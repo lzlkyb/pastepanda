@@ -96,7 +96,7 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   而搜索与容器改造互相独立，可以先做、单独验证。
 </div>
 
-<h2>二、两屏</h2>
+<h2>二、窄屏下的两屏（宽屏见第八节）</h2>
 <div class="side">
   <div>
     <h3>一级：分类列表（占满主窗口）</h3>
@@ -212,7 +212,7 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
 <tr><td>某处「去设置改 X」</td><td>直接进二级并高亮那一行（沿用现在 <code>initialTab</code> 的能力，扩成 <code>initialSection</code>）</td></tr>
 <tr><td>二级页「←」</td><td>回一级</td></tr>
 <tr><td>一级页「←」</td><td>回上一个视图（记录 / 知识库）</td></tr>
-<tr><td><code>Esc</code></td><td>二级 → 一级 → 退出。<b>逐级退</b>，不要一下退到底</td></tr>
+<tr><td><code>Esc</code></td><td><b>窄屏</b>：二级 → 一级 → 退出，<b>逐级退</b>，不要一下退到底。<br><b>宽屏双栏</b>：没有「级」可退，直接退出设置</td></tr>
 </table>
 <div class="note">
   ❗ <b>不做面包屑式的深层路由</b>：设置只有两级，加 URL 路由是为一个不存在的
@@ -258,8 +258,10 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   界面上看不出差别就是对的。也是规则 #7 本来就欠的账</td></tr>
 <tr><td><b>2</b></td><td>加搜索（索引 + 结果列表 + 跳转高亮）</td><td>「找不到」这件事本身。
   仍在弹框里，风险最小、收益最大</td></tr>
-<tr><td><b>3</b></td><td>换容器：弹框 → 主窗口视图 + 二级下钻</td><td>只剩布局与导航，
-  前两步已经把内容和检索都理顺了</td></tr>
+<tr><td><b>3</b></td><td>换容器：弹框 → 主窗口视图。<b>同时做两种布局</b>：
+  ≥600px 双栏、&lt;600px 下钻（见第八节）</td><td>只剩布局与导航，
+  前两步已经把内容和检索都理顺了。两种布局共用一个 <code>section</code> 状态，
+  所以不是两套实现</td></tr>
 </table>
 <div class="note">
   <b>为什么不一次做完</b>：这三步各自都可能出问题，混在一个提交里出了问题
@@ -291,7 +293,113 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   <b>真正改变行为可见性</b>的地方。
 </div>
 
-<h2>八、搜索的三个状态（当时只画了命中态）</h2>
+<h2>八、宽屏：≥600px 双栏同时显示，&lt;600px 才下钻</h2>
+<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 8px">
+  窗口是<b>可缩放</b>的（<code>minWidth: 320</code>，无上限），而 <code>window-state</code>
+  记着用户长期实际跑在 <b>600×875</b>。所以「二级下钻」不该是唯一形态——
+  宽度够时两栏同时显示明显更好用（少一次点击、且能看见自己在整体里的位置）。
+</p>
+
+<h3>门槛取 600，不是 800</h3>
+<table>
+<tr><th></th><th>600</th><th>800</th></tr>
+<tr><td>默认窗口（600 宽）</td><td>✅ 直接就是双栏</td><td>❌ 永远单栏，等于这个特性大多数人看不到</td></tr>
+<tr><td>内容栏宽度</td><td>600 − 180 = <b>420px</b>，与今天的弹框<b>一样宽</b>，行不用重画</td><td>620px，更宽松</td></tr>
+<tr><td>是否新断点</td><td>❌ 项目已有 600</td><td>❌ 项目已有 800</td></tr>
+</table>
+<div class="note">
+  <b>600 与 800 都是项目现有断点</b>（<code>useKbLayout</code> 的注释明写「断点沿用项目现有的
+  600 / 800，再引入第三套只会让以后改布局时没人知道该改哪一档」）。
+  取 600 的决定性理由是：<b>默认窗口正好 600</b>，取 800 的话绝大多数用户永远见不到双栏。
+</div>
+
+<h3>两种形态</h3>
+<div class="side">
+  <div>
+    <h4 style="font-size:12px;margin:0 0 6px">≥600px：左导航 + 右内容</h4>
+    <div class="holder" style="height:330px"><div class="scale" style="height:165px">
+      <div class="win" style="width:300px;height:165px;flex-direction:row">
+        <div style="width:88px;border-right:1px solid var(--border-color);background:var(--section-bg);overflow:auto">
+          <div class="srch" style="margin:5px;padding:3px 5px;font-size:8px">🔍 搜索</div>
+          <div style="padding:5px 7px;font-size:9px;font-weight:600">⚙ 通用</div>
+          <div style="padding:5px 7px;font-size:9px;background:var(--accent-light);color:var(--accent-strong);font-weight:700">🔒 采集与隐私</div>
+          <div style="padding:5px 7px;font-size:9px">🪟 窗口与启动</div>
+          <div style="padding:5px 7px;font-size:9px">📋 列表与交互</div>
+          <div style="padding:5px 7px;font-size:9px">📝 笔记与编辑器</div>
+          <div style="padding:5px 7px;font-size:9px">⌨ 快捷键</div>
+          <div style="padding:5px 7px;font-size:9px">📚 知识库同步</div>
+        </div>
+        <div style="flex:1;overflow:auto">
+          <div class="item" style="padding:6px 9px">
+            <span class="ico" style="width:18px;height:18px;font-size:9px;background:linear-gradient(135deg,#EF4444,#DC2626)">🔒</span>
+            <span class="itxt"><span class="iname" style="font-size:9.5px">敏感内容防护</span>
+            <span class="idesc" style="font-size:8px">密钥/Token 不写入历史</span></span>
+            <span class="tg" style="width:26px;height:15px"><i style="left:13px;width:11px;height:11px"></i></span></div>
+          <div class="item" style="padding:6px 9px">
+            <span class="itxt"><span class="iname" style="font-size:9.5px">自动去除空白</span></span>
+            <span class="tg off" style="width:26px;height:15px"><i style="left:2px;width:11px;height:11px"></i></span></div>
+          <div class="item" style="padding:6px 9px">
+            <span class="itxt"><span class="iname" style="font-size:9.5px">文档保真采集</span></span>
+            <span class="tg" style="width:26px;height:15px"><i style="left:13px;width:11px;height:11px"></i></span></div>
+          <div class="item" style="padding:6px 9px">
+            <span class="itxt"><span class="iname" style="font-size:9.5px">保留格式粘贴</span></span>
+            <span class="tg off" style="width:26px;height:15px"><i style="left:2px;width:11px;height:11px"></i></span></div>
+          <div class="item" style="padding:6px 9px">
+            <span class="itxt"><span class="iname" style="font-size:9.5px">应用排除名单</span>
+            <span class="idesc" style="font-size:8px">3 个程序</span></span><span class="chev">›</span></div>
+        </div>
+      </div>
+    </div></div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
+      导航宽度<b>固定 180px</b>，不用百分比——用百分比的话窗口往 600 收时内容栏会被压到 420 以下。
+    </div>
+  </div>
+  <div>
+    <h4 style="font-size:12px;margin:0 0 6px">&lt;600px：退回二级下钻</h4>
+    <div class="holder" style="height:330px"><div class="scale" style="height:165px">
+      <div class="win" style="width:230px;height:165px">
+        <div class="back"><span>←</span><span>采集与隐私</span></div>
+        <div class="body">
+          <div class="item" style="padding:6px 9px">
+            <span class="ico" style="width:18px;height:18px;font-size:9px;background:linear-gradient(135deg,#EF4444,#DC2626)">🔒</span>
+            <span class="itxt"><span class="iname" style="font-size:9.5px">敏感内容防护</span></span>
+            <span class="tg" style="width:26px;height:15px"><i style="left:13px;width:11px;height:11px"></i></span></div>
+          <div class="item" style="padding:6px 9px">
+            <span class="itxt"><span class="iname" style="font-size:9.5px">自动去除空白</span></span>
+            <span class="tg off" style="width:26px;height:15px"><i style="left:2px;width:11px;height:11px"></i></span></div>
+        </div>
+      </div>
+    </div></div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
+      窄到 320px 也能用——那是 <code>minWidth</code>，得保证不塌。
+    </div>
+  </div>
+</div>
+
+<h3>拖动窗口跨过 600 时</h3>
+<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 8px">
+  两种形态<b>共用同一个状态</b> <code>section: string | null</code>，所以跨档不用做任何迁移：
+</p>
+<table>
+<tr><th>当时在</th><th>拖宽 → 双栏</th><th>拖窄 → 下钻</th></tr>
+<tr><td>二级页（<code>section = "privacy"</code>）</td><td>左栏选中「采集与隐私」，右栏就是它</td><td>—</td></tr>
+<tr><td>一级列表（<code>section = null</code>）</td><td>右栏<b>默认落到第一项</b>，不要留空白</td><td>—</td></tr>
+<tr><td>双栏（<code>section = "hotkeys"</code>）</td><td>—</td><td>直接显示「快捷键」那一页，返回键回一级</td></tr>
+</table>
+
+<div class="bad">
+  🔴 <b>断点必须用 <code>matchMedia</code>，不要写全局 CSS。</b>
+  <code>app.css</code> 里曾有两条「宽屏适配」断点选的是 <code>.card-list</code>，
+  而实际渲染的是 CSS Module 的 <code>.cardList</code>（编译后带哈希）——
+  <b>全局选择器永远匹配不上，两条规则从未生效</b>，与同文件的 <code>.app-shell</code> 是同一个坑
+  （已在 <code>44cb02b</code> 删掉）。
+  <br><br>
+  <code>useKbLayout</code> 已经是现成范式：<code>matchMedia</code> + <code>addEventListener("change")</code>，
+  只在<b>跳档时</b>触发，拖窗口不会每帧 <code>setState</code>。设置页直接照它写，
+  或者干脆把那个 hook 扩一个字段。
+</div>
+
+<h2>九、搜索的三个状态（当时只画了命中态）</h2>
 <div class="side">
   <div>
     <h3>① 开关类命中：直接可拨</h3>
@@ -348,7 +456,7 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   同义词至少要覆盖：开机↔自启动、暗色/夜间↔主题、密码/token↔密钥、快捷键↔热键。
 </div>
 
-<h2>九、明确不做的</h2>
+<h2>十、明确不做的</h2>
 <table>
 <tr><th>不做</th><th>为什么</th></tr>
 <tr><td>独立设置窗口（原方案 A）</td><td>两个 WebView 各持一份 <code>config</code>，
