@@ -1,10 +1,26 @@
 {
   "_怎么填": [
     "照着节清单填：src-tauri/target/bench/outline.md（27 篇 / 352 节，2026-09-05 导）",
-    "note / heading 都是【片段】匹配，大小写不敏感，但必须唯一命中——匹配到多篇会直接报错。",
-    "heading 留空 = 引言节（笔记开头到第一个标题之前）。",
+    "note 是【笔记标题】片段，必须在全库唯一命中；heading 是【节标题】片段，必须在那一篇里唯一命中。撞多条会直接报错，不会静默挑一个。",
+    "heading 留空 = 引言节（笔记开头到第一个标题之前）。整篇以标题开头的笔记没有引言节，留空必报错。",
     "expect 可以写多条（一道题允许多个正确节），cross_note 型本来就该写多条。",
-    "填不满 30 题也能跑；把用不上的空壳删掉即可，query 为空的条目会被当成错误。"
+    "填不满也能跑；把用不上的空壳删掉即可，query 为空的条目会被当成错误、整份用例集拒跑。"
+  ],
+
+  "_🔴 这份用例集的根本局限（引用报告时必须一并引用）": [
+    "34 题全部由 Claude 出，不是人出的。原设计要求由人出题，理由是：",
+    "AI 照着笔记写题，用词会自然落回原文，BM25 拿到白送的分——",
+    "量出来的就不是检索能力，而是「抄得准不准」。2026-09-05 用户拍板改由 AI 代填。",
+    "",
+    "为减轻这个偏差，semantic 型 10 题逐题过了机械校验（scripts/check_leak.py）：",
+    "把查询拆成 bigram（与检索侧 to_ngram 同口径），比对目标节正文，",
+    "泄漏率 = 【查询词里有多少真的出现在那一节里】。实测：6 题 0%，4 题 4~8%，",
+    "且泄漏项全是虚词（「的公」「根本」「普通」「成绩」）——实词没有白送。",
+    "所以 semantic 型的数可信度较高；但 intent / temporal 型没做这层校验（它们本来也不要求避词），",
+    "其中 time-3 / time-4 的实词泄漏到 29% / 31%，这两题偏向变相 keyword，读数时要打折。",
+    "",
+    "→ 结论：这份的 semantic 数可以拿来判 AM-10 的方向；但【库只有 27 篇】这个安全阀依旧生效，",
+    "  报告只归档、不作决策依据。将来库长大后，建议由人重新出一套对照。"
   ],
 
   "_五种类型怎么出": {
@@ -12,86 +28,126 @@
     "intent": "问做法或意图，别照抄原词。例：「实盘通道最后选了哪家，为什么」。",
     "temporal": "带时间限定的问法。例：「上个月改的那个发版流程」。目前没有时效信号（AM-3 未做），这一类大概率会差——正是要量的那个基线。",
     "cross_note": "答案跨多篇。例：「安全相关的约束都写在哪些地方」——expect 写多条。",
-    "semantic": "🔴 最关键的一类，也是唯一能证伪 AM-10 向量层的一类。要求：你心里知道答案在哪一节，但【刻意避开那一节里用过的词】。比如笔记里写的是「租户隔离」，你就问「不同客户的数据会不会串」。如果你发现自己写不出来，那正好说明这一类真的难——宁可少几题，也不要写成变相的 keyword。"
+    "semantic": "🔴 最关键的一类，也是唯一能证伪 AM-10 向量层的一类。要求：心里知道答案在哪一节，但【刻意避开那一节里用过的词】。比如笔记里写的是「租户隔离」，就问「不同客户的数据会不会串」。"
   },
+
+  "_中文分词的坑": [
+    "notes_fts 是裸 fts5，中文靠 to_ngram 的 bigram 预处理才搜得到。",
+    "所以查询里的中文词【至少两个字】，单字查询恒零命中——那是分词口径问题，不是召回失败。"
+  ],
 
   "_污染型": [
     "填了 prefix 的用例会自动跑两遍（干净 / 污染），给出掉幅——验收项①。",
-    "下面预填的 prefix 模拟的是「模型把整段系统提示连同问题一起丢进检索」这个真实场景。",
-    "🔴 2026-09-04 合成库冒烟已经量到：节级召回 100% → 0%，且加大 limit 救不回。真库能不能复现，就看这几条。"
+    "poison-* 四题的 query/expect 是从 kw-2 / int-1 / sem-1 / sem-3 原样复制的——",
+    "污染型量的是【同一道题】干净跑与污染跑的掉幅，两边必须是同一道题才有意义。",
+    "🔴 2026-09-04 合成库冒烟已经量到：节级召回 100% → 0%，且加大 limit 救不回。真库能不能复现，就看这四条。"
   ],
 
-  "_填完怎么跑": [
+  "_怎么跑": [
     "cd 项目根，然后（一行）：",
-    "LIBCLANG_PATH=D:/AItool/winapp/pastePanda/src-tauri/.libclang PP_BENCH_DB=D:/AItool/winapp/pastePanda/src-tauri/target/bench/pp-copy.db PP_BENCH_CASES=docs/am5-cases.json PP_BENCH_DATE=2026-09-05 PP_BENCH_OUT=docs/AM-5-召回基准-2026-09-05.md cargo test --manifest-path src-tauri/Cargo.toml --lib bench::tests::bench_real_library -- --ignored --nocapture",
+    "CARGO_BUILD_JOBS=2 LIBCLANG_PATH=D:/AItool/winapp/pastePanda/src-tauri/.libclang PP_BENCH_DB=D:/AItool/winapp/pastePanda/src-tauri/target/bench/pp-copy.db PP_BENCH_CASES=docs/am5-cases.json PP_BENCH_DATE=2026-09-05 PP_BENCH_OUT=docs/AM-5-召回基准-2026-09-05.md cargo test --manifest-path src-tauri/Cargo.toml --lib bench::tests::bench_real_library -- --ignored --nocapture",
+    "🔴 CARGO_BUILD_JOBS=2 必须带：默认并行度在这台机器上会跑蓝屏（2026-09-05 实测）。",
+    "改完题先跑泄漏校验：PYTHONIOENCODING=utf-8 python scripts/check_leak.py src-tauri/target/bench/pp-copy.db docs/am5-cases.json",
     "⚠ 库只有 27 篇（<100），报告会自动打警告：只归档、不作决策依据。这是故意的安全阀。"
   ],
 
-  "labeler": "",
+  "labeler": "Claude（全部 34 题；非人工标注，semantic 型经 check_leak.py 逐题校验，词面泄漏 0~8% 且均为虚词；time-3/time-4 泄漏 29%/31%，偏向变相 keyword）",
 
   "cases": [
-    { "id": "kw-1", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "kw-2", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "kw-3", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "kw-4", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "kw-5", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "kw-1", "kind": "keyword", "query": "minisign", "expect": [{ "note": "密钥与门禁", "heading": "minisign" }] },
+    { "id": "kw-2", "kind": "keyword", "query": "幸存者偏差", "expect": [{ "note": "数据地基", "heading": "幸存者偏差" }] },
+    { "id": "kw-3", "kind": "keyword", "query": "多重检验", "expect": [{ "note": "因子投资", "heading": "多重检验" }] },
+    { "id": "kw-4", "kind": "keyword", "query": "无障碍", "expect": [{ "note": "UI 审查", "heading": "无障碍" }] },
+    { "id": "kw-5", "kind": "keyword", "query": "玻璃系统", "expect": [{ "note": "strathand-style", "heading": "玻璃系统" }] },
 
-    { "id": "int-1", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "int-2", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "int-3", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "int-4", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "int-5", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "int-6", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "int-7", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "int-1", "kind": "intent", "query": "为什么不把复权之后的价格直接存下来", "expect": [{ "note": "数据地基", "heading": "前复权" }] },
+    { "id": "int-2", "kind": "intent", "query": "打包发版之前必须先核对哪些东西", "expect": [{ "note": "上线验收", "heading": "上线门禁" }] },
+    { "id": "int-3", "kind": "intent", "query": "不可信的代码怎么隔离起来跑", "expect": [{ "note": "安全与隐私", "heading": "沙箱设计" }] },
+    { "id": "int-4", "kind": "intent", "query": "一个新想法要走哪些步骤才算被证明有效", "expect": [{ "note": "因子投资", "heading": "从想法到证据" }] },
+    { "id": "int-5", "kind": "intent", "query": "最后决定怎么收费", "expect": [{ "note": "商业模式", "heading": "一次性买断" }] },
+    { "id": "int-6", "kind": "intent", "query": "手机上到底能干什么不能干什么", "expect": [{ "note": "手机与Web", "heading": "目标与约束" }] },
+    { "id": "int-7", "kind": "intent", "query": "怎么让完全不会写代码的人也能用起来", "expect": [{ "note": "用户画像", "heading": "零代码设计原则" }] },
 
-    { "id": "time-1", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "time-2", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "time-3", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "time-4", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "time-1", "kind": "temporal", "query": "上个月定下来的那个熔断机制", "expect": [{ "note": "安全与隐私", "heading": "自主循环熔断" }] },
+    { "id": "time-2", "kind": "temporal", "query": "八月底那次界面审查收口的结论", "expect": [{ "note": "UI 审查", "heading": "附录 B" }] },
+    { "id": "time-3", "kind": "temporal", "query": "最近实测之后回写进去的验证结论", "expect": [{ "note": "数据地基", "heading": "验证项结论" }] },
+    { "id": "time-4", "kind": "temporal", "query": "八月底整理文档之后留下的待办", "expect": [{ "note": "总纲", "heading": "活跃待办" }] },
 
-    { "id": "cross-1", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
-    { "id": "cross-2", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
-    { "id": "cross-3", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
-    { "id": "cross-4", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
+    {
+      "id": "cross-1",
+      "kind": "cross_note",
+      "query": "实盘通道最后选的是哪条，结论写在哪",
+      "expect": [
+        { "note": "G7", "heading": "结论先行" },
+        { "note": "ADR-024", "heading": "3. 决策" }
+      ]
+    },
+    {
+      "id": "cross-2",
+      "kind": "cross_note",
+      "query": "离线激活码怎么签发，公钥要换哪些",
+      "expect": [
+        { "note": "ADR-023", "heading": "签发 SOP" },
+        { "note": "密钥与门禁", "heading": "License 授权验签" }
+      ]
+    },
+    {
+      "id": "cross-3",
+      "kind": "cross_note",
+      "query": "云端 LLM 的隐私边界是怎么定的",
+      "expect": [
+        { "note": "安全与隐私", "heading": "云端 LLM 隐私边界" },
+        { "note": "架构决策记录", "heading": "ADR-004" }
+      ]
+    },
+    {
+      "id": "cross-4",
+      "kind": "cross_note",
+      "query": "Python 那边的写法约定",
+      "expect": [
+        { "note": "性能预算", "heading": "3.2 Python 内核" },
+        { "note": "编码规范", "heading": "PEP 8" }
+      ]
+    },
 
-    { "id": "sem-1", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-2", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-3", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-4", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-5", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-6", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-7", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-8", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-9", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
-    { "id": "sem-10", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-1", "kind": "semantic", "query": "那些已经摘牌走掉的公司如果漏掉了，历史成绩看着会太漂亮吗", "expect": [{ "note": "数据地基", "heading": "幸存者偏差" }] },
+    { "id": "sem-2", "kind": "semantic", "query": "算的时候用到了当时根本拿不到的消息", "expect": [{ "note": "因子投资", "heading": "前视偏差" }] },
+    { "id": "sem-3", "kind": "semantic", "query": "哪些东西绝不允许传到外面去", "expect": [{ "note": "安全与隐私", "heading": "云端 LLM 隐私边界" }] },
+    { "id": "sem-4", "kind": "semantic", "query": "那种半透能看见底下的层次感是怎么做的", "expect": [{ "note": "strathand-style", "heading": "玻璃系统" }] },
+    { "id": "sem-5", "kind": "semantic", "query": "眼睛不好或者用不了鼠标的人该怎么办", "expect": [{ "note": "UI 审查", "heading": "无障碍" }] },
+    { "id": "sem-6", "kind": "semantic", "query": "一段程序写到多大就该动手切分了", "expect": [{ "note": "编码规范", "heading": "方法与文件长度" }] },
+    { "id": "sem-7", "kind": "semantic", "query": "给普通人推荐买什么会不会踩到线", "expect": [{ "note": "数据合规", "heading": "证券适当性" }] },
+    { "id": "sem-8", "kind": "semantic", "query": "它脑子里早就知道后面发生了什么，这样评出来的成绩还算数吗", "expect": [{ "note": "因子投资", "heading": "训练截止期泄漏" }] },
+    { "id": "sem-9", "kind": "semantic", "query": "怎么确认来敲门的是我自己那台机器", "expect": [{ "note": "手机与Web", "heading": "令牌访问" }] },
+    { "id": "sem-10", "kind": "semantic", "query": "机器扛不住的时候先砍掉什么", "expect": [{ "note": "性能预算", "heading": "资源与降级" }] },
 
     {
       "id": "poison-kw",
       "kind": "keyword",
-      "query": "",
+      "query": "幸存者偏差",
       "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
-      "expect": [{ "note": "", "heading": "" }]
+      "expect": [{ "note": "数据地基", "heading": "幸存者偏差" }]
     },
     {
       "id": "poison-int",
       "kind": "intent",
-      "query": "",
+      "query": "为什么不把复权之后的价格直接存下来",
       "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
-      "expect": [{ "note": "", "heading": "" }]
+      "expect": [{ "note": "数据地基", "heading": "前复权" }]
     },
     {
       "id": "poison-sem-1",
       "kind": "semantic",
-      "query": "",
+      "query": "那些已经摘牌走掉的公司如果漏掉了，历史成绩看着会太漂亮吗",
       "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
-      "expect": [{ "note": "", "heading": "" }]
+      "expect": [{ "note": "数据地基", "heading": "幸存者偏差" }]
     },
     {
       "id": "poison-sem-2",
       "kind": "semantic",
-      "query": "",
+      "query": "哪些东西绝不允许传到外面去",
       "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
-      "expect": [{ "note": "", "heading": "" }]
+      "expect": [{ "note": "安全与隐私", "heading": "云端 LLM 隐私边界" }]
     }
   ]
 }
