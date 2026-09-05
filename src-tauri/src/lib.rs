@@ -749,6 +749,7 @@ pub fn run() {
             commands::note_confirm_ai_tags,
             // 笔记访问时间（B2 前置，为 #7 重现的「久未访问」攒数据）
             commands::note_touch,
+            commands::note_backlinks,
             // 字段视图（B2 #9）：分组组头的真实条数（笔记侧 + 收件箱侧）
             commands::note_group_counts,
             commands::kb_inbox_group_counts,

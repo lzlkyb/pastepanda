@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda 反链面板（M3-④）设计稿</title>
+<style>
+:root{
+  --app-bg:#F7F7F8; --card-bg:#fff; --section-bg:#F0F4F8; --input-bg:#F1F5F9;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD;
+  --green:#11813A; --green-bg:#DCFCE7; --green-border:#A7F3C4;
+  --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+  --danger:#D82525; --red-bg:#FEF2F2;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-t="light"]){
+    --app-bg:#0B0B13; --card-bg:#18181B; --section-bg:#0F0F11; --input-bg:#27272A;
+    --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --border-color:#27272A;
+    --accent:#818CF8; --accent-light:#1E1B4B; --accent-strong:#818CF8;
+    --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+    --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412;
+    --danger:#F87171; --red-bg:#2A1215;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--app-bg);color:var(--text-primary);
+  font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:28px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--text-muted);font-size:13px;margin:0 0 22px}
+h2{font-size:15px;margin:32px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+h3{font-size:13px;margin:20px 0 8px;color:var(--text-secondary)}
+.note{background:var(--accent-light);border-left:3px solid var(--accent);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.warn{background:var(--orange-bg);border-left:3px solid var(--orange);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.bad{background:var(--red-bg);border-left:3px solid var(--danger);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.ok{background:var(--green-bg);border-left:3px solid var(--green);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+code{background:var(--input-bg);padding:1px 5px;border-radius:4px;
+  font:12px ui-monospace,Consolas,monospace}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border-color);vertical-align:top}
+th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin:14px 0}
+
+.pane{width:340px;background:var(--card-bg);border:1px solid var(--border-color);
+  border-radius:10px;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 6px 20px rgba(0,0,0,.10)}
+.head{padding:9px 12px;border-bottom:1px solid var(--border-color);
+  display:flex;align-items:center;gap:8px}
+.title{font-size:13px;font-weight:700;flex:1}
+.x{color:var(--text-muted);font-size:12px}
+.body{padding:11px 12px;font-size:11.5px;color:var(--text-secondary);
+  line-height:1.8;min-height:96px;background:var(--input-bg);margin:0}
+.foot{padding:8px 12px;border-top:1px solid var(--border-color);
+  display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted)}
+.btn{padding:4px 10px;border-radius:6px;border:1px solid var(--border-color);
+  background:var(--card-bg);font-size:11px;font-weight:600}
+.btn.pri{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+
+/* 反链区 */
+.bl{border-top:1px solid var(--border-color);background:var(--section-bg)}
+.blHead{display:flex;align-items:center;gap:6px;padding:7px 12px;
+  font-size:11px;font-weight:700;color:var(--text-secondary);cursor:pointer}
+.blCount{background:var(--accent-light);color:var(--accent-strong);
+  border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700}
+.blList{padding:0 12px 9px}
+.blItem{display:flex;align-items:baseline;gap:7px;padding:5px 8px;border-radius:6px;
+  background:var(--card-bg);border:1px solid var(--border-color);margin-bottom:5px}
+.blTitle{font-size:11.5px;font-weight:600;color:var(--accent-strong);flex:1;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blLine{font-size:10px;color:var(--text-muted);font-family:ui-monospace,Consolas,monospace;flex-shrink:0}
+.blEmpty{padding:8px 12px 11px;font-size:11px;color:var(--text-muted)}
+.caret{font-size:9px;color:var(--text-muted)}
+</style>
+</head>
+<body>
+
+<h1>反链面板（M3-④ 最后一块）</h1>
+<p class="lead">
+  数据层与查询层 2026-09-04 已完成，<code>[[</code> 补全也早就有了。
+  <b>差的只是这一块 UI</b>——以及两个把数据递给前端的 tauri 命令。
+</p>
+
+<h2>一、现状：差什么（已核代码）</h2>
+<table>
+<tr><th>层</th><th>状态</th></tr>
+<tr><td><code>note_links</code> 表与维护</td><td>✅ 在（<code>sync_note_indexes_on</code> 统一维护）</td></tr>
+<tr><td><code>note_backlinks(id)</code></td><td>✅ 在，返回 <code>BackLink { from_id, from_title, line }</code></td></tr>
+<tr><td><code>note_broken_links()</code></td><td>✅ 在，返回 <code>(from_id, from_title, to_title)</code>——🔴 <b>全库的，不是单篇的</b></td></tr>
+<tr><td><code>[[</code> 补全</td><td>✅ 在（<code>notes/wikiLinkComplete.ts</code>）</td></tr>
+<tr><td>tauri 命令</td><td>❌ <b>没有</b>——前端现在拿不到这些数据</td></tr>
+<tr><td>反链面板 UI</td><td>❌ <b>本稿要做的</b></td></tr>
+</table>
+<div class="ok">🟢 AI 侧已经能用了：<code>kb_read</code> 读整篇时就附上了反链与断链。本稿只补人类那一侧。</div>
+
+<h2>二、🔴 先拆一个范围问题：断链不属于这里</h2>
+<div class="bad">
+  <code>note_broken_links()</code> 返回的是<b>全库</b>的断链，不是「这篇笔记的断链」。
+  把它放进单篇详情面板里是<b>语义错位</b>：用户在看 A 篇，却看到一堆 B、C 篇里的断链。
+</div>
+<div class="note">
+  <b>本稿只做反链面板</b>（单篇）。全库断链属于「库体检」那类东西——
+  项目里已经有 <code>KbHealthBar.tsx</code>，那才是它的归属。本次<b>不做</b>，另行拍板。
+  （而且用户拍板过的 M3-④ 范围就是「最小双向链接：反链 + <code>[[</code> 补全，不做图谱」）
+</div>
+
+<h2>三、挂在哪里</h2>
+<div class="row">
+  <div>
+    <p style="font-size:11px;color:var(--text-muted);font-weight:700;margin:0 0 6px">方案 A（采用）：编辑器下方、footer 之上</p>
+    <div class="pane">
+      <div class="head"><span class="title">策手·安全与隐私设计</span><span class="x">✕</span></div>
+      <p class="body">正文编辑区…<br>（CodeMirror）</p>
+      <div class="bl">
+        <div class="blHead"><span class="caret">▾</span>被引用 <span class="blCount">3</span></div>
+        <div class="blList">
+          <div class="blItem"><span class="blTitle">产品技术总纲</span><span class="blLine">第 128 行</span></div>
+          <div class="blItem"><span class="blTitle">ADR-023 离线激活码决策稿</span><span class="blLine">第 44 行</span></div>
+          <div class="blItem"><span class="blTitle">发版前密钥与门禁 checklist</span><span class="blLine">第 9 行</span></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn">…</span><span style="flex:1"></span><span class="btn pri">保存</span></div>
+    </div>
+  </div>
+  <div style="flex:1;min-width:280px">
+    <div class="note"><b>为什么放这里</b>：反链数量不定（0～N），放顶部会挤压正文；
+    而阅读顺序也是<b>先看正文、再看谁引用了我</b>。Obsidian / Roam 都是这个位置。</div>
+    <div class="note"><b>方案 B（否决）：放顶部与「来源」行并列</b>。
+    来源行是定长的（一个芯片），反链是不定长的；放一起会让标题下面突然冒出五六行，
+    每切一篇笔记正文的起始位置都在跳。</div>
+    <div class="note"><b>方案 C（否决）：放第三栏 <code>KbThirdPane</code></b>。
+    那一栏已经是「问答 + 笔记」的上下分栏容器（A-61 ① 刚为它们不互斥做过一次重构），
+    再塞第三种内容就又回到抢空间了。</div>
+  </div>
+</div>
+
+<h2>四、三种状态</h2>
+<div class="row">
+  <div>
+    <p style="font-size:11px;color:var(--text-muted);font-weight:700;margin:0 0 6px">① 有反链（展开）</p>
+    <div class="pane" style="width:300px">
+      <div class="bl" style="border-top:none">
+        <div class="blHead"><span class="caret">▾</span>被引用 <span class="blCount">3</span></div>
+        <div class="blList">
+          <div class="blItem"><span class="blTitle">产品技术总纲</span><span class="blLine">第 128 行</span></div>
+          <div class="blItem"><span class="blTitle">ADR-023 离线激活码决策稿</span><span class="blLine">第 44 行</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p style="font-size:11px;color:var(--text-muted);font-weight:700;margin:0 0 6px">② 有反链（折叠）</p>
+    <div class="pane" style="width:300px">
+      <div class="bl" style="border-top:none">
+        <div class="blHead"><span class="caret">▸</span>被引用 <span class="blCount">3</span></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p style="font-size:11px;color:var(--text-muted);font-weight:700;margin:0 0 6px">③ 无反链</p>
+    <div class="pane" style="width:300px">
+      <div class="bl" style="border-top:none">
+        <div class="blHead"><span class="caret">▸</span>被引用 <span class="blCount" style="background:var(--input-bg);color:var(--text-muted)">0</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="warn">
+  ⚠ <b>0 条时仍然显示那一行（折叠态），不整块隐掉。</b>
+  隐掉的话，面板会随着切笔记时有时无——footer 的位置跟着跳。
+  而且「确实没人引用」本身就是信息。
+</div>
+
+<h2>五、交互</h2>
+<table>
+<tr><th>动作</th><th>行为</th></tr>
+<tr><td>点标题栏</td><td>折叠/展开。状态存 localStorage，<b>全局一份</b>而不是每篇一份（用户要的是「我平时看不看反链」，不是逐篇记忆）</td></tr>
+<tr><td>点一条反链</td><td>跳到那篇笔记。🔴 <b>当前篇有未保存草稿时先走已有的脏数据确认流程</b>，不能直接跳走</td></tr>
+<tr><td>行号</td><td>只展示，<b>不</b>做「跳到那一行」——需要跨篇定位到行，而行号在对方编辑后就变了（它只在保存时重算）</td></tr>
+<tr><td>刷新时机</td><td>切笔记时拉一次；<b>本篇保存后不用拉</b>（反链是「别人指向我」，改自己不会变）</td></tr>
+</table>
+<div class="bad">
+  🔴 <b>行号那一条是有意克制的</b>：<code>BackLink.line</code> 是写入时的行号，
+  只在那篇笔记保存时重算。做成「点了跳到第 128 行」的话，对方改过而未保存时就会跳错位——
+  <b>而跳错位比不能跳更差</b>：用户会以为那里真的引用了他。展示行号只是给个方位感。
+</div>
+
+<h2>六、落地拆分</h2>
+<table>
+<tr><th>文件</th><th>改动</th></tr>
+<tr><td><code>src-tauri/src/commands/notes.rs</code></td><td>新增 <code>note_backlinks</code> 命令（包一层，数据层已有）。全库断链那个<b>本次不加</b> |</td></tr>
+<tr><td><code>src-tauri/src/lib.rs</code></td><td>注册那一个命令</td></tr>
+<tr><td><code>src/components/notes/NoteBacklinks.tsx</code>（新）</td><td>面板本体，预计 ~90 行</td></tr>
+<tr><td><code>NoteDetailPane.tsx</code></td><td>挂一行。🔴 它已经 <b>320 行</b>（规则 #7 上限 300），所以面板<b>必须</b>是独立组件，不能写进去</td></tr>
+<tr><td><code>NoteDetailPane.module.css</code></td><td>面板样式</td></tr>
+</table>
+
+<h2>七、本次不做</h2>
+<div class="warn">
+  • <b>全库断链 UI</b>——语义上属于 <code>KbHealthBar</code>，另行拍板<br>
+  • <b>图谱视图</b>——用户已拍板不做（Obsidian 实证：&gt;200 条变毛线团）<br>
+  • <b>点行号跳转</b>——理由见第五节<br>
+  • <b>实时刷新反链</b>——反链只在对方保存时变，轮询是白烧（规则 #8）
+</div>
+
+</body>
+</html>

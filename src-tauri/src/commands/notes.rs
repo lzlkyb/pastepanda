@@ -110,6 +110,22 @@ pub fn note_get(store: State<DataStore>, id: String) -> Result<Option<Note>, Str
     store.note_get(&id)
 }
 
+/// 谁引用了这一篇（M3-④ 反链面板）。
+///
+/// 数据层 2026-09-04 就在了，一直只有 AI 侧能用（`kb_read` 读整篇时附带）；
+/// 这个命令是把它开给界面。
+///
+/// ❗ **全库断链（`note_broken_links`）故意没开**：它返回的是整库的断链，
+/// 不是「这篇的断链」。放进单篇详情面板是语义错位——用户在看 A 篇，
+/// 却看到一堆 B、C 篇里的断链。它属于「库体检」（`KbHealthBar`），另行拍板。
+#[tauri::command]
+pub fn note_backlinks(
+    store: State<DataStore>,
+    id: String,
+) -> Result<Vec<crate::data_store::BackLink>, String> {
+    store.note_backlinks(&id)
+}
+
 /// 记一笔「这条笔记被打开阅读了」（B2 前置，为 §8.3 #7 重现的「久未访问」攒数据）。
 ///
 /// 无返回值、不报错——失败只在 Rust 侧记 warn，同 `action_event_log` 的口径。

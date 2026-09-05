@@ -248,3 +248,95 @@
 .summaryClear:hover {
   color: var(--danger-color, #e5534b);
 }
+
+/* ===== 反链面板（M3-④）=====
+   在编辑器下方、footer 之上。flex-shrink: 0 不能省：
+   外层是 flex 列，不固定的话条数多时它会去挤编辑器的高度。 */
+.backlinks {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--section-bg, var(--card-bg));
+}
+
+.blHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.blHead:hover { color: var(--text-primary); }
+
+.blCaret {
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 9px;
+  flex-shrink: 0;
+}
+
+.blCount {
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  border-radius: 20px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* 0 条时不用强调色——它不是一个可点的线索，只是个事实 */
+.blCountZero {
+  background: var(--input-bg);
+  color: var(--text-muted);
+}
+
+.blList { padding: 0 12px 9px; }
+
+.blItem {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+  border-radius: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  text-align: left;
+}
+
+.blItem:hover { border-color: var(--accent); background: var(--hover); }
+.blItem:last-child { margin-bottom: 0; }
+
+.blTitle {
+  flex: 1;
+  min-width: 0;          /* 不写这条省略号不生效（flex 子项默认 min-width:auto）*/
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+/* 行号只是方位感，不要抢标题的注意力 */
+.blLine {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.blEmpty {
+  padding: 0 12px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}

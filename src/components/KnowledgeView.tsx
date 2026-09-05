@@ -59,7 +59,7 @@ import {
   type NoteViewOpts,
 } from "@/lib/notes/viewOpts";
 import { NoteDetailPane, NoteDetailEmpty } from "@/components/notes/NoteDetailPane";
-import type { Note } from "@/lib/api";
+import { noteGet, type Note } from "@/lib/api";
 import styles from "./KnowledgeView.module.css";
 
 export function KnowledgeView() {
@@ -128,6 +128,24 @@ export function KnowledgeView() {
       return opened;
     },
     [handleOpen, layout.hasDetailPane, canSplit],
+  );
+
+  /**
+   * 按 id 打开（反链面板点击用，M3-④）。
+   *
+   * 反链里只有 `from_id`，而 `handleOpenNote` 要整个 `Note`——先拉一次。
+   * 走同一个 `handleOpenNote` 而不是自己 setActive：**脏数据守卫就在里面**，
+   * 绕过它的话，用户正写着的草稿会被静默换掉。
+   *
+   * 拉不到（已删 / 已进回收站）就什么都不做：`noteGet` 内部已经记过错了，
+   * 而这里再弹一次对用户没用——他能看到的只是「没跳过去」。
+   */
+  const handleOpenNoteById = useCallback(
+    async (id: string) => {
+      const n = await noteGet(id);
+      if (n) await handleOpenNote(n);
+    },
+    [handleOpenNote],
   );
 
   /** ③ 对笔记做的所有事（需要 ① 的重拉与 ② 的守卫）。 */
@@ -447,6 +465,7 @@ export function KnowledgeView() {
                   onSaved={q.refreshAll}
                   notInList={detail.activeNotInList}
                   onRegister={detail.registerDetail}
+                  onOpenNote={handleOpenNoteById}
                 />
               ) : (
                 <NoteDetailEmpty />

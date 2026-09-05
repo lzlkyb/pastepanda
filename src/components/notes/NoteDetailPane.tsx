@@ -18,6 +18,7 @@ import { getContentTypeMeta } from "@/lib/contentTypes";
 import { noteSetSummary, type Note } from "@/lib/api";
 import { NoteEditorPane } from "./NoteEditorPane";
 import { NoteHistoryView } from "./NoteHistoryView";
+import { NoteBacklinks } from "./NoteBacklinks";
 import { NoteAiActions } from "./NoteAiActions";
 import { useNoteEditorState } from "./useNoteEditorState";
 import { NoteViewModeSwitch, useNoteViewMode } from "./NoteViewModeSwitch";
@@ -38,6 +39,7 @@ export function NoteDetailPane({
   onSaved,
   notInList,
   onRegister,
+  onOpenNote,
 }: {
   /**
    * 当前选中的笔记。
@@ -48,6 +50,13 @@ export function NoteDetailPane({
   note: Note;
   /** 关掉详情（清选中）。脏数据确认由 hook 处理 */
   onClose: () => void;
+  /**
+   * 按 id 打开另一篇（反链面板点击用）。
+   *
+   * ❗ 不在本组件里自己切：切笔记要过**脏数据守卫**，而那个守卫
+   * （`handleOpen`）住在宿主那边——本组件只是通过 `onRegister` 把它报上去。
+   */
+  onOpenNote?: (id: string) => void;
   /** 保存成功后。**不关栏**——用户还在这条笔记上，只需刷列表 */
   onSaved: () => void;
   /**
@@ -248,6 +257,11 @@ export function NoteDetailPane({
           onSave={handleSave}
         />
       )}
+
+      {/* 反链（M3-④）放在编辑器下方、footer 之上：
+          反链数量不定（0～N），放顶部会挤压正文；
+          而阅读顺序也是先看正文、再看谁引用了我。 */}
+      <NoteBacklinks noteId={note.id} onOpenNote={onOpenNote} />
 
       <div className={styles.footer}>
         <button
