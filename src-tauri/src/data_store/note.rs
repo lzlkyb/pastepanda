@@ -1042,6 +1042,8 @@ impl DataStore {
     /// （检索路径同时还有 `push_note_filters` 的条件兼着，两道都拦。不是冗余：
     /// 前者管 FTS 命中集，后者还管 LIKE 回退那条完全不过 FTS 的路径。）
     pub fn note_delete(&self, id: &str) -> Result<(), String> {
+        // 在拿 conn 锁之前发：`hlc_now` 不碰库，但摆在外面更不容易将来被改成死锁。
+        let local_ms = self.hlc_now();
         let conn = self.lock_conn();
         let rowid: Option<i64> = conn
             .query_row(
@@ -1055,6 +1057,18 @@ impl DataStore {
             rusqlite::params![id, note_now()],
         )
         .map_err(|e| e.to_string())?;
+        // §12.12：软删也落墓碑，但是 **purged=0**（删除意图，可被还原撤销）。
+        // 必须在 UPDATE **之后**：墓碑的 `tombstone_ms` 要从刚写下的 `deleted_at` 里算。
+        //
+        // 🔴 上一版这里**不落墓碑**，因为当时只有一类不可撤销的墓碑，落了还原就废了。
+        //    代价是接收端手里没有可转发的删除记录 → 三台以上删不干净。
+        Self::record_tombstones_on(
+            &conn,
+            "id = ?1 AND deleted_at IS NOT NULL",
+            &[&id],
+            0,
+            local_ms,
+        );
         if let Some(rid) = rowid {
             if let Err(e) =
                 conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rid])
@@ -1155,6 +1169,20 @@ impl DataStore {
         }
         conn.execute("UPDATE notes SET deleted_at = NULL WHERE id = ?1", [id])
             .map_err(|e| e.to_string())?;
+        // §12.12：撤销「删除意图」墓碑。不撤的话，本机会把它继续广播给第三台，
+        // 把刚还原的副本又删掉——而用户在本机看到的是「已恢复」。
+        //
+        // ❗ 只删 `purged = 0`：物理清理的墓碑不可撤销。
+        //   （那种情况下 `notes` 里根本没行，上面那句 SELECT 就已经报「回收站里没有」了，
+        //   这里的条件是第二道保险）
+        if let Err(e) = conn.execute(
+            "DELETE FROM note_tombstones WHERE note_id = ?1 AND purged = 0",
+            [id],
+        ) {
+            // 不静默（规则 #15.3），但也不阻断：笔记已经恢复了，
+            // 墓碑没撤掉只影响后续同步，不该让还原本身失败。
+            log::warn!("[Notes] 还原后撤墓碑失败 (id={}): {}", id, e);
+        }
         // 删的时候从 FTS 拿掉了，恢复必须重建——否则笔记回来了却搜不到。
         Self::sync_note_indexes_on(&conn, id);
         Ok(())
@@ -1165,12 +1193,20 @@ impl DataStore {
     /// 只能动已在回收站的：`AND deleted_at IS NOT NULL` 是故意的保险，
     /// 万一哪天有人把它接到外部写入上，也不至于一步平掉一条活笔记。
     pub fn note_purge(&self, id: &str) -> Result<(), String> {
+        let local_ms = self.hlc_now();
         let conn = self.lock_conn();
         let rowid: Option<i64> = conn
             .query_row("SELECT rowid FROM notes WHERE id = ?1", [id], |r| r.get(0))
             .ok();
         // M6-P4：物理删之前先落墓碑。顺序不能反——行没了就读不到 deleted_at 了。
-        Self::record_tombstones_on(&conn, "id = ?1 AND deleted_at IS NOT NULL", &[&id]);
+        // purged=1：不可撤销。若已有软删时落的 purged=0 墓碑，这里把它升级。
+        Self::record_tombstones_on(
+            &conn,
+            "id = ?1 AND deleted_at IS NOT NULL",
+            &[&id],
+            1,
+            local_ms,
+        );
         let n = conn
             .execute(
                 "DELETE FROM notes WHERE id = ?1 AND deleted_at IS NOT NULL",
@@ -1187,7 +1223,17 @@ impl DataStore {
         Ok(())
     }
 
-    /// M6-P4：给即将被物理删的笔记落墓碑。`where_sql` 与调用方的 DELETE 用同一份条件。
+    /// M6-P4：落墓碑。`where_sql` 与调用方的 DELETE / UPDATE 用同一份条件。
+    ///
+    /// # 🔴 两类墓碑（§12.12）
+    ///
+    /// | `purged` | 何时落 | 能否撤销 | 否则会怎样 |
+    /// |---|---|---|---|
+    /// | `0` 删除意图 | [`Self::note_delete`] | **能**，[`Self::note_restore_deleted`] 删掉它 | 不可撤销的话，用户从回收站还原后本机仍会把墓碑广播给第三台，把还原的副本又删掉 |
+    /// | `1` 物理清理 | `note_purge` / 超期清理 | 不能 | — |
+    ///
+    /// 上一版一律写 `1`，于是 `note_delete` 根本不落墓碑（否则还原就废了）——
+    /// 而接收端手里没墓碑就无法再转发，三台以上删不干净。
     ///
     /// # `tombstone_ms` 取的是**软删那一刻**，不是清理那一刻
     ///
@@ -1199,6 +1245,11 @@ impl DataStore {
     ///
     /// 删除意图发生在 T0，30 天后的物理清只是本地的空间回收，**不是一次新的删除**。
     ///
+    /// # `local_ms` 取的是**本机记下这一刻**
+    ///
+    /// 导出按它取（见 [`Self::note_tombstones_since`]）。用 `tombstone_ms` 会在
+    /// 「A 离线一周后才把旧删除同步给 B」时落到 B↔C 游标之前，于是 C 永远收不到。
+    ///
     /// # 失败不阻断
     ///
     /// 落不下墓碑时只 `warn`：同 FTS 清理的先例——**不能让用户删不掉东西**。
@@ -1207,52 +1258,126 @@ impl DataStore {
         conn: &rusqlite::Connection,
         where_sql: &str,
         params: &[&dyn rusqlite::types::ToSql],
+        purged: i64,
+        local_ms: i64,
     ) {
-        // `OR IGNORE`：同一条笔记不会有第二次删除意图，先落的那次才是真的。
+        // UPSERT 而不是纯 `OR IGNORE`：物理清理要能把已有的「删除意图」墓碑**升级**成
+        // 不可撤销（purged 0 → 1）。而 `tombstone_ms` / `local_ms` 在升级时**保持不变**——
+        // 物理清不是一次新的删除（见上），也不需要重新广播一遍。
+        // purged 只升不降：已经物理清过的东西不能因为一次普通软删变回可撤销。
+        //
+        // 🔴 `purged` / `local_ms` **内联而不用占位符**：`where_sql` 里已经用了 `?1`
+        //    （如 `id = ?1 AND deleted_at IS NOT NULL`），再加占位符会与它撞编号。
+        //    两者都是 `i64`，格式化后不可能带出注入。
+        //
         // `deleted_at` 是本地时间字串，`'utc'` 修饰符把它折算成 epoch 秒（语义已实测核过）。
         // 解析不出来时回退到 `updated_ms`——那至少是这一行确实存在过的时刻，
         // 比 0 强得多（0 在 LWW 里永远是输的那一方，等于这条删除白落了）。
         let sql = format!(
-            "INSERT OR IGNORE INTO note_tombstones (note_id, tombstone_ms, source_node, purged)
+            "INSERT INTO note_tombstones (note_id, tombstone_ms, source_node, purged, local_ms)
              SELECT id,
                     COALESCE(CAST(strftime('%s', deleted_at, 'utc') AS INTEGER) * 1000, updated_ms),
                     NULL,
-                    1
-             FROM notes WHERE {where_sql}"
+                    {purged},
+                    {local_ms}
+             FROM notes WHERE {where_sql}
+             ON CONFLICT(note_id) DO UPDATE SET
+                 purged = CASE WHEN excluded.purged > note_tombstones.purged
+                               THEN excluded.purged ELSE note_tombstones.purged END"
         );
         if let Err(e) = conn.execute(&sql, params) {
             log::warn!("[Notes] 落墓碑失败（删除仍会继续，但这条删除可能不传播）: {}", e);
         }
     }
 
-    /// 读墓碑：`since_ms` 之后（含）发生的删除。同步导出用。
+    /// 读墓碑：本机在 `since_ms` **之后**（不含）记下的删除。同步导出用。
     ///
-    /// 返回 `(note_id, tombstone_ms)`。按时间升序，便于对端按顺序应用。
-    pub fn note_tombstones_since(&self, since_ms: i64) -> Result<Vec<(String, i64)>, String> {
+    /// ❗ **严格大于**，与 [`Self::note_changed_since`] 一致：游标存的是「上次已经
+    /// 同步到这里」，用 `>=` 会把边界上那一条**每次都重发一遍**——
+    /// 而游标恰好就是本轮取到的最大 `local_ms`，于是那一条永远出现在清单里。
+    /// （旧版这里是 `>=`，只是当时游标用 `tombstone_ms` 算，被另一个 bug 盖住了。）
+    ///
+    /// 返回 `(note_id, tombstone_ms)` —— 传出去的仍是**源头删除时刻**，LWW 语义不变。
+    ///
+    /// # 🔴 筛选用 `local_ms`，不用 `tombstone_ms`（§12.12）
+    ///
+    /// 两者在本机自己删的时候几乎相等，**转发时差得很远**：
+    /// A 离线一周后回来把一条旧删除同步给 B，B 记下的 `tombstone_ms` 是一周前的，
+    /// 而 B↔C 的游标早已推过那个点 → 下次 B↔C 的清单里**仍然没有它**，C 永远保留那篇。
+    /// `local_ms` 是 B 刚刚才记下的，必在游标之后。
+    ///
+    /// 排序也按 `local_ms`：与筛选同一个字段，游标才不会跳过中间的行。
+    ///
+    /// # 🔴 为什么把 `local_ms` 也返回出去
+    ///
+    /// 调用方要拿它算**新游标**。筛选用 `local_ms` 而游标用 `tombstone_ms` 的话：
+    /// 转发一条旧删除时（`tombstone_ms` 是一周前、`local_ms` 是现在），
+    /// 游标根本不会前进 → 下次同步这条墓碑**又被取到、又发一遍**，永不收敛。
+    /// 筛选与游标必须是同一个字段，这是游标语义的基本要求。
+    ///
+    /// 返回 `(note_id, tombstone_ms, local_ms)`——前两项上线，第三项只给游标用。
+    pub fn note_tombstones_since(
+        &self,
+        since_ms: i64,
+    ) -> Result<Vec<(String, i64, i64)>, String> {
         let conn = self.lock_conn();
         let mut st = conn
             .prepare(
-                "SELECT note_id, tombstone_ms FROM note_tombstones
-                 WHERE tombstone_ms >= ?1 ORDER BY tombstone_ms",
+                "SELECT note_id, tombstone_ms, local_ms FROM note_tombstones
+                 WHERE local_ms > ?1 ORDER BY local_ms",
             )
             .map_err(|e| e.to_string())?;
         let rows = st
-            .query_map([since_ms], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_map([since_ms], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map_err(|e| e.to_string())?
             .filter_map(Result::ok)
             .collect();
         Ok(rows)
     }
 
-    /// 这条笔记 id 是不是已经有墓碑了？导入侧靠它避免「删除被同步回来」。
+    /// 这条笔记 id 是不是已经**不可恢复地**没了？导入侧靠它避免「删除被同步回来」。
+    ///
+    /// # 🔴 只认 `purged = 1`（§12.12）
+    ///
+    /// `purged = 0` 是「删除意图」，**可以被还原撤销**，所以不能拿它永久封杀一个 id：
+    /// 用户在 B 上从回收站还原了那篇，这份活的副本就要能再同步回 A。
+    /// 若这里不分 purged，`import_one` 会只返回 `in_trash`、`apply_delta` 连计数都不看——
+    /// **完全静默地把还原后的笔记挡在门外**。
+    ///
+    /// 代价：A 已物理清（purged=1）时，B 上还原的副本传不回 A。
+    /// 这是有意的：A 那边确实彻底删了，不该被「复活」。
     pub fn note_is_tombstoned(&self, id: &str) -> bool {
         self.lock_conn()
             .query_row(
-                "SELECT 1 FROM note_tombstones WHERE note_id = ?1",
+                "SELECT 1 FROM note_tombstones WHERE note_id = ?1 AND purged = 1",
                 [id],
                 |_| Ok(()),
             )
             .is_ok()
+    }
+
+    /// 记下一条**从对端收到**的删除，以便本机能继续转发给第三台（§12.12）。
+    ///
+    /// - `tombstone_ms` 用**对端给的**（源头删除时刻）—— LWW 要拿它与本地编辑比大小
+    /// - `local_ms` 用**本机现在**—— 否则会落在下游游标之前，第三台永远收不到
+    /// - `purged = 0` —— 这只是删除**意图**；用户在本机还原时能把它撤掉
+    ///
+    /// 🔴 这个函数曾经被写过一次又被**撤回**（见设计稿 §12.12），因为当时：
+    /// ① 墓碑不分类，还原撤不掉；② `note_is_tombstoned` 不分 purged，让 id 再也导不进来。
+    /// 现在两个前提都已改掉，它才成立。单独拿出其中任一改动都会重新引入那个 bug。
+    pub fn note_record_remote_tombstone(&self, id: &str, tombstone_ms: i64) {
+        let local_ms = self.hlc_now();
+        let conn = self.lock_conn();
+        // OR IGNORE：同一条删除会被多次同步过来，先落的那次才是真的。
+        // 不能用 UPSERT 抬 local_ms：那会让同一条墓碑在两台机器之间反复重新入清单，永不收敛。
+        if let Err(e) = conn.execute(
+            "INSERT OR IGNORE INTO note_tombstones
+                 (note_id, tombstone_ms, source_node, purged, local_ms)
+             VALUES (?1, ?2, NULL, 0, ?3)",
+            rusqlite::params![id, tombstone_ms, local_ms],
+        ) {
+            log::warn!("[Notes] 记对端墓碑失败（这条删除不会再转发） (id={}): {}", id, e);
+        }
     }
 
     /// 批量销毁的共用实现。`where_sql` 只能是本文件里的字面量，不接外部输入。
@@ -1267,10 +1392,12 @@ impl DataStore {
         conn: &rusqlite::Connection,
         where_sql: &str,
         params: &[&dyn rusqlite::types::ToSql],
+        local_ms: i64,
     ) -> Result<usize, String> {
         // M6-P4：先落墓碑，再动任何删除。与下面清 FTS 的理由同源——
         // 都要靠 `notes` 里还在的行去取信息，删了就取不到了。
-        Self::record_tombstones_on(conn, where_sql, params);
+        // purged=1：同 `note_purge`，不可撤销（§12.12）。
+        Self::record_tombstones_on(conn, where_sql, params, 1, local_ms);
         let fts_sql = format!(
             "DELETE FROM notes_fts WHERE rowid IN (SELECT rowid FROM notes WHERE {where_sql})"
         );
@@ -1284,8 +1411,9 @@ impl DataStore {
 
     /// 清空回收站：把已软删的全部彻底销毁（连历史快照，不可恢复）。返回条数。
     pub fn note_purge_all(&self) -> Result<usize, String> {
+        let local_ms = self.hlc_now();
         let conn = self.lock_conn();
-        Self::purge_batch_on(&conn, "deleted_at IS NOT NULL", &[])
+        Self::purge_batch_on(&conn, "deleted_at IS NOT NULL", &[], local_ms)
     }
 
     /// 清理超期的回收站条目（R3：默认 30 天）。返回销毁条数。
@@ -1300,8 +1428,9 @@ impl DataStore {
             Some(c) => c,
             None => return Ok(0),
         };
+        let local_ms = self.hlc_now();
         let conn = self.lock_conn();
-        Self::purge_batch_on(&conn, EXPIRED_WHERE, &[&cutoff])
+        Self::purge_batch_on(&conn, EXPIRED_WHERE, &[&cutoff], local_ms)
     }
 
     /// 按给定天数算「会被销毁多少条」，**不删任何东西**。

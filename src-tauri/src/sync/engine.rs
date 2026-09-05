@@ -59,14 +59,26 @@ impl Delta {
 /// 算增量。纯查询，不写盘。
 pub fn compute_delta(store: &DataStore, since_ms: i64) -> Result<Delta, String> {
     let notes = store.note_changed_since(since_ms)?;
-    let tombstones = store.note_tombstones_since(since_ms)?;
+    // 三元组：(note_id, tombstone_ms, local_ms)。
+    let rows = store.note_tombstones_since(since_ms)?;
+    // 🔴 游标用 `local_ms`，不用 `tombstone_ms`——必须与筛选字段一致。
+    //
+    // 转发一条旧删除时两者差得很远（tombstone_ms 是一周前、local_ms 是现在）：
+    // 拿 tombstone_ms 算游标的话，`.max(since_ms)` 会把它压回 since，游标原地踏步，
+    // 于是下次同步同一条墓碑**又被取到、又发一遍**，永不收敛。
     let cursor_ms = notes
         .iter()
         .filter_map(|n| store.note_updated_ms(&n.id))
-        .chain(tombstones.iter().map(|(_, ms)| *ms))
+        .chain(rows.iter().map(|(_, _, local_ms)| *local_ms))
         .max()
         .unwrap_or(since_ms)
         .max(since_ms);
+    // 上线只带 (id, tombstone_ms)：local_ms 是**本机的**记账，对端拿去没意义，
+    // 而且 LWW 要比的是源头删除时刻。
+    let tombstones = rows
+        .into_iter()
+        .map(|(id, tomb_ms, _)| (id, tomb_ms))
+        .collect();
     Ok(Delta {
         notes,
         tombstones,
@@ -394,20 +406,22 @@ pub fn apply_delta(
             .parse()
             .map_err(|_| format!("墓碑里的时间戳不是数字：{}", line))?;
 
-        // ❗ **这里不落墓碑**，虽然「三台以上设备删不干净」是真的（见下）。
+        // 🔴 先记对端墓碑，再软删，顺序不能反。
         //
-        // 试过在这里调 `note_record_remote_tombstone`，那是**把好事办坏**：
-        // `note_delete` 故意不落墓碑，正是为了让「从回收站还原」能生效
-        // （墓碑只在物理清理时落——那时才真的没得救）。在这里补落之后：
-        // ① 用户在本机还原了这篇，本机仍会把墓碑继续广播给第三台，把还原的副本又删掉；
-        // ② `note_is_tombstoned` 会让这个 id **再也导不进来**，
-        //    而 `import_one` 只返回 `in_trash`、`apply_delta` 连计数都不看——完全静默。
-        // 用一个罕见的三机问题换一个常见的单机数据消失，不划算。
+        // 记墓碑是为了本机能把这条删除**继续转发给第三台**（§12.12）：
+        // A 删 → B 收到并软删 → B↔C 同步时清单里得有它，否则 C 永远保留那篇。
         //
-        // 🔴 遗留：A 删 → B 软删（无墓碑）→ B 与 C 同步时清单里没有它 → C 保留那篇。
-        // 正解需要区分「删除意图」与「物理清理」两种墓碑，且要能被还原撤销——
-        // 那是一次独立的设计，不该顺手塞在这条修复里。已记进设计稿待办。
-        let _ = tomb_ms;
+        // 用对端给的 `tomb_ms` 而不是本机删除时刻：删除意图发生在源头，
+        // LWW 要拿它与对端可能存在的更新编辑比大小。
+        // 而下面 `note_delete` 内部也会落一次墓碑，它用的是 `INSERT OR IGNORE`——
+        // 先记的这一条（带源头时刻）会赢，正是想要的。
+        //
+        // ❗ 这一步曾经写过又被撤回，因为当时墓碑不分类：补落之后用户在本机还原，
+        //   本机仍会把墓碑广播出去把还原的副本又删掉，且 `note_is_tombstoned`
+        //   会让这个 id 再也导不进来——完全静默。现在两个前提都已改掉：
+        //   墓碑分 `purged` 0/1，`note_restore_deleted` 会把 0 那一类撤掉，
+        //   `note_is_tombstoned` 只认 1。**三处是一体的，单拿任一处都会重新引入那个 bug。**
+        store.note_record_remote_tombstone(id, tomb_ms);
 
         // 已经没有或已在回收站的，不重复删也不报错——同一条删除会被多次同步过来。
         if store.note_get(id)?.is_some() {

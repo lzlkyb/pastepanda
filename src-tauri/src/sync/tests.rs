@@ -1651,3 +1651,148 @@ fn test_全都落地时不夹游标() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ===== §12.12：三机以上的删除传播 =====
+
+/// 🔴 本次修的就是这个：A 删 → B 收到 → **C 也要删掉**。
+///
+/// 改之前 `note_delete` 不落墓碑（只有物理清理才落），于是 B 手里没有
+/// 可转发的删除记录，B↔C 的清单里就没有它——C 永远保留那篇。
+#[test]
+fn test_三台机器删除能传到第三台() {
+    let (a, b, c) = (store(), store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+
+    // 先让三台都有这篇
+    let (cur_ab, _) = sync(&a, &b, 0, "t3_1");
+    let (cur_bc, _) = sync(&b, &c, 0, "t3_2");
+    assert!(c.note_get(&n.id).unwrap().is_some(), "C 该先拿到这篇");
+
+    // A 删掉，同步给 B
+    a.note_delete(&n.id).unwrap();
+    let (_, rep_ab) = sync(&a, &b, cur_ab, "t3_3");
+    assert_eq!(rep_ab.deleted, 1, "B 该收到删除");
+    assert!(b.note_get(&n.id).unwrap().is_none());
+
+    // 🔴 关键：B 再与 C 同步时，清单里必须带着这条删除
+    let (_, rep_bc) = sync(&b, &c, cur_bc, "t3_4");
+    assert_eq!(rep_bc.deleted, 1, "C 没收到删除——三台以上删不干净（§12.12）");
+    assert!(c.note_get(&n.id).unwrap().is_none(), "C 上那篇该没了");
+}
+
+/// 还原必须能撤销「删除意图」墓碑。
+///
+/// 这正是上一版补丁被**撤回**的原因（见设计稿 §12.12）：
+/// 补落墓碑而不能撤销的话，用户在本机还原后，本机仍会把墓碑广播给第三台，
+/// 把还原的副本又删掉；而 `note_is_tombstoned` 还会让这个 id 再也导不进来。
+#[test]
+fn test_还原会撤销删除意图墓碑() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    let (cur, _) = sync(&a, &b, 0, "r1_1");
+
+    a.note_delete(&n.id).unwrap();
+    sync(&a, &b, cur, "r1_2");
+    assert!(b.note_get(&n.id).unwrap().is_none(), "B 该软删了");
+
+    // 用户在 B 上从回收站还原
+    b.note_restore_deleted(&n.id).unwrap();
+    assert!(b.note_get(&n.id).unwrap().is_some());
+
+    // ① B 不该再把这条墓碑广播出去
+    let d = compute_delta(&b, 0).unwrap();
+    assert!(
+        d.tombstones.iter().all(|(id, _)| id != &n.id),
+        "还原之后 B 不该再广播这条墓碑，否则会把别处还原的副本又删掉"
+    );
+
+    // ② A 上落的是可撤销的删除意图，不该永久封杀这个 id
+    assert!(
+        !a.note_is_tombstoned(&n.id),
+        "软删落的是 purged=0 墓碑，note_is_tombstoned 不该认它——否则还原后的副本永远导不回去"
+    );
+}
+
+/// 物理清理把墓碑升级成不可撤销；软删那一类不影响导入。
+#[test]
+fn test_两类墓碑的分界() {
+    let a = store();
+    let n = a.note_create(None, "甲", "正文").unwrap();
+
+    a.note_delete(&n.id).unwrap();
+    assert!(
+        !a.note_is_tombstoned(&n.id),
+        "软删只是删除意图，还能还原，不该当成不可恢复"
+    );
+    // 但它已经能传播了——这正是三机场景需要的
+    assert_eq!(a.note_tombstones_since(0).unwrap().len(), 1, "软删就该落下可转发的墓碑");
+
+    a.note_purge(&n.id).unwrap();
+    assert!(
+        a.note_is_tombstoned(&n.id),
+        "物理清之后不可恢复，该把 id 封死"
+    );
+    assert_eq!(
+        a.note_tombstones_since(0).unwrap().len(),
+        1,
+        "升级而不是新增一条"
+    );
+}
+
+/// 🔴 坑②：转发时按 `local_ms` 取，不按 `tombstone_ms`。
+///
+/// A 离线一周后才把旧删除同步给 B，B 记下的 `tombstone_ms` 是一周前的；
+/// 若按它筛选，B↔C 的游标早已推过那个点 → C 永远收不到这条删除。
+/// 上一版补丁就是在这里失效的——而那是**最常见的离线场景**。
+#[test]
+fn test旧删除转发时不会被游标跳过() {
+    let b = store();
+    let 一周前 = b.sync_high_water_ms() - 7 * 86_400_000;
+    // B↔C 的游标已经推到「现在」（远晚于那条删除的源头时刻）
+    let 游标 = b.sync_high_water_ms();
+
+    b.note_record_remote_tombstone("远端来的id", 一周前);
+
+    let tombs = b.note_tombstones_since(游标).unwrap();
+    let hit = tombs.iter().find(|(id, _, _)| id == "远端来的id");
+    assert!(
+        hit.is_some(),
+        "按 tombstone_ms 筛会漏掉它——那正是 C 永远收不到删除的原因"
+    );
+    assert_eq!(
+        hit.unwrap().1,
+        一周前,
+        "传出去的必须仍是**源头删除时刻**，LWW 语义不能变"
+    );
+}
+
+/// 🔴 游标必须跟着 `local_ms` 前进，否则同一条墓碑会无限重发。
+///
+/// 这是改 §12.12 时自己造出来的坑：筛选改成了 `local_ms`，而 `compute_delta`
+/// 一度仍用 `tombstone_ms` 算新游标。转发旧删除时（tombstone_ms 是一周前），
+/// `.max(since_ms)` 会把游标压回原处 → 下一轮这条墓碑又被取到、又发一遍，永不收敛。
+#[test]
+fn test转发旧删除后游标要前进() {
+    let b = store();
+    let 一周前 = b.sync_high_water_ms() - 7 * 86_400_000;
+    let 游标 = b.sync_high_water_ms();
+
+    b.note_record_remote_tombstone("远端来的id", 一周前);
+
+    let d = compute_delta(&b, 游标).unwrap();
+    assert_eq!(d.tombstones.len(), 1, "该取到那条转发的墓碑");
+    assert!(
+        d.cursor_ms > 游标,
+        "游标没前进（{} ≤ {}）——下一轮这条墓碑会被重复发送，永不收敛",
+        d.cursor_ms,
+        游标
+    );
+
+    // 拿新游标再算一次：这条不该再出现
+    let d2 = compute_delta(&b, d.cursor_ms).unwrap();
+    assert!(
+        d2.tombstones.is_empty(),
+        "同一条墓碑在游标推过之后又出现了：{:?}",
+        d2.tombstones
+    );
+}

@@ -55,6 +55,8 @@ pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
 };
 pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
+// M3-④ 反链面板：只导出命令层要用的那个类型，模块仍保持私有。
+pub use note_links::BackLink;
 pub use chains::{ChainDef, ChainStepDef, MAX_CHAIN_DESC_CHARS, MAX_CHAIN_NAME_CHARS, MAX_CHAIN_STEPS};
 pub use ai_feedback::{
     ActionPrefRow, AiFeedback, AiFeedbackStat, AI_FEEDBACK_RETAIN_DAYS, FEEDBACK_ACCEPTED,
@@ -1319,11 +1321,44 @@ impl DataStore {
                  note_id      TEXT PRIMARY KEY,   -- 对应 notes.id（UUID，跨机不碰撞）
                  tombstone_ms INTEGER NOT NULL,   -- 删除意图发生的时刻，见 record_tombstones_on
                  source_node  TEXT,               -- 谁删的（NodeId）。M6 主体才有，现在一律 NULL
-                 purged       INTEGER NOT NULL DEFAULT 0
+                 purged       INTEGER NOT NULL DEFAULT 0,
+                 local_ms     INTEGER NOT NULL DEFAULT 0
              );",
         ) {
             log::error!("[DataStore] 建 note_tombstones 表失败: {}", e);
             return Err(e);
+        }
+
+        // 数据库迁移（§12.12）：note_tombstones.local_ms —— **本机**记下这条墓碑的时刻。
+        //
+        // 🔴 为什么不能只靠 `tombstone_ms`：它记的是**源头删除时刻**，而导出按游标取。
+        //   A 离线一周后回来把一条旧删除同步给 B，B 记下的 `tombstone_ms` 是一周前，
+        //   而 B↔C 的游标早已推过它 → 下次 B↔C 的清单里**仍然没有它**，三台以上删不干净。
+        //   导出改按 `local_ms`（本机刚刚才记下，必在游标之后），传出去的仍是
+        //   `tombstone_ms`——LWW 语义一点不变。
+        //
+        // 回填用 `tombstone_ms`：老库里的墓碑全是物理清理落的（purged=1），
+        // 它们本来就按 `tombstone_ms` 传播过，保持原行为即可。
+        let has_tomb_local_ms: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('note_tombstones') WHERE name = 'local_ms'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_tomb_local_ms {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE note_tombstones ADD COLUMN local_ms INTEGER NOT NULL DEFAULT 0;
+                 UPDATE note_tombstones SET local_ms = tombstone_ms;",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] note_tombstones.local_ms 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 加 note_tombstones.local_ms 失败: {}", e);
+                    return Err(e);
+                }
+            }
         }
 
         // 数据库迁移（M6-P2）：notes.updated_ms —— 同步专用的 epoch 毫秒。
@@ -1625,7 +1660,10 @@ impl DataStore {
 
         // HLC 的下界（M6，§7.5 档②）。
         //
-        // 取三者最大：持久化的下界、笔记里最大的 updated_ms、墓碑里最大的 tombstone_ms。
+        // 取四者最大：持久化的下界、笔记里最大的 updated_ms、
+        // 墓碑里最大的 tombstone_ms 与 **local_ms**。
+        // ❗ `local_ms` 不能漏：它也是 `hlc_now()` 发出的（§12.12），
+        //   漏了就会在重启后把下界退回到一个已经用过的值。
         // 🔴 后两项让下界**从数据里自愈**——我们发过的任何时间戳都落在某一行里，
         //    所以就算配置项丢了，重启后也不会退回到一个已经用过的值。
         // 持久化那一项管的是另一种情况：吸收了远端时钟但本机还没写过东西，
@@ -1645,7 +1683,9 @@ impl DataStore {
                 .unwrap_or(0);
             let tomb: i64 = conn
                 .query_row(
-                    "SELECT COALESCE(MAX(tombstone_ms), 0) FROM note_tombstones",
+                    "SELECT COALESCE(MAX(
+                         CASE WHEN tombstone_ms > local_ms THEN tombstone_ms ELSE local_ms END
+                     ), 0) FROM note_tombstones",
                     [],
                     |r| r.get(0),
                 )

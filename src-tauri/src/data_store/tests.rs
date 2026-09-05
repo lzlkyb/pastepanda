@@ -6677,17 +6677,20 @@ fn test_墓碑时间取软删那一刻而不是清理那一刻() {
     let store = make_store();
     let n = store.note_create(None, "甲", "正文").unwrap();
     store.note_delete(&n.id).unwrap();
+
+    // §12.12 之后：**软删当时**就把 `tombstone_ms` 固化下来了（purged=0 墓碑）。
+    let 软删时 = store.note_tombstones_since(0).unwrap()[0].1;
+
+    // 把 deleted_at 改到 2020 并触发超期物理清理——墓碑只该被**升级**为 purged=1，
+    // 时间不得被重写。
     backdate_deleted_at(&store, &n.id, "2020-01-01 00:00:00.000");
     store.note_purge_expired(30).unwrap();
 
     let rows = store.note_tombstones_since(0).unwrap();
-    assert_eq!(rows.len(), 1);
-    let (_, ms) = &rows[0];
-    // 2020-01-01 落在 2020~2021 之间；若取的是「现在」会是 2026 年的值。
-    assert!(
-        (1_577_000_000_000..1_610_000_000_000).contains(ms),
-        "墓碑时间该是软删那一刻（2020），实得 {}——取成清理时刻会误删对端的合法编辑",
-        ms
+    assert_eq!(rows.len(), 1, "物理清理该升级原有墓碑，而不是新增一条");
+    assert_eq!(
+        rows[0].1, 软删时,
+        "墓碑时间该停在软删那一刻——取成清理时刻会误删对端在这期间的合法编辑"
     );
 }
 
@@ -6703,11 +6706,16 @@ fn test_墓碑按时间筛且升序() {
 
     let all = store.note_tombstones_since(0).unwrap();
     assert_eq!(all.len(), 2);
-    assert!(all[0].1 < all[1].1, "要按时间升序，对端才能顺序应用");
+    // §12.12：筛选与排序都按 `local_ms`（第三项）——不是删除发生时刻，
+    // 而是**本机记下这条墓碑**的时刻。转发时两者差得很远，拿前者筛会让
+    // 下游永远收不到旧删除（见 note_tombstones_since 的注释）。
+    assert!(all[0].2 < all[1].2, "要按 local_ms 升序，对端才能顺序应用");
 
-    // 只要 2020-07 之后的 → 只剩晚的那条
-    let recent = store.note_tombstones_since(1_593_561_600_000).unwrap();
-    assert_eq!(recent.len(), 1, "since 没起筛选作用：{:?}", recent);
+    // 以**第一条**的 local_ms 为游标 → 严格大于，所以只剩第二条。
+    // （用第二条的值当 since 会一条不剩——那正是严格大于的目的：
+    //   游标就是上一轮取到的最大 local_ms，不该把它再发一遍）
+    let recent = store.note_tombstones_since(all[0].2).unwrap();
+    assert_eq!(recent.len(), 1, "since 没按 local_ms 起筛选作用：{:?}", recent);
 }
 
 /// 落不下墓碑不能让用户删不掉东西（同 FTS 清理失败的先例）。
