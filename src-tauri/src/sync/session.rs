@@ -225,20 +225,28 @@ async fn run(
 
     // 游标只在这一整轮都成功之后才推。中途失败就让它留在原地，下一轮重来。
     //
-    // 🔴 「有东西没落地」也算没成功：`missing_files`（清单说有、文件没到）
-    // 与 `import_failed`（写库失败）那几篇，推了游标就**再也不会被重发**。
-    // 宁可下一轮重传一次（幂等，而且有「内容相同就跳过」兑着），
-    // 也不能静默地把它们留在对端。原因持续存在时代价只是重复传同一批，
-    // 而那个浪费是有界的、且原因一消失就自愈。
-    let landed = applied.missing_files == 0 && applied.import_failed == 0;
-    if landed {
-        store.device_advance_cursor(peer, high_water)?;
-    } else {
+    // 🔴 「有东西没落地」不能当成全部完成：`missing_files`（清单说有、文件没到）
+    // 与导入失败的那几篇，推过游标就**再也不会被重发**。
+    //
+    // ❗ 但也**不能干脆不推**。游标钉在低位 `C` 时，真冲突的判据
+    // `local > C && incoming > C` 会让任何一篇「本地改过、对端还是旧版」的笔记
+    // **每轮生一份冲突副本**——就是 `705d6af` 修掉的那个风暴，换个门进来。
+    //
+    // 所以夹到「最小未落地戳 − 1」：已落地的过游标（不再重发、不再参与冲突判定），
+    // 没落地的下一轮重来。`device_advance_cursor` 是 MAX-only，
+    // 所以即使夹出一个比现有游标小的值，也只是不动，不会回退。
+    let cap = applied
+        .unsettled_min_ms
+        .map(|m| m.saturating_sub(1))
+        .unwrap_or(i64::MAX);
+    store.device_advance_cursor(peer, high_water.min(cap))?;
+    if applied.missing_files > 0 || applied.import_failed > 0 {
         log::warn!(
-            "[Sync] 与 {} 这一轮有 {} 篇没传到 / {} 篇导入失败，按住游标等下一轮重来",
+            "[Sync] 与 {} 这一轮有 {} 篇没传到 / {} 篇导入失败，游标夹在 {}，下一轮重来",
             &peer[..8.min(peer.len())],
             applied.missing_files,
-            applied.import_failed
+            applied.import_failed,
+            high_water.min(cap)
         );
     }
 

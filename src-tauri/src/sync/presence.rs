@@ -296,8 +296,35 @@ impl PresenceTable {
 
 /// 监听用套接字：绑 [`PORT`]、加入组播组、带读超时（好让线程能停下来）。
 pub fn bind_listener() -> Result<UdpSocket, String> {
-    let sock = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, PORT))
-        .map_err(|e| format!("绑定地址公告端口 {} 失败（可能被占用）：{}", PORT, e))?;
+    bind_listener_on(PORT)
+}
+
+/// 同上，但可以指定端口。**测试用 0（临时端口）**——
+/// 固定 5008 会让并行跑的测试互相抢，表现为随机失败（与被测逻辑无关）。
+pub fn bind_listener_on(port: u16) -> Result<UdpSocket, String> {
+    // 🔴 重试而不是一次就放弃：`stop()` 只置标志，宣告线程要等它那 2 秒读超时
+    // 走完才真的退出。用户在这 2 秒内关了再开（或前端连点开关），
+    // 新线程就会 bind 失败、只留一条 warning 退出——
+    // **地址发现静默死掉，而开关看着是开的**，正是我们想修掉的那个症状。
+    let mut last = String::new();
+    for i in 0..6 {
+        match UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port)) {
+            Ok(s) => return finish_listener(s),
+            Err(e) => {
+                last = e.to_string();
+                if i < 5 {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            }
+        }
+    }
+    Err(format!(
+        "绑定地址公告端口 {} 失败（重试 6 次仍被占用）：{}",
+        port, last
+    ))
+}
+
+fn finish_listener(sock: UdpSocket) -> Result<UdpSocket, String> {
     if let Err(e) = sock.join_multicast_v4(&GROUP, &Ipv4Addr::UNSPECIFIED) {
         // 不是致命错误：网卡不支持组播、或者在容器里跑时，仍然想让线程起来
         log::warn!("[Presence] 加入组播组失败（同网段将发现不到对端）：{}", e);
@@ -341,6 +368,9 @@ pub fn spawn(
     endpoint_port: u16,
     is_paired: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     running: Arc<AtomicBool>,
+    // 监听端口。生产传 `PORT`；**测试传 0**（临时端口）——
+    // 并行跑的测试都去抢固定的 5008，会表现为与被测逻辑无关的随机失败。
+    listen_port: u16,
 ) {
     if !enabled {
         log::info!(
@@ -357,7 +387,7 @@ pub fn spawn(
         return;
     }
     std::thread::spawn(move || {
-        let listener = match bind_listener() {
+        let listener = match bind_listener_on(listen_port) {
             Ok(s) => s,
             Err(e) => {
                 // bind 失败必须复位 running，否则再也起不来（同 lan_sync 的 C8）

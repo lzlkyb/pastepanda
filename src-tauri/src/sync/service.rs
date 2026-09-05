@@ -61,6 +61,9 @@ pub struct LastSync {
     pub skipped_older: usize,
     pub conflicts: usize,
     pub missing_files: usize,
+    /// 单篇导入失败的条数。与 `missing_files` 同等对待——
+    /// 只进日志的话，界面照旧显示「同步完成」，那正是本字段要挡的事。
+    pub import_failed: usize,
     /// 对端时钟超前太多。非 `None` 意味着本机之后赢不过那台机器。
     pub clock_too_far_ahead_ms: Option<i64>,
     /// 连续失败次数；0 = 上一次是成功的。
@@ -187,6 +190,7 @@ fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs:
                     skipped_older: r.applied.skipped_older,
                     conflicts: r.applied.conflicts,
                     missing_files: r.applied.missing_files,
+                    import_failed: r.applied.import_failed,
                     clock_too_far_ahead_ms: r.applied.clock_too_far_ahead_ms,
                     fails: 0,
                     error: None,
@@ -394,6 +398,19 @@ impl SyncService {
         enabled: bool,
         relay: bool,
     ) -> Result<(), String> {
+        self.start_on(store, app_dir, enabled, relay, super::presence::PORT)
+            .await
+    }
+
+    /// 同上，但可以指定地址宣告的监听端口。**测试传 0**，免得并行的测试抢 5008。
+    pub async fn start_on(
+        &self,
+        store: DataStore,
+        app_dir: &std::path::Path,
+        enabled: bool,
+        relay: bool,
+        presence_port: u16,
+    ) -> Result<(), String> {
         if !enabled {
             log::info!(
                 "[Sync] 知识库同步开关（{}）是关的，不启动同步",
@@ -445,6 +462,7 @@ impl SyncService {
             port,
             Arc::new(move |id: &str| matches!(paired_store.device_get(id), Ok(Some(_)))),
             ctx.presence_running.clone(),
+            presence_port,
         );
 
         tokio::spawn(accept_loop(ctx.clone()));

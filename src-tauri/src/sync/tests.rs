@@ -1487,7 +1487,7 @@ mod service_tests {
     async fn test_开关关着时不启动() {
         let svc = SyncService::new();
         let dir = tmp_dir("svc_off");
-        svc.start(store(), &dir, false, false)
+        svc.start_on(store(), &dir, false, false, 0)
             .await
             .expect("关着时 start 不该报错");
         assert!(!svc.is_running().await, "开关关着却起来了");
@@ -1502,7 +1502,7 @@ mod service_tests {
         let s = store();
         let svc = SyncService::new();
         let dir = tmp_dir("svc_pair");
-        svc.start(s.clone(), &dir, true, false)
+        svc.start_on(s.clone(), &dir, true, false, 0)
             .await
             .expect("启动失败");
         assert!(svc.is_running().await);
@@ -1531,13 +1531,13 @@ mod service_tests {
         let s = store();
         let svc = SyncService::new();
         let dir = tmp_dir("svc_twice");
-        svc.start(s.clone(), &dir, true, false).await.unwrap();
+        svc.start_on(s.clone(), &dir, true, false, 0).await.unwrap();
         // 前端可能重复调（比如设置页重挂载），第二次不该再绑一个端点
-        svc.start(s.clone(), &dir, true, false).await.unwrap();
+        svc.start_on(s.clone(), &dir, true, false, 0).await.unwrap();
         assert!(svc.is_running().await);
         svc.stop().await;
         // 停了之后还能再起
-        svc.start(s.clone(), &dir, true, false).await.unwrap();
+        svc.start_on(s.clone(), &dir, true, false, 0).await.unwrap();
         assert!(svc.is_running().await);
         svc.stop().await;
         let _ = std::fs::remove_dir_all(&dir);
@@ -1583,7 +1583,7 @@ mod presence_stop_tests {
         //       **地址发现静默死掉，而界面上开关是开的**。
         let svc = SyncService::new();
         let dir = tmp_dir("presence_stop");
-        svc.start(store(), &dir, true, false).await.expect("启动失败");
+        svc.start_on(store(), &dir, true, false, 0).await.expect("启动失败");
 
         let flag = svc.presence_flag().await.expect("起来之后该有这个标志");
         // spawn 里那个 CAS 成功了才会置 true —— 它同时证明宣告线程真的起来了
@@ -1596,4 +1596,58 @@ mod presence_stop_tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+#[test]
+fn test_没落地的条目会把游标夹在它前面() {
+    // 🔴 这条钉的是「夹」而不是「不推」。
+    //    完全不推游标会引出冲突副本风暴：游标钉在低位 C 时，
+    //    `local > C && incoming > C` 让任何一篇「本地改过、对端还是旧版」的笔记
+    //    每轮生一份副本——就是 705d6af 修掉的那个，换个门进来。
+    let (a, b) = (store(), store());
+    let n1 = a.note_create(None, "先写的", "正文一").unwrap();
+    let n2 = a.note_create(None, "后写的", "正文二").unwrap();
+    let (ms1, ms2) = (
+        a.note_updated_ms(&n1.id).unwrap(),
+        a.note_updated_ms(&n2.id).unwrap(),
+    );
+    assert!(ms1 < ms2, "两篇的时间戳应有先后");
+
+    let dir = tmp_dir("unsettled");
+    let delta = compute_delta(&a, 0).unwrap();
+    write_delta(&a, &delta, &dir).unwrap();
+
+    // 模拟传输被截断：清单里有、文件却没到（**两篇都删掉**，验最小值取的是较早那个）
+    for id in [&n1.id, &n2.id] {
+        let _ = std::fs::remove_file(dir.join(format!("{}.md", id)));
+    }
+    let rep = apply_delta(&b, &dir, 0).expect("应用失败");
+
+    assert_eq!(rep.missing_files, 2, "{:?}", rep);
+    assert_eq!(
+        rep.unsettled_min_ms,
+        Some(ms1),
+        "应取**最小**的那个未落地时间戳，否则夹不住更早的那篇：{:?}",
+        rep
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_全都落地时不夹游标() {
+    let (a, b) = (store(), store());
+    a.note_create(None, "会议纪要", "正文内容").unwrap();
+    let dir = tmp_dir("settled");
+    let delta = compute_delta(&a, 0).unwrap();
+    write_delta(&a, &delta, &dir).unwrap();
+
+    let rep = apply_delta(&b, &dir, 0).expect("应用失败");
+    assert_eq!(rep.missing_files, 0);
+    assert_eq!(rep.import_failed, 0);
+    assert_eq!(
+        rep.unsettled_min_ms, None,
+        "没有未落地的东西就不该夹游标：{:?}",
+        rep
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

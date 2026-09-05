@@ -74,6 +74,14 @@ pub fn compute_delta(store: &DataStore, since_ms: i64) -> Result<Delta, String> 
     })
 }
 
+/// 记一条「没落地」的时间戳。取最小值，见 [`ApplyReport::unsettled_min_ms`]。
+fn note_unsettled(rep: &mut ApplyReport, ms: i64) {
+    rep.unsettled_min_ms = Some(match rep.unsettled_min_ms {
+        Some(cur) => cur.min(ms),
+        None => ms,
+    });
+}
+
 /// 两边是不是**同一个内容版本**。比标题、正文、标签。
 ///
 /// 🔴 **不能直接比整份文件的字节。** 前置字段里的 `created` / `updated`
@@ -156,8 +164,21 @@ pub struct ApplyReport {
     pub missing_files: usize,
     /// 内容与本地一模一样、直接跳过的条数（回声）。见下面那条拦截。
     pub identical: usize,
-    /// 导入阶段真正失败的条数。**不静默**（规则 #15.3），而且会按住游标。
+    /// 导入阶段真正失败的条数。**不静默**（规则 #15.3）。
     pub import_failed: usize,
+    /// 没落地的条目里**最小的那个时间戳**。调用方拿它夹游标。
+    ///
+    /// # 🔴 为什么不是一个 `bool`（「有没有失败」）
+    ///
+    /// 第一版是「一旦有失败就完全不推游标」。那会引出一个更坏的东西——
+    /// **冲突副本风暴**：游标钉在低位 `C`，而真冲突的判据是
+    /// `local > C && incoming > C`。于是任何一篇「我本地改过、对端还是旧版」的笔记
+    /// 都会**每轮生一份冲突副本**——与 `705d6af` 修掉的是同一类事，只是换了个门进来。
+    ///
+    /// 夹到「最小未落地戳 − 1」就同时满足两件事：
+    /// 已经落地的那些过了游标（不再被重发、也不再参与冲突判定），
+    /// 没落地的那几篇下一轮会重来。
+    pub unsettled_min_ms: Option<i64>,
     /// 检测到的真冲突数（两边都在上次同步之后改过）。每个都留了一份冲突副本。
     pub conflicts: usize,
     /// 🔴 对端时钟超前太多，本机拒绝吸收时的超前毫秒数。
@@ -185,7 +206,7 @@ pub fn apply_delta(
     }
     let mut rep = ApplyReport::default();
     // 会被导入的条目的「对端版本戳」。导入完之后要把它们盖回去，见 ③ 之后。
-    let mut keep_stamp: Vec<(String, i64)> = Vec::new();
+    let mut keep_stamp: Vec<(String, i64, PathBuf)> = Vec::new();
 
     // ① 先吸收对端时钟（HLC，§7.5 档②），**在任何本地写入之前**。
     //
@@ -227,11 +248,12 @@ pub fn apply_delta(
         if !path.is_file() {
             // 清单说有、文件却不在：传输被截断了。报出来，别当成「这篇没变」。
             rep.missing_files += 1;
+            note_unsettled(&mut rep, incoming);
             continue;
         }
         // 本地没有这篇 ⇒ 一定要导入（新建），不可能有冲突。
         let Some(local) = store.note_updated_ms(id) else {
-            keep_stamp.push((id.to_string(), incoming));
+            keep_stamp.push((id.to_string(), incoming, path.clone()));
             continue;
         };
 
@@ -275,7 +297,7 @@ pub fn apply_delta(
             rep.skipped_older += 1;
         } else {
             // 对端赢 ⇒ 导入之后要把对端的戳盖回来（见下面的说明）。
-            keep_stamp.push((id.to_string(), incoming));
+            keep_stamp.push((id.to_string(), incoming, path.clone()));
         }
         if local < incoming && both_changed {
             // 对端赢，但本地那份也是真改动 ⇒ 先把**本地这份**留成副本，再让导入覆盖它。
@@ -299,7 +321,34 @@ pub fn apply_delta(
     //    都报出来，且都让调用方按住游标（见 `session::run`）。
     rep.import_failed = imported.failed.len();
     for f in &imported.failed {
-        log::warn!("[Sync] 导入失败，本轮不推进游标：{}", f);
+        log::warn!("[Sync] 单篇导入失败：{}", f);
+    }
+
+    // 🔴 逐条核对**内容是不是真的进来了**，而不是只看「这条在不在」。
+    //
+    // `imported.failed` 给的是「相对路径：原因」，反查不回 id，所以不解析它。
+    // 但只判 `note_get(id).is_none()` 也不够：`keep_stamp` 里既有新建也有更新，
+    // **更新失败时旧行还在**，`is_none()` 是 false → 不算未落地 → 游标照推。
+    // 而紧接着的 ④ 又会把**对端的戳盖到本地这份旧内容上**，此后每轮都是
+    // `local >= incoming` → 判成 skipped_older，对端再发多少次都进不来：
+    // 内容永久停在旧版，界面上却显示成最新的。
+    //
+    // 可达路径很具体：导出侧不限大小、传输上限 256MiB，而 `import_one` 的
+    // `MAX_IMPORT_BYTES` 是 10MiB —— 一篇超过 10MiB 的笔记每轮导入必失败。
+    let mut landed: Vec<(String, i64)> = Vec::new();
+    for (id, ms, path) in &keep_stamp {
+        let ok = match store.note_get(id)? {
+            Some(n) => {
+                let text = std::fs::read_to_string(path).unwrap_or_default();
+                same_version(&n, &text)
+            }
+            None => false,
+        };
+        if ok {
+            landed.push((id.clone(), *ms));
+        } else {
+            note_unsettled(&mut rep, *ms);
+        }
     }
 
     // ④ 🔴 **把对端的版本戳盖回去。** 这一步不是优化，是 LWW 的前提。
@@ -320,7 +369,9 @@ pub fn apply_delta(
     //   在 ① 已经吸收过对端最大值了。
     {
         let conn = store.lock_conn();
-        for (id, ms) in &keep_stamp {
+        // ❗ 只盖**真正落地**的那些。盖到导入失败的旧内容上，
+        //   等于给旧版本贴了个新版本号，之后再也没人能覆盖它。
+        for (id, ms) in &landed {
             if let Err(e) = conn.execute(
                 "UPDATE notes SET updated_ms = ?2 WHERE id = ?1",
                 rusqlite::params![id, ms],
@@ -343,14 +394,20 @@ pub fn apply_delta(
             .parse()
             .map_err(|_| format!("墓碑里的时间戳不是数字：{}", line))?;
 
-        // 🔴 **无论本地这篇还在不在，都要把墓碑记下来。**
+        // ❗ **这里不落墓碑**，虽然「三台以上设备删不干净」是真的（见下）。
         //
-        // `note_delete` 只做软删、**不落墓碑**（墓碑是物理清理时才落的）。
-        // 不补这一条，接收端手里就没有可再传播的删除记录：
-        // A 删 → B 收到并软删 → B 与 C 同步时清单里没它 → **C 永远保留那篇**。
-        // 三台以上设备时这就是删不干净——而模块文档里又写着「天然全网状」。
-        // 放在删除动作**之外**：本地本来就没有 / 已在回收站时同样要能转发。
-        store.note_record_remote_tombstone(id, tomb_ms, None);
+        // 试过在这里调 `note_record_remote_tombstone`，那是**把好事办坏**：
+        // `note_delete` 故意不落墓碑，正是为了让「从回收站还原」能生效
+        // （墓碑只在物理清理时落——那时才真的没得救）。在这里补落之后：
+        // ① 用户在本机还原了这篇，本机仍会把墓碑继续广播给第三台，把还原的副本又删掉；
+        // ② `note_is_tombstoned` 会让这个 id **再也导不进来**，
+        //    而 `import_one` 只返回 `in_trash`、`apply_delta` 连计数都不看——完全静默。
+        // 用一个罕见的三机问题换一个常见的单机数据消失，不划算。
+        //
+        // 🔴 遗留：A 删 → B 软删（无墓碑）→ B 与 C 同步时清单里没有它 → C 保留那篇。
+        // 正解需要区分「删除意图」与「物理清理」两种墓碑，且要能被还原撤销——
+        // 那是一次独立的设计，不该顺手塞在这条修复里。已记进设计稿待办。
+        let _ = tomb_ms;
 
         // 已经没有或已在回收站的，不重复删也不报错——同一条删除会被多次同步过来。
         if store.note_get(id)?.is_some() {

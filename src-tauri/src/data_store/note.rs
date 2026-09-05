@@ -1225,36 +1225,6 @@ impl DataStore {
         }
     }
 
-    /// 记下**从对端同步过来的**一条删除。
-    ///
-    /// 🔴 `note_delete` 只做软删、**不落墓碑**（墓碑是物理清理时才由
-    /// [`Self::record_tombstones_on`] 落的）。同步应用远端删除时如果不补这一条，
-    /// 接收端手里就没有可以再传播的墓碑：
-    ///
-    /// ```text
-    /// A 删了一篇 → B 收到并软删（但没墓碑）
-    ///                 → B 与 C 同步时，B 的墓碑清单里没有它
-    ///                 → C 永远保留那篇笔记
-    /// ```
-    ///
-    /// 三台以上设备时这就是**删不干净**。`source_node` 记的是删除的**源头**，
-    /// 不是转发者——否则同一条删除会因为经手人不同而被当成多次删除。
-    pub fn note_record_remote_tombstone(
-        &self,
-        id: &str,
-        tombstone_ms: i64,
-        source_node: Option<&str>,
-    ) {
-        // 同 record_tombstones_on：落不下只 warn，不能让删除本身失败
-        if let Err(e) = self.lock_conn().execute(
-            "INSERT OR IGNORE INTO note_tombstones (note_id, tombstone_ms, source_node, purged)
-             VALUES (?1, ?2, ?3, 1)",
-            rusqlite::params![id, tombstone_ms, source_node],
-        ) {
-            log::warn!("[Sync] 落远端墓碑失败（这条删除可能传不到第三台机器）: {}", e);
-        }
-    }
-
     /// 读墓碑：`since_ms` 之后（含）发生的删除。同步导出用。
     ///
     /// 返回 `(note_id, tombstone_ms)`。按时间升序，便于对端按顺序应用。
