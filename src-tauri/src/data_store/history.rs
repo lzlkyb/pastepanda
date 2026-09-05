@@ -9,6 +9,78 @@ use super::*;
 pub(super) const HISTORY_COLS: &str =
     "id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type";
 
+/// 时间筛选翻译出来的 SQL 边界。
+#[derive(Debug)]
+pub(super) enum TimeBound {
+    /// 不筛。
+    None,
+    /// `time >= x`（左闭）。
+    Since(String),
+    /// `time BETWEEN a AND b`（**两端都包含**）。
+    Between(String, String),
+}
+
+/// 把前端的 `time_filter` 翻成边界。
+///
+/// # 为什么收口在这里
+///
+/// 这段 match 原先在 [`DataStore::get_history`] 与计数查询里**各写了一遍**，
+/// 两份完全相同。事件聚合（G3）要加 `range:` 时如果照旧各改一遍，
+/// 下一个时间筛选需求就会变成改三处（规则 #11）。
+///
+/// # `range:<起>~<止>`
+///
+/// 事件筛选用。字面格式由前端 `lib/eventLabel.ts` 的 `eventRangeValue` 构造，
+/// 两边必须一致。**两端都包含**：事件的首尾条目本身就属于这个事件。
+///
+/// 残缺的 `range:` 退回 [`TimeBound::None`]（不筛）而不是报错或空结果：
+/// 它是展示层筛选、值由本项目自己构造，真出现残缺就是代码 bug，
+/// 而那时把列表清空比不筛更难排查。未知值同理（与原来的 `_ => String::new()` 一致）。
+pub(super) fn time_bound(time_filter: &str) -> TimeBound {
+    if let Some(body) = time_filter.strip_prefix("range:") {
+        return match body.split_once('~') {
+            Some((a, b)) if !a.is_empty() && !b.is_empty() => {
+                TimeBound::Between(a.to_string(), b.to_string())
+            }
+            _ => TimeBound::None,
+        };
+    }
+    match time_filter {
+        "today" => TimeBound::Since(chrono::Local::now().format("%Y-%m-%d 00:00:00").to_string()),
+        "week" => TimeBound::Since(
+            (chrono::Local::now() - chrono::Duration::days(7))
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        ),
+        "month" => TimeBound::Since(
+            (chrono::Local::now() - chrono::Duration::days(30))
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        ),
+        _ => TimeBound::None,
+    }
+}
+
+/// 把 [`time_bound`] 的结果推进 SQL 与参数表。
+pub(super) fn push_time_bound(
+    sql: &mut String,
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    time_filter: &str,
+) {
+    match time_bound(time_filter) {
+        TimeBound::None => {}
+        TimeBound::Since(t) => {
+            sql.push_str(" AND time >= ?");
+            params.push(Box::new(t));
+        }
+        TimeBound::Between(a, b) => {
+            sql.push_str(" AND time >= ? AND time <= ?");
+            params.push(Box::new(a));
+            params.push(Box::new(b));
+        }
+    }
+}
+
 /// `HISTORY_COLS` 选出的行 → `HistoryItem`。
 ///
 /// `ocr_text` / `tags` 不在这 13 列里（分别住 `image_ocr_cache` 与 `history_tags`），
@@ -368,20 +440,7 @@ impl DataStore {
             sql.push_str(" AND type = ?");
             params_vec.push(Box::new(filter.to_string()));
         }
-        let cutoff_str = match time_filter {
-            "today" => chrono::Local::now().format("%Y-%m-%d 00:00:00").to_string(),
-            "week" => (chrono::Local::now() - chrono::Duration::days(7))
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
-            "month" => (chrono::Local::now() - chrono::Duration::days(30))
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
-            _ => String::new(),
-        };
-        if !cutoff_str.is_empty() {
-            sql.push_str(" AND time >= ?");
-            params_vec.push(Box::new(cutoff_str));
-        }
+        push_time_bound(&mut sql, &mut params_vec, time_filter);
         if !source.is_empty() {
             sql.push_str(" AND source = ?");
             params_vec.push(Box::new(source.to_string()));
@@ -515,20 +574,7 @@ impl DataStore {
         }
 
         // 时间范围（左闭区间，与前端一致：today=今日零点 / week=7天 / month=30天）
-        let cutoff_str = match time_filter {
-            "today" => chrono::Local::now().format("%Y-%m-%d 00:00:00").to_string(),
-            "week" => (chrono::Local::now() - chrono::Duration::days(7))
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
-            "month" => (chrono::Local::now() - chrono::Duration::days(30))
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
-            _ => String::new(),
-        };
-        if !cutoff_str.is_empty() {
-            sql.push_str(" AND time >= ?");
-            params_vec.push(Box::new(cutoff_str));
-        }
+        push_time_bound(&mut sql, &mut params_vec, time_filter);
 
         // 来源过滤
         if !source.is_empty() {

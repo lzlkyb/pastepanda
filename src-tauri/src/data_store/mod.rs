@@ -47,6 +47,9 @@ mod tests_health;
 // 每日整理（H3）的用例。
 #[cfg(test)]
 mod tests_daily;
+// 事件聚合（G3）的用例。
+#[cfg(test)]
+mod tests_events;
 
 pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
@@ -76,7 +79,7 @@ pub use quota::{
     verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
 };
 pub use note_health::{BrokenLink, KbHealth, KbStats, TinyNote, HEALTH_DETAIL_CAP, TINY_NOTE_CHARS};
-pub use daily_brief::DayMetaRow;
+pub use daily_brief::{DayMetaRow, RECENT_META_CAP};
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
 pub use mcp_audit::{McpAuditRow, McpClientRow};

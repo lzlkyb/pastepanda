@@ -26,6 +26,21 @@ export async function historyDayMeta(date: string): Promise<DayMetaRow[]> {
   }
 }
 
+/**
+ * 最近 N 条的条目元信息（事件聚合 G3），已按时间升序。
+ *
+ * 不传 `limit` 就用后端的上限（`RECENT_META_CAP`）。
+ * 与 [`historyDayMeta`] 同一批五列，区别只在圈定范围的方式。
+ */
+export async function historyRecentMeta(limit?: number): Promise<DayMetaRow[]> {
+  try {
+    return await invoke<DayMetaRow[]>("history_recent_meta", { limit: limit ?? null });
+  } catch (e) {
+    logger.warn("读最近元信息失败", e);
+    return [];
+  }
+}
+
 /** `Date` → `YYYY-MM-DD`（**本地时区**）。 */
 export function toIsoDate(d: Date): string {
   // 不用 `toISOString()`：那个转 UTC，东八区凌晨一点看到的会是前一天，

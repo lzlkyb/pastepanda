@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { isEventRange } from "@/lib/eventLabel";
+import { useEventOptions } from "@/hooks/useEventOptions";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { AiStatusCap } from "@/components/AiStatusCap";
 import { AiStatusDot } from "@/components/AiStatusDot";
@@ -82,6 +84,8 @@ export function TopBar({ onSettings, settingsOpen = false }: {
   const filterType = useAppStore((s) => s.filterType);
   const setFilterType = useAppStore((s) => s.setFilterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
+  // 事件下拉的选项（G3）。懒加载：只在展开时拉。
+  const eventOptions = useEventOptions();
   const setTimeFilter = useAppStore((s) => s.setTimeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const setSourceFilter = useAppStore((s) => s.setSourceFilter);
@@ -248,6 +252,18 @@ export function TopBar({ onSettings, settingsOpen = false }: {
             onChange={(v) => setTimeFilter(v as TimeFilter)}
             auto
           />
+          {/* 事件筛选（G3）。与「时间」「来源」并列而**不塞进时间下拉**：
+              那会让「本周」与「某个事件」互相覆盖的语义变乱（设计稿 §4）。
+              底层仍复用 timeFilter 一个 state：后端只有一个 time_filter 参数，
+              两个 state 传下去还得在某处合并，而那个合并点就是新的分叉源。 */}
+          <FilterDropdown
+            label="事件"
+            value={isEventRange(timeFilter) ? timeFilter : "all"}
+            options={eventOptions.options}
+            onChange={(v) => setTimeFilter(v as TimeFilter)}
+            onOpen={eventOptions.load}
+            auto
+          />
           <SourceFilterDropdown
             value={sourceFilter}
             onChange={setSourceFilter}
@@ -396,8 +412,11 @@ function IconBtn({ children, tip, danger, active, hue, onClick, ariaLabel }: {
 }
 
 /* ===== 筛选下拉组件 ===== */
-function FilterDropdown<T extends string>({ label, value, options, onChange, auto }: {
+function FilterDropdown<T extends string>({ label, value, options, onChange, auto, onOpen }: {
   label: string; value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; auto?: boolean;
+  /** 展开时回调。给选项需要现拉的下拉用（事件筛选）——
+     *  挂在 mount 上会白白多一次启动查询，而挂在 historyVersion 上则每复制一条就重拉。 */
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -415,7 +434,7 @@ function FilterDropdown<T extends string>({ label, value, options, onChange, aut
 
   return (
     <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref} data-tauri-drag-region="false">
-      <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
+      <button className={styles.filterDropdownBtn} onClick={() => { if (!open) onOpen?.(); setOpen(!open); }}>
         <span>{activeLabel}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
       </button>

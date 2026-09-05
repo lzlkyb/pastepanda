@@ -72,6 +72,45 @@ impl DataStore {
     }
 }
 
+/// 事件下拉一次拉多少条的上限。
+///
+/// 设计稿在「最近 300 条」上跑出 41 段，平均 7.3 条/段——下拉里 41 项已经偏多，
+/// 再多人就找不到东西了。取 500 留一点余量，同时作为硬夹防止调用方传巨数把全库拉出来。
+pub const RECENT_META_CAP: u32 = 500;
+
+impl DataStore {
+    /// 最近 `limit` 条的条目元信息，**返回时按时间升序**。
+    ///
+    /// 事件聚合（G3）的数据口。与 [`Self::history_day_meta`] 同一批五列，
+    /// 区别只在「怎么圈定范围」：那边按天，这边按条数（事件会跨天）。
+    ///
+    /// ❗ **先倒序截再升序返**：要的是「最近的 N 条」，直接 `ORDER BY time ASC LIMIT N`
+    /// 拿到的是全库最早的 N 条。而分段又要升序，所以包一层子查询。
+    pub fn history_recent_meta(&self, limit: u32) -> Result<Vec<DayMetaRow>, String> {
+        let conn = self.lock_conn();
+        let mut st = conn
+            .prepare(
+                "SELECT id, time, source, type, content_type FROM (
+                     SELECT id, time, source, type, content_type FROM history
+                     ORDER BY time DESC LIMIT ?1
+                 ) ORDER BY time ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = st
+            .query_map([limit.min(RECENT_META_CAP)], |r| {
+                Ok(DayMetaRow {
+                    id: r.get(0)?,
+                    time: r.get(1)?,
+                    source: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    item_type: r.get(3)?,
+                    content_type: r.get(4)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+}
+
 /// 严格 `YYYY-MM-DD`：10 个字符、只允许数字与两个连字符。
 ///
 /// 不用正则也不拉 chrono 解析：这里要拦的是 `%` 这类通配符与长短不对的串，

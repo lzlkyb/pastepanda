@@ -5,6 +5,7 @@ import type { OcrSelectMode } from "@/lib/screenshot/types";
 import { reorderAction } from "@/lib/quickOrder";
 import { splitTableToRows } from "@/lib/tableSplit";
 import { normalizeTheme } from "@/lib/theme";
+import { parseEventRange, isEventRange } from "@/lib/eventLabel";
 
 // ===== 数据类型 =====
 
@@ -55,7 +56,15 @@ export interface HistoryItem {
 export type FilterType = "all" | "text" | "image" | "file" | "pinned";
 
 // 时间范围筛选
-export type TimeFilter = "all" | "today" | "week" | "month";
+/**
+ * 时间筛选。
+ *
+ * `range:<起>~<止>` 是**事件筛选**（G3）：一条事件就是一段时间范围。
+ * 不另开一个 state 而是复用这里，原因是后端只有一个 `time_filter` 参数——
+ * 两个 state 传下去还得在某处合并，那个合并点就是新的分叉源。
+ * 字面格式由 `lib/eventLabel.ts` 的 `eventRangeValue` 定义，前后端共用。
+ */
+export type TimeFilter = "all" | "today" | "week" | "month" | `range:${string}`;
 
 // 来源应用筛选
 export type SourceFilter = string | ""; // 空字符串表示全部
@@ -933,7 +942,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 不再 filter 分页加载的内存窗口。结果尚未写回（首次搜索进行中）时，
     // 先落在下方的内存窗口过滤作为过渡占位（App.tsx effect 写回后即被完整结果替换）；
     // 这也让无后端的纯 store 单测能继续验证搜索过滤逻辑。
-    if (get().searchKeyword.trim()) {
+    // 事件筛选（G3）走同一条路：它也需要后端全量结果。
+    // 内存窗口只有已分页加载的那几十条，而事件可能是几天前的。
+    if (get().searchKeyword.trim() || isEventRange(get().timeFilter)) {
       const sr = get().searchResults;
       if (sr !== null) return sr;
     }
@@ -952,6 +963,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 预计算时间截止线
     let cutoff = 0;
+    // 事件筛选（G3）的上界，0 = 无上界。
+    //
+    // 🔴 `range:` 必须**两边都实现**：后端 SQL（`time_bound`）筛一遍，
+    // 这里对内存里的 `history` 数组再筛一遍。只改后端的话，`timeFilter`
+    // 在这里既不等于 "all" 也匹不上 today/week/month，cutoff 会停在 0
+    // ——于是内存筛选变成空操作，选了事件列表却不变。
+    let until = 0;
     if (timeFilter !== "all") {
       const msInDay = 86400000;
       if (timeFilter === "today") {
@@ -962,6 +980,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         cutoff = now - 7 * msInDay;
       } else if (timeFilter === "month") {
         cutoff = now - 30 * msInDay;
+      } else {
+        const r = parseEventRange(timeFilter);
+        if (r) {
+          cutoff = new Date(r.start.replace(" ", "T")).getTime();
+          until = new Date(r.end.replace(" ", "T")).getTime();
+        }
       }
     }
 
@@ -1002,6 +1026,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           h.timeStamp = new Date(h.time.replace(" ", "T")).getTime();
         }
         if (h.timeStamp < cutoff) continue;
+        // 事件筛选的上界，**含等号**：事件的首尾条目本身就属于这个事件
+        if (until > 0 && h.timeStamp > until) continue;
       }
 
       // 来源过滤

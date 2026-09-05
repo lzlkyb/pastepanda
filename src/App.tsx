@@ -41,6 +41,7 @@ import { DiffDialog } from "@/components/DiffDialog";
 import { ToolboxView } from "@/components/ToolboxView";
 import { KnowledgeView } from "@/components/KnowledgeView";
 import type { ToolHandlers } from "@/lib/toolbox";
+import { isEventRange } from "@/lib/eventLabel";
 
 // 惰加载：它拉进 CodeMirror + Markdown 渲染，而大多数会话根本不会打开笔记
 const NoteDialog = lazy(() => import("@/components/notes/NoteDialog").then((m) => ({ default: m.NoteDialog })));
@@ -349,7 +350,11 @@ function App() {
   // searchSeqRef 防竞态：筛选快速变化导致多个查询在飞时，只允许最新一次写回。
   const searchSeqRef = useRef(0);
   useEffect(() => {
-    if (!searchKeyword.trim()) return; // 无关键词 → 非搜索模式（setSearchKeyword 已清空结果）
+    // 无关键词 → 非搜索模式（setSearchKeyword 已清空结果）。
+    // 🔴 事件筛选（G3）是例外：它没有关键词，但同样需要后端全量下推——
+    // 无关键词时列表只筛内存窗口（初始 50 条），而一个三天前的事件根本不在里面，
+    // 不走这条路的话选了事件列表会是空的。
+    if (!searchKeyword.trim() && !isEventRange(timeFilter)) return;
     const st = useAppStore.getState();
     const key = buildSearchKey(st);
     if (st.searchResults !== null && st.searchResultsKey === key) return; // 同查询结果已新鲜

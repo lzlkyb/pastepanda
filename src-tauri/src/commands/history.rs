@@ -449,3 +449,17 @@ pub fn history_day_meta(
 ) -> Result<Vec<crate::data_store::DayMetaRow>, String> {
     store.history_day_meta(&date)
 }
+
+/// 最近 N 条的条目元信息（事件聚合 G3）。
+///
+/// 与 [`history_day_meta`] 同一批五列，区别只在圈定范围的方式：那边按天，这边按条数
+/// ——事件会跨天（「昨天下午那阵」）。分段仍在前端做（`lib/events.ts`）。
+///
+/// `limit` 由后端夹到 `RECENT_META_CAP`，防止传巨数把全库拉出来。
+#[tauri::command]
+pub fn history_recent_meta(
+    store: State<DataStore>,
+    limit: Option<u32>,
+) -> Result<Vec<crate::data_store::DayMetaRow>, String> {
+    store.history_recent_meta(limit.unwrap_or(crate::data_store::RECENT_META_CAP))
+}
