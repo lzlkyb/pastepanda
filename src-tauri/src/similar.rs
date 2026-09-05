@@ -81,7 +81,10 @@ pub fn distance_within(a: &str, b: &str, max: usize) -> usize {
 }
 
 /// 一组疑似重复。
-#[derive(Debug, Clone, PartialEq)]
+///
+/// 带 `Serialize` 是为了库体检（N3）能直接把它送到前端，
+/// 不必另拄一个字段一模一样的 DTO（两份结构早晚会漂移）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct DupGroup {
     /// 组里的原始名字，保持传入顺序。
     pub names: Vec<String>,

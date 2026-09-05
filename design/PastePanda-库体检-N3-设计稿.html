@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 库体检面板（N3）设计稿</title>
+<style>
+/* ===== 真实主题令牌（照抄 src/styles/theme.css，未改一个值）===== */
+:root{
+  --card-bg:#fff; --bg:#F6F7F9;
+  --text:#1B2330; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-strong:#0273AD; --accent-light:#E0F2FE;
+  --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+  --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+  --danger:#D82525; --red-bg:#FEF2F2;
+}
+html[data-t="dark"]{
+  --card-bg:#18181B; --bg:#0F0F11;
+  --text:#E8E8EC; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+  --border-color:#27272A;
+  --accent:#38BDF8; --accent-strong:#38BDF8; --accent-light:#0C4A6E;
+  --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+  --orange:#FB923C; --orange-bg:#431407; --orange-border:#7C2D12;
+  --danger:#F87171; --red-bg:#450A0A;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:28px 20px 60px;
+  background:var(--bg); color:var(--text);
+  font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:21px;margin:0 0 4px}
+h2{font-size:16px;margin:38px 0 6px;padding-top:20px;border-top:1px solid var(--border-color)}
+h3{font-size:13.5px;margin:20px 0 8px;color:var(--text-secondary);font-weight:600}
+.sub{color:var(--text-muted);font-size:12.5px;margin:0 0 6px}
+p{margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--accent-light);color:var(--accent-strong);padding:1px 5px;border-radius:3px}
+.note{border-left:3px solid var(--orange);background:var(--orange-bg);color:var(--text);padding:9px 13px;border-radius:0 5px 5px 0;font-size:12.5px;margin:12px 0}
+.note b{color:var(--orange)}
+.ok{border-left-color:var(--green);background:var(--green-bg)}
+.ok b{color:var(--green)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0}
+th,td{border:1px solid var(--border-color);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+.kill{color:var(--danger);font-weight:600}
+.keep{color:var(--green);font-weight:600}
+
+/* ===== 模拟窗口 ===== */
+.demo{border:1px solid var(--border-color);border-radius:8px;overflow:hidden;background:var(--card-bg);margin:10px 0 4px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.cap{font-size:11.5px;color:var(--text-muted);margin:0 0 14px;padding-left:2px}
+
+/* --- 状态条容器：照抄 KbSyncStatusBar 的外壳 --- */
+.bar{border-bottom:1px solid var(--border-color);background:var(--card-bg)}
+.bar-head{display:flex;align-items:center;gap:9px;padding:9px 14px;font-size:12.5px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.green{background:var(--green)} .dot.grey{background:var(--text-muted)} .dot.orange{background:var(--orange)}
+.grow{flex:1}
+.tiny{color:var(--text-muted);font-size:11px}
+
+/* --- 行：照抄 row(key,tone,body) --- */
+.row{display:flex;align-items:flex-start;gap:8px;padding:8px 14px;border-top:1px solid var(--border-color);font-size:12px}
+.row.warn{background:var(--orange-bg)} .row.warn>.body{color:var(--orange)}
+.row.bad{background:var(--red-bg)} .row.bad>.body{color:var(--danger)}
+.row.info{background:transparent} .row.info>.body{color:var(--text-secondary)}
+.row>.body{flex:1}
+.row .desc{margin-top:3px;color:var(--text-secondary)}
+.x{border:none;background:transparent;cursor:pointer;color:var(--text-muted);font-size:13px;line-height:1;padding:0}
+.lnk{border:none;background:transparent;padding:0;cursor:pointer;color:var(--accent-strong);font-size:12px;text-decoration:underline}
+
+/* --- 工具条 / 列表：示意 --- */
+.tb{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border-color);font-size:12.5px;color:var(--text-secondary)}
+.tb .fake{border:1px solid var(--border-color);border-radius:5px;padding:4px 9px;background:var(--bg);color:var(--text-muted);font-size:12px}
+.tb .fake.grow{flex:1}
+.list{padding:6px 0}
+.item{padding:8px 14px;font-size:12.5px;color:var(--text-secondary);border-bottom:1px solid var(--border-color)}
+.item:last-child{border-bottom:none}
+.item b{color:var(--text);font-weight:500}
+
+/* --- 抽屉（方案 B） --- */
+.split{display:flex;min-height:230px}
+.split .main{flex:1;min-width:0}
+.drawer{width:290px;flex:none;border-left:1px solid var(--border-color);background:var(--card-bg);display:flex;flex-direction:column}
+.drawer-head{display:flex;align-items:center;padding:9px 13px;border-bottom:1px solid var(--border-color);font-size:12.5px;font-weight:600}
+.drawer-body{padding:4px 0}
+
+.toggle{position:fixed;top:14px;right:16px;z-index:9;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.documentElement.dataset.t=document.documentElement.dataset.t==='dark'?'':'dark'">切换深浅色</button>
+<div class="wrap">
+
+<h1>库体检面板（N3）· 设计稿</h1>
+<p class="sub">2026-09-05 ｜ 对应 <code>行业顶尖差距与规划-2026-09-05.md</code> §2.5 N3 ｜ 规则 #4 预览稿</p>
+
+<h2>一、开工前核查：真库跑出来的数，砍掉了一半设计</h2>
+<p>库里 <b>27 篇</b>活笔记、1 篇在回收站。十个候选指标实测：</p>
+
+<table>
+<tr><th>指标</th><th>真库实测</th><th>裁决</th><th>理由</th></tr>
+<tr><td>断链</td><td>1 条<br><span class="tiny">链接演示·甲 → 链接演示·丢了的那篇</span></td><td class="keep">✅ 报</td><td>可操作，且用户不点开笔记就发现不了</td></tr>
+<tr><td>标签归一化重名</td><td><b>0 组</b><br><span class="tiny">❗ 初算得 1 组（<code>Java</code>/<code>java</code>）是错的：那是全库 38 个标签的口径。<code>tags</code> 是剪贴板与知识库<b>共用表</b>，被笔记用到的只有 <b>6 个</b>，而 <code>Java</code>/<code>java</code> 两个都没笔记在用</span></td><td class="keep">✅ 报<br><span class="tiny">但只算<b>笔记用到的标签</b></span></td><td>AM-8 已验证的那一类；按名字寻址会撞车。拿全库标签算等于把剪贴板的问题报成知识库的</td></tr>
+<tr><td>空 / 极短笔记（&lt;50 字）</td><td>2 篇</td><td class="keep">✅ 报</td><td>误建或没写完，删或补都是一动作</td></tr>
+<tr><td>标题重名 / 近似</td><td>0</td><td class="keep">✅ 报</td><td>今天 0 就一个字都不占；<code>[[标题]]</code> 分叉时链接会静默指错</td></tr>
+<tr><td><b>冲突副本积压</b></td><td>0</td><td class="kill">🔴 不报</td><td><b>已由 <code>KbSyncStatusBar</code> 报了</b>。再报一遍就是《总排期》§2 那类重复规划</td></tr>
+<tr><td><b>孤立笔记</b></td><td><b>25 / 27 = 93%</b></td><td class="kill">🔴 不报</td><td><code>note_links.rs</code> 注释原文：「⚠ 孤立不是问题，只是一个视角……不要拿它当『该整理了』的信号」</td></tr>
+<tr><td><b>无文件夹</b></td><td><b>26 / 27 = 96%</b></td><td class="kill">🔴 不报</td><td>是「没用这个功能」，不是「有毛病」</td></tr>
+<tr><td><b>无标签</b></td><td><b>26 / 27 = 96%</b></td><td class="kill">🔴 不报</td><td>同上</td></tr>
+<tr><td>90 天未更新</td><td>0</td><td class="kill">🔴 不报</td><td>库太新，无区分度；库老了再说</td></tr>
+<tr><td>超大笔记</td><td>均 8375 字 / 中位 4808 / 最大 71770<br><span class="tiny">&gt;8000 字 4 篇</span></td><td class="kill">🔴 不作为问题</td><td>AM-2 节级命中上线后，「长」已经不影响检索了。只在展开面板底部作<b>中性统计</b>给出</td></tr>
+</table>
+
+<div class="note">
+<b>为什么必须砍那三条 90%+ 的：</b>照搬进面板，用户打开看到的是「你的库 93% 有毛病」——那是噪声发生器。
+这正是 AM-8 那 73 对弱候选的重演，当时靠长度门槛滤到 0；<b>这里没有等价的门槛可加，因为它们本来就不是问题</b>。
+</div>
+
+<div class="note ok">
+<b>今天真实可修项 = 2 类</b>（断链 1 条、极短 2 篇）。这不是坏消息——它恰好说明面板必须做成「有问题才出声」，而不是一张永远铺满的仪表盘。
+</div>
+
+<div class="note">
+<b>顺带查出一个现存 bug（不在 N3 范围，待拍板）：</b>
+<code>kb_folders</code> 里 AM-8 的标签重名出口用的是 <code>s.get_tags()</code>，即<b>全部 38 个</b>。
+于是它现在会对模型说「标签（38 个）：CSS、ENV、Go…」外加「<code>Java</code>/<code>java</code> 疑似重复……
+另一个下面的笔记会被漏掉」——而这两个标签下<b>一篇笔记都没有</b>。
+给模型的是知识库画像，喂进去的却是剪贴板的标签。
+</div>
+
+<h2>二、形状：复用 <code>KbSyncStatusBar</code> 的视觉语言，不发明新的</h2>
+<p>知识库顶部<b>已经有</b>一条「只在有话说时才出现」的状态条（<code>KnowledgeView.tsx:235</code>）。体检条紧挨它下面，用同一套：</p>
+<ul style="font-size:12.5px;color:var(--text-secondary);margin:6px 0 0;padding-left:22px">
+<li>外壳 <code>border-bottom + var(--card-bg)</code>，行 <code>padding:8px 14px</code>、<code>font-size:12</code></li>
+<li>三档 tone：<code>bad</code>=<code>--danger</code>/<code>--red-bg</code>，<code>warn</code>=<code>--orange</code>/<code>--orange-bg</code>，<code>info</code>=<code>--text-secondary</code>/透明</li>
+<li>每行右侧一个 <code>×</code>「本次不再提示」——<b>只压这一次，不写进配置</b>（问题修好后本来就该自己消失）</li>
+<li>动作是 <code>--accent-strong</code> 下划线文字链，形如「查看这 N 处 →」</li>
+</ul>
+
+<h2>三、方案 A：顶部条 + 就地展开　<span style="color:var(--green)">（推荐）</span></h2>
+
+<h3>A-1　折叠态（默认）· 有 3 项可修</h3>
+<div class="demo">
+  <div class="bar">
+    <div class="bar-head">
+      <span class="dot orange"></span>
+      <span class="grow">库里有 <b>2 项</b>可以修</span>
+      <button class="lnk">展开 ▾</button>
+      <button class="x" title="本次不再提示">×</button>
+    </div>
+  </div>
+  <div class="tb"><span class="fake grow">搜索笔记…</span><span class="fake">＋ 新建</span></div>
+  <div class="list">
+    <div class="item"><b>链接演示·甲</b> · 2 分钟前</div>
+    <div class="item"><b>知识库同步 M6 记录</b> · 昨天</div>
+    <div class="item"><b>Java 泛型笔记</b> · 3 天前</div>
+  </div>
+</div>
+<p class="cap">一行，不打断。数的是<b>类别</b>不是条目：真库今天是断链 1 条 + 极短 2 篇 = <b>2 项</b>（不是 3 条）。</p>
+
+<h3>A-2　展开态 · 每类一行，动作只导航不代改</h3>
+<div class="demo">
+  <div class="bar">
+    <div class="bar-head">
+      <span class="dot orange"></span>
+      <span class="grow">库里有 <b>2 项</b>可以修</span>
+      <button class="lnk">收起 ▴</button>
+      <button class="x" title="本次不再提示">×</button>
+    </div>
+
+    <div class="row warn">
+      <div class="body">
+        <b>1 条断链</b>
+        <div class="desc">
+          《链接演示·甲》里的 <code>[[链接演示·丢了的那篇]]</code> 指向一篇不存在的笔记。
+          <button class="lnk">去那一行 →</button>
+        </div>
+      </div>
+      <button class="x" title="本次不再提示">×</button>
+    </div>
+
+    <div class="row warn">
+      <div class="body">
+        <b>1 组标签只有大小写不同</b><span class="tiny">（真库今天 0 组，此行为形态示意）</span>
+        <div class="desc">
+          <code>Java</code> 与 <code>java</code> 会被当成两个标签，按名字筛选时只能筛到一半。
+          <button class="lnk">去标签管理 →</button>
+        </div>
+      </div>
+      <button class="x" title="本次不再提示">×</button>
+    </div>
+
+    <div class="row info">
+      <div class="body">
+        <b>2 篇几乎是空的</b>（不足 50 字）
+        <div class="desc">
+          可能是误建或没写完。<button class="lnk">看看这 2 篇 →</button>
+        </div>
+      </div>
+      <button class="x" title="本次不再提示">×</button>
+    </div>
+
+    <div class="row info">
+      <div class="body" style="color:var(--text-muted)">
+        27 篇 · 平均 8,375 字 · 最长 71,770 字 · 38 个标签 · 3 条 <code>[[ ]]</code> 链接
+      </div>
+    </div>
+  </div>
+  <div class="tb"><span class="fake grow">搜索笔记…</span><span class="fake">＋ 新建</span></div>
+  <div class="list"><div class="item"><b>链接演示·甲</b> · 2 分钟前</div></div>
+</div>
+<p class="cap">最后一行是<b>中性统计</b>（<code>info</code> 档、<code>--text-muted</code>、无 ×、无动作）——「超大笔记」降级到这里，不当问题报。</p>
+
+<div class="note">
+<b>三个动作全是「跳到现场」，不替用户改数据。</b>《总排期》AM-8 那条写得很死：
+「⚠ 合并动作没做，这是有意的：合并要复用 AM-3 的『遇同名跳过并告警』守卫，
+裸调 O-9 的标题级全库 <code>REPLACE</code> 会把指向另一篇同名笔记的链接一起改坏。现在只报告，不提供一键合并。」
+<b>AM-3 至今零代码，那个守卫还不存在。</b>加上红线「静默不写」——所以没有任何 <code>[一键修]</code>。
+</div>
+
+<h3>A-3　与同步状态条并存（已配对时）</h3>
+<div class="demo">
+  <div class="bar">
+    <div class="bar-head">
+      <span class="dot green"></span>
+      <span class="grow">已与 <b>办公室台式机</b> 同步 · 12 秒前</span>
+      <span class="tiny">下次约 27 秒后</span>
+    </div>
+    <div class="row warn">
+      <div class="body"><b>有 2 处冲突副本还没处理</b>
+        <div class="desc">两台设备在同一段时间里各改了同一篇。<b>两个版本都留着了，没有丢。</b>
+        <button class="lnk">查看这 2 处 →</button></div>
+      </div><button class="x">×</button>
+    </div>
+  </div>
+  <div class="bar">
+    <div class="bar-head">
+      <span class="dot orange"></span>
+      <span class="grow">库里有 <b>2 项</b>可以修</span>
+      <button class="lnk">展开 ▾</button><button class="x">×</button>
+    </div>
+  </div>
+  <div class="tb"><span class="fake grow">搜索笔记…</span><span class="fake">＋ 新建</span></div>
+  <div class="list"><div class="item"><b>链接演示·甲</b> · 2 分钟前</div></div>
+</div>
+<p class="cap">两条独立组件、同一套视觉。<b>冲突副本只在上面那条出现一次</b>，体检不重复报。<br>
+最坏情况（同步全异常 + 体检有问题）会叠到 6~7 行——所以体检条<b>默认折叠</b>，只占一行。</p>
+
+<h3>A-4　全好时：零占位</h3>
+<div class="demo">
+  <div class="tb"><span class="fake grow">搜索笔记…</span><span class="fake">＋ 新建</span></div>
+  <div class="list">
+    <div class="item"><b>链接演示·甲</b> · 2 分钟前</div>
+    <div class="item"><b>知识库同步 M6 记录</b> · 昨天</div>
+    <div class="item"><b>Java 泛型笔记</b> · 3 天前</div>
+  </div>
+</div>
+<p class="cap">组件返回 <code>null</code>，不占一个像素。<b>不显示「✅ 库很健康」</b>——那是没有信息量的一行，AM-8 的先例是「只在真有重复时才占字」。</p>
+
+<h2>四、方案 B：顶部条 + 右侧抽屉</h2>
+<div class="demo">
+  <div class="bar">
+    <div class="bar-head">
+      <span class="dot orange"></span><span class="grow">库里有 <b>2 项</b>可以修</span>
+      <button class="lnk">查看 ›</button><button class="x">×</button>
+    </div>
+  </div>
+  <div class="split">
+    <div class="main">
+      <div class="tb"><span class="fake grow">搜索笔记…</span><span class="fake">＋ 新建</span></div>
+      <div class="list">
+        <div class="item"><b>链接演示·甲</b> · 2 分钟前</div>
+        <div class="item"><b>知识库同步 M6 记录</b> · 昨天</div>
+        <div class="item"><b>Java 泛型笔记</b> · 3 天前</div>
+      </div>
+    </div>
+    <div class="drawer">
+      <div class="drawer-head"><span class="grow">库体检</span><button class="x">×</button></div>
+      <div class="drawer-body">
+        <div class="row warn"><div class="body"><b>1 条断链</b>
+          <div class="desc">链接演示·甲<br><button class="lnk">去那一行 →</button></div></div></div>
+        <div class="row warn"><div class="body"><b>1 组标签重名</b>
+          <div class="desc"><code>Java</code> / <code>java</code><br><button class="lnk">去标签管理 →</button></div></div></div>
+        <div class="row info"><div class="body"><b>2 篇几乎是空的</b>
+          <div class="desc"><button class="lnk">看看这 2 篇 →</button></div></div></div>
+        <div class="row info"><div class="body" style="color:var(--text-muted)">27 篇 · 均 8,375 字<br>38 标签 · 3 条链接</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="cap">抽屉能装更多条目（库大了以后断链可能几百条），但要新造一个容器，且和右侧第三栏（<code>KbThirdPane</code>）抢位置。</p>
+
+<h2>五、A 与 B 的取舍</h2>
+<table>
+<tr><th></th><th>A · 就地展开</th><th>B · 右侧抽屉</th></tr>
+<tr><td>新增样式</td><td class="keep">零。全部复用 <code>KbSyncStatusBar</code> 的行</td><td>要新造抽屉容器与动画</td></tr>
+<tr><td>与第三栏冲突</td><td class="keep">无</td><td class="kill">和 <code>KbThirdPane</code> 抢右侧宽度</td></tr>
+<tr><td>组件规模（规则 #7 ≤300 行）</td><td class="keep">约 120 行，稳</td><td>抽屉 + 条 两个组件</td></tr>
+<tr><td>装得下多少条</td><td>每类一行 + 「还有 N 条」，够到几百条</td><td class="keep">可滚动，上千条也行</td></tr>
+<tr><td>视觉一致性</td><td class="keep">与同步条完全同构</td><td>两种形态并存</td></tr>
+</table>
+<div class="note ok"><b>推荐 A。</b>今天只有 3 项，B 的唯一优势（装得多）用不上，而它的成本（新容器 + 抢第三栏位置）是实打实的。
+真到了「断链几百条」那天，那是 N5 规模化性能预算要一起考虑的事，届时再把 A 的展开区换成抽屉，条本身不用动。</div>
+
+<h2>六、实现约束（写给自己）</h2>
+<table>
+<tr><th>项</th><th>约定</th></tr>
+<tr><td>数据来源</td><td>全部已存在，<b>不新增任何表或列</b>：<code>note_broken_links()</code> / <code>note_title_dups()</code> / <code>similar::find_dups(标签名)</code> / 一条 <code>LENGTH(content)&lt;50</code> 的 COUNT</td></tr>
+<tr><td class="kill">🔴 标签口径</td><td><b>只算被笔记用到的标签</b>（<code>JOIN note_tags</code>），不是 <code>get_tags()</code> 的全库 38 个。
+<code>tags</code> 是剪贴板与知识库共用表；拿全库算会把剪贴板的重名报成知识库的问题，用户点进去也修不了任何东西</td></tr>
+<tr><td>新增命令</td><td>一个 <code>kb_health()</code>，返回四个计数 + 每类前若干条明细。<b>不复用 <code>kb_folders</code></b>——那是给 AI 的出口，这是给人的</td></tr>
+<tr><td>扫描时机</td><td>进入知识库时算一次并缓存；笔记增删改后失效重算。<b>不做定时轮询</b>（同步条 10 秒那个是因为对端状态在变，体检不是）</td></tr>
+<tr><td>性能</td><td>27 篇怎么算都快。<code>note_broken_links</code> / 极短统计都是全表扫，<b>1 万篇的预算挂 N5</b>，本次只留 TODO 不提前优化</td></tr>
+<tr><td>× 的语义</td><td>照抄同步条：只压当前会话这一次，<b>不写进配置</b></td></tr>
+<tr><td>孤立 / 无文件夹 / 无标签</td><td class="kill">🔴 不实现。不是「先不做」，是<b>实测证明它们不是问题</b>（93% / 96% / 96%）</td></tr>
+<tr><td>一键修</td><td class="kill">🔴 不实现。AM-3 守卫不存在 + 红线「静默不写」。全部是导航</td></tr>
+</table>
+
+<h2>七、需要你拍板的两处</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>我的建议</th></tr>
+<tr><td>①</td><td>折叠态那个数字怎么算？<b>3</b>（三类问题）还是 <b>4</b>（1 断链 + 1 标签组 + 2 篇空）？</td><td>报<b>类别数 3</b>。「4」会让人以为要点 4 次，而实际上标签那一组是一次操作。文案用「有 <b>3 项</b>可以修」而不是「3 个问题」</td></tr>
+<tr><td>②</td><td>「2 篇几乎是空的」用 <code>info</code>（灰、不扎眼）还是 <code>warn</code>（橙）？</td><td>用 <b><code>info</code></b>。空笔记是「你可能忘了写」，不是「库坏了」；断链和标签重名才是真会让检索/链接出错的</td></tr>
+</table>
+
+<p class="sub" style="margin-top:26px">数据全部来自 2026-09-05 对 <code>clipboard.db</code> 的实测；主题令牌照抄 <code>src/styles/theme.css</code>，未改一个值。</p>
+</div>
+</body>
+</html>

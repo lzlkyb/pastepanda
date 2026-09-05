@@ -289,3 +289,14 @@ pub fn note_set_tags(
 pub fn note_count(store: State<DataStore>) -> i64 {
     store.note_count()
 }
+
+/// 库体检（N3）：把断链 / 标签重名 / 标题重名 / 极短笔记聚成一份报告。
+///
+/// 界面上是知识库顶部那条「库里有 N 项可以修」，只在真有问题时才出现。
+///
+/// **不复用 `kb_folders`**：那条是给模型的知识库画像（MCP 出口），
+/// 这条是给人的、要能点着跳到现场。两者判据虽有重合，出口形态与消费者都不同。
+#[tauri::command]
+pub fn kb_health(store: State<DataStore>) -> Result<crate::data_store::KbHealth, String> {
+    store.kb_health()
+}

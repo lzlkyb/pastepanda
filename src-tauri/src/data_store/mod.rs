@@ -29,6 +29,8 @@ mod action_events;
 mod sticky;
 mod quota;
 mod stack_templates;
+// 库体检（N3）：只聚合，不新增表。
+mod note_health;
 #[cfg(test)]
 mod tests;
 // 字段视图（B2 #9）的用例单独一个文件：tests.rs 已经 5000+ 行，再往里塞找不到东西。
@@ -37,6 +39,9 @@ mod tests_view;
 // 问答雏形（B2 #10）的检索用例。同样单独一个文件。
 #[cfg(test)]
 mod tests_qa;
+// 库体检（N3）的用例。
+#[cfg(test)]
+mod tests_health;
 
 pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
@@ -65,6 +70,7 @@ pub use quota::{
     QuotaBlock, QuotaInfo, RedeemResult, SignResult, generate_redeem_code, redeem_secret,
     verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
 };
+pub use note_health::{BrokenLink, KbHealth, KbStats, TinyNote, HEALTH_DETAIL_CAP, TINY_NOTE_CHARS};
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
 pub use mcp_audit::{McpAuditRow, McpClientRow};

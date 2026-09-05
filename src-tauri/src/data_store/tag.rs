@@ -35,6 +35,35 @@ impl DataStore {
         Ok(items)
     }
 
+    /// **被活笔记用到**的标签名（去重、按名排序）。
+    ///
+    /// 🔴 **不是 [`Self::get_tags`]**。`tags` 是剪贴板与知识库的**共用表**：
+    /// 真库（2026-09-05）共 38 个标签，被笔记用到的只有 5 个，
+    /// 其余全是剪贴板内容分类器打的自动标签（`CSS` / `ENV` / `邮箱` ……）。
+    ///
+    /// 凡是「描述知识库」的场合都得用这一条。历史上 MCP 的 `kb_folders`
+    /// 用的是 `get_tags()`，于是对模型报「标签（38 个）……」外加一条
+    /// 「`Java`/`java` 疑似重复，另一个下面的笔记会被漏掉」——
+    /// 而那两个标签下一篇笔记都没有，模型拿它去筛只会得到空结果。
+    ///
+    /// 去重是必需的：同一个标签打在多篇上会出多行，
+    /// 而 [`crate::similar::find_dups`] 会把它自己跟自己归成一组「重复」。
+    pub fn note_tag_names(&self) -> Result<Vec<String>, String> {
+        let conn = self.lock_conn();
+        let mut st = conn
+            .prepare(
+                "SELECT DISTINCT t.name FROM tags t
+                 JOIN note_tags nt ON nt.tag_id = t.id
+                 JOIN notes n ON n.id = nt.note_id AND n.deleted_at IS NULL
+                 ORDER BY t.name",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = st
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
     pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag, String> {
         // 校验标签名：trim 后非空，最长 50 个字符（用 chars().count() 数字符数而非字节数，避免中文被误判）
         let trimmed = name.trim();

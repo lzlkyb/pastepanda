@@ -35,6 +35,7 @@ import { useKbLayout } from "@/hooks/useKbLayout";
 import { ContextMenu } from "@/components/ContextMenu";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
 import { KbSyncStatusBar } from "@/components/notes/KbSyncStatusBar";
+import { KbHealthBar } from "@/components/notes/KbHealthBar";
 import { FolderTree } from "@/components/notes/FolderTree";
 import { NoteList } from "@/components/notes/NoteList";
 import { TrashPanel } from "@/components/notes/TrashPanel";
@@ -238,6 +239,25 @@ export function KnowledgeView() {
                `note_conflict_count`，它按正文里的 `- [conflict]` 数。
                用标题后缀去搜的话，用户改过标题之后两个数就对不上了。 */
             onSearchConflicts={() => q.setKeyword("conflict")}
+          />
+          {/* 库体检（N3）。紧贴同步条下面，理由同上：它也是全库级别的事实。
+              两条是独立组件但用同一套视觉；**冲突副本只在上面那条报**，
+              体检不重复报（否则就是《知识库-总排期》§2 那类重复规划）。
+              全好时组件自己返 null，不占位。 */}
+          <KbHealthBar
+            version={q.version}
+            onOpenNote={(id) => void qaPane.openRefNote(id)}
+            onSearch={q.setKeyword}
+            /* 标签名 → id 的解析放在这里而不是组件里：组件拿到的只有名字
+               （`find_dups` 是纯函数，不碰数据库也就拿不到 id）。
+               ❗ 大小写敏感地找：这一组本来就是「Java 与 java 是两个标签」，
+               折了大小写去找会只能命中其中一个，点哪个都筛出同一批笔记。 */
+            onFilterTag={(name) => {
+              const t = q.allTags.find((x) => x.name === name);
+              if (!t) return false;
+              q.toggleTag(t.id);
+              return true;
+            }}
           />
           <KnowledgeToolbar
             folderName={q.currentFolderName}

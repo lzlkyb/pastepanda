@@ -720,6 +720,7 @@ pub fn run() {
             commands::note_search_relevant,
             commands::note_set_tags,
             commands::note_count,
+            commands::kb_health,
             commands::note_count_filtered,
             // 笔记文件夹（B1 #1）
             commands::folder_list,
