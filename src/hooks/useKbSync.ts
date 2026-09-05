@@ -27,7 +27,10 @@ export interface KbLastSync {
   /** 后写胜里输掉的那一边的条数——那个静默丢弃的**唯一痕迹**。 */
   skipped_older: number;
   conflicts: number;
+  /** 清单说有、文件却没到（传输被截断）。 */
   missing_files: number;
+  /** 文件到了但写不进库（如超过单篇导入上限）。与 `missing_files` 同等对待。 */
+  import_failed: number;
   /** 非 null = 本机之后赢不过那台机器。 */
   clock_too_far_ahead_ms: number | null;
   /** 连续失败次数；0 = 上一次成功。 */

@@ -78,9 +78,11 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   const skew = last.find((l) => l.clock_too_far_ahead_ms != null);
   const failing = last.filter((l) => l.fails > 0);
   const skipped = newest && newest.skipped_older > 0 ? newest : null;
-  const lostFiles = last
-    .filter((l) => l.fails === 0)
-    .reduce((a, l) => a + l.missing_files, 0);
+  // 两者分开算：原因不同（没传到 vs 传到了写不进库），文案也不一样。
+  // 但都属于「没落地」，后端都会把游标夹在它们前面、下一轮重来。
+  const live0 = last.filter((l) => l.fails === 0);
+  const lostFiles = live0.reduce((a, l) => a + l.missing_files, 0);
+  const failedImports = live0.reduce((a, l) => a + l.import_failed, 0);
 
   const row = (key: string, tone: "warn" | "bad" | "info", body: React.ReactNode) => {
     if (dismissed[key]) return null;
@@ -152,6 +154,14 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
         <b>有 {lostFiles} 篇没传完</b>
         <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
           清单里说有、文件却没到，通常是网络抖了一下。下一轮会自动重来。
+        </div>
+      </>)}
+
+      {failedImports > 0 && row("import-failed", "warn", <>
+        <b>有 {failedImports} 篇没能存进来</b>
+        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+          文件收到了，但写入失败——最常见的原因是<b>单篇太大</b>（超过 10MB）。
+          同步会一直重试这几篇，在它们进来之前更新的内容不会被跳过。
         </div>
       </>)}
 
