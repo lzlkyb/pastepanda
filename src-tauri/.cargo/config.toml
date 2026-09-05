@@ -10,6 +10,41 @@
 #    ~/.cargo/config.toml 里用 `[source.crates-io] replace-with = "crates-io"`
 #    盖掉它（全局配置优先级低于工程级，所以实际做法是临时注释掉本文件）。
 #    镜像是 crates.io 的完整镜像，校验和一致，不影响 Cargo.lock。
+
+# 构建并行度：写死 6，不用 cargo 默认的「逻辑核数」。2026-09-05 实测教训：
+# 本机 16 逻辑核 / 8 物理核 / 15.8GB 内存，默认 -j 16 起 16 个 rustc，
+# 每个吃 0.5~1.5GB，再叠上链接峰值与并行的 git push 传输，**把机器跑蓝屏了**。
+# 6 是按 8 物理核 + 给链接峰值留余量定的。
+#
+# ⚠ 换到核心数/内存不同的机器上开发时记得重估这个值。
+[build]
+jobs = 6
+
+# 用 rust-lld 替掉 MSVC 的 link.exe —— **在本机的 rustc 上还做不到，先关着**。
+#
+# 想法本身没错：`rust-lld.exe` 随工具链分发不用额外装，LLD 在大工程上通常比
+# link.exe 快数倍，而链接正是本工程的瓶颈。
+#
+# 但 `-C linker-features=+lld` 在 rustc 1.96 稳定版**不可用**。2026-09-05 实测：
+#
+#     $ rustc --version
+#     rustc 1.96.0 (ac68faa20 2026-05-25)
+#     $ rustc -Clinker-features=+lld t.rs
+#     error: `-C linker-features=+lld` is unstable, and also requires the
+#            `-Z unstable-options` flag to be used
+#
+# 打开它会让**每一次** cargo 构建立刻失败，不是变慢而是编不过。
+#
+# 🔴 别再用 `rustc -C help` 当「这个选项能用」的依据：那份清单把未稳定选项
+#    也一起列出来了，能查到 ≠ 稳定版能用。要验就直接编一个空 main.rs。
+#
+# 想启用有两条路，都得先付代价：
+#   a) 换 nightly 工具链，加 `-Z unstable-options`；
+#   b) 等它进稳定版后，用上面那条空 main.rs 实测通过再打开。
+#
+# [target.x86_64-pc-windows-msvc]
+# rustflags = ["-Clinker-features=+lld"]
+
 [source.crates-io]
 replace-with = "rsproxy-sparse"
 

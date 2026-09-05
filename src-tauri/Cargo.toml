@@ -136,6 +136,23 @@ winreg = "0.52"
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 
+# 开发构建：把链接时间压下去（2026-09-05）。
+#
+# 本机实测：916 个依赖、`cargo check` 单跑 9 分 14 秒。
+# 之前这里**一条配置都没有**，用的是 Rust 默认 `debug = true`，
+# 于是每个依赖都带完整调试信息——而 Windows MSVC 链接 debuginfo 极慢。
+#
+# 🔴 两条分开写是有意的：
+# - 自己的代码留 `line-tables-only`：panic backtrace 的行号照常准，
+#   只是没了变量/类型信息（真要单步调试时临时改回 `true` 即可）
+# - 依赖直接 `false`：几乎不会单步进 `windows-sys` / `iroh`，
+#   但它们的调试信息每次链接都要处理一遍
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 codegen-units = 1
 lto = "fat"
