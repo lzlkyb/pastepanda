@@ -267,7 +267,88 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   一旦同时改了容器，这个标准就没了。
 </div>
 
-<h2>七、明确不做的</h2>
+<h2>七、🔴「通用」那 320 行怎么再拆（当时留白，现在量清楚了）</h2>
+<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 8px">
+  第五节说「通用拆出来还是 ~320 行，仍破规则 #7」。把里面的项列全之后是
+  <b>19 行</b>（12 个开关 + 7 个非开关行），确实不能算一组：
+</p>
+<table>
+<tr><th>拆成</th><th>装什么（真实项，取自源码）</th><th>行数</th></tr>
+<tr><td><b>采集与隐私</b></td><td>敏感内容防护 · 自动去除空白 · 文档保真采集 · 保留格式粘贴 · 应用排除名单</td><td>5</td></tr>
+<tr><td><b>窗口与启动</b></td><td>开机自启 · 窗口置顶 · 失焦自动隐藏 · 窗口动画 · 时间线</td><td>5</td></tr>
+<tr><td><b>列表与交互</b></td><td>双击列表行为 · 卡片悬浮行为 · 来源图标 · 依次粘贴循环</td><td>4</td></tr>
+<tr><td><b>笔记与编辑器</b></td><td>编辑器自动保存 · 编辑器保存写入历史 · 笔记回收站 · 关联 .md 文件</td><td>4</td></tr>
+<tr><td colspan="3" style="color:var(--text-muted)">「自动清理」归到<b>数据管理</b>——它和那边的清理天数是同一件事，
+  放这儿是历史遗留。这也是拆分顺带能修的一处归类错误。</td></tr>
+</table>
+<div class="note">
+  拆完一级列表从 11 条变成 <b>14 条</b>，仍然一屏放得下（一屏约 16 条）。
+  每个二级页 4–5 行，<b>都不用滚</b>——这正是方案 B 想要的效果。
+</div>
+<div class="warn">
+  ⚠ <b>「敏感内容防护」放第一位是有意的</b>：它是唯一一个「关掉会让密钥进历史」的开关，
+  而现在它埋在 12 个开关的中段。分组之后顺手把它提到最前，是这次改造少数几个
+  <b>真正改变行为可见性</b>的地方。
+</div>
+
+<h2>八、搜索的三个状态（当时只画了命中态）</h2>
+<div class="side">
+  <div>
+    <h3>① 开关类命中：直接可拨</h3>
+    <div class="holder" style="height:230px"><div class="scale" style="height:115px"><div class="win" style="height:115px">
+      <div class="back"><span>←</span><span>设置</span></div>
+      <div class="body">
+        <div class="srch" style="color:var(--text-primary)">🔍 密钥</div>
+        <div class="item" style="padding:6px 11px">
+          <span class="itxt"><span class="iname">屏蔽<b class="hit">密钥</b>类内容</span>
+          <span class="idesc">采集与隐私</span></span><span class="tg"><i></i></span></div>
+      </div>
+    </div></div></div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
+      找到就是为了改它，再点进去是多一步。
+    </div>
+  </div>
+  <div>
+    <h3>② 非开关命中：点进去并高亮</h3>
+    <div class="holder" style="height:230px"><div class="scale" style="height:115px"><div class="win" style="height:115px">
+      <div class="back"><span>←</span><span>采集与隐私</span></div>
+      <div class="body">
+        <div class="item" style="background:var(--accent-light)">
+          <span class="ico" style="background:linear-gradient(135deg,#EF4444,#DC2626)">🔒</span>
+          <span class="itxt"><span class="iname">应用排除名单</span>
+          <span class="idesc">这些程序里复制的内容不记录</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="itxt"><span class="iname">自动去除空白</span></span><span class="tg off"><i></i></span></div>
+      </div>
+    </div></div></div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
+      高亮 1.5 秒后淡出。点进一个分组还得自己找，等于没搜。
+    </div>
+  </div>
+  <div>
+    <h3>③ 无结果：给出路，不留死胡同</h3>
+    <div class="holder" style="height:230px"><div class="scale" style="height:115px"><div class="win" style="height:115px">
+      <div class="back"><span>←</span><span>设置</span></div>
+      <div class="body">
+        <div class="srch" style="color:var(--text-primary)">🔍 代理</div>
+        <div style="padding:14px 12px;text-align:center;font-size:10px;color:var(--text-muted)">
+          没有匹配「代理」的设置项<br>
+          <span style="color:var(--accent-strong);text-decoration:underline">看看帮助里有没有 →</span>
+        </div>
+      </div>
+    </div></div></div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
+      搜不到时最可能的情况是「这个功能不叫这个名字」，所以给一条去帮助的路。
+    </div>
+  </div>
+</div>
+<div class="warn">
+  索引<b>手写一份常量表</b>（<code>settingsSections.ts</code>），不要扫 JSX：
+  扫不出同义词与面包屑，而且改版会静默漏项——漏了的表现是「搜不到」，
+  与「本来就没这项」在界面上<b>长得一模一样</b>，没人会发现。
+  同义词至少要覆盖：开机↔自启动、暗色/夜间↔主题、密码/token↔密钥、快捷键↔热键。
+</div>
+
+<h2>九、明确不做的</h2>
 <table>
 <tr><th>不做</th><th>为什么</th></tr>
 <tr><td>独立设置窗口（原方案 A）</td><td>两个 WebView 各持一份 <code>config</code>，
