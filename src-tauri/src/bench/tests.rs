@@ -475,3 +475,137 @@ fn seed_link_demo() {
     println!("乙的反链: {:?}", store.note_backlinks(&b.id).unwrap());
     println!("全库断链: {:?}", store.note_broken_links().unwrap());
 }
+
+/// O-4 切片层定案用：导出**节长分布**。
+///
+/// ```text
+/// PP_BENCH_DB=<库副本> PP_BENCH_OUT=<输出.md> \
+/// cargo test --lib bench::tests::bench_dump_chunk_stats -- --ignored --nocapture
+/// ```
+///
+/// # 为什么需要这个数
+///
+/// AM-2 已经把 section 层做出来了，但它是按 **Markdown 标题**切的——
+/// 那是给**人读**的粒度，未必套得上 embedding 的窗口（bge-small 约 512 token）。
+/// O-4 要定的正是「存什么进向量库」，而这个判断必须建在实测的节长分布上：
+/// 节普遍过长 → 必须再切；普遍很短 → 要考虑合并。
+/// **先量再定，不拍脑袋。**
+///
+/// 🔴 只输出**长度统计与标题**，不导正文——同 `bench_dump_outline`，
+/// 这不是把库倒出来的通道。
+#[test]
+#[ignore = "工具：导出切片口径实测数据"]
+fn bench_dump_chunk_stats() {
+    let db = std::env::var("PP_BENCH_DB").expect("要设 PP_BENCH_DB（真库的副本路径）");
+    let low = db.replace('\\', "/").to_lowercase();
+    assert!(
+        !low.contains("com.pastepanda.app"),
+        "PP_BENCH_DB 指向了应用数据目录（DataStore::new 会跑迁移）：{}",
+        db
+    );
+    let store = DataStore::new(&db).expect("打不开库副本");
+    let notes = store.note_list("", &[], 100_000, 0).expect("读库失败");
+
+    let mut lens: Vec<usize> = Vec::new();
+    let mut skipped = 0usize;
+    let mut rows: Vec<(String, usize, usize, usize)> = Vec::new(); // 标题, 节数, 最长节, 全文长
+
+    for n in &notes {
+        let total = n.content.chars().count();
+        // 与出货一致的短笔记判定（只有一处，见 mcp::tools::skips_section_hits）
+        if crate::mcp::tools::skips_section_hits(&n.content) {
+            skipped += 1;
+        }
+        let secs = crate::markdown::outline(&n.content);
+        let mut maxlen = 0usize;
+        for s in &secs {
+            let c = crate::markdown::slice(&n.content, s, false).chars().count();
+            lens.push(c);
+            maxlen = maxlen.max(c);
+        }
+        rows.push((n.title.clone(), secs.len(), maxlen, total));
+    }
+    lens.sort_unstable();
+
+    let q = |f: f64| -> usize {
+        if lens.is_empty() {
+            return 0;
+        }
+        lens[(((lens.len() - 1) as f64) * f).round() as usize]
+    };
+    let total_chars: usize = lens.iter().sum();
+
+    let mut s = String::from("# 切片口径实测（O-4）\n\n");
+    s.push_str(&format!(
+        "- 篇数 **{}**，节数 **{}**，平均 {:.1} 节/篇\n",
+        notes.len(),
+        lens.len(),
+        lens.len() as f64 / notes.len().max(1) as f64
+    ));
+    s.push_str(&format!(
+        "- 节正文合计 {} 字，平均 {:.0} 字/节\n",
+        total_chars,
+        total_chars as f64 / lens.len().max(1) as f64
+    ));
+    s.push_str(&format!(
+        "- 短笔记（≤400 字，出货时**不做节级定位**）**{}** 篇\n\n",
+        skipped
+    ));
+
+    s.push_str("## 节长分位（字符）\n\n| 分位 | 值 |\n|---|---|\n");
+    for (name, f) in [
+        ("min", 0.0),
+        ("p25", 0.25),
+        ("中位", 0.5),
+        ("p75", 0.75),
+        ("p90", 0.90),
+        ("p95", 0.95),
+        ("max", 1.0),
+    ] {
+        s.push_str(&format!("| {} | {} |\n", name, q(f)));
+    }
+
+    // 阈值参考：bge-small-zh 窗口 512 token，中文粗估 1 字 ≈ 1 token，
+    // 所以 350/512 一带就是「一个切片装不下」的分界。
+    s.push_str("\n## 超长节占比（决定要不要再切）\n\n| 阈值 | 超过的节数 | 占比 |\n|---|---|---|\n");
+    for t in [200usize, 350, 512, 700, 1000, 2000] {
+        let c = lens.iter().filter(|&&x| x > t).count();
+        s.push_str(&format!(
+            "| >{} | {} | {:.1}% |\n",
+            t,
+            c,
+            c as f64 * 100.0 / lens.len().max(1) as f64
+        ));
+    }
+
+    s.push_str("\n## 短节占比（决定要不要合并）\n\n| 阈值 | 节数 | 占比 |\n|---|---|---|\n");
+    for t in [0usize, 20, 50, 100] {
+        let c = lens.iter().filter(|&&x| x <= t).count();
+        s.push_str(&format!(
+            "| ≤{} | {} | {:.1}% |\n",
+            t,
+            c,
+            c as f64 * 100.0 / lens.len().max(1) as f64
+        ));
+    }
+
+    rows.sort_by(|a, b| b.2.cmp(&a.2));
+    s.push_str("\n## 最长节 top10（看看是什么形态）\n\n| 篇 | 节数 | 最长节 | 全文 |\n|---|---|---|---|\n");
+    for (t, n, m, tot) in rows.iter().take(10) {
+        let t = if t.chars().count() > 28 {
+            format!("{}…", t.chars().take(28).collect::<String>())
+        } else {
+            t.clone()
+        };
+        s.push_str(&format!("| {} | {} | {} | {} |\n", t, n, m, tot));
+    }
+
+    println!("{} 篇 / {} 节，中位 {} 字，p90 {} 字", notes.len(), lens.len(), q(0.5), q(0.9));
+    match std::env::var("PP_BENCH_OUT") {
+        Ok(out) => {
+            std::fs::write(&out, &s).unwrap_or_else(|e| panic!("写不了 {}：{}", out, e));
+            println!("已写入 {}", out);
+        }
+        Err(_) => println!("{}", s),
+    }
+}
