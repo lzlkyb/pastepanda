@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda 知识库配对 · 三步向导设计稿</title>
+<style>
+:root{
+  --app-bg:#F7F7F8; --card-bg:#fff; --section-bg:#F0F4F8; --input-bg:#F1F5F9;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-solid:#027CBB; --accent-strong:#0273AD;
+  --green:#11813A; --green-bg:#DCFCE7; --green-border:#A7F3C4;
+  --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+  --danger:#D82525; --red-bg:#FEF2F2;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-t="light"]){
+    --app-bg:#0B0B13; --card-bg:#18181B; --section-bg:#0F0F11; --input-bg:#27272A;
+    --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --border-color:#27272A;
+    --accent:#818CF8; --accent-light:#1E1B4B; --accent-solid:#666FC4; --accent-strong:#818CF8;
+    --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+    --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412;
+    --danger:#F87171; --red-bg:#2A1215;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--app-bg);color:var(--text-primary);
+  font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:28px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--text-muted);font-size:13px;margin:0 0 22px}
+h2{font-size:15px;margin:32px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+h3{font-size:13px;margin:20px 0 8px;color:var(--text-secondary)}
+.note{background:var(--accent-light);border-left:3px solid var(--accent);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.warn{background:var(--orange-bg);border-left:3px solid var(--orange);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.bad{background:var(--red-bg);border-left:3px solid var(--danger);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.ok{background:var(--green-bg);border-left:3px solid var(--green);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+code{background:var(--input-bg);padding:1px 5px;border-radius:4px;
+  font:12px ui-monospace,Consolas,monospace}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border-color);vertical-align:top}
+th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin:14px 0}
+
+/* ── 弹窗模型：照 dialog-box dialog-solid w420 的比例 ── */
+.dlg{width:420px;background:var(--card-bg);border:1px solid var(--border-color);
+  border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.16);overflow:hidden;
+  display:flex;flex-direction:column}
+.dlg .hd{display:flex;align-items:center;justify-content:space-between;
+  padding:13px 15px;border-bottom:1px solid var(--border-color)}
+.dlg .hd h4{margin:0;font-size:14px;font-weight:700}
+.dlg .x{color:var(--text-muted);font-size:13px}
+.dlg .bd{padding:15px;display:flex;flex-direction:column;gap:10px}
+.dlg .ft{padding:11px 15px;border-top:1px solid var(--border-color);
+  display:flex;justify-content:flex-end;gap:8px}
+.btn{padding:6px 13px;border-radius:7px;border:1px solid var(--border-color);
+  background:var(--card-bg);color:var(--text-primary);font-size:12px;font-weight:600}
+.btn.pri{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.btn.dis{opacity:.45}
+.btn.full{width:100%;text-align:center;display:block}
+.inp{padding:7px 10px;border-radius:7px;border:1px solid var(--border-color);
+  background:var(--input-bg);font-size:12px;color:var(--text-primary)}
+.inp.ph{color:var(--text-muted)}
+.ta{font:11px/1.5 ui-monospace,Consolas,monospace;padding:8px;border-radius:6px;
+  border:1px solid var(--border-color);background:var(--input-bg);
+  color:var(--text-secondary);word-break:break-all;min-height:56px}
+.p{font-size:12px;color:var(--text-secondary);margin:0}
+.mut{font-size:11px;color:var(--text-muted)}
+.fp{font:700 15px/1 ui-monospace,Consolas,monospace;letter-spacing:2px}
+
+/* 步骤条 */
+.steps{display:flex;align-items:center;gap:6px;padding:11px 15px;
+  border-bottom:1px solid var(--border-color);background:var(--section-bg)}
+.st{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted)}
+.st b{width:17px;height:17px;border-radius:50%;background:var(--border-color);
+  color:var(--text-muted);display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:700}
+.st.on{color:var(--text-primary);font-weight:700}
+.st.on b{background:var(--accent-solid);color:#fff}
+.st.done b{background:var(--green);color:#fff}
+.st.done{color:var(--text-secondary)}
+.bar{flex:1;height:1px;background:var(--border-color)}
+
+/* 角色选择卡 */
+.pick{display:flex;gap:11px;padding:13px;border-radius:10px;
+  border:1px solid var(--border-color);background:var(--input-bg);cursor:pointer}
+.pick .em{font-size:19px;line-height:1}
+.pick .t{font-size:12.5px;font-weight:700;margin-bottom:2px}
+.pick .d{font-size:11px;color:var(--text-muted);line-height:1.5}
+
+.cap{font-size:11px;color:var(--text-muted);margin:0 0 6px;font-weight:700}
+.pulse{width:44px;height:44px;border-radius:50%;background:var(--accent-light);
+  display:flex;align-items:center;justify-content:center;font-size:20px;margin:4px auto 0}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:20px;
+  background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+.del{text-decoration:line-through;color:var(--text-muted)}
+</style>
+</head>
+<body>
+
+<h1>知识库同步 · 配对交互改造（方案二：三步向导）</h1>
+<p class="lead">
+  改动范围：<code>KbSyncPanel.tsx</code> 的入口按钮 + <code>KbPairDialog.tsx</code> 整体重写（拆两个文件）+
+  后端 <code>SyncIdentity</code> 加一个字段。<b>不改配对协议、不改邀请码格式、不改指纹核对这道门。</b>
+</p>
+
+<h2>一、为什么改：现状的 8 个卡点</h2>
+<table>
+<tr><th>#</th><th>卡点</th><th>代码依据</th></tr>
+<tr><td>1</td><td>设备名是空输入框，不填直接 toast 报错</td><td><code>KbPairDialog.tsx</code> <code>handleCreate</code>：<code>if (!n) toast("请先给这台设备起个名字")</code></td></tr>
+<tr><td>2</td><td>🔴 生成完码是<b>死胡同</b>：没有「完成」按钮，对方接入后这边毫无反馈</td><td>create 模式不渲染 <code>dialog-footer</code>；接入只体现为设备列表默默多一行</td></tr>
+<tr><td>3</td><td>只写「7 天内有效」，不显示到期日；关掉弹窗码就找不回来</td><td>文案硬编码，<code>code</code> 是组件内 state</td></tr>
+<tr><td>4</td><td>🔴 一个剪贴板管理器，却要用户自己 Ctrl+V</td><td>paste 侧只有一个空 <code>textarea</code></td></tr>
+<tr><td>5</td><td>粘完还要再点一次「下一步：核对指纹」才解析</td><td><code>handlePreview</code> 只由按钮触发</td></tr>
+<tr><td>6</td><td>解析失败只有 toast，飘走不留痕</td><td>后端 <code>invite::decode</code> 为「少粘几个字符」专门写了独立话术 —— 说明这是<b>预期中的高频失败</b>，却配了个会消失的提示</td></tr>
+<tr><td>7</td><td>术语四套</td><td>入口「生成邀请码 / 粘贴对方的邀请码」→ 标题「邀请另一台设备 / 添加设备」→ 配对后「➕ 邀请 / 📥 粘贴」</td></tr>
+<tr><td>8</td><td>两个入口并排，第一次用得先想明白自己是哪一方</td><td><code>KbSyncPanel.tsx</code> 未配对分支</td></tr>
+</table>
+
+<h2>二、入口：两个按钮并成一个</h2>
+<div class="row">
+  <div>
+    <p class="cap">改前（未配对时）</p>
+    <div class="dlg" style="width:330px">
+      <div class="bd">
+        <p class="mut" style="margin:0">本机指纹（用来让对方确认是你）</p>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="fp">a3f9-2c81-7d40-be15</span>
+          <span class="btn">📋 复制</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <span class="btn pri" style="flex:1;text-align:center">➕ 生成邀请码</span>
+          <span class="btn" style="flex:1;text-align:center">📥 粘贴对方的邀请码</span>
+        </div>
+      </div>
+    </div>
+    <div class="bad">两个按钮逼用户先判断自己是哪一方。而这两台<b>都是他自己的机器</b> —— 他心里只有「我要把它俩连起来」。</div>
+  </div>
+  <div>
+    <p class="cap">改后</p>
+    <div class="dlg" style="width:330px">
+      <div class="bd">
+        <p class="mut" style="margin:0">本机指纹（用来让对方确认是你）</p>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="fp">a3f9-2c81-7d40-be15</span>
+          <span class="btn">📋 复制</span>
+        </div>
+        <span class="btn pri full">＋ 添加设备</span>
+      </div>
+    </div>
+    <div class="ok">角色判断推迟到向导第一屏 —— 那里有空间把两条路解释清楚，入口只留一个动作。</div>
+  </div>
+</div>
+<p class="mut">已配对分支底部那对「➕ 邀请 / 📥 粘贴」同样并成一个「＋ 添加设备」，术语随之统一（见第六节）。</p>
+
+<h2>三、第一屏：选角色</h2>
+<div class="row">
+  <div class="dlg">
+    <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+    <div class="bd">
+      <p class="p">把这台机器和你的另一台连起来。先选一边开始：</p>
+      <div class="pick">
+        <span class="em">📤</span>
+        <div><div class="t">这台先生成邀请码</div>
+          <div class="d">在这台机器上开始，生成一串码发到另一台去</div></div>
+      </div>
+      <div class="pick">
+        <span class="em">📥</span>
+        <div><div class="t">我已经拿到邀请码了</div>
+          <div class="d">另一台已经生成好，我在这台粘贴</div></div>
+      </div>
+    </div>
+  </div>
+  <div style="flex:1;min-width:280px">
+    <div class="note">两张卡的措辞刻意用<b>动作 + 位置</b>（「这台先…」「我已经拿到…」），不用「邀请方 / 接受方」这种角色名词 —— 用户不需要建立角色概念就能选对。</div>
+    <div class="note">🟢 <b>剪贴板里已经有邀请码时</b>，这一屏直接<b>跳过</b>，径直进 B 路线的核对页。见第五节。</div>
+  </div>
+</div>
+
+<h2>四、A 路线（生成端）：命名 → 复制 → 等待接入</h2>
+
+<h3>A1 · 命名（设备名已自动填好）</h3>
+<div class="row">
+  <div class="dlg">
+    <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+    <div class="steps">
+      <span class="st on"><b>1</b>命名</span><span class="bar"></span>
+      <span class="st"><b>2</b>发送</span><span class="bar"></span>
+      <span class="st"><b>3</b>等待接入</span>
+    </div>
+    <div class="bd">
+      <p class="p">另一台设备上会显示这个名字。</p>
+      <input class="inp" value="DESKTOP-8K2L1" readonly>
+      <p class="mut" style="margin:0">已自动填入本机名称，可以改成你认得出的叫法（例如「书房台式机」）。</p>
+    </div>
+    <div class="ft"><span class="btn">取消</span><span class="btn pri">生成邀请码</span></div>
+  </div>
+  <div style="flex:1;min-width:280px">
+    <div class="ok"><b>这就是你要的那一步省略。</b>输入框打开即有值，直接回车/点按钮就走 —— 从「必须想一个名字」变成「不满意才改」。</div>
+    <div class="note"><b>取值方式</b>：后端 <code>SyncIdentity</code> 加一个 <code>device_name</code> 字段，用 <code>hostname::get()</code>（<code>hostname = "0.4"</code> 已在 <code>Cargo.toml</code>，<code>lan_sync.rs:255</code> 已经在这么用）。<br>
+    ❗ <b>不新增 tauri 命令</b>：<code>kb_sync_identity</code> 本来就在拉，加个字段是零额外往返。</div>
+    <div class="warn">取不到 hostname 时留空并把焦点放进输入框，<b>不要填「未知设备」</b> —— 那会变成对方设备列表里一个没有意义的名字，而且用户看到有值就不会去改了。</div>
+  </div>
+</div>
+
+<h3>A2 · 发送</h3>
+<div class="row">
+  <div class="dlg">
+    <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+    <div class="steps">
+      <span class="st done"><b>✓</b>命名</span><span class="bar"></span>
+      <span class="st on"><b>2</b>发送</span><span class="bar"></span>
+      <span class="st"><b>3</b>等待接入</span>
+    </div>
+    <div class="bd">
+      <p class="p">把这串码发到你的另一台设备（微信 / 备忘录都行，<b>它本身不是秘密</b>）。</p>
+      <div class="ta">eyJub2RlX2lkIjoiYTNmOTJjODE3ZDQwYmUxNWY4M2QyYTkwYzRlNzE2YjJkODVmMzBhMTdjOTRlNjJiOGQwZjNhNTE5YzdlNGQ4MiIsIm5hbWUiOiJERVNLVE9QLThLMkwxIiwiYWRkcnMiOltdLCJ0cyI6MTc1NzA5OTI0MDAwMH0…</div>
+      <span class="btn pri full">📋 复制邀请码</span>
+      <p class="mut" style="margin:0">⏳ <b>2026年9月12日 22:14</b> 前有效（还剩 7 天）</p>
+      <div class="warn" style="margin:2px 0 0">🔐 <b>下一步在另一台机器上做</b>：它会显示一串指纹，确认与本机的
+        <span class="fp" style="font-size:12px">a3f9-2c81-7d40-be15</span> 一字不差。</div>
+    </div>
+    <div class="ft"><span class="btn pri">已发出，去等待 →</span></div>
+  </div>
+  <div style="flex:1;min-width:280px">
+    <div class="note"><b>到期改成绝对时间</b>（「9月12日 22:14」），不是「7 天内」。用户第二天回来看这个弹窗时，「7 天内」是从哪天算的他已经忘了。<br>时间由 <code>Date.now() + TTL_SECS*1000</code> 在前端算 —— <code>TTL_SECS</code> 在 <code>invite.rs</code> 是 7 天，<b>前端别硬编码 7</b>，让后端把 <code>expires_at</code> 一起返回更稳。</div>
+    <div class="note">复制成功后按钮就地变成「✓ 已复制」维持 2 秒，不额外弹 toast —— 用户的视线正在按钮上。</div>
+  </div>
+</div>
+
+<h3>A3 · 等待接入 🔴 本次改造的核心</h3>
+<div class="row">
+  <div class="dlg">
+    <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+    <div class="steps">
+      <span class="st done"><b>✓</b>命名</span><span class="bar"></span>
+      <span class="st done"><b>✓</b>发送</span><span class="bar"></span>
+      <span class="st on"><b>3</b>等待接入</span>
+    </div>
+    <div class="bd" style="text-align:center">
+      <div class="pulse">⏳</div>
+      <p class="p" style="font-weight:700;margin:4px 0 0">等着另一台设备粘贴这串码…</p>
+      <p class="mut" style="margin:0;text-align:left">
+        在<b>另一台</b> PastePanda 里打开<br>
+        设置 → 知识库同步 → <b>＋ 添加设备</b> → <b>我已经拿到邀请码了</b>，把码粘进去。
+      </p>
+      <div class="warn" style="text-align:left;margin:4px 0 0">对方会看到一串指纹，让它和本机的
+        <span class="fp" style="font-size:12px">a3f9-2c81-7d40-be15</span> 对上再确认。</div>
+    </div>
+    <div class="ft"><span class="btn">先关掉，稍后再说</span></div>
+  </div>
+  <div style="flex:1;min-width:280px">
+    <div class="bad"><b>这一屏解决的就是现状第 2 条。</b>改前：复制完码，弹窗停在原地，没有「完成」按钮，用户不知道自己该干嘛、也不知道成没成 —— 只能关掉弹窗去盯设备列表。</div>
+    <div class="ok">🟢 <b>不需要任何新后端能力</b>：<code>useKbSync</code> 本来就在 5 秒轮询 <code>kb_sync_devices</code>。这一屏只要盯着 <code>devices.length</code> 变大就能自己翻页。</div>
+    <div class="note">「先关掉，稍后再说」<b>不阻塞</b>：关了照样配得上，因为配对是对方那边发起的。文案要说清这点，否则用户会以为关掉就前功尽弃。</div>
+    <div class="warn">超过 3 分钟没动静，把下方文案换成一条排查提示（两台是否都开了知识库同步开关 / 码是否粘全）。<b>不要转成失败态</b> —— 用户可能只是走开了。</div>
+  </div>
+</div>
+
+<h3>A4 · 接上了</h3>
+<div class="row">
+  <div class="dlg">
+    <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+    <div class="steps">
+      <span class="st done"><b>✓</b>命名</span><span class="bar"></span>
+      <span class="st done"><b>✓</b>发送</span><span class="bar"></span>
+      <span class="st done"><b>✓</b>等待接入</span>
+    </div>
+    <div class="bd" style="text-align:center">
+      <div class="pulse" style="background:var(--green-bg)">✅</div>
+      <p class="p" style="font-weight:700;margin:4px 0 0">已连上「书房台式机」</p>
+      <p class="mut" style="margin:0">笔记开始在两台设备之间同步。</p>
+    </div>
+    <div class="ft"><span class="btn pri">完成</span></div>
+  </div>
+  <div style="flex:1;min-width:280px">
+    <div class="note">名字取自轮询回来的 <code>KbDevice.name</code>，也就是对方在它的 A1 屏里填的那个 —— 天然验证了「名字确实传过去了」。</div>
+  </div>
+</div>
+
+<h2>五、B 路线（粘贴端）：自动读剪贴板 → 核对指纹</h2>
+
+<h3>B1 · 剪贴板里已经有码（主路径）</h3>
+<div class="row">
+  <div class="dlg">
+    <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+    <div class="steps">
+      <span class="st done"><b>✓</b>读取</span><span class="bar"></span>
+      <span class="st on"><b>2</b>核对指纹</span>
+    </div>
+    <div class="bd">
+      <div class="ok" style="margin:0">📋 已从剪贴板读到邀请码 <span class="mut">· <u>不是这个？手动粘贴</u></span></div>
+      <div style="background:var(--input-bg);border-radius:10px;padding:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">💻 DESKTOP-8K2L1</div>
+        <div class="mut" style="margin-bottom:4px">它的指纹</div>
+        <div class="fp" style="color:var(--accent-strong)">a3f9-2c81-7d40-be15</div>
+      </div>
+      <div class="warn" style="margin:0">⚠️ 到<b>另一台机器</b>上看一眼它显示的指纹，确认与上面这串一字不差。
+        <div class="mut" style="margin-top:6px">邀请码是自签的 —— 它能证明「做码的人有那把私钥」，<b>但证明不了这个码在路上没被人换掉</b>。核对指纹是唯一能挡住这件事的办法。</div>
+        <div style="margin-top:10px;font-weight:700">☐ 我已核对，两边指纹一致</div>
+      </div>
+    </div>
+    <div class="ft"><span class="btn">取消</span><span class="btn pri dis">完成配对</span></div>
+  </div>
+  <div style="flex:1;min-width:280px">
+    <div class="ok"><b>省掉了三个动作</b>：不用选角色、不用 Ctrl+V、不用点「下一步：核对指纹」。打开弹窗直接停在真正需要人做判断的那一屏。</div>
+    <div class="note"><b>识别规则（粗筛 → 再解析）</b>：先在前端用「字符集属于 base64url + 长度 &gt; 200」粗筛，通过了才调 <code>kb_sync_invite_preview</code>。<br>
+    🔴 <b>粗筛不过就静默忽略，绝不弹错误 toast</b> —— 用户剪贴板里绝大多数时候是别的东西，每次打开都被骂一句是不可接受的。</div>
+    <div class="warn"><b>隐私分寸</b>：只在弹窗打开那一刻 <code>readText()</code> <b>一次</b>，不常驻监听、不入库、不上报。<br>
+    这在本产品里是<b>合分寸</b>的 —— PastePanda 本职就是剪贴板管理器，用户早已授权它读剪贴板；但仍要在界面上<b>明说「已从剪贴板读到」</b>，让这次读取是可见的，而不是悄悄发生。</div>
+    <div class="note">「不是这个？手动粘贴」退回 B2 的空输入框态。<code>navigator.clipboard.readText()</code> 在本项目已多处使用（<code>App.tsx:235</code>、<code>QuotaDialog.tsx:149</code>、<code>snippetVariables.ts:76</code>），可行性已验证。</div>
+  </div>
+</div>
+
+<h3>B2 · 剪贴板里没有码（回退路径）</h3>
+<div class="row">
+  <div class="dlg">
+    <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+    <div class="steps">
+      <span class="st on"><b>1</b>读取</span><span class="bar"></span>
+      <span class="st"><b>2</b>核对指纹</span>
+    </div>
+    <div class="bd">
+      <p class="p">把另一台设备生成的邀请码粘进来。</p>
+      <div class="ta" style="color:var(--text-muted)">在这里粘贴邀请码</div>
+      <span class="btn full">📋 读取剪贴板</span>
+    </div>
+    <div class="ft"><span class="btn">取消</span><span class="btn pri dis">完成配对</span></div>
+  </div>
+  <div>
+    <p class="cap">解析失败时（内联，不只 toast）</p>
+    <div class="dlg">
+      <div class="hd"><h4>添加设备</h4><span class="x">✕</span></div>
+      <div class="bd">
+        <div class="ta" style="border-color:var(--danger)">eyJub2RlX2lkIjoiYTNmOTJjODE3ZDQwYmUxNWY4M2QyYTkwYzRlNzE2</div>
+        <p style="margin:0;font-size:11.5px;color:var(--danger)">
+          ⚠️ 这串不是有效的邀请码（base64 解不开，可能是复制时少了几个字符）</p>
+        <p class="mut" style="margin:0">回到另一台机器上重新点一次「📋 复制邀请码」，整串粘过来。</p>
+      </div>
+      <div class="ft"><span class="btn">取消</span><span class="btn pri dis">完成配对</span></div>
+    </div>
+  </div>
+</div>
+<div class="note">错误正文<b>原样透出后端的话</b>（规则 #15.3）—— <code>invite::decode</code> 对「base64 解不开 / 结构不对 / 长度不对 / 签名不过 / 已过期」各写了一句不同的话，这些区别正是用户排查的抓手，<b>不要在前端统一成「邀请码无效」</b>。前端只负责在下面补一句「该怎么办」。</div>
+
+<h2>六、术语统一</h2>
+<table>
+<tr><th>位置</th><th>改前</th><th>改后</th></tr>
+<tr><td>未配对入口</td><td class="del">➕ 生成邀请码 / 📥 粘贴对方的邀请码</td><td>＋ 添加设备</td></tr>
+<tr><td>已配对入口</td><td class="del">➕ 邀请 / 📥 粘贴</td><td>＋ 添加设备</td></tr>
+<tr><td>弹窗标题</td><td class="del">邀请另一台设备 / 添加设备</td><td>添加设备（全程一个标题）</td></tr>
+<tr><td>对另一台的称呼</td><td class="del">对方 / 另一台设备 / 它</td><td><b>另一台设备</b>（统一。「对方」暗示是别人，但文案自己说了这是「你自己的设备」）</td></tr>
+</table>
+
+<h2>七、明确不做</h2>
+<div class="bad"><b>二维码 —— 不做。</b>
+<code>qrcode</code> 与 <code>jsqr</code> 依赖确实已经在项目里（<code>QREditor.tsx</code>、<code>ScreenshotOverlay.tsx</code> 在用），加起来很省事。但这是<b>桌面 ↔ 桌面</b>配对：两端都没有摄像头，手机扫出来的那串码也没有手机版 PastePanda 可以接收。加了是纯装饰。</div>
+<div class="bad"><b>短码（6-8 位）替代长 base64 —— 不做。</b>短码必然需要一台服务器做查表，直接撞上本功能的招牌承诺「笔记<b>不经过任何服务器</b>」。</div>
+<div class="warn"><b>邀请文件 <code>.ppinvite</code> 导出/导入 —— 暂缓（原方案三）。</b>它才是「复制不全」的真正解法（走网盘/U盘，不靠人肉选中）。但先观察：<code>invite::decode</code> 的截断错误提示已经能准确指出问题，等真有人抱怨再加。</div>
+
+<h2>八、落地拆分</h2>
+<table>
+<tr><th>文件</th><th>改动</th></tr>
+<tr><td><code>src-tauri/src/commands/kb_sync.rs</code></td><td><code>SyncIdentity</code> 加 <code>device_name</code>（<code>hostname::get()</code>）；建议顺带加 <code>invite_expires_at</code> 到 <code>kb_sync_invite_create</code> 的返回，别让前端硬编码 7 天</td></tr>
+<tr><td><code>src/hooks/useKbSync.ts</code></td><td><code>KbIdentity</code> 接口跟着加字段；<b>其余不动</b>（等待接入复用现成的 5s 轮询）</td></tr>
+<tr><td><code>src/components/settings/KbSyncPanel.tsx</code></td><td>两处入口按钮并成一个「＋ 添加设备」</td></tr>
+<tr><td><code>src/components/settings/KbPairDialog.tsx</code></td><td>重写为向导外壳：剪贴板预读 + 路线分发。201 行 → <b>89 行</b></td></tr>
+<tr><td><code>src/components/settings/KbPairSteps.tsx</code>（新）</td><td>共用件（<code>StepBar</code> / <code>RolePick</code> / <code>PeerCard</code> / <code>looksLikeInvite</code> / <code>fmtExpire</code>）+ B 路线。<b>221 行</b></td></tr>
+<tr><td><code>src/components/settings/KbPairCreate.tsx</code>（新）</td><td>A 路线四屏。<b>198 行</b></td></tr>
+<tr><td><code>src/lib/fingerprint.ts</code>（新）</td><td><code>fingerprintOf()</code> 从 <code>KbPairDialog</code> 搬出来。不搬就会 <b>KbPairDialog ↔ KbPairSteps 循环引用</b>（规则 #11 公共函数收口）</td></tr>
+<tr><td><code>src/components/Settings.module.css</code></td><td>末尾追加 <code>kbPair*</code> 一段（约 150 行）。样式不写成 tsx 内联对象，否则两个组件都会顶过 300 行</td></tr>
+</table>
+<div class="ok">✅ <b>实际落地比本稿多拆了两个文件</b>（<code>KbPairCreate.tsx</code> 与 <code>lib/fingerprint.ts</code>）—— 向导共 6 屏，全塞进一个 <code>KbPairSteps.tsx</code> 会到 400 行以上。现在最大的文件 221 行，均在规则 #7 的 300 行以内。</div>
+<div class="note">🔴 <b>不碰的东西</b>：邀请码格式、签名、<code>TTL_SECS</code>、指纹分组规则、以及<b>「勾选『我已核对』之前禁用『完成配对』」这道门</b>。<code>invite.rs</code> 的模块注释把这道门的理由写得很清楚（签名管完整性、指纹管真实性），向导只是把它<b>放到更显眼的位置</b>，绝不因为「少一步更友好」而弱化它。</div>
+
+</body>
+</html>

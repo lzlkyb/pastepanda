@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useKbSync, type KbDevice } from "@/hooks/useKbSync";
-import { KbPairDialog, fingerprintOf } from "./KbPairDialog";
+import { fingerprintOf } from "@/lib/fingerprint";
+import type { ToastFn } from "@/components/Toast";
+import { KbPairDialog } from "./KbPairDialog";
 import styles from "../Settings.module.css";
 
 /** 「12 秒前」这种相对时间。0 = 从未同步过。 */
@@ -22,10 +24,11 @@ function ago(ms: number): string {
  * 正好对上「一个同步剪贴板、一个同步笔记」。
  */
 export function KbSyncPanel({ toast }: {
-  toast: (m: string, t?: "success" | "error" | "info") => void;
+  toast: ToastFn;
 }) {
   const s = useKbSync(true, toast);
-  const [dialog, setDialog] = useState<"create" | "paste" | null>(null);
+  // 不再区分 create/paste：角色判断推迟到向导里（而且剪贴板里已有码时会自动跳过）
+  const [pairOpen, setPairOpen] = useState(false);
   const [confirmForget, setConfirmForget] = useState<KbDevice | null>(null);
 
   const online = s.devices.filter((d) => s.live.includes(d.node_id)).length;
@@ -74,16 +77,12 @@ export function KbSyncPanel({ toast }: {
           {/* ❗ 身份没读到时禁用：弹窗本身需要 `identity.fingerprint`，
               不禁的话点下去**什么都不会发生**（规则 #15.3）。
               读失败的原因 refreshIdentity 已经弹过 toast 了。 */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className={styles.lanTestBtn} style={{ flex: 1 }}
-              disabled={!s.identity} onClick={() => setDialog("create")}>
-              ➕ 生成邀请码
-            </button>
-            <button className={styles.lanRefreshBtn} style={{ flex: 1 }}
-              disabled={!s.identity} onClick={() => setDialog("paste")}>
-              📥 粘贴对方的邀请码
-            </button>
-          </div>
+          {/* 一个按钮而不是两个：两台都是用户自己的机器，他心里只有
+              「把它俩连起来」，并排两个入口是在逼他先判断自己是哪一方。 */}
+          <button className={styles.lanTestBtn} style={{ width: "100%" }}
+            disabled={!s.identity} onClick={() => setPairOpen(true)}>
+            ＋ 添加设备
+          </button>
         </>
       ) : (
         <>
@@ -123,21 +122,18 @@ export function KbSyncPanel({ toast }: {
             display: "flex", justifyContent: "space-between", alignItems: "center",
           }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>本机指纹 {fp}</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className={styles.lanRefreshBtn} disabled={!s.identity}
-                onClick={() => setDialog("create")}>➕ 邀请</button>
-              <button className={styles.lanRefreshBtn} disabled={!s.identity}
-                onClick={() => setDialog("paste")}>📥 粘贴</button>
-            </div>
+            <button className={styles.lanRefreshBtn} disabled={!s.identity}
+              onClick={() => setPairOpen(true)}>＋ 添加设备</button>
           </div>
         </>
       )}
 
-      {dialog && s.identity && (
+      {pairOpen && s.identity && (
         <KbPairDialog
-          mode={dialog}
           myFingerprint={s.identity.fingerprint}
-          onClose={() => setDialog(null)}
+          defaultName={s.identity.device_name}
+          devices={s.devices}
+          onClose={() => setPairOpen(false)}
           onCreateInvite={s.createInvite}
           onPreview={s.previewInvite}
           onPair={s.pair}

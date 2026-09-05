@@ -48,6 +48,19 @@ pub struct SyncIdentity {
     pub node_id: String,
     pub fingerprint: String,
     pub running: bool,
+    /// 本机计算机名，给配对向导当设备名的默认值用。
+    ///
+    /// 🔴 取不到时返回**空串**，不要兜底成「未知设备」之类：
+    /// 输入框里一旦有值用户就不会去改，最后对端设备列表里躺着一个
+    /// 没有意义的名字。留空反而会逼他自己起一个。
+    pub device_name: String,
+}
+
+/// 本机计算机名。失败返回空串，理由见 [`SyncIdentity::device_name`]。
+fn local_device_name() -> String {
+    hostname::get()
+        .map(|h| h.to_string_lossy().trim().to_string())
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -60,17 +73,34 @@ pub async fn kb_sync_identity(
         node_id: me.node_id(),
         fingerprint: me.fingerprint(),
         running: svc.is_running().await,
+        device_name: local_device_name(),
     })
+}
+
+/// 生成邀请码的结果。
+///
+/// ❗ `expires_at` 由**后端**算好一起返回，而不是让前端拿一个写死的 7 天去推：
+/// 有效期是 [`invite::TTL_SECS`] 定的，前端硬编码一个 7 就成了第二处事实来源，
+/// 改 TTL 时必然漏掉一处，界面上写的到期日和后端真正的判定就对不上了。
+#[derive(serde::Serialize)]
+pub struct InviteCreated {
+    pub code: String,
+    /// 过期时刻（epoch 毫秒）。
+    pub expires_at: i64,
 }
 
 /// 生成邀请码。`name` 是本机设备名，纯展示用。
 #[tauri::command]
-pub fn kb_sync_invite_create(app: AppHandle, name: String) -> Result<String, String> {
+pub fn kb_sync_invite_create(app: AppHandle, name: String) -> Result<InviteCreated, String> {
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     let now = chrono::Utc::now().timestamp_millis();
     // 地址留空：地址会漂，靠 kb_presence 组播现场发现（见 sync::presence）。
     // 邀请码里塞一个当时的 IP，第二天就是错的。
-    invite::encode(&me, name.trim(), Vec::new(), now)
+    let code = invite::encode(&me, name.trim(), Vec::new(), now)?;
+    Ok(InviteCreated {
+        code,
+        expires_at: now + invite::TTL_SECS * 1000,
+    })
 }
 
 /// 只解码、不配对。给「核对指纹」那一步用。

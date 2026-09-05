@@ -45,6 +45,18 @@ export interface KbIdentity {
   /** 给人肉眼核对的 16 个字符，4-4-4-4 */
   fingerprint: string;
   running: boolean;
+  /**
+   * 本机计算机名，配对向导拿它当设备名默认值。
+   * **可能是空串**（后端取不到 hostname 时故意留空，见 `kb_sync.rs`）。
+   */
+  device_name: string;
+}
+
+/** `kb_sync_invite_create` 的返回。 */
+export interface KbInviteCreated {
+  code: string;
+  /** 过期时刻（epoch 毫秒）。后端算好的——前端别拿 TTL 再推一遍。 */
+  expires_at: number;
 }
 
 /** 邀请码解出来的内容（`sync::invite::Invite`）。 */
@@ -122,7 +134,7 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   const createInvite = useCallback(async (name: string) => {
     setBusy(true);
     try {
-      return await call<string>("kb_sync_invite_create", { name });
+      return await call<KbInviteCreated>("kb_sync_invite_create", { name });
     } finally { setBusy(false); }
   }, [call]);
 
