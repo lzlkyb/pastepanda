@@ -41,6 +41,9 @@ pub const ALPN: &[u8] = b"pastepanda-sync/1";
 /// 8 GiB：个人知识库的全量导出远小于它（本机 25 篇 226KB），
 /// 首次同步是唯一可能大的场合。
 const MAX_TRANSFER_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// 单个文件的上限。在**分配内存之前**夹住对端声明的长度，
+/// 否则一行 `vec![0u8; l]` 就能把进程弄死。单篇笔记远不到 256 MiB。
+const MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
 /// 单个文件名长度上限。
 const MAX_NAME_LEN: usize = 1024;
 /// 反斜杠。**写成 `\u{5C}` 而不是字面量**：这份代码经多层工具传递，
@@ -98,15 +101,31 @@ pub async fn dial(ep: &Endpoint, to: EndpointAddr) -> Result<Wire, String> {
     Ok(Wire { conn, send, recv })
 }
 
-/// 等一个对端连进来，拿到一对流。
-pub async fn accept(ep: &Endpoint) -> Result<Wire, String> {
+/// 等一个对端连进来（**只到握手为止，不等它开流**）。
+///
+/// 🔴 开流那一步要单独调 [`accept_streams`]，不能并进来：
+/// ALPN 是公开的，**没配对的人也连得上**。只要它连上之后不开双向流，
+/// `accept_bi().await` 就会一直挂着——而这个函数是在 accept 循环里调的，
+/// 于是**所有其它设备的入连接全被堵死**。拆开之后调用方可以把开流
+/// 丢进独立任务并加超时。
+pub async fn accept_conn(ep: &Endpoint) -> Result<iroh::endpoint::Connection, String> {
     let incoming = ep.accept().await.ok_or("没有连接进来")?;
-    let conn = incoming.await.map_err(|e| format!("握手失败：{}", e))?;
+    incoming.await.map_err(|e| format!("握手失败：{}", e))
+}
+
+/// 在一个已握手的连接上等对端开双向流。**调用方应当给它加超时。**
+pub async fn accept_streams(conn: iroh::endpoint::Connection) -> Result<Wire, String> {
     let (send, recv) = conn
         .accept_bi()
         .await
         .map_err(|e| format!("开流失败：{}", e))?;
     Ok(Wire { conn, send, recv })
+}
+
+/// 等一个对端连进来并开流。**只给单向的 [`recv_dir`] 与测试用**——
+/// 编排层走 [`accept_conn`] + [`accept_streams`]，见上面的说明。
+pub async fn accept(ep: &Endpoint) -> Result<Wire, String> {
+    accept_streams(accept_conn(ep).await?).await
 }
 
 /// 发一个控制帧：`u32 长度 | 内容`。
@@ -183,6 +202,16 @@ pub async fn read_dir(r: &mut iroh::endpoint::RecvStream, dir: &Path) -> Result<
             .await
             .map_err(|e| format!("读内容长度失败：{}", e))?;
         let l = u64::from_be_bytes(l);
+        // 🔴 单文件也要夹，而且要在**分配之前**。
+        // 只看累计值的话，对端声明一个恰好 8 GiB 的文件不会触发
+        // `total > MAX`（相等），紧接着就是一次 8 GiB 的归零分配 → 直接 OOM。
+        // 单篇笔记远不到这个量级，夹住不会误伤真实数据。
+        if l > MAX_FILE_BYTES {
+            return Err(format!(
+                "对端声明的单个文件太大（{} 字节，上限 {}）",
+                l, MAX_FILE_BYTES
+            ));
+        }
         total += l;
         if total > MAX_TRANSFER_BYTES {
             return Err(format!("这次传输超过上限（{} 字节）", MAX_TRANSFER_BYTES));

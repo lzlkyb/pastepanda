@@ -234,7 +234,10 @@ export function KnowledgeView() {
               开关关着或一台未配对时组件自己返回 null，不占位。 */}
           <KbSyncStatusBar
             enabled={!!kbSyncOn}
-            onSearchConflicts={() => q.setKeyword("冲突副本")}
+            /* ❗ 搜 `conflict` 而不是「冲突副本」：徽章上那个数字来自
+               `note_conflict_count`，它按正文里的 `- [conflict]` 数。
+               用标题后缀去搜的话，用户改过标题之后两个数就对不上了。 */
+            onSearchConflicts={() => q.setKeyword("conflict")}
           />
           <KnowledgeToolbar
             folderName={q.currentFolderName}

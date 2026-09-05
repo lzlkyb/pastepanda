@@ -71,11 +71,16 @@ export function KbSyncPanel({ toast }: {
               } catch { toast("复制失败，请手动选中复制", "error"); }
             }}>📋 复制</button>
           </div>
+          {/* ❗ 身份没读到时禁用：弹窗本身需要 `identity.fingerprint`，
+              不禁的话点下去**什么都不会发生**（规则 #15.3）。
+              读失败的原因 refreshIdentity 已经弹过 toast 了。 */}
           <div style={{ display: "flex", gap: 8 }}>
-            <button className={styles.lanTestBtn} style={{ flex: 1 }} onClick={() => setDialog("create")}>
+            <button className={styles.lanTestBtn} style={{ flex: 1 }}
+              disabled={!s.identity} onClick={() => setDialog("create")}>
               ➕ 生成邀请码
             </button>
-            <button className={styles.lanRefreshBtn} style={{ flex: 1 }} onClick={() => setDialog("paste")}>
+            <button className={styles.lanRefreshBtn} style={{ flex: 1 }}
+              disabled={!s.identity} onClick={() => setDialog("paste")}>
               📥 粘贴对方的邀请码
             </button>
           </div>
@@ -119,8 +124,10 @@ export function KbSyncPanel({ toast }: {
           }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>本机指纹 {fp}</span>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className={styles.lanRefreshBtn} onClick={() => setDialog("create")}>➕ 邀请</button>
-              <button className={styles.lanRefreshBtn} onClick={() => setDialog("paste")}>📥 粘贴</button>
+              <button className={styles.lanRefreshBtn} disabled={!s.identity}
+                onClick={() => setDialog("create")}>➕ 邀请</button>
+              <button className={styles.lanRefreshBtn} disabled={!s.identity}
+                onClick={() => setDialog("paste")}>📥 粘贴</button>
             </div>
           </div>
         </>

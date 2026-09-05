@@ -1567,3 +1567,33 @@ mod service_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod presence_stop_tests {
+    use super::{store, tmp_dir};
+    use crate::sync::service::SyncService;
+    use std::sync::atomic::Ordering;
+
+    #[tokio::test]
+    async fn test_关开关时地址宣告也要停() {
+        // 🔴 回归测试。第一版给 presence::spawn 传的是一个没人持有的
+        //    `Arc::new(AtomicBool::new(false))`，于是 stop() 关不掉它。后果两层：
+        //    ① 停了之后还在组播上喊本机地址；
+        //    ② 关掉再打开时端口 5008 仍被僵尸线程占着，bind 失败只留一条 warning，
+        //       **地址发现静默死掉，而界面上开关是开的**。
+        let svc = SyncService::new();
+        let dir = tmp_dir("presence_stop");
+        svc.start(store(), &dir, true, false).await.expect("启动失败");
+
+        let flag = svc.presence_flag().await.expect("起来之后该有这个标志");
+        // spawn 里那个 CAS 成功了才会置 true —— 它同时证明宣告线程真的起来了
+        assert!(flag.load(Ordering::SeqCst), "地址宣告没起来");
+
+        svc.stop().await;
+        assert!(
+            !flag.load(Ordering::SeqCst),
+            "stop() 没有关掉地址宣告，会留一个占着 5008 端口的僵尸线程"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

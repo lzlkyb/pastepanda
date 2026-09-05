@@ -156,6 +156,8 @@ pub struct ApplyReport {
     pub missing_files: usize,
     /// 内容与本地一模一样、直接跳过的条数（回声）。见下面那条拦截。
     pub identical: usize,
+    /// 导入阶段真正失败的条数。**不静默**（规则 #15.3），而且会按住游标。
+    pub import_failed: usize,
     /// 检测到的真冲突数（两边都在上次同步之后改过）。每个都留了一份冲突副本。
     pub conflicts: usize,
     /// 🔴 对端时钟超前太多，本机拒绝吸收时的超前毫秒数。
@@ -290,6 +292,15 @@ pub fn apply_delta(
     let imported = store.note_import_dir(&dir.to_string_lossy())?;
     rep.created = imported.created;
     rep.updated = imported.updated;
+    // 🔴 `failed` 不能丢。之前只取 created/updated，于是单篇导入失败
+    //    （读文件出错 / 写库出错）既不进报告、游标又照常前进——那几篇
+    //    **再也不会被重发**，是永久且完全无痕的丢数据。
+    //    与 `missing_files` 被认真上报的做法自相矛盾，现在两者一致：
+    //    都报出来，且都让调用方按住游标（见 `session::run`）。
+    rep.import_failed = imported.failed.len();
+    for f in &imported.failed {
+        log::warn!("[Sync] 导入失败，本轮不推进游标：{}", f);
+    }
 
     // ④ 🔴 **把对端的版本戳盖回去。** 这一步不是优化，是 LWW 的前提。
     //
@@ -325,9 +336,22 @@ pub fn apply_delta(
     //    刚导入的文件又建回来——删除等于没发生。
     for line in tomb_raw.lines().filter(|l| !l.trim().is_empty()) {
         let mut it = line.split('\t');
-        let (Some(id), Some(_ms)) = (it.next(), it.next()) else {
+        let (Some(id), Some(ms)) = (it.next(), it.next()) else {
             return Err(format!("墓碑行格式不对：{}", line));
         };
+        let tomb_ms: i64 = ms
+            .parse()
+            .map_err(|_| format!("墓碑里的时间戳不是数字：{}", line))?;
+
+        // 🔴 **无论本地这篇还在不在，都要把墓碑记下来。**
+        //
+        // `note_delete` 只做软删、**不落墓碑**（墓碑是物理清理时才落的）。
+        // 不补这一条，接收端手里就没有可再传播的删除记录：
+        // A 删 → B 收到并软删 → B 与 C 同步时清单里没它 → **C 永远保留那篇**。
+        // 三台以上设备时这就是删不干净——而模块文档里又写着「天然全网状」。
+        // 放在删除动作**之外**：本地本来就没有 / 已在回收站时同样要能转发。
+        store.note_record_remote_tombstone(id, tomb_ms, None);
+
         // 已经没有或已在回收站的，不重复删也不报错——同一条删除会被多次同步过来。
         if store.note_get(id)?.is_some() {
             store.note_delete(id)?;

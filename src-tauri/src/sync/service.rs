@@ -85,7 +85,23 @@ pub struct SyncCtx {
     peers: std::sync::Mutex<std::collections::HashSet<String>>,
     /// 每个对端最近一次的结果。给界面看，见 [`LastSync`]。
     last: std::sync::Mutex<HashMap<String, LastSync>>,
+    /// 🔴 地址宣告线程**自己的**停止标志，与 [`Self::running`] 分开。
+    ///
+    /// 不能共用一个：[`super::presence::spawn`] 进门要做
+    /// `compare_exchange(false, true)` 防并发双线程，而 `running` 建出来就是
+    /// `true`，共用的话那个 CAS 必然失败、宣告压根起不来。
+    ///
+    /// ❗ 但**必须由 `stop()` 一起清掉**。第一版这里传的是一个
+    /// `Arc::new(AtomicBool::new(false))` 临时值、没人持有，后果有两层：
+    /// ① `stop()` 之后宣告线程还在组播上喊本机地址；
+    /// ② 关掉再打开时端口 5008 仍被那个僵尸线程占着，`bind_listener` 失败，
+    ///    只留一条 warning 就退出——**地址发现静默死掉，而开关看着是开的**。
+    presence_running: Arc<AtomicBool>,
 }
+
+/// 连上之后等对端开流的上限。见 [`serve`]：连上却不开流的对端
+/// 不能无限期地占着一个任务。
+pub const OPEN_STREAM_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -251,9 +267,9 @@ pub async fn accept_loop(ctx: Arc<SyncCtx>) {
     while ctx.running.load(Ordering::SeqCst) {
         // 🔴 必须与停止信号一起 select：`accept` 是一直等着的，
         // 光看 `running` 的话开关关掉之后这个循环会永远卡在这儿。
-        let w = tokio::select! {
-            r = super::transport::accept(&ctx.endpoint) => match r {
-                Ok(w) => w,
+        let conn = tokio::select! {
+            r = super::transport::accept_conn(&ctx.endpoint) => match r {
+                Ok(c) => c,
                 Err(e) => {
                     log::warn!("[Sync] 接入连接失败：{}", e);
                     continue;
@@ -261,15 +277,40 @@ pub async fn accept_loop(ctx: Arc<SyncCtx>) {
             },
             _ = ctx.stop.notified() => break,
         };
+        // 🔴 只接到握手为止，**开流也要交给独立任务**：ALPN 是公开的，
+        // 没配对的人也连得上，只要它连上之后不开双向流，`accept_bi` 就一直挂着，
+        // 堵死的是**所有其它设备**的入连接。
         let ctx2 = ctx.clone();
-        tokio::spawn(async move { serve(ctx2, w).await });
+        tokio::spawn(async move { serve(ctx2, conn).await });
     }
     log::info!("[Sync] 入连接循环已停止");
 }
 
-async fn serve(ctx: Arc<SyncCtx>, w: super::transport::Wire) {
-    let peer = w.conn.remote_id().to_string();
+async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
+    let peer = conn.remote_id().to_string();
     let short = &peer[..8.min(peer.len())];
+
+    // 连上却迟迟不开流的，等一小会儿就放掉——它占的只是这一个任务，不再堵别人
+    let w = match tokio::time::timeout(
+        OPEN_STREAM_TIMEOUT,
+        super::transport::accept_streams(conn),
+    )
+    .await
+    {
+        Ok(Ok(w)) => w,
+        Ok(Err(e)) => {
+            log::warn!("[Sync] {} 开流失败：{}", short, e);
+            return;
+        }
+        Err(_) => {
+            log::warn!(
+                "[Sync] {} 连上之后 {} 秒没开流，已放弃",
+                short,
+                OPEN_STREAM_TIMEOUT.as_secs()
+            );
+            return;
+        }
+    };
     let paired = matches!(ctx.store.device_get(&peer), Ok(Some(_)));
 
     let hold = match ctx.coord.admit(&peer, paired).await {
@@ -386,7 +427,15 @@ impl SyncService {
             stop: Arc::new(tokio::sync::Notify::new()),
             peers: std::sync::Mutex::new(std::collections::HashSet::new()),
             last: std::sync::Mutex::new(HashMap::new()),
+            // false：让 presence 自己那个 CAS 能成功，见字段注释
+            presence_running: Arc::new(AtomicBool::new(false)),
         });
+
+        // ❗ 先把可能失败的读库做完，再起任何后台任务。
+        // 反过来的话：这里 `?` 提前返回 → `*guard = Some(ctx)` 没执行 →
+        // 但两个后台任务各自握着 `Arc<SyncCtx>` 继续跑，`stop()` 再也摸不到它们，
+        // 端口 5008 与 iroh 端点被无主线程占着——又一条僵尸路径。
+        let known = store.device_list()?;
 
         let paired_store = store.clone();
         super::presence::spawn(
@@ -395,11 +444,10 @@ impl SyncService {
             me.clone(),
             port,
             Arc::new(move |id: &str| matches!(paired_store.device_get(id), Ok(Some(_)))),
-            Arc::new(AtomicBool::new(false)),
+            ctx.presence_running.clone(),
         );
 
         tokio::spawn(accept_loop(ctx.clone()));
-        let known = store.device_list()?;
         for d in &known {
             start_peer(&ctx, &d.node_id);
         }
@@ -417,6 +465,8 @@ impl SyncService {
         let mut guard = self.inner.lock().await;
         if let Some(ctx) = guard.take() {
             ctx.running.store(false, Ordering::SeqCst);
+            // ❗ 宣告线程是独立标志，漏了它就会留一个占着端口 5008 的僵尸
+            ctx.presence_running.store(false, Ordering::SeqCst);
             ctx.stop.notify_waiters();
             ctx.endpoint.close().await;
             log::info!("[Sync] 同步已停止");
@@ -453,6 +503,17 @@ impl SyncService {
             // ❗ 地址也要清：不清会留一条永不刷新也永不被覆盖的僵尸地址
             ctx.presence.forget(node_id);
         }
+    }
+
+    /// 给测试用：拿到当前那份地址宣告停止标志。
+    ///
+    /// 存在的理由很具体——「`stop()` 有没有把宣告线程也关掉」这件事
+    /// 从外面完全看不出来（`stop()` 之后 `ctx` 就被 take 走了），
+    /// 而它第一版恰恰就是漏的。
+    #[cfg(test)]
+    pub async fn presence_flag(&self) -> Option<Arc<AtomicBool>> {
+        let guard = self.inner.lock().await;
+        guard.as_ref().map(|c| c.presence_running.clone())
     }
 
     /// 当前组播里听得见的对端。没在跑就是空——而不是报错：

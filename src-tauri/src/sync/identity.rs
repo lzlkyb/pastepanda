@@ -186,9 +186,17 @@ fn to_hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
 }
 
+/// 🔴 **先挡非 ASCII，再切片。**
+///
+/// `&s[i..i + 2]` 是**字节**切片，落在多字节 UTF-8 字符中间会 `panic`，
+/// 而本工程是 `panic = "abort"`——整个应用直接挂。
+///
+/// 这不是理论风险：`invite::decode` 校的是 `node_id.len() != 64`，那是**字节长度**。
+/// 一串含一个 3 字节汉字 + 61 个 ASCII 的 `node_id` 刚好 64 字节、能过校验，
+/// 然后在这里炸。用户在配对框里粘一串坑过的邀请码就能把程序弄崩。
 fn from_hex(s: &str) -> Option<Vec<u8>> {
     let s = s.trim();
-    if s.is_empty() || !s.len().is_multiple_of(2) {
+    if s.is_empty() || !s.len().is_multiple_of(2) || !s.is_ascii() {
         return None;
     }
     (0..s.len())

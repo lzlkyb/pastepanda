@@ -401,8 +401,19 @@ pub fn spawn(
                         Heard::Fresh { node_id, addr } => {
                             log::debug!("[Presence] {} 在 {}", &node_id[..8], addr);
                         }
-                        // 自己的包、未配对设备的包、重放，都是常态，不值得记日志
-                        Heard::Mine | Heard::Unpaired { .. } | Heard::Replay { .. } => {}
+                        // 自己的包与未配对设备的包是常态，不值得记日志
+                        Heard::Mine | Heard::Unpaired { .. } => {}
+                        // 🔴 重放要记（debug 级）。正常情况下它极少出现，
+                        // 但对端做一次 NTP 回拨 / 改时区之后，它**所有**新公告都会
+                        // 被这条严格递增判成重放并丢掉，表现是「对方明明开着却一直显示
+                        // 离线」，且 STALE_MS 过后地址失效、不会自愈。
+                        // 静默丢弃的话这种情况完全无从查起。
+                        Heard::Replay { node_id } => {
+                            log::debug!(
+                                "[Presence] {} 的公告时间戳没有前进，按重放丢弃（对端是不是回拨过时钟？）",
+                                &node_id[..8]
+                            );
+                        }
                         Heard::OutOfWindow { node_id, skew_ms } => {
                             log::warn!(
                                 "[Presence] {} 的公告时间差 {}ms，超窗已丢弃（对一下两台机器的时钟）",

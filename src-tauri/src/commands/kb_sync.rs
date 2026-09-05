@@ -163,9 +163,12 @@ pub async fn toggle_kb_sync(
     enable: bool,
 ) -> Result<(), String> {
     let mut config = store.get_config()?;
-    if let Some(obj) = config.as_object_mut() {
-        obj.insert(ENABLE_KEY.to_string(), serde_json::Value::Bool(enable));
-    }
+    // ❗ 不能 `if let Some(..) { .. }` 了事：配置不是对象时会静默跳过写入，
+    //   而 `save_config` 照样返回 Ok，前端以为开关已保存（规则 #15.3）。
+    let obj = config
+        .as_object_mut()
+        .ok_or("配置文件不是一个对象，开关没能保存")?;
+    obj.insert(ENABLE_KEY.to_string(), serde_json::Value::Bool(enable));
     store.save_config(&config)?;
 
     if enable {

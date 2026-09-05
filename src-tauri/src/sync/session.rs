@@ -185,16 +185,38 @@ async fn run(
     }
 
     let since = mine.cursor_ms.min(theirs.cursor_ms);
-    let high_water = mine.high_water_ms.max(theirs.high_water_ms);
+
+    // 🔴 只有**吸收成功**时才能用对端的高水位。
+    //
+    // 模块说明第 3 条「此后本机发的戳都 > H」靠的就是那次吸收。
+    // 被拒时本机下界根本没抬，再把游标推到对端那个虚高的值，后果是：
+    // `hlc_now()` 发的戳永远小于游标 → `note_changed_since(> since)` 永远空
+    // → **本机之后的所有改动都不再发给那台设备**，而游标又是 MAX 不可回退的。
+    // 界面上只会提示「对方时钟快」，不会说「已经停止发送」——静默且永久。
+    let high_water = if clock_too_far.is_some() {
+        mine.high_water_ms
+    } else {
+        mine.high_water_ms.max(theirs.high_water_ms)
+    };
 
     let out = scratch("out");
     let inbox = scratch("in");
     let r = exchange(store, &mut w, since, &out, &inbox, send_first).await;
     let _ = std::fs::remove_dir_all(&out);
-    let (sent, recv) = r?;
+    // ❗ `inbox` 也要在每条退出路径上删掉：里面是**明文笔记**，
+    //   而失败会按 5→60 秒退避反复重试，残留会一直堆在 %TEMP%。
+    let sent_recv = match r {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&inbox);
+            return Err(e);
+        }
+    };
+    let (sent, recv) = sent_recv;
 
-    let mut applied = apply_delta(store, &inbox, since)?;
+    let applied = apply_delta(store, &inbox, since);
     let _ = std::fs::remove_dir_all(&inbox);
+    let mut applied = applied?;
     // hello 阶段被拒的时钟也要出现在报告里：apply 那一步再吸收一次会被同样拒掉，
     // 但如果对端这一轮没发任何东西，apply 里就压根不会走到吸收，信息会丢。
     if applied.clock_too_far_ahead_ms.is_none() {
@@ -202,7 +224,23 @@ async fn run(
     }
 
     // 游标只在这一整轮都成功之后才推。中途失败就让它留在原地，下一轮重来。
-    store.device_advance_cursor(peer, high_water)?;
+    //
+    // 🔴 「有东西没落地」也算没成功：`missing_files`（清单说有、文件没到）
+    // 与 `import_failed`（写库失败）那几篇，推了游标就**再也不会被重发**。
+    // 宁可下一轮重传一次（幂等，而且有「内容相同就跳过」兑着），
+    // 也不能静默地把它们留在对端。原因持续存在时代价只是重复传同一批，
+    // 而那个浪费是有界的、且原因一消失就自愈。
+    let landed = applied.missing_files == 0 && applied.import_failed == 0;
+    if landed {
+        store.device_advance_cursor(peer, high_water)?;
+    } else {
+        log::warn!(
+            "[Sync] 与 {} 这一轮有 {} 篇没传到 / {} 篇导入失败，按住游标等下一轮重来",
+            &peer[..8.min(peer.len())],
+            applied.missing_files,
+            applied.import_failed
+        );
+    }
 
     Ok(SessionReport {
         peer: peer.to_string(),
