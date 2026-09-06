@@ -11,7 +11,7 @@ import { Copy, Eye, EyeOff, RefreshCw, AlertTriangle } from "lucide-react";
 import { copyToClipboard } from "@/lib/utils";
 import { confirmDialog } from "@/lib/confirm";
 import { mcpGetToken, mcpRegenerateToken, type McpStatus } from "@/lib/api/mcp";
-import { McpClientGuide } from "./McpClientGuide";
+import { McpConnectPanel } from "./McpConnectPanel";
 import { McpWritePanel } from "./McpWritePanel";
 import { McpAuditPanel } from "./McpAuditPanel";
 import styles from "../Settings.module.css";
@@ -100,36 +100,44 @@ export function McpServerPanel({
         </div>
       )}
 
-      <McpFieldRows
-        status={status}
-        busy={busy}
-        token={token}
-        shown={shown}
-        portInput={portInput}
-        onPortInput={setPortInput}
-        onSetPort={onSetPort}
-        onToggleShow={async () => {
-          if (!shown && !(await ensureToken())) return;
-          setShown((v) => !v);
-        }}
-        onCopyToken={handleCopyToken}
-        onRegenerate={handleRegenerate}
-        toast={toast}
-      />
+      {/* 🔴 接入放第一屏。改之前它是**最后一块且默认折叠**，上面压着
+          地址/令牌/端口/写权限/调用记录五块——而用户开完服务后
+          想知道的只有一件事：怎么连上。 */}
+      <McpConnectPanel url={status.url} onNeedToken={ensureToken} toast={toast} />
 
-      {/* 写权限放在最上面：它回答的是「这东西到底能对我的笔记做什么」，
-          比「它做过什么」（调用记录）与「怎么接」（指引）都更该先看到。 */}
-      <McpWritePanel toast={toast} />
+      {/* 剩下那五块都是「配好之后才会回来看」的，收进折叠。
+          ❗ 默认收着但**不藏掉**：写权限与调用记录是安全相关的，
+            找不到比多一次点击更糟。 */}
+      <details className={styles.mcpAdvanced}>
+        <summary>高级：端口 · 令牌 · 写权限 · 调用记录</summary>
 
-      {/* 调用记录放在接入指引**之上**：指引是配一次就不看了的，
-          而「谁读过我什么」是需要反复回来看的。 */}
-      <McpAuditPanel
-        auditError={auditError}
-        onDismissError={onDismissAuditError}
-        toast={toast}
-      />
+        <McpFieldRows
+          status={status}
+          busy={busy}
+          token={token}
+          shown={shown}
+          portInput={portInput}
+          onPortInput={setPortInput}
+          onSetPort={onSetPort}
+          onToggleShow={async () => {
+            if (!shown && !(await ensureToken())) return;
+            setShown((v) => !v);
+          }}
+          onCopyToken={handleCopyToken}
+          onRegenerate={handleRegenerate}
+          toast={toast}
+        />
 
-      <McpClientGuide url={status.url} onNeedToken={ensureToken} toast={toast} />
+        {/* 写权限在调用记录之前：它回答的是「这东西到底能对我的笔记做什么」，
+            比「它做过什么」更该先看到。 */}
+        <McpWritePanel toast={toast} />
+
+        <McpAuditPanel
+          auditError={auditError}
+          onDismissError={onDismissAuditError}
+          toast={toast}
+        />
+      </details>
     </div>
   );
 }

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>MCP 一键接入 · 设计稿 2026-09-06</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1e222b; --border:#2b3040;
+    --text:#e6e9ef; --muted:#8b93a7; --accent:#5b8cff; --ok:#3fb950; --bad:#f85149; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px;background:var(--bg);color:var(--text);
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  h3{font-size:13px;margin:20px 0 8px;color:var(--muted);font-weight:600}
+  .sub{color:var(--muted);margin-bottom:8px}
+  code{background:var(--card2);padding:1px 5px;border-radius:4px;font-size:12px;
+       font-family:"Cascadia Mono",Consolas,monospace}
+  pre{background:#0d1016;border:1px solid var(--border);border-radius:8px;padding:12px;
+      overflow-x:auto;font-size:12px;line-height:1.55;font-family:"Cascadia Mono",Consolas,monospace}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  .note{background:var(--card2);border-left:3px solid var(--warn);padding:10px 14px;
+        border-radius:0 8px 8px 0;margin:14px 0;font-size:13px}
+  .note.red{border-left-color:var(--bad)}
+  .note.ok{border-left-color:var(--ok)}
+
+  /* ---- 面板模拟 ---- */
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;
+         padding:16px;max-width:620px}
+  .prow{display:flex;align-items:center;gap:10px;padding:10px 0}
+  .prow+.prow{border-top:1px solid var(--border)}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .dot.on{background:var(--ok)} .dot.off{background:#4a5164}
+  .grow{flex:1;min-width:0}
+  .name{font-size:13px}
+  .path{font-size:11px;color:var(--muted);font-family:Consolas,monospace;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .btn{padding:4px 12px;border-radius:7px;border:1px solid var(--border);
+       background:var(--card2);color:var(--text);font-size:12px;cursor:pointer;flex-shrink:0}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.ghost{background:transparent;color:var(--muted)}
+  .tag{font-size:11px;padding:1px 7px;border-radius:20px;flex-shrink:0}
+  .tag.ok{background:#15351f;color:#7ee094}
+  .tag.warn{background:#3a3113;color:#e8c45f}
+  .tag.info{background:#16283f;color:#7db3ff}
+  .sec{font-size:11px;color:var(--muted);margin:16px 0 6px;letter-spacing:.4px}
+  .fold{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);
+        font-size:12px;color:var(--muted);cursor:pointer}
+
+  /* ---- 确认框 ---- */
+  .dlg{background:var(--card);border:1px solid var(--border);border-radius:12px;
+       padding:18px;max-width:480px}
+  .dlg h4{margin:0 0 10px;font-size:14px}
+  .dlg p{margin:0 0 10px;font-size:12.5px;line-height:1.65;color:#c8cede}
+  .dlg .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+  .kv{font-size:11.5px;font-family:Consolas,monospace;background:#0d1016;
+      border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin:8px 0;color:#9fb0c9}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:900px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>设置 · MCP：一键接入与面板重排</h1>
+<div class="sub">2026-09-06 &nbsp;·&nbsp; 方案 C（一键 + 复制兜底 + 自定义）</div>
+
+<div class="note red">
+  <b>两条硬约束（用户明确提出）：</b><br>
+  ① <b>逐个接入，每个单独确认</b>——没有「全部接入」按钮。每写一次第三方配置文件都是一次独立授权。<br>
+  ② <b>自定义接入必须保留</b>——内置列表永远列不全。
+</div>
+
+<h2>一、面板重排：把「怎么连上」放到第一屏</h2>
+
+<div class="two">
+  <div>
+    <h3>现状 · 开启后一次性摊开 6 块</h3>
+    <div class="panel">
+      <div class="prow"><span class="dot on"></span><span class="grow name">监听中 · 端口 8767</span></div>
+      <div class="prow"><span class="grow name">服务地址</span><code>http://127.0.0.1:8767/mcp</code></div>
+      <div class="prow"><span class="grow name">访问令牌</span><span class="tag info">显示/复制/重置</span></div>
+      <div class="prow"><span class="grow name">监听端口</span><span class="tag info">输入框 + 应用</span></div>
+      <div class="prow"><span class="grow name">写权限（七项开关）</span></div>
+      <div class="prow"><span class="grow name">调用记录</span></div>
+      <div class="prow" style="color:var(--bad)">
+        <span class="grow name">▸ 怎么接进 Claude Code</span>
+        <span class="tag warn">默认折叠</span>
+      </div>
+    </div>
+    <div class="note red" style="margin-top:10px">
+      用户最先需要的东西排在<b>最后且默认收着</b>，而且只讲 Claude Code。
+    </div>
+  </div>
+
+  <div>
+    <h3>改后 · 首屏只剩接入</h3>
+    <div class="panel">
+      <div class="prow"><span class="dot on"></span><span class="grow name">监听中 · 端口 8767</span></div>
+
+      <div class="sec">检测到的客户端</div>
+      <div class="prow">
+        <span class="dot on"></span>
+        <span class="grow"><div class="name">Claude Code</div><div class="path">~/.claude.json</div></span>
+        <span class="tag ok">已接入</span>
+        <button class="btn ghost">移除</button>
+      </div>
+      <div class="prow">
+        <span class="dot off"></span>
+        <span class="grow"><div class="name">WorkBuddy</div><div class="path">~/.workbuddy/mcp.json</div></span>
+        <button class="btn primary">接入</button>
+      </div>
+
+      <div class="sec">其它工具（手动配）</div>
+      <div class="prow">
+        <span class="grow"><div class="name">Cherry Studio / VS Code …</div>
+          <div class="path">配置不落磁盘，只能复制</div></span>
+        <button class="btn">复制配置</button>
+      </div>
+      <div class="prow">
+        <span class="grow"><div class="name">自定义客户端</div>
+          <div class="path">自己指一个配置文件</div></span>
+        <button class="btn">选文件…</button>
+      </div>
+
+      <div class="fold">▸ 高级：端口 · 令牌 · 写权限 · 调用记录</div>
+    </div>
+  </div>
+</div>
+
+<h2>二、三档接入（同一张列表）</h2>
+<table>
+  <tr><th>档</th><th>适用</th><th>行为</th><th>证据强度</th></tr>
+  <tr>
+    <td><b>一键</b></td>
+    <td>Claude Code、WorkBuddy</td>
+    <td>探测到 → 单独确认 → 备份 → 合并写入</td>
+    <td>✅ 本机实物核实</td>
+  </tr>
+  <tr>
+    <td><b>仅复制</b></td>
+    <td>Cherry Studio、VS Code</td>
+    <td>给精确的配置 + 粘到哪里的说明</td>
+    <td>⚠️ 配置不落磁盘/路径不稳定</td>
+  </tr>
+  <tr>
+    <td><b>自定义</b></td>
+    <td>列不到的任意工具</td>
+    <td>选文件 → 预览将写入什么 → 确认 → 合并写入</td>
+    <td>—</td>
+  </tr>
+</table>
+
+<div class="note">
+  <b>VS Code 与 Cherry Studio 为什么不做一键：</b>
+  VS Code 的<b>用户级</b>配置没有固定磁盘路径（官方要求走命令面板
+  「MCP: Open User Configuration」，<code>.vscode/mcp.json</code> 只是工作区级）；
+  Cherry Studio 的配置由应用内 UI 管理，没查到稳定的磁盘 JSON。
+  <b>猜一个路径写过去，后果是写到不相干的地方而且不报错。</b>
+</div>
+
+<h2>三、写入格式（每家不一样，不能套一套）</h2>
+
+<h3>Claude Code · <code>~/.claude.json</code> 顶层 <code>mcpServers</code></h3>
+<pre>"pastepanda": {
+  "type": "http",
+  "url": "http://127.0.0.1:8767/mcp",
+  "headers": { "Authorization": "Bearer &lt;令牌&gt;" }
+}</pre>
+
+<h3>WorkBuddy · <code>~/.workbuddy/mcp.json</code></h3>
+<pre>"pastepanda": {
+  "type": "streamableHttp",
+  "url": "http://127.0.0.1:8767/mcp",
+  "headers": { "Authorization": "Bearer &lt;令牌&gt;" },
+  "timeout": 30000,
+  "disabled": false
+}</pre>
+
+<div class="note ok">
+  <b>WorkBuddy 格式的依据（不是猜的）：</b>它自带 141 条内置连接器，
+  <b>31 条用 <code>headers</code></b>，多条就是 <code>"Authorization": "Bearer ${...}"</code>；
+  其中 <b>4 条是纯字面量</b>（不带 <code>${}</code>）——说明写死令牌是支持的。
+  它还有个 <code>staticHeaders</code>，但那是放来源/版本这类<b>非机密元数据</b>的，令牌不该进那里。
+</div>
+
+<h3>自定义：transport 写法要让用户选</h3>
+<div class="note red">
+  本机扫到的配置里，HTTP 型 transport <b>至少有 5 种写法共存</b>：<br>
+  <code>streamableHttp</code>(328) · <code>sse</code>(24) · <code>http</code>(12) ·
+  <code>streamable-http</code>(6) · 以及完全不写 <code>type</code>(66)。<br>
+  我们<b>猜不出</b>用户那个客户端认哪一种——所以自定义流程里让他选一次，
+  并把已知对应关系（Claude Code → <code>http</code>，WorkBuddy → <code>streamableHttp</code>）标出来做参考。
+</div>
+
+<h2>四、确认框：必须把三件事说清楚</h2>
+<div class="dlg">
+  <h4>接入 WorkBuddy？</h4>
+  <p>将向下面这个文件添加一个名为 <code>pastepanda</code> 的条目，
+     <b>其中包含你的访问令牌（明文）</b>：</p>
+  <div class="kv">C:\Users\19145\.workbuddy\mcp.json<br>
+    <span style="color:#7ee094">原文件先备份为 mcp.json.bak；已有的 1 个条目不会被改动</span></div>
+  <p>同时会<b>开启 MCP 服务</b>——开启后，本机任何能拿到该令牌的程序
+     都可以读取、修改和删除你的笔记。服务只监听 127.0.0.1。</p>
+  <p>接入后需要<b>重启 WorkBuddy</b> 才生效。</p>
+  <div class="foot">
+    <button class="btn">取消</button>
+    <button class="btn primary">接入并开启服务</button>
+  </div>
+</div>
+
+<div class="note">
+  开启服务原有那道安全确认<b>不取消</b>，只是合并进这一步——
+  文案里“能拿到令牌的程序就能读写全部笔记”这句一字不减。
+</div>
+
+<h2>五、写入安全（改别人的文件，不能马虎）</h2>
+<table>
+  <tr><th>风险</th><th>做法</th></tr>
+  <tr><td>覆盖掉用户已有的 MCP 条目</td>
+      <td><b>合并而不是替换</b>。本机 <code>.claude.json</code> 里就有 3 个现成条目
+          （filesystem / paper_search_mcp / codegraph）——它们就是合并逻辑的回归用例</td></tr>
+  <tr><td>写到一半断电 / 崩溃</td>
+      <td><b>原子写</b>：写临时文件 → fsync → rename 盖上去</td></tr>
+  <tr><td>改坏了想恢复</td>
+      <td>写前备份 <code>&lt;名&gt;.bak</code>，路径在确认框里就告知</td></tr>
+  <tr><td>文件不是合法 JSON / 没有 mcpServers</td>
+      <td>先解析，解不开就<b>不写</b>并说清楚；缺容器则新建一个空的</td></tr>
+  <tr><td>重复点接入写两遍</td>
+      <td>已接入的卡片<b>不给「接入」按钮</b>，只给「移除接入」</td></tr>
+  <tr><td>令牌重置后客户端全断了用户不知道</td>
+      <td>已接入的卡片变成<b>「令牌已变更，需重新接入」</b></td></tr>
+  <tr><td>探测是否在翻用户的文件</td>
+      <td>探测<b>只判文件在不在</b>，不读内容、不上报；只有点了接入才读它</td></tr>
+</table>
+
+<h2>六、分步</h2>
+<table>
+  <tr><th>步</th><th>内容</th></tr>
+  <tr><td>1</td><td>面板重排（首屏只剩接入，其余收进高级）+ 复制卡片 —— 不碰任何外部文件，零风险</td></tr>
+  <tr><td>2</td><td>Claude Code 一键（合并逻辑拿本机那 3 个现成条目做验证）</td></tr>
+  <tr><td>3</td><td>WorkBuddy 一键</td></tr>
+  <tr><td>4</td><td>自定义接入（选文件 + transport 选择 + 预览）</td></tr>
+  <tr><td>5</td><td>待核实：Cursor / Claude Desktop / CodeBuddy / Qoder / MarsCode</td></tr>
+</table>
+
+</body>
+</html>

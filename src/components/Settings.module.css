@@ -2165,3 +2165,97 @@
 .kbPairCenter { text-align: center; }
 .kbPairNote { font-size: 11px; color: var(--text-muted); line-height: 1.7; margin: 0; }
 .kbPairText { font-size: 12px; color: var(--text-secondary); line-height: 1.7; margin: 0; }
+
+/* ===== MCP 接入面板（2026-09-06 重排：接入提到第一屏） ===== */
+
+.mcpConnect {
+  margin-top: 12px;
+}
+
+.mcpConnectTitle {
+  font-size: 12px;
+  color: var(--text-secondary, var(--text-muted));
+  margin-bottom: 6px;
+}
+
+.mcpClientRow {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: var(--card-bg);
+  overflow: hidden;
+}
+
+.mcpClientHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+/* 整行可点开合，所以做成按钮；靠右那个复制键是独立的另一个按钮。 */
+.mcpClientName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* 路径当副标题：用户一眼能对上自己机器上有没有这个文件。
+   必须能截断——`~/.workbuddy/mcp.json` 这类在窄面板里放不下。 */
+.mcpClientPath {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcpClientBody {
+  padding: 0 8px 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* 「高级」折叠。默认收着但不藏掉——写权限与调用记录是安全相关的。 */
+.mcpAdvanced {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.mcpAdvanced > summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.mcpAdvanced > summary::-webkit-details-marker { display: none; }
+
+.mcpAdvanced > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.mcpAdvanced[open] > summary::before {
+  content: "▾ ";
+}
+
+.mcpAdvanced > summary:hover { color: var(--text-primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mcpAdvanced > summary::before { transition: none; }
+}
