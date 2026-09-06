@@ -647,6 +647,8 @@ pub fn run() {
             commands::kb_sync_invite_preview,
             commands::kb_sync_pair,
             commands::kb_sync_devices,
+            commands::kb_sync_join_approve,
+            commands::kb_sync_join_deny,
             commands::kb_sync_forget,
             commands::kb_sync_now,
             commands::get_kb_sync_status,

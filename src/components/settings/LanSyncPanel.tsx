@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
+import { LAN_PAIRED_CHANGED } from "@/lib/lanEvents";
 import { LanNearby } from "./LanNearby";
 import { LanPairedList, type PairedDevice } from "./LanPairedList";
 import styles from "../Settings.module.css";
@@ -68,6 +69,39 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
   useEffect(() => {
     refreshPairingKey();
   }, [refreshPairingKey]);
+
+  /**
+   * 配对完成后立即刷名单（不等下一轮轮询）。
+   *
+   * ❗ 光靠上面那个 5 秒轮询不够：接受方的配对是在**收到包的那一刻**完成的，
+   * 不对应任何一次点击，所以会有最长一轮的空窗——用户看到的就是
+   * 「配对完成了但列表没反应」。
+   *
+   * 不跟 `winVisible` 绑定：事件本身是低频的（只在配对成功时发一次），
+   * 而窗口隐起来时它恰好能把错过的那一次变更补上。
+   */
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const off = await listen(LAN_PAIRED_CHANGED, () => {
+          void refreshDevices();
+        });
+        // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），
+        // 立即取消订阅，避免监听器泄漏——同 App.tsx 里那几处的写法。
+        if (cancelled) off();
+        else un = off;
+      } catch (e) {
+        logger.warn("监听设备名单变更失败", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      un?.();
+    };
+  }, [refreshDevices]);
 
   const handleRegenerateKey = async () => {
     setPairingBusy(true);

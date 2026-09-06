@@ -13,6 +13,7 @@ import { ModeSwitcher } from "@/components/ModeSwitcher";
 import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
+import { setTopBarSlot } from "@/lib/topbarSlot";
 import { logger } from "@/lib/logger";
 import { ChevronDown, Tag, X, EyeOff } from "lucide-react";
 import styles from "./TopBar.module.css";
@@ -92,6 +93,9 @@ export function TopBar({ onSettings, settingsOpen = false }: {
   const allTags = useAppStore((s) => s.tags);
   const ws = useAppStore((s) => s.config.current_workspace);
   const stackMode = useAppStore((s) => s.stackMode);
+  // 只订阅条数而不是整个 stackItems：这一行只用来拼提示文案，
+  // 订阅数组会让每收集一条就重渲染整个顶栏。
+  const stackCount = useAppStore((s) => s.stackItems.length);
   const stackToggleHotkey = useAppStore((s) => s.config.stack_toggle_hotkey);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appName, setAppName] = useState("PastePanda");
@@ -202,7 +206,32 @@ export function TopBar({ onSettings, settingsOpen = false }: {
           {!settingsOpen && <ModeSwitcher />}
         </div>
         <div className={styles.headerIcons} data-tauri-drag-region="false">
-          <IconBtn tip={`收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`} active={stackMode} hue="amber" onClick={() => toggleStackMode()}>
+          {/* ===== 模式专属段 =====
+              这一段随模式换内容；下面从 AiStatusCap 起是三模式恒定的全局段。
+
+              栈模式按钮的条件**不能**只写 `appMode === "record"`。
+              粘贴栈是**全局后台状态**、不是记录模式的局部 UI：它有全局快捷键
+              （stack_toggle_hotkey，默认 ctrl+alt+k），主窗口关着也能开；一旦开着，
+              用户复制的每一条都进队列（appStore.stackPush），与当前在看哪个模式无关。
+
+              🔴 所以其它模式下「开着就必须还看得见」：队列条 StackBanner 挂在 CardList 里，
+              切走记录模式它就没了——按钮再一起藏掉的话，东西还在往队列里堆，
+              但屏幕上零线索、零关闭入口，只剩用户未必记得的快捷键。
+              （同一类错误：把状态的唯一出口藏起来。）
+
+              onClick 两种情形共用 toggleStackMode：非记录模式下它只在 stackMode 为真时
+              渲染，所以 toggle 恰好就是「退出」，不需要再分支。 */}
+          {((appMode === "record" && !settingsOpen) || stackMode) && (
+          <IconBtn
+            tip={
+              appMode === "record" && !settingsOpen
+                ? `收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`
+                : `粘贴栈收集中（${stackCount} 条）· 点击退出`
+            }
+            active={stackMode}
+            hue="amber"
+            onClick={() => toggleStackMode()}
+          >
             {/* 定制双色调图标（方案 B）：顶层实心 + 下层渐淡描边，currentColor 自动跟随主题与激活态 */}
             <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 2.6 2.9 7.66a.95.95 0 0 0 0 1.68L12 14.4l9.1-5.06a.95.95 0 0 0 0-1.68Z" fill="currentColor" fillOpacity=".88" />
@@ -210,6 +239,12 @@ export function TopBar({ onSettings, settingsOpen = false }: {
               <path d="m3.2 16.9 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".26" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </IconBtn>
+          )}
+          {/* 各模式自己的按钮投在这里（知识模式 = 「⋯ 更多」）。
+              空着时零宽，所以工具模式与设置页这一段等于不存在——右侧组整体右贴边，
+              少一格只让组变窄，设置/最小化/隐藏纹丝不动。
+              为何要绕 portal 而不是在这里直接写：见 @/lib/topbarSlot 头部。 */}
+          <span ref={setTopBarSlot} className={styles.modeSlot} />
           {/* 工具箱按钮已撤掉：它现在是「工具」模式，从标题行的模式切换器进（D15） */}
           {/* v6.4 主窗口 AI 感知（方案 A）：胶囊 —— 未配置=引流入口；已配置=不渲染（状态收进设置按钮绿点） */}
           <AiStatusCap />

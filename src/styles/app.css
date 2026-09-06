@@ -86,6 +86,43 @@
   filter: brightness(1.15);
 }
 
+/* 箭头在悬停时轻轻点头，暗示「点了会下载」。
+
+   🔴 为何是 CSS 而不是 framer：按压反馈（whileTap）已经在**按钮**上写了内联
+   transform，而内联样式会盖掉样式表里的 transform（CardList.module.css:112 那条
+   注释记的就是这个坑）。把子节点的动画交给 CSS，两边各管各的节点，不抢同一个属性。
+
+   ❗ 不用写 prefers-reduced-motion：globals.css 有全局 `*` 兜底，
+   把所有 animation 压到 0.01ms。 */
+.badge-bob {
+  display: inline-flex;
+}
+
+.header-badge-update:hover .badge-bob {
+  animation: badge-bob 0.7s ease-in-out infinite;
+}
+
+@keyframes badge-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(1.5px); }
+}
+
+/* 「下完了」强调一次。同样挂在**内层** span 上避开与 whileTap 的 transform 之争。
+   没有 infinite：只演一次，持续提醒是 badge-pulse 的活，两者不叠加。
+   它包着图标 + 文字，所以要自己把 .header-badge 的 flex 布局再摆一遍。 */
+.badge-pop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: badge-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes badge-pop {
+  0% { transform: scale(0.9); }
+  45% { transform: scale(1.09); }
+  100% { transform: scale(1); }
+}
+
 /* downloading：复用 version-badge-gradient，与 idle 同源 */ 
 .header-badge-downloading {
   background: var(--version-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
@@ -115,6 +152,25 @@
   background: var(--version-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
   box-shadow: 0 2px 10px var(--version-badge-shadow, rgba(91, 106, 240, 0.35));
   animation: badge-pulse 2s infinite;
+}
+
+/* 悬停名位时的「点一下查查看」。
+   复用 version-badge-gradient：它本来就是**版本徽章**那套渐变（同 uptodate / checking），
+   而这个悬停态显的正是版本号。
+
+   🔴 不给 badge-pulse：呼吸动画留给 update / ready / downloading / checking 那些
+   **有事要告诉你**的状态。一个鼠标放上去才出现的可供性提示再闪，就成了噪声。
+
+   ❗ `cursor: pointer` 必须写：`.header-badge` 基类是 `cursor: default`（那些
+   不可点的状态占多数），不盖的话指针移到徽章上反而变回箭头。 */
+.header-badge-check {
+  background: var(--version-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
+  box-shadow: 0 2px 10px var(--version-badge-shadow, rgba(91, 106, 240, 0.35));
+  cursor: pointer;
+}
+
+.header-badge-check:hover {
+  filter: brightness(1.15);
 }
 
 /* error：固定红色渐变，跨主题统一识别，可点击重试 */

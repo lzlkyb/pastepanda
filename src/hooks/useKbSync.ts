@@ -68,6 +68,21 @@ export interface KbInvite {
 }
 
 /**
+ * 正拿着本机发出的邀请在敲门、等用户确认的对端（`sync::join::JoinRequest`）。
+ *
+ * ❗ **没有设备名**，只有 `node_id`。这是后端故意的：设备名是可自称的，
+ * 而指纹绑在已认证的连接身份上。界面上用 `fingerprintOf(node_id)` 算指纹，
+ * 与对方机器上「本机指纹」显示的是同一串。详见 `sync/join.rs` 模块注释。
+ */
+export interface KbJoinRequest {
+  node_id: string;
+  first_seen_ms: number;
+  last_seen_ms: number;
+  /** 敲了几次。给界面看「它一直在试」。 */
+  tries: number;
+}
+
+/**
  * 知识库同步的命令收口（规则 #11）。
  *
  * ❗ 轮询用 `useWindowVisible` 门住：窗口 `hide()` 之后 WebView 还活着，
@@ -82,6 +97,8 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   const [live, setLive] = useState<string[]>([]);
   const [last, setLast] = useState<KbLastSync[]>([]);
   const [backlog, setBacklog] = useState(0);
+  /** 待本机确认的敲门。空数组 = 没人在等。 */
+  const [pending, setPending] = useState<KbJoinRequest[]>([]);
   const [busy, setBusy] = useState(false);
   const wasOkRef = useRef(true);
 
@@ -104,11 +121,14 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
     try {
       const r = await call<{
         devices: KbDevice[]; live: string[]; last: KbLastSync[]; conflict_backlog: number;
+        pending: KbJoinRequest[];
       }>("kb_sync_devices");
       setDevices(r.devices);
       setLive(r.live);
       setLast(r.last);
       setBacklog(r.conflict_backlog);
+      // 后端把它搭在同一个命令里，所以不多一次往返，也不会两边快照对不上。
+      setPending(r.pending ?? []);
       wasOkRef.current = true;
     } catch (e) {
       logger.warn("读取已配对设备失败", e);
@@ -161,6 +181,29 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
     } finally { setBusy(false); }
   }, [call, refreshDevices]);
 
+  /**
+   * 放行一条敲门（用户已核对两边指纹）。
+   *
+   * 🔴 这是**生成方**那一半的配对。以前只有粘贴方会写设备表，
+   * 生成方把对方每一次连接都拒掉——两台机器从来没连通过。
+   */
+  const approveJoin = useCallback(async (nodeId: string, name: string) => {
+    setBusy(true);
+    try {
+      await call<void>("kb_sync_join_approve", { nodeId, name });
+      await refreshDevices();
+    } finally { setBusy(false); }
+  }, [call, refreshDevices]);
+
+  /** 拒绝一条敲门。本次进程内不再为它弹。 */
+  const denyJoin = useCallback(async (nodeId: string) => {
+    setBusy(true);
+    try {
+      await call<void>("kb_sync_join_deny", { nodeId });
+      await refreshDevices();
+    } finally { setBusy(false); }
+  }, [call, refreshDevices]);
+
   const syncNow = useCallback(async (nodeId: string) => {
     setBusy(true);
     try {
@@ -174,8 +217,9 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   }, [call, refreshDevices, toast]);
 
   return {
-    identity, devices, live, last, backlog, busy,
+    identity, devices, live, last, backlog, pending, busy,
     refreshIdentity, refreshDevices,
     createInvite, previewInvite, pair, forget, syncNow,
+    approveJoin, denyJoin,
   };
 }

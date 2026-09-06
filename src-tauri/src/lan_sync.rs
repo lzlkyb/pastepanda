@@ -317,6 +317,68 @@ pub fn forget_device(app: &AppHandle, device_id: &str) -> Result<bool, String> {
     Ok(true)
 }
 
+/// 「记住的设备」名单变了的事件名。前端设置面板监听它。
+pub const EVENT_PAIRED_CHANGED: &str = "lan-paired-changed";
+
+/// 通知前端立即重拉「记住的设备」名单。
+///
+/// ❗ 前端本来是 5 秒一轮的轮询，但配对完成是**被动**发生的
+/// （接受方是在收到 `pp-pair-key` 那一刻完成的，不对应任何一次点击）。
+/// 只靠轮询会有最长一轮的空窗，看起来就是「配完了列表没反应」。
+pub fn notify_paired_changed(app: &AppHandle) {
+    use tauri::Emitter;
+    if let Err(e) = app.emit(EVENT_PAIRED_CHANGED, ()) {
+        // 不静默（规则 #15.3）：发不出去只会退化成等轮询，不影响配对本身。
+        log::warn!("[LanSync] 发送 {} 事件失败：{}", EVENT_PAIRED_CHANGED, e);
+    }
+}
+
+/// 解开对方送来的配对密钥、落盘、并把对方记进「记住的设备」。
+///
+/// 收成一个函数是因为它有**两条**触发路径（规则 #11）：
+/// ① 收到 `pp-pair-key` 时本端**已**确认 —— 在 [`handle_pair_packet`] 里；
+/// ② 本端**后**确认 —— 由 `lan_pair_confirm` 拿
+///    [`crate::lan_pair::PendingPair::stashed_key`] 里暂存的密文调。
+///
+/// 两条都得落盘 + 记名单 + 通知前端，漏一条就是「配对上了但名单是空的」。
+///
+/// ❗ `peer_name` 必须由调用方从 `PendingPair` 里取，**不能拿包里的
+/// `from_name`**：`pp-pair-key` 包的那个字段是空串（`lan_pair_confirm`
+/// 就是那么填的），拿它会往名单里记一台无名设备。
+pub fn accept_peer_pairing_key(
+    app: &AppHandle,
+    peer_id: &str,
+    peer_name: &str,
+    shared: &[u8],
+    nonce: &str,
+    sealed: &str,
+) -> Result<(), String> {
+    // 解不开 = 共享值不对 = 中间人或乱包。错误往上报，不静默。
+    let key = crate::lan_pair::open_pairing_key(shared, nonce, sealed)?;
+    validate_pairing_key(&key)?;
+    crate::secret_registry::register(crate::secret_registry::SLOT_LAN_PAIRING, &key);
+
+    // 🔴 必须落盘，否则重启后从配置读回的还是旧密钥，配对关系整个丢。
+    //   失败也要把内存那份写上：本次会话至少能用，
+    //   但得把「重启后会失效」这件事明确记下来，不静默（规则 #15.3）。
+    if let Err(e) = apply_pairing_key(app, &key) {
+        log::warn!(
+            "[LanPair] 配对密钥没能写进配置（{}）——本次会话可用，但重启后需要重新配对",
+            e
+        );
+        if let Some(lan) = app.try_state::<LanSync>() {
+            lan.set_pairing_key(key);
+        }
+    }
+
+    // 🔴 配对成功的那一刻就要进名单。以前 `remember_device` 全项目只有一个调用点，
+    //   在「解密成功收到对方加密消息」那条路径上——于是配完对名单是空的，
+    //   得等对方复制点东西、发一条加密广播过来才冒出来（2026-09-06 的真实反馈）。
+    remember_device(app, peer_id, peer_name);
+    notify_paired_changed(app);
+    Ok(())
+}
+
 /// 密钥派生：配对密钥 → SHA-256 → 32 字节 AES-256 密钥
 fn derive_aes_key(pairing_key: &str) -> [u8; 32] {
     let digest = ring::digest::digest(&ring::digest::SHA256, pairing_key.as_bytes());
@@ -456,9 +518,10 @@ fn handle_pair_packet(
     p: &crate::lan_pair::PairPacket,
     self_id: &str,
     pair: &std::sync::Arc<crate::lan_pair::PairState>,
-    pairing_key: &Arc<Mutex<String>>,
     // 🔴 接受对方密钥时要落盘，而落盘要经由 `DataStore`（只能从 AppHandle 取）。
     //   之前这个签名里没有它，所以那条路径只能写内存——配对完当时好用、重启就失效。
+    //   原来还有一个 `pairing_key: &Arc<Mutex<String>>` 参数，已去掉：
+    //   写内存的那条兜底路径现已收进 [`accept_peer_pairing_key`]。
     app: &AppHandle,
 ) {
     use crate::lan_pair::{PairPacket, PairRole, KIND_HELLO, KIND_KEY, KIND_REQ, KIND_RESP};
@@ -520,45 +583,43 @@ fn handle_pair_packet(
             }
         }
 
-        // 对方把配对密钥送来了：解开、存下。
+        // 对方把配对密钥送来了。
         //
-        // ❗ 必须确认本端已经确认过（`confirmed`）才能收——
-        // 否则对方单方面点一下就能换掉我的密钥，那道核对门就白设了。
+        // ❗ 本端没确认前**不能应用**（否则对方单方面点一下就能换掉我的密钥，
+        //   那道核对门就白设了），但也**不能丢弃**——只有发起方会送密钥，
+        //   送完它就清了自己的会话、不会重发。丢掉的话「发起方先点确认」
+        //   这一种顺序就永远配不上，而且两端零提示。
+        //   所以：没确认就**暂存密文**，等本端点确认时（`lan_pair_confirm`）再解。
+        //   详见 `PendingPair::stashed_key` 的注释。
         KIND_KEY if p.to_id == self_id => {
-            let shared = pair.with_pending(now, |pending| {
+            let ready = pair.with_pending(now, |pending| {
                 if pending.peer_id != p.from_id {
                     return None;
                 }
                 if !pending.confirmed {
-                    log::warn!("[LanPair] 本端尚未确认，拒收对方送来的密钥");
+                    pending.stashed_key = Some((p.nonce.clone(), p.sealed.clone()));
+                    log::info!("[LanPair] 对方已确认并送来密钥，等本端核对安全码后生效");
                     return None;
                 }
-                pending.shared.clone()
+                // ❗ 设备名只能从 pending 拿：本包的 `from_name` 是空串。
+                pending
+                    .shared
+                    .clone()
+                    .map(|s| (s, pending.peer_name.clone()))
             });
-            let Some(Some(shared)) = shared else { return };
+            let Some(Some((shared, peer_name))) = ready else {
+                return;
+            };
 
-            match crate::lan_pair::open_pairing_key(&shared, &p.nonce, &p.sealed) {
-                Ok(key) => {
-                    if let Err(e) = crate::lan_sync::validate_pairing_key(&key) {
-                        log::warn!("[LanPair] 对方送来的密钥不合格: {}", e);
-                        return;
-                    }
-                    crate::secret_registry::register(
-                        crate::secret_registry::SLOT_LAN_PAIRING,
-                        &key,
-                    );
-                    // 🔴 必须落盘，否则重启后从配置读回的还是旧密钥，配对关系整个丢失。
-                    //   失败也要把内存那份写上（下面的 fallback）：本次会话至少能用，
-                    //   但得把「重启后会失效」这件事明确记下来，不静默（规则 #15.3）。
-                    if let Err(e) = crate::lan_sync::apply_pairing_key(app, &key) {
-                        log::warn!(
-                            "[LanPair] 配对密钥没能写进配置（{}）——本次会话可用，但重启后需要重新配对",
-                            e
-                        );
-                        if let Ok(mut g) = pairing_key.lock() {
-                            *g = key;
-                        }
-                    }
+            match accept_peer_pairing_key(
+                app,
+                &p.from_id,
+                &peer_name,
+                &shared,
+                &p.nonce,
+                &p.sealed,
+            ) {
+                Ok(()) => {
                     pair.clear();
                     log::info!("[LanPair] 配对完成，已接受对方的配对密钥");
                 }
@@ -839,7 +900,7 @@ impl LanSync {
                         // 走下面那条路会被当成「解不开的包」丢掉——而那正是
                         // 未配对设备彼此隐形的原因。
                         if let Some(p) = try_parse_pair(text) {
-                            handle_pair_packet(&p, &device_id, &pair, &pairing_key, &app_handle);
+                            handle_pair_packet(&p, &device_id, &pair, &app_handle);
                             continue;
                         }
 

@@ -99,6 +99,16 @@
   align-items: center;
 }
 
+/* 模式专属段插槽：各模式的主体组件用 createPortal 把自己的按钮投进来。
+   gap 与 .headerIcons 一致，插槽里的按钮才与旁边的图标排得一样密。
+   ❗ 空着时必须**零宽**（无 padding / 无 min-width）：否则工具模式与设置页
+   会凭空多出一道间隙，而那正是「不留占位」要避开的东西。 */
+.modeSlot {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
 /* 方案 A：功能按钮组与窗口控制组之间的竖分隔线 */
 .headerDivider {
   width: 1px;

@@ -25,6 +25,7 @@
  *   唯一的 AI 路径是问答雏形（B2 #10），详见 `useKbQaPane` 头部。
  */
 import { useCallback, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Sparkles, ChevronRight } from "lucide-react";
 import { ScrollProvider } from "@/contexts/ScrollContext";
 import { useSmoothScroll } from "@/hooks/useSmoothScroll";
@@ -33,6 +34,8 @@ import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useKbLayout } from "@/hooks/useKbLayout";
 import { ContextMenu } from "@/components/ContextMenu";
+import { KbTopBarActions } from "@/components/notes/KbTopBarActions";
+import { useTopBarSlot } from "@/lib/topbarSlot";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
 import { KbSyncStatusBar } from "@/components/notes/KbSyncStatusBar";
 import { KbHealthBar } from "@/components/notes/KbHealthBar";
@@ -76,6 +79,8 @@ const DEFAULT_LIST_RATIO = 28;
 
 export function KnowledgeView() {
   const layout = useKbLayout();
+  /** 顶栏「模式专属段」插槽。本视图在场时往里面投一个「⋯ 更多」（见下方 portal）。 */
+  const topbarSlot = useTopBarSlot();
   const openDialog = useDialogStore((s) => s.openNote);
 
   /**
@@ -251,6 +256,16 @@ export function KnowledgeView() {
     <ScrollProvider scrollRef={scrollWrapRef} lenisRef={lenisRef}>
     {/* 自带 Provider：详见文件头部说明 */}
     <ContextMenu>
+      {/* 知识模式在顶栏的按钮。
+
+          🔴 这个 portal **必须写在 `<ContextMenu>` 里**：`KbTopBarActions` 靠
+          `useContext(CtxMenuCtx)` 弹菜单，而 portal 只改 DOM 落点、不改 React 树位置——
+          写在这里它就还在 Provider 内，拿得到 trigger；挪到 `<ContextMenu>` 外面
+          （或直接写进 `TopBar`）菜单就永远弹不出来。
+
+          插槽为 null = 顶栏还没 commit（或已卸载），此时不投；
+          本视图只在知识模式渲染，所以离开模式时 portal 随之卸载、插槽自动清空。 */}
+      {topbarSlot && createPortal(<KbTopBarActions moreItems={moreItems} />, topbarSlot)}
       <div className={styles.shell} ref={shellRef}>
         {/* ❗ **常挂载**，不写 `{sidebarOpen && ...}`：后者是硬挂硬消，做不了开合的
             宽度动画（记录模式的 Sidebar 就是 `width: 0 → 180px`）。
@@ -323,7 +338,6 @@ export function KnowledgeView() {
             onKeyword={q.setKeyword}
             onNew={handleNew}
             newHint={newHint}
-            moreItems={moreItems}
             showWideBtn={!layout.hasDetailPane}
             onWide={() => void wide.goWide()}
             controls={

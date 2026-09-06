@@ -91,16 +91,30 @@ pub struct InviteCreated {
 
 /// 生成邀请码。`name` 是本机设备名，纯展示用。
 #[tauri::command]
-pub fn kb_sync_invite_create(app: AppHandle, name: String) -> Result<InviteCreated, String> {
+pub fn kb_sync_invite_create(
+    app: AppHandle,
+    store: State<DataStore>,
+    name: String,
+) -> Result<InviteCreated, String> {
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     let now = chrono::Utc::now().timestamp_millis();
     // 地址留空：地址会漂，靠 kb_presence 组播现场发现（见 sync::presence）。
     // 邀请码里塞一个当时的 IP，第二天就是错的。
     let code = invite::encode(&me, name.trim(), Vec::new(), now)?;
-    Ok(InviteCreated {
-        code,
-        expires_at: now + invite::TTL_SECS * 1000,
-    })
+    let expires_at = now + invite::TTL_SECS * 1000;
+
+    // 🔴 生成邀请码 = 开一扇有时限的门。
+    //   没这一步的话，对方粘完码拨过来会被本机当 `NotPaired` 拒掉，
+    //   而本机从头到尾不会知道有人来过——那正是「配对上了却直接离线」与
+    //   「邀请方看不到已配对记录」的根因。详见 `sync::join` 模块注释。
+    //   开门失败不让整个生成失败，但也不静默（规则 #15.3）：
+    //   码已经生出来了，报错会让用户以为白生一场；而没开成的后果
+    //   只是退回到旧行为（对方连不上），得在日志里看得见。
+    if let Err(e) = crate::sync::join::open_door(&store, expires_at) {
+        log::warn!("[Sync] 邀请窗口没能保存（{}）——对方粘完码可能连不上本机", e);
+    }
+
+    Ok(InviteCreated { code, expires_at })
 }
 
 /// 只解码、不配对。给「核对指纹」那一步用。
@@ -156,6 +170,11 @@ pub struct SyncDevices {
     /// 库里**还没处理完**的冲突副本总数。
     /// 与 `last[].conflicts`（刚刚产生了几处）是两个数，界面上别混。
     pub conflict_backlog: i64,
+    /// 正拿着本机发出的邀请在敲门、等用户确认的对端（见 [`crate::sync::join`]）。
+    ///
+    /// ❗ 搭进这个命令而不另开一个：面板本来就在 5 秒轮询它，
+    /// 另开一个就是两倍往返，而且两边的快照可能对不上。
+    pub pending: Vec<crate::sync::join::JoinRequest>,
 }
 
 #[tauri::command]
@@ -168,7 +187,45 @@ pub async fn kb_sync_devices(
         live: svc.live_peers().await,
         last: svc.last_syncs().await,
         conflict_backlog: store.note_conflict_count()?,
+        pending: svc.pending_joins(chrono::Utc::now().timestamp_millis()),
     })
+}
+
+/// 放行一条敲门（用户已经核对过两边指纹）。
+///
+/// 🔴 这是**生成方**那一半的 `device_pair`。以前它不存在，
+/// 所以配对是单边的：只有粘贴方记下了对方，而生成方把对方的每一次
+/// 连接都拒掉。两件事必须一起做，少一件就还是连不上：
+/// ① 写 `devices` 表（之后 `is_paired` 才为真，presence 与 serve 才不再拒）；
+/// ② `add_peer` 起循环（否则要重启应用才同步，而用户正盯着界面看）。
+#[tauri::command]
+pub async fn kb_sync_join_approve(
+    store: State<'_, DataStore>,
+    svc: State<'_, SyncService>,
+    node_id: String,
+    name: String,
+) -> Result<(), String> {
+    // ❗ 只能放行**真的敲过门**的：不卡这一道的话，前端传任意一串 node_id
+    //   就能把任何人写进设备表。
+    if !svc.take_join(&node_id) {
+        return Err("这条连接请求已经不在了（对方可能已放弃），请让它重新试一次".into());
+    }
+    let name = name.trim();
+    let name = if name.is_empty() { "新设备" } else { name };
+    store.device_pair(&node_id, name, "")?;
+    svc.add_peer(&node_id).await?;
+    // 配完了就把门关上，不再敞着（要再加一台就再生一次邀请码）。
+    if let Err(e) = crate::sync::join::close_door(&store) {
+        log::warn!("[Sync] 邀请窗口没能关上（{}）", e);
+    }
+    Ok(())
+}
+
+/// 拒绝一条敲门。本次进程内不再为它弹（防反复骚扰）。
+#[tauri::command]
+pub fn kb_sync_join_deny(svc: State<SyncService>, node_id: String) -> Result<(), String> {
+    svc.deny_join(&node_id);
+    Ok(())
 }
 
 /// 忘记此设备。

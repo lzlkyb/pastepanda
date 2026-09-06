@@ -3,6 +3,7 @@ import { useKbSync, type KbDevice } from "@/hooks/useKbSync";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { ToastFn } from "@/components/Toast";
 import { KbPairDialog } from "./KbPairDialog";
+import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
 import styles from "../Settings.module.css";
 
 /** 「12 秒前」这种相对时间。0 = 从未同步过。 */
@@ -34,6 +35,14 @@ export function KbSyncPanel({ toast }: {
   const online = s.devices.filter((d) => s.live.includes(d.node_id)).length;
   const fp = s.identity?.fingerprint ?? "读取中…";
 
+  /** 一份，两处用：面板自己一份，配对向导的等待屏一份（弹窗盖住面板时看不到下面那份）。 */
+  const joins: KbJoinProps = {
+    pending: s.pending,
+    busy: s.busy,
+    onApprove: s.approveJoin,
+    onDeny: s.denyJoin,
+  };
+
   return (
     <div className={styles.lanPanel}>
       <div className={styles.lanPanelHeader}>
@@ -57,32 +66,35 @@ export function KbSyncPanel({ toast }: {
         笔记<b>只在你的设备之间直连传输</b>，不经过任何服务器。
       </div>
 
+      {/* 🔴 摆在最上面：它是本面板里唯一**需要用户现在就做一件事**的块。
+          没人敲门时组件自己返 null，不占位。 */}
+      <KbJoinRequests {...joins} />
+
       {s.devices.length === 0 ? (
         <>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 5 }}>
-            本机指纹（用来让对方确认是你）
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-            <span style={{
-              fontFamily: "ui-monospace, Consolas, monospace", fontSize: 15,
-              letterSpacing: 2, fontWeight: 700,
-            }}>{fp}</span>
-            <button className={styles.lanRefreshBtn} onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(fp);
-                toast("已复制本机指纹", "success");
-              } catch { toast("复制失败，请手动选中复制", "error"); }
-            }}>📋 复制</button>
-          </div>
           {/* ❗ 身份没读到时禁用：弹窗本身需要 `identity.fingerprint`，
               不禁的话点下去**什么都不会发生**（规则 #15.3）。
               读失败的原因 refreshIdentity 已经弹过 toast 了。 */}
           {/* 一个按钮而不是两个：两台都是用户自己的机器，他心里只有
               「把它俩连起来」，并排两个入口是在逼他先判断自己是哪一方。 */}
+          {/* 🔴 指纹必须排在这个按钮**下面**，且不给复制按钮。
+              改之前它在上面，15px 加粗 + 字距 2 + 一个「📋 复制」——
+              是本面板里最显眼、也是第一个能复制的东西。
+              结果用户直接把**指纹**当邀请码发给了对面（2026-09-06 真实反馈）。
+              一个带复制按钮的串放在主流程上，就是在邀请用户把它发出去。 */}
           <button className={styles.lanTestBtn} style={{ width: "100%" }}
             disabled={!s.identity} onClick={() => setPairOpen(true)}>
             ＋ 添加设备
           </button>
+          <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.7 }}>
+            本机指纹{" "}
+            <span style={{
+              fontFamily: "ui-monospace, Consolas, monospace",
+              fontWeight: 700, color: "var(--text-secondary)",
+            }}>{fp}</span>
+            <br />
+            这<b>不是邀请码</b>，不用发给别人。配对时对方会念出一串数字跟你对，那时才用得上。
+          </div>
         </>
       ) : (
         <>
@@ -134,6 +146,7 @@ export function KbSyncPanel({ toast }: {
           myNodeId={s.identity.node_id}
           defaultName={s.identity.device_name}
           devices={s.devices}
+          joins={joins}
           onClose={() => setPairOpen(false)}
           onCreateInvite={s.createInvite}
           onPreview={s.previewInvite}

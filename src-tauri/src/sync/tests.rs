@@ -1397,11 +1397,76 @@ mod coordinate_tests {
         assert_eq!(backoff_secs(2), 10);
         assert_eq!(backoff_secs(3), 30);
         assert_eq!(backoff_secs(4), 60);
+        // ❗ 2026-09-06 新增的第五档。原来封顶 60 秒而循环**永不放弃**，
+        //   一个永远回不来的对端就是每分钟一次、永远下去；
+        //   而听不到它组播时那一拨走的是 n0 公共 relay（真实跨国流量）。
+        assert_eq!(backoff_secs(5), 300);
         // 到顶就一直是最后一档，不会越界 panic 也不会无限涨
-        assert_eq!(backoff_secs(5), 60);
-        assert_eq!(backoff_secs(9999), 60);
+        assert_eq!(backoff_secs(6), 300);
+        assert_eq!(backoff_secs(9999), 300);
         // fails 从 1 起算，传 0 也不能 panic
         assert_eq!(backoff_secs(0), 5);
+    }
+
+    #[test]
+    fn test_退避阶梯单调不降() {
+        // 阶梯写错顺序（比如把 300 插到中间）不会报错，只会让重试节奏变得很怪。
+        let mut prev = 0;
+        for f in 1..=10u32 {
+            let w = backoff_secs(f);
+            assert!(w >= prev, "阶梯在第 {} 次回落了：{} -> {}", f, prev, w);
+            prev = w;
+        }
+    }
+
+    // ===== 对端拒绝的分类（2026-09-06）=====
+    //
+    // 🔴 这一组盯的是一个**错了不会报错**的东西：分类错了只会表现为
+    // 「白烧 relay 流量」或「界面上只写离线不说原因」。
+
+    #[test]
+    fn test_认得出对端说的还没配对() {
+        use crate::sync::service::{is_busy_reject, is_not_paired_reject};
+        // 真实形状：`session::explain` 把 `close_reason()` 拼在原错误后面。
+        let real = "读帧长度失败：connection lost（closed by peer: not paired (code 1)）";
+        assert!(is_not_paired_reject(real));
+        // 它不应该同时被当成「在忙」——两者的重试节奏差一个数量级。
+        assert!(!is_busy_reject(real));
+    }
+
+    #[test]
+    fn test_等对方确认算在忙而不是故障() {
+        use crate::sync::join::REJECT_PENDING;
+        use crate::sync::service::{is_busy_reject, is_not_paired_reject};
+        let real = format!("读帧长度失败：connection lost（closed by peer: {} (code 1)）", REJECT_PENDING);
+        // 走短延迟重试：用户刚在对面点完确认，不该再等一分钟。
+        assert!(is_busy_reject(&real));
+        assert!(!is_not_paired_reject(&real));
+    }
+
+    #[test]
+    fn test_普通网络错误两者都不匹配() {
+        use crate::sync::service::{is_busy_reject, is_not_paired_reject};
+        // 这种才该走退避阶梯（重试真的可能会好）。
+        for e in ["连接对端失败：timed out", "读帧长度失败：connection lost"] {
+            assert!(!is_not_paired_reject(e), "{}", e);
+            assert!(!is_busy_reject(e), "{}", e);
+        }
+    }
+
+    #[test]
+    fn test_休眠阈值落在阶梯顶之后() {
+        use crate::sync::coordinate::{DORMANT_AFTER_FAILS, DORMANT_POLL_SECS};
+        // 休眠前要先把整个退避阶梯走完，否则那几档根本用不上。
+        assert!(
+            (DORMANT_AFTER_FAILS as usize) > BACKOFF_STEPS_SECS.len(),
+            "休眠阈值比阶梯还短，退避就白设了"
+        );
+        // 休眠心跳必须比阶梯最后一档稀，否则「休眠」反而拨得更勤。
+        assert!(
+            DORMANT_POLL_SECS > *BACKOFF_STEPS_SECS.last().unwrap(),
+            "休眠间隔没比退避顶档更稀"
+        );
     }
 
     #[test]
@@ -1895,4 +1960,95 @@ fn test转发旧删除后游标要前进() {
         "同一条墓碑在游标推过之后又出现了：{:?}",
         d2.tombstones
     );
+}
+
+// ===== 待确认的敲门（sync::join，2026-09-06）=====
+//
+// 这一块补的是「配对只有粘贴方写表」那个断链（见 `sync::join` 模块注释）。
+// 下面盯的都是「错了不会报错，只会表现为配不上」的性质。
+
+use super::join::{JoinRequests, KNOCK_TTL_MS};
+
+#[test]
+fn test_敲门会进待确认列表() {
+    let j = JoinRequests::new();
+    assert!(j.knock("peer-a", 1_000));
+    let v = j.list(1_000);
+    assert_eq!(v.len(), 1);
+    assert_eq!(v[0].node_id, "peer-a");
+    assert_eq!(v[0].tries, 1);
+}
+
+#[test]
+fn test_重复敲门只累加次数不堆条() {
+    // 对端被拒后会一直重试，堆成 N 条的话界面上就是一屏相同的指纹。
+    let j = JoinRequests::new();
+    for i in 0..5 {
+        assert!(j.knock("peer-a", 1_000 + i));
+    }
+    let v = j.list(1_000);
+    assert_eq!(v.len(), 1, "同一台反复敲门不能堆出多条");
+    assert_eq!(v[0].tries, 5);
+    assert_eq!(v[0].first_seen_ms, 1_000, "首次时间不该被后续敲门覆盖");
+}
+
+#[test]
+fn test_不再敲的会过期消失() {
+    let j = JoinRequests::new();
+    j.knock("peer-a", 1_000);
+    assert_eq!(j.list(1_000 + KNOCK_TTL_MS).len(), 1, "刚好到期还算新鲜");
+    assert!(
+        j.list(1_000 + KNOCK_TTL_MS + 1).is_empty(),
+        "对方不再试了就该从列表里消失，而不是挂到天荒地老"
+    );
+}
+
+#[test]
+fn test_拒绝过的不再记() {
+    // 🔴 不守这一条的后果：用户点了拒绝，而对端每几秒重试一次，
+    //    于是那个框一直弹回来——变成骚扰。
+    let j = JoinRequests::new();
+    j.knock("peer-a", 1_000);
+    j.deny("peer-a");
+    assert!(j.list(1_000).is_empty(), "拒绝后应立即从列表里消失");
+    assert!(!j.knock("peer-a", 2_000), "拒绝过的不能再进列表");
+    assert!(j.list(2_000).is_empty());
+}
+
+#[test]
+fn test_放行后拿掉_但不进拒绝名单() {
+    let j = JoinRequests::new();
+    j.knock("peer-a", 1_000);
+    assert!(j.take("peer-a"), "放行时应该能拿到它");
+    assert!(!j.take("peer-a"), "拿过一次就不在了");
+    // 放行不等于拉黑：万一用户之后又「忘记此设备」，它还得能重新敲门。
+    assert!(j.knock("peer-a", 2_000), "放行过的设备以后还得能再敲门");
+}
+
+#[test]
+fn test_放行卡住没敲过门的() {
+    // 🔴 `kb_sync_join_approve` 靠这个返回值卡住「前端传任意 node_id
+    //    就能把任何人写进设备表」。
+    let j = JoinRequests::new();
+    assert!(!j.take("从来没敲过门的人"));
+}
+
+#[test]
+fn test_关开关清队列_但拒绝名单留着() {
+    // 关一下再开就又开始弹同一台被拒过的机器，那不是用户要的。
+    let j = JoinRequests::new();
+    j.knock("good", 1_000);
+    j.knock("bad", 1_000);
+    j.deny("bad");
+    j.clear();
+    assert!(j.list(1_000).is_empty());
+    assert!(j.knock("good", 2_000), "没被拒过的重启后还能敲");
+    assert!(!j.knock("bad", 2_000), "被拒过的不能因为 clear 就复活");
+}
+
+#[test]
+fn test_空的nodeid不记() {
+    let j = JoinRequests::new();
+    assert!(!j.knock("", 1_000));
+    assert!(j.list(1_000).is_empty());
 }

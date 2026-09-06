@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import { LAN_PAIRED_CHANGED } from "@/lib/lanEvents";
 import styles from "../Settings.module.css";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 
@@ -80,6 +81,34 @@ export function LanNearby({ toast }: {
     };
   }, [refresh, winVisible]);
 
+  /**
+   * 配对成功后立即重拉：刚配上的设备要马上从「附近的设备」里消失
+   * （`get_lan_nearby` 会把已记住的滤掉），同时把配对面板收回去。
+   *
+   * ❗ 接受方的配对完成不对应本组件里的任何一次 `await`——它发生在
+   * 收包那一刻，所以只能靠事件，不能靠 confirm() 里那句 refresh()。
+   */
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const off = await listen(LAN_PAIRED_CHANGED, () => {
+          void refresh();
+        });
+        if (cancelled) off();
+        else un = off;
+      } catch (e) {
+        logger.warn("监听配对完成失败", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      un?.();
+    };
+  }, [refresh]);
+
   const start = async (d: NearbyDevice) => {
     setBusy(true);
     try {
@@ -140,6 +169,12 @@ export function LanNearby({ toast }: {
               确认<b>另一台设备</b>上显示的是同一串数字。
               <br />
               两边不一样就点取消——那意味着有人在中间插足。
+              <br />
+              {/* 把「为什么我这边也要点一下」说清楚。不写的话，发起方会觉得
+                  对方都确认了自己那下是多余的二次确认（用户原话）——
+                  而它实际上是「我这边也核对过了」，不是确认对方的确认。 */}
+              两台设备<b>各自都要确认一次</b>（谁先点都行）——
+              这串数字只有两边放在一起比才有意义。
             </div>
             {pair.role === "responder" && (
               <div className={styles.lanPairWarn}>
@@ -151,9 +186,10 @@ export function LanNearby({ toast }: {
               <button className="btn-secondary" onClick={cancel} disabled={busy}>
                 不一样，取消
               </button>
-              {/* 确认已点过就变成等待态，避免用户反复点 */}
+              {/* 确认已点过就变成等待态，避免用户反复点。
+                  文案写「等对方核对」而不是「等对方」：后者看不出在等什么。 */}
               <button className="btn-primary" onClick={confirm} disabled={busy || pair.confirmed}>
-                {pair.confirmed ? "已确认，等对方…" : "一样，确认"}
+                {pair.confirmed ? "已确认 · 等对方核对…" : "两边一样，确认"}
               </button>
             </div>
           </>

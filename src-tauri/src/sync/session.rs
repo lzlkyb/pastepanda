@@ -95,6 +95,10 @@ pub async fn dial_session(
     to: EndpointAddr,
 ) -> Result<SessionReport, String> {
     let w = transport::dial(ep, to).await?;
+    // ❗ 先克隆一份连接句柄：`run` 会把 `w` 吃掉，而失败之后才需要问它
+    //   「对端是不是主动关的、理由是什么」（见 `explain`）。
+    //   Connection 内部是 Arc，克隆很便宜。
+    let conn = w.conn.clone();
     let got = w.conn.remote_id().to_string();
     if got != peer {
         // iroh 是按 EndpointId 认证的，连错人理论上连不上；
@@ -105,7 +109,7 @@ pub async fn dial_session(
             &got[..8.min(got.len())]
         ));
     }
-    run(store, w, &got, true).await
+    run(store, w, &got, true).await.map_err(|e| explain(&conn, e))
 }
 
 /// 等一个对端连进来并把会话走完。`is_paired` 决定收不收。
@@ -136,12 +140,40 @@ pub async fn run_accepted(
     w: Wire,
     peer: &str,
 ) -> Result<SessionReport, String> {
-    run(store, w, peer, false).await
+    let conn = w.conn.clone();
+    run(store, w, peer, false).await.map_err(|e| explain(&conn, e))
 }
 
 /// 拒一个入连接。理由写进关闭原因里，对端日志里看得到（规则 #15.3）。
+///
+/// ❗ 理由能不能真的被对端读到，靠的是 [`explain`]——看那里的说明。
 pub fn reject(w: &Wire, why: &str) {
     w.conn.close(1u32.into(), why.as_bytes());
+}
+
+/// 会话失败时，把**对端主动关闭的理由**拼进错误里。
+///
+/// # 🔴 为什么必须走 `close_reason()`，而不是看错误字符串
+///
+/// quinn 的 `ReadError::ConnectionLost` 的 Display **写死成 `"connection lost"`**
+/// （`quinn-0.11.11/src/recv_stream.rs:548`），它**不插值内层的 `ConnectionError`**。
+/// 于是对端 `conn.close(1, b"not paired")` 的理由在读流错误里**完全看不到**：
+/// 2026-09-06 实测日志里只有 `读帧长度失败：connection lost`。
+///
+/// 直接后果：上层那套靠字符串认「在忙 / 让位」的判据
+/// （[`super::service::is_busy_reject`]）**一直没生效过**——一次正常碰撞会被
+/// 当成故障、走退避阶梯。这个函数就是把理由补回去的地方。
+///
+/// 不去 match 那个枚举而直接用 Display：
+/// `ConnectionError::ApplicationClosed` 的 Display 是 `"closed by peer: {reason} (code N)"`
+/// （`quinn-proto-0.11.16/src/connection/mod.rs:3871`），reason 就在里面，
+/// 而这样可以省掉一条 iroh 内部错误类型的引用路径。
+fn explain(conn: &iroh::endpoint::Connection, err: String) -> String {
+    match conn.close_reason() {
+        // 还没关（本地逻辑错误、超时等）就原样往上报。
+        None => err,
+        Some(e) => format!("{}（{}）", err, e),
+    }
 }
 
 /// 会话主体。两端**只差发收顺序**：谁先发由 `send_first` 决定。

@@ -232,3 +232,34 @@
   }
 }
 
+
+/* ─── 名字位「点击检查更新」（TopBar） ───
+   🔴 这个按钮包着的是 TopBar 传进来的 nameSlot，而 nameSlot 的字体/颜色属于
+   TopBar 自己的 CSS module。所以这里必须把 button 的默认样式全部抹平
+   （font/color/background/border/padding），否则应用名会被浏览器默认按钮样式改掉。 */
+.nameCheckBtn {
+  display: inline-flex;
+  align-items: center;
+  /* 🔴 popLayout 的定位锚：名字↔悬停提示那一层用 AnimatePresence mode="popLayout"，
+     它会把正在退场的节点改成 position:absolute。没有这一行，退场的那 130ms 里
+     它会去找更外层的定位祖先，应用名/徽章会飞到别处。 */
+  position: relative;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  /* 静态下与普通文字完全一致，只有指针形状暗示可点 */
+}
+.nameCheckBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 悬停提示的样式已去掉：它现在直接用全局的 `.header-badge
+   .header-badge-check`（见 `styles/app.css`），跟接管态那几个徽章同一套。
+   原来这里是一段裸文字（accent 色、无胶囊），与同一个名位的其它状态
+   风格不统一。2026-09-06 改。 */

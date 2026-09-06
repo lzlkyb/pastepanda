@@ -12,6 +12,7 @@
 //! | 只搬字节的 QUIC 传输 | [`transport`] |
 //! | 局域网地址宣告（`kb_presence`）| [`presence`] |
 //! | 一次完整的同步往返 | [`session`] |
+//! | 生成方这边的「有人敲门」待确认队列 | [`join`] |
 //! | 谁拨、撞上了谁让位、失败等多久 | [`coordinate`] |
 //! | 自己跑的循环 | [`service`] |
 //!
@@ -24,6 +25,7 @@ pub mod engine;
 pub mod hlc;
 pub mod identity;
 pub mod invite;
+pub mod join;
 pub mod presence;
 pub mod service;
 pub mod session;

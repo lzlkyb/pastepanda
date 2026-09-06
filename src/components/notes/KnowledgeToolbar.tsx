@@ -4,17 +4,16 @@
  * 从 `KnowledgeView` 里抽出来的：那边已经恰好 300 行（规则 #7 的上限），
  * 再加一个「＋」就超了。此处正好是一块完整的展示层，不担任何数据职责。
  *
- * ❗ 溢出菜单的 `trigger` 必须在**本组件**拿（而不是 `KnowledgeView`）：
- *   `KnowledgeView` 自己渲染 `<ContextMenu>`，所以它在 `CtxMenuCtx.Provider`
- *   的**外面**，`useContext` 在那里拿不到东西。菜单项的数据由它算好传下来。
- *   （同 `BatchBar` 当时只能自造下拉的同类问题。）
+ * 「⋯ 更多」已搬到顶栏的模式专属段，见 `KbTopBarActions`：那里面是导入/导出/MCP/回收站，
+ * 全是对**整个知识库**做的事，与当前在哪个文件夹无关。
+ *
+ * ❗ 「＋新建」没跟着搬，且**不要搬**：它是对**当前文件夹**做的事，`newHint` 里写着
+ *   「落入「…」」，而那个文件夹名就是旁边的面包屑——挪到顶栏等于切断它唯一的落点线索。
  *
  * 样式沿用 `KnowledgeView.module.css`：这几个类本来就是给它写的，
  * 再开一个 css module 只会让同一行的样式散在两个文件里。
  */
-import { useContext, useRef } from "react";
-import { Search, Plus, Sparkles, X, MoreHorizontal, Columns3 } from "lucide-react";
-import { CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
+import { Search, Plus, Sparkles, X, Columns3 } from "lucide-react";
 import { useAutoGrow } from "@/hooks/useAutoGrow";
 import styles from "../KnowledgeView.module.css";
 
@@ -36,7 +35,6 @@ export function KnowledgeToolbar({
   question,
   onQuestion,
   onAsk,
-  moreItems,
   showWideBtn,
   onWide,
 }: {
@@ -69,30 +67,15 @@ export function KnowledgeToolbar({
   /** 回车提问 */
   onAsk: () => void;
   /**
-   * 「⋯」溢出菜单的项（A-61 ③）。不传就不渲染那个按钮。
-   * 项里的回调指向 `KnowledgeView` 的 handler，本组件只负责把它们弹出来。
-   */
-  moreItems?: MenuItem[];
-  /**
    * 显示「宽屏」按钮（A-61 ④）。**只在 &lt;800px 时为 true**：
    * ≥800px 已经是三栏，按钮无事可做，也因此不会与三栏共存、不挤面包屑行。
    */
   showWideBtn?: boolean;
   onWide?: () => void;
 }) {
-  const ctxTrigger = useContext(CtxMenuCtx);
-  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
   /** 问题框随内容长高（A-61 ②）。`enabled` 必须传：本框只在问模式渲染，
    *  从搜切回问时它是新挂载的，而那一刻 `question` 可能没变。 */
   const askRef = useAutoGrow(question, { enabled: mode === "ask" });
-
-  /** 弹溢出菜单。坐标取按钮左下角，菜单从按钮下方展开（同普通下拉的位置感）。 */
-  const openMore = () => {
-    if (!ctxTrigger || !moreItems) return;
-    const r = moreBtnRef.current?.getBoundingClientRect();
-    if (!r) return;
-    ctxTrigger(r.left, r.bottom + 2, moreItems);
-  };
 
   return (
     <>
@@ -131,18 +114,7 @@ export function KnowledgeToolbar({
             <Plus size={13} />
           </button>
 
-          {moreItems && (
-            <button
-              type="button"
-              ref={moreBtnRef}
-              className={styles.newBtn}
-              onClick={openMore}
-              title="导入 / 导出 / 回收站"
-              aria-label="更多"
-            >
-              <MoreHorizontal size={13} />
-            </button>
-          )}
+          {/* 「⋯ 更多」曾在这里，已搬到顶栏（KbTopBarActions）。理由见文件头部。 */}
         </span>
       </div>
 

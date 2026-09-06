@@ -3,6 +3,7 @@ import type { KbDevice, KbInviteCreated } from "@/hooks/useKbSync";
 import type { ToastFn } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { StepBar, fmtExpire } from "./KbPairSteps";
+import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
 import styles from "../Settings.module.css";
 
 /** 单按钮的 footer。`.dialog-footer` 是 space-between，不改会靠左。 */
@@ -27,11 +28,13 @@ const footerRight = { justifyContent: "flex-end" as const };
  * 顺带：生成成功后**自动复制到剪贴板**（失败就静默退回手动按钮，不弹错：
  * 用户并没主动请求这件事）。界面上必须明说已经复制了，否则用户不知道。
  */
-export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite, onClose, toast }: {
+export function CreateFlow({ defaultName, myFingerprint, devices, joins, onCreateInvite, onClose, toast }: {
   /** 本机计算机名，**可能为空串**（后端取不到时故意留空）。 */
   defaultName: string;
   myFingerprint: string;
   devices: KbDevice[];
+  /** 对方粘完码拨过来之后，就会在这里出现一条待确认。 */
+  joins: KbJoinProps;
   onCreateInvite: (name: string) => Promise<KbInviteCreated>;
   onClose: () => void;
   toast: ToastFn;
@@ -159,6 +162,11 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
               ⏳ <b>{fmtExpire(expiresAt)}</b> 前有效（还剩 {daysLeft} 天）
             </p>
 
+            {/* 🔴 对方粘完码拨过来后，确认框就出现在这里。
+                摆在等待文案**之上**：它一出现，等待就结束了，
+                用户该看的是它而不是下面那句「等着…」。 */}
+            <KbJoinRequests {...joins} />
+
             {/* 等待状态与码同屏：用户拿着码去发的时候，这边已经在盯了。 */}
             <div className={styles.kbPairWarn}>
               <div className={styles.kbPairCenter} style={{ fontWeight: 700 }}>
@@ -172,6 +180,12 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
                 🔐 对方会看到一串指纹，让它和本机的{" "}
                 <span className={`${styles.kbPairFp} ${styles.kbPairFpSm}`}>{myFingerprint}</span>{" "}
                 一字不差再确认。
+              </div>
+              {/* ❗ 把「然后还要回来确认一次」写明白。
+                  不写的话，用户在对面粘完就以为完事了，回到这台看到的
+                  却是一个要他动手的核对框——而那正是配对能不能成的关键一步。 */}
+              <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+                它粘完之后，<b>这里会出现一条要你确认的请求</b>（两边各核对一次指纹）。
               </div>
               {slow && (
                 <div className={styles.kbPairNote} style={{ marginTop: 6 }}>

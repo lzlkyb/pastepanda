@@ -28,7 +28,8 @@
 //! 而那本来只是一次正常碰撞。
 
 use super::coordinate::{
-    backoff_secs, jittered_secs, Admit, Coordinator, BUSY_RETRY_SECS, JITTER_SECS, PERIOD_SECS,
+    backoff_secs, jittered_secs, Admit, Coordinator, BUSY_RETRY_SECS, DORMANT_AFTER_FAILS,
+    DORMANT_POLL_SECS, JITTER_SECS, PERIOD_SECS,
 };
 use super::presence::PresenceTable;
 use super::session;
@@ -84,10 +85,25 @@ pub struct SyncCtx {
     pub running: Arc<AtomicBool>,
     /// 关开关时把正在 sleep 的循环叫醒。见 [`sleep_or_stop`]。
     pub stop: Arc<tokio::sync::Notify>,
+    /// 把**休眠中**的对端循环叫醒（见 [`sleep_or_wake`]）。
+    ///
+    /// 两个叫醒源：① 组播里听到了某台已配对设备的公告；② 用户点了「立即同步」
+    /// （或新配上一台）。
+    ///
+    /// 🔴 **只对长睡生效**。源 ① 是每份公告都发（间隔 15 秒，不是「刚回来」事件），
+    /// 所以 [`peer_loop`] 里只有 `dormant` 那一支才听它；对正常周期也听的话，
+    /// `PERIOD_SECS` / `JITTER_SECS` 会被整个废掉。详细理由写在 `peer_loop` 里。
+    ///
+    /// ❗ 不按对端分开：`notify_waiters()` 把所有在长睡的都叫起来，多拨几次无害，
+    /// 而每对端一个 `Notify` 要多一张表与一套生命周期管理，不值。
+    pub wake: Arc<tokio::sync::Notify>,
     /// 当前有循环的对端。拦重复起用（两条循环会白拨）。
     peers: std::sync::Mutex<std::collections::HashSet<String>>,
     /// 每个对端最近一次的结果。给界面看，见 [`LastSync`]。
     last: std::sync::Mutex<HashMap<String, LastSync>>,
+    /// 「有人拿着我发出的邀请来敲门」的待确认队列（见 [`super::join`]）。
+    /// 与 [`SyncService`] 共一份，所以关开关不会把拒绝名单弄丢。
+    pub joins: Arc<super::join::JoinRequests>,
     /// 🔴 地址宣告线程**自己的**停止标志，与 [`Self::running`] 分开。
     ///
     /// 不能共用一个：[`super::presence::spawn`] 进门要做
@@ -131,32 +147,76 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     let mut fails: u32 = 0;
     while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
         let outcome = dial_once(&ctx, &peer).await;
-        let wait = match &outcome {
+        // `dormant` = 这一觉是不是「长睡」。**只有长睡才允许被 `ctx.wake` 提前打断**。
+        //
+        // 🔴 不能让正常周期也能被叫醒：`Heard::Fresh` 是**每收到一份公告**都算
+        //    （`presence::PresenceTable::hear`；公告间隔 15 秒，多网卡还更密），
+        //    而不是「对端刚回来」才算。若正常周期也能被叫醒，`PERIOD_SECS` 与
+        //    `JITTER_SECS` 直接作废；而且 `notify_waiters()` 是广播，所有对端循环
+        //    会在同一瞬间醒来齐拨——而抖动本来就是为了避免这件事。
+        let (wait, dormant) = match &outcome {
             Outcome::Synced(_) => {
                 fails = 0;
-                jittered_secs(PERIOD_SECS, JITTER_SECS, now_ms() as u64)
+                (jittered_secs(PERIOD_SECS, JITTER_SECS, now_ms() as u64), false)
             }
             Outcome::Busy(why) => {
                 // 不是故障，不动退避计数
                 log::debug!("[Sync] {} 这次没轮到我们：{}", short, why);
-                BUSY_RETRY_SECS
+                (BUSY_RETRY_SECS, false)
+            }
+            // 对端明确说不认识本机。重试再多次也不会变——要变得对面的人去确认，
+            // 所以直接进长间隔，不走退避阶梯。
+            Outcome::Refused(why) => {
+                fails += 1;
+                log::warn!(
+                    "[Sync] {} 拒绝了本机（{}）——它那边还没把这台加回去。\
+                     不再频繁重试，{} 秒后看一眼；它一上线或你点「立即同步」会立刻叫醒",
+                    short,
+                    why,
+                    DORMANT_POLL_SECS
+                );
+                let _ = ctx.store.device_mark_offline(&peer);
+                (DORMANT_POLL_SECS, true)
             }
             Outcome::Failed(why) => {
                 fails += 1;
-                let w = backoff_secs(fails);
-                log::warn!(
-                    "[Sync] 与 {} 同步失败（连续第 {} 次），{} 秒后重试：{}",
-                    short,
-                    fails,
-                    w,
-                    why
-                );
+                // 🔴 连续失败够多之后进休眠。改之前退避封顶 60 秒且**永不放弃**，
+                //   一个永远回不来的对端就是每分钟一次、永远下去；而听不到它组播时
+                //   那一拨走的是 n0 公共 relay（真实跨国流量）。
+                let dormant = fails >= DORMANT_AFTER_FAILS;
+                let w = if dormant { DORMANT_POLL_SECS } else { backoff_secs(fails) };
+                if fails == DORMANT_AFTER_FAILS {
+                    // 只在**刚进休眠那一次**说清楚，之后不再刷屏。
+                    log::warn!(
+                        "[Sync] 与 {} 连续失败 {} 次，转入休眠：不再定时重拨，\
+                         改为等它的组播公告或你点「立即同步」（另每 {} 秒一次兜底重试）：{}",
+                        short,
+                        fails,
+                        DORMANT_POLL_SECS,
+                        why
+                    );
+                } else if !dormant {
+                    log::warn!(
+                        "[Sync] 与 {} 同步失败（连续第 {} 次），{} 秒后重试：{}",
+                        short,
+                        fails,
+                        w,
+                        why
+                    );
+                }
+                // 休眠期间不再每次都刷一条 warn：每半小时一条无用日志只会把真问题淹了。
                 let _ = ctx.store.device_mark_offline(&peer);
-                w
+                (w, dormant)
             }
         };
         record(&ctx, &peer, outcome, fails, wait);
-        if !sleep_or_stop(&ctx.stop, wait).await {
+        // 长睡才听 `wake`；正常周期只听 `stop`（理由见上面那段）。
+        let alive = if dormant {
+            sleep_or_wake(&ctx, wait).await
+        } else {
+            sleep_or_stop(&ctx.stop, wait).await
+        };
+        if !alive {
             break;
         }
     }
@@ -198,6 +258,21 @@ fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs:
                 },
             );
         }
+        // 🔴 对端明确拒绝：界面上要说**人能看懂的原因**，不是那串
+        //   `读帧长度失败：connection lost（closed by peer: not paired (code 1)）`。
+        //   这正是用户报的「配对上了却直接离线」那个局面里，界面唯一能告诉他的事。
+        //   原始错误不丢，它在日志里（peer_loop 那条 warn）。
+        Outcome::Refused(_) => {
+            let e = m.entry(peer.to_string()).or_default();
+            e.peer = peer.to_string();
+            e.at_ms = now_ms();
+            e.fails = fails;
+            e.error = Some(
+                "对方还没把这台设备加回去——到那台机器的「知识库同步」里确认连接请求（要核对指纹）"
+                    .to_string(),
+            );
+            e.next_in_secs = next_in_secs;
+        }
         Outcome::Failed(why) => {
             let e = m.entry(peer.to_string()).or_default();
             e.peer = peer.to_string();
@@ -218,6 +293,13 @@ enum Outcome {
     Synced(Box<session::SessionReport>),
     /// 对端拒了（在忙 / 保留了它自己那个会话）。
     Busy(String),
+    /// 对端**明确说不认识本机**（`not paired`）。
+    ///
+    /// 🔴 与 [`Outcome::Failed`] 分开是因为两者的重试价值完全不同：
+    /// 「网络到不了」重试可能会好，而「对方没把本机加回去」重试一万次也不会变——
+    /// 它要等的是**对面的人去点一下确认**。全锅烩成 Failed 的后果是：
+    /// 既白烧一上午 relay 流量，界面上又只显一个不解释原因的「离线」。
+    Refused(String),
     Failed(String),
 }
 
@@ -250,6 +332,9 @@ async fn dial_once(ctx: &SyncCtx, peer: &str) -> Outcome {
             );
             Outcome::Synced(Box::new(r))
         }
+        // 对端明说「还没配对」——重试改变不了任何事，得等对面的人去确认。
+        // ❗ 与下一条的先后不重要（两者字样不重叠），但必须在兜底 `Failed` 之前。
+        Err(e) if is_not_paired_reject(&e) => Outcome::Refused(e),
         // 对端按 §6.8 保留了它自己那个会话 —— 它会把两边的东西都搬完，
         // 所以这里什么都不用做，短延迟之后再看一眼就行。
         Err(e) if is_busy_reject(&e) => Outcome::Busy(e),
@@ -257,13 +342,29 @@ async fn dial_once(ctx: &SyncCtx, peer: &str) -> Outcome {
     }
 }
 
+/// 对端明确回了「还没配对」。
+///
+/// 字样来自 [`serve`] 里那句 `session::reject(&w, "not paired")`，
+/// 经 `session::explain` 从 `close_reason()` 里捧回错误串。
+///
+/// 🔴 它能生效的前提就是 `explain`——在那之前，这一类拒绝在拨号方看到的
+/// 只有 `connection lost`（quinn 的 Display 不插值内层错误）。
+pub fn is_not_paired_reject(err: &str) -> bool {
+    err.contains("not paired")
+}
+
 /// 对端的关闭原因里带这些字样就是「在忙」，不是故障。
 ///
 /// ❗ 靠字符串认，是因为 iroh 的应用层关闭原因就是一串字节，
 /// 而给「忙」单独定一个错误码要动线格式。这里的字样与
 /// [`super::coordinate::Coordinator::admit`] 给出的理由一一对应，改一处要改两处。
-fn is_busy_reject(err: &str) -> bool {
-    err.contains("正在向你发起同步") || err.contains("让位") || err.contains("稍后重试")
+pub fn is_busy_reject(err: &str) -> bool {
+    err.contains("正在向你发起同步")
+        || err.contains("让位")
+        || err.contains("稍后重试")
+        // ❗ 「对方已记下敲门、等用户确认」也算「在忙」而不是故障：
+        //   走退避阶梯的话会退到 60 秒，用户刚在对面点完确认还要再等一分钟。
+        || err.contains(super::join::REJECT_PENDING)
 }
 
 /// 收入连接的循环。只接、然后立刻交给独立任务。
@@ -320,9 +421,22 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
     let hold = match ctx.coord.admit(&peer, paired).await {
         Admit::Ok(h) => h,
         Admit::NotPaired => {
-            // 只是没配对，不是攻击：ALPN 对得上说明对方也是 PastePanda
-            session::reject(&w, "not paired");
-            log::info!("[Sync] {} 还没配对，已拒绝", short);
+            // 🔴 不能直接拒了事。配对本来是单边的：只有粘贴方写 `devices` 表，
+            //   生成邀请码那一台在这里永远 `is_paired == false`，于是把对方每一次
+            //   连接都拒掉——**两台机器从来没连通过**，而界面上写着「已配对 · 离线」。
+            //   邀请门开着时改成记一条待确认，由用户核对指纹后放行。
+            //   完整理由与已知取舍见 `sync::join` 模块注释。
+            let now = now_ms();
+            if super::join::door_open(&ctx.store, now) && ctx.joins.knock(&peer, now) {
+                // ❗ 仍然拒这一次连接：用户还没确认，现在放进来就等于自动放行。
+                //   理由用 `REJECT_PENDING`，对端会识别它并短延迟重试。
+                session::reject(&w, super::join::REJECT_PENDING);
+                log::info!("[Sync] {} 敲门了，已记入待确认（等用户核对指纹）", short);
+            } else {
+                // 只是没配对，不是攻击：ALPN 对得上说明对方也是 PastePanda
+                session::reject(&w, "not paired");
+                log::info!("[Sync] {} 还没配对，已拒绝", short);
+            }
             return;
         }
         Admit::Reject(why) => {
@@ -362,6 +476,22 @@ pub async fn sleep_or_stop(stop: &tokio::sync::Notify, secs: u64) -> bool {
     }
 }
 
+/// 同 [`sleep_or_stop`]，但**多一个叫醒源**：`ctx.wake`。
+///
+/// 🔴 休眠（[`DORMANT_POLL_SECS`] = 半小时）必须能被提前打断，否则就从
+/// 「浪费资源」变成了「对端回来了却要等半小时」——后者更难受。
+/// 两个叫醒源见 [`SyncCtx::wake`]。
+///
+/// ❗ `stop` 与 `wake` 的区别：前者返回 `false`（该退出了），后者返回 `true`
+/// （马上再拨一次）。弄反了就是「对端一上线反而把循环关了」。
+async fn sleep_or_wake(ctx: &SyncCtx, secs: u64) -> bool {
+    tokio::select! {
+        _ = tokio::time::sleep(Duration::from_secs(secs)) => true,
+        _ = ctx.wake.notified() => true,
+        _ = ctx.stop.notified() => false,
+    }
+}
+
 /// 前端拿到的那个把手。放进 `tauri::State`。
 ///
 /// # 为什么需要它
@@ -380,11 +510,43 @@ pub async fn sleep_or_stop(stop: &tokio::sync::Notify, secs: u64) -> bool {
 #[derive(Default)]
 pub struct SyncService {
     inner: tokio::sync::Mutex<Option<Arc<SyncCtx>>>,
+    /// 待确认的敲门（见 [`super::join`]）。
+    ///
+    /// ❗ 放在**服务**上而不是 `SyncCtx` 里：`SyncCtx` 会随开关重建，
+    /// 而拒绝名单不该因为用户关一下再开就清空。`SyncCtx` 里那个字段
+    /// 是从这里克隆过去的同一份。
+    joins: Arc<super::join::JoinRequests>,
 }
 
 impl SyncService {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 当前待确认的敲门。**不看开关**：关掉开关时队列已经被 `stop()` 清了，
+    /// 这里再判一次只会多一处要同步的事实。
+    pub fn pending_joins(&self, now_ms: i64) -> Vec<super::join::JoinRequest> {
+        self.joins.list(now_ms)
+    }
+
+    /// 放行一条敲门（用户核对完指纹点了确认）。
+    pub fn take_join(&self, node_id: &str) -> bool {
+        self.joins.take(node_id)
+    }
+
+    /// 拒绝一条敲门。本次进程内不再为它弹。
+    pub fn deny_join(&self, node_id: &str) {
+        self.joins.deny(node_id);
+    }
+
+    /// 把所有**休眠中**的对端循环叫醒（见 [`SyncCtx::wake`]）。
+    ///
+    /// 没在跑就是空操作——不报错：调用方（手动同步 / 新配对 / 听到组播）
+    /// 都不关心同步服务此刻在不在。
+    pub async fn wake_all(&self) {
+        if let Some(ctx) = self.inner.lock().await.as_ref() {
+            ctx.wake.notify_waiters();
+        }
     }
 
     /// 起。已经在跑就什么都不做（幂等，前端可以放心重复调）。
@@ -442,8 +604,12 @@ impl SyncService {
             coord: Arc::new(Coordinator::new(me.node_id())),
             running: Arc::new(AtomicBool::new(true)),
             stop: Arc::new(tokio::sync::Notify::new()),
+            wake: Arc::new(tokio::sync::Notify::new()),
             peers: std::sync::Mutex::new(std::collections::HashSet::new()),
             last: std::sync::Mutex::new(HashMap::new()),
+            // ❗ 从服务上克隆而不是新建：关开关会重建 `SyncCtx`，
+            //   新建的话拒绝名单会跟着清空，关一下再开就又开始弹同一台被拒过的机器。
+            joins: self.joins.clone(),
             // false：让 presence 自己那个 CAS 能成功，见字段注释
             presence_running: Arc::new(AtomicBool::new(false)),
         });
@@ -455,12 +621,19 @@ impl SyncService {
         let known = store.device_list()?;
 
         let paired_store = store.clone();
+        // ❗ 只克隆 `wake` 而不是整个 `ctx`：宣告线程比 `SyncCtx` 活得长时
+        //   抱着一个 Arc<SyncCtx> 会把端点与数据库句柄一起吊住，而它只需要叫醒。
+        let wake = ctx.wake.clone();
         super::presence::spawn(
             true,
             ctx.presence.clone(),
             me.clone(),
             port,
             Arc::new(move |id: &str| matches!(paired_store.device_get(id), Ok(Some(_)))),
+            // 听到已配对设备的公告 = 它回来了 → 把休眠中的循环叫起来。
+            // 不看 `id`：`notify_waiters()` 本来就是广播式的，多拨几次无害
+            // （理由见 `SyncCtx::wake` 的注释）。
+            Arc::new(move |_id: &str| wake.notify_waiters()),
             ctx.presence_running.clone(),
             presence_port,
         );
@@ -487,6 +660,9 @@ impl SyncService {
             ctx.presence_running.store(false, Ordering::SeqCst);
             ctx.stop.notify_waiters();
             ctx.endpoint.close().await;
+            // 待确认队列也清：关掉开关后那几条敲门已经无从确认（没人在监听了），
+            // 留着只会让界面显一条点下去也连不上的请求。拒绝名单不清（见 `JoinRequests::clear`）。
+            ctx.joins.clear();
             log::info!("[Sync] 同步已停止");
         }
     }
@@ -502,6 +678,9 @@ impl SyncService {
     ///
     /// 幂等：重复配同一台不会起两条循环（两条循环会白拨，虽然会话槽挡得住）。
     pub async fn add_peer(&self, node_id: &str) -> Result<(), String> {
+        // ❗ 新配上一台时顺手把其它在休眠的叫醒：典型场景是「对面刚确认完」，
+        //   而本机那条循环可能刚因为被拒多次而睡下。
+        self.wake_all().await;
         let guard = self.inner.lock().await;
         let Some(ctx) = guard.as_ref() else {
             // 开关关着时配对是允许的，只是现在不起循环；开开关时会从 device_list 读到
@@ -574,9 +753,18 @@ impl SyncService {
             let guard = self.inner.lock().await;
             guard.as_ref().cloned().ok_or("知识库同步没有在运行")?
         };
+        // ❗ 顺手把休眠中的循环叫醒。用户点「立即同步」的意思就是「现在试」，
+        //   只拨这一台而把其它睡着的留在那里，下一次还得再点一遍。
+        ctx.wake.notify_waiters();
         match dial_once(&ctx, node_id).await {
             // 「对端在忙」不是失败：它那边正在把两边的东西都搬完
             Outcome::Synced(_) | Outcome::Busy(_) => Ok(()),
+            // 对端明确拒了：把真正的原因告诉用户，而不是只说「失败」。
+            // 这条往上报的字符串会直接弹成 toast（见 `useKbSync.syncNow`）。
+            Outcome::Refused(_) => Err(
+                "对方还没把这台设备加回去。请到那台机器的「知识库同步」里确认连接请求（要核对指纹）"
+                    .to_string(),
+            ),
             Outcome::Failed(why) => Err(why),
         }
     }

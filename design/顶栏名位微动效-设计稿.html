@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>顶栏名位微动效 · 设计稿（2026-09-06）</title>
+<style>
+:root{
+  --bg:#0F1115; --panel:#171A21; --panel2:#1D2129; --line:#2A2F3A;
+  --t1:#E8EAED; --t2:#9AA3B2; --t3:#6B7280;
+  --accent:#5B6AF0;
+  --update-g:linear-gradient(135deg,#5B6AF0,#7C5CF0);
+  --update-s:rgba(91,106,240,.35);
+  --err-g:linear-gradient(135deg,#EF4444,#DC2626);
+  --ok:#22C55E; --warn:#F59E0B; --bad:#EF4444;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t1);
+  font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:32px 28px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--t2);font-size:13px;margin-bottom:28px}
+h2{font-size:16px;margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:13.5px;margin:22px 0 8px;color:var(--t1)}
+p,li{color:var(--t2)}
+li{margin:3px 0}
+code{font-family:"SF Mono",Consolas,monospace;font-size:12px;
+  background:#0B0D11;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#B7C0D0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--t1);font-weight:600;white-space:nowrap}
+td{color:var(--t2)}
+.red{color:#FCA5A5}.grn{color:#86EFAC}.yel{color:#FCD34D}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:5px;border:1px solid var(--line);color:var(--t2)}
+.tag.rec{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.4);color:#86EFAC}
+.tag.no{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.35);color:#FCA5A5}
+
+/* ===== 顶栏仿真 ===== */
+.bar{display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(180deg,#1B1F27,#161A21);border:1px solid var(--line);
+  border-radius:10px;padding:12px 14px;margin:10px 0}
+.barL{display:flex;align-items:center;gap:8px}
+.hamb{color:var(--t2);font-size:14px}
+.appicon{width:20px;height:20px;border-radius:6px;background:var(--update-g);flex-shrink:0}
+.brand{font-size:12px;font-weight:700;color:var(--t1);white-space:nowrap;display:inline-flex;align-items:flex-start}
+.brand sup{font-size:7px;color:#7C5CF0;font-weight:800;margin-left:1px}
+.mode{display:flex;gap:2px;background:#0F1319;border:1px solid var(--line);border-radius:8px;padding:2px}
+.mode span{font-size:11px;padding:3px 9px;border-radius:6px;color:var(--t3)}
+.mode span.on{background:var(--panel2);color:var(--t1)}
+.barR{display:flex;gap:6px;color:var(--t3);font-size:12px}
+
+/* ===== 徽章基类（照抄 app.css .header-badge） ===== */
+.badge{display:inline-flex;align-items:center;gap:4px;
+  font-family:"SF Mono",Consolas,monospace;font-size:10px;font-weight:700;
+  padding:3px 10px;border-radius:7px;color:#fff;letter-spacing:.3px;
+  border:none;cursor:default;white-space:nowrap;user-select:none;
+  box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.badge.up{background:var(--update-g);box-shadow:0 2px 10px var(--update-s);cursor:pointer;
+  animation:pulse 2s infinite}
+.badge.ver{background:var(--update-g);box-shadow:0 2px 10px var(--update-s);cursor:pointer}
+.badge.err{background:var(--err-g);box-shadow:0 2px 10px rgba(220,38,38,.4);cursor:pointer}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.75}}
+.badge svg{flex-shrink:0}
+
+/* 无按压反馈（现状） */
+.badge.dead:hover{filter:brightness(1.15)}
+/* 有按压反馈（方案 A 起） */
+.badge.live{transition:transform .13s cubic-bezier(.34,1.56,.64,1),filter .13s}
+.badge.live:hover{filter:brightness(1.15)}
+.badge.live:active{transform:scale(.92)}
+
+/* 名位交换演示 */
+.swap{position:relative;display:inline-flex;align-items:center;cursor:pointer}
+.swap .a,.swap .b{transition:opacity .13s ease,transform .13s ease}
+.swap .b{position:absolute;left:0;top:50%;opacity:0;transform:translateY(-50%) scale(.92);pointer-events:none}
+.swap.hard .a,.swap.hard .b{transition:none}
+.swap:hover .a{opacity:0;transform:translateY(-2px)}
+.swap:hover .b{opacity:1;transform:translateY(-50%) scale(1)}
+
+/* 落下入场 / 成功脉冲 */
+@keyframes drop{0%{opacity:0;transform:translateY(-8px) scale(.92)}
+  70%{opacity:1;transform:translateY(1px) scale(1.03)}100%{transform:translateY(0) scale(1)}}
+@keyframes okpulse{0%{transform:scale(.9)}45%{transform:scale(1.09)}100%{transform:scale(1)}}
+.play-drop{animation:drop .34s cubic-bezier(.22,1.2,.36,1) both}
+.play-ok{animation:okpulse .42s cubic-bezier(.34,1.56,.64,1) both}
+
+/* 图标呼吸（方案 B） */
+.badge.breathe:hover svg{animation:bob .7s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(1.5px)}}
+
+/* 3D 翻牌（方案 C） */
+.flip{perspective:320px;display:inline-flex;cursor:pointer}
+.flip .in{transform-style:preserve-3d;transition:transform .34s cubic-bezier(.4,0,.2,1);position:relative}
+.flip:hover .in{transform:rotateX(-180deg)}
+.flip .f,.flip .k{backface-visibility:hidden;display:inline-flex;align-items:center}
+.flip .k{position:absolute;left:0;top:0;transform:rotateX(180deg)}
+/* 流光（方案 C） */
+.shimmer{position:relative;overflow:hidden}
+.shimmer::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.45) 50%,transparent 70%);
+  transform:translateX(-120%);animation:shine 2.6s ease-in-out infinite}
+@keyframes shine{0%{transform:translateX(-120%)}55%,100%{transform:translateX(160%)}}
+
+.demo{display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:16px;margin:8px 0}
+.demo .lab{font-size:11px;color:var(--t3);width:100%;margin:-4px 0 2px}
+button.rep{background:#22273040;border:1px solid var(--line);color:var(--t2);
+  border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer}
+button.rep:hover{color:var(--t1);border-color:#3A4150}
+.hint{font-size:11.5px;color:var(--t3);margin-top:6px}
+.ring{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",monospace;font-size:11px;color:var(--t2)}
+.blk{background:#0B0D11;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+  font-family:"SF Mono",Consolas,monospace;font-size:11.5px;color:#B7C0D0;
+  white-space:pre;overflow-x:auto;line-height:1.65}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:2px 14px;font-size:12.5px}
+.kv b{color:var(--t1);font-weight:600}
+.warnbox{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);
+  padding:12px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+.redbox{border-left:3px solid var(--bad);background:rgba(239,68,68,.07);
+  padding:12px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+.okbox{border-left:3px solid var(--ok);background:rgba(34,197,94,.07);
+  padding:12px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>顶栏名位微动效</h1>
+<div class="sub">2026-09-06 · <code>UpdateBadge.tsx</code> / <code>app.css</code> / <code>UpdateBanner.module.css</code> ·
+用户反馈：「名字切换要加微动画，点击更新没有任何手感」</div>
+
+<div class="redbox">
+<b>这个组件不是装饰</b>：<code>UpdateBadge</code> 是更新链路的<b>唯一主动入口</b>（弹窗之外用户能自己点的只有这里）。
+所以这次改动的验收标准不只是「好看」，而是<b>点下去用户知道自己点上了、并且知道结果是什么</b>。
+下面 §0 第 5 条会说明：现在<b>点「检查更新」等于点了个空气</b>——这比按压反馈缺失更严重。
+</div>
+
+<h2>§0 现状盘点（逐条对着源码数）</h2>
+<table>
+<tr><th>#</th><th>位置</th><th>现在的行为</th><th>问题</th></tr>
+<tr><td>1</td><td>名字 ↔ 悬停徽章<br><code>UpdateBadge.tsx:196</code></td>
+<td><code>{nameHover ? &lt;span badge&gt; : nameSlot}</code> 裸三元</td>
+<td class="red">零动画，硬跳。宽度也瞬变，把右边的 ModeSwitcher 顶一下</td></tr>
+<tr><td>2</td><td>名字 ↔ 接管态徽章<br><code>AnimatePresence mode="wait"</code></td>
+<td>名字 <code>opacity+y:±4</code>；徽章 <code>scale 0.8</code></td>
+<td class="yel">有动画但两侧不是同一套语言；<code>mode="wait"</code> 中间有一段空档</td></tr>
+<tr><td>3</td><td><b>点「更新 v x.y.z」</b></td>
+<td>只有 <code>:hover{filter:brightness(1.15)}</code></td>
+<td class="red">没有 <code>whileTap</code>、CSS 也没有 <code>:active</code> → <b>零按压反馈</b>（用户明说的痛点）</td></tr>
+<tr><td>4</td><td>点击后的等待</td>
+<td><code>isStarting</code> 只用来 <code>disabled</code></td>
+<td class="red">屏幕上什么都不变。后端在建连接/取 metadata 的那几百毫秒里，界面是死的</td></tr>
+<tr><td>5</td><td><b>点名字（检查更新）</b></td>
+<td><code>checkForUpdate()</code> → status 变 <code>checking</code>，而 <code>checking 不接管名位</code></td>
+<td class="red">🔴 <b>点完名位原地不动，甚至因为 <code>nameClickable=false</code> 连悬停徽章都缩回成名字</b>——
+看上去像「一点就把提示弄丢了」。查完是「已是最新」还是「查失败」也完全不说。<b>点了等于没点。</b></td></tr>
+<tr><td>6</td><td><code>DownloadRing</code> 进度环</td>
+<td>整数 <code>progress</code> 直接算 <code>strokeDashoffset</code></td>
+<td class="yel">无补间，后端 chunk 回调稀疏时一格一格跳</td></tr>
+<tr><td>7</td><td><code>ready</code> 出现</td><td><code>scale 0.8 → 1</code> 淡入</td>
+<td class="yel">「下完了」这件事没有被强调一次，和普通状态切换长得一样</td></tr>
+<tr><td>8</td><td><code>.header-badge-error</code> / <code>-uptodate</code><br><code>app.css:108,140</code></td>
+<td><b>UpdateBadge 从来不渲染这两个类</b></td>
+<td class="yel">两套已写好的徽章样式是死代码。它们正好是 §0-5 缺的那两个「结果」外观</td></tr>
+</table>
+
+<div class="okbox">
+<b>顺手的收获</b>：§0-5 要补的「检查中 / 已是最新 / 查失败」三个外观，<b>CSS 全都已经写好了</b>
+（<code>.header-badge-checking</code> 有，<code>-uptodate</code> 和 <code>-error</code> 是死代码）。
+这一条不需要新增样式，只需要开始渲染它们。
+</div>
+
+<h2>§1 三个方案</h2>
+
+<h3>方案 A —「按压 + 就地交叉淡入」</h3>
+<p>只修手感的最小集合：所有可点徽章加按压回弹；名字↔徽章改成交叉淡入；点击立刻进「启动中」外观。修 §0 的 1/2/3/4。</p>
+<div class="demo">
+  <div class="lab">① 按压反馈对比 —— 请<b>按住</b>两个徽章</div>
+  <span class="badge up dead">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>更新 v6.19.0</span>
+  <span style="font-size:11px;color:var(--t3)">现状：按下去毫无变化</span>
+  <span class="badge up live">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>更新 v6.19.0</span>
+  <span style="font-size:11px;color:var(--t3)">方案 A：<code>scale .92</code> + 回弹曲线</span>
+</div>
+<div class="demo">
+  <div class="lab">② 名字 ↔ 悬停徽章 —— 请<b>把鼠标移上去再移开</b></div>
+  <div class="bar" style="flex:1;min-width:420px;margin:0">
+    <div class="barL"><span class="hamb">☰</span><span class="appicon"></span>
+      <span class="swap hard">
+        <span class="a brand">PastePanda<sup>AI</sup></span>
+        <span class="b badge ver">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>v6.18.6</span>
+      </span>
+      <span class="mode"><span class="on">记录</span><span>工具</span><span>知识</span></span>
+    </div>
+    <div class="barR">现状 · 硬跳</div>
+  </div>
+  <div class="bar" style="flex:1;min-width:420px;margin:0">
+    <div class="barL"><span class="hamb">☰</span><span class="appicon"></span>
+      <span class="swap">
+        <span class="a brand">PastePanda<sup>AI</sup></span>
+        <span class="b badge ver">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>v6.18.6</span>
+      </span>
+      <span class="mode"><span class="on">记录</span><span>工具</span><span>知识</span></span>
+    </div>
+    <div class="barR">方案 A · 交叉淡入 130ms</div>
+  </div>
+  <div class="hint">注：本演示为了看清楚交叉，把两个节点叠在了一起；实际实现用 <code>AnimatePresence mode="popLayout"</code>，
+  见 §5「为何不做宽度动画」。</div>
+</div>
+
+<h3>方案 B — A ＋ 状态转场（<span class="tag rec">推荐</span>）</h3>
+<p>A 的全部，再补三件<b>只在状态真的变了时才演一次</b>的事：进度连续、下完了被看见、有新版了被看见。</p>
+<div class="demo">
+  <div class="lab">③ 进度环：跳格 vs 补间</div>
+  <span class="ring"><svg id="r1" width="14" height="14" viewBox="0 0 14 14">
+    <circle cx="7" cy="7" r="5.75" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="2.5"/>
+    <circle id="c1" cx="7" cy="7" r="5.75" fill="none" stroke="#7C5CF0" stroke-width="2.5"
+      stroke-linecap="round" transform="rotate(-90 7 7)"/></svg><span>现状 · 无补间</span></span>
+  <span class="ring"><svg id="r2" width="14" height="14" viewBox="0 0 14 14">
+    <circle cx="7" cy="7" r="5.75" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="2.5"/>
+    <circle id="c2" cx="7" cy="7" r="5.75" fill="none" stroke="#7C5CF0" stroke-width="2.5"
+      stroke-linecap="round" transform="rotate(-90 7 7)"
+      style="transition:stroke-dashoffset .38s cubic-bezier(.33,1,.68,1)"/></svg><span>方案 B · 380ms 补间</span></span>
+  <button class="rep" id="repRing">重播一轮下载</button>
+  <div class="hint">后端 <code>on_chunk</code> 回调是按 chunk 来的，稀疏时百分比会 7%、13% 地往上蹦。补间之后弧长永远是连续的。
+  <b>只补圆环，不补百分比数字</b>——数字做补间会出现「45→44→46」的回跳感。</div>
+</div>
+<div class="demo">
+  <div class="lab">④ 有新版了（落下 + 轻过冲） / 下完了（成功脉冲一次）</div>
+  <span class="badge up live breathe" id="bDrop">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>更新 v6.19.0</span>
+  <button class="rep" id="repDrop">重播入场</button>
+  <span class="badge ver live" id="bOk">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/></svg>重启</span>
+  <button class="rep" id="repOk">重播「下完了」</button>
+  <div class="hint">入场只演<b>一次</b>；持续提醒仍然交给已有的 <code>badge-pulse</code>（2s 呼吸），不叠加。
+  另外把鼠标放到左边那个徽章上——箭头会轻轻上下点头，暗示「点了会下载」。</div>
+</div>
+
+<h3>方案 C — B ＋ 品牌级转场 <span class="tag no">不推荐</span></h3>
+<div class="demo">
+  <div class="lab">⑤ 3D 翻牌（悬停） + 常驻流光</div>
+  <span class="flip"><span class="in">
+    <span class="f brand">PastePanda<sup>AI</sup></span>
+    <span class="k badge ver">v6.18.6</span>
+  </span></span>
+  <span class="badge up shimmer" style="animation:none">更新 v6.19.0</span>
+  <div class="hint">翻牌每次鼠标<b>路过</b>名字都会演一遍——顶栏是常驻区域，一天能被路过几百次。
+  流光是<b>永久移动的像素</b>：合成器每帧都得重绘顶栏（规则 #8），而它并不多传达任何信息。</div>
+</div>
+
+<h3>对比</h3>
+<table>
+<tr><th></th><th>A</th><th>B <span class="tag rec">推荐</span></th><th>C</th></tr>
+<tr><th>修掉 §0 的</th><td>1 2 3 4</td><td class="grn">1 2 3 4 6 7（+ §4 修 5、8）</td><td>全部</td></tr>
+<tr><th>改动量</th><td>TSX ~40 行 / CSS ~15 行</td><td>TSX ~85 行 / CSS ~25 行</td><td>B ×1.6，且新增常驻动画</td></tr>
+<tr><th>下载过程的感受</th><td class="yel">仍然一格一格跳</td><td class="grn">连续</td><td class="grn">连续</td></tr>
+<tr><th>长期观感</th><td class="grn">安静</td><td class="grn">安静（只在状态变化时演）</td><td class="red">路过就演 + 永久流光，很快变烦</td></tr>
+<tr><th>性能</th><td class="grn">零常驻开销</td><td class="grn">零常驻开销</td><td class="red">顶栏每帧重绘</td></tr>
+<tr><th>风险</th><td>低</td><td>进度环要引入 MotionValue</td><td class="red">rotateX 会让 12px 文字在中间帧发虚</td></tr>
+</table>
+<div class="okbox"><b>推荐 B。</b>用户说的「手感」= 按压有反馈 + 状态看得见 + 数值连续，三条正好是 B 的内容。
+A 修完按压之后，下载过程仍然一格一格跳、下完了也没有任何交代，还是会觉得呆。
+C 的三项全是装饰，而且全都落在<b>常驻</b>区域——这是这个位置上最不该付的代价。</div>
+
+<h2>§2 参数表（按 B 落地）</h2>
+<div class="kv">
+<b>按压</b><span><code>whileTap={{ scale: 0.92 }}</code>，<code>spring 600/22</code>。徽章只有 20px 高，卡片那套 <code>0.985</code>（<code>Card.tsx:337</code>）在这个尺寸上肉眼看不见</span>
+<b>悬停亮度</b><span>沿用现有 <code>filter:brightness(1.15)</code>，不动</span>
+<b>名位交叉淡入</b><span><code>opacity 0→1</code> + <code>y ∓2px</code> + <code>scale .96→1</code>，<code>0.13s easeOut</code>；<code>AnimatePresence mode="popLayout"</code></span>
+<b>接管态进出</b><span>与上面<b>同一套</b>（现在是 <code>scale 0.8</code>，太夸张，收到 <code>.96</code>）</span>
+<b>available 入场</b><span><code>y:-8→0</code>，<code>spring 500/18</code>（轻过冲），只演一次</span>
+<b>ready 成功脉冲</b><span><code>scale:[0.9, 1.09, 1]</code>，<code>0.42s</code>，只演一次</span>
+<b>进度环补间</b><span><code>useSpring(offset, { stiffness: 90, damping: 20 })</code> → <code>&lt;motion.circle strokeDashoffset={sp}/&gt;</code></span>
+<b>箭头点头</b><span><code>whileHover</code> 下 <code>y:[0,1.5,0]</code>，<code>0.7s</code> 循环（<b>仅悬停期间</b>）</span>
+</div>
+
+<h2>§3 无障碍与开关（已查证，不需要新增任何东西）</h2>
+<div class="okbox">
+<b>「减少动态效果」已经有四通道兜底</b>，新加的动效自动跟随，<b>一行都不用写</b>：
+<ul>
+<li><code>main.tsx:72</code> / <code>editor-main.tsx:57</code> / <code>popup-main.tsx:60</code> / <code>quickpaste-main.tsx:59</code> 四个入口都套了 <code>&lt;MotionConfig reducedMotion="user"&gt;</code> → framer 的位移/缩放自动关掉，只留淡入淡出</li>
+<li><code>globals.css:66</code> 有全局 <code>*</code> 兜底，把所有 <code>animation/transition</code> 压到 <code>0.01ms !important</code> → 覆盖 CSS 侧的 <code>:active</code> 过渡与箭头点头</li>
+</ul>
+</div>
+<div class="warnbox">
+<b>🔴 不挂到「窗口动画」开关（<code>config.window_animation</code>）下。</b>
+那个开关自己的说明写的是<b>「弹框与全屏窗口打开/关闭时的过渡动画」</b>
+（<code>WindowSystemRows.tsx:33</code>，tooltip：「玻璃浮升效果；关闭后弹框与全屏编辑器即时显隐」）。
+把顶栏按压反馈塞进去 = 偷偷扩大它的语义：用户为了「别再玻璃浮升了」关掉它，结果连按钮的按压反馈一起没了，
+而设置项上没有任何地方提示过这件事。<b>按压反馈不是动画偏好，是控件的基本可用性</b>——它跟着系统无障碍偏好走就够了。
+</div>
+
+<h2>§4 配套行为：把「点了检查更新」这件事说完（§0-5 / §0-8）</h2>
+<p>这一节<b>不只是动效</b>，是行为变化，所以单列。可以单独砍掉，但砍掉的话 §0-5 就还在。</p>
+
+<div class="redbox">
+<b>问题</b>：现在点名字 → <code>checkForUpdate()</code> → status 变 <code>checking</code>，
+而 <code>checking</code> 按设计<b>不接管名位</b>，于是：
+<ul>
+<li>名位原地不动，用户不知道点上了没有；</li>
+<li>更糟：<code>nameClickable</code> 在 checking 下是 <code>false</code>，按钮直接被换成裸 <code>nameSlot</code>，
+<b>连正在悬停的那个徽章都缩回成名字了</b>——反馈是「负的」，像把提示点没了；</li>
+<li>查完不管是「已是最新」还是「查失败」，名位都一声不响。</li>
+</ul>
+</div>
+
+<div class="okbox">
+<b>改法</b>：区分不是 <code>checking</code> 与否，而是<b>这轮 checking 是谁发起的</b>。
+加一个组件内的 <code>manualCheck</code> 标记（点击时置位，status 离开 <code>checking</code> 时清）：
+<ul>
+<li><b>后台自动轮询</b>的 checking → 照旧不接管名位。文件头那条原则原样保留：用户什么都没做，名字不该闪。</li>
+<li><b>用户手点</b>的 checking → 名位显 <code>.header-badge-checking</code>「检查中…」（图标转），<b>并且不许缩回名字</b>。</li>
+<li>查完 <code>uptodate</code> → 显 <code>.header-badge-uptodate</code>「已是最新 v6.18.6」约 1.8s 后淡回名字。</li>
+<li>查完 <code>error</code> → 显 <code>.header-badge-error</code>「检查失败，重试」约 3s（红色，可点重试）。</li>
+</ul>
+后两个类<b>今天是死代码</b>（<code>app.css:108/140</code>，UpdateBadge 从不渲染），这一条正好把它们用起来，不新增样式。
+</div>
+
+<h3>对现有测试的影响（已逐条核对 <code>UpdateBadge-nameSlot.test.tsx</code>）</h3>
+<table>
+<tr><th>测试</th><th>影响</th><th>处理</th></tr>
+<tr><td><code>it.each(["idle","checking","error","uptodate"])("%s 不接管，名位显应用名")</code></td>
+<td class="grn">不受影响</td>
+<td>因为区分的是「谁发起的」：测试里没有点击，<code>manualCheck</code> 为 false → 仍然显名字。
+<b>这正是为什么要用 <code>manualCheck</code> 而不是直接让 checking 占位</b>——后者会把这条测试打掉，
+而这条测试钉的原则（自动检查不该抢名位）是对的</td></tr>
+<tr><td><code>it("checking：名字不可点")</code></td>
+<td class="grn">不受影响</td>
+<td>断言 <code>queryByRole("button",{name:"检查更新"})</code> 为 null。手动态渲染的是不可点的 <code>span</code>，不是 button</td></tr>
+<tr><td><code>it("idle：悬停时名字换成「检查更新」提示")</code><br><code>fireEvent.mouseEnter</code> 后立刻 <code>queryByText(NAME)).toBeNull()</code></td>
+<td class="red">🔴 必然失败</td>
+<td>加了退场动画后，名字节点会在 DOM 里多留一小会儿。改成 <code>await waitFor(() =&gt; expect(queryByText(NAME)).toBeNull())</code>。
+<b>这不是放宽断言</b>：同一个文件里「重启后回到 idle」那条已经因为同样的原因用了 <code>findByText</code>，
+并在注释里写明「那一次淡入淡出是设计要求，不是 bug」。改法与既有先例一致</td></tr>
+<tr><td>其余 6 条</td><td class="grn">不受影响</td><td>—</td></tr>
+</table>
+<p>另外<b>新增</b>两条钉住这次的行为：<br>
+① <code>手动点检查：名位立刻显「检查中」，不许缩回应用名</code>（这条是 §0-5 的回归闸门）<br>
+② <code>后台自动 checking：名位不动，仍显应用名</code>（钉住 <code>manualCheck</code> 的区分没被后人改没）</p>
+
+<h2>§5 实现要点</h2>
+<div class="warnbox">
+<b>为何不做宽度动画。</b>名字（<code>PastePanda</code> 12px/700 + AI 上标 ≈ 82px）与徽章（<code>v6.18.6</code> 10px mono ≈ 75px）宽度不同，
+交换时会推动右边的 ModeSwitcher。看着像该给它加个平滑过渡，但<b>不要</b>：
+framer 的 <code>layout</code> 动画是靠 <code>transform: scaleX</code> 实现的，套在文字容器上会让 12px 的应用名在中间帧被<b>横向拉伸发虚</b>。
+用 <code>mode="popLayout"</code> 把退场节点弹出文档流，宽度<b>瞬变</b>（与今天完全一致，零回归），视觉上的交换由 opacity 承担——
+眼睛跟的是透明度，不是那 7px。
+</div>
+<div class="warnbox">
+<b>实现时的修正（落地后回填）：popLayout 只用在内层。</b>
+<code>mode="popLayout"</code> 会把退场节点改成 <code>position:absolute</code>，因此它<b>需要一个 <code>position:relative</code> 的直接祖先</b>；
+没有的话退场的那 130ms 里节点会去找更外层的定位祖先，徽章会飞到别处。
+<ul>
+<li><b>名字 ↔ 悬停提示</b>（最频繁、用户抱怨的那一个）→ 用 <code>popLayout</code>，锚点就是 <code>.nameCheckBtn</code> 自己（加一行 <code>position:relative</code>）。</li>
+<li><b>名字 ↔ 接管态徽章</b>（外层）→ <b>保留 <code>mode="wait"</code></b>。它的父节点是 TopBar 的 <code>.headerTitle</code>，
+要用 popLayout 就得去改别人的布局（或者在这里多包一层 wrapper）；而它的触发频率是「出了新版本」「下载完了」这种量级，
+130ms 空档无人察觉。<b>为一个一天触发不到一次的转场去动别的组件的定位，不划算。</b></li>
+</ul>
+</div>
+<div class="warnbox">
+<b>「叠加渲染」这条路走不通。</b>另一个思路是把名字和徽章用 grid 叠在同一格里（容器宽度 = 两者较大值 → 宽度永不变化，
+本演示 ② 用的就是这招）。但那要求<b>名字节点永久留在 DOM 里</b>（只是 opacity 0），
+于是「悬停时名字不显示」这条断言就再也没法用 <code>queryByText</code> 表达了，只能去查内联样式——
+把一条<b>行为</b>测试降级成<b>实现细节</b>测试。不换。
+</div>
+<div class="kv">
+<b>按压加在哪</b><span><code>available</code> / <code>ready</code> 两个 <code>motion.button</code> 直接加 <code>whileTap</code>；
+名字按钮 <code>.nameCheckBtn</code> 不是 motion 组件 → 改成 <code>motion.button</code>（<code>UpdateBadge.tsx:184</code>）</span>
+<b>点击即刻反馈</b><span><code>isStarting</code> 从「只用来 disabled」升级成一个外观：图标换 <code>Loader2</code> + <code>spin-icon</code>，文字换「启动中…」。
+不等后端，点下去那一帧就变</span>
+<b>不要动的</b><span><code>badge-pulse</code> 的归属（<code>-check</code> 变体<b>不给</b>呼吸，见 <code>app.css:124</code> 的红字）、
+<code>aria-label="检查更新"</code> 写死、<code>nameSlot</code> 由 TopBar 传入的结构、未读说明红点<b>不要加回来</b></span>
+</div>
+
+<h2>§6 不做清单</h2>
+<ul>
+<li><b>不</b>加常驻动画（流光 / 常态呼吸 / 悬停翻牌）——顶栏是常驻区域，见 §1-C</li>
+<li><b>不</b>新增设置开关，<b>也不</b>复用「窗口动画」开关——见 §3</li>
+<li><b>不</b>动 <code>UpdateBanner</code>（设置页那个横幅）：它已经有一整套 <code>y:±6 / 0.2s</code> 的进出动画，且不是用户抱怨的地方</li>
+<li><b>不</b>给百分比数字做补间——会出现回跳感，见 §1-③</li>
+<li><b>不</b>碰 <code>DownloadRing</code> 的不确定态（整体旋转）：那套已经对了</li>
+</ul>
+
+<h2>§7 落地顺序</h2>
+<ol>
+<li><b>按压 + 启动中外观</b>（§0-3、§0-4）— 用户明说的那一条，最小、独立、可单独验收</li>
+<li><b>名位交叉淡入 + 接管态统一到同一套</b>（§0-1、§0-2）— 含那条测试的改法</li>
+<li><b>进度环补间 + 入场/成功脉冲</b>（§0-6、§0-7）</li>
+<li><b>§4 配套行为</b>（§0-5、§0-8）+ 两条新测试 — 这一步动的是行为，建议单独一次提交</li>
+</ol>
+
+<script>
+// ③ 进度环演示：模拟后端 on_chunk 稀疏回调（每次蹦 5~16%）
+const C = 2 * Math.PI * 5.75;
+["c1","c2"].forEach(id => {
+  const el = document.getElementById(id);
+  el.setAttribute("stroke-dasharray", C);
+  el.setAttribute("stroke-dashoffset", C);
+});
+function setP(p) {
+  const off = C * (1 - Math.min(100, Math.max(0, p)) / 100);
+  document.getElementById("c1").setAttribute("stroke-dashoffset", off);
+  document.getElementById("c2").setAttribute("stroke-dashoffset", off);
+}
+let timer = null;
+function runRing() {
+  clearInterval(timer);
+  let p = 0; setP(0);
+  timer = setInterval(() => {
+    p += 5 + Math.random() * 11;
+    setP(p);
+    if (p >= 100) clearInterval(timer);
+  }, 460);
+}
+document.getElementById("repRing").addEventListener("click", runRing);
+runRing();
+
+// ④ 入场 / 成功脉冲重播：先摘类再强制重排，否则同名动画不会重新触发
+function replay(btnId, elId, cls) {
+  document.getElementById(btnId).addEventListener("click", () => {
+    const el = document.getElementById(elId);
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  });
+}
+replay("repDrop", "bDrop", "play-drop");
+replay("repOk", "bOk", "play-ok");
+document.getElementById("bDrop").classList.add("play-drop");
+</script>
+</div></body></html>

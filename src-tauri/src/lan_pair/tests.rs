@@ -228,3 +228,66 @@ fn test_缺字段的报文也能解() {
     assert_eq!(p.from_id, "x");
     assert!(p.from_name.is_empty());
 }
+
+// ===== 确认顺序（2026-09-06 修的 bug）=====
+//
+// 握手是**单向**的：只有发起方送密钥，而它送完就 clear、不重发。
+// 以前接受方未确认时直接丢包，于是「发起方先点」会静默失败。
+// 下面两个测试把**两种顺序都钉住**：少一个就只能拦住其中一半。
+
+#[test]
+fn test_接受方先确认_当场能解开密钥() {
+    let (a, mut b) = handshake(1000);
+    let shared = a.shared.clone().unwrap();
+    let (nonce, sealed) = seal_pairing_key(&shared, "a-very-long-pairing-key-0123456789").unwrap();
+
+    // B 先点了确认，密钥随后到——不走暂存，直接解。
+    b.confirmed = true;
+    assert!(b.stashed_key.is_none(), "这条路径不该留下暂存");
+    let key = open_pairing_key(&b.shared.clone().unwrap(), &nonce, &sealed).unwrap();
+    assert_eq!(key, "a-very-long-pairing-key-0123456789");
+}
+
+#[test]
+fn test_发起方先确认_密钥暂存后仍能解开() {
+    // 🔴 这就是那个 bug 的回归测：以前这一种顺序下包被丢弃，
+    //    而发起方已经 clear 了会话、不会重发 → 两端零提示地配不上。
+    let (a, mut b) = handshake(1000);
+    let shared = a.shared.clone().unwrap();
+    let (nonce, sealed) = seal_pairing_key(&shared, "a-very-long-pairing-key-0123456789").unwrap();
+
+    // 密钥先到，B 还没点确认 → 只能暂存，不能应用也不能丢。
+    assert!(!b.confirmed);
+    b.stashed_key = Some((nonce, sealed));
+
+    // B 随后点确认 → 拿暂存的密文当场完成。
+    b.confirmed = true;
+    let (nonce, sealed) = b.stashed_key.clone().expect("暂存不能丢，否则这种顺序永远配不上");
+    let key = open_pairing_key(&b.shared.clone().unwrap(), &nonce, &sealed).unwrap();
+    assert_eq!(key, "a-very-long-pairing-key-0123456789");
+}
+
+#[test]
+fn test_暂存的是密文_没有正确共享值照样解不开() {
+    // 暂存不等于放行：存的是密文，门禁还在 GCM 认证上。
+    // 否则「本端不确认就不应用」就只剩一个 bool 守着了。
+    let (a, _b) = handshake(1000);
+    let shared = a.shared.clone().unwrap();
+    let (nonce, sealed) = seal_pairing_key(&shared, "a-very-long-pairing-key-0123456789").unwrap();
+
+    // 用另一次握手的共享值（= 中间人的处境）去解同一份密文。
+    let (other, _) = handshake(1000);
+    let wrong = other.shared.clone().unwrap();
+    assert_ne!(wrong, shared, "两次握手的临时密钥不可能撞车");
+    assert!(
+        open_pairing_key(&wrong, &nonce, &sealed).is_err(),
+        "共享值不对就必须解不开（GCM 认证）"
+    );
+}
+
+#[test]
+fn test_新开的会话没有暂存() {
+    let p = PendingPair::start("X", "X 机", PairRole::Responder, 1000).unwrap();
+    assert!(p.stashed_key.is_none());
+    assert!(!p.confirmed);
+}

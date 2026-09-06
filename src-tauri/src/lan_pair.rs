@@ -140,6 +140,20 @@ pub struct PendingPair {
     pub pin: String,
     /// 本端用户是否已点确认。
     pub confirmed: bool,
+    /// 对方已送来、但**本端还没确认**时暂存的密钥密文（nonce_hex, sealed_hex）。
+    ///
+    /// # 🔴 为何是「暂存」而不是「丢弃」（改回去前先读）
+    ///
+    /// 握手是单向的：**只有发起方会送密钥**，而它送完就 [`PairState::clear`]
+    /// 自己的会话、**不会重发**。所以若接受方此刻还没点确认就把包丢了，
+    /// 「发起方先点确认」这一种顺序就**永远配不上**，而且两端零提示
+    /// （接受方之后再点确认也没用，对方会话已经没了）。
+    /// 改成暂存后，两端**谁先点确认都能配上**。
+    ///
+    /// 安全性不变：门禁仍然是「本端不确认就不应用」，只是从「丢弃」变「挂起」；
+    /// 存的是**密文**，没有 `shared` 照样解不开（GCM 认证），
+    /// 且会话 [`PAIR_WINDOW_SECS`] 秒过期时暂存跟着一起消失。
+    pub stashed_key: Option<(String, String)>,
     pub started_at: i64,
 }
 
@@ -169,6 +183,7 @@ impl PendingPair {
             shared: None,
             pin: String::new(),
             confirmed: false,
+            stashed_key: None,
             started_at: now,
         })
     }

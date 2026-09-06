@@ -278,9 +278,23 @@ pub fn lan_pair_start(app: tauri::AppHandle, device_id: String) -> Result<(), St
 
 /// 用户点了「一样，确认」。
 ///
-/// 🔴 发起方确认后才把自己的 `pairing_key` 加密送出去；
-/// 接受方确认只是置位，等对方送过来（接收侧会检查 `confirmed`，
-/// 没确认就拒收——否则对方单方面点一下就能换掉我的密钥）。
+/// 🔴 发起方确认后把自己的 `pairing_key` 加密送出去；
+/// 接受方确认则是「开门收密钥」。
+///
+/// # 两端谁先点都行（改之前不是）
+///
+/// 握手是单向的：只有发起方送密钥，而它送完就 `clear()`、不重发。
+/// 以前接受方收到密钥时若自己还没确认就直接丢包，于是
+/// **发起方先点确认 → 配对静默失败**（两端无任何提示，且接受方
+/// 之后再点也没用）。现在未确认时会把密文暂存在
+/// [`crate::lan_pair::PendingPair::stashed_key`]，本函数发现暂存就当场完成。
+///
+/// ❗ 为何不能干脆让发起方免确认（用户提过这个，已否决）：
+/// 6 位安全码是共享密钥的**指纹**，中间人同时冒充两边时，
+/// 发起方与他算出 pin1、接受方与他算出 pin2。
+/// **只有把两个屏幕上的数字放在一起比，才能发现它们不一样**。
+/// 发起方免确认 = 接受方一个人盯着 pin2 而没有参照物，
+/// 他一点确认，发起方就自动把真密钥送给了中间人。整道核对门会白设。
 #[tauri::command]
 pub fn lan_pair_confirm(app: tauri::AppHandle) -> Result<(), String> {
     let lan = app
@@ -289,17 +303,36 @@ pub fn lan_pair_confirm(app: tauri::AppHandle) -> Result<(), String> {
     let now = chrono::Utc::now().timestamp();
     let pair = lan.pair();
 
-    let info = pair
+    // 一次拿齐所有要用的东西：下面会 `pair.clear()`，那之后 pending 就没了。
+    // ❗ `peer_name` 必须在这里取走（而不是事后去查），它是进「记住的设备」名单的名字。
+    let (role, peer_id, peer_name, shared, stashed) = pair
         .with_pending(now, |p| {
             p.confirmed = true;
-            (p.role, p.peer_id.clone(), p.shared.clone())
+            (
+                p.role,
+                p.peer_id.clone(),
+                p.peer_name.clone(),
+                p.shared.clone(),
+                p.stashed_key.clone(),
+            )
         })
         .ok_or_else(|| "配对已过期，请重新开始".to_string())?;
 
-    let (role, peer_id, shared) = info;
     if role != crate::lan_pair::PairRole::Initiator {
-        return Ok(()); // 接受方：等对方送密钥
+        // 接受方。对方可能**已经先点了确认**、密钥就躺在暂存里——
+        // 那就现在解开完成；否则置位完就等它送过来。
+        let Some((nonce, sealed)) = stashed else {
+            return Ok(());
+        };
+        let shared = shared.ok_or_else(|| "还没有协商完成，稍等一下".to_string())?;
+        crate::lan_sync::accept_peer_pairing_key(
+            &app, &peer_id, &peer_name, &shared, &nonce, &sealed,
+        )?;
+        pair.clear();
+        log::info!("[LanPair] 配对完成（用的是先前暂存的密钥）");
+        return Ok(());
     }
+
     let shared = shared.ok_or_else(|| "还没有协商完成，稍等一下".to_string())?;
 
     let key = lan.get_pairing_key();
@@ -308,13 +341,25 @@ pub fn lan_pair_confirm(app: tauri::AppHandle) -> Result<(), String> {
         v: crate::lan_pair::PAIR_PROTO_V,
         kind: crate::lan_pair::KIND_KEY.into(),
         from_id: lan.device_id().into(),
+        // ❗ 故意留空：对端已经知道我叫什么（招呼包/req 里带过）。
+        //   反过来说，**接收侧不能拿本包的 from_name 当设备名**，得从 pending 拿。
         from_name: String::new(),
-        to_id: peer_id,
+        to_id: peer_id.clone(),
         pk: String::new(),
         nonce,
         sealed,
         ts: now,
     });
+    // 🔴 发起方也要把对方记进名单。以前这里发完就 `clear()`，
+    //   名单里根本不会出现对方，得等它复制点东西发一条加密广播过来才冒出来
+    //   ——用户报的「配对完成后没及时刷新到记住设备列表」就是这一半。
+    //
+    // 已知取舍：握手没有回执，发起方无法得知对方最终确认还是取消。
+    // 所以这里记的是「我已把密钥送出去了」而不是「对方已收下」；
+    // 若对方最后取消，这一行会显示为一台永不同步的设备，用户可在名单里「忘记」它。
+    // 要做到精确得加一个回执包，而那要升 `PAIR_PROTO_V`、旧版对端会永远等下去。
+    crate::lan_sync::remember_device(&app, &peer_id, &peer_name);
+    crate::lan_sync::notify_paired_changed(&app);
     pair.clear();
     Ok(())
 }

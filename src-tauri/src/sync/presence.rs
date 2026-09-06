@@ -361,12 +361,15 @@ pub fn announce_once(
 /// 关着的时候不是静默返回，而是留一行日志说明为什么没起（规则 #15.3）。
 ///
 /// `is_paired` 由调用方给（通常是查 `devices` 表），这样本模块不依赖 `DataStore`。
+/// `on_fresh` 同理：听到一台已配对设备的新公告时回调，用来把休眠中的
+/// 同步循环叫醒（见 `service::SyncCtx::wake`）——本模块自己不知道那边的存在。
 pub fn spawn(
     enabled: bool,
     table: Arc<PresenceTable>,
     me: Arc<NodeIdentity>,
     endpoint_port: u16,
     is_paired: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    on_fresh: Arc<dyn Fn(&str) + Send + Sync>,
     running: Arc<AtomicBool>,
     // 监听端口。生产传 `PORT`；**测试传 0**（临时端口）——
     // 并行跑的测试都去抢固定的 5008，会表现为与被测逻辑无关的随机失败。
@@ -430,6 +433,10 @@ pub fn spawn(
                     match heard {
                         Heard::Fresh { node_id, addr } => {
                             log::debug!("[Presence] {} 在 {}", &node_id[..8], addr);
+                            // ❗ 它回来了。如果那台的同步循环已经因为连续失败而休眠，
+                            //   这一下就是把它叫起来的信号——否则要等到兜底心跳（半小时）。
+                            //   只在 `Fresh` 这一支调：`Unpaired` 那些不关我们的事。
+                            on_fresh(&node_id);
                         }
                         // 自己的包与未配对设备的包是常态，不值得记日志
                         Heard::Mine | Heard::Unpaired { .. } => {}
