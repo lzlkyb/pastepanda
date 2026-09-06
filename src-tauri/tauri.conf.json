@@ -40,7 +40,7 @@
     "updater": {
       "endpoints": [
         "https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json",
-        "https://ghproxy.net/https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json",
+        "https://ghproxy.net/https://github.com/lzlkyb/pastepanda/releases/latest/download/updater-ghproxy.json",
         "https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGQTNBQ0Y5OTIxNjg1RUUKUldUdWhSYVMrYXlqdnptREQvTlpWR1dRckVLVkZaRVBBOGYvQm0wL3FjMjVad1Nkd0ZPUlhSZUMK",
