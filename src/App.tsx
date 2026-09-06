@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore, HistoryItem, buildSearchKey } from "@/stores/appStore";
 import { useDialogStore, anyDialogOpen } from "@/stores/dialogStore";
+import { resolveKeyAction, computeNavIndex } from "@/lib/keyboardActions";
 import { TopBar } from "@/components/TopBar";
 import { SuggestionBar } from "@/components/SuggestionBar";
 import { AiQuickBar } from "@/components/AiQuickBar";
@@ -842,194 +843,162 @@ function App() {
     };
   }, []);
 
-  // 键盘导航
+  // 键盘导航。
+  //
+  // 🔴 **判断全在 `resolveKeyAction`，本函数只负责把动作变成副作用。**
+  //   2026-09-06 之前这里是一份完整的判断逻辑，而 `lib/keyboardActions.ts` 里
+  //   另有一份“纯函数版”——**单测只测后者**。于是两份默默地分岔：
+  //   副本里没有变换枢纽让位、没有 store 型弹窗的 Esc 分层、没有 Ctrl+Shift+D，
+  //   dialogOpen 名单也少了四项——而测试全绿。改真代码永远不会让它们红。
+  //
+  // 现在只有一份真相：分支改了，测试就会红。
   const handleKeyDown = useCallback(async (e: KeyboardEvent) => {
-    // 忽略输入区内的按键。
-    //
-    // 🔴 `isContentEditable` 与 `isComposing` 必须和 `INPUT/TEXTAREA` **同一道早返回**，
-    //   不能只拦列表导航键——因为下面还有一条 `?` 开快捷键帮助，它带
-    //   `preventDefault()`。CodeMirror（笔记正文）是 `<div contenteditable>`，
-    //   `tagName` 是 DIV，挡不住，结果就是**在笔记里根本打不出 `?`**，
-    //   按下去弹的是快捷键面板（与「空格打不出来」同一个病）。
-    //
-    // ❗ 连 `Escape` 一起拦是**故意的**：textarea 本来就是这么拦的，
-    //   contenteditable 只是被漏了。不拦的话，写笔记时按一下 Esc（关补全/
-    //   退输入法候选的反射动作）会一路落到链尾的 `toggleWindow()`——**整个窗口消失**。
-    //   自带未保存确认的弹窗（NoteDialog / ItemEditorDialog）各自注了捕获期
-    //   监听，不依赖这里，不受影响。
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-    if ((e.target as HTMLElement)?.isContentEditable) return;
-    if (e.isComposing) return;
-    // U3：右键菜单打开期间所有按键让位给菜单（菜单自带方向键/Enter/Esc 处理），
-    // 否则 Enter 会同时激活菜单项并粘贴选中卡片、Esc 会同时关菜单和隐藏窗口
-    if (ctxMenuOpenRef.current) return;
-    // 变换枢纽打开时同样让位（枢纽自带 ↑↓/Enter/Esc 处理）
-    if (useDialogStore.getState().hubItem) return;
-    // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
-    const { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, moveToGroup } = dialogStatesRef.current;
-    // anyDialogOpen 覆盖 dialogStore 管的那批（卡片编辑弹框 / 链运行 / 粘贴守卫 / 画像 / 里程碑 …）。
-    // 原先这里只手写了上面那串 show* 局部状态，漏掉了 store 那批：
-    // 开着卡片编辑弹框按 Delete/Backspace 会直接删掉主窗口选中的卡片。
-    const dialogOpen =
-      showSettings || showSequential || showSnippets || showExtract || showEncoding ||
-      showBatchReplace || showConfigDiff || moveToGroup || fileDetailOpenRef.current ||
-      anyDialogOpen(useDialogStore.getState());
-    // ❗ 空格（快速预览）本来漏在这份名单外，弹窗开着时照样会弹预览。
-    //   它和下面那三道闸门是同一批调用点，一并补上（规则 #11.1）。
-    const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End", " "].includes(e.key)
-      || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
-    if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;
-
-    // 视图闸门：这整套键位（↑↓ / Enter 粘贴 / 空格预览 / Delete 删除 / Ctrl+A）
-    // 服务的是**剪贴板历史列表**，不在记录模式时它操作的列表压根不在屏幕上。
-    // 之前没这道闸门，在知识库里：回车 → 粘贴历史项并弹「已粘贴图片」、
-    // 空格 → 弹快速预览、**退格 → 直接删掉历史里选中的条目**。
-    //
-    // ❗ 只拦 `isListNavKey`，不能提到函数开头做整体 return：
-    //   `Escape`（关弹窗 / 隐藏窗口）与 `?`（快捷键帮助）在非输入态下
-    //   属于真全局键位，一刀切会把设置页和知识库里的 Esc 一起废掉。
-    if (useAppStore.getState().appMode !== "record" && isListNavKey) return;
-
     const store = useAppStore.getState();
+    const d = useDialogStore.getState();
+    const {
+      showSettings, showSequential, showSnippets, showExtract,
+      showEncoding, showBatchReplace, showConfigDiff, moveToGroup, showShortcuts,
+    } = dialogStatesRef.current;
+
     const filtered = store.getFilteredItems();
-    const selectedIds = store.selectedIds;
+    const selectedArr = [...store.selectedIds];
     const focusId = store.focusId;
 
-    if (e.key === "Escape") {
-      e.preventDefault();
-      // U4：Esc 分层 — 关最上层弹窗 → 关分组弹窗 → 清多选 → 最后才隐藏窗口
-      // 审查：store 型弹窗（dialogStore 管理）纳入分层且放最前——
-      // 之前单独打开链运行器/粘贴守卫按 Esc 会直接隐藏整个窗口（全局兜底 toggleWindow），
-      // 链运行器从枢纽打开时又被 hubItem 让位逻辑拦掉、无响应。
-      const d = useDialogStore.getState();
-      if (d.chainText) { d.closeChain(); return; }
-      if (d.chainEdit) { d.closeChainEditor(); return; }
-      if (d.pasteGuard) { d.closePasteGuard(); return; }
-      if (d.profileOpen) { d.closeProfile(); return; }
-      if (d.learningsOpen) { d.closeLearnings(); return; }
-      if (d.editorItem) { return; } // 编辑器自带 Esc（含未保存确认），全局不抢；也不隐藏窗口
-      if (d.noteDraft) { return; }   // 同上：NoteDialog 自己接 Esc（脏数据要弹确认）。代关就会跳过确认
-      if (showSettings) { closeSettings(); return; }
-      if (showSequential) { setShowSequential(false); return; }
-      if (showSnippets) { setShowSnippets(false); return; }
-      if (showExtract) { setShowExtract(false); return; }
-      if (showEncoding) { setShowEncoding(false); return; }
-      if (showBatchReplace) { setShowBatchReplace(false); return; }
-      if (showConfigDiff) { setShowConfigDiff(false); return; }
-      if (dialogStatesRef.current.showShortcuts) { setShowShortcuts(false); return; }
-      if (moveToGroup) { setMoveToGroupItem(null); return; }
-      if (selectedIds.size > 0) { store.clearSelection(); return; }
-      await toggleWindow();
-    } else if (e.key === "?" || (e.shiftKey && e.key === "/")) {
-      e.preventDefault();
-      setShowShortcuts((v) => !v);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (filtered.length === 0) return;
-      const currentIdx = focusId ? filtered.findIndex((i) => i.id === focusId) : -1;
-      const nextIdx = Math.min(currentIdx + 1, filtered.length - 1);
-      store.selectItem(filtered[nextIdx].id);
-      // U39：滚动交给 CardList 的 Lenis + 虚拟列表（scrollIntoView 与 Lenis 冲突）
-      window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: filtered[nextIdx].id } }));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (filtered.length === 0) return;
-      const currentIdx = focusId ? filtered.findIndex((i) => i.id === focusId) : filtered.length;
-      const prevIdx = Math.max(currentIdx - 1, 0);
-      store.selectItem(filtered[prevIdx].id);
-      // U39：滚动交给 CardList 的 Lenis + 虚拟列表（scrollIntoView 与 Lenis 冲突）
-      window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: filtered[prevIdx].id } }));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const selectedArr = [...selectedIds];
-      // 优先用 focusId（键盘导航当前项），其次用 selectedIds 第一项
-      const targetId = focusId || selectedArr[0];
-      if (targetId) {
-        const item = filtered.find((i) => i.id === targetId);
-        if (item) {
-          // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是
-          // 5 份拷贝里的一份，每个分支各写一遍回写——v6.15 的「image/rich/file
-          // 三个分支全漏了信号」就是这么来的）。
-          // 各类型的 toast 文案本来就不同，用返回的 kind 选。
-          const { pasteHistoryItem } = await import("@/lib/pasteItem");
-          // 热键粘贴走的是当前可见列表，下标直接用 filtered 里的位置
-          const idx = filtered.findIndex((i) => i.id === item.id);
-          const { ok, kind } = await pasteHistoryItem(item, idx);
-          if (ok) {
-            const msg = kind === "image" ? "已粘贴图片"
-              : kind === "rich" ? "已粘贴图文"
-              : kind === "file" ? "已粘贴文件路径"
-              : "已粘贴";
-            window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "success" } }));
-          }
-        }
+    const action = resolveKeyAction({
+      key: e.key,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      targetTagName: (e.target as HTMLElement)?.tagName ?? "",
+      targetContentEditable: (e.target as HTMLElement)?.isContentEditable ?? false,
+      isComposing: e.isComposing,
+      appMode: store.appMode,
+      ctxMenuOpen: ctxMenuOpenRef.current,
+      hubOpen: Boolean(d.hubItem),
+      showSettings, showSequential, showSnippets, showExtract,
+      showEncoding, showBatchReplace, showConfigDiff, moveToGroup, showShortcuts,
+      fileDetailOpen: fileDetailOpenRef.current,
+      anyStoreDialogOpen: anyDialogOpen(d),
+      chainOpen: Boolean(d.chainText),
+      chainEditOpen: Boolean(d.chainEdit),
+      pasteGuardOpen: Boolean(d.pasteGuard),
+      profileOpen: d.profileOpen,
+      learningsOpen: d.learningsOpen,
+      editorItemOpen: Boolean(d.editorItem),
+      noteDraftOpen: Boolean(d.noteDraft),
+      selectedIds: selectedArr,
+      focusId,
+      // ❗ 传函数而不是值：只有 Space 分支会读它，而算它要扫一遍列表。
+      //   无论在哪里敲键都先扫一遍几千条历史，是白费。
+      focusedItemType: () => {
+        const id = selectedArr[0] ?? focusId;
+        return id ? filtered.find((i) => i.id === id)?.type : undefined;
+      },
+    });
+
+    if (action.type === "ignore") return;
+    // 到这里就是我们接管了这个按键。`consume` 就停在这一步：
+    // 旧代码里 `Enter`/`Delete`/`空格` 都是先 preventDefault 再判断有没有目标的，
+    // 不保留这一步的话，没选中条目时按空格会把列表整页滚下去。
+    e.preventDefault();
+    if (action.type === "consume") return;
+
+    /** 选中某项并滚到可视区。滚动交给 CardList 的 Lenis + 虚拟列表（U39）。 */
+    const focusItem = (id: string) => {
+      store.selectItem(id);
+      window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id } }));
+    };
+
+    switch (action.type) {
+      case "close_dialog": {
+        // 一张表就把「关哪个」讲完了；顺序在 `resolveKeyAction` 里定。
+        const closers: Record<string, () => void> = {
+          chain: () => d.closeChain(),
+          chainEdit: () => d.closeChainEditor(),
+          pasteGuard: () => d.closePasteGuard(),
+          profile: () => d.closeProfile(),
+          learnings: () => d.closeLearnings(),
+          settings: closeSettings,
+          sequential: () => setShowSequential(false),
+          snippets: () => setShowSnippets(false),
+          extract: () => setShowExtract(false),
+          encoding: () => setShowEncoding(false),
+          batchReplace: () => setShowBatchReplace(false),
+          configDiff: () => setShowConfigDiff(false),
+          shortcuts: () => setShowShortcuts(false),
+          moveToGroup: () => setMoveToGroupItem(null),
+        };
+        closers[action.dialog]();
+        return;
       }
-    } else if (e.key === "Delete" || e.key === "Backspace") {
-      e.preventDefault();
-      const selectedArr = [...selectedIds];
-      if (selectedArr.length > 0) {
-        await deleteHistory(selectedArr);
-      } else if (focusId) {
-        await deleteHistory([focusId]);
+      case "clear_selection":
+        store.clearSelection();
+        return;
+      case "hide_window":
+        await toggleWindow();
+        return;
+      case "toggle_shortcuts":
+        setShowShortcuts((v) => !v);
+        return;
+      case "navigate": {
+        const idx = computeNavIndex(action.direction, focusId, filtered.map((i) => i.id));
+        if (idx >= 0) focusItem(filtered[idx].id);
+        return;
       }
-    } else if (e.ctrlKey && e.key === "a") {
-      e.preventDefault();
-      store.selectAll();
-    } else if (e.ctrlKey && !e.shiftKey && e.key === "d") {
-      e.preventDefault();
-      const selectedArr = [...selectedIds];
-      let pinned: boolean | null = null;
-      if (selectedArr.length > 0) {
-        pinned = await togglePin(selectedArr[0]);
-      } else if (focusId) {
-        pinned = await togglePin(focusId);
+      case "paste": {
+        const item = filtered.find((i) => i.id === action.targetId);
+        if (!item) return;
+        // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是
+        // 5 份拷贝里的一份，每个分支各写一遍回写——v6.15 的「image/rich/file
+        // 三个分支全漏了信号」就是这么来的）。
+        const { pasteHistoryItem } = await import("@/lib/pasteItem");
+        // 热键粘贴走的是当前可见列表，下标直接用 filtered 里的位置
+        const { ok, kind } = await pasteHistoryItem(item, filtered.indexOf(item));
+        if (!ok) return;
+        // 各类型的 toast 文案本来就不同，用返回的 kind 选。
+        const msg = kind === "image" ? "已粘贴图片"
+          : kind === "rich" ? "已粘贴图文"
+          : kind === "file" ? "已粘贴文件路径"
+          : "已粘贴";
+        window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "success" } }));
+        return;
       }
-      if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
-    } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
-      e.preventDefault();
-      void openFreeDiff();
-    } else if (e.ctrlKey && e.key === "z") {
-      e.preventDefault();
-      void restoreDeleted();
-    } else if (e.ctrlKey && e.key === "s") {
-      e.preventDefault();
-      setShowSettings(true);
-    } else if (e.ctrlKey && e.key === "h") {
-      e.preventDefault();
-      setShowSettings(true); // 帮助已整合到设置面板
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      if (filtered.length > 0) {
-        store.selectItem(filtered[0].id);
-        window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: filtered[0].id } }));
+      case "delete":
+        await deleteHistory(action.ids);
+        return;
+      case "select_all":
+        store.selectAll();
+        return;
+      case "toggle_pin": {
+        const pinned = await togglePin(action.id);
+        if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+        return;
       }
-    } else if (e.key === "End") {
-      e.preventDefault();
-      if (filtered.length > 0) {
-        const last = filtered[filtered.length - 1];
-        store.selectItem(last.id);
-        window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: last.id } }));
+      case "open_free_diff":
+        void openFreeDiff();
+        return;
+      case "undo":
+        void restoreDeleted();
+        return;
+      case "open_settings":
+        // 帮助已整合到设置面板，所以 Ctrl+S 与 Ctrl+H 同一个动作。
+        setShowSettings(true);
+        return;
+      case "quick_preview": {
+        const item = filtered.find((i) => i.id === action.targetId);
+        if (!item) return;
+        // 带上条目身份：预览面板里粘贴时要回写粘贴信号（只传需要的四个字段，不整条塞）
+        window.dispatchEvent(new CustomEvent("app-quick-preview", {
+          detail: {
+            text: item.text,
+            item: { id: item.id, type: item.type, content_type: item.content_type, source: item.source },
+          },
+        }));
+        return;
       }
-    } else if (e.key === " ") {
-      // Space: 快速预览选中的文本（优先 selectedIds，回退 focusId）
-      e.preventDefault();
-      const targetId = selectedIds.size > 0 ? [...selectedIds][0] : focusId;
-      if (targetId) {
-        const item = filtered.find((i) => i.id === targetId);
-        if (item && item.type === "text") {
-          // 带上条目身份：预览面板里粘贴时要回写粘贴信号（只传需要的四个字段，不整条塞）
-          window.dispatchEvent(new CustomEvent("app-quick-preview", {
-            detail: {
-              text: item.text,
-              item: { id: item.id, type: item.type, content_type: item.content_type, source: item.source },
-            },
-          }));
-        } else if (item && (item.type === "image" || item.type === "file")) {
-          // U44：图片/文件 → 打开对应详情窗（此前 Space 对它们无响应）
-          window.dispatchEvent(new CustomEvent("app-open-item-detail", { detail: { id: item.id } }));
-        }
-      }
+      case "open_item_detail":
+        // U44：图片/文件 → 打开对应详情窗（此前 Space 对它们无响应）
+        window.dispatchEvent(new CustomEvent("app-open-item-detail", { detail: { id: action.targetId } }));
+        return;
     }
     // 状态都走 ref 读，避免频繁重新注册键盘事件；
     // toast / openFreeDiff / closeSettings 本身都是恒引用的 useCallback，列进依赖不会引起重注册
