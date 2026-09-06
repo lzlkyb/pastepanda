@@ -10,10 +10,12 @@
  *
  * 🔴 红线：无 AI。批量动作全走现有的单条 IPC。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { FolderInput, Library, Trash2, X } from "lucide-react";
 import type { NoteFolder } from "@/lib/api";
 import styles from "../KnowledgeView.module.css";
+import { useClickOutside } from "@/hooks/useClickOutside";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 export function BatchBar({
   count,
@@ -33,22 +35,11 @@ export function BatchBar({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // 点外面 / Esc 关下拉。跟 `ViewControls` 同一套做法（mousedown 而不是 click）。
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  // 点外面 / Esc 关下拉。跟 `ViewControls` 同一套做法——现在真的是同一套了：
+  // 两边都调公共 hook，而不是各写一遍（规则 #11）。
+  const closeMenu = useCallback(() => setOpen(false), []);
+  useClickOutside(wrapRef, closeMenu, open);
+  useDialogEscape(closeMenu, open);
 
   const pick = useCallback(
     (id: string | null) => {

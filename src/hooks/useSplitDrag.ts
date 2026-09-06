@@ -13,10 +13,11 @@
  *   ① mousemove/mouseup 监在 **window** 而不是手柄上：拖得快时指针会跑出手柄，
  *      挂手柄上会中途断掉。
  *   ② 像素下限换算成百分比上下限：拖到完全压扁等于把一边弄没了。
- *   ③ 写 localStorage 放在 effect 里而不是 setState 的 updater 里：
- *      StrictMode 下 updater 会双调（项目在 `aiAwarenessActive` 上撞过）。
+ *   ③ 比例的读写与异常兜底已交给 `usePersistedState`（包括「写入必须在 effect 里」
+ *      那条约束——updater 在 StrictMode 下会双调）。
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { usePersistedState } from "@/hooks/usePersistedState";
 
 interface Options {
   /** "x" = 左右分栏（拖宽度），"y" = 上下分栏（拖高度）。 */
@@ -35,17 +36,6 @@ interface Options {
   defaultRatio: number;
 }
 
-function readRatio(key: string, fallback: number): number {
-  try {
-    const raw = localStorage.getItem(key);
-    const n = raw === null ? NaN : Number(raw);
-    return Number.isFinite(n) && n > 0 && n < 100 ? n : fallback;
-  } catch {
-    /* 隐私模式读不到，回默认 */
-    return fallback;
-  }
-}
-
 export function useSplitDrag({
   axis,
   containerRef,
@@ -55,18 +45,20 @@ export function useSplitDrag({
   storageKey,
   defaultRatio,
 }: Options) {
-  const [ratio, setRatio] = useState(() => readRatio(storageKey, defaultRatio));
+  // 读/写/异常兜底交给 `usePersistedState`（规则 #11）。
+  // 存的是百分比数字，手写解析而不用 JSON：不合法或越界的脏值一律回默认，
+  // 不能拿 NaN 去算 flex。
+  const [ratio, setRatio] = usePersistedState(storageKey, defaultRatio, {
+    parse: (raw) => {
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 && n < 100 ? n : defaultRatio;
+    },
+    serialize: (v) => String(Math.round(v)),
+  });
   /** 拖动中的起点。`null` = 没在拖。 */
   const dragRef = useRef<{ pos: number; ratio: number; size: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, String(Math.round(ratio)));
-    } catch {
-      /* 隐私模式/配额满，写不进只是下次回默认 */
-    }
-  }, [ratio, storageKey]);
 
   const onGripDown = useCallback(
     (e: React.MouseEvent) => {
@@ -102,10 +94,11 @@ export function useSplitDrag({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [axis, gripPx, minFirstPx, minSecondPx]);
+  // setRatio 来自 useState，引用恒定；列进来只是让 eslint 静音。
+  }, [axis, gripPx, minFirstPx, minSecondPx, setRatio]);
 
   /** 双击手柄回默认：拖歪了不用去设置里找。 */
-  const reset = useCallback(() => setRatio(defaultRatio), [defaultRatio]);
+  const reset = useCallback(() => setRatio(defaultRatio), [defaultRatio, setRatio]);
 
   return { ratio, setRatio, onGripDown, dragging, reset };
 }

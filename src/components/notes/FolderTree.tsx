@@ -11,7 +11,7 @@
  *
  * 🔴 红线：无 AI。
  */
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useMemo, useState } from "react";
 import { ChevronRight, FolderPlus, Inbox, Library } from "lucide-react";
 import { CtxMenuCtx } from "@/components/ContextMenu";
 import { NOTE_DRAG_MIME } from "./NoteList";
@@ -20,6 +20,7 @@ import { useFolderOps } from "./useFolderOps";
 import { DailySection } from "./DailySection";
 import { Trash2 } from "lucide-react";
 import styles from "./FolderTree.module.css";
+import { usePersistedState } from "@/hooks/usePersistedState";
 
 /** 折叠状态的 localStorage 键。前缀跟项目其他键一致。 */
 const COLLAPSE_KEY = "pastepanda_kb_folder_collapsed";
@@ -91,26 +92,17 @@ export function FolderTree({
    * 落 localStorage 而不是后端配置：它是纯展示层的临时状态，不值得为它动 schema。
    * 项目里 `AiQuickActions` 的拖拽顺序用的是同一套做法。
    */
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem(COLLAPSE_KEY);
-      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-    } catch {
-      // 解不出来就当全展开。一个坏掉的展示层偏好不能让侧栏渲染不出来。
-      return new Set<string>();
-    }
-  });
-
-  // ❗ 写入放在 effect 里而不是 `setCollapsed` 的 updater 里：updater 可能在
-  //   render 阶段被调（StrictMode 会双调），而 localStorage 写入是副作用。
-  //   这个坑项目里踩过一次（App.tsx 里 `aiAwarenessActive` 那条注释）。
-  useEffect(() => {
-    try {
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]));
-    } catch {
-      // 写不进去（隐私模式 / 配额满）不影响功能，下次打开全展开而已。
-    }
-  }, [collapsed]);
+  // 读写与异常兜底全走公共 hook（规则 #11）。存的是数组，用的是 Set，
+  // 所以两头各转一下；“写入必须在 effect 里”那条约束已写在 hook 的注释里。
+  // 解不出来就当全展开：一个坏掉的展示层偏好不能让侧栏渲染不出来。
+  const [collapsed, setCollapsed] = usePersistedState<Set<string>>(
+    COLLAPSE_KEY,
+    new Set<string>(),
+    {
+      parse: (raw) => new Set(JSON.parse(raw) as string[]),
+      serialize: (v) => JSON.stringify([...v]),
+    },
+  );
 
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
 
@@ -154,7 +146,8 @@ export function FolderTree({
       else next.add(id);
       return next;
     });
-  }, []);
+    // setCollapsed 来自 useState，引用恒定；列进来只是让 eslint 静音。
+  }, [setCollapsed]);
 
   // 增删改与右键菜单构造已收进 useFolderOps（合在本文件会超规则 #7 的 300 行）
   const { create, rename, buildMenu } = useFolderOps({

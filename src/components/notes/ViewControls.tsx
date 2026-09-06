@@ -14,12 +14,14 @@
  *
  * 🔴 红线：纯展示层，无 AI、不联网。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ArrowUpDown, Rows3, SlidersHorizontal, X } from "lucide-react";
 import type { Tri, ViewChip, ViewOption } from "@/lib/notes/viewOpts";
 import { TagBadge } from "@/components/TagBadge";
 import type { Tag } from "@/stores/appStore";
 import styles from "./ViewControls.module.css";
+import { useClickOutside } from "@/hooks/useClickOutside";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 /** 一个单选菜单的规格。 */
 export interface MenuSpec {
@@ -44,26 +46,14 @@ export function ViewControls({ sort, group, filterPanel, filterActive }: Props) 
   const [open, setOpen] = useState<Open>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // 点外面 / 敲 ESC 关浮层。mousedown 而不是 click：
-  // 用 click 时，在列表上按住拖选再松手也会算一次外部点击，体验上反应滞后。
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(null);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  // 点外面 / 敲 Esc 关浮层，两者均走公共 hook（规则 #11）。
+  //
+  // ❗ Esc 走 `useDialogEscape` 而不是自己监：它是捕获期 + stopPropagation。
+  //   原先的冒泡监听不阻断，关掉浮层的同时 App 那条全局 Esc 链还会接着跑（
+  //   清多选、甚至隐藏整个窗口）——用户只想关个下拉。
+  const closeMenu = useCallback(() => setOpen(null), []);
+  useClickOutside(wrapRef, closeMenu, open !== null);
+  useDialogEscape(closeMenu, open !== null);
 
   const toggle = useCallback((which: Exclude<Open, null>) => {
     setOpen((cur) => (cur === which ? null : which));

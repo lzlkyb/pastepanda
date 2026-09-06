@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { logger } from "@/lib/logger";
 import styles from "./NoteDetailPane.module.css";
+import { usePersistedState } from "@/hooks/usePersistedState";
 
 /** 后端 `data_store::BackLink`。字段名保持与 Rust 一致。 */
 interface BackLink {
@@ -31,7 +32,13 @@ export function NoteBacklinks({ noteId, onOpenNote }: {
   onOpenNote?: (id: string) => void;
 }) {
   const [links, setLinks] = useState<BackLink[]>([]);
-  const [open, setOpen] = useState(() => localStorage.getItem(LS_KEY) !== "0");
+  // 🔴 原先这里是裸的 `localStorage.getItem`，**没包 try**——隐私模式/禁用本地
+  //   存储时它会抛异常，整个反链面板直接渲染失败，而它存的只是一个展开偏好。
+  //   写入也原在 `setOpen` 的 updater 里（StrictMode 会双调），现在由 hook 放到 effect。
+  const [open, setOpen] = usePersistedState(LS_KEY, true, {
+    parse: (raw) => raw !== "0",
+    serialize: (v) => (v ? "1" : "0"),
+  });
 
   useEffect(() => {
     let alive = true;
@@ -52,12 +59,7 @@ export function NoteBacklinks({ noteId, onOpenNote }: {
     // 挂 content 依赖等于每敲一下都查一次库（规则 #8）。
   }, [noteId]);
 
-  const toggle = () => {
-    setOpen((v) => {
-      localStorage.setItem(LS_KEY, v ? "0" : "1");
-      return !v;
-    });
-  };
+  const toggle = () => setOpen((v) => !v);
 
   return (
     <div className={styles.backlinks}>
