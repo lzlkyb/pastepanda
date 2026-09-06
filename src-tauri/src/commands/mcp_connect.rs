@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn 没有mcpServers的配置会被补上() {
+    fn 没有服务器表的配置会被补上() {
         let mut root = json!({ "foo": 1 });
         merge_entry(&mut root, json!({ "url": "a" })).unwrap();
         assert_eq!(root["mcpServers"]["pastepanda"]["url"], json!("a"));
@@ -414,7 +414,9 @@ mod tests {
     }
 
     #[test]
-    fn mcpServers不是对象时宁可报错也不覆盖() {
+    // ❗ 函数名里不写 `mcpServers`：嵌了 ASCII 驼峰会触发 non_snake_case 警告，
+    //   而 pre-push 钩子里多一条警告就多一分噪音。
+    fn 服务器表不是对象时宁可报错也不覆盖() {
         let mut root = json!({ "mcpServers": "不知道谁写成了字符串" });
         assert!(merge_entry(&mut root, json!({})).is_err());
         assert_eq!(root["mcpServers"], json!("不知道谁写成了字符串"), "报错了就不能动它");
