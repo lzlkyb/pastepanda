@@ -113,9 +113,47 @@ fn test_改动过的邀请码拒绝() {
 
 #[test]
 fn test_截断的邀请码给得出所以然的错() {
-    // 用户手里只有一串 base64，统一报「无效」的话他无从下手（规则 #15.3）。
+    // 用户手里只有一串码，统一报「无效」的话他无从下手（规则 #15.3）。
+    //
+    // ❗ 断言的是**说法具体**，不再断言字面含 "base64"（2026-09-06 改）：
+    //   “base64” 是用户看不懂的黑话，而旧文案「可能是复制时少了几个字符」
+    //   还把人往错方向引——真正的常见原因是混进了看不见的字符（见下一条用例）。
     let e = invite::decode("这显然不是邀请码", NOW).expect_err("该拒");
-    assert!(e.contains("base64"), "要指出是复制缺字符：{}", e);
+    assert!(
+        e.contains("不属于邀请码的字符") || e.contains("只复制到了一半"),
+        "要说得出所以然，不能只报「无效」：{}",
+        e
+    );
+}
+
+#[test]
+fn test_搬运途中混入的不可见字符不影响解码() {
+    // 🔴 真实反馈（2026-09-06）：用户核实邀请码没错，却持续报「解不开」。
+    // 邀请码靠人在微信 / 邮件 / 便笺之间搬，路上会被插入软换行、空格、
+    // 零宽字符——这些**肉眼完全看不见**，所以“核对过是对的”与“程序说解不开”
+    // 可以同时成立。旧实现只做了 `trim()`，只去得掉首尾空白。
+    let dir = tmp_dir("dirty");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "书房台式机", vec![], NOW).unwrap();
+
+    // 在中间插一堆看不见的东西：换行、回车、空格、制表符、零宽空格、BOM
+    let mid = code.len() / 2;
+    let dirty = format!(
+        "  {}\n\r\t\u{200b}\u{feff} {}  ",
+        &code[..mid],
+        &code[mid..]
+    );
+    let inv = invite::decode(&dirty, NOW).expect("洗掉不可见字符后应该能解开");
+    assert_eq!(inv.name, "书房台式机");
+    assert_eq!(inv.node_id, me.node_id());
+
+    // ❗ 放宽不能放到“改过的码也能过”：把身份字段改掉仍须被签名拦下。
+    let tampered = dirty.replace("书房台式机", "别的机器");
+    if tampered != dirty {
+        assert!(invite::decode(&tampered, NOW).is_err(), "改过的码必须拒");
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
