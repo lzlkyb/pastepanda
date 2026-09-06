@@ -319,6 +319,19 @@ impl PairState {
         v
     }
 
+    /// 最后一次听到某设备招呼包的 unix 秒。
+    ///
+    /// ❗ 判「在线」要用这个，不能用「最近收到过它的加密消息」：
+    /// 加密消息只在剪贴板变动时才发，拿它当心跳会让一台安静但在线的设备
+    /// 显示成离线，也会让一台几小时前发过一条、现已关机的设备一直显示在线。
+    /// 招呼包是每 [`HELLO_INTERVAL_SECS`] 秒一次的心跳，才是正确的判据。
+    pub fn last_heard(&self, device_id: &str) -> Option<i64> {
+        self.nearby
+            .lock()
+            .ok()
+            .and_then(|m| m.get(device_id).map(|d| d.last_seen))
+    }
+
     pub fn device_name_of(&self, device_id: &str) -> Option<String> {
         self.nearby
             .lock()

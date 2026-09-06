@@ -92,9 +92,26 @@ pub fn encode(
 /// 每一种失败都给**不同**的话：用户手里只有一串 base64，
 /// 统一报「邀请码无效」的话他无从下手（规则 #15.3）。
 pub fn decode(code: &str, now_ms: i64) -> Result<Invite, String> {
+    let cleaned = normalize(code);
+
+    // 🔴 先分开「多粘了别的文字」与「码本身坏了」——这是两种完全不同的失误，
+    //   给同一句话会把人往错方向引。
+    if cleaned.visible_junk > 0 {
+        return Err(format!(
+            "这串里混进了 {} 个不属于邀请码的字符（多半是把「邀请码：」这样的前缀、\
+             或整段聊天内容一起粘进来了）。邀请码是一长串字母、数字和 - _，请只粘那一段。",
+            cleaned.visible_junk
+        ));
+    }
+    if cleaned.code.is_empty() {
+        return Err("没有粘进任何邀请码内容".to_string());
+    }
+
+    // 洗过之后剩下的全是 base64url 字母，所以这里**只剩一种失败可能**：长度不合法
+    // （len % 4 == 1）。文案因此可以直接指向真正的原因，不再猫一句狗一句。
     let raw = b64()
-        .decode(normalize(code))
-        .map_err(|_| "这串不是有效的邀请码（里面混了不属于邀请码的字符，或者只复制到了一半）")?;
+        .decode(&cleaned.code)
+        .map_err(|_| "这串邀请码长度不对，多半是只复制到了一半。请回到那台机器重新点一次「复制邀请码」")?;
     let wire: Wire = serde_json::from_slice(&raw)
         .map_err(|_| "邀请码内容不完整或版本不对（解出来的不是邀请码结构）")?;
 
@@ -127,35 +144,63 @@ fn b64() -> base64::engine::general_purpose::GeneralPurpose {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
 }
 
+/// [`normalize`] 的结果。
+struct Cleaned {
+    /// 洗完之后的纯 base64url 串。
+    code: String,
+    /// 丢掉的**看得见**的字符数。只用来决定错误话术，不影响解码。
+    visible_junk: usize,
+}
+
 /// 把人手搬运过的邀请码洗成解码器能吃的形式。
 ///
-/// 🔴 2026-09-06 修一个真实反馈：用户核实邀请码没错，却持续报「base64 解不开」。
-/// 原因是这里只做了 `code.trim()`，**它只去得掉首尾空白**；而邀请码是靠人在
-/// 微信 / 邮件 / 便笺之间搬的，路上极容易被插入：
-///   - **软换行**：长串在聊天框里被折行，跨行选中复制就带上了 `\n`
-///   - 空格 / 制表符
-///   - **零宽字符**（U+200B/C/D、BOM）：部分富文本控件会拿它做折行点
+/// # 🔴 用白名单，不用黑名单
 ///
-/// 这些字符**肉眼完全看不出来**——所以“用户核对过邀请码是对的”与
-/// “程序说解不开”可以同时成立，而旧文案「可能是复制时少了几个字符」
-/// 还把人往反方向引。
+/// 邀请码是靠人在微信 / 邮件 / 便笺之间搬的，路上会被插入软换行、空格、
+/// 以及各种**肉眼完全看不见**的格式字符——所以“用户核对过邀请码是对的”与
+/// “程序说解不开”可以同时成立。
+///
+/// 2026-09-06 的第一版修复用的是**黑名单**（`is_whitespace()` 加上列举
+/// ZWSP/ZWNJ/ZWJ/BOM），但那份名单**在构造上就不可能完整**——复查时一次就又找出五个漏网的：
+///   - `U+200E` LRM / `U+200F` RLM（富文本控件、聊天软件会插）
+///   - `U+2060` WORD JOINER（排版控件的折行点）
+///   - `U+00AD` 软连字符（编辑器在长串**折行处**插的，正是本 bug 最典型的场景）
+///   - `U+2066`..`U+2069` 方向隔离符
+/// 它们全是 Cf 类格式字符，`char::is_whitespace()` 一个都不认（White_Space=No）。
+///
+/// 改成**只保留 base64url 字母表** `[A-Za-z0-9_-]`，就没有「漏了哪一个」这回事了。
+/// 放宽不降低安全性：真正把关的是下面那道**签名校验**，洗字符只能让合法的码能读，
+/// 变不出一个能过签名的码。
 ///
 /// 顺带兼容标准字母表（`+/`）与尾部 `=` 填充：本地只会发 URL_SAFE_NO_PAD，
-/// 但码可能经过别的系统转手。放宽这里不降低安全性：真正把关的是下面
-/// 那道**签名校验**，洗字符只能让合法的码能读，变不出一个能过签名的码。
-fn normalize(code: &str) -> String {
-    code.chars()
-        .filter(|c| {
-            !c.is_whitespace()
-                && !matches!(c, '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}')
-                // 填充直接丢：解码器是 NO_PAD 模式，看到 `=` 反而会报错
-                && *c != '='
-        })
+/// 但码可能经过别的系统转手。
+fn normalize(code: &str) -> Cleaned {
+    let mut out = String::with_capacity(code.len());
+    let mut visible_junk = 0usize;
+    for c in code.chars() {
         // 标准字母表 → URL 安全字母表
-        .map(|c| match c {
+        let c = match c {
             '+' => '-',
             '/' => '_',
             c => c,
-        })
-        .collect()
+        };
+        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            out.push(c);
+        } else if c == '=' || c.is_whitespace() {
+            // 填充与空白：预期之内，静静丢掉
+            // （解码器是 NO_PAD 模式，看到 `=` 反而会报错）
+        } else if c.is_alphanumeric() || c.is_ascii_graphic() {
+            // 看得见的杂字：多半是把「邀请码：」之类的前缀或整段聊天一起粘进来了。
+            //
+            // ❗ 这个判据是**近似**的（全角标点如「：」既不是 alphanumeric 也不是
+            //   ascii_graphic，会被当成不可见字符）。但它**只决定报哪一句话**，
+            //   不影响能不能解码，所以不值得为此引一个 Unicode 分类库。
+            visible_junk += 1;
+        }
+        // 其余（零宽、方向标记、软连字符……）一律静静丢掉
+    }
+    Cleaned {
+        code: out,
+        visible_junk,
+    }
 }

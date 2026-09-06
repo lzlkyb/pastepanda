@@ -1725,6 +1725,19 @@
   font-size: 12px;
 }
 
+/* 自定义接入的 transport 选择器。做宽一点：选项文案带着「本机扫到 328 处」
+   这类提示，截断了就等于没提示。 */
+.mcpSelect {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--input-bg, var(--card-bg));
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
 .mcpApplyBtn {
   padding: 3px 12px;
   border: 1px solid var(--border-color);
@@ -2220,6 +2233,37 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 接入状态徽标。flex-shrink:0——它被挤掉的话，用户就看不出自己到底接没接入，
+   而那正是这一行最要紧的信息（路径可以截断，它不行）。 */
+.mcpBadge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--hover);
+  border: 1px solid var(--border-color);
+}
+.mcpBadgeOn {
+  color: var(--green, #2ea043);
+  background: color-mix(in srgb, var(--green, #2ea043) 12%, transparent);
+  border-color: color-mix(in srgb, var(--green, #2ea043) 34%, transparent);
+}
+/* 「令牌或地址已变更」用警告色而不是中性色：这个客户端已经连不上了，
+   而它自己不会报错——不醒目的话用户只会觉得「工具突然不好用了」。 */
+.mcpBadgeStale {
+  color: var(--warn, #f0a020);
+  background: color-mix(in srgb, var(--warn, #f0a020) 14%, transparent);
+  border-color: color-mix(in srgb, var(--warn, #f0a020) 36%, transparent);
+}
+.mcpBadgeBad {
+  color: var(--red, #e5534b);
+  background: color-mix(in srgb, var(--red, #e5534b) 12%, transparent);
+  border-color: color-mix(in srgb, var(--red, #e5534b) 34%, transparent);
 }
 
 .mcpClientBody {

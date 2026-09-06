@@ -49,6 +49,41 @@ pub fn finish_rename(tmp_path: &Path, final_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// 把文本**原子地覆盖**写到 `final_path`（临时文件 → fsync → rename 替换）。
+///
+/// 🔴 **不能用上面的 `finish_rename`。** 那个是给内容寻址文件（文件名 = 内容哈希）
+/// 用的，它把「目标已存在」当成成功并**丢掉自己的 tmp**。而配置文件的目标几乎总是已存在的，
+/// 拿那个函数来写配置 = 每次都静静地不写、还报成功。
+///
+/// fsync 不能省：写完就 rename 而不落盘的话，断电后可能拿到一个名字对、内容是空的文件——
+/// 对配置文件而言这比写失败更糟（失败至少旧文件还在）。
+///
+/// Windows 上 `std::fs::rename` 走的是 `MoveFileEx + MOVEFILE_REPLACE_EXISTING`，
+/// 同卷内可以盖写已存在的目标。
+pub fn write_replace(final_path: &Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = final_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("创建目录 {} 失败：{}", parent.display(), e))?;
+    }
+    let tmp = unique_tmp_path(final_path);
+    // 单独开作用域：要先 fsync 再关句柄，然后才能 rename（Windows 下句柄没关就 rename 会报拒绝访问）
+    {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp)
+            .map_err(|e| format!("创建临时文件失败：{}", e))?;
+        f.write_all(content.as_bytes())
+            .and_then(|_| f.sync_all())
+            .map_err(|e| {
+                let _ = std::fs::remove_file(&tmp);
+                format!("写临时文件失败：{}", e)
+            })?;
+    }
+    std::fs::rename(&tmp, final_path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("替换 {} 失败：{}", final_path.display(), e)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,6 +109,30 @@ mod tests {
         // 目标已存在（并发者先落好了）→ 不报错，且丢掉自己的 tmp
         assert!(finish_rename(&tmp, &target).is_ok());
         assert!(!tmp.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_replace真的盖写已存在的文件() {
+        // 🔴 这正是 `finish_rename` 做不到的那件事：它会把「目标已存在」当成成功并不写。
+        // 配置文件的目标几乎总是已存在的，没这条断言就会静静地退化成「永远不生效」。
+        let dir = std::env::temp_dir().join(format!("pp_wr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("conf.json");
+        std::fs::write(&target, b"old").unwrap();
+        write_replace(&target, "new").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_replace会先把父目录建出来() {
+        // WorkBuddy 的 `~/.workbuddy/` 在未启用过时可能根本不存在
+        let dir = std::env::temp_dir().join(format!("pp_wr2_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let target = dir.join("sub").join("mcp.json");
+        write_replace(&target, "{}").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "{}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

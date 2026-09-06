@@ -180,6 +180,79 @@ export async function mcpAuditClear(): Promise<number | null> {
   }
 }
 
+// ─── 一键接入（对应 commands/mcp_connect.rs）───
+
+/** 某个客户端配置的探测结果。 */
+export interface McpClientProbe {
+  /** 展开 `~` 后的绝对路径。确认框里要把它原样显示出来。 */
+  path: string;
+  exists: boolean;
+  /**
+   * `none` 未接入 · `current` 已接入且地址令牌都对 ·
+   * `stale` 接入过但地址/令牌变了 · `unreadable` 读不了或解析不开
+   *
+   * ❗ `stale` 不能当成「已接入」显示：那个客户端其实已经连不上了，而它不会报错。
+   */
+  state: "none" | "current" | "stale" | "unreadable";
+  /** `unreadable` 时的原因；其余情况为空串。 */
+  detail: string;
+}
+
+/** 一次写入（接入或移除）的结果。 */
+export interface McpConnectOutcome {
+  path: string;
+  /** 备份文件路径；原文件不存在（本次新建）或未发生改动时为空串。 */
+  backup: string;
+  /** 本次是否盖掉/删掉了一条已存在的条目。 */
+  replaced: boolean;
+}
+
+/**
+ * 探测某个客户端的接入状态。
+ *
+ * 失败不弹 toast：面板一打开就批量跑，弹了就是好几个一起刷。
+ * 后端已把「读不了」变成 `state: "unreadable"` 返回，界面在卡片上就地显示原因。
+ */
+export async function mcpClientProbe(configPath: string): Promise<McpClientProbe | null> {
+  try {
+    return await invoke<McpClientProbe>("mcp_client_probe", { configPath });
+  } catch (e) {
+    logger.warn("探测 MCP 客户端配置失败", e);
+    return null;
+  }
+}
+
+/**
+ * 一键接入：备份 → 合并 → 原子写。调用方**必须先弹确认**（这会改用户自己的文件）。
+ *
+ * `entry` 用 `buildMcpEntryForConnect()` 拼，令牌位置是占位符；后端才换真令牌。
+ * 失败返回错误文案（而不是 `null`）：后端的错误话术写得很具体（哪个文件、
+ * 为什么没改），丢掉就只剩一个「接入失败」。
+ */
+export async function mcpClientConnect(
+  configPath: string,
+  entry: Record<string, unknown>,
+): Promise<{ ok: McpConnectOutcome } | { err: string }> {
+  try {
+    return { ok: await invoke<McpConnectOutcome>("mcp_client_connect", { configPath, entry }) };
+  } catch (e) {
+    logger.error("一键接入失败", e);
+    return { err: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 移除接入：只删 `mcpServers.pastepanda`。同样需要调用方先弹确认。 */
+export async function mcpClientDisconnect(
+  configPath: string,
+): Promise<{ ok: McpConnectOutcome } | { err: string }> {
+  try {
+    return { ok: await invoke<McpConnectOutcome>("mcp_client_disconnect", { configPath }) };
+  } catch (e) {
+    logger.error("移除 MCP 接入失败", e);
+    return { err: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
  * 改监听端口。成功返回 `null`，失败返回错误文案。
  *

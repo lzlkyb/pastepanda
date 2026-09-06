@@ -18,6 +18,7 @@ fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fm
 
 pub mod ai;
 mod atomic_write;
+pub mod user_paths;
 mod auto_cleanup;
 /// AM-5 召回基准。`#[cfg(test)]`：只在 `cargo test` 下编译，**不进安装包**。
 /// 真库跑法见模块文档。
@@ -633,6 +634,9 @@ pub fn run() {
             commands::regenerate_lan_pairing_key,
             // 附近设备配对（免交换密钥）
             commands::get_lan_nearby,
+            commands::get_lan_running,
+            commands::get_lan_paired,
+            commands::lan_forget_device,
             commands::get_lan_pair_state,
             commands::lan_pair_start,
             commands::lan_pair_confirm,
@@ -659,6 +663,9 @@ pub fn run() {
             commands::mcp_regenerate_token,
             commands::mcp_set_enabled,
             commands::mcp_set_port,
+            commands::mcp_client_probe,
+            commands::mcp_client_connect,
+            commands::mcp_client_disconnect,
             commands::get_app_version,
             commands::get_app_name,
             commands::ocr_image,

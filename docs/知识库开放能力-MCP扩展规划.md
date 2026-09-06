@@ -615,6 +615,28 @@ O-7  自动化边界   ▶ ⚠️ 待拍板，未定之前不开工
 - [Microsoft：Protecting against indirect prompt injection in MCP](https://developer.microsoft.com/blog/protecting-against-indirect-injection-attacks-mcp/)
 - [Aptible：Prompt Injection in MCP — Tool Poisoning and Blast Radius](https://www.aptible.com/mcp-security/mcp-prompt-injection)
 
+## 待办：一键接入第 5 步——扩充客户端名单（2026-09-06 记入）
+
+前四步已完成（面板重排 / Claude Code / WorkBuddy / 自定义接入），第 5 步**暂缓**。
+
+待核实的客户端：Cursor、Claude Desktop、CodeBuddy、Qoder、MarsCode、千问办公（路径未知，需用户提供）。
+
+这一步**调研为主、写代码为辅**：代码侧只是往 `src/lib/mcpClients.ts` 的 `MCP_CLIENTS`
+里加条目，但每一条都必须填 `evidence`（类型上就是必填的）。
+
+❗ **不能凭印象填两个字段**：
+- `configPath`：路径写错 → 探测永远报「未检测到配置文件」，或更糟——往一个不相干的文件里写东西
+- `transport`：写错一个字**不报错**，只会让客户端静静地连不上
+  （本机实测分布：`streamableHttp` 328 · `sse` 24 · `http` 12 · `streamable-http` 6 · 不写 `type` 66）
+
+在此之前，名单外的工具走**自定义接入**（已可用）：选文件 + 选 transport + 写入前预览，
+走的是与内置客户端完全相同的后端流程。
+
+待验证（第 3 步遗留）：WorkBuddy 能否用 `headers` 里写死的字面量令牌连上。
+目前依据是它自带 141 条连接器里有 4 条是纯字面量——**这是推断，不是实测**，需真机点一次接入确认。
+
+---
+
 **检索参数与上下文增强**
 - [智谱：知识库检索 API](https://docs.bigmodel.cn/api-reference/知识库-api/知识库检索.md)
 - [智谱：上下文增强技术报告](https://docs.bigmodel.cn/cn/guide/tools/knowledge/contextual.md)

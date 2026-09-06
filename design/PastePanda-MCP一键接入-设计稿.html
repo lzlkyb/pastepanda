@@ -241,11 +241,15 @@
 <h2>六、分步</h2>
 <table>
   <tr><th>步</th><th>内容</th></tr>
-  <tr><td>1</td><td>面板重排（首屏只剩接入，其余收进高级）+ 复制卡片 —— 不碰任何外部文件，零风险</td></tr>
-  <tr><td>2</td><td>Claude Code 一键（合并逻辑拿本机那 3 个现成条目做验证）</td></tr>
-  <tr><td>3</td><td>WorkBuddy 一键</td></tr>
-  <tr><td>4</td><td>自定义接入（选文件 + transport 选择 + 预览）</td></tr>
-  <tr><td>5</td><td>待核实：Cursor / Claude Desktop / CodeBuddy / Qoder / MarsCode</td></tr>
+  <tr><td>1</td><td>✅ 面板重排（首屏只剩接入，其余收进高级）+ 复制卡片 —— 不碰任何外部文件，零风险</td></tr>
+  <tr><td>2</td><td>✅ Claude Code 一键（合并逻辑拿本机那 3 个现成条目做了回归测试）</td></tr>
+  <tr><td>3</td><td>✅ WorkBuddy 一键——后端写成通用的（只收「路径 + 条目」），前端遍历注册表渲染，
+      所以做完第 2 步它自然就有了。<b>尚需真机验证</b>：它能否用 headers 里写死的字面量令牌连上，
+      目前依据是它自带 141 条连接器里有 4 条是纯字面量，<b>这是推断不是实测</b></td></tr>
+  <tr><td>4</td><td>✅ 自定义接入（选文件 + transport 选择 + 写入前预览）。后端一行未改——
+      后缀校验 / 解析不开就不改 / 先备份 / 只动自己那一条 / 原子写，对自定义路径一样生效</td></tr>
+  <tr><td>5</td><td>待核实：Cursor / Claude Desktop / CodeBuddy / Qoder / MarsCode / 千问办公（路径未知）。
+      每加一条都要填 <code>evidence</code>，所以是调研为主、写代码为辅</td></tr>
 </table>
 
 </body>

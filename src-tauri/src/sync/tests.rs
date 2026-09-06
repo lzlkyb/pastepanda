@@ -157,6 +157,68 @@ fn test_搬运途中混入的不可见字符不影响解码() {
 }
 
 #[test]
+fn test黑名单漏掉的那五个不可见字符也要能洗掉() {
+    // 🔴 2026-09-06 的第一版修复用黑名单列举不可见字符，复查时一次就又找出五个漏网的。
+    // 它们全是 Cf 类格式字符，`is_whitespace()` 一个都不认（White_Space=No），
+    // 所以旧实现会把它们当正常字符交给 base64 解码器 → 报「解不开」。
+    //
+    // 其中 U+00AD 软连字符最要紧：编辑器就是在长串的**折行处**插它的，
+    // 而“长串在聊天框里被折行”正是本 bug 最典型的场景。
+    //
+    // 这条挂了 = 有人把白名单改回了黑名单。
+    let dir = tmp_dir("invisible");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "书房台式机", vec![], NOW).unwrap();
+
+    for (name, ch) in [
+        ("U+200E LRM 左至右标记", '\u{200e}'),
+        ("U+200F RLM 右至左标记", '\u{200f}'),
+        ("U+2060 WORD JOINER", '\u{2060}'),
+        ("U+00AD 软连字符", '\u{00ad}'),
+        ("U+2066 方向隔离符", '\u{2066}'),
+    ] {
+        // 插在中间，模拟折行处被插入
+        let mid = code.len() / 2;
+        let dirty = format!("{}{}{}", &code[..mid], ch, &code[mid..]);
+        let inv = invite::decode(&dirty, NOW)
+            .unwrap_or_else(|e| panic!("{} 没被洗掉：{}", name, e));
+        assert_eq!(inv.node_id, me.node_id(), "{}", name);
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test多粘了别的文字与码本身坏了要报不同的话() {
+    // 两种完全不同的失误，给同一句话会把人往错方向引（规则 #15.3）。
+    let dir = tmp_dir("junk");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "书房台式机", vec![], NOW).unwrap();
+
+    // ① 把前缀一起粘进来了 → 要明确说「混进了别的字符」
+    let with_prefix = format!("邀请码{}", code);
+    let e1 = invite::decode(&with_prefix, NOW).expect_err("多粘了文字该拒");
+    assert!(e1.contains("不属于邀请码的字符"), "该提示混入文字：{}", e1);
+
+    // ② 只复制到一半 → 要明确说「只复制到了一半」，而不是说混入了字符
+    //   造一个长度 %4==1 的截断（那是洗完之后唯一还能失败的情形）
+    let cut = code.len() - (code.len() % 4) - 3;
+    let truncated = &code[..cut + 1];
+    let e2 = invite::decode(truncated, NOW).expect_err("截断的码该拒");
+    assert!(
+        !e2.contains("不属于邀请码的字符"),
+        "截断不该报成「混入了字符」，那会让用户去找不存在的脏字符：{}",
+        e2
+    );
+
+    // ③ 空串要单独一句，不能跟上面两种混
+    let e3 = invite::decode("   \n  ", NOW).expect_err("空串该拒");
+    assert!(e3.contains("没有粘进"), "空串要说清楚是空的：{}", e3);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_过期的邀请码拒绝且说清怎么办() {
     let dir = tmp_dir("old");
     let me = NodeIdentity::load_or_create(&dir).unwrap();

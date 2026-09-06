@@ -12,7 +12,7 @@ use crate::data_store::DataStore;
 use crate::mcp::{self, McpServer, McpStatus};
 
 /// 应用数据目录（令牌文件就在这里）。
-fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(super) fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("无法获取应用数据目录：{}", e))
@@ -22,7 +22,7 @@ fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
 ///
 /// 拒绝 1024 以下：那些是特权/保留端口。非法值不报错而是回退到默认端口：
 /// 这个值由前端输入校验把关，后端只负责不让一个脏配置把服务弄成永远启不了。
-fn configured_port(store: &DataStore) -> u16 {
+pub(super) fn configured_port(store: &DataStore) -> u16 {
     store
         .get_config()
         .ok()

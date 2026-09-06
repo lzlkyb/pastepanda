@@ -11,7 +11,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
-const MULTICAST_ADDR: &str = "224.1.1.1:5007";
+const MULTICAST_GROUP: std::net::Ipv4Addr = std::net::Ipv4Addr::new(224, 1, 1, 1);
+const MULTICAST_PORT: u16 = 5007;
 /// 图片通过 LAN 同步的最大文件大小 (2MB)
 const MAX_IMAGE_SIZE_LAN: u64 = 2 * 1024 * 1024;
 /// 单条局域网消息允许的最大原始负载大小 (20MB)，超过则在解析/解码前直接丢弃，
@@ -74,6 +75,246 @@ pub fn validate_pairing_key(key: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+// ===== 组播收发：逐块网卡 =====
+
+/// 本机所有可用于组播收发的 IPv4 网卡地址。
+///
+/// # 🔴 为什么必须逐块列出，而不能图省事用 `INADDR_ANY`
+///
+/// `Ipv4Addr::UNSPECIFIED` 在组播语境下**不是「所有网卡」**，
+/// 而是「让系统按路由表挑一块」。装了 VMware / VirtualBox / Hyper-V /
+/// WSL / Docker / VPN 的机器上（现在相当常见），挑中的经常是**虚拟网卡**——于是：
+///   · 发出去的组播包压根没上真实局域网
+///   · 加入组播组也加在了虚拟网卡上，收不到真实局域网的包
+/// 两台同网段的机器就此互相看不见，**而且不报任何错**。
+/// 这正是 2026-09-06「发送测试消息两台电脑互相发现不了」的根因。
+fn enumerate_ifaces() -> Vec<std::net::Ipv4Addr> {
+    let addrs: Vec<std::net::Ipv4Addr> = netdev::get_interfaces()
+        .into_iter()
+        .filter(|i| i.is_up() && !i.is_loopback())
+        .flat_map(|i| i.ipv4.into_iter().map(|n| n.addr()))
+        .filter(|a| !a.is_loopback() && !a.is_unspecified())
+        .collect();
+    if addrs.is_empty() {
+        // 一块都枚举不到时退回旧行为：宁可只走系统默认那块，也好过一个包都不发
+        log::warn!("[LanSync] 没枚举到可用的 IPv4 网卡，退回系统默认网卡");
+        return vec![std::net::Ipv4Addr::UNSPECIFIED];
+    }
+    addrs
+}
+
+/// 网卡列表缓存：`(枚举时刻, 地址表)`。
+static IFACE_CACHE: Mutex<Option<(i64, Vec<std::net::Ipv4Addr>)>> = Mutex::new(None);
+
+/// 缓存存活秒数。
+const IFACE_CACHE_SECS: i64 = 30;
+
+/// 本机可用于组播收发的 IPv4 网卡地址（带缓存）。
+///
+/// # 🔴 为什么要缓存
+///
+/// `netdev::get_interfaces()` **不便宜**：它默认带 `gateway` feature，
+/// 除了 `GetAdaptersAddresses` 还要去解析每块网卡的网关。而组播发送在
+/// 招呼包心跳上是**每 5 秒一次**，再加上每条消息一次——把枚举硬件
+/// 放在这条路径上是纯浪费（规则 #8）。
+///
+/// 网卡变动是低频事件（插拔网线、切 Wi-Fi、连 VPN），缓存 30 秒足够新鲜：
+/// 最坏情况是切网络后 30 秒内发不出去，而对端的招呼包本来就是 5 秒一发，
+/// 发现延迟本就在秒级。
+///
+/// ❗ 监听侧的 join 只在启动时跑一次，不受缓存影响。
+fn multicast_ifaces() -> Vec<std::net::Ipv4Addr> {
+    let now = chrono::Utc::now().timestamp();
+    if let Ok(g) = IFACE_CACHE.lock() {
+        if let Some((at, list)) = g.as_ref() {
+            if now - *at < IFACE_CACHE_SECS {
+                return list.clone();
+            }
+        }
+    }
+    let addrs = enumerate_ifaces();
+    if let Ok(mut g) = IFACE_CACHE.lock() {
+        *g = Some((now, addrs.clone()));
+    }
+    addrs
+}
+
+/// 经指定网卡发一份组播包。
+fn send_via_iface(ifaddr: &std::net::Ipv4Addr, payload: &[u8]) -> std::io::Result<()> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+    use std::net::{SocketAddr, SocketAddrV4};
+
+    let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    // 🔴 这一行是关键：不设它，包就从系统按路由表挑的那块网卡出去。
+    sock.set_multicast_if_v4(ifaddr)?;
+    // ❗ 组播 TTL 不是 `set_ttl`：那个设的是 `IP_TTL`，组播看的是 `IP_MULTICAST_TTL`。
+    //   旧代码写的 `set_ttl(2)` 对组播**从来没生效过**，组播 TTL 一直是默认的 1。
+    //   同网段仍能通，所以一直没被发现——但代码里写的「跨一跳」意图从未成立。
+    sock.set_multicast_ttl_v4(2)?;
+    sock.bind(&SockAddr::from(SocketAddr::from(SocketAddrV4::new(
+        *ifaddr, 0,
+    ))))?;
+    sock.send_to(
+        payload,
+        &SockAddr::from(SocketAddr::from(SocketAddrV4::new(
+            MULTICAST_GROUP,
+            MULTICAST_PORT,
+        ))),
+    )?;
+    Ok(())
+}
+
+/// 往**每一块**网卡各发一份组播包。
+///
+/// 收口三处重复（招呼包 / 握手包 / 加密消息），它们原先各写了一遍
+/// 「bind 0.0.0.0:0 → set_ttl → send_to」（规则 #11）。
+///
+/// 单块网卡失败只记 debug：虚拟网卡发不出去是常态，逐块 warn 会刷屏。
+/// 但**一块都没发出去**是真问题，必须记下来（规则 #15.3）。
+fn send_multicast(payload: &[u8], what: &str) {
+    let mut sent = 0usize;
+    for ifaddr in multicast_ifaces() {
+        match send_via_iface(&ifaddr, payload) {
+            Ok(()) => sent += 1,
+            Err(e) => log::debug!("[LanSync] 经网卡 {} 发送{}失败: {}", ifaddr, what, e),
+        }
+    }
+    if sent == 0 {
+        log::warn!("[LanSync] {}没能从任何一块网卡发出去", what);
+    }
+}
+
+/// 配置里存配对密钥的键。
+pub const CFG_PAIRING_KEY: &str = "lan_pairing_key";
+
+/// 启用一把配对密钥：**同时**写配置与写内存。
+///
+/// # 🔴 两件事必须一起做，少一件都是一个真 bug
+///
+/// - 只写内存 → 配对当时好用、**重启就失效**（启动时从配置读的还是旧密钥，见 `lib.rs` 的 setup）
+/// - 只写配置 → 当前会话仍用旧密钥，要重启才生效
+///
+/// 收成一个函数是因为这件事有**三个**入口（规则 #11）：手动粘密钥、重新生成、
+/// 以及「附近设备一键配对」。而 2026-09-06 的真实反馈正是第三个入口漏了落盘：
+/// `handle_pair_packet` 是监听线程里的自由函数，当时的签名里根本拿不到 `DataStore`——
+/// 不是有人忘了写一行，是那条路径压根没有落盘的能力。
+pub fn apply_pairing_key(app: &AppHandle, key: &str) -> Result<(), String> {
+    let key = key.trim();
+    validate_pairing_key(key)?;
+
+    let store = app
+        .try_state::<DataStore>()
+        .ok_or("数据库还没就绪，配对密钥没能保存")?;
+    let mut config = store.get_config()?;
+    // ❗ 不能 `if let Some(..)` 了事：配置不是对象时会静默跳过写入，
+    //   而 `save_config` 照样返回 Ok（规则 #15.3）。
+    let obj = config
+        .as_object_mut()
+        .ok_or("配置文件不是一个对象，配对密钥没能保存")?;
+    obj.insert(
+        CFG_PAIRING_KEY.to_string(),
+        serde_json::Value::String(key.to_string()),
+    );
+    store.save_config(&config)?;
+
+    if let Some(lan) = app.try_state::<LanSync>() {
+        lan.set_pairing_key(key.to_string());
+    }
+    Ok(())
+}
+
+// ===== 记住的设备名单（持久化）=====
+
+/// 配置里存「记住的设备」名单的键。
+pub const CFG_PAIRED_DEVICES: &str = "lan_paired_devices";
+
+/// 一台记住的设备。
+///
+/// # 🔴 只持久化身份，不持久化在线状态
+///
+/// `last_seen` 每收到一个包就变，写进配置等于每同步一次剪贴板就写一次盘。
+/// 在不在线是**运行期**的事，留在内存那张表（[`LanSync::devices`]）里。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairedDevice {
+    pub device_id: String,
+    pub device_name: String,
+    /// 首次记住的时刻（epoch 秒）。
+    pub paired_at: i64,
+}
+
+/// 读「记住的设备」名单。读不到就当空——这是展示用数据，不值得让整个面板报错。
+pub fn load_paired(app: &AppHandle) -> Vec<PairedDevice> {
+    let Some(store) = app.try_state::<DataStore>() else {
+        return Vec::new();
+    };
+    store
+        .get_config()
+        .ok()
+        .and_then(|c| c.get(CFG_PAIRED_DEVICES).cloned())
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
+fn save_paired(app: &AppHandle, list: &[PairedDevice]) -> Result<(), String> {
+    let store = app
+        .try_state::<DataStore>()
+        .ok_or("数据库还没就绪，设备名单没能保存")?;
+    let mut config = store.get_config()?;
+    let obj = config
+        .as_object_mut()
+        .ok_or("配置文件不是一个对象，设备名单没能保存")?;
+    obj.insert(
+        CFG_PAIRED_DEVICES.to_string(),
+        serde_json::to_value(list).map_err(|e| e.to_string())?,
+    );
+    store.save_config(&config)
+}
+
+/// 记住一台设备（已存在就只在名字变了时更新）。
+///
+/// ❗ 这个函数在**每收到一条对端加密消息**时都会被调用，所以
+/// **没变化就一个字节都不写**——否则每同步一次剪贴板就写一次配置。
+pub fn remember_device(app: &AppHandle, device_id: &str, device_name: &str) {
+    if device_id.is_empty() {
+        return;
+    }
+    let mut list = load_paired(app);
+    match list.iter_mut().find(|d| d.device_id == device_id) {
+        // 名字也没变 → 什么都不做
+        Some(d) if d.device_name == device_name => return,
+        Some(d) => d.device_name = device_name.to_string(),
+        None => list.push(PairedDevice {
+            device_id: device_id.to_string(),
+            device_name: device_name.to_string(),
+            paired_at: chrono::Utc::now().timestamp(),
+        }),
+    }
+    if let Err(e) = save_paired(app, &list) {
+        log::warn!("[LanSync] 记住设备 {} 失败：{}", device_id, e);
+    }
+}
+
+/// 忘记一台设备。返回「原本在不在名单里」。
+///
+/// # 🔴 它只清本机记录，**不吊销配对密钥**
+///
+/// 局域网同步是**单一群组密钥**模型：[`LanSync`] 只有一把 `pairing_key`，
+/// 谁拿到谁就能解密。所以忘记之后对方**仍然能解开本机的广播**，
+/// 只是本机不再把它当成已知设备（于是它会重新出现在「附近的设备」里，可以重新配对）。
+///
+/// 要真正踢掉一台设备只能重新生成密钥，而那会把**所有**设备一起踢掉。
+/// 界面上必须把这件事说清楚，否则用户会以为点了「忘记」就断开了。
+pub fn forget_device(app: &AppHandle, device_id: &str) -> Result<bool, String> {
+    let mut list = load_paired(app);
+    let before = list.len();
+    list.retain(|d| d.device_id != device_id);
+    if list.len() == before {
+        return Ok(false);
+    }
+    save_paired(app, &list)?;
+    Ok(true)
 }
 
 /// 密钥派生：配对密钥 → SHA-256 → 32 字节 AES-256 密钥
@@ -191,12 +432,7 @@ fn send_pair_raw(p: &crate::lan_pair::PairPacket) {
         log::warn!("[LanPair] 序列化握手包失败");
         return;
     };
-    if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
-        let _ = socket.set_ttl(2);
-        if let Err(e) = socket.send_to(json.as_bytes(), MULTICAST_ADDR) {
-            log::warn!("[LanPair] 发送握手包失败: {}", e);
-        }
-    }
+    send_multicast(json.as_bytes(), "握手包");
 }
 
 /// 试着把一包当握手包解。
@@ -221,6 +457,9 @@ fn handle_pair_packet(
     self_id: &str,
     pair: &std::sync::Arc<crate::lan_pair::PairState>,
     pairing_key: &Arc<Mutex<String>>,
+    // 🔴 接受对方密钥时要落盘，而落盘要经由 `DataStore`（只能从 AppHandle 取）。
+    //   之前这个签名里没有它，所以那条路径只能写内存——配对完当时好用、重启就失效。
+    app: &AppHandle,
 ) {
     use crate::lan_pair::{PairPacket, PairRole, KIND_HELLO, KIND_KEY, KIND_REQ, KIND_RESP};
 
@@ -308,8 +547,17 @@ fn handle_pair_packet(
                         crate::secret_registry::SLOT_LAN_PAIRING,
                         &key,
                     );
-                    if let Ok(mut g) = pairing_key.lock() {
-                        *g = key;
+                    // 🔴 必须落盘，否则重启后从配置读回的还是旧密钥，配对关系整个丢失。
+                    //   失败也要把内存那份写上（下面的 fallback）：本次会话至少能用，
+                    //   但得把「重启后会失效」这件事明确记下来，不静默（规则 #15.3）。
+                    if let Err(e) = crate::lan_sync::apply_pairing_key(app, &key) {
+                        log::warn!(
+                            "[LanPair] 配对密钥没能写进配置（{}）——本次会话可用，但重启后需要重新配对",
+                            e
+                        );
+                        if let Ok(mut g) = pairing_key.lock() {
+                            *g = key;
+                        }
                     }
                     pair.clear();
                     log::info!("[LanPair] 配对完成，已接受对方的配对密钥");
@@ -361,12 +609,21 @@ impl LanSync {
         self.pair.clone()
     }
 
-    /// 已配对（= 能解开广播）的设备 id。给 `list_nearby` 做过滤用。
-    pub fn paired_ids(&self) -> Vec<String> {
-        self.devices
-            .lock()
-            .map(|d| d.keys().cloned().collect())
-            .unwrap_or_default()
+    /// 监听线程是否在跑。
+    ///
+    /// ❗ 它会在「端口被占」或「一块网卡都没能加入组播组」时自己变回 false，
+    /// 所以它跟配置里那个开关不是一回事，界面上要分开显示。
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+
+    /// 从运行期在线表里拿掉一台设备。
+    ///
+    /// ❗ 忘记设备时要一并做，否则它还会显示「在线」。
+    pub fn drop_device(&self, device_id: &str) {
+        if let Ok(mut d) = self.devices.lock() {
+            d.remove(device_id);
+        }
     }
 
     /// 发一个**明文**握手包（招呼 / 请求 / 应答 / 密钥投递）。
@@ -379,14 +636,7 @@ impl LanSync {
             log::warn!("[LanPair] 序列化握手包失败");
             return;
         };
-        if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
-            if let Err(e) = socket.set_ttl(2) {
-                log::warn!("[LanPair] 设置 TTL 失败: {}", e);
-            }
-            if let Err(e) = socket.send_to(json.as_bytes(), MULTICAST_ADDR) {
-                log::warn!("[LanPair] 发送握手包失败: {}", e);
-            }
-        }
+        send_multicast(json.as_bytes(), "握手包");
     }
 
     /// 获取已发现的设备列表
@@ -493,14 +743,7 @@ impl LanSync {
             }
         };
 
-        if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
-            if let Err(e) = socket.set_ttl(2) {
-                log::warn!("[LanSync] 设置 TTL 失败: {}", e);
-            }
-            if let Err(e) = socket.send_to(wire.as_bytes(), MULTICAST_ADDR) {
-                log::warn!("[LanSync] 发送消息失败: {}", e);
-            }
-        }
+        send_multicast(wire.as_bytes(), "加密消息");
     }
 
     /// 启动局域网监听线程
@@ -551,12 +794,26 @@ impl LanSync {
                 }
             };
 
-            use std::net::Ipv4Addr;
-            let multicast = Ipv4Addr::new(224, 1, 1, 1);
-            let interface = Ipv4Addr::UNSPECIFIED;
-            if let Err(e) = socket.join_multicast_v4(&multicast, &interface) {
-                log::warn!("[LanSync] 加入组播组失败: {}", e);
+            // 🔴 逐块网卡加入组播组。旧代码用 `INADDR_ANY` 只加了系统挑的那一块，
+            //   在有虚拟网卡的机器上经常加错（详见 `multicast_ifaces`）。
+            let mut joined = 0usize;
+            for ifaddr in multicast_ifaces() {
+                match socket.join_multicast_v4(&MULTICAST_GROUP, &ifaddr) {
+                    Ok(()) => joined += 1,
+                    // 虚拟网卡加不进去是常态，逐块 warn 会刷屏
+                    Err(e) => log::debug!("[LanSync] 网卡 {} 加入组播组失败: {}", ifaddr, e),
+                }
             }
+            if joined == 0 {
+                // 🔴 一块都没加成 = 这个监听线程**永远收不到任何东西**。
+                //   旧代码只 warn 一句就继续跑，界面显示「运行中」而功能是死的——
+                //   用户看到的就是「没报错但就是发现不了」（规则 #15.3）。
+                //   复位 running 后返回，开关会回到关态，用户至少能重试。
+                log::error!("[LanSync] 没能在任何一块网卡上加入组播组，局域网发现不可用");
+                running.store(false, Ordering::SeqCst);
+                return;
+            }
+            log::info!("[LanSync] 已在 {} 块网卡上加入组播组", joined);
             if let Err(e) = socket.set_read_timeout(Some(std::time::Duration::from_secs(2))) {
                 log::warn!("[LanSync] 设置读取超时失败: {}", e);
             }
@@ -582,7 +839,7 @@ impl LanSync {
                         // 走下面那条路会被当成「解不开的包」丢掉——而那正是
                         // 未配对设备彼此隐形的原因。
                         if let Some(p) = try_parse_pair(text) {
-                            handle_pair_packet(&p, &device_id, &pair, &pairing_key);
+                            handle_pair_packet(&p, &device_id, &pair, &pairing_key, &app_handle);
                             continue;
                         }
 
@@ -633,6 +890,21 @@ impl LanSync {
                             let now = chrono::Local::now()
                                 .format("%Y-%m-%d %H:%M:%S")
                                 .to_string();
+                            // 🔴 同时记进持久化名单。不记的话，重启后「已配对」就归零，
+                            //   而且对方掉线后仍留在内存表里被当成已配对、被从附近设备里过滤掉，
+                            //   于是「既看不见也配不回来」（2026-09-06 的真实反馈）。
+                            //
+                            // ❗ 先拿**内存表**卡一道，只在「本次运行头一回见到它」或「改名了」时
+                            //   才去碰配置。`remember_device` 内部虽然也判了「没变化不写盘」，
+                            //   但它得先 `get_config()` 才知道——而那是一次全表扫描 + JSON 解析，
+                            //   还要抢数据库连接锁。放在每条消息上跑是浪费（规则 #8）。
+                            let known = devices
+                                .lock()
+                                .ok()
+                                .and_then(|d| d.get(&msg.device_id).map(|x| x.device_name.clone()));
+                            if known.as_deref() != Some(msg.device_name.as_str()) {
+                                remember_device(&app_handle, &msg.device_id, &msg.device_name);
+                            }
                             if let Ok(mut devs) = devices.lock() {
                                 devs.insert(
                                     msg.device_id.clone(),

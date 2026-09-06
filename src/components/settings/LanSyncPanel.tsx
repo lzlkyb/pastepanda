@@ -2,16 +2,27 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
 import { LanNearby } from "./LanNearby";
+import { LanPairedList, type PairedDevice } from "./LanPairedList";
 import styles from "../Settings.module.css";
 
-interface LanDevice { device_id: string; device_name: string; last_seen: string; }
-
 export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void }) {
-  const [devices, setDevices] = useState<LanDevice[]>([]);
+  const [devices, setDevices] = useState<PairedDevice[]>([]);
   const [loading, setLoading] = useState(false);
   const [pairingKey, setPairingKey] = useState("");
   const [pairingInput, setPairingInput] = useState("");
   const [pairingBusy, setPairingBusy] = useState(false);
+  /**
+   * 监听线程是否真的在跑。
+   *
+   * 🔴 跟开关是两件事。端口 5007 被占、或一块网卡都没能加入组播组时，
+   * 监听线程会自己退出而开关仍然是开的——不把它显示出来，用户看到的
+   * 就是「没报错但就是发现不了」（规则 #15.3）。初值取 true：还没探到时
+   * 不该先报一个红横幅吓人。
+   */
+  const [running, setRunning] = useState(true);
+
+  // 在线数 = 本次运行内听到过的那几台，跟「记住了几台」是两个数。
+  const onlineCount = devices.filter((d) => d.online).length;
 
   // 修复：此前失败时完全静默，设备列表和绿色“监听中”状态原地不动，用户完全无感知；
   // 用 ref 记录上一次是否成功，只在从成功转失败时弹一次，避免 5s 轮询定时器下持续失败刷屏 toast
@@ -20,8 +31,12 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
     setLoading(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const list = await invoke<LanDevice[]>("get_lan_devices");
+      const [list, alive] = await Promise.all([
+        invoke<PairedDevice[]>("get_lan_paired"),
+        invoke<boolean>("get_lan_running"),
+      ]);
       setDevices(list);
+      setRunning(alive);
       wasOkRef.current = true;
     } catch (e) {
       logger.warn("获取设备列表失败", e);
@@ -99,14 +114,29 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
 
   return (
     <div className={styles.lanPanel}>
+      {/* 🔴 开关开着但监听线程没跑 = 功能实际是死的，必须看得见。
+          用横幅而不是 toast：toast 会飘走，而这个失败往往发生在设置页打开之前。 */}
+      {!running && (
+        <div className={styles.mcpAlert}>
+          <span>
+            ⚠ 监听没能启动——同网络的设备无法互相发现。
+            常见原因：端口 5007 被其他程序占用，或本机网卡都无法加入组播组。
+            把开关关掉再打开可重试。
+          </span>
+        </div>
+      )}
+
       <div className={`${styles.lanPanelHeader}`}>
         <div className={styles.lanStatus}>
           {/* 审查：绿点跟随真实状态（无设备=灰），不再恒亮假绿 */}
-          <div className={`${styles.lanDot}${devices.length === 0 ? ` ${styles.off}` : ""}`} />
+          {/* ❗ 绿点跟的是**在线数**，不是记住数。两者混一起的话，
+              配过一次之后绿点就永远亮着，对方早就离线也看不出来。 */}
+          <div className={`${styles.lanDot}${onlineCount === 0 ? ` ${styles.off}` : ""}`} />
           <span className={`${styles.lanStatusText}`}>
-            {devices.length > 0
-              ? `已连接 ${devices.length} 台设备`
+            {onlineCount > 0
+              ? `在线 ${onlineCount} 台`
               : "监听中 — 等待其他设备连接"}
+            {devices.length > 0 && <span> · 记住了 {devices.length} 台</span>}
           </span>
         </div>
         <button className={styles.lanRefreshBtn} onClick={refreshDevices} disabled={loading}>
@@ -175,25 +205,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
         </div>
       </details>
 
-      {devices.length > 0 && (
-        <div className={styles.lanDeviceList}>
-          {devices.map((d, idx) => (
-            <div key={d.device_id ? `device-${d.device_id}-${idx}` : `device-${idx}`} className={`${styles.lanDeviceItem}`}>
-              <div className={`${styles.lanDeviceAvatar}`} style={{
-                // 审查：空 device_id 时 charCodeAt 是 NaN → 兜底 0（无效色）
-                background: `hsl(${(d.device_id.charCodeAt(0) || 0) * 40 % 360}, 60%, 55%)`,
-              }}>
-                {d.device_name.charAt(0).toUpperCase()}
-              </div>
-              <div className={`${styles.lanDeviceInfo}`}>
-                <div className={`${styles.lanDeviceName}`}>{d.device_name}</div>
-                <div className={`${styles.lanDeviceTime}`}>{d.last_seen}</div>
-              </div>
-              <span className={`${styles.lanDeviceOnline}`} title="在线"><span className={styles.dotOnline} /></span>
-            </div>
-          ))}
-        </div>
-      )}
+      <LanPairedList devices={devices} onChanged={refreshDevices} toast={toast} />
 
       {/* ❗ 这里原先写的是「同一局域网内的设备将自动发现并同步剪贴板」，
           而当时必须先手动交换密钥才看得见彼此——那句提示是错的，
@@ -201,7 +213,6 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
           现在有了招呼包，发现确实是自动的，但同步仍需配对——两件事要分开说。 */}
       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>
         💡 同一网络内的设备会自动出现在「附近的设备」里；配对后才会同步剪贴板
-        {devices.length > 0 && <span> · 已配对 {devices.length} 台</span>}
       </div>
       <button className={styles.lanTestBtn} onClick={handleSendTest}>
         🔔 发送测试消息

@@ -13,6 +13,19 @@ pub fn get_lan_status(store: State<DataStore>) -> Result<bool, String> {
         .unwrap_or(false))
 }
 
+/// 监听线程是否真的在跑。
+///
+/// 🔴 跟 [`get_lan_status`]（开关配置）是两件事。开关是用户的意愿，
+/// 这个是实际状态——两者会分开：端口 5007 被占、或一块网卡都没能加入组播组时，
+/// 监听线程会自己退出。不把它露出去的话，界面上开关仍然是开的而功能是死的——
+/// 那正是用户报的「没报错但就是发现不了」（规则 #15.3）。
+#[tauri::command]
+pub fn get_lan_running(app: tauri::AppHandle) -> Result<bool, String> {
+    Ok(app
+        .try_state::<crate::lan_sync::LanSync>()
+        .is_some_and(|l| l.is_running()))
+}
+
 /// 切换局域网同步
 #[tauri::command]
 pub fn toggle_lan_sync(
@@ -83,54 +96,22 @@ pub fn get_lan_pairing_key(
 
 /// 设置（粘贴自其他设备的）局域网配对密钥，持久化并立即在运行时生效
 #[tauri::command]
-pub fn set_lan_pairing_key(
-    app: tauri::AppHandle,
-    store: State<DataStore>,
-    key: String,
-) -> Result<(), String> {
-    let key = key.trim().to_string();
-    if key.is_empty() {
+pub fn set_lan_pairing_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    if key.trim().is_empty() {
         return Err("配对密钥不能为空".to_string());
     }
-    // 修复 M14：密钥强度校验，拒绝 "1" 这类可离线爆破的弱密钥
-    crate::lan_sync::validate_pairing_key(&key)?;
-
-    let mut config = store.get_config()?;
-    if let Some(obj) = config.as_object_mut() {
-        obj.insert(
-            "lan_pairing_key".to_string(),
-            serde_json::Value::String(key.clone()),
-        );
-    }
-    store.save_config(&config)?;
-
-    if let Some(lan_sync) = app.try_state::<crate::lan_sync::LanSync>() {
-        lan_sync.set_pairing_key(key);
-    }
-    Ok(())
+    // 强度校验与落盘都在 `apply_pairing_key` 里（规则 #11）。
+    // 旧写法里的 `if let Some(obj)` 会在配置不是对象时**静默跳过写入**
+    // 却照样返回 Ok，已一并修掉（规则 #15.3）。
+    crate::lan_sync::apply_pairing_key(&app, &key)
 }
 
 /// 重新生成一个随机配对密钥，持久化并立即生效，返回新密钥。
 /// 注意：更换密钥后，其他已配对设备需要重新粘贴此密钥才能继续同步。
 #[tauri::command]
-pub fn regenerate_lan_pairing_key(
-    app: tauri::AppHandle,
-    store: State<DataStore>,
-) -> Result<String, String> {
+pub fn regenerate_lan_pairing_key(app: tauri::AppHandle) -> Result<String, String> {
     let new_key = crate::lan_sync::generate_pairing_key();
-
-    let mut config = store.get_config()?;
-    if let Some(obj) = config.as_object_mut() {
-        obj.insert(
-            "lan_pairing_key".to_string(),
-            serde_json::Value::String(new_key.clone()),
-        );
-    }
-    store.save_config(&config)?;
-
-    if let Some(lan_sync) = app.try_state::<crate::lan_sync::LanSync>() {
-        lan_sync.set_pairing_key(new_key.clone());
-    }
+    crate::lan_sync::apply_pairing_key(&app, &new_key)?;
     Ok(new_key)
 }
 
@@ -150,7 +131,78 @@ pub fn get_lan_nearby(
         return Ok(Vec::new());
     };
     let now = chrono::Utc::now().timestamp();
-    Ok(lan.pair().list_nearby(now, &lan.paired_ids()))
+    // 🔴 过滤依据是**持久化名单**，不是「最近解密成功过」那张内存表。
+    //   旧写法拿 `paired_ids()`（= 内存表的 key）做判据，而那张表既不过期也不落盘：
+    //   对方掉线后仍被当成「已配对」而从附近设备里滤掉，重启后又全部归零。
+    let paired: Vec<String> = crate::lan_sync::load_paired(&app)
+        .into_iter()
+        .map(|d| d.device_id)
+        .collect();
+    Ok(lan.pair().list_nearby(now, &paired))
+}
+
+/// 记住的设备一行。
+///
+/// 🔴 `online` 与 `last_sync` 是两件事，必须分开：
+/// - `online` 由**招呼包**（每 5 秒一次的心跳）判定
+/// - `last_sync` 是最近一次收到它**加密消息**的时刻，而加密消息只在剪贴板变动时才发
+///
+/// 拿 `last_sync` 当在线判据会同时错两头：一台安静但在线的设备显示成离线，
+/// 一台几小时前发过一条、现已关机的设备却一直显示在线。
+#[derive(serde::Serialize)]
+pub struct PairedDeviceView {
+    pub device_id: String,
+    pub device_name: String,
+    pub paired_at: i64,
+    /// 在线：[`crate::lan_pair::NEARBY_TTL_SECS`] 内听到过它的招呼包。
+    pub online: bool,
+    /// 本次运行内最近一次收到它加密消息的时刻；从未收到则为空串。
+    pub last_sync: String,
+}
+
+/// 记住的设备名单（含在线情况）。
+#[tauri::command]
+pub fn get_lan_paired(app: tauri::AppHandle) -> Result<Vec<PairedDeviceView>, String> {
+    let lan = app.try_state::<crate::lan_sync::LanSync>();
+    let now = chrono::Utc::now().timestamp();
+    let last_sync: std::collections::HashMap<String, String> = lan
+        .as_ref()
+        .map(|l| {
+            l.get_devices()
+                .into_iter()
+                .map(|d| (d.device_id, d.last_seen))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(crate::lan_sync::load_paired(&app)
+        .into_iter()
+        .map(|d| PairedDeviceView {
+            online: lan
+                .as_ref()
+                .and_then(|l| l.pair().last_heard(&d.device_id))
+                .is_some_and(|t| now - t <= crate::lan_pair::NEARBY_TTL_SECS),
+            last_sync: last_sync.get(&d.device_id).cloned().unwrap_or_default(),
+            device_id: d.device_id,
+            device_name: d.device_name,
+            paired_at: d.paired_at,
+        })
+        .collect())
+}
+
+/// 忘记一台设备。
+///
+/// 🔴 **只清本机记录，不吊销配对密钥**（单一群组密钥模型，详见
+/// [`crate::lan_sync::forget_device`]）。界面上必须把这件事说清楚。
+#[tauri::command]
+pub fn lan_forget_device(app: tauri::AppHandle, device_id: String) -> Result<bool, String> {
+    let removed = crate::lan_sync::forget_device(&app, &device_id)?;
+    // ❗ 内存那张在线表也要清，否则它还会显示「在线」，
+    //   而且下一轮轮询会把它又记回名单里。
+    if let Some(lan) = app.try_state::<crate::lan_sync::LanSync>() {
+        lan.drop_device(&device_id);
+    }
+    Ok(removed)
 }
 
 /// 进行中的配对快照。两端都轮询它：
