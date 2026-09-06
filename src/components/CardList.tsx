@@ -38,8 +38,6 @@ import { MilestoneDialog } from "@/components/MilestoneDialog";
 import { QuotaDialog } from "@/components/QuotaDialog";
 import { SignFloat } from "@/components/SignFloat";
 import { FreeQuotaOnboarding } from "@/components/FreeQuotaOnboarding";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 
 const QRCodeDialog = lazy(() => import("@/components/QRCodeDialog").then(m => ({ default: m.QRCodeDialog })));
 const DiffDialog = lazy(() => import("@/components/DiffDialog").then(m => ({ default: m.DiffDialog })));
@@ -148,24 +146,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     st.clearTagFilters();
   }, []);
 
-  // 监听系统文件关联事件：双击 .md 文件时打开独立全屏编辑器窗口
-  useEffect(() => {
-    // 应用已在运行时：第二个实例的参数经 single-instance 插件 emit 事件过来
-    const unlisten = listen<string[]>("file-open-event", (event) => {
-      const paths = event.payload;
-      if (paths.length > 0) {
-        invoke("open_fullscreen_editor", { filePath: paths[0], contentType: "markdown" }).catch(() => {});
-      }
-    });
-    // 应用未运行时双击 .md：路径在启动参数中，setup 阶段已存入 PendingFileOpen，
-    // 前端挂载后主动取走（此时 emit 事件尚未注册，不能依赖事件）
-    invoke<string[]>("take_pending_file_open").then((paths) => {
-      if (paths.length > 0) {
-        invoke("open_fullscreen_editor", { filePath: paths[0], contentType: "markdown" }).catch(() => {});
-      }
-    }).catch(() => { /* 命令不存在或无待打开文件时静默忽略 */ });
-    return () => { unlisten.then(fn => fn()); };
-  }, []);
+  // 注：`.md` 文件关联的监听已上移至 `App`（2026-09-06）。
+  // 它原本在这里，而本组件**只在记录模式渲染**：知识库模式下它已卸载，
+  // 双击 md 没人接；冷启动的 `take_pending_file_open` 也只在它挂载时调，
+  // 启动即停在知识库时文件会一直躺在后端、等切回记录模式时突然弹出来。
   const selectedIds = useAppStore((s) => s.selectedIds);
   const focusId = useAppStore((s) => s.focusId);
   const selectItem = useAppStore((s) => s.selectItem);

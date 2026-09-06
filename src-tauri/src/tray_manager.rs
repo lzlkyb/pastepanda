@@ -537,17 +537,16 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     if let Some(window) = app.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false) {
+                        // ❗ 用 `main_window_showing` 而不是 `is_visible()`：
+                        //   最小化的窗口 `is_visible()` 也是 true，直接判会把
+                        //   「最小化后点托盘」当成「要收起来」——点一下没反应。
+                        if crate::main_window_showing(&window) {
                             window.hide().ok();
                         } else {
                             if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
                                 engine.save_foreground_hwnd();
                             }
-                            window.unminimize().ok();
-                            if let Err(e) = window.show() {
-                                log::warn!("[TrayManager] 托盘左键-显示窗口失败: {}", e);
-                            }
-                            window.set_focus().ok();
+                            crate::present_window(&window);
                         }
                     }
                 }

@@ -6,13 +6,14 @@
  * 参考 ChainRunnerDialog 的 pendingAi promise 模式：resolve 后由调用方关闭。
  */
 
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldAlert, ShieldCheck, X } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./PasteGuardDialog.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 export function PasteGuardDialog() {
   const guard = useDialogStore((s) => s.pasteGuard);
@@ -20,21 +21,11 @@ export function PasteGuardDialog() {
   const close = useCallback(() => useDialogStore.getState().closePasteGuard(), []);
   const anim = useDialogAnim();
   const open = guard !== null;
-  // 审查：Esc 关闭（全局 Esc 对部分场景让位，组件自兜底）
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // 同 ProfileDialog / ChainEditor：必须是 close 而不是 close()。依赖数组在渲染期
-    // 构造，写成调用会让每次渲染都执行一次关闭——这条更严重：守卫框是用户
-    // 选“脱敏/原样/取消”的闸口，它自己关掉 = 敏感内容的确认环节直接消失。
-  }, [open, close]);
+  // Esc 关闭（公共 hook：捕获期 + stopPropagation，不让 App 的 Esc 链又跑一遍）。
+  // ❗ 必须传 `close` 而不是 `close()`：参数在渲染期求值，写成调用会让每次
+  //   渲染都执行一次关闭——这条尤其严重：守卫框是用户选“脱敏/原样/取消”
+  //   的闸口，它自己关掉 = 敏感内容的确认环节直接消失。
+  useDialogEscape(close, open);
 
 
   const settle = (v: "mask" | "raw" | "cancel") => {

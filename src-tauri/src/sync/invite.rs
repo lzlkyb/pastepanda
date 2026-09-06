@@ -93,8 +93,8 @@ pub fn encode(
 /// 统一报「邀请码无效」的话他无从下手（规则 #15.3）。
 pub fn decode(code: &str, now_ms: i64) -> Result<Invite, String> {
     let raw = b64()
-        .decode(code.trim())
-        .map_err(|_| "这串不是有效的邀请码（base64 解不开，可能是复制时少了几个字符）")?;
+        .decode(normalize(code))
+        .map_err(|_| "这串不是有效的邀请码（里面混了不属于邀请码的字符，或者只复制到了一半）")?;
     let wire: Wire = serde_json::from_slice(&raw)
         .map_err(|_| "邀请码内容不完整或版本不对（解出来的不是邀请码结构）")?;
 
@@ -125,4 +125,37 @@ pub fn decode(code: &str, now_ms: i64) -> Result<Invite, String> {
 
 fn b64() -> base64::engine::general_purpose::GeneralPurpose {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
+}
+
+/// 把人手搬运过的邀请码洗成解码器能吃的形式。
+///
+/// 🔴 2026-09-06 修一个真实反馈：用户核实邀请码没错，却持续报「base64 解不开」。
+/// 原因是这里只做了 `code.trim()`，**它只去得掉首尾空白**；而邀请码是靠人在
+/// 微信 / 邮件 / 便笺之间搬的，路上极容易被插入：
+///   - **软换行**：长串在聊天框里被折行，跨行选中复制就带上了 `\n`
+///   - 空格 / 制表符
+///   - **零宽字符**（U+200B/C/D、BOM）：部分富文本控件会拿它做折行点
+///
+/// 这些字符**肉眼完全看不出来**——所以“用户核对过邀请码是对的”与
+/// “程序说解不开”可以同时成立，而旧文案「可能是复制时少了几个字符」
+/// 还把人往反方向引。
+///
+/// 顺带兼容标准字母表（`+/`）与尾部 `=` 填充：本地只会发 URL_SAFE_NO_PAD，
+/// 但码可能经过别的系统转手。放宽这里不降低安全性：真正把关的是下面
+/// 那道**签名校验**，洗字符只能让合法的码能读，变不出一个能过签名的码。
+fn normalize(code: &str) -> String {
+    code.chars()
+        .filter(|c| {
+            !c.is_whitespace()
+                && !matches!(c, '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}')
+                // 填充直接丢：解码器是 NO_PAD 模式，看到 `=` 反而会报错
+                && *c != '='
+        })
+        // 标准字母表 → URL 安全字母表
+        .map(|c| match c {
+            '+' => '-',
+            '/' => '_',
+            c => c,
+        })
+        .collect()
 }

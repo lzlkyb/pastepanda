@@ -150,15 +150,16 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
+                    // ❗ 不能只看 `is_visible()`：最小化的窗口它也返回 true，
+                    //   最小化后再按唤出热键会变成又藏一层，得按两次才出来。
+                    if crate::main_window_showing(&window) {
                         let _ = window.hide();
                     } else {
                         // 在显示窗口之前，保存当前前台窗口（备用）
                         if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
                             engine.save_foreground_hwnd();
                         }
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                        crate::present_window(&window);
                     }
                 }
             }

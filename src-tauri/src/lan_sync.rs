@@ -88,16 +88,16 @@ fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// hex → 12 字节 nonce。
+///
+/// 🔴 2026-09-06 修一个**远程可触发的 panic**：原实现先判 `s.len() != 24`
+/// （字节长）再用 `&s[i*2..i*2+2]` 切片。传一串 8 个汉字（恰好 24 字节）
+/// 就能过长度检查、然后切在字符中间 panic。而 `nonce` 直接来自 UDP 包的
+/// `LanEnvelope`，完全由对方控制 —— 足以把监听线程打挂、局域网同步停止工作。
+///
+/// 现在收口到 [`crate::lan_pair::hex_to_12`]，它按字节解析，任何输入都不会 panic。
 fn hex_decode_12(s: &str) -> Result<[u8; 12], String> {
-    if s.len() != 24 {
-        return Err("nonce 长度无效".to_string());
-    }
-    let mut out = [0u8; 12];
-    for (i, slot) in out.iter_mut().enumerate() {
-        *slot = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
-            .map_err(|_| "nonce 编码无效".to_string())?;
-    }
-    Ok(out)
+    crate::lan_pair::hex_to_12(s).ok_or_else(|| "nonce 编码无效".to_string())
 }
 
 /// 将内层消息加密封装为 v2 信封（AES-256-GCM，nonce 由调用方生成）
@@ -164,6 +164,165 @@ pub struct LanDevice {
     pub last_seen: String,
 }
 
+// ===== 附近设备配对：包的收发与握手状态机 =====
+//
+// 这几个写成**自由函数**而不是 `LanSync` 的方法：监听线程拿不到 `&self`
+// （它 move 进去的只有几个 Arc 克隆），写成方法就得把整个 `LanSync` 克隆进线程。
+
+/// 广播一次招呼包（让未配对的设备看得见本机）。
+///
+/// ❗ 写成自由函数而不是 `LanSync` 的方法：唯一的调用方是那个
+/// 脱离 `&self` 跑的广播线程。之前两边各写了一份，方法那份没人调、
+/// 被 dead_code 警告逮到——同一件事只留一处。
+fn send_hello(device_id: &str) {
+    let name = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "未知设备".to_string());
+    send_pair_raw(&crate::lan_pair::PairPacket::hello(
+        device_id,
+        &name,
+        chrono::Utc::now().timestamp(),
+    ));
+}
+
+/// 发一个明文握手包。与 [`LanSync::send_pair_packet`] 同逻辑，供线程内使用。
+fn send_pair_raw(p: &crate::lan_pair::PairPacket) {
+    let Ok(json) = serde_json::to_string(p) else {
+        log::warn!("[LanPair] 序列化握手包失败");
+        return;
+    };
+    if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
+        let _ = socket.set_ttl(2);
+        if let Err(e) = socket.send_to(json.as_bytes(), MULTICAST_ADDR) {
+            log::warn!("[LanPair] 发送握手包失败: {}", e);
+        }
+    }
+}
+
+/// 试着把一包当握手包解。
+///
+/// ❗ 加密信封与握手包**都是 JSON**，所以不能光看能不能解成 JSON，
+/// 必须卡 `kind` 字段以 `pp-` 开头。否则会把加密包误当握手包吃掉。
+fn try_parse_pair(text: &str) -> Option<crate::lan_pair::PairPacket> {
+    let p: crate::lan_pair::PairPacket = serde_json::from_str(text).ok()?;
+    if p.kind.starts_with("pp-") {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// 握手状态机。四种包各走一支。
+///
+/// 🔴 这里所有输入都**不可信**（明文、可伪造）。真正的安全靠两处：
+/// ① 用户肉眼核对两端 pin 一致；② `pp-pair-key` 的 GCM 认证（共享值不对就解不开）。
+fn handle_pair_packet(
+    p: &crate::lan_pair::PairPacket,
+    self_id: &str,
+    pair: &std::sync::Arc<crate::lan_pair::PairState>,
+    pairing_key: &Arc<Mutex<String>>,
+) {
+    use crate::lan_pair::{PairPacket, PairRole, KIND_HELLO, KIND_KEY, KIND_REQ, KIND_RESP};
+
+    let now = chrono::Utc::now().timestamp();
+    if p.from_id == self_id {
+        return; // 组播会回环，自己发的不处理
+    }
+
+    match p.kind.as_str() {
+        KIND_HELLO => pair.on_hello(p, self_id, now),
+
+        // 对方想跟我配对：开一个 Responder 会话，回自己的公钥。
+        // 弹框交给前端轮询 `snapshot` 发现。
+        KIND_REQ if p.to_id == self_id => {
+            if pair.is_blocked(&p.from_id) {
+                log::info!("[LanPair] 已拉黑的对端再次请求，忽略");
+                return;
+            }
+            match crate::lan_pair::PendingPair::start(
+                &p.from_id,
+                &p.from_name,
+                PairRole::Responder,
+                now,
+            ) {
+                Ok(mut pending) => {
+                    if let Err(e) = pending.accept_peer_key(&p.pk) {
+                        log::warn!("[LanPair] 协商失败: {}", e);
+                        return;
+                    }
+                    let my_pk = pending.my_pk.clone();
+                    pair.begin(pending);
+                    send_pair_raw(&PairPacket {
+                        v: crate::lan_pair::PAIR_PROTO_V,
+                        kind: KIND_RESP.into(),
+                        from_id: self_id.into(),
+                        from_name: String::new(),
+                        to_id: p.from_id.clone(),
+                        pk: my_pk,
+                        nonce: String::new(),
+                        sealed: String::new(),
+                        ts: now,
+                    });
+                }
+                Err(e) => log::warn!("[LanPair] 开会话失败: {}", e),
+            }
+        }
+
+        // 对方回了公钥：完成协商，两端现在都能算出 pin 了。
+        KIND_RESP if p.to_id == self_id => {
+            let r = pair.with_pending(now, |pending| {
+                if pending.peer_id != p.from_id {
+                    return Err("应答来自另一台设备，忽略".to_string());
+                }
+                pending.accept_peer_key(&p.pk)
+            });
+            if let Some(Err(e)) = r {
+                log::warn!("[LanPair] 处理应答失败: {}", e);
+            }
+        }
+
+        // 对方把配对密钥送来了：解开、存下。
+        //
+        // ❗ 必须确认本端已经确认过（`confirmed`）才能收——
+        // 否则对方单方面点一下就能换掉我的密钥，那道核对门就白设了。
+        KIND_KEY if p.to_id == self_id => {
+            let shared = pair.with_pending(now, |pending| {
+                if pending.peer_id != p.from_id {
+                    return None;
+                }
+                if !pending.confirmed {
+                    log::warn!("[LanPair] 本端尚未确认，拒收对方送来的密钥");
+                    return None;
+                }
+                pending.shared.clone()
+            });
+            let Some(Some(shared)) = shared else { return };
+
+            match crate::lan_pair::open_pairing_key(&shared, &p.nonce, &p.sealed) {
+                Ok(key) => {
+                    if let Err(e) = crate::lan_sync::validate_pairing_key(&key) {
+                        log::warn!("[LanPair] 对方送来的密钥不合格: {}", e);
+                        return;
+                    }
+                    crate::secret_registry::register(
+                        crate::secret_registry::SLOT_LAN_PAIRING,
+                        &key,
+                    );
+                    if let Ok(mut g) = pairing_key.lock() {
+                        *g = key;
+                    }
+                    pair.clear();
+                    log::info!("[LanPair] 配对完成，已接受对方的配对密钥");
+                }
+                // 解不开 = 共享值不对 = 中间人或乱包。不静默，记下来。
+                Err(e) => log::warn!("[LanPair] {}", e),
+            }
+        }
+
+        _ => {}
+    }
+}
+
 pub struct LanSync {
     running: Arc<AtomicBool>,
     device_id: String,
@@ -171,6 +330,8 @@ pub struct LanSync {
     pub devices: Arc<Mutex<HashMap<String, LanDevice>>>,
     /// 重放防护：近期已见 nonce → 接收时间戳（修复 M12）
     seen_nonces: Arc<Mutex<HashMap<String, i64>>>,
+    /// 附近设备发现与配对握手的状态（见 [`crate::lan_pair`]）。
+    pair: Arc<crate::lan_pair::PairState>,
 }
 
 impl LanSync {
@@ -186,6 +347,45 @@ impl LanSync {
             pairing_key: Arc::new(Mutex::new(pairing_key)),
             devices: Arc::new(Mutex::new(HashMap::new())),
             seen_nonces: Arc::new(Mutex::new(HashMap::new())),
+            pair: crate::lan_pair::PairState::new(),
+        }
+    }
+
+    /// 本机 device_id。握手包要用它分辨“这包是不是发给我的”。
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    /// 配对状态（附近设备表 / 进行中的握手）。
+    pub fn pair(&self) -> Arc<crate::lan_pair::PairState> {
+        self.pair.clone()
+    }
+
+    /// 已配对（= 能解开广播）的设备 id。给 `list_nearby` 做过滤用。
+    pub fn paired_ids(&self) -> Vec<String> {
+        self.devices
+            .lock()
+            .map(|d| d.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// 发一个**明文**握手包（招呼 / 请求 / 应答 / 密钥投递）。
+    ///
+    /// ❗ 走与加密广播同一个组播地址，接收端靠 `kind` 字段分流。
+    /// 内容不加密是**故意的**：未配对的两台机器没有共同密钥，
+    /// 加了就回到“彼此隐形”的原点。包里唯一的机密是 `sealed`，那一项已单独加密。
+    pub fn send_pair_packet(&self, p: &crate::lan_pair::PairPacket) {
+        let Ok(json) = serde_json::to_string(p) else {
+            log::warn!("[LanPair] 序列化握手包失败");
+            return;
+        };
+        if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
+            if let Err(e) = socket.set_ttl(2) {
+                log::warn!("[LanPair] 设置 TTL 失败: {}", e);
+            }
+            if let Err(e) = socket.send_to(json.as_bytes(), MULTICAST_ADDR) {
+                log::warn!("[LanPair] 发送握手包失败: {}", e);
+            }
         }
     }
 
@@ -319,6 +519,24 @@ impl LanSync {
         let devices = self.devices.clone();
         let pairing_key = self.pairing_key.clone();
         let seen_nonces = self.seen_nonces.clone();
+        let pair = self.pair.clone();
+
+        // 招呼包广播线程：让未配对的设备看得见本机。
+        // ❗ 只在局域网同步开着时发（running 结束就停）——
+        // 这是“设备名会被同网段看到”那个隐私代价的唯一闸门。
+        {
+            let running = running.clone();
+            let hello_id = self.device_id.clone();
+            std::thread::spawn(move || {
+                while running.load(Ordering::SeqCst) {
+                    send_hello(&hello_id);
+                    std::thread::sleep(std::time::Duration::from_secs(
+                        crate::lan_pair::HELLO_INTERVAL_SECS,
+                    ));
+                }
+                log::info!("[LanPair] 招呼广播线程退出");
+            });
+        }
 
         std::thread::spawn(move || {
             log::info!("[LanSync] 监听线程启动");
@@ -359,6 +577,14 @@ impl LanSync {
                         let Ok(text) = std::str::from_utf8(&buf[..len]) else {
                             continue;
                         };
+
+                        // 🔴 握手包必须在解密**之前**分流。它们是明文的，
+                        // 走下面那条路会被当成「解不开的包」丢掉——而那正是
+                        // 未配对设备彼此隐形的原因。
+                        if let Some(p) = try_parse_pair(text) {
+                            handle_pair_packet(&p, &device_id, &pair, &pairing_key);
+                            continue;
+                        }
 
                         // 修复 C2/M13：解密 + GCM 认证。密钥不匹配/被篡改/旧版明文消息
                         // 都会在此失败并丢弃 — 不再存在"明文可读、签名可伪造"的通道
@@ -570,7 +796,18 @@ impl LanSync {
                             log::warn!("[LanSync] 推送同步事件失败: {}", e);
                         }
                     }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    // ❗ 上面给 socket 设了 2 秒读超时，所以“没收到包”是**常态**，不是错。
+                    // 🔴 Windows 上读超时报的是 `TimedOut`（WSAETIMEDOUT / os error 10060），
+                    // 不是 `WouldBlock`——只放过后者的话空闲时会每 2 秒刷一条 warn，
+                    // 把真正的接收错误和配对握手日志全淹掉。
+                    Err(ref e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        continue
+                    }
                     Err(e) => {
                         log::warn!("[LanSync] 接收失败: {}", e);
                     }

@@ -102,11 +102,50 @@
   cursor: default;
 }
 
+/* 中栏（笔记列表）在三栏下的宽度，**随窗口分档**（2026-09-06）。
+
+   🔴 不能把 300 直接调大：三栏断点就是 800px，而 800px 窗口下
+   侧栏 180 + 列表 300 之后，第三栏只剩 ~320px——那儿再挤就没法看了。
+   用户觉得窄的是宽窗口：1440px 时第三栏有 ~960px，列表却还钉在 300。
+   所以只在“真的有富余”的档位上放宽。 */
 @media (min-width: 800px) {
   .wrap {
     flex: 0 0 300px;
     width: 300px;
   }
+}
+/* 用户拖过分栏手柄后，宽度由 `KnowledgeView` 写成行内样式（百分比）盖掉上面这个默认值。
+   上面那个 300px 只是拖之前的起点。 */
+
+/* 中栏 ↔ 第三栏 的拖拽手柄。
+
+   ❗ 实体只有 5px 宽，但里面那根线是 1px——手柄太细就抓不住，
+   太粗又在两栏之间画出一条明显的缝。与第三栏内部的横向手柄（`.grip`）同口径。 */
+.vgrip {
+  flex: 0 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  /* 撑开热区：视觉上是一根细线，可抓区域比它宽 */
+  margin: 0 -2px;
+  padding: 0 2px;
+  background: transparent;
+}
+.vgrip::after {
+  content: "";
+  width: 1px;
+  height: 100%;
+  background: var(--border-color);
+  transition: background 0.15s, width 0.15s;
+}
+.vgrip:hover::after,
+.vgripOn::after {
+  width: 3px;
+  background: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vgrip::after { transition: none; }
 }
 
 /* ===== 面包屑 ===== */

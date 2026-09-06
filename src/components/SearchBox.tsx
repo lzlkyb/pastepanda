@@ -5,6 +5,7 @@ import { parseSearchQuery } from "@/lib/searchQuery";
 import { semanticSearch } from "@/lib/api/semantic";
 import { X } from "lucide-react";
 import styles from "./TopBar.module.css";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 export function SearchBox({ fill }: { fill?: boolean } = {}) {
   const setSearchKeyword = useAppStore((s) => s.setSearchKeyword);
@@ -47,16 +48,8 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
   }, [updateClearBtn]);
 
   // 点击外部关闭搜索历史下拉
-  useEffect(() => {
-    if (!showHistory) return;
-    const handler = (e: MouseEvent) => {
-      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
-        setShowHistory(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showHistory]);
+  const hideHistory = useCallback(() => setShowHistory(false), []);
+  useClickOutside(searchBoxRef, hideHistory, showHistory);
 
   // 防抖写入 store
   const scheduleSearch = useCallback((value: string) => {

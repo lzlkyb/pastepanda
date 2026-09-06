@@ -43,6 +43,7 @@ import { BatchBar } from "@/components/notes/BatchBar";
 import { KnowledgeToolbar } from "@/components/notes/KnowledgeToolbar";
 import { KbQaPanel } from "@/components/notes/KbQaPanel";
 import { KbThirdPane, useCanSplitPane } from "@/components/notes/KbThirdPane";
+import { useSplitDrag } from "@/hooks/useSplitDrag";
 import { NoteFilterPanel } from "@/components/notes/NoteFilterPanel";
 import { useKbMoreMenu } from "@/components/notes/kbMoreMenu";
 import { useWideLayout } from "@/hooks/useWideLayout";
@@ -61,6 +62,17 @@ import {
 import { NoteDetailPane, NoteDetailEmpty } from "@/components/notes/NoteDetailPane";
 import { noteGet, type Note } from "@/lib/api";
 import styles from "./KnowledgeView.module.css";
+
+/** 中栏笔记列表的像素下限。再窄标题就只剩一两个字。 */
+const MIN_LIST_PX = 240;
+/** 第三栏的像素下限。与 `KbThirdPane` 里的 `MIN_SPLIT_W` 同口径。 */
+const MIN_THIRD_PX = 320;
+/** 侧栏宽度（与 `FolderTree.module.css` 的 180px 保持一致）。 */
+const SIDEBAR_PX = 180;
+/** 拖拽手柄宽（与 CSS 里的 `.vgrip` 保持一致）。 */
+const VGRIP_PX = 5;
+/** 默认列表占比。1280px 窗口 + 侧栏开着时约合 358px，比原来的死 300 宽一些。 */
+const DEFAULT_LIST_RATIO = 28;
 
 export function KnowledgeView() {
   const layout = useKbLayout();
@@ -102,6 +114,24 @@ export function KnowledgeView() {
    */
   const thirdRef = useRef<HTMLDivElement | null>(null);
   const canSplit = useCanSplitPane(thirdRef);
+
+  /**
+   * 中栏 ↔ 第三栏 的可拖拽宽度。
+   *
+   * ❗ 量的是整个 `.shell`（**含侧栏**），所以右侧下限要把侧栏那 180px 加进去——
+   *   不加的话，侧栏开着时能把第三栏拖到比下限还窄 180px。
+   *   侧栏开合时 ratio 不变（列表宽度恒定，第三栏吸收差额），这正是想要的。
+   */
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const split = useSplitDrag({
+    axis: "x",
+    containerRef: shellRef,
+    minFirstPx: MIN_LIST_PX,
+    minSecondPx: MIN_THIRD_PX + (sidebarOpen ? SIDEBAR_PX : 0),
+    gripPx: VGRIP_PX,
+    storageKey: "pastepanda_kb_list_ratio",
+    defaultRatio: DEFAULT_LIST_RATIO,
+  });
 
   /**
    * 回答区收起了。
@@ -221,7 +251,7 @@ export function KnowledgeView() {
     <ScrollProvider scrollRef={scrollWrapRef} lenisRef={lenisRef}>
     {/* 自带 Provider：详见文件头部说明 */}
     <ContextMenu>
-      <div className={styles.shell}>
+      <div className={styles.shell} ref={shellRef}>
         {/* ❗ **常挂载**，不写 `{sidebarOpen && ...}`：后者是硬挂硬消，做不了开合的
             宽度动画（记录模式的 Sidebar 就是 `width: 0 → 180px`）。
             开合交给 `open` prop + CSS。 */}
@@ -240,7 +270,16 @@ export function KnowledgeView() {
           onDropNotes={(folderId, ids) => void act.handleDropNotes(folderId, ids)}
         />
 
-        <div className={styles.wrap}>
+        {/* 行内宽度只在有第三栏时给：窄屏下列表要 `flex: 1` 吃满全宽，
+            按百分比钉死会在右边留出一块空白。 */}
+        <div
+          className={styles.wrap}
+          style={
+            layout.hasDetailPane
+              ? { flex: `0 0 ${split.ratio}%`, width: `${split.ratio}%` }
+              : undefined
+          }
+        >
           {/* 回收站把中栏整个换掉（W1）：它没有搜索 / 分组 / 筛选 / 新建，
               把工具栏留在上面会给人一堆在这里无意义（甚至会报空）的控件。
               候选条目已从 `notes_fts` 移除，搜也真的搜不到。 */}
@@ -435,6 +474,20 @@ export function KnowledgeView() {
 
             空态也渲染——隐掉会让列表宽度在选中前后跳一下。
             key 必须带 note.id：CodeMirror 初值只在挂载时读一次 */}
+        {/* 拖拽手柄。只在真的有第三栏时才画——窄屏下列表独占全宽，没有两栏可分。
+            双击回默认宽度：拖歪了不用去设置里找。 */}
+        {layout.hasDetailPane && (
+          <div
+            className={`${styles.vgrip}${split.dragging ? ` ${styles.vgripOn}` : ""}`}
+            onMouseDown={split.onGripDown}
+            onDoubleClick={split.reset}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="拖动调整列表宽度（双击复位）"
+            title="拖动调整宽度，双击复位"
+          />
+        )}
+
         {layout.hasDetailPane && (
           <KbThirdPane
             paneRef={thirdRef}

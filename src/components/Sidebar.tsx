@@ -3,6 +3,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import styles from "./Sidebar.module.css";
 import melodyUrl from "@/assets/melody.png";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 /** 侧边栏分组项 */
 export interface SidebarGroup {
@@ -81,16 +82,7 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
     setContextGroup(null);
   }, []);
 
-  useEffect(() => {
-    if (!contextGroup) return;
-    const handler = (e: MouseEvent) => {
-      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) {
-        closeContextMenu();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [contextGroup, closeContextMenu]);
+  useClickOutside(ctxMenuRef, closeContextMenu, !!contextGroup);
 
   // 聚焦输入框
   useEffect(() => {

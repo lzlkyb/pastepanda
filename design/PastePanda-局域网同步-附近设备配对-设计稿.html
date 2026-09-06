@@ -1,0 +1,309 @@
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--line:#e3e6ea;--text:#1c1f23;--dim:#6b7280;
+        --accent:#4f7cff;--code:#f3f4f6;--warn:#e0803a;--danger:#d64545;--ok:#2f9e5f;}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--code:#24272c;--warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;}}
+  :root[data-theme="dark"]{
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--code:#24272c;--warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;}
+  body{background:var(--bg);color:var(--text);margin:0;padding:28px 20px 64px;
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;}
+  h1{font-size:21px;margin:0 0 4px;}
+  h2{font-size:16px;margin:36px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);}
+  h3{font-size:13.5px;margin:20px 0 8px;color:var(--dim);letter-spacing:.03em;}
+  .sub{color:var(--dim);margin:0 0 24px;font-size:13px;}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12.5px;}
+  .note{border-left:3px solid var(--accent);padding:8px 12px;margin:12px 0;
+        background:var(--panel);border-radius:0 6px 6px 0;}
+  .note.warn{border-left-color:var(--warn);}
+  .note.bad{border-left-color:var(--danger);}
+  .note.good{border-left-color:var(--ok);}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px;}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top;}
+  th{background:var(--code);font-weight:600;}
+  .scroll{overflow-x:auto;}
+  pre{background:var(--code);padding:11px 13px;border-radius:7px;overflow-x:auto;
+      font:12px/1.65 ui-monospace,Consolas,monospace;margin:12px 0;}
+
+  /* ===== 演示 ===== */
+  .demo{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin:16px 0;overflow:hidden;}
+  .demoBar{display:flex;gap:8px;align-items:center;padding:8px 11px;
+           background:var(--code);border-bottom:1px solid var(--line);font-size:12px;}
+  .demoBar b{font-weight:600;}
+  .demoBar .sp{flex:1;}
+  .demoBar button{font:inherit;font-size:12px;padding:3px 10px;border-radius:6px;
+                  border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;}
+  .screens{display:flex;gap:0;}
+  .screen{flex:1;padding:13px;min-height:250px;}
+  .screen+.screen{border-left:1px dashed var(--line);}
+  .scrTitle{font-size:11px;color:var(--dim);margin-bottom:9px;letter-spacing:.05em;}
+
+  .row{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);
+       border-radius:7px;margin-bottom:6px;background:var(--bg);cursor:pointer;}
+  .row:hover{border-color:var(--accent);}
+  .row.picked{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--bg));}
+  .av{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;
+      justify-content:center;color:#fff;font-size:11px;font-weight:700;flex:none;}
+  .rowName{font-size:12.5px;font-weight:600;}
+  .rowSub{font-size:10.5px;color:var(--dim);}
+  .pin{font:700 30px/1.25 ui-monospace,Consolas,monospace;letter-spacing:9px;
+       text-align:center;padding:14px 0 6px;color:var(--accent);}
+  .pinHint{font-size:11.5px;color:var(--dim);text-align:center;margin-bottom:12px;}
+  .btnRow{display:flex;gap:7px;justify-content:center;margin-top:10px;}
+  .btnRow button{font:inherit;font-size:12px;padding:5px 13px;border-radius:6px;cursor:pointer;
+                 border:1px solid var(--line);background:var(--bg);color:var(--text);}
+  .btnRow button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+  .okBox{text-align:center;padding:26px 0;}
+  .okBox .big{font-size:34px;}
+  .muted{font-size:11.5px;color:var(--dim);}
+</style>
+
+<div class="wrap">
+
+<h1>局域网同步 · 附近设备配对</h1>
+<p class="sub">PastePanda · 设计稿 · 2026-09-06 · 取消交换密钥，改为【附近设备 + 两端核对 6 位数字】</p>
+
+<h2>一、现在为什么难用</h2>
+
+<div class="scroll">
+<table>
+<tr><th>现象</th><th>真正的原因（看代码得出，不是推测）</th></tr>
+<tr>
+  <td>看不到附近的设备</td>
+  <td>广播包是 <code>AES-256-GCM</code> 加密的，<b>解不开就直接丢</b>。而解密密钥就是配对密钥——
+      所以<b>没交换密钥 = 彼此隐形</b>。发现被鉴权挡住了。</td>
+</tr>
+<tr>
+  <td>密钥太长（32 位 hex）</td>
+  <td><code>generate_pairing_key()</code> = UUID v4。它不只是凭证，<b>它就是加密密钥</b>：
+      <code>SHA256(pairing_key)</code> → AES-256 key。所以它必须够长。</td>
+</tr>
+<tr>
+  <td>面板底部写着「自动发现」</td>
+  <td>🔴 <b>这句提示是错的</b>。原文：「同一局域网内的设备将自动发现并同步剪贴板」——
+      实际必须先手动交换密钥。<b>这句话很可能就是困惑的来源。</b></td>
+</tr>
+</table>
+</div>
+
+<div class="note bad">
+<b>所以「6 位验证码直接替掉长密钥」行不通</b>：6 位数字只有 100 万种可能，
+抓一个密文包就能离线爆破出 AES 密钥。代码里 <code>validate_pairing_key</code>
+强制 ≥16 字符、拒绝单一重复字符，就是为了堵这个。
+</div>
+
+<div class="note good">
+<b>但换个用法就成立：让 6 位数字当「指纹」，不当「密钥」。</b>
+密钥由两端现场协商出来（X25519，32 字节，从不上网），
+数字只是那个密钥的摘要，用来让人肉眼确认「两边算出来的是同一把」。
+</div>
+
+<h2>二、目标流程（点下面的按钮看）</h2>
+<p class="muted">左右两块 = 两台机器的屏幕。全程<b>不需要复制粘贴任何东西</b>。</p>
+
+<div class="demo">
+  <div class="demoBar">
+    <b>步骤</b> <span id="stepName">1 / 4</span>
+    <span class="sp"></span>
+    <button id="prev">← 上一步</button>
+    <button id="next">下一步 →</button>
+    <button id="reset">重放</button>
+  </div>
+  <div class="screens">
+    <div class="screen"><div class="scrTitle">■ A 机（发起方）</div><div id="scrA"></div></div>
+    <div class="screen"><div class="scrTitle">■ B 机（对方）</div><div id="scrB"></div></div>
+  </div>
+</div>
+
+<h2>三、协议时序</h2>
+
+<pre>A 机                                            B 机
+│                                               │
+│  ① 两边都在广播【明文招呼包】（每 5s）         │
+│     { v:3, kind:"hello", device_id,          │
+│       device_name, x25519_pub, ts }          │
+│     ❗ 不含任何剪贴板数据                      │
+│  ◀──────────────────────────────────▶  │
+│                                               │
+│  ② 用户在 A 上点了 B                          │
+│     两端各自算（不必再通信！）：                │
+│     shared = X25519(自己私钥, 对方公钥)        │
+│     pin    = HKDF(shared,"pp-pair-verify")   │
+│              → 前 4 字节 mod 1e6 → 6 位数字     │
+│                                               │
+│  ③ A 发一条【配对请求】，B 弹框                │
+│  ─────────── pair-request ─────────────▶  │
+│                                               │
+│  ④ 两块屏幕同时显示同一个 6 位数字            │
+│     用户肉眼看一致 → 两边都点确认                 │
+│                                               │
+│  ⑤ 两端都确认后，A 把【自己现有的 pairing_key】  │
+│     用 HKDF(shared,"pp-key-transfer") 加密发给 B │
+│  ────────── pair-key（已加密）─────────▶  │
+│     B 解出来存为自己的 pairing_key            │
+▼                                               ▼</pre>
+
+<div class="note bad">
+<b>🔴 这一步是写稿时改过的，原本写错了。</b>
+最初我写的是「协商出的密钥直接当 AES key」——那会<b>破掉多设备模型</b>：
+现有架构是【所有设备共用同一把 pairing_key】，而 ECDH 算出的是【成对密钥】。
+A 同时连 B 和 C 时，广播该用哪把？要么发两份（大改），要么就错了。
+<br><br>
+改正后：<b>协商出的密钥只当一次性保密信道</b>，用它把 A 已有的 pairing_key
+安全地传给 B。共享密钥模型完全不变，广播/加解密一行不用改。
+安全性不降：pin 核对依旧挡中间人，而传输本身走 32 字节 ECDH 密钥加密。
+</div>
+
+<div class="note">
+<b>注意②：算 pin 不需要额外往返。</b>双方的公钥已经在招呼包里互相拿到了，
+X25519 的特性就是【双方各自用自己的私钥 + 对方的公钥，算出同一个值】。
+所以密钥从未在网络上出现过。
+</div>
+
+<h2>四、为什么 6 位数字这么用就是安全的</h2>
+
+<p>这是蓝牙 SSP 与 Signal 安全码的标准做法。关键在于中间人无法让两个数字凑成一样：</p>
+
+<pre>正常：   A ─── shared K ─── B          两边 pin = 472916，一致 ✅
+
+被中间人 M 插足：
+         A ── K₁ ── M ── K₂ ── B
+         A 算出 pin₁ = 472916
+         B 算出 pin₂ = 038145   ← 不一样！用户当场发现 ❌</pre>
+
+<div class="scroll">
+<table>
+<tr><th>担心</th><th>为何不成立</th></tr>
+<tr><td>6 位数字只有 100 万种，不是很容易猜吗？</td>
+    <td>猜对也没用——<b>它不是密钥</b>。真密钥是 X25519 协商出的 32 字节。
+        攻击者要做的不是“猜对数字”，而是“造一把公钥，让它与 A 算出的 pin
+        恰好等于 B 与它算出的 pin”——那是对 HKDF 的原像攻击。</td></tr>
+<tr><td>那他可以反复重试碰运气？</td>
+    <td>每次重试都要用户<b>在两台机器上同时点确认</b>。配对窗口限 60 秒、
+        失败连续 3 次就锁（见下面待拍板）。不是可自动化的爆破面。</td></tr>
+<tr><td>用户不看就点确认怎么办？</td>
+    <td>这是真实弱点，与今天【不核对知识库指纹就勾选】同类。缓解：两端数字字号足够大、
+        确认按钮不预选、文案写“两边不一样就点取消”。<b>不假装能消除它。</b></td></tr>
+</table>
+</div>
+
+<h2>五、新增的攻击面（必须认）</h2>
+
+<div class="note warn">
+要做到「看得见附近设备」，就<b>必须广播一条明文包</b>（现在全部是加密的）。
+代价：<b>同网段的人能看到你的设备名</b>。这是真实的隐私损失，不能糊弄过去。
+</div>
+
+<div class="scroll">
+<table>
+<tr><th>风险</th><th>对策</th></tr>
+<tr><td>设备名泄露（如“LAPTOP-张三”）</td>
+    <td>招呼包只在【局域网同步开着】时发；再加一个【仅配对时广播】开关（默认开），
+        关了就退回今天的行为；设备名可自定义，不强制用 hostname</td></tr>
+<tr><td>被枚举局域网里有哪些 PastePanda</td>
+    <td>本来就能从流量特征看出来（固定端口 + 周期广播），增量主要是设备名</td></tr>
+<tr><td>配对请求骚扰（持续弹框）</td>
+    <td>同一 device_id 限频；连续拒绝 2 次后本次会话拉黑</td></tr>
+<tr><td>伪造招呼包冒充别人</td>
+    <td>招呼包本来就不可信——它只用于“列出候选”。真正定你是谁的是 pin 核对</td></tr>
+</table>
+</div>
+
+<h2>六、兼容旧版本</h2>
+
+<div class="scroll">
+<table>
+<tr><th>场景</th><th>行为</th></tr>
+<tr><td>新 ↔ 新</td><td>走新流程，不用复制密钥</td></tr>
+<tr><td>新 ↔ 旧</td><td>旧版不认招呼包（会当解不开的包丢掉，不会崩）。
+    <b>手填密钥的入口必须保留</b>，折叠在「高级」里</td></tr>
+<tr><td>已配对的设备</td><td>现有 pairing_key <b>继续有效</b>，不强制重配。
+    新流程只是把这把 key <b>安全地送到新设备</b>，存储位置与格式不变</td></tr>
+<tr><td>B 原本已和别人配对过</td><td>接受 A 的 key = <b>离开原来那个圈子</b>（与今天手动「应用密钥」行为一致）。
+    确认框里必须写清楚，不能静默覆盖</td></tr>
+</table>
+</div>
+
+<div class="note good">
+<b>这一条是本方案成立的关键</b>：新旧两条路径最后都归结为「一把 32 字节 AES 密钥」。
+所以加解密、广播、合并那一大块代码<b>一行都不用动</b>，改的只是“密钥从哪来”。
+</div>
+
+<h2>七、待你拍板</h2>
+
+<div class="scroll">
+<table>
+<tr><th>#</th><th>问题</th><th>我的建议</th></tr>
+<tr><td>1</td><td>数字几位？</td><td><b>6 位</b>。蓝牙/Signal 都是 6；再长人就懒得核了，而它的安全性不靠长度</td></tr>
+<tr><td>2</td><td>配对窗口多久？</td><td><b>60 秒</b>，超时两端同时作废</td></tr>
+<tr><td>3</td><td>招呼包频率？</td><td><b>5 秒</b>（跟现有设备列表轮询同步）</td></tr>
+<tr><td>4</td><td>【重要】要不要复用知识库同步的 <code>NodeIdentity</code>？</td>
+    <td>本次<b>不复用</b>，局域网自己生一对 X25519 密钥。<br>
+        理由：知识库那套是 ed25519（签名用），转成 x25519 可行但多一层坑；
+        而且 <b>M6 双机实连还没验过</b>，现在绑在一起是拿两个功能赌一个。<br>
+        但接口按「将来能合」设计（发现层/确认层与具体同步业务解耦）</td></tr>
+<tr><td>5</td><td>那句错提示怎么办？</td><td>本次顺手改掉。改完之后它才<b>真的</b>变成自动发现</td></tr>
+</table>
+</div>
+
+<h2>八、不在本次范围</h2>
+<ul>
+<li>跨网段 / 外网配对——这是局域网同步，本来就只管同网段</li>
+<li>与知识库同步合并成一次配对——待 M6 实连验收后再评估（见待拍板 #4）</li>
+<li>把面板里那一大堆内联 style 收进 CSS Module——值得做，但别和协议改动混在一个改动里</li>
+</ul>
+
+</div>
+
+<script>
+  const PIN = "472916";
+  const steps = [
+    {
+      name: "1 / 4　看到附近的设备",
+      a: `<div class="scrTitle" style="margin-bottom:7px">附近的设备</div>
+          <div class="row" data-k="1"><div class="av" style="background:#4f7cff">B</div>
+            <div><div class="rowName">B-书房台式机</div><div class="rowSub">未配对 · 刚刚听到</div></div></div>
+          <div class="muted" style="margin-top:9px">点一下就能开始配对，不用复制密钥。</div>`,
+      b: `<div class="scrTitle" style="margin-bottom:7px">附近的设备</div>
+          <div class="row"><div class="av" style="background:#8b5cf6">A</div>
+            <div><div class="rowName">A-笔记本</div><div class="rowSub">未配对 · 刚刚听到</div></div></div>
+          <div class="muted" style="margin-top:9px">两边都能看见对方。</div>`,
+    },
+    {
+      name: "2 / 4　A 点了 B，B 弹出请求",
+      a: `<div class="row picked"><div class="av" style="background:#4f7cff">B</div>
+            <div><div class="rowName">B-书房台式机</div><div class="rowSub">正在协商…</div></div></div>
+          <div class="muted" style="margin-top:12px">等对方确认…</div>`,
+      b: `<div class="note" style="margin:0"><b>A-笔记本</b> 想与本机同步剪贴板。</div>
+          <div class="muted" style="margin-top:10px">接下来两边会各自显示一串数字。</div>`,
+    },
+    {
+      name: "3 / 4　两端核对数字（关键）",
+      a: `<div class="pin">${PIN}</div>
+          <div class="pinHint">确认另一台显示的是<b>同一串</b></div>
+          <div class="btnRow"><button>不一样，取消</button><button class="pri">一样，确认</button></div>`,
+      b: `<div class="pin">${PIN}</div>
+          <div class="pinHint">确认另一台显示的是<b>同一串</b></div>
+          <div class="btnRow"><button>不一样，取消</button><button class="pri">一样，确认</button></div>`,
+    },
+    {
+      name: "4 / 4　完成",
+      a: `<div class="okBox"><div class="big">✅</div>
+            <div style="font-weight:700;margin-top:6px">已与 B-书房台式机配对</div>
+            <div class="muted" style="margin-top:5px">剪贴板开始同步</div></div>`,
+      b: `<div class="okBox"><div class="big">✅</div>
+            <div style="font-weight:700;margin-top:6px">已与 A-笔记本配对</div>
+            <div class="muted" style="margin-top:5px">剪贴板开始同步</div></div>`,
+    },
+  ];
+  let i = 0;
+  const A = document.getElementById("scrA"), B = document.getElementById("scrB");
+  const nameEl = document.getElementById("stepName");
+  function draw(){ A.innerHTML = steps[i].a; B.innerHTML = steps[i].b; nameEl.textContent = steps[i].name; }
+  document.getElementById("next").onclick  = () => { if (i < steps.length-1) { i++; draw(); } };
+  document.getElementById("prev").onclick  = () => { if (i > 0) { i--; draw(); } };
+  document.getElementById("reset").onclick = () => { i = 0; draw(); };
+  draw();
+</script>

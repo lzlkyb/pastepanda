@@ -19,6 +19,7 @@ import { ProfileTrajectory } from "@/components/ProfileTrajectory";
 import { AchievementsCard } from "@/components/AchievementsCard";
 import { useToast } from "@/components/Toast";
 import styles from "./ProfileDialog.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 const ALL_ROLES: [string, string][] = [
   ["developer", "开发者"],
@@ -41,21 +42,11 @@ const ROLE_EMOJI: Record<string, string> = {
 export function ProfileDialog() {
   const open = useDialogStore((s) => s.profileOpen);
   const close = useCallback(() => useDialogStore.getState().closeProfile(), []);
-  // 审查：Esc 关闭（全局 Esc 对部分场景让位，组件自兜底）
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // 依赖写 close 而不是 close()：依赖数组是**渲染期构造**的，写成调用形式
-    // 等于每次渲染都真的执行一次 closeProfile()——点开弹窗 → 重渲染 → 自己把
-    // 自己关了，现象就是“按钮点下去没反应”。
-  }, [open, close]);
+  // Esc 关闭（公共 hook：捕获期 + stopPropagation，不让 App 的 Esc 链又跑一遍）。
+  // ❗ 传 `close` 而不是 `close()`：参数在**渲染期求值**，写成调用形式
+  //   等于每次渲染都真的执行一次 closeProfile()——点开弹窗 → 重渲染 →
+  //   自己把自己关了，现象是“按钮点下去没反应”。
+  useDialogEscape(close, open);
 
   const anim = useDialogAnim();
   const { toast } = useToast();

@@ -314,6 +314,16 @@ impl PasteEngine {
         Ok(result)
     }
 
+    /// 读取剪贴板纯文本。
+    ///
+    /// 🔴 前端不要用 `navigator.clipboard.readText()`：`writeText` 不弹权限框，
+    /// 但 **`readText` 会让 WebView 弹“是否允许读取剪贴板”**——在桌面应用里
+    /// 这个浏览器弹框完全是多余的。走这条路同时能用上 `with_clipboard_retry`，
+    /// 比 Web API 在剪贴板被占时可靠得多。
+    pub fn read_text(&self) -> Result<String, String> {
+        Self::with_clipboard_retry("读取剪贴板", |cb| cb.get_text())
+    }
+
     /// 仅复制不粘贴
     pub fn copy_only(&self, text: &str) -> Result<(), String> {
         Self::with_clipboard_retry("复制文字", |cb| cb.set_text(text))?;

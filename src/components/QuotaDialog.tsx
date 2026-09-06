@@ -25,6 +25,7 @@ import {
   type QuotaInfo,
 } from "@/lib/api/quota";
 import styles from "./QuotaDialog.module.css";
+import { readClipboardText } from "@/lib/api";
 
 export function QuotaDialog() {
   const open = useDialogStore((s) => s.quotaOpen);
@@ -146,9 +147,9 @@ export function QuotaDialog() {
   // v6.10：兑换码自动粘贴（读剪贴板，失败静默）
   const pasteCode = useCallback(async () => {
     try {
-      const t = await navigator.clipboard.readText();
-      const c = t.trim();
+      const c = (await readClipboardText()).trim();
       if (c) setCode(c);
+      else toast("剪贴板是空的", "info");
     } catch {
       toast("无法读取剪贴板，请手动输入", "info");
     }

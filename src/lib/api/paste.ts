@@ -182,6 +182,22 @@ export async function copyOnly(text: string) {
   }
 }
 
+/**
+ * 读取剪贴板纯文本。
+ *
+ * 🔴 不要改回 `navigator.clipboard.readText()`：`writeText` 不弹权限框，
+ * 但 **`readText` 会让 WebView 弹出“是否允许读取剪贴板”的浏览器弹框**。
+ * 读不到时返回空串：调用方拿它预填，拿不到就留空，不该阻断流程。
+ */
+export async function readClipboardText(): Promise<string> {
+  try {
+    return await invoke<string>("read_clipboard_text");
+  } catch (e) {
+    logger.error("读取剪贴板失败", e);
+    return "";
+  }
+}
+
 /** 仅复制图片到剪贴板（走 Rust arboard，比 Web API 可靠） */
 export async function copyImageOnly(imagePath: string): Promise<void> {
   await invoke("copy_image_only", { imagePath });

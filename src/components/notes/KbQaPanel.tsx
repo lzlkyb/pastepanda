@@ -57,7 +57,11 @@ export function KbQaPanel({
 }) {
   const [followup, setFollowup] = useState("");
   /** 追问框随内容长高（A-61 ②）。与工具栏提问框同一份逻辑（规则 #11）。 */
-  const askRef = useAutoGrow(followup);
+  // ❗ 把面板自身交给 `useAutoGrow`：追问框的上限跟面板高度走（面板高 40%，
+  //   夹在 3~10 行）。三栏时第三栏还要再上下切一刀，写死 4 行在那儿太短；
+  //   而写死成更大的行数又会在矮面板下把答案区吃光（`.foot` 是 flex-shrink:0）。
+  const paneRef = useRef<HTMLDivElement>(null);
+  const askRef = useAutoGrow(followup, { containerRef: paneRef });
   const scrollRef = useRef<HTMLDivElement>(null);
   const { turns, pending } = session;
 
@@ -82,6 +86,7 @@ export function KbQaPanel({
        再加水平位移会读成「又开了一层」，而它并没有层级——回去靠的是「← 返回列表」。 */
   return (
     <motion.div
+      ref={paneRef}
       className={variant === "inline" ? `${styles.pane} ${styles.inline}` : styles.pane}
       initial={{ opacity: 0, x: variant === "pane" ? 8 : 0 }}
       animate={{ opacity: 1, x: 0 }}

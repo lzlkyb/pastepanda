@@ -26,6 +26,7 @@ import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./ChainEditor.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 const MAX_STEPS = 8;
 
@@ -61,20 +62,10 @@ export function ChainEditor() {
   const editing = useDialogStore((s) => s.chainEdit);
   const close = useCallback(() => useDialogStore.getState().closeChainEditor(), []);
   const open = editing !== null;
-  // 审查：Esc 关闭（全局 Esc 对部分场景让位，组件自兜底）
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // 同 ProfileDialog：必须是 close 而不是 close()。依赖数组在渲染期构造，
-    // 写成调用会让每次渲染都执行一次关闭动作，弹窗永远打不开。
-  }, [open, close]);
+  // Esc 关闭（公共 hook：捕获期 + stopPropagation，不让 App 的 Esc 链又跑一遍）。
+  // ❗ 传 `close` 而不是 `close()`：参数在渲染期求值，写成调用会让每次
+  //   渲染都执行一次关闭动作，弹窗永远打不开。
+  useDialogEscape(close, open);
 
   const anim = useDialogAnim();
   const { toast } = useToast();

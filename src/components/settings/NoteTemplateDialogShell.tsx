@@ -9,13 +9,14 @@
  * 同一个「有未保存改动先问一句」，写两份必定漏一条。
  * 嵌套确认框本身是支持的：`ConfirmDialog` 用 `.z-confirm`（z=600），就是为「从弹窗里再弹」准备的。
  */
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { confirmDialog } from "@/lib/confirm";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 interface Props {
   open: boolean;
@@ -56,18 +57,11 @@ export function NoteTemplateDialogShell({
     if (ok) onClose();
   }, [dirty, onClose]);
 
-  // Esc 关闭（同样过一道未保存确认）
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        void tryClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, tryClose]);
+  // Esc 关闭（同样过一道未保存确认）。
+  // 公共 hook：捕获期 + stopPropagation——本弹窗从设置页打开，不阻断的话
+  // App 的 Esc 链会把**整个设置页**一起关掉，而那条路径连未保存确认都跳过了。
+  const escClose = useCallback(() => { void tryClose(); }, [tryClose]);
+  useDialogEscape(escClose, open);
 
   return createPortal(
     <AnimatePresence>

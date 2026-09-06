@@ -6,6 +6,7 @@ import { pasteTextGuarded } from "@/lib/api";
 import { highlightCode, getLangLabel } from "@/lib/utils";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 /**
  * 快速预览面板 — 按 Space 键弹出，显示选中文本的完整内容
@@ -24,6 +25,10 @@ export function QuickPreview() {
   const { toast } = useToast();
   const anim = useDialogAnim();
 
+  // Esc 关预览（公共 hook：捕获期 + stopPropagation）。
+  const hide = useCallback(() => setVisible(false), []);
+  useDialogEscape(hide, visible);
+
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -35,8 +40,11 @@ export function QuickPreview() {
     };
     window.addEventListener("app-quick-preview", handler);
     // 按 Space 或 Esc 关闭
+    // ❗ 只留空格：Esc 已抽到下面的 `useDialogEscape`（捕获期 + stopPropagation）。
+    //   两个键原先混在这个冒泡监听里，不阻断，按 Esc 关预览的同时
+    //   App 的 Esc 链会接着清多选、甚至隐藏主窗口。
     const keyHandler = (e: KeyboardEvent) => {
-      if (visible && (e.key === "Escape" || e.key === " ")) {
+      if (visible && e.key === " ") {
         e.preventDefault();
         setVisible(false);
       }

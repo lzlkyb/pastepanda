@@ -24,6 +24,7 @@ import {
 } from "@/lib/api/history";
 import { logger } from "@/lib/logger";
 import styles from "./DeepClean.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 const TIME_OPTIONS: { label: string; value: number | null }[] = [
   { label: "全部", value: null },
@@ -129,15 +130,9 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, condKey]);
 
-  // Esc 关闭
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); onClose(); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Esc 关闭。走公共 hook：原来这里是普通冒泡监听，不阻断，
+  // 而本弹窗是从设置页打开的——App 那条 Esc 链会跟着把**整个设置页**关掉。
+  useDialogEscape(onClose, open);
 
   // 来源浮层定位：portal 到 body + fixed，绘制前同步测量（无闪烁），
   // 下方放不下则翻转到触发按钮上方，仍放不下则限高内部滚动

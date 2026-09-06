@@ -1467,6 +1467,59 @@
 }
 .lanDot.off { background: var(--text-muted); box-shadow: none; animation: none; }
 .lanStatusText { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+/* ===== 附近设备配对（2026-09-06）=====
+   设计稿：design/PastePanda-局域网同步-附近设备配对-设计稿.html */
+.lanSectionLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 10px 0 6px;
+}
+.lanNearbyList { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.lanNearbyItem {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px;
+  background: var(--card-bg); border: 1px solid var(--border-color);
+}
+.lanNearbyEmpty {
+  font-size: 11.5px; color: var(--text-muted); line-height: 1.6;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--section-bg); margin-bottom: 10px;
+}
+
+/* 配对核对框。盖住列表，只让用户干一件事。 */
+.lanPairBox {
+  padding: 14px; border-radius: 10px; margin-bottom: 10px;
+  background: var(--card-bg); border: 1px solid var(--accent);
+}
+.lanPairTitle { font-size: 12.5px; font-weight: 700; text-align: center; }
+/* 🔴 字号大、字距拉开：这串数字要被人逐位与另一块屏幕对比。
+   它是整套机制里唯一靠人把关的环节，不能做小。 */
+.lanPairPin {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 30px; font-weight: 700; letter-spacing: 9px;
+  text-align: center; color: var(--accent);
+  padding: 12px 0 4px;
+}
+.lanPairHint {
+  font-size: 11.5px; color: var(--text-secondary);
+  text-align: center; line-height: 1.7;
+}
+.lanPairWarn {
+  font-size: 11px; color: var(--text-secondary); line-height: 1.6;
+  margin-top: 8px; padding: 7px 9px; border-radius: 6px;
+  background: var(--section-bg);
+}
+.lanPairBtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+
+/* 手填密钥降为高级项。保留它是为了能跟旧版本设备配对。 */
+.lanAdvanced { margin-bottom: 10px; }
+.lanAdvancedHead {
+  font-size: 11.5px; color: var(--text-muted);
+  cursor: pointer; padding: 4px 0; user-select: none;
+}
+.lanAdvancedHead:hover { color: var(--accent); }
+
 .lanDeviceList { display: flex; flex-direction: column; gap: 6px; }
 .lanDevice {
   display: flex; align-items: center; gap: 10px;

@@ -910,8 +910,9 @@ pub async fn open_fullscreen_editor(
         window
             .emit("md-editor-load", payload)
             .map_err(|e| format!("推送编辑器数据失败: {}", e))?;
-        let _ = window.show();
-        let _ = window.set_focus();
+        // ❗ `present_window` 而不是裸 `show()`：md 编辑器窗口若正最小化着，
+        //   再从外部双击一个 md，`show()` 拉不回它——看着就是“点了没用”。
+        crate::present_window(&window);
         return Ok(());
     }
 
@@ -999,8 +1000,7 @@ pub async fn open_fullscreen_editor(
     }
 
     // 先隐藏建窗再显示，避免创建瞬间的闪烁。async command 已规避 tauri#13963 死锁。
-    let _ = window.show();
-    let _ = window.set_focus();
+    crate::present_window(&window);
 
     Ok(())
 }

@@ -16,6 +16,9 @@
  *  {{clipboard}} → 当前剪贴板内容（异步）
  */
 
+// 直接引 api/paste 而不是 @/lib/api 桶文件：lib 层引桶容易绕出循环依赖。
+import { readClipboardText } from "@/lib/api/paste";
+
 /** 所有支持的变量名（用于 UI 提示/文档） */
 export const SNIPPET_VARIABLES = [
   { name: "date", label: "日期", example: "2026-07-28" },
@@ -71,12 +74,9 @@ export async function resolveSnippetVariables(content: string): Promise<string> 
   // 先处理异步变量 {{clipboard}}
   let result = content;
   if (result.includes("{{clipboard}}")) {
-    let clipText = "";
-    try {
-      clipText = await navigator.clipboard.readText();
-    } catch {
-      clipText = "";
-    }
+    // `readClipboardText` 自带兜底（读不到返回空串），不用再包 try。
+    // 不用 `navigator.clipboard.readText()`：它会弹浏览器权限框。
+    const clipText = await readClipboardText();
     result = result.replace(/\{\{clipboard\}\}/g, clipText);
   }
 

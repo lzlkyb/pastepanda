@@ -4,6 +4,7 @@ import type { ToastFn } from "@/components/Toast";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { logger } from "@/lib/logger";
 import styles from "../Settings.module.css";
+import { readClipboardText } from "@/lib/api";
 
 /**
  * 配对向导的共用件 + 粘贴路线。A 路线（生成端）在 `KbPairCreate.tsx`。
@@ -40,8 +41,13 @@ export function StepBar({ labels, current }: { labels: string[]; current: number
  * 就远超这个数，而日常剪贴板里那些短串到不了。
  */
 export function looksLikeInvite(s: string): boolean {
-  const t = s.trim();
-  return t.length > 200 && /^[A-Za-z0-9_=-]+$/.test(t);
+  // ❗ 先把空白与零宽字符剔干净再判，与后端 `invite::normalize` 同口径：
+  //   邀请码靠人在聊天框 / 邮件里搬，路上常被插入软换行或零宽字符。
+  //   旧写法直接拿原串套字符集正则，带一个 `\n` 就判失败——而粗筛不过是
+  //   **静默**忽略的（剪贴板预读不触发），用户完全不知道发生了什么。
+  // 用转义而不是字面量：把零宽字符直接写进源码，下一个人根本看不到它们。
+  const t = s.replace(/[\s\u200b-\u200d\uFEFF]/g, "");
+  return t.length > 200 && /^[A-Za-z0-9_=+/-]+$/.test(t);
 }
 
 /** 绝对时间的到期文案。不写「7 天内」：用户第二天回来已经不知道从哪天算。 */
@@ -149,7 +155,7 @@ export function PasteFlow({ initialCode, selfNodeId, onPreview, onPair, onClose,
    */
   const readClip = async () => {
     try {
-      const t = (await navigator.clipboard.readText()).trim();
+      const t = (await readClipboardText()).trim();
       if (!t) { toast("剪贴板是空的", "info"); return; }
       setInput(t);
       setFromClip(true);

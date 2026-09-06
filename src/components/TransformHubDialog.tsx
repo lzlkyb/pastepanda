@@ -45,6 +45,7 @@ import type { NlParseResult } from "@/lib/nlActionParser";
 import { specsFor, defaultOptsFromSpecs } from "@/components/transform/transformOptions";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
 import styles from "./TransformHub.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 export function TransformHubDialog() {
   const item = useDialogStore((s) => s.hubItem);
@@ -268,16 +269,12 @@ export function TransformHubDialog() {
   );
 
   // Esc 关闭（其余导航键交由卡片按钮 / Tab 处理）。
-  // 编解码 / 二维码工作台打开时不接 Esc：它们自己也在 window 上监听 Escape，
-  // preventDefault 不会阻止同级 listener，两边都跑的话按一下 Esc 会把工作台和枢纽一起关掉。
-  useEffect(() => {
-    if (!open || showCodec || showQr) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); close(); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, close, showCodec, showQr]);
+  //
+  // ❗ 编解码 / 二维码工作台打开时不接 Esc：它们自己也在 window 上监听 Escape，
+  //   `preventDefault` 不会阻止同级 listener，两边都跑会把工作台和枢纽一起关掉。
+  //   （这段旧注释描述的正是 2026-09-06 统一治的那个毛病；这里先保留原有回避，
+  //   因为工作台那边还没换成 `useDialogEscape`，换完即可去掉这两个条件。）
+  useDialogEscape(close, open && !showCodec && !showQr);
 
   // v6.3 自然语言动作定位：命中动作卡片滚动到可视区 + 短暂高亮
   const [activeActionId, setActiveActionId] = useState<string | null>(null);

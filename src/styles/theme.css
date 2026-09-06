@@ -44,12 +44,86 @@
 }
 
 /* ===== ErrorBoundary 错误界面动画 ===== */
+/* 错误边界的兜底屏（ErrorBoundary）。
+
+   🔴 2026-09-06：这里原本**只有下面那条添加动画**，而组件里写了 8 个类名，
+   其中 7 个（icon/title/desc/detail/actions + 两个 btn-init-*）在全仓都不存在——
+   意味着崩溃兜底屏一直是**无样式裸渲染**：不居中、按钮挤在一起。
+   偏偏它只在出错时才显示，平时看不见，所以一直没被发现。
+
+   两个按钮直接用全局的 `.btn-primary` / `.btn-secondary`（styles/buttons.css），
+   不另造 `btn-init-*`（规则 #11）。 */
 .error-init-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  /* 它可能包在任意容器里（整页或某个局部区域），
+     用 min-height 而不是 100vh：局部出错时不该把整页撞开。 */
+  min-height: 240px;
+  padding: 32px 24px;
+  text-align: center;
   animation: errorInitFadeIn 0.35s ease;
 }
 @keyframes errorInitFadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .error-init-state { animation-duration: 0.01ms; }
+}
+
+.error-init-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+/* 主题皮肤下这里是 <img>（美乐迪）而不是 emoji，得限尺寸 */
+.error-init-icon img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+
+.error-init-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.error-init-desc {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+/* 报错原文：可能很长且含长串，必须能断行，否则会把容器撑出横向滚动。
+   可选中：用户要么点“复制错误详情”，要么直接刷选。 */
+.error-init-detail {
+  margin: 0;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.error-init-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 /* ===== 流程图 --diagram-* 令牌（规则 8.3：节点实底、玻璃只在浮层） ===== */

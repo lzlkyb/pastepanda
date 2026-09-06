@@ -29,6 +29,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { SequenceDiscover } from "@/components/SequenceDiscover";
 import { AiBadge } from "@/components/AiBadge";
 import styles from "./ChainRunnerDialog.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 export function ChainRunnerDialog() {
   const text = useDialogStore((s) => s.chainText);
@@ -37,18 +38,9 @@ export function ChainRunnerDialog() {
   const close = useCallback(() => useDialogStore.getState().closeChain(), []);
   const open = text !== null;
 
-  // 审查：Esc 关闭（从枢纽打开时全局 Esc 被 hubItem 让位拦截，必须组件自己处理）
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, close]);
+  // Esc 关闭（从枢纽打开时全局 Esc 被 hubItem 让位拦截，必须组件自己处理）。
+  // 公共 hook：捕获期 + stopPropagation。
+  useDialogEscape(close, open);
   const anim = useDialogAnim();
   const { toast } = useToast();
 

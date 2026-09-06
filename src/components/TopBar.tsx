@@ -16,6 +16,7 @@ import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
 import { ChevronDown, Tag, X, EyeOff } from "lucide-react";
 import styles from "./TopBar.module.css";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 const TABS: { key: FilterType; label: string; icon: string }[] = [
   { key: "all",    label: "全部", icon: "📋" },
@@ -413,14 +414,8 @@ function FilterDropdown<T extends string>({ label, value, options, onChange, aut
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  const closeMenu = useCallback(() => setOpen(false), []);
+  useClickOutside(ref, closeMenu, open);
 
   const activeLabel = options.find((o) => o.key === value)?.label || label;
 
@@ -462,14 +457,8 @@ function SourceFilterDropdown({ value, onChange, workspace, auto }: {
   // 只订阅 history.length 作为缓存失效信号，避免每次 history 变化都重渲染
   const historyLen = useAppStore((s) => s.history.length);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  const closeMenu = useCallback(() => setOpen(false), []);
+  useClickOutside(ref, closeMenu, open);
 
   // 收集当前工作空间下的所有来源应用（含 source_icon 信息）
   // historyLen 作为缓存失效信号
@@ -557,13 +546,7 @@ function TagPickerPopover({ tags, selectedTagIds, onToggle, onClose }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+  useClickOutside(ref, onClose);
 
   // 分组：自动标签 vs 手动标签
   const { autoTags, manualTags } = useMemo(() => {

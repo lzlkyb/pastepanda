@@ -3,11 +3,12 @@
  * 默认展示精选列表（后端可识别的 10 种语言 + 4 种配置格式 + 纯文本），
  * 输入搜索时在全量 language-data（130+ 语言）中按名称/别名过滤。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { ChevronDown, Search, Check } from "lucide-react";
 import { languages } from "@codemirror/language-data";
 import { COMMON_CODE_LANGS, COMMON_CONFIG_FMTS, LANG_COLORS } from "./languages";
 import styles from "../FullscreenEditor.module.css";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 export function LanguagePicker({ value, onChange }: {
   value: string | null;
@@ -19,14 +20,8 @@ export function LanguagePicker({ value, onChange }: {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 点击外部关闭
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  const closePicker = useCallback(() => setOpen(false), []);
+  useClickOutside(rootRef, closePicker, open);
 
   // 打开时清空搜索并聚焦输入框
   useEffect(() => {

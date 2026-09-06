@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>知识库交互修复设计稿 · 2026-09-06</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1e222b; --border:#2b3040;
+    --text:#e6e9ef; --muted:#8b93a7; --accent:#5b8cff; --ok:#3fb950; --bad:#f85149; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px;background:var(--bg);color:var(--text);
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  h3{font-size:13px;margin:20px 0 8px;color:var(--muted);font-weight:600}
+  .sub{color:var(--muted);margin-bottom:8px}
+  code{background:var(--card2);padding:1px 5px;border-radius:4px;font-size:12px;
+       font-family:"Cascadia Mono",Consolas,monospace}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px}
+  .box.bad{border-color:#5a2a2a}
+  .box.ok{border-color:#2a5a35}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin-bottom:10px}
+  .tag.bad{background:#3a1d1d;color:#ff9a92}
+  .tag.ok{background:#15351f;color:#7ee094}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  .note{background:var(--card2);border-left:3px solid var(--warn);padding:10px 14px;
+        border-radius:0 8px 8px 0;margin:14px 0;font-size:13px}
+  .note.red{border-left-color:var(--bad)}
+
+  /* ---- 三栏示意 ---- */
+  .layout{display:flex;gap:6px;height:260px;background:var(--card2);
+          border:1px solid var(--border);border-radius:8px;padding:6px}
+  .col{background:#12151c;border:1px solid var(--border);border-radius:6px;
+       display:flex;flex-direction:column;font-size:11px;color:var(--muted)}
+  .col .lbl{padding:5px 8px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .c1{flex:0 0 74px} .c2{flex:1} .c3{flex:0 0 130px}
+  .qa{display:flex;flex-direction:column;border-bottom:1px solid var(--border)}
+  .qa .ans{flex:1;padding:6px 8px;color:#5c6479;min-height:0;overflow:hidden}
+  .qa .inp{flex-shrink:0;margin:4px 6px 6px;border:1px solid var(--border);
+           border-radius:5px;background:#0d1016;padding:4px 6px;color:#5c6479}
+  .mainpane{flex:1;padding:6px 8px;color:#5c6479;min-height:0}
+
+  /* ---- 自动增高演示 ---- */
+  .demo{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .demo-panes{display:flex;gap:14px;align-items:flex-start}
+  .demo-pane{flex:1;background:#12151c;border:1px solid var(--border);border-radius:8px;
+             padding:10px;display:flex;flex-direction:column}
+  .demo-pane .ttl{font-size:11px;color:var(--muted);margin-bottom:8px;flex-shrink:0}
+  .demo-pane .fill{flex:1;min-height:0;background:#0d1016;border-radius:5px;
+                   margin-bottom:8px;padding:6px;font-size:11px;color:#4a5164;overflow:hidden}
+  .demo-pane textarea{width:100%;min-height:26px;padding:5px 8px;border:1px solid var(--border);
+            border-radius:7px;background:var(--card2);color:var(--text);font:inherit;
+            font-size:12px;line-height:1.45;outline:none;resize:none;overflow-y:auto;display:block}
+  .demo-pane textarea:focus{border-color:var(--accent)}
+  .meter{font-size:11px;color:var(--muted);margin-top:6px;font-family:Consolas,monospace}
+  .ctl{margin-top:14px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+  .ctl input[type=range]{flex:1;max-width:260px}
+</style>
+</head>
+<body>
+
+<h1>知识库模式 · 交互修复设计稿</h1>
+<div class="sub">2026-09-06 &nbsp;·&nbsp; 对应用户反馈 5 条 + 排查中发现的 1 条</div>
+
+<div class="note red">
+  <b>核心发现：</b>用户报的 5 条里，有 <b>3 条是同一个根因</b> ——
+  <code>App.tsx:833</code> 的全局键盘豁免只判 <code>INPUT/TEXTAREA/SELECT</code>，
+  而笔记正文是 CodeMirror（<code>&lt;div contenteditable&gt;</code>），一个都挡不住。
+</div>
+
+<h2>一、键盘作用域：从「标签名豁免」改成「视图闸门 + 完整豁免」</h2>
+
+<div class="grid">
+  <div class="box bad">
+    <span class="tag bad">现状</span>
+    <div>全局 keydown 为<b>剪贴板历史列表</b>而写，但在<b>所有视图</b>下都生效。</div>
+    <table>
+      <tr><th>按键</th><th>知识库里打字时实际发生</th></tr>
+      <tr><td><code>Enter</code></td><td>粘贴历史里 focus 的那条 → 弹「已粘贴图片」</td></tr>
+      <tr><td><code>Space</code></td><td>打开快速预览浮层</td></tr>
+      <tr><td><code>Backspace</code></td><td><b style="color:#ff9a92">删除历史中选中的条目</b>（未被报告）</td></tr>
+      <tr><td><code>Ctrl+A</code></td><td>全选历史条目</td></tr>
+      <tr><td>输入法回车</td><td>选字确认被当成提交</td></tr>
+    </table>
+  </div>
+  <div class="box ok">
+    <span class="tag ok">改后</span>
+    <div>两道闸门，先粗后细：</div>
+    <table>
+      <tr><th>顺序</th><th>判断</th></tr>
+      <tr><td>1</td><td><code>appMode !== "history"</code> → 整个 handler 直接返回</td></tr>
+      <tr><td>2</td><td><code>isContentEditable</code> → 返回（CodeMirror / 富文本）</td></tr>
+      <tr><td>3</td><td><code>e.isComposing</code> → 返回（输入法合成中）</td></tr>
+      <tr><td>4</td><td>原有的 INPUT/TEXTAREA/SELECT 与弹窗豁免</td></tr>
+    </table>
+    <div style="margin-top:10px;color:var(--muted);font-size:12px">
+      第 1 条是根治项：以后再加视图，不会重犯。<br>
+      第 2、3 条仍要留 —— 记录模式下也有 CodeMirror 与中文输入。
+    </div>
+  </div>
+</div>
+
+<h2>二、问答区尺寸（用户反馈 #1「三栏下问答框太短」）</h2>
+
+<h3>三栏时第三栏还要再上下切一刀</h3>
+<div class="layout">
+  <div class="col c1"><div class="lbl">侧栏</div></div>
+  <div class="col c2"><div class="lbl">笔记列表</div></div>
+  <div class="col c3">
+    <div class="lbl">第三栏</div>
+    <div class="qa" style="height:96px">
+      <div class="ans">问答 · 答案区</div>
+      <div class="inp">追问…</div>
+    </div>
+    <div class="mainpane">笔记正文</div>
+  </div>
+</div>
+
+<table>
+  <tr><th>症状</th><th>现有约束</th><th>改为</th></tr>
+  <tr>
+    <td>输入框写不下</td>
+    <td><code>DEFAULT_MAX_ROWS = 4</code>（写死）<br>窄栏一行约 25 字 → 上限约 100 字</td>
+    <td>上限随可用高度自适应：<br><code>clamp(3行, 容器高×40%, 10行)</code></td>
+  </tr>
+  <tr>
+    <td>答案区被压扁</td>
+    <td><code>MIN_QA_PX = 120</code><br>减去标题与输入行，答案只剩约 40px</td>
+    <td><code>MIN_QA_PX = 180</code><br>保证标题 + ≥3 行答案 + 输入行</td>
+  </tr>
+</table>
+
+<div class="note">
+  <b>为什么不是简单把 4 行调大：</b>写死成 8 行的话，矮窗口下输入框会把答案区吃光——
+  <code>.foot</code> 是 <code>flex-shrink:0</code>，它长多少，答案区就少多少。
+  所以上限必须跟容器高度挂钩，而不是一个常数。
+</div>
+
+<h3>实测对比（拖动改变面板高度，在框里打字看上限变化）</h3>
+<div class="demo">
+  <div class="demo-panes" id="panes">
+    <div class="demo-pane" id="paneOld" style="height:220px">
+      <div class="ttl">现状 · 写死 4 行</div>
+      <div class="fill">答案区（被输入框挤压的就是这块）</div>
+      <textarea id="taOld" rows="1" placeholder="在这里连续打字…"></textarea>
+      <div class="meter" id="mOld">上限 —</div>
+    </div>
+    <div class="demo-pane" id="paneNew" style="height:220px">
+      <div class="ttl">改后 · 随高度自适应</div>
+      <div class="fill">答案区（保底不会被吃光）</div>
+      <textarea id="taNew" rows="1" placeholder="在这里连续打字…"></textarea>
+      <div class="meter" id="mNew">上限 —</div>
+    </div>
+  </div>
+  <div class="ctl">
+    <span>面板高度</span>
+    <input type="range" id="h" min="140" max="420" value="220">
+    <span id="hv">220px</span>
+  </div>
+</div>
+
+<h2>三、另外两条（无 UI 变化，仅记录结论）</h2>
+<table>
+  <tr><th>#</th><th>现象</th><th>根因</th><th>改法</th></tr>
+  <tr>
+    <td>4</td><td>弹浏览器剪贴板权限框</td>
+    <td><code>navigator.clipboard.readText()</code>（<code>writeText</code> 不弹，read 才弹）<br>仅 <code>App.tsx:265/276</code> 两处</td>
+    <td>走后端 arboard，复用 <code>with_clipboard_retry</code></td>
+  </tr>
+  <tr>
+    <td>5</td><td>外部点 md 进不了全屏编辑器</td>
+    <td>监听器挂在 <code>CardList</code> 里，而它<b>只在记录模式渲染</b>。<br>冷启动的 <code>take_pending_file_open</code> 也在它挂载时才调</td>
+    <td>上移到 <code>App</code> 顶层，与视图解耦</td>
+  </tr>
+</table>
+
+<div class="note">
+  #5 还有个隐蔽副作用：若启动时停在知识库模式，双击过的 md 会一直躺在后端，
+  等切回记录模式时<b>突然弹出来</b>。上移后一并消失。
+</div>
+
+<script>
+// 演示：左边写死 4 行，右边 clamp(3行, 容器高*40%, 10行)。
+// 只为看清「上限该不该跟高度走」，不是最终实现。
+const LINE = 17.4, PAD = 10;
+function cap(rows){ return Math.ceil(LINE * rows + PAD); }
+
+function grow(ta, maxPx, meter, label){
+  ta.style.height = "auto";
+  const h = Math.min(ta.scrollHeight, maxPx);
+  ta.style.height = h + "px";
+  meter.textContent = `上限 ${maxPx}px（约 ${Math.floor((maxPx-PAD)/LINE)} 行）· 当前 ${h}px${label}`;
+}
+
+function render(){
+  const paneH = +document.getElementById("h").value;
+  document.getElementById("hv").textContent = paneH + "px";
+  document.getElementById("paneOld").style.height = paneH + "px";
+  document.getElementById("paneNew").style.height = paneH + "px";
+
+  grow(taOld, cap(4), mOld, "");
+
+  // 自适应：40% 容器高，夹在 3~10 行之间
+  const adaptive = Math.round(
+    Math.min(cap(10), Math.max(cap(3), paneH * 0.4))
+  );
+  grow(taNew, adaptive, mNew, "");
+}
+
+["input","change"].forEach(ev=>{
+  taOld.addEventListener(ev, render);
+  taNew.addEventListener(ev, render);
+  document.getElementById("h").addEventListener(ev, render);
+});
+render();
+</script>
+
+</body>
+</html>

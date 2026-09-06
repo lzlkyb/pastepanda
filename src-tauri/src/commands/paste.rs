@@ -46,6 +46,16 @@ pub fn copy_only(engine: State<PasteEngine>, text: String) -> Result<(), String>
     engine.copy_only(&text)
 }
 
+/// 读取剪贴板纯文本——代替前端的 `navigator.clipboard.readText()`，
+/// 后者会让 WebView 弹出浏览器的剪贴板读取权限框。
+///
+/// 剪贴板为空或内容非文本时返回空串而不是报错：调用方（自由文本对比）
+/// 只是拿它预填，拿不到就留空，不应该阻断打开。
+#[tauri::command]
+pub fn read_clipboard_text(engine: State<PasteEngine>) -> String {
+    engine.read_text().unwrap_or_default()
+}
+
 /// 仅复制图片到剪贴板（不粘贴）— 走 arboard，比 Web Clipboard API 更可靠
 #[tauri::command]
 pub fn copy_image_only(engine: State<PasteEngine>, image_path: String) -> Result<(), String> {
@@ -138,7 +148,10 @@ pub fn paste_send_tab(engine: State<PasteEngine>) -> Result<(), String> {
 #[tauri::command]
 pub fn toggle_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
-        if window.is_visible().unwrap_or(false) {
+        // ❗ 不能只看 `is_visible()`：最小化的窗口它也返回 true（见
+        //   `crate::main_window_showing` 的注释）。托盘左键、唤出热键、
+        //   本命令三条路原先各写了一份同样的判断，也就各错了一遍。
+        if crate::main_window_showing(&window) {
             if let Err(e) = window.hide() {
                 log::warn!("[Commands] 隐藏窗口失败: {}", e);
             }
@@ -149,10 +162,7 @@ pub fn toggle_window(app: tauri::AppHandle) -> Result<(), String> {
             }
             // 临时置顶确保窗口获得焦点，随后恢复（避免托盘弹窗关闭后焦点丢失）
             let _ = window.set_always_on_top(true);
-            if let Err(e) = window.show() {
-                log::warn!("[Commands] 显示窗口失败: {}", e);
-            }
-            window.set_focus().ok();
+            crate::present_window(&window);
             // 延迟恢复置顶状态，确保焦点已稳定
             let w = window.clone();
             std::thread::spawn(move || {

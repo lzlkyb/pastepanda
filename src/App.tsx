@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } fro
 import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useAppStore, HistoryItem, buildSearchKey } from "@/stores/appStore";
 import { useDialogStore, anyDialogOpen } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
@@ -18,7 +19,7 @@ import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { useViewTransition } from "@/hooks/useViewTransition";
 import { logger } from "@/lib/logger";
-import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, readClipboardText, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import {
@@ -260,23 +261,13 @@ function App() {
 
   // 自由文本对比（方案 C 模态入口）：读剪贴板预填左侧，右侧留空待用户粘贴
   const openFreeDiff = useCallback(async () => {
-    let left = "";
-    try {
-      left = await navigator.clipboard.readText();
-    } catch {
-      /* 剪贴板不可读时左侧留空，不阻断打开 */
-    }
+    const left = await readClipboardText();
     setFreeDiff({ open: true, left, right: "" });
   }, []);
 
   // 全屏文本对比（方案 C 全屏深编入口）：读剪贴板预填左侧，独立大窗打开
   const openFreeDiffFullscreen = useCallback(async () => {
-    let left = "";
-    try {
-      left = await navigator.clipboard.readText();
-    } catch {
-      /* 剪贴板不可读时左侧留空，不阻断打开 */
-    }
+    const left = await readClipboardText();
     void invoke("open_fullscreen_editor", {
       sourceId: null,
       content: left,
@@ -814,6 +805,30 @@ function App() {
     };
   }, []);
 
+  /**
+   * 系统文件关联：双击 `.md` 时打开独立全屏编辑器窗口。
+   *
+   * 🔴 必须挂在 `App` 而不是 `CardList`（2026-09-06 从那里上移）：
+   *   `CardList` 只在记录模式渲染，知识库模式下已卸载、双击 md 没人接；
+   *   而 `take_pending_file_open` 写在它的挂载里，启动即停在知识库时那个路径
+   *   永远不执行，文件会一直躺在后端，等切回记录模式时突然弹出来。
+   *   文件关联跟“当前在哪个视图”无关，就不该绑在某个视图的组件上。
+   */
+  useEffect(() => {
+    const openMd = (paths: string[]) => {
+      if (paths.length === 0) return;
+      void invoke("open_fullscreen_editor", { filePath: paths[0], contentType: "markdown" }).catch(() => {});
+    };
+    // 应用已在运行：第二个实例的参数经 single-instance 插件 emit 过来
+    const unlisten = listen<string[]>("file-open-event", (e) => openMd(e.payload));
+    // 应用未运行：路径在启动参数里，setup 阶段已存入 PendingFileOpen，
+    // 前端挂载后主动取走（那一刻 emit 尚未注册，不能依赖事件）
+    void invoke<string[]>("take_pending_file_open")
+      .then(openMd)
+      .catch(() => { /* 命令不存在或无待打开文件时静默忽略 */ });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, []);
+
   // U51：跟踪文件详情弹窗开关（由 CardList 管理，广播 app-filedetail-open/close 事件）
   const fileDetailOpenRef = useRef(false);
   useEffect(() => {
@@ -829,9 +844,23 @@ function App() {
 
   // 键盘导航
   const handleKeyDown = useCallback(async (e: KeyboardEvent) => {
-    // 忽略输入框内的按键
+    // 忽略输入区内的按键。
+    //
+    // 🔴 `isContentEditable` 与 `isComposing` 必须和 `INPUT/TEXTAREA` **同一道早返回**，
+    //   不能只拦列表导航键——因为下面还有一条 `?` 开快捷键帮助，它带
+    //   `preventDefault()`。CodeMirror（笔记正文）是 `<div contenteditable>`，
+    //   `tagName` 是 DIV，挡不住，结果就是**在笔记里根本打不出 `?`**，
+    //   按下去弹的是快捷键面板（与「空格打不出来」同一个病）。
+    //
+    // ❗ 连 `Escape` 一起拦是**故意的**：textarea 本来就是这么拦的，
+    //   contenteditable 只是被漏了。不拦的话，写笔记时按一下 Esc（关补全/
+    //   退输入法候选的反射动作）会一路落到链尾的 `toggleWindow()`——**整个窗口消失**。
+    //   自带未保存确认的弹窗（NoteDialog / ItemEditorDialog）各自注了捕获期
+    //   监听，不依赖这里，不受影响。
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if ((e.target as HTMLElement)?.isContentEditable) return;
+    if (e.isComposing) return;
     // U3：右键菜单打开期间所有按键让位给菜单（菜单自带方向键/Enter/Esc 处理），
     // 否则 Enter 会同时激活菜单项并粘贴选中卡片、Esc 会同时关菜单和隐藏窗口
     if (ctxMenuOpenRef.current) return;
@@ -846,9 +875,21 @@ function App() {
       showSettings || showSequential || showSnippets || showExtract || showEncoding ||
       showBatchReplace || showConfigDiff || moveToGroup || fileDetailOpenRef.current ||
       anyDialogOpen(useDialogStore.getState());
-    const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End"].includes(e.key)
+    // ❗ 空格（快速预览）本来漏在这份名单外，弹窗开着时照样会弹预览。
+    //   它和下面那三道闸门是同一批调用点，一并补上（规则 #11.1）。
+    const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End", " "].includes(e.key)
       || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
     if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;
+
+    // 视图闸门：这整套键位（↑↓ / Enter 粘贴 / 空格预览 / Delete 删除 / Ctrl+A）
+    // 服务的是**剪贴板历史列表**，不在记录模式时它操作的列表压根不在屏幕上。
+    // 之前没这道闸门，在知识库里：回车 → 粘贴历史项并弹「已粘贴图片」、
+    // 空格 → 弹快速预览、**退格 → 直接删掉历史里选中的条目**。
+    //
+    // ❗ 只拦 `isListNavKey`，不能提到函数开头做整体 return：
+    //   `Escape`（关弹窗 / 隐藏窗口）与 `?`（快捷键帮助）在非输入态下
+    //   属于真全局键位，一刀切会把设置页和知识库里的 Esc 一起废掉。
+    if (useAppStore.getState().appMode !== "record" && isListNavKey) return;
 
     const store = useAppStore.getState();
     const filtered = store.getFilteredItems();

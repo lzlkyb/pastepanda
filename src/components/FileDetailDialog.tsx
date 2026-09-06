@@ -13,6 +13,7 @@ import { getImageDataUrl } from "@/lib/api";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogStore } from "@/stores/dialogStore";
 import { PdfViewer } from "@/components/PdfViewer";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 type FileMeta = { size: number; exists: boolean };
 type TextPreviewData = {
@@ -128,13 +129,14 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
     return () => { cancelled = true; };
   }, [previewPath]);
 
-  // U51：Esc 关闭 + 向全局键盘层广播开关状态
+  // Esc 关闭（公共 hook：捕获期 + stopPropagation）。
+  // 原先是普通冒泡监听，App 的 Esc 链不认识本弹窗，会跟着落到链尾隐藏主窗口。
+  useDialogEscape(onClose);
+
+  // U51：向全局键盘层广播开关状态
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("app-filedetail-open"));
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("keydown", onKey);
       window.dispatchEvent(new CustomEvent("app-filedetail-close"));
     };
   }, [onClose]);

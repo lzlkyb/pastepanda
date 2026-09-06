@@ -133,3 +133,153 @@ pub fn regenerate_lan_pairing_key(
     }
     Ok(new_key)
 }
+
+// ===== 附近设备配对（免交换密钥）=====
+//
+// 设计稿：`design/PastePanda-局域网同步-附近设备配对-设计稿.html`
+
+/// 附近尚未配对的设备。
+///
+/// 已配对的不列——它们在 `get_lan_devices` 那个列表里，
+/// 两处都出现会让用户以为没配上、反复点。
+#[tauri::command]
+pub fn get_lan_nearby(
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::lan_pair::NearbyDevice>, String> {
+    let Some(lan) = app.try_state::<crate::lan_sync::LanSync>() else {
+        return Ok(Vec::new());
+    };
+    let now = chrono::Utc::now().timestamp();
+    Ok(lan.pair().list_nearby(now, &lan.paired_ids()))
+}
+
+/// 进行中的配对快照。两端都轮询它：
+/// 发起方拿它显示 pin，接受方拿它弹框 + 显示 pin。
+#[derive(serde::Serialize)]
+pub struct LanPairState {
+    pub peer_id: String,
+    pub peer_name: String,
+    /// 两端核对用的 6 位数字。协商完成前为空串。
+    pub pin: String,
+    /// `"initiator"` / `"responder"`。接受方要先弹一个“对方想配对”。
+    pub role: String,
+    /// 本端用户是否已点确认。
+    pub confirmed: bool,
+}
+
+#[tauri::command]
+pub fn get_lan_pair_state(app: tauri::AppHandle) -> Result<Option<LanPairState>, String> {
+    let Some(lan) = app.try_state::<crate::lan_sync::LanSync>() else {
+        return Ok(None);
+    };
+    let now = chrono::Utc::now().timestamp();
+    Ok(lan.pair().snapshot(now).map(|(id, name, pin, role, ok)| {
+        LanPairState {
+            peer_id: id,
+            peer_name: name,
+            pin,
+            role: match role {
+                crate::lan_pair::PairRole::Initiator => "initiator".into(),
+                crate::lan_pair::PairRole::Responder => "responder".into(),
+            },
+            confirmed: ok,
+        }
+    }))
+}
+
+/// 发起配对（用户在附近列表里点了某台）。
+#[tauri::command]
+pub fn lan_pair_start(app: tauri::AppHandle, device_id: String) -> Result<(), String> {
+    let lan = app
+        .try_state::<crate::lan_sync::LanSync>()
+        .ok_or_else(|| "局域网同步未启动".to_string())?;
+    let now = chrono::Utc::now().timestamp();
+    let pair = lan.pair();
+
+    let peer_name = pair
+        .device_name_of(&device_id)
+        .ok_or_else(|| "这台设备刚刚不见了，请刷新后重试".to_string())?;
+
+    let pending = crate::lan_pair::PendingPair::start(
+        &device_id,
+        &peer_name,
+        crate::lan_pair::PairRole::Initiator,
+        now,
+    )?;
+    let my_pk = pair.begin(pending);
+
+    lan.send_pair_packet(&crate::lan_pair::PairPacket {
+        v: crate::lan_pair::PAIR_PROTO_V,
+        kind: crate::lan_pair::KIND_REQ.into(),
+        from_id: lan.device_id().into(),
+        from_name: hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        to_id: device_id,
+        pk: my_pk,
+        nonce: String::new(),
+        sealed: String::new(),
+        ts: now,
+    });
+    Ok(())
+}
+
+/// 用户点了「一样，确认」。
+///
+/// 🔴 发起方确认后才把自己的 `pairing_key` 加密送出去；
+/// 接受方确认只是置位，等对方送过来（接收侧会检查 `confirmed`，
+/// 没确认就拒收——否则对方单方面点一下就能换掉我的密钥）。
+#[tauri::command]
+pub fn lan_pair_confirm(app: tauri::AppHandle) -> Result<(), String> {
+    let lan = app
+        .try_state::<crate::lan_sync::LanSync>()
+        .ok_or_else(|| "局域网同步未启动".to_string())?;
+    let now = chrono::Utc::now().timestamp();
+    let pair = lan.pair();
+
+    let info = pair
+        .with_pending(now, |p| {
+            p.confirmed = true;
+            (p.role, p.peer_id.clone(), p.shared.clone())
+        })
+        .ok_or_else(|| "配对已过期，请重新开始".to_string())?;
+
+    let (role, peer_id, shared) = info;
+    if role != crate::lan_pair::PairRole::Initiator {
+        return Ok(()); // 接受方：等对方送密钥
+    }
+    let shared = shared.ok_or_else(|| "还没有协商完成，稍等一下".to_string())?;
+
+    let key = lan.get_pairing_key();
+    let (nonce, sealed) = crate::lan_pair::seal_pairing_key(&shared, &key)?;
+    lan.send_pair_packet(&crate::lan_pair::PairPacket {
+        v: crate::lan_pair::PAIR_PROTO_V,
+        kind: crate::lan_pair::KIND_KEY.into(),
+        from_id: lan.device_id().into(),
+        from_name: String::new(),
+        to_id: peer_id,
+        pk: String::new(),
+        nonce,
+        sealed,
+        ts: now,
+    });
+    pair.clear();
+    Ok(())
+}
+
+/// 用户点了「不一样，取消」或关掉弹框。
+///
+/// 拒绝会计数，达到阈值后本次进程内不再为该对端弹框（防骚扰）。
+#[tauri::command]
+pub fn lan_pair_cancel(app: tauri::AppHandle) -> Result<(), String> {
+    let Some(lan) = app.try_state::<crate::lan_sync::LanSync>() else {
+        return Ok(());
+    };
+    let now = chrono::Utc::now().timestamp();
+    let pair = lan.pair();
+    if let Some(peer) = pair.with_pending(now, |p| p.peer_id.clone()) {
+        pair.note_reject(&peer);
+    }
+    pair.clear();
+    Ok(())
+}

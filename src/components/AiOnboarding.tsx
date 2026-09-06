@@ -7,13 +7,14 @@
  * 一个都没提；用户第一次知道价钱竟然是撞上「今日 AI 预算已用完」的时候。因此这里加了
  * 一条告知（计费 + 日预算上限在哪设）：只陈述事实，不吓人。
  */
-import { memo, useEffect } from "react";
+import { memo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Info } from "lucide-react";
 import { AiMark } from "@/components/ai/AiMark";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./AiOnboarding.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 /** localStorage key：看过引导 = 不再弹 */
 export const AI_ONBOARDED_KEY = "pastepanda_ai_onboarded";
@@ -50,16 +51,13 @@ export const AiOnboarding = memo(function AiOnboarding({
 }) {
   const { backdrop, panel } = useDialogAnim();
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        markAiOnboardingSeen();
-        onClose();
-      }
-    };
-    if (open) window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Esc 关闭（公共 hook：捕获期 + stopPropagation）。
+  // ❗ Esc 也算“看过了”，跟点关闭一致；否则下次开应用又弹一次。
+  const closeSeen = useCallback(() => {
+    markAiOnboardingSeen();
+    onClose();
+  }, [onClose]);
+  useDialogEscape(closeSeen, open);
 
   return (
     <AnimatePresence>

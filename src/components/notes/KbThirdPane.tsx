@@ -30,12 +30,19 @@
  *   而它们在上层。放在本组件里再上报就成了「子组件量 → 父组件存 → 传回子组件」
  *   的环形数据流。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import { Sparkles, ChevronRight } from "lucide-react";
 import styles from "./KbThirdPane.module.css";
+import { useSplitDrag } from "@/hooks/useSplitDrag";
 
-/** 分栏后回答区至少多高。一行标题 + 两三行正文的下限。 */
-const MIN_QA_PX = 120;
+/**
+ * 分栏后回答区至少多高。
+ *
+ * 原为 120——但问答区不只有正文：头部标题行 + 底部「当前范围 + 追问框」
+ * 都是 `flex-shrink: 0`，减完答案区只剩约 40px，实际不可读。
+ * 180 保证「标题 + 至少 3 行答案 + 输入行」都在（2026-09-06）。
+ */
+const MIN_QA_PX = 180;
 /** 笔记区至少多高。比回答区大：它里面是标题行 + 形态切换器 + 编辑区。 */
 const MIN_MAIN_PX = 160;
 /** 拖手柄的高（与 CSS 里的 `.grip` 保持一致）。 */
@@ -44,10 +51,13 @@ const GRIP_PX = 7;
 /**
  * 能分栏的最小容器高度。
  *
- * 两个下限 + 手柄就是 287px，再加上两边各自的标题行与内边距——
- * 低于 420 时两块都只剩一行半，分不如不分。
+ * 两个下限 + 手柄 = 180 + 160 + 7 = 347px，再加上两边各自的标题行与内边距——
+ * 低于 480 时两块都只剩一行半，分不如不分（改走折叠切换）。
+ *
+ * ❗ 跟着 `MIN_QA_PX` 120→180 一起从 420 抬到 480：不抬的话 420px 容器里
+ *   两块全压在各自下限上，分栏形同虚设（原注释里的 287 是旧值）。
  */
-const MIN_SPLIT_H = 420;
+const MIN_SPLIT_H = 480;
 /**
  * 能分栏的最小容器宽度。
  *
@@ -61,16 +71,7 @@ const RATIO_KEY = "pastepanda_kb_split_ratio";
 /** 回答区默认占 44%：回答高度基本固定，笔记可能很长且要滚，给它多一点。 */
 const DEFAULT_RATIO = 44;
 
-function readRatio(): number {
-  try {
-    const raw = localStorage.getItem(RATIO_KEY);
-    const n = raw ? parseFloat(raw) : NaN;
-    // 读到脏值（手改过 / 旧版本格式）就回默认，不能拿 NaN 去算 flex。
-    return Number.isFinite(n) && n > 5 && n < 95 ? n : DEFAULT_RATIO;
-  } catch {
-    return DEFAULT_RATIO;
-  }
-}
+// 读取/写入比例的那段已移到 `useSplitDrag`（2026-09-06），这里不再自己读写。
 
 /**
  * 第三栏能不能上下分栏。
@@ -117,17 +118,18 @@ export function KbThirdPane({
   onToggleQaCollapsed,
   qaBarText,
 }: KbThirdPaneProps) {
-  const [ratio, setRatio] = useState(readRatio);
-
-  // 比例写 localStorage 放在 effect 里而不是 setState 的 updater 里：
-  // StrictMode 下 updater 会双调（项目在 App.tsx 的 `aiAwarenessActive` 上撞过）。
-  useEffect(() => {
-    try {
-      localStorage.setItem(RATIO_KEY, String(Math.round(ratio)));
-    } catch {
-      /* 隐私模式/配额满，写不进只是下次回默认 */
-    }
-  }, [ratio]);
+  // 拖拽、下限夹算、持久化全走共用 hook（规则 #11）。
+  // 2026-09-06 从本文件抽出去的：中栏↔第三栏 那个横向分栏需要一模一样的逻辑，
+  // 再抄一份就是第二份真相。
+  const { ratio, onGripDown } = useSplitDrag({
+    axis: "y",
+    containerRef: paneRef,
+    minFirstPx: MIN_QA_PX,
+    minSecondPx: MIN_MAIN_PX,
+    gripPx: GRIP_PX,
+    storageKey: RATIO_KEY,
+    defaultRatio: DEFAULT_RATIO,
+  });
 
   const hasQa = qa !== null;
   /** 真的在上下分栏。 */
@@ -144,44 +146,6 @@ export function KbThirdPane({
   /** 胶囊：有会话但回答没在眼前。它是「回答还在」的唯一凭据与入口。 */
   const showBar = hasQa && !split && !qaFull;
 
-  /** 拖动中的起点。`null` = 没在拖。 */
-  const dragRef = useRef<{ y: number; ratio: number; h: number } | null>(null);
-
-  const onGripDown = useCallback(
-    (e: React.MouseEvent) => {
-      const h = paneRef.current?.clientHeight ?? 0;
-      if (h <= 0) return;
-      e.preventDefault();
-      dragRef.current = { y: e.clientY, ratio, h };
-    },
-    // `paneRef` 现在是 prop（不再是本地 ref），所以要写进依赖；
-    // ref 对象本身引用稳定，写了不会多跑。
-    [ratio, paneRef],
-  );
-
-  // 监在 window 而不是手柄上：拖得快时指针会跑到手柄外面，
-  // 挂在手柄上就会中途断掉（拖拽类交互的通用做法）。
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
-      // 把像素下限换成百分比上限：拖到完全压扁等于把一边弄没，
-      // 而那正是本次要治的毛病。
-      const minR = (MIN_QA_PX / d.h) * 100;
-      const maxR = ((d.h - MIN_MAIN_PX - GRIP_PX) / d.h) * 100;
-      const next = d.ratio + ((e.clientY - d.y) / d.h) * 100;
-      setRatio(Math.min(Math.max(next, minR), Math.max(minR, maxR)));
-    };
-    const onUp = () => {
-      dragRef.current = null;
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, []);
 
   return (
     <div className={styles.third} ref={paneRef}>

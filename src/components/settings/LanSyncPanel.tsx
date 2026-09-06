@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
+import { LanNearby } from "./LanNearby";
 import styles from "../Settings.module.css";
 
 interface LanDevice { device_id: string; device_name: string; last_seen: string; }
@@ -113,9 +114,17 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
         </button>
       </div>
 
-      <div style={{ marginTop: 4, marginBottom: 12 }}>
+      {/* 🔴 附近设备放最前：这是现在推荐的配对方式，不用交换任何东西。
+          手填密钥降为「高级」里的兵底（跟旧版本配对时还需要它）。 */}
+      <div className={styles.lanSectionLabel}>附近的设备</div>
+      <LanNearby toast={toast} />
+
+      <details className={styles.lanAdvanced}>
+        <summary className={styles.lanAdvancedHead}>高级：手动交换配对密钥</summary>
+        <div style={{ marginTop: 4, marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
-          配对密钥（只有使用相同密钥的设备才会互相同步，请将此密钥手动拷贝到其他设备）
+          只有使用相同密钥的设备才会互相同步。
+          <b>与旧版本设备配对时才需要它</b>；两边都是新版本就用上面的「附近的设备」。
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
@@ -163,7 +172,8 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
             应用
           </button>
         </div>
-      </div>
+        </div>
+      </details>
 
       {devices.length > 0 && (
         <div className={styles.lanDeviceList}>
@@ -185,9 +195,13 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
         </div>
       )}
 
+      {/* ❗ 这里原先写的是「同一局域网内的设备将自动发现并同步剪贴板」，
+          而当时必须先手动交换密钥才看得见彼此——那句提示是错的，
+          也很可能正是用户困惑的来源（2026-09-06 改）。
+          现在有了招呼包，发现确实是自动的，但同步仍需配对——两件事要分开说。 */}
       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>
-        💡 同一局域网内的设备将自动发现并同步剪贴板
-        {devices.length > 0 && <span> · 已发现 {devices.length} 台设备</span>}
+        💡 同一网络内的设备会自动出现在「附近的设备」里；配对后才会同步剪贴板
+        {devices.length > 0 && <span> · 已配对 {devices.length} 台</span>}
       </div>
       <button className={styles.lanTestBtn} onClick={handleSendTest}>
         🔔 发送测试消息

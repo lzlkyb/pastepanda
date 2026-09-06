@@ -12,6 +12,7 @@ import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./AiCustomProviderDialog.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 export interface CustomEditorState {
   mode: "add" | "edit";
@@ -61,9 +62,12 @@ export const AiCustomProviderDialog = memo(function AiCustomProviderDialog({
     }
   };
 
+  // Esc 单独走公共 hook（捕获期 + stopPropagation）：本弹窗从设置页打开，
+  // 不阻断的话 App 的 Esc 链会把**整个设置页**一起关掉。
+  useDialogEscape(onClose);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
       if (e.key === "Enter" && canSave) void save();
     };
     window.addEventListener("keydown", onKey);

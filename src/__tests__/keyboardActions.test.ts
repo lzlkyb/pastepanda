@@ -346,3 +346,71 @@ describe("computeNavIndex", () => {
     expect(computeNavIndex("down", "nonexistent", ids)).toBe(0);
   });
 });
+
+/**
+ * 2026-09-06 补：用户在知识库模式下报的三条交互问题，根因都在本文件的 guard。
+ *
+ * 🔴 这些用例锁的是「知识库里打字不该触发剪贴板历史的键位」。
+ *    在补它们之前，本测试文件只有 tagName 一道 guard——而笔记正文是
+ *    CodeMirror（`<div contenteditable>`，tagName 为 DIV），一条都测不到。
+ */
+describe("resolveKeyAction — 输入区与视图闸门", () => {
+  it("contenteditable 里回车不粘贴历史项（用户报「显示已粘贴图片」）", () => {
+    const a = resolveKeyAction(
+      makeState({ key: "Enter", targetTagName: "DIV", targetContentEditable: true }),
+    );
+    expect(a.type).toBe("ignore");
+  });
+
+  it("contenteditable 里空格不弹快速预览（用户报「打不出空格」）", () => {
+    const a = resolveKeyAction(
+      makeState({ key: " ", targetTagName: "DIV", targetContentEditable: true }),
+    );
+    expect(a.type).toBe("ignore");
+  });
+
+  it("contenteditable 里退格不删历史条目（未被报告，审查时发现）", () => {
+    const a = resolveKeyAction(
+      makeState({
+        key: "Backspace",
+        targetTagName: "DIV",
+        targetContentEditable: true,
+        selectedIds: ["a", "b"],
+      }),
+    );
+    expect(a.type).toBe("ignore");
+  });
+
+  it("contenteditable 里 `?` 是普通字符，不开快捷键面板", () => {
+    const a = resolveKeyAction(
+      makeState({ key: "?", targetTagName: "DIV", targetContentEditable: true }),
+    );
+    expect(a.type).toBe("ignore");
+  });
+
+  it("输入法合成中的回车不当快捷键（中文选字）", () => {
+    const a = resolveKeyAction(makeState({ key: "Enter", isComposing: true }));
+    expect(a.type).toBe("ignore");
+  });
+
+  it("知识库模式下列表导航键全部失效", () => {
+    for (const key of ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End", " "]) {
+      const a = resolveKeyAction(makeState({ key, appMode: "knowledge", selectedIds: ["a"] }));
+      expect(a.type, `key=${JSON.stringify(key)}`).toBe("ignore");
+    }
+  });
+
+  it("❗ 但知识库模式下 Escape 与 ? 仍然生效（不能一刀切）", () => {
+    expect(resolveKeyAction(makeState({ key: "Escape", appMode: "knowledge" })).type).toBe(
+      "hide_window",
+    );
+    expect(resolveKeyAction(makeState({ key: "?", appMode: "knowledge" })).type).toBe(
+      "toggle_shortcuts",
+    );
+  });
+
+  it("不传 appMode 时按记录模式处理（向后兼容旧调用）", () => {
+    const a = resolveKeyAction(makeState({ key: "ArrowDown" }));
+    expect(a.type).toBe("navigate");
+  });
+});

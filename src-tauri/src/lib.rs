@@ -33,6 +33,7 @@ pub mod error;
 pub mod hashing;
 mod hotkey_manager;
 mod icon_extractor;
+mod lan_pair;
 mod lan_sync;
 mod lang_arbiter;
 pub mod markdown;
@@ -50,6 +51,29 @@ pub mod sync;
 pub mod similar;
 mod tray_manager;
 mod win_foreground;
+
+/// 主窗口是不是**真的在用户眼前**。
+///
+/// 🔴 不能只看 `is_visible()`：Windows 上**最小化的窗口仍然带着 `WS_VISIBLE`**，
+/// `is_visible()` 返回 `true`。只看它的话，窗口最小化后再点托盘 / 按唤出热键，
+/// 会被判成「它开着，收起来吧」而走进 `hide()` 分支——把一个已经缩着的窗口
+/// 又藏了一层。用户看到的就是「点了没反应」，得再点一次才出来（2026-09-06 反馈）。
+pub fn main_window_showing(window: &tauri::WebviewWindow) -> bool {
+    window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
+}
+
+/// 把窗口摆到用户眼前（主窗口、md 编辑器窗口都用它）。
+///
+/// ❗ `unminimize()` 不能省：对已最小化的窗口，`show()` 在 Windows 上
+/// **不会把它从任务栏恢复回来**，窗口依然缩着。全仓十几处
+/// `show() + set_focus()` 里只有两处带了它，其余都拉不回最小化的窗口。
+pub fn present_window(window: &tauri::WebviewWindow) {
+    window.unminimize().ok();
+    if let Err(e) = window.show() {
+        log::warn!("[Window] 显示窗口失败: {}", e);
+    }
+    window.set_focus().ok();
+}
 
 /// 首次启动时通过文件关联传入的待打开文件路径。
 /// setup 阶段前端尚未加载，无法直接 emit 事件，
@@ -108,10 +132,11 @@ pub fn run() {
             if !md_paths.is_empty() {
                 let _ = app.emit("file-open-event", md_paths);
             }
-            // 第二个实例启动时，显示已有窗口
+            // 第二个实例启动时，显示已有窗口。
+            // ❗ 走 `present_window` 而不是裸 `show()`：主窗口若正最小化着，
+            //   `show()` 在 Windows 上拉不回来——双击图标/双击 md 都会看着像没反应。
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
+                present_window(&window);
             }
         }))
         .plugin(tauri_plugin_opener::init())
@@ -564,6 +589,7 @@ pub fn run() {
             commands::update_history_rich,
             commands::save_rich_image,
             commands::copy_only,
+            commands::read_clipboard_text,
             commands::copy_image_only,
             commands::copy_files,
             commands::save_foreground,
@@ -605,6 +631,12 @@ pub fn run() {
             commands::get_lan_pairing_key,
             commands::set_lan_pairing_key,
             commands::regenerate_lan_pairing_key,
+            // 附近设备配对（免交换密钥）
+            commands::get_lan_nearby,
+            commands::get_lan_pair_state,
+            commands::lan_pair_start,
+            commands::lan_pair_confirm,
+            commands::lan_pair_cancel,
             // 知识库同步（M6）
             commands::kb_sync_identity,
             commands::kb_sync_invite_create,

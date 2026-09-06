@@ -76,7 +76,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <p className="error-init-detail">{this.state.error?.message || "未知错误"}</p>
           <div className="error-init-actions">
             <button
-              className="btn-init-secondary"
+              className="btn-secondary"
               onClick={() => {
                 try {
                   navigator.clipboard.writeText(
@@ -87,7 +87,7 @@ export class ErrorBoundary extends Component<Props, State> {
             >
               📋 复制错误详情
             </button>
-            <button className="btn-init-primary" onClick={this.handleReset}>
+            <button className="btn-primary" onClick={this.handleReset}>
               🔄 重试渲染
             </button>
           </div>

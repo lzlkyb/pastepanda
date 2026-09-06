@@ -11,6 +11,7 @@ import { relativeTime } from "@/lib/utils";
 import type { HistoryItem } from "@/stores/appStore";
 import styles from "./DiffDialog.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 interface DiffDialogProps {
   /** 历史对比模式：两条 HistoryItem */
@@ -91,10 +92,13 @@ export function DiffDialog({ oldItem, newItem, initialLeft, initialRight, freeMo
     window.setTimeout(() => { jumpingRef.current = false; }, 500);
   }, [blockCount, left]);
 
-  // 键盘快捷键
+  // Esc 单独走公共 hook（捕获期 + stopPropagation）：原先它和下面的 F7 导航
+  // 混在同一个冒泡监听里，不阻断，App 的 Esc 链会跟着隐藏主窗口。
+  useDialogEscape(onClose);
+
+  // 键盘快捷键（差异块跳转）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
       if (viewMode !== "preview") return;
       if (e.key === "F7" || (e.key === "ArrowDown" && e.altKey)) { e.preventDefault(); jumpTo(currentBlock + 1); }
       if (e.key === "F7" && e.shiftKey || (e.key === "ArrowUp" && e.altKey)) { e.preventDefault(); jumpTo(currentBlock - 1); }

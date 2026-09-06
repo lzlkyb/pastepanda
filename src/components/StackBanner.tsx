@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Layers, X, Square } from "lucide-react";
@@ -12,6 +12,7 @@ import { stackItemsToMergeItems } from "@/lib/mergeText";
 import { MergeDialog } from "@/components/MergeDialog";
 import { SaveTemplateDialog, TemplateLibraryDialog } from "@/components/StackTemplateDialog";
 import styles from "./StackBanner.module.css";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 /** 紧凑热键标签：复用 formatHotkey 的大小写映射，去掉空格适配窄按钮（ctrl+alt+p → Ctrl+Alt+P） */
 function compactHotkey(combo: string): string {
@@ -109,16 +110,8 @@ export const StackBanner = memo(function StackBanner() {
   // 状态行不再永远展开 5按钮，低频操作收进「⋯」菜单
   const [showOverflow, setShowOverflow] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showOverflow) return;
-    const onClick = (e: MouseEvent) => {
-      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
-        setShowOverflow(false);
-      }
-    };
-    window.addEventListener("mousedown", onClick);
-    return () => window.removeEventListener("mousedown", onClick);
-  }, [showOverflow]);
+  const hideOverflow = useCallback(() => setShowOverflow(false), []);
+  useClickOutside(overflowRef, hideOverflow, showOverflow);
 
   // U58：窗口聚焦时按 Esc 中止「全部粘贴」
   useEffect(() => {

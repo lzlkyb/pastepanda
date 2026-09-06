@@ -36,6 +36,7 @@ import { kbShadowStats, kbShadowClear, type ShadowStats } from "@/lib/api/kbShad
 import { useToast } from "@/components/Toast";
 import { actionLabel, contentTypeLabel } from "@/lib/actionLabels";
 import styles from "./Learnings.module.css";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 /** 编辑率阈值配色：<40% 绿 / 40–59% 琥珀 / ≥60% 红（与设计稿一致） */
 function rateTone(rate: number): { cls: string; txt: string } {
@@ -212,15 +213,8 @@ export function LearningsDialog() {
     void load();
   }, [load, toast]);
 
-  // Esc 关闭
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); close(); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, close]);
+  // Esc 关闭（公共 hook：捕获期 + stopPropagation，不让 App 的 Esc 链又跑一遍）
+  useDialogEscape(close, open);
 
   // 派生：KPI 优化信号 = 被改反馈总数；推荐偏好 max 次数（条形图基准）
   const editedTotal = fbStats.reduce((acc, s) => acc + s.edited, 0);

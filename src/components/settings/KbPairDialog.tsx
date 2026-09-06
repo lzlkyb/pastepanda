@@ -4,6 +4,8 @@ import type { KbDevice, KbInvite, KbInviteCreated } from "@/hooks/useKbSync";
 import type { ToastFn } from "@/components/Toast";
 import { CreateFlow } from "./KbPairCreate";
 import { PasteFlow, RolePick, looksLikeInvite } from "./KbPairSteps";
+import { readClipboardText } from "@/lib/api";
+import { FocusTrap } from "@/components/FocusTrap";
 
 /**
  * 配对向导的外壳：剪贴板预读 → 选路线 → 交给 `KbPairCreate` / `KbPairSteps`。
@@ -50,7 +52,10 @@ export function KbPairDialog({
     let alive = true;
     (async () => {
       try {
-        const t = (await navigator.clipboard.readText()).trim();
+        // 走后端而不是 `navigator.clipboard.readText()`：后者会让 WebView 弹
+        // 「是否允许读取剪贴板」的浏览器权限框。而这里是打开弹框就静默预读，
+        // 弹框一出来尤其让人莫名其妙——用户并没请求读剪贴板。
+        const t = (await readClipboardText()).trim();
         // 🔴 粗筛不过就**静默忽略**，绝不弹错：用户剪贴板里绝大多数时候
         // 是别的东西，每次打开都被骂一句是不可接受的。
         if (alive && looksLikeInvite(t)) {
@@ -66,9 +71,34 @@ export function KbPairDialog({
     return () => { alive = false; };
   }, []);
 
+  /**
+   * Esc 关闭。
+   *
+   * 🔴 必须是**捕获期 + `stopPropagation()`**，照 `NoteDialog` 的写法（规则 #11）。
+   *   本弹框是从设置页打开的，而 App.tsx 的 Esc 分层链里有一条
+   *   `if (showSettings) { closeSettings(); return; }`——之前本弹框根本没接 Esc，
+   *   按下去**关掉的是整个设置页**，配对弹框跟着一起没了。
+   *   光加个冒泡期监听也不行：两个监听器都在 window 上，App 那份注册得更早，
+   *   会先跑，`preventDefault()` 拦不住同级监听器。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
   return (
     <div className="dialog-backdrop" onClick={onClose}>
+      {/* ❗ `FocusTrap`：本弹框之前是全应用唯一一个漏掉它的真模态。
+          不包的后果：Tab 会跑到后面的设置页上（那些控件被遮罩盖着、看不见却可聚焦），
+          关闭后焦点也不会还给打开它的那个按钮。 */}
       {/* 向导每屏块数多，16px 的默认 gap 太松，收到 10px */}
+      <FocusTrap>
       <div className="dialog-box dialog-solid w420" onClick={(e) => e.stopPropagation()}
         style={{ "--dialog-body-gap": "10px" } as CSSProperties}>
         <div className="dialog-header">
@@ -90,6 +120,7 @@ export function KbPairDialog({
           <RolePick onPick={setMode} />
         )}
       </div>
+      </FocusTrap>
     </div>
   );
 }
