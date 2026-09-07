@@ -268,15 +268,27 @@ pub async fn dispatch(
                 source: super::source_agent_from_ua(client),
             };
             match super::tools::call(&ctx, params).await {
-                Ok(out) => Dispatched {
-                    response: ok(id, out.value),
-                    audit: Some(AuditDraft {
-                        tool,
-                        args,
-                        ok: true,
-                        note_ids: out.note_ids,
-                    }),
-                },
+                Ok(out) => {
+                    // 🔴 `ok` 要反映**模型实际看到的结果**，而不是「这次调用有没有
+                    // 走到底」。工具内部的失败走的是 `Ok(error_result(..))`（带
+                    // `isError: true` 的成功应答），以前一律记成 `ok: true`。
+                    //
+                    // 实测后果（2026-09-07）：面板渲染的是
+                    // `r.ok ? "返回 N 篇" : "失败"`，于是
+                    //   ・ AI 往不存在的文件夹建笔记被拒 → 显示「返回 0 篇」
+                    //   🔴 用户关掉写权限后，AI 试图删笔记被门控拦下 → 也显示「返回 0 篇」
+                    // 而「AI 想干什么、被我拦下了」正是这个面板最该回答的问题。
+                    let succeeded = out.value.get("isError") != Some(&Value::Bool(true));
+                    Dispatched {
+                        response: ok(id, out.value),
+                        audit: Some(AuditDraft {
+                            tool,
+                            args,
+                            ok: succeeded,
+                            note_ids: out.note_ids,
+                        }),
+                    }
+                }
                 Err(e) => Dispatched {
                     response: err(id, e.code, e.message),
                     audit: Some(AuditDraft {

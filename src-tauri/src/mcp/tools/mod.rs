@@ -520,6 +520,24 @@ async fn call_read(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolO
         Some(_) => (Vec::new(), Vec::new()),
     };
 
+    // 🔴 超大篇的整篇读要拦下来（实测）。
+    //
+    // 本机库里那篇 63,779 字的总纲，`kb_read(id)` 返回 **135,938 字节**
+    // （正文 72,292 字符，约 4~5 万 token）；而同一篇按节读只要 2,829 字节
+    // ——**便宜 48 倍**。之前只在描述里提醒一句，而提醒拦不住一个没读描述的模型：
+    // 它拿到的是一次 `isError: false` 的「成功」，上下文就没了。
+    //
+    // ❗ **只在这篇真的有可寻址的节时才拦**：没标题的笔记拦了就是彻底读不到，
+    // 那比花揉上下文更坏。那种情况放行，但在抬头把体量说出来。
+    if locator.is_none() {
+        if let Some(out) = oversize_guard(&note) {
+            return Ok(ToolOutput {
+                note_ids: vec![note.id.clone()],
+                value: out,
+            });
+        }
+    }
+
     let value = match &locator {
         None => text_result(format!(
             "{}{}",
@@ -570,20 +588,7 @@ async fn call_sections(
         ));
     }
 
-    for s in &secs {
-        let body = markdown::slice(&note.content, s, false);
-        let lines = if body.trim().is_empty() {
-            0
-        } else {
-            body.lines().count()
-        };
-        // 字数不含空白：中文笔记里空行与缩进占比不小，算进去会让模型误判这一节的大小。
-        let chars = body.chars().filter(|c| !c.is_whitespace()).count();
-        out.push_str(&format!("\n{}  —  {} 行 / {} 字", s.label(), lines, chars));
-        if s.child_count > 0 {
-            out.push_str(&format!("（含 {} 个子节，改本节不会动它们）", s.child_count));
-        }
-    }
+    out.push_str(&format_outline(&note.content, &secs));
 
     out.push_str(&format!("\n\n{}", DATA_NOT_INSTRUCTIONS_BRIEF));
     Ok(ToolOutput {
@@ -759,10 +764,18 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
             // 切词用与 FTS **同一份**（规则 #11），否则会出现「篇命中了、节一个不命中」。
             let terms = crate::data_store::question_terms(&query);
             let folders = folder_map(kb).await;
-            let mut out = format!("找到 {} 篇相关笔记（按相关度排序）：\n", notes.len());
-            for n in &notes {
+            // 🔴 实测出来的一条：切词后是 **OR** 匹配，所以只要有一个常用词撞上，
+            // 一个与本库毫无关系的问题也会得到一整页「相关笔记」。
+            // 把「哪些词真的命中了」摆出来，模型才判得出这一页值不值得信。
+            let per_note: Vec<Vec<&str>> = notes.iter().map(|n| matched_terms(&terms, n)).collect();
+
+            let mut out = format_term_coverage(&query, &terms, &per_note);
+            // 不再无条件地叫它们「相关笔记」：那个词能不能用，由上面那段命中情况决定。
+            out.push_str(&format!("找到 {} 篇（按相关度排序）：\n", notes.len()));
+            for (n, hit) in notes.iter().zip(&per_note) {
                 out.push('\n');
                 out.push_str(&format_brief(n, folder_of(&folders, n)));
+                out.push_str(&format_hit_terms(&terms, hit));
                 out.push_str(&format_kinds(&n.content));
                 out.push_str(&format_section_hits(&n.content, &terms));
             }
@@ -1057,6 +1070,150 @@ fn format_section(n: &Note, folder: Option<&str>, s: &markdown::Section, total: 
     let body = markdown::slice(&n.content, s, true);
     out.push_str(&wrap_content(&n.id, Some(s.index), body.trim()));
     out
+}
+
+/// 这篇里真正出现了哪些查询词。
+///
+/// 🔴 **为何需要它**（2026-09-07 真机实测）：查询「烤鱼做法」被切成
+/// {烤鱼, 鱼做, 做法} 做 **OR**，而「做法」在技术文档里到处都是。
+/// 于是一个与本库毫无关系的问题，返回了 3 篇「相关笔记（按相关度排序）」，
+/// 而模型**没有任何依据**判断它们是垃圾——它会照着这三篇回答用户。
+/// （拆开验证过：「烤鱼」零命中、「鱼做」零命中、「做法」命中 3 篇。）
+///
+/// 用**原文子串**判定而不是再查一次 FTS：切出来的本就是原文里的连续片段，
+/// 子串判定与它同口径，且不用为每个词多打一次库。
+fn matched_terms<'a>(terms: &'a [String], n: &Note) -> Vec<&'a str> {
+    // ASCII 词在切词时已转小写，所以要按小写比；全是中文时就不白跑一遍小写化
+    // （本机库最长的一篇 63,779 字，无谓地 lowercase 它没意义）。
+    let lowered = terms
+        .iter()
+        .any(|t| t.is_ascii())
+        .then(|| (n.title.to_lowercase(), n.content.to_lowercase()));
+    terms
+        .iter()
+        .filter(|t| match (&lowered, t.is_ascii()) {
+            (Some((lt, lc)), true) => lt.contains(t.as_str()) || lc.contains(t.as_str()),
+            _ => n.title.contains(t.as_str()) || n.content.contains(t.as_str()),
+        })
+        .map(String::as_str)
+        .collect()
+}
+
+/// 整页结果前面那段「你的词命中了多少」。**全命中时返空串**（不占位）。
+///
+/// 只在拆出 ≥ 2 个词时才说：单词查询命中了就是命中了，没有「部分」可言。
+fn format_term_coverage(query: &str, terms: &[String], per_note: &[Vec<&str>]) -> String {
+    if terms.len() < 2 {
+        return String::new();
+    }
+    let mut any: Vec<&str> = Vec::new();
+    for v in per_note {
+        for t in v {
+            if !any.contains(t) {
+                any.push(t);
+            }
+        }
+    }
+    let missed: Vec<&str> = terms
+        .iter()
+        .map(String::as_str)
+        .filter(|t| !any.contains(t))
+        .collect();
+    if missed.is_empty() {
+        return String::new();
+    }
+    format!(
+        "⚠ 「{}」被拆成 {} 个词做 **OR** 匹配：{}。\n\
+         下面这批结果里，实际命中的只有 {}；{} 一篇都没命中。\n\
+         **所以它们可能只是碰巧共用了一个常用词，不一定跟你要找的东西相关。**\n\
+         若没命中的那几个才是你的主题词，换个说法重试，或用 kb_list 浏览。\n\n",
+        query,
+        terms.len(),
+        terms.join("、"),
+        if any.is_empty() { "（一个都没有）".to_string() } else { any.join("、") },
+        missed.join("、")
+    )
+}
+
+/// 单条结果后面的命中词。只拆出一个词时不占位。
+fn format_hit_terms(terms: &[String], hit: &[&str]) -> String {
+    if terms.len() < 2 {
+        return String::new();
+    }
+    format!(
+        "  命中 {}/{} 词：{}\n",
+        hit.len(),
+        terms.len(),
+        if hit.is_empty() {
+            // FTS 匹配的是 ngram 变形文本，极少数情况下会与原文子串不一致。
+            // 宁可如实说「没直接命中」，也不编一个好看的数字。
+            "（子串未直接命中）".to_string()
+        } else {
+            hit.join("、")
+        }
+    )
+}
+
+/// 大纲清单的正文部分。**`kb_sections` 与「整篇读被拦」共用这一份**（规则 #11）：
+/// 两处各写一套的话，模型会在两个地方看到形状不同的大纲，而它要拿那个序号去调下一步。
+fn format_outline(content: &str, secs: &[markdown::Section]) -> String {
+    let mut out = String::new();
+    for s in secs {
+        let body = markdown::slice(content, s, false);
+        let lines = if body.trim().is_empty() {
+            0
+        } else {
+            body.lines().count()
+        };
+        // 字数不含空白：中文笔记里空行与缩进占比不小，算进去会让模型误判这一节的大小。
+        let chars = body.chars().filter(|c| !c.is_whitespace()).count();
+        // 缩进版标签（见 `Section::outline_label`）：完整路径版会把顶层标题
+        // 印 N 遍，47 节的文档实测因此要 11,689 字节。
+        out.push_str(&format!("\n{}  —  {} 行 / {} 字", s.outline_label(), lines, chars));
+        if s.child_count > 0 {
+            out.push_str(&format!("（含 {} 个子节，改本节不会动它们）", s.child_count));
+        }
+    }
+    out
+}
+
+/// 整篇读的体量闸。超过它、**且这篇真的有可寻址的节**时，
+/// `kb_read(id)` 不返回正文，而是返回大纲 + 怎么改用按节读。
+///
+/// 阈值取 15,000 **字符**（约 1.2 万 token）：本机库 26 篇里只有两篇超过它
+/// （63,779 与 29,758），而那两篇正是会把上下文一次吃光的；排第三的 14,737 字放行。
+/// 也就是说这道闸拦的是**病态值**，不是常规长文。
+///
+/// 返回 `Some(..)` = 已拦下（`isError`）；`None` = 放行。
+const FULL_READ_MAX_CHARS: usize = 15_000;
+
+fn oversize_guard(note: &Note) -> Option<Value> {
+    let chars = note.content.chars().count();
+    if chars <= FULL_READ_MAX_CHARS {
+        return None;
+    }
+    let secs = markdown::outline(&note.content);
+    // 🔴 没有可寻址的节 = 拦了就没有替代路径，那比花揉上下文更坏。放行。
+    if secs.len() == 1 && secs[0].level == 0 {
+        return None;
+    }
+    let mut out = format!(
+        "【{}】\nid={}\n\
+         🔴 这篇有 {} 字（分 {} 节）。整篇读回去会占掉几万 token，\
+         **所以没有返回正文**。\n\
+         按节取：kb_read(id, index=N)。大纲如下：\n",
+        title_of(note),
+        note.id,
+        chars,
+        secs.len()
+    );
+    out.push_str(&format_outline(&note.content, &secs));
+    out.push_str(
+        "\n\n若是要改内容，用 kb_update_section 按节改——\
+         `kb_update` 的整篇覆盖在这个长度上尤其危险：\
+         你得先把几万字原样带回来再原样发回去，中间差一点就是把用户的东西写坏了。",
+    );
+    Some(error_result(out))
 }
 
 /// 一次取回全部文件夹的 id → 名字映射。

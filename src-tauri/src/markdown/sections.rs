@@ -61,6 +61,25 @@ impl Section {
         }
         format!("[{}] {}", self.index, self.path.join(" / "))
     }
+
+    /// **整篇列大纲时**用的一行：只印本节标题，层级用缩进表示。
+    ///
+    /// 🔴 与 [`Self::label`] 的分工：那个印**完整路径**，用于「你要的是这一节」
+    /// 这类**单条**指认（只取一节时的抬头、歧义候选）；
+    /// 而大纲是**一次性把整篇列出来**，每行都重复一遍从根开始的路径，
+    /// 等于把顶层标题印 N 遍。
+    ///
+    /// 实测（2026-09-07 真机）：47 节的文档，`kb_sections` 因此要 **11,689 字节**
+    /// ——接近整个 `tools/list`。而「先看大纲再取一节」本该是**省钱**的那条路。
+    ///
+    /// 层级信息没丢：缩进就是层级，模型能直接读出树形。
+    pub fn outline_label(&self) -> String {
+        if self.path.is_empty() {
+            return format!("[{}] （引言，无标题）", self.index);
+        }
+        let indent = "  ".repeat(self.level.saturating_sub(1) as usize);
+        format!("{}[{}] {}", indent, self.index, self.heading)
+    }
 }
 
 /// 定位一节的两种方式。
@@ -168,7 +187,10 @@ pub fn outline(content: &str) -> Vec<Section> {
 /// 按定位符找一节。
 pub fn locate(content: &str, r: &SectionRef) -> Result<Section, LocateError> {
     let all = outline(content);
-    let labels = || all.iter().map(Section::label).collect::<Vec<_>>();
+    // 🔴 「没找到」时报的是**整篇大纲**，用缩进版（见 `outline_label`）：
+    // 实测一次传错节号要付 9,936 字节，而那只是一个笔误。
+    // （歧义候选那一支仍用完整路径：那里只有几条，而区分它们靠的就是路径。）
+    let labels = || all.iter().map(Section::outline_label).collect::<Vec<_>>();
 
     match r {
         SectionRef::Index(i) => all
