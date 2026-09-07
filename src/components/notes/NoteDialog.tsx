@@ -18,6 +18,9 @@ import { getContentTypeMeta } from "@/lib/contentTypes";
 import { NoteEditorPane } from "./NoteEditorPane";
 import { NoteViewModeSwitch, useNoteViewMode } from "./NoteViewModeSwitch";
 import { NoteHistoryView } from "./NoteHistoryView";
+import { NoteConflictView } from "./NoteConflictView";
+import { NoteConflictBanner } from "./NoteConflictBanner";
+import { isConflictCopy } from "@/lib/kbConflict";
 import { useNoteEditorState } from "./useNoteEditorState";
 import styles from "./NoteDialog.module.css";
 
@@ -82,6 +85,8 @@ function NoteDialogInner({
 
   /** 历史视图（B1 #4）。切过去只是换掉正文区，`ed` 不重建，所以草稿还在。 */
   const [showHistory, setShowHistory] = useState(false);
+  /** W4a：把编辑区换成冲突对照。同 `showHistory`，不再叠一层弹窗。 */
+  const [showConflict, setShowConflict] = useState(false);
 
   // Esc 自己接（与 ItemEditorDialog 同口径）：App.tsx 的全局分层对 noteDraft 只做
   // `return`、不代关，否则脏数据确认根本没机会弹。
@@ -147,7 +152,24 @@ function NoteDialogInner({
               </div>
             )}
 
-            {showHistory && draft.noteId ? (
+            {/* W4a 入口。判据与传给对照视图的是同一份 `ed.content`。 */}
+            {!showHistory && !showConflict && draft.noteId && isConflictCopy(ed.content) && (
+              <NoteConflictBanner onOpen={() => setShowConflict(true)} />
+            )}
+
+            {showConflict && draft.noteId ? (
+              <NoteConflictView
+                copyId={draft.noteId}
+                copyContent={ed.content}
+                onBack={() => setShowConflict(false)}
+                onResolved={() => {
+                  // 弹窗里没地方“跳到原笔记”（它一次只拿一篇的 draft），
+                  // 而当前这篇副本已经不在了，所以直接关掉。
+                  setShowConflict(false);
+                  closeNote();
+                }}
+              />
+            ) : showHistory && draft.noteId ? (
               <NoteHistoryView
                 noteId={draft.noteId}
                 currentContent={ed.content}

@@ -1,0 +1,113 @@
+/*
+ * NoteConflictView 的布局。
+ *
+ * 🔴 用 `@container` 按**对照区自身**的宽度切，不用 `@media` 按窗口宽。
+ * 知识库是「侧栏 + 列表 + 详情区」三段，900px 窗宽下详情区可能只有 400px；
+ * 按窗宽切会在「窗口够宽、面板很窄」时切成并排 —— 恰好是最难读的那种情形。
+ * 先例：`StackBanner.module.css` 已经在用 container-type。
+ */
+.wrap {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border-color);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary, transparent);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* 窄：每栏自带列头；宽：顶部一行两列 */
+.wideHead {
+  display: none;
+}
+
+/*
+ * 按钮自带，不蹭 `NoteDialog.module.css`。
+ * 蹭别人的 CSS module 会把两个组件钉在一起：那边改个类名，
+ * 这边静默变成无样式（编译不报错）。
+ */
+.back,
+.btn {
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.back {
+  color: var(--text-secondary);
+  border-color: transparent;
+  padding-left: 0;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btnTiny {
+  padding: 2px 6px;
+}
+
+@container (min-width: 640px) {
+  .body {
+    grid-template-columns: 1fr 1fr;
+  }
+  .col + .col {
+    border-left: 1px solid var(--border-color);
+  }
+  .stackHead {
+    display: none;
+  }
+  .wideHead {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}

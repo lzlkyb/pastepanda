@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知识库冲突对照（W4a）设计稿</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1c2024; --dim:#5b6472; --line:#e2e5ea;
+    --accent:#3b7ddd; --accent-bg:#eaf1fd;
+    --add:#1f7a3d; --add-bg:#e6f4ea; --del:#b3261e; --del-bg:#fdeceb;
+    --warn:#8a5300; --warn-bg:#fff4e0; --bad:#b3261e; --bad-bg:#fdeceb;
+    --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#15181c; --card:#1d2126; --ink:#e6e9ee; --dim:#98a2b3; --line:#2c323a;
+      --accent:#6aa2f0; --accent-bg:#1b2838;
+      --add:#6ddb95; --add-bg:#16301f; --del:#f2938c; --del-bg:#33191a;
+      --warn:#f0c07a; --warn-bg:#332816; --bad:#f2938c; --bad-bg:#33191a;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 80px;background:var(--bg);color:var(--ink);
+       font:14.5px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 4px}
+  h2{font-size:18px;margin:38px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:22px 0 6px}
+  p{margin:8px 0}
+  code{font-family:var(--mono);font-size:.9em;background:var(--accent-bg);
+       padding:1px 5px;border-radius:4px}
+  .lead{color:var(--dim);margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+        padding:16px 18px;margin:14px 0}
+  .note{border-left:3px solid var(--accent);background:var(--accent-bg);
+        padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+  .red{border-left-color:var(--bad);background:var(--bad-bg)}
+  .amber{border-left-color:var(--warn);background:var(--warn-bg)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--accent-bg);font-weight:600}
+  .pick{color:var(--add);font-weight:600}
+  .no{color:var(--dim)}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:4px 0}
+
+  /* ---- 宽度切换器 ---- */
+  .widths{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
+  .wbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);
+        padding:6px 13px;border-radius:7px;cursor:pointer;font:inherit;font-size:13px}
+  .wbtn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .stageWrap{overflow-x:auto;padding:4px 0 10px}
+  .stage{margin:0 auto;transition:width .18s ease;background:var(--card);
+         border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .stageTag{font-size:11.5px;color:var(--dim);text-align:center;margin:6px 0 0}
+
+  /* ---- 仿真组件 ---- */
+  .mHead{display:flex;align-items:center;gap:8px;padding:9px 12px;
+         border-bottom:1px solid var(--line);font-size:13px}
+  .mBack{border:none;background:transparent;color:var(--dim);cursor:pointer;font-size:15px;padding:0}
+  .mTitle{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mBadge{font-size:11px;padding:2px 7px;border-radius:20px;
+          background:var(--warn-bg);color:var(--warn);white-space:nowrap}
+  .mBar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+        padding:7px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+  .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .seg button{border:none;background:transparent;color:var(--dim);font:inherit;
+              padding:3px 9px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .navi{margin-left:auto;display:flex;align-items:center;gap:5px}
+  .colhead{display:flex;align-items:center;gap:6px;padding:6px 12px;font-size:12px;
+           background:var(--bg);border-bottom:1px solid var(--line);color:var(--dim)}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .dotMine{background:var(--accent)} .dotPeer{background:var(--warn)}
+  .pane{font-family:var(--mono);font-size:11.5px;line-height:1.65;padding:6px 0;
+        overflow:auto;max-height:190px}
+  .ln{display:flex;gap:8px;padding:0 10px;white-space:pre-wrap;word-break:break-all}
+  .ln .no{width:1.6em;text-align:right;color:var(--dim);flex:none;opacity:.6}
+  .ln.add{background:var(--add-bg);color:var(--add)}
+  .ln.del{background:var(--del-bg);color:var(--del)}
+  .mFoot{display:flex;gap:8px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line)}
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--ink);
+       font:inherit;font-size:12.5px;padding:6px 11px;border-radius:7px;cursor:pointer}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.danger{color:var(--bad);border-color:var(--bad)}
+  .grow{flex:1}
+
+  /* 甲：响应式——宽则并排、窄则堆叠 */
+  .body2{display:grid;grid-template-columns:1fr}
+  .body2 > .col{border-top:1px solid var(--line)}
+  .stage[data-w="900"] .body2{grid-template-columns:1fr 1fr}
+  .stage[data-w="900"] .body2 > .col + .col{border-left:1px solid var(--line)}
+  .stage[data-w="900"] .colhead2{display:grid;grid-template-columns:1fr 1fr}
+  .colhead2{display:none}
+
+  .warnbox{margin:10px 0;padding:8px 11px;border-radius:7px;font-size:12px;
+           background:var(--warn-bg);color:var(--warn)}
+  .tiny{font-size:12px;color:var(--dim)}
+  .kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);
+       border-radius:4px;padding:0 4px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>知识库冲突对照（W4a）</h1>
+<p class="lead">设计稿·2026-09-07。对应 <code>docs/知识库同步-审查与规划-2026-09-07.md</code> 的 W4a。
+<b>尚未实现</b>，先拍形状。</p>
+
+<h2>零、先把已核实的约束摆出来</h2>
+
+<div class="note red">
+<b>🔴 “并排 diff”在这个窗口里放不下。</b><br>
+<code>tauri.conf.json</code>：主窗默认 <b>550×700</b>、<code>minWidth: 320</code>；
+而 <code>KnowledgeView</code> 就渲染在主窗里（<code>App.tsx:1133</code>）。
+320px 宽拆成两栏，每栏不到 160px —— 一行正文放不下六个字。
+<b>所以“并排”不能当成前提，得当成“宽窗下的升级”。</b>
+</div>
+
+<div class="card">
+<h3>已经有的东西（不要重写）</h3>
+<table>
+<tr><th>东西</th><th>在哪</th><th>W4a 怎么用</th></tr>
+<tr><td><code>useDiff({oldText,newText,mode,ignoreWhitespace})</code></td>
+    <td><code>hooks/useDiff.ts</code></td>
+    <td>直接用。返 <code>{left,right,added,removed,blockCount}</code></td></tr>
+<tr><td><code>DiffPane</code></td><td><code>components/DiffPane.tsx</code></td>
+    <td>直接用（渲染一侧、高亮当前差异块）</td></tr>
+<tr><td>按行 / 按词、忽略空白、上一处 / 下一处</td><td><code>DiffDialog.tsx</code>（273 行）</td>
+    <td>工具条照搬，只去掉“编辑模式”与 AI 那两块</td></tr>
+<tr><td>“不叠弹窗、不开侧栏，把编辑区换成它”</td><td><code>NoteHistoryView.tsx</code></td>
+    <td><b>形状与位置的先例</b>——理由就是窗口窄</td></tr>
+<tr><td>被覆盖那一版不会丢</td><td><code>snapshot_note_on</code></td>
+    <td>每次 <code>note_update</code> 都拍快照 → “采用”可从版本历史找回</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h3>冲突副本现在长什么样（<code>engine.rs:583</code>）</h3>
+<p>不是一张表、不是一个文件，而是<b>一篇新笔记</b>：</p>
+<ul>
+<li>标题：<code>《原标题》（冲突副本 1757…）</code></li>
+<li>正文首行：<code>- [conflict] …说明…</code>（AM-7 的行内类别）</li>
+<li>紧跟一行 <code>原笔记 id：`&lt;uuid&gt;`</code>，然后 <code>---</code>，然后<b>输的那一份完整 markdown</b></li>
+<li>积压数：<code>note_conflict_count()</code> 按 <code>content LIKE '%- [conflict]%'</code></li>
+<li>入口现状：<code>KnowledgeView.tsx:313</code> 的 <code>q.setKeyword("conflict")</code>
+    —— <b>就是一个关键词搜索</b>，搜完得用户自己在列表里配对</li>
+</ul>
+</div>
+
+<div class="note red">
+<b>🔴 先修一个不修就白做的正确性问题：diff 的两侧现在不可比。</b><br>
+副本里嵌的是 <code>note_to_markdown(&amp;n, false)</code> 的产物 —— <b>带 frontmatter</b>
+（<code>created</code> / <code>updated</code> 是<b>本机时间字串</b>，同一篇笔记在两台机器上必然不同）；
+而原笔记手里是裸 <code>content</code>。直接拿两者 diff，头几行永远是红的，
+而真正的内容差异被泡在噪声里。<br>
+<b>这与 <code>engine.rs</code> 里 <code>same_version</code> 踩过的是同一个坑</b>
+（那里的注释明写“不能直接比整份文件的字节”，第一版就是这么错的）。<br>
+→ 对照前必须把副本那段 markdown 过一遍 <code>markdown_to_note</code>，<b>只取 content 再比</b>。
+</div>
+
+<h2>一、放在哪里</h2>
+<table>
+<tr><th>方案</th><th>形状</th><th>代价</th></tr>
+<tr><td class="pick">甲（推荐）</td>
+    <td>同 <code>NoteHistoryView</code>：<b>把笔记详情/编辑区换成对照视图</b>，左上角返回</td>
+    <td>与版本历史同一个位置与手感；窄窗也成立；不新增弹窗层级</td></tr>
+<tr><td class="no">乙</td><td>新开一个弹窗（同 <code>DiffDialog</code>）</td>
+    <td>320px 弹窗里内容区不到 300px；且从笔记详情再叠一层弹窗，转得深</td></tr>
+<tr><td class="no">丙</td><td>一个独立的“冲突处理”全页（列表 + 对照）</td>
+    <td>积压通常就 1–2 条，为它造一个顶级视图不值；且与现有搜索入口重叠</td></tr>
+</table>
+
+<div class="note">
+<b>入口两个，都是“在你已经看到它的时候”出现（AM-6：输出要去它被用的地方）：</b>
+<ul>
+<li>打开<b>冲突副本</b>时 → 顶部一条「这是冲突副本 · 与原笔记对照」</li>
+<li>打开<b>原笔记</b>时（若有副本指向它）→ 顶部一条「有 1 份未处理的冲突副本 · 对照」</li>
+</ul>
+<span class="tiny">状态条那条「有 N 处冲突副本」保留现有行为（关键词搜索），不改。</span>
+</div>
+
+<h2>二、窄窗里怎么摆（拖宽度看效果）</h2>
+
+<div class="widths" id="wsw">
+  <span class="tiny"><b>对照区</b>宽（不是窗口宽，见下方红框）：</span>
+  <button class="wbtn" data-w="320">320 · 窄</button>
+  <button class="wbtn" data-w="550" aria-pressed="true">550 · 典型</button>
+  <button class="wbtn" data-w="900">900 · 宽</button>
+</div>
+
+<h3>方案甲（推荐）· 同一份 DOM，一个 CSS 断点：窄则上下堆叠、宽则左右并排</h3>
+<div class="stageWrap">
+<div class="stage" id="stageA" data-w="550" style="width:550px">
+  <div class="mHead">
+    <button class="mBack">←</button>
+    <div class="mTitle">周会纪要</div>
+    <span class="mBadge">冲突对照</span>
+  </div>
+  <div class="mBar">
+    <div class="seg"><button class="on">按行</button><button>按词</button></div>
+    <label><input type="checkbox"> 忽略空白</label>
+    <span class="navi"><button class="btn" style="padding:2px 7px">↑</button>
+      <span>2 / 3</span>
+      <button class="btn" style="padding:2px 7px">↓</button></span>
+  </div>
+
+  <div class="colhead2">
+    <div class="colhead"><span class="dot dotMine"></span>本机版 · 今天 14:02</div>
+    <div class="colhead"><span class="dot dotPeer"></span>对端版 · 台式机 · 今天 13:47</div>
+  </div>
+
+  <div class="body2">
+    <div class="col">
+      <div class="colhead onlyStack"><span class="dot dotMine"></span>本机版 · 今天 14:02
+        <span style="margin-left:auto" class="tiny">当前保留的</span></div>
+      <div class="pane">
+        <div class="ln"><span class="no">1</span><span># 周会纪要</span></div>
+        <div class="ln"><span class="no">2</span><span></span></div>
+        <div class="ln"><span class="no">3</span><span>- 发版时间定在下周三</span></div>
+        <div class="ln del"><span class="no">4</span><span>- 验收人：张三</span></div>
+        <div class="ln"><span class="no">5</span><span>- 风险：依赖的接口还没联调</span></div>
+        <div class="ln del"><span class="no">6</span><span>- 备注：我在笔记本上补的这一条</span></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="colhead onlyStack"><span class="dot dotPeer"></span>对端版 · 台式机 · 13:47
+        <span style="margin-left:auto" class="tiny">冲突副本里的</span></div>
+      <div class="pane">
+        <div class="ln"><span class="no">1</span><span># 周会纪要</span></div>
+        <div class="ln"><span class="no">2</span><span></span></div>
+        <div class="ln"><span class="no">3</span><span>- 发版时间定在下周三</span></div>
+        <div class="ln add"><span class="no">4</span><span>- 验收人：张三、李四</span></div>
+        <div class="ln"><span class="no">5</span><span>- 风险：依赖的接口还没联调</span></div>
+        <div class="ln add"><span class="no">6</span><span>- TODO：把联调时间发群里</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mFoot">
+    <button class="btn pri">用对端那份</button>
+    <button class="btn">保留本机版</button>
+    <span class="grow"></span>
+    <button class="btn">手动拼</button>
+  </div>
+</div>
+</div>
+<p class="stageTag" id="tagA">↑ 550px：堆叠。点 900 看它变成并排</p>
+
+<div class="note amber">
+<b>🔴 改定：不能按窗口宽切，要按对照区自己的宽度切。</b><br>
+上面那个宽度切换器演示的是 <code>@media</code>（按窗口宽）—— <b>那个口径是错的</b>。
+知识库是「文件夹树 + 笔记列表 + 详情区」三段，900px 窗宽下详情区可能只有 400px。
+按窗宽切会在「窗口够宽、面板很窄」时切成并排 —— 恰好是最难读的那种情形。<br>
+→ 用 <code>@container (min-width: 640px)</code> 量<b>对照区本身</b>。项目里已有先例
+（<code>StackBanner.module.css:20</code> 的 <code>container-type: inline-size</code>
+与 <code>:512</code> 的 <code>@container</code>），不是新技术赌注。
+<br><br>
+<b>阈值为何在 640px 上下：</b>拆两栏后每栏 320px，减掉行号槽约 30px，
+等宽字下大约二十几个汉字。再窄就每行都得折，而折行会把左右的行号错开。
+下面这段原来的算法按的是窗宽，数字仍可参考：
+550 拆两栏后每栏约 265px，等宽字下一行大约 30 个西文字符 / 15 个汉字 ——
+每行都得折，而折行会把左右的行号错开，并排就失去了意义。
+680 下每栏 330px≈十六个汉字，勉强能对齐。<b>这个数字得在真机上看一眼再定。</b>
+</div>
+
+<h3>否决的两个</h3>
+<table>
+<tr><th>方案</th><th>为何不用</th></tr>
+<tr><td>乙·单栏 unified diff（git 那种 <code>+/-</code> 交错）</td>
+    <td>最省宽，但 <code>useDiff</code> 返的是 left/right 两个数组，做 unified 要新写一层交织逻辑；
+        而且“采用哪一侧”在交错视图里反而不直观。收益不抵新代码。</td></tr>
+<tr><td>丙·只给“两个按钮”不给 diff</td>
+    <td>那就是现状加个快捷键。用户真正卡住的是“两份到底差在哪”。</td></tr>
+</table>
+
+<h2>三、按钮与它们到底做什么</h2>
+<table>
+<tr><th>按钮</th><th>行为</th><th>得告知用户的后果</th></tr>
+<tr><td><b>用对端那份</b>（主）</td>
+    <td>把副本里的 content 写回<b>原笔记</b>，然后把副本移到回收站</td>
+    <td>🔴 会抬 <code>updated_ms</code> → <b>下一轮同步会把它推给另一台</b>。
+        被覆盖的本机版进了版本历史，找得回。</td></tr>
+<tr><td><b>保留本机版</b></td>
+    <td>原笔记不动，只把副本移到回收站</td>
+    <td>对端那份从此只在回收站里（保留期内还能找）</td></tr>
+<tr><td><b>手动拼</b></td>
+    <td>不改任何东西，退回编辑器（两篇都还在）</td><td>——</td></tr>
+</table>
+
+<div class="note">
+<b>冲突副本本身也会同步 —— 而这正好是个好性质。</b><br>
+副本是 <code>note_create</code> 建的<b>一篇普通笔记</b>，有自己的 <code>updated_ms</code>，
+所以下一轮增量会把它推给对端——两台机器都看得到这份副本。<br>
+又：<code>note_delete</code> <b>软删也落墓碑</b>（<code>note.rs:1177</code>，purged=0，
+注释明写“不落的代价是三台以上删不干净”）。两件事合起来就是：<br>
+<b>在任一台处理一次，两边都干净</b>——原笔记的新内容推过去，
+副本的墓碑也推过去，对端的副本跟着进回收站。不用两边各处理一遍。
+</div>
+
+<div class="note amber">
+<b>因此两个按钮都用“移到回收站”（软删），不用彻底销毁：</b>
+两者都会落墓碑（软删 purged=0、销毁 purged=1），所以墓碑那一行无论如何免不了；
+但软删<b>可还原</b>（还原会把墓碑删掉），给了用户反悔的窗口。
+那一行墓碑由 W3 到期回收，不需要在这里特处理。
+</div>
+
+<div class="card">
+<h3>“用对端那份”前的二次确认</h3>
+<div class="warnbox">把《周会纪要》换成对端那份？<br>
+本机现在这份会进版本历史（找得回），并在下一轮同步时把新内容推给<b>台式机</b>。</div>
+<p class="tiny">用现成的 <code>confirmDialog</code>（<code>NoteHistoryView</code> 恢复版本时用的同一个）。
+只有主按钮需要确认；“保留本机版”只是把副本扔回收站，不必拦。</p>
+</div>
+
+<h2>四、副本 ↔ 原笔记怎么关联</h2>
+<div class="note red">
+<b>🔴 现有的 <code>note_links</code> 表担不了这个活。</b>
+它的主键是 <code>(from_id, to_title)</code> —— 存的是目标<b>标题</b>而不是 id（建表注释自己说了）。
+而副本的标题比原笔记多一个后缀、且用户会改标题。所以不能靠 wiki 链。
+</div>
+<div class="note red">
+<b>🔴 改定：不建表，解正文。</b>此前这里推荐的是新建一张
+<code>note_conflicts</code> 表（“结构化、不依赖正文字面”）。那个理由本身没错，
+但漏了一步推导：<br>
+<b>冲突副本自己会同步过去</b>（已核：<code>note_changed_since</code> 只筛
+<code>deleted_at IS NULL AND updated_ms &gt; ?</code>，同步链路上没有任何地方排除 conflict）；
+而一张本机表是<b>本地记账、不会同步</b> —— 对端收到副本后查表查不到原笔记，
+于是上一节刚认定的那个好性质「在任一台处理一次，两边都干净」<b>直接没了</b>：
+只有产生冲突的那台能处理。<br>
+要让表在对端也有，就得在 <code>apply_delta</code> 里认出「这是一份冲突副本」再解正文回填
+—— <b>那还是解正文，只是搬到了后端，还多了一张表</b>。
+</div>
+<table>
+<tr><th>方案</th><th>做法</th><th>代价</th></tr>
+<tr><td class="pick">甲（改定推荐）</td>
+    <td>前端抽正文里那行 <code>原笔记 id：`&lt;uuid&gt;`</code></td>
+    <td>零后端改动，且<b>对端也能用</b>（它跟着正文一起同步过去了）</td></tr>
+<tr><td class="no">乙</td>
+    <td>新表 <code>note_conflicts(copy_id PK, origin_id, losing_side, losing_ms)</code></td>
+    <td>不同步 → 对端用不了；要能用就得在导入时解正文回填，绕了一大圈</td></tr>
+</table>
+<p class="tiny">两点让“解正文”不那么脆：
+① 用<b>全文宽松正则</b>抓 <code>原笔记 id：`&lt;uuid&gt;`</code>，不按行号定位（用户在正文里插东西也不影响）；
+② 抓不到就<b>如实降级</b>——只给「手动拼」，不假装能对照（规则 #15.3）。</p>
+
+<h2>五、不做什么</h2>
+<ul>
+<li><b>不做三方合并</b>。那是 W4b，前提是新增一份同步基线存储，得单独拍方案。
+    拿错 base 的后果是<b>静默产出错内容</b>，比现在两份副本严重得多。</li>
+<li><b>不改冲突副本的产生逻辑</b>。W4a 零风险就是因为不碰合并语义。</li>
+<li><b>不接 AI</b>。<code>DiffDialog</code> 那个 AI 菜单不搬过来：冲突里两侧都是用户自己写的东西，
+    让模型提一个“合并建议”很容易被当成结论直接采用。若日后要加，必须受 AI 开关控制（规则 #16）。</li>
+<li><b>不改状态条那条提示的现有行为</b>（仍是关键词搜索）。</li>
+</ul>
+
+<h2>六、验收</h2>
+<ul>
+<li>两侧 diff 只显<b>内容</b>差异：一篇只改了标题时间戳的副本，对照里应为“0 / 0 处差异”</li>
+<li>“用对端那份”后：原笔记 content == 副本嵌的 content，且版本历史里能找到旧的那份</li>
+<li>在 A 上“用对端那份”后同步一轮：<b>B 那边的副本也进了回收站</b>（一次处理、两边干净）</li>
+<li>副本进回收站后还能还原，且还原后那条墓碑被删掉（否则对端会把它又删一次）</li>
+<li>320px 下无横向滚动；680px 以上切到并排</li>
+<li>副本被用户改过标题之后，入口仍然找得到原笔记（验方案乙的价值）</li>
+</ul>
+
+<h2>七、待你拍的三个点</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>我的建议</th></tr>
+<tr><td>1</td><td>位置：换编辑区（同版本历史）还是开弹窗？</td><td class="pick">换编辑区</td></tr>
+<tr><td>2</td><td>关联：解正文还是新建 <code>note_conflicts</code> 表？</td>
+    <td class="pick">解正文（零后端改动）。建表不同步 → 对端用不了</td></tr>
+<tr><td>3</td><td>并排的断点怎么切？</td>
+    <td class="pick"><code>@container</code> 按对照区自身宽度，阈值 640px；不能按窗口宽</td></tr>
+</table>
+
+</div>
+
+<script>
+(function(){
+  var stage = document.getElementById("stageA");
+  var tag = document.getElementById("tagA");
+  var btns = document.querySelectorAll("#wsw .wbtn");
+  var words = {
+    "320": "↑ 对照区 320px（窗口 minWidth 时就是这么窄）：只能堆叠。并排在这里每栏不到 160px，不可读。",
+    "550": "↑ 对照区 550px：仍然堆叠。点 900 看它切成并排。",
+    "900": "↑ 对照区 900px：过了 640 阈值，切成左右并排，列头移到顶部一行。"
+  };
+  function apply(w){
+    stage.style.width = w + "px";
+    stage.dataset.w = w;
+    tag.textContent = words[w];
+    btns.forEach(function(b){
+      b.setAttribute("aria-pressed", b.dataset.w === w ? "true" : "false");
+    });
+    // 堆叠时用每栏自带的列头，并排时用顶部那一行
+    var stacked = w !== "900";
+    stage.querySelectorAll(".onlyStack").forEach(function(el){
+      el.style.display = stacked ? "flex" : "none";
+    });
+  }
+  btns.forEach(function(b){
+    b.addEventListener("click", function(){ apply(b.dataset.w); });
+  });
+  apply("550");
+})();
+</script>
+</body>
+</html>

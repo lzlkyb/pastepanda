@@ -18,6 +18,9 @@ import { getContentTypeMeta } from "@/lib/contentTypes";
 import { noteSetSummary, type Note } from "@/lib/api";
 import { NoteEditorPane } from "./NoteEditorPane";
 import { NoteHistoryView } from "./NoteHistoryView";
+import { NoteConflictView } from "./NoteConflictView";
+import { NoteConflictBanner } from "./NoteConflictBanner";
+import { isConflictCopy } from "@/lib/kbConflict";
 import { NoteBacklinks } from "./NoteBacklinks";
 import { NoteAiActions } from "./NoteAiActions";
 import { useNoteEditorState } from "./useNoteEditorState";
@@ -133,6 +136,8 @@ export function NoteDetailPane({
 
   /** 历史视图（B1 #4）。切过去只是换掉编辑区，`ed` 不重建，所以草稿还在。 */
   const [showHistory, setShowHistory] = useState(false);
+  /** W4a：把编辑区换成冲突对照。与 `showHistory` 同一个形状（不叠弹窗）。 */
+  const [showConflict, setShowConflict] = useState(false);
 
   /** 当前摘要（B1 轻量 AI）。本地先行显示，不等列表重拉。 */
   const [summary, setSummary] = useState<string | null>(note.summary);
@@ -232,7 +237,27 @@ export function NoteDetailPane({
         </div>
       )}
 
-      {showHistory ? (
+      {/* W4a 入口：只在编辑视图下出现。判据拿 `ed.content`（编辑器里的当前值），
+          与传给对照视图的是同一份 —— 否则会出现「横幅说是副本、点进去却解不出」。 */}
+      {!showHistory && !showConflict && isConflictCopy(ed.content) && (
+        <NoteConflictBanner onOpen={() => setShowConflict(true)} />
+      )}
+
+      {showConflict ? (
+        <NoteConflictView
+          copyId={note.id}
+          copyContent={ed.content}
+          onBack={() => setShowConflict(false)}
+          onResolved={(originId) => {
+            setShowConflict(false);
+            onSaved();
+            // 副本已经不在了，这一栏不能继续停在它上：
+            // 能跳就跳到原笔记（过宿主的脏数据守卫），否则清选中。
+            if (onOpenNote) onOpenNote(originId);
+            else onClose();
+          }}
+        />
+      ) : showHistory ? (
         <NoteHistoryView
           noteId={note.id}
           currentContent={ed.content}
