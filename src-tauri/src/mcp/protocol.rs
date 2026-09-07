@@ -21,13 +21,32 @@ use serde_json::{json, Value};
 
 use super::gate::WriteSwitches;
 
-/// 客户端没告知协议版本时的回退值。
+/// 本服务**真正实现了**的协议版本，新在前。
 ///
-/// 🔴 **不要把它当成“服务端固定版本”写进应答。** cc-bridge 在这里真撞过坑：
-/// 它曾把应答的 `protocolVersion` 写成一个**根本不存在的版本号**，
-/// 客户端升降级后协商直接失败。正确做法是**回显客户端请求的那个版本**，
-/// 只在它没传时才用这个回退值。
-const FALLBACK_PROTOCOL_VERSION: &str = "2025-06-18";
+/// 🔴 **为何不能一律回显客户端给的版本**。规范（2025-06-18
+/// §Version Negotiation）原文：
+///
+/// > If the server supports the requested protocol version, it MUST respond with
+/// > the same version. **Otherwise, the server MUST respond with another protocol
+/// > version it supports.**
+///
+/// 一律回显等于宣称支持一个自己没实现的版本，而客户端会照着那个版本
+/// 的规则往下走。cc-bridge 那个教训（把应答写死成一个**根本不存在的**
+/// 版本号）的正解是「支持就回显，不支持就回自己最新的」——
+/// 而不是「一律回显」；后者只是从一个坑跳进对面那个坑。
+///
+/// 名单里只放**握手式协商**且与本服务线上形状兼容的三代。
+/// 故意不放 `2026-07-28`：它把协商改成了**每请求**带
+/// `MCP-Protocol-Version` / `_meta`，还多了一个**强制**的 `server/discover`，
+/// 本服务两样都没有。也不放 `2025-11-25`：没核实过差异，
+/// **没核实就不该声称支持**。
+const SUPPORTED_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+
+/// 客户端没传、或传了一个我们不支持的版本时，应答里给的值。
+///
+/// 按规范它 SHOULD 是服务端支持的**最新**版本，所以取名单第一个——
+/// 而不是另写一个字面量（那就又多一处能与名单对不上的地方）。
+const LATEST_PROTOCOL_VERSION: &str = SUPPORTED_VERSIONS[0];
 
 // ===== JSON-RPC 错误码（规范固定值）=====
 pub const ERR_PARSE: i32 = -32700;
@@ -55,11 +74,18 @@ fn server_instructions(switches: &WriteSwitches, blurb: &str) -> String {
         s.push_str(
             "写入约定：\n\
              ・每次写入都会计入用户可见的调用记录，并在笔记上标注改动来源；\n\
+             ・修改类操作会自动留下版本快照，用户随时可以恢复；\n\
              ・删除只能删到**回收站**（可恢复），没有彻底删除的工具；\n\
              ・文件夹与标签是用户自己的组织方式，**不要主动帮他重排**，也不会自动新建；\n\
              ・写权限可以被用户逐项关掉。被关时工具会明确告知，\
              那时**不要重试、不要绕路**，直接告诉用户去设置里打开。\n\
-             ・“今日速记”不开放写入，那是用户热键专用的。",
+             ・“今日速记”不开放写入，那是用户热键专用的。\n\n\
+             往笔记里写文本有七个入口，按**动的范围**选，不要什么都用 kb_update：\n\
+             ・新开一篇 → kb_create；重写整篇 → kb_update（**覆盖全文**，最后才考虑）\n\
+             ・接在末尾 → kb_append；插到开头 → kb_prepend\n\
+             ・只改某一节 → kb_update_section；在某节前后插一段 → kb_insert_at_section\n\
+             ・只改一句话 / 一个错字 → kb_replace_in_note（要求全文唯一命中）\n\
+             拿不准就选**动得最少**的那个：范围大的那几个一旦用错，用户写的东西就没了。",
         );
     } else {
         s.push_str("全部工具都不会写入或修改任何数据。");
@@ -67,7 +93,8 @@ fn server_instructions(switches: &WriteSwitches, blurb: &str) -> String {
     // AM-6：用户手写的库简介接在**最后**。
     // 放末尾而不是开头：前面那些是我们对自己服务的硬约定（只读/边界/写入约定），
     // 不该被一段用户文本隔开或推远。
-    s.push_str(&super::blurb::framed(blurb));
+    // nonce 现生成（O-1）：定界符固定的话，这段文本自己就能把包裹提前闭上。
+    s.push_str(&super::blurb::framed(blurb, &super::delim_nonce()));
     s
 }
 
@@ -153,6 +180,25 @@ async fn load_blurb(kb: &std::sync::Arc<dyn super::source::KbSource>) -> String 
     }
 }
 
+/// 读回收站保留天数（`kb_delete` 的描述要拿**真值**去拼）。
+///
+/// 🔴 为何不在描述里写死「30 天」：`note_trash_days` 是用户可改的（设置
+/// → 常规）。写死的话，用户改成 7 天后模型会继续向他保证「30 天内都能恢复」
+/// ——然后第八天东西没了。这是整份工具描述里唯一一条方向指向数据丢失的不实陈述。
+///
+/// join 失败时不写字面量，而是拿一个空配置去问
+/// [`crate::auto_cleanup::trash_days`]：默认值只能留在那一处（规则 #11）。
+async fn load_trash_days(kb: &std::sync::Arc<dyn super::source::KbSource>) -> i64 {
+    let kb2 = kb.clone();
+    match tokio::task::spawn_blocking(move || kb2.trash_days()).await {
+        Ok(d) => d,
+        Err(e) => {
+            log::error!("[MCP] 读回收站保留天数失败，本次按默认值报：{}", e);
+            crate::auto_cleanup::trash_days(&Value::Null)
+        }
+    }
+}
+
 /// 处理一整个请求体。`client` 是请求的 User-Agent（由 server 层传入）。
 pub async fn dispatch(
     kb: &std::sync::Arc<dyn super::source::KbSource>,
@@ -196,7 +242,12 @@ pub async fn dispatch(
         // （我们发不了 listChanged 通知，原因见 `gate.rs`。）
         "tools/list" => {
             let switches = load_switches(kb).await;
-            ok(id, json!({ "tools": super::tools::definitions(&switches) })).into()
+            let trash_days = load_trash_days(kb).await;
+            ok(
+                id,
+                json!({ "tools": super::tools::definitions(&switches, trash_days) }),
+            )
+            .into()
         }
 
         // 唯一会产生审计的分支。工具名与参数从 `params` 里取，
@@ -244,13 +295,16 @@ pub async fn dispatch(
 
 /// 拼 `initialize` 的应答。
 fn initialize_result(params: Option<&Value>, switches: &WriteSwitches, blurb: &str) -> Value {
-    // 🔴 回显客户端请求的版本。写死一个版本号是 cc-bridge 撞过的真 bug，
-    // 详见 FALLBACK_PROTOCOL_VERSION 的注释。
-    let version = params
+    // 🔴 支持就回显，不支持就回自己最新的——规范原文见 SUPPORTED_VERSIONS。
+    let asked = params
         .and_then(|p| p.get("protocolVersion"))
         .and_then(|v| v.as_str())
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or(FALLBACK_PROTOCOL_VERSION);
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let version = match asked {
+        Some(v) if SUPPORTED_VERSIONS.contains(&v) => v,
+        _ => LATEST_PROTOCOL_VERSION,
+    };
 
     json!({
         "protocolVersion": version,
@@ -278,15 +332,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_initialize_echoes_client_protocol_version() {
-        // 🔴 回归护栏：cc-bridge 曾把这里写死成一个不存在的版本号，
-        // 客户端一升级就协商失败。这条测试就是钉住「回显而不是写死」。
-        let r = initialize_result(
-            Some(&json!({ "protocolVersion": "2099-01-01" })),
-            &WriteSwitches::ALL_ON,
-            "",
-        );
-        assert_eq!(r["protocolVersion"], "2099-01-01");
+    fn test_initialize_echoes_a_version_we_actually_support() {
+        // 🔴 回归护栏（上半）：cc-bridge 曾把这里写死成一个不存在的版本号，
+        // 客户端一升级就协商失败。名单里的版本必须原样回显。
+        for v in SUPPORTED_VERSIONS {
+            let r = initialize_result(
+                Some(&json!({ "protocolVersion": v })),
+                &WriteSwitches::ALL_ON,
+                "",
+            );
+            assert_eq!(r["protocolVersion"], *v, "支持的版本应当回显");
+        }
+    }
+
+    #[test]
+    fn test_initialize_never_claims_a_version_it_does_not_implement() {
+        // 🔴 回归护栏（下半）：这条原本钉的是「一律回显」，连 `2099-01-01`
+        // 都照回——而那是不合规的（规范：不支持就 MUST 回一个自己支持的）。
+        // 宣称支持一个没实现的版本，客户端会照着那个版本的规则往下走。
+        for bad in ["2099-01-01", "2026-07-28", "2025-11-25", "1.0.0", "latest"] {
+            let r = initialize_result(
+                Some(&json!({ "protocolVersion": bad })),
+                &WriteSwitches::ALL_ON,
+                "",
+            );
+            assert_eq!(
+                r["protocolVersion"], LATEST_PROTOCOL_VERSION,
+                "不支持的 {} 被回显了，等于宣称支持它",
+                bad
+            );
+        }
     }
 
     #[test]
@@ -299,7 +374,7 @@ mod tests {
             Some(json!({ "protocolVersion": 123 })),
         ] {
             let r = initialize_result(p.as_ref(), &WriteSwitches::ALL_ON, "");
-            assert_eq!(r["protocolVersion"], FALLBACK_PROTOCOL_VERSION);
+            assert_eq!(r["protocolVersion"], LATEST_PROTOCOL_VERSION);
         }
     }
 
@@ -330,6 +405,40 @@ mod tests {
         assert!(ins.contains("回收站"), "未告知删除只进回收站");
         assert!(ins.contains("调用记录"), "未告知写入会留痕");
         assert!(ins.contains("不要重试"), "未告知被关时不要重试");
+        // 从七个写工具描述里取消的 WRITE_FOOTER 搬到了这里（只说一遍）。
+        // 丢了就等于模型再也不知道自己的修改可撤——它会因此不敢动，
+        // 也没法向用户交代「怎么撤」。
+        assert!(ins.contains("版本快照"), "未告知修改留快照");
+    }
+
+    #[test]
+    fn test_instructions_carry_a_write_tool_decision_table() {
+        // 🔴 往笔记里写文本有**七个**入口，且两两相邻。
+        // 以前只在每个工具描述里写一句「优先用它而不是 kb_update」，
+        // 模型得把七段描述都读完才能拼出选型规则——不如在开头直接给一张表。
+        let ins = initialize_result(None, &WriteSwitches::ALL_ON, "")["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        for name in [
+            "kb_create",
+            "kb_update",
+            "kb_append",
+            "kb_prepend",
+            "kb_update_section",
+            "kb_insert_at_section",
+            "kb_replace_in_note",
+        ] {
+            assert!(ins.contains(name), "选型表里漏了 {}：{}", name, ins);
+        }
+        assert!(ins.contains("动得最少"), "缺「拿不准选动得最少的」那条兜底：{}", ins);
+
+        // 全关时不该推这张表：七个工具一个都调不动，推了只是白付 token。
+        let off = initialize_result(None, &WriteSwitches::ALL_OFF, "")["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(!off.contains("kb_replace_in_note"), "全关时不该推写入选型表：{}", off);
     }
 
     #[test]

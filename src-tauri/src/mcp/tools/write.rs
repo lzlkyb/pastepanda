@@ -69,12 +69,33 @@ fn source(ctx: &CallCtx) -> String {
     }
 }
 
-/// 每个写工具描述末尾都接这一句。
+// 这里原本有一个 `WRITE_FOOTER`，接在**每一个**写工具描述的末尾：
+// 「会计入调用记录 + 标注来源 + 留版本快照」。
+//
+// 🔴 它搬到了 `protocol::server_instructions` 的「写入约定」里，只说一遍。
+// 原因不是「冗余不好看」，而是它逐字重复了 **11 遍**，而工具表是
+// 每次会话都要付的常驻开销。同一句话在同一个上下文里出现一次就够了。
+//
+// 告知本身不能丢：模型不知道自己的动作可撤时，一来会因为怕不可逆而不敢动，
+// 二来没法向用户交代「改了哪里、怎么撤」。protocol.rs 那边有测试钉着。
+
+/// 「删了还能后悔多久」那一句。
 ///
-/// 告知模型「你的动作留痕且可恢复」不是客套：它会影响模型向用户的交代方式
-/// （能说清「改了哪里、怎么撤」），也避免它因为怕不可逆而不敢动。
-const WRITE_FOOTER: &str = "\n\n此操作会计入用户可见的调用记录，并在笔记上标注改动来源；\
-     修改类操作会自动留下版本快照，用户可以随时恢复。";
+/// 🔴 **必须拿真值拼，不能写死「30 天」**：`note_trash_days` 是用户可改的
+/// （设置 → 常规）。写死的话，用户设成 7 天后模型仍会向他保证
+/// 「30 天内都能恢复」——他信了，第八天东西就没了。
+fn trash_note(days: i64) -> String {
+    if days <= 0 {
+        // 0 = 用户关掉了自动销毁。这时再说「N 天后销毁」同样是假话。
+        "可恢复：这台机器上回收站的自动销毁是关着的，删掉的笔记会一直留在回收站里。"
+            .to_string()
+    } else {
+        format!(
+            "可恢复：删掉的笔记会在回收站里留 {} 天（用户自己设的值），到期后自动销毁。",
+            days
+        )
+    }
+}
 
 /// 三个 section 类工具的 inputSchema：`id` + 定位符 + 各自的额外参数。
 ///
@@ -109,16 +130,15 @@ fn section_schema(extra: Value, required: &[&str]) -> Value {
 }
 
 /// 十一个写工具的定义。**本函数不做开关过滤**，过滤在 [`super::definitions`]。
-pub fn definitions() -> Vec<Value> {
+///
+/// `trash_days` 只给 `kb_delete` 用，理由见 [`trash_note`]。
+pub fn definitions(trash_days: i64) -> Vec<Value> {
     vec![
         json!({
             "name": "kb_create",
-            "description": format!(
-                "在用户的知识库里新建一篇笔记。\n\
+            "description": "在用户的知识库里新建一篇笔记。\n\
                  先用 kb_search 确认一下同一主题是不是已经有了——如果有，\
-                 用 kb_append 追到那篇里比另开一篇更有用。{}",
-                WRITE_FOOTER
-            ),
+                 用 kb_append 追到那篇里比另开一篇更有用。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -135,12 +155,9 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_append",
-            "description": format!(
-                "往一篇已有笔记的**末尾追加**一段内容，原有内容不动。\n\
+            "description": "往一篇已有笔记的**末尾追加**一段内容，原有内容不动。\n\
                  只是“再添一条”时请**优先用它而不是 kb_update**：\
-                 kb_update 是整篇覆盖，很容易把用户原有的内容写丢。{}",
-                WRITE_FOOTER
-            ),
+                 kb_update 是整篇覆盖，很容易把用户原有的内容写丢。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -152,14 +169,11 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_update",
-            "description": format!(
-                "改一篇笔记的标题和/或正文。\n\
+            "description": "改一篇笔记的标题和/或正文。\n\
                  ⚠ **content 是整篇覆盖**，不是局部修改。只想添内容就用 kb_append；\
                  真要重写整篇时，请**先 kb_read 拿到当前全文**，在它基础上改，\
                  不要凭记忆或凭摘要重建——那会把用户写的细节概括掉。\n\
-                 只传 title 就只改标题，只传 content 就只改正文。{}",
-                WRITE_FOOTER
-            ),
+                 只传 title 就只改标题，只传 content 就只改正文。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -175,17 +189,14 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_update_section",
-            "description": format!(
-                "**只重写某一节的正文**，标题行不动、其它节不动。\n\
+            "description": "**只重写某一节的正文**，标题行不动、其它节不动。\n\
                  先用 kb_sections 看大纲拿到序号或标题路径，再用它改。\n\
                  🔴 比 kb_update 安全得多：kb_update 是你拿着几十秒前读到的全文整篇覆盖，\
                  期间用户在界面上改的东西会被抹掉；这里只碰你点名的那一节。\n\
                  🔴 节是**平的**：改 `## A` 不会动它下面的 `### A1`。\
                  返回里会告知有几个子节没被动。\n\
                  🔴 body 传空字符串 = **清空这一节的正文**（标题保留）。\
-                 不想改就别调，不要用空串试探。{}",
-                WRITE_FOOTER
-            ),
+                 不想改就别调，不要用空串试探。",
             "inputSchema": section_schema(
                 json!({
                     "body": {
@@ -199,12 +210,9 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_insert_at_section",
-            "description": format!(
-                "在某一节的指定位置**插入**一段，原有内容一字不动。\n\
+            "description": "在某一节的指定位置**插入**一段，原有内容一字不动。\n\
                  想在某节前面新开一节就用 position=before，\
-                 想往某节末尾补一段就用 position=end。{}",
-                WRITE_FOOTER
-            ),
+                 想往某节末尾补一段就用 position=end。",
             "inputSchema": section_schema(
                 json!({
                     "text": {
@@ -224,15 +232,12 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_replace_in_note",
-            "description": format!(
-                "把笔记里的一段原文换成另一段。适合改错别字、改一句话这种局部修正。\n\
+            "description": "把笔记里的一段原文换成另一段。适合改错别字、改一句话这种局部修正。\n\
                  🔴 **要求全文唯一命中**。命中 0 处或多处都会报错，且**一个字也不改**：\
                  若默认全换，你想改第一处却改了七处；\
                  若默认只换第一处，你以为改完了实际还剩六处。两种默认都是你看不出来的错。\n\
                  命中多处时把 find 向前后加长到唯一，或改用 kb_update_section。\n\
-                 行尾无需操心：LF 与 CRLF 会自动对齐。{}",
-                WRITE_FOOTER
-            ),
+                 行尾无需操心：LF 与 CRLF 会自动对齐。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -254,12 +259,9 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_prepend",
-            "description": format!(
-                "把一段内容插到笔记正文的**最开头**，原有内容不动。\
+            "description": "把一段内容插到笔记正文的**最开头**，原有内容不动。\
                  与 kb_append（插到末尾）互为一对，归同一个「追加内容」开关。\n\
-                 带 frontmatter 的笔记会插在 frontmatter 之后，不会撑坏它。{}",
-                WRITE_FOOTER
-            ),
+                 带 frontmatter 的笔记会插在 frontmatter 之后，不会撑坏它。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -277,12 +279,9 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_move",
-            "description": format!(
-                "把一篇笔记移到另一个文件夹。\n\
+            "description": "把一篇笔记移到另一个文件夹。\n\
                  文件夹结构是用户自己的组织方式，**不要主动帮他重排**；\
-                 除非用户明确要求，否则不要调它。{}",
-                WRITE_FOOTER
-            ),
+                 除非用户明确要求，否则不要调它。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -298,12 +297,11 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_tag",
-            "description": format!(
-                "给一篇笔记加或去标签。只动点名的那几个，其它标签不受影响。\n\
-                 标签体系是用户自己的，**只能用已存在的标签**（先用 kb_folders 看），\
-                 不会自动新建。{}",
-                WRITE_FOOTER
-            ),
+            "description": "给一篇笔记加或去标签。只动点名的那几个，其它标签不受影响。\n\
+                 标签体系是用户自己的，**只能用已存在的标签**，不会自动新建。\n\
+                 ⚠ kb_folders 列的是**笔记在用的**标签，那不是「能用哪些」的完整名单\
+                 （库里可能还有只被剪贴板条目用过的标签，那些也能直接用）。\
+                 所以名字对不上时**不要断定「库里没有」**，让用户确认写法。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -325,11 +323,11 @@ pub fn definitions() -> Vec<Value> {
         json!({
             "name": "kb_delete",
             "description": format!(
-                "把一篇笔记**删到回收站**（可恢复，30 天后自动销毁）。\n\
+                "把一篇笔记**删到回收站**。{}\n\
                  没有彻底删除的工具，也不要去找——那一步只能用户自己在界面上做。\n\
                  ⚠ **删之前先确认用户真的要删这一篇**：拿不准就先 kb_read 把标题与\
-                 开头念给用户听，而不是根据标题像不像自己判。{}",
-                WRITE_FOOTER
+                 开头念给用户听，而不是根据标题像不像自己判。",
+                trash_note(trash_days)
             ),
             "inputSchema": {
                 "type": "object",
@@ -341,12 +339,10 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "kb_restore",
-            "description": format!(
-                "把一篇在回收站里的笔记拿回来。删错了用它自己改回来。\n\
-                 回收站里的笔记**不会**出现在 kb_search / kb_list 的结果里，\
-                 所以 id 得从你刚才 kb_delete 的回复里拿。{}",
-                WRITE_FOOTER
-            ),
+            "description": "把一篇在回收站里的笔记拿回来。删错了用它自己改回来。\n\
+                 回收站里的笔记**不会**出现在 kb_search / kb_list 的结果里：\
+                 id 从你刚才 kb_delete 的回复里拿，\
+                 或者用 kb_trash_list 列出回收站来找（上一次会话删的只能走这条路）。",
             "inputSchema": {
                 "type": "object",
                 "properties": {

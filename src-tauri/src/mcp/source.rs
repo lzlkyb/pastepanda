@@ -216,6 +216,20 @@ pub trait KbSource: Send + Sync + 'static {
 
     /// 用户手写的库简介（AM-6）。空串 = 不推（默认）。
     fn library_blurb(&self) -> String;
+
+    /// 回收站的保留天数（`note_trash_days`，用户可在设置里改）。
+    ///
+    /// 🔴 `kb_delete` 的描述要拿它去拼，而不是写死「30 天」：
+    /// 写死的话，用户改成 7 天后模型会继续向他保证「30 天内都能恢复」。
+    /// `<= 0` = 用户关掉了自动销毁，回收站里的东西不会到期。
+    fn trash_days(&self) -> i64;
+
+    /// 回收站里的笔记（`kb_trash_list` 用）。
+    ///
+    /// 🔴 为何要开这一个：已删的笔记**不会**出现在 `kb_search` / `kb_list` 里，
+    /// 所以在有它之前，`kb_restore` 只能恢复「本轮刚刚自己删的」——
+    /// 上一次会话删的东西永远拿不回来，因为没有任何途径取到那个 id。
+    fn trash_list(&self, limit: u32) -> Result<Vec<Note>, String>;
 }
 
 /// 生产实现：从 Tauri 管理状态里取 `DataStore`。
@@ -385,6 +399,21 @@ impl KbSource for AppKbSource {
             .map(|cfg| super::blurb::from_config(&cfg))
             .unwrap_or_default()
     }
+
+    fn trash_days(&self) -> i64 {
+        // 🔴 读与真正执行清理那一侧**同一个函数**（规则 #11）。
+        // 在这里另写一遍 `get("note_trash_days").unwrap_or(30)` 的话，
+        // 两边会在下次改默认值时静默分叉，而分叉的后果是模型向用户
+        // 报了一个错的可恢复期限。
+        let cfg = self
+            .with_store(|s| s.get_config().unwrap_or_default())
+            .unwrap_or_default();
+        crate::auto_cleanup::trash_days(&cfg)
+    }
+
+    fn trash_list(&self, limit: u32) -> Result<Vec<Note>, String> {
+        self.with_store(|s| s.note_list_deleted(limit))?
+    }
 }
 
 /// 名字 → id 的解析在这里，不在 trait 实现里：以后再添一个实现也能直接复用。
@@ -533,8 +562,16 @@ fn resolve_tags_on(store: &DataStore, names: &[String]) -> Result<Vec<String>, S
         match tags.iter().find(|t| t.name == *name) {
             Some(t) => ids.push(t.id.clone()),
             None => {
+                // ⚠ 不能简单地叫它「去 kb_folders 看」：那个工具列的是
+                // **笔记在用的**标签（`note_tag_names`），而这里认的是全库标签
+                // （`get_tags`，含只被剪贴板条目用过的）。两边口径不同是故意的，
+                // 但就不能再把 kb_folders 说成「能用哪些」的全部依据——
+                // 否则模型会对一个**真存在**的标签告诉用户「库里没有、得你先建」。
                 return Err(format!(
-                    "没有叫「{}」的标签。**不会自动新建标签**——先用 kb_folders 看看现有哪些。",
+                    "没有叫「{}」的标签，且**不会自动新建**。\
+                     注意 kb_folders 只列出了**笔记在用的**标签，\
+                     库里可能还有只被剪贴板条目用过的标签（那些也能直接用）。\
+                     所以这可能只是写法对不上：请让用户确认标签名，不要直接断定「库里没有」。",
                     name
                 ))
             }
