@@ -1,5 +1,10 @@
 # Rust 项目编译提速：三项配置
 
+> 🔴 **2026-09-05 订正：三项里的 ②（lld 链接器）已回滚**——它在 rustc 1.96 稳定版
+> 不可用，打开会让每一次 cargo 构建**立刻失败**（编不过，不是变慢）。详见 §②。
+> **现实际生效的只有 ① 与 ③两项；本文引用的提速数字是三项同时开启时量的，
+> 回滚 ② 后实际收益会低于那个值，引用前请重新实测。**
+
 > 可直接把本文贴给其它 AI 执行。来源：PastePanda 在2026-09-05 的实测与落地。
 >
 > 🔴 **不要照抄数值**。下面每项都给了判据与测量命令，先量再定值。
@@ -60,25 +65,46 @@ debug = true
 
 ---
 
-## ② 换 lld 链接器
+## ② 换 lld 链接器 —— 🔴 **本项已回滚，rustc 1.96 稳定版用不了**
 
-```toml
-# .cargo/config.toml
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-Clinker-features=+lld"]
+> ⚠ **2026-09-05 订正。本节原来的写法把 PastePanda 的整个 Rust 构建弄挂了**（不是变慢，是编不过）。
+> 本文开头写着「可直接贴给其它 AI 执行」，所以这一节必须先读完再照做。
+
+想法本身没错：`rust-lld` 随工具链分发不用额外装，LLD 在大工程上通常比 `link.exe` 快数倍，
+而链接正是本工程的瓶颈。但这个 flag **在 rustc 1.96 稳定版不可用**：
+
+```
+$ rustc --version
+rustc 1.96.0 (ac68faa20 2026-05-25)
+$ rustc -Clinker-features=+lld t.rs
+error: `-C linker-features=+lld` is unstable, and also requires the
+       `-Z unstable-options` flag to be used
 ```
 
-**先验证当前工具链支持**（不要假设）：
+### 🔴 验证方法也错了（这才是真正的教训）
+
+本节原先让你跑 `rustc -C help | grep linker-features` 来确认支持——
+**这个判据是无效的**：`-C help` 会把**未稳定选项也一起列出来**，
+能查到 ≠ 稳定版能用。当时就是靠它得出「已实测可用」的结论。
+
+**唯一可靠的验证：真编一个空 `main.rs`**：
 
 ```bash
-# 这个 flag 在稳定版可用吗？
-rustc -C help | grep linker-features
+printf 'fn main(){}' > t.rs && rustc -Clinker-features=+lld t.rs
+# 无输出 = 可用；报 unstable = 不可用，别改
 
-# rust-lld 在不在？（随工具链分发，不用额外装）
-ls ~/.rustup/toolchains/*/lib/rustlib/*/bin/rust-lld*
+ls ~/.rustup/toolchains/*/lib/rustlib/*/bin/rust-lld*   # rust-lld 在不在
 ```
 
-两者都有才能改。本项目实测环境：rustc 1.96.0 / LLD 22.1.2。
+### 想启用的两条路
+
+- 换 nightly 工具链，加 `-Z unstable-options`；
+- 等它进稳定版后，用上面那条空 `main.rs` 实测通过再打开。
+
+本项目当前已在 `src-tauri/.cargo/config.toml` 里**注释掉该配置**，并把上述结论写在旁边。
+另两项（① 与 ③）**不受影响，仍然有效**。
+
+实测环境：rustc 1.96.0 / LLD 22.1.2。
 
 **其它平台**：
 

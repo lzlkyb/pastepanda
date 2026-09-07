@@ -346,7 +346,15 @@ pub fn apply_delta(
             .map(str::trim)
             .filter(|l| !l.is_empty())
         {
-            if !staged.join(want).is_file() && !images.join(want).is_file() {
+            // 同上：这也是对端给的字串。这条路径目前只做 `is_file()` 检查、
+            // 不删不写，但**不能靠「下游刚好无害」当安全保证**：
+            // 同一句话在上面那条路径上就变成了任意文件删除。过同一道门。
+            let Ok(p) = super::transport::safe_rel(&staged, want) else {
+                rep.missing_files += 1;
+                log::warn!("[Sync] 附件清单里的名字不合法，已忽略：{}", want);
+                continue;
+            };
+            if !p.is_file() && !images.join(p.file_name().unwrap_or_default()).is_file() {
                 rep.missing_files += 1;
                 log::warn!("[Sync] 附件清单说有但文件没到：{}", want);
             }
@@ -390,7 +398,20 @@ pub fn apply_delta(
         let incoming: i64 = ms
             .parse()
             .map_err(|_| format!("清单里的时间戳不是数字：{}", line))?;
-        let path = dir.join(rel);
+        // 🔴 清单的第三列是**对端给的字串**，必须过 `safe_rel`。
+        //
+        //    这条曾经是 `dir.join(rel)`。`transport` 只校验了线上的文件**名**，
+        //    而 `.pp-sync-manifest` 这个名字本身是合法的——它的**内容**没人管。
+        //    于是一个已配对的对端只要写一行
+        //        `<它同步过的真实 note_id>\t0\t../../../../<目标文件>`
+        //    （Windows 上直接写 `C:/...` 更省事：`Path::join` 遇绝对路径会整个替换），
+        //    就能走到下面那句 `remove_file`：`incoming = 0` 使 `both_changed` 为假
+        //    （不生冲突副本、不留痕迹），`local >= 0` 恒真 ⇒ **删掉任意文件**。
+        //
+        // ❗ 直接报错而不是跳过：正常对端的 `rel` 是 `write_delta` 生成的安全相对路径，
+        //   出现穿越写法只有两种可能（恶意 / 对端坏了），两种都该把会话停下来。
+        let path = super::transport::safe_rel(dir, rel)
+            .map_err(|e| format!("对端清单里的路径不合法（{}）：{}", e, line))?;
         if !path.is_file() {
             // 清单说有、文件却不在：传输被截断了。报出来，别当成「这篇没变」。
             rep.missing_files += 1;
@@ -434,9 +455,22 @@ pub fn apply_delta(
         let both_changed = local > since_cursor && incoming > since_cursor;
 
         if local >= incoming {
-            // 本地赢。冲突时把**对端那份**留成副本，否则它就没了。
             if both_changed {
-                save_conflict_copy(store, id, &incoming_text, incoming, "对端")?;
+                // 🔴 只有**平手**时赢家才存副本。
+                //
+                //    严格赢（`local > incoming`）时，对端那边必然是 `local < incoming`，
+                //    它会把**自己那份**存成副本再同步过来。两边都存的话，
+                //    得到的是**内容完全相同、`losing_ms` 也相同、标题逐字相同**的两条，
+                //    区别只在「来自对端/本机」一词——而那个词同步过去之后就没意义了。
+                //    两份携带的信息量完全相同，那不是冗余备份，是纯重复。
+                //
+                // ❗ 但平手（`local == incoming`）不行：那时**两边都走这一支、都没有输家**，
+                //   不存就是两台机器各留各的、永久静默分叉。这一支是分叉唯一的痕迹。
+                if local == incoming {
+                    save_conflict_copy(store, id, &incoming_text, incoming)?;
+                }
+                // ❗ 计数无论如何要留：不留的话，赢家那台机器界面会显「冲突 0 处」——
+                //   用户压根不知道发生过冲突，那比重复严重得多。
                 rep.conflicts += 1;
             }
             let _ = std::fs::remove_file(&path);
@@ -450,7 +484,7 @@ pub fn apply_delta(
             let local_note = store.note_get(id)?;
             if let Some(n) = local_note {
                 let text = crate::data_store::note_to_markdown(&n, false);
-                save_conflict_copy(store, id, &text, local, "本机")?;
+                save_conflict_copy(store, id, &text, local)?;
                 rep.conflicts += 1;
             }
         }
@@ -580,12 +614,15 @@ pub fn apply_delta(
 ///
 /// 带一行 `- [conflict]`（AM-7 的行内类别）——于是
 /// `kb_search(kind="conflict")` 就是那个「冲突列表」，不用另做设置页。
+///
+/// ❗ 正文里**不提「本机/对端」**。它曾经提，而那是错的：冲突副本本身就是一篇普通笔记，
+/// 会跟着同步到对面去——到了那台机器上，「本机」指的就是别人了。
+/// 用时间戳标识那一版，在哪台机器上读都成立。
 fn save_conflict_copy(
     store: &DataStore,
     origin_id: &str,
     losing_markdown: &str,
     losing_ms: i64,
-    losing_side: &str,
 ) -> Result<(), String> {
     let title = store
         .note_get(origin_id)
@@ -595,17 +632,17 @@ fn save_conflict_copy(
         .unwrap_or_else(|| "（无标题）".to_string());
 
     let body = format!(
-        "- [conflict] 这是一份**冲突副本**，来自**{}**那一份（时间戳 {}）。\n\
+        "- [conflict] 这是《{}》**没能保留下来的那一版**（时间戳 {}）。\n\
          \n\
-         两台机器在上次同步之后都改过《{}》，后写胜保留了另一份。\n\
-         这一份没有丢，但**也没有被自动合并**——请自己比对后处理，处理完删掉本篇。\n\
+         两台机器在上次同步之后都改过它，后写胜保留了另一版。\n\
+         这一版没有丢，但**也没有被自动合并**——请自己比对后处理，处理完删掉本篇。\n\
          \n\
          原笔记 id：`{}`\n\
          \n\
          ---\n\
          \n\
          {}\n",
-        losing_side, losing_ms, title, origin_id, losing_markdown
+        title, losing_ms, origin_id, losing_markdown
     );
     store
         .note_create(None, &format!("{}（冲突副本 {}）", title, losing_ms), &body)

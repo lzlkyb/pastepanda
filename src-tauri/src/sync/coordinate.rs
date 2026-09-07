@@ -64,15 +64,50 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// ❗ **已不再是空闲周期**（2026-09-07）。空闲时现在是「脏了才拨」：
-/// 见 [`IDLE_CHECK_SECS`] / [`HEARTBEAT_SECS`]。
+/// 心跳间隔的抖动幅度（秒）。加抖动是为了让碰撞**本来就少见**，
+/// 加在心跳（[`HEARTBEAT_SECS`]）上。
 ///
-/// 保留它只为一件事：做 [`jittered_secs`] 的测试基准。
-/// 不要拿它当同步频率看——那个已经不再是一个定数。
-pub const PERIOD_SECS: u64 = 30;
-/// 间隔的抖动幅度（秒）。加抖动是为了让碰撞**本来就少见**；
-/// 现在加在心跳（[`HEARTBEAT_SECS`]）上。
-pub const JITTER_SECS: u64 = 10;
+/// 🔴 2026-09-07 从 10 提到 90（W6 止血第二条）。10 是
+/// 「空闲周期 30 秒」那个时代留下的数（±33%），而空闲改成
+/// 「脏了才拨 + 600 秒兜底心跳」之后，它只剩 **±1.7%**——那等于没有抖动。
+/// 几台设备一起开机，心跳就会一直聚成惊群，**台数越多越明显**。
+/// 现在是 ±15%，撑开成 [510, 690]。
+///
+/// ❗ 抖动要**按周期比例**给，不是拍一个绝对秒数：
+/// 心跳将来再改的话这个数要跟着改。但也别给到 ±50%——
+/// 那会让「最多多久兜底一次」这个上限失去意义。
+pub const JITTER_SECS: u64 = 90;
+
+/// 本机**同时**能进行的同步会话总数（拨出 + 接入合计）。
+///
+/// # 🔴 为什么需要一个全局闸（W6 止血第一条，2026-09-07）
+///
+/// 在这之前只有「每对端一把锁」（[`Coordinator::try_hold`] 的 [`Slot`]），
+/// **没有任何全局上限**。而拓扑是配对图：8 台设备两两互配 = 本机 7 条
+/// `peer_loop`，同时写入唤醒是**广播**的（`service.rs` 的
+/// `wake` / `wrote` 都是一个 `Notify` 叫醒所有循环）。
+/// 于是一次编辑就能让 7 条循环同时拨号 → 7 个会话临时目录、7 份增量同时导出。
+///
+/// `service.rs` 里那句「多拨几次无害」在 2~3 台时成立，**8 台时不成立**。
+/// 每对端一把锁挡的是「同一对端两个会话」，它天生挡不住「7 个不同对端各一个」。
+///
+/// # 为什么是 2 而不是 1
+///
+/// 留一条余量给「本机正拨 A，同时 B 拨进来」这种**正常**并发。
+/// 完全串行的话，一台慢对端（走中继、跨国）会把其它所有设备堵在后面。
+pub const MAX_CONCURRENT_SESSIONS: usize = 2;
+
+/// 写入信号的**合并窗口**（秒）：脏了之后先等这么久没有新写入再拨。
+///
+/// 见 `service::coalesce_writes`。取 3 秒是因为它直接加在
+/// 「改完到同步出去」的延迟上，而 [`MIN_SESSION_GAP_SECS`] 已经有 10 秒了。
+pub const WRITE_COALESCE_SECS: u64 = 3;
+
+/// 合并窗口的封顶（秒）。
+///
+/// 🔴 不能去掉。没有它，一直在写的人就**一直不同步**——
+/// 那是把「合并」做成了「饿死」。
+pub const WRITE_COALESCE_MAX_SECS: u64 = 30;
 
 /// 空闲时的**本地**脏检查间隔（秒）。
 ///
@@ -186,11 +221,30 @@ struct Slot {
     released: tokio::sync::Notify,
 }
 
-/// 占住一个槽。**析构即释放**，所以会话怎么退出（返回、`?`、panic）都不会漏。
+/// 占住一个槽（并占着一个全局闸位）。
+/// **析构即释放**，所以会话怎么退出（返回、`?`、panic）都不会漏。
 #[derive(Debug)]
 pub struct Hold {
     slot: Arc<Slot>,
     peer: String,
+    /// 全局并发闸的令牌（[`MAX_CONCURRENT_SESSIONS`]）。
+    /// 只为了「析构时自动归还」而持有，没人读它。
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+/// 开不成会话的两种原因。
+///
+/// 🔴 **必须分开**，不能合成一个 `None`：
+/// 「这个对端的槽被占着」= 真撞车，要走 RFC 4271 §6.8 让位；
+/// 「全局闸满了」跟对端是谁没关系，让位是**错的**——
+/// [`Coordinator::admit`] 里的让位等的是那把槽的释放通知，
+/// 而闸满时那把槽根本没被这个对端占着，等到的只会是超时。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoldErr {
+    /// 本机同时进行的会话数到顶（[`MAX_CONCURRENT_SESSIONS`]）。
+    GateFull,
+    /// 本机已经有一个到这个对端的会话在跑。
+    PeerBusy,
 }
 
 impl Hold {
@@ -221,13 +275,25 @@ pub enum Admit {
 pub struct Coordinator {
     me: String,
     slots: Mutex<HashMap<String, Arc<Slot>>>,
+    /// 全局并发闸（见 [`MAX_CONCURRENT_SESSIONS`]）。
+    gate: Arc<tokio::sync::Semaphore>,
+    /// 闸位总数。只为了把它写进拒绝理由（`Semaphore` 只能查剩余）。
+    limit: usize,
 }
 
 impl Coordinator {
     pub fn new(my_node_id: String) -> Self {
+        Self::with_limit(my_node_id, MAX_CONCURRENT_SESSIONS)
+    }
+
+    /// 同 [`Self::new`]，但可以指定闸位数。**给测试用**：
+    /// 拿真常量测的话，常量一改测试就要重写。
+    pub fn with_limit(my_node_id: String, limit: usize) -> Self {
         Self {
             me: my_node_id,
             slots: Mutex::new(HashMap::new()),
+            gate: Arc::new(tokio::sync::Semaphore::new(limit)),
+            limit,
         }
     }
 
@@ -236,16 +302,49 @@ impl Coordinator {
         m.entry(peer.to_string()).or_default().clone()
     }
 
-    /// 试着占住某个对端的槽。占不住就返回 `None`——**不等**。
-    pub fn try_hold(&self, peer: &str) -> Option<Hold> {
+    /// 试着开一个到 `peer` 的会话：先过全局闸，再占这个对端的槽。
+    /// **两步都不等**（理由见模块文档最后一节：阻塞 = 跨机死锁）。
+    ///
+    /// # 🔴 顺序是「先闸后槽」，不能反
+    ///
+    /// 反过来的话，闸满时会先把槽占上再退回去，而退回去那一下的 `Drop`
+    /// 会 `notify_waiters()`——把正在让位等待的入连接**假唤醒**，
+    /// 它醒了发现槽还在那儿，只能回一句「让位后没能拿到会话位」。
+    /// 先闸后槽则根本不碰槽，没有这个副作用（`Semaphore` 这边只用
+    /// `try_acquire`，从来没人在上面等）。
+    ///
+    /// 代价：闸满的同时又真撞车时，报的是 [`HoldErr::GateFull`] 而不是
+    /// [`HoldErr::PeerBusy`]。无害：两者对外都是「在忙，稍后重试」。
+    pub fn try_hold(&self, peer: &str) -> Result<Hold, HoldErr> {
+        let permit = self
+            .gate
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| HoldErr::GateFull)?;
         let slot = self.slot(peer);
         slot.busy
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .ok()
-            .map(|_| Hold {
-                slot,
-                peer: peer.to_string(),
-            })
+            .map_err(|_| HoldErr::PeerBusy)?;
+        // 上面那一条 `?` 返回时 `permit` 随之析构，闸位自动归还。
+        Ok(Hold {
+            slot,
+            peer: peer.to_string(),
+            _permit: permit,
+        })
+    }
+
+    /// 当前还剩几个闸位。
+    ///
+    /// ❗ **别拿它拼错误消息**：它是拿到错误**之后**才读的，
+    /// 那一瞬可能已经有会话结束了，于是印出「已达上限（还剩 1 个）」。
+    /// 要报容量用 [`Self::limit`]。
+    pub fn free_slots(&self) -> usize {
+        self.gate.available_permits()
+    }
+
+    /// 闸位总数。
+    pub fn limit(&self) -> usize {
+        self.limit
     }
 
     /// 入连接来了：判配对、拿槽、撞上了按 §6.8 让位。整条规则收口在这儿。
@@ -253,8 +352,22 @@ impl Coordinator {
         if !is_paired {
             return Admit::NotPaired;
         }
-        if let Some(h) = self.try_hold(peer) {
-            return Admit::Ok(h);
+        match self.try_hold(peer) {
+            Ok(h) => return Admit::Ok(h),
+            // 🔴 闸满不是撞车，**不能走让位**：让位等的是这把槽的释放通知，
+            //    而现在槽根本没被这个对端占着，只会白等满 `YIELD_WAIT`。
+            //
+            // ❗ 理由里那四个字「稍后重试」是**协议的一部分**：
+            //    `service::is_busy_reject` 靠它把这次拒绝判成「在忙」而不是故障，
+            //    对端才会 2 秒后再来。判成故障的话它会走退避阶梯（退到 300 秒），
+            //    而本机可能下一秒就空出来了。改这句话要同时改那边。
+            Err(HoldErr::GateFull) => {
+                return Admit::Reject(format!(
+                    "本机同时进行的同步已达上限（{} 个），请稍后重试",
+                    self.limit
+                ))
+            }
+            Err(HoldErr::PeerBusy) => {}
         }
         // 槽被占着 = 本机正有一个到这个对端的出会话在跑 ⇒ 撞上了
         match resolve_collision(&self.me, peer) {
@@ -276,8 +389,9 @@ impl Coordinator {
                     }
                 }
                 match self.try_hold(peer) {
-                    Some(h) => Admit::Ok(h),
-                    None => Admit::Reject("让位后槽又被占了，请稍后重试".into()),
+                    Ok(h) => Admit::Ok(h),
+                    // 不分 `GateFull` / `PeerBusy`：让完位都没拿到，对端该做的事一样。
+                    Err(_) => Admit::Reject("让位后没能拿到会话位，请稍后重试".into()),
                 }
             }
         }

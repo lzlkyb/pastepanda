@@ -597,6 +597,37 @@ fn test_两边都改过时留下冲突副本() {
     );
 }
 
+/// 🔴 严格赢的一边**不再**存副本，但仍然要计数。
+///
+/// 改之前一次冲突会在**每台机器上生两份**副本：赢家存对端那份、输家存自己那份，
+/// 而两者是**同一个版本**（`losing_ms` 相同、标题逐字相同），副本再互相同步过去。
+///
+/// ❗ 计数必须留：不留的话赢家那台机器界面显「冲突 0 处」，用户压根不知道出过冲突。
+#[test]
+fn test_严格赢的一边不存副本但要计数() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "共同起点").unwrap();
+    let (cursor, _) = sync(&a, &b, 0, "win1");
+
+    // 上次同步之后两边各改一次，**A 先改 B 后改** ⇒ B 的戳更大，接收侧（B）严格赢
+    a.note_update(&n.id, "甲", "A 改的").unwrap();
+    b.note_update(&n.id, "甲", "B 改的").unwrap();
+
+    let (_, rep) = sync_from(&a, &b, cursor, cursor, "win2");
+    assert_eq!(rep.skipped_older, 1, "B 应该赢：{:?}", rep);
+    assert_eq!(rep.conflicts, 1, "赢了也要把冲突报出来：{:?}", rep);
+    assert_eq!(
+        b.note_get(&n.id).unwrap().unwrap().content,
+        "B 改的",
+        "B 的内容该留下"
+    );
+    // 关键断言：A 那份不在这里存副本——A 那台机器会把自己那份存成副本再同步过来
+    assert!(
+        b.note_search("冲突副本", "all", &[], 10).unwrap().is_empty(),
+        "严格赢的一边不该再存一份（内容与输家那份完全相同）"
+    );
+}
+
 /// 只有一边改过 ⇒ **不是**冲突，不该留副本。
 ///
 /// 这条守的是「别凭空造冲突」：真实使用里绝大多数同步都是单边改动，
@@ -822,14 +853,91 @@ fn test_拒绝路径穿越的文件名() {
         "./x.md",
     ] {
         assert!(
-            super::transport::safe_rel_for_test(root, bad).is_err(),
+            super::transport::safe_rel(root, bad).is_err(),
             "这个名字该被拒：{:?}",
             bad
         );
     }
     // 正常的相对路径要放过，两种分隔符都认
-    assert!(super::transport::safe_rel_for_test(root, "工作/甲.md").is_ok());
-    assert!(super::transport::safe_rel_for_test(root, "工作\\甲.md").is_ok());
+    assert!(super::transport::safe_rel(root, "工作/甲.md").is_ok());
+    assert!(super::transport::safe_rel(root, "工作\\甲.md").is_ok());
+}
+
+/// 🔴 对端开了头就不再发了，接收侧不能永远挂在那儿。
+///
+/// 加了全局并发闸之后这条从「卡住一台对端」升级成「占掉两个会话位中的一个」：
+/// 两个卡住的会话就能让全机同步停摆。
+///
+/// ❗ 用毫秒级的停滞上限跑，不真等 30 秒（这正是 `read_dir_with` 存在的理由）。
+#[tokio::test]
+async fn test_对端发到一半不发了要中断而不是挂死() {
+    let listener = offline_ep(41).await;
+    let dialer = offline_ep(42).await;
+    let to = dialable(&listener);
+    let inbox = tmp_dir("stall_in");
+
+    let inbox2 = inbox.clone();
+    let recv = tokio::spawn(async move {
+        let mut w = super::transport::accept(&listener).await.unwrap();
+        super::transport::read_dir_with(
+            &mut w.recv,
+            &inbox2,
+            std::time::Duration::from_millis(300),
+        )
+        .await
+    });
+
+    // 拨号方：把「名字 + 内容长度」发完，然后**一个内容字节也不发**，也不关连接。
+    let mut w = super::transport::dial(&dialer, to).await.unwrap();
+    let name = b"a.md";
+    w.send.write_all(&(name.len() as u32).to_be_bytes()).await.unwrap();
+    w.send.write_all(name).await.unwrap();
+    w.send.write_all(&1000u64.to_be_bytes()).await.unwrap();
+
+    let t0 = tokio::time::Instant::now();
+    let r = recv.await.unwrap();
+    let e = r.expect_err("对端不发了，这里必须报错而不是一直等");
+    assert!(e.contains("没动"), "报的不是停滞：{}", e);
+    assert!(
+        t0.elapsed() < std::time::Duration::from_secs(5),
+        "停滞超时没生效，等了 {:?}",
+        t0.elapsed()
+    );
+
+    drop(w);
+    let _ = std::fs::remove_dir_all(&inbox);
+}
+
+/// 🔴 清单**内容**里的路径也要过同一道门。2026-09-07 审出的真漏洞：
+/// `transport` 只校验线上的文件**名**，而 `.pp-sync-manifest` 这个名字合法，
+/// 它的**内容**当时直接 `dir.join(rel)` → `remove_file`——
+/// 已配对的对端能删本机任意文件。
+#[test]
+fn test_清单里的穿越路径不能删掉外面的文件() {
+    let s = store();
+    let n = s.note_create(None, "甲", "正文").unwrap();
+
+    let inbox = tmp_dir("evil_in");
+    // 把“受害者”放在 inbox **外面**，模拟本机任意文件
+    let victim_dir = tmp_dir("evil_victim");
+    let victim = victim_dir.join("别删我.txt");
+    std::fs::write(&victim, "这个文件不该被同步碰到").unwrap();
+
+    // 恶意清单：真实 note_id + `incoming = 0`（使 both_changed 为假、不留痕迹）
+    // + 一个指向 inbox 外面的绝对路径。走到 `local >= incoming` 就会 remove_file。
+    let evil = format!("{}\t0\t{}\n", n.id, victim.to_string_lossy().replace('\\', "/"));
+    std::fs::write(inbox.join(".pp-sync-manifest"), evil).unwrap();
+    std::fs::write(inbox.join(".pp-sync-tombstones"), "").unwrap();
+
+    let r = apply_delta(&s, &inbox, 0);
+    assert!(r.is_err(), "穿越路径应该把会话停下来，而不是默默执行：{:?}", r);
+    assert!(
+        victim.is_file(),
+        "对端通过清单删掉了 inbox 外面的文件——路径穿越回来了"
+    );
+
+    let _ = std::fs::remove_dir_all(&inbox);
+    let _ = std::fs::remove_dir_all(&victim_dir);
 }
 
 // ===== kb_presence 地址宣告 =====
@@ -1398,6 +1506,13 @@ fn test_戳相同但内容不同仍按平手处理() {
     // 平手时本地赢，且因为两边都在游标之后改过，对端那份留了副本
     assert_eq!(rep.skipped_older, 1, "{:?}", rep);
     assert_eq!(rep.conflicts, 1, "真平手应留冲突副本：{:?}", rep);
+    // 🔴 平手是赢家仍然要存副本的**唯一**情形：两边都走 `local >= incoming`、
+    //    都没有输家，不存就是两台机器各留各的、永久静默分叉。
+    assert_eq!(
+        b.note_search("冲突副本", "all", &[], 10).unwrap().len(),
+        1,
+        "平手时赢家必须把对端那版存下来"
+    );
     assert_eq!(
         b.note_get(&n.id).unwrap().unwrap().content,
         "乙的版本",
@@ -1524,9 +1639,9 @@ mod coordinate_tests {
     fn test_抖动不越界且真的会变() {
         let mut seen = std::collections::HashSet::new();
         for seed in 0..500u64 {
-            let v = jittered_secs(PERIOD_SECS, JITTER_SECS, seed);
+            let v = jittered_secs(HEARTBEAT_SECS, JITTER_SECS, seed);
             assert!(
-                (PERIOD_SECS - JITTER_SECS..=PERIOD_SECS + JITTER_SECS).contains(&v),
+                (HEARTBEAT_SECS - JITTER_SECS..=HEARTBEAT_SECS + JITTER_SECS).contains(&v),
                 "seed={} 抖出了 {}，越界",
                 seed,
                 v
@@ -1545,6 +1660,51 @@ mod coordinate_tests {
     }
 
     #[test]
+    fn test_抖动幅度要按心跳比例给() {
+        // 🔴 这条盯的是一个**改了不会报错**的东西：`JITTER_SECS` 是个绝对秒数，
+        //    而它的意义是「占心跳的百分之几」。周期从 30 秒改成 600 秒心跳的那一次，
+        //    抖动没跟着改，于是它从 ±33% 变成 ±1.7%——等于没有抖动，
+        //    几台设备一起开机就会一直聚成惊群，而且**台数越多越明显**。
+        let pct = JITTER_SECS as f64 * 100.0 / HEARTBEAT_SECS as f64;
+        assert!(
+            JITTER_SECS >= HEARTBEAT_SECS / 10,
+            "抖动只有心跳的 {:.1}%，撑不开心跳惊群",
+            pct
+        );
+        assert!(
+            JITTER_SECS <= HEARTBEAT_SECS / 4,
+            "抖动大到心跳的 {:.1}%，「最多多久兜底一次」这个上限就没意义了",
+            pct
+        );
+    }
+
+    #[test]
+    fn test_合并窗口必须比去抖间隔短且有封顶() {
+        use crate::sync::coordinate::{
+            MIN_SESSION_GAP_SECS, WRITE_COALESCE_MAX_SECS, WRITE_COALESCE_SECS,
+        };
+        // 合并窗口是**直接加在**「改完到同步出去」的延迟上的。
+        // 它比去抖间隔还长的话，用户感受到的就不是「合并」而是「变慢了」。
+        assert!(
+            WRITE_COALESCE_SECS < MIN_SESSION_GAP_SECS,
+            "合并窗口（{}s）比去抖间隔（{}s）还长",
+            WRITE_COALESCE_SECS,
+            MIN_SESSION_GAP_SECS
+        );
+        // 🔴 封顶必须真的卡得住：没它的话，一直在写的人就一直不同步。
+        assert!(WRITE_COALESCE_MAX_SECS > WRITE_COALESCE_SECS);
+        // 闸位不能降到 1：完全串行的话，一台慢对端（走中继、跨国）
+        // 会把其它所有设备堵在后面；降到 0 则是直接把同步关掉。
+        assert!(
+            crate::sync::coordinate::MAX_CONCURRENT_SESSIONS >= 2,
+            "并发闸降到 {} 会让一台慢对端堵住全部",
+            crate::sync::coordinate::MAX_CONCURRENT_SESSIONS
+        );
+        // 也不能大到把心跳都盖住（那就变成另一个同步周期了）
+        assert!(WRITE_COALESCE_MAX_SECS < HEARTBEAT_SECS);
+    }
+
+    #[test]
     fn test_抖动不会因为下界减到负数而崩() {
         // base 比 jitter 小是配置写错，但不能 panic（本项目 panic = abort）
         for seed in 0..50u64 {
@@ -1557,7 +1717,7 @@ mod coordinate_tests {
 // ===== 会话槽与让位（coordinate 的有状态那半） =====
 
 mod slot_tests {
-    use crate::sync::coordinate::{Admit, Coordinator, YIELD_WAIT};
+    use crate::sync::coordinate::{Admit, Coordinator, HoldErr, YIELD_WAIT};
 
     /// 比 `hi` 小、比 `lo` 大的一组 id。用真实长度（64 字符 hex）免得
     /// 将来加了长度校验测试才炸。
@@ -1570,13 +1730,18 @@ mod slot_tests {
 
     #[test]
     fn test_槽被占时同一对端拿不到第二个() {
-        let c = Coordinator::new(lo());
+        // ❗ 闸位给到 4：这条盯的是**每对端那把锁**，不能让全局闸插进来干扰结论。
+        let c = Coordinator::with_limit(lo(), 4);
         let peer = hi();
         let h = c.try_hold(&peer).expect("第一次应拿到");
         assert_eq!(h.peer(), peer);
-        assert!(c.try_hold(&peer).is_none(), "同一对端不该拿到第二把");
+        assert_eq!(
+            c.try_hold(&peer).unwrap_err(),
+            HoldErr::PeerBusy,
+            "同一对端不该拿到第二把"
+        );
         // 不同对端互不影响 —— 多设备要能并行
-        assert!(c.try_hold("0".repeat(64).as_str()).is_some());
+        assert!(c.try_hold("0".repeat(64).as_str()).is_ok());
     }
 
     #[test]
@@ -1587,7 +1752,7 @@ mod slot_tests {
         {
             let _h = c.try_hold(&peer).unwrap();
         }
-        assert!(c.try_hold(&peer).is_some(), "出了作用域应已释放");
+        assert!(c.try_hold(&peer).is_ok(), "出了作用域应已释放");
     }
 
     #[tokio::test]
@@ -1652,6 +1817,166 @@ mod slot_tests {
             t0.elapsed() >= YIELD_WAIT,
             "应该真的等满 {:?} 才放弃",
             YIELD_WAIT
+        );
+    }
+
+    // ===== 全局并发闸（W6 止血第一条，2026-09-07）=====
+
+    #[test]
+    fn test_闸满了不同对端也开不了会话() {
+        // 🔴 每对端一把锁**天生挡不住**「7 个不同对端各开一个」——
+        //    而那正是 8 台设备互配时一次写入广播唤醒的形状。闸就是为这个加的。
+        let c = Coordinator::with_limit(lo(), 2);
+        let a = c.try_hold(&"a".repeat(64)).expect("第 1 个");
+        let b = c.try_hold(&"b".repeat(64)).expect("第 2 个");
+        assert_eq!(c.free_slots(), 0);
+        assert_eq!(
+            c.try_hold(&"c".repeat(64)).unwrap_err(),
+            HoldErr::GateFull,
+            "闸满了却还放第 3 个不同对端进来"
+        );
+        drop(a);
+        assert_eq!(c.free_slots(), 1, "闸位没随会话结束归还");
+        assert!(c.try_hold(&"c".repeat(64)).is_ok(), "腾出来之后应能开");
+        drop(b);
+    }
+
+    #[test]
+    fn test_闸满与对端在忙是两种原因() {
+        // 🔴 合成一个 `None` 的话，`admit` 会把「闸满」当成撞车去让位，
+        //    而让位等的是那把槽的释放通知——槽根本没被这个对端占着，
+        //    只会白等满 YIELD_WAIT。两个原因必须能分开。
+        let peer = hi();
+        // 闸只有 1 位：按「先闸后槽」的顺序，先撞上的是闸
+        let c1 = Coordinator::with_limit(lo(), 1);
+        let _h1 = c1.try_hold(&peer).unwrap();
+        assert_eq!(c1.try_hold(&peer).unwrap_err(), HoldErr::GateFull);
+        // 闸有余量时，同一对端才报 PeerBusy
+        let c2 = Coordinator::with_limit(lo(), 4);
+        let _h2 = c2.try_hold(&peer).unwrap();
+        assert_eq!(c2.try_hold(&peer).unwrap_err(), HoldErr::PeerBusy);
+    }
+
+    #[tokio::test]
+    async fn test_闸满时拒的是可重试的在忙而不是故障() {
+        // 🔴 这条盯的是**跨文件的一致性**：拒绝理由里的字样必须能被
+        //    `service::is_busy_reject` 认出来。认不出就会被当成故障走退避阶梯，
+        //    一台正常设备被退到 300 秒一拨，而本机可能下一秒就空出来了。
+        use crate::sync::service::{is_busy_reject, is_not_paired_reject};
+        let c = Coordinator::with_limit(lo(), 1);
+        let _h = c.try_hold(&"a".repeat(64)).unwrap();
+        match c.admit(&hi(), true).await {
+            Admit::Reject(why) => {
+                assert!(is_busy_reject(&why), "闸满被判成故障了：{}", why);
+                assert!(!is_not_paired_reject(&why), "{}", why);
+            }
+            other => panic!("闸满却收下了入连接：{:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_闸满时不走让位所以不会白等满超时() {
+        // 对端 id 比本机大 ⇒ 真撞车的话会走 YieldToPeer 等满 YIELD_WAIT。
+        // 闸满不是撞车，必须立刻拒。
+        let c = Coordinator::with_limit(lo(), 1);
+        let _h = c.try_hold(&"a".repeat(64)).unwrap();
+        let t0 = tokio::time::Instant::now();
+        assert!(matches!(c.admit(&hi(), true).await, Admit::Reject(_)));
+        assert!(
+            t0.elapsed() < YIELD_WAIT,
+            "闸满走进了让位分支，白等了 {:?}",
+            t0.elapsed()
+        );
+    }
+}
+
+// ===== 写入合并窗口（W6 止血第三条，2026-09-07） =====
+//
+// ❗ 窗口长度从参数进，所以这里全用毫秒级的值：不用真睡 3 秒，
+// 也不用为了 `tokio::time::pause()` 去开 tokio 的 `test-util`
+// （`features = ["full"]` 不含它）。
+
+mod coalesce_tests {
+    use crate::sync::service::coalesce_writes;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::Notify;
+
+    const QUIET: Duration = Duration::from_millis(60);
+
+    #[tokio::test]
+    async fn test_安静一个窗口之后放行() {
+        let (stop, wrote) = (Notify::new(), Notify::new());
+        let t0 = tokio::time::Instant::now();
+        assert!(coalesce_writes(&stop, &wrote, QUIET, Duration::from_secs(30)).await);
+        assert!(t0.elapsed() >= QUIET, "没等满一个安静窗口就放行了");
+    }
+
+    #[tokio::test]
+    async fn test_连续写入会把窗口顶回去() {
+        // 这就是「连续编辑不该每次都叫醒全部对端」那一条。
+        let stop = Arc::new(Notify::new());
+        let wrote = Arc::new(Notify::new());
+        let w2 = wrote.clone();
+        // 每 30ms 写一次（比 60ms 的窗口密），连写 4 次
+        tokio::spawn(async move {
+            for _ in 0..4 {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                w2.notify_waiters();
+            }
+        });
+        let t0 = tokio::time::Instant::now();
+        assert!(coalesce_writes(&stop, &wrote, QUIET, Duration::from_secs(30)).await);
+        // 理论值是 4×30ms（都在重新计时）+ 60ms（最后一个完整窗口）= 180ms。
+        //
+        // ❗ 断言卡在 150 而不是 180：`notify_waiters()` 只叫醒**当时已注册**的等待者，
+        //   而循环每转一圈要重新建一个 `notified()`。机器卡顿时理论上可能漏接一次
+        //   （后果只是早放行一个窗口，无害）。150 既能证明「确实被顶回去多次」
+        //   （不顶的话只有 ~60ms），又不会因为卡在理论值上而间歇红。
+        assert!(
+            t0.elapsed() >= Duration::from_millis(150),
+            "窗口没被新写入顶回去，只用了 {:?}",
+            t0.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_一直在写也不会无限期不同步() {
+        // 🔴 没有封顶的话，写一小时的人就一小时不同步——
+        //    那是把「合并」做成了「饿死」。
+        let stop = Arc::new(Notify::new());
+        let wrote = Arc::new(Notify::new());
+        let w2 = wrote.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                w2.notify_waiters();
+            }
+        });
+        let max = Duration::from_millis(300);
+        let t0 = tokio::time::Instant::now();
+        assert!(coalesce_writes(&stop, &wrote, QUIET, max).await);
+        assert!(
+            t0.elapsed() < max * 3,
+            "封顶没生效，等了 {:?}",
+            t0.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_关开关时立刻退出而不是等满窗口() {
+        // 开关一关就该停，不能让用户看着「明明关了还在同步」。
+        let stop = Arc::new(Notify::new());
+        let wrote = Notify::new();
+        let s2 = stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            s2.notify_waiters();
+        });
+        assert!(
+            !coalesce_writes(&stop, &wrote, Duration::from_secs(300), Duration::from_secs(3600))
+                .await,
+            "开关关了必须返回 false"
         );
     }
 }

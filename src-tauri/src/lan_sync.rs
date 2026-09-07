@@ -125,7 +125,7 @@ const IFACE_CACHE_SECS: i64 = 30;
 /// 发现延迟本就在秒级。
 ///
 /// ❗ 监听侧的 join 只在启动时跑一次，不受缓存影响。
-fn multicast_ifaces() -> Vec<std::net::Ipv4Addr> {
+pub(crate) fn multicast_ifaces() -> Vec<std::net::Ipv4Addr> {
     let now = chrono::Utc::now().timestamp();
     if let Ok(g) = IFACE_CACHE.lock() {
         if let Some((at, list)) = g.as_ref() {
@@ -142,7 +142,16 @@ fn multicast_ifaces() -> Vec<std::net::Ipv4Addr> {
 }
 
 /// 经指定网卡发一份组播包。
-fn send_via_iface(ifaddr: &std::net::Ipv4Addr, payload: &[u8]) -> std::io::Result<()> {
+///
+/// ❗ 组播地址与端口从参数进：`sync::presence` 用的是另一组常量，
+/// 而那边原本把「一块网卡」那个 bug 又犯了一遍（见 [`multicast_ifaces`]）。
+/// 与其再复制一份代码，不如把这里参数化。
+pub(crate) fn send_via_iface(
+    ifaddr: &std::net::Ipv4Addr,
+    group: std::net::Ipv4Addr,
+    port: u16,
+    payload: &[u8],
+) -> std::io::Result<()> {
     use socket2::{Domain, Protocol, SockAddr, Socket, Type};
     use std::net::{SocketAddr, SocketAddrV4};
 
@@ -158,10 +167,7 @@ fn send_via_iface(ifaddr: &std::net::Ipv4Addr, payload: &[u8]) -> std::io::Resul
     ))))?;
     sock.send_to(
         payload,
-        &SockAddr::from(SocketAddr::from(SocketAddrV4::new(
-            MULTICAST_GROUP,
-            MULTICAST_PORT,
-        ))),
+        &SockAddr::from(SocketAddr::from(SocketAddrV4::new(group, port))),
     )?;
     Ok(())
 }
@@ -176,7 +182,7 @@ fn send_via_iface(ifaddr: &std::net::Ipv4Addr, payload: &[u8]) -> std::io::Resul
 fn send_multicast(payload: &[u8], what: &str) {
     let mut sent = 0usize;
     for ifaddr in multicast_ifaces() {
-        match send_via_iface(&ifaddr, payload) {
+        match send_via_iface(&ifaddr, MULTICAST_GROUP, MULTICAST_PORT, payload) {
             Ok(()) => sent += 1,
             Err(e) => log::debug!("[LanSync] 经网卡 {} 发送{}失败: {}", ifaddr, what, e),
         }

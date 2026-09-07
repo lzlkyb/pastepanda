@@ -63,6 +63,12 @@ use std::path::PathBuf;
 /// 会话协议版本。对不上就**连不下去**，不猜。
 pub const PROTO_V: u32 = 1;
 
+/// 发完之后等对端确认收到的上限。见 [`exchange`] 里那段注释。
+///
+/// ❗ 与 [`super::transport::STALL_TIMEOUT`] 分开：那个是「正在收发中停滞」的上限，
+/// 这个是「发完了等排空」的上限，两者量级不同。
+pub const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// 开场帧。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Hello {
@@ -411,7 +417,25 @@ async fn exchange(
         w.send.finish().map_err(|e| format!("收尾失败：{}", e))?;
         // 🔴 这一侧最后发，必须等对端确认收到才放手：`finish()` 只标记流结束，
         // 不等数据真正送到（探针 README ③）。直接返回会把还在飞的数据掐掉。
-        w.conn.closed().await;
+        // ❗ 但不能无限期等：对端不关的话这一句会挂死，而加了全局并发闸之后
+        //   它占着的是两个会话位中的一个（`coordinate::MAX_CONCURRENT_SESSIONS`）。
+        //
+        // 🔴 超时了就**报错**，不能当成成功继续：我们不知道对端收没收到。
+        //   当成成功的话本机会推游标，而对端没收到就不会推——
+        //   本机那批数据**再也不会被重发**，静默丢数据。
+        //   报错则游标不动、下一轮重发，而重发是幂等的（见模块说明）。
+        //
+        // 为何不用 `transport::STALL_TIMEOUT`：`write_dir` 能返回就说明数据已被流控接收，
+        // 剩下要排空的大约只有一个窗口，不是整次传输；给 60 秒是宽裕的。
+        if tokio::time::timeout(CLOSE_WAIT, w.conn.closed())
+            .await
+            .is_err()
+        {
+            return Err(format!(
+                "发完之后等了 {} 秒，对端没确认收到。本轮作废，下一轮重来",
+                CLOSE_WAIT.as_secs()
+            ));
+        }
         Ok(Exchanged {
             sent,
             recv,

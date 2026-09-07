@@ -342,32 +342,72 @@ pub fn bind_listener_on(port: u16) -> Result<UdpSocket, String> {
 }
 
 fn finish_listener(sock: UdpSocket) -> Result<UdpSocket, String> {
-    if let Err(e) = sock.join_multicast_v4(&GROUP, &Ipv4Addr::UNSPECIFIED) {
-        // 不是致命错误：网卡不支持组播、或者在容器里跑时，仍然想让线程起来
-        log::warn!("[Presence] 加入组播组失败（同网段将发现不到对端）：{}", e);
+    // 🔴 逐块网卡加入组播组。这里原本是 `Ipv4Addr::UNSPECIFIED`，
+    //    而它在组播语境下**不是「所有网卡」**，是「让系统按路由表挑一块」——
+    //    装了 VMware / VirtualBox / Hyper-V / WSL / Docker / VPN 的机器上
+    //    经常挑中虚拟网卡，于是同网段的两台机器互相听不见。
+    //
+    // ❗ 这不是新发现：`lan_sync` 2026-09-06 就因为同一件事修过一次
+    //   （见 `lan_sync::multicast_ifaces` 的注释），只是没搬到这个新模块。
+    //   本模块里它的症状更隐蔽：不表现为「同步不了」，而是 `service::target()`
+    //   拿不到局域网地址 → 退到只给 node_id 的兜底分支 → **走 n0 公共中继**，
+    //   同一局域网的两台机器静静地绕道跨国同步，而界面徽章还写着「外网」。
+    let mut joined = 0usize;
+    for ifaddr in crate::lan_sync::multicast_ifaces() {
+        match sock.join_multicast_v4(&GROUP, &ifaddr) {
+            Ok(()) => joined += 1,
+            // 虚拟网卡加不进去是常态，逐块 warn 会刷屏
+            Err(e) => log::debug!("[Presence] 网卡 {} 加入组播组失败：{}", ifaddr, e),
+        }
+    }
+    if joined == 0 {
+        // ❗ 不像 `lan_sync` 那样直接放弃线程：本模块的宣告是**单向也有用**的
+        //   （只要对端听得见我们，它就会拨过来，而同步会话本来就是双向的）。
+        //   但绝不能静默（规则 #15.3）：这意味着本机永远听不到任何公告。
+        log::error!("[Presence] 没能在任何一块网卡上加入组播组，本机听不到对端的地址公告（同步会退到中继）");
+    } else {
+        log::info!("[Presence] 已在 {} 块网卡上加入组播组", joined);
     }
     sock.set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .map_err(|e| format!("设置读取超时失败：{}", e))?;
     Ok(sock)
 }
 
-/// 发送用套接字。与监听分开：绑同一个端口再往它发包在各平台行为不一致，
+/// 往**每一块**网卡各发一份地址公告。
+///
+/// 发送与监听用不同的套接字：绑同一个端口再往它发包在各平台行为不一致，
 /// 而发送方根本不需要固定端口（接收方只看源 IP）。
-pub fn bind_sender() -> Result<UdpSocket, String> {
-    UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(|e| format!("创建发送套接字失败：{}", e))
+///
+/// 🔴 这里原本是一个 `bind(0.0.0.0:0)` 的 socket 直接 `send_to`，
+/// 没有 `set_multicast_if_v4`——包从系统按路由表挑的那一块出去，
+/// 在有虚拟网卡的机器上经常根本没上真实局域网。理由同 [`finish_listener`]。
+///
+/// ❗ 复用 `lan_sync` 那套（带 30 秒网卡缓存），不重写一份：
+/// `netdev::get_interfaces()` 不便宜，而它已经在招呼包路径上被缓存过了。
+fn announce_all_ifaces(packet: &[u8]) -> Result<(), String> {
+    let mut sent = 0usize;
+    let mut last = String::new();
+    for ifaddr in crate::lan_sync::multicast_ifaces() {
+        match crate::lan_sync::send_via_iface(&ifaddr, GROUP, PORT, packet) {
+            Ok(()) => sent += 1,
+            Err(e) => {
+                // 虚拟网卡发不出去是常态，逐块 warn 会刷屏
+                log::debug!("[Presence] 经网卡 {} 发送地址公告失败：{}", ifaddr, e);
+                last = e.to_string();
+            }
+        }
+    }
+    if sent == 0 {
+        // 一块都没发出去 = 对端永远不知道本机地址，必须报（规则 #15.3）
+        return Err(format!("地址公告没能从任何一块网卡发出去：{}", last));
+    }
+    Ok(())
 }
 
 /// 喊一次。
-pub fn announce_once(
-    sock: &UdpSocket,
-    me: &NodeIdentity,
-    endpoint_port: u16,
-    now_ms: i64,
-) -> Result<(), String> {
+pub fn announce_once(me: &NodeIdentity, endpoint_port: u16, now_ms: i64) -> Result<(), String> {
     let packet = build(me, endpoint_port, now_ms)?;
-    sock.send_to(&packet, (GROUP, PORT))
-        .map_err(|e| format!("发送地址公告失败：{}", e))?;
-    Ok(())
+    announce_all_ifaces(&packet)
 }
 
 // ===== 后台线程 =====
@@ -416,14 +456,6 @@ pub fn spawn(
                 return;
             }
         };
-        let sender = match bind_sender() {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!("[Presence] {}", e);
-                running.store(false, Ordering::SeqCst);
-                return;
-            }
-        };
         let my_id = me.node_id();
         log::info!("[Presence] 地址宣告已启动，端口 {}", PORT);
 
@@ -432,7 +464,7 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             let now = chrono::Utc::now().timestamp_millis();
             if now - last_announce >= ANNOUNCE_INTERVAL_SECS as i64 * 1000 {
-                if let Err(e) = announce_once(&sender, &me, endpoint_port, now) {
+                if let Err(e) = announce_once(&me, endpoint_port, now) {
                     log::warn!("[Presence] {}", e);
                 }
                 last_announce = now;

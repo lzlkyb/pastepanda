@@ -32,6 +32,49 @@ use iroh::{
     Endpoint, EndpointAddr,
 };
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// 一次读或写**停滞**多久就放弃。
+///
+/// # 🔴 为什么是「停滞超时」而不是「会话总超时」
+///
+/// [`super::session::run`] **只在整轮成功之后**才推游标。
+/// 也就是说中途中断 = 没有任何部分进度，下一轮从头再来。
+/// 所以一旦总超时短于实际需要的时间，那次同步就**永远做不完**——
+/// 不是变慢，是永久失败，而且每次重试烧同样的流量。
+/// 而首次同步一个带图的知识库走中继时，几十分钟是可能的（附件单张上限 10MB）：
+/// **拍不出一个安全的总时长。**
+///
+/// 按进度算就没有这个矛盾：大文件分块收发、每块各自计时，
+/// [`IO_CHUNK`] / 30 秒 ≈ 最低 17 kbps。任何真实链路都高出几个数量级，
+/// 而「保活着每分钟挤一个字节」的慢速攻击会在 30 秒内被砍掉。
+/// **对「慢但在动」零误伤。**
+///
+/// ❗ 它顺带把「完全死掉的连接」也兜住了，所以不需要去依赖 QUIC 自己的 idle timeout
+/// （iroh presets 里那个值未核实，也不必依赖）。
+pub const STALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 大文件按块收发，每块各自计时。**读写两侧共用这一个块大小。**
+///
+/// ❗ 不分块的话，一个 256MiB 的文件就是一次 `read_exact` / `write_all`，
+/// 包上超时又变回了「总超时」——慢链路上必超。
+const IO_CHUNK: usize = 64 * 1024;
+
+/// 给一次读/写加停滞超时。超时就中断整个会话（游标不推，下一轮重来）。
+async fn stalled<T>(
+    what: &str,
+    stall: Duration,
+    f: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    match tokio::time::timeout(stall, f).await {
+        Ok(r) => r,
+        Err(_) => Err(format!(
+            "{}：{} 秒内一个字节都没动，已中断本次同步",
+            what,
+            stall.as_secs()
+        )),
+    }
+}
 
 /// ALPN。带版本号：协议不兼容时**连不上**比连上之后乱解析好得多。
 pub const ALPN: &[u8] = b"pastepanda-sync/1";
@@ -140,17 +183,24 @@ pub async fn write_frame(s: &mut iroh::endpoint::SendStream, bytes: &[u8]) -> Re
 /// 收一个控制帧。
 pub async fn read_frame(r: &mut iroh::endpoint::RecvStream) -> Result<Vec<u8>, String> {
     let mut n = [0u8; 4];
-    r.read_exact(&mut n)
-        .await
-        .map_err(|e| format!("读帧长度失败：{}", e))?;
+    stalled("读帧长度", STALL_TIMEOUT, async {
+        r.read_exact(&mut n)
+            .await
+            .map_err(|e| format!("读帧长度失败：{}", e))
+    })
+    .await?;
     let n = u32::from_be_bytes(n) as usize;
     if n == 0 || n > MAX_FRAME_LEN {
         return Err(format!("对端报的帧长度不合法（{} 字节）", n));
     }
     let mut buf = vec![0u8; n];
-    r.read_exact(&mut buf)
-        .await
-        .map_err(|e| format!("读帧内容失败：{}", e))?;
+    // 控制帧封顶 `MAX_FRAME_LEN`（= [`IO_CHUNK`]），不用再分块
+    stalled("读帧内容", STALL_TIMEOUT, async {
+        r.read_exact(&mut buf)
+            .await
+            .map_err(|e| format!("读帧内容失败：{}", e))
+    })
+    .await?;
     Ok(buf)
 }
 
@@ -177,12 +227,27 @@ pub async fn write_dir(s: &mut iroh::endpoint::SendStream, dir: &Path) -> Result
 
 /// 从流里读一个目录出来，返回收到的字节数。`dir` 必须已存在。
 pub async fn read_dir(r: &mut iroh::endpoint::RecvStream, dir: &Path) -> Result<u64, String> {
+    read_dir_with(r, dir, STALL_TIMEOUT).await
+}
+
+/// 同上，但停滞上限从参数进。
+///
+/// ❗ **给测试用**：同 [`super::service::coalesce_writes`] 把窗口参数化的理由——
+/// 验证停滞分支不该真等 30 秒。
+pub async fn read_dir_with(
+    r: &mut iroh::endpoint::RecvStream,
+    dir: &Path,
+    stall: Duration,
+) -> Result<u64, String> {
     let mut total = 0u64;
     loop {
         let mut n = [0u8; 4];
-        r.read_exact(&mut n)
-            .await
-            .map_err(|e| format!("读名字长度失败：{}", e))?;
+        stalled("读名字长度", stall, async {
+            r.read_exact(&mut n)
+                .await
+                .map_err(|e| format!("读名字长度失败：{}", e))
+        })
+        .await?;
         let n = u32::from_be_bytes(n) as usize;
         if n == 0 {
             break;
@@ -191,16 +256,22 @@ pub async fn read_dir(r: &mut iroh::endpoint::RecvStream, dir: &Path) -> Result<
             return Err(format!("文件名过长（{} 字节）", n));
         }
         let mut name = vec![0u8; n];
-        r.read_exact(&mut name)
-            .await
-            .map_err(|e| format!("读名字失败：{}", e))?;
+        stalled("读名字", stall, async {
+            r.read_exact(&mut name)
+                .await
+                .map_err(|e| format!("读名字失败：{}", e))
+        })
+        .await?;
         let rel = String::from_utf8(name).map_err(|_| "文件名不是 UTF-8".to_string())?;
         let path = safe_rel(dir, &rel)?;
 
         let mut l = [0u8; 8];
-        r.read_exact(&mut l)
-            .await
-            .map_err(|e| format!("读内容长度失败：{}", e))?;
+        stalled("读内容长度", stall, async {
+            r.read_exact(&mut l)
+                .await
+                .map_err(|e| format!("读内容长度失败：{}", e))
+        })
+        .await?;
         let l = u64::from_be_bytes(l);
         // 🔴 单文件也要夹，而且要在**分配之前**。
         // 只看累计值的话，对端声明一个恰好 8 GiB 的文件不会触发
@@ -217,9 +288,16 @@ pub async fn read_dir(r: &mut iroh::endpoint::RecvStream, dir: &Path) -> Result<
             return Err(format!("这次传输超过上限（{} 字节）", MAX_TRANSFER_BYTES));
         }
         let mut buf = vec![0u8; l as usize];
-        r.read_exact(&mut buf)
-            .await
-            .map_err(|e| format!("读内容失败：{}", e))?;
+        // 🔴 分块读，每块各自计时。一次 `read_exact` 整个文件再包超时的话，
+        //    那就变回了「总超时」（见 [`STALL_TIMEOUT`]）——256MiB 的文件在慢链路上必超。
+        for part in buf.chunks_mut(IO_CHUNK) {
+            stalled("读文件内容", stall, async {
+                r.read_exact(part)
+                    .await
+                    .map_err(|e| format!("读内容失败：{}", e))
+            })
+            .await?;
+        }
 
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p).map_err(|e| format!("建目录失败：{}", e))?;
@@ -254,10 +332,17 @@ pub async fn recv_dir(ep: &Endpoint, dir: &Path) -> Result<u64, String> {
 }
 
 /// 把相对路径解成 `dir` 下的绝对路径，**拒绝任何逃出 `dir` 的写法**。
-///
-/// 🔴 这是本模块唯一的安全边界：名字来自网络。
 /// 拒绝绝对路径、盘符、`..`、以及空段。
-fn safe_rel(dir: &Path, rel: &str) -> Result<PathBuf, String> {
+///
+/// 🔴 **凡是拿对端给的字串拼本机路径的地方，都必须先过这里。**
+///
+/// 这句话原本写的是「本模块唯一的安全边界」，而那个前提**曾经不成立**：
+/// [`super::engine::apply_delta`] 从 `.pp-sync-manifest` 里读第三列直接
+/// `dir.join(rel)`，绕过了这里。文件**名**过了校验，文件**内容**没人管，
+/// 而那条路径下面就是一句 `std::fs::remove_file`——
+/// 已配对的对端因此能删本机任意文件（2026-09-07 审出并修掉）。
+/// 所以它现在是 `pub(super)`：**边界只有一道，但入口不只一个。**
+pub(super) fn safe_rel(dir: &Path, rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err("空文件名".to_string());
     }
@@ -275,12 +360,6 @@ fn safe_rel(dir: &Path, rel: &str) -> Result<PathBuf, String> {
         out.push(seg);
     }
     Ok(out)
-}
-
-/// 给测试用。`safe_rel` 是私有的，而路径穿越是本模块唯一的安全边界，必须能测。
-#[cfg(test)]
-pub fn safe_rel_for_test(dir: &Path, rel: &str) -> Result<PathBuf, String> {
-    safe_rel(dir, rel)
 }
 
 /// 收集目录下所有文件（含子目录），返回 `(相对路径, 内容)`。
@@ -313,9 +392,18 @@ fn walk(root: &Path, cur: &Path, out: &mut Vec<(String, Vec<u8>)>) -> Result<(),
     Ok(())
 }
 
-/// 写一段字节。把错误统一成字符串，省得每处都写一遍 `map_err`。
+/// 写一段字节。**分块 + 每块停滞超时**。错误统一成字符串，省得每处写一遍 `map_err`。
+///
+/// 🔴 写侧同样会挂死：对端不读的话，流控窗口填满后 `write_all` 会永远阻塞。
+/// 只包读不包写会漏掉一半的挂死路径。
 async fn wr(s: &mut iroh::endpoint::SendStream, b: &[u8]) -> Result<(), String> {
-    s.write_all(b)
-        .await
-        .map_err(|e| format!("写流失败：{}", e))
+    for part in b.chunks(IO_CHUNK) {
+        stalled("写流", STALL_TIMEOUT, async {
+            s.write_all(part)
+                .await
+                .map_err(|e| format!("写流失败：{}", e))
+        })
+        .await?;
+    }
+    Ok(())
 }

@@ -28,8 +28,9 @@
 //! 而那本来只是一次正常碰撞。
 
 use super::coordinate::{
-    backoff_secs, jittered_secs, Admit, Coordinator, BUSY_RETRY_SECS, DORMANT_AFTER_FAILS,
-    DORMANT_POLL_SECS, HEARTBEAT_SECS, IDLE_CHECK_SECS, JITTER_SECS, MIN_SESSION_GAP_SECS,
+    backoff_secs, jittered_secs, Admit, Coordinator, HoldErr, BUSY_RETRY_SECS,
+    DORMANT_AFTER_FAILS, DORMANT_POLL_SECS, HEARTBEAT_SECS, IDLE_CHECK_SECS, JITTER_SECS,
+    MIN_SESSION_GAP_SECS, WRITE_COALESCE_MAX_SECS, WRITE_COALESCE_SECS,
 };
 use super::presence::PresenceTable;
 use super::session;
@@ -104,10 +105,16 @@ pub struct SyncCtx {
     ///
     /// 🔴 **只对长睡生效**。源 ① 是每份公告都发（间隔 15 秒，不是「刚回来」事件），
     /// 所以 [`peer_loop`] 里只有 `dormant` 那一支才听它；对正常周期也听的话，
-    /// `PERIOD_SECS` / `JITTER_SECS` 会被整个废掉。详细理由写在 `peer_loop` 里。
+    /// 退避阶梯与心跳节奏会被整个废掉。详细理由写在 `peer_loop` 里。
     ///
-    /// ❗ 不按对端分开：`notify_waiters()` 把所有在长睡的都叫起来，多拨几次无害，
-    /// 而每对端一个 `Notify` 要多一张表与一套生命周期管理，不值。
+    /// ❗ 不按对端分开：`notify_waiters()` 把所有在长睡的都叫起来。
+    /// 每对端一个 `Notify` 要多一张表与一套生命周期管理，不值。
+    ///
+    /// 🔴 这儿原来写的是「多拨几次无害」——**那句话在 >4 台时已经不成立**（W6）。
+    /// 拓扑是配对图：8 台互配 = 本机 7 条循环，一次广播就是 7 个会话同时开。
+    /// 广播本身没改（改成按对端仍然不值），改的是另外两处：
+    /// [`super::coordinate::MAX_CONCURRENT_SESSIONS`] 卡住同时跑的总数，
+    /// [`coalesce_writes`] 把连续编辑合成一次。
     pub wake: Arc<tokio::sync::Notify>,
     /// 「本机写了笔记」的信号（方案 B）。来自 `DataStore::write_signal()`，
     /// 而那个信号挂在 HLC 发号处——全项目刷 `updated_ms` 的唯一出口，
@@ -158,13 +165,24 @@ fn target(ctx: &SyncCtx, peer: &str) -> Result<EndpointAddr, String> {
     Ok(addr)
 }
 
-/// 拨完之后该怎么等。把三种策略写成类型，而不是 `(u64, bool)`：
+/// 拨完之后该怎么等。把四种策略写成类型，而不是 `(u64, bool)`：
 /// 「这一觉能不能被叫醒」改错了不会报错，只会开始疯狂拨号。
 enum Wait {
     /// 同步成功后：脏了就拨，否则睡到心跳。见 [`idle_wait`]。
     Idle,
-    /// 固定时长，**不听叫醒**（退避阶梯 / 对端在忙）。
+    /// 退避阶梯：上一拨**失败了**。固定时长、不听叫醒。
     Fixed(u64),
+    /// 没轮到本机（对端在忙 / 本机并发闸满）。短延迟后再来。
+    ///
+    /// 🔴 必须与 [`Wait::Fixed`] 分开，虽然两者都只是「睡 n 秒」：
+    /// `Fixed` 会把 `want_digest` 清掉（刚失败过，不是核对账的时候），
+    /// 而「没轮到」**根本没拨出去过**——清掉就把 `peer_loop` 起手那个
+    /// 「第一拨带摘要」（W2）给弄丢了。
+    ///
+    /// 加了全局并发闸之后这不再是罕见路径：开机时 N 条循环一起拨，
+    /// 只有 [`super::coordinate::MAX_CONCURRENT_SESSIONS`] 条能进去，
+    /// 其余每一条的**头一拨**都会落在这儿。
+    Busy(u64),
     /// 长睡，听叫醒（对端回来 / 手动同步）。
     Dormant(u64),
 }
@@ -177,7 +195,7 @@ impl Wait {
     fn secs_hint(&self) -> u64 {
         match self {
             Wait::Idle => HEARTBEAT_SECS,
-            Wait::Fixed(s) | Wait::Dormant(s) => *s,
+            Wait::Fixed(s) | Wait::Busy(s) | Wait::Dormant(s) => *s,
         }
     }
 }
@@ -205,8 +223,21 @@ async fn idle_wait(ctx: &SyncCtx, peer: &str) -> Woke {
     let deadline = now_ms() + jittered_secs(HEARTBEAT_SECS, JITTER_SECS, now_ms() as u64) as i64 * 1000;
     loop {
         match dirty_for(ctx, peer) {
-            // 有东西要发 → 立即拨
-            Ok(true) => return Woke::Dirty,
+            // 有东西要发 → 先过一个合并窗口再拨（W6 止血第三条）
+            Ok(true) => {
+                return if coalesce_writes(
+                    &ctx.stop,
+                    &ctx.wrote,
+                    Duration::from_secs(WRITE_COALESCE_SECS),
+                    Duration::from_secs(WRITE_COALESCE_MAX_SECS),
+                )
+                .await
+                {
+                    Woke::Dirty
+                } else {
+                    Woke::Stop
+                }
+            }
             Ok(false) => {}
             // 查不了库就当脏（宁可多拨一次，不能因为一次 SQL 错就把同步停了）。
             Err(e) => {
@@ -259,10 +290,10 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     let mut want_digest = true;
     while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
         let outcome = dial_once(&ctx, &peer, want_digest).await;
-        // 三种睡法写成显式的（而不是一个 `bool`），因为「谁能被叫醒」是这段
+        // 四种睡法写成显式的（而不是一个 `bool`），因为「谁能被叫醒」是这段
         // 最容易改错的地方，而改错了不报错、只是开始疯狂拨号（已经发生过一次）。
         //
-        // 🔴 `Wait::Fixed`（退避阶梯 / 对端在忙）**绝不听叫醒**。
+        // 🔴 `Wait::Fixed` / `Wait::Busy`（退避阶梯 / 没轮到本机）**绝不听叫醒**。
         //    叫醒源里有「本机写了笔记」与「对端回来了」，它们与「上一拨刚失败」
         //    没有关系——听了就等于把退避阶梯抹掉：一台拒绝本机的设备（游标 0，
         //    永远是“脏”的）会被每几秒拨一次。
@@ -272,9 +303,9 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 Wait::Idle
             }
             Outcome::Busy(why) => {
-                // 不是故障，不动退避计数
+                // 不是故障，不动退避计数，也不清 `want_digest`（见 [`Wait::Busy`]）
                 log::debug!("[Sync] {} 这次没轮到我们：{}", short, why);
-                Wait::Fixed(BUSY_RETRY_SECS)
+                Wait::Busy(BUSY_RETRY_SECS)
             }
             // 对端明确说不认识本机。重试再多次也不会变——要变得对面的人去确认，
             // 所以直接进长间隔，不走退避阶梯。
@@ -346,6 +377,11 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 want_digest = false;
                 sleep_or_stop(&ctx.stop, s).await
             }
+            // 🔴 没轮到本机：**不动 `want_digest`**。这一拨根本没发出去，
+            //    清掉的话，开机时被并发闸挡下的那几台就永远拿不到
+            //    「第一拨带摘要」（W2）——而那正是上次崩在会话中间后
+            //    发现分叉的唯一机会，错过了就要等到下一次心跳（最多 690 秒）。
+            Wait::Busy(s) => sleep_or_stop(&ctx.stop, s).await,
             // 从长睡里醒来：与对端已经很久没说过话，正是分叉最可能积起来的时候。
             Wait::Dormant(s) => {
                 want_digest = true;
@@ -445,8 +481,22 @@ enum Outcome {
 async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
     // 本机也要先拿槽：不然本机的两条路径（周期拨号与刚收到的入连接）
     // 会同时对同一个库跑 apply。
-    let Some(_hold) = ctx.coord.try_hold(peer) else {
-        return Outcome::Busy("本机已有一个到它的会话在跑".into());
+    let _hold = match ctx.coord.try_hold(peer) {
+        Ok(h) => h,
+        Err(HoldErr::PeerBusy) => {
+            return Outcome::Busy("本机已有一个到它的会话在跑".into())
+        }
+        // 全局并发闸满（W6 止血）。这**不是故障**：走 `Outcome::Busy` 就不动
+        // 退避计数、也不覆盖界面上上一次的结果，`BUSY_RETRY_SECS` 秒后再来。
+        // 当成失败的后果是一台正常设备被退到 300 秒一拨，而它只是排了一下队。
+        Err(HoldErr::GateFull) => {
+            // ❗ 报上限而不是 `free_slots()`：后者是拿完错误才读的，
+            //   那一瞬可能已经有人释放了，于是印出「已达上限（还剩 1 个）」这种自相矛盾的话。
+            return Outcome::Busy(format!(
+                "本机同时进行的同步已达上限（{} 个）",
+                ctx.coord.limit()
+            ))
+        }
     };
     let to = match target(ctx, peer) {
         Ok(t) => t,
@@ -633,6 +683,52 @@ pub async fn sleep_or_stop(stop: &tokio::sync::Notify, secs: u64) -> bool {
     }
 }
 
+/// 脏了之后的**合并窗口**：等到「`quiet` 这么长时间内没有新写入」再放行。
+///
+/// # 为什么需要它（W6 止血第三条，2026-09-07）
+///
+/// 写入信号是**广播**的（一个 `Notify` 叫醒全部对端循环），而
+/// [`MIN_SESSION_GAP_SECS`] 只挡得住**单个对端**连着拨。
+/// 连续编辑一分钟、身边 7 台设备，就是每台拨 5~6 次、共三十几个会话，
+/// 而其中真正需要送出去的只有最后那一版。
+///
+/// # 两条边界
+///
+/// - **封顶** `max`：一直在写也不能无限期不同步。没它就是把「合并」做成「饿死」。
+/// - 🔴 **不听 `ctx.wake`**。看着它很像该听（「立即同步」应该不等窗口），
+///   但 `wake` 同时是组播公告的出口——局域网里每台已配对设备每 15 秒
+///   就会把它打一次。听了的话窗口在局域网上几乎立刻被短路，整个合并形同虚设。
+///   代价：用户正在连续打字时点「立即同步」，最多等 `max`。
+///   那一刻他本来就还在改，而换来的是平时不会白拨三十几次。
+///
+/// 参数收 `&Notify` 而不是 `&SyncCtx`，同 [`sleep_or_stop`]：为了能单测。
+///
+/// ❗ 两个窗口收 [`Duration`] 而不是秒数，也不直接读常量：
+/// 测试可以用毫秒级的值把整条行为跑完，不用真睡 3 秒，
+/// 也就不用为了 `tokio::time::pause()` 去开 tokio 的 `test-util`
+/// （`features = ["full"]` **不含**它）。
+///
+/// 返回 `false` = 开关关了，该退出。
+pub async fn coalesce_writes(
+    stop: &tokio::sync::Notify,
+    wrote: &tokio::sync::Notify,
+    quiet: Duration,
+    max: Duration,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + max;
+    loop {
+        let calm = tokio::select! {
+            _ = tokio::time::sleep(quiet) => true,
+            // 还在写 → 重新计窗口
+            _ = wrote.notified() => false,
+            _ = stop.notified() => return false,
+        };
+        if calm || tokio::time::Instant::now() >= deadline {
+            return true;
+        }
+    }
+}
+
 /// 同 [`sleep_or_stop`]，但**多一个叫醒源**：`ctx.wake`。
 ///
 /// 🔴 休眠（[`DORMANT_POLL_SECS`] = 半小时）必须能被提前打断，否则就从
@@ -803,8 +899,8 @@ impl SyncService {
             port,
             Arc::new(move |id: &str| matches!(paired_store.device_get(id), Ok(Some(_)))),
             // 听到已配对设备的公告 = 它回来了 → 把休眠中的循环叫起来。
-            // 不看 `id`：`notify_waiters()` 本来就是广播式的，多拨几次无害
-            // （理由见 `SyncCtx::wake` 的注释）。
+            // 不看 `id`：`notify_waiters()` 本来就是广播式的（理由见
+            // `SyncCtx::wake` 的注释；多拨出来的量现在由全局并发闸卡着）。
             Arc::new(move |_id: &str| wake.notify_waiters()),
             ctx.presence_running.clone(),
             presence_port,
