@@ -184,6 +184,58 @@ fn test_附件落盘后字节一致() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 🔴 只落盘「`<32位hex>.<扩展名>`」形状的文件。
+///
+/// 这不是一条安全校验（名字已经过了 `safe_rel`，穿越不了），
+/// 而是「不可能有用的东西不要落盘」：`to_local()` 只会产出
+/// `file:///{images}/{32hex}.{ext}` 这一种引用，其它形状的文件
+/// **永远不会被任何笔记引用到**，只会占着磁盘。
+#[test]
+fn test_只落盘形状对的附件名() {
+    let dir = std::env::temp_dir().join(format!("pp_attach_shape_{}", std::process::id()));
+    let staged = dir.join(ASSETS_DIR);
+    let images = dir.join("images");
+    std::fs::create_dir_all(&staged).unwrap();
+
+    let good = format!("{}.png", HASH);
+    std::fs::write(staged.join(&good), "真附件".as_bytes()).unwrap();
+
+    // ❗ 大小写变体必须用**不同的 hash**：Windows 文件名大小写不敏感，
+    //   拿同一个 hash 的话 `xxx.PNG` 与 `xxx.png` 会落成**同一个文件**，
+    //   把上面那个真附件的内容覆成「垃圾」，测试就假绿了。
+    const H_EXT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const H_HASH: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    // 全部应该被挡下
+    let bad = [
+        "evil.exe".to_string(),
+        "README.md".to_string(),
+        format!("{}.PNG", H_EXT),           // 大写扩展名：扫描侧已统一转小写，不可能出现
+        format!("{}.png", H_HASH.to_uppercase()), // 大写 hash，同上
+        format!("{}.png", &HASH[..30]),     // hash 短了
+        format!("{}x.png", HASH),           // hash 长了
+        format!("{}.png.exe", HASH),        // 双扩展名
+        format!("{}.toolongext", HASH),     // 扩展名超长
+        HASH.to_string(),                   // 没扩展名
+    ];
+    for b in &bad {
+        std::fs::write(staged.join(b), "垃圾".as_bytes()).unwrap();
+    }
+
+    let (landed, deduped) = adopt_assets(&staged, &images).unwrap();
+    assert_eq!((landed, deduped), (1, 0), "只该落盘那一个真附件");
+    assert!(images.join(&good).is_file());
+    for b in &bad {
+        assert!(
+            !images.join(b).exists(),
+            "形状不对的文件被落盘了：{}",
+            b
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ===== 引擎层端到端（不联网）=====
 
 use crate::data_store::DataStore;

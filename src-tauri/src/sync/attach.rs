@@ -171,6 +171,35 @@ pub fn stage_asset(
     Ok(Some(meta.len()))
 }
 
+/// 附件名的合法形状：`{32位小写 hex}.{1~5 位小写字母数字}`。
+///
+/// # 🔴 这不是「安全校验」，是「把不可能有用的东西挡在外面」
+///
+/// 附件名由 [`AssetRef::file_name`] 生成，而 [`to_local`] 只会产出
+/// `file:///{images}/{32hex}.{ext}` 这一种引用——
+/// **任何不符合这个形状的文件，不可能被任何笔记引用到**，
+/// 落盘它是可证明的纯浪费。
+///
+/// ❗ 顺带堵掉「对端往你的 images 目录塞垃圾」：名字本身过不了 `safe_rel`（穿越不了）、
+/// 也覆盖不了已有图（同名就跳），但在这一步之前它能塞进来的量
+/// 只受传输上限（`MAX_TRANSFER_BYTES` = 8 GiB）约束。
+///
+/// 🔴 只认小写：`scan_local_refs` / `scan_portable_refs` 都做了
+/// `to_ascii_lowercase()`，所以暂存里的名字必定是小写的。
+fn is_asset_name(name: &str) -> bool {
+    let Some((hash, ext)) = name.split_once('.') else {
+        return false;
+    };
+    hash.len() == 32
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && (1..=5).contains(&ext.len())
+        // ❗ `split_once` 只切第一个点，所以 `a.b.png` 的 ext 里还带着点——
+        //   下面这条会把它刷掉。
+        && ext.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+}
+
 /// 把暂存目录里的附件落到本机 images 目录。
 ///
 /// 🔴 **同 hash 即同内容**（文件名就是内容 md5），所以已存在就直接跳过——
@@ -193,6 +222,19 @@ pub fn adopt_assets(staged_assets: &Path, images_dir: &Path) -> Result<(usize, u
             continue;
         }
         let name = entry.file_name();
+        // 形状对不上就不落盘。不静默（规则 #15.3）：正常对端永远不会发这种东西，
+        // 出现了就是对端坏了或者恶意，两种都该能从日志里查到。
+        let Some(n) = name.to_str() else {
+            log::warn!("[Sync] 附件名不是 UTF-8，不落盘：{:?}", name);
+            continue;
+        };
+        if !is_asset_name(n) {
+            log::warn!(
+                "[Sync] 附件名不是 `<32位hex>.<扩展名>` 的形状，不可能被任何笔记引用，不落盘：{}",
+                n
+            );
+            continue;
+        }
         let dst = images_dir.join(&name);
         if dst.exists() {
             skipped += 1;
