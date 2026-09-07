@@ -50,6 +50,51 @@ fn run_once(handle: &AppHandle) {
     cleanup_history(handle, &store, &config);
     cleanup_note_trash(&store, &config);
     cleanup_mcp_audit(&store, &config);
+    cleanup_sync_tombstones(&store, &config);
+}
+
+/// 回收站保留天数。**缺省取 30 而不是 0**：键不存在意味着「从没配过」，
+/// 不是「要求关闭」。`0` = 用户明确关掉了。
+///
+/// 收口成一处（规则 #11）：回收站清理与墓碑安全期都要读它，
+/// 两处各写一个默认值的话，改一处忘一处不会报错。
+fn trash_days(config: &serde_json::Value) -> i64 {
+    config
+        .get("note_trash_days")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(30)
+}
+
+/// 墓碑安全期在回收站保留期之上再加多少天。
+///
+/// 宁大勿小：删早了的后果是已删的笔记在对端复活，而用户会以为
+/// 是同步把垃圾又搬回来了。多留只是多几 KB。
+const TOMBSTONE_GRACE_DAYS: i64 = 30;
+
+/// 用户关掉回收站自动销毁时，拿什么当作安全期的基数。
+const TRASH_DAYS_FALLBACK: i64 = 30;
+
+/// 同步墓碑的回收（W3）。安全期 = 回收站保留期 + [`TOMBSTONE_GRACE_DAYS`]。
+///
+/// ❗ `note_trash_days == 0`（用户关掉了回收站自动销毁）时**不跟着关**，
+/// 而是退回 [`TRASH_DAYS_FALLBACK`] 来算安全期。理由同本模块开头那一条：
+/// 两个开关静默联动、而用户无从得知，是这里犯过的错。
+/// 「不自动销毁笔记」是关于笔记的，与墓碑这份同步记账无关。
+///
+/// 真正拉着安全底线的是另一个条件（所有设备的游标都过了这条），
+/// 见 [`DataStore::tombstone_gc`]。年龄只是叠在上面的第二道闸。
+fn cleanup_sync_tombstones(store: &crate::data_store::DataStore, config: &serde_json::Value) {
+    let base = trash_days(config);
+    let safe_days = if base > 0 { base } else { TRASH_DAYS_FALLBACK } + TOMBSTONE_GRACE_DAYS;
+    match store.tombstone_purge_expired(safe_days) {
+        Ok(n) if n > 0 => log::info!(
+            "[AutoCleanup] 回收 {} 条同步墓碑（已过 {} 天安全期、且所有已配对设备都已收到）",
+            n,
+            safe_days
+        ),
+        Ok(_) => {}
+        Err(e) => log::warn!("[AutoCleanup] 墓碑回收失败: {}", e),
+    }
 }
 
 /// MCP 调用审计的超期清理（W3）。口径同回收站：默认 30 天，`0` = 不清理。
@@ -75,11 +120,7 @@ fn cleanup_mcp_audit(store: &crate::data_store::DataStore, config: &serde_json::
 /// 不发事件通知前端：回收站不是常驻视图，用户下次点进去自然拉到新数据；
 /// 为此推一个没人看的事件只会多一条前端监听路径。
 fn cleanup_note_trash(store: &crate::data_store::DataStore, config: &serde_json::Value) {
-    let days = config
-        .get("note_trash_days")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(30);
-    match store.note_purge_expired(days) {
+    match store.note_purge_expired(trash_days(config)) {
         Ok(n) if n > 0 => log::info!("[AutoCleanup] 回收站销毁 {} 条超期笔记", n),
         Ok(_) => {}
         Err(e) => log::warn!("[AutoCleanup] 回收站清理失败: {}", e),

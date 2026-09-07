@@ -38,4 +38,6 @@ mod attach_tests;
 #[cfg(test)]
 mod digest_tests;
 #[cfg(test)]
+mod gc_tests;
+#[cfg(test)]
 mod tests;

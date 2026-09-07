@@ -1544,6 +1544,78 @@ impl DataStore {
         Self::purge_batch_on(&conn, "deleted_at IS NOT NULL", &[], local_ms)
     }
 
+    /// 同步墓碑回收（W3）。返回删掉的行数。
+    ///
+    /// # 双条件，缺一不可
+    ///
+    /// ```text
+    /// 可删 = 所有已配对设备的游标都 > 该墓碑的 local_ms
+    ///        且 墓碑年龄 > 安全期
+    /// ```
+    ///
+    /// - 只用游标条件：一台设备长期不开机就把回收永久卡住。
+    ///   逃生口是「忘记」它——忘记后它不在 devices 表里，自然不再计入。
+    /// - 只用年龄条件：对端离线超过安全期后回来 → 它没收到删除
+    ///   → **那边的笔记复活**。
+    ///
+    /// 🔴 这一项删早了的后果是「已删的笔记复活」，而用户会以为是同步
+    /// 把垃圾又搬回来了。宁可墓碑多留一年，也不能提前删。
+    ///
+    /// # 为何入参是两个阈值而不是天数
+    ///
+    /// 这一层不碰墙上时针，所以测试能把两个条件各自钉死；
+    /// 算阈值那一步在 [`Self::tombstone_purge_expired`]。
+    pub fn tombstone_gc(&self, min_device_cursor_ms: i64, cutoff_ms: i64) -> Result<usize, String> {
+        // ❗ 两边都用**严格小于**。导出用的是 `local_ms > 游标`，
+        //   所以 `local_ms == 最小游标` 的那条其实已经发出去过了；
+        //   但宁可多留一毫秒，这一项不值得在边界上精打细算。
+        self.lock_conn()
+            .execute(
+                "DELETE FROM note_tombstones WHERE local_ms < ?1 AND local_ms < ?2",
+                [min_device_cursor_ms, cutoff_ms],
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    /// 按「安全期天数」跑一次墓碑回收。`safe_days <= 0` 时**一行都不删**。
+    ///
+    /// ❗ 没配对任何设备时游标条件**天然成立**（没人要收这条删除）。
+    /// 日后新配一台也不会因此复活：新设备从游标 0 拉的是**活笔记**，
+    /// 一条已删的笔记在它那边压根不存在。
+    ///
+    /// 🔴 年龄拿 `local_ms`（HLC 戳）与墙上时针相减，而 HLC 下界可能因为
+    /// 吸收过一台快钟设备而超前于墙上时针 —— 那时年龄算出来是负的，
+    /// 墓碑只会被**多留**，方向是安全的。反方向（用户把系统时间调到未来）
+    /// 会让年龄条件提前满足，但游标条件还在拿着。
+    pub fn tombstone_purge_expired(&self, safe_days: i64) -> Result<usize, String> {
+        self.tombstone_purge_expired_at(safe_days, wall_ms())
+    }
+
+    /// 同上，但「现在」可以传进来。
+    ///
+    /// ❗ 存在的理由是**可测**：墓碑刚生成时 `local_ms ≈ 现在`，
+    /// 拿真实墙上时针的话永远跑不到「年龄够了」那一支，
+    /// 于是「取最小游标」那条真正拉着安全底线的逻辑一行也盖不到。
+    pub(crate) fn tombstone_purge_expired_at(
+        &self,
+        safe_days: i64,
+        now_ms: i64,
+    ) -> Result<usize, String> {
+        if safe_days <= 0 {
+            return Ok(0);
+        }
+        let min_cursor = self
+            .device_list()?
+            .iter()
+            .map(|d| d.sync_cursor_ms)
+            .min()
+            .unwrap_or(i64::MAX);
+        // 🔴 取**最小**而不是最大：只要有一台还没收到，这条墓碑就不能删。
+        //   取最大的后果就是那台落后的设备永远收不到删除、笔记在它那边复活。
+        let cutoff = now_ms - safe_days.saturating_mul(86_400_000);
+        self.tombstone_gc(min_cursor, cutoff)
+    }
+
     /// 清理超期的回收站条目（R3：默认 30 天）。返回销毁条数。
     ///
     /// `days <= 0` 直接返回 0 —— 这是用户的**逃生口**（设置里关掉自动清理），
