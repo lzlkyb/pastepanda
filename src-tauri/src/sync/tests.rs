@@ -837,7 +837,7 @@ fn test_拒绝路径穿越的文件名() {
 mod presence_tests {
     use super::tmp_dir;
     use crate::sync::identity::NodeIdentity;
-    use crate::sync::presence::{build, Heard, PresenceTable, STALE_MS};
+    use crate::sync::presence::{build, Heard, PresenceTable, ANNOUNCE_INTERVAL_SECS, STALE_MS};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     /// 固定时刻。测试**不取当前时间**：presence 有 ±120 秒的时间窗，
@@ -874,6 +874,8 @@ mod presence_tests {
             Heard::Fresh {
                 node_id: a.node_id(),
                 addr: SocketAddr::new(ip(20), 41234),
+                // 第一份公告就是一次跃变（之前表里根本没它）。
+                returned: true,
             }
         );
         assert_eq!(
@@ -881,6 +883,55 @@ mod presence_tests {
             vec![SocketAddr::new(ip(20), 41234)]
         );
         assert_eq!(table.live(T0 + 100), vec![a.node_id()]);
+    }
+
+    /// 🔴 公告是 15 秒一份的**心跳**，只有「从听不到到听得到」那一下是跃变。
+    ///
+    /// 为何钉它：`service` 拿 `returned` 决定要不要叫醒休眠的同步循环，
+    /// 而 `notify_waiters()` 是广播。若每份心跳都算跃变，休眠（本该 1800 秒）
+    /// 就被封顶在 15 秒，且任一已配对设备喂气就把全体叫起来——
+    /// 一台拒绝本机的设备会每 15 秒被重拨一次、永远下去。
+    #[test]
+    fn test_只有从没声音到有声音才算它回来了() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_returned")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_returned_b")).unwrap();
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+
+        // 第一份：表里本没它 → 跃变
+        let h1 = table.hear(
+            &build(&a, 41234, T0).unwrap(),
+            ip(20),
+            &b.node_id(),
+            &known,
+            T0,
+        );
+        assert!(matches!(h1, Heard::Fresh { returned: true, .. }));
+
+        // 第二份（一个心跳周期后，地址还新鲜）→ **不是**跃变
+        let t2 = T0 + ANNOUNCE_INTERVAL_SECS as i64 * 1000;
+        let h2 = table.hear(
+            &build(&a, 41234, t2).unwrap(),
+            ip(20),
+            &b.node_id(),
+            &known,
+            t2,
+        );
+        assert!(
+            matches!(h2, Heard::Fresh { returned: false, .. }),
+            "心跳不能算跃变，否则休眠会被封顶在 15 秒"
+        );
+
+        // 隐身超过 STALE_MS 后再冒头 → 又是跃变（这才是真的「回来了」）
+        let t3 = t2 + STALE_MS + 1;
+        let h3 = table.hear(
+            &build(&a, 41234, t3).unwrap(),
+            ip(20),
+            &b.node_id(),
+            &known,
+            t3,
+        );
+        assert!(matches!(h3, Heard::Fresh { returned: true, .. }));
     }
 
     #[test]

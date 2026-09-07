@@ -29,7 +29,7 @@
 
 use super::coordinate::{
     backoff_secs, jittered_secs, Admit, Coordinator, BUSY_RETRY_SECS, DORMANT_AFTER_FAILS,
-    DORMANT_POLL_SECS, JITTER_SECS, PERIOD_SECS,
+    DORMANT_POLL_SECS, HEARTBEAT_SECS, IDLE_CHECK_SECS, JITTER_SECS, MIN_SESSION_GAP_SECS,
 };
 use super::presence::PresenceTable;
 use super::session;
@@ -97,6 +97,11 @@ pub struct SyncCtx {
     /// ❗ 不按对端分开：`notify_waiters()` 把所有在长睡的都叫起来，多拨几次无害，
     /// 而每对端一个 `Notify` 要多一张表与一套生命周期管理，不值。
     pub wake: Arc<tokio::sync::Notify>,
+    /// 「本机写了笔记」的信号（方案 B）。来自 `DataStore::write_signal()`，
+    /// 而那个信号挂在 HLC 发号处——全项目刷 `updated_ms` 的唯一出口，
+    /// 所以**不可能漏掉任何一条写入路径**（不靠给二十个命令逐个加通知）。
+    /// 只在 [`idle_wait`] 里听；退避与忙碌等待**不听**。
+    pub wrote: Arc<tokio::sync::Notify>,
     /// 当前有循环的对端。拦重复起用（两条循环会白拨）。
     peers: std::sync::Mutex<std::collections::HashSet<String>>,
     /// 每个对端最近一次的结果。给界面看，见 [`LastSync`]。
@@ -141,28 +146,109 @@ fn target(ctx: &SyncCtx, peer: &str) -> Result<EndpointAddr, String> {
     Ok(addr)
 }
 
-/// 一个对端的循环：拨 → 成功就等一个带抖动的周期 → 失败就退避。
+/// 拨完之后该怎么等。把三种策略写成类型，而不是 `(u64, bool)`：
+/// 「这一觉能不能被叫醒」改错了不会报错，只会开始疯狂拨号。
+enum Wait {
+    /// 同步成功后：脏了就拨，否则睡到心跳。见 [`idle_wait`]。
+    Idle,
+    /// 固定时长，**不听叫醒**（退避阶梯 / 对端在忙）。
+    Fixed(u64),
+    /// 长睡，听叫醒（对端回来 / 手动同步）。
+    Dormant(u64),
+}
+
+impl Wait {
+    /// 给界面看的「大约多久后再试」。
+    ///
+    /// ❗ `Idle` 报心跳上限而不是 `IDLE_CHECK_SECS`：后者只是本地检查的节奏，
+    /// 报它会让界面写着「5 秒后同步」而实际上没改动就不会同步。
+    fn secs_hint(&self) -> u64 {
+        match self {
+            Wait::Idle => HEARTBEAT_SECS,
+            Wait::Fixed(s) | Wait::Dormant(s) => *s,
+        }
+    }
+}
+
+/// 同步成功之后的等待：**脏了就拨，否则睡到心跳**。
+///
+/// # 🔴 为何不再固定 30 秒一轮
+///
+/// 两台设备各自每 30 秒拨对方一次 = 一对设备平均每 15 秒一次完整会话，
+/// 而绝大多数会话两边都没改过东西——纯浪费（对走中继的对端还是跨境流量）。
+///
+/// # 为何只看本机脏不看对端
+///
+/// 因为**两台都在拨**：A 改了 A 拨 B、B 改了 B 拨 A，一次会话把两个方向都搬完。
+/// 所以不需要知道对端脏不脏，也不需要变更通知协议。
+/// 覆盖不到的那几种（对端改完拨不通、又没有组播）由 `HEARTBEAT_SECS` 兜底。
+///
+/// 返回 `false` = 该退出循环了。
+async fn idle_wait(ctx: &SyncCtx, peer: &str) -> bool {
+    // 去抖：刚同步完就先压一段。这一段**不听写入信号**，
+    // 否则连续敲键盘时会变成边打字边拨号。
+    if !sleep_or_stop(&ctx.stop, MIN_SESSION_GAP_SECS).await {
+        return false;
+    }
+    let deadline = now_ms() + jittered_secs(HEARTBEAT_SECS, JITTER_SECS, now_ms() as u64) as i64 * 1000;
+    loop {
+        match dirty_for(ctx, peer) {
+            // 有东西要发 → 立即拨
+            Ok(true) => return true,
+            Ok(false) => {}
+            // 查不了库就当脏（宁可多拨一次，不能因为一次 SQL 错就把同步停了）。
+            Err(e) => {
+                log::warn!("[Sync] 脏检查失败，本轮当作有变更：{}", e);
+                return true;
+            }
+        }
+        if now_ms() >= deadline {
+            return true; // 到心跳了，无论如何同一次
+        }
+        let left = ((deadline - now_ms()) / 1000).max(1) as u64;
+        // 这一段听 `wake`（对端回来 / 手动同步）与写入信号（方案 B）。
+        if !sleep_idle(ctx, IDLE_CHECK_SECS.min(left)).await {
+            return false;
+        }
+    }
+}
+
+/// 本机还有没有东西要发给这台对端。
+///
+/// ❗ 游标每次都从**库里**读而不缓存在循环里：对端主动拨过来完成的同步
+/// （`serve` 那条路）也会推游标，缓存的话本循环看不到，于是会以为自己还脏、
+/// 白拨一次。
+fn dirty_for(ctx: &SyncCtx, peer: &str) -> Result<bool, String> {
+    let cursor = match ctx.store.device_get(peer)? {
+        Some(d) => d.sync_cursor_ms,
+        // 名单里已经没这台了（刚被忘记）——当作不脏，循环下一圈会因 `has_peer` 退出。
+        None => return Ok(false),
+    };
+    ctx.store.has_changes_since(cursor)
+}
+
+/// 一个对端的循环：拨 → 成功就等到「有活干」 → 失败就退避。
 pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     let short = &peer[..8.min(peer.len())];
     let mut fails: u32 = 0;
     while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
         let outcome = dial_once(&ctx, &peer).await;
-        // `dormant` = 这一觉是不是「长睡」。**只有长睡才允许被 `ctx.wake` 提前打断**。
+        // 三种睡法写成显式的（而不是一个 `bool`），因为「谁能被叫醒」是这段
+        // 最容易改错的地方，而改错了不报错、只是开始疯狂拨号（已经发生过一次）。
         //
-        // 🔴 不能让正常周期也能被叫醒：`Heard::Fresh` 是**每收到一份公告**都算
-        //    （`presence::PresenceTable::hear`；公告间隔 15 秒，多网卡还更密），
-        //    而不是「对端刚回来」才算。若正常周期也能被叫醒，`PERIOD_SECS` 与
-        //    `JITTER_SECS` 直接作废；而且 `notify_waiters()` 是广播，所有对端循环
-        //    会在同一瞬间醒来齐拨——而抖动本来就是为了避免这件事。
-        let (wait, dormant) = match &outcome {
+        // 🔴 `Wait::Fixed`（退避阶梯 / 对端在忙）**绝不听叫醒**。
+        //    叫醒源里有「本机写了笔记」与「对端回来了」，它们与「上一拨刚失败」
+        //    没有关系——听了就等于把退避阶梯抹掉：一台拒绝本机的设备（游标 0，
+        //    永远是“脏”的）会被每几秒拨一次。
+        let wait = match &outcome {
             Outcome::Synced(_) => {
                 fails = 0;
-                (jittered_secs(PERIOD_SECS, JITTER_SECS, now_ms() as u64), false)
+                Wait::Idle
             }
             Outcome::Busy(why) => {
                 // 不是故障，不动退避计数
                 log::debug!("[Sync] {} 这次没轮到我们：{}", short, why);
-                (BUSY_RETRY_SECS, false)
+                Wait::Fixed(BUSY_RETRY_SECS)
             }
             // 对端明确说不认识本机。重试再多次也不会变——要变得对面的人去确认，
             // 所以直接进长间隔，不走退避阶梯。
@@ -176,7 +262,7 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                     DORMANT_POLL_SECS
                 );
                 let _ = ctx.store.device_mark_offline(&peer);
-                (DORMANT_POLL_SECS, true)
+                Wait::Dormant(DORMANT_POLL_SECS)
             }
             Outcome::Failed(why) => {
                 fails += 1;
@@ -206,15 +292,20 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 }
                 // 休眠期间不再每次都刷一条 warn：每半小时一条无用日志只会把真问题淹了。
                 let _ = ctx.store.device_mark_offline(&peer);
-                (w, dormant)
+                if dormant {
+                    Wait::Dormant(w)
+                } else {
+                    Wait::Fixed(w)
+                }
             }
         };
-        record(&ctx, &peer, outcome, fails, wait);
-        // 长睡才听 `wake`；正常周期只听 `stop`（理由见上面那段）。
-        let alive = if dormant {
-            sleep_or_wake(&ctx, wait).await
-        } else {
-            sleep_or_stop(&ctx.stop, wait).await
+        record(&ctx, &peer, outcome, fails, wait.secs_hint());
+        let alive = match wait {
+            // 脏了就拨、否则睡到心跳。空闲时不再固定 30 秒一轮——
+            // 那一轮里两边都没改过东西，整个会话是纯浪费。
+            Wait::Idle => idle_wait(&ctx, &peer).await,
+            Wait::Fixed(s) => sleep_or_stop(&ctx.stop, s).await,
+            Wait::Dormant(s) => sleep_or_wake(&ctx, s).await,
         };
         if !alive {
             break;
@@ -315,12 +406,9 @@ async fn dial_once(ctx: &SyncCtx, peer: &str) -> Outcome {
     };
     match session::dial_session(&ctx.store, &ctx.endpoint, peer, to).await {
         Ok(r) => {
-            let transport = if ctx.presence.addrs_of(peer, now_ms()).is_empty() {
-                "wan"
-            } else {
-                "lan"
-            };
-            let _ = ctx.store.device_mark_online(peer, transport, now_ms());
+            let _ = ctx
+                .store
+                .device_mark_online(peer, transport_of(ctx, peer), now_ms());
             log::info!(
                 "[Sync] 与 {} 同步完成：收 {} 篇 / 更新 {} 篇 / 删 {} 篇 / 冲突 {} 处 / {} 字节",
                 &peer[..8.min(peer.len())],
@@ -339,6 +427,23 @@ async fn dial_once(ctx: &SyncCtx, peer: &str) -> Outcome {
         // 所以这里什么都不用做，短延迟之后再看一眼就行。
         Err(e) if is_busy_reject(&e) => Outcome::Busy(e),
         Err(e) => Outcome::Failed(e),
+    }
+}
+
+/// 这一次握手算走的哪条路：组播里有它的新鲜地址就是 `lan`，否则 `wan`。
+///
+/// ❗ 拨出与接入两条路径共用同一个判据（规则 #11）。接入那边原来写死成 `lan`，
+/// 于是对端从外网打洞进来时徽章会说「局域网」。
+///
+/// 🔴 它的结果与 `presence.live()` 是**同一份事实的两个投影**：
+/// `wan` 等价于「不在 `live` 里」。所以前端**绝不能**拿 `live` 当在线判据
+/// 而又去渲染「外网」标签——那两个条件互斥，标签永远不会出现，
+/// 而 WAN 对端会一律显示离线。完整说明在 `src/lib/kbOnline.ts`。
+fn transport_of(ctx: &SyncCtx, peer: &str) -> &'static str {
+    if ctx.presence.addrs_of(peer, now_ms()).is_empty() {
+        "wan"
+    } else {
+        "lan"
     }
 }
 
@@ -449,7 +554,11 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
 
     match session::run_accepted(&ctx.store, w, &peer).await {
         Ok(r) => {
-            let _ = ctx.store.device_mark_online(&peer, "lan", now_ms());
+            // ❗ 不能写死 "lan"（改之前就是）：入连接也可能是对端从外网打洞
+            //   或过中继过来的，那时徽章会说「局域网」而它根本不在本局域网。
+            let _ = ctx
+                .store
+                .device_mark_online(&peer, transport_of(&ctx, &peer), now_ms());
             log::info!(
                 "[Sync] {} 发起的同步完成：收 {} 篇 / 更新 {} 篇 / 冲突 {} 处",
                 short,
@@ -488,6 +597,20 @@ async fn sleep_or_wake(ctx: &SyncCtx, secs: u64) -> bool {
     tokio::select! {
         _ = tokio::time::sleep(Duration::from_secs(secs)) => true,
         _ = ctx.wake.notified() => true,
+        _ = ctx.stop.notified() => false,
+    }
+}
+
+/// 空闲等待里的一小段睡。除了 `wake`，还听**本机写了笔记**（方案 B）。
+///
+/// ❗ 写入信号只是「去重新查一下脏不脏」，**不是**「马上拨」——
+/// 导入远端笔记时它也会响（见 `HlcClock::wrote`），而那种时候精确脏检查
+/// 会告诉我们不脏。两者分工：信号管「何时去看」，脏检查管「该不该拨」。
+async fn sleep_idle(ctx: &SyncCtx, secs: u64) -> bool {
+    tokio::select! {
+        _ = tokio::time::sleep(Duration::from_secs(secs)) => true,
+        _ = ctx.wake.notified() => true,
+        _ = ctx.wrote.notified() => true,
         _ = ctx.stop.notified() => false,
     }
 }
@@ -605,6 +728,7 @@ impl SyncService {
             running: Arc::new(AtomicBool::new(true)),
             stop: Arc::new(tokio::sync::Notify::new()),
             wake: Arc::new(tokio::sync::Notify::new()),
+            wrote: store.write_signal(),
             peers: std::sync::Mutex::new(std::collections::HashSet::new()),
             last: std::sync::Mutex::new(HashMap::new()),
             // ❗ 从服务上克隆而不是新建：关开关会重建 `SyncCtx`，

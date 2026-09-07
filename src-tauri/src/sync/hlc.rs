@@ -38,6 +38,8 @@
 //! 而不是让用户发现「自己改的东西总是不生效」却不知道为什么。
 
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 /// 允许吸收的最大「超前」幅度：5 分钟。
 ///
@@ -58,6 +60,21 @@ pub enum Absorb {
 #[derive(Debug)]
 pub struct HlcClock {
     floor: AtomicI64,
+    /// 本机发了新戳（= 写了东西）就响一下。
+    ///
+    /// # 🔴 为何叫醒信号放在这里
+    ///
+    /// [`Self::issue`] 是**全项目刷 `updated_ms` 的唯一出口**
+    /// （`DataStore::hlc_now` 的注释就这么写的，而它只有这一个调用点）。
+    /// 把信号挂在这里，同步就能在笔记一被写就知道——**不可能漏**。
+    /// 去给二十个写入命令逐个加通知的做法，正是规则 #11.1 说的那种
+    /// 「新增分支没找全同类调用点」的坑。
+    ///
+    /// ❗ 它会在**导入远端笔记**时也响（`apply_delta` 写入时走了 `issue`）。
+    /// 那是无害的：叫醒只让循环重新做一次**精确的**脏检查
+    /// （[`crate::data_store::DataStore::has_changes_since`]），而导入的那些笔记
+    /// 戳已被盖回到 ≤ 游标，所以检出来是“不脏”、不会多拨一轮。
+    wrote: Arc<Notify>,
 }
 
 impl HlcClock {
@@ -66,7 +83,13 @@ impl HlcClock {
     pub fn with_floor(floor: i64) -> Self {
         Self {
             floor: AtomicI64::new(floor),
+            wrote: Arc::new(Notify::new()),
         }
+    }
+
+    /// 「本机写了东西」的信号。同步循环拿它做即时叫醒（方案 B）。
+    pub fn wrote_signal(&self) -> Arc<Notify> {
+        self.wrote.clone()
     }
 
     /// 发一个新时间戳：`max(墙钟, floor + 1)`，并把 floor 抬到它。
@@ -81,8 +104,16 @@ impl HlcClock {
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |f| {
                 Some(wall_ms.max(f + 1))
             }) {
-            Ok(prev) => wall_ms.max(prev + 1),
-            Err(_) => wall_ms,
+            Ok(prev) => {
+                // ❗ 发完号才响：响的时候 floor 已经抬上去了，
+                //   被叫醒的那一边去查库才不会看到一个中间状态。
+                self.wrote.notify_waiters();
+                wall_ms.max(prev + 1)
+            }
+            Err(_) => {
+                self.wrote.notify_waiters();
+                wall_ms
+            }
         }
     }
 

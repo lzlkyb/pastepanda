@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
 import type { KbDevice, KbLastSync } from "@/hooks/useKbSync";
+import { countKbOnline } from "@/lib/kbOnline";
 
 /** 「12 秒前」。 */
 function ago(ms: number): string {
@@ -74,7 +75,9 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   const name = (peer: string) =>
     devices.find((d) => d.node_id === peer)?.name ?? peer.slice(0, 8);
   const newest = last.find((l) => l.fails === 0 && l.at_ms > 0);
-  const onlineCount = devices.filter((d) => live.includes(d.node_id)).length;
+  // ❗ 不能只看 `live`（组播听得见）：WAN 对端永远不在里面，而它可能正在好好同步。
+  //   理由与完整判据见 `@/lib/kbOnline`。
+  const onlineCount = countKbOnline(devices, live);
   const skew = last.find((l) => l.clock_too_far_ahead_ms != null);
   const failing = last.filter((l) => l.fails > 0);
   const skipped = newest && newest.skipped_older > 0 ? newest : null;

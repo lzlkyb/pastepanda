@@ -210,8 +210,12 @@ pub async fn kb_sync_join_approve(
     if !svc.take_join(&node_id) {
         return Err("这条连接请求已经不在了（对方可能已放弃），请让它重新试一次".into());
     }
+    // ❗ 不填名字时退到**指纹**而不是「新设备」：后者在名单里认不出是哪台，
+    //   而指纹正好是用户刚刚拿在手里核对过的那一串（对得上号）。
+    //   多台都不填时，「新设备」还会重名。（2026-09-07 实测到的毛刺。）
     let name = name.trim();
-    let name = if name.is_empty() { "新设备" } else { name };
+    let fp = crate::sync::identity::fingerprint_of(&node_id);
+    let name = if name.is_empty() { fp.as_str() } else { name };
     store.device_pair(&node_id, name, "")?;
     svc.add_peer(&node_id).await?;
     // 配完了就把门关上，不再敞着（要再加一台就再生一次邀请码）。

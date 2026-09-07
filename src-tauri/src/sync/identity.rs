@@ -43,6 +43,25 @@ pub struct NodeIdentity {
     public: Vec<u8>,
 }
 
+/// 从 `node_id`（64 字符 hex）算短指纹：前 16 个字符按 4 分组。
+///
+/// ❗ 拆成自由函数是因为有两个调用方（规则 #11）：
+/// [`NodeIdentity::fingerprint`] 算**自己的**，而 `kb_sync_join_approve`
+/// 要算**对端的**（只有 node_id，拿不到它的 `NodeIdentity`）。
+///
+/// 🔴 分组规则改动时，`src/lib/fingerprint.ts` 里那份要一起改——
+/// 两边各算一遍是有意的（邀请码里只有 node_id、没有指纹字段，
+/// 少一个可自称的字段），但两边必须算出同一串，否则用户核对时会对不上。
+pub fn fingerprint_of(node_id: &str) -> String {
+    node_id
+        .as_bytes()
+        .chunks(4)
+        .take(4)
+        .map(|c| String::from_utf8_lossy(c).to_string())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 impl NodeIdentity {
     /// 读回身份；文件不存在就生成一个新的并落盘。
     ///
@@ -101,13 +120,7 @@ impl NodeIdentity {
     /// 所以两端必须**各自看自己的指纹、口头核对一致**——
     /// 同 SSH host key 指纹、Signal 安全码的做法。
     pub fn fingerprint(&self) -> String {
-        let h = self.node_id();
-        h.as_bytes()
-            .chunks(4)
-            .take(4)
-            .map(|c| String::from_utf8_lossy(c).to_string())
-            .collect::<Vec<_>>()
-            .join("-")
+        fingerprint_of(&self.node_id())
     }
 
     pub fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, String> {

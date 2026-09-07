@@ -6932,3 +6932,43 @@ fn test_标离线不动最后在线时间() {
     assert_eq!(d.last_seen, 12_345, "离线不该刷新「最后一次在线」");
     assert_eq!(d.transport, "lan", "也不该抹掉上次是从哪条通道连上的");
 }
+
+// ── 同步脏判据（has_changes_since）───────────────────────
+//
+// 🔴 它是「脏了才拨」那套的地基：判错为不脏 = 改动传不出去（用户看到的就是丢数据），
+// 判错为脏 = 每 5 秒空拨一次。两个方向都要钉。
+
+#[test]
+fn test_脏判据_空库对任何游标都不脏() {
+    let store = make_store();
+    assert!(!store.has_changes_since(0).unwrap());
+    assert!(!store.has_changes_since(i64::MAX).unwrap());
+}
+
+#[test]
+fn test_脏判据_新建笔记后相对旧游标是脏的() {
+    let store = make_store();
+    let note = store.note_create(None, "新笔记", "内容").unwrap();
+    let ms = store.note_updated_ms(&note.id).unwrap();
+
+    // 游标停在这条之前 → 脏
+    assert!(store.has_changes_since(ms - 1).unwrap());
+    // 游标已经盖过它 → 不脏（严格大于，边界那条不重发）
+    assert!(!store.has_changes_since(ms).unwrap());
+}
+
+#[test]
+fn test_脏判据_删除也算脏() {
+    let store = make_store();
+    let note = store.note_create(None, "要删的", "内容").unwrap();
+    let after_create = store.note_updated_ms(&note.id).unwrap();
+    // 先确认「创建已同步完」的状态下是不脏的
+    assert!(!store.has_changes_since(after_create).unwrap());
+
+    store.note_delete(&note.id).unwrap();
+    // 🔴 删除走墓碑表，不在 notes 的活笔记里——只查 notes 会漏掉整个「删除」语义
+    assert!(
+        store.has_changes_since(after_create).unwrap(),
+        "删除必须算脏，否则删除永远传不到对端"
+    );
+}

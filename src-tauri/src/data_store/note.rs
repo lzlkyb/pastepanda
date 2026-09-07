@@ -246,6 +246,12 @@ impl DataStore {
         self.hlc.floor()
     }
 
+    /// 「本机写了笔记」的信号，给同步循环做即时叫醒用（方案 B）。
+    /// 为何挂在 HLC 上而不是逐个命令上，见 [`crate::sync::hlc::HlcClock`] 的字段注释。
+    pub fn write_signal(&self) -> std::sync::Arc<tokio::sync::Notify> {
+        self.hlc.wrote_signal()
+    }
+
     /// 把 HLC 下界落盘。**只在吸收远端时钟之后调**，不在每次写笔记时调。
     ///
     /// 每次写都落盘是白花一次 UPDATE：本机自己发的时间戳已经存在笔记行里了，
@@ -729,6 +735,42 @@ impl DataStore {
             n.tags = Self::load_note_tags_on(&conn, &n.id);
         }
         Ok(notes)
+    }
+
+    /// 游标之后还有东西要发吗。= [`Self::note_changed_since`] 或
+    /// [`Self::note_tombstones_since`] 任一非空（也就是 `compute_delta` 会不会返回东西）。
+    ///
+    /// # 🔴 为何不直接拿 `sync_high_water_ms()` 与游标比
+    ///
+    /// 因为**导入远端笔记也会走 `hlc_now()`**（`sync::engine::apply_delta` 里
+    /// 先经 `note_update`/`note_create` 写入、再把对端的版本戳盖回去）。
+    /// HLC 下界只能升不能降，于是每次「导入过东西的同步」结束后下界都会
+    /// 高于游标——拿它当脏标志会在每次真同步后多拨一轮空会话。
+    /// 改成直接问库，导入的那些笔记戳已经被盖回到 ≤ 游标，就不会误报。
+    ///
+    /// ❗ 没有 `updated_ms` 索引，这里是一次扫表。在 5 秒一次的节奏下可以忽略
+    /// （而且脏的时候 `EXISTS` 会提前停）；库大到很多万篇时再补索引。
+    /// **不能**用 `note_changed_since(..).is_empty()` 代替：那个会把全部变更笔记
+    /// 连内容带标签全部物化出来（还是 N+1 查询）。
+    pub fn has_changes_since(&self, since_ms: i64) -> Result<bool, String> {
+        let conn = self.lock_conn();
+        let any_note: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM notes
+                 WHERE deleted_at IS NULL AND updated_ms > ?1 LIMIT 1)",
+                [since_ms],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if any_note {
+            return Ok(true);
+        }
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM note_tombstones WHERE local_ms > ?1 LIMIT 1)",
+            [since_ms],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())
     }
 
     /// AM-8：库里疑似重复的笔记标题。

@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useKbSync, type KbDevice } from "@/hooks/useKbSync";
 import { fingerprintOf } from "@/lib/fingerprint";
+import {
+  countKbOnline, isKbDeviceOnline, kbOnlineLabel, kbDeviceProblem, hasKbRelayPeer,
+} from "@/lib/kbOnline";
 import type { ToastFn } from "@/components/Toast";
 import { KbPairDialog } from "./KbPairDialog";
 import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
@@ -32,7 +35,8 @@ export function KbSyncPanel({ toast }: {
   const [pairOpen, setPairOpen] = useState(false);
   const [confirmForget, setConfirmForget] = useState<KbDevice | null>(null);
 
-  const online = s.devices.filter((d) => s.live.includes(d.node_id)).length;
+  // ❗ 不能只看 `s.live`（组播听得见）——理由见 `@/lib/kbOnline` 文件头。
+  const online = countKbOnline(s.devices, s.live);
   const fp = s.identity?.fingerprint ?? "读取中…";
 
   /** 一份，两处用：面板自己一份，配对向导的等待屏一份（弹窗盖住面板时看不到下面那份）。 */
@@ -100,7 +104,8 @@ export function KbSyncPanel({ toast }: {
         <>
           <div className={styles.lanDeviceList}>
             {s.devices.map((d) => {
-              const isOnline = s.live.includes(d.node_id);
+              const isOnline = isKbDeviceOnline(d, s.live);
+              const problem = kbDeviceProblem(d, s.last, s.live);
               return (
                 <div key={d.node_id} className={styles.lanDeviceItem}>
                   <div className={styles.lanDeviceAvatar} style={{
@@ -111,6 +116,15 @@ export function KbSyncPanel({ toast }: {
                     <div className={styles.lanDeviceTime}>
                       {fingerprintOf(d.node_id)} · {ago(d.last_seen)}
                     </div>
+                    {/* 🔴 离线时把**原因**说出来。后端一直算好了放在 `last[].error` 里，
+                        而这个面板从来没渲染过它——于是「对方还没把这台加回去」这种
+                        完全可操作的原因，在界面上只表现为一个字「离线」。 */}
+                    {problem && (
+                      <div className={styles.lanDeviceTime}
+                        style={{ color: "var(--orange)", whiteSpace: "normal", lineHeight: 1.5 }}>
+                        {problem}
+                      </div>
+                    )}
                   </div>
                   <span style={{
                     fontSize: 10, padding: "2px 7px", borderRadius: 20,
@@ -118,7 +132,7 @@ export function KbSyncPanel({ toast }: {
                     color: isOnline ? "var(--green)" : "var(--text-secondary)",
                     border: `1px solid ${isOnline ? "var(--green-border)" : "var(--border-color)"}`,
                   }}>
-                    {isOnline ? (d.transport === "wan" ? "外网" : "局域网") : "离线"}
+                    {kbOnlineLabel(d, s.live)}
                   </span>
                   <button className={styles.lanRefreshBtn} disabled={s.busy}
                     onClick={() => s.syncNow(d.node_id)}>⇅</button>
@@ -129,6 +143,21 @@ export function KbSyncPanel({ toast }: {
               );
             })}
           </div>
+          {/* ❗ 不是错误提示（异地设备本来就只能走中继），所以用中性颜色、不报警。
+              但必须说：两台本该在同一局域网时，这意味着笔记在绕一趟国外的公共中继，
+              而界面上原本零线索。 */}
+          {hasKbRelayPeer(s.devices, s.live) && (
+            <div style={{
+              marginTop: 10, fontSize: 11, lineHeight: 1.7,
+              color: "var(--text-muted)",
+            }}>
+              标「外网」的设备是通过<b>公共中继</b>连的。异地设备本该如此；
+              但如果两台就在同一个局域网，它应该显「局域网」——
+              显「外网」说明发现包（UDP 5008）被防火墙或 AP 隔离挡住了，
+              笔记会绕一趟国外中继，慢很多。
+            </div>
+          )}
+
           <div style={{
             marginTop: 12, paddingTop: 11, borderTop: "1px solid var(--border-color)",
             display: "flex", justifyContent: "space-between", alignItems: "center",

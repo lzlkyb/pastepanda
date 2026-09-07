@@ -129,7 +129,21 @@ pub fn build(me: &NodeIdentity, endpoint_port: u16, now_ms: i64) -> Result<Vec<u
 #[derive(Debug, Clone, PartialEq)]
 pub enum Heard {
     /// 收下了：这个已配对节点现在可以在 `addr` 拨到。
-    Fresh { node_id: String, addr: SocketAddr },
+    ///
+    /// `returned` = 这一份公告是一次**跃变**（之前一个新鲜地址都没有，现在有了），
+    /// 也就是「它回来了」。
+    ///
+    /// 🔴 为何必须区分它与「又收到一份心跳」：公告是 **15 秒一份的心跳**，
+    /// 而 [`super::service::SyncCtx::wake`] 是拿来叫醒休眠循环的。
+    /// 若每份公告都叫醒，休眠（本该 1800 秒）就被封顶在 15 秒——
+    /// 而且 `notify_waiters()` 是广播，**任一**已配对设备在局域网里喂气，
+    /// 就会把所有休眠循环全叫起来。结果是一台拒绝本机的设备每 15 秒被重拨一次、
+    /// 永远下去——比没加休眠之前（封顶 60 秒）还糟。（2026-09-07 审出。）
+    Fresh {
+        node_id: String,
+        addr: SocketAddr,
+        returned: bool,
+    },
     /// 自己发的（组播会回环）。
     Mine,
     /// 不是已配对设备。连地址都不记——否则同网段任何人都能把表灌满。
@@ -227,6 +241,8 @@ impl PresenceTable {
         let addr = SocketAddr::new(src_ip, wire.port);
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let entry = map.entry(wire.node_id.clone()).or_default();
+        // ❗ 必须在下面刷新 `seen` **之前**算：刷完之后永远是「新鲜」，跃变就测不到了。
+        let was_live = entry.addrs.iter().any(|(_, s)| now_ms - *s <= STALE_MS);
         // 严格递增：原样重发同一份公告（ts 相同）也算重放。
         // 宣告间隔是秒级、ts 是毫秒级，正常情况下撞不上。
         if wire.ts <= entry.last_ts {
@@ -250,6 +266,7 @@ impl PresenceTable {
         Heard::Fresh {
             node_id: wire.node_id,
             addr,
+            returned: !was_live,
         }
     }
 
@@ -431,12 +448,18 @@ pub fn spawn(
                         chrono::Utc::now().timestamp_millis(),
                     );
                     match heard {
-                        Heard::Fresh { node_id, addr } => {
+                        Heard::Fresh {
+                            node_id,
+                            addr,
+                            returned,
+                        } => {
                             log::debug!("[Presence] {} 在 {}", &node_id[..8], addr);
-                            // ❗ 它回来了。如果那台的同步循环已经因为连续失败而休眠，
-                            //   这一下就是把它叫起来的信号——否则要等到兜底心跳（半小时）。
-                            //   只在 `Fresh` 这一支调：`Unpaired` 那些不关我们的事。
-                            on_fresh(&node_id);
+                            // 🔴 只在**跃变**时叫醒（它刚回来），不是每份心跳都叫。
+                            //   每份都叫的后果见 `Heard::Fresh::returned` 的注释：
+                            //   休眠会被封顶在 15 秒，而且是广播式的、一台喂气全体醒。
+                            if returned {
+                                on_fresh(&node_id);
+                            }
                         }
                         // 自己的包与未配对设备的包是常态，不值得记日志
                         Heard::Mine | Heard::Unpaired { .. } => {}
