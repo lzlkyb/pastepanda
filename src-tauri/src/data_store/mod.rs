@@ -1278,8 +1278,16 @@ impl DataStore {
         // `REPLACE(content, '[[旧]]', '[[新]]')` 保持同一套语义。
         // 两份文档原本各自规划了这张表且规格相反，裁决见总排期 §2。
         //
-        // 一次建表，四家共用：反链面板 / `[[` 补全的已存在提示 /
-        // AM-9 的引用次数信号 / O-9 的断链检查。
+        // 一次建表，多家共用。实际消费方（2026-09-07 核过）：
+        //   ・ 反链面板（`commands::note_backlinks` → `NoteBacklinks.tsx`）
+        //   ・ 知识库健康度（`note_health.rs` 用 `note_broken_links`）
+        //   ・ MCP 的 `kb_read`（返回反链 + 断链）
+        //   ・ 待做：O-2 的图谱工具、AM-9 的引用次数排序信号
+        //
+        // ❗ 原注释把 **O-9 的断链检查**也算进来了，那是错的：
+        // O-9 （`rewrite_wiki_links_on`）用的是 `instr(content,'[[旧]]') + REPLACE`，
+        // 根本没碰这张表。列错消费方的后果是：改这张表时会去估一个
+        // 根本不存在的影响面，而真正会碎的那三家反而没列出来。
         let links_existed: bool = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'note_links'",
