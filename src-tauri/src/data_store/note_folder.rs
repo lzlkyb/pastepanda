@@ -323,12 +323,27 @@ impl DataStore {
     }
 
     /// 给笔记归档。`folder_id` 为 `None` = 移回未分类。
+    ///
+    /// # 🔴 刷 `updated_ms`（同步版本号）但**不刷** `updated_at`
+    ///
+    /// `note.rs` 那张「四处故意不刷」的表里曾列着本函数，理由是
+    /// 「把移动算成一次修改会让『最近修改』列表乱跳」。那个顾虑是对的，
+    /// 但它指向的是 `updated_at`——而 M6-P2 已经把同步的行版本号拆成了
+    /// **另一个列** `updated_ms`。两者独立，所以可以只刷后者：
+    /// 界面排序不受影响，而同步能看到这一行变过了。
+    ///
+    /// ❗ 光刷这一处**不够**让文件夹移动传到对端，另外两处缺一不可：
+    /// `sync::engine` 的回声拦截要连文件夹一起比（否则纯移动被当成「一模一样」跳过），
+    /// `note_import_dir` 的**更新分支**要调本函数（它原来只在新建分支调）。
     pub fn note_set_folder(&self, note_id: &str, folder_id: Option<&str>) -> Result<(), String> {
+        // 在拿 conn 锁之前发，同 `note.rs` 里那几处：`hlc_now` 不碰库，
+        // 但摆在外面更不容易将来被改成死锁。
+        let ms = self.hlc_now();
         let conn = self.lock_conn();
         let n = conn
             .execute(
-                "UPDATE notes SET folder_id = ?1 WHERE id = ?2",
-                rusqlite::params![folder_id, note_id],
+                "UPDATE notes SET folder_id = ?1, updated_ms = ?3 WHERE id = ?2",
+                rusqlite::params![folder_id, note_id, ms],
             )
             .map_err(|e| e.to_string())?;
         if n == 0 {

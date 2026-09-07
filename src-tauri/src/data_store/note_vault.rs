@@ -391,6 +391,16 @@ impl DataStore {
             Some(id) => {
                 // 走 note_update ⇒ **自动留下一份导入前的快照**（#4 白送的）
                 self.note_update(&id, &parsed.title, &parsed.content)?;
+                // 🔴 更新分支也要跟着挪文件夹。这里原本什么都不做（只有新建分支设），
+                //    于是一篇已存在的笔记在 vault 里被挪到另一个目录后导入，它仍然待在旧文件夹里。
+                //
+                //    本模块的既定语义是「**文件就是权威**」（见 `sync::engine` 模块注释），
+                //    而目录层级正是文件那一半的一部分，所以不跟是不一致。
+                //
+                // ❗ 这同时是 M6 同步能传递「移动文件夹」的**必要条件**：
+                //   同步过来的笔记带着 `pastepanda_id`，三级匹配第一步就命中 id，
+                //   永远走这一支——不在这里设的话，前面两处改完也白搭。
+                self.note_set_folder(&id, folder_id.as_deref())?;
                 (id, false)
             }
             None => {

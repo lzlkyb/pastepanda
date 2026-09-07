@@ -906,6 +906,11 @@ impl SyncService {
             presence_port,
         );
 
+        // ❗ 扫掉上一次崩溃残留的会话暂存目录（里面是**明文笔记**）。
+        //   放在这儿而不是定时跑：残留只会在“上一次进程死了”时产生，
+        //   而那之后必然有一次启动。只读一遍 `%TEMP%` 的顶层，不递归。
+        session::sweep_stale_scratch();
+
         tokio::spawn(accept_loop(ctx.clone()));
         for d in &known {
             start_peer(&ctx, &d.node_id);

@@ -444,9 +444,74 @@ async fn exchange(
     }
 }
 
+/// 陈旧暂存目录的保留时长（秒）。
+///
+/// ❗ 给到 24 小时是故意宽的：只要一个正在跑的会话目录被误删，那次同步就崩了。
+/// 有了停滞超时（[`super::transport::STALL_TIMEOUT`]）之后，
+/// 单次会话再慢也到不了这个量级。
+pub const SCRATCH_TTL_SECS: u64 = 24 * 3600;
+
+/// 暂存目录的名字前缀。**只删带这个前缀的**：`%TEMP%` 是共用的。
+const SCRATCH_PREFIX: &str = "pp_session_";
+
+/// 扫掉陈旧的会话暂存目录。在同步服务启动时跑一次。
+///
+/// # 🔴 为什么需要它
+///
+/// 暂存目录里是**明文笔记**。[`run`] 在每一条退出路径上都删了它，
+/// 但进程崩溃（或被任务管理器杀掉）时会残留，而之前**没有任何地方清理它们**——
+/// 一台用了一年的机器上可以积很多份笔记明文。
+pub fn sweep_stale_scratch() {
+    let n = sweep_scratch_in(
+        &std::env::temp_dir(),
+        std::time::Duration::from_secs(SCRATCH_TTL_SECS),
+    );
+    if n > 0 {
+        log::info!("[Sync] 清掉 {} 个陈旧的会话暂存目录（里面是明文笔记）", n);
+    }
+}
+
+/// 同上，但根目录与保留时长从参数进。**给测试用**（不能拿真的 `%TEMP%` 测）。
+///
+/// 返回删掉的目录数。任何一步出错都只是跳过：清理失败不应该影响同步启动。
+pub fn sweep_scratch_in(root: &std::path::Path, ttl: std::time::Duration) -> usize {
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return 0;
+    };
+    let mut removed = 0usize;
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.starts_with(SCRATCH_PREFIX) {
+            continue;
+        }
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        // 年龄看不了（权限/文件系统不支持）就**不删**：宁可留着，不能误删在跑的。
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .map(|t| t.elapsed().map(|d| d >= ttl).unwrap_or(false))
+            .unwrap_or(false);
+        if old && std::fs::remove_dir_all(&p).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 /// 一个空的暂存目录。用项目里现成的写法，不引 `tempfile`。
+///
+/// ❗ 前缀走 [`SCRATCH_PREFIX`]，不再写字面量：
+/// [`sweep_scratch_in`] 靠它认自己的目录，两处一旦走形就是「永远清不掉」。
 fn scratch(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("pp_session_{}_{}", tag, uuid::Uuid::new_v4()));
+    let d = std::env::temp_dir().join(format!(
+        "{}{}_{}",
+        SCRATCH_PREFIX,
+        tag,
+        uuid::Uuid::new_v4()
+    ));
     let _ = std::fs::create_dir_all(&d);
     d
 }

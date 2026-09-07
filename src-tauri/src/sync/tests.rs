@@ -597,6 +597,58 @@ fn test_两边都改过时留下冲突副本() {
     );
 }
 
+/// 🔴 纯粹的「把笔记挪到另一个文件夹」要能同步过去。
+///
+/// 这一条之前完全没有覆盖，而它同时被**三处**拦着（缺一不可）：
+/// ① `note_set_folder` 不刷 `updated_ms` → 压根不进增量；
+/// ② 回声拦截只比标题/正文/标签 → 纯移动被当成「一模一样」跳过；
+/// ③ `note_import_dir` 只在**新建**分支设文件夹，而同步过来的笔记带 id、永远走更新分支。
+#[test]
+fn test_只挪文件夹也要同步过去() {
+    let (a, b) = (store(), store());
+    let f1 = a.folder_create("工作", None).unwrap();
+    let f2 = a.folder_create("归档", None).unwrap();
+    let n = a.note_create(None, "甲", "正文一字不改").unwrap();
+    a.note_set_folder(&n.id, Some(&f1.id)).unwrap();
+
+    let (cursor, _) = sync(&a, &b, 0, "mv1");
+    let landed = b.note_get(&n.id).unwrap().unwrap();
+    let fid = landed.folder_id.clone().expect("第一轮就该落在「工作」里");
+    assert_eq!(b.folder_list().unwrap().iter().find(|f| f.id == fid).unwrap().name, "工作");
+
+    // 只挪文件夹，标题/正文/标签一字不改
+    a.note_set_folder(&n.id, Some(&f2.id)).unwrap();
+
+    let (_, rep) = sync_from(&a, &b, cursor, cursor, "mv2");
+    assert_eq!(rep.identical, 0, "纯移动被回声拦截吃掉了：{:?}", rep);
+
+    let moved = b.note_get(&n.id).unwrap().unwrap();
+    let fid2 = moved.folder_id.expect("移动后还在未分类？");
+    assert_eq!(
+        b.folder_list().unwrap().iter().find(|f| f.id == fid2).unwrap().name,
+        "归档",
+        "文件夹移动没传过去"
+    );
+}
+
+/// ❗ 上一条的反面：**真的一字未改**（连文件夹也没变）时，回声拦截必须照旧生效。
+///
+/// 🔴 拆开写是因为把文件夹掺进拦截条件很容易把拦截本身弄失效（比如
+/// Windows 上分隔符不统一就永远不相等），而那会直接引回「每轮再生一批冲突副本」。
+#[test]
+fn test_连文件夹也没变时回声拦截仍然生效() {
+    let (a, b) = (store(), store());
+    let f = a.folder_create("工作", None).unwrap();
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    a.note_set_folder(&n.id, Some(&f.id)).unwrap();
+
+    let (cursor, _) = sync(&a, &b, 0, "echo1");
+    // 拿旧游标重发同一批 = 回声
+    let (_, rep) = sync_from(&a, &b, 0, cursor, "echo2");
+    assert_eq!(rep.identical, 1, "回声该被拦下：{:?}", rep);
+    assert_eq!(rep.conflicts, 0, "回声不该算冲突：{:?}", rep);
+}
+
 /// 🔴 严格赢的一边**不再**存副本，但仍然要计数。
 ///
 /// 改之前一次冲突会在**每台机器上生两份**副本：赢家存对端那份、输家存自己那份，
@@ -1890,6 +1942,63 @@ mod slot_tests {
     }
 }
 
+// ===== 暂存目录回收（2026-09-07） =====
+//
+// 🔴 暂存目录里是**明文笔记**。会话自己会删，但进程崩溃时残留，
+// 而之前没有任何地方清理它们。
+
+mod scratch_gc_tests {
+    use crate::sync::session::sweep_scratch_in;
+    use std::time::Duration;
+
+    fn mkdir(root: &std::path::Path, name: &str) -> std::path::PathBuf {
+        let p = root.join(name);
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(p.join("a.md"), "明文笔记").unwrap();
+        p
+    }
+
+    #[test]
+    fn test_到期的扫掉_不是我们的不碰() {
+        let root = super::tmp_dir("gc_root");
+        let mine = mkdir(&root, "pp_session_out_abc");
+        let mine2 = mkdir(&root, "pp_session_in_def");
+        // ❗ 别人的东西：`%TEMP%` 是共用的，认错前缀就是删别人的文件
+        let theirs = mkdir(&root, "pp_other_xyz");
+        let unrelated = mkdir(&root, "chrome_tmp");
+
+        // ttl = 0 ⇒ 刚建的也算到期，免得去改 mtime
+        let n = sweep_scratch_in(&root, Duration::from_secs(0));
+        assert_eq!(n, 2, "该删两个");
+        assert!(!mine.exists() && !mine2.exists(), "自己的暂存目录没删掉");
+        assert!(theirs.exists(), "前缀不对的被误删了（%TEMP% 是共用的）");
+        assert!(unrelated.exists(), "无关目录被误删了");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_没到期的一律不动() {
+        // 🔴 这条盯的是「误删正在跑的会话目录」——那会直接把那次同步弄崩。
+        let root = super::tmp_dir("gc_root2");
+        let live = mkdir(&root, "pp_session_out_live");
+
+        let n = sweep_scratch_in(&root, Duration::from_secs(24 * 3600));
+        assert_eq!(n, 0, "刚建的目录不该被删");
+        assert!(live.exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_根目录不存在不崩() {
+        assert_eq!(
+            sweep_scratch_in(std::path::Path::new("D:/这个目录不存在的"), Duration::from_secs(0)),
+            0
+        );
+    }
+}
+
 // ===== 写入合并窗口（W6 止血第三条，2026-09-07） =====
 //
 // ❗ 窗口长度从参数进，所以这里全用毫秒级的值：不用真睡 3 秒，
@@ -1903,6 +2012,20 @@ mod coalesce_tests {
     use tokio::sync::Notify;
 
     const QUIET: Duration = Duration::from_millis(60);
+
+    /// 🔴 测试里用 `notify_one()` 而不是生产里那个 `notify_waiters()`。
+    ///
+    /// `notify_waiters()` **只叫醒当时已注册的等待者、不存许可**，
+    /// 而循环每转一圈要重新建一个 `notified()`。机器一卡，写入任务没被调度到，
+    /// 四次通知可以**全部丢掉**——实测到过一次：本该 180ms 的用例只跑了 68.7ms。
+    ///
+    /// ❗ 这不是产品 bug：生产里漏接一次只意味着早放行一个窗口、照样去拨，无害。
+    /// 但它让**测试**变成了招式。`notify_one()` 会存一个许可，
+    /// 下一次 `notified()` 立刻返回，于是不论调度怎么拖都不会丢——
+    /// 而 `coalesce_writes` 跑的仍然是同一条代码路径。
+    fn poke(n: &Notify) {
+        n.notify_one();
+    }
 
     #[tokio::test]
     async fn test_安静一个窗口之后放行() {
@@ -1922,19 +2045,16 @@ mod coalesce_tests {
         tokio::spawn(async move {
             for _ in 0..4 {
                 tokio::time::sleep(Duration::from_millis(30)).await;
-                w2.notify_waiters();
+                poke(&w2);
             }
         });
         let t0 = tokio::time::Instant::now();
         assert!(coalesce_writes(&stop, &wrote, QUIET, Duration::from_secs(30)).await);
-        // 理论值是 4×30ms（都在重新计时）+ 60ms（最后一个完整窗口）= 180ms。
-        //
-        // ❗ 断言卡在 150 而不是 180：`notify_waiters()` 只叫醒**当时已注册**的等待者，
-        //   而循环每转一圈要重新建一个 `notified()`。机器卡顿时理论上可能漏接一次
-        //   （后果只是早放行一个窗口，无害）。150 既能证明「确实被顶回去多次」
-        //   （不顶的话只有 ~60ms），又不会因为卡在理论值上而间歇红。
+        // 4×30ms（每一次都把窗口顶回去）+ 60ms（最后一个完整安静窗口）= 180ms。
+        // 睡眠只会超时不会提前，而 `poke` 不丢通知，所以这个下界是确定的。
+        // 不顶的话只有 ~60ms。
         assert!(
-            t0.elapsed() >= Duration::from_millis(150),
+            t0.elapsed() >= Duration::from_millis(4 * 30 + 60),
             "窗口没被新写入顶回去，只用了 {:?}",
             t0.elapsed()
         );
@@ -1950,17 +2070,18 @@ mod coalesce_tests {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(10)).await;
-                w2.notify_waiters();
+                poke(&w2);
             }
         });
         let max = Duration::from_millis(300);
         let t0 = tokio::time::Instant::now();
         assert!(coalesce_writes(&stop, &wrote, QUIET, max).await);
-        assert!(
-            t0.elapsed() < max * 3,
-            "封顶没生效，等了 {:?}",
-            t0.elapsed()
-        );
+        let e = t0.elapsed();
+        // 🔴 下界与上界都要断：
+        //    每 10ms 写一次、窗口 60ms ⇒ 安静窗口**永远轮不到**，只能由封顶放行。
+        //    只断上界的话，“提前从安静窗口跑掉”也会算通过——那就根本没测到封顶。
+        assert!(e >= max, "不是被封顶放行的（只用了 {:?}），这条测的不是封顶", e);
+        assert!(e < max * 3, "封顶没生效，等了 {:?}", e);
     }
 
     #[tokio::test]
@@ -1971,7 +2092,7 @@ mod coalesce_tests {
         let s2 = stop.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(20)).await;
-            s2.notify_waiters();
+            poke(&s2);
         });
         assert!(
             !coalesce_writes(&stop, &wrote, Duration::from_secs(300), Duration::from_secs(3600))

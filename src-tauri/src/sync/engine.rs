@@ -107,7 +107,25 @@ fn note_unsettled(rep: &mut ApplyReport, ms: i64) {
     });
 }
 
+/// 一篇笔记在增量目录里的**相对目录**（`工作/项目A`；根目录为空串）。
+///
+/// ❗ 统一用 `/`：清单里写的就是 `/`（`write_delta` 做过替换），
+/// 而本机算出来的是平台分隔符。不统一的话 Windows 上永远不相等——
+/// 那会让回声拦截完全失效，每轮重新导入一批。
+fn folder_path_of(
+    folder_rel: &std::collections::HashMap<String, PathBuf>,
+    folder_id: Option<&str>,
+) -> String {
+    folder_id
+        .and_then(|id| folder_rel.get(id))
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default()
+}
+
 /// 两边是不是**同一个内容版本**。比标题、正文、标签。
+///
+/// ❗ **不包含文件夹**。文件夹只在 `apply_delta` 的回声拦截那一处额外比，
+/// 理由写在那儿（这里还被「真的落地了吗」校验用着，口径不能一样）。
 ///
 /// 🔴 **不能直接比整份文件的字节。** 前置字段里的 `created` / `updated`
 /// 是**本机时间字串**，同一篇笔记在两台机器上必然不同——
@@ -319,6 +337,11 @@ pub fn apply_delta(
     let mut rep = ApplyReport::default();
     // 会被导入的条目的「对端版本戳」。导入完之后要把它们盖回去，见 ③ 之后。
     let mut keep_stamp: Vec<(String, i64, PathBuf)> = Vec::new();
+    // 本机每个文件夹对应的**相对目录**（`工作/项目A`）。拿 `Path::new("")` 当根就是相对路径。
+    //
+    // 🔴 文件夹要按**路径**比，不能按 `folder_id`：id 是每台机器各自生成的，
+    //    跨机没有可比性；而增量目录里传的本来就是目录层级。
+    let folder_rel = DataStore::sync_folder_dir_map(&store.folder_list()?, Path::new(""));
 
     // ①′ W1：附件先落盘，再把暂存目录里所有 md 的便携引用改写回本机绝对路径。
     //
@@ -433,10 +456,26 @@ pub fn apply_delta(
         //
         // 只比内容、不比时间戳：戳相同而内容不同是**真的平手**
         // （两台机器可能吸收同一个下界之后发出同一个值），那种情况仍走下面的判定。
+        // ❗ 除了标题/正文/标签，还要比**文件夹**：否则一次纯粹的「把笔记挪到另一个
+        //   文件夹」会被这条拦截当成「一模一样」跳过，文件从暂存里删掉、根本不导入，
+        //   于是移动**永远传不过去**（文件夹不在 markdown 里，它由目录层级表达）。
+        //
+        // 🔴 只在这里加，**不动 `same_version` 本体**——它还被 ③ 之后的「真的落地了吗」
+        //    校验用着，那里比不上就会按住游标。把文件夹掺进去的话，
+        //    万一哪次文件夹没能落地就是**游标永远不推、无限重试**。
+        //    （文件夹真落不下去时 `note_set_folder` 会报错，那一篇计入 `import_failed`，
+        //     游标照样被按住——失败已经在上游被接住了。）
         let incoming_text = std::fs::read_to_string(&path).unwrap_or_default();
+        let incoming_dir = Path::new(rel)
+            .parent()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
         let identical = store
             .note_get(id)?
-            .map(|n| same_version(&n, &incoming_text))
+            .map(|n| {
+                same_version(&n, &incoming_text)
+                    && folder_path_of(&folder_rel, n.folder_id.as_deref()) == incoming_dir
+            })
             .unwrap_or(false);
         if identical {
             let _ = std::fs::remove_file(&path);
