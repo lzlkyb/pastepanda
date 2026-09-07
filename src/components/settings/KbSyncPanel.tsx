@@ -9,6 +9,16 @@ import { KbPairDialog } from "./KbPairDialog";
 import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
 import styles from "../Settings.module.css";
 
+/**
+ * 开始提示星型配对的对端数阈值。
+ *
+ * 本机有 4 个对端 = 至少 5 台设备，对应规划里那个「>4 台」。
+ *
+ * ❗ 看的是**本机的对端数**而不是总台数，因为成本就是按对端算的：
+ * 每多一个直连对端，后端就多跑一条 `peer_loop`。
+ */
+const STAR_HINT_PEERS = 4;
+
 /** 「12 秒前」这种相对时间。0 = 从未同步过。 */
 function ago(ms: number): string {
   if (!ms) return "还没同步过";
@@ -155,6 +165,33 @@ export function KbSyncPanel({ toast }: {
               但如果两台就在同一个局域网，它应该显「局域网」——
               显「外网」说明发现包（UDP 5008）被防火墙或 AP 隔离挡住了，
               笔记会绕一趟国外中继，慢很多。
+            </div>
+          )}
+
+          {/* 设备多了之后的拓扑引导。
+
+              🔴 后端本来就支持星型——`peer_loop` 是按**已配对设备**起的，
+              所以拓扑就是配对图，星型是「配出来」的而不是「写出来」的。
+              缺的一直只是**没人告诉用户还有这个选项**，于是默认就配成了全互配。
+
+              ❗ **不能写成「你配错了」**：面板只知道本机自己的对端数，
+              看不到全局拓扑——而星型里的那台常开机**同样**有 N-1 个对端，
+              它才是配对了的那一台。所以最后一句要给它留个口子。 */}
+          {s.devices.length >= STAR_HINT_PEERS && (
+            <div style={{
+              marginTop: 10, fontSize: 11, lineHeight: 1.7,
+              color: "var(--text-muted)",
+            }}>
+              这台设备正在<b>直接对接 {s.devices.length} 台</b>。设备一多时，
+              建议配成「星型」：让其它设备<b>都只跟一台常开机配对</b>，彼此之间不配。
+              不用改任何设置——在各台设备上把多余的配对「忘记」掉、
+              只留跟常开机的那一条即可；
+              {s.devices.length + 1} 台设备两两互配是 {(s.devices.length + 1) * s.devices.length / 2} 对连接，
+              星型只需 {s.devices.length} 对。
+              <br />
+              ⚠ 代价：那台常开机掉线时，其它设备之间就同步不了了
+              （两两互配是少一台只少一条路）。
+              <b>如果这台就是你的常开机，那现在这样就是对的。</b>
             </div>
           )}
 
