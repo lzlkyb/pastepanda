@@ -36,6 +36,12 @@ export interface KbLastSync {
   /** 这一轮新落盘的附件数（W1）。 */
   assets_landed: number;
   /**
+   * 这一轮整桶重对账的桶数（W2）。非 0 = 发现了分叉并已经在修。
+   *
+   * ❗ 偶尔非 0 是正常的（修好就回 0）；持续非 0 才是问题。
+   */
+  diverged_buckets: number;
+  /**
    * 🔴 本机**没搬出去**的附件数（原图不在 / 超过 10MB）。
    *
    * 与 `missing_files` 方向相反：这是**发送侧**才知道的事，

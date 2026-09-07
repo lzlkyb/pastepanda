@@ -53,7 +53,7 @@
 //! 而不是让对端在报文里自称。同 [`super::presence`] 不带设备名的道理：
 //! 少一个可自称的字段，就少一处要交叉核对的地方。
 
-use super::engine::{apply_delta, compute_delta, ApplyReport};
+use super::engine::{apply_delta, compute_delta_in, ApplyReport};
 use super::transport::{self, Wire};
 use crate::data_store::DataStore;
 use iroh::{Endpoint, EndpointAddr};
@@ -71,6 +71,19 @@ struct Hello {
     cursor_ms: i64,
     /// 本机的 HLC 下界。见模块说明。
     high_water_ms: i64,
+    /// 本机懂分桶摘要（W2）。
+    ///
+    /// 🔴 这个能力位存在的原因：协议版本没跟着升（不想强迫两台机器同时升级）。
+    /// 于是旧版对端会把它当 `false`（serde 默认值）。不看这一位就直接发摘要帧的话，
+    /// 本机会写出一个旧版永远不会读的帧，然后自己卡在读一个永远不来的帧上——**挂死**。
+    #[serde(default)]
+    digest_capable: bool,
+    /// 本机希望这一轮对一次摘要（心跳 / 从长睡里醒来的会话）。
+    ///
+    /// ❗ 只要**一边**想就交换。两边各自按自己的心跳节拍走，要求同时想的话
+    /// 几乎永远对不上，摘要就埋成了死代码。
+    #[serde(default)]
+    want_digest: bool,
 }
 
 /// 一次会话的结果。
@@ -86,15 +99,25 @@ pub struct SessionReport {
     pub recv_bytes: u64,
     /// 本机这边没搬出去的附件数（见 [`super::engine::ExportReport`]）。
     pub assets_skipped: usize,
+    /// 这一轮发现对不上、因而整桶重对账的桶数（W2）。
+    ///
+    /// ❗ 非 0 不是错，是「发现了分叉并已经在修」。但它该能被看到：
+    /// 如果每个心跳会话都报同一个桶分叉，那就是修不好——不报出来的话
+    /// 那个「每轮重发、永不收敛」的状态从外面看不出来。
+    pub diverged_buckets: usize,
     pub applied: ApplyReport,
 }
 
 /// 主动发起一次会话。`to` 从 [`super::presence`] 或邀请码里的地址来。
+/// `want_digest` = 这一轮要不要对一次分桶摘要（W2）。只有心跳与从长睡里
+/// 醒来的会话给 `true`；每次本地改动触发的会话都算一遍的话，
+/// 会把刚做完的「脏了才拨」那个成本优势吃掉一部分。
 pub async fn dial_session(
     store: &DataStore,
     ep: &Endpoint,
     peer: &str,
     to: EndpointAddr,
+    want_digest: bool,
 ) -> Result<SessionReport, String> {
     let w = transport::dial(ep, to).await?;
     // ❗ 先克隆一份连接句柄：`run` 会把 `w` 吃掉，而失败之后才需要问它
@@ -111,7 +134,9 @@ pub async fn dial_session(
             &got[..8.min(got.len())]
         ));
     }
-    run(store, w, &got, true).await.map_err(|e| explain(&conn, e))
+    run(store, w, &got, true, want_digest)
+        .await
+        .map_err(|e| explain(&conn, e))
 }
 
 /// 等一个对端连进来并把会话走完。`is_paired` 决定收不收。
@@ -130,7 +155,9 @@ pub async fn accept_session(
             &peer[..8.min(peer.len())]
         ));
     }
-    run(store, w, &peer, false).await
+    // ❗ 接入侧自己不提要摘要（它没有自己的心跳节拍），但拨号方提了就配合。
+    //   判据写在 `run` 里：`mine.want || theirs.want`。
+    run(store, w, &peer, false, false).await
 }
 
 /// 把一个**已经接下来**的连接跑成一次会话。
@@ -143,7 +170,10 @@ pub async fn run_accepted(
     peer: &str,
 ) -> Result<SessionReport, String> {
     let conn = w.conn.clone();
-    run(store, w, peer, false).await.map_err(|e| explain(&conn, e))
+    // ❗ 接入侧同 `accept_session`：自己不提要摘要，拨号方提了就配合。
+    run(store, w, peer, false, false)
+        .await
+        .map_err(|e| explain(&conn, e))
 }
 
 /// 拒一个入连接。理由写进关闭原因里，对端日志里看得到（规则 #15.3）。
@@ -187,11 +217,14 @@ async fn run(
     mut w: Wire,
     peer: &str,
     send_first: bool,
+    want_digest: bool,
 ) -> Result<SessionReport, String> {
     let mine = Hello {
         v: PROTO_V,
         cursor_ms: store.device_cursor(peer),
         high_water_ms: store.sync_high_water_ms(),
+        digest_capable: true,
+        want_digest,
     };
     let bytes = serde_json::to_vec(&mine).map_err(|e| format!("序列化 hello 失败：{}", e))?;
     transport::write_frame(&mut w.send, &bytes).await?;
@@ -233,9 +266,29 @@ async fn run(
         mine.high_water_ms.max(theirs.high_water_ms)
     };
 
+    // W2：分桶摘要。两边拿的是同两份摘要，而分叉集是它们的纯函数，
+    // 所以两边算出来的 `diverged` 必然一样，不用再多一个「请求重发」帧。
+    // 为何不能只一边做（单向修复不收敛）写在 `digest` 模块里。
+    let diverged: Vec<u32> = if mine.digest_capable
+        && theirs.digest_capable
+        && (mine.want_digest || theirs.want_digest)
+    {
+        exchange_digests(store, &mut w).await?
+    } else {
+        Vec::new()
+    };
+    if !diverged.is_empty() {
+        log::info!(
+            "[Sync] 与 {} 有 {} 个桶对不上，这一轮把它们整桶重对账：{:?}",
+            &peer[..8.min(peer.len())],
+            diverged.len(),
+            diverged
+        );
+    }
+
     let out = scratch("out");
     let inbox = scratch("in");
-    let r = exchange(store, &mut w, since, &out, &inbox, send_first).await;
+    let r = exchange(store, &mut w, since, &out, &inbox, send_first, &diverged).await;
     let _ = std::fs::remove_dir_all(&out);
     // ❗ `inbox` 也要在每条退出路径上删掉：里面是**明文笔记**，
     //   而失败会按 5→60 秒退避反复重试，残留会一直堆在 %TEMP%。
@@ -290,8 +343,35 @@ async fn run(
         sent_bytes: x.sent,
         recv_bytes: x.recv,
         assets_skipped: x.assets_skipped,
+        diverged_buckets: diverged.len(),
         applied,
     })
+}
+
+/// 只给测试用：把一段 hello JSON 解成 `(digest_capable, want_digest)`。
+///
+/// 🔴 存在的理由是那两个 `#[serde(default)]`——它们默认为 `false`
+/// 是与旧版对端不挂死的**唯一保障**，而 [`Hello`] 是私有的，测试摸不到。
+#[cfg(test)]
+pub fn hello_from_json_for_test(s: &str) -> Result<(bool, bool), String> {
+    let h: Hello = serde_json::from_str(s).map_err(|e| e.to_string())?;
+    Ok((h.digest_capable, h.want_digest))
+}
+
+/// 互报分桶摘要，返回**两边会算出完全相同结果**的分叉桶列表。
+///
+/// 🔴 这里只用两份摘要算（纯函数），不做任何本地取舍。一旦两边算出不同的
+/// 分叉集，修复就变成单向的，而单向修复不收敛（理由在 `digest` 模块）。
+///
+/// ❗ 写完再读，与 hello 同一个形状（不看 `send_first`）：16 个 u64 的 JSON
+/// 就几百字节，远不到把发送窗口填满，不会像目录传输那样双向卡死。
+async fn exchange_digests(store: &DataStore, w: &mut Wire) -> Result<Vec<u32>, String> {
+    let mine = store.sync_bucket_digests()?;
+    let bytes = serde_json::to_vec(&mine).map_err(|e| format!("序列化摘要失败：{}", e))?;
+    transport::write_frame(&mut w.send, &bytes).await?;
+    let raw = transport::read_frame(&mut w.recv).await?;
+    let theirs: Vec<u64> = serde_json::from_slice(&raw).map_err(|_| "对端的分桶摘要解不开")?;
+    Ok(super::digest::diverged(&mine, &theirs))
 }
 
 /// [`exchange`] 的结果。用结构而不是三元组：三个裸数字排在一起谁是谁看不出来。
@@ -309,8 +389,9 @@ async fn exchange(
     out: &std::path::Path,
     inbox: &std::path::Path,
     send_first: bool,
+    buckets: &[u32],
 ) -> Result<Exchanged, String> {
-    let delta = compute_delta(store, since)?;
+    let delta = compute_delta_in(store, since, buckets)?;
     let exported = super::engine::write_delta(store, &delta, out)?;
 
     if send_first {

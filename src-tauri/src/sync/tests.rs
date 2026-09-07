@@ -1232,7 +1232,7 @@ async fn test_会话一次往返两边都拿到对方的东西() {
     // 拨号方与接受方在同一个任务里并行推进（tokio::join! 不需要 Send）
     let known = |id: &str| id == ia;
     let (ra, rb) = tokio::join!(
-        dial_session(&a, &ep_a, &ib, to),
+        dial_session(&a, &ep_a, &ib, to, false),
         accept_session(&b, &ep_b, &known)
     );
     let ra = ra.expect("拨号方会话失败");
@@ -1271,7 +1271,7 @@ async fn test_第二轮什么都不搬也不生冲突副本() {
 
     let known = |id: &str| id == ia;
     let (r1a, r1b) = tokio::join!(
-        dial_session(&a, &ep_a, &ib, dialable(&ep_b)),
+        dial_session(&a, &ep_a, &ib, dialable(&ep_b), false),
         accept_session(&b, &ep_b, &known)
     );
     let r1a = r1a.expect("第一轮拨号失败");
@@ -1281,7 +1281,7 @@ async fn test_第二轮什么都不搬也不生冲突副本() {
 
     // 第二轮：两边都没改过任何东西
     let (r2a, r2b) = tokio::join!(
-        dial_session(&a, &ep_a, &ib, dialable(&ep_b)),
+        dial_session(&a, &ep_a, &ib, dialable(&ep_b), false),
         accept_session(&b, &ep_b, &known)
     );
     let r2a = r2a.expect("第二轮拨号失败");
@@ -1324,7 +1324,7 @@ async fn test_没配对的对端连进来会被拒() {
 
     let nobody = |_: &str| false;
     let (ra, rb) = tokio::join!(
-        dial_session(&a, &ep_a, &ib, dialable(&ep_b)),
+        dial_session(&a, &ep_a, &ib, dialable(&ep_b), false),
         accept_session(&b, &ep_b, &nobody)
     );
     let err = rb.expect_err("没配对却把会话走完了");

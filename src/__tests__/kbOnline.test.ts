@@ -90,7 +90,7 @@ function lastOf(over: Partial<KbLastSync> = {}): KbLastSync {
     at_ms: NOW - 1_000,
     created: 0, updated: 0, deleted: 0, skipped_older: 0, conflicts: 0,
     missing_files: 0, import_failed: 0, clock_too_far_ahead_ms: null,
-    assets_landed: 0, assets_skipped: 0,
+    assets_landed: 0, assets_skipped: 0, diverged_buckets: 0,
     fails: 0, error: null, next_in_secs: 30,
     ...over,
   };

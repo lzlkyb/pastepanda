@@ -91,6 +91,9 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   const failedImports = live0.reduce((a, l) => a + l.import_failed, 0);
   // ❗ 这一条与上面两条方向相反：它是**本机没发出去**，只有这边看得见。
   const assetsSkipped = live0.reduce((a, l) => a + l.assets_skipped, 0);
+  // W2：偶尔非 0 是正常的、下一轮就消失；**持续**非 0 才是修不好。
+  // 面板记不住历史，分辨不了两者，所以用 info 调、可一键压掉。
+  const diverged = live0.reduce((a, l) => a + l.diverged_buckets, 0);
 
   const row = (key: string, tone: "warn" | "bad" | "info", body: React.ReactNode) => {
     if (dismissed[key]) return null;
@@ -171,6 +174,11 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
           文件收到了，但写入失败——最常见的原因是<b>单篇太大</b>（超过 10MB）。
           同步会一直重试这几篇，在它们进来之前更新的内容不会被跳过。
         </div>
+      </>)}
+
+      {diverged > 0 && row("diverged", "info", <>
+        最近一次对账发现 <b>{diverged} 处</b>两边对不上，已经把那几块重新同过一遍。
+        <b>没有丢东西。</b>如果这条提示一直在，说明没修好——那是个 bug。
       </>)}
 
       {assetsSkipped > 0 && row("assets-skipped", "warn", <>

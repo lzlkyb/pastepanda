@@ -730,11 +730,73 @@ impl DataStore {
     /// ❗ 只返回**活**笔记。已删的那些由 `note_tombstones_since` 负责——
     /// 两条路各管一半，混在一起会让「删除」被对端当成「一次内容更新」。
     pub fn note_changed_since(&self, since_ms: i64) -> Result<Vec<Note>, String> {
+        self.note_changed_since_or_buckets(since_ms, &[])
+    }
+
+    /// W2：每个桶一个摘要，长度恒为 [`crate::sync::digest::BUCKETS`]。
+    ///
+    /// ❗ 只算**活笔记**。墓碑不进摘要：「A 有活的 X、B 已删 X」这种真分叉
+    /// 照样能被发现（X 在 A 的桶里、不在 B 的桶里），而两边都没活笔记的
+    /// 陈旧墓碑差异是无害的，让它进摘要只会把桶天天弄成对不上。
+    pub fn sync_bucket_digests(&self) -> Result<Vec<u64>, String> {
+        use crate::sync::digest;
+        let conn = self.lock_conn();
+        // 🔴 `ORDER BY id` 不能去：FNV 不可交换，递进顺序变了，
+        //    两台机器内容完全一样也会算出不同的摘要。
+        let mut st = conn
+            .prepare("SELECT id, updated_ms FROM notes WHERE deleted_at IS NULL ORDER BY id")
+            .map_err(|e| e.to_string())?;
+        let mut buckets = vec![digest::empty_bucket(); digest::BUCKETS as usize];
+        let rows = st
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (id, ms) = row.map_err(|e| e.to_string())?;
+            let b = digest::bucket_of(&id) as usize;
+            buckets[b] = digest::absorb(buckets[b], &id, ms);
+        }
+        Ok(buckets)
+    }
+
+    /// 拼「`?1` 之后改过的 或 落在这些桶里的」那一段 WHERE。桶为空时退化成单条件。
+    ///
+    /// ❗ 调用方要自己给它包上括号：里面有裸 `OR`，不包的话
+    /// `deleted_at IS NULL AND a OR b` 会按 `(A AND a) OR b` 结合，把已删的也拉出来。
+    ///
+    /// 注入面：`buckets` 是 `u32`，只能拼出数字；两个列名是本模块写死的字面量。
+    fn since_or_buckets_clause(ms_col: &str, id_col: &str, buckets: &[u32]) -> String {
+        if buckets.is_empty() {
+            return format!("{} > ?1", ms_col);
+        }
+        let list = buckets
+            .iter()
+            .map(|b| b.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "{} > ?1 OR {} IN ({})",
+            ms_col,
+            crate::sync::digest::bucket_sql(id_col),
+            list
+        )
+    }
+
+    /// 「游标之后改过的」或「落在这些桶里的全部」。桶为空时就是原来的单条件。
+    ///
+    /// 🔴 重对账拉回来的旧笔记 `updated_ms <= since`，所以接收侧的冲突判据
+    /// `local > 游标 && incoming > 游标` 两边都不成立——重对账**不会生冲突副本**，
+    /// 而是走 `apply_delta` 里那条「内容一模一样就跳过」。这一条是 W2 能用的前提。
+    pub fn note_changed_since_or_buckets(
+        &self,
+        since_ms: i64,
+        buckets: &[u32],
+    ) -> Result<Vec<Note>, String> {
         let conn = self.lock_conn();
         let sql = format!(
-            "SELECT {} FROM notes WHERE deleted_at IS NULL AND updated_ms > ?1 \
+            "SELECT {} FROM notes WHERE deleted_at IS NULL AND ({}) \
              ORDER BY updated_ms",
-            NOTE_COLS
+            NOTE_COLS,
+            Self::since_or_buckets_clause("updated_ms", "id", buckets)
         );
         let mut st = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let mut notes: Vec<Note> = st
@@ -1374,13 +1436,25 @@ impl DataStore {
         &self,
         since_ms: i64,
     ) -> Result<Vec<(String, i64, i64)>, String> {
+        self.note_tombstones_since_or_buckets(since_ms, &[])
+    }
+
+    /// `since_ms` 之后的墓碑，外加落在给定桶里的全部墓碑（W2 重对账）。
+    ///
+    /// ❗ 墓碑也得跟着桶重发：「A 还有活的 X、B 已删」这种分叉，
+    /// 光重发活笔记只会把 X 又送回 B，而 B 的删除永远传不到 A。
+    pub fn note_tombstones_since_or_buckets(
+        &self,
+        since_ms: i64,
+        buckets: &[u32],
+    ) -> Result<Vec<(String, i64, i64)>, String> {
         let conn = self.lock_conn();
-        let mut st = conn
-            .prepare(
-                "SELECT note_id, tombstone_ms, local_ms FROM note_tombstones
-                 WHERE local_ms > ?1 ORDER BY local_ms",
-            )
-            .map_err(|e| e.to_string())?;
+        let sql = format!(
+            "SELECT note_id, tombstone_ms, local_ms FROM note_tombstones \
+             WHERE ({}) ORDER BY local_ms",
+            Self::since_or_buckets_clause("local_ms", "note_id", buckets)
+        );
+        let mut st = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = st
             .query_map([since_ms], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map_err(|e| e.to_string())?

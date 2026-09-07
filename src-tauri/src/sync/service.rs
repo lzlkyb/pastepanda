@@ -69,6 +69,11 @@ pub struct LastSync {
     pub clock_too_far_ahead_ms: Option<i64>,
     /// 这一轮新落盘的附件数（W1）。只是个正向信息，给面板一个属实的东西可显。
     pub assets_landed: usize,
+    /// 这一轮整桶重对账的桶数（W2）。非 0 = 发现了分叉并已经在修。
+    ///
+    /// ❗ 要能看到它，否则「每个心跳都报同一个桶分叉」这种修不好的状态
+    /// 从外面完全看不出来。渲染在 `KbSyncStatusBar`（info 调）。
+    pub diverged_buckets: usize,
     /// 🔴 本机这边**没搬出去**的附件数（源图被清过 / 超过上限）。
     ///
     /// 与 `missing_files` 同类，但方向相反：它是**发送侧**才知道的事。
@@ -190,34 +195,45 @@ impl Wait {
 /// 所以不需要知道对端脏不脏，也不需要变更通知协议。
 /// 覆盖不到的那几种（对端改完拨不通、又没有组播）由 `HEARTBEAT_SECS` 兜底。
 ///
-/// 返回 `false` = 该退出循环了。
-async fn idle_wait(ctx: &SyncCtx, peer: &str) -> bool {
+/// 返回值见 [`Woke`]（除了「该不该退出」，还告诉调用方**为何**醒的）。
+async fn idle_wait(ctx: &SyncCtx, peer: &str) -> Woke {
     // 去抖：刚同步完就先压一段。这一段**不听写入信号**，
     // 否则连续敲键盘时会变成边打字边拨号。
     if !sleep_or_stop(&ctx.stop, MIN_SESSION_GAP_SECS).await {
-        return false;
+        return Woke::Stop;
     }
     let deadline = now_ms() + jittered_secs(HEARTBEAT_SECS, JITTER_SECS, now_ms() as u64) as i64 * 1000;
     loop {
         match dirty_for(ctx, peer) {
             // 有东西要发 → 立即拨
-            Ok(true) => return true,
+            Ok(true) => return Woke::Dirty,
             Ok(false) => {}
             // 查不了库就当脏（宁可多拨一次，不能因为一次 SQL 错就把同步停了）。
             Err(e) => {
                 log::warn!("[Sync] 脏检查失败，本轮当作有变更：{}", e);
-                return true;
+                return Woke::Dirty;
             }
         }
         if now_ms() >= deadline {
-            return true; // 到心跳了，无论如何同一次
+            return Woke::Heartbeat; // 到心跳了，无论如何同一次
         }
         let left = ((deadline - now_ms()) / 1000).max(1) as u64;
         // 这一段听 `wake`（对端回来 / 手动同步）与写入信号（方案 B）。
         if !sleep_idle(ctx, IDLE_CHECK_SECS.min(left)).await {
-            return false;
+            return Woke::Stop;
         }
     }
+}
+
+/// [`idle_wait`] 为何醒了。它只多做一件事：决定下一拨要不要带分桶摘要（W2）。
+enum Woke {
+    /// 开关关了 / 这台设备被移除，循环该结束。
+    Stop,
+    /// 有东西变了。只搬增量，**不对摘要**——这种会话可能几十秒一次。
+    Dirty,
+    /// 心跳到点。两边本来都没改过东西，正是**顺手对一次摘要**的时候：
+    /// 这一轮本就没东西可搬，摘要那点开销不与任何真实工作抢时间。
+    Heartbeat,
 }
 
 /// 本机还有没有东西要发给这台对端。
@@ -238,8 +254,11 @@ fn dirty_for(ctx: &SyncCtx, peer: &str) -> Result<bool, String> {
 pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     let short = &peer[..8.min(peer.len())];
     let mut fails: u32 = 0;
+    // 🔴 第一拨就带摘要（W2）：上一次可能是崩在会话中间的，
+    // 而那正是两边游标已推、内容却分叉的典型成因。
+    let mut want_digest = true;
     while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
-        let outcome = dial_once(&ctx, &peer).await;
+        let outcome = dial_once(&ctx, &peer, want_digest).await;
         // 三种睡法写成显式的（而不是一个 `bool`），因为「谁能被叫醒」是这段
         // 最容易改错的地方，而改错了不报错、只是开始疯狂拨号（已经发生过一次）。
         //
@@ -310,9 +329,28 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
         let alive = match wait {
             // 脏了就拨、否则睡到心跳。空闲时不再固定 30 秒一轮——
             // 那一轮里两边都没改过东西，整个会话是纯浪费。
-            Wait::Idle => idle_wait(&ctx, &peer).await,
-            Wait::Fixed(s) => sleep_or_stop(&ctx.stop, s).await,
-            Wait::Dormant(s) => sleep_or_wake(&ctx, s).await,
+            Wait::Idle => match idle_wait(&ctx, &peer).await {
+                Woke::Stop => false,
+                Woke::Dirty => {
+                    want_digest = false;
+                    true
+                }
+                Woke::Heartbeat => {
+                    want_digest = true;
+                    true
+                }
+            },
+            // 退避重试：上一拨刚失败，不是核对账的时候（失败多半是网络问题，
+            // 多算一遍摘要只是白烧）。
+            Wait::Fixed(s) => {
+                want_digest = false;
+                sleep_or_stop(&ctx.stop, s).await
+            }
+            // 从长睡里醒来：与对端已经很久没说过话，正是分叉最可能积起来的时候。
+            Wait::Dormant(s) => {
+                want_digest = true;
+                sleep_or_wake(&ctx, s).await
+            }
         };
         if !alive {
             break;
@@ -351,6 +389,7 @@ fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs:
                     import_failed: r.applied.import_failed,
                     clock_too_far_ahead_ms: r.applied.clock_too_far_ahead_ms,
                     assets_landed: r.applied.assets_landed,
+                    diverged_buckets: r.diverged_buckets,
                     assets_skipped: r.assets_skipped,
                     fails: 0,
                     error: None,
@@ -403,7 +442,7 @@ enum Outcome {
     Failed(String),
 }
 
-async fn dial_once(ctx: &SyncCtx, peer: &str) -> Outcome {
+async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
     // 本机也要先拿槽：不然本机的两条路径（周期拨号与刚收到的入连接）
     // 会同时对同一个库跑 apply。
     let Some(_hold) = ctx.coord.try_hold(peer) else {
@@ -413,7 +452,7 @@ async fn dial_once(ctx: &SyncCtx, peer: &str) -> Outcome {
         Ok(t) => t,
         Err(e) => return Outcome::Failed(e),
     };
-    match session::dial_session(&ctx.store, &ctx.endpoint, peer, to).await {
+    match session::dial_session(&ctx.store, &ctx.endpoint, peer, to, want_digest).await {
         Ok(r) => {
             let _ = ctx
                 .store
@@ -889,7 +928,10 @@ impl SyncService {
         // ❗ 顺手把休眠中的循环叫醒。用户点「立即同步」的意思就是「现在试」，
         //   只拨这一台而把其它睡着的留在那里，下一次还得再点一遍。
         ctx.wake.notify_waiters();
-        match dial_once(&ctx, node_id).await {
+        // 🔴 手动同步带上分桶摘要（W2）。用户去点这个按钮，大多数时候正是
+        // 因为他觉得两边不一样了——而「两边不一样但游标都推过了」正是摘要要治的那一种；
+        // 不带的话他点一千次也只是反复拨一个空增量。
+        match dial_once(&ctx, node_id, true).await {
             // 「对端在忙」不是失败：它那边正在把两边的东西都搬完
             Outcome::Synced(_) | Outcome::Busy(_) => Ok(()),
             // 对端明确拒了：把真正的原因告诉用户，而不是只说「失败」。

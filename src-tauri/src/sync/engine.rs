@@ -59,9 +59,21 @@ impl Delta {
 
 /// 算增量。纯查询，不写盘。
 pub fn compute_delta(store: &DataStore, since_ms: i64) -> Result<Delta, String> {
-    let notes = store.note_changed_since(since_ms)?;
+    compute_delta_in(store, since_ms, &[])
+}
+
+/// 同上，外加把 `buckets` 里的**全部**内容一并算进增量（W2 重对账）。
+///
+/// ❗ 游标不受影响：它取的是本次见到的**最大**值，而桶里拉回来的那些旧行
+/// 时间戳都 `<= since`，既不会抬高也不会拉低游标。
+pub fn compute_delta_in(
+    store: &DataStore,
+    since_ms: i64,
+    buckets: &[u32],
+) -> Result<Delta, String> {
+    let notes = store.note_changed_since_or_buckets(since_ms, buckets)?;
     // 三元组：(note_id, tombstone_ms, local_ms)。
-    let rows = store.note_tombstones_since(since_ms)?;
+    let rows = store.note_tombstones_since_or_buckets(since_ms, buckets)?;
     // 🔴 游标用 `local_ms`，不用 `tombstone_ms`——必须与筛选字段一致。
     //
     // 转发一条旧删除时两者差得很远（tombstone_ms 是一周前、local_ms 是现在）：

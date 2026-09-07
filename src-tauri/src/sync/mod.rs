@@ -22,6 +22,7 @@
 
 pub mod attach;
 pub mod coordinate;
+pub mod digest;
 pub mod engine;
 pub mod hlc;
 pub mod identity;
@@ -34,5 +35,7 @@ pub mod transport;
 
 #[cfg(test)]
 mod attach_tests;
+#[cfg(test)]
+mod digest_tests;
 #[cfg(test)]
 mod tests;
