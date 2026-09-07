@@ -246,6 +246,18 @@ impl DataStore {
         self.hlc.floor()
     }
 
+    /// 本机图片目录（`<app_data>/images`）。
+    ///
+    /// ❗ 从库文件位置推导而不是另传一个 `AppHandle`：`sync::engine` 是
+    /// **不联网不碰界面**的一层（模块注释明说），给它塞 AppHandle 会把
+    /// 那层的可测性拆掉。内存库（`:memory:`）时返回 `None`。
+    pub fn images_dir(&self) -> Option<std::path::PathBuf> {
+        let p = std::path::Path::new(&self.path);
+        p.parent()
+            .filter(|d| !d.as_os_str().is_empty())
+            .map(crate::sync::attach::images_dir_of)
+    }
+
     /// 「本机写了笔记」的信号，给同步循环做即时叫醒用（方案 B）。
     /// 为何挂在 HLC 上而不是逐个命令上，见 [`crate::sync::hlc::HlcClock`] 的字段注释。
     pub fn write_signal(&self) -> std::sync::Arc<tokio::sync::Notify> {

@@ -30,6 +30,7 @@
 //! （§7.5 已推翻「同毫秒才算冲突」那个定义）。
 //! 本片只做后写胜，并**把跳过的条数报出来**，让它至少可见。
 
+use super::attach;
 use crate::data_store::{DataStore, Note};
 use std::path::{Path, PathBuf};
 
@@ -115,8 +116,21 @@ fn same_version(local: &Note, incoming_md: &str) -> bool {
     theirs == mine
 }
 
+/// 导出一次增量的结果。
+///
+/// 🔴 存在的理由只有一条：`assets_skipped` 必须能上到界面。
+/// 没搬成的附件（源图被清过 / 超过上限）对端会看到一张**断图**，
+/// 而接收侧无从发现（它只看附件清单，而清单里就没这一条）——
+/// 知道的只有**发送侧**，而能处理的也只有发送侧的人。
+/// 只进日志的话，两边界面都显示「同步完成」（规则 #15.3）。
+#[derive(Debug, Default, PartialEq)]
+pub struct ExportReport {
+    /// 因为源文件不在或超过 [`attach::MAX_ASSET_BYTES`] 而没搬的附件数。
+    pub assets_skipped: usize,
+}
+
 /// 把增量写成一个目录。目录必须已存在。
-pub fn write_delta(store: &DataStore, delta: &Delta, out: &Path) -> Result<(), String> {
+pub fn write_delta(store: &DataStore, delta: &Delta, out: &Path) -> Result<ExportReport, String> {
     if !out.is_dir() {
         return Err(format!("输出目录不存在: {}", out.display()));
     }
@@ -124,6 +138,9 @@ pub fn write_delta(store: &DataStore, delta: &Delta, out: &Path) -> Result<(), S
     let dir_of = DataStore::sync_folder_dir_map(&folders, out);
 
     let mut manifest = String::new();
+    // 已搬进暂存的附件文件名（去重：多篇笔记常引用同一张图）。
+    let mut assets: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut rep = ExportReport::default();
     for n in &delta.notes {
         let dir = match n.folder_id.as_deref().and_then(|id| dir_of.get(id)) {
             Some(d) => d.clone(),
@@ -135,7 +152,33 @@ pub fn write_delta(store: &DataStore, delta: &Delta, out: &Path) -> Result<(), S
         // 用标题就得处理重名编号，而重名编号在两台机器上可能编出不同的号，
         // 于是同一篇笔记在对端落成另一个文件 —— 而 id 是唯一且稳定的。
         let name = format!("{}.md", n.id);
-        std::fs::write(dir.join(&name), crate::data_store::note_to_markdown(n, true))
+
+        // 🔴 W1：图片引用先便携化，再把字节搬进附件目录。
+        //    两件事缺一件都白做：只搬字节 → 对面路径不同，图仍断；
+        //    只改引用 → 对面根本没这张图。详见 `sync::attach` 模块注释。
+        let md = crate::data_store::note_to_markdown(n, true);
+        for a in attach::scan_local_refs(&md) {
+            let Some(images) = store.images_dir() else {
+                break; // 内存库（测试）没有 images 目录，不是错
+            };
+            match attach::stage_asset(&images, &out.join(attach::ASSETS_DIR), &a) {
+                Ok(Some(_)) => assets.insert(a.file_name()),
+                // 源图不在 / 超过 10MB 上限。**不静默**：对端那边会看到一个
+                // 断图，而日志里得能查到为什么（规则 #15.3）。
+                Ok(None) => {
+                    rep.assets_skipped += 1;
+                    log::warn!(
+                        "[Sync] 附件没搬（不存在或超过 {}MB）：{} ← 笔记 {}",
+                        attach::MAX_ASSET_BYTES / 1024 / 1024,
+                        a.file_name(),
+                        &n.id[..8.min(n.id.len())]
+                    );
+                    false
+                }
+                Err(e) => return Err(e),
+            };
+        }
+        std::fs::write(dir.join(&name), attach::to_portable(&md))
             .map_err(|e| format!("写文件失败 {name}: {e}"))?;
 
         let ms = store.note_updated_ms(&n.id).unwrap_or(0);
@@ -152,12 +195,51 @@ pub fn write_delta(store: &DataStore, delta: &Delta, out: &Path) -> Result<(), S
     }
     std::fs::write(out.join(MANIFEST), manifest).map_err(|e| format!("写清单失败: {e}"))?;
 
+    // 附件清单。写它是为了能复用现有的「清单说有、文件没到 → 按住游标」机制：
+    // 不写的话传输把附件截掉了也无从发现，图会静默丢。
+    let assets_manifest: String = assets.iter().map(|n| format!("{}\n", n)).collect();
+    std::fs::write(out.join(attach::ASSETS_MANIFEST), assets_manifest)
+        .map_err(|e| format!("写附件清单失败: {e}"))?;
+
     let tomb: String = delta
         .tombstones
         .iter()
         .map(|(id, ms)| format!("{}\t{}\n", id, ms))
         .collect();
     std::fs::write(out.join(TOMBSTONES), tomb).map_err(|e| format!("写墓碑清单失败: {e}"))?;
+    Ok(rep)
+}
+
+/// 把暂存目录里所有 `.md` 的便携引用改写回本机绝对路径。
+///
+/// ❗ 递归，但**跳过 `.` 开头的目录**（就是附件目录自己）——
+/// 与 `note_import_dir` 的 `collect_md` 保持同一口径，否则两边对“哪些文件算笔记”
+/// 的理解会分岔。
+///
+/// 写不回去就直接报错（不吃）：写失败意味着这篇导入后正文里会残留
+/// `pp-asset:`——那东西前端渲染不了，且会把回声拦截打坏。
+fn rewrite_staged_refs(dir: &Path, images_dir: &Path) -> Result<(), String> {
+    for entry in std::fs::read_dir(dir)
+        .map_err(|e| format!("读暂存目录失败: {e}"))?
+        .flatten()
+    {
+        let p = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        if p.is_dir() {
+            rewrite_staged_refs(&p, images_dir)?;
+        } else if p.extension().and_then(|e| e.to_str()) == Some("md") {
+            let text = std::fs::read_to_string(&p)
+                .map_err(|e| format!("读暂存文件失败 {}: {e}", p.display()))?;
+            if !text.contains(attach::PORTABLE_SCHEME) {
+                continue; // 没图的笔记不白写一遍
+            }
+            std::fs::write(&p, attach::to_local(&text, images_dir))
+                .map_err(|e| format!("回写暂存文件失败 {}: {e}", p.display()))?;
+        }
+    }
     Ok(())
 }
 
@@ -176,6 +258,12 @@ pub struct ApplyReport {
     pub missing_files: usize,
     /// 内容与本地一模一样、直接跳过的条数（回声）。见下面那条拦截。
     pub identical: usize,
+    /// 新落盘的附件数（W1）。
+    pub assets_landed: usize,
+    /// 本机已有、因而跳过的附件数。
+    ///
+    /// ❗ 不是失败：文件名就是内容 md5，同名即同内容，跳过是**去重**。
+    pub assets_deduped: usize,
     /// 导入阶段真正失败的条数。**不静默**（规则 #15.3）。
     pub import_failed: usize,
     /// 没落地的条目里**最小的那个时间戳**。调用方拿它夹游标。
@@ -219,6 +307,40 @@ pub fn apply_delta(
     let mut rep = ApplyReport::default();
     // 会被导入的条目的「对端版本戳」。导入完之后要把它们盖回去，见 ③ 之后。
     let mut keep_stamp: Vec<(String, i64, PathBuf)> = Vec::new();
+
+    // ①′ W1：附件先落盘，再把暂存目录里所有 md 的便携引用改写回本机绝对路径。
+    //
+    // 🔴 **这一步必须在下面的逐篇循环之前**，不能拆到循环里。
+    //    循环里那条回声拦截（`identical`）是拿**文件里的文本**与本地笔记比内容的；
+    //    而本地笔记存的是绝对路径。若此时文件里还是 `pp-asset:` 便携引用，
+    //    两边**永远不可能相等** → 回声拦截全面失效 → 回声那一批每篇都满足
+    //    `both_changed` → **每轮再生一批冲突副本**。那正是 `session.rs`
+    //    模块注释里花了很大力气避开的那个坑。
+    if let Some(images) = store.images_dir() {
+        let staged = dir.join(attach::ASSETS_DIR);
+        match attach::adopt_assets(&staged, &images) {
+            Ok((landed, skipped)) => {
+                rep.assets_landed = landed;
+                rep.assets_deduped = skipped;
+            }
+            // 附件落不下不让整次同步失败（文字还是能同的），但不静默。
+            Err(e) => log::warn!("[Sync] 附件落盘失败（图会断）：{}", e),
+        }
+        // 附件清单说有、文件没到 → 同 md 的 `missing_files` 一样报出来，
+        // 让调用方按住游标、下一轮重来。
+        for want in std::fs::read_to_string(dir.join(attach::ASSETS_MANIFEST))
+            .unwrap_or_default()
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+        {
+            if !staged.join(want).is_file() && !images.join(want).is_file() {
+                rep.missing_files += 1;
+                log::warn!("[Sync] 附件清单说有但文件没到：{}", want);
+            }
+        }
+        rewrite_staged_refs(dir, &images)?;
+    }
 
     // ① 先吸收对端时钟（HLC，§7.5 档②），**在任何本地写入之前**。
     //

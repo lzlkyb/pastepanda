@@ -84,6 +84,8 @@ pub struct SessionReport {
     pub high_water_ms: i64,
     pub sent_bytes: u64,
     pub recv_bytes: u64,
+    /// 本机这边没搬出去的附件数（见 [`super::engine::ExportReport`]）。
+    pub assets_skipped: usize,
     pub applied: ApplyReport,
 }
 
@@ -237,14 +239,13 @@ async fn run(
     let _ = std::fs::remove_dir_all(&out);
     // ❗ `inbox` 也要在每条退出路径上删掉：里面是**明文笔记**，
     //   而失败会按 5→60 秒退避反复重试，残留会一直堆在 %TEMP%。
-    let sent_recv = match r {
+    let x = match r {
         Ok(v) => v,
         Err(e) => {
             let _ = std::fs::remove_dir_all(&inbox);
             return Err(e);
         }
     };
-    let (sent, recv) = sent_recv;
 
     let applied = apply_delta(store, &inbox, since);
     let _ = std::fs::remove_dir_all(&inbox);
@@ -286,10 +287,18 @@ async fn run(
         peer: peer.to_string(),
         since_ms: since,
         high_water_ms: high_water,
-        sent_bytes: sent,
-        recv_bytes: recv,
+        sent_bytes: x.sent,
+        recv_bytes: x.recv,
+        assets_skipped: x.assets_skipped,
         applied,
     })
+}
+
+/// [`exchange`] 的结果。用结构而不是三元组：三个裸数字排在一起谁是谁看不出来。
+struct Exchanged {
+    sent: u64,
+    recv: u64,
+    assets_skipped: usize,
 }
 
 /// 算增量、写出去、收回来。抽出来是为了让上面那层无论成败都能清掉暂存目录。
@@ -300,9 +309,9 @@ async fn exchange(
     out: &std::path::Path,
     inbox: &std::path::Path,
     send_first: bool,
-) -> Result<(u64, u64), String> {
+) -> Result<Exchanged, String> {
     let delta = compute_delta(store, since)?;
-    super::engine::write_delta(store, &delta, out)?;
+    let exported = super::engine::write_delta(store, &delta, out)?;
 
     if send_first {
         let sent = transport::write_dir(&mut w.send, out).await?;
@@ -310,7 +319,11 @@ async fn exchange(
         let recv = transport::read_dir(&mut w.recv, inbox).await?;
         // 我们读完了对端的，说明对端也早就读完了我们的，不必再等 `closed()`
         w.conn.close(0u32.into(), b"done");
-        Ok((sent, recv))
+        Ok(Exchanged {
+            sent,
+            recv,
+            assets_skipped: exported.assets_skipped,
+        })
     } else {
         let recv = transport::read_dir(&mut w.recv, inbox).await?;
         let sent = transport::write_dir(&mut w.send, out).await?;
@@ -318,7 +331,11 @@ async fn exchange(
         // 🔴 这一侧最后发，必须等对端确认收到才放手：`finish()` 只标记流结束，
         // 不等数据真正送到（探针 README ③）。直接返回会把还在飞的数据掐掉。
         w.conn.closed().await;
-        Ok((sent, recv))
+        Ok(Exchanged {
+            sent,
+            recv,
+            assets_skipped: exported.assets_skipped,
+        })
     }
 }
 

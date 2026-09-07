@@ -33,6 +33,15 @@ export interface KbLastSync {
   import_failed: number;
   /** 非 null = 本机之后赢不过那台机器。 */
   clock_too_far_ahead_ms: number | null;
+  /** 这一轮新落盘的附件数（W1）。 */
+  assets_landed: number;
+  /**
+   * 🔴 本机**没搬出去**的附件数（原图不在 / 超过 10MB）。
+   *
+   * 与 `missing_files` 方向相反：这是**发送侧**才知道的事，
+   * 对端只会看到一张断图且无从分辨，所以必须在这边显示。
+   */
+  assets_skipped: number;
   /** 连续失败次数；0 = 上一次成功。 */
   fails: number;
   error: string | null;

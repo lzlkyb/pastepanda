@@ -20,6 +20,7 @@
 //! 配对界面按规则 #4 要先出设计稿；所以这一层现在**不接任何 Tauri 命令**——
 //! 接了就是没人调的死代码。
 
+pub mod attach;
 pub mod coordinate;
 pub mod engine;
 pub mod hlc;
@@ -31,5 +32,7 @@ pub mod service;
 pub mod session;
 pub mod transport;
 
+#[cfg(test)]
+mod attach_tests;
 #[cfg(test)]
 mod tests;

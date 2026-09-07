@@ -67,6 +67,13 @@ pub struct LastSync {
     pub import_failed: usize,
     /// 对端时钟超前太多。非 `None` 意味着本机之后赢不过那台机器。
     pub clock_too_far_ahead_ms: Option<i64>,
+    /// 这一轮新落盘的附件数（W1）。只是个正向信息，给面板一个属实的东西可显。
+    pub assets_landed: usize,
+    /// 🔴 本机这边**没搬出去**的附件数（源图被清过 / 超过上限）。
+    ///
+    /// 与 `missing_files` 同类，但方向相反：它是**发送侧**才知道的事。
+    /// 对端只会看到一张断图且无从分辨，所以必须在这边显示。
+    pub assets_skipped: usize,
     /// 连续失败次数；0 = 上一次是成功的。
     pub fails: u32,
     /// 失败原因（`fails > 0` 时有）。
@@ -343,6 +350,8 @@ fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs:
                     missing_files: r.applied.missing_files,
                     import_failed: r.applied.import_failed,
                     clock_too_far_ahead_ms: r.applied.clock_too_far_ahead_ms,
+                    assets_landed: r.applied.assets_landed,
+                    assets_skipped: r.assets_skipped,
                     fails: 0,
                     error: None,
                     next_in_secs,

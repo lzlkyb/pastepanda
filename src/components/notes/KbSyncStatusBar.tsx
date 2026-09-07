@@ -32,6 +32,9 @@ function mins(ms: number): string {
  *
  * `ApplyReport` 里的 `clock_too_far_ahead_ms` / `conflicts` / `skipped_older` /
  * `missing_files` 之前**只进日志**。不显示的话它们就是纯粹的静默数据损失（规则 #15.3）。
+ *
+ * `assets_skipped`（W1）是同一类事里**方向相反**的一条：不是「没收到」而是
+ * 「没发出去」。对端只会看到一张断图且分辨不出原因，能处理的只有发送侧的人。
  */
 export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   enabled: boolean;
@@ -86,6 +89,8 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   const live0 = last.filter((l) => l.fails === 0);
   const lostFiles = live0.reduce((a, l) => a + l.missing_files, 0);
   const failedImports = live0.reduce((a, l) => a + l.import_failed, 0);
+  // ❗ 这一条与上面两条方向相反：它是**本机没发出去**，只有这边看得见。
+  const assetsSkipped = live0.reduce((a, l) => a + l.assets_skipped, 0);
 
   const row = (key: string, tone: "warn" | "bad" | "info", body: React.ReactNode) => {
     if (dismissed[key]) return null;
@@ -165,6 +170,14 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
         <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
           文件收到了，但写入失败——最常见的原因是<b>单篇太大</b>（超过 10MB）。
           同步会一直重试这几篇，在它们进来之前更新的内容不会被跳过。
+        </div>
+      </>)}
+
+      {assetsSkipped > 0 && row("assets-skipped", "warn", <>
+        <b>有 {assetsSkipped} 张图没发出去</b>
+        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+          对方那边这几张会显示成断图。要么是<b>原图已不在本机</b>（图片目录被清过），
+          要么是<b>单张超过 10MB</b>。<b>只有这台看得见</b>——对方无从分辨。
         </div>
       </>)}
 
