@@ -48,7 +48,21 @@ const CANDIDATE_WHERE: &str = "
       AND (h.pinned = 1 OR COALESCE(h.search_hit_count, 0) >= 2)
       -- 带 deleted_at：笔记被删了，那张卡片就又变回「没沉淀过」，该回到收件箱。
       AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.history_id = h.id AND n.deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM kb_inbox_dismissed d WHERE d.history_id = h.id)";
+      AND NOT EXISTS (SELECT 1 FROM kb_inbox_dismissed d WHERE d.history_id = h.id)
+      -- 排掉压根没法转笔记的：列了也只能给一个灏掉的「不支持转笔记」，
+      -- 占着位置又做不了事。口径与前端 `extractNoteDraft` 逐条对应：
+      --   file        → 正文就是一串路径，不支持
+      --   image       → 没 OCR 文字就是一条空笔记
+      --   其余类型   → `draftFromText` 对空文本返回 null
+      -- ❗ 写在这里而不是前端过滤：列表与计数共用本常量，前端筛会让
+      -- 横幅上的总数比列表多出几条（上面那段注释钉的就是这个）。
+      AND (CASE h.type
+             WHEN 'file' THEN 0
+             WHEN 'image' THEN EXISTS (SELECT 1 FROM image_ocr_cache o
+                                        WHERE o.image_path = h.content
+                                          AND TRIM(COALESCE(o.full_text, '')) <> '')
+             ELSE TRIM(COALESCE(h.text, '')) <> ''
+           END)";
 
 /// 待沉淀区的视图选项（B2 #9）。**全默认 = 与做这个功能之前一模一样**。
 ///
@@ -217,24 +231,46 @@ impl DataStore {
 
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows: Vec<InboxCandidate> = stmt
+        // 先拆成两排：`load_ocr_texts_into_items` 要的是 `&mut [HistoryItem]`，
+        // 从 `Vec<InboxCandidate>` 里取不出连续切片。最后再 zip 回去。
+        let mut items: Vec<HistoryItem> = Vec::new();
+        let mut metas: Vec<(i64, i64, Option<String>)> = Vec::new();
+        let iter = stmt
             .query_map(refs.as_slice(), |row| {
                 let item = row_to_history_item(row)?;
                 // 13 列之后才是我们额外选的那几列
                 let hit: i64 = row.get(13)?;
                 let pasted: i64 = row.get(14)?;
                 let group_key: Option<String> = row.get(15)?;
+                Ok((item, hit, pasted, group_key))
+            })
+            .map_err(|e| e.to_string())?;
+        for (item, hit, pasted, group_key) in iter.filter_map(|r| r.ok()) {
+            items.push(item);
+            metas.push((hit, pasted, group_key));
+        }
+        // 🔴 先放锁再去取 OCR：`load_ocr_texts_into_items` 自己要 `lock_conn()`，
+        // 拿着这把锁去调就是自己等自己。
+        drop(stmt);
+        drop(conn);
+        // ❗ 没这一行的后果不是「图片缺点信息」，是**全部图片都显示「不支持转笔记」**：
+        // 前端 `extractNoteDraft` 对 image 的判据就是 `ocr_text`，为空就返回 null。
+        // 此前本文件一次都没加载过 OCR（只有 `history.rs` 的三条搜索路径加了），
+        // 实测待沉淀里 80 张图片全部有 OCR 文字，却一张都转不了。
+        self.load_ocr_texts_into_items(&mut items)?;
+        let rows: Vec<InboxCandidate> = items
+            .into_iter()
+            .zip(metas)
+            .map(|(item, (hit, pasted, group_key))| {
                 let reason = if item.pinned { "star" } else { "research" };
-                Ok(InboxCandidate {
+                InboxCandidate {
                     reason: reason.to_string(),
                     search_hit_count: hit,
                     recently_pasted: pasted != 0,
                     group_key,
                     item,
-                })
+                }
             })
-            .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
     }
