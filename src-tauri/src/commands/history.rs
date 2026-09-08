@@ -258,6 +258,15 @@ pub fn toggle_pin(store: State<DataStore>, id: String) -> Result<bool, String> {
     store.toggle_pin(&id)
 }
 
+/// 记一笔「搜完真的把它用了」。前端在**搜索状态下**粘贴 / 复制某条时调。
+///
+/// 无返回值、不报错：这是统计，凭什么拿它去卡住用户的粘贴。
+/// 「当时是不是在搜索」的判断放在前端：只有那边知道搜索框里有没有字。
+#[tauri::command]
+pub fn mark_search_recall(store: State<DataStore>, id: String) {
+    store.bump_search_recall(&id);
+}
+
 #[tauri::command]
 pub fn clear_history(
     store: State<DataStore>,

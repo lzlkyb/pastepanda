@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 import { toastActionFailed } from "@/lib/utils";
 import { maskSensitiveText } from "@/lib/mask";
+import { markRecallIfSearching } from "@/lib/searchRecall";
 import { useDialogStore } from "@/stores/dialogStore";
 
 /** 目标应用可读名（守卫确认条的提示文案） */
@@ -151,10 +152,16 @@ export async function copyRichOnly(htmlFragment: string, plainText: string): Pro
  * 返回给用户看的提示文案；失败直接抛，由调用方弹错误 toast。
  */
 export async function copyItemToClipboard(item: {
+  /** 只为了记「找回」信号。可选：并不是每个调用方都手里有完整条目。 */
+  id?: string;
   type: string;
   text: string;
   content?: string;
 }): Promise<string> {
+  // 搜索状态下把某条复制走 = 真的把它找回来用了。
+  // 写在函数头而不是四个调用点上：同一个仓库的粘贴信号就是因为散在
+  // 各处而漏了三个分支（见 `logItemPasted`）。
+  markRecallIfSearching(item.id);
   if (item.type === "image" && item.content) {
     await copyImageOnly(item.content);
     return "已复制图片";

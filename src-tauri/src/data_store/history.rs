@@ -391,11 +391,7 @@ impl DataStore {
         self.load_tags_into_items(&mut items)?;
         self.load_ocr_texts_into_items(&mut items)?;
 
-        // v6.1 自我净化：简单搜索路径也记录命中（收口在 bump_search_hits）
-        if !search.is_empty() && !items.is_empty() {
-            let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
-            self.bump_search_hits(&ids);
-        }
+        // ❗ 这里原本把本次返回的全部条目批量 +1，已删——详见 `bump_search_recall`。
 
         Ok(items)
     }
@@ -529,9 +525,7 @@ impl DataStore {
                 limit,
             ) {
                 if !fts_items.is_empty() {
-                    // 搜索命中计数（独立取锁，收口在 bump_search_hits）
-                    let ids: Vec<String> = fts_items.iter().map(|i| i.id.clone()).collect();
-                    self.bump_search_hits(&ids);
+                    // ❗ 原先在这里批量计数，已删——详见 `bump_search_recall`。
                     return Ok(fts_items);
                 }
             }
@@ -634,12 +628,7 @@ impl DataStore {
         self.load_tags_into_items(&mut items)?;
         self.load_ocr_texts_into_items(&mut items)?;
 
-        // v6.1 自我净化：搜索命中即高价值信号（豁免过期清理）。
-        // 对本次命中并返回的条目批量 +1，fire-and-forget（收口在 bump_search_hits）。
-        if !search.is_empty() && !items.is_empty() {
-            let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
-            self.bump_search_hits(&ids);
-        }
+        // ❗ 原先在这里批量计数，已删——详见 `bump_search_recall`。
 
         Ok(items)
     }
@@ -932,30 +921,32 @@ impl DataStore {
         Ok(())
     }
 
-    /// 批量记一笔搜索命中：次数 +1，并刷新「最近一次命中时间」。
+    /// 记一笔「搜完真的把它用了」：次数 +1，并刷新「最近一次」。
     ///
-    /// 收口三个搜索路径（简单搜 / FTS / 多关键词）里三段几乎一模一样的代码（规则 #11）——
-    /// 之前只有 `search_hit_count` 时就已经是三份，再加一列就是三处各改一次、漏一处不报错。
+    /// ❗ **只算真的用了那一条，不算它在结果里露过面。**
     ///
-    /// fire-and-forget：写失败只记 warn，不能让统计卡住搜索本身。
-    fn bump_search_hits(&self, ids: &[String]) {
-        if ids.is_empty() {
+    /// 旧实现是把本次搜索**返回的全部条目**批量 +1（上限 1000 条），
+    /// 而搜索框是 200ms 防抖、每个稳定下来的前缀各发一次查询（退格回删同理）。
+    /// 于是「找回 ×48」的真实含义是「在你过去的搜索结果里露过 48 次脸」。
+    ///
+    /// 现场证据（2026-09-08）：库里 **6 个不同条目计数一模一样是 47**、4 个是 48。
+    /// 人不可能把 6 样东西各找回恰好 47 次——它们只能是在同一条 UPDATE 里被一起数的。
+    ///
+    /// 这个计数还兼着「豁免过期清理」（见 `VALUE_PRESERVE_SQL`），
+    /// 所以旧口径不仅是数字难看，还在给一堆你没真用过的东西发免死金牌。
+    ///
+    /// fire-and-forget：写失败只记 warn，不能让统计卡住用户的动作。
+    pub fn bump_search_recall(&self, id: &str) {
+        if id.is_empty() {
             return;
         }
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        // ?1 给时间，id 从 ?2 开始
-        let placeholders: Vec<String> =
-            ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
-        let sql = format!(
+        if let Err(e) = self.lock_conn().execute(
             "UPDATE history SET search_hit_count = search_hit_count + 1, search_hit_at = ?1 \
-             WHERE id IN ({})",
-            placeholders.join(","),
-        );
-        let mut params: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(ids.len() + 1);
-        params.push(&now as &dyn rusqlite::types::ToSql);
-        params.extend(ids.iter().map(|s| s as &dyn rusqlite::types::ToSql));
-        if let Err(e) = self.lock_conn().execute(&sql, params.as_slice()) {
-            log::warn!("[History] 搜索命中计数更新失败: {}", e);
+             WHERE id = ?2",
+            params![now, id],
+        ) {
+            log::warn!("[History] 找回计数更新失败: {}", e);
         }
     }
 

@@ -10,6 +10,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { cleanSourceName } from "@/lib/utils";
+import { markRecallIfSearching } from "@/lib/searchRecall";
 
 /** outcome 取值（与后端 data_store/action_events.rs 的常量一一对应） */
 export type ActionOutcome = "copied" | "pasted" | "abandoned";
@@ -135,6 +136,10 @@ export function logPasteEvent(
   sourceApp: string,
   listIndex?: number,
 ): void {
+  // 搜索状态下粘贴某条 = 真的把它找回来用了。搭在这个现成的收口上，
+  // 因为它本来就是为了防「漏一个分支就少一类信号」而建的。
+  markRecallIfSearching(historyId);
+
   // v6.15：多带两个字段（粘的第几条 + 往哪类应用粘）。
   //
   // 为何要这两个：X3（目标应用感知重排）隐含一个未验证的假设——“用户唤起后需要在列表里找”。

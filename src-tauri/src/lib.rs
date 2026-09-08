@@ -624,6 +624,7 @@ pub fn run() {
             commands::update_history,
             commands::delete_history,
             commands::toggle_pin,
+            commands::mark_search_recall,
             commands::clear_history,
             commands::count_expired_history,
             commands::count_history_conditions,

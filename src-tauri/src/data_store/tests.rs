@@ -459,10 +459,14 @@ fn test_update_history_time_recopy_count() {
     assert_eq!(count(), 3, "Recapture 每次 +1");
 }
 
-/// 搜索命中要同时写 `search_hit_count` 与 `search_hit_at`（B2 前置）。
+/// 「找回」只能由真的用了那一条来计，并且要同时写上时间。
 ///
-/// 钉这条是因为 `bump_search_hits` 里参数占位符从 `?2` 开始（`?1` 给时间）——
-/// 这种差一位的绑定错误不会报错，只会安静地一条都更新不到。
+/// ❗ 这条用例原先钉的是相反的行为（“搜一下就 +1”）。那个口径是错的：
+///   它把本次搜索**返回的全部条目**一起 +1，而搜索框每个前缀各发一次查询。
+///   实测后果：库里 6 个不同条目计数一模一样是 47、4 个是 48。
+///
+/// `search_hit_at` 除了答「多久没找过」，还是清零迁移的幂等判据
+/// （“有计数却没有命中时间” = 旧数据），所以它必须跟计数一起写。
 #[test]
 fn test_search_hit_records_time() {
     let store = make_store();
@@ -470,19 +474,31 @@ fn test_search_hit_records_time() {
         .insert_history(&make_item("sh-1", "Rust 的 Pin", "2024-01-01 10:00:00", "text"))
         .unwrap();
 
+    let read = |store: &DataStore| -> (i64, Option<String>) {
+        store
+            .lock_conn()
+            .query_row(
+                "SELECT search_hit_count, search_hit_at FROM history WHERE id = 'sh-1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+    };
+
     let hits = store.get_history("默认", "all", "Pin", 0, 10).unwrap();
     assert_eq!(hits.len(), 1, "该搜得到");
+    let (n, at) = read(&store);
+    assert_eq!(n, 0, "光是在结果里露了个面不算找回");
+    assert!(at.is_none(), "没真用就不该有命中时间");
 
-    let (n, at): (i64, Option<String>) = store
-        .lock_conn()
-        .query_row(
-            "SELECT search_hit_count, search_hit_at FROM history WHERE id = 'sh-1'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(n, 1, "命中次数 +1");
-    assert!(at.is_some(), "命中时间必须写上");
+    // 真的用了（前端在搜索状态下粘贴/复制时调）
+    store.bump_search_recall("sh-1");
+    let (n, at) = read(&store);
+    assert_eq!(n, 1, "真用了才 +1");
+    assert!(at.is_some(), "命中时间必须跟着写（清零迁移的幂等判据靠它）");
+
+    store.bump_search_recall("sh-1");
+    assert_eq!(read(&store).0, 2, "再用一次再 +1");
 }
 
 /// `note_touch` 只能改 `last_access_at`，**不能碰 `updated_at`**（B2 前置）。
@@ -2426,26 +2442,45 @@ fn test_preserve_toggle_off_clears_valued() {
     assert_eq!(result.len(), 0, "全部清空");
 }
 
+/// 搜索本身不能动计数 —— 三条搜索路径一条都不行。
+///
+/// 旧实现在这三处各写了一次批量 +1。删掉一处很容易，删完三处才算完，
+/// 而漏的那一处不会报错——只会让数字又悄悄涨回去。所以三条都要断。
 #[test]
-fn test_search_hit_count_increments_on_search() {
+fn test_搜索本身不算找回() {
     let store = make_store();
     store
         .insert_history(&make_item("find-me", "unique-keyword-xyz", "2026-01-01 10:00:00", "text"))
         .unwrap();
+    let hit = |store: &DataStore| -> i64 {
+        store
+            .lock_conn()
+            .query_row(
+                "SELECT search_hit_count FROM history WHERE id = 'find-me'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
 
-    // 带搜索词的查询命中后计数 +1
-    let result = store.search_history("默认", "unique-keyword", "all", "", "", "all", &[], 10).unwrap();
-    assert_eq!(result.len(), 1);
-
-    let hit: i32 = store
-        .lock_conn()
-        .query_row(
-            "SELECT search_hit_count FROM history WHERE id = 'find-me'",
-            [],
-            |r| r.get(0),
-        )
+    // ① 全量搜索（search_history）
+    let result = store
+        .search_history("默认", "unique-keyword", "all", "", "", "all", &[], 10)
         .unwrap();
-    assert_eq!(hit, 1);
+    assert_eq!(result.len(), 1, "该搜得到");
+    assert_eq!(hit(&store), 0, "search_history 不该计数");
+
+    // ② 列表带关键词（get_history）
+    assert_eq!(store.get_history("默认", "all", "unique", 0, 10).unwrap().len(), 1);
+    assert_eq!(hit(&store), 0, "get_history 不该计数");
+
+    // ③ 多跑几次也不该涨（旧口径下这里就已经是 3 了）
+    for _ in 0..3 {
+        store
+            .search_history("默认", "unique-keyword", "all", "", "", "all", &[], 10)
+            .unwrap();
+    }
+    assert_eq!(hit(&store), 0, "搜多少次都是 0；只有真用了才算");
 }
 
 // ============================================================
@@ -7122,5 +7157,104 @@ fn test_脏判据_删除也算脏() {
     assert!(
         store.has_changes_since(after_create).unwrap(),
         "删除必须算脏，否则删除永远传不到对端"
+    );
+}
+
+/// 置顶必须把笔记排到列表最前 —— **列表与搜索两条路径都要**。
+///
+/// 这条用例补的是一个真实漏网：`note_toggle_pin` 一直是好的（库里 flag 确实翻了），
+/// 但 `note_list_view` 自己另拼了一份 ORDER BY，漏了 `notes.pinned DESC`，
+/// 于是置顶完行原地不动 —— 用户看到的就是「置顶没生效」。
+/// 而搜索路径走 `order_clause`，排序是对的，所以一搜又「好了」，更难判。
+///
+/// ❗ 光断言 `pinned == true` 是不够的：那一步本来就没坏。
+///   必须断言**位置**，这才是用户实际看到的东西。
+#[test]
+fn test_置顶的笔记要排到列表最前() {
+    let store = make_store();
+    // 按创建顺序，默认排序（最近修改倒序）下 c 在最前、a 在最后。
+    let a = store.note_create(None, "最早的一条", "甲的正文").unwrap();
+    let _b = store.note_create(None, "中间的一条", "乙的正文").unwrap();
+    let _c = store.note_create(None, "最新的一条", "丙的正文").unwrap();
+
+    // 先钓住「没置顶时 a 确实不在最前」——否则下面的断言可能只是碰巧。
+    let before = store.note_list("all", &[], 50, 0).unwrap();
+    assert_eq!(before.len(), 3);
+    assert_ne!(before[0].id, a.id, "前提不成立：a 本来就在最前，这条用例证明不了什么");
+
+    assert!(store.note_toggle_pin(&a.id).unwrap(), "切换后应为已置顶");
+
+    // ① 普通列表（就是坏掉的那条路径）
+    let listed = store.note_list("all", &[], 50, 0).unwrap();
+    assert_eq!(listed[0].id, a.id, "置顶的笔记必须排在列表最前");
+    assert!(listed[0].pinned, "排最前的这条得真的带着置顶标记");
+
+    // ② 带视图选项的列表（分组表达式那条分支）
+    let opts = crate::data_store::NoteViewOpts::default();
+    let viewed = store.note_list_view("all", &[], &opts, 50, 0).unwrap();
+    assert_eq!(viewed[0].id, a.id, "note_list_view 同样要认置顶");
+
+    // ③ 搜索路径（原本就是对的，钉住别被改回去）
+    let found = store.note_search("正文", "all", &[], 20).unwrap();
+    assert_eq!(found[0].id, a.id, "搜索结果里置顶也要排最前");
+
+    // ④ 取消置顶后要回到原位，不能一直粘在顶上
+    assert!(!store.note_toggle_pin(&a.id).unwrap(), "再切一次应为未置顶");
+    let after = store.note_list("all", &[], 50, 0).unwrap();
+    assert_ne!(after[0].id, a.id, "取消置顶后不该还在最前");
+}
+
+/// 待沉淀只该列得出能转笔记的，而且图片的 OCR 文字要跟着回去。
+///
+/// 两件事一起钉，因为它们会互相掩盖：
+/// 只加过滤、不加载 OCR 的话，“图片都不能转”会让过滤看起来很合理——
+/// 而实际上那是把 80 张本来好好的图片一起筛掉了（实测线上 80 张全部有 OCR）。
+#[test]
+fn test_待沉淀只列能转笔记的并带上识别文字() {
+    let store = make_store();
+    // 非 text 类型用不了 `seed_candidate`（它写死了 "text"），这里自己插。
+    let seed = |id: &str, ty: &str, text: &str, path: &str, time: &str| {
+        let mut it = make_item(id, text, time, ty);
+        it.content = path.to_string();
+        store.insert_history(&it).unwrap();
+        store
+            .lock_conn()
+            .execute(
+                "UPDATE history SET search_hit_count = 3 WHERE id = ?1",
+                rusqlite::params![id],
+            )
+            .unwrap();
+    };
+
+    seed("h-text", "text", "一段能转成笔记的正文", "", "2026-08-01 10:00:00");
+    // 文件卡片：全部内容就是一串路径，转不出正文
+    seed("h-file", "file", "D:\\某个文件.zip", "D:\\某个文件.zip", "2026-08-02 10:00:00");
+    // 有 OCR 的图片：能转
+    seed("h-img-ocr", "image", "", "D:\\shot-1.png", "2026-08-03 10:00:00");
+    store.set_ocr_text("D:\\shot-1.png", "截图里认出来的字").unwrap();
+    // 没 OCR 的图片：转出来是一条空笔记
+    seed("h-img-raw", "image", "", "D:\\shot-2.png", "2026-08-04 10:00:00");
+
+    let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
+    let ids: Vec<&str> = rows.iter().map(|c| c.item.id.as_str()).collect();
+    assert!(ids.contains(&"h-text"), "纯文本该在");
+    assert!(ids.contains(&"h-img-ocr"), "有 OCR 的图片该在");
+    assert!(!ids.contains(&"h-file"), "文件卡片没有可写的正文，不该占位");
+    assert!(!ids.contains(&"h-img-raw"), "没 OCR 的图片转出来是空笔记");
+
+    // 计数必须与列表一致，否则横幅写 4 条而列表只有 2 条
+    assert_eq!(
+        store.kb_inbox_count("默认").unwrap(),
+        rows.len() as i64,
+        "计数与列表必须用同一份条件"
+    );
+
+    // 🔴 关键：OCR 文字必须被带到前端。少了它，前端 `extractNoteDraft`
+    //    对每一张图片都返回 null，于是全部图片显示「不支持转笔记」。
+    let img_row = rows.iter().find(|c| c.item.id == "h-img-ocr").unwrap();
+    assert_eq!(
+        img_row.item.ocr_text.as_deref(),
+        Some("截图里认出来的字"),
+        "待沉淀也要加载 OCR，否则图片全部转不了"
     );
 }

@@ -1195,6 +1195,34 @@ impl DataStore {
             }
         }
 
+        // 一次性数据迁移：清掉旧口径攒下的「找回次数」。
+        //
+        // 旧 `bump_search_hits` 数的是「出现在搜索结果里」，一次搜索最多把 1000 条一起 +1；
+        // 新口径（`bump_search_recall`）只在用户真的用了那一条时 +1。
+        // 两份数字不同量纲，混在一起比全部清掉更坏。
+        //
+        // 🔴 判据用 `search_hit_at IS NULL` 而不是另设一个迁移标志位：
+        //   新口径每次 +1 都会顺手写 `search_hit_at`，所以
+        //   「有计数却没有命中时间」按定义就是旧数据。
+        //   这让迁移**自带幂等**：跑过一次后再也匹不上，
+        //   也绝不会把新攒的诚实计数抹掉（无条件 UPDATE 会每次启动都清一遍）。
+        //   跟 `COLOR_REALIGN` 是同一个套路：按旧状态匹配。
+        //
+        // ❗ 连带影响：这个计数兼着「豁免过期清理」（`VALUE_PRESERVE_SQL`）。
+        //   清零 = 那些条目失去保护。落地前实测过：唯一靠它保护的有 99 条，
+        //   但**没有一条超过 30 天**（`auto_cleanup_days` = 30），所以不会立刻删东西。
+        match conn.execute(
+            "UPDATE history SET search_hit_count = 0 \
+             WHERE COALESCE(search_hit_count, 0) > 0 AND search_hit_at IS NULL",
+            [],
+        ) {
+            Ok(n) if n > 0 => {
+                log::info!("[DataStore] 旧口径找回计数已清零：{} 条", n);
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("[DataStore] 找回计数清零失败（不阻断启动）: {}", e),
+        }
+
         // 数据库迁移（B2 前置）：notes.last_access_at ——笔记最后一次被**打开阅读**的时间。
         //
         // §8.3 #7 重现的选取口径是「久未访问 × 当初信号强度」，而「久未访问」目前无数据源：
