@@ -150,6 +150,12 @@ export function NoteCard({
         type="button"
         className={styles.cardMain}
         ref={rowRef}
+        /* 本卡的色调，与列表行一样挂在整张卡上。
+           ❗ 封面上那个 `--kb-cover-tint` 代替不了它：它只在封面那个
+           `<span>` 上，而 `NoteItemBody`（字数条就在里面）是它的**兄弟**，
+           继承不到；而且有真封面图时那个分支根本不渲染。
+           少了这行，同一篇笔记的字数条在列表里带色、在网格里是灰的。 */
+        style={{ ["--kb-row-tint" as string]: noteIconColor(note) }}
         tabIndex={focused ? 0 : -1}
         draggable
         onDragStart={(e) => {
