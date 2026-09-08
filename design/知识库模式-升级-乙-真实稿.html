@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知识库升级 乙 · 真实稿（ocean 浅色）</title>
+<style>
+/* ==========================================================================
+   真实稿：颜色与尺寸全部取自项目源码，不是示意色。
+   token 值来自 src/styles/theme.css 的 [data-theme="ocean"]（= 当前实际在用的主题）
+   尺寸来自 KnowledgeView.module.css / FolderTree.module.css
+   ========================================================================== */
+
+/* ---- 文档外壳（不属于产品 UI，只是这张稿子的排版）---- */
+*{box-sizing:border-box}
+body{margin:0;background:#14161b;color:#e6e8ec;
+     font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.doc{max-width:1180px;margin:0 auto;padding:36px 24px 100px}
+h1{font-size:23px;margin:0 0 6px}
+.sub{color:#9aa2b1;margin:0 0 8px;font-size:13px}
+h2{font-size:16px;margin:42px 0 6px;padding-bottom:8px;border-bottom:1px solid #2a2f3a}
+h2 .n{color:#6b7382;font-weight:400;margin-right:8px}
+.docNote{border-left:3px solid #e0a44a;background:rgba(224,164,74,.07);
+         padding:10px 14px;margin:14px 0;border-radius:0 6px 6px 0;font-size:13px}
+.docNote.bad{border-left-color:#e0687a;background:rgba(224,104,122,.07)}
+.docNote.ok{border-left-color:#5cc98a;background:rgba(92,201,138,.07)}
+.docNote.info{border-left-color:#6aa9ff;background:rgba(106,169,255,.07)}
+code{background:#1d2129;padding:1px 5px;border-radius:4px;font-size:12.5px;
+     font-family:"Cascadia Mono",Consolas,monospace;color:#cfd6e4}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:12.5px}
+th,td{border:1px solid #2a2f3a;padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#1d2129;color:#9aa2b1;font-weight:600}
+.cap{font-size:11.5px;color:#6b7382;margin:6px 0 0}
+.old{color:#e0687a} .new{color:#5cc98a;font-weight:600}
+
+/* 并排对照容器 */
+.cmp{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin:14px 0}
+.cmpCol{display:flex;flex-direction:column;gap:8px}
+.cmpHd{font-size:11.5px;font-weight:700;letter-spacing:.4px;padding:3px 9px;
+       border-radius:20px;align-self:flex-start}
+.cmpHd.b{background:rgba(224,104,122,.15);color:#ffa0af;border:1px solid rgba(224,104,122,.35)}
+.cmpHd.a{background:rgba(92,201,138,.15);color:#8fe0b2;border:1px solid rgba(92,201,138,.35)}
+
+/* ==========================================================================
+   以下是产品 UI 的真实价值
+   ========================================================================== */
+.pp{
+  /* ---- theme.css [data-theme="ocean"] 原值 ---- */
+  --app-bg:#F7F7F8;
+  --card-bg:#fff;
+  --text-primary:#0F172A;
+  --text-secondary:#495565;
+  --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7;
+  --accent-light:#E0F2FE;
+  --accent-solid:#027CBB;
+  --accent-strong:#0273AD;
+  --accent-shadow:rgba(2,132,199,0.15);
+  --hover:#E8ECF2;
+  --sidebar-bg:#EFF1F5;
+  --section-bg:#F0F4F8;
+  --search-bg:#fff;
+  --glass-card-bg:#FFFFFF;
+  --glass-card-border:rgba(0,0,0,0.08);
+  --glass-card-hover-border:rgba(0,0,0,0.14);
+  --glass-card-shadow:0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.05);
+  --glass-card-hover-shadow:0 4px 12px rgba(0,0,0,0.10), 0 0 0 1px rgba(2,132,199,0.25);
+  --glass-icon-bg:rgba(0,0,0,0.04);
+  --glass-icon-border:rgba(0,0,0,0.07);
+  --glass-icon-shadow:inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --card-selected-bg:#E0F2FE;
+  --card-selected-border:#0284C7;
+  --card-selected-shadow:0 0 0 2px rgba(2,132,199,0.25);
+  --amber:#F59E0B;
+  /* 🔴 ocean 下微光与光泽是关掉的（原文就是 none） */
+  --card-shimmer-display:none;
+
+  /* ---- 尺寸：改前（当前代码的真实值）---- */
+  --kb-fs-title:13px;
+  --kb-fs-exc:11.5px;
+  --kb-fs-meta:9.5px;
+  --kb-fs-badge:9.5px;
+  --kb-fs-crumb:11px;
+  --kb-fs-crumb-b:12px;
+  --kb-fs-mode:11.5px;
+  --kb-fs-count:10px;
+  --kb-w-btn:20px;
+  --kb-w-clear:18px;
+  --kb-h-mode:22px;
+  --kb-w-add:18px;
+  --kb-caret-ico:9px;
+  --kb-meta-weight:400;
+
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  color:var(--text-primary);
+}
+
+/* ---- 尺寸：改后（乙稿 §1/§6/§7）----
+   只换这一组变量，下面所有组件 CSS 一行不改——
+   这就是乙稿 §6 「token 收口」想说的事。 */
+.pp.after{
+  --kb-fs-title:13.5px;
+  --kb-fs-exc:12.5px;
+  --kb-fs-meta:11.5px;
+  --kb-fs-badge:11px;
+  --kb-fs-crumb:12.5px;
+  --kb-fs-crumb-b:13px;
+  --kb-fs-mode:12px;
+  --kb-fs-count:11.5px;
+  --kb-w-btn:28px;
+  --kb-w-clear:20px;
+  --kb-h-mode:28px;
+  --kb-w-add:28px;
+  --kb-caret-ico:13px;
+  --kb-meta-weight:500;
+}
+
+/* ---- 三栏外层 ---- */
+.ppShell{display:flex;background:var(--app-bg);border:1px solid var(--border-color);
+         border-radius:10px;overflow:hidden}
+
+/* ---- 侧栏（FolderTree）---- */
+.ppSide{width:180px;flex-shrink:0;background:var(--sidebar-bg);padding:12px 8px 8px;
+        display:flex;flex-direction:column;gap:1px}
+.ppSLbl{display:flex;align-items:center;padding:10px 10px 6px;font-size:11px;
+        color:#696D75;font-weight:600}
+.ppAdd{margin-left:auto;width:var(--kb-w-add);height:var(--kb-w-add);border-radius:5px;
+       display:flex;align-items:center;justify-content:center;color:var(--text-secondary);
+       background:transparent;border:none}
+.ppSRow{display:flex;align-items:center;gap:6px;padding:7px 8px 7px 10px;font-size:13px;
+        color:var(--text-primary);border-radius:7px;position:relative}
+.ppSRow.on{background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+.ppSRow.on::before{content:"";position:absolute;left:2px;top:50%;transform:translateY(-50%);
+                   width:3px;height:16px;border-radius:2px;background:var(--accent);
+                   box-shadow:0 0 6px var(--accent-shadow)}
+.ppCaret{width:11px;height:16px;display:flex;align-items:center;justify-content:center;
+         color:var(--text-muted);font-size:var(--kb-caret-ico);flex-shrink:0}
+.ppSIco{width:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+        color:var(--text-secondary)}
+.ppSName{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ppCount{flex-shrink:0;padding:1px 5px;border:1px solid var(--border-color);border-radius:8px;
+         background:var(--section-bg);font-size:var(--kb-fs-count);font-weight:600;
+         line-height:1.4;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.ppSRow.on .ppCount{border-color:var(--accent);background:var(--card-bg);color:var(--accent-strong)}
+.ppSep{height:1px;background:var(--border-color);margin:8px 6px}
+
+/* ---- 中栏 ---- */
+.ppMid{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;padding:8px 10px}
+.ppMid.wide{width:520px}
+.ppCrumb{display:flex;align-items:center;gap:5px;font-size:var(--kb-fs-crumb);
+         color:var(--text-muted);padding:2px 0}
+.ppCrumb b{color:var(--text-primary);font-size:var(--kb-fs-crumb-b)}
+.ppCrumbAct{margin-left:auto;display:flex;gap:2px}
+.ppBtn{width:var(--kb-w-btn);height:var(--kb-w-btn);border-radius:5px;display:flex;
+       align-items:center;justify-content:center;color:var(--text-secondary);
+       background:transparent;border:none;flex-shrink:0}
+.ppWide{height:var(--kb-w-btn);padding:0 6px;border-radius:5px;display:flex;align-items:center;
+        gap:3px;font-size:10.5px;color:var(--text-secondary)}
+.ppSearchRow{display:flex;gap:6px;align-items:center}
+.ppSearch{flex:1;min-width:0;display:flex;align-items:center;gap:6px;height:38px;padding:0 8px;
+          border-radius:8px;background:var(--search-bg);border:1px solid var(--border-color)}
+.ppModeSeg{display:flex;gap:2px;padding:2px;border-radius:6px;background:var(--hover);flex-shrink:0}
+.ppMode{height:var(--kb-h-mode);padding:0 8px;border-radius:5px;display:flex;align-items:center;
+        justify-content:center;font-size:var(--kb-fs-mode);color:var(--text-muted)}
+.ppMode.on{background:var(--card-bg);color:var(--accent-strong);font-weight:600}
+.ppSPh{flex:1;color:var(--text-muted);font-size:12px}
+.ppClear{width:var(--kb-w-clear);height:var(--kb-w-clear);border-radius:50%;display:flex;
+         align-items:center;justify-content:center;background:var(--hover);
+         color:var(--text-muted);flex-shrink:0;position:relative}
+
+/* ---- 笔记行（NoteList）---- */
+.ppList{display:flex;flex-direction:column;gap:10px;list-style:none;margin:0;padding:0}
+.ppRow{position:relative;display:flex;align-items:stretch;gap:4px;border-radius:16px;
+       background:var(--glass-card-bg);border:1px solid var(--glass-card-border);
+       box-shadow:var(--glass-card-shadow);overflow:hidden;flex-shrink:0}
+.ppRow.hov{border-color:var(--glass-card-hover-border);
+           box-shadow:var(--glass-card-hover-shadow);transform:translateY(-2px) scale(1.01)}
+.ppRow.act{background:var(--card-selected-bg);border-color:var(--card-selected-border);
+           box-shadow:var(--card-selected-shadow),0 4px 16px var(--accent-shadow)}
+.ppRowMain{position:relative;z-index:1;flex:1;min-width:0;display:flex;align-items:center;
+           gap:10px;padding:10px 12px;border-radius:15px}
+.ppIcon{flex-shrink:0;width:34px;height:34px;border-radius:11px;display:flex;align-items:center;
+        justify-content:center;font-size:15px;background:var(--glass-icon-bg);
+        border:1px solid var(--glass-icon-border);box-shadow:var(--glass-icon-shadow);
+        color:var(--text-secondary)}
+.ppIcon.thumb{padding:0;overflow:hidden}
+.ppIcon.thumb img,.ppIcon.thumb .fake{width:100%;height:100%;object-fit:cover;border-radius:9px}
+.ppBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ppTitle{font-size:var(--kb-fs-title);font-weight:600;color:var(--text-primary);
+         line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ppExc{font-size:var(--kb-fs-exc);line-height:1.45;color:var(--text-secondary);
+       display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ppMeta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:1px;
+        font-size:var(--kb-fs-meta);font-weight:var(--kb-meta-weight);color:var(--text-muted);
+        font-variant-numeric:tabular-nums}
+.ppTag{font-size:var(--kb-fs-badge);padding:1px 6px;border-radius:20px;
+       background:var(--accent-light);color:var(--accent-strong);font-weight:500}
+.ppPin{color:var(--amber);flex-shrink:0;margin-right:4px}
+
+/* 删除按钮（现状：挂停时唯一能点的东西，已经是 28×28）*/
+.ppDel{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;
+       justify-content:center;color:var(--text-muted);align-self:center;margin-right:6px;
+       flex-shrink:0}
+.ppDel.on{background:rgba(239,68,68,.15);color:#EF4444}
+
+/* 悬停动作条（乙稿重用 C 稿 §3）*/
+.ppActs{position:absolute;top:6px;right:6px;z-index:2;display:flex;gap:2px;padding:3px;
+        border-radius:9px;background:rgba(255,255,255,.94);
+        border:1px solid var(--border-color);box-shadow:0 2px 8px rgba(0,0,0,.10)}
+.ppActs i{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;
+          justify-content:center;font-style:normal;color:var(--text-secondary)}
+.ppActs i.hot{color:var(--amber)}
+
+/* ---- 网格形态（乙稿 §3/§4）---- */
+.ppGrid{display:grid;gap:10px}
+.ppGrid.c2{grid-template-columns:1fr 1fr}
+.ppGrid.c3{grid-template-columns:1fr 1fr 1fr}
+.ppCard{position:relative;display:flex;flex-direction:column;border-radius:16px;
+        background:var(--glass-card-bg);border:1px solid var(--glass-card-border);
+        box-shadow:var(--glass-card-shadow);overflow:hidden}
+.ppCover{height:74px;flex-shrink:0;background:linear-gradient(135deg,#8FB6D9,#5E86AE);
+         display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px}
+/* 文字封面：色相跟主题走（color-mix 从 --accent / --section-bg 派生）*/
+.ppCoverTxt{height:74px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+            font-size:30px;font-weight:700;
+            color:color-mix(in srgb, var(--text-primary) 22%, transparent);
+            background:linear-gradient(135deg,
+              color-mix(in srgb, var(--accent) var(--cs,18%), var(--section-bg)),
+              color-mix(in srgb, var(--accent) 4%, var(--section-bg)))}
+.ppCardPad{padding:9px 11px 10px;display:flex;flex-direction:column;gap:4px;flex:1}
+
+/* ---- 命中区标注（只是这张稿子的讲解层）---- */
+.hit{position:relative}
+.hit::after{content:"";position:absolute;left:50%;top:50%;width:28px;height:28px;
+            transform:translate(-50%,-50%);border:1px dashed #0284C7;border-radius:8px;
+            pointer-events:none}
+.hitBad::after{border-color:#EF4444}
+
+/* 尺寸标尺 */
+.ruler{display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;padding:16px;
+       background:#0d1015;border:1px solid #2a2f3a;border-radius:10px;margin:12px 0}
+.rz{text-align:center}
+.rzBox{border:1px dashed #353c4a;border-radius:6px;display:flex;align-items:center;
+       justify-content:center;color:#6b7382;margin:0 auto 6px;font-size:9px}
+.rzBox.ok{border-style:solid;border-color:#5cc98a;color:#8fe0b2}
+.rzBox.no{border-color:#e0687a;color:#ffa0af}
+.rzCap{font-size:10.5px;color:#6b7382;white-space:nowrap}
+
+svg.i{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>知识库模式升级 · 乙 · 真实稿</h1>
+<p class="sub">颜色与尺寸全取自源码 · 主题 <b>ocean</b>（你当前实际在用的）· 2026-09-07</p>
+
+<div class="docNote info">
+<b>这张稿与前两张的区别：</b>前两张是方案说明书（表格 + 推理 + 线框），这张是<b>按真实值渲染的界面</b>。所有颜色直接抄自 <code>theme.css</code> 的 <code>[data-theme="ocean"]</code>，所有尺寸直接抄自 <code>KnowledgeView.module.css</code> / <code>FolderTree.module.css</code>。<br>
+你看到的就是改完之后的样子。
+</div>
+
+<h2><span class="n">§0</span>先更正乙稿里我自己写错的一条</h2>
+
+<div class="docNote bad">
+<b>🔴 乙稿 §3 我写着「静态微光 <code>::before</code>、悬停光泽 <code>::after</code>」是现有材质的一部分，并说「经典白等主题把它设成 none」。<br>
+实际：<code>ocean</code>——也就是<b>默认且你正在用的主题</b>——本身就是关的：</b>
+<pre style="background:#0d1015;border:1px solid #2a2f3a;border-radius:6px;padding:10px 12px;font-size:12px;overflow-x:auto;margin:8px 0 4px">--card-shimmer-display: none;
+--card-shimmer-anim: none;</pre>
+所以你平日看到的笔记行就是：<b>白底 + <code>rgba(0,0,0,0.08)</code> 边框 + <code>0 1px 3px</code> 轻阴影</b>。没有玻璃感，没有微光。<br>
+<b>这反而让乙稿 §1/§2/§7 更重要了：</b>既然浅色下没有材质可依靠，那「好看」就只能靠<b>图标、缩略图、排版层次</b>——正好是这三项。
+</div>
+
+<h2><span class="n">§1</span>中栏：真实 300px 宽的改前 / 改后</h2>
+<p class="cap">下面两列都是 <b>300px</b>——就是 ≥800px 窗口下中栏的真实宽度（<code>KnowledgeView.module.css:14</code> 固定值）。</p>
+
+<div class="cmp">
+
+<!-- ===================== 改前 ===================== -->
+<div class="cmpCol">
+<span class="cmpHd b">改前 · 当前代码</span>
+<div class="pp">
+  <div class="ppShell">
+    <div class="ppMid">
+      <div class="ppCrumb">
+        <b>未分类</b><span>· 23 条</span>
+        <span class="ppCrumbAct">
+          <span class="ppWide">⊕ 宽屏</span>
+          <span class="ppBtn"><svg class="i" width="13" height="13" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        </span>
+      </div>
+      <div class="ppSearchRow">
+        <div class="ppSearch">
+          <span class="ppModeSeg"><span class="ppMode on">搜</span><span class="ppMode">问</span></span>
+          <span class="ppSPh">搜笔记…</span>
+          <span class="ppClear"><svg class="i" width="9" height="9" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        </div>
+      </div>
+      <ul class="ppList">
+        <li class="ppRow">
+          <div class="ppRowMain">
+            <div class="ppIcon">📝</div>
+            <div class="ppBody">
+              <div class="ppTitle">配色板截图整理</div>
+              <div class="ppExc">这几张是 dawn 主题下的对照，注意 accent-light 压白字那一条</div>
+              <div class="ppMeta"><span class="ppTag">设计</span><span>3 小时前</span><span>·</span><span>420 字</span></div>
+            </div>
+          </div>
+        </li>
+        <li class="ppRow">
+          <div class="ppRowMain">
+            <div class="ppIcon">📅</div>
+            <div class="ppBody">
+              <div class="ppTitle">今日速记 09-07</div>
+              <div class="ppExc">下午把封面正则那段验了，限长 512 确实能拦住 base64</div>
+              <div class="ppMeta"><span class="ppTag">速记</span><span>1 小时前</span><span>·</span><span>1.2k 字</span></div>
+            </div>
+          </div>
+        </li>
+        <li class="ppRow">
+          <div class="ppRowMain">
+            <div class="ppIcon">📋</div>
+            <div class="ppBody">
+              <div class="ppTitle">Tauri 打包体积优化</div>
+              <div class="ppExc">先关 devtools，再把 wry 的那几个 feature 关掉</div>
+              <div class="ppMeta"><span class="ppTag">Rust</span><span>昨天</span><span>·</span><span>840 字</span></div>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
+<p class="cap">标题 13 / 摘要 11.5 / 元信息 <b class="old">9.5</b>。图标槽里是 <b class="old">emoji</b>。三条长得一模一样。</p>
+</div>
+
+<!-- ===================== 改后 ===================== -->
+<div class="cmpCol">
+<span class="cmpHd a">改后 · 乙稿批 0 + 批 1</span>
+<div class="pp after">
+  <div class="ppShell">
+    <div class="ppMid">
+      <div class="ppCrumb">
+        <b>未分类</b><span>· 23 条</span>
+        <span class="ppCrumbAct">
+          <span class="ppWide">⊕ 宽屏</span>
+          <span class="ppBtn"><svg class="i" width="15" height="15" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        </span>
+      </div>
+      <div class="ppSearchRow">
+        <div class="ppSearch">
+          <span class="ppModeSeg"><span class="ppMode on">搜</span><span class="ppMode">问</span></span>
+          <span class="ppSPh">搜笔记…</span>
+          <span class="ppClear hit"><svg class="i" width="11" height="11" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        </div>
+      </div>
+      <ul class="ppList">
+        <li class="ppRow hov">
+          <div class="ppActs">
+            <i><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></i>
+            <i class="hot"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M12 17v5M9 10.8V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.8a2 2 0 0 0 .6 1.4l1 1a1 1 0 0 1-.7 1.8H7.1a1 1 0 0 1-.7-1.8l1-1a2 2 0 0 0 .6-1.4Z"/></svg></i>
+            <i><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2Z"/></svg></i>
+            <i><svg class="i" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></i>
+          </div>
+          <div class="ppRowMain">
+            <div class="ppIcon thumb"><div class="fake" style="background:linear-gradient(135deg,#7FA8CE,#4E7396)"></div></div>
+            <div class="ppBody">
+              <div class="ppTitle">配色板截图整理</div>
+              <div class="ppExc">这几张是 dawn 主题下的对照，注意 accent-light 压白字那一条</div>
+              <div class="ppMeta"><span class="ppTag">设计</span><span>3 小时前</span><span>·</span><span>420 字</span></div>
+            </div>
+          </div>
+        </li>
+        <li class="ppRow">
+          <div class="ppRowMain">
+            <div class="ppIcon"><svg class="i" width="17" height="17" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div>
+            <div class="ppBody">
+              <div class="ppTitle">今日速记 09-07</div>
+              <div class="ppExc">下午把封面正则那段验了，限长 512 确实能拦住 base64</div>
+              <div class="ppMeta"><span class="ppTag">速记</span><span>1 小时前</span><span>·</span><span>1.2k 字</span></div>
+            </div>
+          </div>
+        </li>
+        <li class="ppRow">
+          <div class="ppRowMain">
+            <div class="ppIcon"><svg class="i" width="17" height="17" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4"/></svg></div>
+            <div class="ppBody">
+              <div class="ppTitle">Tauri 打包体积优化</div>
+              <div class="ppExc">先关 devtools，再把 wry 的那几个 feature 关掉</div>
+              <div class="ppMeta"><span class="ppTag">Rust</span><span>昨天</span><span>·</span><span>840 字</span></div>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
+<p class="cap">标题 13.5 / 摘要 12.5 / 元信息 <b class="new">11.5 + 字重 500 + tabular-nums</b>。图标换 <b class="new">lucide</b>，首条直接显<b class="new">缩略图</b>。第一条是悬停态（四个 28×28 按钮 + 抬升阴影）。</p>
+</div>
+
+</div>
+
+<div class="docNote ok">
+<b>把两列并着看，改变最大的不是尺寸，是<u>三条笔记终于不一样了</u>。</b>左边三个图标槽是三个彩色 emoji，重量差不多、风格不统一；右边第一条是真图、后两条是描线图标，<b>扫下去能直接分出图/文</b>。<br>
+这两项加起来就是乙稿的<b>批 0（约半天）</b>。
+</div>
+
+<h2><span class="n">§2</span>侧栏：真实 180px 宽（只改三项）</h2>
+<p class="cap">选中态的 3px 竖条、行胶囊圆角、计数胶囊 <b>两边都有</b>——那三条 09-02 就做完了（乙稿 §0 那张更正表）。真正变的只有三项。</p>
+
+<div class="cmp">
+<div class="cmpCol">
+<span class="cmpHd b">改前</span>
+<div class="pp">
+  <div class="ppShell">
+    <div class="ppSide">
+      <div class="ppSLbl"><span>文件夹</span>
+        <span class="ppAdd"><svg class="i" width="12" height="12" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+      </div>
+      <div class="ppSRow"><span class="ppCaret"></span><span class="ppSIco"><svg class="i" width="12" height="12" viewBox="0 0 24 24"><path d="M16 6H3M16 12H3M13 18H3M21 6v12"/></svg></span><span class="ppSName">全部笔记</span><span class="ppCount">142</span></div>
+      <div class="ppSRow on"><span class="ppCaret"></span><span class="ppSIco"><svg class="i" width="12" height="12" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span><span class="ppSName">未分类</span><span class="ppCount">23</span></div>
+      <div class="ppSep"></div>
+      <div class="ppSRow"><span class="ppCaret">›</span><span class="ppSIco"><svg class="i" width="12" height="12" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="ppSName">工作</span><span class="ppCount">38</span></div>
+      <div class="ppSRow"><span class="ppCaret">˅</span><span class="ppSIco"><svg class="i" width="12" height="12" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="ppSName">阅读</span><span class="ppCount">9</span></div>
+      <div class="ppSep"></div>
+      <div class="ppSRow"><span class="ppCaret"></span><span class="ppSIco"><svg class="i" width="12" height="12" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span><span class="ppSName">回收站</span><span class="ppCount">4</span></div>
+    </div>
+  </div>
+</div>
+<p class="cap">新建 <b class="old">18×18</b> / 三角图标 <b class="old">9px</b> / 计数 <b class="old">10px</b></p>
+</div>
+
+<div class="cmpCol">
+<span class="cmpHd a">改后</span>
+<div class="pp after">
+  <div class="ppShell">
+    <div class="ppSide">
+      <div class="ppSLbl"><span>文件夹</span>
+        <span class="ppAdd"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+      </div>
+      <div class="ppSRow"><span class="ppCaret"></span><span class="ppSIco"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M16 6H3M16 12H3M13 18H3M21 6v12"/></svg></span><span class="ppSName">全部笔记</span><span class="ppCount">142</span></div>
+      <div class="ppSRow on"><span class="ppCaret"></span><span class="ppSIco"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span><span class="ppSName">未分类</span><span class="ppCount">23</span></div>
+      <div class="ppSep"></div>
+      <div class="ppSRow"><span class="ppCaret hit">›</span><span class="ppSIco"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="ppSName">工作</span><span class="ppCount">38</span></div>
+      <div class="ppSRow"><span class="ppCaret">˅</span><span class="ppSIco"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="ppSName">阅读</span><span class="ppCount">9</span></div>
+      <div class="ppSep"></div>
+      <div class="ppSRow"><span class="ppCaret"></span><span class="ppSIco"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span><span class="ppSName">回收站</span><span class="ppCount">4</span></div>
+    </div>
+  </div>
+</div>
+<p class="cap">新建 <b class="new">28×28</b> / 三角图标 <b class="new">13px + 24 命中</b>（蓝虚线）/ 计数 <b class="new">11.5px</b>。<b>180px 宽与行高不变</b>。</p>
+</div>
+</div>
+
+<div class="docNote">
+<b>行高我没动，因为 C 稿 §4 那个「≈26」是算错的。</b>算式可核：<code>.row</code> 是 <code>display:flex; align-items:center</code>、<code>padding: 7px 8px 7px 10px</code>、<code>font-size: 13px</code>，全局 <code>line-height: 1.5</code>（<code>globals.css:32</code>）。子元素里最高的是文件夹名的行盒 <b>13 × 1.5 = 19.5px</b>（<code>.caret</code> 16px、内置图标 svg 12px、<code>.count</code> 18px 都比它矮）。<br>
+所以真实行高 = 19.5 + 7 + 7 ≈ <b>33.5px</b>，<b>本来就比 C 稿想抬到的 32 还高</b>。再抬只会白白少看两个文件夹。
+</div>
+
+<h2><span class="n">§3</span>网格形态：文字封面到底长什么样</h2>
+<p class="cap">中栏拉到 520px（2 列）。卡片用与列表行<b>同一套</b> glass token 与 <b>radius 16</b>（乙稿 §3）。</p>
+
+<div class="pp after" style="display:inline-block">
+  <div class="ppShell">
+    <div class="ppMid wide">
+      <div class="ppCrumb"><b>全部笔记</b><span>· 142 条</span>
+        <span class="ppCrumbAct"><span class="ppBtn"><svg class="i" width="15" height="15" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span></span>
+      </div>
+      <div class="ppSearchRow">
+        <div class="ppSearch">
+          <span class="ppModeSeg"><span class="ppMode on">搜</span><span class="ppMode">问</span></span>
+          <span class="ppSPh">搜笔记…</span>
+        </div>
+        <span class="ppModeSeg">
+          <span class="ppMode"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
+          <span class="ppMode on"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+        </span>
+      </div>
+      <div class="ppGrid c2">
+        <div class="ppCard">
+          <div class="ppCover" style="background:linear-gradient(135deg,#7FA8CE,#4E7396)">真封面（正文第一张图）</div>
+          <div class="ppCardPad">
+            <div class="ppTitle">配色板截图整理</div>
+            <div class="ppExc">这几张是 dawn 主题下的对照…</div>
+            <div class="ppMeta"><span class="ppTag">设计</span><span>3 小时前</span></div>
+          </div>
+        </div>
+        <div class="ppCard">
+          <div class="ppCoverTxt" style="--cs:26%">今</div>
+          <div class="ppCardPad">
+            <div class="ppTitle">今日速记 09-07</div>
+            <div class="ppExc">下午把封面正则那段验了…</div>
+            <div class="ppMeta"><span class="ppTag">速记</span><span>1 小时前</span></div>
+          </div>
+        </div>
+        <div class="ppCard">
+          <div class="ppCoverTxt" style="--cs:14%">T</div>
+          <div class="ppCardPad">
+            <div class="ppTitle">Tauri 打包体积优化</div>
+            <div class="ppExc">先关 devtools，再把 wry 的…</div>
+            <div class="ppMeta"><span class="ppTag">Rust</span><span>昨天</span></div>
+          </div>
+        </div>
+        <div class="ppCard">
+          <div class="ppCoverTxt" style="--cs:34%">周</div>
+          <div class="ppCardPad">
+            <div class="ppTitle">周会要点 09-04</div>
+            <div class="ppExc">预发环境下周切，需要先…</div>
+            <div class="ppMeta"><span class="ppTag">会议</span><span>3 天前</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="docNote ok">
+<b>四张卡片等高、不参差、没有灰占位框。</b>右上/左下/右下那三张都是<b>文字封面</b>（没图），深浅档位由 <code>note.id</code> 哈希决定（这里分别是 14% / 26% / 34%），但颜色<b>全部从 <code>--accent</code> 与 <code>--section-bg</code> 用 <code>color-mix</code> 派生</b>——换主题它们自动跟着变，不会在某个主题下翻车。<br>
+右上角那个列表/网格切换器就是新增的 <code>NoteLayoutSwitch</code>。
+</div>
+
+<h2><span class="n">§4</span>命中区：视觉尺寸与命中区解耦</h2>
+<p class="cap">下面每个方块都是真尺寸。中栏只有 300px，把所有按钮真画成 28px 会撑爆——所以内联小控件只撑命中区。</p>
+
+<div class="ruler">
+  <div class="rz"><div class="rzBox no" style="width:14px;height:14px">14</div><div class="rzCap">.rowCheck<br>现状</div></div>
+  <div class="rz"><div class="rzBox no" style="width:18px;height:18px">18</div><div class="rzCap">.searchClear<br>.addBtn 现状</div></div>
+  <div class="rz"><div class="rzBox no" style="width:20px;height:20px">20</div><div class="rzCap">.newBtn<br>.wideBtn 现状</div></div>
+  <div class="rz"><div class="rzBox no" style="width:22px;height:22px">22</div><div class="rzCap">.modeBtn<br>现状</div></div>
+  <div class="rz"><div class="rzBox" style="width:24px;height:24px">24</div><div class="rzCap">WCAG 2.2 AA<br>§2.5.8 下限</div></div>
+  <div class="rz"><div class="rzBox ok" style="width:28px;height:28px">28</div><div class="rzCap"><b>本次基准</b><br>= .rowDelete 已有值</div></div>
+  <div class="rz"><div class="rzBox" style="width:34px;height:34px">34</div><div class="rzCap">.rowIcon<br>（不变）</div></div>
+  <div class="rz"><div class="rzBox" style="width:38px;height:38px">38</div><div class="rzCap">.ppSearch<br>（已达标）</div></div>
+</div>
+
+<div class="docNote ok">
+<b>28 不是我拍的：<code>.rowDelete</code> 本来就是 28×28</b>（源码实测）。所以悬停动作条那四个新按钮用 28 是<b>与已有那个删除按钮对齐</b>，不是引入新标准。搜索框 38px 也早已达标。<br>
+真正低于 24 的是前四个（红色）。它们全部靠 <code>::before {inset:-6px}</code> 撑命中区，<b>视觉尺寸只微调</b>（例如 <code>.searchClear</code> 18→20 视觉、但命中 28）。§1/§2 里那些蓝色虚线框就是它。
+</div>
+
+<div class="docNote bad">
+<b>❗ 相邻小控件间距必须 ≥ 12px。</b>命中区是定位元素，两个挤在一起时<b>后定义的会盖住前一个</b>。回收站那两个（恢复 / 彻底删除）必须逐个手验。
+</div>
+
+<h2><span class="n">§5</span>深色主题校验（midnight）</h2>
+<p class="cap">同一套结构、只换 token。midnight 下 <code>--glass-card-bg</code> 是半透明的，微光也开着——所以玻璃感只在深色主题下看得到。</p>
+
+<div class="pp after" style="display:inline-block;
+  --app-bg:#0B0B13;--card-bg:#18181B;--text-primary:#E4E4E7;--text-secondary:#AFAFB7;
+  --text-muted:#8D8D95;--border-color:#27272A;--accent:#818CF8;--accent-light:#1E1B4B;
+  --accent-strong:#818CF8;--accent-shadow:rgba(129,140,248,0.2);--hover:#1F1F23;
+  --sidebar-bg:#131315;--section-bg:#0F0F11;--search-bg:#27272A;
+  --glass-card-bg:rgba(24,24,27,0.55);--glass-card-border:rgba(255,255,255,0.06);
+  --glass-card-hover-border:rgba(255,255,255,0.14);
+  --glass-card-shadow:0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
+  --glass-card-hover-shadow:0 8px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06);
+  --glass-icon-bg:rgba(255,255,255,0.05);--glass-icon-border:rgba(255,255,255,0.07);
+  --glass-icon-shadow:inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.3);
+  --card-selected-bg:#1E1B4B;--card-selected-border:#818CF8;
+  --card-selected-shadow:0 0 0 2px rgba(129,140,248,0.25)">
+  <div class="ppShell">
+    <div class="ppSide">
+      <div class="ppSLbl"><span>文件夹</span><span class="ppAdd"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span></div>
+      <div class="ppSRow on"><span class="ppCaret"></span><span class="ppSIco"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span><span class="ppSName">未分类</span><span class="ppCount">23</span></div>
+      <div class="ppSRow"><span class="ppCaret">›</span><span class="ppSIco"><svg class="i" width="14" height="14" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="ppSName">工作</span><span class="ppCount">38</span></div>
+    </div>
+    <div class="ppMid">
+      <div class="ppCrumb"><b>未分类</b><span>· 23 条</span></div>
+      <ul class="ppList">
+        <li class="ppRow hov">
+          <div class="ppRowMain">
+            <div class="ppIcon thumb"><div class="fake" style="background:linear-gradient(135deg,#5B7FA6,#33506E)"></div></div>
+            <div class="ppBody">
+              <div class="ppTitle">配色板截图整理</div>
+              <div class="ppExc">这几张是 dawn 主题下的对照…</div>
+              <div class="ppMeta"><span class="ppTag">设计</span><span>3 小时前</span><span>·</span><span>420 字</span></div>
+            </div>
+          </div>
+        </li>
+        <li class="ppRow act">
+          <div class="ppRowMain">
+            <div class="ppIcon"><svg class="i" width="17" height="17" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div>
+            <div class="ppBody">
+              <div class="ppTitle">今日速记 09-07</div>
+              <div class="ppExc">下午把封面正则那段验了…</div>
+              <div class="ppMeta"><span class="ppTag">速记</span><span>1 小时前</span><span>·</span><span>1.2k 字</span></div>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
+<p class="cap">第一条悬停态，第二条是<b>第三栏正在看的那一条</b>（<code>--card-selected-*</code>）。lucide 图标跟着 <code>--text-secondary</code> 变色，<b>emoji 做不到这一点</b>——这是换图标除了风格之外的第二个理由。</p>
+
+<h2><span class="n">§6</span>这张稿对应的代码改动</h2>
+
+<table>
+<tr><th>看得见的变化</th><th>改哪里</th><th>批次</th></tr>
+<tr><td>图标槽 emoji → lucide</td><td><code>NoteList.tsx:281-288</code> 的 <code>provenanceOf</code>（返回值改 <code>ReactNode</code>）<b class="old"> + 必须同步 <code>TrashPanel.tsx:219</code></b></td><td>批 0</td></tr>
+<tr><td>首条显缩略图</td><td><code>NoteList.tsx</code> 行渲染 + 新 <code>.rowIconThumb</code>（照 <code>CardList.module.css:375</code>）</td><td>批 0</td></tr>
+<tr><td>字号 13→13.5 / 11.5→12.5 / 9.5→11.5</td><td><code>KnowledgeView.module.css</code> 顶部 <code>--kb-fs-*</code></td><td>批 1</td></tr>
+<tr><td>元信息字重 500 + <code>tabular-nums</code></td><td><code>.rowMeta</code>（照侧栏 <code>.count</code> 已有那句）</td><td>批 1</td></tr>
+<tr><td>小按钮命中区撑到 28</td><td><code>::before {inset:-6px}</code>，共 <b>7 处</b>（§4 那四个红框 + 回收站 2 + caret）</td><td>批 1</td></tr>
+<tr><td>圆角/间距不再硬编码</td><td>新增 <code>--kb-r-sm/md/lg</code> 与 <code>--kb-sp-1..5</code>（<b>只给现存值起名，零视觉差异</b>）</td><td>批 1</td></tr>
+<tr><td>悬停四个按钮</td><td><code>NoteList.tsx</code>，全部 <code>tabIndex={-1}</code>；删除收进「⋯」</td><td>批 2</td></tr>
+<tr><td>网格 + 文字封面</td><td>新 <code>NoteLayoutSwitch</code> + <code>NoteGrid</code>；卡片复用 <code>.row</code> 同一套 glass token、<b>radius 16 而不是 C 稿的 14</b></td><td>批 3</td></tr>
+</table>
+
+<div class="docNote info">
+<b>§1 与 §2 里的「改后」两列，整个只靠一个 <code>.after</code> 类名——里面只换了 14 个 CSS 变量，组件 CSS 一行未改。</b><br>
+这就是乙稿 §6 「token 收口」想要的效果，也是丙稿那个密度三档能只花半天的前提。你可以直接把这张稿子的 <code>.pp</code> / <code>.pp.after</code> 两组变量抄进代码。
+</div>
+
+<div class="docNote">
+<b>这张稿没画的：</b>空态（C 稿 §6，复用现有 <code>Illustration</code>）、问答面板（C 稿 §5，只改尺寸）、第三栏头部（C 稿 §7，它自己就注明没通读 <code>KbThirdPane</code>）。这三项在批 2 / 批 4，到时单独出稿。
+</div>
+
+</div>
+</body>
+</html>

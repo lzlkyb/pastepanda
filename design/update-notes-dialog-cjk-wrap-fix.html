@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN" data-page-node-id="YrM4Sc7RH5FG54FxCSp93x">
+<head data-page-node-id="CYAMaeTfOb6Fbc3R7JBA59">
+<meta charset="utf-8" data-page-node-id="K0zICMGb1DphcFaTAyYZ3Z" />
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="fHFMuJx9l0ZmwU33qUwZ69" />
+<title>UpdateNotesDialog 方案 A · CSS 兜底修复（设计稿）</title>
+<style>
+  /* === 设计稿只读样式：仅用于让用户在动手前看到修复后效果 === */
+  :root {
+    --accent: #5B6AF0;
+    --accent-2: #7C5CF0;
+    --version-badge-gradient: linear-gradient(135deg, #5B6AF0, #7C5CF0);
+    --accent-light: rgba(91,106,240,.10);
+    --accent-shadow: rgba(91,106,240,.30);
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --border-color: #E2E8F0;
+    --section-bg: #F1F5F9;
+    --card-bg: #fff;
+    --green: #16A34A;
+    --green-bg: rgba(22,163,74,.10);
+    --green-border: rgba(22,163,74,.30);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    background: #F8FAFC;
+    padding: 24px;
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .lead { font-size: 12px; color: var(--text-muted); margin-bottom: 24px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 0 0 460px; max-width: 460px; }
+  .col h2 { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-left: 6px;
+  }
+  .badge.ok { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .badge.warn { background: rgba(245,158,11,.10); color: #D97706; border: 1px solid rgba(217,119,6,.30); }
+  .legend { font-size: 11px; color: var(--text-secondary); margin-top: 6px; }
+  .legend b { color: var(--accent-2); }
+
+  /* ===== Dialog 外壳 ===== */
+  .dialog-box {
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(14px) saturate(1.4);
+    border: 1px solid rgba(15,23,42,.08);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 40px rgba(15,23,42,.14);
+    overflow: hidden;
+  }
+
+  /* ===== Hero ===== */
+  .hero {
+    position: relative;
+    padding: 24px 24px 20px;
+    border-radius: 16px 16px 0 0;
+    flex-shrink: 0;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(180deg, var(--accent-light) 0%, transparent 88%);
+    opacity: 0.95;
+    pointer-events: none;
+  }
+  .heroTop {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    /* 关键修复 A1：允许按钮在不够时换到下一行，不再压标题 */
+    flex-wrap: wrap;
+  }
+  .icon {
+    width: 46px; height: 46px;
+    border-radius: 14px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--version-badge-gradient);
+    color: #fff; font-weight: 800; font-size: 16px;
+    box-shadow: 0 6px 18px var(--accent-shadow);
+  }
+  .htxt {
+    flex: 1 1 200px;       /* 关键 A2：给自然宽度一个 200px 起点，避免 < 一字宽 */
+    min-width: 0;
+    padding-top: 1px;
+  }
+  .hname {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .htitle {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    line-height: 1.35;
+    color: var(--text-primary);
+    margin-top: 3px;
+    /* 关键修复 A3：CJK 友好 — 在窄宽度时优雅换行到下一行，
+       而不是逐字竖排 */
+    overflow-wrap: anywhere;
+    word-break: normal;
+    min-width: 0;
+  }
+  .close {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    border: none;
+    background: var(--section-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .hverRow {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+    /* 关键修复 A4：版本号行也允许 wrap，不会再被按钮挤到 < 字宽 */
+    flex-wrap: wrap;
+  }
+  .hver {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.8px;
+    color: var(--text-primary);
+    min-width: 0;
+    flex-wrap: wrap;
+    /* 关键修复 A5：保证自身不被压缩到 1 字 */
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+  .vOld { font-size: 13px; color: var(--text-muted); text-decoration: line-through; opacity: 0.6; font-weight: 700; }
+  .vNew { background: linear-gradient(135deg, var(--accent) 20%, var(--accent-2) 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hpill { font-size: 9px; font-weight: 800; letter-spacing: 0.8px; color: #fff; background: var(--accent); padding: 3px 8px; border-radius: 5px; align-self: center; box-shadow: 0 0 0 2px rgba(91,106,240,.14), 0 3px 10px var(--accent-shadow); }
+  .hdl {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 36px; padding: 0 16px;
+    border: none; border-radius: 10px;
+    background: var(--version-badge-gradient);
+    color: #fff; font-size: 12.5px; font-weight: 700;
+    cursor: pointer; flex-shrink: 0;
+    box-shadow: 0 4px 14px var(--accent-shadow);
+  }
+
+  /* ===== Body 分组卡片 ===== */
+  .dialog-body { padding: 0; flex: 1; }
+  .body { padding: 10px 20px 4px 24px; }
+  .grp { border: 1px solid var(--border-color); border-radius: 13px; padding: 12px 14px; margin-bottom: 10px; background: var(--card-bg); }
+  .grpHead { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; min-width: 0; }
+  .grpBadge { font-size: 10px; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 6px; background: rgba(16,185,129,.15); color: #10B981; flex-shrink: 0; }
+  .grpBadge.fix { background: rgba(239,68,68,.12); color: #EF4444; }
+  .grpBadge.change { background: rgba(245,158,11,.12); color: #D97706; }
+  .grpTitle {
+    font-size: 13px; font-weight: 700; color: var(--text-primary);
+    /* 关键修复 A6：chip 后跟长文本可截断为省略号，
+       不会把整个标题压缩到逐字竖排 */
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+  }
+  .grpItem {
+    display: flex; gap: 10px; padding: 6px 0;
+    font-size: 12px; line-height: 1.6; color: var(--text-secondary);
+    min-width: 0;
+    flex-wrap: wrap;          /* 关键 A7：内容溢出时换行 */
+  }
+  .grpItem::before { content: ''; flex-shrink: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--border-color); margin-top: 7px; }
+  .grpItem b { color: var(--text-primary); font-weight: 650; }
+  .feat { margin: 7px 0 7px 15px; border-radius: 10px; background: var(--section-bg); padding: 10px 12px; min-width: 0; }
+  .featTitle { font-size: 13px; font-weight: 700; color: var(--text-primary); overflow-wrap: anywhere; word-break: normal; min-width: 0; }
+  .featDesc { font-size: 12px; line-height: 1.6; color: var(--text-secondary); margin-top: 2px; overflow-wrap: anywhere; word-break: normal; min-width: 0; }
+  .featWhy { font-size: 12px; line-height: 1.6; color: var(--text-primary); padding: 5px 9px; border-left: 3px solid var(--accent); border-radius: 0 7px 7px 0; background: var(--accent-light); margin-top: 7px; overflow-wrap: anywhere; }
+
+  /* ===== 底部 CTA + 页脚 ===== */
+  .manualCta {
+    display: flex; align-items: center; gap: 9px;
+    width: calc(100% - 44px); margin: 4px 22px 0;
+    padding: 11px 15px; border-radius: 11px;
+    border: 1px solid var(--accent); background: var(--accent-light); color: var(--accent);
+    font-size: 12.5px; font-weight: 700; cursor: pointer;
+  }
+  .manualCtaText { flex: 1; text-align: left; }
+  .footer {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 22px 18px;
+    border-top: 1px solid var(--border-color);
+  }
+  .btnSkip { padding: 10px 16px; border-radius: 11px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btnDownload { flex: 1; height: 42px; border: none; border-radius: 11px; background: var(--version-badge-gradient); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px var(--accent-shadow); }
+</style>
+</head>
+<body data-page-node-id="EgeVFfGMYTo0DCAzDURxhH">
+
+<h1 data-page-node-id="n3MHpNPaDjwma3954irUbx">UpdateNotesDialog 方案 A · CSS 兜底修复 <span class="badge ok" data-page-node-id="2jz8jyhzvNODgPTi8tP1N2">仅改 CSS / 0 tsx</span></h1>
+<p class="lead" data-page-node-id="jzoeU6DUxlQEZTn0nc3Boy">修复 6 处 CJK 逐字竖排根因（min-width:0 + overflow-wrap:anywhere + 给 hero/hverRow flex-wrap:wrap），不动任何 react 结构。</p>
+
+<div class="row" data-page-node-id="6ZF1Jgf1P1yhc3a9XITGGm">
+
+  <!-- 左：修复前 -->
+  <div class="col" data-page-node-id="SGaS4VuOoHtFAKNagZTIzd">
+    <h2 data-page-node-id="YTPHbEDmvq2XL597IhldaJ">当前（修复前）</h2>
+    <div class="dialog-box" data-page-node-id="nWX2ONXTmVq3RzATNpgOG5">
+      <div class="hero" data-page-node-id="4STbHiq3f8dgCgGvOJDlv3">
+        <div class="heroTop" data-page-node-id="2hoBOe8hYCz3FzbW0GLHc7">
+          <div class="icon" data-page-node-id="sFYoHkwCDA3jxjKHuV0eLa">P</div>
+          <div class="htxt" data-page-node-id="wJydY0WYSJQQSGFZJlK0an">
+            <div class="hname" data-page-node-id="V4BnvIWGEfPTA1TqcV6t54">PASTEPANDA</div>
+            <div class="htitle" data-page-node-id="MSHq6l4uykWepXF1ebEeXi">知识库同步终于能真的连上：配对以前是单边的——只有粘...</div>
+          </div>
+          <button class="close" data-page-node-id="qoyc48fkiuDepgUeLoMpIg">×</button>
+        </div>
+        <div class="hverRow" data-page-node-id="6UeD67rXcPJyVhxWZhN6pn">
+          <div class="hver" data-page-node-id="Lz3CiX48l99ik9UOCUBXFV">
+            <span class="vOld" data-page-node-id="AOzUNu0mymPqdVjNUyp47a">v7.1.2</span>
+            <span style="color:#5B6AF0" data-page-node-id="ySgw9A6dqPSrO1VpTw8aaG">→</span>
+            <span class="vNew" data-page-node-id="uvPA9krVC6Bppur05Faqfd">v7.1.3</span>
+            <span class="hpill" data-page-node-id="CBBEzocANAPBw54JMObdUS">NEW</span>
+          </div>
+          <button class="hdl" data-page-node-id="STWt0GNdcNA79QSEdmPH1S">⤓ 立即更新</button>
+        </div>
+      </div>
+
+      <div class="dialog-body" data-page-node-id="7vi3OiMnL2tjPvKfGWdwWe"><div class="body" data-page-node-id="A9lFRpG3jaBWjhm3gUNAAN">
+        <div class="grp" data-page-node-id="dDAQVDI9CzX1nJsqx9wVeb">
+          <div class="grpHead" data-page-node-id="vs4voEJsCydqm14DHrurJu">
+            <span class="grpBadge" data-page-node-id="bRERTKCkTsMtXCc2LGgQZn">新增</span>
+            <span class="grpTitle" data-page-node-id="Des6EH8z4NMhGFqyYBkPJ5">新增 · 4</span>
+          </div>
+          <div class="grpItem" data-page-node-id="U39YDh70PeMKRxAS8d0qBn"><b data-page-node-id="62plxnvj98wOI6xHRZ9l9t">知识库同步终于能真的连上</b>：配对以前是单边的——只有粘贴邀请码那一台记下了对...</div>
+          <div class="feat" data-page-node-id="vMBaDPT3ZJFH4WAvaCC2ML">
+            <div class="featTitle" data-page-node-id="8HLtZcyFwMElPPw4zJUjAx">顶栏按钮模式换中控</div>
+            <div class="featDesc" data-page-node-id="L7nvEAm2iGntAI2BxYyNbd">粘贴栈按钮只在记录模式显示（栈开着时其它模式仍然看得见，否则东西还在往队列里推、屏幕上却没有关闭入口）</div>
+          </div>
+        </div>
+
+        <div class="manualCta" data-page-node-id="g68zIZmiuCSQoCm3QYJ7Gb">
+          <span style="font-size:14px" data-page-node-id="8NaWotShPWAXhgn8nG0uJM">📖</span>
+          <span class="manualCtaText" data-page-node-id="QR7cgJffjUkARwBg7cKbVZ">本次更新亮点 + 全部功能详解，查看完整手册</span>
+          <span data-page-node-id="ckfHp5AvFZOR4D2w0aCNvq">›</span>
+        </div>
+      </div></div>
+
+      <div class="footer" data-page-node-id="IzjYykDHvDv0aXTu2I4O5V">
+        <button class="btnSkip" data-page-node-id="PNYWyHjuTn6SrEQukLxPVa">稍后看</button>
+        <button class="btnDownload" data-page-node-id="uKF3M57HhzgafUFTaeqWMX">⤓ 下载并更新</button>
+      </div>
+    </div>
+    <div class="legend" data-page-node-id="I4WdwJhvjKVnF0uUtKwMOw">⚠ 长标题 <b data-page-node-id="LX2h1hm3AEyq1HBl6Yx7Fy">v7.1.2 → v7.1.3</b>、<b data-page-node-id="IbJVD9ZnB0M8IhHGfw0Qx7">新增·N</b>、<b data-page-node-id="PyiZVSyolArf8d3PMcFmNn">.featTitle / .featDesc</b> 都被 flex shrink 压缩到 <b data-page-node-id="PCQHxJ8DF3KqxEvFRYdhjU">逐字竖排</b>（截图里的现象）。</div>
+  </div>
+
+  <!-- 右：修复后 -->
+  <div class="col" data-page-node-id="mDPpFBJvRwlHDiNFbiIw7H">
+    <h2 data-page-node-id="dtBP2h2dBHqn0aafqLU9Aj">方案 A（修复后）</h2>
+    <div class="dialog-box" data-page-node-id="5Qt9vooonWrs9RNI1WTUNp">
+      <div class="hero" data-page-node-id="jtL9IT6DJ4TppfzdgJzVkv">
+        <div class="heroTop" data-page-node-id="qs2EbVMGA760jOORJeLDeB">
+          <div class="icon" data-page-node-id="jPp9KrTIeE1cWgHA22wFTw">P</div>
+          <div class="htxt" data-page-node-id="kKXCLrBWiOHICfQ6qqRe7u">
+            <div class="hname" data-page-node-id="o5ThL2maf0GjDbOJyJw7my">PASTEPANDA</div>
+            <div class="htitle" data-page-node-id="8GKxyDQlnroLPbIak0v2Fn">知识库同步终于能真的连上：配对以前是单边的——只有粘...</div>
+          </div>
+          <button class="close" data-page-node-id="ujqB586w1gnWejMsVCbPAl">×</button>
+        </div>
+        <div class="hverRow" data-page-node-id="bZaZ7PN9xPymG91y9xQQIO">
+          <div class="hver" data-page-node-id="PxPb3lcYn96PZzMkHD97NB">
+            <span class="vOld" data-page-node-id="rrD2jB105MDDsFG3oGebXt">v7.1.2</span>
+            <span style="color:#5B6AF0" data-page-node-id="B8FPJOWXvM5uUtzqL3b9V1">→</span>
+            <span class="vNew" data-page-node-id="yBcNEbr5Y09i6FCOJH9oDs">v7.1.3</span>
+            <span class="hpill" data-page-node-id="35jXRFbJ9a5WFChbctBcxM">NEW</span>
+          </div>
+          <button class="hdl" data-page-node-id="T7Vm83zvbTJsfAfjA3PBMO">⤓ 立即更新</button>
+        </div>
+      </div>
+
+      <div class="dialog-body" data-page-node-id="9zF41mFsAI0Ec0C4CuXvve"><div class="body" data-page-node-id="N2f04UGbodx8SEGQ3dva2M">
+        <div class="grp" data-page-node-id="d7sqLMiKJbaQUUXZfz4GP2">
+          <div class="grpHead" data-page-node-id="aBTdPWA68ROgynwix1VSz9">
+            <span class="grpBadge" data-page-node-id="VSf4h3MNKFjqHberBCjIoN">新增</span>
+            <span class="grpTitle" data-page-node-id="97KbyVwy9vaZhqZIFLpEOI">新增 · 4</span>
+          </div>
+          <div class="grpItem" data-page-node-id="AJgZXSiZIZ1CmQqorLL0ZV"><b data-page-node-id="gshC7GF9evo06FgujbJCtk">知识库同步终于能真的连上</b>：配对以前是单边的——只有粘贴邀请码那一台记下了对方，生成邀请码的那一台从头到尾不记，于是把对方的每一次连接都拒掉。两台机器从来没连通，界面上却写着「已配对 · 离线」。现在对方粘完码拨过来，你这边会出现一条「待确认的连接请求」，核对指纹后确认才放行（两边各核对一次，这才是完整的中防中间人）</div>
+          <div class="feat" data-page-node-id="h7SDgw9F6jZo3f5WqXADmU">
+            <div class="featTitle" data-page-node-id="2OPZtekdftlCNSkzujExYn">顶栏按钮模式换中控</div>
+            <div class="featDesc" data-page-node-id="kxJ3mbjUWGApX54gbp1cWF">粘贴栈按钮只在记录模式显示（栈开着时其它模式仍然看得见，否则东西还在往队列里推、屏幕上却没有关闭入口）</div>
+          </div>
+        </div>
+
+        <div class="manualCta" data-page-node-id="lZDy6hHDz9czjZyabzYrZC">
+          <span style="font-size:14px" data-page-node-id="CBA8uJmMOcpbBMblNTFY49">📖</span>
+          <span class="manualCtaText" data-page-node-id="uTYYfQ6qWYO1sHQhmqIlF9">本次更新亮点 + 全部功能详解，查看完整手册</span>
+          <span data-page-node-id="cVl8GIE6M5AFvRwvrVDJI9">›</span>
+        </div>
+      </div></div>
+
+      <div class="footer" data-page-node-id="Nij0BltI6SLzbACXpY231s">
+        <button class="btnSkip" data-page-node-id="OMpduMJmFy845o8E9VQaTy">稍后看</button>
+        <button class="btnDownload" data-page-node-id="EcSU98mH036li8A7upJzdP">⤓ 下载并更新</button>
+      </div>
+    </div>
+    <div class="legend" data-page-node-id="gteDfC4egUPJWC1tX3KdsB">✅ 关键 CSS 改 6 处：.heroTop / .hverRow 加 <b data-page-node-id="bZSBEe3VN0pbKsshQnwDcJ">flex-wrap:wrap</b>；.htitle/.hver/.grpTitle/.featTitle/.featDesc/.featWhy/.grpItem 加 <b data-page-node-id="ZYP0AGejYNl8k1YrL9p7ha">overflow-wrap:anywhere; min-width:0;</b>；.grpTitle 走省略号。</div>
+  </div>
+
+</div>
+
+</body>
+</html>

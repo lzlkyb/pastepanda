@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知识库模式升级（方案 乙）· 设计稿</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d2129; --line:#2a2f3a; --line2:#353c4a;
+    --text:#e6e8ec; --dim:#9aa2b1; --faint:#6b7382;
+    --accent:#6aa9ff; --amber:#e0a44a; --green:#5cc98a; --rose:#e0687a; --violet:#a98bff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1060px;margin:0 auto;padding:40px 24px 100px}
+  h1{font-size:24px;margin:0 0 6px}
+  .sub{color:var(--dim);margin:0 0 10px;font-size:13px}
+  h2{font-size:16.5px;margin:44px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h2 .n{color:var(--faint);font-weight:400;margin-right:8px}
+  h3{font-size:13.5px;margin:24px 0 8px;color:var(--dim);font-weight:600}
+  p{margin:10px 0}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12.5px;
+       font-family:"Cascadia Mono",Consolas,monospace;color:#cfd6e4}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--dim);font-weight:600}
+  ul{margin:8px 0;padding-left:20px} li{margin:5px 0}
+  .old{color:var(--rose)} .new{color:var(--green);font-weight:600}
+  .note{border-left:3px solid var(--amber);background:rgba(224,164,74,.07);
+        padding:10px 14px;margin:14px 0;border-radius:0 6px 6px 0;font-size:13px}
+  .bad{border-left-color:var(--rose);background:rgba(224,104,122,.07)}
+  .ok{border-left-color:var(--green);background:rgba(92,201,138,.07)}
+  .info{border-left-color:var(--accent);background:rgba(106,169,255,.07)}
+  pre{background:#0d1015;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+      overflow-x:auto;font-size:12px;line-height:1.6;
+      font-family:"Cascadia Mono",Consolas,monospace;color:#cfd6e4}
+  .lbl{font-size:11.5px;color:var(--faint);margin:4px 0 0 2px}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;
+       border:1px solid currentColor;margin-right:6px;vertical-align:1px}
+  .t0{color:var(--rose)} .t1{color:var(--green)} .t2{color:var(--accent)}
+  .t3{color:var(--violet)} .t4{color:var(--amber)}
+
+  /* ===== 图标槽对照 ===== */
+  .slots{display:flex;gap:26px;flex-wrap:wrap;margin:16px 0;padding:20px;
+         background:#0d1015;border:1px solid var(--line);border-radius:10px}
+  .slot{text-align:center}
+  .disc{border-radius:11px;display:flex;align-items:center;justify-content:center;
+        margin:0 auto 8px;background:rgba(255,255,255,.05);
+        border:1px solid rgba(255,255,255,.07);
+        box-shadow:inset 0 2px 4px rgba(255,255,255,.04),0 2px 8px rgba(0,0,0,.3)}
+  .disc.d34{width:34px;height:34px}
+  .disc.d42{width:42px;height:42px;border-radius:12px}
+  .disc.emoji{font-size:15px}
+  .disc svg{stroke:var(--dim);stroke-width:2.2;fill:none;
+            stroke-linecap:round;stroke-linejoin:round}
+  .slotCap{font-size:11px;color:var(--faint);white-space:nowrap;line-height:1.5}
+
+  /* ===== 界面模拟 ===== */
+  .win{background:#12151b;border:1px solid var(--line);border-radius:11px;overflow:hidden;margin:12px 0 4px}
+  .lrow{display:flex;gap:10px;border:1px solid var(--line);border-radius:16px;background:#161a21;
+        padding:10px;position:relative;align-items:flex-start}
+  .lico{width:34px;height:34px;border-radius:11px;background:rgba(255,255,255,.05);
+        border:1px solid rgba(255,255,255,.07);flex-shrink:0;overflow:hidden;
+        display:flex;align-items:center;justify-content:center;font-size:15px}
+  .lico svg{stroke:var(--dim);stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .lico.thumb{background:linear-gradient(135deg,#3a4a63,#26303f);color:#8fa8c8;font-size:9px}
+  .gtitle{font-size:13.5px;font-weight:600;color:var(--text);line-height:1.35}
+  .gexc{font-size:12.5px;color:var(--dim);line-height:1.5}
+  .gmeta{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);
+         flex-wrap:wrap;font-weight:500;font-variant-numeric:tabular-nums}
+  .chip{font-size:11px;font-weight:500;padding:1px 7px;border-radius:20px;
+        background:rgba(106,169,255,.15);color:#9cc6ff}
+  .acts{position:absolute;top:7px;right:7px;display:flex;gap:3px;
+        background:rgba(18,21,27,.86);border:1px solid var(--line2);border-radius:9px;padding:3px}
+  .acts i{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;
+          justify-content:center;font-style:normal;font-size:12px;color:var(--dim)}
+  .acts i.hot{color:var(--amber)}
+
+  /* ===== 网格候选 ===== */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+  .gcard{border:1px solid var(--line);border-radius:16px;background:#161a21;overflow:hidden;
+         display:flex;flex-direction:column;position:relative}
+  .cover{height:74px;background:linear-gradient(135deg,#26303f,#1b2330);
+         display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px}
+  .coverTxt{height:74px;display:flex;align-items:center;justify-content:center;
+            font-size:30px;font-weight:700;color:rgba(255,255,255,.22);
+            background:linear-gradient(135deg,rgba(106,169,255,.20),rgba(106,169,255,.05))}
+  .gpad{padding:9px 11px 10px;display:flex;flex-direction:column;gap:5px;flex:1}
+  .ragged{align-items:start}
+
+  /* ===== 键盘导航图 ===== */
+  .kb{display:grid;grid-template-columns:repeat(3,58px);gap:6px;margin:12px 0}
+  .kbc{height:44px;border:1px solid var(--line2);border-radius:8px;display:flex;
+       align-items:center;justify-content:center;font-size:12px;color:var(--faint);background:#0d1015}
+  .kbc.cur{border-color:var(--accent);color:var(--accent);background:rgba(106,169,255,.10)}
+  .kbc.tgt{border-color:var(--green);color:var(--green);border-style:dashed}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.two{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>知识库模式升级 · 方案 乙</h1>
+<p class="sub">补 C 稿的 5 个落地缺口 + 一层现代化视觉语言 · 2026-09-07</p>
+
+<div class="card">
+<b>本稿与 C 稿的关系：</b>不推翻，是<b>补洞 + 加一层</b>。C 稿的 §1（尺寸规范）、§2（列表↔网格）、§3（悬停动作条）、§6（空态）、§8（分批）全部保留其结论，本稿只改<b>顺序</b>与<b>五处它没答的地方</b>，再加两节它完全没写的东西（排版层次、动效）。<br>
+丙稿（推翻重设计）另出一份，见 <code>知识库模式-升级-丙-设计稿.html</code>。
+</div>
+
+<h2><span class="n">§0</span>先更正 C 稿的基线：§4 有三条把「已完成」当「待做」</h2>
+
+<p>读 <code>FolderTree.module.css</code> 后发现，C 稿 §4 那张对照表的「现在」一列不准。侧栏在 <code>de5f06d</code>（09-02 21:36「知识库六块合并提交 / 视觉统一」）那轮<b>已经改过</b>，而 C 稿是 09-06 写的——写稿时这些已在代码里。</p>
+
+<table>
+<tr><th>C 稿 §4 说</th><th>实际</th></tr>
+<tr><td class="old">选中态：仅底色 → 新增 3px accent 左边条</td><td class="new">已完成。<code>.rowOn::before</code> 就是 <code>width:3px; height:16px; border-radius:2px</code> 且带 <code>box-shadow: 0 0 6px var(--accent-shadow)</code> 光晕。源码注释明写「③ 竖条改成带圆角与光晕的 <code>::before</code>（原来是方的 inset 阴影）」</td></tr>
+<tr><td class="old">行圆角 / 胶囊化</td><td class="new">已完成。<code>.row</code> 是 <code>border-radius: 7px</code> 内缩胶囊，注释明写「原本是 <code>0 6px 6px 0</code>：贴左边、只圆右侧」，并说<b>这才是两边看上去不像同一个软件的主因</b></td></tr>
+<tr><td class="old">hover 手感与记录模式对齐</td><td class="new">已完成。<code>transition: all 0.15s</code>，注释：「与记录模式 <code>.item</code> 同一句」</td></tr>
+<tr><td>计数徽标 10px → 11.5px</td><td>真·待做。<code>.count</code> 仍是 <code>font-size: 10px</code>（已有 <code>tabular-nums</code>，那条不用改）</td></tr>
+<tr><td>折叠三角 11×16 → 24×24 命中</td><td>真·待做。<code>.caret</code> 是 <code>width:11px; height:16px</code></td></tr>
+<tr><td>新建文件夹 18×18 → 28×28</td><td>真·待做。<code>.addBtn</code> 是 <code>18×18</code></td></tr>
+</table>
+
+<div class="note ok">
+<b>§1 那张 14 行的尺寸表反过来是可信的。</b>抽样复核 7 项<b>全中</b>：<code>.searchClear</code> 18×18、<code>.newBtn</code> 20×20、<code>.wideBtn</code> h20、<code>.addBtn</code> 18×18、<code>.modeBtn</code> h22、<code>.askBtn</code> h24、<code>.rowCheck</code> 14×14、<code>.caret</code> 11×16。<br>
+所以 <b>§1 照做，§4 按上表删掉前三行再做。</b>
+</div>
+
+<div class="note info">
+<b>另外两件 C 稿担心多余、其实已经有的事：</b><br>
+① <b>笔记行的玻璃材质不缺。</b><code>.row</code> 已与记录模式共用 <code>--glass-card-bg/-border/-shadow</code>、静态微光 <code>::before</code>（走 <code>--card-shimmer-display</code>）、悬停光泽 <code>::after</code>（走 <code>--card-shimmer-anim</code>，关键帧在 <code>styles/surface.css</code>，与卡片共用同一份）、<code>--card-selected-*</code> 选中态，抬升是 <code>NoteList.tsx:349</code> 的 <code>whileHover={{y:-2, scale:1.01}}</code> spring。<b>「平庸」不是材质问题。</b><br>
+② <b>焦点环不缺。</b><code>globals.css:86</code> 有零特异性的 <code>:where(button:focus-visible, a:…, [tabindex]:…)</code> 全局兜底，<code>app.css:188</code> 另有一组具体的，知识库自己还有 <code>.rowMain:focus-visible</code>。新增按钮<b>什么都不用写</b>，只需确认没被 <code>outline: none</code> 盖掉。
+</div>
+
+<h2><span class="n">§1</span>洞 1：全页最强的视觉锚点是个 emoji</h2>
+
+<p>这是「和记录模式差距很大」里最直接看得见的一条，C 稿通篇未提。</p>
+
+<div class="slots">
+  <div class="slot">
+    <div class="disc d42">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </div>
+    <div class="slotCap">记录模式<br><b>42px</b> · lucide svg<br>strokeWidth 2.2</div>
+  </div>
+  <div class="slot">
+    <div class="disc d34 emoji">📝</div>
+    <div class="slotCap" style="color:var(--rose)">知识库 现状<br><b>34px</b> · emoji 字符<br>font-size 15px</div>
+  </div>
+  <div class="slot">
+    <div class="disc d34"><svg width="17" height="17" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
+    <div class="slotCap" style="color:var(--green)">知识库 <b>新</b><br>34px · lucide svg<br>size 17 / sw 2.2</div>
+  </div>
+  <div class="slot">
+    <div class="disc d34"><svg width="17" height="17" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div>
+    <div class="slotCap">今日速记<br>CalendarDays</div>
+  </div>
+  <div class="slot">
+    <div class="disc d34"><svg width="17" height="17" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4"/></svg></div>
+    <div class="slotCap">剪贴板转来<br>ClipboardList</div>
+  </div>
+  <div class="slot">
+    <div class="disc d34"><svg width="17" height="17" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg></div>
+    <div class="slotCap">AI 新建<br>Bot</div>
+  </div>
+</div>
+<p class="lbl">svg 为示意画法，实现直接用 lucide-react 的同名组件，不手抄 path。</p>
+
+<h3>映射表</h3>
+<table>
+<tr><th>来路</th><th>现在</th><th>新</th><th>判定依据（<code>NoteList.tsx:281-288</code>）</th></tr>
+<tr><td>AI 新建</td><td class="old">🤖</td><td class="new"><code>Bot</code></td><td><code>note.ai_provider</code></td></tr>
+<tr><td>今日速记</td><td class="old">📅</td><td class="new"><code>CalendarDays</code></td><td><code>note.daily_date</code></td></tr>
+<tr><td>剪贴板卡片转来</td><td class="old">📋</td><td class="new"><code>ClipboardList</code></td><td><code>note.history_id</code></td></tr>
+<tr><td>手工新建</td><td class="old">📝</td><td class="new"><code>PenLine</code></td><td>兜底</td></tr>
+</table>
+
+<div class="note bad">
+<b>🔴 改签名要找全调用点（规则 #11.1）。</b><code>provenanceOf</code> 是 <b>export</b> 的，返回 <code>{ icon: string; label: string }</code>。改成 <code>ReactNode</code> 后有<b>两个</b>调用点：
+<ul>
+<li><code>NoteList.tsx:339</code>（笔记行）</li>
+<li><code>TrashPanel.tsx:219</code> —— 它 <code>import { provenanceOf } from "./NoteList"</code>，注释还写着「来路走公共的 <code>provenanceOf</code>（与笔记行同一份）」</li>
+</ul>
+<b>漏掉回收站的话，那边的图标底会渲染成 <code>[object Object]</code>。</b>这是本轮最容易踩的一脚。
+</div>
+
+<div class="note">
+<b>为什么不把 34px 跟着抬到记录模式的 42px：</b>中栏在 ≥800px 下是<b>固定 300px</b>（<code>KnowledgeView.module.css:14</code>、<code>:111</code>），而 42px 图标槽 + 相应的呼吸间距会把标题可用宽压掉近 30px。<b>34px 配 17px 图标</b>（记录是 42 配 18）视觉重量基本相当。<br>
+<b>不动 <code>--glass-icon-*</code>、不动圆角 11px</b>——只换里面装的东西。
+</div>
+
+<h2><span class="n">§2</span>洞 2：图片笔记在列表里和纯文笔记长得一模一样</h2>
+
+<p>记录模式把<b>真实缩略图</b>直接塞进图标槽（<code>CardList.module.css:375</code> 的 <code>.cardImgThumb</code> 42×42 <code>object-fit:cover</code>，用在 <code>Card.tsx:352</code>）。知识库那个 34px 槽永远是一个字符。</p>
+
+<div class="win" style="padding:14px;background:#0f1218;display:flex;flex-direction:column;gap:10px">
+  <div class="lrow">
+    <div class="acts"><i>开</i><i class="hot">顶</i><i>移</i><i>⋯</i></div>
+    <div class="lico thumb">缩略图</div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+      <div class="gtitle">配色板截图整理</div>
+      <div class="gexc">这几张是 dawn 主题下的对照，注意 accent-light 压白字…</div>
+      <div class="gmeta"><span class="chip">设计</span><span>3 小时前</span><span>420 字</span></div>
+    </div>
+  </div>
+  <div class="lrow">
+    <div class="lico"><svg width="17" height="17" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+      <div class="gtitle">周会要点 09-04</div>
+      <div class="gexc">预发环境下周切…需要先把迁移脚本跑一遍</div>
+      <div class="gmeta"><span class="chip">会议</span><span class="chip">待办</span><span>昨天</span><span>1.2k 字</span></div>
+    </div>
+  </div>
+</div>
+<p class="lbl">同一个 34px 槽：有图的装缩略图，没图的装 lucide 图标。列表形态<b>立刻</b>有了图文之分，不依赖网格。</p>
+
+<div class="note ok">
+<b>为什么这条该抢先做：</b>封面提取正则 C 稿 §2 已经写好了，把同一个结果喂进 34px 槽即可。它<b>不依赖</b>批 3 的网格，改完打开就能看出区别。C 稿把图片可视化整体压在网格里，等于让「差距很大」这句抱怨要等到批 3 才有答案——排错了。
+</div>
+
+<pre>.rowIconThumb {          /* 34px 槽的缩略图变体，照 .cardImgThumb 的手法 */
+  padding: 0;
+  overflow: hidden;
+}
+.rowIconThumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  border-radius: 9px;    /* 槽是 11px，内缩 1px 边框后视觉对齐取 9 */
+}</pre>
+
+<div class="note bad">
+<b>🔴 C 稿那条「只在网格形态算正则」的性能护栏，在乙里失效了</b>——列表形态现在也要算。替代护栏：
+<ul>
+<li><code>useMemo</code> 挂在 <code>note.id + note.updated_at</code> 上（C 稿原话，保留）</li>
+<li>正则限长 512（C 稿原话，防正文里的 base64 巨串，保留）</li>
+<li>作用域是<b>当前已渲染的行</b>——分页 <code>LoadMoreSentinel</code> 已在，一次不会是全库</li>
+<li><code>loading="lazy"</code> + <code>decoding="async"</code>；<code>onError</code> 降级回 lucide 图标，<b>不摆碎图</b></li>
+</ul>
+</div>
+
+<h2><span class="n">§3</span>洞 3：网格卡片的材质归属，C 稿没定</h2>
+
+<p>C 稿 §2 的网格卡片是自画的：<code>background:#161a21</code> / <code>border:1px solid</code> / <code>radius:14</code>。而真实的 <code>.row</code> 是 glass token / <b>radius 16</b> / 双层 shimmer / spring 抬升。</p>
+
+<div class="note bad">
+照 C 稿实现的结果是「<b>列表形态有玻璃、网格形态没有</b>」——比现状更不统一。§3 只说了「不复用 <code>CardActionBar</code> 组件，只照搬形态与尺寸」，网格卡片的<b>材质</b>归属通篇没写。
+</div>
+
+<h3>网格卡片 = <code>.row</code> 同一套，逐条对齐</h3>
+<table>
+<tr><th>项</th><th>取值</th><th>来源</th></tr>
+<tr><td>底 / 边框 / 阴影</td><td><code>--glass-card-bg / -border / -shadow</code></td><td>同 <code>.row</code></td></tr>
+<tr><td>圆角</td><td class="new">16px（<b>不是 C 稿的 14</b>）</td><td>同 <code>.row</code></td></tr>
+<tr><td>静态微光</td><td><code>::before</code> 渐变，<code>display: var(--card-shimmer-display, block)</code></td><td>同 <code>.row</code>。经典白等主题把它设成 <code>none</code>，不走这个变量就会「网格有微光、列表没有」</td></tr>
+<tr><td>悬停光泽</td><td><code>::after</code> + <code>animation: var(--card-shimmer-anim, pp-shimmer-sweep …)</code></td><td>关键帧在 <code>styles/surface.css</code>，三处共用一份</td></tr>
+<tr><td>hover 抬升</td><td>framer-motion <code>whileHover</code>，<b>CSS 里不写 transform</b></td><td><code>.row</code> 注释原话：内联 transform 会覆盖样式表里的</td></tr>
+<tr><td>选中态</td><td><code>--card-selected-bg / -border / -shadow</code></td><td>同 <code>.rowActive</code></td></tr>
+<tr><td>backdrop-filter</td><td class="old">不写</td><td><code>.row</code> 注释：记录模式为它付过 GPU 代价并在 v5.5.2 删掉了</td></tr>
+</table>
+
+<div class="note">
+<b>❗ 有一对坑不能照抄结论。</b><code>.row</code> 的 <code>overflow:hidden</code> 与 <code>flex-shrink:0</code> 是<b>一对</b>——因为 <code>.list</code> 是 flex column + <code>overflow-y:auto</code>，而 flex 项的自动最小尺寸只在 <code>overflow: visible</code> 时等于内容高，一加 hidden 那个下限就变 0，行会塌成细缝（源码注释说知识列表<b>真撞上过一次</b>）。<br>
+网格里卡片是 <b>grid 项而不是 flex 项</b>，自动最小尺寸的规则不同。<b>这里必须实测重验，不能把 <code>flex-shrink:0</code> 照抄过去当护身符</b>（它在 grid 项上根本不生效）。
+</div>
+
+<h2><span class="n">§4</span>洞 4：封面 74px + 「无图不留位」在 Grid 里必然参差</h2>
+
+<p>C 稿说「无图的卡片不留封面位——摆一排灰色占位框比不摆更难看」。这句判断我同意，但省掉占位框不等于问题消失：</p>
+
+<div class="two">
+<div>
+<h3 style="color:var(--rose)">stretch（Grid 默认）</h3>
+<div class="grid" style="grid-template-columns:1fr 1fr">
+  <div class="gcard"><div class="cover">封面</div><div class="gpad"><div class="gtitle">有图的</div><div class="gexc">摘要两行…</div><div class="gmeta"><span>昨天</span></div></div></div>
+  <div class="gcard"><div class="gpad"><div class="gtitle">没图的</div><div class="gexc">摘要两行…</div><div class="gmeta"><span>昨天</span></div><div style="flex:1;min-height:44px;border:1px dashed var(--rose);border-radius:6px;margin-top:6px;font-size:10px;color:var(--rose);display:flex;align-items:center;justify-content:center">被拉出来的空白</div></div></div>
+</div>
+</div>
+<div>
+<h3 style="color:var(--rose)">start（改 align-items）</h3>
+<div class="grid ragged" style="grid-template-columns:1fr 1fr">
+  <div class="gcard"><div class="cover">封面</div><div class="gpad"><div class="gtitle">有图的</div><div class="gexc">摘要两行…</div><div class="gmeta"><span>昨天</span></div></div></div>
+  <div class="gcard"><div class="gpad"><div class="gtitle">没图的</div><div class="gexc">摘要两行…</div><div class="gmeta"><span>昨天</span></div></div></div>
+</div>
+<p class="lbl" style="color:var(--rose)">行与行错位，看着像布局坏了</p>
+</div>
+</div>
+
+<h3>三个候选</h3>
+<table>
+<tr><th></th><th>做法</th><th>代价</th></tr>
+<tr><td><b>甲</b></td><td><b>文字封面</b>：无图卡也给 74px 封面区，装渐变色块 + 标题首字大字</td><td>零新增数据。<b>推荐</b></td></tr>
+<tr><td>乙</td><td><b>正文补行</b>：无图卡不要封面，摘要从 2 行放到 5 行，把 74px 填掉</td><td>同一屏里两种卡片信息量不同，扫读时会以为「这条内容更多」</td></tr>
+<tr><td>丙</td><td><b>等高裁切</b>：无图卡摆浅色纯色块（不是灰占位框，是 <code>--section-bg</code> 平面）</td><td>最省事，但一屏几个色块并排还是显空</td></tr>
+</table>
+
+<div class="grid" style="grid-template-columns:1fr 1fr 1fr">
+  <div class="gcard"><div class="cover">封面图</div><div class="gpad"><div class="gtitle">Tauri 打包体积</div><div class="gexc">先关 devtools…</div><div class="gmeta"><span class="chip">Rust</span><span>2 小时前</span></div></div></div>
+  <div class="gcard"><div class="coverTxt">周</div><div class="gpad"><div class="gtitle">周会要点 09-04</div><div class="gexc">预发环境下周切…</div><div class="gmeta"><span class="chip">会议</span><span>昨天</span></div></div></div>
+  <div class="gcard"><div class="coverTxt" style="background:linear-gradient(135deg,rgba(169,139,255,.20),rgba(169,139,255,.05))">配</div><div class="gpad"><div class="gtitle">配色板截图整理</div><div class="gexc">dawn 主题下的对照…</div><div class="gmeta"><span class="chip">设计</span><span>3 小时前</span></div></div></div>
+</div>
+<p class="lbl">候选甲。左=真封面，中/右=文字封面（深浅档不同）。等高，不参差，也不空。</p>
+
+<div class="note ok">
+<b>🔴 文字封面的颜色不能自由 HSL。</b>项目有 <b>6 个主题</b>（<code>ocean</code> 默认 + <code>midnight/forest/blossom/dawn/ocean-dark</code>），而 <code>theme.css</code> 里有 <b>28 处「对比度改进」标注</b>、每条都带改前/改后的对比度数字——那是一次刻意的 WCAG 审计。自由取色会在某个主题下翻车，且绕过那次审计。<br>
+所以色块走 <code>color-mix</code> 从主题色派生：
+<pre>/* 色相跟着主题走，只用 note.id 的哈希决定「深浅档位」（4 档） */
+background: linear-gradient(135deg,
+  color-mix(in srgb, var(--accent) calc(14% + var(--kb-cover-step) * 4%), var(--section-bg)),
+  color-mix(in srgb, var(--accent) 4%, var(--section-bg)));</pre>
+首字用 <code>color-mix(in srgb, var(--text-primary) 22%, transparent)</code>，不写死 rgba。<br>
+❗ 首字取法：<code>Array.from(title)[0]</code> <b>不能用 <code>title[0]</code></b>——emoji 与部分生僻字是代理对，<code>[0]</code> 会切出半个码点渲染成 <span style="color:var(--rose)">□</span>。
+</div>
+
+<h2><span class="n">§5</span>洞 5：网格会把现成的方向键导航弄错</h2>
+
+<p><code>NoteList.tsx</code> 的 <code>onListKeyDown</code>（<code>:118-131</code>）已经有 <code>ArrowDown / ArrowUp / Home / End</code>，走的是索引 <b>±1</b>（一维）。网格是二维。</p>
+
+<div class="two">
+<div>
+<h3>照 C 稿实现（错）</h3>
+<div class="kb">
+  <div class="kbc cur">1 ●</div><div class="kbc tgt">2 ↓?</div><div class="kbc">3</div>
+  <div class="kbc">4</div><div class="kbc">5</div><div class="kbc">6</div>
+</div>
+<p class="lbl" style="color:var(--rose)">按 ↓ 跳到<b>右边一格</b>——索引 +1 而不是 +列数</p>
+</div>
+<div>
+<h3>乙</h3>
+<div class="kb">
+  <div class="kbc cur">1 ●</div><div class="kbc">2</div><div class="kbc">3</div>
+  <div class="kbc tgt">4 ↓</div><div class="kbc">5</div><div class="kbc">6</div>
+</div>
+<p class="lbl" style="color:var(--green)">↓ = +colCount，→ = +1</p>
+</div>
+</div>
+
+<table>
+<tr><th>键</th><th>列表（colCount=1）</th><th>网格（colCount=2 或 3）</th></tr>
+<tr><td>↓ / ↑</td><td>±1（不变）</td><td class="new">±colCount</td></tr>
+<tr><td>→ / ←</td><td class="old"><b>不接</b></td><td class="new">±1，行尾自动跳到下一行首</td></tr>
+<tr><td>Home / End</td><td>0 / len-1</td><td>0 / len-1（不变）</td></tr>
+</table>
+
+<div class="note">
+<b>列表形态下 ←→ 必须不接。</b>一维列表里它无意义，而且中栏窄屏时 ← 可能被理解成「回到侧栏」——别去抢一个语义未定的键。<br>
+<b>→ 在行尾跳到下一行首</b>（而不是停住）：索引本来就是线性的，跳行是这套模型的自然行为。<br>
+实现上 <code>colCount</code> 由 C 稿 §2 那个 ResizeObserver（照 <code>useCanSplitPane</code> 范式）算出来，和决定「能不能用网格」的是<b>同一个数</b>——不要算两遍。
+</div>
+
+<div class="note info">
+C 稿把三个新悬停按钮全设 <code>tabIndex={-1}</code>、宣称「可达性靠快捷键不靠 Tab」——这个取舍我认同（否则 Tab 一行停四次、一屏停两百次）。但它<b>没说网格下这套键要改</b>，等于自己把可达性论据架空了。本节就是补这一条。
+</div>
+
+<h2><span class="n">§6</span>token 收口：补 §1 只做了一半的那半</h2>
+
+<p>C 稿 §1 承诺「全部收口到 <code>KnowledgeView.module.css</code> 顶部的一组 <code>--kb-*</code> 变量（规则 #11）」，但实际只覆盖<b>字号</b>。已核实：</p>
+
+<ul>
+<li>全项目<b>没有 <code>--radius-*</code> token</b>。硬编码出现过 <code>4 / 5 / 6 / 7 / 8 / 10 / 12 / 16 / 20 / 999</code></li>
+<li><code>--card-gap</code> <b>只存在于 <code>CardList.module.css:7</code> 内部</b>。<code>KnowledgeView.module.css:521</code> 是抄了个 <code>10px</code>，注释里声称「同记录模式的 <code>--card-gap</code>」——<b>一改就分叉，而注释会继续说它们相同</b></li>
+</ul>
+
+<pre>/* KnowledgeView.module.css 顶部，与 --kb-fs-* 并列 */
+--kb-r-sm: 7px;    /* 侧栏行胶囊 / 小按钮 —— 现存值 */
+--kb-r-md: 11px;   /* 34px 图标槽 —— 现存值 */
+--kb-r-lg: 16px;   /* 笔记卡片 / 网格卡片 —— 现存值 */
+--kb-sp-1: 4px; --kb-sp-2: 6px; --kb-sp-3: 8px; --kb-sp-4: 10px; --kb-sp-5: 12px;</pre>
+
+<div class="note ok">
+<b>🔴 关键：不新增任何数值，只给现存数值起名字。</b>这一条<b>零视觉风险</b>——改完截图应当逐像素一致。它的价值不是变好看，是让后面三批不再各写一份。<br>
+<code>--card-gap</code> 单独处理：提到 <code>theme.css</code>（一个变量，两处引用），或者退一步——<b>把 <code>KnowledgeView.module.css:521</code> 那句注释改成「这是 <code>--card-gap</code> 的副本，改动要同步」</b>。装作它们共享一个变量，比明说是副本更危险。
+</div>
+
+<h2><span class="n">§7</span>排版层次：这才是「更美观」的主力</h2>
+
+<p>C 稿 §1 的字号阶梯把小字<b>抬上去</b>了，方向对。但它留下 7 档字号，而层次仍然只靠字号一个维度——颜色只有 primary/secondary/muted 在用，字重几乎没参与。</p>
+
+<table>
+<tr><th>层级</th><th>C 稿</th><th>乙</th><th>加了什么</th></tr>
+<tr><td>标题</td><td>13.5</td><td>13.5 / <b>600</b> / <code>--text-primary</code></td><td>字重</td></tr>
+<tr><td>摘要</td><td>12.5</td><td>12.5 / 400 / <code>--text-secondary</code></td><td>颜色降一档</td></tr>
+<tr><td>元信息</td><td>11.5</td><td>11.5 / <b>500</b> / <code>--text-muted</code> + <code>tabular-nums</code></td><td>字重 + 等宽数字</td></tr>
+<tr><td>标签胶囊</td><td>11</td><td>11 / 500</td><td>字重</td></tr>
+<tr><td>面包屑</td><td>12.5（文件夹名 13）</td><td class="new">合并到 12.5，文件夹名靠 <b>600</b> 突出</td><td>省掉一档字号</td></tr>
+</table>
+
+<p><b>字号档位从 7 档（9 / 9.5 / 10 / 10.5 / 11 / 11.5 / 13）压到 4 档（11 / 11.5 / 12.5 / 13.5）</b>，层次改由字重与颜色承担。这是现代软件排版的常规做法，也顺带让 §6 的 token 表更短。</p>
+
+<div class="note ok">
+<b><code>tabular-nums</code> 值得单独说。</b>元信息里「2 小时前 / 1.2k 字」是数字，比例字体下 <code>1</code> 比 <code>8</code> 窄，一列的右边沿会参差。侧栏 <code>.count</code> <b>已经用了</b> <code>font-variant-numeric: tabular-nums</code>（源码注释：「不加的话 1 比 8 窄，一列数字的右边沿会参差不齐」）——照抄同一句到 <code>.rowMeta</code>。<br>
+<b>不引入任何新颜色。</b><code>--text-secondary</code> / <code>--text-muted</code> 已过那 28 处对比度改进，直接用。
+</div>
+
+<h2><span class="n">§8</span>动效：C 稿完全没写的一节</h2>
+
+<p>列表↔网格切换、以及断点处 2 列↔3 列跳变，照 C 稿都是<b>瞬变</b>。项目已有 framer-motion 且已在 <code>.row</code> 上用 spring，这里恰好是现代感最强的一处。</p>
+
+<table>
+<tr><th>时机</th><th>做法</th></tr>
+<tr><td>列表 ↔ 网格</td><td>卡片挂 <code>layout</code>，容器 <code>AnimatePresence</code>；卡片以 <code>note.id</code> 为 key，位置变化由 FLIP 补</td></tr>
+<tr><td>2 列 ↔ 3 列</td><td>同一套 <code>layout</code>，不另写</td></tr>
+<tr><td>hover 抬升</td><td><b>已有</b>，<code>whileHover={{y:-2, scale:1.01}}</code> spring，不改</td></tr>
+<tr><td>新笔记入场</td><td><code>initial={{opacity:0, y:4}}</code>（照 <code>CardList.module.css:196</code> 那条 <code>from{opacity:0;transform:translateY(3px)}</code> 的既有手感）</td></tr>
+</table>
+
+<div class="note bad">
+<b>🔴 <code>layout</code> 是有代价的：</b>它每帧测量元素盒。一页可能几十条，长列表上会掉帧。<b>护栏：<code>layout</code> 只在切换那一次开，切完关掉</b>（用 state 控制 <code>layout</code> prop），不要常开。<br>
+<b>降级：</b><code>useReducedMotion()</code> 为真时全部关掉，只保留瞬变。项目已有先例——<code>KnowledgeView.module.css:147</code> 就有 <code>@media (prefers-reduced-motion: reduce)</code>（还有 <code>App.module.css:44</code>、<code>editor-main.tsx:26</code>）。这不是新规矩，是补齐。
+</div>
+
+<h2><span class="n">§9</span>分批（修正 C 稿的顺序）</h2>
+
+<table>
+<tr><th>批</th><th>内容</th><th>改动面</th><th>估时</th></tr>
+<tr><td><span class="tag t0">批 0</span></td><td><b>§1 图标槽 emoji→lucide</b> + <b>§2 列表缩略图</b></td><td><code>NoteList.tsx</code> + <code>TrashPanel.tsx</code>（签名）+ 少量 CSS</td><td class="new">约 0.5 天</td></tr>
+<tr><td><span class="tag t1">批 1</span></td><td><b>C 稿 §1 尺寸规范</b>（按 §0 删掉 §4 前三行）+ <b>§6 token 收口</b> + <b>§7 排版层次</b></td><td>几乎纯 CSS</td><td>1～2 天</td></tr>
+<tr><td><span class="tag t2">批 2</span></td><td><b>C 稿 §3 悬停动作条</b> + <b>C 稿 §6 空态</b></td><td><code>NoteList.tsx</code>、<code>NoteListEmpty.tsx</code></td><td>1～2 天</td></tr>
+<tr><td><span class="tag t3">批 3</span></td><td><b>C 稿 §2 网格</b> + 本稿 <b>§3 材质</b> + <b>§4 文字封面</b> + <b>§5 二维键盘</b> + <b>§8 动效</b></td><td>新 <code>NoteLayoutSwitch</code> + <code>NoteGrid</code>，改 <code>KnowledgeToolbar</code></td><td>2～3 天</td></tr>
+<tr><td><span class="tag t4">批 4</span></td><td><b>C 稿 §4 侧栏</b>（缩减后）+ <b>C 稿 §5 问答</b> + <b>C 稿 §7 第三栏头部</b></td><td>3 个 CSS module + 2 个 tsx</td><td>2 天</td></tr>
+</table>
+
+<p><b>相对 C 稿只动了两处：</b>① 新增批 0，把「差距很大」的直接答案从批 3 提到最前；② 批 3 吸收本稿 §3/§4/§5/§8——因为它们全是网格<b>落地前必须先定</b>的，留到实现现场就会现拍。</p>
+
+<p><b>批 0 与批 1 各自单独可发。</b>批 0 半天见效，批 1 是「点不着」那句抱怨的完整答案。</p>
+
+<h2><span class="n">§10</span>风险 / 不做清单</h2>
+
+<table>
+<tr><th>风险</th><th>应对</th></tr>
+<tr><td class="old">🔴 <code>provenanceOf</code> 改签名漏掉回收站 → <code>[object Object]</code></td><td>两个调用点同批改；回收站截图验收</td></tr>
+<tr><td>列表形态也算封面正则，性能</td><td><code>useMemo(note.id + updated_at)</code>、限长 512、只算已渲染行、lazy</td></tr>
+<tr><td><code>.row</code> 的 <code>overflow:hidden</code>/<code>flex-shrink:0</code> 那一对照抄进网格</td><td>grid 项规则不同，<b>实测重验</b>，别抄结论</td></tr>
+<tr><td>文字封面在 6 个主题下某个难看</td><td>只走 <code>color-mix</code> 从 <code>--accent</code>/<code>--section-bg</code> 派生，6 个主题逐个截图</td></tr>
+<tr><td>首字取到半个码点</td><td><code>Array.from(title)[0]</code></td></tr>
+<tr><td><code>layout</code> 动画掉帧</td><td>只在切换瞬间开；<code>useReducedMotion</code> 全关</td></tr>
+<tr><td>§6 token 化改出视觉差异</td><td>它<b>不该</b>有差异——改完逐像素对比，有差异就是抄错了值</td></tr>
+</table>
+
+<h3>不做清单（继承 C 稿 §9，加两条）</h3>
+<ul>
+<li class="old">❌ <b><code>source_kind</code> 类型徽标</b>——唯一要动 Rust + 数据层的项（C 稿原判，同意）</li>
+<li class="old">❌ <b>推翻三栏骨架 / 面包屑 / 搜问切换</b>——见丙稿的账单</li>
+<li class="old">❌ <b>自定义主题/配色</b>—— 6 个主题 + 28 处对比度改进，不碰</li>
+<li class="old">❌ <b>虚拟滚动</b>——分页已在，不提前优化</li>
+<li class="old">❌ <b>手动指定封面</b>——要新字段 + 新 UI</li>
+<li class="old">❌ <b>新增全局 <code>--radius-*</code> 体系</b>（新）——本轮只在知识库内收口成 <code>--kb-r-*</code>。全项目 10 档圆角统一是另一件事，会碰到每一个模块</li>
+<li class="old">❌ <b>命令面板 / ⌘K</b>（新）——项目现在没有，它是一个独立功能而不是本轮的视觉升级</li>
+</ul>
+
+<h2>验收</h2>
+<ul>
+<li>知识模式内<b>没有 emoji 当图标</b>（<code>provenanceOf</code> 返回 lucide 组件）；回收站同步生效、无 <code>[object Object]</code></li>
+<li>含图笔记在<b>列表形态</b>就显缩略图；图路径失效时降级为 lucide 图标，不出碎图</li>
+<li>网格卡片与列表行<b>同材质</b>：radius 16、双层 shimmer、同一套 glass token；切到卡片不透明的主题时两者微光同时消失</li>
+<li>网格里无图卡有文字封面，<b>与有图卡等高</b>，无参差、无灰占位框；6 个主题逐个截图通过</li>
+<li>网格里 ↓ 跳一行（+colCount）而非一格；列表里 ←→ 无响应</li>
+<li>知识模式内无小于 11px 的字号，字号档位 ≤ 4 档</li>
+<li>§6 token 化前后截图<b>逐像素一致</b></li>
+<li><code>prefers-reduced-motion: reduce</code> 下切换布局无动画</li>
+<li>320px 最窄窗不溢出、无横向滚动条；中栏 &lt;520px 时网格按钮置灰</li>
+<li><code>vitest run</code> 全绿；<code>tsc --noEmit</code> / <code>eslint --max-warnings=0</code> 为 0</li>
+</ul>
+
+</div>
+</body>
+</html>

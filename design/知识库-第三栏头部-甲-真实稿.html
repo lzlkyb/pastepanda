@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>第三栏头部工具条 · 方案甲 · 真实设计稿</title>
+<style>
+/* ===== 页面外壳（说明用，不是产品样式） ===== */
+body{margin:0;padding:28px 32px 60px;background:#fafafa;color:#111;
+  font:13px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:15px;margin:34px 0 10px;padding-bottom:6px;border-bottom:1px solid #e3e3e6}
+h3{font-size:13px;margin:18px 0 6px}
+p{margin:6px 0}
+.lead{color:#555;margin:0 0 6px}
+code{background:#f0f0f3;padding:1px 5px;border-radius:4px;font-family:Consolas,monospace;font-size:12px}
+.note{background:#fff8e6;border-left:3px solid #f59e0b;padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0}
+.bad{background:#fef2f2;border-left:3px solid #dc2626;padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0}
+.ok{background:#f0fdf4;border-left:3px solid #16a34a;padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0}
+table{border-collapse:collapse;margin:10px 0;font-size:12.5px}
+th,td{border:1px solid #e0e0e4;padding:5px 9px;text-align:left;vertical-align:top}
+th{background:#f4f4f6;font-weight:600}
+.cols{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin:14px 0}
+.col > .cap{font-size:11.5px;color:#666;margin-bottom:6px;font-weight:600}
+.ruler{font-size:11px;color:#888;margin-top:5px;font-family:Consolas,monospace}
+
+/* =========================================================
+   ↓↓↓ 以下全部是从源码抄来的真实值。改动只在 .pp.after 那一组。
+   ocean 主题（用户当前在用的那套，浅色）— src/styles/theme.css:168
+   ========================================================= */
+.pp{
+  --app-bg:#F7F7F8;
+  --card-bg:#fff;
+  --text-primary:#0F172A;
+  --text-secondary:#495565;
+  --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7;
+  --accent-light:#E0F2FE;
+  --accent-solid:#027CBB;
+  --accent-strong:#0273AD;
+  --input-bg:#F1F5F9;
+  --section-bg:#F0F4F8;
+  --hover:#E8ECF2;
+  --amber:#f59e0b;
+
+  font:13px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:var(--app-bg);
+  border:1px solid var(--border-color);
+  border-radius:10px;
+  overflow:hidden;
+}
+
+/* .pane — NoteDetailPane.module.css:7 */
+.pane{
+  display:flex;flex-direction:column;
+  padding:8px 10px 10px;
+  gap:6px;
+  background:var(--app-bg);
+}
+
+/* .head — NoteDetailPane.module.css:37 */
+.head{display:flex;align-items:center;gap:6px;flex-shrink:0}
+
+/* .titleInput — NoteDetailPane.module.css:44 */
+.titleInput{
+  flex:1;min-width:0;height:30px;padding:0 10px;
+  border:1px solid var(--border-color);border-radius:8px;
+  background:var(--input-bg);color:var(--text-primary);
+  font-family:inherit;font-size:13px;font-weight:600;
+  outline:none;box-sizing:border-box;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* 形态切换器 — NoteViewModeSwitch.module.css:7
+   实测宽 = padding 2*2 + 3*24 + gap 2*2 = 80px */
+.vmWrap{display:flex;flex-shrink:0;gap:2px;padding:2px;border-radius:6px;background:var(--hover)}
+.vmBtn{display:flex;align-items:center;justify-content:center;width:24px;height:22px;
+  border:none;border-radius:5px;background:transparent;color:var(--text-muted)}
+.vmOn{background:var(--card-bg);box-shadow:0 1px 2px rgba(0,0,0,.06);color:var(--accent-strong)}
+
+/* .closeBtn — NoteDetailPane.module.css:80 */
+.closeBtn{display:flex;align-items:center;justify-content:center;
+  width:26px;height:26px;flex-shrink:0;border:none;border-radius:7px;
+  background:transparent;color:var(--text-muted)}
+
+/* ▼ 新增的那一个按钮。尺寸取 26 与旁边 .closeBtn 对齐，
+   不取 --kb-hit(28) —— 见稿子 §2。 */
+.moreBtn{display:flex;align-items:center;justify-content:center;
+  width:26px;height:26px;flex-shrink:0;border:none;border-radius:7px;
+  background:transparent;color:var(--text-secondary);position:relative}
+.moreBtn.hov{background:var(--hover);color:var(--text-primary)}
+
+/* 正文区（只为让头部有个落地的上下文，非本稿重点） */
+.bodyStub{
+  height:96px;border:1px solid var(--border-color);border-radius:8px;
+  background:var(--card-bg);color:var(--text-muted);font-size:12.5px;
+  padding:8px 10px;box-sizing:border-box}
+
+/* 图标（内联 svg，size 与源码一致：X=13 / MoreHorizontal=14） */
+svg{display:block}
+
+/* 右键菜单的真实观感（ContextMenu 那套的近似：本稿只演示条目，不改它） */
+.menu{width:168px;background:var(--card-bg);border:1px solid var(--border-color);
+  border-radius:9px;box-shadow:0 8px 24px rgba(15,23,42,.14);padding:4px;font-size:12.5px}
+.mi{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;color:var(--text-primary)}
+.mi.hov{background:var(--hover)}
+.mi.danger{color:#B91C1C}
+.msep{height:1px;background:var(--border-color);margin:4px 6px}
+.mi .arrow{margin-left:auto;color:var(--text-muted);font-size:11px}
+</style>
+</head>
+<body>
+
+<h1>第三栏头部工具条 · 方案甲 · 真实设计稿</h1>
+<p class="lead">2026-09-07 · 批 4 · 对应 C 稿 §7 · 按 ocean（用户当前主题）真实 token 渲染</p>
+
+<div class="bad">
+<b>先更正 C 稿 §7 的前提。</b>C 稿写的是「第三栏缺一条头部工具条」，并自注
+「<code>KbThirdPane</code> / <code>NoteDetailPane</code> 我只看了尺寸，没通读结构」。
+通读后：<b>头部早就有了</b>（<code>NoteDetailPane.tsx:163</code> 的 <code>.head</code>），
+里面是 标题输入框 + 「不在当前列表」提示 + 三形态切换器 + 关闭按钮，
+底部 <code>.footer</code> 还有 历史 / AI / 复制为 Markdown / 保存。
+<br>所以这一节真正缺的只有一件事：<b>行上有的那三个操作（置顶 / 移动 / ⋯）在第三栏里拿不到</b>。
+</div>
+
+<h2>§1 甲方案：只加一个 <code>⋯</code></h2>
+
+<p>置顶、移动、删除全部收进 <code>⋯</code> 的菜单，头部只多一个按钮。</p>
+
+<h3>1.1 最窄的情况 —— 800px 窗口，侧栏开着</h3>
+
+<p class="ruler">第三栏宽 = 800 − 180(侧栏) − 300(中栏) − 7(vgrip) = <b>313px</b>；
+<code>.pane</code> 左右 padding 各 10 → 头部可用 <b>293px</b></p>
+
+<div class="cols">
+  <div class="col">
+    <div class="cap">改前（现在）</div>
+    <div class="pp" style="width:313px">
+      <div class="pane">
+        <div class="head">
+          <input class="titleInput" value="NC 重端登录按 IP 限制组织的实现" readonly>
+          <div class="vmWrap">
+            <div class="vmBtn">✎</div><div class="vmBtn vmOn">◫</div><div class="vmBtn">👁</div>
+          </div>
+          <div class="closeBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </div>
+        </div>
+        <div class="bodyStub">正文 / 编辑区……</div>
+      </div>
+    </div>
+    <div class="ruler">标题框 = 293 − 6 − 80 − 6 − 26 = <b>175px</b></div>
+  </div>
+
+  <div class="col">
+    <div class="cap">改后（甲）</div>
+    <div class="pp after" style="width:313px">
+      <div class="pane">
+        <div class="head">
+          <input class="titleInput" value="NC 重端登录按 IP 限制组织的实现" readonly>
+          <div class="vmWrap">
+            <div class="vmBtn">✎</div><div class="vmBtn vmOn">◫</div><div class="vmBtn">👁</div>
+          </div>
+          <div class="moreBtn hov">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </div>
+          <div class="closeBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </div>
+        </div>
+        <div class="bodyStub">正文 / 编辑区……</div>
+      </div>
+    </div>
+    <div class="ruler">标题框 = 175 − 6 − 26 = <b>143px</b></div>
+  </div>
+</div>
+
+<div class="note">
+<b>代价说清楚：标题框从 175px 缩到 143px。</b>13px 粗体下可见约 <b>9 个汉字</b>（改前约 11 个）。
+它是 <code>&lt;input&gt;</code>，不是只读文本 —— 光标进去仍可横向滚动看全、编辑全，
+只是<b>一眼看不全长标题</b>。
+<br>这是甲方案唯一的实质损失。乙（再加一个置顶按钮）会到 111px ≈ 7 个字，
+那才是真的不能用；所以甲是「加按钮」这条路上的上限。
+</div>
+
+<h3>1.2 常见宽度 —— 1280px 窗口</h3>
+
+<p class="ruler">第三栏宽 ≈ 1280 − 180 − 300 − 7 = <b>793px</b>（拖过 vgrip 可变）→ 头部可用 773px</p>
+
+<div class="cols">
+  <div class="col">
+    <div class="cap">改后（甲）· 宽屏下根本不紧</div>
+    <div class="pp after" style="width:793px">
+      <div class="pane">
+        <div class="head">
+          <input class="titleInput" value="NC 重端登录按 IP 限制组织 · 双向互锁与登录后置校验的落地记录" readonly>
+          <div class="vmWrap">
+            <div class="vmBtn">✎</div><div class="vmBtn vmOn">◫</div><div class="vmBtn">👁</div>
+          </div>
+          <div class="moreBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </div>
+          <div class="closeBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </div>
+        </div>
+        <div class="bodyStub">正文 / 编辑区……</div>
+      </div>
+    </div>
+    <div class="ruler">标题框 = 773 − 6 − 80 − 6 − 26 − 6 − 26 = <b>623px</b></div>
+  </div>
+</div>
+
+<h3>1.3 带「不在当前列表」徽标的最差情况</h3>
+
+<p>这个徽标是 <code>flex-shrink: 0</code> 且 <code>white-space: nowrap</code>（源码里就有注释说不锁会被压成一列字），
+它占 6 个字 + 内边距 ≈ <b>77px</b>。搜索后点一条、然后改了搜索词时会碰到：</p>
+
+<div class="cols">
+  <div class="col">
+    <div class="cap">313px + 徽标（改后）· 这是真正的底线情况</div>
+    <div class="pp after" style="width:313px">
+      <div class="pane">
+        <div class="head">
+          <input class="titleInput" value="NC 重端登录…" readonly>
+          <span style="flex-shrink:0;padding:1px 7px;border:1px solid rgba(245,158,11,.35);
+            border-radius:6px;background:rgba(245,158,11,.12);color:#B45309;
+            font-size:10.5px;font-weight:600;white-space:nowrap">不在当前列表</span>
+          <div class="vmWrap">
+            <div class="vmBtn">✎</div><div class="vmBtn vmOn">◫</div><div class="vmBtn">👁</div>
+          </div>
+          <div class="moreBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </div>
+          <div class="closeBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </div>
+        </div>
+        <div class="bodyStub">正文 / 编辑区……</div>
+      </div>
+    </div>
+    <div class="ruler">标题框 = 143 − 6 − 77 = <b>60px</b>（约 3 个字）</div>
+  </div>
+</div>
+
+<div class="bad">
+<b>这一格是真实存在的，而且改前就已经很糟（改前 98px）。</b>
+甲把它从 98 推到 60。
+<br><b>建议顺手修掉：把徽标从文字换成图标 + tooltip。</b>
+它已经有 <code>title</code>（「搜索或筛选变了，左侧列表里现在没有这一条」），
+文字重复了 tooltip 的意思。换成一个琥珀色 <code>EyeOff</code>（16px 含内边距）后：
+60 → <b>121px</b>，反而比改前的 98px 宽。
+<br>❗ 但这是一次<b>额外的 UI 变更</b>（文字→图标，信息量下降），不在 C 稿 §7 的范围里。
+默认<b>不做</b>，等你拍。
+</div>
+
+<h2>§2 为什么是这个位置、这个尺寸</h2>
+
+<table>
+<tr><th>决定</th><th>选了</th><th>理由</th></tr>
+<tr>
+  <td>放哪</td>
+  <td><b>形态切换器右侧、关闭按钮左侧</b></td>
+  <td>关闭必须是最右那个 —— 全应用（弹窗、面板、问答栏）的✕ 都在最右，
+      把它挤到中间会让「关闭」变成需要找的按钮。</td>
+</tr>
+<tr>
+  <td>多大</td>
+  <td><b>26×26</b>（不是 <code>--kb-hit</code> 的 28）</td>
+  <td>旁边 <code>.closeBtn</code> 就是 26。两个紧挨的图标按钮差 2px 看得出来；
+      命中区靠 <code>::before{inset:-1px}</code> 撑到 28，不占布局。
+      （这就是批 1 里 <code>.caret</code> / <code>.addBtn</code> 用的同一个手法。）</td>
+</tr>
+<tr>
+  <td>图标多大</td>
+  <td><code>MoreHorizontal size={14}</code></td>
+  <td>行悬停条上的 <code>⋯</code> 就是 14（<code>NoteList.tsx:527</code>）—— 同一个动作同一个尺寸。
+      旁边 <code>X</code> 是 13，不改。</td>
+</tr>
+<tr>
+  <td>Tab 能不能停</td>
+  <td><b>能停（不给 <code>tabIndex={-1}</code>）</b></td>
+  <td>这里与行悬停条<b>相反</b>。行上那三个必须 <code>-1</code>，是因为列表里有上百行，
+      Tab 会停上百次；第三栏头部<b>只有一份</b>，Tab 停一次是应该的。
+      所以它<b>不需要</b>再配一个 P/M 快捷键。</td>
+</tr>
+<tr>
+  <td>菜单从哪弹</td>
+  <td>按钮左下角（<code>r.left, r.bottom + 2</code>）</td>
+  <td>与行悬停条上 <code>⋯</code> 的锚点公式逐字相同（<code>NoteList.tsx:524</code>）。</td>
+</tr>
+</table>
+
+<h2>§3 菜单里装什么 —— 不新建，直接用 <code>buildMenu</code></h2>
+
+<p>这是行右键与行悬停条已经在用的那一份（<code>NoteList.tsx:255</code>），一字不改：</p>
+
+<div class="cols">
+  <div class="col">
+    <div class="cap">未置顶的笔记 · 建过文件夹</div>
+    <div class="pp">
+      <div class="menu">
+        <div class="mi hov">📌 置顶</div>
+        <div class="mi">📂 移动到文件夹<span class="arrow">›</span></div>
+        <div class="msep"></div>
+        <div class="mi danger">🗑 删除笔记</div>
+      </div>
+    </div>
+    <div class="ruler">风险梯度从上到下递增（源码注释里就这么写的）</div>
+  </div>
+  <div class="col">
+    <div class="cap">已置顶 · 一个文件夹都没建</div>
+    <div class="pp">
+      <div class="menu">
+        <div class="mi">📍 取消置顶</div>
+        <div class="msep"></div>
+        <div class="mi danger">🗑 删除笔记</div>
+      </div>
+    </div>
+    <div class="ruler">没地方可移时那一项<b>不出</b>（<code>children.length &gt; 0</code>），不弹空子菜单</div>
+  </div>
+</div>
+
+<div class="ok">
+<b>这是甲方案最大的好处：零新增产品行为。</b>
+置顶 / 移动 / 删除的文案、图标、排序、分隔线、危险色、“未分类”该不该出、
+删除确认框——全部跟行上完全一致，因为就是同一份代码。
+不存在「两处迟早分歧」的风险。
+</div>
+
+<h2>§4 这一批真正的工作量：不是那个按钮，是把菜单搬出来</h2>
+
+<p><code>buildMenu</code> / <code>folderMenu</code> 现在住在 <code>NoteList.tsx</code> 里（它们是
+<code>useCallback</code>，依赖 <code>folders</code> / <code>onSetFolder</code> / <code>onDelete</code> / <code>onTogglePin</code>）。
+<code>NoteDetailPane</code> 拿不到——它的 props 只有
+<code>note / onClose / onSaved / notInList / onRegister / onOpenNote</code>。</p>
+
+<h3>4.1 两种搬法</h3>
+
+<table>
+<tr><th></th><th>做法</th><th>代价</th></tr>
+<tr>
+  <td><b>抬到 <code>KnowledgeView</code></b><br>（推荐）</td>
+  <td>把两个菜单抽成 <code>useNoteMenu()</code>，<b>在 <code>KnowledgeView</code> 调一次</b>，
+      把 <code>buildMenu</code> / <code>folderMenu</code> 当 props 传给 <code>NoteList</code> 与 <code>NoteDetailPane</code>。</td>
+  <td><code>NoteDetailPane</code> 多 1 个 prop；<code>NoteList</code> 可以<b>退掉</b>
+      <code>onSetFolder</code>（它只为建菜单而存在）。净增 0 个调用链。</td>
+</tr>
+<tr>
+  <td>各自调 hook</td>
+  <td><code>NoteDetailPane</code> 自己调 <code>useNoteMenu()</code>。</td>
+  <td>得给它新增 <b>4 个</b> props（folders / onSetFolder / onDelete / onTogglePin），
+      而它本来是个只管「一条笔记」的组件。它也成了菜单第二个调用点。</td>
+</tr>
+</table>
+
+<h3>4.2 抬到 <code>KnowledgeView</code> 后的数据流</h3>
+
+<pre style="background:#f6f6f8;border:1px solid #e2e2e6;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.7;overflow-x:auto">
+KnowledgeView
+  ├─ q.folders · act.handleSetFolder · act.handleDelete · act.handleTogglePin
+  │     ↓
+  ├─ useNoteMenu({ folders, onSetFolder, onDelete, onTogglePin })
+  │     → { folderMenu, buildMenu }        ← 唯一一份
+  │     ↓                    ↓
+  ├─ &lt;NoteList  buildMenu folderMenu …&gt;      行右键 / 悬停条 ⋯ / M 键
+  └─ &lt;KbThirdPane main={
+         &lt;NoteDetailPane buildMenu …&gt;         ← 新：头部那个 ⋯
+       }&gt;
+</pre>
+
+<div class="note">
+<b><code>folderMenu</code> 为什么不传给 <code>NoteDetailPane</code>：</b>
+它只服务于行悬停条上那个「移动」按钮与 M 快捷键。第三栏没有单独的移动按钮
+（甲方案就是把它收进菜单），所以只需 <code>buildMenu</code>。<b>不传用不到的东西。</b>
+</div>
+
+<div class="bad">
+<b>❗ 规则 #11.1：抽出来后必须把同类调用点找全。</b>
+<code>buildMenu</code> 现在有 <b>3</b> 个调用点（行右键 <code>NoteList.tsx:417</code>、
+悬停条 ⋯ <code>:524</code>、卡片右键 <code>NoteCard.tsx</code>），
+<code>folderMenu</code> 有 <b>2</b> 个（悬停条移动 <code>:507</code>、M 键 <code>:215</code>）。
+加上新的第三栏，共 <b>4 + 2</b>。抽完要逐个核对，一个不能漏。
+</div>
+
+<h2>§5 代码改动清单</h2>
+
+<table>
+<tr><th>文件</th><th>改什么</th></tr>
+<tr>
+  <td><b>新增</b> <code>src/components/notes/useNoteMenu.tsx</code></td>
+  <td>从 <code>NoteList.tsx</code> 搬出 <code>folderMenu</code>（:124）与 <code>buildMenu</code>（:255），
+      连注释一起搬。<code>.tsx</code> 而不是 <code>.ts</code>：里面有 <code>&lt;Pin size={14} /&gt;</code>。
+      放 <code>components/notes/</code> 而不是 <code>lib/notes/</code>：旁边已有
+      <code>useNoteLayout.ts</code> / <code>useNoteEditorState.ts</code>，跟着现有位置走。</td>
+</tr>
+<tr>
+  <td><code>KnowledgeView.tsx</code></td>
+  <td>调 <code>useNoteMenu</code>；给 <code>NoteList</code> 传 <code>buildMenu</code>/<code>folderMenu</code>、
+      去掉 <code>onSetFolder</code>；给 <code>NoteDetailPane</code> 传 <code>buildMenu</code>。</td>
+</tr>
+<tr>
+  <td><code>NoteList.tsx</code></td>
+  <td>删掉两个 <code>useCallback</code>（约 −55 行，这文件本来就超了规则 #7 的 300 行）；
+      props 添 <code>buildMenu</code>/<code>folderMenu</code>、去 <code>onSetFolder</code>；
+      <code>onListKeyDown</code> 的 dep 数组跟着改。</td>
+</tr>
+<tr>
+  <td><code>NoteDetailPane.tsx</code></td>
+  <td>新 prop <code>buildMenu?</code>（可选，不传就不画那个按钮）；
+      <code>useContext(CtxMenuCtx)</code>（<code>&lt;ContextMenu&gt;</code> 包在 <code>KnowledgeView</code>
+      最外层，第三栏在它里面，拿得到）；<code>.head</code> 里插一个按钮。
+      <b>❗ 这个文件是 CRLF</b>，编辑时注意。</td>
+</tr>
+<tr>
+  <td><code>NoteDetailPane.module.css</code></td>
+  <td>新 <code>.moreBtn</code>（抄 <code>.closeBtn</code> 那套，颜色用 <code>--text-secondary</code>
+      而不是 <code>--text-muted</code>：它是动作入口，不是次要信息）
+      + <code>::before{inset:-1px}</code> 命中区。</td>
+</tr>
+<tr>
+  <td><b>测试</b></td>
+  <td>新增 <code>src/__tests__/noteMenu.test.tsx</code>：验 <code>buildMenu</code> 搬家后行为不变
+      （置顶文案随 <code>pinned</code> 翻、无文件夹时不出移动项、删除带 danger）。</td>
+</tr>
+</table>
+
+<div class="ok">
+<b>预计：新增 2 个文件（hook + 测试）+ 改 4 个，NoteList 净减约 55 行。</b>
+甲方案的产品变更只有一句话：<b>第三栏头部多一个 <code>⋯</code>，菜单与行上完全一致</b>。
+其余全是收口。
+</div>
+
+<h2>§6 本稿没回答的</h2>
+<ul>
+<li><b>「不在当前列表」徽标该不该改成图标</b>（§1.3）—— 默认不改，等拍。</li>
+<li><b>KbQaPanel 那 7 处 11/11.5px 该不该抬到 12.5</b> —— 与本节无关，仍悬着。</li>
+<li><b>剩下的 9 处 &lt;11px</b>（NoteDetailPane 5 / ViewControls 2 / NoteDialog 2）——
+  其中 NoteDialog 那两处在 <code>.shell</code> 外面，继承不到 <code>--kb-*</code>，要单独处理。</li>
+</ul>
+
+</body>
+</html>

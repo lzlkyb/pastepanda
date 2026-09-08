@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知识库模式升级（方案 丙 · 推翻重设计）· 设计稿</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d2129; --line:#2a2f3a; --line2:#353c4a;
+    --text:#e6e8ec; --dim:#9aa2b1; --faint:#6b7382;
+    --accent:#6aa9ff; --amber:#e0a44a; --green:#5cc98a; --rose:#e0687a; --violet:#a98bff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1060px;margin:0 auto;padding:40px 24px 100px}
+  h1{font-size:24px;margin:0 0 6px}
+  .sub{color:var(--dim);margin:0 0 10px;font-size:13px}
+  h2{font-size:16.5px;margin:44px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h2 .n{color:var(--faint);font-weight:400;margin-right:8px}
+  h3{font-size:13.5px;margin:24px 0 8px;color:var(--dim);font-weight:600}
+  p{margin:10px 0}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12.5px;
+       font-family:"Cascadia Mono",Consolas,monospace;color:#cfd6e4}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--dim);font-weight:600}
+  ul{margin:8px 0;padding-left:20px} li{margin:5px 0}
+  .old{color:var(--rose)} .new{color:var(--green);font-weight:600}
+  .note{border-left:3px solid var(--amber);background:rgba(224,164,74,.07);
+        padding:10px 14px;margin:14px 0;border-radius:0 6px 6px 0;font-size:13px}
+  .bad{border-left-color:var(--rose);background:rgba(224,104,122,.07)}
+  .ok{border-left-color:var(--green);background:rgba(92,201,138,.07)}
+  .info{border-left-color:var(--accent);background:rgba(106,169,255,.07)}
+  pre{background:#0d1015;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+      overflow-x:auto;font-size:12px;line-height:1.6;
+      font-family:"Cascadia Mono",Consolas,monospace;color:#cfd6e4}
+  .lbl{font-size:11.5px;color:var(--faint);margin:4px 0 0 2px}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;
+       border:1px solid currentColor;margin-right:6px;vertical-align:1px}
+  .t1{color:var(--green)} .t2{color:var(--accent)} .t3{color:var(--violet)} .t4{color:var(--amber)}
+  .price{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;
+         background:rgba(224,104,122,.16);color:#ffa0af;margin-left:6px}
+  .price.lo{background:rgba(92,201,138,.16);color:#8fe0b2}
+  .price.mid{background:rgba(224,164,74,.16);color:#f0c684}
+
+  /* ===== 骨架线框 ===== */
+  .fr{display:flex;background:#0d1015;border:1px solid var(--line);border-radius:10px;
+      overflow:hidden;margin:10px 0;min-height:190px;font-size:11px}
+  .fc{border-right:1px dashed var(--line2);padding:10px 8px;color:var(--faint);
+      display:flex;flex-direction:column;gap:6px}
+  .fc:last-child{border-right:none}
+  .fcHd{font-size:10px;color:var(--dim);font-weight:700;letter-spacing:.4px}
+  .blk{background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:7px;
+       height:26px;display:flex;align-items:center;padding:0 7px;font-size:10px}
+  .blk.tall{height:52px}
+  .blk.on{border-color:var(--accent);background:rgba(106,169,255,.10);color:#9cc6ff}
+  .drawer{position:relative}
+  .drawer::after{content:"抽屉";position:absolute;top:6px;right:-1px;font-size:9px;
+                 background:var(--panel2);border:1px solid var(--line2);border-radius:4px;
+                 padding:0 4px;color:var(--violet)}
+  .gone{background:repeating-linear-gradient(45deg,rgba(224,104,122,.07) 0 6px,transparent 6px 12px);
+        border-color:rgba(224,104,122,.35);color:#ffa0af}
+
+  /* ===== 密度对照 ===== */
+  .dens{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0}
+  .dcol{background:#0d1015;border:1px solid var(--line);border-radius:10px;padding:10px}
+  .drow{border:1px solid var(--line);border-radius:12px;background:#161a21;
+        display:flex;gap:7px;align-items:flex-start}
+  .dico{border-radius:9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);flex-shrink:0}
+  .dtl{font-weight:600;color:var(--text)}
+  .dmt{color:var(--faint)}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.two{grid-template-columns:1fr}.dens{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>知识库模式升级 · 方案 丙</h1>
+<p class="sub">推翻重设计（换配色 / 密度 / 骨架）· 2026-09-07</p>
+
+<div class="note bad">
+<b>先把立场说清：我仍然不推荐丙。</b>你要求出稿对比，所以本稿按丙的<b>完整范围</b>画，不缩水、不做成稻草人——两个骨架候选都画到能评估的程度，配色与密度也给了可落地的做法。<br>
+但本稿同时把<b>账单摆出来</b>（§5），因为丙与乙的差别主要不在效果，而在代价：<b>已核实有 11 张已定稿编码了三栏 / 第三栏 / 侧栏 / 面包屑的决策</b>，而 C 稿 §9 自己说的「作废 6 张」是低估。<br>
+看完 §5 你要还想做，我照做——但顺序上我会强烈建议先走 §6 那条最小可逆路径。
+</div>
+
+<div class="card">
+<b>丙不是一件事，是三件可以分开做的事。</b>把它们捆成一个「重设计」是本方案最大的风险来源，所以本稿先拆开、各自定价：<br><br>
+<b>维度 A · 骨架</b>（三栏 → 别的）<span class="price">最贵</span><br>
+<b>维度 B · 配色</b>（换视觉方向）<span class="price mid">中，但有安全做法</span><br>
+<b>维度 C · 密度</b>（紧凑/舒适/宽松可选）<span class="price lo">最便宜，且是真新增价值</span>
+</div>
+
+<h2><span class="n">§1</span>现状骨架：先看清丙要推翻的是什么</h2>
+
+<p>读 <code>KnowledgeView.tsx</code>（547 行）与 <code>KnowledgeView.module.css</code> 后的实际结构，布局三档，断点沿用 600 / 800：</p>
+
+<table>
+<tr><th>窗口宽</th><th>形态</th><th>依据</th></tr>
+<tr><td>&lt; 600px</td><td>侧栏抽屉化，点笔记 → 弹窗</td><td><code>KnowledgeView.tsx:15-18</code></td></tr>
+<tr><td>600 ～ 800px</td><td>侧栏常驻 + 列表，点笔记 → 弹窗</td><td>同上</td></tr>
+<tr><td>≥ 800px</td><td>侧栏常驻 + 列表 + <b>第三栏取代弹窗</b></td><td><code>KnowledgeView.module.css:111</code></td></tr>
+</table>
+
+<div class="fr">
+  <div class="fc" style="width:150px">
+    <div class="fcHd">侧栏 180px</div>
+    <div class="blk">全部笔记</div>
+    <div class="blk on">未分类</div>
+    <div class="blk">工作</div>
+    <div class="blk">回收站</div>
+  </div>
+  <div class="fc" style="width:230px">
+    <div class="fcHd">中栏 <b>固定 300px</b></div>
+    <div class="blk">面包屑 · 搜/问</div>
+    <div class="blk tall">笔记行</div>
+    <div class="blk tall">笔记行</div>
+  </div>
+  <div class="fc" style="flex:1">
+    <div class="fcHd">第三栏（≥800px）· 可拖拽</div>
+    <div class="blk">标题 / 工具条</div>
+    <div class="blk tall">笔记正文 · 编辑器</div>
+    <div class="blk">问答 / 字段视图 / 冲突对照 都住这里</div>
+  </div>
+</div>
+<p class="lbl">现状。第三栏是 <code>useSplitDrag</code> 可拖拽的，比例存在 localStorage 的 <code>pastepanda_kb_list_ratio</code>（<code>KnowledgeView.tsx:137</code>）。</p>
+
+<div class="note info">
+<b>❗ 一个丙必须先知道的约束：中栏在 ≥800px 下是<b>固定 300px</b></b>（<code>KnowledgeView.module.css:14</code>）。源码注释还写着「🔴 不能把 300 直接调大：三栏断点就是 800px，而 800px 窗口下……」<br>
+这条正是「网格上不了 3 列」的根因，也是丙的骨架候选一唯一真正想解决的问题。
+</div>
+
+<h2><span class="n">§2</span>维度 A · 骨架候选一：侧栏抽屉化，中栏放宽</h2>
+
+<p>最小幅度的骨架变更：侧栏从「≥600px 常驻」改成<b>始终是浮层抽屉</b>，腾出的 180px 给中栏。第三栏保留。</p>
+
+<div class="fr">
+  <div class="fc drawer" style="width:96px;background:rgba(169,139,255,.05)">
+    <div class="fcHd" style="color:var(--violet)">侧栏</div>
+    <div class="blk" style="font-size:9px">点 ☰ 滑出</div>
+    <div class="blk" style="font-size:9px">浮在内容上</div>
+  </div>
+  <div class="fc" style="width:300px">
+    <div class="fcHd">中栏 <b>300 → 420+</b></div>
+    <div class="blk">面包屑 · 搜/问 · 列表/网格</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div class="blk tall">卡片</div><div class="blk tall">卡片</div>
+      <div class="blk tall">卡片</div><div class="blk tall">卡片</div>
+    </div>
+  </div>
+  <div class="fc" style="flex:1">
+    <div class="fcHd">第三栏 · 保留</div>
+    <div class="blk">标题 / 工具条</div>
+    <div class="blk tall">正文</div>
+  </div>
+</div>
+
+<table>
+<tr><th>得到</th><th>付出</th></tr>
+<tr><td class="new">中栏不再被 300px 卡死，网格<b>不拉窗口就能上 2～3 列</b>——这是 C 稿 §2 那张「&lt;520px 强制列表」表格真正的解法</td><td class="old">文件夹导航从「一眼可见」变成「要点开」。知识库的核心操作之一就是在文件夹间跳，这是<b>高频动作降级</b></td></tr>
+<tr><td class="new">窄屏与宽屏的形态<b>统一</b>了（现在是三档，抽屉化后只有两档：有没有第三栏）</td><td class="old">🔴 <b>记录模式的侧栏仍是常驻</b>（<code>width: 0 → 180px</code>）。两个模式的侧栏手感就此分叉——而这<b>正好和 09-02「视觉统一」那轮的目标相反</b></td></tr>
+<tr><td>抽屉本身不用新写：&lt;600px 已经是抽屉，把条件从「窄屏」改成「总是」</td><td><code>sidebarOpen.knowledge</code> 的语义从「展开/收起」变成「浮层开/关」，<code>useSplitDrag</code> 的 <code>minSecondPx</code> 里那句 <code>+ (sidebarOpen ? SIDEBAR_PX : 0)</code>（<code>KnowledgeView.tsx:135</code>）要重算</td></tr>
+</table>
+
+<div class="note">
+<b>我对候选一的判断：</b>它是<b>三个候选里唯一解决了真实问题</b>的（300px 天花板）。但那句「记录模式侧栏常驻、知识库变抽屉」的分叉，会让「两边不像同一个软件」这个<b>原始抱怨反向恶化</b>——你最初说的就是「和记录模式差距很大」。<br>
+如果要做候选一，<b>记录模式的侧栏得跟着一起抽屉化</b>，否则不如不做。而那就不是知识库一个模式的改动了。
+</div>
+
+<h2><span class="n">§3</span>维度 A · 骨架候选二：单栏聚焦流</h2>
+
+<p>最「现代」的那一种：取消三栏，只有<b>列表 → 全屏阅读/编辑</b>两态，侧栏抽屉，无第三栏。Bear / Craft / Obsidian 移动端的形态。</p>
+
+<div class="two">
+<div>
+<div class="fr" style="min-height:170px">
+  <div class="fc drawer" style="width:80px;background:rgba(169,139,255,.05)">
+    <div class="fcHd" style="color:var(--violet)">侧栏</div>
+    <div class="blk" style="font-size:9px">抽屉</div>
+  </div>
+  <div class="fc" style="flex:1">
+    <div class="fcHd">态 1 · 列表（占满）</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+      <div class="blk tall">卡</div><div class="blk tall">卡</div><div class="blk tall">卡</div>
+      <div class="blk tall">卡</div><div class="blk tall">卡</div><div class="blk tall">卡</div>
+    </div>
+  </div>
+</div>
+</div>
+<div>
+<div class="fr" style="min-height:170px">
+  <div class="fc" style="flex:1">
+    <div class="fcHd">态 2 · 全屏阅读（← 返回）</div>
+    <div class="blk">← 返回 · 标题 · 工具条</div>
+    <div class="blk tall" style="height:96px">正文 · 最大阅读宽度 680px 居中</div>
+  </div>
+</div>
+</div>
+</div>
+
+<table>
+<tr><th>得到</th><th>付出</th></tr>
+<tr><td class="new">单条笔记的阅读/编辑体验最好——正文可以居中限宽（现在挤在第三栏里）</td><td class="old">🔴 <b>作废第三栏的全部决策。</b>问答面板（B2-10 + B2-10b 两轮）、字段视图（B2-9）、<b>以及 09-07 刚做完的 W4a 冲突并排对照</b>——它们全都住在第三栏里</td></tr>
+<tr><td class="new">网格能上 3～4 列，视觉上最接近「现代笔记软件」</td><td class="old">🔴 <code>useSplitDrag</code> / <code>useCanSplitPane</code> / <code>pastepanda_kb_list_ratio</code> <b>整套报废</b>；用户已存的拖拽比例静默失效</td></tr>
+<tr><td>窄屏与宽屏彻底同构，代码分支最少</td><td class="old">🔴 <b>大屏浪费。</b>1600px 宽的窗口下看一条笔记，两侧全是空白；而「列表与正文同时可见」是桌面端笔记软件的核心优势，主动放弃它</td></tr>
+<tr><td></td><td class="old">🔴 <b>「看着笔记列表改笔记」这个动作没了。</b>对照两条笔记、边看列表边整理，都要来回切换</td></tr>
+</table>
+
+<div class="note bad">
+<b>候选二我明确反对，理由不是保守：</b>它把一个<b>桌面应用</b>改成移动端形态。Bear/Craft 的单栏是因为它们主战场在 iPhone/iPad；PastePanda 是 Windows 桌面工具，窗口默认 550×700 但用户会拉大。<br>
+更要紧的是 <b>W4a（<code>9325d6a</code>，09-07 15:03，就是今天）的冲突并排对照就是为第三栏设计的</b>——它的整个价值就是「两份内容同屏对照」。候选二会让那一轮工作直接失效。
+</div>
+
+<h2><span class="n">§4</span>维度 B · 配色：唯一可行的做法是「新增」而不是「修改」</h2>
+
+<p>丙里「换视觉方向」听起来最像「现代化美学」，但它是本方案里<b>最容易静默破坏已有质量的一项</b>。已核实的现状：</p>
+
+<table>
+<tr><th>事实</th><th>数字</th></tr>
+<tr><td>主题数量</td><td><b>6 个</b>：<code>ocean</code>（默认，在 <code>:root</code>）、<code>midnight</code>、<code>forest</code>、<code>blossom</code>、<code>dawn</code>、<code>ocean-dark</code></td></tr>
+<tr><td><code>theme.css</code> 里带「对比度改进」标注的行</td><td><b>28 处</b>，每条都写了改前/改后的具体对比度（如「改前 3.26:1 → 改后 4.56:1」）</td></tr>
+</table>
+
+<div class="note bad">
+<b>🔴 那 28 处不是随手写的注释，是一次刻意的 WCAG 审计的台账。</b>里面包括专为对比度新增的 token：<code>--accent-solid</code>（实心主按钮底色，专门为了白字压其上能达标，不改 <code>--accent</code> 本身）、<code>--accent-strong</code>（压在 <code>--accent-light</code> 上的文字/图标色）。<br>
+<b>改现有 6 个主题的颜色 = 把这 28 条全部重做一遍，否则就是静默回退可访问性。</b>而回退不会报错、不会被测试抓出来——只会有人看不清。
+</div>
+
+<h3>所以：只能新增第 7 个主题</h3>
+
+<pre>/* theme.css 末尾，与其他 6 个并列。一个字也不改前面六个。 */
+[data-theme="graphite"] {
+  /* 必须把前 6 个主题用到的 token 名<b>全部</b>定义一遍：
+     漏一个就会回退到 :root（= ocean 的值），
+     而那意味着深色底 + 浅色文字的随机组合。 */
+  --text-primary: …; --text-secondary: …; --text-muted: …;
+  --border-color: …; --accent: …; --accent-light: …;
+  --accent-solid: …;  /* 白字压其上 ≥ 4.5:1 */
+  --accent-strong: …; /* 压在 --accent-light 上 ≥ 4.5:1 */
+  --glass-card-* / --glass-icon-* / --card-selected-* / --card-shimmer-display …
+}</pre>
+
+<div class="note ok">
+<b>这一项可以脱离丙单独做，风险低。</b>它不动任何现有代码路径，用户不切到它就完全无感。<br>
+<b>但它也不解决「平庸」。</b>得说清楚：知识库与记录模式<b>用的是同一套颜色 token</b>（已核实）。两边看起来不同不是颜色造成的——新增一个主题只会让<b>两边一起</b>变成新颜色，差距原样存在。
+</div>
+
+<h2><span class="n">§5</span>维度 C · 密度三档：丙里唯一我认为值的东西</h2>
+
+<p>现代软件（Linear、Things、Gmail）都给密度选项，因为「一屏能看多少条」是<b>真实的个人偏好差异</b>，不是设计师能代替用户拍的。</p>
+
+<p>而 C 稿 §9 里有一条风险写着：「行高/字号全面抬高 → 一屏能看的条数变少 → <b>真实代价，接受</b>」。密度三档就是那条代价的直接解法——不用接受，交用户选。</p>
+
+<div class="dens">
+  <div class="dcol">
+    <div class="fcHd" style="margin-bottom:8px">紧凑</div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <div class="drow" style="padding:6px;border-radius:10px">
+        <div class="dico" style="width:26px;height:26px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+          <div class="dtl" style="font-size:12.5px">周会要点</div>
+          <div class="dmt" style="font-size:11px">昨天 · 1.2k</div>
+        </div>
+      </div>
+      <div class="drow" style="padding:6px;border-radius:10px">
+        <div class="dico" style="width:26px;height:26px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+          <div class="dtl" style="font-size:12.5px">Tauri 体积</div>
+          <div class="dmt" style="font-size:11px">2 小时前</div>
+        </div>
+      </div>
+      <div class="drow" style="padding:6px;border-radius:10px">
+        <div class="dico" style="width:26px;height:26px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+          <div class="dtl" style="font-size:12.5px">配色板</div>
+          <div class="dmt" style="font-size:11px">3 小时前</div>
+        </div>
+      </div>
+    </div>
+    <p class="lbl">行高 ≈ 40px</p>
+  </div>
+  <div class="dcol" style="border-color:var(--green)">
+    <div class="fcHd" style="margin-bottom:8px;color:var(--green)">舒适（默认）</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="drow" style="padding:9px;border-radius:14px">
+        <div class="dico" style="width:34px;height:34px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+          <div class="dtl" style="font-size:13.5px">周会要点</div>
+          <div class="dmt" style="font-size:12.5px">预发环境下周切…</div>
+          <div class="dmt" style="font-size:11.5px">昨天 · 1.2k 字</div>
+        </div>
+      </div>
+      <div class="drow" style="padding:9px;border-radius:14px">
+        <div class="dico" style="width:34px;height:34px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+          <div class="dtl" style="font-size:13.5px">Tauri 打包体积</div>
+          <div class="dmt" style="font-size:12.5px">先关 devtools…</div>
+          <div class="dmt" style="font-size:11.5px">2 小时前 · 840 字</div>
+        </div>
+      </div>
+    </div>
+    <p class="lbl">行高 ≈ 70px（= 乙稿的值）</p>
+  </div>
+  <div class="dcol">
+    <div class="fcHd" style="margin-bottom:8px">宽松</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="drow" style="padding:13px;border-radius:16px">
+        <div class="dico" style="width:42px;height:42px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+          <div class="dtl" style="font-size:14.5px">周会要点</div>
+          <div class="dmt" style="font-size:13px">预发环境下周切，需要先把迁移脚本…</div>
+          <div class="dmt" style="font-size:12px">昨天 · 1.2k 字</div>
+        </div>
+      </div>
+    </div>
+    <p class="lbl">行高 ≈ 96px</p>
+  </div>
+</div>
+
+<div class="note ok">
+<b>🔴 它便宜的前提是乙稿 §6 先落地。</b>密度三档的实现就是换两组变量：
+<pre>[data-kb-density="compact"]  { --kb-sp-*: 小一档; --kb-fs-*: 小一档; --kb-r-*: 小一档 }
+[data-kb-density="cozy"]     { /* 默认，就是乙稿的值 */ }
+[data-kb-density="roomy"]    { --kb-sp-*: 大一档; --kb-fs-*: 大一档; --kb-r-*: 大一档 }</pre>
+<b>而乙稿 §6 正好就是把这三组变量收口。</b>没有它，密度三档就得去 12 个地方改硬编码值；有了它，这一项是<b>半天的活</b>。
+</div>
+
+<div class="note bad">
+<b>两个不能拍脑袋的约束：</b><br>
+① <b>紧凑档不能突破命中区下限。</b>C 稿 §1 定的是命中区 ≥ 24×24（WCAG 2.2 AA §2.5.8）。紧凑档可以把<b>视觉尺寸</b>调小，但 <code>::before</code> 那层命中区<b>不跟着缩</b>——否则紧凑档就把「按钮太小点不着」那句抱怨原封不动地递回来了。<br>
+② <b>密度得存盘且只管知识库。</b>存到设置里（跟着主题那套走），属性名刷在知识库根元素上而不是 <code>&lt;html&gt;</code>——否则会意外注入记录模式，而那边的尺寸不走 <code>--kb-*</code>。
+</div>
+
+<h2><span class="n">§6</span>丙的账单（全部可核）</h2>
+
+<h3>作废的已定稿：11 张，不是 C 稿说的 6 张</h3>
+
+<p>把 <code>design/</code> 里每张知识库稿按「三栏 / 第三栏 / 面包屑 / 侧栏」出现次数数一遍（骨架决策的代理指标）：</p>
+
+<table>
+<tr><th>引用次数</th><th>设计稿</th><th>丙对它的影响</th></tr>
+<tr><td><b>42</b></td><td><code>PastePanda-知识库视图-设计稿.html</code></td><td class="old">这就是骨架的定稿。候选一部分作废，候选二<b>全废</b></td></tr>
+<tr><td><b>28</b></td><td><code>知识库交互优化-A61-设计稿.html</code></td><td class="old">三栏下的交互调优，骨架一变全部重评</td></tr>
+<tr><td>13</td><td><code>知识库问答-第三栏改版-B2-10b</code></td><td class="old">候选二下<b>整张废</b>（名字里就写着第三栏）</td></tr>
+<tr><td>11</td><td><code>知识库能力扩展-设计稿.html</code></td><td class="old">部分作废</td></tr>
+<tr><td>11</td><td><code>知识库模式-视觉统一-设计稿.html</code></td><td class="old">🔴 候选一的侧栏抽屉化<b>直接与它相反</b></td></tr>
+<tr><td>7</td><td><code>知识库字段视图-B2-9-设计稿.html</code></td><td class="old">住在第三栏</td></tr>
+<tr><td>6</td><td><code>知识库回收站-W1-设计稿.html</code></td><td class="old">部分作废</td></tr>
+<tr><td>6</td><td><code>PastePanda-知识库交互修复-设计稿.html</code></td><td class="old">部分作废</td></tr>
+<tr><td>5</td><td><code>知识库交互修复-设计稿.html</code></td><td class="old">部分作废</td></tr>
+<tr><td>1</td><td><code>知识库冲突对照-设计稿.html</code></td><td class="old">🔴 <b>今天刚落地的 W4a</b>，并排对照依赖第三栏</td></tr>
+</table>
+
+<p class="lbl">另有 <code>知识库问答雏形-B2-10</code> 等未命中关键词但同属第三栏体系的稿子。09-01～09-07 共 18 张知识库设计稿。</p>
+
+<h3>代码侧</h3>
+<table>
+<tr><th>项</th><th>候选一</th><th>候选二</th></tr>
+<tr><td><code>KnowledgeView.tsx</code>（547 行）</td><td>改布局与 <code>sidebarOpen</code> 语义</td><td class="old">基本重写</td></tr>
+<tr><td><code>useSplitDrag</code> / <code>useCanSplitPane</code></td><td>改 <code>minSecondPx</code> 计算</td><td class="old">整套删除</td></tr>
+<tr><td>localStorage <code>pastepanda_kb_list_ratio</code></td><td>含义变了，旧值需迁移或丢弃</td><td class="old">🔴 <b>静默失效</b>——用户拖好的比例没了，不会有任何提示</td></tr>
+<tr><td>600 / 800 两个断点</td><td>只剩 800（有无第三栏）</td><td class="old">全部取消</td></tr>
+<tr><td><code>KbThirdPane</code> / <code>NoteDetailPane</code> / <code>KbQaPanel</code></td><td>不动</td><td class="old">全部改成全屏态</td></tr>
+<tr><td><code>NoteDialog</code>（窄屏弹窗）</td><td>不动</td><td class="old">要么删、要么变成唯一形态</td></tr>
+<tr><td>6 个主题 × 28 处对比度标注</td><td colspan="2">只要不改现有主题颜色就<b>不涉及</b>（见 §4）</td></tr>
+</table>
+
+<div class="note bad">
+<b>🔴 一个比工时更重的代价：丙不解决你提的两句抱怨。</b><br>
+「很多按钮和图标很小不方便点击」——骨架换了，<code>.searchClear</code> 还是 18×18、<code>.addBtn</code> 还是 18×18。<b>这句只有 C 稿 §1 能答。</b><br>
+「看起来很平庸、和记录模式差距很大」——两边本来就共用同一套颜色 token 与同一套玻璃材质（已核实）。换骨架只会把两边的<b>布局也弄成不一样</b>，差距变大而不是变小。<b>而乙稿 §1/§2 那两个洞（emoji 图标槽、列表无缩略图）才是这句的直接答案。</b>
+</div>
+
+<h2><span class="n">§7</span>结论：把丙拆成两堆</h2>
+
+<div class="note ok">
+<b>丙里值得做的两项，且两项都不需要推翻任何东西：</b>
+<ul>
+<li><b>密度三档（§5）</b>——真新增价值，直接回答 C 稿那条「一屏条数变少，接受」。<b>依赖乙稿 §6 先落地</b>，之后约半天</li>
+<li><b>新增第 7 个主题（§4）</b>——不动现有代码路径，风险极低。约 1 天（大部分时间花在逐个 token 算对比度）</li>
+</ul>
+</div>
+
+<div class="note bad">
+<b>丙里我建议不做的一项：</b>
+<ul>
+<li><b>骨架候选二（单栏聚焦流）</b>——把桌面应用改成移动端形态，且使今天刚落地的 W4a 失效</li>
+</ul>
+<b>而骨架候选一是真正的分水岭：</b>它确实解开了 300px 天花板（那是个真问题），但代价是与记录模式的侧栏手感分叉——除非<b>记录模式一起抽屉化</b>。那是一个全局决策，不应该从知识库的视觉升级里顺带做掉。
+</div>
+
+<h3>最小可逆路径（如果你要做丙）</h3>
+
+<table>
+<tr><th>步</th><th>做什么</th><th>为何这个顺序</th></tr>
+<tr><td><span class="tag t1">1</span></td><td><b>乙稿批 0 + 批 1</b>（图标槽 / 缩略图 / 尺寸 / token 收口）</td><td>两句抱怨的直接答案，且 token 收口是密度三档的前提</td></tr>
+<tr><td><span class="tag t1">2</span></td><td><b>丙稿 §5 密度三档</b></td><td>半天，且它能<b>替代掉一部分对骨架的不满</b>——很多时候「想换布局」其实是「想一屏看更多/更少」</td></tr>
+<tr><td><span class="tag t4">3</span></td><td><b>停下来用几天</b></td><td>🔴 关键一步。前两步都是可逆的；骨架不是</td></tr>
+<tr><td><span class="tag t2">4</span></td><td>如果还觉得布局不行 → <b>乙稿批 3 的网格形态</b></td><td>网格能解决大部分「布局单调」，而且<b>不动骨架</b></td></tr>
+<tr><td><span class="tag t3">5</span></td><td>如果网格受 300px 限制到难以接受 → <b>才上骨架候选一</b></td><td>到这一步你才真正<b>知道自己需要它</b>，而不是猜</td></tr>
+</table>
+
+<div class="note info">
+这条路径的意义：<b>前四步全部可逆、全部不作废任何已定稿，而它们加起来已经覆盖了你提的全部两句抱怨。</b>第五步那个不可逆的决定，被推到了你手里有真实使用手感之后。
+</div>
+
+<h2>验收（若做丙）</h2>
+<ul>
+<li><b>密度：</b>三档切换即时生效并存盘；<b>紧凑档下所有命中区仍 ≥ 24×24</b>（逐个量，不靠目测）</li>
+<li><b>密度：</b>属性刷在知识库根元素上，切到记录模式后尺寸<b>不受影响</b></li>
+<li><b>主题：</b>第 7 个主题下逐个页面截图；无任何 token 回退到 <code>:root</code>（搜索前 6 个主题的 token 名逐个比对）</li>
+<li><b>主题：</b><code>--accent-solid</code> 上的白字与 <code>--accent-strong</code> 在 <code>--accent-light</code> 上均 ≥ 4.5:1（算出数字写进注释，照现有 28 处的格式）</li>
+<li><b>主题：</b>现有 6 个主题的 <code>theme.css</code> 字节<b>一字未改</b>（<code>git diff</code> 只能看到新增的那一块）</li>
+<li><b>骨架（若做候选一）：</b>旧的 <code>pastepanda_kb_list_ratio</code> 不导致布局错位（迁移或主动清理，<b>不静默失效</b>）</li>
+<li><b>骨架（若做候选一）：</b>记录模式侧栏已同步抽屉化——<b>否则本项不得合入</b></li>
+<li><code>vitest run</code> 全绿；<code>tsc --noEmit</code> / <code>eslint --max-warnings=0</code> 为 0</li>
+</ul>
+
+<div class="card">
+<b>一句话总结：</b>丙的三个维度里，<b>密度</b>值得做且便宜（但要先有乙稿 §6），<b>新增主题</b>安全但不解决问题，<b>骨架</b>才是真正的「推翻」——而它要付 11 张已定稿，却<b>不回答你提的任何一句抱怨</b>。
+</div>
+
+</div>
+</body>
+</html>

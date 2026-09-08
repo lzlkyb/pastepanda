@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="zh-CN" data-page-node-id="9iLhwY7NvytgH1bSQQBNWP">
+<head data-page-node-id="bohEBnt7NZx3VtGSFJLMQm">
+<meta charset="utf-8" data-page-node-id="HY3bABWGPUHANgEGXy7WFP" />
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="z3pFHpktFlyd7HI4q9xtFq" />
+<title>UpdateNotesDialog · 方案 C 设计稿（hero 版式优化 + CSS 兜底）</title>
+<style>
+  /* =====================================================================
+     设计稿说明：本文件仅供评审，1:1 复刻 UpdateNotesDialog 的真实结构
+     与 CSS 取值（src/components/UpdateNotesDialog.tsx + .module.css）。
+     左栏 = 方案 A（仅 CSS 兜底）  右栏 = 方案 C（CSS 兜底 + hero 版式优化）
+     ===================================================================== */
+  :root {
+    --accent: #5B6AF0;
+    --accent-2: #7C5CF0;
+    --accent-solid: #5B6AF0;
+    --accent-light: rgba(91,106,240,.10);
+    --accent-shadow: rgba(91,106,240,.30);
+    --version-badge-gradient: linear-gradient(135deg, #5B6AF0, #7C5CF0);
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --border-color: #E2E8F0;
+    --section-bg: #F1F5F9;
+    --card-bg: #fff;
+    --hover: rgba(15,23,42,.04);
+    --hero-glow: radial-gradient(120% 80% at 20% 0%, rgba(124,92,240,.10), transparent 60%);
+    --green: #16A34A;
+    --green-bg: rgba(22,163,74,.10);
+    --green-border: rgba(22,163,74,.30);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    background: #F8FAFC;
+    padding: 24px;
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .lead { font-size: 12px; color: var(--text-muted); margin-bottom: 22px; }
+  .row { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 0 0 460px; max-width: 460px; }
+  .col h2 {
+    font-size: 12px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tag {
+    display: inline-flex; align-items: center; padding: 2px 8px;
+    border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0;
+    text-transform: none;
+  }
+  .tag.a { background: rgba(245,158,11,.12); color: #D97706; border: 1px solid rgba(217,119,6,.30); }
+  .tag.c { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .note {
+    font-size: 11px; color: var(--text-secondary); margin-top: 8px;
+    padding: 9px 11px; border-radius: 8px; background: var(--section-bg);
+    border: 1px solid var(--border-color); line-height: 1.6;
+  }
+  .note b { color: var(--accent-2); }
+  .note code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 10.5px;
+    background: #fff; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--border-color); color: var(--accent-2);
+  }
+
+  /* ===== 真实 dialog 外壳（w460） ===== */
+  .dialog-box {
+    width: 460px;
+    background: rgba(255,255,255,.86);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    border: 1px solid rgba(15,23,42,.08);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 40px rgba(15,23,42,.14);
+    overflow: hidden;
+  }
+
+  /* ===== Hero（共用） ===== */
+  .hero {
+    position: relative;
+    padding: 24px 24px 20px;
+    border-radius: 16px 16px 0 0;
+    flex-shrink: 0;
+  }
+  .hero::before {
+    content: ''; position: absolute; inset: 0;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(180deg, var(--accent-light) 0%, transparent 88%);
+    opacity: .95; pointer-events: none;
+  }
+  .hero::after {
+    content: ''; position: absolute; inset: 0;
+    border-radius: 16px 16px 0 0;
+    background: var(--hero-glow); pointer-events: none;
+  }
+
+  /* --- 方案 A：heroTop 结构不变（icon + hname + htitle + close 同行） --- */
+  .a .heroTop {
+    position: relative; z-index: 1;
+    display: flex; align-items: flex-start; gap: 13px;
+    flex-wrap: wrap;                 /* A1 兜底 */
+  }
+  .a .htxt { flex: 1 1 200px; min-width: 0; padding-top: 1px; }
+
+  /* --- 方案 C：heroTop 只留品牌行，标题独立成行 --- */
+  .c .heroTop {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; gap: 13px;   /* C1：垂直居中更像品牌行 */
+    flex-wrap: wrap;
+  }
+  .c .htxt { flex: 1 1 120px; min-width: 0; }
+  .c .heroTitle {
+    position: relative; z-index: 1;
+    margin-top: 10px;                 /* C2：标题独占整行，吃满 412px */
+    font-size: 17px; font-weight: 800;
+    letter-spacing: -.3px; line-height: 1.4;
+    color: var(--text-primary);
+    overflow-wrap: anywhere; word-break: normal; min-width: 0;
+  }
+
+  /* 共用 hero 原子 */
+  .icon {
+    width: 46px; height: 46px; border-radius: 14px;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--version-badge-gradient); color: #fff;
+    font-weight: 800; font-size: 16px;
+    box-shadow: 0 6px 18px var(--accent-shadow);
+  }
+  .hname {
+    font-size: 11px; font-weight: 800; letter-spacing: .8px;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+  .htitle {
+    font-size: 17px; font-weight: 800; letter-spacing: -.3px;
+    line-height: 1.35; color: var(--text-primary); margin-top: 3px;
+    overflow-wrap: anywhere; word-break: normal; min-width: 0;   /* A3 */
+  }
+  .dialog-close {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: none; background: transparent;
+    color: var(--text-secondary); flex-shrink: 0; font-size: 14px;
+  }
+  .dialog-close:hover { background: var(--hover); }
+
+  .hverRow {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 14px;
+    flex-wrap: wrap;                 /* A4 兜底 */
+  }
+  .c .hverRow { margin-top: 14px; }
+  .hver {
+    display: flex; align-items: baseline; gap: 8px;
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    font-size: 19px; font-weight: 800; letter-spacing: -.8px;
+    color: var(--text-primary); min-width: 0;
+    flex-wrap: wrap;
+    overflow-wrap: anywhere; word-break: normal;   /* A5 */
+  }
+  .vOld { font-size: 13px; color: var(--text-muted); text-decoration: line-through; opacity: .6; font-weight: 700; }
+  .vArrow { color: var(--accent); opacity: .7; display: inline-flex; }
+  .vNew {
+    background: linear-gradient(135deg, var(--accent) 20%, #6D5CF0 90%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 3px 10px var(--accent-shadow));
+  }
+  .hpill {
+    font-size: 9px; font-weight: 800; letter-spacing: .8px; color: #fff;
+    background: var(--accent-solid); padding: 3px 8px; border-radius: 5px;
+    box-shadow: 0 0 0 2px rgba(91,106,240,.14), 0 3px 10px var(--accent-shadow);
+    align-self: center;
+  }
+  .hdl {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+    height: 36px; padding: 0 16px; border: none; border-radius: 10px;
+    background: var(--version-badge-gradient); color: #fff;
+    font-size: 12.5px; font-weight: 700; font-family: inherit;
+    cursor: pointer; flex-shrink: 0;
+    box-shadow: 0 4px 14px var(--accent-shadow);
+  }
+
+  /* ===== Body 分组卡片（两方案共用，均含 A 的 CSS 兜底） ===== */
+  .dialog-body { padding: 0; flex: 1; }
+  .body { padding: 10px 20px 4px 24px; }
+  .grp {
+    border: 1px solid var(--border-color); border-radius: 13px;
+    padding: 12px 14px; margin-bottom: 10px; background: var(--card-bg);
+  }
+  .grpHead { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; min-width: 0; }
+  .grpBadge {
+    font-size: 10px; font-weight: 800; letter-spacing: .5px;
+    padding: 2px 8px; border-radius: 6px; flex-shrink: 0;
+  }
+  .grpBadge.feat   { background: rgba(16,185,129,.15); color: #10B981; }
+  .grpBadge.change { background: rgba(245,158,11,.12); color: #D97706; }
+  .grpBadge.fix    { background: rgba(239,68,68,.12);  color: #EF4444; }
+  .grpTitle {
+    font-size: 13px; font-weight: 700; color: var(--text-primary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;  /* A6 */
+  }
+  .grpItem {
+    display: flex; gap: 10px; padding: 6px 0;
+    font-size: 12px; line-height: 1.6; color: var(--text-secondary);
+    min-width: 0; flex-wrap: wrap;            /* A7 */
+  }
+  .grpItem::before {
+    content: ''; flex-shrink: 0; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--border-color); margin-top: 7px;
+  }
+  .grpItem b { color: var(--text-primary); font-weight: 650; }
+  .feat {
+    margin: 7px 0 7px 15px; border-radius: 10px;
+    background: var(--section-bg); padding: 10px 12px; min-width: 0;
+  }
+  .featTitle {
+    font-size: 13px; font-weight: 700; color: var(--text-primary);
+    overflow-wrap: anywhere; word-break: normal; min-width: 0;
+  }
+  .featDesc {
+    font-size: 12px; line-height: 1.6; color: var(--text-secondary); margin-top: 2px;
+    overflow-wrap: anywhere; word-break: normal; min-width: 0;
+  }
+  .featWhy {
+    font-size: 12px; line-height: 1.6; color: var(--text-primary);
+    padding: 5px 9px; border-left: 3px solid var(--accent);
+    border-radius: 0 7px 7px 0; background: var(--accent-light); margin-top: 7px;
+    overflow-wrap: anywhere; word-break: normal; min-width: 0;
+  }
+  .featHowH { font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: .3px; margin: 7px 0 2px; }
+  .featHow { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.7; color: var(--text-secondary); }
+  .featHow li { margin: 1px 0; }
+
+  /* ===== 手册 CTA + 页脚（共用） ===== */
+  .manualCta {
+    display: flex; align-items: center; gap: 9px;
+    width: calc(100% - 44px); margin: 4px 22px 0; flex-shrink: 0;
+    padding: 11px 15px; border-radius: 11px;
+    border: 1px solid var(--accent); background: var(--accent-light); color: var(--accent);
+    font-size: 12.5px; font-weight: 700; font-family: inherit; cursor: pointer;
+  }
+  .manualCtaText { flex: 1; text-align: left; }
+  .footer {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 22px 18px; flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+  }
+  .btnSkip {
+    padding: 10px 16px; border-radius: 11px;
+    border: 1px solid var(--border-color); background: transparent;
+    color: var(--text-secondary); font-size: 12px; font-weight: 600;
+    font-family: inherit; cursor: pointer;
+  }
+  .btnDownload {
+    flex: 1; height: 42px; border: none; border-radius: 11px;
+    background: var(--version-badge-gradient); color: #fff;
+    font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px var(--accent-shadow);
+  }
+
+  /* 差异高亮标记 */
+  .mark {
+    outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 6px;
+  }
+</style>
+</head>
+<body data-page-node-id="ssXn5I5JWiIqa2klEKTrmQ">
+
+<h1 data-page-node-id="xwVC2OJap3xWQ00iM5QMFv">UpdateNotesDialog · 方案 C 设计稿</h1>
+<p class="lead" data-page-node-id="mh0l06sknXoFfwSyuJWRpj">C = 方案 A 的 CSS 兜底（6 处）＋ hero 版式优化（标题独占整行）。真实弹框宽 <code style="font-family:ui-monospace" data-page-node-id="fE3vUQW0Q8FZBgeG5nLBYY">w460</code>，内容取自 v7.1.3 实际文案。</p>
+
+<div class="row" data-page-node-id="DdZhe56nRN6S3kwBIXqBSv">
+
+  <!-- ========== 左：方案 A ========== -->
+  <div class="col" data-page-node-id="gF5As4HLLuAX2Id79utlMA">
+    <h2 data-page-node-id="CsbVizEdMSUsxXJ9GidA4E">方案 A <span class="tag a" data-page-node-id="TH97FwxmlvoADaUcH2aerJ">仅 CSS · 0 tsx</span></h2>
+    <div class="dialog-box a" data-page-node-id="enfTIZcnQbW4bB6HfMga1E">
+      <div class="hero" data-page-node-id="iAQeoQFWFDAX0YGl8QIVOY">
+        <div class="heroTop" data-page-node-id="r8gk6JbchCIFTWquKlcbgM">
+          <div class="icon" data-page-node-id="DHZcdGpGlsuzfIRzZrwCdv">P</div>
+          <div class="htxt" data-page-node-id="l5AGTXcCTNgk3BtCyQPRqa">
+            <div class="hname" data-page-node-id="vDaeOEuYO50c5GP412W7Ue">PastePanda</div>
+            <div class="htitle" data-page-node-id="Ki1BEAyDtWVknw8NQ7YuZG">知识库同步终于能真的连上：配对以前是单边的——只有粘贴邀请码那一台记下了对方</div>
+          </div>
+          <button class="dialog-close" title="关闭" data-page-node-id="3AwHpHG8RcJAoXWT3ZvR58">×</button>
+        </div>
+        <div class="hverRow" data-page-node-id="YN9nYUGCkrJA1htkxPQQ2F">
+          <div class="hver" data-page-node-id="VtTO4kNlBrJ2yNrmlX4Wc2">
+            <span class="vOld" data-page-node-id="2mLu8MY5AIsDud11UjMnxw">v7.1.2</span>
+            <span class="vArrow" data-page-node-id="I7MOg6EBAgtDZg3Cd1n6DZ">→</span>
+            <span class="vNew" data-page-node-id="jAm3nzPAK99ViFOiYAFNYp">v7.1.3</span>
+            <span class="hpill" data-page-node-id="fVeu9FB2Gvc4qfaVpUGuGe">NEW</span>
+          </div>
+          <button class="hdl" data-page-node-id="MrD8wB1vbKx1udV0i5b5Jl">⤓ 立即更新</button>
+        </div>
+      </div>
+
+      <div class="dialog-body" data-page-node-id="me5llD0qvpeQGxIWRYEJcW"><div class="body" data-page-node-id="99petwbpgdYyeUs7iK0GLQ">
+        <div class="grp" data-page-node-id="NLSLQ0kZaaDME4xBHwFFf6">
+          <div class="grpHead" data-page-node-id="awHi0gXPz07QQvwO6HpJUI">
+            <span class="grpBadge feat" data-page-node-id="aDrhdMGJi7VxQbFG0BJBAm">新增</span>
+            <span class="grpTitle" data-page-node-id="Fnz1bYQBQV6pMoN181uE8z">新增 · 4</span>
+          </div>
+          <div class="grpItem" data-page-node-id="BUXGVUrDFxdIFHllbRn31c"><b data-page-node-id="aBHY4hWHLYC4DnP5CD1hBd">知识库同步终于能真的连上</b>：配对以前是单边的——只有粘贴邀请码那一台记下了对方，生成邀请码的那一台从头到尾不记，于是把对方的每一次连接都拒掉</div>
+          <div class="feat" data-page-node-id="mqxoDEhPZeEGExLcUSXncZ">
+            <div class="featTitle" data-page-node-id="JBRakOY4BA5Rvmuf2unUVw">顶栏按钮模式换中控</div>
+            <div class="featDesc" data-page-node-id="Q76clu6YcgcLkoiR0oc8wX">粘贴栈按钮只在记录模式显示（栈开着时其它模式仍然看得见，否则东西还在往队列里推、屏幕上却没有关闭入口）</div>
+            <div class="featWhy" data-page-node-id="lfNhFtGALwWhsMCPFzJgxY">以前按钮的有无由「当前是不是记录模式」决定，切个模式按钮就消失，像坏了</div>
+          </div>
+        </div>
+        <div class="grp" data-page-node-id="1hQTVPLvsyA0F3uCTeqPCT">
+          <div class="grpHead" data-page-node-id="X4x3oXNQq1ntULT0d8eLYH">
+            <span class="grpBadge change" data-page-node-id="vkgHahR37C6xjhXjmLEg33">改进</span>
+            <span class="grpTitle" data-page-node-id="SHTN4M9sz2yNBgilPPwV6n">改进 · 1</span>
+          </div>
+          <div class="grpItem" data-page-node-id="Qp48Dk7xTGRRUbNvLfewVA"><b data-page-node-id="ZWO3isvUCMMHEqmmN5Yi0y">识库模式的「导入」</b>：现在支持直接拖入整个文件夹</div>
+        </div>
+        <div class="grp" data-page-node-id="McQgQ3eCEAXkpBkpemQLCN">
+          <div class="grpHead" data-page-node-id="EcAzxcUwiNdfw6glFA3QV1">
+            <span class="grpBadge fix" data-page-node-id="JiATfEGeuh2EblTZCgog4q">修复</span>
+            <span class="grpTitle" data-page-node-id="YeFbmt4HUWzuCYQ4XESYnO">修复 · 1</span>
+          </div>
+          <div class="grpItem" data-page-node-id="NU6RgDEOOC5PTini4SlFFR"><b data-page-node-id="VqkTo4bCaA4VmkX87S0bpD">保龄布比额</b>：顶包识库模式的按钮错位</div>
+        </div>
+
+        <div class="manualCta" data-page-node-id="ZX3Y8VUl8VnAAIJ2yQqdyv">
+          <span style="font-size:14px" data-page-node-id="dHrkXWnOgsAIxAb5mTPaWV">📖</span>
+          <span class="manualCtaText" data-page-node-id="l7eOMAnX7YgUVeMPDObLLZ">本次更新亮点 + 全部功能详解，查看完整手册</span>
+          <span data-page-node-id="zhmTPZK6BVfGj2Fq9uu9Qn">›</span>
+        </div>
+      </div></div>
+
+      <div class="footer" data-page-node-id="djJ385HN8brHM6JD4Gzgbu">
+        <button class="btnSkip" data-page-node-id="DRuhtHstqC8KkFs1vOaji3">稍后看</button>
+        <button class="btnDownload" data-page-node-id="D7SDfYbCbMuZttCVP8RrHf">⤓ 下载并更新</button>
+      </div>
+    </div>
+
+    <div class="note" data-page-node-id="hyphLu1ISCWMy8qUfmD23M">
+      <b data-page-node-id="Gk05pSTuFkbqf1ZJ5FvvmG">A 的做法：</b>hero 结构不动，只加 6 处 CSS 兜底——
+      <code data-page-node-id="HUQrwib1RjhtMUy4gCyijX">.heroTop</code>/<code data-page-node-id="3foNoTHoWBGlXk6IhnNqOI">.hverRow</code> 加 <code data-page-node-id="BRwnuWytO5zApLsh4oTd3e">flex-wrap:wrap</code>；
+      文本类加 <code data-page-node-id="sUwKsVVH3IBvLwhE5DKwbS">overflow-wrap:anywhere; min-width:0</code>；
+      <code data-page-node-id="JMHNEPyT89KAjWOKTfqJNs">.grpTitle</code> 走省略号。<br data-page-node-id="Or0RwzNpmDjDkAoGQ8zgxB">
+      ⚠ 标题与 46px 图标、28px 关闭按钮<b data-page-node-id="2TZkBBo718NIJPqL9ZgG7T">同行争宽</b>，可用宽仅 ~325px，长标题仍要折 3 行。
+    </div>
+  </div>
+
+  <!-- ========== 右：方案 C ========== -->
+  <div class="col" data-page-node-id="DgHO5LGccFtEJLmNKjKPAo">
+    <h2 data-page-node-id="bCAltKmM3GYpE8C1osbmMY">方案 C <span class="tag c" data-page-node-id="qDH1nk68kb2EKhMoIHC38f">A + hero 版式优化</span></h2>
+    <div class="dialog-box c" data-page-node-id="tspQvjodsNN7QGEVgH2vyS">
+      <div class="hero" data-page-node-id="bkQ1lesRGLnN9s40F1d4NC">
+        <div class="heroTop" data-page-node-id="ofgdLBtZeA5axoyJ7AyRzq">
+          <div class="icon" data-page-node-id="JxI0sMokoZo1uJqguWq0Oh">P</div>
+          <div class="htxt" data-page-node-id="gxFBz191vT0VkapjsPoh84">
+            <div class="hname" data-page-node-id="S38hb3hy5jDfIWFQv4Nj5U">PastePanda</div>
+          </div>
+          <button class="dialog-close" title="关闭" data-page-node-id="t9m0F5YKjyNenA337dY6cb">×</button>
+        </div>
+        <!-- C 的核心：标题独占整行，吃满 412px -->
+        <div class="heroTitle mark" data-page-node-id="BgtBr6PtGOfq5Fv2TuatOa">知识库同步终于能真的连上：配对以前是单边的——只有粘贴邀请码那一台记下了对方</div>
+        <div class="hverRow" data-page-node-id="g3k4Z1ouEeCxCyvmTEXzTF">
+          <div class="hver" data-page-node-id="siDUnZkEw0aUCE5aBl3iNL">
+            <span class="vOld" data-page-node-id="RRrpox3TJLYHuqZl9Zx0S3">v7.1.2</span>
+            <span class="vArrow" data-page-node-id="ngTsSx06fKykiFoHu0bPjN">→</span>
+            <span class="vNew" data-page-node-id="tadD7Vwpx59q28XwT9pQKX">v7.1.3</span>
+            <span class="hpill" data-page-node-id="QxBAaVFz31B4GoMdhHdrlB">NEW</span>
+          </div>
+          <button class="hdl" data-page-node-id="u8x3OIoIkUq3GkYkrVu33B">⤓ 立即更新</button>
+        </div>
+      </div>
+
+      <div class="dialog-body" data-page-node-id="8AWEY1KEpPTvG9NmDCnWGt"><div class="body" data-page-node-id="BGcCcvshQtiizJbnoqDm7a">
+        <div class="grp" data-page-node-id="AuNDFF30EWxTt7P0cFwL6W">
+          <div class="grpHead" data-page-node-id="hWPlaA1IHF5nbAilOHmf2p">
+            <span class="grpBadge feat" data-page-node-id="yar2qcq3CxdC7XOQPv8Vgu">新增</span>
+            <span class="grpTitle" data-page-node-id="sJcsJMVumvhceBK25Pk29L">新增 · 4</span>
+          </div>
+          <div class="grpItem" data-page-node-id="JLgfsB2MECZy6oaGPVyZtd"><b data-page-node-id="ALhoVmsea47WnWn7JA49dg">知识库同步终于能真的连上</b>：配对以前是单边的——只有粘贴邀请码那一台记下了对方，生成邀请码的那一台从头到尾不记，于是把对方的每一次连接都拒掉</div>
+          <div class="feat" data-page-node-id="dJXAgdGBMvVTDZ7LdBkFRm">
+            <div class="featTitle" data-page-node-id="awj4PdMsrbLKTbh9btUw2P">顶栏按钮模式换中控</div>
+            <div class="featDesc" data-page-node-id="fBRsIfjQEY1aEbFYU7cuHi">粘贴栈按钮只在记录模式显示（栈开着时其它模式仍然看得见，否则东西还在往队列里推、屏幕上却没有关闭入口）</div>
+            <div class="featWhy" data-page-node-id="i3CR3C4ODHTszm2uD8CeCs">以前按钮的有无由「当前是不是记录模式」决定，切个模式按钮就消失，像坏了</div>
+          </div>
+        </div>
+        <div class="grp" data-page-node-id="yRE3wdbU34dgdXNE4Ogoks">
+          <div class="grpHead" data-page-node-id="8QGFmfgD49GDY45SLT3qyR">
+            <span class="grpBadge change" data-page-node-id="pQgAaDlJnxi7WyBWGKGkzT">改进</span>
+            <span class="grpTitle" data-page-node-id="5wWTKPHLkRF3YQKx0QL8cr">改进 · 1</span>
+          </div>
+          <div class="grpItem" data-page-node-id="tKIpK3rAvH0CQdgaE7A7uw"><b data-page-node-id="OHSUdmMyz8mYkDDhLV6yVB">识库模式的「导入」</b>：现在支持直接拖入整个文件夹</div>
+        </div>
+        <div class="grp" data-page-node-id="l35XeU8ZAcx1CwPDDRGl1m">
+          <div class="grpHead" data-page-node-id="MaA7ea4tABA0nn7dWyS1lr">
+            <span class="grpBadge fix" data-page-node-id="x1KCqc5l0DdmqemSjQIFRD">修复</span>
+            <span class="grpTitle" data-page-node-id="qEyj7giiL0xPmq2a390Dl3">修复 · 1</span>
+          </div>
+          <div class="grpItem" data-page-node-id="oYyQCAQ73emofXbt55qRsl"><b data-page-node-id="hrVwtNGxUOZaNmYbpvLwtC">保龄布比额</b>：顶包识库模式的按钮错位</div>
+        </div>
+
+        <div class="manualCta" data-page-node-id="ahbLpTbSQ1H5888VuMIhqF">
+          <span style="font-size:14px" data-page-node-id="szEIzkhM8ioAGnFjZTtlK2">📖</span>
+          <span class="manualCtaText" data-page-node-id="mlzvkIFMGV4tk11fCZLbHk">本次更新亮点 + 全部功能详解，查看完整手册</span>
+          <span data-page-node-id="TkNf7UWpXliUnDoZGwvawp">›</span>
+        </div>
+      </div></div>
+
+      <div class="footer" data-page-node-id="gsMvnCLe6iO2cTdlJ69xLa">
+        <button class="btnSkip" data-page-node-id="up9Xx2rN9aasVoyeyZiEcV">稍后看</button>
+        <button class="btnDownload" data-page-node-id="KnF7P2RTDC1ZmMbS3I01DE">⤓ 下载并更新</button>
+      </div>
+    </div>
+
+    <div class="note" data-page-node-id="2luzzozWCHFnSwtoja5SCN">
+      <b data-page-node-id="1JqKC1oOp70AITi4OeZoqg">C = A 的全部兜底 ＋ 3 处 hero 改动（虚线框即改动处）：</b><br data-page-node-id="W9rQsDJMYtXKFPmlUgQNhj">
+      ① <code data-page-node-id="FTr6Evl3zxEGGu1nQ50RCp">.htitle</code> 从 <code data-page-node-id="0UodaaCdce6TC9twVyrjcL">.htxt</code> 移出为 hero 直接子级，<b data-page-node-id="P8M9H5cB1RaBwg5zk06cng">独占整行</b>（可用宽 325px → <b data-page-node-id="kfx1vCo075TdZV5ORVJwo4">412px</b>）<br data-page-node-id="YOuh9XbpcOWmnGu0kSveF5">
+      ② <code data-page-node-id="L6gVFEpxDocYL2KQhp8kX6">.heroTop</code> 只剩 图标＋品牌名＋关闭，<code data-page-node-id="HYSRoefHa0boC6x5sD4Tiy">align-items</code> 改 <code data-page-node-id="lmWVBcmYyL3bCaX0OTm4jR">center</code><br data-page-node-id="prDjQOPMcqyMVSDG9ArsPV">
+      ③ 标题 <code data-page-node-id="w4g2hnFdMfkZBQrD0pM4tP">margin-top:10px</code> 与品牌行分离，层级更清楚<br data-page-node-id="BsWH2roE9n0vT9n8Sdkmnp">
+      <b data-page-node-id="tszkbw8MpiVfD3dBPQAxoV">收益：</b>长标题少折一行；标题不再跟图标/关闭按钮争宽，从根上消除压缩诱因。
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
