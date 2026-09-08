@@ -253,7 +253,7 @@ cd pastepanda
 npm install
 
 # ⚠️ 硬性前置：设 LIBCLANG_PATH（ocr-rs bindgen 需要，项目自带 libclang.dll）
-# Git Bash: export LIBCLANG_PATH="$(pwd)/src-tauri/.libclang"
+# Git Bash: export LIBCLANG_PATH="$(pwd -W)/src-tauri/.libclang"   ← 是 `pwd -W`，裸 `pwd` 给的 /d/... bindgen 不认
 # PowerShell: $env:LIBCLANG_PATH = "$(Get-Location)/src-tauri/.libclang"
 
 # 开发模式（必须 npm run tauri，不要裸 npx tauri dev）

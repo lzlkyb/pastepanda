@@ -41,8 +41,8 @@ Unable to find libclang ... set the LIBCLANG_PATH environment variable
 项目约定**不**持久化 `.cargo/config`，所以每个新终端都要设一次（或 `setx` 写进用户环境变量，一劳永逸）：
 
 ```bash
-# Git Bash / WSL
-export LIBCLANG_PATH="$(pwd)/src-tauri/.libclang"
+# Git Bash——必须给 **Windows 形式**的盘符路径，用 `pwd -W` 而不是 `pwd`
+export LIBCLANG_PATH="$(pwd -W)/src-tauri/.libclang"
 
 # PowerShell
 $env:LIBCLANG_PATH = "$(Get-Location)/src-tauri/.libclang"
@@ -50,6 +50,21 @@ $env:LIBCLANG_PATH = "$(Get-Location)/src-tauri/.libclang"
 # cmd（set 不加引号）
 set LIBCLANG_PATH=D:\AItool\winapp\pastePanda\src-tauri\.libclang
 ```
+
+> 🔴 **Git Bash 里千万别写 `$(pwd)`**（2026-09-08 实测）。它展开成 `/d/...`，
+> 而 bindgen 是原生 Windows 程序，根本不认这种 MSYS 路径。Git Bash 只对**命令行参数**
+> 做路径转换，**不动环境变量的值**，所以这一步不会被自动纠正。
+> 报错长这样，注意末尾那个 `invalid: []`——它意思是「变量拿到了、但当成空目录」，
+> 而不是「你没设」，很容易看成另一回事：
+>
+> ```
+> Unable to find libclang: couldn't find any valid shared libraries matching:
+> ['clang.dll', 'libclang.dll'], set the `LIBCLANG_PATH` environment variable
+> to a path where one of these files can be found (invalid: [])
+> ```
+>
+> 而且它不是开场就报：`ocr-rs` 排在依赖图非常靠后，真机上是编到 **841/904** 才挂。
+> 先花十几分钟编依赖、快到终点才倒，所以值得在启动前先 `echo $LIBCLANG_PATH` 看一眼。
 
 > 注意：OCR 依赖已 **vendoring 进仓库**（`src-tauri/vendor/ocr-rs`），构建离线；但 `src-tauri/vendor/ocr-rs/3rd_party/prebuilt/`（约 170MB MNN 预编译）被 `.gitignore` 忽略，clone 后首次构建需自行准备或走 CI 缓存。
 
@@ -61,7 +76,7 @@ set LIBCLANG_PATH=D:\AItool\winapp\pastePanda\src-tauri\.libclang
 git clone git@github.com:lzlkyb/pastepanda.git
 cd pastepanda
 npm install
-export LIBCLANG_PATH="$(pwd)/src-tauri/.libclang"   # 每次新终端都要
+export LIBCLANG_PATH="$(pwd -W)/src-tauri/.libclang"   # 每次新终端都要；注意是 `pwd -W`
 npm run tauri dev                                   # 用 npm run，不要裸 npx tauri dev
 ```
 

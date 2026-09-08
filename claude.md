@@ -26,9 +26,12 @@ ocr-rs（vendored PP-OCR 引擎）的 bindgen 阶段需要 `libclang.dll`，项�
 项目约定**不**持久化 `.cargo/config`，所以每个新终端都要先设这个变量（见下）。
 
 ### 启动命令（必须先在项目根目录下执行）
-- **Git Bash / WSL**：
+- **Git Bash**：注意是 `pwd -W`。裸 `pwd` 给的是 `/d/...`，而 bindgen 是原生 Windows
+  程序不认 MSYS 路径；Git Bash 只转换**命令行参数**、不动环境变量的值，
+  所以这里不会被自动纠正。写错了会编到 841/904（`ocr-rs` 靠很后）才挂，
+  报 `Unable to find libclang ... (invalid: [])`。
   ```bash
-  export LIBCLANG_PATH="$(pwd)/src-tauri/.libclang" && npm run tauri dev
+  export LIBCLANG_PATH="$(pwd -W)/src-tauri/.libclang" && npm run tauri dev
   ```
 - **PowerShell**：
   ```powershell
