@@ -19,8 +19,16 @@ use std::path::{Path, PathBuf};
 /// 导出的笔记上限。个人规模远达不到，写一个只是不想让 SQL 拿到 u32::MAX。
 const EXPORT_CAP: u32 = 100_000;
 
-/// 导入时新建标签的颜色。外部文件里只有标签名，颜色用户自己改。
-const IMPORT_TAG_COLOR: &str = "#6B7280";
+/// 导入建标签时的颜色：**空串 = 未配色**（色彩规范 §3 第 3 层）。
+///
+/// 🔴 原来是 `"#6B7280"`。2026-09-08 改掉，因为那个灰同时还是
+/// 「文本类型的颜色」，两个含义挤在同一个字段里，渲染层分不开。
+/// 后果是真实发生过的：用户库里**笔记在用的 10 个标签 10 个全是灰**。
+///
+/// 空串交给前端 `getTagStyle` 按标签名哈希取色——
+/// 不在这里现拍一个，是因为调色盘在前端（`src/lib/palette.ts`），
+/// 在 Rust 里再写一份就是第二份（规则 #11）。
+const IMPORT_TAG_COLOR: &str = "";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportReport {

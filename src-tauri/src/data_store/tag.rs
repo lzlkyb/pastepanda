@@ -281,12 +281,28 @@ impl DataStore {
 
     // ===== 自动标签（AI 智能分类） =====
 
-    /// 确保自动标签种子数据存在（首次启动时插入）
+    /// 确保自动标签种子数据存在（首次启动时插入）。
+    ///
+    /// 🔴 种子分成两张表（2026-09-08，色彩规范 §5.5），因为它们的
+    /// **颜色性质不同**，将来的改动规则也不同：
+    ///
+    /// - [`SEMANTIC_TAGS`]：身份色。该与前端 `CONTENT_TYPE_META` 对齐，
+    ///   取值归 `HUE`（前端 `src/lib/palette.ts`）管。
+    /// - [`BRAND_TAGS`]：品牌色。外部事实，**不参与主题、不参与哈希、不可替换**。
+    ///
+    /// ❗ 本次拆分**一个色值都没改**。下面那个已知不一致需要单独一轮（含数据迁移）：
+    ///
+    /// **同一个概念在前后端取两个色**——17 个可比概念里 14 个不一致。
+    /// 例：「电话」图标是 `#F59E0B`（琥珀）而标签是 `#16A34A`（绿）；
+    /// 「Markdown」图标是 #6366F1、标签是 #84CC16。两者**在同一张卡片上同时可见**。
+    ///
+    /// 🔴 不能在这里顺手改：下面是 `INSERT OR IGNORE`，
+    /// 改种子**只对全新安装生效**，已有库的标签颜色一个不会变——
+    /// 那只会让新旧安装分叉，比现在更糟。
     pub fn ensure_auto_tags(&self) -> Result<(), String> {
-        let conn = self.lock_conn();
-        let auto_tags: [(&str, &str, &str); 32] = [
-            // 主类别
-            ("auto-code", "代码", "#6366F1"),
+        /// 身份色：这是哪一类内容。应与前端 `CONTENT_TYPE_META` 同源。
+        const SEMANTIC_TAGS: [(&str, &str, &str); 18] = [
+            ("auto-code", "代码", "#8B5CF6"),
             // 图文混排：走自动标签而不是卡片上写死的徽标，这样才能与其它标签
             // 统一管理：点卡片上的标签可筛选、也会出现在筛选标签列表里
             ("auto-rich", "图文", "#D97706"),
@@ -298,20 +314,31 @@ impl DataStore {
             // 流程图的色与前端 contentTypes.ts 里 diagram 的 #0EA5E9 保持一致。
             ("auto-diagram", "流程图", "#0EA5E9"),
             ("auto-doc", "文档", "#A21CAF"),
-            ("auto-link", "链接", "#06B6D4"),
-            ("auto-json", "JSON", "#F59E0B"),
-            ("auto-config", "配置文件", "#10B981"),
-            ("auto-log", "日志", "#6B7280"),
-            ("auto-table", "表格", "#8B5CF6"),
-            ("auto-command", "命令行", "#EF4444"),
+            ("auto-link", "链接", "#10B981"),
+            ("auto-json", "JSON", "#F97316"),
+            ("auto-config", "配置文件", "#14B8A6"),
+            ("auto-log", "日志", "#78716C"),
+            ("auto-table", "表格", "#84CC16"),
+            ("auto-command", "命令行", "#A855F7"),
             ("auto-secret", "密钥", "#DC2626"),
-            ("auto-number", "数字", "#14B8A6"),
-            ("auto-plaintext", "纯文本", "#9CA3AF"),
-            ("auto-email", "邮箱", "#2563EB"),
-            ("auto-phone", "电话", "#16A34A"),
+            ("auto-number", "数字", "#0EA5E9"),
+            ("auto-plaintext", "纯文本", "#6B7280"),
+            ("auto-email", "邮箱", "#3B82F6"),
+            ("auto-phone", "电话", "#F59E0B"),
             ("auto-color", "颜色", "#EC4899"),
-            ("auto-filepath", "文件路径", "#EA580C"),
-            ("auto-markdown", "Markdown", "#84CC16"),
+            ("auto-filepath", "文件路径", "#06B6D4"),
+            ("auto-markdown", "Markdown", "#6366F1"),
+        ];
+
+        /// 品牌色：语言与配置格式的**官方 logo 色**。
+        ///
+        /// 🔴 铁律：**不参与主题、不参与哈希、不可替换。**
+        /// 把 Python 蓝 `#3776AB` 换成 `HUE` 里某个“差不多的蓝”，
+        /// 它就不再是「Python」了——这类色的价值全在于认出来。
+        ///
+        /// ❗ 所以它们也不归 `HUE` 管。前端 `CONTENT_TYPE_META` 里给
+        /// HTML 定的 `HUE.red` 反而是错的：这里的 `#E34F26` 才是 HTML5 官方色。
+        const BRAND_TAGS: [(&str, &str, &str); 14] = [
             // 代码语言
             ("auto-lang-python", "Python", "#3776AB"),
             ("auto-lang-javascript", "JavaScript", "#F7DF1E"),
@@ -329,7 +356,54 @@ impl DataStore {
             ("auto-fmt-env", "ENV", "#ECD53F"),
             ("auto-fmt-ini", "INI", "#7C8DA5"),
         ];
-        for (id, name, color) in &auto_tags {
+
+        // 一次性迁移（2026-09-08，色彩规范 §5.7）：把已建的身份标签对齐到前端。
+        //
+        // 🔴 背景：同一个概念在前后端取两个色，16 个可比概念里 **13 个不一致**，
+        //    而两者**在同一张卡片上同时可见**（图标走 `CONTENT_TYPE_META`，
+        //    标签走这张种子表）。例：一条电话号码图标琥珀、标签绿。
+        //
+        // ❗ 上面那个 `INSERT OR IGNORE` **改不到已存在的行**，
+        //    所以光改种子只对全新安装生效——那反而让新旧安装分叉。必须配迁移。
+        //
+        // 🔴 按**旧值**匹配而不是无条件覆盖：现在确实没有改标签颜色的界面
+        //    （`updateTag` 没人调），但写成「种子永远赢」就是一个每次启动都跑的
+        //    覆盖行为——将来真加了改色功能，用户的修改会被静默抹掉。
+        //    按旧值匹配自带幂等：跑过一次后再也匹配不上。
+        const COLOR_REALIGN: [(&str, &str, &str); 13] = [
+            ("auto-code", "#6366F1", "#8B5CF6"),
+            ("auto-link", "#06B6D4", "#10B981"),
+            ("auto-json", "#F59E0B", "#F97316"),
+            ("auto-config", "#10B981", "#14B8A6"),
+            ("auto-log", "#6B7280", "#78716C"),
+            ("auto-table", "#8B5CF6", "#84CC16"),
+            ("auto-command", "#EF4444", "#A855F7"),
+            ("auto-number", "#14B8A6", "#0EA5E9"),
+            ("auto-plaintext", "#9CA3AF", "#6B7280"),
+            ("auto-email", "#2563EB", "#3B82F6"),
+            ("auto-phone", "#16A34A", "#F59E0B"),
+            ("auto-filepath", "#EA580C", "#06B6D4"),
+            ("auto-markdown", "#84CC16", "#6366F1"),
+        ];
+
+        let conn = self.lock_conn();
+
+        let mut realigned = 0usize;
+        for (id, old, new) in &COLOR_REALIGN {
+            match conn.execute(
+                "UPDATE tags SET color = ?3 WHERE id = ?1 AND color = ?2",
+                params![id, old, new],
+            ) {
+                Ok(n) => realigned += n,
+                // 不阻断启动：标签颜色不值得拿整个应用能不能开去换。
+                Err(e) => log::warn!("[DataStore] 标签色对齐失败 {}（不阻断）: {}", id, e),
+            }
+        }
+        if realigned > 0 {
+            log::info!("[DataStore] 自动标签色对齐前端：{} 个", realigned);
+        }
+
+        for (id, name, color) in SEMANTIC_TAGS.iter().chain(BRAND_TAGS.iter()) {
             conn.execute(
                 // M6-P3：补 updated_at。
                 // 🔴 顺带修一个既有 bug：原来用 `datetime('now')`，那是 **UTC**，

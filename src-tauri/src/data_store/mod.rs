@@ -927,6 +927,34 @@ impl DataStore {
             }
         }
 
+        // 数据迁移（2026-09-08，色彩规范 §5.6）：把「导入建的灰标签」改成空串哨兵。
+        //
+        // 🔴 `#6B7280` 曾经身兼两职：既是「文本类型的颜色」，又是
+        //    `note_vault.rs` 里 `IMPORT_TAG_COLOR` 的值——也就是「根本没配色」。
+        //    两者存在同一个字段里，渲染层只能靠 `source` 去**猜**。
+        //    空串把「没配色」变成一个明确的值，猜测就不需要了。
+        //
+        // ❗ 为什么只挑 `source='manual'`：`auto` 里那两个灰
+        //    （「日志」`#6B7280`、「纯文本」`#9CA3AF`）是**有意选的**——
+        //    它们语义上就是「无特征」，不能碰。
+        //
+        // ❗ 为什么这不会毁掉用户意图：界面上**造不出灰的手动标签**。
+        //    `TagEditor` 是唯一的建标签入口，颜色只能从 9 个预设里挑
+        //    （无自由取色输入框）；`updateTag` 虽然存在却没有任何组件调用。
+        //    所以 manual + 灰 只可能来自导入路径。
+        //
+        // 幂等：跑第二遍时已经没有匹配行。失败不阻断启动：
+        // 标签颜色不值得拿整个应用能不能开去换。
+        match conn.execute(
+            "UPDATE tags SET color = '' \
+             WHERE source = 'manual' AND color IN ('#6B7280', '#9CA3AF')",
+            [],
+        ) {
+            Ok(n) if n > 0 => log::info!("[DataStore] 导入标签颜色迁移：{} 个改为未配色", n),
+            Ok(_) => {}
+            Err(e) => log::warn!("[DataStore] 导入标签颜色迁移失败（不阻断启动）: {}", e),
+        }
+
         // 数据库迁移：为旧 history 表添加 source_icon 列（如果不存在）
         let has_source_icon: bool = conn
             .query_row(
