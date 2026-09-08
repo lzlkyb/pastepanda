@@ -78,6 +78,16 @@ impl FakeKb {
     }
 }
 
+/// 断言失败时拿来贴现场的前 n 个**字符**。
+///
+/// 🔴 不能写 `&text[..n.min(text.len())]`：`len()` 是**字节**，切到中文中间
+/// 会直接 panic（`is not a char boundary`）。那时你看到的报错是切片坏了，
+/// **不是被测的东西坏了**，白查一轮。本文件里早先写的那几处同形切片
+/// 只是碰巧没切在字符中间，新写的一律走这里。
+fn head(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
 fn fake_note(id: &str, title: &str, content: &str) -> crate::data_store::Note {
     // 用 JSON 反序列化造：`Note` 字段很多且会增，手写构造会频繁被新字段撞坏。
     // `#[serde(default)]` 的字段自动补齐。
@@ -90,6 +100,31 @@ fn fake_note(id: &str, title: &str, content: &str) -> crate::data_store::Note {
         "tags": [],
     }))
     .expect("造假笔记失败（Note 的必填字段变了？）")
+}
+
+/// 一批足以撑爆输出预算的笔记。
+///
+/// ❗ **该调大的是篇数，不是每篇的长度**。第一版造了 30 篇 × 1,300 字，
+/// 以为是 3.9 万字——结果闸根本没触发：`format_brief` 把摘要截到
+/// `BRIEF_CHARS`（200 字），**每篇在输出里只占约 300 字**，30 篇才 7,800。
+/// 笔记本身多长对列表输出的体量几乎没影响。
+///
+/// 80 篇 × ~300 字 ≈ 2.4 万字，稳稳越过 15,000。
+/// 它比真实 `limit` 上限（列表 50 / 搜索 20）大，是故意的：
+/// 这条测试钉的是**闸本身**（源给多少就得拦住），不是今天这个库能不能走到那儿。
+///
+/// 不拿 `self.notes` 撑：那几篇是别的测试在数篇数、对摘要的，
+/// 把它们改大会同时撞坏一批无关的断言。
+fn bulk_notes() -> Vec<crate::data_store::Note> {
+    (0..80)
+        .map(|i| {
+            fake_note(
+                &format!("bulk{}", i),
+                &format!("海量笔记 {}", i),
+                &"这一段只是把这篇撑得够长。".repeat(100),
+            )
+        })
+        .collect()
 }
 
 impl super::source::KbSource for FakeKb {
@@ -142,6 +177,10 @@ impl super::source::KbSource for FakeKb {
         _limit: u32,
         _offset: u32,
     ) -> Result<super::source::ListOutcome, String> {
+        // 输出预算那条测试的入口：只有它会拿到 30 篇大篇幅。
+        if folder == Some("海量") {
+            return Ok(super::source::ListOutcome::Ok(bulk_notes()));
+        }
         // 假实现里只认一个文件夹与一个标签，其余一律当未知——正好用来钉 R6。
         if let Some(f) = folder {
             if f != "技术" {
@@ -193,6 +232,9 @@ impl super::source::KbSource for FakeKb {
                 });
             }
         }
+        if query.contains("海量") {
+            return Ok(super::source::SearchOutcome::Hits(bulk_notes()));
+        }
         if query.contains("并发") {
             Ok(super::source::SearchOutcome::Hits(self.notes.clone()))
         } else {
@@ -225,12 +267,22 @@ impl super::source::KbSource for FakeKb {
     }
 
     fn folders(&self) -> Result<Vec<crate::data_store::NoteFolder>, String> {
-        Ok(vec![serde_json::from_value(json!({
+        // 两层：技术（有子节点）→ 技术/Rust（叶子）。
+        // 🔴 必须两种都有：只造叶子的话，「含子文件夹」无条件拼与有条件拼
+        // 在测试里长得一模一样，真机上那个假陈述就是这么漏过去的。
+        let f1 = serde_json::from_value(json!({
             "id": "f1", "name": "技术", "parent_id": null,
             "sort_order": 0, "created_at": "2026-09-01 10:00:00",
-            "note_count": 1, "depth": 1,
+            "note_count": 3, "depth": 1,
         }))
-        .expect("造假文件夹失败")])
+        .expect("造假文件夹失败");
+        let f2 = serde_json::from_value(json!({
+            "id": "f2", "name": "Rust", "parent_id": "f1",
+            "sort_order": 0, "created_at": "2026-09-01 10:00:00",
+            "note_count": 1, "depth": 2,
+        }))
+        .expect("造假子文件夹失败");
+        Ok(vec![f1, f2])
     }
 
     fn note_tag_names(&self) -> Result<Vec<String>, String> {
@@ -1149,6 +1201,64 @@ async fn test_体量闸要与列表里的字数同口径() {
     ) * 2
         + super::tools::visible_chars("# 第一节\n\n\n\n# 第二节\n\n");
     assert_eq!(n, expect, "拦下时报的字数不是不计空白那个口径");
+}
+
+#[tokio::test]
+async fn test_列表超输出预算要截断并给出翻页位置() {
+    // 🔴 真机量出来的空子（2026-09-08）：`kb_read` 有体量闸，
+    //    而 `kb_list` / `kb_search` 没有——后者在 limit 拉满时反而返得更多。
+    //    而 limit 是**模型自己填的**，指望它自律等于没有闸。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_list", json!({ "folder": "海量" })).await;
+    assert!(!is_err, "截断不是错误，不得报 isError：{}", head(&text, 200));
+    assert!(text.contains("没列出来"), "截了就要明说：{}", head(&text, 400));
+    // 截断后必须给出接下去怎么取，否则模型只能重试一次同样的调用。
+    assert!(text.contains("offset="), "没告诉模型从哪接着翻：{}", text);
+    // 真的得少于 80 篇，否则闸根本没生效。
+    let listed = text.matches("海量笔记 ").count();
+    assert!(listed > 0, "一篇都没列等于这次调用白打：{}", head(&text, 300));
+    assert!(listed < 80, "超预算了却全列了出来（列了 {} 篇）", listed);
+}
+
+#[tokio::test]
+async fn test_搜索超输出预算要截断且不能叫翻页() {
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_search", json!({ "query": "海量" })).await;
+    assert!(!is_err, "截断不得报 isError：{}", head(&text, 200));
+    assert!(text.contains("没列出来"), "截了要明说：{}", head(&text, 400));
+    // 🔴 `kb_search` 没有 offset——告诉模型「翻页」等于叫它去试一个不存在的参数。
+    assert!(!text.contains("offset="), "搜索没有 offset，不得叫模型翻页：{}", text);
+    assert!(text.contains("缩范围"), "应当指向缩范围而不是拉尾巴：{}", text);
+    let listed = text.matches("海量笔记 ").count();
+    assert!(listed > 0 && listed < 80, "截断位置不对（列了 {} 篇）", listed);
+}
+
+#[tokio::test]
+async fn test_叶子文件夹不能说含子文件夹() {
+    // 🔴 真机（2026-09-08）：库里只有一个文件夹 design、无任何子节点，
+    //    输出却是「design（1 篇，含子文件夹）」——一句假话，而模型会照这个转述。
+    let base = spawn_server().await;
+    let (text, _) = call_text(&base, "kb_folders", json!({})).await;
+    // 技术真有子节点 Rust，该说；Rust 是叶子，不该说。
+    assert!(text.contains("技术（3 篇，含子文件夹里的）"), "有子节点的该说：{}", text);
+    assert!(text.contains("Rust（1 篇）"), "叶子文件夹不该带后缀：{}", text);
+}
+
+#[tokio::test]
+async fn test_新建时要说清落到哪个文件夹() {
+    // 不说的话模型无从向用户交代，而用户很可能正在某个文件夹里
+    // 找一篇实际落在未分类的笔记。
+    let base = spawn_server().await;
+    let (a, _) = call_text(&base, "kb_create", json!({ "title": "甲", "content": "x" })).await;
+    assert!(a.contains("未分类"), "不带 folder 时要说清落在未分类：{}", a);
+
+    let (b, _) = call_text(
+        &base,
+        "kb_create",
+        json!({ "title": "乙", "content": "x", "folder": "技术" }),
+    )
+    .await;
+    assert!(b.contains("文件夹「技术」"), "带 folder 时要说清放进了哪里：{}", b);
 }
 
 #[tokio::test]

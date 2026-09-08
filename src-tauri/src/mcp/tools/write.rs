@@ -367,10 +367,18 @@ pub(super) async fn call_create(
     // content 允许为空：先开一篇再用 kb_append 填是合理的用法。
     let content = arg_str(a, "content").unwrap_or("").to_string();
     let folder = arg_str(a, "folder").map(str::to_string);
+    // 🔴 新篇落到哪儿要说出来。不说的话，模型无从向用户交代，
+    // 而用户很可能正在某个文件夹里找一篇实际落在**未分类**的笔记。
+    // 拿参数拼而不是反查 folder_id：创建能成功就说明这个名字已经解到了，
+    // 再查一次是多一次 SQLite 全局锁（那把锁与主界面共用）。
+    let landed = match folder.as_deref() {
+        Some(f) => format!("\n已放进文件夹「{}」。", f),
+        None => "\n没指定文件夹，这篇落在**未分类**里。要归类用 kb_move。".to_string(),
+    };
     let src = source(&ctx);
     let kb = ctx.kb.clone();
     match blocking(move || kb.create(&title, &content, folder.as_deref(), &src)).await {
-        Ok(n) => Ok(wrote(&n, "已新建笔记")),
+        Ok(n) => Ok(wrote_note(&n, "已新建笔记", Some(landed))),
         Err(e) => Ok(error_result(format!("新建失败：{}", e)).into()),
     }
 }

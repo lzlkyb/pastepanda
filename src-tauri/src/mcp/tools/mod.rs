@@ -632,9 +632,20 @@ async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolO
         ListOutcome::Ok(notes) => {
             let folders = folder_map(kb).await;
             let mut out = format!("共 {} 篇（按最近修改倒序）：\n", notes.len());
-            for n in &notes {
-                out.push('\n');
-                out.push_str(&format_brief(n, folder_of(&folders, n)));
+            let blocks: Vec<String> = notes
+                .iter()
+                .map(|n| format!("\n{}", format_brief(n, folder_of(&folders, n))))
+                .collect();
+            let shown = push_within_budget(&mut out, &blocks);
+            if shown < notes.len() {
+                // 翻页而不是缩范围：`kb_list` 有 offset，没列完的那几篇接着取就行。
+                out.push_str(&format!(
+                    "\n⚠ 后面还有 {} 篇没列出来（这一次已经返了约 {} 字）。\
+                     接着翻：kb_list(offset={})；或用 folder / tag 缩小范围。\n",
+                    notes.len() - shown,
+                    visible_chars(&out),
+                    offset as usize + shown
+                ));
             }
             out.push_str(&format!(
                 "\n用 kb_read(id) 取其中一篇的全文，或 kb_sections(id) 先看大纲。\n{}",
@@ -642,7 +653,8 @@ async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolO
             ));
             Ok(ToolOutput {
                 value: text_result(out),
-                note_ids: notes.iter().map(|n| n.id.clone()).collect(),
+                // 🔴 只记**真列出去了的**那几篇：审计面板回答的是「AI 看到了什么」。
+                note_ids: notes.iter().take(shown).map(|n| n.id.clone()).collect(),
             })
         }
     }
@@ -772,12 +784,30 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
             let mut out = format_term_coverage(&query, &terms, &per_note);
             // 不再无条件地叫它们「相关笔记」：那个词能不能用，由上面那段命中情况决定。
             out.push_str(&format!("找到 {} 篇（按相关度排序）：\n", notes.len()));
-            for (n, hit) in notes.iter().zip(&per_note) {
-                out.push('\n');
-                out.push_str(&format_brief(n, folder_of(&folders, n)));
-                out.push_str(&format_hit_terms(&terms, hit));
-                out.push_str(&format_kinds(&n.content));
-                out.push_str(&format_section_hits(&n.content, &terms));
+            let blocks: Vec<String> = notes
+                .iter()
+                .zip(&per_note)
+                .map(|(n, hit)| {
+                    format!(
+                        "\n{}{}{}{}",
+                        format_brief(n, folder_of(&folders, n)),
+                        format_hit_terms(&terms, hit),
+                        format_kinds(&n.content),
+                        format_section_hits(&n.content, &terms)
+                    )
+                })
+                .collect();
+            let shown = push_within_budget(&mut out, &blocks);
+            if shown < notes.len() {
+                // 🔴 这里不能叫它「翻页」：`kb_search` 没有 offset，而且后面那几篇
+                // 本来就是相关度最低的——该做的是缩范围，不是把尾巴拉回来。
+                out.push_str(&format!(
+                    "\n⚠ 排在后面的 {} 篇没列出来（这一次已经返了约 {} 字）。\
+                     它们是相关度最低的那几篇；真要继续找，用 folder / tag / kind 缩范围，\
+                     或换一组更准的关键词——把 limit 调大只会再被截一次。\n",
+                    notes.len() - shown,
+                    visible_chars(&out)
+                ));
             }
             out.push_str(&format!(
                 "\n看完摘要觉得哪篇有用，用 kb_read(id) 取它的全文；\
@@ -787,7 +817,8 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
             ));
             Ok(ToolOutput {
                 value: text_result(out),
-                note_ids: notes.iter().map(|n| n.id.clone()).collect(),
+                // 同 `kb_list`：只记真列出去的那几篇。
+                note_ids: notes.iter().take(shown).map(|n| n.id.clone()).collect(),
             })
         }
     }
@@ -816,12 +847,23 @@ async fn call_folders(
         out.push_str("文件夹：一个都没有（所有笔记都在未分类）。\n");
     } else {
         out.push_str(&format!("文件夹（{} 个，缩进表示层级）：\n", folders.len()));
+        // 🔴 「含子文件夹」只能对**真有子文件夹的**那几个说。
+        // 原来是无条件拼上去的，真机上对叶子文件夹 design 也印了这四个字
+        // （2026-09-08 实测，库里就一个文件夹、无子节点）。本意是「这个数**算上了**
+        // 子文件夹里的」，字面却读成「这个文件夹**下面有**子文件夹」——
+        // 模型会照这个向用户转述，与 kb_delete 曾谎报 30 天保留期是同一类毛病。
+        let has_child: std::collections::HashSet<&str> = folders
+            .iter()
+            .filter_map(|f| f.parent_id.as_deref())
+            .collect();
         for f in &folders {
             let indent = "  ".repeat((f.depth.max(1) - 1) as usize);
-            out.push_str(&format!(
-                "{}- {}（{} 篇，含子文件夹）\n",
-                indent, f.name, f.note_count
-            ));
+            let count = if has_child.contains(f.id.as_str()) {
+                format!("{} 篇，含子文件夹里的", f.note_count)
+            } else {
+                format!("{} 篇", f.note_count)
+            };
+            out.push_str(&format!("{}- {}（{}）\n", indent, f.name, count));
         }
         // 同名必须摆出来：写入侧按名字解文件夹，同名时取**第一个匹配**。
         // 不告知的话，kb_move 会把笔记移进一个模型没想着的同名文件夹里。
@@ -1187,6 +1229,41 @@ fn format_outline(content: &str, secs: &[markdown::Section]) -> String {
 /// 两处必须读同一个函数。
 pub(super) fn visible_chars(content: &str) -> usize {
     content.chars().filter(|c| !c.is_whitespace()).count()
+}
+
+/// 一次工具调用最多还回多少字（[`visible_chars`] 口径）。
+///
+/// 🔴 与 [`FULL_READ_MAX_CHARS`] **同一个数、同一个口径**，这是故意的：
+/// 「一次调用最多还 15,000 字」是一条**全库规则**，不是 `kb_read` 一个工具的规矩。
+///
+/// ❗ **它在当前这个库上不会触发**，这是量出来的、不是推出来的（2026-09-08，26 篇）：
+/// - `kb_search` 默认 limit=5 → 5,540 字；拉到上限 limit=20 → **12,306 字**
+/// - `kb_list` limit=50 → 7,864 字
+///
+/// 我一度把 limit=20 线性外推成「约 22,000 字、比被拦下的整篇读还多」——外推错了：
+/// 排在后面的命中相关度低，「最相关的节」本来就列不出几段，并不是 4 倍关系。
+/// 所以这道闸**不是在修一个已观测到的超量**，而是一条上界：
+/// 12,306 已经贴着 15,000，库再长一点、笔记再长一点就会越过去，
+/// 而 `limit` 是模型自己填的，到那时没有任何东西拦它。
+const RESULT_MAX_CHARS: usize = FULL_READ_MAX_CHARS;
+
+/// 逐条往输出里塞，超预算就停下。返回**实际列出的条数**。
+///
+/// ❗ **至少留一条**：一条都不给等于这次调用白打，模型只能再试一次，
+/// 那比超预算更坏——同 [`oversize_guard`] 里「没有可寻址的节就放行」那一支。
+fn push_within_budget(out: &mut String, blocks: &[String]) -> usize {
+    let mut used = visible_chars(out);
+    let mut shown = 0;
+    for b in blocks {
+        let cost = visible_chars(b);
+        if shown > 0 && used + cost > RESULT_MAX_CHARS {
+            break;
+        }
+        out.push_str(b);
+        used += cost;
+        shown += 1;
+    }
+    shown
 }
 
 /// 整篇读的体量闸。超过它、**且这篇真的有可寻址的节**时，
