@@ -1555,9 +1555,14 @@ button.evoRow:hover {
   align-items: flex-start;
   padding: 7px 9px;
   border-radius: 8px;
-  background: var(--amber-bg);
-  border: 1px solid var(--amber-border);
-  color: var(--amber);
+  /* 🔴 这三行原来是真 bug，不只是命名问题：`--amber-bg` / `--amber-border` /
+     `--amber` 在 `theme.css` 里从未定义，而这里**连回退值都没写**。
+     `var()` 解不出值且无回退时整条声明作废——也就是说
+     `.stateNote` 一直**没有底、没有边、没有字色**。
+     改成警告一族后它才真正有了样式（这是观感变化，不是回归）。 */
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
+  color: var(--warning);
   font-size: 10.5px;
   line-height: 1.55;
 }

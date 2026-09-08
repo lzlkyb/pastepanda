@@ -64,8 +64,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, #fff7e6, var(--amber-bg, #fdf3e0));
-  border: 1px solid var(--amber-border, #f5dfae);
+  /* 🔴 金色是**成就**语义，不是警告——不能改成 `--orange-*`（ocean 下是深赭
+     `#C54A0A`，勋章会读成报错）。但也不能继续写 `var(--amber-bg, …)`：
+     `--amber-bg` 在 `theme.css` 里从未定义，那个引用只会让人以为它跟主题走。
+     2026-09-08 改成它**实际生效的那个值**，观感一点没变。
+     真要让金色跟主题，该新增一族 `--gold`（见色彩规范待办项）。 */
+  background: linear-gradient(145deg, #fff7e6, #fdf3e0);
+  border: 1px solid #f5dfae;
 }
 .medal b { font-size: 14px; line-height: 1; color: var(--warning, #b45309); }
 .medal span { font-size: 7px; color: var(--warning, #b45309); margin-top: 1px; letter-spacing: 0.5px; }

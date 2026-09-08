@@ -74,10 +74,14 @@
   gap: 6px;
   flex-shrink: 0;
   padding: 4px 8px;
-  border: 1px solid var(--amber-border, rgba(245, 158, 11, 0.35));
+  /* 🔴 警告语义，走 `--warning` / `--orange-*`（2026-09-08）。
+     原来用的 `--amber-border` / `--amber-light` / `--amber-strong` 在
+     `theme.css` 里**一个都没定义过**，所以三行全走回退值——
+     六个主题同一个颜色，深色主题下没校验过对比度。 */
+  border: 1px solid var(--orange-border);
   border-radius: 6px;
-  background: var(--amber-light, rgba(245, 158, 11, 0.12));
-  color: var(--amber-strong, #B45309);
+  background: var(--orange-bg);
+  color: var(--warning);
   font-size: var(--kb-fs-badge, 11px);
   font-weight: 600;
   line-height: 1.55;

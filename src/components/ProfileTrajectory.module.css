@@ -54,8 +54,10 @@
   font-size: 10.5px;
   font-weight: 600;
   color: var(--warning, #b45309);
-  background: var(--amber-bg, #fdf3e0);
-  border: 1px solid var(--amber-border, #f5dfae);
+  /* 连续天数 = 成就语义，同 `.medal`：金色，不归警告一族。
+     `--amber-bg` / `--amber-border` 从未定义，2026-09-08 改成实际生效的值。 */
+  background: #fdf3e0;
+  border: 1px solid #f5dfae;
   padding: 3px 10px;
   border-radius: 99px;
 }

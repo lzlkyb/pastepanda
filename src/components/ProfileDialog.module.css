@@ -55,9 +55,12 @@
 
 .warn {
   font-size: 10.5px;
-  color: var(--warning, #b45309);
-  background: var(--amber-bg, #fef3c7);
-  border: 1px solid var(--amber-border, #fde68a);
+  /* ❗ 这条规则原来同时引了一个**已定义**的 token（`--warning`）和
+     两个**从未定义**的（`--amber-bg` / `--amber-border`）——
+     同一个警告框里一半跟主题走、一半写死。统一到 `--orange-*`。 */
+  color: var(--warning);
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
   border-radius: 9px;
   padding: 6px 10px;
   display: flex;

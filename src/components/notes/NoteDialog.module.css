@@ -342,9 +342,12 @@
 .histPin {
   flex-shrink: 0;
   padding: 0 5px;
-  border: 1px solid var(--warning-color, #d29922);
+  /* `--warning-color` 从未定义（已定义的叫 `--warning`）。同一个语义在本库里
+     曾有四个名字：`--orange` / `--warning` / `--amber*` / `--warning-color`，
+     后两个都是幽灵。2026-09-08 收敛到前两个。 */
+  border: 1px solid var(--warning);
   border-radius: 4px;
-  color: var(--warning-color, #d29922);
+  color: var(--warning);
   /* 同上：`.shell` 外，硬编 11px（批 4）。 */
   font-size: 11px;
   font-weight: 600;
@@ -377,8 +380,8 @@
 }
 
 .histPinBtn:hover:not(:disabled) {
-  border-color: var(--warning-color, #d29922);
-  color: var(--warning-color, #d29922);
+  border-color: var(--warning);
+  color: var(--warning);
 }
 
 .histPinBtn:disabled {
