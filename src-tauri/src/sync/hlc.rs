@@ -124,7 +124,14 @@ impl HlcClock {
 
     /// 吸收对端见过的最大时间戳。
     pub fn absorb(&self, remote_max: i64, wall_ms: i64) -> Absorb {
-        let ahead = remote_max - wall_ms;
+        // ❗ `saturating_sub` 而不是裸减法（2026-09-07 修）。
+        //   `remote_max` 来自对端清单文本的 `.parse::<i64>()`，`i64::MIN` 是合法输入。
+        //   裸减法下：dev（overflow-checks 默认开）直接 panic 在 `peer_loop` 的
+        //   spawn 任务里、而那个 JoinHandle 是被丢掉的（`service.rs`）⇒ 该对端
+        //   同步循环无声死掉；release（未开 overflow-checks）回绕成大正数 ⇒
+        //   报「对端时钟快 92233720368547 毫秒」而实际是对端**严重滞后**，
+        //   照着这句诊断去查会查反方向。
+        let ahead = remote_max.saturating_sub(wall_ms);
         if ahead > MAX_FUTURE_SKEW_MS {
             return Absorb::TooFarAhead { ahead_ms: ahead };
         }

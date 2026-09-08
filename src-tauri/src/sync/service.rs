@@ -214,15 +214,37 @@ impl Wait {
 /// 覆盖不到的那几种（对端改完拨不通、又没有组播）由 `HEARTBEAT_SECS` 兜底。
 ///
 /// 返回值见 [`Woke`]（除了「该不该退出」，还告诉调用方**为何**醒的）。
-async fn idle_wait(ctx: &SyncCtx, peer: &str) -> Woke {
+async fn idle_wait(
+    ctx: &SyncCtx,
+    peer: &str,
+    // 上一拨没推动游标（见 `peer_loop` 里 `cursor_stalled` 的注释）。
+    cursor_stalled: bool,
+) -> Woke {
     // 去抖：刚同步完就先压一段。这一段**不听写入信号**，
     // 否则连续敲键盘时会变成边打字边拨号。
     if !sleep_or_stop(&ctx.stop, MIN_SESSION_GAP_SECS).await {
         return Woke::Stop;
     }
     let deadline = now_ms() + jittered_secs(HEARTBEAT_SECS, JITTER_SECS, now_ms() as u64) as i64 * 1000;
+    // 让下面那条 warn 每次 `idle_wait` 只报一次：本循环每 `IDLE_CHECK_SECS`（5 秒）
+    // 转一圈，不扣的话一直到心跳会刷几百条。
+    let mut warned_stalled = false;
     loop {
         match dirty_for(ctx, peer) {
+            // 🔴 脏但上一拨游标没动 ⇒ **不走快通道**，改等心跳。
+            //    否则就是 13 秒一拨的自我维持循环（详细理由在 `peer_loop`）。
+            //    不静默（规则 #15.3）：这个状态意味着有东西**永远落不地**，
+            //    光退避不报的话，现象就只剩「同步看着在跑但某篇永远不同步」。
+            Ok(true) if cursor_stalled => {
+                if !warned_stalled {
+                    warned_stalled = true;
+                    log::warn!(
+                        "[Sync] 与 {} 仍有待同步的变更，但上一拨游标没有推动——\
+                         有条目反复落不地。改为等心跳，不再密集重试。",
+                        &peer[..8.min(peer.len())]
+                    );
+                }
+            }
             // 有东西要发 → 先过一个合并窗口再拨（W6 止血第三条）
             Ok(true) => {
                 return if coalesce_writes(
@@ -281,6 +303,18 @@ fn dirty_for(ctx: &SyncCtx, peer: &str) -> Result<bool, String> {
     ctx.store.has_changes_since(cursor)
 }
 
+/// 读一台对端的同步游标。读不到（刚被忘记 / SQL 错）当 0。
+///
+/// 存在的理由只有一条：[`peer_loop`] 要能判「上一拨到底有没有推动游标」。
+fn cursor_of(ctx: &SyncCtx, peer: &str) -> i64 {
+    ctx.store
+        .device_get(peer)
+        .ok()
+        .flatten()
+        .map(|d| d.sync_cursor_ms)
+        .unwrap_or(0)
+}
+
 /// 一个对端的循环：拨 → 成功就等到「有活干」 → 失败就退避。
 pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     let short = &peer[..8.min(peer.len())];
@@ -289,7 +323,20 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     // 而那正是两边游标已推、内容却分叉的典型成因。
     let mut want_digest = true;
     while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
+        let cursor_before = cursor_of(&ctx, &peer);
         let outcome = dial_once(&ctx, &peer, want_digest).await;
+        // 🔴 拨完立刻量一次：游标没动 + 仍然「脏」就是一个**自我维持的循环**，
+        //    必须退避（2026-09-07 新增）。已经验实的一条路径：
+        //      一篇笔记在对端没标签、本机有 ⇒ 导入时 `parsed.tags.is_empty()`
+        //      守卫跳过不清本地标签 ⇒ `same_version` 比标签得 false
+        //      ⇒ `note_unsettled` ⇒ `session.rs` 把游标夹在这篇之前（永久）
+        //      ⇒ `dirty_for` 恒真 ⇒ 每 13 秒（MIN_SESSION_GAP 10 + 合并窗口 3）
+        //         拨一次、每次重传游标之后全部内容——比它取代的固定心跳（600 秒）差 46 倍。
+        //
+        //    ❗ 这条护栏**不依赖**那个标签 bug 被修好：任何其它「永远落不地」
+        //      的成因（>10MiB 的笔记、对端手里有本机已 purge 的笔记…）都会走到同一步。
+        // 这一拨拨完之后游标**没有推动**。看 `idle_wait` 里对它的用法。
+        let cursor_stalled = cursor_of(&ctx, &peer) == cursor_before;
         // 四种睡法写成显式的（而不是一个 `bool`），因为「谁能被叫醒」是这段
         // 最容易改错的地方，而改错了不报错、只是开始疯狂拨号（已经发生过一次）。
         //
@@ -360,7 +407,7 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
         let alive = match wait {
             // 脏了就拨、否则睡到心跳。空闲时不再固定 30 秒一轮——
             // 那一轮里两边都没改过东西，整个会话是纯浪费。
-            Wait::Idle => match idle_wait(&ctx, &peer).await {
+            Wait::Idle => match idle_wait(&ctx, &peer, cursor_stalled).await {
                 Woke::Stop => false,
                 Woke::Dirty => {
                     want_digest = false;

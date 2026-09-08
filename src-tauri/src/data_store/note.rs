@@ -2113,8 +2113,43 @@ impl DataStore {
     /// B1 的 AI 自动标签会另走一个写 `'ai'` 的路径，**不要把这个方法改成带参数的**
     /// ——否则一次手动保存会把 AI 打的标签整批抹成 manual。
     pub fn note_set_tags(&self, note_id: &str, tag_ids: &[String]) -> Result<(), String> {
+        // 🔴 必须刷 `notes.updated_ms`（2026-09-07 补）。不刷的后果已经完整验过：
+        //    ① `has_changes_since` 与 `sync_bucket_digests` 都只看 `updated_ms`，
+        //       纯标签改动于是「不脏」——既不拨号、分桶摘要还报「完全一致」，
+        //       于是标签在对端**永远收不到**（含 Agent 用 `kb_tag` 打的）；
+        //    ② 而 `sync::engine` 的 `same_version` **是**比标签的，于是一旦两边标签不同，
+        //       那篇笔记每轮都判「没落地」→ `note_unsettled` → 游标永久夹住
+        //       → `dirty_for` 恒真 → **13 秒一拨的拨号风暴**。
+        //    用 `MAX(?, updated_ms + 1)` 而不是直接赋值：跟其余四个写入点同口径
+        //    （直接赋值只剩 `note_set_folder` 一处，那本身也是个待修的例外）。
+        //
+        // ❗ `hlc_now()` 在拿锁之前发，同本文件其余几处。
+        let ms = self.hlc_now();
         let mut conn = self.lock_conn();
         let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        // 🔴 标签集没变就**一个字都不写**（2026-09-07）。
+        //
+        //    本函数现在会刷 `updated_ms`，而 `note_import_dir` 每导一篇就调它一次——
+        //    不拦的话：① 手动重导一个没变的 vault 会把**所有**笔记标脏；
+        //    ② 同步导入后笔记变脏 → 发回去 → 对端导入又变脏…… ping-pong。
+        //    （同步那边虽然有④「盖回对端版本戳」能抵消掉1，但不能靠下游刚好帮忙。）
+        let mut cur: Vec<String> = tx
+            .prepare("SELECT tag_id FROM note_tags WHERE note_id = ?1")
+            .and_then(|mut st| {
+                st.query_map([note_id], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(|e| e.to_string())?;
+        let mut want: Vec<String> = tag_ids.to_vec();
+        cur.sort_unstable();
+        cur.dedup();
+        want.sort_unstable();
+        want.dedup();
+        if cur == want {
+            return Ok(());
+        }
+
         tx.execute("DELETE FROM note_tags WHERE note_id = ?1", [note_id])
             .map_err(|e| e.to_string())?;
         for tid in tag_ids {
@@ -2126,6 +2161,12 @@ impl DataStore {
             )
             .map_err(|e| e.to_string())?;
         }
+        // 标签集换了 ⇒ 版本号得进，否则同步看不见（见本函数开头）。
+        tx.execute(
+            "UPDATE notes SET updated_ms = MAX(?2, updated_ms + 1) WHERE id = ?1",
+            rusqlite::params![note_id, ms],
+        )
+        .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
         Ok(())
     }
@@ -2144,6 +2185,8 @@ impl DataStore {
         add: &[String],
         remove: &[String],
     ) -> Result<(usize, usize), String> {
+        // 同 `note_set_tags`：标签变了就得刷版本号（理由写在那边）。
+        let ms = self.hlc_now();
         let mut conn = self.lock_conn();
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         let mut added = 0;
@@ -2165,6 +2208,15 @@ impl DataStore {
                     rusqlite::params![note_id, tid],
                 )
                 .map_err(|e| e.to_string())?;
+        }
+        // ❗ 只在**真的动了**才刷：`INSERT OR IGNORE` / `DELETE` 都可能一行未变
+        //   （模型重复打同一个标签很常见），无条件刷就是白白造一轮同步。
+        if added > 0 || removed > 0 {
+            tx.execute(
+                "UPDATE notes SET updated_ms = MAX(?2, updated_ms + 1) WHERE id = ?1",
+                rusqlite::params![note_id, ms],
+            )
+            .map_err(|e| e.to_string())?;
         }
         tx.commit().map_err(|e| e.to_string())?;
         Ok((added, removed))

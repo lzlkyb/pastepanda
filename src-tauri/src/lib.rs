@@ -343,6 +343,60 @@ pub fn run() {
                     }
                 }
             };
+
+            // 本机局域网设备标识。
+            //
+            // 🔴 必须**持久化**。这里原先在下面起 LanSync 那行写的是每次启动
+            //    `uuid::Uuid::new_v4()` 一个新的，旁边注释声称「该值仅用于过滤自身
+            //    消息」——**那句是错的**：`lan_sync::remember_device` 拿对端的这个
+            //    device_id 当「记住的设备」的身份键（存在 `lan_paired_devices`）。
+            //    每次重启换身份的后果（2026-09-07 用户报上来、已在库里核实）：
+            //      ① 对端每重启一次，本机就多记一台同名设备（列表无限增长）；
+            //      ② `lan_pair::list_nearby` 按 device_id 过滤已配对，所以已配对的机器
+            //         重启后又变成「附近的未配对设备」，配对形同虚设；
+            //      ③ `PairState::note_reject` 的 REJECT_LIMIT（拒绝 N 次后不再弹框）
+            //         可以靠重启绕过；
+            //      ④ `forget_device` 删掉的是一个死 id，对端下次启动照样回来。
+            //
+            // ❗ 注意这里**重新 `get_config()`** 而不是用上面的 `saved_config`：
+            //    首次启动两个 key 都缺，若两边各自 `saved_config.clone()` 再写回去，
+            //    后写的那个会拿着**旧快照**把刚生成的配对密钥覆盖掉
+            //    （下次启动又生成一个新的 ⇒ 首次启动期间配对好的设备全部失效）。
+            //
+            // ❗ 位置不能往下挑：`app.manage(store)` 之后 `store` 已经被 move 进
+            //    Tauri 的状态里，那里再调 `store.get_config()` 直接 E0382。
+            let device_id = {
+                let cfg_now = store.get_config().unwrap_or_default();
+                let existing = cfg_now
+                    .get("lan_device_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                match existing {
+                    Some(id) => id,
+                    None => {
+                        let new_id = uuid::Uuid::new_v4().to_string();
+                        let mut cfg = cfg_now.clone();
+                        if let Some(obj) = cfg.as_object_mut() {
+                            obj.insert(
+                                "lan_device_id".to_string(),
+                                serde_json::Value::String(new_id.clone()),
+                            );
+                        }
+                        if let Err(e) = store.save_config(&cfg) {
+                            // 🔴 不能静默（规则 #15.3）：存不下就意味着本次启动的身份只活
+                            //    到退出，对端下次会把我们当新设备——就是上面那个 bug 又回来了。
+                            log::warn!(
+                                "[LanSync] 保存本机 device_id 失败，本次启动的设备身份不会被记住: {}",
+                                e
+                            );
+                        }
+                        log::info!("[LanSync] 首次生成本机设备标识并已持久化");
+                        new_id
+                    }
+                }
+            };
+
             let auto_strip_enabled = saved_config
                 .get("auto_strip")
                 .and_then(|v| v.as_bool())
@@ -476,10 +530,9 @@ pub fn run() {
                 }
             }
 
-            // 局域网同步（使用之前读取的配置）
-            // 修复 Low：device_id 改用完整 UUID（原仅取前 8 位十六进制 = 32bit，易碰撞/被伪造），
-            // 该值仅用于过滤自身消息，无长度约束
-            let device_id = uuid::Uuid::new_v4().to_string();
+            // 局域网同步（使用之前读取的配置）。
+            // `device_id` 在上面跟 `lan_pairing_key` 一起读/生成——必须在
+            // `app.manage(store)` **之前**，那一句把 `store` move 进了 Tauri 的状态。
             let lan_sync = lan_sync::LanSync::new(device_id, lan_pairing_key);
             if lan_enabled {
                 lan_sync.start_listener(handle.clone());

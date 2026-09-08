@@ -377,6 +377,36 @@ async fn exchange_digests(store: &DataStore, w: &mut Wire) -> Result<Vec<u32>, S
     transport::write_frame(&mut w.send, &bytes).await?;
     let raw = transport::read_frame(&mut w.recv).await?;
     let theirs: Vec<u64> = serde_json::from_slice(&raw).map_err(|_| "对端的分桶摘要解不开")?;
+
+    // 🔴 在这里校长度（2026-09-07 新增）。`from_slice` 本身不限制元素个数，
+    //    而 64KiB 的帧能装下约 32000 个 `u64`。下游 `digest::diverged` 对长度不符
+    //    的处理是「当全部分叉」（那个选择本身是对的，理由写在 `digest.rs`：
+    //    按短的比会隐形跳过尾部桶、静默不收敛），于是那 32000 个桶 id 会被
+    //    `since_or_buckets_clause` 拼成约 200KB 的 `IN (...)` 字面量。
+    //
+    // ❗ `digest.rs` 那句「全量重对账**只是浪费一次**」是个错的前提：
+    //   对端版本不同时它**每轮都发生**——而且没任何日志，现象只是
+    //   「同步一直很慢」。所以这里不改它的语义，只做两件事：
+    //     ① 荒诞的长度直接当帧坏掉（堆不出巨型 SQL）；
+    //     ② 可信但不等的长度报 warn（规则 #15.3），后继仍交给 `diverged`
+    //        以保住「不静默跳过尾部桶」那个正确性保证。
+    const MAX_DIGEST_LEN: usize = 1024;
+    if theirs.len() > MAX_DIGEST_LEN {
+        return Err(format!(
+            "对端的分桶摘要长度荒诞（{} 个，上限 {}），当帧坏掉",
+            theirs.len(),
+            MAX_DIGEST_LEN
+        ));
+    }
+    if theirs.len() != mine.len() {
+        log::warn!(
+            "[Sync] 对端的分桶数是 {}，本机是 {}——两端版本不一致。\
+             本轮会按「全部分叉」处理（即全库重导），而且**每轮都会**，\
+             直到两边升到同一个版本。",
+            theirs.len(),
+            mine.len()
+        );
+    }
     Ok(super::digest::diverged(&mine, &theirs))
 }
 

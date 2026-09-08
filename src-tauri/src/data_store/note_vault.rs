@@ -259,6 +259,17 @@ impl DataStore {
         let mut skipped = 0i64;
         collect_md(&root, &mut Vec::new(), &mut files, &mut skipped)?;
 
+        // 本次导入有没有看到目录层级（任一文件在子目录里）。
+        //
+        // ❗ 它是「源头到底携不携带分类信息」的判据，给更新分支的移文件夹用。
+        //   全平的一堆 .md（用户单独重导一个子目录）里，`rel_dirs` 全为空不代表
+        //   「这些笔记属于未分类」，只代表「这批文件没告诉你分类」。
+        //
+        // ❗ 已知局限：同步侧如果**所有**笔记都在根下，那么一次真正的
+        //   「全部移回未分类」传不过来。取这个舍弃是因为反方向的代价大得多：
+        //   静默把一批笔记的分类抹掉，而且不进 `ImportReport` 的任何字段。
+        let saw_dirs = files.iter().any(|(_, rel)| !rel.is_empty());
+
         let mut rep = ImportReport {
             created: 0,
             updated: 0,
@@ -281,7 +292,7 @@ impl DataStore {
             // 报告里用**相对路径**而不是光文件名：出问题的往往正是多层目录里
             // 的同名文件，只报 `x.md` 用户根本分不出是哪一个。
             let label = rel_label(&rel_dirs, &path);
-            match self.import_one(&path, &rel_dirs, &mut claimed) {
+            match self.import_one(&path, &rel_dirs, &mut claimed, saw_dirs) {
                 // 墓碑：既没建也没更新，不能计进 created/updated，否则报告里
                 // 会出现一条根本没发生的变更。
                 Ok(o) if o.in_trash => rep.in_trash.push(label),
@@ -314,6 +325,9 @@ impl DataStore {
         path: &std::path::Path,
         rel_dirs: &[String],
         claimed: &mut std::collections::HashSet<String>,
+        // 本次导入里**至少有一个**文件落在子目录里。见更新分支的注释。
+        // （用 `//` 而不是 `///`：文档注释不能标在函数参数上。）
+        saw_dirs: bool,
     ) -> Result<ImportOne, String> {
         let stem = path
             .file_stem()
@@ -400,7 +414,19 @@ impl DataStore {
                 // ❗ 这同时是 M6 同步能传递「移动文件夹」的**必要条件**：
                 //   同步过来的笔记带着 `pastepanda_id`，三级匹配第一步就命中 id，
                 //   永远走这一支——不在这里设的话，前面两处改完也白搭。
-                self.note_set_folder(&id, folder_id.as_deref())?;
+                //
+                // ❗ 但不能**无条件**调（2026-09-07 修）：`folder_id` 为 `None` 有两种
+                //   含义，而它们要求相反的行为——
+                //     · 「源头说它属于未分类」（同步传过来的移动）⇒ 该挪；
+                //     · 「源头根本没携带分类信息」（用户单独重导一个子目录，
+                //       .md 带 `pastepanda_id` 但 `rel_dirs` 全空）⇒ 不能挪，
+                //       否则这批笔记的分类被整批抹成未分类，而且不进 `ImportReport`
+                //       的任何字段 ⇒ 静默丢分类。
+                //   `saw_dirs` 就是区分这两种的那一位；本文件自己在子目录里时
+                //   （`folder_id.is_some()`）含义无歧义，总是该挪。
+                if saw_dirs || folder_id.is_some() {
+                    self.note_set_folder(&id, folder_id.as_deref())?;
+                }
                 (id, false)
             }
             None => {
@@ -422,9 +448,19 @@ impl DataStore {
             self.note_set_summary(&note_id, Some(sm))?;
         }
 
-        if !parsed.tags.is_empty() {
-            let ids = self.ensure_tag_ids(&parsed.tags)?;
-            self.note_set_tags(&note_id, &ids)?;
+        // ❗ `None` 与 `Some([])` 要求相反的行为（2026-09-07 改，见 `ParsedNote::tags`）：
+        //   旧代码是 `if !parsed.tags.is_empty()`，把两者归成了一类 ⇒
+        //   **标签的删除永远同步不过去**，而 `same_version` 又比标签 ⇒
+        //   那篇笔记每轮判「没落地」⇒ 游标永久夹住 ⇒ 拨号风暴。
+        match parsed.tags.as_deref() {
+            // 源头没携带标签信息（没 frontmatter / 没 `tags:` 键）——不动。
+            None => {}
+            // 源头明确声明了标签集（含空集）——整体替换。
+            // `note_set_tags` 已做「集没变就不写」，所以重复导入不会造脏。
+            Some(names) => {
+                let ids = self.ensure_tag_ids(names)?;
+                self.note_set_tags(&note_id, &ids)?;
+            }
         }
 
         Ok(ImportOne {

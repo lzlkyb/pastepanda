@@ -342,7 +342,14 @@ impl DataStore {
         let conn = self.lock_conn();
         let n = conn
             .execute(
-                "UPDATE notes SET folder_id = ?1, updated_ms = ?3 WHERE id = ?2",
+                // ❗ `MAX(?3, updated_ms + 1)` 而不是直接赋 `?3`（2026-09-07 修）。
+                //   这里曾是全项目**唯一**一处直接赋值的写入点，其余四处都是 MAX。
+                //   单看它不会倒退（`?3` 是 `hlc_now()` ≥ floor ≥ 库内最大值），但一旦
+                //   有未来戳被写进本地行而 HLC 下界还没抬（对端时钟超前、absorb 拒了的
+                //   那个窗口），移动这篇笔记就会把 `updated_ms` **往回拉**，
+                //   于是下轮同步对端那份更旧的反而判胜并覆盖，还额外生一份冲突副本。
+                //   「全项目唯一的例外」本身就是缺陷，不靠不变式兜着。
+                "UPDATE notes SET folder_id = ?1, updated_ms = MAX(?3, updated_ms + 1) WHERE id = ?2",
                 rusqlite::params![folder_id, note_id, ms],
             )
             .map_err(|e| e.to_string())?;

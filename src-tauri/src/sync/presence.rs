@@ -384,11 +384,31 @@ fn finish_listener(sock: UdpSocket) -> Result<UdpSocket, String> {
 ///
 /// ❗ 复用 `lan_sync` 那套（带 30 秒网卡缓存），不重写一份：
 /// `netdev::get_interfaces()` 不便宜，而它已经在招呼包路径上被缓存过了。
-fn announce_all_ifaces(packet: &[u8]) -> Result<(), String> {
+fn announce_all_ifaces(
+    me: &NodeIdentity,
+    endpoint_port: u16,
+    now_ms: i64,
+) -> Result<(), String> {
     let mut sent = 0usize;
     let mut last = String::new();
-    for ifaddr in crate::lan_sync::multicast_ifaces() {
-        match crate::lan_sync::send_via_iface(&ifaddr, GROUP, PORT, packet) {
+    for (i, ifaddr) in crate::lan_sync::multicast_ifaces().into_iter().enumerate() {
+        // 🔴 每块网卡**各建一份包、ts 不同**（2026-09-07 修）。
+        //
+        //    旧写法是上层 `build()` 一次、这里把**同一份字节**往每块网卡各发一份，
+        //    于是 N 份包带着**同一个 `ts`**。而接收侧的严格递增重放检查
+        //    （`wire.ts <= entry.last_ts` ⇒ `return Heard::Replay`）就在学习源地址
+        //    那几行**之前**：第一份被接受并写 `last_ts`，其余每一份都被当重放
+        //    丢掉、**永远走不到学地址**。后果：`service::target()` 只拿到一个候选地址，
+        //    如果那一个是不可路由的网卡（Hyper-V / VMware 虚拟网卡很常见），
+        //    打洞就失败、回落公共 relay——而 `transport_of()` 仍然报 "lan"。
+        //
+        //    `now_ms + i` 而不是改接收侧的检查顺序：把重放检查挪到学地址之后，
+        //    等于允许一个第三方重放旧包把**自己的 IP** 登记到那个 node_id 名下；
+        //    而每包不同 ts 既保住了严格递增的重放防护，也让 N 个源地址都能被学到。
+        //    代价：每次宣告多签 N-1 次名（ed25519，微秒级）与最多几毫秒的 ts 偏差，
+        //    而 `CLOCK_WINDOW_MS` 是分钟级的，不会因此被卡。
+        let packet = build(me, endpoint_port, now_ms + i as i64)?;
+        match crate::lan_sync::send_via_iface(&ifaddr, GROUP, PORT, &packet) {
             Ok(()) => sent += 1,
             Err(e) => {
                 // 虚拟网卡发不出去是常态，逐块 warn 会刷屏
@@ -406,8 +426,8 @@ fn announce_all_ifaces(packet: &[u8]) -> Result<(), String> {
 
 /// 喊一次。
 pub fn announce_once(me: &NodeIdentity, endpoint_port: u16, now_ms: i64) -> Result<(), String> {
-    let packet = build(me, endpoint_port, now_ms)?;
-    announce_all_ifaces(&packet)
+    // 包在 `announce_all_ifaces` 里**逐网卡**建（每份 ts 不同），理由写在那里。
+    announce_all_ifaces(me, endpoint_port, now_ms)
 }
 
 // ===== 后台线程 =====

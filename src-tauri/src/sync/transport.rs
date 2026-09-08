@@ -240,7 +240,24 @@ pub async fn read_dir_with(
     stall: Duration,
 ) -> Result<u64, String> {
     let mut total = 0u64;
+    // 🔴 条目数上限（2026-09-07 新增）。本循环原有三道门：
+    //    单文件 `MAX_FILE_BYTES`、总量 `MAX_TRANSFER_BYTES`、每次读 `stall` 超时。
+    //    但**没有条目数上限**，而 `total` 只累加声明长度：
+    //    对端持续发**零长度**文件时，`total` 恒为 0 ⇒ 永不触发总量上限；
+    //    每个条目又都很快到达 ⇒ 永不停滞 ⇒ 无限循环写满暂存目录所在盘。
+    //
+    //    上限取得很宽松：一次增量里的条目数 = 笔记数 + 附件数 + 几个元文件，
+    //    真实库上万条也远低于它；它只用来接住「无限发」这一种。
+    const MAX_ENTRIES: usize = 200_000;
+    let mut entries = 0usize;
     loop {
+        entries += 1;
+        if entries > MAX_ENTRIES {
+            return Err(format!(
+                "这次传输的条目数超过上限（{}），已中断",
+                MAX_ENTRIES
+            ));
+        }
         let mut n = [0u8; 4];
         stalled("读名字长度", stall, async {
             r.read_exact(&mut n)

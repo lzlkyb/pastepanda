@@ -5836,7 +5836,7 @@ fn test_md_frontmatter_escapes_risky_titles() {
 
     // 带逗号的标签读回来仍是**一个**标签——旧的 `tags: [a, b]` 写法在这里就碎成两个了
     let back = markdown_to_note(&md, "x");
-    assert_eq!(back.tags, vec!["工作".to_string(), "NC, 二开".to_string()]);
+    assert_eq!(back.tags, Some(vec!["工作".to_string(), "NC, 二开".to_string()]));
 
     // 复制到剪贴板那份不写 id
     assert!(!note_to_markdown(&n, false).contains("pastepanda_id"));
@@ -5849,7 +5849,7 @@ fn test_md_roundtrip_keeps_title_tags_body() {
     let back = markdown_to_note(&md, "文件名");
 
     assert_eq!(back.title, "会议纪要: 8/29");
-    assert_eq!(back.tags, vec!["工作".to_string()]);
+    assert_eq!(back.tags, Some(vec!["工作".to_string()]));
     assert_eq!(back.content, "第一行\n\n[[某个链接]] 原样", "wiki-link 必须一字不改");
     assert_eq!(back.id.as_deref(), Some(n.id.as_str()));
 }
@@ -5880,7 +5880,50 @@ fn test_md_parse_degrades_instead_of_failing() {
 fn test_md_parse_accepts_inline_tag_array() {
     // Obsidian 自己常写行内数组，旧版 noteToMarkdown 也是
     let p = markdown_to_note("---\ntitle: T\ntags: [工作, SQL]\n---\n\nbody", "x");
-    assert_eq!(p.tags, vec!["工作".to_string(), "SQL".to_string()]);
+    assert_eq!(p.tags, Some(vec!["工作".to_string(), "SQL".to_string()]));
+}
+
+#[test]
+fn test_md_parse_distinguishes_absent_from_empty_tags() {
+    // 2026-09-07：「没有 tags 键」与「tags 键在、但是空」必须分开。
+    // 前者是「没说」⇒ 导入时不动本地标签；后者是「说了没标签」⇒ 该清空。
+    // 归成一类（旧行为）的后果：标签的删除永远同步不过去，而 `same_version`
+    // 又要比标签 ⇒ 这篇笔记永远落不了地，游标被永久夹在它之前。
+
+    // ① 完全没 frontmatter
+    assert_eq!(markdown_to_note("正文", "x").tags, None);
+    // ② 有 frontmatter 但没 tags 键
+    assert_eq!(
+        markdown_to_note("---\ntitle: T\n---\n\nbody", "x").tags,
+        None,
+        "没声明就是 None"
+    );
+    // ③ 行内空数组
+    assert_eq!(
+        markdown_to_note("---\ntitle: T\ntags: []\n---\n\nbody", "x").tags,
+        Some(vec![]),
+        "`tags: []` 是明确的「清空」"
+    );
+    // ④ 键在、值空（块式列表一条都没写）——导出侧给无标签笔记写的就是这个形状
+    assert_eq!(
+        markdown_to_note("---\ntitle: T\ntags:\n---\n\nbody", "x").tags,
+        Some(vec![]),
+        "有键无值也是「清空」"
+    );
+}
+
+#[test]
+fn test_md_export_always_writes_tags_key() {
+    // 导出（带 id 那份，同步与 vault 走的就是它）必须写 `tags:` 键，
+    // 否则上面那个区分等于没做：清空了标签的笔记导出后看起来像「没说」。
+    let n = mk_note_for_md("无标签", "body", &[]);
+    let md = note_to_markdown(&n, true);
+    assert!(md.contains("tags:"), "带 id 导出必须写 tags 键：{md}");
+    assert_eq!(markdown_to_note(&md, "x").tags, Some(vec![]));
+
+    // 剪贴板那份（无 id，给人看的）不写空键
+    let md2 = note_to_markdown(&n, false);
+    assert!(!md2.contains("tags:"), "复制给人的那份不该带空键：{md2}");
 }
 
 #[test]
@@ -6289,6 +6332,115 @@ fn test_vault_import_deep_dirs_flatten_without_overwriting() {
     let folders = store.folder_list().unwrap();
     assert!(folders.iter().all(|f| f.depth <= MAX_FOLDER_DEPTH));
     assert!(!folders.iter().any(|f| f.name == "D" || f.name == "E"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 🔴 回归（2026-09-07）：**平铺**导入不能把笔记从文件夹里拽到根目录。
+///
+/// `note_import_dir` 给每个文件算一个 `folder_id`，落根目录的文件算出来是
+/// `None`。更新分支以前无条件 `note_set_folder(&id, None)` ⇒ 用户把几个 `.md`
+/// 单独扔进一个目录再导一次（改错别字的常见做法），库里的文件夹结构就被清平了。
+///
+/// 判据是「这次导入**整体**有没有出现过目录」（`saw_dirs`），不是「这一个文件
+/// 在不在目录里」——否则真正的 vault 里，根目录那些「未分类」笔记又永远动不了。
+#[test]
+fn test_vault_import_flat_files_do_not_yank_notes_out_of_folders() {
+    let store = make_store();
+    let work = store.folder_create("工作", None).unwrap();
+    let n = store.note_create(None, "会议纪要", "旧正文").unwrap();
+    store.note_set_folder(&n.id, Some(&work.id)).unwrap();
+
+    // 全平铺：整个目录里一个子目录都没有
+    let flat = tmp_vault_dir("flat");
+    std::fs::write(
+        flat.join("会议纪要.md"),
+        format!("---\ntitle: 会议纪要\npastepanda_id: {}\n---\n\n改过的正文", n.id),
+    )
+    .unwrap();
+    let rep = store.note_import_dir(flat.to_str().unwrap()).unwrap();
+    assert_eq!(rep.updated, 1, "该按 id 认出是同一篇，而不是新建；created={}", rep.created);
+
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(got.content, "改过的正文", "正文该更新（证明这一篇真被处理过）");
+    assert_eq!(
+        got.folder_id.as_deref(),
+        Some(work.id.as_str()),
+        "平铺导入不该把它拽出「工作」"
+    );
+
+    // 反面：同一次导入里**出现过目录**，归属就该按文件所在位置定——
+    // 少了这一半，上面那个守卫写成「永远不动文件夹」也能绿。
+    let tree = tmp_vault_dir("tree");
+    std::fs::create_dir_all(tree.join("归档")).unwrap();
+    std::fs::write(
+        tree.join("归档").join("会议纪要.md"),
+        format!("---\ntitle: 会议纪要\npastepanda_id: {}\n---\n\n再改一次", n.id),
+    )
+    .unwrap();
+    store.note_import_dir(tree.to_str().unwrap()).unwrap();
+
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    let folders = store.folder_list().unwrap();
+    let arch = folders.iter().find(|f| f.name == "归档").expect("该建出「归档」");
+    assert_eq!(
+        got.folder_id.as_deref(),
+        Some(arch.id.as_str()),
+        "带目录的导入要按目录归位"
+    );
+
+    std::fs::remove_dir_all(&flat).ok();
+    std::fs::remove_dir_all(&tree).ok();
+}
+
+/// 🔴 回归（2026-09-07）：frontmatter 里「没有 `tags:` 键」= 源头没携带标签信息，
+/// 不该动本地标签。用户自己用 Obsidian 新建/编辑的 `.md` 就是这个形状。
+#[test]
+fn test_vault_import_absent_tags_key_leaves_local_tags_alone() {
+    let store = make_store();
+    let t = store.create_tag("架构", "#111").unwrap();
+    let n = store.note_create(None, "T", "旧").unwrap();
+    store.note_set_tags(&n.id, &[t.id.clone()]).unwrap();
+
+    let dir = tmp_vault_dir("tags-absent");
+    std::fs::write(
+        dir.join("T.md"),
+        format!("---\ntitle: T\npastepanda_id: {}\n---\n\n新", n.id),
+    )
+    .unwrap();
+    store.note_import_dir(dir.to_str().unwrap()).unwrap();
+
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(got.content, "新", "正文该更新（证明这一篇真被处理过）");
+    assert_eq!(got.tags.len(), 1, "文件没声明标签 ⇒ 不该动本地标签，实得 {:?}", got.tags);
+    assert_eq!(got.tags[0].name, "架构");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 🔴 回归（2026-09-07）：`tags: []`（键在、但是空）= 源头明确说「这篇没标签」，
+/// 必须清空本地关联。旧类型是 `Vec<String>`，这两种全变成空数组 ⇒ 只能保守处理
+/// ⇒ **标签的删除永远同步不过去**，而 `sync::engine::same_version` 又是比标签的
+/// ⇒ 那篇笔记每轮判「没落地」⇒ 游标永久夹住 ⇒ 拨号风暴。
+#[test]
+fn test_vault_import_empty_tags_key_clears_local_tags() {
+    let store = make_store();
+    let t = store.create_tag("架构", "#111").unwrap();
+    let n = store.note_create(None, "T", "旧").unwrap();
+    store.note_set_tags(&n.id, &[t.id.clone()]).unwrap();
+
+    let dir = tmp_vault_dir("tags-empty");
+    std::fs::write(
+        dir.join("T.md"),
+        format!("---\ntitle: T\ntags: []\npastepanda_id: {}\n---\n\n新", n.id),
+    )
+    .unwrap();
+    store.note_import_dir(dir.to_str().unwrap()).unwrap();
+
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert!(got.tags.is_empty(), "`tags: []` 是明确的「清空」，实得 {:?}", got.tags);
+    // 只解关联，标签本体不该被删（它可能还挂在其它笔记上）
+    assert!(store.get_tags().unwrap().iter().any(|x| x.id == t.id));
 
     std::fs::remove_dir_all(&dir).ok();
 }

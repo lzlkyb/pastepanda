@@ -19,7 +19,17 @@ use super::*;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParsedNote {
     pub title: String,
-    pub tags: Vec<String>,
+    /// frontmatter 里的 `tags`。
+    ///
+    /// 🔴 `Option` 而不是 `Vec`（2026-09-07 改）：这两个情况必须分开，
+    ///   因为它们要求**相反**的导入行为：
+    ///     · `None`（根本没有 `tags:` 键）= 源头没携带标签信息 ⇒ **不动**本地标签；
+    ///     · `Some([])`（有键、但是空）= 源头明确说「这篇没标签」 ⇒ **清空**。
+    ///   旧类型是 `Vec<String>`，两者全变成空数组，于是 `note_import_dir` 只能
+    ///   保守处理（`if !tags.is_empty()`）⇒ **标签的删除永远同步不过去**，
+    ///   而 `sync::engine` 的 `same_version` 又是比标签的 ⇒ 那篇笔记每轮判
+    ///   「没落地」⇒ 游标永久夹住 ⇒ 拨号风暴（见 `service.rs` 的 `cursor_stalled`）。
+    pub tags: Option<Vec<String>>,
     /// 导出时写的 `pastepanda_id`。外部新建的文件没有它。
     pub id: Option<String>,
     /// frontmatter 里的 `summary`（B1 轻量 AI）。没有这一行就是 None。
@@ -133,6 +143,15 @@ pub fn to_markdown(v: MdOut) -> String {
         for t in v.tags {
             s.push_str(&format!("  - {}\n", yaml_scalar(t)));
         }
+    } else if v.id.is_some() {
+        // 🔴 导出路径（带 `pastepanda_id`）**没标签也要写这一行**（2026-09-07）。
+        //    不写的话「没有 tags 键」与「标签被清空了」在文件上完全一样，
+        //    而导入侧正是靠这个区分「不动本地标签」跟「清空本地标签」的
+        //    （见 `ParsedNote::tags`）——于是**标签的删除永远同步不过去**。
+        //
+        // ❗ 只在带 id 时写：无 id 那条是「复制为 Markdown」，给人看的，
+        //   挂一行 `tags: []` 只是噪声（而它也不会被导回来）。
+        s.push_str("tags: []\n");
     }
     if !v.created.is_empty() {
         s.push_str(&format!("created: {}\n", yaml_scalar(v.created)));
@@ -158,7 +177,8 @@ pub fn to_markdown(v: MdOut) -> String {
 pub fn markdown_to_note(text: &str, fallback_title: &str) -> ParsedNote {
     let plain = |content: &str| ParsedNote {
         title: fallback_title.to_string(),
-        tags: Vec::new(),
+        // 没 frontmatter 就是「没说」，不是「说了没标签」——导入时不动本地标签。
+        tags: None,
         id: None,
         summary: None,
         content: content.trim_start_matches('\n').to_string(),
@@ -189,7 +209,8 @@ pub fn markdown_to_note(text: &str, fallback_title: &str) -> ParsedNote {
             if let Some(item) = line.trim_start().strip_prefix("- ") {
                 let t = yaml_unscalar(item);
                 if !t.is_empty() {
-                    out.tags.push(t);
+                    // 走到这里说明前面见过 `tags:` 键，`out.tags` 已经是 `Some`。
+                    out.tags.get_or_insert_with(Vec::new).push(t);
                 }
                 continue;
             }
@@ -213,18 +234,26 @@ pub fn markdown_to_note(text: &str, fallback_title: &str) -> ParsedNote {
                 out.id = if id.is_empty() { None } else { Some(id) };
             }
             "tags" => {
+                // ❗ 只要见到 `tags:` 键，就至少是 `Some(vec![])`——
+                //   「有键但空」是一个**明确的声明**（该清空），
+                //   跟「根本没这个键」（不动）是两回事。见 `ParsedNote::tags`。
                 let inline = v.trim();
                 if inline.is_empty() {
-                    in_tags = true; // 块式，标签在下几行
+                    in_tags = true; // 块式，标签在下几行（也可能一行都没有）
+                    out.tags.get_or_insert_with(Vec::new);
+                } else if inline == "[]" {
+                    // 行内空数组：同样是「明确说没标签」。
+                    out.tags = Some(Vec::new());
                 } else {
                     // 兼容行内数组 [a, b]（旧版 noteToMarkdown 写的就是这个，
                     // 且 Obsidian 自己也常用）
                     let body = inline.trim_start_matches('[').trim_end_matches(']');
-                    out.tags = body
-                        .split(',')
-                        .map(|t| yaml_unscalar(t))
-                        .filter(|t| !t.is_empty())
-                        .collect();
+                    out.tags = Some(
+                        body.split(',')
+                            .map(|t| yaml_unscalar(t))
+                            .filter(|t| !t.is_empty())
+                            .collect(),
+                    );
                 }
             }
             _ => {} // created / updated 不导回来：库里的时间戳是库自己的事

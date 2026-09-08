@@ -72,8 +72,24 @@ static LOCAL_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
     //      于是 `apply_delta` 的回声拦截永远比不相等，每轮再生一批冲突副本。
     //   加上 `\b` 后，`e`/`s` 前面都是字母（无边界），两条路一起堵死；
     //   而 `file:///` 后面的 `C` 前面是 `/`，边界成立，正常路径不受影响。
+    //
+    // 🔴 中段**必须允许空格**（2026-09-07 修）。原来是 `[^\s"'()<>]*?`，
+    //    排掉了空白 ⇒ Windows 用户名带空格时（`C:\Users\John Doe\...`，极常见）
+    //    整条引用就匹配不上，而后果是静默的一整条链：
+    //      `scan_local_refs` 返回空 ⇒ `stage_asset` 一次都不调 ⇒ 附件不搬、
+    //      而 `assets_skipped` 也不 +1；`to_portable` 原样返回 ⇒ 发出去的正文里
+    //      留着发送方的本机绝对路径（顺便泄露用户名）；对端 `to_local` 只认
+    //      `pp-asset:` 前缀、找不到 ⇒ 图**永久断**。全程无一处 warn。
+    //
+    // ❗ 但不能只把 `\s` 去掉就完事：惰性量词会跨过无关文字去凑后面的
+    //   `/images/<hash>.<ext>`。例子：`see C:/notes 然后 ![x](D:/y/images/aaa.png)`
+    //   —— 从 `C:/` 起步也能匹到末尾那个 hash。所以同时排掉 `[` `]`：
+    //   那种跨越必然含有 `![x](` 里的方括号或圆括号。
+    //   残留限制：路径里真带方括号时仍会漏（Windows 文件名允许 `[]`）——
+    //   但变的那一段只是用户名，而带方括号的 Windows 用户名几乎不存在；
+    //   排掉换行保证不会跨行。
     Regex::new(
-        r#"(?i)(?:file:/{2,3})?\b[A-Za-z]:[/\\][^\s"'()<>]*?[/\\]images[/\\]([0-9a-f]{32})\.([a-z0-9]{1,5})"#,
+        r#"(?i)(?:file:/{2,3})?\b[A-Za-z]:[/\\][^"'()<>\[\]\r\n]*?[/\\]images[/\\]([0-9a-f]{32})\.([a-z0-9]{1,5})"#,
     )
     .expect("图片引用正则写错了")
 });
@@ -243,10 +259,22 @@ pub fn adopt_assets(staged_assets: &Path, images_dir: &Path) -> Result<(usize, u
         // 先写临时再原子 rename，同 `commands/images.rs` 的落盘做法：
         // 写一半崩掉不该在 images 目录里留下一张残缺的图（而它的名字
         // 又是内容 hash，下次会被当成“已有”直接跳过——永久坏图）。
+        // 🔴 单个文件失败**不能用 `?` 直接返回**（2026-09-07 修）。
+        //    旧写法一旦第 3 张图碰上磁盘满，后面 47 张全不落盘，而且——
+        //    更坑的是那些文件**仍然躺在暂存目录里**，于是 `apply_delta` 里
+        //    那条附件清单核对（旧条件带着 `!p.is_file()`）会把它们当成「到了」，
+        //    游标照推 ⇒ 那几张图永久断且下一轮不重来。
+        //    现在：逐个 warn 后继续，落不下的那几个由清单核对（已改成只看
+        //    目的地 images/）报成 `missing_files` ⇒ 游标被按住 ⇒ 下一轮重来。
         let tmp = crate::atomic_write::unique_tmp_path(&dst);
-        std::fs::copy(&src, &tmp).map_err(|e| format!("落附件失败 {:?}: {e}", name))?;
-        crate::atomic_write::finish_rename(&tmp, &dst)
-            .map_err(|e| format!("附件改名失败 {:?}: {e}", name))?;
+        if let Err(e) = std::fs::copy(&src, &tmp) {
+            log::warn!("[Sync] 落附件失败，跳过这一个继续 {:?}: {}", name, e);
+            continue;
+        }
+        if let Err(e) = crate::atomic_write::finish_rename(&tmp, &dst) {
+            log::warn!("[Sync] 附件改名失败，跳过这一个继续 {:?}: {}", name, e);
+            continue;
+        }
         landed += 1;
     }
     Ok((landed, skipped))

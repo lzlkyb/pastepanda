@@ -139,7 +139,14 @@ fn same_version(local: &Note, incoming_md: &str) -> bool {
     if p.title != local.title || p.content != local.content {
         return false;
     }
-    let mut theirs: Vec<&str> = p.tags.iter().map(|s| s.as_str()).collect();
+    // ❗ `p.tags` 现在是 `Option`（见 `ParsedNote::tags`）。
+    //   `None` = 文件根本没声明标签 ⇒ 这一维不比（没声明就不算差异）。
+    //   同步导出总是写 `tags:` 键（`note_to_markdown` 带 id），所以同步这条路上
+    //   它恒为 `Some`；`None` 只会出现在外部工具无 frontmatter 的文件上。
+    let Some(their_tags) = p.tags.as_deref() else {
+        return true;
+    };
+    let mut theirs: Vec<&str> = their_tags.iter().map(|s| s.as_str()).collect();
     let mut mine: Vec<&str> = local.tags.iter().map(|t| t.name.as_str()).collect();
     theirs.sort_unstable();
     mine.sort_unstable();
@@ -343,6 +350,22 @@ pub fn apply_delta(
     //    跨机没有可比性；而增量目录里传的本来就是目录层级。
     let folder_rel = DataStore::sync_folder_dir_map(&store.folder_list()?, Path::new(""));
 
+    // 清单与墓碑的原文。
+    //
+    // ❗ 读取提到附件那段**之前**（2026-09-07）：附件清单核对发现文件没落盘时
+    //   要按住游标，而那需要一个时间戳——它只能从清单里来。
+    //   只是把**读文件**提前，不动下面「先吸收时钟再写本地」的次序。
+    let manifest = std::fs::read_to_string(dir.join(MANIFEST)).unwrap_or_default();
+    let tomb_raw = std::fs::read_to_string(dir.join(TOMBSTONES)).unwrap_or_default();
+    // 清单里的**最小**戳。两个地方用它把游标按在这一批之前：
+    // 附件没落盘（①′）与对端时钟超前而中止本轮（①）。
+    let batch_min_ms = manifest
+        .lines()
+        .chain(tomb_raw.lines())
+        .filter_map(|l| l.split('\t').nth(1))
+        .filter_map(|v| v.parse::<i64>().ok())
+        .min();
+
     // ①′ W1：附件先落盘，再把暂存目录里所有 md 的便携引用改写回本机绝对路径。
     //
     // 🔴 **这一步必须在下面的逐篇循环之前**，不能拆到循环里。
@@ -377,9 +400,30 @@ pub fn apply_delta(
                 log::warn!("[Sync] 附件清单里的名字不合法，已忽略：{}", want);
                 continue;
             };
-            if !p.is_file() && !images.join(p.file_name().unwrap_or_default()).is_file() {
+            // 🔴 只看**目的地** `images/`（2026-09-07 修）。
+            //    旧条件是 `!p.is_file() && !images.join(..).is_file()`，而 `p` 指向
+            //    **暂存**目录；`adopt_assets` 是拷贝不是移动，所以一个文件就算
+            //    落盘**失败**也仍然在暂存里 ⇒ `p.is_file()` 为 true ⇒ 短路判定「到了」
+            //    ⇒ `missing_files` 不加、游标照推。
+            //    「暂存里有」只证明**传输**成功，不证明**落盘**成功——
+            //    而笔记正文里的引用指向的是 `images/`，所以该问的只有它。
+            if !images.join(p.file_name().unwrap_or_default()).is_file() {
                 rep.missing_files += 1;
-                log::warn!("[Sync] 附件清单说有但文件没到：{}", want);
+                // 🔴 必须同时标 unsettled（2026-09-07 修）。旧代码只加计数器，
+                //    而游标**只**由 `unsettled_min_ms` 夹（`session.rs`）——
+                //    `note_unsettled` 全项目只有两个调用点，`.md` 缺失那条有、
+                //    附件这两条没有。于是笔记带着指向不存在文件的引用落地、
+                //    `updated_ms` 沉到游标下方，W2 摘要只折 `(id, updated_ms)`
+                //    也看不见 ⇒ 永久断图且无自愈路径。
+                //    旧注释声称「让调用方按住游标」，实际没有。
+                //
+                // ❗ 拿清单的**最小**戳（`batch_min_ms`）而不是精确到「哪篇笔记
+                //   引用了这张图」：附件清单里没有「图 → 笔记」的映射。保守一点（整批重传）
+                //   比漏一张图强，而附件没到本身是罕见情况。
+                if let Some(m) = batch_min_ms {
+                    note_unsettled(&mut rep, m);
+                }
+                log::warn!("[Sync] 附件清单说有但没落到 images/：{}", want);
             }
         }
         rewrite_staged_refs(dir, &images)?;
@@ -391,8 +435,8 @@ pub fn apply_delta(
     //    先吸收，本机接下来发的时间戳才会高于对端那一批；
     //    反过来的话，导入产生的时间戳可能还低于刚收到的那些，
     //    于是本机在自己刚应用的东西之上做的修改，反而判输。
-    let manifest = std::fs::read_to_string(dir.join(MANIFEST)).unwrap_or_default();
-    let tomb_raw = std::fs::read_to_string(dir.join(TOMBSTONES)).unwrap_or_default();
+    //
+    // （`manifest` / `tomb_raw` 已在本函数开头读好，见那里的注释。）
     let remote_max = manifest
         .lines()
         .chain(tomb_raw.lines())
@@ -403,11 +447,35 @@ pub fn apply_delta(
         match store.absorb_remote_clock(rm) {
             crate::sync::hlc::Absorb::Ok => {}
             crate::sync::hlc::Absorb::TooFarAhead { ahead_ms } => {
+                // 🔴 拒绝吸收就必须**整轮中止**，不能只打个 warn 就往下走
+                //    （2026-09-07 修）。旧行为把偏斜守卫彻底架空了：
+                //      导入照走 → 下面④ 把对端原始 `updated_ms` 直写 `notes`
+                //      （`UPDATE notes SET updated_ms = ?2`，零校验）→ 重启时
+                //      `DataStore::new` 取 `MAX(updated_ms)` 当新下界 ⇒ 本机 HLC
+                //      永久跳到那个未来时间。**没有任何界面能改那些行，只能改库。**
+                //      真正的伤害不是时间显示错，是本机从此给所有笔记盖未来戳
+                //      ⇒ 它的笔记谁也覆盖不了。
+                //
+                // ❗ 为何不选「导入但把写入的 `updated_ms` 夹到下界以下」：
+                //    那等于篡改对端的版本号，LWW 会无根据地偏向本机。
+                //    也不选「只加界面告警」——那等于不修。
+                //
+                // ❗ 附件已经在 ①′ 落盘了，不回滚：它们是内容寻址的（文件名 = 内容 md5）、
+                //    不带时间戳，无法被时钟污染；下一轮重来时它们正好已经在位。
+                //
+                // 游标：拿清单里的**最小**戳标成 unsettled，于是 `session.rs` 会把
+                // 游标夹在它之前 ⇒ 校好时之后这一批会重传，一篇不丢。
                 log::warn!(
-                    "[Sync] 对端时钟比本机快 {} 毫秒，拒绝吸收。                     本机之后无法覆盖那台机器的笔记——请检查两台机器的系统时间。",
+                    "[Sync] 对端时钟比本机快 {} 毫秒，**本轮不导入任何笔记**。\
+                     写进去会让本机的版本时钟永久跳到未来、不可恢复。\
+                     请校对两台机器的系统时间，之后会自动重试。",
                     ahead_ms
                 );
                 rep.clock_too_far_ahead_ms = Some(ahead_ms);
+                if let Some(m) = batch_min_ms {
+                    note_unsettled(&mut rep, m);
+                }
+                return Ok(rep);
             }
         }
     }
