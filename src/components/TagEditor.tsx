@@ -7,8 +7,22 @@ import { useToast } from "@/components/Toast";
 import { X, Search } from "lucide-react";
 import styles from "./TagEditor.module.css";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { HUE } from "@/lib/palette";
 
-const PRESET_COLORS = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
+/**
+ * 新建标签时给用户挑的预设色。
+ *
+ * 🔴 引 `HUE`（规范第 1 层）而不写裸 hex。2026-09-08 改引用时
+ * 色值与顺序**一字未改**——它们本来就是 Tailwind 500 档，
+ * 只是以前与 `CONTENT_TYPE_META` 、`tag.rs` 种子表各写一份。
+ *
+ * ❗ **故意不放灰。** 按规范，灰只能表示「无特征」（日志、纯文本那类），
+ * 不该出现在「给你新建的标签挑一个色」这个场景里。
+ */
+const PRESET_COLORS = [
+  HUE.blue, HUE.green, HUE.orange, HUE.purple, HUE.red,
+  HUE.pink, HUE.teal, HUE.amber, HUE.indigo,
+];
 
 interface TagEditorProps {
   open: boolean;
