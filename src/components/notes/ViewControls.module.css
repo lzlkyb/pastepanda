@@ -85,7 +85,10 @@
 
 .popHint {
   margin-left: auto;
-  font-size: 10px;
+  /* 抬到下限 11（批 4）。写带回退值的 token：本组件有两个消费者
+     （`KnowledgeView` 在 `.shell` 里、`KbInboxPanel` 不一定），
+     两边算出来都是 11px。 */
+  font-size: var(--kb-fs-badge, 11px);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -222,7 +225,7 @@
 
 .hint {
   margin-top: 7px;
-  font-size: 10.5px;
+  font-size: var(--kb-fs-badge, 11px);
   color: var(--text-muted);
   line-height: 1.5;
 }

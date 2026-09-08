@@ -26,6 +26,18 @@ import Lenis from "lenis";
 export function useSmoothScroll(
   wrapperRef: RefObject<HTMLElement | null>,
   contentRef: RefObject<HTMLElement | null>,
+  /**
+   * 🔴 节点会被重挂时必传：一个每次重挂都变的值。
+   *
+   * 下面那个 effect 的依赖是两个 `RefObject`，而它们的**身份永不变**
+   * ⇒ effect 只跑一次。只要宿主组件自己不卸载、而那两个 **DOM 节点**卸载重挂了
+   * （比如 `KnowledgeView` 切到回收站再切回来），Lenis 就会留在**已分离的节点**上，
+   * 新节点没人接——现象是「去过一趟回收站之后，列表的平滑滚动就没了」。
+   * （2026-09-07：这是一个早就存在、审查网格列数 hook 时顺藤摸出来的 bug。）
+   *
+   * 节点常驻的调用方不用传。
+   */
+  remountKey?: number,
 ): RefObject<Lenis | null> {
   const lenisRef = useRef<Lenis | null>(null);
 
@@ -65,7 +77,7 @@ export function useSmoothScroll(
       lenis.destroy();
       lenisRef.current = null;
     };
-  }, [wrapperRef, contentRef]);
+  }, [wrapperRef, contentRef, remountKey]);
 
   return lenisRef;
 }

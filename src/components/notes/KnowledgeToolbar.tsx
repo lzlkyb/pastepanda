@@ -219,7 +219,8 @@ export function KnowledgeToolbar({
               aria-label="清空"
               tabIndex={-1}
             >
-              <X size={11} />
+              {/* 13 而不是 11：按钮视觉尺寸从 18 抬到 20 了（命中 28）。 */}
+              <X size={13} />
             </button>
           )}
 

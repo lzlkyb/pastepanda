@@ -62,19 +62,65 @@
 }
 
 /* 「不在当前列表」提示。用警告色而不是强调色：它不是一个错误，
-   只是「你看到的两栏现在对不上」这个事实。`flex-shrink: 0` 是必需的：
-   旁边是一个 `flex: 1` 的标题输入框，不锁的话它会被压成一列字。 */
-.notInList {
+   只是「你看到的两栏现在对不上」这个事实。
+
+   ❗ 批 4：从 `.head` 里的一个 `flex-shrink: 0` 小胶囊（占 77px，把标题框
+   压到 60px）改成头部下方的**整行**，跟 `.summaryRow` / `.sourceRow` 同一组。
+   横向不紧了，所以文案从 6 个字 + tooltip 换成一句完整的话（见 tsx 注释）。
+   不再需要 `white-space: nowrap`：它已经是自己一行，窄栏下应该折行而不是溢出。 */
+.notInListRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   flex-shrink: 0;
-  padding: 1px 7px;
+  padding: 4px 8px;
   border: 1px solid var(--amber-border, rgba(245, 158, 11, 0.35));
   border-radius: 6px;
   background: var(--amber-light, rgba(245, 158, 11, 0.12));
   color: var(--amber-strong, #B45309);
-  font-size: 10.5px;
+  font-size: var(--kb-fs-badge, 11px);
   font-weight: 600;
-  white-space: nowrap;
-  cursor: default;
+  line-height: 1.55;
+}
+
+/* 图标不跟着文字基线跑：文字可能折成两行，而它应该对齐第一行。
+   1px 的 margin-top 是 12px 图标对 1.55 行高的视觉居中补偿。 */
+.notInListIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* 头部的「更多」按钮。尺寸抄旁边的 `.closeBtn`（26）而不取 `--kb-hit`（28）：
+   两个紧挨的图标按钮差 2px 看得出来，与旁边对齐比对齐全局 token 重要。
+   颜色用 `--text-secondary` 而不是 `.closeBtn` 的 `--text-muted`：
+   它是一个动作入口，不是次要信息。 */
+.moreBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, color 0.15s;
+}
+
+/* 命中区撑到 28（= --kb-hit）而不占布局。inset = (28 − 26) / 2 = 1。
+   旁边 `.closeBtn` 相距 6px，双方各外撑 1px 总共只吃掉 2px，不会盖住它。 */
+.moreBtn::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+}
+
+.moreBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
 }
 
 .closeBtn {
@@ -157,9 +203,10 @@
   gap: 8px;
 }
 
-/* 未保存标记。第三栏没有弹窗那种强制性，所以这个标记必须看得见 */
+/* 未保存标记。第三栏没有弹窗那种强制性，所以这个标记必须看得见。
+   ❗ 10.5 与这句注释自相矛盾，抬到下限 11（批 4）。 */
 .dirtyDot {
-  font-size: 10.5px;
+  font-size: var(--kb-fs-badge, 11px);
   color: var(--orange-solid, #C54A0A);
   padding: 1px 6px;
   border-radius: 5px;
@@ -275,11 +322,17 @@
 
 .blHead:hover { color: var(--text-primary); }
 
+/* 折叠三角。已从文本字符换成 lucide `ChevronRight size={13}`（批 4），
+   跟侧栏 `FolderTree` 的 `.caret` 同口径；不再需要 `font-size`。 */
 .blCaret {
-  font-size: 9px;
   color: var(--text-muted);
-  width: 9px;
   flex-shrink: 0;
+}
+
+/* 展开时转 90°。与 `FolderTree.module.css` 的 `.caretOpen` 逐字相同。 */
+.blCaretOpen {
+  transform: rotate(90deg);
+  transition: transform 0.15s;
 }
 
 .blCount {
@@ -287,7 +340,7 @@
   color: var(--accent-strong);
   border-radius: 20px;
   padding: 1px 7px;
-  font-size: 10px;
+  font-size: var(--kb-fs-badge, 11px);
   font-weight: 700;
 }
 
@@ -327,10 +380,12 @@
   color: var(--accent-strong);
 }
 
-/* 行号只是方位感，不要抢标题的注意力 */
+/* 行号只是方位感，不要抢标题的注意力。
+   ❗ 弱化靠**颜色**而不靠把字号压到下限以下（批 4）：
+   10px 在 125% 缩放下已经难辨，而层级本来就是色阶在表达。 */
 .blLine {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--kb-fs-badge, 11px);
   color: var(--text-muted);
   font-family: ui-monospace, Consolas, monospace;
 }

@@ -58,8 +58,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--kb-hit);
+  height: var(--kb-hit);
   padding: 0;
   border: none;
   border-radius: 5px;
@@ -80,8 +80,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--kb-hit);
+  height: var(--kb-hit);
   padding: 0;
   border: none;
   border-radius: 5px;
@@ -128,8 +128,8 @@
 }
 
 .answer {
-  font-size: 12.5px;
-  line-height: 1.7;
+  font-size: var(--kb-fs-body);
+  line-height: 1.75;
   color: var(--text-primary);
   word-break: break-word;
 }
@@ -151,15 +151,22 @@
    靠 href 前缀选中，与 `CITATION_HREF_PREFIX` 成对（改一头就失效）。 */
 .answer :global(a[href^="#kbqa-ref-"]) {
   display: inline-block;
-  min-width: 14px;
-  padding: 0 4px;
-  margin: 0 1px;
-  border-radius: 3px;
+  /* 🔴 20×20（原先 min-width 14 / line-height 15 / 字号 10）。
+     它是真的可点链接，而且是全页最小的一个。
+
+     ❗ 不用 `::before` 撑命中区：它是行内元素、嵌在回答正文里，
+       向外撑会盖住前后的文字（那些文字本身不可点，但盖上去后
+       鼠标在正文上会变成手型，看着像整句话都能点）。
+       所以这里用**真尺寸**，靠 line-height 把高度撑到 20。 */
+  min-width: 20px;
+  padding: 0 5px;
+  margin: 0 2px;
+  border-radius: 4px;
   background: var(--accent-light);
   color: var(--accent-strong);
-  font-size: 10px;
+  font-size: var(--kb-fs-meta);
   font-weight: 600;
-  line-height: 15px;
+  line-height: 20px;
   text-align: center;
   text-decoration: none;
   vertical-align: 1px;
@@ -210,7 +217,7 @@
 .clip,
 .hint {
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: var(--kb-fs-badge);
 }
 
 .badge {
@@ -218,7 +225,7 @@
   border-radius: 4px;
   background: var(--accent-light);
   color: var(--accent-strong);
-  font-size: 10px;
+  font-size: var(--kb-fs-badge);
   font-weight: 600;
 }
 
@@ -261,7 +268,7 @@
 }
 
 .scope {
-  font-size: 10.5px;
+  font-size: var(--kb-fs-badge);
   color: var(--text-muted);
 }
 
@@ -284,7 +291,15 @@
   background: var(--card-bg);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 11.5px;
+  /* ❗ 从 11.5 抬到 --kb-fs-body（批 4）。这是知识库里**唯一一个“你在这里
+     敲字，但字比别处小”的框**——搜索框与笔记标题框都是 13px。
+     取 --kb-fs-body（12.5）而不是 13：`.answer` 就是这个 token，
+     你敲进去的追问与它产生的回答用同一个字号，一段对话一个声音。
+
+     ❗ 同文件其余 6 处 11/11.5 是按钮与单行标签（.hd/.back/.refs/.ref/
+     .btnPrimary）与引用样式的 .qline（muted + 左边框，比正文小是标准做法），
+     C 稿 §5 要求全抬到 12.5 是把整个面板当正文看，抬了只会把面板撑大。 */
+  font-size: var(--kb-fs-body);
   line-height: 1.45;
   outline: none;
   /* 拖手柄与自动高度互相打架 */

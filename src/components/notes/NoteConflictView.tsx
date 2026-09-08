@@ -126,6 +126,32 @@ export function NoteConflictView({
 
   const adopt = async () => {
     if (!parsed || !origin) return;
+
+    // 🔴 先重新拉一次原笔记，不能直接用 `origin`（2026-09-07 修）。
+    //
+    //    `origin` 是**挂载时的快照**（上面那个 effect 依赖 `[parsed]`，而 `parsed`
+    //    只随 `copyContent` 变）。本视图开着的期间同步完全可能拉来原笔记的改动，
+    //    而那时候：
+    //      ① 下面拿 `origin.title` 写回去就是**旧标题**（旧注释声称用的是
+    //         「原笔记现在的」，那句不成立）；而标题一变，`note_update_from`
+    //         会触发 `rewrite_wiki_links_on` 去改写**其它笔记里的 `[[引用]]`**；
+    //      ② 更重的是用户刚刚比对的 diff 是跟**旧正文**比的，
+    //         直接写就把他从未看过的新正文静默覆盖了。
+    //
+    //    ❗ 发现变了不能默默用新值继续（那仍然是覆盖未看过的内容），
+    //      而是刷新 diff 并要求重新确认。
+    const fresh = await noteGet(parsed.originId);
+    if (!fresh) {
+      setOrigin(null);
+      toast("原笔记已经不在了，无法采用", "error");
+      return;
+    }
+    if (fresh.title !== origin.title || fresh.content !== origin.content) {
+      setOrigin(fresh);
+      toast("原笔记刚被改过（可能是同步拉来的），已重新比对，请再确认一次", "error");
+      return;
+    }
+
     const ok = await confirmDialog({
       title: "用副本那一份替换原笔记",
       // 确认框是纯文本渲染，不要写 Markdown 星号。
@@ -142,7 +168,11 @@ export function NoteConflictView({
     //
     // 标题用**原笔记现在的**：这里采用的是正文，不连带换标题
     // （副本 frontmatter 里那个标题是当时的快照，拿它覆盖会让人意外）。
-    if (!(await noteUpdate(origin.id, origin.title, parsed.losingContent))) {
+    // ❗ 用 `fresh.title` 而不是 `origin.title`：上面刚校过两者相等，这里写 `fresh`
+    //   是为了让「用的是刚读到的那份」在代码上自明。
+    //   残留窗口：确认框弹出到点下去那几秒里仍可能被同步改动——
+    //   那个窗口没封，但它比「整个视图开着的时长」小了一个量级。
+    if (!(await noteUpdate(fresh.id, fresh.title, parsed.losingContent))) {
       setBusy(false);
       return; // 错已弹过
     }

@@ -14,7 +14,7 @@
  * 🔴 红线：无 AI。
  */
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, Trash2, ChevronRight, ChevronDown } from "lucide-react";
+import { RotateCcw, Trash2, ChevronRight, ChevronDown, Folder } from "lucide-react";
 import {
   noteListDeleted,
   noteRestoreDeleted,
@@ -29,7 +29,7 @@ import { relativeTime, countChars, fmtCount } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
 import { TagBadge, TagBadgeMore } from "@/components/TagBadge";
 import { useAppStore } from "@/stores/appStore";
-import { provenanceOf } from "./NoteList";
+import { NoteRowIcon } from "./NoteRowIcon";
 import { excerpt } from "@/lib/notes/excerpt";
 import styles from "../KnowledgeView.module.css";
 /** 只读预览最多渲染多少行。回收站只需要「认出是哪条」，不是阅读器。 */
@@ -216,7 +216,6 @@ export function TrashPanel({
       {rows.map((n) => {
         const open = expanded === n.id;
         const exp = expiryText(daysLeft(n.deleted_at, days));
-        const prov = provenanceOf(n);
         const kind = sourceKindTag(n);
         const chars = countChars(n.content.trim());
         return (
@@ -232,10 +231,19 @@ export function TrashPanel({
               aria-expanded={open}
               onClick={() => setExpanded(open ? null : n.id)}
             >
-              {/* 图标底：来路走公共的 `provenanceOf`（与笔记行同一份）。
-                  展开箭头搭在图标底上角，不再占标题行开头那个位置。 */}
-              <span className={styles.trashIcon} title={prov.label} aria-hidden="true">
-                {prov.icon}
+              {/* 图标底：走公共的 `NoteRowIcon`（与笔记行同一份，含缩略图）。
+                  `.trashIcon` 与 `.rowIcon` 同为 34×34 / radius 11 / 同一套 glass token，
+                  所以能共用同一个图标尺寸。
+
+                  ❗ 展开箭头只能摆在槽**外面**：它原本是 `.trashIcon` 的子元素，
+                    而现在槽里可能是一张 `object-fit: cover` 的图、且带 `overflow: hidden`，
+                    箭头继续放里面会被图盖掉或被圆角剪掉。 */}
+              <span className={styles.trashIconWrap}>
+                <NoteRowIcon
+                  note={n}
+                  className={styles.trashIcon}
+                  thumbClassName={styles.rowIconThumb}
+                />
                 <span className={styles.trashCaret}>
                   {open ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
                 </span>
@@ -260,9 +268,18 @@ export function TrashPanel({
                       {kind.text}
                     </span>
                   )}
-                  {/* 📁 原文件夹 = 「恢复到哪去」。软删不清 `folder_id`，所以这个值是准的。
-                      它比「类型」更影响恢复决策——那是恢复这个动作的直接后果。 */}
-                  <span className={styles.trashFolder}>📁 {folderName(n.folder_id)}</span>
+                  {/* 原文件夹 = 「恢复到哪去」。软删不清 `folder_id`，所以这个值是准的。
+                      它比「类型」更影响恢复决策——那是恢复这个动作的直接后果。
+
+                      ❗ 图标用 lucide 而不是 emoji（原来是一个字面的 文件夹 emoji）：
+                        图标槽已经换成描线图标了，旁边再摆个彩色 emoji 就是把同一种
+                        不一致换个位置。`.trashFolder` 本身是 `inline-flex` + `gap: 2px`，
+                        所以原来那个手写空格反而是多余的，一并去掉。
+                        尺寸 11px：跟着这条胶囊的 9.5px 字号走，再大就把胶囊顶高了。 */}
+                  <span className={styles.trashFolder}>
+                    <Folder size={11} aria-hidden="true" />
+                    {folderName(n.folder_id)}
+                  </span>
                   {chars > 0 && <span className={styles.rowSize}>{fmtCount(chars)} 字</span>}
                   {exp && (
                     <span className={exp.urgent ? styles.trashExpiryUrgent : styles.trashExpiry}>

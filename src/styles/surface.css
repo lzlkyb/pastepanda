@@ -43,3 +43,12 @@
   18% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* 空态图标外圈的慢速自转。从 `CardList.module.css` 的 `emptyRingSpin` 搬过来：
+ * 知识库的空态要用同一个，而写在模块里的关键帧名字会被哈希、只能那个模块用。
+ *
+ * 14s 而不是更快：它是背景装饰，转快了会把眼睛从正文上拉走。 */
+@keyframes pp-ring-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

@@ -10,9 +10,10 @@
  *
  * 🔴 红线：无 AI。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ExternalLink, Copy, X, History } from "lucide-react";
+import { ExternalLink, Copy, X, History, MoreHorizontal, EyeOff } from "lucide-react";
+import { CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { relativeTime } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
 import { noteSetSummary, type Note } from "@/lib/api";
@@ -43,6 +44,7 @@ export function NoteDetailPane({
   notInList,
   onRegister,
   onOpenNote,
+  buildMenu,
 }: {
   /**
    * 当前选中的笔记。
@@ -58,8 +60,12 @@ export function NoteDetailPane({
    *
    * ❗ 不在本组件里自己切：切笔记要过**脏数据守卫**，而那个守卫
    * （`handleOpen`）住在宿主那边——本组件只是通过 `onRegister` 把它报上去。
+   *
+   * 🔴 返回 `Promise<boolean>` 而不是 `void`（2026-09-07 修）：
+   *   旧类型是 `void`，于是「守卫拦下了」这件事**在类型上就无处可接**。
+   *   后果看 `onResolved` 那里的注释。
    */
-  onOpenNote?: (id: string) => void;
+  onOpenNote?: (id: string) => Promise<boolean>;
   /** 保存成功后。**不关栏**——用户还在这条笔记上，只需刷列表 */
   onSaved: () => void;
   /**
@@ -78,7 +84,19 @@ export function NoteDetailPane({
   onRegister?: (
     v: { guard: () => Promise<boolean>; dirty: boolean; title: string; content: string } | null,
   ) => void;
+  /**
+   * 置顶 / 移动 / 删除菜单（头部那个 `⋯`）。来自 `useNoteMenu`，
+   * 与中栏行右键、悬停条的 `⋯` **是同一份**。
+   *
+   * ❗ 可选：不传就不画那个按钮。给它默认值比强制传好——
+   *   菜单靠 `CtxMenuCtx`，而 Provider 不在作用域里时本来就弹不出来。
+   */
+  buildMenu?: (note: Note) => MenuItem[];
 }) {
+  /** 弹菜单的触发器。`null` = Provider 不在作用域里（那时不画 `⋯`）。
+      `<ContextMenu>` 包在 `KnowledgeView` 最外层，第三栏在它里面，所以拿得到。 */
+  const ctxTrigger = useContext(CtxMenuCtx);
+  const moreRef = useRef<HTMLButtonElement | null>(null);
   const ed = useNoteEditorState({
     target: {
       noteId: note.id,
@@ -168,13 +186,6 @@ export function NoteDetailPane({
           placeholder="笔记标题"
           aria-label="笔记标题"
         />
-        {/* 搜索 / 切文件夹后这条可能已不在旁边列表里，而列表里也就没有对应的
-            高亮行了。不清选中（那会丢草稿），只把这件事说出来。 */}
-        {notInList && (
-          <span className={styles.notInList} title="搜索或筛选变了，左侧列表里现在没有这一条">
-            不在当前列表
-          </span>
-        )}
         {/* 形态切换器。**放头部**，与全屏 Markdown 编辑器的工具栏位置一致；
             按钮本身走同一份 `TRI_MODES`。 */}
         <NoteViewModeSwitch
@@ -182,8 +193,34 @@ export function NoteDetailPane({
           onChange={setViewMode}
           splitDisabled={splitDisabled}
         />
+        {/* 置顶 / 移动 / 删除。收成一个 `⋯` 而不是平铺三个按钮：
+            800px 窗口（侧栏开着）时本栏只有 ~313px，头部可用 293，
+            已经装了标题框 + 形态切换器 + 关闭；再加一个按钮就把标题框
+            从 175px 压到 143px（约 9 个汉字），加两个就到 111px，不能用了。
+
+            ❗ 不给 `tabIndex={-1}`，与行悬停条上那三个**相反**：
+              行上必须 -1（列表里上百行，Tab 会停上百次），而本头部只有一份，
+              Tab 停一次是应该的——所以它不需要再配一个 P/M 快捷键。 */}
+        {buildMenu && ctxTrigger && (
+          <button
+            type="button"
+            ref={moreRef}
+            className={styles.moreBtn}
+            onClick={() => {
+              // 锚点公式与行悬停条上的 `⋯` 逐字相同（NoteList.tsx）。
+              const r = moreRef.current?.getBoundingClientRect();
+              ctxTrigger(r ? r.left : 0, r ? r.bottom + 2 : 0, buildMenu(note));
+            }}
+            title="更多（置顶 / 移动 / 删除）"
+            aria-label="更多操作"
+          >
+            <MoreHorizontal size={14} />
+          </button>
+        )}
         {/* 关闭按钮：第三栏不是弹窗，但仍需要一个「我看完了」的出口，
-            否则必须选另一条才能离开当前这条 */}
+            否则必须选另一条才能离开当前这条。
+            ❗ 它必须是最右那个——全应用（弹窗 / 面板 / 问答栏）的 ✕ 都在最右，
+              把它挤到中间会让「关闭」变成需要找的按钮。 */}
         <button
           type="button"
           className={styles.closeBtn}
@@ -194,6 +231,26 @@ export function NoteDetailPane({
           <X size={13} />
         </button>
       </div>
+
+      {/* 搜索 / 切文件夹后这条可能已不在旁边列表里，而列表里也就没有对应的
+          高亮行了。不清选中（那会丢草稿），只把这件事说出来。
+
+          ❗ 从 `.head` 里搬到这里（2026-09-07 批 4），两个理由：
+          ① `.head` 里其余三样（标题框 / 形态切换器 / 关闭）都是**常驻控件**，
+            而它是**临时状态提示**，本不是一类东西；下面这组（摘要行 / 来源行）
+            已经就是「条件出现的面板级信息行」这个模式。
+          ② 它在 `.head` 里是 `flex-shrink: 0` 的 77px，800px 窗口（侧栏开着）下
+            会把标题框压到 60px（约 3 个字）—— 挂了头部那个 `⋯` 之后更糟。
+
+          搬下来后横向不再紧，于是把原本只写在 `title` 里的**整句话直接显示出来**：
+          旧写法是「不在当前列表」6 个字 + 一个悬停才看得到的 tooltip，
+          而靠悬停才能读到的解释等于大多数人读不到。 */}
+      {notInList && (
+        <div className={styles.notInListRow}>
+          <EyeOff size={12} className={styles.notInListIcon} />
+          <span>搜索或筛选变了，左侧列表里现在没有这一条</span>
+        </div>
+      )}
 
       {/* AI 摘要（B1 轻量 AI）。只在真有时占位；点✕ 清掉，清成空串而不是 NULL——
           「从未生成」与「生成过又不要了」是两回事 */}
@@ -251,10 +308,24 @@ export function NoteDetailPane({
           onResolved={(originId) => {
             setShowConflict(false);
             onSaved();
-            // 副本已经不在了，这一栏不能继续停在它上：
-            // 能跳就跳到原笔记（过宿主的脏数据守卫），否则清选中。
-            if (onOpenNote) onOpenNote(originId);
-            else onClose();
+            // 🔴 副本已经被软删了，这一栏**绝不能停在它上**。
+            //
+            // 旧写法是 `if (onOpenNote) onOpenNote(originId);` —— 既不 await
+            // 也不看返回值（那时候类型还是 `void`，根本接不到）。
+            // 宿主的 `handleOpen` 带脏数据守卫，它完全可能返回 false：
+            // 内容已经写进原笔记、副本已软删，但离开时弹「有未保存的修改」、
+            // 用户选「留在这条」 ⇒ 面板停在一条已删的行上，
+            // 此后任何保存都因 `WHERE deleted_at IS NULL` 硬失败。
+            //
+            // `void (async ...)()` 而不是把 onResolved 改成 async：
+            // 跟本仓其它处同一个惯例（如 `onOpen={(n) => void handleOpenNote(n)}`）。
+            if (!onOpenNote) {
+              onClose();
+              return;
+            }
+            void (async () => {
+              if (!(await onOpenNote(originId))) onClose();
+            })();
           }}
         />
       ) : showHistory ? (

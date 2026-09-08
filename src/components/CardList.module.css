@@ -721,11 +721,9 @@
   border-radius: 50%;
   border: 2px dashed var(--accent);
   opacity: 0.25;
-  animation: emptyRingSpin 14s linear infinite;
-}
-@keyframes emptyRingSpin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  /* 关键帧已移到 `styles/surface.css`（改名 `pp-ring-spin`）：
+     知识库空态要用同一个，而模块内的 `@keyframes` 名字会被哈希。 */
+  animation: pp-ring-spin 14s linear infinite;
 }
 .emptyIcon {
   width: 64px;

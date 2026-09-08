@@ -9,25 +9,23 @@
  */
 import { Fragment, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Trash2, FolderInput, Library, Pin, PinOff } from "lucide-react";
+import { FolderInput, Pin, PinOff, MoreHorizontal } from "lucide-react";
 import { CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
-import { TagBadge, TagBadgeMore } from "@/components/TagBadge";
-import { relativeTime, countChars, fmtCount } from "@/lib/utils";
-import { excerpt, excerptAround, highlight } from "@/lib/notes/excerpt";
 import type { Note, NoteFolder } from "@/lib/api";
 import { groupHeaderFor } from "@/lib/notes/viewOpts";
 import { LoadMoreSentinel } from "./LoadMoreSentinel";
+import { NoteRowIcon } from "./NoteRowIcon";
+import { NoteItemBody } from "./NoteItemBody";
+import { NoteCard } from "./NoteCard";
+import type { NoteLayout } from "./useNoteLayout";
+import { NOTE_DRAG_MIME } from "@/lib/notes/dragMime";
 import styles from "../KnowledgeView.module.css";
 
 // `excerpt` 已移到 `@/lib/notes/excerpt`（连带高亮与带关键词的摘要）。
 // 本文件超了规则 #7 的 300 行，而那两个函数是纯函数、也被 TrashPanel 用。
 
-/** 行内最多摆几个标签，剩下的收成 `+N`。
- *
- * 不摆全部：`.rowMeta` 是 flex-wrap，8 个标签会把一行撞成三行，
- * 而行高不齐是扫列表时最费力的一件事。完整标签在第三栏里看。
- * 取 3 而不是 TagRow 的 2：笔记行比卡片宽，而且标签在知识库里是主要分类手段。 */
-const MAX_ROW_TAGS = 3;
+// 标题/摘要/元信息三段与 `MAX_ROW_TAGS` 已移到 `NoteItemBody.tsx`：
+// 网格卡片上来后那段有了第二个消费者（规则 #11）。
 
 export function NoteList({
   notes,
@@ -45,8 +43,11 @@ export function NoteList({
   onClearSelection,
   onOpen,
   onDelete,
-  onSetFolder,
   onTogglePin,
+  buildMenu,
+  folderMenu,
+  layout,
+  cols,
 }: {
   notes: Note[];
   /** 给「移动到文件夹」菜单用 */
@@ -71,9 +72,16 @@ export function NoteList({
   onClearSelection: () => void;
   onOpen: (note: Note) => void;
   onDelete: (note: Note) => void;
-  onSetFolder: (note: Note, folderId: string | null) => void;
   /** 切换置顶（B1）。 */
   onTogglePin: (note: Note) => void;
+  /** 完整右键菜单。来自 `useNoteMenu`，由 `KnowledgeView` 调一次后下发。 */
+  buildMenu: (note: Note) => MenuItem[];
+  /** 仅文件夹列表（悬停条上的移动按钮与 M 键用）。与 `buildMenu` 同源。 */
+  folderMenu: (note: Note) => MenuItem[];
+  /** 生效形态（不是用户偏好）。宽度不够时调用方已经降成 `list` 了 */
+  layout: NoteLayout;
+  /** 网格列数（列表形态时为 1）。二维键盘导航靠它 */
+  cols: number;
 }) {
   const ctxTrigger = useContext(CtxMenuCtx);
 
@@ -111,15 +119,36 @@ export function NoteList({
     [notes.length],
   );
 
+  // `folderMenu` / `buildMenu` 已搬到 `useNoteMenu.tsx`（2026-09-07）：
+  // 第三栏头部的 `⋯` 也要用 `buildMenu`，而 `NoteDetailPane` 拿不到住在
+  // 本文件里的东西。现在两者都由 `KnowledgeView` 调一次后当 props 下发。
+
   /** 列表级键盘。Enter 不用接——行本身就是 `<button>`，那是原生行为。 */
   const onListKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       switch (e.key) {
+        // ── 方向键。列表是一维（cols=1），网格是二维 ──
+        // 🔴 ↓ 必须跳 **+cols** 而不是 +1：网格下 +1 是向右一格。
+        //   设计稿没提这一条，它却把三个新按钮全设了 `tabIndex={-1}`
+        //   并宣称「可达性靠快捷键」——不改这里就是把那个论据自己架空了。
         case "ArrowDown":
+          e.preventDefault();
+          moveTo(focusIdx + cols);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          moveTo(focusIdx - cols);
+          break;
+        // ❗ 列表形态下←→**不接**：一维列表里它无意义，
+        //   而中栏窄屏时 ← 可能被理解成「回到侧栏」——别去抢一个语义未定的键。
+        //   行尾自动跳下一行首（而不是停住）：索引本来就是线性的。
+        case "ArrowRight":
+          if (cols <= 1) break;
           e.preventDefault();
           moveTo(focusIdx + 1);
           break;
-        case "ArrowUp":
+        case "ArrowLeft":
+          if (cols <= 1) break;
           e.preventDefault();
           moveTo(focusIdx - 1);
           break;
@@ -143,6 +172,35 @@ export function NoteList({
           }
           break;
         }
+        // ── P / M：悬停动作条那两个正向按钮的键盘路径 ──
+        // 动作条里全是 `tabIndex={-1}`（不能让 Tab 在列表里停上百次），
+        // 所以可达性必须靠这里——不补就是把功能只给了鼠标。
+        case "p":
+        case "P": {
+          // ❗ 带修饰键时不接：Ctrl+P / Cmd+P 是别人的快捷键。
+          if (e.ctrlKey || e.metaKey || e.altKey) break;
+          const n = notes[focusIdx];
+          if (n) {
+            e.preventDefault();
+            onTogglePin(n);
+          }
+          break;
+        }
+        case "m":
+        case "M": {
+          if (e.ctrlKey || e.metaKey || e.altKey) break;
+          const n = notes[focusIdx];
+          const items = n ? folderMenu(n) : [];
+          // 没地方可移（一个文件夹都没建）时不弹空菜单。
+          if (n && ctxTrigger && items.length > 0) {
+            e.preventDefault();
+            // 键盘路径没有鼠标坐标，拿当前行的位置当锚点。
+            const el = rowRefs.current[focusIdx];
+            const r = el?.getBoundingClientRect();
+            ctxTrigger(r ? r.left + 40 : 0, r ? r.bottom : 0, items);
+          }
+          break;
+        }
         case "Escape":
           // 清选中。没选中时不拦，让 Esc 继续冒泡（外面还有别人在听）。
           if (selectedIds.size > 0) {
@@ -152,7 +210,18 @@ export function NoteList({
           break;
       }
     },
-    [focusIdx, moveTo, notes, onDelete, selectedIds, onClearSelection],
+    [
+      focusIdx,
+      moveTo,
+      notes,
+      onDelete,
+      selectedIds,
+      onClearSelection,
+      onTogglePin,
+      folderMenu,
+      ctxTrigger,
+      cols,
+    ],
   );
 
   const folderName = useCallback(
@@ -160,59 +229,31 @@ export function NoteList({
     [folders],
   );
 
-  const buildMenu = useCallback(
-    (note: Note): MenuItem[] => {
-      const children: MenuItem[] = [];
-      // 已在未分类的不给「移回未分类」
-      if (note.folder_id !== null) {
-        children.push({
-          icon: <Library size={13} />,
-          label: "未分类",
-          onClick: () => onSetFolder(note, null),
-        });
-      }
-      for (const f of folders) {
-        if (f.id === note.folder_id) continue; // 当前所在的不用列
-        children.push({
-          icon: <FolderInput size={13} />,
-          label: f.name,
-          onClick: () => onSetFolder(note, f.id),
-          separator: children.length === 1 && note.folder_id !== null,
-        });
-      }
+  /**
+   * 把键盘焦点索引挂到某一行。
+   *
+   * 🔴 悬停动作条上那三个按钮必须调它（2026-09-07 修）。它们是
+   *   `tabIndex={-1}`，但**点击仍会拿到 DOM 焦点**，而之前不动 `focusIdx`。
+   *   后果：点了第 10 行的置顶按钮再按 `P`，切的是 `focusIdx` 指向的那一行
+   *   （可能是第 2 行）——而那两个快捷键正是为这三个按钮的可达性配的。
+   *
+   * ❗ 不调 `.focus()`：只同步索引，不把焦点从刚点的按钮上抢走。
+   */
+  const focusRow = useCallback((i: number) => setFocusIdx(i), []);
 
-      const items: MenuItem[] = [];
-      // 置顶（B1）摆最上面：它是可逆、无害、高频的那一个，
-      // 而删除在最下面且带 danger——菜单里的风险梯度从上到下递增。
-      items.push({
-        icon: note.pinned ? <PinOff size={14} /> : <Pin size={14} />,
-        label: note.pinned ? "取消置顶" : "置顶",
-        onClick: () => onTogglePin(note),
-      });
-      if (children.length > 0) {
-        items.push({
-          icon: <FolderInput size={14} />,
-          label: "移动到文件夹",
-          children,
-        });
-      }
-      items.push({
-        icon: <Trash2 size={14} />,
-        label: "删除笔记",
-        onClick: () => onDelete(note),
-        danger: true,
-        separator: items.length > 0,
-      });
-      return items;
-    },
-    [folders, onDelete, onSetFolder, onTogglePin],
-  );
 
   return (
     // 键盘接在 `<ul>` 上而不是每行上：事件会冒泡上来，一份处理就够，
     // 而且分组头、加载更多哨兵那几个 `<li>` 不需要各自再接一遍。
-    <ul className={styles.list} onKeyDown={onListKeyDown}>
+    <ul
+      className={layout === "grid" ? `${styles.list} ${styles.grid}` : styles.list}
+      /* 列数用内联变量下发，避免为 2 列/3 列各写一个类。 */
+      style={layout === "grid" ? ({ ["--kb-cols" as string]: String(cols) }) : undefined}
+      onKeyDown={onListKeyDown}
+    >
       {notes.map((note, i) => {
+        // 行与卡片的 props 完全一致（同一份契约），只换渲染。
+        const Item = layout === "grid" ? NoteCard : NoteRow;
         // 组头：相邻两行的组键不同时插一个（分组本身已在 SQL 的 ORDER BY 里做过）
         const header = groupHeaderFor(notes, i);
         return (
@@ -227,7 +268,7 @@ export function NoteList({
                 )}
               </li>
             )}
-            <NoteRow
+            <Item
               note={note}
               index={i}
               active={activeId === note.id}
@@ -244,9 +285,11 @@ export function NoteList({
               showFolderColumn={showFolderColumn}
               folderName={folderName}
               buildMenu={buildMenu}
+              folderMenu={folderMenu}
               ctxTrigger={ctxTrigger}
               onOpen={onOpen}
-              onDelete={onDelete}
+              onTogglePin={onTogglePin}
+              onFocusRow={focusRow}
             />
           </Fragment>
         );
@@ -263,36 +306,8 @@ export function NoteList({
   );
 }
 
-/**
- * 一篇笔记的**来路**（图标 + 悬停解释）。
- *
- * 记录模式的卡片图标编的是**内容类型**（文本/图片/链接/代码……），
- * 而笔记里真正有区分度的是「这条从哪来」——这是知识库独有的维度，
- * 也是 M5 之后才有东西可看的一个维度。
- *
- * 导出的缘由（规则 #11）：回收站需要的正是同一个维度——用户恢复前要判「这是什么」。
- * 在 `TrashPanel` 里再写一份就是两份会分歧的 emoji 表。
- *
- * ❗ `notes.source_agent` 的准确含义是「由 AI **新建**」而不是「被 AI 改过」：
- *   `note_update_from` 只把来源写进**版本快照**（W2 的 `note_revisions.source_agent`），
- *   不动 `notes.source_agent`——那两个是不同的事实（创建者 vs 最近改动者）。
- *   所以文案不能写成「AI 改过」，而是指向版本历史。
- */
-export function provenanceOf(note: Note): { icon: string; label: string } {
-  if (note.source_agent) {
-    const name = note.source_agent.replace(/^agent:/, "");
-    return { icon: "🤖", label: `由 ${name} 新建。AI 对已有笔记的修改看版本历史。` };
-  }
-  if (note.daily_date) return { icon: "📅", label: `今日速记 · ${note.daily_date}` };
-  if (note.history_id) return { icon: "📋", label: "由剪贴板卡片转来" };
-  return { icon: "📝", label: "手工新建" };
-}
-
-/**
- * 拖拽载荷的 MIME。自定义类型而不是 `text/plain`：
- * 后者会让笔记能被拖进任何输入框，而我们只想让它能拖进文件夹。
- */
-export const NOTE_DRAG_MIME = "application/x-pastepanda-notes";
+// `NOTE_DRAG_MIME` 已搬到 `@/lib/notes/dragMime`（2026-09-07）：
+// 它的三个消费者里有 `NoteCard`，而本文件又导入 `NoteCard` ⇒ 循环依赖。
 
 /** 单行。从上面拆出来只为了让分组那层 map 还读得动（行为一字未改）。 */
 function NoteRow({
@@ -310,9 +325,11 @@ function NoteRow({
   showFolderColumn,
   folderName,
   buildMenu,
+  folderMenu,
   ctxTrigger,
   onOpen,
-  onDelete,
+  onTogglePin,
+  onFocusRow,
 }: {
   note: Note;
   index: number;
@@ -331,13 +348,19 @@ function NoteRow({
   showFolderColumn: boolean;
   folderName: (id: string | null) => string;
   buildMenu: (note: Note) => MenuItem[];
+  /** 仅文件夹列表（悬停条上的移动按钮用）。与 `buildMenu` 同源 */
+  folderMenu: (note: Note) => MenuItem[];
   /** 右键菜单触发器。null = Provider 不在作用域里（那时不弹菜单） */
   ctxTrigger: ((x: number, y: number, items: MenuItem[]) => void) | null;
   onOpen: (note: Note) => void;
-  onDelete: (note: Note) => void;
+  onTogglePin: (note: Note) => void;
+  /** 把键盘焦点索引挂到本行（动作条按下时调）。理由见列表层的 `focusRow`。 */
+  onFocusRow: (index: number) => void;
+  /* ❗ 没有 `onDelete`：行上那个删除按钮已收进「⋯」，
+     删除现在只走两条路——`buildMenu` 里那项（右键与⋯共用）
+     与列表层的 Delete 键。两者都在列表层，行组件不需要知道。 */
 }) {
-  const prov = provenanceOf(note);
-  const chars = countChars(note.content.trim());
+  // 字数条已随标题/摘要/元信息一起进了 `NoteItemBody`，那里自己算。
   return (
     // 抬升 / 按压的参数**直接用卡片的**（Card.tsx 那两行），不另定一套——
     // 两套弹簧参数是「风格不统一」的另一种形式。
@@ -393,79 +416,79 @@ function NoteRow({
         }}
       >
         {/* 图标底：直接用卡片那一套 `--glass-icon-*` token（见 CSS）。
-            它是卡片最强的视觉锚点，而笔记行本来一个图标都没有。 */}
-        <span className={styles.rowIcon} title={prov.label} aria-hidden="true">
-          {prov.icon}
-        </span>
+            它是卡片最强的视觉锚点，而笔记行本来一个图标都没有。
+            有图的笔记装缩略图、没图的装来路图标——同记录模式的 `.cardImgThumb`。 */}
+        <NoteRowIcon
+          note={note}
+          className={styles.rowIcon}
+          thumbClassName={styles.rowIconThumb}
+        />
         <span className={styles.rowBody}>
-        <span className={styles.rowTitle}>
-          {/* 置顶徽标（B1）。摆在标题前而不是行尾：扫列表时眼睛走的是左边缘，
-              而「这条被我置顶了」是一眼就要看到的事。 */}
-          {note.pinned && <Pin size={10} className={styles.rowPin} aria-label="已置顶" />}
-          {highlight(note.title, keyword)}
-        </span>
-        {/* 有 AI 摘要就用它，没有才回退到正文截断（B1 轻量 AI）。
-            扫列表时一行摘要比一段截断的正文有用得多。
-            注意用 `note.summary ||` 而不是 `??`：空串（用户清掉过）也该回退。
-
-            搜索时（B3）摆正文而不是摘要：命中在正文里，而 AI 摘要里未必有那个词——
-            继续摆摘要就会出现「搜到了但一个高亮也看不到」。 */}
-        <span className={styles.rowExcerpt}>
-          {keyword.trim()
-            ? highlight(excerptAround(note.content, keyword), keyword)
-            : note.summary || excerpt(note.content)}
-        </span>
-        <span className={styles.rowMeta}>
-          <span className={styles.rowTime}>{relativeTime(note.updated_at)}</span>
-          {/* 字数条（抄卡片的 `.cardSizeTag`）。卡片那边摆的是字节大小，
-              笔记里该看的是**字数**——它回答的是「这条我得读多久」。
-              空正文不摆：新建未写的笔记挂个「0 字」只是噪声。
-              计数走公共 `countChars`（按码点数，emoji 算 1 个），不用 `.length`。 */}
-          {chars > 0 && <span className={styles.rowSize}>{fmtCount(chars)} 字</span>}
-          {/* 标签走全应用**唯一**的 TagBadge（规则 #11 公共函数收口）。
-              原先这里手搓了一个 `borderColor: tag.color` 的描边 chip，绕过了
-              TagBadge 那句「全应用所有标签渲染点都必须经过这里」——后果是淡底/
-              hover/主题派生全丢了，而且 `source='auto'` 的🤖标识也不会显。
-
-              用 TagBadge 而不用 TagRow：TagRow 的点击接的是 `toggleTagFilter`，
-              那是**记录模式**的筛选器，在知识库里点下去会去筛剪贴板卡片。 */}
-          {/* A1：行内标签现在**可点** = 切换该标签的筛选。
-              ❗ 接的是知识库自己的 `tagIds`，**不是** `TagRow` 那个 `toggleTagFilter`
-                （那是记录模式的筛选器，在这里点下去会去筛剪贴板卡片）。
-              TagBadge 内部已经 `stopPropagation` + `preventDefault`，
-              所以不会连带触发行的「打开笔记」。 */}
-          {note.tags.slice(0, MAX_ROW_TAGS).map((tag) => (
-            <TagBadge
-              key={tag.id}
-              tag={tag}
-              /* ❗ 不传 `active`：`TagBadge` 的 `active` 只对 `picker` 变体生效（看它的实现），
-                 行内用的是 `card` 变体。传一个不生效的 prop 比不传更容易骗人。
-                 当前生效的标签靠上面的 chips 行表达，那里是完整的。 */
-              onClick={() => onTagClick(tag.id)}
-            />
-          ))}
-          {note.tags.length > MAX_ROW_TAGS && (
-            <TagBadgeMore count={note.tags.length - MAX_ROW_TAGS} />
-          )}
-          {/* 侧栏收起时才显所属文件夹：展开时树里已经高亮着了，重复信息 */}
-          {showFolderColumn && (
-            <span className={styles.rowFolder}>{folderName(note.folder_id)}</span>
-          )}
-        </span>
+          <NoteItemBody
+            note={note}
+            keyword={keyword}
+            showFolderColumn={showFolderColumn}
+            folderName={folderName}
+            onTagClick={onTagClick}
+          />
         </span>
       </button>
-      <button
-        type="button"
-        className={styles.rowDelete}
-        title="删除笔记（Delete）"
-        aria-label={`删除笔记 ${note.title}`}
-        /* ❗ 必须 -1，否则 roving 白做了——Tab 还是会在列表里停 50 次。
-           它仍然可达：行上按 Delete、右键菜单、鼠标悬停。 */
-        tabIndex={-1}
-        onClick={() => onDelete(note)}
-      >
-        <Trash2 size={12} />
-      </button>
+      {/* ── 悬停动作条（设计稿 §3）──
+          原来这里只有一个删除按钮，也就是说鼠标滑到行上时
+          唯一能点的东西是个不可逆操作。现在三个全正向，删除进「⋯」。
+
+          ❗ 没有「打开」按钮：设计稿列了一个，但它自己的表格里写的就是
+            「同点行」——点整行已经是打开，再摆一个是纯冗余的 28px。
+            而中栏只有 300px，每个按钮都得掘标题的宽度。
+
+          ❗ 全部 `tabIndex={-1}`：否则 roving tabindex 白做了，
+            Tab 一行停三次、一屏停一百多次。可达靠快捷键（P / M / Delete）
+            与右键菜单，不靠 Tab。 */}
+      {/* `onMouseDown` 而不是 `onClick`：要在按钮自己的 onClick 之**前**先把
+          焦点索引对齐（否则 `⋯` 弹出的菜单里那些动作仍然指向旧行）。 */}
+      <span className={styles.rowActs} onMouseDown={() => onFocusRow(index)}>
+        <button
+          type="button"
+          className={`${styles.rowActBtn} ${note.pinned ? styles.rowActBtnOn : ""}`}
+          title={note.pinned ? "取消置顶（P）" : "置顶（P）"}
+          aria-label={note.pinned ? `取消置顶 ${note.title}` : `置顶 ${note.title}`}
+          tabIndex={-1}
+          onClick={() => onTogglePin(note)}
+        >
+          {note.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+        </button>
+        {/* 移动与「⋯」都走 `ctxTrigger`（右键菜单那套现成机制），
+            不另写弹层——也就不会出现「右键菜单改了、悬停条忘了改」。 */}
+        <button
+          type="button"
+          className={styles.rowActBtn}
+          title="移动到文件夹（M）"
+          aria-label={`移动 ${note.title} 到文件夹`}
+          tabIndex={-1}
+          onClick={(e) => {
+            const items = folderMenu(note);
+            if (!ctxTrigger || items.length === 0) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            ctxTrigger(r.left, r.bottom + 2, items);
+          }}
+        >
+          <FolderInput size={14} />
+        </button>
+        <button
+          type="button"
+          className={styles.rowActBtn}
+          title="更多"
+          aria-label={`${note.title} 的更多操作`}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (!ctxTrigger) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            ctxTrigger(r.left, r.bottom + 2, buildMenu(note));
+          }}
+        >
+          <MoreHorizontal size={14} />
+        </button>
+      </span>
     </motion.li>
   );
 }

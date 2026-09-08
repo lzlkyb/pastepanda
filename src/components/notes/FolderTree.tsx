@@ -14,7 +14,7 @@
 import { useCallback, useContext, useMemo, useState } from "react";
 import { ChevronRight, FolderPlus, Inbox, Library } from "lucide-react";
 import { CtxMenuCtx } from "@/components/ContextMenu";
-import { NOTE_DRAG_MIME } from "./NoteList";
+import { NOTE_DRAG_MIME } from "@/lib/notes/dragMime";
 import { buildFolderTree, type FolderFilter, type FolderNode, type NoteFolder } from "@/lib/api";
 import { useFolderOps } from "./useFolderOps";
 import { DailySection } from "./DailySection";
@@ -234,7 +234,8 @@ export function FolderTree({
             aria-label={isCollapsed ? "展开" : "折叠"}
             tabIndex={-1}
           >
-            <ChevronRight size={9} className={isCollapsed ? "" : styles.caretOpen} />
+            {/* 13 而不是 9：9px 的三角是全页最小的可点目标（设计稿 §1）。 */}
+            <ChevronRight size={13} className={isCollapsed ? "" : styles.caretOpen} />
           </button>
           {/* ❗ `title` 是必需而不是锥上添花：`.name` 只有 `text-overflow: ellipsis`，
               名字一截断就**根本读不到**。行高字号对齐记录模式后名字区又窄了
@@ -265,7 +266,7 @@ export function FolderTree({
           aria-label="新建文件夹"
           tabIndex={open ? 0 : -1}
         >
-          <FolderPlus size={12} />
+          <FolderPlus size={14} />
         </button>
       </div>
 
@@ -277,7 +278,7 @@ export function FolderTree({
         tabIndex={open ? 0 : -1}
         onKeyDown={builtinKey("all")}
       >
-        <Library size={12} className={styles.builtinIcon} />
+        <Library size={14} className={styles.builtinIcon} />
         <span className={styles.name}>全部笔记</span>
         <span className={styles.count}>{totalCount}</span>
       </div>
@@ -291,7 +292,7 @@ export function FolderTree({
         tabIndex={open ? 0 : -1}
         onKeyDown={builtinKey("unfiled")}
       >
-        <Inbox size={12} className={styles.builtinIcon} />
+        <Inbox size={14} className={styles.builtinIcon} />
         <span className={styles.name}>未分类</span>
         <span className={styles.count}>{unfiledCount}</span>
       </div>
@@ -330,7 +331,7 @@ export function FolderTree({
         tabIndex={open ? 0 : -1}
         onKeyDown={builtinKey("trash")}
       >
-        <Trash2 size={12} className={styles.builtinIcon} />
+        <Trash2 size={14} className={styles.builtinIcon} />
         <span className={styles.name}>回收站</span>
         {trashCount > 0 && <span className={styles.count}>{trashCount}</span>}
       </div>

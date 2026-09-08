@@ -110,12 +110,15 @@
   flex-shrink: 0;
 }
 
+/* ❗ 28×28，真尺寸而不是 `::before` 撑：它在侧栏标题行右端、
+   旁边没其他可点控件，180px 宽完全装得下。
+   28 走 `--kb-hit`（定在 KnowledgeView 的 `.shell` 上，靠继承拿到）。 */
 .addBtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: var(--kb-hit);
+  height: var(--kb-hit);
   border: none;
   border-radius: 5px;
   background: transparent;
@@ -239,14 +242,17 @@
 }
 
 /* 展开/折叠三角。无子项时用 visibility 而不是 display:none：
-   保住占位，否则同层的有子/无子行名字会差 9px 不对齐。 */
+   保住占位，否则同层的有子/无子行名字会差 14px 不对齐。 */
 .caret {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 11px;
-  /* 16px 而不是 14px：行字号从 12 抬到 13px 后行高变了，三角要跟着居中。
-     宽度仍为 11px（没抬到记录模式的 16px 图标槽）：那 5px 要给文件夹名字。 */
+  /* ❗ 宽度从 11 抬到 14：图标从 9px 换成 13px 后，11px 的框装不下。
+     代价是从文件夹名字里抠了 3px（原注释说那 5px 要给名字，还剩 2px）。
+     值得：9px 的三角是全页最小的可点目标。 */
+  width: 14px;
+  /* 16px 而不是 14px：行字号从 12 抬到 13px 后行高变了，三角要跟着居中。 */
   height: 16px;
   flex-shrink: 0;
   border: none;
@@ -254,6 +260,16 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+/* 命中区撑到 24×24（WCAG 2.2 AA §2.5.8 的下限，不是 28）。
+   这里取 24 而不是 `--kb-hit`：侧栏行高就 33.5px，
+   28 的命中区会和上下相邻行的命中区碰上。
+   横向 (24-14)/2 = 5，竖向 (24-16)/2 = 4。 */
+.caret::before {
+  content: "";
+  position: absolute;
+  inset: -4px -5px;
 }
 
 .caretHidden {
@@ -289,7 +305,7 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--section-bg);
-  font-size: 10px;
+  font-size: var(--kb-fs-meta);
   font-weight: 600;
   line-height: 1.4;
   color: var(--text-muted);

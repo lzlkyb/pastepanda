@@ -9,6 +9,34 @@
   min-width: 0;
   min-height: 0;
   display: flex;
+
+  /* ===== 尺寸 token（规则 #11 收口）=====
+     挂 `.shell` 而不是 `:root`：只管知识库，刷全局会注入记录模式（那边不走这套）。
+     侧栏 / 第三栏 / 问答面板 都是 DOM 后代，靠继承拿到——
+     CSS Module 只隔离类名，不隔离自定义属性。
+     ❗ 拿不到的只有 `NoteDialog`（挂在 App 顶层）与 `KbTopBarActions`（portal 到顶栏）。 */
+
+  /* ❗ 圆角与间距的 token 本轮**有意不做**，原因记在这里：
+     设计稿假设它们是「3 档圆角 + 5 档间距」，只需起名字、零视觉差异。
+     实数不是：知识库 CSS 里圆角有 **16 种值**
+     （5px×16、7px×12、6px×11、4px×6、8px×5、2/3/9/10/11/12/15/16/20px/50%/0），
+     gap 从 1px 到 12px 有 10 种。
+
+     所以：忠实命名要 16 个 token（毫无意义）；压成 3～5 档则是
+     **视觉改动**，与「零差异」前提矛盾，得单独一批配截图验收。
+     宁可不做也不能只命名 3 个——那会让人以为 `--kb-r-sm` 是小按钮圆角，
+     而实际上 16 处小按钮用的是 5px。 */
+
+  /* 字号：压成 4 档（原先 9 / 9.5 / 10 / 10.5 / 11 / 11.5 / 12 / 12.5 / 13 共 9 个值）。
+     层次改由**字重 + 颜色**承担，不再靠字号一个维度拉开。 */
+  --kb-fs-title: 13.5px;  /* 行/卡片标题 */
+  --kb-fs-body: 12.5px;   /* 摘要正文 / 面包屑 / 按钮文字 */
+  --kb-fs-meta: 11.5px;   /* 时间 / 字数 / 计数 */
+  --kb-fs-badge: 11px;    /* 徽标最小字 */
+
+  /* 命中区基准。不是拍的：原来那个行内删除按钮就是 28×28，顶栏图标按钮也是。
+     WCAG 2.2 AA §2.5.8 的下限是 24，28 是项目自己已有的基准。 */
+  --kb-hit: 28px;
 }
 
 /* 中栏（笔记列表）。≥800px 时固定 300px，把剩下的宽度留给第三栏；
@@ -59,13 +87,16 @@
 
 /* 搜索框里的清空✕。**只在有内容时渲染**（见 tsx）：
    空的时候摆一个永远点不动的按钮只是噪声。 */
+/* ❗ 视觉 20px、命中 28px（见下面的 `::before`）。
+   不真画成 28：中栏在 ≥800px 下只有 300px，全部按钮真放大会把它撑爆。 */
 .searchClear {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: none;
   border-radius: 5px;
   background: var(--hover);
@@ -79,17 +110,20 @@
 }
 
 /* 「问」的提交按钮。只在 ask 模式出：搜索是边打边搜的，没有「提交」这个动作。
-   高 24px（比框内切换器的 22px 略大），不顶满 38px：它是框内控件不是框外按钮。 */
+   不顶满搜索框的 38px：它是框内控件不是框外按钮。
+
+   ❗ 高 30 而不是 28：它是搜索行里的主按钮（实心底），
+     跟旁边那些 28 的次级按钮同高会分不出主次。 */
 .askBtn {
   flex-shrink: 0;
-  height: 24px;
-  padding: 0 9px;
+  height: 30px;
+  padding: 0 11px;
   border: none;
   border-radius: 6px;
   background: var(--accent);
   color: #fff;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--kb-fs-body);
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s, background 0.15s;
@@ -155,35 +189,42 @@
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--kb-fs-body);
   color: var(--text-muted);
   padding: 2px 0;
 }
 
+/* 文件夹名。❗ 不再给它单独一档字号（原先 12 vs 面包屑 11）：
+   同一行里差 1px 既看不出层次、又多一个字号档位。
+   字重 600 本来就有，靠它与颜色拉开已经够了。 */
 .crumb b {
   color: var(--text-primary);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--kb-fs-body);
 }
 
-.burger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+/* `.burger`（20×20 的汉堡按钮）已删：JSX 里零引用，
+   它早已并进顶栏的 ☰（C 稿 §4）。 */
+
+/* 命中区撑层：只改可点范围，**不占布局**（不影响兄弟元素位置）。
+   inset 取负值：(28 - 视觉尺寸) / 2。例如 20px 视觉 → inset: -4px。
+
+   🔴 相邻小控件间距必须 ≥ 12px：命中区是定位元素，两个挤在一起时
+     **后定义的会盖住前一个**。并排且间距不够的（如回收站那两个）
+     必须改真尺寸而不是用这个。 */
+.searchClear::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
 
-.burger:hover {
-  background: var(--hover);
-  color: var(--text-primary);
+/* 16px 视觉 → 28px 命中。两者都是 16，共用同一个 inset。
+   ❗ `.trashCaret` 已经是 `position: absolute`，本身就是定位元素，不需要再加 relative。 */
+.rowCheck::before,
+.trashCaret::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
 }
 
 /* 新建空白笔记（#13）。margin-left:auto 把它顶到面包屑行最右，
@@ -192,8 +233,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: var(--kb-hit);
+  height: var(--kb-hit);
   flex-shrink: 0;
   border: none;
   border-radius: 5px;
@@ -229,15 +270,15 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 20px;
-  padding: 0 6px;
+  height: var(--kb-hit);
+  padding: 0 8px;
   flex-shrink: 0;
   border: 1px solid var(--border-color);
   border-radius: 5px;
   background: transparent;
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 10.5px;
+  font-size: var(--kb-fs-badge);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
@@ -312,14 +353,14 @@
 
 .modeBtn,
 .modeOn {
-  height: 22px;
-  padding: 0 8px;
+  height: var(--kb-hit);
+  padding: 0 9px;
   border: none;
   border-radius: 5px;
   background: none;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--kb-fs-body);
   line-height: 1;
   cursor: pointer;
   transition: all 0.15s;
@@ -426,9 +467,101 @@
   color: var(--text-muted);
 }
 
-.icon {
-  font-size: 34px;
-  opacity: 0.55;
+/* ── 空态图标（设计稿 §6）──
+   原来是一个 34px 的 emoji。记录模式那边是
+   96px 容器 + 旋转虚线环 + 64px 圆角图标底（`.emptyIconWrap` / `.emptyRing` / `.emptyIcon`）。
+
+   ❗ 设计稿说「直接复用 `Illustration` 组件」——行不通：
+     那个组件是给发版说明/教练卡画 OCR/马赛克/橡皮擦功能示意的 Canvas 渲染器
+     （固定 240×130 画布，kind 只有 ocr/mosaic/eraser/default），
+     拿它当笔记空态会画出图像编辑的图形。
+     `MelodyEmpty` 也不行：它在非 blossom 主题下 `return null`。
+     所以这里复用的是记录模式的**做法**（纯 CSS + 一个 lucide 图标），
+     关键帧走已搬到 `surface.css` 的 `pp-ring-spin`。 */
+.emptyWrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.emptyRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px dashed var(--accent);
+  opacity: 0.25;
+  animation: pp-ring-spin 14s linear infinite;
+}
+
+/* 降级：系统要求减少动画时环不转（仍然画出来，只是不动）。
+   本文件已有同类先例（`.vgrip::after`）。 */
+@media (prefers-reduced-motion: reduce) {
+  .emptyRing { animation: none; }
+}
+
+.emptyIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-icon-bg);
+  border: 1px solid var(--glass-icon-border);
+  box-shadow: var(--glass-icon-shadow);
+  color: var(--text-muted);
+}
+
+/* 空态的主动作按钮行。之前只有一句提示文字告诉你去哪里点，
+   但空态正是用户最需要一个可点入口的时候。 */
+.emptyActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.emptyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--kb-fs-body);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.emptyBtn:hover {
+  background: var(--hover);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
+}
+
+/* 主按钮（实心）。用 `--accent-solid` 而不是 `--accent`：
+   前者就是为了白字压其上能达标而新增的（theme.css 那 28 处对比度改进之一）。 */
+.emptyBtnPrimary {
+  border-color: transparent;
+  background: var(--accent-solid);
+  color: #fff;
+  font-weight: 600;
+}
+
+.emptyBtnPrimary:hover {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
 }
 
 .title {
@@ -518,8 +651,13 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  /* 同记录模式的 `--card-gap`。原来是 4px（紧密列表），
-     卡片化后必须拉开——挨在一起的卡片看上去反而像表格。 */
+  /* 🔴 这是记录模式 `--card-gap` 的**副本**，不是同一个变量。
+     那个变量只存在于 `CardList.module.css:7` 内部，这边拿不到。
+     改动要两边同步——原注释写的是「同记录模式的 --card-gap」，
+     读起来像共享一个值，而它们一直是两份。
+
+     原来是 4px（紧密列表），卡片化后必须拉开——
+     挨在一起的卡片看上去反而像表格。 */
   gap: 10px;
 }
 
@@ -607,7 +745,7 @@
 
 /* 所属文件夹（仅侧栏收起时显示） */
 .rowFolder {
-  font-size: 9.5px;
+  font-size: var(--kb-fs-badge);
   color: var(--text-muted);
   padding: 0 4px;
   border-radius: 3px;
@@ -669,11 +807,14 @@
 }
 
 /* 选中框。只在已进入多选时渲染（见 tsx），所以不需要为未选中态留位。 */
+/* ❗ 视觉 16px、命中 28px（下面 `::before`）。
+   复选框不能真画成 28：它在行内，那会把标题区挤掉一大块。 */
 .rowCheck {
+  position: relative;
   flex-shrink: 0;
   align-self: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin-left: 8px;
   border: 1.5px solid var(--border-color);
   border-radius: 4px;
@@ -683,11 +824,13 @@
 .rowCheckOn {
   border-color: var(--accent);
   background: var(--accent);
-  /* ✓ 用背景图而不是字符：字符会跟着行高跑，而这个框是固定 14px 的。 */
+  /* ✓ 用背景图而不是字符：字符会跟着行高跑，而这个框是固定 16px 的。 */
   background-image: linear-gradient(45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%),
                     linear-gradient(-45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%);
+  /* ❗ 坐标跟着框宽走：框从 14 抬到 16 后中心从 y=7 移到 y=8，
+     不改这两个值那个勾就偏心了。 */
   background-size: 8px 2px, 8px 2px;
-  background-position: 2px 7px, 4px 7px;
+  background-position: 3px 8px, 5px 8px;
   background-repeat: no-repeat;
 }
 
@@ -710,18 +853,19 @@
 .batchCount {
   font-weight: 600;
 }
+/* ❗ 高 30（同 `.askBtn`）：批量条是实心 accent 底的浮层，里面的按钮是主动作。 */
 .batchBtn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
-  padding: 0 9px;
+  height: 30px;
+  padding: 0 11px;
   border: none;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--kb-fs-body);
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -732,8 +876,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--kb-hit);
+  height: var(--kb-hit);
   margin-left: auto;
   border: none;
   border-radius: 6px;
@@ -818,6 +962,37 @@
   transition: all 0.3s ease;
 }
 
+/* 图标槽装缩略图时叠上这一层（照记录模式 `.cardImgThumb` 的手法）。
+   它只在 `NoteRowIcon` 真的解出了图时才加，没图 / 图挂了都不加。
+
+   ❗ `overflow: hidden` 不能省：不裁的话图的方角会顶出槽的 11px 圆角。 */
+.rowIconThumb {
+  padding: 0;
+  overflow: hidden;
+}
+
+.rowIconThumb img {
+  width: 100%;
+  height: 100%;
+  /* cover 而不是 contain：34px 这么小，留白边不如裁掉——
+     这里要的是「让人认出这是哪张图」，不是完整展示。 */
+  object-fit: cover;
+  /* 槽本体是 11px，减掉 1px 边框后取 9px 才与外沿对齐。 */
+  border-radius: 9px;
+  display: block;
+}
+
+/* 回收站：图标槽 + 展开箭头的定位容器。
+
+   为何新增这一层：箭头原本是 `.trashIcon` 的子元素，而现在槽里可能是
+   一张带 `overflow: hidden` 的图——箭头继续放里面会被圆角剪掉。
+   尺寸跟着 `.trashIcon` 自然撑成 34×34，所以箭头的 `-3px` 偏移不用改。 */
+.trashIconWrap {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
 .rowBody {
   flex: 1;
   min-width: 0;
@@ -826,10 +1001,12 @@
   gap: 2px;
 }
 
-/* ── 三级排版层次（设计稿 §1 「层次」那一行）──
-   原来三行是 12.5 / 11 / 10px，每级只差 1～1.5px，扫列表时分不出主次。 */
+/* ── 四级排版层次 ──
+   标题 13.5/600 · 摘要 12.5/400 · 元信息 11.5/500 · 徽标 11/600，
+   全部走 `--kb-fs-*`。三个次级层之间不仅字号不同，字重与颜色也逐级递减
+   （primary → secondary → muted）——三个维度叠起来才扫得动。 */
 .rowTitle {
-  font-size: 13px;
+  font-size: var(--kb-fs-title);
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -838,7 +1015,7 @@
 }
 
 .rowExcerpt {
-  font-size: 11.5px;
+  font-size: var(--kb-fs-body);
   line-height: 1.45;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -846,16 +1023,23 @@
   text-overflow: ellipsis;
 }
 
+/* 元信息行。字重 500 而不是 400：它比摘要字号小、颜色也更浅，
+   再用常规字重就轻得看不见了——层次靠字重承担而不是继续拉字号。
+
+   ❗ `tabular-nums`：里面是「2 小时前 / 1.2k 字」这种数字，比例字体下
+     1 比 8 窄，一列的右边沿会参差。侧栏 `.count` 已经用了同一句。 */
 .rowMeta {
   display: flex;
   align-items: center;
   gap: 5px;
   flex-wrap: wrap;
   margin-top: 1px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .rowTime {
-  font-size: 10.5px;
+  font-size: var(--kb-fs-meta);
   color: var(--text-muted);
 }
 
@@ -866,7 +1050,7 @@
   border: 1px solid var(--border-color);
   border-radius: 4px;
   background: var(--section-bg);
-  font-size: 9.5px;
+  font-size: var(--kb-fs-badge);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -876,53 +1060,228 @@
 /* （原有的 `.tagChip` 已删：标签渲染收回到公共组件 TagBadge，见 NoteList.tsx。
    它本来就不应该存在——TagBadge 的文件头写的是「标签颜色唯一来源」。） */
 
-/* 删除按钮：默认隐，hover 行才出。不用 display:none 而用 opacity：
-   前者会让它从 Tab 顺序里消失，键盘用户就删不了笔记了。 */
-.rowDelete {
-  /* 同 `.rowMain`：不抬层级会被 `.row::after` 那层光泽盖住。 */
+/* ===== 网格形态（设计稿 §2）===== */
+
+/* 同一个 `<ul>`，只换布局——选中集 / roving tabindex / 键盘 / 拖拽 /
+   分组头 / 加载更多哨兵全在 `NoteList` 里，另起一个列表组件会把这一整套复制。
+   列数走内联的 `--kb-cols`，不为 2 列/3 列各写一个类。 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--kb-cols, 2), minmax(0, 1fr));
+  /* 🔴 `align-items` 不写 = 默认 stretch，卡片等高。
+     这是故意的，且与「无图也留封面位」是一对：
+     如果改成 start，行与行会错位，看着像布局坏了。 */
+}
+
+/* 分组头与加载更多哨兵在网格里必须横跨整行，
+   不写就会变成一个占一格的格子、后面的卡片接在它旁边。 */
+.grid > li:not(.card) {
+  grid-column: 1 / -1;
+}
+
+/* 卡片本体。🔴 材质与 `.row` **逐条相同**（设计稿 §3）：
+   同一套 glass token、radius 16（不是 C 稿写的 14）、同一套 shimmer。
+   否则会出现「列表形态有玻璃、网格形态没有」——比现状更不统一。
+
+   ❗ `overflow: hidden` 在这里是安全的，但理由与 `.row` 不同：
+     `.row` 必须配 `flex-shrink: 0`（flex 项的自动最小尺寸会被 hidden 打成 0，
+     行会塌成细缝）；而卡片是 **grid 项**，它的高度由行轨道决定，
+     不会因 hidden 而自己塌掉。`flex-shrink` 在 grid 项上根本不生效，所以不抄。 */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--glass-card-bg);
+  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--glass-card-shadow);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 静态微光。走 `--card-shimmer-display`：浅色主题（包括默认的 ocean）
+   把它设成了 none，不走这个变量就会「网格有微光、列表没有」。 */
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  display: var(--card-shimmer-display, block);
+  background: linear-gradient(180deg, var(--glass-shimmer-static) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.card:hover {
+  border-color: var(--glass-card-hover-border);
+  box-shadow: var(--glass-card-hover-shadow);
+}
+
+/* 卡片主体（可点区）。z-index 同 `.rowMain`：不抬层级会被 `::before` 盖着。 */
+.cardMain {
   position: relative;
   z-index: 1;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 15px;
+}
+
+.cardMain:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* 封面区。高度固定：变高度会让同一行的卡片正文起点不齐。 */
+.cardCover,
+.cardCoverTxt {
+  height: 74px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* ── 抄卡片的悬停操作片（`.cardInlineBtn`）──
-     原来是个透明底、无描边的裸图标，悬停时看不出它是个可点的东西。
-     卡片那边是 28×28 圆角 + 底色 + 轻阴影，“能点”一眼就看得出来。 */
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  align-self: center;
-  margin-right: 6px;
-  border: none;
-  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cardCover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 文字封面（无图时）。
+   🔴 颜色必须用 `color-mix` 从 `--accent` / `--section-bg` 派生，
+     **不能自由 HSL**：项目有 6 个主题，而 `theme.css` 里有 28 处
+     带改前/改后数字的对比度改进标注——自由取色会在某个主题下翻车，
+     且绕过了那次审计。`--kb-cover-step` 由 `coverStepOf(note.id)` 定（稳定）。 */
+.cardCoverTxt {
+  font-size: 30px;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--text-primary) 22%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(
+      in srgb,
+      var(--accent) calc(14% + var(--kb-cover-step, 0) * 5%),
+      var(--section-bg)
+    ),
+    color-mix(in srgb, var(--accent) 4%, var(--section-bg))
+  );
+  user-select: none;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* 卡片上的多选框。行里那个是 flex 兄弟，卡片里只能摆浮层；
+   摆左上而不是右上：右上已经是悬停动作条了。 */
+.cardCheck {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 4px;
   background: var(--card-bg);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  color: var(--text-muted);
-  cursor: pointer;
+}
+
+/* ── 悬停动作条（设计稿 §3）──
+   取代原来那个孤零零的删除按钮：之前手一滑到行上，
+   最醒目的可点目标是个**破坏性操作**。现在三个按钮全是正向的，
+   删除收进「⋯」的二级菜单（Delete 键与右键菜单照旧）。
+
+   🔴 用浮层而不是行内占位：中栏在 ≥800px 下固定 300px，
+     内容区约 276px、标题区约 232px。三个 28px 按钮常驻占 94px，
+     不悬停时也把标题永久压短一大截——而记录模式的卡片宽得多，
+     它的 `.cardInlineBtn` 才能行内占位。
+
+   ❗ 摆在**右上**而不是竖向居中：标题是 `nowrap + ellipsis`，
+     盖住的正是已经被省号截掉的那一段；竖向居中会同时盖住标题、摘要、元信息三行。 */
+.rowActs {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  /* z-index 必须 ≥ 2：`.rowMain` 为了压住 `.row::after` 的光泽已经带了 z-index:1。 */
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--glass-popover-bg);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  transition: opacity 0.15s;
+  /* 🔴 隐着的时候必须不接鼠标。它是绝对定位浮层，
+     `opacity: 0` 的浮层**照样拦点击**——不写这一句，
+     点标题右半边会没反应（原来那个删除按钮是 flex 兄弟、不是浮层，没这个问题）。 */
+  pointer-events: none;
 }
 
-.row:hover .rowDelete,
-.rowDelete:focus-visible {
+/* 不用 `display:none` 而用 opacity：前者会把按钮从无障碍树里摘掉。
+   `:focus-within` 是给鼠标以外的路径留的（尽管里面都是 tabIndex=-1，
+   脚本聚焦或未来改变策略时不会变成隐形按钮）。 */
+.row:hover .rowActs,
+.rowActs:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 
-.rowDelete:hover {
-  background: color-mix(in srgb, var(--red, #EF4444) 15%, transparent);
-  color: var(--red, #EF4444);
+.rowActBtn {
+  width: var(--kb-hit);
+  height: var(--kb-hit);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.rowActBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* 已置顶：琥珀色常亮（不只在 hover 时）——它表达的是**状态**而不是可点性。 */
+.rowActBtnOn {
+  color: var(--amber, #f59e0b);
 }
 
 /* ===== 字段视图（B2 #9）：分组组头 + 加载更多 ===== */
 
 /* 组头。sticky 让长组滚动时还知道自己在哪一组。
-   z-index 必须 ≥2：`.rowMain` / `.rowDelete` 为了压住 `.row::after` 的光泽带了
+   z-index 必须比行里所有东西都高：`.rowMain` 为了压住 `.row::after` 的光泽带了
    z-index:1，而 `.row` 自身没建层叠上下文，所以它们和组头在同一个上下文里比；
-   组头原来也是 1，DOM 里排在后面的行就赢了——滚动时行的文字会盖住组头。 */
+   组头原来也是 1，DOM 里排在后面的行就赢了——滚动时行的文字会盖住组头。
+
+   🔴 从 2 抬到 3：新增的 `.rowActs`（悬停动作条）是 2，
+     和组头平手时 DOM 靠后的行会赢——鼠标停在刚滚到组头下面的行上时，
+     那行的动作条会浮在组头之上。 */
 .groupHead {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -939,10 +1298,11 @@
   padding: 0 6px;
   border-radius: 6px;
   background: var(--hover);
-  font-size: 10px;
+  font-size: var(--kb-fs-meta);
   font-weight: 600;
-  line-height: 16px;
+  line-height: 18px;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 组头下沿的渐隐。原来是一条发丝线，改成内容淡入组头底色 —— 读起来像组头浮在列表上。
@@ -1058,8 +1418,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  /* ❗ 视觉 16px、命中 28px（下面 `::before`）。
+     它搭在 34px 图标槽的右下角，真画成 28 会把槽盖掉一半。 */
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
@@ -1082,7 +1444,7 @@
   gap: 2px;
   padding: 0 5px;
   border-radius: 4px;
-  font-size: 9.5px;
+  font-size: var(--kb-fs-badge);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -1122,7 +1484,7 @@
   border-radius: 4px;
   background: var(--accent-light);
   color: var(--accent-strong);
-  font-size: 9.5px;
+  font-size: var(--kb-fs-badge);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -1132,13 +1494,13 @@
 }
 
 .trashExpiry {
-  font-size: 10px;
+  font-size: var(--kb-fs-badge);
   color: var(--text-muted);
 }
 
 /* 剩余 ≤3 天。用告警色而不只是变个数字——这是最后的提醒机会 */
 .trashExpiryUrgent {
-  font-size: 10px;
+  font-size: var(--kb-fs-badge);
   color: var(--warning, #f0a020);
 }
 
@@ -1157,22 +1519,30 @@
   word-break: break-word;
 }
 
+/* ❗ gap 从 6 抬到 12：里面那两个按钮一个是恢复、一个是彻底删除，
+   一个可逆一个不可逆，挤得近本身就是误触源。 */
 .trashActions {
   display: flex;
-  gap: 6px;
+  gap: 12px;
   padding: 0 10px 7px;
 }
 
+/* 🔴 这两个用**真高 28**而不是 `::before` 撑命中区：
+   它们并排在 `.trashActions` 里、gap 只有 6px，
+   而命中区是定位元素——两个各自向外撑 6px 会重叠，
+   后定义的那个（彻底删除）会盖住前一个（恢复），
+   结果是点「恢复」的右半边会发生删除——毁灭性误触。 */
 .trashRestore,
 .trashPurge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  height: var(--kb-hit);
   border: none;
   background: none;
   cursor: pointer;
-  font-size: 11px;
-  padding: 2px 4px;
+  font-size: var(--kb-fs-badge);
+  padding: 0 8px;
   border-radius: 5px;
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { logger } from "@/lib/logger";
 import styles from "./NoteDetailPane.module.css";
 import { usePersistedState } from "@/hooks/usePersistedState";
@@ -68,7 +69,14 @@ export function NoteBacklinks({ noteId, onOpenNote }: {
           而且「确实没人引用」本身就是信息。 */}
       <button type="button" className={styles.blHead} onClick={toggle}
         title={open ? "收起反链" : "展开反链"}>
-        <span className={styles.blCaret}>{open ? "▾" : "▸"}</span>
+        {/* 从文本字符 ▾/▸（9px）换成 lucide（2026-09-07 批 4）：
+            一是侧栏的折叠三角已经是 `ChevronRight size={13}`（FolderTree），
+            同一个视图里两种三角是风格不统一；
+            二是 9px 的文本三角在不同字体下字形差异很大。 */}
+        <ChevronRight
+          size={13}
+          className={`${styles.blCaret}${open ? ` ${styles.blCaretOpen}` : ""}`}
+        />
         被引用
         <span className={`${styles.blCount}${links.length === 0 ? ` ${styles.blCountZero}` : ""}`}>
           {links.length}

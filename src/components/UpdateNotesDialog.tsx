@@ -128,12 +128,15 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
                     </div>
                     <div className={styles.htxt}>
                       <div className={styles.hname}>PastePanda</div>
-                      <div className={styles.htitle}>{themeLine}</div>
                     </div>
                     <button onClick={closeDialog} className="dialog-close" title="关闭">
                       <X size={15} />
                     </button>
                   </div>
+                  {/* 主题句独占整行：不再与图标 / 关闭按钮同行争宽（可用宽 325px → 412px）。
+                      此前它挤在 .htxt 里，被 flex 压缩到不足一个汉字宽，浏览器为塞下内容
+                      在汉字之间逐字断行——看上去就是「竖排」，这是根因而非观感问题。 */}
+                  <div className={styles.heroTitle}>{themeLine}</div>
                   <div className={styles.hverRow}>
                     <div className={styles.hver}>
                       {hasNewer && (

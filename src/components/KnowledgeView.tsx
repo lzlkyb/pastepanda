@@ -41,6 +41,7 @@ import { KbSyncStatusBar } from "@/components/notes/KbSyncStatusBar";
 import { KbHealthBar } from "@/components/notes/KbHealthBar";
 import { FolderTree } from "@/components/notes/FolderTree";
 import { NoteList } from "@/components/notes/NoteList";
+import { useNoteMenu } from "@/components/notes/useNoteMenu";
 import { TrashPanel } from "@/components/notes/TrashPanel";
 import { BatchBar } from "@/components/notes/BatchBar";
 import { KnowledgeToolbar } from "@/components/notes/KnowledgeToolbar";
@@ -55,6 +56,12 @@ import { useNoteDetail } from "@/components/notes/useNoteDetail";
 import { useNoteActions } from "@/components/notes/useNoteActions";
 import { useKbQaPane } from "@/components/notes/useKbQaPane";
 import { NoteListEmpty } from "@/components/notes/NoteListEmpty";
+import { NoteLayoutSwitch } from "@/components/notes/NoteLayoutSwitch";
+import {
+  useGridCapacity,
+  useNoteLayoutPref,
+  type NoteLayout,
+} from "@/components/notes/useNoteLayout";
 import { ViewControls, ViewChips } from "@/components/notes/ViewControls";
 import {
   NOTE_GROUPS,
@@ -86,13 +93,57 @@ export function KnowledgeView() {
   /**
    * 列表的平滑滚动（与记录模式同一套物理惯性）。
    *
-   * 两个 ref 都在这里而不在 NoteList 里：包层 div **总是渲染**（里面装列表或空态），
-   * 这样 DOM 节点在本组件整个生命周期内稳定，不用给 hook 再搞一套
-   * 「列表出现了吗」的依赖判断。
+   * 两个 ref 都在这里而不在 NoteList 里：`BackToTop` 与 `ScrollProvider` 也要用它们。
+   *
+   * 🔴 包层 div **并不总是渲染**——下面那个「是不是回收站」的三元会把整个分支
+   *   （包括 `.listWrap`）卸载掉。这里原先写的是「总是渲染」，那句是错的，
+   *   而它直接导致了两个 bug（2026-09-07 审查时发现）：
+   *     ① `useSmoothScroll` 的 effect 依赖两个身份永不变的 `RefObject` ⇒ 只跑一次，
+   *        去过回收站再回来后 Lenis 留在已分离的节点上，平滑滚动失效；
+   *     ② `useGridCapacity` 同理，网格列数永久冻结在切走前的值。
+   *   现在靠 `attachWrap` 这个 callback ref 收口：节点每次挂载/卸载都会过这里。
    */
   const scrollWrapRef = useRef<HTMLDivElement | null>(null);
   const scrollContentRef = useRef<HTMLDivElement | null>(null);
-  const lenisRef = useSmoothScroll(scrollWrapRef, scrollContentRef);
+  /** 包层重挂计数。只用于把 `useSmoothScroll` 的 effect 顶开重新绑定。 */
+  const [wrapEpoch, setWrapEpoch] = useState(0);
+  const lenisRef = useSmoothScroll(scrollWrapRef, scrollContentRef, wrapEpoch);
+
+  /**
+   * 列表 / 网格 形态（设计稿 §2）。
+   *
+   * ❗ 名字叫 `noteLayout` 而不是 `layout`：上面那个 `layout` 是 `useKbLayout()`
+   *   （侧栏/弹窗/第三栏 三档骸架），同名会很难看懂。
+   *
+   * 🔴 量的是 `scrollWrapRef`（`.listWrap`）而不是窗口：
+   *   中栏宽度受侧栏开合与第三栏拖拽（`split.ratio`）影响，
+   *   900px 的窗口完全可能只给中栏 300px。
+   *
+   * ❗ `pref` 是用户选的，`noteLayout` 是生效的。宽度不够时只降生效值，
+   *   **不回写偏好**——否则拉窄一次就把用户的选择永久改成了列表。
+   */
+  const [layoutPref, setLayoutPref] = useNoteLayoutPref();
+  const { canGrid, cols, measureRef } = useGridCapacity();
+  const noteLayout: NoteLayout = layoutPref === "grid" && canGrid ? "grid" : "list";
+
+  /**
+   * `.listWrap` 的 ref 汇总点。三个消费者共用同一个节点：
+   * `scrollWrapRef`（Lenis / ScrollProvider / BackToTop）、网格列数测量、重挂计数。
+   *
+   * ❗ 必须 `useCallback([measureRef])` 保持身份稳定：否则 React 每次渲染都会
+   *   把 ref 卸下再装上，而里面又有 `setWrapEpoch` ⇒ 无限重渲染。
+   *   （`measureRef` 自己是 `useCallback([])`，稳定。）
+   */
+  const attachWrap = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollWrapRef.current = el;
+      measureRef(el);
+      // 只在真的挂上新节点时顶一下；卸载（null）不用——
+      // 那时 effect 的 cleanup 会自己 destroy 掉 Lenis。
+      if (el) setWrapEpoch((n) => n + 1);
+    },
+    [measureRef],
+  );
 
   /**
    * 侧栏开合：**读 store，开关在顶栏 ☰**（与记录模式同一个按钮）。
@@ -176,9 +227,14 @@ export function KnowledgeView() {
    * 而这里再弹一次对用户没用——他能看到的只是「没跳过去」。
    */
   const handleOpenNoteById = useCallback(
-    async (id: string) => {
+    // ❗ 返回值不能吐（2026-09-07 修）：调用方靠它区分「跳过去了」与
+    //   「被脏数据守卫拦下了 / 拉不到那篇」——`NoteDetailPane` 处理冲突副本后
+    //   必须知道这个，否则会停在一条**已被软删**的笔记上，
+    //   之后任何保存都会因 `WHERE deleted_at IS NULL` 硬失败。
+    async (id: string): Promise<boolean> => {
       const n = await noteGet(id);
-      if (n) await handleOpenNote(n);
+      if (!n) return false;
+      return await handleOpenNote(n);
     },
     [handleOpenNote],
   );
@@ -192,6 +248,19 @@ export function KnowledgeView() {
     clearActive: detail.clearActive,
     removeLocally: q.removeLocally,
     refreshAll: q.refreshAll,
+  });
+
+  /**
+   * 笔记菜单（置顶 / 移动 / 删除）。
+   *
+   * ❗ 在这里调而不是在 `NoteList` 里：中栏的行与卡片、以及第三栏头部那个 `⋯`
+   *   都要用同一份菜单，而那两个组件是兄弟关系——只有共同的父能只建一份。
+   */
+  const noteMenu = useNoteMenu({
+    folders: q.folders,
+    onSetFolder: act.handleSetFolder,
+    onDelete: act.handleDelete,
+    onTogglePin: (n) => void act.handleTogglePin(n),
   });
 
   /** ④ 问答雏形（B2 #10）。它占哪块屏幕的规则全在 `useKbQaPane` 里。 */
@@ -341,6 +410,23 @@ export function KnowledgeView() {
             showWideBtn={!layout.hasDetailPane}
             onWide={() => void wide.goWide()}
             controls={
+              <>
+              {/* 列表/网格切换。摆在 `ViewControls` 前面：
+                  它改的是「怎么摆」，而那边改的是「摆哪些/怎么排」。
+
+                  ❗ `value` 给的是 **`noteLayout`（生效值）而不是 `layoutPref`（偏好）**。
+                    给偏好的后果是：窄栏下网格按钮会同时是 `disabled` 和
+                    `aria-pressed={true}`——一个「既是当前选中又不可用」的按钮，
+                    而屏上实际渲染的是列表；对读屏就是一个矛盾状态。
+                    高亮跟随生效值 = 屏上是什么就高亮什么。
+                    偏好仍然存着（`layoutPref`），拉宽回来自动恢复成网格。
+                    代价：窄栏时用户看不到自己选过网格——但那个事实由置灰按钮的
+                    tooltip（「当前宽度放不下网格」）说明，比谎报高亮好。 */}
+              <NoteLayoutSwitch
+                value={noteLayout}
+                onChange={setLayoutPref}
+                gridDisabled={!canGrid}
+              />
               <ViewControls
                 sort={{
                   options: NOTE_SORTS,
@@ -363,6 +449,7 @@ export function KnowledgeView() {
                   />
                 }
               />
+              </>
             }
             chips={<ViewChips chips={q.chips} onClearAll={q.clearAllFilters} />}
             qaEnabled={qaPane.enabled}
@@ -436,14 +523,19 @@ export function KnowledgeView() {
             />
           )}
 
-          {/* 滚动包层总是渲染（里面装列表或空态）：Lenis 要的两个节点得稳定存在。 */}
-          <div className={styles.listWrap} ref={scrollWrapRef}>
+          {/* 滚动包层。❗ 它**只在非回收站分支里**存在，切回收站会连同这个 div
+              一起卸载——所以 ref 走 `attachWrap`（见它的注释），不能直接给 RefObject。 */}
+          <div className={styles.listWrap} ref={attachWrap}>
             <div className={styles.listContent} ref={scrollContentRef}>
               {q.notes.length === 0 ? (
                 <NoteListEmpty
                   loading={q.loading}
                   keyword={q.keyword}
                   folderFilter={q.folderFilter}
+                  /* 空态的主动作走与面包屑那个⊕ / 搜索框那个✕ **完全相同**的入口，
+                     不另开一条路——否则新建的目标文件夹迟早两边分歧。 */
+                  onNew={handleNew}
+                  onClearSearch={() => q.setKeyword("")}
                 />
               ) : (
                 <NoteList
@@ -462,8 +554,12 @@ export function KnowledgeView() {
                   onClearSelection={act.clearSelection}
                   onOpen={(n) => void handleOpenNote(n)}
                   onDelete={act.handleDelete}
-                  onSetFolder={act.handleSetFolder}
                   onTogglePin={(n) => void act.handleTogglePin(n)}
+                  buildMenu={noteMenu.buildMenu}
+                  folderMenu={noteMenu.folderMenu}
+                  layout={noteLayout}
+                  /* 列表形态下固定 1：二维键盘导航靠它判断该跳几格。 */
+                  cols={noteLayout === "grid" ? cols : 1}
                 />
               )}
             </div>
@@ -533,6 +629,7 @@ export function KnowledgeView() {
                   notInList={detail.activeNotInList}
                   onRegister={detail.registerDetail}
                   onOpenNote={handleOpenNoteById}
+                  buildMenu={noteMenu.buildMenu}
                 />
               ) : (
                 <NoteDetailEmpty />
