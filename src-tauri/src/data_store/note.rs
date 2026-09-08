@@ -603,6 +603,16 @@ fn push_view_filters(sql: &mut String, o: &NoteViewOpts) {
 /// ` ORDER BY [组序, ]排序 LIMIT ?`——搜索的 FTS 与 LIKE 两条路径共用（规则 #11）。
 /// 写两份的结果就是「FTS 正常时排序对、退到 LIKE 就不对」，而那条路径平时跑不到。
 fn order_clause(o: &NoteViewOpts) -> String {
+    order_clause_with(o, o.order_by())
+}
+
+/// 同上，但排序式由调用方给——普通列表要把速记改成日期倒序，用不了 `o.order_by()`。
+///
+/// ❗ `note_list_view` 原先自己另拼了一份 ORDER BY，**里面漏了 `notes.pinned DESC`**：
+/// 置顶写进库了、列表也刷新了，但行原地不动——看上去就是「置顶没用」。
+/// 而搜索的两条路径走本函数，排序是对的，所以只要一搜就又「好了」。
+/// 并成一份而不是去那边补一行，就是为了不再出一次。
+fn order_clause_with(o: &NoteViewOpts, order: &str) -> String {
     let mut s = String::from(" ORDER BY ");
     if let Some(g) = o.group_order() {
         s.push_str(g);
@@ -615,7 +625,7 @@ fn order_clause(o: &NoteViewOpts) -> String {
     //   结果就是同一个组名在列表里出现两次。
     // 所以规则是：**置顶 = 在它所处的分组里排最前**，不分组时即全局最前。
     s.push_str("notes.pinned DESC, ");
-    s.push_str(o.order_by());
+    s.push_str(order);
     s.push_str(" LIMIT ?");
     s
 }
@@ -1767,13 +1777,10 @@ impl DataStore {
         } else {
             opts.order_by()
         };
-        sql.push_str(" ORDER BY ");
-        if let Some(g) = opts.group_order() {
-            sql.push_str(g);
-            sql.push_str(", ");
-        }
-        sql.push_str(order);
-        sql.push_str(" LIMIT ? OFFSET ?");
+        // 与搜索两条路径共用同一份拼装（见 `order_clause_with`）。
+        // 它尾巴已经带了 ` LIMIT ?`，这里只需补 ` OFFSET ?`。
+        sql.push_str(&order_clause_with(opts, order));
+        sql.push_str(" OFFSET ?");
         params.push(Box::new(limit));
         params.push(Box::new(offset));
 
