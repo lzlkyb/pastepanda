@@ -121,6 +121,17 @@ impl super::source::KbSource for FakeKb {
                 &"剪贴板直接存的一大块纯文本。".repeat(2000),
             )));
         }
+        // n7：**只有算上空白才超闸**的那一篇。正文 14,400 字（未过闸），
+        // 但空行把裸字符数括到 2 万以上。它有小节，所以不会走「无节放行」那一支，
+        // 判定完全落在字数口径上。
+        if id == "n7" {
+            let filler = "这一段只是填长度。\n\n\n\n".repeat(800); // 7,200 字 + 3,200 个空白
+            return Ok(Some(fake_note(
+                "n7",
+                "空行很多但正文没超闸",
+                &format!("# 第一节\n\n{}\n\n# 第二节\n\n{}", filler, filler),
+            )));
+        }
         Ok(self.notes.iter().find(|n| n.id == id).cloned())
     }
 
@@ -1109,6 +1120,35 @@ async fn test_超大篇的整篇读要被拦下并给大纲() {
     let (sec, is_err) = call_text(&base, "kb_read", json!({ "id": "n5", "index": 1 })).await;
     assert!(!is_err, "按节读不该被拦：{}", &sec[..200.min(sec.len())]);
     assert!(sec.contains("这一段只是填长度"), "按节读要真的给正文");
+}
+
+#[tokio::test]
+async fn test_体量闸要与列表里的字数同口径() {
+    // 🔴 真机报出来的（2026-09-08）：`kb_list` 说那篇 14,737 字（不计空白），
+    //    而体量闸用裸 `chars().count()` 算出 16,728，于是把它拦了。
+    //    阈值 15,000 是按**列表里那个数**标定的，两处口径一不同，
+    //    阈值就被悄悄压低了一成多——拦的不再是病态值，是常规长文。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_read", json!({ "id": "n7" })).await;
+    assert!(!is_err, "正文没过闸却被拦了（空白被算进去了）：{}", &text[..300.min(text.len())]);
+    assert!(text.contains("这一段只是填长度"), "放行就要真的给正文");
+
+    // 另一半：被拦时报出的字数，必须就是列表里那个数。
+    // 不然模型会看到同一篇笔记有两个不同的体量，无法判断该不该读。
+    let (blocked, _) = call_text(&base, "kb_read", json!({ "id": "n5" })).await;
+    let (listed, _) = call_text(&base, "kb_sections", json!({ "id": "n5" })).await;
+    let _ = listed; // 大纲不带总字数，这里只需确保两条路都能走通
+    let n = blocked
+        .split("这篇有 ")
+        .nth(1)
+        .and_then(|s| s.split(' ').next())
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or_else(|| panic!("拦下时没报字数：{}", &blocked[..200.min(blocked.len())]));
+    let expect = super::tools::visible_chars(
+        "这一段只是填长度。".repeat(1200).as_str(),
+    ) * 2
+        + super::tools::visible_chars("# 第一节\n\n\n\n# 第二节\n\n");
+    assert_eq!(n, expect, "拦下时报的字数不是不计空白那个口径");
 }
 
 #[tokio::test]

@@ -1177,18 +1177,31 @@ fn format_outline(content: &str, secs: &[markdown::Section]) -> String {
     out
 }
 
+/// 笔记的「字数」。**全库唯一口径**：不计空白。
+///
+/// 🔴 之所以抽出来，是因为它一度有两份：`format_brief` 滤掉空白，
+/// 而 [`oversize_guard`] 用的是裸 `chars().count()`。同一篇笔记于是有两个数——
+/// 真机上 `kb_list` 说 14,737 字，`kb_read` 说 16,728 字（差 13%，全是空行和缩进）。
+/// 后果不只是「说法不一致」：**体量闸是按列表里那个数标定的**，
+/// 用裸计数就等于把阈值悄悄压低了一成多，本该放行的那篇被拦了。
+/// 两处必须读同一个函数。
+pub(super) fn visible_chars(content: &str) -> usize {
+    content.chars().filter(|c| !c.is_whitespace()).count()
+}
+
 /// 整篇读的体量闸。超过它、**且这篇真的有可寻址的节**时，
 /// `kb_read(id)` 不返回正文，而是返回大纲 + 怎么改用按节读。
 ///
-/// 阈值取 15,000 **字符**（约 1.2 万 token）：本机库 26 篇里只有两篇超过它
-/// （63,779 与 29,758），而那两篇正是会把上下文一次吃光的；排第三的 14,737 字放行。
+/// 阈值取 15,000 **字**（[`visible_chars`] 口径，约 1.2 万 token）：
+/// 本机库 26 篇里只有两篇超过它（63,779 与 29,758），
+/// 而那两篇正是会把上下文一次吃光的；排第三的 14,737 字放行。
 /// 也就是说这道闸拦的是**病态值**，不是常规长文。
 ///
 /// 返回 `Some(..)` = 已拦下（`isError`）；`None` = 放行。
 const FULL_READ_MAX_CHARS: usize = 15_000;
 
 fn oversize_guard(note: &Note) -> Option<Value> {
-    let chars = note.content.chars().count();
+    let chars = visible_chars(&note.content);
     if chars <= FULL_READ_MAX_CHARS {
         return None;
     }
@@ -1388,8 +1401,8 @@ fn format_brief(n: &Note, folder: Option<&str>) -> String {
     // 而剪贴板来的笔记正好经常是「又长、又一个 Markdown 标题都没有」——
     // 那种笔记连 kb_sections 都给不出结构，读回来就是一次盲跳。
     //
-    // 字数不含空白，与 `kb_sections` 那边同口径：中文笔记里空行与缩进占比不小。
-    let chars = n.content.chars().filter(|c| !c.is_whitespace()).count();
+    // 字数不含空白：中文笔记里空行与缩进占比不小。口径见 `visible_chars`。
+    let chars = visible_chars(&n.content);
     let secs = markdown::outline(&n.content);
     // 没标题的笔记 `outline` 也会返一个引言节。报「1 节」会让模型以为
     // 能按节读，所以这一支要明说。
