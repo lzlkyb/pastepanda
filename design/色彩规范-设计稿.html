@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 色彩规范 · 真值对照稿</title>
+<style>
+/* ╔════════════════════════════════════════════════════════╗
+   下面这一批不是拍脑袋调的，是从 `src/styles/theme.css` 的
+   [data-theme="ocean"] 块里抽出来的**真值**——用户 config 表里
+   theme=ocean（2026-09-08 实查）。所以这版稿子与他屏幕上看到的颜色一致。
+   换主题看效果得重抽一次，不要在这里手改。
+   ╚════════════════════════════════════════════════════════╝ */
+:root{
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD;
+  --danger:#D82525; --green:#11813A; --orange:#C54A0A;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB; --section-bg:#F0F4F8; --card-bg:#fff; --hover:#E8ECF2;
+  --glass-card-bg:#FFFFFF; --glass-card-border:rgba(0,0,0,0.08);
+  --glass-card-shadow:0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.05);
+  --glass-icon-bg:rgba(0,0,0,0.04); --glass-icon-border:rgba(0,0,0,0.07);
+  --glass-icon-shadow:inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --search-bg:#fff; --search-border:#E0E4EB; --card-selected-bg:#E0F2FE;
+  /* 知识库字号档（KnowledgeView.module.css 真值） */
+  --kb-fs-title:13.5px; --kb-fs-body:12.5px; --kb-fs-meta:11.5px; --kb-fs-badge:11px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:28px 32px 80px;
+  background:var(--section-bg); color:var(--text-primary);
+  font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:15px;margin:34px 0 10px;padding-top:14px;border-top:1px solid var(--border-color)}
+h3{font-size:13px;margin:16px 0 8px;color:var(--text-secondary)}
+.sub{color:var(--text-muted);font-size:12.5px;margin:0 0 6px}
+.note{
+  background:#fff;border:1px solid var(--border-color);border-left:3px solid var(--accent);
+  border-radius:6px;padding:9px 12px;font-size:12.5px;color:var(--text-secondary);margin:10px 0;
+}
+.bad{border-left-color:var(--danger)}
+code{background:var(--section-bg);padding:1px 5px;border-radius:4px;font-size:12px;
+  font-family:ui-monospace,Consolas,monospace}
+
+/* —— 对照组：左改前 / 右改后。列宽 300px = 知识库中栏在 ≥800px 下的**真实宽度**
++     （KnowledgeView.module.css 里写明中栏固定 300px），不拉宽美化。 —— */
+.pair{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+.col{width:300px;flex:0 0 300px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px;margin-bottom:8px}
+.tagBefore{background:#EEF0F3;color:var(--text-muted);border:1px solid var(--border-color)}
+.tagAfter{background:var(--accent-light);color:var(--accent-strong);border:1px solid var(--accent)}
+
+/* —— 笔记行：形制直接照 KnowledgeView.module.css 搬 —— */
+.row{display:flex;align-items:stretch;gap:4px;border-radius:16px;
+  background:var(--glass-card-bg);border:1px solid var(--glass-card-border);
+  box-shadow:var(--glass-card-shadow);margin-bottom:10px;overflow:hidden}
+.rowMain{display:flex;gap:10px;padding:10px 12px;flex:1;min-width:0;align-items:flex-start}
+.rowIcon{flex:0 0 34px;width:34px;height:34px;border-radius:11px;display:flex;
+  align-items:center;justify-content:center;font-size:15px;
+  background:var(--glass-icon-bg);border:1px solid var(--glass-icon-border);
+  box-shadow:var(--glass-icon-shadow)}
+/* 改后：12% 底 / 22% 边——直接照搬记录模式 `.bgPink` 那五个类的比例 */
+.rowIcon.tinted{
+  background:color-mix(in srgb, var(--t) 12%, var(--glass-icon-bg));
+  border-color:color-mix(in srgb, var(--t) 22%, var(--glass-icon-border));
+}
+.rowIcon svg{width:17px;height:17px;stroke-width:2.2;fill:none;
+  stroke:var(--text-muted);stroke-linecap:round;stroke-linejoin:round}
+.rowIcon.tinted svg{stroke:var(--t)}
+.rowBody{min-width:0;flex:1}
+.rowTitle{font-size:var(--kb-fs-title);font-weight:600;color:var(--text-primary);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rowExcerpt{font-size:var(--kb-fs-body);line-height:1.45;color:var(--text-secondary);
+  margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rowMeta{display:flex;align-items:center;gap:5px;font-weight:500;margin-top:5px;flex-wrap:wrap}
+.rowTime{font-size:var(--kb-fs-meta);color:var(--text-muted)}
+.rowSize{display:inline-flex;align-items:center;padding:0 5px;border-radius:4px;
+  background:var(--section-bg);font-size:var(--kb-fs-badge);font-weight:600;line-height:1.5;
+  border:1px solid var(--border-color);color:var(--text-muted)}
+.rowSize.tinted{
+  border-color:color-mix(in srgb, var(--t) 38%, var(--border-color));
+  color:color-mix(in srgb, var(--t) 55%, var(--text-muted));
+}
+
+/* —— 标签徽标（TagBadge 的淡底派生法） —— */
+.tg{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:5px;
+  margin:0 4px 4px 0;
+  background:color-mix(in srgb, var(--tag-c) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--tag-c) 30%, transparent);
+  color:color-mix(in srgb, var(--tag-c) 78%, var(--text-primary));}
+
+/* —— 网格卡片封面 —— */
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.card{border-radius:16px;background:var(--glass-card-bg);border:1px solid var(--glass-card-border);
+  box-shadow:var(--glass-card-shadow);overflow:hidden}
+.cover{height:74px;display:flex;align-items:center;justify-content:center;
+  font-size:30px;font-weight:700;user-select:none;
+  color:color-mix(in srgb, var(--text-primary) 22%, transparent);
+  background:linear-gradient(135deg,
+    color-mix(in srgb, var(--cv) calc(14% + var(--step,0) * 5%), var(--section-bg)),
+    color-mix(in srgb, var(--cv) 4%, var(--section-bg)));}
+.cardBody{padding:8px 10px}
+.cardTitle{font-size:var(--kb-fs-title);font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.cardMeta{font-size:var(--kb-fs-meta);color:var(--text-muted);margin-top:3px}
+
+/* —— 色卡 —— */
+.swatches{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.sw{width:96px;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;background:#fff}
+.sw i{display:block;height:34px}
+.sw b{display:block;font-size:11px;font-weight:600;padding:4px 6px 0}
+.sw span{display:block;font-size:10.5px;color:var(--text-muted);padding:0 6px 5px;
+  font-family:ui-monospace,Consolas,monospace}
+.layer{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:4px;
+  background:var(--accent-light);color:var(--accent-strong);margin-left:6px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:8px 0}
+th,td{border:1px solid var(--border-color);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--section-bg);font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>PastePanda · 色彩规范 · 真值对照稿</h1>
+<p class="sub">
+  2026-09-08。配套文档：<code>docs/PastePanda-色彩规范.md</code><br>
+  本稿所有颜色取自 <code>theme.css</code> 的 <code>[data-theme="ocean"]</code> 块（你 config 表里实际在用的主题），
+  列宽 300px = 知识库中栏的真实宽度。
+</p>
+
+<h2>一 · 四层色彩</h2>
+<table>
+<tr><th style="width:88px">层</th><th>用途</th><th>取值来源</th><th>换主题会变吗</th></tr>
+<tr><td><b>0 语义</b></td><td>危险 / 警告 / 成功 / 当前选中</td><td><code>--accent</code> <code>--danger</code> <code>--green</code> <code>--orange</code></td><td><b>会</b>，且带对比度审计</td></tr>
+<tr><td><b>1 身份</b></td><td>这是哪一类 / 哪一个（不含好坏）</td><td><code>HUE</code> 表（新建）</td><td>不变</td></tr>
+<tr><td><b>2 品牌</b></td><td>Python / JS / Rust … logo 色</td><td><code>BRAND</code> 表（新建）</td><td>不变，不可替换</td></tr>
+<tr><td><b>3 哨兵</b></td><td>「没人配过色」</td><td>空串 <code>""</code></td><td>—</td></tr>
+</table>
+
+<h3>第 1 层：身份色盘 <span class="layer">HUE</span></h3>
+<p class="sub">不是新发明的——全仓库 41 个色值里有 21 个已经落在这些档上，只是没收口。</p>
+<div class="swatches" id="hue"></div>
+
+<h3>第 2 层：品牌色 <span class="layer">BRAND</span></h3>
+<p class="sub">外部事实。不进哈希盘——把 Python 蓝扔进随机轮转里，它就不再是「Python」了。</p>
+<div class="swatches" id="brand"></div>
+
+<h2>二 · 笔记行：改前 / 改后</h2>
+<p class="sub">标题用的是你库里真实的笔记（共 26 篇，其中 24 篇手工新建、无内容类型）。</p>
+<div class="pair">
+  <div class="col">
+    <span class="tag tagBefore">改前</span>
+    <div id="rowsBefore"></div>
+  </div>
+  <div class="col">
+    <span class="tag tagAfter">改后</span>
+    <div id="rowsAfter"></div>
+  </div>
+</div>
+<div class="note">
+  <b>真正起作用的是底座，不是线条。</b>
+  第一版只把图标的线染了色，一整屏看过去仍然是灰的——
+  一根 17px 的彩线撑不起 34px 的灰底。
+  记录模式一直是给 <code>.cardIcon</code> 另挂一个 <code>.bgPink</code> / <code>.bgGreen</code>…
+  把 42px 槽变成一块彩色瓷砖（<code>Card.tsx:181</code>）。此处 12%/22% 就是照搬它的。
+</div>
+
+<h2>三 · 网格卡片封面：改前 / 改后</h2>
+<div class="pair">
+  <div class="col">
+    <span class="tag tagBefore">改前：色相写死 <code>--accent</code></span>
+    <div class="grid" id="gridBefore"></div>
+  </div>
+  <div class="col">
+    <span class="tag tagAfter">改后：色相走本篇色调</span>
+    <div class="grid" id="gridAfter"></div>
+  </div>
+</div>
+<div class="note">
+  <b>只改了色相。</b>混合比例（<code>14% + step*5%</code> / <code>4%</code>）、
+  混合底（<code>--section-bg</code>）、面上那个字的 <code>--text-primary 22%</code> 全部没动——
+  那段代码的红色注释要求的正是这个。
+  <br><b>但不是零风险：</b>同一混合比下不同色相亮度不同（黄 <code>#F59E0B</code> 比蓝 <code>#3B82F6</code> 亮不少）。
+  若哪个主题下封面字发糊，<b>先动那个 22%</b>，不要回头碰混合比。
+</div>
+
+<h2>四 · 标签：改前 / 改后</h2>
+<p class="sub">这 10 个是你库里<b>笔记真在用</b>的全部标签。</p>
+<div class="pair">
+  <div class="col" style="flex:0 0 300px">
+    <span class="tag tagBefore">改前：10/10 都是 <code>#6B7280</code></span>
+    <div id="tagsBefore"></div>
+  </div>
+  <div class="col" style="flex:0 0 300px">
+    <span class="tag tagAfter">改后：按名哈希</span>
+    <div id="tagsAfter"></div>
+  </div>
+</div>
+<div class="note bad">
+  <b>根因是一行常量：</b><code>note_vault.rs:23 &nbsp;const IMPORT_TAG_COLOR = "#6B7280"</code>。
+  Markdown 库导入建的标签一律给这个值。它不是「有人选了灰」，是「根本没选」——
+  而两者存在同一个字段里，代码只能猜。这就是规范里第 3 层（空串哨兵）要解决的事。
+</div>
+
+<h2>五 · <code>--amber</code> 欠的账</h2>
+<div class="note bad">
+  <code>--amber</code> 在 <code>theme.css</code> 里出现 <b>0 次</b>，而 4 个文件在
+  <code>var(--amber, #F59E0B)</code> 地用它。后果：置顶图钉在<b>六个主题下都是同一个颜色</b>，
+  深色主题下没经过任何对比度校验——而 <code>--green</code> / <code>--orange</code> / <code>--danger</code>
+  都是按主题分别调过的。
+  <br><br>
+  两条路：① 补齐 <code>--amber</code> 四个变量 × 6 个主题；
+  ② 改用已有的 <code>--orange</code> 一族。
+  ② 更符合「不新增语义色」，但会让<b>置顶与警告同色</b>。<b>这一条需要你拍板。</b>
+</div>
+<p class="sub">下面是两条路在 ocean 下的实际观感（左：写死的 <code>#F59E0B</code>；右：ocean 的 <code>--orange</code> = <code>#C54A0A</code>）：</p>
+<div class="pair">
+  <div class="col"><span class="tag tagBefore">① 写死 #F59E0B</span><div id="amberA"></div></div>
+  <div class="col"><span class="tag tagAfter">② 用 --orange</span><div id="amberB"></div></div>
+</div>
+
+<h2>六 · 不做什么</h2>
+<table>
+<tr><th style="width:190px">不做</th><th>为什么</th></tr>
+<tr><td>给标题 / 正文上色</td><td>记录模式也没有；正文彩色会把列表变成彩票</td></tr>
+<tr><td>碰封面的混合比例</td><td>比例与混合底是对比度审计的一部分，只能改色相</td></tr>
+<tr><td>把搜索框 / 侧栏改彩</td><td>实测已与记录模式一致（搜索框逐字相同；知识库文件夹树带色 37% vs 记录模式侧栏 20%，已经<b>更花</b>）。上色 = 朝一致性的反方向走</td></tr>
+<tr><td>给「更多」上语义色</td><td>它背后既有安全动作也有删除，给一个色等于替里面所有项拿一个表态</td></tr>
+</table>
+
+<script>
+/* 与 `contentTypes.ts` 里的 FALLBACK_PALETTE / hashColor 逐字相同。
+   写两份是因为设计稿不能 import 项目代码；改了那边记得同步这里。 */
+const PAL=["#3B82F6","#8B5CF6","#EC4899","#10B981","#F59E0B","#EF4444","#06B6D4","#6366F1"];
+const hash=t=>{let h=0;for(let i=0;i<t.length;i++)h=((h<<5)-h+t.charCodeAt(i))|0;
+  return PAL[Math.abs(h)%PAL.length];};
+
+const HUE={red:"#EF4444",orange:"#F97316",amber:"#F59E0B",lime:"#84CC16",
+  green:"#22C55E",emerald:"#10B981",teal:"#14B8A6",cyan:"#06B6D4",sky:"#0EA5E9",
+  blue:"#3B82F6",indigo:"#6366F1",violet:"#8B5CF6",purple:"#A855F7",pink:"#EC4899",gray:"#6B7280"};
+const BRAND={Python:"#3776AB",JavaScript:"#F7DF1E",TypeScript:"#3178C6",Rust:"#DEA584",
+  Go:"#00ADD8",CSS:"#1572B6",HTML:"#E34F26",Java:"#ED8B00",PostgreSQL:"#336791",Slack:"#E01E5A"};
+
+const sw=(o,el)=>{el.innerHTML=Object.entries(o).map(([k,v])=>
+  `<div class="sw"><i style="background:${v}"></i><b>${k}</b><span>${v}</span></div>`).join("");};
+sw(HUE,document.getElementById("hue"));
+sw(BRAND,document.getElementById("brand"));
+
+/* 真实笔记标题 + 真实字数（来自 2026-09-08 的 kb_list） */
+const NOTES=[
+  ["策手 StratHand · AI量化软件 产品技术总纲","# 策手 StratHand · 产品技术总纲（权威主文档）","63779 字","47 节"],
+  ["策手 StratHand · ADR 架构决策记录","把主文档 §11 里已锁定的技术决策归档为正式 ADR。","29758 字","25 节"],
+  ["策手 StratHand · G7 实盘通道选型 spike 报告","已决（2026-08-31 拍板「双通道分层默认」）","4831 字","15 节"],
+  ["【7.1.0问题记录】","1知识库模式下3栏状态下问答框太短","150 字","无小节"],
+  ["【终端功能】","存在全屏显示遮挡、Win11滚轮失效、UI按钮调整…","98 字","无小节"],
+];
+/* 笔形图标 = 「手工新建」（你库里 24/26 都是这一类） */
+const PEN='<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+const row=(n,tint)=>{
+  const t=tint?`style="--t:${hash(n[0])}"`:"";
+  const c=tint?" tinted":"";
+  return `<div class="row"><div class="rowMain">
+    <span class="rowIcon${c}" ${t}>${PEN}</span>
+    <span class="rowBody">
+      <span class="rowTitle">${n[0]}</span>
+      <div class="rowExcerpt">${n[1]}</div>
+      <div class="rowMeta">
+        <span class="rowSize${c}" ${t}>${n[2]}</span>
+        <span class="rowSize${c}" ${t}>${n[3]}</span>
+        <span class="rowTime">2026-09-01</span>
+      </div>
+    </span></div></div>`;
+};
+document.getElementById("rowsBefore").innerHTML=NOTES.map(n=>row(n,false)).join("");
+document.getElementById("rowsAfter").innerHTML=NOTES.map(n=>row(n,true)).join("");
+
+/* 网格封面。step 按标题哈希取 0..3，模拟 `coverStepOf(note.id)` 的稳定性。 */
+const card=(n,tint)=>{
+  const cv=tint?hash(n[0]):"var(--accent)";
+  const step=Math.abs(n[0].length*7)%4;
+  return `<div class="card">
+    <div class="cover" style="--cv:${cv};--step:${step}">${n[0].replace(/^【/,"")[0]}</div>
+    <div class="cardBody"><div class="cardTitle">${n[0]}</div>
+      <div class="cardMeta">${n[2]}｜${n[3]}</div></div></div>`;
+};
+document.getElementById("gridBefore").innerHTML=NOTES.slice(0,4).map(n=>card(n,false)).join("");
+document.getElementById("gridAfter").innerHTML=NOTES.slice(0,4).map(n=>card(n,true)).join("");
+
+/* 真实标签（全部 source=manual、全部 #6B7280） */
+const TAGS=["NSIS","Tauri","开源许可证","投顾合规","数据合规",
+  "更新能力对比","策略IP","自动更新","量化投资","静默安装"];
+const tg=(name,c)=>`<span class="tg" style="--tag-c:${c}">${name}</span>`;
+document.getElementById("tagsBefore").innerHTML=TAGS.map(t=>tg(t,"#6B7280")).join("");
+document.getElementById("tagsAfter").innerHTML=TAGS.map(t=>tg(t,hash(t))).join("");
+
+/* --amber 两条路的观感：置顶图钉 + 已置顶底 */
+const PIN='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V7a3 3 0 0 1 6 0v3.76a2 2 0 0 0 .59 1.42L17 13.5V17H7v-3.5l1.41-1.32A2 2 0 0 0 9 10.76Z"/></svg>';
+const amber=(c)=>`<div class="row"><div class="rowMain">
+  <span class="rowIcon tinted" style="--t:${c}">${PEN}</span>
+  <span class="rowBody"><span class="rowTitle">已置顶的一篇笔记</span>
+  <div class="rowMeta">
+    <span style="display:inline-flex;padding:3px;border-radius:7px;color:${c};
+      background:color-mix(in srgb, ${c} 14%, transparent)">${PIN}</span>
+    <span class="rowTime">hover 态与已置顶态同色</span>
+  </div></span></div></div>`;
+document.getElementById("amberA").innerHTML=amber("#F59E0B");
+document.getElementById("amberB").innerHTML=amber("#C54A0A");
+</script>
+</body>
+</html>
