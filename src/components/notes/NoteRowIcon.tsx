@@ -12,6 +12,7 @@
 import { useMemo, useState } from "react";
 import { Bot, CalendarDays, ClipboardList, PenLine, type LucideIcon } from "lucide-react";
 import { coverUrlOf } from "@/lib/notes/cover";
+import { noteIconColor } from "@/lib/contentTypes";
 import type { Note } from "@/lib/api";
 
 /**
@@ -22,6 +23,13 @@ import type { Note } from "@/lib/api";
  * （`KnowledgeView.module.css`），多占 8px 会从标题里抠。
  */
 const ICON_SIZE = 17;
+
+/**
+ * 描边粗细。跟记录模式（`Card.tsx` 里写死的 2.2）对齐，而不是 lucide 默认的 2。
+ * 0.2 看着微不足道，但在 17px 这个尺寸上是 10% 的墨量：
+ * 线太细时颜色撑不起来，上了色也像没上。
+ */
+const ICON_STROKE = 2.2;
 
 /**
  * 一篇笔记的「来路」：图标组件 + 悬停解释。
@@ -90,12 +98,19 @@ export function NoteRowIcon({
   const cover = useMemo(() => coverUrlOf(note.content), [note.content]);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const showThumb = cover !== null && cover !== failedSrc;
+  const tint = noteIconColor(note);
 
   return (
     <span
       className={showThumb ? `${className} ${thumbClassName}` : className}
       title={label}
       aria-hidden="true"
+      /* 🔴 真正让一行「有色」的是**底座**，不是图标线条。
+         记录模式给 `.cardIcon` 另挂一个 `.bgPink/.bgGreen/…`，
+         把 42px 槽变成一块彩色瓷砖（`Card.tsx:181`）。
+         只染线条的话，灰底上一根彩线整体看还是灰的。
+         挂到槽上而不是图标上：装缩略图时也要有这层底。 */
+      style={{ ["--kb-icon-tint" as string]: tint }}
     >
       {showThumb ? (
         <img
@@ -107,7 +122,7 @@ export function NoteRowIcon({
           onError={() => setFailedSrc(cover)}
         />
       ) : (
-        <Icon size={ICON_SIZE} />
+        <Icon size={ICON_SIZE} color={tint} strokeWidth={ICON_STROKE} />
       )}
     </span>
   );

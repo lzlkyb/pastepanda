@@ -11,6 +11,7 @@ import { FolderInput, MoreHorizontal, Pin, PinOff } from "lucide-react";
 import type { MenuItem } from "@/components/ContextMenu";
 import type { Note } from "@/lib/api";
 import { coverUrlOf, coverStepOf, coverInitialOf } from "@/lib/notes/cover";
+import { noteIconColor } from "@/lib/contentTypes";
 import { NoteItemBody } from "./NoteItemBody";
 import { NOTE_DRAG_MIME } from "@/lib/notes/dragMime";
 import styles from "../KnowledgeView.module.css";
@@ -185,9 +186,15 @@ export function NoteCard({
         ) : (
           <span
             className={styles.cardCoverTxt}
-            /* 深浅档由 `note.id` 哈希定（稳定），颜色在 CSS 里用 `color-mix`
-               从 `--accent` / `--section-bg` 派生——换主题自动跟着变。 */
-            style={{ ["--kb-cover-step" as string]: String(coverStepOf(note.id)) }}
+            /* 深浅档由 `note.id` 哈希定（稳定）；色相走 `--kb-cover-tint`，
+               与列表行图标的 `--kb-icon-tint` **同一个取色函数**（规则 #11）：
+               同一篇笔记在列表与网格里必须是同一个颜色，否则切一下形态整屏换色。
+               仍然在 CSS 里用 `color-mix` 掺进 `--section-bg`，没改混合比例——
+               那里那段红色注释要求的正是这个。 */
+            style={{
+              ["--kb-cover-step" as string]: String(coverStepOf(note.id)),
+              ["--kb-cover-tint" as string]: noteIconColor(note),
+            }}
             aria-hidden="true"
           >
             {coverInitialOf(note.title)}

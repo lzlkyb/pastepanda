@@ -2,7 +2,7 @@ import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, us
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, parseFilePaths, resolveImageCardDisplay, getImageOcrFullText, copyToClipboard, type ImageOcrState } from "@/lib/utils";
-import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
+import { getContentTypeMeta, hashColor, isCodeLike } from "@/lib/contentTypes";
 import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
 import { URL_SCHEME_RE, urlHost, urlPathname, fileUrlToLocalPath } from "@/lib/url";
@@ -46,15 +46,10 @@ async function copyOcrTextToClipboard(
   toast(ok ? "已复制识别文字" : "复制失败", ok ? "success" : "error");
 }
 
-const PALETTE = ["#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#6366F1"];
-
 export type ImgState = { status: "loading" | "loaded" | "error" | "silent"; url?: string };
 
-function hashColor(text: string): string {
-  let h = 0;
-  for (let i = 0; i < text.length; i++) h = ((h << 5) - h + text.charCodeAt(i)) | 0;
-  return PALETTE[Math.abs(h) % PALETTE.length];
-}
+// `hashColor` 与它的调色盘搬到了 `@/lib/contentTypes`（2026-09-08）：
+// 知识库的行/卡片图标要用同一份，否则同一条内容在两个模式里会是不同颜色。
 
 // content_type → 图标组件映射；颜色统一取自 getContentTypeMeta（唯一来源）
 const ICONS: Record<string, React.FC<{ size?: number; color?: string; strokeWidth?: number }>> = {

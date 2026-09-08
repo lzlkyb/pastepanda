@@ -15,6 +15,7 @@ import type { Note, NoteFolder } from "@/lib/api";
 import { groupHeaderFor } from "@/lib/notes/viewOpts";
 import { LoadMoreSentinel } from "./LoadMoreSentinel";
 import { NoteRowIcon } from "./NoteRowIcon";
+import { noteIconColor } from "@/lib/contentTypes";
 import { NoteItemBody } from "./NoteItemBody";
 import { NoteCard } from "./NoteCard";
 import type { NoteLayout } from "./useNoteLayout";
@@ -389,6 +390,10 @@ function NoteRow({
         type="button"
         className={styles.rowMain}
         ref={rowRef}
+        /* 本行的色调。图标自己也算一遍（`NoteRowIcon` 还要服务回收站，
+           那里没有这个父元素），但算的是**同一个函数**——一份实现、两处调用，
+           不是两套规则。提到行上是因为字数条那些元素不在图标那棵子树里。 */
+        style={{ ["--kb-row-tint" as string]: noteIconColor(note) }}
         /* roving：全列表只有一个 0。 */
         tabIndex={focused ? 0 : -1}
         /* A3 拖拽源。❗ 挂在这个普通 `<button>` 上而不是外层 `motion.li`：
@@ -449,7 +454,7 @@ function NoteRow({
       <span className={styles.rowActs} onMouseDown={() => onFocusRow(index)}>
         <button
           type="button"
-          className={`${styles.rowActBtn} ${note.pinned ? styles.rowActBtnOn : ""}`}
+          className={`${styles.rowActBtn} ${styles.rowActBtnPin} ${note.pinned ? styles.rowActBtnOn : ""}`}
           title={note.pinned ? "取消置顶（P）" : "置顶（P）"}
           aria-label={note.pinned ? `取消置顶 ${note.title}` : `置顶 ${note.title}`}
           tabIndex={-1}
@@ -461,7 +466,7 @@ function NoteRow({
             不另写弹层——也就不会出现「右键菜单改了、悬停条忘了改」。 */}
         <button
           type="button"
-          className={styles.rowActBtn}
+          className={`${styles.rowActBtn} ${styles.rowActBtnMove}`}
           title="移动到文件夹（M）"
           aria-label={`移动 ${note.title} 到文件夹`}
           tabIndex={-1}

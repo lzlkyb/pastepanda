@@ -794,7 +794,11 @@
   flex-shrink: 0;
   margin-right: 4px;
   vertical-align: -1px;
-  color: var(--amber, #F59E0B);
+  /* 🔴 置顶 = 记录模式的「收藏」（`.cardInlineBtnFav`），同一个语义，所以用同一个色。
+     2026-09-08 从 `var(--amber, #F59E0B)` 改过来：`--amber` 在 `theme.css` 里
+     **从来没定义过**（0 次），那个回退值在六个主题下都一样，
+     也没进过 `theme.css` 里那 28 处对比度审计。 */
+  color: var(--orange);
 }
 
 /* ===== 多选与批量（A2） ===== */
@@ -947,6 +951,19 @@
 
    34px 而不是卡片的 42px：中栏宽只有 300px，而笔记行要装三行文字（卡片只两行），
    42 会把标题挤得只剩不到一半宽。 */
+/* 🔴 底座要跟着图标一起染色。记录模式的做法是给 `.cardIcon` 另挂一个
+   `.bgPink` / `.bgGreen` / `.bgAmber` / `.bgBlue` / `.bgPurple`（`Card.tsx:181`），
+   把 42px 槽变成一块彩色瓷砖。知识库这边一直是中性玻璃，
+   所以哪怕把图标线条染了色，一整屏看过去仍然是灰的——
+   一根 17px 的彩线撑不起 34px 的灰底。
+
+   比例 12% / 22% 直接照搬记录模式那五个类（`rgba(…,.12)` / `rgba(…,.22)`），
+   不自己拍一个：那组值已经在 6 个主题下跑了很久。
+
+   ❗ 用 `color-mix` 掺到 `--glass-icon-bg` 上而不是直接铺色：
+   玻璃底本身按主题变，直接铺一层固定 rgba 会在深色主题下浮出来。
+   `--kb-icon-tint` 由 `NoteRowIcon` 按笔记挂在行内；缺省 `transparent`
+   意味着没传时退回原来的中性玻璃，不会变成一块黑斑。 */
 .rowIcon {
   flex-shrink: 0;
   width: 34px;
@@ -956,8 +973,16 @@
   align-items: center;
   justify-content: center;
   font-size: 15px;
-  background: var(--glass-icon-bg);
-  border: 1px solid var(--glass-icon-border);
+  background: color-mix(
+    in srgb,
+    var(--kb-icon-tint, transparent) 12%,
+    var(--glass-icon-bg)
+  );
+  border: 1px solid color-mix(
+    in srgb,
+    var(--kb-icon-tint, transparent) 22%,
+    var(--glass-icon-border)
+  );
   box-shadow: var(--glass-icon-shadow);
   transition: all 0.3s ease;
 }
@@ -1043,18 +1068,38 @@
   color: var(--text-muted);
 }
 
+/* 字数条。
+
+   ❗ 原来是**三层灰叠在一起**：`--section-bg` 底 + `--border-color` 边
+   + `--text-muted` 字。而它是**每行都有**的元素，所以占屏重量不小。
+
+   记录模式没有对应物（卡片不显字数），所以这里没有「跟着它怎么写」可参；
+   选择是接本行的色调（`--kb-row-tint`，与图标同色），
+   好处是一行内部自洽，不会变成又一个不相干的颜色。
+
+   🔴 只染**边与字**，底继续用 `--section-bg`：它紧挨着正文，
+   底也染上就成了一块与标题争注意力的色块——字数是参考信息，不是重点。
+   缺省值保留原来的中性色，没传 tint 时（如回收站）行为不变。 */
 .rowSize {
   display: inline-flex;
   align-items: center;
   padding: 0 5px;
-  border: 1px solid var(--border-color);
+  border: 1px solid color-mix(
+    in srgb,
+    var(--kb-row-tint, var(--border-color)) 38%,
+    var(--border-color)
+  );
   border-radius: 4px;
   background: var(--section-bg);
   font-size: var(--kb-fs-badge);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
-  color: var(--text-muted);
+  color: color-mix(
+    in srgb,
+    var(--kb-row-tint, var(--text-muted)) 55%,
+    var(--text-muted)
+  );
 }
 
 /* （原有的 `.tagChip` 已删：标签渲染收回到公共组件 TagBadge，见 NoteList.tsx。
@@ -1158,10 +1203,21 @@
 }
 
 /* 文字封面（无图时）。
-   🔴 颜色必须用 `color-mix` 从 `--accent` / `--section-bg` 派生，
-     **不能自由 HSL**：项目有 6 个主题，而 `theme.css` 里有 28 处
-     带改前/改后数字的对比度改进标注——自由取色会在某个主题下翻车，
-     且绕过了那次审计。`--kb-cover-step` 由 `coverStepOf(note.id)` 定（稳定）。 */
+   🔴 颜色必须用 `color-mix` 掺进 `--section-bg`，**不能自由 HSL**：
+     项目有 6 个主题，而 `theme.css` 里有 28 处带改前/改后数字的
+     对比度改进标注——自由取色会在某个主题下翻车，且绕过了那次审计。
+     `--kb-cover-step` 由 `coverStepOf(note.id)` 定（稳定）。
+
+   ❗ 2026-09-08：色相从写死的 `--accent` 改成 `--kb-cover-tint`（缺省仍是 `--accent`）。
+     原因是整个知识库只有 accent 一个色系，一屏卡片就是同一个色的深浅档，
+     看上去与全灰差不多。
+
+     🔴 **没动的东西比动了的重要**：混合比例（`14% + step*5%` / `4%`）、
+     混合底（`--section-bg`）、以及面上那个字的 `--text-primary 22%` 全部不变。
+     变的只有**色相**，所以上面那段审计的结论结构上仍然成立。
+     但要诚实：同一混合比下不同色相的亮度不同（黄 #F59E0B 比蓝 #3B82F6 亮不少），
+     所以这不是零风险。若哪个主题下封面字变得看不清，
+     先动那个 22%（它也是从 `--text-primary` 派生的），不要回头去碰混合比。 */
 .cardCoverTxt {
   font-size: 30px;
   font-weight: 700;
@@ -1170,10 +1226,10 @@
     135deg,
     color-mix(
       in srgb,
-      var(--accent) calc(14% + var(--kb-cover-step, 0) * 5%),
+      var(--kb-cover-tint, var(--accent)) calc(14% + var(--kb-cover-step, 0) * 5%),
       var(--section-bg)
     ),
-    color-mix(in srgb, var(--accent) 4%, var(--section-bg))
+    color-mix(in srgb, var(--kb-cover-tint, var(--accent)) 4%, var(--section-bg))
   );
   user-select: none;
 }
@@ -1258,14 +1314,41 @@
   transition: background 0.15s, color 0.15s;
 }
 
+/* 🔴 hover 要报出**这个按钮是干什么的**，而不是统一变深一点的灰。
+
+   记录模式那几个行内按钮是**常驻带色**的（`.cardInlineBtnFav` 橙底橙边、
+   `.cardInlineBtnDel` 红、`.cardInlineBtnCopy` / `Edit` 走 accent）。
+   这边**不照搬「常驻」**：笔记行比卡片矮，三个按钮又是 hover 才浮出来的，
+   常驻上色会把一排彩色小块压在标题旁边。取的是同一套**语义色**，
+   只在 hover 时现形——色相一致，分量按各自的密度调。 */
 .rowActBtn:hover {
   background: var(--hover);
   color: var(--text-primary);
 }
 
-/* 已置顶：琥珀色常亮（不只在 hover 时）——它表达的是**状态**而不是可点性。 */
+/* 置顶 —— 用 `--orange`，与记录模式的「收藏」同一个语义（把一条提上去）。
+
+   ❗ 这确实与「警告」同色——`theme.css` 里六个主题都写着 `--warning: var(--orange)`。
+   但那不是本次引入的：**收藏与警告今天就已经同色**，置顶只是加入一个
+   已存在的桶——而且是它本来就该在的那个。 */
+.rowActBtnPin:hover {
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+}
+
+/* 移动到文件夹 —— accent。与记录模式的「编辑 / 复制」同档：
+   都是「对这条做点什么」且不带危险性。 */
+.rowActBtnMove:hover {
+  background: var(--accent-light, color-mix(in srgb, var(--accent) 12%, transparent));
+  color: var(--accent-strong, var(--accent));
+}
+
+/* ❗ 「更多」故意不给色，保留中性 hover：它只是开一个菜单，
+   背后既有安全动作也有删除。给它一个色等于替里面所有项拿一个表态。 */
+
+/* 已置顶：常亮（不只在 hover 时）——它表达的是**状态**而不是可点性。 */
 .rowActBtnOn {
-  color: var(--amber, #f59e0b);
+  color: var(--orange);
 }
 
 /* ===== 字段视图（B2 #9）：分组组头 + 加载更多 ===== */
