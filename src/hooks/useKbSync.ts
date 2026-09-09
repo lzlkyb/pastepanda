@@ -53,6 +53,15 @@ export interface KbLastSync {
   error: string | null;
   /** 大约多久后再试 / 再同步（秒）。**含拖动，界面上别写死。** */
   next_in_secs: number;
+  /**
+   * 上一次**真的同步成功**的时间；0 = 从来没成功过。
+   *
+   * 🔴 `at_ms` 是「上次**尝试**」，失败时也在刷——分不出
+   * 「对方一直没开机」与「上午还好好的现在坏了」。要分得用这一个。
+   */
+  last_ok_ms: number;
+  /** 已进休眠（连续失败够多，不再定时拨）。后端算好的，前端不再推。 */
+  dormant: boolean;
 }
 
 export interface KbIdentity {

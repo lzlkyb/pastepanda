@@ -82,7 +82,27 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   //   理由与完整判据见 `@/lib/kbOnline`。
   const onlineCount = countKbOnline(devices, live);
   const skew = last.find((l) => l.clock_too_far_ahead_ms != null);
-  const failing = last.filter((l) => l.fails > 0);
+  /**
+   * 🔴 分级依据不是「有没有失败」，是「**你能不能处理**」。
+   *
+   * 旧实现是 `fails > 0` 就一台一行橙色 warn。可「对方没开机」是**常态**：
+   * 退避封顶 300 秒、第 20 次后才休眠，所以对方关机一天，那行橙色就挂一天、
+   * 次数一路涨到几十；配几台就几行。而状态行第一句已经写了「对方都不在线」。
+   *
+   * 更糟的是它与「对端时钟不对」「有几处冲突副本」同一视觉权重——
+   * 前者你什么都做不了，后者你必须处理。常态把真问题淹了。
+   *
+   * 现在分三档：
+   *   已休眠            → 不出行（状态行那句就够了）
+   *   从未成功过、还在试  → 合并成一行灰字
+   *   曾经成功过、现在连不上 → 橙色 warn，这才是「本来好好的突然坏了」
+   *
+   * ❗ 不需要再加「成功得够新」的时间限制：持续失败约 1.5 小时就会休眠，
+   * 所以 `!dormant && last_ok_ms > 0` 天然就意味着「没多久前还好好的」。
+   */
+  const failing = last.filter((l) => l.fails > 0 && !l.dormant);
+  const broke = failing.filter((l) => l.last_ok_ms > 0);
+  const neverOk = failing.filter((l) => l.last_ok_ms === 0);
   const skipped = newest && newest.skipped_older > 0 ? newest : null;
   // 两者分开算：原因不同（没传到 vs 传到了写不进库），文案也不一样。
   // 但都属于「没落地」，后端都会把游标夹在它们前面、下一轮重来。
@@ -189,13 +209,24 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
         </div>
       </>)}
 
-      {failing.map((f) => row(`fail-${f.peer}`, "warn", <>
-        <b>连不上 {name(f.peer)} · {f.next_in_secs} 秒后重试（第 {f.fails} 次）</b>
+      {/* 曾经成功过、现在连不上——唯一值得报警的一档。
+          写出「之前还好好的」，因为那才是你判断要不要去查的依据 */}
+      {broke.map((f) => row(`fail-${f.peer}`, "warn", <>
+        <b>连不上 {name(f.peer)}（{ago(f.last_ok_ms)}还好好的）</b>
         <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
-          对方可能没开机、不在同一网络，或没开这个开关。
+          {f.next_in_secs} 秒后重试。对方可能刚关机、换了网络，或关了这个开关。
           {f.error && <span style={{ color: "var(--text-muted)" }}>（{f.error}）</span>}
         </div>
       </>))}
+
+      {/* 从未连上过的：合并成一行灰字。你处理不了，也不需要一台一行——
+          但不能完全不报：刚配对完就连不上是真会发生的，而那时候你得知道 */}
+      {neverOk.length > 0 && row("fail-new", "info", <>
+        还没连上 <b>{neverOk.length} 台</b>（{neverOk.map((f) => name(f.peer)).join("、")}），还在重试。
+        {neverOk[0].error && (
+          <span style={{ color: "var(--text-muted)" }}>（{neverOk[0].error}）</span>
+        )}
+      </>)}
     </div>
   );
 }

@@ -87,6 +87,19 @@ pub struct LastSync {
     /// 大约多久之后再试 / 再同步（秒）。界面上该显示这个而不是写死 30：
     /// 它含拖动（[`jittered_secs`]），写死了盯着表的人会觉得程序坏了。
     pub next_in_secs: u64,
+    /// 上一次**真的同步成功**的时间；0 = 从来没成功过。
+    ///
+    /// 🔴 不能用 [`Self::at_ms`] 代替：那一个**失败时也在刷**（它是「上次尝试」）。
+    /// 一台机器 10:00 同步成功、12:00 开始连不上，那个 10:00 就被盖没了——
+    /// 于是界面无法区分「对方一直没开机」与「上午还好好的现在坏了」，
+    /// 而这两件事对用户的意义完全不同。
+    pub last_ok_ms: i64,
+    /// 已进休眠（连续失败够多，不再定时拨）。
+    ///
+    /// ❗ 由循环里已经算好的 [`Wait`] 直接得出，**不让前端拿
+    /// `fails >= DORMANT_AFTER_FAILS` 再推一遍**——那就是两处口径，
+    /// 阀值一改界面就静默地说错话。
+    pub dormant: bool,
 }
 
 /// 循环们共用的一份东西。
@@ -403,7 +416,15 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 }
             }
         };
-        record(&ctx, &peer, outcome, fails, wait.secs_hint());
+        // dormant 从循环刚算好的 `wait` 取，不另写一遍阀值判定
+        record_into(
+            &ctx.last,
+            &peer,
+            outcome,
+            fails,
+            wait.secs_hint(),
+            matches!(wait, Wait::Dormant(_)),
+        );
         let alive = match wait {
             // 脏了就拨、否则睡到心跳。空闲时不再固定 30 秒一轮——
             // 那一轮里两边都没改过东西，整个会话是纯浪费。
@@ -446,8 +467,19 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
 ///
 /// ❗「对端在忙」**不覆盖**上一次的结果：那既不是成功也不是失败，
 /// 覆盖掉的话界面上刚才那次成功的统计会被一条「在忙」冲没。
-fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs: u64) {
-    let mut m = match ctx.last.lock() {
+/// 只接那张表而不是整个 `SyncCtx`：它本来也只用 `ctx.last`，
+/// 而换成表之后它就能单测了——`last_ok_ms` 不被失败覆盖这条不钉住的话，
+/// 以后有人在 `Failed` 分支里顺手添一行 `e.last_ok_ms = now_ms()` 就把
+/// 「没开机 vs 刚坏」的区分静默地废掉了。
+pub(super) fn record_into(
+    last: &std::sync::Mutex<HashMap<String, LastSync>>,
+    peer: &str,
+    outcome: Outcome,
+    fails: u32,
+    next_in_secs: u64,
+    dormant: bool,
+) {
+    let mut m = match last.lock() {
         Ok(m) => m,
         Err(p) => p.into_inner(),
     };
@@ -477,6 +509,9 @@ fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs:
                     fails: 0,
                     error: None,
                     next_in_secs,
+                    // 成功这一刻就是「上次真的同步成功」
+                    last_ok_ms: now_ms(),
+                    dormant: false,
                 },
             );
         }
@@ -494,6 +529,8 @@ fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs:
                     .to_string(),
             );
             e.next_in_secs = next_in_secs;
+            // ❗ 不动 `last_ok_ms`：失败不能把「曾经成功过」这件事抹掉
+            e.dormant = dormant;
         }
         Outcome::Failed(why) => {
             let e = m.entry(peer.to_string()).or_default();
@@ -502,6 +539,8 @@ fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs:
             e.fails = fails;
             e.error = Some(why);
             e.next_in_secs = next_in_secs;
+            // ❗ 同上：`last_ok_ms` 保留
+            e.dormant = dormant;
         }
     }
 }
@@ -511,7 +550,7 @@ fn has_peer(ctx: &SyncCtx, peer: &str) -> bool {
     ctx.peers.lock().map(|p| p.contains(peer)).unwrap_or(false)
 }
 
-enum Outcome {
+pub(super) enum Outcome {
     Synced(Box<session::SessionReport>),
     /// 对端拒了（在忙 / 保留了它自己那个会话）。
     Busy(String),

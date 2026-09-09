@@ -2549,3 +2549,44 @@ fn test_空的nodeid不记() {
     assert!(!j.knock("", 1_000));
     assert!(j.list(1_000).is_empty());
 }
+
+/// 失败不能把「曾经同步成功过」抹掉。
+///
+/// 🔴 知识库那条同步提示就靠 `last_ok_ms` 分「对方没开机」与「上午还好好的现在坏了」：
+/// 前者你什么都做不了（不报警），后者才值得橙色一行。
+/// `at_ms` 代替不了——它是「上次**尝试**」，失败时同样在刷。
+use super::service::{record_into, LastSync, Outcome};
+
+#[test]
+fn test_失败不覆盖上次成功时间() {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    let last: Mutex<HashMap<String, LastSync>> = Mutex::new(HashMap::new());
+    last.lock().unwrap().insert(
+        "p1".to_string(),
+        LastSync {
+            peer: "p1".to_string(),
+            at_ms: 1_000,
+            last_ok_ms: 1_000,
+            ..Default::default()
+        },
+    );
+
+    record_into(&last, "p1", Outcome::Failed("网络不通".to_string()), 3, 30, false);
+    record_into(&last, "p2", Outcome::Failed("超时".to_string()), 1, 5, false);
+    record_into(&last, "p3", Outcome::Failed("一直连不上".to_string()), 20, 1800, true);
+
+    let m = last.lock().unwrap();
+
+    let p1 = &m["p1"];
+    assert_eq!(p1.last_ok_ms, 1_000, "失败不能把「曾经成功过」抹掉");
+    assert!(p1.at_ms > 1_000, "at_ms 是「上次尝试」，失败时应该刷新");
+    assert_eq!(p1.fails, 3);
+    assert!(!p1.dormant);
+
+    assert_eq!(m["p2"].last_ok_ms, 0, "从未成功过就该是 0——界面据此只合并成一行灰字");
+
+    // dormant 由循环的 `Wait` 传进来，不在这里再推一遍阀值
+    assert!(m["p3"].dormant, "已休眠要能传到前端，否则它只能拿 fails 阀值再推一遍");
+}
