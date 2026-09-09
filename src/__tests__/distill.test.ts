@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   buildDailyDrafts,
+  buildDistillPayload,
   buildTopicDrafts,
+  parseDistillResult,
   topicClusters,
   tokenize,
   overlap,
@@ -149,5 +151,45 @@ describe("每日蒸馏·P2 跨天主题", () => {
     const short = tokenize("npm run build");
     const long = tokenize("npm run build 失败了报错说找不到模块请检查依赖是否安装完整");
     expect(overlap(short, long)).toBeGreaterThan(0.5);
+  });
+});
+
+describe("每日蒸馏·P3 AI 成文", () => {
+  it("载荷只由摘录拼成，一条一行带编号", () => {
+    const rows = [
+      row(1, "VS Code", "code", "回收站按钮点不动"),
+      row(2, "VS Code", "code", "回收站清空要二次确认"),
+      row(3, "VS Code", "code", "回收站空态没做"),
+    ];
+    const [d] = buildDailyDrafts(rows, D);
+    const payload = buildDistillPayload(d);
+    expect(payload).toContain("[1]");
+    expect(payload).toContain("[3]");
+    expect(payload).not.toContain("[4]");
+    // 🔴 出网面积的回归阀：载荷里的每一行都得能在摘录里找到。
+    // 哪天有人把它改成去取全文，这条先红
+    for (const r of rows) expect(payload).toContain(r.excerpt);
+  });
+
+  it("模型守格式时拆出首行标题", () => {
+    const r = parseDistillResult("# 回收站的三个遗留问题\n\n- 空态\n- 二次确认", "备用标题");
+    expect(r.title).toBe("回收站的三个遗留问题");
+    expect(r.content).toContain("二次确认");
+    expect(r.content.startsWith("#")).toBe(false);
+  });
+
+  // 最要紧的一条：模型违反格式是**常态**，此时绝不能把一次
+  // 已经花了钱的调用丢掉——宁可标题土一点
+  it("模型不守格式时回退到聚类标题，一个字不丢", () => {
+    const raw = "这三条都在说回收站：\n- 空态\n- 二次确认";
+    const r = parseDistillResult(raw, "VS Code · 代码 · 2026-09-08");
+    expect(r.title).toBe("VS Code · 代码 · 2026-09-08");
+    expect(r.content).toBe(raw);
+  });
+
+  it("只有一行标题、没正文也不能把标题当正文", () => {
+    const r = parseDistillResult("## 只有标题", "备用");
+    expect(r.title).toBe("只有标题");
+    expect(r.content).toBe("");
   });
 });

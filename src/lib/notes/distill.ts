@@ -51,6 +51,11 @@ export interface DistillDraft {
   source: string;
   /** 中文类型名，展示用 */
   typeLabel: string;
+  /**
+   * 构成本篇的原始行。P3 的载荷由它拼，
+   * **不去反解 `content`**（那是展示用的 Markdown，格式一变解析就碎）。
+   */
+  rows: DayExcerptRow[];
 }
 
 /**
@@ -118,6 +123,7 @@ export function buildDailyDrafts(
         count: items.length,
         source: src,
         typeLabel,
+        rows: items,
       };
     });
 }
@@ -294,8 +300,53 @@ export function buildTopicDrafts(
         count: items.length,
         source: span,
         typeLabel: "跨天主题",
+        rows: items,
       };
     })
     .filter((d) => !dismissed.has(d.key))
     .slice(0, MAX_TOPIC_DRAFTS);
+}
+
+// ── P3 AI 成文 ────────────────────────────────────────────
+//
+// P1/P2 只能「聚」（纯词面，离线、零成本），P3 才「炼」。
+// 两者分层是故意的：**不点那个按钮，就一分钱不花、一个字节不出网**。
+//
+// 载荷与返回格式都与 `src-tauri/src/ai/actions.rs` 的 `ai-distill-draft`
+// 提示词是**硬约定**，两边成对，改一头就错。
+
+/**
+ * 拼给模型的载荷：主题线索 + 编号摘录。
+ *
+ * 🔴 **只用 `rows[].excerpt`**——它在 Rust 接口层已被 `DISTILL_EXCERPT_CHARS = 60` 夹死。
+ * 这里绝不能改成去取全文：**出网面积必须等于用户已经在卡片上看到的那几行**。
+ */
+export function buildDistillPayload(draft: DistillDraft): string {
+  const lines = draft.rows
+    .map((r, i) => `[${i + 1}] ${cleanSourceName(r.source) || "（无来源）"} · ${r.excerpt}`)
+    .join("\n");
+  return `主题线索：${draft.title}\n\n${lines}`;
+}
+
+/**
+ * 拆模型返回的「首行标题 + 正文」。
+ *
+ * **不报错是故意的**：模型违反格式是常态（这一点全库同调，参见 parse_ai_tags）。
+ * 没有 `#` 开头就整段当正文、沿用聚类算出来的标题——
+ * 宁可标题土一点，也不要把一次**已经花了钱**的调用丢掉。
+ */
+export function parseDistillResult(
+  raw: string,
+  fallbackTitle: string,
+): { title: string; content: string } {
+  const text = raw.trim();
+  const nl = text.indexOf("\n");
+  const first = (nl === -1 ? text : text.slice(0, nl)).trim();
+  if (first.startsWith("#")) {
+    const title = first.replace(/^#+\s*/, "").trim();
+    if (title) {
+      return { title, content: nl === -1 ? "" : text.slice(nl + 1).trim() };
+    }
+  }
+  return { title: fallbackTitle, content: text };
 }

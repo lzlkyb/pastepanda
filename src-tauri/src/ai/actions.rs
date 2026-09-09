@@ -467,6 +467,21 @@ pub const ACTIONS: &[AiAction] = &[
         options: &[],
         content_types: &[],
     },
+    // ===== 蒸馏成文（P3）=====
+    //
+    // 同样必须是内部动作：输入是前端拼好的「主题线索 + 编号摘录」。
+    // 摆进变换中心后，用户会对着一段普通文本点它——与 `ai-kb-qa` 同一个理由。
+    AiAction {
+        id: "ai-distill-draft",
+        label: "AI 成文",
+        description: "把一簇剪贴板摘录写成一篇笔记草稿",
+        icon: "sparkles",
+        // 摘录在接口层已被 DISTILL_EXCERPT_CHARS = 60 夹死，一簇撑死几百字，
+        // 要的是一篇短笔记而不是长文；与 ai-summarize 同取 1024，给推理模型留余量。
+        max_tokens: 1024,
+        options: &[],
+        content_types: &[],
+    },
 ];
 
 /// 不进通用动作面的内部动作：`ai_run` 照常受理，但不出现在 `ai_list_actions` 的清单里。
@@ -481,6 +496,9 @@ pub const INTERNAL_ACTION_IDS: &[&str] = &[
     // 知识库问答（B2 #10）：只能从知识模式的搜/问切换器进，
     // 它的输入是拼好的「问题 + 片段」格式，对普通卡片内容无意义。
     "ai-kb-qa",
+    // 蒸馏成文（P3）：只能从待沉淀的草稿卡进，
+    // 输入是拼好的「主题线索 + 编号摘录」格式。
+    "ai-distill-draft",
 ];
 
 pub fn is_internal_action(id: &str) -> bool {
@@ -740,6 +758,25 @@ pub fn build_prompt(
              回答简洁，可以用 Markdown 的列表与粗体排版。用与问题相同的语言回答。\n\n{}",
             trimmed
         ),
+        // 蒸馏成文（P3）。`trimmed` 是**前端拼好**的「主题线索 + 编号摘录」，
+        // 格式约定住在 `src/lib/notes/distill.ts`，两边必须一致。
+        //
+        // 三条硬规则各挡一种独特的失败：
+        // ①「首行必须是标题」——前端按它拆标题/正文，漏了草稿就没标题；
+        // ②「只能依据这些摘录」——摘录只有 60 字，是全表最容易被模型脑补的输入；
+        // ③「不要硬凑成一个主题」——聚类是**词面**的，簇里本来就会混进不相干的条目，
+        //    不给模型一个「拒绝合并」的出口，它一定会强行圆成一个主题。
+        "ai-distill-draft" => format!(
+            "下面是同一主题下的若干条剪贴板摘录，每条一行，开头有 [编号] 与来源。\
+             把它们整理成一篇笔记草稿。\
+             首行必须是标题，用「# 」开头，不超过 20 个字；\
+             正文用 Markdown 的小标题与列表把这些摘录归拢成 2~4 组，同一件事的合到一起；\
+             **只能依据这些摘录**：它们本来就是片段、信息不全，缺的地方留着就行，\
+             不要用常识补全、不要推测、不要编造摘录里没有的结论；\
+             拿不准是不是一回事的，单独列一条，**不要硬凑成一个主题**。\
+             只输出笔记本身，不要前言和结语：\n\n{}",
+            trimmed
+        ),
         other => return Err(format!("动作 {} 尚未实现", other)),
     };
 
@@ -850,6 +887,35 @@ mod tests {
     #[test]
     fn test_kb_qa_is_internal_action() {
         assert!(is_internal_action("ai-kb-qa"));
+    }
+
+    // P3 蒸馏成文：三条硬规则缺任一条都是一种独特的失败方式
+    #[test]
+    fn test_distill_draft_prompt_has_hard_rules() {
+        let (_, user, max) = build_prompt(
+            "ai-distill-draft",
+            "主题线索：回收站\n\n[1] 剪贴板 · 回收站按钮点不动\n[2] 笔记 · 回收站清空要二次确认",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
+        // ① 首行标题——前端按它拆标题/正文，漏了草稿就没标题。与 distill.ts 成对
+        assert!(user.contains("首行必须是标题"));
+        // ② 只能依据摘录——摘录只有 60 字，是全表最容易被模型脑补的输入
+        assert!(user.contains("只能依据这些摘录"));
+        // ③ 拒绝合并的出口——聚类是词面的，簇里必然混进不相干条目，
+        //   不给出口它就强行圆成一个主题
+        assert!(user.contains("不要硬凑成一个主题"));
+        // 载荷原样带上
+        assert!(user.contains("回收站清空要二次确认"));
+        assert_eq!(max, 1024);
+    }
+
+    // 与问答同一个理由：输入是拼好的专用格式，摆进变换中心后
+    // 用户会对着一段普通文本点它，回来的必然是胡话
+    #[test]
+    fn test_distill_draft_is_internal_action() {
+        assert!(is_internal_action("ai-distill-draft"));
     }
 
     // v6.1 S3：修复代码动作

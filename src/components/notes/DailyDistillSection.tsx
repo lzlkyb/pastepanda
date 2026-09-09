@@ -13,6 +13,12 @@
  * 2. **不做全文搬运**：摄录由后端夹到 60 字，前端拿不到全文。
  * 3. **产出上限**：每天最多 3 篇（`MAX_DRAFTS_PER_DAY`）。
  *
+ * # P3：「AI 成文」是手动的，不是自动的
+ *
+ * P1/P2 只能「聚」（纯词面，离线、零成本），点了那个按钮才「炼」。
+ * 发出去的就是卡片上已经渲染给你看过的那几行，**不多一个字**；
+ * 不点就一分钱不花、一个字节不出网。详见 `runAi`。
+ *
  * # ⚠ 采纳后草稿不会自己消失
  *
  * 因为我们**无法知道你在弹窗里到底存没存**。两个选择：
@@ -21,16 +27,22 @@
  * 选了②：**多一行可见的冗余，好过一条静默消失的内容**。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, Undo2 } from "lucide-react";
+import { Sparkles, Undo2, Wand2 } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import { historyDayExcerpts, historyRecentExcerpts, toIsoDate } from "@/lib/api/dailyBrief";
 import {
   buildDailyDrafts,
+  buildDistillPayload,
   buildTopicDrafts,
+  parseDistillResult,
   TOPIC_LOOKBACK_DAYS,
   type DistillDraft,
 } from "@/lib/notes/distill";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
+import { aiRun } from "@/lib/api/ai";
+import { isAiAvailable } from "@/lib/transforms/aiTransforms";
+import { budgetExceededMessage } from "@/lib/aiBudgetMsg";
+import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import styles from "./KbInboxPanel.module.css";
 
@@ -58,7 +70,10 @@ export function DailyDistillSection() {
   const today = toIsoDate(new Date());
   const [drafts, setDrafts] = useState<DistillDraft[]>([]);
   const [lastDismissed, setLastDismissed] = useState<DistillDraft | null>(null);
+  /** 正在成文的那篇的 key。同时只允许一篇——每一次都花用户的钱 */
+  const [aiBusy, setAiBusy] = useState<string | null>(null);
   const openNote = useDialogStore((s) => s.openNote);
+  const { toast } = useToast();
 
   const reload = useCallback(async () => {
     const dismissed = loadDismissed(today);
@@ -94,6 +109,49 @@ export function DailyDistillSection() {
       setDrafts((cur) => cur.filter((x) => x.key !== d.key));
     },
     [today],
+  );
+
+  /**
+   * P3：把这一簇摘录发给**用户自己配的** AI，写成一篇草稿。
+   *
+   * 🔴 三条红线：
+   * 1. **只能手动触发**——后台批量跑 = 烧用户的钱 + 无声出网，两条都踩；
+   * 2. **仍不落库**——模型写完还是进 `openNote` 预填，与采纳路径同一条；
+   * 3. **三态全接**——needsConfirm / budgetExceeded / truncated 各自有说法。
+   *
+   * 命名函数表达式（`run`）是为了 needsConfirm 后能递归重发：
+   * force 只能由用户在 toast 上按出来，**绝不自动重发**。
+   */
+  const runAi = useCallback(
+    async function run(d: DistillDraft, force = false): Promise<void> {
+      if (!isAiAvailable()) {
+        toast("请先在设置里配置 AI", "info");
+        return;
+      }
+      setAiBusy(d.key);
+      try {
+        // 载荷只含已被夹到 60 字的摘录（见 buildDistillPayload 的红线）
+        const r = await aiRun("ai-distill-draft", buildDistillPayload(d), undefined, force);
+        if (r.status === "ok" && r.content.trim()) {
+          // 截断必须说出来：不说，用户会把「断在半句」当成模型水平差
+          if (r.truncated) toast("写到上限被截断了，采纳后请自己补个结尾", "info", 6000);
+          const parsed = parseDistillResult(r.content, d.title);
+          openNote({ title: parsed.title, content: parsed.content });
+        } else if (r.status === "needsConfirm") {
+          toast(r.reason, "info", 12000, () => void run(d, true), "确认发送");
+        } else if (r.status === "budgetExceeded") {
+          toast(budgetExceededMessage(r.spentCny, r.budgetCny), "info", 6000);
+        } else {
+          toast("成文失败，请重试", "info");
+        }
+      } catch (e) {
+        logger.warn("蒸馏成文失败", e);
+        toast("成文失败，请重试", "info");
+      } finally {
+        setAiBusy(null);
+      }
+    },
+    [openNote, toast],
   );
 
   const undo = useCallback(() => {
@@ -163,6 +221,15 @@ export function DailyDistillSection() {
                 onClick={() => openNote({ title: d.title, content: d.content })}
               >
                 采纳为笔记
+              </button>
+              <button
+                type="button"
+                className={styles.ghostBtn}
+                disabled={aiBusy !== null}
+                onClick={() => void runAi(d)}
+                title="把这一簇摘录发给你自己配的 AI，写成一篇草稿；不点就不发"
+              >
+                <Wand2 size={11} /> {aiBusy === d.key ? "写作中…" : "AI 成文"}
               </button>
               <button type="button" className={styles.ghostBtn} onClick={() => dismiss(d)}>
                 忽略
