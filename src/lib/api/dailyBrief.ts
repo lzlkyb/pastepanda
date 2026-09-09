@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 import type { SegmentItem } from "@/lib/events";
+import type { DayExcerptRow } from "@/lib/notes/distill";
 
 /** 后端只返这五列，刚好就是分段需要的形状。 */
 export type DayMetaRow = SegmentItem;
@@ -37,6 +38,24 @@ export async function historyRecentMeta(limit?: number): Promise<DayMetaRow[]> {
     return await invoke<DayMetaRow[]>("history_recent_meta", { limit: limit ?? null });
   } catch (e) {
     logger.warn("读最近元信息失败", e);
+    return [];
+  }
+}
+
+/**
+ * 拉某一天的条目 + **短摘录**（每日蒸馏 P1 / C3 内容层）。
+ *
+ * 🔴 与 [`historyDayMeta`] 的差别只有一个：多一列摘录。
+ * 摘录长度由**后端**夹死（60 字），前端拿不到全文——
+ * 「不做全文搬运」这条红线不靠调用方自律。
+ *
+ * 失败返空数组，理由同 [`historyDayMeta`]。
+ */
+export async function historyDayExcerpts(date: string): Promise<DayExcerptRow[]> {
+  try {
+    return await invoke<DayExcerptRow[]>("history_day_excerpts", { date });
+  } catch (e) {
+    logger.warn("读当日摘录失败", e);
     return [];
   }
 }

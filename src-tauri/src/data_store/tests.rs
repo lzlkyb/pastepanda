@@ -7357,3 +7357,49 @@ fn test_同时满足多条通路时只报最强的() {
     opts.reason = "star".to_string();
     assert_eq!(store.kb_inbox_list_view("默认", &opts, 50, 0).unwrap().len(), 1);
 }
+
+
+/// 每日蒸馏的摘录：必须按**字符**截断，且长度由后端夹死。
+///
+/// 🔴 这条钉的是两件事，都出过事：
+/// ① **中文截断**——`&s[..60]` 在中文上直接 panic。本仓 2026-09-08 在 MCP
+///    那边刚撞过一次，而那种崩看起来像「功能坏了」，不像「切错了字节」。
+/// ② **不做全文搬运是红线**——长度在后端夹，不交给调用方自律。
+///    没有这条断言，以后有人为了「草稿更完整」把上限调大，没人拦得住。
+#[test]
+fn test_蒸馏摘录按字符截断且不回全文() {
+    use crate::data_store::DISTILL_EXCERPT_CHARS;
+    let store = make_store();
+    let long: String = "中".repeat(DISTILL_EXCERPT_CHARS * 3);
+    let mut it = make_item("d-long", &long, "2026-08-01 10:00:00", "text");
+    it.source = "编辑器".to_string();
+    store.insert_history(&it).unwrap();
+    // 带换行的：摘录要拼进 Markdown 列表项，换行会把列表打断
+    store
+        .insert_history(&make_item("d-nl", "第一行
+第二行	带制表", "2026-08-01 10:01:00", "text"))
+        .unwrap();
+
+    let rows = store.history_day_excerpts("2026-08-01").unwrap();
+    let by = |id: &str| rows.iter().find(|r| r.id == id).unwrap();
+
+    let e = &by("d-long").excerpt;
+    // 省略号占一个字符，所以是上限 +1
+    assert_eq!(
+        e.chars().count(),
+        DISTILL_EXCERPT_CHARS + 1,
+        "超长内容应截到上限并加省略号；这里若 panic 过就根本走不到断言"
+    );
+    assert!(e.ends_with('…'));
+    assert!(
+        e.chars().count() < long.chars().count(),
+        "🔴 绝不能回全文——这是红线，不是优化"
+    );
+
+    let nl = &by("d-nl").excerpt;
+    assert!(!nl.chars().any(char::is_control), "换行/制表要压成空格");
+
+    // 日期形式要校：它拼进 LIKE 模式，传个 % 进来能把整库拉出来
+    assert!(store.history_day_excerpts("2026-8-1").is_err());
+    assert!(store.history_day_excerpts("%").is_err());
+}

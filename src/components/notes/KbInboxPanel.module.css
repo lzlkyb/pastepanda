@@ -182,6 +182,27 @@
   color: #EC4899;
 }
 
+/* ── 今日蒸馏（P1）─────────────────────────────────────────────
+   与待沉淀共用本文件：两者在视觉上是同一个区块的两半，
+   拆成两份 CSS 只会让它们慢慢长歪。 */
+
+/* 蒸馏没有展开/收起，所以是 div 不是 button——不能沿用 .banner 的
+   hover/active 反馈，那会让人以为点得动。 */
+.distillHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+/* 征标用 accent 的紫向偏移：蒸馏是「机器拟的」，与待沉淀那几个
+   「你做过什么」的征标要一眼区分得开。 */
+.badgeDistill {
+  background: color-mix(in srgb, #8B5CF6 15%, transparent);
+  color: #8B5CF6;
+}
+
 .rowBody {
   flex: 1;
   min-width: 0;

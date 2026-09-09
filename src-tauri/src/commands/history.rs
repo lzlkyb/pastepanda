@@ -459,6 +459,19 @@ pub fn history_day_meta(
     store.history_day_meta(&date)
 }
 
+/// 当日条目 + **短摄录**（每日蒸馏 P1 / C3 内容层）。
+///
+/// 与 [`history_day_meta`] 的差别只有一个：多一列 60 字摄录。
+/// 🔴 摄录长度由**后端**夹死（`DISTILL_EXCERPT_CHARS`），
+/// “不做全文搬运”这条红线不交给调用方自律。
+#[tauri::command]
+pub fn history_day_excerpts(
+    store: State<DataStore>,
+    date: String,
+) -> Result<Vec<crate::data_store::DayExcerptRow>, String> {
+    store.history_day_excerpts(&date)
+}
+
 /// 最近 N 条的条目元信息（事件聚合 G3）。
 ///
 /// 与 [`history_day_meta`] 同一批五列，区别只在圈定范围的方式：那边按天，这边按条数

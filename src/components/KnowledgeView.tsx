@@ -37,6 +37,7 @@ import { ContextMenu } from "@/components/ContextMenu";
 import { KbTopBarActions } from "@/components/notes/KbTopBarActions";
 import { useTopBarSlot } from "@/lib/topbarSlot";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
+import { DailyDistillSection } from "@/components/notes/DailyDistillSection";
 import { KbSyncStatusBar } from "@/components/notes/KbSyncStatusBar";
 import { KbHealthBar } from "@/components/notes/KbHealthBar";
 import { FolderTree } from "@/components/notes/FolderTree";
@@ -508,6 +509,9 @@ export function KnowledgeView() {
           ) : (
             <>
           {/* 待沉淀区（§8.1 4️⃣）。一条候选都没时它自己返回 null */}
+          {/* 蒸馏在待沉淀之上：它答「这一堆合起来值不值得留」，
+              比逐条判断更省力，该先看到 */}
+          <DailyDistillSection />
           <KbInboxPanel />
 
           {/* 批量动作条（A2）。只在真选中了东西时出现，不占常驻行高。

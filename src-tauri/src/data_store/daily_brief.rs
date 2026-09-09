@@ -72,6 +72,86 @@ impl DataStore {
     }
 }
 
+/// 每日蒸馏（P1 / C3 内容层）一条摄录多长。
+///
+/// 🔴 **“不做全文搬运”是红线，在接口层兜住而不是在 UI 层兜住。**
+/// UI 层的约束只约束当前这一个调用方；接口层只回 60 字，
+/// 以后**谁来调都拿不到全文**。
+pub const DISTILL_EXCERPT_CHARS: usize = 60;
+
+/// 带短摄录的当日条目（每日蒸馏用）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DayExcerptRow {
+    pub id: String,
+    pub time: String,
+    pub source: String,
+    #[serde(rename = "type")]
+    pub item_type: String,
+    pub content_type: Option<String>,
+    /// 前 [`DISTILL_EXCERPT_CHARS`] 个**字符**（不是字节）。
+    pub excerpt: String,
+}
+
+impl DataStore {
+    /// 某一天的条目 + 短摄录，按时间升序。每日蒸馏（P1）的数据口。
+    ///
+    /// # 这不违反本模块头那句「不碰 `text`」
+    ///
+    /// 那句说的是 **H3 行为层**（统计 + 分段），它确实零内容。
+    /// 本函数是 **C3 内容层**，职责就是读内容。两个因素让它仍然安全：
+    /// ① **只回 60 字摄录**，不回全文；
+    /// ② 摄录只用于在**本机**拼草稿，不进 AI 请求——真要送给模型，
+    ///   那是另一个需要显式授权的动作，不得搓进本接口。
+    ///
+    /// ❗ `content` 仍然不碰：图片的 `content` 是 base64，一天几百条就是几十 MB。
+    /// 图片靠 `text`（占位文本）参与聚簇，看内容请去开卡片。
+    pub fn history_day_excerpts(&self, date: &str) -> Result<Vec<DayExcerptRow>, String> {
+        if !is_iso_date(date) {
+            return Err(format!("日期格式应为 YYYY-MM-DD，实际收到：{}", date));
+        }
+        let conn = self.lock_conn();
+        let mut st = conn
+            .prepare(
+                "SELECT id, time, source, type, content_type, COALESCE(text, '')
+                 FROM history WHERE time LIKE ?1 ORDER BY time ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = st
+            .query_map([format!("{}%", date)], |r| {
+                let raw: String = r.get(5)?;
+                Ok(DayExcerptRow {
+                    id: r.get(0)?,
+                    time: r.get(1)?,
+                    source: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    item_type: r.get(3)?,
+                    content_type: r.get(4)?,
+                    excerpt: excerpt_of(&raw),
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+}
+
+/// 取前 N 个**字符**并压掉换行。
+///
+/// 🔴 必须走 `chars()`，**不能切字节**：`&s[..60]` 在中文上会直接 panic（
+/// 本仓 2026-09-08 在 MCP 那边刚撞过一次，而那种崩看起来像「功能坏了」）。
+///
+/// 压换行是因为摄录要拼进 Markdown 列表项，带换行会把列表打断。
+fn excerpt_of(raw: &str) -> String {
+    let flat: String = raw
+        .chars()
+        .map(|c| if c == '\n' || c == '\r' || c == '\t' { ' ' } else { c })
+        .collect();
+    let trimmed = flat.trim();
+    let mut out: String = trimmed.chars().take(DISTILL_EXCERPT_CHARS).collect();
+    if trimmed.chars().count() > DISTILL_EXCERPT_CHARS {
+        out.push('…');
+    }
+    out
+}
+
 /// 事件下拉一次拉多少条的上限。
 ///
 /// 设计稿在「最近 300 条」上跑出 41 段，平均 7.3 条/段——下拉里 41 项已经偏多，
