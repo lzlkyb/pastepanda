@@ -472,6 +472,18 @@ pub fn history_day_excerpts(
     store.history_day_excerpts(&date)
 }
 
+/// 最近 N 天的条目 + 短摄录（P2 主题簇蒸馏）。
+///
+/// `days` 由后端夹到 `DISTILL_LOOKBACK_MAX_DAYS`，防传巨数把全库拉出来
+/// ——这个接口是**带内容**的，不能像元信息那样随便拉。
+#[tauri::command]
+pub fn history_recent_excerpts(
+    store: State<DataStore>,
+    days: u32,
+) -> Result<Vec<crate::data_store::DayExcerptRow>, String> {
+    store.history_recent_excerpts(days)
+}
+
 /// 最近 N 条的条目元信息（事件聚合 G3）。
 ///
 /// 与 [`history_day_meta`] 同一批五列，区别只在圈定范围的方式：那边按天，这边按条数

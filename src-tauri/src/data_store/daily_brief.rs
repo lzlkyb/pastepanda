@@ -133,6 +133,49 @@ impl DataStore {
     }
 }
 
+/// P2 主题簇蒸馏的回看窗口上限（天）。
+///
+/// 30 是**硬夹**，不是默认值：调用方传多少都不会超过它。
+/// 不夹的话传个 3650 就把全库拉出来了，而这个接口是带内容的。
+pub const DISTILL_LOOKBACK_MAX_DAYS: u32 = 30;
+
+impl DataStore {
+    /// 最近 N 天的条目 + 短摄录，按时间升序。P2 主题簇蒸馏的数据口。
+    ///
+    /// 与 [`Self::history_day_excerpts`] 共用同一个摄录夹子（`excerpt_of`）——
+    /// “不做全文搬运”只实现一遍，不能这边夹 60 字、那边又开个口子。
+    ///
+    /// ❗ 走 `time >= ?` 而不是 `LIKE`：跨天区间拼不出 `LIKE` 模式，
+    /// 而且这里本来就不应该再碰字符串拼接。
+    pub fn history_recent_excerpts(&self, days: u32) -> Result<Vec<DayExcerptRow>, String> {
+        let days = days.clamp(1, DISTILL_LOOKBACK_MAX_DAYS);
+        let since = (chrono::Local::now() - chrono::Duration::days(days as i64))
+            .format("%Y-%m-%d 00:00:00")
+            .to_string();
+        let conn = self.lock_conn();
+        let mut st = conn
+            .prepare(
+                "SELECT id, time, source, type, content_type, COALESCE(text, '')
+                 FROM history WHERE time >= ?1 ORDER BY time ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = st
+            .query_map([since], |r| {
+                let raw: String = r.get(5)?;
+                Ok(DayExcerptRow {
+                    id: r.get(0)?,
+                    time: r.get(1)?,
+                    source: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    item_type: r.get(3)?,
+                    content_type: r.get(4)?,
+                    excerpt: excerpt_of(&raw),
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+}
+
 /// 取前 N 个**字符**并压掉换行。
 ///
 /// 🔴 必须走 `chars()`，**不能切字节**：`&s[..60]` 在中文上会直接 panic（

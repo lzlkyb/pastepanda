@@ -818,6 +818,7 @@ pub fn run() {
             commands::kb_health,
             commands::history_day_meta,
             commands::history_day_excerpts,
+            commands::history_recent_excerpts,
             commands::history_recent_meta,
             commands::note_count_filtered,
             // 笔记文件夹（B1 #1）

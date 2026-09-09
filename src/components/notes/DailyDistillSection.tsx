@@ -23,8 +23,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sparkles, Undo2 } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
-import { historyDayExcerpts, toIsoDate } from "@/lib/api/dailyBrief";
-import { buildDailyDrafts, type DistillDraft } from "@/lib/notes/distill";
+import { historyDayExcerpts, historyRecentExcerpts, toIsoDate } from "@/lib/api/dailyBrief";
+import {
+  buildDailyDrafts,
+  buildTopicDrafts,
+  TOPIC_LOOKBACK_DAYS,
+  type DistillDraft,
+} from "@/lib/notes/distill";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
 import { logger } from "@/lib/logger";
 import styles from "./KbInboxPanel.module.css";
@@ -56,8 +61,17 @@ export function DailyDistillSection() {
   const openNote = useDialogStore((s) => s.openNote);
 
   const reload = useCallback(async () => {
-    const rows = await historyDayExcerpts(today);
-    setDrafts(buildDailyDrafts(rows, today, loadDismissed(today)));
+    const dismissed = loadDismissed(today);
+    // 两条管线并行拉：P1 只看今天，P2 要回看一周。
+    // 各自独立限量（3 + 2），合起来才不会淹——见 distill.ts 的红线③。
+    const [dayRows, weekRows] = await Promise.all([
+      historyDayExcerpts(today),
+      historyRecentExcerpts(TOPIC_LOOKBACK_DAYS),
+    ]);
+    setDrafts([
+      ...buildDailyDrafts(dayRows, today, dismissed),
+      ...buildTopicDrafts(weekRows, dismissed),
+    ]);
   }, [today]);
 
   useEffect(() => {
@@ -103,8 +117,10 @@ export function DailyDistillSection() {
       <div className={styles.distillHead}>
         <Sparkles size={13} className={styles.bannerIcon} />
         <span className={styles.bannerText}>
-          今日蒸馏 <b>{drafts.length}</b> 篇草稿
-          <span className={styles.bannerHint}>，按「来源 × 类型」聚的；存不存你说了算</span>
+          可蒸馏 <b>{drafts.length}</b> 篇草稿
+          <span className={styles.bannerHint}>
+            ，今天的按「来源 × 类型」聚，跨天的按主题聚；存不存你说了算
+          </span>
         </span>
       </div>
 

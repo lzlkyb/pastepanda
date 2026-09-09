@@ -81,7 +81,9 @@ pub use quota::{
     verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
 };
 pub use note_health::{BrokenLink, KbHealth, KbStats, TinyNote, HEALTH_DETAIL_CAP, TINY_NOTE_CHARS};
-pub use daily_brief::{DayExcerptRow, DayMetaRow, DISTILL_EXCERPT_CHARS, RECENT_META_CAP};
+pub use daily_brief::{
+    DayExcerptRow, DayMetaRow, DISTILL_EXCERPT_CHARS, DISTILL_LOOKBACK_MAX_DAYS, RECENT_META_CAP,
+};
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
 pub use mcp_audit::{McpAuditRow, McpClientRow};

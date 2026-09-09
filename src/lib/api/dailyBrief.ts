@@ -60,6 +60,20 @@ export async function historyDayExcerpts(date: string): Promise<DayExcerptRow[]>
   }
 }
 
+/**
+ * 最近 N 天的条目 + 短摘录（P2 主题簇蒸馏）。
+ *
+ * `days` 由后端夹到 30 天上限。摘录仍是同一个 60 字夹子。
+ */
+export async function historyRecentExcerpts(days: number): Promise<DayExcerptRow[]> {
+  try {
+    return await invoke<DayExcerptRow[]>("history_recent_excerpts", { days });
+  } catch (e) {
+    logger.warn("读近期摘录失败", e);
+    return [];
+  }
+}
+
 /** `Date` → `YYYY-MM-DD`（**本地时区**）。 */
 export function toIsoDate(d: Date): string {
   // 不用 `toISOString()`：那个转 UTC，东八区凌晨一点看到的会是前一天，
