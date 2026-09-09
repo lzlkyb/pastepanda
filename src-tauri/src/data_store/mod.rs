@@ -602,7 +602,7 @@ impl DataStore {
             );
 
             -- ===== 知识库 A 阶段（D15 三模式里的「知识」模式）=====
-            -- 源：docs/个人知识库与笔记-规划.md §6。
+            -- 源：知识库主规划 §6（该文档已于 2026-09-08 并入 docs/PastePanda-规划与排期.md）。
             -- 与规划原 DDL 有三处**有意偏离**，都是照真实代码纠正的（规划已同步）：
             --   ① note_tags.tag_id 用 TEXT 而不是规划写的 INTEGER——tags.id 是
             --      TEXT PRIMARY KEY，INTEGER 没法外键到它；

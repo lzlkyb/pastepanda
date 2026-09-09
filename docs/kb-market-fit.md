@@ -1,7 +1,7 @@
 # 个人知识库（PKM）市场趋势 × PastePanda 规划对照
 
 > 用途：知识库功能规划评审参考。
-> 调研时间：2026-08-27 ｜ 对照规划：《个人知识库与笔记-规划》v3.5（设计稿 `kb-a-note-dialog.html` / `kb-b-library-view.html`）
+> 调研时间：2026-08-27 ｜ 对照规划：知识库主规划 v3.5（2026-09-08 已并入《PastePanda-规划与排期》）（设计稿 `kb-a-note-dialog.html` / `kb-b-library-view.html`）
 > 数据来源：公开行业文章与产品发布信息（Notion / Obsidian / Logseq / Joplin / NotebookLM / Mem / Reflect 等），为估算值，仅作方向判断。
 
 ---
