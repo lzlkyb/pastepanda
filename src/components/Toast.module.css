@@ -40,6 +40,13 @@
   animation: toastProgress var(--toast-duration, 4s) linear forwards;
 }
 
+/* 悬停时进度条也停（U4.2）。它与 JS 那边的停表必须同步：
+   条子跑完了 toast 却还在（或反过来），比不停还难看。
+   `paused` 是续播不重播，所以 JS 那边存的也是「剩余时间」。 */
+.toastItem:hover::after {
+  animation-play-state: paused;
+}
+
 @keyframes toastProgress {
   from { width: 100%; }
   to   { width: 0%; }

@@ -50,6 +50,7 @@ import {
   type DistillDraft,
 } from "@/lib/notes/distill";
 import { noteCreate, noteDelete } from "@/lib/api/notes";
+import { UNDO_WINDOW_MS } from "@/components/Toast";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
 import { useFirstSight } from "@/hooks/useFirstSight";
 import { aiRun } from "@/lib/api/ai";
@@ -100,6 +101,10 @@ type LastAction =
 /**
  * 撤销条多久后自己走。
  *
+ * 🔴 不在这里定数，向 Toast 那边借：删笔记的撤销在 toast 上、本区块的撤销在自己的条上，
+ * 两处长得不一样但回答的是同一个问题——「给你多久反悔」。
+ * 两份各写一个 6000，下次只会改其中一个（规则 #11：口径单一来源）。
+ *
  * 6 秒是 Gmail 那条「已存档 · 撤销」的量级：够看清一句话并伸手点一下，
  * 又不至于挂在界面上碍事。旧实现**没有任何自动清除**，
  * 做完一次批量采纳，界面反而多了一行要你再点一次的东西。
@@ -107,7 +112,7 @@ type LastAction =
  * ❗ 错过也不丢东西：采纳那条的笔记就在库里（删一下就是，进回收站），
  * 忽略那条更轻——只是 localStorage 里一个 key。
  */
-const UNDO_AUTO_HIDE_MS = 6000;
+const UNDO_AUTO_HIDE_MS = UNDO_WINDOW_MS;
 
 export function DailyDistillSection() {
   const today = toIsoDate(new Date());

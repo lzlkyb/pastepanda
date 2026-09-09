@@ -15,15 +15,19 @@
  * 放到外面就得把 `flashFolder` 当参数传进来，反而多一层。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useToast } from "@/components/Toast";
+import { useToast, UNDO_WINDOW_MS } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
-import { noteDelete, noteSetFolder, noteTogglePin, type Note } from "@/lib/api";
+import { noteDelete, noteRestoreDeleted, noteSetFolder, noteTogglePin, type Note } from "@/lib/api";
+
+/** 把标题塞进 toast 一行。按**码点**切，别把 emoji 劈成两半。 */
+function clipTitle(s: string, n = 16): string {
+  const cs = [...s];
+  return cs.length <= n ? s : `${cs.slice(0, n).join("")}…`;
+}
 
 export interface NoteActionsOpts {
   /** 当前**已加载**的列表。范围选与 `selectedNotes` 都按它的下标/成员算。 */
   notes: Note[];
-  /** 回收站保留天数。删除确认框要拿它说人话，**不能写死 30**（用户能改）。 */
-  trashDays: number;
   /** 第三栏里开着的那条。`null` = 没开（窄屏永远是 null）。 */
   activeNote: Note | null;
   /**
@@ -42,8 +46,7 @@ export interface NoteActionsOpts {
 }
 
 export function useNoteActions(opts: NoteActionsOpts) {
-  const { notes, trashDays, activeNote, isActiveDirty, clearActive, removeLocally, refreshAll } =
-    opts;
+  const { notes, activeNote, isActiveDirty, clearActive, removeLocally, refreshAll } = opts;
   const { toast } = useToast();
 
   /**
@@ -110,13 +113,52 @@ export function useNoteActions(opts: NoteActionsOpts) {
   // 卸载时清定时器：不清就是对已卸载组件 setState（React 会警告，且是真泄漏）。
   useEffect(() => () => window.clearTimeout(landTimerRef.current), []);
 
-  /** 删除确认框里那句「删了还能找回」。单条与批量共用一份口径（规则 #11）。 */
-  const keepText = useMemo(
-    () =>
-      trashDays > 0
-        ? `会先移到回收站，${trashDays} 天内可以恢复。`
-        : "会先移到回收站，可以随时恢复。",
-    [trashDays],
+  /**
+   * 删之前要不要拦一下。
+   *
+   * 🔴 删除本身**不拦**（U4.1/U4.3）：后端 `note_delete` 是
+   *   `UPDATE notes SET deleted_at`（软删），笔记进回收站，撤销就在 toast 上。
+   *   能撤销的不要弹确认——确认框拦住的是**每一次正确的删除**，
+   *   而撤销只在出错那一次付出成本。
+   *
+   * ❗ 但有**一段真的不可逆**：第三栏里那条未保存的修改。
+   *   撤销恢复的是**库里的版本**，不包含这些改动，所以只在这种时候弹。
+   */
+  const guardDirty = useCallback(
+    async (hit: boolean) => {
+      if (!hit) return true;
+      return await confirmDialog({
+        title: "这条有未保存的修改",
+        message:
+          "笔记本身会进回收站、可以找回，但这些未保存的修改不行——\n撤销恢复的是库里的版本。",
+        confirmText: "丢弃修改并删除",
+        variant: "danger",
+      });
+    },
+    [],
+  );
+
+  /**
+   * 撤销删除：把刚删的那几条从回收站捞回来。
+   *
+   * 走的就是回收站面板那条路（`noteRestoreDeleted`），不新开接口——
+   * 「恢复一条笔记」只该有一处实现（规则 #11.1）。
+   * 部分失败不静默：捞回来几条就说几条（规则 #15.3）。
+   */
+  const undoDelete = useCallback(
+    async (targets: Note[]) => {
+      let ok = 0;
+      for (const n of targets) {
+        if (await noteRestoreDeleted(n.id, n.history_id)) ok++;
+      }
+      refreshAll();
+      if (ok === targets.length) {
+        toast(targets.length === 1 ? "已恢复" : `已恢复 ${ok} 条`, "success");
+      } else {
+        toast(`恢复了 ${ok} 条，${targets.length - ok} 条没能恢复`, "error");
+      }
+    },
+    [refreshAll, toast],
   );
 
   /**
@@ -133,30 +175,33 @@ export function useNoteActions(opts: NoteActionsOpts) {
 
   const handleDelete = useCallback(
     async (note: Note) => {
-      // 🔴 不能说「此操作不可恢复」——后端 `note_delete` 是
-      //   `UPDATE notes SET deleted_at`（**软删**），笔记进回收站。
-      //   两个方向都坏：吓得用户不敢删（其实很安全），删完也不知道能找回。
-      // 删的正好是第三栏里正在改的那条 ⇒ 未保存的修改也会一并没，得说出来。
-      // （恢复回来的是库里的版本，不包含这些改动。）
-      const draftWarn =
-        activeNote?.id === note.id && isActiveDirty()
-          ? "这条还有未保存的修改，会一并丢弃。"
-          : "";
-      const ok = await confirmDialog({
-        title: "删除笔记",
-        message: `删除笔记「${note.title}」？${keepText}原卡片不受影响。${draftWarn}`,
-        confirmText: "删除",
-      });
-      if (!ok) return;
+      if (!(await guardDirty(activeNote?.id === note.id && isActiveDirty()))) return;
       if (!(await noteDelete(note.id, note.history_id))) return;
-      toast("已删除笔记", "success");
       removeLocally(note.id);
       // 删的正好是第三栏里那条 → 回空态。**不自动跳下一条**：
       // 自动跳转会让用户以为删错了（设计稿 §10）。
       if (activeNote?.id === note.id) clearActive();
       refreshAll();
+      // 回执里不再写「会进回收站，N 天内可恢复」——那句话归回收站面板说（它那儿已经写了，
+      // 还带逐条倒计时）。这里要回答的只有一件事：**删错了现在怎么办**。
+      toast(
+        `已删除「${clipTitle(note.title)}」`,
+        "success",
+        UNDO_WINDOW_MS,
+        () => void undoDelete([note]),
+        "撤销",
+      );
     },
-    [activeNote, isActiveDirty, keepText, toast, removeLocally, clearActive, refreshAll],
+    [
+      activeNote,
+      isActiveDirty,
+      guardDirty,
+      undoDelete,
+      toast,
+      removeLocally,
+      clearActive,
+      refreshAll,
+    ],
   );
 
   const handleSetFolder = useCallback(
@@ -192,25 +237,34 @@ export function useNoteActions(opts: NoteActionsOpts) {
   const handleBatchDelete = useCallback(async () => {
     const targets = selectedNotes;
     if (targets.length === 0) return;
-    const ok = await confirmDialog({
-      title: `删除 ${targets.length} 条笔记？`,
-      message: `${keepText}原卡片不受影响。`,
-      confirmText: `删除 ${targets.length} 条`,
-      variant: "danger",
-    });
-    if (!ok) return;
+    // 同单条：删 N 条也是可撤销的，不拦；只有未保存的修改那一段不可逆。
+    if (!(await guardDirty(!!activeNote && selectedIds.has(activeNote.id) && isActiveDirty())))
+      return;
+    // 只把**真删掉的**那几条交给撤销：把失败的也算进去，撤销时就会去恢复一条
+    // 压根没删成的笔记，然后报一个莫名其妙的失败。
+    const done: Note[] = [];
     let failed = 0;
     for (const n of targets) {
-      if (!(await noteDelete(n.id, n.history_id))) failed++;
+      if (await noteDelete(n.id, n.history_id)) done.push(n);
+      else failed++;
     }
-    reportBatch("删除", targets.length, failed);
     if (activeNote && selectedIds.has(activeNote.id)) clearActive();
     clearSelection();
     refreshAll();
+    // 不走 `reportBatch`：那个是给移动用的（移动靠高亮环回执、不需要撤销）。
+    // 部分失败仍然要给撤销：已经删掉的那几条同样可能是误删（规则 #15.3）。
+    const undo = done.length > 0 ? () => void undoDelete(done) : undefined;
+    if (failed > 0) {
+      toast(`已删除 ${done.length} 条，${failed} 条失败`, "error", undefined, undo, undo && "撤销");
+    } else {
+      toast(`已删除 ${done.length} 条笔记`, "success", UNDO_WINDOW_MS, undo, "撤销");
+    }
   }, [
     selectedNotes,
-    keepText,
-    reportBatch,
+    guardDirty,
+    undoDelete,
+    isActiveDirty,
+    toast,
     activeNote,
     selectedIds,
     clearActive,

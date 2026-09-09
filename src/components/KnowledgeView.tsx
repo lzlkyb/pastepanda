@@ -155,8 +155,6 @@ export function KnowledgeView() {
    */
   const sidebarOpen = useAppStore((s) => s.sidebarOpen.knowledge);
 
-  /** 回收站保留天数。删除确认框要拿它说人话，**不能写死 30**（用户能改）。 */
-  const trashDays = useAppStore((s) => s.config.note_trash_days);
   const kbSyncOn = useAppStore((s) => s.config.kb_sync_enabled);
 
   /** ① 数据层。 */
@@ -243,7 +241,6 @@ export function KnowledgeView() {
   /** ③ 对笔记做的所有事（需要 ① 的重拉与 ② 的守卫）。 */
   const act = useNoteActions({
     notes: q.notes,
-    trashDays,
     activeNote: detail.activeNote,
     isActiveDirty: detail.isActiveDirty,
     clearActive: detail.clearActive,

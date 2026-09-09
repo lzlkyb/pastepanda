@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, createContext, useContext, ReactNode } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, createContext, useContext, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw, Copy, Check } from "lucide-react";
 import styles from "./Toast.module.css";
@@ -33,9 +33,69 @@ export function useToast() {
 
 let toastId = 0;
 
+/**
+ * 撤销窗口。UI 规则 U4.2：撤销条 4–10 秒自动消失（Material snackbar 口径），
+ * 本项目统一取 **6 秒**——够看清一句话并伸手点一下。
+ * 蒸馏区那条撤销条用的是同一个数（规则 #11：口径单一来源）。
+ */
+export const UNDO_WINDOW_MS = 6000;
+
+/**
+ * 一条 toast 的关闭计时器。
+ *
+ * `t !== 0` = 跑着，剩余 = `left - (now - startedAt)`；
+ * `t === 0` = 停表中，剩余就是 `left`。
+ */
+type ToastTimer = { t: number; left: number; startedAt: number };
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const MAX_TOASTS = 5; // 最多同时显示 5 个 toast
+
+  /**
+   * 🔴 为什么不能沿用原来那句裸 `setTimeout`：U4.2 要求**悬停暂停倒计时**。
+   * 正把鼠标移过去要点「撤销」、toast 却自己没了，是最气人的一种交互——
+   * 而带撤销的 toast 恰恰是唯一一种**必须点中**的 toast。
+   *
+   * 存「剩余时间」而不是离开时重新计满，是为了和底部那条进度条对齐：
+   * CSS 那边用的是 `animation-play-state: paused`，它是**续播不重播**的。
+   */
+  const timers = useRef(new Map<number, ToastTimer>());
+
+  const dismiss = useCallback((id: number) => {
+    const e = timers.current.get(id);
+    if (e) {
+      if (e.t) window.clearTimeout(e.t);
+      timers.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((x) => x.id !== id));
+  }, []);
+
+  const arm = useCallback((id: number, ms: number) => {
+    const t = window.setTimeout(() => dismiss(id), ms);
+    timers.current.set(id, { t, left: ms, startedAt: Date.now() });
+  }, [dismiss]);
+
+  /** 鼠标进来：停表。 */
+  const pause = useCallback((id: number) => {
+    const e = timers.current.get(id);
+    if (!e || !e.t) return;
+    window.clearTimeout(e.t);
+    timers.current.set(id, { t: 0, left: Math.max(0, e.left - (Date.now() - e.startedAt)), startedAt: 0 });
+  }, []);
+
+  /** 鼠标离开：按**剩下的**时间续上，不是重新计满。 */
+  const resume = useCallback((id: number) => {
+    const e = timers.current.get(id);
+    if (!e || e.t) return;
+    arm(id, e.left);
+  }, [arm]);
+
+  // 卸载时把还没到点的都清掉，否则是对已卸载组件 setState。
+  useEffect(() => {
+    const m = timers.current;
+    return () => { m.forEach((e) => e.t && window.clearTimeout(e.t)); m.clear(); };
+  }, []);
 
   const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string) => {
     const d = duration ?? (type === "error" ? 5000 : 4000);
@@ -48,10 +108,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
       return next;
     });
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), d);
-  }, []);
-
-  const dismiss = (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id));
+    arm(id, d);
+  }, [arm]);
 
   // 复制反馈状态：记录当前处于「已复制」态的 toast id（1.5s 后复原，不弹额外 toast）
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -104,6 +162,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 exit={{ opacity: 0, scale: 0.95, x: 10 }}
                 transition={{ duration: 0.2, layout: { type: "spring", stiffness: 550, damping: 38 } }}
                 className={`${styles.toastItem} ${styles[t.type]}`}
+                // U4.2：悬停暂停倒计时。底部那条进度条由 CSS 的
+                // `animation-play-state: paused` 同步停住，两边看到的是同一件事。
+                onMouseEnter={() => pause(t.id)}
+                onMouseLeave={() => resume(t.id)}
                 style={{
                   pointerEvents: "auto",
                   "--toast-duration": `${t.duration}ms`,
