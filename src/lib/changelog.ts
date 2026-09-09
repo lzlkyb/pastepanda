@@ -88,17 +88,28 @@ export function getUnseenEntries(entries: ChangelogEntry[], sinceVersion: string
   return entries.filter(e => compareVersions(e.version, sinceVersion) > 0);
 }
 
-/** Category display color mapping (CSS variable names) */
+/**
+ * 更新日志分类的展示色。
+ *
+ * 🔴 写字面值而不是 `var(--cat-*, …)`（2026-09-09 改）：
+ *   那七个 `--cat-*` 在 `theme.css` 里**从未定义**，于是六套主题下一直用的
+ *   就是后面那个兜底值。继续写 `var()` 只会让人以为它们跟主题。
+ *
+ * 为何不指向现有 token：这是一套**分类谱**，需要 8 个互相可区分的色相，
+ * 而主题里只有 accent / green / orange / danger 四支主色——不够分，
+ * 硬凑会让两三个分类撞成同一个颜色。真要让它跟主题，得单独设一族
+ * 分类谱 token（同「金色该新增 --gold」那条待办）。
+ */
 export const CATEGORY_COLORS: Record<ChangeCategoryType, string> = {
-  feat: "var(--cat-feat, #6366F1)",
-  fix: "var(--cat-fix, #F59E0B)",
-  change: "var(--cat-change, #8B5CF6)",
-  security: "var(--cat-sec, #EF4444)",
-  perf: "var(--cat-improve, #10B981)",
-  tech: "var(--cat-tech, #64748B)",
-  stability: "var(--cat-stability, #F97316)",
-  uiux: "var(--cat-improve, #10B981)",
-  other: "var(--cat-other, #7888A0)",
+  feat: "#6366F1",
+  fix: "#F59E0B",
+  change: "#8B5CF6",
+  security: "#EF4444",
+  perf: "#10B981",
+  tech: "#64748B",
+  stability: "#F97316",
+  uiux: "#10B981",
+  other: "#7888A0",
 };
 
 /** Category icon mapping */

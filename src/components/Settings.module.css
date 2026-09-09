@@ -1644,9 +1644,9 @@
   padding: 8px 10px;
   border-radius: 9px;
   font-size: 12px;
-  color: var(--red, #e5534b);
-  background: color-mix(in srgb, var(--red, #e5534b) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--red, #e5534b) 30%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
 .mcpAlert span {
@@ -1661,7 +1661,7 @@
   background: none;
   cursor: pointer;
   font-size: 11px;
-  color: var(--red, #e5534b);
+  color: var(--danger);
   opacity: 0.8;
 }
 
@@ -1830,8 +1830,8 @@
   font-size: 11px;
   line-height: 1.6;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--warn, #f0a020) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn, #f0a020) 32%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
 }
 
 .mcpGuideWarn code {
@@ -1918,7 +1918,20 @@
   height: 18px;
   border: none;
   border-radius: 9px;
-  background: var(--success-color, #3fb950);
+  /* 用 --green：同本文件 `.sToggle.on`（设置页自己的主开关）的约定。
+
+     ❗ 原先写的是 `var(--success-color, #3fb950)`，而 **--success-color 全仓从未定义**
+     （2026-09-09 扫到）——于是七个写权限开关的绿一直是写死的 #3fb950，
+     六套主题下长得一模一样。它不报错，只是默默用兜底值。
+
+     不新定义 --success-color，也不用 --success（它注释写明是「v6.4 AI UI：缓存绿」）：
+     再多一个名字就是同一个颜色三个叫法（规则 #11）。
+
+     白滑块压在轨道上的对比度：浅色四套 #11813A ⇒ 4.97:1（原 2.54:1）；
+     深色两套 #4ADE80 ⇒ 1.74:1。后者偏低，但那是 `.sToggle` 今天已有的
+     全局取舍（同一个 --green + 同一个 #fff 滑块），不在本次单独开一条例外；
+     开/关的区分也不只靠滑块（轨道绿/灰 + 滑块左/右两重编码）。 */
+  background: var(--green);
   cursor: pointer;
   transition: background 0.18s ease;
 }
@@ -1939,6 +1952,117 @@
 .mcpSwOff::after { left: 2px; }
 
 .mcpSw:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ===== 可写入的范围（项目②）。设计稿：design/MCP文件夹写白名单-真实稿.html ===== */
+
+/* 🔴 自带滚动容器。`.settingsContent` 写了 `overflow-x: hidden` 并附了一段
+   长注释：**真需要空间的块必须自带滚动容器**（同 `.mcpAuditList` / `.mcpCode`）。
+   不自带就会把整个设置页顶出一条横条。
+   底色给白：面板底是 `--accent-light`，不给白底就跟面板连成一片。 */
+.mcpFsList {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.mcpFsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+.mcpFsRow:last-child { border-bottom: none; }
+
+/* 未分类那一行：照侧栏的现有约定画在分隔线上方
+   （`FolderTree.tsx:7`：内置项不是文件夹）。两处长得不一样会让人以为是两回事。 */
+.mcpFsBuiltin { border-bottom: 2px solid var(--border-color); }
+
+.mcpFsIndent1 { padding-left: 28px; }
+.mcpFsIndent2 { padding-left: 46px; }
+.mcpFsIndent3 { padding-left: 64px; }
+
+.mcpFsBox {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid var(--toggle-off-label);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+/* 实心用 --accent-solid（而不是 --accent）：白勾压在上面，
+   而 theme.css:210 已注明它就是「实心主按钮专用底色（白字压其上）」。 */
+.mcpFsBoxOn {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+}
+/* 继承来的勾：显示为已勾但淡一级，提示“你没直接选它”。 */
+.mcpFsBoxInherited {
+  background: color-mix(in srgb, var(--accent-solid) 40%, transparent);
+  border-color: color-mix(in srgb, var(--accent-solid) 40%, transparent);
+  cursor: default;
+}
+.mcpFsBox:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.mcpFsName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcpFsNameMuted { color: var(--text-muted); }
+
+.mcpFsCount {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mcpFsBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mcpFsClear {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--accent);
+}
+.mcpFsClear:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.mcpFsScope {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.mcpFsScopeAll { background: var(--green-bg); color: var(--green); }
+.mcpFsScopeSome { background: var(--accent-light); color: var(--accent-strong); }
 
 .mcpAuditList {
   margin: 8px 0 0;
@@ -1987,7 +2111,7 @@
 }
 
 .mcpAuditHit { flex-shrink: 0; color: var(--text-secondary); }
-.mcpAuditFail { flex-shrink: 0; color: var(--red, #e5534b); }
+.mcpAuditFail { flex-shrink: 0; color: var(--danger); }
 
 .mcpAuditClear {
   display: inline-flex;
@@ -2005,8 +2129,8 @@
 
 .mcpAuditClear:hover {
   background: var(--hover);
-  border-color: var(--red, #e5534b);
-  color: var(--red, #e5534b);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* ===== 知识库配对向导（KbPairDialog / KbPairSteps）=====
@@ -2256,14 +2380,14 @@
 /* 「令牌或地址已变更」用警告色而不是中性色：这个客户端已经连不上了，
    而它自己不会报错——不醒目的话用户只会觉得「工具突然不好用了」。 */
 .mcpBadgeStale {
-  color: var(--warn, #f0a020);
-  background: color-mix(in srgb, var(--warn, #f0a020) 14%, transparent);
-  border-color: color-mix(in srgb, var(--warn, #f0a020) 36%, transparent);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 36%, transparent);
 }
 .mcpBadgeBad {
-  color: var(--red, #e5534b);
-  background: color-mix(in srgb, var(--red, #e5534b) 12%, transparent);
-  border-color: color-mix(in srgb, var(--red, #e5534b) 34%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 34%, transparent);
 }
 
 .mcpClientBody {

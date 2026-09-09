@@ -733,7 +733,8 @@
   font-size: 9px;
   border-radius: 4px;
   padding: 1px 5px;
-  background: var(--ai-bg, #f3e8ff);
+  /* `--ai-bg` 从未定义，写成实际生效值（同 MilestoneDialog 的口径）。 */
+  background: #f3e8ff;
   color: var(--accent);
   font-weight: 600;
   flex-shrink: 0;
@@ -1063,7 +1064,7 @@
   padding: 8px 10px;
   border-radius: 8px;
   background: var(--red-bg, #fee2e2);
-  border: 1px solid var(--danger-border, #fecaca);
+  border: 1px solid var(--red-border);
   color: var(--danger);
   font-size: 11px;
 }
@@ -1351,7 +1352,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--panel-bg, transparent);
+  background: transparent;
 }
 
 /* ==========================================================================
@@ -1379,7 +1380,7 @@
   grid-template-columns: repeat(3, 1fr);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: var(--panel-bg, transparent);
+  background: transparent;
   overflow: hidden;
 }
 
@@ -1423,7 +1424,7 @@
   padding: 7px 9px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
-  background: var(--panel-bg, transparent);
+  background: transparent;
   font-family: inherit;
   text-align: left;
   color: var(--text-primary);
@@ -1526,7 +1527,10 @@ button.evoRow:hover {
 }
 
 .injectHead b {
-  color: var(--text-color);
+  /* 🔴 原先是 `var(--text-color)`，**连兜底都没有**，而那个 token 从未定义
+     ⇒ 整条声明在计算值阶段就非法，颜色默默回落成继承父级的 --text-muted。
+     这一行本意是在一片 muted 里做强调，结果一直跟周围一个颜色。 */
+  color: var(--text-primary);
   font-weight: 600;
   font-size: 10.5px;
 }
@@ -1537,7 +1541,10 @@ button.evoRow:hover {
   padding: 8px 9px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
-  background: var(--code-bg);
+  /* 🔴 同上：原先 `var(--code-bg)` 无兜底且 token 未定义 ⇒ 背景根本没生效（透明）。
+     用 --input-bg：项目里「下沉的等宽块」惯例就是它
+     （DeepClean.module.css:64 / Extract.module.css:100 / Help.module.css:140）。 */
+  background: var(--input-bg);
   font-family: ui-monospace, Consolas, "Microsoft YaHei", monospace;
   font-size: 10.5px;
   line-height: 1.6;

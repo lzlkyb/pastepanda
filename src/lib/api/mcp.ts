@@ -144,6 +144,101 @@ export async function mcpSetWriteSwitch(
   }
 }
 
+/** 可写入范围选择器里的一行。 */
+export interface McpScopeRow {
+  /** folder id，或哨兵 `__unfiled__`。 */
+  id: string;
+  name: string;
+  /** 缩进层级，顶层 = 1。 */
+  depth: number;
+  /** 本文件夹**及其后代**里的笔记数。 */
+  notes: number;
+  /** 用户直接勾了它。 */
+  checked: boolean;
+  /** 由祖先的勾继承而来——显示为已勾但淡色、不可单独取消。 */
+  inherited: boolean;
+}
+
+/** 「可写入的范围」那一区的全部数据。 */
+export interface McpWriteScope {
+  /** `false` = 从未配过（全库可写）。 */
+  restricted: boolean;
+  rows: McpScopeRow[];
+  covered: number;
+  total: number;
+}
+
+/** 读可写入范围。失败返回 `null`（面板自己显示读不到）。 */
+export async function mcpGetWriteScope(): Promise<McpWriteScope | null> {
+  try {
+    return await invoke<McpWriteScope>("mcp_get_write_scope");
+  } catch (e) {
+    logger.error("读可写入范围失败", e);
+    toastActionFailed("读可写入范围", e);
+    return null;
+  }
+}
+
+/**
+ * 存可写入范围，返回改完后的全量视图（`null` = 失败）。
+ *
+ * 🔴 `entries` 传 `null` = 「恢复全库」（回到未配过）；
+ * 传 `[]` = 「一篇都不可写」。**两者不是一回事**，切勿把空数组当成清空语义传——
+ * 那会让用户取消全部勾选后得到相反的结果（授权全库）。
+ *
+ * 返回全量而不是单行：前端就不用自己算继承态与篇数，
+ * 少一份「界面以为改了、后端其实没改」的可能。
+ */
+export async function mcpSetWriteScope(
+  entries: string[] | null,
+): Promise<McpWriteScope | null> {
+  try {
+    return await invoke<McpWriteScope>("mcp_set_write_scope", { entries });
+  } catch (e) {
+    logger.error("保存可写入范围失败", e);
+    toastActionFailed("保存可写入范围", e);
+    return null;
+  }
+}
+
+/** AI 经 MCP 建的文件夹（项目③）。 */
+export interface McpAiFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  /** 含后代的笔记数。 */
+  noteCount: number;
+  depth: number;
+  createdAt: string;
+}
+
+/** AI 建的文件夹列表。失败返回空数组。 */
+export async function mcpAiFolders(): Promise<McpAiFolder[]> {
+  try {
+    return await invoke<McpAiFolder[]>("mcp_ai_folders");
+  } catch (e) {
+    logger.warn("读 AI 建的文件夹失败", e);
+    return [];
+  }
+}
+
+/**
+ * 撤销一个 AI 建的文件夹。返回 `[挑走的笔记数, 挑走的子夹数]`，`null` = 失败。
+ *
+ * 语义是「删掉它，里面的东西升到父级」——**不是「恢复原状」**。
+ * 如果笔记本来在别的夹子里、被 AI 挑进来的，撤销不会把它送回原处；
+ * 界面文案得把实际去向直接告知，不能用「恢复原状」这种假词。
+ */
+export async function mcpUndoAiFolder(id: string): Promise<[number, number] | null> {
+  try {
+    return await invoke<[number, number]>("mcp_undo_ai_folder", { id });
+  } catch (e) {
+    logger.error("撤销 AI 文件夹失败", e);
+    toastActionFailed("撤销 AI 文件夹", e);
+    return null;
+  }
+}
+
 /** 最近的调用记录。红线②的「可见」就靠它。 */
 export async function mcpAuditList(limit = 100): Promise<McpAuditRow[]> {
   try {

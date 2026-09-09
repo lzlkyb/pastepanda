@@ -126,7 +126,7 @@
   border-radius: 6px;
   flex-shrink: 0;
 }
-.riskLocal { background: var(--teal-bg, var(--section-bg)); color: var(--text-secondary); border: 1px solid var(--border-color); }
+.riskLocal { background: var(--section-bg); color: var(--text-secondary); border: 1px solid var(--border-color); }
 .riskNet { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border); }
 .riskDanger { background: var(--red-bg); color: var(--danger); border: 1px solid var(--red-border); }
 .editBtns {

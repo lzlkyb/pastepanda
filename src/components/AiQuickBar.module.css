@@ -273,7 +273,7 @@
 
 .err {
   background: var(--red-bg, #fef2f2);
-  border: 1px solid var(--danger-border, #fecaca);
+  border: 1px solid var(--red-border);
   color: var(--danger);
 }
 
@@ -312,7 +312,8 @@
   font-size: 8.5px;
   font-weight: 700;
   color: #14708a;
-  background: var(--teal-bg, #e3f4f8);
+  /* `--teal-bg` 从未定义，写成实际生效值。 */
+  background: #e3f4f8;
   border-radius: 4px;
   padding: 1px 5px;
   line-height: 1.4;

@@ -9,7 +9,8 @@
 //!
 //! 抽成 trait 后，生产走 [`AppKbSource`]，测试塞一个手搭的假实现。
 
-use super::gate::WriteSwitches;
+use super::gate::{WriteScope, WriteSwitches};
+use std::collections::HashMap;
 use crate::data_store::{DataStore, Note, NoteFolder, NoteUpdateReport, NoteViewOpts};
 use crate::markdown::{apply, ContentEdit, EditReport};
 
@@ -23,6 +24,8 @@ pub enum ListOutcome {
     Ok(Vec<Note>),
     UnknownFolder(String),
     UnknownTag(String),
+    /// ③甲：`author` 点名了一个从未写过东西的 agent。
+    UnknownAuthor { asked: String, known: Vec<String> },
 }
 
 /// `kb_search` 的结果。
@@ -52,6 +55,8 @@ pub enum SearchOutcome {
     /// 带上 `matched`（筛掉前有几篇）——只说「没找到」会让模型以为
     /// 连关键词都不匹配，从而换一个完全不同的词重试，白跑一轮。
     NoKindMatch { kind: String, matched: usize },
+    /// ③甲：`author` 点名了一个从未写过东西的 agent。同上两档的取舍。
+    UnknownAuthor { asked: String, known: Vec<String> },
 }
 
 /// 范围参数（名字）解析后的结果。
@@ -60,9 +65,59 @@ pub enum SearchOutcome {
 /// 各写一套的后果是两个工具对同一个文件夹名给出不同结果，
 /// 而那种不一致在日志里看不出来。
 enum Scope {
-    Ok { folder_id: String, tag_ids: Vec<String> },
+    Ok {
+        folder_id: String,
+        tag_ids: Vec<String>,
+        /// 已校验的写入者筛选（③甲）。空串 = 不筛。
+        /// 取值口径同 [`NoteViewOpts::author`]。
+        author: String,
+    },
     UnknownFolder(String),
     UnknownTag(String),
+    /// ③甲：点名了一个从未写过东西的 agent。带上库里真实的名单。
+    ///
+    /// 🔴 不能归入「没找到」：模型会把「agent 名写错了」读成
+    /// 「那个 agent 确实没记过这个」——同 folder / tag 的取舍。
+    UnknownAuthor { asked: String, known: Vec<String> },
+}
+
+/// `author` 参数的归一与校验。
+///
+/// # 🔴 `me` 与 `human` 故意不校验存不存在
+///
+/// 一个 agent 第一次问「我上次记了什么」时它本来就什么都没写过。
+/// 那是一个**有意义的空结果**（“你还没记过东西”），不是错。
+/// 报「没有叫 agent:claude-code 的写入者」更是荒谬——那就是它自己。
+/// 而点名其他 agent 时，写错名字与「他确实没记过」必须分开。
+fn resolve_author(store: &DataStore, author: &str, me: &str) -> Result<Scope, String> {
+    // 返回 `Scope` 只为了复用 `UnknownAuthor` 那一支；成功时只看 `author` 字段。
+    let want = match author.trim() {
+        "" => String::new(),
+        // 服务端解 `me`：模型不需要知道自己叫什么，也不会因自报名字而报错。
+        "me" => me.to_string(),
+        "human" => "human".to_string(),
+        // 宽容一个缩写：`claude-code` 等价于 `agent:claude-code`。
+        // 这不是「静默放宽」——两者指的是同一个对象，只是拼法不同。
+        a if a.starts_with("agent:") => a.to_string(),
+        a => format!("agent:{}", a),
+    };
+    if want.is_empty() || want == "human" || want == me {
+        return Ok(Scope::Ok {
+            folder_id: String::new(),
+            tag_ids: Vec::new(),
+            author: want,
+        });
+    }
+    let known = store.note_writers()?;
+    if known.iter().any(|w| *w == want) {
+        Ok(Scope::Ok {
+            folder_id: String::new(),
+            tag_ids: Vec::new(),
+            author: want,
+        })
+    } else {
+        Ok(Scope::UnknownAuthor { asked: want, known })
+    }
 }
 
 /// 把工具参数里的**名字**解成底层要的 **id**。
@@ -75,6 +130,8 @@ fn resolve_scope(
     store: &DataStore,
     folder: Option<&str>,
     tag: Option<&str>,
+    author: Option<&str>,
+    me: &str,
 ) -> Result<Scope, String> {
     let folder_id = match folder {
         None => String::new(),
@@ -96,7 +153,20 @@ fn resolve_scope(
             }
         }
     };
-    Ok(Scope::Ok { folder_id, tag_ids })
+    // ③甲：写入者校验也收口在本函数（同一个理由：两个工具必须同口径）。
+    let author = match author {
+        None => String::new(),
+        Some(a) => match resolve_author(store, a, me)? {
+            Scope::Ok { author, .. } => author,
+            // 不是 `Ok` 就只可能是 `UnknownAuthor`，原样往上报。
+            other => return Ok(other),
+        },
+    };
+    Ok(Scope::Ok {
+        folder_id,
+        tag_ids,
+        author,
+    })
 }
 
 /// 三个只读工具背后的数据访问。
@@ -106,20 +176,27 @@ fn resolve_scope(
 pub trait KbSource: Send + Sync + 'static {
     fn read(&self, id: &str) -> Result<Option<Note>, String>;
 
+    /// `me` = 本次调用者的 `source_agent`（③甲）。只用于把 `author: "me"`
+    /// 在**服务端**解成具体名字——模型不需要知道自己叫什么。
     fn list(
         &self,
         folder: Option<&str>,
         tag: Option<&str>,
+        author: Option<&str>,
+        me: &str,
         limit: u32,
         offset: u32,
     ) -> Result<ListOutcome, String>;
 
+    /// `me` 同 [`Self::list`]。
     fn search(
         &self,
         query: &str,
         folder: Option<&str>,
         tag: Option<&str>,
         kind: Option<&str>,
+        author: Option<&str>,
+        me: &str,
         limit: u32,
     ) -> Result<SearchOutcome, String>;
 
@@ -230,6 +307,48 @@ pub trait KbSource: Send + Sync + 'static {
     /// 所以在有它之前，`kb_restore` 只能恢复「本轮刚刚自己删的」——
     /// 上一次会话删的东西永远拿不回来，因为没有任何途径取到那个 id。
     fn trash_list(&self, limit: u32) -> Result<Vec<Note>, String>;
+
+    /// AI 可写入的范围快照（项目②）。理由同 `write_switches`。
+    fn write_scope(&self) -> WriteScope;
+
+    /// 这一篇当前在哪个文件夹 —— 专给权限判定用。
+    ///
+    /// 🔴 **必须含回收站里的**，不能用 `read()` 代替：
+    /// `note_get` 带了 `deleted_at IS NULL`（`note.rs:1700`），已删的笔记读不到。
+    /// 而 `kb_restore` 恰好只动回收站里的 ⇒ 拿 `read()` 判它会永远取不到归属。
+    ///
+    /// 也不能用 `trash_list(limit)` 凑：它只返回最近 N 条，
+    /// 超出 limit 的那些会查不到 ⇒ 权限判定静默走错分支。
+    fn folder_of(&self, note_id: &str) -> Result<NoteSpot, String>;
+
+    /// 全部文件夹的 `id -> parent_id`。递归判定要沿它往上走。
+    fn folder_parents(&self) -> Result<HashMap<String, Option<String>>, String>;
+
+    /// 建一个文件夹（项目③）。`parent` 是**名字**，`None` = 顶层。
+    ///
+    /// 校验全靠数据层现有的三道（名字非空 / 同父不重名 / 深度不超
+    /// `MAX_FOLDER_DEPTH`）—— 不在这层再写一份，两份就会漂。
+    ///
+    /// 返回新夹子的名字（给模型回显用）。
+    fn folder_create(&self, name: &str, parent: Option<&str>) -> Result<String, String>;
+}
+
+/// 一篇笔记在权限判定里的位置。
+///
+/// 用枚举而不是 `Option<Option<String>>`：后者的两层 `None` 语义完全不同
+/// （“没这篇” vs “未分类”），而它们在权限判定里要走相反的分支。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NoteSpot {
+    /// 在这个文件夹里。
+    In(String),
+    /// 未分类（`folder_id IS NULL`）。
+    Unfiled,
+    /// 库里（含回收站）根本没这个 id。
+    ///
+    /// **不当权限问题处理**：没东西可保护，放它过去、让工具自己报
+    /// 「没有 id xxx」——那比一句笼统的「没权限」有用得多。
+    /// （注意这不是 fail-open：查库出错走的是 `Err`，那一条是 fail-closed。）
+    Missing,
 }
 
 /// 生产实现：从 Tauri 管理状态里取 `DataStore`。
@@ -265,10 +384,12 @@ impl KbSource for AppKbSource {
         &self,
         folder: Option<&str>,
         tag: Option<&str>,
+        author: Option<&str>,
+        me: &str,
         limit: u32,
         offset: u32,
     ) -> Result<ListOutcome, String> {
-        self.with_store(|s| list_on(s, folder, tag, limit, offset))?
+        self.with_store(|s| list_on(s, folder, tag, author, me, limit, offset))?
     }
 
     fn search(
@@ -277,9 +398,11 @@ impl KbSource for AppKbSource {
         folder: Option<&str>,
         tag: Option<&str>,
         kind: Option<&str>,
+        author: Option<&str>,
+        me: &str,
         limit: u32,
     ) -> Result<SearchOutcome, String> {
-        self.with_store(|s| search_on(s, query, folder, tag, kind, limit))?
+        self.with_store(|s| search_on(s, query, folder, tag, kind, author, me, limit))?
     }
 
     fn links_of(&self, id: &str) -> (Vec<String>, Vec<String>) {
@@ -414,6 +537,42 @@ impl KbSource for AppKbSource {
     fn trash_list(&self, limit: u32) -> Result<Vec<Note>, String> {
         self.with_store(|s| s.note_list_deleted(limit))?
     }
+
+    fn write_scope(&self) -> WriteScope {
+        let cfg = self
+            .with_store(|s| s.get_config())
+            .and_then(|r| r)
+            .unwrap_or_default();
+        WriteScope::from_config(&cfg)
+    }
+
+    fn folder_of(&self, note_id: &str) -> Result<NoteSpot, String> {
+        let got = self.with_store(|s| s.note_folder_of_any(note_id))??;
+        Ok(match got {
+            None => NoteSpot::Missing,
+            Some(None) => NoteSpot::Unfiled,
+            Some(Some(fid)) => NoteSpot::In(fid),
+        })
+    }
+
+    fn folder_parents(&self) -> Result<HashMap<String, Option<String>>, String> {
+        let list = self.with_store(|s| s.folder_list())??;
+        Ok(list.into_iter().map(|f| (f.id, f.parent_id)).collect())
+    }
+
+    fn folder_create(&self, name: &str, parent: Option<&str>) -> Result<String, String> {
+        let name = name.to_string();
+        let parent = parent.map(|s| s.to_string());
+        self.with_store(move |s| {
+            // 父夹按**名字**解，同 `kb_create` / `kb_move`：模型手里只有名字
+            // （`kb_folders` 返回的就是名字），让它猜 id 是不现实的。
+            let pid = match parent.as_deref() {
+                None => None,
+                Some(p) => Some(resolve_folder_on(s, p)?),
+            };
+            s.folder_create_by_ai(&name, pid.as_deref()).map(|f| f.name)
+        })?
+    }
 }
 
 /// 名字 → id 的解析在这里，不在 trait 实现里：以后再添一个实现也能直接复用。
@@ -421,17 +580,32 @@ fn list_on(
     store: &DataStore,
     folder: Option<&str>,
     tag: Option<&str>,
+    author: Option<&str>,
+    me: &str,
     limit: u32,
     offset: u32,
 ) -> Result<ListOutcome, String> {
     // 名字 → id 的解析收口在 `resolve_scope`（与 kb_search 共用）。
-    let (folder_filter, tag_ids) = match resolve_scope(store, folder, tag)? {
-        Scope::Ok { folder_id, tag_ids } => (folder_id, tag_ids),
+    let (folder_filter, tag_ids, author) = match resolve_scope(store, folder, tag, author, me)? {
+        Scope::Ok {
+            folder_id,
+            tag_ids,
+            author,
+        } => (folder_id, tag_ids, author),
         Scope::UnknownFolder(n) => return Ok(ListOutcome::UnknownFolder(n)),
         Scope::UnknownTag(n) => return Ok(ListOutcome::UnknownTag(n)),
+        Scope::UnknownAuthor { asked, known } => {
+            return Ok(ListOutcome::UnknownAuthor { asked, known })
+        }
     };
 
-    let opts = NoteViewOpts::default();
+    // 🔴 `author` 走 SQL 而不是取回来再筛（不同于 `kind`）：
+    //    `kb_list` 带 `offset`，而 offset 是 SQL 算的——在 Rust 里后筛会让
+    //    第二页跳行或重复。`kind` 没这个问题是因为 `kb_search` 没有 offset。
+    let opts = NoteViewOpts {
+        author,
+        ..NoteViewOpts::default()
+    };
     let notes = store.note_list_view(&folder_filter, &tag_ids, &opts, limit, offset)?;
     Ok(ListOutcome::Ok(notes))
 }
@@ -453,6 +627,8 @@ fn search_on(
     folder: Option<&str>,
     tag: Option<&str>,
     kind: Option<&str>,
+    author: Option<&str>,
+    me: &str,
     limit: u32,
 ) -> Result<SearchOutcome, String> {
     // 先单独跑一次拆词，就是为了分开那两种「没结果」。
@@ -462,10 +638,17 @@ fn search_on(
     }
     // AM-1a：范围参数。底层 `note_search_relevant` 本来就收这两个，
     // 之前 MCP 层硬编码传空——**是遗漏，不是取舍**。
-    let (folder_filter, tag_ids) = match resolve_scope(store, folder, tag)? {
-        Scope::Ok { folder_id, tag_ids } => (folder_id, tag_ids),
+    let (folder_filter, tag_ids, author) = match resolve_scope(store, folder, tag, author, me)? {
+        Scope::Ok {
+            folder_id,
+            tag_ids,
+            author,
+        } => (folder_id, tag_ids, author),
         Scope::UnknownFolder(n) => return Ok(SearchOutcome::UnknownFolder(n)),
         Scope::UnknownTag(n) => return Ok(SearchOutcome::UnknownTag(n)),
+        Scope::UnknownAuthor { asked, known } => {
+            return Ok(SearchOutcome::UnknownAuthor { asked, known })
+        }
     };
     // AM-7：kind 写错要当场报错，不能等它筛空了再说「没找到」——
     // 后者会被模型读成「库里确实没有」，然后带着错结论走下去。
@@ -476,7 +659,10 @@ fn search_on(
         }
     }
 
-    let opts = NoteViewOpts::default();
+    let opts = NoteViewOpts {
+        author,
+        ..NoteViewOpts::default()
+    };
     // 带 kind 时多取一些再筛（见 KIND_OVER_FETCH）。
     let fetch = match kind {
         Some(_) => limit.saturating_mul(KIND_OVER_FETCH),

@@ -17,6 +17,8 @@ struct FakeKb {
     notes: Vec<crate::data_store::Note>,
     /// 七个写开关。测试靠它钉双层门。
     switches: super::gate::WriteSwitches,
+    /// 可写入范围（项目②）。默认不限制，所以现有写测试不受影响。
+    scope: super::gate::WriteScope,
     /// 真落到数据层的写调用：(方法, 目标, source)。
     ///
     /// 不真改 `notes`：本模块要钉的是 **MCP 层**（参数解析、门控、输出形状），
@@ -29,8 +31,17 @@ impl FakeKb {
         Self::with_switches(super::gate::WriteSwitches::ALL_ON)
     }
 
+    /// 开关全开、只限定范围。项目②的测试用它。
+    fn with_scope(scope: super::gate::WriteScope) -> Self {
+        Self {
+            scope,
+            ..Self::with_switches(super::gate::WriteSwitches::ALL_ON)
+        }
+    }
+
     fn with_switches(switches: super::gate::WriteSwitches) -> Self {
         Self {
+            scope: super::gate::WriteScope::unrestricted(),
             notes: vec![
                 fake_note(
                     "n1",
@@ -127,6 +138,30 @@ fn bulk_notes() -> Vec<crate::data_store::Note> {
         .collect()
 }
 
+/// 假源的 `author` 门（③甲）。返 `Some((asked, known))` = 应当报未知写入者。
+///
+/// 🔴 口径必须与真实的 `resolve_author` 一致：
+/// - `me` / `human` **不校验存不存在**（一个 agent 第一次问「我记了什么」
+///   时它本来就什么都没写过，那是空结果而不是错）；
+/// - 不带 `agent:` 前缀的当缩写补上；
+/// - 其余点名要真的存在于名单里。
+///
+/// 两边口径一旦漂开，测试就在钉一个不存在的行为。
+fn fake_author_gate(author: Option<&str>, me: &str) -> Option<(String, Vec<String>)> {
+    const KNOWN: &str = "agent:claude-code";
+    let a = author?.trim();
+    let want = match a {
+        "" | "me" | "human" => return None,
+        x if x.starts_with("agent:") => x.to_string(),
+        x => format!("agent:{}", x),
+    };
+    if want == me || want == KNOWN {
+        None
+    } else {
+        Some((want, vec![KNOWN.to_string()]))
+    }
+}
+
 impl super::source::KbSource for FakeKb {
     fn read(&self, id: &str) -> Result<Option<crate::data_store::Note>, String> {
         // n4 只存在于 `kb_read` 这条路上，故意不进 `notes`：
@@ -174,9 +209,20 @@ impl super::source::KbSource for FakeKb {
         &self,
         folder: Option<&str>,
         tag: Option<&str>,
+        author: Option<&str>,
+        me: &str,
         _limit: u32,
         _offset: u32,
     ) -> Result<super::source::ListOutcome, String> {
+        // ③甲：假源里 `me` 与 `human` 总是合法（同真实实现：空结果不是错），
+        // 只认一个具体名字 `agent:claude-code`，其余一律报未知——
+        // 用来钉「写错 agent 名不得静默退化成不筛」。
+        if let Some(outcome) = fake_author_gate(author, me) {
+            return Ok(super::source::ListOutcome::UnknownAuthor {
+                asked: outcome.0,
+                known: outcome.1,
+            });
+        }
         // 输出预算那条测试的入口：只有它会拿到 30 篇大篇幅。
         if folder == Some("海量") {
             return Ok(super::source::ListOutcome::Ok(bulk_notes()));
@@ -201,11 +247,20 @@ impl super::source::KbSource for FakeKb {
         folder: Option<&str>,
         tag: Option<&str>,
         kind: Option<&str>,
+        author: Option<&str>,
+        me: &str,
         _limit: u32,
     ) -> Result<super::source::SearchOutcome, String> {
         // 照真实取词口径的形状做：单字 = 拆不出词
         if query.chars().count() < 2 {
             return Ok(super::source::SearchOutcome::NoSearchableTerms);
+        }
+        // ③甲：同 `list`。
+        if let Some(outcome) = fake_author_gate(author, me) {
+            return Ok(super::source::SearchOutcome::UnknownAuthor {
+                asked: outcome.0,
+                known: outcome.1,
+            });
         }
         // AM-1a：只认这一个文件夹 / 一个标签，其余一律报未知——
         // 目的是钉住「名字写错不得静默退化成全库搜」这条契约。
@@ -391,6 +446,51 @@ impl super::source::KbSource for FakeKb {
         self.switches
     }
 
+    fn write_scope(&self) -> super::gate::WriteScope {
+        self.scope.clone()
+    }
+
+    /// 只给权限判定用。
+    ///
+    /// 故意与 `notes` 里的 `folder_id` 分开写：`fake_note` 那几篇的 `folder_id`
+    /// 全是 `None`（未分类），而范围检查需要**三种位置都有样本**；
+    /// 去改 `notes` 会连带撞坏一批在数篇数 / 对摘要的断言。
+    fn folder_of(&self, note_id: &str) -> Result<super::source::NoteSpot, String> {
+        use super::source::NoteSpot;
+        Ok(match note_id {
+            // f2 = 「技术/Rust」，它的 parent 是 f1 —— 用来钉「勾父夹包含子夹」。
+            "n1" => NoteSpot::In("f2".to_string()),
+            "n2" => NoteSpot::In("f1".to_string()),
+            "n3" => NoteSpot::Unfiled,
+            // 其它 id 一律当「库里没这篇」—— 范围检查会放过去，
+            // 让工具自己报「没有 id xxx」。
+            _ => NoteSpot::Missing,
+        })
+    }
+
+    fn folder_create(&self, name: &str, parent: Option<&str>) -> Result<String, String> {
+        // 不真建（同本模块其它写方法），只记一笔：
+        // 要钉的是 MCP 层（参数解析、门控、输出形状），
+        // 真建的行为与三道校验由 `data_store::tests` 盖。
+        self.writes.lock().unwrap().push((
+            "folder_create".to_string(),
+            format!("{}@{}", name, parent.unwrap_or("")),
+            String::new(),
+        ));
+        Ok(name.to_string())
+    }
+
+    fn folder_parents(
+        &self,
+    ) -> Result<std::collections::HashMap<String, Option<String>>, String> {
+        // 走 `folders()` 而不另写一份：两处对不上的话，递归那条测试会假绿。
+        Ok(self
+            .folders()?
+            .into_iter()
+            .map(|f| (f.id, f.parent_id))
+            .collect())
+    }
+
     // 🔴 故意不是 30：它钉住 `kb_delete` 的描述拿的确实是这个值，
     // 而不是又一个刚好等于默认值的字面量。
     fn trash_days(&self) -> i64 {
@@ -449,8 +549,24 @@ async fn spawn_server_with_switches(
 async fn spawn_with(
     switches: super::gate::WriteSwitches,
 ) -> (String, std::sync::Arc<FakeKb>, std::sync::Arc<RecordingAudit>) {
+    spawn_from(FakeKb::with_switches(switches)).await
+}
+
+/// 带指定范围起服务（项目②）。开关全开，只限范围——
+/// 这样拦下来的一定是范围而不是开关。
+async fn spawn_server_with_scope(
+    scope: super::gate::WriteScope,
+) -> (String, std::sync::Arc<FakeKb>) {
+    let (base, fake, _) = spawn_from(FakeKb::with_scope(scope)).await;
+    (base, fake)
+}
+
+/// 起服务的**真正单一实现**（规则 #11）。上面几个入口全走它。
+async fn spawn_from(
+    fake: FakeKb,
+) -> (String, std::sync::Arc<FakeKb>, std::sync::Arc<RecordingAudit>) {
     let token = std::sync::Arc::new(std::sync::Mutex::new(TOKEN.to_string()));
-    let fake = std::sync::Arc::new(FakeKb::with_switches(switches));
+    let fake = std::sync::Arc::new(fake);
     let kb: std::sync::Arc<dyn super::source::KbSource> = fake.clone();
     let recorder = std::sync::Arc::new(RecordingAudit::default());
     let audit: std::sync::Arc<dyn super::audit::AuditSink> = recorder.clone();
@@ -776,6 +892,233 @@ async fn test_tools_call_unknown_vs_placeholder() {
     assert_eq!(v["error"]["code"], super::protocol::ERR_INVALID_PARAMS);
 }
 
+// ═════ 项目②：可写入的范围 ═════
+//
+// FakeKb 的位置布局（看 `folder_of`）：
+//   n1 在 f2（「技术/Rust」，parent = f1）、n2 在 f1（「技术」）、n3 未分类。
+
+// ===== ③甲：`author` 筛选 =====
+
+#[tokio::test]
+async fn test_author_me_and_human_never_error_even_with_nothing_written() {
+    // 🔴 这条是 ③甲 里最容易做错的地方。
+    //
+    // 一个 agent 第一次问「我上次记了什么」时，它本来就什么都没写过。
+    // 如果把 `me` 也拿去校验「这个写入者存不存在」，它会拿到
+    // 「没有叫 agent:xxx 的写入者」——而那就是它自己。
+    // 而那正好是最重要的那条路径。
+    let base = spawn_server().await;
+    for a in ["me", "human"] {
+        let (text, is_err) = call_text(&base, "kb_list", json!({ "author": a })).await;
+        assert!(!is_err, "author={} 不应当报错：{}", a, text);
+        let (text, is_err) =
+            call_text(&base, "kb_search", json!({ "query": "并发", "author": a })).await;
+        assert!(!is_err, "kb_search author={} 不应当报错：{}", a, text);
+    }
+}
+
+#[tokio::test]
+async fn test_unknown_author_errors_and_lists_the_real_ones() {
+    // 🔴 写错 agent 名**不得**静默退化成「不筛」——同 folder / tag 的取舍。
+    //    静默放宽的后果是模型拿到一堆别人写的笔记当成自己的记忆。
+    //    而报错里要带**真实名单**：静态描述写不出这个。
+    let base = spawn_server().await;
+    for tool in ["kb_list", "kb_search"] {
+        let mut args = json!({ "author": "agent:不存在的" });
+        if tool == "kb_search" {
+            args["query"] = json!("并发");
+        }
+        let (text, is_err) = call_text(&base, tool, args).await;
+        assert!(is_err, "{} 点名一个不存在的写入者应当报错：{}", tool, text);
+        assert!(
+            text.contains("agent:claude-code"),
+            "{} 的报错要把真实名单给回去：{}",
+            tool,
+            text
+        );
+        assert!(
+            text.contains("me") && text.contains("human"),
+            "{} 的报错要告诉模型还有两个特殊值：{}",
+            tool,
+            text
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_author_accepts_the_bare_name_as_a_shorthand() {
+    // `claude-code` 与 `agent:claude-code` 指的是同一个对象，只是拼法不同。
+    // 认缩写不是「静默放宽」（那指的是把筛选条件丢掉）。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_list", json!({ "author": "claude-code" })).await;
+    assert!(!is_err, "缩写形应当被认：{}", text);
+}
+
+#[tokio::test]
+async fn test_scope_unset_means_no_limit() {
+    // 🔴 升级兼容，这条最重要：老用户配置里没有这个键，
+    //    他的 AI 写入不能因为多了个功能就静默失效。
+    let (base, _) = spawn_server_with_scope(super::gate::WriteScope::unrestricted()).await;
+    for id in ["n1", "n2", "n3"] {
+        let (text, is_err) = call_text(&base, "kb_delete", json!({ "id": id })).await;
+        assert!(!is_err, "未配过范围时 {} 居然被拦：{}", id, text);
+    }
+}
+
+#[tokio::test]
+async fn test_scope_explicitly_empty_is_not_unlimited() {
+    // 🔴 `Some([])` 与 `None` 必须分开。归成「空 = 不限制」的话，
+    //    用户在界面上取消全部勾选得到的结果会是**授权全库** ——
+    //    与他刚做的动作正好相反。同 `ParsedNote::tags` 那个坑。
+    let (base, fake) =
+        spawn_server_with_scope(super::gate::WriteScope::only(Vec::<String>::new())).await;
+    for id in ["n1", "n2", "n3"] {
+        let (text, is_err) = call_text(&base, "kb_delete", json!({ "id": id })).await;
+        assert!(is_err, "明确取消全部后 {} 还能写：{}", id, text);
+    }
+    assert!(
+        fake.writes.lock().unwrap().is_empty(),
+        "被拦的调用绝不能到达数据层"
+    );
+}
+
+#[tokio::test]
+async fn test_scope_covers_descendants() {
+    // 勾了父夹 f1 ⇒ 子夹 f2 里的 n1 也能写（递归）。
+    // 这一条靠的是 `folder_parents()` 真的被沿着走了，而不是只比一层。
+    let (base, _) = spawn_server_with_scope(super::gate::WriteScope::only(["f1"])).await;
+    let (t1, e1) = call_text(&base, "kb_delete", json!({ "id": "n1" })).await;
+    assert!(!e1, "子夹里的笔记应该被父夹的授权盖住：{}", t1);
+    let (t2, e2) = call_text(&base, "kb_delete", json!({ "id": "n2" })).await;
+    assert!(!e2, "直接在 f1 里的笔记当然能写：{}", t2);
+
+    // 反面：未分类不在任何夹子里，不应被 f1 的授权蒙混过去。
+    let (t3, e3) = call_text(&base, "kb_delete", json!({ "id": "n3" })).await;
+    assert!(e3, "未分类不该被文件夹授权盖到：{}", t3);
+}
+
+#[tokio::test]
+async fn test_scope_unfiled_is_its_own_entry() {
+    // 只勾「未分类」：未分类可写，夹子里的全部不可写。
+    let (base, _) =
+        spawn_server_with_scope(super::gate::WriteScope::only([super::gate::UNFILED])).await;
+    let (t3, e3) = call_text(&base, "kb_delete", json!({ "id": "n3" })).await;
+    assert!(!e3, "勾了未分类却写不了未分类：{}", t3);
+    for id in ["n1", "n2"] {
+        let (t, e) = call_text(&base, "kb_delete", json!({ "id": id })).await;
+        assert!(e, "只勾未分类时 {} 还能写：{}", id, t);
+    }
+
+    // `kb_create` 不带 folder = 落未分类 ⇒ 应当放行。
+    let (tc, ec) = call_text(
+        &base,
+        "kb_create",
+        json!({ "title": "x", "content": "y" }),
+    )
+    .await;
+    assert!(!ec, "勾了未分类，不带 folder 的新建就该放行：{}", tc);
+}
+
+#[tokio::test]
+async fn test_scope_refusal_never_names_out_of_scope_folders() {
+    // 🔴 报错里给出范围外文件夹的名字，等于靠报错把用户的目录
+    //    结构一点点泄露给模型（它只需要逐个试）。
+    let (base, _) =
+        spawn_server_with_scope(super::gate::WriteScope::only([super::gate::UNFILED])).await;
+    let (text, is_err) = call_text(&base, "kb_delete", json!({ "id": "n2" })).await;
+    assert!(is_err);
+    assert!(!text.contains("技术"), "泄露了范围外文件夹名：{}", text);
+    assert!(!text.contains("Rust"), "泄露了范围外文件夹名：{}", text);
+    // 且要告诉模型别重试（这类拒绝不是暂时故障）。
+    assert!(text.contains("不要反复重试"), "没叫它停下：{}", text);
+}
+
+#[tokio::test]
+async fn test_scope_move_checks_both_sides() {
+    // 只授权 f1。
+    let (base, fake) = spawn_server_with_scope(super::gate::WriteScope::only(["f1"])).await;
+
+    // ① 把范围外的（n3 未分类）搬进授权夹 ⇒ 拒。
+    //    只查目标的话这一步会放行，等于把箱子外的东西搞进来。
+    let (t1, e1) = call_text(&base, "kb_move", json!({ "id": "n3", "folder": "技术" })).await;
+    assert!(e1, "把范围外的搬进来应当被拒：{}", t1);
+
+    // ② 把范围内的（n2 在 f1）搬到未分类 ⇒ 拒。
+    //    只查源的话这一步会放行，等于逆向逃逸。
+    let (t2, e2) = call_text(&base, "kb_move", json!({ "id": "n2" })).await;
+    assert!(e2, "把范围内的搬出去应当被拒：{}", t2);
+
+    // ③ 两边都在范围内（n1 在 f2⊆f1 → 技术）⇒ 放行。
+    let (t3, e3) = call_text(&base, "kb_move", json!({ "id": "n1", "folder": "技术" })).await;
+    assert!(!e3, "两边都在范围内却被拒：{}", t3);
+
+    let done = fake.writes.lock().unwrap();
+    assert_eq!(done.len(), 1, "只应有第③步落到数据层，实得 {:?}", done);
+}
+
+#[tokio::test]
+async fn test_scope_stale_id_does_not_widen_or_crash() {
+    // 白名单里的文件夹被用户删掉之后，残留 id 既不能让判定崩掉，
+    // 也不能静默放宽成「什么都能写」。
+    let (base, _) =
+        spawn_server_with_scope(super::gate::WriteScope::only(["已经不存在的夹子"])).await;
+    for id in ["n1", "n2", "n3"] {
+        let (t, e) = call_text(&base, "kb_delete", json!({ "id": id })).await;
+        assert!(e, "白名单只有残留 id 时 {} 还能写：{}", id, t);
+    }
+}
+
+#[tokio::test]
+async fn test_every_write_tool_is_scope_checked() {
+    // 🔴 这条是本项真正的闸门。其它几条只能证明「今天这几个工具对」；
+    //    它钉的是**注册表本身** —— 以后新加一个写工具而忘了接范围检查，
+    //    它会直接红。漏一个的后果不会报错，只是那个工具静默绕过白名单。
+    //
+    //    只勾「未分类」：于是 n2（在 f1）与「技术」那个夹子全部在范围外。
+    let (base, fake) =
+        spawn_server_with_scope(super::gate::WriteScope::only([super::gate::UNFILED])).await;
+
+    // 参数只需带到“能被范围检查看懂”为止：检查跑在工具自己校参之前，
+    // 所以不用把 `body` / `text` / `content` 那些必填项凑齐。
+    let mut checked = 0;
+    for name in super::tools::write_tool_names() {
+        let args = match name {
+            "kb_create" => json!({ "title": "x", "content": "y", "folder": "技术" }),
+            "kb_move" => json!({ "id": "n2", "folder": "技术" }),
+            // 它的目标参数叫 `parent` 而不是 `folder` —— 这正是 `ScopeTarget`
+            // 要带参数名的原因（写死 `"folder"` 就会静默漏掉它）。
+            "kb_folder_create" => json!({ "name": "新夹子", "parent": "技术" }),
+            _ => json!({ "id": "n2" }),
+        };
+        let (text, is_err) = call_text(&base, name, args).await;
+        assert!(is_err, "{} 没被范围拦住：{}", name, text);
+        assert!(
+            text.contains("可写入的范围"),
+            "{} 被拦了但不是范围拦的（文案对不上）：{}",
+            name,
+            text
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 12, "写工具数量变了，这条测试要跟着核一遍");
+    assert!(
+        fake.writes.lock().unwrap().is_empty(),
+        "有调用穿过范围门到了数据层：{:?}",
+        fake.writes.lock().unwrap()
+    );
+}
+
+#[test]
+fn test_unfiled_sentinel_is_not_a_possible_id() {
+    // 哨兵值不能撞上真实 folder id 的取值空间。
+    // folder id 是 uuid（`folder_create` 里 `Uuid::new_v4()`）——只有 hex 与连字符。
+    assert!(
+        super::gate::UNFILED.contains('_'),
+        "哨兵必须含 uuid 不可能出现的字符，否则存在撞名风险"
+    );
+    assert!(uuid::Uuid::parse_str(super::gate::UNFILED).is_err());
+}
+
 /// 取一次 tools/call 的纯文本结果（方便断言）。
 async fn call_text(base: &str, name: &str, args: Value) -> (String, bool) {
     let (_, v) = rpc(
@@ -935,11 +1278,11 @@ fn tool_names(v: &Value) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn test_all_eleven_tools_listed_when_switches_on() {
+async fn test_all_tools_listed_when_switches_on() {
     let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
     let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
     let names = tool_names(&v);
-    assert_eq!(names.len(), 17, "全开时应有 17 个工具，实际：{:?}", names);
+    assert_eq!(names.len(), 18, "全开时应有 18 个工具，实际：{:?}", names);
     for expect in [
         "kb_folders",
         "kb_create",
@@ -1365,7 +1708,7 @@ async fn test_turning_off_update_hides_all_four_but_not_prepend() {
     let (base, _) = spawn_server_with_switches(sw).await;
     let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
     let names = tool_names(&v);
-    assert_eq!(names.len(), 13, "关「修改笔记」应当一次少掉四个工具：{:?}", names);
+    assert_eq!(names.len(), 14, "关「修改笔记」应当一次少掉四个工具：{:?}", names);
     for gone in [
         "kb_update",
         "kb_update_section",

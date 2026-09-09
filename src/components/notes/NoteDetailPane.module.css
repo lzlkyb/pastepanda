@@ -274,7 +274,7 @@
   flex-shrink: 0;
   padding: 5px 8px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--accent-color, #4a9eff) 8%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .summaryText {
@@ -297,7 +297,7 @@
 }
 
 .summaryClear:hover {
-  color: var(--danger-color, #e5534b);
+  color: var(--danger);
 }
 
 /* ===== 反链面板（M3-④）=====

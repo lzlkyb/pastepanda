@@ -109,7 +109,7 @@
   border: none;
   border-radius: 10px;
   /* 白字压 --accent 对比度不足 4.5:1，渐变起始色改用加深版 --accent-solid */
-  background: linear-gradient(135deg, var(--accent-solid), var(--accent-dark, #0369A1));
+  background: linear-gradient(135deg, var(--accent-solid), color-mix(in srgb, var(--accent-solid) 85%, #000));
   color: #fff;
   font-size: 13px;
   font-weight: 600;

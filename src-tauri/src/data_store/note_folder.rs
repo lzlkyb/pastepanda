@@ -43,6 +43,16 @@ pub struct NoteFolder {
     /// 深度（顶层 = 1）。给前端算缩进与「能不能再建子文件夹」用。
     #[serde(default)]
     pub depth: i64,
+    /// 这个夹子是谁建的：`"manual"`（默认）/ `"ai"`。
+    ///
+    /// 取值口径很窄：**只有 `kb_folder_create`（经 MCP 由 AI agent 建）写 `"ai"`**。
+    /// 它不是笼统的「AI 相关」—— vault 导入建的也是 `"manual"`（用户主动导入）。
+    #[serde(default = "folder_source_default")]
+    pub source: String,
+}
+
+fn folder_source_default() -> String {
+    "manual".to_string()
 }
 
 /// 递归取某文件夹的自身 + 全部后代 id。多处复用，收口成常量（规则 #11）。
@@ -81,7 +91,8 @@ impl DataStore {
              SELECT t.id, t.name, t.parent_id, t.sort_order, t.created_at, t.depth,
                     (SELECT COUNT(*) FROM notes n WHERE n.deleted_at IS NULL AND n.folder_id IN (
                         {subtree} SELECT id FROM sub
-                    )) AS cnt
+                    )) AS cnt,
+                    (SELECT f2.source FROM note_folders f2 WHERE f2.id = t.id) AS src
              FROM tree t
              ORDER BY t.depth, t.sort_order, t.name",
             // 子查询里的 ?1 要绑到 t.id，所以把常量里的 ?1 换成列引用
@@ -99,12 +110,83 @@ impl DataStore {
                     created_at: r.get(4)?,
                     depth: r.get(5)?,
                     note_count: r.get(6)?,
+                    source: r.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
+    }
+
+    /// AI 经 MCP 建的文件夹（项目③）。设置页的「撤销」列表靠它。
+    pub fn folder_list_ai(&self) -> Result<Vec<NoteFolder>, String> {
+        Ok(self
+            .folder_list()?
+            .into_iter()
+            .filter(|f| f.source == "ai")
+            .collect())
+    }
+
+    /// 撤销一个文件夹：删掉它，**里面的东西（笔记与子夹）都升到父级**。
+    ///
+    /// 顶层夹子的话，里面的笔记就变未分类（`folder_id IS NULL`）。
+    ///
+    /// # 为何是「升到父级」而不是「退回原位」
+    ///
+    /// `note_revisions` **不存 `folder_id`**（`mod.rs:706`），没有任何数据源能告诉
+    /// 我们一篇笔记「进这个夹子之前在哪里」。为此新加一张表不值——
+    /// 而「升到父级」是无状态、可预测的，一句话就能讲完。
+    /// 代价得在界面上说清楚：如果笔记本来在别的夹子里、被 AI 挑进来的，
+    /// 撤销**不会**把它送回原处。
+    ///
+    /// # 🔴 顺序不能反
+    ///
+    /// `note_folders.parent_id` 的外键是 `ON DELETE CASCADE`（`mod.rs:692`），
+    /// 所以**先删再挑子夹是错的** —— 删那一行的瞬间整棵子树跟着没，
+    /// 而子夹可能是用户手建的。必须先把子夹的 `parent_id` 改成父级。
+    ///
+    /// 全程包在一个事务里：中途失败不能留下「子夹已挑走但夹子还在」这种中间态。
+    ///
+    /// 返回：（挑走的笔记数, 挑走的子夹数）。
+    pub fn folder_dissolve(&self, id: &str) -> Result<(usize, usize), String> {
+        let mut conn = self.lock_conn();
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        let parent: Option<String> = match tx.query_row(
+            "SELECT parent_id FROM note_folders WHERE id = ?1",
+            [id],
+            |r| r.get::<_, Option<String>>(0),
+        ) {
+            Ok(v) => v,
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                return Err("这个文件夹已经不在了".to_string())
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+
+        // ① 子夹先挑到父级（必须在删之前，看上面那段）。
+        let moved_folders = tx
+            .execute(
+                "UPDATE note_folders SET parent_id = ?2 WHERE parent_id = ?1",
+                rusqlite::params![id, parent],
+            )
+            .map_err(|e| e.to_string())?;
+
+        // ② 笔记挑到父级（顶层则变未分类）。
+        let moved_notes = tx
+            .execute(
+                "UPDATE notes SET folder_id = ?2 WHERE folder_id = ?1",
+                rusqlite::params![id, parent],
+            )
+            .map_err(|e| e.to_string())?;
+
+        // ③ 此时它已经是空的，删它不会连带任何东西。
+        tx.execute("DELETE FROM note_folders WHERE id = ?1", [id])
+            .map_err(|e| e.to_string())?;
+
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok((moved_notes, moved_folders))
     }
 
     /// 未分类笔记数。侧栏内置项用。
@@ -170,6 +252,27 @@ impl DataStore {
         name: &str,
         parent_id: Option<&str>,
     ) -> Result<NoteFolder, String> {
+        self.folder_create_with_source(name, parent_id, "manual")
+    }
+
+    /// AI 经 MCP 建的（项目③）。与手建走**同一套校验**，只有 `source` 不同。
+    ///
+    /// 为何不给 `folder_create` 加一个参数：它有两个生产调用点与二十多处测试，
+    /// 动签名就是二十多处无意义的 diff；两个薄入口 + 一个实现更干净（规则 #11）。
+    pub fn folder_create_by_ai(
+        &self,
+        name: &str,
+        parent_id: Option<&str>,
+    ) -> Result<NoteFolder, String> {
+        self.folder_create_with_source(name, parent_id, "ai")
+    }
+
+    fn folder_create_with_source(
+        &self,
+        name: &str,
+        parent_id: Option<&str>,
+        source: &str,
+    ) -> Result<NoteFolder, String> {
         let name = name.trim();
         if name.is_empty() {
             return Err("文件夹名不能为空".to_string());
@@ -205,9 +308,10 @@ impl DataStore {
 
         conn.execute(
             // M6-P3：updated_at 与 created_at 同值——刚建就是「至今没改过」。
-            "INSERT INTO note_folders (id, name, parent_id, sort_order, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-            rusqlite::params![id, name, parent_id, next_order, now],
+            "INSERT INTO note_folders
+                 (id, name, parent_id, sort_order, created_at, updated_at, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
+            rusqlite::params![id, name, parent_id, next_order, now, source],
         )
         .map_err(|e| e.to_string())?;
 
@@ -219,6 +323,7 @@ impl DataStore {
             created_at: now,
             note_count: 0,
             depth,
+            source: source.to_string(),
         })
     }
 

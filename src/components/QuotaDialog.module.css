@@ -23,7 +23,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(140deg, var(--green-bg), var(--teal-bg, #e4f6f2));
+  background: linear-gradient(140deg, var(--green-bg), #e4f6f2);
   border: 1px solid var(--green-border, #bfe6ce);
   color: var(--green);
 }
@@ -111,7 +111,10 @@
 .dayLabel { font-size: 8px; color: var(--text-muted); line-height: 1; }
 .dayAmt { font-size: 9px; font-weight: 700; color: var(--text-secondary); line-height: 1; }
 .dayDone .badge {
-  background: linear-gradient(145deg, var(--teal, #0f8a76), var(--green));
+  /* `--teal` 从未定义。不写回字面 #0f8a76，而是从 --green 推：
+     这一堆本来就是「绿→青绿」的渐变，从主题绿向青偏一点就能真的跟主题，
+     而不是像里程碑那些紫/粉一样没有任何现有色族可依。 */
+  background: linear-gradient(145deg, color-mix(in srgb, var(--green) 78%, #0891B2), var(--green));
   border-color: var(--green);
   color: #fff;
 }

@@ -1307,6 +1307,41 @@ impl DataStore {
             }
         }
 
+        // 数据库迁移（项目③）：note_folders.source —— 这个夹子是谁建的。
+        //
+        // 取值口径定得很窄：**只有 `kb_folder_create`（经 MCP 由 AI agent 建）写 'ai'**。
+        // 其它全部走默认值 'manual' —— 包括 vault 导入的 `ensure_folder_path`
+        // （用户主动导入，不是 AI 行为）。
+        //
+        // 回填：存量夹子全是用户自己建的，默认值就是对的，不需额外 UPDATE。
+        //
+        // ⚠ 已知不一致，明写不藏：文件夹不是一等同步实体（同步传的是带目录
+        //   路径的 markdown），所以 A 机上 AI 建的夹子同步到 B 机会是 'manual'。
+        //   不值得为此把文件夹提成同步实体（那是另一个量级的工程），
+        //   但界面文案要避开「全部 AI 建的夹子」这种承诺。
+        {
+            let has: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('note_folders') WHERE name = 'source'",
+                    [],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has {
+                if let Err(e) = conn.execute_batch(
+                    "ALTER TABLE note_folders ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';",
+                ) {
+                    if is_duplicate_column_error(&e) {
+                        log::warn!("[DataStore] note_folders.source 列已存在，忽略: {}", e);
+                    } else {
+                        log::error!("[DataStore] 添加 note_folders.source 列失败: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
         // 建表（M6-P1）：devices —— 已配对的设备。
         //
         // 配对是一次性的**信任建立**，在线与否是连接层事件，两者解耦：

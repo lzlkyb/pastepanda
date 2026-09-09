@@ -78,7 +78,8 @@
 .d2 { background: color-mix(in srgb, var(--accent) 52%, transparent); }
 .d3 { background: color-mix(in srgb, var(--accent) 74%, transparent); }
 .d4 { background: var(--accent-strong); }
-.today { outline: 2px solid var(--purple, #7d5fd3); outline-offset: 1px; }
+/* 同 MilestoneDialog：`--purple` 从未定义，写成它实际生效的字面值。 */
+.today { outline: 2px solid #7d5fd3; outline-offset: 1px; }
 
 .trajMeta {
   display: flex;

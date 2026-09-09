@@ -13,6 +13,8 @@ import { confirmDialog } from "@/lib/confirm";
 import { mcpGetToken, mcpRegenerateToken, type McpStatus } from "@/lib/api/mcp";
 import { McpConnectPanel } from "./McpConnectPanel";
 import { McpWritePanel } from "./McpWritePanel";
+import { McpScopePanel } from "./McpScopePanel";
+import { McpAiFolderPanel } from "./McpAiFolderPanel";
 import { McpAuditPanel } from "./McpAuditPanel";
 import styles from "../Settings.module.css";
 
@@ -131,6 +133,13 @@ export function McpServerPanel({
         {/* 写权限在调用记录之前：它回答的是「这东西到底能对我的笔记做什么」，
             比「它做过什么」更该先看到。 */}
         <McpWritePanel toast={toast} />
+
+        {/* 接在写权限之后：先回答「能做哪类事」，再回答「能对哪些笔记做」。
+            反过来的话，用户先看到一个范围选择器却还不知道 AI 到底能干什么。 */}
+        <McpScopePanel toast={toast} />
+
+        {/* 项目③的「可见 + 可撤销」。一个都没时它自己返回 null。 */}
+        <McpAiFolderPanel toast={toast} />
 
         <McpAuditPanel
           auditError={auditError}

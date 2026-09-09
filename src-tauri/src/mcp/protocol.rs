@@ -19,7 +19,7 @@
 
 use serde_json::{json, Value};
 
-use super::gate::WriteSwitches;
+use super::gate::{WriteScope, WriteSwitches};
 
 /// 本服务**真正实现了**的协议版本，新在前。
 ///
@@ -71,6 +71,28 @@ fn server_instructions(switches: &WriteSwitches, blurb: &str) -> String {
          边界：仅覆盖**笔记**，不包含剪贴板历史。\n\n",
     );
     if switches.any_on() {
+        // ①甲：写入判据。
+        //
+        // 🔴 为何必须有这一段：下面那些「写入约定」全是**不许做什么**，
+        // 工具描述回答的是**用哪个工具**，而一直没人回答「什么值得记」。
+        // 后果是可量的：2026-09-09 实测库里 26 篇活笔记，
+        // 由 AI 写的 **0 篇**；`- [kind]` 行命中 **0 条**（而任务复选框有 70 行）。
+        // 也就是说 `kb_search` 的 `kind` 筛选当时是个**死参数**——
+        // 它只能匹配到没人被要求写的东西。
+        //
+        // 🔴 只在写开关至少开一档时发：全关时推一段「什么值得记」
+        // 等于叫模型去做一件它做不了的事，而且那些 token 白付。
+        s.push_str(
+            "什么值得记（用户开了写入，但**不要把对话流水往里倒**）：\n\
+             ・**结论，不是过程**——定下来的方案、选型理由，不是推导它的那几轮；\n\
+             ・**踩过的坑**——这台机器/这个项目特有的坑，不是能从文档里查到的通用知识；\n\
+             ・**用户纠正你的地方**——尤其是带理由的纠正；\n\
+             ・**下次会重新推导一遍的东西**——这条是判据的总开关：\
+             如果下一个会话要花力气重新弄清它，那就该记。\n\n\
+             记的时候在正文里加行内标记，形如 `- [decision] 一句话`——\
+             `kb_search` 的 `kind` 参数靠它筛（可用类别看那个参数的说明）。\n\
+             🔴 只往**正文**里加这种行，不要去改用户已有的句子。\n\n",
+        );
         s.push_str(
             "写入约定：\n\
              ・每次写入都会计入用户可见的调用记录，并在笔记上标注改动来源；\n\
@@ -163,6 +185,22 @@ async fn load_switches(kb: &std::sync::Arc<dyn super::source::KbSource>) -> Writ
         Err(e) => {
             log::error!("[MCP] 读写开关失败，本次按全关处理：{}", e);
             WriteSwitches::ALL_OFF
+        }
+    }
+}
+
+/// 读一次可写入范围（项目②）。
+///
+/// join 失败时返回**一篇都不可写**（`WriteScope::only([])`）而不是不限制，
+/// 理由同 [`load_switches`]：「不限制」适用的是「配置里没这个键」，
+/// 而这里是**读不到、不知道用户意愿** —— 权限门在不知道时得往保守那边倒。
+async fn load_scope(kb: &std::sync::Arc<dyn super::source::KbSource>) -> WriteScope {
+    let kb2 = kb.clone();
+    match tokio::task::spawn_blocking(move || kb2.write_scope()).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("[MCP] 读可写范围失败，本次按「一篇都不可写」处理：{}", e);
+            WriteScope::only(Vec::<String>::new())
         }
     }
 }
@@ -265,6 +303,7 @@ pub async fn dispatch(
             let ctx = super::tools::CallCtx {
                 kb: kb.clone(),
                 switches: load_switches(kb).await,
+                scope: load_scope(kb).await,
                 source: super::source_agent_from_ua(client),
             };
             match super::tools::call(&ctx, params).await {
@@ -421,6 +460,105 @@ mod tests {
         // 丢了就等于模型再也不知道自己的修改可撤——它会因此不敢动，
         // 也没法向用户交代「怎么撤」。
         assert!(ins.contains("版本快照"), "未告知修改留快照");
+    }
+
+    #[test]
+    fn test_instructions_answer_what_is_worth_recording() {
+        // 🔴 ①甲。不钉的后果不是报错而是**静默倒退**：
+        // 这一段被谁删了，`kb_search` 的 `kind` 筛选当场变回死参数（零命中），
+        // 而从任何返回值上都看不出来。
+        //
+        // 2026-09-09 实测依据：库里 26 篇活笔记，AI 写的 0 篇；
+        // `- [kind]` 行命中 0 条，而任务复选框 70 行。
+        let ins = initialize_result(None, &WriteSwitches::ALL_ON, "")["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            ins.contains("什么值得记"),
+            "写入判据那一段丢了：{}",
+            ins
+        );
+        // 四条判据里最要紧的是那条总开关。
+        assert!(
+            ins.contains("重新推导"),
+            "缺「下次会重新推导一遍的就该记」那条总开关：{}",
+            ins
+        );
+        // 推荐写法必须带上——不带的话 `kind` 筛选永远没东西可筛。
+        assert!(
+            ins.contains("[decision]") || ins.contains("decision /"),
+            "没告诉模型行内标记的写法：{}",
+            ins
+        );
+
+        // 全关时不该推：叫模型去做一件它做不了的事，而且 token 白付。
+        let off = initialize_result(None, &WriteSwitches::ALL_OFF, "")["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            !off.contains("什么值得记"),
+            "全关时不该推写入判据：{}",
+            off
+        );
+    }
+
+    #[test]
+    fn test_instructions_stay_within_a_context_budget() {
+        // 🔴 `instructions` 与 `tools/list` 是**同一类开销**：每个客户端每次连接
+        // 都要为它付上下文，而且是在模型做任何事之前。
+        //
+        // 为何补这条：2026-09-07 把 `WRITE_FOOTER` 从 11 个写工具里挑到了这里，
+        // 那一笔是划算的（付 11 次变付 1 次）。但那之后“挑到 instructions”就成了
+        // 一个现成手法，而 `tools/list` 那边有预算、这边**没人量**——
+        // 于是它会成为一个把成本藏起来的口子：认真看着的那个数字降了，
+        // 每次连接的总开销却没降。两边都得有秤。
+        //
+        // 🔴 又涨了不要顺手改大：先问「这句话在工具描述里本来付几次」。
+        //    付 1 次的挑过来不省钱，只是换了个地方放。
+        let on = initialize_result(None, &WriteSwitches::ALL_ON, "")["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .len();
+        let off = initialize_result(None, &WriteSwitches::ALL_OFF, "")["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .len();
+        println!("instructions：全开 {} 字节 / 全关 {} 字节（不含用户库简介）", on, off);
+        // 基线（2026-09-09 上半）：全开 1462 / 全关 361。当时预算 2200。
+        // 基线（2026-09-09 下半，①甲 写入判据）：**全开 2212 / 全关 361**。
+        //
+        // ①甲 花了 750 字节，而不是规划里估的 450。这条断言当场拦下了它
+        // （先报 2456），照它自己说的「先问这句话在工具描述里本来付几次」查了一遍，
+        // 真找出三处重复（共 244 字节）：
+        //   ・`kb_list(author="me")` 提示 —— `kb_list` 的 author 参数里已经有；
+        //   ・类别词表 decision / fact / todo / question —— `kb_search` 的 `kind` 参数里已经有；
+        //   ・「决定 vs 事实是两种查询」那句理由 —— 同上。
+        // 删完剩 750。这三处不是「把话写短」，是真的说了两遍。
+        //
+        // 🔴 那 750 值不值（这才是本断言要求回答的问题）：值。
+        //    2026-09-09 实测：库里 26 篇活笔记，**AI 写的 0 篇**；
+        //    `- [kind]` 行命中 **0 条**（任务复选框 70 行），
+        //    且 2026-09-04 那次也是 0 —— 五天没动。
+        //    也就是说 `kb_search` 的 `kind` 一直是个**死参数**：解析/筛选/展示/校验
+        //    四道都建好了，唯独没人告诉模型该写它。750 字节（约 250 token）
+        //    是 `tools/list` 那 15072 的 5%，而它是目前唯一一件
+        //    「不知道 AI 会怎么用也知道该做」的事。
+        //
+        // 预算改给 2600：留约半个「写入判据段」的余量。
+        // 参照：同一时刻 `tools/list` 是 15072——这段占它的约七分之一。
+        // 全关那个不单独卡：它只是全开的子集，卡了也是重复的。
+        //
+        // 用户手写的库简介（AM-6）**没算在内**：它另有 500 字符硬上限，
+        // 而且那是用户自己选的开销，不应该占我们自己的额度。
+        assert!(
+            on < 2_600,
+            "instructions 已涨到 {} 字节（基线 2212）。要么精简，\
+             要么先确认这份每次连接都付的开销值得",
+            on
+        );
+        assert!(off < on, "全关时反而不比全开短，那写入约定那段没真的被略掉");
     }
 
     #[test]

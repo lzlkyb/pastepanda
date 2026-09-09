@@ -5303,6 +5303,175 @@ fn test_folder_create_by_ai_shares_the_same_validation() {
     );
 }
 
+// ===== ③甲：写入者筛选（`NoteViewOpts::author`）=====
+
+/// 造一个人写一篇、两个 agent 各写一篇的库。
+fn store_with_three_writers() -> DataStore {
+    let store = make_store();
+    store.note_create(None, "人写的并发笔记", "并发模型").unwrap();
+    store
+        .note_create_from(None, "claude 写的并发笔记", "并发模型", "agent:claude-code")
+        .unwrap();
+    store
+        .note_create_from(None, "cursor 写的并发笔记", "并发模型", "agent:cursor")
+        .unwrap();
+    store
+}
+
+fn author_opts(author: &str) -> NoteViewOpts {
+    NoteViewOpts {
+        author: author.to_string(),
+        ..NoteViewOpts::default()
+    }
+}
+
+#[test]
+fn test_author_filter_applies_on_every_query_path() {
+    // 🔴 这条钉的是规则 #11.1：`push_author_filter` 有**四个**调用点
+    //    （`note_view_from_where` / `note_search` 的 FTS 路径 / 它的 LIKE 兑底 /
+    //    `note_search_relevant`）。漏一处**不报错**，只是那条路径静默不筛——
+    //    而静默不筛的后果是模型把别人写的笔记当成自己的记忆。
+    //
+    //    最容易漏的是 LIKE 那条：它只在 FTS 挂了才跑。它在下面
+    //    `test_author_filter_survives_the_like_fallback` 里单独钉，
+    //    **不要以为本条盖住了它**——本条跑不到那里（实测过：
+    //    把 LIKE 那一行删掉，本条照样全绿）。
+    let store = store_with_three_writers();
+    let all = NoteViewOpts::default();
+
+    // 路径一：`note_list_view`（过 `note_view_from_where`）
+    assert_eq!(store.note_list_view("all", &[], &all, 50, 0).unwrap().len(), 3);
+    let human = store
+        .note_list_view("all", &[], &author_opts("human"), 50, 0)
+        .unwrap();
+    assert_eq!(human.len(), 1, "human 应当只剩人写的那篇");
+    assert_eq!(human[0].source_agent, "", "human 的口径是空串");
+    let cc = store
+        .note_list_view("all", &[], &author_opts("agent:claude-code"), 50, 0)
+        .unwrap();
+    assert_eq!(cc.len(), 1);
+    assert_eq!(cc[0].source_agent, "agent:claude-code");
+
+    // 路径二：`note_search_relevant`（问答检索，bm25）
+    let hits = store
+        .note_search_relevant("并发", "all", &[], &author_opts("agent:cursor"), 10)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "相关度检索也得筛：{:?}", hits.len());
+    assert_eq!(hits[0].source_agent, "agent:cursor");
+
+    // 路径三：`note_search_view`（普通搜索，界面用的那条）。
+    // 用 `_view` 而不是 `note_search`：后者硬传 `NoteViewOpts::default()`，
+    // 拿它测永远测不到 author——也就钉不住 FTS / LIKE 那两个调用点。
+    let s = store
+        .note_search_view("并发", "all", &[], &author_opts("human"), 50)
+        .unwrap();
+    assert_eq!(s.len(), 1, "普通搜索也得筛");
+    assert_eq!(s[0].source_agent, "");
+}
+
+#[test]
+fn test_author_filter_survives_the_like_fallback() {
+    // 🔴 四个调用点里唯一一个**平时跑不到**的：`note_search_view` 里的
+    //    LIKE 兑底。它只在 FTS 挂了才走，所以常规测试永远碰不到它——
+    //    而那正是 `order_clause_with` 那条注释说的坑的温床：
+    //    「写两份的结果就是 FTS 正常时排序对、退到 LIKE 就不对」。
+    //
+    //    靠 DROP 掉 `notes_fts` 把那条路径逃出来：比造一个能让 FTS 失败的
+    //    查询可靠，也不依赖 FTS 的具体报错时机。
+    let store = store_with_three_writers();
+    store
+        .lock_conn()
+        .execute("DROP TABLE notes_fts", [])
+        .expect("删 FTS 表应当成功，否则这条测试并没跑到 LIKE 路径");
+
+    // 先确认真的进了兑底：不筛时还能搜到三篇（若 FTS 没挂，这里会是 0）。
+    let all = store
+        .note_search_view("并发", "all", &[], &NoteViewOpts::default(), 50)
+        .unwrap();
+    assert_eq!(all.len(), 3, "没进 LIKE 兑底，这条测试就是空转的");
+
+    let mine = store
+        .note_search_view("并发", "all", &[], &author_opts("agent:cursor"), 50)
+        .unwrap();
+    assert_eq!(mine.len(), 1, "LIKE 兑底路径上 author 也必须生效");
+    assert_eq!(mine[0].source_agent, "agent:cursor");
+}
+
+#[test]
+fn test_author_filter_does_not_break_positional_binding() {
+    // 🔴 `push_author_filter` 是全文仅此一处往 `push_view_filters` 旁边
+    //    **追绑定参数**的地方（那个函数刷意不带参数）。
+    //    位置绑定错位项目里刚踩过坑（`bump_search_hits`），
+    //    所以这里把 author 与**其它每一种带参数的筛选**叠在一起跑一遍：
+    //    对不上的话不会报 SQL 错，只是条件互相错位、结果静默不对。
+    let store = make_store();
+    let f = store.folder_create("工作", None).unwrap();
+    let t = store.create_tag("重要", "#fff").unwrap();
+
+    let mine = store
+        .note_create_from(None, "我写的并发", "并发模型", "agent:claude-code")
+        .unwrap();
+    store.note_set_folder(&mine.id, Some(&f.id)).unwrap();
+    store.note_set_tags(&mine.id, &[t.id.clone()]).unwrap();
+
+    // 同文件夹同标签，但是别人写的——只有 author 条件能把它排除。
+    let other = store
+        .note_create_from(None, "别人写的并发", "并发模型", "agent:cursor")
+        .unwrap();
+    store.note_set_folder(&other.id, Some(&f.id)).unwrap();
+    store.note_set_tags(&other.id, &[t.id.clone()]).unwrap();
+
+    let opts = author_opts("agent:claude-code");
+    let rows = store
+        .note_list_view(&f.id, &[t.id.clone()], &opts, 50, 0)
+        .unwrap();
+    assert_eq!(rows.len(), 1, "文件夹 + 标签 + author 三重叠加应当只剩一篇");
+    assert_eq!(rows[0].id, mine.id, "筛剩的必须是我写的那篇");
+
+    let hits = store
+        .note_search_relevant("并发", &f.id, &[t.id.clone()], &opts, 10)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "相关度路径上三重叠加也要对");
+    assert_eq!(hits[0].id, mine.id);
+}
+
+#[test]
+fn test_author_filter_empty_means_no_filter() {
+    // 🔴 空串 = 不筛。写错成「空串 = 只要人写的」会让**所有不带 author 的调用**
+    //    静默溡掉 AI 写的笔记——而那条路径是界面列表的主路径。
+    let store = store_with_three_writers();
+    assert_eq!(
+        store
+            .note_list_view("all", &[], &author_opts(""), 50, 0)
+            .unwrap()
+            .len(),
+        3,
+        "空串必须是「不筛」而不是「只要人写的」"
+    );
+}
+
+#[test]
+fn test_note_writers_lists_only_agents_and_skips_deleted() {
+    let store = store_with_three_writers();
+    let w = store.note_writers().unwrap();
+    assert_eq!(
+        w,
+        vec!["agent:claude-code".to_string(), "agent:cursor".to_string()],
+        "人写的（空串）不得进名单，且要排序稳定"
+    );
+
+    // 🔴 已删的不算：回收站里的东西不应该让一个名字看起来「可用」。
+    let cursor = store
+        .note_list_view("all", &[], &author_opts("agent:cursor"), 5, 0)
+        .unwrap();
+    store.note_delete(&cursor[0].id).unwrap();
+    assert_eq!(
+        store.note_writers().unwrap(),
+        vec!["agent:claude-code".to_string()],
+        "删掉唯一一篇后，agent:cursor 不应该还在名单里"
+    );
+}
+
 #[test]
 fn test_folder_dissolve_lifts_children_to_parent() {
     let store = make_store();

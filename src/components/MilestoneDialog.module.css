@@ -35,9 +35,16 @@
   justify-content: center;
   font-size: 32px;
 }
-.blue { background: linear-gradient(150deg, var(--accent-light), var(--purple-bg, #f0ecfd)); border: 1px solid var(--accent); }
-.green { background: linear-gradient(150deg, var(--green-bg), var(--teal-bg, #e4f6f2)); border: 1px solid var(--green); }
-.purple { background: linear-gradient(150deg, var(--purple-bg, #f0ecfd), var(--pink-bg, #fdeef3)); border: 1px solid var(--purple, #7d5fd3); }
+/* 🔴 紫/粉/青三系写成字面值，不再假装跟主题（同 QuotaDialog `.medal` 的口径）。
+   原先写的是 `var(--purple-bg, #f0ecfd)` 这类形式，而 `--purple` / `--purple-bg` /
+   `--pink-bg` / `--teal-bg` 在 `theme.css` 里**从未定义**：那些引用只会让人
+   以为它们会随主题变，实际六套主题下一直是同一个值，也没进过对比度审计。
+   改成它们**实际生效的那个值**，观感一点没变。
+   里程碑是「成就」语义，现有色族（accent/green/orange/danger）都不承载它；
+   真要让它跟主题，得新增 `--purple` / `--teal` 一族（同「金色该新增 --gold」那条待办）。 */
+.blue { background: linear-gradient(150deg, var(--accent-light), #f0ecfd); border: 1px solid var(--accent); }
+.green { background: linear-gradient(150deg, var(--green-bg), #e4f6f2); border: 1px solid var(--green); }
+.purple { background: linear-gradient(150deg, #f0ecfd, #fdeef3); border: 1px solid #7d5fd3; }
 
 .tag {
   display: inline-block;
@@ -50,7 +57,7 @@
 }
 .tagBlue { color: var(--accent-strong); background: var(--accent-light); border: 1px solid var(--accent); }
 .tagGreen { color: var(--green); background: var(--green-bg); border: 1px solid var(--green-border); }
-.tagPurple { color: var(--purple, #7d5fd3); background: var(--purple-bg, #f0ecfd); border: 1px solid var(--purple, #7d5fd3); }
+.tagPurple { color: #7d5fd3; background: #f0ecfd; border: 1px solid #7d5fd3; }
 
 .title {
   font-size: 19px;

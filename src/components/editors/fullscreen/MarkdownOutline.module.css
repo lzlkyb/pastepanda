@@ -6,7 +6,9 @@
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  background: var(--panel-bg, rgba(0, 0, 0, 0.12));
+  /* `--panel-bg` / `--hover-bg` 从未定义（已扫全仓）。全屏编辑器这层本来就是
+     固定深色底，需要的是半透叠加而不是主题实色，所以写字面值。 */
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .head {
@@ -44,7 +46,7 @@
   text-overflow: ellipsis;
 }
 .item:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.07));
+  background: rgba(255, 255, 255, 0.07);
   color: var(--text-primary, #e6edf7);
 }
 

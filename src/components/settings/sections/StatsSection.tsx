@@ -145,6 +145,10 @@ export function StatsSection({
                 </div>
               </div>
               <div className={styles.bCard}>
+                {/* 三片的颜色全部走主题 token（accent / green / orange）。
+                    中间那片原先是 `var(--teal, #2DD4BF)`，而 `--teal` 从未定义 ⇒
+                    它实际一直是写死的浅青，在深色主题下跟另两片亮度不一致。
+                    改用 --green：蓝/绿/橙 三色同源同深浅，也仍然互相可区分。 */}
                 <div className={styles.bCardTitle}>类型占比</div>
                 <div className={styles.bDonutRow}>
                   <svg width="62" height="62" viewBox="0 0 76 76">
@@ -152,7 +156,7 @@ export function StatsSection({
                       <circle cx="38" cy="38" r="30" fill="none" stroke="var(--input-bg)" strokeWidth="10" />
                       <circle cx="38" cy="38" r="30" fill="none" stroke="var(--accent)" strokeWidth="10"
                         strokeDasharray={`${dash.textArc} ${dash.C - dash.textArc}`} strokeDashoffset="0" />
-                      <circle cx="38" cy="38" r="30" fill="none" stroke="var(--teal, #2DD4BF)" strokeWidth="10"
+                      <circle cx="38" cy="38" r="30" fill="none" stroke="var(--green)" strokeWidth="10"
                         strokeDasharray={`${dash.imageArc} ${dash.C - dash.imageArc}`} strokeDashoffset={-dash.textArc} />
                       <circle cx="38" cy="38" r="30" fill="none" stroke="var(--orange)" strokeWidth="10"
                         strokeDasharray={`${dash.fileArc} ${dash.C - dash.fileArc}`} strokeDashoffset={-(dash.textArc + dash.imageArc)} />
@@ -161,7 +165,7 @@ export function StatsSection({
                   </svg>
                   <div className={styles.bDonutLegend}>
                     <div className={styles.bLegItem}><i className={styles.bLegDot} style={{ background: "var(--accent)" }} />文本<b>{stats.text_count.toLocaleString()}</b></div>
-                    <div className={styles.bLegItem}><i className={styles.bLegDot} style={{ background: "var(--teal, #2DD4BF)" }} />图片<b>{stats.image_count.toLocaleString()}</b></div>
+                    <div className={styles.bLegItem}><i className={styles.bLegDot} style={{ background: "var(--green)" }} />图片<b>{stats.image_count.toLocaleString()}</b></div>
                     <div className={styles.bLegItem}><i className={styles.bLegDot} style={{ background: "var(--orange)" }} />文件<b>{stats.file_count.toLocaleString()}</b></div>
                   </div>
                 </div>

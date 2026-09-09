@@ -203,7 +203,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
               padding: "4px 8px",
               borderRadius: 4,
               border: "1px solid var(--border-color, #ccc)",
-              background: "var(--bg-secondary, transparent)",
+              background: "transparent",
               color: "var(--text-primary)",
             }}
           />
@@ -224,7 +224,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
               padding: "4px 8px",
               borderRadius: 4,
               border: "1px solid var(--border-color, #ccc)",
-              background: "var(--bg-secondary, transparent)",
+              background: "transparent",
               color: "var(--text-primary)",
             }}
           />

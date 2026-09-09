@@ -1,0 +1,535 @@
+<title>MCP 文件夹写白名单 · 真实稿</title>
+<style>
+  /* ── ocean 主题真实 token（逐个抄自 src/styles/theme.css:173-215）── */
+  :root {
+    --app-bg: #F7F7F8;
+    --card-bg: #fff;
+    --card-border: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --border-color: #E0E4EB;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --accent-solid: #027CBB;
+    --accent-strong: #0273AD;
+    --input-bg: #F1F5F9;
+    --dialog-bg: #fff;
+    --section-bg: #F0F4F8;
+    --hover: #E8ECF2;
+    --sidebar-bg: #EFF1F5;
+    --toggle-off-bg: #E2E8F0;
+    --toggle-off-label: #94A3B8;
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --danger: #D82525;
+    --red-bg: #FEF2F2;
+    --orange: #C54A0A;
+    --orange-bg: #FFF7ED;
+    --orange-border: #FED7AA;
+    --green: #11813A;
+    --green-bg: #DCFCE7;
+    /* ⚠ .mcpSw 开启态写的是 var(--success-color, #3fb950)，
+       而 --success-color 全仓**未定义**（已 grep 确认）——
+       所以它实际永远渲染兜底的 #3fb950，不跟主题。
+       这里照真实效果画，不照“应该的样子”画。 */
+    --sw-on: #3fb950;
+  }
+  body {
+    margin: 0; padding: 28px 20px 60px;
+    background: var(--app-bg); color: var(--text-primary);
+    font: 13px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  h2 {
+    font-size: 14px; margin: 34px 0 10px; padding-bottom: 6px;
+    border-bottom: 2px solid var(--accent); color: var(--accent-strong);
+  }
+  h3 { font-size: 12.5px; margin: 18px 0 8px; color: var(--text-secondary); }
+  .lead { color: var(--text-secondary); font-size: 12px; margin: 0 0 8px; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+    background: var(--input-bg); padding: 1px 4px; border-radius: 3px;
+  }
+  .note {
+    font-size: 11.5px; line-height: 1.7; color: var(--text-secondary);
+    background: var(--section-bg); border-left: 3px solid var(--accent);
+    padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 10px 0;
+  }
+  .warn {
+    font-size: 11.5px; line-height: 1.7; color: #7A3D08;
+    background: var(--orange-bg); border-left: 3px solid var(--orange);
+    padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 10px 0;
+  }
+  .bad {
+    font-size: 11.5px; line-height: 1.7; color: #8C1616;
+    background: var(--red-bg); border-left: 3px solid var(--danger);
+    padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 10px 0;
+  }
+  table { border-collapse: collapse; font-size: 11.5px; margin: 10px 0; }
+  th, td { border: 1px solid var(--border-color); padding: 5px 9px; text-align: left; }
+  th { background: var(--section-bg); font-weight: 600; }
+
+  /* ── 真实几何容器 ── */
+  .frame { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .shot { margin: 0; }
+  .shot figcaption {
+    font-size: 11px; color: var(--text-muted); margin-bottom: 6px;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  /* .settingsContent = 688(窗口) - 137.6(.settingsNav 20%) - 1(边框) = 549.4 */
+  .content { width: 549px; background: var(--dialog-bg); padding: 8px 0; }
+  /* .lanPanel { margin: 8px 20px; padding: 16px 18px; background: var(--accent-light) } */
+  .panel {
+    margin: 8px 20px; padding: 16px 18px; border-radius: 14px;
+    background: var(--accent-light); border: 1px solid var(--border-color);
+  }
+  /* 内容实宽 = 549 - 40(margin) - 36(padding) = 473 */
+  .mcpGuide { margin-top: 12px; }
+  .mcpGuideToggle {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; color: var(--accent); cursor: pointer;
+  }
+  .mcpGuideBody { margin-top: 8px; }
+  .mcpGuideNote { margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--text-muted); }
+  .mcpSwGroup { margin: 10px 0 2px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .mcpSwRow { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+  .mcpSwLabel { flex: 1; min-width: 0; font-size: 12.5px; }
+  .mcpSwTool {
+    margin-left: 4px; font-size: 11px; color: var(--text-muted);
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .mcpSw {
+    position: relative; flex-shrink: 0; width: 32px; height: 18px;
+    border-radius: 9px; background: var(--sw-on);
+  }
+  .mcpSw::after {
+    content: ""; position: absolute; top: 2px; left: 16px;
+    width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  }
+  .mcpSwOff { background: var(--border-color); }
+  .mcpSwOff::after { left: 2px; }
+</style>
+
+<h1>MCP 文件夹写白名单 · 真实稿</h1>
+<p class="lead">
+  2026-09-09。项目②。规则 #4（改 UI 先出稿）。
+  尺寸与颜色全部抄自源码，<b>不是示意图</b>。
+</p>
+
+<h2>§ 0　先看你库里的真实数据 —— 它把重点挪了位置</h2>
+
+<p class="lead">
+  直读 <code>%APPDATA%\com.pastepanda.app\clipboard.db</code> 的 <code>note_folders</code> 与 <code>notes</code>：
+</p>
+
+<table>
+  <tr><th>位置</th><th>笔记数</th></tr>
+  <tr><td><b>未分类</b>（<code>folder_id IS NULL</code>）</td><td><b>25</b></td></tr>
+  <tr><td><code>design</code>（唯一一个文件夹，顶层）</td><td>1</td></tr>
+</table>
+
+<div class="bad">
+  🔴 <b>这直接判了决策 A 的生死。</b>
+  若按 A1（未分类不算在白名单内），白名单一启用就会让 AI
+  碰不了你 <b>26 篇里的 25 篇</b>。那不是「严格一点」，是功能直接不可用。
+  把「未分类」当成可勾的一行（已定方案）在你这个库上不是边界情况，<b>它就是主体</b>。
+</div>
+
+<div class="warn">
+  ⚠ <b>同时得说一个不中听的结论：这个功能对你当下的库帮助很小。</b><br>
+  只有 1 个文件夹时，「文件夹级白名单」能给你的真实选择几乎只有一个：
+  未分类能不能写。而那跟你已经有的写开关（全局开/关）差不多。<br>
+  它的价值要等到库里真有几个文件夹（如「工作 / 个人 / 财务」）才出来。
+  所以下面 § 3 画你的真实库，§ 4 另画一个多文件夹的库 ——
+  <b>只看前者会把设计判错</b>（看着像个只有两行的空壳）。
+</div>
+
+<h2>§ 1　真实几何</h2>
+
+<table>
+  <tr><th>量</th><th>值</th><th>出处</th></tr>
+  <tr><td>主窗口宽</td><td><b>688px</b></td><td><code>.window-state.json</code> 的 <code>main.width</code></td></tr>
+  <tr><td>左侧菜单</td><td>137.6px</td><td><code>.settingsNav</code> <code>flex: 0 0 20%</code>，夹在 [128, 220]</td></tr>
+  <tr><td>内容区</td><td><b>549.4px</b></td><td>688 − 137.6 − 1（右边框）</td></tr>
+  <tr><td>面板外宽</td><td>509.4px</td><td><code>.lanPanel</code> <code>margin: 8px 20px</code></td></tr>
+  <tr><td><b>内容实宽</b></td><td><b>473.4px</b></td><td><code>.lanPanel</code> <code>padding: 16px 18px</code></td></tr>
+  <tr><td>文件夹深度上限</td><td>4</td><td><code>note_folder.rs:27</code> <code>MAX_FOLDER_DEPTH</code></td></tr>
+</table>
+
+<div class="note">
+  面板底色是 <code>var(--accent-light)</code> = <b>#E0F2FE</b>（不是卡片白）。
+  所以任何放在里面的控件都得在浅蓝底上看得清 ——
+  这一条在旧稿里很容易错，照白底调的浅色到这里就洗白了。
+</div>
+
+<div class="warn">
+  ⚠ <code>--accent</code>（#0284C7）压 <code>--app-bg</code> 只有 <b>3.82:1</b> ——
+  <code>theme.css:206</code> 已经把这条记下来了：它是为「压在 <code>--accent-light</code> 上」调的，
+  <b>不能拿来当正文小字色</b>。本稿里它只用在 12px 的可点击标题上（同现有 <code>.mcpGuideToggle</code>）。
+</div>
+
+<style>
+  /* ── 新增：文件夹选择器。尽量复用现有类的尺寸语言 ── */
+  .fsList {
+    margin: 8px 0 0; padding: 0; list-style: none;
+    max-height: 168px; overflow-y: auto; overflow-x: hidden;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color); border-radius: 8px;
+  }
+  .fsRow {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; font-size: 12px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .fsRow:last-child { border-bottom: none; }
+  .fsBox {
+    flex-shrink: 0; width: 14px; height: 14px; border-radius: 3px;
+    border: 1.5px solid var(--toggle-off-label); background: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #fff; line-height: 1;
+  }
+  .fsBoxOn { background: var(--accent-solid); border-color: var(--accent-solid); }
+  .fsName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fsCount { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+  /* 未分类那一行：照侧栏的做法画在分隔线上方（FolderTree.tsx:7 已注明这个约定） */
+  .fsBuiltin { border-bottom: 2px solid var(--border-color); }
+  .fsIndent1 { padding-left: 28px; }
+  .fsIndent2 { padding-left: 46px; }
+  .fsMuted { color: var(--text-muted); }
+  .fsBar {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px; font-size: 11px; color: var(--text-muted);
+  }
+  .fsClear {
+    margin-left: auto; font-size: 11px; color: var(--accent); cursor: pointer;
+  }
+  .fsScope {
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    font-size: 10.5px; font-weight: 600;
+  }
+  .fsScopeAll { background: var(--green-bg); color: var(--green); }
+  .fsScopeSome { background: var(--accent-light); color: var(--accent-strong); }
+</style>
+
+<h2>§ 2　改前（现在就长这样）</h2>
+
+<p class="lead">
+  展开的「写权限」区。七个开关、三个分组标题，最后一句说明。
+</p>
+
+<div class="frame">
+  <figure class="shot">
+    <figcaption>549px 内容区 · 473px 内容实宽</figcaption>
+    <div class="content">
+      <div class="panel">
+        <div class="mcpGuide">
+          <span class="mcpGuideToggle">▾ 写权限（7 项全开）</span>
+          <div class="mcpGuideBody">
+            <div class="mcpSwGroup">新增——只增不改，弄不丢已有内容</div>
+            <div class="mcpSwRow">
+              <span class="mcpSwLabel">新建笔记<code class="mcpSwTool">kb_create</code></span>
+              <span class="mcpSw"></span>
+            </div>
+            <div class="mcpSwRow">
+              <span class="mcpSwLabel">追加内容<code class="mcpSwTool">kb_append</code><code class="mcpSwTool">kb_prepend</code></span>
+              <span class="mcpSw"></span>
+            </div>
+            <div class="mcpSwGroup">修改——会改变已有笔记与你的组织结构</div>
+            <div class="mcpSwRow">
+              <span class="mcpSwLabel">修改笔记<code class="mcpSwTool">kb_update</code><code class="mcpSwTool">kb_update_section</code></span>
+              <span class="mcpSw"></span>
+            </div>
+            <div class="mcpSwRow">
+              <span class="mcpSwLabel">移动文件夹<code class="mcpSwTool">kb_move</code></span>
+              <span class="mcpSw"></span>
+            </div>
+            <div class="mcpSwRow">
+              <span class="mcpSwLabel">改标签<code class="mcpSwTool">kb_tag</code></span>
+              <span class="mcpSw"></span>
+            </div>
+            <div class="mcpSwGroup">删除与恢复——都只动回收站，互为逆操作</div>
+            <div class="mcpSwRow">
+              <span class="mcpSwLabel">删到回收站<code class="mcpSwTool">kb_delete</code></span>
+              <span class="mcpSw"></span>
+            </div>
+            <div class="mcpSwRow">
+              <span class="mcpSwLabel">从回收站恢复<code class="mcpSwTool">kb_restore</code></span>
+              <span class="mcpSw"></span>
+            </div>
+            <p class="mcpGuideNote">
+              改完<b>立即生效</b>；但已连接的客户端手里的工具表是缓存的，
+              重连后才不会再看到已关的工具。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<div class="warn">
+  ⚠ 上面那七个开关回答的是「<b>能做哪类事</b>」，
+  一个都没回答「<b>能对哪些笔记做</b>」。
+  今天「修改笔记」一开，AI 就能改全库任何一篇 —— 项目②补的就是后一半。
+</div>
+
+<h2>§ 3　改后 · 你的真实库（1 个文件夹 + 25 篇未分类）</h2>
+
+<p class="lead">
+  新增一个同样可折叠的区，接在「写权限」下面。标题收起时就报当前范围 ——
+  同 <code>McpWritePanel</code> 自己的原则（“藏起来就没人知道可以关”）。
+</p>
+
+<div class="frame">
+  <figure class="shot">
+    <figcaption>默认态：不选 = 全库可写（升级后你的现状）</figcaption>
+    <div class="content">
+      <div class="panel">
+        <div class="mcpGuide">
+          <span class="mcpGuideToggle">▸ 写权限（7 项全开）</span>
+        </div>
+        <div class="mcpGuide">
+          <span class="mcpGuideToggle">▾ 可写入的范围（全库）</span>
+          <div class="mcpGuideBody">
+            <ul class="fsList">
+              <li class="fsRow fsBuiltin">
+                <span class="fsBox fsBoxOn">✓</span>
+                <span class="fsName">未分类</span>
+                <span class="fsCount">25 篇</span>
+              </li>
+              <li class="fsRow">
+                <span class="fsBox fsBoxOn">✓</span>
+                <span class="fsName">design</span>
+                <span class="fsCount">1 篇</span>
+              </li>
+            </ul>
+            <div class="fsBar">
+              <span class="fsScope fsScopeAll">全库可写</span>
+              <span>一个不选也是全库可写</span>
+            </div>
+            <p class="mcpGuideNote">
+              只限制<b>写入</b>。AI 仍能检索与阅读全库 ——
+              要让它看不到，得关掉上面的 MCP 服务器。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <figure class="shot">
+    <figcaption>只勾了 design：25 篇未分类变成只读</figcaption>
+    <div class="content">
+      <div class="panel">
+        <div class="mcpGuide">
+          <span class="mcpGuideToggle">▸ 写权限（7 项全开）</span>
+        </div>
+        <div class="mcpGuide">
+          <span class="mcpGuideToggle">▾ 可写入的范围（限 1 个文件夹）</span>
+          <div class="mcpGuideBody">
+            <ul class="fsList">
+              <li class="fsRow fsBuiltin">
+                <span class="fsBox"></span>
+                <span class="fsName fsMuted">未分类</span>
+                <span class="fsCount">25 篇</span>
+              </li>
+              <li class="fsRow">
+                <span class="fsBox fsBoxOn">✓</span>
+                <span class="fsName">design</span>
+                <span class="fsCount">1 篇</span>
+              </li>
+            </ul>
+            <div class="fsBar">
+              <span class="fsScope fsScopeSome">可写 1 / 26 篇</span>
+              <span class="fsClear">恢复全库</span>
+            </div>
+            <p class="mcpGuideNote">
+              只限制<b>写入</b>。AI 仍能检索与阅读全库 ——
+              要让它看不到，得关掉上面的 MCP 服务器。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<div class="note">
+  <b>为何每行都报笔记数（“25 篇”）。</b>
+  用户在这里做的决定本质上是「我把多少篇笔记交给 AI 写」。
+  只列文件夹名的话，你无法知道勾一个夹子是交出去 1 篇还是 500 篇。
+  右下那个「可写 1 / 26 篇」同理：把总账直接算好。
+</div>
+
+<div class="warn">
+  ⚠ <b>“恢复全库”而不是“清空选择”。</b>
+  后者字面上是「什么都不选」，而它的实际效果是「全库可写」——
+  正好相反。按钮得说它的<b>结果</b>。
+</div>
+
+<h2>§ 4　改后 · 一个组织较多的库（对照）</h2>
+
+<div class="warn">
+  ⚠ 这一节的文件夹名与篇数是<b>构造的</b>，不是你库里的。
+  目的只有一个：判断这个设计在真正需要它的库里成不成立（嵌套、滚动、部分勾选）。
+  深度按真实上限 <code>MAX_FOLDER_DEPTH = 4</code> 画。
+</div>
+
+<div class="frame">
+  <figure class="shot">
+    <figcaption>部分授权 · 列表超高就内部滚动（max-height 168px）</figcaption>
+    <div class="content">
+      <div class="panel">
+        <div class="mcpGuide">
+          <span class="mcpGuideToggle">▾ 可写入的范围（限 2 个文件夹）</span>
+          <div class="mcpGuideBody">
+            <ul class="fsList">
+              <li class="fsRow fsBuiltin">
+                <span class="fsBox"></span>
+                <span class="fsName fsMuted">未分类</span>
+                <span class="fsCount">25 篇</span>
+              </li>
+              <li class="fsRow">
+                <span class="fsBox fsBoxOn">✓</span>
+                <span class="fsName">工作</span>
+                <span class="fsCount">86 篇</span>
+              </li>
+              <li class="fsRow fsIndent1">
+                <span class="fsBox fsBoxOn">✓</span>
+                <span class="fsName fsMuted">NC 二开</span>
+                <span class="fsCount">41 篇</span>
+              </li>
+              <li class="fsRow fsIndent2">
+                <span class="fsBox fsBoxOn">✓</span>
+                <span class="fsName fsMuted">单据模板</span>
+                <span class="fsCount">12 篇</span>
+              </li>
+              <li class="fsRow">
+                <span class="fsBox"></span>
+                <span class="fsName fsMuted">个人</span>
+                <span class="fsCount">54 篇</span>
+              </li>
+              <li class="fsRow fsIndent1">
+                <span class="fsBox"></span>
+                <span class="fsName fsMuted">财务</span>
+                <span class="fsCount">9 篇</span>
+              </li>
+              <li class="fsRow">
+                <span class="fsBox fsBoxOn">✓</span>
+                <span class="fsName">design</span>
+                <span class="fsCount">1 篇</span>
+              </li>
+            </ul>
+            <div class="fsBar">
+              <span class="fsScope fsScopeSome">可写 87 / 166 篇</span>
+              <span class="fsClear">恢复全库</span>
+            </div>
+            <p class="mcpGuideNote">
+              勾上一个文件夹<b>包含它下面所有层</b>。
+              只限制写入；AI 仍能检索与阅读全库。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<div class="note">
+  <b>子夹的勾是「继承而来」的，不可单独取消。</b>
+  「工作」勾上之后，NC 二开 / 单据模板 自动跟着勾上。
+  因为后端存的是<b>前缀递归语义</b>（决策里定的），
+  而不是一串扁平的 id。允许单独取消子夹就得引入「排除项」，
+  那是另一个量级的数据模型，<b>本项不做</b>。
+  子夹那两行用 <code>--text-muted</code> 而不是主色，就是在提示“你没直接选它”。
+</div>
+
+<h2>§ 5　被拒时模型看到什么</h2>
+
+<p class="lead">
+  学 Obsidian 那两家的 <code>path_forbidden</code> + <code>activeScope</code>：
+  <b>回显当前作用域</b>，让模型自我纠正而不用看服务端日志。
+</p>
+
+<pre style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:10px 12px;font-size:11.5px;line-height:1.7;overflow-x:auto;width:509px;box-sizing:border-box">这篇笔记在「未分类」里，而用户只开放了「design」给 AI 写入。
+一个字都没改。要改得用户自己在 PastePanda 设置 → 知识库 MCP 服务
+→ 可写入的范围里加。不要反复重试。</pre>
+
+<div class="bad">
+  🔴 <b>报错里不得列出范围外文件夹的名字。</b>
+  那等于靠报错把用户的目录结构一点点泄露给模型（它只需要逐个试）。
+  只能列<b>已授权</b>的那几个——那些本来就是它该知道的。
+</div>
+
+<div class="note">
+  最后一句「不要反复重试」是有用的：这类拒绝<b>不是暂时性故障</b>，
+  不说清楚的话模型很可能当成一次失败而反复拨——
+  同一类错误在同步那边已经以「拨号风暴」的形式发生过一次。
+</div>
+
+<h2>§ 6　这个稿子里每一个故意的选择</h2>
+
+<table>
+  <tr><th>选择</th><th>理由</th></tr>
+  <tr>
+    <td>单独一个可折叠区，不塞进「写权限」里</td>
+    <td>两者回答的是不同问题（能做哪类事 / 能对哪些笔记做）。
+        揉在一起会让那七行变成九行，而第八九行不是开关。</td>
+  </tr>
+  <tr>
+    <td>标题收起时就报范围（「全库」/「限 N 个文件夹」）</td>
+    <td>照搬 <code>McpWritePanel</code> 自己的原则（文件头注释：“藏起来就没人知道可以关”）。
+        这是全面板里最容易被忽略的一个设置。</td>
+  </tr>
+  <tr>
+    <td>用复选框，不用开关</td>
+    <td>开关（<code>.mcpSw</code>）在这个面板里已经是「开/关一项能力」的语义。
+        多选一个集合用复选框，别拿同一个控件说两件事。</td>
+  </tr>
+  <tr>
+    <td>每行带篇数</td>
+    <td>用户真正在决定的是「交出多少篇」。只有名字的话这个量是隐形的。</td>
+  </tr>
+  <tr>
+    <td>「未分类」在顶部 + 下方一条 2px 分隔线</td>
+    <td>照侧栏的现有约定（<code>FolderTree.tsx:7</code>：内置项画在分隔线上方）。
+        两处长得不一样会让人以为是两回事。</td>
+  </tr>
+  <tr>
+    <td><code>max-height: 168px</code> + 内部滚动</td>
+    <td>🔴 <code>.settingsContent</code> 已经写了 <code>overflow-x: hidden</code> 并附了一段长注释：
+        <b>真需要空间的块必须自带滚动容器</b>（同 <code>.mcpAuditList</code> / <code>.mcpCode</code>）。
+        不自带就会把整个设置页顶出一条横条。</td>
+  </tr>
+  <tr>
+    <td>列表底色用 <code>--card-bg</code>（白）</td>
+    <td>面板底是 <code>--accent-light</code>（#E0F2FE）。列表不给白底就跟面板连成一片，
+        看不出它是一个可滚动的区。同 <code>.mcpAuditList</code> 的做法。</td>
+  </tr>
+</table>
+
+<h2>§ 7　本项不做的</h2>
+
+<ol style="font-size:12px;line-height:1.9;padding-left:22px">
+  <li><b>不动读的范围。</b>读的那半得先想清楚「<code>kb_search</code> 命中了
+      范围外的笔记该不该告知」——告知会泄露存在，不告知会让模型对用户说
+      「库里没有」。<code>resolve_tags_on</code> 里已经为这个坑写过一段长注释。</li>
+  <li><b>不做「排除项」。</b>子夹不能单独取消（见 § 4）。</li>
+  <li><b>不动侧栏。</b>不在文件夹树上标「已授权给 AI」——
+      <code>FolderTree.module.css:179-181</code> 已注明底色被三个状态占完了
+      （<code>.rowOn</code> / <code>.rowLanded</code> / <code>.rowDrop</code>），要加得另找视觉通道。</li>
+  <li><b>不新增 <code>WriteKind</code> 档位。</b>白名单不是一项「能力」，它是所有能力的
+      <b>作用域</b>；而且新增档位在升级时会静默提权（<code>gate.rs:140</code>）。</li>
+</ol>
+
+<h2>§ 8　顺手查到的一个小缺陷（不属本项）</h2>
+
+<div class="warn">
+  <code>Settings.module.css:1921</code> 的 <code>.mcpSw</code> 开启态写的是<br>
+  <code>background: var(--success-color, #3fb950)</code><br>
+  而 <code>--success-color</code> <b>全仓未定义</b>（已 grep 确认）。
+  ocean 自己的绿是 <code>--success: #15803D</code>。<br>
+  ⇒ 七个写权限开关的绿一直是写死的 <code>#3fb950</code>，<b>不跟主题变</b>。
+  本稿照真实效果画了。不在本项修 —— 你拍一下要不要单独处理。
+</div>
+

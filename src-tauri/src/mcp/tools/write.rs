@@ -105,20 +105,18 @@ fn section_schema(extra: Value, required: &[&str]) -> Value {
     let mut props = json!({
         "id": {
             "type": "string",
-            "description": "笔记 id，来自 kb_search / kb_list / kb_sections 的返回结果。"
+            "description": "笔记 id。"
         },
         "section": {
             "type": "string",
-            "description": "按**标题路径**定位要动的那一节（如「架构 / 数据流」，\
-                              也可只写尾段「数据流」）。\
-                              命中多节时报错并列出候选，**不会随便挑一个**。\
-                              与 index 只能给一个。"
+            "description": "要动的那一节，按**标题路径**定位（如「架构 / 数据流」，\
+                              也可只写尾段「数据流」）。"
         },
         "index": {
             "type": "integer",
             "minimum": 0,
-            "description": "按 kb_sections 给的**序号**定位要动的那一节。\
-                              0 = 第一个标题之前的引言部分。与 section 只能给一个。"
+            "description": "要动的那一节，按 kb_sections 给的**序号**定位。\
+                              0 = 第一个标题之前的引言部分。"
         }
     });
     if let (Some(p), Some(e)) = (props.as_object_mut(), extra.as_object()) {
@@ -154,6 +152,29 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
             }
         }),
         json!({
+            "name": "kb_folder_create",
+            "description": "新建一个文件夹。\n\
+                 先用 kb_folders 看一眼：很可能已经有一个意思相近的了，\
+                 那就直接用现有的，不要另建一个。\n\
+                 ⚠ 文件夹结构是用户自己的组织方式，**不要主动帮他重排**；\
+                 只在他明确要求、或你真的需要一个地方放新笔记时才建。\n\
+                 🔴 建好的夹子会被标成「由 AI 创建」，用户能在设置里一键撤销\
+                 （撤销 = 删掉它，里面的笔记与子夹都升到父级，不会丢）。\n\
+                 同一个父级下不能重名；层数有上限，超了会直接失败。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "文件夹名。必填。" },
+                    "parent": {
+                        "type": "string",
+                        "description": "建在哪个文件夹下（名字，用 kb_folders 查）。\
+                                          省略 = 建在顶层。**不存在的名字会直接失败**。"
+                    }
+                },
+                "required": ["name"]
+            }
+        }),
+        json!({
             "name": "kb_append",
             "description": "往一篇已有笔记的**末尾追加**一段内容，原有内容不动。\n\
                  只是“再添一条”时请**优先用它而不是 kb_update**：\
@@ -161,7 +182,7 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "id": { "type": "string", "description": "笔记 id，来自 kb_search / kb_list。" },
+                    "id": { "type": "string", "description": "笔记 id。" },
                     "text": { "type": "string", "description": "要追加的内容。会隔一个空行接在末尾。" }
                 },
                 "required": ["id", "text"]
@@ -243,7 +264,7 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
                 "properties": {
                     "id": {
                         "type": "string",
-                        "description": "笔记 id，来自 kb_search / kb_list 的返回结果。"
+                        "description": "笔记 id。"
                     },
                     "find": {
                         "type": "string",
@@ -267,7 +288,7 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
                 "properties": {
                     "id": {
                         "type": "string",
-                        "description": "笔记 id，来自 kb_search / kb_list 的返回结果。"
+                        "description": "笔记 id。"
                     },
                     "text": {
                         "type": "string",
@@ -380,6 +401,36 @@ pub(super) async fn call_create(
     match blocking(move || kb.create(&title, &content, folder.as_deref(), &src)).await {
         Ok(n) => Ok(wrote_note(&n, "已新建笔记", Some(landed))),
         Err(e) => Ok(error_result(format!("新建失败：{}", e)).into()),
+    }
+}
+
+/// 建一个文件夹（项目③）。
+pub(super) async fn call_folder_create(
+    ctx: CallCtx,
+    args: Option<Value>,
+) -> Result<ToolOutput, ToolError> {
+    let a = args.as_ref();
+    let Some(name) = arg_str(a, "name").map(str::to_string) else {
+        return Err(ToolError::invalid_params("kb_folder_create 需要参数 name"));
+    };
+    let parent = arg_str(a, "parent").map(str::to_string);
+    let kb = ctx.kb.clone();
+    let where_ = match parent.as_deref() {
+        Some(p) => format!("「{}」下面", p),
+        None => "顶层".to_string(),
+    };
+    match blocking(move || kb.folder_create(&name, parent.as_deref())).await {
+        Ok(created) => Ok(ToolOutput {
+            value: json!({ "content": [{ "type": "text", "text": format!(
+                "已在{}建好文件夹「{}」。\n\
+                 它在设置里会被标成「由 AI 创建」，用户可以一键撤销。\n\
+                 接下来用 kb_create(folder=\"{}\") 或 kb_move 把笔记放进去。",
+                where_, created, created
+            ) }] }),
+            // 没有笔记被读写，审计里不记 id。
+            note_ids: vec![],
+        }),
+        Err(e) => Ok(error_result(format!("建文件夹失败：{}", e)).into()),
     }
 }
 

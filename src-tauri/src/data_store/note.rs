@@ -484,6 +484,16 @@ pub struct NoteViewOpts {
     /// （不需要字段级 `#[serde(default)]`：结构体上那个 `default` 已经盖住了，
     /// 所以旧前端不传这个字段也能反序列化。）
     pub updated_within: String,
+    /// 写入者筛选（③甲）。`""` 不筛 / `"human"` 人亲自写的 /
+    /// 其余值按 `notes.source_agent` 精确匹配（形如 `agent:claude-code`）。
+    ///
+    /// 不会与真实值撞车：`source_agent_from_ua()` 产出的值**总带 `agent:` 前缀**，
+    /// 所以永远不会等于 `"human"`；而人写的那一档存的是空串。
+    ///
+    /// 🔴 它的值**最终源自 User-Agent 头**（`source_agent_from_ua` 只截长度、不转义），
+    /// 所以必须走**绑定参数**、绝不能内联——这是它不能放进
+    /// [`push_view_filters`] 的原因，详见 [`push_author_filter`]。
+    pub author: String,
 }
 
 impl NoteViewOpts {
@@ -597,6 +607,45 @@ fn push_view_filters(sql: &mut String, o: &NoteViewOpts) {
     if let Some(days) = o.within_days() {
         if let Some(cutoff) = expired_cutoff(days) {
             sql.push_str(&format!(" AND notes.updated_at >= '{cutoff}'"));
+        }
+    }
+}
+
+/// 写入者筛选（③甲）。**必须与 [`push_view_filters`] 分开。**
+///
+/// # 为何不合并进上面那个函数
+///
+/// `push_view_filters` 有一条**不带绑定参数**的不变式（它全部内联字面量，
+/// 安全性靠「值的来源是白名单枚举」而不靠转义）。
+/// 而 `author` 的值最终源自 **User-Agent 头**：`source_agent_from_ua()`
+/// 只做 `split('/')` + trim + 截 40 字，**不做任何转义**。
+/// 内联它就是一个注入面，即使先拿库里的 distinct 值校验过也不行——
+/// 那个值本身就是从头里存进去的。所以它必须走 `?`，
+/// 也就不能放进那个“无参数”函数里。
+///
+/// # 🔴 调用位置不能变
+///
+/// 位置绑定看的是 `?` 在 SQL 里的**出现顺序**：本函数同时追 SQL 片段与
+/// 参数，所以只要在同一个位置调就是对的；拆开或提前就会错位。
+/// 项目里刚因位置绑定错位踩过坑（`bump_search_hits`）。
+///
+/// # 🔴 四个调用点，一个都不能漏（规则 #11.1）
+///
+/// 跟 `push_view_filters` 一模一样的四处：`note_view_from_where`、
+/// `note_search` 的 FTS 路径、它的 LIKE 兑底路径、`note_search_relevant`。
+/// 漏一处不报错，只是那条路径静默不筛——而 LIKE 那条平时根本跑不到。
+fn push_author_filter(
+    sql: &mut String,
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    o: &NoteViewOpts,
+) {
+    match o.author.as_str() {
+        "" => {}
+        // 空串在 W2 里的语义就是「人亲自改的」。`''` 是字面量，不碰输入。
+        "human" => sql.push_str(" AND notes.source_agent = ''"),
+        a => {
+            sql.push_str(" AND notes.source_agent = ?");
+            params.push(Box::new(a.to_string()));
         }
     }
 }
@@ -1693,6 +1742,26 @@ impl DataStore {
 impl DataStore {
     // ===== 查询 =====
 
+    /// 这一篇的 `folder_id`，**含回收站里的**。
+    ///
+    /// 外层 `None` = 库里没这个 id；内层 `None` = 未分类。
+    ///
+    /// 🔴 不能用 [`Self::note_get`] 代替：它带了 `deleted_at IS NULL`，
+    /// 已删的笔记返回 `None`。而 MCP 的写范围判定里有一个 `kb_restore`
+    /// 恰好只动回收站里的，拿 `note_get` 判它会永远取不到归属。
+    pub fn note_folder_of_any(&self, id: &str) -> Result<Option<Option<String>>, String> {
+        let conn = self.lock_conn();
+        match conn.query_row(
+            "SELECT folder_id FROM notes WHERE id = ?1",
+            [id],
+            |r| r.get::<_, Option<String>>(0),
+        ) {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// 按 id 取一条（带标签）。不存在返回 `Ok(None)`。
     pub fn note_get(&self, id: &str) -> Result<Option<Note>, String> {
         let conn = self.lock_conn();
@@ -1744,6 +1813,7 @@ impl DataStore {
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
         push_view_filters(&mut sql, opts);
+        push_author_filter(&mut sql, &mut params, opts);
         (sql, params)
     }
 
@@ -1962,6 +2032,7 @@ impl DataStore {
             vec![Box::new(to_match_expr(kw))];
         push_note_filters(&mut fts_sql, &mut fts_params, folder_filter, tag_ids);
         push_view_filters(&mut fts_sql, opts);
+        push_author_filter(&mut fts_sql, &mut fts_params, opts);
         fts_sql.push_str(&order_clause(opts));
         fts_params.push(Box::new(limit));
 
@@ -1992,6 +2063,7 @@ impl DataStore {
                     vec![Box::new(pattern.clone()), Box::new(pattern)];
                 push_note_filters(&mut like_sql, &mut like_params, folder_filter, tag_ids);
                 push_view_filters(&mut like_sql, opts);
+                push_author_filter(&mut like_sql, &mut like_params, opts);
                 like_sql.push_str(&order_clause(opts));
                 like_params.push(Box::new(limit));
 
@@ -2012,6 +2084,28 @@ impl DataStore {
             n.tags = Self::load_note_tags_on(&conn, &n.id);
         }
         Ok(notes)
+    }
+
+    /// 库里真实出现过的写入者（③甲）。**不含人**（空串那一档）。
+    ///
+    /// 用途只有一个：把「点名了一个不存在的 agent」与「那个 agent 确实没记过」分开，
+    /// 并在报错里把真实名单给回去——静态描述做不到这个。
+    ///
+    /// 已删的不算：回收站里的东西不应该让一个名字看起来「可用」。
+    pub fn note_writers(&self) -> Result<Vec<String>, String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT source_agent FROM notes \
+                 WHERE deleted_at IS NULL AND source_agent != '' ORDER BY source_agent",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     /// 问答检索（B2 #10）：按**相关度**取 top-N，不按时间。
@@ -2052,6 +2146,7 @@ impl DataStore {
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(expr)];
         push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
         push_view_filters(&mut sql, opts);
+        push_author_filter(&mut sql, &mut params, opts);
         // 不复用 order_clause：它排的是时间/标题，而这里要的是相关度。
         // 分组也不参与（上面固定给 `NULL AS grp`）：问答取的是 5 篇片段，没有分组语义。
         //

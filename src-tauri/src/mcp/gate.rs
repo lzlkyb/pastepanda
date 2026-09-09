@@ -77,7 +77,7 @@ impl WriteKind {
     /// 那是一个**模式**而不是「更多开关」，留待后续。
     pub fn tool_names(self) -> &'static [&'static str] {
         match self {
-            WriteKind::Create => &["kb_create"],
+            WriteKind::Create => &["kb_create", "kb_folder_create"],
             WriteKind::Append => &["kb_append", "kb_prepend"],
             WriteKind::Update => &[
                 "kb_update",
@@ -159,6 +159,225 @@ impl WriteSwitches {
                 enabled: self.allowed(*k),
             })
             .collect()
+    }
+}
+
+// ═════ 可写入的范围（项目②） ═════
+//
+// 写开关管「能做哪类事」，本节管「能对哪些笔记做」。两者**串联**：都过才行。
+
+/// `config` 表里存白名单的键。值是 JSON 字符串数组。
+pub const CFG_WRITE_FOLDERS: &str = "mcp_write_folders";
+
+/// 「未分类」在白名单里的哨兵值。
+///
+/// 未分类的 `folder_id` 是 SQL `NULL`，存不进 id 数组。用字面串而不是 JSON `null`：
+/// `null` 在「没配这一项」与「配了未分类」之间有歧义——那正是 2026-09-07
+/// 刚在 `ParsedNote::tags` 上踩过的同一类坑。
+///
+/// 🔴 它不能撞上真实 folder id 的取值空间。现在 folder id 是 uuid，
+/// 不含下划线，所以安全；`test_unfiled_sentinel_is_not_a_possible_id` 钉住这个前提。
+pub const UNFILED: &str = "__unfiled__";
+
+/// AI 可写入的范围。
+///
+/// # 三种状态，不是两种
+///
+/// 🔴 `None` 与 `Some(空)` 必须分开，理由跟 `ParsedNote::tags` 一模一样：
+///   · `None`（配置里没这个键）= 用户从来没配过 ⇒ **不限制**。
+///     升级兼容全靠这一条：老用户的 AI 写入不能因为多了个功能就静默失效。
+///   · `Some([])` = 用户把每一行都取消了 ⇒ **一篇都不可写**。
+///
+/// 要是把两者归成「空 = 不限制」（规划初稿就是这么写的），用户在界面上
+/// 取消全部勾选得到的结果会是**授权全库** —— 与他刚做的动作正好相反。
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct WriteScope(Option<Vec<String>>);
+
+impl WriteScope {
+    /// 不限制（用户未配过）。也是 `Default`。
+    pub fn unrestricted() -> Self {
+        Self(None)
+    }
+
+    /// 只授权这几项。测试与前端存盘用。
+    pub fn only<I, S>(items: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self(Some(items.into_iter().map(Into::into).collect()))
+    }
+
+    pub fn is_unrestricted(&self) -> bool {
+        self.0.is_none()
+    }
+
+    /// 已授权的条目（含可能的 [`UNFILED`] 哨兵）。
+    ///
+    /// 🔴 报错文案只能用它。**绝不得列范围外文件夹的名字** ——
+    /// 那等于靠报错把用户的目录结构一点点泄露给模型（它只需要逐个试）。
+    pub fn allowed_entries(&self) -> &[String] {
+        self.0.as_deref().unwrap_or(&[])
+    }
+
+    /// 从 `config` 表的 JSON 里读。
+    ///
+    /// 键不存在、或被写坏成非数组，都当「没配过」（不限制）。
+    /// 后一半是故意的：配置损坏时宁可放行，也不要把用户的 AI 写入全锁死
+    /// —— 后者会表现成「AI 突然不工作了」而且没有任何线索。
+    pub fn from_config(cfg: &Value) -> Self {
+        match cfg.get(CFG_WRITE_FOLDERS).and_then(|v| v.as_array()) {
+            None => Self(None),
+            Some(arr) => Self(Some(
+                arr.iter()
+                    .filter_map(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            )),
+        }
+    }
+
+    /// 存回配置用。`None` 不写键（留给「没配过」）。
+    pub fn to_config_value(&self) -> Option<Value> {
+        self.0
+            .as_ref()
+            .map(|v| Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()))
+    }
+
+    /// 这一篇（按它所在文件夹）可不可写。`folder` 为 `None` = 未分类。
+    ///
+    /// **递归**：勾了「工作」就包含它下面所有层。沿 parent 链往上逐级问。
+    /// `parent_of` 由调用方从 `folders()` 拼——取数据不在这里，权限判定全在这里。
+    pub fn allows(
+        &self,
+        folder: Option<&str>,
+        parent_of: &std::collections::HashMap<String, Option<String>>,
+    ) -> bool {
+        let Some(list) = &self.0 else {
+            return true; // 没配过 = 不限制
+        };
+        let Some(id) = folder else {
+            return list.iter().any(|s| s == UNFILED);
+        };
+        let mut cur = Some(id.to_string());
+        // 步数封顶：正常深度不超 MAX_FOLDER_DEPTH，多给一步容错；
+        // 同时它也是环的兜底——脏数据里 parent 链成环时不能死循环。
+        for _ in 0..=crate::data_store::MAX_FOLDER_DEPTH {
+            let Some(c) = cur else { return false };
+            if list.iter().any(|s| *s == c) {
+                return true;
+            }
+            cur = parent_of.get(&c).cloned().flatten();
+        }
+        false
+    }
+}
+
+/// 设置页「可写入的范围」那一区要的全部数据。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteScopeView {
+    /// `false` = 用户从未配过（不限制）。界面据此显示「全库」。
+    pub restricted: bool,
+    /// 可勾的行，顺序就是界面顺序：未分类在最前，然后是文件夹。
+    pub rows: Vec<ScopeRow>,
+    /// 已授权覆盖的笔记数 / 全库笔记数——界面上那个「可写 87 / 166 篇」。
+    ///
+    /// 为何报篇数：用户在这里做的决定本质上是「我把多少篇笔记交给 AI 写」。
+    /// 只列文件夹名的话，他无法知道勾一个夹子是交出去 1 篇还是 500 篇。
+    pub covered: i64,
+    pub total: i64,
+}
+
+/// 选择器里的一行。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeRow {
+    /// folder id，或 [`UNFILED`]。
+    pub id: String,
+    pub name: String,
+    /// 缩进层级。顶层为 **1**（跟 `folder_list` 的 `depth` 同口径）；未分类也是 1。
+    pub depth: i64,
+    /// 本文件夹**及其所有后代**里的笔记数（同 `NoteFolder::note_count`）。
+    pub notes: i64,
+    /// 用户**直接**勾了它。
+    pub checked: bool,
+    /// 由祖先的勾**继承**而来。
+    ///
+    /// 界面上显示为已勾但淡色、不可单独取消：后端存的是前缀递归语义，
+    /// 允许单独取消子夹就得引入「排除项」，那是另一个量级的数据模型。
+    pub inherited: bool,
+}
+
+impl WriteScope {
+    /// 拼出设置页要的视图。
+    ///
+    /// 取数据不在这里（`folders` 与 `unfiled` 由调用方查），所以它能被单测。
+    pub fn view(
+        &self,
+        folders: &[crate::data_store::NoteFolder],
+        unfiled: i64,
+    ) -> WriteScopeView {
+        let parent_of: std::collections::HashMap<String, Option<String>> = folders
+            .iter()
+            .map(|f| (f.id.clone(), f.parent_id.clone()))
+            .collect();
+        let entries = self.allowed_entries();
+        let is_checked = |id: &str| entries.iter().any(|s| s == id);
+
+        let mut rows = vec![ScopeRow {
+            id: UNFILED.to_string(),
+            name: "未分类".to_string(),
+            depth: 1,
+            notes: unfiled,
+            checked: is_checked(UNFILED),
+            // 未分类上面没有任何东西，不可能是继承来的。
+            inherited: false,
+        }];
+        for f in folders {
+            let checked = is_checked(&f.id);
+            rows.push(ScopeRow {
+                id: f.id.clone(),
+                name: f.name.clone(),
+                depth: f.depth,
+                notes: f.note_count,
+                checked,
+                inherited: !checked && self.allows(Some(&f.id), &parent_of),
+            });
+        }
+
+        // 🔴 `note_count` **含后代**（看 `NoteFolder::note_count`），所以：
+        //   · 全库数 = 未分类 + 所有**顶层**夹子的计数（再加子夹就重复了）；
+        //   · 已覆盖数只能加**最外层的勾** —— 父子同时被勾时，
+        //     直接相加会把子树算两遍（界面上就成了「可写 128 / 166」这种假数）。
+        let filed: i64 = folders.iter().filter(|f| f.depth == 1).map(|f| f.note_count).sum();
+        let total = unfiled + filed;
+        let covered = if self.is_unrestricted() {
+            total
+        } else {
+            let by_folders: i64 = folders
+                .iter()
+                // 只算自己被勾且**祖先都没被勾**的（即勾中森林的根）。
+                .filter(|f| {
+                    is_checked(&f.id)
+                        && !parent_of
+                            .get(&f.id)
+                            .cloned()
+                            .flatten()
+                            .is_some_and(|p| self.allows(Some(&p), &parent_of))
+                })
+                .map(|f| f.note_count)
+                .sum();
+            by_folders + if is_checked(UNFILED) { unfiled } else { 0 }
+        };
+
+        WriteScopeView {
+            restricted: !self.is_unrestricted(),
+            rows,
+            covered,
+            total,
+        }
     }
 }
 

@@ -266,7 +266,7 @@
 
 .histRowActive,
 .histRowActive:hover {
-  background: color-mix(in srgb, var(--accent-color, #4a9eff) 15%, transparent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .histWhen {
@@ -279,7 +279,11 @@
 .histNow {
   font-size: 11px;
   font-weight: 600;
-  color: var(--success-color, #3fb950);
+  /* 同上：原先的 `var(--success-color, #3fb950)` 里那个 token 从未定义。
+     这里是**文字**（11px/600，不到 large text 的门槛），适用 4.5:1：
+     它压在 `.histList` 的 --card-bg（ocean = #fff）上，
+     #3fb950 只有 2.54:1（**本来不达标**），--green 的 #11813A 是 4.97:1。 */
+  color: var(--green);
 }
 
 .histMeta {
@@ -325,7 +329,9 @@
   padding: 5px 12px;
   border: none;
   border-radius: 6px;
-  background: var(--accent-color, #4a9eff);
+  /* 实心按钮用 --accent-solid 而不是 --accent：theme.css:210 已注明它就是
+     「实心主按钮专用底色（白字压其上）」—— 白字压 --accent 只有 4.10:1。 */
+  background: var(--accent-solid);
   color: #fff;
   font-size: 11.5px;
   font-weight: 600;
@@ -361,7 +367,9 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 11px;
-  color: var(--accent-color, #4a9eff);
+  /* 11px 正文色用 --accent-strong：--accent 压白底只有 4.09:1（不达 4.5），
+     --accent-strong 是 5.17:1。theme.css:211 就是为「文字/图标色」调的。 */
+  color: var(--accent-strong);
 }
 
 /* 锚定 / 解除按钮：描边而不是实心——实心会跟「恢复」抢主按钮的位置，

@@ -70,7 +70,7 @@
 }
 
 .bar:hover {
-  background: var(--accent-soft, var(--accent-light));
+  background: var(--accent-light);
 }
 
 /* 文案吃满剩下宽度，把箭头顶到右边。轮数多了也不换行。 */

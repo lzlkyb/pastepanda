@@ -90,6 +90,86 @@ pub fn mcp_set_write_switch(
     Ok(mcp::gate::WriteSwitches::from_config(&cfg).rows())
 }
 
+/// 可写入的范围（项目②）。
+///
+/// ⚠ 篇数的口径跟**侧栏一致**（`folder_unfiled_count` 排掉速记），
+/// 而不是字面的「全库笔记数」—— 选择器要跟用户在侧栏看到的数对得上，
+/// 两处不一样会让人以为算错了。
+/// 得说清楚的是：**范围检查本身是覆盖速记的**（它们 `folder_id IS NULL`，
+/// 归在未分类那一行下），只是不计入那个展示数字。
+#[tauri::command]
+pub fn mcp_get_write_scope(store: State<DataStore>) -> Result<mcp::gate::WriteScopeView, String> {
+    let cfg = store.get_config().unwrap_or_default();
+    let folders = store.folder_list()?;
+    let unfiled = store.folder_unfiled_count()?;
+    Ok(mcp::gate::WriteScope::from_config(&cfg).view(&folders, unfiled))
+}
+
+/// 存可写入范围。**无需重启服务**：每个请求现读一次配置。
+///
+/// `entries` 为 `None` = 回到「没配过」（全库可写），对应界面上的「恢复全库」。
+///
+/// 🔴 `Some(空数组)` 与 `None` **不是一回事**：前者是用户把每一行都
+/// 取消了（一篇都不可写），后者是从未配过。归成一类的后果是：
+/// 用户取消全部勾选 ⇒ 得到「授权全库」，与他刚做的动作正好相反。
+#[tauri::command]
+pub fn mcp_set_write_scope(
+    store: State<DataStore>,
+    entries: Option<Vec<String>>,
+) -> Result<mcp::gate::WriteScopeView, String> {
+    let scope = match entries {
+        None => mcp::gate::WriteScope::unrestricted(),
+        Some(v) => mcp::gate::WriteScope::only(v),
+    };
+    let mut cfg = store.get_config().unwrap_or_default();
+    let Some(obj) = cfg.as_object_mut() else {
+        return Err("配置格式异常，无法保存可写入范围".to_string());
+    };
+    match scope.to_config_value() {
+        Some(v) => {
+            obj.insert(mcp::gate::CFG_WRITE_FOLDERS.to_string(), v);
+        }
+        // 「恢复全库」= 把键删掉，而不是写一个空数组（那是相反的意思）。
+        None => {
+            obj.remove(mcp::gate::CFG_WRITE_FOLDERS);
+        }
+    }
+    store.save_config(&cfg)?;
+    let folders = store.folder_list()?;
+    let unfiled = store.folder_unfiled_count()?;
+    Ok(scope.view(&folders, unfiled))
+}
+
+/// AI 经 MCP 建的文件夹（项目③）。设置页的「撤销」列表靠它。
+#[tauri::command]
+pub fn mcp_ai_folders(
+    store: State<DataStore>,
+) -> Result<Vec<crate::data_store::NoteFolder>, String> {
+    store.folder_list_ai()
+}
+
+/// 撤销一个 AI 建的文件夹：删掉它，**里面的东西都升到父级**。
+///
+/// 返回（挑走的笔记数, 挑走的子夹数），给界面报结果用。
+///
+/// 🔴 **只能撤 `source = 'ai'` 的**。不限制的后果是它变成一个通用的
+/// 「删文件夹」命令，而那条路上本来有自己的确认流程与影响预览
+/// （`folder_delete_impact`）—— 绕过去就把那些护栏全丢了。
+#[tauri::command]
+pub fn mcp_undo_ai_folder(
+    store: State<DataStore>,
+    id: String,
+) -> Result<(usize, usize), String> {
+    let is_ai = store
+        .folder_list_ai()?
+        .iter()
+        .any(|f| f.id == id);
+    if !is_ai {
+        return Err("只能撤销由 AI 创建的文件夹".to_string());
+    }
+    store.folder_dissolve(&id)
+}
+
 /// 最近的调用记录（W3）。红线②的「可见」就靠它。
 #[tauri::command]
 pub fn mcp_audit_list(

@@ -45,7 +45,7 @@
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  background: linear-gradient(140deg, var(--green-bg), var(--teal-bg, #e4f6f2));
+  background: linear-gradient(140deg, var(--green-bg), #e4f6f2);
   border: 1px solid var(--green-border, #bfe6ce);
   color: var(--green);
 }
