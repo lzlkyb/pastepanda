@@ -31,6 +31,11 @@
 .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; max-height: 66vh; overflow-y: auto; }
 .loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 40px 0; color: var(--text-muted); font-size: 12px; }
 
+/* 加载失败态（U3.5）。与 `.loading` 分开一个分支，否则失败会永远停在转圈上。 */
+.loadError { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 34px 12px; color: var(--danger); font-size: 12px; text-align: center; }
+.retryBtn { height: 24px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); color: var(--text-primary); font-family: inherit; font-size: 11px; cursor: pointer; flex-shrink: 0; transition: background 150ms cubic-bezier(0.2, 0, 0, 1); }
+.retryBtn:hover { background: var(--hover); }
+
 .main { display: flex; align-items: center; gap: 14px; }
 .ring {
   width: 84px;

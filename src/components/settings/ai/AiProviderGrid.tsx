@@ -10,6 +10,7 @@
  */
 
 import { useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import { confirmDialog } from "@/lib/confirm";
 import type { AiProviderInfo } from "@/lib/api";
 import styles from "../AiTab.module.css";
@@ -78,23 +79,26 @@ export function AiProviderGrid(p: Props) {
   const renderCustom = (it: AiProviderInfo) => {
     const on = it.id === p.currentId;
     return (
-      <button
-        key={it.id}
-        className={`${styles.provCard}${on ? ` ${styles.provCardOn}` : ""}`}
-        onClick={() => p.onProviderChange(it.id)}
-        title={it.baseUrl || it.note}
-      >
-        {/* provNameInset：给右上角的 ✎ / ✕ 两个绝对定位按钮让位，
-            内置卡没有这两个按钮所以不加 */}
-        <span className={`${styles.provName} ${styles.provNameInset}`}>{it.name}</span>
-        <span className={styles.provTags}>
-          {it.hasKey && <span className={`${styles.provTag} ${styles.provTagSet}`}>已配置</span>}
-          {on && <span className={styles.provCk}>✓</span>}
-        </span>
-        <span
+      // 🔴 两个动作按钮必须是卡片的**兄弟节点**而不是子节点：
+      //   它们原本是嵌在 `<button className=provCard>` 里的 `<span onClick>`。
+      //   `<span>` 没有 tabIndex/role，于是**键盘用户根本无法编辑或删除自定义服务商**，
+      //   而删除会连密钥一起清掉；改成真 `<button>` 又不能再嵌在 button 里（非法嵌套）。
+      <div key={it.id} className={styles.provWrap}>
+        <button
+          className={`${styles.provCard} ${styles.provCardCustom}${on ? ` ${styles.provCardOn}` : ""}`}
+          onClick={() => p.onProviderChange(it.id)}
+          title={it.baseUrl || it.note}
+        >
+          <span className={styles.provName}>{it.name}</span>
+          <span className={styles.provTags}>
+            {it.hasKey && <span className={`${styles.provTag} ${styles.provTagSet}`}>已配置</span>}
+            {on && <span className={styles.provCk}>✓</span>}
+          </span>
+        </button>
+        <button
+          type="button"
           className={styles.provEdit}
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             p.onEditCustom({
               id: it.id,
               name: it.name,
@@ -104,27 +108,31 @@ export function AiProviderGrid(p: Props) {
             });
           }}
           title="编辑"
+          aria-label={`编辑 ${it.name}`}
         >
-          ✎
-        </span>
-        <span
+          <Pencil size={11} />
+        </button>
+        <button
+          type="button"
           className={styles.provDel}
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             // 删除服务商 = 删配置 + 删密钥，不可恢复——统一确认弹窗
             void confirmDialog({
               title: "删除自定义服务商",
               message: `删除「${it.name}」会连配置和密钥一起清掉，确定吗？`,
               confirmText: "删除",
+              variant: "danger",
             }).then((ok) => {
               if (ok) p.onDeleteCustom(it.id);
             });
           }}
           title="删除"
+          // ❗ 不能只写「删除」：读屏用户听到的得是删什么。
+          aria-label={`删除服务商 ${it.name}`}
         >
-          ✕
-        </span>
-      </button>
+          <Trash2 size={11} />
+        </button>
+      </div>
     );
   };
 

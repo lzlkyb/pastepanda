@@ -521,6 +521,7 @@ export function KnowledgeView() {
               onMove={(id) => void act.handleBatchMove(id)}
               onDelete={() => void act.handleBatchDelete()}
               onClear={act.clearSelection}
+              busy={act.batchBusy}
             />
           )}
 

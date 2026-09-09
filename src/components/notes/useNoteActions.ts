@@ -56,6 +56,22 @@ export function useNoteActions(opts: NoteActionsOpts) {
    *   而整理一批笔记的典型动作恰恰是「连选一段」。
    */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+
+  /**
+   * 批量操作进度。null = 不忙。
+   *
+   * 🔴 它同时是**并发闸**和 U1 的进度指示，两件事缺一不可：
+   * 两个批量动作都是串行 `await` 循环，而 `BatchBar` 的按钮原先**全程可点**。
+   * Shift 连选 50 条再点「移动到…」，界面在整个循环里一动不动；
+   * 更实际的伤害是**可重入**——循环没跑完再点一次删除，第二轮 `noteDelete`
+   * 打在已软删的行上全失败，用户看到的回执是「已删除 0 条，12 条失败」
+   * ——一个纯属自己造出来的假失败。
+   */
+  const [batchBusy, setBatchBusy] = useState<{
+    done: number;
+    total: number;
+    verb: string;
+  } | null>(null);
   const anchorRef = useRef<number>(-1);
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
@@ -236,17 +252,23 @@ export function useNoteActions(opts: NoteActionsOpts) {
    */
   const handleBatchDelete = useCallback(async () => {
     const targets = selectedNotes;
-    if (targets.length === 0) return;
+    if (targets.length === 0 || batchBusy) return;
     // 同单条：删 N 条也是可撤销的，不拦；只有未保存的修改那一段不可逆。
     if (!(await guardDirty(!!activeNote && selectedIds.has(activeNote.id) && isActiveDirty())))
       return;
+    setBatchBusy({ done: 0, total: targets.length, verb: "删除" });
     // 只把**真删掉的**那几条交给撤销：把失败的也算进去，撤销时就会去恢复一条
     // 压根没删成的笔记，然后报一个莫名其妙的失败。
     const done: Note[] = [];
     let failed = 0;
-    for (const n of targets) {
-      if (await noteDelete(n.id, n.history_id)) done.push(n);
-      else failed++;
+    try {
+      for (const [i, n] of targets.entries()) {
+        if (await noteDelete(n.id, n.history_id)) done.push(n);
+        else failed++;
+        setBatchBusy({ done: i + 1, total: targets.length, verb: "删除" });
+      }
+    } finally {
+      setBatchBusy(null);
     }
     if (activeNote && selectedIds.has(activeNote.id)) clearActive();
     clearSelection();
@@ -261,6 +283,7 @@ export function useNoteActions(opts: NoteActionsOpts) {
     }
   }, [
     selectedNotes,
+    batchBusy,
     guardDirty,
     undoDelete,
     isActiveDirty,
@@ -276,17 +299,23 @@ export function useNoteActions(opts: NoteActionsOpts) {
   const handleBatchMove = useCallback(
     async (folderId: string | null) => {
       const targets = selectedNotes;
-      if (targets.length === 0) return;
+      if (targets.length === 0 || batchBusy) return;
+      setBatchBusy({ done: 0, total: targets.length, verb: "移动" });
       let failed = 0;
-      for (const n of targets) {
-        if (!(await noteSetFolder(n.id, folderId))) failed++;
+      try {
+        for (const [i, n] of targets.entries()) {
+          if (!(await noteSetFolder(n.id, folderId))) failed++;
+          setBatchBusy({ done: i + 1, total: targets.length, verb: "移动" });
+        }
+      } finally {
+        setBatchBusy(null);
       }
       reportBatch("移动", targets.length, failed);
       clearSelection();
       refreshAll();
       flashFolder(folderId ?? "unfiled");
     },
-    [selectedNotes, reportBatch, clearSelection, refreshAll, flashFolder],
+    [selectedNotes, batchBusy, reportBatch, clearSelection, refreshAll, flashFolder],
   );
 
   /**
@@ -323,5 +352,6 @@ export function useNoteActions(opts: NoteActionsOpts) {
     handleBatchDelete,
     handleBatchMove,
     handleDropNotes,
+    batchBusy,
   };
 }

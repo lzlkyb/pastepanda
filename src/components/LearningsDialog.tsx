@@ -38,11 +38,20 @@ import { actionLabel, contentTypeLabel } from "@/lib/actionLabels";
 import styles from "./Learnings.module.css";
 import { useDialogEscape } from "@/hooks/useDialogEscape";
 
-/** 编辑率阈值配色：<40% 绿 / 40–59% 琥珀 / ≥60% 红（与设计稿一致） */
+/**
+ * 编辑率阈值配色：<40% 绿 / 40–59% 琥珀 / ≥60% 红（与设计稿一致）。
+ *
+ * 🔴 `txt` 必须是 `styles.x` 而不能是字面量。旧版写的是 `txt: "red"`，
+ * 而 CSS 里是 `.rateTxt.red`——两个类名都会被 CSS Modules 哈希。
+ * DOM 上得到 `class="Learnings_rateTxt__x red"`，选择器**永远匹配不上**：
+ * 条形图有颜色（它走的是 `styles.rateRed` 这类真哈希类）、
+ * 旁边的「73% 被改」却恒为默认文字色——同一行里一半上了色一半没上，
+ * 而这个百分比正是用户判断「要不要写偏好指令」的那个数。
+ */
 function rateTone(rate: number): { cls: string; txt: string } {
-  if (rate >= 60) return { cls: styles.rateRed, txt: "red" };
-  if (rate >= 40) return { cls: styles.rateAmber, txt: "amber" };
-  return { cls: styles.rateGreen, txt: "green" };
+  if (rate >= 60) return { cls: styles.rateRed, txt: styles.red };
+  if (rate >= 40) return { cls: styles.rateAmber, txt: styles.amber };
+  return { cls: styles.rateGreen, txt: styles.green };
 }
 
 export function LearningsDialog() {
@@ -61,9 +70,18 @@ export function LearningsDialog() {
   const [shadow, setShadow] = useState<ShadowStats | null>(null);
   const [busy, setBusy] = useState(false);
   const [savedPref, setSavedPref] = useState<string | null>(null);
+  /**
+   * 读取失败原因。null = 没失败过。
+   *
+   * 🔴 不能只靠 toast（U3.5）：toast 4–5 秒就没了，而 `stats` 仍是 null，
+   * 渲染落进「加载中…」分支——之后用户面对的是一个**永远转圈的弹窗**，
+   * 看起来像卡死而不是失败，关掉重开还是同一个圈。
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   /** 拉取统计 + 负反馈 + AI 结果反馈 + 内容记忆 */
   const load = useCallback(async () => {
+    setLoadError(null);
     try {
       const [s, d, fb, p, mem, sem, sh] = await Promise.all([
         actionEventStats(30),
@@ -83,7 +101,9 @@ export function LearningsDialog() {
       setSemVectorCount(sem?.enabled ? sem.vectorCount : null);
       setShadow(sh);
     } catch (e) {
-      toast(`读取学习记录失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      const msg = e instanceof Error ? e.message : String(e);
+      setLoadError(msg);
+      toast(`读取学习记录失败：${msg}`, "error");
     }
   }, [toast]);
 
@@ -208,7 +228,13 @@ export function LearningsDialog() {
       confirmText: "清空",
     });
     if (!ok) return;
-    if (!(await kbShadowClear())) return;
+    // 失败不能静默 return：用户刚在确认框里点了「清空」这种不可逆动作，
+    // 屏幕零变化、数字照旧，他只能猜是没点上还是清了没刷新，多半会再点一遍。
+    // 同文件其它四个清空都有失败提示，只漏了这一个。
+    if (!(await kbShadowClear())) {
+      toast("清空失败，记录未变动", "error");
+      return;
+    }
     toast("已清空沉淀观察记录", "success");
     void load();
   }, [load, toast]);
@@ -264,7 +290,15 @@ export function LearningsDialog() {
                   </span>
                 </div>
 
-                {!stats ? (
+                {loadError && !stats ? (
+                  // 失败态要与「真的没数据」可区分，并自带重试入口（U3.3 / U3.5）。
+                  <div className={styles.loadError}>
+                    <span>读取失败：{loadError}</span>
+                    <button type="button" className={styles.retryBtn} onClick={() => void load()}>
+                      重试
+                    </button>
+                  </div>
+                ) : !stats ? (
                   <div className={styles.empty}>加载中…</div>
                 ) : (
                   <>

@@ -571,6 +571,7 @@ body {
 .tray-popup-toast.visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+  /* （减少动效的处理在本文件末尾） */
 }
 
 .tray-popup-toast .toast-icon {
@@ -613,3 +614,22 @@ body {
 }
 
 
+
+/* ===== 减少动效（U2）=====
+   `globals.css` 的全局兜底只能把时长压成 0.01ms，**去不掉 `transform` 本身**；
+   而 U2 要求的是去掉位移与缩放、只留透明度。托盘弹窗是常驻入口，
+   `:active` 的整体缩放在开了「减少动态效果」的机器上尤其明显。
+
+   ❗ `.tray-popup-toast` 靠 `translateX(-50%)` 做水平居中，去位移时**必须保留它**。
+   ❗ 不写全局 `* { transition: none !important }`：那会把靠 transition
+   做的状态反馈一起干掉。 */
+@media (prefers-reduced-motion: reduce) {
+  .tray-popup-item:active {
+    transform: none;
+  }
+
+  .tray-popup-toast,
+  .tray-popup-toast.visible {
+    transform: translateX(-50%);
+  }
+}

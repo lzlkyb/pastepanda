@@ -68,19 +68,32 @@
   color: var(--text-secondary);
   font-family: inherit;
   font-size: 10.5px;
+  /* 本月格加字重：`.dim` 的 opacity 从 0.45 抬到 0.7 之后，
+     本月/非本月光靠深浅已经分不太开——再给一条不靠颜色的差异（V5）。 */
+  font-weight: 500;
   line-height: 1.3;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .day:hover {
   background: var(--hover);
 }
 
-/* 上/下月的补位格。不隐掉：空白格子会让一周看不出是一行 */
+/* 上/下月的补位格。不隐掉：空白格子会让一周看不出是一行。
+
+   🔴 `opacity` 从 0.45 抬到 0.7。旧值下实际渲染色 ≈ rgb(184,191,199)，
+   压在 `--sidebar-bg` 上只有 **1.86:1**，而字号只有 10.5px。
+   这不是「淡一点的装饰」——`DailyCalendar.tsx` 对**所有**格子都挂了 `onClick`
+   （注释明说「没速记的日期也能点」），它们是一排能点、点了就跳月的真按钮，
+   看不清就会跳到别的日期去。上面那句注释的目的只需要**格子在**，
+   不需要**数字看不清**。
+   ❗ 不能改用 `disabled`：那会把「点补位格跳月」这个既有行为改掉。
+   抬亮后本月/非本月的对比会变弱，所以给本月格加了字重把层级补回来（V5）。 */
 .dim {
   color: var(--text-muted);
-  opacity: 0.45;
+  opacity: 0.7;
+  font-weight: 400;
 }
 
 /* 那天有速记 */

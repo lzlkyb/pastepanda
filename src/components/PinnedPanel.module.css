@@ -1,0 +1,210 @@
+/* PinnedPanel.module.css — 贴图管理面板。
+
+   这个文件是补上来的：组件原先零 CSS class、零变量，20+ 处字面色值
+   （#1B2340 / #101528 / #6B7FA3 …）。后果不只是「不好看」：
+     · 默认主题是**浅色**的，从托盘点开「贴图管理」会弹出一块深蓝黑卡片，
+       跟应用其它部分毫无关系——这不是「深色弹窗」的设计选择，是根本没接主题；
+     · 空态那句话的 #6B7FA3 压在渐变上全程 **3.81–4.47:1**，没有一处达 4.5。
+   换成 token 之后对比度由主题保证，不用逐个手算。 */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 24, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.panel {
+  width: 480px;
+  max-height: 560px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 24×24（U7）。旧实现是一个无尺寸的裸 ✕ 字符。 */
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.close:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.list {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+/* 🔴 加载失败态（U3.5）。旧实现的 catch 里只有 `logger.warn`，
+   于是 `paths` 保持 `[]`、渲染出「暂无置顶贴图」——
+   把「读不出来」说成了「你没有贴图」。而那句空态文案还写得很好，
+   越好越骗人。 */
+.loadError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 36px 16px;
+  font-size: 12px;
+  color: var(--danger);
+  text-align: center;
+}
+
+.retryBtn {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.retryBtn:hover { background: var(--hover); }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.thumb {
+  width: 64px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--input-bg);
+}
+
+.thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.thumbPh {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 行内按钮统一 24px 高（U7）。图形按钮取正方，文字按钮宽度自适应。 */
+.iconBtn,
+.textBtn {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.iconBtn { width: 24px; }
+.textBtn { padding: 0 9px; font-size: 11px; }
+
+.iconBtn:hover,
+.textBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.dangerBtn {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.dangerBtn:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-color);
+}

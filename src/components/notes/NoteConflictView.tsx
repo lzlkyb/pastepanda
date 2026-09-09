@@ -245,11 +245,16 @@ export function NoteConflictView({
           忽略空白
         </label>
         <span style={{ flex: 1 }} />
-        <button type="button" className={`${styles.btn} ${styles.btnTiny}`} onClick={() => jumpTo(currentBlock - 1)} disabled={blockCount === 0}>
+        {/* 🔴 这两个按钮里只有一个 lucide `<svg>`（lucide-react 不生成 `<title>`），
+            既没 aria-label 也没 title，是本片区唯两个读屏读不出名字的可点元素。
+            而冲突合并是低频高危场景：用户在这一屏决定哪一版留下，
+            跳转点错方向就会漏看一处差异。 */}
+        <button type="button" className={`${styles.btn} ${styles.btnTiny}`} onClick={() => jumpTo(currentBlock - 1)} disabled={blockCount === 0} title="上一处差异" aria-label="上一处差异">
           <ChevronUp size={12} />
         </button>
-        <span>{blockCount > 0 ? `${currentBlock + 1} / ${blockCount}` : "0 / 0"}</span>
-        <button type="button" className={`${styles.btn} ${styles.btnTiny}`} onClick={() => jumpTo(currentBlock + 1)} disabled={blockCount === 0}>
+        {/* 跳转后只改这个数字，不播报的话键盘用户不知道跳到哪了。 */}
+        <span role="status" aria-live="polite">{blockCount > 0 ? `${currentBlock + 1} / ${blockCount}` : "0 / 0"}</span>
+        <button type="button" className={`${styles.btn} ${styles.btnTiny}`} onClick={() => jumpTo(currentBlock + 1)} disabled={blockCount === 0} title="下一处差异" aria-label="下一处差异">
           <ChevronDown size={12} />
         </button>
       </div>

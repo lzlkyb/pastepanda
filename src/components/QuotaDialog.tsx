@@ -42,11 +42,23 @@ export function QuotaDialog() {
   const [needEnable, setNeedEnable] = useState(false);
   const [enabling, setEnabling] = useState(false);
 
+  /**
+   * 读取失败原因。null = 没失败过。
+   *
+   * 🔴 只弹 toast 不够（U3.5）：它 4–5 秒就没了，而 `quota` 仍是 null，
+   * 渲染落进「加载中…」——之后用户对着一个**永远转圈的弹窗**，
+   * 分不清是卡死还是失败；关掉重开只会重跑同一个失败请求。
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
+    setLoadError(null);
     try {
       setQuota(await aiQuotaGet());
     } catch (e) {
-      toast(`读取额度失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      const msg = e instanceof Error ? e.message : String(e);
+      setLoadError(msg);
+      toast(`读取额度失败：${msg}`, "error");
     }
   }, [toast]);
 
@@ -205,7 +217,15 @@ export function QuotaDialog() {
                     </div>
                   )}
 
-                  {!quota ? (
+                  {loadError && !quota ? (
+                    // 失败态与「真的没数据」必须可区分，并自带重试入口（U3.3 / U3.5）。
+                    <div className={styles.loadError}>
+                      <span>读取失败：{loadError}</span>
+                      <button type="button" className={styles.retryBtn} onClick={() => void load()}>
+                        重试
+                      </button>
+                    </div>
+                  ) : !quota ? (
                     <div className={styles.loading}>
                       <Loader2 size={16} className="spin" /> 加载中…
                     </div>

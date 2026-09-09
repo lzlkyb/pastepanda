@@ -267,40 +267,56 @@ body {
 }
 .qp-item.pinned .qp-pin, .qp-row.pinned .qp-pin { display: block; }
 
-/* 操作按钮（悬停显示） */
+/* 操作按钮（悬停显示）
+
+   🔴 24×24（U7 / SC 2.5.8）。旧值是 `padding: 2px 4px` + 10px 字，
+   算下来实际只有约 16×18。而这个按钮比别处的删除都输不起：
+   `QuickPastePanel.tsx` 自己的注释写着「这里的删除**无法撤销**——
+   undoStack 是前端 store 状态，本窗口与主窗口是两个独立的 React 实例」。
+   列表布局下它还被挪到 `right:6px; top:50%`（见 :253），
+   正好落在鼠标从右往左划向行尾的轨迹上。
+   字号维持 10px——**视觉尺寸不变，只把命中区做够**。 */
 .qp-del {
   position: absolute;
   top: 5px;
   left: 5px;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
   background: var(--glass-popover-bg);
   border-radius: 6px;
-  padding: 2px 4px;
+  padding: 0;
   display: none;
   cursor: pointer;
   border: none;
   font-size: 10px;
-  line-height: 1.2;
+  line-height: 1;
 }
 .qp-item:hover .qp-del, .qp-item.sel .qp-del,
-.qp-row:hover .qp-del, .qp-row.sel .qp-del { display: block; }
+.qp-row:hover .qp-del, .qp-row.sel .qp-del { display: flex; }
 .qp-del:hover { color: var(--danger); }
 
 .qp-pinbtn {
   position: absolute;
   top: 5px;
   right: 5px;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
   background: var(--glass-popover-bg);
   border-radius: 6px;
-  padding: 2px;
+  padding: 0;
   display: none;
   cursor: pointer;
   border: none;
   line-height: 0;
 }
 .qp-item:not(.pinned):hover .qp-pinbtn, .qp-item:not(.pinned).sel .qp-pinbtn,
-.qp-row:not(.pinned):hover .qp-pinbtn, .qp-row:not(.pinned).sel .qp-pinbtn { display: block; }
+.qp-row:not(.pinned):hover .qp-pinbtn, .qp-row:not(.pinned).sel .qp-pinbtn { display: flex; }
 .qp-pinbtn:hover { color: var(--accent); }
 
 /* ── 面板底栏 ── */
@@ -363,3 +379,24 @@ body {
 .qp-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .qp-toast .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
 .qp-toast .dot.err { background: var(--danger); }
+
+/* ===== 减少动效（U2）=====
+   `globals.css` 的全局兜底只能把时长压成 0.01ms，**去不掉 `transform` 本身**；
+   而 U2 要求的是去掉位移与缩放、只留透明度。快速粘贴面板是热键唤出的高频界面，
+   鼠标在网格上扫过时每张卡片依次抬起 2px。
+
+   ❗ `.qp-toast` 靠 `translateX(-50%)` 做水平居中，去位移时**必须保留它**，
+   否则 toast 会跑到屏幕右侧。
+   ❗ 不写全局 `* { transition: none !important }`：那会把「已复制 ✓」
+   这类靠 transition 做的**状态反馈**一起干掉。 */
+@media (prefers-reduced-motion: reduce) {
+  .qp-item,
+  .qp-item:hover {
+    transform: none;
+  }
+
+  .qp-toast,
+  .qp-toast.show {
+    transform: translateX(-50%);
+  }
+}

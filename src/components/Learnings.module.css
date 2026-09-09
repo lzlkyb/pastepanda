@@ -406,7 +406,38 @@
   flex-shrink: 0;
 }
 
-.rateTxt.green { color: var(--green); }
+/* 加载失败态（U3.5）。与「加载中」分开一个分支，否则失败会永远停在转圈上。 */
+.loadError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 12px;
+  color: var(--danger);
+  font-size: 12px;
+  text-align: center;
+}
+
+.retryBtn {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.retryBtn:hover { background: var(--hover); }
+
+/* 这三条从来没生效过（调用方传的是字面量），2026-09-09 修好后才第一次真正出现。
+   压在 `--dialog-bg` 上算过：绿 5.02:1 / 橙 4.84:1 / 红 4.99:1，三档都过 AA。
+   `--green` → `--success`：U6 不许新代码用色名，而这三行等于是新写的。 */
+.rateTxt.green { color: var(--success); }
 .rateTxt.amber { color: var(--warning); }
 .rateTxt.red { color: var(--danger); }
 

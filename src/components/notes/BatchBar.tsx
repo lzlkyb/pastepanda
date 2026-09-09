@@ -23,6 +23,7 @@ export function BatchBar({
   onMove,
   onDelete,
   onClear,
+  busy,
 }: {
   /** 已选条数。为 0 时调用方不渲染本组件。 */
   count: number;
@@ -31,6 +32,14 @@ export function BatchBar({
   onMove: (folderId: string | null) => void;
   onDelete: () => void;
   onClear: () => void;
+  /**
+   * 正在跑的批量动作。null = 不忙。
+   *
+   * 🔴 两个作用：① U1 的进度指示（串行循环跑 50 条时界面不能一动不动）；
+   * ② 把按钮禁掉防重入——循环没跑完再点一次删除，第二轮会打在已软删的
+   * 行上全失败，用户看到「已删除 0 条，12 条失败」这种自己造的假失败。
+   */
+  busy?: { done: number; total: number; verb: string } | null;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -51,7 +60,14 @@ export function BatchBar({
 
   return (
     <div className={styles.batchBar} ref={wrapRef}>
-      <span className={styles.batchCount}>已选 {count} 条</span>
+      {/* 忙的时候把进度顶到计数位：那是本条上唯一一直在看的位置。 */}
+      <span className={styles.batchCount}>
+        {busy ? `${busy.verb}中 ${busy.done}/${busy.total}` : `已选 ${count} 条`}
+      </span>
+      {/* 进度只写在文字里，读屏用户听不到（SC 4.1.3）。 */}
+      <span className="sr-only" role="status">
+        {busy ? `正在${busy.verb}第 ${busy.done} 条，共 ${busy.total} 条` : ""}
+      </span>
 
       <div className={styles.batchMoveWrap}>
         <button
@@ -59,6 +75,7 @@ export function BatchBar({
           className={styles.batchBtn}
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
+          disabled={!!busy}
         >
           <FolderInput size={12} /> 移动到…
         </button>
@@ -82,7 +99,7 @@ export function BatchBar({
         )}
       </div>
 
-      <button type="button" className={styles.batchBtn} onClick={onDelete}>
+      <button type="button" className={styles.batchBtn} onClick={onDelete} disabled={!!busy}>
         <Trash2 size={12} /> 删除
       </button>
 
