@@ -23,14 +23,20 @@ import type { InboxViewOpts } from "@/lib/notes/viewOpts";
  * ❌ 曾有第四条 `shot`（截图文字量），2026-09-08 当天撤销：
  * 它测量的是体积不是意图，而体积预测不了价值。截图改走每日蒸馏进知识库。
  */
-export type InboxReason = "star" | "research" | "recopy";
+// ❌ 不再有 `recopy`：通路#3（重复复制）已于 2026-09-09 撤销，
+// 它与每日蒸馏重叠（反复复制的内容必然也在当天/跨天的簇里），
+// 而且它测的是**分布**不是意图。见 `kb_inbox.rs` 里的撤销说明。
+export type InboxReason = "star" | "research";
 
 /** 一条待沉淀候选。 */
 export interface InboxCandidate {
   item: HistoryItem;
   reason: InboxReason;
   search_hit_count: number;
-  /** 重复复制次数。`recopy` 征标上的数字 */
+  /**
+   * 重复复制次数。通路#3 撤销后它不再决定入选，
+   * 但仍然给「重复复制最多」那个排序选项用。
+   */
   recopy_count: number;
   /** 有过 pasted 信号。仅同分时影响排序（A-28），也用于展示一个“用过”微标 */
   recently_pasted: boolean;

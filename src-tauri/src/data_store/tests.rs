@@ -5254,6 +5254,124 @@ fn test_kb_inbox_is_workspace_scoped() {
 // 笔记文件夹（B1 #1）
 // ============================================================
 
+// ═════ 项目③：AI 建的文件夹与撤销 ═════
+
+#[test]
+fn test_folder_source_marks_only_ai_created() {
+    let store = make_store();
+    let manual = store.folder_create("手建的", None).unwrap();
+    let ai = store.folder_create_by_ai("AI 建的", None).unwrap();
+
+    assert_eq!(manual.source, "manual");
+    assert_eq!(ai.source, "ai");
+
+    // 列表里也要能读回来（不只是创建时的返回值对）。
+    let all = store.folder_list().unwrap();
+    assert_eq!(
+        all.iter().find(|f| f.id == ai.id).unwrap().source,
+        "ai",
+        "folder_list 没把 source 选出来"
+    );
+    let only_ai = store.folder_list_ai().unwrap();
+    assert_eq!(only_ai.len(), 1);
+    assert_eq!(only_ai[0].id, ai.id);
+}
+
+#[test]
+fn test_folder_create_by_ai_shares_the_same_validation() {
+    // 两个入口走同一个实现（规则 #11）—— 校验不能只在手建那条路上。
+    let store = make_store();
+    assert!(store.folder_create_by_ai("", None).is_err(), "空名字该拒");
+
+    let a = store.folder_create("工作", None).unwrap();
+    assert!(
+        store.folder_create_by_ai("工作", None).is_err(),
+        "同父同名该拒（否则 resolve_folder_on 按名字找会静默指错人）"
+    );
+
+    // 深度上限：断言跟着 MAX_FOLDER_DEPTH 算，不写死数字。
+    let mut parent = a.id.clone();
+    for i in 1..MAX_FOLDER_DEPTH {
+        parent = store
+            .folder_create(&format!("第{}层", i + 1), Some(&parent))
+            .unwrap()
+            .id;
+    }
+    assert!(
+        store.folder_create_by_ai("太深了", Some(&parent)).is_err(),
+        "超深度该拒"
+    );
+}
+
+#[test]
+fn test_folder_dissolve_lifts_children_to_parent() {
+    let store = make_store();
+    let top = store.folder_create("工作", None).unwrap();
+    let mid = store.folder_create_by_ai("AI 建的中间层", Some(&top.id)).unwrap();
+    // 🔴 子夹是**用户手建**的：它绝不能因为撤销上层而消失。
+    let sub = store.folder_create("用户手建的子夹", Some(&mid.id)).unwrap();
+
+    let n1 = store.note_create(None, "在中间层里", "a").unwrap();
+    store.note_set_folder(&n1.id, Some(&mid.id)).unwrap();
+    let n2 = store.note_create(None, "在子夹里", "b").unwrap();
+    store.note_set_folder(&n2.id, Some(&sub.id)).unwrap();
+
+    let (notes, folders) = store.folder_dissolve(&mid.id).unwrap();
+    assert_eq!(notes, 1, "只有直接在它里面的那一篇要挑走");
+    assert_eq!(folders, 1);
+
+    let all = store.folder_list().unwrap();
+    assert!(!all.iter().any(|f| f.id == mid.id), "中间层应该没了");
+
+    // 🔴 这两条是本项最容易造成**实际丢数据**的地方：
+    //    `note_folders.parent_id` 的外键是 `ON DELETE CASCADE`，
+    //    先删再挑子夹会把整棵子树连带删掉——而子夹是用户手建的。
+    //    光数笔记数量拦不住这个 bug，必须断言子夹仍存在且 parent 对了。
+    let kept = all
+        .iter()
+        .find(|f| f.id == sub.id)
+        .expect("🔴 子夹被连带删了（ON DELETE CASCADE）");
+    assert_eq!(
+        kept.parent_id.as_deref(),
+        Some(top.id.as_str()),
+        "子夹应该升到祖父那一层"
+    );
+
+    // 笔记一篇都不能丢。
+    assert_eq!(
+        store.note_get(&n1.id).unwrap().unwrap().folder_id.as_deref(),
+        Some(top.id.as_str()),
+        "直接在里面的笔记该升到父级"
+    );
+    assert_eq!(
+        store.note_get(&n2.id).unwrap().unwrap().folder_id.as_deref(),
+        Some(sub.id.as_str()),
+        "子夹里的笔记跟着子夹走，不动"
+    );
+}
+
+#[test]
+fn test_folder_dissolve_top_level_makes_notes_unfiled() {
+    let store = make_store();
+    let top = store.folder_create_by_ai("AI 建的顶层", None).unwrap();
+    let n = store.note_create(None, "里面的", "x").unwrap();
+    store.note_set_folder(&n.id, Some(&top.id)).unwrap();
+
+    let (notes, folders) = store.folder_dissolve(&top.id).unwrap();
+    assert_eq!((notes, folders), (1, 0));
+    assert_eq!(
+        store.note_get(&n.id).unwrap().unwrap().folder_id,
+        None,
+        "顶层夹子被撤销 ⇒ 里面的笔记变未分类"
+    );
+}
+
+#[test]
+fn test_folder_dissolve_missing_id_errors() {
+    let store = make_store();
+    assert!(store.folder_dissolve("不存在").is_err());
+}
+
 #[test]
 fn test_folder_create_and_list_with_depth() {
     let store = make_store();
@@ -7268,7 +7386,7 @@ fn test_待沉淀只列能转笔记的并带上识别文字() {
 /// 它会把重复复制报成「找回 ×0」——**不报错，只是界面上说错话**。
 /// 所以这里断言的是 `reason`，不只是「在不在列表里」。
 #[test]
-fn test_三条入选通路各自都能入选且原因报对() {
+fn test_两条入选通路各自都能入选且原因报对() {
     let store = make_store();
     let bump = |sql: &str| store.lock_conn().execute(sql, []).unwrap();
 
@@ -7283,11 +7401,14 @@ fn test_三条入选通路各自都能入选且原因报对() {
         .unwrap();
     bump("UPDATE history SET search_hit_count = 2 WHERE id = 'c-hit'");
 
-    // 通路#3 重复复制 >= 3
+    // ❌ 通路#3（重复复制）已于 2026-09-09 撤销。这里留一条「复制了很多次的」，
+    //    断言它**不再**因为复制次数多而入选——撤销要能被钉住，
+    //    否则以后有人凭「反正反复复制的应该挺重要」把它加回来。
+    //    它与蒸馏重叠：反复复制的内容必然也在当天/跨天的簇里。
     store
         .insert_history(&make_item("c-recopy", "反复复制的那串口令", "2026-08-03 10:00:00", "text"))
         .unwrap();
-    bump("UPDATE history SET recopy_count = 3 WHERE id = 'c-recopy'");
+    bump("UPDATE history SET recopy_count = 9 WHERE id = 'c-recopy'");
 
     // ❌ 通路#5（截图文字量）已于 2026-09-08 当天撤销。这里保留一张
     //    「字很多的截图」，断言它**不再**因为字多而入选——撤销要能被钉住，
@@ -7312,17 +7433,18 @@ fn test_三条入选通路各自都能入选且原因报对() {
 
     assert_eq!(by("c-star").map(|c| c.reason.as_str()), Some("star"));
     assert_eq!(by("c-hit").map(|c| c.reason.as_str()), Some("research"));
-    assert_eq!(by("c-recopy").map(|c| c.reason.as_str()), Some("recopy"));
+    assert!(
+        by("c-recopy").is_none(),
+        "重复复制不再是入选通路（通路#3 已撤）——它是分布不是意图，已归蒸馏管"
+    );
     assert!(
         by("c-shot").is_none(),
         "截图字数不再是入选通路（通路#5 已撤）——字多不等于值得沉淀"
     );
 
-    assert!(by("c-recopy-lo").is_none(), "复制 2 次不该入选（门槛 3）");
+    assert!(by("c-recopy-lo").is_none(), "复制 2 次同样不入选");
     assert!(by("c-shot-lo").is_none(), "短 OCR 截图同样不该入选");
 
-    // 数字要跟着回前端，否则征标只能写「重复用」而说不出几次
-    assert_eq!(by("c-recopy").unwrap().recopy_count, 3);
     assert_eq!(by("c-hit").unwrap().search_hit_count, 2);
 
     // 计数与列表必须用同一份条件

@@ -186,14 +186,41 @@
    与待沉淀共用本文件：两者在视觉上是同一个区块的两半，
    拆成两份 CSS 只会让它们慢慢长歪。 */
 
-/* 蒸馏没有展开/收起，所以是 div 不是 button——不能沿用 .banner 的
-   hover/active 反馈，那会让人以为点得动。 */
+/* 与待沉淀的 `.banner` **同构**：都是可点的折叠横幅。
+
+   旧版它是个普通 `<div>`——没 chevron、点不动、**永远展开**。
+   行换成卡片后它从「有点占地方」变成了「把下面的笔记列表挤没」：
+   中栏只有 `.listWrap` 一层会滚，而本区块是 `flex-shrink: 0`，
+   它占的高度一分不让。
+
+   颜色用紫而不是 accent：`.badgeDistill` 已经定了「蒸馏 = 紫」这个约定，
+   横幅跟着它走，两个区块才能一眼分清谁是谁。*/
 .distillHead {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, #8B5CF6 30%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, #8B5CF6 8%, transparent);
+  color: var(--text-primary);
+  font-family: inherit;
   font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.distillHead:hover {
+  background: color-mix(in srgb, #8B5CF6 14%, transparent);
+  border-color: color-mix(in srgb, #8B5CF6 45%, transparent);
+}
+
+/* 不复用 `.bannerIcon`：那一个是 accent 色的 */
+.distillIcon {
+  color: #8B5CF6;
+  flex-shrink: 0;
 }
 
 /* 征标用 accent 的紫向偏移：蒸馏是「机器拟的」，与待沉淀那几个
@@ -201,6 +228,140 @@
 .badgeDistill {
   background: color-mix(in srgb, #8B5CF6 15%, transparent);
   color: #8B5CF6;
+}
+
+/* ===== 蒸馏卡片（P1/P2 共用）=====
+
+   不复用待沉淀的 `.row`，因为两边回答的不是同一个问题：
+   待沉淀答「**这一条**值不值得留」，标题就是内容，一行一条够了；
+   蒸馏答「**这一堆**合起来值不值得留」——不把里面是什么露出来，
+   采纳 / AI 成文 / 忽略**三个动作全是盲的**。
+
+   旧版还有一个结构性毛病：`.rowActions` 是 flex-shrink: 0，
+   三个按钮永不让位，全部挤压 nowrap 的标题。换成纵向堆叠后这个冲突不存在了。*/
+
+.distillList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* 🔴 与待沉淀取**同一个** 240px。
+
+     曾经抬到过 320px，理由是「5 篇才不至于一屏只看得见一篇半」——
+     那只算了区块自己好不好看，没算它从主内容那里拿走了多少：
+     单元高同时从 ~45px 涨到 ~82px，两相叠加把 `.listWrap` 压到了近于 0，
+     看起来就是「页面不能滑动」。待沉淀那条注释早就写过这个原则：
+     **待沉淀是待办，笔记才是主内容**。*/
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.distillCard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  transition: border-color 0.15s;
+}
+
+.distillCard:hover {
+  border-color: color-mix(in srgb, #8B5CF6 45%, var(--border-color));
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cardTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 用的是**真实摘录**，不是「已拟好正文，采纳后可直接改」那种
+   每行都一样、占一整行却零信息的恒定文案。*/
+.cardPreview {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+/* 首次说明（L4）。只在这个区块**第一次真的有内容**时露一次。
+
+   不是空态教学（L3）：那一条的前提是空态能给出可执行的下一步，
+   而本区块空的时候用户无事可做（内容靠系统产出）。
+
+   V1：用背景色差分层，**不再加一条边框**。
+   V6：彩底上的文字取同色相低饱和，不用中性灰——灰在彩底上是「脏」不是「次要」。*/
+.firstHint {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: color-mix(in srgb, var(--accent-strong, var(--accent)) 70%, var(--text-primary));
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* 蒸馏那块跟它自己的紫（与 `.badgeDistill` / `.distillHead` 同一个约定）*/
+.firstHintDistill {
+  background: color-mix(in srgb, #8B5CF6 8%, transparent);
+  color: color-mix(in srgb, #8B5CF6 70%, var(--text-primary));
+}
+
+/* 批量条。跟在列表**下面**，且只在展开时出现：
+   看得见卡片才能批量操作它们，否则「全部采纳」不知道在操作谁。
+   上边一条分隔线把它与卡片分开，又保持在同一块里。*/
+.batchBar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 6px 1px 0;
+  border-top: 1px dashed var(--border-color);
+}
+
+/* 把按钮与它们操作的东西绑在一起。放左边、占满剩余，
+   按钮被推到右侧——与卡片里 那排动作对齐。*/
+.batchLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* 花过钱的标记。用与征标同一个紫，但只描边不填底：
+   填底的已经被「N 条」那个征标占了，两个实心块挤在一行认不出主次。*/
+.aiTag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, #8B5CF6 45%, transparent);
+  border-radius: 5px;
+  color: #8B5CF6;
+  font-size: 9.5px;
+  white-space: nowrap;
 }
 
 .rowBody {

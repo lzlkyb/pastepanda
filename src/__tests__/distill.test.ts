@@ -141,7 +141,8 @@ describe("每日蒸馏·P2 跨天主题", () => {
       mk(3, "2026-09-08", "回收站 UI 的批量删除"),
     ];
     const [a] = buildTopicDrafts(rows);
-    expect(a.title).toContain("3 天里的 3 条");
+    expect(a.title).toContain("回收");
+    expect(a.title).toContain("跨 3 天");
     expect(buildTopicDrafts(rows)[0].title).toBe(a.title);
   });
 
@@ -151,6 +152,33 @@ describe("每日蒸馏·P2 跨天主题", () => {
     const short = tokenize("npm run build");
     const long = tokenize("npm run build 失败了报错说找不到模块请检查依赖是否安装完整");
     expect(overlap(short, long)).toBeGreaterThan(0.5);
+  });
+});
+
+describe("每日蒸馏·标题口径", () => {
+  // 🔴 三张同尺寸的图扁在一起时，`835x116` 与 `图片` 同频，
+  // 而同频按字典序——`'835x116'.localeCompare('图片') === -1`，
+  // 标题会变成 `835x116`。P2 在入口挡过占位串，P1 曾经没挡。
+  it("占位串不能定标题", () => {
+    const rows = [
+      row(1, "微信", "image", "[图片] 835x116"),
+      row(2, "微信", "image", "[图片] 835x116"),
+      row(3, "微信", "image", "[图片] 835x116"),
+    ];
+    const [d] = buildDailyDrafts(rows, D);
+    expect(d.title).not.toContain("835x116");
+  });
+
+  it("全是占位串时退回类型名，不编一个出来", () => {
+    const rows = [
+      row(1, "截图", "image", "[图片] 12x34"),
+      row(2, "截图", "image", "[图片] 56x78"),
+      row(3, "截图", "image", "[图片] 90x12"),
+    ];
+    const [d] = buildDailyDrafts(rows, D);
+    // 没取到有语义的词就用类型名（typeLabel），而不是随便拿一个数字串
+    expect(d.title).not.toMatch(/\d+x\d+/);
+    expect(d.title).toContain("截图");
   });
 });
 

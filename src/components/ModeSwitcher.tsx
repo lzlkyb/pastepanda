@@ -18,7 +18,7 @@ import styles from "./ModeSwitcher.module.css";
 const MODES: { key: AppMode; label: string; tip: string }[] = [
   { key: "record", label: "记录", tip: "剪贴板历史与搜索" },
   { key: "tools", label: "工具", tip: "依次粘贴 / 片段库 / 编码转换等工具" },
-  { key: "knowledge", label: "知识", tip: "知识库：待沉淀与笔记" },
+  { key: "knowledge", label: "知识", tip: "知识库：笔记，以及可以存成笔记的内容" },
 ];
 
 export function ModeSwitcher() {

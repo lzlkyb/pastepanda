@@ -39,6 +39,7 @@ import {
 import { ViewControls, ViewChips, TriRow } from "./ViewControls";
 import { LoadMoreSentinel } from "./LoadMoreSentinel";
 import { REASON_META, REASON_ORDER } from "@/lib/notes/inboxReasons";
+import { useFirstSight } from "@/hooks/useFirstSight";
 import styles from "./KbInboxPanel.module.css";
 
 /** 首屏与每批条数。设计稿 §5-2b 定的 20。 */
@@ -63,8 +64,6 @@ function badgeCount(c: InboxCandidate): string {
   switch (c.reason) {
     case "research":
       return ` ×${c.search_hit_count}`;
-    case "recopy":
-      return ` ×${c.recopy_count}`;
     default:
       return "";
   }
@@ -76,8 +75,6 @@ function signalText(c: InboxCandidate): string {
   switch (c.reason) {
     case "star":
       return `已收藏${from} · ${when}采集`;
-    case "recopy":
-      return `你又原样复制过 ${c.recopy_count} 次${from} · ${when}采集`;
     default:
       return `你搜出来后真的用过 ${c.search_hit_count} 次 · ${when}采集`;
   }
@@ -90,6 +87,8 @@ export function KbInboxPanel() {
   const [loading, setLoading] = useState(false);
   /** 刚忽略掉的那一条，给一个可撤销的窗口。不用 toast（②），就在原位给条提示 */
   const [justDismissed, setJustDismissed] = useState<InboxCandidate | null>(null);
+  // L4：第一次真的有候选时解释一句。空的时候不说（那是 L3，不适用）
+  const showFirstHint = useFirstSight("kb-inbox", total > 0);
   const workspace = useAppStore((s) => s.config.current_workspace);
 
   /** 字段视图（B2 #9）。同笔记侧：**不持久化**，筛选是一次性意图不是偏好。 */
@@ -196,7 +195,7 @@ export function KbInboxPanel() {
       >
         <Inbox size={13} className={styles.bannerIcon} />
         <span className={styles.bannerText}>
-          待沉淀 <b>{total}</b> 条 —— 你反复找回过的内容
+          可存为笔记 <b>{total}</b> 条 —— 你收藏或搜回过的
           {total > BATCH && <span className={styles.bannerHint}>，先看最相关的 {BATCH} 条</span>}
         </span>
         <ChevronDown
@@ -204,6 +203,15 @@ export function KbInboxPanel() {
           className={`${styles.chevron}${expanded ? ` ${styles.chevronOpen}` : ""}`}
         />
       </button>
+
+      {/* L4 首次说明：第一次真的有候选时露一次。不做空态教学——
+          本区空的时候用户没有「点了就不空」的动作（见 UI 规则 L3 的前提）*/}
+      {showFirstHint && (
+        <div className={styles.firstHint}>
+          第一次出现 —— 这里是你<b>收藏过</b>、或者<b>搜出来后真的用过</b>的内容，
+          可以直接存成笔记。存不存都由你，忽略了就不再提。
+        </div>
+      )}
 
       {/* 忽略的撤销条。放在面板内而不是 toast：设计稿§5-4 要求本区永不弹 toast。 */}
       {justDismissed && (

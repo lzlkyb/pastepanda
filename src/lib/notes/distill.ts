@@ -56,6 +56,71 @@ export interface DistillDraft {
    * **不去反解 `content`**（那是展示用的 Markdown，格式一变解析就碎）。
    */
   rows: DayExcerptRow[];
+  /**
+   * 卡片上那一行预览。用的是**真实摘录**，
+   * 不是「已拟好正文」那种每行都一样、占一整行却零信息的恒定文案。
+   */
+  preview: string;
+}
+
+// ── 标题与预览（P1/P2 共用）──────────────────────────
+
+/** 预览行里最多摆几条，每条截到几个字。 */
+const PREVIEW_ITEMS = 3;
+const PREVIEW_CHARS = 20;
+
+/** 按**字符**截（`[...s]`），不是 `slice`——后者会把代理对切成乱码。 */
+function clip(s: string, n: number): string {
+  const cs = [...s];
+  return cs.length <= n ? s : `${cs.slice(0, n).join("")}…`;
+}
+
+/**
+ * 取簇内出现在**最多条目里**的那个词做标题。
+ *
+ * 注意这是**文档频次**：`tokenize` 返回 Set，一条里出现十次也只算一次。
+ * 否则一条特别长的摘录能凭一己之力把标题定下来。
+ */
+function topLabel(items: DayExcerptRow[]): string | undefined {
+  const freq = new Map<string, number>();
+  for (const r of items) {
+    // 🔴 占位串（`[图片] 835x116` 这类）不参与。
+    //
+    // 它们没有语义，却会在「同尺寸图片扎堆」时凭文档频次取胜：
+    // 三张一样的图，`835x116` 与 `图片` 同频，而同频时按字典序——
+    // `'835x116'.localeCompare('图片') === -1`，于是标题变成了 `835x116`。
+    //
+    // ❗ P2 在 `topicClusters` 入口已经挡过一次，但 P1 没有——
+    // 把过滤放在这里而不是调用方，两边才不会再分岔。
+    if (isPlaceholder(r.excerpt)) continue;
+    for (const t of tokenize(r.excerpt)) freq.set(t, (freq.get(t) ?? 0) + 1);
+  }
+  return [...freq.entries()]
+    .filter(([t]) => t.length >= 2)
+    // 同频时按字典序，保证同样的输入每次得到同样的标题
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+}
+
+function previewOf(items: DayExcerptRow[]): string {
+  return items
+    .slice(0, PREVIEW_ITEMS)
+    .map((r) => clip(r.excerpt.trim(), PREVIEW_CHARS))
+    .join(" / ");
+}
+
+/**
+ * AI 成文后的预览：取正文第一行有字的，去掉 Markdown 前缀。
+ *
+ * 不能直接拿 `content.slice()`：模型的正文开头常常是 `## 小标题`，
+ * 预览行里摆一串 `##` 只会让人以为排版坏了。
+ */
+export function previewOfText(text: string): string {
+  const line =
+    text
+      .split("\n")
+      .map((s) => s.replace(/^[#\-*>\s]+/, "").trim())
+      .find((s) => s.length > 0) ?? "";
+  return clip(line, PREVIEW_ITEMS * PREVIEW_CHARS);
 }
 
 /**
@@ -116,7 +181,12 @@ export function buildDailyDrafts(
       const lines = items.map((r) => `- ${hhmm(r.time)} ${r.excerpt}`).join("\n");
       return {
         key,
-        title: `${src} · ${typeLabel} · ${date}`,
+        // 标题取簇内最高频的词（与 P2 同一口径）。
+        // 以前是 `来源 · 类型 · 日期`——那是**分组键**，
+        // 回答的是「怎么归的类」而不是「这堆是什么」。
+        // 没取到词（全是占位串之类）就退回类型名，不编。
+        title: `${topLabel(items) ?? typeLabel} · ${src}`,
+        preview: previewOf(items),
         // 开头那句是给**未来的你**看的：一篇只有 bullet 的笔记，
         // 三个月后根本想不起来当时为什么存它。
         content: `这一天在 **${src}** 里复制了 ${items.length} 条${typeLabel}：\n\n${lines}\n`,
@@ -278,24 +348,18 @@ export function buildTopicDrafts(
 ): DistillDraft[] {
   return topicClusters(rows)
     .map((items) => {
-      const freq = new Map<string, number>();
-      for (const r of items) {
-        for (const t of tokenize(r.excerpt)) freq.set(t, (freq.get(t) ?? 0) + 1);
-      }
-      const top = [...freq.entries()]
-        .filter(([t]) => t.length >= 2)
-        // 同频时按字典序，保证同样的输入每次得到同样的标题
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
       const days = [...new Set(items.map((r) => dayOf(r.time)))].sort();
       const span = `${days[0]} ~ ${days[days.length - 1]}`;
-      const label = top ?? "未命名主题";
+      const label = topLabel(items) ?? "未命名主题";
       const lines = items
         .map((r) => `- ${dayOf(r.time)} ${hhmm(r.time)} ${r.excerpt}`)
         .join("\n");
       return {
         // key 带上跨度：明天再算时它会变，草稿也就该重新问一次
         key: `topic|${label}|${span}`,
-        title: `${label} · ${days.length} 天里的 ${items.length} 条`,
+        // 条数已经在卡片左上的征标里，标题里再说一遍是冗余
+        title: `${label} · 跨 ${days.length} 天`,
+        preview: previewOf(items),
         content: `这 ${days.length} 天（${span}）里反复出现的 **${label}**，共 ${items.length} 条：\n\n${lines}\n`,
         count: items.length,
         source: span,

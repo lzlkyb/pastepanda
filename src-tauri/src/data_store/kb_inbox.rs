@@ -14,7 +14,7 @@ use super::*;
 pub struct InboxCandidate {
     /// 原卡片。直接给前端复用卡片渲染能力（文本预览 / 来源 / 时间）。
     pub item: HistoryItem,
-    /// 入选原因：`star` 收藏 / `research` 找回 / `recopy` 重复复制。
+    /// 入选原因：`star` 收藏 / `research` 找回。
     ///
     /// 由 SQL 的 `reason_expr()` 算，**不在 Rust 里再推一遍**：
     /// 忽略时要把它写进 `kb_inbox_dismissed.reason`，两边各算一遍就会漂。
@@ -50,12 +50,18 @@ pub struct InboxCandidate {
 const SIG_STAR: &str = "h.pinned = 1";
 /// 通路#2 找回。口径已于 2026-09-08 改成「搜完真的用了那条」，并清了存量。
 const SIG_RESEARCH: &str = "COALESCE(h.search_hit_count, 0) >= 2";
-/// 通路#3 重复复制。门槛 3 来自主规划原设计（`copy_count >= 3`）。
-///
-/// 为什么是它而不是别的：**零动作成本**。实测这个库里
-/// 收藏 0 条、手工标签 0 条——所有要求用户多点一下的信号都是空的；
-/// 而「你又原样复制了一次同样的东西」不需要任何额外动作就能拿到。
-const SIG_RECOPY: &str = "COALESCE(h.recopy_count, 0) >= 3";
+// ❌ 通路#3（重复复制 ≥ 3）**已于 2026-09-09 撤销**。
+//
+// 它与每日蒸馏（P1/P2）重叠：一条被反复复制的内容，必然也扎在
+// 当天或跨天的簇里，蒸馏一定会把它卷进去——用户在同一屏看到两遍。
+//
+// 🔴 更根本的理由：它被归错类了。当时把它当成「零成本拿到的强意图」，
+// 但「被复制了 3 次」不是意图，是**分布**。剩下两条通路测的都是
+// **你的动作**（点了星 / 搜出来真用了），而蒸馏整个就是分布。
+// 分界线因此变成一句话：**待沉淀 = 你动过手的；可蒸馏 = 机器看出来的**。
+//
+// ❗ `history.recopy_count` 列与它的累加**保留**：那是一个真实的计数，
+// 仍然给待沉淀的排序选项用；撤的只是「凭它自动入选」这件事。
 // ❌ 通路#5（截图文字量 ≥ 800）**已于 2026-09-08 当天撤销**。
 //
 // 它是四条里唯一一个不问「你做过什么」、只问「它长什么样」的：
@@ -80,27 +86,23 @@ const SIG_RECOPY: &str = "COALESCE(h.recopy_count, 0) >= 3";
 /// ❗ `WHEN` 的顺序就是优先级：一条卡片可能同时满足好几条通路，
 /// 只报最强的那个。顺序必须与 `candidate_where()` 里的 OR 一致。
 ///
-/// 🔴 `ELSE` 分支取 `recopy` 而不是另给一个兑底值：三条通路与
+/// 🔴 `ELSE` 分支直接取 `research` 而不是另给一个兑底值：两条通路与
 /// `candidate_where()` 的 OR 是**同一套**，能进来就必中其一，
 /// 兑底值永远取不到——给了反而多一个筛不出东西的分组。
 fn reason_expr() -> String {
-    format!(
-        "CASE WHEN {SIG_STAR} THEN 'star' \
-              WHEN {SIG_RESEARCH} THEN 'research' \
-              ELSE 'recopy' END"
-    )
+    format!("CASE WHEN {SIG_STAR} THEN 'star' ELSE 'research' END")
 }
 
 /// 候选条件。抽出来：列表与计数必须用**完全相同**的条件，
 /// 否则横幅上写「待沉淀 225 条」而列表里只有 200 条，用户会以为丢了东西。
 ///
-/// 四条信号（任一命中即入选）+ 三个排除。
+/// 两条信号（任一命中即入选）+ 三个排除。
 /// ❗ 占位符用**匿名** `?` 而不是 `?1`：字段视图（B2 #9）要往后面拼不定个数的
 /// 筛选参数，编号绑定下每加一个参数就要重排全部序号——而排错不报错，只是结果静默变错。
 fn candidate_where() -> String {
     format!("
     WHERE h.workspace = ?
-      AND ({SIG_STAR} OR {SIG_RESEARCH} OR {SIG_RECOPY})
+      AND ({SIG_STAR} OR {SIG_RESEARCH})
       -- 带 deleted_at：笔记被删了，那张卡片就又变回「没沉淀过」，该回到收件箱。
       AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.history_id = h.id AND n.deleted_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM kb_inbox_dismissed d WHERE d.history_id = h.id)
@@ -188,7 +190,7 @@ fn push_inbox_filters(
     // 🔴 直接拿 `reason_expr()` 去比，不另写一套等价条件。
     // 旧实现把「找回」翻译成 `h.pinned = 0`，那在只有两条通路时碰巧等价；
     // 加了第三、第四条之后它就错了——而且**不报错**，只是筛出一堆不属于这个原因的。
-    if matches!(o.reason.as_str(), "star" | "research" | "recopy") {
+    if matches!(o.reason.as_str(), "star" | "research") {
         sql.push_str(&format!(" AND ({}) = '{}'", reason_expr(), o.reason));
     }
     match o.pasted.as_str() {
