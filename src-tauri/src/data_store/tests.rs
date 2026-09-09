@@ -7260,15 +7260,15 @@ fn test_待沉淀只列能转笔记的并带上识别文字() {
 }
 
 
-/// 四条入选通路各自都能把一张卡片送进待沉淀，且 `reason` 要报对。
+/// 三条入选通路各自都能把一张卡片送进待沉淀，且 `reason` 要报对。
 ///
 /// 🔴 为什么要挖这条：旧实现把「入选原因」写在**三处**
 ///（`group_expr` / `push_inbox_filters` / 行映射），而行映射那份是
-/// `if item.pinned { "star" } else { "research" }`。加完第三、四条通路后，
-/// 它会把重复复制与截图全报成「找回 ×0」——**不报错，只是界面上说错话**。
+/// `if item.pinned { "star" } else { "research" }`。加完第三条通路后，
+/// 它会把重复复制报成「找回 ×0」——**不报错，只是界面上说错话**。
 /// 所以这里断言的是 `reason`，不只是「在不在列表里」。
 #[test]
-fn test_四条入选通路各自都能入选且原因报对() {
+fn test_三条入选通路各自都能入选且原因报对() {
     let store = make_store();
     let bump = |sql: &str| store.lock_conn().execute(sql, []).unwrap();
 
@@ -7289,7 +7289,9 @@ fn test_四条入选通路各自都能入选且原因报对() {
         .unwrap();
     bump("UPDATE history SET recopy_count = 3 WHERE id = 'c-recopy'");
 
-    // 通路#5 截图文字量 >= 800
+    // ❌ 通路#5（截图文字量）已于 2026-09-08 当天撤销。这里保留一张
+    //    「字很多的截图」，断言它**不再**因为字多而入选——撤销要能被钉住，
+    //    否则以后有人凭「反正字多的截图挺有用」把它加回来。
     let mut shot = make_item("c-shot", "", "2026-08-04 10:00:00", "image");
     shot.content = "img-long.png".to_string();
     store.insert_history(&shot).unwrap();
@@ -7311,10 +7313,13 @@ fn test_四条入选通路各自都能入选且原因报对() {
     assert_eq!(by("c-star").map(|c| c.reason.as_str()), Some("star"));
     assert_eq!(by("c-hit").map(|c| c.reason.as_str()), Some("research"));
     assert_eq!(by("c-recopy").map(|c| c.reason.as_str()), Some("recopy"));
-    assert_eq!(by("c-shot").map(|c| c.reason.as_str()), Some("shot"));
+    assert!(
+        by("c-shot").is_none(),
+        "截图字数不再是入选通路（通路#5 已撤）——字多不等于值得沉淀"
+    );
 
     assert!(by("c-recopy-lo").is_none(), "复制 2 次不该入选（门槛 3）");
-    assert!(by("c-shot-lo").is_none(), "OCR 只有 100 字不该入选（门槛 800）");
+    assert!(by("c-shot-lo").is_none(), "短 OCR 截图同样不该入选");
 
     // 数字要跟着回前端，否则征标只能写「重复用」而说不出几次
     assert_eq!(by("c-recopy").unwrap().recopy_count, 3);

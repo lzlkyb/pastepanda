@@ -11,7 +11,7 @@
  * 于是加两条通路后四处全会把重复复制与截图误报成「找回」——
  * 而那**不报错**，只是界面上静默地说错话。
  */
-import { Star, Search, Repeat, ScanText } from "lucide-react";
+import { Star, Search, Repeat } from "lucide-react";
 import type { InboxReason } from "@/lib/api";
 
 export const REASON_META: Record<
@@ -29,8 +29,7 @@ export const REASON_META: Record<
   star: { label: "收藏", only: "只看收藏", Icon: Star, badge: "badgeStar" },
   research: { label: "找回", only: "只看找回", Icon: Search, badge: "badgeHit" },
   recopy: { label: "重复用", only: "只看重复用的", Icon: Repeat, badge: "badgeRecopy" },
-  shot: { label: "截图", only: "只看截图", Icon: ScanText, badge: "badgeShot" },
 };
 
 /** 按优先级排好的全部原因。顺序与后端 `reason_expr()` 的 `WHEN` 一致。 */
-export const REASON_ORDER: InboxReason[] = ["star", "research", "recopy", "shot"];
+export const REASON_ORDER: InboxReason[] = ["star", "research", "recopy"];

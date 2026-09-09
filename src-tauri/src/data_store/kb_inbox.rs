@@ -14,7 +14,7 @@ use super::*;
 pub struct InboxCandidate {
     /// 原卡片。直接给前端复用卡片渲染能力（文本预览 / 来源 / 时间）。
     pub item: HistoryItem,
-    /// 入选原因：`star` 收藏 / `research` 找回 / `recopy` 重复复制 / `shot` 截图文字量。
+    /// 入选原因：`star` 收藏 / `research` 找回 / `recopy` 重复复制。
     ///
     /// 由 SQL 的 `reason_expr()` 算，**不在 Rust 里再推一遍**：
     /// 忽略时要把它写进 `kb_inbox_dismissed.reason`，两边各算一遍就会漂。
@@ -56,28 +56,38 @@ const SIG_RESEARCH: &str = "COALESCE(h.search_hit_count, 0) >= 2";
 /// 收藏 0 条、手工标签 0 条——所有要求用户多点一下的信号都是空的；
 /// 而「你又原样复制了一次同样的东西」不需要任何额外动作就能拿到。
 const SIG_RECOPY: &str = "COALESCE(h.recopy_count, 0) >= 3";
-/// 通路#5 截图文字量。
-///
-/// ❗ **800 是本文件里唯一一个没有原则依据、纯按分布挑的数**。
-/// 2026-09-08 实测候选池里有字的截图 259 张，中位数 384 字：
-/// ≥300 字 → 166 张，≥500 → 100 张，**≥800 → 43 张**。
-/// 阀值再低一档，待沉淀就会变成图片墙——而**字多 ≠ 值得沉淀**，
-/// 字数只是个弱代理。觉得吵就调高它，只改这一处。
-const SIG_SHOT: &str = "(h.type = 'image' AND EXISTS (
-            SELECT 1 FROM image_ocr_cache o
-             WHERE o.image_path = h.content
-               AND LENGTH(TRIM(COALESCE(o.full_text, ''))) >= 800))";
+// ❌ 通路#5（截图文字量 ≥ 800）**已于 2026-09-08 当天撤销**。
+//
+// 它是四条里唯一一个不问「你做过什么」、只问「它长什么样」的：
+// 其余三条测量**意图**（点了星 / 搜出来用了 / 又复制了一次），
+// 而它测量**体积**。体积预测不了价值——一张 1200 字的报错截图
+// 和一张 1200 字的文档截图，在这条规则眼里一模一样。
+//
+// 🔴 当时为了压住它专门挑了个高阀值（800，实测 +43 张）——
+// **需要靠调阀值压住的信号，本身就是错的信号**。
+// 而且 43 vs 通路#3 的 11，它会把待沉淀变成图片墙；
+// 它又恰好是「一张截图 1:1 变一篇笔记」这个已被判定错误的形态。
+//
+// 截图改走**每日蒸馏（P1）**进知识库：那里是聚合形态
+//（「今天你截了 5 张关于 X 的图」），比单张挤进来有用得多。
+//
+// ❗ 同天做的另外两件与本通路无关，**保留**：
+//   ① 待沉淀加载 OCR（图片终于能转笔记）——那是修 bug
+//   ② 可转性过滤（排掉 file 卡片）
 
 /// 入选原因的**唯一**口径。分组 / 筛选 / 列表行都从这里取。
 ///
 /// ❗ `WHEN` 的顺序就是优先级：一条卡片可能同时满足好几条通路，
 /// 只报最强的那个。顺序必须与 `candidate_where()` 里的 OR 一致。
+///
+/// 🔴 `ELSE` 分支取 `recopy` 而不是另给一个兑底值：三条通路与
+/// `candidate_where()` 的 OR 是**同一套**，能进来就必中其一，
+/// 兑底值永远取不到——给了反而多一个筛不出东西的分组。
 fn reason_expr() -> String {
     format!(
         "CASE WHEN {SIG_STAR} THEN 'star' \
               WHEN {SIG_RESEARCH} THEN 'research' \
-              WHEN {SIG_RECOPY} THEN 'recopy' \
-              ELSE 'shot' END"
+              ELSE 'recopy' END"
     )
 }
 
@@ -90,7 +100,7 @@ fn reason_expr() -> String {
 fn candidate_where() -> String {
     format!("
     WHERE h.workspace = ?
-      AND ({SIG_STAR} OR {SIG_RESEARCH} OR {SIG_RECOPY} OR {SIG_SHOT})
+      AND ({SIG_STAR} OR {SIG_RESEARCH} OR {SIG_RECOPY})
       -- 带 deleted_at：笔记被删了，那张卡片就又变回「没沉淀过」，该回到收件箱。
       AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.history_id = h.id AND n.deleted_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM kb_inbox_dismissed d WHERE d.history_id = h.id)
@@ -178,7 +188,7 @@ fn push_inbox_filters(
     // 🔴 直接拿 `reason_expr()` 去比，不另写一套等价条件。
     // 旧实现把「找回」翻译成 `h.pinned = 0`，那在只有两条通路时碰巧等价；
     // 加了第三、第四条之后它就错了——而且**不报错**，只是筛出一堆不属于这个原因的。
-    if matches!(o.reason.as_str(), "star" | "research" | "recopy" | "shot") {
+    if matches!(o.reason.as_str(), "star" | "research" | "recopy") {
         sql.push_str(&format!(" AND ({}) = '{}'", reason_expr(), o.reason));
     }
     match o.pasted.as_str() {

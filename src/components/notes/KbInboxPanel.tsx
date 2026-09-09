@@ -78,9 +78,6 @@ function signalText(c: InboxCandidate): string {
       return `已收藏${from} · ${when}采集`;
     case "recopy":
       return `你又原样复制过 ${c.recopy_count} 次${from} · ${when}采集`;
-    case "shot":
-      // 字数从已加载的 `ocr_text` 现算，不再让后端多传一列。
-      return `截图里认出 ${(c.item.ocr_text ?? "").trim().length} 个字 · ${when}采集`;
     default:
       return `你搜出来后真的用过 ${c.search_hit_count} 次 · ${when}采集`;
   }

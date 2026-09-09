@@ -18,9 +18,12 @@ import type { InboxViewOpts } from "@/lib/notes/viewOpts";
 /**
  * 入选原因。后端 `reason_expr()` 算好传回，忽略时原样送回去写 dismissed.reason。
  *
- * 四条通路，优先级就是这个顺序（一张卡片可能同时满足好几条，只报最强的）。
+ * 三条通路，优先级就是这个顺序（一张卡片可能同时满足好几条，只报最强的）。
+ *
+ * ❌ 曾有第四条 `shot`（截图文字量），2026-09-08 当天撤销：
+ * 它测量的是体积不是意图，而体积预测不了价值。截图改走每日蒸馏进知识库。
  */
-export type InboxReason = "star" | "research" | "recopy" | "shot";
+export type InboxReason = "star" | "research" | "recopy";
 
 /** 一条待沉淀候选。 */
 export interface InboxCandidate {
