@@ -3,6 +3,7 @@ import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
 import type { KbDevice, KbLastSync } from "@/hooks/useKbSync";
 import { countKbOnline } from "@/lib/kbOnline";
+import styles from "./KbSyncStatusBar.module.css";
 
 /** 「12 秒前」。 */
 function ago(ms: number): string {
@@ -115,36 +116,32 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   // 面板记不住历史，分辨不了两者，所以用 info 调、可一键压掉。
   const diverged = live0.reduce((a, l) => a + l.diverged_buckets, 0);
 
+  const TONE = { bad: styles.rowBad, warn: styles.rowWarn, info: styles.rowInfo } as const;
+
   const row = (key: string, tone: "warn" | "bad" | "info", body: React.ReactNode) => {
     if (dismissed[key]) return null;
-    const color = tone === "bad" ? "var(--danger)"
-      : tone === "warn" ? "var(--orange)" : "var(--text-secondary)";
-    const bg = tone === "bad" ? "var(--red-bg)"
-      : tone === "warn" ? "var(--orange-bg)" : "transparent";
     return (
-      <div key={key} style={{
-        display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 14px",
-        background: bg, borderTop: "1px solid var(--border-color)", fontSize: 12,
-      }}>
-        <div style={{ flex: 1, color }}>{body}</div>
+      <div key={key} className={`${styles.row} ${TONE[tone]}`}>
+        <div className={styles.rowBody}>{body}</div>
         {/* 只压这一次，不写进配置：这些提示本来就该在问题解决后自己消失 */}
-        <button onClick={() => setDismissed((d) => ({ ...d, [key]: true }))}
-          title="本次不再提示" style={{
-            border: "none", background: "transparent", cursor: "pointer",
-            color: "var(--text-muted)", fontSize: 13, lineHeight: 1, padding: 0,
-          }}>×</button>
+        <button
+          type="button"
+          className={styles.dismiss}
+          onClick={() => setDismissed((d) => ({ ...d, [key]: true }))}
+          title="本次不再提示"
+          aria-label="本次不再提示"
+        >
+          ×
+        </button>
       </div>
     );
   };
 
   return (
-    <div style={{ borderBottom: "1px solid var(--border-color)", background: "var(--card-bg)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 14px", fontSize: 12.5 }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: "50%",
-          background: onlineCount > 0 ? "var(--green)" : "var(--text-muted)",
-        }} />
-        <span style={{ flex: 1 }}>
+    <div className={styles.bar}>
+      <div className={styles.status}>
+        <span className={`${styles.dot}${onlineCount > 0 ? ` ${styles.dotOnline}` : ""}`} />
+        <span className={styles.statusText}>
           {newest
             ? <>已与 <b>{name(newest.peer)}</b> 同步 · {ago(newest.at_ms)}</>
             : <>已配对 {devices.length} 台 · {onlineCount > 0 ? "正在等下一轮" : "对方都不在线"}</>}
@@ -152,15 +149,13 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
         {/* 🔴 用真实的抖动值，**不要写死 30 秒**：实际间隔是 20~40 秒，
             写死了盯着表的人会觉得程序坏了 */}
         {newest && newest.next_in_secs > 0 && (
-          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-            下次约 {newest.next_in_secs} 秒后
-          </span>
+          <span className={styles.next}>下次约 {newest.next_in_secs} 秒后</span>
         )}
       </div>
 
       {skew && row("skew", "bad", <>
         <b>{name(skew.peer)} 的系统时间比本机快 {mins(skew.clock_too_far_ahead_ms!)}</b>
-        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+        <div className={styles.detail}>
           <b>你在这台机器上改的笔记会一直判输</b>——它的时间戳永远更大。
           请校准两台机器的系统时间，改完自动恢复。
         </div>
@@ -168,12 +163,11 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
 
       {backlog > 0 && row("conflict", "warn", <>
         <b>有 {backlog} 处冲突副本还没处理</b>
-        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+        <div className={styles.detail}>
           两台设备在同一段时间里各改了同一篇。<b>两个版本都留着了，没有丢。</b>{" "}
-          <button onClick={onSearchConflicts} style={{
-            border: "none", background: "transparent", padding: 0, cursor: "pointer",
-            color: "var(--accent-strong)", fontSize: 12, textDecoration: "underline",
-          }}>查看这 {backlog} 处 →</button>
+          <button type="button" className={styles.linkBtn} onClick={onSearchConflicts}>
+            查看这 {backlog} 处 →
+          </button>
         </div>
       </>)}
 
@@ -183,14 +177,14 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
 
       {lostFiles > 0 && row("truncated", "warn", <>
         <b>有 {lostFiles} 篇没传完</b>
-        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+        <div className={styles.detail}>
           清单里说有、文件却没到，通常是网络抖了一下。下一轮会自动重来。
         </div>
       </>)}
 
       {failedImports > 0 && row("import-failed", "warn", <>
         <b>有 {failedImports} 篇没能存进来</b>
-        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+        <div className={styles.detail}>
           文件收到了，但写入失败——最常见的原因是<b>单篇太大</b>（超过 10MB）。
           同步会一直重试这几篇，在它们进来之前更新的内容不会被跳过。
         </div>
@@ -203,7 +197,7 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
 
       {assetsSkipped > 0 && row("assets-skipped", "warn", <>
         <b>有 {assetsSkipped} 张图没发出去</b>
-        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+        <div className={styles.detail}>
           对方那边这几张会显示成断图。要么是<b>原图已不在本机</b>（图片目录被清过），
           要么是<b>单张超过 10MB</b>。<b>只有这台看得见</b>——对方无从分辨。
         </div>
@@ -213,9 +207,9 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
           写出「之前还好好的」，因为那才是你判断要不要去查的依据 */}
       {broke.map((f) => row(`fail-${f.peer}`, "warn", <>
         <b>连不上 {name(f.peer)}（{ago(f.last_ok_ms)}还好好的）</b>
-        <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>
+        <div className={styles.detail}>
           {f.next_in_secs} 秒后重试。对方可能刚关机、换了网络，或关了这个开关。
-          {f.error && <span style={{ color: "var(--text-muted)" }}>（{f.error}）</span>}
+          {f.error && <span className={styles.muted}>（{f.error}）</span>}
         </div>
       </>))}
 
@@ -224,7 +218,7 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
       {neverOk.length > 0 && row("fail-new", "info", <>
         还没连上 <b>{neverOk.length} 台</b>（{neverOk.map((f) => name(f.peer)).join("、")}），还在重试。
         {neverOk[0].error && (
-          <span style={{ color: "var(--text-muted)" }}>（{neverOk[0].error}）</span>
+          <span className={styles.muted}>（{neverOk[0].error}）</span>
         )}
       </>)}
     </div>

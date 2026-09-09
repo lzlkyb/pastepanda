@@ -456,6 +456,19 @@ export function DailyDistillSection() {
           {drafts.length > 0 && (
             <div className={styles.batchBar}>
               <span className={styles.batchLabel}>以上 {drafts.length} 篇</span>
+              {/* U1 的可听版。看得见的人从按钮上的「存入中 2/5」就知道进度了，
+                  但读屏用户不会去重读一个已经按过、现在又被 disabled 的按钮——
+                  对他们来说那就是「点了一下，然后什么都没发生」。
+                  role="status"（= aria-live: polite）不打断当前朗读，一步一报。
+                  不忙的时候渲染空字串：活区必须**一直在 DOM 里**，
+                  整个节点现插现删的话很多读屏压根不会报。 */}
+              <span className="sr-only" role="status">
+                {adopt
+                  ? `正在存入第 ${adopt.done} 篇，共 ${adopt.total} 篇`
+                  : batch
+                    ? `AI 正在写第 ${batch.done} 篇，共 ${batch.total} 篇`
+                    : ""}
+              </span>
               <button
                 type="button"
                 className={styles.primaryBtn}

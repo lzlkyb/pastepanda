@@ -72,6 +72,23 @@ img { -webkit-user-drag: none; user-select: none; }
   }
 }
 
+/* ===== 只给读屏的文字 =====
+ * 用在「进度/状态只写在按钮文字里」的地方：看得见的人从「存入中 2/5」就知道进度了，
+ * 读屏用户不会去重读一个没焦点的按钮，需要一个 role="status" 的活区把它报出来。
+ * 不用 display:none / visibility:hidden：那两个会连读屏一起屏蔽。 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ===== 键盘导航焦点兜底 =====
  * app.css 里的焦点样式用的是 kebab-case 类名（.icon-btn/.seg-item 等），组件早已
  * 迁到 CSS Modules 的 hash 类名，匹配不到，导致全应用键盘 Tab 导航基本没有焦点指示。

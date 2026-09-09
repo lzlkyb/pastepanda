@@ -160,6 +160,18 @@
      午夜 #18181B 卡片底上仍有 3.76 / 3.68 的对比度（图形元素门槛 3.0）。
      6 套主题同值，所以只在这里写一次；浅色四套因此**零视觉变化**。 */
   --orange-solid: #C54A0A;
+
+  /* ===== 语义色补全（UI 规则 U6）=====
+     U6 说新代码只许用语义名（--warning / --danger）、不许用色名（--orange / --red-bg）。
+     但此前语义名只有**文字色一档**，没有配套的底色与描边。结果是：任何组件
+     只要想做一个「警告底 + 警告字」的徽标，就只能回头去拿 --orange-bg——
+     规则不是被违反的，是根本无法遵守。
+
+     每套主题里补上下面三个名字，**指向已有的同一个值**：
+       --warning-bg / --warning-border  →  --orange-bg / --orange-border
+       --danger-bg                      →  --red-bg
+     取值一个没改，七套主题零视觉变化；色名变量作为存量继续活着，不做大扫除（§10）。
+     --warning 上的对比度已经由 --orange 那行注释验过：orange-on-orange-bg = 4.54:1。 */
 }
 
 /* ===== 主题变量 ===== */
@@ -220,7 +232,9 @@
   /* Toast 已改用玻璃拟态设计（--glass-popover-bg + backdrop-filter + --text-primary），不再需要这套“实心底 toast”的语义色令牌，故删除 --toast-success-* / --toast-error-* / --toast-info-*（共 9 个变量 × 7 套主题） */
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
-  --warning: var(--orange);
+  /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
+  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
   --danger-hover: #B91C1C;
@@ -339,7 +353,9 @@
   --timeline-bg: rgba(9, 9, 11, 0.95);
   --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
   --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
-  --warning: var(--orange);
+  /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
+  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --danger-bg: var(--red-bg);
   --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
   --red-bg: #450A0A; --danger: #F87171;
   --danger-hover: #FCA5A5;
@@ -424,7 +440,9 @@
   --timeline-bg: rgba(242, 247, 245, 0.95);
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
-  --warning: var(--orange);
+  /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
+  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
   --danger-hover: #B91C1C;
@@ -509,7 +527,9 @@
   --timeline-bg: rgba(255, 250, 252, 0.95);
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
-  --warning: var(--orange);
+  /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
+  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525;
   --danger-hover: #B91C1C;
@@ -594,7 +614,9 @@
   --timeline-bg: rgba(255, 250, 242, 0.95);
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
-  --warning: var(--orange);
+  /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
+  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525;
   --danger-hover: #B91C1C;
@@ -685,7 +707,9 @@
   --timeline-bg: rgba(6, 13, 20, 0.95);
   --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
   --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
-  --warning: var(--orange);
+  /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
+  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --danger-bg: var(--red-bg);
   --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
   --red-bg: #3A1525; --danger: #FF6B8A;
   --danger-hover: #FF9DBD;

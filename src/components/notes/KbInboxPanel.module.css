@@ -6,6 +6,30 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+
+  /* ===== 动效 token（U2）=====
+     四档时长里本区块只用得到前两档：颜色 / hover 用「快」，chevron 转向用「标准」。
+     曲线只写了常规那一条：本区块没有「从无到有地进入视野」的元素，用不上减速那条。
+     旧值是随手写的 0.15s / 0.18s，一个都不在四档里。 */
+  --dur-fast: 100ms;
+  --dur-std: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ===== 蒸馏紫（U6 / V3）=====
+     原先是 11 处硬编码 #8B5CF6。它确实**不该**跟主题走——「机器拟的」是一个功能
+     身份，和内容类型色同一类（见《色彩规范》），所以它住在这里而不是 theme.css。
+     但「不跟主题走」不等于「可以抄 11 遍」：抄 11 遍的代价是调色要靠全文替换，
+     而且没有任何一处写着这个紫代表什么。
+
+     两个名字对应两种用法，与 --accent / --accent-strong 是同一套分工：
+       --distill          实色：图标、描边、以及拿去混底色
+       --distill-on-tint  压在浅紫底上的**文字**色
+     后者必须单独一个，不能直接用 --distill：#8B5CF6 压在自己 15% 的浅紫底上，
+     浅色主题只有 3.5:1、深色 3.6:1，都不到正文的 4.5:1（U7 / WCAG SC 1.4.3）。
+     向 --text-primary 混 30% 就够：浅色主题里 text-primary 是深的、把紫压暗，
+     深色主题里是浅的、把紫提亮，**一个式子两边都成立**，算下来 5.5:1 / 5.2:1。 */
+  --distill: #8B5CF6;
+  --distill-on-tint: color-mix(in srgb, var(--distill) 70%, var(--text-primary));
 }
 
 /* ===== 横幅 ===== */
@@ -17,14 +41,14 @@
   width: 100%;
   padding: 7px 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  border-radius: 9px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 12px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .banner:hover {
@@ -49,7 +73,7 @@
 .chevron {
   flex-shrink: 0;
   color: var(--text-muted);
-  transition: transform 0.18s;
+  transition: transform var(--dur-std) var(--ease);
 }
 
 .chevronOpen {
@@ -58,11 +82,14 @@
 
 /* ===== 忽略的撤销条 ===== */
 
+/* padding 从 5px 10px 收到 4px 6px：里面两个按钮要撑到 24px（U7），
+   不收的话整条会从 ~26px 撑到 36px。取4px 还有一个好处：
+   8 − 4 = 4，正好是 `.undoClose` 该用的内圆角（V4 同心圆角）。 */
 .undoBar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
+  gap: 6px;
+  padding: 4px 6px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--card-bg);
@@ -78,34 +105,55 @@
   white-space: nowrap;
 }
 
+/* 🔴 高度必须是 24px。旧值是 `padding: 2px 7px` + 11px 字，算下来约 20px，
+   不到 WCAG SC 2.5.8 的 24×24 下限。而这个按钮比其它按钮更输不起：
+   它只活 6 秒，点不中就没了（悬停暂停只在你已经移到上面之后才算数）。 */
 .undoBtn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 3px;
-  padding: 2px 7px;
+  height: 24px;
+  padding: 0 8px;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--accent);
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
   flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease);
 }
 
 .undoBtn:hover {
   background: var(--hover);
 }
 
+/* 同上：旧值 `font-size:14 / padding:0 2px` 实际只有约 18×14。
+   圆角取 4px 而不是跟按钮一样的 8px：它坐在 `.undoBar` 的右下角里，
+   外圆角 8 − padding 4 = 4（V4）。 */
 .undoClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border: none;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 0;
   flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.undoClose:hover {
+  background: var(--hover);
+  color: var(--text-primary);
 }
 
 /* ===== 候选列表 ===== */
@@ -135,7 +183,7 @@
   padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 8px;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .row:hover {
@@ -149,37 +197,29 @@
   gap: 3px;
   flex-shrink: 0;
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
 }
 
+/* 两个征标都改成了 theme.css 里**已经验过对比度的成对 token**，
+   不再自己拿 color-mix 调一个底色出来。两个理由：
+
+   ① U6：--orange / --orange-solid 是**色名**，新代码不该用。
+   ② 更要紧的是旧写法在深色主题里真的不达标：--orange-solid 固定是 #C54A0A
+     （它本来就是为「白字压实色橙」准备的，六套主题同值），
+     把它当文字色压在深色卡片底上只有 2.65:1；--accent-solid 同理，3.07:1。
+     换成 --warning 与 --accent-strong 后是 6.9:1 / 5.4:1。
+     这不是改名，是修一个只在深色主题里犯的对比度 bug。 */
 .badgeStar {
-  background: color-mix(in srgb, var(--orange, #F59E0B) 18%, transparent);
-  color: var(--orange-solid, #C54A0A);
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 
 .badgeHit {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent-solid, var(--accent));
-}
-
-/* 重复复制。用语义 token `--green`：「又用了一次」是正向信号，
-   与上面两个保持一致（都跟主题走）。 */
-.badgeRecopy {
-  background: color-mix(in srgb, var(--green) 16%, transparent);
-  color: var(--green);
-}
-
-/* 截图。❗ 这里用的是**身份色字面值**而不是主题 token：
-   #EC4899 就是 `CONTENT_TYPE_META.image` 的 `HUE.pink`，
-   征标要与卡片上那个图片类型徽同色（见《PastePanda-色彩规范》：
-   「换个主题后这个颜色应该跟着变吗？」——内容类型的答案是不该）。
-   theme.css 里没有 pink token，也不该为它新开一个。 */
-.badgeShot {
-  background: color-mix(in srgb, #EC4899 15%, transparent);
-  color: #EC4899;
+  background: var(--accent-light);
+  color: var(--accent-strong);
 }
 
 /* ── 今日蒸馏（P1）─────────────────────────────────────────────
@@ -201,33 +241,35 @@
   gap: 6px;
   width: 100%;
   padding: 7px 10px;
-  border: 1px solid color-mix(in srgb, #8B5CF6 30%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, #8B5CF6 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--distill) 30%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--distill) 8%, transparent);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 12px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .distillHead:hover {
-  background: color-mix(in srgb, #8B5CF6 14%, transparent);
-  border-color: color-mix(in srgb, #8B5CF6 45%, transparent);
+  background: color-mix(in srgb, var(--distill) 14%, transparent);
+  border-color: color-mix(in srgb, var(--distill) 45%, transparent);
 }
 
-/* 不复用 `.bannerIcon`：那一个是 accent 色的 */
+/* 不复用 `.bannerIcon`：那一个是 accent 色的。
+   图标用 --distill 而不是 --distill-on-tint：图形元素的门槛是 3:1（SC 1.4.11），
+   实色紫压在 8% 淡紫底上够得到；文字那档的 4.5:1 才需要压暗的那个。 */
 .distillIcon {
-  color: #8B5CF6;
+  color: var(--distill);
   flex-shrink: 0;
 }
 
 /* 征标用 accent 的紫向偏移：蒸馏是「机器拟的」，与待沉淀那几个
    「你做过什么」的征标要一眼区分得开。 */
 .badgeDistill {
-  background: color-mix(in srgb, #8B5CF6 15%, transparent);
-  color: #8B5CF6;
+  background: color-mix(in srgb, var(--distill) 15%, transparent);
+  color: var(--distill-on-tint);
 }
 
 /* ===== 蒸馏卡片（P1/P2 共用）=====
@@ -264,11 +306,11 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--card-bg);
-  transition: border-color 0.15s;
+  transition: border-color var(--dur-fast) var(--ease);
 }
 
 .distillCard:hover {
-  border-color: color-mix(in srgb, #8B5CF6 45%, var(--border-color));
+  border-color: color-mix(in srgb, var(--distill) 45%, var(--border-color));
 }
 
 .cardHead {
@@ -326,8 +368,8 @@
 
 /* 蒸馏那块跟它自己的紫（与 `.badgeDistill` / `.distillHead` 同一个约定）*/
 .firstHintDistill {
-  background: color-mix(in srgb, #8B5CF6 8%, transparent);
-  color: color-mix(in srgb, #8B5CF6 70%, var(--text-primary));
+  background: color-mix(in srgb, var(--distill) 8%, transparent);
+  color: var(--distill-on-tint);
 }
 
 /* 批量条。跟在列表**下面**，且只在展开时出现：
@@ -357,9 +399,9 @@
 .aiTag {
   flex-shrink: 0;
   padding: 0 5px;
-  border: 1px solid color-mix(in srgb, #8B5CF6 45%, transparent);
-  border-radius: 5px;
-  color: #8B5CF6;
+  border: 1px solid color-mix(in srgb, var(--distill) 45%, transparent);
+  border-radius: 4px;
+  color: var(--distill-on-tint);
   font-size: 9.5px;
   white-space: nowrap;
 }
@@ -407,7 +449,7 @@
   height: 24px;
   padding: 0 9px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   /* 实色配白字走 --accent-solid（同 NoteDialog / stackBadge 的结论） */
   background: var(--accent-solid, var(--accent));
   color: #fff;
@@ -415,7 +457,7 @@
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-fast) var(--ease);
   white-space: nowrap;
 }
 
@@ -427,13 +469,13 @@
   height: 24px;
   padding: 0 9px;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
   white-space: nowrap;
 }
 
@@ -476,7 +518,7 @@
   padding: 2px 7px;
   background: var(--section-bg);
   border: 1px solid var(--border-color);
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--text-muted);
   font-size: 11px;
   font-family: inherit;
@@ -515,4 +557,18 @@
   text-align: center;
   font-size: 11.5px;
   color: var(--text-muted);
+}
+
+/* ===== 减少动效（U2）=====
+   要去掉的是**位移与缩放**，不是「把时长调短一点」——前庭疾患者看到转动的
+   chevron 不是「不好看」而是真会不舒服。
+
+   🔴 但只取消 transition，**不取消 `.chevronOpen` 那个 rotate**：
+   那个箭头朝上朝下是「展开了没有」的**状态指示**，把它一并置空就不是少了动画，
+   是把信息删了。现在的行为是：转向立即完成，不做过渡。
+   颜色 / 透明度的过渡不在本条范围内，不动。 */
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
 }

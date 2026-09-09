@@ -1,0 +1,168 @@
+/* KbSyncStatusBar.module.css — 知识库顶栏那条同步状态 + 异常提示。
+
+   这个文件是补上来的：组件原先整屏 17 处内联 `style={{}}`。
+   搬出来不是为了「好看」，是因为内联 style **写不了**下面这些东西——
+     · 拿不到 `:hover` / `:focus-visible` → 里面两个 <button> 键盘用户看不见焦点（U7）
+     · 拿不到媒体查询 → `prefers-reduced-motion` 无处可写（U2）
+     · 无法被主题覆盖 → 语义色形同虚设（U6）
+   也就是说内联 style 是那三条规则集体失效的**根因**，不是风格偏好（U8）。*/
+
+.bar {
+  /* U2：只用四档时长里的「快」这一档（这里全是颜色/底色变化）+ 常规曲线 */
+  --dur-fast: 100ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+/* ===== 第一行：状态 ===== */
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  font-size: 12.5px;
+}
+
+/* 圆点是装饰，不是按钮——它小于 24px 不违反 SC 2.5.8（那条只管点击目标）。
+   它也不是唯一的状态来源：右边那句话已经把「在线/都不在线」写出来了（SC 1.4.1）。*/
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.dotOnline {
+  background: var(--success);
+}
+
+.statusText {
+  flex: 1;
+  min-width: 0;
+}
+
+.next {
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* ===== 提示行 ===== */
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail {
+  margin-top: 3px;
+}
+
+/* 三档语气。底色与文字色全部走**语义名**（U6）：
+   旧代码用的是 --red-bg / --orange / --orange-bg 这些**色名**变量。
+   色名说的是「它是什么颜色」，语义名说的是「它表示什么」——
+   只有后者能跟着主题走，也只有后者能在换主题时不把「警告」变成「装饰」。*/
+.rowBad {
+  background: var(--danger-bg);
+}
+
+.rowWarn {
+  background: var(--warning-bg);
+}
+
+.rowInfo {
+  background: transparent;
+}
+
+/* 🔴 V6：彩色底上的次要文字取**同色相**，不用中性灰。
+   旧代码在橙底上写 `color: var(--text-secondary)`，出来的效果是「脏」而不是「次要」。
+
+   层级安排要注意一点：混向 --text-primary 得到的是**更高**对比度，不是更低。
+   所以标题取混过的那个（最重），正文取纯色相（次重、仍达 AA）——
+   反过来写会让说明比标题还抢眼。
+   一个式子两套主题都成立：浅色主题里 text-primary 是深的、把色相压暗，
+   深色主题里是浅的、把色相提亮。*/
+.rowBad .rowBody {
+  color: color-mix(in srgb, var(--danger) 55%, var(--text-primary));
+}
+
+.rowBad .detail,
+.rowBad .muted {
+  color: var(--danger);
+}
+
+.rowWarn .rowBody {
+  color: color-mix(in srgb, var(--warning) 55%, var(--text-primary));
+}
+
+.rowWarn .detail,
+.rowWarn .muted {
+  color: var(--warning);
+}
+
+/* info 行底色是透明（= 卡片底，不是彩色底），所以这里用灰不违反 V6 */
+.rowInfo .rowBody,
+.rowInfo .detail {
+  color: var(--text-secondary);
+}
+
+.rowInfo .muted {
+  color: var(--text-muted);
+}
+
+/* 「查看这 N 处 →」。
+   `color: inherit` 是故意的：它长在 `.detail` 里，于是跟着所在行的语气色走。
+   旧写法写死了 accent 蓝，压在橙底上是两个色相打架（V3：一屏只一个强调色）。
+   去掉颜色差异后靠什么让人看出它能点？下划线 + 手型——
+   两者都是**静止状态**就看得见的，不靠 hover 才现身（L6）。*/
+.linkBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* 🔴 24×24（U7 / WCAG SC 2.5.8）。旧值是 `font-size:13 / padding:0`，
+   实际只有约 13×13 —— 全应用最小的可点目标之一。*/
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.dismiss:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* 没有 `prefers-reduced-motion` 块是故意的：本文件里没有任何位移与缩放，
+   只有颜色过渡，而颜色过渡不属于 U2 要去掉的那一类。 */
