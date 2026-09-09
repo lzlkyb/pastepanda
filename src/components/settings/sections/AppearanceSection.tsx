@@ -58,31 +58,24 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
                   // emit 广播是幂等的：主窗口自身也会收到，但 applyTheme 重复执行无副作用。
                   emit("theme-changed", { theme: t.key }).catch(() => { /* 广播失败不影响本窗口已生效 */ });
                 }}
-                style={{
-                  width: 64, borderRadius: 10, overflow: "hidden",
-                  border: isActive ? "2px solid var(--accent)" : "2px solid transparent",
-                  cursor: "pointer", background: "none", padding: 0,
-                  boxShadow: isActive ? "0 0 0 3px var(--accent-light)" : "0 2px 6px rgba(0,0,0,0.08)",
-                  transition: "all 0.2s", fontFamily: "inherit",
-                }}>
-                <div style={{
-                  height: 24, background: prev.barBg, display: "flex",
-                  alignItems: "center", padding: "0 6px", gap: 3,
-                  borderBottom: `1px solid ${prev.lineBg}`,
-                }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: prev.accent }} />
-                  <div style={{ fontSize: 8, color: prev.text }}>{t.displayName}</div>
+                className={`${styles.themeCard}${isActive ? ` ${styles.themeCardOn}` : ""}`}
+                title={t.displayName}
+                aria-pressed={isActive}>
+                {/* 内联 style 里只剩下「这个主题长什么颜色」这一类真正因主题而异的值，
+                    尺寸/圆角/阴影这些六张卡完全一样的东西都进了 Settings.module.css。 */}
+                <div
+                  className={styles.themeCardBar}
+                  style={{ background: prev.barBg, borderBottom: `1px solid ${prev.lineBg}` }}
+                >
+                  <div className={styles.themeCardDot} style={{ background: prev.accent }} />
+                  <div className={styles.themeCardName} style={{ color: prev.text }}>{t.displayName}</div>
                 </div>
-                <div style={{
-                  height: 36, background: prev.bodyBg, padding: 6,
-                  display: "flex", flexDirection: "column", gap: 3,
-                  position: "relative",
-                }}>
-                  <div style={{ height: 5, borderRadius: 3, background: prev.barBg, width: "100%", border: `1px solid ${prev.lineBg}` }} />
-                  <div style={{ height: 5, borderRadius: 3, background: prev.lineBg, width: "70%" }} />
-                  <div style={{ height: 5, borderRadius: 3, background: prev.accent, width: "45%" }} />
+                <div className={styles.themeCardBody} style={{ background: prev.bodyBg }}>
+                  <div className={styles.themeCardLine} style={{ background: prev.barBg, width: "100%", border: `1px solid ${prev.lineBg}` }} />
+                  <div className={styles.themeCardLine} style={{ background: prev.lineBg, width: "70%" }} />
+                  <div className={styles.themeCardLine} style={{ background: prev.accent, width: "45%" }} />
                   {t.key === "blossom" && (
-                    <span style={{ position: "absolute", right: 4, bottom: 2, fontSize: 10, lineHeight: 1 }}>💗</span>
+                    <span className={styles.themeCardHeart}>💗</span>
                   )}
                 </div>
               </button>

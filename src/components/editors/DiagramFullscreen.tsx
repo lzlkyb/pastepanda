@@ -95,7 +95,7 @@ export function DiagramFullscreen({
     }
   }, [aiPrompt, toast]);
 
-  const exportAs = useDiagramExport(canvasRef);
+  const [exportAs, exporting] = useDiagramExport(canvasRef);
 
   return (
     <FullscreenShell
@@ -127,7 +127,7 @@ export function DiagramFullscreen({
           <button className={editorStyles.ghostBtn} onClick={copyMermaid} title="复制 Mermaid 源码">
             <FileCode size={14} /> Mermaid
           </button>
-          <ExportMenu onExport={exportAs} />
+          <ExportMenu onExport={exportAs} exporting={exporting} />
         </>
       }
     >

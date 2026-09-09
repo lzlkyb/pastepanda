@@ -256,6 +256,9 @@ export async function noteGet(id: string): Promise<Note | null> {
  * 笔记列表，`updated_at` 降序。
  *
  * `folderFilter` / `tagIds` 是**交集**关系（设计稿 §4）；文件夹取具体 id 时含全部后代。
+ *
+ * 🔴 失败返回 `null` 而**不是** `[]`，理由同 {@link noteSearch}：
+ *   空数组会被列表渲染成「还没有笔记」，把「读不出来」伪装成「你库里没有」。
  */
 export async function noteList(
   opts: {
@@ -266,7 +269,7 @@ export async function noteList(
     limit?: number;
     offset?: number;
   } = {},
-): Promise<Note[]> {
+): Promise<Note[] | null> {
   try {
     return await invoke<Note[]>("note_list", {
       folderFilter: opts.folderFilter ?? "all",
@@ -277,7 +280,8 @@ export async function noteList(
     });
   } catch (e) {
     logger.error("获取笔记列表失败", e);
-    return [];
+    toastActionFailed("读取笔记列表", e);
+    return null;
   }
 }
 
@@ -359,6 +363,13 @@ export async function fetchNoteHistoryIds(): Promise<string[]> {
  *
  * **筛选条件会叠上**：选着文件夹搜索时，用户的预期是「在这个文件夹里搜」，
  * 而不是结果突然跳出当前范围。
+ *
+ * 🔴 **失败返回 `null`，不是 `[]`**（规则 #15.3）。
+ *   这条路原先跟问答那条一样踩了同一个坑：catch 成空数组之后，列表只会判
+ *   `notes.length === 0`，于是 FTS 索引坏 / 库被锁住时用户读到的是
+ *   「没找到匹配的笔记 / 换个词试试」——**把检索失败伪装成「你库里没这篇」**。
+ *   后果不是「少看到点东西」，而是用户得出「我没写过」的结论，然后去重写一遍。
+ *   `null` 让调用方分得出「搜到了 0 条」与「这次没搜成」，前者说换个词、后者给重试。
  */
 export async function noteSearch(
   keyword: string,
@@ -368,7 +379,7 @@ export async function noteSearch(
     view?: NoteViewOpts;
     limit?: number;
   } = {},
-): Promise<Note[]> {
+): Promise<Note[] | null> {
   try {
     return await invoke<Note[]>("note_search", {
       keyword,
@@ -379,7 +390,8 @@ export async function noteSearch(
     });
   } catch (e) {
     logger.error("搜索笔记失败", e);
-    return [];
+    toastActionFailed("搜索笔记", e);
+    return null;
   }
 }
 
@@ -389,9 +401,11 @@ export async function noteSearch(
  * 与 {@link noteSearch} 分开是必须的：那边是 AND 语义，一整句问题丢进去
  * 零命中是必然的（理由见后端 `question_to_or_expr` 的注释）。
  *
- * 🔴 **故意让异常抛出去**，不像 {@link noteSearch} 那样 catch 成 `[]`：
- * 问答里的空数组会被展示成「知识库中没有相关笔记」——把检索失败
- * 伪装成「你库里没这个」是个**看不出来的错答案**（规则 #15.3）。
+ * 🔴 **故意让异常抛出去**（而不是吞成空数组）：问答里的空数组会被展示成
+ * 「知识库中没有相关笔记」——把检索失败伪装成「你库里没这个」是个
+ * **看不出来的错答案**（规则 #15.3）。
+ * 这里比 {@link noteSearch} 更进一步直接抛：问答的调用方本来就要 try/catch
+ * 去区分「模型没答」与「压根没检索到」，多一层 `null` 反而是第二种表示法。
  */
 export async function noteSearchRelevant(
   question: string,

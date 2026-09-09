@@ -222,7 +222,10 @@ export function ProfileDialog() {
                           内容领域
                         </div>
                         {profile.domains.length === 0 ? (
-                          <div className={styles.empty}>暂无数据</div>
+                          // 这一块靠**系统从你的用法里算**，不是你点一下就能填上的，
+                          // 所以不给「下一步」，只把「这里会出现什么」说清楚（L3 的第二类情形）。
+                          // 「暂无数据」两件都没说，看起来还像是图坏了。
+                          <div className={styles.empty}>还看不出来——用上一阵子，这里会显示你常处理的内容类型</div>
                         ) : (
                           <div className={styles.donutWrap}>
                             <div className={styles.donut} style={donutStyle ?? undefined}>

@@ -537,7 +537,8 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
             {fileInfo === null
               ? "检查中…"
               : fileExists
-                ? <><Check size={11} style={{ marginRight: 2, color: "var(--green)" }} /> 文件正常</>
+                // 语义名统一：--green 是色名，换成 --success（U6：新代码只用语义名）
+                ? <><Check size={11} style={{ marginRight: 2, color: "var(--success)" }} /> 文件正常</>
                 : "⚠ 已移动或不存在"}
           </div>
         </div>
@@ -649,20 +650,38 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
       const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
       return idx >= 0 ? p.slice(0, idx) : p;
     }));
-    try {
-      let opened = 0;
-      for (const p of existing) {
-        const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
-        const dir = idx >= 0 ? p.slice(0, idx) : p;
-        if (dirs.has(dir)) {
-          dirs.delete(dir);
-          await invoke("open_file_location", { path: p });
-          opened++;
-        }
+    // try 收进循环体：原来整个循环被一个 try 包着，第 3 个失败就中断，
+    // 前 2 个已经真的开出了资源管理器窗口，提示却只说「无法打开文件夹」——
+    // 屏幕上凭空多出两个窗口，而提示说的是没打开。
+    let opened = 0;
+    let failedTotal = 0;
+    let streak = 0; // 连续失败次数
+    let aborted = false;
+    let lastErr: unknown = null;
+    for (const p of existing) {
+      const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+      const dir = idx >= 0 ? p.slice(0, idx) : p;
+      if (!dirs.has(dir)) continue;
+      dirs.delete(dir);
+      try {
+        await invoke("open_file_location", { path: p });
+        opened++;
+        streak = 0;
+      } catch (e) {
+        lastErr = e;
+        failedTotal++;
+        streak++;
+        // 连续 3 次失败多半是系统级故障（资源管理器挂了），
+        // 再跑下去只会白试 N 次，直接短路
+        if (streak >= 3) { aborted = true; break; }
       }
+    }
+    if (failedTotal === 0) {
       toast(`已打开 ${opened} 个文件夹`, "success");
-    } catch (e) {
-      toast(errText(e, "无法打开文件夹"), "error");
+    } else if (opened === 0) {
+      toast(errText(lastErr, "无法打开文件夹"), "error");
+    } else {
+      toast(`已打开 ${opened} 个文件夹，${failedTotal} 个失败${aborted ? "（连续失败已中止）" : ""}`, "info");
     }
   }, [paths, infoMap, toast]);
 

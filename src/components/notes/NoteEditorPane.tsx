@@ -59,8 +59,10 @@ export function NoteEditorPane({
       wikiLinkCompletion(async () => {
         // 只拉一次（缓存在 wikiLinkCompletion 里）。200 条封顶：
         // 候选最多展示 20 条，拉全库只是白花 IPC。
+        // 拉失败返 null（api 层已弹 toast）。这里降级成空候选表而不再报一次：
+        // 它只是 `[[` 的补全提示，没提示也不阻断输入，而弹两遍错反而吵。
         const notes = await noteList({ limit: 200 });
-        return notes.map((n) => n.title).filter(Boolean);
+        return (notes ?? []).map((n) => n.title).filter(Boolean);
       }),
     ],
     [],

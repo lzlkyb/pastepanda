@@ -32,9 +32,12 @@
   flex-shrink: 0;
 }
 
+/* 高度 24px（SC 2.5.8 最小点击靶区）。
+   注意：头部那三条约束讲的全是**宽度**（138px 总宽），高度不在其中；
+   border-radius 仍为 7px：它是按 .modes 的 9px 减 2px padding 算出的同心圆角，跟高度无关。 */
 .mode {
   position: relative;
-  height: 22px;
+  height: 24px;
   padding: 0 9px;
   border: none;
   border-radius: 7px;

@@ -302,12 +302,17 @@ export function TopBar({ onSettings, settingsOpen = false }: {
 
         {/* Tab 区域 */}
         <div className={styles.tabsArea} data-tauri-drag-region="false">
+          {/* 改成按钮而不是一段死文字：计数失败常常只是一次性超时，
+              只报错不给重试入口的话用户只能重启窗口。 */}
           {countsError && (
-            <div className={styles.countsErrorHint} title="统计数据加载失败">
-              <span style={{ fontSize: 10, color: "var(--danger)", display: "flex", alignItems: "center", gap: 4, padding: "2px 0" }}>
-                ⚠ 计数获取失败
-              </span>
-            </div>
+            <button
+              type="button"
+              className={styles.countsErrorHint}
+              onClick={refreshCounts}
+              title="统计数据加载失败，点击重试"
+            >
+              ⚠ 计数获取失败，点击重试
+            </button>
           )}
           <AnimatePresence mode="wait">
             {tabStyle === "segmented" ? (

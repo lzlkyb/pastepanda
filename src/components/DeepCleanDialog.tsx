@@ -61,6 +61,11 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
   // ── 实时计数 ──
   const [count, setCount] = useState(0);
   const [counting, setCounting] = useState(false);
+  // 统计失败标志：原来 catch 里直接 setCount(0)，界面会斩钉截铁地报「0 / 条记录符合条件」
+  // 且按钮变灰——用户合理地得出「没旧图片可清」，而真实情况是那条 COUNT 查询挂了。
+  const [countErr, setCountErr] = useState(false);
+  /** 重试计数器：改变它即重跑下方的计数 effect（条件未变也能重查） */
+  const [retryTick, setRetryTick] = useState(0);
 
   // ── 来源下拉数据（复用侧边栏聚合计数，后端 GROUP BY 全量统计） ──
   // sourceIcon 传给 SourceBadge，真实图标模式下可取到应用图标
@@ -75,6 +80,8 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewItems, setPreviewItems] = useState<HistoryItem[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // 同理：预览加载失败不能显示成「没有匹配的记录」
+  const [previewErr, setPreviewErr] = useState(false);
 
   const [cleaning, setCleaning] = useState(false);
 
@@ -85,8 +92,10 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
     setItemType("all");
     setSource("all");
     setCount(0);
+    setCountErr(false);
     setPreviewOpen(false);
     setPreviewItems([]);
+    setPreviewErr(false);
     setSrcOpen(false);
     let cancelled = false;
     (async () => {
@@ -113,22 +122,24 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
     if (!open) return;
     setPreviewOpen(false);
     setPreviewItems([]);
+    setPreviewErr(false);
     setCounting(true);
     let cancelled = false;
     (async () => {
       try {
         const n = await countHistoryConditions({ beforeDays: days, itemType, source });
-        if (!cancelled) setCount(n);
+        if (!cancelled) { setCount(n); setCountErr(false); }
       } catch (e) {
         logger.warn("统计匹配记录数失败", e);
-        if (!cancelled) setCount(0);
+        // 标上 countErr：下方改显「统计失败 + 重试」，而不是一个可信的大号 0
+        if (!cancelled) { setCount(0); setCountErr(true); }
       } finally {
         if (!cancelled) setCounting(false);
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, condKey]);
+  }, [open, condKey, retryTick]);
 
   // Esc 关闭。走公共 hook：原来这里是普通冒泡监听，不阻断，
   // 而本弹窗是从设置页打开的——App 那条 Esc 链会跟着把**整个设置页**关掉。
@@ -175,23 +186,30 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
   }, [srcOpen]);
 
   // 展开 / 收起预览（展开时懒加载命中记录前 50 条）
-  const togglePreview = useCallback(async () => {
-    if (previewOpen) {
-      setPreviewOpen(false);
-      return;
-    }
-    setPreviewOpen(true);
+  /** 拉取预览（单独抽出来，为了失败后能原地「重试」而不用先收起再展开） */
+  const loadPreview = useCallback(async () => {
     setPreviewLoading(true);
+    setPreviewErr(false);
     try {
       const items = await previewHistoryConditions({ beforeDays: days, itemType, source }, 50);
       setPreviewItems(items);
     } catch (e) {
       logger.warn("加载预览失败", e);
       setPreviewItems([]);
+      setPreviewErr(true); // 不再伪装成「没有匹配的记录」
     } finally {
       setPreviewLoading(false);
     }
-  }, [previewOpen, days, itemType, source]);
+  }, [days, itemType, source]);
+
+  const togglePreview = useCallback(() => {
+    if (previewOpen) {
+      setPreviewOpen(false);
+      return;
+    }
+    setPreviewOpen(true);
+    void loadPreview();
+  }, [previewOpen, loadPreview]);
 
   // 执行清理（弹窗本身即确认流程：大数字 + 预览，不再二次确认）
   const handleClean = useCallback(async () => {
@@ -318,23 +336,42 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
                     <span className={styles.matchNum} style={{ color: "var(--text-muted)" }}>
                       <Loader2 size={22} className="spin-icon" />
                     </span>
+                  ) : countErr ? (
+                    /* 统计挂了就不要拿 0 冒充：画一个破折号，后面跟「统计失败」与重试 */
+                    <span className={styles.matchNum} style={{ color: "var(--danger)" }}>—</span>
                   ) : (
                     <span className={styles.matchNum}>{count}</span>
                   )}
                   <div className={styles.matchMeta}>
-                    <div className={styles.matchLabel}>条记录符合条件</div>
-                    <div className={styles.matchDesc}>自动跳过置顶记录 · 删除后可 Ctrl+Z 撤销</div>
+                    <div className={styles.matchLabel}>{countErr ? "统计失败" : "条记录符合条件"}</div>
+                    <div className={styles.matchDesc}>
+                      {countErr
+                        ? "没能算出命中条数，这不代表没有符合条件的记录，请重试"
+                        : "自动跳过置顶记录 · 删除后可 Ctrl+Z 撤销"}
+                    </div>
                   </div>
-                  <button className={styles.previewLink} onClick={() => void togglePreview()}>
-                    {previewOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    {previewOpen ? "收起" : "预览"}
-                  </button>
+                  {countErr ? (
+                    <button className={styles.previewLink} onClick={() => setRetryTick((t) => t + 1)}>
+                      重试
+                    </button>
+                  ) : (
+                    <button className={styles.previewLink} onClick={togglePreview}>
+                      {previewOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      {previewOpen ? "收起" : "预览"}
+                    </button>
+                  )}
                 </div>
 
                 {previewOpen && (
                   <div className={styles.previewList}>
                     {previewLoading ? (
                       <div className={styles.previewEmpty}>加载中…</div>
+                    ) : previewErr ? (
+                      /* 「没有匹配的记录」拆成两种情形：真的一条没命中 vs 查询本身失败 */
+                      <div className={styles.previewEmpty} style={{ color: "var(--danger)" }}>
+                        预览加载失败{" "}
+                        <button className={styles.previewLink} onClick={() => void loadPreview()}>重试</button>
+                      </div>
                     ) : previewItems.length === 0 ? (
                       <div className={styles.previewEmpty}>没有匹配的记录</div>
                     ) : (
@@ -362,9 +399,10 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
                 <button
                   className={`btn-danger ${styles.dangerBtn}`}
                   onClick={() => void handleClean()}
-                  disabled={count <= 0 || counting || cleaning}
+                  disabled={count <= 0 || counting || cleaning || countErr}
                 >
-                  {cleaning ? "清理中…" : `清理 ${count} 条记录`}
+                  {/* 统计失败时不能写「清理 0 条记录」——那会把故障读成结论 */}
+                  {cleaning ? "清理中…" : countErr ? "无法清理（统计失败）" : `清理 ${count} 条记录`}
                 </button>
               </div>
             </motion.div>

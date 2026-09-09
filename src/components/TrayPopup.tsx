@@ -558,8 +558,12 @@ export function TrayPopup() {
       ) : dataLoaded ? (
         <div className="tray-popup-cards" style={{ justifyContent: "center", opacity: 0.5 }}>
           <div className="tray-popup-card">
-            <div className="card-value" style={{ fontSize: 12, color: "var(--text-muted)" }}>暂无数据</div>
-            <div className="card-label">请检查数据库</div>
+            {/* ❗ 这不是空态而是**错误态**：空库会回一份全是 0 的 stats，
+                只有 invoke 抛错或 `data.stats` 为空时才走到这里。
+                旧文案「请检查数据库」不是人话：用户不知道「检查数据库」是个什么动作，
+                而且它把一个读取失败说成了像是数据坏了（U3-错误态）。 */}
+            <div className="card-value" style={{ fontSize: 12, color: "var(--text-muted)" }}>读不到统计</div>
+            <div className="card-label">打开主窗口再试试</div>
           </div>
         </div>
       ) : null}
@@ -613,7 +617,9 @@ export function TrayPopup() {
         </>
       ) : (
         <div className="tray-popup-section-label" style={{ justifyContent: "center", padding: "10px 0", opacity: 0.6 }}>
-          暂无最近记录
+          {/* L3：空态要答「这里会出现什么」与「怎么让它出现」。
+              这一条答得出来：用户复制一下就不空了，所以得说。 */}
+          还没有记录 · 复制点什么就会出现在这里
         </div>
       )}
 

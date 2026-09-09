@@ -531,6 +531,11 @@ export function KnowledgeView() {
               {q.notes.length === 0 ? (
                 <NoteListEmpty
                   loading={q.loading}
+                  /* 查询没跑成时不能跟「搜了 0 条」共用一个空态（详见 useNoteQuery.loadError）。
+                     重试直接用 refreshAll：列表读不出来时侧栏计数多半也是旧的，
+                     只重拉列表会留下一半过期数据；也不必为此新开一个只用一次的入口。 */
+                  loadError={q.loadError}
+                  onRetry={q.refreshAll}
                   keyword={q.keyword}
                   folderFilter={q.folderFilter}
                   /* 空态的主动作走与面包屑那个⊕ / 搜索框那个✕ **完全相同**的入口，

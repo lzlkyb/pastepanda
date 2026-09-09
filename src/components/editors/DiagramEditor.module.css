@@ -60,6 +60,14 @@
 .ghostBtn:hover {
   background: var(--hover, #e8ecf2);
 }
+/* 导出进行中的置忙态：必须看得出来不可点，否则用户只会觉得"点歪了"而再点一次 */
+.ghostBtn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.ghostBtn:disabled:hover {
+  background: var(--card-bg, #fff);
+}
 
 .exportWrap {
   position: relative;

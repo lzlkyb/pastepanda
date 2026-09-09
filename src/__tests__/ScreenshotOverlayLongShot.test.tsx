@@ -64,8 +64,11 @@ async function clickLongShot(): Promise<void> {
  * ⚠️ 必须发：实时拼接循环的终止权**完全在用户手里**（微信就是这样），
  * 既没有屏数上限也没有总时长上限。测试里不发 stop/abort 就会一直采样。
  */
-async function runLongShot(end: "stop" | "abort" = "stop"): Promise<void> {
-  await clickLongShot();
+/**
+ * 收尾半段。从 `runLongShot` 里拆出来，是为了让需要断言「开截那一刻」的用例
+ * 能在中间插一脚（见「全局 Esc 被占用」那条）。
+ */
+async function finishLongShot(end: "stop" | "abort" = "stop"): Promise<void> {
   await env.emitBackend(LONGSHOT_CONTROL, end);
   // ❌ 不能用固定 sleep 等它收尾：循环闲置时会 sleep(200) 降速（见 idleSpins），
   // 全量并行跑时这一觉会被拖得更长 —— 固定等 260ms 在空机器上够、在负载下必挂。
@@ -75,6 +78,11 @@ async function runLongShot(end: "stop" | "abort" = "stop"): Promise<void> {
     await flush(2);
   }
   await flush(8);
+}
+
+async function runLongShot(end: "stop" | "abort" = "stop"): Promise<void> {
+  await clickLongShot();
+  await finishLongShot(end);
 }
 
 describe("启动准备", () => {
@@ -104,9 +112,18 @@ describe("启动准备", () => {
 
   it("全局 Esc 被占用时明确告知，但不阻断长截图", async () => {
     env.setCommand("arm_longshot_escape", () => false);
-    await runLongShot();
+    await clickLongShot();
 
+    // 🔴 断言必须做在**开截那一刻**，不能放到整个流程跑完之后。
+    //
+    // 截图窗的 toast 是**单槽**的，后一条会盖掉前一条。旧版把这句断言写在
+    // `runLongShot()` 之后能过，只是因为那时候**没有别的消息说话**——
+    // 一旦给拼接质量补上回执（“有几段只勉强对上”）它就挂了。
+    // 而那个覆盖本身是对的：长截图跑完的那一刻，Esc 能不能用已经不重要了。
     expect(screen.getByText(/全局 Esc 被占用/)).toBeTruthy();
+
+    await finishLongShot();
+    // “不阻断”：提示归提示，截图窗该隐还是要隐、流程该跑还是要跑。
     expect(env.countInvoke("hide_screenshot_window")).toBe(1);
   });
 

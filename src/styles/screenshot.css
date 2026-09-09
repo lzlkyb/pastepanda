@@ -800,6 +800,20 @@ body {
   box-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
 }
+/* 热区扩张：视觉保持 8px（含边框实际 11×11），可点区域撑到 24×24。
+   画一个 40×24 的小矩形标注再想调大小时，八个把手中心两两只隔 20px，
+   11px 的裸把手实测就是"要点好几次才抓得到对的那个"。
+   相邻热区会重叠，但 onSelHandleDown/onAnnotHandleDown 走的是元素自身的 mousedown
+   （不是坐标判定），重叠时由堆叠顺序决定，行为可预期。 */
+.sel-handle::before {
+  content: "";
+  position: absolute;
+  left: -8px; top: -8px;
+  width: 24px; height: 24px;
+}
+/* 角把手 z-index 提一档：四个角能同时改两个方向，使用频率高于边把手，
+   不提的话重叠区会被后渲染的边把手吃掉。 */
+.h-nw, .h-ne, .h-se, .h-sw { z-index: 43; }
 .h-nw { left: -4px; top: -4px; cursor: nwse-resize; }
 .h-n  { left: 50%; top: -4px; margin-left: -4px; cursor: ns-resize; }
 .h-ne { right: -4px; top: -4px; cursor: nesw-resize; }
@@ -951,7 +965,18 @@ body {
   animation: ocrSpin 0.8s linear infinite;
 }
 .ls-txt { flex: 1; min-width: 0; }
-.ls-main { white-space: nowrap; }
+/* min-width:0 + 省略号：非 ok 时行上会多出一段质量文字（.ls-qtxt）。
+   .ls-bar 是 overflow:hidden + 按钮 flex-shrink:0，横向空间本来就紧张；
+   不允许截断的话多出的字会把「已拼 N 段」挤成半个字，这里让它优雅地省略。 */
+.ls-main { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* 拼接质量的**文字**载体：颜色不是唯一通道（旧实现只有 .ls-dot 的 background 在变）。
+   只在 warn/bad 时渲染，所以不写 .ok 规则。 */
+.ls-qtxt {
+  margin-right: 6px; font-weight: 600;
+  font-size: 10.5px; vertical-align: middle;
+}
+.ls-qtxt.warn { color: #FCD34D; }
+.ls-qtxt.bad { color: #F87171; }
 /* 拼接质量三色点（学 ShareX 的绿/黄/红）。
    带 title 属性给文字解释 —— 颜色自己说不清「黄到底意味着什么」。 */
 .ls-dot {
@@ -977,7 +1002,6 @@ body {
 .ls-btn.abort:hover { background: color-mix(in srgb, var(--danger, #F87171) 15%, transparent); }
 .ls-btn.off { opacity: 0.4; cursor: not-allowed; }
 .ls-btn.off:hover { background: transparent; }
- color-mix(in srgb, var(--accent, #6366F1) 20%, transparent); }
 
 
 /* 橡皮范围圈层：叠在标注画布之上，只显示一个跟随鼠标的圆。

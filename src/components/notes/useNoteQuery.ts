@@ -55,6 +55,14 @@ export function useNoteQuery() {
   const [groupCounts, setGroupCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  /**
+   * 上一次查询**没查成**（`noteList` / `noteSearch` 返回 null）。
+   *
+   * 🔴 它必须与「查成了但 0 条」分开：两者在 `notes.length === 0` 上长得一模一样，
+   *   而空态说的话截然相反——一个是「换个词试试」，一个是「没读出来，重试」。
+   *   合成一个的后果是把检索失败伪装成「你库里没这篇」（同 api 层那段红字）。
+   */
+  const [loadError, setLoadError] = useState(false);
   /** 数据版本号。侧栏「今日速记」区自己拉数据，靠它知道什么时候该重拉（B2 #3） */
   const [version, setVersion] = useState(0);
 
@@ -129,6 +137,7 @@ export function useNoteQuery() {
       if (ff === "trash") {
         setNotes([]);
         setGroupCounts(new Map());
+        setLoadError(false);
         setLoading(false);
         return;
       }
@@ -142,6 +151,17 @@ export function useNoteQuery() {
         noteCountFiltered({ folderFilter: ff, tagIds: tids, view: v }),
         noteGroupCounts({ folderFilter: ff, tagIds: tids, view: v }),
       ]);
+      // null = 这次没查成（api 层已弹过 toast）。清列表并挂错误态，
+      // 由 NoteListEmpty 说人话 + 给重试。**不保留旧结果**：旧结果配着新关键词
+      // 更像是「搜出来的就是这些」，比空着还误导。
+      if (rows === null) {
+        setNotes([]);
+        setGroupCounts(new Map());
+        setLoadError(true);
+        setLoading(false);
+        return;
+      }
+      setLoadError(false);
       setNotes(rows);
       setTotal(cnt);
       setGroupCounts(groups);
@@ -182,7 +202,9 @@ export function useNoteQuery() {
           limit: PAGE,
           offset: notes.length,
         });
-    setNotes((cur) => (kwTrim ? rows : [...cur, ...rows]));
+    // 加载更多失败：已加载的那些还在屏幕上，别把它们清掉——
+    // 这一步的失败范围只是「下一页」，api 层的 toast 已经说了。
+    if (rows !== null) setNotes((cur) => (kwTrim ? rows : [...cur, ...rows]));
     setLoadingMore(false);
   }, [folderFilter, keyword, loading, loadingMore, notes.length, view, tagIds]);
 
@@ -247,6 +269,7 @@ export function useNoteQuery() {
     groupCounts,
     loading,
     loadingMore,
+    loadError,
     version,
     // 筛选态
     keyword,

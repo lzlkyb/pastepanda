@@ -777,6 +777,14 @@
   opacity: 1;
 }
 
+/* 自动保存失败态：用语义色令牌 --danger，不用 --red-bg 那套色名。
+   opacity 拉满，否则跟旁边 0.8 的普通状态项混在一起看不出来。*/
+.statusFailed {
+  color: var(--danger, #d82525);
+  opacity: 1;
+  font-weight: 600;
+}
+
 /* ─── JSON 结构树预览（方案 B · 卡片化文档风）─── */
 
 .jsonTree {

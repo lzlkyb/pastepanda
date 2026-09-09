@@ -567,7 +567,7 @@
 .cardInlineVisible ~ .cardTime,
 .cardWrap:has(.cardInlineVisible) .cardTime {
   opacity: 0;
-  transition: opacity 100ms cubic-bezier(0.2, 0, 0, 1);
+  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .cardInlineBtn {
@@ -1110,8 +1110,8 @@
   font-weight: 500;
   color: var(--text-primary);
   /* U2：四档时长的「快」。不写 `all`——这里只需要底色与描边动。 */
-  transition: background 100ms cubic-bezier(0.2, 0, 0, 1),
-    border-color 100ms cubic-bezier(0.2, 0, 0, 1), color 100ms cubic-bezier(0.2, 0, 0, 1);
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
   white-space: nowrap;
   user-select: none;
   font-family: inherit;

@@ -24,7 +24,14 @@ const ITEMS: { kind: ExportKind; label: string }[] = [
   { kind: "panda", label: "💾 PastePanda 文件" },
 ];
 
-export function ExportMenu({ onExport }: { onExport: (kind: ExportKind) => void }) {
+export function ExportMenu({
+  onExport,
+  exporting = false,
+}: {
+  onExport: (kind: ExportKind) => void;
+  /** 导出进行中：toPng 在中等规模流程图上是秒级，不置忙的话界面全程静止，用户会再点一次 */
+  exporting?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -61,10 +68,12 @@ export function ExportMenu({ onExport }: { onExport: (kind: ExportKind) => void 
         className={styles.ghostBtn}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="导出为…"
+        title={exporting ? "正在导出…" : "导出为…"}
+        disabled={exporting}
+        aria-busy={exporting}
         onClick={() => setOpen((v) => !v)}
       >
-        <Download size={14} /> 导出
+        <Download size={14} /> {exporting ? "导出中…" : "导出"}
       </button>
 
       {open && (

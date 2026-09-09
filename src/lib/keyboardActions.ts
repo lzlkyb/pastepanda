@@ -26,7 +26,8 @@ export type DialogId =
   | "batchReplace"
   | "configDiff"
   | "shortcuts"
-  | "moveToGroup";
+  | "moveToGroup"
+  | "pinnedPanel";
 
 export type KeyAction =
   /** 不关我们的事：不拦截，也不 preventDefault。 */
@@ -91,6 +92,14 @@ export interface KeyEventHandlerState {
   showShortcuts: boolean;
   moveToGroup: boolean;
   fileDetailOpen: boolean;
+  /**
+   * 固定面板（PinnedPanel）开着。
+   *
+   * 🔴 它是 `position:fixed; inset:0` 的全屏遮罩，又只是 `App.tsx` 的一个局部 useState，
+   *   既不在 `dialogStore` 也一直没传进来——于是在它上面按 Delete 删的是遮罩**背后**
+   *   看不见的剪贴板记录，按 Esc 则是整个主窗口消失而面板还开着。
+   */
+  pinnedPanelOpen?: boolean;
   // 下面这批是 2026-09-06 补齐的——之前模型里没有，于是它与 `App.tsx` 的
   // 实际行为默默地分岔了（测试只测副本，分岔一直没人发现）。
   showSequential?: boolean;
@@ -186,6 +195,7 @@ export function resolveKeyAction(state: KeyEventHandlerState): KeyAction {
     state.showConfigDiff ||
     state.moveToGroup ||
     state.fileDetailOpen ||
+    state.pinnedPanelOpen ||
     state.anyStoreDialogOpen;
   const isListNavKey =
     LIST_NAV_KEYS.has(key) || (ctrlKey && LIST_NAV_CTRL_KEYS.has(key));
@@ -215,6 +225,8 @@ export function resolveKeyAction(state: KeyEventHandlerState): KeyAction {
     // 这两个自带 Esc（含未保存确认），全局不抢；也不能往下落到隐藏窗口。
     if (state.editorItemOpen) return { type: "ignore" };
     if (state.noteDraftOpen) return { type: "ignore" };
+    // 排在 showSettings 之前：它是盖满全屏的遮罩，视觉上就是最上层。
+    if (state.pinnedPanelOpen) return { type: "close_dialog", dialog: "pinnedPanel" };
     if (state.showSettings) return { type: "close_dialog", dialog: "settings" };
     if (state.showSequential) return { type: "close_dialog", dialog: "sequential" };
     if (state.showSnippets) return { type: "close_dialog", dialog: "snippets" };

@@ -392,6 +392,22 @@ export function useLongShot(params: {
         );
         return; // finally 里会恢复窗口并清 longShot
       }
+      // 拼接质量不 ok 时必须当场说一声。
+      // quality 会被两条路径打成 warn（重叠不足 = 接缝可能错位；连续 3 帧对不上），
+      // 但只有后者会写 longNote，而每成功推进一帧都会把 longNote 清空——
+      // 于是"中途黄过、后面又拼顺了"这种最常见的情形走到这里 longNote 是空的，
+      // 状态窗直接关闭，quality 再没被读过，成了死变量。
+      // 长截图最常见的失败不是"没截到"，是"截到了但中间错位一屏"：用户拿到一张
+      // 看起来完整的长图，等贴进文档才发现接缝错位，那时原始窗口早滚走、复现不了。
+      // 代码其实已经知道这件事，必须在出图时就把它说出来。
+      if (quality !== "ok") {
+        showToast(
+          quality === "bad"
+            ? "长截图只拼上一屏 · 该窗口可能不响应滚轮"
+            : "有几段只勉强对上 · 请检查接缝是否错位",
+          false,
+        );
+      }
       // 拼接长图
       const long = document.createElement("canvas");
       long.width = Math.max(1, Math.round(r.w));

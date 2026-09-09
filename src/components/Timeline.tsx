@@ -410,7 +410,12 @@ export function Timeline({
             style={{ transform: `translateY(${translateY}px)` }}
           >
             {nodes.length === 0 ? (
-              <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "12px 0", opacity: 0.6 }}><MelodyEmpty size={48} />暂无记录</div>
+              // L3：用户有能让它不空的动作（复制一下），那就得把那一步说出来。
+              // U8：同时把内联 style 搬进了 CSS Module。
+              <div className={styles.timelineEmpty}>
+                <MelodyEmpty size={48} />
+                今天还没有记录 · 复制点什么就会出现在这里
+              </div>
             ) : nodes.map((node, i) => {
               // 判断是否需要渲染分组标签（前一个节点不是同一分组）
               const prevGroup = i > 0 ? nodes[i - 1].group : null;

@@ -148,7 +148,10 @@
 }
 
 /* 功能键默认色相（配色方案 B）：复用工具箱瓷砖调色板，色相跨主题固定 */
-.iconBtn[data-hue="amber"]  { color: #F59E0B; }
+/* amber 压暗一档：原 #F59E0B 压 --app-bg 仅 2.01:1（叠 fillOpacity .88 后 1.86:1），
+   低于 SC 1.4.11 非文本 3:1 门槛——图标形状是唯一信息，看不清就等于没有。
+   保留橙黄色相而不换 --orange-solid（那个偏砖红，会跟 danger 系混淆）。 */
+.iconBtn[data-hue="amber"]  { color: #B45309; }
 .iconBtn[data-hue="sky"]    { color: #0EA5E9; }
 .iconBtn[data-hue="violet"] { color: #8B5CF6; }
 
@@ -280,19 +283,35 @@
   color: var(--accent-strong);
 }
 
+/* 行容器本身不再可点：可点的是里面并列的 .searchHistoryMain 与 .searchHistoryRemove。
+   :focus-within 不能缺——键盘 Tab 进来时没有 hover，没它就看不出焦点在哪一行。 */
 .searchHistoryItem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
+  padding: 0 8px 0 0;
   transition: background 0.1s;
-  font-size: 12px;
   color: var(--text-primary);
 }
 
-.searchHistoryItem:hover {
+.searchHistoryItem:hover,
+.searchHistoryItem:focus-within {
   background: var(--hover);
+}
+
+.searchHistoryMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px 8px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
 }
 
 .searchHistoryItemIcon {
@@ -308,7 +327,10 @@
   white-space: nowrap;
 }
 
+/* 视觉仍是 20px 小圆（撑大会把一行历史顶成一排按钮），
+   点击靶区由下面的 ::after 撑到 24×24（SC 2.5.8）——写法同 StackBanner 的 .rm。 */
 .searchHistoryRemove {
+  position: relative;
   flex-shrink: 0;
   width: 20px;
   height: 20px;
@@ -325,7 +347,20 @@
   transition: all 0.15s;
 }
 
-.searchHistoryItem:hover .searchHistoryRemove {
+.searchHistoryRemove::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+}
+
+/* 键盘焦点落到它身上时必须现形：它本来就在 Tab 序里，
+   只靠 hover 揭示等于把焦点放在一个 opacity:0 的元素上。 */
+.searchHistoryItem:hover .searchHistoryRemove,
+.searchHistoryItem:focus-within .searchHistoryRemove {
   opacity: 1;
 }
 
@@ -661,14 +696,16 @@
   position: relative;
 }
 
+/* 高度跟旁边的 .tagFilterAdd 对齐（同一行两个按钮原本 22 / 24 不一样高）；
+   字号 11px：U5 字阶表里没有 10 这一档。 */
 .tagFilterClear {
-  height: 22px;
+  height: 24px;
   padding: 0 8px;
   border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
@@ -677,7 +714,8 @@
 
 .tagFilterClear:hover {
   color: var(--danger);
-  background: var(--red-bg);
+  /* 语义名而非色名（U6）；--danger-bg 就是 --red-bg 的别名，取值一致。 */
+  background: var(--danger-bg);
 }
 
 .tagFilterAdd {
@@ -703,8 +741,27 @@
   background: var(--accent-light);
 }
 
+/* 重试按钮（原先是一个不可点的 span + 内联 style）。
+   字号 11px 而不是 10px：U5 字阶表里没有 10 这一档。 */
 .countsErrorHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
   margin-bottom: 4px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.countsErrorHint:hover {
+  background: var(--danger-bg);
 }
 
 /* ===== 标签选择 Popover ===== */

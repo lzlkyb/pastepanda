@@ -417,6 +417,19 @@
   opacity: 1;
 }
 
+/* 空态（L3）。原先是一串内联 style，搬进来一并存着（U8）。 */
+.timelineEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-muted);
+}
+
 /* ===== 拖拽 tooltip ===== */
 .timelineTooltip {
   position: absolute;

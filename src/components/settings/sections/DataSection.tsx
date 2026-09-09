@@ -31,7 +31,9 @@ export function DataSection({
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>📦</span>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>导出数据</div>
-          <div className={`${styles.sRowDesc}`}>将历史记录导出为 JSON 文件</div>
+          {/* 实际默认导出的是 Excel：handleExport 的 filters 顺序是 xlsx → csv → json，
+              系统保存对话框取第一项做默认扩展名。原描述写死「JSON」，界面说的和实际发生的不是一回事。 */}
+          <div className={`${styles.sRowDesc}`}>导出为 Excel / CSV / JSON，在保存对话框里选格式</div>
         </div>
         <button className={styles.sAction} onClick={handleExport} disabled={exporting}>
           {exporting ? <span className={styles.sActionLoading}>导出中…</span> : "导出"}
@@ -55,7 +57,13 @@ export function DataSection({
           <div className={`${styles.sRowLabel}`}>清理过期记录</div>
           <div className={`${styles.sRowDesc}`}>{expiredCount > 0 ? `${expiredCount} 条记录已过期` : "暂无过期记录"}</div>
         </div>
-        <button className={`${styles.sAction}${expiredCount > 0 ? ` ${styles.danger}` : ""}`} onClick={handleCleanup}>
+        {/* 无过期记录时必须 disabled：handleCleanup 首行就是 `if (expiredCount <= 0) return;`，
+            而 .sAction 自带边框 + hover 变强调色 + cursor:pointer，静止和 hover 都在说「我能点」。 */}
+        <button
+          className={`${styles.sAction}${expiredCount > 0 ? ` ${styles.danger}` : ""}`}
+          onClick={handleCleanup}
+          disabled={expiredCount === 0}
+        >
           {expiredCount > 0 ? `清理 ${expiredCount} 条` : "无过期"}
         </button>
       </div>

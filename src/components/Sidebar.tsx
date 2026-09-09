@@ -36,6 +36,15 @@ interface SidebarProps {
 const PRESET_COLORS = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
 const PRESET_ICONS = ["📁", "📂", "🏷️", "📌", "⭐", "❤️", "🔥", "💼", "🎯", "📝", "💡", "🔖"];
 
+/** 色点是纯色块，颜色本身就是唯一信息——不给名字读屏只会读到一排空按钮。
+    含 blossom 主题的两个专属色；未登记的色值退回十六进制串，好过没有。 */
+const COLOR_NAMES: Record<string, string> = {
+  "#3B82F6": "蓝色", "#22C55E": "绿色", "#F97316": "橙色", "#A855F7": "紫色",
+  "#EF4444": "红色", "#EC4899": "粉色", "#14B8A6": "青色", "#F59E0B": "琥珀色",
+  "#6366F1": "靛蓝色", "#F0568C": "玫红色", "#7EC8E3": "天蓝色",
+};
+const colorName = (c: string) => COLOR_NAMES[c.toUpperCase()] ?? c;
+
 /** 来源分组图标：真实应用图标 + emoji 回退（双模式解析走 useSourceIcon）。
     回退用传入的 fallbackEmoji 而不是 hook 里的 emoji：分组自己带图标（用户可改），
     优先级高于 SOURCE_MAP 的预设。 */
@@ -131,15 +140,17 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
     }
   };
 
-  const handleContextMenu = (e: React.MouseEvent, groupId: string) => {
+  /** `at` 给键盘路径用：按 Enter/Space 发出的 click 事件 clientX/Y 都是 0，
+      直接透传会把菜单甩到窗口左上角，跟触发它的按钮毫无关系。 */
+  const handleContextMenu = (e: React.MouseEvent, groupId: string, at?: { x: number; y: number }) => {
     e.preventDefault();
     e.stopPropagation();
     setContextGroup(groupId);
     // 边界检测：防止右键菜单溢出窗口
     const menuW = 150;
     const menuH = 280;
-    const x = Math.min(e.clientX, window.innerWidth - menuW - 10);
-    const y = Math.min(e.clientY, window.innerHeight - menuH - 10);
+    const x = Math.min(at?.x ?? e.clientX, window.innerWidth - menuW - 10);
+    const y = Math.min(at?.y ?? e.clientY, window.innerHeight - menuH - 10);
     setContextPos({ x: Math.max(x, 10), y: Math.max(y, 10) });
   };
 
@@ -182,36 +193,44 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
       );
     }
 
+    // 「⋯ 更多」必须是 `.item` 的**兄弟**而不是子节点：<button> 里嵌交互元素是无效 HTML，
+    // 而重命名/改色/删除分组三个操作的可见入口只有它（右键菜单鼠标专属）。
     return (
-      <button
-        key={g.id}
-        className={`${styles.item}${activeGroupId === g.id ? ` ${styles.active}` : ""}`}
-        onClick={() => onSelectGroup(g.id)}
-        onContextMenu={(e) => g.isUserGroup ? handleContextMenu(e, g.id) : undefined}
-        tabIndex={open ? 0 : -1}
-      >
-        {g.section === "source" && g.sourceRaw ? (
-          <SourceGroupIcon source={g.sourceRaw} sourceIcon={g.sourceIcon} fallbackEmoji={g.icon || "🔍"} />
-        ) : g.icon ? (
-          <span className={styles.icon}>{g.icon}</span>
-        ) : (
-          <span className={styles.dot} style={{ background: g.color || "#3B82F6" }} />
-        )}
-        <span className={styles.name}>{g.name}</span>
-        <span className={styles.count}>{g.count}</span>
+      <div key={g.id} className={styles.itemWrap}>
+        <button
+          className={`${styles.item}${activeGroupId === g.id ? ` ${styles.active}` : ""}`}
+          onClick={() => onSelectGroup(g.id)}
+          onContextMenu={(e) => g.isUserGroup ? handleContextMenu(e, g.id) : undefined}
+          tabIndex={open ? 0 : -1}
+        >
+          {g.section === "source" && g.sourceRaw ? (
+            <SourceGroupIcon source={g.sourceRaw} sourceIcon={g.sourceIcon} fallbackEmoji={g.icon || "🔍"} />
+          ) : g.icon ? (
+            <span className={styles.icon}>{g.icon}</span>
+          ) : (
+            <span className={styles.dot} style={{ background: g.color || "#3B82F6" }} />
+          )}
+          <span className={styles.name}>{g.name}</span>
+          <span className={styles.count}>{g.count}</span>
+        </button>
         {g.isUserGroup && (
-          <span
+          <button
+            type="button"
             className={styles.moreBtn}
+            aria-label={`${g.name} 更多操作`}
+            title="更多操作"
+            tabIndex={open ? 0 : -1}
             onClick={(e) => {
               e.stopPropagation();
-              handleContextMenu(e as unknown as React.MouseEvent, g.id);
+              const r = e.currentTarget.getBoundingClientRect();
+              const byKeyboard = e.clientX === 0 && e.clientY === 0;
+              handleContextMenu(e, g.id, byKeyboard ? { x: r.right, y: r.bottom } : undefined);
             }}
-            title="更多操作"
           >
             ⋯
-          </span>
+          </button>
         )}
-      </button>
+      </div>
     );
   };
 
@@ -234,14 +253,20 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
         {creating && (
           <div className={styles.createRow}>
             <div className={styles.colorPicker}>
+              {/* 选中态叠一个 ✓：原来只靠 2px 边框 + scale(1.15)，在 14px 色点上几乎看不出。 */}
               {presetColors.map((c) => (
                 <button
                   key={c}
+                  type="button"
                   className={`${styles.colorDot}${newColor === c ? ` ${styles.colorDotActive}` : ""}`}
                   style={{ background: c }}
                   onClick={() => setNewColor(c)}
                   tabIndex={open ? 0 : -1}
-                />
+                  aria-label={colorName(c)}
+                  aria-pressed={newColor === c}
+                >
+                  {newColor === c && <span className={styles.colorDotCheck} aria-hidden="true">✓</span>}
+                </button>
               ))}
             </div>
             <div className={styles.iconPicker}>
@@ -332,8 +357,11 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
             {presetColors.map((c) => (
               <button
                 key={c}
+                type="button"
                 className={`${styles.contextMenuColorDot}${(userGroups.find(g => g.id === contextGroup)?.color) === c ? ` ${styles.contextMenuColorDotActive}` : ""}`}
                 style={{ background: c }}
+                aria-label={colorName(c)}
+                aria-pressed={(userGroups.find(g => g.id === contextGroup)?.color) === c}
                 onClick={() => {
                   if (onChangeGroupColor) onChangeGroupColor(contextGroup, c);
                   closeContextMenu();

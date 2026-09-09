@@ -104,7 +104,7 @@ export function DiagramEditor({ item, registerActions }: { item: import("@/store
     }
   }, [aiPrompt, toast]);
 
-  const exportAs = useDiagramExport(canvasRef);
+  const [exportAs, exporting] = useDiagramExport(canvasRef);
 
   return (
     <div className={styles.editor}>
@@ -115,7 +115,7 @@ export function DiagramEditor({ item, registerActions }: { item: import("@/store
           </button>
         )}
         <div className={styles.spacer} />
-        <ExportMenu onExport={exportAs} />
+        <ExportMenu onExport={exportAs} exporting={exporting} />
         <button className={styles.ghostBtn} onClick={launchFullscreen} title="全屏编辑">
           <Maximize2 size={14} /> 全屏
         </button>

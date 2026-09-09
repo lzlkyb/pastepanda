@@ -238,7 +238,9 @@ export const SuggestionBar = memo(function SuggestionBar() {
           onMouseLeave={() => setHovered(false)}
         >
           <span className={styles.icon}><Lightbulb size={13} /></span>
-          <span className={styles.text}>{describe(suggestion)}</span>
+          {/* 文案是 nowrap + ellipsis 单行截断，而旁边的「使用」会直接跑动作（如 act-open-url 直接打开）——
+              至少得给个看全文的路径，不能让人在看不清的情况下点执行。 */}
+          <span className={styles.text} title={describe(suggestion)}>{describe(suggestion)}</span>
           <span className={styles.spacer} />
           <button className={styles.useBtn} onClick={() => void handleUse()}>
             使用 <ArrowRight size={12} />

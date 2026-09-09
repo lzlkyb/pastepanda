@@ -7,7 +7,16 @@
  *
  * 🔴 红线：无 AI。
  */
-import { BookOpen, CalendarDays, SearchX, FolderOpen, Plus, X } from "lucide-react";
+import {
+  BookOpen,
+  CalendarDays,
+  SearchX,
+  FolderOpen,
+  Plus,
+  X,
+  AlertTriangle,
+  RotateCcw,
+} from "lucide-react";
 import type { FolderFilter } from "@/lib/api";
 import { useAppStore } from "@/stores/appStore";
 import { formatHotkey } from "@/components/settings/HotkeyRecorder";
@@ -16,18 +25,24 @@ import styles from "../KnowledgeView.module.css";
 
 export function NoteListEmpty({
   loading,
+  loadError,
   keyword,
   folderFilter,
   onNew,
   onClearSearch,
+  onRetry,
 }: {
   loading: boolean;
+  /** 上一次查询**没查成**（不是查成了 0 条）。优先于下面四种空态。 */
+  loadError?: boolean;
   keyword: string;
   folderFilter: FolderFilter;
   /** 新建笔记（落在当前文件夹）。不传就不摆那个按钮 */
   onNew?: () => void;
   /** 清空搜索词。不传就不摆 */
   onClearSearch?: () => void;
+  /** 重试上一次查询。只在 `loadError` 时用。 */
+  onRetry?: () => void;
 }) {
   // 热键从配置读而不是写死：用户改过之后这里再教他按 Ctrl+Alt+D 就是在说谎
   const dailyHotkey = useAppStore((s) => s.config?.daily_note_hotkey);
@@ -46,6 +61,43 @@ export function NoteListEmpty({
             <div className={`${styles.skelBar} ${styles.skelMeta}`} />
           </div>
         ))}
+      </div>
+    );
+  }
+
+  // 🔴 错误态必须抢在四种空态前面。
+  //
+  //   “搜了但一条都没有”与“根本没搜成”在 `notes.length === 0` 上完全一样，
+  //   但该说的话相反。旧写法里 FTS 索引坏 / 库被锁住时打出的是
+  //   「没找到匹配的笔记 / 换个词试试」——用户据此得出「我没写过这篇」，
+  //   然后可能真去重写一遍。所以这里要先把「笔记都还在」说出口，再给重试入口。
+  //   role="alert" ：列表内容被一条错误取代了，读屏用户不报就永远不知道。
+  if (loadError) {
+    return (
+      <div className={styles.stateBox} role="alert">
+        <div className={styles.emptyWrap} aria-hidden="true">
+          <div className={styles.emptyRing} />
+          <div className={styles.emptyIcon}>
+            <AlertTriangle size={30} strokeWidth={1.8} />
+          </div>
+        </div>
+        <div className={styles.title}>没能把笔记读出来</div>
+        <div className={styles.hint}>
+          这不是「库里没有」——笔记都还在，只是这一次查询没跑成。
+          数据库可能正被占着（比如同步或备份在写），重试一下多半就好。
+        </div>
+        {onRetry && (
+          <div className={styles.emptyActions}>
+            <button
+              type="button"
+              className={`${styles.emptyBtn} ${styles.emptyBtnPrimary}`}
+              onClick={onRetry}
+            >
+              <RotateCcw size={14} />
+              重试
+            </button>
+          </div>
+        )}
       </div>
     );
   }

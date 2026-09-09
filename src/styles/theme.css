@@ -219,7 +219,7 @@
      它是为「压在 --accent-light 上」调的，不能拿来当正文小字色。 */
   --brand-ai-from: #1D4ED8;
   --brand-ai-to: #6D28D9;
-  --toggle-off-label: #94A3B8;
+  --toggle-off-label: #4B5563; --toggle-on-label: #fff;
   --card-selected-bg: #E0F2FE;
   --card-selected-border: #0284C7;
   --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
@@ -233,7 +233,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
@@ -302,7 +302,7 @@
   --shot-bar-bg: rgba(255, 255, 255, 0.92);
   --shot-bar-border: rgba(15, 23, 42, 0.16);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: var(--text-muted);
+  --shot-bar-muted: #4E5A6B;
   --shot-hover: var(--hover);
   /* 出口语义色：浅色档统一换深色档（accent-strong 浅底 4.5:1；粉/薄荷无主题令牌，手选深色档） */
   --shot-save: var(--accent-strong);
@@ -341,7 +341,7 @@
      midnight 底极暗（#1C1832），这对值有 12:1 以上，宽裕。 */
   --brand-ai-from: #A8DEFF;
   --brand-ai-to: #D8CCFF;
-  --toggle-off-label: #71717A;
+  --toggle-off-label: #B4B4BC; --toggle-on-label: #0B2417;
   --card-selected-bg: #1E1B4B;
   --card-selected-border: #818CF8;
   --card-selected-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
@@ -354,7 +354,7 @@
   --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
   --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange); --orange-strong: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
   --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
   --red-bg: #450A0A; --danger: #F87171;
@@ -428,7 +428,7 @@
   --dialog-bg: #fff;
   --section-bg: #ECFDF5;
   --toggle-off-bg: #D1D9D3;
-  --toggle-off-label: #A8A29E;
+  --toggle-off-label: #4A5750; --toggle-on-label: #fff;
   --card-selected-bg: #ECFDF5;
   --card-selected-border: #059669;
   --card-selected-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
@@ -441,7 +441,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
@@ -481,7 +481,7 @@
   --shot-bar-bg: rgba(255, 255, 255, 0.90);
   --shot-bar-border: rgba(23, 23, 23, 0.16);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: var(--text-muted);
+  --shot-bar-muted: #4E5A6B;
   --shot-hover: var(--hover);
   --shot-save: var(--accent-strong);
   --shot-long: var(--accent-strong);
@@ -515,7 +515,7 @@
   --dialog-bg: #fff;
   --section-bg: #FFF0F6;
   --toggle-off-bg: #F3D5E2;
-  --toggle-off-label: #C9A2B4;
+  --toggle-off-label: #6E4557; --toggle-on-label: #fff;
   --card-selected-bg: #FFDDEC;
   --card-selected-border: #F0568C;
   --card-selected-shadow: 0 0 0 2px rgba(240, 86, 140, 0.2);
@@ -528,7 +528,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525;
@@ -568,7 +568,7 @@
   --shot-bar-bg: rgba(255, 255, 255, 0.90);
   --shot-bar-border: rgba(240, 86, 140, 0.35);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: var(--text-muted);
+  --shot-bar-muted: #4E5A6B;
   --shot-hover: var(--hover);
   --shot-save: var(--accent-strong);
   --shot-long: var(--accent-strong);
@@ -602,7 +602,7 @@
   --dialog-bg: #fff;
   --section-bg: #FFF4E6;
   --toggle-off-bg: #EFDCC6;
-  --toggle-off-label: #B09A80;
+  --toggle-off-label: #6B5638; --toggle-on-label: #fff;
   --card-selected-bg: #FFEDE2;
   --card-selected-border: #E8734A;
   --card-selected-shadow: 0 0 0 2px rgba(232, 115, 74, 0.22);
@@ -615,7 +615,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525;
@@ -655,7 +655,7 @@
   --shot-bar-bg: rgba(255, 255, 255, 0.90);
   --shot-bar-border: rgba(232, 115, 74, 0.30);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: var(--text-muted);
+  --shot-bar-muted: #4E5A6B;
   --shot-hover: var(--hover);
   --shot-save: var(--accent-strong);
   --shot-long: var(--accent-strong);
@@ -695,7 +695,7 @@
        #A8DEFF 5.13:1 / #D8CCFF 4.93:1。再往下调任何一档都会跌破 4.5。 */
   --brand-ai-from: #A8DEFF;
   --brand-ai-to: #D8CCFF;
-  --toggle-off-label: #5577A0;
+  --toggle-off-label: #9FB6D0; --toggle-on-label: #062015;
   --card-selected-bg: #0A1E3A;
   --card-selected-border: #3B9EFF;
   --card-selected-shadow: 0 0 0 2px rgba(59,158,255,0.25);
@@ -708,7 +708,7 @@
   --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
   --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange); --orange-strong: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
   --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
   --red-bg: #3A1525; --danger: #FF6B8A;

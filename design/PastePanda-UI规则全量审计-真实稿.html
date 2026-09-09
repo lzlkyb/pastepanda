@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda UI 全量审计 · 真实稿</title>
+<style>
+/* 这不是方案说明书。下面每一块都是拿 **用户当前主题 ocean 的真实 token** 渲染的，
+   尺寸也用真实值。主题取自 clipboard.db 的 config 表（theme = 'ocean'），
+   token 原值抄自 src/styles/theme.css:168-300。 */
+:root{
+  --app-bg:#F7F7F8; --card-bg:#fff; --border-color:#E0E4EB;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-solid:#027CBB; --accent-strong:#0273AD;
+  --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+  --danger:#D82525; --green:#11813A; --hover:#E8ECF2; --sidebar-bg:#EFF1F5;
+  --toggle-off-bg:#E2E8F0; --toggle-off-label:#94A3B8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--app-bg);color:var(--text-primary);
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:32px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--text-muted);font-size:12px;margin-bottom:28px}
+section{background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;
+  padding:20px;margin-bottom:20px}
+h2{font-size:15px;margin:0 0 4px}
+.why{color:var(--text-secondary);font-size:12px;margin:0 0 16px;max-width:70ch}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cell{border:1px solid var(--border-color);border-radius:8px;padding:14px;background:var(--app-bg)}
+.cell.after{background:var(--card-bg)}
+.tag{font-size:11px;font-weight:600;margin-bottom:10px;display:flex;gap:6px;align-items:center}
+.bad{color:var(--danger)} .good{color:var(--green)}
+.ratio{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--text-muted);
+  margin-top:10px;padding-top:8px;border-top:1px dashed var(--border-color)}
+.ratio b{color:var(--text-primary)}
+.note{font-size:11.5px;color:var(--text-secondary);background:var(--sidebar-bg);
+  border-radius:8px;padding:10px 12px;margin-top:14px}
+
+/* ── ① 顶栏图标（真实尺寸 28×28，TopBar.module.css:117）── */
+.bar{display:flex;gap:6px;align-items:center;background:var(--app-bg);padding:8px 10px;border-radius:8px}
+.ib{width:28px;height:28px;border:none;border-radius:8px;background:transparent;
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ib svg{width:16px;height:16px}
+.amber-old{color:#F59E0B} .amber-new{color:#C54A0A}
+
+/* ── ② 设置开关（真实尺寸 44×26，Settings.module.css:1070）── */
+.sw{width:44px;height:26px;border-radius:13px;position:relative;display:inline-flex;
+  align-items:center;cursor:pointer;flex-shrink:0}
+.sw .kn{width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;
+  box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.sw .lb{position:absolute;font-weight:600;letter-spacing:.5px}
+.sw.on{background:var(--green)} .sw.on .kn{right:3px} .sw.on .lb{left:7px;color:#fff}
+.sw.off{background:var(--toggle-off-bg)} .sw.off .kn{left:3px}
+.sw.off .lb{right:7px}
+.old .lb{font-size:9px} .old .sw.off .lb{color:var(--toggle-off-label)}
+.new .lb{font-size:11px} .new .sw.off .lb{color:#4B5563}
+.row{display:flex;align-items:center;gap:12px;padding:9px 0}
+.row .t{flex:1;font-size:12.5px}
+.row .d{font-size:11px;color:var(--text-muted)}
+
+/* ── ③ PinnedPanel（真实硬编码色 vs 接主题）── */
+.pp-old{background:linear-gradient(180deg,#1B2340,#101528);border-radius:12px;padding:16px;
+  color:#E6EDF7;min-height:150px}
+.pp-old .h{font-size:13px;font-weight:600;margin-bottom:4px}
+.pp-old .e{font-size:12px;color:#6B7FA3;margin-top:34px;text-align:center}
+.pp-new{background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;
+  padding:16px;min-height:150px}
+.pp-new .h{font-size:13px;font-weight:600;margin-bottom:4px}
+.pp-new .e{font-size:12px;color:var(--text-muted);margin-top:34px;text-align:center}
+
+/* ── ④ 图标渐变底座 ── */
+.tiles{display:flex;gap:10px;flex-wrap:wrap}
+.tile{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-size:15px}
+.gl{font-family:ui-monospace,Consolas,monospace;font-size:10px;color:var(--text-muted);
+  margin-top:6px;text-align:center}
+.tw{text-align:center}
+</style>
+</head>
+<body>
+
+<h1>PastePanda UI 规则全量审计 · 需要看视觉才能定的那几块</h1>
+<div class="sub">
+  6 个 agent 分块扫完，结果里大多数是对错问题（静默失败、键盘不可达、死循环），那些直接改就行。
+  这份稿只放**改了会变好看还是变难看、得你看一眼拍板**的四块。
+  全部按 ocean 真实 token 渲染，不是示意色。
+</div>
+
+<section>
+  <h2>① 顶栏「收集模式」图标：1.86:1 → 4.50:1</h2>
+  <p class="why">
+    它是「粘贴栈正在吞你复制的每一条」这个全局后台状态的**唯一可见线索**，
+    代码里写着「其它模式下开着就必须还看得见」——而现在它在四套浅色主题下几乎和背景糊在一起。
+    <b>这一块需要你拍板的是：失去那个亮黄色可以接受吗？</b>
+  </p>
+  <div class="pair">
+    <div class="cell">
+      <div class="tag bad">● 改前 · #F59E0B</div>
+      <div class="bar">
+        <button class="ib amber-old"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v3H4zM4 11h16v3H4zM4 16h10v3H4z"/></svg></button>
+        <button class="ib" style="color:var(--text-secondary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+        <button class="ib" style="color:var(--text-secondary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+      </div>
+      <div class="ratio">#F59E0B on #F7F7F8 = <b>2.01:1</b><br>实际还带 fillOpacity .88 → <b>1.86:1</b><br>SC 1.4.11 图形元素门槛 3:1</div>
+    </div>
+    <div class="cell after">
+      <div class="tag good">● 改后 · --orange-solid</div>
+      <div class="bar">
+        <button class="ib amber-new"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v3H4zM4 11h16v3H4zM4 16h10v3H4z"/></svg></button>
+        <button class="ib" style="color:var(--text-secondary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+        <button class="ib" style="color:var(--text-secondary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+      </div>
+      <div class="ratio">#C54A0A on #F7F7F8 = <b>4.50:1</b> ✓<br>深色两套仍有 3.7+，不用分主题写</div>
+    </div>
+  </div>
+  <div class="note">
+    <b>备选：</b>想保留琥珀感就用 <code>#B45309</code>（4.69:1）——仍然是橙黄系，只是压暗一档。
+    我推荐这个而不是 --orange-solid：后者偏砖红，与「收集中」的语义距离更远。
+  </div>
+</section>
+
+<section>
+  <h2>② 设置开关的「开 / 关」字：2.08:1 → 6.15:1，9px → 11px</h2>
+  <p class="why">
+    这两个字是开关**唯一不靠颜色的状态信息**（SC 1.4.1 的那份保险）。
+    现在它比轨道底色还淡，等于状态又退回「只看轨道是绿是灰」。
+    <b>这一块需要你拍板的是：“关”变清楚之后，视觉上会比现在“重”——这是规则要的结果，但你得认。</b>
+  </p>
+  <div class="pair">
+    <div class="cell old">
+      <div class="tag bad">● 改前 · 9px · #94A3B8</div>
+      <div class="row"><div><div class="t">开机自启动</div><div class="d">登录后自动运行</div></div>
+        <div class="sw off"><span class="lb">关</span><span class="kn"></span></div></div>
+      <div class="row"><div><div class="t">监听剪贴板</div><div class="d">复制时自动记录</div></div>
+        <div class="sw on"><span class="lb">开</span><span class="kn"></span></div></div>
+      <div class="row"><div><div class="t">启用粘贴栈</div><div class="d">连续收集多条</div></div>
+        <div class="sw off"><span class="lb">关</span><span class="kn"></span></div></div>
+      <div class="ratio">关：#94A3B8 on #E2E8F0 = <b>2.08:1</b><br>字号 9px（U5 下限 11）<br>blossom 主题最差：<b>1.66:1</b></div>
+    </div>
+    <div class="cell after new">
+      <div class="tag good">● 改后 · 11px · #4B5563</div>
+      <div class="row"><div><div class="t">开机自启动</div><div class="d">登录后自动运行</div></div>
+        <div class="sw off"><span class="lb">关</span><span class="kn"></span></div></div>
+      <div class="row"><div><div class="t">监听剪贴板</div><div class="d">复制时自动记录</div></div>
+        <div class="sw on"><span class="lb">开</span><span class="kn"></span></div></div>
+      <div class="row"><div><div class="t">启用粘贴栈</div><div class="d">连续收集多条</div></div>
+        <div class="sw off"><span class="lb">关</span><span class="kn"></span></div></div>
+      <div class="ratio">关：#4B5563 on #E2E8F0 = <b>6.15:1</b> ✓<br>开：#fff on #11813A = <b>4.97:1</b> ✓</div>
+    </div>
+  </div>
+  <div class="note">
+    ❗ <b>深色主题还有一个单独的坑：</b>midnight / ocean-dark 下“开”是白字压亮绿 <code>#4ADE80</code>，
+    只有 <b>1.74:1</b>。那一档不能靠压暗文字解决，得把白字换成深字（亮底配深字）。
+    两套方向相反，所以这一改必须七套主题逐个验，不能只看 ocean。
+  </div>
+</section>
+
+<section>
+  <h2>③ 贴图管理面板：整块硬编码深色，根本没接主题</h2>
+  <p class="why">
+    <code>PinnedPanel.tsx:74-171</code> 零 CSS class、零变量，20+ 处字面色值。
+    默认主题是浅色，从托盘点开「贴图管理」弹出一块深蓝黑的卡片。
+    而那句写得很好的空态文案，恰好是全屏唯一不达标的一句。
+    <b>这一块需要你拍板的是：那块深蓝到底是刻意配合贴图场景选的，还是当年没接主题？</b>
+  </p>
+  <div class="pair">
+    <div class="cell">
+      <div class="tag bad">● 改前 · 硬编码 #1B2340→#101528</div>
+      <div class="pp-old">
+        <div class="h">贴图管理</div>
+        <div style="font-size:11px;color:#8FA3C8">当前 0 张置顶贴图</div>
+        <div class="e">暂无置顶贴图 · 截图后点「贴图置顶」即可钉在屏幕上</div>
+      </div>
+      <div class="ratio">空态文案 #6B7FA3 压渐变：<br>上端 <b>3.81:1</b> · 下端 <b>4.47:1</b><br>渐变全程无一处达 4.5:1</div>
+    </div>
+    <div class="cell after">
+      <div class="tag good">● 改后 · 走主题 token</div>
+      <div class="pp-new">
+        <div class="h">贴图管理</div>
+        <div style="font-size:11px;color:var(--text-secondary)">当前 0 张置顶贴图</div>
+        <div class="e">暂无置顶贴图 · 截图后点「贴图置顶」即可钉在屏幕上</div>
+      </div>
+      <div class="ratio">#627083 on #fff = <b>5.04:1</b> ✓<br>深色主题自动跟着变，不用手算</div>
+    </div>
+  </div>
+  <div class="note">
+    <b>若你确认要保留深色：</b>最小改法是把那句空态的 <code>#6B7FA3</code> 提到 <code>#8FA3C8</code>
+    （同文件已在用）——对渐变两端是 5.75:1 / 6.65:1，两端都过，其余一字不动。
+    这块反正要动（它还有个 Delete 键删错东西的 bug），顺手而已。
+  </div>
+</section>
+
+<section>
+  <h2>④ 138 处图标渐变底座：同一个起点色配了 5 个终点</h2>
+  <p class="why">
+    全库最大的单一重复源，而且**跨窗口**：同一个功能的图标底色在「设置页」与「托盘弹窗」各写一遍。
+    下面四个块都是 <code>#8B5CF6</code> 开头，终点各不相同——都在现在的代码里。
+    <b>这一块需要你拍板的是：收成哪一个。</b>
+  </p>
+  <div class="cell" style="background:var(--card-bg)">
+    <div class="tag bad">● 现状 · 同一起点色的 5 种终点（全部实存）</div>
+    <div class="tiles">
+      <div class="tw"><div class="tile" style="background:linear-gradient(135deg,#8B5CF6,#5856D6)">✦</div><div class="gl">#5856D6<br>5 处</div></div>
+      <div class="tw"><div class="tile" style="background:linear-gradient(135deg,#8B5CF6,#6366F1)">✦</div><div class="gl">#6366F1<br>4 处</div></div>
+      <div class="tw"><div class="tile" style="background:linear-gradient(135deg,#8B5CF6,#AF52DE)">✦</div><div class="gl">#AF52DE<br>4 处</div></div>
+      <div class="tw"><div class="tile" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">✦</div><div class="gl">#6D28D9<br>2 处</div></div>
+      <div class="tw"><div class="tile" style="background:linear-gradient(135deg,#8B5CF6,#5B21B6)">✦</div><div class="gl">#5B21B6<br>1 处</div></div>
+    </div>
+    <div class="ratio">这不是设计决策，是复制粘贴时手滑。<b>#6366F1</b> 同样配过 4 个终点，<b>#EF4444</b> 配过 3 个。</div>
+  </div>
+  <div class="note">
+    <b>两步走，风险完全不同：</b><br>
+    第一步（零视觉变化，不需要这张稿）：把 28 种**跨文件重复**的色对（共 119 处）提成 token，取值一个不改。
+    <code>popup.css</code> 的 live 硬编码色会从 <b>154 → 28</b>。<br>
+    第二步（就是上面这张）：把 5 个终点收成 1 个，**会有可见色差**。我推荐 <code>#6D28D9</code>（violet-700）：
+    它与 <code>--brand-ai-to</code> 已有的值一致，不新引入颜色。
+  </div>
+</section>
+
+<section style="background:var(--sidebar-bg)">
+  <h2>不需要设计稿的（对错问题，不是取舍）</h2>
+  <p class="why" style="margin-bottom:8px">
+    下面这些 agent 都给了 file:line，我抽验了其中五条，全部属实。它们没有可供选择的方案，只有“没修”和“修了”。
+  </p>
+  <div style="font-size:12px;line-height:2">
+    🔴 <b>screenshot.css:980</b> 孤立残片吞掉了整条 <code>.eraser-cursor</code>（橡皮圈被标注盖住）—— <b>删一行</b><br>
+    🔴 <b>notes.ts:380</b> 搜索失败渲染成「没找到匹配的笔记」（同文件 :392 有红字注释点破过这件事）<br>
+    🔴 <b>App.tsx:104</b> PinnedPanel 没进键盘守卫，开着它按 Delete 删主窗口卡片<br>
+    🔴 <b>AiProfileInject.tsx:31</b> 失败后无限重试 + toast 刷屏，只能重启<br>
+    🔴 <b>SearchBox.tsx:178</b> 搜索历史下拉对键盘完全不可用<br>
+    🔴 <b>LearningsDialog.tsx:43</b> 三档配色从未生效（字面量对 CSS Modules 哈希类）<br>
+    • EncodingDialog / BatchReplaceDialog / DeepCleanDialog / SnippetsDialog 四处把「失败」渲染成「空」<br>
+    • SnippetsDialog 批量删除成败都不说；BatchReplace 部分失败报绿色「成功」
+  </div>
+</section>
+
+</body>
+</html>

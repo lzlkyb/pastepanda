@@ -441,6 +441,8 @@ describe("resolveKeyAction — 收口时从 App.tsx 补进模型的分支", () =
   describe("dialogOpen 名单必须齐 —— 漏一个就意味着开着它按退格会删主列表的卡片", () => {
     const flags = [
       "showSequential", "showEncoding", "showBatchReplace", "showConfigDiff", "anyStoreDialogOpen",
+      // pinnedPanelOpen 是全屏遮罩，一直漏在名单外：开着它按 Delete 删的是遮罩背后的卡片。
+      "pinnedPanelOpen",
     ] as const;
     for (const flag of flags) {
       it(`${flag} 打开时屏蔽 Delete`, () => {
@@ -469,6 +471,7 @@ describe("resolveKeyAction — 收口时从 App.tsx 补进模型的分支", () =
       ["showEncoding", "encoding"],
       ["showBatchReplace", "batchReplace"],
       ["showConfigDiff", "configDiff"],
+      ["pinnedPanelOpen", "pinnedPanel"],
     ])("%s → 关 %s", (flag, dialog) => {
       const a = resolveKeyAction(makeState({ key: "Escape", [flag]: true }));
       expect(a).toEqual({ type: "close_dialog", dialog });

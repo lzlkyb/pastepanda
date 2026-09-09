@@ -11,7 +11,7 @@
  *   没有提示就是静默失败：用户会以为功能坏了，或者更糟——以为正在发而实际没发。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { profilePromptPreview, type ProfilePromptPreview } from "@/lib/api/profile";
@@ -27,27 +27,45 @@ export function AiProfileInject({ enabled, onChange }: Props) {
   const { toast } = useToast();
   const [pv, setPv] = useState<ProfilePromptPreview | null>(null);
   const [loading, setLoading] = useState(false);
+  /** 读取失败的原因。null = 没失败过 */
+  const [failed, setFailed] = useState<string | null>(null);
+  // 一次性加载保护，照抄旁边 AiEvolution 的 P1 修复。
+  //
+  // 原来的写法是死循环：catch 不置任何失败态 → pv 保持 null，
+  // finally 的 setLoading(false) 触发重渲染 → 依赖里的 loading 变了 → effect 重入
+  // → `!pv && !loading` 再次成立 → 又 load()。后端一失败就是不停打 IPC，
+  // 屏幕上常驻 5 个错误 toast，只能重启。
+  const attemptedRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setFailed(null);
     try {
       setPv(await profilePromptPreview());
     } catch (e) {
-      toast(`读取注入片段失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      const msg = e instanceof Error ? e.message : String(e);
+      setFailed(msg);
+      toast(`读取注入片段失败：${msg}`, "error");
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
-  // 关着时不拉（预览区根本不渲染）；关掉后丢掉旧值，
+  // 关着时不拉（预览区根本不渲染）；关掉后丢掉旧值并复位尝试标记，
   // 下次再开重拉——中间这段时间画像很可能已经变了。
+  // 开着的时候无论成败都只发一次，失败后的唯一重试入口是下面那个「刷新」按钮。
   useEffect(() => {
     if (!enabled) {
       setPv(null);
+      setFailed(null);
+      attemptedRef.current = false;
       return;
     }
-    if (!pv && !loading) void load();
-  }, [enabled, pv, loading, load]);
+    if (!attemptedRef.current) {
+      attemptedRef.current = true;
+      void load();
+    }
+  }, [enabled, load]);
 
   return (
     <>
@@ -79,6 +97,15 @@ export function AiProfileInject({ enabled, onChange }: Props) {
           {loading && !pv ? (
             <div className={styles.evoDesc}>
               <Loader2 size={12} className="spin" /> 加载中…
+            </div>
+          ) : failed && !pv ? (
+            // 失败必须看得见，否则与「没什么可注入」长得一模一样；
+            // 并且要明说不会自动重试，把用户引到上面的「刷新」上。
+            <div className={styles.stateNote}>
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>
+                读取失败：{failed}。<b>不会自动重试</b>，点上面的「刷新」再试一次。
+              </span>
             </div>
           ) : (
             <InjectBody pv={pv} />

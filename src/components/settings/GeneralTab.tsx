@@ -94,8 +94,15 @@ export function GeneralTab({
           setShowDeepClean={setShowDeepClean}
         />
       </div>
+      {/* 空态不能只说「没找到」：这里用户有明确动作能让列表重新出现（清掉搜索），
+          所以必须把那个动作直接摆出来，并给一个可照拄的词例。
+          ❗ useSettingsSearch 只改这个节点的 style.display，不改它的子节点，加按钮安全。 */}
       <div ref={search.noResultRef} className={styles.settingsNoResult} style={{ display: "none" }}>
         😕 没有找到与「{search.filter}」匹配的设置项
+        <div className={styles.settingsNoResultHint}>清掉搜索看全部设置，或换个词试试，比如「主题」「热键」</div>
+        <button className={styles.settingsNoResultBtn} onClick={() => search.setFilter("")}>
+          清空搜索
+        </button>
       </div>
       {/* 深度清理弹窗：portal 到 body，open 门控显隐 */}
       <DeepCleanDialog open={showDeepClean} onClose={() => setShowDeepClean(false)} />

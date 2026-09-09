@@ -123,8 +123,16 @@ export function BatchReplaceDialog({ open, onClose }: { open: boolean; onClose: 
       });
       setReplaceResults(r);
       const okCount = r.filter((x) => x.ok).length;
+      const failCount = r.length - okCount;
       const totalReplaced = r.reduce((sum, x) => sum + x.replaced_count, 0);
-      toast(`替换完成：${okCount}/${r.length} 文件，共 ${totalReplaced} 处`, "success");
+      // 这是会写盘的操作：部分失败时绿色的「成功」会被读成「都办妥了」（数字要靠读），
+      // 所以降级为 info 并在文案里点名失败数——与 EncodingDialog 的写法保持一致。
+      toast(
+        failCount === 0
+          ? `替换完成：${r.length} 个文件，共 ${totalReplaced} 处`
+          : `替换完成：${okCount}/${r.length} 个文件成功，${failCount} 个失败，共 ${totalReplaced} 处`,
+        failCount === 0 ? "success" : "info",
+      );
     } catch (e) {
       logger.warn("替换失败", e);
       toast("替换失败", "error");
@@ -134,6 +142,9 @@ export function BatchReplaceDialog({ open, onClose }: { open: boolean; onClose: 
   }, [paths, pattern, replacement, isRegex, caseSensitive, toast]);
 
   const totalMatches = previewResults?.reduce((s, r) => s + r.match_count, 0) ?? 0;
+  // 读不出来的文件 match_count 正好也是 0，原来被 filter 掉，于是与「0 处匹配」无法区分。
+  // 而预览的作用就是「执行前先确认命中范围」，这一步的误判直接决定下一步的破坏性操作。
+  const previewErrCount = previewResults?.filter((r) => r.error).length ?? 0;
 
   return (
     <AnimatePresence>
@@ -143,9 +154,8 @@ export function BatchReplaceDialog({ open, onClose }: { open: boolean; onClose: 
             <motion.div {...anim.panel} className="dialog-box w460" onClick={(e) => e.stopPropagation()}>
               <div className="dialog-header">
                 <h2 className="dialog-title">批量替换</h2>
-                <button onClick={onClose} className="dialog-close"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+                {/* hover 背景交给 dialog.css 的 .dialog-close:hover；inline style 会压掉主题定制 */}
+                <button onClick={onClose} className="dialog-close">
                   <X size={16} />
                 </button>
               </div>
@@ -214,20 +224,33 @@ export function BatchReplaceDialog({ open, onClose }: { open: boolean; onClose: 
                     <div className={styles.previewHeader}>
                       共 {totalMatches} 处匹配
                     </div>
+                    {previewErrCount > 0 && (
+                      <div className={`${styles.previewHeader} ${styles.resultErr}`}>
+                        {previewErrCount} 个文件无法读取，将被跳过
+                      </div>
+                    )}
                     <div className={styles.previewList}>
-                      {previewResults.filter((r) => r.match_count > 0).map((r) => (
+                      {previewResults.filter((r) => r.match_count > 0 || r.error).map((r) => (
                         <div key={r.path} className={styles.previewFile}>
                           <div className={styles.previewFileName}>
-                            {r.path.split(/[/\\]/).pop()} ({r.match_count})
+                            {r.path.split(/[/\\]/).pop()}{r.error ? "" : ` (${r.match_count})`}
                           </div>
-                          {r.matches.slice(0, 5).map((m, i) => (
-                            <div key={i} className={styles.previewMatch}>
-                              <span className={styles.matchLoc}>L{m.line}:{m.col}</span>
-                              <span className={styles.matchCtx}>{m.context}</span>
+                          {r.error ? (
+                            <div className={`${styles.previewMatch} ${styles.resultErr}`}>
+                              <span className={styles.matchCtx}>无法读取：{r.error}</span>
                             </div>
-                          ))}
-                          {r.matches.length > 5 && (
-                            <div className={styles.previewMore}>…还有 {r.matches.length - 5} 处</div>
+                          ) : (
+                            <>
+                              {r.matches.slice(0, 5).map((m, i) => (
+                                <div key={i} className={styles.previewMatch}>
+                                  <span className={styles.matchLoc}>L{m.line}:{m.col}</span>
+                                  <span className={styles.matchCtx}>{m.context}</span>
+                                </div>
+                              ))}
+                              {r.matches.length > 5 && (
+                                <div className={styles.previewMore}>…还有 {r.matches.length - 5} 处</div>
+                              )}
+                            </>
                           )}
                         </div>
                       ))}

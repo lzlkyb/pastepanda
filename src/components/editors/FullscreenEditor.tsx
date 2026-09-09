@@ -227,6 +227,10 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   const [text, setText] = useState(initFilePath ? "" : initContent || "");
   const [viewMode, setViewMode] = useState<ViewMode>(spec.defaultMode);
   const [isDirty, setIsDirty] = useState(false);
+  // 自动保存写盘失败（只读文件/盘满/路径被占）。必须单独记：状态栏只有两态时，
+  // "防抖期间还没存"与"根本存不进去"长得一模一样；用户开着自动保存就是为了不管保存，
+  // 连续失败十分钟后关窗、守卫弹二选一，他会因为"相信自动保存一直在跑"而选不保存 —— 终点是丢稿。
+  const [autoSaveError, setAutoSaveError] = useState(false);
   const [showConfirmClose, setShowConfirmClose] = useState(false);
   // 全屏状态：决定切换按钮显示「放大」还是「缩回」图标
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -423,6 +427,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
         await invoke("update_history", { id: effectiveSourceId, text });
         setInitialContent(text);
         setIsDirty(false);
+        setAutoSaveError(false); // 手动存成功说明目标可写，清掉自动保存的失败标记
         toast("已保存", "success");
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -458,6 +463,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       await invoke("write_text_file_full", { path: currentFilePath, text });
       setInitialContent(text);
       setIsDirty(false);
+      setAutoSaveError(false); // 同上：手动存成功就不再报自动保存失败
       // 刚写的就是磁盘最新版，不更新的话下一轮轮询会把自己的保存认成外部改动
       await fileWatch.markSynced(currentFilePath);
       try {
@@ -497,6 +503,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       setFileName(selectedPath.split(/[\\/]/).pop() || spec.defaultFileName);
       setInitialContent(text);
       setIsDirty(false);
+      setAutoSaveError(false); // 另存为换了可写的新路径，旧路径的失败标记已无意义
       toast("已保存", "success");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -574,8 +581,11 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
         }
         setInitialContent(snapshot);
         setIsDirty(false);
+        setAutoSaveError(false); // 成功一次即清错
       } catch {
-        /* 自动保存失败静默处理：保留脏状态，用户仍可 Ctrl+S 手动重试 */
+        // 仍不弹窗（自动保存是无人值守的），但必须在状态栏把"存不进去"这件事显式化，
+        // 否则界面与"还没到存盘时机"完全一样。脏状态保留，用户仍可 Ctrl+S 手动重试。
+        setAutoSaveError(true);
       }
     }, 1000);
 
@@ -948,8 +958,13 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
           <span className={styles.statusItem}>UTF-8</span>
         </div>
         <div className={styles.statusRight}>
-          <span className={`${styles.statusItem} ${!isDirty ? styles.statusSaved : ""}`}>
-            {isDirty ? "● 未保存" : "✓ 已保存"}
+          {/* 三态：已保存 / 未保存（防抖期）/ 自动保存失败。
+              第三态不能并进前两态："还没存"会自己好，"存不进去"不会，必须提示手动重试。*/}
+          <span
+            className={`${styles.statusItem} ${autoSaveError ? styles.statusFailed : !isDirty ? styles.statusSaved : ""}`}
+            title={autoSaveError ? "自动保存写盘失败，改动还在编辑器里。请按 Ctrl+S 重试或另存为其他路径" : undefined}
+          >
+            {autoSaveError ? "● 自动保存失败 · Ctrl+S 重试" : isDirty ? "● 未保存" : "✓ 已保存"}
           </span>
           <span className={styles.statusItem}>
             {spec.dynamicLanguage ? (languageName ?? "纯文本") : spec.label}

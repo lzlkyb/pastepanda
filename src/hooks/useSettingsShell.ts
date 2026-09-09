@@ -66,6 +66,11 @@ export function useSettingsShell(open: boolean) {
   const saveChainRef = useRef(Promise.resolve() as Promise<unknown>);
 
   const updateAndSave = async (partial: Record<string, unknown>) => {
+    // 乐观更新前先拍下本次涉及键的旧值，供失败回滚用。
+    // ❗ 只拍 partial 里的那几个键而不是整份 config：保存是串行的，整份回滚会把
+    //   排在本次之后、已经成功落盘的其它改动也一并抹掉。
+    const before = useAppStore.getState().config as unknown as Record<string, unknown>;
+    const rollback = Object.fromEntries(Object.keys(partial).map((k) => [k, before[k]]));
     updateConfig(partial);
     const task = saveChainRef.current.then(async () => {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -78,7 +83,12 @@ export function useSettingsShell(open: boolean) {
       await task;
     } catch (e) {
       logger.warn("即时保存失败", e);
-      toast("设置保存失败，请检查数据库权限", "error");
+      // 修复：以前只报错不还原。toast 消失后开关停在「开」而库里是旧值，
+      // 下次启动它自己变回去，用户会当成「设置存不住的怪 bug」。
+      // 同仓 useAiSettings.persist 遇到同样情况是 reload() 回填真实落盘值，这里对齐该行为：
+      // 回滚到上一次成功落盘的值（= 库里真实值），屏上与库里重新一致。
+      updateConfig(rollback);
+      toast("设置保存失败，该项已还原（请检查数据库权限）", "error");
     }
   };
 
@@ -187,14 +197,23 @@ export function useSettingsShell(open: boolean) {
           item && typeof item.id === "string" && typeof item.text === "string"
           && typeof item.time === "string" && typeof item.type === "string"
         );
-        if (valid.length === 0) { toast("文件中没有有效记录", "error"); return; }
+        // 被丢弃的条目必须告诉用户：500 条的备份里 120 条字段缺失，
+        // 只报绿色的「导入成功：380 条」的话，他永远不会知道文件里本来有 500 条——
+        // 数据类操作把部分成功报成成功，是最难事后发现的一类错。
+        const dropped = items.length - valid.length;
+        if (valid.length === 0) { toast(`文件中没有有效记录（共 ${items.length} 条，全部格式不符）`, "error"); return; }
         const { invoke } = await import("@tauri-apps/api/core");
         const count = await invoke<number>("import_history", { items: valid });
         const store = useAppStore.getState();
         const fresh = await invoke<HistoryItem[]>("get_history", { workspace: store.config.current_workspace, filter: "all", search: "", offset: 0, limit: 200 });
         store.setHistory(fresh);
         invalidateCountsCache();
-        toast(`导入成功：${count || valid.length} 条记录`, "success");
+        const imported = count || valid.length;
+        if (dropped > 0) {
+          toast(`导入 ${imported} 条；${dropped} 条格式不符已跳过`, "warning");
+        } else {
+          toast(`导入成功：${imported} 条记录`, "success");
+        }
       }
     } catch (e) {
       logger.warn("导入失败", e);
@@ -210,6 +229,11 @@ export function useSettingsShell(open: boolean) {
   };
 
   const executeCleanup = async () => {
+    // 先关框再执行。clear_history 要删 N 条并把 deleted_items 整份回传前端（撑撤销栈），
+    // N 上千时不是瞬间完成；原来 setShowCleanupConfirm(false) 在函数最后一行，
+    // 删除过程中确认框一直开着、按钮还能反复点。
+    // （失败 toast 会在弹窗关闭之后才出现，Toast 是应用级浮层，不会被已经消失的确认框挡住。）
+    setShowCleanupConfirm(false);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const result = await invoke<{ count: number; deleted_items: HistoryItem[] }>("clear_history", { workspace: config.current_workspace, beforeDays: Number(cleanupDays) });
@@ -232,7 +256,6 @@ export function useSettingsShell(open: boolean) {
       // 修复：清理失败时确认框照常关闭、计数不变却无任何提示，补上失败 toast
       toast(`清理过期记录失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
-    setShowCleanupConfirm(false);
   };
 
   const handleSwitchTabStyle = (style: "segmented" | "circle") => {

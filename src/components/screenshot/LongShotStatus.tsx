@@ -32,6 +32,15 @@ const QUALITY_TIP: Record<LongShotQuality, string> = {
   bad: "基本没拼成（只有一屏或重叠对不上）",
 };
 
+/** 上面那句注释自己就说了"必须配文字"，于是把文字放进了 title —— 等于没放。
+ *  这是个 420px 宽的独立小窗，用户此刻的手在滚鼠标滚轮，不会去 hover 一个 7px 的点；
+ *  色觉障碍用户完全拿不到。而这恰好是唯一能在出图**之前**告诉用户"往回滚一点"的通道，
+ *  所以非 ok 时必须在行上直接出字。ok 不出字：一切正常时不占用本来就紧张的横向空间。 */
+const QUALITY_LABEL: Partial<Record<LongShotQuality, string>> = {
+  warn: "接缝可能错位",
+  bad: "没拼上",
+};
+
 export function LongShotStatus() {
   const [p, setP] = useState<LongShotProgress>({ frames: 0, height: 0, thumb: null });
   const [pending, setPending] = useState<LongShotControl | null>(null);
@@ -118,6 +127,11 @@ export function LongShotStatus() {
               className={`ls-dot ${p.quality ?? "ok"}`}
               title={QUALITY_TIP[p.quality ?? "ok"]}
             />
+            {QUALITY_LABEL[p.quality ?? "ok"] && (
+              <span className={`ls-qtxt ${p.quality}`} title={QUALITY_TIP[p.quality ?? "ok"]}>
+                {QUALITY_LABEL[p.quality ?? "ok"]}
+              </span>
+            )}
             已拼 <b>{p.frames}</b> 段<span className="ls-h">高 {p.height}px</span>
           </div>
           <div className="ls-sub">

@@ -174,22 +174,31 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
                 清除全部
               </button>
             </div>
+            {/* 一行 = 两个并列的 button，而不是「整行 button 里嵌删除 button」：
+                后者是无效 HTML（交互元素不能嵌套），浏览器会自己拆成兄弟节点，
+                实际渲染结构跟代码对不上。原来整行是 <div onMouseDown>，键盘根本选不中。 */}
             {searchHistory.map((kw, i) => (
-              <div
-                key={i}
-                className={styles.searchHistoryItem}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleSearchSubmit(kw);
-                }}
-              >
-                <span className={styles.searchHistoryItemIcon}>🕐</span>
-                <span className={styles.searchHistoryText}>{kw}</span>
+              <div key={i} className={styles.searchHistoryItem}>
+                {/* preventDefault 必须保留：它拦的是「按下时搜索框失焦」，
+                    不拦则点一下历史项输入框会先掉焦点闪一下；真正的搜索动作改为 onClick，
+                    因为键盘按 Enter/Space 发的是 click、不是 mousedown。 */}
                 <button
-                  className={styles.searchHistoryRemove}
-                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); removeSearchHistory(kw); }}
+                  type="button"
+                  className={styles.searchHistoryMain}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSearchSubmit(kw)}
                 >
-                  <X size={10} />
+                  <span className={styles.searchHistoryItemIcon} aria-hidden="true">🕐</span>
+                  <span className={styles.searchHistoryText}>{kw}</span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.searchHistoryRemove}
+                  aria-label={`删除搜索记录 ${kw}`}
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={(e) => { e.stopPropagation(); removeSearchHistory(kw); }}
+                >
+                  <X size={10} aria-hidden="true" />
                 </button>
               </div>
             ))}

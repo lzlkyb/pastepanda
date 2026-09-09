@@ -2,7 +2,7 @@
  * EncodingDialog.tsx — 编码检测与批量转码。
  * 选择文件 → 检测编码 → 选目标编码 → 预览 → 执行转换（自动备份 .bak）。
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, FolderOpen, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -18,6 +18,21 @@ interface DetectResult {
   confidence: number;
   has_bom: boolean;
 }
+
+/** 列表项 = 探测结果 + 失败标记。
+ *  探测失败的文件以前直接不入列表（静默丢弃）：选 20 个、挂了 5 个，
+ *  列表只剩 15 行，转换又报「15/15 成功」——用户合理地以为整目录都转完了，
+ *  而那几个没转的文件会在别处炸掉。现在失败项也入列表、标「无法读取」且不参与转换。 */
+type FileEntry = DetectResult & { failed?: boolean };
+
+/** 无法读取时的占位行 */
+const failedEntry = (path: string): FileEntry => ({
+  path,
+  encoding: "无法读取",
+  confidence: 0,
+  has_bom: false,
+  failed: true,
+});
 
 interface ConvertResult {
   path: string;
@@ -36,11 +51,17 @@ const TARGET_ENCODINGS = [
 ];
 
 export function EncodingDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [files, setFiles] = useState<DetectResult[]>([]);
+  const [files, setFiles] = useState<FileEntry[]>([]);
   const [targetEnc, setTargetEnc] = useState("utf-8");
   const [removeBom, setRemoveBom] = useState(false);
   const [converting, setConverting] = useState(false);
   const [results, setResults] = useState<ConvertResult[] | null>(null);
+  // 扫描进度：200 个 .properties = 200 次串行 IPC，期间弹窗原本什么都不动，
+  // 用户以为没点上会再点一次又起一轮。现在按钮禁用 + 显示「已扫描 37/200」。
+  const [scanning, setScanning] = useState<{ done: number; total: number } | null>(null);
+  // 取消标志（U1：>10s 的操作必须能中断）。用 ref 而非 state：
+  // 循环里读的必须是最新值，state 在闭包里会永远是启动时的 false。
+  const cancelledRef = useRef(false);
   const { toast } = useToast();
   const anim = useDialogAnim();
 
@@ -53,21 +74,33 @@ export function EncodingDialog({ open, onClose }: { open: boolean; onClose: () =
       });
       if (!paths || (Array.isArray(paths) && paths.length === 0)) return;
       const pathArr = Array.isArray(paths) ? paths : [paths];
-      const detected: DetectResult[] = [];
+      cancelledRef.current = false;
+      setScanning({ done: 0, total: pathArr.length });
+      const detected: FileEntry[] = [];
+      let failedCount = 0;
       for (const p of pathArr) {
+        if (cancelledRef.current) break; // 用户点了「取消扫描」
         try {
           const r = await invoke<DetectResult>("detect_file_encoding", { path: p });
           detected.push(r);
         } catch (e) {
           logger.warn(`检测编码失败: ${p}`, e);
+          detected.push(failedEntry(p)); // 不再静默丢弃
+          failedCount++;
         }
+        setScanning((s) => (s ? { ...s, done: s.done + 1 } : s));
       }
       setFiles(detected);
       setResults(null);
+      if (failedCount > 0) {
+        toast(`${failedCount} 个文件无法读取，已在列表中标出且不会参与转换`, "error");
+      }
     } catch (e) {
       logger.warn("选择文件失败", e);
+    } finally {
+      setScanning(null);
     }
-  }, []);
+  }, [toast]);
 
   const selectFolder = useCallback(async () => {
     try {
@@ -78,30 +111,48 @@ export function EncodingDialog({ open, onClose }: { open: boolean; onClose: () =
       const { readDir } = await import("@tauri-apps/plugin-fs");
       const entries = await readDir(dir as string);
       const textExts = new Set(["txt", "sql", "properties", "yaml", "yml", "json", "xml", "csv", "log", "conf", "ini", "env", "md"]);
-      const detected: DetectResult[] = [];
-      for (const entry of entries) {
-        if (!entry.isFile) continue;
-        const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
-        if (!textExts.has(ext)) continue;
-        const fullPath = `${dir}/${entry.name}`;
+      // 先把待扫清单算出来，才能给出分母（「37/200」而不是「已扫 37」）
+      const targets = entries
+        .filter((entry) => entry.isFile && textExts.has(entry.name.split(".").pop()?.toLowerCase() ?? ""))
+        .map((entry) => `${dir}/${entry.name}`);
+      cancelledRef.current = false;
+      setScanning({ done: 0, total: targets.length });
+      const detected: FileEntry[] = [];
+      let failedCount = 0;
+      for (const fullPath of targets) {
+        if (cancelledRef.current) break;
         try {
           const r = await invoke<DetectResult>("detect_file_encoding", { path: fullPath });
           detected.push(r);
-        } catch { /* skip unreadable */ }
+        } catch (e) {
+          logger.warn(`检测编码失败: ${fullPath}`, e);
+          detected.push(failedEntry(fullPath));
+          failedCount++;
+        }
+        setScanning((s) => (s ? { ...s, done: s.done + 1 } : s));
       }
       setFiles(detected);
       setResults(null);
       if (detected.length === 0) toast("该目录下没有可识别的文本文件", "info");
+      else if (failedCount > 0) {
+        toast(`${failedCount} 个文件无法读取，已在列表中标出且不会参与转换`, "error");
+      }
     } catch (e) {
       logger.warn("选择文件夹失败", e);
+    } finally {
+      setScanning(null);
     }
   }, [toast]);
 
+  /** 可参与转换的文件：探测失败的必须排除，否则后端会拿到一个读不出编码的文件去重写 */
+  const convertable = files.filter((f) => !f.failed);
+
   const executeConvert = useCallback(async () => {
-    if (files.length === 0) return;
+    const targets = files.filter((f) => !f.failed);
+    if (targets.length === 0) return;
     setConverting(true);
     try {
-      const paths = files.map((f) => f.path);
+      const paths = targets.map((f) => f.path);
       const r = await invoke<ConvertResult[]>("batch_convert_encoding", {
         paths,
         targetEncoding: targetEnc,
@@ -126,9 +177,8 @@ export function EncodingDialog({ open, onClose }: { open: boolean; onClose: () =
             <motion.div {...anim.panel} className="dialog-box w460" onClick={(e) => e.stopPropagation()}>
               <div className="dialog-header">
                 <h2 className="dialog-title">编码转换</h2>
-                <button onClick={onClose} className="dialog-close"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+                {/* hover 背景交给 dialog.css 的 .dialog-close:hover；inline style 会压掉主题定制 */}
+                <button onClick={onClose} className="dialog-close">
                   <X size={16} />
                 </button>
               </div>
@@ -136,12 +186,29 @@ export function EncodingDialog({ open, onClose }: { open: boolean; onClose: () =
               <div className="dialog-body" style={{ gap: 12 }}>
                 {/* 文件选择 */}
                 <div className={styles.fileActions}>
-                  <button className={styles.btn} onClick={selectFiles}>
+                  {/* 扫描中两个「选择…」都禁用：否则用户以为没点中、再点一次会叠起第二轮扫描。
+                      opacity 写在 inline：EncodingDialog.module.css 没有 .btn:disabled 规则，
+                      光加 disabled 属性看上去和可点无异 */}
+                  <button className={styles.btn} onClick={selectFiles} disabled={scanning !== null}
+                    style={scanning ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>
                     <FolderOpen size={14} /> 选择文件
                   </button>
-                  <button className={styles.btn} onClick={selectFolder}>
+                  <button className={styles.btn} onClick={selectFolder} disabled={scanning !== null}
+                    style={scanning ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>
                     <FolderOpen size={14} /> 选择文件夹
                   </button>
+                  {/* 扫描中：进度 + 可中断。不给进度的话，200 个文件期间界面零变化，
+                      看上去和「没点中」一模一样 */}
+                  {scanning && (
+                    <>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--text-secondary)" }}>
+                        <RefreshCw size={12} className={styles.spin} /> 已扫描 {scanning.done}/{scanning.total}
+                      </span>
+                      <button className={styles.btn} onClick={() => { cancelledRef.current = true; }}>
+                        取消扫描
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 {/* 文件列表 */}
@@ -152,7 +219,12 @@ export function EncodingDialog({ open, onClose }: { open: boolean; onClose: () =
                         <span className={styles.fileName} title={f.path}>
                           {f.path.split(/[/\\]/).pop()}
                         </span>
-                        <span className={styles.encBadge}>{f.encoding}{f.has_bom ? " +BOM" : ""}</span>
+                        {/* 失败行用危险色标出，并在 title 里说清楚它不会被转换（而不是静默消失） */}
+                        <span
+                          className={styles.encBadge}
+                          style={f.failed ? { color: "var(--danger)" } : undefined}
+                          title={f.failed ? "无法读取，本次转换会跳过该文件" : undefined}
+                        >{f.encoding}{f.has_bom ? " +BOM" : ""}</span>
                       </div>
                     ))}
                   </div>
@@ -175,11 +247,11 @@ export function EncodingDialog({ open, onClose }: { open: boolean; onClose: () =
                 {/* 执行按钮 */}
                 <button
                   className={styles.convertBtn}
-                  disabled={files.length === 0 || converting}
+                  disabled={convertable.length === 0 || converting || scanning !== null}
                   onClick={executeConvert}
                 >
                   {converting ? <RefreshCw size={14} className={styles.spin} /> : <RefreshCw size={14} />}
-                  {converting ? "转换中…" : `转换为 ${TARGET_ENCODINGS.find((e) => e.value === targetEnc)?.label}`}
+                  {converting ? "转换中…" : `转换 ${convertable.length} 个文件为 ${TARGET_ENCODINGS.find((e) => e.value === targetEnc)?.label}`}
                 </button>
 
                 {/* 结果 */}

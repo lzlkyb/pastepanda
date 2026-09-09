@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { AppConfig } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { ToggleRow } from "../ToggleRow";
@@ -32,6 +33,32 @@ export function GeneralSection({
   cleanupDays, handlePickCleanupDays, trashDays, handlePickTrashDays,
   mdAssoc, mdAssocBusy, handleMdAssocToggle,
 }: GeneralSectionProps) {
+  /*
+   * 应用排除名单：本地草稿 + onBlur 提交（与同页其它文本输入 AiSetupStep 一致）。
+   *
+   * 原写法是 `onChange={() => updateAndSave(...)}`，而 updateAndSave = 改 store + 写整份配置：
+   * 输「KeePass, 1Password」就是 18 次全量写库；写库失败时还会每敲一个字弹一次错误 toast。
+   */
+  const [excludedDraft, setExcludedDraft] = useState(config.excluded_apps);
+  /** 已提交值：用它判「草稿真的变了吗」，避免每次 blur 都写一遍库 */
+  const committedRef = useRef(config.excluded_apps);
+  // 外部改了配置（恢复默认 / 其它窗口）时把草稿拉齐
+  useEffect(() => {
+    setExcludedDraft(config.excluded_apps);
+    committedRef.current = config.excluded_apps;
+  }, [config.excluded_apps]);
+
+  // ❗ 改成 onBlur 后多了一条丢数据路径：用户输完直接按 Esc 退设置，blur 来不及触发。
+  //   用 ref 装最新的提交函数 + 空依赖的卸载清理，在卸载时补一次提交。
+  //   （不能把 commit 直接写进依赖：updateAndSave 每次渲染都是新函数，那样会变成每渲染都跑一次清理。）
+  const commitRef = useRef<() => void>(() => {});
+  commitRef.current = () => {
+    if (excludedDraft === committedRef.current) return;
+    committedRef.current = excludedDraft;
+    void updateAndSave({ excluded_apps: excludedDraft });
+  };
+  useEffect(() => () => commitRef.current(), []);
+
   return (
     <>
       {/* ── 通用 ── */}
@@ -140,9 +167,11 @@ export function GeneralSection({
           <div className={`${styles.sRowDesc}`}>来自这些应用的复制内容不会被记录（逗号分隔）</div>
           <input
             type="text"
-            value={config.excluded_apps}
+            value={excludedDraft}
             placeholder="例如：KeePass, 1Password, Bitwarden"
-            onChange={(e) => updateAndSave({ excluded_apps: e.target.value })}
+            onChange={(e) => setExcludedDraft(e.target.value)}
+            onBlur={() => commitRef.current()}
+            onKeyDown={(e) => { if (e.key === "Enter") commitRef.current(); }}
             style={{
               marginTop: 6,
               width: "100%",
@@ -202,15 +231,19 @@ export function GeneralSection({
             {config.hover_mode === "off" ? "无悬浮交互，界面最简洁" : config.hover_mode === "inline" ? "Hover 显示操作按钮，时间自动隐藏" : "弹出 Popover 预览气泡，内容预览+操作"}
           </div>
         </div>
+        {/* 纯 emoji 改成文字：🚫/👆/💬 的含义只写在 title= 里，靠 .sSegOpt::after 悬停才浮出来。
+            这是**常驻**图标按钮，不属于「行内悬停操作」那条例外，也不在×/放大镜/⚙/←→
+            那四个公认符号里：👆 表示「操作按钮」、💬 表示「预览气泡」，不悬停根本猜不出；
+            触屏/键盘用户连悬停都没有。改用现成的 .sSegText（专为文字多选一准备，hover/active 与 .sSegOpt 一致）。 */}
         <div className={styles.sSegGroup}>
-          <button className={`${styles.sSegOpt}${config.hover_mode === "off" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "off" })} title="关闭">
-            <span className={styles.sSegEmoji}>🚫</span>
+          <button className={`${styles.sSegText}${config.hover_mode === "off" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "off" })} aria-pressed={config.hover_mode === "off"}>
+            关闭
           </button>
-          <button className={`${styles.sSegOpt}${config.hover_mode === "inline" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "inline" })} title="操作按钮">
-            <span className={styles.sSegEmoji}>👆</span>
+          <button className={`${styles.sSegText}${config.hover_mode === "inline" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "inline" })} aria-pressed={config.hover_mode === "inline"}>
+            操作按钮
           </button>
-          <button className={`${styles.sSegOpt}${config.hover_mode === "popover" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "popover" })} title="预览气泡">
-            <span className={styles.sSegEmoji}>💬</span>
+          <button className={`${styles.sSegText}${config.hover_mode === "popover" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "popover" })} aria-pressed={config.hover_mode === "popover"}>
+            预览气泡
           </button>
         </div>
       </div>
@@ -237,12 +270,13 @@ export function GeneralSection({
             {config.source_icon_mode === "app" ? "显示真实程序图标，更直观" : "显示预设 Emoji 图标"}
           </div>
         </div>
+        {/* 同上：😀/🖼️ 两个常驻图标按钮的含义也只存在悬停提示里，改成文字 */}
         <div className={styles.sSegGroup}>
-          <button className={`${styles.sSegOpt}${config.source_icon_mode === "emoji" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ source_icon_mode: "emoji" })} title="Emoji 图标">
-            <span className={styles.sSegEmoji}>😀</span>
+          <button className={`${styles.sSegText}${config.source_icon_mode === "emoji" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ source_icon_mode: "emoji" })} aria-pressed={config.source_icon_mode === "emoji"}>
+            Emoji
           </button>
-          <button className={`${styles.sSegOpt}${config.source_icon_mode === "app" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ source_icon_mode: "app" })} title="应用真实图标">
-            <span className={styles.sSegEmoji}>🖼️</span>
+          <button className={`${styles.sSegText}${config.source_icon_mode === "app" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ source_icon_mode: "app" })} aria-pressed={config.source_icon_mode === "app"}>
+            应用图标
           </button>
         </div>
       </div>

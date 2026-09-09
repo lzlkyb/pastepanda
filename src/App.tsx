@@ -790,8 +790,9 @@ function App() {
 
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
   // U4：moveToGroup 弹窗一并登记，Esc/导航键守卫才能感知它
-  const dialogStatesRef = useRef({ showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem });
-  dialogStatesRef.current = { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem };
+  // 🔴 pinnedPanelOpen 同理：它是全屏遮罩，不登记就会在它上面按 Delete 删掉遮罩背后选中的卡片。
+  const dialogStatesRef = useRef({ showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem, pinnedPanelOpen: showPinnedPanel });
+  dialogStatesRef.current = { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem, pinnedPanelOpen: showPinnedPanel };
 
   // U3：跟踪右键菜单开关（ContextMenu 打开/关闭时广播 app-ctxmenu-open/close 事件）
   const ctxMenuOpenRef = useRef(false);
@@ -858,6 +859,7 @@ function App() {
     const {
       showSettings, showSequential, showSnippets, showExtract,
       showEncoding, showBatchReplace, showConfigDiff, moveToGroup, showShortcuts,
+      pinnedPanelOpen,
     } = dialogStatesRef.current;
 
     const filtered = store.getFilteredItems();
@@ -876,6 +878,7 @@ function App() {
       hubOpen: Boolean(d.hubItem),
       showSettings, showSequential, showSnippets, showExtract,
       showEncoding, showBatchReplace, showConfigDiff, moveToGroup, showShortcuts,
+      pinnedPanelOpen,
       fileDetailOpen: fileDetailOpenRef.current,
       anyStoreDialogOpen: anyDialogOpen(d),
       chainOpen: Boolean(d.chainText),
@@ -926,6 +929,7 @@ function App() {
           configDiff: () => setShowConfigDiff(false),
           shortcuts: () => setShowShortcuts(false),
           moveToGroup: () => setMoveToGroupItem(null),
+          pinnedPanel: () => setShowPinnedPanel(false),
         };
         closers[action.dialog]();
         return;
@@ -1172,23 +1176,25 @@ function App() {
                   <h2 className="dialog-title">📂 移动到分组</h2>
                   <button className="dialog-close" onClick={() => setMoveToGroupItem(null)}><X size={14} /></button>
                 </div>
+                {/* hover 交给 CSS：原先是 JS 模拟 hover，而「移除分组」那一条漏写了两个事件，
+                    同一个列表里第一行鼠标划过纹丝不动、其余行会变底色。 */}
                 <div className="dialog-body" style={{ padding: "8px 0" }}>
                   <button
+                    type="button"
+                    className={appStyles.moveToGroupItem}
                     onClick={() => handleMoveToGroup(null)}
-                    style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 10, borderRadius: 0 }}
                   >
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--text-muted)", flexShrink: 0 }} />
+                    <span className={appStyles.moveToGroupDot} style={{ background: "var(--text-muted)" }} />
                     移除分组
                   </button>
                   {groups.map((g) => (
                     <button
                       key={g.id}
+                      type="button"
+                      className={appStyles.moveToGroupItem}
                       onClick={() => handleMoveToGroup(g.id)}
-                      style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 10, borderRadius: 0, transition: "background 0.1s" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                     >
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: g.color, flexShrink: 0 }} />
+                      <span className={appStyles.moveToGroupDot} style={{ background: g.color }} />
                       {g.name}
                     </button>
                   ))}

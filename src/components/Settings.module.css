@@ -175,13 +175,16 @@
   transform: translateX(18px);
 }
 
+/* ❗ 这里**故意不写** outline: none。
+   globals.css 的键盘焦点兜底用的是 :where()（零特异性），任何自己写了 outline 的规则
+   都会盖过它；本控件（「添加笔记类型」下拉）又没有 :focus 替代样式，
+   写了就等于 Tab 到它完全没有落点提示。 */
 .settingsSelect {
   height: 28px;
   padding: 0 8px;
   border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  outline: none;
   cursor: pointer;
   background: var(--input-bg);
   color: var(--text-primary);
@@ -1026,6 +1029,31 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+/* 空态得回答「怎么让它出现」，而不是只说「没找到」——
+   这正好属于「用户有动作能让它不空」（清掉搜索）那一类。 */
+.settingsNoResultHint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.settingsNoResultBtn {
+  margin-top: 12px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.settingsNoResultBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-light);
+}
 
 /* Setting row */
 .sRow {
@@ -1081,17 +1109,24 @@
 }
 .sToggle.off .sToggleThumb { transform: translateX(2px); }
 .sToggle.on  .sToggleThumb { transform: translateX(20px); }
+/* 「开 / 关」两个字是开关**唯一不依赖颜色**的状态信息（SC 1.4.1 的那份保险），
+   所以它必须自己读得清：
+   · 9px 低于正文字号下限 11px，先提到 11px（44px 轨道 + 22px 旋钮仍放得下，不会被旋钮压住）；
+   · 「开」态原来写死 #fff，而深色两套主题的 --green 是亮绿 #4ADE80，白字只有 1.74:1，
+     改走 --toggle-on-label（浅色四套 = #fff，深色两套 = 深色字）。
+   · 「关」态用的 --toggle-off-label 已在 theme.css 里按 ≥4.5:1 重新取值，这里不用动。
+   副作用是「关」会比以前显眼——这是要的结果，不是回归。 */
 .sToggle .sToggleLabel {
   position: absolute;
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   pointer-events: none;
   user-select: none;
 }
-.sToggle.on  .sToggleLabel { left: 7px;  color: #fff; }
+.sToggle.on  .sToggleLabel { left: 7px;  color: var(--toggle-on-label); }
 .sToggle.off .sToggleLabel { left: auto; right: 6px; color: var(--toggle-off-label); }
 /* 美乐蒂皮肤：开关白色旋钮内嵌一颗粉色爱心（绿色 on 轨道语义保留不变） */
 :global([data-theme="blossom"]) .sToggle .sToggleThumb::after {
@@ -2426,4 +2461,71 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mcpAdvanced > summary::before { transition: none; }
+}
+
+/* ===== 主题预览卡（从 AppearanceSection 的内联 style 搬过来） =====
+ *
+ * 搬家同时改了两个数：卡片 64px → 72px、主题名 8px → 11px。
+ * 那串主题名是六个按钮**唯一的名字**（8px 比正文下限 11px 低了将近三成，
+ * 对比度本身达标，纯粹是小到费劲）。卡宽跟着变大是因为「美乐迪」这类 3 字名
+ * 在 11px 下要 33px，加上左侧彩点与内边距后 64px 已经拐不过弯。
+ * 预览色仍然写在内联 style 里——它们是每个主题各自一份的数据，不是样式。 */
+.themeCard {
+  width: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.themeCardOn {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.themeCardBar {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 4px;
+}
+.themeCardDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.themeCardName {
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.themeCardBody {
+  height: 36px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+}
+.themeCardLine {
+  height: 5px;
+  border-radius: 3px;
+}
+.themeCardHeart {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .themeCard { transition: none; }
 }

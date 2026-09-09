@@ -434,14 +434,32 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
         lineEls.length > 0
           ? Array.from(lineEls).map((l) => l.textContent ?? "").join("\n")
           : pre.innerText;
-      navigator.clipboard?.writeText(copyText).then(() => {
-        btn.textContent = "✓ 已复制";
-        btn.classList.add("md-copied");
+      // 复位成初始态（成功/失败共用）
+      const restore = (ms: number) =>
         setTimeout(() => {
           btn.innerHTML = `${COPY_ICON} 复制`;
-          btn.classList.remove("md-copied");
-        }, 1200);
-      }).catch(() => { /* 剪贴板不可用时静默 */ });
+          btn.classList.remove("md-copied", "md-copyfail");
+        }, ms);
+      // 失败必须有反馈。旧实现注释写着"静默"，但成功有反馈、失败没反馈，
+      // 两者在界面上的区别是"按钮变了"和"按钮没变"——而后者跟"点歪了没点着"
+      // 长得一模一样：用户以为已经复制了，去粘贴时拿到的是上一次剪贴板的内容。
+      const fail = () => {
+        btn.textContent = "复制失败";
+        btn.classList.add("md-copyfail");
+        restore(1600);
+      };
+      // 剪贴板 API 整个不可用时（非安全上下文等）也要走失败分支，
+      // 否则 ?. 短路后什么都不会发生，跟上面那个静默失败是同一个坑。
+      const p = navigator.clipboard?.writeText(copyText);
+      if (!p) {
+        fail();
+        return;
+      }
+      p.then(() => {
+        btn.textContent = "✓ 已复制";
+        btn.classList.add("md-copied");
+        restore(1200);
+      }).catch(fail);
     };
     el.addEventListener("click", onClick);
     return () => el.removeEventListener("click", onClick);

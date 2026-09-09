@@ -56,12 +56,15 @@ export function AiEvolution({ open, onToggle, profileAsContext, onProfileAsConte
   const { toast } = useToast();
   const [sum, setSum] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
+  /** 读取失败原因。null = 没失败过（写法参照 AiUsageDetail 的 loadFailed） */
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
   // 一次性加载保护：本组件常驻挂载，加载失败后不再自动重试，
   // 避免 effect 因 sum 仍为空而无限重入 + 反复弹 error toast（P1）。
   const attemptedRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadFailed(null);
     try {
       const [s, d, fb, p, mem] = await Promise.all([
         actionEventStats(30),
@@ -85,11 +88,28 @@ export function AiEvolution({ open, onToggle, profileAsContext, onProfileAsConte
         memory: mem,
       });
     } catch (e) {
-      toast(`读取学习记录失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      // 只弹 toast 是不够的：sum 保持 null 且 attemptedRef 已置 true（不会再重试），
+      // 渲染出来就是「30 天使用 —」——「—」的自然读法是「没有记录」，真相是「读失败了」。
+      // 而这块正是「学习数据可见可删」那条红线的门面，不能拿空态冒充。
+      const msg = e instanceof Error ? e.message : String(e);
+      setLoadFailed(msg);
+      toast(`读取学习记录失败：${msg}`, "error");
     } finally {
       setLoading(false);
     }
   }, [toast]);
+
+  /**
+   * 失败后的重试。
+   *
+   * ❗ 这里是把 `attemptedRef` 置 **true** 而不是复位。重试走的是直接调 `load()`，
+   *   不靠 effect；反过来，若把它置回 false，effect 的 `!attemptedRef.current`
+   *   会在下一次渲染时再发一轮，变成**一次点击拉两次**。
+   */
+  const retry = useCallback(() => {
+    attemptedRef.current = true;
+    void load();
+  }, [load]);
 
   // 只在展开时拉一次：本组件常驻挂载（包着 AiSection），attemptedRef 保证无论
   // 成功失败都只发一次，失败后不会因 sum 仍为空而无限重入（P1 修复）。
@@ -112,12 +132,15 @@ export function AiEvolution({ open, onToggle, profileAsContext, onProfileAsConte
       try {
         await opts.run();
         toast(opts.ok, "success");
-        setSum(null); // 下一个 effect 会重拉，不自己猜新值
+        // ❗ 原来这里是 `setSum(null)` + 注释「下一个 effect 会重拉」，但 effect 的条件是
+        //   `!attemptedRef.current`，而它已经是 true——根本不会重拉，
+        //   结果是清完之后三个数字永久变成「—」。直接重拉。
+        void load();
       } catch (e) {
         toast(`清空失败：${e instanceof Error ? e.message : String(e)}`, "error");
       }
     },
-    [toast]
+    [toast, load]
   );
 
   const openLearnings = () => useDialogStore.getState().openLearnings();
@@ -146,6 +169,11 @@ export function AiEvolution({ open, onToggle, profileAsContext, onProfileAsConte
       {loading && !sum ? (
         <div className={styles.usageNote}>
           <Loader2 size={12} className="spin" /> 加载中…
+        </div>
+      ) : loadFailed && !sum ? (
+        <div className={styles.loadError}>
+          <span>读取失败：{loadFailed}</span>
+          <button className={styles.retryBtn} onClick={retry}>重试</button>
         </div>
       ) : (
         <>

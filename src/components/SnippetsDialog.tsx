@@ -43,6 +43,10 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
   const { toast } = useToast();
   const anim = useDialogAnim();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
+  // 加载失败标志：不能让「加载挂了」和「真的一条都没有」渲染成同一个界面。
+  // 发布版没有控制台，logger.warn 等于什么都没留下，而空态那句「暂无片段，点击右上角新建」
+  // 太可信了——存了几十条的老用户会当场以为数据没了。
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Snippet | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,8 +67,10 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
     try {
       const items = await invoke<Snippet[]>("get_snippets");
       setSnippets(items);
+      setLoadError(false);
     } catch (e) {
       logger.warn("加载片段失败", e);
+      setLoadError(true); // 交给下方列表区渲染「加载失败 + 重试」，而不是伪装成空态
     } finally {
       setLoading(false);
     }
@@ -78,15 +84,27 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
         const legacy = localStorage.getItem("snippets");
         if (legacy) {
           const oldSnippets: Snippet[] = JSON.parse(legacy);
+          // 只有全部写入成功才清 localStorage：原来是无条件 removeItem，
+          // 任何一条 add_snippet 失败都会把旧片段永久抹掉且无从恢复（唯一的副本就在这里）
+          let allOk = true;
           for (const s of oldSnippets) {
-            await invoke("add_snippet", { name: s.name, content: s.content }).catch(() => {});
+            try {
+              await invoke("add_snippet", { name: s.name, content: s.content });
+            } catch (e) {
+              allOk = false;
+              logger.warn("迁移旧片段失败", e);
+            }
           }
-          localStorage.removeItem("snippets");
+          if (allOk) {
+            localStorage.removeItem("snippets");
+          } else {
+            toast("部分旧片段迁移失败，已保留本地旧数据，下次打开会自动重试", "error");
+          }
         }
       } catch { logger.warn("迁移旧片段数据失败"); }
       await loadSnippets();
     })();
-  }, [open, loadSnippets]);
+  }, [open, loadSnippets, toast]);
 
   // 关闭时重置状态
   useEffect(() => {
@@ -224,6 +242,12 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
     }
     await loadSnippets();
     setSelectedIds(failed);
+    // 确认框写着「不可撤销」，却全程零反馈：删 10 条成 7 条不说、全失败也不说，
+    // 用户只看到片段还在，会以为没点中而再点一次。三分支照 ExtractDialog 的写法对齐。
+    const okCount = selectedIds.size - failed.size;
+    if (failed.size === 0) toast(`已删除 ${okCount} 个片段`, "success");
+    else if (okCount === 0) toast("删除失败，请重试", "error");
+    else toast(`已删除 ${okCount} 个，${failed.size} 个失败（仍保持选中）`, "error");
   };
 
   const handleExportSnippets = async () => {
@@ -280,9 +304,9 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                     <Plus size={13} />
                     <span>新建</span>
                   </button>
-                  <button onClick={() => handleRequestClose(true)} className="dialog-close"
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+                  {/* hover 背景由 dialog.css 的 .dialog-close:hover 接管；
+                      原来的 inline style 优先级更高，把 blossom 主题的定制 hover 压掉了一半 */}
+                  <button onClick={() => handleRequestClose(true)} className="dialog-close">
                     <X size={16} />
                   </button>
                 </div>
@@ -352,6 +376,15 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                         className={`${styles.btnSmV2} ${styles.primary}`}
                         style={!editing.name.trim() || saving ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>{saving ? "保存中..." : "保存"}</button>
                     </div>
+                  </div>
+                ) : loadError ? (
+                  /* 加载失败优先于空态：两者同为「列表是空的」，但结论完全相反，
+                     不能让用户看到「你还没有片段」就以为数据丢了 */
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 0", gap: "8px" }}>
+                    <ClipboardList size={20} style={{ color: "var(--danger)" }} />
+                    <p className={styles.snippetItemSub}>片段加载失败 · 你的片段仍在本地，没有丢失</p>
+                    <button onClick={() => void loadSnippets()}
+                      className={`${styles.btnSmV2} ${styles.outline} ${styles.compact}`}>重试</button>
                   </div>
                 ) : filtered.length === 0 ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 0", gap: "8px" }}>
@@ -468,9 +501,7 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                       </span>
                     )}
                   </div>
-                  <button className="dialog-close" onClick={() => setPreviewSnippet(null)}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+                  <button className="dialog-close" onClick={() => setPreviewSnippet(null)}>
                     <X size={16} />
                   </button>
                 </div>

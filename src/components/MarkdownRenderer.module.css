@@ -180,6 +180,8 @@
 }
 
 .md :global(.md-copybtn.md-copied) { color: var(--green, #4ADE80); }
+/* 复制失败：用语义色令牌 --danger，不用 --red-bg 那套色名 */
+.md :global(.md-copybtn.md-copyfail) { color: var(--danger, #ef4444); }
 
 .md pre {
   padding: 15px 18px;
