@@ -96,12 +96,19 @@ fn resolve_author(store: &DataStore, author: &str, me: &str) -> Result<Scope, St
         // 服务端解 `me`：模型不需要知道自己叫什么，也不会因自报名字而报错。
         "me" => me.to_string(),
         "human" => "human".to_string(),
+        // §7.2：与界面那个筛选同口径（规则 #11）。
+        // 两边各认一套值早晚会漂，而漂了的表现是「同一个词在界面与 AI 那里
+        // 筛出不同结果」——这种不一致在日志里看不出来。
+        // 不校验存不存在：同 `me` / `human`，“库里没任何 AI 写过的东西”
+        // 是一个有意义的空结果，不是错。
+        "ai" => "ai".to_string(),
+        "ai_edited" => "ai_edited".to_string(),
         // 宽容一个缩写：`claude-code` 等价于 `agent:claude-code`。
         // 这不是「静默放宽」——两者指的是同一个对象，只是拼法不同。
         a if a.starts_with("agent:") => a.to_string(),
         a => format!("agent:{}", a),
     };
-    if want.is_empty() || want == "human" || want == me {
+    if want.is_empty() || matches!(want.as_str(), "human" | "ai" | "ai_edited") || want == me {
         return Ok(Scope::Ok {
             folder_id: String::new(),
             tag_ids: Vec::new(),

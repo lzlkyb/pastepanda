@@ -5326,9 +5326,126 @@ fn author_opts(author: &str) -> NoteViewOpts {
 }
 
 #[test]
+fn test_last_agent_written_at_every_content_write() {
+    // 🔴 §7.1 的主护栅。它钉三件事，每一件漏了都**不报错**：
+    //   ① 改正文要写 last_agent（漏了 → `author="me"` 找不回追加的内容）；
+    //   ② 人改一遍要清掉它（漏了 → 人改过的笔记永远算在 AI 头上）；
+    //   ③ 改元数据不得动它（漏了 → AI 动了个标签就声称「记过」这篇）。
+    let store = make_store();
+    let f = store.folder_create("工作", None).unwrap();
+    let t = store.create_tag("重要", "#fff").unwrap();
+
+    // ① 人建的：两列都空。
+    let n = store.note_create(None, "人建的", "原文").unwrap();
+    let read = |id: &str| store.note_get(id).unwrap().unwrap();
+    assert_eq!(read(&n.id).source_agent, "", "人建的 source_agent 应为空");
+    assert_eq!(read(&n.id).last_agent, "", "人建的 last_agent 应为空");
+
+    // ① AI 改正文：只动 last_agent，source_agent 不得被覆盖。
+    store
+        .note_update_from(&n.id, "人建的", "原文\n\nAI 追的", "agent:claude-code")
+        .unwrap();
+    assert_eq!(
+        read(&n.id).source_agent,
+        "",
+        "🔴 source_agent 是「创建者」，改动不得动它（行图标与快照锚定靠它）"
+    );
+    assert_eq!(
+        read(&n.id).last_agent,
+        "agent:claude-code",
+        "🔴 这就是 §7.1：追加不记归属的话，author=\"me\" 找不回自己写的东西"
+    );
+
+    // ③ 改元数据不算：文件夹与标签都不得动 last_agent。
+    //    它们本来就不接 source 参数，这条钉的是「以后也不要给它们加」。
+    store.note_set_folder(&n.id, Some(&f.id)).unwrap();
+    store.note_set_tags(&n.id, &[t.id.clone()]).unwrap();
+    assert_eq!(
+        read(&n.id).last_agent,
+        "agent:claude-code",
+        "改文件夹/标签不是正文改动，不得动 last_agent"
+    );
+
+    // ② 人再改一遍正文：清掉。
+    store.note_update(&n.id, "人建的", "人又改了一遍").unwrap();
+    assert_eq!(
+        read(&n.id).last_agent,
+        "",
+        "🔴 人改过之后「最后改过正文的」就是人，不能再算在 agent 头上"
+    );
+
+    // AI 建的：两列同值。
+    let a = store
+        .note_create_from(None, "AI 建的", "正文", "agent:cursor")
+        .unwrap();
+    assert_eq!(a.source_agent, "agent:cursor", "返回值里的 source_agent");
+    assert_eq!(a.last_agent, "agent:cursor", "返回值里的 last_agent——与 INSERT 对得上");
+    assert_eq!(read(&a.id).last_agent, "agent:cursor", "重读也要一致");
+}
+
+#[test]
+fn test_revision_restore_clears_last_agent() {
+    // 🔴 用户从历史里回滚过的笔记不该还声称某 agent 最后改过。
+    //    不清的后果不是报错，而是 `author` 把一篇用户亲手恢复过的笔记
+    //    算成 AI 的记忆——而模型根本没有回滚这个工具。
+    let store = make_store();
+    let n = store.note_create(None, "笔记", "第一版").unwrap();
+    store
+        .note_update_from(&n.id, "笔记", "AI 改的第二版", "agent:claude-code")
+        .unwrap();
+    assert_eq!(
+        store.note_get(&n.id).unwrap().unwrap().last_agent,
+        "agent:claude-code"
+    );
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    let first = revs.last().expect("应当有快照");
+    store.note_restore(first.id).unwrap();
+
+    let after = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(
+        after.last_agent, "",
+        "🔴 回滚只可能是人点的，last_agent 必须清掉"
+    );
+}
+
+#[test]
+fn test_author_me_finds_appended_content_not_just_created() {
+    // 🔴 §7.1 的验收条件。`instructions` 告诉模型「同一主题已有就用
+    //    kb_append 追进去」——如果 `author` 只认 source_agent，
+    //    那么**模型越听话、越找不回自己的记忆**。这条就是那个场景。
+    let store = make_store();
+    // 用户先建了一篇，AI 后来往里面追了东西——正是我们推荐的写法。
+    let n = store.note_create(None, "并发笔记", "用户写的开头").unwrap();
+    store
+        .note_update_from(
+            &n.id,
+            "并发笔记",
+            "用户写的开头\n\n- [decision] 阻塞活儿丢给 spawn_blocking",
+            "agent:claude-code",
+        )
+        .unwrap();
+    // 另一篇纯用户的，用来确认筛选真的在筛。
+    store.note_create(None, "另一篇并发", "用户写的").unwrap();
+
+    let mine = store
+        .note_list_view("all", &[], &author_opts("agent:claude-code"), 50, 0)
+        .unwrap();
+    assert_eq!(mine.len(), 1, "🔴 追加过的那篇必须能被 author 找到");
+    assert_eq!(mine[0].id, n.id);
+
+    // 而 `human` 不该包含它：人建的、但正文被 AI 改过了。
+    let human = store
+        .note_list_view("all", &[], &author_opts("human"), 50, 0)
+        .unwrap();
+    assert_eq!(human.len(), 1, "human 只该剩那篇从未被 AI 碰过的");
+    assert_ne!(human[0].id, n.id, "被 AI 改过正文的不能再算「人亲自写的」");
+}
+
+#[test]
 fn test_author_filter_applies_on_every_query_path() {
     // 🔴 这条钉的是规则 #11.1：`push_author_filter` 有**四个**调用点
-    //    （`note_view_from_where` / `note_search` 的 FTS 路径 / 它的 LIKE 兑底 /
+    //    （`note_view_from_where` / `note_search` 的 FTS 路径 / 它的 LIKE 兜底 /
     //    `note_search_relevant`）。漏一处**不报错**，只是那条路径静默不筛——
     //    而静默不筛的后果是模型把别人写的笔记当成自己的记忆。
     //
@@ -5372,7 +5489,7 @@ fn test_author_filter_applies_on_every_query_path() {
 #[test]
 fn test_author_filter_survives_the_like_fallback() {
     // 🔴 四个调用点里唯一一个**平时跑不到**的：`note_search_view` 里的
-    //    LIKE 兑底。它只在 FTS 挂了才走，所以常规测试永远碰不到它——
+    //    LIKE 兜底。它只在 FTS 挂了才走，所以常规测试永远碰不到它——
     //    而那正是 `order_clause_with` 那条注释说的坑的温床：
     //    「写两份的结果就是 FTS 正常时排序对、退到 LIKE 就不对」。
     //
@@ -5384,23 +5501,23 @@ fn test_author_filter_survives_the_like_fallback() {
         .execute("DROP TABLE notes_fts", [])
         .expect("删 FTS 表应当成功，否则这条测试并没跑到 LIKE 路径");
 
-    // 先确认真的进了兑底：不筛时还能搜到三篇（若 FTS 没挂，这里会是 0）。
+    // 先确认真的进了兜底：不筛时还能搜到三篇（若 FTS 没挂，这里会是 0）。
     let all = store
         .note_search_view("并发", "all", &[], &NoteViewOpts::default(), 50)
         .unwrap();
-    assert_eq!(all.len(), 3, "没进 LIKE 兑底，这条测试就是空转的");
+    assert_eq!(all.len(), 3, "没进 LIKE 兜底，这条测试就是空转的");
 
     let mine = store
         .note_search_view("并发", "all", &[], &author_opts("agent:cursor"), 50)
         .unwrap();
-    assert_eq!(mine.len(), 1, "LIKE 兑底路径上 author 也必须生效");
+    assert_eq!(mine.len(), 1, "LIKE 兜底路径上 author 也必须生效");
     assert_eq!(mine[0].source_agent, "agent:cursor");
 }
 
 #[test]
 fn test_author_filter_does_not_break_positional_binding() {
     // 🔴 `push_author_filter` 是全文仅此一处往 `push_view_filters` 旁边
-    //    **追绑定参数**的地方（那个函数刷意不带参数）。
+    //    **追绑定参数**的地方（那个函数刻意不带参数）。
     //    位置绑定错位项目里刚踩过坑（`bump_search_hits`），
     //    所以这里把 author 与**其它每一种带参数的筛选**叠在一起跑一遍：
     //    对不上的话不会报 SQL 错，只是条件互相错位、结果静默不对。
@@ -5436,9 +5553,87 @@ fn test_author_filter_does_not_break_positional_binding() {
 }
 
 #[test]
+fn test_author_ai_means_any_agent() {
+    // §7.2：界面上那个「只看 AI 写过的」靠这一支。
+    //
+    // 🔴 不能靠「点名某个 agent」代替：用户不知道自己库里有哪些 agent。
+    //    规划里把 §7.2 当成「纯前端」就错在没发现后端缺这一支。
+    let store = store_with_three_writers();
+    // 再造一篇「人建的、被 AI 改过正文」——它也得算进 AI 那一档。
+    let mixed = store.note_create(None, "人建的并发", "并发模型").unwrap();
+    store
+        .note_update_from(&mixed.id, "人建的并发", "并发模型\n\nAI 追的", "agent:claude-code")
+        .unwrap();
+
+    let ai = store
+        .note_list_view("all", &[], &author_opts("ai"), 50, 0)
+        .unwrap();
+    assert_eq!(ai.len(), 3, "两篇 AI 建的 + 一篇被 AI 改过的：{:?}", ai.len());
+    assert!(
+        ai.iter()
+            .all(|n| !n.source_agent.is_empty() || !n.last_agent.is_empty()),
+        "`ai` 筛出来的每一篇都得至少有一列非空"
+    );
+
+    // 与 `human` 互补：两边加起来就是全库，不重不漏。
+    let human = store
+        .note_list_view("all", &[], &author_opts("human"), 50, 0)
+        .unwrap();
+    let all = store
+        .note_list_view("all", &[], &NoteViewOpts::default(), 50, 0)
+        .unwrap();
+    assert_eq!(
+        ai.len() + human.len(),
+        all.len(),
+        "🔴 `ai` 与 `human` 必须是互补的两半（全库 {}）——否则一定有一类笔记两边都看不到",
+        all.len()
+    );
+}
+
+#[test]
+fn test_author_ai_edited_is_the_one_the_user_cannot_otherwise_see() {
+    // §7.2 乙案。「改过我的」= 我建的、但正文被 AI 改过。
+    //
+    // 🔴 它不能用 `ai` 代替：`ai` 把「AI 建的」也包进去了，
+    //    而后者列表里本来就有图标（`NoteRowIcon`）。
+    //    用户真正看不见的只有这一类：他自己写的东西被改过了。
+    let store = make_store();
+    // 一：人建的、被 AI 改过正文 —— 只有它应当命中。
+    let edited = store.note_create(None, "我写的", "原文").unwrap();
+    store
+        .note_update_from(&edited.id, "我写的", "原文\n\nAI 追的", "agent:claude-code")
+        .unwrap();
+    // 二：AI 建的 —— 不应当命中（列表里本来有图标）。
+    store
+        .note_create_from(None, "AI 建的", "正文", "agent:cursor")
+        .unwrap();
+    // 三：纯人写的 —— 不应当命中。
+    store.note_create(None, "纯我写的", "正文").unwrap();
+
+    let rows = store
+        .note_list_view("all", &[], &author_opts("ai_edited"), 50, 0)
+        .unwrap();
+    assert_eq!(rows.len(), 1, "只该剩「我建的、被 AI 改过」那一篇：{:?}", rows.len());
+    assert_eq!(rows[0].id, edited.id);
+    assert_eq!(rows[0].source_agent, "", "必须是人建的");
+    assert_ne!(rows[0].last_agent, "", "而且正文被 agent 改过");
+
+    // 与 `ai` 的关系：真子集。若两者结果相同，乙案就没意义了。
+    let ai = store
+        .note_list_view("all", &[], &author_opts("ai"), 50, 0)
+        .unwrap();
+    assert_eq!(ai.len(), 2, "`ai` 还要包含 AI 建的那篇");
+    assert!(
+        ai.iter().any(|n| n.id == edited.id),
+        "🔴 `ai_edited` 必须是 `ai` 的子集——两边口径不一致的话，\
+         用户从「AI 写过」切到「改过我的」会看到前者没有的条目"
+    );
+}
+
+#[test]
 fn test_author_filter_empty_means_no_filter() {
     // 🔴 空串 = 不筛。写错成「空串 = 只要人写的」会让**所有不带 author 的调用**
-    //    静默溡掉 AI 写的笔记——而那条路径是界面列表的主路径。
+    //    静默漏掉 AI 写的笔记——而那条路径是界面列表的主路径。
     let store = store_with_three_writers();
     assert_eq!(
         store
@@ -6272,6 +6467,7 @@ fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
         created_at: "2026-08-29 14:32:07.000".to_string(),
         updated_at: "2026-09-01 09:10:44.000".to_string(),
         source_agent: String::new(),
+        last_agent: String::new(),
         folder_id: None,
         summary: None,
         daily_date: None,

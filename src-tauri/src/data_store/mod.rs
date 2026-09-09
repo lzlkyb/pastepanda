@@ -1342,6 +1342,77 @@ impl DataStore {
             }
         }
 
+        // 数据库迁移（§7.1）：notes.last_agent —— 最后一个改过**正文**的 agent。
+        //
+        // # 🔴 为何必须另开一列而不是复用 source_agent
+        //
+        // `notes.source_agent` 的语义是「创建者」，而且不能动：
+        // `NoteRowIcon` 的行图标与 `should_anchor_on` 的快照锚定都靠它。
+        // 拿它兼记「最近改动者」会把创建者这个事实覆盖掉。
+        //
+        // 而不加列的后果是一个**自相矛盾**：`instructions` 告诉模型
+        // 「同一主题已有就用 kb_append 追进去」，而 `kb_search/kb_list` 的
+        // `author="me"` 只认 source_agent，于是**模型越听话、越找不回自己的记忆**。
+        //
+        // # 为何不靠现有表算
+        //
+        // 两个看似更便宜的选项都被排除，理由同一条：
+        // **归属不能建在会被清掉的数据上**。
+        // ・`note_revisions`：`prune_revisions_on` 会删掉超出 `MAX_REVISIONS`
+        //   的未锚定快照 ⇒ 归属随版本老化**静默消失**，不报错。
+        // ・`mcp_audit.note_ids`：有保留天数，且红线② 要求它用户可见可删。
+        //
+        // # 取值口径：只计**正文**改动
+        //
+        // 写入点只有三处（护栅见 `test_last_agent_written_at_every_content_write`）：
+        // ・`note_create_on` 的 INSERT → 写 source
+        // ・`note_update_from` 的 UPDATE → 写 source
+        // ・版本回滚的 UPDATE → **清成空串**（那只可能是人点的，
+        //   模型没有这个工具）—— 用户手动回滚过的笔记不该还声称某 agent 最后改过
+        //
+        // 改元数据的一律不算：`note_set_folder` / `note_set_tags` / `note_tags_edit`
+        // 本来就**不接 source 参数**——代码库早就区分了「改正文带来源」与
+        // 「改元数据不带」。改了个标签就说它「记过」这篇是错的。
+        // 标题改名带动的 `[[链接]]` 重写（O-9）也不算：那是派生编辑。
+        //
+        // 回填：存量笔记拿不到历史改动者（版本表会被裁），默认空串就是
+        // 诚实的答案——不能拿 `source_agent` 回填，那等于声称「创建者就是最后改动者」。
+        //
+        // 🔴 回填带来一个**永久歧义**，展示层必须知道：
+        //    `source_agent != '' && last_agent == ''` 有两种成因——
+        //    迁移前的存量（不知道谁最后改的），或迁移后人真改过一遍。
+        //    两者**分不开**，所以 `provenance` / `format_brief` 在这一档
+        //    一律只报创建者、不声称「后来用户改过」——那句话会是编的。
+        //    （这个坑是被 `test_brief_marks_the_writer_only_for_agents` 当场拦下的：
+        //    那条测试的假笔记没设 `last_agent`，正好就是存量笔记的形状。）
+        //
+        // ⚠ 已知不一致，明写不藏：**同步不传归属**。`sync/*.rs` 里
+        //   `source_agent` 一次都没出现，跳机来的笔记走 `note_create_keeping_id`
+        //   （硬传 ""）。`last_agent` 保持一致，而且这是有意的：
+        //   归属是**本机事实**，跳机传来的只是对端的声称。
+        {
+            let has: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'last_agent'",
+                    [],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has {
+                if let Err(e) = conn.execute_batch(
+                    "ALTER TABLE notes ADD COLUMN last_agent TEXT NOT NULL DEFAULT '';",
+                ) {
+                    if is_duplicate_column_error(&e) {
+                        log::warn!("[DataStore] notes.last_agent 列已存在，忽略: {}", e);
+                    } else {
+                        log::error!("[DataStore] 添加 notes.last_agent 列失败: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
         // 建表（M6-P1）：devices —— 已配对的设备。
         //
         // 配对是一次性的**信任建立**，在线与否是连接层事件，两者解耦：

@@ -233,8 +233,11 @@ impl DataStore {
                 // M6-P2：恢复旧版本是一次新的修改（不是回到过去），
                 // 所以 updated_ms 取**现在**而不是那个快照的时间——
                 // 否则对端会认为它旧于自己手里的版本，把用户刚做的恢复覆盖掉。
+                // §7.1：`last_agent` 清成空串。同上面那句「模型没有这个工具」：
+                // 从历史里恢复只可能是人点的，用户手动回滚过的笔记
+                // 不该还声称某 agent 最后改过——那会让 `author` 把它算成 AI 的记忆。
                 "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
-                 updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
+                 updated_ms = MAX(?5, updated_ms + 1), last_agent = '' WHERE id = ?1",
                 rusqlite::params![note_id, title, content, note_now(), self.hlc_now()],
             )
             .map_err(|e| e.to_string())?;

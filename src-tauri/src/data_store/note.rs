@@ -56,8 +56,22 @@ pub struct Note {
     pub created_at: String,
     pub updated_at: String,
     /// D13：外部 agent 写入的来源标记。M4 才启用，手动笔记是空串。
+    ///
+    /// 🔴 它是「**创建者**」，不是「最近改动者」——后者看 [`Self::last_agent`]。
+    /// 行图标（`NoteRowIcon`）与快照锚定（`should_anchor_on`）都靠它，
+    /// 所以它不能被改动者覆盖。
     #[serde(default)]
     pub source_agent: String,
+    /// §7.1：最后一个改过**正文**的 agent（`agent:xxx`）。空串 = 最后是人改的。
+    ///
+    /// 与 [`Self::source_agent`] 的区别就是「建的」与「改过的」。
+    /// 两者分开是因为 `instructions` 让模型优先 `kb_append` 往现有笔记里追，
+    /// 而只看 `source_agent` 的话那些内容在 `author="me"` 里是看不见的。
+    ///
+    /// 只计正文改动（改文件夹/标签不算），写入口径与回填理由
+    /// 写在迁移处（`data_store/mod.rs` 搜 `last_agent`）。
+    #[serde(default)]
+    pub last_agent: String,
     /// 所属文件夹（B1 #1）。`None` = 未分类。
     ///
     /// 删文件夹时由 `ON DELETE SET NULL` 自动变回 None——**笔记不随文件夹删**。
@@ -115,7 +129,7 @@ pub struct Note {
 /// 它得用同一份列顺序，不能另写一份。
 pub(super) const NOTE_COLS: &str =
     "id, history_id, title, content, created_at, updated_at, source_agent, \
-     folder_id, summary, daily_date, deleted_at, pinned";
+     folder_id, summary, daily_date, deleted_at, pinned, last_agent";
 
 pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -134,6 +148,8 @@ pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         //   插在中间会把后面所有下标推一位，而那不报错、只是静默读错列。
         //   SQLite 没有 bool，存的是 INTEGER。
         pinned: row.get::<_, i64>(11)? != 0,
+        // ❗ 下标 12 = §7.1 追在 `NOTE_COLS` 末尾的 `last_agent`。同上：**只能追在末尾**。
+        last_agent: row.get(12)?,
         tags: Vec::new(),
         // 同 `tags`：不在 NOTE_COLS 里，由 note_list_deleted 读完本函数后另行填
         source_kind: None,
@@ -484,11 +500,16 @@ pub struct NoteViewOpts {
     /// （不需要字段级 `#[serde(default)]`：结构体上那个 `default` 已经盖住了，
     /// 所以旧前端不传这个字段也能反序列化。）
     pub updated_within: String,
-    /// 写入者筛选（③甲）。`""` 不筛 / `"human"` 人亲自写的 /
-    /// 其余值按 `notes.source_agent` 精确匹配（形如 `agent:claude-code`）。
+    /// 写入者筛选（③甲）。五档取值：
+    /// - `""` 不筛
+    /// - `"ai"` 任何 agent 建过或改过正文的（§7.2 界面筛选靠它）
+    /// - `"ai_edited"` 我建的、但正文被 AI 改过（§7.2 乙案；用户唯一看不见的那一类）
+    /// - `"human"` 人亲自写的（**两列都空**）
+    /// - 其余值按 `source_agent` 或 `last_agent` 精确匹配（形如 `agent:claude-code`）
     ///
-    /// 不会与真实值撞车：`source_agent_from_ua()` 产出的值**总带 `agent:` 前缀**，
-    /// 所以永远不会等于 `"human"`；而人写的那一档存的是空串。
+    /// 三个哨兵值不会与真实值撞车：`source_agent_from_ua()` 产出的值
+    /// **总带 `agent:` 前缀**，所以永远不会等于 `"ai"` 或 `"human"`；
+    /// 而人写的那一档存的是空串。
     ///
     /// 🔴 它的值**最终源自 User-Agent 头**（`source_agent_from_ua` 只截长度、不转义），
     /// 所以必须走**绑定参数**、绝不能内联——这是它不能放进
@@ -632,7 +653,7 @@ fn push_view_filters(sql: &mut String, o: &NoteViewOpts) {
 /// # 🔴 四个调用点，一个都不能漏（规则 #11.1）
 ///
 /// 跟 `push_view_filters` 一模一样的四处：`note_view_from_where`、
-/// `note_search` 的 FTS 路径、它的 LIKE 兑底路径、`note_search_relevant`。
+/// `note_search` 的 FTS 路径、它的 LIKE 兜底路径、`note_search_relevant`。
 /// 漏一处不报错，只是那条路径静默不筛——而 LIKE 那条平时根本跑不到。
 fn push_author_filter(
     sql: &mut String,
@@ -641,10 +662,32 @@ fn push_author_filter(
 ) {
     match o.author.as_str() {
         "" => {}
-        // 空串在 W2 里的语义就是「人亲自改的」。`''` 是字面量，不碰输入。
-        "human" => sql.push_str(" AND notes.source_agent = ''"),
+        // §7.2：「任何 agent」——界面上那个「只看 AI 写过的」靠它。
+        //
+        // 🔴 不能靠「点名某个 agent」代替：用户不知道自己库里有哪些 agent，
+        //    也不应该逐个试。没这一支的话 §7.2 那个筛选根本无法实现
+        //    （规划里把 §7.2 当成「纯前端」是错的，就错在这里）。
+        "ai" => sql.push_str(" AND (notes.source_agent != '' OR notes.last_agent != '')"),
+        // §7.2 乙案：「改过我的」——**我建的、但正文被 AI 改过**。
+        //
+        // 🔴 它不是 `ai` 的子集名字游戏，而是用户唯一看不见的那一类：
+        //    「AI 建了一篇笔记」列表里有图标，而「AI 悄悄改了我写的东西」
+        //    在界面上没有任何痕迹。这也是乙案胜过甲案的唯一理由。
+        "ai_edited" => {
+            sql.push_str(" AND notes.source_agent = '' AND notes.last_agent != ''")
+        }
+        // 🔴 `human` 要求**两列都空**：人建的、但后来被 AI 改过正文的笔记
+        //    不能再算「人亲自写的」——对用户来说那正是他最想看见的一类。
+        //    `''` 是字面量，不碰输入。
+        "human" => sql.push_str(" AND notes.source_agent = '' AND notes.last_agent = ''"),
+        // §7.1：建的**或**改过正文的都算。
+        //
+        // 🔴 两列都要匹，且两个 `?` 顶两个参数（不能写成一个占位符绑两次）：
+        //    只比 `source_agent` 就是 §7.1 那个 bug 本身——`instructions` 让模型
+        //    优先 `kb_append`，而追加只动 `last_agent`，于是它越听话越找不回来。
         a => {
-            sql.push_str(" AND notes.source_agent = ?");
+            sql.push_str(" AND (notes.source_agent = ? OR notes.last_agent = ?)");
+            params.push(Box::new(a.to_string()));
             params.push(Box::new(a.to_string()));
         }
     }
@@ -1016,8 +1059,11 @@ impl DataStore {
         };
         let now = note_now();
         conn.execute(
-            "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent, updated_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7)",
+            // §7.1：`last_agent` 与 `source_agent` 在新建时同值（都是 `?6`）——
+            // 新建也是一次正文改动，创建者就是当下的最后改动者。
+            // 之后两者会分开：别人改了正文只动 last_agent。
+            "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent, last_agent, updated_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?6, ?7)",
             rusqlite::params![id, history_id, title, content, now, source, self.hlc_now()],
         )
         .map_err(|e| e.to_string())?;
@@ -1032,6 +1078,9 @@ impl DataStore {
             // 新建的笔记不走回收站查询，永远是 None（同 `deleted_at`）
             source_kind: None,
             source_agent: source.to_string(),
+            // §7.1：与 INSERT 里的 `?6, ?6` 保持一致——这里是同一份事实的
+            // 内存副本，两处对不上就是「刚建完返回的对象与重读的不一样」。
+            last_agent: source.to_string(),
             // 新建笔记一律落入「未分类」。归档走 `note_set_folder`（右键「移动到文件夹」
             // 与 #13 新建空白笔记的「落入当前文件夹」都用它），不往 create 里堆参数。
             folder_id: None,
@@ -1102,9 +1151,12 @@ impl DataStore {
         tx.execute(
             // M6-P2：每一处刷 `updated_at` 的地方都必须同时刷 `updated_ms`——
             // 漏一处 = 那次改动在同步里「没发生过」。MAX(...) 是单调保证，见 [`now_ms`]。
+            // §7.1：`last_agent` 跟着 source 走。空串 = 人亲自改的，
+            // 所以人改一遍会把之前的 agent 标记**清掉**——那是对的：
+            // 此后「最后改过正文的」确实是人，不能再算在 agent 头上。
             "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
-             updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
-            rusqlite::params![id, title, content, note_now(), self.hlc_now()],
+             updated_ms = MAX(?5, updated_ms + 1), last_agent = ?6 WHERE id = ?1",
+            rusqlite::params![id, title, content, note_now(), self.hlc_now(), source],
         )
         .map_err(|e| e.to_string())?;
         Self::prune_revisions_on(&tx, id).map_err(|e| e.to_string())?;

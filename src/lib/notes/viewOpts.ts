@@ -25,6 +25,21 @@ export type NoteGroupBy = "" | "folder" | "month" | "tag";
  */
 export type NoteWithin = "" | "7d" | "30d" | "90d";
 
+/**
+ * 写入者筛选（§7.2）。`""` = 不筛。
+ *
+ * 🔴 后端那个字段还接 `agent:xxx`（点名某个 agent），本类型故意不含——
+ * 界面上用户不知道自己库里有哪些 agent，逐个列出来只会把一行撑爆。
+ * 点名那个能力留给 MCP（agent 自己用 `author="me"`）。
+ *
+ * 三个非空值的区分是有意的：
+ * - `ai` 任何 agent 碰过的（建的或改过正文的）
+ * - `ai_edited` **我建的、但正文被 AI 改过** —— 用户唯一看不见的那一类：
+ *   「AI 建了一篇」列表里有图标（`NoteRowIcon`），而「AI 改了我写的」没有任何痕迹
+ * - `human` 两列都空，即从未被 AI 碰过
+ */
+export type NoteAuthor = "" | "ai" | "ai_edited" | "human";
+
 export interface NoteViewOpts {
   sort: NoteSort;
   groupBy: NoteGroupBy;
@@ -32,6 +47,7 @@ export interface NoteViewOpts {
   fromCard: Tri;
   tagged: Tri;
   updatedWithin: NoteWithin;
+  author: NoteAuthor;
 }
 
 export type InboxSort = "" | "signal" | "recent" | "recopy";
@@ -63,7 +79,22 @@ export const DEFAULT_NOTE_VIEW: NoteViewOpts = {
   fromCard: "",
   tagged: "",
   updatedWithin: "",
+  author: "",
 };
+
+/**
+ * 写入者筛选的选项（§7.2）。与后端 `push_author_filter` 的哨兵值一一对应。
+ *
+ * 🔴 标签不能叫「手工写的」：上面「来源」行已经有一个「手工新建」，
+ *    而那个指的是**不是从剪贴板来的**（`history_id` 为空）——
+ *    一篇 AI 建的笔记也是「手工新建」。两个维度撞名会让用户以为它们是同一个筛选。
+ */
+export const NOTE_AUTHORS: ViewOption[] = [
+  { value: "", label: "不筛" },
+  { value: "ai", label: "AI 写过" },
+  { value: "ai_edited", label: "改过我的" },
+  { value: "human", label: "我写的" },
+];
 
 /** 时间范围的选项（B4）。与后端 `within_days()` 的白名单一一对应。 */
 export const NOTE_WITHINS: ViewOption[] = [
@@ -174,7 +205,13 @@ function triChip(
  *   而实际检索已被筛过——没命中时用户会以为「这个文件夹里真没有」。
  */
 export function isNoteViewFiltered(v: NoteViewOpts, tagIds: readonly string[] = []): boolean {
-  return !!(v.summary || v.fromCard || v.tagged || v.updatedWithin) || tagIds.length > 0;
+  return (
+    // §7.2：`author` 必须算进来。漏了就是上面那段注释里已经应验过两次的坑：
+    // 筛着「只看 AI 写过的」提问时，回答卡会声称范围是整个文件夹，
+    // 而实际检索已被筛过——没命中时用户会以为「这个文件夹里真没有」。
+    !!(v.summary || v.fromCard || v.tagged || v.updatedWithin || v.author) ||
+    tagIds.length > 0
+  );
 }
 
 /**
@@ -208,6 +245,12 @@ export function noteViewChips(
       label: `${labelOf(NOTE_WITHINS, v.updatedWithin)}改过`,
       onClear: () => set({ updatedWithin: "" }),
     });
+  }
+  // §7.2。同上面 B4 那条的理由：chips 行里各种条件混在一起，
+  // “改过我的”单独摆在那里看不出是谁改的，所以 chip 上要把 AI 补回去。
+  if (v.author) {
+    const label = v.author === "ai_edited" ? "AI 改过我的" : labelOf(NOTE_AUTHORS, v.author);
+    out.push({ label, onClear: () => set({ author: "" }) });
   }
   return out;
 }

@@ -1,0 +1,125 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>写入者筛选 · 真实稿</title>
+<style>
+  /* ===== 真实 token（抄自 src/styles/theme.css 的 ocean 块，即用户当前主题） ===== */
+  :root{
+    --app-bg:#F7F7F8; --card-bg:#fff; --text-primary:#0F172A;
+    --text-secondary:#495565; --text-muted:#627083; --border-color:#E0E4EB;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD;
+    --section-bg:#F0F4F8;
+  }
+  body{margin:0;padding:24px;background:var(--app-bg);
+    font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text-primary)}
+  h1{font-size:17px;margin:0 0 4px}
+  h2{font-size:13.5px;margin:28px 0 8px;color:var(--text-secondary)}
+  .note{font-size:12px;color:var(--text-muted);max-width:760px;margin:0 0 18px}
+  .note b{color:var(--text-primary)}
+  .red{color:#D82525}
+  /* 主窗口宽度取自 .window-state.json 的 main.width */
+  .win{width:688px;background:var(--card-bg);border:1px solid var(--border-color);
+    border-radius:8px;padding:10px;position:relative;margin-bottom:6px}
+  .bar{display:flex;justify-content:flex-end;font-size:11.5px;color:var(--text-muted)}
+  /* ===== 下面全部抄自 ViewControls.module.css，未改一个值 ===== */
+  .pop{position:relative;min-width:132px;padding:3px;background:var(--card-bg);
+    border:1px solid var(--border-color);border-radius:8px;
+    box-shadow:0 6px 20px rgb(0 0 0 / 18%);display:inline-block}
+  .triRow{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .triRow:last-child{margin-bottom:0}
+  .triLabel{flex:0 0 52px;font-size:11.5px;color:var(--text-secondary)}
+  .triBtns{display:flex;gap:3px;margin-left:auto}
+  .triBtn{padding:2px 7px;background:var(--section-bg);border:1px solid var(--border-color);
+    border-radius:5px;color:var(--text-muted);font-size:11px;font-family:inherit;
+    white-space:nowrap;cursor:pointer}
+  .triOn{background:var(--accent-light);border-color:var(--accent);color:var(--accent-strong)}
+  .tagRow{font-size:11.5px;color:var(--text-secondary);padding:2px 0 5px;border-bottom:1px dashed var(--border-color);margin-bottom:7px}
+  .w{font-size:11px;color:var(--text-muted);margin:4px 0 0}
+  .w b{color:var(--accent-strong)}
+</style>
+
+<h1>写入者筛选（§7.2 人侧）· 真实稿</h1>
+<p class="note">
+  2026-09-09。<b>下面的样式全部抄自 `ViewControls.module.css`，token 抄自 `theme.css` 的 ocean 块
+  （你当前的主题），主窗口 688px 取自 `.window-state.json`。</b>
+  浮层本身是 `min-width:132px` <b>靠内容撑开</b>的，且按钮 `white-space:nowrap`——
+  所以新加一行会把<b>整个面板变宽</b>，而它是 `right:0` 锚定的，往左长。
+  这是本稿要回答的主要问题。
+</p>
+
+<h2>改前（现状）—— 4 行，没有「谁写的」</h2>
+<div class="win"><div class="bar">··· 工具栏 ···</div></div>
+<div class="pop" id="p0">
+  <div class="tagRow">标签：（用户自建的那几个）</div>
+  <div class="triRow"><span class="triLabel">摘要</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">有摘要</button><button class="triBtn">无摘要</button></div></div>
+  <div class="triRow"><span class="triLabel">来源</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">来自卡片</button><button class="triBtn">手工新建</button></div></div>
+  <div class="triRow"><span class="triLabel">标签</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">有标签</button><button class="triBtn">无标签</button></div></div>
+  <div class="triRow"><span class="triLabel">修改时间</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">7 天内</button><button class="triBtn">30 天内</button><button class="triBtn">90 天内</button></div></div>
+</div>
+<p class="w">实测宽度：<b id="w0"></b>（由「修改时间」那行的 4 个按钮撑出来的）</p>
+
+<h2>甲案：三选（不筛 / AI 写过 / 我写的）</h2>
+<p class="note">跟上面三行同形（TriRow）。“AI 写过” = <b>建的或改过正文的都算</b>。</p>
+<div class="pop" id="p1">
+  <div class="triRow"><span class="triLabel">修改时间</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">7 天内</button><button class="triBtn">30 天内</button><button class="triBtn">90 天内</button></div></div>
+  <div class="triRow"><span class="triLabel">谁写的</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">AI 写过</button><button class="triBtn">我写的</button></div></div>
+</div>
+<p class="w">实测宽度：<b id="w1"></b>。按字符宽度估算它比「修改时间」那行窄（三个按钮对四个），
+  也就不会撑宽面板——<b>以上面那两个实测数字为准</b>，别信我的估算。</p>
+
+<h2>乙案：四选（不筛 / AI 写过 / 改过我的 / 我写的）</h2>
+<p class="note">
+  多了“改过我的”——即 <b>我建的、但正文被 AI 改过</b>。
+  §7.2 里的理由：<b>对用户来说这一类比「AI 建了一篇」更可怕</b>。
+  与 PickRow（「修改时间」那行）同形，不新增视觉图式。
+</p>
+<div class="pop" id="p2">
+  <div class="triRow"><span class="triLabel">修改时间</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">7 天内</button><button class="triBtn">30 天内</button><button class="triBtn">90 天内</button></div></div>
+  <div class="triRow"><span class="triLabel">谁写的</span><div class="triBtns">
+    <button class="triBtn">不筛</button><button class="triBtn triOn">AI 写过</button><button class="triBtn">改过我的</button><button class="triBtn">我写的</button></div></div>
+</div>
+<p class="w">实测宽度：<b id="w2"></b>（比现状 <b id="d2"></b>）</p>
+
+<h2>乙案在完整面板里的样子</h2>
+<div class="win"><div class="bar">··· 工具栏 ···</div></div>
+<div class="pop" id="p3">
+  <div class="tagRow">标签：（用户自建的那几个）</div>
+  <div class="triRow"><span class="triLabel">摘要</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">有摘要</button><button class="triBtn">无摘要</button></div></div>
+  <div class="triRow"><span class="triLabel">来源</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">来自卡片</button><button class="triBtn">手工新建</button></div></div>
+  <div class="triRow"><span class="triLabel">标签</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">有标签</button><button class="triBtn">无标签</button></div></div>
+  <div class="triRow"><span class="triLabel">谁写的</span><div class="triBtns">
+    <button class="triBtn">不筛</button><button class="triBtn triOn">改过我的</button><button class="triBtn">AI 写过</button><button class="triBtn">我写的</button></div></div>
+  <div class="triRow"><span class="triLabel">修改时间</span><div class="triBtns">
+    <button class="triBtn triOn">不筛</button><button class="triBtn">7 天内</button><button class="triBtn">30 天内</button><button class="triBtn">90 天内</button></div></div>
+</div>
+<p class="w">实测宽度：<b id="w3"></b>。行序按现有注释的理路（标签在最上面），「谁写的」插在「修改时间」之前。</p>
+
+<h2 class="red">🔴 一个措辞陷阱</h2>
+<p class="note">
+  现有「来源」行的两个值是<b>来自卡片 / 手工新建</b>。那个“手工新建”指的是
+  <b>不是从剪贴板来的</b>，跟“是不是人写的”是两回事——
+  一篇 AI 建的笔记也是“手工新建”（`history_id` 为空）。
+  所以新行的标签<b>不能叫“手工写的”</b>，会与上面那一行撞意思；
+  稿里用的是<b>“我写的”</b>。
+</p>
+
+<script>
+  const w = id => document.getElementById(id).getBoundingClientRect().width;
+  const px = n => Math.round(n) + "px";
+  const base = w("p0");
+  document.getElementById("w0").textContent = px(base);
+  document.getElementById("w1").textContent = px(w("p1"));
+  document.getElementById("w2").textContent = px(w("p2"));
+  document.getElementById("w3").textContent = px(w("p3"));
+  const d = w("p3") - base;
+  document.getElementById("d2").textContent = (d >= 0 ? "+" : "") + px(d);
+</script>

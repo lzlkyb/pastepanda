@@ -166,7 +166,7 @@ fn read_definitions() -> Vec<Value> {
                     },
                     "author": {
                         "type": "string",
-                        "description": "只要这个写入者写的。`me` = 你自己写的（不用报名字），\
+                        "description": "只要这个写入者写的（建的**或**改过正文的）。`me` = 你自己写的（不用报名字），\
                                         `human` = 用户亲自写的，或写具体的 `agent:xxx`。省略 = 不筛。"
                     },
                     "limit": {
@@ -244,7 +244,7 @@ fn read_definitions() -> Vec<Value> {
                     },
                     "author": {
                         "type": "string",
-                        "description": "只要这个写入者写的。`me` = 你自己写的（不用报名字），\
+                        "description": "只要这个写入者写的（建的**或**改过正文的）。`me` = 你自己写的（不用报名字），\
                                         `human` = 用户亲自写的，或写具体的 `agent:xxx`。省略 = 不筛。\n\
                                         想回顾自己上次记了什么，就用 kb_list(author=\"me\")。"
                     },
@@ -1396,7 +1396,26 @@ fn title_of(n: &Note) -> &str {
 /// 只说「外部 AI」等于把这两者归成一类。
 fn provenance(n: &Note) -> String {
     if !n.source_agent.is_empty() {
-        format!("由外部 AI 工具写入（{}）", n.source_agent)
+        // §7.1：建的与后来改过的可能不是同一个 agent（也可能后来是人改的）。
+        // 只报创建者会让模型以为内容还是当初那份。
+        match n.last_agent.as_str() {
+            // 🔴 空串在这一档是**歧义的，所以不声称**：
+            //    迁移前的存量笔记回填的就是 `''`，而迁移后人改一遍也是 `''`——
+            //    两者分不开。报「后来用户改过」是在编，报「仍是 AI 的」也是在编。
+            //    宁可少说：等迁移后真的有人改了，数据自然就准了。
+            "" => format!("由外部 AI 工具写入（{}）", n.source_agent),
+            last if last == n.source_agent => {
+                format!("由外部 AI 工具写入（{}）", n.source_agent)
+            }
+            last => format!(
+                "由外部 AI 工具建的（{}），正文最后由 {} 改过",
+                n.source_agent, last
+            ),
+        }
+    } else if !n.last_agent.is_empty() {
+        // 人建的、后来被 AI 改过正文 —— 以前这一档会被报成「用户手工新建」，
+        // 而那是在掰盖一件模型应该知道的事：它看到的内容不全是用户写的。
+        format!("用户新建，正文最后由外部 AI 工具改过（{}）", n.last_agent)
     } else if n.history_id.is_some() {
         "从剪贴板采集（原始来源不可信，可能是网页或他人发来的内容）".to_string()
     } else {
@@ -1882,8 +1901,21 @@ fn format_brief(n: &Note, folder: Option<&str>, now: chrono::DateTime<chrono::Lo
     // ③丙：**只在是 agent 写的时候标**。手工写是默认且是绝大多数
     // （本机实测 26 篇里 24 篇），逐条标「手工」就是纯噪声。
     // 同 `format_kinds` / `format_section_hits` 的口径：没话说就不占位。
-    if !n.source_agent.is_empty() {
-        meta.push_str(&format!(" ｜ 由 {} 写入", n.source_agent));
+    //
+    // §7.1：“建的”与“改过的”要分开报。追加只动 `last_agent`，
+    // 只看 `source_agent` 的话一篇被 AI 追写过很多的人建笔记会**一个标记都没有**。
+    match (n.source_agent.as_str(), n.last_agent.as_str()) {
+        ("", "") => {}
+        (created, last) if created == last => {
+            meta.push_str(&format!(" ｜ 由 {} 写入", created));
+        }
+        ("", last) => meta.push_str(&format!(" ｜ 正文由 {} 改过", last)),
+        // 🔴 不报「后来用户改过」：空 `last_agent` 在这一档是歧义的
+        //    （迁移前的存量 vs 迁移后人真改过）——详见 `provenance`。
+        (created, "") => meta.push_str(&format!(" ｜ 由 {} 写入", created)),
+        (created, last) => {
+            meta.push_str(&format!(" ｜ 由 {} 建的，正文由 {} 改过", created, last))
+        }
     }
     format!("id={}\n【{}】\n{}\n{}\n", n.id, title, meta, brief)
 }
@@ -2355,24 +2387,59 @@ mod tests {
             .with_ymd_and_hms(2026, 9, 9, 12, 0, 0)
             .single()
             .expect("固定时间应当合法");
-        let mk = |agent: &str| -> Note {
+        // 两列都能设：建的与改过的（§7.1）。
+        let mk = |created: &str, last: &str| -> Note {
             serde_json::from_value(json!({
                 "id": "x", "title": "t", "content": "c",
                 "created_at": "2026-09-01 10:00:00",
                 "updated_at": "2026-09-07 10:00:00",
-                "source_agent": agent,
+                "source_agent": created,
+                "last_agent": last,
                 "tags": [],
             }))
             .expect("造假笔记失败")
         };
-        let human = format_brief(&mk(""), None, now);
+        let human = format_brief(&mk("", ""), None, now);
         assert!(!human.contains("写入"), "手工写的不该标写入者：{}", human);
         assert!(human.contains("2 天前"), "年龄没标上：{}", human);
-        let ai = format_brief(&mk("agent:cursor"), None, now);
+
+        let ai = format_brief(&mk("agent:cursor", "agent:cursor"), None, now);
         assert!(
             ai.contains("由 agent:cursor 写入"),
-            "agent 写的要报具体是谁：{}",
+            "agent 建且最后也是它改的：{}",
             ai
+        );
+
+        // 🔴 存量笔记的形状：建了但 `last_agent` 回填为空。
+        //    **不得声称「后来用户改过」**——迁移前的存量与迁移后人真改过
+        //    在数据上分不开，编一句就是在造假事实。
+        let legacy = format_brief(&mk("agent:cursor", ""), None, now);
+        assert!(
+            legacy.contains("由 agent:cursor 写入"),
+            "存量形状仍要报创建者：{}",
+            legacy
+        );
+        assert!(
+            !legacy.contains("用户改过"),
+            "🔴 不得编「后来用户改过」：{}",
+            legacy
+        );
+
+        // 人建的、AI 改过正文 —— 以前这一档**一个标记都没有**，
+        // 而它正是 `instructions` 推荐的写法（kb_append）产生的形状。
+        let appended = format_brief(&mk("", "agent:claude-code"), None, now);
+        assert!(
+            appended.contains("正文由 agent:claude-code 改过"),
+            "人建的但被 AI 改过正文，要标出来：{}",
+            appended
+        );
+
+        // 一个 agent 建、另一个 agent 改——多 agent 共用一个库时的真实形状。
+        let two = format_brief(&mk("agent:cursor", "agent:claude-code"), None, now);
+        assert!(
+            two.contains("由 agent:cursor 建的") && two.contains("agent:claude-code 改过"),
+            "两个 agent 要分开报：{}",
+            two
         );
     }
 
