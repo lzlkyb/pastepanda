@@ -107,6 +107,7 @@ import { ModePill } from "./ModePill";
 import { BLUR_LEVELS, COLORS, DEWARP_LEVELS, MOSAIC_LEVELS, TEXT_SIZES, TOOL_BY_KEY, WIDTHS } from "./tools";
 import { csvEscape, ocrToTable } from "@/lib/screenshot/ocrTable";
 import { detectSensitiveText } from "@/lib/screenshot/sensitive";
+import { confirmDialog, getConfirm } from "@/lib/confirm";
 import type {
   Annotation,
   ControlList,
@@ -935,6 +936,15 @@ export function ScreenshotOverlay() {
   /* ===== 快捷键 ===== */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 🔴 确认框开着的时候，本层快捷键全部停手。
+      //
+      // 这一条是随「window.confirm → confirmDialog」一起必须加的：
+      // 原生 confirm 会**阻塞整个 JS 事件循环**，按键根本到不了页面；
+      // 换成页内弹窗后它不再阻塞，于是用户对着「要不要发到云端」的框随手敲一下，
+      // 数字键会切背后的工具、Ctrl+Z 会撤销背后的标注、Esc 更是直接把截图窗关了
+      // ——标注全丢。ConfirmDialog 自己在 capture 阶段吃掉了 Esc，
+      // 但其它键志不在它管，得在这里拦。
+      if (getConfirm()) return;
       const p = phaseRef.current;
       // 只拦真正的文本输入控件。原实现把 BUTTON 也拦了，后果是用鼠标点过任何工具按钮后
       // （焦点留在按钮上），数字键切工具、方向键微调、Ctrl+Z 全部失效——
@@ -2197,14 +2207,34 @@ export function ScreenshotOverlay() {
   /* ===== V2：AI 处理 / 送动作链出口 ===== */
   const ocrText = () => ocr?.fullText?.trim() || "";
 
+  /**
+   * 敏感内容外发前的确认（规则 16 的兜底）。
+   *
+   * 三个出口（AI、动作链、翻译）问的是同一件事，原先各写了一遍，
+   * 措辞已经开始漂（「确认安全的话可以继续」/「确认安全可以继续」）。
+   * 收成一处（规则 #11）：**安全提示的措辞一旦漂，用户就会开始觉得它们是不同的事**，
+   * 而这三次问的实际上就是同一个问题。
+   *
+   * ❗ 保留确认而不是改成可撤销（U4.3）：内容一旦出网就收不回来了，
+   * 这是真不可逆，正是该弹框的那一类。
+   */
+  const confirmSensitiveSend = (kind: string, detail: string) =>
+    confirmDialog({
+      title: "这段内容里检测到敏感信息",
+      message: `疑似${kind}。\n\n${detail}\n\nPastePanda 默认拦下这一步，确认安全再继续。`,
+      confirmText: "仍然发送",
+      variant: "danger",
+    });
+
   const openAi = async () => {
     // 红线（claude.md 规则 16）：AI 总开关未开时，AI 出口一律不打开
     if (!isAiAvailable()) return;
     // 红线兜底：识别文本含疑似密钥/密码时，先确认才允许发云端
     const sensitive = ocrText() ? detectSensitiveText(ocrText()) : null;
     if (sensitive) {
-      const ok = window.confirm(
-        `检测到疑似敏感内容：${sensitive}\n\n发送到 AI 云端可能造成泄露（PastePanda 默认阻止）。确认安全的话可以继续，否则取消。`,
+      const ok = await confirmSensitiveSend(
+        sensitive,
+        "发送到 AI 云端意味着它会离开这台电脑。",
       );
       if (!ok) return;
     }
@@ -2271,8 +2301,9 @@ export function ScreenshotOverlay() {
     // 红线兜底：与 AI 出口对称，识别文本含疑似密钥/密码时先确认（链可能有云端步骤）
     const sensitive = ocrText() ? detectSensitiveText(ocrText()) : null;
     if (sensitive) {
-      const ok = window.confirm(
-        `检测到疑似敏感内容：${sensitive}\n\n动作链可能包含发送到云端的步骤（PastePanda 默认阻止）。确认安全的话可以继续，否则取消。`,
+      const ok = await confirmSensitiveSend(
+        sensitive,
+        "动作链里可能有发送到云端的步骤，那意味着它会离开这台电脑。",
       );
       if (!ok) return;
     }
@@ -2311,9 +2342,14 @@ export function ScreenshotOverlay() {
     try {
       const c: Chain = { id: chain.id, name: chain.name, description: chain.description, steps: chain.steps, corrupted: chain.stepsCorrupted, rawSteps: chain.stepsRaw };
       const res = await runChain(c, text, {}, async (step) => {
-        return window.confirm(
-          `「${step.label}」这一步会把内容发送到云端（可能计费），是否继续？`,
-        );
+        // 逐步问，而不是开跑前一次性问完：U4.5——花钱 / 出网的批量操作
+        // 必须串行且可中断，任一步取消就停，不接着烧。
+        return await confirmDialog({
+          title: `「${step.label}」这一步要发到云端`,
+          message: "这一步会把内容发送到云端处理，可能产生费用。",
+          confirmText: "继续这一步",
+          variant: "warning",
+        });
       });
       setChainRes(res);
     } catch (e) {
@@ -2417,8 +2453,9 @@ export function ScreenshotOverlay() {
     // 红线兜底：与 AI 出口一致
     const sensitive = detectSensitiveText(text);
     if (sensitive) {
-      const ok = window.confirm(
-        `检测到疑似敏感内容：${sensitive}\n\n发送到 AI 云端可能造成泄露（PastePanda 默认阻止）。确认安全可以继续，否则取消。`,
+      const ok = await confirmSensitiveSend(
+        sensitive,
+        "翻译要发送到 AI 云端，意味着它会离开这台电脑。",
       );
       if (!ok) return;
     }

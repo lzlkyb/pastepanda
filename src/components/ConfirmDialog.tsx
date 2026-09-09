@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle } from "lucide-react";
@@ -26,6 +27,28 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const anim = useDialogAnim();
+
+  /**
+   * Esc = 取消。
+   *
+   * 🔴 这不是锦上添花，是在补一个缺口：本组件是来替代 `window.confirm` 的，
+   * 而原生 confirm 按 Esc 就是取消。不接这一下，每换掉一处 window.confirm
+   * 就在那处弄丢一个用户已经会了的操作。
+   *
+   * ❗ 只在 `open` 时挂，否则满屏都是没用的 window 监听。
+   * 用 capture 阶段：弹窗开着的时候，Esc 应当先归它，
+   * 不能让底下的页面（比如截图遮罩层）抢先把自己关了。 */
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onCancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, onCancel]);
+
   return createPortal(
     <AnimatePresence>
       {open && (

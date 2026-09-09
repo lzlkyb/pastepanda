@@ -8,12 +8,17 @@ import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { ScreenshotOverlay } from "./components/screenshot/ScreenshotOverlay";
 import { logger } from "./lib/logger";
 import { applyTheme, DEFAULT_THEME, normalizeTheme } from "./lib/theme";
 import "./styles/globals.css";
 // 独立窗口必须加载主题样式表，否则 var(--dialog-bg)/var(--accent) 等全部无定义
 import "./styles/theme.css";
+// 确认弹窗用的是全局类（.dialog-backdrop / .dialog-box / .btn-*），不是 CSS Module。
+// 不引这两张表，截图窗里的确认框会渲染成一坨没样式的裸文字。
+import "./styles/dialog.css";
+import "./styles/buttons.css";
 import "./styles/screenshot.css";
 
 window.addEventListener("error", (event) => {
@@ -145,6 +150,12 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary componentName="截图窗口" fallback={(err) => <CrashPanel error={err} />}>
       <ScreenshotOverlay />
+      {/* 🔴 必须挂：`confirmDialog()` 只是把请求放进一个模块级槽位，
+          真正画出来的是这个宿主。截图窗是**独立的 React root**，
+          不共享 App.tsx 里那个——不挂的话，调用方那句 `await confirmDialog(...)`
+          会**永远不返回**：没有任何东西能去 resolve 它。
+          表现就是点「AI 处理」没反应、也不报错。 */}
+      <ConfirmDialogHost />
     </ErrorBoundary>
   </React.StrictMode>,
 );
