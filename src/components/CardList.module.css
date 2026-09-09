@@ -164,7 +164,9 @@
   position: absolute;
   inset: -6px;
   border-radius: 12px;
-  border: 2px solid rgba(245, 158, 11, 0.55);
+  /* V3：不写硬编码 hex。原值 rgba(245,158,11,.55) 就是一个写死的橙，
+     深色主题下它不跟着变，而它包的正是那个已经跟着变的置顶按钮。 */
+  border: 2px solid color-mix(in srgb, var(--warning) 55%, transparent);
   animation: starPulse 0.5s ease-out forwards;
   pointer-events: none;
 }
@@ -538,6 +540,11 @@
 
 /* ===== 按钮模式：卡片内嵌操作按钮 ===== */
 .cardInlineActions {
+  /* U2：四档时长里的前两档。定在这里而不是文件顶部：本轮只碰这一块（§10）。 */
+  --dur-fast: 100ms;
+  --dur-std: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
   position: absolute;
   right: 12px;
   top: 50%;
@@ -545,7 +552,7 @@
   display: flex;
   gap: 4px;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--dur-std) var(--ease);
   z-index: 5;
   pointer-events: none;
 }
@@ -555,10 +562,12 @@
 }
 
 /* 按钮模式 hover 时隐藏时间 */
+/* ❗ 这两条选择器里拿不到 `.cardInlineActions` 上的 token（它们的主语是 `.cardTime`，
+   不是它的后代），所以这里直写四档里的值。 */
 .cardInlineVisible ~ .cardTime,
 .cardWrap:has(.cardInlineVisible) .cardTime {
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 100ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .cardInlineBtn {
@@ -571,7 +580,10 @@
   justify-content: center;
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  /* 不写 `all`：它把 box-shadow / border-color 也一并动画了，
+     而这里只想让底色、图标色和缩放动。 */
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
   font-family: inherit;
   background: var(--card-bg);
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
@@ -583,18 +595,20 @@
   transform: scale(0.95);
 }
 
+/* 色名变量→语义名（U6）。--warning 就是 --orange、--warning-bg 就是 --orange-bg，
+   取值一个没改；换名是为了让它能跟着主题走。 */
 .cardInlineBtnFav {
-  color: var(--orange);
-  background: var(--orange-bg);
-  border: 1px solid var(--orange-border);
+  color: var(--warning);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
 }
 .cardInlineBtnFav:hover {
-  background: var(--orange-border);
+  background: var(--warning-border);
 }
 .cardInlineBtnFavActive {
-  color: var(--orange);
-  background: var(--orange-border);
-  border: 1px solid var(--orange);
+  color: var(--warning);
+  background: var(--warning-border);
+  border: 1px solid var(--warning);
 }
 
 .cardInlineBtnCopy {
@@ -620,11 +634,33 @@
 
 .cardInlineBtnDel {
   color: var(--danger);
-  background: var(--red-bg);
+  background: var(--danger-bg);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
 }
 .cardInlineBtnDel:hover {
   background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+/* ===== 减少动效（U2）=====
+   🔴 只盖本轮碰过的这几处（卡片悬停操作条 + 置顶弹跳），**不做全文件大扫除**：
+   本文件还有 14 组 @keyframes，其中 `loadMoreSpin` / `cardlistSpin` 是**进度指示**，
+   停掉它们不是少了动画，是把「正在加载」这个信息删了——
+   与蒸馏区 chevron 那处是同一个道理。剩下的等碰到再逐个判（§10）。 */
+@media (prefers-reduced-motion: reduce) {
+  .cardInlineBtn:hover,
+  .cardInlineBtn:active {
+    transform: none;
+  }
+
+  /* 置顶弹跳整段去掉：它纯粹是庆祝性的，去掉不丢任何信息——
+     状态本身由 `.cardInlineBtnFavActive` 的实底与卡片上的角标表达。
+     光写 `animation: none` 不够：::after 那圈会停在静态帧上变成一圈死描边。 */
+  .starPopping {
+    animation: none;
+  }
+  .starPopping::after {
+    display: none;
+  }
 }
 
 /* ===== 批量操作工具栏 ===== */
@@ -1065,14 +1101,17 @@
   justify-content: center;
   gap: 3px;
   padding: 5px 6px;
-  border-radius: 7px;
+  /* U5：圆角只许 4 / 8 / 12。原值 7px 是拍的。 */
+  border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
   cursor: pointer;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-primary);
-  transition: all 0.15s ease;
+  /* U2：四档时长的「快」。不写 `all`——这里只需要底色与描边动。 */
+  transition: background 100ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 100ms cubic-bezier(0.2, 0, 0, 1), color 100ms cubic-bezier(0.2, 0, 0, 1);
   white-space: nowrap;
   user-select: none;
   font-family: inherit;

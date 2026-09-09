@@ -24,7 +24,7 @@ import { togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
 import { pasteGuarded } from "@/lib/pasteGuard";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
 import { CardActionBar } from "@/components/card/CardActionBar";
-import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette, Workflow } from "lucide-react";
+import { Pin, Copy, Pencil, Trash2, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette, Workflow } from "lucide-react";
 import styles from "./CardList.module.css";
 
 const LazyMdRenderer = lazy(() => import("@/components/MarkdownRenderer").then(m => ({ default: m.MarkdownRenderer })));
@@ -634,30 +634,33 @@ const CardHoverPopover = memo(function CardHoverPopover({
           );
         })()}
 
-        {/* 操作按钮 */}
+        {/* 操作按钮。图标与右键菜单、悬停操作条用同一批——
+            同一个动作在三个入口里只能有一张脸（规则 #11）。 */}
         <div className={styles.cardPopoverActions}>
           <button
+            type="button"
             className={`${styles.cardPopoverBtn} ${item.pinned ? styles.cardPopoverBtnFavActive : styles.cardPopoverBtnFav}${pinFlash ? ` ${styles.starPopping}` : ""}`}
             onClick={handleFav}
             title={item.pinned ? "取消置顶" : "置顶"}
+            aria-pressed={item.pinned}
           >
-            {item.pinned ? "★" : "☆"} <span>{item.pinned ? "已置顶" : "置顶"}</span>
+            <Pin size={12} /> <span>{item.pinned ? "已置顶" : "置顶"}</span>
           </button>
-          <button className={styles.cardPopoverBtn} onClick={handleCopy} title="复制">
-            📋 <span>复制</span>
+          <button type="button" className={styles.cardPopoverBtn} onClick={handleCopy} title="复制到剪贴板">
+            <Copy size={12} /> <span>复制</span>
           </button>
           {getImageOcrFullText(item, ocrState) && (
-            <button className={`${styles.cardPopoverBtn} ${styles.cardPopoverBtnOcr}`} onClick={handleCopyOcr} title="复制识别文字">
-              📝 <span>复制文字</span>
+            <button type="button" className={`${styles.cardPopoverBtn} ${styles.cardPopoverBtnOcr}`} onClick={handleCopyOcr} title="复制识别文字">
+              <FileText size={12} /> <span>复制文字</span>
             </button>
           )}
           {(item.type === "text" || item.type === "diagram") && onEdit && (
-            <button className={styles.cardPopoverBtn} onClick={handleEdit} title="编辑">
-              ✏️ <span>编辑</span>
+            <button type="button" className={styles.cardPopoverBtn} onClick={handleEdit} title="编辑">
+              <Pencil size={12} /> <span>编辑</span>
             </button>
           )}
-          <button className={`${styles.cardPopoverBtn} ${styles.cardPopoverBtnDanger}`} onClick={handleDelete} title="删除">
-            🗑 <span>删除</span>
+          <button type="button" className={`${styles.cardPopoverBtn} ${styles.cardPopoverBtnDanger}`} onClick={handleDelete} title="删除">
+            <Trash2 size={12} /> <span>删除</span>
           </button>
         </div>
     </motion.div>
@@ -723,19 +726,58 @@ const InlineCardActions = memo(function InlineCardActions({
     >
       {/* 执行类动作条：inline 模式空间小，紧凑排列 */}
       <CardActionBar item={item} compact />
-      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnFav} ${item.pinned ? styles.cardInlineBtnFavActive : ""}${pinFlash ? ` ${styles.starPopping}` : ""}`} onClick={handleFav} title={item.pinned ? "取消置顶" : "置顶"}>
-        {item.pinned ? "★" : "☆"}
+      {/* 🔴 图标必须与**右键菜单里同一个动作**用同一个（`cardMenuItems.tsx`）。
+
+          旧实现用的是 emoji：☆ 📋 ✏️ 🗑，而右键菜单里同一批动作用的是 lucide 的
+          Pin / Copy / Pencil / Trash2——**同一个「复制」在两个入口长得不一样**。
+          三个具体代价：
+            · 📋 在一个**剪贴板应用**里歧义最大：它到底是「复制这条」还是「这是剪贴板条目」？
+              通用的复制图标是两个叠起来的矩形，不是剪贴板。
+            · ☆ 读作「收藏」而不是「置顶」（类名至今叫 `cardInlineBtnFav`，
+              说明当初就是按 favorite 选的图标，后来被改成了 pinned）。
+            · emoji 由系统字体渲染：各平台长相不同、自带颜色、不跟主题走。
+          图标同样适用「口径单一来源」（规则 #11）：同一个动作只能有一张脸。
+
+          文字在 `title` 与 `aria-label` 里，并与右键菜单的条目名**逐字一致**：
+          两处叫法一致，用户才能把它们认成同一件事（L5）。 */}
+      <button
+        type="button"
+        className={`${styles.cardInlineBtn} ${styles.cardInlineBtnFav} ${item.pinned ? styles.cardInlineBtnFavActive : ""}${pinFlash ? ` ${styles.starPopping}` : ""}`}
+        onClick={handleFav}
+        title={item.pinned ? "取消置顶" : "置顶"}
+        aria-label={item.pinned ? "取消置顶" : "置顶"}
+        aria-pressed={item.pinned}
+      >
+        <Pin size={14} />
       </button>
-      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnCopy}`} onClick={handleCopy} title="复制">
-        📋
+      <button
+        type="button"
+        className={`${styles.cardInlineBtn} ${styles.cardInlineBtnCopy}`}
+        onClick={handleCopy}
+        title="复制到剪贴板"
+        aria-label="复制到剪贴板"
+      >
+        <Copy size={14} />
       </button>
       {(item.type === "text" || item.type === "diagram") && onEdit && (
-        <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnEdit}`} onClick={handleEdit} title="编辑">
-          ✏️
+        <button
+          type="button"
+          className={`${styles.cardInlineBtn} ${styles.cardInlineBtnEdit}`}
+          onClick={handleEdit}
+          title="编辑"
+          aria-label="编辑"
+        >
+          <Pencil size={14} />
         </button>
       )}
-      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnDel}`} onClick={handleDelete} title="删除">
-        🗑
+      <button
+        type="button"
+        className={`${styles.cardInlineBtn} ${styles.cardInlineBtnDel}`}
+        onClick={handleDelete}
+        title="删除"
+        aria-label="删除"
+      >
+        <Trash2 size={14} />
       </button>
     </div>
   );
