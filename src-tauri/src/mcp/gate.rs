@@ -20,7 +20,7 @@
 
 use serde_json::Value;
 
-/// 七个写工具各自的权限档。一档对一个工具（1:1）。
+/// 写工具的权限档。一档管一个或多个工具。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WriteKind {
     Create,
@@ -30,11 +30,13 @@ pub enum WriteKind {
     Tag,
     Delete,
     Restore,
+    /// 整理文件夹结构（改名 / 解散）。默认开，同其他七档。
+    Structure,
 }
 
 impl WriteKind {
     /// 全部档位。数组下标就是 `as usize`，所以**顺序不能与 enum 声明错开**。
-    pub const ALL: [WriteKind; 7] = [
+    pub const ALL: [WriteKind; 8] = [
         WriteKind::Create,
         WriteKind::Append,
         WriteKind::Update,
@@ -42,6 +44,7 @@ impl WriteKind {
         WriteKind::Tag,
         WriteKind::Delete,
         WriteKind::Restore,
+        WriteKind::Structure,
     ];
 
     /// `config` 表里的键。开关不是秘密，可以进那张明文 KV。
@@ -54,6 +57,37 @@ impl WriteKind {
             WriteKind::Tag => "mcp_write_tag",
             WriteKind::Delete => "mcp_write_delete",
             WriteKind::Restore => "mcp_write_restore",
+            WriteKind::Structure => "mcp_write_structure",
+        }
+    }
+
+    /// 这一档在**配置里没有这个键**时的取值。
+    ///
+    /// # 🔴 为何不是一句统一的 `unwrap_or(true)`，尽管现在每档都返 `true`
+    ///
+    /// 因为那句 `unwrap_or(true)` 曾经是「**绝不新开档位**」这条约束的**唯一**理由：
+    /// 写成统一默认时，加一个新档位不用做任何选择就自动是开的——
+    /// 那个默认是「没人想过」而不是「拍过」。拆成每档自己声明之后，
+    /// 默认值仍然可以全是 `true`，但那变成一个**被写下的决定**。
+    ///
+    /// 🔴 故意不写 `_ => true` 兜底：加新档的人必须在这里亲手写下
+    /// 它的默认值，想不明白就编不过。
+    ///
+    /// ⚠ 默认全开留着一个**已知**副作用，不藏：一个把七个开关全手动关掉的
+    /// 老用户，升级后新档位在他配置里没有这个键 ⇒ 读默认值 ⇒ 是**开**的。
+    /// 这是 2026-09-09 拍定的（“默认都要开启”），与旧的七档口径一致。
+    pub fn default_on(self) -> bool {
+        match self {
+            WriteKind::Create
+            | WriteKind::Append
+            | WriteKind::Update
+            | WriteKind::Move
+            | WriteKind::Tag
+            | WriteKind::Delete
+            | WriteKind::Restore => true,
+            // 整理文件夹：同其他七档默认开。用户能把 MCP 服务开起来
+            // （它本身默认关、开启时还有确认弹窗），就已经表达了那个意愿。
+            WriteKind::Structure => true,
         }
     }
 
@@ -73,6 +107,13 @@ impl WriteKind {
     /// ——那是个真正的权限提升，且用户无从得知。复用现有档位则直接继承
     /// 他当前的选择，不存在这个问题。
     ///
+    /// ⚠ 2026-09-09 破了一次例：新增了 [`WriteKind::Structure`]（整理文件夹）。
+    /// 上面那个副作用是**明知的**，并且仍然存在（默认值拍定为开）。
+    /// 换来的是粒度：改名/解散文件夹与「改笔记」不是同一种能力，
+    /// 挂到 `Update` 上会让用户为了挡住前者而关掉后者。
+    /// 同时把默认值拆成每档自己声明（[`WriteKind::default_on`]），
+    /// 至少让下一个新档的默认值成为一个必须亲手写下的决定。
+    ///
     /// 代价：失去「只许精准改、不许整篇覆盖」这种更安全的配置。
     /// 那是一个**模式**而不是「更多开关」，留待后续。
     pub fn tool_names(self) -> &'static [&'static str] {
@@ -84,11 +125,18 @@ impl WriteKind {
                 "kb_update_section",
                 "kb_insert_at_section",
                 "kb_replace_in_note",
+                // 回滚就是一次正文覆盖（内容来源是历史）；
+                // 摘要是改笔记的一个字段。两个都得列在这里——
+                // 用户在设置页看的就是这份名单，漏一个就是
+                // 「关了修改笔记，但它还能回滚我的笔记」——而它其实不能。
+                "kb_revert",
+                "kb_summary",
             ],
             WriteKind::Move => &["kb_move"],
             WriteKind::Tag => &["kb_tag"],
             WriteKind::Delete => &["kb_delete"],
             WriteKind::Restore => &["kb_restore"],
+            WriteKind::Structure => &["kb_folder_rename", "kb_folder_dissolve"],
         }
     }
 
@@ -104,23 +152,24 @@ impl WriteKind {
             WriteKind::Tag => "改标签",
             WriteKind::Delete => "删除到回收站",
             WriteKind::Restore => "从回收站恢复",
+            WriteKind::Structure => "整理文件夹",
         }
     }
 }
 
-/// 七个开关的快照。
+/// 八个开关的快照。
 ///
-/// 用 `[bool; 7]` 而不是七个具名字段：字段名与配置键要一一对应，
-/// 写成七个字段就多一处能对错的地方（且 `move` 是关键字，得写成 `r#move`）。
+/// 用 `[bool; 8]` 而不是八个具名字段：字段名与配置键要一一对应，
+/// 写成八个字段就多一处能对错的地方（且 `move` 是关键字，得写成 `r#move`）。
 /// 下标统一走 [`WriteKind::ALL`]，漏一档编译就不过。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WriteSwitches([bool; 7]);
+pub struct WriteSwitches([bool; 8]);
 
 impl WriteSwitches {
     /// 全开。测试与「配置读不到」时的取值。
-    pub const ALL_ON: Self = Self([true; 7]);
+    pub const ALL_ON: Self = Self([true; 8]);
     /// 全关。测试用。
-    pub const ALL_OFF: Self = Self([false; 7]);
+    pub const ALL_OFF: Self = Self([false; 8]);
 
     pub fn allowed(&self, kind: WriteKind) -> bool {
         self.0[kind as usize]
@@ -137,13 +186,18 @@ impl WriteSwitches {
     /// 这与项目里其它开关的默认**相反**，别照抄那边的 `unwrap_or(false)`。
     /// 理由：MCP 服务本身默认就是关的、开启时又有确认弹窗，
     /// 用户能把服务开起来就已经表达了「我要让 AI 工具用我的知识库」。
+    ///
+    /// 具体默认值走 [`WriteKind::default_on`] 而不是写死在这里：
+    /// 那一句统一的 `unwrap_or(true)` 曾经是「绝不新开档位」的唯一理由。
     pub fn from_config(cfg: &Value) -> Self {
-        let mut out = [true; 7];
+        // 初值无关紧要：下面那个循环走 `WriteKind::ALL`，每个下标都会被盖一遍。
+        // 写 `false` 而不是 `true`，是为了不让人把它误读成「默认全开」的出处。
+        let mut out = [false; 8];
         for kind in WriteKind::ALL {
             out[kind as usize] = cfg
                 .get(kind.cfg_key())
                 .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+                .unwrap_or(kind.default_on());
         }
         Self(out)
     }

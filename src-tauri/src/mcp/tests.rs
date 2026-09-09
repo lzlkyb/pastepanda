@@ -480,6 +480,84 @@ impl super::source::KbSource for FakeKb {
         Ok(name.to_string())
     }
 
+    // ===== §7.4 新增的六个 =====
+    //
+    // 读的那两个给一份写死的固定数据：只有 `n1` 有历史，且只有 rev=7。
+    // 这不是偷懒——它正好能把 **归属校验** 那条路径钉住：
+    // 拿 `n2` + rev=7 去读/回滚，就是「拿别的笔记的 rev」那个坑。
+    fn revisions(&self, id: &str) -> Result<Vec<crate::data_store::NoteRevisionMeta>, String> {
+        if id != "n1" {
+            return Ok(vec![]);
+        }
+        Ok(vec![crate::data_store::NoteRevisionMeta {
+            id: 7,
+            title: "旧标题".to_string(),
+            created_at: "2026-09-01 10:00:00".to_string(),
+            char_count: 42,
+            pinned: true,
+            source_agent: "agent:claude-code".to_string(),
+        }])
+    }
+
+    fn revision(
+        &self,
+        id: &str,
+        rev_id: i64,
+    ) -> Result<Option<crate::data_store::NoteRevision>, String> {
+        // 归属校验：与真实实现同口径（不属于这一篇 ⇒ 当没这个版本）。
+        if id != "n1" || rev_id != 7 {
+            return Ok(None);
+        }
+        Ok(Some(crate::data_store::NoteRevision {
+            id: 7,
+            note_id: "n1".to_string(),
+            title: "旧标题".to_string(),
+            content: "旧正文".to_string(),
+            created_at: "2026-09-01 10:00:00".to_string(),
+            pinned: true,
+            source_agent: "agent:claude-code".to_string(),
+        }))
+    }
+
+    fn revert(&self, id: &str, rev_id: i64, source: &str) -> Result<String, String> {
+        if id != "n1" || rev_id != 7 {
+            return Err("这一篇里没有这个版本".to_string());
+        }
+        self.writes.lock().unwrap().push((
+            "revert".to_string(),
+            format!("{}@{}", id, rev_id),
+            source.to_string(),
+        ));
+        Ok("旧标题".to_string())
+    }
+
+    fn set_summary(&self, id: &str, text: Option<&str>) -> Result<(), String> {
+        self.writes.lock().unwrap().push((
+            "set_summary".to_string(),
+            format!("{}@{}", id, text.unwrap_or("<清掉>")),
+            String::new(),
+        ));
+        Ok(())
+    }
+
+    fn folder_rename(&self, folder: &str, name: &str) -> Result<String, String> {
+        self.writes.lock().unwrap().push((
+            "folder_rename".to_string(),
+            format!("{}=>{}", folder, name),
+            String::new(),
+        ));
+        Ok(name.to_string())
+    }
+
+    fn folder_dissolve(&self, folder: &str) -> Result<(usize, usize), String> {
+        self.writes.lock().unwrap().push((
+            "folder_dissolve".to_string(),
+            folder.to_string(),
+            String::new(),
+        ));
+        Ok((2, 1))
+    }
+
     fn folder_parents(
         &self,
     ) -> Result<std::collections::HashMap<String, Option<String>>, String> {
@@ -1088,6 +1166,14 @@ async fn test_every_write_tool_is_scope_checked() {
             // 它的目标参数叫 `parent` 而不是 `folder` —— 这正是 `ScopeTarget`
             // 要带参数名的原因（写死 `"folder"` 就会静默漏掉它）。
             "kb_folder_create" => json!({ "name": "新夹子", "parent": "技术" }),
+            // §7.4 的两个文件夹维护工具：目标参数叫 `folder`，且它指的是
+            // **要被动的那个夹子本身**（不是笔记）。
+            //
+            // 🔴 不能落回下面那个 `{ id: n2 }` 兜底：那样 `folder` 参数缺失，
+            //    范围检查会把它当「未分类」，而未分类恰好在白名单里 ⇒ 放行。
+            //    于是这条测试会“通过得很安静”地漏掉两个写工具。
+            "kb_folder_rename" => json!({ "folder": "技术", "name": "技术2" }),
+            "kb_folder_dissolve" => json!({ "folder": "技术" }),
             _ => json!({ "id": "n2" }),
         };
         let (text, is_err) = call_text(&base, name, args).await;
@@ -1100,7 +1186,7 @@ async fn test_every_write_tool_is_scope_checked() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 12, "写工具数量变了，这条测试要跟着核一遍");
+    assert_eq!(checked, 16, "写工具数量变了，这条测试要跟着核一遍");
     assert!(
         fake.writes.lock().unwrap().is_empty(),
         "有调用穿过范围门到了数据层：{:?}",
@@ -1282,7 +1368,7 @@ async fn test_all_tools_listed_when_switches_on() {
     let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
     let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
     let names = tool_names(&v);
-    assert_eq!(names.len(), 18, "全开时应有 18 个工具，实际：{:?}", names);
+    assert_eq!(names.len(), 23, "全开时应有 23 个工具，实际：{:?}", names);
     for expect in [
         "kb_folders",
         "kb_create",
@@ -1290,6 +1376,13 @@ async fn test_all_tools_listed_when_switches_on() {
         "kb_delete",
         "kb_restore",
         "kb_trash_list",
+        // §7.4 的五个。列全而不是只改数字：数字对上但少了某一个
+        // （比如新开的 `Structure` 档默认被读成关）时，光看数字发现不了。
+        "kb_history",
+        "kb_revert",
+        "kb_summary",
+        "kb_folder_rename",
+        "kb_folder_dissolve",
     ] {
         assert!(names.contains(&expect.to_string()), "丢了 {}", expect);
     }
@@ -1301,7 +1394,7 @@ async fn test_switch_off_hides_tool_from_list() {
     let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
     let names = tool_names(&v);
     // 外层门：没开放的工具模型根本看不到。
-    assert_eq!(names.len(), 6, "全关时只应剩六个只读工具，实际：{:?}", names);
+    assert_eq!(names.len(), 7, "全关时只应剩六个只读工具，实际：{:?}", names);
     assert!(!names.iter().any(|n| n == "kb_delete"));
 }
 
@@ -1703,17 +1796,21 @@ async fn test_turning_off_update_also_blocks_precision_edits() {
 }
 
 #[tokio::test]
-async fn test_turning_off_update_hides_all_four_but_not_prepend() {
+async fn test_turning_off_update_hides_all_six_but_not_prepend() {
     let sw = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_update": false }));
     let (base, _) = spawn_server_with_switches(sw).await;
     let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
     let names = tool_names(&v);
-    assert_eq!(names.len(), 14, "关「修改笔记」应当一次少掉四个工具：{:?}", names);
+    assert_eq!(names.len(), 17, "关「修改笔记」应当一次少掉六个工具：{:?}", names);
     for gone in [
         "kb_update",
         "kb_update_section",
         "kb_insert_at_section",
         "kb_replace_in_note",
+        // §7.4：回滚是一次正文覆盖，摘要是改笔记的一个字段。
+        // 关了「修改笔记」却还能回滚，那个开关就是假的。
+        "kb_revert",
+        "kb_summary",
     ] {
         assert!(!names.iter().any(|n| n == gone), "{} 还在表里", gone);
     }
@@ -2177,4 +2274,116 @@ async fn test_kb_read_没有链时不占位() {
     let (text, _) = call_text(&base, "kb_read", json!({ "id": "n1" })).await;
     assert!(!text.contains("引用"), "n1 没有链，不该出现相关字样：{}", text);
     assert!(!text.contains("断链"), "{}", text);
+}
+
+// ===== §7.4：版本历史 / 回滚 / 摘要 / 文件夹维护 =====
+
+#[tokio::test]
+async fn test_history_lists_versions_with_who_changed_it() {
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_history", json!({ "id": "n1" })).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("rev=7"), "没给版本号，模型就无法 kb_revert：{}", text);
+    assert!(text.contains("agent:claude-code"), "没说是谁改的：{}", text);
+    assert!(
+        text.contains("锚点"),
+        "锚点没标出来——那决定这一版会不会被裁掉：{}",
+        text
+    );
+}
+
+#[tokio::test]
+async fn test_history_explains_why_it_is_empty() {
+    // 🔴 空结果必须解释「为何空」。不解释的话模型会当成自己参数传错了，
+    //    然后换个参数再试一遍——那是白花一轮。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_history", json!({ "id": "n2" })).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("每次改动之前"), "没说清为何空：{}", text);
+}
+
+#[tokio::test]
+async fn test_history_and_revert_refuse_a_rev_from_another_note() {
+    // 🔴 这条盯的是本批里**唯一一处自己新引入的安全逻辑**。
+    //    `rev` 是全库递增的整数（模型能猜），而范围判定看的是 `arguments.id`。
+    //    不校归属的话，传一个别的笔记的 rev 就能读到、甚至改写白名单外那一篇。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_history", json!({ "id": "n2", "rev": 7 })).await;
+    assert!(is_err, "拿别的笔记的 rev 竟然读到了：{}", text);
+    let (text, is_err) = call_text(&base, "kb_revert", json!({ "id": "n2", "rev": 7 })).await;
+    assert!(is_err, "拿别的笔记的 rev 竟然回滚成功了：{}", text);
+}
+
+#[tokio::test]
+async fn test_revert_records_the_agent_and_tells_the_model_to_speak_up() {
+    let (base, fake) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    let (text, is_err) = call_text(&base, "kb_revert", json!({ "id": "n1", "rev": 7 })).await;
+    assert!(!is_err, "{}", text);
+    let w = fake.writes();
+    assert_eq!(w.len(), 1, "{:?}", w);
+    assert_eq!(w[0].0, "revert");
+    // source 必须透到数据层：否则 `author="me"` 看不到自己刚干的这一下（§7.1）。
+    assert!(w[0].2.starts_with("agent:"), "来源没透传：{:?}", w);
+    // 回滚会让用户后来写的内容从正文里消失，模型必须交代。
+    assert!(text.contains("告诉用户"), "没要求它交代：{}", text);
+}
+
+#[tokio::test]
+async fn test_summary_empty_text_clears_instead_of_erroring() {
+    // 🔴 空串在这里是**指令**（清掉摘要），不是「没传参数」。
+    //    走 `arg_str` 会把它当没传 ⇒ 报参数缺失，而调用方其实是想清掉。
+    let (base, fake) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    let (text, is_err) = call_text(&base, "kb_summary", json!({ "id": "n2", "text": "" })).await;
+    assert!(!is_err, "{}", text);
+    let w = fake.writes();
+    assert_eq!(w.len(), 1, "{:?}", w);
+    assert!(w[0].1.contains("<清掉>"), "空串没被当成清掉：{:?}", w);
+}
+
+#[tokio::test]
+async fn test_folder_dissolve_says_the_notes_were_kept() {
+    // 解散最容易被误解成「连笔记一起删」。回执必须把「一篇没删」说出来，
+    // 否则模型会照着自己的猜测去向用户转述。
+    let (base, fake) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    let (text, is_err) =
+        call_text(&base, "kb_folder_dissolve", json!({ "folder": "技术" })).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("没删"), "没说清笔记还在：{}", text);
+    assert!(text.contains("2 篇"), "没报挪了多少：{}", text);
+    assert_eq!(fake.writes()[0].0, "folder_dissolve");
+}
+
+#[tokio::test]
+async fn test_structure_switch_hides_only_the_two_folder_tools() {
+    // 🔴 新开的那一档必须只管它自己的两个工具。
+    //    特别是不能连带 `kb_folder_create`（它归 `Create`）——
+    //    否则关了「整理文件夹」就连建文件夹一起挡住了，而那两件事风险差很多。
+    let sw = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_structure": false }));
+    let (base, _) = spawn_server_with_switches(sw).await;
+    let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
+    let names = tool_names(&v);
+    assert_eq!(names.len(), 21, "关「整理文件夹」应当只少掉两个：{:?}", names);
+    for gone in ["kb_folder_rename", "kb_folder_dissolve"] {
+        assert!(!names.iter().any(|n| n == gone), "{} 还在表里", gone);
+    }
+    assert!(
+        names.iter().any(|n| n == "kb_folder_create"),
+        "kb_folder_create 归「新建笔记」那一档，不该跟着被关：{:?}",
+        names
+    );
+}
+
+#[test]
+fn test_new_write_kind_defaults_to_on_as_decided() {
+    // 2026-09-09 拍定：新档也默认开（“默认都要开启”）。
+    //
+    // 这条不是在夸默认开有多好，而是把它**钉成一个被写下的决定**：
+    // 副作用是一个把七个开关全关掉的老用户，升级后会拿到这一档是开的（因为
+    // 他配置里没有这个键）。哪天要改口径，改的应该是 `default_on`，
+    // 而不是发现这条测试红了以后把它删掉。
+    let sw = super::gate::WriteSwitches::from_config(&json!({}));
+    assert!(sw.allowed(super::gate::WriteKind::Structure));
+    // 而显式关掉必须真的关得掉。
+    let off = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_structure": false }));
+    assert!(!off.allowed(super::gate::WriteKind::Structure));
 }

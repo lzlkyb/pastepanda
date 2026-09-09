@@ -179,6 +179,48 @@ impl DataStore {
         }
     }
 
+    /// 读某一份快照，并**校验它属于 `note_id`**。
+    ///
+    /// # 🔴 为何这道校验必须在这一层
+    ///
+    /// 它本来写在 MCP 那边（`KbSource::revision` / `revert`），而那里
+    /// **测不到**：真实实现 `AppKbSource` 要一个 `tauri::AppHandle`，
+    /// 而测试跑在 `--no-default-features` 下（默认特性会拉进 tauri 的
+    /// `test`，撞上本机缺失的 `ProcessPrng` 直接 0xc0000139）。
+    /// 于是能被测到的只有 `FakeKb` 里那份**镜像逻辑**——
+    /// 那种测试是空的：把真实校验敲掉也不会红。
+    ///
+    /// 校的是什么：`rev_id` 是**全库递增**的整数（模型能猜），
+    /// 而 MCP 的范围判定看的是 `arguments.id`。两边不对时，
+    /// 传一个**别的笔记**的 `rev_id` 就能读到、甚至改写白名单外那一篇。
+    pub fn note_revision_get_in(
+        &self,
+        note_id: &str,
+        rev_id: i64,
+    ) -> Result<Option<NoteRevision>, String> {
+        Ok(self
+            .note_revision_get(rev_id)?
+            .filter(|r| r.note_id == note_id))
+    }
+
+    /// 回滚，且**校验这个版本属于 `note_id`**。理由同
+    /// [`Self::note_revision_get_in`]。
+    ///
+    /// 🔴 校失败时**不区分**「不存在」与「不是你的」：
+    /// 后者等于告诉调用方「这个版本存在，只是不属于你」——
+    /// 那本身就是一点信息泄露（能靠它扫出别人的版本号区间）。
+    pub fn note_restore_in(
+        &self,
+        note_id: &str,
+        rev_id: i64,
+        source: &str,
+    ) -> Result<Note, String> {
+        if self.note_revision_get_in(note_id, rev_id)?.is_none() {
+            return Err("这一篇里没有这个版本".to_string());
+        }
+        self.note_restore(rev_id, source)
+    }
+
     /// 手动锚定 / 解除锚定一份快照（W2b）。
     ///
     /// **锚点只能手动清除，不自动过期**。存储代价有界且很小（每篇一份纯文本），
@@ -206,7 +248,14 @@ impl DataStore {
     ///
     /// **先把当前版存成一份快照再覆盖**，所以恢复本身可撤销：
     /// 后悔了再从历史里恢复回刚才那份即可。
-    pub fn note_restore(&self, rev_id: i64) -> Result<Note, String> {
+    ///
+    /// `source`：空串 = 人在界面上点的；`agent:xxx` = 模型调 `kb_revert`。
+    ///
+    /// 🔴 它同时管两件事，两件都不能漏：
+    /// ・盖到 `notes.last_agent`（§7.1）——回滚也是一次正文改动；
+    /// ・传给 `snapshot_note_on`，决定回滚**前**那一版要不要锁成锚点。
+    ///   模型回滚掉的东西必须能找回来，而普通快照会被 `prune_revisions_on` 裁掉。
+    pub fn note_restore(&self, rev_id: i64, source: &str) -> Result<Note, String> {
         let note_id = {
             let conn = self.lock_conn();
             let (note_id, title, content): (String, String, String) = conn
@@ -224,21 +273,32 @@ impl DataStore {
             // 事务：快照与覆盖必须同生死。只快照不覆盖 = 历史里多了一份莫名其妙的重复版；
             // 只覆盖不快照 = 用户当前的内容直接没了，恢复不可撤销。
             let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-            // 来源传空：从历史里恢复只可能是人点的（模型没有这个工具），
-            // 所以既不该记成外部改动，也不该触发锚定。
-            if !Self::snapshot_note_on(&tx, &note_id, "").map_err(|e| e.to_string())? {
+            // 🔴 来源必须透传，不能写死空串。
+            // 这里原来写的是「从历史里恢复只可能是人点的（模型没有这个工具）」——
+            // 2026-09-09 接了 `kb_revert` 之后那句话当场就假了。
+            // 写死空串的后果不是少条标记，而是回滚**前**那一版不再被锚定：
+            // 模型把一篇回滚到三个月前，用户刚写的那版会被当普通快照裁掉。
+            if !Self::snapshot_note_on(&tx, &note_id, source).map_err(|e| e.to_string())? {
                 return Err(format!("笔记不存在: {}", note_id));
             }
             tx.execute(
                 // M6-P2：恢复旧版本是一次新的修改（不是回到过去），
                 // 所以 updated_ms 取**现在**而不是那个快照的时间——
                 // 否则对端会认为它旧于自己手里的版本，把用户刚做的恢复覆盖掉。
-                // §7.1：`last_agent` 清成空串。同上面那句「模型没有这个工具」：
-                // 从历史里恢复只可能是人点的，用户手动回滚过的笔记
-                // 不该还声称某 agent 最后改过——那会让 `author` 把它算成 AI 的记忆。
+                // §7.1：`last_agent` 跟着 `source` 走。人点的回滚传空串，
+                // 于是之前的 agent 标记被清掉——那是对的：此后「最后改过正文的」确实是人。
+                // 而模型调 `kb_revert` 时要记上它：回滚也是一次正文改动，
+                // 不记的话 `author="me"` 就看不到自己刚干的这一下。
                 "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
-                 updated_ms = MAX(?5, updated_ms + 1), last_agent = '' WHERE id = ?1",
-                rusqlite::params![note_id, title, content, note_now(), self.hlc_now()],
+                 updated_ms = MAX(?5, updated_ms + 1), last_agent = ?6 WHERE id = ?1",
+                rusqlite::params![
+                    note_id,
+                    title,
+                    content,
+                    note_now(),
+                    self.hlc_now(),
+                    source
+                ],
             )
             .map_err(|e| e.to_string())?;
             Self::prune_revisions_on(&tx, &note_id).map_err(|e| e.to_string())?;

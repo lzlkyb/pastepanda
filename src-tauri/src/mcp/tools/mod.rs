@@ -281,6 +281,24 @@ fn read_definitions() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "name": "kb_history",
+            "description": "看一篇笔记改过哪几版。\n\
+                            不带 rev = 列版本（新→旧，带时间、字数、是谁改的）；\
+                            带 rev = 读那一版的正文。\n\
+                            想回退时先用它拿版本号，再交给 kb_revert。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "笔记 id。" },
+                    "rev": {
+                        "type": "integer",
+                        "description": "版本号（从不带 rev 的结果里拿）。省略 = 只列表。"
+                    }
+                },
+                "required": ["id"]
+            }
+        }),
     ]
 }
 
@@ -468,6 +486,46 @@ const TOOLS: &[ToolSpec] = &[
         scope: ScopeTarget::ByNoteId,
         run: |c, a| Box::pin(async move { write::call_restore(c, a).await }),
     },
+    ToolSpec {
+        name: "kb_history",
+        write: None,
+        scope: ScopeTarget::NotWrite,
+        run: |c, a| Box::pin(async move { call_history(&c.kb, a.as_ref()).await }),
+    },
+    // 回滚与写摘要都挂在现有的 `Update` 上，同 `kb_update` 系列。
+    // 回滚就是一次正文覆盖（只是内容来源是历史），
+    // 关掉「修改笔记」就应该连它一起关——否则那个开关是假的。
+    ToolSpec {
+        name: "kb_revert",
+        write: Some(WriteKind::Update),
+        scope: ScopeTarget::ByNoteId,
+        run: |c, a| Box::pin(async move { write::call_revert(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_summary",
+        write: Some(WriteKind::Update),
+        scope: ScopeTarget::ByNoteId,
+        run: |c, a| Box::pin(async move { write::call_summary(c, a).await }),
+    },
+    // 🔴 这两个新开了一档 `WriteKind::Structure`，而上面 `kb_folder_create`
+    // 那段注释当年写的是「绝不新开档位」。两件事让它变成可做的：
+    // ① 默认值拆成了每档自己声明（`WriteKind::default_on`）；
+    // ② 改名/解散文件夹与「改笔记」真不是同一种能力，
+    //   挂到 `Update` 上会让用户为了挡住前者而关掉后者。
+    // 代价（已拍定）：新档默认开，所以把七个开关全关掉的老用户
+    // 升级后会拿到这一档是开的。
+    ToolSpec {
+        name: "kb_folder_rename",
+        write: Some(WriteKind::Structure),
+        scope: ScopeTarget::ByFolderArg("folder"),
+        run: |c, a| Box::pin(async move { write::call_folder_rename(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_folder_dissolve",
+        write: Some(WriteKind::Structure),
+        scope: ScopeTarget::ByFolderArg("folder"),
+        run: |c, a| Box::pin(async move { write::call_folder_dissolve(c, a).await }),
+    },
 ];
 
 fn spec_of(name: &str) -> Option<&'static ToolSpec> {
@@ -530,6 +588,20 @@ const HINTS: &[Hints] = &[
     // 删到回收站⇒ destructive；已经在回收站里的再删一次不会更差 ⇒ 幂等。
     Hints { name: "kb_delete", destructive: true, idempotent: false },
     Hints { name: "kb_restore", destructive: false, idempotent: true },
+    Hints::read("kb_history"),
+    // 回滚把当前正文换成旧的 ⇒ destructive；同一个 rev 再回一次结果不变 ⇒ 幂等。
+    //
+    // ⚠ 幂等在这里有一个不好看的尾巴：每次回滚都会把当前版另存一份快照，
+    //   所以重试一次 = 历史里多一份重复版。判据看的是**正文状态**（那一字不差），
+    //   同 `kb_update` 那条的口径。
+    Hints { name: "kb_revert", destructive: true, idempotent: true },
+    // 摘要是整个字段覆盖（可能盖掉用户自己写的）⇒ destructive。
+    Hints { name: "kb_summary", destructive: true, idempotent: true },
+    // 改名不碰笔记；改成同一个名字结果一样。
+    Hints { name: "kb_folder_rename", destructive: false, idempotent: true },
+    // 解散掉一层目录结构 ⇒ destructive（**笔记不删**，但用户的分类没了）。
+    // 第二次调时那个夹子已不存在 ⇒ 报错且一个字不改 ⇒ 仍算幂等。
+    Hints { name: "kb_folder_dissolve", destructive: true, idempotent: true },
 ];
 
 fn hints_of(name: &str) -> Option<&'static Hints> {
@@ -1252,6 +1324,81 @@ async fn call_folders(
     Ok(text_result(out).into())
 }
 
+/// 一篇笔记的版本历史。
+///
+/// 🔴 列表与读某一版是**同一个工具**，不拆成两个：
+/// 拆开要多付一份参数表，而 2026-09-09 那次度量里参数表比描述还贵
+/// （`dump_tool_list_cost`：inputSchema 7107 > description 6400）。
+/// 而「先列后读」是同一个动作的两步，不存在只用其中一个的场景。
+async fn call_history(
+    kb: &Arc<dyn KbSource>,
+    args: Option<&Value>,
+) -> Result<ToolOutput, ToolError> {
+    let id = arg_id(args, "kb_history")?;
+    let kb2 = Arc::clone(kb);
+    let id2 = id.clone();
+
+    let Some(rev_id) = arg_i64(args, "rev") else {
+        let list = match blocking(move || kb2.revisions(&id2)).await {
+            Ok(v) => v,
+            Err(e) => return Ok(error_result(format!("读版本历史失败：{}", e)).into()),
+        };
+        if list.is_empty() {
+            return Ok(ToolOutput {
+                // 把「为何空」说清楚：快照是在**每次改动之前**存的，
+                // 不说的话模型会以为历史没开、或者以为自己参数传错了。
+                value: text_result(
+                    "这篇还没有历史版本——快照是在**每次改动之前**存的，\
+                     所以一篇建完就没再动过的笔记没有历史。",
+                ),
+                note_ids: vec![id],
+            });
+        }
+        let mut out = format!("id={} 的版本历史（新 → 旧，共 {} 份）：\n", id, list.len());
+        for r in &list {
+            out.push_str(&format!(
+                "  rev={} ｜ {} ｜ {} 字{}{}\n",
+                r.id,
+                r.created_at,
+                r.char_count,
+                if r.source_agent.is_empty() {
+                    // 空串就是人改的。不写「用户改的」而是不写：
+                    // 这一行每个版本都要占字，而绝大多数版本都是人改的。
+                    String::new()
+                } else {
+                    format!(" ｜ {} 改的", r.source_agent)
+                },
+                if r.pinned { " ｜ 🔒 锚点（不会被裁掉）" } else { "" },
+            ));
+        }
+        out.push_str("\n用 kb_history(id, rev) 读某一版的正文，kb_revert(id, rev) 回滚到它。");
+        return Ok(ToolOutput { value: text_result(out), note_ids: vec![id] });
+    };
+
+    match blocking(move || kb2.revision(&id2, rev_id)).await {
+        Ok(Some(r)) => {
+            // 同 `kb_read`：历史正文也是**数据而不是指令**，要过同一道包装。
+            // 不包的话，一篇被注入过的笔记只要把那句话写进去再改回来，
+            // 就能靠历史接口绕过 `kb_read` 的防御。
+            let body = wrap_content(&id, None, &truncate_chars(&r.content, FULL_READ_MAX_CHARS));
+            Ok(ToolOutput {
+                value: text_result(format!(
+                    "id={} 的 rev={}（{}）：\n{}",
+                    id, r.id, r.created_at, body
+                )),
+                note_ids: vec![id],
+            })
+        }
+        // 归属不符与真的不存在走同一个出口，理由在 `KbSource::revision`。
+        Ok(None) => Ok(error_result(format!(
+            "这一篇里没有 rev={}。用不带 rev 的 kb_history 看它有哪些版本。",
+            rev_id
+        ))
+        .into()),
+        Err(e) => Ok(error_result(format!("读版本失败：{}", e)).into()),
+    }
+}
+
 // ===== 辅助 =====
 
 /// R2：**所有 DB 调用都必须走这里。**
@@ -1308,6 +1455,14 @@ fn arg_u32(args: Option<&Value>, key: &str, default: u32, min: u32, max: u32) ->
         .and_then(|v| v.as_u64())
         .map(|v| v.clamp(min as u64, max as u64) as u32)
         .unwrap_or(default)
+}
+
+/// 取一个整数参数。没传 / 不是整数都返 `None`。
+///
+/// 不复用 `arg_u32`：那个带默认值与上下限夹取，而版本号「没传」与「传了 0」
+/// 是两件事（前者 = 只列表）。夹成默认值会把前者静默变成后者。
+fn arg_i64(args: Option<&Value>, key: &str) -> Option<i64> {
+    args?.get(key)?.as_i64()
 }
 
 /// 按**字符**（不是字节）截断。
@@ -2059,7 +2214,7 @@ mod tests {
     #[test]
     fn test_annotations_present_and_consistent_with_gate() {
         let tools = all();
-        assert_eq!(tools.len(), 18, "全开时应有18个工具");
+        assert_eq!(tools.len(), 23, "全开时应有23个工具");
         for t in &tools {
             let name = t["name"].as_str().unwrap();
             let a = &t["annotations"];
@@ -2103,9 +2258,9 @@ mod tests {
 
     #[test]
     fn test_annotations_follow_the_switches() {
-        // 写开关全关时只剩 6 个只读工具，它们全部应声明只读。
+        // 写开关全关时只剩 7 个只读工具，它们全部应声明只读。
         let tools = definitions(&WriteSwitches::ALL_OFF, TEST_TRASH_DAYS);
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 7);
         for t in &tools {
             let name = t["name"].as_str().unwrap();
             assert_eq!(
@@ -2129,7 +2284,7 @@ mod tests {
             let n = TOOLS.iter().filter(|t| t.write == Some(kind)).count();
             assert!(n >= 1, "{} 没有对应任何工具", kind.cfg_key());
         }
-        assert_eq!(TOOLS.iter().filter(|t| t.write.is_some()).count(), 12);
+        assert_eq!(TOOLS.iter().filter(|t| t.write.is_some()).count(), 16);
     }
 
     #[test]
@@ -2184,8 +2339,9 @@ mod tests {
             .iter()
             .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
             .collect();
-        assert_eq!(names.len(), 6);
+        assert_eq!(names.len(), 7);
         for expect in [
+            "kb_history",
             "kb_folders",
             "kb_search",
             "kb_read",
@@ -2256,19 +2412,29 @@ mod tests {
         //    ・**报错恢复**（“命中多节会报错”、“与 index 只能给一个”）→ 删。
         //      报错路径带着真实上下文，比静态句子说得好。
         //
-        // 中文 UTF-8 三字节一字，粗估 3200~4600 token。
+        // 中文 UTF-8 三字节一字，粗估 4000~5600 token。
         // 参照：MemPalace 的唤醒常驻（L0+L1）**实测 600~900 token**
         // （README 那个 170 是目标值，不是当前实现）。
         // 所以我们是它的约 4~5 倍，而且这些 token 买到的是「怎么用工具」，
         // **不含任何一条记忆**——而它那 600~900 里装的是真的记忆。
         //
-        // 预算给 16000：留出约一个工具的余量。碰到它时不要顺手改大——
+        // （2026-09-09 §7.4，接 5 个维护类工具）：**18564 字节 / 23 个工具**。
+        // 涨了 3492，每个新工具均 698——比全表均值（807）低，因为这几个
+        // 只有 1~2 个参数（参数表比描述贵，见上）。买到的是：
+        //   ・`kb_history` + `kb_revert`：模型改坏正文后**原本没有任何退路**
+        //     （`kb_restore` 只管回收站，不是版本回滚）。
+        //   ・`kb_folder_rename` + `kb_folder_dissolve`：原本只有 `kb_folder_create`，
+        //     文件夹树**只能长不能修**——一个单向棘轮，越用越乱。
+        //   ・`kb_summary`：摘要进 `kb_search` / `kb_list` 的结果，直接决定检索多便宜。
+        //
+        // 预算给 20000（封顶拍定在 22KB，这里留约两个工具的余量）。
+        // 碰到它时不要顺手改大——
         // 先回答「这个工具值不值得让每个客户端每次连接都多付这么多」。
         // 🔴 下一次碰预算，先跑 `dump_tool_list_cost` 再动手。上面这笔账里
         // 两个最大的发现（参数表比描述贵、169 字节空格）都是**读源码看不出来**的。
         assert!(
-            bytes < 16_000,
-            "tools/list 已涨到 {} 字节（基线 15072），超出预算。\
+            bytes < 20_000,
+            "tools/list 已涨到 {} 字节（基线 18564），超出预算。\
              要么精简描述，要么先确认这份常驻开销值得",
             bytes
         );
@@ -2487,7 +2653,7 @@ mod tests {
         assert_eq!(declared, dispatched);
         assert_eq!(
             declared.len(),
-            18,
+            23,
             "工具数量变了就要重读一遍本模块头部的取舍说明"
         );
     }

@@ -5400,7 +5400,7 @@ fn test_revision_restore_clears_last_agent() {
 
     let revs = store.note_revision_list(&n.id).unwrap();
     let first = revs.last().expect("应当有快照");
-    store.note_restore(first.id).unwrap();
+    store.note_restore(first.id, "").unwrap();
 
     let after = store.note_get(&n.id).unwrap().unwrap();
     assert_eq!(
@@ -6274,7 +6274,7 @@ fn test_restore_is_itself_undoable() {
     store.note_update(&n.id, "标题", "第二版").unwrap();
 
     let revs = store.note_revision_list(&n.id).unwrap();
-    let restored = store.note_restore(revs[0].id).unwrap();
+    let restored = store.note_restore(revs[0].id, "").unwrap();
     assert_eq!(restored.content, "第一版");
 
     // 恢复前的内容进了历史 ⇒ 恢复可撤销
@@ -6284,7 +6284,7 @@ fn test_restore_is_itself_undoable() {
     assert_eq!(top.content, "第二版", "恢复应先把当前版存成快照");
 
     // 撤销恢复：把刚才那份再恢复回来
-    let back = store.note_restore(after[0].id).unwrap();
+    let back = store.note_restore(after[0].id, "").unwrap();
     assert_eq!(back.content, "第二版");
 }
 
@@ -6295,7 +6295,7 @@ fn test_restore_also_restores_title() {
     store.note_update(&n.id, "新标题", "新正文").unwrap();
 
     let revs = store.note_revision_list(&n.id).unwrap();
-    let restored = store.note_restore(revs[0].id).unwrap();
+    let restored = store.note_restore(revs[0].id, "").unwrap();
     assert_eq!(restored.title, "原标题");
     assert_eq!(restored.content, "正文");
 }
@@ -6330,7 +6330,7 @@ fn test_deleting_note_cascades_revisions() {
 fn test_restore_missing_revision_errors() {
     let store = make_store();
     // 不静默（规则 #15.3）
-    assert!(store.note_restore(999_999).is_err());
+    assert!(store.note_restore(999_999, "").is_err());
     assert!(store.note_revision_get(999_999).unwrap().is_none());
 }
 
@@ -7141,7 +7141,7 @@ fn test_updated_ms_is_bumped_on_every_write_path() {
     // 版本恢复：这是一次**新的**修改，不是回到过去
     let revs = store.note_revision_list(&n.id).unwrap();
     let first = revs.last().expect("应当有历史版本");
-    store.note_restore(first.id).unwrap();
+    store.note_restore(first.id, "").unwrap();
     递增(&store, "note_restore", &mut last);
 }
 
@@ -7889,4 +7889,101 @@ fn test_蒸馏摘录按字符截断且不回全文() {
     // 日期形式要校：它拼进 LIKE 模式，传个 % 进来能把整库拉出来
     assert!(store.history_day_excerpts("2026-8-1").is_err());
     assert!(store.history_day_excerpts("%").is_err());
+}
+
+/// §7.4：读历史 / 回滚的**归属校验**。
+///
+/// 🔴 这条必须在数据层，不能只在 MCP 层写：真实实现 `AppKbSource`
+/// 要一个 `tauri::AppHandle`，在 `--no-default-features` 下构造不出来，
+/// 所以写在那一层的校验只有 `FakeKb` 的镜像能被测到——
+/// 把真实校验敲掉也不会红。详细理由在 `note_revision_get_in` 的注释里。
+#[test]
+fn test_revision_access_is_scoped_to_the_note_that_owns_it() {
+    let store = make_store();
+    let a = store.note_create(None, "A", "a1").unwrap();
+    let b = store.note_create(None, "B", "b1").unwrap();
+    // 各改一次，各产出一份快照。
+    store.note_update(&a.id, "A", "a2").unwrap();
+    store.note_update(&b.id, "B", "b2").unwrap();
+    let rev_a = store.note_revision_list(&a.id).unwrap()[0].id;
+
+    // 拿 A 的版本号去读 / 回滚 B——两边都得被挡住。
+    assert!(
+        store.note_revision_get_in(&b.id, rev_a).unwrap().is_none(),
+        "拿别的笔记的 rev 读到了内容"
+    );
+    assert!(
+        store.note_restore_in(&b.id, rev_a, "agent:x").is_err(),
+        "拿别的笔记的 rev 回滚成功了"
+    );
+    // 而且 B 的正文一个字没动（光看报错不够：
+    // “报了错但已经改完了”是一种真存在过的失败形状）。
+    assert_eq!(store.note_get(&b.id).unwrap().unwrap().content, "b2");
+
+    // 反面：校验不能把正当访问也挡了。
+    assert!(store.note_revision_get_in(&a.id, rev_a).unwrap().is_some());
+    let back = store.note_restore_in(&a.id, rev_a, "agent:x").unwrap();
+    assert_eq!(back.content, "a1");
+    // 回滚也是一次正文改动：`last_agent` 要跟着 source 走（§7.1）。
+    // 不记的话 `author="me"` 看不到模型刚干的这一下。
+    assert_eq!(back.last_agent, "agent:x");
+}
+
+/// §7.4：模型回滚时，回滚**前**那一版要被锚成锚点。
+///
+/// 🔴 这不是锦上添花：普通快照会被 `prune_revisions_on` 挤掉。
+/// 模型把一篇回滚到很旧的一版，用户刚写的那版如果不锚，
+/// 就会在后继编辑里静默消失——那时候已经找不回来了。
+#[test]
+fn test_agent_revert_anchors_the_version_it_replaced() {
+    let store = make_store();
+    let n = store.note_create(None, "T", "v1").unwrap();
+    store.note_update(&n.id, "T", "v2").unwrap();
+    let rev_v1 = store.note_revision_list(&n.id).unwrap()[0].id;
+
+    store.note_restore_in(&n.id, rev_v1, "agent:x").unwrap();
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    let v2 = revs
+        .iter()
+        .find(|r| r.char_count == 2 && r.id != rev_v1)
+        .expect("回滚前那一版应该进了历史");
+    assert!(v2.pinned, "模型回滚掉的那一版没被锚住，会被历史裁剪挤掉");
+}
+
+/// §7.4：人在界面上点的回滚不锚、也不留 agent 标记。
+///
+/// 两个入口走同一个 `note_restore`，只差 `source`——
+/// 所以得有一条盯着「空串那一支」，否则把 `source` 写死也不会红。
+#[test]
+fn test_human_revert_leaves_no_agent_mark_and_no_anchor() {
+    let store = make_store();
+    let n = store.note_create(None, "T", "v1").unwrap();
+    store.note_update_from(&n.id, "T", "v2", "agent:x").unwrap();
+    let rev_v1 = store.note_revision_list(&n.id).unwrap()[0].id;
+
+    // ⚠ 不能断言「一个锚点都没有」——上面那次 `note_update_from("agent:x")`
+    //   **本身就已经锚了一份**（agent 改动会触发 `should_anchor_on`）。
+    //   要钉的是「人点的回滚**不新增**锚点」，所以看的是差值。
+    let pinned_before = store
+        .note_revision_list(&n.id)
+        .unwrap()
+        .iter()
+        .filter(|r| r.pinned)
+        .count();
+
+    let back = store.note_restore(rev_v1, "").unwrap();
+    assert_eq!(back.content, "v1");
+    assert_eq!(back.last_agent, "", "人手动回滚过之后不应该还声称某个 agent 最后改过");
+
+    let pinned_after = store
+        .note_revision_list(&n.id)
+        .unwrap()
+        .iter()
+        .filter(|r| r.pinned)
+        .count();
+    assert_eq!(
+        pinned_after, pinned_before,
+        "人自己点的回滚不该新锚一个版本（锚点只能手动清，乱锚会占死名额）"
+    );
 }

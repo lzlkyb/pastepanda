@@ -23,7 +23,8 @@
 use serde_json::{json, Value};
 
 use super::{
-    arg_str, arg_str_list, blocking, error_result, text_result, CallCtx, ToolError, ToolOutput,
+    arg_i64, arg_str, arg_str_list, blocking, error_result, text_result, CallCtx, ToolError,
+    ToolOutput,
 };
 use crate::data_store::Note;
 use crate::markdown::{ContentEdit, EditReport, InsertAt};
@@ -372,6 +373,69 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
                 "required": ["id"]
             }
         }),
+        json!({
+            "name": "kb_revert",
+            "description": "把一篇笔记回滚到它的某个历史版本。先用 kb_history 拿版本号。\n\
+                 回滚**前**的内容会先另存一份历史，所以回错了能再回来。\n\
+                 ⚠ 正文会被**整篇**换成旧的那一版：用户在那之后写的东西全部不在了。\
+                 只想拿回其中一段就用 kb_history 读那一版，再用 kb_append 把那段接回去。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "笔记 id。" },
+                    "rev": { "type": "integer", "description": "版本号，从 kb_history 拿。" }
+                },
+                "required": ["id", "rev"]
+            }
+        }),
+        json!({
+            "name": "kb_summary",
+            "description": "给一篇笔记写一句摘要。\n\
+                 它会出现在 kb_search / kb_list 的结果里，所以写得好能让以后的检索便宜很多：\
+                 写**这篇解决了什么**，不要复述标题。\n\
+                 text 传空串 = 清掉摘要。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "笔记 id。" },
+                    "text": { "type": "string", "description": "摘要。一两句就好。" }
+                },
+                "required": ["id", "text"]
+            }
+        }),
+        json!({
+            "name": "kb_folder_rename",
+            "description": "给一个文件夹改名。里面的笔记不动。\n\
+                 ⚠ 文件夹结构是用户自己的组织方式，**不要主动帮他重排**；\
+                 只在他明确要求时才改。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "要改名的文件夹（名字，用 kb_folders 查）。"
+                    },
+                    "name": { "type": "string", "description": "新名字。同一父级下不能重名。" }
+                },
+                "required": ["folder", "name"]
+            }
+        }),
+        json!({
+            "name": "kb_folder_dissolve",
+            "description": "解散一个文件夹：里面的笔记与子文件夹全部上提到它的父级，再删这一层。\n\
+                 **笔记一篇不删**。用它收拾建多了的空夹子或多余的层级。\n\
+                 ⚠ 同 kb_folder_rename：别主动重排用户的目录。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "要解散的文件夹（名字，用 kb_folders 查）。"
+                    }
+                },
+                "required": ["folder"]
+            }
+        }),
     ]
 }
 
@@ -718,5 +782,124 @@ pub(super) async fn call_restore(
             note_ids: vec![id],
         }),
         Err(e) => Ok(error_result(format!("恢复失败：{}", e)).into()),
+    }
+}
+
+/// 回滚到某个历史版本。
+///
+/// 🔴 归属校验在 [`super::KbSource::revert`] 里，不在这里：
+/// `rev` 是全库递增的整数，而范围判定看的是 `arguments.id`。
+/// 两边不对时，一个别的笔记的 `rev` 就能改写白名单外那篇。
+pub(super) async fn call_revert(
+    ctx: CallCtx,
+    args: Option<Value>,
+) -> Result<ToolOutput, ToolError> {
+    let a = args.as_ref();
+    let Some(id) = arg_str(a, "id").map(str::to_string) else {
+        return Err(ToolError::invalid_params("kb_revert 需要参数 id"));
+    };
+    let Some(rev) = arg_i64(a, "rev") else {
+        return Err(ToolError::invalid_params(
+            "kb_revert 需要参数 rev（整数，用 kb_history 拿）",
+        ));
+    };
+    let src = source(&ctx);
+    let kb = ctx.kb.clone();
+    let id2 = id.clone();
+    match blocking(move || kb.revert(&id2, rev, &src)).await {
+        Ok(title) => Ok(ToolOutput {
+            value: text_result(format!(
+                "已把「{}」回滚到 rev={}。\n\
+                 回滚前的内容已另存为一份历史（kb_history 能看到），所以这一步能退回去。\n\
+                 🔴 请把回滚这件事告诉用户——他在那之后写的东西现在不在正文里了。\nid={}",
+                title, rev, id
+            )),
+            note_ids: vec![id],
+        }),
+        Err(e) => Ok(error_result(format!("回滚失败：{}", e)).into()),
+    }
+}
+
+/// 写（或清掉）一篇的摘要。
+pub(super) async fn call_summary(
+    ctx: CallCtx,
+    args: Option<Value>,
+) -> Result<ToolOutput, ToolError> {
+    let a = args.as_ref();
+    let Some(id) = arg_str(a, "id").map(str::to_string) else {
+        return Err(ToolError::invalid_params("kb_summary 需要参数 id"));
+    };
+    // 🔴 用 `arg_str_allow_empty` 而不是 `arg_str`：后者把空串当没传，
+    // 而空串在这里是一个**有意义的指令**（清掉摘要）。
+    // 拿 `arg_str` 的后果是「清摘要」静默变成报参数缺失。
+    let text = arg_str_allow_empty(a, "text").unwrap_or("").to_string();
+    let val: Option<String> = if text.trim().is_empty() { None } else { Some(text) };
+    let cleared = val.is_none();
+    let kb = ctx.kb.clone();
+    let id2 = id.clone();
+    match blocking(move || kb.set_summary(&id2, val.as_deref())).await {
+        Ok(()) => Ok(ToolOutput {
+            value: text_result(if cleared {
+                format!("已清掉这篇的摘要。\nid={}", id)
+            } else {
+                format!(
+                    "已写好摘要。它会出现在 kb_search / kb_list 的结果里。\nid={}",
+                    id
+                )
+            }),
+            note_ids: vec![id],
+        }),
+        Err(e) => Ok(error_result(format!("写摘要失败：{}", e)).into()),
+    }
+}
+
+/// 文件夹改名。
+pub(super) async fn call_folder_rename(
+    ctx: CallCtx,
+    args: Option<Value>,
+) -> Result<ToolOutput, ToolError> {
+    let a = args.as_ref();
+    let Some(folder) = arg_str(a, "folder").map(str::to_string) else {
+        return Err(ToolError::invalid_params("kb_folder_rename 需要参数 folder"));
+    };
+    let Some(name) = arg_str(a, "name").map(str::to_string) else {
+        return Err(ToolError::invalid_params("kb_folder_rename 需要参数 name"));
+    };
+    let old = folder.clone();
+    let kb = ctx.kb.clone();
+    match blocking(move || kb.folder_rename(&folder, &name)).await {
+        Ok(newname) => Ok(ToolOutput {
+            value: text_result(format!(
+                "已把文件夹「{}」改名为「{}」。里面的笔记没动。",
+                old, newname
+            )),
+            // 没有笔记被读写，审计里不记 id（同 `kb_folder_create`）。
+            note_ids: vec![],
+        }),
+        Err(e) => Ok(error_result(format!("改名失败：{}", e)).into()),
+    }
+}
+
+/// 解散一层文件夹。
+pub(super) async fn call_folder_dissolve(
+    ctx: CallCtx,
+    args: Option<Value>,
+) -> Result<ToolOutput, ToolError> {
+    let a = args.as_ref();
+    let Some(folder) = arg_str(a, "folder").map(str::to_string) else {
+        return Err(ToolError::invalid_params("kb_folder_dissolve 需要参数 folder"));
+    };
+    let shown = folder.clone();
+    let kb = ctx.kb.clone();
+    match blocking(move || kb.folder_dissolve(&folder)).await {
+        Ok((notes, subs)) => Ok(ToolOutput {
+            value: text_result(format!(
+                "已解散文件夹「{}」：{} 篇笔记与 {} 个子文件夹上提到了它的父级，\
+                 笔记一篇没删。",
+                shown, notes, subs
+            )),
+            note_ids: vec![],
+        }),
+        Err(e) => Ok(error_result(format!("解散失败：{}", e)).into()),
     }
 }

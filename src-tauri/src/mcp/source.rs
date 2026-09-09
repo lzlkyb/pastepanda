@@ -11,7 +11,9 @@
 
 use super::gate::{WriteScope, WriteSwitches};
 use std::collections::HashMap;
-use crate::data_store::{DataStore, Note, NoteFolder, NoteUpdateReport, NoteViewOpts};
+use crate::data_store::{
+    DataStore, Note, NoteFolder, NoteRevision, NoteRevisionMeta, NoteUpdateReport, NoteViewOpts,
+};
 use crate::markdown::{apply, ContentEdit, EditReport};
 
 /// `kb_list` 的结果。
@@ -338,6 +340,40 @@ pub trait KbSource: Send + Sync + 'static {
     ///
     /// 返回新夹子的名字（给模型回显用）。
     fn folder_create(&self, name: &str, parent: Option<&str>) -> Result<String, String>;
+
+    /// 这一篇的版本快照列表（新 → 旧）。`kb_history` 用。
+    fn revisions(&self, id: &str) -> Result<Vec<NoteRevisionMeta>, String>;
+
+    /// 读某一份快照的正文。
+    ///
+    /// 🔴 **必须同时传 `id`**，不能只拿 `rev_id` 去读。
+    /// `rev_id` 是全库递增的整数，模型能猜；而权限与范围判定走的是
+    /// `ScopeTarget::ByNoteId`（看 `arguments.id`）。两边不对的话，
+    /// 传一个**别的笔记**的 `rev_id` 就能把白名单外那篇的历史正文读出来。
+    /// 不属于这一篇时返 `Ok(None)`（与「没这个版本」同一个出口，
+    /// 不告知它“这个版本存在但不是你的”）。
+    fn revision(&self, id: &str, rev_id: i64) -> Result<Option<NoteRevision>, String>;
+
+    /// 回滚到某一份快照。返回回滚后的标题。
+    ///
+    /// 🔴 同 `revision`：`rev_id` 不属于 `id` 时必须报错。
+    /// 这里漏掉比读那里漏掉更严重——那是**改写**白名单外的笔记。
+    fn revert(&self, id: &str, rev_id: i64, source: &str) -> Result<String, String>;
+
+    /// 写摘要。`None` = 清掉。
+    fn set_summary(&self, id: &str, text: Option<&str>) -> Result<(), String>;
+
+    /// 文件夹改名。`folder` 是**名字**（同 `folder_create` 的 `parent`）。
+    /// 返回新名字。
+    fn folder_rename(&self, folder: &str, name: &str) -> Result<String, String>;
+
+    /// 解散一层文件夹：里面的笔记与子夹全部上提到它的父夹，然后删这一层。
+    /// 返回（挪走的笔记数, 挪走的子夹数）。
+    ///
+    /// 🔴 给模型的是解散而不是 `folder_delete`：后者会**连带删子文件夹**
+    /// （看 `test_folder_delete_keeps_notes_but_cascades_subfolders`）。
+    /// 两者都不删笔记，但一个只拆一层、一个拆整棵子树。
+    fn folder_dissolve(&self, folder: &str) -> Result<(usize, usize), String>;
 }
 
 /// 一篇笔记在权限判定里的位置。
@@ -578,6 +614,53 @@ impl KbSource for AppKbSource {
                 Some(p) => Some(resolve_folder_on(s, p)?),
             };
             s.folder_create_by_ai(&name, pid.as_deref()).map(|f| f.name)
+        })?
+    }
+
+    fn revisions(&self, id: &str) -> Result<Vec<NoteRevisionMeta>, String> {
+        let id = id.to_string();
+        self.with_store(move |s| s.note_revision_list(&id))?
+    }
+
+    // 🔴 下面两个只是管子：归属校验在数据层
+    // （`note_revision_get_in` / `note_restore_in`），不在这里。
+    // 理由写在那两个方法的注释里：本层的真实实现需要 `tauri::AppHandle`，
+    // 在 `--no-default-features` 下根本构造不出来 ⇒ 写在这里的校验
+    // 只有 `FakeKb` 的镜像能被测到，那种测试是空的。
+    fn revision(&self, id: &str, rev_id: i64) -> Result<Option<NoteRevision>, String> {
+        let id = id.to_string();
+        self.with_store(move |s| s.note_revision_get_in(&id, rev_id))?
+    }
+
+    fn revert(&self, id: &str, rev_id: i64, source: &str) -> Result<String, String> {
+        let id = id.to_string();
+        let source = source.to_string();
+        self.with_store(move |s| s.note_restore_in(&id, rev_id, &source).map(|n| n.title))?
+    }
+
+    fn set_summary(&self, id: &str, text: Option<&str>) -> Result<(), String> {
+        let id = id.to_string();
+        let text = text.map(|s| s.to_string());
+        self.with_store(move |s| s.note_set_summary(&id, text.as_deref()))?
+    }
+
+    fn folder_rename(&self, folder: &str, name: &str) -> Result<String, String> {
+        let folder = folder.to_string();
+        let name = name.to_string();
+        self.with_store(move |s| {
+            // 同 `folder_create`：模型手里只有名字，所以先解名。
+            // 重名 / 空名 / 深度那三道校验全靠数据层现有的，不在这层再写一份。
+            let fid = resolve_folder_on(s, &folder)?;
+            s.folder_rename(&fid, &name)?;
+            Ok(name)
+        })?
+    }
+
+    fn folder_dissolve(&self, folder: &str) -> Result<(usize, usize), String> {
+        let folder = folder.to_string();
+        self.with_store(move |s| {
+            let fid = resolve_folder_on(s, &folder)?;
+            s.folder_dissolve(&fid)
         })?
     }
 }

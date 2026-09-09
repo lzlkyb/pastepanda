@@ -41,5 +41,7 @@ pub fn note_revision_pin(
 /// 内部会**先把当前版存成一份快照**，所以恢复可撤销。
 #[tauri::command]
 pub fn note_restore(store: State<DataStore>, rev_id: i64) -> Result<Note, String> {
-    store.note_restore(rev_id)
+    // 空串 = 人在界面上点的。这个命令只给界面用，
+    // 模型走的是 MCP 的 `kb_revert`（它传 `agent:xxx`）。
+    store.note_restore(rev_id, "")
 }
