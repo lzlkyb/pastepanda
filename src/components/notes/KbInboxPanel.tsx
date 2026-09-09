@@ -12,7 +12,7 @@
  * 🔴 红线：无 AI。候选全由本机信号算出。
  */
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ChevronDown, Inbox, Star, Search, Undo2 } from "lucide-react";
+import { ChevronDown, Inbox, Undo2 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
 import { relativeTime } from "@/lib/utils";
@@ -25,6 +25,7 @@ import {
   kbInboxDismiss,
   kbInboxUndismiss,
   type InboxCandidate,
+  type InboxReason,
 } from "@/lib/api";
 import { CONTENT_TYPE_META, getContentTypeMeta } from "@/lib/contentTypes";
 import {
@@ -37,6 +38,7 @@ import {
 } from "@/lib/notes/viewOpts";
 import { ViewControls, ViewChips, TriRow } from "./ViewControls";
 import { LoadMoreSentinel } from "./LoadMoreSentinel";
+import { REASON_META, REASON_ORDER } from "@/lib/notes/inboxReasons";
 import styles from "./KbInboxPanel.module.css";
 
 /** 首屏与每批条数。设计稿 §5-2b 定的 20。 */
@@ -56,12 +58,32 @@ const TYPE_OPTIONS = Object.entries(CONTENT_TYPE_META).map(([key, meta]) => ({
  *   编一个时间比不写更糟；同理收藏也没有「收藏时间」（`pinned` 就是个布尔）。
  *   能说的只有采集时间，就只说它。
  */
+/** 征标上那个数字。没数字可报的原因（收藏）返回空串。 */
+function badgeCount(c: InboxCandidate): string {
+  switch (c.reason) {
+    case "research":
+      return ` ×${c.search_hit_count}`;
+    case "recopy":
+      return ` ×${c.recopy_count}`;
+    default:
+      return "";
+  }
+}
+
 function signalText(c: InboxCandidate): string {
   const when = relativeTime(c.item.time);
-  if (c.reason === "star") {
-    return c.item.source ? `已收藏 · 来自 ${c.item.source} · ${when}采集` : `已收藏 · ${when}采集`;
+  const from = c.item.source ? ` · 来自 ${c.item.source}` : "";
+  switch (c.reason) {
+    case "star":
+      return `已收藏${from} · ${when}采集`;
+    case "recopy":
+      return `你又原样复制过 ${c.recopy_count} 次${from} · ${when}采集`;
+    case "shot":
+      // 字数从已加载的 `ocr_text` 现算，不再让后端多传一列。
+      return `截图里认出 ${(c.item.ocr_text ?? "").trim().length} 个字 · ${when}采集`;
+    default:
+      return `你搜出来后真的用过 ${c.search_hit_count} 次 · ${when}采集`;
   }
-  return `你搜索找回来过 ${c.search_hit_count} 次 · ${when}采集`;
 }
 
 export function KbInboxPanel() {
@@ -94,7 +116,7 @@ export function KbInboxPanel() {
   const groupLabel = useCallback(
     (key: string) => {
       if (view.groupBy === "type") return getContentTypeMeta(key).label;
-      if (view.groupBy === "reason") return key === "star" ? "收藏" : "找回";
+      if (view.groupBy === "reason") return REASON_META[key as InboxReason]?.label ?? key;
       // 按来源分组：没来源的卡片 source 是空串（非 NULL），组名得自己补
       return key || "（无来源）";
     },
@@ -234,8 +256,11 @@ export function KbInboxPanel() {
                   <div className={styles.typeGrid}>
                     {[
                       { v: "" as const, t: "不筛" },
-                      { v: "star" as const, t: "收藏" },
-                      { v: "research" as const, t: "找回" },
+                      // 不手写清单：后端加一条通路时，漏改这里就是「筛不到那一类」。
+                      ...REASON_ORDER.map((v) => ({
+                        v,
+                        t: REASON_META[v].label,
+                      })),
                     ].map((o) => (
                       <button
                         key={o.v}
@@ -334,9 +359,13 @@ function CandidateRow({
 
   return (
     <div className={styles.row}>
-      <span className={`${styles.badge} ${c.reason === "star" ? styles.badgeStar : styles.badgeHit}`}>
-        {c.reason === "star" ? <Star size={9} /> : <Search size={9} />}
-        {c.reason === "star" ? "收藏" : `找回 ×${c.search_hit_count}`}
+      <span className={`${styles.badge} ${styles[REASON_META[c.reason].badge]}`}>
+        {(() => {
+          const I = REASON_META[c.reason].Icon;
+          return <I size={9} />;
+        })()}
+        {REASON_META[c.reason].label}
+        {badgeCount(c)}
       </span>
       <div className={styles.rowBody}>
         <div className={styles.rowTitle}>{cardLabel(c) || "未命名内容"}</div>

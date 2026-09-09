@@ -152,16 +152,31 @@ export async function copyRichOnly(htmlFragment: string, plainText: string): Pro
  * 返回给用户看的提示文案；失败直接抛，由调用方弹错误 toast。
  */
 export async function copyItemToClipboard(item: {
-  /** 只为了记「找回」信号。可选：并不是每个调用方都手里有完整条目。 */
+  /** 记「找回」与「复制」两个信号都要它。可选：并不是每个调用方都手里有完整条目。 */
   id?: string;
   type: string;
   text: string;
   content?: string;
+  content_type?: string | null;
+  source?: string | null;
 }): Promise<string> {
-  // 搜索状态下把某条复制走 = 真的把它找回来用了。
-  // 写在函数头而不是四个调用点上：同一个仓库的粘贴信号就是因为散在
-  // 各处而漏了三个分支（见 `logItemPasted`）。
+  // 两个信号都写在函数头而不是四个调用点上：同一个仓库的粘贴信号
+  // 就是因为散在各处而漏了三个分支（见 `logItemPasted`）。
+  //
+  // ① 搜索状态下复制走 = 真的把它找回来用了
   markRecallIfSearching(item.id);
+  // ② 复制本身就是「用了它」——剪贴板工具里它比粘贴更常用，
+  //   之前却一次都没记过。
+  if (item.id) {
+    void import("./actionEvents").then(({ logItemCopied }) =>
+      logItemCopied({
+        id: item.id as string,
+        type: item.type,
+        content_type: item.content_type,
+        source: item.source,
+      }),
+    );
+  }
   if (item.type === "image" && item.content) {
     await copyImageOnly(item.content);
     return "已复制图片";

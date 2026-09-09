@@ -15,14 +15,20 @@ import { logger } from "@/lib/logger";
 import { toastActionFailed } from "@/lib/utils";
 import type { InboxViewOpts } from "@/lib/notes/viewOpts";
 
-/** 入选原因。后端算好传回，忽略时原样送回去写 dismissed.reason。 */
-export type InboxReason = "star" | "research";
+/**
+ * 入选原因。后端 `reason_expr()` 算好传回，忽略时原样送回去写 dismissed.reason。
+ *
+ * 四条通路，优先级就是这个顺序（一张卡片可能同时满足好几条，只报最强的）。
+ */
+export type InboxReason = "star" | "research" | "recopy" | "shot";
 
 /** 一条待沉淀候选。 */
 export interface InboxCandidate {
   item: HistoryItem;
   reason: InboxReason;
   search_hit_count: number;
+  /** 重复复制次数。`recopy` 征标上的数字 */
+  recopy_count: number;
   /** 有过 pasted 信号。仅同分时影响排序（A-28），也用于展示一个“用过”微标 */
   recently_pasted: boolean;
   /** 当前分组下的组键（B2 #9）。null = 不分组。

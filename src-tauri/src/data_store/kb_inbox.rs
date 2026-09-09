@@ -14,13 +14,18 @@ use super::*;
 pub struct InboxCandidate {
     /// 原卡片。直接给前端复用卡片渲染能力（文本预览 / 来源 / 时间）。
     pub item: HistoryItem,
-    /// 入选原因：`star`（收藏）/ `research`（找回）。
+    /// 入选原因：`star` 收藏 / `research` 找回 / `recopy` 重复复制 / `shot` 截图文字量。
     ///
-    /// 在后端算而不是让前端从 `pinned`/`hit` 推：忽略时要把它写进
-    /// `kb_inbox_dismissed.reason`，两边各算一遍就会漂。
+    /// 由 SQL 的 `reason_expr()` 算，**不在 Rust 里再推一遍**：
+    /// 忽略时要把它写进 `kb_inbox_dismissed.reason`，两边各算一遍就会漂。
     pub reason: String,
-    /// 被搜索命中次数。主排序依据，也是展示文案的数字。
+    /// 被搜索命中次数。主排序依据，也是 `research` 征标上的数字。
     pub search_hit_count: i64,
+    /// 重复复制次数。`recopy` 征标上的数字。
+    ///
+    /// ❗ 它不在 `HISTORY_COLS` 里（`HistoryItem` 没这个字段），所以必须单选一列。
+    /// 不传的后果不是「少个数字」，是征标只能写「重复用」而说不出几次。
+    pub recopy_count: i64,
     /// 是否有过 `action_events.outcome='pasted'`。
     ///
     /// 只做同分时的 tiebreaker（`↩A-28`）：它语义最准（真的被取用了），
@@ -34,18 +39,58 @@ pub struct InboxCandidate {
     pub group_key: Option<String>,
 }
 
-/// 候选条件。抽出成常量：列表与计数必须用**完全相同**的条件，
+// ── 四条入选通路，每条只定义一次 ───────────────────────────────
+//
+// 🔴 为什么拆成常量：入选条件与「入选原因」必须用**同一份口径**。
+// 旧实现把原因写在三处（`group_expr` / `push_inbox_filters` / 行映射），
+// 加一条通路就要三处各改一次——而漏一处不报错，只是徒然多出一个
+// 筛不出东西的分组。现在它们都从这四个常量拼出来。
+
+/// 通路#1 收藏。实测全库为 0，不删是因为零成本且用了就是最强意图。
+const SIG_STAR: &str = "h.pinned = 1";
+/// 通路#2 找回。口径已于 2026-09-08 改成「搜完真的用了那条」，并清了存量。
+const SIG_RESEARCH: &str = "COALESCE(h.search_hit_count, 0) >= 2";
+/// 通路#3 重复复制。门槛 3 来自主规划原设计（`copy_count >= 3`）。
+///
+/// 为什么是它而不是别的：**零动作成本**。实测这个库里
+/// 收藏 0 条、手工标签 0 条——所有要求用户多点一下的信号都是空的；
+/// 而「你又原样复制了一次同样的东西」不需要任何额外动作就能拿到。
+const SIG_RECOPY: &str = "COALESCE(h.recopy_count, 0) >= 3";
+/// 通路#5 截图文字量。
+///
+/// ❗ **800 是本文件里唯一一个没有原则依据、纯按分布挑的数**。
+/// 2026-09-08 实测候选池里有字的截图 259 张，中位数 384 字：
+/// ≥300 字 → 166 张，≥500 → 100 张，**≥800 → 43 张**。
+/// 阀值再低一档，待沉淀就会变成图片墙——而**字多 ≠ 值得沉淀**，
+/// 字数只是个弱代理。觉得吵就调高它，只改这一处。
+const SIG_SHOT: &str = "(h.type = 'image' AND EXISTS (
+            SELECT 1 FROM image_ocr_cache o
+             WHERE o.image_path = h.content
+               AND LENGTH(TRIM(COALESCE(o.full_text, ''))) >= 800))";
+
+/// 入选原因的**唯一**口径。分组 / 筛选 / 列表行都从这里取。
+///
+/// ❗ `WHEN` 的顺序就是优先级：一条卡片可能同时满足好几条通路，
+/// 只报最强的那个。顺序必须与 `candidate_where()` 里的 OR 一致。
+fn reason_expr() -> String {
+    format!(
+        "CASE WHEN {SIG_STAR} THEN 'star' \
+              WHEN {SIG_RESEARCH} THEN 'research' \
+              WHEN {SIG_RECOPY} THEN 'recopy' \
+              ELSE 'shot' END"
+    )
+}
+
+/// 候选条件。抽出来：列表与计数必须用**完全相同**的条件，
 /// 否则横幅上写「待沉淀 225 条」而列表里只有 200 条，用户会以为丢了东西。
 ///
-/// 两个信号（规划 §1.6 通路 #1 #2）+ 两个排除：
-/// - 通路#1 `pinned = 1`——**实测为 0**（§3.2），不删是因为零成本且用了就是强意图；
-/// - 通路#2 `search_hit_count >= 2`——**存量就有 225 条**，所以必须分批；
-/// - 排除已有笔记、排除用户说过「别烦我」的。
+/// 四条信号（任一命中即入选）+ 三个排除。
 /// ❗ 占位符用**匿名** `?` 而不是 `?1`：字段视图（B2 #9）要往后面拼不定个数的
 /// 筛选参数，编号绑定下每加一个参数就要重排全部序号——而排错不报错，只是结果静默变错。
-const CANDIDATE_WHERE: &str = "
+fn candidate_where() -> String {
+    format!("
     WHERE h.workspace = ?
-      AND (h.pinned = 1 OR COALESCE(h.search_hit_count, 0) >= 2)
+      AND ({SIG_STAR} OR {SIG_RESEARCH} OR {SIG_RECOPY} OR {SIG_SHOT})
       -- 带 deleted_at：笔记被删了，那张卡片就又变回「没沉淀过」，该回到收件箱。
       AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.history_id = h.id AND n.deleted_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM kb_inbox_dismissed d WHERE d.history_id = h.id)
@@ -62,7 +107,8 @@ const CANDIDATE_WHERE: &str = "
                                         WHERE o.image_path = h.content
                                           AND TRIM(COALESCE(o.full_text, '')) <> '')
              ELSE TRIM(COALESCE(h.text, '')) <> ''
-           END)";
+           END)")
+}
 
 /// 待沉淀区的视图选项（B2 #9）。**全默认 = 与做这个功能之前一模一样**。
 ///
@@ -105,12 +151,13 @@ impl InboxViewOpts {
     /// ❗ 与笔记侧不同，这里返回的是**原始值**（`code` / `Chrome` / `star`）而不是中文标签：
     /// `content_type` → 中文名的映射住在前端 `CONTENT_TYPE_META`（卡片上的类型徽用的同一份）。
     /// 在 Rust 里再拄一份 19 项的中文表，两边早晚对不上（规则 #11）。
-    fn group_expr(&self) -> &'static str {
+    fn group_expr(&self) -> String {
         match self.group_by.as_str() {
-            "type" => "COALESCE(h.content_type, 'text')",
-            "source" => "h.source",
-            "reason" => "CASE WHEN h.pinned = 1 THEN 'star' ELSE 'research' END",
-            _ => "NULL",
+            "type" => "COALESCE(h.content_type, 'text')".to_string(),
+            "source" => "h.source".to_string(),
+            // 不在这里再写一遍 CASE：口径只有 `reason_expr()` 一份。
+            "reason" => reason_expr(),
+            _ => "NULL".to_string(),
         }
     }
 
@@ -128,12 +175,11 @@ fn push_inbox_filters(
     params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
     o: &InboxViewOpts,
 ) {
-    match o.reason.as_str() {
-        "star" => sql.push_str(" AND h.pinned = 1"),
-        // 「找回」= 不是收藏而靠搜索命中入选的。与后端算 `reason` 的口径完全一致
-        //（那里也是 `if item.pinned { star } else { research }`），不另定义一遍。
-        "research" => sql.push_str(" AND h.pinned = 0"),
-        _ => {}
+    // 🔴 直接拿 `reason_expr()` 去比，不另写一套等价条件。
+    // 旧实现把「找回」翻译成 `h.pinned = 0`，那在只有两条通路时碰巧等价；
+    // 加了第三、第四条之后它就错了——而且**不报错**，只是筛出一堆不属于这个原因的。
+    if matches!(o.reason.as_str(), "star" | "research" | "recopy" | "shot") {
+        sql.push_str(&format!(" AND ({}) = '{}'", reason_expr(), o.reason));
     }
     match o.pasted.as_str() {
         "yes" => sql.push_str(
@@ -187,7 +233,7 @@ impl DataStore {
         workspace: &str,
         opts: &InboxViewOpts,
     ) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
-        let mut sql = format!(" FROM history h {CANDIDATE_WHERE}");
+        let mut sql = format!(" FROM history h {}", candidate_where());
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
             vec![Box::new(workspace.to_string())];
         push_inbox_filters(&mut sql, &mut params, opts);
@@ -209,7 +255,9 @@ impl DataStore {
                     COALESCE(h.search_hit_count, 0) AS hit,
                     EXISTS(SELECT 1 FROM action_events ae
                             WHERE ae.history_id = h.id AND ae.outcome = 'pasted') AS pasted,
-                    {grp} AS grp{from_where}",
+                    COALESCE(h.recopy_count, 0) AS recopy,
+                    {grp} AS grp,
+                    {rsn} AS reason{from_where}",
             // 列名带 h. 前缀：子查询里也有 history_id 同名列，不限定会歧义
             cols = HISTORY_COLS
                 .split(", ")
@@ -217,6 +265,10 @@ impl DataStore {
                 .collect::<Vec<_>>()
                 .join(", "),
             grp = opts.group_expr(),
+            // 🔴 原因从 SQL 里取，不在 Rust 里再算一遍。
+            // 旧实现写的是 `if item.pinned { "star" } else { "research" }`——
+            // 一加通路就会把重复复制与截图全报成「找回」。
+            rsn = reason_expr(),
             from_where = from_where,
         );
         sql.push_str(" ORDER BY ");
@@ -234,20 +286,25 @@ impl DataStore {
         // 先拆成两排：`load_ocr_texts_into_items` 要的是 `&mut [HistoryItem]`，
         // 从 `Vec<InboxCandidate>` 里取不出连续切片。最后再 zip 回去。
         let mut items: Vec<HistoryItem> = Vec::new();
-        let mut metas: Vec<(i64, i64, Option<String>)> = Vec::new();
+        let mut metas: Vec<(i64, i64, i64, Option<String>, String)> = Vec::new();
         let iter = stmt
             .query_map(refs.as_slice(), |row| {
                 let item = row_to_history_item(row)?;
-                // 13 列之后才是我们额外选的那几列
-                let hit: i64 = row.get(13)?;
-                let pasted: i64 = row.get(14)?;
-                let group_key: Option<String> = row.get(15)?;
-                Ok((item, hit, pasted, group_key))
+                // 🔴 按**列名**取，不写死下标。
+                // 旧实现是 `row.get(13..15)`，而本轮在中间插了一列 `recopy`，
+                // 下标全错位——**而且不报错**，只是静默读到隔壁列。
+                // 笔记侧 `row_to_note_grouped` 已经为同一件事撞过一次。
+                let hit: i64 = row.get("hit")?;
+                let pasted: i64 = row.get("pasted")?;
+                let recopy: i64 = row.get("recopy")?;
+                let group_key: Option<String> = row.get("grp")?;
+                let reason: String = row.get("reason")?;
+                Ok((item, hit, pasted, recopy, group_key, reason))
             })
             .map_err(|e| e.to_string())?;
-        for (item, hit, pasted, group_key) in iter.filter_map(|r| r.ok()) {
+        for (item, hit, pasted, recopy, group_key, reason) in iter.filter_map(|r| r.ok()) {
             items.push(item);
-            metas.push((hit, pasted, group_key));
+            metas.push((hit, pasted, recopy, group_key, reason));
         }
         // 🔴 先放锁再去取 OCR：`load_ocr_texts_into_items` 自己要 `lock_conn()`，
         // 拿着这把锁去调就是自己等自己。
@@ -261,11 +318,11 @@ impl DataStore {
         let rows: Vec<InboxCandidate> = items
             .into_iter()
             .zip(metas)
-            .map(|(item, (hit, pasted, group_key))| {
-                let reason = if item.pinned { "star" } else { "research" };
+            .map(|(item, (hit, pasted, recopy, group_key, reason))| {
                 InboxCandidate {
-                    reason: reason.to_string(),
+                    reason,
                     search_hit_count: hit,
+                    recopy_count: recopy,
                     recently_pasted: pasted != 0,
                     group_key,
                     item,
@@ -275,7 +332,7 @@ impl DataStore {
         Ok(rows)
     }
 
-    /// 候选总数（横幅计数）。与 `kb_inbox_list` 共用 `CANDIDATE_WHERE`。
+    /// 候选总数（横幅计数）。与 `kb_inbox_list` 共用 `candidate_where()`。
     pub fn kb_inbox_count(&self, workspace: &str) -> Result<i64, String> {
         self.kb_inbox_count_view(workspace, &InboxViewOpts::default())
     }

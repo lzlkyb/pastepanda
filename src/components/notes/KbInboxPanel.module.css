@@ -165,6 +165,23 @@
   color: var(--accent-solid, var(--accent));
 }
 
+/* 重复复制。用语义 token `--green`：「又用了一次」是正向信号，
+   与上面两个保持一致（都跟主题走）。 */
+.badgeRecopy {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: var(--green);
+}
+
+/* 截图。❗ 这里用的是**身份色字面值**而不是主题 token：
+   #EC4899 就是 `CONTENT_TYPE_META.image` 的 `HUE.pink`，
+   征标要与卡片上那个图片类型徽同色（见《PastePanda-色彩规范》：
+   「换个主题后这个颜色应该跟着变吗？」——内容类型的答案是不该）。
+   theme.css 里没有 pink token，也不该为它新开一个。 */
+.badgeShot {
+  background: color-mix(in srgb, #EC4899 15%, transparent);
+  color: #EC4899;
+}
+
 .rowBody {
   flex: 1;
   min-width: 0;

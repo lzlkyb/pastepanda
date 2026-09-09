@@ -7258,3 +7258,97 @@ fn test_待沉淀只列能转笔记的并带上识别文字() {
         "待沉淀也要加载 OCR，否则图片全部转不了"
     );
 }
+
+
+/// 四条入选通路各自都能把一张卡片送进待沉淀，且 `reason` 要报对。
+///
+/// 🔴 为什么要挖这条：旧实现把「入选原因」写在**三处**
+///（`group_expr` / `push_inbox_filters` / 行映射），而行映射那份是
+/// `if item.pinned { "star" } else { "research" }`。加完第三、四条通路后，
+/// 它会把重复复制与截图全报成「找回 ×0」——**不报错，只是界面上说错话**。
+/// 所以这里断言的是 `reason`，不只是「在不在列表里」。
+#[test]
+fn test_四条入选通路各自都能入选且原因报对() {
+    let store = make_store();
+    let bump = |sql: &str| store.lock_conn().execute(sql, []).unwrap();
+
+    // 通路#1 收藏（零找回、零重复）
+    let mut star = make_item("c-star", "只收藏过", "2026-08-01 10:00:00", "text");
+    star.pinned = true;
+    store.insert_history(&star).unwrap();
+
+    // 通路#2 找回 >= 2
+    store
+        .insert_history(&make_item("c-hit", "搜出来后真的用过", "2026-08-02 10:00:00", "text"))
+        .unwrap();
+    bump("UPDATE history SET search_hit_count = 2 WHERE id = 'c-hit'");
+
+    // 通路#3 重复复制 >= 3
+    store
+        .insert_history(&make_item("c-recopy", "反复复制的那串口令", "2026-08-03 10:00:00", "text"))
+        .unwrap();
+    bump("UPDATE history SET recopy_count = 3 WHERE id = 'c-recopy'");
+
+    // 通路#5 截图文字量 >= 800
+    let mut shot = make_item("c-shot", "", "2026-08-04 10:00:00", "image");
+    shot.content = "img-long.png".to_string();
+    store.insert_history(&shot).unwrap();
+    store.set_ocr_text("img-long.png", &"字".repeat(900)).unwrap();
+
+    // 两条**门槛下方**的，确认不是「什么都往里进」
+    store
+        .insert_history(&make_item("c-recopy-lo", "只复制过两次", "2026-08-05 10:00:00", "text"))
+        .unwrap();
+    bump("UPDATE history SET recopy_count = 2 WHERE id = 'c-recopy-lo'");
+    let mut shot_lo = make_item("c-shot-lo", "", "2026-08-06 10:00:00", "image");
+    shot_lo.content = "img-short.png".to_string();
+    store.insert_history(&shot_lo).unwrap();
+    store.set_ocr_text("img-short.png", &"字".repeat(100)).unwrap();
+
+    let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
+    let by = |id: &str| rows.iter().find(|c| c.item.id == id);
+
+    assert_eq!(by("c-star").map(|c| c.reason.as_str()), Some("star"));
+    assert_eq!(by("c-hit").map(|c| c.reason.as_str()), Some("research"));
+    assert_eq!(by("c-recopy").map(|c| c.reason.as_str()), Some("recopy"));
+    assert_eq!(by("c-shot").map(|c| c.reason.as_str()), Some("shot"));
+
+    assert!(by("c-recopy-lo").is_none(), "复制 2 次不该入选（门槛 3）");
+    assert!(by("c-shot-lo").is_none(), "OCR 只有 100 字不该入选（门槛 800）");
+
+    // 数字要跟着回前端，否则征标只能写「重复用」而说不出几次
+    assert_eq!(by("c-recopy").unwrap().recopy_count, 3);
+    assert_eq!(by("c-hit").unwrap().search_hit_count, 2);
+
+    // 计数与列表必须用同一份条件
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), rows.len() as i64);
+}
+
+/// 同时满足多条通路时只报最强的那个；筛选要与它同一口径。
+///
+/// ❗ 后半段是这条用例的重点：旧筛选把「找回」翻译成 `h.pinned = 0`，
+/// 那在只有两条通路时碰巧等价。下面这张卡 `pinned=1` 且 `hit>=2`，
+/// 用旧口径筛「只看找回」会把它错误地放进来。
+#[test]
+fn test_同时满足多条通路时只报最强的() {
+    let store = make_store();
+    let mut it = make_item("c-all", "又收藏又找回又反复复制", "2026-08-01 10:00:00", "text");
+    it.pinned = true;
+    store.insert_history(&it).unwrap();
+    store
+        .lock_conn()
+        .execute("UPDATE history SET search_hit_count = 9, recopy_count = 9 WHERE id = 'c-all'", [])
+        .unwrap();
+
+    let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
+    assert_eq!(rows[0].reason, "star", "收藏的优先级最高");
+
+    let mut opts = crate::data_store::InboxViewOpts::default();
+    opts.reason = "research".to_string();
+    assert!(
+        store.kb_inbox_list_view("默认", &opts, 50, 0).unwrap().is_empty(),
+        "它的原因是 star，不该出现在「只看找回」里"
+    );
+    opts.reason = "star".to_string();
+    assert_eq!(store.kb_inbox_list_view("默认", &opts, 50, 0).unwrap().len(), 1);
+}

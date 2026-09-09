@@ -186,6 +186,38 @@ export function logItemPasted(
   logPasteEvent(item.id, item.content_type || item.type, item.source, listIndex);
 }
 
+/**
+ * 把一条历史记录**复制回剪贴板**。所有这类入口都该走这里。
+ *
+ * 🔴 为什么补这个：2026-09-08 实测 `action_events` 全表才 36 条、带 `history_id`
+ * 的 14 条——而在一个剪贴板工具里，**复制才是主要的「用了它」**，
+ * 它却一次都没被记过（`"copied"` 以前只用在 AI 动作的产物上）。
+ *
+ * ❗ `actionId` 沿用 `paste` 哨兵而不新开一个 `copy`：
+ * 后端有 **6 处**查询用 `action_id <> 'paste'` 排除哨兵（权重聚合 / 画像 /
+ * 序列记忆），新开一个就要六处各改一次——而漏一处**不报错**，
+ * 只是静默污染个性化权重。哨兵的真实含义是「这是卡片使用事件、不是变换动作」，
+ * 复制与粘贴的区别交给 `outcome`。
+ *
+ * 同理没带 `pasteIndex` / `targetCat`：那两个是「往哪个应用粘的第几条」，
+ * 复制没有目标应用，编一个比不写更糟。
+ */
+export function logItemCopied(item: {
+  id: string;
+  type: string;
+  content_type?: string | null;
+  source?: string | null;
+}): void {
+  logActionEvent({
+    actionId: "paste",
+    contentType: item.content_type || item.type,
+    sourceApp: cleanSourceName(item.source ?? ""),
+    hour: new Date().getHours(),
+    outcome: "copied",
+    historyId: item.id,
+  });
+}
+
 /** 最近 N 天的事件统计（默认 30 天） */
 export async function actionEventStats(days?: number): Promise<ActionEventStats> {
   return invoke("action_event_stats", { days });

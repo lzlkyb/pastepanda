@@ -35,8 +35,17 @@ export interface NoteViewOpts {
 }
 
 export type InboxSort = "" | "signal" | "recent" | "recopy";
+import type { InboxReason as CandidateReason } from "@/lib/api";
+import { REASON_META } from "./inboxReasons";
+
 export type InboxGroupBy = "" | "type" | "source" | "reason";
-export type InboxReason = "" | "star" | "research";
+/**
+ * 待沉淀的「只看某种原因」筛选值。`""` = 不筛。
+ *
+ * ❗ 与 `@/lib/api` 里那个同名类型**不是一回事**：那个是候选自身的原因（不含 `""`）。
+ * 这里刻意复用它再并上 `""`，这样后端加通路时**这一处会自动跟上**。
+ */
+export type InboxReason = "" | CandidateReason;
 
 export interface InboxViewOpts {
   sort: InboxSort;
@@ -215,7 +224,8 @@ export function inboxViewChips(
   }
   if (v.reason) {
     out.push({
-      label: v.reason === "star" ? "只看收藏" : "只看找回",
+      // 不在这里写第四份中文映射（见 inboxReasons.ts 顶部注释）。
+      label: REASON_META[v.reason].only,
       onClear: () => set({ reason: "" }),
     });
   }
