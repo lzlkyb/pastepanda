@@ -232,23 +232,7 @@
   color: var(--accent-strong);
 }
 
-/* 类型多选（待沉淀区的筛选浮层用） */
-.typeGrid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 3px;
-}
-
-.sectionLabel {
-  margin: 9px 0 3px;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-}
-
-.hint {
-  margin-top: 7px;
-  font-size: var(--kb-fs-badge, 11px);
-  color: var(--text-muted);
-  line-height: 1.5;
-}
+/* 已删：.typeGrid / .sectionLabel / .hint 三条。
+   它们随 7aa7770（B2 #9）一起进来，是给待沉淀区筛选浮层写的，
+   而那个浮层最终落在 KbInboxPanel（自带 module）里——本文件只有
+   ViewControls.tsx 一个消费者，所以这三条从出生就没匹配过任何元素。 */
