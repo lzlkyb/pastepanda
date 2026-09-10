@@ -108,11 +108,13 @@ jobs:
           }
 
           $html = Get-Content docs/manual/index.html -Raw
-          $expected = "releases/download/v${confVer}/PastePanda_v${confVer}_x64-setup.exe"
+          # ❗ 目录是 tag（带 v），文件名**不带 v**：CI 从 v7.0.0 起资产名一直是
+          # PastePanda_7.x.x_x64-setup.exe（2026-09-10 用 v7.1.4 Release 实测）。
+          $expected = "releases/download/v${confVer}/PastePanda_${confVer}_x64-setup.exe"
           if ($html -notmatch [regex]::Escape($expected)) {
             Write-Host "❌ 手册下载链接版本与 tauri.conf.json 不一致 (conf=$confVer)"
-            $m = [regex]::Match($html, "releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/PastePanda_v")
-            if ($m.Success) { Write-Host "   手册链接实际版本 = $($m.Groups[1].Value)" }
+            $m = [regex]::Match($html, "releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/PastePanda_v?([0-9]+\.[0-9]+\.[0-9]+)_x64-setup\.exe")
+            if ($m.Success) { Write-Host "   手册链接 tag=v$($m.Groups[1].Value) 文件名版本=$($m.Groups[2].Value)" }
             elseif ($html.Contains("{{PP_VERSION}}")) { Write-Host "   手册仍为占位符 {{PP_VERSION}}，请先本地 npm run prebuild 注入版本再发版" }
             exit 1
           }
