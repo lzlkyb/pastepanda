@@ -24,6 +24,8 @@ pub mod protocol;
 pub mod audit;
 pub mod server;
 pub mod source;
+/// HTTPS 证书（**默认关闭**，用户手动打开）。
+pub mod tls;
 pub mod token;
 pub mod tools;
 

@@ -105,6 +105,21 @@ tower = { version = "0.5", features = ["limit"] }   # ConcurrencyLimitLayer
 # 只要 limit：不启 `compression-gzip`，本服务绑回环，压缩收益近零
 # 却要拖一整梯 async-compression（理由同不抄 per-IP 限流，见 src/mcp/auth.rs）。
 tower-http = { version = "0.6", features = ["limit"] }
+# ── MCP 的 HTTPS 监听（**默认关闭**，用户手动打开，见 src/mcp/tls.rs）──
+#
+# 🔴 回环地址上的 HTTPS 几乎不产生安全收益（流量从未离开本机，
+# 而同机进程照样能连）。它存在只为一件事：有些客户端/扫描不收 http。
+# 所以默认关，http 监听始终保留（C 档：并存，不破坏已接入的客户端）。
+#
+# 两个依赖都刻意选了「不引第二套加密栈」的 feature：
+#   · rcgen 走 `ring`——项目本来就用 ring（见上面 iroh 的 tls-ring）
+#   · axum-server 走 `tls-rustls-no-provider`——rustls/tokio-rustls 已在依赖树里
+#     （reqwest 与 iroh 带进来的），复用现成的 provider 而不再塞一个
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
+# ❗ 选了 no-provider 就必须自己装 crypto provider（rustls 0.23 不再默认选一个），
+#   否则建 TLS 配置时直接挂。rustls 本来就在依赖树里，声明成直接依赖不增体积。
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # tree-sitter 语言仲裁层（方案 B）：规则引擎存疑时用真实语法解析投票定语言
 tree-sitter = "0.26"
 tree-sitter-javascript = "0.25"
