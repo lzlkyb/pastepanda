@@ -23,6 +23,7 @@ import { confirmDialog } from "@/lib/confirm";
 import { logger } from "@/lib/logger";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import {
+  MCP_CONTAINER_KEY,
   MCP_ENTRY_NAME,
   MCP_TRANSPORTS,
   buildMcpConfigJson,
@@ -58,13 +59,27 @@ export function McpCustomConnect({
   const [probe, setProbe] = useState<McpClientProbe | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * 容器键跟着写法走。
+   *
+   * 🔴 `remote` 是 **OpenCode 专用**的写法，而 OpenCode 的容器键是 `mcp`，
+   * 不是 `mcpServers`。不跟着切的话，用户在这里选了 remote 也会被写进
+   * `mcpServers`——文件看着写成功了，而 OpenCode 一个字读不到。
+   *
+   * 它是个字符串，进 useCallback 依赖表是安全的（按值比）。
+   */
+  const containerKey = transport === "remote" ? "mcp" : MCP_CONTAINER_KEY;
+
   // ❗ 不能把它当依赖传给 useCallback：对象字面量每次渲染都是新引用，
   //   那样 useCallback 等于白写。下面一律依赖 `transport` 并在用到时现拼。
-  const shape: McpEntryShape = { transport };
+  const shape: McpEntryShape = { transport, containerKey };
 
-  const refresh = useCallback(async (p: string) => {
-    setProbe(p ? await mcpClientProbe(p) : null);
-  }, []);
+  const refresh = useCallback(
+    async (p: string) => {
+      setProbe(p ? await mcpClientProbe(p, containerKey) : null);
+    },
+    [containerKey],
+  );
 
   // 地址变了（换端口）同样要重探：已写入的条目会从 current 变成 stale。
   useEffect(() => {
@@ -93,7 +108,7 @@ export function McpCustomConnect({
       message:
         `将修改：\n${probe.path}\n\n` +
         `• 修改前会先备份一份（同目录，文件名带 pastepanda-bak）\n` +
-        `• 只添加/更新 mcpServers 里名为 「${MCP_ENTRY_NAME}」 的那一条\n` +
+        `• 只添加/更新 ${containerKey} 里名为 「${MCP_ENTRY_NAME}」 的那一条\n` +
         `• transport 写法：${transport}\n` +
         `• 会把本机的访问令牌写进去` +
         (probe.exists ? "" : "\n• 该文件目前不存在，会新建") +
@@ -104,7 +119,11 @@ export function McpCustomConnect({
 
     setBusy(true);
     try {
-      const r = await mcpClientConnect(path, buildMcpEntryForConnect({ transport }, url));
+      const r = await mcpClientConnect(
+        path,
+        buildMcpEntryForConnect({ transport, containerKey }, url),
+        containerKey,
+      );
       if ("err" in r) {
         toast(r.err, "error", 8000);
         return;
@@ -114,7 +133,7 @@ export function McpCustomConnect({
     } finally {
       setBusy(false);
     }
-  }, [path, probe, transport, url, toast, refresh]);
+  }, [path, probe, transport, containerKey, url, toast, refresh]);
 
   const doDisconnect = useCallback(async () => {
     if (!path || !probe) return;
@@ -130,7 +149,9 @@ export function McpCustomConnect({
 
     setBusy(true);
     try {
-      const r = await mcpClientDisconnect(path);
+      // ❗ 必须传与接入时同一个容器键，否则会去一个没写过的键里找——
+      //   结果是“移除成功”但条目还在。
+      const r = await mcpClientDisconnect(path, containerKey);
       if ("err" in r) {
         toast(r.err, "error", 8000);
         return;
@@ -140,7 +161,7 @@ export function McpCustomConnect({
     } finally {
       setBusy(false);
     }
-  }, [path, probe, toast, refresh]);
+  }, [path, probe, containerKey, toast, refresh]);
 
   const connected = probe?.state === "current";
 

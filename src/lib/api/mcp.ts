@@ -308,9 +308,13 @@ export interface McpConnectOutcome {
  * 失败不弹 toast：面板一打开就批量跑，弹了就是好几个一起刷。
  * 后端已把「读不了」变成 `state: "unreadable"` 返回，界面在卡片上就地显示原因。
  */
-export async function mcpClientProbe(configPath: string): Promise<McpClientProbe | null> {
+export async function mcpClientProbe(
+  configPath: string,
+  /** 不传 = `mcpServers`。OpenCode 那类容器键不同的客户端必须传。 */
+  containerKey?: string,
+): Promise<McpClientProbe | null> {
   try {
-    return await invoke<McpClientProbe>("mcp_client_probe", { configPath });
+    return await invoke<McpClientProbe>("mcp_client_probe", { configPath, containerKey });
   } catch (e) {
     logger.warn("探测 MCP 客户端配置失败", e);
     return null;
@@ -327,21 +331,37 @@ export async function mcpClientProbe(configPath: string): Promise<McpClientProbe
 export async function mcpClientConnect(
   configPath: string,
   entry: Record<string, unknown>,
+  /** 不传 = `mcpServers`。写错会往客户端配置里造一个它不认的键。 */
+  containerKey?: string,
 ): Promise<{ ok: McpConnectOutcome } | { err: string }> {
   try {
-    return { ok: await invoke<McpConnectOutcome>("mcp_client_connect", { configPath, entry }) };
+    return {
+      ok: await invoke<McpConnectOutcome>("mcp_client_connect", {
+        configPath,
+        entry,
+        containerKey,
+      }),
+    };
   } catch (e) {
     logger.error("一键接入失败", e);
     return { err: e instanceof Error ? e.message : String(e) };
   }
 }
 
-/** 移除接入：只删 `mcpServers.pastepanda`。同样需要调用方先弹确认。 */
+/**
+ * 移除接入：只删容器里的 `pastepanda` 那一条。同样需要调用方先弹确认。
+ *
+ * ❗ `containerKey` 必须与接入时传的一致，否则会去一个根本没写过的键里找，
+ *   结果是“移除成功”但条目还在。
+ */
 export async function mcpClientDisconnect(
   configPath: string,
+  containerKey?: string,
 ): Promise<{ ok: McpConnectOutcome } | { err: string }> {
   try {
-    return { ok: await invoke<McpConnectOutcome>("mcp_client_disconnect", { configPath }) };
+    return {
+      ok: await invoke<McpConnectOutcome>("mcp_client_disconnect", { configPath, containerKey }),
+    };
   } catch (e) {
     logger.error("移除 MCP 接入失败", e);
     return { err: e instanceof Error ? e.message : String(e) };

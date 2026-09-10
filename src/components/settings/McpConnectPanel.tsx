@@ -58,7 +58,11 @@ export function McpConnectPanel({
   /** 重新探测全部可一键的客户端。 */
   const refresh = useCallback(async () => {
     const rows = await Promise.all(
-      PROBEABLE.map(async (c) => [c.id, await mcpClientProbe(c.configPath!)] as const),
+      // ❗ `containerKey` 三处（探测 / 接入 / 移除）必须都传且一致——
+      //   只传一处的话，OpenCode 会出现「接入了却报未接入」或「移除成功但条目还在」。
+      PROBEABLE.map(
+        async (c) => [c.id, await mcpClientProbe(c.configPath!, c.containerKey)] as const,
+      ),
     );
     setProbes(Object.fromEntries(rows));
   }, []);
@@ -101,7 +105,11 @@ export function McpConnectPanel({
       });
       if (!ok) return;
 
-      const r = await mcpClientConnect(c.configPath!, buildMcpEntryForConnect(c, url));
+      const r = await mcpClientConnect(
+        c.configPath!,
+        buildMcpEntryForConnect(c, url),
+        c.containerKey,
+      );
       if ("err" in r) {
         // 后端的错误话术写得很具体（哪个文件、为什么没改），原样给用户看。
         toast(r.err, "error", 8000);
@@ -133,7 +141,7 @@ export function McpConnectPanel({
       });
       if (!ok) return;
 
-      const r = await mcpClientDisconnect(c.configPath!);
+      const r = await mcpClientDisconnect(c.configPath!, c.containerKey);
       if ("err" in r) {
         toast(r.err, "error", 8000);
         return;

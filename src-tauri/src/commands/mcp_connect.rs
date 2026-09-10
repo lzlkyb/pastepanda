@@ -44,6 +44,15 @@ const MCP_ENTRY_NAME: &str = "pastepanda";
 /// 只负责把这个占位符换成真令牌——**令牌从头到尾没出过 Rust**。
 const TOKEN_SENTINEL: &str = "__PASTEPANDA_TOKEN__";
 
+/// 装 MCP 服务器的那个顶层键。绝大多数客户端都是它。
+///
+/// 🔴 但**不是全部**：OpenCode 用的是 `mcp`（`~/.config/opencode/opencode.json`）。
+/// 所以三个命令都收一个可选的 `container_key`，不传就用这个默认值。
+///
+/// ❗ 它与 `MCP_ENTRY_NAME` 的定位不同：条目名写死在后端是为了「无论前端怎么错，
+///   移除接入也只删得掉我们自己那一条」；而容器键必须跟着客户端走，写死就接不了 OpenCode。
+const DEFAULT_CONTAINER: &str = "mcpServers";
+
 /// 某个客户端配置的探测结果。
 #[derive(Serialize)]
 pub struct McpClientProbe {
@@ -133,26 +142,26 @@ fn substitute_token(v: &mut Value, token: &str) -> usize {
     }
 }
 
-/// 把条目合并进 `mcpServers`。返回「是否盖掉了旧条目」。
+/// 把条目合并进容器键。返回「是否盖掉了旧条目」。
 ///
-/// ❗ 只动 `mcpServers[MCP_ENTRY_NAME]` 一个键，同级的其他服务器原封不动。
-fn merge_entry(root: &mut Value, entry: Value) -> Result<bool, String> {
+/// ❗ 只动 `container[MCP_ENTRY_NAME]` 一个键，同级的其他服务器原封不动。
+fn merge_entry(root: &mut Value, container: &str, entry: Value) -> Result<bool, String> {
     let obj = root
         .as_object_mut()
         .ok_or_else(|| "配置顶层不是对象".to_string())?;
     let servers = obj
-        .entry("mcpServers")
+        .entry(container)
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
     let servers = servers.as_object_mut().ok_or_else(|| {
-        "配置里的 mcpServers 不是一个对象，不敢动它。请先手动检查这个文件。".to_string()
+        format!("配置里的 {} 不是一个对象，不敢动它。请先手动检查这个文件。", container)
     })?;
     Ok(servers.insert(MCP_ENTRY_NAME.to_string(), entry).is_some())
 }
 
-/// 从 `mcpServers` 里拿掉我们那一条。返回「原本在不在」。
-fn remove_entry(root: &mut Value) -> bool {
+/// 从容器键里拿掉我们那一条。返回「原本在不在」。
+fn remove_entry(root: &mut Value, container: &str) -> bool {
     root.as_object_mut()
-        .and_then(|o| o.get_mut("mcpServers"))
+        .and_then(|o| o.get_mut(container))
         .and_then(|s| s.as_object_mut())
         .and_then(|s| s.remove(MCP_ENTRY_NAME))
         .is_some()
@@ -162,17 +171,24 @@ fn remove_entry(root: &mut Value) -> bool {
 ///
 /// 地址或令牌对不上就是 `stale`——两个常见成因：用户换了端口，或者重置了令牌。
 /// 不把它当成「已接入」很重要：那个客户端其实已经连不上了，而它不会报错。
-fn entry_state(root: &Value, url: &str, token: &str) -> &'static str {
-    let Some(entry) = root.get("mcpServers").and_then(|m| m.get(MCP_ENTRY_NAME)) else {
+fn entry_state(root: &Value, container: &str, url: &str, token: &str) -> &'static str {
+    let Some(entry) = root.get(container).and_then(|m| m.get(MCP_ENTRY_NAME)) else {
         return "none";
     };
     let want_auth = format!("Bearer {}", token);
-    let url_ok = entry.get("url").and_then(|v| v.as_str()) == Some(url);
-    let auth_ok = entry
-        .get("headers")
-        .and_then(|h| h.get("Authorization"))
-        .and_then(|v| v.as_str())
-        == Some(want_auth.as_str());
+    // 🔴 URL 与 headers 的**字段名各家不一样**（Gemini CLI 用 `httpUrl`）。
+    //    这里不能只认 `url`，否则那几家接入完毕仍然报「未接入」，
+    //    用户会反复点接入、每点一次多一份备份。
+    let url_ok = ["url", "httpUrl"]
+        .iter()
+        .any(|k| entry.get(*k).and_then(|v| v.as_str()) == Some(url));
+    let auth_ok = ["headers", "http_headers"].iter().any(|k| {
+        entry
+            .get(*k)
+            .and_then(|h| h.get("Authorization"))
+            .and_then(|v| v.as_str())
+            == Some(want_auth.as_str())
+    });
     if url_ok && auth_ok {
         "current"
     } else {
@@ -237,7 +253,11 @@ pub fn mcp_client_probe(
     store: State<DataStore>,
     server: State<McpServer>,
     config_path: String,
+    // 不传 = `mcpServers`。OpenCode 那类容器键不同的客户端才需要传。
+    // ❗ 参数上不能用 `///`（rustc 只允许 allow/cfg/deny 那几个内置属性）。
+    container_key: Option<String>,
 ) -> Result<McpClientProbe, String> {
+    let container = container_key.as_deref().unwrap_or(DEFAULT_CONTAINER);
     let path = expand_home(&config_path)?;
     let display = path.display().to_string();
     let exists = path.exists();
@@ -254,7 +274,7 @@ pub fn mcp_client_probe(
         Ok(root) => Ok(McpClientProbe {
             path: display,
             exists: true,
-            state: entry_state(&root, &url, &token),
+            state: entry_state(&root, container, &url, &token),
             detail: String::new(),
         }),
         Err(detail) => Ok(McpClientProbe {
@@ -280,7 +300,10 @@ pub fn mcp_client_connect(
     server: State<McpServer>,
     config_path: String,
     entry: Value,
+    // 不传 = `mcpServers`，见 `DEFAULT_CONTAINER`。参数上不能用 `///`。
+    container_key: Option<String>,
 ) -> Result<McpConnectOutcome, String> {
+    let container = container_key.as_deref().unwrap_or(DEFAULT_CONTAINER);
     let path = expand_home(&config_path)?;
     ensure_json_path(&path)?;
     if !entry.is_object() {
@@ -300,7 +323,7 @@ pub fn mcp_client_connect(
     // 再备份，最后才写。先备份后解析的话，一个解析失败会白白在用户目录里留下垃圾。
     let mut root = read_root(&path)?;
     let backup_path = backup(&path)?;
-    let replaced = merge_entry(&mut root, entry)?;
+    let replaced = merge_entry(&mut root, container, entry)?;
     write_root(&path, &root)?;
 
     log::info!(
@@ -320,7 +343,12 @@ pub fn mcp_client_connect(
 /// 条目本来就不在也算成功（幂等），但那种情况不写盘也不备份——
 /// 没改动却留下一个备份文件只会让人困惑。
 #[tauri::command]
-pub fn mcp_client_disconnect(config_path: String) -> Result<McpConnectOutcome, String> {
+pub fn mcp_client_disconnect(
+    config_path: String,
+    // 不传 = `mcpServers`，见 `DEFAULT_CONTAINER`。参数上不能用 `///`。
+    container_key: Option<String>,
+) -> Result<McpConnectOutcome, String> {
+    let container = container_key.as_deref().unwrap_or(DEFAULT_CONTAINER);
     let path = expand_home(&config_path)?;
     ensure_json_path(&path)?;
     if !path.exists() {
@@ -331,7 +359,7 @@ pub fn mcp_client_disconnect(config_path: String) -> Result<McpConnectOutcome, S
         });
     }
     let mut root = read_root(&path)?;
-    if !remove_entry(&mut root) {
+    if !remove_entry(&mut root, container) {
         return Ok(McpConnectOutcome {
             path: path.display().to_string(),
             backup: String::new(),
@@ -369,7 +397,7 @@ mod tests {
     #[test]
     fn 合并不能碰到旁边的服务器与其他顶层键() {
         let mut root = claude_like();
-        let replaced = merge_entry(&mut root, json!({ "type": "http" })).unwrap();
+        let replaced = merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "type": "http" })).unwrap();
         assert!(!replaced, "本来没有 pastepanda 条目，不应报成替换");
 
         let servers = root["mcpServers"].as_object().unwrap();
@@ -385,8 +413,8 @@ mod tests {
     #[test]
     fn 重复接入只替换自己那一条() {
         let mut root = claude_like();
-        merge_entry(&mut root, json!({ "url": "a" })).unwrap();
-        let replaced = merge_entry(&mut root, json!({ "url": "b" })).unwrap();
+        merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "url": "a" })).unwrap();
+        let replaced = merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "url": "b" })).unwrap();
         assert!(replaced);
         assert_eq!(root["mcpServers"].as_object().unwrap().len(), 4, "不能越接越多");
         assert_eq!(root["mcpServers"]["pastepanda"]["url"], json!("b"));
@@ -395,20 +423,20 @@ mod tests {
     #[test]
     fn 移除只删自己那一条() {
         let mut root = claude_like();
-        merge_entry(&mut root, json!({ "url": "a" })).unwrap();
-        assert!(remove_entry(&mut root));
+        merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "url": "a" })).unwrap();
+        assert!(remove_entry(&mut root, DEFAULT_CONTAINER));
         let servers = root["mcpServers"].as_object().unwrap();
         assert_eq!(servers.len(), 3);
         assert!(servers.contains_key("codegraph"));
         // 再删一次：幂等，不报错也不误伤
-        assert!(!remove_entry(&mut root));
+        assert!(!remove_entry(&mut root, DEFAULT_CONTAINER));
         assert_eq!(root["mcpServers"].as_object().unwrap().len(), 3);
     }
 
     #[test]
     fn 没有服务器表的配置会被补上() {
         let mut root = json!({ "foo": 1 });
-        merge_entry(&mut root, json!({ "url": "a" })).unwrap();
+        merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "url": "a" })).unwrap();
         assert_eq!(root["mcpServers"]["pastepanda"]["url"], json!("a"));
         assert_eq!(root["foo"], json!(1));
     }
@@ -418,7 +446,7 @@ mod tests {
     //   而 pre-push 钩子里多一条警告就多一分噪音。
     fn 服务器表不是对象时宁可报错也不覆盖() {
         let mut root = json!({ "mcpServers": "不知道谁写成了字符串" });
-        assert!(merge_entry(&mut root, json!({})).is_err());
+        assert!(merge_entry(&mut root, DEFAULT_CONTAINER, json!({})).is_err());
         assert_eq!(root["mcpServers"], json!("不知道谁写成了字符串"), "报错了就不能动它");
     }
 
@@ -447,18 +475,57 @@ mod tests {
     fn 状态判定认地址也认令牌() {
         let url = "http://127.0.0.1:8765/mcp";
         let mut root = json!({});
-        assert_eq!(entry_state(&root, url, "tok"), "none");
+        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "tok"), "none");
 
         merge_entry(
             &mut root,
+            DEFAULT_CONTAINER,
             json!({ "url": url, "headers": { "Authorization": "Bearer tok" } }),
         )
         .unwrap();
-        assert_eq!(entry_state(&root, url, "tok"), "current");
+        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "tok"), "current");
         // 令牌重置后：客户端其实已经连不上了，不能还显示「已接入」
-        assert_eq!(entry_state(&root, url, "new-tok"), "stale");
+        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "new-tok"), "stale");
         // 换了端口同理
-        assert_eq!(entry_state(&root, "http://127.0.0.1:9999/mcp", "tok"), "stale");
+        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, "http://127.0.0.1:9999/mcp", "tok"), "stale");
+    }
+
+    /// 🔴 OpenCode 的容器键是 `mcp` 而不是 `mcpServers`（`~/.config/opencode/opencode.json`）。
+    /// 容器键写死的话，接入会往它的配置里**凭空造一个它不认的 `mcpServers`**，
+    /// 看上去写成功了，而 OpenCode 一个字都读不到。
+    #[test]
+    fn 容器键可以不是默认那个() {
+        // OpenCode 的真实形状：顶层有 $schema，服务器装在 `mcp` 里
+        let mut root = json!({
+            "$schema": "https://opencode.ai/config.json",
+            "mcp": { "别人的": { "type": "remote", "url": "https://x" } }
+        });
+        let replaced = merge_entry(&mut root, "mcp", json!({ "type": "remote" })).unwrap();
+        assert!(!replaced);
+        assert_eq!(root["mcp"].as_object().unwrap().len(), 2, "不能碰旁边那条");
+        assert_eq!(root["$schema"], json!("https://opencode.ai/config.json"));
+        // ❗ 绝不能顺手造一个 mcpServers 出来
+        assert!(root.get("mcpServers").is_none(), "写错了容器键");
+
+        assert!(remove_entry(&mut root, "mcp"));
+        assert_eq!(root["mcp"].as_object().unwrap().len(), 1);
+    }
+
+    /// 🔴 Gemini CLI 把 URL 写在 `httpUrl` 里（它靠字段名选传输）。
+    /// 状态判定只认 `url` 的话，它接入完毕依然报「未接入」——
+    /// 用户会反复点接入，而每点一次就在他主目录里多一份备份文件。
+    #[test]
+    fn 状态判定要认httpUrl字段() {
+        let url = "http://127.0.0.1:8765/mcp";
+        let mut root = json!({});
+        merge_entry(
+            &mut root,
+            DEFAULT_CONTAINER,
+            json!({ "httpUrl": url, "headers": { "Authorization": "Bearer tok" } }),
+        )
+        .unwrap();
+        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "tok"), "current");
+        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "另一把"), "stale");
     }
 
     #[test]

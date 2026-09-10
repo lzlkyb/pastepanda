@@ -13,7 +13,7 @@
  */
 
 /** HTTP 类 transport 在各客户端里的写法。 */
-export type McpTransport = "http" | "streamableHttp" | "streamable-http" | "sse";
+export type McpTransport = "http" | "streamableHttp" | "streamable-http" | "sse" | "remote";
 
 /**
  * 四种写法及其常见度。**自定义接入的选择器用它。**
@@ -27,6 +27,9 @@ export const MCP_TRANSPORTS: { value: McpTransport; hint: string }[] = [
   { value: "sse", hint: "较早的写法（24 处）" },
   { value: "http", hint: "Claude Code 用这个（12 处）" },
   { value: "streamable-http", hint: "连字符写法（6 处）" },
+  // ❗ 它不在上面那份扫描统计里：OpenCode 自成一派，不区分 http/sse，
+  //   只认 `remote` 这一个值（传输由它自己协商）。
+  { value: "remote", hint: "OpenCode 专用（它只认这一个）" },
 ];
 
 export interface McpClientDef {
@@ -67,6 +70,13 @@ export interface McpClientDef {
    *   自定义接入的下拉也靠它做覆盖性检查。
    */
   omitType?: boolean;
+  /**
+   * 装服务器的顶层键。默认 [`MCP_CONTAINER_KEY`]（`mcpServers`）。
+   *
+   * 🔴 OpenCode 用的是 `mcp`。写错的后果不是报错，是往它的配置里
+   * **凭空造一个它不认的 `mcpServers`**——界面上显示接入成功，而 OpenCode 一个字读不到。
+   */
+  containerKey?: string;
   /** 粘到哪里 / 怎么打开那个配置。 */
   where: string;
   /** 为什么不能一键（`configPath` 为 null 时必填）。 */
@@ -97,6 +107,16 @@ export interface McpClientDef {
  *   两边改其中一个的后果：探测永远报「未接入」，而每次接入都多写一条。
  */
 export const MCP_ENTRY_NAME = "pastepanda";
+
+/**
+ * 默认的容器键。
+ *
+ * ❗ 与后端 `commands/mcp_connect.rs` 的 `DEFAULT_CONTAINER` 必须一致：
+ *   前端不传 `containerKey` 时后端就用它那份，两边分岔的话，
+ *   “写进去的键”与“探测/移除看的键”不是同一个——接入成功但永远显示未接入。
+ *   `mcpClients.test.ts` 直接读 Rust 源码比对这一点。
+ */
+export const MCP_CONTAINER_KEY = "mcpServers";
 
 /**
  * 令牌占位符。一键接入时拼条目用它占位，由后端换成真令牌。
@@ -213,6 +233,26 @@ export const MCP_CLIENTS: McpClientDef[] = [
       "❗ 该文件装的是 Gemini CLI 的**全部设置**，不只 MCP，所以只能合并不能覆盖（同 `~/.claude.json`）。",
   },
   {
+    id: "opencode",
+    name: "OpenCode",
+    configPath: "~/.config/opencode/opencode.json",
+    /**
+     * 🔴 OpenCode 两处都与别家不同：
+     *   ① 容器键是 `mcp`，不是 `mcpServers`；
+     *   ② `type` 只认 `"remote"`，不分 http / sse。
+     */
+    transport: "remote",
+    containerKey: "mcp",
+    // 文档示例里带着 `enabled: true`；写上比押它默认启用保险。
+    extra: { enabled: true },
+    where: "写进该文件的 **mcp**（注意不是 mcpServers）。",
+    evidence:
+      "官方文档 opencode.ai/docs/mcp-servers（2026-09-10 查）：全局配置在 " +
+      "`~/.config/opencode/opencode.json`（❗ 不是 `~/.opencode/`）；" +
+      "容器键是 **`mcp`**；远程服务器的 `type` **必须**是 `\"remote\"`（required），" +
+      "配 `url` + 可选 `enabled` + 可选 `headers`（示例就是 `Authorization: Bearer`）。",
+  },
+  {
     id: "cherry-studio",
     name: "Cherry Studio",
     configPath: null,
@@ -258,7 +298,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
  */
 export type McpEntryShape = Pick<
   McpClientDef,
-  "transport" | "extra" | "urlField" | "headersField" | "omitType"
+  "transport" | "extra" | "urlField" | "headersField" | "omitType" | "containerKey"
 >;
 
 /**
@@ -288,7 +328,13 @@ export function buildMcpConfigJson(
   token: string,
 ): string {
   return JSON.stringify(
-    { mcpServers: { [MCP_ENTRY_NAME]: buildMcpEntry(client, url, token) } },
+    {
+      // 容器键跟着客户端走（OpenCode 是 `mcp`）——复制卡片也得是对的，
+      // 否则手动粘贴的那条路会把一键接入修好的坑又踩一遍。
+      [client.containerKey ?? MCP_CONTAINER_KEY]: {
+        [MCP_ENTRY_NAME]: buildMcpEntry(client, url, token),
+      },
+    },
     null,
     2,
   );

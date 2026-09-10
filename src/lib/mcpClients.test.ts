@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   MCP_CLIENTS,
+  MCP_CONTAINER_KEY,
   MCP_ENTRY_NAME,
   MCP_TOKEN_SENTINEL,
   MCP_TRANSPORTS,
@@ -43,6 +44,15 @@ describe("TS 与 Rust 的跨语言契约", () => {
 
   it("令牌占位符两边必须逐字相同", () => {
     expect(MCP_TOKEN_SENTINEL).toBe(rustConst("TOKEN_SENTINEL"));
+  });
+
+  /**
+   * 🔴 默认容器键也是两边各写一份。前端不传 `containerKey` 时后端用它那份，
+   * 两边分岔的后果是：写进去的键与探测/移除看的键不是同一个——
+   * 接入成功却永远显示未接入，而用户每点一次接入就多一份备份文件。
+   */
+  it("默认容器键两边必须逐字相同", () => {
+    expect(MCP_CONTAINER_KEY).toBe(rustConst("DEFAULT_CONTAINER"));
   });
 });
 
@@ -106,6 +116,20 @@ describe("条目拼装", () => {
     const json = JSON.parse(buildMcpConfigJson({ transport: "sse" }, url, "t"));
     expect(Object.keys(json)).toEqual(["mcpServers"]);
     expect(Object.keys(json.mcpServers)).toEqual([MCP_ENTRY_NAME]);
+  });
+
+  /**
+   * 🔴 OpenCode 的容器键是 `mcp`。写成 `mcpServers` 的后果不是报错，
+   * 是往它的配置里凭空造一个它不认的键——显示接入成功，而它一个字读不到。
+   * 复制卡片那条路同理，所以连 `buildMcpConfigJson` 一起钉。
+   */
+  it("OpenCode 用 mcp 容器键，且 type 是 remote", () => {
+    const oc = MCP_CLIENTS.find((c) => c.id === "opencode")!;
+    const json = JSON.parse(buildMcpConfigJson(oc, url, "t"));
+    expect(Object.keys(json)).toEqual(["mcp"]);
+    expect(json.mcp[MCP_ENTRY_NAME].type).toBe("remote");
+    expect(json.mcp[MCP_ENTRY_NAME].url).toBe(url);
+    expect(json.mcpServers, "不能顺手造一个 mcpServers").toBeUndefined();
   });
 });
 
