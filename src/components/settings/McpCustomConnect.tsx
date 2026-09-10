@@ -26,7 +26,7 @@ import {
   MCP_CONTAINER_KEY,
   MCP_ENTRY_NAME,
   MCP_TRANSPORTS,
-  buildMcpConfigJson,
+  buildMcpConfigSnippet,
   buildMcpEntryForConnect,
   type McpEntryShape,
   type McpTransport,
@@ -231,7 +231,7 @@ export function McpCustomConnect({
       <div className={styles.mcpGuideRow}>
         <span>将写入的内容（预览）</span>
       </div>
-      <pre className={styles.mcpCode}>{buildMcpConfigJson(shape, url, TOKEN_PLACEHOLDER)}</pre>
+      <pre className={styles.mcpCode}>{buildMcpConfigSnippet(shape, url, TOKEN_PLACEHOLDER)}</pre>
       <p className={styles.mcpGuideNote}>
         预览里是占位符，<b>实际写入时由后端换成真令牌</b>（令牌不经过界面）。
         写入完全走与内置客户端同一套流程：先备份、只动自己那一条、解析不开就不改。

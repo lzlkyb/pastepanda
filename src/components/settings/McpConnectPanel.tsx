@@ -22,8 +22,9 @@ import { copyToClipboard } from "@/lib/utils";
 import { confirmDialog } from "@/lib/confirm";
 import {
   MCP_CLIENTS,
+  MCP_CONTAINER_KEY,
   MCP_ENTRY_NAME,
-  buildMcpConfigJson,
+  buildMcpConfigSnippet,
   buildMcpEntryForConnect,
   canOneClick,
   type McpClientDef,
@@ -96,7 +97,10 @@ export function McpConnectPanel({
         message:
           `将修改这个文件：\n${probe.path}\n\n` +
           `• 修改前会先备份一份（同目录，文件名带 pastepanda-bak）\n` +
-          `• 只添加/更新 mcpServers 里名为 「${MCP_ENTRY_NAME}」 的那一条，` +
+          // ❗ 容器键得跟着客户端读（OpenCode 是 `mcp`、Codex 是 `mcp_servers`）。
+          //   写死 `mcpServers` 的话，确认框会告诉用户一个我们根本不会去改的键——
+          //   而这句话的全部意义就是“告诉你我到底要动什么”。
+          `• 只添加/更新 ${c.containerKey ?? MCP_CONTAINER_KEY} 里名为 「${MCP_ENTRY_NAME}」 的那一条，` +
           `其他服务器与配置原封不动\n` +
           `• 会把本机的访问令牌写进去（${c.name} 靠它访问你的笔记）` +
           (probe.exists ? "" : "\n• 该文件目前不存在，会新建") +
@@ -181,7 +185,7 @@ export function McpConnectPanel({
           busy={busyId === c.id}
           probe={probes[c.id] ?? null}
           onToggle={() => setOpenId(openId === c.id ? null : c.id)}
-          onCopyConfig={() => void copyFor(c, buildMcpConfigJson, "配置")}
+          onCopyConfig={() => void copyFor(c, buildMcpConfigSnippet, "配置")}
           onCopyCli={() => void copyFor(c, (cc, u, t) => cc.cli!(u, t), "命令")}
           onAction={() => void onAction(c)}
         />
@@ -191,7 +195,7 @@ export function McpConnectPanel({
       <McpCustomConnect url={url} toast={toast} />
 
       <p className={styles.mcpGuideNote}>
-        一键接入会先备份对方的配置文件，且<b>只动 mcpServers 里属于本软件的那一条</b>。
+        一键接入会先备份对方的配置文件，且<b>只动其中属于本软件的那一条</b>。
       </p>
       <p className={styles.mcpGuideNote}>
         展开后显示的是占位符 <code>{TOKEN_PLACEHOLDER}</code>，

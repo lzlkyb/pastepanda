@@ -32,6 +32,15 @@ export const MCP_TRANSPORTS: { value: McpTransport; hint: string }[] = [
   { value: "remote", hint: "OpenCode 专用（它只认这一个）" },
 ];
 
+/**
+ * 配置文件的格式。不写就是 `json`。
+ *
+ * 🔴 Codex 是 `toml`。它影响的**不只是一键写入**，还有屏幕上的复制卡片：
+ * 给一个 TOML 客户端发一张 JSON 卡片，跟下面记的 Claude Desktop 是同一类伤害——
+ * 用户照着粘进去，得到的是一份解不开的 `config.toml`。
+ */
+export type McpConfigFormat = "json" | "toml";
+
 export interface McpClientDef {
   id: string;
   name: string;
@@ -42,6 +51,8 @@ export interface McpClientDef {
    * 这个字段也是后续“能不能一键”的判据：为 null 就只给复制卡片。
    */
   configPath: string | null;
+  /** 配置文件格式。不写 = `json`。后端按**扩展名**自己再判一次。 */
+  format?: McpConfigFormat;
   transport: McpTransport;
   /** 这家额外要的字段（如 WorkBuddy 的 timeout / disabled）。 */
   extra?: Record<string, unknown>;
@@ -253,6 +264,37 @@ export const MCP_CLIENTS: McpClientDef[] = [
       "配 `url` + 可选 `enabled` + 可选 `headers`（示例就是 `Authorization: Bearer`）。",
   },
   {
+    id: "codex",
+    name: "Codex CLI",
+    configPath: "~/.codex/config.toml",
+    /**
+     * 🔴 全表里**唯一一个不是 JSON 的**。
+     *
+     * 它同时决定了屏幕上的复制卡片要渲染成 TOML：给它一张 JSON 卡片，
+     * 用户粘进 `config.toml` 后 Codex 连配置都读不开了——比不给还糟。
+     */
+    format: "toml",
+    containerKey: "mcp_servers",
+    /**
+     * 条目里**没有 `type`**：Codex 跟 Gemini CLI 一样靠字段名选传输——
+     * 有 `command` 就是 stdio，有 `url` 就是 StreamableHTTP。
+     * `transport` 仍填 `streamableHttp`，记的是“实际走哪种”。
+     */
+    transport: "streamableHttp",
+    omitType: true,
+    headersField: "http_headers",
+    where: "写进该文件的 [mcp_servers]。❗ 它是 **TOML**，不是 JSON。",
+    evidence:
+      "路径：本机 `~/.codex/config.toml` 实测存在，里面就是 `[mcp_servers.…]` 子表（2026-09-10 扫描）。" +
+      "格式：直读 openai/codex 源码 `codex-rs/config/src/mcp_types.rs`（main 分支，2026-09-10 拉取）核实——" +
+      "`McpServerTransportConfig` 是 `#[serde(untagged)]`，**靠字段选传输**：" +
+      "有 `command` 走 stdio、有 `url` 走 StreamableHttp，**整个条目没有 `type` 字段**；" +
+      "静态请求头的字段名叫 `http_headers`（`HashMap<String, String>`，写字面量合法）。" +
+      "❗ 另有 `bearer_token_env_var`，但那要求令牌放在**环境变量**里，我们给不了；" +
+      "也因此**没给命令行**：`codex mcp add`（`codex-rs/cli/src/mcp_cmd.rs`）只有 " +
+      "`--bearer-token-env-var`，没有 `--header`，写不出字面量令牌。",
+  },
+  {
     id: "cherry-studio",
     name: "Cherry Studio",
     configPath: null,
@@ -298,7 +340,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
  */
 export type McpEntryShape = Pick<
   McpClientDef,
-  "transport" | "extra" | "urlField" | "headersField" | "omitType" | "containerKey"
+  "transport" | "extra" | "urlField" | "headersField" | "omitType" | "containerKey" | "format"
 >;
 
 /**
@@ -321,21 +363,61 @@ export function buildMcpEntry(
   };
 }
 
-/** 生成可直接粘贴的完整 JSON（带外层 mcpServers）。 */
-export function buildMcpConfigJson(
+/** TOML 裸键（bare key）的字符集；不在这个范围里的得加引号。 */
+const TOML_BARE_KEY = /^[A-Za-z0-9_-]+$/;
+
+function tomlKey(k: string): string {
+  return TOML_BARE_KEY.test(k) ? k : JSON.stringify(k);
+}
+
+/**
+ * TOML 值的字面量。
+ *
+ * 嵌套对象写成**行内表**，跟后端 `mcp_connect.rs` 一键写入时的写法保持一致——
+ * 屏幕上看到的和实际写进去的得是同一个东西。
+ *
+ * ❗ 碰到 TOML 表示不了的值直接抛（规则 #15.3）：宁可让测试当场挂，
+ *   也不能静静地给用户一张粘进去就坏的卡片。`mcpClients.test.ts` 里有一条
+ *   把整张名单都渲染一遍，所以真有这种值会在构建时就被拦下。
+ */
+function tomlValue(v: unknown): string {
+  if (typeof v === "string") return JSON.stringify(v);
+  if (typeof v === "boolean") return String(v);
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (Array.isArray(v)) return `[${v.map(tomlValue).join(", ")}]`;
+  if (v !== null && typeof v === "object") {
+    const inner = Object.entries(v as Record<string, unknown>)
+      .map(([k, x]) => `${tomlKey(k)} = ${tomlValue(x)}`)
+      .join(", ");
+    return `{ ${inner} }`;
+  }
+  throw new Error(`TOML 表示不了这个值：${String(v)}`);
+}
+
+/**
+ * 生成可直接粘贴的完整配置片段（带外层容器键）。
+ *
+ * 🔴 **格式跟着客户端走**：Codex 是 TOML，其余是 JSON。
+ * 一律出 JSON 的话，Codex 用户照着粘完，`config.toml` 就解不开了。
+ *
+ * 容器键同样跟着客户端走（OpenCode 是 `mcp`、Codex 是 `mcp_servers`）——
+ * 手动粘贴那条路不能把一键接入修好的坑又踩一遍。
+ */
+export function buildMcpConfigSnippet(
   client: McpEntryShape,
   url: string,
   token: string,
 ): string {
-  return JSON.stringify(
-    {
-      // 容器键跟着客户端走（OpenCode 是 `mcp`）——复制卡片也得是对的，
-      // 否则手动粘贴的那条路会把一键接入修好的坑又踩一遍。
-      [client.containerKey ?? MCP_CONTAINER_KEY]: {
-        [MCP_ENTRY_NAME]: buildMcpEntry(client, url, token),
-      },
-    },
-    null,
-    2,
-  );
+  const container = client.containerKey ?? MCP_CONTAINER_KEY;
+  const entry = buildMcpEntry(client, url, token);
+
+  if (client.format === "toml") {
+    const lines = [`[${tomlKey(container)}.${tomlKey(MCP_ENTRY_NAME)}]`];
+    for (const [k, v] of Object.entries(entry)) {
+      lines.push(`${tomlKey(k)} = ${tomlValue(v)}`);
+    }
+    return lines.join("\n");
+  }
+
+  return JSON.stringify({ [container]: { [MCP_ENTRY_NAME]: entry } }, null, 2);
 }

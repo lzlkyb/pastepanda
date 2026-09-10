@@ -33,6 +33,15 @@ serde = { version = "1", features = ["derive"] }
 # 重排一遍等于整份重写：用户拿备份对比时看到的是满屏 diff，根本认不出我们到底动了什么。
 # 开了它之后，写回去只多出我们那一个块。
 serde_json = { version = "1", features = ["preserve_order"] }
+# 🔴 Codex 的 `~/.codex/config.toml` 是 TOML，同样是「一键接入」要改的别人的文件。
+# 用 toml_edit 而不是 toml：那个文件里除了 MCP 还有用户自己写的模型/审批策略设置，
+# **以及注释**。toml 走 serde 往返会把注释、空行、键顺序统统抹掉——
+# 跟上面给 serde_json 开 preserve_order 是同一个理由，只是 TOML 的代价更大：
+# 键顺序乱了还能看出来，注释没了是找不回来的。
+#
+# 它本来就在依赖树里（tauri 那边传递引入，Cargo.lock 已有 0.25.x，本地也已缓存），
+# 声明成直接依赖不新增下载，也不引入第二个版本。
+toml_edit = "0.25"
 rusqlite = { version = "0.31", features = ["bundled"] }
 scraper = "0.21"
 arboard = { version = "3", features = ["image-data"] }

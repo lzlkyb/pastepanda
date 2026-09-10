@@ -5,7 +5,7 @@
  * 探测结果与忙碌标志都由父级传进来。
  */
 import { Copy, ChevronRight, ChevronDown, Info } from "lucide-react";
-import { canOneClick, buildMcpConfigJson, type McpClientDef } from "@/lib/mcpClients";
+import { canOneClick, buildMcpConfigSnippet, type McpClientDef } from "@/lib/mcpClients";
 import type { McpClientProbe } from "@/lib/api/mcp";
 import styles from "../Settings.module.css";
 
@@ -145,7 +145,7 @@ export function McpClientRow({
           )}
 
           <pre className={styles.mcpCode}>
-            {buildMcpConfigJson(client, url, TOKEN_PLACEHOLDER)}
+            {buildMcpConfigSnippet(client, url, TOKEN_PLACEHOLDER)}
           </pre>
         </div>
       )}

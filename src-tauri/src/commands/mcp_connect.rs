@@ -14,6 +14,12 @@
 //! 另外 `MCP_ENTRY_NAME` 写死在后端、**不从前端传**：这样无论前端怎么错，
 //! 「移除接入」也只删得掉我们自己那一条，删不到 `filesystem` / `codegraph`。
 //!
+//! # 两种格式
+//!
+//! 绝大多数客户端是 JSON，**Codex 是 TOML**（`~/.codex/config.toml`）。
+//! 两条路各有一套读/合并/写，但上面那四道门一样都要过；
+//! 判定“接没接入”的字段名知识则只在 `judge_entry` 一处，不写两份。
+//!
 //! # 关于“探测只看文件在不在”
 //!
 //! 设计稿里写过「探测只做存在性检查、不读内容」，但同一份设计又要求卡片能显示
@@ -25,6 +31,7 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, State};
+use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
 use crate::atomic_write;
 use crate::data_store::DataStore;
@@ -80,19 +87,40 @@ pub struct McpConnectOutcome {
 // 纯逻辑（不碰 Tauri 状态，可单测）
 // ---------------------------------------------------------------------------
 
-/// 路径限制：只能改 `.json`。
+/// 配置文件的格式。**按扩展名判定，不嗅探内容。**
 ///
-/// 自定义接入（后续步骤）里路径是用户选的，选错一个 `package.json` 以外的东西
-/// 虽然还有 JSON 解析那道关拦着，但先在这里拦住报错更直白。
-fn ensure_json_path(path: &Path) -> Result<(), String> {
-    let ok = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("json"));
-    if ok {
-        Ok(())
-    } else {
-        Err(format!("只能写入 .json 配置文件，但拿到的是：{}", path.display()))
+/// 扩展名是客户端自己定死的（`.claude.json` / `config.toml`），比猜内容可靠；
+/// 而猜错的下场是把一份 TOML 当 JSON 写回去——那就不是「接入失败」了。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ConfigFormat {
+    Json,
+    Toml,
+}
+
+impl ConfigFormat {
+    /// 备份文件末尾要保留的扩展名。
+    ///
+    /// 一份 TOML 备份成 `.json` 的话，双击打开是报错的——备份就成了只能看不能用的东西。
+    fn ext(self) -> &'static str {
+        match self {
+            ConfigFormat::Json => "json",
+            ConfigFormat::Toml => "toml",
+        }
+    }
+}
+
+/// 路径限制：只收 `.json` 与 `.toml`。
+///
+/// 自定义接入里路径是用户选的，选错一个别的文件虽然还有解析那道关拦着，
+/// 但先在这里拦住、报一句直白的话更好。
+fn detect_format(path: &Path) -> Result<ConfigFormat, String> {
+    match path.extension().and_then(|s| s.to_str()) {
+        Some(e) if e.eq_ignore_ascii_case("json") => Ok(ConfigFormat::Json),
+        Some(e) if e.eq_ignore_ascii_case("toml") => Ok(ConfigFormat::Toml),
+        _ => Err(format!(
+            "只能写入 .json 或 .toml 配置文件，但拿到的是：{}",
+            path.display()
+        )),
     }
 }
 
@@ -172,7 +200,15 @@ fn remove_entry(root: &mut Value, container: &str) -> bool {
 /// 地址或令牌对不上就是 `stale`——两个常见成因：用户换了端口，或者重置了令牌。
 /// 不把它当成「已接入」很重要：那个客户端其实已经连不上了，而它不会报错。
 fn entry_state(root: &Value, container: &str, url: &str, token: &str) -> &'static str {
-    let Some(entry) = root.get(container).and_then(|m| m.get(MCP_ENTRY_NAME)) else {
+    judge_entry(root.get(container).and_then(|m| m.get(MCP_ENTRY_NAME)), url, token)
+}
+
+/// 判定逻辑本体。**字段名的知识只在这一处**（规则 #11）。
+///
+/// TOML 那边把条目翻成 JSON 后也走它，不另写一份——
+/// 否则哪天又多一家用新字段名，两边得记得都改。
+fn judge_entry(entry: Option<&Value>, url: &str, token: &str) -> &'static str {
+    let Some(entry) = entry else {
         return "none";
     };
     let want_auth = format!("Bearer {}", token);
@@ -199,11 +235,12 @@ fn entry_state(root: &Value, container: &str, url: &str, token: &str) -> &'stati
 /// 备份原文件，返回备份路径（原文件不存在就返回空串）。
 ///
 /// 名字里带 `pastepanda`：用户在主目录里看到这个文件时，能一眼看出是谁留下的。
-/// 末尾保留 `.json`：否则双击打不开，备份就变成了只能看不能用的东西。
+/// 末尾保留原来那个扩展名（见 [`ConfigFormat::ext`]）：否则双击打不开，
+/// 备份就变成了只能看不能用的东西。
 ///
 /// ❗ 故意**不清理旧备份**。自动删用户目录里的文件是另一类风险，
 /// 而接入这个动作一共也就点那么几次。
-fn backup(path: &Path) -> Result<String, String> {
+fn backup(path: &Path, fmt: ConfigFormat) -> Result<String, String> {
     if !path.exists() {
         return Ok(String::new());
     }
@@ -212,7 +249,7 @@ fn backup(path: &Path) -> Result<String, String> {
         .and_then(|s| s.to_str())
         .ok_or_else(|| format!("路径 {} 没有文件名", path.display()))?;
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let dest = path.with_file_name(format!("{}.pastepanda-bak-{}.json", stem, ts));
+    let dest = path.with_file_name(format!("{}.pastepanda-bak-{}.{}", stem, ts, fmt.ext()));
     std::fs::copy(path, &dest).map_err(|e| format!("备份 {} 失败：{}", path.display(), e))?;
     Ok(dest.display().to_string())
 }
@@ -225,6 +262,172 @@ fn write_root(path: &Path, root: &Value) -> Result<(), String> {
     let mut text = serde_json::to_string_pretty(root)
         .map_err(|e| format!("序列化配置失败：{}", e))?;
     text.push('\n');
+    atomic_write::write_replace(path, &text)
+}
+
+// ---------------------------------------------------------------------------
+// TOML 分支（目前只有 Codex：`~/.codex/config.toml`）
+//
+// 上面那四道门一道不少，只是换个格式。特别是第一道：
+// 解析不开就一个字都不改——`config.toml` 里除了 MCP 还有用户自己的模型与
+// 审批策略设置，当空文档重建一份同样是把用户的东西弄丢。
+// ---------------------------------------------------------------------------
+
+/// 读并解析 TOML 文档。文件不存在 → 空文档（空文件本来就解成空文档，不用特判）。
+fn read_toml(path: &Path) -> Result<DocumentMut, String> {
+    if !path.exists() {
+        return Ok(DocumentMut::new());
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("读不了 {}：{}", path.display(), e))?;
+    // 削 BOM 的理由同 `read_root`。
+    let text = text.trim_start_matches('\u{feff}');
+    text.parse::<DocumentMut>().map_err(|e| {
+        format!(
+            "{} 不是合法 TOML（{}），为免弄坏它，这里一个字都没改。",
+            path.display(),
+            e
+        )
+    })
+}
+
+/// 把前端拼的 JSON 值翻成 TOML 值。
+///
+/// 嵌套对象一律翻成**行内表**（形如 `http_headers = { Authorization = "..." }`），
+/// 不翻成 `[mcp_servers.pastepanda.http_headers]` 子表头：子表头必须排在父表
+/// 所有普通键之后，以后条目再多一个字段就容易写出顺序非法的 TOML。
+fn json_to_toml_value(v: &Value) -> Result<TomlValue, String> {
+    Ok(match v {
+        Value::String(s) => TomlValue::from(s.as_str()),
+        Value::Bool(b) => TomlValue::from(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                TomlValue::from(i)
+            } else if let Some(f) = n.as_f64() {
+                TomlValue::from(f)
+            } else {
+                return Err(format!("条目里有 TOML 表示不了的数字：{}", n));
+            }
+        }
+        Value::Array(a) => {
+            let mut arr = toml_edit::Array::new();
+            for x in a {
+                arr.push(json_to_toml_value(x)?);
+            }
+            TomlValue::Array(arr)
+        }
+        Value::Object(o) => {
+            let mut t = toml_edit::InlineTable::new();
+            for (k, x) in o {
+                t.insert(k, json_to_toml_value(x)?);
+            }
+            TomlValue::InlineTable(t)
+        }
+        // TOML 没有 null。真出现了就是前端拼错了，报错比静静丢掉一个字段强。
+        Value::Null => return Err("条目里有 null，TOML 表示不了".to_string()),
+    })
+}
+
+/// 把整个条目翻成一张普通表（渲染成 `[mcp_servers.pastepanda]`）。
+fn json_entry_to_toml_table(entry: &Value) -> Result<Table, String> {
+    let Value::Object(fields) = entry else {
+        return Err("要写入的 MCP 条目不是一个对象".to_string());
+    };
+    let mut tbl = Table::new();
+    for (k, v) in fields {
+        tbl.insert(k, Item::Value(json_to_toml_value(v)?));
+    }
+    Ok(tbl)
+}
+
+/// 把条目合并进 TOML 的容器表。返回「是否盖掉了旧条目」。
+fn merge_entry_toml(doc: &mut DocumentMut, container: &str, entry: &Value) -> Result<bool, String> {
+    let tbl = json_entry_to_toml_table(entry)?;
+    let root = doc.as_table_mut();
+    if !root.contains_key(container) {
+        let mut holder = Table::new();
+        // 隐式表：不额外渲染一行光秃秃的 `[mcp_servers]`。
+        // 写出来虽然合法，但用户对着备份做 diff 时会多出一处莫名其妙的改动。
+        holder.set_implicit(true);
+        root.insert(container, Item::Table(holder));
+    }
+    // 🔴 这里只能用 `as_table_mut`，**不能用 `as_table_like_mut`**：
+    //    toml_edit 给行内表实现的 `TableLike::insert` 里是 `value.into_value().unwrap()`，
+    //    而我们塞的是一张普通表——那一下会直接 panic（在 Tauri 命令里 panic
+    //    比报错严重得多）。容器真被写成了行内表就老实报错、让用户手动粘。
+    let holder = root
+        .get_mut(container)
+        .and_then(|i| i.as_table_mut())
+        .ok_or_else(|| {
+            format!(
+                "配置里的 {} 不是一张普通表（或者被写成了行内表），不敢动它。\
+                 请把上面的配置手动粘进去。",
+                container
+            )
+        })?;
+    Ok(holder.insert(MCP_ENTRY_NAME, Item::Table(tbl)).is_some())
+}
+
+/// 从 TOML 容器表里拿掉我们那一条。返回「原本在不在」。
+///
+/// 这里用 `as_table_like_mut` 是安全的（`remove` 没有那个 unwrap），
+/// 而且移除本来就该尽量能干活：写得再怪的容器也得能把自己那条拿走。
+fn remove_entry_toml(doc: &mut DocumentMut, container: &str) -> bool {
+    doc.as_table_mut()
+        .get_mut(container)
+        .and_then(|i| i.as_table_like_mut())
+        .and_then(|t| t.remove(MCP_ENTRY_NAME))
+        .is_some()
+}
+
+/// 把 TOML 条目里我们关心的字段翻回 JSON，交给 [`judge_entry`] 判。
+///
+/// ❗ 只翻**字符串**：判定用得着的就是 `url` / `httpUrl` 与 headers 里的
+///   `Authorization`，其余类型翻过去也没人看，还得为 TOML 的日期时间等类型
+///   另写一套映射。
+fn toml_entry_to_json(item: &Item) -> Value {
+    let mut out = serde_json::Map::new();
+    let Some(t) = item.as_table_like() else {
+        return Value::Object(out);
+    };
+    for (k, v) in t.iter() {
+        if let Some(s) = v.as_str() {
+            out.insert(k.to_string(), Value::String(s.to_string()));
+        } else if let Some(inner) = v.as_table_like() {
+            let mut sub = serde_json::Map::new();
+            for (k2, v2) in inner.iter() {
+                if let Some(s2) = v2.as_str() {
+                    sub.insert(k2.to_string(), Value::String(s2.to_string()));
+                }
+            }
+            out.insert(k.to_string(), Value::Object(sub));
+        }
+    }
+    Value::Object(out)
+}
+
+/// TOML 版的状态判定。字段名的知识仍然在 [`judge_entry`] 那一处。
+fn entry_state_toml(doc: &DocumentMut, container: &str, url: &str, token: &str) -> &'static str {
+    let entry = doc
+        .as_table()
+        .get(container)
+        .and_then(|i| i.as_table_like())
+        .and_then(|t| t.get(MCP_ENTRY_NAME))
+        .map(toml_entry_to_json);
+    judge_entry(entry.as_ref(), url, token)
+}
+
+/// 把 TOML 文档写回磁盘。
+///
+/// 不用自己拼格式：`toml_edit` 把原文的注释、空行、缩进都原样拿着，
+/// 输出里变化的只有我们那一块。
+fn write_toml(path: &Path, doc: &DocumentMut) -> Result<(), String> {
+    let mut text = doc.to_string();
+    // 只在真缺的时候补换行——无条件 push 会给原有文件末尾白添一个空行，
+    // 而那会在用户的 diff 里多出一行不属于我们的改动。
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
     atomic_write::write_replace(path, &text)
 }
 
@@ -269,12 +472,31 @@ pub fn mcp_client_probe(
             detail: String::new(),
         });
     }
+    // 后缀不认识也归到 `unreadable`，不报错：面板一打开就批量跑，
+    // 一个客户端的路径填错不应该让整面板报错；但原因要带回去显示（规则 #15.3）。
+    let fmt = match detect_format(&path) {
+        Ok(f) => f,
+        Err(detail) => {
+            return Ok(McpClientProbe {
+                path: display,
+                exists: true,
+                state: "unreadable",
+                detail,
+            })
+        }
+    };
     let (url, token) = url_and_token(&app, &store, &server)?;
-    match read_root(&path) {
-        Ok(root) => Ok(McpClientProbe {
+    let read = match fmt {
+        ConfigFormat::Json => read_root(&path).map(|r| entry_state(&r, container, &url, &token)),
+        ConfigFormat::Toml => {
+            read_toml(&path).map(|d| entry_state_toml(&d, container, &url, &token))
+        }
+    };
+    match read {
+        Ok(state) => Ok(McpClientProbe {
             path: display,
             exists: true,
-            state: entry_state(&root, container, &url, &token),
+            state,
             detail: String::new(),
         }),
         Err(detail) => Ok(McpClientProbe {
@@ -305,7 +527,7 @@ pub fn mcp_client_connect(
 ) -> Result<McpConnectOutcome, String> {
     let container = container_key.as_deref().unwrap_or(DEFAULT_CONTAINER);
     let path = expand_home(&config_path)?;
-    ensure_json_path(&path)?;
+    let fmt = detect_format(&path)?;
     if !entry.is_object() {
         return Err("要写入的 MCP 条目不是一个对象".to_string());
     }
@@ -319,12 +541,25 @@ pub fn mcp_client_connect(
         ));
     }
 
-    // 顺序不能变：先把原文件读懂（读不懂就在这里停住，什么都没发生），
-    // 再备份，最后才写。先备份后解析的话，一个解析失败会白白在用户目录里留下垃圾。
-    let mut root = read_root(&path)?;
-    let backup_path = backup(&path)?;
-    let replaced = merge_entry(&mut root, container, entry)?;
-    write_root(&path, &root)?;
+    // 🔴 顺序不能变：**所有可能失败的步骤都在内存里做完**（读、解析、合并），
+    // 才备份、才写盘。这样无论哪一步出错，磁盘上什么都没发生——
+    // 不会白白在用户目录里留下一个无人认领的备份文件。
+    let (backup_path, replaced) = match fmt {
+        ConfigFormat::Json => {
+            let mut root = read_root(&path)?;
+            let replaced = merge_entry(&mut root, container, entry)?;
+            let backup_path = backup(&path, fmt)?;
+            write_root(&path, &root)?;
+            (backup_path, replaced)
+        }
+        ConfigFormat::Toml => {
+            let mut doc = read_toml(&path)?;
+            let replaced = merge_entry_toml(&mut doc, container, &entry)?;
+            let backup_path = backup(&path, fmt)?;
+            write_toml(&path, &doc)?;
+            (backup_path, replaced)
+        }
+    };
 
     log::info!(
         "[MCP] 已接入 {}（{}）",
@@ -338,7 +573,7 @@ pub fn mcp_client_connect(
     })
 }
 
-/// 移除接入：只删 `mcpServers.pastepanda`，其余原封不动。
+/// 移除接入：只删容器里名为 `pastepanda` 的那一条，其余原封不动。
 ///
 /// 条目本来就不在也算成功（幂等），但那种情况不写盘也不备份——
 /// 没改动却留下一个备份文件只会让人困惑。
@@ -350,7 +585,7 @@ pub fn mcp_client_disconnect(
 ) -> Result<McpConnectOutcome, String> {
     let container = container_key.as_deref().unwrap_or(DEFAULT_CONTAINER);
     let path = expand_home(&config_path)?;
-    ensure_json_path(&path)?;
+    let fmt = detect_format(&path)?;
     if !path.exists() {
         return Ok(McpConnectOutcome {
             path: path.display().to_string(),
@@ -358,16 +593,36 @@ pub fn mcp_client_disconnect(
             replaced: false,
         });
     }
-    let mut root = read_root(&path)?;
-    if !remove_entry(&mut root, container) {
-        return Ok(McpConnectOutcome {
-            path: path.display().to_string(),
-            backup: String::new(),
-            replaced: false,
-        });
-    }
-    let backup_path = backup(&path)?;
-    write_root(&path, &root)?;
+    // 同样先在内存里把活干完：条目本来就不在的话直接返回，
+    // 既不写盘也不备份——没改动却留下一个备份只会让人困惑。
+    let backup_path = match fmt {
+        ConfigFormat::Json => {
+            let mut root = read_root(&path)?;
+            if !remove_entry(&mut root, container) {
+                return Ok(McpConnectOutcome {
+                    path: path.display().to_string(),
+                    backup: String::new(),
+                    replaced: false,
+                });
+            }
+            let backup_path = backup(&path, fmt)?;
+            write_root(&path, &root)?;
+            backup_path
+        }
+        ConfigFormat::Toml => {
+            let mut doc = read_toml(&path)?;
+            if !remove_entry_toml(&mut doc, container) {
+                return Ok(McpConnectOutcome {
+                    path: path.display().to_string(),
+                    backup: String::new(),
+                    replaced: false,
+                });
+            }
+            let backup_path = backup(&path, fmt)?;
+            write_toml(&path, &doc)?;
+            backup_path
+        }
+    };
     log::info!("[MCP] 已从 {} 移除接入", path.display());
     Ok(McpConnectOutcome {
         path: path.display().to_string(),
@@ -515,7 +770,8 @@ mod tests {
     /// 状态判定只认 `url` 的话，它接入完毕依然报「未接入」——
     /// 用户会反复点接入，而每点一次就在他主目录里多一份备份文件。
     #[test]
-    fn 状态判定要认httpUrl字段() {
+    // ❗ 名字里不能写 `httpUrl`：嵌了 ASCII 驼峰会触发 non_snake_case 警告（上一批就报了）。
+    fn 状态判定要认gemini那个url字段() {
         let url = "http://127.0.0.1:8765/mcp";
         let mut root = json!({});
         merge_entry(
@@ -529,11 +785,151 @@ mod tests {
     }
 
     #[test]
-    fn 只收json后缀() {
-        assert!(ensure_json_path(Path::new("C:\\a\\b.json")).is_ok());
-        assert!(ensure_json_path(Path::new("C:\\a\\b.JSON")).is_ok());
-        assert!(ensure_json_path(Path::new("C:\\a\\b.md")).is_err());
-        assert!(ensure_json_path(Path::new("C:\\a\\b")).is_err());
+    fn 只收两种后缀并据此分流() {
+        assert_eq!(detect_format(Path::new("C:\\a\\b.json")).unwrap(), ConfigFormat::Json);
+        assert_eq!(detect_format(Path::new("C:\\a\\b.JSON")).unwrap(), ConfigFormat::Json);
+        assert_eq!(detect_format(Path::new("C:\\a\\config.toml")).unwrap(), ConfigFormat::Toml);
+        assert_eq!(detect_format(Path::new("C:\\a\\config.TOML")).unwrap(), ConfigFormat::Toml);
+        assert!(detect_format(Path::new("C:\\a\\b.md")).is_err());
+        assert!(detect_format(Path::new("C:\\a\\b")).is_err());
+        // 备份得跟着原格式走，否则双击打不开
+        assert_eq!(ConfigFormat::Json.ext(), "json");
+        assert_eq!(ConfigFormat::Toml.ext(), "toml");
+    }
+
+    // ---- TOML（Codex）----
+
+    /// 拿本机 `~/.codex/config.toml` 的真实形状做样本：
+    /// 条目是 `[mcp_servers.xxx]` 子表，而且文件里还有用户自己的设置与注释。
+    const CODEX_LIKE: &str = "\
+# 我自己写的注释，一个字都不能丢
+model = \"gpt-5\"
+
+[mcp_servers.codegraph]
+command = \"codegraph\"
+args = [\"serve\"]
+";
+
+    /// 🔴 这条守的是“为什么非用 toml_edit 不可”：
+    /// 用 serde 往返会把用户的注释抹掉，而注释没了是找不回来的。
+    #[test]
+    fn 写回去要保留注释与旁边的服务器() {
+        let mut doc = CODEX_LIKE.parse::<DocumentMut>().unwrap();
+        let replaced = merge_entry_toml(
+            &mut doc,
+            "mcp_servers",
+            &json!({
+                "url": "http://127.0.0.1:8765/mcp",
+                "http_headers": { "Authorization": "Bearer tok" }
+            }),
+        )
+        .unwrap();
+        assert!(!replaced);
+
+        let out = doc.to_string();
+        assert!(out.contains("# 我自己写的注释，一个字都不能丢"), "注释被抹了：{}", out);
+        assert!(out.contains("model = \"gpt-5\""), "用户自己的设置丢了：{}", out);
+        assert!(out.contains("[mcp_servers.codegraph]"), "把旁边那条弄没了：{}", out);
+        assert!(out.contains("[mcp_servers.pastepanda]"), "没写进去：{}", out);
+        // headers 要是行内表，不另起一个子表头
+        assert!(
+            out.contains("http_headers = { Authorization = \"Bearer tok\" }"),
+            "headers 写法不对：{}",
+            out
+        );
+        // 写出来的东西必须能再解开（序列化出非法 TOML 是最坏的结果）
+        assert!(out.parse::<DocumentMut>().is_ok(), "写出了解不开的 TOML：{}", out);
+    }
+
+    #[test]
+    fn 重复接入与移除在toml上同样只动自己那一条() {
+        let mut doc = CODEX_LIKE.parse::<DocumentMut>().unwrap();
+        merge_entry_toml(&mut doc, "mcp_servers", &json!({ "url": "a" })).unwrap();
+        let replaced = merge_entry_toml(&mut doc, "mcp_servers", &json!({ "url": "b" })).unwrap();
+        assert!(replaced, "第二次应该是替换");
+        let out = doc.to_string();
+        assert!(out.contains("url = \"b\""));
+        assert!(!out.contains("url = \"a\""), "越接越多了：{}", out);
+
+        assert!(remove_entry_toml(&mut doc, "mcp_servers"));
+        let out = doc.to_string();
+        assert!(!out.contains("pastepanda"), "没删干净：{}", out);
+        assert!(out.contains("[mcp_servers.codegraph]"), "误伤了旁边那条：{}", out);
+        assert!(out.contains("# 我自己写的注释，一个字都不能丢"));
+        // 再删一次：幂等
+        assert!(!remove_entry_toml(&mut doc, "mcp_servers"));
+    }
+
+    #[test]
+    fn 没有服务器表的toml会被补上且不多一行表头() {
+        let mut doc = "model = \"gpt-5\"\n".parse::<DocumentMut>().unwrap();
+        merge_entry_toml(&mut doc, "mcp_servers", &json!({ "url": "a" })).unwrap();
+        let out = doc.to_string();
+        assert!(out.contains("[mcp_servers.pastepanda]"), "{}", out);
+        // 🔴 容器是隐式表：不能多出一行光秃秃的 `[mcp_servers]`，
+        //    否则用户对着备份做 diff 时会看到一处莫名其妙的改动。
+        assert!(!out.contains("\n[mcp_servers]"), "多写了一行表头：{}", out);
+    }
+
+    #[test]
+    fn toml状态判定认http_headers() {
+        let url = "http://127.0.0.1:8765/mcp";
+        let mut doc = CODEX_LIKE.parse::<DocumentMut>().unwrap();
+        assert_eq!(entry_state_toml(&doc, "mcp_servers", url, "tok"), "none");
+
+        merge_entry_toml(
+            &mut doc,
+            "mcp_servers",
+            &json!({ "url": url, "http_headers": { "Authorization": "Bearer tok" } }),
+        )
+        .unwrap();
+        assert_eq!(entry_state_toml(&doc, "mcp_servers", url, "tok"), "current");
+        // 重置了令牌 / 换了端口：Codex 其实已经连不上了，不能还显示「已接入」
+        assert_eq!(entry_state_toml(&doc, "mcp_servers", url, "另一把"), "stale");
+        assert_eq!(entry_state_toml(&doc, "mcp_servers", "http://127.0.0.1:9999/mcp", "tok"), "stale");
+    }
+
+    #[test]
+    fn 解析不开的toml报错而不是当空文档() {
+        // 🔴 同 JSON 那条：当空文档的话，一写就把用户的模型与审批策略设置全抹了。
+        let dir = std::env::temp_dir().join(format!("pp_mct_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("broken.toml");
+        std::fs::write(&p, "[mcp_servers\n").unwrap();
+        assert!(read_toml(&p).is_err());
+
+        // 带 BOM 的合法 TOML 要能读得动
+        let p2 = dir.join("bom.toml");
+        std::fs::write(&p2, "\u{feff}model = \"x\"\n").unwrap();
+        assert_eq!(read_toml(&p2).unwrap()["model"].as_str(), Some("x"));
+
+        // 不存在算空文档（没东西可弄丢）
+        assert!(read_toml(&dir.join("nope.toml")).unwrap().as_table().is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 🔴 toml_edit 给行内表实现的 `TableLike::insert` 里是 `into_value().unwrap()`，
+    /// 往里塞一张普通表会直接 panic。在 Tauri 命令里 panic 比报错严重得多，
+    /// 所以这里宁可报错。
+    #[test]
+    fn 容器被写成行内表时报错而不是panic() {
+        let mut doc = "mcp_servers = { a = { url = \"x\" } }\n"
+            .parse::<DocumentMut>()
+            .unwrap();
+        let before = doc.to_string();
+        assert!(merge_entry_toml(&mut doc, "mcp_servers", &json!({ "url": "a" })).is_err());
+        assert_eq!(doc.to_string(), before, "报错了就一个字都不能改");
+    }
+
+    #[test]
+    fn 翻译不了的值宁可报错() {
+        // TOML 没有 null。静静丢掉这个字段的话，写出去的就是一份连不上的配置
+        assert!(json_to_toml_value(&json!(null)).is_err());
+        // 常见类型都得能翻（OpenCode 那类客户端的 `enabled: true` 就是布尔）
+        assert!(json_to_toml_value(&json!(true)).is_ok());
+        assert!(json_to_toml_value(&json!(30000)).is_ok());
+        assert!(json_to_toml_value(&json!(["a", "b"])).is_ok());
     }
 
     #[test]

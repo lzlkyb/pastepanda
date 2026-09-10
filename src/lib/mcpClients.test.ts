@@ -21,7 +21,7 @@ import {
   MCP_TRANSPORTS,
   buildMcpEntry,
   buildMcpEntryForConnect,
-  buildMcpConfigJson,
+  buildMcpConfigSnippet,
   canOneClick,
 } from "./mcpClients";
 
@@ -113,19 +113,71 @@ describe("条目拼装", () => {
   });
 
   it("完整 JSON 包着 mcpServers 且用统一的条目名", () => {
-    const json = JSON.parse(buildMcpConfigJson({ transport: "sse" }, url, "t"));
+    const json = JSON.parse(buildMcpConfigSnippet({ transport: "sse" }, url, "t"));
     expect(Object.keys(json)).toEqual(["mcpServers"]);
     expect(Object.keys(json.mcpServers)).toEqual([MCP_ENTRY_NAME]);
   });
 
   /**
+   * 🔴 Codex 跟 Gemini CLI 一样靠字段名选传输（有 `url` 就是 StreamableHTTP），
+   * 而它的静态请求头叫 `http_headers` 而不是 `headers`。
+   * 依据是它自己的源码 `codex-rs/config/src/mcp_types.rs`（见注册表的 evidence）。
+   */
+  it("Codex：不写 type，请求头叫 http_headers", () => {
+    const cx = MCP_CLIENTS.find((c) => c.id === "codex")!;
+    const entry = buildMcpEntry(cx, url, "t") as Record<string, unknown>;
+    expect(entry.type, "Codex 的条目不该有 type").toBeUndefined();
+    expect(entry.url).toBe(url);
+    expect(entry.headers, "写成 headers 它不认").toBeUndefined();
+    expect((entry.http_headers as Record<string, string>).Authorization).toBe("Bearer t");
+  });
+
+  /**
+   * 🔴 给一个 TOML 客户端发 JSON 卡片，跟给 Claude Desktop 发 JSON 是同一类伤害：
+   * 用户照着粘进 `config.toml`，Codex 连配置都读不开了——比不给还糟。
+   */
+  it("Codex 的复制卡片是 TOML，不是 JSON", () => {
+    const cx = MCP_CLIENTS.find((c) => c.id === "codex")!;
+    const text = buildMcpConfigSnippet(cx, url, "tok");
+    expect(text).toContain(`[mcp_servers.${MCP_ENTRY_NAME}]`);
+    expect(text).toContain(`url = "${url}"`);
+    expect(text).toContain('http_headers = { Authorization = "Bearer tok" }');
+    // 一眼能认出不是 JSON：没有那个外层大括号
+    expect(text.trimStart().startsWith("{"), "出成了 JSON").toBe(false);
+  });
+
+  /**
+   * 🔴 `format` 跟 `configPath` 的后缀必须对得上：
+   * 后端 `mcp_connect.rs` 是**按扩展名**决定走 JSON 还是 TOML 分支的。
+   * 两边对不上的话，屏幕上的卡片与实际写进去的东西会是两种格式。
+   */
+  it("format 与配置文件后缀不能分岔", () => {
+    for (const c of MCP_CLIENTS) {
+      if (!c.configPath) continue;
+      const isToml = c.configPath.toLowerCase().endsWith(".toml");
+      expect(c.format === "toml", `${c.id} 的 format 与路径后缀对不上`).toBe(isToml);
+    }
+  });
+
+  /**
+   * ❗ `tomlValue` 碰到表示不了的值会抛。卡片是在 React 渲染里算的，
+   * 真抛了就是一片白屏——所以在这里把整张名单都渲染一遍，
+   * 把“上线后白屏”提前成“构建时挂”。
+   */
+  it("每家都能渲染出卡片", () => {
+    for (const c of MCP_CLIENTS) {
+      expect(() => buildMcpConfigSnippet(c, url, "t"), `${c.id} 的卡片渲染抛了`).not.toThrow();
+    }
+  });
+
+  /**
    * 🔴 OpenCode 的容器键是 `mcp`。写成 `mcpServers` 的后果不是报错，
    * 是往它的配置里凭空造一个它不认的键——显示接入成功，而它一个字读不到。
-   * 复制卡片那条路同理，所以连 `buildMcpConfigJson` 一起钉。
+   * 复制卡片那条路同理，所以连 `buildMcpConfigSnippet` 一起钉。
    */
   it("OpenCode 用 mcp 容器键，且 type 是 remote", () => {
     const oc = MCP_CLIENTS.find((c) => c.id === "opencode")!;
-    const json = JSON.parse(buildMcpConfigJson(oc, url, "t"));
+    const json = JSON.parse(buildMcpConfigSnippet(oc, url, "t"));
     expect(Object.keys(json)).toEqual(["mcp"]);
     expect(json.mcp[MCP_ENTRY_NAME].type).toBe("remote");
     expect(json.mcp[MCP_ENTRY_NAME].url).toBe(url);
