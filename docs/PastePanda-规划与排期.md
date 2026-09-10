@@ -212,7 +212,9 @@ P1/P2 拿到的摘录，在 Rust 接口层就被 `DISTILL_EXCERPT_CHARS = 60` �
 | **O-5** | 索引运维 | ❌ 无任何 reindex / 校验类工具 |
 | **O-7** | 自动化边界 | ❌ 待拍板，**未定之前不开工** → §5 |
 | **O-10** | 单点补齐 | ❌ 清单未动。⚠ 其中 **daily note 接口是有意不开**（`write.rs:13`：速记不可写，会撞 `idx_notes_daily` 唯一约束）|
-| — | 一键接入客户端扩充 | 🟡 已有 4 个（Claude Code / WorkBuddy / Cherry Studio / VS Code）。待核：Cursor、Claude Desktop、CodeBuddy、Qoder、MarsCode、千问办公（路径未知）|
+| — | ~~一键接入客户端扩充~~ | ✅ **2026-09-10 完成**：能一键的 **10 家**（Claude Code / WorkBuddy / Qoder / CodeBuddy / Gemini CLI / OpenCode / Codex CLI / Qwen Code / ZCode / Pi）+ 只给复制卡片的 2 家（Cherry Studio / VS Code）。<br>❗ 本行原写「已有 4 个」**是错的**：Cherry Studio 与 VS Code 的 `configPath` 为 null，从来就不能一键，真实起点是 2 家。<br>⚠ **刻意不收**：Claude Desktop——它只认 stdio，给它一张 JSON 卡片是**有害的**（理由写在 `mcpClients.ts` 末尾）。<br>⚠ **未收因为证据不够**：通义灵码 / Trae / MarsCode——本机没装 + 官方文档抓不全，按注册表自己的 `evidence` 规矩不能凭猜写。推进的最快路子：**在它们界面里手动加一个远程 MCP，直接读它写出来的真实形状**（ZCode 那条就是这么坐实的）|
+| **TLS-1** | MCP HTTPS：把 CA 装进系统信任库 | ❌ **未做，且未实测**（2026-09-10）。后端两块已完成（见 §6），但**不装 CA 就等于没做完**：客户端会拒绝那张证书。<br>🔴 这是本软件对用户机器做过**最重**的一件事，所以 `mcp_https_enabled` **默认关**（2026-09-10 拍板：C 档 = 并存 + 默认关）。<br>待定：用 `certutil -user -addstore Root` 还是 PowerShell `Import-Certificate`——**要真跑一次才能定，而那会往开发机的信任库里真装一个根证书**，需先拿到授权。<br>❗ 配套必须同批做：**移除 CA 的命令**。现有的 `tls::reset()` 只删三个文件，**不会**动信任库里已装的那份——光重置会在那里积一堆废根证书 |
+| **TLS-2** | MCP HTTPS：设置页 UI | ❌ 未做（2026-09-10）。一个默认关的开关 + https 地址展示 + 「装/移除 CA」按钮 + 失败原因的显示位。<br>❗ `httpsRunning` 与 `httpsError` **必须一起读**：开关开着但端口被占时前者是 false，只显示开关状态等于骗人（规则 #15.3）|
 | **AM-3** | 时效标记 | ❌ 全仓 0 处。双形式：`- superseded_by [[X]]` + `- valid_until <ISO>`。**不能做成布尔**——布尔表达不了「这个报价到年底就不算了」 |
 | **AM-9** | 多信号加权 | 🟡 只有破同分（`bm25` + `updated_ms`）。🔴 **开工时要重估权重**：`last_access_at` 已从 32% 升到 77%，不能再沿用「弱信号」这个定性 |
 | **AM-10 / M3-①** | 向量层 | ❌ 未实现。🔴 前置「**真跑探针**」从未跑过（当前只有静态符号预筛）。路线 = 复用 vendored MNN，模型**按需下载**不打包 |
@@ -321,7 +323,11 @@ AM-7 记忆类型 · AM-8 近重复 · AM-9 破同分 · AM-5 召回基准（⚠
 
 **MCP**：O-1 注入防御（含 nonce 防伪造）· O-8 section 层与精准编辑 · O-9 改标题断链 ·
 O-6 协议版本协商白名单 · O-2 `note_links` 表与查询层 · 反链面板 UI · `kb_trash_list` ·
-写入选型表 · 工具描述体量闸（13,556 字节 / 17 工具）
+写入选型表 · 工具描述体量闸（13,556 字节 / 17 工具）·
+**一键接入 10 家客户端**（2026-09-10：支持 TOML、嵌套容器路径、每家自定字段名）·
+**接入面板分组**（2026-09-10：按「本机装没装这个工具」而**不是**按「配置文件在不在」）·
+**HTTPS 双监听后端**（2026-09-10，**默认关**；证书按需生成 + https 单独启停不碰 http）——
+⚠ 只是后端，**整个功能未完**，剩 TLS-1 / TLS-2 两条见 §3.2
 
 **同步**：M6 主体（iroh）· 三步配对向导 · HLC · P2a `updated_ms` · P3 三表补时间戳 · P4 墓碑表 ·
 W1 图片同步 · W2 分桶摘要 · W3 墓碑回收 · W4a 并排对照 · W6 止血三条 · **实连验收（120 次）**
