@@ -4,6 +4,7 @@ import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
 import type { KbDevice, KbLastSync } from "@/hooks/useKbSync";
 import { countKbOnline } from "@/lib/kbOnline";
+import { explainSyncError } from "@/lib/syncError";
 import styles from "./KbSyncStatusBar.module.css";
 
 /** 「12 秒前」。 */
@@ -128,6 +129,11 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   const failing = last.filter((l) => l.fails > 0 && !l.dormant);
   const broke = failing.filter((l) => l.last_ok_ms > 0);
   const neverOk = failing.filter((l) => l.last_ok_ms === 0);
+  /**
+   * 下面那一行只拿第一台的错误（合并成一行就只能拿一条），先算好，
+   * 避免在 JSX 里为了取一个值套 IIFE。
+   */
+  const neverOkWhy = neverOk.length > 0 ? explainSyncError(neverOk[0].error) : null;
   const skipped = newest && newest.skipped_older > 0 ? newest : null;
   // 两者分开算：原因不同（没传到 vs 传到了写不进库），文案也不一样。
   // 但都属于「没落地」，后端都会把游标夹在它们前面、下一轮重来。
@@ -230,20 +236,31 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
 
       {/* 曾经成功过、现在连不上——唯一值得报警的一档。
           写出「之前还好好的」，因为那才是你判断要不要去查的依据 */}
-      {broke.map((f) => row(`fail-${f.peer}`, "warn", <>
-        <b>连不上 {name(f.peer)}（{ago(f.last_ok_ms)}还好好的）</b>
-        <div className={styles.detail}>
-          {f.next_in_secs} 秒后重试。对方可能刚关机、换了网络，或关了这个开关。
-          {f.error && <span className={styles.muted}>（{f.error}）</span>}
-        </div>
-      </>))}
+      {broke.map((f) => {
+        /* 🔴 不再把后端错误串原样打出来（2026-09-10 用户报「timed out 看不懂」）。
+           上一句已经把「连不上」的常见原因说完了，再跟一串 iroh 的英文原文
+           只会让人以为出了需要处理的技术故障。判据见 `@/lib/syncError`。
+           原串仍然进 `title`：排错时悬停就能看到，也没从日志里丢。 */
+        const why = explainSyncError(f.error);
+        return row(`fail-${f.peer}`, "warn", <>
+          <b>连不上 {name(f.peer)}（{ago(f.last_ok_ms)}还好好的）</b>
+          <div className={styles.detail}>
+            {f.next_in_secs} 秒后重试。对方可能刚关机、换了网络，或关了这个开关。
+            {/* `?? undefined`：`error` 是 `string | null`，而 `title` 只接 `string | undefined`。 */}
+            {why && <span className={styles.muted} title={f.error ?? undefined}>（{why}）</span>}
+          </div>
+        </>);
+      })}
 
       {/* 从未连上过的：合并成一行灰字。你处理不了，也不需要一台一行——
           但不能完全不报：刚配对完就连不上是真会发生的，而那时候你得知道 */}
       {neverOk.length > 0 && row("fail-new", "info", <>
         还没连上 <b>{neverOk.length} 台</b>（{neverOk.map((f) => name(f.peer)).join("、")}），还在重试。
-        {neverOk[0].error && (
-          <span className={styles.muted}>（{neverOk[0].error}）</span>
+        {/* 同上：只在「你能处理」时才出这一句。刚配对完就连不上的情形里，
+            `not paired` 正是那条真能抢救的提示——而它在旧写法里被埋在
+            一串英文里，跟 `timed out` 长得一模一样。 */}
+        {neverOkWhy && (
+          <span className={styles.muted} title={neverOk[0].error ?? undefined}>（{neverOkWhy}）</span>
         )}
       </>)}
     </div>
