@@ -206,9 +206,13 @@ export function McpConnectPanel({
     <div className={styles.mcpConnect}>
       <div className={styles.mcpConnectHead}>
         <div className={styles.mcpConnectTitle}>接入到 AI 工具</div>
+        {/* ❗ 右边那个数不能写成「检测到 N」：它只是 present 组的大小，
+            而已接入的那几个同样是检测到的——那会变成一个少报的假数字。
+            present 里的三种状态（未接入 / 令牌或地址已变更 / 配置读不了）
+            都确实是「现在连不上」，所以叫未接入才是准的。 */}
         {!groups.probing && (
           <div className={styles.mcpConnectSummary}>
-            已接入 {groups.connected.length} · 检测到 {groups.present.length}
+            已接入 {groups.connected.length} · 未接入 {groups.present.length}
           </div>
         )}
       </div>
