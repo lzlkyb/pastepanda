@@ -198,6 +198,20 @@ describe("条目拼装", () => {
   });
 
   /**
+   * 🔴 Pi 靠字段区分传输，条目里没有 `type`。
+   * 也不写 `auth`：那一路要配 `bearerToken` / `bearerTokenEnv` / `bearerTokenStore`，
+   * 而我们给的是字面量请求头。
+   */
+  it("Pi：不写 type 与 auth，只出 url + headers", () => {
+    const p = MCP_CLIENTS.find((c) => c.id === "pi")!;
+    const entry = buildMcpEntry(p, url, "t") as Record<string, unknown>;
+    expect(entry.type, "Pi 的条目不该有 type").toBeUndefined();
+    expect(entry.auth, "写了 auth 它会去找一把我们没配的令牌").toBeUndefined();
+    expect(entry.url).toBe(url);
+    expect((entry.headers as Record<string, string>).Authorization).toBe("Bearer t");
+  });
+
+  /**
    * 🔴 「点号 = 嵌套」这个约定两边各实现了一份。前端拆而后端不拆（或反过来），
    * 结果就是复制卡片与一键写入落在两个不同的地方。
    */

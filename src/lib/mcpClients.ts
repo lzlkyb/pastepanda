@@ -347,6 +347,32 @@ export const MCP_CLIENTS: McpClientDef[] = [
       "而桌面端那条路可能绕过迁移，所以用规范写法 `type: \"http\"` + `headers`。",
   },
   {
+    id: "pi",
+    name: "Pi",
+    configPath: "~/.pi/agent/mcp.json",
+    /**
+     * 条目里**没有 `type`**：Pi 靠 `command` / `url` / `socket` 区分传输。
+     * `transport` 仍填 `streamableHttp`，记的是“实际走哪种”。
+     */
+    transport: "streamableHttp",
+    omitType: true,
+    where: "写进该文件的 mcpServers。",
+    connectCaveat:
+      "🔴 MCP **不是 Pi 自带的能力**：要先在 Pi 里跑 `pi install npm:pi-mcp-adapter`，" +
+      "否则这份配置写进去也没人读——而且不会报错，只是工具不出现。",
+    evidence:
+      "路径：官方 pi.dev/packages/pi-mcp-adapter（2026-09-10 查）列了 6 个配置位置并写明 " +
+      "**Precedence is (later entries win)**。`~/.pi/agent/mcp.json`（原文：" +
+      "`<Pi agent dir>/mcp.json` — Pi global override，默认 `~/.pi/agent/mcp.json`，" +
+      "可用 `$PI_CODING_AGENT_DIR` 改）排在三个全局共享文件（`~/.config/mcp/mcp.json`、" +
+      "`~/.agents/mcp.json`、`~/.agents/mcp/mcp.json`）**之后**，所以写它能压过那三个；" +
+      "再往后只剩项目级文件，而项目级我们本来就不写（令牌会跟着进 git）。" +
+      "容器键 `mcpServers`；远程条目是 `url` + `headers`，**没有 `type` / `transport` 字段**。" +
+      "⚠ 它另有 `auth: \"bearer\"` 一路（配 `bearerToken` / `bearerTokenEnv` / `bearerTokenStore`）；" +
+      "这里不写 `auth`、只走纯 `headers`——文档说 headers 会照发，且这跟本表其余各家一致。" +
+      "真出现 401 先回来看这一条。",
+  },
+  {
     id: "cherry-studio",
     name: "Cherry Studio",
     configPath: null,
