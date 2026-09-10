@@ -94,7 +94,7 @@ const FEATURES = [
   { icon: "🔄", bg: "linear-gradient(135deg,#EC4899,#BE185D)", name: "配置工具箱", desc: "Properties/YAML/JSON 互转 + 跨格式语义对比 + 批量替换", path: "顶栏工具箱 → 配置转换 / 配置对比" },
   { icon: "🔡", bg: "linear-gradient(135deg,#06B6D4,#0891B2)", name: "编码转换", desc: "自动检测 GBK/Big5/Shift_JIS 等编码，一键转 UTF-8", path: "顶栏工具箱 → 编码转换" },
   { icon: "📤", bg: "linear-gradient(135deg,#84CC16,#65A30D)", name: "数据导出", desc: "历史记录导出为 Excel / CSV / JSON，支持筛选后导出", path: "顶栏工具箱 → 导出" },
-  { icon: "🌐", bg: "linear-gradient(135deg,#6366F1,#4F46E5)", name: "局域网同步", desc: "多设备间 AES-256-GCM 加密同步文本/图片/文件", path: "设置 → 局域网同步 → 开启" },
+  { icon: "🌐", bg: "linear-gradient(135deg,#6366F1,#4F46E5)", name: "剪贴板同步", desc: "同一局域网内 AES-256-GCM 加密同步文本/图片/文件", path: "设置 → 剪贴板同步 → 开启" },
   { icon: "📝", bg: "linear-gradient(135deg,#F97316,#EA580C)", name: "片段库", desc: "常用文本模板 + 动态变量（日期/剪贴板/UUID）", path: "顶栏工具箱 → 片段库" },
   { icon: "🔤", bg: "linear-gradient(135deg,#EF4444,#DC2626)", name: "正则替换", desc: "粘贴时自动应用正则规则（去空行/脱敏/URL解码等）", path: "设置 → 正则规则 → 启用" },
 ];

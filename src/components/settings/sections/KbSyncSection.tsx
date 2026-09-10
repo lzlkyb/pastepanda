@@ -18,7 +18,12 @@ export function KbSyncSection({ config, updateAndSave }: KbSyncSectionProps) {
       {/* ── 知识库同步（M6）──
           ❗ 与上面那个**完全独立**：那个同步剪贴板，这个同步笔记。
           开关分开是因为绑在一起会逼用户做一个他不想做的选择：
-          「我只想同步笔记，不想让剪贴板到处飞」。 */}
+          「我只想同步笔记，不想让剪贴板到处飞」。
+
+          ❗ 说明里那句「与上面的『局域网同步』无关」**已删**：
+          上面那个已改名为「剪贴板同步」，两个标题现在同轴（都按内容），
+          名字自己就把区别说清了。要靠一句「与那个无关」消歧，
+          本身就是命名错了的信号。 */}
       <div className={styles.sSection}>知识库同步</div>
       <ToggleRow icon="📚" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)"
         label="知识库同步" desc="在你自己的设备之间同步笔记，局域网与跨网走同一条通道"
@@ -27,7 +32,6 @@ export function KbSyncSection({ config, updateAndSave }: KbSyncSectionProps) {
         detail={<>
           <p>把知识库里的笔记在你的多台设备之间保持一致。</p>
           <p>🔒 <b>点到点直连</b>，笔记不经过任何服务器</p>
-          <p>📌 <b>与上面的「局域网同步」无关</b>：那个同步剪贴板，这个同步笔记，两个开关互不影响</p>
           <p>⚠️ <b>首次要配对</b>：两台机器互相核对一串指纹，核对不上就不要确认</p>
         </>}
         onChange={async (v) => {

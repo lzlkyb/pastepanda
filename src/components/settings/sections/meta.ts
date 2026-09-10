@@ -14,7 +14,7 @@ export const SETTINGS_SECTIONS = [
   { key: "stats",      label: "数据统计",     icon: "📊" },
   { key: "appearance", label: "外观",         icon: "🎨" },
   { key: "general",    label: "通用",         icon: "⚙️" },
-  { key: "lan",        label: "局域网同步",   icon: "🌐" },
+  { key: "lan",        label: "剪贴板同步",   icon: "🌐" },
   { key: "kb",         label: "知识库同步",   icon: "📚" },
   { key: "hotkey",     label: "快捷键",       icon: "⌨️" },
   { key: "data",       label: "数据管理",     icon: "💾" },
