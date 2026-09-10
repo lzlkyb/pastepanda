@@ -179,6 +179,26 @@ describe("splitTableToRows", () => {
     const result = splitTableToRows(text);
     expect(result!.rows).toEqual(['D-001\t他说"你好', "D-002\tok"]);
   });
+
+  it("字段中间的引号（英寸符）不是定界符，不能吞掉行分隔", () => {
+    // 🔴 第一版把任何引号都当定界符，两个英寸符正好凑成一对 →
+    //    中间那个换行被当成「引号内的换行」吞掉，「合适」那行整个丢了，
+    //    两行数据拼成一条。TSV 约定：引号只在字段首字符位置才有转义含义。
+    const result = splitTableToRows('尺寸\t备注\n24"\t偏大\n27"\t合适');
+    expect(result!.rows).toEqual(['24"\t偏大', '27"\t合适']);
+  });
+
+  it("字段中间成对的引号也不算定界符（第一版会整表返 null）", () => {
+    const result = splitTableToRows('a\tb"c\nd\te"f');
+    expect(result!.rows).toEqual(['d\te"f']);
+  });
+
+  it("边框线与数据行不等长时不用位置切法（错位数据比不认更糟）", () => {
+    // 位置切法的前提是定宽对齐。表被手工编辑过时宁可不认——
+    // 切出来的错位内容用户看不出来。
+    const text = ["+--+--+", "| id | name |", "+--+--+", "|  1 | a|b  |"].join("\n");
+    expect(splitTableToRows(text)).toBeNull();
+  });
 });
 
 describe("looksLikeTableButUnsplit", () => {

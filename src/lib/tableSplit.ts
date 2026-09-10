@@ -173,24 +173,60 @@ const NL_SENTINEL = "\u0000";
  * `D-001\t"第一行`）——数据被静默破坏。这里把**引号内**的换行换成哨兵
  * 字符再交给 `parseTable`，出结果后由 [`unprotectCell`] 换回来。
  *
- * ❗ 三道阀门，宁可不处理也不能把用户内容改坏：
+ * # 🔴 只有出现在**字段开头**的引号才是定界符
+ *
+ * 第一版把任何 `"` 都当定界符来切换 inQuote，实测把一张普通表格弄丢了数据：
+ *
+ * ```text
+ * 尺寸\t备注      →  拆出一条 `24"\t偏大\n27"`
+ * 24"\t偏大          「合适」那行整个丢了
+ * 27"\t合适
+ * ```
+ *
+ * 因为两个英寸符正好凑成一对，中间那个换行就被当成「引号内的换行」吞掉了。
+ * TSV / CSV 的约定本来就是：引号只在字段的第一个字符位置才有转义含义
+ * （行首、或紧跟在 Tab / 换行 之后）；字段中间的 `"` 就是个普通字符。
+ *
+ * ❗ 四道阀门，宁可不处理也不能把用户内容改坏：
  *   ① 没引号直接走原路；② 哨兵字符本来就出现过就放弃；
- *   ③ 引号不成对（扫完还在引号里）说明这不是 Excel 那套转义，也放弃。
+ *   ③ 引号不成对（扫完还在引号字段里）放弃；
+ *   ④ 没有任何「引号字段内的换行」需要保护时也放弃（返 null 走原路）。
  */
 function protectQuotedNewlines(text: string): string | null {
   if (!text.includes('"')) return null;
   if (text.includes(NL_SENTINEL)) return null;
   let out = "";
-  let inQuote = false;
+  let inQuoted = false;
+  let atFieldStart = true;
   let hit = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (c === '"') {
-      inQuote = !inQuote;
+    if (!inQuoted) {
+      if (c === '"' && atFieldStart) {
+        inQuoted = true;
+        out += c;
+        atFieldStart = false;
+        continue;
+      }
+      // 字段边界：Tab 或换行之后是下一个字段的开头
+      atFieldStart = c === "\t" || c === "\n" || c === "\r";
       out += c;
       continue;
     }
-    if (inQuote && (c === "\n" || c === "\r")) {
+    // 引号字段内
+    if (c === '"') {
+      if (text[i + 1] === '"') {
+        // `""` = 转义的一个引号，原样留给 unprotectCell 去还原
+        out += '""';
+        i++;
+        continue;
+      }
+      inQuoted = false;
+      atFieldStart = false;
+      out += c;
+      continue;
+    }
+    if (c === "\n" || c === "\r") {
       if (c === "\r" && text[i + 1] === "\n") i++; // CRLF 折成一个哨兵
       out += NL_SENTINEL;
       hit = true;
@@ -198,8 +234,8 @@ function protectQuotedNewlines(text: string): string | null {
     }
     out += c;
   }
-  if (inQuote) return null;
-  if (!hit) return null; // 有引号但里面没换行，没必要动
+  if (inQuoted) return null;
+  if (!hit) return null; // 没有需要保护的换行，没必要动
   return out;
 }
 

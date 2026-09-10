@@ -55,6 +55,10 @@ function parseBordered(lines: string[]): TableData | null {
     if (border[i] === "+") bounds.push(i);
   }
   if (bounds.length < 3) return null; // 至少两列才有必要走这条路
+  // ❗ 位置切法的前提是定宽对齐：MySQL 输出里边框线与每一行等长。
+  //   长度对不上说明表被手工编辑过，拿边框位置去切会切出错位的内容
+  //   ——而那比直接不认更糟（错数据看不出来）。
+  if (dataLines.some((l) => l.trim().length !== border.length)) return null;
 
   const sliceRow = (l: string): string[] => {
     const s = l.trim();
