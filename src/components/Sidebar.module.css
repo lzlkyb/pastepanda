@@ -4,7 +4,10 @@
   width: 0;
   min-width: 0;
   height: 100%;
-  background: var(--sidebar-bg);
+  background: var(--shell-bg, var(--sidebar-bg));
+  /* 仅 ocean 有 --shell-blur（规则 8.3：整栏一个合成层，且场景主题为 none） */
+  backdrop-filter: var(--shell-blur, none);
+  -webkit-backdrop-filter: var(--shell-blur, none);
   border-right: 1px solid transparent;
   display: flex;
   flex-direction: column;
@@ -17,7 +20,7 @@
 .sidebar.open {
   width: 180px;
   min-width: 180px;
-  border-right-color: var(--border-color);
+  border-right-color: var(--shell-border, var(--border-color));
 }
 
 /* 头部 — 隐藏，用 section label 替代 */

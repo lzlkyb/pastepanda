@@ -179,9 +179,9 @@
   height: 38px;
   padding: 0 14px;
   border-radius: 8px;  /* 搜索框圆角统一为 8px（高度不变，与其余 7 处搜索框对齐） */
-  background: var(--search-bg);
+  background: var(--control-glass, var(--search-bg));
   border: 1px solid var(--search-border);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--control-elev, 0 1px 4px rgba(0, 0, 0, 0.03));
   transition: all 0.2s;
 }
 

@@ -64,18 +64,19 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 静态光泽层 — 始终可见的顶部微光，模拟玻璃反光 */
+/* 静态光泽层 — 始终可见的顶部微光，模拟玻璃反光。
+   走 --card-top-light：ocean 白卡用冷色淡染，场景主题仍是白 inset。 */
 .card::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: 16px;
   display: var(--card-shimmer-display, block);
-  background: linear-gradient(
+  background: var(--card-top-light, linear-gradient(
     180deg,
     var(--glass-shimmer-static) 0%,
     transparent 50%
-  );
+  ));
   z-index: 0;
   pointer-events: none;
 }

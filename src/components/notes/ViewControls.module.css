@@ -54,10 +54,12 @@
   color: var(--text-primary);
 }
 
-/* 非默认时高亮：不看 chips 行也能知道自己正被筛着 */
+/* 非默认时高亮：不看 chips 行也能知道自己正被筛着。
+   --control-ring：柔光环替代纯色块，与视觉升级稿一致；底仍用 accent-light 保对比度。 */
 .iconOn {
   background: var(--accent-light);
   color: var(--accent-strong);
+  box-shadow: var(--control-ring);
 }
 
 /* 浮层。右对齐：图标在行最右，向左展开才不会冲出栏外 */

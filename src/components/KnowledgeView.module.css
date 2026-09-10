@@ -314,8 +314,8 @@
   padding: 0 8px;
   border: 1px solid var(--search-border);
   border-radius: 8px;
-  background: var(--search-bg);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  background: var(--control-glass, var(--search-bg));
+  box-shadow: var(--control-elev, 0 1px 4px rgba(0, 0, 0, 0.03));
   transition: all 0.2s;
 }
 
@@ -698,7 +698,7 @@
   position: absolute;
   inset: 0;
   display: var(--card-shimmer-display, block);
-  background: linear-gradient(180deg, var(--glass-shimmer-static) 0%, transparent 50%);
+  background: var(--card-top-light, linear-gradient(180deg, var(--glass-shimmer-static) 0%, transparent 50%));
   pointer-events: none;
   z-index: 0;
 }

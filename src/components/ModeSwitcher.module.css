@@ -74,9 +74,10 @@
   inset: 0;
   border-radius: 7px;
   /* 实色而不是页签那种半透白玻璃：顶栏是透的，半透白叠浅色皮肤场景
-     必然看不见（真机已验证）。实色把「背景亮度」这个变量整个抽掉了。 */
-  background: var(--accent-solid);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+     必然看不见（真机已验证）。实色把「背景亮度」这个变量整个抽掉了。
+     2026-09：改为 accent→accent-solid 竖向渐变，仍以 solid 收尾保白字对比度。 */
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-solid) 100%);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
   z-index: 0;
 }
 

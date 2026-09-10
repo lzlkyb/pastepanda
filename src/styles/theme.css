@@ -161,6 +161,23 @@
      6 套主题同值，所以只在这里写一次；浅色四套因此**零视觉变化**。 */
   --orange-solid: #C54A0A;
 
+  /* ===== UI 视觉升级 · 壳层 / 表面 token（2026-09，详见 docs/UI视觉升级-Token改动表.md）=====
+     组件一律 `var(--x, 旧值)` 消费；未覆写主题行为不变。
+     🔴 shell blur 默认 none：只有 ocean（无 SkinScene）打开。
+        场景主题若再叠一层壳采样，会与 SkinScene 动画叠出 GPU 乘法（规则 8.2/8.3）。 */
+  --shell-bg: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  --shell-border: color-mix(in srgb, var(--card-bg) 85%, transparent);
+  --shell-blur: none;
+  --glass-card-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07);
+  --card-top-light: linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, transparent 45%);
+  --card-selected-glow: color-mix(in srgb, var(--accent) 16%, transparent);
+  --control-glass: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  --control-ring: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
+    0 1px 4px color-mix(in srgb, var(--accent) 12%, transparent);
+  /* 控件静息投影（搜索框等）：近影 + 中影 + 内高光，可叠在 glass 底上 */
+  --control-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
   /* ===== 语义色补全（UI 规则 U6）=====
      U6 说新代码只许用语义名（--warning / --danger）、不许用色名（--orange / --red-bg）。
      但此前语义名只有**文字色一档**，没有配套的底色与描边。结果是：任何组件
@@ -182,13 +199,16 @@
   /* 皮肤场景：清冽晨海 — 晨光海面天空渐变（SkinScene 太阳/海鸥/帆影/波浪/碎金衬于其上） */
   /* 经典白皮肤：纯色底（与 v5.2.0一致）。ocean 不再渲染 SkinScene，
      背景静止 → 卡片的 backdrop-filter 结果可被合成器缓存，模糊几乎不花 GPU。 */
-  --app-bg: #F7F7F8;
-  /* 经典白：中性极浅灰。原 #F4F6F9 是 (244,246,249)，蓝分量最高、偏冷，
-     同一亮度下冷色看起来就比中性色“灰”。
-     不用纯白是为了让纯白卡片还能浮起来——两边都纯白就只剩边框分界了。 */
-  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
-  --header-bg-start: transparent;
-  --header-bg-end: transparent;
+  /* 经典白升级（2026-09 视觉稿）：纯色死白 → 静态氛围渐变。
+     两层 radial 用 accent 色相（青 + 微紫），底仍是极浅冷灰，保证白卡可浮起。
+     纯静态、可被合成器缓存；不引入 SkinScene 动画。 */
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2, 132, 199, 0.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109, 40, 217, 0.08), transparent 50%),
+    linear-gradient(168deg, #F4F8FC 0%, #EEF3F8 42%, #E8F0F7 100%);
+  /* 顶栏壳渐变：半透白淡入透明，与列表拉开景深（场景主题仍全 transparent） */
+  --header-bg-start: rgba(255, 255, 255, 0.55);
+  --header-bg-end: rgba(255, 255, 255, 0.18);
   --card-bg: #fff;
   --card-border: #E0E4EB;
   --text-primary: #0F172A;
@@ -220,13 +240,18 @@
   --brand-ai-from: #1D4ED8;
   --brand-ai-to: #6D28D9;
   --toggle-off-label: #4B5563; --toggle-on-label: #fff;
-  --card-selected-bg: #E0F2FE;
-  --card-selected-border: #0284C7;
-  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  /* 选中：白→浅蓝渐变底 + 柔环（替代硬色块 + 2px 硬圈） */
+  --card-selected-bg: linear-gradient(180deg, #FFFFFF 0%, #F0F9FF 100%);
+  --card-selected-border: color-mix(in srgb, #0284C7 35%, transparent);
+  --card-selected-shadow: 0 0 0 3px rgba(2, 132, 199, 0.16), 0 8px 24px rgba(2, 132, 199, 0.16);
   --accent-shadow: rgba(2, 132, 199, 0.15);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
   --hover: #E8ECF2;
-  --sidebar-bg: #EFF1F5;
+  /* 侧栏壳：半透 + 磨砂（仅 ocean 有 --shell-blur；规则 8.3 只挂在这一个容器） */
+  --sidebar-bg: rgba(244, 247, 251, 0.72);
+  --shell-bg: rgba(244, 247, 251, 0.72);
+  --shell-border: rgba(255, 255, 255, 0.85);
+  --shell-blur: blur(16px) saturate(1.2);
   --sidebar-section-label: #696D75; /* 对比度改进：侧边栏分区标题(如“智能分类”) 改前2.25:1→改后4.59:1 */
   --timeline-bg: rgba(244, 246, 249, 0.95);
   /* Toast 已改用玻璃拟态设计（--glass-popover-bg + backdrop-filter + --text-primary），不再需要这套“实心底 toast”的语义色令牌，故删除 --toast-success-* / --toast-error-* / --toast-info-*（共 9 个变量 × 7 套主题） */
@@ -258,23 +283,26 @@
   /* 卡片玻璃模糊：整个属性走变量，因为只有背景静止的主题适合开模糊。
      不能写成 blur(var(--…)) 形式——那种写法无法表达 none。 */
   --glass-card-filter: none;
-  /* 下面两项关掉在纯白卡片上完全不可见、却仍在渲染的玻璃装饰。
-     其余主题不定义这两个变量，走 CardList 里的 fallback，行为不变。 */
-  /* 顶部静态光泽层：白色半透明渐变盖在纯白上 = 看不见，但多一个渲染层 */
-  --card-shimmer-display: none;
-  /* hover 扫光：pp-shimmer-sweep（定义在 styles/surface.css）是 infinite 动画，
-     扫的也是半透明白，看不见却真在跑。
-     ❗ 这一行现在**同时管着卡片与知识模式的笔记行** ——两边读同一个变量，
-     为的就是不出现「笔记行有光泽、卡片没有」这种新的不一致。 */
-  --card-shimmer-anim: none;  /* 卡片已不透明，模糊完全看不见；而非 none 的值仍会创建合成层并采样背景，属白付开销 */
+  /* hover 扫光仍关：白扫光在白卡上不可见，infinite 动画白付 GPU。
+     静态顶光改用冷色 --card-top-light，display 由下方 block 打开。 */
+  --card-shimmer-anim: none;
   --glass-card-border: rgba(0,0,0,0.08);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(2,132,199,0.10);
-  --glass-card-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.05);
-  /* 去掉了 inset 0 1px 0 rgba(255,255,255,0.7)：白色内高光压在纯白卡片上完全不可见。
-     投影从 2px 8px 收到 1px 3px、描边从 0.04 提到 0.05：
-     经典白靠描边定边界，而不是靠大阴影把卡片“浮”起来。 */
-  --glass-card-hover-shadow: 0 4px 12px rgba(0,0,0,0.10), 0 0 0 1px rgba(2,132,199,0.25);
+  /* 三段：近影 + 中影 + 描边环（替代原 1px 3px 单层浅影）。
+     仍不写 inset 白高光：压在纯白卡上不可见。 */
+  --glass-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --glass-card-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07);
+  /* 白卡顶光：冷色淡染；纯白 inset 在 #FFF 上不可见 */
+  --card-top-light: linear-gradient(180deg, rgba(224, 240, 250, 0.55) 0%, transparent 45%);
+  --card-shimmer-display: block;
+  /* 控件玻璃：比 :root 更透，配合顶栏壳渐变 */
+  --control-glass: rgba(255, 255, 255, 0.78);
+  --control-ring: inset 0 0 0 1px rgba(2, 132, 199, 0.22), 0 1px 4px rgba(2, 132, 199, 0.12);
+  --control-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  /* hover：近影抬升 + accent 柔环，不再叠三层硬描边 */
+  --glass-card-hover-shadow: 0 2px 6px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.10), 0 0 0 1px rgba(2, 132, 199, 0.22);
   --glass-shimmer: rgba(255,255,255,0.40);
   --glass-shimmer-static: rgba(255,255,255,0.50);
   --glass-icon-bg: rgba(0,0,0,0.04);
@@ -344,7 +372,6 @@
   --toggle-off-label: #B4B4BC; --toggle-on-label: #0B2417;
   --card-selected-bg: #1E1B4B;
   --card-selected-border: #818CF8;
-  --card-selected-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
   --accent-shadow: rgba(129, 140, 248, 0.2);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.45);
   --hover: #1F1F23;
@@ -374,6 +401,10 @@
   --glass-card-hover-glow: rgba(129,140,248,0.10);
   --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
   --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(129,140,248,0.10);
+  /* 深色顶光：白 inset 已够，不覆写 --card-top-light；选中改柔环 */
+  --card-selected-shadow: 0 0 0 3px rgba(129, 140, 248, 0.22), 0 8px 28px rgba(129, 140, 248, 0.14);
+  --control-elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --glass-shimmer: rgba(255,255,255,0.06);
   --glass-shimmer-static: rgba(255,255,255,0.05);
   --glass-icon-bg: rgba(255,255,255,0.05);
@@ -431,7 +462,7 @@
   --toggle-off-label: #4A5750; --toggle-on-label: #fff;
   --card-selected-bg: #ECFDF5;
   --card-selected-border: #059669;
-  --card-selected-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
+  --card-selected-shadow: 0 0 0 3px rgba(5, 150, 105, 0.16), 0 8px 24px rgba(5, 150, 105, 0.12);
   --accent-shadow: rgba(5, 150, 105, 0.15);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
   --hover: #E8EDE8;
@@ -518,7 +549,7 @@
   --toggle-off-label: #6E4557; --toggle-on-label: #fff;
   --card-selected-bg: #FFDDEC;
   --card-selected-border: #F0568C;
-  --card-selected-shadow: 0 0 0 2px rgba(240, 86, 140, 0.2);
+  --card-selected-shadow: 0 0 0 3px rgba(240, 86, 140, 0.18), 0 8px 24px rgba(240, 86, 140, 0.12);
   --accent-shadow: rgba(240, 86, 140, 0.15);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
   --hover: #FBE7F0;
@@ -605,7 +636,7 @@
   --toggle-off-label: #6B5638; --toggle-on-label: #fff;
   --card-selected-bg: #FFEDE2;
   --card-selected-border: #E8734A;
-  --card-selected-shadow: 0 0 0 2px rgba(232, 115, 74, 0.22);
+  --card-selected-shadow: 0 0 0 3px rgba(232, 115, 74, 0.18), 0 8px 24px rgba(232, 115, 74, 0.12);
   --accent-shadow: rgba(232, 115, 74, 0.15);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
   --hover: #F7E9DA;
@@ -698,7 +729,9 @@
   --toggle-off-label: #9FB6D0; --toggle-on-label: #062015;
   --card-selected-bg: #0A1E3A;
   --card-selected-border: #3B9EFF;
-  --card-selected-shadow: 0 0 0 2px rgba(59,158,255,0.25);
+  --card-selected-shadow: 0 0 0 3px rgba(59, 158, 255, 0.22), 0 8px 28px rgba(59, 158, 255, 0.14);
+  --control-elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --accent-shadow: rgba(59,158,255,0.2);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.45);
   --hover: #0F1F35;
