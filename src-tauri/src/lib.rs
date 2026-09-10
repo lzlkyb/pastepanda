@@ -116,7 +116,21 @@ pub fn run() {
     // 默认提到 info；RUST_LOG 仍然覆盖一切（要更静就 RUST_LOG=error）。
     // 热路径已核对：剪贴板监听是事件驱动，info 只在线程生命周期与每条新内容时打，
     // 不存在按轮询频率刷日志的地方。
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    //
+    // ❗ iroh 的 tracing 日志会经 log 桥接进 env_logger，而它的 info 是「每发一个 UDP 包
+    //   一条」级别的（实测一次启动 831 行日志里 656 行是 iroh，占 79%）：
+    //     · iroh::socket::transports  poll_send; network_path=… len=1200   ← 每包一条
+    //     · iroh::socket::remote_map  handle_message; msg=ResolveRemote(..)
+    //     · tracing::span             relay-actor; / actor; / tx;  ← 只有 span 名，无字段
+    //   这三类是纯噪音，排查打洞问题也不会逐条看，直接 off。net_report/relay 是网络探测与
+    //   TLS 连接，偶发且出问题时有价值，降到 warn。iroh::endpoint（节点 id）与
+    //   pastepanda_lib::sync::service（同步失败原因）是真信号，保持 info。
+    //   env_logger 的过滤按模块路径前缀匹配，所以 iroh::socket=off 一并覆盖 transports
+    //   与 remote_map 两个子模块。需要调试 iroh 时 RUST_LOG=iroh=debug 即可全部恢复。
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
+        "info,iroh::socket=off,tracing::span=off,iroh::net_report=warn,iroh_relay=warn",
+    ))
+    .init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -148,6 +162,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            log::info!("[BOOT] 0 setup 进入");
             // 窗口状态恢复 — 必须在 window.show() 之前注册，确保先恢复后显示
             #[cfg(desktop)]
             if let Err(e) = app
@@ -180,6 +195,7 @@ pub fn run() {
                     log::warn!("初始化 Updater 插件失败，已跳过：{e}");
                 }
             }
+            log::info!("[BOOT] 1 window-state + updater 注册完成");
             let handle = app.handle().clone();
 
             // 文件关联（首次启动）：系统双击 .md 文件时，文件路径作为命令行参数传入。
@@ -211,7 +227,9 @@ pub fn run() {
             app.manage(screenshot::EditorTarget(std::sync::Mutex::new(None)));
 
             // 初始化 SQLite 数据库
+            log::info!("[BOOT] 2 准备取 app_data_dir");
             let app_dir = handle.path().app_data_dir().expect("无法获取应用数据目录");
+            log::info!("[BOOT] 3 app_data_dir = {}", app_dir.display());
             if let Err(e) = std::fs::create_dir_all(&app_dir) {
                 log::error!("无法创建应用数据目录: {}", e);
             }
@@ -221,7 +239,10 @@ pub fn run() {
                 "clipboard.db"
             });
             let store = match data_store::DataStore::new(db_path_str) {
-                Ok(s) => s,
+                Ok(s) => {
+                    log::info!("[BOOT] 4 数据库打开成功");
+                    s
+                }
                 Err(e) => {
                     log::error!("无法初始化数据库: {}", e);
                     fatal_startup_error(
@@ -241,6 +262,7 @@ pub fn run() {
             // M5-1 内容记忆：启动时懒回填历史摘要（纯规则，不阻塞主流程）。
             // 只补一次（幂等）；清空后不自动补存量（红线②：删了就是删了）。
             // 2000 条规则摘要（正则 + 截断）耗时在百毫秒级，可接受。
+            log::info!("[BOOT] 5 种子数据完成，准备回填摘要");
             let started = std::time::Instant::now();
             match store.history_summaries_backfill(2000) {
                 Ok(n) => log::info!(
@@ -595,12 +617,15 @@ pub fn run() {
             // （同步剪贴板）无关**——用户可能只想要其中一个。
             //
             // ❗ 必须先 manage 再 boot：`boot` 里要 `try_state::<SyncService>()`。
+            log::info!("[BOOT] 6 准备注册 SyncService");
             app.manage(sync::service::SyncService::new());
             commands::boot(&handle);
+            log::info!("[BOOT] 7 boot 已派发");
 
             // 显示窗口
             // U5：开机自启带 /silent 标志时静默驻留托盘，不弹窗抢焦点
             // （与设置面板"开机后自动在后台运行，托盘图标常驻"的承诺一致）
+            log::info!("[BOOT] 8 准备显示窗口");
             let silent_start = std::env::args().any(|a| a.eq_ignore_ascii_case("/silent"));
             if let Some(window) = app.get_webview_window("main") {
                 if silent_start {

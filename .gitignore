@@ -44,3 +44,8 @@ tools/__pycache__/
 .codebuddy/
 src-tauri/.libclang/
 .workbuddy/
+
+# 本地诊断 / 构建杂项（勿入库）
+.rcgen.json
+src-tauri/_rust.txt
+design/promo/hyperframes/.bin/
