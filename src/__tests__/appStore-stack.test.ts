@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useAppStore, HistoryItem } from "@/stores/appStore";
+import { useAppStore, HistoryItem, STACK_MAX_ITEMS } from "@/stores/appStore";
 
 /** 创建测试用 HistoryItem */
 function makeItem(overrides: Partial<HistoryItem> & { id: string; text: string }): HistoryItem {
@@ -554,4 +554,56 @@ describe("stackConsumeMerged", () => {
     expect(s.stackItems).toHaveLength(1);
     expect(s.stackPasted).toBe(0);
   });
+
+  // 🔴 主因回归：Excel / 网页表格复制的类型是 `doc`（CF_HTML 带 `<table>` 是
+  //    `detect_doc_fragment` 的强信号，而 `doc_capture` 默认开）。以前类型闸门
+  //    只放 text/rich，于是最常见的表格来源恰恰拆不了——这就是用户报的
+  //    「有时候按表格拆分不了」。
+  it("doc 类型（Excel / 网页表格复制）也要拆分", () => {
+    useAppStore.getState().setStackMode(true);
+    const item = makeItem({
+      id: "doc",
+      type: "doc",
+      text: "姓名\t邮箱\n张三\tzhang@qq.com\n李四\tli@qq.com",
+    });
+    const result = useAppStore.getState().stackPushOrSplit(item);
+    expect(result).toEqual({ splitCount: 2, totalRows: 2 });
+    expect(useAppStore.getState().stackItems.map((i) => i.text)).toEqual([
+      "张三\tzhang@qq.com",
+      "李四\tli@qq.com",
+    ]);
+  });
+
+  it("栈里已有的条目不能被拆分结果顶掉，只按剩余空间放", () => {
+    // 🔴 以前是 `[...新, ...旧].slice(0, 50)`：实测栈内 40 条 + 拆一张 60 行的表
+    //    = 40 条旧条目全没了，而提示只说「仅前 50 条入栈」。
+    //    ❗ 得用 setState 直接置栈：`setStackMode(true)` 会把 stackItems 清空。
+    const older: HistoryItem[] = Array.from({ length: 40 }, (_, i) =>
+      makeItem({ id: `old-${i}`, text: `旧条目${i}` }),
+    );
+    useAppStore.setState({ stackMode: true, stackItems: older, stackCollected: 40 });
+    const big = "列A\t列B\n" + Array.from({ length: 60 }, (_, i) => `r${i}\tv${i}`).join("\n");
+    const result = useAppStore.getState().stackPushOrSplit(makeItem({ id: "big", text: big }));
+    expect(result).toEqual({ splitCount: 10, totalRows: 60 });
+    const s = useAppStore.getState();
+    expect(s.stackItems).toHaveLength(STACK_MAX_ITEMS);
+    expect(s.stackItems.filter((i) => i.id.startsWith("old-"))).toHaveLength(40);
+  });
+
+  it("栈已满时拆分不动栈，返回 splitCount 0 让调用方去提示", () => {
+    const full: HistoryItem[] = Array.from({ length: STACK_MAX_ITEMS }, (_, i) =>
+      makeItem({ id: `old-${i}`, text: `旧条目${i}` }),
+    );
+    useAppStore.setState({ stackMode: true, stackItems: full, stackCollected: STACK_MAX_ITEMS });
+    const result = useAppStore
+      .getState()
+      .stackPushOrSplit(makeItem({ id: "t", text: "a\tb\n1\t2\n3\t4" }));
+    expect(result).toEqual({ splitCount: 0, totalRows: 2 });
+    const s = useAppStore.getState();
+    expect(s.stackItems).toHaveLength(STACK_MAX_ITEMS);
+    // 🔴 也不能退化成 stackPush 把整张表塞进去——那会顶掉一条旧条目
+    expect(s.stackItems.every((i) => i.id.startsWith("old-"))).toBe(true);
+    expect(s.stackLastSplit).toBeNull();
+  });
+
 });

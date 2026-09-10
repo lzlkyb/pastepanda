@@ -3,7 +3,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useAppStore, HistoryItem, Tag } from "@/stores/appStore";
+import { useAppStore, HistoryItem, Tag, STACK_MAX_ITEMS } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { invalidateCountsCache } from "./cache";
 import { sequentialPaste, indexPaste } from "./sequential";
@@ -108,9 +108,14 @@ export async function initBackend(): Promise<() => void> {
         const split = store.stackPushOrSplit(event.payload.item);
         const after = useAppStore.getState().stackItems.length;
         if (split) {
-          const message = split.totalRows > split.splitCount
-            ? `表格 ${split.totalRows} 行，仅前 ${split.splitCount} 条入栈`
-            : `已按行拆 ${split.splitCount} 条入栈`;
+          // ❗ splitCount 是**真正入栈的条数**，不是表格行数。栈满时它是 0，
+          //   那时一条都没动，得说清楚为什么——以前这种情况会静默把数十条
+          //   旧条目顶掉，而提示只说「仅前 50 条入栈」。
+          const message = split.splitCount === 0
+            ? `栈已满 ${STACK_MAX_ITEMS} 条，表格没拆——先粘掉几条再复制`
+            : split.totalRows > split.splitCount
+              ? `表格 ${split.totalRows} 行，只放进前 ${split.splitCount} 条（栈上限 ${STACK_MAX_ITEMS}）`
+              : `已按行拆 ${split.splitCount} 条入栈`;
           window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, type: "info" } }));
         } else if (after > before) {
           window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `入栈 ${after} 条`, type: "info" } }));

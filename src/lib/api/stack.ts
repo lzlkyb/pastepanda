@@ -4,7 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
-import { splitTableToRows } from "@/lib/tableSplit";
+import { splitTableToRows, isTableSplitCandidate } from "@/lib/tableSplit";
 
 /** 同步栈模式状态到后端（托盘图标） */
 function syncStackModeToBackend(active: boolean) {
@@ -112,6 +112,9 @@ export async function stackAutoSplitAndPasteFirst(): Promise<boolean> {
   if (store.stackMode || !store.config.table_split_enabled) return false;
   const top = store.history[0];
   if (!top) return false;
+  // ❗ 这里以前**没有**类型判据，而 `stackPushOrSplit` 有，于是同一张表格
+  //   「先开栈再复制」拆不了、「直接按热键」却拆得动。两个入口必须同一判据（规则 #11）。
+  if (!isTableSplitCandidate(top.type)) return false;
   const split = splitTableToRows(top.text || "", {
     format: store.config.table_split_format,
     includeHeader: store.config.table_split_include_header,

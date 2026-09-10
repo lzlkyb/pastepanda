@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import type { SemanticHit } from "@/lib/api/semantic";
 import type { OcrSelectMode } from "@/lib/screenshot/types";
 import { reorderAction } from "@/lib/quickOrder";
-import { splitTableToRows } from "@/lib/tableSplit";
+import { splitTableToRows, isTableSplitCandidate } from "@/lib/tableSplit";
 import { normalizeTheme } from "@/lib/theme";
 import { parseEventRange, isEventRange } from "@/lib/eventLabel";
 
@@ -342,6 +342,14 @@ interface AppState {
 }
 
 // ===== 默认配置 =====
+
+/**
+ * 粘贴栈最多装多少条。
+ *
+ * ❗ 以前这个 50 写死在两处 `slice(0, 50)`，而拆分那处的语义跟单条入栈不一样
+ *   （一次可能涌进数十条），两边各自看不见对方。收成常量，且提示文案里也用它。
+ */
+export const STACK_MAX_ITEMS = 50;
 
 export const DEFAULT_CONFIG: AppConfig = {
   hotkey: "ctrl+alt+v",
@@ -778,7 +786,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const keyOf = (it: HistoryItem) => (it.type === "text" ? it.text : it.content || it.text);
       if (top && top.type === item.type && keyOf(top) === keyOf(item)) return s;
       // 上限 50 条，超出移出最早的（栈底）；stackCollected 记录真实收集总数（不受截断影响）
-      const next = [item, ...s.stackItems].slice(0, 50);
+      const next = [item, ...s.stackItems].slice(0, STACK_MAX_ITEMS);
       return { stackItems: next, stackCollected: s.stackCollected + 1 };
     }),
   stackMarkPasted: () =>
@@ -843,7 +851,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   stackPushOrSplit: (item) => {
     const s = get();
     if (!s.stackMode) return null;
-    if (s.config.table_split_enabled && (item.type === "text" || item.type === "rich")) {
+    if (s.config.table_split_enabled && isTableSplitCandidate(item.type)) {
       const split = splitTableToRows(item.text || "", {
         format: s.config.table_split_format,
         includeHeader: s.config.table_split_include_header,
@@ -853,8 +861,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         // ① 头插会把最后逐行 push 的行顶到最前面，与表格原始顺序相反；
         // ② 它的去重只比当前栈顶，循环里每 push 一行栈顶就变了，表格里相邻两行完全相同时会被静默吸掉。
         // 直接构造好整批按表格顺序的条目一次性 set()，两个问题同时解决。
+        // 🔴 不能 `[...新, ...旧].slice(0, 50)`：新条目在前，旧的会被静默顶掉。
+        //    实测栈内 40 条 + 拆一张 60 行的表 = 40 条旧条目全没了，而提示只说
+        //    「仅前 50 条入栈」（讲的是表格截断），对刚删掉的 40 条一字不提。
+        //    旧条目是用户主动攒起来的、可能已经排好序；表格还在剪贴板里随时能重来。
+        //    ❗ 与 `stackPush` 的口径不同是有意的：复制单条时顶掉最老的一条是正常的
+        //    栈行为，而一次拆分顶掉几十条不是。别把两处“统一”。
+        const room = Math.max(0, STACK_MAX_ITEMS - s.stackItems.length);
+        const rows = split.rows.slice(0, room);
+        if (rows.length === 0) {
+          // 栈满：什么都不做，由调用方提示「先粘掉几条」。整表塞进去也会顶掉一条旧的。
+          return { splitCount: 0, totalRows: split.totalRows };
+        }
         const now = new Date().toISOString();
-        const newItems: HistoryItem[] = split.rows.map((rowText) => ({
+        const newItems: HistoryItem[] = rows.map((rowText) => ({
           id: crypto.randomUUID(),
           text: rowText,
           time: now,
@@ -865,11 +885,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           workspace: s.config.current_workspace,
         }));
         set((s2) => ({
-          stackItems: [...newItems, ...s2.stackItems].slice(0, 50),
+          // slice 只是兜底：上面已经按剩余空间截过，这里截不到东西。
+          stackItems: [...newItems, ...s2.stackItems].slice(0, STACK_MAX_ITEMS),
           stackCollected: s2.stackCollected + newItems.length,
           stackLastSplit: { originalText: item.text, itemIds: newItems.map((i) => i.id) },
         }));
-        return { splitCount: split.rows.length, totalRows: split.totalRows };
+        return { splitCount: rows.length, totalRows: split.totalRows };
       }
     }
     get().stackPush(item);
