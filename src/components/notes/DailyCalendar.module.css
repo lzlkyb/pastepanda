@@ -1,9 +1,27 @@
 /* DailyCalendar.module.css —— 侧栏月历（B2 #3，设计稿 §1）。
-   宽度就是侧栏的 180px 减去内边距，七列每列约 22px——
-   字号只能做到 10.5px，再大就换行了。 */
+   字号只能做到 10.5px，再大就换行了。
+
+   🔴 格子尺寸（U7 / WCAG SC 2.5.8 要 24×24）。完整式子写在这里，
+   因为它跨了三个文件，下次改动前必须重算一遍：
+
+     侧栏 `.treeOpen` 固定 180px（FolderTree.module.css，不可拖宽——
+     KnowledgeView 那个 .vgrip 拖的是中栏↔第三栏）
+     − `.list` 的左右内边距 8×2 = 164px
+     − 滚动条 5px（globals.css 全局定义，文件夹多时才出现）= 159px
+
+   旧值：再减 `.cal` 的 9×2 内边距 → 146px，减 6 个 1px 间隙后 /7 = **20.0px**。
+   而 7×24 + 6 = 174px，比 164 还多——即使把 `.cal` 内边距归零也只有 22.6px。
+
+   所以用负外边距把 `.list` 的 8px 借回来（满宽铺）：
+     无滚动条：164 + 16 = 180，(180 − 6)/7 = **24.86px** ✓
+     有滚动条：159 + 16 = 175，(175 − 6)/7 = **24.14px** ✓
+   两种情况都过。代价是网格横向顶到侧栏边（月历本来就是满宽的东西，
+   Apple 日历 / Notion 侧栏都如此），以及展开时高度 +26px（6 行 × 4.35px）。
+   月份头部不跟着满宽，它自己拿回 9px 内边距。 */
 
 .cal {
-  padding: 4px 9px 8px;
+  margin: 0 -8px;
+  padding: 4px 0 8px;
   flex-shrink: 0;
 }
 
@@ -11,7 +29,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 0 6px;
+  /* 左右 9px：原先靠 `.cal` 的内边距，现在 `.cal` 满宽了，头部自己给。 */
+  padding: 2px 9px 6px;
   font-size: 11px;
   color: var(--text-secondary);
 }
@@ -61,7 +80,15 @@
 
 .day {
   position: relative;
-  padding: 3px 0;
+  /* 24×24（U7 / WCAG SC 2.5.8）。旧值 `padding: 3px 0` 只有 20.0×19.65，
+     而相邻格子只隔 1px——SC 2.5.8 的「间距豁免」也不成立。
+     宽度靠 .cal 的满宽铺拿到（见文件头算式），高度靠这里。
+     改 flex 居中而不是加 padding：高度固定 24 后，数字无论一位两位都在正中间。 */
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: none;
   border-radius: 4px;
   background: transparent;

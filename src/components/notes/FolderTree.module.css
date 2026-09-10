@@ -70,6 +70,13 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* 🔴 必须显式写 hidden。只写 `overflow-y: auto` 时，按 CSS 规范
+     `overflow-x` 会从 visible **计算成 auto**——于是月历那个满宽铺的
+     负外边距（DailyCalendar.module.css 的 `.cal { margin: 0 -8px }`）
+     会在侧栏底部抽出一根横向滚动条。
+     而导航侧栏本来就不该能横向滚：溢出时正确的行为是裁掉，不是给条滚动条。
+     （文件夹名靠省略号截断、层级深度有上限，没人依赖横向滚动。） */
+  overflow-x: hidden;
   padding: 12px 8px 8px;
   display: flex;
   flex-direction: column;
