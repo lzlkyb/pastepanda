@@ -136,6 +136,28 @@ describe("离线原因的文案", () => {
     expect(msg).toContain("忘记");
   });
 
+  /**
+   * 🔴 这条盯的是 2026-09-10 用户报的「设置页还显示 timed out」。
+   *
+   * 场景就是库里那台 be0d5954：配过对、`last_seen=0`、后端一直在报
+   * 「连接对端失败：timed out」。旧代码 `return l.error` 把那串英文直接丢给用户，
+   * **而且还把下面那句真正可操作的「先忘记再重新配一次」挤掉了**——
+   * 后者才是这个情形下真正能解决问题的那句。
+   */
+  it("timed out 不能挤掉「从来没连上过」那句可操作的提示", () => {
+    const d = dev({ last_seen: 0 });
+    const l = lastOf({ fails: 12, error: "连接对端失败：timed out" });
+    const msg = kbDeviceProblem(d, [l], [], NOW);
+    expect(msg).toContain("忘记");
+    expect(msg).not.toContain("timed out");
+  });
+
+  it("曾经连上过、现在只是连不上 ⇒ 什么都不说（你处理不了）", () => {
+    const d = dev({ last_seen: NOW - 600_000 });
+    const l = lastOf({ fails: 3, error: "连接对端失败：timed out" });
+    expect(kbDeviceProblem(d, [l], [], NOW)).toBeNull();
+  });
+
   // 在线但上一拨失败过是常态（碰撞 / 丢包），那时报错只会吓人。
   it("在线时一律不说", () => {
     const d = dev({ conn_state: "online", transport: "wan", last_seen: NOW - 2_000 });

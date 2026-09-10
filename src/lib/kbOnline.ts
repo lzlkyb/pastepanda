@@ -27,6 +27,7 @@
  * `Active` 会残留），别再拿它当在线判据。
  */
 import type { KbDevice, KbLastSync } from "@/hooks/useKbSync";
+import { explainSyncError } from "@/lib/syncError";
 
 /**
  * `last_seen` 多旧就不再算在线（毫秒）。
@@ -112,9 +113,20 @@ export function kbDeviceProblem(
   now: number = Date.now(),
 ): string | null {
   if (isKbDeviceOnline(d, live, now)) return null;
-  // 后端给的原因最准，优先用。
+  // 后端给的原因最准，优先用——但先过一道「这条对用户有没有用」。
   const l = last.find((x) => x.peer === d.node_id);
-  if (l && l.fails > 0 && l.error) return l.error;
+  if (l && l.fails > 0) {
+    const why = explainSyncError(l.error);
+    if (why) return why;
+    /**
+     * 🔴 `explainSyncError` 返回 null = 这条错误对用户没用（`timed out` 那一类）。
+     * 此时**不能就地 `return null`**：下面「从来没连上过」那一支才是可操作的，
+     * 而它恰恰只在这种时候有价值（连不上 + 一次也没成功过 = 多半是单边配对残留）。
+     *
+     * 2026-09-10 之前这里直接 `return l.error`，于是设置页上写着
+     * 「连接对端失败：timed out」——既看不懂，又把下面那句真正有用的话挤掉了。
+     */
+  }
   // 🔴 配过对却一次都没连上过：几乎肯定是单边配对的残留
   //    （修之前生成邀请码那一台不写自己的设备表，于是把对方每次连接都拒掉）。
   //    不说的话它就是一行永远离线、用户不知道能做什么的尸体。

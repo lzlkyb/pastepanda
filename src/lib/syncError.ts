@@ -81,6 +81,18 @@ export function explainSyncError(raw: string | null | undefined): string | null 
   if (JUST_OFFLINE.some((k) => lower.includes(k))) return null;
 
   /**
+   * 🔴 整串没有英文字母 ⇒ 后端已经写成人话了，**原样给出、一个字不切**。
+   *
+   * `sync/service.rs` 里真有这种：
+   *   「对方还没把这台设备加回去——到那台机器的「知识库同步」里确认连接请求（要核对指纹）」
+   * 它们恰好没带全角冒号，所以下面那个 `split` 目前不会截到——但那是**运气**。
+   * 只要以后有人在这类文案里写一个「：」，后半句就默默没了。
+   *
+   * 切前缀的目的本来就只是「把底层库的英文原文去掉」；压根没英文，就没什么可切的。
+   */
+  if (!/[a-z]/i.test(raw)) return raw.trim() || null;
+
+  /**
    * 剩下的当真故障报，但只留**中文前缀**（“读帧长度失败”），英文原文交给 `title`。
    *
    * ❗ 分隔符用 `：` 或「半角冒号 + 空白」，**不能光用半角 `:`**：

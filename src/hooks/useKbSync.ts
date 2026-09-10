@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
+import { explainSyncError } from "@/lib/syncError";
 
 /** 后端 `data_store::device::Device`。字段名保持与 Rust 一致，别在这层改名。 */
 export interface KbDevice {
@@ -235,8 +236,15 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
       await refreshDevices();
       toast("同步完成", "success");
     } catch (e) {
-      // 不静默（规则 #15.3）：这个按钮就是用来诊断同步不通的，静默失败最讽刺
-      toast(`同步失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      // 不静默（规则 #15.3）：这个按钮就是用来诊断同步不通的，静默失败最讽刺。
+      //
+      // ❗ 但也别把 `timed out` 原样丢出去（2026-09-10 用户报「看不懂」）。
+      //   🔴 这里与状态条那两处的**语义不同**：用户刚点了按钮，必须给一句回应。
+      //   所以 `explainSyncError` 返回 null（「就是没连上」那一类）时要**兜一句人话**，
+      //   而不能像那边一样什么都不显示。
+      const raw = e instanceof Error ? e.message : String(e);
+      const why = explainSyncError(raw) ?? "连不上对方。它可能没开机、换了网络，或关了这个开关";
+      toast(`同步失败：${why}`, "error");
     } finally { setBusy(false); }
   }, [call, refreshDevices, toast]);
 
