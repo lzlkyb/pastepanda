@@ -516,7 +516,11 @@ body {
 }
 .ocr-head .copy-all.done { background: var(--green, #22c55e); }
 .ocr-body { padding: 8px 10px; overflow-y: auto; }
+/* 每行都是一个「复制这行」按钮（U7：原先是 div，键盘到不了）。
+   width/text-align 是换成 button 后补的：按钮默认 inline-block 且文字居中，
+   不写的话整列会变成居中的短条。 */
 .ocr-row {
+  width: 100%; box-sizing: border-box; text-align: left;
   display: flex; align-items: flex-start; gap: 6px;
   padding: 5px 8px; margin-bottom: 3px; border-radius: 6px;
   font-size: 11px; line-height: 1.6; color: var(--text-primary, #E0E8F0);
@@ -627,7 +631,9 @@ body {
 .pop-head .xbtn:hover { background: var(--hover, #0F1F35); color: var(--text-primary); }
 .pop-body { overflow-y: auto; padding: 8px; }
 .pop-empty { padding: 14px; font-size: 11px; color: var(--text-muted, #7994B4); text-align: center; }
+/* 同 .ocr-row：已换成 button（U7），需要自己撑满一行并左对齐。 */
 .pop-row {
+  width: 100%; box-sizing: border-box; text-align: left;
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border-radius: 8px; cursor: pointer;
   transition: background 0.12s;
@@ -638,8 +644,10 @@ body {
   display: flex; align-items: center; justify-content: center; font-size: 12px;
   background: var(--input-bg, #162B45); color: var(--text-primary, #E0E8F0);
 }
-.pop-row .lbl { font-size: 12px; color: var(--text-primary, #E0E8F0); }
-.pop-row .dsc { font-size: 10px; color: var(--text-muted, #7994B4); margin-top: 1px; }
+/* 行变成 button 后，这两行从 <div> 改成了 <span>（div 不能合法地放进 button），
+   所以要把 display:block 补回来，否则标题与副标题会拼成一行。 */
+.pop-row .lbl { display: block; font-size: 12px; color: var(--text-primary, #E0E8F0); }
+.pop-row .dsc { display: block; font-size: 10px; color: var(--text-muted, #7994B4); margin-top: 1px; }
 .pop-row .net { margin-left: auto; font-size: 10px; color: var(--orange, #FB923C); white-space: nowrap; }
 .pop-row.busy { opacity: 0.55; pointer-events: none; }
 /* 含云端步骤的链在 AI 未启用时置灰（规则 16）。与 .busy 外观相近但语义不同：
@@ -740,9 +748,14 @@ body {
   height: 12px;
   background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 18%, transparent);
 }
+/* 关闭提示。看上去还是 16×16，但热区靠 padding 撑到 24×24（U7 / SC 2.5.8），
+   再用等量负外边距把位置拉回去——提示条的高度与行内间距一点不变。
+   直接把宽高改成 24 会把整条提示抬高八个像素。 */
 .shot-hint .hk-close {
   pointer-events: auto;
-  margin-left: 2px;
+  margin: -4px -4px -4px -2px;
+  padding: 4px;
+  box-sizing: content-box;
   width: 16px;
   height: 16px;
   display: inline-flex;
@@ -1250,7 +1263,9 @@ body {
    `screenshotThemeTokens.test.ts` 是用 `indexOf(".text-toolbar")` 找「主声明块」的：
    本规则写在 `.text-toolbar {` 前面时，那条测试会把这个重置块当成文字工具栏的主块，
    然后报「必须引用 --shot-* 令牌」。 */
-:where(.attr-bar button, .annot-toolbar button, .text-toolbar button, .act-panel button, button.mode-pill) {
+:where(.attr-bar button, .annot-toolbar button, .text-toolbar button, .act-panel button,
+       button.mode-pill, button.ocr-row, button.pop-row,
+       button.picker-bar, .shot-hint button) {
   border: none;
   background: none;
   padding: 0;

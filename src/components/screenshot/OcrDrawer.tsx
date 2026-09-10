@@ -88,15 +88,18 @@ export function OcrDrawer({
             未从图片识别到文字
           </div>
         ) : (
+          /* U7：每一行都是一个「复制这行」按钮，原先是 `<div onClick>`——
+             识别出来的整列文字键盘一行也点不到。 */
           ocr.lines.map((line, i) => (
-            <div
+            <button
               key={i}
+              type="button"
               className={`ocr-row${copiedRow === i ? " copied" : ""}`}
               onClick={() => onCopyRow(i)}
             >
               <span className="n">{i + 1}</span>
               <span className="tx">{line.text}</span>
-            </div>
+            </button>
           ))
         )}
       </div>

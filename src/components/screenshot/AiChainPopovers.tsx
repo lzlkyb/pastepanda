@@ -107,19 +107,22 @@ export function AiPopover({
           {actions.length === 0 ? (
             <div className="pop-empty">加载动作清单中…</div>
           ) : (
+            /* U7：原先是 `<div onClick>`，整份动作清单键盘都到不了。
+               内层两行文字同时从 <div> 改成 <span>：div 不能合法地放进 button。 */
             actions.map((a) => (
-              <div
+              <button
                 key={a.id}
+                type="button"
                 className={`pop-row${busyId === a.id ? " busy" : ""}`}
                 onClick={() => (busyId ? undefined : onRun(a))}
               >
                 <span className="ic">{a.icon || "✦"}</span>
                 <span>
-                  <div className="lbl">{a.label}</div>
-                  <div className="dsc">{a.description}</div>
+                  <span className="lbl">{a.label}</span>
+                  <span className="dsc">{a.description}</span>
                 </span>
                 <span className="net">✦ 云端</span>
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -204,21 +207,26 @@ export function ChainPopover({
               // （规则 15.3：不能静默）；纯本地链不受影响。
               const blocked = !aiOk && chainNeedsAi(c);
               return (
-                <div
+                /* 禁用态用 aria-disabled + 现有的 JS 守卫，不用原生 disabled：
+                   与截图工具栏同一口径，且「为什么不能点」就写在下一行副标题里，
+                   跳过它会让人无从知道还有这么一条链。 */
+                <button
                   key={c.id}
+                  type="button"
                   className={`pop-row${busyId === c.id ? " busy" : ""}${blocked ? " disabled" : ""}`}
+                  aria-disabled={blocked}
                   onClick={() => (busyId || blocked ? undefined : onRun(c))}
                 >
                   <span className="ic">⚡</span>
                   <span>
-                    <div className="lbl">{c.name}</div>
-                    <div className="dsc">
+                    <span className="lbl">{c.name}</span>
+                    <span className="dsc">
                       {blocked
                         ? "含云端步骤 · 需先在设置里开启 AI"
                         : c.description || `${c.steps.length} 步`}
-                    </div>
+                    </span>
                   </span>
-                </div>
+                </button>
               );
             })
           )}

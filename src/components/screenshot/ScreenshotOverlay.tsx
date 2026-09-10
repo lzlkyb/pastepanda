@@ -3392,7 +3392,8 @@ export function ScreenshotOverlay() {
           <span><span className="hk">Enter</span> 进入标注</span>
           <span className="sep" />
           <span><span className="hk">Esc</span> 退出</span>
-          <span className="hk-close" title="关闭提示" onClick={closeHint}>×</span>
+          {/* U7：原先是 `<span onClick>`，键盘关不掉这条提示。 */}
+          <button type="button" className="hk-close" title="关闭提示" aria-label="关闭提示" onClick={closeHint}>×</button>
         </div>
       )}
 
@@ -3973,7 +3974,10 @@ export function ScreenshotOverlay() {
       )}
       {/* A 方案：完成复制后的文字 toast（点击复制全文） */}
       {ocrToast && (
-        <div
+        /* U7：它不是纯回执，而是一个「点一下复制全文」的真按钮，
+           而且停留 6 秒（与撤销条同窗口）——键盘用户应该能在这 6 秒里按到它。 */
+        <button
+          type="button"
           className="picker-bar"
           style={{ cursor: "pointer", borderColor: "color-mix(in srgb, var(--green, #22c55e) 55%, transparent)", bottom: 64 }}
           onClick={async () => {
@@ -3985,7 +3989,7 @@ export function ScreenshotOverlay() {
           }}
         >
           <span>📄 {ocrToast}</span>
-        </div>
+        </button>
       )}
 
       {/* OCR 过程可见全部收到工具栏「取文字」按钮上：
@@ -4147,7 +4151,12 @@ export function ScreenshotOverlay() {
         />
       )}
 
-      {/* 像素放大镜 + 取色（select 态拖选中显示） */}
+      {/* 像素放大镜 + 取色（select 态拖选中显示）。
+
+          ❗ 这一个**故意不**换成 button（其余可点项都换了，U7）：
+          它默认 `display: none`，只在**鼠标拖选过程中**跟着光标出现，
+          而那一刻不可能有人在敲 Tab。把它做成按钮只会多一个永远碰不到的焦点位。
+          键盘取色走的是属性条里的吸管按钮（已可聚焦）。 */}
       <div
         ref={magRef}
         className="mag-view"
