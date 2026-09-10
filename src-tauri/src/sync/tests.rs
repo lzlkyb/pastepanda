@@ -2590,3 +2590,52 @@ fn test_失败不覆盖上次成功时间() {
     // dormant 由循环的 `Wait` 传进来，不在这里再推一遍阀值
     assert!(m["p3"].dormant, "已休眠要能传到前端，否则它只能拿 fails 阀值再推一遍");
 }
+
+/// 重启后不能把「曾经同步成功过」丢掉。
+///
+/// 🔴 这条盯的是一个真开过的 bug（2026-09-09）：`last_ok_ms` 本来只存在
+/// `SyncCtx.last` 那张**内存**表里，而那张表每次启动都是空的。
+/// 于是上面那条测试盯住的区分（没开机 vs 刚坏）**每次重启后都静默失效**：
+/// 知识库那条提示把已经同步过的设备说成「还没连上 2 台」。
+#[test]
+fn test_启动时把上次成功时间种回内存表() {
+    use super::service::seed_last_ok;
+    use crate::data_store::device::Device;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    let dev = |id: &str, ok: i64| Device {
+        node_id: id.to_string(),
+        name: id.to_string(),
+        paired_at: String::new(),
+        transport: String::new(),
+        conn_state: String::new(),
+        last_seen: 0,
+        relay_addr: String::new(),
+        sync_cursor_ms: 0,
+        last_ok_ms: ok,
+    };
+
+    let last: Mutex<HashMap<String, LastSync>> = Mutex::new(HashMap::new());
+    seed_last_ok(&last, &[dev("p1", 5_000), dev("p2", 0)]);
+
+    {
+        let m = last.lock().unwrap();
+        assert_eq!(m["p1"].last_ok_ms, 5_000, "持久化的成功时间没种进来");
+        assert_eq!(m["p1"].peer, "p1");
+        // ❗ `at_ms` 必须还是 0：它是「上次**尝试**」，而本进程一次都没试过。
+        //   写上了界面的 `newest` 就会成立 ⇒ 顶上一句「已与 p1 同步·刚刚」。
+        assert_eq!(m["p1"].at_ms, 0, "at_ms 不能被种——那会谎报成「刚刚同步过」");
+        assert!(!m.contains_key("p2"), "从未成功过的不必建空条目");
+    }
+
+    // 种完之后再失败一次：这才是真正要保的联合行为——
+    // 界面应该看到「连不上 p1（多久之前还好好的）」，而不是「还没连上」。
+    record_into(&last, "p1", Outcome::Failed("网络不通".to_string()), 2, 30, false);
+    let m = last.lock().unwrap();
+    assert_eq!(
+        m["p1"].last_ok_ms, 5_000,
+        "种过之后失败仍不能抹掉它——否则重启后第一次失败就又变回「从未成功过」"
+    );
+    assert!(m["p1"].fails > 0);
+}

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { create } from "zustand";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
 import type { KbDevice, KbLastSync } from "@/hooks/useKbSync";
@@ -19,6 +20,28 @@ function mins(ms: number): string {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
+
+/**
+ * 哪几条提示被按下了 ×。
+ *
+ * 🔴 不能用组件内的 `useState`：本组件只在**知识库模式**下挂着，
+ * 切到其它模式就卸载——于是用户点的 × 切走再回来就白点了，
+ * 而 `neverOk` 那一档要连续失败约 1.5 小时才进休眠，
+ * 对方一直不开机时它会反复冒出来。
+ *
+ * ❗ 故意**不**写进 localStorage（已拍定）：开关名字就一个
+ *   `fail-new`，永久按 key 压住的话，以后**另一台**真坏了也不会再报。
+ *   重启后重新提一次，与按钮上那句「本次不再提示」对得上。
+ */
+interface DismissedState {
+  dismissed: Record<string, boolean>;
+  dismiss: (key: string) => void;
+}
+
+const useDismissed = create<DismissedState>((set) => ({
+  dismissed: {},
+  dismiss: (key) => set((s) => ({ dismissed: { ...s.dismissed, [key]: true } })),
+}));
 
 /**
  * 知识库里那条同步状态 + 异常提示。
@@ -46,7 +69,8 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
   const [live, setLive] = useState<string[]>([]);
   const [last, setLast] = useState<KbLastSync[]>([]);
   const [backlog, setBacklog] = useState(0);
-  const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
+  const dismissed = useDismissed((s) => s.dismissed);
+  const dismiss = useDismissed.getState().dismiss;
 
   const refresh = useCallback(async () => {
     try {
@@ -123,11 +147,12 @@ export function KbSyncStatusBar({ enabled, onSearchConflicts }: {
     return (
       <div key={key} className={`${styles.row} ${TONE[tone]}`}>
         <div className={styles.rowBody}>{body}</div>
-        {/* 只压这一次，不写进配置：这些提示本来就该在问题解决后自己消失 */}
+        {/* 压到重启（不写进配置）：这些提示本来就该在问题解决后自己消失。
+            为何不是组件内的 state（以前就是，而那是个 bug）：看 `useDismissed`。 */}
         <button
           type="button"
           className={styles.dismiss}
-          onClick={() => setDismissed((d) => ({ ...d, [key]: true }))}
+          onClick={() => dismiss(key)}
           title="本次不再提示"
           aria-label="本次不再提示"
         >

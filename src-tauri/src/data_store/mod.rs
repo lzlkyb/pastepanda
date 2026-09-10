@@ -1436,6 +1436,47 @@ impl DataStore {
             return Err(e);
         }
 
+        // 数据库迁移：devices.last_ok_ms —— 上一次**真的同步成功**的时间。
+        //
+        // 🔴 为何要落库（而不是继续只放内存）
+        //
+        // 同名字段本来只存在 `SyncCtx.last` 那张 `Mutex<HashMap<..>>` 里，
+        // 而那张表**每次启动都是空的**。于是每次重启后：
+        // 任何连不上的对端走 `record_into` 的 `or_default()` 拿到 `last_ok_ms = 0`
+        // ⇒ `KbSyncStatusBar` 把它归成「从未成功过」
+        // ⇒ 本该显示「连不上 X（两天前还好好的）」，实际显示「还没连上 2 台」。
+        //
+        // 而 `last_ok_ms` 那个字段的注释自己写着它存在的唯一理由：
+        // 区分「对方一直没开机」与「上午还好好的现在坏了」。
+        // 那个区分在每次重启后都静默失效，而旁边的 `last_seen` 与
+        // `sync_cursor_ms` 偏偏都是持久化的。
+        //
+        // 回填：存量设备默认 0。不拿 `sync_cursor_ms` 回填——那是
+        // 「同步到哪一次**改动**」的时间，与「上次同步发生在何时」可以差很远，
+        // 拿它充数会把「N 天前还好好的」说错。第一次同步成功时自然就对了。
+        {
+            let has: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'last_ok_ms'",
+                    [],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has {
+                if let Err(e) = conn.execute_batch(
+                    "ALTER TABLE devices ADD COLUMN last_ok_ms INTEGER NOT NULL DEFAULT 0;",
+                ) {
+                    if is_duplicate_column_error(&e) {
+                        log::warn!("[DataStore] devices.last_ok_ms 列已存在，忽略: {}", e);
+                    } else {
+                        log::error!("[DataStore] 添加 devices.last_ok_ms 列失败: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
         // 建表（O-2 / M3-④）：note_links —— 正文里 `[[标题]]` 的链关系。
         //
         // 存**目标标题**而不是目标 id：与 O-9 改名时那句字面

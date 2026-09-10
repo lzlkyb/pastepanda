@@ -416,6 +416,11 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 }
             }
         };
+        // 🔴 成功要**落库**，不能只记在内存表里：那张表重启就空，
+        //    于是「曾经成功过」这件事每次重启都丢（详细看
+        //    `Device::last_ok_ms` 与那条迁移的注释）。
+        //    先取标志再传：`outcome` 下一行就被 move 进 `record_into` 了。
+        let synced = matches!(outcome, Outcome::Synced(_));
         // dormant 从循环刚算好的 `wait` 取，不另写一遍阀值判定
         record_into(
             &ctx.last,
@@ -425,6 +430,12 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
             wait.secs_hint(),
             matches!(wait, Wait::Dormant(_)),
         );
+        if synced {
+            // 写库失败不能把同步循环带崩：它只影响下次重启后的那句提示。
+            if let Err(e) = ctx.store.device_mark_synced(&peer, now_ms()) {
+                log::warn!("[sync] 记 last_ok_ms 失败 peer={} : {}", &peer[..8.min(peer.len())], e);
+            }
+        }
         let alive = match wait {
             // 脏了就拨、否则睡到心跳。空闲时不再固定 30 秒一轮——
             // 那一轮里两边都没改过东西，整个会话是纯浪费。
@@ -542,6 +553,36 @@ pub(super) fn record_into(
             // ❗ 同上：`last_ok_ms` 保留
             e.dormant = dormant;
         }
+    }
+}
+
+/// 把持久化的 `last_ok_ms` 种回内存表（启动时调一次）。
+///
+/// 不种的后果：[`record_into`] 的失败分支走 `or_default()` 拿到 0，
+/// 界面把每一台都归成「从未成功过」——于是 `KbSyncStatusBar` 那套
+/// 三档分级每次重启后都塌成中间那档（本该说「两天前还好好的」，
+/// 变成了「还没连上 2 台」）。
+///
+/// 只收那张表而不是整个 `SyncCtx`，理由同 [`record_into`]：这样它能单测。
+pub(super) fn seed_last_ok(
+    last: &std::sync::Mutex<HashMap<String, LastSync>>,
+    known: &[crate::data_store::device::Device],
+) {
+    let mut m = match last.lock() {
+        Ok(m) => m,
+        Err(p) => p.into_inner(),
+    };
+    for d in known {
+        // 0 = 从未成功过，种进去也没意义（而且会白建一堆空条目）。
+        if d.last_ok_ms <= 0 {
+            continue;
+        }
+        let e = m.entry(d.node_id.clone()).or_default();
+        e.peer = d.node_id.clone();
+        e.last_ok_ms = d.last_ok_ms;
+        // ❗ `at_ms` 保持 0：它的语义是「上次**尝试**」，而本进程还没试过。
+        //   界面的 `newest` 要求 `at_ms > 0`，写上就会变成
+        //   「已与 X 同步·刚刚」——而它这一轮一次都没跑过。
     }
 }
 
@@ -973,6 +1014,9 @@ impl SyncService {
         // 但两个后台任务各自握着 `Arc<SyncCtx>` 继续跑，`stop()` 再也摸不到它们，
         // 端口 5008 与 iroh 端点被无主线程占着——又一条僵尸路径。
         let known = store.device_list()?;
+
+        // 把持久化的 `last_ok_ms` 种回内存表（为何必须种：看那个函数的注释）。
+        seed_last_ok(&ctx.last, &known);
 
         let paired_store = store.clone();
         // ❗ 只克隆 `wake` 而不是整个 `ctx`：宣告线程比 `SyncCtx` 活得长时

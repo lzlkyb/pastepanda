@@ -28,6 +28,19 @@ pub struct Device {
     pub relay_addr: String,
     /// 与这台对端上次同步到哪儿。见建表注释。
     pub sync_cursor_ms: i64,
+    /// 上一次**真的同步成功**的时间（epoch 毫秒）；`0` = 从来没成功过。
+    ///
+    /// 🔴 为何必须落库：同名字段本来只存在 `SyncCtx.last` 那张**内存**表里，
+    /// 而那张表每次启动都是空的。于是任何失败的对端走 `or_default()`
+    /// 拿到 `last_ok_ms = 0`，被界面归成「从未成功过」——于是
+    /// `KbSyncStatusBar` 那套三档分级（已休眠 / 从未成功过 / 曾经好好的突然坏了）
+    /// **重启后全部塌成中间那档**：本该显示「连不上 X（两天前还好好的）」，
+    /// 实际显示成了「还没连上 2 台」。
+    ///
+    /// 不能拿 [`Self::sync_cursor_ms`] 充数：那是「同步到哪一次**改动**」的时间，
+    /// 与「上次同步发生在何时」可以差很远（一周没改东西、但天天在同步）。
+    #[serde(default)]
+    pub last_ok_ms: i64,
 }
 
 /// 在线状态的两个取值。用常量而不是散在各处的字面量（规则 #11）。
@@ -44,11 +57,15 @@ fn row_to_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
         last_seen: r.get(5)?,
         relay_addr: r.get(6)?,
         sync_cursor_ms: r.get(7)?,
+        // ❗ 下标 8 = 追在 `COLS` 末尾的 `last_ok_ms`。同 `NOTE_COLS` 那条：
+        //   新列**只能追在末尾**，插中间会把后面所有下标推一位，
+        //   而那不报错、只是静默读错列。
+        last_ok_ms: r.get(8)?,
     })
 }
 
-const COLS: &str =
-    "node_id, name, paired_at, transport, conn_state, last_seen, relay_addr, sync_cursor_ms";
+const COLS: &str = "node_id, name, paired_at, transport, conn_state, last_seen, relay_addr, \
+     sync_cursor_ms, last_ok_ms";
 
 impl DataStore {
     /// 配对（或重新配对同一个 `node_id`）。
@@ -143,6 +160,23 @@ impl DataStore {
         self.lock_conn()
             .execute(
                 "UPDATE devices SET sync_cursor_ms = MAX(sync_cursor_ms, ?2) WHERE node_id = ?1",
+                rusqlite::params![node_id, ms],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// 记下「刚刚真的同步成功了」。只在 `Outcome::Synced` 时调。
+    ///
+    /// 🔴 用 `MAX` 而不是直接赋值，理由同 [`Self::device_advance_cursor`]：
+    /// 这个字段往回退意味着界面会把「刚刚还好好的」说成「很久以前好过」。
+    ///
+    /// ❗ 失败时**绝不调它**——那会把「曾经成功过」这件事抹成「刚刚成功过」，
+    ///   于是「对方一直没开机」与「上午还好好的现在坏了」又分不开了。
+    pub fn device_mark_synced(&self, node_id: &str, ms: i64) -> Result<(), String> {
+        self.lock_conn()
+            .execute(
+                "UPDATE devices SET last_ok_ms = MAX(last_ok_ms, ?2) WHERE node_id = ?1",
                 rusqlite::params![node_id, ms],
             )
             .map(|_| ())
