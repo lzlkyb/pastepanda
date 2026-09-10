@@ -4,7 +4,10 @@
   z-index: var(--z-context);
   padding: 5px;
   border-radius: 12px;
-  min-width: 170px;
+  /* 170 是个早就失效的值：本菜单最短的一项「从 Markdown 目录导入…」
+     在 12.5px 下就把它撑到 200 多。抬到 180 只是让短菜单（文件夹右键那种）
+     不至于窄到像个 tooltip。 */
+  min-width: 180px;
   overflow: visible;
   background: var(--glass-popover-bg);
   backdrop-filter: blur(20px) saturate(1.4);
@@ -13,10 +16,12 @@
   box-shadow: var(--glass-popover-shadow);
 }
 
+/* 分隔线。左右缩进跟菜单项的 `padding-left` 对齐（都是 10px）：
+   原先是 8px，比图标左缘往外突 2px，一栏里有两条时看得出来。 */
 .ctxSep {
   height: 1px;
   background: var(--glass-popover-border);
-  margin: 4px 8px;
+  margin: 5px 10px;
 }
 
 .ctxItem {
@@ -24,7 +29,9 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 7px 10px;
+  /* 8 而不是 7：项高从 30px 抬到 32px。桌面菜单的常规密度就在 32 上下，
+     30 在 12.5px 字号下偏挤。两者都过 WCAG 2.5.8 的 24 下限。 */
+  padding: 8px 10px;
   font-size: 12.5px;
   cursor: pointer;
   border: none;
@@ -33,7 +40,11 @@
   transition: background 0.12s ease;
   font-family: inherit;
   text-align: left;
-  border-radius: 8px;
+  /* 🔴 7 而不是 8：容器圆角 12px 减掉它自己 5px 的 padding，内壁的有效圆角
+     正好是 7px。写 8 的话，hover 底色会在**四个角各超出内壁 1px**，
+     单看一个角几乎看不见，四个一起漏就是一圈“糊”。
+     改容器的 `padding` 或 `border-radius` 时这里要跟着算。 */
+  border-radius: 7px;
 }
 
 .ctxItem:hover,
@@ -77,13 +88,50 @@
   color: var(--danger-hover);
 }
 
+/* 图标列。
+
+   ❗ 用半透明的 `color` 而不是 `opacity`：`opacity` 作用于整个子树，而粘贴变换
+   那几项的图标是**带底色的彩色瓷砖**（`.ctxTextIcon`，颜色由 `transformMenu.tsx`
+   行内传）——它们一直在被这行一起洗淡。改成 `color` 后，lucide 线图标
+   （`stroke="currentColor"`）照样变淡，行内上了色的瓷砖不受影响。
+
+   🔴 必须是 `currentColor` 而不是写死的 `--text-muted`：`.danger` 把项的 color
+   设成了 `--danger`、`.ctxItemPrimary` 设成 `--accent`，跟着 currentColor 走
+   图标就自动是淡红 / 淡 accent；写死一个灰会把这两种语义色抹平。 */
 .ctxItemIcon {
   flex-shrink: 0;
-  opacity: 0.7;
+  color: color-mix(in srgb, currentColor 62%, transparent);
+  transition: color 0.12s ease, transform 0.12s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 16px;
+}
+
+/* 悬停 / 键盘落点：图标补足到实色并往前挪 1px。
+   只挪 1px 是故意的——菜单项是密排的，挪多了整列图标会看着在抖。 */
+.ctxItem:hover .ctxItemIcon,
+.keyboardActive .ctxItemIcon {
+  color: currentColor;
+  transform: translateX(1px);
+}
+
+/* 🔴 禁用项不给这套反馈。上面那条 `.ctxItem:disabled:hover` 特地把 hover 底色
+   取消了（否则看着像能点），图标却亮起来就把那一步抵消了。
+   特异性（0,3,1）高于上面那条（0,2,1），所以能盖住。 */
+.ctxItem:disabled:hover .ctxItemIcon {
+  color: color-mix(in srgb, currentColor 62%, transparent);
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ctxItemIcon {
+    transition: none;
+  }
+  .ctxItem:hover .ctxItemIcon,
+  .keyboardActive .ctxItemIcon {
+    transform: none;
+  }
 }
 
 /* 粘贴变换文字图标 */

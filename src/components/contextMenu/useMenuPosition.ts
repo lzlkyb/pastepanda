@@ -70,7 +70,21 @@ export function useMenuPosition(params: {
     }
     top = Math.max(MARGIN, Math.min(top, window.innerHeight - menuH - MARGIN));
 
-    return { left, top };
+    /**
+     * 入场缩放的原点 —— 菜单**贴着锚点的那个角**。
+     *
+     * 🔴 不能写死 `top left`，也不能只按 `alignRight` 二选一：上面两段翻折会把
+     * 菜单翻到锚点的左边 / 上边，之后的视口钳制还可能让它落到第三个位置。
+     * 写死的后果是贴着屏幕右下角右键时，菜单从**离鼠标最远**的那个角长出来，
+     * 看起来像是从别处飞过来的。
+     *
+     * 所以按最终坐标反推：右缘落在锚点上 ⇒ 从右边长；下缘落在锚点上 ⇒ 从下边长。
+     * 1px 容差是因为 `left` / `top` 经过钳制后可能带小数。
+     */
+    const originX = left + menuW <= pos.x + 1 ? "right" : "left";
+    const originY = top + menuH <= pos.y + 1 ? "bottom" : "top";
+
+    return { left, top, origin: `${originY} ${originX}` };
   // 依赖里必须带 `alignRight`：不带也“能跑”（`trigger` 每次 `setPos({x,y})`
   // 都是新对象，会连带重算），但那是撑在一个无关的引用等式上。
   }, [pos, menuSize, alignRight]);

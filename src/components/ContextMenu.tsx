@@ -158,6 +158,10 @@ export function ContextMenu({ children }: { children: ReactNode }) {
               left: `${adjustedPos ? adjustedPos.left : pos.x}px`,
               top: `${adjustedPos ? adjustedPos.top : pos.y}px`,
               transform: "none",
+              /* 从贴着锚点（鼠标 / 触发按钮）的那个角长出来，而不是从菜单中心。
+                 具体怎么反推在 `useMenuPosition` 里。首帧还没量到尺寸（adjustedPos 为 null）
+                 时退回左上角，与旧行为一致。 */
+              transformOrigin: adjustedPos?.origin ?? "top left",
             }}
             onClick={(e) => e.stopPropagation()}
           >
