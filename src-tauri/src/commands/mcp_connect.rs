@@ -482,7 +482,14 @@ fn url_and_token(
     store: &DataStore,
     server: &McpServer,
 ) -> Result<(String, String), String> {
-    let url = server.status(super::mcp::configured_port(store)).url;
+    // 拿的是 **http** 地址：一键接入始终写 http，https 只是并存的第二条路。
+    // （第二个参数只影响 `status()` 里的 https 字段，这里用不着。）
+    let url = server
+        .status(
+            super::mcp::configured_port(store),
+            super::mcp::configured_https_port(store),
+        )
+        .url;
     let token = crate::mcp::token::load_or_create(&super::mcp::app_dir(app)?)?;
     Ok((url, token))
 }

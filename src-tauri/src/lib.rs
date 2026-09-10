@@ -304,6 +304,19 @@ pub fn run() {
                 .and_then(|p| u16::try_from(p).ok())
                 .filter(|p| *p >= 1024)
                 .unwrap_or(mcp::DEFAULT_PORT);
+            // HTTPS 监听：**默认关**，只有配置里明确写过 true 才开。
+            let mcp_https_enabled = store
+                .get_config()
+                .ok()
+                .and_then(|c| c.get(mcp::CFG_HTTPS_ENABLED).and_then(|v| v.as_bool()))
+                .unwrap_or(false);
+            let mcp_https_port = store
+                .get_config()
+                .ok()
+                .and_then(|c| c.get(mcp::CFG_HTTPS_PORT).and_then(|v| v.as_u64()))
+                .and_then(|p| u16::try_from(p).ok())
+                .filter(|p| *p >= 1024)
+                .unwrap_or(mcp::DEFAULT_HTTPS_PORT);
 
             // 读取保存的热键配置（在 store 被 manage 之前）
             let saved_config = store.get_config().unwrap_or_default();
@@ -544,8 +557,24 @@ pub fn run() {
             let mcp_server = mcp::McpServer::new();
             if mcp_enabled {
                 let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(handle.clone()));
+                // 证书按需生成：开关不打开，这台机器上就永远不会出现证书文件。
+                // 准备失败不拦住主服务（https 是可选功能）。
+                let https = if mcp_https_enabled {
+                    match mcp::tls::ensure(&app_dir) {
+                        Ok(material) => Some(mcp::HttpsOpts {
+                            port: mcp_https_port,
+                            material,
+                        }),
+                        Err(e) => {
+                            log::warn!("[MCP] 证书准备失败，HTTPS 本次不开：{}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
                 let started = mcp::token::load_or_create(&app_dir)
-                    .and_then(|token| mcp_server.start(handle.clone(), kb, token, mcp_port));
+                    .and_then(|token| mcp_server.start(handle.clone(), kb, token, mcp_port, https));
                 match started {
                     Ok(port) => {
                         log::info!("[MCP] 知识库服务已启用：http://127.0.0.1:{}/mcp", port)
@@ -723,6 +752,7 @@ pub fn run() {
             commands::mcp_regenerate_token,
             commands::mcp_set_enabled,
             commands::mcp_set_port,
+            commands::mcp_set_https_enabled,
             commands::mcp_client_probe,
             commands::mcp_client_connect,
             commands::mcp_client_disconnect,

@@ -32,6 +32,50 @@ pub(super) fn configured_port(store: &DataStore) -> u16 {
         .unwrap_or(mcp::DEFAULT_PORT)
 }
 
+/// HTTPS 开关。**缺省为关**——它要配套往系统信任库里装根证书，
+/// 不能因为配置里没这个键就当成开。
+pub(super) fn https_enabled(store: &DataStore) -> bool {
+    store
+        .get_config()
+        .ok()
+        .and_then(|c| c.get(mcp::CFG_HTTPS_ENABLED).and_then(|v| v.as_bool()))
+        .unwrap_or(false)
+}
+
+/// HTTPS 端口。规则同 [`configured_port`]。
+pub(super) fn configured_https_port(store: &DataStore) -> u16 {
+    store
+        .get_config()
+        .ok()
+        .and_then(|c| c.get(mcp::CFG_HTTPS_PORT).and_then(|v| v.as_u64()))
+        .and_then(|p| u16::try_from(p).ok())
+        .filter(|p| *p >= 1024)
+        .unwrap_or(mcp::DEFAULT_HTTPS_PORT)
+}
+
+/// 启服务时要不要带上 https。关着就是 `None`。
+///
+/// ❗ 证书是**按需**生成的：开关不打开，这台机器上就永远不会出现任何
+///   证书文件。生成失败也不报错、只记日志并返回 `None`——
+///   同理：https 是可选功能，不能因为它让主服务启不了。
+///   真失败了界面会从 `status()` 的 `httpsRunning=false` 看到。
+fn https_opts(app: &AppHandle, store: &DataStore) -> Option<mcp::HttpsOpts> {
+    if !https_enabled(store) {
+        return None;
+    }
+    let dir = app_dir(app).ok()?;
+    match mcp::tls::ensure(&dir) {
+        Ok(material) => Some(mcp::HttpsOpts {
+            port: configured_https_port(store),
+            material,
+        }),
+        Err(e) => {
+            log::warn!("[MCP] 证书准备失败，HTTPS 本次不开：{}", e);
+            None
+        }
+    }
+}
+
 /// 把端口写回 `config` 表。
 fn persist_port(store: &DataStore, port: u16) -> Result<(), String> {
     let mut cfg = store.get_config().unwrap_or_default();
@@ -199,7 +243,7 @@ pub fn mcp_audit_clear(store: State<DataStore>) -> Result<usize, String> {
 /// 当前状态（R7：界面上要有一条看得见的状态）。**不包含令牌**。
 #[tauri::command]
 pub fn mcp_get_status(store: State<DataStore>, server: State<McpServer>) -> McpStatus {
-    server.status(configured_port(&store))
+    server.status(configured_port(&store), configured_https_port(&store))
 }
 
 /// 改监听端口。服务在跑就当场换到新端口，停着就只存配置。
@@ -223,7 +267,7 @@ pub fn mcp_set_port(
     }
     // 已经就是这个端口（配置与运行中都是）就什么都不做。
     // 停机时 `status(port).port` 就是传入值，所以这个条件在停机下退化成只比配置。
-    let status = server.status(port);
+    let status = server.status(port, configured_https_port(&store));
     if port == configured_port(&store) && status.port == port {
         return Ok(status);
     }
@@ -232,10 +276,10 @@ pub fn mcp_set_port(
         server.stop();
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
-        server.start(app.clone(), kb, token, port)?;
+        server.start(app.clone(), kb, token, port, https_opts(&app, &store))?;
     }
     persist_port(&store, port)?;
-    Ok(server.status(port))
+    Ok(server.status(port, configured_https_port(&store)))
 }
 
 /// 取当前令牌（用户点「显示令牌」/「复制」时才调）。
@@ -280,7 +324,7 @@ pub fn mcp_set_enabled(
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let port = configured_port(&store);
         let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
-        server.start(app.clone(), kb, token, port)?;
+        server.start(app.clone(), kb, token, port, https_opts(&app, &store))?;
         if let Err(e) = persist_enabled(&store, true) {
             server.stop();
             return Err(format!("服务已启动但配置保存失败，已回滚到关闭：{}", e));
@@ -289,7 +333,52 @@ pub fn mcp_set_enabled(
         persist_enabled(&store, false)?;
         server.stop();
     }
-    Ok(server.status(configured_port(&store)))
+    Ok(server.status(configured_port(&store), configured_https_port(&store)))
+}
+
+/// 把 HTTPS 开关写回 `config` 表。
+fn persist_https_enabled(store: &DataStore, enabled: bool) -> Result<(), String> {
+    let mut cfg = store.get_config().unwrap_or_default();
+    let Some(obj) = cfg.as_object_mut() else {
+        return Err("配置格式异常，无法保存 HTTPS 开关".to_string());
+    };
+    obj.insert(
+        mcp::CFG_HTTPS_ENABLED.to_string(),
+        serde_json::Value::Bool(enabled),
+    );
+    store.save_config(&cfg)
+}
+
+/// 开/关 HTTPS 监听，并持久化。
+///
+/// 🔴 **打开 ≠ 客户端就能用了**：还得把 CA 装进系统信任库（另一个命令，
+/// 会弹 Windows 的确认框）。这里只负责把监听起来。
+///
+/// ❗ **不重启整个服务**：那会撞上同一个 http 端口的「旧监听未释放」竞态
+///   （参看 `mcp_set_port` 为什么只在端口真变了时才重启）。
+///   https 那一路是单独启停的。
+///
+/// 先写配置再动服务：写失败就什么都不变，状态仍然自洽。
+/// 而监听起不来不回滚配置——开关就是用户的意愿，下次开机还得接着试；
+/// 失败原因会从 `httpsError` 带到界面上，不静默。
+#[tauri::command]
+pub fn mcp_set_https_enabled(
+    app: AppHandle,
+    store: State<DataStore>,
+    server: State<McpServer>,
+    enabled: bool,
+) -> Result<McpStatus, String> {
+    persist_https_enabled(&store, enabled)?;
+    if enabled {
+        if let Some(opts) = https_opts(&app, &store) {
+            if let Err(e) = server.enable_https(opts) {
+                log::warn!("[MCP] HTTPS 开启失败：{}", e);
+            }
+        }
+    } else {
+        server.disable_https();
+    }
+    Ok(server.status(configured_port(&store), configured_https_port(&store)))
 }
 
 /// 读用户手写的库简介（AM-6）。空串 = 没填 = 不推。

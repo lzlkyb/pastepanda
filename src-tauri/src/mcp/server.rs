@@ -62,6 +62,35 @@ struct Running {
     /// 优雅停机信号。`oneshot::Sender::send` 会消耗 self，
     /// 所以停服务时是把整个 `Running` `take()` 出来。
     shutdown: oneshot::Sender<()>,
+    /// https 监听。用户手动打开且真的启成了才有。
+    https: Option<HttpsRunning>,
+    /// 这一路的路由。存着是为了能**单独启停 https 而不碰 http**：
+    ///
+    /// 🔴 切 https 如果靠「停整个服务再起」，就会撞上同一个 http 端口的
+    /// 「旧监听还没释放」竞态——`mcp_set_port` 只在端口真变了时才重启，
+    /// 重置令牌故意不重启，都是为了绕开它。
+    router: axum::Router,
+    /// https 没启成的原因（比如那个端口被占）。正常时为空串。
+    ///
+    /// 🔴 它存在是为了不静默（规则 #15.3）：https 是可选功能，
+    /// 它起不来不能连累 http（那条路上已经接了十几家客户端），
+    /// 但也不能无声无息地没了——那会让用户对着一个“已打开”的开关发愁。
+    https_error: String,
+}
+
+/// https 监听的句柄。axum-server 的停机走 `Handle`，跟 http 那边的
+/// `oneshot` 不是同一套——两个监听用的本来就是两个不同的服务器实现。
+struct HttpsRunning {
+    port: u16,
+    // ❗ `Handle` 带泛型（地址类型）；`from_tcp_rustls` 返回的是
+    //   `Server<SocketAddr, _>`，所以这里就是 `Handle<SocketAddr>`。
+    handle: axum_server::Handle<std::net::SocketAddr>,
+}
+
+/// 启 https 所需的东西。由命令层决定要不要传（**默认不传 = 不开**）。
+pub struct HttpsOpts {
+    pub port: u16,
+    pub material: super::tls::TlsMaterial,
 }
 
 /// MCP 服务句柄，作为 Tauri 管理状态存活于整个进程。
@@ -83,6 +112,16 @@ pub struct McpStatus {
     pub port: u16,
     /// 直接能拷走填进 MCP 客户端的地址。停机时也给，方便用户先看后开。
     pub url: String,
+    /// https 监听真的起来了吗。
+    ///
+    /// ❗ 它不等于「开关打开了」：开关开着但端口被占时它是 false，
+    ///   原因在 `https_error` 里。界面得拿这两个字段一起读。
+    pub https_running: bool,
+    pub https_port: u16,
+    /// https 地址。**开关关着时也给**，理由同 `url`。
+    pub https_url: String,
+    /// https 没起来的原因；正常时为空串。
+    pub https_error: String,
 }
 
 impl Default for McpServer {
@@ -114,19 +153,25 @@ impl McpServer {
     /// 为什么要多这个参数：`url` 字段的用途就是让用户拷走填进 MCP 客户端。
     /// 若停机时一律回 `DEFAULT_PORT`，而用户已把端口改成别的值，
     /// 他拷走的就是个**错地址**——而且要等到客户端连不上才会发现。
-    pub fn status(&self, configured_port: u16) -> McpStatus {
+    pub fn status(&self, configured_port: u16, configured_https_port: u16) -> McpStatus {
         let guard = self.running.lock().ok();
         // 在跑就用**实际绑的**端口（配置改了但未重启时，两者会不一致，
         // 此时实际值才是客户端能连上的那个）。
-        let port = guard
-            .as_ref()
-            .and_then(|g| g.as_ref().map(|r| r.port))
-            .unwrap_or(configured_port);
-        let running = guard.as_ref().is_some_and(|g| g.is_some());
+        let running_ref = guard.as_ref().and_then(|g| g.as_ref());
+        let port = running_ref.map(|r| r.port).unwrap_or(configured_port);
+        let running = running_ref.is_some();
+        let https = running_ref.and_then(|r| r.https.as_ref());
+        let https_port = https.map(|h| h.port).unwrap_or(configured_https_port);
         McpStatus {
             running,
             port,
             url: format!("http://127.0.0.1:{}/mcp", port),
+            https_running: https.is_some(),
+            https_port,
+            https_url: format!("https://127.0.0.1:{}/mcp", https_port),
+            https_error: running_ref
+                .map(|r| r.https_error.clone())
+                .unwrap_or_default(),
         }
     }
 
@@ -145,6 +190,8 @@ impl McpServer {
         kb: Arc<dyn super::source::KbSource>,
         token: String,
         port: u16,
+        // 传 `None` = 不开 https。**默认就是不开**（参数上不能用 `///`）。
+        https: Option<HttpsOpts>,
     ) -> Result<u16, String> {
         let mut guard = self
             .running
@@ -170,6 +217,9 @@ impl McpServer {
         self.set_token(token)?;
         let audit = Arc::new(super::audit::AppAuditSink::new(app));
         let router = build_router(audit, kb, self.token.clone());
+        // https 要用同一套路由与中间件（三道门一样都要过）。
+        // Router 是廉价克隆的，不能分两套——那就是两份安全策略了。
+        let router_for_https = router.clone();
         let (tx, rx) = oneshot::channel::<()>();
 
         tauri::async_runtime::spawn(async move {
@@ -191,8 +241,71 @@ impl McpServer {
             }
         });
 
-        *guard = Some(Running { port, shutdown: tx });
+        // 🔴 https 起不来**不能**让整个服务起不来：它是可选功能，
+        //    而 http 那条路上已经接了十几家客户端。所以这里只记下失败原因，
+        //    由 `status()` 带到界面上——既不静默（规则 #15.3），也不牵连主功能。
+        let (https_running, https_error) = match https {
+            None => (None, String::new()),
+            Some(opts) => match start_https(&opts, router_for_https.clone()) {
+                Ok(h) => (Some(h), String::new()),
+                Err(e) => {
+                    log::warn!("[MCP] HTTPS 没能启动：{}", e);
+                    (None, e)
+                }
+            },
+        };
+
+        *guard = Some(Running {
+            port,
+            shutdown: tx,
+            router: router_for_https,
+            https: https_running,
+            https_error,
+        });
         Ok(port)
+    }
+
+    /// 单独开 https，**不动 http**。服务没在跑就什么也不做（下次启动时生效）。
+    ///
+    /// 已经开着就先收掉再开（换端口/换证书都走这里）。
+    pub fn enable_https(&self, opts: HttpsOpts) -> Result<(), String> {
+        let mut guard = self
+            .running
+            .lock()
+            .map_err(|_| "MCP 服务状态锁已中毒".to_string())?;
+        let Some(r) = guard.as_mut() else {
+            return Ok(());
+        };
+        if let Some(h) = r.https.take() {
+            h.handle
+                .graceful_shutdown(Some(std::time::Duration::from_secs(3)));
+        }
+        match start_https(&opts, r.router.clone()) {
+            Ok(h) => {
+                r.https = Some(h);
+                r.https_error = String::new();
+                Ok(())
+            }
+            Err(e) => {
+                // 失败也不报到上层：http 还好好跑着，而原因会从 `status()` 出去。
+                r.https_error = e.clone();
+                Err(e)
+            }
+        }
+    }
+
+    /// 单独关 https，**不动 http**。
+    pub fn disable_https(&self) {
+        let Ok(mut guard) = self.running.lock() else {
+            log::warn!("[MCP] 状态锁已中毒，无法关 HTTPS");
+            return;
+        };
+        let Some(r) = guard.as_mut() else { return };
+        if let Some(h) = r.https.take() {
+            h.handle
+                .graceful_shutdown(Some(std::time::Duration::from_secs(3)));
+        }
+        r.https_error = String::new();
     }
 
     /// 停服务。本来就没在跑也算成功。
@@ -205,10 +318,56 @@ impl McpServer {
             }
         };
         if let Some(r) = taken {
+            if let Some(h) = r.https.as_ref() {
+                // 给在途请求一点收尾时间，到点强断。
+                // 不给上限的话，一个挂着不动的连接就能让「关服务」永远完不了。
+                h.handle
+                    .graceful_shutdown(Some(std::time::Duration::from_secs(3)));
+            }
             // 接收端已掉（服务自己先挂了）时 send 会失败，那不是错误
             let _ = r.shutdown.send(());
         }
     }
+}
+
+/// 起 https 监听。失败不抛到上层的 `Result`——调用方把它当成可选功能处理。
+fn start_https(opts: &HttpsOpts, router: axum::Router) -> Result<HttpsRunning, String> {
+    let cfg = super::tls::tls_config(&opts.material)?;
+    // 同 http：先同步 bind，「端口被占」当场就是个错误值，
+    // 而不是一行只进日志的告警。
+    let listener = std::net::TcpListener::bind(("127.0.0.1", opts.port)).map_err(|e| {
+        format!(
+            "HTTPS 端口 {} 无法绑定：{}。它不能跟 http 端口相同，也不能被别的程序占着。",
+            opts.port, e
+        )
+    })?;
+    // `axum_server::from_tcp_rustls` 内部要把它交给 tokio，而那要求非阻塞。
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("HTTPS 监听套接字设为非阻塞失败：{}", e))?;
+
+    let handle = axum_server::Handle::new();
+    let h = handle.clone();
+    let port = opts.port;
+    tauri::async_runtime::spawn(async move {
+        // ❗ `from_tcp_rustls` 会把 std 监听套接字挂到 tokio 的反应器上，
+        //   那必须在运行时线程上做——所以放在这个 async 块里。
+        let server = match axum_server::from_tcp_rustls(listener, cfg) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("[MCP] HTTPS 监听套接字接入运行时失败：{}", e);
+                return;
+            }
+        };
+        log::info!("[MCP] HTTPS 已启动：https://127.0.0.1:{}/mcp", port);
+        if let Err(e) = server.handle(h).serve(router.into_make_service()).await {
+            log::error!("[MCP] HTTPS 异常退出：{}", e);
+        } else {
+            log::info!("[MCP] HTTPS 已停止");
+        }
+    });
+
+    Ok(HttpsRunning { port, handle })
 }
 
 /// 组装路由与中间件。抽成函数是为了测试能直接拿到真 Router。

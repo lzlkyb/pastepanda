@@ -198,6 +198,36 @@ pub fn ensure_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
+/// 拿生成好的材料建一份 TLS 配置。**同步**。
+///
+/// ❗ 不用 axum-server 自带的 `RustlsConfig::from_pem`：那是 async 的，
+///   而 `McpServer::start` 必须是同步函数——只有同步才能把「端口被占」
+///   当场变成返回值里的错误（见 `server.rs` 里那段注释）。
+///   在同步上下文里 `block_on` 一个可能已在运行时线程上的调用是自找麻烦。
+///
+/// ALPN 跟 axum-server 自己那条路保持一致（h2 + http/1.1），
+/// 免得两条路建出来的服务器行为不一样。
+pub fn tls_config(m: &TlsMaterial) -> Result<axum_server::tls_rustls::RustlsConfig, String> {
+    use rustls::pki_types::pem::PemObject;
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+
+    ensure_crypto_provider();
+    let certs: Vec<CertificateDer<'static>> =
+        CertificateDer::pem_slice_iter(m.cert_chain_pem.as_bytes())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("证书解析失败：{}", e))?;
+    let key = PrivateKeyDer::from_pem_slice(m.key_pem.as_bytes())
+        .map_err(|e| format!("私钥解析失败：{}", e))?;
+    let mut cfg = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| format!("证书与私钥对不上：{}", e))?;
+    cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Ok(axum_server::tls_rustls::RustlsConfig::from_config(
+        std::sync::Arc::new(cfg),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,12 +298,8 @@ mod tests {
     fn 生成的材料能真的建起tls配置() {
         let d = temp_dir("tlscfg");
         let m = ensure(&d).unwrap();
-        ensure_crypto_provider();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let cfg = rt.block_on(axum_server::tls_rustls::RustlsConfig::from_pem(
-            m.cert_chain_pem.into_bytes(),
-            m.key_pem.into_bytes(),
-        ));
+        // 走的就是服务启动时的那条路（同步的 `tls_config`）。
+        let cfg = tls_config(&m);
         assert!(cfg.is_ok(), "证书跟私钥对不上：{:?}", cfg.err());
         let _ = std::fs::remove_dir_all(&d);
     }

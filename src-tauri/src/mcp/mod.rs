@@ -32,13 +32,27 @@ pub mod tools;
 #[cfg(test)]
 mod tests;
 
-pub use server::{McpServer, McpStatus, DEFAULT_PORT};
+pub use server::{HttpsOpts, McpServer, McpStatus, DEFAULT_PORT};
 
 /// 配置项：是否开启 MCP 服务。存在 `config` 表（开关不是秘密，令牌才是）。
 pub const CFG_ENABLED: &str = "mcp_server_enabled";
 
 /// 配置项：监听端口。省略/非法时用 [`DEFAULT_PORT`]。
 pub const CFG_PORT: &str = "mcp_server_port";
+
+/// 配置项：是否额外开一个 HTTPS 监听。
+///
+/// 🔴 **默认关，必须用户手动打开。** 因为它要配套地往用户的系统信任库
+/// 里装一个根证书，而那是本软件对用户机器做过最重的一件事（见 `tls.rs`）。
+/// 装个软件就被塞进一个根证书，那是不可接受的。
+pub const CFG_HTTPS_ENABLED: &str = "mcp_https_enabled";
+
+/// 配置项：HTTPS 监听端口。省略/非法时用 [`DEFAULT_HTTPS_PORT`]。
+pub const CFG_HTTPS_PORT: &str = "mcp_https_port";
+
+/// HTTPS 的默认端口。刻意选了一个跟 [`DEFAULT_PORT`] 不相邻的值：
+/// 两个监听同时存在，用户改了其中一个时不应该轻易撞上另一个。
+pub const DEFAULT_HTTPS_PORT: u16 = 17660;
 
 // 没有「写能力一次性告知」那个配置项：本功能上线前项目尚未发版，
 // 不存在「当初基于只读承诺开过服务」的老用户。无人可告的告知只会误发。
