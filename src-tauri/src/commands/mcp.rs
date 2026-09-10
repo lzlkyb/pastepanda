@@ -411,3 +411,37 @@ pub fn mcp_set_library_blurb(store: State<DataStore>, text: String) -> Result<St
     store.save_config(&cfg)?;
     Ok(normalized)
 }
+
+// ─── HTTPS / CA 信任库（TLS-1 / TLS-2）───
+
+/// CA 状态：证书生成没生成、装进信任库没有。
+///
+/// 查询**不生成**证书——生成是打开 HTTPS 开关时的事（见 `https_opts`）。
+/// 界面打开时轮询这个，CA 行才显示得对。
+#[tauri::command]
+pub fn mcp_tls_ca_status(app: AppHandle) -> Result<mcp::tls::CaStatus, String> {
+    Ok(mcp::tls::ca_status(&app_dir(&app)?))
+}
+
+/// 把 CA 装进**当前用户**的信任根证书库。
+///
+/// 🔴 这是本软件对用户机器做过的最重的一件事，前端必须先弹确认框。
+/// `certutil` 自己也会再弹一次系统确认——两道都别省。
+#[tauri::command]
+pub fn mcp_tls_install_ca(app: AppHandle) -> Result<mcp::tls::CaStatus, String> {
+    let dir = app_dir(&app)?;
+    // 确保证书存在。用户可能先点了「装」而从未开过 HTTPS。
+    if !mcp::tls::exists(&dir) {
+        mcp::tls::ensure(&dir)?;
+    }
+    mcp::tls::install_ca(&dir)
+}
+
+/// 从**当前用户**的信任根证书库移除我们的 CA。
+///
+/// 幂等：本来就没装就直接返回当前状态，不报错。
+/// 移除**不会**删本地的证书文件——下次开 HTTPS 还能直接用。
+#[tauri::command]
+pub fn mcp_tls_remove_ca(app: AppHandle) -> Result<mcp::tls::CaStatus, String> {
+    mcp::tls::remove_ca(&app_dir(&app)?)
+}

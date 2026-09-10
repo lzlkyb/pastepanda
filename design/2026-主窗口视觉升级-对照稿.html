@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 主窗口视觉升级 · 改前/改后</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   改前 = theme.css [data-theme="ocean"] 真值复刻
+   改后 = 同一信息架构上的视觉精修（可落地的 token 级改动）
+   窗口 480×560 · 结构不改：TopBar / Sidebar 180 / Card 72
+   性能：静态背景一次绘制；卡片仍无 backdrop-filter（规则 8.3）
+   ═══════════════════════════════════════════════════════ */
+*{box-sizing:border-box}
+body{
+  margin:0;padding:28px 20px 90px;
+  font:14px/1.65 "Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  background:#E8EEF4;color:#0F172A;
+}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{font-size:12.5px;color:#5B6B7F;margin:0 0 14px;line-height:1.7}
+h2{font-size:15px;margin:34px 0 12px;padding-top:16px;border-top:1px solid #D5DEE8}
+h2 .n{
+  display:inline-flex;width:22px;height:22px;border-radius:7px;
+  align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  background:#DCEBFA;color:#0273AD;margin-right:8px;
+}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;padding:1px 5px;border-radius:4px;background:#E7EEF6}
+.note{
+  border-radius:10px;padding:12px 14px;margin:12px 0;font-size:12.5px;line-height:1.65;
+  background:#fff;border:1px solid #D8E0EA;border-left:3px solid #0284C7;color:#495565;
+}
+.toolbar{
+  position:sticky;top:8px;z-index:60;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:10px 12px;margin:0 0 18px;border-radius:12px;
+  background:rgba(255,255,255,.88);border:1px solid #D8E0EA;
+  backdrop-filter:blur(12px);box-shadow:0 6px 20px rgba(15,23,42,.08);
+}
+.toolbar button{
+  border:1px solid #D8E0EA;background:#F4F7FA;color:#0F172A;
+  border-radius:8px;padding:6px 12px;font:600 12px/1 inherit;cursor:pointer;font-family:inherit;
+}
+.toolbar button.on{background:#027CBB;border-color:transparent;color:#fff}
+.toolbar .hint{margin-left:auto;font-size:11.5px;color:#627083}
+
+.pair{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.lab{
+  display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:8px;
+}
+.labA{background:#E8ECF2;color:#627083;border:1px solid #E0E4EB}
+.labB{background:#DCEBFA;color:#0273AD;border:1px solid #7DD3FC}
+
+/* ═══════ 窗口壳 ═══════ */
+.win{
+  width:480px;height:560px;display:flex;flex-direction:column;
+  border-radius:12px;overflow:hidden;position:relative;
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 20px 48px rgba(15,23,42,.16), 0 2px 8px rgba(15,23,42,.04);
+  font-size:13px;color:#0F172A;
+}
+
+/* ── 改前：纯平 ocean ── */
+.winA{background:#F7F7F8}
+.winA .sb{background:#EFF1F5;border-right:1px solid #E0E4EB}
+.winA .hd{padding:16px 16px 0}
+.winA .search{
+  flex:1;height:38px;padding:0 14px;border-radius:8px;display:flex;align-items:center;gap:8px;
+  background:#fff;border:1px solid #E0E4EB;box-shadow:0 1px 4px rgba(0,0,0,.03);
+  color:#627083;font-size:13px;
+}
+.winA .fbtn{
+  height:34px;padding:0 10px;border-radius:8px;border:1px solid #E0E4EB;background:#F1F5F9;
+  color:#495565;font-size:11px;display:flex;align-items:center;flex-shrink:0;
+}
+.winA .seg{
+  height:28px;padding:0 10px;border-radius:8px;border:1px solid #E0E4EB;background:#F1F5F9;
+  color:#495565;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;
+}
+.winA .seg.on{background:#027CBB;border-color:transparent;color:#fff;font-weight:600}
+.winA .modes{
+  display:flex;gap:2px;padding:2px;border-radius:9px;margin-left:10px;
+  background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.75);
+  backdrop-filter:blur(10px);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 2px 8px rgba(0,0,0,.1);
+}
+.winA .mode{
+  height:24px;padding:0 9px;border:none;border-radius:7px;background:transparent;
+  color:#495565;font-size:12px;font-family:inherit;
+}
+.winA .mode.on{color:#fff;font-weight:600;position:relative;isolation:isolate}
+.winA .mode.on::before{content:"";position:absolute;inset:0;border-radius:7px;background:#027CBB;z-index:-1}
+.winA .list{padding:10px 16px 24px;display:flex;flex-direction:column;gap:10px;overflow:hidden;flex:1}
+.winA .card{
+  display:flex;align-items:center;gap:12px;padding:12px 16px;height:72px;border-radius:16px;
+  background:#fff;border:1px solid rgba(0,0,0,.08);
+  box-shadow:0 1px 3px rgba(0,0,0,.06),0 0 0 1px rgba(0,0,0,.05);flex-shrink:0;
+}
+.winA .card.on{
+  background:#E0F2FE;border-color:#0284C7;
+  box-shadow:0 0 0 2px rgba(2,132,199,.25),0 4px 16px rgba(2,132,199,.15);
+}
+.winA .item{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;font-size:13px;color:#0F172A}
+.winA .item.on{background:#E0F2FE;color:#0273AD;font-weight:600;position:relative}
+.winA .item.on::before{
+  content:"";position:absolute;left:2px;top:50%;transform:translateY(-50%);
+  width:3px;height:16px;border-radius:2px;background:#0284C7;
+}
+.winA .sec{
+  font-size:11px;font-weight:700;color:#696D75;text-transform:uppercase;letter-spacing:.5px;
+  padding:10px 10px 6px;
+}
+.winA .cnt{
+  font-size:10px;color:#627083;font-weight:600;background:#F0F4F8;border:1px solid #E0E4EB;
+  border-radius:8px;padding:1px 7px;margin-left:auto;
+}
+.winA .ic{
+  width:42px;height:42px;min-width:42px;border-radius:12px;display:grid;place-items:center;font-size:18px;
+  background:rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.07);
+  box-shadow:inset 0 2px 4px rgba(255,255,255,.5),0 2px 6px rgba(0,0,0,.05);
+}
+.winA .t{font-size:13px;font-weight:600;line-height:1.4;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.winA .s{font-size:11px;color:#495565;margin-top:2px;display:flex;gap:6px;align-items:center}
+.winA .time{font-size:11px;color:#627083;margin-left:auto;align-self:flex-start;margin-top:2px}
+.winA .chip{
+  font-size:10px;height:16px;padding:0 5px;border-radius:4px;display:inline-flex;align-items:center;
+  background:#F0F4F8;border:1px solid #E0E4EB;color:#627083;
+}
+.winA .tag{
+  font-size:10px;height:16px;padding:0 5px;border-radius:4px;display:inline-flex;align-items:center;font-weight:600;
+  background:rgba(2,132,199,.10);border:1px solid rgba(2,132,199,.28);color:#0273AD;
+}
+.winA .pin{
+  font-size:10px;height:16px;padding:0 6px;border-radius:4px;display:inline-flex;align-items:center;font-weight:600;
+  background:#E0F2FE;color:#0273AD;
+}
+.bgB{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.22)}
+.bgG{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.22)}
+.bgP{background:rgba(236,72,153,.12);border-color:rgba(236,72,153,.22)}
+.bgV{background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.22)}
+.dotC{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.hdrTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.hdrL{display:flex;align-items:center;gap:8px}
+.hdrR{display:flex;gap:2px;align-items:center}
+.ib{
+  width:28px;height:28px;border-radius:8px;display:grid;place-items:center;
+}
+.ib svg{width:16px;height:16px}
+.tg{
+  width:28px;height:28px;border:none;background:transparent;border-radius:8px;
+  display:grid;place-items:center;color:#495565;font-size:14px;
+}
+.tg.on{background:#E0F2FE;color:#0273AD}
+.logo{
+  width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,#0284C7,#0369A1);
+  display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800;
+}
+.name{font-size:12px;font-weight:700}
+.aiM{font-size:8px;font-weight:800;margin-left:3px;background:linear-gradient(90deg,#1D4ED8,#6D28D9);-webkit-background-clip:text;background-clip:text;color:transparent}
+.div{width:1px;height:16px;background:#E0E4EB;margin:0 4px}
+.ctrl{padding:0 0 4px}
+.row{display:flex;align-items:center;gap:6px}
+.tabs{display:flex;gap:6px;padding:10px 0 0}
+.body{flex:1;display:flex;overflow:hidden;min-height:0}
+.sb{width:180px;min-width:180px;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sl{flex:1;overflow:hidden;padding:12px 8px 8px;display:flex;flex-direction:column;gap:1px}
+.panel{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+
+/* ═══════════════════════════════════════════════════════
+   改后 · 视觉升级
+   ═══════════════════════════════════════════════════════ */
+.winB{
+  /* ① 氛围底：静态天空→海面，一次绘制，无动画、无 blur 采样 */
+  background:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg, #F4F8FC 0%, #EEF3F8 42%, #E8F0F7 100%);
+}
+.winB .sb{
+  /* ② 侧栏：半透明浮起，与主区拉开景深 */
+  background:rgba(244,247,251,.72);
+  border-right:1px solid rgba(255,255,255,.7);
+  box-shadow:inset -1px 0 0 rgba(15,23,42,.04);
+  backdrop-filter:blur(16px) saturate(1.2);
+  -webkit-backdrop-filter:blur(16px) saturate(1.2);
+}
+.winB .hd{
+  padding:14px 16px 0;
+  /* ③ 顶栏：微磨砂条，与列表内容分层 */
+  background:linear-gradient(180deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.28) 78%, transparent 100%);
+}
+.winB .search{
+  flex:1;height:38px;padding:0 14px;border-radius:12px;display:flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.82);
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:
+    0 1px 2px rgba(15,23,42,.04),
+    0 4px 14px rgba(15,23,42,.06),
+    inset 0 1px 0 rgba(255,255,255,.9);
+  color:#8A96A8;font-size:13px;
+}
+.winB .fbtn{
+  height:34px;padding:0 12px;border-radius:11px;border:1px solid rgba(255,255,255,.85);
+  background:rgba(255,255,255,.7);
+  box-shadow:0 2px 8px rgba(15,23,42,.05), inset 0 1px 0 rgba(255,255,255,.8);
+  color:#5B6B7F;font-size:11.5px;font-weight:600;display:flex;align-items:center;flex-shrink:0;
+}
+.winB .seg{
+  height:30px;padding:0 11px;border-radius:10px;border:1px solid transparent;
+  background:rgba(255,255,255,.45);
+  color:#5B6B7F;font-size:11.5px;display:inline-flex;align-items:center;gap:5px;font-weight:500;
+  box-shadow:inset 0 0 0 1px rgba(15,23,42,.04);
+}
+.winB .seg.on{
+  background:linear-gradient(180deg,#0B95D4,#027CBB);
+  border-color:transparent;color:#fff;font-weight:700;
+  box-shadow:
+    0 4px 12px rgba(2,132,199,.35),
+    0 1px 0 rgba(255,255,255,.35) inset;
+}
+.winB .modes{
+  display:flex;gap:2px;padding:3px;border-radius:11px;margin-left:12px;
+  background:rgba(255,255,255,.55);
+  border:1px solid rgba(255,255,255,.8);
+  backdrop-filter:blur(12px);
+  box-shadow:0 4px 14px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.7);
+}
+.winB .mode{
+  height:26px;padding:0 11px;border:none;border-radius:8px;background:transparent;
+  color:#5B6B7F;font-size:12px;font-family:inherit;font-weight:500;
+}
+.winB .mode.on{color:#fff;font-weight:700;position:relative;isolation:isolate}
+.winB .mode.on::before{
+  content:"";position:absolute;inset:0;border-radius:8px;z-index:-1;
+  background:linear-gradient(180deg,#0B95D4,#027CBB);
+  box-shadow:0 2px 8px rgba(2,132,199,.4);
+}
+.winB .list{padding:12px 16px 28px;display:flex;flex-direction:column;gap:10px;overflow:hidden;flex:1}
+.winB .card{
+  display:flex;align-items:center;gap:12px;padding:12px 16px;height:72px;border-radius:16px;
+  /* ④ 卡片：多层阴影 + 顶部微光边，像浮起来的实体而不是贴纸 */
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(252,253,255,.96) 100%);
+  border:1px solid rgba(255,255,255,.95);
+  box-shadow:
+    0 1px 2px rgba(15,23,42,.04),
+    0 6px 16px rgba(15,23,42,.07),
+    0 0 0 1px rgba(15,23,42,.04);
+  flex-shrink:0;position:relative;overflow:hidden;
+}
+.winB .card::before{
+  content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg, rgba(255,255,255,.75) 0%, transparent 42%);
+}
+.winB .card.on{
+  background:
+    linear-gradient(180deg, #FFFFFF 0%, #F0F9FF 100%);
+  border-color:rgba(2,132,199,.35);
+  box-shadow:
+    0 0 0 3px rgba(2,132,199,.16),
+    0 8px 24px rgba(2,132,199,.16),
+    0 1px 2px rgba(15,23,42,.05);
+}
+.winB .item{
+  display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:9px;
+  font-size:13px;color:#3D4A5C;transition:all .15s;
+}
+.winB .item:hover{background:rgba(255,255,255,.65);color:#0F172A}
+.winB .item.on{
+  background:linear-gradient(90deg, rgba(2,132,199,.14), rgba(2,132,199,.06));
+  color:#0273AD;font-weight:600;position:relative;
+  box-shadow:0 2px 8px rgba(2,132,199,.10);
+}
+.winB .item.on::before{
+  content:"";position:absolute;left:2px;top:50%;transform:translateY(-50%);
+  width:3px;height:18px;border-radius:2px;
+  background:linear-gradient(180deg,#38BDF8,#0284C7);
+  box-shadow:0 0 8px rgba(2,132,199,.55);
+}
+.winB .sec{
+  font-size:10.5px;font-weight:700;color:#8A96A8;text-transform:uppercase;letter-spacing:.7px;
+  padding:12px 12px 6px;
+}
+.winB .cnt{
+  font-size:10px;color:#5B6B7F;font-weight:600;margin-left:auto;
+  background:rgba(255,255,255,.7);border:1px solid rgba(15,23,42,.06);
+  border-radius:8px;padding:1px 7px;
+  font-variant-numeric:tabular-nums;
+}
+.winB .ic{
+  width:42px;height:42px;min-width:42px;border-radius:12px;display:grid;place-items:center;font-size:18px;
+  /* 图标槽：更软的内阴影 + 微浮 */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.65),
+    inset 0 1px 3px rgba(15,23,42,.04),
+    0 2px 6px rgba(15,23,42,.06);
+  border:1px solid rgba(255,255,255,.7);
+  position:relative;z-index:1;
+}
+.winB .t{font-size:13px;font-weight:600;line-height:1.4;margin:0;color:#0F172A;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;letter-spacing:-.01em}
+.winB .s{font-size:11px;color:#5B6B7F;margin-top:3px;display:flex;gap:6px;align-items:center;position:relative;z-index:1}
+.winB .time{font-size:11px;color:#8A96A8;margin-left:auto;align-self:flex-start;margin-top:2px;position:relative;z-index:1;font-variant-numeric:tabular-nums}
+.winB .chip{
+  font-size:10px;height:17px;padding:0 6px;border-radius:6px;display:inline-flex;align-items:center;
+  background:rgba(15,23,42,.04);border:1px solid rgba(15,23,42,.06);color:#5B6B7F;
+}
+.winB .tag{
+  font-size:10px;height:17px;padding:0 6px;border-radius:6px;display:inline-flex;align-items:center;font-weight:600;
+  background:linear-gradient(180deg, rgba(2,132,199,.14), rgba(2,132,199,.08));
+  border:1px solid rgba(2,132,199,.22);color:#0273AD;
+  box-shadow:0 1px 2px rgba(2,132,199,.08);
+}
+.winB .pin{
+  font-size:10px;height:17px;padding:0 6px;border-radius:6px;display:inline-flex;align-items:center;font-weight:600;
+  background:linear-gradient(180deg,#E0F2FE,#F0F9FF);color:#0273AD;
+  border:1px solid rgba(2,132,199,.18);
+}
+.winB .bgB{background:linear-gradient(145deg, rgba(59,130,246,.16), rgba(59,130,246,.08));border-color:rgba(59,130,246,.22)}
+.winB .bgG{background:linear-gradient(145deg, rgba(16,185,129,.16), rgba(16,185,129,.08));border-color:rgba(16,185,129,.22)}
+.winB .bgP{background:linear-gradient(145deg, rgba(236,72,153,.16), rgba(236,72,153,.08));border-color:rgba(236,72,153,.22)}
+.winB .bgV{background:linear-gradient(145deg, rgba(139,92,246,.16), rgba(139,92,246,.08));border-color:rgba(139,92,246,.22)}
+.winB .tg{
+  width:28px;height:28px;border:none;background:transparent;border-radius:9px;
+  display:grid;place-items:center;color:#5B6B7F;font-size:14px;
+}
+.winB .tg.on{
+  background:linear-gradient(180deg,#E0F2FE,#F0F9FF);color:#0273AD;
+  box-shadow:inset 0 0 0 1px rgba(2,132,199,.2);
+}
+.winB .logo{
+  width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#0EA5E9,#0284C7 55%,#0369A1);
+  display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;
+  box-shadow:0 3px 10px rgba(2,132,199,.35);
+}
+.winB .ib{
+  width:28px;height:28px;border-radius:9px;display:grid;place-items:center;
+  box-shadow:0 1px 0 rgba(255,255,255,.5) inset;
+}
+.winB .hdrTop{margin-bottom:10px}
+.winB .body{padding-top:2px}
+
+/* 对照说明卡 */
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}
+.kcard{
+  border-radius:12px;padding:14px 14px 12px;background:#fff;border:1px solid #D8E0EA;
+}
+.kcard h3{margin:0 0 6px;font-size:13px}
+.kcard p{margin:0;font-size:12px;color:#5B6B7F;line-height:1.55}
+.kcard .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:5px;background:#DCEBFA;color:#0273AD;
+  font-size:10px;font-weight:800;margin-right:6px;vertical-align:-2px;
+}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0}
+th,td{border:1px solid #D8E0EA;padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#F0F5FA;font-weight:700}
+.foot{margin-top:28px;font-size:11.5px;color:#627083;line-height:1.65}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <strong style="font-size:12.5px">对照</strong>
+    <button class="on">左右并排（默认）</button>
+    <span class="hint">左 = Ocean 现状复刻 · 右 = 视觉升级（结构/信息架构不变）</span>
+  </div>
+
+  <h1>主窗口视觉升级 · 改前 / 改后</h1>
+  <p class="sub">
+    上一版只加了 AI 状态，所以「看不出变好看」。这版专做<strong>观感</strong>：
+    氛围底、景深、卡片浮起、控件微光——仍是 480 窗、侧栏 180、卡片 72 的同一套骨架，
+    只换材质与光。卡片依旧<strong>没有</strong> <code>backdrop-filter</code>（规则 8.3）。
+  </p>
+
+  <div class="note">
+    <b>为什么现在「平」：</b>Ocean 主题刻意做成经典白——
+    <code>--app-bg:#F7F7F8</code>、卡片纯白、阴影极浅（源码注释：靠描边定边界，不靠大阴影）。
+    好看的改法不是推翻，而是<strong>给环境一点空气、给卡片一点厚度</strong>，其余不动。
+  </div>
+
+  <div class="pair">
+    <!-- ═══════════ 改前 ═══════════ -->
+    <div>
+      <span class="lab labA">改前 · Ocean 现状</span>
+      <div class="win winA">
+        <header class="hd">
+          <div class="hdrTop">
+            <div class="hdrL">
+              <button class="tg on">☰</button>
+              <span class="logo">P</span>
+              <span class="name">PastePanda<span class="aiM">AI</span></span>
+              <div class="modes">
+                <button class="mode on">记录</button>
+                <button class="mode">工具</button>
+                <button class="mode">知识</button>
+              </div>
+            </div>
+            <div class="hdrR">
+              <span class="ib" style="color:#B45309">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.6 2.9 7.66a.95.95 0 0 0 0 1.68L12 14.4l9.1-5.06a.95.95 0 0 0 0-1.68Z" fill="currentColor" fillOpacity=".88"/><path d="m3.2 12.4 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".5" stroke-width="2.1" stroke-linecap="round"/></svg>
+              </span>
+              <span class="ib" style="color:#8B5CF6;position:relative">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+                <span style="position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:#11813A;box-shadow:0 0 0 2px #F7F7F8"></span>
+              </span>
+              <span class="div"></span>
+              <span class="ib" style="color:#495565"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></span>
+              <span class="ib" style="color:#495565"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-11-8-11-8"/><path d="m1 1 22 22"/></svg></span>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <div class="search">🔍 搜索剪贴板内容…</div>
+              <div class="fbtn">时间 ▾</div>
+              <div class="fbtn">来源 ▾</div>
+            </div>
+            <div class="tabs">
+              <span class="seg on">📋 全部</span>
+              <span class="seg">📝 文本</span>
+              <span class="seg">📸 图片</span>
+              <span class="seg">📁 文件</span>
+              <span class="seg">⭐ 收藏</span>
+            </div>
+          </div>
+        </header>
+        <div class="body">
+          <aside class="sb">
+            <div class="sl">
+              <div class="sec">内置</div>
+              <div class="item on"><span>📋</span><span>全部</span><span class="cnt">128</span></div>
+              <div class="item"><span>⭐</span><span>收藏</span><span class="cnt">12</span></div>
+              <div class="item"><span>📁</span><span>未分组</span><span class="cnt">41</span></div>
+              <div class="sec">分组</div>
+              <div class="item"><span>📁</span><span>工作</span><span class="cnt">23</span></div>
+              <div class="item"><span>🏷️</span><span>待办</span><span class="cnt">8</span></div>
+              <div class="sec">来源</div>
+              <div class="item"><span class="dotC" style="background:#3B82F6"></span><span>VS Code</span><span class="cnt">19</span></div>
+              <div class="item"><span class="dotC" style="background:#22C55E"></span><span>Chrome</span><span class="cnt">34</span></div>
+              <div class="item"><span class="dotC" style="background:#A855F7"></span><span>微信</span><span class="cnt">11</span></div>
+            </div>
+          </aside>
+          <main class="panel">
+            <div class="list">
+              <div class="card on">
+                <div class="ic bgB">📝</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">PastePanda 剪贴历史 API：讨论结论与字段草案</p>
+                  <div class="s"><span class="pin">📌 置顶</span><span class="chip">VS Code</span><span class="tag">工作</span></div>
+                </div>
+                <span class="time">2分钟前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgG">🐍</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">def parse_file_paths(payload: str) -&gt; list[str]:</p>
+                  <div class="s"><span class="chip">VS Code</span><span class="tag">代码</span></div>
+                </div>
+                <span class="time">11分钟前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgP">🖼</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">Screenshot 2026-09-09 142033.png</p>
+                  <div class="s"><span class="chip">微信</span><span class="chip">1920×1080</span><span class="chip">已识别</span></div>
+                </div>
+                <span class="time">28分钟前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgV">🔗</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">https://www.figma.com/blog/config-2026-recap/</p>
+                  <div class="s"><span class="chip">Chrome</span></div>
+                </div>
+                <span class="time">1小时前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgB">📄</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">本周粘贴次数最多的 5 个应用与来源分布</p>
+                  <div class="s"><span class="chip">Excel</span></div>
+                </div>
+                <span class="time">3小时前</span>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════ 改后 ═══════════ -->
+    <div>
+      <span class="lab labB">改后 · 视觉升级</span>
+      <div class="win winB">
+        <header class="hd">
+          <div class="hdrTop">
+            <div class="hdrL">
+              <button class="tg on">☰</button>
+              <span class="logo">P</span>
+              <span class="name">PastePanda<span class="aiM">AI</span></span>
+              <div class="modes">
+                <button class="mode on">记录</button>
+                <button class="mode">工具</button>
+                <button class="mode">知识</button>
+              </div>
+            </div>
+            <div class="hdrR">
+              <span class="ib" style="color:#B45309">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.6 2.9 7.66a.95.95 0 0 0 0 1.68L12 14.4l9.1-5.06a.95.95 0 0 0 0-1.68Z" fill="currentColor" fillOpacity=".88"/><path d="m3.2 12.4 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".5" stroke-width="2.1" stroke-linecap="round"/></svg>
+              </span>
+              <span class="ib" style="color:#8B5CF6;position:relative">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+                <span style="position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:#11813A;box-shadow:0 0 0 2px rgba(244,248,252,.9)"></span>
+              </span>
+              <span class="div" style="background:rgba(15,23,42,.10)"></span>
+              <span class="ib" style="color:#5B6B7F"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></span>
+              <span class="ib" style="color:#5B6B7F"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-11-8-11-8"/><path d="m1 1 22 22"/></svg></span>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <div class="search">🔍 搜索剪贴板内容…</div>
+              <div class="fbtn">时间 ▾</div>
+              <div class="fbtn">来源 ▾</div>
+            </div>
+            <div class="tabs">
+              <span class="seg on">📋 全部</span>
+              <span class="seg">📝 文本</span>
+              <span class="seg">📸 图片</span>
+              <span class="seg">📁 文件</span>
+              <span class="seg">⭐ 收藏</span>
+            </div>
+          </div>
+        </header>
+        <div class="body">
+          <aside class="sb">
+            <div class="sl">
+              <div class="sec">内置</div>
+              <div class="item on"><span>📋</span><span>全部</span><span class="cnt">128</span></div>
+              <div class="item"><span>⭐</span><span>收藏</span><span class="cnt">12</span></div>
+              <div class="item"><span>📁</span><span>未分组</span><span class="cnt">41</span></div>
+              <div class="sec">分组</div>
+              <div class="item"><span>📁</span><span>工作</span><span class="cnt">23</span></div>
+              <div class="item"><span>🏷️</span><span>待办</span><span class="cnt">8</span></div>
+              <div class="sec">来源</div>
+              <div class="item"><span class="dotC" style="background:#3B82F6"></span><span>VS Code</span><span class="cnt">19</span></div>
+              <div class="item"><span class="dotC" style="background:#22C55E"></span><span>Chrome</span><span class="cnt">34</span></div>
+              <div class="item"><span class="dotC" style="background:#A855F7"></span><span>微信</span><span class="cnt">11</span></div>
+            </div>
+          </aside>
+          <main class="panel">
+            <div class="list">
+              <div class="card on">
+                <div class="ic bgB">📝</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">PastePanda 剪贴历史 API：讨论结论与字段草案</p>
+                  <div class="s"><span class="pin">📌 置顶</span><span class="chip">VS Code</span><span class="tag">工作</span></div>
+                </div>
+                <span class="time">2分钟前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgG">🐍</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">def parse_file_paths(payload: str) -&gt; list[str]:</p>
+                  <div class="s"><span class="chip">VS Code</span><span class="tag">代码</span></div>
+                </div>
+                <span class="time">11分钟前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgP">🖼</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">Screenshot 2026-09-09 142033.png</p>
+                  <div class="s"><span class="chip">微信</span><span class="chip">1920×1080</span><span class="chip">已识别</span></div>
+                </div>
+                <span class="time">28分钟前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgV">🔗</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">https://www.figma.com/blog/config-2026-recap/</p>
+                  <div class="s"><span class="chip">Chrome</span></div>
+                </div>
+                <span class="time">1小时前</span>
+              </div>
+              <div class="card">
+                <div class="ic bgB">📄</div>
+                <div style="flex:1;min-width:0">
+                  <p class="t">本周粘贴次数最多的 5 个应用与来源分布</p>
+                  <div class="s"><span class="chip">Excel</span></div>
+                </div>
+                <span class="time">3小时前</span>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">1</span>一眼能看到的 5 处变化</h2>
+  <div class="grid3">
+    <div class="kcard">
+      <h3><span class="num">1</span>氛围底</h3>
+      <p>纯 <code>#F7F7F8</code> → 静态天空/海面淡渐变（青 + 微紫）。一次绘制，无动画、不采样列表。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">2</span>侧栏景深</h3>
+      <p>实色 <code>#EFF1F5</code> → 半透明 + 磨砂，主区像浮在侧栏之上。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">3</span>卡片厚度</h3>
+      <p>单层浅阴影 → 多层（近影 + 中影 + 描边）+ 顶部微光，选中带柔光环。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">4</span>控件微光</h3>
+      <p>搜索/筛选/页签从灰方块改成白玻璃感；选中页签带渐变实底 + 投影。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">5</span>选中强调</h3>
+      <p>侧栏左条带光晕；选中卡片光环更柔；图标槽渐变更透气。</p>
+    </div>
+  </div>
+
+  <h2><span class="n">2</span>落地到 token（只动 Ocean 块即可试）</h2>
+  <table>
+    <tr><th style="width:180px">位置</th><th>改前</th><th>改后建议</th></tr>
+    <tr>
+      <td><code>--app-bg</code></td>
+      <td><code>#F7F7F8</code></td>
+      <td>多层 <code>radial-gradient</code> + <code>linear-gradient</code>（见稿内 <code>.winB</code>）</td>
+    </tr>
+    <tr>
+      <td><code>--sidebar-bg</code></td>
+      <td><code>#EFF1F5</code></td>
+      <td><code>rgba(244,247,251,0.72)</code> + 壳层 <code>backdrop-filter</code>（整栏一次，不是每行）</td>
+    </tr>
+    <tr>
+      <td><code>--glass-card-shadow</code></td>
+      <td><code>0 1px 3px …</code></td>
+      <td>三段：近影 + <code>0 6px 16px</code> + 描边环</td>
+    </tr>
+    <tr>
+      <td><code>--card-selected-*</code></td>
+      <td>浅蓝底 + 硬环</td>
+      <td>白→浅蓝渐变底 + 3px 柔光环 + 淡投影</td>
+    </tr>
+    <tr>
+      <td>搜索框 / 页签</td>
+      <td>实底灰</td>
+      <td>半透白 + 内高光；激活页签渐变实底</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <b>性能边界：</b>氛围底是静态渐变（合成器可缓存）；侧栏 blur 只挂在<strong>一个</strong>容器上。
+    卡片列表仍无 <code>backdrop-filter</code>。多窗口 × 场景动画的乘法风险不引入。
+  </div>
+
+  <h2><span class="n">3</span>不改</h2>
+  <table>
+    <tr><th>项</th><th>原因</th></tr>
+    <tr><td>布局骨架（顶栏/侧栏 180/卡 72）</td><td>信息架构已稳，改布局成本远大于观感收益</td></tr>
+    <tr><td>ModeSwitcher 实色滑块</td><td>透明顶栏下实色是正解，只微调圆角与投影</td></tr>
+    <tr><td>图标色相 amber/violet</td><td>已按对比度压过</td></tr>
+    <tr><td>内容与徽标语义</td><td>这版只谈「皮」</td></tr>
+  </table>
+
+  <p class="foot">
+    文件：<code>design/2026-主窗口视觉升级-对照稿.html</code><br>
+    改前依据：<code>theme.css</code> ocean 真值。若这版方向对，下一步把 <code>.winB</code> 的值收成
+    ocean 主题覆写 + <code>Sidebar</code>/<code>CardList</code>/<code>TopBar</code> 的局部样式，再出一版更细的 token 表。
+  </p>
+</div>
+</body>
+</html>

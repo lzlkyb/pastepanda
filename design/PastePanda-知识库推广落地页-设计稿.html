@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="zh-CN" data-page-node-id="gaBlM6M3M5Rd9MLQ0ndKtS">
+<head data-page-node-id="YMWebFtockUyDACyzJvcGd">
+<meta charset="utf-8" data-page-node-id="XPlf81Y0sGJrmbsfVoHBsj">
+<meta name="viewport" content="width=device-width,initial-scale=1" data-page-node-id="69KfVsPfhnaiTMOdsDYMC0">
+<title>PastePanda 知识库 · 推广落地页设计稿 v2（美化版）</title>
+<style>
+/* ==========================================================================
+   知识库推广落地页 v2 · 美化版
+   --------------------------------------------------------------------------
+   v2 相对 v1 的改动：
+   1. emoji → 内联 SVG 图标（sprite + <use>），统一 1.7 描边、currentColor
+   2. 背景层：网格 + 双光斑 + 顶部渐晕；分区之间用渐隐分隔不再硬切
+   3. 卡片：hover 上浮 + 阴影加深 + 顶部高光边；特性卡加玻璃拟态
+   4. 排印：标题 800 字重 + 负字距，数字 tabular-nums，正文行高 1.75
+   5. 动效：IntersectionObserver 滚动进场（尊重 prefers-reduced-motion）
+   6. 同步屏连线改渐变流动；隐私屏深色加光晕
+   --------------------------------------------------------------------------
+   取值来源（真实源码，非示意色）：
+   - 品牌渐变 #5B6AF0→#7C5CF0 ← src/styles/app.css:128（--version-badge-gradient）
+   - App 窗口 mock 令牌 ← src/styles/theme.css [data-theme="ocean"] 180-189
+   - 结构 ← KnowledgeView.tsx 三栏 + 顶栏模式切换
+   ========================================================================== */
+
+:root{
+  /* 落地页外壳 */
+  --lp-bg:#fff;
+  --lp-soft:#FAFAFC;
+  --lp-deep:#08080F;
+  --ink:#0F172A;      /* = text-primary   ocean */
+  --ink-2:#495565;    /* = text-secondary */
+  --ink-3:#627083;    /* = text-muted     */
+  --line:#E9EBF1;
+  --line-2:#F1F2F7;
+  --b1:#5B6AF0; --b2:#7C5CF0;
+  --grad:linear-gradient(135deg,#5B6AF0,#7C5CF0);
+  --grad-soft:linear-gradient(135deg,rgba(91,106,240,.10),rgba(124,92,240,.10));
+  --brand-soft:#F0F1FE;
+  --brand-ink:#4A46C8;
+  --sh-1:0 1px 2px rgba(15,23,42,.05);
+  --sh-2:0 4px 16px rgba(15,23,42,.06);
+  --sh-3:0 18px 48px rgba(15,23,42,.12);
+  --sh-b:0 8px 24px rgba(91,106,240,.28);
+  --r:16px;
+
+  /* App mock（ocean 真实令牌） */
+  --app-bg:#F7F7F8;
+  --card-bg:#fff;
+  --border-color:#E0E4EB;
+  --accent:#0284C7;
+  --accent-light:#E0F2FE;
+  --accent-solid:#027CBB;
+  --sidebar-bg:#EFF1F5;
+  --section-bg:#F0F4F8;
+  --hover:#E8ECF2;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--lp-bg);color:var(--ink);
+  font:15px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+svg{display:block}
+h1,h2,h3{margin:0;letter-spacing:-.5px}
+p{margin:0}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+/* 图标 */
+.ic{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* ── 背景层 ── */
+.bgfx{position:fixed;inset:0;pointer-events:none;z-index:0}
+.bgfx .g1,.bgfx .g2{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5}
+.bgfx .g1{width:620px;height:620px;top:-260px;left:-160px;
+  background:radial-gradient(circle,rgba(91,106,240,.30),transparent 70%)}
+.bgfx .g2{width:560px;height:560px;top:-160px;right:-180px;
+  background:radial-gradient(circle,rgba(124,92,240,.26),transparent 70%)}
+.bgfx .grid{position:absolute;inset:0;
+  background-image:linear-gradient(rgba(15,23,42,.045) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(15,23,42,.045) 1px,transparent 1px);
+  background-size:52px 52px;
+  -webkit-mask-image:linear-gradient(180deg,#000 0,transparent 620px);
+          mask-image:linear-gradient(180deg,#000 0,transparent 620px)}
+.page{position:relative;z-index:1}
+
+/* ── 设计稿说明（交付后删除）── */
+.spec{position:relative;z-index:5;background:linear-gradient(90deg,#FFF7E0,#FFFDF5);
+  border-bottom:1px solid #F2E0AE;color:#6B4E00;font-size:12.5px;
+  padding:8px 22px;display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.spec b{font-weight:800}
+
+/* ── 通用 ── */
+.sec{padding:96px 0;position:relative}
+.sec.soft{background:var(--lp-soft)}
+.sec.soft::before,.sec.soft::after{content:"";position:absolute;left:0;right:0;height:64px}
+.sec.soft::before{top:-64px;background:linear-gradient(180deg,transparent,var(--lp-soft))}
+.sec.soft::after{bottom:-64px;background:linear-gradient(180deg,var(--lp-soft),transparent)}
+.eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;
+  letter-spacing:1.2px;text-transform:uppercase;color:var(--brand-ink);
+  background:var(--brand-soft);border:1px solid rgba(91,106,240,.18);
+  border-radius:999px;padding:5px 13px;margin-bottom:16px}
+.eyebrow .ic{font-size:13px}
+h2.big{font-size:36px;line-height:1.28;font-weight:800;margin-bottom:16px;letter-spacing:-1px}
+h2.big em{font-style:normal;background:var(--grad);-webkit-background-clip:text;
+  background-clip:text;color:transparent}
+.lead{font-size:17px;color:var(--ink-2);max-width:690px;line-height:1.8}
+.hd{margin-bottom:44px}
+
+/* ── 按钮 ── */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:11px;
+  font-size:14.5px;font-weight:700;border:1px solid transparent;cursor:pointer;
+  transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s,background .18s,border-color .18s}
+.btn .ic{font-size:15px}
+.btn.pri{background:var(--grad);color:#fff;box-shadow:var(--sh-b);
+  position:relative;overflow:hidden}
+.btn.pri::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.22),transparent 55%);pointer-events:none}
+.btn.pri:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(91,106,240,.36)}
+.btn.pri:hover .ic.a{transform:translateX(2px)}
+.btn .ic.a{transition:transform .18s}
+.btn.gh{background:#fff;color:var(--ink);border-color:var(--line);box-shadow:var(--sh-1)}
+.btn.gh:hover{border-color:#CBD2E0;transform:translateY(-2px);box-shadow:var(--sh-2)}
+.btn.sm{padding:8px 16px;font-size:13.5px;border-radius:9px}
+
+/* ── 导航 ── */
+.nav{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.72);
+  backdrop-filter:blur(16px) saturate(180%);border-bottom:1px solid transparent;
+  transition:border-color .2s,box-shadow .2s,background .2s}
+.nav.on{border-bottom-color:var(--line-2);box-shadow:0 2px 20px rgba(15,23,42,.05);
+  background:rgba(255,255,255,.86)}
+.nav .wrap{display:flex;align-items:center;gap:10px;height:64px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:16.5px;letter-spacing:-.3px}
+.logo .mark{width:28px;height:28px;border-radius:9px;background:var(--grad);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;
+  box-shadow:0 3px 10px rgba(91,106,240,.34)}
+.nav nav{margin-left:auto;display:flex;gap:4px}
+.nav nav a{font-size:13.5px;color:var(--ink-2);padding:7px 12px;border-radius:9px;font-weight:600;
+  transition:.16s}
+.nav nav a:hover{color:var(--ink);background:var(--lp-soft)}
+.nav .btn{margin-left:12px}
+
+/* ── Hero ── */
+.hero{padding:74px 0 92px}
+.pill{display:inline-flex;align-items:center;gap:8px;background:#fff;
+  border:1px solid rgba(91,106,240,.24);border-radius:999px;padding:5px 14px 5px 6px;
+  font-size:12.5px;font-weight:700;color:var(--brand-ink);box-shadow:var(--sh-1);margin-bottom:22px}
+.pill b{background:var(--grad);color:#fff;border-radius:999px;padding:2px 9px;font-size:11px;
+  font-weight:800;letter-spacing:.2px}
+.hero h1{font-size:56px;line-height:1.16;font-weight:800;letter-spacing:-2px;margin-bottom:20px}
+.hero h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;
+  background-clip:text;color:transparent}
+.hero p{font-size:18.5px;color:var(--ink-2);max-width:660px;line-height:1.8;margin-bottom:32px}
+.hero .cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.hero .meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3)}
+.hero .meta span{display:flex;align-items:center;gap:6px}
+.hero .meta .ic{font-size:14px;color:var(--b1)}
+
+/* 统计条 */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);margin:56px 0 0;
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff;
+  box-shadow:var(--sh-2)}
+.stats div{padding:20px 22px;border-right:1px solid var(--line-2)}
+.stats div:last-child{border-right:0}
+.stats .n{font-size:26px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;
+  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;
+  line-height:1.2}
+.stats .l{font-size:12.5px;color:var(--ink-3);margin-top:2px}
+
+/* ── App 窗口 mock ── */
+.shot{margin-top:52px;border-radius:16px;overflow:hidden;background:var(--app-bg);
+  border:1px solid rgba(15,23,42,.09);box-shadow:0 30px 70px -20px rgba(15,23,42,.30)}
+.shot .bar{height:38px;background:linear-gradient(180deg,#F3F4F7,#EAECF1);
+  border-bottom:1px solid var(--border-color);display:flex;align-items:center;
+  gap:7px;padding:0 14px}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot.r{background:#FF5F57}.dot.y{background:#FEBC2E}.dot.g{background:#28C840}
+.shot .bar .ttl{margin-left:10px;font-size:11.5px;color:var(--ink-3);font-weight:700;
+  display:flex;align-items:center;gap:6px}
+.modes{margin-left:auto;display:flex;gap:2px;background:#fff;border:1px solid var(--border-color);
+  border-radius:8px;padding:2px}
+.modes span{font-size:10.5px;padding:3px 10px;border-radius:6px;color:var(--ink-3);font-weight:600}
+.modes span.on{background:var(--accent-light);color:var(--accent-solid);font-weight:800}
+.app{display:grid;grid-template-columns:190px 240px 1fr;height:400px;background:var(--app-bg)}
+.app .col{border-right:1px solid var(--border-color);overflow:hidden;background:var(--app-bg)}
+.app .col:last-child{border-right:0;background:#fff}
+.colhd{height:32px;display:flex;align-items:center;gap:7px;padding:0 11px;
+  border-bottom:1px solid var(--border-color);font-size:11px;color:var(--ink-3);font-weight:800;
+  background:var(--card-bg)}
+.colhd .ic{font-size:12px;opacity:.7}
+.colhd .cnt{margin-left:auto;font-size:9.5px;background:var(--hover);border-radius:999px;
+  padding:1px 7px;font-weight:700}
+.srch{margin:8px 9px;background:#fff;border:1px solid var(--border-color);border-radius:7px;
+  padding:4px 8px;font-size:11px;color:var(--ink-3);display:flex;align-items:center;gap:6px}
+.srch .ic{font-size:12px}
+.tree{padding:2px 0;font-size:11.5px}
+.tree div{padding:5px 12px;display:flex;align-items:center;gap:7px;color:var(--ink-2)}
+.tree div .ic{font-size:13px;opacity:.75}
+.tree div.sel{background:var(--accent-light);color:var(--accent-solid);font-weight:800}
+.tree div b{font-weight:400;opacity:.75;font-size:10px;margin-left:auto;font-variant-numeric:tabular-nums}
+.rows{padding:3px 0}
+.row{padding:8px 11px;border-bottom:1px solid #F1F3F7;transition:background .15s}
+.row:hover{background:#FAFBFC}
+.row.sel{background:var(--accent-light);box-shadow:inset 3px 0 0 var(--accent)}
+.row .t{font-size:12px;font-weight:800;color:var(--ink);margin-bottom:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .x{font-size:10.5px;color:var(--ink-3);line-height:1.55;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.row .m{display:flex;align-items:center;gap:5px;margin-top:4px;font-size:9.5px;color:var(--ink-3)}
+.tag{background:var(--section-bg);border-radius:5px;padding:1px 6px;font-weight:600}
+.tag.b{background:var(--brand-soft);color:var(--brand-ink)}
+.detail{padding:18px 22px;height:100%;overflow:hidden}
+.detail h3{font-size:17px;font-weight:800;margin-bottom:5px}
+.crumb{font-size:10.5px;color:var(--ink-3);margin-bottom:14px;display:flex;align-items:center;gap:5px}
+.crumb .ic{font-size:11px}
+.md{font-size:12.5px;color:var(--ink-2);line-height:1.85}
+.md h4{font-size:12px;margin:15px 0 5px;color:var(--ink);font-weight:800}
+.md code{background:var(--section-bg);padding:1.5px 5px;border-radius:5px;
+  font:11.5px "Cascadia Mono",Consolas,monospace;color:#B4345A}
+.md pre{background:#0F172A;color:#D8DEE9;padding:11px 13px;border-radius:9px;
+  font:11px/1.75 "Cascadia Mono",Consolas,monospace;overflow:auto;margin:9px 0}
+.md .quote{border-left:3px solid var(--accent);background:var(--accent-light);
+  padding:8px 12px;border-radius:0 8px 8px 0;font-size:11.5px;color:var(--ink-2);
+  display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.md .quote .ic{font-size:13px;color:var(--accent-solid)}
+.blink{color:var(--accent-solid);text-decoration:underline;text-decoration-style:dotted;
+  text-underline-offset:2px}
+.blbar{display:flex;gap:7px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color)}
+.blbar span{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--ink-3);
+  background:var(--section-bg);border-radius:7px;padding:3px 9px}
+.blbar span .ic{font-size:12px}
+
+/* ── 痛点四步 ── */
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.vsbox{border:1px solid var(--line);border-radius:var(--r);padding:26px;background:#fff;
+  box-shadow:var(--sh-1);position:relative;overflow:hidden}
+.vsbox::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
+.vsbox.bad::before{background:linear-gradient(90deg,#FCA5A5,#EF4444)}
+.vsbox.good{border-color:rgba(91,106,240,.30);background:linear-gradient(180deg,#FCFCFF,#fff)}
+.vsbox.good::before{background:var(--grad)}
+.vsbox .h{font-size:13px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.vsbox.bad .h{color:#C0392B}.vsbox.good .h{color:var(--brand-ink)}
+.steps{display:flex;flex-direction:column;gap:10px}
+.steps .s{display:flex;align-items:center;gap:11px;font-size:14.5px;color:var(--ink-2)}
+.steps .s i{width:21px;height:21px;border-radius:50%;flex:none;display:flex;
+  align-items:center;justify-content:center;font-size:10.5px;font-style:normal;font-weight:800}
+.vsbox.bad .s i{background:#FDECEA;color:#C0392B}
+.vsbox.good .s i{background:var(--brand-soft);color:var(--brand-ink)}
+.steps .s.dead{color:#B9BEC9;text-decoration:line-through}
+.steps .s .ic{margin-left:auto;font-size:14px;opacity:.5}
+.vsbox .foot{margin-top:20px;padding-top:15px;border-top:1px dashed var(--line);
+  font-size:13px;color:var(--ink-3)}
+.vsbox.good .foot{color:var(--brand-ink);font-weight:700}
+
+/* ── 特性屏 ── */
+.feat{display:grid;grid-template-columns:1fr 1.12fr;gap:56px;align-items:center}
+.feat.rev .txt{order:2}
+.feat h2{font-size:31px;font-weight:800;margin-bottom:15px;letter-spacing:-1px}
+.feat p{color:var(--ink-2);font-size:16px;margin-bottom:20px;line-height:1.8}
+.pts{list-style:none;padding:0;margin:0 0 24px}
+.pts li{display:flex;gap:11px;padding:9px 0;font-size:14.5px;color:var(--ink-2);
+  border-bottom:1px solid var(--line-2)}
+.pts li:last-child{border-bottom:0}
+.pts li b{color:var(--ink);font-weight:800}
+.pts .k{width:21px;height:21px;border-radius:7px;background:var(--grad-soft);
+  color:var(--brand-ink);flex:none;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:800;margin-top:4px;border:1px solid rgba(91,106,240,.16)}
+
+/* 采集：剪贴卡 + 右键菜单 */
+.clip{background:var(--app-bg);border:1px solid var(--border-color);border-radius:14px;
+  padding:15px;position:relative;box-shadow:var(--sh-2)}
+.cards{display:flex;flex-direction:column;gap:9px}
+.card{background:#fff;border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;
+  display:flex;gap:10px;align-items:flex-start}
+.card .ico{width:26px;height:26px;border-radius:8px;flex:none;display:flex;
+  align-items:center;justify-content:center;color:#fff}
+.card .ico .ic{font-size:14px;stroke-width:1.9}
+.card .ico.code{background:#7C5CF0}
+.card .ico.link{background:#0E9F6E}
+.card .ico.txt{background:#6B7280}
+.card .bd{min-width:0;flex:1}
+.card .t{font-size:12px;font-weight:800;color:var(--ink);margin-bottom:2px}
+.card .x{font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;font-family:"Cascadia Mono",Consolas,monospace}
+.card .tm{font-size:9.5px;color:var(--ink-3);flex:none}
+.card.hi{border-color:var(--accent);box-shadow:0 0 0 3px rgba(2,132,199,.14)}
+.menu{position:absolute;right:12px;top:96px;width:176px;background:#fff;
+  border:1px solid var(--border-color);border-radius:11px;
+  box-shadow:0 14px 34px rgba(15,23,42,.20);padding:5px;font-size:12px;z-index:3}
+.menu div{padding:7px 10px;border-radius:7px;color:var(--ink-2);display:flex;
+  align-items:center;gap:9px}
+.menu div .ic{font-size:14px;opacity:.8}
+.menu div.hot{background:var(--accent-light);color:var(--accent-solid);font-weight:800}
+.menu div.hot .ic{opacity:1}
+.menu .sep{height:1px;background:var(--border-color);margin:5px 3px;padding:0}
+.menu .kbd{margin-left:auto;font-size:10px;background:var(--section-bg);border-radius:4px;
+  padding:1px 5px;color:var(--ink-3)}
+
+/* 问答 */
+.qa{background:#fff;border:1px solid var(--border-color);border-radius:14px;overflow:hidden;
+  box-shadow:var(--sh-2)}
+.qa .q{background:linear-gradient(180deg,#F6F8FB,#EFF2F7);padding:13px 15px;
+  display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid var(--border-color)}
+.qa .q .av{width:23px;height:23px;border-radius:50%;background:var(--grad);color:#fff;
+  flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800}
+.qa .q p{font-size:13.5px;font-weight:700;color:var(--ink)}
+.qa .a{padding:16px 17px}
+.qa .a p{margin-bottom:10px;font-size:13.5px;color:var(--ink-2);line-height:1.85}
+.qa .a b{color:var(--ink)}
+.qa .a code{background:var(--section-bg);padding:1.5px 5px;border-radius:5px;
+  font:11.5px "Cascadia Mono",Consolas,monospace;color:#B4345A}
+.sup{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;
+  padding:0 4px;border-radius:5px;background:var(--accent-light);color:var(--accent-solid);
+  font-size:9.5px;font-weight:800;vertical-align:super;margin-left:3px}
+.srcs{border-top:1px solid var(--border-color);background:var(--app-bg);padding:10px 15px;
+  display:flex;flex-direction:column;gap:7px}
+.srcs .lb{font-size:10px;font-weight:800;color:var(--ink-3);letter-spacing:.6px;
+  text-transform:uppercase;margin-bottom:1px}
+.srcs .sc{display:flex;gap:9px;align-items:center;font-size:11.5px;color:var(--ink-2);
+  background:#fff;border:1px solid var(--border-color);border-radius:8px;padding:7px 10px;
+  transition:.16s}
+.srcs .sc:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(2,132,199,.12)}
+.srcs .sc b{color:var(--accent-solid);font-weight:800;background:var(--accent-light);
+  border-radius:5px;padding:1px 6px;font-size:10px}
+.srcs .sc .g{margin-left:auto;color:var(--ink-3);font-size:11px;display:flex;align-items:center;gap:3px}
+.srcs .sc .ic{font-size:12px}
+.qa .inp{margin:11px 15px 15px;border:1px solid var(--border-color);border-radius:10px;
+  padding:10px 13px;font-size:12.5px;color:var(--ink-3);background:var(--app-bg);
+  display:flex;align-items:center;gap:9px}
+.qa .inp .send{margin-left:auto;width:26px;height:26px;border-radius:8px;
+  background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;
+  box-shadow:0 3px 9px rgba(91,106,240,.30)}
+.qa .inp .send .ic{font-size:13px;stroke-width:2}
+
+/* MCP */
+.mcp{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.mcpc{border:1px solid var(--line);border-radius:var(--r);padding:22px;background:#fff;
+  display:flex;flex-direction:column;gap:11px;box-shadow:var(--sh-1);
+  transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s,border-color .2s}
+.mcpc:hover{transform:translateY(-4px);box-shadow:var(--sh-3);border-color:rgba(91,106,240,.30)}
+.mcpc .li{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-size:16px;font-weight:800}
+.mcpc .li.a{background:linear-gradient(135deg,#E8833A,#D97757)}
+.mcpc .li.b{background:var(--grad);box-shadow:0 4px 12px rgba(91,106,240,.30)}
+.mcpc .li.c{background:linear-gradient(135deg,#8B90A0,#6B7280)}
+.mcpc .n{font-size:14.5px;font-weight:800}
+.mcpc .d{font-size:12.5px;color:var(--ink-3);line-height:1.7;flex:1}
+.mcpc .go{font-size:12.5px;font-weight:800;color:var(--brand-ink);display:flex;
+  align-items:center;gap:5px}
+.mcpc .go .ic{font-size:13px;transition:transform .18s}
+.mcpc:hover .go .ic{transform:translateX(3px)}
+.mcpnote{margin-top:20px;border-left:3px solid var(--b1);background:var(--grad-soft);
+  padding:14px 18px;border-radius:0 12px 12px 0;font-size:13px;color:#3B3BA8;line-height:1.8}
+.mcpnote b{color:#2E2A9A}
+
+/* 隐私（深色） */
+.sec.deep{background:var(--lp-deep);color:#E4E4E7;overflow:hidden}
+.sec.deep::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(760px 340px at 50% -10%,rgba(91,106,240,.28),transparent 70%)}
+.sec.deep>*{position:relative}
+.sec.deep h2.big{color:#fff}
+.sec.deep .lead{color:#A8A8B4}
+.sec.deep .eyebrow{background:rgba(129,140,248,.14);border-color:rgba(129,140,248,.32);
+  color:#B4BCFB}
+.priv{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:12px}
+.privc{background:#121218;border:1px solid #23232C;border-radius:var(--r);padding:22px;
+  transition:.2s}
+.privc:hover{border-color:rgba(129,140,248,.42);background:#15151C;transform:translateY(-3px)}
+.privc .e{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;
+  justify-content:center;margin-bottom:14px;background:rgba(129,140,248,.13);
+  color:#A5B4FC;border:1px solid rgba(129,140,248,.24)}
+.privc .e .ic{font-size:19px}
+.privc .n{font-size:14.5px;font-weight:800;color:#fff;margin-bottom:7px}
+.privc .d{font-size:12.5px;color:#8D8D95;line-height:1.7}
+.privc .off{display:inline-flex;align-items:center;gap:5px;margin-top:12px;font-size:10.5px;
+  font-weight:800;background:#1E1B4B;color:#A5B4FC;border:1px solid #3730A3;
+  border-radius:999px;padding:3px 10px}
+.privc .off .ic{font-size:11px}
+
+/* 同步 */
+.sync{display:grid;grid-template-columns:1fr auto 1fr;gap:20px;align-items:center;
+  background:#fff;border:1px solid var(--line);border-radius:18px;padding:30px;
+  box-shadow:var(--sh-2)}
+.dev{border:1px solid var(--border-color);border-radius:14px;overflow:hidden;
+  background:var(--app-bg);box-shadow:var(--sh-1);transition:.2s}
+.dev:hover{box-shadow:var(--sh-2);transform:translateY(-2px)}
+.dev .hd{background:linear-gradient(180deg,#F3F4F7,#EAECF1);padding:10px 14px;font-size:12px;
+  font-weight:800;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-color)}
+.dev .hd .on{width:8px;height:8px;border-radius:50%;background:#22C55E;
+  box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.dev .bd{padding:18px}
+.code{font:800 32px/1 "Cascadia Mono",Consolas,monospace;letter-spacing:10px;
+  text-align:center;color:var(--ink);margin:6px 0 10px;font-variant-numeric:tabular-nums}
+.dev .bd .cp{font-size:11.5px;color:var(--ink-3);text-align:center}
+.mid{display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--ink-3);
+  font-size:11.5px;text-align:center;padding:0 6px}
+.mid .ln{width:96px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--b1),var(--b2));
+  background-size:200% 100%;animation:flow 2.6s linear infinite}
+@keyframes flow{to{background-position:-200% 0}}
+.mid .fp{font:700 10px/1 "Cascadia Mono",Consolas,monospace;color:#9AA2B1;
+  background:var(--section-bg);border-radius:6px;padding:4px 8px}
+.mid .ic.d{font-size:18px;color:var(--b1)}
+.syncfoot{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:28px}
+.syncfoot div{font-size:13.5px;color:var(--ink-2);display:flex;gap:9px;align-items:flex-start}
+.syncfoot .ic{font-size:16px;color:var(--b1);margin-top:3px}
+.syncfoot b{color:var(--ink);font-weight:800;display:block}
+
+/* 功能网格 */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.fc{border:1px solid var(--line);border-radius:14px;padding:18px 20px;background:#fff;
+  display:flex;gap:12px;align-items:flex-start;box-shadow:var(--sh-1);transition:.2s}
+.fc:hover{transform:translateY(-3px);box-shadow:var(--sh-2);border-color:rgba(91,106,240,.26)}
+.fc .i{width:32px;height:32px;border-radius:10px;background:var(--grad-soft);
+  color:var(--brand-ink);display:flex;align-items:center;justify-content:center;flex:none;
+  border:1px solid rgba(91,106,240,.16)}
+.fc .i .ic{font-size:16px}
+.fc .n{font-size:14px;font-weight:800;margin-bottom:3px}
+.fc .d{font-size:12.5px;color:var(--ink-3);line-height:1.7}
+
+/* 不适合谁 */
+.no{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.noc{border:1px dashed #D8DCE5;border-radius:14px;padding:20px;background:var(--lp-soft)}
+.noc .i{width:30px;height:30px;border-radius:9px;background:#fff;border:1px solid #E2E5EC;
+  display:flex;align-items:center;justify-content:center;color:var(--ink-3);margin-bottom:11px}
+.noc .i .ic{font-size:15px}
+.noc .n{font-size:13.5px;font-weight:800;margin-bottom:5px}
+.noc .d{font-size:12.5px;color:var(--ink-3);line-height:1.7}
+
+/* CTA */
+.cta{padding:96px 0;background:var(--lp-deep);color:#fff;text-align:center;position:relative;
+  overflow:hidden}
+.cta::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(720px 340px at 50% 0%,rgba(91,106,240,.34),transparent 68%)}
+.cta::after{content:"";position:absolute;left:50%;top:0;width:720px;height:1px;
+  transform:translateX(-50%);
+  background:linear-gradient(90deg,transparent,rgba(165,180,252,.7),transparent)}
+.cta>*{position:relative}
+.cta h2{font-size:38px;font-weight:800;margin-bottom:14px;letter-spacing:-1.2px}
+.cta p{color:#A8A8B4;font-size:16.5px;margin:0 auto 32px;max-width:560px;line-height:1.8}
+.cta .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.cta .btn.gh{background:rgba(255,255,255,.05);color:#fff;border-color:rgba(255,255,255,.18)}
+.cta .btn.gh:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.34)}
+.cta .fine{margin-top:20px;font-size:12.5px;color:#6E6E80}
+
+footer{background:#05050A;color:#6E6E80;font-size:12.5px;padding:26px 0}
+footer .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+footer .r{margin-left:auto}
+
+/* 进场动画 */
+.rv{opacity:0;transform:translateY(18px);
+  transition:opacity .6s cubic-bezier(.2,.8,.2,1),transform .6s cubic-bezier(.2,.8,.2,1)}
+.rv.in{opacity:1;transform:none}
+
+@media (max-width:960px){
+  .hero h1{font-size:38px;letter-spacing:-1px}
+  .hero p{font-size:16.5px}
+  .feat,.vs{grid-template-columns:1fr;gap:32px}
+  .feat.rev .txt{order:0}
+  .app{grid-template-columns:150px 1fr;height:330px}
+  .app .col:last-child{display:none}
+  .priv,.no,.mcp,.grid3{grid-template-columns:repeat(2,1fr)}
+  .sync{grid-template-columns:1fr}
+  .syncfoot{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stats div:nth-child(2){border-right:0}
+  .stats div:nth-child(-n+2){border-bottom:1px solid var(--line-2)}
+  .nav nav{display:none}
+  .sec{padding:64px 0}
+  h2.big{font-size:28px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+  .rv{opacity:1;transform:none}
+}
+</style>
+</head>
+<body data-page-node-id="LFuErAAw2WYwKdAfQRsI6G">
+
+<!-- ═══ 图标 sprite（内联 SVG，1.7 描边）═══ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" data-page-node-id="NBUIfSmllo0uDbSmHALQGN">
+  <defs data-page-node-id="EH0T7rjNByo3Ew8nVBWW3b">
+    <symbol id="i-folder" viewBox="0 0 24 24" data-page-node-id="PGp30kIm9Ik08kiIQLViD3"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" data-page-node-id="dcvnxtKQlHTmCvyVSH90zD"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24" data-page-node-id="ybEEDL0Mh1cxNEmdPZGLYf"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z" data-page-node-id="en1DBE8pB0Xk4svBjU7oot"/><path d="M14 3v5h5" data-page-node-id="51cYYSGYlBSrBwwmavxvtb"/><path d="M9 13h6M9 17h4" data-page-node-id="sFujdWV5RYcXgrbGURjLZh"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" data-page-node-id="ZZWNwXhdqBrssTUnxa9wHL"><circle cx="11" cy="11" r="7" data-page-node-id="GFXX5MAttxjO3ZfYc4J3L2"/><path d="m20 20-3.5-3.5" data-page-node-id="ASVf3qdcEyuGp3LBYffCWT"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24" data-page-node-id="y2cIl3sXChsAXkLdkJmOFL"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" data-page-node-id="CkGSwx5ymZfnvCOCPsBI2R"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" data-page-node-id="AZa6WA1P9Tiw5oyBEB7KO9"><path d="M12 3l8 3v6c0 5-3.4 8.3-8 9-4.6-.7-8-4-8-9V6l8-3z" data-page-node-id="EFuLXQbW8A1HSWpbSf7EEa"/><path d="m9 12 2 2 4-4" data-page-node-id="2xdVTJGAzesNOeVCiYj4fH"/></symbol>
+    <symbol id="i-sync" viewBox="0 0 24 24" data-page-node-id="YB7HAiyRZEsB0Ga53zmrmk"><path d="M20 11a8 8 0 0 0-13.7-5.1L4 8" data-page-node-id="nKrBZumDGdkSyiMg28Vnce"/><path d="M4 5v3h3" data-page-node-id="1rB49JrEBdOVmFS4S4XGPT"/><path d="M4 13a8 8 0 0 0 13.7 5.1L20 16" data-page-node-id="u1JrlqFvKVG7tScqC1oulc"/><path d="M20 19v-3h-3" data-page-node-id="hUrHkvChMiWawblROXWBIV"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24" data-page-node-id="bVn8qUbBeKcDvxp80wkwm1"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1" data-page-node-id="Ubk5IHQPFLrOkRNG6gd0BB"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1" data-page-node-id="SAbYHgXMxy83SCU1oRRXrF"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24" data-page-node-id="dAHOiNxUsG2s6zKf5MumoP"><path d="m9 8-4 4 4 4M15 8l4 4-4 4" data-page-node-id="OzrFIJJJfcoaPwKLlvPmG0"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" data-page-node-id="zxsevPZZt2EJUDwDD21yIf"><path d="M4 7h16M10 11v6M14 11v6" data-page-node-id="WpQ8zdxrj7TKqi38xzwt8X"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" data-page-node-id="046oc65a0aqXhgjTmW2JXk"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" data-page-node-id="KeOUnThwUAel6AdXWe0Ud8"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24" data-page-node-id="2r3ofIY10STG5aTkpviw0l"><path d="M20 13.5 13.5 20a2 2 0 0 1-2.8 0L4 13.3A2 2 0 0 1 3.4 12V5a2 2 0 0 1 2-2h7a2 2 0 0 1 1.4.6l6 6a2 2 0 0 1 .2 2.9z" data-page-node-id="GDlNxSd5ZXDthyEE1GrniA"/><circle cx="8" cy="8" r="1.4" data-page-node-id="EKEJRo6gFcni0n3rV2FgEq"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" data-page-node-id="OXrEk98XrD3rTqw5Qddmll"><path d="m5 13 4 4L19 7" data-page-node-id="y4xrROgMlGUrCrdp8j7VCs"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" data-page-node-id="Gf2hHOXjYhl3MDn6XTe8sj"><path d="M6 6l12 12M18 6 6 18" data-page-node-id="2VuB8kThEqCKjGVujyBr3s"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" data-page-node-id="XWUu0LFPeFTdVEXvacFcTc"><path d="M5 12h14M13 6l6 6-6 6" data-page-node-id="WdPx0uH1XCsQ5vHAdqk9DY"/></symbol>
+    <symbol id="i-dl" viewBox="0 0 24 24" data-page-node-id="H8NQoRG9IRUGl6f880zF3k"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" data-page-node-id="P8hotL9d4cCBnzrIAeMlz3"/><path d="M5 19h14" data-page-node-id="vQjl1eLbq0lRnkFP5SFBwh"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" data-page-node-id="Uva8bsOBwhyI9FUp1NTICG"><circle cx="12" cy="12" r="8.5" data-page-node-id="TFzznzpxYTIdi2CzyG3ref"/><path d="M12 7.5V12l3 2" data-page-node-id="Hap7HEFithjcBXPxNaATWC"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" data-page-node-id="CFB0fjv2CYn9sWGwBctnel"><path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" data-page-node-id="8yp9lHMCTSEic3HWOm85Q2"/><circle cx="12" cy="12" r="2.6" data-page-node-id="pEn6G4GQz2n7EClWRDHlA9"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24" data-page-node-id="HMRpqxOSAatKKole16yD5g"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" data-page-node-id="3YEFYQNEZe4Fvlwmc3wW3r"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24" data-page-node-id="bqLyVvDjfIs45zjIxEuY6A"><ellipse cx="12" cy="6" rx="7" ry="3" data-page-node-id="Qd5AebMfuzfdzQGQhYN5Hz"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" data-page-node-id="gXfGZEOCNs8fAQYErhJX5y"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" data-page-node-id="wDuTEWcvk5AWgKBIWXnHZa"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24" data-page-node-id="gjQIoLzYtnQPeVcGTG3Pt4"><path d="m12 3 9 5-9 5-9-5 9-5z" data-page-node-id="L78KLs0hvszFtwgNgFsziV"/><path d="m3 13 9 5 9-5" data-page-node-id="o1hED1RTkfvIRCUtA749wT"/></symbol>
+    <symbol id="i-health" viewBox="0 0 24 24" data-page-node-id="rhMgXDJ3p6NPxQhCL4OXmB"><path d="M3 12h4l2-5 3 10 3-7 2 2h4" data-page-node-id="FRr2A9js9D9Szux6ADXtZP"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24" data-page-node-id="RDR3X8zjSQ8Hpb5oaj8UPM"><path d="M9 3v6M15 3v6" data-page-node-id="amhCIj9BMm94GzQ5AsyT0l"/><path d="M7 9h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V9z" data-page-node-id="JUf0FCFm49JJ4x5y4Avrz2"/><path d="M12 17v4" data-page-node-id="ilDL4yChfe6kGOkczxeAYw"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24" data-page-node-id="M8iGisBz8w3NgnLxHfvr3k"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" data-page-node-id="JDjT8nIFdoiQpxKh2dknc7"/><path d="M4 12h16" data-page-node-id="0d50VNEdnfI6BmZamGbCsh"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24" data-page-node-id="sa7Ewtj2FMoytrCvwacvsg"><path d="M4 13V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7" data-page-node-id="ygRSlI0LYCUrCSfEPkvh92"/><path d="m4 13 2.5 5a2 2 0 0 0 1.8 1.2h7.4a2 2 0 0 0 1.8-1.2L20 13" data-page-node-id="DfaaBAKwIED8BpJKOtbE4F"/><path d="M4 13h5l1 2h4l1-2h5" data-page-node-id="9D5wwaV39STin8VxEXtgGR"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24" data-page-node-id="7hi2RluVyJQGmDxBupxleA"><path d="M4 12a8 8 0 1 0 3-6.2L4 8" data-page-node-id="hQwHoPFujQqEDGj9OTjPmf"/><path d="M4 4v4h4" data-page-node-id="xX4rgyjvwGYY5gHtQRBaj6"/><path d="M12 8.5V12l2.5 1.8" data-page-node-id="jNpXUNBr7xB2Nj3Yz0sGLL"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24" data-page-node-id="Mdc2FXFr9E7DSRvhbzBMiY"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5" data-page-node-id="Pp0XYGlVW0gNRc7LiuhtEh"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" data-page-node-id="0R4KQXLpk2CmAIHYPQ5JSl"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" data-page-node-id="txoZkmAqzuVOURFT3RTzxT"><path d="M12 19V5M7 10l5-5 5 5" data-page-node-id="k44N5J3OUnF9t531sM0R79"/></symbol>
+    <symbol id="i-devices" viewBox="0 0 24 24" data-page-node-id="0cQRhS0hEkHHJ5nHmjVTfp"><rect x="3" y="5" width="12" height="9" rx="1.5" data-page-node-id="zurqvp6Eb36j2R2zxVF7yL"/><rect x="14" y="11" width="7" height="8" rx="1.5" data-page-node-id="nkGEoSZXXyBwa6ixKDqbIm"/><path d="M6 18h5" data-page-node-id="OUGHo2UdfEN9PvaSfq1rjw"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24" data-page-node-id="XXOcy1tDl5Cis68JBEhZmM"><rect x="7" y="3" width="10" height="18" rx="2.5" data-page-node-id="QUj1yDKTCuhyzW4wdda5Df"/><path d="M11 18h2" data-page-node-id="DHluQuXFIqLANwogA5dyYL"/></symbol>
+    <symbol id="i-team" viewBox="0 0 24 24" data-page-node-id="pfgsvgzGoRN4YxZb8Ufb3W"><circle cx="9" cy="8" r="3" data-page-node-id="fGROx26OnzUOsv63UCgKbR"/><path d="M3 20a6 6 0 0 1 12 0" data-page-node-id="CnknOs5DGEfUJkiWXfIFhp"/><path d="M16 11a3 3 0 1 0 0-6" data-page-node-id="aNhR6cT0E5exI0h9EjajMx"/><path d="M18 20a5 5 0 0 0-2-4" data-page-node-id="GG9Z5vaAIE4cbVv6dy3REG"/></symbol>
+    <symbol id="i-graph" viewBox="0 0 24 24" data-page-node-id="BWpkEjCislY2ig0NOCYZx8"><circle cx="6" cy="7" r="2.4" data-page-node-id="0drZsxMIpjukK6inz7Arc6"/><circle cx="18" cy="7" r="2.4" data-page-node-id="qLbVaVHjanQrVdZx5eu39t"/><circle cx="12" cy="17" r="2.4" data-page-node-id="OH5sHGnUtIloUykPKTOaP4"/><path d="M8 8.4 10.6 15M16 8.4 13.4 15M8.4 7h7.2" data-page-node-id="VJwFF1YUlj3UhihkdmPnFj"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24" data-page-node-id="Nd4XouWFFBFviGvWEr8Emc"><rect x="9" y="3" width="6" height="11" rx="3" data-page-node-id="h9okb0F4sSRLRBkFRhzU9X"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" data-page-node-id="4x6EDshKwXxx1NEmjMguig"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" data-page-node-id="tZctbBJ1WanKfyqOTqxCPY"><rect x="5" y="10" width="14" height="10" rx="2" data-page-node-id="oiMEGTDDqg9EmMZsB2oe3f"/><path d="M8 10V7a4 4 0 0 1 8 0v3" data-page-node-id="DBoMFDKfHt1BVPGsDh6Mk9"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" data-page-node-id="xKHRiaq6q3CjxH9jd0wt7l"><path d="M9 19c-4 1.5-4-2.5-6-3m12 5v-3.9a3.4 3.4 0 0 0-1-2.6c3 0 6-1.6 6-6.6A5 5 0 0 0 18.4 5a4.7 4.7 0 0 0-.1-3.4s-1.2 0-3.6 2.5a9.4 9.4 0 0 0-5 0C7.3 1.6 6.1 1.6 6.1 1.6A4.7 4.7 0 0 0 6 5a5 5 0 0 0-1.4 3.9c0 5 3 6.6 6 6.6a3.4 3.4 0 0 0-1 2.6V21" data-page-node-id="BT6QAMY1zjwi82ZOY5ysOC"/></symbol>
+    <symbol id="i-win" viewBox="0 0 24 24" data-page-node-id="ZTDD0RWClYOIh5MucJjQql"><path d="M4 6.5 10 5v6H4V6.5zM11 4.8 20 3.5v7.5h-9V4.8zM4 12h6v6l-6-1.2V12zM11 12h9v7.3l-9-1.8V12z" data-page-node-id="KcAlYKeZhmc5ITWBZK0pgl"/></symbol>
+  </defs>
+</svg>
+
+<!-- 背景层 -->
+<div class="bgfx" data-page-node-id="xwD3N1lFtRLW0ggjqtltls"><span class="g1" data-page-node-id="6pDFYTZzUUOxCRbThiGpwU"></span><span class="g2" data-page-node-id="eZhzF31SagNOu529JJ2053"></span><span class="grid" data-page-node-id="R9rNODjEAxpgSszEFdmdBb"></span></div>
+
+<!-- 设计稿说明（交付后删除） -->
+<div class="spec" data-page-node-id="ZTFhlTTkGaMsGOLimOE2jB">
+  <b data-page-node-id="9vBeoERng7DE41IfBNrlXE">设计稿 v2</b>
+  <span data-page-node-id="m19pZ9wrj1KBhoGssn3CEo">渐变 <code data-page-node-id="tK3D1lPxMGve4sUz6BPqiA">#5B6AF0→#7C5CF0</code> ← <code data-page-node-id="UqCHD4A1nnwsLXHk5c7wv4">app.css:128</code>；窗口 mock 令牌 ← <code data-page-node-id="PyVJq2bfmGt5KQtzhyOEsJ">theme.css</code> ocean</span>
+  <span data-page-node-id="oU0vSpJl1yOeGnmEaakCqu">⚠️ 截图位为 HTML 重建示意，上线换真实截图</span>
+  <span data-page-node-id="wKygjDLcCxde82oi0OM6l5">v7.1.4 ｜ 下载链接待替换</span>
+</div>
+
+<div class="page" data-page-node-id="o379mvh7Rcq43IvgDcllaY">
+
+<!-- ═══ 导航 ═══ -->
+<header class="nav" id="nav" data-page-node-id="FCgKL5X4d919G5HuPDbaXF">
+  <div class="wrap" data-page-node-id="PTEIpsGbPJ7IfYxcm4llln">
+    <a class="logo" href="#top" data-page-node-id="vNxhFMFR0JyUPRprOJpuVg"><span class="mark" data-page-node-id="lFT6RTTh6NdizbFuwu9WMe">P</span>PastePanda</a>
+    <nav data-page-node-id="9ZlajgPHCgkou6GrCXIKxe">
+      <a href="#capture" data-page-node-id="oDGAp18RqUQJgtZc8jiAf3">采集</a>
+      <a href="#ask" data-page-node-id="9zs2wEYL5B97fmsprbrcWD">问答</a>
+      <a href="#ai" data-page-node-id="1NFYoyAGk8XrC35O1HZrM0">AI 接入</a>
+      <a href="#privacy" data-page-node-id="7ZAPjKijCOAztA9oT7gkXV">隐私</a>
+      <a href="#sync" data-page-node-id="YftBR7GakMFe49NuA66dXe">同步</a>
+      <a href="#features" data-page-node-id="qIsVhuv1otQ6RpLDWJXaHj">功能</a>
+    </nav>
+    <a class="btn pri sm" href="#download" data-page-node-id="BQY6OcxzRuGjsGU0eQPXmE"><svg class="ic" data-page-node-id="onUmGWMNFzBZsVT8c11gEY"><use href="#i-dl" data-page-node-id="pUrCleJKNr7x63bG5MsSvy"/></svg>下载 v7.1.4</a>
+  </div>
+</header>
+
+<!-- ═══ 1 · Hero ═══ -->
+<section class="hero" id="top" data-page-node-id="6E7pge0xdDTfBMIahVRuIC">
+  <div class="wrap" data-page-node-id="fnTdBBomgHAfehDbCu8Mdi">
+    <div class="pill rv" data-page-node-id="sg5Dc9WHEzADbr1jf1Cu1M"><b data-page-node-id="F1Yph4y7G2dKTgq4ww5Ebr">NEW</b> v7.1.4 · 知识库模块</div>
+    <h1 class="rv" data-page-node-id="dvoLhgYKgfCQpJ2SRAUdDd">你复制过的东西，<br data-page-node-id="2M8K6SbpyCnPv9LQ0fV4vL"><em data-page-node-id="eNAjPchGj620poKgjERRAb">本来就该是你的知识</em></h1>
+    <p class="rv" data-page-node-id="dMxM4ZFJVCMMcNlAaJYqVI">把剪贴板接进知识库：复制过的任意一条，一键变成能搜索、能问答、能让 AI 用上的笔记——全程存在你自己的电脑上。</p>
+    <div class="cta rv" data-page-node-id="LQK0zHBstlUdUCwdiRmUuo">
+      <a class="btn pri" href="#download" data-page-node-id="L3F9y3bJfkOrCfvsxc5Keh">
+        <svg class="ic a" data-page-node-id="JUPHHat3XBDm5PYwUqvAQY"><use href="#i-dl" data-page-node-id="D9G4FHHFt6SFsJ3yHdDPtn"/></svg>下载 Windows 版</a>
+      <a class="btn gh" href="#capture" data-page-node-id="XSTvb0ZvlHCPq8p3k1bzH3">看看它怎么用</a>
+    </div>
+    <div class="meta rv" data-page-node-id="deZHWuxijSsMfAvRlSr7P4">
+      <span data-page-node-id="H8zHTdGudyBa3E69FWZkAe"><svg class="ic" data-page-node-id="nPAFyJaLbsazBXw9QkcjPQ"><use href="#i-win" data-page-node-id="RujASfAJsmCQvbQKCRnz0c"/></svg>Windows 10 / 11</span>
+      <span data-page-node-id="lF08ewjKhaU9XCvllOyQAl"><svg class="ic" data-page-node-id="45qu0twb5qY5MxxY4HUpP5"><use href="#i-github" data-page-node-id="PYVvBo0ZnUYnnEzVzDxEGg"/></svg>MIT 开源</span>
+      <span data-page-node-id="sbdTWZ5PPMEad8DIUD9TYa"><svg class="ic" data-page-node-id="7UwZsAls2i4V1RWmqkxEYw"><use href="#i-check" data-page-node-id="2xdX06hHapIH3XJgY1WMLX"/></svg>无需注册账号</span>
+    </div>
+
+    <!-- 产品窗口 mock（ocean 真实令牌 + KnowledgeView 三栏） -->
+    <div class="shot rv" data-page-node-id="S8QgTfIuQeIOF7TJZmioyu">
+      <div class="bar" data-page-node-id="FmRvghCbV7ujfV4HRyLtwg">
+        <span class="dot r" data-page-node-id="7rwkyfXVH6UjsfQzy0BeT1"></span><span class="dot y" data-page-node-id="PEvq4XHK75bLxspu3ChNDa"></span><span class="dot g" data-page-node-id="wRPqj7imWJHgFsEwD5MjEI"></span>
+        <span class="ttl" data-page-node-id="0MgPzAlbYWFDQHmRE4dC6D"><svg class="ic" style="width:13px;height:13px" data-page-node-id="tNSQSMXOIV9nfIWNDcDBT0"><use href="#i-note" data-page-node-id="WAh2Md2cnCz5W9vkSa7l6m"/></svg>PastePanda</span>
+        <div class="modes" data-page-node-id="SKCsC6EaNGZsGwFKuWmWEz">
+          <span data-page-node-id="puZg22iSjAN5WncKVCoVGZ">记录</span><span data-page-node-id="pcAJ9PYDFreeQdjNfhA8e7">工具</span><span class="on" data-page-node-id="6AknVWHKw3PCfi622msjuB">知识</span><span data-page-node-id="jMJJOkOJzIlJskV9Mjff8f">设置</span>
+        </div>
+      </div>
+      <div class="app" data-page-node-id="Zq2wRVZfzPH7PXdH31o9iT">
+        <div class="col" data-page-node-id="4f53mX9wIDvwNFA4Xbc4rG">
+          <div class="colhd" data-page-node-id="lBxjiLk3X3DQ54xfSzdyXY"><svg class="ic" data-page-node-id="xKmJAriY68ku35VqDMPCu7"><use href="#i-layers" data-page-node-id="OxaJn4lagi2HGC4JhQRL50"/></svg>知识库<span class="cnt" data-page-node-id="8wLXMKYNkrkj9ATCUspt4A">25</span></div>
+          <div class="srch" data-page-node-id="LPfNvqyinrzRhld4rQH10A"><svg class="ic" data-page-node-id="kXqtYU9UHulxOvF9lFM8OL"><use href="#i-search" data-page-node-id="ab2Lk6UOLs7uybLdcr2dHZ"/></svg>搜索笔记…</div>
+          <div class="tree" data-page-node-id="MBXIEBePnJvHPqhm12W29F">
+            <div class="sel" data-page-node-id="BPDSe2VdKZ58zFC1rNh4dv"><svg class="ic" data-page-node-id="9FGJ8qWfLBlutcxBGCLKYN"><use href="#i-folder" data-page-node-id="iA8d7r2fpkwgE8IWv7ZmtR"/></svg>全部笔记 <b data-page-node-id="xdnRwBKjkspuqggIq5e0Ym">25</b></div>
+            <div data-page-node-id="m8KG5g2N7jIGMd5L2PT6TE"><svg class="ic" data-page-node-id="IqZghriQQl7svlh5yyTxFu"><use href="#i-folder" data-page-node-id="9PFaJO3dVDl17XpV4CcPbN"/></svg>开发 <b data-page-node-id="tFqbWdSJb5gZoEWcR3BBTE">9</b></div>
+            <div style="padding-left:24px" data-page-node-id="D0Qh39knuo5D7FGOXL5R7x"><svg class="ic" data-page-node-id="bel2S4h2a6MeanFdGRYO3X"><use href="#i-folder" data-page-node-id="LYDAdVBbxLwh2y8qXDDaB2"/></svg>Docker <b data-page-node-id="6HkFdfrdoBueYc9E8cCBoD">4</b></div>
+            <div style="padding-left:24px" data-page-node-id="RRqTRGSefNCeNZRjCfxJv3"><svg class="ic" data-page-node-id="PP7YpsWf3CtOCrm659fCXb"><use href="#i-folder" data-page-node-id="3BDFg9WR0lv4tmITw7H8Bg"/></svg>PostgreSQL <b data-page-node-id="aKvZKawiCszfMuT57GqKFv">3</b></div>
+            <div data-page-node-id="d0RrGKkdVRB4YsDLPqKaGq"><svg class="ic" data-page-node-id="7mk5B1DrQ8ZhIdGEoaM2QB"><use href="#i-folder" data-page-node-id="pCiRABRfG2mIoxxDph78pz"/></svg>客户沟通 <b data-page-node-id="qBHE5TjncCr1eQ40RtaZf2">6</b></div>
+            <div data-page-node-id="Wim4nadf5zal4yt5ITWurC"><svg class="ic" data-page-node-id="uwjXziM4VE390Wf6tBMQ5H"><use href="#i-folder" data-page-node-id="Zu8cMZrDj9MiMnKU3Al9sp"/></svg>读了一半 <b data-page-node-id="bNqk9AD0i0HQIdD5I363zB">5</b></div>
+            <div data-page-node-id="6UYJ0K5wjTYc1HDA2TBGLS"><svg class="ic" data-page-node-id="4JwU36Ja2aJUnEPJVR644Y"><use href="#i-tag" data-page-node-id="h3YfIuTbcBp1nUSsoQsmRJ"/></svg>模板 <b data-page-node-id="AlvbUOx3kEUpJgRY34VYIy">3</b></div>
+            <div data-page-node-id="oZCHA2oVfSS042X1fxhH6O"><svg class="ic" data-page-node-id="epMhMnryEVAzeICsKBcdwi"><use href="#i-trash" data-page-node-id="YYdajXhnNthjDP5I8o6hee"/></svg>回收站 <b data-page-node-id="59fHCq29UAjstVWPMMi8zl">1</b></div>
+          </div>
+        </div>
+        <div class="col" data-page-node-id="j4LEfN3tn3ooCk6Eb4g8MG">
+          <div class="colhd" data-page-node-id="Mcc6OmQAvK3XFoZWjmWO8O">开发 / Docker<span class="cnt" data-page-node-id="vmurO1QoYL1OGPt7NB6e9F">4</span></div>
+          <div class="rows" data-page-node-id="cKDmpEE1oJZiGt5EdSLvia">
+            <div class="row sel" data-page-node-id="y2RooSUQljSG7c9Qync5n8">
+              <div class="t" data-page-node-id="QuJ9fE1tM27JAcMO1JZeCa">Docker 端口占用排查</div>
+              <div class="x" data-page-node-id="Tan4i5YNAZYR97RabNMEQF">宿主机端口被占，容器起不来时的三条定位路径…</div>
+              <div class="m" data-page-node-id="wwMhspfvzfLAzADSaLFCJN"><span class="tag b" data-page-node-id="5ZYP5a8NoDKDpC7ws4GJky">docker</span><span class="tag" data-page-node-id="d4dZZDQUAOdsUq7k6ZJhZ0">排障</span> 2 天前</div>
+            </div>
+            <div class="row" data-page-node-id="oPZPudSMFfMuZKio6KG6Lg">
+              <div class="t" data-page-node-id="XF6ie7d4UrbiPTQfcHHfyy">多阶段构建瘦身</div>
+              <div class="x" data-page-node-id="f6l5I5hn6KDSzOfTiMjQB7">把 1.2G 的镜像压到 180M 的完整过程</div>
+              <div class="m" data-page-node-id="ksK27VFNpfqbaPhqqFzx1S"><span class="tag b" data-page-node-id="NGeL78I0jlEQHWYDd21gYZ">docker</span> 上周</div>
+            </div>
+            <div class="row" data-page-node-id="TTUSQwObgntNptc6qw5eD7">
+              <div class="t" data-page-node-id="4EhDKyW7UjpXvhCMcND9ie">docker-compose 网络互通</div>
+              <div class="x" data-page-node-id="hC20aAeeahGw2hgvXZjgAZ">容器间用服务名互访，不要用 localhost</div>
+              <div class="m" data-page-node-id="wDHGpv7knsWNLHkgkGOexw"><span class="tag b" data-page-node-id="TnbZ7DeFdBCizUqP2lfIBV">docker</span> 上周</div>
+            </div>
+            <div class="row" data-page-node-id="4cMqTuvAOTYXqrDSyRuXcS">
+              <div class="t" data-page-node-id="mxLLAt7NENlTx3nHDXmAHL">volume 权限踩坑</div>
+              <div class="x" data-page-node-id="X9VWK4G3tM1VG6Emn84VZm">宿主机目录挂载后容器内无法写入</div>
+              <div class="m" data-page-node-id="Td9XeWSlLJJNujZaPpNhnV"><span class="tag b" data-page-node-id="SAN5BB0rLiJRo6DOvd0AHX">docker</span> 8 月</div>
+            </div>
+          </div>
+        </div>
+        <div class="col" data-page-node-id="xRhKgA7gzGfBaGylh0UBPk">
+          <div class="detail" data-page-node-id="kvtylEfgfHMMCus8BiwWCI">
+            <div class="crumb" data-page-node-id="gaaqrxAgbbzYabb4PD3Eaa"><svg class="ic" data-page-node-id="OSySjtQzfpW26xH5TRrBv4"><use href="#i-folder" data-page-node-id="77QVgfcSwaCBwJMlC68qga"/></svg>开发 / Docker › 全部笔记</div>
+            <h3 data-page-node-id="jjgcq6j7iy8cqU9aIrB5wA">Docker 端口占用排查</h3>
+            <div class="md" data-page-node-id="FA03Nl0EbT2jstNzNXZaaz">
+              <div class="quote" data-page-node-id="QNyCfQHPq1jqxcp1LKh8x7"><svg class="ic" data-page-node-id="DcQyo4gqT68MYCMdeZcSNX"><use href="#i-clock" data-page-node-id="ytCSGko77dXnwxG5pzPY7N"/></svg>来源：Windows 终端 · 2 天前复制 · 一键转为笔记</div>
+              <h4 data-page-node-id="ADBQ5A6SoMY964kOJeDEYi">现象</h4>
+              <p data-page-node-id="viUHDg3cKTFDMlnmsxmmzO">容器启动报 <code data-page-node-id="FXhrNbvDftTzn4JHrtu9r9">port is already allocated</code>，但 <code data-page-node-id="ZLJjkhL1Q21gacLmHFHFrT">netstat</code> 查不到占用。</p>
+              <h4 data-page-node-id="Tl88F792Au9DoNvfZkbmko">定位</h4>
+              <pre data-page-node-id="8MsuquHwEBqpDWdc0DCAiz">docker ps -a --format "{{.Names}}\t{{.Ports}}"
+netsh interface ipv4 show excludedportrange protocol=tcp</pre>
+              <p data-page-node-id="474xCALmoETSAWIFkJPRVQ">第二条是关键：Windows 的 Hyper-V 会<strong data-page-node-id="BdOuF4b9ykNHVIWQy8oAQP">预留</strong>一段端口，这段端口不在 netstat 里显示。</p>
+              <h4 data-page-node-id="RhYhwXddj0F0GB1DUWxZV9">解决</h4>
+              <p data-page-node-id="VdJzUYFx8uURGFunSIf6EL">换到预留段之外的端口，参见 <span class="blink" data-page-node-id="PRAm3bCD4J4r4IIESus826">多阶段构建瘦身</span> 里记的端口表。</p>
+              <div class="blbar" data-page-node-id="cBXh5lqEiW3tc5cTtB95ka">
+                <span data-page-node-id="9pkRtb8CAlZwVFAzpXfwFM"><svg class="ic" data-page-node-id="6RqFscRaO0GAMSsaMCXdSL"><use href="#i-link" data-page-node-id="FJBr4YBNRRd9gKAsiEdxXc"/></svg>3 条反链</span>
+                <span data-page-node-id="zm86WoNflvd6DmgCpPSdai"><svg class="ic" data-page-node-id="gTCT3EXpSC09l2OYGni4Jd"><use href="#i-history" data-page-node-id="nhwfBuAtRVBMkeF9sE5VJH"/></svg>5 个版本</span>
+                <span data-page-node-id="iUnttjSwJxkcRWEW2wUv5D"><svg class="ic" data-page-node-id="te4omMsVCNH80WfYGkBBvK"><use href="#i-edit" data-page-node-id="uHTJkG9wI47A33Ds3RWGGr"/></svg>1.2k 字 · 6 节</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 统计条（数字均为可核实的真实值） -->
+    <div class="stats rv" data-page-node-id="9E21lzlNe3F9b8AAxYAmiA">
+      <div data-page-node-id="5sRKhFVj8FevWsQ0u62bOO"><div class="n" data-page-node-id="JmHeeu5lYmv34USiGkaijc">12</div><div class="l" data-page-node-id="d30P05WPdlcVufVyCgxKXE">项知识库能力</div></div>
+      <div data-page-node-id="2tQXGjWD7E1UsjMYkUqKqN"><div class="n" data-page-node-id="9EP3iZv4QjCHTZ75jEkQc0">17</div><div class="l" data-page-node-id="L6YbJAelD89c3RgUr16n4b">个 MCP 工具</div></div>
+      <div data-page-node-id="V10vFUHPaZvIKSLVwswsu3"><div class="n" data-page-node-id="whN4Hspzd2Ch4fm99ELwXH">6</div><div class="l" data-page-node-id="lfuDeyTwC5hA98Z7zt5GYO">位配对数字</div></div>
+      <div data-page-node-id="uGygrA6cJZmT3CGtkcPkls"><div class="n" data-page-node-id="cShVbXdRLyFOzpQDCp6EPS">0</div><div class="l" data-page-node-id="PkUnsDjwFkNEpzEsQGuWBK">行数据上传（AI 关闭时）</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2 · 痛点 ═══ -->
+<section class="sec soft" id="why" data-page-node-id="Q6XtusbVRZasGaQ02DLc0u">
+  <div class="wrap" data-page-node-id="SJT4GtgElrYFcLk7EJKqxz">
+    <div class="hd rv" data-page-node-id="iDyqcUKBUtK2WSgsf0ppzc">
+      <span class="eyebrow" data-page-node-id="n78EabUCkVI2tQxWMMC0Up"><svg class="ic" data-page-node-id="EUBsopon2PJy6yAfGd2PCc"><use href="#i-search" data-page-node-id="KEfYxmFcM4cFCo1vOmpMrC"/></svg>先说问题</span>
+      <h2 class="big" data-page-node-id="DHY5QMzrHoudqIQcARUXFU">笔记软件被闲置，<em data-page-node-id="dCHdwJibBYzBKksL2c8SvA">不是因为功能不够</em></h2>
+      <p class="lead" data-page-node-id="ldO58zl88BGT0pWBlk74KT">是因为从「看到」到「存下」中间隔着四步。任何一步犹豫一下，这条内容就没了。</p>
+    </div>
+    <div class="vs" data-page-node-id="CrKkEbITOWQWxze2O7Yk7t">
+      <div class="vsbox bad rv" data-page-node-id="oChuVQSiMZ9u3VfcFbpBQx">
+        <p class="h" data-page-node-id="XZ1AC8W1XiACV7xmxMBuAK"><svg class="ic" style="width:15px;height:15px" data-page-node-id="mKdKcKBIBxT3P1OXQfbIOo"><use href="#i-x" data-page-node-id="IqxWSeNhXOBppP4X3eJdmh"/></svg>传统笔记软件</p>
+        <div class="steps" data-page-node-id="B3SgOHtT9s27TaTIgGqrYO">
+          <div class="s" data-page-node-id="fAerNDEwLeStq2DRD1h6hF"><i data-page-node-id="XwytzE87OOPRYGDnXh73O3">1</i>切到笔记软件</div>
+          <div class="s" data-page-node-id="5BQKBC00PPQ9M6FFA3DC0A"><i data-page-node-id="zB5Est35WVRmHx1BeDrvDP">2</i>新建一篇</div>
+          <div class="s" data-page-node-id="qbE6FUT4QfB9fa5TbbCawh"><i data-page-node-id="NODqNtpAYgm5bZHtTSOutt">3</i>想个标题</div>
+          <div class="s" data-page-node-id="2RL5Ng8CjnWslnWvskHYW7"><i data-page-node-id="gJnVAsQRJdHCjk3xruNTiC">4</i>选放哪个文件夹</div>
+        </div>
+        <div class="foot" data-page-node-id="FXJkMPiEXLRCNbEFHUIEfe">四步里任意一步犹豫一下，这条内容就没了。</div>
+      </div>
+      <div class="vsbox good rv" data-page-node-id="sOKiVLCqkJaUgTOsU6Xs1r">
+        <p class="h" data-page-node-id="7lREFjwRtw6aXr3r9s32Yn"><svg class="ic" style="width:15px;height:15px" data-page-node-id="SeYRbpb9Ulvo4FfwLMTgts"><use href="#i-check" data-page-node-id="3Thtsapc4GDFPsMymjNQgs"/></svg>PastePanda</p>
+        <div class="steps" data-page-node-id="fu0bXSBOPCo2CnmK6iA0qm">
+          <div class="s" data-page-node-id="XE1uFp0UZNZVl8r68iBnkM"><i data-page-node-id="DKPeV7Xy2SDwkWTFdyNUyJ">1</i>复制（你本来就在做）</div>
+          <div class="s dead" data-page-node-id="EhkdO65Uxm2OxoKIDX0C6h"><i data-page-node-id="ueC24dJPCXTsaFXisshH7F">2</i>切窗口<svg class="ic" data-page-node-id="3GWfQov5avPRNhfAqCueBt"><use href="#i-check" data-page-node-id="bqBSDVh6BNRgFABFEDWpHU"/></svg></div>
+          <div class="s dead" data-page-node-id="iaViktGXMWKFtR6fM6Ld3W"><i data-page-node-id="qRSgeP6WHUBTyUFxRIASNs">3</i>新建<svg class="ic" data-page-node-id="b2pHWQ6mT5ezM2hKEGP0oS"><use href="#i-check" data-page-node-id="3ap1Ib5UVJhpjJadyrNaAS"/></svg></div>
+          <div class="s dead" data-page-node-id="Y34GgFU99GIZH0NcG6UHEQ"><i data-page-node-id="mJudQfRJJIJKJL4uDhHLIc">4</i>命名 + 归类<svg class="ic" data-page-node-id="G4JgQEvjTPk7nrNre6Nb47"><use href="#i-check" data-page-node-id="UO7TyYMogidjplCWFOzBCz"/></svg></div>
+        </div>
+        <div class="foot" data-page-node-id="s8kkJ7sUUHlb2EhQmoNQPs">第 2–4 步由软件接管：一键转为笔记。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3 · 采集 ═══ -->
+<section class="sec" id="capture" data-page-node-id="05pWsRXJXBT3j8wivrbCoT">
+  <div class="wrap" data-page-node-id="KeB5Bm0D1NAurl8mDLEhIN">
+    <div class="feat" data-page-node-id="B9jk2uwug4KCMCW4JdYwB3">
+      <div class="txt rv" data-page-node-id="OKmHqQ76anNhhoGbRB0ehI">
+        <span class="eyebrow" data-page-node-id="HMcBGZndQBNXRnCKnBSjvg"><svg class="ic" data-page-node-id="Bh9m7TmswCQa0FOcHUSryz"><use href="#i-inbox" data-page-node-id="QlHGCvw3GyzrP3aA44QmFl"/></svg>采集</span>
+        <h2 data-page-node-id="QsBZ3xz5kmLIrMuWTU4JQs">复制，就是记账的第一步</h2>
+        <p data-page-node-id="NEvcAgvD5yy3tD90hsCccj">剪贴板是唯一一条你在所有应用里都在用的通道。你复制过什么，就已经替你筛过一遍了——剩下的交给一键。</p>
+        <ul class="pts" data-page-node-id="q6lBKwFeTDbYpr3YV0Z64v">
+          <li data-page-node-id="vhcrBcLB1zwlu4gfzQe0DG"><span class="k" data-page-node-id="WNqWmhXTpw6OxWqBXWNPea">1</span><span data-page-node-id="cebBNKUiSjhjDhWuEoW9JN">文本 / 代码 / 链接，<b data-page-node-id="TuuUo5wPdlxupQGaBPsAsy">一键转为笔记</b>，来源应用自动带上</span></li>
+          <li data-page-node-id="ZQEoKHovLpWeYYjBBd95sn"><span class="k" data-page-node-id="zWYW9ZQz7fgtnlRqKLN2PT">2</span><span data-page-node-id="spVAsOSTf5LCtQgPkKQKZx"><b data-page-node-id="kIGRqYoY1Wk5POfCfcG9vG">待沉淀</b>收件箱：复制过但还没整理的，一条不漏地列着</span></li>
+          <li data-page-node-id="TmGdINRi4DSfrxE2yfMGeD"><span class="k" data-page-node-id="sQTOCPk9u4XZf69Sl8krLL">3</span><span data-page-node-id="GpsGADSbpSmoG0mT6Uefho">文件夹 + 标签分类，<b data-page-node-id="fzDkSQVU4rAtCneIGPZr6U">版本快照</b>可回滚</span></li>
+          <li data-page-node-id="FgRzlEfPSzn6OMLfDDGKNF"><span class="k" data-page-node-id="QDidIJkDh7p6XQCsKACWmy">4</span><span data-page-node-id="R0v4kqsWzsMPSikWInlmZl">整库导出为 Markdown 目录结构，随时可再导入</span></li>
+        </ul>
+        <a class="btn pri" href="#download" data-page-node-id="Z4YuwdrdpkoPu3y2BK03Nq"><svg class="ic a" data-page-node-id="BhbYjifinbA4r5C6bC006k"><use href="#i-dl" data-page-node-id="baNsmoXKnf614Vyy2OLOCj"/></svg>下载试试</a>
+      </div>
+      <div class="rv" data-page-node-id="ECmmb1ckCZfLij14B2xiet">
+        <div class="clip" data-page-node-id="qx6Zo2ItAj23m6mEqV5xKx">
+          <div class="cards" data-page-node-id="f51Pl8QK8nkkxiBxUcEjr1">
+            <div class="card hi" data-page-node-id="gm5qfYa4LaZULDdZUwfSdg">
+              <div class="ico code" data-page-node-id="EfYTQOATXmUhrvcRKirGuS"><svg class="ic" data-page-node-id="lDcCl9hWLU2ruH0MeDVRHi"><use href="#i-code" data-page-node-id="AYv9UegXfLxeSFuVfD8Zek"/></svg></div>
+              <div class="bd" data-page-node-id="Cdl3FjDSRtfZqhK01HuGGG">
+                <div class="t" data-page-node-id="B5tLOOeIRAFtUz5PjiLYdD">docker ps -a --format ...</div>
+                <div class="x" data-page-node-id="E9xMkJGkWEdnr6cmGJD0Xu">netsh interface ipv4 show excludedport…</div>
+              </div>
+              <div class="tm" data-page-node-id="CH8JOIIz3rCDYCOhFlRX74">2 分钟前</div>
+            </div>
+            <div class="card" data-page-node-id="eo2Y6vbdRDH0AAJZCMnw9V">
+              <div class="ico link" data-page-node-id="PWf9RRtu4eF3kitzFU89DY"><svg class="ic" data-page-node-id="C4HqLcnFjYCnwWP8pyOZEx"><use href="#i-link" data-page-node-id="ECA77GDpyhx6IjyQu6u6ya"/></svg></div>
+              <div class="bd" data-page-node-id="Bn6ViLbPUqVyYA0BK24SDZ">
+                <div class="t" data-page-node-id="bN5RTNwkEYY4sxuxqj1uow">Hyper-V 保留端口导致 Docker 启动失败</div>
+                <div class="x" data-page-node-id="mv4FW5pF4riSS5gKDnJQ5T">https://docs.microsoft.com/…</div>
+              </div>
+              <div class="tm" data-page-node-id="5Ek32OaWMAVAySdD4kWvo6">8 分钟前</div>
+            </div>
+            <div class="card" data-page-node-id="t164eK0UVN7ZNN6GlHKoGx">
+              <div class="ico txt" data-page-node-id="YzzaJ2I4cogQx7wnwdVknK"><svg class="ic" data-page-node-id="ZcCnBYTU3alYgZBHTywiXI"><use href="#i-note" data-page-node-id="ks0GbikW4fffBcDQHK6YNB"/></svg></div>
+              <div class="bd" data-page-node-id="PmtBEcxpX49T35A6pp26G3">
+                <div class="t" data-page-node-id="8CHI5uzB2hlkF0pqdmAtjy">客户说：这个月要能导出 Excel</div>
+                <div class="x" data-page-node-id="WqEdYwQtXzGchG7BDzoScs">需求记录 · 待确认优先级</div>
+              </div>
+              <div class="tm" data-page-node-id="WdstZDQ3DO35BUuUFDN1hI">23 分钟前</div>
+            </div>
+          </div>
+          <div class="menu" data-page-node-id="Tm10UKR7noXsC43If637Om">
+            <div class="hot" data-page-node-id="fF7WkmIUMzCRlfzaU1y5Pf"><svg class="ic" data-page-node-id="2ZfhcoauEWDFPAjkjDbGfR"><use href="#i-note" data-page-node-id="ovEDwPZoLekoK2GIBA9MxG"/></svg>转为笔记<span class="kbd" data-page-node-id="r99XLVXuKSGtKHH63zmIga">Enter</span></div>
+            <div data-page-node-id="yK7Aj5dB86sErV6XOpmvGB"><svg class="ic" data-page-node-id="FMP18mJKOlYWeLpL7Eqgez"><use href="#i-layers" data-page-node-id="qpG6GdTYHm1N9dId3ahdvk"/></svg>复制</div>
+            <div data-page-node-id="qyO55Zoex2kLxnsFV0DAty"><svg class="ic" data-page-node-id="WPS9C7pIzyP0icG6QwD8JC"><use href="#i-tag" data-page-node-id="LH60joRWv4uwuUct6IBCCT"/></svg>置顶</div>
+            <div class="sep" data-page-node-id="pbFfZtkJrbl9MEGrET0ZzV"></div>
+            <div data-page-node-id="xLZRwWzbV6xOI7VxxbKccA"><svg class="ic" data-page-node-id="YCoIZIXmFBUnmcZy8DGuLi"><use href="#i-folder" data-page-node-id="C4sWTNHpUwL6qhCuANMWtE"/></svg>移动到文件夹</div>
+            <div data-page-node-id="KsFiLrjtMIjjiUNlVYY9Yj"><svg class="ic" data-page-node-id="ayIcKrZEYEDDHvafSOO8UP"><use href="#i-trash" data-page-node-id="P3HxKUY4S18cHy1tuwpIiD"/></svg>删除</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 4 · 问答 ═══ -->
+<section class="sec soft" id="ask" data-page-node-id="0bWLnNj0incRxHBHRFj8YR">
+  <div class="wrap" data-page-node-id="gRSYAgHAY8ijnTf15sDUqZ">
+    <div class="feat rev" data-page-node-id="LXcrfI79cKeTXYcTTYJPgH">
+      <div class="txt rv" data-page-node-id="oJFEGSHUu9wp2hG8XFOmXt">
+        <span class="eyebrow" data-page-node-id="Chr65fYYFEdbCndIwcjdaU"><svg class="ic" data-page-node-id="zDTg92rV6uaSFQGsASwg4Y"><use href="#i-spark" data-page-node-id="hJ3hTjoWfiMoEGJ2OAauoB"/></svg>调用</span>
+        <h2 data-page-node-id="SLzuylIB7s6f9yWuG0V5Bn">别翻了，直接问它</h2>
+        <p data-page-node-id="dQDdJ9sHgd1h1TzVsYr4KF">「上次那个 Docker 的报错怎么解决的」——答案流式出来，每一句都标着出处，点一下回到原文。</p>
+        <ul class="pts" data-page-node-id="N4BfixS1pI3P1az3flBbAB">
+          <li data-page-node-id="7CiU4LQWkQBW9LzEoFyOVK"><span class="k" data-page-node-id="CwtEfoE2M5TBpBHb1KtKeK">1</span><span data-page-node-id="DmHiFHcxZxEgiwym2lFOYE"><b data-page-node-id="4OLXatsCKZZIBkcammu7Lw">带引用的回答</b>：<code data-page-node-id="97Fwsv8aM8qDhn1AE52D7x">[1]</code> 角标点得回原笔记</span></li>
+          <li data-page-node-id="ELVVu9NcVQiD1ojeDHEf3y"><span class="k" data-page-node-id="9NTSthN7z6GpZGzQwASpl2">2</span><span data-page-node-id="KAdCnqlek0iCAyVGAOGWOS">支持<b data-page-node-id="Y0GppiZ1lChkx0EQqRXKxR">多轮追问</b>，上下文接着聊</span></li>
+          <li data-page-node-id="ABJqOcpRaxDdON6lbCdKbn"><span class="k" data-page-node-id="L48WUUD7fxMH31Z3nX6DCB">3</span><span data-page-node-id="aRlr92clNhya40vMLqT5M0"><b data-page-node-id="d1rAWFAy71BUj283zj1ygY">反链</b>：打开一篇，列出哪些笔记引用了它</span></li>
+          <li data-page-node-id="MYlqk4gOJPU8TTctaLl6lQ"><span class="k" data-page-node-id="LtEc2vd1OztKrrhswwUfK6">4</span><span data-page-node-id="MEtN2zQUH4hBnR8qiJFDzi"><b data-page-node-id="WcmnyAJipCLudleD0ALpKf">库体检</b>：断链、重复标签、空白笔记，自己报给你</span></li>
+        </ul>
+      </div>
+      <div class="rv" data-page-node-id="LVrQAeGRxH2iM7XNB0yYpO">
+        <div class="qa" data-page-node-id="kFAiJCZQBUFuLI7U7FLhOa">
+          <div class="q" data-page-node-id="Cf3VzdnO1zTDAXhnc1QPqF"><span class="av" data-page-node-id="FusCZBBaQu55Ei57RYZs1R">我</span><p data-page-node-id="2XaROvKYGIOVT8m90G0OE4">上次那个 Docker 端口被占用的问题，最后是怎么解决的？</p></div>
+          <div class="a" data-page-node-id="xAbQD9wAXyPbMVMaG6q9qH">
+            <p data-page-node-id="AfZALZ0V7ujcCmxRpt9BTC">是 Windows 的 <b data-page-node-id="6UFr6gtgqhl4YEVtW87W2t">Hyper-V 预留端口</b>导致的：那段端口被系统预留，<code data-page-node-id="En9hPNJCg4PPG9AkRzSknp">netstat</code> 里查不到，但 Docker 分配时会判为已占用<sup class="sup" data-page-node-id="NNmfpFJtrQ3pZXOVB8UfoA">1</sup>。</p>
+            <p data-page-node-id="IO9INdAm0optNYADG8yJkY">定位用 <code data-page-node-id="d8qdiLtdmgYTkxOnfqIl7p">netsh interface ipv4 show excludedportrange protocol=tcp</code> 看预留段，然后把容器端口换到段外<sup class="sup" data-page-node-id="wLgBUYzwmnEK3St55G4kRu">1</sup>。</p>
+            <p data-page-node-id="WCkyE017VHafARnzhCSEfR">你记的那篇里还留了一张可用端口表，在《多阶段构建瘦身》里<sup class="sup" data-page-node-id="yCkPiSZFzqMg5wBpCVxuGZ">2</sup>。</p>
+          </div>
+          <div class="srcs" data-page-node-id="KKRYN13eFdvRG8OKVi8TGw">
+            <div class="lb" data-page-node-id="qTMAGYgYNB9crKC7ulOY1Q">引用来源</div>
+            <div class="sc" data-page-node-id="L2DBaFqUeyQYJVsf60rFKV"><b data-page-node-id="GYhLsHOnNCLDTcR1Lthpsb">[1]</b>Docker 端口占用排查 · 开发/Docker
+              <span class="g" data-page-node-id="yz4oSJwZiNv7064orlR4bm">跳转 <svg class="ic" data-page-node-id="mmtNWiowc6uvBcUc4NZbHG"><use href="#i-arrow" data-page-node-id="LsiUe52nrKo4ihpAXKFsWH"/></svg></span></div>
+            <div class="sc" data-page-node-id="MQD2iPtNRO9NPtNn5WfmRY"><b data-page-node-id="YTxSZ76BRqbJVPyUabMoRl">[2]</b>多阶段构建瘦身 · 开发/Docker
+              <span class="g" data-page-node-id="yBarp3ZI9p0CRiCg2HjtOI">跳转 <svg class="ic" data-page-node-id="NNup2cTMZZvAJMFpaGBTFZ"><use href="#i-arrow" data-page-node-id="jA0LBGEUhcZ3RaB3MWRxse"/></svg></span></div>
+          </div>
+          <div class="inp" data-page-node-id="Kof5X8ZD4bfMQ4s2XQzXXE">继续追问，比如「把这段整理成一段话」
+            <span class="send" data-page-node-id="AMtUBnXkISneT7MoZuJkNE"><svg class="ic" data-page-node-id="aPqsBonN4AJ57XuNCTGHG2"><use href="#i-send" data-page-node-id="Lny93kLree9reBocF4cvr9"/></svg></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 5 · AI 接入 ═══ -->
+<section class="sec" id="ai" data-page-node-id="WPoi9nF7mImreDB4hJwlrC">
+  <div class="wrap" data-page-node-id="BfYGxCtAzuRXhZSge7zdBT">
+    <div class="hd rv" data-page-node-id="1b4b7OlyROTQJrUl8nXF98">
+      <span class="eyebrow" data-page-node-id="vnHbXGkWnhwS0qZzyP5VDF"><svg class="ic" data-page-node-id="iD05DfSbtFoYtu9FmqNAor"><use href="#i-plug" data-page-node-id="SNAzigUqGQyHCLFLLy5mEM"/></svg>AI</span>
+      <h2 class="big" data-page-node-id="om5OOwoqjVDHrdzx8Xcy2l">让 AI <em data-page-node-id="HcnyKE8qDxGs7z3bnERa1v">用上</em>你的库，而不是把库喂给 AI</h2>
+      <p class="lead" data-page-node-id="yd3IjTejMFD64CrVGcDeAn">喂给它：上传 → 读一次 → 答完就忘。用起来：它自己来查、自己引用、按节写回。通过 MCP，设置里点一下就接好了。</p>
+    </div>
+    <div class="mcp" data-page-node-id="B4D1PZwEdYDXn8Rtueke9H">
+      <div class="mcpc rv" data-page-node-id="VWUZO83AVgpLDCq651trz8">
+        <div class="li a" data-page-node-id="atBd1GqdxOc83qBQzzM7r9">C</div>
+        <div class="n" data-page-node-id="qTB9B2msBQTFHGMav4QE8C">Claude Code</div>
+        <div class="d" data-page-node-id="IIkDlWNqPRbOmEQxgcuG4G">一键接入。写代码时它会自己翻你的排障记录，不用你再贴一遍。</div>
+        <div class="go" data-page-node-id="oHGExQezjl3NjTeruWDZEc">设置 → MCP → 接入 <svg class="ic" data-page-node-id="k26rC2mTlWE7eHPo5L8GKq"><use href="#i-arrow" data-page-node-id="dn66E9FfkDgpwBpgoNywgo"/></svg></div>
+      </div>
+      <div class="mcpc rv" data-page-node-id="ciBjNA2RtYw86SKAZ9Vrko">
+        <div class="li b" data-page-node-id="cymD4Np8PzHGAPd0oA7kys">W</div>
+        <div class="n" data-page-node-id="3K2wvzdec3NDoXgIb3izGj">WorkBuddy</div>
+        <div class="d" data-page-node-id="N3qchb0M761CGlV0BF0IUp">同一套接入流程。让 AI 助手直接检索、引用、写入你的笔记。</div>
+        <div class="go" data-page-node-id="w8VzSOmPe2gJeRrftW1sgZ">设置 → MCP → 接入 <svg class="ic" data-page-node-id="TGhsYdEjco2WupKTiu9S7z"><use href="#i-arrow" data-page-node-id="HdfUmgrka76BxMBz7nfAL4"/></svg></div>
+      </div>
+      <div class="mcpc rv" data-page-node-id="2e4GpHWWlMobbZG2r5vKNM">
+        <div class="li c" data-page-node-id="2q42l1fx4nl1HjGt5Hd8r7">⋯</div>
+        <div class="n" data-page-node-id="LKiN5oIpvEtIQNyvIKdDXP">自定义接入</div>
+        <div class="d" data-page-node-id="uyf5O0wWdBnzhEB01rCsNw">名单外的工具，选它的配置文件即可，不用自己拼 JSON。</div>
+        <div class="go" data-page-node-id="YF4lV0mGHXH0kJzUCzZGRY">选择配置文件 <svg class="ic" data-page-node-id="U60O2Ge42Af3m1oyyfHkFA"><use href="#i-arrow" data-page-node-id="uWPNHnCoeguSgv0YVKdAsL"/></svg></div>
+      </div>
+    </div>
+    <div class="mcpnote rv" data-page-node-id="vWaH96iRwVPQ8MFqt7a2DQ">
+      <b data-page-node-id="vPmSc4EqZqIcgMHHSRShpo">两个细节值得说。</b> 一是接入时会<b data-page-node-id="Qw1bigERcOAbVmNqLH0XbF">先备份对方的配置</b>，且只动属于 PastePanda 的那一条，不碰你已有的其他服务器。
+      二是读写<b data-page-node-id="LKQ4LBpiDPG1OoDd12LzvZ">按节（section）定位</b>——库里笔记平均 9000 字，整篇回灌等于什么都没给；按节命中，AI 拿到的才是相关的那一节，写回去也只改那一节。
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 6 · 隐私 ═══ -->
+<section class="sec deep" id="privacy" data-page-node-id="If8qVeR6SL7QZONFcdZBc7">
+  <div class="wrap" data-page-node-id="MlEH1fpCHMJ52IartD11Y8">
+    <div class="hd rv" data-page-node-id="lYusG96AGpo1xwOuyFqCLB">
+      <span class="eyebrow" data-page-node-id="W3YEeeMSV76uZc4k4C78hi"><svg class="ic" data-page-node-id="g04r39RtTOyIZnM1Mm69Wt"><use href="#i-shield" data-page-node-id="DUBfuC5riUdLEXNH7BwClr"/></svg>隐私</span>
+      <h2 class="big" data-page-node-id="k5CycIIdnbpo08q8TRHiUd">默认不出本机</h2>
+      <p class="lead" data-page-node-id="EVWwiJD7pRr1rFB9UNZfku">我们判断：隐私不该是设置里的一个开关，应该是默认值。</p>
+    </div>
+    <div class="priv" data-page-node-id="KisaBc5O0I93WbuqbN7pEp">
+      <div class="privc rv" data-page-node-id="REXNDL8hNCotqx8JmJNVBn">
+        <div class="e" data-page-node-id="lNPVsGFtDxwTeH1uT6mM86"><svg class="ic" data-page-node-id="dg1sdk1ZPWxVqlcjQr9974"><use href="#i-db" data-page-node-id="94qghXjZNEqSrNd5XNK5r3"/></svg></div>
+        <div class="n" data-page-node-id="ZTH4jBMrOoVnGgvDiO1MB2">内容存本机</div>
+        <div class="d" data-page-node-id="2vU4KPR5Bwx5bZHwJ01Ngx">笔记与剪贴历史全程本地存储，可整库导出为 Markdown 目录。</div>
+      </div>
+      <div class="privc rv" data-page-node-id="eg27qidy3O0WPQA3Tsm7iK">
+        <div class="e" data-page-node-id="7qbqz3UvupE0eXPsOC2B1V"><svg class="ic" data-page-node-id="tVDhhnPEDIcSLJIdkUXBsY"><use href="#i-scan" data-page-node-id="Qce4qyHOn0kjoEw6hKWBEh"/></svg></div>
+        <div class="n" data-page-node-id="GMnapn438HSSwBjDL6MBzG">OCR 本地离线</div>
+        <div class="d" data-page-node-id="vgYiCwWhzXZJEA0DzR1ca1">截图文字识别走本地模型，断网也能识别，图片不上传。</div>
+      </div>
+      <div class="privc rv" data-page-node-id="0DzGGnsRH0wskKhTlWzXLS">
+        <div class="e" data-page-node-id="TUXnpuGbryn6VnAxkY4hWx"><svg class="ic" data-page-node-id="p7JQFyBAJOFIkV5swpSTkH"><use href="#i-spark" data-page-node-id="NtffoOsZg3aVuI4zQ2C0oV"/></svg></div>
+        <div class="n" data-page-node-id="AyuWFsYhnS6KDptlE4Wxxo">AI 默认关闭</div>
+        <div class="d" data-page-node-id="7dUsBMqwqHyH5iL6Jlz2Ok">不开就是零请求、零上传、零费用。要用，你自己打开。</div>
+        <span class="off" data-page-node-id="VSGDAhUihnDwl7zaFEUuly"><svg class="ic" data-page-node-id="AhNRNBlPCJz0ChbcLklA2n"><use href="#i-lock" data-page-node-id="n6OR7JgXYrCPZaWA8c4Hl9"/></svg>默认 OFF</span>
+      </div>
+      <div class="privc rv" data-page-node-id="Qu6RTg4pqTbo6oU4vCDGCk">
+        <div class="e" data-page-node-id="lRJSWLSumQIJEbkY1qrqMP"><svg class="ic" data-page-node-id="DLuCd47yRer7eHfdNgZH7n"><use href="#i-eye" data-page-node-id="FBvZCxnswddjFYOcDrbQVQ"/></svg></div>
+        <div class="n" data-page-node-id="VRy2vPKEf05BLkfkDF1AWp">日志可见可删</div>
+        <div class="d" data-page-node-id="SWNPgtXY5rcDCW5FvqLpPt">使用日志永不出本机，界面里看得见，也能一键清空。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 7 · 同步 ═══ -->
+<section class="sec" id="sync" data-page-node-id="Gg1OtUJdzLHUN5V9A7aqdG">
+  <div class="wrap" data-page-node-id="Pjts6kAk2Dvg2mb8N7vZG7">
+    <div class="hd rv" data-page-node-id="P7WNhSKSCSzqw0D5DhbpNy">
+      <span class="eyebrow" data-page-node-id="D6RpELoicMdL8GFBftu5q3"><svg class="ic" data-page-node-id="sgUGOGZRcULpl70KjpKC0r"><use href="#i-devices" data-page-node-id="BVEbIUmxuZkLqotC9c9ODZ"/></svg>多设备</span>
+      <h2 class="big" data-page-node-id="EOID0Lrh2O7WTOFYTKWwni">两台电脑，<em data-page-node-id="6mpefMtr85jE7pRd0nP5BQ">自己同步</em></h2>
+      <p class="lead" data-page-node-id="QtkoNpzFN3TSP4vEqEIokL">同一网络里两台机器会互相看见，各显示一个 6 位数，对上就配好了。不在同一网络也能连——先尝试直连，连不上才走公共中继。</p>
+    </div>
+    <div class="sync rv" data-page-node-id="AgluNzsZv0Z9Hv3AYMe7qP">
+      <div class="dev" data-page-node-id="1dfPLEnziRUsjAdP3N0wfI">
+        <div class="hd" data-page-node-id="IgcOOZEj6rzFYNu35sW48e"><span class="on" data-page-node-id="Xv6i46FrcP3xtacckueYYa"></span><svg class="ic" style="width:13px;height:13px" data-page-node-id="ya3jYx3o1JlgrgI8HUa8hs"><use href="#i-win" data-page-node-id="h1a1gN0BBuq2A0zYBJBn2H"/></svg>办公室 · Windows 11</div>
+        <div class="bd" data-page-node-id="x6JUGOqHWEIs6khJTXoDZQ">
+          <div class="code" data-page-node-id="UobcVz8ZUVg6ylQqCQCRja">482 913</div>
+          <div class="cp" data-page-node-id="9yfkl3SNNAVNEzpqPUWGIG">在另一台机器上输入这 6 位数字</div>
+        </div>
+      </div>
+      <div class="mid" data-page-node-id="wLgyvqCLHlp6IhtRjBrSNp">
+        <svg class="ic d" data-page-node-id="uRWYt8EMwNfYisInffqkJv"><use href="#i-sync" data-page-node-id="lssoxSm8O48HQwqYj407UK"/></svg>
+        <span class="ln" data-page-node-id="CGAIHO4CGyVtTUnO0lEEc8"></span>
+        <span data-page-node-id="FW03H5wiOtfvpyfStVKaMt">双边各确认一次</span>
+        <span class="fp" data-page-node-id="UDgFcZcfkKCIet5jKzTx1d">SHA256:9f2a…c71e</span>
+      </div>
+      <div class="dev" data-page-node-id="KEE1cVAmUKPb2Z0k1PB3xa">
+        <div class="hd" data-page-node-id="M9yaIJEWGYbyCBhveIhibc"><span class="on" data-page-node-id="0F3ANiNavNca8XPf8cKtWQ"></span><svg class="ic" style="width:13px;height:13px" data-page-node-id="AVRyCCQq7vpX4s3x9R69GY"><use href="#i-win" data-page-node-id="43mHFLvkL8ZzXzM8YKwuNZ"/></svg>家里 · Windows 11</div>
+        <div class="bd" data-page-node-id="ozcOL5fo2pcAn64OB3gZIU">
+          <div class="code" data-page-node-id="GYOJV1GwjOqOzRQRLOlpk8">482 913</div>
+          <div class="cp" data-page-node-id="PVut6W9F7Pp0ZFfRc5DiQb">两边数字一致，即可确认</div>
+        </div>
+      </div>
+    </div>
+    <div class="syncfoot rv" data-page-node-id="ISy24HCD6okNN5dl8reaQ1">
+      <div data-page-node-id="i3y5V7IDgRrCEwOEdRHM4w"><svg class="ic" data-page-node-id="M65dOoVPu142X9nBOHT3VX"><use href="#i-shield" data-page-node-id="pSbcgxZe3gvVcwwDwQKgyV"/></svg><span data-page-node-id="Vjw5EnPBvC4jZCKAmrVtK7"><b data-page-node-id="Xo45LlaoreaA4EY5TOy24x">无自有服务器</b>P2P 直连优先，我们不经手你的数据</span></div>
+      <div data-page-node-id="mOQ8IhRsAPSONbpn3w20LE"><svg class="ic" data-page-node-id="LFtY6zw8Xd9SihKcyliUom"><use href="#i-check" data-page-node-id="iBFgzULX0hjMgAApSb6P4f"/></svg><span data-page-node-id="V8gPymTGe3ZzqJAnYoIqMq"><b data-page-node-id="zCQfWxd4uCM90toBjplhB9">指纹双边核对</b>两边各确认一次，防中间人</span></div>
+      <div data-page-node-id="V9KAEOxRGb5OJzyI64bRJF"><svg class="ic" data-page-node-id="j2rpeECPm65XuCpuyZHkEA"><use href="#i-history" data-page-node-id="3rwMqfscoYHoon0CS0Iz1i"/></svg><span data-page-node-id="zSBRcrBvSew2vQFbmDUaLS"><b data-page-node-id="YCtXLHM0oCAvzuPRBz3VBu">冲突不静默覆盖</b>留副本，让你自己决定</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 8 · 功能 ═══ -->
+<section class="sec soft" id="features" data-page-node-id="G2EFdRIV2MG834BvN1aF6K">
+  <div class="wrap" data-page-node-id="ccB7A4BHg9rWpPMmTk5cYj">
+    <div class="hd rv" data-page-node-id="1MyPF9FVvEaYyZhfhhrbLv">
+      <span class="eyebrow" data-page-node-id="kOQnRCpQOtYdAYBWWDn7Tx"><svg class="ic" data-page-node-id="KIsAemeKU8AsAAIB82KiWD"><use href="#i-layers" data-page-node-id="7J01RAfToLLnIsCSZfUpAh"/></svg>完整能力</span>
+      <h2 class="big" data-page-node-id="v50djVvwYegCOi2VVQvltd">功能一览</h2>
+    </div>
+    <div class="grid3" data-page-node-id="unGG1b6dZDo9byepWsdUYD">
+      <div class="fc rv" data-page-node-id="LUhDx8BYxlNhBVSTEZyVsX"><div class="i" data-page-node-id="Z66wp3ekOxw2avvUH7Yu7l"><svg class="ic" data-page-node-id="aYL2c4JrgYEFQdb1Umj4Hc"><use href="#i-note" data-page-node-id="aqqxEcA6PK6GWPdZZR2vS2"/></svg></div>
+        <div data-page-node-id="LKI26qvRxMB29aZEPfmHv0"><div class="n" data-page-node-id="Qsf9nDqvQBMA2n2V3ID3bL">一键转笔记</div><div class="d" data-page-node-id="rBZFncrRffTgjxr4xo0LKQ">剪贴历史中的文本 / 代码 / 链接一键固化，保留来源应用</div></div></div>
+      <div class="fc rv" data-page-node-id="dh8gLwYv35a4rbzRt0dFX1"><div class="i" data-page-node-id="6QXWFuGussTb0dH3Sf5WF9"><svg class="ic" data-page-node-id="i9tVkLPFyAMYOTSIX8Qrkw"><use href="#i-folder" data-page-node-id="hAUXP1jCK4VLrwGZQbmQ4S"/></svg></div>
+        <div data-page-node-id="vu9NPlkVjwUFBtStqyHwVA"><div class="n" data-page-node-id="KOGMNzB5T3urNA50praK7Y">文件夹 + 标签</div><div class="d" data-page-node-id="v66FAJfcwxDBieQS5EdPwg">层级分类；「待沉淀」列出复制过但还没整理的内容</div></div></div>
+      <div class="fc rv" data-page-node-id="4mAFZTSr1WebnLmBtkxhfE"><div class="i" data-page-node-id="JoFCtjieLbZJOYnDVE7FaT"><svg class="ic" data-page-node-id="kwcXQc3vhUNAaXwDBkuJvO"><use href="#i-edit" data-page-node-id="VzMz70MNHSSArmaNl7spaX"/></svg></div>
+        <div data-page-node-id="MhjNGvm12OEhXpTuyPfgpH"><div class="n" data-page-node-id="5wn2T5mF19pdFqzaIjP8sA">笔记编辑器</div><div class="d" data-page-node-id="NaZEuQKH8EldNPueiW4Szs">Markdown 编辑 + 预览，版本快照可回滚</div></div></div>
+      <div class="fc rv" data-page-node-id="u9ASVg9jbVLDQAj857xzY6"><div class="i" data-page-node-id="61PbmUziYjm5ttkk83o7vm"><svg class="ic" data-page-node-id="077VdIwlNCZPDAm4n4zFW7"><use href="#i-search" data-page-node-id="ucTEYD5CWwxiPRvfkGhV1q"/></svg></div>
+        <div data-page-node-id="b5ioRDHVqV2ncw4VkhtGIw"><div class="n" data-page-node-id="YWiYSNho1d4PKEYikNio7Z">问答</div><div class="d" data-page-node-id="N90RLQKzPWnXHGflvf6yjy">流式回答、标注引用来源 [n]、支持多轮追问</div></div></div>
+      <div class="fc rv" data-page-node-id="VlHCpWpMit2cTpqHBlgJ8J"><div class="i" data-page-node-id="Cywk2tquFaEPUDZax708kM"><svg class="ic" data-page-node-id="ZFXkCHKeGT6YxRcs3ohNXh"><use href="#i-link" data-page-node-id="gQyRZgFKnWc1FRxxdY1foQ"/></svg></div>
+        <div data-page-node-id="OtZsR6dYqrZrtVvi6bxekY"><div class="n" data-page-node-id="q4cTHUvdc5PoQ19YUGpJDI">反链</div><div class="d" data-page-node-id="zsfz6jS9ToAVBFKEj21ugt">列出哪些笔记引用了当前这篇，点击跳转</div></div></div>
+      <div class="fc rv" data-page-node-id="Th59tQDklg0DwxfKaoL4ho"><div class="i" data-page-node-id="rUzrcdgNtRpAhUOCRDDQbi"><svg class="ic" data-page-node-id="GYWh22lS5pJXdTHY2qDcPQ"><use href="#i-health" data-page-node-id="uFGrG9CqqAu8R9WTganAr4"/></svg></div>
+        <div data-page-node-id="Z8qKtbjLLefHNpqIUDWtuD"><div class="n" data-page-node-id="DyoG6frzVtXb1o6EUdQQ16">库体检</div><div class="d" data-page-node-id="Qu0qtrUQq7ABxzg1rLHz6e">断链、重复标签、空白笔记，可跳转修复</div></div></div>
+      <div class="fc rv" data-page-node-id="eAId7R4DjjLzK7Q4NDlwKI"><div class="i" data-page-node-id="YMAhaUYeAkIBjeCnQaZqAB"><svg class="ic" data-page-node-id="4kwAq7VSDur1lTOeUXf7bV"><use href="#i-clock" data-page-node-id="4GZHAfxGk4LkgQIGLcrsUD"/></svg></div>
+        <div data-page-node-id="gUuHi6KUMyxOLYcgBAIQXJ"><div class="n" data-page-node-id="ZH6jQoRL5z0SLDl1cBYzD7">今日速记 / 今日整理</div><div class="d" data-page-node-id="zIPUPFSjG7rvTlzFV79mgY">把一天的碎片按时间理成时间线，只读时间与来源</div></div></div>
+      <div class="fc rv" data-page-node-id="UzPMEA7vj7L3CKpPpT0hJi"><div class="i" data-page-node-id="drvvpfaAkvcAtEKUKrSUhr"><svg class="ic" data-page-node-id="9tx9hmgkkARpe9nYskw8BI"><use href="#i-spark" data-page-node-id="sjdG7JjqHLwvZI2VHpEymB"/></svg></div>
+        <div data-page-node-id="HNEDSvnTs4zVFauZ0NU7rH"><div class="n" data-page-node-id="cqENF3SvHKTzYIsmI45Tcq">轻量 AI</div><div class="d" data-page-node-id="XtboqjMLn4x39vYl9tRCH0">自动生成一行摘要、建议标签（受 AI 开关控制）</div></div></div>
+      <div class="fc rv" data-page-node-id="smuqARERbRVBVZHeq0Ot3A"><div class="i" data-page-node-id="4IRbkiDvNrDqDjGe2nxjsF"><svg class="ic" data-page-node-id="IjC8cdQTF8l55y8R2dC48D"><use href="#i-plug" data-page-node-id="x80rXnSdyl4xcsP49974Wl"/></svg></div>
+        <div data-page-node-id="ySDLyZX1VNUFumNOEWQri8"><div class="n" data-page-node-id="AdIGOSps2KqG9adGuPfxAL">MCP Server</div><div class="d" data-page-node-id="QfgXqKXou3kLJV5xmoAKqN">接给外部 AI 工具：查询、按节写入、调用审计</div></div></div>
+      <div class="fc rv" data-page-node-id="ZvoRDBfNhCPiJ2DOL7jbKN"><div class="i" data-page-node-id="uynXxjdyfpdguBQrWvCHZJ"><svg class="ic" data-page-node-id="HIXF3qRm72TOi0hllOROrh"><use href="#i-trash" data-page-node-id="BL9kHhz1l3x1ZK13xjClFR"/></svg></div>
+        <div data-page-node-id="UqhfDQVWuXS6mPTOX3GBf0"><div class="n" data-page-node-id="uGZpOzlrjS1HJgMpRcy4cA">回收站</div><div class="d" data-page-node-id="RHvrywxIDsGDNlY2OqpC0V">删除进回收站可恢复，自动清理周期可配置</div></div></div>
+      <div class="fc rv" data-page-node-id="S5uU9KNj4sZ6NRCw4G5scM"><div class="i" data-page-node-id="BZTZ1JRFa4N7c5a7zgRyZG"><svg class="ic" data-page-node-id="sH5YGUsafPza0EuJIESz3K"><use href="#i-export" data-page-node-id="NKAqoMBGwIRaPftlZ5ySoG"/></svg></div>
+        <div data-page-node-id="NlnWmSyi7Eqq13gIhkuymh"><div class="n" data-page-node-id="pJ3GpFaTrFObEADK1raqRD">导入 / 导出</div><div class="d" data-page-node-id="PHr6Lb5CxTpOQzWwJQ2aiR">整库 Markdown 目录一键导出备份，可再导入还原</div></div></div>
+      <div class="fc rv" data-page-node-id="F7VqURPyQBSpSlhm5u3YZ7"><div class="i" data-page-node-id="udwkyFFARPOmGGFiC3XrA0"><svg class="ic" data-page-node-id="8dFA9pSxr6EYLtgSD3spop"><use href="#i-sync" data-page-node-id="AyKo9YTszpbKga6mig83cW"/></svg></div>
+        <div data-page-node-id="spAkOdTDISHrpUEudS2zv5"><div class="n" data-page-node-id="Szwgmo533JiuRsQOhFH7C5">多设备同步</div><div class="d" data-page-node-id="FmOcHfM72e0Db6qrmUOBoY">局域网发现 + 6 位配对，或邀请码远程配对</div></div></div>
+    </div>
+
+    <h2 class="big rv" style="margin-top:70px;font-size:28px" data-page-node-id="ysgYRWxA5FLkZb8cI5qfnm">也说说它<em data-page-node-id="pixr5fWVbzH2msFXxmBB2e">不适合</em>谁</h2>
+    <div class="no" data-page-node-id="8Tuu0A1RzTl1We4vjIeo4V">
+      <div class="noc rv" data-page-node-id="L6EqZvjX2RHdsHt0232VjI"><div class="i" data-page-node-id="NghOCPN12CZg9WIYxzSK1q"><svg class="ic" data-page-node-id="viFYjk0stE7SXlD391Ecoc"><use href="#i-phone" data-page-node-id="dvFNyFviuwZHJEK60kHPrB"/></svg></div>
+        <div class="n" data-page-node-id="OFNC7Kj2AYHBh8TIKQF044">需要手机 / Mac</div><div class="d" data-page-node-id="FydSEWtdD8Y9OXTktO9vmg">目前只有 Windows 10 / 11。</div></div>
+      <div class="noc rv" data-page-node-id="LYVBVaJHcxhuErAueRzb79"><div class="i" data-page-node-id="aFO5uC7fJFOCjYxUqNfJuu"><svg class="ic" data-page-node-id="mbZWZDoyW38X6ufQzmVDIA"><use href="#i-team" data-page-node-id="1mRrcJUr5S7Mesq7lWx7XM"/></svg></div>
+        <div class="n" data-page-node-id="51NQ9pcHvFajWSdpJMbJqH">需要多人协作</div><div class="d" data-page-node-id="zR2DlikJjsyKk7INtZzIQH">这是个人知识库，不做团队 Wiki。</div></div>
+      <div class="noc rv" data-page-node-id="zTnjTuwG7xAZeZCjBiXnhS"><div class="i" data-page-node-id="rbspsbf0mh5z21JBHzvnK0"><svg class="ic" data-page-node-id="AQJ4b94DmZGjt7vEC1AZt2"><use href="#i-graph" data-page-node-id="rVWTLOGtZuH2A3WVGYD3MY"/></svg></div>
+        <div class="n" data-page-node-id="Vj5dXo1asGKfpsuHCoGPiY">想要链接图谱</div><div class="d" data-page-node-id="jEsHsQqrb6D73J5GSF4dJD">有反链面板，但刻意没做图谱——超过两百条就成了毛线球。</div></div>
+      <div class="noc rv" data-page-node-id="aqHOtXkY1tspWQksZBQa01"><div class="i" data-page-node-id="S5OFeLzpSSsMAdPDBRXnq4"><svg class="ic" data-page-node-id="pQHvUmHfZliJS4gNIs9oEI"><use href="#i-mic" data-page-node-id="FHg6KBDFECxTfkuTMjxxHl"/></svg></div>
+        <div class="n" data-page-node-id="Pzmh0zFfQNLvAPO7231w3J">要会议转录</div><div class="d" data-page-node-id="sieyE1cna4WmV7CM0DTYt7">没做，也不打算做。我们只管你已经复制过的东西。</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 9 · CTA ═══ -->
+<section class="cta" id="download" data-page-node-id="bOj9K4iy4ojfDFB1ohWnGD">
+  <div class="wrap" data-page-node-id="T0bYyJhoGgX36GDV3Ak3Uz">
+    <h2 class="rv" data-page-node-id="GOwFUtiq0zqpQgH97nXRNm">开始沉淀</h2>
+    <p class="rv" data-page-node-id="tY0gCVJgLE0BA2Rd7uW3F6">你已经复制过很多值得留下的东西了。现在它们有地方去了。</p>
+    <div class="row rv" data-page-node-id="cGzeSy1HocBv48U8qMvGIX">
+      <a class="btn pri" href="#" data-page-node-id="nRKvChw80Li8vEyrUwhugx"><svg class="ic a" data-page-node-id="8SXZgAfv2tZd84QgL2wWDR"><use href="#i-dl" data-page-node-id="2We12EZACUTkoZA0e4kssb"/></svg>下载 Windows 版 · v7.1.4</a>
+      <a class="btn gh" href="#" data-page-node-id="YZ04BTE0AYCdGf4uOVnxWD"><svg class="ic" data-page-node-id="3UU74KmVYQ9UBdXKDVDNDd"><use href="#i-github" data-page-node-id="qS0Su5ekyRrrUEDDWdobfq"/></svg>在 GitHub 上看源码</a>
+    </div>
+    <div class="fine rv" data-page-node-id="kfCVFB3Q0lLSquWSoHuZ2N">Windows 10 / 11 ｜ MIT 开源 ｜ 国内镜像加速下载</div>
+  </div>
+</section>
+
+<footer data-page-node-id="akPJNjoyw7guJghbdOk2lG">
+  <div class="wrap" data-page-node-id="1Os4IkAH70aHcGG6wqaCSG">
+    <span data-page-node-id="THgLmHzN9iNCUl2Al8Omv6">PastePanda · 智能剪贴板 + 本地知识库</span>
+    <span class="r" data-page-node-id="KeO5r5ooKUD1rz7sBAktfV">v7.1.4 ｜ MIT License ｜ 内容永不出本机</span>
+  </div>
+</footer>
+
+</div><!-- /page -->
+
+<script>
+/* 进场动画 + 导航滚动态 */
+(function(){
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.rv');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function(el){ el.classList.add('in'); });
+  } else {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+    els.forEach(function(el, i){
+      el.style.transitionDelay = (Math.min(i % 4, 3) * 60) + 'ms';
+      io.observe(el);
+    });
+  }
+  var nav = document.getElementById('nav');
+  var onScroll = function(){ nav.classList.toggle('on', window.scrollY > 8); };
+  onScroll();
+  addEventListener('scroll', onScroll, { passive: true });
+})();
+</script>
+</body>
+</html>

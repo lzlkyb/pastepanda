@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · UI 视觉升级 Token 设计稿 · 六主题</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   配套：docs/UI视觉升级-Token改动表.md
+   六主题可切换 · 展示改前/改后与 token 推导
+   ═══════════════════════════════════════════════════════ */
+*{box-sizing:border-box}
+body{
+  margin:0;padding:24px 18px 90px;
+  font:14px/1.65 "Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  background:#EEF2F6;color:#0F172A;
+  transition:background .25s,color .25s;
+}
+body[data-t="midnight"],body[data-t="ocean-dark"]{background:#0B0C10;color:#E4E4E7}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{font-size:12.5px;color:#5B6B7F;margin:0 0 14px;line-height:1.7}
+body[data-t="midnight"] .sub,body[data-t="ocean-dark"] .sub{color:#8D8D95}
+h2{font-size:15px;margin:32px 0 12px;padding-top:16px;border-top:1px solid #D5DEE8}
+body[data-t="midnight"] h2,body[data-t="ocean-dark"] h2{border-color:#27272A}
+h2 .n{
+  display:inline-flex;width:22px;height:22px;border-radius:7px;
+  align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  background:#DCEBFA;color:#0273AD;margin-right:8px;
+}
+body[data-t="midnight"] h2 .n,body[data-t="ocean-dark"] h2 .n{background:#1E1B4B;color:#A5B4FC}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;padding:1px 5px;border-radius:4px;background:#E7EEF6}
+body[data-t="midnight"] code,body[data-t="ocean-dark"] code{background:#1F1F23}
+.note{
+  border-radius:10px;padding:12px 14px;margin:12px 0;font-size:12.5px;line-height:1.65;
+  background:#fff;border:1px solid #D8E0EA;border-left:3px solid #0284C7;color:#495565;
+}
+body[data-t="midnight"] .note,body[data-t="ocean-dark"] .note{
+  background:#18181B;border-color:#27272A;border-left-color:#818CF8;color:#AFAFB7;
+}
+.toolbar{
+  position:sticky;top:8px;z-index:80;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:10px 12px;margin:0 0 18px;border-radius:12px;
+  background:rgba(255,255,255,.9);border:1px solid #D8E0EA;
+  backdrop-filter:blur(12px);box-shadow:0 6px 20px rgba(15,23,42,.08);
+}
+body[data-t="midnight"] .toolbar,body[data-t="ocean-dark"] .toolbar{
+  background:rgba(24,24,27,.92);border-color:#27272A;box-shadow:0 6px 20px rgba(0,0,0,.4);
+}
+.toolbar button{
+  border:1px solid #D8E0EA;background:#F4F7FA;color:#0F172A;
+  border-radius:8px;padding:6px 11px;font:600 12px/1 inherit;cursor:pointer;font-family:inherit;
+}
+body[data-t="midnight"] .toolbar button,body[data-t="ocean-dark"] .toolbar button{
+  background:#1F1F23;border-color:#3F3F46;color:#E4E4E7;
+}
+.toolbar button.on{background:#027CBB;border-color:transparent;color:#fff}
+body[data-t="midnight"] .toolbar button.on,body[data-t="ocean-dark"] .toolbar button.on{
+  background:#666FC4;color:#fff;
+}
+.toolbar .hint{margin-left:auto;font-size:11.5px;color:#627083}
+body[data-t="midnight"] .toolbar .hint,body[data-t="ocean-dark"] .toolbar .hint{color:#8D8D95}
+.lab{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:8px}
+.labA{background:#E8ECF2;color:#627083;border:1px solid #E0E4EB}
+.labB{background:#DCEBFA;color:#0273AD;border:1px solid #7DD3FC}
+body[data-t="midnight"] .labA,body[data-t="ocean-dark"] .labA{background:#1F1F23;color:#8D8D95;border-color:#27272A}
+body[data-t="midnight"] .labB,body[data-t="ocean-dark"] .labB{background:#1E1B4B;color:#A5B4FC;border-color:#4F46E5}
+
+/* ═══════ 主题 Token 层（演示用，与改动表一致） ═══════ */
+.stage{
+  --accent:#0284C7; --accent-solid:#027CBB; --accent-strong:#0273AD; --accent-light:#E0F2FE;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB; --section-bg:#F0F4F8; --hover:#E8ECF2;
+  --card-bg:#fff; --green:#11813A;
+  --app-old:#F7F7F8;
+  --app-new:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg, #F4F8FC 0%, #EEF3F8 42%, #E8F0F7 100%);
+  --shell-bg:rgba(244,247,251,.72);
+  --shell-border:rgba(255,255,255,.85);
+  --shell-blur:blur(16px) saturate(1.2);
+  --card-old-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.05);
+  --card-new-shadow:
+    0 1px 2px rgba(15,23,42,.04),
+    0 6px 16px rgba(15,23,42,.07),
+    0 0 0 1px rgba(15,23,42,.04);
+  --sel-old-bg:#E0F2FE; --sel-old-border:#0284C7;
+  --sel-new-bg:linear-gradient(180deg,#FFF,#F0F9FF);
+  --sel-new-border:rgba(2,132,199,.35);
+  --sel-new-shadow:0 0 0 3px rgba(2,132,199,.16), 0 8px 24px rgba(2,132,199,.16);
+  --top-light:linear-gradient(180deg, rgba(255,255,255,.7) 0%, transparent 42%);
+  --control-glass:rgba(255,255,255,.82);
+  --control-ring:inset 0 0 0 1px rgba(2,132,199,.2), 0 1px 4px rgba(2,132,199,.12);
+  --icon-t:#3B82F6;
+}
+.stage[data-theme="forest"]{
+  --accent:#059669; --accent-solid:#05875F; --accent-strong:#04835B; --accent-light:#ECFDF5;
+  --text-primary:#171717; --text-secondary:#58524F; --text-muted:#726E6B;
+  --border-color:#D1D9D3; --section-bg:#ECFDF5; --hover:#E4E8E5;
+  --app-old:linear-gradient(180deg,#F5F1E3 0%,#EAE5D1 55%,#DCD6BD 100%);
+  --app-new:var(--app-old); /* 场景主题不变 */
+  --shell-bg:rgba(255,255,255,.28);
+  --shell-blur:none;
+  --card-old-shadow:0 2px 8px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04), inset 0 1px 0 rgba(255,255,255,.7);
+  --card-new-shadow:0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.75);
+  --sel-old-bg:#D1FAE5; --sel-new-bg:linear-gradient(180deg,#fff,#ECFDF5);
+  --sel-new-border:rgba(5,150,105,.35);
+  --sel-new-shadow:0 0 0 3px rgba(5,150,105,.16), 0 8px 24px rgba(5,150,105,.14);
+  --control-ring:inset 0 0 0 1px rgba(5,150,105,.2), 0 1px 4px rgba(5,150,105,.12);
+  --icon-t:#059669;
+}
+.stage[data-theme="blossom"]{
+  --accent:#F0568C; --accent-solid:#CE3B70; --accent-strong:#B02C5D; --accent-light:#FFDDEC;
+  --text-primary:#3D2231; --text-secondary:#5F4755; --text-muted:#86596D;
+  --border-color:#F9D3E2; --section-bg:#FFF0F6; --hover:#FBE7F0;
+  --app-old:linear-gradient(168deg,#FFE4EF 0%,#FFC9DD 42%,#FFAECF 78%,#FF9BC4 100%);
+  --app-new:var(--app-old);
+  --shell-bg:rgba(255,255,255,.32);
+  --shell-blur:none;
+  --card-old-shadow:0 2px 8px rgba(0,0,0,.06), inset 0 1px 0 rgba(255,255,255,.7);
+  --card-new-shadow:0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.75);
+  --sel-old-bg:#FFDDEC; --sel-new-bg:linear-gradient(180deg,#fff,#FFDDEC);
+  --sel-new-border:rgba(240,86,140,.4);
+  --sel-new-shadow:0 0 0 3px rgba(240,86,140,.18), 0 8px 24px rgba(240,86,140,.14);
+  --control-ring:inset 0 0 0 1px rgba(240,86,140,.22), 0 1px 4px rgba(240,86,140,.12);
+  --icon-t:#F0568C;
+}
+.stage[data-theme="dawn"]{
+  --accent:#EA580C; --accent-solid:#C2410C; --accent-strong:#9A3412; --accent-light:#FFEDD5;
+  --text-primary:#1C1917; --text-secondary:#57534E; --text-muted:#78716C;
+  --border-color:#E7D5C4; --section-bg:#FFF7ED; --hover:#F5E6D3;
+  --app-old:linear-gradient(180deg,#FFF8EE 0%,#FFE9D2 42%,#FFD9AE 72%,#F9C78F 100%);
+  --app-new:var(--app-old);
+  --shell-bg:rgba(255,255,255,.3);
+  --shell-blur:none;
+  --card-old-shadow:0 2px 8px rgba(0,0,0,.06), inset 0 1px 0 rgba(255,255,255,.7);
+  --card-new-shadow:0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.75);
+  --sel-old-bg:#FFEDD5; --sel-new-bg:linear-gradient(180deg,#fff,#FFEDD5);
+  --sel-new-border:rgba(234,88,12,.35);
+  --sel-new-shadow:0 0 0 3px rgba(234,88,12,.16), 0 8px 24px rgba(234,88,12,.12);
+  --control-ring:inset 0 0 0 1px rgba(234,88,12,.2), 0 1px 4px rgba(234,88,12,.12);
+  --icon-t:#EA580C;
+}
+.stage[data-theme="midnight"]{
+  --accent:#818CF8; --accent-solid:#666FC4; --accent-strong:#A5B4FC; --accent-light:#1E1B4B;
+  --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+  --border-color:#27272A; --section-bg:#0F0F11; --hover:#1F1F23;
+  --card-bg:rgba(24,24,27,.55);
+  --app-old:#0F0F11;
+  --app-new:var(--app-old);
+  --shell-bg:rgba(24,24,27,.78);
+  --shell-border:rgba(255,255,255,.1);
+  --shell-blur:none;
+  --card-old-shadow:0 4px 16px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04), inset 0 1px 0 rgba(255,255,255,.05);
+  --card-new-shadow:0 2px 6px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.05), inset 0 1px 0 rgba(255,255,255,.06);
+  --sel-old-bg:#1E1B4B; --sel-new-bg:linear-gradient(180deg,#1E1B4B,#151530);
+  --sel-new-border:rgba(129,140,248,.45);
+  --sel-new-shadow:0 0 0 3px rgba(129,140,248,.22), 0 8px 28px rgba(129,140,248,.14);
+  --top-light:linear-gradient(180deg, rgba(255,255,255,.08) 0%, transparent 42%);
+  --control-glass:rgba(39,39,42,.85);
+  --control-ring:inset 0 0 0 1px rgba(129,140,248,.28), 0 1px 4px rgba(129,140,248,.16);
+  --icon-t:#818CF8;
+}
+.stage[data-theme="ocean-dark"]{
+  --accent:#3B9EFF; --accent-solid:#2D78C2; --accent-strong:#3B9EFF; --accent-light:#0A1E3A;
+  --text-primary:#E0E8F0; --text-secondary:#A2B6CD; --text-muted:#7994B4;
+  --border-color:#162B45; --section-bg:#081018; --hover:#0F1F35;
+  --card-bg:rgba(10,22,40,.55);
+  --app-old:radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+  --app-new:var(--app-old);
+  --shell-bg:rgba(10,22,40,.78);
+  --shell-border:rgba(255,255,255,.1);
+  --shell-blur:none;
+  --card-old-shadow:0 4px 16px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.04), inset 0 1px 0 rgba(255,255,255,.05);
+  --card-new-shadow:0 2px 6px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05), inset 0 1px 0 rgba(255,255,255,.06);
+  --sel-old-bg:#0A1E3A; --sel-new-bg:linear-gradient(180deg,#0A1E3A,#081828);
+  --sel-new-border:rgba(59,158,255,.45);
+  --sel-new-shadow:0 0 0 3px rgba(59,158,255,.22), 0 8px 28px rgba(59,158,255,.14);
+  --top-light:linear-gradient(180deg, rgba(255,255,255,.08) 0%, transparent 42%);
+  --control-glass:rgba(22,43,69,.85);
+  --control-ring:inset 0 0 0 1px rgba(59,158,255,.28), 0 1px 4px rgba(59,158,255,.16);
+  --icon-t:#3B9EFF;
+}
+
+/* ═══════ 演示窗 ═══════ */
+.pair{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.win{
+  width:420px;height:320px;border-radius:12px;overflow:hidden;position:relative;
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 16px 40px rgba(15,23,42,.14);
+  display:flex;flex-direction:column;font-size:12.5px;
+}
+.stage[data-theme="midnight"] .win,.stage[data-theme="ocean-dark"] .win{
+  border-color:rgba(255,255,255,.08);
+  box-shadow:0 16px 40px rgba(0,0,0,.5);
+}
+.winOld{background:var(--app-old);color:var(--text-primary)}
+.winNew{background:var(--app-new);color:var(--text-primary)}
+.hd{padding:10px 12px 8px;flex-shrink:0;display:flex;align-items:center;gap:8px}
+.winNew .hd{
+  background:linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 70%, transparent), transparent);
+}
+.logo{
+  width:20px;height:20px;border-radius:6px;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--accent),var(--accent-solid));
+  color:#fff;font-size:10px;font-weight:800;
+}
+.winNew .logo{box-shadow:0 3px 10px color-mix(in srgb, var(--accent) 35%, transparent)}
+.name{font-size:12px;font-weight:700;color:var(--text-primary)}
+.modes{display:flex;gap:2px;padding:2px;border-radius:9px;margin-left:6px}
+.winOld .modes{background:color-mix(in srgb, var(--card-bg) 55%, transparent);border:1px solid color-mix(in srgb, var(--card-bg) 75%, transparent)}
+.winNew .modes{
+  background:color-mix(in srgb, var(--card-bg) 55%, transparent);
+  border:1px solid color-mix(in srgb, var(--card-bg) 80%, transparent);
+  padding:3px;border-radius:11px;
+  box-shadow:0 4px 14px rgba(15,23,42,.08);
+}
+.mode{height:22px;padding:0 8px;border:none;border-radius:6px;background:transparent;color:var(--text-secondary);font-size:11px;font-family:inherit}
+.winNew .mode{height:24px;border-radius:8px}
+.mode.on{color:#fff;font-weight:600;position:relative;isolation:isolate}
+.mode.on::before{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--accent-solid);z-index:-1}
+.winNew .mode.on::before{background:linear-gradient(180deg,var(--accent),var(--accent-solid));box-shadow:0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent)}
+.body{flex:1;display:flex;min-height:0}
+.sb{
+  width:110px;flex-shrink:0;padding:8px 6px;display:flex;flex-direction:column;gap:2px;
+  border-right:1px solid var(--border-color);
+}
+.winOld .sb{background:color-mix(in srgb, var(--section-bg) 80%, var(--card-bg))}
+.winNew .sb{
+  background:var(--shell-bg);
+  border-right-color:var(--shell-border);
+  backdrop-filter:var(--shell-blur);
+  -webkit-backdrop-filter:var(--shell-blur);
+}
+.si{
+  display:flex;align-items:center;gap:6px;padding:5px 7px;border-radius:6px;
+  font-size:11px;color:var(--text-primary);
+}
+.si.on{background:var(--accent-light);color:var(--accent-strong);font-weight:600;position:relative}
+.si.on::before{
+  content:"";position:absolute;left:1px;top:50%;transform:translateY(-50%);
+  width:3px;height:14px;border-radius:2px;background:var(--accent);
+}
+.winNew .si.on::before{box-shadow:0 0 6px color-mix(in srgb, var(--accent) 50%, transparent)}
+.panel{flex:1;min-width:0;padding:8px 10px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.search{
+  height:32px;border-radius:8px;display:flex;align-items:center;padding:0 10px;gap:6px;
+  font-size:11.5px;color:var(--text-muted);flex-shrink:0;
+}
+.winOld .search{background:#fff;border:1px solid var(--border-color);box-shadow:0 1px 4px rgba(0,0,0,.03)}
+.stage[data-theme="midnight"] .winOld .search,.stage[data-theme="ocean-dark"] .winOld .search{
+  background:var(--card-bg);border-color:var(--border-color);
+}
+.winNew .search{
+  background:var(--control-glass);
+  border:1px solid color-mix(in srgb, var(--card-bg) 90%, transparent);
+  border-radius:10px;
+  box-shadow:0 1px 2px rgba(15,23,42,.04), 0 4px 14px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.85);
+}
+.card{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;flex-shrink:0;
+  border:1px solid transparent;position:relative;overflow:hidden;
+  background:var(--card-bg);
+}
+.winOld .card{box-shadow:var(--card-old-shadow);border-color:color-mix(in srgb, var(--text-primary) 8%, transparent)}
+.winNew .card{box-shadow:var(--card-new-shadow);border-color:color-mix(in srgb, var(--card-bg) 95%, transparent)}
+.winNew .card::before{
+  content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:var(--top-light);
+}
+.card.sel{}
+.winOld .card.sel{background:var(--sel-old-bg);border-color:var(--sel-old-border);box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent)}
+.winNew .card.sel{
+  background:var(--sel-new-bg);border-color:var(--sel-new-border);box-shadow:var(--sel-new-shadow);
+}
+.ic{
+  width:30px;height:30px;min-width:30px;border-radius:9px;display:grid;place-items:center;font-size:13px;
+  background:color-mix(in srgb, var(--icon-t) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--icon-t) 22%, transparent);
+  position:relative;z-index:1;
+}
+.winNew .ic{
+  background:linear-gradient(145deg, color-mix(in srgb, var(--icon-t) 16%, transparent), color-mix(in srgb, var(--icon-t) 8%, transparent));
+}
+.ct{font-size:11.5px;font-weight:600;color:var(--text-primary);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;z-index:1}
+.cm{font-size:10.5px;color:var(--text-muted);margin-top:2px;position:relative;z-index:1}
+.cbody{flex:1;min-width:0}
+
+/* swatches / tables */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.kcard{
+  border-radius:12px;padding:14px;background:#fff;border:1px solid #D8E0EA;
+}
+body[data-t="midnight"] .kcard,body[data-t="ocean-dark"] .kcard{background:#18181B;border-color:#27272A}
+.kcard h3{margin:0 0 6px;font-size:13px}
+.kcard p{margin:0;font-size:12px;color:#5B6B7F;line-height:1.55}
+body[data-t="midnight"] .kcard p,body[data-t="ocean-dark"] .kcard p{color:#8D8D95}
+.kcard .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:5px;background:#DCEBFA;color:#0273AD;
+  font-size:10px;font-weight:800;margin-right:6px;vertical-align:-2px;
+}
+body[data-t="midnight"] .kcard .num,body[data-t="ocean-dark"] .kcard .num{background:#1E1B4B;color:#A5B4FC}
+table{border-collapse:collapse;width:100%;font-size:12px;margin:10px 0}
+th,td{border:1px solid #D8E0EA;padding:7px 9px;text-align:left;vertical-align:top}
+body[data-t="midnight"] th,body[data-t="midnight"] td,
+body[data-t="ocean-dark"] th,body[data-t="ocean-dark"] td{border-color:#27272A}
+th{background:#F0F5FA;font-weight:700}
+body[data-t="midnight"] th,body[data-t="ocean-dark"] th{background:#1F1F23}
+.swrow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.sw{
+  width:120px;border-radius:10px;overflow:hidden;border:1px solid #D8E0EA;background:#fff;
+}
+body[data-t="midnight"] .sw,body[data-t="ocean-dark"] .sw{background:#18181B;border-color:#27272A}
+.sw i{display:block;height:44px}
+.sw b{display:block;font-size:11px;padding:6px 8px 0;color:inherit}
+.sw span{display:block;font-size:10px;color:#627083;padding:0 8px 8px;font-family:ui-monospace,Consolas,monospace}
+body[data-t="midnight"] .sw span,body[data-t="ocean-dark"] .sw span{color:#8D8D95}
+.tagPill{
+  display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;margin-right:4px;
+}
+.tagMain{background:#DCFCE7;color:#166534}
+.tagLite{background:#FEF3C7;color:#92400E}
+.tagNone{background:#F3F4F6;color:#6B7280}
+body[data-t="midnight"] .tagMain,body[data-t="ocean-dark"] .tagMain{background:#052E16;color:#4ADE80}
+body[data-t="midnight"] .tagLite,body[data-t="ocean-dark"] .tagLite{background:#431407;color:#FB923C}
+body[data-t="midnight"] .tagNone,body[data-t="ocean-dark"] .tagNone{background:#1F1F23;color:#8D8D95}
+.foot{margin-top:28px;font-size:11.5px;color:#627083;line-height:1.65}
+body[data-t="midnight"] .foot,body[data-t="ocean-dark"] .foot{color:#8D8D95}
+</style>
+</head>
+<body data-t="ocean">
+<div class="wrap">
+
+  <div class="toolbar">
+    <strong style="font-size:12.5px;margin-right:2px">主题</strong>
+    <button class="on" data-set="ocean">Ocean</button>
+    <button data-set="forest">Forest</button>
+    <button data-set="blossom">Blossom</button>
+    <button data-set="dawn">Dawn</button>
+    <button data-set="midnight">Midnight</button>
+    <button data-set="ocean-dark">Ocean Dark</button>
+    <span class="hint">对应 docs/UI视觉升级-Token改动表.md · 切主题看推导是否成立</span>
+  </div>
+
+  <h1>UI 视觉升级 · Token 设计稿（六主题）</h1>
+  <p class="sub">
+    左窗 = 改前 token · 右窗 = 改后 token。Ocean 底色变了；场景主题底色不动，只加厚阴影与选中柔环。
+    侧栏 blur <strong>仅 ocean</strong> 打开，其余主题 <code>--shell-blur: none</code>。
+  </p>
+
+  <div class="note">
+    <b>读法：</b>当前主题若 tag 为「主改」，左右底色应明显不同；若为「轻改」，左右底色相同、卡片厚度与选中环有差异。
+  </div>
+
+  <div class="stage" id="stage" data-theme="ocean">
+    <div class="pair">
+      <div>
+        <span class="lab labA">改前</span>
+        <div class="win winOld">
+          <div class="hd">
+            <span class="logo">P</span>
+            <span class="name">PastePanda</span>
+            <div class="modes">
+              <button class="mode on">记录</button>
+              <button class="mode">知识</button>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sb">
+              <div class="si on">全部</div>
+              <div class="si">收藏</div>
+              <div class="si">工作</div>
+            </div>
+            <div class="panel">
+              <div class="search">搜索…</div>
+              <div class="card sel">
+                <div class="ic">📝</div>
+                <div class="cbody"><p class="ct">选中卡片（旧：硬蓝底）</p><div class="cm">2分钟前 · VS Code</div></div>
+              </div>
+              <div class="card">
+                <div class="ic" style="--icon-t:#10B981">🐍</div>
+                <div class="cbody"><p class="ct">普通卡片（旧：浅阴影）</p><div class="cm">11分钟前</div></div>
+              </div>
+              <div class="card">
+                <div class="ic" style="--icon-t:#8B5CF6">🔗</div>
+                <div class="cbody"><p class="ct">另一条笔记</p><div class="cm">1小时前</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <span class="lab labB">改后 <span id="tagLevel" class="tagPill tagMain">主改</span></span>
+        <div class="win winNew">
+          <div class="hd">
+            <span class="logo">P</span>
+            <span class="name">PastePanda</span>
+            <div class="modes">
+              <button class="mode on">记录</button>
+              <button class="mode">知识</button>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sb">
+              <div class="si on">全部</div>
+              <div class="si">收藏</div>
+              <div class="si">工作</div>
+            </div>
+            <div class="panel">
+              <div class="search">搜索…</div>
+              <div class="card sel">
+                <div class="ic">📝</div>
+                <div class="cbody"><p class="ct">选中卡片（新：柔光环）</p><div class="cm">2分钟前 · VS Code</div></div>
+              </div>
+              <div class="card">
+                <div class="ic" style="--icon-t:#10B981">🐍</div>
+                <div class="cbody"><p class="ct">普通卡片（新：三段阴影）</p><div class="cm">11分钟前</div></div>
+              </div>
+              <div class="card">
+                <div class="ic" style="--icon-t:#8B5CF6">🔗</div>
+                <div class="cbody"><p class="ct">另一条笔记</p><div class="cm">1小时前</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2><span class="n">1</span>当前主题 Token 对照</h2>
+    <div class="swrow" id="swatches"></div>
+
+    <div class="grid3" style="margin-top:8px">
+      <div class="kcard">
+        <h3><span class="num">A</span>氛围底 <code>--app-bg</code></h3>
+        <p id="appNote">Ocean：死白 → 青/微紫静态渐变。其它主题不变。</p>
+      </div>
+      <div class="kcard">
+        <h3><span class="num">B</span>壳层 blur</h3>
+        <p id="blurNote">仅 Ocean：侧栏 <code>blur(16px)</code>。场景主题 <code>none</code>。</p>
+      </div>
+      <div class="kcard">
+        <h3><span class="num">C</span>卡片阴影</h3>
+        <p id="shadowNote">全部主题：近影 + 中影；深色档用黑影 + 白 inset。</p>
+      </div>
+      <div class="kcard">
+        <h3><span class="num">D</span>选中态</h3>
+        <p id="selNote">2px 硬环 → 3px accent 柔环 + 淡投影。</p>
+      </div>
+      <div class="kcard">
+        <h3><span class="num">E</span>控件微光</h3>
+        <p id="ctrlNote">搜索框玻璃化；工具钮 on 用 <code>--control-ring</code>。</p>
+      </div>
+      <div class="kcard">
+        <h3><span class="num">F</span>性能边界</h3>
+        <p>卡片 filter 仍 none；壳 blur 仅 1 个容器且仅 ocean；无新增 infinite 动画。</p>
+      </div>
+    </div>
+
+    <h2><span class="n">2</span>六主题力度一览</h2>
+    <table>
+      <tr>
+        <th>主题</th><th>力度</th><th>app-bg</th><th>shell-blur</th><th>阴影</th><th>选中环</th>
+      </tr>
+      <tr>
+        <td><b>ocean</b></td>
+        <td><span class="tagPill tagMain">主改</span></td>
+        <td>改：静态氛围渐变</td>
+        <td><code>blur(16px)</code></td>
+        <td>三段浅影</td>
+        <td>3px 柔环</td>
+      </tr>
+      <tr>
+        <td>forest</td>
+        <td><span class="tagPill tagLite">轻改</span></td>
+        <td>不变（纸感+场景）</td>
+        <td><code>none</code></td>
+        <td>中影加深</td>
+        <td>3px 柔环</td>
+      </tr>
+      <tr>
+        <td>blossom</td>
+        <td><span class="tagPill tagLite">轻改</span></td>
+        <td>不变</td>
+        <td><code>none</code></td>
+        <td>中影加深</td>
+        <td>3px 柔环</td>
+      </tr>
+      <tr>
+        <td>dawn</td>
+        <td><span class="tagPill tagLite">轻改</span></td>
+        <td>不变</td>
+        <td><code>none</code></td>
+        <td>中影加深</td>
+        <td>3px 柔环</td>
+      </tr>
+      <tr>
+        <td>midnight</td>
+        <td><span class="tagPill tagLite">轻改</span></td>
+        <td>不变</td>
+        <td><code>none</code></td>
+        <td>近影+中影</td>
+        <td>3px 柔环</td>
+      </tr>
+      <tr>
+        <td>ocean-dark</td>
+        <td><span class="tagPill tagLite">轻改</span></td>
+        <td>不变</td>
+        <td><code>none</code></td>
+        <td>近影+中影</td>
+        <td>3px 柔环</td>
+      </tr>
+    </table>
+
+    <h2><span class="n">3</span>建议写入 theme.css 的骨架</h2>
+    <div class="kcard">
+      <pre style="margin:0;font-size:11.5px;line-height:1.55;overflow:auto"><code>:root {
+  /* 新 token：组件用 var(--x, 旧值) 消费 */
+  --glass-card-elev: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+  --card-top-light: linear-gradient(180deg, rgba(255,255,255,.55) 0%, transparent 45%);
+  --card-selected-glow: color-mix(in srgb, var(--accent) 16%, transparent);
+  --shell-bg: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  --shell-blur: none;          /* 默认关；ocean 覆写打开 */
+  --control-glass: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  --control-ring: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
+                  0 1px 4px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+[data-theme="ocean"] {
+  --app-bg: radial-gradient(...), radial-gradient(...), linear-gradient(...);
+  --shell-bg: rgba(244,247,251,.72);
+  --shell-blur: blur(16px) saturate(1.2);
+  --glass-card-shadow: 0 1px 2px rgba(15,23,42,.04),
+                       0 6px 16px rgba(15,23,42,.07),
+                       0 0 0 1px rgba(15,23,42,.04);
+  /* selected / sidebar-bg 同步见改动表 §2 */
+}</code></pre>
+    </div>
+
+    <p class="foot">
+      设计稿：<code>design/2026-UI升级-Token六主题-设计稿.html</code><br>
+      改动表：<code>docs/UI视觉升级-Token改动表.md</code><br>
+      观感对照：主窗口 / 知识库两份视觉升级稿。确认后按 P1 只动 ocean + :root。
+    </p>
+  </div>
+</div>
+
+<script>
+const LEVEL = {
+  ocean: {tag:'主改', cls:'tagMain', app:'Ocean：死白 → 青/微紫静态渐变。', blur:'侧栏 blur(16px) 打开。', shadow:'三段：近影 + 中影 + 描边环。'},
+  forest: {tag:'轻改', cls:'tagLite', app:'不变（已有纸感渐变 + SkinScene）。', blur:'none，避免与场景叠 GPU。', shadow:'保留 inset 高光，中影加深。'},
+  blossom: {tag:'轻改', cls:'tagLite', app:'不变（糖果粉场景）。', blur:'none。', shadow:'同 forest 浅色档。'},
+  dawn: {tag:'轻改', cls:'tagLite', app:'不变（晨光场景）。', blur:'none。', shadow:'同 forest 浅色档。'},
+  midnight: {tag:'轻改', cls:'tagLite', app:'不变（星夜场景）。', blur:'none。', shadow:'黑近影 + 黑中影 + 白 inset。'},
+  'ocean-dark': {tag:'轻改', cls:'tagLite', app:'不变（海面场景）。', blur:'none。', shadow:'同 midnight 深色档。'}
+};
+function setTheme(t){
+  document.body.setAttribute('data-t', t);
+  document.getElementById('stage').setAttribute('data-theme', t);
+  document.querySelectorAll('.toolbar button[data-set]').forEach(b=>{
+    b.classList.toggle('on', b.getAttribute('data-set')===t);
+  });
+  const L = LEVEL[t];
+  const tag = document.getElementById('tagLevel');
+  tag.className = 'tagPill ' + L.cls;
+  tag.textContent = L.tag;
+  document.getElementById('appNote').textContent = L.app;
+  document.getElementById('blurNote').textContent = L.blur;
+  document.getElementById('shadowNote').textContent = L.shadow;
+  const st = getComputedStyle(document.getElementById('stage'));
+  const items = [
+    ['--app-old','改前 底'],
+    ['--app-new','改后 底'],
+    ['--shell-bg','壳 shell-bg'],
+    ['--card-old-shadow','改前 卡影'],
+    ['--card-new-shadow','改后 卡影'],
+    ['--sel-new-shadow','改后 选中环']
+  ];
+  const box = document.getElementById('swatches');
+  box.innerHTML = items.map(([k,label])=>{
+    const v = st.getPropertyValue(k).trim();
+    const isBg = k.includes('app') || k==='--shell-bg';
+    const style = isBg ? `background:${v}` : `background:#fff;box-shadow:${v}`;
+    return `<div class="sw"><i style="${style}"></i><b>${label}</b><span>${k}</span></div>`;
+  }).join('');
+}
+document.querySelectorAll('.toolbar button[data-set]').forEach(b=>{
+  b.addEventListener('click',()=>setTheme(b.getAttribute('data-set')));
+});
+setTheme('ocean');
+</script>
+</body>
+</html>

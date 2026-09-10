@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 知识库视觉升级 · 改前/改后</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   对照截图：知识模式 · 全部笔记 · 窄侧栏
+   真值：KnowledgeView / ViewControls / KbInboxPanel / TopBar
+   改后沿用主窗口视觉升级同一套语言（氛围底 / 景深 / 卡片厚度）
+   列表卡片仍无 backdrop-filter（规则 8.3）
+   ═══════════════════════════════════════════════════════ */
+*{box-sizing:border-box}
+body{
+  margin:0;padding:28px 18px 90px;
+  font:14px/1.65 "Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  background:#E8EEF4;color:#0F172A;
+}
+.wrap{max-width:1120px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{font-size:12.5px;color:#5B6B7F;margin:0 0 14px;line-height:1.7}
+h2{font-size:15px;margin:34px 0 12px;padding-top:16px;border-top:1px solid #D5DEE8}
+h2 .n{
+  display:inline-flex;width:22px;height:22px;border-radius:7px;
+  align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  background:#DCEBFA;color:#0273AD;margin-right:8px;
+}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;padding:1px 5px;border-radius:4px;background:#E7EEF6}
+.note{
+  border-radius:10px;padding:12px 14px;margin:12px 0;font-size:12.5px;line-height:1.65;
+  background:#fff;border:1px solid #D8E0EA;border-left:3px solid #0284C7;color:#495565;
+}
+.toolbar{
+  position:sticky;top:8px;z-index:60;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:10px 12px;margin:0 0 18px;border-radius:12px;
+  background:rgba(255,255,255,.88);border:1px solid #D8E0EA;
+  backdrop-filter:blur(12px);box-shadow:0 6px 20px rgba(15,23,42,.08);
+}
+.toolbar .hint{margin-left:auto;font-size:11.5px;color:#627083}
+.lab{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:8px}
+.labA{background:#E8ECF2;color:#627083;border:1px solid #E0E4EB}
+.labB{background:#DCEBFA;color:#0273AD;border:1px solid #7DD3FC}
+.pair{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+
+/* ═══════ 窗口：贴近截图宽高 ═══════ */
+.win{
+  width:720px;height:640px;display:flex;flex-direction:column;
+  border-radius:12px;overflow:hidden;position:relative;
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 20px 48px rgba(15,23,42,.16), 0 2px 8px rgba(15,23,42,.04);
+  font-size:13px;color:#0F172A;
+}
+
+/* ── 共用顶栏骨架 ── */
+.hd{padding:12px 14px 0;flex-shrink:0}
+.hdrTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.hdrL{display:flex;align-items:center;gap:8px}
+.hdrR{display:flex;gap:2px;align-items:center}
+.logo{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800}
+.name{font-size:12px;font-weight:700}
+.aiM{font-size:8px;font-weight:800;margin-left:3px;background:linear-gradient(90deg,#1D4ED8,#6D28D9);-webkit-background-clip:text;background-clip:text;color:transparent}
+.modes{display:flex;gap:2px;padding:2px;border-radius:9px;margin-left:10px}
+.mode{height:24px;padding:0 10px;border:none;border-radius:7px;background:transparent;color:#495565;font-size:12px;font-family:inherit}
+.mode.on{color:#fff;font-weight:600;position:relative;isolation:isolate}
+.mode.on::before{content:"";position:absolute;inset:0;border-radius:7px;z-index:-1}
+.tg{width:28px;height:28px;border:none;background:transparent;border-radius:8px;display:grid;place-items:center;color:#495565;font-size:14px}
+.tg.on{color:#0273AD}
+.ib{width:28px;height:28px;border-radius:8px;display:grid;place-items:center}
+.ib svg{width:16px;height:16px}
+.div{width:1px;height:16px;margin:0 4px}
+.dot{position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:#11813A}
+
+/* 配对状态条 */
+.pairBar{
+  margin:0 14px 10px;padding:8px 12px;border-radius:8px;font-size:12px;
+  display:flex;align-items:center;gap:8px;
+}
+/* 面包屑 + 宽屏/新建 */
+.crumbRow{display:flex;align-items:center;gap:6px;padding:0 14px 8px}
+.crumb{font-size:12.5px;color:#5B6B7F}
+.crumb b{color:#0F172A;font-weight:600}
+.pillBtn{
+  height:28px;padding:0 8px;border-radius:6px;border:1px solid transparent;
+  display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;
+  color:#5B6B7F;background:transparent;
+}
+/* 搜索行 */
+.searchRow{display:flex;align-items:center;gap:6px;padding:0 14px 8px}
+.searchBox{
+  flex:1;min-width:0;height:38px;padding:0 8px;border-radius:8px;
+  display:flex;align-items:center;gap:6px;
+}
+.segBox{display:flex;gap:2px;padding:2px;border-radius:6px;flex-shrink:0}
+.segBtn{height:28px;padding:0 9px;border:none;border-radius:5px;background:none;color:#8A96A8;font-size:12.5px;font-family:inherit}
+.segBtn.on{font-weight:600}
+.ph{color:#8A96A8;font-size:13px;flex:1}
+.tool{
+  width:28px;height:28px;border:none;background:none;border-radius:7px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  color:#8A96A8;flex-shrink:0;font-family:inherit;cursor:default;
+}
+.tool span{font-size:9px;line-height:1}
+.tool.on{font-weight:600}
+/* 合成横幅 */
+.banner{
+  margin:0 14px 10px;padding:8px 10px;border-radius:8px;
+  display:flex;align-items:center;gap:7px;font-size:12px;
+  border:1px solid transparent;
+}
+.banner .sp{flex-shrink:0}
+.bannerTxt{flex:1;min-width:0;line-height:1.45}
+.bannerTxt em{font-style:normal;font-weight:700}
+.bannerHint{color:#8A96A8;font-size:11.5px}
+/* 列表 */
+.list{flex:1;min-height:0;overflow:hidden;padding:0 14px 16px;display:flex;flex-direction:column;gap:10px}
+.row{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;
+  border:1px solid transparent;flex-shrink:0;position:relative;overflow:hidden;
+}
+.ic{
+  width:34px;height:34px;min-width:34px;border-radius:11px;
+  display:grid;place-items:center;font-size:15px;
+  border:1px solid transparent;position:relative;z-index:1;
+}
+.body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;position:relative;z-index:1}
+.title{font-size:13.5px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.ex{font-size:12.5px;color:#495565;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;margin:0}
+.meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:1px;font-weight:500;font-variant-numeric:tabular-nums}
+.tm{font-size:11.5px;color:#627083}
+.wc{
+  display:inline-flex;align-items:center;padding:0 5px;border-radius:4px;
+  font-size:11px;font-weight:600;line-height:1.5;
+}
+.tag{
+  display:inline-flex;align-items:center;font-size:11px;font-weight:600;
+  height:17px;padding:0 6px;border-radius:5px;
+}
+.folder{
+  font-size:11px;color:#627083;padding:0 4px;border-radius:3px;white-space:nowrap;
+}
+.acts{
+  display:flex;gap:4px;opacity:0;transition:opacity .15s;position:relative;z-index:1;flex-shrink:0;
+}
+.row:hover .acts,.row.hot .acts{opacity:1}
+.abtn{
+  width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  border:1px solid transparent;font-size:12px;
+}
+
+/* ═══════ 改前 A ═══════ */
+.winA{background:#F7F7F8}
+.winA .hd{background:transparent}
+.winA .logo{background:linear-gradient(135deg,#0284C7,#0369A1)}
+.winA .modes{
+  background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.75);
+  backdrop-filter:blur(10px);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 2px 8px rgba(0,0,0,.1);
+}
+.winA .mode.on::before{background:#027CBB}
+.winA .tg.on{background:#E0F2FE}
+.winA .ib{color:#495565}
+.winA .pairBar{background:#fff;border:1px solid #E0E4EB;color:#0F172A}
+.winA .pillBtn{border-color:#E0E4EB}
+.winA .searchBox{background:#fff;border:1px solid #E0E4EB;box-shadow:0 1px 4px rgba(0,0,0,.03)}
+.winA .segBox{background:#E8ECF2}
+.winA .segBtn.on{background:#fff;color:#0273AD;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.winA .tool.on{background:#E0F2FE;color:#0273AD}
+.winA .banner{
+  background:color-mix(in srgb,#8B5CF6 8%,transparent);
+  border-color:color-mix(in srgb,#8B5CF6 30%,transparent);
+}
+.winA .banner .sp{color:#8B5CF6}
+.winA .row{
+  background:#fff;border-color:rgba(0,0,0,.08);
+  box-shadow:0 1px 3px rgba(0,0,0,.06),0 0 0 1px rgba(0,0,0,.05);
+}
+.winA .ic{background:rgba(0,0,0,.04);border-color:rgba(0,0,0,.07);box-shadow:inset 0 2px 4px rgba(255,255,255,.5),0 2px 6px rgba(0,0,0,.05)}
+.winA .wc{background:#F0F4F8;border:1px solid #E0E4EB}
+.winA .folder{background:#E8ECF2}
+.winA .abtn{background:#fff;border-color:#E0E4EB;color:#495565}
+
+/* ═══════ 改后 B ═══════ */
+.winB{
+  background:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.13), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.07), transparent 50%),
+    linear-gradient(168deg, #F4F8FC 0%, #EEF3F8 42%, #E8F0F7 100%);
+}
+.winB .hd{
+  background:linear-gradient(180deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.28) 78%, transparent 100%);
+  padding:12px 14px 0;
+}
+.winB .logo{background:linear-gradient(135deg,#0EA5E9,#0284C7 55%,#0369A1);box-shadow:0 3px 10px rgba(2,132,199,.35);width:22px;height:22px;border-radius:7px}
+.winB .modes{
+  padding:3px;border-radius:11px;margin-left:12px;
+  background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.8);
+  backdrop-filter:blur(12px);box-shadow:0 4px 14px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.7);
+}
+.winB .mode{height:26px;border-radius:8px;padding:0 11px;color:#5B6B7F}
+.winB .mode.on{color:#fff;font-weight:700}
+.winB .mode.on::before{
+  background:linear-gradient(180deg,#0B95D4,#027CBB);
+  box-shadow:0 2px 8px rgba(2,132,199,.4);
+}
+.winB .tg.on{
+  background:linear-gradient(180deg,#E0F2FE,#F0F9FF);
+  box-shadow:inset 0 0 0 1px rgba(2,132,199,.2);
+}
+.winB .ib{color:#5B6B7F;border-radius:9px}
+.winB .pairBar{
+  background:rgba(255,255,255,.62);
+  border:1px solid rgba(255,255,255,.85);
+  box-shadow:0 2px 10px rgba(15,23,42,.05), inset 0 1px 0 rgba(255,255,255,.7);
+  color:#3D4A5C;
+}
+.winB .pillBtn{
+  background:rgba(255,255,255,.7);
+  border-color:rgba(255,255,255,.85);
+  box-shadow:0 2px 8px rgba(15,23,42,.05), inset 0 1px 0 rgba(255,255,255,.75);
+  color:#5B6B7F;border-radius:9px;
+}
+.winB .searchBox{
+  background:rgba(255,255,255,.82);
+  border:1px solid rgba(255,255,255,.9);
+  border-radius:12px;
+  box-shadow:0 1px 2px rgba(15,23,42,.04), 0 4px 14px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.9);
+}
+.winB .segBox{
+  background:rgba(15,23,42,.04);
+  border-radius:8px;
+}
+.winB .segBtn{color:#8A96A8}
+.winB .segBtn.on{
+  background:rgba(255,255,255,.95);
+  color:#0273AD;
+  box-shadow:0 1px 3px rgba(15,23,42,.08), 0 0 0 1px rgba(2,132,199,.12);
+}
+.winB .tool{
+  color:#8A96A8;border-radius:8px;
+}
+.winB .tool.on{
+  background:linear-gradient(180deg, rgba(2,132,199,.14), rgba(2,132,199,.08));
+  color:#0273AD;
+  box-shadow:inset 0 0 0 1px rgba(2,132,199,.2), 0 1px 4px rgba(2,132,199,.12);
+}
+.winB .banner{
+  background:
+    linear-gradient(135deg, rgba(139,92,246,.12), rgba(2,132,199,.08) 70%, transparent);
+  border-color:rgba(139,92,246,.28);
+  box-shadow:0 2px 12px rgba(139,92,246,.10), inset 0 1px 0 rgba(255,255,255,.55);
+  border-radius:10px;
+}
+.winB .banner .sp{color:#8B5CF6}
+.winB .row{
+  background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(252,253,255,.96) 100%);
+  border-color:rgba(255,255,255,.95);
+  box-shadow:
+    0 1px 2px rgba(15,23,42,.04),
+    0 6px 16px rgba(15,23,42,.07),
+    0 0 0 1px rgba(15,23,42,.04);
+}
+.winB .row::before{
+  content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg, rgba(255,255,255,.7) 0%, transparent 40%);
+}
+.winB .ic{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.65), inset 0 1px 3px rgba(15,23,42,.04), 0 2px 6px rgba(15,23,42,.06);
+  border-color:rgba(255,255,255,.7);
+}
+.winB .title{letter-spacing:-.01em}
+.winB .ex{color:#5B6B7F}
+.winB .tm{color:#8A96A8}
+.winB .folder{background:rgba(15,23,42,.05)}
+.winB .abtn{
+  background:rgba(255,255,255,.9);
+  border-color:rgba(15,23,42,.06);
+  color:#5B6B7F;
+  box-shadow:0 1px 3px rgba(15,23,42,.06);
+}
+/* tint 示例（与真值 12%/22% 同比例，改后略提饱和） */
+.tBlue{--t:#3B82F6}.tGreen{--t:#10B981}.tOrange{--t:#F59E0B}.tRed{--t:#EF4444}.tPurple{--t:#8B5CF6}
+.winA .ic[class*="t"]{background:color-mix(in srgb,var(--t) 12%, rgba(0,0,0,.04));border-color:color-mix(in srgb,var(--t) 22%, rgba(0,0,0,.07))}
+.winB .ic[class*="t"]{
+  background:linear-gradient(145deg, color-mix(in srgb,var(--t) 16%, transparent), color-mix(in srgb,var(--t) 8%, transparent));
+  border-color:color-mix(in srgb,var(--t) 24%, transparent);
+}
+.winA .wc[class*="t"]{color:color-mix(in srgb,var(--t) 55%, #627083);border-color:color-mix(in srgb,var(--t) 38%, #E0E4EB)}
+.winB .wc[class*="t"]{
+  color:color-mix(in srgb,var(--t) 62%, #3D4A5C);
+  background:color-mix(in srgb,var(--t) 8%, #fff);
+  border:1px solid color-mix(in srgb,var(--t) 28%, transparent);
+  border-radius:6px;
+}
+.winA .tag[class*="t"]{background:color-mix(in srgb,var(--t) 12%, transparent);color:color-mix(in srgb,var(--t) 70%, #0F172A)}
+.winB .tag[class*="t"]{
+  background:linear-gradient(180deg, color-mix(in srgb,var(--t) 14%, transparent), color-mix(in srgb,var(--t) 8%, transparent));
+  color:color-mix(in srgb,var(--t) 72%, #0F172A);
+  border:1px solid color-mix(in srgb,var(--t) 22%, transparent);
+  border-radius:6px;
+  box-shadow:0 1px 2px color-mix(in srgb,var(--t) 10%, transparent);
+}
+.neutralWc{
+  display:inline-flex;align-items:center;padding:0 5px;border-radius:4px;
+  font-size:11px;font-weight:600;background:#F0F4F8;border:1px solid #E0E4EB;color:#627083;
+}
+.winB .neutralWc{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.06);color:#5B6B7F;border-radius:6px}
+
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
+.kcard{border-radius:12px;padding:14px;background:#fff;border:1px solid #D8E0EA}
+.kcard h3{margin:0 0 6px;font-size:13px}
+.kcard p{margin:0;font-size:12px;color:#5B6B7F;line-height:1.55}
+.kcard .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:5px;background:#DCEBFA;color:#0273AD;
+  font-size:10px;font-weight:800;margin-right:6px;vertical-align:-2px;
+}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0}
+th,td{border:1px solid #D8E0EA;padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#F0F5FA;font-weight:700}
+.foot{margin-top:28px;font-size:11.5px;color:#627083;line-height:1.65}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <strong style="font-size:12.5px">知识库 · 视觉升级对照</strong>
+    <span class="hint">对照你的截图 · 窗口 720×640 · 与主窗口升级同一套语言</span>
+  </div>
+
+  <h1>知识库页面 · 视觉升级 改前 / 改后</h1>
+  <p class="sub">
+    左：按截图与源码复刻的现状（配对条 · 全部笔记 · 搜/问 · 合成横幅 · 笔记卡片）。
+    右：沿用主窗口那套「氛围底 / 景深 / 卡片厚度 / 控件微光」，信息架构一字不改。
+  </p>
+
+  <div class="note">
+    <b>截图里已经做对的：</b>笔记行卡片化、图标 34px 带色 tint、字数条跟行色调、
+    搜/问内嵌分段、合成横幅用蒸馏紫。升级只加「空气感和厚度」，不推翻这些。
+  </div>
+
+  <div class="pair">
+    <!-- ═══════════ 改前 ═══════════ -->
+    <div>
+      <span class="lab labA">改前 · 对照截图</span>
+      <div class="win winA">
+        <header class="hd">
+          <div class="hdrTop">
+            <div class="hdrL">
+              <button class="tg on">☰</button>
+              <span class="logo">P</span>
+              <span class="name">PastePanda<span class="aiM">AI</span></span>
+              <div class="modes">
+                <button class="mode">记录</button>
+                <button class="mode">工具</button>
+                <button class="mode on">知识</button>
+              </div>
+            </div>
+            <div class="hdrR">
+              <span class="ib" style="position:relative">
+                <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+              </span>
+              <span class="ib" style="color:#8B5CF6;position:relative">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+                <span class="dot" style="box-shadow:0 0 0 2px #F7F7F8"></span>
+              </span>
+              <span class="div" style="background:#E0E4EB"></span>
+              <span class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></span>
+              <span class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-11-8-11-8"/><path d="m1 1 22 22"/></svg></span>
+            </div>
+          </div>
+        </header>
+
+        <div class="pairBar">● 已配对 2 台 · 对方都不在线</div>
+
+        <div class="crumbRow">
+          <span class="crumb"><b>全部笔记</b> · 26 条</span>
+          <span style="margin-left:auto"></span>
+          <button class="pillBtn">▤ 宽屏</button>
+          <button class="pillBtn" style="width:28px;padding:0;justify-content:center">＋</button>
+        </div>
+
+        <div class="searchRow">
+          <div class="searchBox">
+            <div class="segBox">
+              <button class="segBtn on">搜</button>
+              <button class="segBtn">问</button>
+            </div>
+            <span class="ph">搜笔记（中文 / 拼音首字母）</span>
+          </div>
+          <button class="tool on"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>列表</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>网格</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l3 3M17 20l-3-3"/></svg><span>排序</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M8 12h12M12 18h8"/></svg><span>分组</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16l-6 7v5l-4 2v-7L4 5z"/></svg><span>筛选</span></button>
+        </div>
+
+        <div class="banner">
+          <span class="sp">✨</span>
+          <div class="bannerTxt">
+            可合成笔记 <em>4 篇</em> —— 今天同一个来源的碎片、以及这几天反复出现的，各合成一篇；
+            <span class="bannerHint">存不存你说了算</span>
+          </div>
+          <span style="color:#8A96A8">⌄</span>
+        </div>
+
+        <div class="list">
+          <div class="row hot">
+            <div class="ic tPurple">✎</div>
+            <div class="body">
+              <p class="title"><span style="color:#F59E0B">📌</span> 策手vs·cc-bridge-更新能力对比</p>
+              <p class="ex">策手与cc-bridge的自动更新能力在多数维度已基本对齐，核心差距仅在于下载…</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tPurple">2.7k 字</span>
+                <span class="tag tBlue">NSIS</span>
+                <span class="tag tBlue">Tauri</span>
+                <span class="tag tGreen">更新能力对比</span>
+                <span class="neutralWc">+2</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+            <div class="acts">
+              <span class="abtn">📌</span>
+              <span class="abtn">⧉</span>
+              <span class="abtn">⋯</span>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tGreen">✎</div>
+            <div class="body">
+              <p class="title">7.1.0问题记录</p>
+              <p class="ex">1知识库模式下3栏状态下问答框太短 2知识库模式下编辑内容回车就会显示已…</p>
+              <div class="meta">
+                <span class="tm">4天前</span>
+                <span class="wc tGreen">156 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tRed">▤</div>
+            <div class="body">
+              <p class="title">终端功能</p>
+              <p class="ex">终端功能存在全屏显示遮挡、Win11滚轮失效、UI按钮调整、主题适配及圆角…</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tRed">110 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tOrange">✎</div>
+            <div class="body">
+              <p class="title">策手 StratHand · 编码规范</p>
+              <p class="ex">这份编码规范为 AI 编程代理和开发者定义了 Rust/TypeScript/Python 三语言…</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tOrange">6.3k 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tBlue">✎</div>
+            <div class="body">
+              <p class="title">策手 StratHand · 用户画像与零代码用户旅程</p>
+              <p class="ex">策手 StratHand · 用户画像与零代码用户旅程（Phase 1 产品 / UX …</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tBlue">4.1k 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════ 改后 ═══════════ -->
+    <div>
+      <span class="lab labB">改后 · 视觉升级</span>
+      <div class="win winB">
+        <header class="hd">
+          <div class="hdrTop">
+            <div class="hdrL">
+              <button class="tg on">☰</button>
+              <span class="logo">P</span>
+              <span class="name">PastePanda<span class="aiM">AI</span></span>
+              <div class="modes">
+                <button class="mode">记录</button>
+                <button class="mode">工具</button>
+                <button class="mode on">知识</button>
+              </div>
+            </div>
+            <div class="hdrR">
+              <span class="ib" style="position:relative">
+                <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+              </span>
+              <span class="ib" style="color:#8B5CF6;position:relative">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+                <span class="dot" style="box-shadow:0 0 0 2px rgba(244,248,252,.9)"></span>
+              </span>
+              <span class="div" style="background:rgba(15,23,42,.10)"></span>
+              <span class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></span>
+              <span class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-11-8-11-8"/><path d="m1 1 22 22"/></svg></span>
+            </div>
+          </div>
+        </header>
+
+        <div class="pairBar">● 已配对 2 台 · 对方都不在线</div>
+
+        <div class="crumbRow">
+          <span class="crumb"><b>全部笔记</b> · 26 条</span>
+          <span style="margin-left:auto"></span>
+          <button class="pillBtn">▤ 宽屏</button>
+          <button class="pillBtn" style="width:28px;padding:0;justify-content:center">＋</button>
+        </div>
+
+        <div class="searchRow">
+          <div class="searchBox">
+            <div class="segBox">
+              <button class="segBtn on">搜</button>
+              <button class="segBtn">问</button>
+            </div>
+            <span class="ph">搜笔记（中文 / 拼音首字母）</span>
+          </div>
+          <button class="tool on"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>列表</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>网格</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l3 3M17 20l-3-3"/></svg><span>排序</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M8 12h12M12 18h8"/></svg><span>分组</span></button>
+          <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16l-6 7v5l-4 2v-7L4 5z"/></svg><span>筛选</span></button>
+        </div>
+
+        <div class="banner">
+          <span class="sp">✨</span>
+          <div class="bannerTxt">
+            可合成笔记 <em>4 篇</em> —— 今天同一个来源的碎片、以及这几天反复出现的，各合成一篇；
+            <span class="bannerHint">存不存你说了算</span>
+          </div>
+          <span style="color:#8A96A8">⌄</span>
+        </div>
+
+        <div class="list">
+          <div class="row hot">
+            <div class="ic tPurple">✎</div>
+            <div class="body">
+              <p class="title"><span style="color:#F59E0B">📌</span> 策手vs·cc-bridge-更新能力对比</p>
+              <p class="ex">策手与cc-bridge的自动更新能力在多数维度已基本对齐，核心差距仅在于下载…</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tPurple">2.7k 字</span>
+                <span class="tag tBlue">NSIS</span>
+                <span class="tag tBlue">Tauri</span>
+                <span class="tag tGreen">更新能力对比</span>
+                <span class="neutralWc">+2</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+            <div class="acts">
+              <span class="abtn">📌</span>
+              <span class="abtn">⧉</span>
+              <span class="abtn">⋯</span>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tGreen">✎</div>
+            <div class="body">
+              <p class="title">7.1.0问题记录</p>
+              <p class="ex">1知识库模式下3栏状态下问答框太短 2知识库模式下编辑内容回车就会显示已…</p>
+              <div class="meta">
+                <span class="tm">4天前</span>
+                <span class="wc tGreen">156 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tRed">▤</div>
+            <div class="body">
+              <p class="title">终端功能</p>
+              <p class="ex">终端功能存在全屏显示遮挡、Win11滚轮失效、UI按钮调整、主题适配及圆角…</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tRed">110 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tOrange">✎</div>
+            <div class="body">
+              <p class="title">策手 StratHand · 编码规范</p>
+              <p class="ex">这份编码规范为 AI 编程代理和开发者定义了 Rust/TypeScript/Python 三语言…</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tOrange">6.3k 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="ic tBlue">✎</div>
+            <div class="body">
+              <p class="title">策手 StratHand · 用户画像与零代码用户旅程</p>
+              <p class="ex">策手 StratHand · 用户画像与零代码用户旅程（Phase 1 产品 / UX …</p>
+              <div class="meta">
+                <span class="tm">9月1日 周二</span>
+                <span class="wc tBlue">4.1k 字</span>
+                <span class="folder">未分类</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">1</span>一眼能看到的变化</h2>
+  <div class="grid3">
+    <div class="kcard">
+      <h3><span class="num">1</span>氛围底</h3>
+      <p>死白 → 青/微紫静态渐变，和主窗口同一套空气感。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">2</span>顶栏微磨砂</h3>
+      <p>知识模式实色蓝滑块保留；壳层加淡白渐变，与内容分层。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">3</span>卡片厚度</h3>
+      <p>单层浅影 → 近影 + 中影 + 白描边 + 顶部微光；hover 操作钮更清晰。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">4</span>搜索行质感</h3>
+      <p>搜/问内嵌分段更利落；列表/网格等工具钮激活态带柔光环。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">5</span>合成横幅</h3>
+      <p>蒸馏紫保留身份色，加淡渐变与微光边，从「贴纸」变成「浮层」。</p>
+    </div>
+    <div class="kcard">
+      <h3><span class="num">6</span>色 tint 提纯</h3>
+      <p>图标/字数条/标签用渐变淡底，比纯 12% 平铺更有材质；比例仍守 12–16%。</p>
+    </div>
+  </div>
+
+  <h2><span class="n">2</span>落地对齐源码</h2>
+  <table>
+    <tr><th style="width:180px">位置</th><th>改法</th><th>约束</th></tr>
+    <tr>
+      <td><code>--app-bg</code></td>
+      <td>与主窗口升级共用同一组氛围渐变</td>
+      <td>静态，可缓存</td>
+    </tr>
+    <tr>
+      <td><code>.row</code> 阴影</td>
+      <td>对齐主窗口卡片三段阴影</td>
+      <td>仍无 <code>backdrop-filter</code></td>
+    </tr>
+    <tr>
+      <td><code>.rowIcon</code> tint</td>
+      <td>保持 12%/22% color-mix；改后加对角淡渐变</td>
+      <td>仍走 <code>--kb-icon-tint</code></td>
+    </tr>
+    <tr>
+      <td><code>.banner</code></td>
+      <td>保留 <code>--distill</code> 身份；加渐变 + 内高光</td>
+      <td>对比度仍守 <code>--distill-on-tint</code></td>
+    </tr>
+    <tr>
+      <td><code>ViewControls</code></td>
+      <td>激活态从 flat accent-light 改为柔光环</td>
+      <td>标签常驻 L2 不动</td>
+    </tr>
+    <tr>
+      <td>ModeSwitcher</td>
+      <td>圆角/投影微调，仍 <code>--accent-solid</code> 实底</td>
+      <td>透明顶栏下实色正确</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <b>不改：</b>搜/问结构、合成横幅文案与语义、字数条「只染边字不染底」、
+    图标 34px、行 gap 10、工具钮 28px 常驻标签、蒸馏紫身份色。
+  </div>
+
+  <p class="foot">
+    文件：<code>design/2026-知识库视觉升级-对照稿.html</code><br>
+    对照：你的截图 + <code>KnowledgeView.module.css</code> / <code>ViewControls.module.css</code> /
+    <code>KbInboxPanel.module.css</code> / <code>TopBar</code> · 视觉语言与
+    <code>design/2026-主窗口视觉升级-对照稿.html</code> 一致。
+  </p>
+</div>
+</body>
+</html>

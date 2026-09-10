@@ -1,6 +1,8 @@
-# PastePanda — 智能剪贴板管理器
+# PastePanda — 智能剪贴板管理器 × 个人知识库
 
-> 🚀 一款基于 Tauri 2 的 Windows 桌面剪贴板管理工具，支持文本/图片/文件历史记录、全局热键粘贴、工作区管理、局域网同步，内置编解码/SQL/日志/配置转换等开发者工具箱。
+> 🚀 一款基于 Tauri 2 的 Windows 桌面工具：管好剪贴板（历史 / 热键粘贴 / 栈模式），把复制过的东西沉淀成**本地知识库**（全文检索、带引用问答、MCP 接给 AI、多设备同步），另内置编解码 / SQL / 日志 / 配置转换等开发者工具箱。
+>
+> **复制即沉淀** —— 你复制过的东西，本来就该是你的知识。笔记只存在你自己电脑里，AI 能力默认关闭。
 
 **[English](README.en.md)**
 
@@ -15,7 +17,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License" />
-  <img src="https://img.shields.io/badge/version-6.18.1-green" alt="Version" />
+  <img src="https://img.shields.io/badge/version-7.1.4-green" alt="Version" />
 </p>
 
 ---
@@ -23,6 +25,7 @@
 ## 📖 目录
 
 - [核心功能](#-核心功能)
+  - [知识库（v7 主线）](#kb)
 - [快捷键速查](#️-快捷键速查)
 - [界面预览](#️-界面预览)
 - [安装](#-安装)
@@ -47,6 +50,27 @@
 | 📝 **片段库** | 常用文本模板管理，使用次数统计，支持动态变量插入 |
 | 🔗 **信息提取** | 自动识别电话号码、邮箱、URL |
 | 🔒 **敏感内容防护** | 密钥/凭证模式自动识别，不记录敏感剪贴板 |
+
+<a id="kb"></a>
+
+### 📚 知识库（v7 主线）
+
+> 主流笔记软件要你「专门去记」，PastePanda 直接拿你本来就在用的剪贴板当入口。
+> 省掉的不是一步操作，是「要不要记」这个心理成本。
+
+| 功能 | 说明 |
+|------|------|
+| 📥 **复制即沉淀** | 任意剪贴板卡片右键「转为笔记」，也可直接新建；支持文件夹、标签与 Markdown |
+| 🔍 **本机全文检索** | 一次搜索同时命中剪贴板与笔记；长笔记按节（section）定位，直接跳到命中位置 |
+| 💬 **带引用的问答** | 基于你的笔记作答，回答带 `[1][2]` 角标，点开即达原文。检索在本机完成，只有作答走你**在设置里显式开启**的 AI |
+| 🔌 **接给外部 AI** | 通过 MCP 暴露 18 个工具，一键接入 Claude Code / WorkBuddy，让 AI 检索、引用、写入你的笔记。服务只绑 `127.0.0.1` |
+| 🔗 **双向链接 + 库体检** | 自动梳理笔记之间的引用关系；找出没人引用的笔记和失效链接，库越大越不慌 |
+| 🔄 **多设备同步** | 两台设备用 6 位配对码直接连接，不经过我们的服务器 |
+| 🔒 **存储与隐私** | 笔记全存本机 SQLite；截图 OCR 走本地离线模型（PP-OCRv6），全程不联网；AI 开关默认关闭，不开就是零请求、零上传 |
+
+**AI 红线**：所有 AI 能力受 `ai_enabled` 门控（前后端双校验）。未开启时不会发起任何外部请求，
+也不会产生费用；只有「测试连接 / 试跑自定义动作」这类你主动点按钮的操作是例外。
+本地 OCR 与自动打标签是纯本地规则，不算 AI。
 
 ### 高效粘贴
 
@@ -89,8 +113,8 @@
 
 | 功能 | 说明 |
 |------|------|
-| 🌐 **局域网同步** | 多设备间同步文本/图片/文件，AES-256-GCM 加密 + 重放防护 |
-| 🎨 **4 套主题** | 浅色/深色/蔚蓝/蔚蓝深色 |
+| 🌐 **剪贴板局域网同步** | 多设备间同步剪贴板文本/图片/文件，AES-256-GCM 加密 + 重放防护（笔记走知识库自己的设备直连同步） |
+| 🎨 **6 套主题** | 经典白 / 深海 / 午夜 / 森林 / 美乐蒂 / 晨曦 |
 | ⚙️ **系统集成** | 系统托盘、开机自启、数据导入/导出（JSON） |
 | 🔄 **自动更新** | 多源加速（GitHub + Gitee 镜像），版本更新弹框 + 分类日志 |
 
@@ -183,6 +207,7 @@
 | rust_xlsxwriter | Excel (.xlsx) 导出 |
 | csv | CSV 解析/导出 |
 | serde_yaml | YAML 配置解析（配置互转/对比） |
+| axum | MCP 服务的 HTTP 传输层（MCP 协议手写，不引 SDK） |
 
 ---
 
@@ -199,6 +224,8 @@
 │   │   │   ├── SecretEditor    # 密钥脱敏查看
 │   │   │   ├── JsonEditor      # JSON 格式化
 │   │   │   └── ...             # Text/Html/Fullscreen 等
+│   │   ├── KnowledgeView.tsx   # 知识库主视图（三栏：文件夹树/列表/详情）
+│   │   ├── notes/              # 知识库子组件（编辑器/问答面板/库体检/同步状态）
 │   │   ├── CardList.tsx        # 卡片列表（核心组件）
 │   │   ├── SettingsDialog.tsx  # 设置对话框
 │   │   ├── FileDetailDialog.tsx # 文件/多文件详情
@@ -224,10 +251,11 @@
 │       ├── paste_engine.rs     # 粘贴引擎（WM_PASTE）
 │       ├── hotkey_manager.rs   # 全局热键管理
 │       ├── content_classifier.rs # 内容类型识别（日志/JSON/SQL 等）
-│       ├── data_store/         # SQLite 数据层（7 模块）
-│       ├── commands/           # Tauri Commands（14 模块）
+│       ├── data_store/         # SQLite 数据层（含 note / kb_* 知识库表）
+│       ├── commands/           # Tauri Commands（含 mcp_connect 一键接入）
+│       ├── mcp/                # MCP 服务（18 个 kb_* 工具，只绑 127.0.0.1）
 │       ├── tray_manager.rs     # 系统托盘
-│       └── lan_sync.rs         # 局域网同步（AES-256-GCM）
+│       └── lan_sync.rs         # 剪贴板局域网同步（AES-256-GCM）
 ├── docs/                       # 文档与截图
 └── scripts/                    # 构建脚本
 ```

@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PastePanda · 2026 UI 趋势落地 · 设计稿</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   真值来源（规则 12）：
+   - theme.css [data-theme="ocean"] / [data-theme="midnight"]
+   - CardList.module.css 卡片 72px / gap 10px / radius 16px
+   - surface.css：卡片不做 backdrop-filter（GPU 规则 8.3）
+   本稿是「趋势 → PastePanda」的可对照探索，不是已实现代码。
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB; --section-bg:#F0F4F8; --card-bg:#FFFFFF; --hover:#E8ECF2;
+  --accent:#0284C7; --accent-solid:#027CBB; --accent-strong:#0273AD;
+  --accent-light:#E0F2FE; --danger:#D82525; --green:#11813A; --orange:#C54A0A;
+  --glass-card-bg:#FFFFFF;
+  --glass-card-border:rgba(0,0,0,0.08);
+  --glass-card-shadow:0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.05);
+  --glass-icon-bg:rgba(0,0,0,0.04);
+  --glass-icon-border:rgba(0,0,0,0.07);
+  --shell-bg:rgba(255,255,255,0.72);
+  --shell-border:rgba(255,255,255,0.85);
+  --shell-shadow:0 8px 28px rgba(15,23,42,0.10), 0 0 0 1px rgba(15,23,42,0.06);
+  --page-bg:
+    radial-gradient(ellipse 900px 480px at 12% -8%, rgba(2,132,199,0.12), transparent 55%),
+    radial-gradient(ellipse 700px 420px at 88% 0%, rgba(109,40,217,0.08), transparent 50%),
+    linear-gradient(180deg, #EEF3F8 0%, #E8EEF5 100%);
+  --reftop:linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.35) 42%, transparent 100%);
+}
+[data-theme="midnight"] {
+  --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+  --border-color:#27272A; --section-bg:#0F0F11; --card-bg:#18181B; --hover:#1F1F23;
+  --accent:#818CF8; --accent-solid:#666FC4; --accent-strong:#A5B4FC;
+  --accent-light:#1E1B4B; --danger:#F87171; --green:#4ADE80; --orange:#FB923C;
+  --glass-card-bg:rgba(24,24,27,0.55);
+  --glass-card-border:rgba(255,255,255,0.08);
+  --glass-card-shadow:0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05);
+  --glass-icon-bg:rgba(255,255,255,0.05);
+  --glass-icon-border:rgba(255,255,255,0.08);
+  --shell-bg:rgba(18,18,22,0.78);
+  --shell-border:rgba(255,255,255,0.10);
+  --shell-shadow:0 12px 36px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
+  --page-bg:
+    radial-gradient(ellipse 900px 480px at 10% -10%, rgba(129,140,248,0.18), transparent 55%),
+    radial-gradient(ellipse 700px 400px at 90% 5%, rgba(56,189,248,0.10), transparent 50%),
+    linear-gradient(180deg, #0B0C10 0%, #12141A 100%);
+  --reftop:linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.04) 40%, transparent 100%);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; padding:28px 28px 96px;
+  font:14px/1.65 "Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  color:var(--text-primary);
+  background:var(--section-bg);
+}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px;letter-spacing:-0.02em}
+.sub{color:var(--text-muted);font-size:12.5px;margin:0 0 8px;line-height:1.7}
+h2{
+  font-size:15px;margin:36px 0 12px;padding-top:16px;
+  border-top:1px solid var(--border-color);
+  display:flex;align-items:center;gap:8px;
+}
+h2 .n{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:7px;font-size:11px;font-weight:700;
+  background:var(--accent-light);color:var(--accent-strong);
+}
+h3{font-size:12.5px;margin:18px 0 8px;color:var(--text-secondary);font-weight:700}
+code{
+  background:color-mix(in srgb, var(--section-bg) 80%, var(--accent) 8%);
+  padding:1px 5px;border-radius:4px;font-size:11.5px;
+  font-family:ui-monospace,Consolas,monospace;
+}
+.note{
+  background:var(--card-bg);border:1px solid var(--border-color);
+  border-left:3px solid var(--accent);border-radius:8px;
+  padding:10px 12px;font-size:12.5px;color:var(--text-secondary);margin:12px 0;
+}
+.warn{border-left-color:var(--orange)}
+.bad{border-left-color:var(--danger)}
+.ok{border-left-color:var(--green)}
+.toolbar{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin:0 0 20px;padding:10px 12px;border-radius:12px;
+  background:var(--card-bg);border:1px solid var(--border-color);
+  position:sticky;top:8px;z-index:50;
+  box-shadow:0 4px 16px rgba(15,23,42,0.06);
+}
+[data-theme="midnight"] .toolbar{box-shadow:0 4px 16px rgba(0,0,0,0.4)}
+.toolbar button{
+  border:1px solid var(--border-color);background:var(--section-bg);
+  color:var(--text-primary);border-radius:8px;padding:6px 12px;
+  font:600 12px/1 inherit;cursor:pointer;font-family:inherit;
+}
+.toolbar button.on{
+  background:var(--accent-solid);border-color:transparent;color:#fff;
+}
+.toolbar .hint{margin-left:auto;font-size:11.5px;color:var(--text-muted)}
+
+/* ── 趋势卡 ── */
+.trendGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.trend{
+  border-radius:14px;padding:14px;background:var(--card-bg);
+  border:1px solid var(--border-color);
+}
+.trend b{display:block;font-size:13px;margin-bottom:4px}
+.trend p{margin:0;font-size:12px;color:var(--text-secondary);line-height:1.55}
+.trend .t{
+  display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;
+  border-radius:999px;margin-bottom:8px;
+  background:color-mix(in srgb, var(--accent) 12%, transparent);
+  color:var(--accent-strong);
+}
+.trend .t.no{background:color-mix(in srgb, var(--danger) 10%, transparent);color:var(--danger)}
+.trend .t.yes{background:color-mix(in srgb, var(--green) 12%, transparent);color:var(--green)}
+
+/* ── 对照双栏 ── */
+.pair{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.col{width:480px;flex:0 0 480px;max-width:100%}
+.tag{
+  display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;
+  border-radius:6px;margin-bottom:8px;
+}
+.tagBefore{background:var(--hover);color:var(--text-muted);border:1px solid var(--border-color)}
+.tagAfter{background:var(--accent-light);color:var(--accent-strong);border:1px solid var(--accent)}
+
+/* ── 主窗口舞台 ── */
+.stage{
+  position:relative;border-radius:18px;padding:22px;
+  background:var(--page-bg);
+  border:1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  overflow:hidden;
+  min-height:520px;
+}
+.stage::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(2,132,199,0.06), transparent 40%),
+    radial-gradient(circle at 85% 70%, rgba(109,40,217,0.05), transparent 35%);
+}
+[data-theme="midnight"] .stage::after{
+  background:
+    radial-gradient(circle at 20% 80%, rgba(129,140,248,0.10), transparent 40%),
+    radial-gradient(circle at 85% 70%, rgba(56,189,248,0.06), transparent 35%);
+}
+.app{
+  position:relative;z-index:1;display:grid;
+  grid-template-columns:168px 1fr;gap:10px;
+  height:480px;
+}
+
+/* 壳：只在「框架」用光学玻璃，内容卡不模糊（对齐 8.3） */
+.shell{
+  border-radius:16px;
+  background:var(--shell-bg);
+  border:1px solid var(--shell-border);
+  box-shadow:var(--shell-shadow);
+  backdrop-filter:blur(18px) saturate(140%);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  position:relative;overflow:hidden;
+}
+.shell::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:var(--reftop);
+  border-radius:inherit;
+}
+.side{display:flex;flex-direction:column;padding:12px 10px;gap:4px}
+.brand{
+  display:flex;align-items:center;gap:8px;padding:6px 8px 12px;
+  font-weight:800;font-size:13px;letter-spacing:-0.02em;
+}
+.brandMark{
+  width:26px;height:26px;border-radius:9px;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--accent),#6D28D9);
+  color:#fff;font-size:13px;font-weight:800;
+  box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.navItem{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 10px;border-radius:10px;font-size:12.5px;
+  color:var(--text-secondary);cursor:default;
+  border:1px solid transparent;
+  transition:transform 150ms cubic-bezier(0.2,0,0,1), background 150ms, color 150ms;
+}
+.navItem:hover{background:color-mix(in srgb, var(--accent) 8%, transparent);color:var(--text-primary)}
+.navItem.on{
+  background:var(--accent-light);color:var(--accent-strong);font-weight:700;
+  border-color:color-mix(in srgb, var(--accent) 28%, transparent);
+  /* Expressive：选中态不是简单换色，带轻微“吸附”位移 */
+  transform:translateX(2px);
+  box-shadow:inset 3px 0 0 var(--accent);
+}
+.navItem .ic{width:18px;text-align:center;font-size:13px}
+.sideFoot{margin-top:auto;padding:8px 6px 2px;border-top:1px solid var(--border-color)}
+.aiGate{
+  display:flex;align-items:center;gap:7px;
+  padding:7px 9px;border-radius:10px;font-size:11.5px;font-weight:600;
+  background:color-mix(in srgb, var(--green) 10%, transparent);
+  color:var(--green);border:1px solid color-mix(in srgb, var(--green) 22%, transparent);
+}
+.aiGate.off{
+  background:var(--hover);color:var(--text-muted);
+  border-color:var(--border-color);
+}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px color-mix(in srgb, currentColor 22%, transparent)}
+
+.main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.top{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-bottom:1px solid var(--border-color);
+}
+.search{
+  flex:1;display:flex;align-items:center;gap:8px;
+  height:34px;padding:0 12px;border-radius:10px;
+  background:color-mix(in srgb, var(--card-bg) 70%, transparent);
+  border:1px solid var(--border-color);
+  color:var(--text-muted);font-size:12.5px;
+}
+.chipRow{display:flex;gap:6px}
+.chip{
+  height:30px;padding:0 10px;border-radius:999px;display:inline-flex;align-items:center;gap:5px;
+  font-size:11.5px;font-weight:600;border:1px solid var(--border-color);
+  background:var(--card-bg);color:var(--text-secondary);
+}
+.chip.on{
+  background:var(--accent-solid);border-color:transparent;color:#fff;
+  box-shadow:0 2px 10px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.content{flex:1;min-height:0;padding:12px 14px;overflow:auto}
+
+/* Bento 概览条 */
+.bento{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.bCard{
+  border-radius:14px;padding:12px 12px 10px;
+  background:var(--glass-card-bg);
+  border:1px solid var(--glass-card-border);
+  box-shadow:var(--glass-card-shadow);
+  position:relative;overflow:hidden;
+  min-height:78px;
+}
+.bCard::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg, rgba(255,255,255,0.55) 0%, transparent 48%);
+}
+[data-theme="midnight"] .bCard::before{
+  background:linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 48%);
+}
+.bLabel{font-size:10.5px;color:var(--text-muted);font-weight:600;position:relative}
+.bVal{font-size:22px;font-weight:800;letter-spacing:-0.03em;margin-top:2px;position:relative;line-height:1.15}
+.bVal small{font-size:11px;font-weight:700;color:var(--text-muted);margin-left:2px}
+.bMeta{font-size:11px;color:var(--text-secondary);margin-top:4px;position:relative}
+.bCard.hero{
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--card-bg)), color-mix(in srgb, #6D28D9 10%, var(--card-bg)));
+  border-color:color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.bCard.hero .bVal{color:var(--accent-strong)}
+
+/* 卡片列表：对齐真实 72px / gap 10 / r16 */
+.list{display:flex;flex-direction:column;gap:10px}
+.clip{
+  display:flex;align-items:center;gap:12px;
+  height:72px;padding:12px 16px;border-radius:16px;
+  background:var(--glass-card-bg);
+  border:1px solid var(--glass-card-border);
+  box-shadow:var(--glass-card-shadow);
+  position:relative;overflow:hidden;
+  /* 对齐 8.3：卡片无 backdrop-filter */
+}
+.clip::before{
+  content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg, rgba(255,255,255,0.55) 0%, transparent 50%);
+}
+[data-theme="midnight"] .clip::before{
+  background:linear-gradient(180deg, rgba(255,255,255,0.07) 0%, transparent 50%);
+}
+.clip.sel{
+  border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow:
+    var(--glass-card-shadow),
+    0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.clipIcon{
+  flex:0 0 34px;width:34px;height:34px;border-radius:11px;
+  display:grid;place-items:center;font-size:15px;
+  background:var(--glass-icon-bg);border:1px solid var(--glass-icon-border);
+  position:relative;
+}
+.clipBody{min-width:0;flex:1;position:relative}
+.clipTitle{
+  font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.clipMeta{
+  display:flex;align-items:center;gap:6px;margin-top:4px;
+  font-size:11.5px;color:var(--text-muted);font-weight:500;
+}
+.pill{
+  display:inline-flex;align-items:center;padding:0 6px;border-radius:5px;
+  background:var(--section-bg);border:1px solid var(--border-color);
+  font-size:11px;font-weight:600;
+}
+.pill.ai{
+  background:color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color:color-mix(in srgb, var(--accent) 30%, transparent);
+  color:var(--accent-strong);
+}
+.pill.ok{color:var(--green);border-color:color-mix(in srgb, var(--green) 30%, transparent);
+  background:color-mix(in srgb, var(--green) 10%, transparent)}
+.pill.run{color:var(--orange);border-color:color-mix(in srgb, var(--orange) 30%, transparent);
+  background:color-mix(in srgb, var(--orange) 10%, transparent)}
+.clipAct{
+  position:relative;display:flex;gap:4px;opacity:0;
+  transition:opacity 150ms cubic-bezier(0.2,0,0,1);
+}
+.clip:hover .clipAct,.clip.sel .clipAct{opacity:1}
+.ibtn{
+  width:28px;height:28px;border-radius:8px;display:grid;place-items:center;
+  border:1px solid var(--border-color);background:var(--card-bg);
+  font-size:12px;color:var(--text-secondary);
+}
+.ibtn.pri{
+  background:var(--accent-solid);border-color:transparent;color:#fff;font-weight:700;
+}
+
+/* Expressive 状态条：从 chip 形变成进度条（M3 Expressive 思路） */
+.aiBar{
+  margin-top:12px;border-radius:14px;padding:12px 14px;
+  border:1px solid color-mix(in srgb, var(--accent) 28%, var(--border-color));
+  background:color-mix(in srgb, var(--accent) 7%, var(--card-bg));
+  display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
+}
+.aiBar .sp{
+  width:18px;height:18px;border-radius:50%;flex:0 0 auto;
+  border:2.5px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color:var(--accent);
+  animation:spin 0.85s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.aiBarTxt{flex:1;min-width:0}
+.aiBarTxt b{display:block;font-size:12.5px}
+.aiBarTxt span{font-size:11.5px;color:var(--text-secondary)}
+.prog{
+  position:absolute;left:0;bottom:0;height:3px;width:62%;
+  background:linear-gradient(90deg,var(--accent),#6D28D9);
+  border-radius:0 2px 2px 0;
+}
+
+/* 表格 */
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0}
+th,td{border:1px solid var(--border-color);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:color-mix(in srgb, var(--section-bg) 70%, var(--card-bg));font-weight:700}
+ul{margin:8px 0;padding-left:18px;color:var(--text-secondary);font-size:12.5px}
+li{margin:4px 0}
+.footNote{margin-top:28px;font-size:11.5px;color:var(--text-muted);line-height:1.65}
+
+/* 组件对照卡 */
+.cmpCard{
+  border-radius:14px;padding:14px;background:var(--card-bg);
+  border:1px solid var(--border-color);
+}
+.rowOld,.rowNew{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+  margin-bottom:8px;
+}
+.rowOld{background:var(--hover);border:1px solid var(--border-color);color:var(--text-secondary)}
+.rowNew{
+  background:var(--glass-card-bg);border:1px solid var(--glass-card-border);
+  box-shadow:var(--glass-card-shadow);
+}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 0;font-size:11.5px;color:var(--text-muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <strong style="font-size:12.5px;margin-right:4px">主题</strong>
+    <button id="btnOcean" class="on" onclick="setTheme('ocean')">Ocean（当前默认）</button>
+    <button id="btnMid" onclick="setTheme('midnight')">Midnight</button>
+    <span class="hint">所有颜色取自 <code>theme.css</code> 真值 · 卡片 72px / gap 10 / r16 对齐 CardList</span>
+  </div>
+
+  <h1>PastePanda · 2026 UI 趋势落地设计稿</h1>
+  <p class="sub">
+    2026-09-09 · 对照来源：NN/g（Liquid Glass / Neobrutalism）、Figma Config 2026（Motion 一等公民 / Shader / Agent）、
+    Smashing（Agentic UI / Button 之死）。<br>
+    本稿只做<strong>「趋势 → 本产品怎么吃」</strong>：不照搬 iOS 26 的透明叠字，不引入粗野主义描边。
+    主线是：<b>壳层光学玻璃 · 内容层清晰 · 动效有语义 · AI 状态一等可视</b>。
+  </p>
+
+  <div class="note ok">
+    <b>选型结论先说：</b>推荐落地 <b>A 路线「壳玻璃 + Bento 概览 + 语义动效 + AI 门控可视化」</b>。
+    它是现有 ocean/midnight 玻璃语言的精修，不是换皮；性能上继续遵守「卡片不加 backdrop-filter」（规则 8.3）。
+  </div>
+
+  <!-- ═══════════ 1 趋势地图 ═══════════ -->
+  <h2><span class="n">1</span>趋势地图：吃哪条、不吃哪条</h2>
+  <div class="trendGrid">
+    <div class="trend">
+      <span class="t yes">吃 · 壳层</span>
+      <b>Liquid Glass / 玻璃 2.0</b>
+      <p>顶栏、侧栏、弹窗壳用光学折射边 + 内高光；<b>内容卡片禁止 blur</b>。NN/g 批评点是「透明压正文」，我们反着做。</p>
+    </div>
+    <div class="trend">
+      <span class="t yes">吃 · 动效</span>
+      <b>Expressive Motion</b>
+      <p>选中、运行中、落定用形变/位移表达状态（150/200/300ms 四档），不是「好看就动」。时间轴可进设计系统。</p>
+    </div>
+    <div class="trend">
+      <span class="t yes">吃 · 布局</span>
+      <b>Bento 概览</b>
+      <p>主列表上方 4 格不等分卡：今日剪贴、AI 可用、知识库、快捷动作。不把整页改成官网式 Bento。</p>
+    </div>
+    <div class="trend">
+      <span class="t yes">吃 · AI</span>
+      <b>Agentic 状态可视化</b>
+      <p>侧栏常驻 AI 门控点（规则 16）；运行条带进度与撤销；空态/错误态分开展示（U3 / U3.5）。</p>
+    </div>
+    <div class="trend">
+      <span class="t no">不吃</span>
+      <b>透明叠正文</b>
+      <p>iOS 26 的 Messages 背景图压文字、Mail 字叠字——可读性直接崩。内容层永远实底或 ≥55% 不透明。</p>
+    </div>
+    <div class="trend">
+      <span class="t no">不吃</span>
+      <b>Neobrutalism 全盘</b>
+      <p>粗描边 + 硬阴影适合创作者营销站；效率工具里会抬高认知负荷。最多借「高对比选中」一点。</p>
+    </div>
+  </div>
+
+  <!-- ═══════════ 2 主窗口 ═══════════ -->
+  <h2><span class="n">2</span>主窗口全景（可切主题）</h2>
+  <p class="sub">布局骨架不变：侧栏 + 顶栏 + 卡片列表。变化在「壳的光学感、Bento 概览条、AI 运行条、卡片状态语义」。</p>
+
+  <div class="stage">
+    <div class="app">
+      <!-- 侧栏 -->
+      <aside class="shell side">
+        <div class="brand"><span class="brandMark">🐼</span>PastePanda</div>
+        <div class="navItem on"><span class="ic">📋</span>剪贴板</div>
+        <div class="navItem"><span class="ic">🗂</span>知识库</div>
+        <div class="navItem"><span class="ic">🧰</span>工具箱</div>
+        <div class="navItem"><span class="ic">✨</span>AI 变换</div>
+        <div class="navItem"><span class="ic">⚙️</span>设置</div>
+        <div class="sideFoot">
+          <div class="aiGate" id="aiGate">
+            <span class="dot"></span>
+            <span>AI 可用 · DeepSeek</span>
+          </div>
+          <button class="toolbar" style="all:unset;display:none"></button>
+          <div style="margin-top:8px">
+            <button class="chip" style="width:100%;justify-content:center" onclick="toggleAi()">切换 AI 门控</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 主区 -->
+      <section class="shell main">
+        <div class="top">
+          <div class="search">🔍 搜索剪贴板、标签、来源…</div>
+          <div class="chipRow">
+            <span class="chip on">全部</span>
+            <span class="chip">文本</span>
+            <span class="chip">图片</span>
+            <span class="chip">置顶</span>
+          </div>
+        </div>
+        <div class="content">
+          <!-- Bento -->
+          <div class="bento">
+            <div class="bCard hero">
+              <div class="bLabel">今日剪贴</div>
+              <div class="bVal">128 <small>条</small></div>
+              <div class="bMeta">比昨日 +18 · 文本 96 · 图 22</div>
+            </div>
+            <div class="bCard">
+              <div class="bLabel">AI 余额</div>
+              <div class="bVal">4.2<small>k</small></div>
+              <div class="bMeta">今日已用 380</div>
+            </div>
+            <div class="bCard">
+              <div class="bLabel">知识库</div>
+              <div class="bVal">26</div>
+              <div class="bMeta">2 篇待同步</div>
+            </div>
+            <div class="bCard">
+              <div class="bLabel">快捷动作</div>
+              <div class="bVal" style="font-size:14px;line-height:1.5">OCR · JSON<br>翻译 · 摘要</div>
+              <div class="bMeta">按 ⌥ 长按卡片展开</div>
+            </div>
+          </div>
+
+          <!-- AI 运行条（Expressive） -->
+          <div class="aiBar" id="aiBar">
+            <span class="sp"></span>
+            <div class="aiBarTxt">
+              <b>正在生成摘要…</b>
+              <span>可随时取消 · 预计 3s · 来源：网页剪贴 #9182</span>
+            </div>
+            <span class="chip" style="height:26px">取消</span>
+            <div class="prog"></div>
+          </div>
+
+          <!-- 卡片 -->
+          <div class="list" style="margin-top:12px">
+            <div class="clip sel">
+              <div class="clipIcon">📝</div>
+              <div class="clipBody">
+                <div class="clipTitle">PastePanda · 剪贴板历史 API 设计讨论（含 #草稿）</div>
+                <div class="clipMeta">
+                  <span>2 分钟前</span><span class="pill">文本</span>
+                  <span class="pill ok">已 AI 摘要</span>
+                  <span class="pill">VS Code</span>
+                </div>
+              </div>
+              <div class="clipAct">
+                <span class="ibtn pri">粘贴</span>
+                <span class="ibtn">📌</span>
+                <span class="ibtn">⋯</span>
+              </div>
+            </div>
+
+            <div class="clip">
+              <div class="clipIcon" style="background:color-mix(in srgb,#10B981 12%,var(--glass-icon-bg));border-color:color-mix(in srgb,#10B981 22%,var(--glass-icon-border))">🐍</div>
+              <div class="clipBody">
+                <div class="clipTitle">def parse_file_paths(payload: str) -&gt; list[str]: …</div>
+                <div class="clipMeta">
+                  <span>11 分钟前</span><span class="pill">代码 · Python</span>
+                  <span class="pill ai">AI 建议：去注释</span>
+                </div>
+              </div>
+              <div class="clipAct">
+                <span class="ibtn pri">粘贴</span>
+                <span class="ibtn">📌</span>
+                <span class="ibtn">⋯</span>
+              </div>
+            </div>
+
+            <div class="clip">
+              <div class="clipIcon">🖼</div>
+              <div class="clipBody">
+                <div class="clipTitle">Screenshot 2026-09-09 142033.png · 1920×1080</div>
+                <div class="clipMeta">
+                  <span>28 分钟前</span><span class="pill">图片 · 248 KB</span>
+                  <span class="pill run">OCR 运行中 62%</span>
+                </div>
+              </div>
+              <div class="clipAct">
+                <span class="ibtn pri">粘贴</span>
+                <span class="ibtn">📌</span>
+                <span class="ibtn">⋯</span>
+              </div>
+            </div>
+
+            <div class="clip">
+              <div class="clipIcon">🔗</div>
+              <div class="clipBody">
+                <div class="clipTitle">https://www.figma.com/blog/config-2026-recap/</div>
+                <div class="clipMeta">
+                  <span>1 小时前</span><span class="pill">链接</span>
+                  <span class="pill">Chrome</span>
+                </div>
+              </div>
+              <div class="clipAct">
+                <span class="ibtn pri">粘贴</span>
+                <span class="ibtn">📌</span>
+                <span class="ibtn">⋯</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>Accent / 选中</span>
+    <span><i style="background:var(--green)"></i>成功 / AI 可用</span>
+    <span><i style="background:var(--orange)"></i>运行中</span>
+    <span><i style="background:var(--danger)"></i>危险 / 失败</span>
+    <span>壳：<code>backdrop-filter: blur(18px)</code> · 卡片：<code>none</code></span>
+  </div>
+
+  <!-- ═══════════ 3 组件对照 ═══════════ -->
+  <h2><span class="n">3</span>关键组件：现状思路 → 2026 精修</h2>
+
+  <h3>3.1 壳 vs 内容（Liquid Glass 的正确打开方式）</h3>
+  <div class="pair">
+    <div class="col">
+      <span class="tag tagBefore">常见错误 · 学 iOS 26</span>
+      <div class="cmpCard" style="min-height:120px;background:linear-gradient(135deg,#f87171,#fbbf24,#34d399);border:none;position:relative">
+        <div style="position:absolute;inset:12px;border-radius:10px;background:rgba(255,255,255,0.28);backdrop-filter:blur(2px);padding:12px;color:#111">
+          <div style="font-size:12px;font-weight:700">半透明卡压在花哨背景上</div>
+          <div style="font-size:11.5px;margin-top:4px;opacity:.85">正文对比度崩了 · 选中态看不清 · 长列表全是合成层</div>
+        </div>
+      </div>
+      <p class="sub" style="margin-top:8px">NN/g：透明叠字 = 灾难。卡片一多 GPU 也炸（规则 8.3）。</p>
+    </div>
+    <div class="col">
+      <span class="tag tagAfter">本稿 · 壳玻璃 / 内容实底</span>
+      <div class="stage" style="min-height:120px;padding:12px">
+        <div style="display:flex;gap:8px;height:96px">
+          <div class="shell" style="width:72px;backdrop-filter:blur(16px)"></div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+            <div class="clip" style="height:auto;min-height:40px;padding:8px 10px">
+              <div class="clipIcon" style="width:24px;height:24px;border-radius:8px;font-size:12px">📝</div>
+              <div class="clipBody"><div class="clipTitle" style="font-size:12px">内容卡不透明 / 无 blur，文字始终可读</div></div>
+            </div>
+            <div class="clip" style="height:auto;min-height:40px;padding:8px 10px">
+              <div class="clipIcon" style="width:24px;height:24px;border-radius:8px;font-size:12px">✨</div>
+              <div class="clipBody"><div class="clipTitle" style="font-size:12px">场景光只从壳与页底透出</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="sub" style="margin-top:8px">壳负责「有材质」，内容负责「读得清」。职责分开。</p>
+    </div>
+  </div>
+
+  <h3>3.2 选中态 / 运行态：Expressive 位移与形变</h3>
+  <div class="pair">
+    <div class="col">
+      <span class="tag tagBefore">现状常见</span>
+      <div class="rowOld">
+        <div class="clipIcon" style="width:28px;height:28px;font-size:13px">📄</div>
+        <div style="flex:1;font-size:12.5px">仅 border 变色 + 静态浅底</div>
+        <span class="pill">选中</span>
+      </div>
+      <div class="rowOld">
+        <div class="clipIcon" style="width:28px;height:28px;font-size:13px">⚙️</div>
+        <div style="flex:1;font-size:12.5px">运行中只有转圈，无进度语义</div>
+        <span class="pill">busy</span>
+      </div>
+    </div>
+    <div class="col">
+      <span class="tag tagAfter">本稿 · 语义动效（150/200ms）</span>
+      <div class="rowNew" style="transform:translateX(2px);border-color:color-mix(in srgb,var(--accent) 45%,transparent);box-shadow:inset 3px 0 0 var(--accent), var(--glass-card-shadow)">
+        <div class="clipIcon" style="width:28px;height:28px;font-size:13px">📄</div>
+        <div style="flex:1;font-size:12.5px">选中：微位移 2px + 内侧竖条 + 光晕环</div>
+        <span class="pill" style="background:var(--accent-light);color:var(--accent-strong);border-color:transparent">选中</span>
+      </div>
+      <div class="aiBar" style="margin-top:0">
+        <span class="sp" style="width:14px;height:14px"></span>
+        <div class="aiBarTxt"><b style="font-size:12px">OCR 62%</b><span style="font-size:11px">底部进度条 · 可取消</span></div>
+        <div class="prog"></div>
+      </div>
+    </div>
+  </div>
+
+  <h3>3.3 AI 门控：规则 16 的可视化答案</h3>
+  <table>
+    <tr><th style="width:110px">状态</th><th>侧栏门控点</th><th>卡片上的 AI 表现</th><th>用户能做什么</th></tr>
+    <tr>
+      <td><b>可用</b></td>
+      <td><span class="aiGate" style="display:inline-flex;padding:4px 8px;font-size:11px"><span class="dot"></span>AI 可用</span></td>
+      <td>出现「AI 建议」「已摘要」等 <code>.pill.ai/.ok</code></td>
+      <td>一键变换、试跑、预算条</td>
+    </tr>
+    <tr>
+      <td><b>运行中</b></td>
+      <td>同上 + 列表顶出现 AI 运行条</td>
+      <td>橙色 <code>.pill.run</code> + 底部进度</td>
+      <td>取消 / 看进度 / 完成后可撤销</td>
+    </tr>
+    <tr>
+      <td><b>未启用</b></td>
+      <td><span class="aiGate off" style="display:inline-flex;padding:4px 8px;font-size:11px"><span class="dot"></span>AI 已关闭</span></td>
+      <td><b>零</b> AI 按钮 / 建议 / 变换入口</td>
+      <td>点门控 → 设置开启（显式例外）</td>
+    </tr>
+  </table>
+  <div class="note bad">
+    <b>红线对照：</b>未启用时前端零可见、后端零请求。本稿侧栏门控是「唯一常驻入口」，
+    避免 AI 能力散落在卡片溢出菜单里却没人知道总开关在哪。
+  </div>
+
+  <!-- ═══════════ 4 视觉 token ═══════════ -->
+  <h2><span class="n">4</span>新增/收敛的视觉 Token（建议）</h2>
+  <table>
+    <tr><th style="width:200px">Token</th><th>Ocean 参考</th><th>用途</th><th>约束</th></tr>
+    <tr>
+      <td><code>--shell-bg</code></td>
+      <td><code>rgba(255,255,255,0.72)</code></td>
+      <td>侧栏/顶栏/弹窗壳</td>
+      <td>唯一允许 <code>backdrop-filter</code> 的层</td>
+    </tr>
+    <tr>
+      <td><code>--shell-border</code></td>
+      <td><code>rgba(255,255,255,0.85)</code></td>
+      <td>壳顶部折射边</td>
+      <td>配合 <code>::before</code> 静态高光，不做动画 blur</td>
+    </tr>
+    <tr>
+      <td><code>--glass-card-*</code></td>
+      <td>沿用 theme.css</td>
+      <td>卡片/笔记行</td>
+      <td><b>filter 恒 none</b>；不透明度可升到 0.45–0.6 压场景</td>
+    </tr>
+    <tr>
+      <td><code>--motion-150/200/300</code></td>
+      <td><code>150/200/300ms</code></td>
+      <td>U2 四档</td>
+      <td>曲线仅两条：<code>cubic-bezier(.2,0,0,1)</code> / <code>(.4,0,.2,1)</code></td>
+    </tr>
+    <tr>
+      <td>状态 pill 色</td>
+      <td>绿 / 橙 / accent / danger</td>
+      <td>U3 四件套 + AI 状态</td>
+      <td>只许语义色（U6），禁止色名变量</td>
+    </tr>
+  </table>
+
+  <!-- ═══════════ 5 落地切片 ═══════════ -->
+  <h2><span class="n">5</span>建议落地切片（可拆 PR）</h2>
+  <table>
+    <tr><th style="width:70px">切片</th><th>做什么</th><th>验收</th><th>性能/规则</th></tr>
+    <tr>
+      <td><b>P1</b></td>
+      <td>侧栏 + 顶栏改壳玻璃 token；卡片保持现状</td>
+      <td>ocean/midnight 都不发灰；四窗口截图一致</td>
+      <td>壳 blur 只在 1–2 个节点；不可见时可 pause 场景</td>
+    </tr>
+    <tr>
+      <td><b>P2</b></td>
+      <td>主列表上方 Bento 四格（今日/余额/KB/快捷）</td>
+      <td>窄窗自动折成 2×2；数据来自已有 store</td>
+      <td>无网络；不引入新请求</td>
+    </tr>
+    <tr>
+      <td><b>P3</b></td>
+      <td>AI 门控点 + 运行条 + 卡片 pill</td>
+      <td><code>aiAvailable=false</code> 时全部消失</td>
+      <td>规则 16 双保险；失败走错误态不是空态（U3.5）</td>
+    </tr>
+    <tr>
+      <td><b>P4</b></td>
+      <td>选中/置顶/落定的 Expressive 微动效</td>
+      <td>与 surface.css keyframes 统一命名 <code>pp-*</code></td>
+      <td>只用 150/200/300；reduced-motion 走全局兜底</td>
+    </tr>
+  </table>
+
+  <div class="note warn">
+    <b>先别做：</b>全站 Bento 官网化、卡片加 blur、Neobrutalism 描边、每卡独立 backdrop-filter。
+    这些在效率工具里收益低、风险高（可读性 / GPU / 多窗口乘法）。
+  </div>
+
+  <p class="footNote">
+    设计稿路径：<code>design/2026-UI趋势落地-设计稿.html</code> ·
+    配套阅读：<code>docs/PastePanda-UI规则.md</code>（U1–U8 / L / V）、项目规则 8（性能）、16（AI 红线）<br>
+    若确认方向，下一步可按 P1 出更细的侧栏/顶栏逐像素稿，并对照真实 <code>Sidebar.module.css</code> / <code>TopBar.module.css</code> 逐条改 token。
+  </p>
+</div>
+
+<script>
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('btnOcean').classList.toggle('on', t==='ocean');
+  document.getElementById('btnMid').classList.toggle('on', t==='midnight');
+}
+let aiOn = true;
+function toggleAi(){
+  aiOn = !aiOn;
+  const g = document.getElementById('aiGate');
+  const bar = document.getElementById('aiBar');
+  g.classList.toggle('off', !aiOn);
+  g.querySelector('span:last-child').textContent = aiOn ? 'AI 可用 · DeepSeek' : 'AI 已关闭';
+  bar.style.display = aiOn ? 'flex' : 'none';
+  document.querySelectorAll('.pill.ai, .pill.ok, .pill.run').forEach(el=>{
+    el.style.display = aiOn ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>

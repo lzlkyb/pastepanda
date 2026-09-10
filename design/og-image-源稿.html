@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>og-image 源稿 1200×630</title>
+<style>
+  /* PastePanda 官网 og-image 源稿。
+   * 用 agent-browser 以 1200×630 viewport 截图后存为 docs/manual/og-image.png。
+   * 文案与首页 h1 / og:title 同源：「你复制过的一切，都还在」。
+   * 双色（橙 #F2A93B / 青 #38C6DD）取自 public/icon.png 真实 logo，不是品牌渐变
+   * #5B6AF0→#7C5CF0——分享卡在黑底上用 logo 原色对比更强。 */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1200px; height:630px; overflow:hidden; }
+  body {
+    background:#0B0F19; color:#F4F6FA;
+    font-family:"Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+    display:flex; align-items:center; justify-content:center; position:relative;
+  }
+  .glow-o, .glow-c { position:absolute; border-radius:50%; filter:blur(90px); opacity:.22; }
+  .glow-o { width:460px; height:460px; background:#F2A93B; top:-160px; right:60px; }
+  .glow-c { width:420px; height:420px; background:#38C6DD; bottom:-180px; left:40px; }
+  .wrap { display:flex; align-items:center; gap:56px; position:relative; z-index:1; }
+  .logo {
+    width:212px; height:212px; border-radius:44px; overflow:hidden; flex:none;
+    border:1px solid rgba(255,255,255,.14); box-shadow:0 24px 70px rgba(0,0,0,.55);
+  }
+  .logo img { width:100%; height:100%; display:block; }
+  .txt h1 { font-size:64px; font-weight:800; letter-spacing:1px; line-height:1.15; }
+  .txt h1 em { font-style:normal; color:#F2A93B; }
+  .txt .sub { margin-top:18px; font-size:27px; color:#B9C2D0; letter-spacing:.5px; }
+  .txt .caps { margin-top:26px; display:flex; gap:12px; }
+  .txt .caps span {
+    font-size:17px; color:#C8D2E0; padding:7px 16px; border-radius:99px;
+    border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05); white-space:nowrap;
+  }
+  .txt .caps span.hl { color:#0B0F19; background:#38C6DD; border-color:#38C6DD; font-weight:700; }
+  .bar { position:absolute; left:0; right:0; bottom:0; height:6px;
+    background:linear-gradient(90deg,#F2A93B 0%,#F2A93B 30%,#38C6DD 70%,#38C6DD 100%); }
+</style>
+</head>
+<body>
+  <div class="glow-o"></div><div class="glow-c"></div>
+  <div class="wrap">
+    <div class="logo"><img src="../public/icon.png" alt="logo" /></div>
+    <div class="txt">
+      <h1>你复制过的一切，<em>都还在</em></h1>
+      <div class="sub">PastePanda · Windows 免费的剪贴板工作站</div>
+      <div class="caps">
+        <span>截图标注</span><span>本地 OCR</span><span>格式变换</span><span class="hl">知识库</span><span>免费 · 不出设备</span>
+      </div>
+    </div>
+  </div>
+  <div class="bar"></div>
+</body>
+</html>

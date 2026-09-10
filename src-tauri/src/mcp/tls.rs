@@ -121,6 +121,138 @@ fn base_year() -> i32 {
         .unwrap_or(2026)
 }
 
+// ─── 系统信任库（TLS-1，certutil -user）───
+//
+// 走「当前用户」信任库，不需要管理员。装/卸都是用户可见的一次性动作，
+// 子进程开销可忽略；系统还会弹原生确认框，比我们自己画一个更可信。
+
+/// 我们 CA 的 CN。卸载时按它定位——同名不可能，名字里带了「仅本机」约束。
+const CA_CN: &str = "PastePanda Local CA (127.0.0.1 only)";
+
+/// CA 是否已生成 + 是否已装进当前用户信任库。
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CaStatus {
+    /// `mcp-tls-ca.pem` 等三个文件在不在（`exists()`）。
+    pub generated: bool,
+    /// 当前用户信任库里有没有我们的 CA。
+    pub installed: bool,
+    /// 证书文件路径，装/卸时确认框要显示；未生成时为空串。
+    pub ca_path: String,
+    /// 装进信任库后的 SHA1（hex，无分隔）；未装时为空串。
+    pub thumbprint: String,
+}
+
+fn run_certutil(args: &[&str]) -> Result<String, String> {
+    let out = std::process::Command::new("certutil")
+        .args(args)
+        .output()
+        .map_err(|e| format!("调用 certutil 失败：{}", e))?;
+    // certutil 成功时 exit=0，失败时 stdout/stderr 里有原因。
+    // 两边都拼上：有的错误只进 stdout，有的只进 stderr。
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    if !out.status.success() {
+        let msg = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else {
+            stdout.trim().to_string()
+        };
+        return Err(format!("certutil 失败：{}", msg));
+    }
+    Ok(format!("{}{}", stdout, stderr))
+}
+
+/// 从 `certutil -user -store Root` 的输出里找出我们的 CA，返回 SHA1。
+///
+/// 🔴 **不依赖英文字段名**：中文 Windows 上 certutil 输出「使用者:」「证书哈希(sha1):」，
+///   不是 `Subject:` / `Cert Hash(sha1):`。`from_utf8_lossy` 也救不了——那会把 GBK
+///   字节变成 U+FFFD，但 **ASCII 部分（我们的 CN、十六进制哈希）原样活着**。
+///   所以策略是：任何一行含我们的 CN → 进入「本张证书」态；后续行里抓 40 位 hex。
+fn find_our_ca_in_store(dump: &str) -> Option<String> {
+    let mut current_is_ours = false;
+    for line in dump.lines() {
+        let t = line.trim();
+        // 分隔线。中英文都长这样：`==== ... ====`；不要求里面出现 "Certificate"。
+        if t.starts_with("====") {
+            current_is_ours = false;
+            continue;
+        }
+        // 我们的 CN 是纯 ASCII，编码乱码不影响匹配。
+        if t.contains(CA_CN) {
+            current_is_ours = true;
+            continue;
+        }
+        if current_is_ours {
+            // SHA1 是 40 位十六进制。允许空格/冒号分隔（`certutil` 有时会这么打）。
+            let compact: String = t.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+            if compact.len() >= 40 {
+                // 取最后 40 位：前面可能粘着「证书哈希」的乱码字节被当成 hex 的情况极少，
+                // 但取尾部比取头部稳（真正的 hash 一定在行尾）。
+                return Some(compact[compact.len() - 40..].to_uppercase());
+            }
+        }
+    }
+    None
+}
+
+/// 查当前状态。**不生成证书**——生成是打开 HTTPS 开关时的事。
+pub fn ca_status(app_dir: &Path) -> CaStatus {
+    let generated = exists(app_dir);
+    let ca_file_path = ca_path(app_dir);
+    let ca_path_str = if ca_file_path.exists() {
+        ca_file_path.display().to_string()
+    } else {
+        String::new()
+    };
+    let (installed, thumbprint) = match run_certutil(&["-user", "-store", "Root"]) {
+        Ok(dump) => match find_our_ca_in_store(&dump) {
+            Some(h) => (true, h),
+            None => (false, String::new()),
+        },
+        Err(e) => {
+            // 查不到不等于没装：certutil 本身可能坏了。
+            // 这里只记日志，状态按「未装」返回——界面还能手动装一次，装失败会给出真实原因。
+            log::warn!("[MCP] 查询信任库失败：{}", e);
+            (false, String::new())
+        }
+    };
+    CaStatus {
+        generated,
+        installed,
+        ca_path: ca_path_str,
+        thumbprint,
+    }
+}
+
+/// 把 CA 装进**当前用户**的信任根证书库。
+///
+/// 必须先有证书文件。`certutil` 会弹系统确认框——那比我们自己画一个更可信，
+/// 且用户已经习惯对它做判断。
+pub fn install_ca(app_dir: &Path) -> Result<CaStatus, String> {
+    if !exists(app_dir) {
+        return Err("本机还没有 HTTPS 证书，请先打开 HTTPS 开关".to_string());
+    }
+    let path = ca_path(app_dir);
+    run_certutil(&["-user", "-addstore", "Root", &path.display().to_string()])?;
+    log::info!("[MCP] CA 已装入当前用户信任库：{}", path.display());
+    Ok(ca_status(app_dir))
+}
+
+/// 从**当前用户**的信任根证书库移除我们的 CA。
+///
+/// 按 SHA1 精确定位，不怕同名。没装就直接返回当前状态（幂等），
+/// 不报「找不到」——用户点「移除」时可能已经卸过了。
+pub fn remove_ca(app_dir: &Path) -> Result<CaStatus, String> {
+    let dump = run_certutil(&["-user", "-store", "Root"])?;
+    let Some(hash) = find_our_ca_in_store(&dump) else {
+        return Ok(ca_status(app_dir));
+    };
+    run_certutil(&["-user", "-delstore", "Root", &hash])?;
+    log::info!("[MCP] CA 已从当前用户信任库移除：{}", hash);
+    Ok(ca_status(app_dir))
+}
+
 fn generate(app_dir: &Path) -> Result<TlsMaterial, String> {
     let year = base_year();
     let not_before = date_time_ymd(year, 1, 1);
@@ -302,5 +434,68 @@ mod tests {
         let cfg = tls_config(&m);
         assert!(cfg.is_ok(), "证书跟私钥对不上：{:?}", cfg.err());
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 解析 certutil 输出。真实格式的片段，不是自己编的理想化文本。
+    #[test]
+    fn 能从certutil输出里解析出我们的CA() {
+        let dump = r#"
+================ Certificate 0 ================
+Serial Number: 1111111111111111
+Issuer: CN=Some Other CA
+ NotBefore: 2024/1/1 0:00
+ NotAfter: 2034/1/1 0:00
+Subject: CN=Some Other CA
+Cert Hash(sha1): aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111
+================ Certificate 1 ================
+Serial Number: 2222222222222222
+Issuer: CN=PastePanda Local CA (127.0.0.1 only)
+Subject: CN=PastePanda Local CA (127.0.0.1 only)
+Cert Hash(sha1): bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222
+================ Certificate 2 ================
+Serial Number: 3333333333333333
+Subject: CN=Yet Another
+Cert Hash(sha1): cccc3333cccc3333cccc3333cccc3333cccc3333
+"#;
+        let hash = find_our_ca_in_store(dump);
+        assert_eq!(
+            hash.as_deref(),
+            Some("BBBB2222BBBB2222BBBB2222BBBB2222BBBB2222"),
+            "应该拿到我们那张的 SHA1，且大写"
+        );
+    }
+
+    #[test]
+    fn 信任库里没有我们的CA时返回None() {
+        let dump = r#"
+================ Certificate 0 ================
+Subject: CN=Unrelated Root
+Cert Hash(sha1): deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+"#;
+        assert!(find_our_ca_in_store(dump).is_none());
+    }
+
+    /// 🔴 中文 Windows 的 certutil 输出「使用者:」「证书哈希(sha1):」，
+    ///   不是英文的 `Subject:` / `Cert Hash(sha1):`。这条守的是那次真机踩坑。
+    #[test]
+    fn 中文certutil输出也能解析() {
+        let dump = r#"
+Root "受信任的根证书颁发机构"
+================ 证书 0 ================
+序列号: 26852d425e6be778ba78e9a791f79d68f6ecaec6
+颁发者: CN=PastePanda Local CA (127.0.0.1 only)
+ NotBefore: 2026/1/1 8:00
+ NotAfter: 2036/1/1 8:00
+使用者: CN=PastePanda Local CA (127.0.0.1 only)
+签名匹配公钥
+根证书: 使用者与颁发者匹配
+证书哈希(sha1): a46eabd860a41a09b7d9a0e9212d5129c646782a
+"#;
+        let hash = find_our_ca_in_store(dump);
+        assert_eq!(
+            hash.as_deref(),
+            Some("A46EABD860A41A09B7D9A0E9212D5129C646782A"),
+            "中文 certutil 输出应能解析出 SHA1"
+        );
     }
 }

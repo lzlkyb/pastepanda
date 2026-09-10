@@ -1793,6 +1793,71 @@
   color: var(--text-muted);
 }
 
+/* ── HTTPS 小节（TLS-2）── */
+.mcpSectionLabel {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 14px 0 2px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+
+/* 开关：36×20，与设置页其它 toggle 同一视觉重量 */
+.mcpSwitch {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: var(--text-muted);
+  transition: background 0.15s;
+}
+.mcpSwitch:disabled { opacity: 0.45; cursor: not-allowed; }
+.mcpSwitch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.mcpSwitchOn { background: var(--accent); }
+.mcpSwitchOn::after { transform: translateX(16px); }
+
+/* 状态 pill：监听中 / 未监听 / 未开启 */
+.mcpPillOk,
+.mcpPillWarn,
+.mcpPillMute {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.mcpPillOk {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: var(--green);
+}
+.mcpPillWarn {
+  background: color-mix(in srgb, var(--orange, #d97706) 16%, transparent);
+  color: var(--orange, #d97706);
+}
+.mcpPillMute {
+  background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+  color: var(--text-muted);
+}
+
 /* ── 接入指引（默认折叠）── */
 .mcpGuide { margin-top: 12px; }
 

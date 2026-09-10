@@ -1,6 +1,8 @@
-# PastePanda — Smart Clipboard Manager
+# PastePanda — Smart Clipboard Manager × Personal Knowledge Base
 
-> 🚀 A Windows desktop clipboard manager built with Tauri 2. Supports text/image/file history, global hotkey paste, workspace management, LAN sync, and a built-in developer toolbox (codecs, SQL, log analysis, config conversion & more).
+> 🚀 A Windows desktop app built with Tauri 2: it manages your clipboard (history / hotkey paste / stack mode), turns what you copy into a **local knowledge base** (full-text search, cited Q&A, MCP for AI clients, multi-device sync), and ships a built-in developer toolbox (codecs, SQL, log analysis, config conversion & more).
+>
+> **Copy once, keep it forever** — what you've copied should already be your knowledge. Notes live only on your own machine, and every AI capability is off by default.
 
 **[简体中文](README.md)**
 
@@ -15,7 +17,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License" />
-  <img src="https://img.shields.io/badge/version-5.4.0-green" alt="Version" />
+  <img src="https://img.shields.io/badge/version-7.1.4-green" alt="Version" />
 </p>
 
 ---
@@ -47,6 +49,28 @@
 | 📝 **Snippet Library** | Reusable text templates with usage stats & dynamic variables |
 | 🔗 **Info Extraction** | Auto-detects phone numbers, emails, URLs |
 | 🔒 **Sensitive Content Guard** | Recognizes keys/credentials patterns, skips recording |
+
+<a id="kb"></a>
+
+### 📚 Knowledge Base (v7 headline)
+
+> Most note apps ask you to "sit down and take notes". PastePanda uses the clipboard you
+> already use — what it removes isn't a click, it's the "should I bother saving this?" moment.
+
+| Feature | Description |
+|---------|-------------|
+| 📥 **Copy → Note** | Right-click any clipboard card → "Convert to note", or create one directly. Folders, tags and Markdown supported |
+| 🔍 **Local full-text search** | One search covers both clipboard and notes. Long notes are located by section, so jumps land on the exact match |
+| 💬 **Cited Q&A** | Answers are grounded in your notes and carry `[1][2]` markers — click to open the source. Retrieval runs locally; only answering goes through the AI you **explicitly enabled** in Settings |
+| 🔌 **MCP for AI clients** | Exposes 18 tools over MCP, one-click connect for Claude Code / WorkBuddy, so AI can search, cite and write your notes. Server binds to `127.0.0.1` only |
+| 🔗 **Backlinks + health check** | Maps references between notes; surfaces orphan notes and dead links as the library grows |
+| 🔄 **Multi-device sync** | Two devices pair with a 6-digit code and connect directly — no server of ours in between |
+| 🔒 **Storage & privacy** | Notes stay in a local SQLite file; screenshot OCR runs on a local offline model (PP-OCRv6), never online; AI is off by default — off means zero requests and zero upload |
+
+**AI red line**: every AI capability is gated by `ai_enabled` (checked on both frontend and backend).
+When it's off, nothing is sent out and nothing is billed; the only exceptions are buttons you
+press yourself, such as "test connection" or "run custom action". Local OCR and auto-tagging are
+purely local rules — not AI.
 
 ### Efficient Pasting
 
@@ -89,8 +113,8 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🌐 **LAN Sync** | Sync text/images/files across devices, AES-256-GCM encryption + replay protection |
-| 🎨 **4 Themes** | Light / Dark / Azure / Azure Dark |
+| 🌐 **Clipboard LAN Sync** | Sync clipboard text/images/files across devices, AES-256-GCM encryption + replay protection (notes sync via the knowledge base's own device-to-device link) |
+| 🎨 **6 Themes** | Classic White / Deep Sea / Midnight / Forest / My Melody / Dawn |
 | ⚙️ **System Integration** | System tray, auto-start on boot, data import/export (JSON) |
 | 🔄 **Auto Update** | Multi-source acceleration (GitHub + Gitee mirror), update dialog + categorized changelog |
 
@@ -199,6 +223,8 @@ Download the latest `.exe` installer from the [Releases](https://github.com/lzlk
 │   │   │   ├── SecretEditor    # Secret masked viewer
 │   │   │   ├── JsonEditor      # JSON formatter
 │   │   │   └── ...             # Text/Html/Fullscreen etc.
+│   │   ├── KnowledgeView.tsx   # Knowledge base main view (3 panes: tree / list / detail)
+│   │   ├── notes/              # Knowledge base subcomponents (editor / Q&A pane / health / sync)
 │   │   ├── CardList.tsx        # Card list (core component)
 │   │   ├── SettingsDialog.tsx  # Settings dialog
 │   │   ├── FileDetailDialog.tsx # File/multi-file detail

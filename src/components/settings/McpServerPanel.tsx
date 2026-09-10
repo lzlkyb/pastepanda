@@ -16,6 +16,7 @@ import { McpWritePanel } from "./McpWritePanel";
 import { McpScopePanel } from "./McpScopePanel";
 import { McpAiFolderPanel } from "./McpAiFolderPanel";
 import { McpAuditPanel } from "./McpAuditPanel";
+import { McpHttpsPanel } from "./McpHttpsPanel";
 import styles from "../Settings.module.css";
 
 /** 令牌是 43 个字符的 base64url。遮码时只留头尾，够用户认出是哪一把。 */
@@ -30,6 +31,7 @@ export function McpServerPanel({
   startError,
   auditError,
   onSetPort,
+  onRefresh,
   onDismissError,
   onDismissAuditError,
   toast,
@@ -39,6 +41,8 @@ export function McpServerPanel({
   startError: string;
   auditError: string;
   onSetPort: (port: number) => Promise<boolean>;
+  /** HTTPS 开关改完后刷 McpStatus。 */
+  onRefresh: () => Promise<void>;
   onDismissError: () => void;
   onDismissAuditError: () => void;
   toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void;
@@ -111,7 +115,7 @@ export function McpServerPanel({
           ❗ 默认收着但**不藏掉**：写权限与调用记录是安全相关的，
             找不到比多一次点击更糟。 */}
       <details className={styles.mcpAdvanced}>
-        <summary>高级：端口 · 令牌 · 写权限 · 调用记录</summary>
+        <summary>高级：端口 · 令牌 · HTTPS · 写权限 · 调用记录</summary>
 
         <McpFieldRows
           status={status}
@@ -127,6 +131,14 @@ export function McpServerPanel({
           }}
           onCopyToken={handleCopyToken}
           onRegenerate={handleRegenerate}
+          toast={toast}
+        />
+
+        {/* HTTPS（TLS-2）：默认关的第二监听 + 系统信任库 CA。
+            放在端口之后、写权限之前——它回答的是「地址怎么多一条 https」。 */}
+        <McpHttpsPanel
+          status={status}
+          onRefresh={onRefresh}
           toast={toast}
         />
 

@@ -39,10 +39,30 @@ export interface McpStatus {
   port: number;
   /** 直接能拷走填进 MCP 客户端的地址。**停机时也给**，方便用户先看后开 */
   url: string;
+  /**
+   * https 监听真的起来了吗。
+   *
+   * ❗ 它不等于「开关打开了」：开关开着但端口被占时它是 false，
+   *   原因在 `httpsError` 里。界面得拿这两个字段一起读（规则 #15.3）。
+   */
+  httpsRunning: boolean;
+  httpsPort: number;
+  /** https 地址。开关关着时也给，理由同 `url`。 */
+  httpsUrl: string;
+  /** https 没起来的原因；正常时为空串。 */
+  httpsError: string;
 }
 
 /** 默认状态：拿不到时绝不能报「运行中」——宁可显示停机，不能谎报服务开着。 */
-export const MCP_STATUS_UNKNOWN: McpStatus = { running: false, port: 0, url: "" };
+export const MCP_STATUS_UNKNOWN: McpStatus = {
+  running: false,
+  port: 0,
+  url: "",
+  httpsRunning: false,
+  httpsPort: 0,
+  httpsUrl: "",
+  httpsError: "",
+};
 
 /**
  * 当前状态。**不含令牌**。
@@ -394,5 +414,76 @@ export async function mcpSetPort(port: number): Promise<string | null> {
   } catch (e) {
     logger.error("修改 MCP 端口失败", e);
     return e instanceof Error ? e.message : String(e);
+  }
+}
+
+// ─── HTTPS / CA 信任库（TLS-1 / TLS-2）───
+
+/** CA 状态。对应 Rust 的 `mcp::tls::CaStatus`。 */
+export interface McpTlsCaStatus {
+  /** 证书三件套生成了吗（打开 HTTPS 开关时自动生成）。 */
+  generated: boolean;
+  /** 装进「当前用户」信任库了吗。 */
+  installed: boolean;
+  /** CA 证书文件绝对路径；未生成时为空串。确认框要显示。 */
+  caPath: string;
+  /** 信任库里的 SHA1（hex，无分隔）；未装时为空串。 */
+  thumbprint: string;
+}
+
+/** 读 CA 状态。失败返回 `null`（面板自己显示读不到）。 */
+export async function mcpTlsCaStatus(): Promise<McpTlsCaStatus | null> {
+  try {
+    return await invoke<McpTlsCaStatus>("mcp_tls_ca_status");
+  } catch (e) {
+    logger.warn("读取 CA 状态失败", e);
+    return null;
+  }
+}
+
+/**
+ * 开/关 HTTPS 监听并持久化。
+ *
+ * 🔴 **打开 ≠ 客户端就能用**：还得装 CA 进信任库（另一个命令）。
+ * 失败返回错误文案；监听起不来不回滚配置——原因会从 `httpsError` 带到界面。
+ */
+export async function mcpSetHttpsEnabled(enabled: boolean): Promise<string | null> {
+  try {
+    await invoke("mcp_set_https_enabled", { enabled });
+    return null;
+  } catch (e) {
+    logger.error("切换 HTTPS 失败", e);
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+/**
+ * 把 CA 装进当前用户信任库。**调用方必须先弹确认**。
+ *
+ * certutil 还会再弹一次系统确认框——两道都别省。
+ * 返回最新状态（`null` = 失败，调用方用 toast 报）。
+ */
+export async function mcpTlsInstallCa(): Promise<McpTlsCaStatus | null> {
+  try {
+    return await invoke<McpTlsCaStatus>("mcp_tls_install_ca");
+  } catch (e) {
+    logger.error("安装 CA 失败", e);
+    toastActionFailed("安装 CA 到信任库", e);
+    return null;
+  }
+}
+
+/**
+ * 从当前用户信任库移除 CA。幂等：本来就没装不报错。
+ *
+ * **不会**删本地证书文件——下次开 HTTPS 还能直接用。
+ */
+export async function mcpTlsRemoveCa(): Promise<McpTlsCaStatus | null> {
+  try {
+    return await invoke<McpTlsCaStatus>("mcp_tls_remove_ca");
+  } catch (e) {
+    logger.error("移除 CA 失败", e);
+    toastActionFailed("从信任库移除 CA", e);
+    return null;
   }
 }

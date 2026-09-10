@@ -88,6 +88,7 @@ export function McpTab() {
           startError={mcp.startError}
           auditError={mcp.auditError}
           onSetPort={mcp.setPort}
+          onRefresh={mcp.refresh}
           onDismissError={mcp.dismissError}
           onDismissAuditError={mcp.dismissAuditError}
           toast={toast}

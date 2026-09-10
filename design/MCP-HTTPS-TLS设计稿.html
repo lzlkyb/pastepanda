@@ -1,0 +1,348 @@
+<!--
+=========================================================================================
+  PastePanda · MCP HTTPS · 设置页设计稿（TLS-2）
+  日期：2026-09-10
+
+  【一、动笔前读过的真实源码（项目规则 #12）】
+    src/components/settings/McpServerPanel.tsx    容器：lanPanel + mcpAdvanced 折叠
+    src/components/settings/McpConnectPanel.tsx   确认框文案风格（会动哪个文件、会备份）
+    src/hooks/useMcpServer.ts                     状态源：status / busy / startError
+    src/lib/api/mcp.ts                            McpStatus 类型（待补 https 四字段）
+    src-tauri/src/mcp/server.rs                   McpStatus: https_running / https_port /
+                                                  https_url / https_error（规则 #15.3）
+    src-tauri/src/commands/mcp.rs                 mcp_set_https_enabled 已实现；装/卸 CA 未做
+    src-tauri/src/mcp/tls.rs                      CA 文件：app_dir/mcp-tls-ca.pem
+    src/components/Settings.module.css            .mcpRow / .mcpLabel / .mcpValue /
+                                                  .mcpAlert / .mcpHint / .mcpApplyBtn
+
+  【二、设计取舍与理由】
+    1. HTTPS 小节放在「高级」折叠内、端口行之后、写权限之前。
+       理由：它回答「地址怎么多一条 https」，与端口同类；装 CA 是重操作，
+       不该与「复制接入卡片」（第一屏）混在一起。
+    2. 开关真值 = 后端 status 的 https 开关态（配置），运行真值 = httpsRunning。
+       两者必须一起显示（规则 #15.3）：开关开、监听没起来时，状态条是红的、
+       原因在 httpsError 横幅里——绝不能只显示开关。
+    3. 装/卸 CA 是**系统级**动作，确认框写清三件事：
+       ① 往「当前用户」信任库加一个根证书（不需要管理员）
+       ② 证书只对 127.0.0.1 / localhost 有效
+       ③ 可随时用「移除」按钮卸掉
+       不写「对所有网站」的恐吓文案——SAN 只有回环，实际风险面就是本机。
+    4. CA 状态独立于 https 开关：可以先装 CA 再开 https，也可以只开 https
+       （客户端会警告证书不受信，但监听本身是通的）。两条状态都可见。
+    5. httpsError 用 .mcpAlert 就地显示，不用 toast：端口被占、证书生成失败
+       都会持续存在，toast 飘走就等于没告诉（规则 #15.3）。
+    6. 不新增 https 端口输入框（第一版）：默认 17660，配置键已存在。
+       等用户真有撞端口诉求再加——避免设置页再堆一行默认没人改的输入。
+
+  【三、本稿没有做的事】
+    - 不含 .tsx/.ts/.css 实现代码。
+    - TLS-1 的 certutil 子进程细节不在本稿（那是后端命令层）。
+=========================================================================================
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda MCP HTTPS · 设置页设计稿（TLS-2）</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+    --card:#1d242c; --hover:#243040; --input:#151b22;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da;
+            --card:#fff; --hover:#eef2f6; --input:#f6f8fa; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 80px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  h2 { font-size:15px; margin:32px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13px; margin:18px 0 8px; color:var(--tx2); }
+  p, li { color:var(--tx2); font-size:13px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; color:var(--tx2); }
+  .note.warn { border-left-color:var(--warn); }
+  .cap { font-size:11px; color:var(--tx3); margin:8px 0 0; }
+
+  /* ── 设置卡片外壳（照抄 .lanPanel 真实数值） ── */
+  .panel {
+    width:100%; max-width:560px; border-radius:14px; padding:16px 18px;
+    background:color-mix(in srgb,var(--accent) 6%,var(--panel));
+    border:1px solid var(--line); margin:0 0 18px;
+  }
+  .panelHead { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .status { display:flex; align-items:center; gap:8px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--ok);
+         box-shadow:0 0 6px color-mix(in srgb,var(--ok) 40%,transparent); }
+  .dot.off { background:var(--tx3); box-shadow:none; }
+  .statusText { font-size:13px; font-weight:600; color:var(--tx); }
+
+  /* 折叠（照抄 .mcpAdvanced） */
+  details.adv { margin:0; }
+  details.adv > summary {
+    list-style:none; cursor:pointer; user-select:none;
+    font-size:12px; color:var(--tx2); padding:6px 0;
+  }
+  details.adv > summary::-webkit-details-marker { display:none; }
+  details.adv > summary::before { content:"▸ "; }
+  details.adv[open] > summary::before { content:"▾ "; }
+
+  .rows { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .row { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .label { flex-shrink:0; width:64px; font-size:12px; color:var(--tx2); }
+  .value {
+    flex:1; min-width:120px; padding:3px 8px; border-radius:6px;
+    background:var(--input); font-family:ui-monospace,Consolas,monospace;
+    font-size:11.5px; color:var(--tx); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .iconBtn {
+    flex-shrink:0; display:inline-flex; align-items:center; padding:4px;
+    border:1px solid var(--line); border-radius:6px; background:var(--card);
+    color:var(--tx2); cursor:pointer; font-size:12px;
+  }
+  .iconBtn:hover { background:var(--hover); border-color:var(--accent); }
+  .applyBtn {
+    padding:3px 12px; border:1px solid var(--line); border-radius:6px;
+    background:var(--card); color:var(--tx); font-size:12px; cursor:pointer;
+  }
+  .applyBtn:hover:not(:disabled) { background:var(--hover); border-color:var(--accent); }
+  .applyBtn:disabled { opacity:.45; cursor:not-allowed; }
+  .hint { width:100%; padding-left:71px; font-size:11px; color:var(--tx3); }
+
+  .alert {
+    display:flex; align-items:center; gap:7px; margin:10px 0 0;
+    padding:8px 10px; border-radius:9px; font-size:12px; color:var(--danger);
+    background:color-mix(in srgb,var(--danger) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);
+  }
+  .alert span { flex:1; min-width:0; word-break:break-word; }
+  .alert button { border:none; background:none; cursor:pointer; font-size:11px; color:var(--danger); opacity:.8; }
+
+  .pill {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;
+  }
+  .pill.ok { background:color-mix(in srgb,var(--ok) 16%,transparent); color:var(--ok); }
+  .pill.warn { background:color-mix(in srgb,var(--warn) 16%,transparent); color:var(--warn); }
+  .pill.mute { background:color-mix(in srgb,var(--tx3) 16%,transparent); color:var(--tx3); }
+
+  .switch {
+    position:relative; width:36px; height:20px; border-radius:10px;
+    background:var(--tx3); border:none; cursor:pointer; padding:0; flex-shrink:0;
+  }
+  .switch.on { background:var(--accent); }
+  .switch::after {
+    content:""; position:absolute; top:2px; left:2px; width:16px; height:16px;
+    border-radius:50%; background:#fff; transition:transform .15s;
+  }
+  .switch.on::after { transform:translateX(16px); }
+
+  .sectionTitle {
+    font-size:12px; font-weight:700; color:var(--tx);
+    margin:14px 0 4px; padding-top:10px; border-top:1px dashed var(--line);
+  }
+  .ghostRow { opacity:.45; pointer-events:none; }
+
+  .states { display:flex; flex-direction:column; gap:22px; }
+  .stateBlock { border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--panel); }
+  .stateBlock h3 { margin:0 0 10px; color:var(--tx); font-size:13px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>MCP HTTPS · 设置页设计稿</h1>
+  <p class="lede">TLS-2 · 方案 A：HTTPS 小节嵌在「高级」折叠内、端口之后、写权限之前。<br>
+  默认关。CA 装卸（TLS-1）用 <code>certutil -user</code>，走当前用户信任库、不需要管理员。</p>
+
+  <div class="note">
+    <b>规则 #15.3 落地</b>：<code>httpsRunning</code> 与 <code>httpsError</code> 必须一起读。
+    开关开着、端口被占时，状态行是「HTTPS 未监听」+ 红色横幅写原因——绝不只显示开关「已开启」。
+  </div>
+
+  <h2>一、整体位置（高级折叠展开后）</h2>
+  <div class="panel">
+    <div class="panelHead">
+      <div class="status"><span class="dot"></span><span class="statusText">监听中 · 端口 17650</span></div>
+    </div>
+    <details class="adv" open>
+      <summary>高级：端口 · 令牌 · HTTPS · 写权限 · 调用记录</summary>
+      <div class="rows">
+        <div class="row"><span class="label">服务地址</span><code class="value">http://127.0.0.1:17650/mcp</code><span class="iconBtn">⧉</span></div>
+        <div class="row"><span class="label">访问令牌</span><code class="value">••••••••••••••••••••••</code></div>
+        <div class="row"><span class="label">监听端口</span><input style="width:92px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--tx);font-size:12px" value="17650"/><span class="applyBtn">应用</span></div>
+      </div>
+
+      <div class="sectionTitle">HTTPS（可选，默认关）</div>
+      <div class="rows">
+        <div class="row">
+          <span class="label">开启 HTTPS</span>
+          <button class="switch" type="button" aria-label="HTTPS 开关"></button>
+          <span class="pill mute">未开启</span>
+        </div>
+        <div class="row ghostRow">
+          <span class="label">HTTPS 地址</span>
+          <code class="value">https://127.0.0.1:17660/mcp</code>
+          <span class="iconBtn">⧉</span>
+        </div>
+        <div class="row">
+          <span class="label">信任库 CA</span>
+          <span class="pill mute">证书未生成</span>
+          <span class="applyBtn" style="opacity:.45">装进信任库</span>
+          <span class="applyBtn" style="opacity:.45">移除</span>
+        </div>
+        <div class="hint">打开 HTTPS 后会自动生成本机证书；客户端仍会因「不受信」警告，需再点「装进信任库」。</div>
+      </div>
+    </details>
+  </div>
+  <p class="cap">关态：开关灰、地址灰、CA 按钮灰。一眼看出「没开」，而不是「坏了」。</p>
+
+  <h2>二、关键状态</h2>
+  <div class="states">
+
+    <div class="stateBlock">
+      <h3>A · HTTPS 开了 · 监听成功 · CA 未装</h3>
+      <div class="panel">
+        <div class="panelHead">
+          <div class="status"><span class="dot"></span><span class="statusText">监听中 · 端口 17650</span></div>
+        </div>
+        <details class="adv" open>
+          <summary>高级</summary>
+          <div class="sectionTitle" style="border-top:none;padding-top:4px;margin-top:0">HTTPS（可选，默认关）</div>
+          <div class="rows">
+            <div class="row">
+              <span class="label">开启 HTTPS</span>
+              <button class="switch on" type="button"></button>
+              <span class="pill ok">HTTPS 监听中 · 17660</span>
+            </div>
+            <div class="row">
+              <span class="label">HTTPS 地址</span>
+              <code class="value">https://127.0.0.1:17660/mcp</code>
+              <span class="iconBtn">⧉</span>
+            </div>
+            <div class="row">
+              <span class="label">信任库 CA</span>
+              <span class="pill warn">未装入信任库</span>
+              <span class="applyBtn">装进信任库</span>
+            </div>
+            <div class="hint">客户端会因证书不受信而拒绝或警告。点「装进信任库」后重连即可。</div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="stateBlock">
+      <h3>B · HTTPS 开了 · 监听成功 · CA 已装</h3>
+      <div class="panel">
+        <div class="panelHead">
+          <div class="status"><span class="dot"></span><span class="statusText">监听中 · 端口 17650</span></div>
+        </div>
+        <details class="adv" open>
+          <summary>高级</summary>
+          <div class="sectionTitle" style="border-top:none;padding-top:4px;margin-top:0">HTTPS（可选，默认关）</div>
+          <div class="rows">
+            <div class="row">
+              <span class="label">开启 HTTPS</span>
+              <button class="switch on" type="button"></button>
+              <span class="pill ok">HTTPS 监听中 · 17660</span>
+            </div>
+            <div class="row">
+              <span class="label">HTTPS 地址</span>
+              <code class="value">https://127.0.0.1:17660/mcp</code>
+              <span class="iconBtn">⧉</span>
+            </div>
+            <div class="row">
+              <span class="label">信任库 CA</span>
+              <span class="pill ok">已装入信任库</span>
+              <span class="applyBtn">从信任库移除</span>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="stateBlock">
+      <h3>C · HTTPS 开关开了 · 监听失败（规则 #15.3）</h3>
+      <div class="panel">
+        <div class="panelHead">
+          <div class="status"><span class="dot"></span><span class="statusText">监听中 · 端口 17650</span></div>
+        </div>
+        <details class="adv" open>
+          <summary>高级</summary>
+          <div class="sectionTitle" style="border-top:none;padding-top:4px;margin-top:0">HTTPS（可选，默认关）</div>
+          <div class="rows">
+            <div class="row">
+              <span class="label">开启 HTTPS</span>
+              <button class="switch on" type="button"></button>
+              <span class="pill warn">HTTPS 未监听</span>
+            </div>
+            <div class="row">
+              <span class="label">HTTPS 地址</span>
+              <code class="value">https://127.0.0.1:17660/mcp</code>
+              <span class="iconBtn">⧉</span>
+            </div>
+            <div class="alert">
+              <span>端口 17660 无法绑定：通常被其他程序占用。可关掉 HTTPS 后换端口，或结束占用进程后重新开启。</span>
+              <button>知道了</button>
+            </div>
+          </div>
+        </details>
+      </div>
+      <p class="cap">开关显示「已开」+ 状态 pill「未监听」+ 红色横幅写原因。绝不只显示开关。</p>
+    </div>
+
+  </div>
+
+  <h2>三、装 CA 确认框</h2>
+  <p>点「装进信任库」弹出，文案必须写清这是系统级动作、影响范围、可逆：</p>
+  <div class="panel" style="max-width:420px;background:var(--panel2);border-radius:10px">
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:8px">把本机 CA 装进系统信任库？</div>
+    <div style="font-size:12.5px;color:var(--tx2);line-height:1.7;white-space:pre-line">将向「当前用户」的信任根证书库添加一张本机生成的根证书。
+
+• 不需要管理员权限
+• 证书只对 127.0.0.1 / localhost / ::1 有效
+• 用于让 MCP 客户端信任本机 HTTPS 地址
+• 可随时点「从信任库移除」卸掉
+
+文件位置：
+C:\Users\…\AppData\…\mcp-tls-ca.pem</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <span class="applyBtn">取消</span>
+      <span class="applyBtn" style="border-color:var(--accent);color:var(--accent)">装进信任库</span>
+    </div>
+  </div>
+  <p class="cap">移除确认框对称：写明「会让已配好的 https 客户端重新报证书警告」。</p>
+
+  <h2>四、交互与后端命令</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px">
+    <tr><th style="border:1px solid var(--line);padding:7px 9px;background:var(--panel2);text-align:left">动作</th>
+        <th style="border:1px solid var(--line);padding:7px 9px;background:var(--panel2);text-align:left">命令</th>
+        <th style="border:1px solid var(--line);padding:7px 9px;background:var(--panel2);text-align:left">说明</th></tr>
+    <tr><td style="border:1px solid var(--line);padding:7px 9px">开关 HTTPS</td>
+        <td style="border:1px solid var(--line);padding:7px 9px"><code>mcp_set_https_enabled</code></td>
+        <td style="border:1px solid var(--line);padding:7px 9px">已实现；写配置 + 单独启停 https</td></tr>
+    <tr><td style="border:1px solid var(--line);padding:7px 9px">查询 CA</td>
+        <td style="border:1px solid var(--line);padding:7px 9px"><code>mcp_tls_ca_status</code></td>
+        <td style="border:1px solid var(--line);padding:7px 9px">新增：exists / installed / thumbprint</td></tr>
+    <tr><td style="border:1px solid var(--line);padding:7px 9px">装 CA</td>
+        <td style="border:1px solid var(--line);padding:7px 9px"><code>mcp_tls_install_ca</code></td>
+        <td style="border:1px solid var(--line);padding:7px 9px">新增：<code>certutil -user -addstore Root</code></td></tr>
+    <tr><td style="border:1px solid var(--line);padding:7px 9px">移除 CA</td>
+        <td style="border:1px solid var(--line);padding:7px 9px"><code>mcp_tls_remove_ca</code></td>
+        <td style="border:1px solid var(--line);padding:7px 9px">新增：按 SHA1 从 <code>CurrentUser\Root</code> 删除</td></tr>
+  </table>
+
+  <div class="note warn">
+    <b>不做（第一版）</b>：HTTPS 端口输入框。默认 17660，配置键已有。
+    等真实撞端口诉求再加，避免设置页再堆一行默认没人改的输入。
+  </div>
+</div>
+</body>
+</html>

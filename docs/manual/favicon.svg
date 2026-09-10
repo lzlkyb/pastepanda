@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- PastePanda favicon：按 public/icon.png 矢量重建（上橙环 + 下青环，互扣）。
+       原始位图见 public/icon.png（520×520，黑底）。改色先回那里核对。 -->
+  <rect width="64" height="64" rx="14" fill="#05070C"/>
+  <path d="M22.5 21 A 13.5 13.5 0 1 1 36 34.5" fill="none" stroke="#F2A93B" stroke-width="7.5" stroke-linecap="round"/>
+  <circle cx="34" cy="19" r="5.5" fill="#F2A93B"/>
+  <path d="M28 29.5 A 13.5 13.5 0 1 1 41.5 43" fill="none" stroke="#38C6DD" stroke-width="7.5" stroke-linecap="round"/>
+  <circle cx="30" cy="45" r="5.5" fill="#38C6DD"/>
+</svg>
