@@ -95,10 +95,13 @@ export interface McpClientDef {
   /**
    * 接入确认框里要多说的一句（可选）。
    *
-   * 用于那些**自己也会改这个文件**的客户端：它们运行期间可能拿内存里的
-   * 旧快照整份写回去，把我们刚写的条目盖掉。
+   * 用于那些「改了会有额外后果」的客户端，目前两类：
+   *   ① 它自己也会改这个文件（运行期间拿内存旧快照整份写回去，把我们刚写的盖掉）
+   *   ② 我们这一写会**改变它对其他配置文件的取舍**（ZCode 的 `.agents` 降级链）
+   *
+   * 两类共同点：用户不知情就会莫名其妙地少东西，而且不报错。
    */
-  writeRaceCaveat?: string;
+  connectCaveat?: string;
   /**
    * 可选：官方 CLI 安装命令（比手改 JSON 可靠）。
    * 有就在展开区里优先给它。
@@ -170,7 +173,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
       "❗ `--scope user` 不能省。`claude mcp add` 的默认 scope 是 `local`，" +
       "而 local 只对**执行命令时那一个目录**生效。知识库跟项目无关，" +
       "在别的目录开 Claude Code 就没这个工具——而且不报错，最难查的那种。",
-    writeRaceCaveat:
+    connectCaveat:
       "这个文件不只放 MCP 配置，Claude Code 运行时还会往里面写启动次数、会话历史等东西。" +
       "如果它正开着，接入后请重启它再确认一下条目还在（不放心就先退出再接入）。",
     evidence:
@@ -295,6 +298,55 @@ export const MCP_CLIENTS: McpClientDef[] = [
       "`--bearer-token-env-var`，没有 `--header`，写不出字面量令牌。",
   },
   {
+    id: "qwen-code",
+    name: "Qwen Code（通义千问）",
+    configPath: "~/.qwen/settings.json",
+    /**
+     * ❗ 跟 Gemini CLI 一模一样（它就是 gemini-cli 的分支）：
+     * 不写 `type`，URL 走 `httpUrl`。写成 `url` 会被当成 **SSE** 去连——
+     * 不报错，只是连不上。
+     */
+    transport: "streamableHttp",
+    omitType: true,
+    urlField: "httpUrl",
+    where: "写进该文件的 mcpServers。",
+    evidence:
+      "直读官方文档 QwenLM/qwen-code 的 `docs/users/features/mcp.md`（2026-09-10 查）：" +
+      "用户级配置是 `~/.qwen/settings.json`（原文：User scope (default)），容器键 `mcpServers`；" +
+      "远程 streamable HTTP 示例为 `httpUrl` + `headers.Authorization: Bearer`，" +
+      "**整个条目没有 `type`**；文档明写 `url` 是给 SSE 用的。" +
+      "❗ 该文件装的是 Qwen Code 的**全部设置**，不只 MCP，所以只能合并不能覆盖（同 `~/.gemini/settings.json`）。",
+  },
+  {
+    id: "zcode",
+    name: "ZCode（智谱）",
+    configPath: "~/.zcode/cli/config.json",
+    /**
+     * 🔴 全表里**唯一一个容器不在顶层的**：服务器装在 `mcp` 下面的 `servers` 里。
+     * 带点号 = 嵌套路径（后端 `mcp_connect.rs` 会拆）。
+     * 写成顶层一个叫 `"mcp.servers"` 的键的话，界面显示接入成功而 ZCode 一个字读不到。
+     */
+    containerKey: "mcp.servers",
+    transport: "http",
+    where: "写进该文件的 **mcp.servers**（注意是嵌在 mcp 下面的 servers，不是顶层一个键）。",
+    connectCaveat:
+      "ZCode 还支持一个降级配置 `~/.agents/mcp.json`，但它**只在 " +
+      "`~/.zcode/cli/config.json` 里一个 MCP 服务器都没有时才生效**。" +
+      "所以你现在的 MCP 服务器如果全写在 `~/.agents/mcp.json` 里，" +
+      "这次接入会让它们全部失效——ZCode 不会报错，只是那些工具没了。" +
+      "那种情况请改用上面的「复制配置」，把这一条也粘进 `~/.agents/mcp.json`。",
+    evidence:
+      "路径与键名：ZCode 自带的官方插件技能 `zcode-guide/…/skills/diagnosing-mcp/SKILL.md` " +
+      "（本机 `~/.zcode/cli/plugins/cache/zcode-plugins-official/` 下，2026-09-10 实读）逐字写明：" +
+      "User 作用域配置是 `~/.zcode/cli/config.json`，键路径是 **`mcp.servers`**（不是顶层 `mcpServers`）。" +
+      "transport：同一份文档——`http` / `sse` 需要 `url`，可选 `headers` / `enabled` / `timeoutMs`；" +
+      "`type` 省略时按字段推断（有 `url` 即 `http`）。" +
+      "❗ 它明确说 **schema 是严格的、多一个键就会被静静丢掉**（pitfall 5），" +
+      "所以这里只出 `type` / `url` / `headers` 三个字段，不加 `enabled`。" +
+      "❗ 文档还说 `type: \"remote\"` 与 `http_headers` 属于会被 CLI 自动迁移的**旧写法**，" +
+      "而桌面端那条路可能绕过迁移，所以用规范写法 `type: \"http\"` + `headers`。",
+  },
+  {
     id: "cherry-studio",
     name: "Cherry Studio",
     configPath: null,
@@ -408,16 +460,24 @@ export function buildMcpConfigSnippet(
   url: string,
   token: string,
 ): string {
-  const container = client.containerKey ?? MCP_CONTAINER_KEY;
+  // 🔴 带点号的容器键 = 嵌套路径（ZCode 的 `mcp.servers`）。
+  //    不拆的话，卡片会吐出一个字面量叫 `"mcp.servers"` 的键——
+  //    而那正是后端刚修掉的那个坑：手动粘贴这条路不能把它又踩一遍。
+  const segs = (client.containerKey ?? MCP_CONTAINER_KEY).split(".");
   const entry = buildMcpEntry(client, url, token);
 
   if (client.format === "toml") {
-    const lines = [`[${tomlKey(container)}.${tomlKey(MCP_ENTRY_NAME)}]`];
+    // TOML 的表头本来就用点号表示嵌套，逐段转义后拼起来即可。
+    const header = [...segs, MCP_ENTRY_NAME].map(tomlKey).join(".");
+    const lines = [`[${header}]`];
     for (const [k, v] of Object.entries(entry)) {
       lines.push(`${tomlKey(k)} = ${tomlValue(v)}`);
     }
     return lines.join("\n");
   }
 
-  return JSON.stringify({ [container]: { [MCP_ENTRY_NAME]: entry } }, null, 2);
+  // 从里往外包：{pastepanda: entry} → {servers: …} → {mcp: …}
+  let node: Record<string, unknown> = { [MCP_ENTRY_NAME]: entry };
+  for (const seg of [...segs].reverse()) node = { [seg]: node };
+  return JSON.stringify(node, null, 2);
 }

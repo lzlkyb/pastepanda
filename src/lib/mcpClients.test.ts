@@ -160,6 +160,52 @@ describe("条目拼装", () => {
   });
 
   /**
+   * 🔴 Qwen Code 是 gemini-cli 的分支：不写 `type`、URL 走 `httpUrl`。
+   * 写成 `url` 会被当成 SSE 去连——不报错，只是连不上。
+   */
+  it("Qwen Code：不写 type，URL 走 httpUrl", () => {
+    const q = MCP_CLIENTS.find((c) => c.id === "qwen-code")!;
+    const entry = buildMcpEntry(q, url, "t") as Record<string, unknown>;
+    expect(entry.type, "Qwen Code 的条目不该有 type").toBeUndefined();
+    expect(entry.httpUrl).toBe(url);
+    expect(entry.url, "写成 url 会被当成 SSE").toBeUndefined();
+    expect((entry.headers as Record<string, string>).Authorization).toBe("Bearer t");
+  });
+
+  /**
+   * 🔴 ZCode 的容器不在顶层，是 `mcp` 下面的 `servers`。
+   * 卡片吐出一个字面量叫 `"mcp.servers"` 的键的话，用户粘进去也白粘——
+   * ZCode 不报错，只是一个字读不到。
+   */
+  it("ZCode：容器键真的嵌套，不是一个带点的键名", () => {
+    const z = MCP_CLIENTS.find((c) => c.id === "zcode")!;
+    const json = JSON.parse(buildMcpConfigSnippet(z, url, "t"));
+    expect(Object.keys(json)).toEqual(["mcp"]);
+    expect(Object.keys(json.mcp)).toEqual(["servers"]);
+    expect(json.mcp.servers[MCP_ENTRY_NAME].url).toBe(url);
+    expect(json["mcp.servers"], "把点号当成键名了").toBeUndefined();
+  });
+
+  /**
+   * 🔴 ZCode 的 schema 是**严格**的：多一个键，那条服务器就会被静静丢掉
+   * （依据见注册表的 evidence）。所以它的条目只能有这三个字段。
+   */
+  it("ZCode 的条目不能多带字段", () => {
+    const z = MCP_CLIENTS.find((c) => c.id === "zcode")!;
+    const entry = buildMcpEntry(z, url, "t") as Record<string, unknown>;
+    expect(Object.keys(entry).sort()).toEqual(["headers", "type", "url"]);
+    expect(entry.type).toBe("http");
+  });
+
+  /**
+   * 🔴 「点号 = 嵌套」这个约定两边各实现了一份。前端拆而后端不拆（或反过来），
+   * 结果就是复制卡片与一键写入落在两个不同的地方。
+   */
+  it("点号=嵌套 这个约定后端也实现了", () => {
+    expect(RUST_SRC, "后端没有拆点号").toContain("container.split('.')");
+  });
+
+  /**
    * ❗ `tomlValue` 碰到表示不了的值会抛。卡片是在 React 渲染里算的，
    * 真抛了就是一片白屏——所以在这里把整张名单都渲染一遍，
    * 把“上线后白屏”提前成“构建时挂”。

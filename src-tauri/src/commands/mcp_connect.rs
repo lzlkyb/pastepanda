@@ -56,6 +56,14 @@ const TOKEN_SENTINEL: &str = "__PASTEPANDA_TOKEN__";
 /// 🔴 但**不是全部**：OpenCode 用的是 `mcp`（`~/.config/opencode/opencode.json`）。
 /// 所以三个命令都收一个可选的 `container_key`，不传就用这个默认值。
 ///
+/// 🔴 **带点号的容器键 = 嵌套路径**：ZCode 的服务器装在 `mcp.servers` 里
+/// （`~/.zcode/cli/config.json` 下的 `{"mcp": {"servers": {…}}}`），不是顶层一个键。
+/// 不支持嵌套的话，我们会在它配置里造一个名字就叫 `"mcp.servers"` 的顶层键——
+/// 界面显示接入成功，而 ZCode 一个字读不到。
+///
+/// ❗ 代价是：真有客户端把点号写进**键名本身**的话，这里会拆错。
+///   目前名单里没有这种，真碰上了再给注册表加一个「不拆」开关。
+///
 /// ❗ 它与 `MCP_ENTRY_NAME` 的定位不同：条目名写死在后端是为了「无论前端怎么错，
 ///   移除接入也只删得掉我们自己那一条」；而容器键必须跟着客户端走，写死就接不了 OpenCode。
 const DEFAULT_CONTAINER: &str = "mcpServers";
@@ -174,13 +182,16 @@ fn substitute_token(v: &mut Value, token: &str) -> usize {
 ///
 /// ❗ 只动 `container[MCP_ENTRY_NAME]` 一个键，同级的其他服务器原封不动。
 fn merge_entry(root: &mut Value, container: &str, entry: Value) -> Result<bool, String> {
-    let obj = root
-        .as_object_mut()
-        .ok_or_else(|| "配置顶层不是对象".to_string())?;
-    let servers = obj
-        .entry(container)
-        .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    let servers = servers.as_object_mut().ok_or_else(|| {
+    let mut cur = root;
+    for seg in container.split('.') {
+        let obj = cur
+            .as_object_mut()
+            .ok_or_else(|| format!("配置里的 {} 这条路径上有一段不是对象，不敢动它。", container))?;
+        cur = obj
+            .entry(seg)
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    }
+    let servers = cur.as_object_mut().ok_or_else(|| {
         format!("配置里的 {} 不是一个对象，不敢动它。请先手动检查这个文件。", container)
     })?;
     Ok(servers.insert(MCP_ENTRY_NAME.to_string(), entry).is_some())
@@ -188,9 +199,14 @@ fn merge_entry(root: &mut Value, container: &str, entry: Value) -> Result<bool, 
 
 /// 从容器键里拿掉我们那一条。返回「原本在不在」。
 fn remove_entry(root: &mut Value, container: &str) -> bool {
-    root.as_object_mut()
-        .and_then(|o| o.get_mut(container))
-        .and_then(|s| s.as_object_mut())
+    let mut cur = root;
+    for seg in container.split('.') {
+        match cur.get_mut(seg) {
+            Some(next) => cur = next,
+            None => return false,
+        }
+    }
+    cur.as_object_mut()
         .and_then(|s| s.remove(MCP_ENTRY_NAME))
         .is_some()
 }
@@ -200,7 +216,11 @@ fn remove_entry(root: &mut Value, container: &str) -> bool {
 /// 地址或令牌对不上就是 `stale`——两个常见成因：用户换了端口，或者重置了令牌。
 /// 不把它当成「已接入」很重要：那个客户端其实已经连不上了，而它不会报错。
 fn entry_state(root: &Value, container: &str, url: &str, token: &str) -> &'static str {
-    judge_entry(root.get(container).and_then(|m| m.get(MCP_ENTRY_NAME)), url, token)
+    let mut cur = Some(root);
+    for seg in container.split('.') {
+        cur = cur.and_then(|v| v.get(seg));
+    }
+    judge_entry(cur.and_then(|m| m.get(MCP_ENTRY_NAME)), url, token)
 }
 
 /// 判定逻辑本体。**字段名的知识只在这一处**（规则 #11）。
@@ -343,28 +363,33 @@ fn json_entry_to_toml_table(entry: &Value) -> Result<Table, String> {
 /// 把条目合并进 TOML 的容器表。返回「是否盖掉了旧条目」。
 fn merge_entry_toml(doc: &mut DocumentMut, container: &str, entry: &Value) -> Result<bool, String> {
     let tbl = json_entry_to_toml_table(entry)?;
-    let root = doc.as_table_mut();
-    if !root.contains_key(container) {
-        let mut holder = Table::new();
-        // 隐式表：不额外渲染一行光秃秃的 `[mcp_servers]`。
-        // 写出来虽然合法，但用户对着备份做 diff 时会多出一处莫名其妙的改动。
-        holder.set_implicit(true);
-        root.insert(container, Item::Table(holder));
+    // 带点号的容器键 = 嵌套路径，语义跟 JSON 那边必须一致（见 `DEFAULT_CONTAINER`）。
+    // 目前只有 Codex 走 TOML，而它是单段的 `mcp_servers`；
+    // 但两个分支对同一个字串理解不同，就是下一个坑。
+    let mut holder = doc.as_table_mut();
+    for seg in container.split('.') {
+        if !holder.contains_key(seg) {
+            let mut t = Table::new();
+            // 隐式表：不额外渲染一行光秃秃的 `[mcp_servers]`。
+            // 写出来虽然合法，但用户对着备份做 diff 时会多出一处莫名其妙的改动。
+            t.set_implicit(true);
+            holder.insert(seg, Item::Table(t));
+        }
+        // 🔴 这里只能用 `as_table_mut`，**不能用 `as_table_like_mut`**：
+        //    toml_edit 给行内表实现的 `TableLike::insert` 里是 `value.into_value().unwrap()`，
+        //    而我们塞的是一张普通表——那一下会直接 panic（在 Tauri 命令里 panic
+        //    比报错严重得多）。容器真被写成了行内表就老实报错、让用户手动粘。
+        holder = holder
+            .get_mut(seg)
+            .and_then(|i| i.as_table_mut())
+            .ok_or_else(|| {
+                format!(
+                    "配置里的 {} 不是一张普通表（或者被写成了行内表），不敢动它。\
+                     请把上面的配置手动粘进去。",
+                    container
+                )
+            })?;
     }
-    // 🔴 这里只能用 `as_table_mut`，**不能用 `as_table_like_mut`**：
-    //    toml_edit 给行内表实现的 `TableLike::insert` 里是 `value.into_value().unwrap()`，
-    //    而我们塞的是一张普通表——那一下会直接 panic（在 Tauri 命令里 panic
-    //    比报错严重得多）。容器真被写成了行内表就老实报错、让用户手动粘。
-    let holder = root
-        .get_mut(container)
-        .and_then(|i| i.as_table_mut())
-        .ok_or_else(|| {
-            format!(
-                "配置里的 {} 不是一张普通表（或者被写成了行内表），不敢动它。\
-                 请把上面的配置手动粘进去。",
-                container
-            )
-        })?;
     Ok(holder.insert(MCP_ENTRY_NAME, Item::Table(tbl)).is_some())
 }
 
@@ -373,11 +398,14 @@ fn merge_entry_toml(doc: &mut DocumentMut, container: &str, entry: &Value) -> Re
 /// 这里用 `as_table_like_mut` 是安全的（`remove` 没有那个 unwrap），
 /// 而且移除本来就该尽量能干活：写得再怪的容器也得能把自己那条拿走。
 fn remove_entry_toml(doc: &mut DocumentMut, container: &str) -> bool {
-    doc.as_table_mut()
-        .get_mut(container)
-        .and_then(|i| i.as_table_like_mut())
-        .and_then(|t| t.remove(MCP_ENTRY_NAME))
-        .is_some()
+    let mut cur: &mut dyn toml_edit::TableLike = doc.as_table_mut();
+    for seg in container.split('.') {
+        match cur.get_mut(seg).and_then(|i| i.as_table_like_mut()) {
+            Some(next) => cur = next,
+            None => return false,
+        }
+    }
+    cur.remove(MCP_ENTRY_NAME).is_some()
 }
 
 /// 把 TOML 条目里我们关心的字段翻回 JSON，交给 [`judge_entry`] 判。
@@ -408,10 +436,13 @@ fn toml_entry_to_json(item: &Item) -> Value {
 
 /// TOML 版的状态判定。字段名的知识仍然在 [`judge_entry`] 那一处。
 fn entry_state_toml(doc: &DocumentMut, container: &str, url: &str, token: &str) -> &'static str {
-    let entry = doc
-        .as_table()
-        .get(container)
-        .and_then(|i| i.as_table_like())
+    let mut cur: Option<&dyn toml_edit::TableLike> = Some(doc.as_table());
+    for seg in container.split('.') {
+        cur = cur
+            .and_then(|t| t.get(seg))
+            .and_then(|i| i.as_table_like());
+    }
+    let entry = cur
         .and_then(|t| t.get(MCP_ENTRY_NAME))
         .map(toml_entry_to_json);
     judge_entry(entry.as_ref(), url, token)
@@ -764,6 +795,59 @@ mod tests {
 
         assert!(remove_entry(&mut root, "mcp"));
         assert_eq!(root["mcp"].as_object().unwrap().len(), 1);
+    }
+
+    /// 🔴 ZCode 的服务器装在 `mcp.servers` 里（`~/.zcode/cli/config.json`），
+    /// 不是顶层一个键。不拆点号的话，我们会造一个名字就叫 `"mcp.servers"`
+    /// 的顶层键——界面显示接入成功，而 ZCode 一个字读不到。
+    #[test]
+    fn 嵌套容器键要真的嵌套() {
+        let mut root = json!({
+            "model": "glm-4",
+            "mcp": { "servers": { "别人的": { "type": "http", "url": "https://x" } } }
+        });
+        let replaced = merge_entry(&mut root, "mcp.servers", json!({ "type": "http" })).unwrap();
+        assert!(!replaced);
+        assert_eq!(root["mcp"]["servers"].as_object().unwrap().len(), 2, "不能碰旁边那条");
+        assert_eq!(root["model"], json!("glm-4"));
+        // ❗ 绝不能造一个字面量叫 "mcp.servers" 的顶层键
+        assert!(root.get("mcp.servers").is_none(), "把点号当成键名了");
+
+        assert!(remove_entry(&mut root, "mcp.servers"));
+        assert_eq!(root["mcp"]["servers"].as_object().unwrap().len(), 1);
+        // 幂等；中间层缺失时也不能报错
+        assert!(!remove_entry(&mut root, "mcp.servers"));
+        assert!(!remove_entry(&mut root, "压根没有.这个路径"));
+    }
+
+    #[test]
+    fn 嵌套容器键没有中间层时会补齐() {
+        let mut root = json!({ "model": "glm-4" });
+        assert_eq!(entry_state(&root, "mcp.servers", "u", "t"), "none");
+        merge_entry(
+            &mut root,
+            "mcp.servers",
+            json!({ "type": "http", "url": "u", "headers": { "Authorization": "Bearer t" } }),
+        )
+        .unwrap();
+        assert_eq!(root["mcp"]["servers"]["pastepanda"]["url"], json!("u"));
+        assert_eq!(root["model"], json!("glm-4"));
+        assert!(root.get("mcp.servers").is_none());
+        assert_eq!(entry_state(&root, "mcp.servers", "u", "t"), "current");
+    }
+
+    /// 两个分支对同一个容器键字串的理解必须一致。
+    /// （目前走 TOML 的只有 Codex、而它是单段的；这条钉的是将来。）
+    #[test]
+    fn toml的嵌套语义要跟json一致() {
+        let mut doc = "model = \"x\"\n".parse::<DocumentMut>().unwrap();
+        merge_entry_toml(&mut doc, "mcp.servers", &json!({ "url": "u" })).unwrap();
+        let out = doc.to_string();
+        assert!(out.contains("[mcp.servers.pastepanda]"), "没嵌套：{}", out);
+        assert!(out.contains("model = \"x\""));
+        assert_eq!(entry_state_toml(&doc, "mcp.servers", "u", "t"), "stale");
+        assert!(remove_entry_toml(&mut doc, "mcp.servers"));
+        assert!(!remove_entry_toml(&mut doc, "mcp.servers"));
     }
 
     /// 🔴 Gemini CLI 把 URL 写在 `httpUrl` 里（它靠字段名选传输）。

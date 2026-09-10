@@ -104,7 +104,7 @@ export function McpConnectPanel({
           `其他服务器与配置原封不动\n` +
           `• 会把本机的访问令牌写进去（${c.name} 靠它访问你的笔记）` +
           (probe.exists ? "" : "\n• 该文件目前不存在，会新建") +
-          (c.writeRaceCaveat ? `\n\n⚠ ${c.writeRaceCaveat}` : ""),
+          (c.connectCaveat ? `\n\n⚠ ${c.connectCaveat}` : ""),
         confirmText: "接入",
       });
       if (!ok) return;
