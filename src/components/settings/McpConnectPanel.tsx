@@ -17,7 +17,7 @@
  * 🔴 屏幕上永远是占位符，只有点「复制」时才取真令牌——设置页可能被录屏或截图。
  *   一键接入走的是另一条路：令牌根本不进前端，后端拿到占位符自己换（见 mcpClients.ts）。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { copyToClipboard } from "@/lib/utils";
 import { confirmDialog } from "@/lib/confirm";
 import {
@@ -29,6 +29,7 @@ import {
   canOneClick,
   type McpClientDef,
 } from "@/lib/mcpClients";
+import { groupMcpClients } from "@/lib/mcpGroups";
 import {
   mcpClientProbe,
   mcpClientConnect,
@@ -41,6 +42,9 @@ import styles from "../Settings.module.css";
 
 /** 只对有磁盘配置路径的客户端探测。 */
 const PROBEABLE = MCP_CLIENTS.filter(canOneClick);
+
+/** 永远只能手动配的那几家。单独成组，顺带回答了「为什么它没有按钮」。 */
+const MANUAL = MCP_CLIENTS.filter((c) => !canOneClick(c));
 
 export function McpConnectPanel({
   url,
@@ -62,7 +66,8 @@ export function McpConnectPanel({
       // ❗ `containerKey` 三处（探测 / 接入 / 移除）必须都传且一致——
       //   只传一处的话，OpenCode 会出现「接入了却报未接入」或「移除成功但条目还在」。
       PROBEABLE.map(
-        async (c) => [c.id, await mcpClientProbe(c.configPath!, c.containerKey)] as const,
+        async (c) =>
+          [c.id, await mcpClientProbe(c.configPath!, c.containerKey, c.detectPath)] as const,
       ),
     );
     setProbes(Object.fromEntries(rows));
@@ -172,24 +177,92 @@ export function McpConnectPanel({
     [probes, doConnect, doDisconnect],
   );
 
+  /**
+   * 分组。名单长到十几家之后，一视同仁地铺平就不行了：
+   * 用户机器上只装了一两个工具，其余十几行全是噪音，
+   * 真正要操作的那一两行反而埋在中间。
+   *
+   * 规则本体在 `lib/mcpGroups.ts`——拎出去是为了能直接测：
+   * 分错组不会报错，只会让本该露出来的行落进折叠区，而那种 bug 没人会发现。
+   */
+  const groups = useMemo(() => groupMcpClients(PROBEABLE, probes), [probes]);
+
+  const renderRow = (c: McpClientDef) => (
+    <McpClientRow
+      key={c.id}
+      client={c}
+      url={url}
+      open={openId === c.id}
+      busy={busyId === c.id}
+      probe={probes[c.id] ?? null}
+      onToggle={() => setOpenId(openId === c.id ? null : c.id)}
+      onCopyConfig={() => void copyFor(c, buildMcpConfigSnippet, "配置")}
+      onCopyCli={() => void copyFor(c, (cc, u, t) => cc.cli!(u, t), "命令")}
+      onAction={() => void onAction(c)}
+    />
+  );
+
   return (
     <div className={styles.mcpConnect}>
-      <div className={styles.mcpConnectTitle}>接入到 AI 工具</div>
+      <div className={styles.mcpConnectHead}>
+        <div className={styles.mcpConnectTitle}>接入到 AI 工具</div>
+        {!groups.probing && (
+          <div className={styles.mcpConnectSummary}>
+            已接入 {groups.connected.length} · 检测到 {groups.present.length}
+          </div>
+        )}
+      </div>
 
-      {MCP_CLIENTS.map((c) => (
-        <McpClientRow
-          key={c.id}
-          client={c}
-          url={url}
-          open={openId === c.id}
-          busy={busyId === c.id}
-          probe={probes[c.id] ?? null}
-          onToggle={() => setOpenId(openId === c.id ? null : c.id)}
-          onCopyConfig={() => void copyFor(c, buildMcpConfigSnippet, "配置")}
-          onCopyCli={() => void copyFor(c, (cc, u, t) => cc.cli!(u, t), "命令")}
-          onAction={() => void onAction(c)}
-        />
-      ))}
+      {groups.connected.length > 0 && (
+        <details className={styles.mcpGroup} open>
+          <summary className={styles.mcpGroupSummary}>
+            已接入<span className={styles.mcpGroupCount}>{groups.connected.length}</span>
+          </summary>
+          {groups.connected.map(renderRow)}
+        </details>
+      )}
+
+      {groups.present.length > 0 && (
+        <details className={styles.mcpGroup} open>
+          <summary className={styles.mcpGroupSummary}>
+            {groups.probing ? (
+              "正在检测本机装了哪些工具…"
+            ) : (
+              <>
+                本机检测到的工具
+                <span className={styles.mcpGroupCount}>{groups.present.length}</span>
+              </>
+            )}
+          </summary>
+          {groups.present.map(renderRow)}
+        </details>
+      )}
+
+      {/* 下面两组默认折着。标题里带上名字：不展开也能知道里面是谁，
+          省得用户为了确认「我的工具在不在名单里」而挨个点开。 */}
+      {groups.absent.length > 0 && (
+        <details className={styles.mcpGroup}>
+          <summary className={styles.mcpGroupSummary}>
+            本机没检测到<span className={styles.mcpGroupCount}>{groups.absent.length}</span>
+            <span className={styles.mcpGroupNames}>
+              {groups.absent.map((c) => c.name).join("、")}
+            </span>
+          </summary>
+          {groups.absent.map(renderRow)}
+        </details>
+      )}
+
+      {MANUAL.length > 0 && (
+        <details className={styles.mcpGroup}>
+          <summary className={styles.mcpGroupSummary}>
+            需要手动配置<span className={styles.mcpGroupCount}>{MANUAL.length}</span>
+            <span className={styles.mcpGroupNames}>
+              {MANUAL.map((c) => c.name).join("、")}
+            </span>
+          </summary>
+          {MANUAL.map(renderRow)}
+        </details>
+      )}
 
       {/* 🔴 自定义接入永远保留：上面那份内置名单不可能穷举所有工具。 */}
       <McpCustomConnect url={url} toast={toast} />

@@ -53,6 +53,15 @@ export interface McpClientDef {
   configPath: string | null;
   /** 配置文件格式。不写 = `json`。后端按**扩展名**自己再判一次。 */
   format?: McpConfigFormat;
+  /**
+   * 这个工具自己的目录（如 `~/.zcode`），只用来做「本机装没装」的分组判断。
+   * **后端只对它做存在性检查，从不写它。**
+   *
+   * 🔴 不写的话就退化成拿「MCP 配置文件在不在」充数，而那会把
+   * 「装了但从没配过 MCP」误判成没装——那恰恰是一键接入最有用的一类
+   * （本机就有现成例子：`~/.zcode/` 在、`~/.zcode/cli/config.json` 不在）。
+   */
+  detectPath?: string;
   transport: McpTransport;
   /** 这家额外要的字段（如 WorkBuddy 的 timeout / disabled）。 */
   extra?: Record<string, unknown>;
@@ -165,6 +174,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "claude-code",
     name: "Claude Code",
     configPath: "~/.claude.json",
+    detectPath: "~/.claude",
     transport: "http",
     where: "写进该文件**顶层**的 mcpServers（不是某个 project 下面）。",
     cli: (url, token) =>
@@ -184,6 +194,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "workbuddy",
     name: "WorkBuddy",
     configPath: "~/.workbuddy/mcp.json",
+    detectPath: "~/.workbuddy",
     transport: "streamableHttp",
     // 跟它自带连接器的写法保持一致。
     extra: { timeout: 30000, disabled: false },
@@ -197,6 +208,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "qoder",
     name: "Qoder",
     configPath: "~/.qoderwork/mcp.json",
+    detectPath: "~/.qoderwork",
     // 🔴 连字符写法，**不是** WorkBuddy 那个 `streamableHttp`。
     //    官方文档给的远程示例就是 `streamable-http`，写成驼峰不报错、只是连不上。
     transport: "streamable-http",
@@ -213,6 +225,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "codebuddy",
     name: "CodeBuddy",
     configPath: "~/.codebuddy/mcp.json",
+    detectPath: "~/.codebuddy",
     transport: "http",
     where: "写进该文件的 mcpServers。",
     evidence:
@@ -225,6 +238,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "gemini-cli",
     name: "Gemini CLI",
     configPath: "~/.gemini/settings.json",
+    detectPath: "~/.gemini",
     /**
      * 🔴 这一条是全表里**唯一不写 `type`** 的。
      *
@@ -250,6 +264,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "opencode",
     name: "OpenCode",
     configPath: "~/.config/opencode/opencode.json",
+    detectPath: "~/.config/opencode",
     /**
      * 🔴 OpenCode 两处都与别家不同：
      *   ① 容器键是 `mcp`，不是 `mcpServers`；
@@ -270,6 +285,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "codex",
     name: "Codex CLI",
     configPath: "~/.codex/config.toml",
+    detectPath: "~/.codex",
     /**
      * 🔴 全表里**唯一一个不是 JSON 的**。
      *
@@ -301,6 +317,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "qwen-code",
     name: "Qwen Code（通义千问）",
     configPath: "~/.qwen/settings.json",
+    detectPath: "~/.qwen",
     /**
      * ❗ 跟 Gemini CLI 一模一样（它就是 gemini-cli 的分支）：
      * 不写 `type`，URL 走 `httpUrl`。写成 `url` 会被当成 **SSE** 去连——
@@ -321,6 +338,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "zcode",
     name: "ZCode（智谱）",
     configPath: "~/.zcode/cli/config.json",
+    detectPath: "~/.zcode",
     /**
      * 🔴 全表里**唯一一个容器不在顶层的**：服务器装在 `mcp` 下面的 `servers` 里。
      * 带点号 = 嵌套路径（后端 `mcp_connect.rs` 会拆）。
@@ -350,6 +368,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     id: "pi",
     name: "Pi",
     configPath: "~/.pi/agent/mcp.json",
+    detectPath: "~/.pi",
     /**
      * 条目里**没有 `type`**：Pi 靠 `command` / `url` / `socket` 区分传输。
      * `transport` 仍填 `streamableHttp`，记的是“实际走哪种”。

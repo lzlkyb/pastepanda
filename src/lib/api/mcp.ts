@@ -283,6 +283,13 @@ export interface McpClientProbe {
   path: string;
   exists: boolean;
   /**
+   * 这台机器上**这个工具在不在**（看它自己的目录，不是看 MCP 配置文件）。
+   *
+   * 🔴 界面分组靠它而**不是** `exists`：工具装了但从没配过 MCP（目录在、
+   * 配置文件不在）恰恰是一键接入最有用的场景。
+   */
+  toolPresent: boolean;
+  /**
    * `none` 未接入 · `current` 已接入且地址令牌都对 ·
    * `stale` 接入过但地址/令牌变了 · `unreadable` 读不了或解析不开
    *
@@ -312,9 +319,15 @@ export async function mcpClientProbe(
   configPath: string,
   /** 不传 = `mcpServers`。OpenCode 那类容器键不同的客户端必须传。 */
   containerKey?: string,
+  /** 工具自己的目录，只用来算 `toolPresent`。不传就等于 `exists`。 */
+  detectPath?: string,
 ): Promise<McpClientProbe | null> {
   try {
-    return await invoke<McpClientProbe>("mcp_client_probe", { configPath, containerKey });
+    return await invoke<McpClientProbe>("mcp_client_probe", {
+      configPath,
+      containerKey,
+      detectPath,
+    });
   } catch (e) {
     logger.warn("探测 MCP 客户端配置失败", e);
     return null;

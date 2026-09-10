@@ -74,6 +74,16 @@ pub struct McpClientProbe {
     /// 展开 `~` 后的绝对路径。界面上直接显示它，用户才能自己去核。
     pub path: String,
     pub exists: bool,
+    /// 这台机器上**这个工具在不在**（看它自己的目录，不是看 MCP 配置文件）。
+    ///
+    /// 🔴 它跟 `exists` 是两回事，而界面分组靠的是它：
+    /// 本机 `~/.zcode/` 在（ZCode 装了）但 `~/.zcode/cli/config.json` 不在
+    /// （从没配过 MCP）——而那正是一键接入**最有用**的场景（帮他把文件建出来）。
+    /// 按 `exists` 分组的话，恰恰把最该露出来的那一类给折起来了。
+    ///
+    /// 前端不传 `detect_path` 时它就等于 `exists`。
+    #[serde(rename = "toolPresent")]
+    pub tool_present: bool,
     /// `none` 未接入 · `current` 已接入且地址令牌都对 ·
     /// `stale` 接入过但地址/令牌变了 · `unreadable` 读不了或解析不开
     pub state: &'static str,
@@ -490,15 +500,25 @@ pub fn mcp_client_probe(
     // 不传 = `mcpServers`。OpenCode 那类容器键不同的客户端才需要传。
     // ❗ 参数上不能用 `///`（rustc 只允许 allow/cfg/deny 那几个内置属性）。
     container_key: Option<String>,
+    // 这个工具自己的目录（如 `~/.zcode`），只用来算 `tool_present`。
+    // 不传就拿配置文件在不在充数。**从不写它，只做存在性检查。**
+    detect_path: Option<String>,
 ) -> Result<McpClientProbe, String> {
     let container = container_key.as_deref().unwrap_or(DEFAULT_CONTAINER);
     let path = expand_home(&config_path)?;
     let display = path.display().to_string();
     let exists = path.exists();
+    // ❗ 展开失败当成「不在」，不报错：这只是个分组依据，
+    //   为它让整个探测失败不值得。
+    let tool_present = match detect_path.as_deref() {
+        Some(d) => expand_home(d).map(|p| p.exists()).unwrap_or(false),
+        None => exists,
+    };
     if !exists {
         return Ok(McpClientProbe {
             path: display,
             exists: false,
+            tool_present,
             state: "none",
             detail: String::new(),
         });
@@ -511,6 +531,7 @@ pub fn mcp_client_probe(
             return Ok(McpClientProbe {
                 path: display,
                 exists: true,
+                tool_present,
                 state: "unreadable",
                 detail,
             })
@@ -527,12 +548,14 @@ pub fn mcp_client_probe(
         Ok(state) => Ok(McpClientProbe {
             path: display,
             exists: true,
+            tool_present,
             state,
             detail: String::new(),
         }),
         Err(detail) => Ok(McpClientProbe {
             path: display,
             exists: true,
+            tool_present,
             state: "unreadable",
             detail,
         }),

@@ -35,6 +35,18 @@ function badgeOf(
   }
 }
 
+/**
+ * 主行里那句提示（占的是原来放路径的位置）。返回 null = 不显示。
+ *
+ * 🔴 只为一种情况存在：**工具装了、但从没配过 MCP**。
+ * 不说的话，它在「本机检测到的工具」组里显示「未接入」，
+ * 而用户会因为“那个文件我好像没有”而不敢点——实际上接入会帮他建。
+ */
+function noteOf(probe: McpClientProbe | null): string | null {
+  if (!probe || probe.exists || !probe.toolPresent) return null;
+  return "还没配过 MCP，接入时会新建配置文件";
+}
+
 /** 一键按钮的文案；返回 null = 这一行不给一键按钮。 */
 function actionLabel(probe: McpClientProbe | null): string | null {
   if (!probe) return null;
@@ -74,6 +86,7 @@ export function McpClientRow({
 }) {
   const badge = badgeOf(client, probe);
   const label = canOneClick(client) ? actionLabel(probe) : null;
+  const note = noteOf(probe);
 
   return (
     <div className={styles.mcpClientRow}>
@@ -81,11 +94,10 @@ export function McpClientRow({
         <button type="button" className={styles.mcpClientName} onClick={onToggle}>
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           <span>{client.name}</span>
-          {/* 路径就是最好的副标题：用户一眼能对上自己机器上有没有这个文件。
-              探测回来了就换成展开后的绝对路径（`~` 对不上到底是哪个目录）。 */}
-          <code className={styles.mcpClientPath}>
-            {probe?.path ?? client.configPath ?? "应用内配置"}
-          </code>
+          {/* 🔴 路径已经挑到展开区去了：它跟名字抢同一份 flex 空间，在主行里
+              基本必被省略号截断——而一个截断的路径既核不了也认不出，等于白占地方。
+              腾出来的位置给那句真正需要当场看到的提示。 */}
+          {note && <span className={styles.mcpClientNote}>{note}</span>}
         </button>
 
         <span className={`${styles.mcpBadge} ${badge.cls}`}>{badge.text}</span>
@@ -113,6 +125,11 @@ export function McpClientRow({
 
       {open && (
         <div className={styles.mcpClientBody}>
+          {/* 探测回来了就用展开后的绝对路径（`~` 对不上到底是哪个目录）。
+              这里不截断，用户才能拿它去核自己机器上的文件。 */}
+          <div className={styles.mcpClientPathLine}>
+            {probe?.path ?? client.configPath ?? "应用内配置"}
+          </div>
           <p className={styles.mcpGuideNote}>{client.where}</p>
 
           {/* 不能一键的要说清楚为什么，否则用户只会觉得“为什么它没有按钮”。 */}

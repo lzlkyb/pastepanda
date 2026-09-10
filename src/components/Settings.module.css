@@ -2344,10 +2344,84 @@
   margin-top: 12px;
 }
 
+.mcpConnectHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .mcpConnectTitle {
   font-size: 12px;
   color: var(--text-secondary, var(--text-muted));
-  margin-bottom: 6px;
+}
+
+/* 两组都展开时它跟组标题里的数字重复；但用户把组折起来之后，
+   这一行就是「一眼看到接没接入」的唯一去处，而那正是这个面板的全部意义。 */
+.mcpConnectSummary {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── 分组折叠 ──
+ *
+ * 🔴 分的不是「按名字排序」，是「跟你有没有关系」：
+ * 名单十几家，而用户机器上只装一两个。铺平的话，真正要操作的那一两行
+ * 会埋在十几行「未检测到配置文件」中间。
+ * 标记沿用 .mcpAdvanced 那套 ▸/▾，免得同一个面板里两种折叠长得不一样。 */
+.mcpGroup {
+  margin-bottom: 4px;
+}
+
+.mcpGroupSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.mcpGroupSummary::-webkit-details-marker { display: none; }
+
+.mcpGroupSummary::before {
+  content: "▸";
+  flex-shrink: 0;
+}
+
+.mcpGroup[open] > .mcpGroupSummary::before {
+  content: "▾";
+}
+
+.mcpGroupSummary:hover { color: var(--text-primary); }
+
+.mcpGroupCount {
+  flex-shrink: 0;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--hover);
+  font-size: 10.5px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* 折着的那两组把名字列在标题里：不展开也能知道里面是谁。
+   截断了也不要紧——它只是个线索，点开就有完整的。 */
+.mcpGroupNames {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mcpClientRow {
@@ -2381,17 +2455,26 @@
   text-align: left;
 }
 
-/* 路径当副标题：用户一眼能对上自己机器上有没有这个文件。
-   必须能截断——`~/.workbuddy/mcp.json` 这类在窄面板里放不下。 */
-.mcpClientPath {
+/* 主行里那句「还没配过 MCP」。占的是原来放路径的位置——
+   路径跟名字抢同一份 flex 空间，基本必被截断，而截断的路径既核不了也认不出。 */
+.mcpClientNote {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-muted);
-  font-family: "Cascadia Mono", Consolas, monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 展开区顶部的配置文件路径。**这里不截断**：
+   用户得拿它去核自己机器上那个文件，看不全就等于没给。 */
+.mcpClientPathLine {
+  margin: 6px 0 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  word-break: break-all;
 }
 
 /* 接入状态徽标。flex-shrink:0——它被挤掉的话，用户就看不出自己到底接没接入，

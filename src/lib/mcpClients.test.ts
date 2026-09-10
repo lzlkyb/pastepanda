@@ -263,6 +263,35 @@ describe("注册表自身的约束", () => {
     }
   });
 
+  /**
+   * 🔴 能一键的都必须有 `detectPath`，否则界面分组会退化成拿
+   * 「MCP 配置文件在不在」充数——「装了但从没配过 MCP」就被误判成没装，
+   * 而那恰恰是一键接入最有用的一类。
+   */
+  it("能一键的都得有 detectPath", () => {
+    for (const c of MCP_CLIENTS) {
+      if (!canOneClick(c)) continue;
+      expect(c.detectPath?.trim().length, `${c.id} 缺 detectPath`).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * `detectPath` 必须是 `configPath` 的前缀。它防的是打错字（如 `~/.zcodee`）
+   * ——那不会报错，只会让这一行永远躺在折叠区里。
+   *
+   * ❗ 用「字符串前缀」而不是「路径祖先」：Claude Code 的检测目录 `~/.claude`
+   *   跟它的配置 `~/.claude.json` 是兄弟不是父子。
+   */
+  it("detectPath 必须是 configPath 的前缀", () => {
+    for (const c of MCP_CLIENTS) {
+      if (!c.detectPath || !c.configPath) continue;
+      expect(
+        c.configPath.startsWith(c.detectPath),
+        `${c.id}：${c.detectPath} 不像是 ${c.configPath} 的检测点`,
+      ).toBe(true);
+    }
+  });
+
   it("id 不重复", () => {
     // id 是探测结果的字典键，重了就会两行共用一个状态
     const ids = MCP_CLIENTS.map((c) => c.id);
