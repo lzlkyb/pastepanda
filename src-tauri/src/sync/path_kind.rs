@@ -1,15 +1,15 @@
-//! 与某个对端「现在走哪条路」——从 iroh 的连接层直接读，不靠推断。
+//! 一次同步里「数据实际走的哪条路」——从 iroh 的连接层直接读，不靠推断。
 //!
-//! # 🔴 为何需要它
+//! # 🔴 它答的是「怎么连的」，不是「在不在线」（别再拿它当在线判据）
 //!
-//! 现有的在线判据（`src/lib/kbOnline.ts`）是两个**间接证据**的并：
-//! 组播听得见，或者 90 秒内真同步成功过。两个都不是「此刻通不通」：
+//! 最初想用它替掉在线判据，走不通，原因见下面那节。在线判据仍然是
+//! `devices.last_ok_ms` + 组播（`src/lib/kbOnline.ts`）。这里只答一件事：
+//! **上一次同步成功时，笔记实际是从哪条路过去的。**
 //!
-//! - 组播只证明同子网可见，而同步走的是 iroh QUIC（可直连、可过中继）；
-//! - 那个 90 秒窗口是个**滞后**：对端 5 秒前刚断网，界面还要显示 85 秒的「在线」。
-//!
-//! 而 iroh 自己就知道每条网络路径此刻活不活跃。等于说：
-//! 以前是关着仪表盘、靠「上次到没到目的地」推断发动机在不在转。
+//! 这件事原来是靠猜的：`transport_of()` 拿「presence 里有没有它的地址」
+//! 当传输方式，于是 `wan` 与「组播听得见」在构造上互斥——那个「外网」标签
+//! 是个到不了的死分支，WAN 对端一律显示离线（2026-09-07 实测复现过）。
+//! 现在改成从活连接实测，那条互斥也随之消失。
 //!
 //! # 比现有的 `transport` 多一档，而那一档是必要的
 //!
@@ -17,33 +17,55 @@
 //! 混成同一个「外网」，而两者速度差一个量级（n0 的公共中继在欧洲，
 //! 那是真实的跨境流量）。用户看到「外网」时无从判断该不该去查网络。
 //!
-//! # iroh 1.1.0 的实际 API（已源码核实，别凭印象改）
+//! # 🔴 绝不要改成 `Endpoint::remote_info()`（iroh 1.1.0 源码三处印证）
+//!
+//! `remote_info()` 看着才是「问端点某个对端现在怎么样」的正道，而它的
+//! `TransportAddrUsage::Active` 看着就是「此刻在通」。**都不是。**
+//! 那个 `Active` 一旦置上就再也不会撤，端点活多久它就残留多久：
+//!
+//! 1. `PathStatus::Open` 才映射成 `Active`，而把 `Open` 改回 `Inactive` 的只有
+//!    `abandoned_path()` 一处；
+//! 2. 而 `handle_path_event(Abandoned)` 在 `conn_state.handle.upgrade()` 拿不到
+//!    连接时**直接 return**（原注释 `"event for closed connection"`）——连接已经
+//!    关掉的路径，那一处永远走不到；
+//! 3. `handle_connection_close()` 只从 `connections` 里摘掉连接、清 `selected_path`，
+//!    **完全不碰** 喂 `remote_info()` 的那张端点级 `state.paths`；而唯一会清理的
+//!    `prune_non_relay_paths()` 要非中继路径攒够 30 条才触发，且明文
+//!    `_ => { /* ignore paths that are open */ }`。
+//!
+//! 我们每轮同步开一个会话就关 ⇒ 拿 `remote_info()` 判在线，会在对端断网后
+//! 一直报「在线」直到进程重启。
+//!
+//! # 对的 API：`Connection::paths()`（已源码核实，别凭印象改）
 //!
 //! ```text
-//! endpoint.remote_info(id).await        -> Option<RemoteInfo>
-//! RemoteInfo::addrs()                   -> Iterator<&TransportAddrInfo>
-//! TransportAddrInfo::addr()             -> &TransportAddr        // is_relay() / is_ip()
-//! TransportAddrInfo::usage()            -> TransportAddrUsage    // Active | Inactive
+//! conn.paths()            -> PathList        // 文档原话：不含已关闭的路径
+//! PathList::iter()        -> Iterator<Path>
+//! Path::remote_addr()     -> &TransportAddr
+//! Path::is_selected()     -> bool           // 当前被选中用于传输应用数据
 //! ```
 //!
-//! ❗ 旧版 iroh 那个 `conn_type()` / `ConnectionType` 在 1.1.0 里**不存在**。
+//! 它是**按连接**的（每次会话新建一份），所以没有上面那种粘滞；
+//! 而 `is_selected()` 直接就是「数据走哪条」，不用再拿「最好的那条」去推。
 //!
-//! ❗ `Connection::path_events()` 看着更好（事件驱动，不用轮询），但它在
-//!   **Connection** 上，而我们每轮同步开一个会话就关 ⇒ 它只覆盖单次会话，
-//!   回答不了「此刻在不在线」。端点级的 `remote_info` 才是对的工具。
+//! ❗ 旧版 iroh 那个 `conn_type()` / `ConnectionType` 在 1.1.0 里**不存在**。
 
 use iroh::TransportAddr;
 
-/// 此刻与对端之间最好的一条活跃路径。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 这一次会话里数据实际走的那条路。
+///
+/// ❗ `Default` 是为了给 `SessionReport` 的 `#[derive(Default)]` 充数，
+///   充的是 `None`——“没测到”而不是随便猜一档。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PathKind {
-    /// 局域网直连（活跃的 IP 路径，且是私网地址）。
+    /// 局域网直连（IP 路径，且是私网地址）。
     Lan,
-    /// 公网直连（活跃的 IP 路径，打洞成功）。
+    /// 公网直连（IP 路径，打洞成功）。
     Direct,
-    /// 绕中继（只有活跃的 relay 路径）。
+    /// 绕中继。
     Relay,
-    /// 一条活跃路径都没有。
+    /// 一条开放路径都没有。
+    #[default]
     None,
 }
 
@@ -85,45 +107,77 @@ fn is_lan_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-/// 从 iroh 的地址表推出 [`PathKind`]。
+/// 把一条连接的开放路径表折成 [`PathKind`]。
 ///
-/// ❗ 故意**不收** iroh 的 `TransportAddrInfo`：它的字段是 `pub(super)`、
-///   外面构造不出来，收它就没法单测。调用方把它拆成
-///   `(是否活跃, 地址)` 传进来。
+/// 入参是 `(是否被选中, 路径的远端地址)`——即 `Connection::paths()` 里每条的
+/// `(is_selected(), remote_addr())`。**每条都是开放的**（那个 API 不返回已关闭的），
+/// 所以 `false` 只表示「不是当前在传数据的那条」，不表示不可用。
 ///
-/// 优先级：局域网直连 > 公网直连 > 中继。iroh 会并行探测多条路径，
-/// 同时有多条活跃时报**最好的那条**——那才是数据实际会走的。
+/// ❗ 故意**不收** iroh 的 `Path`：`remote_addr()` 的生命周期绑在 `&self` 上
+///   （不是 `'a`），跨不出闭包；`Path` 也构造不出来，收它就没法单测。
+///   转换在 [`of_conn`] 里做。
 ///
-/// 🔴 `Inactive` 的一律不算。iroh 的 remote map 会留着历史地址（文档原话：
-/// “may include outdated or unusable addresses”），拿它们当在线就又回到
-/// 「靠陈旧痕迹推断」了。
-pub fn path_kind_of<'a>(addrs: impl Iterator<Item = (bool, &'a TransportAddr)>) -> PathKind {
-    let mut best = PathKind::None;
-    for (active, addr) in addrs {
-        if !active {
-            continue;
+/// 🔴 被选中的那条**优先**，哪怕另有一条「更好」的没被选中。
+/// 这与最初的写法相反，而那个反过来是错的：局域网地址还开着、数据却在走中继时，
+/// 「报最好的那条」会写出「局域网」，正好把这个判据要暴露的问题掩掉。
+///
+/// 没有任何一条被选中时（快照可能正落在路径迁移中间）才退回「开放路径里最好的」，
+/// 优先级 局域网直连 > 公网直连 > 中继。
+pub fn path_kind_of<'a>(paths: impl Iterator<Item = (bool, &'a TransportAddr)>) -> PathKind {
+    let mut selected = PathKind::None;
+    let mut any = PathKind::None;
+    for (is_selected, addr) in paths {
+        let k = kind_of_addr(addr);
+        if is_selected && rank(k) > rank(selected) {
+            selected = k;
         }
-        let k = match addr {
-            TransportAddr::Ip(sa) if is_lan_ip(sa.ip()) => PathKind::Lan,
-            TransportAddr::Ip(_) => PathKind::Direct,
-            TransportAddr::Relay(_) => PathKind::Relay,
-            // `TransportAddr` 是 `#[non_exhaustive]` 的（还有 `Custom`）。
-            // 不认识的路径类型当中继算：它至少证明**通**，
-            // 而把它报成直连会让用户以为速度应该很快。
-            _ => PathKind::Relay,
-        };
-        // 优先级比较：Lan(3) > Direct(2) > Relay(1) > None(0)
-        let rank = |p: PathKind| match p {
-            PathKind::Lan => 3,
-            PathKind::Direct => 2,
-            PathKind::Relay => 1,
-            PathKind::None => 0,
-        };
-        if rank(k) > rank(best) {
-            best = k;
+        if rank(k) > rank(any) {
+            any = k;
         }
     }
-    best
+    if selected != PathKind::None {
+        selected
+    } else {
+        any
+    }
+}
+
+/// 单条地址属于哪一档。
+fn kind_of_addr(addr: &TransportAddr) -> PathKind {
+    match addr {
+        TransportAddr::Ip(sa) if is_lan_ip(sa.ip()) => PathKind::Lan,
+        TransportAddr::Ip(_) => PathKind::Direct,
+        TransportAddr::Relay(_) => PathKind::Relay,
+        // `TransportAddr` 是 `#[non_exhaustive]` 的（还有 `Custom`）。
+        // 不认识的路径类型当中继算：它至少证明**通**，
+        // 而把它报成直连会让用户以为速度应该很快。
+        _ => PathKind::Relay,
+    }
+}
+
+/// 优先级：Lan(3) > Direct(2) > Relay(1) > None(0)
+fn rank(p: PathKind) -> u8 {
+    match p {
+        PathKind::Lan => 3,
+        PathKind::Direct => 2,
+        PathKind::Relay => 1,
+        PathKind::None => 0,
+    }
+}
+
+/// 从一条**活着的**连接上读它此刻在走哪条路。
+///
+/// ❗ 得在会话还没掉的时候读。会话关掉之后 `paths()` 仍能返回最后那份快照
+///   （`PathStateReceiver::get` 无视 `closed` 直接克隆），所以在 `run` 收尾处
+///   读是安全的；而那份快照只属于这一次会话，不会串到下一次。
+pub fn of_conn(conn: &iroh::endpoint::Connection) -> PathKind {
+    let list = conn.paths();
+    // 先克隆成 owned：`Path::remote_addr()` 的返回借着 `Path` 自身，出不了闭包。
+    let owned: Vec<(bool, TransportAddr)> = list
+        .iter()
+        .map(|p| (p.is_selected(), p.remote_addr().clone()))
+        .collect();
+    path_kind_of(owned.iter().map(|(sel, addr)| (*sel, addr)))
 }
 
 #[cfg(test)]
@@ -140,16 +194,8 @@ mod tests {
     }
 
     #[test]
-    fn test_一条活跃路径都没有就是离线() {
+    fn test_没有开放路径就是离线() {
         assert_eq!(path_kind_of(std::iter::empty()), PathKind::None);
-        // 🔴 只有 Inactive 也是离线——iroh 的 remote map 会留历史地址，
-        //    不排除的话就又回到靠陈旧痕迹推断了。
-        let addrs = [ip("192.168.1.9:7842"), relay()];
-        assert_eq!(
-            path_kind_of(addrs.iter().map(|a| (false, a))),
-            PathKind::None,
-            "Inactive 的地址不能算成在线"
-        );
     }
 
     #[test]
@@ -180,31 +226,42 @@ mod tests {
     }
 
     #[test]
-    fn test_多条活跃时报最好的那条() {
-        // iroh 会并行探测；数据实际走最好的那条，报最差的会让用户
-        // 去查一个不存在的网络问题。
+    fn test_被选中的那条优先哪怕另有更好的没被选中() {
+        // 🔴 这与最初的写法相反，而那个反过来是错的：局域网地址还开着、
+        //    数据却在走中继时，「报最好的那条」会写出「局域网」，
+        //    正好把这个判据要暴露的问题掩掉。
         let r = relay();
         let lan = ip("192.168.1.9:7842");
         let wan = ip("5.223.65.62:7842");
 
-        let all = [(true, &r), (true, &wan), (true, &lan)];
-        assert_eq!(path_kind_of(all.iter().copied()), PathKind::Lan);
+        let relay_selected = [(true, &r), (false, &wan), (false, &lan)];
+        assert_eq!(
+            path_kind_of(relay_selected.iter().copied()),
+            PathKind::Relay,
+            "数据在走中继，就不能因为局域网路径还开着而报「局域网」"
+        );
 
-        let no_lan = [(true, &r), (true, &wan)];
-        assert_eq!(path_kind_of(no_lan.iter().copied()), PathKind::Direct);
+        let lan_selected = [(false, &r), (false, &wan), (true, &lan)];
+        assert_eq!(path_kind_of(lan_selected.iter().copied()), PathKind::Lan);
 
-        let only_relay = [(true, &r)];
-        assert_eq!(path_kind_of(only_relay.iter().copied()), PathKind::Relay);
+        let direct_selected = [(false, &r), (true, &wan), (false, &lan)];
+        assert_eq!(
+            path_kind_of(direct_selected.iter().copied()),
+            PathKind::Direct
+        );
     }
 
     #[test]
-    fn test_活跃的中继比不活跃的局域网强() {
-        // 🔴 优先级比的是**活跃的**那几条。一条早已失效的局域网地址
-        //    不能把正在用的中继盖掉——那正是“靠陈旧痕迹推断”的重蹈。
-        let lan = ip("192.168.1.9:7842");
+    fn test_一条都没被选中时退回最好的开放路径() {
+        // 快照可能正落在路径迁移中间。这时每条都是开放的
+        // （`Connection::paths()` 不返回已关闭的），报最好的那条比报「离线」有用。
         let r = relay();
-        let mixed = [(false, &lan), (true, &r)];
-        assert_eq!(path_kind_of(mixed.iter().copied()), PathKind::Relay);
+        let lan = ip("192.168.1.9:7842");
+        let none_selected = [(false, &r), (false, &lan)];
+        assert_eq!(path_kind_of(none_selected.iter().copied()), PathKind::Lan);
+
+        let only_relay = [(false, &r)];
+        assert_eq!(path_kind_of(only_relay.iter().copied()), PathKind::Relay);
     }
 
     #[test]

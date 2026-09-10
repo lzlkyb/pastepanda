@@ -112,6 +112,12 @@ pub struct SessionReport {
     /// 那个「每轮重发、永不收敛」的状态从外面看不出来。
     pub diverged_buckets: usize,
     pub applied: ApplyReport,
+    /// 这一轮数据实际走的哪条路（局域网直连 / 公网直连 / 绕中继）。
+    ///
+    /// 🔴 只能在连接还活着时测，所以由这里带出去，而不是让上层拿到报告后
+    /// 自己去问端点：那时会话已经关了，而端点级的 `remote_info()` 有残留问题
+    /// （详见 [`super::path_kind`] 模块头）。
+    pub path: super::path_kind::PathKind,
 }
 
 /// 主动发起一次会话。`to` 从 [`super::presence`] 或邀请码里的地址来。
@@ -306,6 +312,12 @@ async fn run(
         }
     };
 
+    // ❗ 在这儿读、而不是在函数末尾：这一刻数据刚传完，`is_selected()` 就是
+    //   「这一轮笔记实际走的那条路」。挪到 `apply_delta` 之后也读得到（快照在
+    //   连接关闭后仍保留），但那已经隔了一整次落盘，没必要让一个事实
+    //   去依赖“那张表不会被清”这个实现细节。
+    let path = super::path_kind::of_conn(&w.conn);
+
     let applied = apply_delta(store, &inbox, since);
     let _ = std::fs::remove_dir_all(&inbox);
     let mut applied = applied?;
@@ -351,6 +363,7 @@ async fn run(
         assets_skipped: x.assets_skipped,
         diverged_buckets: diverged.len(),
         applied,
+        path,
     })
 }
 

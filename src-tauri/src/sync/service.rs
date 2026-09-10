@@ -633,7 +633,7 @@ async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
         Ok(r) => {
             let _ = ctx
                 .store
-                .device_mark_online(peer, transport_of(ctx, peer), now_ms());
+                .device_mark_online(peer, mark_path(peer, r.path), now_ms());
             log::info!(
                 "[Sync] 与 {} 同步完成：收 {} 篇 / 更新 {} 篇 / 删 {} 篇 / 冲突 {} 处 / {} 字节",
                 &peer[..8.min(peer.len())],
@@ -655,21 +655,31 @@ async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
     }
 }
 
-/// 这一次握手算走的哪条路：组播里有它的新鲜地址就是 `lan`，否则 `wan`。
+/// 把这一轮实测的路径折成存库的字符串，顺带把「测不出来」喊出来。
 ///
-/// ❗ 拨出与接入两条路径共用同一个判据（规则 #11）。接入那边原来写死成 `lan`，
-/// 于是对端从外网打洞进来时徽章会说「局域网」。
+/// # 🔴 它替掉的是什么
 ///
-/// 🔴 它的结果与 `presence.live()` 是**同一份事实的两个投影**：
-/// `wan` 等价于「不在 `live` 里」。所以前端**绝不能**拿 `live` 当在线判据
-/// 而又去渲染「外网」标签——那两个条件互斥，标签永远不会出现，
-/// 而 WAN 对端会一律显示离线。完整说明在 `src/lib/kbOnline.ts`。
-fn transport_of(ctx: &SyncCtx, peer: &str) -> &'static str {
-    if ctx.presence.addrs_of(peer, now_ms()).is_empty() {
-        "wan"
-    } else {
-        "lan"
+/// 原来这儿是 `transport_of()`：拿「presence 里有没有它的地址」当传输方式，
+/// 空就写 `wan`、非空就写 `lan`。那等于说 `wan` 与「组播听得见」是
+/// **同一份事实的两个投影**、在构造上互斥——于是前端一边拿 `live` 判在线、
+/// 一边想渲染「外网」标签时，那个标签是个到不了的死分支，
+/// WAN 对端一律显示离线（2026-09-07 实测复现）。
+///
+/// 现在的值来自 `SessionReport::path`，是会话还活着时从
+/// `Connection::paths()` 实测的，与 presence 再无关系。
+///
+/// ❗ 拨出与接入两条路径仍然共用这一个口子（规则 #11）。
+///
+/// ❗ 会话成功了却一条开放路径都没测到，说明我们对 iroh 的理解有偏差，
+///   不能静默（规则 #15.3）。写空串而不是编一档：前端对空串有兜底。
+fn mark_path(peer: &str, path: super::path_kind::PathKind) -> &'static str {
+    if path == super::path_kind::PathKind::None {
+        log::warn!(
+            "[Sync] 与 {} 同步成功，却没测到任何开放路径——传输方式这次留空",
+            &peer[..8.min(peer.len())]
+        );
     }
+    path.as_str()
 }
 
 /// 对端明确回了「还没配对」。
@@ -783,7 +793,7 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
             //   或过中继过来的，那时徽章会说「局域网」而它根本不在本局域网。
             let _ = ctx
                 .store
-                .device_mark_online(&peer, transport_of(&ctx, &peer), now_ms());
+                .device_mark_online(&peer, mark_path(&peer, r.path), now_ms());
             log::info!(
                 "[Sync] {} 发起的同步完成：收 {} 篇 / 更新 {} 篇 / 冲突 {} 处",
                 short,

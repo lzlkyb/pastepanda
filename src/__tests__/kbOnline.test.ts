@@ -62,10 +62,25 @@ describe("知识库设备在线判据", () => {
     expect(isKbDeviceOnline(d, [], NOW)).toBe(true);
   });
 
-  // 组播是此刻的事实，transport 记的是上一次——刚从外网切回局域网时以新的为准。
-  it("transport 还写着 wan 但组播已经听得见 → 标「局域网」", () => {
+  // 🔴 这条与改之前相反，是刻意的。改之前 transport 是猜的，所以宁可信组播；
+  //    现在它是「上一次同步成功时数据实际走的那条路」，而组播只证明同子网可见。
+  //    组播听得见、数据却在绕中继（AP 隔离挡了打洞但没挡组播）正是这个标签要
+  //    暴露的事，让组播优先就会把它掩成「局域网」。
+  it("组播听得见但实测走的是中继 → 标「绕中继」，不能掩成「局域网」", () => {
+    const d = dev({ conn_state: "online", transport: "relay", last_seen: NOW - 1_000 });
+    expect(kbOnlineLabel(d, [d.node_id], NOW)).toBe("绕中继");
+  });
+
+  it("打洞成功的公网直连单独一档，不与中继混成「外网」", () => {
+    const d = dev({ conn_state: "online", transport: "direct", last_seen: NOW - 1_000 });
+    expect(kbOnlineLabel(d, [], NOW)).toBe("公网直连");
+  });
+
+  // 🔴 旧值必须继续认。改判据之前落库的行就是 lan/wan，不认就会掉进
+  //    「在线」那条兜底，界面上凭空多出一个没人写过的标签。
+  it("旧值 wan 仍然标「外网」", () => {
     const d = dev({ conn_state: "online", transport: "wan", last_seen: NOW - 1_000 });
-    expect(kbOnlineLabel(d, [d.node_id], NOW)).toBe("局域网");
+    expect(kbOnlineLabel(d, [], NOW)).toBe("外网");
   });
 
   it("计数：组播一台 + WAN 一台 + 离线一台 = 2", () => {
@@ -75,11 +90,19 @@ describe("知识库设备在线判据", () => {
     expect(countKbOnline([lan, wan, off], [lan.node_id], NOW)).toBe(2);
   });
 
-  it("在线但听不到组播 = 有设备在走中继", () => {
+  // 🔴 判据从「在线但听不到组播」换成实测的 transport === "relay"。
+  //    旧判据把打洞成功的公网直连也算成中继，异地两台直连得很好时也会报警。
+  it("中继告警只看实测的 relay，不看组播", () => {
+    const relay = dev({ conn_state: "online", transport: "relay", last_seen: NOW - 5_000 });
+    expect(hasKbRelayPeer([relay], [], NOW)).toBe(true);
+    // 🔴 组播听得见也照样算：那正是「同一局域网却在绕中继」这个要暴露的情形。
+    expect(hasKbRelayPeer([relay], [relay.node_id], NOW)).toBe(true);
+
+    const direct = dev({ conn_state: "online", transport: "direct", last_seen: NOW - 5_000 });
+    expect(hasKbRelayPeer([direct], [], NOW)).toBe(false);
+    // ❗ 旧值 wan 分不出直连与中继，宁可漏报也不误报。
     const wan = dev({ conn_state: "online", transport: "wan", last_seen: NOW - 5_000 });
-    expect(hasKbRelayPeer([wan], [], NOW)).toBe(true);
-    // 组播听得见就不算；全部离线也不算（那是另一回事）。
-    expect(hasKbRelayPeer([wan], [wan.node_id], NOW)).toBe(false);
+    expect(hasKbRelayPeer([wan], [], NOW)).toBe(false);
     expect(hasKbRelayPeer([dev()], [], NOW)).toBe(false);
   });
 });
