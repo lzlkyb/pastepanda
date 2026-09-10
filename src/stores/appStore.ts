@@ -323,7 +323,7 @@ interface AppState {
   /** 表格拆分（方案 A/B）：命中表格则按行拆分逐条入栈并返回拆分统计；未命中/非文本/非栈模式则降级为普通 stackPush 并返回 null */
   stackPushOrSplit: (item: HistoryItem) => { splitCount: number; totalRows: number } | null;
   /** 撤销最近一次表格拆分：移除还在队列中的拆分行，还原为一条原始整表文本（已粘贴的行不受影响） */
-  stackUndoSplit: () => void;
+  stackUndoSplit: () => boolean;
   /** 合并粘贴成功后调用：把参与合并的那几条从未粘贴队列中移除并标记为已粘贴，避免后续逐条/全部粘贴时重复粘贴同一批内容 */
   stackConsumeMerged: (ids: string[]) => void;
   exitStackMode: () => void;
@@ -350,6 +350,23 @@ interface AppState {
  *   （一次可能涌进数十条），两边各自看不见对方。收成常量，且提示文案里也用它。
  */
 export const STACK_MAX_ITEMS = 50;
+
+/**
+ * 队列里被「消费掉」（已粘贴）的那些 id 若沾了最近一次拆分，就不能再撤销拆分了。
+ *
+ * 🔴 收口成函数是因为漏过一次：`stackMarkPasted` 有这个防护，
+ * `stackConsumeMerged`（合并粘贴）没有。实测拆成 3 条后合并粘贴前两条，
+ * 再点「撤销拆分」会把**整张原表**塞回队列——已经贴出去的那两行会被再贴一次。
+ *
+ * ❗ 新增任何「把条目标记为已粘贴并移出队列」的路径时，记得也走这里（规则 #11.1）。
+ */
+function splitAfterPasted(
+  last: { originalText: string; itemIds: string[] } | null,
+  pastedIds: string[],
+): { originalText: string; itemIds: string[] } | null {
+  if (!last) return null;
+  return pastedIds.some((id) => last.itemIds.includes(id)) ? null : last;
+}
 
 export const DEFAULT_CONFIG: AppConfig = {
   hotkey: "ctrl+alt+v",
@@ -797,12 +814,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       done.add(pasted.id);
       // 若这一条属于最近一次表格拆分，说明部分内容已经贴出去了——此时如果还允许「撤销拆分」，会把整张原表重新塞回队列，
       // 导致已经贴过的部分被重复粘贴一次，所以要把可撤销记录一并清掉
-      const stillUndoable = s.stackLastSplit && !s.stackLastSplit.itemIds.includes(pasted.id);
       return {
         stackItems: rest,
         stackDoneIds: done,
         stackPasted: s.stackPasted + 1,
-        stackLastSplit: stillUndoable ? s.stackLastSplit : null,
+        stackLastSplit: splitAfterPasted(s.stackLastSplit, [pasted.id]),
       };
     }),
   // 拖拽重排：直接复用 quickOrder.ts 的 reorderAction（id 数组换位纯函数），不再另写一份
@@ -830,6 +846,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   stackLoadTemplate: (items) =>
     set((s) => {
       const now = new Date().toISOString();
+      // ❗ 载入模板是**替换**语义（StackTemplateDialog 会先弹确认框告知
+      //   「将替换当前 N 条未粘贴内容」），所以这里不要改成追加。
+      //   但旧的拆分记录必须清：队列已经换了一批，那条记录再也撒不回任何东西，
+      //   留着只会让「撤销拆分」按钮亮着、点了报成功却什么都没做。
       const loaded: HistoryItem[] = items.map((it) => ({
         id: crypto.randomUUID(),
         text: it.text,
@@ -842,8 +862,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return {
         stackMode: true,
-        stackItems: loaded,
+        // ❗ 防御性上限：后端 `stack_template_save` 已经卡了 50 条，此处取不到
+        //   东西；但这个 action 是公开的，别让它成为唯一不守上限的入口。
+        stackItems: loaded.slice(0, STACK_MAX_ITEMS),
         stackCollected: s.stackCollected + loaded.length,
+        stackLastSplit: null,
       };
     }),
   // 表格拆分：检测只对文本/图文类型做，命中则逐行拆分入栈（不登记进 history，避免连带触发只该由真实剪贴板事件产生的副作用）；
@@ -896,25 +919,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().stackPush(item);
     return null;
   },
-  stackUndoSplit: () =>
-    set((s) => {
-      const last = s.stackLastSplit;
-      if (!last) return s;
-      const idSet = new Set(last.itemIds);
-      const remaining = s.stackItems.filter((i) => !idSet.has(i.id));
-      if (remaining.length === s.stackItems.length) return { stackLastSplit: null };
-      const restored: HistoryItem = {
-        id: crypto.randomUUID(),
-        text: last.originalText,
-        time: new Date().toISOString(),
-        type: "text",
-        content: "",
-        pinned: false,
-        source: "clipboard",
-        workspace: s.config.current_workspace,
-      };
-      return { stackItems: [restored, ...remaining], stackLastSplit: null };
-    }),
+  stackUndoSplit: () => {
+    const s = get();
+    const last = s.stackLastSplit;
+    if (!last) return false;
+    const idSet = new Set(last.itemIds);
+    const remaining = s.stackItems.filter((i) => !idSet.has(i.id));
+    if (remaining.length === s.stackItems.length) {
+      // 拆分行已经全不在队列里了（贴完了 / 删了 / 载入模板换了一批）。
+      // 🔴 这时必须报 false。以前这里静默清掉记录就返回，而调用方无条件弹
+      //    「已撤销拆分」——用户看到成功提示但什么都没发生。
+      set({ stackLastSplit: null });
+      return false;
+    }
+    const restored: HistoryItem = {
+      id: crypto.randomUUID(),
+      text: last.originalText,
+      time: new Date().toISOString(),
+      type: "text",
+      content: "",
+      pinned: false,
+      source: "clipboard",
+      workspace: s.config.current_workspace,
+    };
+    set({ stackItems: [restored, ...remaining], stackLastSplit: null });
+    return true;
+  },
   stackConsumeMerged: (ids) =>
     set((s) => {
       const idSet = new Set(ids);
@@ -923,7 +953,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       const remaining = s.stackItems.filter((i) => !idSet.has(i.id));
       const done = new Set(s.stackDoneIds);
       consumed.forEach((i) => done.add(i.id));
-      return { stackItems: remaining, stackDoneIds: done, stackPasted: s.stackPasted + consumed.length };
+      return {
+        stackItems: remaining,
+        stackDoneIds: done,
+        stackPasted: s.stackPasted + consumed.length,
+        // 🔴 这一行以前没有：合并粘贴几条拆分行之后点「撤销拆分」，
+        //    会把整张原表塞回队列，已贴过的行被再贴一次。
+        stackLastSplit: splitAfterPasted(s.stackLastSplit, ids),
+      };
     }),
   exitStackMode: () =>
     set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackPasteAllActive: false, stackLastSplit: null }),

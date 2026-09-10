@@ -153,60 +153,144 @@ function parseSingleColumn(text: string): string[] | null {
   return lines;
 }
 
+/**
+ * 存放被保护的换行的哨兵字符。选 NUL：剪贴板文本里几乎不可能出现，
+ * 而一旦真出现了就整段放弃处理（见 [`protectQuotedNewlines`]）。
+ */
+const NL_SENTINEL = "\u0000";
+
+/**
+ * Excel 把「单元格内含换行」的格子用引号包起来，换行原样留在里面：
+ *
+ * ```text
+ * 单号\t备注
+ * D-001\t"第一行
+ * 第二行"
+ * D-002\tok
+ * ```
+ *
+ * 按行切会把一个格子劈成两条、引号还留着（实测拆出 3 条，第一条是
+ * `D-001\t"第一行`）——数据被静默破坏。这里把**引号内**的换行换成哨兵
+ * 字符再交给 `parseTable`，出结果后由 [`unprotectCell`] 换回来。
+ *
+ * ❗ 三道阀门，宁可不处理也不能把用户内容改坏：
+ *   ① 没引号直接走原路；② 哨兵字符本来就出现过就放弃；
+ *   ③ 引号不成对（扫完还在引号里）说明这不是 Excel 那套转义，也放弃。
+ */
+function protectQuotedNewlines(text: string): string | null {
+  if (!text.includes('"')) return null;
+  if (text.includes(NL_SENTINEL)) return null;
+  let out = "";
+  let inQuote = false;
+  let hit = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      inQuote = !inQuote;
+      out += c;
+      continue;
+    }
+    if (inQuote && (c === "\n" || c === "\r")) {
+      if (c === "\r" && text[i + 1] === "\n") i++; // CRLF 折成一个哨兵
+      out += NL_SENTINEL;
+      hit = true;
+      continue;
+    }
+    out += c;
+  }
+  if (inQuote) return null;
+  if (!hit) return null; // 有引号但里面没换行，没必要动
+  return out;
+}
+
+/** 还原被保护的换行，并按 TSV 约定去掉包裹引号（`""` 还原成 `"`）。 */
+function unprotectCell(cell: string): string {
+  let v = cell;
+  if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+    v = v.slice(1, -1).replace(/""/g, '"');
+  }
+  return v.split(NL_SENTINEL).join("\n");
+}
+
+/**
+ * 看着像表格，但 [`splitTableToRows`] 没拆成。
+ *
+ * 🔴 给用户一句解释用的。以前拆不成就静默整条入栈，提示只说「入栈 1 条」，
+ * 用户看不出是「它认出是表格但没拆开」还是「它压根没试」（规则 #15.3）。
+ */
+export function looksLikeTableButUnsplit(text: string): boolean {
+  const lines = contentLines(text);
+  if (lines.length < 2) return false;
+  if (hasBorderLine(text)) return true;
+  const withTab = lines.filter((l) => l.includes("\t")).length;
+  return withTab * 2 >= lines.length;
+}
+
 export function splitTableToRows(text: string, opts?: SplitTableOptions): SplitTableResult | null {
-  const single = (rows: string[]): SplitTableResult => ({
-    rows: rows.slice(0, MAX_TABLE_SPLIT_ROWS),
-    totalRows: rows.length,
-  });
+  // ⓪ Excel 的「单元格内含换行」用引号包着，先把引号内的换行藏起来，
+  //   否则按行切会把一个格子劈成两条。出结果时再还原。
+  const guarded = protectQuotedNewlines(text);
+  const work = guarded ?? text;
+  const unwrap = guarded === null ? (c: string) => c : unprotectCell;
+
+  const single = (rows: string[]): SplitTableResult => {
+    const mapped = rows.map(unwrap);
+    return {
+      rows: mapped.slice(0, MAX_TABLE_SPLIT_ROWS),
+      totalRows: mapped.length,
+    };
+  };
 
   // ① 先判「其实是一列」：每行尾部挂的那个 Tab 不能把首行变成表头。
-  const asSingle = stripTrailingEmptyCells(text);
+  const asSingle = stripTrailingEmptyCells(work);
   if (asSingle !== null) {
     const col = parseSingleColumn(asSingle);
     if (col) return single(col);
   }
 
-  let table = parseTable(text);
+  let table = parseTable(work);
 
   // ② 边框表格：解析不成时剔掉分隔线再试 Tab 分支；仍不成就到此为止。
   //   🔴 绝不能掉进下面的单列兜底：实测一张某值含 `|` 的边框表会被当成
   //   单列列表，把 `+----+------+` 这种分隔线也逐行入栈，产出 6 条垃圾。
-  if (!table && hasBorderLine(text)) {
-    const noBorder = dropBorderLines(text);
+  if (!table && hasBorderLine(work)) {
+    const noBorder = dropBorderLines(work);
     table = noBorder ? parseTable(noBorder) : null;
     if (!table) return null;
   }
 
   // ③ 首行是合并标题行
   if (!table) {
-    const trimmed = dropTitlePrefix(text);
+    const trimmed = dropTitlePrefix(work);
     if (trimmed) table = parseTable(trimmed);
   }
 
   // ④ 数据行单元格不够
   if (!table) {
-    const padded = padShortRows(text);
+    const padded = padShortRows(work);
     if (padded) table = parseTable(padded);
   }
 
   if (table) {
+    const t = table;
     const format = opts?.format ?? "raw";
     const includeHeader = opts?.includeHeader ?? false;
+    const cols = t.columns.map(unwrap);
 
     const formatDataRow = (cells: string[]): string =>
       format === "field-value"
-        ? table.columns.map((col, i) => `${col}: ${cells[i] ?? ""}`).join("; ")
-        : cells.join("\t");
+        ? cols.map((col, i) => `${col}: ${unwrap(cells[i] ?? "")}`).join("; ")
+        : cells.map(unwrap).join("\t");
 
-    const dataRows = table.rows.map(formatDataRow);
-    const rows = includeHeader ? [table.columns.join("\t"), ...dataRows] : dataRows;
+    const dataRows = t.rows.map(formatDataRow);
+    const rows = includeHeader ? [cols.join("\t"), ...dataRows] : dataRows;
 
-    return { rows: rows.slice(0, MAX_TABLE_SPLIT_ROWS), totalRows: table.rows.length };
+    return { rows: rows.slice(0, MAX_TABLE_SPLIT_ROWS), totalRows: t.rows.length };
   }
 
   // ⑤ 多列全部试完还不行，最后试单列：竖着复制的一列值没有列名概念，
   //   format/includeHeader 选项对它无意义，直接忽略
-  const singleColumn = parseSingleColumn(text);
+  const singleColumn = parseSingleColumn(work);
   if (singleColumn) return single(singleColumn);
 
   return null;

@@ -2,7 +2,11 @@
  * 表格拆分入栈（方案 A+B）：拆分纯函数测试。
  */
 import { describe, it, expect } from "vitest";
-import { splitTableToRows, MAX_TABLE_SPLIT_ROWS } from "@/lib/tableSplit";
+import {
+  splitTableToRows,
+  MAX_TABLE_SPLIT_ROWS,
+  looksLikeTableButUnsplit,
+} from "@/lib/tableSplit";
 
 describe("splitTableToRows", () => {
   it("Tab 分隔表格：按行拆分，默认排除表头、原始行格式", () => {
@@ -108,7 +112,16 @@ describe("splitTableToRows", () => {
   });
 
   it("边框表格解析不成时返回 null，绝不掉进单列兜底产出边框线", () => {
-    // 🔴 某个值含竖线 → 列数不一致 → 以前会把 "+----+------+" 也当成一行数据入栈
+    // 只有表头没数据行：边框分支拿不到 2 行，剔掉边框线后也只剩 1 行。
+    // 🔴 关键是它**不能**掉进单列兜底——那会把两条 `+----+------+`
+    //    和表头一共 3 条当数据入栈。
+    const text = ["+----+------+", "| id | name |", "+----+------+"].join("\n");
+    expect(splitTableToRows(text)).toBeNull();
+  });
+
+  it("边框表格里某个值含竖线时，改拿边框线定列位仍能拆", () => {
+    // 以前简单按竖线切会多切出一列 → 整张表被否决 → 掉进单列兜底产出边框线。
+    // 现在简单切法失败就改拿 `+----+------+` 的 `+` 位置按字符列切。
     const text = [
       "+----+------+",
       "| id | name |",
@@ -117,7 +130,8 @@ describe("splitTableToRows", () => {
       "|  2 | cd   |",
       "+----+------+",
     ].join("\n");
-    expect(splitTableToRows(text)).toBeNull();
+    const result = splitTableToRows(text);
+    expect(result!.rows).toEqual(["1\ta|b", "2\tcd"]);
   });
 
   it("单列里有一行超长时整批保留，不因一行而全否", () => {
@@ -142,5 +156,45 @@ describe("splitTableToRows", () => {
     // 比例判定守的就是这个下限：一行也不像「一行一个短值」时不能当列表。
     const lines = Array.from({ length: 4 }, (_, i) => `第${i}段：` + "文字".repeat(50));
     expect(splitTableToRows(lines.join("\n"))).toBeNull();
+  });
+
+  it("单元格内含换行（Excel 多行单元格）不被劈成两条，引号也去掉", () => {
+    // 🔴 以前实测拆出 3 条，第一条是 `D-001\t"第一行`——一个格子被劈成两条、
+    //    引号还留着，数据静默破坏。现在引号内的换行先藏起来，出结果再还原。
+    const text = '单号\t备注\nD-001\t"第一行\n第二行"\nD-002\tok';
+    const result = splitTableToRows(text);
+    expect(result!.rows).toEqual(["D-001\t第一行\n第二行", "D-002\tok"]);
+    expect(result!.totalRows).toBe(2);
+  });
+
+  it("单元格里成对的双引号按 TSV 约定还原", () => {
+    const text = '单号\t备注\nD-001\t"他说""你好""\n第二行"\nD-002\tok';
+    const result = splitTableToRows(text);
+    expect(result!.rows[0]).toBe('D-001\t他说"你好"\n第二行');
+  });
+
+  it("引号不成对时不动原文（那就不是 Excel 那套转义）", () => {
+    // 宁可不处理，也不能拿一个孤零零的引号当依据去改用户内容。
+    const text = '单号\t备注\nD-001\t他说"你好\nD-002\tok';
+    const result = splitTableToRows(text);
+    expect(result!.rows).toEqual(['D-001\t他说"你好', "D-002\tok"]);
+  });
+});
+
+describe("looksLikeTableButUnsplit", () => {
+  it("多数行含 Tab → 算「像表格」", () => {
+    expect(looksLikeTableButUnsplit("a\tb\nc\td")).toBe(true);
+  });
+
+  it("有边框线 → 算「像表格」", () => {
+    expect(looksLikeTableButUnsplit("+----+\n| a |")).toBe(true);
+  });
+
+  it("普通多行文字 → 不算（否则每次复制都被念一遍）", () => {
+    expect(looksLikeTableButUnsplit("第一行\n第二行\n第三行")).toBe(false);
+  });
+
+  it("单行 → 不算", () => {
+    expect(looksLikeTableButUnsplit("a\tb")).toBe(false);
   });
 });

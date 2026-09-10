@@ -20,7 +20,20 @@ interface TableData {
 const BORDER_RE = /^\+[-+]+\+$/;
 const PIPE_RE = /^\|(.+)\|$/;
 
-/** 解析 MySQL 边框格式 */
+/**
+ * 解析 MySQL 边框格式。
+ *
+ * # 🔴 为何有两套切法
+ *
+ * 先按 `|` 简单切（原来的做法，保持原样）；只在它因列数不一致而失败时，
+ * 才改用 `+----+------+` 那行的 `+` 位置按字符列切。
+ *
+ * 因为**单元格里本身包含竖线**时（比如值是 `a|b`），简单切法会多切出一列，
+ * 于是整张表被否决。而 MySQL 的输出是定宽对齐的，边框线就是权威的列分隔位置。
+ *
+ * ❗ 顺序不能反：位置切法依赖对齐，而手工拼的 / 被编辑过的边框表可能对不齐，
+ *   那种情况下简单切法反而是对的。先简单后位置 = 既不改现有行为，又能多救一类。
+ */
 function parseBordered(lines: string[]): TableData | null {
   const dataLines = lines.filter((l) => PIPE_RE.test(l.trim()));
   if (dataLines.length < 2) return null; // 至少表头 + 1 行数据
@@ -30,10 +43,34 @@ function parseBordered(lines: string[]): TableData | null {
 
   const columns = parseRow(dataLines[0]);
   const rows = dataLines.slice(1).map(parseRow);
+  if (rows.every((r) => r.length === columns.length)) {
+    return { columns, rows };
+  }
 
-  // 列数一致性检查
-  if (rows.some((r) => r.length !== columns.length)) return null;
-  return { columns, rows };
+  // 简单切法列数对不上（多半是某个值里带了竖线）→ 改拿边框线定列位
+  const border = lines.map((l) => l.trim()).find((l) => BORDER_RE.test(l));
+  if (!border) return null;
+  const bounds: number[] = [];
+  for (let i = 0; i < border.length; i++) {
+    if (border[i] === "+") bounds.push(i);
+  }
+  if (bounds.length < 3) return null; // 至少两列才有必要走这条路
+
+  const sliceRow = (l: string): string[] => {
+    const s = l.trim();
+    const cells: string[] = [];
+    for (let k = 0; k + 1 < bounds.length; k++) {
+      cells.push(s.slice(bounds[k] + 1, bounds[k + 1]).trim());
+    }
+    return cells;
+  };
+
+  const cols2 = sliceRow(dataLines[0]);
+  const rows2 = dataLines.slice(1).map(sliceRow);
+  // 对齐得不够好时会切出空列名 / 整行空，那就不是定宽输出，宁可不认
+  if (cols2.some((c) => c === "")) return null;
+  if (rows2.some((r) => r.every((c) => c === ""))) return null;
+  return { columns: cols2, rows: rows2 };
 }
 
 /** 解析 Tab 分隔格式 */

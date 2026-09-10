@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore, HistoryItem, Tag, STACK_MAX_ITEMS } from "@/stores/appStore";
+import { isTableSplitCandidate, looksLikeTableButUnsplit } from "@/lib/tableSplit";
 import { logger } from "@/lib/logger";
 import { invalidateCountsCache } from "./cache";
 import { sequentialPaste, indexPaste } from "./sequential";
@@ -118,7 +119,18 @@ export async function initBackend(): Promise<() => void> {
               : `已按行拆 ${split.splitCount} 条入栈`;
           window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, type: "info" } }));
         } else if (after > before) {
-          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `入栈 ${after} 条`, type: "info" } }));
+          // ❗ 拆不成时以前只说「入栈 N 条」，用户看不出是「认出是表格但没拆开」
+          //   还是「压根没试」（规则 #15.3）。只在真的像表格时才多说一句，
+          //   免得普通复制也被念一遍。
+          const it = event.payload.item;
+          const unsplit =
+            store.config.table_split_enabled &&
+            isTableSplitCandidate(it.type) &&
+            looksLikeTableButUnsplit(it.text || "");
+          const msg = unsplit
+            ? "看着像表格，但没能按行拆开——已整条入栈"
+            : `入栈 ${after} 条`;
+          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "info" } }));
         }
       } else {
         // U23：普通捕获静默记录（卡片出现在顶部即反馈），仅局域网同步这类"外部事件"才提示

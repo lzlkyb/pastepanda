@@ -213,9 +213,16 @@ export const StackBanner = memo(function StackBanner() {
                       disabled={!stackLastSplit}
                       title="把最近一次表格拆分的行合并回一条原始整表文本"
                       onClick={() => {
-                        stackUndoSplit();
+                        // ❗ 只在真的撤销了才报成功。拆分行已经全不在队列里时
+                        //   （贴完了 / 删了 / 载入模板换了一批）这个按钮还是亮的，
+                        //   以前点下去会弹「已撤销」但什么都没发生。
+                        const ok = stackUndoSplit();
                         setShowOverflow(false);
-                        toast("已撤销拆分，还原为一条原文", "success");
+                        if (ok) {
+                          toast("已撤销拆分，还原为一条原文", "success");
+                        } else {
+                          toast("拆分出的行已不在队列里，没有可撤销的内容", "info");
+                        }
                       }}
                     >
                       📐 撤销拆分

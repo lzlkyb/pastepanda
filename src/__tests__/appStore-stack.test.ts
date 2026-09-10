@@ -606,4 +606,47 @@ describe("stackConsumeMerged", () => {
     expect(s.stackLastSplit).toBeNull();
   });
 
+
+  it("合并粘贴掉拆分行之后不能再撤销拆分（否则已贴过的会被再贴一次）", () => {
+    // 🔴 实测：拆成 3 条后合并粘贴前两条，以前 stackLastSplit 还在，
+    //    点「撤销拆分」会把**整张原表**塞回队列 → 已贴的两行被再贴一次。
+    //    `stackMarkPasted` 本来有这个防护，`stackConsumeMerged` 漏了。
+    useAppStore.getState().setStackMode(true);
+    useAppStore
+      .getState()
+      .stackPushOrSplit(makeItem({ id: "raw", text: "列A\t列B\n1\ta\n2\tb\n3\tc" }));
+    const ids = useAppStore.getState().stackItems.map((i) => i.id);
+    useAppStore.getState().stackConsumeMerged([ids[0], ids[1]]);
+    expect(useAppStore.getState().stackLastSplit).toBeNull();
+    expect(useAppStore.getState().stackUndoSplit()).toBe(false);
+    expect(useAppStore.getState().stackItems.map((i) => i.text)).toEqual(["3\tc"]);
+  });
+
+  it("撤销拆分：真撤了返 true，没东西可撤返 false（提示不能撒谎）", () => {
+    useAppStore.getState().setStackMode(true);
+    useAppStore.getState().stackPushOrSplit(makeItem({ id: "raw", text: "列A\t列B\n1\ta\n2\tb" }));
+    expect(useAppStore.getState().stackUndoSplit()).toBe(true);
+    expect(useAppStore.getState().stackUndoSplit()).toBe(false);
+  });
+
+  it("拆分行被删光后撤销返 false，且记录被清掉", () => {
+    // 以前这里静默清记录就返回，而调用方无条件弹「已撤销拆分」——假成功。
+    useAppStore.getState().setStackMode(true);
+    useAppStore.getState().stackPushOrSplit(makeItem({ id: "raw", text: "列A\t列B\n1\ta\n2\tb" }));
+    const ids = useAppStore.getState().stackItems.map((i) => i.id);
+    ids.forEach((id) => useAppStore.getState().stackRemoveItem(id));
+    expect(useAppStore.getState().stackUndoSplit()).toBe(false);
+    expect(useAppStore.getState().stackLastSplit).toBeNull();
+  });
+
+  it("载入模板会清掉旧的拆分记录（否则撤销按钮亮着却什么也不做）", () => {
+    useAppStore.getState().setStackMode(true);
+    useAppStore.getState().stackPushOrSplit(makeItem({ id: "raw", text: "列A\t列B\n1\ta\n2\tb" }));
+    useAppStore
+      .getState()
+      .stackLoadTemplate([{ type: "text", text: "模板1", content: "" }]);
+    expect(useAppStore.getState().stackLastSplit).toBeNull();
+    expect(useAppStore.getState().stackUndoSplit()).toBe(false);
+  });
+
 });
