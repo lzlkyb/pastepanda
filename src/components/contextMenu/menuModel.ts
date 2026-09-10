@@ -13,6 +13,17 @@ export interface MenuItem {
   separator?: boolean;
   /** 类型主操作（置顶高亮显示） */
   primary?: boolean;
+  /**
+   * 置灰且不可点。
+   *
+   * 🔴 必须是**显式字段**，不能拿「没有 `onClick`」当禁用：
+   * 子菜单的父项（带 `children`）本来就没 `onClick`，那样会把它一起置灰。
+   *
+   * ❗ 它真的落到 `<button disabled>` 上，所以点它**菜单不会关**
+   * （普通项点完会 `closeMenu()`）——那才是禁用应有的手感。
+   * 以前靠「不传 `onClick`」装禁用，结果是点下去菜单关掉、什么也没发生。
+   */
+  disabled?: boolean;
   children?: MenuItem[];
 }
 
@@ -22,7 +33,7 @@ export interface MenuItem {
 export function navigableSubIndexes(item?: MenuItem): number[] {
   const out: number[] = [];
   item?.children?.forEach((c, i) => {
-    if (c.onClick) out.push(i);
+    if (c.onClick && !c.disabled) out.push(i);
   });
   return out;
 }
@@ -42,5 +53,7 @@ export function stepSubIndex(list: number[], current: number | null, step: numbe
 
 /** 可被键盘落上的顶层项（分组父项也算——它能展开子菜单） */
 export function flattenNavigable(items: MenuItem[]): MenuItem[] {
-  return items.filter((item) => item.onClick || item.children);
+  // 禁用项不能被键盘落上：它还带着 `onClick`（只是被 `disabled` 挡住），
+  // 不排除的话↓会停在一个按回车没反应的项上。
+  return items.filter((item) => (item.onClick || item.children) && !item.disabled);
 }

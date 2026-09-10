@@ -21,12 +21,30 @@ import styles from "./ContextMenu.module.css";
 export type { MenuItem };
 export { createCardMenuItems } from "./contextMenu/cardMenuItems";
 
+/**
+ * 开菜单。`opts.alignRight` 把 `x` 当成菜单的**右缘**而不是左缘。
+ *
+ * 为何需要它：右键菜单从鼠标处往右下弹（默认），而**从按钮点开的下拉**
+ * 应该跟那个按钮对齐。顶栏右上角那个「⋯」以前传的是按钮左缘，
+ * 靠 `useMenuPosition` 的贴边翻折去“碰巧”：空间够时菜单往右穿到设置/窗口按钮底下，
+ * 空间不够时翻成「菜单右缘贴按钮**左**缘」——两种都与按钮错开。
+ * 显式右对齐后，无论空间够不够都是与按钮右缘对齐（超出视口仍由原有钳制兼顾）。
+ */
+export type CtxMenuTrigger = (
+  x: number,
+  y: number,
+  items: MenuItem[],
+  opts?: { alignRight?: boolean },
+) => void;
+
 // ★ React Context 传递 trigger 函数 + 动态菜单项，Card 直接调用，完全不依赖 DOM 事件冒泡
-export const CtxMenuCtx = createContext<((x: number, y: number, items: MenuItem[]) => void) | null>(null);
+export const CtxMenuCtx = createContext<CtxMenuTrigger | null>(null);
 
 export function ContextMenu({ children }: { children: ReactNode }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [items, setItems] = useState<MenuItem[]>([]);
+  /** 把 `pos.x` 当右缘算（从按钮点开的下拉）。看 [`CtxMenuTrigger`]。 */
+  const [alignRight, setAlignRight] = useState(false);
   /** 菜单项 DOM id 的前缀（aria-activedescendant 需要真实 id 才能指向高亮项） */
   const domIdBase = useId();
 
@@ -48,15 +66,18 @@ export function ContextMenu({ children }: { children: ReactNode }) {
   const { activeIndex, activeSubIndex, setActiveIndex, setActiveSubIndex, resetActive } =
     useMenuKeyboard({ open, flatItems, onClose: closeMenu });
 
-  const { menuRef, submenuRef, adjustedPos } = useMenuPosition({ open, pos, items, activeIndex });
+  const { menuRef, submenuRef, adjustedPos } = useMenuPosition({
+    open, pos, items, activeIndex, alignRight,
+  });
 
   useMenuDismiss({ open, menuRef, onClose: closeMenu });
   useContextMenuHotkey();
 
   // ★ 暴露给 Card 的 trigger 函数 — 通过 Context 传递
-  const trigger = useCallback((x: number, y: number, menuItems: MenuItem[]) => {
+  const trigger = useCallback<CtxMenuTrigger>((x, y, menuItems, opts) => {
     setItems(menuItems);
     setPos({ x, y });
+    setAlignRight(!!opts?.alignRight);
     resetActive();
   }, [resetActive]);
 
@@ -191,6 +212,7 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                                 role="menuitem"
                                 className={`${styles.ctxItem}${activeSubIndex === j ? ` ${styles.keyboardActive}` : ""}${child.danger ? ` ${styles.danger}` : ""}`}
                                 onClick={() => { child.onClick?.(); closeMenu(); }}
+                                disabled={child.disabled}
                                 onMouseEnter={() => setActiveSubIndex(j)}
                               >
                                 <span className={styles.ctxItemIcon}>{child.icon}</span>
@@ -213,6 +235,9 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                     id={itemDomId(flatIdx)}
                     role="menuitem"
                     onClick={() => { item.onClick?.(); closeMenu(); }}
+                    /* 🔴 真的 `disabled`，不是“不传 onClick”：后者仍会跑上面那个
+                       `closeMenu()`，效果是点下去菜单关掉、什么也没发生。 */
+                    disabled={item.disabled}
                     className={`${styles.ctxItem}${item.primary ? ` ${styles.ctxItemPrimary}` : ""}${item.danger ? ` ${styles.danger}` : ""}${isActive ? ` ${styles.keyboardActive}` : ""}`}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
                     onMouseLeave={() => { if (activeSubIndex === null) setActiveIndex(-1); }}

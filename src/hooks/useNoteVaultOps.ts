@@ -11,16 +11,38 @@
  *
  * 🔴 红线：无 AI。导出导入只在本机文件系统与本机 SQLite 之间走。
  */
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
+import { create } from "zustand";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import { noteExportDir, noteImportDir } from "@/lib/api";
 
 export type VaultBusy = "export" | "import" | null;
 
+/**
+ * “正在导入/导出”的**全局**状态。
+ *
+ * 🔴 不能用 `useState`：本 hook 有**两个调用点**（知识库「⋯」溢出菜单与
+ * 设置页「数据管理」那两行），各自一份局部 state 的后果是：
+ * 从菜单开始导入，再去设置页，那两行显示**空闲**——可以再点一次，
+ * 于是两个目录扫描并发跑在同一个库上。那道防重入只在单个入口内成立。
+ */
+interface VaultBusyState {
+  busy: VaultBusy;
+  setBusy: (b: VaultBusy) => void;
+}
+
+const useVaultBusy = create<VaultBusyState>((set) => ({
+  busy: null,
+  setBusy: (busy) => set({ busy }),
+}));
+
 export function useNoteVaultOps(onImported?: () => void) {
   const { toast } = useToast();
-  const [busy, setBusy] = useState<VaultBusy>(null);
+  const busy = useVaultBusy((s) => s.busy);
+  // 从 store 拿而不是从上面那个选择器拿：`setBusy` 是恒定引用，
+  // 进下面两个 `useCallback` 的依赖表不会造成重建。
+  const setBusy = useVaultBusy.getState().setBusy;
 
   const pickDir = useCallback(async (title: string): Promise<string | null> => {
     const { open } = await import("@tauri-apps/plugin-dialog");
@@ -32,8 +54,16 @@ export function useNoteVaultOps(onImported?: () => void) {
     const dir = await pickDir("选一个空目录存放导出的笔记");
     if (!dir) return;
     setBusy("export");
-    const rep = await noteExportDir(dir);
-    setBusy(null);
+    // 🔴 必须 `try/finally`：`busy` 现在是**全局**的。
+    // 以前它是组件局部 state，抛了异常也随组件一起死；
+    // 现在不收尾的话会**永久卡在导出中**，两个入口都再也点不动，
+    // 而用户看到的只是两个永远置灰的菜单项。
+    let rep: Awaited<ReturnType<typeof noteExportDir>>;
+    try {
+      rep = await noteExportDir(dir);
+    } finally {
+      setBusy(null);
+    }
     if (!rep) return; // api 层已弹错（规则 #15.3）
 
     // 删文件是不可逆的，所以**删了就必须说**（规则 #15.3）。
@@ -50,7 +80,7 @@ export function useNoteVaultOps(onImported?: () => void) {
 
     // 报真数字而不是「完成」：导了几篇是用户唯一能拿来校对的东西
     toast(`已导出 ${rep.notes} 篇笔记到 ${rep.folders} 个文件夹`, "success");
-  }, [pickDir, toast]);
+  }, [pickDir, toast, setBusy]);
 
   const importDir = useCallback(async () => {
     const dir = await pickDir("选一个 Markdown 目录（可以是 Obsidian vault）");
@@ -66,8 +96,13 @@ export function useNoteVaultOps(onImported?: () => void) {
     if (!ok) return;
 
     setBusy("import");
-    const rep = await noteImportDir(dir);
-    setBusy(null);
+    // 同 `exportDir`：全局 `busy` 必须收尾。
+    let rep: Awaited<ReturnType<typeof noteImportDir>>;
+    try {
+      rep = await noteImportDir(dir);
+    } finally {
+      setBusy(null);
+    }
     if (!rep) return;
 
     let msg = `新增 ${rep.created} 篇、更新 ${rep.updated} 篇`;
@@ -113,7 +148,7 @@ export function useNoteVaultOps(onImported?: () => void) {
 
     toast(msg, "success");
     onImported?.();
-  }, [pickDir, toast, onImported]);
+  }, [pickDir, toast, onImported, setBusy]);
 
   return { busy, exportDir, importDir };
 }

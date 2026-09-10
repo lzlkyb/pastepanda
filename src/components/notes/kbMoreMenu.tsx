@@ -31,19 +31,26 @@ export function createKbMoreMenuItems({
   onTrash,
   trashCount,
 }: KbMoreMenuOpts): MenuItem[] {
-  // 跑着的时候把 onClick 置空而不是不渲染这两项：菜单项突然消失比不能点更迷惑，
-  // 而 `MenuItem` 没有 `disabled`——没 onClick 的项本来就不可交互（见 navigableSubIndexes）。
+  // 跑着的时候把两项置灰而不是不渲染：菜单项突然消失比不能点更迷惑。
+  //
+  // 🔴 用 `disabled` 字段，不是把 `onClick` 置空。
+  //    这里原来写的是「`MenuItem` 没有 `disabled`——没 onClick 的项本来就不可交互」，
+  //    **那句话是错的**：`ContextMenu` 的处理器是
+  //    `onClick={() => { item.onClick?.(); closeMenu(); }}`，所以没 onClick 的项
+  //    仍然能点、仍然 hover 高亮，点下去的效果是**菜单关掉、什么也没发生**。
   const vaultBusy = busy !== null;
   return [
     {
       icon: <Upload size={14} />,
       label: busy === "import" ? "导入中…" : "从 Markdown 目录导入…",
-      onClick: vaultBusy ? undefined : onImport,
+      onClick: onImport,
+      disabled: vaultBusy,
     },
     {
       icon: <Download size={14} />,
       label: busy === "export" ? "导出中…" : "导出为 Markdown 目录…",
-      onClick: vaultBusy ? undefined : onExport,
+      onClick: onExport,
+      disabled: vaultBusy,
     },
     { icon: null, label: "", separator: true },
     {

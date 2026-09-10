@@ -24,14 +24,20 @@ export function KbTopBarActions({ moreItems }: { moreItems: MenuItem[] }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
 
   /**
-   * 弹溢出菜单。坐标取按钮左下角，菜单从按钮下方展开（同普通下拉的位置感）。
-   * 按钮靠窗口右缘也不用自己算右对齐：`useMenuPosition` 会按实测宽度翻折并钳制到视口内。
+   * 弹溢出菜单：从按钮下方展开、与按钮**右缘对齐**。
+   *
+   * 🔴 一定要传 `alignRight`，并且传的是 `r.right`（不是 `r.left`）。
+   * 之前传按钮左缘、指望 `useMenuPosition` 的贴边翻折去“碰巧”，
+   * 而那两条分支没一条是对的：
+   * ・右侧空间够 ⇒ 菜单从按钮左缘往右铺，穿到设置/窗口按钮底下；
+   * ・右侧空间不够 ⇒ 翻成「菜单右缘贴按钮**左**缘」，与按钮错开一个按钮宽。
+   * 而这个按钮就在顶栏右上角，两种情形都碰得到。
    */
   const openMore = () => {
     if (!ctxTrigger) return;
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
-    ctxTrigger(r.left, r.bottom + 2, moreItems);
+    ctxTrigger(r.right, r.bottom + 2, moreItems, { alignRight: true });
   };
 
   return (

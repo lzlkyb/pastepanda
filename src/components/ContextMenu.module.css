@@ -41,6 +41,20 @@
   background: var(--hover);
 }
 
+/* 禁用项。取值照项目现有的 `:disabled` 写法（opacity 0.4 + not-allowed），
+   不另造一套——ProfileDialog 的 `.opBtn:disabled` 就是这个值。
+
+   🔴 必须把 hover 底色也取消：`:disabled` 不阻止 `:hover` 生效，
+   光置灰不取消底色的话，鼠标移上去还是一副「可以点」的样子。 */
+.ctxItem:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ctxItem:disabled:hover {
+  background: transparent;
+}
+
 /* 类型主操作 — 置顶高亮（accent 底色 + 加粗） */
 .ctxItemPrimary {
   background: color-mix(in srgb, var(--accent) 10%, transparent);

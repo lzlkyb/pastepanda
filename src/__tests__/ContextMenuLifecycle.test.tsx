@@ -151,3 +151,77 @@ describe("菜单要跟着视口变化关闭", () => {
     expect(screen.getByText("删除卡片A")).toBeTruthy();
   });
 });
+
+/**
+ * 禁用项（`MenuItem.disabled`）。
+ *
+ * 🔴 这组盯的是一个真开过的 bug（2026-09-09）：知识库「⋯」菜单靠
+ * 「不传 `onClick`」装禁用（当时那行注释还写着「没 onClick 的项本来就不可交互」），
+ * 而本文件里的处理器是 `onClick={() => { item.onClick?.(); closeMenu(); }}`——
+ * 所以那种「禁用项」仍然能点、仍然 hover 高亮，点下去的效果是
+ * **菜单关掉、什么也没发生**。“菜单不关”是两边真正的分水岭。
+ */
+describe("菜单项禁用态", () => {
+  const onEnabled = vi.fn();
+  const onDisabled = vi.fn();
+  const MIXED: MenuItem[] = [
+    { icon: null, label: "能点的", onClick: onEnabled },
+    // 带着 `onClick` + `disabled`——正是生产代码里「导入中…」那一项的形状
+    { icon: null, label: "导入中…", onClick: onDisabled, disabled: true },
+  ];
+
+  function DisabledHarness() {
+    const trigger = useContext(CtxMenuCtx);
+    return <button onClick={() => trigger?.(10, 10, MIXED)}>开</button>;
+  }
+
+  const open = () => {
+    render(
+      <ContextMenu>
+        <DisabledHarness />
+      </ContextMenu>,
+    );
+    fireEvent.click(screen.getByText("开"));
+  };
+
+  beforeEach(() => {
+    cleanup();
+    onEnabled.mockClear();
+    onDisabled.mockClear();
+  });
+
+  it("禁用项落到真的 `<button disabled>` 上", () => {
+    open();
+    expect((screen.getByText("导入中…").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    // 反面：能点的那项不能被连带禁掉
+    expect((screen.getByText("能点的").closest("button") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("点禁用项：不调回调，而且**菜单不关**", () => {
+    open();
+    fireEvent.click(screen.getByText("导入中…"));
+    expect(onDisabled).not.toHaveBeenCalled();
+    // 这一条才是修复前后的区别：以前点下去菜单会关掉，看起来像“执行了”
+    expect(screen.queryByRole("menu")).not.toBeNull();
+  });
+
+  it("能点的项照旧：调回调并关菜单", async () => {
+    open();
+    fireEvent.click(screen.getByText("能点的"));
+    expect(onEnabled).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  });
+
+  it("键盘导航跳过禁用项", () => {
+    open();
+    // ↓ 一下应该落在第一项；再一下应该**还在**第一项（第二项被禁用，不可达）。
+    // 不排除的话会停在一个按回车没反应的项上。
+    const menu = screen.getByRole("menu");
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onDisabled).not.toHaveBeenCalled();
+    expect(onEnabled).toHaveBeenCalledTimes(1);
+    expect(menu).toBeTruthy();
+  });
+});

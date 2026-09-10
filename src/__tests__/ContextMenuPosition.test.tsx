@@ -15,16 +15,18 @@ const MENU_H = 300;
 
 const ITEMS: MenuItem[] = [{ icon: null, label: "复制到剪贴板", onClick: vi.fn() }];
 
-function Harness({ x, y }: { x: number; y: number }) {
+type OpenOpts = { alignRight?: boolean };
+
+function Harness({ x, y, opts }: { x: number; y: number; opts?: OpenOpts }) {
   const trigger = useContext(CtxMenuCtx);
-  return <button onClick={() => trigger?.(x, y, ITEMS)}>开菜单</button>;
+  return <button onClick={() => trigger?.(x, y, ITEMS, opts)}>开菜单</button>;
 }
 
 /** 打开菜单并读回它最终落在哪 */
-function openAt(x: number, y: number): { left: number; top: number } {
+function openAt(x: number, y: number, opts?: OpenOpts): { left: number; top: number } {
   render(
     <ContextMenu>
-      <Harness x={x} y={y} />
+      <Harness x={x} y={y} opts={opts} />
     </ContextMenu>,
   );
   fireEvent.click(screen.getByText("开菜单"));
@@ -87,5 +89,34 @@ describe("菜单贴边翻折", () => {
     const { left, top } = openAt(75, 75);
     expect(left).toBeGreaterThanOrEqual(8);
     expect(top).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe("从按钮点开的下拉：右对齐", () => {
+  /**
+   * 🔴 这组盯的是顶栏右上角那个「⋯」的一个真毛病：
+   * 它以前传按钮**左**缘、指望上面那套贴边翻折去“碰巧”，而两条分支都错开：
+   * ・右侧空间够 ⇒ 菜单从左缘往右铺，穿到设置/窗口按钮底下；
+   * ・右侧空间不够 ⇒ 翻成「菜单右缘贴按钮**左**缘」。
+   * 所以两种空间情形都要钉，光测一种会漏。
+   */
+  it("右侧空间够时也要右对齐（不能往右铺）", () => {
+    // x=500 当右缘，右侧还剩 500 —— 旧逻辑会把它当左缘、left=500
+    expect(openAt(500, 100, { alignRight: true }).left).toBe(500 - MENU_W);
+  });
+
+  it("靠窗口右缘时仍然与按钮右缘对齐", () => {
+    // innerWidth=1000，x=980（按钮右缘）。右对齐 ⇒ left=780，
+    // 仍在视口内（980 ≤ 1000-8），所以不被钳制。
+    expect(openAt(980, 100, { alignRight: true }).left).toBe(980 - MENU_W);
+  });
+
+  it("右对齐也不得把菜单顶出屏幕左边（钳制仍生效）", () => {
+    // x=100 当右缘 ⇒ left=-100，必须被钳到 MARGIN=8
+    expect(openAt(100, 100, { alignRight: true }).left).toBe(8);
+  });
+
+  it("不传 alignRight 时行为一字不变（右键菜单还是从鼠标处往右下弹）", () => {
+    expect(openAt(500, 100).left).toBe(500);
   });
 });

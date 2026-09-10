@@ -18,8 +18,10 @@ export function useMenuPosition(params: {
   pos: { x: number; y: number } | null;
   items: MenuItem[];
   activeIndex: number;
+  /** `pos.x` 是菜单的**右缘**而不是左缘（从按钮点开的下拉）。 */
+  alignRight?: boolean;
 }) {
-  const { open, pos, items, activeIndex } = params;
+  const { open, pos, items, activeIndex, alignRight } = params;
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const [menuSize, setMenuSize] = useState({ width: 0, height: 0 });
@@ -49,8 +51,14 @@ export function useMenuPosition(params: {
     const availAbove = pos.y - MARGIN;
 
     // 水平方向：优先向右，空间不足时向左
-    let left = pos.x;
-    if (availRight < menuW && availLeft > availRight) {
+    //
+    // 🔴 `alignRight` 跳过这套“碰巧”逻辑：它把 `pos.x` 当右缘，
+    //    无论空间够不够都与触发按钮右缘对齐。没它的时候，顶栏右上角那个
+    //    「⋯」会出现两种都错开的情形：空间够→菜单往右穿到设置/窗口按钮底下；
+    //    空间不够→翻成「菜单右缘贴按钮**左**缘」，与按钮错开一个按钮宽。
+    //    下面的视口钳制仍然生效，所以不会因此跑出屏幕。
+    let left = alignRight ? pos.x - menuW : pos.x;
+    if (!alignRight && availRight < menuW && availLeft > availRight) {
       left = pos.x - menuW;
     }
     left = Math.max(MARGIN, Math.min(left, window.innerWidth - menuW - MARGIN));
@@ -63,7 +71,9 @@ export function useMenuPosition(params: {
     top = Math.max(MARGIN, Math.min(top, window.innerHeight - menuH - MARGIN));
 
     return { left, top };
-  }, [pos, menuSize]);
+  // 依赖里必须带 `alignRight`：不带也“能跑”（`trigger` 每次 `setPos({x,y})`
+  // 都是新对象，会连带重算），但那是撑在一个无关的引用等式上。
+  }, [pos, menuSize, alignRight]);
 
   // 子菜单边缘钳制：打开瞬间（挂载后、绘制前）测量真实宽高与父项视口位置——
   //   水平：按实测宽度决定向右还是向左翻转；

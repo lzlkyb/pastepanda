@@ -46,8 +46,25 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
   useEffect(() => {
     if (!open) return;
     // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定页；
-    // 不传或传 "general" 就落在第一个分区（右栏永远不能是空的）。
-    setNav(initialTab && initialTab !== "general" ? initialTab : SETTINGS_SECTIONS[0].key);
+    // 不传或传 "general" 就落在第一个分区（右栅永远不能是空的）。
+    const key = initialTab && initialTab !== "general" ? initialTab : SETTINGS_SECTIONS[0].key;
+    setNav(key);
+    // 🔴 只 `setNav` 是不够的——下面两件事都曾被漏掉，而它们叠起来
+    //    正好把「定位到指定页」这个功能完全抵消（实测：从知识库「⋯」菜单
+    //    点「连接 AI 工具（MCP）」，设置页打开了但停在第一节）：
+    //    ① 右栅的定位**只由 `pendingScrollRef` 驱动**（看下面那个 effect）。
+    //      不排一次的话，右栅停在第一节，而左菜单却高亮着 MCP。
+    //    ② scroll-spy 那个 effect 在挂载时会**立即 `onScroll()` 一次**，
+    //      按当前滚动位置（顶部）把 `nav` 改回第一节——连高亮也保不住。
+    //      所以必须同时压住它，口径与 `handleNavPick` 一致。
+    //
+    // ⚠ 页面底部那几页（帮助/关于）的目标位置会在 `LazyMount` 把 MCP
+    //   真内容换进来后下移。这里不补偿：那是 `LazyMount` 占位高度的事，
+    //   而且 MCP 自己的标题在它内容之上，不受影响。
+    if (key !== SETTINGS_SECTIONS[0].key) {
+      pendingScrollRef.current = key;
+      spyMutedUntilRef.current = performance.now() + 700;
+    }
     // initialTab 只在打开那一刻消费。列进依赖的话，父组件改一次这个 prop
     // 就会把用户手动切过去的项拉回来。
     // eslint-disable-next-line react-hooks/exhaustive-deps
