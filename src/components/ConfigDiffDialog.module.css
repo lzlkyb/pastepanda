@@ -323,6 +323,18 @@
   opacity: 0.7;
 }
 
+/* U3.5：对比失败的常驻错误条 */
+.errBox {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--danger);
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  word-break: break-word;
+}
+
 .emptyCell {
   text-align: center;
   padding: 24px 12px !important;

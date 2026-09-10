@@ -8,8 +8,10 @@
    也就是说内联 style 是那三条规则集体失效的**根因**，不是风格偏好（U8）。*/
 
 .bar {
-  /* U2：只用四档时长里的「快」这一档（这里全是颜色/底色变化）+ 常规曲线 */
-  --dur-fast: 100ms;
+  /* U2：只用四档时长里的「快」这一档（这里全是颜色/底色变化）+ 常规曲线。
+     写本文件时快档是 100ms；2026-09-09 修正为 **150ms**（M3 的 short3，
+     也是全库 330 处的事实标准）。与 KbHealthBar.module.css 保持同值。 */
+  --dur-fast: 150ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
   border-bottom: 1px solid var(--border-color);

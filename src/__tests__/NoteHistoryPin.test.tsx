@@ -21,13 +21,14 @@ const revs = [
 
 const noteRevisionPin = vi.fn(async () => true);
 const confirmDialog = vi.fn(async () => true);
+const noteRestore = vi.fn(async () => null);
 
 vi.mock("@/lib/api", () => ({
   noteRevisionList: async () => revs,
   noteRevisionGet: async () => ({ id: 1, note_id: "n1", title: "标题",
     content: "旧正文", created_at: "2026-09-02 09:00:00", pinned: true, source_agent: "" }),
   noteRevisionPin: (...a: unknown[]) => noteRevisionPin(...(a as [])),
-  noteRestore: async () => null,
+  noteRestore: (...a: unknown[]) => noteRestore(...(a as [])),
 }));
 
 vi.mock("@/lib/confirm", () => ({
@@ -38,12 +39,12 @@ vi.mock("@/components/Toast", () => ({
   useToast: () => ({ toast: () => {} }),
 }));
 
-function renderView() {
+function renderView(isDirty = false) {
   return render(
     <NoteHistoryView
       noteId="n1"
       currentContent="当前正文"
-      isDirty={false}
+      isDirty={isDirty}
       onBack={() => {}}
       onRestored={() => {}}
     />,
@@ -54,6 +55,7 @@ describe("版本锚定", () => {
   beforeEach(() => {
     noteRevisionPin.mockClear();
     confirmDialog.mockClear();
+    noteRestore.mockClear();
   });
 
   it("锚定徽标与客户端名都要显示，且去掉 agent: 前缀", async () => {
@@ -110,5 +112,42 @@ describe("版本锚定", () => {
 
     await waitFor(() => expect(noteRevisionPin).toHaveBeenCalledWith(2, true));
     expect(confirmDialog).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 恢复版本的确认走不走，取决于「这一下能不能悔」，U4.3：
+ * - 干净时：当前已保存的内容会被存成一份历史，能再恢复回去 → 不拦；
+ * - 脏时：那一段未保存的草稿没地方去，是真丢 → 必须拦。
+ *
+ * 这两条必须成对存在：只写前一条的话，哪天把确认整个删干净也还是绿的。
+ */
+describe("恢复版本的确认口径（U4.3）", () => {
+  beforeEach(() => {
+    confirmDialog.mockClear();
+    noteRestore.mockClear();
+  });
+
+  it("没有未保存修改时，恢复不弹确认（它可逆）", async () => {
+    renderView(false);
+    await waitFor(() => expect(screen.getByText("锚定")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("380 字"));
+    fireEvent.click(await screen.findByRole("button", { name: /恢复到这个版本/ }));
+
+    await waitFor(() => expect(noteRestore).toHaveBeenCalledWith(1));
+    expect(confirmDialog).not.toHaveBeenCalled();
+  });
+
+  it("有未保存修改时必须弹确认，取消就不能碰后端", async () => {
+    confirmDialog.mockResolvedValueOnce(false as never);
+    renderView(true);
+    await waitFor(() => expect(screen.getByText("锚定")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("380 字"));
+    fireEvent.click(await screen.findByRole("button", { name: /恢复到这个版本/ }));
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
+    expect(noteRestore).not.toHaveBeenCalled();
   });
 });

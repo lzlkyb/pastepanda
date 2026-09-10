@@ -46,6 +46,9 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
   const [result, setResult] = useState<DiffResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<FilterMode>("diff");
+  // U3.5：对比失败不能只发一个会消失的 toast —— result 仍为 null，
+  // 面板会原样退回「开始对比」按钮，看起来就像那一下没点中。
+  const [diffError, setDiffError] = useState<string | null>(null);
   const { toast } = useToast();
   const anim = useDialogAnim();
 
@@ -63,12 +66,16 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
       setResult(null);
     } catch (e) {
       logger.warn("选择文件失败", e);
+      // 取消选择走的是 `!path` 分支，能走到这里就是真出错了。
+      // 原先只写日志，用户点“选文件”后屏幕上什么也不会发生。
+      toast("打不开文件选择器，可以把内容直接粘到下面的文本框", "error");
     }
-  }, []);
+  }, [toast]);
 
   const runDiff = useCallback(async () => {
     setLoading(true);
     setResult(null);
+    setDiffError(null);
     try {
       let r: DiffResult;
       if (leftFile && rightFile) {
@@ -87,7 +94,9 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
       setFilter("diff");
     } catch (e) {
       logger.warn("配置对比失败", e);
-      toast(typeof e === "string" ? e : "对比失败", "error");
+      const msg = typeof e === "string" ? e : "对比失败";
+      toast(msg, "error");
+      setDiffError(msg);
     } finally {
       setLoading(false);
     }
@@ -99,6 +108,7 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
     setLeftFile(rightFile);
     setRightFile(leftFile);
     setResult(null);
+    setDiffError(null);
   }, [leftText, rightText, leftFile, rightFile]);
 
   const visibleEntries = result
@@ -122,9 +132,9 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
               {/* Header */}
               <div className="dialog-header">
                 <h2 className="dialog-title">配置对比</h2>
-                <button onClick={onClose} className="dialog-close"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+                {/* hover 背景交给 dialog.css 的 .dialog-close:hover；
+                    inline style 优先级更高，会把 blossom 主题的定制 hover 压掉 */}
+                <button onClick={onClose} className="dialog-close" aria-label="关闭">
                   <X size={16} />
                 </button>
               </div>
@@ -184,6 +194,13 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
                   <button className={styles.diffBtn} onClick={runDiff} disabled={loading}>
                     {loading ? "对比中…" : "开始对比"}
                   </button>
+                )}
+
+                {/* U3.5：失败原因常驻，不随 toast 一起消失 */}
+                {!result && !loading && diffError && (
+                  <div className={styles.errBox} role="alert">
+                    没能对比：{diffError}
+                  </div>
                 )}
 
                 {/* 结果区 */}
@@ -252,7 +269,9 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
                           {visibleEntries.length === 0 && (
                             <tr>
                               <td colSpan={3} className={styles.emptyCell}>
-                                {filter === "diff" ? "无差异，两侧配置完全一致" : "无数据"}
+                                {filter === "diff"
+                                  ? "无差异，两侧配置完全一致"
+                                  : "两侧都没解析出配置项——多半是粘进来的内容不完整，或者不是这个格式"}
                               </td>
                             </tr>
                           )}

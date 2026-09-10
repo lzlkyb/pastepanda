@@ -425,9 +425,9 @@ export function TransformHubDialog() {
                 <span className={styles.headerIcon}><Sparkles size={16} /></span>
                 <h2 className="dialog-title">变换为…</h2>
                 <span className={styles.headerSub}>{scored.length} 个可用变换</span>
-                <button onClick={close} className="dialog-close"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+                {/* hover 背景交给 dialog.css 的 .dialog-close:hover；
+                    inline style 优先级更高，会把 blossom 主题的定制 hover 压掉 */}
+                <button onClick={close} className="dialog-close" aria-label="关闭">
                   <X size={16} />
                 </button>
               </div>

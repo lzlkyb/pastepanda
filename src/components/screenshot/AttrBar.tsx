@@ -145,24 +145,44 @@ export function AttrBar({
   onCancelMasks,
 }: Props) {
   return (
-    <div className={`attr-bar${attach !== "below" ? " top-attached" : ""}`} style={{ left, top }}>
+    // U7：这一排原先全是 `<span onClick>`——整个截图窗没有一个可聚焦元素，
+    // globals.css 那条 `:focus-visible` 兜底在这里是空转。现在全部是真 <button>：
+    // 键盘用户在标注态能选颜色 / 粗细 / 形状 / 箭头 / 字号 / 强度，而不是只能用默认红色细线。
+    // （进一步的 roving tabindex（一组一个 Tab 位、组内方向键）另记，本次不做。）
+    <div
+      className={`attr-bar${attach !== "below" ? " top-attached" : ""}`}
+      style={{ left, top }}
+      role="toolbar"
+      aria-label="标注属性"
+    >
       {showColor && (
         <>
           <span className="albl">颜色</span>
           {COLORS.map((c) => (
             // 外层 .cwrap 是 24px 热区，内层 .cp 才是 14px 色点。
             // 旧实现直接把 onClick 挂在 14px 色点上，点偏一两像素就没反应。
-            <span key={c} className="cwrap" data-tip={c} onClick={() => onSelectColor(c)}>
+            <button
+              key={c}
+              type="button"
+              className="cwrap"
+              data-tip={c}
+              aria-label={`颜色 ${c}`}
+              aria-pressed={color === c && !pickerOn}
+              onClick={() => onSelectColor(c)}
+            >
               <span className={`cp${color === c && !pickerOn ? " on" : ""}`} style={{ background: c }} />
-            </span>
+            </button>
           ))}
-          <span
+          <button
+            type="button"
             className={`cwrap picker${pickerOn ? " on" : ""}`}
             data-tip="吸管取色 · 点画布取色并复制色值"
+            aria-label="吸管取色"
+            aria-pressed={pickerOn}
             onClick={onPicker}
           >
             {PICKER_ICON}
-          </span>
+          </button>
         </>
       )}
 
@@ -171,14 +191,17 @@ export function AttrBar({
           <span className="asep" />
           <span className="albl">粗细</span>
           {WIDTHS.map((w) => (
-            <span
+            <button
               key={w.id}
+              type="button"
               className={`wpick${widthId === w.id ? " on" : ""}`}
               data-tip={`${w.label}（${w.w}px）`}
+              aria-label={`粗细 ${w.label}`}
+              aria-pressed={widthId === w.id}
               onClick={() => onSelectWidth(w.id)}
             >
               <span className="wdot" style={{ width: w.dot, height: w.dot }} />
-            </span>
+            </button>
           ))}
         </>
       )}
@@ -190,28 +213,35 @@ export function AttrBar({
       {maskMode && onSelectMaskMode && (
         <>
           <span className="albl">模式</span>
-          <span
+          <button
+            type="button"
             className={`wpick txt${maskMode === "mosaic" ? " on" : ""}`}
             data-tip="马赛克·色块遮档"
+            aria-pressed={maskMode === "mosaic"}
             onClick={() => onSelectMaskMode("mosaic")}
           >
             马赛克
-          </span>
-          <span
+          </button>
+          <button
+            type="button"
             className={`wpick txt${maskMode === "blur" ? " on" : ""}`}
             data-tip="模糊·柔化遮档（水滴）"
+            aria-pressed={maskMode === "blur"}
             onClick={() => onSelectMaskMode("blur")}
           >
             模糊
-          </span>
+          </button>
           <span className="attr-anchor">
-            <span
+            {/* 自动打码是**动作型**（点一下就去跑 OCR），不是模式开关，
+                所以不给 aria-pressed——它永远没有选中态。 */}
+            <button
+              type="button"
               className={`wpick txt${discoverAutomask ? " discover" : ""}`}
               data-tip="自动打码·一键遮蔽图中手机/身份证/邮箱等隐私文字（OCR 检测，可逐个排除）"
               onClick={() => onSelectMaskMode("automask")}
             >
               自动打码
-            </span>
+            </button>
             {maskOn && (
               <div className="mask-bar" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="mask-title">🔒 识别到 {maskActive} 处隐私</div>
@@ -250,28 +280,33 @@ export function AttrBar({
       {dewarpMode && onSelectDewarpMode && (
         <>
           <span className="albl">模式</span>
-          <span
+          <button
+            type="button"
             className={`wpick txt${dewarpMode === "manual" ? " on" : ""}`}
             data-tip="手动·涂抹或矩形选区局部去水印"
+            aria-pressed={dewarpMode === "manual"}
             onClick={() => onSelectDewarpMode("manual")}
           >
             手动
-          </span>
-          <span
+          </button>
+          <button
+            type="button"
             className={`wpick txt${dewarpMode === "tile" ? " on" : ""}`}
             data-tip="平铺·自动检测整屏平铺水印并批量去除"
+            aria-pressed={dewarpMode === "tile"}
             onClick={() => onSelectDewarpMode("tile")}
           >
             平铺·自动
-          </span>
+          </button>
           {onAutoDewarp && (
-            <span
+            <button
+              type="button"
               className="wpick txt"
               data-tip="自动去水印·OCR 定位图中重复出现的水印文字，一键批量还原"
               onClick={onAutoDewarp}
             >
               文字·自动
-            </span>
+            </button>
           )}
           <span className="asep" />
         </>
@@ -282,28 +317,37 @@ export function AttrBar({
       {maskShape && onSelectMaskShape && (
         <>
           <span className="albl">形状</span>
-          <span
+          <button
+            type="button"
             className={`wpick${maskShape === "brush" ? " on" : ""}`}
             data-tip="涂抹·像画笔一样刷过要遮的地方"
+            aria-label="形状·涂抹"
+            aria-pressed={maskShape === "brush"}
             onClick={() => onSelectMaskShape("brush")}
           >
             {SHAPE_BRUSH_ICON}
-          </span>
-          <span
+          </button>
+          <button
+            type="button"
             className={`wpick${maskShape === "rect" ? " on" : ""}`}
             data-tip="矩形·拖出一块区域"
+            aria-label="形状·矩形"
+            aria-pressed={maskShape === "rect"}
             onClick={() => onSelectMaskShape("rect")}
           >
             {SHAPE_RECT_ICON}
-          </span>
+          </button>
           {magicSupported && (
-            <span
+            <button
+              type="button"
               className={`wpick${maskShape === "magic" ? " on" : ""}`}
               data-tip="魔棒·刷过水印文字即自动吸附同色连通区，斜向文字一笔选全"
+              aria-label="形状·魔棒"
+              aria-pressed={maskShape === "magic"}
               onClick={() => onSelectMaskShape("magic")}
             >
               {SHAPE_MAGIC_ICON}
-            </span>
+            </button>
           )}
           <span className="asep" />
         </>
@@ -315,14 +359,16 @@ export function AttrBar({
           <span className="asep" />
           <span className="albl">字号</span>
           {TEXT_SIZES.map((t) => (
-            <span
+            <button
               key={t.id}
+              type="button"
               className={`wpick txt${textSizeId === t.id ? " on" : ""}`}
               data-tip={`${t.label}（${t.css}px）`}
+              aria-pressed={textSizeId === t.id}
               onClick={() => onSelectTextSize(t.id)}
             >
               {t.label}
-            </span>
+            </button>
           ))}
         </>
       )}
@@ -331,14 +377,16 @@ export function AttrBar({
         <>
           <span className="albl">强度</span>
           {strengthLevels.map((s) => (
-            <span
+            <button
               key={s.id}
+              type="button"
               className={`wpick txt${strengthValue === s.v ? " on" : ""}`}
               data-tip={`${s.label}（${s.v}px）`}
+              aria-pressed={strengthValue === s.v}
               onClick={() => onSelectStrength(s.v)}
             >
               {s.label}
-            </span>
+            </button>
           ))}
           {/* 当前值：滚轮微调后不在整档位上也能看到具体数字 */}
           <span className="aval">{strengthValue}px</span>
@@ -349,20 +397,26 @@ export function AttrBar({
         <>
           <span className="asep" />
           <span className="albl">箭头</span>
-          <span
+          <button
+            type="button"
             className={`wpick${arrowStyle === "single" ? " on" : ""}`}
             data-tip="单箭头"
+            aria-label="单箭头"
+            aria-pressed={arrowStyle === "single"}
             onClick={() => onSelectArrowStyle("single")}
           >
             {IcArrowSingle}
-          </span>
-          <span
+          </button>
+          <button
+            type="button"
             className={`wpick${arrowStyle === "double" ? " on" : ""}`}
             data-tip="双箭头"
+            aria-label="双箭头"
+            aria-pressed={arrowStyle === "double"}
             onClick={() => onSelectArrowStyle("double")}
           >
             {IcArrowDouble}
-          </span>
+          </button>
         </>
       )}
     </div>

@@ -40,10 +40,21 @@ export function TextToolbar({ color, onSelectColor, textSizeId, onSelectTextSize
         A+
       </button>
       <span className="tsep" />
+      {/* U7：色点原先是 `<span onClick>`，旁边两个 A−/A+ 却已经是真按钮——
+          同一条工具栏里一半能聚焦一半不能。外层 .text-toolbar 的 onMouseDown
+          已经 preventDefault 保住输入焦点，换成 button 不会把正在编辑的文字框弄失焦。 */}
       {COLORS.map((c) => (
-        <span key={c} className="cwrap" data-tip={c} onClick={() => onSelectColor(c)}>
+        <button
+          key={c}
+          type="button"
+          className="cwrap"
+          data-tip={c}
+          aria-label={`颜色 ${c}`}
+          aria-pressed={color === c}
+          onClick={() => onSelectColor(c)}
+        >
           <span className={`cp${color === c ? " on" : ""}`} style={{ background: c }} />
-        </span>
+        </button>
       ))}
       {/* 快捷键常驻：以前写在输入框的 placeholder 里，一打字就消失，
           而“怎么换行”恰恰是打到一半才会问的问题。 */}

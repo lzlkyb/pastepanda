@@ -52,6 +52,10 @@ export function ChainRunnerDialog() {
   // 默认全部展开：X1 要求"每步单独预览"，运行完就该看到每步的前后对比
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState(false);
+  // U3.5：运行本身抛异常 / 链已不存在时的错误态。
+  // 不能塞进 result —— 那会渲染成一张写着「中间结果（保留到失败前）」的空卡片，
+  // 而此时一步都没跑成，根本没有中间结果可保留。
+  const [runError, setRunError] = useState<string | null>(null);
   // B2：AI 步骤的运行前确认（云端内容不自动发送）
   const [pendingAi, setPendingAi] = useState<{ index: number; label: string; resolve: (v: boolean) => void } | null>(null);
 
@@ -61,6 +65,7 @@ export function ChainRunnerDialog() {
       const hint = useDialogStore.getState().chainIdHint;
       setInput(text ?? "");
       setResult(null);
+      setRunError(null);
       setRunning(false);
       setExpanded(new Set());
       setCopied(false);
@@ -108,12 +113,16 @@ export function ChainRunnerDialog() {
     if (running) return;
     setRunning(true);
     setResult(null);
+    setRunError(null);
     try {
       // AI 临时链不在注册表里，不能走 getChainAsync（那会报“链已不存在”）
       const target =
         adHoc && chainId === adHoc.id ? adHoc : await getChainAsync(chainId);
       if (!target) {
         toast("这条链已不存在", "error");
+        // 只发 toast 不够：toast 会消失，面板会退回「点『运行整条链』开始」的初始提示，
+        // 看起来像「我没点过运行」。留一条常驻说明。
+        setRunError("这条链已不存在——可能在别处被删了。请在上方重新选一条。");
         return;
       }
       const r = await runChain(target, input, {}, async (step, index) => {
@@ -141,12 +150,9 @@ export function ChainRunnerDialog() {
     } catch (e) {
       // 审查：补 catch —— 此前 try/finally 无 catch，异常时浮空 rejection、
       // pendingAi 的确认 promise 可能永不 resolve（配合关窗兜底）
-      toast(`执行失败：${e instanceof Error ? e.message : String(e)}`, "error");
-      setResult({
-        ok: false,
-        final: "",
-        stages: [],
-      });
+      const msg = e instanceof Error ? e.message : String(e);
+      toast(`执行失败：${msg}`, "error");
+      setRunError(msg);
     } finally {
       setRunning(false);
     }
@@ -220,33 +226,44 @@ export function ChainRunnerDialog() {
               {/* 链选择：横向滚动胶囊 tab（v6.10 升级：原竖排大按钮占高、链多要滚） */}
               <div className={styles.chainRow}>
                 <div className={styles.chainTabs}>
-                  {allChains.map((c) => (
-                    <button
-                      key={c.id}
-                      className={`${styles.chainTab} ${c.id === chainId ? styles.chainTabOn : ""}`}
-                      onClick={() => { setChainId(c.id); setResult(null); }}
-                      title={c.description || c.name}
-                    >
-                      <span className={styles.chainTabName}>{c.name}</span>
-                      {/* AI 临时链标上 AI：它与用户亲手配的链混在同一列表里，
-                          不标就分不清“这条是模型刚编的、没存过” */}
-                      {adHoc && c.id === adHoc.id && <AiBadge kind="ai" size="xs" />}
-                      {!isPreset(c.id) && (
-                        <span
-                          className={styles.chainTabEdit}
-                          title={
-                            adHoc && c.id === adHoc.id ? "存为我的链" : "编辑这条链"
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            editChain(c);
-                          }}
+                  {allChains.map((c) => {
+                    const on = c.id === chainId;
+                    const isAdHoc = !!adHoc && c.id === adHoc.id;
+                    // 预置链不可改；其余（自定义链 / AI 临时链）都能进编辑器
+                    const editable = !isPreset(c.id);
+                    return (
+                      <div
+                        key={c.id}
+                        className={`${styles.chainTabWrap} ${on ? styles.chainTabWrapOn : ""}`}
+                      >
+                        <button
+                          className={`${styles.chainTab} ${on ? styles.chainTabOn : ""} ${editable ? styles.chainTabEditable : ""}`}
+                          onClick={() => { setChainId(c.id); setResult(null); setRunError(null); }}
+                          title={c.description || c.name}
                         >
-                          <Pencil size={10} />
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                          <span className={styles.chainTabName}>{c.name}</span>
+                          {/* AI 临时链标上 AI：它与用户亲手配的链混在同一列表里，
+                              不标就分不清“这条是模型刚编的、没存过” */}
+                          {isAdHoc && <AiBadge kind="ai" size="xs" />}
+                        </button>
+                        {/* U7：原先是嵌在 tab 按钮里的 16×16 <span>，键盘永远到不了 ——
+                            而全仓只有这一个入口能编辑已有自定义链 / 把 AI 临时链存下来，
+                            而 AI 临时链关窗即失。改成平级真按钮 + 24×24；
+                            位置始终留着（chainTabEditable 的 padding-right），hover 不再抄行。 */}
+                        {editable && (
+                          <button
+                            type="button"
+                            className={styles.chainTabEdit}
+                            title={isAdHoc ? "存为我的链" : "编辑这条链"}
+                            aria-label={isAdHoc ? `把「${c.name}」存为我的链` : `编辑动作链「${c.name}」`}
+                            onClick={() => editChain(c)}
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <button
                   className={styles.newBtn}
@@ -382,7 +399,18 @@ export function ChainRunnerDialog() {
                 </div>
               )}
 
-              {!result && !running && (
+              {/* U3.5：运行抛异常 / 链不存在 —— 得说清楚是「没跑成」，而不是退回初始提示 */}
+              {runError && !running && (
+                <div className={styles.runErrBox}>
+                  <ShieldAlert size={13} />
+                  <span className={styles.runErrMsg}>没跑起来：{runError}</span>
+                  <button className={styles.runErrRetry} onClick={() => void run()} disabled={!input}>
+                    <RotateCcw size={11} /> 重试
+                  </button>
+                </div>
+              )}
+
+              {!result && !running && !runError && (
                 <div className={styles.idleHint}>
                   点「运行整条链」开始——每步结果都会展示出来，失败会明确到第几步。
                 </div>

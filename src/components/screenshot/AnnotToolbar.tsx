@@ -227,47 +227,62 @@ export function AnnotToolbar({
       className={`annot-toolbar${attach !== "below" ? " top-attached" : ""}${busy ? " busy" : ""}`}
       style={{ left, top }}
       onClickCapture={onToolCapture}
+      role="toolbar"
+      aria-label="截图工具栏"
     >
+      {/* U7：下面每一项原先都是 `<div onClick>`——连同属性条一起，
+          整个截图窗没有任何一个可聚焦元素。现在全部是真 <button>。
+          ❗ 禁用项用的是 `aria-disabled` + 现有的 JS 守卫，**不用** 原生 `disabled`：
+          原生 disabled 的按钮不收鼠标事件，而这里的 tooltip 是 `data-tip` + `:hover`，
+          换成 disabled 会让「没有可撤销的操作」这类解释性提示整个消失。 */}
       {/* 主栏只渲染未隐藏的工具：模糊 / 自动打码已收进马赛克属性栏的模式分段 */}
       {TOOLS.filter((t) => !t.hidden).map((t) => (
-        <div
+        <button
           key={t.id}
+          type="button"
           className={`tool${tool === t.id ? " on" : ""}${discover?.includes(t.id) ? " discover" : ""}`}
           data-tip={`${t.tip ?? t.label}${t.key ? `（按 ${t.key}）` : ""}`}
+          aria-pressed={tool === t.id}
           onClick={() => onSelectTool(t.id)}
         >
           <span className="ic">{t.icon}</span>
           <span className="lb">{t.label}</span>
-        </div>
+        </button>
       ))}
 
       <div className="tsep" />
 
-      <div
+      <button
+        type="button"
         className={`tool dim tb-undo${canUndo ? "" : " disabled"}`}
         data-tip={canUndo ? "撤销（Ctrl+Z）" : "没有可撤销的操作"}
+        aria-disabled={!canUndo}
         onClick={() => canUndo && onUndo()}
       >
         <span className="ic">{IcUndo}</span>
         <span className="lb">撤销</span>
-      </div>
-      <div
+      </button>
+      <button
+        type="button"
         className={`tool dim tb-redo${canRedo ? "" : " disabled"}`}
         data-tip={canRedo ? "重做（Ctrl+Y）" : "没有可重做的操作"}
+        aria-disabled={!canRedo}
         onClick={() => canRedo && onRedo()}
       >
         <span className="ic">{IcRedo}</span>
         <span className="lb">重做</span>
-      </div>
+      </button>
 
       <div className="tsep" />
 
       {/* 长截图（从 select 态移来）：输出类动作而非标注工具，靠 tsep 与标注工具分开。
           ⚠️ 已有标注时必须禁用：长截图走 finalizeCanvas，不合成 annotations，
           此时点它会把先画的标注静默丢掉。 */}
-      <div
+      <button
+        type="button"
         className={`tool longshot${longShotDisabled ? " disabled" : ""}`}
         data-tip={longShotTip}
+        aria-disabled={longShotDisabled}
         onClick={() => {
           if (longShotDisabled) return;
           onLongShot();
@@ -275,18 +290,20 @@ export function AnnotToolbar({
       >
         <span className="ic">{IcLongShot}</span>
         <span className="lb">长截图</span>
-      </div>
+      </button>
 
       {/* 取文字：与长截图同组（都是"对整张图产出别的东西"），但排在它右边：
           主栏右对齐选区右边缘，而框选后鼠标通常停在选区右下角，越靠右手越省（规则 17.2）。
           取文字高频、长截图低频。 */}
-      <div
+      <button
+        type="button"
         className={`tool ocr-btn${ocrStatus === "running" ? " busy" : ""}${
           ocrStatus === "failed" ? " failed" : ""
         }${ocrStatus === "done" ? " done" : ""}${
           ocrStatus === "empty" || ocrStatus === "idle" ? " disabled" : ""
         }${discover?.includes("ocr") ? " discover" : ""}`}
         data-tip={ocrTip}
+        aria-disabled={!ocrClickable}
         onClick={() => {
           if (!ocrClickable) return;
           onOcr();
@@ -300,65 +317,68 @@ export function AnnotToolbar({
           {ocrStatus === "running" ? <span className="ocr-spin" /> : OCR_ICON}
         </span>
         <span className="lb">取文字</span>
-      </div>
+      </button>
 
       <div className="tsep" />
 
       {/* 三个主力出口。以前全藏在那个无标签的「⋯」后面，而贴图 / AI 是本产品的主力能力。
           行业里保存/贴图一律在主栏（QQ / 微信 / PixPin），不藏二级菜单。 */}
-      <div className="tool exit-save" data-tip="保存为图片文件（Ctrl+S）" onClick={onSave}>
+      <button type="button" className="tool exit-save" data-tip="保存为图片文件（Ctrl+S）" onClick={onSave}>
         <span className="ic">{SAVE_ICON}</span>
         <span className="lb">保存</span>
-      </div>
-      <div className={`tool exit-pin${discover?.includes("pin") ? " discover" : ""}`} data-tip="钉在屏幕最上层，可拖动可缩放" onClick={onPin}>
+      </button>
+      <button type="button" className={`tool exit-pin${discover?.includes("pin") ? " discover" : ""}`} data-tip="钉在屏幕最上层，可拖动可缩放" onClick={onPin}>
         <span className="ic">{PIN_ICON}</span>
         <span className="lb">贴图</span>
-      </div>
+      </button>
       {/* 图标与文字都走全站统一的 AI 标识（AiMark / lucide Sparkles），不在这里另写一份。
           strokeWidth 2.25 是算出来的：tools.tsx 的图标是 viewBox 16 / stroke 1.5，
           渲染到 17px 后约 1.59 设备像素；lucide 是 viewBox 24，要达到同粗细
           需 1.59 ÷ (17/24) ≈ 2.25。用默认的 2 会比旁边所有图标细一截。 */}
       {aiOk && (
-        <div className="tool exit-ai" data-tip="AI 处理识别文字：解释 / 翻译 / 总结" onClick={onAi}>
+        <button type="button" className="tool exit-ai" data-tip="AI 处理识别文字：解释 / 翻译 / 总结" onClick={onAi}>
           <span className="ic">
             <Sparkles size={17} strokeWidth={2.25} />
           </span>
           <span className="lb">
             <AiMark shape="text" text="AI" />
           </span>
-        </div>
+        </button>
       )}
       {/* 更多出口并入出口组：低频出口收「更多」，符合交互通用原则；
           让出口能力集中、确认动作独立成对。 */}
-      <div
+      <button
+        type="button"
         className="tool more-btn"
         data-tip="更多出口：翻译 / 送动作链 / 固定区域 / 插入文档"
         onClick={onMore}
       >
         更多 ⋯
-      </div>
+      </button>
 
       <div className="tsep" />
 
       {/* 取消与完成成对：反向操作（放弃 / 确认）放一起，靠视觉权重兜底误点——
           完成实心蓝渐变是视线终点，取消灰描边低调，无需再物理分离到中央。
           两级取消（Esc）仍独立生效，只是按钮挪位。 */}
-      <div
+      <button
+        type="button"
         className="tool cancel-btn"
         data-tip="取消截图并关闭 · 只想重新框选按 Esc"
         onClick={onCancel}
       >
         ✕ 取消
-      </div>
+      </button>
       <span className="pair-sep" />
       {/* 完成是最高频出口，放最右（规则 17.2：越靠右越省手） */}
-      <div
+      <button
+        type="button"
         className="tool done-btn"
         data-tip={busy ? "正在合成图片…" : "完成并复制（Enter / 双击画布）"}
         onClick={onDone}
       >
         {busy ? "处理中…" : "完成 ✓"}
-      </div>
+      </button>
 
     </div>
   );

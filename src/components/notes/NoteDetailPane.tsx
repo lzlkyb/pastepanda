@@ -12,7 +12,7 @@
  */
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ExternalLink, Copy, X, History, MoreHorizontal, EyeOff } from "lucide-react";
+import { ExternalLink, Copy, X, History, MoreHorizontal, EyeOff, NotebookPen } from "lucide-react";
 import { CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { relativeTime } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
@@ -270,7 +270,9 @@ export function NoteDetailPane({
             title="清掉摘要"
             aria-label="清掉摘要"
           >
-            ✕
+            {/* 原先是文字字符 ✕：它的字形随系统字体变，与同一屏上其它
+                lucide 的 X 粗细不一致（顶部关闭按钮就在几十像素外）。 */}
+            <X size={11} />
           </button>
         </div>
       )}
@@ -421,8 +423,10 @@ export function NoteDetailEmpty() {
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
     >
+      {/* 原先是 emoji 📝：emoji 由系统字体渲染，色彩与粗细都跟不了主题，
+          在深色主题下尤其突兀。换成 lucide 后它跟着 --text-muted 走。 */}
       <div className={styles.emptyIcon} aria-hidden="true">
-        📝
+        <NotebookPen size={28} strokeWidth={1.5} />
       </div>
       <div className={styles.emptyText}>从左侧选一条笔记</div>
     </motion.div>

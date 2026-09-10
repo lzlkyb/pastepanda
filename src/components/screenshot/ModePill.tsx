@@ -13,7 +13,7 @@ import type { OcrSelectMode } from "@/lib/screenshot/types";
 
 interface Props {
   /** 供父组件实测胶囊宽高（右对齐选区右缘需要真实宽度，文本态会变宽） */
-  innerRef?: React.Ref<HTMLDivElement>;
+  innerRef?: React.Ref<HTMLButtonElement>;
   /** 当前模式（唯一状态，父组件持有） */
   mode: OcrSelectMode;
   /** 点击切换。父组件在 smart / modifier 之间翻转并落盘 */
@@ -26,9 +26,13 @@ interface Props {
 export function ModePill({ innerRef, mode, onToggle, left, top }: Props) {
   const smart = mode === "smart";
   return (
-    <div
+    // U7：原先是 `<div onClick>`，键盘永远切不了 OCR 选字模式。
+    // aria-pressed 读的是「智能意图开着没有」（而不是「能不能点」）。
+    <button
+      type="button"
       ref={innerRef}
       className="mode-pill"
+      aria-pressed={smart}
       data-tip={
         smart
           ? "当前：智能意图 · 点击切换为 Ctrl 修饰键"
@@ -42,6 +46,6 @@ export function ModePill({ innerRef, mode, onToggle, left, top }: Props) {
       <span className={`dot${smart ? " smart" : " ctrl"}`} />
       {smart ? "智能意图" : "Ctrl"}
       <span className="sw">⇄</span>
-    </div>
+    </button>
   );
 }

@@ -167,7 +167,8 @@ export function ScreenshotOverlay() {
   const tbRef = useRef<HTMLDivElement>(null);
   const [tbSize, setTbSize] = useState({ w: 660, h: 54 });
   // OCR 模式胶囊尺寸实测：文本态（智能意图 / Ctrl）宽度不同，右对齐选区右缘要真值
-  const pillRef = useRef<HTMLDivElement>(null);
+  // ModePill 根节点已改成 <button>（U7），ref 类型跟着变。
+  const pillRef = useRef<HTMLButtonElement>(null);
   const [pillSize, setPillSize] = useState({ w: 88, h: 28 });
   // result 态出口面板同理：高度随出口数量变（AI 开关、编辑器是否打开都会影响），必须实测
   /** 橡皮光标层：**独立于标注画布**的一张透明 canvas。
@@ -1318,7 +1319,9 @@ export function ScreenshotOverlay() {
   // useLayoutEffect：要在浏览器绘制前把位置改对，否则能看到一帧跳动。
   useLayoutEffect(() => {
     const observe = (
-      el: HTMLDivElement | null,
+      // HTMLElement 而不是 HTMLDivElement：ModePill 根节点已改成 <button>（U7），
+      // 而这里只用到 getBoundingClientRect，本来也不该挑元素类型。
+      el: HTMLElement | null,
       set: React.Dispatch<React.SetStateAction<{ w: number; h: number }>>,
     ) => {
       if (!el) return null;

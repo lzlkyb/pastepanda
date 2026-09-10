@@ -150,9 +150,9 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
             {/* Header */}
             <div className="dialog-header">
               <h2 className="dialog-title">内容提取</h2>
-              <button onClick={onClose} className="dialog-close"
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+              {/* hover 背景交给 dialog.css 的 .dialog-close:hover；
+                  inline style 优先级更高，会把 blossom 主题的定制 hover 压掉 */}
+              <button onClick={onClose} className="dialog-close" aria-label="关闭">
                 <X size={16} />
               </button>
             </div>

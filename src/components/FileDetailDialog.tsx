@@ -83,6 +83,10 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>("");
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  /** U3.5：读预览抛异常。原先 catch 只把 data 置 null，而文本类文件的渲染分支
+   *  全都挂在 `data?.kind` 上——null 时**一个分支都不命中**，预览区就完全空白，
+   *  没有任何文字告诉用户发生了什么。 */
+  const [previewError, setPreviewError] = useState(false);
 
   useEffect(() => {
     if (!paths.length) { setPreviewPath(""); return; }
@@ -91,6 +95,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
 
   useEffect(() => {
     setPreviewData(null);
+    setPreviewError(false);
     setImagePreviewUrl("");
     setMediaUrl("");
     if (!previewPath) return;
@@ -121,7 +126,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
           if (!cancelled) setPreviewData(data);
         }
       } catch {
-        if (!cancelled) setPreviewData(null);
+        if (!cancelled) { setPreviewData(null); setPreviewError(true); }
       } finally {
         if (!cancelled) setPreviewLoading(false);
       }
@@ -167,6 +172,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
           <PreviewPanel
             path={previewPath}
             data={previewData}
+            error={previewError}
             imageUrl={imagePreviewUrl}
             mediaUrl={mediaUrl}
             loading={previewLoading}
@@ -185,8 +191,8 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
 }
 
 /** ④ 快速预览面板（主区版）：图片 hero / 音视频内嵌播放 / 文本高亮+搜索+复制全文+编辑器打开 / 二进制·缺失引导 */
-function PreviewPanel({ path, data, imageUrl, mediaUrl, loading, item }: {
-  path: string; data: TextPreviewData | null; imageUrl: string; mediaUrl: string; loading: boolean; item: HistoryItem;
+function PreviewPanel({ path, data, error, imageUrl, mediaUrl, loading, item }: {
+  path: string; data: TextPreviewData | null; error: boolean; imageUrl: string; mediaUrl: string; loading: boolean; item: HistoryItem;
 }) {
   const { toast } = useToast();
   const openEditor = useDialogStore((s) => s.openEditor);
@@ -275,6 +281,16 @@ function PreviewPanel({ path, data, imageUrl, mediaUrl, loading, item }: {
       {!loading && isImage && !imageUrl && (
         <div className="file-preview-empty fd-empty">
           <span>无法加载图片预览</span>
+          <FileActionBtn icon={<ExternalLink size={14} />} label="用系统打开" onClick={openSys} />
+        </div>
+      )}
+
+      {/* U3.5：读失败——下面那几个分支全靠 data?.kind，data 为 null 时谁都不命中，
+          结果是一块空白。图片 / 音视频 / PDF 各自有兜底态，这里只管其余。 */}
+      {!loading && error && !isImage && !isPdf && !isPlayableMedia(path) && (
+        <div className="file-preview-empty fd-empty">
+          <span>没能读出预览内容</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>文件本身不一定有问题，可以直接用系统打开看看</span>
           <FileActionBtn icon={<ExternalLink size={14} />} label="用系统打开" onClick={openSys} />
         </div>
       )}
@@ -468,6 +484,10 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
 }) {
   const { toast } = useToast();
   const [fileInfo, setFileInfo] = useState<FileMeta | null>(null);
+  /** U3.5：查询本身挂了。原先 catch 里直接 `{ exists: false }`，
+   *  界面于是斩钉截铁地打出「⚠ 已移动或不存在」并把两个打开按钮置灰——
+   *  而文件可能好好的，只是那一次 IPC 没回。这比空态更坏：它是一个**肯定句**。 */
+  const [infoError, setInfoError] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
 
@@ -476,9 +496,9 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
     (async () => {
       try {
         const info = await invoke<FileMeta>("get_file_info", { path });
-        if (!cancelled) setFileInfo(info);
+        if (!cancelled) { setFileInfo(info); setInfoError(false); }
       } catch {
-        if (!cancelled) setFileInfo({ size: 0, exists: false });
+        if (!cancelled) { setFileInfo(null); setInfoError(true); }
       }
     })();
     return () => { cancelled = true; };
@@ -486,6 +506,9 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
 
   const fileName = nameOf(path);
   const fileExists = fileInfo?.exists === true;
+  /** 没查到状态时**不拦**操作：让用户去试，真打不开时 open_file_with_system
+   *  自己会报错——那比凭一次失败的检查就把路封死要强。 */
+  const canAct = fileExists || infoError;
   const fileIcon = getFileIcon(fileName);
   const iconColor = getFileIconColor(fileName);
 
@@ -497,7 +520,7 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
   }, [path, toast]);
 
   const handleOpenFile = useCallback(async () => {
-    if (openingFile || !fileExists) return;
+    if (openingFile || !canAct) return;
     setOpeningFile(true);
     try {
       await invoke("open_file_with_system", { path });
@@ -507,10 +530,10 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
     } finally {
       setOpeningFile(false);
     }
-  }, [path, openingFile, fileExists, fileName, toast]);
+  }, [path, openingFile, canAct, fileName, toast]);
 
   const handleOpenFolder = useCallback(async () => {
-    if (openingFolder || !fileExists) return;
+    if (openingFolder || !canAct) return;
     setOpeningFolder(true);
     try {
       await invoke("open_file_location", { path });
@@ -519,7 +542,7 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
     } finally {
       setOpeningFolder(false);
     }
-  }, [path, openingFolder, fileExists, toast]);
+  }, [path, openingFolder, canAct, toast]);
 
   return (
     <div className="fd-body">
@@ -534,12 +557,16 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
         <div className="fd-strip-main">
           <div className="fd-strip-name" title={fileName}>{fileName}</div>
           <div className="fd-strip-sub">
-            {fileInfo === null
-              ? "检查中…"
-              : fileExists
-                // 语义名统一：--green 是色名，换成 --success（U6：新代码只用语义名）
-                ? <><Check size={11} style={{ marginRight: 2, color: "var(--success)" }} /> 文件正常</>
-                : "⚠ 已移动或不存在"}
+            {infoError
+              // U3.5：「没查到」不能写成「不存在」。括号里那句是必要的——
+              // 不加的话一行告警同样会被读成「文件出事了」。
+              ? "⚠ 没查到文件状态（文件本身不一定有问题，可以直接试着打开）"
+              : fileInfo === null
+                ? "检查中…"
+                : fileExists
+                  // 语义名统一：--green 是色名，换成 --success（U6：新代码只用语义名）
+                  ? <><Check size={11} style={{ marginRight: 2, color: "var(--success)" }} /> 文件正常</>
+                  : "⚠ 已移动或不存在"}
           </div>
         </div>
         <ChevronDown size={16} className={`fd-strip-chev ${metaOpen ? "open" : ""}`} />
@@ -549,7 +576,8 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
         <>
           <div className="fd-info-rows">
             <InfoRow label="完整路径" value={path} mono />
-            <InfoRow label="文件大小" value={fileInfo ? formatSize(fileInfo.size) : "…"} />
+            {/* infoError 时不能留着「…」不动——那是一个永远转下去的加载态。 */}
+            <InfoRow label="文件大小" value={infoError ? "没查到" : fileInfo ? formatSize(fileInfo.size) : "…"} />
             <InfoRow label="复制时间" value={item.time || "未知"} />
             <InfoRow label="来源" value={item.source ? <SourceBadge source={item.source} /> : "未知"} />
           </div>
@@ -559,13 +587,13 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
               label={openingFile ? "打开中…" : "打开文件"}
               onClick={handleOpenFile}
               primary
-              disabled={!fileExists || openingFile}
+              disabled={!canAct || openingFile}
             />
             <FileActionBtn
               icon={openingFolder ? <Loader size={14} className="spin" /> : <FolderOpen size={14} />}
               label={openingFolder ? "打开中…" : "打开文件夹"}
               onClick={handleOpenFolder}
-              disabled={!fileExists || openingFolder}
+              disabled={!canAct || openingFolder}
             />
             <FileActionBtn icon={<Copy size={14} />} label="复制路径" onClick={handleCopyPath} />
           </div>
@@ -581,27 +609,33 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
 }) {
   const { toast } = useToast();
   const [infoMap, setInfoMap] = useState<Record<string, FileMeta>>({});
+  /** U3.5（多文件版）：查失败的那几个。原先它们被当成 `exists:false`，
+   *  汇总行会报「⚠ N 已移动」——把「没查成」累加成了一个关于用户文件的肯定断言。 */
+  const [failedPaths, setFailedPaths] = useState<Set<string>>(new Set());
   const [busyPath, setBusyPath] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const failed = new Set<string>();
       const entries = await Promise.all(paths.map(async (p) => {
         try {
           const info = await invoke<FileMeta>("get_file_info", { path: p });
           return [p, info] as const;
         } catch {
+          failed.add(p);
           return [p, { size: 0, exists: false }] as const;
         }
       }));
-      if (!cancelled) setInfoMap(Object.fromEntries(entries));
+      if (!cancelled) { setInfoMap(Object.fromEntries(entries)); setFailedPaths(failed); }
     })();
     return () => { cancelled = true; };
   }, [paths]);
 
   const loaded = Object.keys(infoMap).length > 0;
   const okCount = paths.filter((p) => infoMap[p]?.exists).length;
-  const missingCount = paths.length - okCount;
+  const failedCount = paths.filter((p) => failedPaths.has(p)).length;
+  const missingCount = paths.length - okCount - failedCount;
   const totalSize = paths.reduce((s, p) => s + (infoMap[p]?.exists ? infoMap[p].size : 0), 0);
 
   const openFile = useCallback(async (p: string) => {
@@ -644,7 +678,8 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
   }, [paths, toast]);
 
   const openAllFolders = useCallback(async () => {
-    const existing = paths.filter((p) => infoMap[p]?.exists);
+    // 没查到状态的也包进来（U3.5）：它们不是「确认不存在」，下面真开不成会计入 failedTotal。
+    const existing = paths.filter((p) => infoMap[p]?.exists || failedPaths.has(p));
     if (existing.length === 0) { toast("没有可打开的文件", "error"); return; }
     const dirs = new Set(existing.map((p) => {
       const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
@@ -683,7 +718,7 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
     } else {
       toast(`已打开 ${opened} 个文件夹，${failedTotal} 个失败${aborted ? "（连续失败已中止）" : ""}`, "info");
     }
-  }, [paths, infoMap, toast]);
+  }, [paths, infoMap, failedPaths, toast]);
 
   return (
     <div className="fd-body" style={{ gap: 12 }}>
@@ -699,6 +734,8 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
           <>
             <span style={{ fontSize: 11, color: "var(--green)" }}>✓ {okCount} 正常</span>
             {missingCount > 0 && <span style={{ fontSize: 11, color: "var(--danger, #EF4444)" }}>⚠ {missingCount} 已移动</span>}
+            {/* 单列一档：它不是「文件没了」，而是「我没问出来」，用中性色。 */}
+            {failedCount > 0 && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>? {failedCount} 没查到</span>}
           </>
         )}
         <span style={{ marginLeft: "auto" }}>
@@ -713,8 +750,10 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
       }}>
         {paths.map((p) => {
           const info = infoMap[p];
+          const failed = failedPaths.has(p);
           const exists = info?.exists === true;
-          const missing = info?.exists === false;
+          // 查失败的不算 missing（否则行上会红着写「已移动或不存在」）。
+          const missing = info?.exists === false && !failed;
           const name = nameOf(p);
           const busy = busyPath === p;
           const isSelected = p === selectedPath;
@@ -741,14 +780,15 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
                   {name}
                 </div>
                 <div style={{ fontSize: 10.5, marginTop: 1, color: missing ? "var(--danger, #EF4444)" : "var(--text-muted)" }}>
-                  {!info ? "检查中…" : exists ? `${formatSize(info.size)} · 正常` : "⚠ 已移动或不存在"}
+                  {!info ? "检查中…" : failed ? "? 没查到状态" : exists ? `${formatSize(info.size)} · 正常` : "⚠ 已移动或不存在"}
                 </div>
               </div>
+              {/* 没查到状态的行不置灰：让用户去试，真打不开会自己报错。 */}
               <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                <RowIconBtn title="打开文件" disabled={!exists || busy} onClick={(e) => { e.stopPropagation(); openFile(p); }}>
+                <RowIconBtn title="打开文件" disabled={(!exists && !failed) || busy} onClick={(e) => { e.stopPropagation(); openFile(p); }}>
                   {busy ? <Loader size={13} className="spin" /> : <ExternalLink size={13} />}
                 </RowIconBtn>
-                <RowIconBtn title="打开文件夹" disabled={!exists || busy} onClick={(e) => { e.stopPropagation(); openFolder(p); }}>
+                <RowIconBtn title="打开文件夹" disabled={(!exists && !failed) || busy} onClick={(e) => { e.stopPropagation(); openFolder(p); }}>
                   <FolderOpen size={13} />
                 </RowIconBtn>
                 <RowIconBtn title="复制路径" onClick={(e) => { e.stopPropagation(); copyPath(p); }}>
@@ -767,7 +807,7 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
           label="打开全部文件夹"
           onClick={openAllFolders}
           primary
-          disabled={!loaded || okCount === 0}
+          disabled={!loaded || (okCount === 0 && failedCount === 0)}
         />
         <FileActionBtn
           icon={<Copy size={14} />}

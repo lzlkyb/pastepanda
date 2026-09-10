@@ -565,6 +565,12 @@ body {
 }
 .act-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green, #22c55e); }
 .act-row {
+  /* U7：这九行原先是 `<div onClick>`，而「送动作链 / 固定区域 / 重新截图」
+     只有这一条路——键盘用户根本到不了。现在是 `<button>`，
+     所以要自己撑满一行（按钮默认是 inline-block，不会像 div 那样自动占满）。 */
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; font-size: 12px; color: var(--text-primary, #E0E8F0);
   cursor: pointer; transition: background 0.12s;
@@ -576,8 +582,10 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; flex-shrink: 0;
 }
-.act-row .lbl { font-size: 12px; }
-.act-row .sub { font-size: 10px; color: var(--text-muted, #7994B4); margin-top: 1px; }
+/* 行变成 <button> 后，内层两行文字从 <div> 改成了 <span>（div 不能合法地
+   放进 button），所以要把 display:block 补回来，否则两行会拼成一行。 */
+.act-row .lbl { display: block; font-size: 12px; }
+.act-row .sub { display: block; font-size: 10px; color: var(--text-muted, #7994B4); margin-top: 1px; }
 .act-row .k { margin-left: auto; font-size: 10px; color: var(--text-muted, #7994B4); font-family: ui-monospace, Consolas, monospace; }
 .act-row.primary { background: var(--accent-light, #0A1E3A); border-radius: 8px; margin: 6px 8px; padding: 8px 10px; }
 .act-row.primary .ic { background: var(--accent-solid, #2D78C2); color: #fff; }
@@ -1225,5 +1233,33 @@ body {
 @keyframes tbAttrIn {
   from { opacity: 0; transform: translate(-50%, -10px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ===== U7：工具栏里的原生 button 重置 =====
+
+   截图窗里所有可点项已改成真 `<button>`（属性条原本是 `<span onClick>`，
+   主工具栏 / 模式胶囊 / 「更多」面板是 `<div onClick>`，文字工具栏的色点是 `<span onClick>`）
+   ——它们都永远进不了 Tab 序，截图窗之前没有任何一个可聚焦元素。
+   浏览器给 button 的默认边框 / 背景 / 字体必须清掉，否则这几排会长出灰框。
+
+   用 `:where()` 把整条选择器压成**零特异性**：.wpick / .cwrap / .tool / .act-row /
+   .mask-confirm 那些现有规则都能盖过它。
+   （写成 `.attr-bar button` 就是 (0,1,1)，反而会把 `.wpick { font-size: 10.5px }` 压掉。）
+
+   ❗ 位置必须留在**文件末尾**。级联上它写哪都行，但
+   `screenshotThemeTokens.test.ts` 是用 `indexOf(".text-toolbar")` 找「主声明块」的：
+   本规则写在 `.text-toolbar {` 前面时，那条测试会把这个重置块当成文字工具栏的主块，
+   然后报「必须引用 --shot-* 令牌」。 */
+:where(.attr-bar button, .annot-toolbar button, .text-toolbar button, .act-panel button, button.mode-pill) {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  cursor: pointer;
+  appearance: none;
 }
 

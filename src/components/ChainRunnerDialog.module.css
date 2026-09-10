@@ -106,19 +106,45 @@
   font-weight: 700;
 }
 .chainTabName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+/* U7：编辑按钮从「tab 内部的 span」改成「包层里的平级真按钮」。
+   包层提供定位上下文，并接手原先 .chainTab 的 flex-shrink（它现在才是 flex item）。 */
+.chainTabWrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+/* 可编辑的链：右侧恒定留出 24×24 的位置。
+   旧写法是 display:none → hover 才出现，一悬停整行就重排，
+   而这行本身能横向滚动，标签会在光标下面滑走。 */
+.chainTabEditable { padding-right: 30px; }
 .chainTabEdit {
-  display: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 5px;
-  background: var(--section-bg);
-  color: var(--text-secondary);
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
+  /* 默认不可见：用 visibility 而不是 display，既保住位置（不抄行），
+     又不会留下一个“看不见却点得中”的陷阱（那是 opacity:0 的毛病）。 */
+  visibility: hidden;
 }
-.chainTab:hover .chainTabEdit { display: inline-flex; }
-.chainTabEdit:hover { color: var(--accent-strong); }
+/* 鼠标：悬停整块就出。键盘：选中这条链后它就进入 Tab 序（visibility 可见才可聚焦）。 */
+.chainTabWrap:hover .chainTabEdit,
+.chainTabWrapOn .chainTabEdit { visibility: visible; }
+.chainTabEdit:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
 .newBtn {
   flex-shrink: 0;
   display: inline-flex;
@@ -456,6 +482,40 @@
 .copyDone { color: var(--green); border-color: var(--green-border); background: var(--green-bg); }
 .pasteBtn { border: none; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; }
 .pasteBtn:hover:not(:disabled) { opacity: 0.92; color: #fff; border: none; }
+
+/* U3.5：运行未能开始 / 中途抛异常的常驻错误态（不能退回 idleHint） */
+.runErrBox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--danger);
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  margin: 0 14px;
+  line-height: 1.6;
+}
+.runErrMsg { flex: 1; min-width: 0; word-break: break-word; }
+.runErrRetry {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid var(--red-border);
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--danger);
+  cursor: pointer;
+  transition: 0.15s;
+}
+.runErrRetry:hover:not(:disabled) { background: var(--red-border); }
+.runErrRetry:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .idleHint {
   text-align: center;

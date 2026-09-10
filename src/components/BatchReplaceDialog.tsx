@@ -68,8 +68,11 @@ export function BatchReplaceDialog({ open, onClose }: { open: boolean; onClose: 
       setReplaceResults(null);
     } catch (e) {
       logger.warn("选择文件失败", e);
+      // 取消选择走的是 `!selected` 分支，能走到这里就是真出错了。
+      // 发布版没有控制台，只写 logger 等于点了按钮屏幕上什么也不发生。
+      toast("打不开文件选择器", "error");
     }
-  }, []);
+  }, [toast]);
 
   const selectFolder = useCallback(async () => {
     try {
@@ -87,6 +90,9 @@ export function BatchReplaceDialog({ open, onClose }: { open: boolean; onClose: 
       toast(`已选择 ${filePaths.length} 个文件`, "info");
     } catch (e) {
       logger.warn("选择文件夹失败", e);
+      // 同上；而且这条路径里还包含 readDir，它失败时用户已经选完文件夹了，
+      // 什么都不说的话看起来就像「这个文件夹是空的」。
+      toast("没能读取这个文件夹", "error");
     }
   }, [toast]);
 

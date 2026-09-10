@@ -1,0 +1,199 @@
+/* KbHealthBar.module.css — 知识库顶栏那条「库里有 N 项可以修」。
+
+   与 KbSyncStatusBar.module.css 是**成对**的两个文件：两条状态条在同一位置
+   上下相邻，形态不一致就会看成两个不同来源的东西叠在一起。
+   所以这里的类名、三档语气、24×24 的 ×、`color: inherit` 的文字链
+   都刻意与那份保持一致，改一边时另一边要跟着改。
+
+   这个文件也是补上来的：组件原先整屏 17 处内联 `style={{}}`，
+   与那份同因同果——内联 style 写不了 `:hover` / `:focus-visible` / 媒体查询，
+   也不接受主题覆盖，是 U6 / U7 集体失效的根因，不是风格偏好（U8）。*/
+
+.bar {
+  /* U2 快档。**150ms 不是 100ms**：快档已于 2026-09-09 修正——
+     100ms 当初是从 M3 四档里挑错了一档，全库实测 150ms 有 330 处、100ms 只有 15 处。*/
+  --dur-fast: 150ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+/* ===== 第一行：概述 ===== */
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  font-size: 12.5px;
+}
+
+/* 圆点是装饰而非按钮，小于 24px 不违反 SC 2.5.8（那条只管点击目标）。
+   它也不是唯一的信息来源——右边那句话已经把「有 N 项可以修」写出来了（SC 1.4.1）。*/
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--warning);
+}
+
+.statusText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== 明细行 ===== */
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail {
+  margin-top: 3px;
+}
+
+/* 明细里的每一条（一篇笔记 / 一组标签）。 */
+.item {
+  margin-top: 2px;
+}
+
+/* 两档语气，底色与文字色全部走**语义名**（U6）：
+   旧代码用的是 --orange / --orange-bg 这类**色名**变量。
+   色名说的是「它是什么颜色」，语义名说的是「它表示什么」，
+   只有后者能跟着主题走、也只有后者换主题时不会把「警告」变成「装饰」。*/
+.rowWarn {
+  background: var(--warning-bg);
+}
+
+.rowInfo {
+  background: transparent;
+}
+
+/* 🔴 V6：彩色底上的次要文字取**同色相**，不用中性灰。
+   混向 --text-primary 得到的是**更高**对比度而不是更低，所以标题取混过的那个（最重）、
+   说明取纯色相（次重、仍达 AA）；反过来写会让说明比标题还抢眼。
+   一个式子两套主题都成立：浅色主题里 text-primary 深、把色相压暗，深色主题里浅、把色相提亮。*/
+.rowWarn .rowBody {
+  color: color-mix(in srgb, var(--warning) 55%, var(--text-primary));
+}
+
+.rowWarn .detail,
+.rowWarn .muted {
+  color: var(--warning);
+}
+
+/* info 行底色是透明（= 卡片底，不是彩色底），所以这里用灰不违反 V6 */
+.rowInfo .rowBody,
+.rowInfo .detail {
+  color: var(--text-secondary);
+}
+
+.rowInfo .muted {
+  color: var(--text-muted);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+/* 明细里的文字链（打开某篇笔记 / 搜同名 / 筛标签）。
+   `color: inherit` 是故意的：它长在 `.detail` 里，于是跟着所在行的语气色走。
+   写死 accent 蓝的话，压在橙底上就是两个色相打架（V3：一屏只一个强调色）。
+   去掉颜色差异后靠什么看出它能点？下划线 + 手型——两者都是**静止状态**
+   就看得见的，不靠 hover 才现身（L6）。*/
+.linkBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+/* 顶行那个「展开 ▾」不在彩色底上，所以它保留强调色。 */
+.expandBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  flex-shrink: 0;
+}
+
+/* 🔴 24×24（U7 / WCAG SC 2.5.8）。旧值是 `font-size:13 / padding:0`，
+   实际只有约 13×13 —— 全应用最小的可点目标之一。*/
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.dismiss:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* ===== 底部中性统计 ===== */
+
+.stats {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ===== U3.5：体检没跑成 ===== */
+
+/* 体检失败原本返 null，界面上与「库很健康」**逐像素相同**。
+   这条就是 U3.5 说的那种：查询失败被渲染成查询结果为空。*/
+.loadFail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.retryBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  flex-shrink: 0;
+}
+
+/* 没有 `prefers-reduced-motion` 块是故意的：本文件里没有任何位移与缩放，
+   只有颜色过渡，而颜色过渡不属于 U2 要去掉的那一类。 */

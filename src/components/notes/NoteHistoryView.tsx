@@ -93,21 +93,27 @@ export function NoteHistoryView({
 
   const handleRestore = useCallback(async () => {
     if (selected === "current") return;
-    const ok = await confirmDialog({
-      title: "恢复版本",
-      // 脏数据必须写进去：恢复直接写库，草稿没地方去，不说就是静默丢数据。
-      // （确认框是纯文本渲染，不要写 Markdown 星号）
-      message: isDirty
-        ? "把笔记恢复到这个版本？当前未保存的修改会丢失。原来已保存的内容会存成一份历史，可以再恢复回来。"
-        : "把笔记恢复到这个版本？当前内容会存成一份历史，随时可以再恢复回来。",
-      confirmText: "恢复",
-    });
-    if (!ok) return;
+    // U4.3：只有不可逆才弹确认。恢复本身是可逆的——当前已保存的内容
+    // 会被存成一份历史，就在这个列表里，随时能再恢复回去，所以不拦。
+    // 但「有未保存修改」时那一段草稿没地方去，是真丢，必须确认。
+    // （与删笔记同一口径：noteDeleteUndo.test.tsx「只有未保存的修改才弹确认」）
+    if (isDirty) {
+      const ok = await confirmDialog({
+        title: "恢复版本",
+        // 脏数据必须写进去：恢复直接写库，草稿没地方去，不说就是静默丢数据。
+        // （确认框是纯文本渲染，不要写 Markdown 星号）
+        message:
+          "把笔记恢复到这个版本？当前未保存的修改会丢失。原来已保存的内容会存成一份历史，可以再恢复回来。",
+        confirmText: "恢复",
+      });
+      if (!ok) return;
+    }
     setRestoring(true);
     const note = await noteRestore(selected);
     setRestoring(false);
     if (!note) return; // api 层已弹错（规则 #15.3），不重复提示也不关视图
-    toast("已恢复，原版本已存入历史", "success");
+    // 不弹确认了，回执就得把「怎么悔」说清楚（U4.1）。
+    toast("已恢复。原来的内容已存成一份历史，可以再恢复回来", "success");
     onRestored(note);
   }, [selected, isDirty, toast, onRestored]);
 
@@ -153,6 +159,14 @@ export function NoteHistoryView({
               ? `${revs.length} 份历史 · ${pinnedCount} 份锚定`
               : `${revs.length} 份历史`}
         </span>
+      </div>
+
+      {/* L1 出路二：「锚定」是本项目的词，用户语言里没有它。
+          改名属于产品语言决策（规则 L1 已写明：未拍板前走「就地解释」这条路），
+          所以在它首次出现的位置（列表里的徽标）之前先把话说完。
+          原先只在「一条历史都没有」的空态里解释过——而有历史时才看得到徽标。 */}
+      <div className={styles.histPinHint}>
+        「锚定」= 手动保住某一份，它不占 20 份上限、也永不被挤掉
       </div>
 
       <div className={styles.histList}>

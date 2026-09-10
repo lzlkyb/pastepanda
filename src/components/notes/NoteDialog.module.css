@@ -232,6 +232,15 @@
   color: var(--text-muted);
 }
 
+/* L1：「锚定」的就地解释。弱化到背景里——它是一句说明，不是可操作项，
+   不能抢走列表里那个黄徽标的注意力。 */
+.histPinHint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  padding: 0 2px 2px;
+}
+
 /* 列表限高：预览区必须留得下，否则 20 份历史会把预览挤没 */
 .histList {
   flex: 0 1 auto;
