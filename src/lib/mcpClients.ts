@@ -42,6 +42,31 @@ export interface McpClientDef {
   transport: McpTransport;
   /** 这家额外要的字段（如 WorkBuddy 的 timeout / disabled）。 */
   extra?: Record<string, unknown>;
+  /**
+   * 条目里 URL 的字段名。默认 `url`。
+   *
+   * 🔴 Gemini CLI 用 `httpUrl`，而且它**靠字段名选传输方式**：
+   *   `httpUrl` → StreamableHTTP、`url` → SSE、`command` → stdio。
+   *   所以写错这个名字不是「少个别名」，是**选错了传输方式**。
+   */
+  urlField?: string;
+  /**
+   * headers 的字段名。默认 `headers`。
+   *
+   * Codex 的 TOML 用 `http_headers`（它自己源码里的注释：「DB中的统一规范使用 headers，
+   * Codex TOML 使用 http_headers」）。
+   */
+  headersField?: string;
+  /**
+   * 不输出 `type` 字段。
+   *
+   * Gemini CLI 的条目**没有** `type`；多写一个不认识的字段至少是噪声，
+   * 严格校验的客户端还可能直接报错。
+   *
+   * ❗ 即便不输出，`transport` 字段仍然要填：它记的是「这条实际走哪种传输」，
+   *   自定义接入的下拉也靠它做覆盖性检查。
+   */
+  omitType?: boolean;
   /** 粘到哪里 / 怎么打开那个配置。 */
   where: string;
   /** 为什么不能一键（`configPath` 为 null 时必填）。 */
@@ -135,6 +160,59 @@ export const MCP_CLIENTS: McpClientDef[] = [
       "它另有 staticHeaders，但那是放来源/版本这类非机密元数据的，令牌不该进那里。",
   },
   {
+    id: "qoder",
+    name: "Qoder",
+    configPath: "~/.qoderwork/mcp.json",
+    // 🔴 连字符写法，**不是** WorkBuddy 那个 `streamableHttp`。
+    //    官方文档给的远程示例就是 `streamable-http`，写成驼峰不报错、只是连不上。
+    transport: "streamable-http",
+    where: "写进该文件的 mcpServers。",
+    evidence:
+      "路径：本机 `~/.qoderwork/mcp.json` 实测存在，顶层就是 `mcpServers`（2026-09-10 扫描）。" +
+      "❗ 目录名是 `.qoderwork` 而不是 `.qoder`。" +
+      "transport：官方文档 docs.qoder.com 的 MCP 页，远程服务示例为 " +
+      "`\"type\": \"streamable-http\"` + `headers.Authorization: Bearer`（2026-09-10 查）。" +
+      "⚠ 本机那一条现有条目是 stdio 型且带 `enabled` 字段；官方远程示例里没有这个字段，" +
+      "所以这里不写——若以后发现 Qoder 不写 `enabled` 就不启用，再补 `extra`。",
+  },
+  {
+    id: "codebuddy",
+    name: "CodeBuddy",
+    configPath: "~/.codebuddy/mcp.json",
+    transport: "http",
+    where: "写进该文件的 mcpServers。",
+    evidence:
+      "路径：本机 `~/.codebuddy/mcp.json` 实测存在，顶层是 `mcpServers`" +
+      "（2026-09-10 扫描，当时里面是空的）。" +
+      "transport：腾讯官方文档 codebuddy.cn/docs/cli/mcp 同时给了 `http` 与 `sse` 两种远程写法，" +
+      "都是 `url` + `headers.Authorization: Bearer`（2026-09-10 查）。这里取 `http`（与 Claude Code 同档）。",
+  },
+  {
+    id: "gemini-cli",
+    name: "Gemini CLI",
+    configPath: "~/.gemini/settings.json",
+    /**
+     * 🔴 这一条是全表里**唯一不写 `type`** 的。
+     *
+     * Gemini CLI 在启动时按**字段名**选传输：
+     *   `httpUrl` → StreamableHTTPClientTransport
+     *   `url`     → SSEClientTransport
+     *   `command` → StdioClientTransport
+     * 所以这里把 URL 写成 `url` 的话，它会按 **SSE** 去连——不报错，只是连不上。
+     * `transport` 仍填 `streamableHttp`，记的是“实际走哪种”。
+     */
+    transport: "streamableHttp",
+    omitType: true,
+    urlField: "httpUrl",
+    where: "写进该文件的 mcpServers。",
+    evidence:
+      "官方文档（geminicli.com/docs/tools/mcp-server 与 google-gemini.github.io 的同名页，" +
+      "2026-09-10 查）：全局配置在 `~/.gemini/settings.json`，容器键 `mcpServers`；" +
+      "远程 HTTP 示例为 `httpUrl` + `headers.Authorization: Bearer`，**整个条目没有 `type` 字段**；" +
+      "文档明写传输选择规则：httpUrl→StreamableHTTP、url→SSE、command→Stdio。" +
+      "❗ 该文件装的是 Gemini CLI 的**全部设置**，不只 MCP，所以只能合并不能覆盖（同 `~/.claude.json`）。",
+  },
+  {
     id: "cherry-studio",
     name: "Cherry Studio",
     configPath: null,
@@ -157,13 +235,31 @@ export const MCP_CLIENTS: McpClientDef[] = [
 ];
 
 /**
+ * 🔴 调研过、**刻意不收**的客户端——写在这里免得下次又查一遍。
+ *
+ * ## Claude Desktop（2026-09-10 查证）
+ *
+ * 它的 `claude_desktop_config.json` **只认 stdio**：往里写带 `url` 的条目会被
+ * **静默丢弃**，严重时启动即崩或加载出零个工具。远程 HTTP 服务只能走应用内的
+ * 自定义连接器（Custom Connector），或用 `mcp-remote` 包一层 stdio 桥。
+ *
+ * ❗ 所以它不能当成「不能一键、给张复制卡片」那一类收进来：
+ *   本文件生成的卡片就是一份 `mcpServers` JSON，而那份 JSON 粘进它的配置里
+ *   **恰好是有害的那种**。给错的东西比什么都不给更糟。
+ *   将来真要收，得先给注册表加一个「不出 JSON 卡片、只出文字说明」的能力。
+ */
+
+/**
  * 拼一条条目所需的最小信息。
  *
  * ❗ 故意比 `McpClientDef` 窄：**自定义接入**时用户只挑了一个 transport，
  *   没有 name / where / evidence 可填。要求传完整定义只会逼着调用方
  *   造一个假的 `evidence`——而那个字段存在的意义就是“不凭记忆填”。
  */
-export type McpEntryShape = Pick<McpClientDef, "transport" | "extra">;
+export type McpEntryShape = Pick<
+  McpClientDef,
+  "transport" | "extra" | "urlField" | "headersField" | "omitType"
+>;
 
 /**
  * 生成某家客户端的条目对象（不含外层 mcpServers）。
@@ -176,10 +272,11 @@ export function buildMcpEntry(
   url: string,
   token: string,
 ): Record<string, unknown> {
+  // 字段名默认值就是大多数客户端的写法；只有真不一样的那几家才在注册表里覆盖。
   return {
-    type: client.transport,
-    url,
-    headers: { Authorization: `Bearer ${token}` },
+    ...(client.omitType ? {} : { type: client.transport }),
+    [client.urlField ?? "url"]: url,
+    [client.headersField ?? "headers"]: { Authorization: `Bearer ${token}` },
     ...(client.extra ?? {}),
   };
 }

@@ -79,6 +79,29 @@ describe("条目拼装", () => {
     expect(entry.type).toBe("streamableHttp");
   });
 
+  /**
+   * 🔴 Gemini CLI 是全表里唯一不写 `type` 的，而且它**靠字段名选传输**：
+   * `httpUrl`→StreamableHTTP、`url`→SSE、`command`→Stdio。
+   * 把 URL 写成 `url` 的话它会按 SSE 去连——**不报错，只是连不上**，
+   * 正是这个注册表要防的那类错。
+   */
+  it("Gemini CLI：不写 type，URL 走 httpUrl", () => {
+    const g = MCP_CLIENTS.find((c) => c.id === "gemini-cli")!;
+    const entry = buildMcpEntry(g, url, "t") as Record<string, unknown>;
+    expect(entry.type, "Gemini CLI 的条目不该有 type").toBeUndefined();
+    expect(entry.httpUrl).toBe(url);
+    expect(entry.url, "写成 url 会被当成 SSE").toBeUndefined();
+    expect((entry.headers as Record<string, string>).Authorization).toBe("Bearer t");
+  });
+
+  it("每一条都得把 URL 真的写进条目里（字段名可以不同）", () => {
+    // `urlField` 写错一个字母，条目里就没有地址了——而那同样不会报错。
+    for (const c of MCP_CLIENTS) {
+      const entry = buildMcpEntryForConnect(c, url);
+      expect(JSON.stringify(entry), `${c.id} 的条目里没有 URL`).toContain(url);
+    }
+  });
+
   it("完整 JSON 包着 mcpServers 且用统一的条目名", () => {
     const json = JSON.parse(buildMcpConfigJson({ transport: "sse" }, url, "t"));
     expect(Object.keys(json)).toEqual(["mcpServers"]);
