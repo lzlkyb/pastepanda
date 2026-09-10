@@ -58,6 +58,11 @@ export function KbHealthBar({
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
   const [hidden, setHidden] = useState(false);
+  /** 🔴 「体检没跑成」那条的关闭，**必须与 `hidden` 分开**。
+   *  合用一个的话：用户关掉「这次没查成」→ 之后改了笔记、体检重跑并成功、
+   *  真查出来一堆断链重名——整条栏却因为 `hidden` 还是 true 而不再出现。
+   *  他关的是「别报失败」，不是「本次会话都别告诉我库里有问题」。 */
+  const [failDismissed, setFailDismissed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -83,7 +88,7 @@ export function KbHealthBar({
   // U3.5：体检没跑成得说一声。不弹 toast（api 层已经有意不弹），
   // 但也不能静默消失成「库很健康」。句子里先把「不影响你用」说清楚，
   // 否则一条红字会让人以为库坏了——实际上只是体检这一项没算出来。
-  if (loadFailed) {
+  if (loadFailed && !failDismissed) {
     return (
       <div className={styles.bar}>
         <div className={styles.loadFail}>
@@ -96,9 +101,9 @@ export function KbHealthBar({
           <button
             type="button"
             className={styles.dismiss}
-            onClick={() => setHidden(true)}
-            title="本次不再提示"
-            aria-label="本次不再提示"
+            onClick={() => setFailDismissed(true)}
+            title="本次不再提示体检失败"
+            aria-label="本次不再提示体检失败"
           >
             ×
           </button>

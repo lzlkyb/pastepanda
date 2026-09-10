@@ -748,14 +748,21 @@ body {
   height: 12px;
   background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 18%, transparent);
 }
-/* 关闭提示。看上去还是 16×16，但热区靠 padding 撑到 24×24（U7 / SC 2.5.8），
-   再用等量负外边距把位置拉回去——提示条的高度与行内间距一点不变。
-   直接把宽高改成 24 会把整条提示抬高八个像素。 */
+/* 关闭提示。热区靠 padding 撑到 24×24（U7 / SC 2.5.8），再用等量负外边距
+   把位置拉回去——提示条的高度与行内间距一点不变。
+   直接把宽高改成 24 会把整条提示抬高八个像素。
+
+   `background-clip: content-box` 是故意的：不加的话 hover 底色会连着
+   padding 一起画成 24×24，在这条很窄的提示里是一块明显变大的色块。
+   现在：**画面 16×16 不变，可点范围 24×24**。
+   （若日后想让 hover 反馈诚实地盖住整个热区，删这一行即可——
+   那是个视觉取舍，不影响合规性。） */
 .shot-hint .hk-close {
   pointer-events: auto;
   margin: -4px -4px -4px -2px;
   padding: 4px;
   box-sizing: content-box;
+  background-clip: content-box;
   width: 16px;
   height: 16px;
   display: inline-flex;
