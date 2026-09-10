@@ -83,35 +83,38 @@ export function ViewControls({ sort, group, filterPanel, filterActive }: Props) 
 
   return (
     <div className={styles.wrap} ref={wrapRef}>
+      {/* L2：每个图标带常驻中文标签。原先三个字只写在 title 里——
+          hover 才出现，而排序/分组/筛选这三个图标彼此并不自明。
+          尺寸不变的算法见 ViewControls.module.css 里 .icon 的注释。 */}
       <button
         type="button"
         className={`${styles.icon}${sort.value ? ` ${styles.iconOn}` : ""}`}
         title="排序"
-        aria-label="排序"
         aria-expanded={open === "sort"}
         onClick={() => toggle("sort")}
       >
-        <ArrowUpDown size={13} />
+        <ArrowUpDown size={12} />
+        <span className={styles.iconLb}>排序</span>
       </button>
       <button
         type="button"
         className={`${styles.icon}${group.value ? ` ${styles.iconOn}` : ""}`}
         title="分组"
-        aria-label="分组"
         aria-expanded={open === "group"}
         onClick={() => toggle("group")}
       >
-        <Rows3 size={13} />
+        <Rows3 size={12} />
+        <span className={styles.iconLb}>分组</span>
       </button>
       <button
         type="button"
         className={`${styles.icon}${filterActive ? ` ${styles.iconOn}` : ""}`}
         title="筛选"
-        aria-label="筛选"
         aria-expanded={open === "filter"}
         onClick={() => toggle("filter")}
       >
-        <SlidersHorizontal size={13} />
+        <SlidersHorizontal size={12} />
+        <span className={styles.iconLb}>筛选</span>
       </button>
 
       {open === "sort" && menu(sort, "sort")}

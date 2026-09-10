@@ -10,11 +10,24 @@
 }
 
 /* 28×28（原 22×22）：搜索框长到 38px 后，22px 的图标在同一行里显得像没对齐。
-   同样没抬到记录模式的 34px：三个图标×12px 就是从输入框里抢 36px。 */
+   同样没抬到记录模式的 34px：三个图标×12px 就是从输入框里抢 36px。
+
+   L2：图标下方加**常驻**中文标签（原先只写在 title 里，hover 才看得到，
+   触屏上根本不生效）。形式照搬截图工具栏的 `.tool .ic + .tool .lb`，
+   不另发明一套。
+
+   🔴 为什么能白拿：**行高与行宽都不变**。
+   高：图标 12px + 间隙 1px + 标签行高 9px = 22px，还在 28px 盒子里。
+   宽：两个汉字 × 9px ≈ 18px < 28px。
+   这一点是关键——搜索框里**能打字的宽度只有 ~108px**（见 KnowledgeView.module.css
+   的 .searchRow 注释），把标签横着放在图标旁边要再吃 ~78px，剩下 30px——
+   那不是取舍，是把搜索框删了。 */
 .icon {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
   width: 28px;
   height: 28px;
   padding: 0;
@@ -22,8 +35,18 @@
   border: none;
   border-radius: 7px;
   color: var(--text-muted);
+  font-family: inherit;
   cursor: pointer;
   transition: all 0.15s;
+}
+
+/* 标签本身。不给 opacity 降透：它是读得懂这个图标的**唯一**依据，
+   降透会把它推到 --text-muted 之下、在浅色主题里跌破 4.5:1。 */
+.iconLb {
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
 }
 
 .icon:hover {

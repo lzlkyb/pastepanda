@@ -14,10 +14,11 @@
 
 import type { ToolId } from "@/lib/screenshot/types";
 import type { TbAttach } from "@/lib/screenshot/toolbarPos";
-import type { MouseEvent } from "react";
+import { useCallback, useRef, type MouseEvent } from "react";
 import { Sparkles } from "lucide-react";
 import { AiMark } from "@/components/ai/AiMark";
 import { OCR_ICON, PIN_ICON, SAVE_ICON, TOOLS } from "./tools";
+import { useRovingToolbar } from "./useRovingToolbar";
 
 /** 取文字按钮的状态（与 ScreenshotOverlay 的 ocrStatus 同源） */
 export type OcrBtnStatus = "idle" | "running" | "done" | "empty" | "failed";
@@ -221,14 +222,30 @@ export function AnnotToolbar({
     el.classList.add("sel-pop");
   };
 
+  // role="toolbar" 得配漫游焦点（一个 Tab 位 + 方向键）——只标 role 不做漫游，
+  // 等于把一个错的导航模型告诉了屏阅读器用户。
+  const barRef = useRef<HTMLDivElement>(null);
+  const roving = useRovingToolbar(barRef);
+  // 父组件要用 innerRef 实测栏宽（右对齐选区右缘），本组件又要自己一份
+  // 来写 tabIndex：一个 DOM 节点只能挂一个 ref，所以这里合并。
+  const setBarRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      barRef.current = el;
+      if (typeof innerRef === "function") innerRef(el);
+      else if (innerRef) (innerRef as { current: HTMLDivElement | null }).current = el;
+    },
+    [innerRef],
+  );
+
   return (
     <div
-      ref={innerRef}
+      ref={setBarRef}
       className={`annot-toolbar${attach !== "below" ? " top-attached" : ""}${busy ? " busy" : ""}`}
       style={{ left, top }}
       onClickCapture={onToolCapture}
       role="toolbar"
       aria-label="截图工具栏"
+      {...roving}
     >
       {/* U7：下面每一项原先都是 `<div onClick>`——连同属性条一起，
           整个截图窗没有任何一个可聚焦元素。现在全部是真 <button>。

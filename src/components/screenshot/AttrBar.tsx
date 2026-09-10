@@ -8,10 +8,13 @@
  * 只在选中绘制类工具时渲染（橡皮擦 / 马赛克 / 模糊 不需要颜色与粗细），
  * 属性记忆上次选择，所以实际不增加点击次数。
  *
- * 纯展示组件：不持有状态、不碰 ref、不发 IPC。
+ * 不持有业务状态、不发 IPC。（原注释写的是「不碰 ref」，现在碰了一个：
+ * 漫游焦点要把 tabIndex 写到真实 DOM 上，绕不开。见 useRovingToolbar。）
  */
 
+import { useRef } from "react";
 import type { TbAttach } from "@/lib/screenshot/toolbarPos";
+import { useRovingToolbar } from "./useRovingToolbar";
 import {
   COLORS,
   PICKER_ICON,
@@ -144,16 +147,22 @@ export function AttrBar({
   onApplyMasks,
   onCancelMasks,
 }: Props) {
+  // role="toolbar" 就得配漫游焦点（一个 Tab 位 + 方向键）：否则展开时
+  // 二十多个按钮全在 Tab 序里，而这个 role 又把一个错的导航模型告诉了屏阅读器用户。
+  const barRef = useRef<HTMLDivElement>(null);
+  const roving = useRovingToolbar(barRef);
   return (
     // U7：这一排原先全是 `<span onClick>`——整个截图窗没有一个可聚焦元素，
     // globals.css 那条 `:focus-visible` 兜底在这里是空转。现在全部是真 <button>：
     // 键盘用户在标注态能选颜色 / 粗细 / 形状 / 箭头 / 字号 / 强度，而不是只能用默认红色细线。
-    // （进一步的 roving tabindex（一组一个 Tab 位、组内方向键）另记，本次不做。）
+    // 漫游焦点（一个 Tab 位 + 组内方向键）在 useRovingToolbar 里。
     <div
+      ref={barRef}
       className={`attr-bar${attach !== "below" ? " top-attached" : ""}`}
       style={{ left, top }}
       role="toolbar"
       aria-label="标注属性"
+      {...roving}
     >
       {showColor && (
         <>
