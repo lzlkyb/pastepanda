@@ -14,6 +14,16 @@ import type { SettingsTabName } from "@/lib/openSettings";
  * 且每一项的 `label` 与右栏分区标题的文字逐字一致（反查靠的就是这段文字）。
  * 两者都写在 `sections/meta.ts` 的注释里。
  */
+
+/**
+ * 外部跳转后继续校正目标位置的时长。
+ *
+ * 2.5s 是拍的，但有下界依据：要等的是 `stats` / `expiredCount` 两个 `invoke`
+ * 加 `AiTab` 的 providers，都是本机 SQLite / 配置读取；真慢到 2.5s 以上的话，
+ * 用户早就自己动了，而那种情况下我们本就该收手（见下面的 wheel 监听）。
+ */
+const SETTLE_MS = 2500;
+
 export function useSettingsNav({ open, initialTab, blossom, searching, sectionClass }: {
   open: boolean;
   /** 从变换中心等处跳过来时指定的页；不传或 "general" 就落在第一个分区。 */
@@ -31,8 +41,30 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
    */
   const [nav, setNav] = useState<SettingsNavKey>(SETTINGS_SECTIONS[0].key);
   const bodyRef = useRef<HTMLDivElement>(null);
-  /** 点菜单后待执行的滚动目标（等目标渲染出来再滑） */
-  const pendingScrollRef = useRef<SettingsNavKey | null>(null);
+  /**
+   * 待执行的滚动目标（等目标渲染出来再滑）。
+   *
+   * `smooth` 区分两种来源，它们的**时机完全不同**：
+   * - 手点菜单（true）：页面早就加载完、布局是稳的，平滑滑过去是对的；
+   * - 外部跳转（false）：见下面 `settling` 那段，那时页面还没长齐。
+   */
+  const pendingScrollRef = useRef<{ key: SettingsNavKey; smooth: boolean } | null>(null);
+  /**
+   * 外部跳转（`initialTab`）后的**校正窗口**：期间内容一长高就重新对齐。
+   *
+   * 🔴 这是 2026-09-10 报的那个 bug 的修复：从知识库「⋯」点「连接 AI 工具（MCP）」，
+   * 结果停在「数据管理」。根因**不是**找不到目标、也不是滚不动，而是**算早了**：
+   * 下面那个 effect 依赖 `[open]`，在 `SettingsView` 挂载那一刻就排了滚动，而那时：
+   *   ・`stats`（页面最顶上那块）还是 `null`，异步回来后要撑出一整块；
+   *   ・`expiredCount` 还是 0；
+   *   ・`AiTab` 的 providers 没到，回来后可能自动展开「服务商与密钥」；
+   *   ・`McpTab` 压根没挂载（`LazyMount` 靠 IntersectionObserver），只有 220px 占位。
+   * 于是按一个矮得多的页面算出 `top` 滑过去；随后这些内容陆续到达，
+   * 把 MCP 标题一路往下推，而原来的代码**滑完就把 ref 清了、再也不重算**。
+   *
+   * 手点菜单一直是好的，正因为那时候上面这些都已就位——同一段代码，只是跑在对的时刻。
+   */
+  const [settling, setSettling] = useState<SettingsNavKey | null>(null);
   /**
    * 平滑期间抑制 scroll-spy 的截止时间。
    * 不加这个的话：点「数据管理」→ 开始平滑 → 途中扫过「快捷键」→ spy 把 nav 改成快捷键，
@@ -62,8 +94,10 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
     //   真内容换进来后下移。这里不补偿：那是 `LazyMount` 占位高度的事，
     //   而且 MCP 自己的标题在它内容之上，不受影响。
     if (key !== SETTINGS_SECTIONS[0].key) {
-      pendingScrollRef.current = key;
-      spyMutedUntilRef.current = performance.now() + 700;
+      // 外部跳转不用 smooth：页面刚打开、用户还没看到内容，
+      // 从顶部滑到第 9 项那段动画既没有信息量，又会与下面的校正互相打断。
+      pendingScrollRef.current = { key, smooth: false };
+      spyMutedUntilRef.current = performance.now() + SETTLE_MS;
     }
     // initialTab 只在打开那一刻消费。列进依赖的话，父组件改一次这个 prop
     // 就会把用户手动切过去的项拉回来。
@@ -89,22 +123,96 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
     if (key === "about" && CHANGELOG.length > 0) setLastSeenVersion(CHANGELOG[0].version);
     // 点菜单 → 平滑到那一节。不在这里直接滚：MCP 那块是按可见性懒挂载的，
     // 可能还没真正渲染出来，交给渲染后的 effect 去量位置。
-    pendingScrollRef.current = key;
+    pendingScrollRef.current = { key, smooth: true };
   };
 
-  // 点菜单后真正执行滚动：放在渲染后，因为目标（尤其是懒挂载的 MCP）可能刚出现
-  useEffect(() => {
-    const key = pendingScrollRef.current;
-    if (!key) return;
-    pendingScrollRef.current = null;
+  /**
+   * 把某一节对齐到滚动容器顶部。返回是否真的找到并滚了（目标未渲染就是 false）。
+   *
+   * 已经对齐时仍然调 `scrollTo`：同一个值对浏览器来说是 no-op，
+   * 而加一道「差值小于 N 就不滚」的短路反而会在 jsdom（rect 全返 0）下
+   * 把“排过一次滚动”这件事变得不可观测。
+   */
+  const alignTo = (key: SettingsNavKey, smooth: boolean): boolean => {
     const scroller = bodyRef.current;
     const target = findNavEl(key);
-    if (!scroller || !target) return;
+    if (!scroller || !target) return false;
     // 用 scrollTop 增量而不是 scrollIntoView：后者会连带滑动祖先容器，把整个窗口顶掉
     const top = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    spyMutedUntilRef.current = performance.now() + 700;
-    scroller.scrollTo({ top, behavior: "smooth" });
+    scroller.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+    return true;
+  };
+
+  // 真正执行滚动：放在渲染后，因为目标（尤其是懒挂载的 MCP）可能刚出现。
+  //
+  // ❗ **故意不写依赖数组**：本 effect 靠「每次渲染都跑」来重试那些当帧还没
+  //   渲染出来的目标（见下面那段红色注释），加了依赖就没了重试机会。
+  //
+  //   eslint 为此报「无依赖数组的 effect 里调 setState 可能无限更新」——
+  //   这里不会：`setSettling` 之前刚把 `pendingScrollRef.current` 置了 null，
+  //   重渲染后第一行 `if (!p) return` 就出去了，走不到第二次 setState。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const p = pendingScrollRef.current;
+    if (!p) return;
+    // 🔴 没找到目标时**不清 ref**，留给下一次渲染重试。
+    //    原来的代码在取 target **之前**就清了，于是「那一帧恰好还没渲染出来」
+    //    等于永久放弃——本 effect 没有依赖数组、每次渲染都跑，本来是有机会重试的。
+    if (!alignTo(p.key, p.smooth)) return;
+    pendingScrollRef.current = null;
+    spyMutedUntilRef.current = performance.now() + (p.smooth ? 700 : SETTLE_MS);
+    // 外部跳转：进入校正窗口，在页面长齐的过程中持续对齐。
+    // 手点菜单不进：那时布局已稳，再插手只会把平滑动画打断。
+    if (!p.smooth) setSettling(p.key);
   });
+
+  /**
+   * 校正窗口（只在外部跳转后开）：内容一长高就重新对齐。
+   *
+   * 🔴 为什么必须上 `ResizeObserver`，而不能只靠「每次渲染重新对齐」：
+   * 撑高页面的那几处状态**不都在本组件树上**——`AiTab` 的展开与
+   * `LazyMount` 的 `shown` 都是它们自己的 `useState`，改了不会让 `SettingsView`
+   * 重渲染，本 hook 的 effect 也就不会跑。
+   *
+   * ❗ 特性检测不能省：jsdom 没有 `ResizeObserver`（`test-setup.ts` 里也没补），
+   *   直接 `new` 会让所有渲染到设置页的测试一起挂。没它时降级为只靠重渲染驱动。
+   */
+  useEffect(() => {
+    if (!settling) return;
+    const scroller = bodyRef.current;
+    if (!scroller) return;
+
+    const stop = () => setSettling(null);
+    const realign = () => {
+      alignTo(settling, false);
+      // 对齐动作自己会触发 scroll 事件，别让 spy 把高亮改走
+      spyMutedUntilRef.current = performance.now() + 200;
+    };
+
+    // 🔴 用户自己动了就立刻收手——跟用户抢滚动条是最糟的体验，
+    //    而校正窗口有 2.5s，足够长到用户已经开始滑了。
+    const onUserScroll = () => stop();
+    scroller.addEventListener("wheel", onUserScroll, { passive: true });
+    scroller.addEventListener("pointerdown", onUserScroll, { passive: true });
+    scroller.addEventListener("keydown", onUserScroll);
+
+    const timer = window.setTimeout(stop, SETTLE_MS);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(realign) : null;
+    // 观察**子元素**而不是容器：容器自己的尺寸不变，变的是里面内容的高度。
+    if (ro) for (const child of Array.from(scroller.children)) ro.observe(child);
+
+    return () => {
+      window.clearTimeout(timer);
+      ro?.disconnect();
+      scroller.removeEventListener("wheel", onUserScroll);
+      scroller.removeEventListener("pointerdown", onUserScroll);
+      scroller.removeEventListener("keydown", onUserScroll);
+    };
+    // `alignTo` 每次渲染都是新闭包，列进依赖会让校正窗口每渲染一次就重建一次
+    // （连带把 2.5s 的定时器也重置）。它里面只用到 `findNavEl`，
+    // 而那个只依赖 `navItems`（`blossom`）——主题不会在这 2.5s 里变。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settling]);
 
   // scroll-spy：滑到哪一节，菜单就高亮哪一项（含 AI/MCP/帮助/关于）
   useEffect(() => {
