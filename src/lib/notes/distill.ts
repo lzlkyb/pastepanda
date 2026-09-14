@@ -97,8 +97,21 @@ function topLabel(items: DayExcerptRow[]): string | undefined {
   }
   return [...freq.entries()]
     .filter(([t]) => t.length >= 2)
-    // 同频时按字典序，保证同样的输入每次得到同样的标题
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+    // 同频时不能用 localeCompare：CI 是 en_US（`ui` 排在 `回收` 前），
+    // 本机 zh-CN 反过来——同一套输入在两边标题不同，且 Linux 上会把
+    // 无区分度的短拉丁词顶成标题。改成语义序 + 码元序，跨平台稳定。
+    .sort((a, b) => b[1] - a[1] || preferLabelToken(a[0], b[0]))[0]?.[0];
+}
+
+/**
+ * 同频标题词的比较：CJK 优先 → 更长优先 → 码元序（保证同样输入同样标题）。
+ *
+ * 产品是中文界面，标题词优先取中文语义；`ui`/`id` 这类短拉丁在
+ * 「回收站 UI …」里文档频次与「回收」打平时不该胜出。
+ */
+function preferLabelToken(a: string, b: string): number {
+  const cjk = (t: string) => (/[\u4e00-\u9fa5]/.test(t) ? 1 : 0);
+  return cjk(b) - cjk(a) || b.length - a.length || (a < b ? -1 : a > b ? 1 : 0);
 }
 
 function previewOf(items: DayExcerptRow[]): string {
