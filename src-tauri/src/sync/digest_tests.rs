@@ -160,6 +160,10 @@ fn test_只有改过的那个桶报分叉() {
 fn test_游标已推过的分叉普通增量修不了而重对账能修() {
     let (a, b) = (store(), store());
     let n = a.note_create(None, "甲", "A 的版本").unwrap();
+    // 摘要只折 (id, updated_ms)，**不含正文**。两边若落在同一毫秒，
+    // 内容不同也会摘要相同——CI（Linux）写入极快时会稳定复现。
+    // 隔开 2ms，让分叉在摘要里可见。
+    std::thread::sleep(std::time::Duration::from_millis(2));
     // B 拿同一个 id 建一篇不同内容的——就是分叉的形状
     b.note_create_keeping_id(&n.id, "甲", "B 的版本").unwrap();
 

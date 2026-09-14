@@ -663,6 +663,9 @@ fn test_严格赢的一边不存副本但要计数() {
 
     // 上次同步之后两边各改一次，**A 先改 B 后改** ⇒ B 的戳更大，接收侧（B）严格赢
     a.note_update(&n.id, "甲", "A 改的").unwrap();
+    // 隔开 2ms：同一毫秒内两次写会变成「平手」（见 test_戳相同…），
+    // 平手赢家也会存副本，这条用例要的是**严格赢**才不存。CI 上写入极快会踩到。
+    std::thread::sleep(std::time::Duration::from_millis(2));
     b.note_update(&n.id, "甲", "B 改的").unwrap();
 
     let (_, rep) = sync_from(&a, &b, cursor, cursor, "win2");
