@@ -14,6 +14,9 @@ jobs:
   rust-test:
     name: Rust Tests
     runs-on: windows-latest
+    # 2026-09-14：Post 缓存上传曾把 job 挂死 >1h（测试本身已过）。
+    # 没有 timeout 时 Actions 会无限等；30min 到点自动失败，可重跑。
+    timeout-minutes: 30
 
     steps:
       - name: 检出代码
@@ -25,10 +28,12 @@ jobs:
       - name: 缓存 Cargo
         uses: actions/cache@v4
         with:
+          # 🔴 不缓存 src-tauri/target：编译产物常达数 GB，
+          #    actions/cache 收尾上传会挂死（实测 2026-09-14）。
+          #    只缓 registry/git：依赖编译仍是大头，但上传量可控。
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            src-tauri/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
@@ -49,6 +54,7 @@ jobs:
   frontend-test:
     name: Frontend Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: 检出代码
