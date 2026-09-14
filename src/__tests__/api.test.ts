@@ -620,7 +620,9 @@ describe("indexPaste", () => {
 // initBackend
 // ============================================================
 describe("initBackend", () => {
-  it("loads initial history, config, groups, tags on init", async () => {
+  // 20s：initBackend 串行拉 config/history/groups/tags，vitest 并行满载时
+  // 默认 5s 会偶发超时（单跑约 0.8s）。这是负载抖动，不是功能慢。
+  it("loads initial history, config, groups, tags on init", { timeout: 20_000 }, async () => {
     const { initBackend } = await import("@/lib/api");
 
     // Mock invoke 依次返回不同的值（C13 修复后顺序：config → history → groups → tags）
