@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 知识库同步状态 · A/B 设计稿</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   对照源码：KbSyncStatusBar.tsx / .module.css
+            KnowledgeView.module.css 面包屑行 / wrap
+            theme.css ocean 真值
+   窗口宽 560（知识中栏 + 一点余量），不是整窗
+   ═══════════════════════════════════════════════════════ */
+*{box-sizing:border-box}
+body{
+  margin:0;padding:24px 18px 90px;
+  font:14px/1.65 "Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  background:#EEF2F6;color:#0F172A;
+}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{font-size:12.5px;color:#5B6B7F;margin:0 0 14px;line-height:1.7}
+h2{font-size:15px;margin:32px 0 12px;padding-top:16px;border-top:1px solid #D5DEE8}
+h2 .n{
+  display:inline-flex;width:22px;height:22px;border-radius:7px;
+  align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  background:#DCEBFA;color:#0273AD;margin-right:8px;
+}
+h3{font-size:13px;margin:18px 0 8px;color:#495565}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;padding:1px 5px;border-radius:4px;background:#E7EEF6}
+.note{
+  border-radius:10px;padding:12px 14px;margin:12px 0;font-size:12.5px;line-height:1.65;
+  background:#fff;border:1px solid #D8E0EA;border-left:3px solid #0284C7;color:#495565;
+}
+.note.ok{border-left-color:#11813A}
+.note.bad{border-left-color:#D82525}
+.toolbar{
+  position:sticky;top:8px;z-index:80;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:10px 12px;margin:0 0 18px;border-radius:12px;
+  background:rgba(255,255,255,.9);border:1px solid #D8E0EA;
+  backdrop-filter:blur(12px);box-shadow:0 6px 20px rgba(15,23,42,.08);
+}
+.toolbar button{
+  border:1px solid #D8E0EA;background:#F4F7FA;color:#0F172A;
+  border-radius:8px;padding:6px 11px;font:600 12px/1 inherit;cursor:pointer;font-family:inherit;
+}
+.toolbar button.on{background:#027CBB;border-color:transparent;color:#fff}
+.toolbar .hint{margin-left:auto;font-size:11.5px;color:#627083}
+
+/* ── Ocean 真值 token ── */
+.stage{
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg,#F4F8FC 0%,#EEF3F8 42%,#E8F0F7 100%);
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB; --card-bg:#fff; --section-bg:#F0F4F8; --hover:#E8ECF2;
+  --accent:#0284C7; --accent-solid:#027CBB; --accent-strong:#0273AD; --accent-light:#E0F2FE;
+  --danger:#D82525; --danger-bg:#FEF2F2; --warning:#C54A0A; --warning-bg:#FFF7ED;
+  --success:#11813A; --green:#11813A;
+  --control-glass:rgba(255,255,255,.78);
+  --control-elev:0 1px 2px rgba(15,23,42,.04), 0 4px 14px rgba(15,23,42,.07), inset 0 1px 0 rgba(255,255,255,.9);
+  --glass-card-bg:#fff;
+  --glass-card-border:rgba(0,0,0,.08);
+  --glass-card-shadow:0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07), 0 0 0 1px rgba(15,23,42,.04);
+  --glass-popover-bg:rgba(255,255,255,.97);
+  --glass-popover-border:rgba(0,0,0,.06);
+  --glass-popover-shadow:0 12px 36px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.06);
+  --kb-hit:28px;
+  --kb-fs-body:12.5px; --kb-fs-meta:11.5px; --kb-fs-badge:11px; --kb-fs-title:13.5px;
+}
+
+/* ── 中栏舞台（知识库列表宽） ── */
+.col{
+  width:420px;flex:0 0 420px;
+}
+.panel{
+  border-radius:14px;background:var(--app-bg);border:1px solid #D5DEE8;
+  box-shadow:0 12px 32px rgba(15,23,42,.1);overflow:hidden;position:relative;
+  min-height:420px;
+}
+.panelInner{padding:12px 14px 16px;position:relative}
+.pair{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.lab{
+  display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:8px;
+}
+.labNow{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA}
+.labA{background:#DCFCE7;color:#166534;border:1px solid #86EFAC}
+.labB{background:#DBEAFE;color:#1E40AF;border:1px solid #93C5FD}
+
+/* 面包屑行（真值：crumb + crumbActions） */
+.crumbRow{display:flex;align-items:center;gap:6px;margin-bottom:10px;min-height:28px}
+.crumb{font-size:var(--kb-fs-body);color:var(--text-muted)}
+.crumb b{color:var(--text-primary);font-weight:600}
+.crumbActions{display:flex;align-items:center;gap:6px;margin-left:auto}
+.wideBtn,.newBtn{
+  height:var(--kb-hit);padding:0 8px;border-radius:8px;display:inline-flex;align-items:center;gap:3px;
+  border:1px solid color-mix(in srgb,var(--border-color) 80%,transparent);
+  background:var(--control-glass);box-shadow:var(--control-elev);
+  color:var(--text-secondary);font-size:var(--kb-fs-badge);font-weight:600;font-family:inherit;
+}
+.newBtn{width:28px;padding:0;justify-content:center}
+
+/* 搜索行（占位，不展开） */
+.searchRow{
+  height:38px;border-radius:10px;margin-bottom:10px;
+  background:var(--control-glass);border:1px solid rgba(255,255,255,.9);
+  box-shadow:var(--control-elev);
+  display:flex;align-items:center;padding:0 12px;color:var(--text-muted);font-size:13px;
+}
+
+/* 笔记行占位 */
+.noteRow{
+  display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:14px;
+  background:var(--glass-card-bg);border:1px solid var(--glass-card-border);
+  box-shadow:var(--glass-card-shadow);margin-bottom:8px;height:64px;
+}
+.noteIc{width:32px;height:32px;border-radius:10px;background:color-mix(in srgb,#8B5CF6 12%,transparent);
+  border:1px solid color-mix(in srgb,#8B5CF6 22%,transparent);display:grid;place-items:center;font-size:14px}
+.noteT{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.noteM{font-size:11px;color:var(--text-muted);margin-top:2px}
+
+/* ═══════ 现状堆叠条 ═══════ */
+.nowBar{background:var(--card-bg);border-bottom:1px solid var(--border-color);margin:-12px -14px 12px}
+.nowStatus{display:flex;align-items:center;gap:9px;padding:9px 14px;font-size:12.5px}
+.nowDot{width:8px;height:8px;border-radius:50%;background:var(--text-muted);flex-shrink:0}
+.nowDot.on{background:var(--success)}
+.nowRow{display:flex;align-items:flex-start;gap:8px;padding:8px 14px;border-top:1px solid var(--border-color);font-size:12px}
+.nowRow.warn{background:var(--warning-bg)}
+.nowRow.info{background:transparent}
+.nowRow .body{flex:1;min-width:0}
+.nowRow.warn .body{color:color-mix(in srgb,var(--warning) 55%,var(--text-primary))}
+.nowRow.info .body{color:var(--text-secondary)}
+.nowRow .det{margin-top:3px;font-size:11.5px}
+.nowRow.warn .det{color:var(--warning)}
+.nowX{width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:14px;cursor:default;flex-shrink:0}
+
+/* ═══════ A · 状态胶囊 ═══════ */
+.cap{
+  display:inline-flex;align-items:center;gap:6px;
+  height:26px;padding:0 10px;border-radius:999px;
+  border:1px solid color-mix(in srgb,var(--border-color) 85%,transparent);
+  background:var(--control-glass);box-shadow:var(--control-elev);
+  font-size:11.5px;font-weight:600;color:var(--text-secondary);
+  cursor:pointer;font-family:inherit;position:relative;
+  transition:all .15s;
+}
+.cap:hover{border-color:var(--accent);color:var(--text-primary)}
+.capDot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex-shrink:0;
+  box-shadow:0 0 0 2.5px color-mix(in srgb,currentColor 18%,transparent)}
+.capDot.ok{background:var(--success);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--success) 20%,transparent)}
+.capDot.warn{background:var(--warning);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--warning) 22%,transparent)}
+.capDot.bad{background:var(--danger);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--danger) 22%,transparent)}
+.capBadge{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:16px;height:16px;padding:0 4px;border-radius:999px;
+  background:var(--warning);color:#fff;font-size:10px;font-weight:700;
+}
+.capBadge.bad{background:var(--danger)}
+
+/* A 浮层 */
+.pop{
+  position:absolute;top:calc(100% + 6px);right:0;width:300px;z-index:20;
+  border-radius:12px;padding:4px;
+  background:var(--glass-popover-bg);
+  border:1px solid var(--glass-popover-border);
+  box-shadow:var(--glass-popover-shadow);
+  backdrop-filter:blur(16px);
+  font-size:12px;
+}
+.popHead{padding:10px 12px 8px;border-bottom:1px solid var(--border-color)}
+.popHead b{display:block;font-size:12.5px}
+.popHead span{font-size:11px;color:var(--text-muted)}
+.popSec{padding:6px}
+.popItem{
+  padding:8px 10px;border-radius:8px;margin-bottom:2px;
+}
+.popItem.warn{background:color-mix(in srgb,var(--warning) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--warning) 22%,transparent)}
+.popItem.info{background:var(--section-bg);border:1px solid transparent}
+.popItem.bad{background:color-mix(in srgb,var(--danger) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--danger) 20%,transparent)}
+.popItem b{font-size:12px}
+.popItem .det{margin-top:2px;font-size:11px;color:var(--text-secondary);line-height:1.45}
+.popItem.warn b{color:color-mix(in srgb,var(--warning) 70%,var(--text-primary))}
+.popItem.bad b{color:color-mix(in srgb,var(--danger) 70%,var(--text-primary))}
+.popFoot{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 10px;border-top:1px solid var(--border-color);
+  font-size:11px;color:var(--text-muted);
+}
+.popLink{
+  border:none;background:transparent;color:var(--accent-strong);
+  font:600 11px inherit;font-family:inherit;cursor:pointer;padding:0;text-decoration:underline;
+}
+
+/* ═══════ B · 同步卡 ═══════ */
+.syncCard{
+  border-radius:12px;margin-bottom:10px;overflow:hidden;
+  background:
+    linear-gradient(135deg, color-mix(in srgb,var(--accent) 8%,var(--card-bg)), var(--card-bg));
+  border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);
+  box-shadow:var(--glass-card-shadow);
+}
+.syncCard.warnTone{
+  background:linear-gradient(135deg, color-mix(in srgb,var(--warning) 10%,var(--card-bg)), var(--card-bg));
+  border-color:color-mix(in srgb,var(--warning) 28%,transparent);
+}
+.syncTop{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:default}
+.syncTop .txt{flex:1;min-width:0;font-size:12.5px;font-weight:600}
+.syncTop .meta{font-size:11px;color:var(--text-muted);font-weight:500}
+.syncChev{color:var(--text-muted);font-size:12px;transition:transform .2s}
+.syncChev.open{transform:rotate(180deg)}
+.syncList{border-top:1px solid color-mix(in srgb,var(--border-color) 70%,transparent);padding:4px}
+.syncItem{padding:8px 10px;border-radius:8px;font-size:12px}
+.syncItem + .syncItem{margin-top:2px}
+.syncItem.warn{
+  background:color-mix(in srgb,var(--warning) 8%,transparent);
+  color:color-mix(in srgb,var(--warning) 65%,var(--text-primary));
+}
+.syncItem.info{color:var(--text-secondary)}
+.syncItem .det{margin-top:2px;font-size:11px;color:var(--warning);font-weight:500}
+.syncItem.info .det{color:var(--text-muted)}
+.syncFoot{padding:6px 10px 8px;font-size:11px;color:var(--text-muted)}
+
+/* 开关演示 */
+.swRow{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.sw{
+  border:1px solid #D8E0EA;background:#fff;border-radius:8px;padding:6px 10px;
+  font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;color:#495565;
+}
+.sw.on{background:#027CBB;border-color:transparent;color:#fff}
+
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0}
+th,td{border:1px solid #D8E0EA;padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#F0F5FA;font-weight:700}
+.foot{margin-top:28px;font-size:11.5px;color:#627083;line-height:1.65}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <strong style="font-size:12.5px;margin-right:4px">状态场景</strong>
+    <button class="on" data-state="idle" onclick="setState('idle')">常态 · 离线无事</button>
+    <button data-state="broke" onclick="setState('broke')">异常 · 连不上</button>
+    <button data-state="ok" onclick="setState('ok')">正常 · 刚同步</button>
+    <span class="hint">文案取自 KbSyncStatusBar.tsx 真源码 · 窗宽 420=中栏</span>
+  </div>
+
+  <h1>知识库同步状态 · 方案 A / B 设计稿</h1>
+  <p class="sub">
+    现状是「状态行 + 若干全宽提示条」叠在笔记列表上方。本稿用同一套场景数据，
+    对比 <b>A：胶囊 + 浮层</b> 与 <b>B：一张同步卡</b>。token 用 ocean 真值。
+  </p>
+
+  <div class="note">
+    <b>打扰分级（两案共用）：</b><br>
+    · 对方离线 / 从未连上 → 你处理不了 → <b>默认收起</b><br>
+    · 曾经好好的现在连不上 / 时钟偏差 / 冲突副本 / 图没发出去 → 你可能要处理 → <b>可见角标或卡头变色</b><br>
+    · 没有任何问题 → A 不显眼；B <b>整卡不出现</b>
+  </div>
+
+  <div class="stage">
+    <div class="pair">
+
+      <!-- ═══════════ 现状 ═══════════ -->
+      <div class="col">
+        <span class="lab labNow">现状 · 堆叠条</span>
+        <div class="panel">
+          <div class="panelInner">
+            <div class="nowBar" id="nowBar">
+              <div class="nowStatus">
+                <span class="nowDot" id="nowDot"></span>
+                <span id="nowStatusTxt">已配对 2 台 · 对方都不在线</span>
+              </div>
+              <!-- idle: 只有 neverOk 一行；broke: warn+info；ok: 无额外行 -->
+              <div class="nowRow warn" data-when="broke">
+                <div class="body">
+                  <b>连不上 新设备（4 小时前还好好的）</b>
+                  <div class="det">300 秒后重试。对方可能刚关机、换了网络，或关了这个开关。</div>
+                </div>
+                <button class="nowX">×</button>
+              </div>
+              <div class="nowRow info" data-when="idle broke">
+                <div class="body">还没连上 <b>1 台</b>（DESKTOP-HHOLIC2），还在重试。</div>
+                <button class="nowX">×</button>
+              </div>
+            </div>
+
+            <div class="crumbRow">
+              <span class="crumb"><b>全部笔记</b> · 26 条</span>
+              <div class="crumbActions">
+                <span class="wideBtn">▤ 宽屏</span>
+                <span class="newBtn">＋</span>
+              </div>
+            </div>
+            <div class="searchRow">🔍 搜笔记（中文 / 拼音首字母）</div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">策手vs·cc-bridge-更新能力对比</div><div class="noteM">9月1日 · 2.7k 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">7.1.0问题记录</div><div class="noteM">4天前 · 156 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">▤</div><div style="flex:1;min-width:0"><div class="noteT">终端功能</div><div class="noteM">9月1日 · 110 字</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 方案 A ═══════════ -->
+      <div class="col">
+        <span class="lab labA">方案 A · 胶囊 + 浮层</span>
+        <div class="panel">
+          <div class="panelInner">
+            <div class="crumbRow" style="position:relative">
+              <span class="crumb"><b>全部笔记</b> · 26 条</span>
+              <!-- A：胶囊挂在面包屑右侧，宽屏/+ 之前 -->
+              <div class="crumbActions">
+                <button class="cap" id="cap" onclick="togglePop()">
+                  <span class="capDot" id="capDot"></span>
+                  <span id="capTxt">配对 2 台 · 离线</span>
+                  <span class="capBadge hidden" id="capBadge">1</span>
+                </button>
+                <span class="wideBtn">▤ 宽屏</span>
+                <span class="newBtn">＋</span>
+              </div>
+
+              <!-- 浮层（默认关；broke 时可点开） -->
+              <div class="pop hidden" id="pop">
+                <div class="popHead">
+                  <b id="popTitle">已配对 2 台</b>
+                  <span id="popSub">对方都不在线 · 约 10 秒刷新</span>
+                </div>
+                <div class="popSec" id="popSec"></div>
+                <div class="popFoot">
+                  <span>× = 本次不再提示</span>
+                  <button class="popLink" type="button">打开同步设置 →</button>
+                </div>
+              </div>
+            </div>
+            <div class="searchRow">🔍 搜笔记（中文 / 拼音首字母）</div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">策手vs·cc-bridge-更新能力对比</div><div class="noteM">9月1日 · 2.7k 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">7.1.0问题记录</div><div class="noteM">4天前 · 156 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">▤</div><div style="flex:1;min-width:0"><div class="noteT">终端功能</div><div class="noteM">9月1日 · 110 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">策手 StratHand · 编码规范</div><div class="noteM">9月1日 · 6.3k 字</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 方案 B ═══════════ -->
+      <div class="col">
+        <span class="lab labB">方案 B · 一张同步卡</span>
+        <div class="panel">
+          <div class="panelInner">
+            <!-- B：有问题才整卡出现；无问题态下面整卡 hidden -->
+            <div class="syncCard" id="syncCard">
+              <div class="syncTop" onclick="toggleSyncBody()">
+                <span class="capDot" id="bDot"></span>
+                <span class="txt" id="bTitle">已配对 2 台 · 对方都不在线</span>
+                <span class="meta" id="bMeta">1 项</span>
+                <span class="syncChev open" id="bChev">⌄</span>
+              </div>
+              <div class="syncList" id="bList"></div>
+              <div class="syncFoot" id="bFoot">点 × = 本次不再提示 · 10 秒自动刷新</div>
+            </div>
+
+            <div class="crumbRow">
+              <span class="crumb"><b>全部笔记</b> · 26 条</span>
+              <div class="crumbActions">
+                <span class="wideBtn">▤ 宽屏</span>
+                <span class="newBtn">＋</span>
+              </div>
+            </div>
+            <div class="searchRow">🔍 搜笔记（中文 / 拼音首字母）</div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">策手vs·cc-bridge-更新能力对比</div><div class="noteM">9月1日 · 2.7k 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">7.1.0问题记录</div><div class="noteM">4天前 · 156 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">▤</div><div style="flex:1;min-width:0"><div class="noteT">终端功能</div><div class="noteM">9月1日 · 110 字</div></div></div>
+            <div class="noteRow"><div class="noteIc">✎</div><div style="flex:1;min-width:0"><div class="noteT">策手 StratHand · 编码规范</div><div class="noteM">9月1日 · 6.3k 字</div></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <h2><span class="n">1</span>三态对照</h2>
+  <table>
+    <tr><th style="width:110px">场景</th><th>现状</th><th>A 胶囊</th><th>B 同步卡</th></tr>
+    <tr>
+      <td><b>常态离线</b><br><span style="font-size:11px;color:#627083">对方关机、还在重试</span></td>
+      <td>白状态条 + 灰 info 条（<b>占两行</b>）</td>
+      <td>灰点胶囊「配对 2 台 · 离线」；详情点开才有</td>
+      <td>灰头卡 + 默认展开 info 一行（可收起）</td>
+    </tr>
+    <tr>
+      <td><b>连不上</b><br><span style="font-size:11px;color:#627083">曾经好好的</span></td>
+      <td>状态条 + <b>橙 warn 条</b> + 可能再加 info 条</td>
+      <td>橙点 + 角标 <b>1</b>；浮层首条橙 warn</td>
+      <td>卡头橙染 + chevron；warn 列在卡内</td>
+    </tr>
+    <tr>
+      <td><b>刚同步</b></td>
+      <td>绿点状态条「已与 XX 同步」</td>
+      <td>绿点「已同步 · 12 秒前」；无角标</td>
+      <td>绿头轻卡一行，或可整卡隐藏只留入口</td>
+    </tr>
+    <tr>
+      <td><b>无配对设备</b></td>
+      <td>不渲染</td>
+      <td>不渲染胶囊</td>
+      <td>不渲染卡</td>
+    </tr>
+    <tr>
+      <td><b>首屏高度</b></td>
+      <td>约 40–120px+</td>
+      <td>约 <b>26px</b>（挤进面包屑行）</td>
+      <td>约 40–90px（看展开项）</td>
+    </tr>
+  </table>
+
+  <h2><span class="n">2</span>取舍</h2>
+  <div class="pair">
+    <div class="note ok" style="flex:1;min-width:280px">
+      <b>A 适合你现在的痛点</b><br>
+      首屏几乎还给笔记；和顶栏 AI 点、更新点同一套「角标 + 点开」心智。<br>
+      代价：要多一次点击；浮层要自己做焦点陷阱 / Esc。
+    </div>
+    <div class="note" style="flex:1;min-width:280px;border-left-color:#2563EB">
+      <b>B 信息更全、更好做</b><br>
+      异常始终在列表上方可见，不用点开；实现就是把现有 rows 收进一张卡。<br>
+      代价：异常多时仍会占首屏；与「蒸馏横幅」抢上方注意力。
+    </div>
+  </div>
+
+  <div class="note bad">
+    <b>两案都要删的现状问题：</b>
+    「连不上 A」和「还没连上 B」在现状里是两条独立全宽条——应合并；
+    对方长期离线的 info 不应与「时钟不对」同级。
+  </div>
+
+  <h2><span class="n">3</span>落地要点（确认方向后）</h2>
+  <table>
+    <tr><th style="width:80px">案</th><th>改哪里</th><th>注意</th></tr>
+    <tr>
+      <td><b>A</b></td>
+      <td>新组件 <code>KbSyncCap.tsx</code>；挂进 KnowledgeView 面包屑 <code>.crumbActions</code>；
+        数据仍走现有 <code>kb_sync_devices</code>；整文件替换 <code>KbSyncStatusBar</code> 的 UI 壳</td>
+      <td>浮层用 <code>--glass-popover-*</code>；Esc / 点外关闭；≤800px 窄栏胶囊可只留圆点+角标</td>
+    </tr>
+    <tr>
+      <td><b>B</b></td>
+      <td>重写 <code>KbSyncStatusBar</code> 外壳为单卡；保留现有 row 语义色与 dismiss 逻辑</td>
+      <td>无 <code>broke/conflict/skew</code> 时整卡 <code>null</code>；info 默认可折叠</td>
+    </tr>
+  </table>
+
+  <p class="foot">
+    文件：<code>design/2026-知识库同步状态-AB设计稿.html</code><br>
+    源码对照：<code>KbSyncStatusBar.tsx</code>（分级注释）、<code>KnowledgeView.tsx</code> 面包屑挂载点、
+    ocean token。点顶栏按钮切换三态预览；A 的胶囊可点开浮层。
+  </p>
+</div>
+
+<script>
+const DATA = {
+  idle: {
+    nowStatus: "已配对 2 台 · 对方都不在线",
+    nowOnline: false,
+    capTxt: "配对 2 台 · 离线",
+    capDot: "",
+    capBadge: null,
+    popTitle: "已配对 2 台",
+    popSub: "对方都不在线 · 约 10 秒刷新",
+    popItems: [
+      { tone: "info", title: "还没连上 1 台（DESKTOP-HHOLIC2）", det: "还在重试。你处理不了——对方开机后会自动连上。" }
+    ],
+    bTitle: "已配对 2 台 · 对方都不在线",
+    bMeta: "1 项",
+    bTone: "",
+    bDot: "",
+    bItems: [
+      { tone: "info", title: "还没连上 1 台（DESKTOP-HHOLIC2）", det: "还在重试。" }
+    ]
+  },
+  broke: {
+    nowStatus: "已配对 2 台 · 对方都不在线",
+    nowOnline: false,
+    capTxt: "配对 2 台 · 连不上",
+    capDot: "warn",
+    capBadge: "1",
+    popTitle: "已配对 2 台",
+    popSub: "1 项需要你看一眼",
+    popItems: [
+      { tone: "warn", title: "连不上 新设备（4 小时前还好好的）", det: "300 秒后重试。对方可能刚关机、换了网络，或关了这个开关。" },
+      { tone: "info", title: "还没连上 1 台（DESKTOP-HHOLIC2）", det: "还在重试。" }
+    ],
+    bTitle: "已配对 2 台 · 连不上新设备",
+    bMeta: "1 项要处理",
+    bTone: "warnTone",
+    bDot: "warn",
+    bItems: [
+      { tone: "warn", title: "连不上 新设备（4 小时前还好好的）", det: "300 秒后重试。对方可能刚关机、换了网络，或关了这个开关。" },
+      { tone: "info", title: "还没连上 1 台（DESKTOP-HHOLIC2）", det: "还在重试。" }
+    ]
+  },
+  ok: {
+    nowStatus: "已与 新设备 同步 · 12 秒前",
+    nowOnline: true,
+    capTxt: "已同步 · 12 秒前",
+    capDot: "ok",
+    capBadge: null,
+    popTitle: "已与 新设备 同步",
+    popSub: "12 秒前 · 下次约 28 秒后",
+    popItems: [],
+    bTitle: "已与 新设备 同步 · 12 秒前",
+    bMeta: "",
+    bTone: "",
+    bDot: "ok",
+    bItems: []
+  }
+};
+
+let state = "idle";
+let popOpen = false;
+let syncOpen = true;
+
+function render() {
+  const d = DATA[state];
+
+  // 现状
+  document.getElementById("nowStatusTxt").textContent = d.nowStatus;
+  document.getElementById("nowDot").className = "nowDot" + (d.nowOnline ? " on" : "");
+  document.querySelectorAll(".nowRow").forEach((el) => {
+    const when = el.getAttribute("data-when") || "";
+    el.classList.toggle("hidden", !when.split(/\s+/).includes(state));
+  });
+
+  // A
+  document.getElementById("capTxt").textContent = d.capTxt;
+  document.getElementById("capDot").className = "capDot " + (d.capDot || "");
+  const badge = document.getElementById("capBadge");
+  if (d.capBadge) { badge.textContent = d.capBadge; badge.classList.remove("hidden"); }
+  else badge.classList.add("hidden");
+  document.getElementById("popTitle").textContent = d.popTitle;
+  document.getElementById("popSub").textContent = d.popSub;
+  const ps = document.getElementById("popSec");
+  ps.innerHTML = d.popItems.length
+    ? d.popItems.map(i => `<div class="popItem ${i.tone}"><b>${i.title}</b><div class="det">${i.det}</div></div>`).join("")
+    : `<div class="popItem info" style="color:var(--text-muted)">没有需要处理的提示。</div>`;
+  document.getElementById("pop").classList.toggle("hidden", !(popOpen && state !== "ok" ? true : popOpen));
+
+  // B
+  const card = document.getElementById("syncCard");
+  // ok 态：轻量一行仍显示（证明「刚同步」可感知）；若产品要更干净可 hidden
+  card.className = "syncCard " + (d.bTone || "");
+  document.getElementById("bTitle").textContent = d.bTitle;
+  document.getElementById("bMeta").textContent = d.bMeta;
+  document.getElementById("bDot").className = "capDot " + (d.bDot || "");
+  const bl = document.getElementById("bList");
+  bl.innerHTML = d.bItems.map(i =>
+    `<div class="syncItem ${i.tone}"><b>${i.title}</b><div class="det">${i.det}</div></div>`
+  ).join("") || `<div class="syncItem info" style="color:var(--text-muted)">一切正常。</div>`;
+  bl.classList.toggle("hidden", !syncOpen);
+  document.getElementById("bChev").classList.toggle("open", syncOpen);
+}
+
+function setState(s) {
+  state = s;
+  popOpen = false;
+  document.querySelectorAll(".toolbar button[data-state]").forEach(b =>
+    b.classList.toggle("on", b.getAttribute("data-state") === s)
+  );
+  render();
+}
+function togglePop() { popOpen = !popOpen; render(); }
+function toggleSyncBody() { syncOpen = !syncOpen; render(); }
+setState("idle");
+</script>
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>设置行图标 · 裸 emoji（无方砖无圆盘）</title>
+<style>
+  :root {
+    --bg: #EEF2F7; --card: #fff; --ink: #0F172A; --muted: #627083; --line: #E0E4EB;
+    --green: #11813A; --off-bg: #E2E8F0; --off-label: #4B5563;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink);
+    padding: 32px 28px 56px; line-height: 1.5;
+  }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .lead { font-size: 13px; color: var(--muted); max-width: 780px; margin-bottom: 20px; }
+  .lead b { color: var(--ink); }
+
+  /* 顶栏页签对照 */
+  .tabs {
+    max-width: 780px; display: flex; gap: 6px; align-items: center;
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 14px; margin-bottom: 24px;
+  }
+  .tab {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    background: #F1F5F9; color: var(--ink);
+  }
+  .tab.on { background: #E0F2FE; color: #0273AD; }
+  .tab em { font-style: normal; font-size: 14px; }
+  .tabs .hint { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+  .vs {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+    max-width: 900px; margin-bottom: 28px;
+  }
+  .vsCard {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .vsCard h3 { font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px; margin-right: 6px;
+  }
+  .tag.old { background: #F1F5F9; color: var(--muted); }
+  .tag.new { background: #1D4ED8; color: #fff; }
+  .mini {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-top: 1px dashed var(--line);
+  }
+  .mini:first-of-type { border-top: none; }
+  .mini .t { font-size: 12px; font-weight: 600; }
+  .mini .d { font-size: 11px; color: var(--muted); }
+
+  /* 旧：方砖 */
+  .tile {
+    width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+    display: grid; place-items: center; font-size: 18px;
+    background: color-mix(in srgb, #F59E0B 14%, #fff);
+    border: 1px solid color-mix(in srgb, #F59E0B 28%, transparent);
+  }
+  .tile.g { background: color-mix(in srgb, #10B981 14%, #fff); border-color: color-mix(in srgb, #10B981 28%, transparent); }
+  /* 旧：白圆盘 */
+  .plateWrap {
+    width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, #F5A524, #F97316);
+  }
+  .plate {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(255,255,255,.92); display: grid; place-items: center;
+    font-size: 14px; box-shadow: 0 1px 2px rgba(15,23,42,.14);
+  }
+  /* 新：裸 emoji */
+  .em {
+    width: 36px; height: 36px; flex-shrink: 0;
+    display: grid; place-items: center;
+    font-size: 20px; line-height: 1;
+    background: transparent; border: none;
+  }
+
+  h2 { font-size: 15px; font-weight: 700; margin: 8px 0 12px; }
+  .panel {
+    background: #fff; border-radius: 14px; overflow: hidden;
+    max-width: 780px; border: 1px solid var(--line);
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06);
+    margin-bottom: 16px;
+  }
+  .sec {
+    padding: 10px 16px; font-size: 12px; font-weight: 700;
+    background: #F0F4F8; border-bottom: 1px solid var(--line);
+  }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: none; }
+  .body { flex: 1; min-width: 0; }
+  .lab { font-size: 13px; font-weight: 600; }
+  .desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  .tg {
+    display: inline-block; width: 44px; height: 26px; border-radius: 13px;
+    position: relative; flex-shrink: 0; background: var(--off-bg);
+  }
+  .tg.on { background: var(--green); }
+  .tg i {
+    position: absolute; left: 0; top: 2px; width: 22px; height: 22px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  }
+  .tg.off i { transform: translateX(2px); }
+  .tg.on i { transform: translateX(20px); }
+  .tg em {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-style: normal; font-size: 11px; font-weight: 700;
+  }
+  .tg.on em { left: 7px; color: #fff; }
+  .tg.off em { right: 6px; color: var(--off-label); }
+
+  .dark {
+    max-width: 780px; background: #0C1222; border-radius: 14px;
+    border: 1px solid #1E293B; overflow: hidden; margin-bottom: 16px;
+  }
+  .dark .sec { background: #111827; color: #94A3B8; border-color: #1E293B; }
+  .dark .row { border-color: #1E293B; }
+  .dark .lab { color: #E2E8F0; }
+  .dark .desc { color: #94A3B8; }
+
+  .rules {
+    max-width: 780px; background: #fff; border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 18px; font-size: 12px; color: var(--muted);
+  }
+  .rules b { color: var(--ink); }
+  .rules li { margin: 5px 0 5px 16px; }
+</style>
+</head>
+<body>
+
+<h1>设置行图标 · 裸 emoji</h1>
+<p class="lead">
+  和顶栏页签同一套：只要 emoji，<b>无方砖、无白圆盘、无 lucide</b>。
+  槽位 36×36 保行高，字号 20px（页签是 14px，设置行稍大便于扫读）。
+</p>
+
+<div class="tabs">
+  <span class="tab on"><em>📋</em>全部</span>
+  <span class="tab"><em>📝</em>文本</span>
+  <span class="tab"><em>📸</em>图片</span>
+  <span class="tab"><em>📁</em>文件</span>
+  <span class="tab"><em>⭐</em>收藏</span>
+  <span class="hint">← 顶栏页签现状：裸 emoji</span>
+</div>
+
+<div class="vs">
+  <div class="vsCard">
+    <h3><span class="tag old">旧</span>tinted 方砖</h3>
+    <div class="mini"><span class="tile">🚀</span><div><div class="t">开机自启</div></div></div>
+    <div class="mini"><span class="tile g">💾</span><div><div class="t">自动保存</div></div></div>
+  </div>
+  <div class="vsCard">
+    <h3><span class="tag old">旧</span>彩砖 + 白圆盘</h3>
+    <div class="mini"><span class="plateWrap"><span class="plate">🚀</span></span><div><div class="t">开机自启</div></div></div>
+    <div class="mini"><span class="plateWrap" style="background:linear-gradient(135deg,#34D399,#059669)"><span class="plate">💾</span></span><div><div class="t">自动保存</div></div></div>
+  </div>
+  <div class="vsCard">
+    <h3><span class="tag new">新</span>裸 emoji</h3>
+    <div class="mini"><span class="em">🚀</span><div><div class="t">开机自启</div></div></div>
+    <div class="mini"><span class="em">💾</span><div><div class="t">自动保存</div></div></div>
+  </div>
+</div>
+
+<h2>新案 · 设置页整段</h2>
+<div class="panel">
+  <div class="sec">通用</div>
+  <div class="row">
+    <span class="em">🚀</span>
+    <div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div>
+    <span class="tg off"><i></i><em>关</em></span>
+  </div>
+  <div class="row">
+    <span class="em">📌</span>
+    <div class="body"><div class="lab">窗口置顶</div><div class="desc">始终显示在其他窗口之上</div></div>
+    <span class="tg off"><i></i><em>关</em></span>
+  </div>
+  <div class="row">
+    <span class="em">💾</span>
+    <div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+  <div class="row">
+    <span class="em">🛡</span>
+    <div class="body"><div class="lab">敏感内容防护</div><div class="desc">不记录匹配密钥/凭证模式的内容</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+  <div class="row">
+    <span class="em">🪟</span>
+    <div class="body"><div class="lab">自动框选当前窗口</div><div class="desc">按截图热键后自动选中光标所在窗口</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+  <div class="row">
+    <span class="em">🌐</span>
+    <div class="body"><div class="lab">剪贴板同步</div><div class="desc">多台电脑自动共享剪贴板</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+  <div class="row">
+    <span class="em">📋</span>
+    <div class="body"><div class="lab">保留格式粘贴</div><div class="desc">粘贴文档/图文时保留富格式</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+  <div class="row">
+    <span class="em">📝</span>
+    <div class="body"><div class="lab">编辑器保存写入历史</div><div class="desc">保存 .md 时同时写入剪贴板历史</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+  <div class="row">
+    <span class="em">⏱</span>
+    <div class="body"><div class="lab">时间线</div><div class="desc">主页面左侧显示竖版时间轴导航</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+  <div class="row">
+    <span class="em">👁</span>
+    <div class="body"><div class="lab">失焦自动隐藏</div><div class="desc">窗口失去焦点时隐藏到托盘</div></div>
+    <span class="tg on"><i></i><em>开</em></span>
+  </div>
+</div>
+
+<div class="dark">
+  <div class="sec">深色主题 · 同样裸 emoji</div>
+  <div class="row">
+    <span class="em">🚀</span>
+    <div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div>
+  </div>
+  <div class="row">
+    <span class="em">💾</span>
+    <div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div>
+  </div>
+  <div class="row">
+    <span class="em">🛡</span>
+    <div class="body"><div class="lab">敏感内容防护</div><div class="desc">不记录匹配密钥/凭证模式的内容</div></div>
+  </div>
+  <div class="row">
+    <span class="em">🌐</span>
+    <div class="body"><div class="lab">剪贴板同步</div><div class="desc">多台电脑自动共享剪贴板</div></div>
+  </div>
+</div>
+
+<div class="rules">
+  <b>落地规格（确认后改代码）</b>
+  <ul>
+    <li><code>.sRowIcon</code>：透明底、无描边、无阴影、无 ::before；槽位 <b>36×36</b></li>
+    <li>只渲染 emoji，字号 <b>20px</b>，与顶栏页签同一套字形</li>
+    <li>去掉 <code>.ic*</code> 色相类与 <code>--ic-*</code> 砖色（不再需要）</li>
+    <li>去掉白圆盘、SettingTile 的 tinted 底逻辑</li>
+  </ul>
+</div>
+
+</body>
+</html>

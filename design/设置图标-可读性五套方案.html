@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>设置图标可读性 · 方案对照</title>
+<style>
+  :root {
+    --bg: #EEF2F7; --card: #fff; --ink: #0F172A; --muted: #627083; --line: #E0E4EB;
+    --ic-system:  linear-gradient(135deg, #F5A524, #F97316);
+    --ic-capture: linear-gradient(135deg, #38BDF8, #0284C7);
+    --ic-save:    linear-gradient(135deg, #34D399, #059669);
+    --ic-editor:  linear-gradient(135deg, #818CF8, #4F46E5);
+    --ic-privacy: linear-gradient(135deg, #FB7185, #E11D48);
+    --ic-sync:    linear-gradient(135deg, #22D3EE, #0891B2);
+    --ic-paste:   linear-gradient(135deg, #A78BFA, #7C3AED);
+    --ic-brand:   linear-gradient(135deg, #1D4ED8, #6D28D9);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); padding: 28px 24px 48px; }
+  h1 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .lead { font-size: 12px; color: var(--muted); max-width: 760px; margin-bottom: 20px; line-height: 1.55; }
+  .lead b { color: var(--ink); }
+  h2 { font-size: 13px; font-weight: 700; margin: 22px 0 10px; }
+  .card { background: var(--card); border-radius: 12px; padding: 16px 18px; max-width: 760px; box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07); margin-bottom: 14px; }
+  .card h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-right: 8px; }
+  .tag.bad { background: #FEE2E2; color: #B91C1C; }
+  .tag.ok { background: #DCFCE7; color: #166534; }
+  .note { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+  .pros { margin-top: 10px; font-size: 11px; color: var(--muted); display: grid; gap: 3px; }
+  .pros b { color: var(--ink); }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: none; }
+  .body { flex: 1; }
+  .lab { font-size: 13px; font-weight: 600; }
+  .desc { font-size: 11px; color: var(--muted); }
+
+  .ico {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 18px; flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 1px 3px rgba(15,23,42,.10);
+  }
+  /* 问题演示：无处理 */
+  .icoRaw { }
+
+  /* 1 白圆底板 */
+  .icoPlate {
+    background: rgba(255,255,255,.22);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
+    width: 26px; height: 26px; border-radius: 50%;
+    font-size: 14px;
+  }
+  .icoWrapPlate {
+    /* 外层仍是彩色砖，内层白圆 */
+  }
+  .icoWrapPlate .inner {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(255,255,255,.92);
+    display: grid; place-items: center;
+    font-size: 15px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.12);
+  }
+
+  /* 2 白描边 SVG */
+  .icoSvg svg {
+    width: 20px; height: 20px;
+    stroke: #fff; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.18));
+  }
+
+  /* 3 马卡龙底 + 深色字形 */
+  .icoSoft {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(15,23,42,.08);
+    filter: none;
+  }
+  .soft-system  { background: linear-gradient(135deg, #FDE68A, #FCD34D); }
+  .soft-capture { background: linear-gradient(135deg, #BAE6FD, #7DD3FC); }
+  .soft-save    { background: linear-gradient(135deg, #A7F3D0, #6EE7B7); }
+  .soft-editor  { background: linear-gradient(135deg, #C7D2FE, #A5B4FC); }
+  .soft-privacy { background: linear-gradient(135deg, #FECDD3, #FDA4AF); }
+  .soft-sync    { background: linear-gradient(135deg, #A5F3FC, #67E8F9); }
+  .soft-paste   { background: linear-gradient(135deg, #DDD6FE, #C4B5FD); }
+  .soft-brand   { background: linear-gradient(135deg, #BFDBFE, #A5B4FC); }
+
+  /* 4 投影分离 */
+  .icoShadow {
+    text-shadow: 0 1px 2px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.08);
+  }
+
+  /* 5 深一档渐变 + 白描边字 */
+  .deep-system  { background: linear-gradient(135deg, #D97706, #C2410C); }
+  .deep-capture { background: linear-gradient(135deg, #0284C7, #0369A1); }
+  .deep-save    { background: linear-gradient(135deg, #059669, #047857); }
+  .deep-editor  { background: linear-gradient(135deg, #4F46E5, #4338CA); }
+  .deep-privacy { background: linear-gradient(135deg, #E11D48, #BE123C); }
+  .deep-sync    { background: linear-gradient(135deg, #0891B2, #0E7490); }
+  .deep-paste   { background: linear-gradient(135deg, #7C3AED, #6D28D9); }
+  .deep-brand   { background: linear-gradient(135deg, #1D4ED8, #5B21B6); }
+
+  .grid8 { display: flex; flex-wrap: wrap; gap: 10px; }
+  .sw { text-align: center; }
+  .sw small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h1>彩色底上看不清图标 · 五套解法</h1>
+  <p class="lead">
+    根因：emoji <b>自带彩色</b>，压在同色相渐变上会糊（🚀 黄火箭在琥珀上、⚡ 黄闪电在翠绿上最惨）；
+    白描边 SVG 在浅青/浅黄上对比也不够。下面五套从「最小改动」到「换掉 emoji」。
+  </p>
+
+  <!-- 问题 -->
+  <div class="card">
+    <h3><span class="tag bad">现状问题</span>硬渐变 + 原生 emoji</h3>
+    <p class="note">同色系尤其严重：system 琥珀上的 🚀📌、save 翠绿上的 ⚡。</p>
+    <div class="grid8">
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-system)">🚀</div><small>system</small></div>
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-system)">📌</div><small>system</small></div>
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-save)">⚡</div><small>save</small></div>
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-capture)">🪟</div><small>capture</small></div>
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-sync)">🌐</div><small>sync</small></div>
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-paste)">📋</div><small>paste</small></div>
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-privacy)">🛡</div><small>privacy</small></div>
+      <div class="sw"><div class="ico icoRaw" style="background:var(--ic-editor)">📝</div><small>editor</small></div>
+    </div>
+  </div>
+
+  <!-- 方案 1 -->
+  <div class="card">
+    <h3><span class="tag ok">方案 1</span>白圆底板（最小改动）</h3>
+    <p class="note">彩色砖不动，emoji 放进半透明/实心白圆里。iOS 设置「账户头像」同款思路。</p>
+    <div class="grid8">
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-system)"><div class="inner">🚀</div></div></div>
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-system)"><div class="inner">📌</div></div></div>
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-save)"><div class="inner">⚡</div></div></div>
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-capture)"><div class="inner">🪟</div></div></div>
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-sync)"><div class="inner">🌐</div></div></div>
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-paste)"><div class="inner">📋</div></div></div>
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-privacy)"><div class="inner">🛡</div></div></div>
+      <div class="sw"><div class="ico icoWrapPlate" style="background:var(--ic-editor)"><div class="inner">📝</div></div></div>
+    </div>
+    <div class="pros">
+      <div><b>优</b>：只改 sRowIcon 内部一层；emoji 全保真。</div>
+      <div><b>劣</b>：多一层「圆套方」，略碎；小圆里 emoji 更小。</div>
+    </div>
+  </div>
+
+  <!-- 方案 2 -->
+  <div class="card">
+    <h3><span class="tag ok">方案 2</span>单色白描边 SVG（最专业）</h3>
+    <p class="note">macOS / Win11 / iOS 系统设置同款：色砖 + 白线稿，永不糊。需把 emoji 换成 lucide 图标。</p>
+    <div class="grid8">
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-system)"><svg viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></div><small>rocket</small></div>
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-system)"><svg viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></div><small>pin</small></div>
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-save)"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m9 13 3 3 3-3"/></svg></div><small>save</small></div>
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-capture)"><svg viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></div><small>window</small></div>
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-sync)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></div><small>globe</small></div>
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-paste)"><svg viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div><small>clipboard</small></div>
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-privacy)"><svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg></div><small>shield</small></div>
+      <div class="sw"><div class="ico icoSvg" style="background:var(--ic-editor)"><svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></div><small>file-text</small></div>
+    </div>
+    <div class="pros">
+      <div><b>优</b>：任意底色都清晰；和主窗 lucide 图标语言统一；最「系统设置」。</div>
+      <div><b>劣</b>：约 40 处要换图标；少一点 emoji 的活泼感。</div>
+    </div>
+  </div>
+
+  <!-- 方案 3 -->
+  <div class="card">
+    <h3><span class="tag ok">方案 3</span>马卡龙底 + 原生 emoji（最柔）</h3>
+    <p class="note">渐变整体抬亮降饱和，emoji 用原色即可辨认，不抢视线。</p>
+    <div class="grid8">
+      <div class="sw"><div class="ico icoSoft soft-system">🚀</div><small>system</small></div>
+      <div class="sw"><div class="ico icoSoft soft-system">📌</div><small>system</small></div>
+      <div class="sw"><div class="ico icoSoft soft-save">⚡</div><small>save</small></div>
+      <div class="sw"><div class="ico icoSoft soft-capture">🪟</div><small>capture</small></div>
+      <div class="sw"><div class="ico icoSoft soft-sync">🌐</div><small>sync</small></div>
+      <div class="sw"><div class="ico icoSoft soft-paste">📋</div><small>paste</small></div>
+      <div class="sw"><div class="ico icoSoft soft-privacy">🛡</div><small>privacy</small></div>
+      <div class="sw"><div class="ico icoSoft soft-editor">📝</div><small>editor</small></div>
+    </div>
+    <div class="pros">
+      <div><b>优</b>：emoji 不用改；整页更轻；深色主题也好压。</div>
+      <div><b>劣</b>：色砖存在感变弱，扫读性略降；和「高饱和 macOS 砖」气质不同。</div>
+    </div>
+  </div>
+
+  <!-- 方案 4 -->
+  <div class="card">
+    <h3><span class="tag ok">方案 4</span>加深渐变 + 白字描边（折中）</h3>
+    <p class="note">色相不变，两端各压暗一档；emoji 加 text-shadow 白描边/投影分离。</p>
+    <div class="grid8">
+      <div class="sw"><div class="ico icoShadow deep-system">🚀</div><small>system</small></div>
+      <div class="sw"><div class="ico icoShadow deep-system">📌</div><small>system</small></div>
+      <div class="sw"><div class="ico icoShadow deep-save">⚡</div><small>save</small></div>
+      <div class="sw"><div class="ico icoShadow deep-capture">🪟</div><small>capture</small></div>
+      <div class="sw"><div class="ico icoShadow deep-sync">🌐</div><small>sync</small></div>
+      <div class="sw"><div class="ico icoShadow deep-paste">📋</div><small>paste</small></div>
+      <div class="sw"><div class="ico icoShadow deep-privacy">🛡</div><small>privacy</small></div>
+      <div class="sw"><div class="ico icoShadow deep-editor">📝</div><small>editor</small></div>
+    </div>
+    <div class="pros">
+      <div><b>优</b>：保留高饱和砖；emoji 不动；改动只在 CSS 两处。</div>
+      <div><b>劣</b>：黄 emoji 在深琥珀上仍略闷，不如 2/3 彻底。</div>
+    </div>
+  </div>
+
+  <!-- 方案 5 -->
+  <div class="card">
+    <h3><span class="tag ok">方案 5</span>混搭推荐：深砖 + 白 SVG（2+4）</h3>
+    <p class="note">色砖用方案 4 的深一档，字形用方案 2 的白线稿——专业且永不失读。</p>
+    <div class="grid8">
+      <div class="sw"><div class="ico icoSvg deep-system"><svg viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg></div></div>
+      <div class="sw"><div class="ico icoSvg deep-save"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m9 13 3 3 3-3"/></svg></div></div>
+      <div class="sw"><div class="ico icoSvg deep-capture"><svg viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></div></div>
+      <div class="sw"><div class="ico icoSvg deep-sync"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></div></div>
+      <div class="sw"><div class="ico icoSvg deep-privacy"><svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg></div></div>
+      <div class="sw"><div class="ico icoSvg deep-editor"><svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg></div></div>
+      <div class="sw"><div class="ico icoSvg deep-paste"><svg viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div></div>
+      <div class="sw"><div class="ico icoSvg deep-brand"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.8L20 10l-4.5 3.5L17 20l-5-3-5 3 1.5-6.5L4 10l6.1-1.2z"/></svg></div></div>
+    </div>
+    <div class="pros">
+      <div><b>优</b>：专业度最高，任意主题可读。</div>
+      <div><b>劣</b>：工作量最大（色值 + 换图标）。</div>
+    </div>
+  </div>
+</body>
+</html>

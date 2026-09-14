@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>查找悬浮卡 · 移动交互三方案设计稿</title>
+<style>
+  :root {
+    --app-bg: #F4F6F9;
+    --card-bg: #FFFFFF;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --border-color: #E0E4EB;
+    --hover: #E8ECF2;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-strong: #0273AD;
+    --accent-light: #E0F2FE;
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --shadow-float:
+      0 0 0 1px rgba(0,0,0,.03),
+      0 8px 24px rgba(0,0,0,.12);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #E8ECF2;
+    color: var(--text-primary);
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 28px 20px 72px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--text-secondary); margin: 0 0 8px; max-width: 78ch; }
+  .sub { color: var(--text-muted); font-size: 12px; margin: 0 0 24px; }
+
+  .plan {
+    margin: 28px 0;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .plan.rec {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    box-shadow: 0 0 0 3px var(--accent-shadow);
+  }
+  .plan-h {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border-color);
+    background: linear-gradient(180deg, var(--section-bg), transparent);
+  }
+  .plan-h h2 { margin: 0; font-size: 15px; }
+  .badge {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--accent); color: #fff;
+  }
+  .badge.ghost {
+    background: var(--section-bg); color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+  }
+  .plan-b { padding: 14px 16px 18px; }
+  .meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+  }
+  .meta dt { color: var(--text-muted); font-size: 11px; margin: 0 0 2px; }
+  .meta dd { margin: 0; color: var(--text-secondary); }
+  .meta ul { margin: 0; padding-left: 16px; }
+  .meta li { margin: 2px 0; }
+
+  /* 编辑器舞台 */
+  .stage {
+    position: relative;
+    height: 320px;
+    border-radius: 12px;
+    border: 1px solid #c5ced8;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse 600px 280px at 20% -10%, rgba(2,132,199,.12), transparent 55%),
+      linear-gradient(168deg, #F4F8FC, #E8F0F7);
+  }
+  .doc {
+    position: absolute; inset: 0;
+    padding: 18px 20px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.75;
+    color: rgba(15,23,42,.42);
+    user-select: none;
+    overflow: hidden;
+  }
+  .doc .hit {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+    border-radius: 2px;
+    outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    color: rgba(15,23,42,.7);
+  }
+
+  /* 通用查找卡控件 */
+  .card {
+    position: absolute;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-float);
+    font-size: 12px;
+    z-index: 5;
+    max-width: calc(100% - 24px);
+  }
+  .tf {
+    height: 28px; padding: 0 10px;
+    border: 1px solid var(--border-color); border-radius: 8px;
+    background: var(--input-bg); color: var(--text-primary);
+    font-size: 12.5px; outline: none; width: 110px; min-width: 0;
+  }
+  .tf:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-shadow);
+  }
+  .btn {
+    height: 28px; padding: 0 10px;
+    border: 1px solid var(--border-color); border-radius: 8px;
+    background: var(--card-bg); color: var(--text-secondary);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    white-space: nowrap; font-family: inherit;
+  }
+  .btn:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 28px; padding: 0 10px;
+    border: 1px solid var(--border-color); border-radius: 999px;
+    background: var(--card-bg); font-size: 11.5px; font-weight: 500;
+    color: var(--text-secondary); cursor: pointer; user-select: none;
+  }
+  .pill.on {
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-strong);
+  }
+  .close {
+    width: 26px; height: 26px; border: none; border-radius: 8px;
+    background: transparent; color: var(--text-muted); font-size: 15px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .close:hover { background: var(--hover); color: var(--text-primary); }
+
+  .hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .hint code {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px;
+    background: var(--section-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px 16px;
+    margin-top: 10px; font-size: 11.5px; color: var(--text-muted);
+  }
+  .legend b { color: var(--text-secondary); font-weight: 600; }
+
+  /* ── A 拖柄 ── */
+  .grip {
+    width: 26px;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--border-color);
+    cursor: grab;
+    color: var(--text-muted);
+    background: linear-gradient(180deg, var(--section-bg), transparent);
+    border-radius: 12px 0 0 12px;
+    user-select: none;
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+  .grip:active { cursor: grabbing; }
+  .card-a {
+    top: 14px; right: 14px;
+    padding: 8px 36px 8px 0;
+  }
+  .card-a .close {
+    position: absolute; top: 6px; right: 6px;
+  }
+  .card-a .body {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 6px 8px;
+    padding-left: 10px;
+    padding-right: 4px;
+  }
+  .toast-note {
+    position: absolute;
+    left: 50%; bottom: 14px;
+    transform: translateX(-50%);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-float);
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0;
+    transition: opacity .2s, transform .2s;
+    pointer-events: none;
+    z-index: 6;
+    white-space: nowrap;
+  }
+  .toast-note.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── B 标题栏 ── */
+  .card-b {
+    top: 14px; right: 14px;
+    width: min(380px, calc(100% - 28px));
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    height: 34px;
+    padding: 0 6px 0 12px;
+    background: var(--section-bg);
+    border-bottom: 1px solid var(--border-color);
+    cursor: grab;
+    user-select: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .titlebar:active { cursor: grabbing; }
+  .titlebar .dots {
+    color: var(--text-muted);
+    font-size: 11px;
+    letter-spacing: 1px;
+    margin-right: 2px;
+  }
+  .titlebar .sp { flex: 1; }
+  .tbtn {
+    width: 24px; height: 24px; border: none; border-radius: 6px;
+    background: transparent; color: var(--text-muted);
+    cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tbtn:hover { background: var(--hover); color: var(--text-primary); }
+  .bbody {
+    display: flex; flex-wrap: wrap; gap: 6px 8px;
+    padding: 10px 12px;
+  }
+  .card-b.collapsed .bbody { display: none; }
+  .card-b.collapsed .titlebar { border-bottom: none; }
+  .match-chip {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+
+  /* ── C 锚点 + 胶囊 ── */
+  .card-c {
+    top: 14px; right: 14px;
+    padding: 8px 8px 8px 12px;
+  }
+  .pin-btn {
+    width: 28px; height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .pin-btn:hover,
+  .pin-btn.open {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  }
+  .anchor-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 168px;
+    padding: 5px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-float);
+    display: none;
+    z-index: 7;
+  }
+  .anchor-menu.open { display: block; }
+  .anchor-menu button {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .anchor-menu button:hover { background: var(--hover); }
+  .anchor-menu button.active {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-strong);
+    font-weight: 600;
+  }
+  .anchor-menu .sep {
+    height: 1px; background: var(--border-color); margin: 4px 8px;
+  }
+  .mini {
+    position: absolute;
+    top: 14px; right: 14px;
+    height: 32px;
+    padding: 0 12px 0 10px;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    box-shadow: var(--shadow-float);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    z-index: 5;
+    font-family: inherit;
+  }
+  .mini.show { display: inline-flex; }
+  .mini:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    color: var(--accent-strong);
+  }
+  .mini .n {
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 999px;
+    padding: 1px 6px;
+    font-size: 11px;
+  }
+  .card-c.hidden { display: none; }
+
+  /* 对比表 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+  }
+  th {
+    background: var(--section-bg);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  tr:last-child td { border-bottom: none; }
+  .rec-box {
+    margin-top: 28px;
+    padding: 14px 16px;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+    border-radius: 0 10px 10px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .rec-box strong { color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>查找悬浮卡 · 移动交互三方案</h1>
+  <p class="lead">
+    现状问题：整卡是工具条，可抓空白几乎为 0；抓手只有 3px 虚线；光标整卡 grab 但点控件会静默失败；位置不记忆，重开回右上。
+    下面三套稿都在同一编辑器舞台上示意，可直接点。
+  </p>
+  <p class="sub">交互原型可点：A 双击抓手归位 · B 点折叠/展开 · C 点钉子换锚点、点「−」收成胶囊</p>
+
+  <!-- ========== A ========== -->
+  <section class="plan rec" id="plan-a">
+    <div class="plan-h">
+      <h2>方案 A · 专用拖柄 + 位置记忆</h2>
+      <span class="badge">推荐 · 改动最小</span>
+    </div>
+    <div class="plan-b">
+      <dl class="meta">
+        <div>
+          <dt>手感</dt>
+          <dd>只按左侧拖柄条移动；双击拖柄 = 归位右上。光标只在拖柄上是 grab。</dd>
+        </div>
+        <div>
+          <dt>记忆</dt>
+          <dd>位置写入 <code>sessionStorage</code>（按编辑器类型分 key），关面板再开仍在原处。</dd>
+        </div>
+        <div>
+          <dt>误触</dt>
+          <dd>几乎为 0——控件区完全不参与拖动。</dd>
+        </div>
+        <div>
+          <dt>代价</dt>
+          <dd>占宽约 26px；新用户要先看见拖柄才知道能拖（拖柄常驻、有纹路）。</dd>
+        </div>
+      </dl>
+
+      <div class="stage" id="stage-a">
+        <div class="doc">
+          1  7.1.0问题记录<br/>
+          2  知识库模式下3栏状态问答回车太短<br/>
+          3  自己写笔记的时候没办法增加空格<br/>
+          4  交互问题太多了这个模式下的交互逻辑和友好性全部查一下<br/>
+          5  知识库同步模式下弹框会显示浏览器弹框询问是否允许读取剪贴板<br/>
+          6  在知识库模式下从外部点击.md，进入不了全屏md编辑器<br/>
+          7  都要给我建议和最好的交互方案<br/>
+          8  <span class="hit">查找</span>面板要悬浮、可移动、不遮挡正文
+        </div>
+        <div class="card card-a" id="card-a" style="right:14px;left:auto;top:14px">
+          <div class="grip" id="grip-a" title="拖动 · 双击归位">⋮⋮</div>
+          <div class="body">
+            <input class="tf" placeholder="查找" />
+            <button class="btn" type="button">下一个</button>
+            <button class="btn" type="button">上一个</button>
+            <label class="pill"><input type="checkbox" /> 大小写</label>
+            <label class="pill on"><input type="checkbox" checked /> 正则</label>
+          </div>
+          <button class="close" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="toast-note" id="toast-a">已归位到右上角</div>
+      </div>
+      <p class="hint">可试：<strong>按住左侧 ⋮⋮ 拖动</strong>；<strong>双击 ⋮⋮</strong> 归位。点输入框/按钮不会拖走卡片。</p>
+    </div>
+  </section>
+
+  <!-- ========== B ========== -->
+  <section class="plan" id="plan-b">
+    <div class="plan-h">
+      <h2>方案 B · 迷你窗口（标题栏可拖 / 可折叠）</h2>
+      <span class="badge ghost">可学性最好</span>
+    </div>
+    <div class="plan-b">
+      <dl class="meta">
+        <div>
+          <dt>手感</dt>
+          <dd>整条标题栏可拖，心智 = 系统小窗。点「−」收成只剩标题栏，正文不被挡。</dd>
+        </div>
+        <div>
+          <dt>记忆</dt>
+          <dd>位置 + 折叠态一并记忆；重开保持上次形态。</dd>
+        </div>
+        <div>
+          <dt>误触</dt>
+          <dd>低。标题栏与控件区分明确。</dd>
+        </div>
+        <div>
+          <dt>代价</dt>
+          <dd>多占约 34px 高；要处理 CM 面板 DOM（挂载后注入标题栏或 <code>createPanel</code>）。实现量约为 A 的 2 倍。</dd>
+        </div>
+      </dl>
+
+      <div class="stage" id="stage-b">
+        <div class="doc">
+          1  7.1.0问题记录<br/>
+          2  知识库模式下3栏状态问答回车太短<br/>
+          3  自己写笔记的时候没办法增加空格<br/>
+          4  交互问题太多了这个模式下的交互逻辑和友好性全部查一下<br/>
+          5  知识库同步模式下弹框会显示浏览器弹框询问是否允许读取剪贴板<br/>
+          6  在知识库模式下从外部点击.md，进入不了全屏md编辑器<br/>
+          7  都要给我建议和最好的交互方案<br/>
+          8  <span class="hit">查找</span>面板要悬浮、可移动、不遮挡正文
+        </div>
+        <div class="card card-b" id="card-b">
+          <div class="titlebar" id="titlebar-b">
+            <span class="dots">⋮⋮</span>
+            <span>查找</span>
+            <span class="match-chip" id="match-b">3 处</span>
+            <span class="sp"></span>
+            <button class="tbtn" type="button" id="collapse-b" title="折叠">−</button>
+            <button class="tbtn" type="button" title="关闭">×</button>
+          </div>
+          <div class="bbody">
+            <input class="tf" placeholder="查找" style="flex:1;width:auto" />
+            <button class="btn" type="button">下一个</button>
+            <button class="btn" type="button">上一个</button>
+            <label class="pill"><input type="checkbox" /> 大小写</label>
+            <label class="pill"><input type="checkbox" /> 全词</label>
+            <label class="pill on"><input type="checkbox" checked /> 正则</label>
+            <input class="tf" placeholder="替换" style="flex:1;width:auto" />
+            <button class="btn" type="button">替换</button>
+            <button class="btn" type="button">全部替换</button>
+          </div>
+        </div>
+      </div>
+      <p class="hint">可试：<strong>拖标题栏</strong>；点 <strong>− / +</strong> 折叠展开（折叠后几乎不挡正文）。</p>
+    </div>
+  </section>
+
+  <!-- ========== C ========== -->
+  <section class="plan" id="plan-c">
+    <div class="plan-h">
+      <h2>方案 C · 锚点菜单 + 胶囊收纳（禁止自由拖）</h2>
+      <span class="badge ghost">最不挡字</span>
+    </div>
+    <div class="plan-b">
+      <dl class="meta">
+        <div>
+          <dt>手感</dt>
+          <dd>钉子按钮选四角 / 顶中 / 底中；「−」收成 🔍 胶囊（带匹配数），点开还原。</dd>
+        </div>
+        <div>
+          <dt>记忆</dt>
+          <dd>锚点 + 是否收成胶囊写入 <code>localStorage</code>。</dd>
+        </div>
+        <div>
+          <dt>误触</dt>
+          <dd>无拖动误触；菜单项即选即生效。</dd>
+        </div>
+        <div>
+          <dt>代价</dt>
+          <dd>不能微调到任意像素位置；要设计 6 个锚点的夹取与窄窗回退。</dd>
+        </div>
+      </dl>
+
+      <div class="stage" id="stage-c">
+        <div class="doc">
+          1  7.1.0问题记录<br/>
+          2  知识库模式下3栏状态问答回车太短<br/>
+          3  自己写笔记的时候没办法增加空格<br/>
+          4  交互问题太多了这个模式下的交互逻辑和友好性全部查一下<br/>
+          5  知识库同步模式下弹框会显示浏览器弹框询问是否允许读取剪贴板<br/>
+          6  在知识库模式下从外部点击.md，进入不了全屏md编辑器<br/>
+          7  都要给我建议和最好的交互方案<br/>
+          8  <span class="hit">查找</span>面板要悬浮、可移动、不遮挡正文
+        </div>
+        <button class="mini" id="mini-c" type="button" title="展开查找">
+          🔍 <span class="n">3</span>
+        </button>
+        <div class="card card-c" id="card-c">
+          <input class="tf" placeholder="查找" />
+          <button class="btn" type="button">下一个</button>
+          <button class="btn" type="button">上一个</button>
+          <label class="pill on"><input type="checkbox" checked /> 正则</label>
+          <button class="pin-btn open" type="button" id="pin-c" title="锚点位置">⌖</button>
+          <button class="tbtn" type="button" id="mini-btn-c" title="收成胶囊" style="width:28px;height:28px;border:1px solid var(--border-color);border-radius:8px;">−</button>
+          <button class="close" type="button" style="width:28px;height:28px;border-radius:8px;">×</button>
+          <div class="anchor-menu open" id="menu-c">
+            <button type="button" data-a="tr" class="active">右上</button>
+            <button type="button" data-a="br">右下</button>
+            <button type="button" data-a="tl">左上</button>
+            <button type="button" data-a="bl">左下</button>
+            <div class="sep"></div>
+            <button type="button" data-a="tc">顶部居中</button>
+            <button type="button" data-a="bc">底部居中</button>
+          </div>
+        </div>
+      </div>
+      <p class="hint">可试：点 <strong>⌖</strong> 开关锚点菜单并切换位置；点 <strong>−</strong> 收成胶囊，再点胶囊展开。</p>
+    </div>
+  </section>
+
+  <!-- 对比 -->
+  <h2 style="margin:36px 0 10px;font-size:15px">怎么选</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>维度</th>
+        <th>A 拖柄</th>
+        <th>B 标题栏窗</th>
+        <th>C 锚点+胶囊</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>能不能拖到任意位置</td>
+        <td class="ok">能</td>
+        <td class="ok">能</td>
+        <td>只能 6 个锚点</td>
+      </tr>
+      <tr>
+        <td>挡住正文时的最优解</td>
+        <td>拖走</td>
+        <td>折叠或拖走</td>
+        <td>收成胶囊 / 换锚点</td>
+      </tr>
+      <tr>
+        <td>新用户可学性</td>
+        <td>中（要看见拖柄）</td>
+        <td>高（窗口心智）</td>
+        <td>高（按钮明确）</td>
+      </tr>
+      <tr>
+        <td>实现量</td>
+        <td>小</td>
+        <td>中大（DOM 结构）</td>
+        <td>中</td>
+      </tr>
+      <tr>
+        <td>与现有 CM 面板</td>
+        <td>兼容好</td>
+        <td>要注入标题栏</td>
+        <td>兼容好</td>
+      </tr>
+      <tr>
+        <td>建议</td>
+        <td><strong>先做这个</strong></td>
+        <td>若要完整查找窗体验</td>
+        <td>若首要诉求是「不挡字」</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="rec-box">
+    <strong>推荐路径：</strong>先上 <strong>A</strong>（立刻解决拖不动、拖完就丢），观察一轮；
+    若仍觉得占地方，再叠 <strong>C 的胶囊收纳</strong>（A+C 组合是最终形态）。
+    <strong>B</strong> 单独排期，适合和「查找结果计数 / 替换折叠」一起做。
+  </div>
+
+</div>
+
+<script>
+(function () {
+  // ── A：拖柄拖动 + 双击归位 ──
+  const stageA = document.getElementById("stage-a");
+  const cardA = document.getElementById("card-a");
+  const gripA = document.getElementById("grip-a");
+  const toastA = document.getElementById("toast-a");
+  let drag = null;
+
+  function clampA(x, y) {
+    const sw = stageA.clientWidth, sh = stageA.clientHeight;
+    const cw = cardA.offsetWidth, ch = cardA.offsetHeight;
+    return {
+      x: Math.max(0, Math.min(x, sw - cw)),
+      y: Math.max(0, Math.min(y, sh - ch)),
+    };
+  }
+
+  gripA.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const sr = stageA.getBoundingClientRect();
+    const cr = cardA.getBoundingClientRect();
+    drag = {
+      id: e.pointerId,
+      ox: e.clientX - cr.left,
+      oy: e.clientY - cr.top,
+      sr,
+    };
+    gripA.setPointerCapture(e.pointerId);
+    cardA.style.boxShadow =
+      "0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 12px 32px rgba(0,0,0,.16)";
+  });
+  gripA.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const p = clampA(e.clientX - drag.sr.left - drag.ox, e.clientY - drag.sr.top - drag.oy);
+    cardA.style.left = p.x + "px";
+    cardA.style.top = p.y + "px";
+    cardA.style.right = "auto";
+  });
+  const endA = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null;
+    cardA.style.boxShadow = "";
+  };
+  gripA.addEventListener("pointerup", endA);
+  gripA.addEventListener("pointercancel", endA);
+
+  gripA.addEventListener("dblclick", () => {
+    cardA.style.left = "auto";
+    cardA.style.right = "14px";
+    cardA.style.top = "14px";
+    toastA.classList.add("show");
+    setTimeout(() => toastA.classList.remove("show"), 1400);
+  });
+
+  // ── B：标题栏拖动 + 折叠 ──
+  const stageB = document.getElementById("stage-b");
+  const cardB = document.getElementById("card-b");
+  const titlebar = document.getElementById("titlebar-b");
+  const collapseB = document.getElementById("collapse-b");
+  let dragB = null;
+
+  titlebar.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("button")) return;
+    e.preventDefault();
+    const sr = stageB.getBoundingClientRect();
+    const cr = cardB.getBoundingClientRect();
+    dragB = { id: e.pointerId, ox: e.clientX - cr.left, oy: e.clientY - cr.top, sr };
+    titlebar.setPointerCapture(e.pointerId);
+    cardB.style.boxShadow =
+      "0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 12px 32px rgba(0,0,0,.16)";
+  });
+  titlebar.addEventListener("pointermove", (e) => {
+    if (!dragB || e.pointerId !== dragB.id) return;
+    const cw = cardB.offsetWidth, ch = cardB.offsetHeight;
+    let x = e.clientX - dragB.sr.left - dragB.ox;
+    let y = e.clientY - dragB.sr.top - dragB.oy;
+    x = Math.max(0, Math.min(x, stageB.clientWidth - cw));
+    y = Math.max(0, Math.min(y, stageB.clientHeight - ch));
+    cardB.style.left = x + "px";
+    cardB.style.top = y + "px";
+    cardB.style.right = "auto";
+  });
+  const endB = (e) => {
+    if (!dragB || e.pointerId !== dragB.id) return;
+    dragB = null;
+    cardB.style.boxShadow = "";
+  };
+  titlebar.addEventListener("pointerup", endB);
+  titlebar.addEventListener("pointercancel", endB);
+
+  collapseB.addEventListener("click", () => {
+    const col = cardB.classList.toggle("collapsed");
+    collapseB.textContent = col ? "+" : "−";
+    collapseB.title = col ? "展开" : "折叠";
+  });
+
+  // ── C：锚点 + 胶囊 ──
+  const stageC = document.getElementById("stage-c");
+  const cardC = document.getElementById("card-c");
+  const pinC = document.getElementById("pin-c");
+  const menuC = document.getElementById("menu-c");
+  const miniC = document.getElementById("mini-c");
+  const miniBtnC = document.getElementById("mini-btn-c");
+
+  pinC.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = menuC.classList.toggle("open");
+    pinC.classList.toggle("open", open);
+  });
+
+  function place(anchor) {
+    cardC.style.left = "auto";
+    cardC.style.right = "auto";
+    cardC.style.top = "auto";
+    cardC.style.bottom = "auto";
+    const m = 14;
+    const w = cardC.offsetWidth || 360;
+    switch (anchor) {
+      case "tr": cardC.style.top = m + "px"; cardC.style.right = m + "px"; break;
+      case "br": cardC.style.bottom = m + "px"; cardC.style.right = m + "px"; break;
+      case "tl": cardC.style.top = m + "px"; cardC.style.left = m + "px"; break;
+      case "bl": cardC.style.bottom = m + "px"; cardC.style.left = m + "px"; break;
+      case "tc":
+        cardC.style.top = m + "px";
+        cardC.style.left = "50%";
+        cardC.style.transform = "translateX(-50%)";
+        break;
+      case "bc":
+        cardC.style.bottom = m + "px";
+        cardC.style.left = "50%";
+        cardC.style.transform = "translateX(-50%)";
+        break;
+    }
+    if (anchor !== "tc" && anchor !== "bc") cardC.style.transform = "none";
+  }
+
+  menuC.querySelectorAll("button[data-a]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menuC.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      place(btn.getAttribute("data-a"));
+      menuC.classList.remove("open");
+      pinC.classList.remove("open");
+    });
+  });
+
+  document.addEventListener("click", () => {
+    menuC.classList.remove("open");
+    pinC.classList.remove("open");
+  });
+
+  miniBtnC.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cardC.classList.add("hidden");
+    miniC.classList.add("show");
+  });
+  miniC.addEventListener("click", () => {
+    miniC.classList.remove("show");
+    cardC.classList.remove("hidden");
+  });
+})();
+</script>
+</body>
+</html>

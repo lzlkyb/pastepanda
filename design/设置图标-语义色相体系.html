@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>PastePanda 设置图标色彩体系</title>
+<style>
+  :root {
+    --bg: #EEF2F7;
+    --card: #fff;
+    --ink: #0F172A;
+    --muted: #627083;
+    --line: #E0E4EB;
+    --accent: #0284C7;
+    --green: #11813A;
+    --off-bg: #E2E8F0;
+    --off-label: #4B5563;
+
+    /* ── PastePanda 设置图标 · 8 语义色相 ──
+       原则：饱和度/明度同一档，只换色相；六主题下固定（同 brand-ai），
+       因为它们标的是「功能族」不是「当前状态」。 */
+    --ic-system:  linear-gradient(135deg, #F5A524, #F97316); /* 系统·窗口 */
+    --ic-capture: linear-gradient(135deg, #38BDF8, #0284C7); /* 采集·截图 */
+    --ic-save:    linear-gradient(135deg, #34D399, #059669); /* 保存·数据 */
+    --ic-editor:  linear-gradient(135deg, #818CF8, #4F46E5); /* 编辑·笔记 */
+    --ic-privacy: linear-gradient(135deg, #FB7185, #E11D48); /* 隐私·安全 */
+    --ic-sync:    linear-gradient(135deg, #22D3EE, #0891B2); /* 同步·网络 */
+    --ic-paste:   linear-gradient(135deg, #A78BFA, #7C3AED); /* 粘贴·栈 */
+    --ic-brand:   linear-gradient(135deg, #1D4ED8, #6D28D9); /* AI·品牌 */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink);
+    padding: 28px 24px 48px; line-height: 1.5;
+  }
+  h1 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  h2 { font-size: 14px; font-weight: 700; margin: 22px 0 10px; }
+  .lead { font-size: 12px; color: var(--muted); max-width: 760px; margin-bottom: 18px; }
+  .lead b { color: var(--ink); }
+
+  /* 色板 */
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    max-width: 760px;
+    margin-bottom: 8px;
+  }
+  .sw {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.06);
+  }
+  .swTile {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: grid; place-items: center;
+    font-size: 20px; margin-bottom: 8px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 6px rgba(15,23,42,.12);
+  }
+  .swName { font-size: 12px; font-weight: 700; }
+  .swUse { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .swHex { font-size: 10px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; margin-top: 4px; }
+
+  /* 设置行 */
+  .panel {
+    background: var(--card);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 760px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+    border: 1px solid var(--line);
+  }
+  .sec {
+    padding: 10px 16px;
+    font-size: 12px; font-weight: 700;
+    background: #F0F4F8;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: none; }
+  .ico {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 18px; flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 1px 3px rgba(15,23,42,.10);
+  }
+  .body { flex: 1; min-width: 0; }
+  .lab { font-size: 13px; font-weight: 600; }
+  .desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .hue {
+    font-size: 10px; font-weight: 700; letter-spacing: .02em;
+    padding: 2px 6px; border-radius: 4px;
+    background: #F1F5F9; color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  /* 开关 */
+  .tg {
+    display: inline-block; width: 44px; height: 26px; border-radius: 13px;
+    position: relative; flex-shrink: 0; background: var(--off-bg);
+  }
+  .tg.on { background: var(--green); }
+  .tg i {
+    position: absolute; left: 0; top: 2px; width: 22px; height: 22px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  }
+  .tg.off i { transform: translateX(2px); }
+  .tg.on i { transform: translateX(20px); }
+  .tg em {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-style: normal; font-size: 11px; font-weight: 700;
+  }
+  .tg.on em { left: 7px; color: #fff; }
+  .tg.off em { right: 6px; color: var(--off-label); }
+
+  /* 深色预览条 */
+  .darkWrap {
+    margin-top: 22px; max-width: 760px;
+    background: #0C1222;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid #1E293B;
+  }
+  .darkTitle { font-size: 12px; font-weight: 700; color: #94A3B8; margin-bottom: 12px; }
+  .darkGrid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .darkGrid .swTile { margin: 0; box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 2px 8px rgba(0,0,0,.35); }
+
+  .rules {
+    max-width: 760px; margin-top: 22px;
+    background: #FEF3C7; border: 1px solid #FCD34D;
+    border-radius: 10px; padding: 14px 16px;
+    font-size: 12px; color: #78350F;
+  }
+  .rules b { font-weight: 700; }
+  .rules li { margin: 4px 0 4px 16px; }
+
+  .vs {
+    max-width: 760px; margin-top: 18px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .vsCard {
+    background: var(--card); border-radius: 12px; padding: 14px 16px;
+    border: 1px solid var(--line);
+  }
+  .vsCard h3 { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .vsCard.old .ico {
+    width: 36px; height: 36px; border-radius: 8px; font-size: 16px;
+    background: color-mix(in srgb, var(--accent) 12%, #fff);
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+  }
+</style>
+</head>
+<body>
+  <h1>PastePanda 设置图标 · 语义色相体系</h1>
+  <p class="lead">
+    不是「随便上彩虹」，也不是继续灰瓷砖。设计原则三条：
+    <b>① 8 个色相对应 8 类功能</b>（扫一眼知道是哪族）；
+    <b>② 饱和度/明度锁在同一档</b>（看起来是一家人，不是调色盘）；
+    <b>③ 固定色，不跟主题变</b>（同 <code>--brand-ai</code> 的约定——图标标的是功能身份，不是当前主题）。
+    冷色系（青/蓝/靛/紫）贴 ocean 默认主题与品牌 AI 渐变，暖色只留给「系统/隐私」两类需要跳出来的。
+  </p>
+
+  <h2>色板 · 8 语义色相</h2>
+  <div class="swatches">
+    <div class="sw"><div class="swTile" style="background:var(--ic-system)">📌</div><div class="swName">系统 System</div><div class="swUse">置顶 · 自启 · 失焦 · 动画</div><div class="swHex">#F5A524 → #F97316</div></div>
+    <div class="sw"><div class="swTile" style="background:var(--ic-capture)">🪟</div><div class="swName">采集 Capture</div><div class="swUse">截图 · 文档保真 · 框选</div><div class="swHex">#38BDF8 → #0284C7</div></div>
+    <div class="sw"><div class="swTile" style="background:var(--ic-save)">💾</div><div class="swName">保存 Save</div><div class="swUse">自动保存 · 导出 · 清理 · 回收</div><div class="swHex">#34D399 → #059669</div></div>
+    <div class="sw"><div class="swTile" style="background:var(--ic-editor)">📝</div><div class="swName">编辑 Editor</div><div class="swUse">编辑器 · 笔记 · 模板</div><div class="swHex">#818CF8 → #4F46E5</div></div>
+    <div class="sw"><div class="swTile" style="background:var(--ic-privacy)">🛡</div><div class="swName">隐私 Privacy</div><div class="swUse">敏感防护 · 排除名单</div><div class="swHex">#FB7185 → #E11D48</div></div>
+    <div class="sw"><div class="swTile" style="background:var(--ic-sync)">🌐</div><div class="swName">同步 Sync</div><div class="swUse">剪贴板同步 · 知识库同步 · MCP</div><div class="swHex">#22D3EE → #0891B2</div></div>
+    <div class="sw"><div class="swTile" style="background:var(--ic-paste)">📋</div><div class="swName">粘贴 Paste</div><div class="swUse">格式粘贴 · 循环 · 栈 · 拆行</div><div class="swHex">#A78BFA → #7C3AED</div></div>
+    <div class="sw"><div class="swTile" style="background:var(--ic-brand)">✨</div><div class="swName">品牌 AI</div><div class="swUse">AI 相关 · 与顶栏 AI 上标同源</div><div class="swHex">#1D4ED8 → #6D28D9</div></div>
+  </div>
+
+  <h2>落成设置行（通用 / 窗口 / 同步）</h2>
+  <div class="panel">
+    <div class="sec">通用</div>
+    <div class="row"><span class="ico" style="background:var(--ic-system)">📌</span><div class="body"><div class="lab">窗口置顶</div><div class="desc">始终显示在其他窗口之上</div></div><span class="hue">系统</span><span class="tg off"><i></i><em>关</em></span></div>
+    <div class="row"><span class="ico" style="background:var(--ic-system)">🚀</span><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div><span class="hue">系统</span><span class="tg off"><i></i><em>关</em></span></div>
+    <div class="row"><span class="ico" style="background:var(--ic-save)">💾</span><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div><span class="hue">保存</span><span class="tg on"><i></i><em>开</em></span></div>
+    <div class="row"><span class="ico" style="background:var(--ic-privacy)">🛡</span><div class="body"><div class="lab">敏感内容防护</div><div class="desc">不记录匹配密钥/凭证模式的内容</div></div><span class="hue">隐私</span><span class="tg on"><i></i><em>开</em></span></div>
+    <div class="row"><span class="ico" style="background:var(--ic-capture)">📄</span><div class="body"><div class="lab">文档保真采集</div><div class="desc">从 Word/网页等复制时保留格式结构</div></div><span class="hue">采集</span><span class="tg on"><i></i><em>开</em></span></div>
+    <div class="row"><span class="ico" style="background:var(--ic-paste)">📋</span><div class="body"><div class="lab">保留格式粘贴</div><div class="desc">粘贴文档/图文时保留富格式</div></div><span class="hue">粘贴</span><span class="tg on"><i></i><em>开</em></span></div>
+
+    <div class="sec">窗口与系统</div>
+    <div class="row"><span class="ico" style="background:var(--ic-system)">👁</span><div class="body"><div class="lab">失焦自动隐藏</div><div class="desc">窗口失去焦点时隐藏到托盘</div></div><span class="hue">系统</span><span class="tg on"><i></i><em>开</em></span></div>
+    <div class="row"><span class="ico" style="background:var(--ic-system)">✨</span><div class="body"><div class="lab">窗口动画</div><div class="desc">弹框与全屏窗口打开/关闭时的过渡动画</div></div><span class="hue">系统</span><span class="tg on"><i></i><em>开</em></span></div>
+    <div class="row"><span class="ico" style="background:var(--ic-editor)">⏱</span><div class="body"><div class="lab">时间线</div><div class="desc">主页面左侧显示竖版时间轴导航</div></div><span class="hue">编辑</span><span class="tg on"><i></i><em>开</em></span></div>
+
+    <div class="sec">剪贴板同步</div>
+    <div class="row"><span class="ico" style="background:var(--ic-sync)">🌐</span><div class="body"><div class="lab">剪贴板同步</div><div class="desc">多台电脑自动共享剪贴板。仅限同一局域网</div></div><span class="hue">同步</span><span class="tg on"><i></i><em>开</em></span></div>
+
+    <div class="sec">知识库同步</div>
+    <div class="row"><span class="ico" style="background:var(--ic-sync)">📚</span><div class="body"><div class="lab">知识库同步</div><div class="desc">在你自己的设备之间同步笔记</div></div><span class="hue">同步</span><span class="tg on"><i></i><em>开</em></span></div>
+
+    <div class="sec">知识库 MCP 服务</div>
+    <div class="row"><span class="ico" style="background:var(--ic-sync)">🧩</span><div class="body"><div class="lab">知识库 MCP 服务</div><div class="desc">让 Claude Code 等 AI 工具读写你的笔记</div></div><span class="hue">同步</span><span class="tg off"><i></i><em>关</em></span></div>
+  </div>
+
+  <div class="darkWrap">
+    <div class="darkTitle">深色主题预览 · 同一套固定色（不另调）</div>
+    <div class="darkGrid">
+      <div class="swTile" style="background:var(--ic-system)">📌</div>
+      <div class="swTile" style="background:var(--ic-capture)">🪟</div>
+      <div class="swTile" style="background:var(--ic-save)">💾</div>
+      <div class="swTile" style="background:var(--ic-editor)">📝</div>
+      <div class="swTile" style="background:var(--ic-privacy)">🛡</div>
+      <div class="swTile" style="background:var(--ic-sync)">🌐</div>
+      <div class="swTile" style="background:var(--ic-paste)">📋</div>
+      <div class="swTile" style="background:var(--ic-brand)">✨</div>
+    </div>
+  </div>
+
+  <h2>对比：现在 vs 体系</h2>
+  <div class="vs">
+    <div class="vsCard old">
+      <h3>现在（E2 淡瓷砖）</h3>
+      <div class="row" style="border:none;padding:8px 0"><span class="ico">🚀</span><div class="body"><div class="lab">开机自启</div></div></div>
+      <div class="row" style="border:none;padding:8px 0"><span class="ico">💾</span><div class="body"><div class="lab">编辑器自动保存</div></div></div>
+      <div class="row" style="border:none;padding:8px 0"><span class="ico">🛡</span><div class="body"><div class="lab">敏感内容防护</div></div></div>
+    </div>
+    <div class="vsCard">
+      <h3>体系后（语义色相）</h3>
+      <div class="row" style="border:none;padding:8px 0"><span class="ico" style="background:var(--ic-system)">🚀</span><div class="body"><div class="lab">开机自启</div></div></div>
+      <div class="row" style="border:none;padding:8px 0"><span class="ico" style="background:var(--ic-save)">💾</span><div class="body"><div class="lab">编辑器自动保存</div></div></div>
+      <div class="row" style="border:none;padding:8px 0"><span class="ico" style="background:var(--ic-privacy)">🛡</span><div class="body"><div class="lab">敏感内容防护</div></div></div>
+    </div>
+  </div>
+
+  <div class="rules">
+    <b>落地方式（确认后再改代码）</b>
+    <ul>
+      <li>theme.css 顶部 <code>:root</code> 增加 8 个 <code>--ic-*</code> 固定色（不随主题变，注释对齐 brand-ai）</li>
+      <li>去掉 <code>.sRowIcon</code> 的 <code>!important</code> 盖色；瓷砖改为 <code>40×40 r10</code> + 内高光 + 轻投影</li>
+      <li>TSX 里 <code>gradient="…"</code> 全部换成 <code>hue="system|capture|save|…"</code>，避免 29 处各写各的 hex</li>
+      <li>emoji / SVG 图标保持现有；深色主题下白图标压在渐变上仍清晰（实测最差点均 ≥4.5:1 可再核）</li>
+      <li>行 padding 微调（12px→13px）容纳 40px 瓷砖，密度不炸</li>
+    </ul>
+  </div>
+</body>
+</html>

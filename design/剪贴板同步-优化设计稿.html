@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>剪贴板同步 · 优化设计稿（全量）</title>
+<style>
+  :root {
+    --card-bg: #fff;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #627083;
+    --border-color: #E0E4EB;
+    --hover: #E8ECF2;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-strong: #0273AD;
+    --accent-light: #E0F2FE;
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --green: #059669;
+    --green-bg: #ECFDF5;
+    --orange: #C54A0A;
+    --danger: #DC2626;
+    --elev: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+    --float-shadow: 0 0 0 1px rgba(0,0,0,.03), 0 8px 24px rgba(0,0,0,.12);
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #E8ECF2;
+    color: var(--text-primary);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  @keyframes pp-float-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  .page { max-width: 1120px; margin: 0 auto; padding: 28px 20px 72px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--text-secondary); margin: 0 0 8px; max-width: 80ch; }
+  .sub { color: var(--text-muted); font-size: 12px; margin: 0 0 20px; }
+  h2 {
+    font-size: 15px; margin: 30px 0 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border-color);
+  }
+  h3 { font-size: 13px; margin: 14px 0 8px; color: var(--text-secondary); }
+  .note { font-size: 12px; color: var(--text-muted); margin: 8px 0 0; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+    background: var(--section-bg); padding: 1px 5px; border-radius: 4px;
+  }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 920px) { .duo { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 12px;
+  }
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px; margin-bottom: 8px;
+  }
+  .tag.old { background: #FEF3C7; color: #92400E; }
+  .tag.new { background: #DCFCE7; color: #166534; }
+  .stage {
+    background: linear-gradient(168deg, #F4F8FC, #E8F0F7);
+    border: 1px solid #cfd8e2;
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  /* 按钮 */
+  .btn {
+    height: 28px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-secondary); font-size: 12px; font-weight: 600;
+    font-family: inherit; cursor: pointer;
+    transition: background 150ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease);
+  }
+  .btn:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.primary {
+    background: var(--accent-solid); border-color: transparent; color: #fff;
+  }
+  .btn.primary:hover { opacity: .92; color: #fff; }
+  .btn.danger {
+    border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, var(--card-bg));
+  }
+  .inp {
+    height: 28px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--input-bg);
+    color: var(--text-primary); font-size: 12px; font-family: inherit;
+    flex: 1; min-width: 0; outline: none;
+  }
+  .inp:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-shadow);
+    background: var(--card-bg);
+  }
+  .inp.mono { font-family: ui-monospace, Consolas, monospace; }
+
+  /* 胶囊状态 */
+  .cap {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 10px; border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
+    background: var(--card-bg); box-shadow: var(--elev);
+    font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+    cursor: pointer; font-family: inherit;
+  }
+  .cap .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-muted);
+    box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--text-muted) 18%, transparent);
+  }
+  .cap .dot.on {
+    background: var(--green);
+    box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--green) 20%, transparent);
+  }
+  .cap .dot.warn {
+    background: var(--orange);
+    box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--orange) 22%, transparent);
+  }
+  .cap .badge {
+    min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+    background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .capPop {
+    position: absolute; top: calc(100% + 6px); right: 0;
+    width: 300px; padding: 12px 14px; border-radius: 12px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    box-shadow: var(--float-shadow); font-size: 12px;
+    animation: pp-float-in 150ms var(--ease) both;
+    z-index: 5;
+  }
+  .capWrap { position: relative; display: inline-block; }
+  .capRow { display: flex; justify-content: space-between; gap: 8px; margin: 4px 0; }
+  .capRow b { font-weight: 600; }
+
+  /* 设备行 */
+  .dev {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 12px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    box-shadow: var(--elev); margin-bottom: 8px;
+  }
+  .av {
+    width: 34px; height: 34px; border-radius: 10px;
+    display: grid; place-items: center; color: #fff; font-weight: 700;
+    background: #0EA5E9; flex-shrink: 0;
+  }
+  .devInfo { flex: 1; min-width: 0; }
+  .devName { font-size: 13px; font-weight: 600; }
+  .devMeta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .live {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    flex-shrink: 0;
+  }
+
+  /* PIN */
+  .pinBox {
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));
+    background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+    border-radius: 12px; padding: 14px; text-align: center;
+  }
+  .pin {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 32px; font-weight: 700; letter-spacing: 10px;
+    color: var(--accent-strong); margin: 8px 0 6px;
+  }
+  .pinHint { font-size: 12px; color: var(--text-secondary); line-height: 1.55; }
+  .pinBtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+
+  /* 空态 */
+  .empty {
+    border: 1px dashed var(--border-color); border-radius: 12px;
+    padding: 16px; background: var(--card-bg); text-align: left;
+  }
+  .steps { margin: 8px 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 12px; }
+  .steps li { margin: 4px 0; }
+
+  /* 卡片分区 */
+  .secCard {
+    border-radius: 12px; border: 1px solid var(--border-color);
+    background: var(--card-bg); box-shadow: var(--elev); overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .secH {
+    padding: 10px 14px; font-size: 11.5px; font-weight: 700;
+    color: var(--text-secondary); letter-spacing: .3px;
+    background: linear-gradient(180deg, var(--section-bg), color-mix(in srgb, var(--section-bg) 40%, transparent));
+    border-bottom: 1px solid var(--border-color);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .secB { padding: 12px 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .lbl { font-size: 12px; color: var(--text-secondary); min-width: 56px; }
+
+  /* 列表徽章 */
+  .srcBadge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-strong);
+  }
+  .srcBadge.off {
+    background: var(--section-bg); color: var(--text-muted);
+    border: 1px solid var(--border-color);
+  }
+
+  table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    background: var(--card-bg); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border-color);
+  }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  th { background: var(--section-bg); font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+
+  .callout {
+    margin-top: 16px; padding: 12px 14px;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+    border-radius: 0 10px 10px 0;
+    font-size: 12.5px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 900px) { .plans { grid-template-columns: 1fr 1fr; } }
+  .plan {
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 12px; font-size: 12px;
+  }
+  .plan h4 { margin: 0 0 6px; font-size: 13px; }
+  .plan ul { margin: 0; padding-left: 16px; color: var(--text-secondary); }
+  .plan li { margin: 3px 0; }
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px; background: var(--accent); color: #fff;
+    margin-bottom: 6px;
+  }
+  .badge.ghost { background: var(--section-bg); color: var(--text-secondary); border: 1px solid var(--border-color); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>剪贴板同步 · 优化设计稿（全量）</h1>
+  <p class="lead">
+    覆盖上一轮清单的全部项：主界面状态、设置 S1 卡片、空态引导、测试反馈、列表徽章、
+    安全入口、轮询/监听收口。左现状 / 右目标；可点处已标。
+  </p>
+  <p class="sub">可试：点同步胶囊展开、附近空态、发送测试、生成密钥危险样式。</p>
+
+  <!-- 1 主界面胶囊 -->
+  <h2>1 · 主界面同步状态胶囊（新）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在 · 只在设置里可见</span>
+      <div class="stage" style="min-height:72px;display:flex;align-items:center">
+        <span style="color:var(--text-muted);font-size:12px">
+          用户必须打开 设置 → 剪贴板同步，才知道是否在跑、有没有在线设备。
+        </span>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 与知识库胶囊同语言</span>
+      <div class="stage" style="min-height:72px;display:flex;align-items:center;gap:8px">
+        <div class="capWrap">
+          <button class="cap" id="lanCap" type="button">
+            <span class="dot on" id="lanDot"></span>
+            同步
+            <span class="badge" id="lanBadge">2</span>
+          </button>
+          <div class="capPop" id="lanPop" style="display:none">
+            <div class="capRow"><span>状态</span><b id="lanState">监听中</b></div>
+            <div class="capRow"><span>在线</span><b id="lanOnline">2 台</b></div>
+            <div class="capRow"><span>记住</span><b>3 台</b></div>
+            <div class="capRow"><span>最近同步</span><b>刚刚 · MacBook</b></div>
+            <div class="row" style="margin-top:10px;justify-content:flex-end">
+              <button class="btn" type="button" id="lanOpen">打开设置</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn" type="button" id="lanToggleState">切换：无在线 / 监听失败</button>
+      </div>
+      <p class="note">角标只在在线 &gt; 0 或有异常时出现；dormant/关开关则整颗隐藏或灰点。</p>
+    </div>
+  </div>
+
+  <!-- 2 设置 S1 -->
+  <h2>2 · 设置面板 · S1 卡片语言</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在 · 内联 style + 专用小按钮</span>
+      <div class="stage">
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">高级：手动交换配对密钥</div>
+        <div class="row" style="margin-bottom:8px">
+          <input class="inp mono" style="border-radius:4px;background:transparent;height:24px" value="a3f8…9c21" readonly />
+          <button class="btn" style="border-radius:4px;height:24px;font-size:11px" type="button">🔁 重新生成</button>
+        </div>
+        <div class="row">
+          <input class="inp mono" style="border-radius:4px;background:transparent;height:24px" placeholder="粘贴其他设备的配对密钥" />
+          <button class="btn" style="border-radius:4px;height:24px;font-size:11px" type="button">应用</button>
+        </div>
+      </div>
+      <p class="note">圆角 4、高度 24，与全局 8/28 阶梯脱节。</p>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 分区卡 + 28/8 + focus</span>
+      <div class="stage">
+        <div class="secCard" style="margin:0">
+          <div class="secH">高级：手动交换配对密钥</div>
+          <div class="secB">
+            <p style="margin:0 0 10px;font-size:12px;color:var(--text-secondary)">
+              只有相同密钥的设备才会互相同步；两边都是新版请用「附近的设备」。
+            </p>
+            <div class="row" style="margin-bottom:8px">
+              <span class="lbl">本机密钥</span>
+              <input class="inp mono" value="a3f8…9c21" readonly />
+              <button class="btn" type="button">复制</button>
+              <button class="btn danger" type="button">重新生成…</button>
+            </div>
+            <div class="row">
+              <span class="lbl">对端密钥</span>
+              <input class="inp mono" placeholder="粘贴其他设备的配对密钥" />
+              <button class="btn primary" type="button">应用</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">「重新生成」标危险：会踢掉所有已配对设备（确认框已有说明）。</p>
+    </div>
+  </div>
+
+  <!-- 3 空态 -->
+  <h2>3 · 附近设备空态（引导）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在</span>
+      <div class="stage">
+        <div style="padding:12px;border-radius:10px;background:var(--card-bg);border:1px solid var(--border-color);font-size:12px;color:var(--text-muted)">
+          没有发现附近的设备。确认另一台也开了局域网同步、且在同一个网络里。
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 三步 + 高级入口</span>
+      <div class="stage">
+        <div class="empty">
+          <div style="font-weight:600;font-size:13px">还没有发现附近设备</div>
+          <ol class="steps">
+            <li>另一台电脑安装并打开 <b>PastePanda</b></li>
+            <li>确保在同一 Wi-Fi / 局域网</li>
+            <li>两边都打开 <b>设置 → 剪贴板同步</b></li>
+          </ol>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" type="button">我再检查一下</button>
+            <button class="btn" type="button">用密钥手动配对</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 PIN -->
+  <h2>4 · 配对安全码（PIN）· 保持现有心智，微调视觉</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在 · 功能正确</span>
+      <div class="stage">
+        <div class="pinBox">
+          <div style="font-size:12px;font-weight:600">与「MacBook Pro」配对</div>
+          <div class="pin" style="letter-spacing:6px;font-size:28px">482913</div>
+          <div class="pinHint">确认另一台设备上显示的是同一串数字</div>
+          <div class="pinBtns">
+            <button class="btn" type="button">不一样，取消</button>
+            <button class="btn primary" type="button">两边一样，确认</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 字距/层级/等待态</span>
+      <div class="stage">
+        <div class="pinBox">
+          <div style="font-size:12px;font-weight:600">与「MacBook Pro」配对</div>
+          <div class="pin">482913</div>
+          <div class="pinHint">
+            确认<b>另一台设备</b>上显示的是同一串数字。<br />
+            两边不一样就点取消——那意味着有人在中间插足。<br />
+            两台设备<b>各自都要确认一次</b>。
+          </div>
+          <div class="pinBtns">
+            <button class="btn" type="button">不一样，取消</button>
+            <button class="btn primary" type="button">两边一样，确认</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">逻辑已对齐；仅视觉（大号等宽数字、分段说明）。确认后按钮变「已确认 · 等对方核对…」。</p>
+    </div>
+  </div>
+
+  <!-- 5 测试消息 -->
+  <h2>5 · 发送测试消息 · 有送达反馈</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在</span>
+      <div class="stage">
+        <div class="row">
+          <button class="btn" type="button" id="testOld">🔔 发送测试消息</button>
+          <span id="testOldMsg" style="font-size:12px;color:var(--text-muted)">点后只有 toast「已发送」</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 结果写在按钮旁</span>
+      <div class="stage">
+        <div class="row">
+          <button class="btn primary" type="button" id="testNew">发送测试消息</button>
+          <span id="testNewMsg" style="font-size:12px;color:var(--text-secondary)">尚未发送</span>
+        </div>
+      </div>
+      <p class="note">成功：「已送达 2 台在线设备」；失败：「0 台收到 — 检查对方是否在线」。</p>
+    </div>
+  </div>
+
+  <!-- 6 列表徽章 -->
+  <h2>6 · 记录列表 · 局域网来源徽章</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在 · 仅 toast + source 前缀</span>
+      <div class="stage">
+        <div class="dev">
+          <span class="av">文</span>
+          <div class="devInfo">
+            <div class="devName">https://example.com/page</div>
+            <div class="devMeta">局域网: MacBook · 2 分钟前</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 可扫视徽章</span>
+      <div class="stage">
+        <div class="dev">
+          <span class="av">文</span>
+          <div class="devInfo">
+            <div class="devName">https://example.com/page</div>
+            <div class="devMeta">
+              <span class="srcBadge">📡 MacBook</span>
+              <span style="margin-left:6px">2 分钟前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">可选：顶栏筛选「仅局域网」；toast 节流（10s 合并）。</p>
+    </div>
+  </div>
+
+  <!-- 7 监听失败 -->
+  <h2>7 · 监听失败横幅 · 对齐语义色</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在 · 已有横幅</span>
+      <div class="stage">
+        <div style="padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--orange) 10%,#fff);border:1px solid color-mix(in srgb,var(--orange) 25%,transparent);font-size:12px;color:var(--text-secondary)">
+          ⚠ 监听没能启动——同网络的设备无法互相发现。…把开关关掉再打开可重试。
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 一键重试 + 端口提示</span>
+      <div class="stage">
+        <div style="padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--orange) 10%,#fff);border:1px solid color-mix(in srgb,var(--orange) 25%,transparent);font-size:12px;color:var(--text-secondary)">
+          <b style="color:var(--orange)">监听没能启动</b> — 同网络设备无法互相发现。
+          <div style="margin-top:6px">常见：端口 <code>5007</code> 被占用，或网卡无法加入组播。</div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn" type="button">重试监听</button>
+            <button class="btn" type="button">如何排查</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8 架构 -->
+  <h2>8 · 轮询 / 监听收口（架构，无新视觉）</h2>
+  <table>
+    <thead>
+      <tr><th>现状</th><th>目标</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>设备列表 5s + 附近 2s 两路 <code>invoke</code></td>
+        <td>合并 <code>get_lan_sync_overview</code>（running/paired/nearby/pair_state）；配对中 2s，空闲 5s</td>
+      </tr>
+      <tr>
+        <td>Panel 与 Nearby 各 listen 一次 <code>LAN_PAIRED_CHANGED</code></td>
+        <td>上提到 Panel 一次，统一刷新</td>
+      </tr>
+      <tr>
+        <td>各自动态 <code>import("@tauri-apps/api/core")</code></td>
+        <td>收口 <code>lib/lanApi.ts</code></td>
+      </tr>
+      <tr>
+        <td>窗口隐藏已停轮询</td>
+        <td>保持；overview 合并后更省</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 9 安全 -->
+  <h2>9 · 安全与密钥入口</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在 · 文案清楚，入口弱</span>
+      <div class="stage">
+        <details style="font-size:12px;color:var(--text-secondary)">
+          <summary>高级：手动交换配对密钥</summary>
+          <div style="margin-top:8px">…重新生成密钥会踢掉所有设备（确认框里）</div>
+        </details>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标 · 危险操作外露半级</span>
+      <div class="stage">
+        <div class="secCard" style="margin:0">
+          <div class="secH" style="color:var(--danger)">⚠ 重新生成配对密钥</div>
+          <div class="secB" style="font-size:12px;color:var(--text-secondary)">
+            所有已配对设备将立即断开，需在每台机器上重新配对。
+            <div class="row" style="margin-top:8px">
+              <button class="btn danger" type="button">重新生成…</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">「忘记单台」仍不吊销密钥（群组模型）；生成密钥是唯一硬断开。</p>
+    </div>
+  </div>
+
+  <!-- 10 设备列表 -->
+  <h2>10 · 记住的设备 · 在线/最后同步（已具备，对齐卡片）</h2>
+  <div class="stage">
+    <div class="dev">
+      <span class="av">M</span>
+      <div class="devInfo">
+        <div class="devName">MacBook Pro</div>
+        <div class="devMeta"><span style="color:var(--green);font-weight:600">在线</span> · 最后同步 刚刚</div>
+      </div>
+      <span class="live" title="刚刚还听到心跳"></span>
+      <button class="btn" type="button">忘记</button>
+    </div>
+    <div class="dev">
+      <span class="av" style="background:#94A3B8">O</span>
+      <div class="devInfo">
+        <div class="devName">Office-PC</div>
+        <div class="devMeta">离线 · 最后同步 昨天 18:20</div>
+      </div>
+      <button class="btn" type="button">忘记</button>
+    </div>
+  </div>
+
+  <h2>11 · 实施分期</h2>
+  <div class="plans">
+    <div class="plan">
+      <span class="badge">P0</span>
+      <h4>设置收口</h4>
+      <ul>
+        <li>S1 卡片/圆角/focus</li>
+        <li>去重复监听</li>
+        <li>空态三步</li>
+        <li>测试送达文案</li>
+        <li>监听失败一键重试</li>
+      </ul>
+    </div>
+    <div class="plan">
+      <span class="badge">P1</span>
+      <h4>状态可见</h4>
+      <ul>
+        <li>主界面同步胶囊</li>
+        <li>与 KbSyncCap 同组件壳</li>
+        <li>打开设置跳转</li>
+      </ul>
+    </div>
+    <div class="plan">
+      <span class="badge">P2</span>
+      <h4>列表与反馈</h4>
+      <ul>
+        <li>来源徽章</li>
+        <li>toast 节流</li>
+        <li>可选「仅局域网」筛选</li>
+      </ul>
+    </div>
+    <div class="plan">
+      <span class="badge ghost">P3</span>
+      <h4>后端协作</h4>
+      <ul>
+        <li>overview 合并命令</li>
+        <li>测试 ACK 计数</li>
+        <li>lib/lanApi 收口</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>建议先做 P0</strong>（纯前端、当天能完），再上 P1 胶囊；P2/P3 可并行。
+    本稿路径：<code>design/剪贴板同步-优化设计稿.html</code>。确认后按分期改代码。
+  </div>
+
+</div>
+<script>
+(function () {
+  // 胶囊
+  const cap = document.getElementById("lanCap");
+  const pop = document.getElementById("lanPop");
+  const dot = document.getElementById("lanDot");
+  const badge = document.getElementById("lanBadge");
+  const online = document.getElementById("lanOnline");
+  const state = document.getElementById("lanState");
+  let mode = 0;
+  cap.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pop.style.display = pop.style.display === "none" ? "block" : "none";
+  });
+  document.addEventListener("click", () => { pop.style.display = "none"; });
+  pop.addEventListener("click", (e) => e.stopPropagation());
+  document.getElementById("lanOpen").addEventListener("click", () => {
+    document.getElementById("lanOpen").textContent = "（将打开设置）";
+  });
+  document.getElementById("lanToggleState").addEventListener("click", () => {
+    mode = (mode + 1) % 3;
+    if (mode === 0) {
+      dot.className = "dot on"; badge.style.display = ""; badge.textContent = "2";
+      online.textContent = "2 台"; state.textContent = "监听中";
+    } else if (mode === 1) {
+      dot.className = "dot"; badge.style.display = "none";
+      online.textContent = "0 台"; state.textContent = "等待其他设备";
+    } else {
+      dot.className = "dot warn"; badge.style.display = "none";
+      online.textContent = "—"; state.textContent = "监听失败";
+    }
+  });
+
+  // 测试
+  document.getElementById("testOld").addEventListener("click", () => {
+    document.getElementById("testOldMsg").textContent = "toast：已发送测试同步消息";
+  });
+  document.getElementById("testNew").addEventListener("click", () => {
+    const el = document.getElementById("testNewMsg");
+    el.textContent = "发送中…";
+    el.style.color = "var(--text-muted)";
+    setTimeout(() => {
+      el.textContent = "已送达 2 台在线设备";
+      el.style.color = "var(--green)";
+    }, 600);
+  });
+})();
+</script>
+</body>
+</html>

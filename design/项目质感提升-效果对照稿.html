@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>项目质感提升 · 效果对照稿</title>
+<style>
+  :root {
+    --card-bg: #fff;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #627083;
+    --border-color: #E0E4EB;
+    --hover: #E8ECF2;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-strong: #0273AD;
+    --accent-light: #E0F2FE;
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --green: #059669;
+    --green-bg: #ECFDF5;
+    --danger: #DC2626;
+    --orange: #C54A0A;
+    --elev: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+    --float-shadow: 0 0 0 1px rgba(0,0,0,.03), 0 8px 24px rgba(0,0,0,.12);
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #E8ECF2;
+    color: var(--text-primary);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  .page { max-width: 1120px; margin: 0 auto; padding: 28px 20px 72px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--text-secondary); margin: 0 0 8px; max-width: 80ch; }
+  .sub { color: var(--text-muted); font-size: 12px; margin: 0 0 22px; }
+  h2 {
+    font-size: 15px; margin: 32px 0 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border-color);
+  }
+  .note { font-size: 12px; color: var(--text-muted); margin: 8px 0 0; }
+
+  /* 共享 keyframes（与 globals 一致） */
+  @keyframes pp-float-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pp-pop {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+  }
+  @keyframes pinPop {
+    0% { transform: scale(0) rotate(-35deg); }
+    70% { transform: scale(1.3) rotate(8deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  @keyframes skel {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
+  @keyframes rowIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes rowOut {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(-4px); }
+  }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .duo { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 12px;
+  }
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px; margin-bottom: 8px;
+  }
+  .tag.old { background: #FEF3C7; color: #92400E; }
+  .tag.new { background: #DCFCE7; color: #166534; }
+  .stage {
+    background: linear-gradient(168deg, #F4F8FC, #E8F0F7);
+    border: 1px solid #cfd8e2;
+    border-radius: 10px;
+    padding: 14px;
+    min-height: 120px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  /* ── 按钮 ── */
+  .btn {
+    height: 28px; padding: 0 12px;
+    border-radius: 8px; border: 1px solid var(--border-color);
+    background: var(--card-bg); color: var(--text-secondary);
+    font-size: 12px; font-weight: 600; font-family: inherit;
+    cursor: pointer;
+    transition: background 150ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease), transform 150ms var(--ease);
+  }
+  .btn:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.primary {
+    background: var(--accent-solid); border-color: transparent; color: #fff;
+  }
+  .btn.primary:hover { opacity: .92; color: #fff; }
+  .btn.danger {
+    border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, var(--card-bg));
+    position: relative; overflow: hidden;
+  }
+  .btn.no-focus:focus { outline: none; }
+
+  /* 按住填充 */
+  .btn.hold::after {
+    content: ""; position: absolute; inset: 0;
+    background: var(--danger);
+    transform: scaleX(0); transform-origin: left;
+    opacity: .25;
+  }
+  .btn.hold:active::after {
+    animation: holdFill 400ms linear forwards;
+  }
+  @keyframes holdFill {
+    to { transform: scaleX(1); }
+  }
+
+  /* 复制成功 */
+  .copy {
+    height: 28px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--accent-light);
+    color: var(--accent-strong); font-size: 12px; font-weight: 600;
+    font-family: inherit; cursor: pointer; display: inline-flex;
+    align-items: center; gap: 4px;
+    transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease);
+  }
+  .copy.done {
+    background: var(--green-bg); border-color: var(--green); color: var(--green);
+    animation: pp-pop 200ms var(--ease);
+  }
+  .copy.flat.done { animation: none; }
+
+  /* 浮层 */
+  .float {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: 12px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    box-shadow: var(--float-shadow); font-size: 12px;
+  }
+  .float.in { animation: pp-float-in 150ms var(--ease) both; }
+  .float.pop-none { animation: none; opacity: 1; }
+
+  /* 焦点环 */
+  .iconBtn {
+    width: 28px; height: 28px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    cursor: pointer; font-size: 13px; color: var(--text-secondary);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .iconBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .iconBtn:focus { outline: none; box-shadow: none; }
+
+  /* 置顶星 */
+  .star {
+    width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border-color);
+    background: var(--card-bg); cursor: pointer; font-size: 14px;
+    color: var(--text-muted);
+  }
+  .star.on {
+    color: var(--orange);
+    border-color: color-mix(in srgb, var(--orange) 40%, transparent);
+    background: color-mix(in srgb, var(--orange) 12%, var(--card-bg));
+  }
+  .star.pop { animation: pinPop 300ms cubic-bezier(0.34, 1.45, 0.4, 1); }
+
+  /* 列表 */
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 12px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    box-shadow: var(--elev); font-size: 12.5px;
+  }
+  .item.enter { animation: rowIn 200ms var(--ease) both; }
+  .item.leaving {
+    animation: rowOut 200ms var(--ease) both;
+    pointer-events: none;
+  }
+  .item.static { animation: none; }
+  .thumb {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  /* 骨架 */
+  .skelCard {
+    padding: 12px; border-radius: 12px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    box-shadow: var(--elev);
+  }
+  .skelLine {
+    height: 12px; border-radius: 6px; margin-bottom: 8px;
+    background: linear-gradient(90deg, var(--section-bg) 25%, var(--hover) 50%, var(--section-bg) 75%);
+    background-size: 200% 100%;
+    animation: skel 1.2s linear infinite;
+  }
+  .skelLine.w60 { width: 60%; }
+  .skelLine.w40 { width: 40%; }
+  .skelLine:last-child { margin-bottom: 0; }
+  .skelCard.slow .skelLine { animation: none; background: var(--section-bg); }
+
+  /* 分段焦点 */
+  .seg {
+    display: inline-flex; padding: 3px; gap: 2px;
+    background: var(--section-bg); border-radius: 10px;
+  }
+  .seg button {
+    height: 28px; padding: 0 12px; border: none; border-radius: 8px;
+    background: transparent; color: var(--text-muted);
+    font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+  }
+  .seg button.on {
+    background: var(--card-bg); color: var(--accent-strong);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .seg button:focus { outline: none; }
+
+  /* 查找卡拖动示意 */
+  .searchCard {
+    position: relative; width: 280px;
+    padding: 10px 12px; border-radius: 12px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    box-shadow: var(--float-shadow);
+    transition: box-shadow 150ms var(--ease), scale 150ms var(--ease);
+    cursor: grab;
+  }
+  .searchCard.dragging {
+    scale: 1.01; cursor: grabbing;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 12px 32px rgba(0,0,0,.16);
+  }
+  .searchCard .grip {
+    position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 16px; border-radius: 2px;
+    background: repeating-linear-gradient(to bottom, var(--text-muted) 0 2px, transparent 2px 4px);
+    opacity: .4;
+  }
+
+  /* 规格表 */
+  table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    background: var(--card-bg); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border-color);
+  }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-color); }
+  th { background: var(--section-bg); font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+    background: var(--section-bg); padding: 1px 5px; border-radius: 4px;
+  }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
+  }
+  .hintbar {
+    margin-top: 8px; font-size: 11.5px; color: var(--text-muted);
+  }
+  .callout {
+    margin-top: 20px; padding: 12px 14px;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+    border-radius: 0 10px 10px 0;
+    font-size: 12.5px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>项目质感提升 · 效果对照稿</h1>
+  <p class="lead">
+    把上一轮清单里的关键项做成可点示意：左「现状/未接」右「目标」。
+    动效一律 <code>opacity/transform/scale</code>，时长 150/200/300ms，系统「减少动态效果」会直接关掉。
+  </p>
+  <p class="sub">可试：复制、置顶、增删行、按住危险键、拖查找卡、Tab 到按钮看焦点环。</p>
+
+  <!-- 1 焦点环 -->
+  <h2>1 · 键盘焦点环（U7 / 可学性）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">未接 focus-visible</span>
+      <div class="stage">
+        <div class="row">
+          <button class="iconBtn no-focus" type="button">★</button>
+          <button class="iconBtn no-focus" type="button">⋯</button>
+          <button class="btn no-focus" type="button">导出</button>
+          <div class="seg">
+            <button type="button" class="on no-focus">列表</button>
+            <button type="button" class="no-focus">网格</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">按 Tab：看不出焦点在哪（当前全库仍有缺口）。</p>
+    </div>
+    <div class="panel">
+      <span class="tag new">统一 accent 环 · offset 2</span>
+      <div class="stage">
+        <div class="row">
+          <button class="iconBtn" type="button">★</button>
+          <button class="iconBtn" type="button">⋯</button>
+          <button class="btn" type="button">导出</button>
+          <div class="seg">
+            <button type="button" class="on">列表</button>
+            <button type="button">网格</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">Tab 时清晰可见；鼠标点击不出现环（只 :focus-visible）。</p>
+    </div>
+  </div>
+
+  <!-- 2 复制 -->
+  <h2>2 · 复制成功脉冲（P1 · 200ms）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">只有变色</span>
+      <div class="stage">
+        <button class="copy flat" id="copyOld" type="button">复制</button>
+      </div>
+      <p class="note">点了变绿，但没有「确认感」。</p>
+    </div>
+    <div class="panel">
+      <span class="tag new">变色 + scale 弹一下</span>
+      <div class="stage">
+        <button class="copy" id="copyNew" type="button">复制</button>
+      </div>
+      <p class="note">Toast / 动作链 / 变换卡 / Markdown 块已挂 <code>pp-pop</code>。</p>
+    </div>
+  </div>
+
+  <!-- 3 浮层入场 -->
+  <h2>3 · 浮层入场（P0 · 150ms）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">硬切</span>
+      <div class="stage" id="stageFloatOld">
+        <button class="btn" id="btnFloatOld" type="button">打开浮层</button>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">fade + 上移 6px</span>
+      <div class="stage" id="stageFloatNew">
+        <button class="btn" id="btnFloatNew" type="button">打开浮层</button>
+      </div>
+    </div>
+  </div>
+  <p class="hintbar">已挂：KbSync 浮层、侧栏菜单、顶栏下拉、帮助气泡、查找卡（200ms + 轻 scale）。</p>
+
+  <!-- 4 列表进出 -->
+  <h2>4 · 列表进出（待做样板）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">瞬间增删</span>
+      <div class="stage">
+        <div class="row bar" style="margin:0 0 10px">
+          <button class="btn" id="addOld" type="button">插入一条</button>
+          <button class="btn" id="delOld" type="button">删除末条</button>
+        </div>
+        <div class="list" id="listOld">
+          <div class="item static"><span class="thumb"></span>剪贴板 · 今天 10:21</div>
+          <div class="item static"><span class="thumb"></span>剪贴板 · 今天 10:05</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">进 200ms / 出 200ms</span>
+      <div class="stage">
+        <div class="row bar" style="margin:0 0 10px">
+          <button class="btn" id="addNew" type="button">插入一条</button>
+          <button class="btn" id="delNew" type="button">删除末条</button>
+        </div>
+        <div class="list" id="listNew">
+          <div class="item"><span class="thumb"></span>剪贴板 · 今天 10:21</div>
+          <div class="item"><span class="thumb"></span>剪贴板 · 今天 10:05</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">真实列表要配合 virtualizer 行高；本稿只证明手感。剪贴板或知识库先做一块样板再铺开。</p>
+
+  <!-- 5 置顶 -->
+  <h2>5 · 置顶 / 收藏（时长已收 U2）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">角标 380ms 过长</span>
+      <div class="stage">
+        <button class="star" id="starOld" type="button">☆</button>
+        <span style="margin-left:10px;font-size:12px;color:var(--text-muted)">点一下切换置顶</span>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">弹出 300ms · 可再点</span>
+      <div class="stage">
+        <button class="star" id="starNew" type="button">☆</button>
+        <span style="margin-left:10px;font-size:12px;color:var(--text-muted)">与弹窗/浮层同一档</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6 危险 -->
+  <h2>6 · 危险操作（可选增强）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">只靠确认框</span>
+      <div class="stage">
+        <button class="btn danger" type="button">删除记录</button>
+      </div>
+      <p class="note">误触成本在弹窗层；按下去前无蓄力感。</p>
+    </div>
+    <div class="panel">
+      <span class="tag new">按住 400ms 蓄力填充</span>
+      <div class="stage">
+        <button class="btn danger hold" type="button" title="按住">删除记录</button>
+      </div>
+      <p class="note">示意：真正落地时「按住完成」再弹确认，或替换部分低危删除。不是所有删除都上。</p>
+    </div>
+  </div>
+
+  <!-- 7 骨架 -->
+  <h2>7 · 加载骨架（统计 / AI / MCP）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">转圈或空白</span>
+      <div class="stage">
+        <div class="skelCard slow">
+          <div class="skelLine w40"></div>
+          <div class="skelLine"></div>
+          <div class="skelLine w60"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">静态渐变 shimmer（可关）</span>
+      <div class="stage">
+        <div class="skelCard">
+          <div class="skelLine w40"></div>
+          <div class="skelLine"></div>
+          <div class="skelLine w60"></div>
+        </div>
+      </div>
+      <p class="note">只动 background-position，比每卡 blur 便宜；减少动态时停成灰条。</p>
+    </div>
+  </div>
+
+  <!-- 8 拖动 -->
+  <h2>8 · 查找卡拖动微抬升（P2）</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">只有阴影</span>
+      <div class="stage">
+        <div class="searchCard" id="dragOld" style="margin-left:12px">
+          <span class="grip"></span>
+          <div style="padding-left:10px;font-size:12px;color:var(--text-secondary)">按住拖我</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag new">scale 1.01 + 阴影</span>
+      <div class="stage">
+        <div class="searchCard dragging" id="dragNew" style="margin-left:12px">
+          <span class="grip"></span>
+          <div style="padding-left:10px;font-size:12px;color:var(--text-secondary)">拖动中示意（已抬升）</div>
+        </div>
+      </div>
+      <p class="note">独立 <code>scale</code> 属性，不和入场 transform 打架。</p>
+    </div>
+  </div>
+
+  <!-- 规格 -->
+  <h2>9 · 时长与曲线规格（U2）</h2>
+  <table>
+    <thead>
+      <tr><th>档位</th><th>用途</th><th>本稿对应</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><b>150ms</b></td><td>hover / 浮层入场 / 焦点</td><td>pp-float-in、按钮 hover</td></tr>
+      <tr><td><b>200ms</b></td><td>复制弹跳 / 列表进出场 / 徽章</td><td>pp-pop、rowIn/Out</td></tr>
+      <tr><td><b>300ms</b></td><td>置顶角标 / 较重抬升</td><td>pinPop、rowGlide</td></tr>
+      <tr><td><b>400ms</b></td><td>蓄力/长确认（慎用）</td><td>holdFill 示意</td></tr>
+      <tr><td colspan="3">曲线 <code>cubic-bezier(0.2, 0.8, 0.2, 1)</code> 为主；弹跳可用 <code>(0.34, 1.45, 0.4, 1)</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>建议实施顺序：</strong>
+    ① 焦点环补全 → ② 列表进出场样板（剪贴板或知识库）→ ③ 骨架屏统计/AI →
+    ④ 危险按住（仅高危）→ ⑤ <code>transition: all</code> 收口（改到哪收哪）。
+    本稿可直接当验收清单：左边做不到、右边做到了就算过关。
+  </div>
+
+  <p class="note" style="margin-top:18px">路径：<code>design/项目质感提升-效果对照稿.html</code></p>
+</div>
+
+<script>
+(function () {
+  function pulseCopy(btn, flat) {
+    btn.addEventListener("click", () => {
+      btn.classList.remove("done");
+      void btn.offsetWidth;
+      btn.classList.add("done");
+      btn.textContent = "已复制 ✓";
+      setTimeout(() => {
+        btn.classList.remove("done");
+        btn.textContent = "复制";
+      }, 1400);
+    });
+  }
+  pulseCopy(document.getElementById("copyOld"));
+  pulseCopy(document.getElementById("copyNew"));
+
+  function mountFloat(stage, btn, withAnim) {
+    btn.addEventListener("click", () => {
+      const old = stage.querySelector(".float");
+      if (old) old.remove();
+      const el = document.createElement("div");
+      el.className = "float" + (withAnim ? " in" : " pop-none");
+      el.style.marginTop = "12px";
+      el.textContent = "同步状态 · 一切正常";
+      stage.appendChild(el);
+    });
+  }
+  mountFloat(document.getElementById("stageFloatOld"), document.getElementById("btnFloatOld"), false);
+  mountFloat(document.getElementById("stageFloatNew"), document.getElementById("btnFloatNew"), true);
+
+  function bindList(list, anim) {
+    let n = 2;
+    document.getElementById(anim ? "addNew" : "addOld").addEventListener("click", () => {
+      n++;
+      const item = document.createElement("div");
+      item.className = "item" + (anim ? " enter" : " static");
+      item.innerHTML = '<span class="thumb"></span>剪贴板 · 刚刚 ' + n;
+      list.insertBefore(item, list.firstChild);
+    });
+    document.getElementById(anim ? "delNew" : "delOld").addEventListener("click", () => {
+      const last = list.lastElementChild;
+      if (!last) return;
+      if (!anim) { last.remove(); return; }
+      last.classList.add("leaving");
+      setTimeout(() => last.remove(), 200);
+    });
+  }
+  bindList(document.getElementById("listOld"), false);
+  bindList(document.getElementById("listNew"), true);
+
+  function bindStar(btn, long) {
+    btn.addEventListener("click", () => {
+      const on = btn.classList.toggle("on");
+      btn.textContent = on ? "★" : "☆";
+      btn.classList.remove("pop");
+      void btn.offsetWidth;
+      btn.classList.add("pop");
+      if (long) btn.style.animationDuration = "380ms";
+      else btn.style.animationDuration = "300ms";
+    });
+  }
+  bindStar(document.getElementById("starOld"), true);
+  bindStar(document.getElementById("starNew"), false);
+
+  // 拖动示意
+  function makeDrag(el) {
+    let d = null;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      d = { x: e.clientX, y: e.clientY, l: el.offsetLeft, t: el.offsetTop };
+      el.setPointerCapture(e.pointerId);
+      if (el.id === "dragNew") el.classList.add("dragging");
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!d) return;
+      el.style.position = "relative";
+      el.style.left = d.l + (e.clientX - d.x) + "px";
+      el.style.top = d.t + (e.clientY - d.y) + "px";
+    });
+    el.addEventListener("pointerup", () => {
+      d = null;
+      if (el.id === "dragNew") el.classList.remove("dragging");
+    });
+  }
+  makeDrag(document.getElementById("dragOld"));
+  makeDrag(document.getElementById("dragNew"));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>保留 emoji · 三套可读性方案</title>
+<style>
+  :root {
+    --bg: #EEF2F7; --card: #fff; --ink: #0F172A; --muted: #627083; --line: #E0E4EB;
+    /* 高饱和砖（语义色相） */
+    --ic-system:  linear-gradient(135deg, #F5A524, #F97316);
+    --ic-capture: linear-gradient(135deg, #38BDF8, #0284C7);
+    --ic-save:    linear-gradient(135deg, #34D399, #059669);
+    --ic-editor:  linear-gradient(135deg, #818CF8, #4F46E5);
+    --ic-privacy: linear-gradient(135deg, #FB7185, #E11D48);
+    --ic-sync:    linear-gradient(135deg, #22D3EE, #0891B2);
+    --ic-paste:   linear-gradient(135deg, #A78BFA, #7C3AED);
+    /* 马卡龙砖 */
+    --soft-system:  linear-gradient(135deg, #FDE68A, #FCD34D);
+    --soft-capture: linear-gradient(135deg, #BAE6FD, #7DD3FC);
+    --soft-save:    linear-gradient(135deg, #A7F3D0, #6EE7B7);
+    --soft-editor:  linear-gradient(135deg, #C7D2FE, #A5B4FC);
+    --soft-privacy: linear-gradient(135deg, #FECDD3, #FDA4AF);
+    --soft-sync:    linear-gradient(135deg, #A5F3FC, #67E8F9);
+    --soft-paste:   linear-gradient(135deg, #DDD6FE, #C4B5FD);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); padding: 28px 24px 48px; }
+  h1 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .lead { font-size: 12px; color: var(--muted); max-width: 760px; margin-bottom: 20px; line-height: 1.55; }
+  .lead b { color: var(--ink); }
+  .card { background: var(--card); border-radius: 12px; padding: 16px 18px; max-width: 760px; box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07); margin-bottom: 14px; }
+  .card h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-right: 8px; }
+  .tag.rec { background: #1D4ED8; color: #fff; }
+  .tag.a { background: #DCFCE7; color: #166534; }
+  .tag.b { background: #E0F2FE; color: #0273AD; }
+  .tag.c { background: #EDE9FE; color: #6D28D9; }
+  .note { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+  .pros { margin-top: 10px; font-size: 11px; color: var(--muted); display: grid; gap: 3px; }
+  .pros b { color: var(--ink); }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: none; }
+  .body { flex: 1; }
+  .lab { font-size: 13px; font-weight: 600; }
+  .desc { font-size: 11px; color: var(--muted); }
+  .ico {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: grid; place-items: center; font-size: 18px; flex-shrink: 0;
+  }
+  /* 高饱和 + 投影 */
+  .icoDeep { box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 1px 3px rgba(15,23,42,.12); }
+  .icoDeep .em { filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+  /* 白圆盘 */
+  .icoPlate .plate {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(255,255,255,.92);
+    display: grid; place-items: center; font-size: 14px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.14);
+  }
+  /* 马卡龙 */
+  .icoSoft { box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(15,23,42,.08); }
+</style>
+</head>
+<body>
+  <h1>保留 emoji · 三套（解决看不清）</h1>
+  <p class="lead">
+    lucide 已撤。下面都在 <b>emoji + 语义色相</b> 的前提下修可读性——不再换图标语言。
+  </p>
+
+  <div class="card">
+    <h3><span class="tag rec">最推荐</span>方案 A · 马卡龙砖 + 原色 emoji</h3>
+    <p class="note">渐变抬亮降饱和，emoji 用原色即可辨认。最接近你说的「原来好看」，又不会糊。</p>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-system)">🚀</div><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div></div>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-system)">📌</div><div class="body"><div class="lab">窗口置顶</div><div class="desc">始终显示在其他窗口之上</div></div></div>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-save)">💾</div><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div></div>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-privacy)">🛡</div><div class="body"><div class="lab">敏感内容防护</div><div class="desc">不记录匹配密钥/凭证模式的内容</div></div></div>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-capture)">🪟</div><div class="body"><div class="lab">自动框选当前窗口</div><div class="desc">按截图热键后自动选中光标所在窗口</div></div></div>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-sync)">🌐</div><div class="body"><div class="lab">剪贴板同步</div><div class="desc">多台电脑自动共享剪贴板</div></div></div>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-paste)">📋</div><div class="body"><div class="lab">保留格式粘贴</div><div class="desc">粘贴文档/图文时保留富格式</div></div></div>
+    <div class="row"><div class="ico icoSoft" style="background:var(--soft-editor)">📝</div><div class="body"><div class="lab">编辑器保存写入历史</div><div class="desc">保存 .md 时同时写入剪贴板历史</div></div></div>
+    <div class="pros">
+      <div><b>优</b>：emoji 全保真；改动只在 CSS 色值；深色主题换一档即可。</div>
+      <div><b>劣</b>：比高饱和砖「淡」一截，热闹感略降。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="tag b">方案 B</span>高饱和砖 + emoji 投影</h3>
+    <p class="note">砖保持现在的高饱和语义色，emoji 加 drop-shadow 从底上「抬起来」。</p>
+    <div class="row"><div class="ico icoDeep" style="background:var(--ic-system)"><span class="em">🚀</span></div><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div></div>
+    <div class="row"><div class="ico icoDeep" style="background:var(--ic-system)"><span class="em">📌</span></div><div class="body"><div class="lab">窗口置顶</div><div class="desc">始终显示在其他窗口之上</div></div></div>
+    <div class="row"><div class="ico icoDeep" style="background:var(--ic-save)"><span class="em">💾</span></div><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div></div>
+    <div class="row"><div class="ico icoDeep" style="background:var(--ic-privacy)"><span class="em">🛡</span></div><div class="body"><div class="lab">敏感内容防护</div><div class="desc">不记录匹配密钥/凭证模式的内容</div></div></div>
+    <div class="row"><div class="ico icoDeep" style="background:var(--ic-capture)"><span class="em">🪟</span></div><div class="body"><div class="lab">自动框选当前窗口</div><div class="desc">按截图热键后自动选中光标所在窗口</div></div></div>
+    <div class="row"><div class="ico icoDeep" style="background:var(--ic-sync)"><span class="em">🌐</span></div><div class="body"><div class="lab">剪贴板同步</div><div class="desc">多台电脑自动共享剪贴板</div></div></div>
+    <div class="pros">
+      <div><b>优</b>：保留最热闹的彩色砖。</div>
+      <div><b>劣</b>：黄 emoji 在琥珀上仍略闷，不如 A 彻底。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="tag c">方案 C</span>高饱和砖 + 白圆盘托 emoji</h3>
+    <p class="note">彩色砖不动，emoji 放进磨砂白圆——热闹归砖，清晰归圆盘。</p>
+    <div class="row"><div class="ico icoPlate" style="background:var(--ic-system)"><div class="plate">🚀</div></div><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div></div>
+    <div class="row"><div class="ico icoPlate" style="background:var(--ic-save)"><div class="plate">💾</div></div><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div></div>
+    <div class="row"><div class="ico icoPlate" style="background:var(--ic-privacy)"><div class="plate">🛡</div></div><div class="body"><div class="lab">敏感内容防护</div><div class="desc">不记录匹配密钥/凭证模式的内容</div></div></div>
+    <div class="row"><div class="ico icoPlate" style="background:var(--ic-capture)"><div class="plate">🪟</div></div><div class="body"><div class="lab">自动框选当前窗口</div><div class="desc">按截图热键后自动选中光标所在窗口</div></div></div>
+    <div class="pros">
+      <div><b>优</b>：emoji 永远清楚；砖仍高饱和。</div>
+      <div><b>劣</b>：圆套方略碎，40px 里 emoji 会小一圈。</div>
+    </div>
+  </div>
+</body>
+</html>

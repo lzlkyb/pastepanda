@@ -277,12 +277,12 @@
 git clone git@github.com:lzlkyb/pastepanda.git
 cd pastepanda
 
-# 安装依赖
-npm install
+# Windows 一键环境准备（检查工具链 / npm install / 补 libclang / 预热 MNN）
+powershell -ExecutionPolicy Bypass -File scripts\setup-dev.ps1
 
-# ⚠️ 硬性前置：设 LIBCLANG_PATH（ocr-rs bindgen 需要，项目自带 libclang.dll）
+# ⚠️ 硬性前置：设 LIBCLANG_PATH（ocr-rs bindgen 需要；.libclang/ 不在 git 里，需自备）
 # Git Bash: export LIBCLANG_PATH="$(pwd -W)/src-tauri/.libclang"   ← 是 `pwd -W`，裸 `pwd` 给的 /d/... bindgen 不认
-# PowerShell: $env:LIBCLANG_PATH = "$(Get-Location)/src-tauri/.libclang"
+# PowerShell: $env:LIBCLANG_PATH = "$(Get-Location)\src-tauri\.libclang"
 
 # 开发模式（必须 npm run tauri，不要裸 npx tauri dev）
 npm run tauri dev
@@ -297,12 +297,15 @@ npx vitest run
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
+> **从零到能跑 dev 的完整说明**（含两样不在 git 里的构建资产：`libclang.dll`、MNN 预编译）见 [`CONTRIBUTING.md` §2](CONTRIBUTING.md)。协作者与 AI 都按那一节走。
+
 ### OCR 引擎构建注意（重要）
 
 本项目的 OCR 基于 `ocr-rs`（PP-OCRv6，MNN 推理），已 **vendoring 进仓库**（`src-tauri/vendor/ocr-rs`），构建**完全离线**，无需联网下载预编译 MNN：
 
-- 依赖通过 `[patch.crates-io]` 指向本地 `vendor/ocr-rs`，预编译 MNN 在 `vendor/ocr-rs/3rd_party/prebuilt/`；`.gitignore` 已忽略该预编译目录（约 170MB），crate 源码入库。
-- 构建期仍需要 `libclang`（`bindgen` 生成 FFI）：`pip install libclang` 拿到 `libclang.dll`，编译前设 `LIBCLANG_PATH` 指向其目录并加入 `PATH`。这只是构建期依赖，发布版 exe 自包含。
+- 依赖通过 `[patch.crates-io]` 指向本地 `vendor/ocr-rs`，预编译 MNN 在 `vendor/ocr-rs/3rd_party/prebuilt/`；`.gitignore` 已忽略该预编译目录（约 170MB）与 `src-tauri/.libclang/`，crate 源码与 OCR 模型入库。**clone 后这两样要自备**：跑 `scripts\setup-dev.ps1`，或见 [`CONTRIBUTING.md` §2](CONTRIBUTING.md)。
+- 构建期仍需要 `libclang`（`bindgen` 生成 FFI）：装 LLVM，或 `pip install libclang`，把 `libclang.dll` 放到 `src-tauri\.libclang\`，编译前设 `LIBCLANG_PATH`。这只是构建期依赖，发布版 exe 自包含。
+- 无本地 MNN 缓存时，首次 cargo 构建会从 [MNN-Prebuilds](https://github.com/zibo-chen/MNN-Prebuilds) 自动下载（需联网一次）。
 
 ```bash
 # 示例：设置 libclang 后构建

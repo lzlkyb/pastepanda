@@ -1,0 +1,324 @@
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--line:#e3e6ea;--text:#1c1f23;--dim:#6b7280;
+        --accent:#4f7cff;--code:#f3f4f6;--warn:#e0803a;--danger:#d64545;--ok:#2f9e5f;}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--code:#24272c;--warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;}}
+  :root[data-theme="dark"]{
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--code:#24272c;--warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;}
+  body{background:var(--bg);color:var(--text);margin:0;padding:28px 20px 64px;
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;}
+  h1{font-size:21px;margin:0 0 4px;}
+  h2{font-size:16px;margin:36px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);}
+  h3{font-size:13.5px;margin:20px 0 8px;color:var(--dim);letter-spacing:.03em;}
+  .sub{color:var(--dim);margin:0 0 24px;font-size:13px;}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12.5px;}
+  .note{border-left:3px solid var(--accent);padding:8px 12px;margin:12px 0;
+        background:var(--panel);border-radius:0 6px 6px 0;}
+  .note.warn{border-left-color:var(--warn);}
+  .note.bad{border-left-color:var(--danger);}
+  .note.good{border-left-color:var(--ok);}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px;}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top;}
+  th{background:var(--code);font-weight:600;}
+  .scroll{overflow-x:auto;}
+  pre{background:var(--code);padding:11px 13px;border-radius:7px;overflow-x:auto;
+      font:12px/1.65 ui-monospace,Consolas,monospace;margin:12px 0;}
+
+  /* ===== 演示：贴近 Settings.module.css 真实样式 ===== */
+  .demo{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin:16px 0;overflow:hidden;}
+  .demoBar{display:flex;gap:8px;align-items:center;padding:8px 11px;
+           background:var(--code);border-bottom:1px solid var(--line);font-size:12px;}
+  .demoBar b{font-weight:600;}
+  .demoBar .sp{flex:1;}
+  .demoBar button{font:inherit;font-size:12px;padding:3px 10px;border-radius:6px;
+                  border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;}
+  .screen{padding:14px;}
+
+  .secLabel{font-size:11px;font-weight:600;color:var(--dim);letter-spacing:.04em;margin:10px 0 6px;}
+  .devList{display:flex;flex-direction:column;gap:4px;}
+  .devItem{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;
+           background:var(--bg);border:1px solid var(--line);}
+  .devItem.paused{opacity:.72;border-style:dashed;}
+  .av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font-size:12px;font-weight:700;flex-shrink:0;}
+  .info{flex:1;min-width:0;}
+  .name{font-size:12px;font-weight:600;color:var(--text);}
+  .time{font-size:10px;color:var(--dim);}
+  .badge{font-size:10px;padding:2px 7px;border-radius:20px;border:1px solid var(--line);
+         background:var(--bg);color:var(--dim);flex-shrink:0;white-space:nowrap;}
+  .badge.on{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok);
+            border-color:color-mix(in srgb,var(--ok) 35%,var(--line));}
+  .badge.off{color:var(--dim);}
+  .badge.pause{background:color-mix(in srgb,var(--warn) 12%,transparent);color:var(--warn);
+               border-color:color-mix(in srgb,var(--warn) 35%,var(--line));}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex-shrink:0;}
+  .dot.off{background:var(--dim);opacity:.4;}
+
+  /* 开关：与真实 Toggle 同量级，行内常驻文字 */
+  .swRow{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+  .swLabel{font-size:10px;color:var(--dim);min-width:22px;text-align:right;}
+  .sw{width:34px;height:18px;border-radius:10px;background:var(--line);position:relative;
+      cursor:pointer;border:none;padding:0;flex-shrink:0;transition:background .15s;}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+             background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s;}
+  .sw.on{background:var(--ok);}
+  .sw.on::after{transform:translateX(16px);}
+  .sw:disabled{opacity:.5;cursor:not-allowed;}
+
+  .miniBtn{font:inherit;font-size:11px;padding:3px 8px;border-radius:6px;
+           border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;
+           flex-shrink:0;}
+  .miniBtn.danger{color:var(--danger);}
+  .miniBtn:disabled{opacity:.5;cursor:not-allowed;}
+
+  .foot{font-size:11px;color:var(--dim);line-height:1.7;margin:8px 0 4px;}
+
+  /* 确认弹 */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;
+        justify-content:center;z-index:10;}
+  .dlg{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;
+       width:min(400px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.25);}
+  .dlg h4{margin:0 0 8px;font-size:14px;}
+  .dlg p{margin:0 0 14px;font-size:12.5px;color:var(--dim);line-height:1.7;}
+  .dlg .btns{display:flex;gap:8px;justify-content:flex-end;}
+  .dlg button{font:inherit;font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;
+              border:1px solid var(--line);background:var(--bg);color:var(--text);}
+  .dlg button.pri{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:600;}
+  .hidden{display:none;}
+</style>
+
+<div class="wrap">
+
+<h1>同步设备 · 暂停 / 启用</h1>
+<p class="sub">PastePanda · 设计稿 · 方案 A · 知识库同步 + 剪贴板局域网同步 · 保留配对与游标，只停这一台</p>
+
+<h2>一、要解决什么</h2>
+<p>配对完成后设备行上只有「忘记」。忘记会删记录（KB 还要重配），用户想「暂时别跟这台同步」时没有更轻的出口。</p>
+
+<div class="note good">
+  <b>方案 A 语义</b>：暂停 = 保留身份 / 同步游标 / 历史，<b>只停这一台</b>；恢复不用重新配对。<br>
+  忘记 = 从名单移除（KB 需重新配对）。两者并存，暂停是高频可逆，忘记是低频破坏性。
+</div>
+
+<h2>二、UI 变更（对照真实组件）</h2>
+
+<div class="scroll">
+<table>
+<tr><th>位置</th><th>现状</th><th>改后</th></tr>
+<tr>
+  <td><code>LanPairedList</code>（剪贴板）</td>
+  <td>在线点 +「忘记」</td>
+  <td>在线点 + <b>启用开关</b> +「忘记」；暂停时状态行写「已暂停」</td>
+</tr>
+<tr>
+  <td><code>KbSyncPanel</code> 设备行</td>
+  <td>徽章 + ⇅ + 忘记</td>
+  <td>徽章（暂停时换「已暂停」）+ <b>启用开关</b> + ⇅（暂停时禁用）+ 忘记</td>
+</tr>
+<tr>
+  <td>列表底部说明</td>
+  <td>只解释「忘记不吊销密钥」</td>
+  <td>补一句暂停语义；LAN 必须写清「暂停只是本机不收不发」</td>
+</tr>
+</table>
+</div>
+
+<h3>交互规则</h3>
+<ul>
+  <li><b>L2 常驻标签</b>：开关旁有「启用」小字，不靠 hover 认出这是开关。</li>
+  <li><b>高频一步</b>：点开关即切换，无确认（可逆）。</li>
+  <li><b>忘记仍二次确认</b>；暂停中的设备忘记文案不变。</li>
+  <li>暂停中：<code>⇅</code> 禁用；LAN 无手动同步则忽略。</li>
+  <li>乐观更新失败必须回滚并 toast（规则 #15）。</li>
+</ul>
+
+<h2>三、演示：剪贴板同步「记住的设备」</h2>
+
+<div class="demo">
+  <div class="demoBar"><b>剪贴板同步 · 记住的设备</b><span class="sp"></span>
+    <button type="button" onclick="document.getElementById('forgetDlg').classList.remove('hidden')">预览忘记确认</button>
+  </div>
+  <div class="screen">
+    <div class="secLabel">记住的设备</div>
+    <div class="devList">
+      <div class="devItem">
+        <div class="av" style="background:hsl(200,60%,55%)">O</div>
+        <div class="info">
+          <div class="name">Office-PC</div>
+          <div class="time">在线 · 最后同步 12:04</div>
+        </div>
+        <span class="dot" title="刚刚还听到它的心跳"></span>
+        <div class="swRow">
+          <span class="swLabel">启用</span>
+          <button type="button" class="sw on" aria-label="启用同步" onclick="toggleSw(this,'lan1')"></button>
+        </div>
+        <button type="button" class="miniBtn danger" onclick="document.getElementById('forgetDlg').classList.remove('hidden')">忘记</button>
+      </div>
+      <div class="devItem paused" id="lan1row">
+        <div class="av" style="background:hsl(40,60%,55%)">H</div>
+        <div class="info">
+          <div class="name">Home-Laptop</div>
+          <div class="time">已暂停 · 停止与本机收发剪贴板</div>
+        </div>
+        <span class="badge pause">已暂停</span>
+        <div class="swRow">
+          <span class="swLabel">启用</span>
+          <button type="button" class="sw" aria-label="启用同步" onclick="toggleSw(this,'lan1')"></button>
+        </div>
+        <button type="button" class="miniBtn danger" onclick="document.getElementById('forgetDlg').classList.remove('hidden')">忘记</button>
+      </div>
+    </div>
+    <div class="foot">
+      「暂停」只停本机与它的收发，配对与密钥都还在，点开关即恢复。<br>
+      ⚠ 局域网同步是<b>单一群组密钥</b>：暂停后对方仍能解密本机广播（它手里还有同一把钥匙）。
+      要真正断开得重新生成密钥，那会踢掉所有设备。<br>
+      「忘记」只清本机记录，不会吊销配对密钥。
+    </div>
+  </div>
+</div>
+
+<h2>四、演示：知识库同步设备列表</h2>
+
+<div class="demo">
+  <div class="demoBar"><b>知识库同步 · 已配对设备</b></div>
+  <div class="screen">
+    <div class="devList">
+      <div class="devItem">
+        <div class="av" style="background:hsl(150,60%,55%)">D</div>
+        <div class="info">
+          <div class="name">Desktop</div>
+          <div class="time">A1B2 · 3 分钟前同步</div>
+        </div>
+        <span class="badge on">在线</span>
+        <div class="swRow">
+          <span class="swLabel">启用</span>
+          <button type="button" class="sw on" onclick="toggleSw(this,'kb1')"></button>
+        </div>
+        <button type="button" class="miniBtn" title="立刻同步">⇅</button>
+        <button type="button" class="miniBtn danger" onclick="document.getElementById('forgetDlg').classList.remove('hidden')">忘记</button>
+      </div>
+      <div class="devItem paused">
+        <div class="av" style="background:hsl(280,50%,55%)">T</div>
+        <div class="info">
+          <div class="name">Travel-Note</div>
+          <div class="time">C3D4 · 2 天前同步</div>
+          <div class="time" style="color:var(--warn)">已暂停 · 不会主动拨它，也会拒它的入站同步</div>
+        </div>
+        <span class="badge pause">已暂停</span>
+        <div class="swRow">
+          <span class="swLabel">启用</span>
+          <button type="button" class="sw" onclick="toggleSw(this,'kb1')"></button>
+        </div>
+        <button type="button" class="miniBtn" disabled title="已暂停">⇅</button>
+        <button type="button" class="miniBtn danger" onclick="document.getElementById('forgetDlg').classList.remove('hidden')">忘记</button>
+      </div>
+    </div>
+    <div class="foot">
+      暂停后：停止与该设备的同步循环，对方拨过来也拒；同步游标保留，恢复后接着传。<br>
+      「忘记」才会删记录并要求重新配对。
+    </div>
+  </div>
+</div>
+
+<h2>五、忘记确认（不变，可对照）</h2>
+<div class="note">
+  剪贴板忘记文案继续强调「不吊销密钥」；知识库忘记强调「需重新配对」。暂停不进这个弹层。
+</div>
+
+<div class="mask" id="forgetDlg">
+  <div class="dlg">
+    <h4>忘记「Home-Laptop」？</h4>
+    <p>它会从本机名单里移除，并重新出现在「附近的设备」里（可以重新配对）。</p>
+    <p style="color:var(--warn)">⚠ 这不会吊销配对密钥：对方手里还有同一把密钥，仍然能解开本机的广播。</p>
+    <div class="btns">
+      <button type="button" onclick="document.getElementById('forgetDlg').classList.add('hidden')">取消</button>
+      <button type="button" class="pri" onclick="document.getElementById('forgetDlg').classList.add('hidden')">忘记</button>
+    </div>
+  </div>
+</div>
+
+<h2>六、后端契约（实现清单）</h2>
+
+<h3>知识库（SQLite <code>devices</code>）</h3>
+<pre>-- 迁移：追加列，老数据默认启用
+ALTER TABLE devices ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
+
+-- Device 结构追加 paused: bool（serde default false）
+-- COLS 末尾追加 paused（只能追末尾，防下标错位）
+
+device_set_paused(node_id, paused) -> bool
+  UPDATE devices SET paused = ?2 WHERE node_id = ?1
+
+device_list() 返回含 paused
+spawn / add_peer 时跳过 paused=1
+入站握手若 node_id paused=1 → 拒绝并 log
+
+命令：
+  kb_sync_set_paused { node_id, paused }
+  恢复时 svc.add_peer(node_id)；暂停时 svc.drop_peer(node_id)
+</pre>
+
+<h3>剪贴板 LAN（config <code>lan_paired_devices</code>）</h3>
+<pre>PairedDevice 增加：
+  #[serde(default)]
+  pub paused: bool
+
+remember_device：名字与 paused 都未变则零写入
+收包 / 发送：paused 的设备不写入剪贴板、不作为目标
+online 点：paused 时灰点 + 「已暂停」，不报在线
+
+命令：
+  lan_set_device_paused { device_id, paused }
+  与 lan_forget_device 并列注册
+</pre>
+
+<div class="note warn">
+  <b>LAN 文案红线</b>：暂停做不到「对方收不到」。群组密钥模型下对方仍能解密广播。
+  界面必须写「只停本机收发」，禁止写成「已断开」。
+</div>
+
+<h2>七、验收清单</h2>
+<ul>
+  <li>暂停后 KB：无新拨号；对方入站被拒；游标不丢；恢复后能接着同步。</li>
+  <li>暂停后 LAN：本机不应用该设备消息；列表显示「已暂停」；重启仍在暂停。</li>
+  <li>重启应用后 paused 状态保持。</li>
+  <li>忘记不受暂停影响；暂停中可直接忘记。</li>
+  <li>开关失败回滚 UI + toast。</li>
+  <li><code>npx tsc --noEmit</code> / <code>npm run lint</code> / vitest / cargo test 全绿。</li>
+</ul>
+
+<script>
+function toggleSw(btn, group){
+  const on = btn.classList.toggle('on');
+  const row = btn.closest('.devItem');
+  if (!row) return;
+  row.classList.toggle('paused', !on);
+  const time = row.querySelector('.time');
+  const badge = row.querySelector('.badge');
+  if (time && time.dataset.kb) {
+    /* kb 行由第二行 time 提示 */
+  }
+  // 演示：同步钮
+  const sync = row.querySelector('.miniBtn:not(.danger)');
+  if (sync) { sync.disabled = !on; sync.title = on ? '立刻同步' : '已暂停'; }
+  // 徽章
+  if (badge) {
+    if (!on) { badge.textContent = '已暂停'; badge.className = 'badge pause'; }
+    else { badge.textContent = ''; badge.className = 'badge off'; badge.style.display='none'; }
+    if (on) badge.style.display = '';
+  }
+  // LAN 行：在线点隐藏
+  const dot = row.querySelector('.dot');
+  if (dot) dot.style.display = on ? '' : 'none';
+  if (time && !on) {
+    if (!time.dataset.orig) time.dataset.orig = time.textContent;
+    time.textContent = row.id ? '已暂停 · 停止与本机收发剪贴板' : time.textContent;
+  } else if (time && on && time.dataset.orig) {
+    time.textContent = time.dataset.orig;
+  }
+}
+</script>
+</div>

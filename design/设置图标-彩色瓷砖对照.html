@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>设置图标 · 三套对照</title>
+<style>
+  :root {
+    --bg: #EEF2F7;
+    --card: #fff;
+    --ink: #0F172A;
+    --muted: #627083;
+    --line: #E0E4EB;
+    --accent: #0284C7;
+    --green: #11813A;
+    --off-bg: #E2E8F0;
+    --off-label: #4B5563;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 28px 24px 48px;
+  }
+  h1 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .lead { font-size: 12px; color: var(--muted); margin-bottom: 20px; max-width: 720px; line-height: 1.55; }
+  .grid { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 18px 20px 16px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+  }
+  .card h2 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px; margin-right: 8px; vertical-align: 1px;
+  }
+  .tag.cur { background: #FEE2E2; color: #B91C1C; }
+  .tag.a { background: #DCFCE7; color: #166534; }
+  .tag.b { background: #E0F2FE; color: #0273AD; }
+  .tag.c { background: #EDE9FE; color: #6D28D9; }
+  .note { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+  .pros { margin-top: 12px; font-size: 11px; color: var(--muted); display: grid; gap: 3px; }
+  .pros b { color: var(--ink); font-weight: 600; }
+
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #FAFBFC;
+    border: 1px solid var(--line);
+    margin-bottom: 8px;
+  }
+  .row:last-of-type { margin-bottom: 0; }
+  .body { flex: 1; min-width: 0; }
+  .lab { font-size: 13px; font-weight: 600; }
+  .desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  /* 当前：E2 淡色瓷砖 */
+  .icoCur {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: grid; place-items: center;
+    font-size: 16px; flex-shrink: 0;
+    background: color-mix(in srgb, var(--accent) 12%, #fff);
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+  }
+
+  /* A：恢复 TSX 原渐变（36×8） */
+  .icoA {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: grid; place-items: center;
+    font-size: 16px; flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
+  }
+
+  /* B：macOS 加大（40×10，软影，白图标） */
+  .icoB {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 18px; flex-shrink: 0;
+    filter: drop-shadow(0 1px 2px rgba(15,23,42,.12));
+  }
+
+  /* C：低饱和马卡龙（40×12） */
+  .icoC {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: grid; place-items: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+
+  .g1 { background: linear-gradient(135deg, #F59E0B, #FF9500); }
+  .g2 { background: linear-gradient(135deg, #10B981, #059669); }
+  .g3 { background: linear-gradient(135deg, #3B82F6, #0078D4); }
+  .g4 { background: linear-gradient(135deg, #EF4444, #FF3B30); }
+  .g5 { background: linear-gradient(135deg, #8B5CF6, #6366F1); }
+
+  /* 马卡龙：同色相抬亮降饱和 */
+  .m1 { background: linear-gradient(135deg, #FCD34D, #FBBF24); }
+  .m2 { background: linear-gradient(135deg, #6EE7B7, #34D399); }
+  .m3 { background: linear-gradient(135deg, #93C5FD, #60A5FA); }
+  .m4 { background: linear-gradient(135deg, #FCA5A5, #F87171); }
+  .m5 { background: linear-gradient(135deg, #C4B5FD, #A78BFA); }
+
+  /* 开关示意（现版 44×26 带字） */
+  .tg {
+    display: inline-block; width: 44px; height: 26px; border-radius: 13px;
+    position: relative; flex-shrink: 0; background: var(--off-bg);
+  }
+  .tg.on { background: var(--green); }
+  .tg i {
+    position: absolute; left: 0; top: 2px; width: 22px; height: 22px;
+    border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  }
+  .tg.off i { transform: translateX(2px); }
+  .tg.on i { transform: translateX(20px); }
+  .tg em {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-style: normal; font-size: 11px; font-weight: 700; pointer-events: none;
+  }
+  .tg.on em { left: 7px; color: #fff; }
+  .tg.off em { right: 6px; color: var(--off-label); }
+
+  .dims {
+    margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);
+    font-size: 11px; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+  <h1>设置页图标色 · 三套对照</h1>
+  <p class="lead">
+    现状：TSX 每行都传了彩虹渐变（如 <code>#F59E0B→#FF9500</code>），但 E2 用
+    <code>!important</code> 统一盖成「accent 12% 淡瓷砖」——所以整页看起来素。
+    你发的那张就是 macOS 设置：彩色瓷砖 + 白图标。下面三套从「完全恢复」到「再收一档」。
+  </p>
+
+  <div class="grid">
+
+    <div class="card">
+      <h2><span class="tag cur">当前</span>E2 淡色瓷砖 · 36×8</h2>
+      <p class="note">六主题自适应、安静，但扫一眼分不清行，整页发灰。</p>
+      <div class="row"><span class="icoCur">🚀</span><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div><span class="tg off"><i></i><em>关</em></span></div>
+      <div class="row"><span class="icoCur">💾</span><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div><span class="tg on"><i></i><em>开</em></span></div>
+      <div class="row"><span class="icoCur">👁</span><div class="body"><div class="lab">失焦自动隐藏</div><div class="desc">窗口失去焦点时隐藏到托盘</div></div><span class="tg on"><i></i><em>开</em></span></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="tag a">方案 A</span>恢复彩虹渐变 · 36×8</h2>
+      <p class="note">去掉 <code>!important</code> 即可——渐变已在 TSX 里，改动最小。</p>
+      <div class="row"><span class="icoA g1">🚀</span><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div><span class="tg off"><i></i><em>关</em></span></div>
+      <div class="row"><span class="icoA g2">💾</span><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div><span class="tg on"><i></i><em>开</em></span></div>
+      <div class="row"><span class="icoA g4">👁</span><div class="body"><div class="lab">失焦自动隐藏</div><div class="desc">窗口失去焦点时隐藏到托盘</div></div><span class="tg on"><i></i><em>开</em></span></div>
+      <div class="pros">
+        <div><b>优</b>：一眼可扫；和你截图同语言；改动一行 CSS。</div>
+        <div><b>劣</b>：36px 偏小，彩色略挤；深色主题上原渐变可能过艳。</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="tag b">方案 B</span>macOS 体量 · 40×10 + 软影</h2>
+      <p class="note">你截图那套：瓷砖略大、圆角 10、轻微投影、图标 18px。</p>
+      <div class="row"><span class="icoB g1">🚀</span><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div><span class="tg off"><i></i><em>关</em></span></div>
+      <div class="row"><span class="icoB g2">💾</span><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div><span class="tg on"><i></i><em>开</em></span></div>
+      <div class="row"><span class="icoB g4">👁</span><div class="body"><div class="lab">失焦自动隐藏</div><div class="desc">窗口失去焦点时隐藏到托盘</div></div><span class="tg on"><i></i><em>开</em></span></div>
+      <div class="pros">
+        <div><b>优</b>：最接近你发的截图；层次感最好。</div>
+        <div><b>劣</b>：行高略增；需同步改行 padding。</div>
+      </div>
+      <div class="dims">推荐优先这个</div>
+    </div>
+
+    <div class="card">
+      <h2><span class="tag c">方案 C</span>马卡龙低饱和 · 40×12</h2>
+      <p class="note">同色相抬亮，比 B 更柔，适合「要彩但不要太闹」。</p>
+      <div class="row"><span class="icoC m1">🚀</span><div class="body"><div class="lab">开机自启</div><div class="desc">Windows 启动时自动运行</div></div><span class="tg off"><i></i><em>关</em></span></div>
+      <div class="row"><span class="icoC m2">💾</span><div class="body"><div class="lab">编辑器自动保存</div><div class="desc">停止输入后自动回写内容</div></div><span class="tg on"><i></i><em>开</em></span></div>
+      <div class="row"><span class="icoC m4">👁</span><div class="body"><div class="lab">失焦自动隐藏</div><div class="desc">窗口失去焦点时隐藏到托盘</div></div><span class="tg on"><i></i><em>开</em></span></div>
+      <div class="pros">
+        <div><b>优</b>：彩而不闹，深色主题也好压。</div>
+        <div><b>劣</b>：要另写一套渐变表，和 TSX 现有值不完全一致。</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

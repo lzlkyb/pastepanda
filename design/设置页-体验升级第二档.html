@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设置页 · 体验升级第二档（S1 之后）</title>
+<style>
+  :root {
+    --card-bg: #fff;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #627083;
+    --border-color: #E0E4EB;
+    --hover: #E8ECF2;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-strong: #0273AD;
+    --accent-light: #E0F2FE;
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --green: #059669;
+    --danger: #DC2626;
+    --elev: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #E8ECF2;
+    color: var(--text-primary);
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 28px 20px 72px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--text-secondary); margin: 0 0 18px; max-width: 78ch; }
+  h2 {
+    font-size: 15px; margin: 30px 0 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border-color);
+  }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    background: var(--card-bg); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border-color);
+  }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  th { background: var(--section-bg); font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+    background: var(--section-bg); padding: 1px 5px; border-radius: 4px;
+  }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 920px) { .duo { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 12px;
+  }
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px; margin-bottom: 8px;
+  }
+  .tag.old { background: #FEF3C7; color: #92400E; }
+  .tag.new { background: #DCFCE7; color: #166534; }
+  .note { font-size: 12px; color: var(--text-muted); margin: 8px 0 0; }
+
+  /* 设置模拟 */
+  .shell {
+    display: flex; height: 400px;
+    border-radius: 10px; border: 1px solid #c5ced8;
+    overflow: hidden; background: #fff;
+  }
+  .nav {
+    flex: 0 0 128px; background: var(--section-bg);
+    border-right: 1px solid var(--border-color); padding: 6px 0;
+  }
+  .navItem {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; font-size: 12px; cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+  .navItem.on {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent-strong); font-weight: 600;
+    border-left-color: var(--accent);
+  }
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .hdr {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border-color);
+  }
+  .search {
+    flex: 1; display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border: 1px solid var(--border-color);
+    border-radius: 8px; background: var(--input-bg);
+    color: var(--text-muted); font-size: 12px;
+  }
+  .search.focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-shadow);
+    background: #fff; color: var(--text-primary);
+  }
+  .body {
+    flex: 1; overflow: auto; padding: 10px 14px 16px;
+    background: color-mix(in srgb, var(--section-bg) 35%, #fff);
+  }
+  .sec {
+    margin-top: 10px; padding: 10px 14px 8px;
+    font-size: 11px; font-weight: 700; letter-spacing: .4px;
+    color: var(--text-secondary); text-transform: uppercase;
+    background: linear-gradient(180deg, var(--section-bg), color-mix(in srgb, var(--section-bg) 50%, #fff));
+    border: 1px solid var(--border-color); border-radius: 12px 12px 0 0;
+    box-shadow: var(--elev);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cnt {
+    font-size: 10px; font-weight: 700; color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 999px; padding: 1px 6px;
+  }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; background: #fff;
+    border-left: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+  }
+  .row.last { border-radius: 0 0 12px 12px; box-shadow: var(--elev); }
+  .row.hit {
+    background: color-mix(in srgb, var(--accent) 8%, #fff);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: grid; place-items: center; font-size: 16px; flex-shrink: 0;
+  }
+  .icon.tint {
+    background: color-mix(in srgb, var(--accent) 10%, #fff);
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    color: var(--accent-strong);
+  }
+  .icon.rainbow { border: 1px solid transparent; }
+  .rbody { flex: 1; min-width: 0; }
+  .rname { font-size: 13px; font-weight: 600; }
+  .rdesc { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  mark {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: inherit; border-radius: 2px; padding: 0 1px;
+  }
+  .sw {
+    width: 42px; height: 24px; border-radius: 12px;
+    background: var(--green); position: relative; flex-shrink: 0;
+  }
+  .sw::after {
+    content: ""; position: absolute; top: 2px; right: 2px;
+    width: 20px; height: 20px; border-radius: 50%; background: #fff;
+  }
+  .right {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    min-width: 96px; justify-content: flex-end;
+  }
+  .pill {
+    height: 24px; padding: 0 10px; border-radius: 999px;
+    border: 1px solid var(--border-color); background: #fff;
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+  }
+  .pill.on {
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-strong);
+  }
+  .kbd {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 10px; font-weight: 600; color: var(--text-muted);
+    background: var(--section-bg); border: 1px solid var(--border-color);
+    border-radius: 4px; padding: 1px 5px;
+  }
+  .banner {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px; padding: 8px 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 8%, #fff);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .banner b { color: var(--accent-strong); }
+  .banner button {
+    margin-left: auto; height: 24px; padding: 0 10px;
+    border-radius: 8px; border: 1px solid var(--border-color);
+    background: #fff; font-size: 11px; font-weight: 600;
+    color: var(--text-secondary); cursor: pointer; font-family: inherit;
+  }
+
+  .foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-top: 1px solid var(--border-color);
+    background: var(--section-bg); font-size: 11px; color: var(--text-muted);
+  }
+  .ghost {
+    border: none; background: transparent; color: var(--text-muted);
+    font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit;
+    padding: 4px 8px; border-radius: 6px;
+  }
+  .ghost:hover { background: var(--hover); color: var(--danger); }
+  .primary {
+    height: 28px; padding: 0 14px; border: none; border-radius: 8px;
+    background: var(--accent-solid); color: #fff;
+    font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .plans { grid-template-columns: 1fr; } }
+  .plan {
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 14px;
+  }
+  .plan.rec {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    box-shadow: 0 0 0 3px var(--accent-shadow);
+  }
+  .plan h3 {
+    margin: 0 0 8px; font-size: 14px; display: flex;
+    justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .badge {
+    font-size: 10px; font-weight: 700; padding: 2px 8px;
+    border-radius: 999px; background: var(--accent); color: #fff;
+  }
+  .badge.ghost {
+    background: var(--section-bg); color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+  }
+  .plan ul { margin: 0; padding-left: 16px; color: var(--text-secondary); font-size: 12.5px; }
+  .plan li { margin: 3px 0; }
+  .cost {
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px dashed var(--border-color);
+    font-size: 11.5px; color: var(--text-muted);
+  }
+  .callout {
+    margin-top: 16px; padding: 12px 14px;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+    border-radius: 0 10px 10px 0;
+    font-size: 12.5px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .hintbar {
+    margin: 8px 0 0; font-size: 11.5px; color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>设置页 · 体验升级第二档</h1>
+  <p class="lead">
+    S1 已解决「像不像一家人」。这一档只做<strong>体验</strong>：更快找到、更少误点、更安静。
+    不改保存模型、不改七分区信息架构、不给设置上玻璃。
+  </p>
+
+  <h2>1 · S1 之后还剩的体验债</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:18%">痛点</th>
+        <th style="width:36%">现状</th>
+        <th>影响</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>搜索只「藏/显」</td>
+        <td>命中行有浅底，但不滚动定位、不标分区来源、词不高亮</td>
+        <td>11 项导航 + 长列表时，搜完仍要自己找</td>
+      </tr>
+      <tr>
+        <td>搜索无快捷键</td>
+        <td>顶栏有框，但 Ctrl+F / <code>/</code> 未聚焦到它</td>
+        <td>和编辑器/主窗查找心智不一致</td>
+      </tr>
+      <tr>
+        <td>图标过吵</td>
+        <td>每行一套彩虹渐变瓷砖，10+ 行就是彩虹墙</td>
+        <td>抢标签文字，主题切换时更花</td>
+      </tr>
+      <tr>
+        <td>行右控件不齐</td>
+        <td>开关 / 数值胶囊 / 小按钮组宽度差大，扫列困难</td>
+        <td>「哪行是开关、哪行要点开」要逐行读</td>
+      </tr>
+      <tr>
+        <td>危险操作贴太近</td>
+        <td>底栏「恢复默认」与「退出设置」同行左右</td>
+        <td>误触成本高（虽有确认框）</td>
+      </tr>
+      <tr>
+        <td>无「搜到几处」语境</td>
+        <td>只有计数，不知道分布在哪些分区</td>
+        <td>结果区像打散的行堆</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2 · 核心对照：搜索结果模式</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在</span>
+      <div class="shell">
+        <div class="nav">
+          <div class="navItem on">⚙ 通用</div>
+          <div class="navItem">⌨ 快捷键</div>
+          <div class="navItem">💾 数据</div>
+        </div>
+        <div class="main">
+          <div class="hdr">
+            <span class="search">🔍 清理</span>
+          </div>
+          <div class="body">
+            <div class="sec">通用</div>
+            <div class="row">
+              <span class="icon rainbow" style="background:linear-gradient(135deg,#F59E0B,#FF9500)">🗑</span>
+              <span class="rbody">
+                <div class="rname">自动清理</div>
+                <div class="rdesc">启动后每小时清理超过天数的记录</div>
+              </span>
+              <span class="right"><span class="pill on">30天</span></span>
+            </div>
+            <div class="sec">数据管理</div>
+            <div class="row last">
+              <span class="icon rainbow" style="background:linear-gradient(135deg,#10B981,#059669)">🧹</span>
+              <span class="rbody">
+                <div class="rname">清理过期记录</div>
+                <div class="rdesc">立即删除超过天数且未收藏的条目</div>
+              </span>
+              <span class="right"><span class="pill">执行</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">能筛出来，但像两截互不相关的列表；彩虹图标抢戏。</p>
+    </div>
+
+    <div class="panel">
+      <span class="tag new">目标 · 结果语境 + 降噪图标</span>
+      <div class="shell">
+        <div class="nav">
+          <div class="navItem on">⚙ 通用</div>
+          <div class="navItem">⌨ 快捷键</div>
+          <div class="navItem">💾 数据</div>
+        </div>
+        <div class="main">
+          <div class="hdr">
+            <span class="search focus">🔍 清理 <span style="margin-left:auto;font-size:11px">2 处</span></span>
+          </div>
+          <div class="body">
+            <div class="banner">
+              搜索「<b>清理</b>」 · 命中 <b>2</b> 项 · 分布在「通用」「数据管理」
+              <button type="button">清除</button>
+            </div>
+            <div class="sec">通用 <span class="cnt">1</span></div>
+            <div class="row hit">
+              <span class="icon tint">🗑</span>
+              <span class="rbody">
+                <div class="rname">自动<mark>清理</mark></div>
+                <div class="rdesc">启动后每小时清理超过天数的记录</div>
+              </span>
+              <span class="right"><span class="pill on">30天</span></span>
+            </div>
+            <div class="sec">数据管理 <span class="cnt">1</span></div>
+            <div class="row last hit">
+              <span class="icon tint">🧹</span>
+              <span class="rbody">
+                <div class="rname"><mark>清理</mark>过期记录</div>
+                <div class="rdesc">立即删除超过天数且未收藏的条目</div>
+              </span>
+              <span class="right"><span class="pill">执行</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">结果条 + 词高亮 + 分区计数；图标改 accent 淡色瓷砖，眼睛回到文字。</p>
+      <p class="hintbar">交互：输入时自动滚到第一条命中；Esc 清空搜索；<kbd class="kbd">Ctrl+F</kbd> 聚焦设置搜索。</p>
+    </div>
+  </div>
+
+  <h2>3 · 行右控件与底栏</h2>
+  <div class="duo">
+    <div class="panel">
+      <span class="tag old">现在</span>
+      <div class="shell" style="height:220px">
+        <div class="main" style="flex:1">
+          <div class="body">
+            <div class="sec">通用</div>
+            <div class="row">
+              <span class="rbody"><div class="rname">开机自启</div></span>
+              <span class="right"><span class="sw"></span></span>
+            </div>
+            <div class="row">
+              <span class="rbody"><div class="rname">自动清理</div></span>
+              <span class="right" style="min-width:0"><span class="pill">7天</span><span class="pill on">30天</span><span class="pill">关</span></span>
+            </div>
+            <div class="row last">
+              <span class="rbody"><div class="rname">导出配置</div></span>
+              <span class="right" style="min-width:0"><span class="pill">导出</span></span>
+            </div>
+          </div>
+          <div class="foot">
+            <button class="ghost">恢复默认设置</button>
+            <button class="primary">退出设置</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">右侧宽窄不一；恢复默认贴着退出。</p>
+    </div>
+    <div class="panel">
+      <span class="tag new">目标</span>
+      <div class="shell" style="height:220px">
+        <div class="main" style="flex:1">
+          <div class="body">
+            <div class="sec">通用</div>
+            <div class="row">
+              <span class="rbody"><div class="rname">开机自启</div><div class="rdesc">登录系统后自动运行</div></span>
+              <span class="right"><span class="sw"></span></span>
+            </div>
+            <div class="row">
+              <span class="rbody"><div class="rname">自动清理</div><div class="rdesc">超过天数的未收藏记录</div></span>
+              <span class="right"><span class="pill on">30天</span></span>
+            </div>
+            <div class="row last">
+              <span class="rbody"><div class="rname">导出配置</div><div class="rdesc">下载 JSON 备份</div></span>
+              <span class="right"><span class="pill">导出</span></span>
+            </div>
+          </div>
+          <div class="foot">
+            <span>所有设置修改后自动保存</span>
+            <span style="display:flex;gap:10px;align-items:center">
+              <button class="ghost">恢复默认…</button>
+              <button class="primary">完成</button>
+            </span>
+          </div>
+        </div>
+      </div>
+      <p class="note">行右固定栏宽；多选一收成<strong>当前值胶囊</strong>（点开再选）；危险操作与主按钮拉开。</p>
+    </div>
+  </div>
+
+  <h2>4 · 三套方案</h2>
+  <div class="plans">
+    <div class="plan">
+      <h3>E1 找得到 <span class="badge ghost">搜索优先</span></h3>
+      <ul>
+        <li>搜索结果条：关键词 + 命中数 + 分区分布</li>
+        <li>命中行：<mark>词高亮</mark> + 左侧 accent 条 + 自动滚入视口</li>
+        <li>Esc 清空；设置页内 <kbd class="kbd">Ctrl+F</kbd> / <kbd class="kbd">/</kbd> 聚焦搜索</li>
+        <li>清除按钮与计数同条</li>
+      </ul>
+      <p class="cost"><strong>优点：</strong>只动搜索路径，收益最大。<br/>
+      <strong>缺点：</strong>图标吵、行右不齐仍在。</p>
+    </div>
+    <div class="plan rec">
+      <h3>E2 找得到 + 看得清 <span class="badge">推荐</span></h3>
+      <ul>
+        <li>E1 全部</li>
+        <li>行图标：彩虹渐变 → <strong>主题 accent 淡色瓷砖</strong>（保留 emoji，只统一底）</li>
+        <li>行右控件栏：固定最小宽、右对齐；多选一收成「当前值」点开</li>
+        <li>底栏：恢复默认移左下弱化；主按钮「完成」</li>
+        <li>推荐徽标改胶囊，与 L2 文字并存</li>
+      </ul>
+      <p class="cost"><strong>优点：</strong>扫读成本明显下降，与工具箱 P1 同语言。<br/>
+      <strong>缺点：</strong>要改多处 section 的图标 style / 少量 tsx。</p>
+    </div>
+    <div class="plan">
+      <h3>E3 再深一层 <span class="badge ghost">可选</span></h3>
+      <ul>
+        <li>E2 + AI 页「高级」默认折叠</li>
+        <li>跨分区「相关设置」跳转（清理 ↔ 回收站天数）</li>
+        <li>首次进设置的轻提示（非开屏教程）</li>
+      </ul>
+      <p class="cost"><strong>优点：</strong>长页更短。<br/>
+      <strong>缺点：</strong>动信息呈现，建议 E2 稳一周再做。</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>建议做 E2。</strong>它回答的是「打开设置 10 秒内改完一项就走」：
+    搜索立刻指到、图标不再抢戏、右侧一列开关可扫。
+    <strong>刻意不做：</strong>设置改弹窗布局、合并七分区、把开关改成 accent 主色（绿=开已是语义，动了会和成功态打架）。
+  </div>
+
+  <p class="note" style="margin-top:18px">
+    设计稿：<code>design/设置页-体验升级第二档.html</code>。确认档位后我按 E1→E2 改代码。
+  </p>
+
+</div>
+</body>
+</html>
