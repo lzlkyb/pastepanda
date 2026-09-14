@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
-import { LAN_PAIRED_CHANGED } from "@/lib/lanEvents";
 import styles from "../Settings.module.css";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 
@@ -38,11 +37,13 @@ const POLL_MS = 2000;
  *
  * 用户不看就点确认是真实弱点，这里不假装能消除它。
  */
-export function LanNearby({ toast }: {
+export function LanNearby({ toast, onReady }: {
   /** 与 `LanSyncPanel` 同一个窄类型（只用得到 success/error）。
    *  不用全局 `ToastFn`：那个包含 `"loading"` 等更宽的取值，
    *  父组件传下来的函数接不住，会在这里报类型不兼容。 */
   toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void;
+  /** 挂载后把 refresh 交给父级：配对完成事件由 Panel 统一 listen，避免双订阅 */
+  onReady?: (refresh: () => void) => void;
 }) {
   const [nearby, setNearby] = useState<NearbyDevice[]>([]);
   const [pair, setPair] = useState<PairState | null>(null);
@@ -67,47 +68,23 @@ export function LanNearby({ toast }: {
 
   // ❗ 窗口不可见就停（规则 #8）。本面板 2 秒一轮，是全应用最密的轮询；
   //   不关的话用户把窗口最小化后它依然每 2 秒进一次后端。
-  //   `useKbSync`（5 秒）与 `KbSyncStatusBar`（10 秒）早就是这么写的，
-  //   这里是把它们补齐。
   const winVisible = useWindowVisible();
   useEffect(() => {
     if (!winVisible) return;
     aliveRef.current = true;
     void refresh();
-    const t = setInterval(refresh, POLL_MS);
+    // 配对中才需要密轮询；空闲 5s 足够（P0 降频）
+    const t = setInterval(refresh, pair ? POLL_MS : 5000);
     return () => {
       aliveRef.current = false;
       clearInterval(t);
     };
-  }, [refresh, winVisible]);
+  }, [refresh, winVisible, pair]);
 
-  /**
-   * 配对成功后立即重拉：刚配上的设备要马上从「附近的设备」里消失
-   * （`get_lan_nearby` 会把已记住的滤掉），同时把配对面板收回去。
-   *
-   * ❗ 接受方的配对完成不对应本组件里的任何一次 `await`——它发生在
-   * 收包那一刻，所以只能靠事件，不能靠 confirm() 里那句 refresh()。
-   */
+  // 把 refresh 交给父级：LAN_PAIRED_CHANGED 只在 Panel listen 一次
   useEffect(() => {
-    let un: (() => void) | undefined;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        const off = await listen(LAN_PAIRED_CHANGED, () => {
-          void refresh();
-        });
-        if (cancelled) off();
-        else un = off;
-      } catch (e) {
-        logger.warn("监听配对完成失败", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      un?.();
-    };
-  }, [refresh]);
+    onReady?.(() => void refresh());
+  }, [onReady, refresh]);
 
   const start = async (d: NearbyDevice) => {
     setBusy(true);
@@ -201,7 +178,12 @@ export function LanNearby({ toast }: {
   if (nearby.length === 0) {
     return (
       <div className={styles.lanNearbyEmpty}>
-        没有发现附近的设备。确认另一台也开了局域网同步、且在同一个网络里。
+        <div className={styles.lanNearbyEmptyTitle}>还没有发现附近设备</div>
+        <ol className={styles.lanNearbySteps}>
+          <li>另一台电脑安装并打开 <b>PastePanda</b></li>
+          <li>确保在同一 Wi-Fi / 局域网</li>
+          <li>两边都打开 <b>设置 → 剪贴板同步</b></li>
+        </ol>
       </div>
     );
   }

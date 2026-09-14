@@ -214,10 +214,19 @@ export function StatsSection({
               <span>📦 {config.current_workspace || "默认"}空间</span>
             </div>
           </>
-        ) : (
-          <div style={{ padding: "16px 0", textAlign: "center", fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid var(--border-color)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "fab-icon-spin 0.6s linear infinite" }} />
-            加载统计数据…
+        ) : statsError ? null : (
+          /* 加载骨架：比转圈更像「即将出现的卡片」（U3）。只动 background-position，
+             深色/减少动态由主题与全局 reduce 兜底。 */
+          <div className={styles.statsSkeleton} aria-busy="true" aria-label="加载统计数据">
+            <div className={styles.skelBlock}>
+              <div className={`${styles.skelLine} ${styles.skelW40}`} />
+              <div className={styles.skelLine} />
+              <div className={`${styles.skelLine} ${styles.skelW60}`} />
+            </div>
+            <div className={styles.skelBlock}>
+              <div className={`${styles.skelLine} ${styles.skelW40}`} />
+              <div className={styles.skelLine} />
+            </div>
           </div>
         )}
       </div>

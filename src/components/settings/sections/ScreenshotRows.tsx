@@ -1,6 +1,6 @@
 import type { AppConfig } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
-import { ToggleRow } from "../ToggleRow";
+import { ToggleRow, SettingTile } from "../ToggleRow";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
 
@@ -16,7 +16,7 @@ interface ScreenshotRowsProps {
 export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRowsProps) {
   return (
     <>
-      <ToggleRow icon="🪟" gradient="linear-gradient(135deg, #F59E0B, #D97706)" label="自动框选当前窗口"
+      <ToggleRow icon="🪟" hue="capture" label="自动框选当前窗口"
         desc="按截图热键后自动选中光标所在窗口（微信同款），可直接完成或重新拖选"
         value={config.auto_frame_window}
         onChange={(v) => updateAndSave({ auto_frame_window: v })}
@@ -25,7 +25,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
           <p>按截图热键后，自动选中光标所在窗口作为选区（微信同款），可直接完成或重新拖选。</p>
           <p>光标停在桌面空白时不自动框选，保持 hover 吸附全屏。</p>
         </>} />
-      <ToggleRow icon="⚡" gradient="linear-gradient(135deg, #10B981, #059669)" label="截图窗口常驻"
+      <ToggleRow icon="⚡" hue="capture" label="截图窗口常驻"
         desc="开启后截图窗关闭时仅隐藏不销毁，再次按热键秒开（微信同款）；关闭则每次冷启动，首次画面慢几秒。代价：常驻约几十~百 MB 内存"
         value={config.screenshot_window_persist}
         onChange={(v) => updateAndSave({ screenshot_window_persist: v })}
@@ -36,7 +36,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
           <p>代价：常驻约几十~百 MB 内存。</p>
         </>} />
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>🔤</span>
+        <SettingTile hue="capture">🔤</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>OCR 选字模式</div>
           <div className={`${styles.sRowDesc}`}>
@@ -61,7 +61,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
         </div>
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)" }}>⚡</span>
+        <SettingTile hue="capture">⚡</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>完成后自动执行动作链</div>
           <div className={`${styles.sRowDesc}`}>
@@ -98,7 +98,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
         )}
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #0EA5E9, #0284C7)" }}>🗂️</span>
+        <SettingTile hue="paste">🗂️</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>面板布局</div>
           <div className={`${styles.sRowDesc}`}>

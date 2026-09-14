@@ -248,6 +248,9 @@ pub struct PairedDevice {
     pub device_name: String,
     /// 首次记住的时刻（epoch 秒）。
     pub paired_at: i64,
+    /// 用户暂停：本机不收不发。❗ 群组密钥下对方仍能解密本机广播。
+    #[serde(default)]
+    pub paused: bool,
 }
 
 /// 读「记住的设备」名单。读不到就当空——这是展示用数据，不值得让整个面板报错。
@@ -295,6 +298,7 @@ pub fn remember_device(app: &AppHandle, device_id: &str, device_name: &str) {
             device_id: device_id.to_string(),
             device_name: device_name.to_string(),
             paired_at: chrono::Utc::now().timestamp(),
+            paused: false,
         }),
     }
     if let Err(e) = save_paired(app, &list) {
@@ -321,6 +325,30 @@ pub fn forget_device(app: &AppHandle, device_id: &str) -> Result<bool, String> {
     }
     save_paired(app, &list)?;
     Ok(true)
+}
+
+/// 暂停 / 恢复一台已记住的设备。返回是否真的改到了。
+///
+/// 只改本机名单：群组密钥模型下对方仍能解密广播（见 [`forget_device`]）。
+pub fn set_device_paused(app: &AppHandle, device_id: &str, paused: bool) -> Result<bool, String> {
+    let mut list = load_paired(app);
+    let Some(d) = list.iter_mut().find(|d| d.device_id == device_id) else {
+        return Ok(false);
+    };
+    if d.paused == paused {
+        return Ok(false);
+    }
+    d.paused = paused;
+    save_paired(app, &list)?;
+    Ok(true)
+}
+
+/// 这台设备是否被用户暂停（不在名单 = false）。
+pub fn is_device_paused(app: &AppHandle, device_id: &str) -> bool {
+    load_paired(app)
+        .into_iter()
+        .find(|d| d.device_id == device_id)
+        .is_some_and(|d| d.paused)
 }
 
 /// 「记住的设备」名单变了的事件名。前端设置面板监听它。
@@ -926,6 +954,12 @@ impl LanSync {
 
                         // 过滤自身消息
                         if msg.device_id == device_id {
+                            continue;
+                        }
+
+                        // 用户暂停的设备：不写剪贴板、不更新在线表。
+                        // 读配置一次即可——暂停是低频操作，不必每包扫名单。
+                        if is_device_paused(&app_handle, &msg.device_id) {
                             continue;
                         }
 

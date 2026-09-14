@@ -9,7 +9,7 @@
  *
  * 🔴 红线：不接 AI。正文只在本机内存 ↔ 本机 SQLite 之间走。
  */
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { markdownWithCode } from "@/components/editors/fullscreen/languages";
 import { useCodeMirrorEditor } from "@/components/editors/useCodeMirrorEditor";
 import { wikiLinkCompletion } from "./wikiLinkComplete";
@@ -26,6 +26,8 @@ export function NoteEditorPane({
   viewMode,
   onChange,
   onSave,
+  /** 把 openSearch 交给外层标题栏（预览态也要能点「查找」） */
+  onOpenSearch,
 }: {
   /** 挂载时的初值。**变了也不会重建编辑器**（hook 的装配只跟 ready），
    *  所以换笔记时必须靠外层 key 重建本组件——NoteDialog 那边已经这么做了。 */
@@ -41,6 +43,7 @@ export function NoteEditorPane({
   onChange: (next: string) => void;
   /** Ctrl+S：与底部「保存」同一条路 */
   onSave: () => void;
+  onOpenSearch?: (fn: () => void) => void;
 }) {
   /**
    * 语言与编辑增强。hook 要的是 `(ctx) => Extension`（Extension 可以是数组）。
@@ -68,7 +71,7 @@ export function NoteEditorPane({
     [],
   );
 
-  const { editorRef } = useCodeMirrorEditor({
+  const { editorRef, bridge } = useCodeMirrorEditor({
     initialText: initialContent,
     ready: true,
     isDark,
@@ -77,6 +80,11 @@ export function NoteEditorPane({
     onDocChange: onChange,
     onSave,
   });
+
+  // openSearch 每次渲染身份稳定（useCallback []），effect 只需 [onOpenSearch]
+  useEffect(() => {
+    onOpenSearch?.(bridge.openSearch);
+  }, [onOpenSearch, bridge]);
 
   return (
     <div className={styles.split}>

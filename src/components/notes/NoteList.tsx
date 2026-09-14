@@ -370,6 +370,11 @@ function NoteRow({
       className={`${styles.row} ${active ? styles.rowActive : ""} ${
         selected ? styles.rowSelected : ""
       }`}
+      /* 轻入场：只 opacity/transform（200ms），与记录卡/浮层同一档（U2）。
+         不做 FLIP 搬家——笔记列表靠滚动加载，大位移会和分页抢注意力。 */
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
       whileHover={{ y: -2, scale: 1.01, transition: { type: "spring", stiffness: 500, damping: 30 } }}
       whileTap={{ scale: 0.985, transition: { duration: 0.08, ease: "easeOut" } }}
       onContextMenu={(e) => {

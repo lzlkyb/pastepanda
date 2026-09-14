@@ -5,6 +5,8 @@
  *   仅编辑/分屏/仅预览。两个名字撞一起会很难看懂。
  *
  * 🔴 红线：无 AI。
+ *
+ * 2026-09：去掉 gridDisabled——网格任意宽度可点；窄栏由列数自适应（1 列）。
  */
 import { List, LayoutGrid } from "lucide-react";
 import type { NoteLayout } from "./useNoteLayout";
@@ -13,17 +15,9 @@ import styles from "../KnowledgeView.module.css";
 export function NoteLayoutSwitch({
   value,
   onChange,
-  gridDisabled,
 }: {
   value: NoteLayout;
   onChange: (l: NoteLayout) => void;
-  /**
-   * 中栏太窄，网格不可用。
-   *
-   * **置灰而不是隐藏**——直接照搬 `NoteViewModeSwitch` 里 `splitDisabled`
-   * 那段现成的论据：拉窗口时按钮数量跳变比一个置灰的按钮更迷惑。
-   */
-  gridDisabled?: boolean;
 }) {
   return (
     <div className={styles.modeSeg} role="group" aria-label="列表形态">
@@ -40,14 +34,8 @@ export function NoteLayoutSwitch({
       <button
         type="button"
         className={`${styles.modeBtn} ${value === "grid" ? styles.modeOn : ""}`}
-        onClick={() => {
-          if (gridDisabled) return;
-          onChange("grid");
-        }}
-        disabled={gridDisabled}
-        /* 置灰时把**为什么**说清楚。只把按钮变淡不告诉原因，
-           用户只会以为它坏了。文案句式照 `NoteViewModeSwitch` 那一条。 */
-        title={gridDisabled ? "当前宽度放不下网格，把窗口拉宽一些" : "网格"}
+        onClick={() => onChange("grid")}
+        title="网格"
         aria-label="网格"
         aria-pressed={value === "grid"}
       >

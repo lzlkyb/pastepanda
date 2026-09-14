@@ -232,7 +232,7 @@ pub fn kb_sync_join_deny(svc: State<SyncService>, node_id: String) -> Result<(),
     Ok(())
 }
 
-/// 忘记此设备。
+/// 忘记此设备（从名单删除；要重新配对）。
 ///
 /// ❗ 要同时做三件事，少一件就留脏东西：删记录、停循环、清地址。
 /// 地址不清的话，表里会留一条**永不刷新也永不被覆盖**的僵尸地址
@@ -246,6 +246,26 @@ pub async fn kb_sync_forget(
     let removed = store.device_forget(&node_id)?;
     svc.drop_peer(&node_id).await;
     Ok(removed)
+}
+
+/// 暂停 / 恢复一台设备的同步（保留配对与游标）。
+#[tauri::command]
+pub async fn kb_sync_set_paused(
+    store: State<'_, DataStore>,
+    svc: State<'_, SyncService>,
+    node_id: String,
+    paused: bool,
+) -> Result<bool, String> {
+    let changed = store.device_set_paused(&node_id, paused)?;
+    if !changed {
+        return Ok(false);
+    }
+    if paused {
+        svc.drop_peer(&node_id).await;
+    } else {
+        svc.add_peer(&node_id).await?;
+    }
+    Ok(true)
 }
 
 /// 立刻跟某台同步一次。

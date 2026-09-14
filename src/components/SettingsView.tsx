@@ -1,5 +1,5 @@
-import { Fragment } from "react";
-import { ArrowLeft, Settings as SettingsIcon, Search as SearchIcon } from "lucide-react";
+import { Fragment, useEffect } from "react";
+import { ArrowLeft, Settings as SettingsIcon, Search as SearchIcon, X } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { HelpTabContent } from "@/components/settings/HelpTabContent";
@@ -29,10 +29,14 @@ import styles from "./Settings.module.css";
  * 文字始终显示。曾经有过一个 600px 断点用来把菜单收成图标条，已废弃：
  * 只剩图标用户看不懂是哪一项。
  */
-export function SettingsView({ open, onClose, initialTab }: {
+export function SettingsView({ open, onClose, initialTab, initialSection, jump }: {
   open: boolean;
   onClose: () => void;
   initialTab?: SettingsTabName;
+  /** 通用页内分区 key（如 "lan"）；由 openSettings 的 section 透传 */
+  initialSection?: string;
+  /** 每次外部 open-settings +1；设置已打开时再跳也要重新定位 */
+  jump?: number;
 }) {
   // 搜索框在标题栏（本组件渲染），而装设置行的容器在 GeneralTab 里，靠 ref 对接
   const search = useSettingsSearch();
@@ -42,8 +46,45 @@ export function SettingsView({ open, onClose, initialTab }: {
   const sh = useSettingsShell(open);
   const isBlossom = sh.config.theme === "blossom";
   const { nav, navItems, bodyRef, handleNavPick } = useSettingsNav({
-    open, initialTab, blossom: isBlossom, searching, sectionClass: styles.sSection,
+    open, initialTab, initialSection, jump, blossom: isBlossom, searching, sectionClass: styles.sSection,
   });
+
+  // E2：设置页内 Ctrl+F / `/` 聚焦搜索（与主窗/编辑器查找心智一致）。
+  // Esc：有搜索词时先清空，不直接关设置（规则 17.6 两级取消）。
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const inField = !!t && (
+        t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable
+      );
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        search.inputRef.current?.focus();
+        search.inputRef.current?.select();
+        return;
+      }
+      if (e.key === "/" && !inField && !mod) {
+        e.preventDefault();
+        search.inputRef.current?.focus();
+        return;
+      }
+      if (e.key === "Escape" && search.filter) {
+        const focused = document.activeElement;
+        const inSearch = focused === search.inputRef.current
+          || !!focused?.closest?.("." + styles.settingsSearchBox);
+        if (inSearch || searching) {
+          e.stopPropagation();
+          search.setFilter("");
+          search.inputRef.current?.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, search.filter, searching]);
 
   /** 菜单一项。**文字始终显示**——只有图标的话用户看不懂是哪一项 */
   const navItem = (n: SettingsNavEntry) => {
@@ -82,16 +123,19 @@ export function SettingsView({ open, onClose, initialTab }: {
         <div className={styles.settingsSearchBox}>
           <span className={styles.settingsSearchIcon}><SearchIcon size={13} strokeWidth={2.2} /></span>
           <input
+            ref={search.inputRef}
             className={styles.settingsSearchInput}
             type="text"
             value={search.filter}
-            placeholder="搜索设置"
+            placeholder="搜索设置  Ctrl+F"
             onChange={(e) => search.setFilter(e.target.value)}
           />
           {/* 命中计数：子节点故意留空，文本由 useSettingsSearch 的 effect 直接写入 */}
           <span ref={search.countRef} className={styles.settingsSearchCount} />
           {search.filter && (
-            <button className={styles.settingsSearchClear} onClick={() => search.setFilter("")} title="清空搜索">✕</button>
+            <button className={styles.settingsSearchClear} onClick={() => search.setFilter("")} title="清空搜索">
+              <X size={12} strokeWidth={2.4} />
+            </button>
           )}
         </div>
       </div>
@@ -107,6 +151,28 @@ export function SettingsView({ open, onClose, initialTab }: {
             </Fragment>
           ))}
         </div>
+
+        <div className={styles.settingsContentCol}>
+          {/* E2 结果条：只在搜索时出现。摘要文本由 effect 写入 summaryRef */}
+          {searching && (
+            <div className={styles.settingsSearchBanner}>
+              <SearchIcon size={13} strokeWidth={2.2} />
+              <span className={styles.settingsSearchBannerText}>
+                「{search.filter.trim()}」
+                <span ref={search.summaryRef} className={styles.settingsSearchSummary} />
+              </span>
+              <button
+                type="button"
+                className={styles.settingsSearchClear}
+                onClick={() => {
+                  search.setFilter("");
+                  search.inputRef.current?.focus();
+                }}
+              >
+                清除
+              </button>
+            </div>
+          )}
 
         {/* 右侧详情：**全部 11 项排在同一根滚动里**，滑到哪一节菜单就高亮哪一项。
             前七个分区在 GeneralTab 里（它们得待在搜索容器内，那里的 children 必须是一层扁平的行）；
@@ -138,12 +204,13 @@ export function SettingsView({ open, onClose, initialTab }: {
             </>
           )}
         </div>
+        </div>
       </div>
 
       <div className={styles.sFooter}>
         <div className={styles.sFooterRow}>
-          <button onClick={() => sh.setShowResetConfirm(true)} className={styles.sResetBtn} title="将所有设置恢复为默认值">恢复默认设置</button>
-          <button onClick={onClose} className={styles.sSaveBtn}>退出设置</button>
+          <button onClick={() => sh.setShowResetConfirm(true)} className={styles.sResetBtn} title="将所有设置恢复为默认值">恢复默认…</button>
+          <button onClick={onClose} className={styles.sSaveBtn}>完成</button>
         </div>
         <div className={styles.sFooterMeta}>
           <span className={styles.sAutoSaveHint}>所有设置修改后自动保存</span>

@@ -13,6 +13,7 @@
  * 🔴 红线：无 AI。导出导入只在本机文件系统与本机 SQLite 之间走。
  */
 import { useNoteVaultOps } from "@/hooks/useNoteVaultOps";
+import { SettingTile } from "./ToggleRow"
 import styles from "../Settings.module.css";
 
 export function NoteVaultRows({ onImported }: { onImported?: () => void }) {
@@ -21,12 +22,7 @@ export function NoteVaultRows({ onImported }: { onImported?: () => void }) {
   return (
     <>
       <div className={styles.sRow}>
-        <span
-          className={styles.sRowIcon}
-          style={{ background: "linear-gradient(135deg, #8B5CF6, #6D28D9)" }}
-        >
-          📝
-        </span>
+        <SettingTile hue="editor">📝</SettingTile>
         <div className={styles.sRowBody}>
           <div className={styles.sRowLabel}>导出笔记为 Markdown 目录</div>
           <div className={styles.sRowDesc}>
@@ -43,12 +39,7 @@ export function NoteVaultRows({ onImported }: { onImported?: () => void }) {
       </div>
 
       <div className={styles.sRow}>
-        <span
-          className={styles.sRowIcon}
-          style={{ background: "linear-gradient(135deg, #10B981, #047857)" }}
-        >
-          📂
-        </span>
+        <SettingTile hue="save">📂</SettingTile>
         <div className={styles.sRowBody}>
           <div className={styles.sRowLabel}>从 Markdown 目录导入</div>
           <div className={styles.sRowDesc}>只新增与更新，不会删除现有笔记</div>

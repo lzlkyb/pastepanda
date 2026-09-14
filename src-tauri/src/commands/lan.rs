@@ -158,6 +158,8 @@ pub struct PairedDeviceView {
     pub online: bool,
     /// 本次运行内最近一次收到它加密消息的时刻；从未收到则为空串。
     pub last_sync: String,
+    /// 用户暂停：本机不收不发（不吊销群组密钥）。
+    pub paused: bool,
 }
 
 /// 记住的设备名单（含在线情况）。
@@ -178,14 +180,16 @@ pub fn get_lan_paired(app: tauri::AppHandle) -> Result<Vec<PairedDeviceView>, St
     Ok(crate::lan_sync::load_paired(&app)
         .into_iter()
         .map(|d| PairedDeviceView {
-            online: lan
-                .as_ref()
-                .and_then(|l| l.pair().last_heard(&d.device_id))
-                .is_some_and(|t| now - t <= crate::lan_pair::NEARBY_TTL_SECS),
+            online: !d.paused
+                && lan
+                    .as_ref()
+                    .and_then(|l| l.pair().last_heard(&d.device_id))
+                    .is_some_and(|t| now - t <= crate::lan_pair::NEARBY_TTL_SECS),
             last_sync: last_sync.get(&d.device_id).cloned().unwrap_or_default(),
             device_id: d.device_id,
             device_name: d.device_name,
             paired_at: d.paired_at,
+            paused: d.paused,
         })
         .collect())
 }
@@ -203,6 +207,23 @@ pub fn lan_forget_device(app: tauri::AppHandle, device_id: String) -> Result<boo
         lan.drop_device(&device_id);
     }
     Ok(removed)
+}
+
+/// 暂停 / 恢复一台设备（只改本机名单；对方仍能解密群组广播）。
+#[tauri::command]
+pub fn lan_set_device_paused(
+    app: tauri::AppHandle,
+    device_id: String,
+    paused: bool,
+) -> Result<bool, String> {
+    let changed = crate::lan_sync::set_device_paused(&app, &device_id, paused)?;
+    // 暂停后立刻从内存在线表摘掉，避免界面还亮着在线点。
+    if changed && paused {
+        if let Some(lan) = app.try_state::<crate::lan_sync::LanSync>() {
+            lan.drop_device(&device_id);
+        }
+    }
+    Ok(changed)
 }
 
 /// 进行中的配对快照。两端都轮询它：

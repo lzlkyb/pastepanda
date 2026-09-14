@@ -37,6 +37,8 @@ export function KnowledgeToolbar({
   onAsk,
   showWideBtn,
   onWide,
+  /** 同步状态胶囊等（方案 A）。空着时不占位。 */
+  crumbExtra,
 }: {
   folderName: string;
   total: number;
@@ -72,6 +74,8 @@ export function KnowledgeToolbar({
    */
   showWideBtn?: boolean;
   onWide?: () => void;
+  /** 面包屑动作组里的额外节点（同步胶囊），摆在「宽屏」之前 */
+  crumbExtra?: React.ReactNode;
 }) {
   /** 问题框随内容长高（A-61 ②）。`enabled` 必须传：本框只在问模式渲染，
    *  从搜切回问时它是新挂载的，而那一刻 `question` 可能没变。 */
@@ -90,6 +94,7 @@ export function KnowledgeToolbar({
         {/* 右侧动作组。`margin-left:auto` 在本容器上而不在单个按钮上：
             按钮个数会变（宽屏按钮只在窄屏出），放单个按钮上就得跟着改。 */}
         <span className={styles.crumbActions}>
+          {crumbExtra}
           {/* 宽屏布局（A-61 ④）。很多用户不会主动拖窗口，根本不知道有三栏形态。 */}
           {showWideBtn && onWide && (
             <button

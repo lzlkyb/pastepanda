@@ -4,7 +4,7 @@
  * 清理类为全文变换（经 replaceDoc，自动触发脏标记/自动保存）。
  */
 import type { ReactNode } from "react";
-import { MessageSquare, Indent, Outdent, Scissors, AlignLeft } from "lucide-react";
+import { Search, MessageSquare, Indent, Outdent, Scissors, AlignLeft } from "lucide-react";
 import type { ShellBridge } from "./types";
 import styles from "../FullscreenEditor.module.css";
 
@@ -17,9 +17,14 @@ function FmtBtn({ icon, title, onClick }: { icon: ReactNode; title: string; onCl
 }
 
 export function CodeFormatBar({ bridge }: { bridge: ShellBridge }) {
-  const { toggleComment, indentMore, indentLess, text, replaceDoc } = bridge;
+  const { toggleComment, indentMore, indentLess, text, replaceDoc, openSearch } = bridge;
   return (
     <>
+      <button className={styles.fmtBtnText} title="查找 Ctrl+F" onClick={openSearch}>
+        <Search size={13} />
+        <span>查找</span>
+      </button>
+      <div className={styles.fmtSep} />
       <FmtBtn icon={<MessageSquare size={13} />} title="注释/取消注释（选区或当前行）" onClick={toggleComment} />
       <FmtBtn icon={<Indent size={13} />} title="增加缩进" onClick={indentMore} />
       <FmtBtn icon={<Outdent size={13} />} title="减少缩进" onClick={indentLess} />

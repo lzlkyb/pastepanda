@@ -2,7 +2,7 @@
  * SignFloat —— 左下角每日签到浮窗（v6.9，WorkBuddy 式）。
  *
  * 触发（每天一次，本地记录）：
- * - 今天未弹过 + 今天未签到 + AI 已启用
+ * - 今天未弹过 + 今天未签到 + AI 已启用 + 签到累计未达 100 万上限
  *   （AI 关闭/未启用 → 不弹；服务商不限——配自定义服务商同样提醒，用户诉求）
  * 交互：非 modal 不打断操作；点签到 → 成功态 1.8s 自动收起；✕ → 收起当天不再弹；
  * 「查看额度明细 →」打开完整签到弹窗。首日（初始额度未动）显示「送你 10 万 token」。
@@ -43,6 +43,8 @@ export function SignFloat() {
         // 切回内置 Agnes 或后续场景仍可用
         const q = await aiQuotaGet();
         if (!q.canSign) return; // 今天已签
+        // 签到累计已达上限（reward 恒为 0）→ 不再打扰；完整弹窗仍可手动打开
+        if (q.signAdded >= q.signCap - INITIAL_GRANT) return;
         if (cancelled) return;
         setQuota(q);
         setVisible(true);

@@ -115,3 +115,262 @@ img { -webkit-user-drag: none; user-select: none; }
 /* AI 渐变字曾经在这里做全局类（.aiGrad），已收回
    components/ai/AiMark.module.css——现在只有 AiMark 一个消费方，
    不再需要跨模块的全局类。新增 AI 标识请用 <AiMark>，不要在这里重建它。 */
+
+/* ===== 浮层入场微动画（P0 · U2 150/200ms）=====
+   性能红线（规则 8.x）：
+   · 只动 opacity / transform，合成器可缓存纹理，不触发 layout/paint 大面积重算；
+   · 禁止在入场动画上叠 backdrop-filter / filter:blur（乘法代价）；
+   · 一次性 animation，不是 infinite；prefers-reduced-motion 已由上方全局兜底。
+   用法：给浮层根加 class `pp-float-in`；查找悬浮卡在 globals 里单独 200ms。 */
+@keyframes pp-float-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.pp-float-in {
+  animation: pp-float-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes pp-float-card-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+/* 复制/成功按钮脉冲（P1）：只 scale，200ms 一次结束。挂 class `pp-pop` 或与 .copied 并用 */
+@keyframes pp-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+.pp-pop {
+  animation: pp-pop 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ===== CodeMirror 查找/替换面板（悬浮卡片，可拖动）=====
+   打开：Ctrl+F / 工具栏「查找」。拖动逻辑见 cmSearchPanelDrag.ts。
+   DOM（@codemirror/search SearchPanel）：
+     .cm-editor > .cm-panels > .cm-panel.cm-search
+       > input.cm-textfield[name=search]
+       > button.cm-button[name=next|prev|select]
+       > label > input[type=checkbox][name=case|re|word]
+       > br
+       > input.cm-textfield[name=replace]
+       > button.cm-button[name=replace|replaceAll]
+       > button[name=close]   ← 没有 .cm-button，也没有 .cm-close
+   默认贴右上角、不占编辑区行高；拖空白处可挪开。 */
+.cm-editor {
+  /* 悬浮面板的定位参照（CM 自己也有，这里再钉一次防宿主覆盖） */
+  position: relative !important;
+}
+
+/* 槽位铺满编辑器当定位层；卡片自己绝对定位，拖动 left/top 才相对编辑器 */
+.cm-editor .cm-panels {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none; /* 只有卡片本身吃事件，别挡正文选择 */
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  overflow: visible;
+}
+
+.cm-editor .cm-panel.cm-search {
+  pointer-events: auto;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 36px 10px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  /* 悬浮卡片：不透明底 + 描边 + 双层阴影，盖在正文上仍可读（V1/V2）
+     与 ContextMenu/Toast/Tooltip 同源 --float-card-*（方案 B） */
+  background: var(--float-card-bg, var(--card-bg));
+  /* 入场：200ms 轻 scale，只 opacity/transform（见 pp-float-card-in） */
+  animation: pp-float-card-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  border: 1px solid var(--float-card-border, var(--border-color));
+  border-radius: 12px;
+  box-shadow: var(--float-card-shadow,
+    0 0 0 1px color-mix(in srgb, #000 3%, transparent),
+    0 8px 24px color-mix(in srgb, #000 12%, transparent));
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow 150ms ease, scale 150ms ease;
+}
+
+.cm-editor .cm-panel.cm-search:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #000 4%, transparent),
+    0 10px 28px color-mix(in srgb, #000 16%, transparent);
+}
+
+.cm-editor .cm-panel.cm-search.cm-search-dragging {
+  cursor: grabbing;
+  /* P2：拖起时微抬升。用独立 scale 属性，避免和入场 animation 的 transform fill 打架 */
+  scale: 1.01;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 12px 32px color-mix(in srgb, #000 18%, transparent);
+  transition: box-shadow 150ms ease, scale 150ms ease;
+}
+
+/* 左侧抓手点：一眼看出能拖（L6），pointer-events 由父级扛 */
+.cm-editor .cm-panel.cm-search::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--text-muted) 0 2px,
+    transparent 2px 4px
+  );
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* CM 在查找区和替换区之间插了 <br>：做成整行断点 */
+.cm-editor .cm-panel.cm-search > br {
+  flex-basis: 100%;
+  height: 0;
+  margin: 0;
+  border: none;
+}
+
+.cm-editor .cm-panel.cm-search .cm-textfield {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--input-bg, var(--card-bg));
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  min-width: 0;
+  flex: 1 1 120px;
+  max-width: 220px;
+  cursor: text;
+  user-select: text;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.cm-editor .cm-panel.cm-search .cm-textfield:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow, color-mix(in srgb, var(--accent) 18%, transparent));
+}
+
+.cm-editor .cm-panel.cm-search .cm-textfield::placeholder {
+  color: var(--text-muted);
+}
+
+.cm-editor .cm-panel.cm-search .cm-button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  appearance: none;
+  white-space: nowrap;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.cm-editor .cm-panel.cm-search .cm-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+  color: var(--accent-strong, var(--accent));
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+}
+
+.cm-editor .cm-panel.cm-search .cm-button:active {
+  background: color-mix(in srgb, var(--accent) 14%, var(--card-bg));
+}
+
+/* 开关标签做成胶囊：选中时 accent 描边 */
+.cm-editor .cm-panel.cm-search > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  margin: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--card-bg);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.cm-editor .cm-panel.cm-search > label:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  color: var(--text-primary);
+}
+
+.cm-editor .cm-panel.cm-search > label:has(input:checked) {
+  border-color: var(--accent-border, color-mix(in srgb, var(--accent) 45%, transparent));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong, var(--accent));
+}
+
+.cm-editor .cm-panel.cm-search > label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent-solid, var(--accent));
+  cursor: pointer;
+}
+
+/* 关闭：CM 的 [name=close] 固定在卡片右上 */
+.cm-editor .cm-panel.cm-search > [name="close"] {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.cm-editor .cm-panel.cm-search > [name="close"]:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* 匹配高亮：对齐应用 accent，而不是 CM 默认黄/青荧光 */
+.cm-editor .cm-searchMatch {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 2px;
+  outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.cm-editor .cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--accent) 48%, transparent);
+  outline: 1px solid var(--accent);
+}

@@ -35,9 +35,59 @@ function rowHaystack(el: HTMLElement): string {
   return out.toLowerCase();
 }
 
+/** 拆掉上次注入的 <mark>，把文本节点并回去，避免 React 重渲染后叠 mark */
+function clearSearchMarks(root: ParentNode) {
+  root.querySelectorAll("mark." + styles.searchMark).forEach((m) => {
+    const parent = m.parentNode;
+    if (!parent) return;
+    parent.replaceChild(document.createTextNode(m.textContent || ""), m);
+    parent.normalize();
+  });
+}
+
+/**
+ * 在标题/描述文本节点里给关键词包 <mark>。
+ * 只动这两个节点：整行 walk 会碰开关「开/关」和数值，误伤状态文案。
+ */
+function highlightSearchKw(row: HTMLElement, kw: string) {
+  if (!kw) return;
+  const targets = row.querySelectorAll<HTMLElement>(
+    "." + styles.sRowLabel + ", ." + styles.sRowDesc,
+  );
+  for (const box of targets) {
+    const walk = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent || "";
+        const lower = text.toLowerCase();
+        let from = 0;
+        let idx = lower.indexOf(kw, from);
+        if (idx < 0) return;
+        const frag = document.createDocumentFragment();
+        while (idx >= 0) {
+          if (idx > from) frag.appendChild(document.createTextNode(text.slice(from, idx)));
+          const mark = document.createElement("mark");
+          mark.className = styles.searchMark;
+          mark.textContent = text.slice(idx, idx + kw.length);
+          frag.appendChild(mark);
+          from = idx + kw.length;
+          idx = lower.indexOf(kw, from);
+        }
+        if (from < text.length) frag.appendChild(document.createTextNode(text.slice(from)));
+        node.parentNode?.replaceChild(frag, node);
+        return;
+      }
+      // 深拷贝子节点列表：高亮过程中会改树
+      Array.from(node.childNodes).forEach(walk);
+    };
+    Array.from(box.childNodes).forEach(walk);
+  }
+}
+
 export interface SettingsSearch {
   filter: string;
   setFilter: (v: string) => void;
+  /** 输入框 ref：Ctrl+F / `/` 聚焦用 */
+  inputRef: RefObject<HTMLInputElement | null>;
   // ❗ 写 `| null`：React 19 的 useRef<T>(null) 返回 RefObject<T | null>，
   // 声成 RefObject<T> 会编不过。
   /** 挂在装设置行的容器上（它的 children 必须是一层扁平的行） */
@@ -46,22 +96,26 @@ export interface SettingsSearch {
   noResultRef: RefObject<HTMLDivElement | null>;
   /** 挂在搜索框旁的计数 <span> 上（该 span 不要渲染子节点） */
   countRef: RefObject<HTMLSpanElement | null>;
+  /** 挂在结果条摘要上：「命中 N 项 · 分布在…」由 effect 写入 */
+  summaryRef: RefObject<HTMLSpanElement | null>;
 }
 
 /** dev 下别名表校验只做一次（模块级，不随组件重挂重算） */
 let aliasChecked = false;
 
 /**
- * 设置页搜索：关键词状态 + 对容器做原地过滤。
+ * 设置页搜索：关键词状态 + 对容器做原地过滤 + 结果语境。
  *
  * 从 useSettingsData 里拆出来的，因为搜索框搬到了**左侧菜单顶部**（SettingsView 持有），
  * 而装设置行的容器在 GeneralTab 里——两边靠这组 ref 对接。
  */
 export function useSettingsSearch(): SettingsSearch {
   const [filter, setFilter] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const noResultRef = useRef<HTMLDivElement>(null);
   const countRef = useRef<HTMLSpanElement>(null);
+  const summaryRef = useRef<HTMLSpanElement>(null);
 
   // 不写依赖数组＝每次渲染后都重跑。过滤是对真实 DOM 做的，而 React 新插入的节点
   // 默认 display 为空串，会绕过当前关键词直接显形；只要容器里有条件渲染的分区
@@ -87,13 +141,21 @@ export function useSettingsSearch(): SettingsSearch {
       warnStaleAliasKeys(labels);
     }
 
+    // 先拆掉上一轮的 mark，再过滤/重高亮
+    clearSearchMarks(container);
+
     // 第一遍：按文本匹配显示/隐藏每个设置行（分区标题留到第二遍）
     let visibleCount = 0;
+    let hitCount = 0;
+    /** 直接命中的行所在的分区名（顺序保留、去重） */
+    const hitSections: string[] = [];
     // 分区标题自己命中时，整节展开——搜「外观」「数据管理」这种词本来就应当有结果
     let sectionHit = false;
+    let sectionTitle = "";
     for (const el of children) {
       if (el.classList.contains(styles.sSection)) {
-        sectionHit = kw !== "" && (el.textContent || "").toLowerCase().includes(kw);
+        sectionTitle = (el.textContent || "").trim();
+        sectionHit = kw !== "" && sectionTitle.toLowerCase().includes(kw);
         continue;
       }
       // 空关键词时短路，不去走 rowHaystack 的 DOM 遍历（这是常态）
@@ -103,6 +165,11 @@ export function useSettingsSearch(): SettingsSearch {
       // 底纹只给「自己命中」的行；因分区名命中而整节展开时不加，否则一整节都是底纹。
       // React 每次渲染会按 props 重置 className，但本 effect 每次渲染后都跑，会补回来
       el.classList.toggle(styles.settingsHit, direct);
+      if (direct) {
+        hitCount++;
+        if (sectionTitle && !hitSections.includes(sectionTitle)) hitSections.push(sectionTitle);
+        highlightSearchKw(el, kw);
+      }
       if (match) visibleCount++;
     }
     // 第二遍：若某分区下已无可见行，则连分区标题一起隐藏
@@ -127,9 +194,26 @@ export function useSettingsSearch(): SettingsSearch {
     // 计数写 DOM 而不是走 state：本 effect 每次渲染都跑，setState 会绕回来。
     // 对应的 <span> 不渲染任何子节点，React 不会覆盖这里写进去的文本。
     if (countRef.current) {
-      countRef.current.textContent = kw ? `${visibleCount} 项` : "";
+      countRef.current.textContent = kw ? `${hitCount} 项` : "";
+    }
+    if (summaryRef.current) {
+      if (!kw) {
+        summaryRef.current.textContent = "";
+      } else if (hitCount === 0) {
+        summaryRef.current.textContent = "没有匹配项";
+      } else {
+        const dist = hitSections.length
+          ? ` · 分布在「${hitSections.join("」「")}」`
+          : "";
+        summaryRef.current.textContent = `命中 ${hitCount} 项${dist}`;
+      }
+    }
+    // 滚到第一条直接命中，省得搜完还要自己找（U1）
+    if (kw) {
+      const first = container.querySelector<HTMLElement>("." + styles.settingsHit);
+      first?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   });
 
-  return { filter, setFilter, containerRef, noResultRef, countRef };
+  return { filter, setFilter, inputRef, containerRef, noResultRef, countRef, summaryRef };
 }

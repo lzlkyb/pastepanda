@@ -1,4 +1,5 @@
-/* Toast — CSS Module（玻璃态升级：毛玻璃 + 图标色块容器 + 渐变进度条） */
+/* Toast — 工具浮层卡（方案 B）：不透明 + 12 + 双层影，对齐查找悬浮卡。
+   不再 backdrop-filter：Toast 常压在列表/弹窗上，且会叠多条（规则 8.3）。 */
 .toastContainer {
   position: fixed;
   /* U53: 下移避开标题栏右上角的最小化/关闭按钮（按钮区约 y=16~50px） */
@@ -19,11 +20,9 @@
   padding: 9px 12px;
   border-radius: 12px;
   pointer-events: auto;
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  border: 1px solid var(--glass-popover-border);
-  box-shadow: var(--glass-popover-shadow);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   color: var(--text-primary);
   position: relative;
   overflow: hidden;
@@ -156,19 +155,20 @@
 .toastCopy:hover {
   opacity: 1;
   background: var(--hover);
-  border-color: var(--glass-popover-border);
+  border-color: var(--float-card-border, var(--border-color));
 }
 
 /* 复制成功反馈态：绿色对勾 + 文字，仍在同一 toast 内（同可见域，符合规则 15） */
 .toastCopy.copied {
   opacity: 1;
   color: var(--green);
+  animation: pp-pop 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .toastAction {
   flex-shrink: 0;
   cursor: pointer;
-  border: 1px solid var(--glass-popover-border);
+  border: 1px solid var(--float-card-border, var(--border-color));
   background: var(--hover);
   color: var(--accent);
   padding: 3px 10px;

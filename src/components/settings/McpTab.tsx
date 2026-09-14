@@ -59,7 +59,7 @@ export function McpTab() {
       <div className={styles.sSection}>知识库 MCP 服务</div>
       <ToggleRow
         icon="🧩"
-        gradient="linear-gradient(135deg, #8B5CF6, #6366F1)"
+        hue="sync"
         label="知识库 MCP 服务"
         desc="让 Claude Code 等 AI 工具读写你的笔记（仅本机，需令牌，写权限逐项可关）"
         value={mcp.status.running}

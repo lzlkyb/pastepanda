@@ -49,6 +49,18 @@ export function useEditorCore(item: HistoryItem, registerActions: (a: EditorActi
 
   /** 保存：invoke + 乐观更新 + top-200 刷新（修复 C12：基于回调时刻最新 state） */
   const save = useCallback(async (): Promise<boolean> => {
+    // 工具模式合成条目：库里没有这条 id，保存 = 写回剪贴板（见 lib/toolEditors.ts）。
+    const { isToolItemId } = await import("@/lib/toolEditors");
+    if (isToolItemId(item.id)) {
+      try {
+        await navigator.clipboard.writeText(textRef.current);
+        toast("已复制到剪贴板", "success");
+        return true;
+      } catch {
+        toast("复制失败", "error");
+        return false;
+      }
+    }
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("update_history", { id: item.id, text: textRef.current });

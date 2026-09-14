@@ -756,7 +756,23 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
             return;
         }
     };
-    let paired = matches!(ctx.store.device_get(&peer), Ok(Some(_)));
+    let paired = matches!(
+        ctx.store.device_get(&peer),
+        Ok(Some(d)) if !d.paused
+    );
+    // 暂停中的已配对设备：明确拒，且不走「敲门/待确认」——那会和暂停语义打架。
+    if !paired {
+        if let Ok(Some(d)) = ctx.store.device_get(&peer) {
+            if d.paused {
+                session::reject(&w, "peer paused");
+                log::info!(
+                    "[Sync] {} 已被本机暂停，拒绝入站同步",
+                    short
+                );
+                return;
+            }
+        }
+    }
 
     let hold = match ctx.coord.admit(&peer, paired).await {
         Admit::Ok(h) => h,
@@ -1037,7 +1053,9 @@ impl SyncService {
             ctx.presence.clone(),
             me.clone(),
             port,
-            Arc::new(move |id: &str| matches!(paired_store.device_get(id), Ok(Some(_)))),
+            Arc::new(move |id: &str| {
+                matches!(paired_store.device_get(id), Ok(Some(d)) if !d.paused)
+            }),
             // 听到已配对设备的公告 = 它回来了 → 把休眠中的循环叫起来。
             // 不看 `id`：`notify_waiters()` 本来就是广播式的（理由见
             // `SyncCtx::wake` 的注释；多拨出来的量现在由全局并发闸卡着）。
@@ -1053,6 +1071,11 @@ impl SyncService {
 
         tokio::spawn(accept_loop(ctx.clone()));
         for d in &known {
+            // 暂停中的设备不拨；恢复时由 kb_sync_set_paused → add_peer 补循环。
+            if d.paused {
+                log::info!("[Sync] 设备 {} 已暂停，不起同步循环", &d.node_id[..8.min(d.node_id.len())]);
+                continue;
+            }
             start_peer(&ctx, &d.node_id);
         }
         log::info!(

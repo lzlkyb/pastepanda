@@ -16,6 +16,8 @@ export interface KbDevice {
   last_seen: number;
   relay_addr: string;
   sync_cursor_ms: number;
+  /** 用户暂停：停同步但仍配对。 */
+  paused: boolean;
 }
 
 /** 后端 `sync::service::LastSync`。 */
@@ -206,6 +208,15 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
     } finally { setBusy(false); }
   }, [call, refreshDevices]);
 
+  /** 暂停 / 恢复一台设备（保留配对与游标）。 */
+  const setPaused = useCallback(async (nodeId: string, paused: boolean) => {
+    setBusy(true);
+    try {
+      await call<boolean>("kb_sync_set_paused", { nodeId, paused });
+      await refreshDevices();
+    } finally { setBusy(false); }
+  }, [call, refreshDevices]);
+
   /**
    * 放行一条敲门（用户已核对两边指纹）。
    *
@@ -251,7 +262,7 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   return {
     identity, devices, live, last, backlog, pending, busy,
     refreshIdentity, refreshDevices,
-    createInvite, previewInvite, pair, forget, syncNow,
+    createInvite, previewInvite, pair, forget, setPaused, syncNow,
     approveJoin, denyJoin,
   };
 }

@@ -80,7 +80,7 @@ function TextBtn({ icon, label, title, onClick }: { icon: ReactNode; label: stri
 }
 
 export function JsonFormatBar({ bridge }: { bridge: ShellBridge }) {
-  const { text, replaceDoc, gotoLine } = bridge;
+  const { text, replaceDoc, gotoLine, openSearch } = bridge;
   const { toast } = useToast();
   const validation = useMemo(() => validateJson(text), [text]);
   const isArray = useMemo(() => parseJsonArray(text).ok, [text]);
@@ -110,6 +110,8 @@ export function JsonFormatBar({ bridge }: { bridge: ShellBridge }) {
 
   return (
     <>
+      <TextBtn icon={<Search size={13} />} label="查找" title="查找 Ctrl+F" onClick={openSearch} />
+      <div className={styles.fmtSep} />
       <TextBtn icon={<Zap size={13} />} label="格式化" title="格式化 JSON" onClick={() => apply("format")} />
       <TextBtn icon={<Package size={13} />} label="压缩" title="压缩为单行" onClick={() => apply("compress")} />
       {isArray && (

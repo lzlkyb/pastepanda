@@ -228,7 +228,8 @@
 }
 
 /* 新建空白笔记（#13）。margin-left:auto 把它顶到面包屑行最右，
-   不另开一行工具栏：480px 宽的窗口里多一行就少两条笔记。 */
+   不另开一行工具栏：480px 宽的窗口里多一行就少两条笔记。
+   2026-09：与 .wideBtn 同套控制层玻璃。 */
 .newBtn {
   display: flex;
   align-items: center;
@@ -236,16 +237,18 @@
   width: var(--kb-hit);
   height: var(--kb-hit);
   flex-shrink: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  border-radius: 8px;
+  background: var(--control-glass, transparent);
+  box-shadow: var(--control-elev, none);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .newBtn:hover {
-  background: var(--hover);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--control-glass, var(--card-bg)));
   color: var(--accent, var(--text-primary));
 }
 
@@ -257,7 +260,8 @@
 .crumbActions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  /* 6px 而不是 2px：同步胶囊是胶囊形，贴着「宽屏」会挤成一坨 */
+  gap: 6px;
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -265,7 +269,8 @@
 /* 「宽屏」按钮（A-61 ④）。
 
    带文字而不是纯图标：它会改用户的窗口尺寸，一个看不出后果的图标
-   不该干这种事。只在窄屏渲染，所以不会与三栏时的空间竞争。 */
+   不该干这种事。只在窄屏渲染，所以不会与三栏时的空间竞争。
+   2026-09：套控制层玻璃（--control-glass/elev），与搜索框同语言。 */
 .wideBtn {
   display: flex;
   align-items: center;
@@ -273,19 +278,20 @@
   height: var(--kb-hit);
   padding: 0 8px;
   flex-shrink: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 5px;
-  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  border-radius: 8px;
+  background: var(--control-glass, transparent);
+  box-shadow: var(--control-elev, none);
   color: var(--text-secondary);
   font-family: inherit;
   font-size: var(--kb-fs-badge);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .wideBtn:hover {
   border-color: var(--accent);
-  background: var(--hover);
+  background: color-mix(in srgb, var(--accent) 8%, var(--control-glass, var(--card-bg)));
   color: var(--accent, var(--text-primary));
 }
 
@@ -1278,10 +1284,10 @@
   display: flex;
   gap: 2px;
   padding: 3px;
-  border-radius: 9px;
-  background: var(--glass-popover-bg);
-  border: 1px solid var(--glass-popover-border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  box-shadow: var(--float-card-shadow, 0 2px 8px rgba(0, 0, 0, 0.1));
   opacity: 0;
   transition: opacity 0.15s;
   /* 🔴 隐着的时候必须不接鼠标。它是绝对定位浮层，

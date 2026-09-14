@@ -34,50 +34,45 @@
   background: var(--accent-solid);
 }
 
-/* 悬浮 tooltip — FloatingPortal 传送到 body */
+/* 悬浮 tooltip — 工具浮层卡（方案 B）。r10→12 进浮层阶梯。 */
 .tooltip {
   position: absolute;
   top: 0;
   left: 0;
-  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透且保小字可读 */
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  background: var(--float-card-bg, var(--card-bg));
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.5;
   padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--glass-popover-border);
+  border-radius: 12px;
+  border: 1px solid var(--float-card-border, var(--border-color));
   white-space: normal;
   max-width: 320px;
   width: max-content;
   pointer-events: none;
   z-index: var(--z-tooltip);
-  box-shadow: var(--glass-popover-shadow);
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   text-align: left;
 }
 
 .tooltipArrow {
-  fill: var(--glass-popover-bg);
+  fill: var(--float-card-bg, var(--card-bg));
 }
 
-/* 点击弹出的详细气泡 */
+/* 点击弹出的详细气泡 — 同 tooltip，工具浮层卡 */
 .bubble {
   position: absolute;
   top: 0;
   left: 0;
   width: 300px;
   max-width: calc(100vw - 48px);
-  /* 皮肤场景：玻璃小浮层，与同组件悬浮 tooltip(.tooltip) 保持同风格 */
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  border: 1px solid var(--glass-popover-border);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
   border-radius: 12px;
-  box-shadow: var(--glass-popover-shadow);
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   z-index: var(--z-tooltip);
   overflow: hidden;
+  animation: pp-float-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .bubbleHeader {

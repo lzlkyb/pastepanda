@@ -1,6 +1,6 @@
 import type { AppConfig } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
-import { ToggleRow } from "../ToggleRow";
+import { ToggleRow, SettingTile } from "../ToggleRow";
 import { NoteVaultRows } from "../NoteVaultRows";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
@@ -28,7 +28,7 @@ export function DataSection({
       {/* ── 数据管理 ── */}
       <div className={styles.sSection}>数据管理</div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>📦</span>
+        <SettingTile hue="save">📦</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>导出数据</div>
           {/* 实际默认导出的是 Excel：handleExport 的 filters 顺序是 xlsx → csv → json，
@@ -40,7 +40,7 @@ export function DataSection({
         </button>
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #06B6D4, #0078D4)" }}>📥</span>
+        <SettingTile hue="save">📥</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>导入数据</div>
           <div className={`${styles.sRowDesc}`}>从 JSON 文件导入历史记录</div>
@@ -52,7 +52,7 @@ export function DataSection({
       {/* 笔记的 Markdown 目录导出/导入（B1 #5）。上面那两行是历史记录的 JSON，两回事 */}
       <NoteVaultRows />
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EF4444, #FF3B30)" }}>🧹</span>
+        <SettingTile hue="save">🗑</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>清理过期记录</div>
           <div className={`${styles.sRowDesc}`}>{expiredCount > 0 ? `${expiredCount} 条记录已过期` : "暂无过期记录"}</div>
@@ -70,7 +70,7 @@ export function DataSection({
       {/* v6.1 自我净化开关：保护常用内容不过期。关掉即退回"超期必清"旧行为 */}
       <ToggleRow
         icon="🛟"
-        gradient="linear-gradient(135deg, #10B981, #059669)"
+        hue="save"
         label="保护常用内容"
         desc="打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理"
         value={config.preserve_valued_content}
@@ -86,7 +86,7 @@ export function DataSection({
         </>}
       />
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EF4444, #F97316)" }}>🎯</span>
+        <SettingTile hue="privacy">🛟</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             深度清理

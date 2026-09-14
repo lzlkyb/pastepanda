@@ -2614,6 +2614,7 @@ fn test_启动时把上次成功时间种回内存表() {
         relay_addr: String::new(),
         sync_cursor_ms: 0,
         last_ok_ms: ok,
+        paused: false,
     };
 
     let last: Mutex<HashMap<String, LastSync>> = Mutex::new(HashMap::new());

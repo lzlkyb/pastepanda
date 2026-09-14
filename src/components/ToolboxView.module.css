@@ -1,15 +1,12 @@
-/* ToolboxView.module.css — 「工具」模式主体区（D15）。
+/* ToolboxView.module.css — 「工具」模式主体区（D15 → P1）。
 
-   色相变量（--tile-hue）与原顶栏下拉面板完全一致，包含 blossom 主题的重映射，
-   这样从下拉搬到主体区后颜色不会变。布局从「竖向菜单行」改为「自适应网格」——
-   480px 下一列，窗口拉宽自动变两列，不写硬阀值。 */
+   色相变量（--tile-hue）与原顶栏下拉面板完全一致，包含 blossom 主题的重映射。
+   P1 卡片语言：静止实底 + --elev，hover 升到 --float-card-shadow，
+   对齐查找浮层卡 / 方案 B 工具浮层；不写 backdrop-filter（规则 8.3）。
 
-/* 必须是 `flex:1 + min-width:0`，不能写 `height:100%`。
-   父元素 `.contentArea`（App.module.css）是 **横向 flex 容器**，记录模式的
-   `.cardPanel` 就是这么写的。第一版漏了这两条，后果是一条链：
-   flex-grow:0 → 宽度由内容撑而不是 448px；min-width:auto → 收不到 min-content
-   以下 → 横向溢出 → 被 `.contentArea` 的 overflow:hidden 裁掉。
-   于是 `.grid` 的 auto-fill 是拿一个没人控制的宽度在算列数。 */
+   必须是 `flex:1 + min-width:0`，不能写 `height:100%`。
+   父元素 `.contentArea`（App.module.css）是 **横向 flex 容器**。 */
+
 .wrap {
   flex: 1;
   min-width: 0;
@@ -17,7 +14,93 @@
   padding: 4px 16px 16px;
 }
 
+/* ── 筛选条 ── */
+.searchWrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 4px 0 10px;
+  /* 吸顶时不透出下面滚动的卡片（含 chips 行） */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--app-bg, #f4f6f9) 96%, transparent) 0%,
+    color-mix(in srgb, var(--app-bg, #f4f6f9) 96%, transparent) 78%,
+    transparent 100%
+  );
+}
+
+.search {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.search::placeholder {
+  color: var(--text-muted);
+}
+
+.search:focus {
+  border-color: var(--accent);
+  background: var(--card-bg);
+  box-shadow: 0 0 0 3px var(--accent-shadow, rgba(2, 132, 199, 0.15));
+}
+
+/* ── 分类 chips ── */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  color: var(--text-primary);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chipOn {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong, var(--accent));
+  font-weight: 600;
+}
+
+.chipOn:hover {
+  color: var(--accent-strong, var(--accent));
+}
+
+/* ── 分组 ── */
 .section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 14px;
   margin-bottom: 8px;
   font-size: 11px;
@@ -26,58 +109,230 @@
   color: var(--text-muted);
 }
 
-.section:first-child {
+.section:first-of-type {
   margin-top: 4px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
+.cnt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong, var(--accent));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
-.item {
+.secTotal {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0;
+}
+
+/* ── 高频 hero：始终两列（auto-fit，窄窗才折成一列）── */
+.hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+/* ── 网格 ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 8px;
+  /* 卡片高度对齐，避免描述行数不同导致锯齿 */
+  align-items: stretch;
+}
+
+/* ── 共用卡壳 ── */
+.item,
+.heroCard {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  /* 底色透明，只留一道边框——hover 才填实。
-     第一版每张卡都上 `--card-bg` 实底，9 张实心块浮在透明皮肤场景上很碎。 */
-  background: transparent;
+  background: var(--card-bg);
+  box-shadow: var(
+    --glass-card-elev,
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07)
+  );
   cursor: pointer;
   text-align: left;
   font-family: inherit;
-  transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 
-.item:hover {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: var(--card-bg);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.07);
+/* 顶光：与知识库卡同一 token，深色主题由 theme.css 覆写 */
+.item::before,
+.heroCard::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 42%;
+  background: var(
+    --card-top-light,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 100%)
+  );
+  pointer-events: none;
+}
+
+.item:hover,
+.heroCard:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   transform: translateY(-1px);
 }
 
-.item:active {
-  transform: translateY(0);
+.item:active,
+.heroCard:active {
+  transform: scale(0.98);
 }
 
+.item:focus-visible,
+.heroCard:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.item:disabled,
+.heroCard:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.item:disabled:hover,
+.heroCard:disabled:hover {
+  border-color: var(--border-color);
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── 最近用过一行（点名字直接跑） ── */
+.recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.recentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg, var(--card-bg));
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.recentChip:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  color: var(--accent-strong, var(--accent));
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+}
+
+.recentChip:active {
+  transform: scale(0.97);
+}
+
+.recentChip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.recentChip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── 常用 pin（使用 ≥3 次且进前 3） ── */
+.pin {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-strong, var(--accent));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 999px;
+  padding: 1px 6px;
+  line-height: 14px;
+}
+
+.heroCard {
+  padding: 14px;
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--border-color));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 7%, var(--card-bg)) 0%,
+      var(--card-bg) 58%
+    );
+}
+
+.heroCard:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+/* ── 瓷砖（V4：卡 12 − 内距 ~2 ≈ 10） ── */
 .tile {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  font-size: 17px;
-  background: color-mix(in srgb, var(--tile-hue) 13%, transparent);
-  border: 1px solid color-mix(in srgb, var(--tile-hue) 24%, transparent);
-  transition: transform 0.15s;
+  font-size: 18px;
+  background: color-mix(in srgb, var(--tile-hue) 14%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--tile-hue) 28%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: transform 0.15s, box-shadow 0.15s;
+  z-index: 1;
 }
 
-.item:hover .tile {
-  transform: scale(1.08);
+.heroCard .tile {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  border-radius: 12px;
+}
+
+.item:hover .tile,
+.heroCard:hover .tile {
+  transform: scale(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 0 3px color-mix(in srgb, var(--tile-hue) 18%, transparent);
 }
 
 .tile[data-hue="amber"]  { --tile-hue: #F59E0B; }
@@ -95,23 +350,124 @@
 :global([data-theme="blossom"]) .tile[data-hue="green"],
 :global([data-theme="blossom"]) .tile[data-hue="cyan"] { --tile-hue: #7EC8E3; }
 
+/* ── 文案 ── */
 .text {
   min-width: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  z-index: 1;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kbd {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--text-muted);
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 16px;
 }
 
 .desc {
   font-size: 11px;
   color: var(--text-muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  /* 网格卡默认单行省略，高度才齐；hero 卡允许两行 */
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.heroCard .desc {
+  -webkit-line-clamp: 2;
+}
+
+.chev {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transform: translateX(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  z-index: 1;
+}
+
+.item:hover .chev,
+.heroCard:hover .chev {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--accent-strong, var(--accent));
+}
+
+.item:disabled:hover .chev,
+.heroCard:disabled:hover .chev {
+  opacity: 0;
+}
+
+/* ── 空态（U3：答「会出现什么 / 怎么让它出现」） ── */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.emptyDesc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.clearBtn {
+  margin-top: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.clearBtn:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+  color: var(--accent-strong, var(--accent));
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
 }

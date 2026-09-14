@@ -24,10 +24,14 @@ import type { SettingsTabName } from "@/lib/openSettings";
  */
 const SETTLE_MS = 2500;
 
-export function useSettingsNav({ open, initialTab, blossom, searching, sectionClass }: {
+export function useSettingsNav({ open, initialTab, initialSection, jump, blossom, searching, sectionClass }: {
   open: boolean;
   /** 从变换中心等处跳过来时指定的页；不传或 "general" 就落在第一个分区。 */
   initialTab?: SettingsTabName;
+  /** 通用页内分区 key（如 "lan"）；合法时覆盖 initialTab 的落点 */
+  initialSection?: string;
+  /** 外部 open-settings 计数；已打开时再跳靠它触发（open 本身不翻转） */
+  jump?: number;
   /** 樱花主题（四个页的图标要换） */
   blossom: boolean;
   /** 搜索态：右栏是跨分区结果，此时不该再跟随高亮 */
@@ -71,6 +75,16 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
    * 菜单高亮会在滑动过程中乱跳，最后停在错的项上。
    */
   const spyMutedUntilRef = useRef(0);
+  /**
+   * 手点菜单的强制重渲染计数（只写不读）。
+   *
+   * 🔴 修的是「点侧栏有时不滚 / 只挪一点」：
+   * `handleNavPick` 里若 `nav` 已经等于目标 key（scroll-spy 先改过、或连点同一项），
+   * `setNav` 会命中 React 状态 bailout——**不重渲染**。而真正执行滚动的那个 effect
+   * 故意没写依赖数组、靠「每次渲染都跑」驱动，于是 pending 永远不被消费。
+   * 每次 pick 自增一次，保证至少一帧重渲染。
+   */
+  const [, setPickSeq] = useState(0);
 
   /** 菜单全部 11 项，**顺序即滚动顺序** */
   const navItems = useMemo(() => settingsNavItems(blossom), [blossom]);
@@ -79,7 +93,15 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
     if (!open) return;
     // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定页；
     // 不传或传 "general" 就落在第一个分区（右栅永远不能是空的）。
-    const key = initialTab && initialTab !== "general" ? initialTab : SETTINGS_SECTIONS[0].key;
+    // 剪贴板同步等入口可再带 section（如 "lan"）：合法分区 key 优先于 tab 落点。
+    const sectionHit =
+      initialSection &&
+      SETTINGS_SECTIONS.some((s) => s.key === initialSection)
+        ? (initialSection as SettingsNavKey)
+        : null;
+    const key =
+      sectionHit ??
+      (initialTab && initialTab !== "general" ? initialTab : SETTINGS_SECTIONS[0].key);
     setNav(key);
     // 🔴 只 `setNav` 是不够的——下面两件事都曾被漏掉，而它们叠起来
     //    正好把「定位到指定页」这个功能完全抵消（实测：从知识库「⋯」菜单
@@ -99,47 +121,95 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
       pendingScrollRef.current = { key, smooth: false };
       spyMutedUntilRef.current = performance.now() + SETTLE_MS;
     }
-    // initialTab 只在打开那一刻消费。列进依赖的话，父组件改一次这个 prop
-    // 就会把用户手动切过去的项拉回来。
+    // initialTab / initialSection / jump 只在「打开或外部再跳」那一刻消费。
+    // 列进 open 之外的依赖时，父组件因别的原因重渲染改一次 prop 就会把
+    // 用户手动切过去的项拉回来——所以 jump 是唯一额外扳机。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, jump]);
 
   /**
    * 在滚动容器里找某一项的标题元素。靠**标题文字**对应——meta.ts 已声明
    * label 必须与分区标题逐字一致；AI/MCP/帮助/关于 的标题也按同一套文字渲染。
    * 用 querySelectorAll 而不是遍历 container.children：四个页的标题在搜索容器**之外**。
+   *
+   * 跳过被搜索 `display:none` 的标题：它们的 rect 全 0，alignTo 会「成功」
+   * 滚到错误位置并清掉 pending。❗ 不能用 `offsetParent === null` 判隐藏——
+   * jsdom 里 offsetParent 恒为 null，会把所有目标滤掉（测试与真实 DOM 行为不一致）。
    */
   const findNavEl = (key: SettingsNavKey): HTMLElement | undefined => {
     const scroller = bodyRef.current;
     if (!scroller) return undefined;
     const label = navItems.find((n) => n.key === key)?.label;
+    if (!label) return undefined;
     return Array.from(scroller.querySelectorAll<HTMLElement>("." + sectionClass)).find(
-      (el) => (el.textContent || "").trim() === label,
+      (el) =>
+        el.style.display !== "none" &&
+        (el.textContent || "").trim() === label,
     );
+  };
+
+  /**
+   * 目标相对滚动容器**内容顶部**的布局偏移（吸顶时也准）。
+   *
+   * 🔴 两套旧算法都栽过：
+   * ① `scrollTop + rect.top - scroller.top`：`.sSection` 是 sticky，吸顶后
+   *    rect.top 贴在滚动口，公式算成「就在原地」——来回切换几次后必现「切不动」。
+   * ② 纯 `offsetTop` 链：`.settingsSections > *` 入场动画带 `transform`，
+   *    transform 元素会成为 offsetParent，链会从 scroller 上跳过，走错分支。
+   *
+   * 现在：目标若是 sticky，**临时改成 relative 量一次 rect 再改回**。
+   * 读 rect 会强制 layout，设置页点菜单频率下可以接受。
+   */
+  const offsetInScroller = (el: HTMLElement, scroller: HTMLElement): number => {
+    const measure = () =>
+      scroller.scrollTop +
+      el.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top;
+
+    if (getComputedStyle(el).position !== "sticky") {
+      return measure();
+    }
+    const prevPos = el.style.position;
+    const prevTop = el.style.top;
+    el.style.position = "relative";
+    el.style.top = "auto";
+    const top = measure();
+    el.style.position = prevPos;
+    el.style.top = prevTop;
+    return top;
   };
 
   const handleNavPick = (key: SettingsNavKey) => {
     setNav(key);
     if (key === "about" && CHANGELOG.length > 0) setLastSeenVersion(CHANGELOG[0].version);
-    // 点菜单 → 平滑到那一节。不在这里直接滚：MCP 那块是按可见性懒挂载的，
-    // 可能还没真正渲染出来，交给渲染后的 effect 去量位置。
+    // 手点菜单 = 用户接管：立刻收掉外部跳转的校正窗口，
+    // 否则 ResizeObserver 还会按旧目标滚，跟这次抢滚动条。
+    setSettling(null);
+    // 不在点击瞬间直接滚：MCP 是懒挂载，可能还没渲染出来，交给 effect 重试。
+    // smooth:true 表示「用户主动点的」——不要再开 settling；
+    // 真正怎么滚由 alignTo 决定（直接写 scrollTop）。
     pendingScrollRef.current = { key, smooth: true };
+    // 防 setNav bailout（nav 已是目标时）导致滚动 effect 一帧都不跑
+    setPickSeq((n) => n + 1);
   };
 
   /**
    * 把某一节对齐到滚动容器顶部。返回是否真的找到并滚了（目标未渲染就是 false）。
    *
-   * 已经对齐时仍然调 `scrollTo`：同一个值对浏览器来说是 no-op，
-   * 而加一道「差值小于 N 就不滚」的短路反而会在 jsdom（rect 全返 0）下
-   * 把“排过一次滚动”这件事变得不可观测。
+   * 手点菜单（smooth=true）用**单次** `scrollTo({behavior:"smooth"})`：
+   * 测距已对 sticky 做过校正，不再需要「先打断再滚」的双调用（WebView2 会吞第二次）。
+   * 外部跳转 / settling 重对齐仍用 scrollTop 直赋，要的是准不是动画。
    */
   const alignTo = (key: SettingsNavKey, smooth: boolean): boolean => {
     const scroller = bodyRef.current;
     const target = findNavEl(key);
     if (!scroller || !target) return false;
-    // 用 scrollTop 增量而不是 scrollIntoView：后者会连带滑动祖先容器，把整个窗口顶掉
-    const top = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    scroller.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+    const top = offsetInScroller(target, scroller);
+    if (smooth) {
+      scroller.scrollTo({ top, behavior: "smooth" });
+    } else {
+      scroller.scrollTop = top;
+    }
     return true;
   };
 
@@ -147,6 +217,7 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
   //
   // ❗ **故意不写依赖数组**：本 effect 靠「每次渲染都跑」来重试那些当帧还没
   //   渲染出来的目标（见下面那段红色注释），加了依赖就没了重试机会。
+  //   手点菜单那一侧由 `pickSeq` 保证至少触发一次重渲染（见 handleNavPick）。
   //
   //   eslint 为此报「无依赖数组的 effect 里调 setState 可能无限更新」——
   //   这里不会：`setSettling` 之前刚把 `pendingScrollRef.current` 置了 null，
@@ -160,7 +231,8 @@ export function useSettingsNav({ open, initialTab, blossom, searching, sectionCl
     //    等于永久放弃——本 effect 没有依赖数组、每次渲染都跑，本来是有机会重试的。
     if (!alignTo(p.key, p.smooth)) return;
     pendingScrollRef.current = null;
-    spyMutedUntilRef.current = performance.now() + (p.smooth ? 700 : SETTLE_MS);
+    // 手点菜单的 smooth 可能超过 700ms（长页），mute 拉长一点，避免途中 spy 抢高亮
+    spyMutedUntilRef.current = performance.now() + (p.smooth ? 900 : SETTLE_MS);
     // 外部跳转：进入校正窗口，在页面长齐的过程中持续对齐。
     // 手点菜单不进：那时布局已稳，再插手只会把平滑动画打断。
     if (!p.smooth) setSettling(p.key);

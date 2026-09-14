@@ -1,7 +1,7 @@
 import type { AppConfig } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { HelpTooltip } from "@/components/HelpTooltip";
-import { ToggleRow } from "../ToggleRow";
+import { ToggleRow, SettingTile } from "../ToggleRow";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
 
@@ -20,7 +20,7 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
   const { toast } = useToast();
   return (
     <>
-      <ToggleRow icon="⏱" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
+      <ToggleRow icon="⏱" hue="editor" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
         tooltip="在剪贴板列表左侧显示时间轴，可快速跳转到不同时间段的记录"
         detailTitle="时间线"
         detail={<>
@@ -30,7 +30,7 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
           <p>💡 适合记录较多时使用，帮助快速浏览</p>
         </>}
         onChange={(v) => updateAndSave({ timeline_enabled: v })} />
-      <ToggleRow icon="✨" gradient="linear-gradient(135deg, #0EA5E9, #8B5CF6)" label="窗口动画" desc="弹框与全屏窗口打开/关闭时的过渡动画" value={config.window_animation}
+      <ToggleRow icon="✨" hue="system" label="窗口动画" desc="弹框与全屏窗口打开/关闭时的过渡动画" value={config.window_animation}
         tooltip="玻璃浮升效果；关闭后弹框与全屏编辑器即时显隐"
         detailTitle="窗口动画"
         detail={<>
@@ -40,10 +40,10 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
           <p>💡 默认开启；追求极速响应可关闭</p>
         </>}
         onChange={(v) => updateAndSave({ window_animation: v })} />
-      <ToggleRow icon="🔁" gradient="linear-gradient(135deg, #06B6D4, #0078D4)" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
+      <ToggleRow icon="🔁" hue="paste" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
         tooltip="适合重复粘贴同一组内容时使用"
       />
-      <ToggleRow icon="👁" gradient="linear-gradient(135deg, #EF4444, #FF3B30)" label="失焦自动隐藏" desc="窗口失去焦点时隐藏到托盘" value={config.hide_on_focus_out} onChange={(v) => updateAndSave({ hide_on_focus_out: v })}
+      <ToggleRow icon="👁" hue="system" label="失焦自动隐藏" desc="窗口失去焦点时隐藏到托盘" value={config.hide_on_focus_out} onChange={(v) => updateAndSave({ hide_on_focus_out: v })}
         recommend
         tooltip="点击其他窗口时自动隐藏，保持桌面整洁"
         detailTitle="失焦自动隐藏"
@@ -54,13 +54,13 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
           <p>⚠️ 关闭后需手动点击 X 隐藏窗口</p>
         </>}
       />
-      <ToggleRow icon="📌" gradient="linear-gradient(135deg, #F59E0B, #FF9500)" label="窗口置顶" desc="始终显示在其他窗口之上" value={config.always_on_top}
+      <ToggleRow icon="📌" hue="system" label="窗口置顶" desc="始终显示在其他窗口之上" value={config.always_on_top}
         tooltip="适合频繁粘贴时使用，窗口始终可见"
         onChange={async (v) => {
           await updateAndSave({ always_on_top: v });
           try { const { getCurrentWindow } = await import("@tauri-apps/api/window"); await getCurrentWindow().setAlwaysOnTop(v); } catch { toast("窗口置顶设置失败", "error"); }
         }} />
-      <ToggleRow icon="🚀" gradient="linear-gradient(135deg, #3B82F6, #0078D4)" label="开机自启" desc="Windows 启动时自动运行" value={config.auto_startup}
+      <ToggleRow icon="🚀" hue="system" label="开机自启" desc="Windows 启动时自动运行" value={config.auto_startup}
         tooltip="开机后自动在后台运行，托盘图标常驻"
         detailTitle="开机自启"
         detail={<>
@@ -72,7 +72,7 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
           await updateAndSave({ auto_startup: v });
           try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("set_startup", { enable: v }); } catch { toast("开机自启设置失败", "error"); }
         }} />
-      <ToggleRow icon="📝" gradient="linear-gradient(135deg, #6366F1, #8B5CF6)" label="编辑器保存写入历史" desc="全屏编辑器中保存 .md 文件时，同时写入剪贴板历史" value={config.md_save_to_history} onChange={(v) => updateAndSave({ md_save_to_history: v })}
+      <ToggleRow icon="📝" hue="editor" label="编辑器保存写入历史" desc="全屏编辑器中保存 .md 文件时，同时写入剪贴板历史" value={config.md_save_to_history} onChange={(v) => updateAndSave({ md_save_to_history: v })}
         tooltip="开启后，在全屏 Markdown 编辑器中编辑并保存 .md 文件时，内容会同时作为一条剪贴板记录保存"
         detailTitle="编辑器保存写入历史"
         detail={<>
@@ -82,7 +82,7 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
           <p>💡 默认开启，适合编辑后需要频繁粘贴的场景</p>
         </>}
       />
-      <ToggleRow icon="💾" gradient="linear-gradient(135deg, #10B981, #059669)" label="编辑器自动保存" desc="全屏编辑器中停止输入后自动回写内容" value={config.md_auto_save} onChange={(v) => updateAndSave({ md_auto_save: v })}
+      <ToggleRow icon="💾" hue="save" label="编辑器自动保存" desc="全屏编辑器中停止输入后自动回写内容" value={config.md_auto_save} onChange={(v) => updateAndSave({ md_auto_save: v })}
         tooltip="开启后，在全屏 Markdown 编辑器中输入停顿约 1 秒后，内容自动保存（卡片回写数据库 / 文件写回磁盘），无需手动按 Ctrl+S"
         detailTitle="编辑器自动保存"
         detail={<>
@@ -95,7 +95,7 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
       />
       {/* .md 文件关联：状态实时取自注册表，三态显示 */}
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #0EA5E9, #0284C7)" }}>📎</span>
+        <SettingTile hue="editor">📎</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             关联 .md 文件

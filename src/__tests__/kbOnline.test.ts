@@ -25,6 +25,7 @@ function dev(over: Partial<KbDevice> = {}): KbDevice {
     last_seen: 0,
     relay_addr: "",
     sync_cursor_ms: 0,
+    paused: false,
     ...over,
   };
 }

@@ -1429,11 +1429,38 @@ impl DataStore {
                  -- 与这台对端上次同步到哪儿（我们时钟下的 updated_ms）。
                  -- 🔴 它不只是「省流量」：冲突检测拿它当**共同祖先的替代**——
                  --    HLC 只给全序，不告诉你两边是不是各改了一次（见 sync::engine）。
-                 sync_cursor_ms INTEGER NOT NULL DEFAULT 0
+                 sync_cursor_ms INTEGER NOT NULL DEFAULT 0,
+                 -- 用户暂停：1=停同步但仍配对（迁移也会给旧库补这列）
+                 paused INTEGER NOT NULL DEFAULT 0
              );",
         ) {
             log::error!("[DataStore] 建 devices 表失败: {}", e);
             return Err(e);
+        }
+
+        // 数据库迁移：devices.paused —— 用户级暂停（保留配对与游标，只停同步）。
+        // 与 `forget` 不同：暂停可逆、重启仍在；删除才要重新配对。
+        {
+            let has: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'paused'",
+                    [],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has {
+                if let Err(e) = conn.execute_batch(
+                    "ALTER TABLE devices ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;",
+                ) {
+                    if is_duplicate_column_error(&e) {
+                        log::warn!("[DataStore] devices.paused 列已存在，忽略: {}", e);
+                    } else {
+                        log::error!("[DataStore] 添加 devices.paused 列失败: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
         }
 
         // 数据库迁移：devices.last_ok_ms —— 上一次**真的同步成功**的时间。

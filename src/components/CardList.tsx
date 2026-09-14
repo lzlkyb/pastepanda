@@ -26,7 +26,6 @@ import melodyUrl from "@/assets/melody.png";
 import { useLoadMore } from "@/hooks/useLoadMore";
 import { useVirtualScroll } from "@/hooks/useVirtualScroll";
 import { prefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
-import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
 import { MergeDialog, type MergeItem } from "@/components/MergeDialog";
 import { TransformHubDialog } from "@/components/TransformHubDialog";
 import { ChainRunnerDialog } from "@/components/ChainRunnerDialog";
@@ -915,7 +914,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           （与 ConfirmDialog / UpdateNotesDialog 的既有做法一致） */}
       {createPortal(
         <>
-          <ItemEditorDialog />
+          {/* ItemEditorDialog 已上移到 App.tsx：工具模式也要能打开编辑器 */}
           <TransformHubDialog />
           <ChainRunnerDialog />
           <ChainEditor />

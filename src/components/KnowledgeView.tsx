@@ -38,7 +38,7 @@ import { KbTopBarActions } from "@/components/notes/KbTopBarActions";
 import { useTopBarSlot } from "@/lib/topbarSlot";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
 import { DailyDistillSection } from "@/components/notes/DailyDistillSection";
-import { KbSyncStatusBar } from "@/components/notes/KbSyncStatusBar";
+import { KbSyncCap } from "@/components/notes/KbSyncCap";
 import { KbHealthBar } from "@/components/notes/KbHealthBar";
 import { FolderTree } from "@/components/notes/FolderTree";
 import { NoteList } from "@/components/notes/NoteList";
@@ -120,12 +120,12 @@ export function KnowledgeView() {
    *   中栏宽度受侧栏开合与第三栏拖拽（`split.ratio`）影响，
    *   900px 的窗口完全可能只给中栏 300px。
    *
-   * ❗ `pref` 是用户选的，`noteLayout` 是生效的。宽度不够时只降生效值，
-   *   **不回写偏好**——否则拉窄一次就把用户的选择永久改成了列表。
+   * 2026-09：网格任意宽度可切，生效值 = 偏好。窄栏自动降到 1 列卡片，
+   *   拉宽再加列——不再把用户的选择「降级成列表」。
    */
   const [layoutPref, setLayoutPref] = useNoteLayoutPref();
-  const { canGrid, cols, measureRef } = useGridCapacity();
-  const noteLayout: NoteLayout = layoutPref === "grid" && canGrid ? "grid" : "list";
+  const { cols, measureRef } = useGridCapacity();
+  const noteLayout: NoteLayout = layoutPref;
 
   /**
    * `.listWrap` 的 ref 汇总点。三个消费者共用同一个节点：
@@ -369,20 +369,8 @@ export function KnowledgeView() {
             <TrashPanel onChanged={q.refreshAll} folders={q.folders} />
           ) : (
           <>
-          {/* 同步状态与异常提示。放在工具条**之上**：它是全库级别的事实，
-              与当前文件夹 / 筛选无关；放下面会让人以为它在描述这一屏的列表。
-              开关关着或一台未配对时组件自己返回 null，不占位。 */}
-          <KbSyncStatusBar
-            enabled={!!kbSyncOn}
-            /* ❗ 搜 `conflict` 而不是「冲突副本」：徽章上那个数字来自
-               `note_conflict_count`，它按正文里的 `- [conflict]` 数。
-               用标题后缀去搜的话，用户改过标题之后两个数就对不上了。 */
-            onSearchConflicts={() => q.setKeyword("conflict")}
-          />
-          {/* 库体检（N3）。紧贴同步条下面，理由同上：它也是全库级别的事实。
-              两条是独立组件但用同一套视觉；**冲突副本只在上面那条报**，
-              体检不重复报（否则就是「同一件事两处并列」那类重复规划）。
-              全好时组件自己返 null，不占位。 */}
+          {/* 同步状态改为面包屑上的胶囊（方案 A，2026-09）：不再在列表上方堆全宽条。
+              数据与分级见 useKbSyncStatus；开关关 / 未配对时胶囊自己不渲染。 */}
           <KbHealthBar
             version={q.version}
             onOpenNote={(id) => void qaPane.openRefNote(id)}
@@ -407,23 +395,20 @@ export function KnowledgeView() {
             newHint={newHint}
             showWideBtn={!layout.hasDetailPane}
             onWide={() => void wide.goWide()}
+            crumbExtra={
+              <KbSyncCap
+                enabled={!!kbSyncOn}
+                onSearchConflicts={() => q.setKeyword("conflict")}
+              />
+            }
             controls={
               <>
               {/* 列表/网格切换。摆在 `ViewControls` 前面：
                   它改的是「怎么摆」，而那边改的是「摆哪些/怎么排」。
-
-                  ❗ `value` 给的是 **`noteLayout`（生效值）而不是 `layoutPref`（偏好）**。
-                    给偏好的后果是：窄栏下网格按钮会同时是 `disabled` 和
-                    `aria-pressed={true}`——一个「既是当前选中又不可用」的按钮，
-                    而屏上实际渲染的是列表；对读屏就是一个矛盾状态。
-                    高亮跟随生效值 = 屏上是什么就高亮什么。
-                    偏好仍然存着（`layoutPref`），拉宽回来自动恢复成网格。
-                    代价：窄栏时用户看不到自己选过网格——但那个事实由置灰按钮的
-                    tooltip（「当前宽度放不下网格」）说明，比谎报高亮好。 */}
+                  2026-09：网格任意宽度可点；列数由 useGridCapacity 按中栏宽度分档。 */}
               <NoteLayoutSwitch
                 value={noteLayout}
                 onChange={setLayoutPref}
-                gridDisabled={!canGrid}
               />
               <ViewControls
                 sort={{

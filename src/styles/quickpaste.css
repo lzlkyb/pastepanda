@@ -354,17 +354,16 @@ body {
 }
 .qp-empty svg { opacity: 0.4; }
 
-/* ── Toast ── */
+/* ── Toast（工具浮层卡 · 方案 B，与主窗 Toast 同源） ── */
 .qp-toast {
   position: fixed;
   left: 50%;
   bottom: 40px;
   transform: translateX(-50%) translateY(16px);
-  background: var(--glass-popover-bg);
-  border: 1px solid var(--glass-popover-border);
-  box-shadow: var(--glass-popover-shadow);
-  backdrop-filter: blur(16px);
-  border-radius: 10px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
+  border-radius: 12px;
   padding: 8px 16px;
   font-size: 12px;
   color: var(--text-primary);

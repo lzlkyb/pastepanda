@@ -70,6 +70,7 @@
   background: var(--green-bg);
   border-color: var(--green-border);
   color: var(--green);
+  animation: pp-pop 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .paste {

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { AiStatusCap } from "@/components/AiStatusCap";
 import { AiStatusDot } from "@/components/AiStatusDot";
+import { LanSyncCap } from "@/components/LanSyncCap";
 import { AiMark } from "@/components/ai/AiMark";
 import { getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
 import { cleanSourceName } from "@/lib/source-mappings";
@@ -97,6 +98,8 @@ export function TopBar({ onSettings, settingsOpen = false }: {
   // 订阅数组会让每收集一条就重渲染整个顶栏。
   const stackCount = useAppStore((s) => s.stackItems.length);
   const stackToggleHotkey = useAppStore((s) => s.config.stack_toggle_hotkey);
+  // 剪贴板同步入口只挂在记录模式标签行；未开启时整行也不为它渲染（方案 A）
+  const lanSyncEnabled = useAppStore((s) => s.config.lan_sync_enabled);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appName, setAppName] = useState("PastePanda");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -248,6 +251,7 @@ export function TopBar({ onSettings, settingsOpen = false }: {
           {/* 工具箱按钮已撤掉：它现在是「工具」模式，从标题行的模式切换器进（D15） */}
           {/* v6.4 主窗口 AI 感知（方案 A）：胶囊 —— 未配置=引流入口；已配置=不渲染（状态收进设置按钮绿点） */}
           <AiStatusCap />
+          {/* 剪贴板同步已挪到记录模式标签筛选行最右侧（不再顶栏常驻） */}
           {/* 审查方案 1：设置按钮带 AI 状态绿点 —— 已就绪时右上角一个 6px 绿点（hover 看详情），
               不占额外空间，能力入口在快捷区 */}
           <span className={styles.settingsWrap}>
@@ -327,45 +331,57 @@ export function TopBar({ onSettings, settingsOpen = false }: {
           </AnimatePresence>
         </div>
 
-        {/* 标签筛选栏 */}
-        {allTags.length > 0 && (
+        {/* 标签筛选栏。
+            渲染条件：有标签，或剪贴板同步开着（同步入口钉在行最右；
+            未开启同步且无标签时整行消失，不为一个关着的功能占一行） */}
+        {(allTags.length > 0 || lanSyncEnabled) && (
           <div className={styles.tagFilterBar} data-tauri-drag-region="false">
-            {/* #10 筛选芯片增删动画：勾选标签时芯片弹入，点 × 时弹出，兄弟芯片 layout 让位 */}
-            <AnimatePresence initial={false}>
-            {selectedTagIds.map((tid) => {
-              const tag = allTags.find((t) => t.id === tid);
-              if (!tag) return null;
-              return (
-                <AnimatedTagBadge
-                  key={tid}
-                  tag={tag}
-                  variant="chip"
-                  onRemove={(t) => toggleTagFilter(t.id)}
-                />
-              );
-            })}
-            </AnimatePresence>
-            {selectedTagIds.length > 0 && (
-              <button className={styles.tagFilterClear} onClick={clearTagFilters} title="清除所有标签筛选">
-                清除
-              </button>
+            {allTags.length > 0 && (
+              <>
+                {/* #10 筛选芯片增删动画：勾选标签时芯片弹入，点 × 时弹出，兄弟芯片 layout 让位 */}
+                <AnimatePresence initial={false}>
+                {selectedTagIds.map((tid) => {
+                  const tag = allTags.find((t) => t.id === tid);
+                  if (!tag) return null;
+                  return (
+                    <AnimatedTagBadge
+                      key={tid}
+                      tag={tag}
+                      variant="chip"
+                      onRemove={(t) => toggleTagFilter(t.id)}
+                    />
+                  );
+                })}
+                </AnimatePresence>
+                {selectedTagIds.length > 0 && (
+                  <button className={styles.tagFilterClear} onClick={clearTagFilters} title="清除所有标签筛选">
+                    清除
+                  </button>
+                )}
+                <button
+                  className={styles.tagFilterAdd}
+                  onClick={() => setTagPickerOpen(!tagPickerOpen)}
+                >
+                  <Tag size={12} /> 标签筛选
+                </button>
+                <AnimatePresence>
+                  {tagPickerOpen && (
+                    <TagPickerPopover
+                      tags={allTags}
+                      selectedTagIds={selectedTagIds}
+                      onToggle={toggleTagFilter}
+                      onClose={() => setTagPickerOpen(false)}
+                    />
+                  )}
+                </AnimatePresence>
+              </>
             )}
-            <button
-              className={styles.tagFilterAdd}
-              onClick={() => setTagPickerOpen(!tagPickerOpen)}
-            >
-              <Tag size={12} /> 标签筛选
-            </button>
-            <AnimatePresence>
-              {tagPickerOpen && (
-                <TagPickerPopover
-                  tags={allTags}
-                  selectedTagIds={selectedTagIds}
-                  onToggle={toggleTagFilter}
-                  onClose={() => setTagPickerOpen(false)}
-                />
-              )}
-            </AnimatePresence>
+            {/* 剪贴板同步：记录模式语境入口；未开启时整块不渲染 */}
+            {lanSyncEnabled && (
+              <div className={styles.tagRowEnd}>
+                <LanSyncCap />
+              </div>
+            )}
           </div>
         )}
       </div>

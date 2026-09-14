@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -45,6 +46,9 @@ import { ToolboxView } from "@/components/ToolboxView";
 import { KnowledgeView } from "@/components/KnowledgeView";
 import type { ToolHandlers } from "@/lib/toolbox";
 import { isEventRange } from "@/lib/eventLabel";
+import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
+import { QREditor } from "@/components/editors/QREditor";
+import { openClipboardTool } from "@/lib/toolEditors";
 
 // 惰加载：它拉进 CodeMirror + Markdown 渲染，而大多数会话根本不会打开笔记
 const NoteDialog = lazy(() => import("@/components/notes/NoteDialog").then((m) => ({ default: m.NoteDialog })));
@@ -105,6 +109,10 @@ function App() {
   /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"）。
    *  类型走 `SettingsTabName`（与 SettingsDialog 共用一份，加 tab 时不会漏）。 */
   const [showSettingsTab, setShowSettingsTab] = useState<SettingsTabName | undefined>(undefined);
+  /** 通用页内分区定位（如 "lan"）；与 tab 一起消费，关闭时清空 */
+  const [showSettingsSection, setShowSettingsSection] = useState<string | undefined>(undefined);
+  /** 每次 open-settings 事件 +1：设置已打开时再点入口也要重新定位（仅靠 open 翻转不够） */
+  const [settingsJump, setSettingsJump] = useState(0);
 
   /**
    * 关闭设置页。🔴 **必须顺手清掉 `showSettingsTab`**：它的语义是「这一次打开定位到哪」，
@@ -120,6 +128,7 @@ function App() {
   const closeSettings = useCallback(() => {
     setShowSettings(false);
     setShowSettingsTab(undefined);
+    setShowSettingsSection(undefined);
   }, []);
 
   /**
@@ -142,6 +151,8 @@ function App() {
     const onOpenSettings = (e: Event) => {
       const detail = (e as CustomEvent<OpenSettingsDetail>).detail;
       setShowSettingsTab(detail?.tab);
+      setShowSettingsSection(detail?.section);
+      setSettingsJump((j) => j + 1);
       setShowSettings(true);
     };
     window.addEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
@@ -191,6 +202,9 @@ function App() {
   const [showDailyBrief, setShowDailyBrief] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
   const [showEncoding, setShowEncoding] = useState(false);
+  /** 二维码工具（QREditor 独立弹窗，读剪贴板预填） */
+  const [showQr, setShowQr] = useState(false);
+  const [qrInitialText, setQrInitialText] = useState("");
   const [showBatchReplace, setShowBatchReplace] = useState(false);
   const [showConfigDiff, setShowConfigDiff] = useState(false);
   const [freeDiff, setFreeDiff] = useState<{ open: boolean; left: string; right: string }>({ open: false, left: "", right: "" });
@@ -1076,6 +1090,14 @@ function App() {
     difffull: openFreeDiffFullscreen,
     newdiagram: handleNewDiagram,
     dailybrief: () => setShowDailyBrief(true),
+    qr: async () => {
+      setQrInitialText(await readClipboardText());
+      setShowQr(true);
+    },
+    sql: () => void openClipboardTool("sql"),
+    json: () => void openClipboardTool("json"),
+    log: () => void openClipboardTool("log"),
+    timestamp: () => void openClipboardTool("number"),
   };
 
   return (
@@ -1132,6 +1154,17 @@ function App() {
             <ToolboxView handlers={toolHandlers} />
           </div>
         )}
+        {/* 统一编辑器外壳挂到 App：工具模式也要能 openEditor（原先只在 CardList/记录模式）。
+            createPortal 到 body：避免被 contentArea 的层叠上下文压住（同 CardList 旧做法） */}
+        {createPortal(
+          <>
+            <ItemEditorDialog />
+            {showQr && (
+              <QREditor initialText={qrInitialText} onClose={() => setShowQr(false)} />
+            )}
+          </>,
+          document.body,
+        )}
         {shownView === "knowledge" && (
           <div className={`${appStyles.contentArea} ${viewPhaseClass}`}>
             <KnowledgeView />
@@ -1144,7 +1177,13 @@ function App() {
           <div className={`${appStyles.contentArea} ${viewPhaseClass}`}>
             <Suspense fallback={null}>
               <ErrorBoundary fallback={null} componentName="设置页">
-                <SettingsView open onClose={closeSettings} initialTab={showSettingsTab} />
+                <SettingsView
+                  open
+                  onClose={closeSettings}
+                  initialTab={showSettingsTab}
+                  initialSection={showSettingsSection}
+                  jump={settingsJump}
+                />
               </ErrorBoundary>
             </Suspense>
           </div>

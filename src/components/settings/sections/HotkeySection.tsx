@@ -1,7 +1,7 @@
 import type { AppConfig } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
-import { ToggleRow } from "../ToggleRow";
+import { ToggleRow, SettingTile } from "../ToggleRow";
 import { NoteTemplateRows } from "../NoteTemplateRows";
 import { HotkeyRecorder } from "../HotkeyRecorder";
 import { ScreenshotRows } from "./ScreenshotRows";
@@ -23,7 +23,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
       {/* ── 快捷键 ── */}
       <div className={styles.sSection}>快捷键</div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #3B82F6, #0078D4)" }}>⌨</span>
+        <SettingTile hue="system">⌨</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>唤出窗口</div>
           <div className={`${styles.sRowDesc}`}>全局快捷键，在任何位置唤出</div>
@@ -44,7 +44,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
         }} />
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #5856D6)" }}>📋</span>
+        <SettingTile hue="paste">📋</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>依次粘贴</div>
           <div className={`${styles.sRowDesc}`}>按顺序逐条粘贴剪贴板</div>
@@ -65,7 +65,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
         }} />
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F97316, #EA580C)" }}>📚</span>
+        <SettingTile hue="paste">📚</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>收集模式开关</div>
           <div className={`${styles.sRowDesc}`}>进入/退出剪贴板收集模式（栈模式）</div>
@@ -86,7 +86,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
         }} />
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #FB923C, #F97316)" }}>📤</span>
+        <SettingTile hue="paste">📤</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>粘贴最近收集</div>
           <div className={`${styles.sRowDesc}`}>粘贴最近收集的内容并移出收集列表</div>
@@ -106,7 +106,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
           }
         }} />
       </div>
-      <ToggleRow icon="📐" gradient="linear-gradient(135deg, #FB923C, #EA580C)" label="表格自动拆行入栈" desc="栈模式下复制表格时自动按行拆分（关闭=表格整块入栈）" value={config.table_split_enabled}
+      <ToggleRow icon="📐" hue="paste" label="表格自动拆行入栈" desc="栈模式下复制表格时自动按行拆分（关闭=表格整块入栈）" value={config.table_split_enabled}
         tooltip="栈模式下复制表格（或非栈模式下按栈粘贴热键且剪贴板是表格）会自动按行拆分，可在「⋯」菜单里一键撤销"
         detailTitle="表格自动拆行入栈"
         detail={<>
@@ -118,7 +118,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
       {config.table_split_enabled && (
         <>
           <div className={styles.sRow}>
-            <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #FB923C, #EA580C)" }}>📝</span>
+            <SettingTile hue="paste">📝</SettingTile>
             <div className={`${styles.sRowBody}`}>
               <div className={`${styles.sRowLabel}`}>拆行格式</div>
               <div className={`${styles.sRowDesc}`}>入栈后每条的文本样子</div>
@@ -129,7 +129,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
             </div>
           </div>
           <div className={styles.sRow}>
-            <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #FB923C, #EA580C)" }}>🏷️</span>
+            <SettingTile hue="paste">🏷️</SettingTile>
             <div className={`${styles.sRowBody}`}>
               <div className={`${styles.sRowLabel}`}>表头</div>
               <div className={`${styles.sRowDesc}`}>拆分时是否保留第一行表头</div>
@@ -142,7 +142,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
         </>
       )}
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #14B8A6, #0D9488)" }}>⚡</span>
+        <SettingTile hue="paste">⚡</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>快捷粘贴</div>
           <div className={`${styles.sRowDesc}`}>在光标处弹出面板，快速选择并粘贴（类 Win+V）</div>
@@ -163,7 +163,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
         }} />
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #6D28D9)" }}>📸</span>
+        <SettingTile hue="capture">📸</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>截图标注</div>
           <div className={`${styles.sRowDesc}`}>全局热键唤出截图：选区 → 标注 → OCR 识别 → 复制/保存/AI 处理</div>
@@ -184,7 +184,7 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
         }} />
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #10B981, #059669)" }}>📅</span>
+        <SettingTile hue="editor">📅</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>今日速记</div>
           <div className={`${styles.sRowDesc}`}>把剪贴板当前内容追加到「今天」那条笔记，不用打开窗口</div>

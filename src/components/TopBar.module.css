@@ -241,17 +241,16 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透 */
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  border: 1px solid var(--glass-popover-border);
+  /* 工具浮层卡（方案 B）：不透明，对齐查找/菜单 */
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
   border-radius: 12px;
-  box-shadow: var(--glass-popover-shadow);
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   z-index: 30;
   overflow: hidden;
   max-height: 240px;
   overflow-y: auto;
+  animation: pp-float-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .searchHistoryHeader {
@@ -474,17 +473,15 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透 */
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  border: 1px solid var(--glass-popover-border);
-  border-radius: 10px;
-  box-shadow: var(--glass-popover-shadow);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  border-radius: 12px;
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   z-index: 30;
   overflow: hidden;
   max-height: 200px;
   overflow-y: auto;
+  animation: pp-float-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .filterDropdownItem {
@@ -741,6 +738,15 @@
   background: var(--accent-light);
 }
 
+/* 剪贴板同步入口：钉在标签筛选行最右（margin-left:auto）。
+   flex-shrink:0：标签芯片再多也不把胶囊压没。 */
+.tagRowEnd {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
 /* 重试按钮（原先是一个不可点的 span + 内联 style）。
    字号 11px 而不是 10px：U5 字阶表里没有 10 这一档。 */
 .countsErrorHint {
@@ -770,15 +776,13 @@
   top: calc(100% + 4px);
   left: 0;
   width: 200px;
-  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透 */
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  border: 1px solid var(--glass-popover-border);
-  border-radius: 10px;
-  box-shadow: var(--glass-popover-shadow);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  border-radius: 12px;
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   z-index: 30;
   overflow: hidden;
+  animation: pp-float-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .tagPickerHeader {

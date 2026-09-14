@@ -1,4 +1,5 @@
-/* ContextMenu — CSS Module（玻璃态升级：毛玻璃 + 圆角项 + 加深阴影） */
+/* ContextMenu — 工具浮层卡（方案 B）：不透明 + 12 + 双层影，对齐查找悬浮卡。
+   不再 backdrop-filter：短命菜单盖在卡片流上，半透明会吃掉底下文字对比度，且 N 个菜单 = N 个合成层（规则 8.3）。 */
 .ctxMenu {
   position: fixed;
   z-index: var(--z-context);
@@ -9,18 +10,16 @@
      不至于窄到像个 tooltip。 */
   min-width: 180px;
   overflow: visible;
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border: 1px solid var(--glass-popover-border);
-  box-shadow: var(--glass-popover-shadow);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
 }
 
 /* 分隔线。左右缩进跟菜单项的 `padding-left` 对齐（都是 10px）：
    原先是 8px，比图标左缘往外突 2px，一栏里有两条时看得出来。 */
 .ctxSep {
   height: 1px;
-  background: var(--glass-popover-border);
+  background: var(--float-card-border, var(--border-color));
   margin: 5px 10px;
 }
 
@@ -165,28 +164,26 @@
   align-items: center;
 }
 
-/* 子菜单弹层 — 不透明底。
-   原因：子菜单在 DOM 上嵌套于带 backdrop-filter 的一级菜单内，按 CSS 规范其玻璃模糊
-   采样到的是父级"已模糊且仅 0.85 不透明"的合成底，会被稀释得几乎透明、看不清内容。
-   故改用不透明 --dialog-bg 保证可读；opaque 背景上 backdrop-filter 完全失效，一并移除。 */
+/* 子菜单弹层 — 与一级菜单同源 float-card（已不透明，自然无 blur） */
 .ctxSubmenu {
   position: absolute;
   left: calc(100% + 4px);
   top: -4px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--glass-popover-border);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
   border-radius: 12px;
   padding: 5px;
   min-width: 180px;
-  box-shadow: var(--glass-popover-shadow);
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   z-index: 91;
-  animation: ctxSubmenuIn 0.12s ease;
+  /* U2：0.12s → 150ms，与主菜单/浮层入场同一档 */
+  animation: ctxSubmenuIn 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .flipLeft {
   left: auto;
   right: calc(100% + 4px);
-  animation: ctxSubmenuInLeft 0.12s ease;
+  animation: ctxSubmenuInLeft 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @keyframes ctxSubmenuIn {

@@ -20,6 +20,7 @@ import { CONTENT_TYPE_META } from "@/lib/contentTypes";
 import { parseTemplateOverrides } from "@/lib/notes/template";
 import { NoteTemplateDialog } from "./NoteTemplateDialog";
 import { NoteTemplateTypesDialog } from "./NoteTemplateTypesDialog";
+import { SettingTile } from "./ToggleRow"
 import styles from "../Settings.module.css";
 
 /** 没任何覆盖时存空串而不是 `{}`：空串在 parseTemplateOverrides 里就是「没配」 */
@@ -51,12 +52,7 @@ export function NoteTemplateRows({ config, updateAndSave }: Props) {
       <div className={styles.sSection}>转笔记模板</div>
 
       <div className={styles.sRow}>
-        <span
-          className={styles.sRowIcon}
-          style={{ background: "linear-gradient(135deg, #6366F1, #4338CA)" }}
-        >
-          📝
-        </span>
+        <SettingTile hue="editor">📝</SettingTile>
         <div className={styles.sRowBody}>
           <div className={styles.sRowLabel}>默认模板</div>
           <div className={styles.sRowDesc}>
@@ -73,12 +69,7 @@ export function NoteTemplateRows({ config, updateAndSave }: Props) {
       </div>
 
       <div className={styles.sRow}>
-        <span
-          className={styles.sRowIcon}
-          style={{ background: "linear-gradient(135deg, #14B8A6, #0D9488)" }}
-        >
-          🏷️
-        </span>
+        <SettingTile hue="editor">🏷️</SettingTile>
         <div className={styles.sRowBody}>
           <div className={styles.sRowLabel}>按类型定制</div>
           <div className={styles.sRowDesc}>

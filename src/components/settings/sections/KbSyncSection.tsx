@@ -25,7 +25,7 @@ export function KbSyncSection({ config, updateAndSave }: KbSyncSectionProps) {
           名字自己就把区别说清了。要靠一句「与那个无关」消歧，
           本身就是命名错了的信号。 */}
       <div className={styles.sSection}>知识库同步</div>
-      <ToggleRow icon="📚" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)"
+      <ToggleRow icon="📚" hue="sync"
         label="知识库同步" desc="在你自己的设备之间同步笔记，局域网与跨网走同一条通道"
         value={config.kb_sync_enabled ?? false}
         detailTitle="知识库同步"

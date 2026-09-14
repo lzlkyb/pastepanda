@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from "react";
 import {
+  Search,
   Bold, Italic, Strikethrough, Heading,
   Quote, Code, CodeSquare, List, ListOrdered,
   CheckSquare, Link, Image, Table, Minus,
@@ -20,9 +21,15 @@ function FmtBtn({ icon, title, onClick }: { icon: ReactNode; title: string; onCl
 }
 
 export function MarkdownFormatBar({ bridge }: { bridge: ShellBridge }) {
-  const { insertFormat, insertLinePrefix } = bridge;
+  const { insertFormat, insertLinePrefix, openSearch } = bridge;
   return (
     <>
+      {/* L2：带「查找」二字，不只放大镜——快捷键对小白不可发现 */}
+      <button className={styles.fmtBtnText} title="查找 Ctrl+F" onClick={openSearch}>
+        <Search size={13} />
+        <span>查找</span>
+      </button>
+      <div className={styles.fmtSep} />
       <FmtBtn icon={<Bold size={13} />} title="粗体 Ctrl+B" onClick={() => insertFormat("**", "**")} />
       <FmtBtn icon={<Italic size={13} />} title="斜体 Ctrl+I" onClick={() => insertFormat("*", "*")} />
       <FmtBtn icon={<Strikethrough size={13} />} title="删除线" onClick={() => insertFormat("~~", "~~")} />

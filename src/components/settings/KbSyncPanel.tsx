@@ -114,17 +114,26 @@ export function KbSyncPanel({ toast }: {
         <>
           <div className={styles.lanDeviceList}>
             {s.devices.map((d) => {
-              const isOnline = isKbDeviceOnline(d, s.live);
-              const problem = kbDeviceProblem(d, s.last, s.live);
+              const isOnline = !d.paused && isKbDeviceOnline(d, s.live);
+              const problem = d.paused ? null : kbDeviceProblem(d, s.last, s.live);
               return (
-                <div key={d.node_id} className={styles.lanDeviceItem}>
-                  <div className={styles.lanDeviceAvatar} style={{
-                    background: `hsl(${(d.node_id.charCodeAt(0) || 0) * 40 % 360}, 60%, 55%)`,
-                  }}>{d.name.charAt(0).toUpperCase()}</div>
+                <div
+                  key={d.node_id}
+                  className={`${styles.lanDeviceItem}${d.paused ? ` ${styles.lanDevicePaused}` : ""}`}
+                >
+                  <div
+                    className={styles.lanDeviceAvatar}
+                    style={{
+                      background: `hsl(${(d.node_id.charCodeAt(0) || 0) * 40 % 360}, 60%, 55%)`,
+                      opacity: d.paused ? 0.55 : 1,
+                    }}
+                  >
+                    {d.name.charAt(0).toUpperCase()}
+                  </div>
                   <div className={styles.lanDeviceInfo}>
                     <div className={styles.lanDeviceName}>{d.name}</div>
                     <div className={styles.lanDeviceTime}>
-                      {fingerprintOf(d.node_id)} · {ago(d.last_seen)}
+                      {fingerprintOf(d.node_id)} · {d.paused ? "已暂停" : ago(d.last_seen)}
                     </div>
                     {/* 🔴 离线时把**原因**说出来。后端一直算好了放在 `last[].error` 里，
                         而这个面板从来没渲染过它——于是「对方还没把这台加回去」这种
@@ -136,19 +145,57 @@ export function KbSyncPanel({ toast }: {
                       </div>
                     )}
                   </div>
-                  <span style={{
-                    fontSize: 10, padding: "2px 7px", borderRadius: 20,
-                    background: isOnline ? "var(--green-bg)" : "var(--card-bg)",
-                    color: isOnline ? "var(--green)" : "var(--text-secondary)",
-                    border: `1px solid ${isOnline ? "var(--green-border)" : "var(--border-color)"}`,
-                  }}>
-                    {kbOnlineLabel(d, s.live)}
-                  </span>
-                  <button className={styles.lanRefreshBtn} disabled={s.busy}
+                  {d.paused ? (
+                    <span className={styles.lanDevicePausedBadge} title="不会主动拨它，也会拒它的入站同步">
+                      已暂停
+                    </span>
+                  ) : (
+                    <span style={{
+                      fontSize: 10, padding: "2px 7px", borderRadius: 20,
+                      background: isOnline ? "var(--green-bg)" : "var(--card-bg)",
+                      color: isOnline ? "var(--green)" : "var(--text-secondary)",
+                      border: `1px solid ${isOnline ? "var(--green-border)" : "var(--border-color)"}`,
+                    }}>
+                      {kbOnlineLabel(d, s.live)}
+                    </span>
+                  )}
+                  <div className={styles.lanPauseSw}>
+                    <span className={styles.lanPauseLabel}>启用</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={!d.paused}
+                      aria-label={d.paused ? "启用与该设备的同步" : "暂停与该设备的同步"}
+                      className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${styles.on}`}`}
+                      disabled={s.busy}
+                      onClick={async () => {
+                        try {
+                          await s.setPaused(d.node_id, !d.paused);
+                          toast(
+                            d.paused
+                              ? `已恢复「${d.name}」的同步`
+                              : `已暂停「${d.name}」——不再与它同步，配对与游标都还在`,
+                            "success",
+                          );
+                        } catch (e) {
+                          toast(
+                            `${d.paused ? "恢复" : "暂停"}失败：${e instanceof Error ? e.message : String(e)}`,
+                            "error",
+                          );
+                        }
+                      }}
+                      title={d.paused ? "恢复同步（无需重新配对）" : "暂停同步（可随时恢复）"}
+                    >
+                      <span className={styles.lanPauseKnob} />
+                    </button>
+                  </div>
+                  <button className={styles.lanRefreshBtn} disabled={s.busy || d.paused}
+                    title={d.paused ? "已暂停" : "立刻同步"}
                     onClick={() => s.syncNow(d.node_id)}>⇅</button>
                   <button className={styles.lanRefreshBtn} disabled={s.busy}
                     style={{ color: "var(--danger)" }}
-                    onClick={() => setConfirmForget(d)}>忘记</button>
+                    title="从本机删除，需重新配对"
+                    onClick={() => setConfirmForget(d)}>删除</button>
                 </div>
               );
             })}
@@ -183,7 +230,7 @@ export function KbSyncPanel({ toast }: {
             }}>
               这台设备正在<b>直接对接 {s.devices.length} 台</b>。设备一多时，
               建议配成「星型」：让其它设备<b>都只跟一台常开机配对</b>，彼此之间不配。
-              不用改任何设置——在各台设备上把多余的配对「忘记」掉、
+              不用改任何设置——在各台设备上把多余的配对「删除」掉、
               只留跟常开机的那一条即可；
               {s.devices.length + 1} 台设备两两互配是 {(s.devices.length + 1) * s.devices.length / 2} 对连接，
               星型只需 {s.devices.length} 对。
@@ -223,22 +270,27 @@ export function KbSyncPanel({ toast }: {
       {confirmForget && (
         <div className="dialog-backdrop" onClick={() => setConfirmForget(null)}>
           <div className="dialog-box dialog-solid w420" onClick={(e) => e.stopPropagation()}>
-            <div className="dialog-header"><h2 className="dialog-title">忘记「{confirmForget.name}」？</h2></div>
+            <div className="dialog-header"><h2 className="dialog-title">删除「{confirmForget.name}」？</h2></div>
             <div className="dialog-body" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-              <p style={{ margin: "0 0 8px" }}>本机不再与它同步，已同步过来的笔记<b>不会被删</b>。</p>
-              {/* 说清后果：只忘一边的话对方会一直白拨，用户看到「连不上」会以为是 bug */}
+              <p style={{ margin: "0 0 8px" }}>
+                本机不再与它同步，已同步过来的笔记<b>不会被删</b>；要恢复得重新配对。
+              </p>
+              <p style={{ margin: "0 0 8px", color: "var(--text-muted)" }}>
+                若只想暂时不同步，用旁边的「启用」开关即可，无需删除。
+              </p>
+              {/* 说清后果：只删一边的话对方会一直白拨，用户看到「连不上」会以为是 bug */}
               <p style={{ margin: 0, color: "var(--text-muted)" }}>
                 ❗ 对方那台机器上<b>还留着这台的记录</b>，它会继续尝试连接并被拒绝。
-                想彻底断开，请在两边都忘记一次。
+                想彻底断开，请在两边都删除一次。
               </p>
             </div>
             <div className="dialog-footer">
               <button className="btn-secondary" onClick={() => setConfirmForget(null)}>取消</button>
               <button className="btn-danger" disabled={s.busy} onClick={async () => {
                 await s.forget(confirmForget.node_id);
-                toast(`已忘记「${confirmForget.name}」`, "success");
+                toast(`已删除「${confirmForget.name}」`, "success");
                 setConfirmForget(null);
-              }}>忘记此设备</button>
+              }}>删除此设备</button>
             </div>
           </div>
         </div>

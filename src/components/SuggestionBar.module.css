@@ -1,4 +1,5 @@
-/* v6.2 主动建议条：主窗口 TopBar 下方一行 inline，不弹窗、8 秒自动收起 */
+/* v6.2 主动建议条：主窗口 TopBar 下方一行 inline，不弹窗、8 秒自动收起。
+   方案 B：壳并 float-card（r12）；操作钮抬到 28px/r8，和查找卡同阶梯。 */
 
 .bar {
   display: flex;
@@ -6,11 +7,10 @@
   gap: 8px;
   margin: 0 14px 6px;
   padding: 6px 10px;
-  border-radius: 9px;
-  background: var(--glass-card-bg, var(--dialog-bg));
-  border: 1px solid var(--glass-card-border, var(--border-color));
-  box-shadow: var(--glass-card-shadow, none);
-  backdrop-filter: var(--glass-card-filter, none);
+  border-radius: 12px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  box-shadow: var(--float-card-shadow, none);
   font-size: 12px;
   color: var(--text-primary);
   overflow: hidden;
@@ -22,7 +22,7 @@
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--accent-light);
   color: var(--accent-strong);
   flex-shrink: 0;
@@ -43,9 +43,10 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  height: 28px;
   border: none;
-  border-radius: 6px;
-  padding: 3px 8px;
+  border-radius: 8px;
+  padding: 0 10px;
   font-size: 12px;
   background: var(--accent-light);
   color: var(--accent-strong);
@@ -68,10 +69,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;

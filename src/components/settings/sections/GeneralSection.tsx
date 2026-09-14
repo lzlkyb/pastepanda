@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AppConfig } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
-import { ToggleRow } from "../ToggleRow";
+import { ToggleRow, SettingTile } from "../ToggleRow";
 import { WindowSystemRows } from "./WindowSystemRows";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
@@ -64,7 +64,7 @@ export function GeneralSection({
       {/* ── 通用 ── */}
       <div className={styles.sSection}>通用</div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>🗑</span>
+        <SettingTile hue="save">🗑</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             自动清理
@@ -94,7 +94,7 @@ export function GeneralSection({
       {/* 回收站保留天数（W1 / R3）。紧跟在自动清理后面，但文案必须把
           「这是笔记、那是剪贴板」说清楚——两行长得一样，误认了就是删错东西。 */}
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>♻</span>
+        <SettingTile hue="save">♻</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             笔记回收站
@@ -122,7 +122,7 @@ export function GeneralSection({
           ))}
         </div>
       </div>
-      <ToggleRow icon={<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 8.6 18 18M15.4 8.6 6 18"/></svg>} gradient="linear-gradient(135deg, #10B981, #34C759)" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })}
+      <ToggleRow icon="✂" hue="save" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })}
         tooltip="粘贴代码时尤其有用，避免多余缩进"
         detailTitle="自动去除空白"
         detail={<>
@@ -131,7 +131,7 @@ export function GeneralSection({
           <p>💡 开启后粘贴更干净，无需手动删空格</p>
         </>}
       />
-      <ToggleRow icon="🛡" gradient="linear-gradient(135deg, #EF4444, #DC2626)" label="敏感内容防护" desc="不记录匹配密钥/凭证模式的内容" value={config.skip_sensitive} onChange={(v) => updateAndSave({ skip_sensitive: v })}
+      <ToggleRow icon="🛡" hue="privacy" label="敏感内容防护" desc="不记录匹配密钥/凭证模式的内容" value={config.skip_sensitive} onChange={(v) => updateAndSave({ skip_sensitive: v })}
         tooltip="开启后，复制密码、Token、密钥等敏感内容时不会记录到历史，也不会通过局域网同步"
         detailTitle="敏感内容防护"
         detail={<>
@@ -140,7 +140,7 @@ export function GeneralSection({
           <p>💡 建议保持开启，避免敏感信息意外留存</p>
         </>}
       />
-      <ToggleRow icon="📄" gradient="linear-gradient(135deg, #3B82F6, #6366F1)" label="文档保真采集" desc="从 Word/网页等复制时保留格式结构" value={config.doc_capture} onChange={(v) => updateAndSave({ doc_capture: v })}
+      <ToggleRow icon="📄" hue="capture" label="文档保真采集" desc="从 Word/网页等复制时保留格式结构" value={config.doc_capture} onChange={(v) => updateAndSave({ doc_capture: v })}
         tooltip="开启后，从 Word/Excel/网页复制带表格/标题/列表的内容时，会保留 HTML 格式片段，便于清洗与转 Markdown"
         detailTitle="文档保真采集"
         detail={<>
@@ -149,7 +149,7 @@ export function GeneralSection({
           <p>💡 无结构的普通复制（聊天、记事本）不受影响</p>
         </>}
       />
-      <ToggleRow icon="📋" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)" label="保留格式粘贴" desc="粘贴文档/图文时保留富格式" value={config.paste_format_default !== "plain"} onChange={(v) => updateAndSave({ paste_format_default: v ? "auto" : "plain" })}
+      <ToggleRow icon="📋" hue="paste" label="保留格式粘贴" desc="粘贴文档/图文时保留富格式" value={config.paste_format_default !== "plain"} onChange={(v) => updateAndSave({ paste_format_default: v ? "auto" : "plain" })}
         tooltip="开启时粘贴文档/图文内容保留富格式（CF_HTML）；关闭则全部粘贴纯文本"
         detailTitle="保留格式粘贴"
         detail={<>
@@ -158,7 +158,7 @@ export function GeneralSection({
         </>}
       />
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F43F5E, #E11D48)" }}>🚫</span>
+        <SettingTile hue="privacy">🚫</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             应用排除名单
@@ -188,7 +188,7 @@ export function GeneralSection({
         </div>
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>👆</span>
+        <SettingTile hue="system">👆</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             双击列表行为
@@ -210,7 +210,7 @@ export function GeneralSection({
         </button>
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #6366F1, #818CF8)" }}>🖱️</span>
+        <SettingTile hue="system">🖱️</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             卡片悬浮行为
@@ -250,7 +250,7 @@ export function GeneralSection({
 
       {/* 来源图标模式 */}
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EC4899, #F43F5E)" }}>🎯</span>
+        <SettingTile hue="system">🎯</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
             来源图标

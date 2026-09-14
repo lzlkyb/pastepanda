@@ -143,12 +143,13 @@
      opacity 只作用在路径上，箭头会比线深一截。 */
   --diagram-edge-line: color-mix(in srgb, var(--accent, #0284c7) 55%, var(--text-muted, #64748b));
   --diagram-edge-selected: var(--accent, #0284c7);
-  --diagram-panel-bg: var(--glass-popover-bg, rgba(15, 23, 42, 0.7));
-  --diagram-panel-border: var(--glass-popover-border, rgba(255, 255, 255, 0.14));
+  --diagram-panel-bg: var(--float-card-bg, var(--glass-popover-bg, rgba(15, 23, 42, 0.7)));
+  --diagram-panel-border: var(--float-card-border, var(--glass-popover-border, rgba(255, 255, 255, 0.14)));
   --diagram-panel-hover: var(--glass-shimmer, rgba(255, 255, 255, 0.1));
-  /* 浮层模糊：工具栏 / 属性面板 / 属性抽屉 / 形状库 / 状态栏 / 空态按钮 六处共用一份，
-     以前各写一遍 blur(10px) saturate(1.3)，调一次要改六处（规则 #11 单一数据源）。 */
-  --diagram-float-blur: blur(10px) saturate(1.3);
+  /* 浮层模糊：工具栏 / 属性面板 / 属性抽屉 / 形状库 / 状态栏 / 空态按钮 六处共用一份。
+     方案 B：面板底已改 --float-card-*（不透明），此处 blur 仅留给仍半透明的兼容路径；
+     消费方应去掉各自的 backdrop-filter（规则 8.3）。 */
+  --diagram-float-blur: none;
 
   /* ===== --orange-solid：白字能压上去的实色橙 =====
      ❗ 为什么不能直接用 --orange：那个令牌承担的是「深底上的文字色」，所以深色主题里
@@ -160,6 +161,17 @@
      午夜 #18181B 卡片底上仍有 3.76 / 3.68 的对比度（图形元素门槛 3.0）。
      6 套主题同值，所以只在这里写一次；浅色四套因此**零视觉变化**。 */
   --orange-solid: #C54A0A;
+
+  /* ===== 设置页图标 · 8 语义彩砖（design/设置图标-emoji彩砖白圆盘最终稿.html）=====
+     高饱和渐变，固定色不随主题；白圆盘在 Settings.module.css .sRowIconGlyph。 */
+  --ic-system:  linear-gradient(135deg, #FBBF24 0%, #F59E0B 45%, #EA580C 100%);
+  --ic-capture: linear-gradient(135deg, #38BDF8 0%, #0EA5E9 45%, #0284C7 100%);
+  --ic-save:    linear-gradient(135deg, #34D399 0%, #10B981 45%, #059669 100%);
+  --ic-editor:  linear-gradient(135deg, #A5B4FC 0%, #6366F1 45%, #4F46E5 100%);
+  --ic-privacy: linear-gradient(135deg, #FB7185 0%, #F43F5E 45%, #E11D48 100%);
+  --ic-sync:    linear-gradient(135deg, #22D3EE 0%, #06B6D4 45%, #0891B2 100%);
+  --ic-paste:   linear-gradient(135deg, #C4B5FD 0%, #8B5CF6 45%, #7C3AED 100%);
+  --ic-brand:   linear-gradient(135deg, #93C5FD 0%, #3B82F6 45%, #6366F1 100%);
 
   /* ===== UI 视觉升级 · 壳层 / 表面 token（2026-09，详见 docs/UI视觉升级-Token改动表.md）=====
      组件一律 `var(--x, 旧值)` 消费；未覆写主题行为不变。
@@ -177,6 +189,21 @@
   /* 控件静息投影（搜索框等）：近影 + 中影 + 内高光，可叠在 glass 底上 */
   --control-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  /* ===== 工具浮层卡（方案 B · 双轨材质，2026-09）=====
+     双轨判定（写给以后加浮层的人）：
+       · 工具浮层 —— 短命、要盖在正文上读字、可能叠多层
+         → --float-card-*：不透明、禁 backdrop-filter（规则 8.3）
+         → 查找悬浮卡 / 右键菜单 / Toast / tip / 建议条 / 同步浮层 / 卡片菜单
+       · 窗口级 —— 整窗或大面板，背后是皮肤场景，用户会停留
+         → 仍走 --glass-dialog-* / dialog-box 玻璃；工作型弹窗用 dialog-solid
+     值从各主题 --card-bg / --border-color 推导，六主题自动继承；
+     深色两套在各自块里抬高阴影不透明度。圆角阶梯：控件 8 / 浮层 12 / 弹窗 16。 */
+  --float-card-bg: var(--card-bg);
+  --float-card-border: var(--border-color);
+  --float-card-shadow:
+    0 0 0 1px color-mix(in srgb, #000 3%, transparent),
+    0 8px 24px color-mix(in srgb, #000 12%, transparent);
 
   /* ===== 语义色补全（UI 规则 U6）=====
      U6 说新代码只许用语义名（--warning / --danger）、不许用色名（--orange / --red-bg）。
@@ -254,7 +281,7 @@
   --shell-blur: blur(16px) saturate(1.2);
   --sidebar-section-label: #696D75; /* 对比度改进：侧边栏分区标题(如“智能分类”) 改前2.25:1→改后4.59:1 */
   --timeline-bg: rgba(244, 246, 249, 0.95);
-  /* Toast 已改用玻璃拟态设计（--glass-popover-bg + backdrop-filter + --text-primary），不再需要这套“实心底 toast”的语义色令牌，故删除 --toast-success-* / --toast-error-* / --toast-info-*（共 9 个变量 × 7 套主题） */
+  /* 工具浮层（含 Toast）已改 --float-card-* 不透明卡（方案 B），--glass-popover-* 仍给窗口级/场景玻璃用 */
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
@@ -413,6 +440,10 @@
   --glass-popover-bg: rgba(20,20,24,0.85);
   --glass-popover-border: rgba(255,255,255,0.07);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  /* 深色浮层卡阴影抬高：不透明卡压在深底上，细环改白、抬升改更深黑 */
+  --float-card-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 8px 28px rgba(0, 0, 0, 0.45);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
   --glass-dialog-bg: rgba(20,20,24,0.66);
   --glass-dialog-blur: 22px;
@@ -769,6 +800,10 @@
   --glass-popover-bg: rgba(10,22,40,0.85);
   --glass-popover-border: rgba(255,255,255,0.08);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  /* 深色浮层卡阴影抬高（与 midnight 同款：白细环 + 深抬升） */
+  --float-card-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 8px 28px rgba(0, 0, 0, 0.45);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
   --glass-dialog-bg: rgba(10,22,40,0.66);
   --glass-dialog-blur: 22px;

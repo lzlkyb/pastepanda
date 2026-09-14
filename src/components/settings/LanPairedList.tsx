@@ -1,5 +1,5 @@
 /**
- * LanPairedList —— 「记住的设备」列表 + 忘记入口。
+ * LanPairedList —— 「记住的设备」列表 + 暂停开关 + 删除入口。
  *
  * 从 `LanSyncPanel` 拆出来只为了那边别超 300 行（规则 #7）；
  * 它不持名单状态，数据与刷新都由父级传进来。
@@ -29,6 +29,8 @@ export interface PairedDevice {
   online: boolean;
   /** 本次运行内最近一次同步的时刻；空串 = 本次运行还没同步过。 */
   last_sync: string;
+  /** 用户暂停：本机不收不发（不吊销群组密钥）。 */
+  paused: boolean;
 }
 
 export function LanPairedList({
@@ -37,42 +39,71 @@ export function LanPairedList({
   toast,
 }: {
   devices: PairedDevice[];
-  /** 忘记成功后让父级重拉名单。 */
+  /** 删除成功后让父级重拉名单。 */
   onChanged: () => Promise<void> | void;
   toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void;
 }) {
-  /** 正在忘记的设备 id（空 = 没在忙）。 */
-  const [forgetting, setForgetting] = useState("");
+  /** 正在删除的设备 id（空 = 没在忙）。 */
+  const [deleting, setDeleting] = useState("");
+  /** 正在切换暂停的设备 id。 */
+  const [pausing, setPausing] = useState("");
 
   /**
-   * 忘记一台设备。
+   * 删除一台设备（从本机名单移除，要重新配对）。
    *
    * ❗ 确认文案里必须写明它**不吊销密钥**——局域网同步是单一群组密钥模型，
    *   对方手里还有同一把密钥。不说的话用户会以为点完就断开了。
    */
-  const handleForget = async (d: PairedDevice) => {
+  const handleDelete = async (d: PairedDevice) => {
     const { confirmDialog } = await import("@/lib/confirm");
     const ok = await confirmDialog({
-      title: `忘记「${d.device_name}」？`,
+      title: `删除「${d.device_name}」？`,
       message:
         "它会从本机名单里移除，并重新出现在「附近的设备」里（可以重新配对）。\n\n" +
         "⚠ 这不会吊销配对密钥：对方手里还有同一把密钥，仍然能解开本机的广播。\n" +
-        "要真正断开，得在「高级」里重新生成密钥——那会把所有设备一起踢掉。",
-      confirmText: "忘记",
+        "要真正断开，得在「高级」里重新生成密钥——那会把所有设备一起踢掉。\n\n" +
+        "若只想暂时不同步，用旁边的「启用」开关即可。",
+      confirmText: "删除",
       variant: "danger",
     });
     if (!ok) return;
-    setForgetting(d.device_id);
+    setDeleting(d.device_id);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("lan_forget_device", { deviceId: d.device_id });
-      toast(`已忘记「${d.device_name}」`, "success");
+      toast(`已删除「${d.device_name}」`, "success");
       await onChanged();
     } catch (e) {
-      logger.warn("忘记设备失败", e);
-      toast(`忘记失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      logger.warn("删除设备失败", e);
+      toast(`删除失败：${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
-      setForgetting("");
+      setDeleting("");
+    }
+  };
+
+  /** 暂停 / 恢复。可逆、无确认；失败回滚（父级重拉）。 */
+  const handleTogglePause = async (d: PairedDevice) => {
+    const next = !d.paused;
+    setPausing(d.device_id);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("lan_set_device_paused", { deviceId: d.device_id, paused: next });
+      toast(
+        next
+          ? `已暂停「${d.device_name}」——本机不再与它收发剪贴板`
+          : `已恢复「${d.device_name}」的同步`,
+        "success",
+      );
+      await onChanged();
+    } catch (e) {
+      logger.warn("切换设备暂停失败", e);
+      toast(
+        `${next ? "暂停" : "恢复"}失败：${e instanceof Error ? e.message : String(e)}`,
+        "error",
+      );
+      await onChanged();
+    } finally {
+      setPausing("");
     }
   };
 
@@ -85,13 +116,14 @@ export function LanPairedList({
         {devices.map((d, idx) => (
           <div
             key={d.device_id ? `device-${d.device_id}-${idx}` : `device-${idx}`}
-            className={`${styles.lanDeviceItem}`}
+            className={`${styles.lanDeviceItem}${d.paused ? ` ${styles.lanDevicePaused}` : ""}`}
           >
             <div
               className={`${styles.lanDeviceAvatar}`}
               style={{
                 // 审查：空 device_id 时 charCodeAt 是 NaN → 兜底 0（无效色）
                 background: `hsl(${((d.device_id.charCodeAt(0) || 0) * 40) % 360}, 60%, 55%)`,
+                opacity: d.paused ? 0.55 : 1,
               }}
             >
               {d.device_name.charAt(0).toUpperCase()}
@@ -101,31 +133,62 @@ export function LanPairedList({
               {/* ❗ 这一行把「在线」与「最后同步」分开写。旧版本只有一个时间
                   配上恒亮的绿点，对方已经关机了也看不出来。 */}
               <div className={`${styles.lanDeviceTime}`}>
-                {d.online ? "在线" : "离线"}
-                {d.last_sync ? ` · 最后同步 ${d.last_sync}` : " · 本次运行还没同步过"}
+                {d.paused
+                  ? "已暂停 · 停止与本机收发剪贴板"
+                  : d.online
+                    ? "在线"
+                    : "离线"}
+                {!d.paused &&
+                  (d.last_sync ? ` · 最后同步 ${d.last_sync}` : " · 本次运行还没同步过")}
               </div>
             </div>
-            {d.online && (
+            {!d.paused && d.online && (
               <span className={`${styles.lanDeviceOnline}`} title="刚刚还听到它的心跳">
                 <span className={styles.dotOnline} />
               </span>
             )}
+            {d.paused && (
+              <span className={styles.lanDevicePausedBadge} title="本机不再与它收发；对方仍能解密广播">
+                已暂停
+              </span>
+            )}
+            <div className={styles.lanPauseSw}>
+              <span className={styles.lanPauseLabel}>启用</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!d.paused}
+                aria-label={d.paused ? "启用与该设备的同步" : "暂停与该设备的同步"}
+                className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${styles.on}`}`}
+                disabled={pausing === d.device_id}
+                onClick={() => void handleTogglePause(d)}
+                title={
+                  d.paused
+                    ? "恢复同步（配对与记录都还在）"
+                    : "暂停同步（可随时恢复，无需重新配对）"
+                }
+              >
+                <span className={styles.lanPauseKnob} />
+              </button>
+            </div>
             <button
               className={styles.lanRefreshBtn}
-              onClick={() => void handleForget(d)}
-              disabled={forgetting === d.device_id}
-              title="从本机名单里移除（不会吊销配对密钥）"
+              onClick={() => void handleDelete(d)}
+              disabled={deleting === d.device_id}
+              title="从本机名单删除（不会吊销配对密钥）"
             >
-              {forgetting === d.device_id ? "…" : "忘记"}
+              {deleting === d.device_id ? "…" : "删除"}
             </button>
           </div>
         ))}
       </div>
       {/* 🔴 必须说清楚：局域网同步是**单一群组密钥**模型，谁拿到密钥谁就能解密。
-          不说的话用户会以为点了「忘记」就把对方断开了。 */}
+          不说的话用户会以为点了「删除」就把对方断开了。 */}
       <div style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 8px" }}>
-        「忘记」只清本机记录，它会重新出现在上面的「附近的设备」里、可以重新配对。
-        <b>它不会吊销配对密钥</b>——对方手里还有同一把密钥，仍能解开本机的广播。
+        「启用」关掉 = 暂停：本机不再与它收发，配对还在，再打开即恢复。
+        <br />
+        「删除」会清掉本机记录，它会重新出现在上面的「附近的设备」里、可以重新配对。
+        <b>两者都不会吊销配对密钥</b>——对方手里还有同一把密钥，仍能解开本机的广播。
         要真正断开，得到下面「高级」里重新生成密钥（那会把<b>所有</b>设备一起踢掉）。
       </div>
     </>

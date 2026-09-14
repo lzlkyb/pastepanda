@@ -38,9 +38,10 @@ import {
   indentLess,
 } from "@codemirror/commands";
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput } from "@codemirror/language";
-import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
 import { planLinePrefix } from "@/lib/mdLinePrefix";
 import type { ExtensionCtx, ShellBridge } from "./fullscreen/types";
+import { attachSearchPanelDrag } from "./cmSearchPanelDrag";
 
 /**
  * 亮色编辑器外观（CodeMirror chrome）。
@@ -251,6 +252,14 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
     const view = viewRef.current;
     if (view) { indentLess(view); view.focus(); }
   }, []);
+  /** 工具栏「查找」：与 Ctrl+F 同一 searchKeymap 面板，不另造 UI。
+      先 focus：预览切回编辑后 view 曾是 display:none，不 focus 面板会藏在暗处。 */
+  const openSearch = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.focus();
+    openSearchPanel(view);
+  }, []);
 
   const bridge: ShellBridge = useMemo(
     () => ({
@@ -258,8 +267,9 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
       toggleComment: bridgeToggleComment,
       indentMore: bridgeIndentMore,
       indentLess: bridgeIndentLess,
+      openSearch,
     }),
-    [text, replaceDoc, gotoLine, insertFormat, insertLinePrefix, bridgeToggleComment, bridgeIndentMore, bridgeIndentLess]
+    [text, replaceDoc, gotoLine, insertFormat, insertLinePrefix, bridgeToggleComment, bridgeIndentMore, bridgeIndentLess, openSearch]
   );
 
   // ─── CM6 装配（只跑一次，ready 翻面才重建）───
@@ -289,7 +299,29 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
               hostRef.current.insertPastedImages?.(files, view),
           }),
       themeCompartment.current.of(isDark ? oneDark : lightEditorChrome),
-      search(),
+      // 查找面板：悬浮卡片（globals.css 绝对定位到右上），可拖动不挡正文。
+      // top 只决定挂在 cm-panels-top 还是 bottom 槽位，视觉位置由 CSS 控制。
+      search({ top: true }),
+      // CM 默认 next/previous/match case… 全是英文，首次出现就该说人话（L1）
+      EditorState.phrases.of({
+        Find: "查找",
+        Replace: "替换",
+        next: "下一个",
+        previous: "上一个",
+        all: "全选",
+        "match case": "大小写",
+        regexp: "正则",
+        "by word": "全词",
+        replace: "替换",
+        "replace all": "全部替换",
+        close: "关闭",
+        "current match": "当前匹配",
+        "replaced $ matches": "已替换 $ 处",
+        "replaced match on line $": "已替换第 $ 行",
+        "on line": "行",
+        go: "跳转",
+        "Go to line": "跳转到行",
+      }),
       highlightSelectionMatches(),
       // ❌ history() 必须显式装：这里是手搭扩展数组、没用 basicSetup，
       // 而 CodeMirror 6 的撤销栈是独立扩展。漏了它（以及 historyKeymap）
@@ -324,8 +356,11 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
 
     viewRef.current = view;
     view.focus();
+    // 悬浮查找面板拖动：绑在 .cm-editor 根上，面板开关时自动生效/失效
+    const detachSearchDrag = attachSearchPanelDrag(view.dom);
 
     return () => {
+      detachSearchDrag();
       view.destroy();
       viewRef.current = null;
     };

@@ -13,6 +13,9 @@ import { toggleStackMode, stackPasteNext, isStackPasteAllRunning, abortStackPast
 import { extractNoteDraft } from "@/lib/notes/extract";
 import { noteAppendDaily } from "./noteDaily";
 
+/** 局域网同步 toast 节流：10s 内只弹一次（P2）。卡片仍在顶部，信息不丢。 */
+let lastLanToastAt = 0;
+
 /** 初始化 Tauri 后端连接 */
 export async function initBackend(): Promise<() => void> {
   const store = useAppStore.getState();
@@ -134,9 +137,14 @@ export async function initBackend(): Promise<() => void> {
         }
       } else {
         // U23：普通捕获静默记录（卡片出现在顶部即反馈），仅局域网同步这类"外部事件"才提示
+        // P2：10s 节流，连续同步不刷屏
         if (isLanSync) {
-          const msg = `📡 ${event.payload.item.source!.replace("局域网: ", "")}同步了${typeLabel}`;
-          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "info" } }));
+          const now = Date.now();
+          if (now - lastLanToastAt > 10_000) {
+            lastLanToastAt = now;
+            const msg = `📡 ${event.payload.item.source!.replace("局域网: ", "")}同步了${typeLabel}`;
+            window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "info" } }));
+          }
         }
       }
     }));

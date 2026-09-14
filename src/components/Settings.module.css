@@ -254,7 +254,7 @@
 .smallBtn {
   height: 28px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -338,6 +338,8 @@
   border: 1px solid var(--border-color);
   transition: all 0.15s;
   font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btnSecondary:hover {
   background: var(--section-bg);
@@ -451,10 +453,11 @@
 
 
 .statsPanel {
-  margin: 10px 20px 12px;
-  background: var(--section-bg);
-  border-radius: 14px;
-  border: 1px solid var(--border-color);
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-color);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -473,6 +476,8 @@
   font-size: 10.5px;
   font-weight: 500;
   color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* ===== 数据仪表盘：核心指标 4 格 ===== */
@@ -555,6 +560,8 @@
   color: var(--accent-strong);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .weekReportBtn:hover {
   background: var(--accent);
@@ -764,19 +771,78 @@
   white-space: nowrap;
 }
 
+/* 统计加载骨架：代替转圈。只动 background-position（合成器友好） */
+.statsSkeleton {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 16px;
+}
+.skelBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skelLine {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--section-bg) 25%,
+    var(--hover) 50%,
+    var(--section-bg) 75%
+  );
+  background-size: 200% 100%;
+  animation: pp-skel 1.2s linear infinite;
+}
+.skelW40 { width: 40%; }
+.skelW60 { width: 60%; }
+@keyframes pp-skel {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skelLine {
+    animation: none;
+    background: var(--section-bg);
+  }
+}
 
 
 
-/* Section header */
+
+/* Section header — S1 分区卡片头（扁平片段 + :has 收口，不包 wrapper 以免破坏搜索/scroll-spy）
+
+   🔴 sticky 头**不能自带 margin-top**：margin 在元素盒外，吸顶后那条缝会透出
+   下面滚过的内容（截图里「通用」上方漏出上一分区残字）。间距改由 ::before
+   不透明条盖住，高度与旧 margin 一致。 */
 .sSection {
-  padding: 14px 20px 6px;
+  margin-top: 0;
+  padding: 10px 16px;
   font-size: 11px;
   font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  /* 实底而不是渐变卡头：吸顶时要能完全盖住滚过的内容 */
   background: var(--section-bg);
-  border-bottom: 1px solid var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+/* 卡片间距：盖在上一卡与本头之间，吸顶时也挡内容 */
+.sSection::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: -12px;
+  height: 12px;
+  background: color-mix(in srgb, var(--section-bg) 35%, var(--dialog-bg));
+  pointer-events: none;
 }
 
 /* #16 设置分区错峰入场 — 标签页面板每次挂载（AnimatePresence mode="wait" 按 key 重挂载）
@@ -838,10 +904,11 @@
   border-radius: 8px;
   border: 1px solid var(--search-border);
   background: var(--search-bg);
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 .settingsSearchBox:focus-within {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow, rgba(2, 132, 199, 0.15));
 }
 .settingsSearchInput {
   flex: 1;
@@ -876,10 +943,72 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
-/* 命中行的浅色底纹：--accent-light 六套主题各自定义过，不会在某套主题下翻车。
-   只在有关键词时加，空搜索时不加（否则整页都是底纹） */
+/* 命中行：左侧 accent 条 + 淡底。条子用 scaleX，比 inset box-shadow 更合成器友好 */
 .settingsHit {
-  background: var(--accent-light);
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  position: relative;
+  transition: background 150ms ease;
+}
+.settingsHit::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: pp-hit-bar-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  pointer-events: none;
+}
+@keyframes pp-hit-bar-in {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+/* 关键词高亮（注入的 mark） */
+.searchMark {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* 搜索结果条：粘在内容区顶，写清命中数与分区分布 */
+.settingsContentCol {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.settingsSearchBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+  animation: pp-float-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.settingsSearchBanner svg {
+  color: var(--accent-strong, var(--accent));
+  flex-shrink: 0;
+}
+.settingsSearchBannerText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settingsSearchSummary {
+  color: var(--text-muted);
+  margin-left: 4px;
 }
 /* ══ 设置从弹框改为主窗口视图（第 3 步） ══
    ≥600px：左导航 + 右内容双栏；<600px：一级导航 ↔ 二级内容下钻。
@@ -929,7 +1058,7 @@
   align-items: center;
   gap: 4px;
   padding: 5px 10px 5px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
   color: var(--text-secondary);
@@ -985,12 +1114,20 @@
   font-family: inherit;
   cursor: pointer;
   text-align: left;
+  border-left: 3px solid transparent;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 .settingsNavItem:hover { background: var(--hover); }
+.settingsNavItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* 选中：左侧 accent 指示条 + 淡底，比整条重色块更轻（对齐侧栏选中语言） */
 .settingsNavItemActive {
-  background: var(--accent-light);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent-strong, var(--accent));
   font-weight: 600;
+  border-left-color: var(--accent);
 }
 .settingsNavIcon { font-size: 14px; flex-shrink: 0; }
 /* 标签单行，真装不下时省略号而不是折行——折行会把菜单项高度撞不齐 */
@@ -1011,6 +1148,10 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  /* 🔴 必须 relative：分区头是 sticky，getBoundingClientRect 在吸顶时量到的是
+     「卡住后的视觉位置」而不是文档流位置。有了 positioned 祖先后，
+     useSettingsNav 可以用 offsetTop 链算出不受 sticky 影响的布局偏移。 */
+  position: relative;
   /* 🔴 `overflow-x` 必须显式写。只写 `overflow-y: auto` 不等于「x 不滚」：
      CSS 规范里一轴为非 visible 时，另一轴的 `visible` 会被**计算成 `auto`**。
      所以任何一个比容器宽一点点的子元素（哪怕只溢出几个像素）
@@ -1021,6 +1162,14 @@
      现有的 `.mcpCode`（JSON 配置）与 `.mcpAuditList` 就是这么做的。
      新增宽内容时照办，别回头把这行去掉。 */
   overflow-x: hidden;
+  /* S1：内容限宽居中，宽屏下设置行不再无限拉长 */
+  padding: 4px 16px 20px;
+  background: color-mix(in srgb, var(--section-bg) 35%, var(--dialog-bg));
+}
+.settingsContent > * {
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .settingsNoResult {
@@ -1055,32 +1204,108 @@
   background: var(--accent-light);
 }
 
-/* Setting row */
+/* Setting row — S1：行落在分区卡片内（左右下描边），可点行有 hover */
 .sRow {
   display: flex;
   align-items: center;
-  padding: 12px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   gap: 12px;
+  background: var(--card-bg);
+  /* 与 sSection 左右边对齐，拼成一张卡 */
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  transition: background 150ms ease;
 }
-.sRow:last-child { border-bottom: none; }
+.sRow:hover {
+  background: color-mix(in srgb, var(--accent) 4%, var(--card-bg));
+}
+.sRow:last-child { border-bottom: 1px solid var(--border-color); }
+/* 后面直接跟 lanPanel 时去掉行底边，由面板 border-top 接管，接缝只一条线 */
+.sRow:has(+ .lanPanel) { border-bottom: none; }
+/* 分区末行（下一个是标题）与整页末行：补下圆角，卡片才闭合 */
+.sRow:has(+ .sSection),
+.settingsSections > .sRow:last-child,
+.settingsContent > .sRow:last-child {
+  border-radius: 0 0 12px 12px;
+  box-shadow: var(
+    --glass-card-elev,
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07)
+  );
+}
 
+/* 行右控件列：胶囊/按钮统一右对齐，最小宽保证「哪行有控件」可扫（E2）。
+   🔴 排除 .sToggle：开关自己就是 last-child，吃掉 min-width:72 会把 44×26
+   轨道撑成 72px 长胶囊（旋钮贴边、字挤），和设计稿对不上。
+   🔴 不写 gap / flex-wrap：子控件自己的间距（sCleanup 4px、sSegGroup 2px）
+   特异性压不过本规则，写了会把它们盖掉。 */
+.sRow > :last-child:not(.sToggle) {
+  flex-shrink: 0;
+  min-width: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* emoji + 彩砖 + 白圆盘（最终稿：圆盘必须是真实 DOM，不能用 ::before） */
 .sRowIcon {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
   flex-shrink: 0;
+  background: var(--ic-brand);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 1px 3px rgba(15, 23, 42, 0.10);
+}
+.sRowIconGlyph {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  font-style: normal;
+  flex-shrink: 0;
+}
+.icSystem  { background: var(--ic-system); }
+.icCapture { background: var(--ic-capture); }
+.icSave    { background: var(--ic-save); }
+.icEditor  { background: var(--ic-editor); }
+.icPrivacy { background: var(--ic-privacy); }
+.icSync    { background: var(--ic-sync); }
+.icPaste   { background: var(--ic-paste); }
+.icBrand   { background: var(--ic-brand); }
+
+/* 分区头之后的非标题块（statsPanel / AiTab 内容 / sSectionDesc…）：
+   接上卡片左右边，避免「只有标题是卡片、身体散在外面」。
+   🔴 排除 .lanPanel：它要自己接在开关行下面（同卡续页），不能吃内缩浮卡样式。 */
+.sSection ~ :not(.sSection):not(.lanPanel) {
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+.sSection ~ :not(.sSection):not(.lanPanel):has(+ .sSection),
+.settingsSections > *:last-child:not(.lanPanel),
+.settingsContent > *:last-child:not(.lanPanel) {
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0 0 12px 12px;
+  box-shadow: var(
+    --glass-card-elev,
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07)
+  );
 }
 
 .sRowBody { flex: 1; min-width: 0; }
 .sRowLabel { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .sRowDesc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-/* Toggle switch — iOS style */
+/* Toggle switch — iOS style（紧凑 44×26，不吃右列 min-width:72） */
 .sToggle {
   display: inline-block;
   width: 44px;
@@ -1215,7 +1440,7 @@
 /* Action button */
 .sAction {
   padding: 5px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
   font-size: 11px;
@@ -1232,6 +1457,10 @@
   color: var(--accent-strong);
   background: var(--accent-light);
 }
+.sAction:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .sAction:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -1242,6 +1471,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 .sActionLoading::before {
   content: '';
@@ -1256,29 +1486,30 @@
   to { transform: rotate(360deg); }
 }
 
-/* Cleanup options inline */
-.sCleanup { display: flex; gap: 4px; }
+/* Cleanup options — S1 胶囊多选一（与查找卡/工具箱开关同语言） */
+.sCleanup { display: flex; gap: 4px; flex-wrap: wrap; }
 .sCleanupOpt {
-  padding: 3px 8px;
-  border-radius: 5px;
-  font-size: 10px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-color);
   font-family: inherit;
-  background: transparent;
+  background: var(--card-bg);
   color: var(--text-muted);
   transition: all 0.15s;
 }
 .sCleanupOpt.active {
-  background: var(--accent-light);
-  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent-strong);
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .sCleanupOpt:not(.active):hover {
-  color: var(--text-secondary);
-  background: var(--input-bg);
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
 }
 
 /* 分段控件（复刻 tabBar 风格） */
@@ -1289,6 +1520,7 @@
   padding: 3px;
   gap: 2px;
   flex-shrink: 0;
+  max-width: 100%;
 }
 .sSegOpt {
   width: 32px;
@@ -1436,8 +1668,8 @@
   transition: color 0.12s ease, border-color 0.12s ease;
 }
 .sResetBtn:hover {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  color: var(--danger);
+  border-bottom-color: color-mix(in srgb, var(--danger) 50%, transparent);
 }
 
 .sAutoSaveHint {
@@ -1455,10 +1687,14 @@
 
 /* 跨组件共享: SettingsDialog 帮助说明 */
 .sSectionDesc {
-  padding: 0 20px 8px;
+  padding: 10px 16px 8px;
   font-size: 11px;
   color: var(--text-muted);
   line-height: 1.5;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .sRowRecommend {
@@ -1477,14 +1713,36 @@
 
 
 
+/* 开关开启后的详情面板：接在同一张分区卡里（修复与开关行「断节」）。
+   不留 margin、不另起圆角；底部圆角/阴影由「下一个是 sSection / 末块」那套规则补。 */
 .lanPanel {
-  margin: 8px 20px; border-radius: 14px;
-  padding: 16px 18px;
-  background: var(--accent-light);
-  border: 1px solid var(--border-color);
+  margin: 0;
+  border-radius: 0;
+  padding: 14px 16px 16px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--card-bg));
+  border: none;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+}
+/* 下一分区 / 页尾 / 自身容器末尾：补下圆角 + 卡片阴影，与 sRow 末行同一收口。
+   last-child 覆盖 McpTab（包在 LazyMount 里、后面没有 sSection 兄弟）的情况。 */
+.sSection ~ .lanPanel:has(+ .sSection),
+.settingsSections > .lanPanel:last-child,
+.settingsContent > .lanPanel:last-child,
+.lanPanel:last-child {
+  border-radius: 0 0 12px 12px;
+  box-shadow: var(
+    --glass-card-elev,
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07)
+  );
 }
 .lanPanelHeader {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
 }
 .lanStatus {
@@ -1501,7 +1759,15 @@
   50% { opacity: 0.5; }
 }
 .lanDot.off { background: var(--text-muted); box-shadow: none; animation: none; }
-.lanStatusText { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.lanStatusText {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  /* 计数后缀整段不拆，避免「记住了 3 / 台」断在数字和单位之间 */
+}
+.lanStatusText span { white-space: nowrap; }
 /* ===== 附近设备配对（2026-09-06）=====
    设计稿：design/PastePanda-局域网同步-附近设备配对-设计稿.html */
 .lanSectionLabel {
@@ -1518,8 +1784,110 @@
 }
 .lanNearbyEmpty {
   font-size: 11.5px; color: var(--text-muted); line-height: 1.6;
-  padding: 10px 12px; border-radius: 8px;
-  background: var(--section-bg); margin-bottom: 10px;
+  padding: 12px 14px; border-radius: 12px;
+  border: 1px dashed var(--border-color);
+  background: var(--card-bg); margin-bottom: 10px;
+}
+.lanNearbyEmptyTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.lanNearbySteps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+.lanNearbySteps li { margin: 3px 0; }
+
+/* 监听失败横幅（覆盖 mcpAlert 内布局） */
+.lanAlertBody {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.lanAlertHint {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.lanAlertHint code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--orange, #C54A0A) 12%, transparent);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+/* 高级区：对齐 8/28 阶梯 */
+.lanAdvBody {
+  margin-top: 6px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lanAdvDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.lanAdvRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lanAdvLabel {
+  flex-shrink: 0;
+  width: 56px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.lanKeyInput {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.lanKeyInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow, rgba(2, 132, 199, 0.15));
+  background: var(--card-bg);
+}
+.lanKeyMono {
+  font-family: ui-monospace, Consolas, monospace;
+}
+.lanTip {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.lanTestRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.lanTestMsg {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.lanTestOk {
+  color: var(--green);
+  font-weight: 600;
 }
 
 /* 配对核对框。盖住列表，只让用户干一件事。 */
@@ -1626,9 +1994,72 @@
   background: none; border: 1px solid var(--border-color); border-radius: 6px;
   padding: 2px 8px; font-size: 11px; color: var(--text-secondary);
   cursor: pointer; font-family: inherit;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .lanRefreshBtn:hover { background: var(--hover); }
 .lanRefreshBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 设备暂停态 + 行内启用开关（方案 A） */
+.lanDevicePaused {
+  border-style: dashed;
+  opacity: 0.78;
+}
+.lanDevicePausedBadge {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--orange-bg, color-mix(in srgb, var(--orange, #e0803a) 12%, transparent));
+  color: var(--orange, #e0803a);
+  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 35%, var(--border-color));
+  white-space: nowrap;
+}
+.lanPauseSw {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.lanPauseLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 22px;
+  text-align: right;
+}
+.lanPauseToggle {
+  width: 34px;
+  height: 18px;
+  border-radius: 10px;
+  border: none;
+  padding: 0;
+  background: var(--border-color);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.lanPauseToggle.on {
+  background: var(--green);
+}
+.lanPauseToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.lanPauseKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+}
+.lanPauseToggle.on .lanPauseKnob {
+  transform: translateX(16px);
+}
 
 
 
@@ -1697,6 +2128,8 @@
   cursor: pointer;
   font-size: 11px;
   color: var(--danger);
+  white-space: nowrap;
+  font-family: inherit;
   opacity: 0.8;
 }
 
@@ -1896,6 +2329,9 @@
   font-size: 11px;
   padding: 2px 8px;
   cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: inherit;
 }
 
 .mcpGuideRow button:hover { background: var(--hover); border-color: var(--accent); }

@@ -479,7 +479,12 @@
 }
 .actBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
 .actBtn:disabled { opacity: 0.5; cursor: default; }
-.copyDone { color: var(--green); border-color: var(--green-border); background: var(--green-bg); }
+.copyDone {
+  color: var(--green);
+  border-color: var(--green-border);
+  background: var(--green-bg);
+  animation: pp-pop 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 .pasteBtn { border: none; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; }
 .pasteBtn:hover:not(:disabled) { opacity: 0.92; color: #fff; border: none; }
 

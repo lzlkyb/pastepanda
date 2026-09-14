@@ -2,28 +2,33 @@
  * 列表/网格形态：列数测量与形态选择。
  *
  * 🔴 红线：无 AI。纯尺寸计算 + 一个 localStorage 偏好。
+ *
+ * 2026-09：网格**任意宽度可切**。窄栏不再置灰，而是降到 1 列卡片
+ * （产品预期：Notes/Notion 都是这样；按钮灰掉会被当成坏了）。
+ * 列数仍按中栏实宽分档：≥780 → 3，≥520 → 2，否则 1。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type NoteLayout = "list" | "grid";
 
-/** 低于这个宽度网格放不下（两列卡片会窄到标题只剩几个字）。 */
-const MIN_GRID_W = 520;
-/** 三列的门槛。 */
+/** 两列门槛。低于此用 1 列卡片（不是禁用网格）。 */
+const TWO_COL_W = 520;
+/** 三列门槛。 */
 const THREE_COL_W = 780;
 
-interface GridCapacity {
+export interface GridCapacity {
+  /** 恒 true：网格始终可选。保留字段以免调用方/类型大改。 */
   canGrid: boolean;
   cols: number;
 }
 
 function capacityOf(w: number): GridCapacity {
-  const canGrid = w >= MIN_GRID_W;
-  return { canGrid, cols: canGrid ? (w >= THREE_COL_W ? 3 : 2) : 1 };
+  const cols = w >= THREE_COL_W ? 3 : w >= TWO_COL_W ? 2 : 1;
+  return { canGrid: true, cols };
 }
 
 /**
- * 量**中栏自身**的宽度，给出能不能用网格与几列。
+ * 量**中栏自身**的宽度，给出网格列数。
  *
  * 🔴 必须 ResizeObserver 而不能用 `useMediaQuery`：
  *   中栏宽度受侧栏开合与第三栏拖拽（`split.ratio`）影响，
@@ -44,7 +49,7 @@ function capacityOf(w: number): GridCapacity {
 export function useGridCapacity(): GridCapacity & {
   measureRef: (el: HTMLElement | null) => void;
 } {
-  const [cap, setCap] = useState<GridCapacity>({ canGrid: false, cols: 1 });
+  const [cap, setCap] = useState<GridCapacity>({ canGrid: true, cols: 1 });
   const roRef = useRef<ResizeObserver | null>(null);
 
   const measureRef = useCallback((el: HTMLElement | null) => {
@@ -56,7 +61,7 @@ export function useGridCapacity(): GridCapacity & {
     const apply = () =>
       setCap((prev) => {
         const next = capacityOf(el.clientWidth);
-        // ❗ 阈值没跨过就返回原对象，React 会跳过重渲染。
+        // ❗ 列数没变就返回原对象，React 会跳过重渲染。
         //   不这么写的话拖分栏时每一帧都会把整个笔记列表重渲染一遍。
         return prev.canGrid === next.canGrid && prev.cols === next.cols ? prev : next;
       });
@@ -82,7 +87,7 @@ const LS_KEY = "pastepanda_kb_note_layout";
  *
  * ❗ 存的是**偏好**而不是生效值：窗口拉窄时不能把用户的选择改成 list 写回去，
  *   否则拉宽回来后就变成列表了——用户从没按过那下。
- *   生效值 = `pref === "grid" && canGrid ? "grid" : "list"`，在调用方算。
+ *   现在网格始终可选，生效值 = 偏好本身；拉宽只增加列数。
  */
 export function useNoteLayoutPref(): [NoteLayout, (l: NoteLayout) => void] {
   const [pref, setPref] = useState<NoteLayout>(() =>

@@ -2,6 +2,7 @@ import type { AppConfig } from "@/stores/appStore";
 import { emit } from "@tauri-apps/api/event";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
 import { HelpTooltip } from "@/components/HelpTooltip";
+import { SettingTile } from "../ToggleRow"
 import styles from "../../Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
@@ -27,7 +28,7 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
       {/* ── 外观 ── */}
       <div className={styles.sSection}>外观</div>
       <div className={styles.sRow} style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-        <span className={styles.sRowIcon} style={{ background: "linear-gradient(135deg, #0078D4, #5856D6)", width: "fit-content", padding: "6px 12px" }}>🎨</span>
+        <SettingTile hue="brand">🎨</SettingTile>
         <div className={styles.sRowBody}>
           <div className={styles.sRowLabel}>
             主题配色
@@ -84,7 +85,7 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
         </div>
       </div>
       <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>📑</span>
+        <SettingTile hue="system">📑</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>标签样式</div>
           <div className={`${styles.sRowDesc}`}>切换筛选标签的显示风格</div>

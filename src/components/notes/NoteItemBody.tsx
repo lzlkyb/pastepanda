@@ -86,8 +86,10 @@ export function NoteItemBody({
         {note.tags.length > MAX_ROW_TAGS && (
           <TagBadgeMore count={note.tags.length - MAX_ROW_TAGS} />
         )}
-        {/* 侧栏收起时才显所属文件夹：展开时树里已经高亮着了，重复信息 */}
-        {showFolderColumn && (
+        {/* 侧栏收起时才显所属文件夹：展开时树里已经高亮着了，重复信息。
+            2026-09：无文件夹（未分类）不显示徽标——列表里几乎每条都挂着
+            「未分类」是噪声，不是信息；有夹子时名字本身就是区分。 */}
+        {showFolderColumn && note.folder_id && (
           <span className={styles.rowFolder}>{folderName(note.folder_id)}</span>
         )}
       </span>

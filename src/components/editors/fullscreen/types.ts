@@ -37,6 +37,8 @@ export interface ShellBridge {
   indentMore: () => void;
   /** 选区行减少缩进 */
   indentLess: () => void;
+  /** 打开编辑区内查找面板（Ctrl+F 同源；工具栏可见入口，L2） */
+  openSearch: () => void;
 }
 
 /** 语言模式工厂上下文：外壳把运行期能力注入给类型专属扩展 */

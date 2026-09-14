@@ -7570,6 +7570,27 @@ fn test_配对与忘记设备() {
     assert!(!store.device_forget("aa").unwrap(), "重复忘记该返回 false");
 }
 
+/// 暂停可逆：游标与配对都留着；重复设同值返回 false。
+#[test]
+fn test_设备暂停与恢复() {
+    let store = make_store();
+    store.device_pair("aa", "笔记本", "").unwrap();
+    store.device_advance_cursor("aa", 9_999).unwrap();
+
+    assert!(store.device_set_paused("aa", true).unwrap());
+    assert!(store.device_get("aa").unwrap().unwrap().paused);
+    assert!(!store.device_set_paused("aa", true).unwrap(), "重复暂停该返回 false");
+    assert_eq!(
+        store.device_get("aa").unwrap().unwrap().sync_cursor_ms,
+        9_999,
+        "暂停不该动同步游标"
+    );
+
+    assert!(store.device_set_paused("aa", false).unwrap());
+    assert!(!store.device_get("aa").unwrap().unwrap().paused);
+    assert!(!store.device_set_paused("missing", true).unwrap());
+}
+
 /// 重复配对同一台机器**只更新名字与 relay**，不抹掉连接层的事实。
 #[test]
 fn test_重复配对不重置在线状态() {

@@ -41,6 +41,9 @@ pub struct Device {
     /// 与「上次同步发生在何时」可以差很远（一周没改东西、但天天在同步）。
     #[serde(default)]
     pub last_ok_ms: i64,
+    /// 用户暂停了这台设备的同步（仍配对、游标保留）。
+    #[serde(default)]
+    pub paused: bool,
 }
 
 /// 在线状态的两个取值。用常量而不是散在各处的字面量（规则 #11）。
@@ -61,11 +64,13 @@ fn row_to_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
         //   新列**只能追在末尾**，插中间会把后面所有下标推一位，
         //   而那不报错、只是静默读错列。
         last_ok_ms: r.get(8)?,
+        // 下标 9：新列只能追在 COLS 末尾（见上一条注释）。
+        paused: r.get::<_, i64>(9)? != 0,
     })
 }
 
 const COLS: &str = "node_id, name, paired_at, transport, conn_state, last_seen, relay_addr, \
-     sync_cursor_ms, last_ok_ms";
+     sync_cursor_ms, last_ok_ms, paused";
 
 impl DataStore {
     /// 配对（或重新配对同一个 `node_id`）。
@@ -122,6 +127,37 @@ impl DataStore {
         conn.execute("DELETE FROM devices WHERE node_id = ?1", [node_id])
             .map(|n| n > 0)
             .map_err(|e| e.to_string())
+    }
+
+    /// 暂停 / 恢复一台设备的同步。返回是否真的改到了一行。
+    ///
+    /// 暂停 ≠ 忘记：身份与 `sync_cursor_ms` 都留着，恢复后接着传。
+    pub fn device_set_paused(&self, node_id: &str, paused: bool) -> Result<bool, String> {
+        let conn = self.lock_conn();
+        // 先读当前值：SQLite 对「UPDATE 成相同值」仍计 1 行，
+        // 直接看 changes 会把「本来就是暂停」报成「刚改成功」。
+        let current: Option<i64> = match conn.query_row(
+            "SELECT paused FROM devices WHERE node_id = ?1",
+            [node_id],
+            |r| r.get(0),
+        ) {
+            Ok(v) => Some(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(e) => return Err(e.to_string()),
+        };
+        let Some(current) = current else {
+            return Ok(false);
+        };
+        let want = if paused { 1 } else { 0 };
+        if current == want {
+            return Ok(false);
+        }
+        conn.execute(
+            "UPDATE devices SET paused = ?2 WHERE node_id = ?1",
+            rusqlite::params![node_id, want],
+        )
+        .map(|n| n > 0)
+        .map_err(|e| e.to_string())
     }
 
     /// 标记握手成功：置 `online`、记通道与时刻。

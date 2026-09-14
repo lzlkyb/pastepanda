@@ -7,9 +7,9 @@
  *
  * 🔴 红线：全程无 AI。标题与正文只进本机 SQLite 与本机 FTS。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ExternalLink, Copy, History } from "lucide-react";
+import { X, ExternalLink, Copy, History, Search } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
@@ -88,11 +88,30 @@ function NoteDialogInner({
   /** W4a：把编辑区换成冲突对照。同 `showHistory`，不再叠一层弹窗。 */
   const [showConflict, setShowConflict] = useState(false);
 
+  /** 编辑区 openSearch（CodeMirror）。标题栏「查找」在预览态也要能点，故上提。 */
+  const openSearchRef = useRef<(() => void) | null>(null);
+  const handleFind = useCallback(() => {
+    if (showHistory) setShowHistory(false);
+    if (showConflict) setShowConflict(false);
+    const run = () => openSearchRef.current?.();
+    if (viewMode === "preview") {
+      setViewMode("edit");
+      // 等 React 提交 + 撤掉 display:none 后再开面板；
+      // 只 rAF 一帧时编辑器仍可能未完成布局，面板会开在看不见的地方。
+      setTimeout(run, 80);
+    } else {
+      run();
+    }
+  }, [showHistory, showConflict, viewMode, setViewMode]);
+
   // Esc 自己接（与 ItemEditorDialog 同口径）：App.tsx 的全局分层对 noteDraft 只做
   // `return`、不代关，否则脏数据确认根本没机会弹。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // 查找面板开着时，Esc 应只关面板（CM searchKeymap 自己处理），
+      // 不要把整个笔记弹窗关掉——那会让人以为「查找」把稿子弄没了。
+      if (document.querySelector(".cm-editor .cm-panels.cm-search")) return;
       e.preventDefault();
       e.stopPropagation();
       void handleClose();
@@ -115,6 +134,17 @@ function NoteDialogInner({
             <h2 className="dialog-title">
               📝 {draft.noteId ? "编辑笔记" : draft.historyId ? "转为笔记" : "新建笔记"}
             </h2>
+            {/* 查找：标题栏常驻（L2）。预览态也会先切到编辑再开搜索面板 */}
+            <button
+              type="button"
+              className={styles.headerFindBtn}
+              onClick={handleFind}
+              title="查找 Ctrl+F"
+              aria-label="查找"
+            >
+              <Search size={13} />
+              <span>查找</span>
+            </button>
             {/* 形态切换器。与第三栏、全屏编辑器**同一个组件、同一份定义**，
                 而且都在头部——三个入口的手感一致。
                 弹窗宽 520px，分屏后每边 ~250px，跟改之前一样，所以不置灰。 */}
@@ -193,6 +223,9 @@ function NoteDialogInner({
                 isDark={ed.isDark}
                 onChange={ed.setContent}
                 onSave={handleSave}
+                onOpenSearch={(fn) => {
+                  openSearchRef.current = fn;
+                }}
               />
             )}
           </div>
