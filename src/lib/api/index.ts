@@ -188,3 +188,48 @@ export type {
 
 // 初始化
 export { initBackend } from "./init";
+
+// 远程电脑（方案 A：与同步配对分离）
+export {
+  rcStatus,
+  rcIdentity,
+  rcTargets,
+  rcInviteCreate,
+  rcInvitePreview,
+  rcPair,
+  rcForget,
+  rcJoinApprove,
+  rcJoinDeny,
+  rcSetEnabled,
+  rcStartChannel,
+  rcSetCapability,
+  rcSetDeviceAllowed,
+  rcRequestSession,
+  rcCancelRequest,
+  rcApproveInbound,
+  rcDenyInbound,
+  rcEndSession,
+  rcRequireActive,
+} from "./rc";
+export type {
+  RcCapability,
+  RcSession,
+  RcStatus,
+  RcTargetDevice,
+  RcInboundKnock,
+  RcJoinRequest,
+  RcIdentity,
+  RcInvite,
+  RcInviteCreated,
+  RcSyncOffer,
+} from "./rc";
+export {
+  rcSyncOffers,
+  kbSyncAllowFromRc,
+  kbSyncDenyFromRc,
+  rcLatestFrame,
+  rcSendInput,
+  rcPushClipboard,
+  rcPullClipboard,
+} from "./rc";
+export type { RcFramePayload, RcInputEvent } from "./rc";

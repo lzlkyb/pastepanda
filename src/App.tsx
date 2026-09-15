@@ -67,6 +67,8 @@ const BatchReplaceDialog = lazy(() => import("@/components/BatchReplaceDialog").
 const ConfigDiffDialog = lazy(() => import("@/components/ConfigDiffDialog").then(m => ({ default: m.ConfigDiffDialog })));
 const SequentialPasteDialog = lazy(() => import("@/components/SequentialPasteDialog").then(m => ({ default: m.SequentialPasteDialog })));
 const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
+const RemoteComputerDialog = lazy(() => import("@/components/rc/RemoteComputerDialog").then(m => ({ default: m.RemoteComputerDialog })));
+const RcOverlay = lazy(() => import("@/components/rc/RcOverlay").then(m => ({ default: m.RcOverlay })));
 
 function App() {
   const appMode = useAppStore((s) => s.appMode);
@@ -200,6 +202,7 @@ function App() {
   /** 每日整理（H3）。不进 `dialogOpen`：它自带 FocusTrap 与背景点击关闭，
    *  与周报弹窗同一类（那个也没进）。 */
   const [showDailyBrief, setShowDailyBrief] = useState(false);
+  const [showRemote, setShowRemote] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
   const [showEncoding, setShowEncoding] = useState(false);
   /** 二维码工具（QREditor 独立弹窗，读剪贴板预填） */
@@ -1090,6 +1093,7 @@ function App() {
     difffull: openFreeDiffFullscreen,
     newdiagram: handleNewDiagram,
     dailybrief: () => setShowDailyBrief(true),
+    remote: () => setShowRemote(true),
     qr: async () => {
       setQrInitialText(await readClipboardText());
       setShowQr(true);
@@ -1114,6 +1118,9 @@ function App() {
         {/* settingsOpen 让顶栏隐掉模式切换器与搜索/页签行（那两样属于「记录模式」），
             外壳仍保留——无边框窗口靠它拖动和最小化 */}
         <TopBar onSettings={() => setShowSettings(true)} settingsOpen={showSettings} />
+        <Suspense fallback={null}>
+          <RcOverlay />
+        </Suspense>
         {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
             v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。
             这里只认 "on"（唯一判定 @/lib/aiAvailability：开关开着 + 密钥配齐，本地厂商免密钥）——
@@ -1269,6 +1276,21 @@ function App() {
               </Suspense>
             )}
           </ErrorBoundary>
+          <ErrorBoundary fallback={null} componentName="远程电脑">
+
+            {showRemote && (
+
+              <Suspense fallback={null}>
+
+                <RemoteComputerDialog onClose={() => setShowRemote(false)} />
+
+              </Suspense>
+
+            )}
+
+          </ErrorBoundary>
+
+          
           <ErrorBoundary fallback={null} componentName="编码转换">
             <EncodingDialog open={showEncoding} onClose={() => setShowEncoding(false)} />
           </ErrorBoundary>

@@ -48,6 +48,7 @@ mod screenshot;
 pub mod secret_registry;
 /// M6 多机同步。当前只有 P1 身份/配对层，无传输层、无界面。
 pub mod sync;
+pub mod rc;
 /// AM-8 近重复判定（纯函数）。
 pub mod similar;
 mod tray_manager;
@@ -619,7 +620,26 @@ pub fn run() {
             // ❗ 必须先 manage 再 boot：`boot` 里要 `try_state::<SyncService>()`。
             log::info!("[BOOT] 6 准备注册 SyncService");
             app.manage(sync::service::SyncService::new());
+            // 远程协助：全局单例；State 也放同一份。
+            {
+                let rc_state = app.state::<data_store::DataStore>();
+                let rc_svc = std::sync::Arc::new(rc::RcService::new((*rc_state).clone()));
+                rc::install_global(rc_svc.clone());
+                {
+                    let handle_rc = handle.clone();
+                    rc_svc.set_notify(std::sync::Arc::new(move || {
+                        if let Some(svc) = rc::global() {
+                            let _ = handle_rc.emit("rc-session-changed", svc.status());
+                            if let Some(err) = svc.take_inject_err() {
+                                let _ = handle_rc.emit("rc-inject-error", err);
+                            }
+                        }
+                    }));
+                }
+                app.manage(rc_svc);
+            }
             commands::boot(&handle);
+            commands::rc_boot(&handle);
             log::info!("[BOOT] 7 boot 已派发");
 
             // 显示窗口
@@ -761,6 +781,37 @@ pub fn run() {
             commands::kb_sync_forget,
             commands::kb_sync_set_paused,
             commands::kb_sync_now,
+            // 远程电脑
+            commands::rc_status,
+            commands::rc_identity,
+            commands::rc_targets,
+            commands::rc_sync_offers,
+            commands::kb_sync_allow_from_rc,
+            commands::kb_sync_deny_from_rc,
+            commands::rc_invite_create,
+            commands::rc_invite_preview,
+            commands::rc_pair,
+            commands::rc_forget,
+            commands::rc_join_approve,
+            commands::rc_join_deny,
+            commands::rc_set_enabled,
+            commands::rc_start_channel,
+            commands::rc_set_capability,
+            commands::rc_set_device_allowed,
+            commands::rc_request_session,
+            commands::rc_cancel_request,
+            commands::rc_approve_inbound,
+            commands::rc_deny_inbound,
+            commands::rc_end_session,
+            commands::rc_require_active,
+            commands::rc_latest_frame,
+            commands::rc_send_input,
+            commands::rc_push_clipboard,
+            commands::rc_set_quality,
+            commands::rc_list_monitors,
+            commands::rc_set_capture_scope,
+            commands::rc_pull_clipboard,
+            commands::rc_session_history,
             commands::get_kb_sync_status,
             commands::toggle_kb_sync,
             commands::mcp_get_status,

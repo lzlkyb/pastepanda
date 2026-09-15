@@ -1,0 +1,508 @@
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--line:#e3e6ea;--text:#1c1f23;--dim:#6b7280;
+        --accent:#4f7cff;--code:#f3f4f6;--warn:#e0803a;--danger:#d64545;--ok:#2f9e5f;}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--code:#24272c;--warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;}}
+  :root[data-theme="dark"]{
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--code:#24272c;--warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;}
+  body{background:var(--bg);color:var(--text);margin:0;padding:28px 20px 64px;
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1000px;margin:0 auto;}
+  h1{font-size:21px;margin:0 0 4px;}
+  h2{font-size:16px;margin:36px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);}
+  h3{font-size:13.5px;margin:20px 0 8px;color:var(--dim);letter-spacing:.03em;}
+  .sub{color:var(--dim);margin:0 0 24px;font-size:13px;}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12.5px;}
+  .note{border-left:3px solid var(--accent);padding:8px 12px;margin:12px 0;
+        background:var(--panel);border-radius:0 6px 6px 0;}
+  .note.warn{border-left-color:var(--warn);}
+  .note.bad{border-left-color:var(--danger);}
+  .note.good{border-left-color:var(--ok);}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px;}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top;}
+  th{background:var(--code);font-weight:600;}
+  .scroll{overflow-x:auto;}
+
+  .demo{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin:16px 0;overflow:hidden;}
+  .demoBar{display:flex;gap:8px;align-items:center;padding:8px 11px;
+           background:var(--code);border-bottom:1px solid var(--line);font-size:12px;}
+  .demoBar b{font-weight:600;}
+  .demoBar .sp{flex:1;}
+  .demoBar button{font:inherit;font-size:12px;padding:3px 10px;border-radius:6px;
+                  border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;}
+  .demoBar button.act{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .screen{padding:14px;}
+
+  /* 设置行 */
+  .setRow{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);}
+  .setRow:last-child{border-bottom:none;}
+  .setInfo{flex:1;min-width:0;}
+  .setTitle{font-size:13px;font-weight:600;margin-bottom:2px;}
+  .setDesc{font-size:12px;color:var(--dim);line-height:1.65;}
+  .sw{width:38px;height:20px;border-radius:11px;background:var(--line);position:relative;
+      cursor:pointer;border:none;padding:0;flex-shrink:0;margin-top:2px;transition:background .15s;}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+             background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s;}
+  .sw.on{background:var(--ok);}
+  .sw.on::after{transform:translateX(18px);}
+  .capPills{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+  .pill{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--line);
+        background:var(--bg);color:var(--dim);cursor:pointer;}
+  .pill.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-strong,var(--accent));
+           border-color:color-mix(in srgb,var(--accent) 40%,var(--line));font-weight:600;}
+  .pill:disabled{opacity:.45;cursor:not-allowed;}
+
+  /* 设备列表 */
+  .devList{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+  .devItem{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+           background:var(--bg);border:1px solid var(--line);}
+  .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font-size:12px;font-weight:700;flex-shrink:0;}
+  .info{flex:1;min-width:0;}
+  .name{font-size:12.5px;font-weight:600;}
+  .meta{font-size:11px;color:var(--dim);}
+  .badge{font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);
+         background:var(--bg);color:var(--dim);flex-shrink:0;white-space:nowrap;}
+  .badge.on{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok);
+            border-color:color-mix(in srgb,var(--ok) 35%,var(--line));}
+  .badge.warn{background:color-mix(in srgb,var(--warn) 12%,transparent);color:var(--warn);
+              border-color:color-mix(in srgb,var(--warn) 35%,var(--line));}
+  .badge.danger{background:color-mix(in srgb,var(--danger) 10%,transparent);color:var(--danger);
+                border-color:color-mix(in srgb,var(--danger) 35%,var(--line));}
+  .miniBtn{font:inherit;font-size:11px;padding:4px 10px;border-radius:6px;
+           border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;
+           flex-shrink:0;}
+  .miniBtn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+  .miniBtn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--line));}
+  .miniBtn:disabled{opacity:.45;cursor:not-allowed;}
+
+  /* 工具箱瓦片 */
+  .toolsGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .tile{border:1px solid var(--line);border-radius:10px;padding:14px 12px;background:var(--bg);
+        text-align:left;cursor:default;}
+  .tile.hero{border-color:color-mix(in srgb,var(--accent) 40%,var(--line));
+             background:color-mix(in srgb,var(--accent) 6%,var(--bg));}
+  .tileIcon{font-size:22px;margin-bottom:6px;}
+  .tileName{font-size:13px;font-weight:600;margin-bottom:2px;}
+  .tileDesc{font-size:11px;color:var(--dim);line-height:1.5;}
+  .tileNew{font-size:10px;padding:1px 6px;border-radius:10px;background:var(--accent);color:#fff;
+           margin-left:6px;vertical-align:middle;}
+
+  /* 会话壳 / 画面 */
+  .viewShell{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0d0f12;}
+  .viewTop{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);
+           border-bottom:1px solid var(--line);font-size:12px;}
+  .viewTop .live{width:8px;height:8px;border-radius:50%;background:var(--ok);flex-shrink:0;}
+  .viewTop .live.off{background:var(--dim);}
+  .viewTop .sp{flex:1;}
+  .fakeScreen{height:220px;position:relative;
+    background:
+      linear-gradient(180deg,#1a2332 0%,#0f141c 100%);
+  }
+  .fakeWin{position:absolute;border-radius:6px;border:1px solid #2a3344;background:#151b26;}
+  .fakeWin .bar{height:18px;background:#1e2634;border-radius:6px 6px 0 0;display:flex;align-items:center;
+                gap:4px;padding:0 8px;}
+  .fakeWin .bar i{width:7px;height:7px;border-radius:50%;background:#3a4558;}
+  .fakeWin .body{padding:10px;font-size:10px;color:#7a8699;line-height:1.8;font-family:ui-monospace,Consolas,monospace;}
+  .hud{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;}
+  .hud span{font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.55);
+            color:#c8d0dc;border:1px solid rgba(255,255,255,.08);}
+
+  /* 被控横幅 */
+  .ctrlBanner{display:flex;align-items:center;gap:10px;padding:10px 14px;
+    background:color-mix(in srgb,var(--danger) 12%,var(--panel));
+    border:1px solid color-mix(in srgb,var(--danger) 35%,var(--line));
+    border-radius:8px;margin:10px 0;font-size:12.5px;}
+  .ctrlBanner .who{font-weight:600;color:var(--danger);}
+  .ctrlBanner .sp{flex:1;}
+  .ctrlBanner .meta{font-size:11px;color:var(--dim);}
+
+  /* 确认条 */
+  .joinCard{border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));
+            background:color-mix(in srgb,var(--warn) 8%,var(--panel));
+            border-radius:10px;padding:12px 14px;margin:10px 0;}
+  .joinCard h4{margin:0 0 6px;font-size:13px;}
+  .joinCard p{margin:0 0 10px;font-size:12px;color:var(--dim);line-height:1.65;}
+  .joinBtns{display:flex;gap:8px;justify-content:flex-end;}
+
+  .emptyBox{border:1px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;
+            color:var(--dim);font-size:12.5px;line-height:1.7;background:var(--bg);}
+  .foot{font-size:11px;color:var(--dim);line-height:1.7;margin:8px 0 4px;}
+  .k{font-size:10px;padding:1px 5px;border-radius:4px;border:1px solid var(--line);
+     background:var(--code);font-family:ui-monospace,Consolas,monospace;}
+  ul.tight{margin:6px 0;padding-left:18px;font-size:13px;}
+  ul.tight li{margin:4px 0;}
+</style>
+
+<div class="wrap">
+
+<h1>远程电脑 · 设计稿</h1>
+<p class="sub">PastePanda · 2026-09-14 · 对应规划 <code>docs/PastePanda-规划与排期.md §3.7</code> · 一期 R0 门禁 + R1 只看 + R2 可控壳 · 默认关闭</p>
+
+<div class="note warn">
+  <b>先读这句</b>：这是「远程协助」不是 ToDesk。只服务<b>已配对的自有设备</b>；
+  被控端默认拒绝一切远程；每次会话都要对端点头；无会话时协议层直接丢 Input 帧。
+  远程 shell / 文件管理 / 无人值守 <b>明确不做</b>（规划 §4）。
+</div>
+
+<h2>一、分期对照（本稿覆盖到哪）</h2>
+<div class="scroll">
+<table>
+<tr><th>期</th><th>本稿内容</th><th>状态</th></tr>
+<tr><td><b>R0</b> 门禁</td><td>设置「允许被远程」+ 能力档（只看 / 可控）+ 设备级可再关</td><td>§二 设置</td></tr>
+<tr><td><b>R1</b> 只看</td><td>工具箱入口 · 设备列表 · 申请会话 · 对端确认 · 看画面壳 · 被控横幅</td><td>§三–§六</td></tr>
+<tr><td><b>R2</b> 可控</td><td>能力升级确认 · 键鼠状态提示（本稿只做壳与文案，注入逻辑另实现）</td><td>§七</td></tr>
+<tr><td>R3 异地/体验</td><td>脏矩形 · 自适应码率 · 剪贴板会话内推拉</td><td>不在本稿</td></tr>
+</table>
+</div>
+
+<h2>二、R0 · 设置「允许被远程」</h2>
+<p class="foot">挂在设置页 · 与「知识库同步」同级新块。<b>默认关</b>；关时无任何 RC 网络入口。</p>
+
+<div class="demo">
+  <div class="demoBar"><b>演示 · 被控开关</b><span class="sp"></span>
+    <button type="button" onclick="document.getElementById('rcMain').classList.toggle('hidden')">显隐面板</button>
+    <button type="button" class="act" onclick="toggleSw(this)">切换允许</button>
+  </div>
+  <div class="screen" id="rcMain">
+    <div class="setRow">
+      <div class="setInfo">
+        <div class="setTitle">允许被远程协助</div>
+        <div class="setDesc">
+          打开后，<b>已配对</b>的设备可以申请查看或控制这台电脑。默认关闭。
+          会话开始时本机会出现常驻横幅，随时可结束。
+        </div>
+      </div>
+      <button type="button" class="sw" id="rcSw" onclick="toggleSw(this)" aria-label="允许被远程"></button>
+    </div>
+
+    <div class="setRow">
+      <div class="setInfo">
+        <div class="setTitle">能力上限</div>
+        <div class="setDesc">
+          「可控」包含只看。对方申请的能力不能超过这里选的档。
+          选「只看」时，即使对方申请控制也会被拒。
+        </div>
+        <div class="capPills" id="capPills">
+          <button type="button" class="pill" data-cap="view">只看</button>
+          <button type="button" class="pill on" data-cap="control">可控（含只看）</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setRow">
+      <div class="setInfo">
+        <div class="setTitle">设备级限制</div>
+        <div class="setDesc">某台配对设备永不许远程这台电脑时，单独关掉。与同步暂停是<b>两个开关</b>：暂停停同步，这里停远程。</div>
+        <div class="devList">
+          <div class="devItem">
+            <div class="av" style="background:#4f7cff">书</div>
+            <div class="info">
+              <div class="name">书房主机</div>
+              <div class="meta">fingerprint 7736…98f · 在线</div>
+            </div>
+            <span class="badge on">允许</span>
+            <button type="button" class="miniBtn">关闭</button>
+          </div>
+          <div class="devItem">
+            <div class="av" style="background:#8b5cf6">客</div>
+            <div class="info">
+              <div class="name">客厅笔记本</div>
+              <div class="meta">fingerprint be0d…954 · 在线</div>
+            </div>
+            <span class="badge warn">已禁止</span>
+            <button type="button" class="miniBtn">允许</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>规则 15</b>：开关与它下面的能力档、设备列表同一可见性域；关掉主开关时能力档与设备行应变灰但仍可读（说明「为什么点不动」），不是整块消失。
+</div>
+
+<h2>三、工具箱入口</h2>
+<p class="foot">工具模式 · 「网络」新分组（或并入内容旁的「协作」）。名称用「远程电脑」，副标题写「协助」。</p>
+
+<div class="demo">
+  <div class="demoBar"><b>演示 · 工具箱瓦片</b><span class="sp"></span>
+    <span style="color:var(--dim)">本机「允许被远程」关时不影响发起；发起依赖的是对方允许</span>
+  </div>
+  <div class="screen">
+    <div class="toolsGrid">
+      <div class="tile hero">
+        <div class="tileIcon">🖥️</div>
+        <div class="tileName">远程电脑<span class="tileNew">新</span></div>
+        <div class="tileDesc">查看或操作已配对的另一台电脑</div>
+      </div>
+      <div class="tile">
+        <div class="tileIcon">📋</div>
+        <div class="tileName">依次粘贴</div>
+        <div class="tileDesc">按顺序逐条粘贴文本</div>
+      </div>
+      <div class="tile">
+        <div class="tileIcon">📝</div>
+        <div class="tileName">片段库</div>
+        <div class="tileDesc">常用文本收藏，一键粘贴</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>四、R1 · 发起端：设备列表 → 申请会话</h2>
+<p class="foot">点开「远程电脑」后的主体区。列表复用知识库设备数据源（已配对 + 在线 + 暂停）。</p>
+
+<h3>4.1 无配对 / 全离线</h3>
+<div class="demo">
+  <div class="demoBar"><b>演示 · 空态</b><span class="sp"></span>
+    <button type="button" onclick="setPane('paneEmpty')">空</button>
+    <button type="button" onclick="setPane('paneList')">有设备</button>
+    <button type="button" onclick="setPane('paneDenied')">对方关了</button>
+  </div>
+  <div class="screen">
+    <div class="emptyBox" id="paneEmpty">
+      <div style="font-size:22px;margin-bottom:8px">🖥️</div>
+      还没有可远程的设备<br>
+      先在 <b>设置 → 知识库同步</b> 完成配对；对方也需打开「允许被远程协助」。
+    </div>
+  </div>
+</div>
+
+<h3>4.2 设备列表与申请</h3>
+<div class="demo">
+  <div class="demoBar"><b>演示 · 申请</b><span class="sp"></span>
+    <span style="color:var(--dim)">轻预览：点「远程」先出半透明预览卡，不直接连（规则 18）</span>
+  </div>
+  <div class="screen">
+    <div class="devList">
+      <div class="devItem">
+        <div class="av" style="background:#4f7cff">书</div>
+        <div class="info">
+          <div class="name">书房主机</div>
+          <div class="meta">局域网直连 · 在线</div>
+        </div>
+        <span class="badge on">可申请</span>
+        <button type="button" class="miniBtn pri">远程</button>
+      </div>
+      <div class="devItem">
+        <div class="av" style="background:#8b5cf6">客</div>
+        <div class="info">
+          <div class="name">客厅笔记本</div>
+          <div class="meta">对方未开启「允许被远程」</div>
+        </div>
+        <span class="badge">不可用</span>
+        <button type="button" class="miniBtn" disabled>远程</button>
+      </div>
+      <div class="devItem" style="opacity:.72">
+        <div class="av" style="background:#6b7280">办</div>
+        <div class="info">
+          <div class="name">办公室台式</div>
+          <div class="meta">同步已暂停 · 远程仍可单独申请</div>
+        </div>
+        <span class="badge warn">离线</span>
+        <button type="button" class="miniBtn" disabled>远程</button>
+      </div>
+    </div>
+
+    <div id="paneDenied" style="display:none;margin-top:10px">
+      <div class="note bad" style="margin:0">
+        <b>对方关着「允许被远程」</b><br>
+        请让对方在它的 PastePanda 里打开：设置 → 允许被远程协助。<br>
+        本机不会越权发起——协议层也会拒。
+      </div>
+    </div>
+
+    <div class="joinCard" style="margin-top:14px">
+      <h4>申请查看「书房主机」的屏幕</h4>
+      <p>
+        对方会看到确认条，同意后才开始传输画面。<br>
+        能力：<b>只看</b>（本机设置若为「可控」，可在此升级，需对端再次同意）。
+      </p>
+      <div class="capPills" style="margin-bottom:10px">
+        <button type="button" class="pill on">只看</button>
+        <button type="button" class="pill">可控（需对方同意）</button>
+      </div>
+      <div class="joinBtns">
+        <button type="button" class="miniBtn">取消</button>
+        <button type="button" class="miniBtn pri">发送申请</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>五、R1 · 被控端：确认条 + 会话横幅</h2>
+<p class="foot">对齐 <code>KbJoinRequests</code>：有人申请时整块置顶；没人时不占位。会话中的横幅<b>常驻</b>（规则 15 / U3）。</p>
+
+<div class="demo">
+  <div class="demoBar"><b>演示 · 被控侧</b><span class="sp"></span>
+    <button type="button" onclick="setCtrl('wait')">等待确认</button>
+    <button type="button" onclick="setCtrl('live')">会话中</button>
+    <button type="button" onclick="setCtrl('off')">空闲</button>
+  </div>
+  <div class="screen">
+    <div id="ctrlWait">
+      <div class="joinCard">
+        <h4>「书房主机」想查看这台电脑的屏幕</h4>
+        <p>
+          发起设备指纹 <code>7736…98f</code> · 局域网<br>
+          能力范围：<b>只看</b> · 申请于 12 秒前<br>
+          同意后画面将实时发给对方；随时可在横幅上结束。
+        </p>
+        <div class="joinBtns">
+          <button type="button" class="miniBtn">拒绝</button>
+          <button type="button" class="miniBtn pri">同意查看</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ctrlLive" class="hidden">
+      <div class="ctrlBanner">
+        <span class="live" style="width:8px;height:8px;border-radius:50%;background:var(--danger);display:inline-block"></span>
+        <span class="who">正在被「书房主机」远程查看</span>
+        <span class="meta">只看 · 已 02:14 · 局域网</span>
+        <span class="sp"></span>
+        <button type="button" class="miniBtn danger">结束会话</button>
+      </div>
+      <p class="foot">横幅固定在主窗顶栏下 / 托盘弹窗顶部；关闭主窗不隐藏横幅（托盘仍可见）。「结束」双方同时生效。</p>
+    </div>
+
+    <div id="ctrlOff" class="hidden">
+      <div class="emptyBox">当前没有远程会话。有人申请时会在这里出现确认条。</div>
+    </div>
+  </div>
+</div>
+
+<div class="note good">
+  <b>两级取消</b>：被控端「结束」= 立刻断流；发起端 <span class="k">Esc</span> 先停预览，再 <span class="k">Esc</span> 才退出会话（规则 17.6 / 18.4）。
+</div>
+
+<h2>六、R1 · 发起端看画面壳</h2>
+<p class="foot">只读。无键鼠捕获。分辨率约 1280 宽 JPEG · 5–8fps（实现参数，界面只显示状态）。</p>
+
+<div class="demo">
+  <div class="demoBar"><b>演示 · 只看会话</b><span class="sp"></span>
+    <button type="button" class="act">结束会话</button>
+  </div>
+  <div class="screen" style="padding:0">
+    <div class="viewShell">
+      <div class="viewTop">
+        <span class="live"></span>
+        <b>书房主机</b>
+        <span class="badge">只看</span>
+        <span style="color:var(--dim)">1280×720 · 约 7 fps · 02:14</span>
+        <span class="sp"></span>
+        <button type="button" class="miniBtn">全屏</button>
+        <button type="button" class="miniBtn danger">结束</button>
+      </div>
+      <div class="fakeScreen">
+        <div class="fakeWin" style="left:8%;top:12%;width:48%;height:70%">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="body">C:\Users\demo&gt; dir<br>Volume in drive C is OS<br>10 File(s)  12,480 bytes</div>
+        </div>
+        <div class="fakeWin" style="left:52%;top:28%;width:38%;height:48%">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="body">粘贴板历史…<br>笔记 · 同步中…</div>
+        </div>
+        <div class="hud">
+          <span>只读 · 未连接键鼠</span>
+          <span>Esc 停流</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>七、R2 · 可控壳（文案与确认，逻辑另做）</h2>
+
+<div class="demo">
+  <div class="demoBar"><b>演示 · 升级为可控</b></div>
+  <div class="screen">
+    <div class="joinCard">
+      <h4>申请控制「书房主机」</h4>
+      <p>
+        对方将能看到你的鼠标与键盘操作。<br>
+        文本粘贴优先走「推送剪贴板 → 对端粘贴」，比逐键更稳。<br>
+        会话随时可被双方结束。
+      </p>
+      <div class="joinBtns">
+        <button type="button" class="miniBtn">取消</button>
+        <button type="button" class="miniBtn pri">发送控制申请</button>
+      </div>
+    </div>
+
+    <div class="ctrlBanner" style="margin-top:12px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--danger);display:inline-block"></span>
+      <span class="who">正在被「书房主机」远程控制</span>
+      <span class="meta">键鼠可用 · 已 00:41</span>
+      <span class="sp"></span>
+      <button type="button" class="miniBtn danger">结束会话</button>
+    </div>
+
+    <p class="foot">
+      可控态被控端横幅用 danger 色，文案从「查看」改为「控制」——同一位置同一结构，只换语义强度。
+      发起端 HUD 增加「键鼠已连接」。
+    </p>
+  </div>
+</div>
+
+<h2>八、状态与文案清单（实现时直接抄）</h2>
+<div class="scroll">
+<table>
+<tr><th>场景</th><th>用户看到什么</th><th>禁止</th></tr>
+<tr><td>对方未开允许</td><td>「对方未开启允许被远程」+ 去哪打开</td><td>静默失败 / 英文错误串</td></tr>
+<tr><td>对方拒绝</td><td>「对方拒绝了本次远程申请」</td><td>自动重试刷屏</td></tr>
+<tr><td>会话超时</td><td>「对方未在 60 秒内确认，申请已取消」</td><td>无限挂起</td></tr>
+<tr><td>断流</td><td>「连接已断开」+ 重试 / 结束两个出口</td><td>黑屏无说明</td></tr>
+<tr><td>UIPI 拦输入</td><td>「部分按键未送达（系统权限拦截）」</td><td>假装成功</td></tr>
+<tr><td>被控端结束</td><td>发起端 toast「对方结束了远程会话」</td><td>无声退出</td></tr>
+</table>
+</div>
+
+<h2>九、不在本期</h2>
+<ul class="tight">
+  <li>远程 shell / 任意命令</li>
+  <li>浏览或下载对端磁盘文件</li>
+  <li>无人值守常开被控</li>
+  <li>手机控制端</li>
+  <li>剪贴板文件夹、会话录像（屏幕录制已拍板不做）</li>
+</ul>
+
+<div class="note warn">
+  <b>实现顺序建议</b>：先 R0 协议与双端开关 + 单测（未 Grant 拒 Input）→ 再 R1 低帧只看 → 再 R2 键鼠。
+  设计稿确认后动代码；UI 落地前仍按规则 4/12 对照真实 <code>Settings.module.css</code> / <code>ToolboxView</code>。
+</div>
+
+</div>
+
+<script>
+function toggleSw(btn){
+  if(btn.id==='rcSw'){ btn.classList.toggle('on'); return; }
+  const sw=document.getElementById('rcSw');
+  sw.classList.toggle('on');
+}
+document.querySelectorAll('#capPills .pill').forEach(p=>{
+  p.addEventListener('click',()=>{
+    if(p.disabled) return;
+    p.parentElement.querySelectorAll('.pill').forEach(x=>x.classList.remove('on'));
+    p.classList.add('on');
+  });
+});
+function setPane(id){
+  document.getElementById('paneEmpty').style.display = id==='paneEmpty'?'block':'none';
+  document.getElementById('paneDenied').style.display = id==='paneDenied'?'block':'none';
+  // 有设备列表在默认 markup 里常显；空态时用 note 说明已足够，不强制互斥整页
+}
+function setCtrl(s){
+  const w=document.getElementById('ctrlWait');
+  const l=document.getElementById('ctrlLive');
+  const o=document.getElementById('ctrlOff');
+  w.classList.toggle('hidden', s!=='wait');
+  l.classList.toggle('hidden', s!=='live');
+  o.classList.toggle('hidden', s!=='off');
+}
+setCtrl('wait');
+</script>

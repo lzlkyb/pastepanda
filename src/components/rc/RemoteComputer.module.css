@@ -1,0 +1,712 @@
+/* 远程电脑对话框与全局条（R1 壳） */
+.body {
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.noteWarn {
+  border-left: 3px solid var(--orange, #e0803a);
+  background: color-mix(in srgb, var(--orange, #e0803a) 8%, transparent);
+  padding: 8px 12px;
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.noteBad {
+  border-left: 3px solid var(--danger, #d64545);
+  background: color-mix(in srgb, var(--danger, #d64545) 8%, transparent);
+  padding: 8px 12px;
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.emptyBox {
+  border: 1px dashed var(--border-color, #e3e6ea);
+  border-radius: 10px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-muted, #6b7280);
+  font-size: 12.5px;
+  line-height: 1.7;
+  background: var(--card-bg, #f6f7f9);
+}
+
+.devList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.devItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--card-bg, #f6f7f9);
+  border: 1px solid var(--border-color, #e3e6ea);
+}
+
+.av {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.meta {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+}
+
+.miniBtn,
+.miniBtnPri,
+.dangerBtn {
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #1c1f23);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.miniBtnPri {
+  background: var(--accent, #4f7cff);
+  border-color: var(--accent, #4f7cff);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dangerBtn {
+  color: var(--danger, #d64545);
+  border-color: color-mix(in srgb, var(--danger, #d64545) 40%, var(--border-color, #e3e6ea));
+}
+
+.miniBtn:disabled,
+.miniBtnPri:disabled,
+.dangerBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.joinCard {
+  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 40%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--orange, #e0803a) 8%, var(--card-bg, #fff));
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.joinCard h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.joinCard p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.65;
+}
+
+.capPills {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.pill,
+.pillOn {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  background: var(--card-bg, #f6f7f9);
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+}
+
+.pillOn {
+  background: color-mix(in srgb, var(--accent, #4f7cff) 14%, transparent);
+  color: var(--accent, #4f7cff);
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 40%, var(--border-color, #e3e6ea));
+  font-weight: 600;
+}
+
+.joinBtns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.viewShell {
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d0f12;
+}
+
+.viewTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--card-bg, #fff);
+  border-bottom: 1px solid var(--border-color, #e3e6ea);
+  font-size: 12px;
+}
+
+.live {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green, #2f9e5f);
+  flex-shrink: 0;
+}
+
+.liveOff {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--orange, #e0803a);
+  flex-shrink: 0;
+}
+
+.pillWarn {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 40%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--orange, #e0803a) 12%, transparent);
+  color: var(--orange, #e0803a);
+  display: inline-flex;
+  align-items: center;
+}
+
+.fitBox {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.panBox {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  display: block;
+}
+
+.fakeScreen:fullscreen {
+  height: 100vh;
+  min-height: 100vh;
+  background: #0b0d10;
+}
+
+.fakeScreen:fullscreen .screenCanvas {
+  /* contain 由内联 object-fit 控制；全屏时仍完整可见 */
+}
+
+.sp {
+  flex: 1;
+}
+
+.fakeScreen {
+  /* 会话可用高度：对话框内主区域 */
+  height: min(62vh, 560px);
+  min-height: 280px;
+  position: relative;
+  background: linear-gradient(180deg, #1a2332 0%, #0f141c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+}
+
+.screenCanvas {
+  display: block;
+  background: #0d0f12;
+  /* 非 1:1 时由内联 style 控制 object-fit；1:1 用真实像素尺寸 + panBox 滚动 */
+}
+
+.ctrlBar {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.qBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--card-bg, #f6f7f9);
+  border: 1px solid var(--border-color, #e3e6ea);
+}
+
+.qLabel {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  margin-right: 2px;
+}
+
+.qSp {
+  flex: 1;
+  min-width: 8px;
+}
+
+/* 键盘捕获态：一圈强调色描边，一眼能看出按键会发给谁 */
+.fakeScreenKb {
+  box-shadow: inset 0 0 0 2px var(--accent, #4f7cff);
+}
+
+.kbBadge {
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 55%, transparent) !important;
+  color: #a8c0ff !important;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  color: #7a8699;
+  font-size: 12px;
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  background: transparent;
+}
+
+.placeholderSub {
+  font-size: 11px;
+  opacity: 0.75;
+  max-width: 280px;
+}
+
+.hud {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.hud span {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #c8d0dc;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.foot {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.7;
+}
+
+.spin {
+  animation: rcSpin 1s linear infinite;
+}
+
+@keyframes rcSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 被控确认条（挂 App 层） */
+.ctrlBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 8px 12px 0;
+  background: color-mix(in srgb, var(--danger, #d64545) 12%, var(--card-bg, #fff));
+  border: 1px solid color-mix(in srgb, var(--danger, #d64545) 35%, var(--border-color, #e3e6ea));
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.ctrlBanner .who {
+  font-weight: 600;
+  color: var(--danger, #d64545);
+}
+
+.joinGlobal {
+  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 40%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--orange, #e0803a) 8%, var(--card-bg, #fff));
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 8px 12px 0;
+}
+
+.joinGlobal h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.joinGlobal p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.65;
+}
+
+/* —— UX 升级 —— */
+.pill,
+.pillOn,
+.pillDanger {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  background: var(--card-bg, #f6f7f9);
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pillOn {
+  background: color-mix(in srgb, var(--accent, #4f7cff) 14%, transparent);
+  color: var(--accent, #4f7cff);
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 40%, var(--border-color, #e3e6ea));
+  font-weight: 600;
+}
+
+.pillDanger {
+  background: color-mix(in srgb, var(--danger, #d64545) 12%, transparent);
+  color: var(--danger, #d64545);
+  border-color: color-mix(in srgb, var(--danger, #d64545) 35%, var(--border-color, #e3e6ea));
+  cursor: default;
+}
+
+.hudOk {
+  border-color: rgba(79, 189, 128, 0.4) !important;
+  color: #7dcea0 !important;
+}
+.hudWarn {
+  border-color: rgba(224, 154, 90, 0.45) !important;
+  color: #e8b87a !important;
+}
+.hudAccent {
+  border-color: rgba(107, 147, 255, 0.45) !important;
+  color: #9db8ff !important;
+}
+
+.viewTools {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 2;
+}
+
+.viewTools button {
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #c8d0dc;
+  cursor: pointer;
+}
+
+.viewTools button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.toolOn {
+  background: rgba(107, 147, 255, 0.28) !important;
+  color: #fff !important;
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--card-bg, #f6f7f9);
+  border-top: 1px solid var(--border-color, #e3e6ea);
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  flex-wrap: wrap;
+}
+
+.fb {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.fbOk {
+  background: color-mix(in srgb, var(--green, #2f9e5f) 12%, transparent);
+  color: var(--green, #2f9e5f);
+}
+.fbWarn {
+  background: color-mix(in srgb, var(--orange, #e0803a) 12%, transparent);
+  color: var(--orange, #e0803a);
+}
+.fbBad {
+  background: color-mix(in srgb, var(--danger, #d64545) 10%, transparent);
+  color: var(--danger, #d64545);
+}
+.fbInfo {
+  background: color-mix(in srgb, var(--accent, #4f7cff) 10%, transparent);
+  color: var(--accent, #4f7cff);
+}
+
+.recentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.devItemRecent {
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 45%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--accent, #4f7cff) 5%, var(--card-bg, #f6f7f9));
+}
+
+.tagRecent,
+.tagRc,
+.tagSync {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  margin-left: 4px;
+}
+.tagRecent {
+  color: var(--accent, #4f7cff);
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 40%, var(--border-color, #e3e6ea));
+}
+.tagRc {
+  color: var(--accent, #4f7cff);
+}
+.tagSync {
+  color: #2aa8b8;
+  border-color: color-mix(in srgb, #2aa8b8 35%, var(--border-color, #e3e6ea));
+}
+.tagDenied {
+  color: var(--danger, #d64545);
+  border-color: color-mix(in srgb, var(--danger, #d64545) 35%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--danger, #d64545) 8%, transparent);
+}
+
+.dotOn,
+.dotOff {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: 0;
+}
+.dotOn {
+  background: var(--green, #2f9e5f);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green, #2f9e5f) 22%, transparent);
+}
+.dotOff {
+  background: var(--text-muted, #6b7280);
+}
+
+.dotDanger {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger, #d64545);
+  display: inline-block;
+}
+
+.timer {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.kbdHint {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  margin-right: auto;
+}
+
+.guideTitle {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.guideLead {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.65;
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+.step {
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--card-bg, #f6f7f9);
+}
+.stepNum {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent, #4f7cff);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.stepT {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.stepD {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.6;
+}
+
+.pairPane {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.fpBox {
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--card-bg, #f6f7f9);
+}
+.fpLabel {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 4px;
+}
+.fpVal {
+  font-family: ui-monospace, Consolas, monospace;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.checkLine {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  cursor: pointer;
+  margin: 10px 0;
+}
+
+@media (max-width: 640px) {
+  .steps,
+  .pairPane {
+    grid-template-columns: 1fr;
+  }
+}
+
+.devMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  min-width: 120px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.devMenu button {
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.devMenu button:hover {
+  background: var(--card-bg, #f6f7f9);
+  color: var(--danger, #d64545);
+}
+
+.devItem {
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .live {
+    animation: none !important;
+  }
+}

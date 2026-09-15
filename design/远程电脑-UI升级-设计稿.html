@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>远程电脑 · UI/UX 升级设计稿</title>
+<style>
+  :root{
+    --bg:#f6f7f9;--panel:#fff;--line:#e3e6ea;--text:#1c1f23;--dim:#6b7280;
+    --accent:#4f7cff;--accent-soft:#6b93ff;--code:#f3f4f6;
+    --warn:#e0803a;--danger:#d64545;--ok:#2f9e5f;--cyan:#2aa8b8;
+    --radius:8px;--radius-lg:12px;
+    --shadow-1:0 1px 2px rgba(16,24,40,.06);
+    --shadow-2:0 4px 12px rgba(16,24,40,.08);
+    --shadow-3:0 12px 32px rgba(16,24,40,.12);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--accent-soft:#8aabff;--code:#24272c;
+    --warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;--cyan:#4ec4d4;
+    --shadow-1:0 1px 2px rgba(0,0,0,.35);
+    --shadow-2:0 4px 14px rgba(0,0,0,.4);
+    --shadow-3:0 16px 40px rgba(0,0,0,.5);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#16181c;--panel:#1e2126;--line:#2c3037;--text:#e6e8ea;--dim:#9aa3ad;
+    --accent:#6b93ff;--accent-soft:#8aabff;--code:#24272c;
+    --warn:#e09a5a;--danger:#e06a6a;--ok:#4fbd80;--cyan:#4ec4d4;
+    --shadow-1:0 1px 2px rgba(0,0,0,.35);
+    --shadow-2:0 4px 14px rgba(0,0,0,.4);
+    --shadow-3:0 16px 40px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);margin:0;padding:28px 20px 80px;
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:-.02em}
+  h2{font-size:16px;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:13px;margin:22px 0 8px;color:var(--dim);letter-spacing:.04em;font-weight:600}
+  .sub{color:var(--dim);margin:0 0 20px;font-size:13px}
+  code,kbd{background:var(--code);padding:1px 6px;border-radius:4px;font-size:12px;
+           font-family:ui-monospace,Consolas,monospace}
+  kbd{border:1px solid var(--line);box-shadow:0 1px 0 var(--line);padding:1px 6px}
+  .note{border-left:3px solid var(--accent);padding:10px 14px;margin:14px 0;
+        background:var(--panel);border-radius:0 8px 8px 0;font-size:13px;line-height:1.7}
+  .note.warn{border-left-color:var(--warn)}
+  .note.bad{border-left-color:var(--danger)}
+  .note.good{border-left-color:var(--ok)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--code);font-weight:600}
+  ul.tight{margin:8px 0;padding-left:18px;font-size:13px}
+  ul.tight li{margin:5px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:820px){.grid2{grid-template-columns:1fr}}
+
+  /* —— 演示壳 —— */
+  .demo{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);
+        margin:16px 0;overflow:hidden;box-shadow:var(--shadow-1)}
+  .demoBar{display:flex;gap:8px;align-items:center;padding:8px 12px;
+           background:var(--code);border-bottom:1px solid var(--line);font-size:12px}
+  .demoBar b{font-weight:600}
+  .demoBar .sp{flex:1}
+  .demoBar button{font:inherit;font-size:12px;padding:4px 10px;border-radius:6px;
+                  border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer}
+  .demoBar button.act{background:var(--accent);border-color:var(--accent);color:#fff}
+  .screen{padding:16px}
+
+  /* —— 通用控件 —— */
+  .pill{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--line);
+        background:var(--bg);color:var(--dim);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+  .pill.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);
+           border-color:color-mix(in srgb,var(--accent) 40%,var(--line));font-weight:600}
+  .pill.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok);
+           border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+  .pill.warn{background:color-mix(in srgb,var(--warn) 12%,transparent);color:var(--warn);
+             border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+  .pill.danger{background:color-mix(in srgb,var(--danger) 10%,transparent);color:var(--danger);
+               border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}
+  .pill.cyan{background:color-mix(in srgb,var(--cyan) 12%,transparent);color:var(--cyan);
+             border-color:color-mix(in srgb,var(--cyan) 35%,var(--line))}
+  .btn{font:inherit;font-size:12px;padding:6px 12px;border-radius:var(--radius);
+       border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .dot.on{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
+  .dot.off{background:var(--dim)}
+  .dot.warn{background:var(--warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 22%,transparent)}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-weight:700}
+
+  /* —— 设备卡片 —— */
+  .devList{display:flex;flex-direction:column;gap:8px}
+  .devCard{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--radius-lg);
+           background:var(--bg);border:1px solid var(--line);transition:border-color .15s,box-shadow .15s}
+  .devCard:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--line));box-shadow:var(--shadow-1)}
+  .devCard.recent{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));
+                  background:color-mix(in srgb,var(--accent) 5%,var(--bg))}
+  .av{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+      color:#fff;font-size:13px;font-weight:700;flex-shrink:0;position:relative}
+  .av .badgeDot{position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;border-radius:50%;
+                border:2px solid var(--panel)}
+  .devInfo{flex:1;min-width:0}
+  .devName{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .devMeta{font-size:11px;color:var(--dim);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .devActions{display:flex;gap:6px;align-items:center;flex-shrink:0}
+  .tag{font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid var(--line);
+       background:var(--panel);color:var(--dim)}
+  .tag.rc{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line));
+          background:color-mix(in srgb,var(--accent) 10%,transparent)}
+  .tag.sync{color:var(--cyan);border-color:color-mix(in srgb,var(--cyan) 35%,var(--line));
+            background:color-mix(in srgb,var(--cyan) 10%,transparent)}
+  .tag.recent{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+
+  /* —— 首次引导 —— */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+  @media (max-width:640px){.steps{grid-template-columns:1fr}}
+  .step{border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px;background:var(--bg)}
+  .stepNum{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;
+           font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+  .stepT{font-size:13px;font-weight:600;margin-bottom:4px}
+  .stepD{font-size:12px;color:var(--dim);line-height:1.6}
+  .arrowRow{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--dim);font-size:12px;margin:4px 0 12px}
+
+  /* —— 会话壳 —— */
+  .viewShell{border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;
+             background:#0b0d10;box-shadow:var(--shadow-2)}
+  .viewTop{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);
+           border-bottom:1px solid var(--line);font-size:12px;flex-wrap:wrap}
+  .viewTop .live{width:8px;height:8px;border-radius:50%;background:var(--ok);flex-shrink:0;
+                 box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+  .viewTop .sp{flex:1}
+  .fakeScreen{height:280px;position:relative;overflow:hidden;
+              background:linear-gradient(165deg,#1a2332 0%,#0f141c 55%,#121820 100%)}
+  .fakeWin{position:absolute;border-radius:6px;border:1px solid #2a3344;background:#151b26}
+  .fakeWin .bar{height:18px;background:#1e2634;border-radius:6px 6px 0 0;display:flex;align-items:center;
+                gap:4px;padding:0 8px}
+  .fakeWin .bar i{width:7px;height:7px;border-radius:50%;background:#3a4558}
+  .fakeWin .body{padding:10px;font-size:10px;color:#7a8699;line-height:1.8;
+                 font-family:ui-monospace,Consolas,monospace}
+
+  /* HUD 左下 / 右上 */
+  .hud{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;flex-wrap:wrap;max-width:70%}
+  .hud span{font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.55);
+            color:#c8d0dc;border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(6px)}
+  .hud span.accent{border-color:rgba(107,147,255,.45);color:#9db8ff}
+  .hud span.ok{border-color:rgba(79,189,128,.4);color:#7dcea0}
+  .hud span.warn{border-color:rgba(224,154,90,.45);color:#e8b87a}
+
+  .viewTools{position:absolute;right:10px;top:10px;display:flex;gap:4px;padding:4px;
+             border-radius:8px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.08);
+             backdrop-filter:blur(8px)}
+  .viewTools button{font:inherit;font-size:11px;padding:4px 9px;border-radius:6px;border:none;
+                    background:transparent;color:#c8d0dc;cursor:pointer}
+  .viewTools button.on{background:rgba(107,147,255,.28);color:#fff}
+  .viewTools button:hover{background:rgba(255,255,255,.1)}
+
+  .ctrlStrip{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);
+             border-top:1px solid var(--line);font-size:12px;flex-wrap:wrap}
+  .ctrlStrip .hint{font-size:11px;color:var(--dim);flex:1;min-width:120px}
+  .statusBar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--code);
+             border-top:1px solid var(--line);font-size:11px;color:var(--dim);flex-wrap:wrap}
+
+  /* 被控横幅 */
+  .ctrlBanner{display:flex;align-items:center;gap:12px;padding:10px 14px;
+    background:color-mix(in srgb,var(--danger) 10%,var(--panel));
+    border:1px solid color-mix(in srgb,var(--danger) 35%,var(--line));
+    border-radius:var(--radius-lg);font-size:12.5px;box-shadow:var(--shadow-1)}
+  .ctrlBanner .who{font-weight:600;color:var(--danger);display:flex;align-items:center;gap:8px}
+  .ctrlBanner .timer{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text)}
+  .ctrlBanner .sp{flex:1}
+
+  /* 申请确认 */
+  .joinCard{border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));
+            background:color-mix(in srgb,var(--warn) 8%,var(--panel));
+            border-radius:var(--radius-lg);padding:14px}
+  .joinCard h4{margin:0 0 6px;font-size:13px}
+  .joinCard p{margin:0 0 12px;font-size:12px;color:var(--dim);line-height:1.65}
+  .joinBtns{display:flex;gap:8px;justify-content:flex-end;align-items:center}
+  .kbdHint{font-size:11px;color:var(--dim);margin-right:auto}
+
+  /* 配对向导 */
+  .pairPane{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:640px){.pairPane{grid-template-columns:1fr}}
+  .fpBox{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;background:var(--bg)}
+  .fpLabel{font-size:11px;color:var(--dim);margin-bottom:4px}
+  .fpVal{font-family:ui-monospace,Consolas,monospace;font-weight:700;font-size:13px;letter-spacing:.02em}
+  .fpMatch{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px}
+  .checkLine{display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;margin-top:10px}
+
+  /* 画质条 + 反馈 */
+  .qBar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 0;font-size:12px}
+  .qLabel{font-size:11px;color:var(--dim);margin-right:2px}
+  .qSp{flex:1}
+  .fb{font-size:11px;padding:3px 8px;border-radius:6px;display:inline-flex;align-items:center;gap:4px}
+  .fb.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+  .fb.warn{background:color-mix(in srgb,var(--warn) 12%,transparent);color:var(--warn)}
+  .fb.bad{background:color-mix(in srgb,var(--danger) 10%,transparent);color:var(--danger)}
+  .fb.info{background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent)}
+
+  /* 剪贴板状态 */
+  .clipRow{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--radius);
+           background:var(--bg);border:1px solid var(--line);font-size:12px}
+  .clipRow .t{flex:1;color:var(--dim);font-size:11px}
+
+  /* 会话历史 */
+  .hist{display:flex;flex-direction:column;gap:6px}
+  .histItem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius);
+            background:var(--bg);border:1px solid var(--line);font-size:12px}
+  .histItem .when{color:var(--dim);font-size:11px;min-width:90px}
+
+  .emptyBox{border:1px dashed var(--line);border-radius:var(--radius-lg);padding:24px 16px;text-align:center;
+            color:var(--dim);font-size:12.5px;line-height:1.7;background:var(--bg)}
+  .foot{font-size:11px;color:var(--dim);line-height:1.7;margin:8px 0}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin:8px 0}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>远程电脑 · UI/UX 升级设计稿</h1>
+<p class="sub">
+  PastePanda · 2026-09 · 在 <code>design/远程电脑-设计稿.html</code>（R0–R2 壳）之上的
+  <b>美化 + 流程友好</b>升级 · 覆盖会话 HUD / 设备卡片 / 配对向导 / 反馈时序 / 快捷键 ·
+  对齐 U1–U8、L1–L6、V1–V6
+</p>
+
+<div class="note">
+  <b>本稿要解决的三件事</b>（远程工具的核心焦虑）：<br>
+  ① <b>对面在不在</b> —— 设备卡片在线态 + presence；② <b>我现在能不能控</b> —— 会话 HUD / 横幅 / 键盘捕获态；<br>
+  ③ <b>改了有没有生效</b> —— 画质/范围/剪贴板即时反馈，禁止静默失败（U1 / 规则 15.1）。<br>
+  装饰性动效排在反馈之后；不做远程 shell / 文件管理 / 无人值守。
+</div>
+
+<!-- ========== 1. 设计原则 ========== -->
+<h2>一、设计原则（先钉死再画）</h2>
+<table>
+  <tr><th>维度</th><th>规则</th><th>本功能落地</th></tr>
+  <tr><td>U1 反馈时序</td><td>&lt;100ms 有响应；&gt;1s 出进度；&gt;10s 可取消</td><td>画质 pill 立即高亮；连接中 spinner；申请 120s 可取消</td></tr>
+  <tr><td>U2 动效</td><td>只 150/200/300/400ms</td><td>卡片 hover 150ms；在线呼吸 2s 循环仅在线点；<code>prefers-reduced-motion</code> 全停</td></tr>
+  <tr><td>U3 状态四件套</td><td>空/加载/错误/部分成功</td><td>空态三步引导；错误 toast + 按钮回滚；部分成功=「已降到流畅」</td></tr>
+  <tr><td>L2 图标标签</td><td>常驻文字，不只 hover</td><td>所有操作有文字；快捷键进 tooltip/文案</td></tr>
+  <tr><td>L3 空态</td><td>答「会出现什么 / 怎么让它出现」</td><td>首次三步：配对 → 申请 → 确认</td></tr>
+  <tr><td>V1 层级</td><td>留白 &gt; 背景对比 &gt; 边框</td><td>设备卡用背景差分「最近」；边框只做 hover</td></tr>
+  <tr><td>V3 颜色</td><td>一屏一强调色</td><td>主强调 <span class="swatch" style="background:#4f7cff"></span>accent；在线 ok；被控 danger；仅状态用色</td></tr>
+  <tr><td>17.1 鼠标可达</td><td>快捷键只是加速器</td><td>Enter/Esc 有，但按钮始终可点</td></tr>
+  <tr><td>17.6 / 18.4 两级取消</td><td>先退回预览态再退出</td><td>Esc1 释放键盘 → Esc2 结束会话</td></tr>
+</table>
+
+<div class="legend">
+  <span><i class="swatch" style="background:#4f7cff"></i>accent 操作/强调</span>
+  <span><i class="swatch" style="background:#2f9e5f"></i>ok 在线/成功</span>
+  <span><i class="swatch" style="background:#e0803a"></i>warn 待确认/降档</span>
+  <span><i class="swatch" style="background:#d64545"></i>danger 被控/结束</span>
+  <span><i class="swatch" style="background:#2aa8b8"></i>cyan 仅同步来源</span>
+</div>
+
+<!-- ========== 2. 首次引导 + 设备列表 ========== -->
+<h2>二、工具箱主面板（空态 / 列表 / 最近设备）</h2>
+
+<h3>2.1 空态：三步引导（L3）</h3>
+<div class="demo">
+  <div class="demoBar"><b>空态</b><span class="sp"></span><span>RemoteComputerDialog · 无配对</span></div>
+  <div class="screen">
+    <div class="emptyBox" style="text-align:left;padding:20px 18px">
+      <div style="font-size:20px;margin-bottom:6px">🖥️</div>
+      <div style="font-weight:600;color:var(--text);font-size:14px;margin-bottom:4px">还没有可远程的设备</div>
+      <div style="margin-bottom:4px">配对后，对方可以申请<b>查看或控制</b>这台电脑；你也可以去控别人的电脑。</div>
+      <div style="margin-bottom:14px;font-size:12px">「允许被远程」只影响别人控你；<b>发起远程不需要打开它</b>。</div>
+      <div class="steps">
+        <div class="step">
+          <div class="stepNum">1</div>
+          <div class="stepT">双方配对</div>
+          <div class="stepD">一边生成邀请码，另一边粘贴并核对指纹。与知识库同步配对无关。</div>
+        </div>
+        <div class="step">
+          <div class="stepNum">2</div>
+          <div class="stepT">发起申请</div>
+          <div class="stepD">选「只看」或「可控」，对方会看到确认条与你的指纹。</div>
+        </div>
+        <div class="step">
+          <div class="stepNum">3</div>
+          <div class="stepT">对方同意</div>
+          <div class="stepD">被控端常驻横幅可随时结束；默认关闭，每次都要点头。</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn">再看一遍说明</button>
+        <button class="btn pri">远程配对设备</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>2.2 设备列表卡片（在线呼吸点 · 来源 · 最近）</h3>
+<div class="demo">
+  <div class="demoBar"><b>设备列表</b><span class="sp"></span><span>在线点：仅 on 态呼吸；reduced-motion 停</span></div>
+  <div class="screen">
+    <div class="devList">
+      <!-- 最近 -->
+      <div class="devCard recent">
+        <div class="av" style="background:#5b7cfa">办
+          <span class="badgeDot" style="background:var(--ok)"></span>
+        </div>
+        <div class="devInfo">
+          <div class="devName">
+            办公室台式机
+            <span class="tag recent">上次控制 · 2 小时前</span>
+            <span class="tag rc">远程配对</span>
+          </div>
+          <div class="devMeta">
+            <span class="dot on"></span><span>在线</span>
+            <span class="mono">A3F2 · 91C8</span>
+            <span>能力：可控</span>
+          </div>
+        </div>
+        <div class="devActions">
+          <button class="btn pri">远程</button>
+          <button class="btn ghost" title="更多">⋯</button>
+        </div>
+      </div>
+      <!-- 在线 -->
+      <div class="devCard">
+        <div class="av" style="background:#2aa8b8">客
+          <span class="badgeDot" style="background:var(--ok)"></span>
+        </div>
+        <div class="devInfo">
+          <div class="devName">客厅笔记本 <span class="tag sync">来自同步</span></div>
+          <div class="devMeta">
+            <span class="dot on"></span><span>在线</span>
+            <span class="mono">77B0 · 12E4</span>
+          </div>
+        </div>
+        <div class="devActions"><button class="btn pri">远程</button></div>
+      </div>
+      <!-- 离线：仍可点，标题解释 -->
+      <div class="devCard">
+        <div class="av" style="background:#8a93a3">旧
+          <span class="badgeDot" style="background:var(--dim)"></span>
+        </div>
+        <div class="devInfo">
+          <div class="devName">旧手机热点机 <span class="tag rc">远程配对</span></div>
+          <div class="devMeta">
+            <span class="dot off"></span><span>离线</span>
+            <span class="mono">C0DE · 4411</span>
+            <span>未听到局域网宣告，仍可经中继尝试</span>
+          </div>
+        </div>
+        <div class="devActions">
+          <button class="btn" title="未听到局域网宣告，仍可尝试（可能经中继）">远程</button>
+        </div>
+      </div>
+    </div>
+    <div class="foot">▸ 「最近」用背景差分而不是彩色边框（V1）；离线按钮<b>不禁用</b>，避免 presence 未到时锁死（已实现）。</div>
+  </div>
+</div>
+
+<!-- ========== 3. 配对向导 ========== -->
+<h2>三、配对向导（指纹并排对照）</h2>
+<div class="demo">
+  <div class="demoBar"><b>粘贴邀请码</b><span class="sp"></span><span>勾选后才解锁「完成」· 倒计时有效期</span></div>
+  <div class="screen">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">远程配对</div>
+    <div class="pairPane">
+      <div class="fpBox">
+        <div class="fpLabel">本机指纹（告诉对方）</div>
+        <div class="fpVal">A3F2 · 91C8 · 55D1</div>
+        <div class="fpLabel" style="margin-top:8px">设备名（对方列表显示）</div>
+        <input style="width:100%;margin-top:4px;font:inherit;font-size:12px;padding:6px 8px;
+               border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text)"
+               value="我的电脑" />
+      </div>
+      <div class="fpBox">
+        <div class="fpLabel">对方指纹（必须一致）</div>
+        <div class="fpVal" style="color:var(--accent)">77B0 · 12E4 · 9A03</div>
+        <div class="fpLabel" style="margin-top:8px">对方设备名</div>
+        <div style="font-size:12px;margin-top:4px">客厅笔记本</div>
+        <div class="fpMatch">
+          <span class="dot warn"></span>
+          <span style="color:var(--warn)">请与对方屏幕上的指纹核对</span>
+        </div>
+      </div>
+    </div>
+    <label class="checkLine">
+      <input type="checkbox" />
+      <span>我已与对方核对指纹一致（核对不过就不要勾）</span>
+    </label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn">返回</button>
+      <button class="btn pri" disabled>完成远程配对</button>
+    </div>
+    <div class="foot">邀请码剩余 <b style="color:var(--warn)">11:42</b> · 与知识库同步配对是两套授权，互不影响。</div>
+  </div>
+</div>
+
+<!-- ========== 4. 会话 HUD + 工具条 ========== -->
+<h2>四、会话视图（HUD · 画面工具 · 底栏反馈）</h2>
+
+<h3>4.1 可控会话 · 完整 HUD</h3>
+<div class="demo">
+  <div class="demoBar"><b>发起端 · 可控</b><span class="sp"></span>
+    <button class="act">适应窗口</button><button>1:1</button><button>指针锁定</button>
+  </div>
+  <div class="screen" style="padding:0">
+    <div class="viewShell">
+      <div class="viewTop">
+        <span class="live"></span>
+        <span>正在查看 <b>办公室台式机</b></span>
+        <span class="pill ok">可控</span>
+        <span class="pill" id="kbPill">键盘：未捕获</span>
+        <span class="sp"></span>
+        <button class="btn danger">结束会话</button>
+      </div>
+      <div class="fakeScreen" id="fakeScreen">
+        <div class="fakeWin" style="left:40px;top:28px;width:42%;height:58%">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="body">C:\Users\demo&gt; dir<br>  项目A<br>  项目B<br>  notes.md</div>
+        </div>
+        <div class="fakeWin" style="right:36px;top:48px;width:38%;height:48%">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="body">PastePanda · 远程会话<br>帧率稳定 · 延迟 28ms</div>
+        </div>
+        <!-- 右上：画面工具 -->
+        <div class="viewTools">
+          <button class="on">适应</button>
+          <button>1:1</button>
+          <button>填充</button>
+          <button title="捕获鼠标指针">锁定指针</button>
+        </div>
+        <!-- 左下 HUD -->
+        <div class="hud">
+          <span class="ok">H.264 · 8fps</span>
+          <span class="accent">延迟 ~28ms</span>
+          <span>清晰 · 主屏</span>
+          <span>心跳 1.0s</span>
+        </div>
+      </div>
+      <div class="ctrlStrip">
+        <button class="btn" id="kbBtn">捕获键盘</button>
+        <button class="btn">推送剪贴板</button>
+        <button class="btn">拉取剪贴板</button>
+        <span class="pill">自动同步：关</span>
+        <span class="hint">Esc：先释放键盘，再按一次结束会话 · 点画面也可捕获</span>
+      </div>
+      <div class="statusBar">
+        <span class="fb ok">画质已同步到对方</span>
+        <span>·</span>
+        <span>剪贴板：2 分钟前推送成功</span>
+        <span class="sp" style="flex:1"></span>
+        <span>会话 rc-91c8a3f2</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>4.2 HUD 字段说明（诚实文案，替换写死的「约 5fps · 1280」）</h3>
+<table>
+  <tr><th>字段</th><th>数据源</th><th>示例</th></tr>
+  <tr><td>编码 · 帧率</td><td>最近帧 codec + 实际 tick 间隔</td><td><code>H.264 · 8fps</code> / <code>JPEG · 5fps</code></td></tr>
+  <tr><td>延迟</td><td>Ping–Pong RTT（已有 Ping 帧）</td><td><code>延迟 ~28ms</code>；&gt;200ms 用 warn 色</td></tr>
+  <tr><td>画质 · 范围</td><td>stream_opts 当前值</td><td><code>清晰 · 主屏</code></td></tr>
+  <tr><td>心跳</td><td>上次成功 ping 间隔</td><td><code>心跳 1.0s</code>；超时显示 warn</td></tr>
+  <tr><td>占位（无帧）</td><td>动态 profile</td><td>「等待对方画面…」+「对方编码中 · 清晰档」<b>不再写死 5fps/1280</b></td></tr>
+</table>
+
+<h3>4.3 只看会话（无控制条，HUD 更瘦）</h3>
+<div class="demo">
+  <div class="demoBar"><b>发起端 · 只看</b><span class="sp"></span><span>无键鼠/剪贴板条</span></div>
+  <div class="screen" style="padding:0">
+    <div class="viewShell">
+      <div class="viewTop">
+        <span class="live"></span>
+        <span>正在查看 <b>客厅笔记本</b></span>
+        <span class="pill">只看</span>
+        <span class="sp"></span>
+        <button class="btn danger">结束会话</button>
+      </div>
+      <div class="fakeScreen" style="height:160px">
+        <div class="hud"><span class="ok">JPEG · 5fps</span><span>均衡 · 整屏</span></div>
+      </div>
+      <div class="statusBar">只看会话：对方未授予键鼠控制。若需控制请重新申请「可控」。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 5. 画质 / 反馈 ========== -->
+<h2>五、画质条与即时反馈（禁止静默失败）</h2>
+<div class="demo">
+  <div class="demoBar"><b>会话中 · 画质/范围</b><span class="sp"></span><span>失败必须回滚 + toast</span></div>
+  <div class="screen">
+    <div class="qBar">
+      <span class="qLabel">画质</span>
+      <button class="pill">流畅</button>
+      <button class="pill on">均衡</button>
+      <button class="pill">清晰</button>
+      <span class="qLabel" style="margin-left:10px">画面</span>
+      <button class="pill on">整屏</button>
+      <button class="pill">仅主屏</button>
+      <span class="qSp"></span>
+      <span class="fb ok">已生效</span>
+    </div>
+    <div class="qBar">
+      <span class="qLabel">画质</span>
+      <button class="pill">流畅</button>
+      <button class="pill on">均衡</button>
+      <button class="pill">清晰</button>
+      <span class="qSp"></span>
+      <span class="fb warn">应用中…</span>
+    </div>
+    <div class="qBar">
+      <span class="qLabel">画质</span>
+      <button class="pill">流畅</button>
+      <button class="pill on">均衡</button>
+      <button class="pill">清晰</button>
+      <span class="qSp"></span>
+      <span class="fb bad">改档失败：发送通道不可用 · 已恢复原选中</span>
+    </div>
+    <div class="qBar">
+      <span class="qLabel">画质</span>
+      <button class="pill">流畅</button>
+      <button class="pill on warn">均衡</button>
+      <button class="pill">清晰</button>
+      <span class="qSp"></span>
+      <span class="fb warn">网络不佳，对方已自动降到流畅</span>
+    </div>
+    <div class="foot">
+      交互：点选 → 立即高亮（&lt;100ms）→ 发送 → 成功 <code>已生效</code> / 失败 <b>回滚选中 + toast</b>（U1 + 规则 15.1）。<br>
+      自动降档来自被控端 adapt，发起端 HUD/文案同步提示（部分成功，U3）。
+    </div>
+  </div>
+</div>
+
+<!-- ========== 6. 剪贴板 ========== -->
+<h2>六、剪贴板状态条</h2>
+<div class="demo">
+  <div class="demoBar"><b>剪贴板</b><span class="sp"></span><span>拉取中 / 成功 / 失败 / 过大</span></div>
+  <div class="screen" style="display:flex;flex-direction:column;gap:8px">
+    <div class="clipRow">
+      <span class="pill cyan">自动同步</span>
+      <span class="t">最近推送 · 12s 前 · 1.2KB</span>
+      <button class="btn ghost">关</button>
+    </div>
+    <div class="clipRow">
+      <span class="pill">拉取对方</span>
+      <span class="t">等待对方剪贴板…（最长 4s）</span>
+      <span class="fb info">拉取中</span>
+    </div>
+    <div class="clipRow">
+      <span class="pill ok">拉取对方</span>
+      <span class="t">已写入本机剪贴板 · 86 字符</span>
+      <span class="fb ok">成功</span>
+    </div>
+    <div class="clipRow">
+      <span class="pill danger">拉取对方</span>
+      <span class="t">对方剪贴板过大，无法拉取</span>
+      <span class="fb bad">失败</span>
+    </div>
+    <div class="foot">拉取已改为后端等回包（已实现）；这里补 UI 态：idle / loading / ok / err，不再只 toast 一下就消失。</div>
+  </div>
+</div>
+
+<!-- ========== 7. 被控横幅 + 申请 ========== -->
+<h2>七、被控横幅与入站申请</h2>
+
+<h3>7.1 被控中（不可关到看不见）</h3>
+<div class="ctrlBanner">
+  <span class="who"><span class="dot" style="background:var(--danger)"></span> 正在被「办公室台式机」远程</span>
+  <span class="pill danger">可控</span>
+  <span class="timer">00:12:48</span>
+  <span class="sp"></span>
+  <span style="font-size:11px;color:var(--dim)">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+  <button class="btn danger">立即结束</button>
+</div>
+<div class="foot">时长用等宽字体；结束按钮常驻。规则 15：Active 恒展示。</div>
+
+<h3>7.2 入站申请（快捷键 + 指纹）</h3>
+<div class="joinCard">
+  <h4>🔔 「客厅笔记本」申请远程这台电脑</h4>
+  <p>
+    申请能力：<b>可控（含只看）</b> · 设备名可自称，以指纹为准<br>
+    指纹 <span class="mono" style="color:var(--text)">77B0 · 12E4 · 9A03</span>
+  </p>
+  <div class="joinBtns">
+    <span class="kbdHint"><kbd>Enter</kbd> 同意 · <kbd>Esc</kbd> 拒绝 · 鼠标始终可用</span>
+    <button class="btn">拒绝</button>
+    <button class="btn pri">同意远程</button>
+  </div>
+</div>
+
+<!-- ========== 8. 快捷键 / 两级取消 ========== -->
+<h2>八、键盘与取消（两级）</h2>
+<table>
+  <tr><th>场景</th><th>按键</th><th>行为</th><th>鼠标替代</th></tr>
+  <tr><td>入站申请条可见</td><td><kbd>Enter</kbd> / <kbd>Esc</kbd></td><td>同意 / 拒绝</td><td>「同意远程」「拒绝」按钮</td></tr>
+  <tr><td>会话中 · 键盘已捕获</td><td><kbd>Esc</kbd></td><td><b>第 1 次</b>：释放键盘 + 释放修饰键</td><td>「释放键盘」按钮</td></tr>
+  <tr><td>会话中 · 键盘已释放</td><td><kbd>Esc</kbd></td><td><b>第 2 次</b>：弹确认「结束会话？」</td><td>顶栏「结束会话」</td></tr>
+  <tr><td>会话中 · 可控</td><td>点画面</td><td>捕获键盘（现有）</td><td>同左</td></tr>
+  <tr><td>Win 键</td><td>—</td><td>不转发（防卡死本机，已有）</td><td>—</td></tr>
+</table>
+<div class="note warn">
+  两级取消对齐规则 17.6 / 18.4：误触 Esc 不会把用户赶出会话。
+  第 2 次结束用二次确认（不可逆），不是直接断（U4）。
+</div>
+
+<!-- ========== 9. 指针锁定 ========== -->
+<h2>九、指针锁定（可控增强）</h2>
+<div class="demo">
+  <div class="demoBar"><b>锁定指针</b><span class="sp"></span><span>可选，默认关</span></div>
+  <div class="screen">
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">为什么需要</div>
+        <div style="font-size:12px;color:var(--dim);line-height:1.7">
+          不锁定时，鼠标拖出 canvas 边缘会丢 move 事件，远程拖拽窗口/框选体验差。<br>
+          锁定后指针钉在画面中心，用相对位移驱动远端（绝对坐标仍可由 0..65535 映射）。<br>
+          <b>默认关</b>；开启后 HUD 显示「指针已锁定 · Esc 或按钮解除」。
+        </div>
+      </div>
+      <div style="width:220px;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--bg)">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">工具条状态</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="pill">适应</button>
+          <button class="pill">1:1</button>
+          <button class="pill on">锁定指针</button>
+        </div>
+        <div style="font-size:11px;color:var(--dim);margin-top:10px">指针已锁定 · <kbd>Esc</kbd> 解除</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 10. 连接失败 / 重连 ========== -->
+<h2>十、失败与重连</h2>
+<div class="demo">
+  <div class="demoBar"><b>状态块</b><span class="sp"></span><span>U3 错误态，不只是 toast</span></div>
+  <div class="screen" style="display:flex;flex-direction:column;gap:8px">
+    <div class="note bad" style="margin:0">
+      <b>连接对端失败</b>：未在 8s 内建立通道（对方可能离线或未启动远程）。<br>
+      <span style="color:var(--dim);font-size:12px">已尝试局域网地址 2 个 · 中继 1 次</span>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn pri">重试</button>
+        <button class="btn">返回设备列表</button>
+      </div>
+    </div>
+    <div class="note warn" style="margin:0">
+      <b>画面流中断</b>，会话已结束。可一键重连同一设备。
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn pri">重新远程「办公室台式机」</button>
+        <button class="btn">返回列表</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 11. 会话历史 ========== -->
+<h2>十一、会话历史（设置 · 远程电脑）</h2>
+<div class="demo">
+  <div class="demoBar"><b>最近会话</b><span class="sp"></span><span>审计用，默认只保留最近 20 条</span></div>
+  <div class="screen">
+    <div class="hist">
+      <div class="histItem">
+        <span class="when">今天 14:22</span>
+        <span style="flex:1"><b>办公室台式机</b> · 我发起 · 可控</span>
+        <span style="color:var(--dim)">12 分 48 秒</span>
+        <span class="pill ok">正常结束</span>
+      </div>
+      <div class="histItem">
+        <span class="when">今天 09:01</span>
+        <span style="flex:1"><b>客厅笔记本</b> · 对方控我 · 只看</span>
+        <span style="color:var(--dim)">3 分 12 秒</span>
+        <span class="pill">我方结束</span>
+      </div>
+      <div class="histItem">
+        <span class="when">昨天 21:40</span>
+        <span style="flex:1"><b>办公室台式机</b> · 我发起 · 可控</span>
+        <span style="color:var(--dim)">—</span>
+        <span class="pill warn">连接失败</span>
+      </div>
+    </div>
+    <div class="foot">不记画面内容、不记键鼠序列；只记元数据。满足「可审计」又不变成录屏（明确不做）。</div>
+  </div>
+</div>
+
+<!-- ========== 12. 交互流程 ========== -->
+<h2>十二、关键流程时序</h2>
+
+<h3>12.1 发起可控</h3>
+<div class="demo"><div class="screen">
+  <div class="arrowRow">选设备 → 选能力 → 发送 → 等待 → 会话</div>
+  <table>
+    <tr><th>步骤</th><th>UI</th><th>超时/反馈</th></tr>
+    <tr><td>1 点「远程」</td><td>能力 pill：只看 / 可控（默认记住上次）</td><td>—</td></tr>
+    <tr><td>2 发送申请</td><td>面板切「等待对方确认…」+ 取消</td><td>对端 120s 未答 → 自动失败并提示</td></tr>
+    <tr><td>3 对方同意</td><td>自动进会话视图，拉首帧</td><td>首帧 &gt;3s 显示「对方编码中」</td></tr>
+    <tr><td>4 会话中</td><td>HUD + 工具条 + 控制条</td><td>心跳、画质反馈、Esc 两级</td></tr>
+    <tr><td>5 结束</td><td>确认 → 回列表；可「重连」</td><td>被控横幅同时消失</td></tr>
+  </table>
+</div></div>
+
+<h3>12.2 被控同意</h3>
+<div class="demo"><div class="screen">
+  <table>
+    <tr><th>步骤</th><th>UI</th></tr>
+    <tr><td>申请到达</td><td>置顶确认条 + toast（窗口 hide 也能通过事件到）</td></tr>
+    <tr><td>同意</td><td>常驻红色横幅（谁 + 能力 + 时长 + 结束）</td></tr>
+    <tr><td>对方控</td><td>本机键鼠被注入；UIPI 失败 → 对端 toast</td></tr>
+    <tr><td>任一方结束</td><td>横幅消失；End 帧已双向可达</td></tr>
+  </table>
+</div></div>
+
+<!-- ========== 13. 分期落地 ========== -->
+<h2>十三、落地分期（建议实现顺序）</h2>
+<table>
+  <tr><th>期</th><th>范围</th><th>主要文件</th><th>依赖</th></tr>
+  <tr>
+    <td><b>UX-1</b><br>反馈与诚实文案</td>
+    <td>画质失败回滚+toast；占位文案动态；剪贴板四态；自动降档提示</td>
+    <td><code>RcSessionView</code> <code>RcQualityBar</code> <code>RemoteComputer.module.css</code></td>
+    <td>纯前端 · 无后端</td>
+  </tr>
+  <tr>
+    <td><b>UX-2</b><br>会话体验</td>
+    <td>HUD 字段；适应/1:1/填充；Esc 两级；最近设备+重连；入站 Enter/Esc</td>
+    <td>同上 + <code>useRc</code></td>
+    <td>Ping RTT 可选后端</td>
+  </tr>
+  <tr>
+    <td><b>UX-3</b><br>配对与空态</td>
+    <td>三步引导；指纹并排；邀请倒计时；设置配对始终可见</td>
+    <td><code>RemoteComputerDialog</code> <code>RcPairDialog</code> <code>RcSection</code></td>
+    <td>设置配对已提前修</td>
+  </tr>
+  <tr>
+    <td><b>UX-4</b><br>增强</td>
+    <td>指针锁定；会话历史；多屏切换器</td>
+    <td>前端 + <code>input.rs</code> / <code>dxgi</code> 多输出</td>
+    <td>指针锁定/多屏需后端</td>
+  </tr>
+</table>
+
+<div class="note good">
+  <b>验收（黑话测试）</b>：把截图给没用过的人，让他指出「对面在不在、我能不能控、改画质有没有生效」。
+  三块都能说对才算过；说不对的那块回炉（L 组元规则）。
+</div>
+
+<div class="note warn">
+  <b>明确不做</b>：远程 shell、文件传输、无人值守、录屏回放、移动端。多屏切换仅当后端 DXGI 枚举多输出后开放入口。
+</div>
+
+<p class="sub" style="margin-top:32px">
+  设计稿完 · 确认后按 UX-1 → UX-4 改代码 · 改 UI 前仍会对照本稿与真实组件源码
+</p>
+
+</div>
+<script>
+  // 演示：捕获键盘 pill 切换
+  const kbBtn = document.getElementById('kbBtn');
+  const kbPill = document.getElementById('kbPill');
+  if (kbBtn && kbPill) {
+    kbBtn.addEventListener('click', () => {
+      const on = kbBtn.textContent === '捕获键盘';
+      kbBtn.textContent = on ? '释放键盘' : '捕获键盘';
+      kbPill.textContent = on ? '键盘：已捕获 · Esc 释放' : '键盘：未捕获';
+      kbPill.classList.toggle('ok', on);
+    });
+  }
+  // 演示：工具条切换
+  document.querySelectorAll('.viewTools button').forEach((b) => {
+    b.addEventListener('click', () => {
+      b.parentElement.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+    });
+  });
+</script>
+</body>
+</html>

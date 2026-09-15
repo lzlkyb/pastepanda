@@ -6,6 +6,7 @@ import { AppearanceSection } from "./sections/AppearanceSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { LanSyncSection } from "./sections/LanSyncSection";
 import { KbSyncSection } from "./sections/KbSyncSection";
+import { RcSection } from "./sections/RcSection";
 import { HotkeySection } from "./sections/HotkeySection";
 import { DataSection } from "./sections/DataSection";
 import type { SettingsSearch } from "@/hooks/useSettingsSearch";
@@ -86,6 +87,7 @@ export function GeneralTab({
         />
         <LanSyncSection config={config} updateAndSave={updateAndSave} />
         <KbSyncSection config={config} updateAndSave={updateAndSave} />
+        <RcSection config={config} updateAndSave={updateAndSave} />
         <HotkeySection config={config} updateAndSave={updateAndSave} chains={chains} />
         <DataSection
           config={config} updateAndSave={updateAndSave} expiredCount={expiredCount}

@@ -91,6 +91,8 @@ export interface AppConfig {
   lan_sync_enabled: boolean;
   /** 知识库（笔记）同步。**与 `lan_sync_enabled`（剪贴板）无关**，两个开关互不影响。 */
   kb_sync_enabled: boolean;
+  /** 远程协助：允许被已配对设备远程。**默认关**；关时不接受任何入站远程申请。 */
+  rc_enabled: boolean;
   always_on_top: boolean;
   auto_startup: boolean;
   sequential_hotkey: string;
@@ -382,6 +384,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   hide_on_focus_out: false,
   lan_sync_enabled: false,
   kb_sync_enabled: false,
+  rc_enabled: false,
   always_on_top: false,
   auto_startup: false,
   sequential_hotkey: "ctrl+alt+q",

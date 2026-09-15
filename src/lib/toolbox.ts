@@ -27,7 +27,8 @@ export type ToolKey =
   | "sql"
   | "json"
   | "log"
-  | "timestamp";
+  | "timestamp"
+  | "remote";
 
 export interface ToolItem {
   key: ToolKey;
@@ -166,6 +167,19 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
         name: "时间戳 / 数字",
         desc: "时间戳互转、进制、字节速览",
         hue: "rose",
+      },
+    ],
+  },
+  {
+    label: "网络",
+    items: [
+      {
+        key: "remote",
+        icon: "🖥️",
+        name: "远程电脑",
+        desc: "查看或操作已配对的另一台电脑",
+        hue: "sky",
+        hero: true,
       },
     ],
   },

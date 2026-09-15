@@ -1,0 +1,1652 @@
+//! 远程电脑服务层（方案 A：与同步配对/通道分离）。
+//!
+//! # 🔴 不认识 tauri
+//!
+//! 与 `sync/` 同一条界线。身份仍是共用的 `NodeIdentity`，
+//! 但**设备信任表是 `rc_devices`**，通道在 `rc_enabled` 时自建 Endpoint。
+
+use super::join::{self, RcJoins};
+use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
+use super::session::{
+    gate_inbound, gate_outbound, is_active, new_session_id, Gate, Session, CFG_CAPABILITY,
+    CFG_DEVICE_DENY, CFG_ENABLED,
+};
+use crate::data_store::DataStore;
+use crate::sync::identity::NodeIdentity;
+use crate::sync::presence::{self, PresenceTable, PORT as PRESENCE_BASE_PORT};
+use iroh::{Endpoint, EndpointAddr};
+use serde::Serialize;
+use std::collections::HashMap;
+use std::path::Path;
+use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+
+/// 活跃会话最长持续（毫秒）。超时后推流循环自动结束，避免无人值守挂死。
+const SESSION_TTL_MS: i64 = 2 * 60 * 60 * 1000;
+/// 剪贴板推送上限：按 **JSON 帧 UTF-8 字节**卡（控制帧 64KB，留余量）。
+/// 中文 1 字 ≈ 3 字节，不能按字符数卡。
+const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
+/// 拉回剪贴板时等回包的总时长。
+const CLIPBOARD_PULL_TIMEOUT_MS: i64 = 4_000;
+
+/// 会话状态变化时通知前端（由 lib.rs 注入，避免 RcService 依赖 AppHandle）。
+type NotifyFn = Arc<dyn Fn() + Send + Sync>;
+
+/// 被控端配置键。
+pub const CFG_QUALITY: &str = "rc_quality";
+/// `virtual` | `primary`
+pub const CFG_CAPTURE_SCOPE: &str = "rc_capture_scope";
+/// `auto` | `jpeg` | `h264` — R4 硬编开关
+pub const CFG_CODEC: &str = "rc_codec";
+/// 发起端心跳超时（毫秒）：超过则暂停截帧推流（会话仍保留）。
+const HEARTBEAT_TIMEOUT_MS: i64 = 3_500;
+
+/// RC 地址宣告端口。**不是**同步的 5008，两套 presence 互不抢 bind。
+pub const RC_PRESENCE_PORT: u16 = PRESENCE_BASE_PORT + 1;
+
+/// 给界面看的完整状态。
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct RcStatus {
+    pub enabled: bool,
+    pub capability: String,
+    pub session: Option<Session>,
+    pub pending: Vec<InboundKnock>,
+    /// 生成邀请后、等对方核对指纹敲门的列表。
+    pub joins: Vec<join::RcJoinRequest>,
+    pub device_deny: HashMap<String, bool>,
+    /// 通道是否已起来（rc_enabled 且端点绑定成功）。
+    pub running: bool,
+    /// 画质档 sharp/balanced/smooth
+    pub quality: String,
+    /// 截取范围 virtual/primary
+    pub capture_scope: String,
+    /// 发起端最近 RTT（毫秒），0=尚未测到。
+    pub rtt_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct InboundKnock {
+    pub peer: String,
+    pub peer_name: String,
+    pub capability: Capability,
+    pub first_seen_ms: i64,
+}
+
+struct Running {
+    endpoint: Endpoint,
+    presence: Arc<PresenceTable>,
+    /// accept 循环停止标志：true = 退出。
+    stop: Arc<AtomicBool>,
+    /// presence 的 running（true = 在跑）；stop 时置 false。
+    presence_running: Arc<AtomicBool>,
+    #[allow(dead_code)]
+    identity: Arc<NodeIdentity>,
+}
+
+pub struct RcService {
+    store: DataStore,
+    inner: Mutex<Inner>,
+    running: Mutex<Option<Running>>,
+    joins: Arc<RcJoins>,
+    /// 发起端最近一帧（合成后）画面。
+    last_frame: Mutex<Option<super::video::VideoFrame>>,
+    /// 发起端 → 被控端的发送半流（R2 键鼠 / R3 剪贴板）。tokio Mutex：跨 await 持锁。
+    outbound_send: tokio::sync::Mutex<Option<iroh::endpoint::SendStream>>,
+    /// 最近从被控端拉回的剪贴板文本。
+    remote_clipboard: Mutex<Option<String>>,
+    /// 每次写入 remote_clipboard 自增；pull 用它判断回包是否已到。
+    clip_seq: std::sync::atomic::AtomicU64,
+    /// 被控端：推 JPEG 时的发送半流（End 帧用；发起端走 outbound_send）。
+    inbound_send:
+        tokio::sync::Mutex<Option<std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>>>,
+    /// 状态变化通知（emit `rc-session-changed` / inject-error）。
+    notify: Mutex<Option<NotifyFn>>,
+    /// 最近一次注入失败（UIPI 等），供发起端展示。
+    last_inject_err: Mutex<Option<String>>,
+    /// 被控端：最近一次收到发起端输入/心跳的时间。
+    last_activity_ms: std::sync::atomic::AtomicI64,
+    /// 发起端最近一次测得的 RTT（毫秒）；0 = 尚未测到。
+    last_rtt_ms: std::sync::atomic::AtomicI64,
+    /// 会话中可被发起端改的推流参数（画质档 / 截取范围 / 强制 JPEG）。
+    stream_opts: Mutex<StreamOpts>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StreamOpts {
+    profile: super::video::EncodeProfile,
+    virtual_screen: bool,
+    /// >=0 抓指定显示器；-1 跟随 virtual_screen。
+    monitor: i32,
+    /// 发起端解不出 H.264 时置 true，本会话强制 JPEG。
+    force_jpeg: bool,
+}
+
+impl Default for StreamOpts {
+    fn default() -> Self {
+        Self {
+            profile: super::video::EncodeProfile::default(),
+            virtual_screen: true,
+            monitor: -1,
+            force_jpeg: false,
+        }
+    }
+}
+
+#[derive(Default)]
+struct Inner {
+    session: Option<Session>,
+    pending: Vec<InboundKnock>,
+}
+
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+static GLOBAL: OnceLock<Arc<RcService>> = OnceLock::new();
+
+pub fn install_global(svc: Arc<RcService>) {
+    let _ = GLOBAL.set(svc);
+}
+
+pub fn global() -> Option<Arc<RcService>> {
+    GLOBAL.get().cloned()
+}
+
+impl RcService {
+    pub fn new(store: DataStore) -> Self {
+        Self {
+            store,
+            inner: Mutex::new(Inner::default()),
+            running: Mutex::new(None),
+            joins: RcJoins::new(),
+            last_frame: Mutex::new(None),
+            outbound_send: tokio::sync::Mutex::new(None),
+            remote_clipboard: Mutex::new(None),
+            clip_seq: std::sync::atomic::AtomicU64::new(0),
+            inbound_send: tokio::sync::Mutex::new(None),
+            notify: Mutex::new(None),
+            last_inject_err: Mutex::new(None),
+            last_activity_ms: std::sync::atomic::AtomicI64::new(0),
+            last_rtt_ms: std::sync::atomic::AtomicI64::new(0),
+            stream_opts: Mutex::new(StreamOpts::default()),
+        }
+    }
+
+    pub fn note_rtt(&self, rtt_ms: i64) {
+        self.last_rtt_ms.store(rtt_ms.max(0), Ordering::Relaxed);
+    }
+
+    pub fn last_rtt_ms(&self) -> i64 {
+        self.last_rtt_ms.load(Ordering::Relaxed)
+    }
+
+    /// 会话建立时用本机配置初始化推流参数。
+    pub fn reset_stream_opts_from_cfg(&self) {
+        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
+        g.profile = self.encode_profile();
+        g.virtual_screen = self.capture_virtual_screen();
+        g.monitor = -1;
+        g.force_jpeg = false;
+    }
+
+    /// 发起端在会话中改画质/范围。
+    pub fn set_stream_quality(&self, quality: &str) -> Result<(), String> {
+        if !matches!(quality, "sharp" | "balanced" | "smooth") {
+            return Err("画质档只能是 sharp / balanced / smooth".into());
+        }
+        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
+        g.profile = super::video::EncodeProfile::from_str(quality);
+        Ok(())
+    }
+
+    pub fn set_stream_scope(&self, scope: &str) -> Result<(), String> {
+        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
+        if scope == "virtual" {
+            g.virtual_screen = true;
+            g.monitor = -1;
+            return Ok(());
+        }
+        if scope == "primary" {
+            g.virtual_screen = false;
+            g.monitor = -1;
+            return Ok(());
+        }
+        if let Some(n) = scope.strip_prefix("monitor:") {
+            let idx: i32 = n
+                .parse()
+                .map_err(|_| "显示器编号无效，应为 monitor:0 / monitor:1…")?;
+            if idx < 0 {
+                return Err("显示器编号不能为负".into());
+            }
+            g.virtual_screen = false;
+            g.monitor = idx;
+            return Ok(());
+        }
+        Err("截取范围只能是 virtual / primary / monitor:N".into())
+    }
+
+    /// 发起端：H.264 解不出时强制本会话走 JPEG；`codec=h264` 可再打开。
+    pub fn set_stream_codec(&self, codec: &str) -> Result<(), String> {
+        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
+        match codec {
+            "jpeg" => {
+                g.force_jpeg = true;
+                Ok(())
+            }
+            "h264" => {
+                g.force_jpeg = false;
+                Ok(())
+            }
+            _ => Err("编码只能是 jpeg 或 h264".into()),
+        }
+    }
+
+    fn stream_opts_snapshot(&self) -> StreamOpts {
+        *self.stream_opts.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub fn touch_activity(&self) {
+        self.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    }
+
+    /// 是否应暂停推流：会话开始后长时间无心跳/输入。
+    pub fn should_pause_stream(&self) -> bool {
+        let last = self.last_activity_ms.load(Ordering::Relaxed);
+        if last == 0 {
+            // 尚未收到任何输入：给发起端 5s 窗口发首个心跳
+            return false;
+        }
+        now_ms() - last > HEARTBEAT_TIMEOUT_MS
+    }
+
+    pub fn encode_profile(&self) -> super::video::EncodeProfile {
+        super::video::EncodeProfile::from_str(
+            self.cfg()
+                .get(CFG_QUALITY)
+                .and_then(|v| v.as_str())
+                .unwrap_or("balanced"),
+        )
+    }
+
+    pub fn capture_virtual_screen(&self) -> bool {
+        self.cfg()
+            .get(CFG_CAPTURE_SCOPE)
+            .and_then(|v| v.as_str())
+            .map(|s| s != "primary")
+            .unwrap_or(true)
+    }
+
+    /// 注入前端通知回调（lib.rs 在 manage 之后调用）。
+    pub fn set_notify(&self, f: NotifyFn) {
+        *self.notify.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
+    }
+
+    fn emit_changed(&self) {
+        let f = self.notify.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        if let Some(f) = f {
+            f();
+        }
+    }
+
+    fn set_inject_err(&self, msg: String) {
+        *self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+        self.emit_changed();
+    }
+
+    pub fn take_inject_err(&self) -> Option<String> {
+        self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()).take()
+    }
+
+    /// 发起端取最近一帧（JPEG bytes）。无画面返 None。
+    pub fn latest_frame(&self) -> Option<super::video::VideoFrame> {
+        self.last_frame.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    fn set_frame(&self, f: super::video::VideoFrame) {
+        *self.last_frame.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
+    }
+
+    fn clear_frame(&self) {
+        *self.last_frame.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    fn session_is(&self, phase: SessionPhase, peer: &str) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        matches!(inner.session.as_ref(), Some(s) if s.phase == phase && s.peer == peer)
+    }
+
+    fn session_capability(&self) -> Option<Capability> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner.session.as_ref().map(|s| s.capability)
+    }
+
+    /// 发起端发送输入/剪贴板帧。会话必须 OutboundActive 且能力为 Control（剪贴板也要求可控）。
+    pub async fn send_input(&self, ev: &super::input::InputEvent) -> Result<(), String> {
+        let cap = self.session_capability().ok_or("没有进行中的会话")?;
+        super::input::assert_control_allowed(cap)?;
+        {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let s = inner.session.as_ref().ok_or("没有进行中的会话")?;
+            if s.phase != SessionPhase::OutboundActive {
+                return Err("会话尚未建立".into());
+            }
+        }
+        let mut guard = self.outbound_send.lock().await;
+        let Some(send) = guard.as_mut() else {
+            return Err("发送通道不可用".into());
+        };
+        let json = serde_json::to_vec(ev).map_err(|e| e.to_string())?;
+        crate::sync::transport::write_frame(send, &json).await
+    }
+
+    /// 发起端：把本地剪贴板文本推给被控端（R3 文本优先）。
+    /// 按 **JSON 帧字节**卡上限，避免中文字符数过了但 write_frame 超 64KB。
+    pub async fn push_clipboard(&self, text: &str) -> Result<(), String> {
+        let ev = super::input::InputEvent::ClipboardPush {
+            text: text.to_string(),
+        };
+        let json = serde_json::to_vec(&ev).map_err(|e| e.to_string())?;
+        if json.len() > CLIPBOARD_MAX_JSON_BYTES {
+            return Err(format!(
+                "剪贴板过大（约 {} KB，上限约 {} KB），请改用文件或其他方式传输",
+                json.len() / 1024,
+                CLIPBOARD_MAX_JSON_BYTES / 1024
+            ));
+        }
+        self.send_input(&ev).await
+    }
+
+    /// 发起端请求拉回对方剪贴板，并等回包（修「立刻 take 必空」竞态）。
+    /// 超时或对方无回包时返回 `Ok(None)`。
+    pub async fn pull_clipboard(&self) -> Result<Option<String>, String> {
+        let before = self.clip_seq.load(Ordering::SeqCst);
+        self.send_input(&super::input::InputEvent::ClipboardPull).await?;
+        let deadline = now_ms() + CLIPBOARD_PULL_TIMEOUT_MS;
+        while now_ms() < deadline {
+            if self.clip_seq.load(Ordering::SeqCst) > before {
+                return Ok(self.take_remote_clipboard());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        }
+        Ok(None)
+    }
+
+    /// 最近一次从被控端拉回的剪贴板文本（由接收循环写入）。
+    pub fn take_remote_clipboard(&self) -> Option<String> {
+        self.remote_clipboard.lock().unwrap_or_else(|p| p.into_inner()).take()
+    }
+
+    fn set_remote_clipboard(&self, t: String) {
+        *self.remote_clipboard.lock().unwrap_or_else(|p| p.into_inner()) = Some(t);
+        self.clip_seq.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn joins(&self) -> Arc<RcJoins> {
+        self.joins.clone()
+    }
+
+    fn cfg(&self) -> serde_json::Value {
+        self.store.get_config().unwrap_or_default()
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.cfg()
+            .get(CFG_ENABLED)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    pub fn max_capability(&self) -> Capability {
+        self.cfg()
+            .get(CFG_CAPABILITY)
+            .and_then(|v| v.as_str())
+            .and_then(Capability::parse)
+            .unwrap_or(Capability::View)
+    }
+
+    pub fn device_deny(&self) -> HashMap<String, bool> {
+        self.cfg()
+            .get(CFG_DEVICE_DENY)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    /// 是否在**远程**配对表里。
+    fn is_rc_paired(&self, node_id: &str) -> bool {
+        matches!(self.store.rc_device_get(node_id), Ok(Some(_)))
+    }
+
+    /// 远程信任（方案 A 单向继承）：远程配对 **或** 同步配对。
+    ///
+    /// 同步配对的设备可直接发起/接受远程；远程配对**不会**自动进同步。
+    pub fn has_remote_trust(&self, node_id: &str) -> bool {
+        if self.is_rc_paired(node_id) {
+            return true;
+        }
+        matches!(self.store.device_get(node_id), Ok(Some(_)))
+    }
+
+    /// 同步设备首次用于远程时写入 rc_devices（幂等），便于 presence 勾选与列表稳定。
+    pub fn elevate_from_sync(&self, node_id: &str) -> Result<(), String> {
+        if self.is_rc_paired(node_id) {
+            return Ok(());
+        }
+        let name = self
+            .store
+            .device_get(node_id)
+            .ok()
+            .flatten()
+            .map(|d| d.name)
+            .unwrap_or_else(|| "同步设备".into());
+        self.store.rc_device_pair(node_id, &name)
+    }
+
+    fn peer_name(&self, node_id: &str) -> String {
+        if let Ok(Some(d)) = self.store.rc_device_get(node_id) {
+            return d.name;
+        }
+        if let Ok(Some(d)) = self.store.device_get(node_id) {
+            return d.name;
+        }
+        String::new()
+    }
+
+    pub fn status(&self) -> RcStatus {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let running = self.running.lock().unwrap_or_else(|p| p.into_inner()).is_some();
+        RcStatus {
+            enabled: self.enabled(),
+            capability: self.max_capability().as_str().to_string(),
+            session: inner.session.clone(),
+            pending: inner.pending.clone(),
+            joins: self.joins.list(now_ms()),
+            device_deny: self.device_deny(),
+            running,
+            quality: self
+                .cfg()
+                .get(CFG_QUALITY)
+                .and_then(|v| v.as_str())
+                .unwrap_or("balanced")
+                .to_string(),
+            capture_scope: self
+                .cfg()
+                .get(CFG_CAPTURE_SCOPE)
+                .and_then(|v| v.as_str())
+                .unwrap_or("virtual")
+                .to_string(),
+            rtt_ms: self.last_rtt_ms(),
+        }
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.running.lock().unwrap_or_else(|p| p.into_inner()).is_some()
+    }
+
+    /// 是否需要通道：允许被控 **或** 已有远程配对（要发起）。
+    /// 两者语义不同：`rc_enabled` 只管「别人能不能控你」；发起只要配对过。
+    pub fn needs_channel(&self) -> bool {
+        if self.enabled() {
+            return true;
+        }
+        matches!(self.store.rc_device_list(), Ok(list) if !list.is_empty())
+    }
+
+    /// 启动独立通道。幂等。
+    ///
+    /// 🔴 **不再要求 `rc_enabled`**（方案 A）：发起远程的人往往从未打开过
+    /// 「允许被远程」——那开关只应挡住**别人控你**，不该挡住你去控别人。
+    /// 入站仍由 `gate_inbound` 看 `rc_enabled` 拒掉。
+    pub async fn start(&self, app_dir: &Path, relay: bool) -> Result<(), String> {
+        {
+            let guard = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            if guard.is_some() {
+                return Ok(());
+            }
+        }
+        let me = Arc::new(NodeIdentity::load_or_create(app_dir)?);
+        let endpoint = bind_rc_endpoint(&me, relay).await?;
+        let port = endpoint
+            .bound_sockets()
+            .first()
+            .map(|s| s.port())
+            .ok_or("远程端点没有绑到任何端口")?;
+        let presence = Arc::new(PresenceTable::new());
+        let stop = Arc::new(AtomicBool::new(false));
+        let presence_running = Arc::new(AtomicBool::new(false));
+
+        {
+            let mut g = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            *g = Some(Running {
+                endpoint: endpoint.clone(),
+                presence: presence.clone(),
+                stop: stop.clone(),
+                presence_running: presence_running.clone(),
+                identity: me.clone(),
+            });
+        }
+
+        let known = self.store.rc_device_list()?;
+        log::info!(
+            "[RC] 远程通道已启动，端口 {}，远程已配对 {} 台（允许被控={})",
+            port,
+            known.len(),
+            self.enabled()
+        );
+
+        // accept 循环
+        {
+            let svc = global().ok_or("RcService 未安装到 global")?;
+            let ep = endpoint.clone();
+            let stop2 = stop.clone();
+            tauri::async_runtime::spawn(async move {
+                accept_loop(svc, ep, stop2).await;
+            });
+        }
+
+        // presence：宣告 RC 端口；is_paired 用**远程信任**（rc ∪ 同步），
+        // 否则仅同步配对的对端收不到本机 RC 地址，局域网发现会失败。
+        {
+            let store = self.store.clone();
+            let store_online = self.store.clone();
+            presence::spawn(
+                true,
+                presence,
+                me,
+                port,
+                Arc::new(move |id: &str| {
+                    matches!(store.rc_device_get(id), Ok(Some(_)))
+                        || matches!(store.device_get(id), Ok(Some(_)))
+                }),
+                // 听见对端「回来」→ 刷 rc_devices 在线（修纯 RC 配对永远 offline）
+                Arc::new(move |id: &str| {
+                    let _ = store_online.rc_device_touch(id, true);
+                }),
+                presence_running,
+                RC_PRESENCE_PORT,
+            );
+        }
+
+        Ok(())
+    }
+
+    /// presence 里当前还听得见的对端（局域网在线）。
+    pub fn presence_live_ids(&self) -> Vec<String> {
+        let g = self.running.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(r) = g.as_ref() else {
+            return Vec::new();
+        };
+        r.presence.live(now_ms())
+    }
+
+    pub async fn stop(&self) {
+        // 先收口会话（发 End / 清帧），再关通道，避免留下「可控」假状态
+        {
+            let has = {
+                let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                inner.session.is_some()
+            };
+            if has {
+                let _ = self.end_session("远程通道关闭").await;
+            }
+        }
+        let running = {
+            let mut g = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            g.take()
+        };
+        if let Some(r) = running {
+            r.stop.store(true, Ordering::SeqCst);
+            r.presence_running.store(false, Ordering::SeqCst);
+            r.endpoint.close().await;
+            self.joins.clear();
+            {
+                let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                inner.session = None;
+                inner.pending.clear();
+            }
+            *self.outbound_send.lock().await = None;
+            *self.inbound_send.lock().await = None;
+            log::info!("[RC] 远程通道已停止");
+        }
+    }
+
+    pub fn pending_joins(&self) -> Vec<join::RcJoinRequest> {
+        self.joins.list(now_ms())
+    }
+
+    pub fn approve_join(&self, node_id: &str, name: &str) -> Result<(), String> {
+        if !self.joins.take(node_id) && !self.is_rc_paired(node_id) {
+            // 已配对再点一次也允许（幂等刷新名字）
+            if !self.is_rc_paired(node_id) {
+                return Err("没有待确认的远程配对请求".into());
+            }
+        }
+        let n = if name.trim().is_empty() {
+            "新设备".to_string()
+        } else {
+            name.trim().to_string()
+        };
+        self.store.rc_device_pair(node_id, &n)
+    }
+
+    pub fn deny_join(&self, node_id: &str) {
+        self.joins.deny(node_id, now_ms());
+    }
+
+    fn transport_ready(&self) -> Option<(Endpoint, Arc<PresenceTable>)> {
+        let g = self.running.lock().unwrap_or_else(|p| p.into_inner());
+        g.as_ref().map(|r| (r.endpoint.clone(), r.presence.clone()))
+    }
+
+    pub async fn request_session(
+        &self,
+        peer: &str,
+        capability: Capability,
+    ) -> Result<Session, String> {
+        let session_id = {
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            if gate_outbound(inner.session.is_some()) == Gate::Busy {
+                return Err("[busy_local] 已有进行中的远程会话，请先结束".into());
+            }
+            if !self.has_remote_trust(peer) {
+                return Err("[not_paired] 尚未完成远程配对：请先在远程电脑设置里配对这台设备".into());
+            }
+            if !self.is_running() {
+                return Err("[channel_down] 远程通道未启动：请先开启远程通道或完成远程配对".into());
+            }
+            // 同步设备首次发起远程 → 写入 rc_devices（方案 A）
+            if let Err(e) = self.elevate_from_sync(peer) {
+                log::warn!("[RC] 从同步配对提升到远程失败：{e}");
+            }
+            let id = new_session_id(now_ms());
+            inner.session = Some(Session {
+                id: id.clone(),
+                peer: peer.to_string(),
+                peer_name: self.peer_name(peer),
+                capability,
+                phase: SessionPhase::OutboundPending,
+                started_ms: now_ms(),
+                granted: false,
+            });
+            id
+        };
+
+        match self.dial_and_request(peer, capability).await {
+            Ok((accepted_cap, send, recv)) => {
+                {
+                    let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                    let Some(sess) = inner.session.as_mut() else {
+                        return Err("会话已失效".into());
+                    };
+                    if sess.id != session_id {
+                        return Err("会话已失效".into());
+                    }
+                    sess.phase = SessionPhase::OutboundActive;
+                    sess.capability = accepted_cap;
+                    sess.granted = true;
+                }
+                let _ = self.store.rc_device_touch(peer, true);
+                self.clear_frame();
+                self.note_rtt(0);
+                *self.outbound_send.lock().await = Some(send);
+                self.spawn_outbound_video(peer, recv);
+                let sess = {
+                    let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                    inner.session.clone().unwrap()
+                };
+                Ok(sess)
+            }
+            Err(e) => {
+                let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                if let Some(s) = inner.session.as_ref() {
+                    if s.id == session_id {
+                        inner.session = None;
+                    }
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// 发起端：收 JPEG / 脏矩形 / 控制帧。
+    ///
+    /// 🔴 **不再合成再编码**：整帧与脏块 JPEG 原样交给前端画布合成，
+    /// 避免「网络传脏矩形、本机却整帧 clone + 二次 JPEG」的白做功。
+    fn spawn_outbound_video(&self, peer: &str, mut recv: iroh::endpoint::RecvStream) {
+        let peer = peer.to_string();
+        let Some(svc) = global() else { return };
+        tauri::async_runtime::spawn(async move {
+            use super::video::{read_incoming, Incoming};
+            let mut pending_rect: Option<super::video::DirtyRect> = None;
+            // 画布逻辑尺寸：整帧时从 JPEG 解出，脏块沿用
+            let mut canvas_w: u32 = 0;
+            let mut canvas_h: u32 = 0;
+            loop {
+                if !svc.session_is(SessionPhase::OutboundActive, &peer) {
+                    break;
+                }
+                match read_incoming(&mut recv).await {
+                    Ok(Incoming::Control(bytes)) => match RcFrame::decode(&bytes) {
+                        Ok(RcFrame::End { reason }) => {
+                            log::info!("[RC] 对端结束：{reason}");
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(_) => {
+                            // 可能是 vrect 元数据或剪贴板回包
+                            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                                if v.get("t").and_then(|x| x.as_str()) == Some("vrect") {
+                                    pending_rect = Some(super::video::DirtyRect {
+                                        x: v["x"].as_u64().unwrap_or(0) as u32,
+                                        y: v["y"].as_u64().unwrap_or(0) as u32,
+                                        w: v["w"].as_u64().unwrap_or(0) as u32,
+                                        h: v["h"].as_u64().unwrap_or(0) as u32,
+                                    });
+                                } else if v.get("t").and_then(|x| x.as_str()) == Some("clip") {
+                                    if let Some(t) = v.get("text").and_then(|x| x.as_str()) {
+                                        svc.set_remote_clipboard(t.to_string());
+                                    }
+                                } else if v.get("t").and_then(|x| x.as_str()) == Some("clip_err") {
+                                    if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
+                                        log::warn!("[RC] 剪贴板拉回失败：{e}");
+                                        // 推进 seq：让 pull 立刻返回；内容为空表示失败
+                                        svc.set_remote_clipboard(String::new());
+                                    }
+                                } else if v.get("t").and_then(|x| x.as_str()) == Some("pong") {
+                                    if let Some(ts) = v.get("ts").and_then(|x| x.as_i64()) {
+                                        let rtt = now_ms().saturating_sub(ts);
+                                        svc.note_rtt(rtt);
+                                    }
+                                } else if v.get("t").and_then(|x| x.as_str()) == Some("inject_err") {
+                                    if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
+                                        log::warn!("[RC] 被控端注入失败：{e}");
+                                        svc.set_inject_err(e.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    Ok(Incoming::Jpeg(f)) => {
+                        let rect = pending_rect.take();
+                        // 整帧：用轻量 JPEG 头读尺寸（不解像素）
+                        if rect.is_none() {
+                            if let Some((w, h)) = jpeg_dimensions(&f.jpeg) {
+                                canvas_w = w;
+                                canvas_h = h;
+                            }
+                        }
+                        let (w, h) = (canvas_w, canvas_h);
+                        svc.set_frame(super::video::VideoFrame {
+                            width: w,
+                            height: h,
+                            jpeg: f.jpeg,
+                            at_ms: chrono::Utc::now().timestamp_millis(),
+                            full: rect.is_none(),
+                            rect,
+                            codec: super::video::FrameCodec::Jpeg,
+                            key: rect.is_none(),
+                        });
+                    }
+                    Ok(Incoming::H264 {
+                        key,
+                        width,
+                        height,
+                        data,
+                    }) => {
+                        svc.set_frame(super::video::VideoFrame {
+                            width,
+                            height,
+                            jpeg: data,
+                            at_ms: chrono::Utc::now().timestamp_millis(),
+                            full: true,
+                            rect: None,
+                            codec: super::video::FrameCodec::H264,
+                            key,
+                        });
+                    }
+                    Err(e) => {
+                        log::info!("[RC] 画面流结束：{e}");
+                        break;
+                    }
+                }
+            }
+            *svc.outbound_send.lock().await = None;
+            // P0：收流失败 ≠ 用户点了结束，但会话必须收口，否则界面一直「可控」
+            svc.force_end_for_peer(&peer, "画面流中断").await;
+        });
+    }
+
+    async fn dial_and_request(
+        &self,
+        peer: &str,
+        capability: Capability,
+    ) -> Result<
+        (
+            Capability,
+            iroh::endpoint::SendStream,
+            iroh::endpoint::RecvStream,
+        ),
+        String,
+    > {
+        let Some((ep, presence)) = self.transport_ready() else {
+            return Err("[channel_down] 远程通道未启动".into());
+        };
+        let id = iroh::EndpointId::from_str(peer).map_err(|e| format!("[bad_node_id] node_id 解不开：{}", e))?;
+        let mut addr = EndpointAddr::new(id);
+        for sock in presence.addrs_of(peer, now_ms()) {
+            addr = addr.with_ip_addr(sock);
+        }
+
+        let conn = ep
+            .connect(addr, ALPN)
+            .await
+            .map_err(|e| format!("[connect_failed] 连接对端失败：{}", e))?;
+        let (mut send, mut recv) = conn
+            .open_bi()
+            .await
+            .map_err(|e| format!("开流失败：{}", e))?;
+
+        let req = RcFrame::Request { capability };
+        crate::sync::transport::write_frame(&mut send, &req.encode()?).await?;
+        let resp = RcFrame::decode(&crate::sync::transport::read_frame(&mut recv).await?)?;
+        match resp {
+            RcFrame::Accept { capability } => Ok((capability, send, recv)),
+            RcFrame::Deny { reason, code } => {
+                let code = code.unwrap_or_default();
+                if code.is_empty() {
+                    Err(reason)
+                } else {
+                    Err(format!("[{code}] {reason}"))
+                }
+            }
+            other => Err(format!("对端回了意外的帧：{other:?}")),
+        }
+    }
+
+    /// 入站连接（本模块 accept_loop 调用）。
+    pub async fn handle_inbound_conn(&self, conn: iroh::endpoint::Connection) {
+        use crate::sync::transport::{read_frame, write_frame};
+
+        let peer = conn.remote_id().to_string();
+        let short = peer[..8.min(peer.len())].to_string();
+        let Ok(w) = crate::sync::transport::accept_streams(conn).await else {
+            log::warn!("[RC] {short} 开流失败");
+            return;
+        };
+        let mut send = w.send;
+        let mut recv = w.recv;
+
+        let deny = |reason: &str, code: &str| {
+            RcFrame::Deny {
+                reason: reason.to_string(),
+                code: Some(code.to_string()),
+            }
+            .encode()
+            .ok()
+        };
+
+        let Ok(bytes) = read_frame(&mut recv).await else {
+            return;
+        };
+        let requested = match RcFrame::decode(&bytes) {
+            Ok(RcFrame::Request { capability }) => capability,
+            Ok(_) => {
+                if let Some(b) = deny("期望 Request 帧", "not_request") {
+                    let _ = write_frame(&mut send, &b).await;
+                }
+                return;
+            }
+            Err(e) => {
+                log::warn!("[RC] {short} 帧解码失败：{e}");
+                return;
+            }
+        };
+
+        // 未配对（远程/同步都没有）+ 邀请门开着 → 记敲门，等用户核对指纹
+        if !self.has_remote_trust(&peer) {
+            let now = now_ms();
+            if join::door_open(&self.store, now) && self.joins.knock(&peer, now) {
+                if let Some(b) = deny("等待对方确认配对", "await_pair_confirm") {
+                    let _ = write_frame(&mut send, &b).await;
+                }
+                log::info!("[RC] {short} 敲门配对，已记入待确认");
+                self.emit_changed();
+            } else {
+                if let Some(b) = deny("尚未远程配对", "not_paired") {
+                    let _ = write_frame(&mut send, &b).await;
+                }
+                log::info!("[RC] {short} 未远程配对，已拒绝");
+            }
+            return;
+        }
+
+        let gate = {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            gate_inbound(
+                self.enabled(),
+                self.max_capability(),
+                &self.device_deny(),
+                &peer,
+                self.has_remote_trust(&peer),
+                requested,
+                inner.session.is_some(),
+            )
+        };
+        if gate != Gate::Allow {
+            if let Some(b) = deny(gate.deny_reason(), gate.deny_code()) {
+                let _ = write_frame(&mut send, &b).await;
+            }
+            log::info!("[RC] 拒绝 {short}：{}", gate.deny_reason());
+            return;
+        }
+
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            if !inner.pending.iter().any(|k| k.peer == peer) {
+                inner.pending.push(InboundKnock {
+                    peer: peer.clone(),
+                    peer_name: self.peer_name(&peer),
+                    capability: requested,
+                    first_seen_ms: now_ms(),
+                });
+            }
+        }
+        // 有申请进来立刻通知前端（窗口隐藏时也能 toast）
+        self.emit_changed();
+
+        let deadline = now_ms() + 120_000;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            if now_ms() > deadline {
+                self.clear_pending(&peer);
+                if let Some(b) = deny("等待确认超时", "confirm_timeout") {
+                    let _ = write_frame(&mut send, &b).await;
+                }
+                return;
+            }
+            let decision = {
+                let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                match inner.session.as_ref() {
+                    Some(s) if s.peer == peer && s.phase == SessionPhase::InboundActive => {
+                        Some(Ok(s.capability))
+                    }
+                    Some(s) if s.peer != peer => Some(Err("busy")),
+                    Some(_) => None,
+                    None => {
+                        if !inner.pending.iter().any(|k| k.peer == peer) {
+                            Some(Err("denied"))
+                        } else {
+                            None
+                        }
+                    }
+                }
+            };
+            match decision {
+                Some(Ok(cap)) => {
+                    if let Ok(b) = (RcFrame::Accept { capability: cap }).encode() {
+                        let _ = write_frame(&mut send, &b).await;
+                    }
+                    // R1：推 JPEG 画面直到会话结束
+                    spawn_inbound_video(&peer, send, recv).await;
+                    return;
+                }
+                Some(Err(_)) => {
+                    if let Some(b) = deny("对方拒绝或会话被占用", "rejected_or_busy") {
+                        let _ = write_frame(&mut send, &b).await;
+                    }
+                    self.clear_pending(&peer);
+                    return;
+                }
+                None => continue,
+            }
+        }
+    }
+
+    fn clear_pending(&self, peer: &str) {
+        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner.pending.retain(|k| k.peer != peer);
+    }
+
+    pub fn approve_inbound(&self, peer: &str) -> Result<Session, String> {
+        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let idx = inner
+            .pending
+            .iter()
+            .position(|k| k.peer == peer)
+            .ok_or("没有待确认的远程申请")?;
+        // 同意时重查门禁：申请与同意之间最长 120s，配置可能已变（TOCTOU）
+        if !self.enabled() {
+            return Err("本机已关闭「允许被远程协助」".into());
+        }
+        if self.device_deny().get(peer).copied().unwrap_or(false) {
+            return Err("该设备已被禁止远程本机".into());
+        }
+        if !self.has_remote_trust(peer) {
+            return Err("设备未配对".into());
+        }
+        let knock = inner.pending.remove(idx);
+        let cap = if knock.capability.allowed_by(self.max_capability()) {
+            knock.capability
+        } else {
+            self.max_capability()
+        };
+        let s = Session {
+            id: new_session_id(now_ms()),
+            peer: peer.to_string(),
+            peer_name: knock.peer_name,
+            capability: cap,
+            phase: SessionPhase::InboundActive,
+            started_ms: now_ms(),
+            granted: true,
+        };
+        inner.session = Some(s.clone());
+        Ok(s)
+    }
+
+    pub fn deny_inbound(&self, peer: &str) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let before = inner.pending.len();
+        inner.pending.retain(|k| k.peer != peer);
+        if inner.pending.len() == before {
+            return Err("没有待确认的远程申请".into());
+        }
+        Ok(())
+    }
+
+    pub async fn end_session(&self, reason: &str) -> Result<(), String> {
+        let (peer, peer_name, cap, phase, started) = {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let Some(s) = inner.session.as_ref() else {
+                return Err("没有进行中的会话".into());
+            };
+            log::info!("[RC] 会话结束：{reason}");
+            (s.peer.clone(), s.peer_name.clone(), s.capability, s.phase, s.started_ms)
+        };
+        // 尽力通知对端：发起端走 outbound_send；被控端走 inbound_send
+        {
+            let mut guard = self.outbound_send.lock().await;
+            if let Some(send) = guard.as_mut() {
+                if let Ok(b) = (RcFrame::End {
+                    reason: reason.to_string(),
+                })
+                .encode()
+                {
+                    let _ = crate::sync::transport::write_frame(send, &b).await;
+                }
+            }
+            *guard = None;
+        }
+        {
+            let ib = self.inbound_send.lock().await.take();
+            if let Some(send) = ib {
+                let mut g = send.lock().await;
+                if let Ok(b) = (RcFrame::End {
+                    reason: reason.to_string(),
+                })
+                .encode()
+                {
+                    let _ = crate::sync::transport::write_frame(&mut g, &b).await;
+                }
+            }
+        }
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            inner.session = None;
+            inner.pending.clear();
+        }
+        let _ = self.store.rc_device_touch(&peer, false);
+        self.append_history(&peer, &peer_name, cap, phase, started, reason);
+        self.clear_frame();
+        self.note_rtt(0);
+        *self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        self.emit_changed();
+        Ok(())
+    }
+
+    /// 只记元数据：谁 / 方向 / 能力 / 时长 / 结果。不记画面与键鼠。
+    fn append_history(
+        &self,
+        peer: &str,
+        peer_name: &str,
+        cap: Capability,
+        phase: SessionPhase,
+        started_ms: i64,
+        reason: &str,
+    ) {
+        const KEY: &str = "rc_session_history";
+        const MAX: usize = 20;
+        let ended = now_ms();
+        let dir = match phase {
+            SessionPhase::OutboundActive | SessionPhase::OutboundPending => "outbound",
+            _ => "inbound",
+        };
+        let entry = serde_json::json!({
+            "peer": peer,
+            "peer_name": peer_name,
+            "capability": cap.as_str(),
+            "dir": dir,
+            "started_ms": started_ms,
+            "ended_ms": ended,
+            "duration_ms": (ended - started_ms).max(0),
+            "reason": reason,
+        });
+        let mut config = self.store.get_config().unwrap_or_default();
+        let Some(obj) = config.as_object_mut() else { return };
+        let mut list: Vec<serde_json::Value> = obj
+            .get(KEY)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        list.insert(0, entry);
+        list.truncate(MAX);
+        if let Ok(v) = serde_json::to_value(&list) {
+            obj.insert(KEY.to_string(), v);
+            let _ = self.store.save_config(&config);
+        }
+    }
+
+    pub fn session_history(&self) -> Vec<serde_json::Value> {
+        self.cfg()
+            .get("rc_session_history")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    /// 流断开 / 对端消失时本地收口：只清**该对端**的会话，避免误杀别人。
+    pub async fn force_end_for_peer(&self, peer: &str, reason: &str) {
+        let should = {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            matches!(inner.session.as_ref(), Some(s) if s.peer == peer)
+        };
+        if !should {
+            return;
+        }
+        log::info!("[RC] 强制结束会话（{peer}）：{reason}");
+        let _ = self.end_session(reason).await;
+    }
+
+    /// 会话是否超过 TTL（推流循环每圈检查）。
+    pub fn session_expired(&self) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        match inner.session.as_ref() {
+            Some(s) if is_active(s.phase) => now_ms() - s.started_ms > SESSION_TTL_MS,
+            _ => false,
+        }
+    }
+
+    pub fn require_active(&self) -> Result<Session, String> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        match inner.session.as_ref() {
+            Some(s) if is_active(s.phase) => Ok(s.clone()),
+            Some(_) => Err("会话尚未建立".into()),
+            None => Err("没有进行中的远程会话".into()),
+        }
+    }
+
+    pub fn must_show_banner(&self) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        matches!(
+            inner.session.as_ref(),
+            Some(s) if s.phase == SessionPhase::InboundActive
+        )
+    }
+}
+
+/// 被控端：约 5fps 推流（脏矩形/自适应）+ 读输入帧（R2/R3）。
+async fn spawn_inbound_video(
+    peer: &str,
+    send: iroh::endpoint::SendStream,
+    mut recv: iroh::endpoint::RecvStream,
+) {
+    let peer = peer.to_string();
+    let Some(svc) = global() else {
+        return;
+    };
+    let send = std::sync::Arc::new(tokio::sync::Mutex::new(send));
+    // 被控端结束会话时要用这条半流发 End
+    {
+        let ib = send.clone();
+        let svc_ib = svc.clone();
+        tauri::async_runtime::spawn(async move {
+            *svc_ib.inbound_send.lock().await = Some(ib);
+        });
+    }
+
+    // 输入读取任务
+    {
+        let peer2 = peer.clone();
+        let svc2 = svc.clone();
+        let send2 = send.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                if !svc2.session_is(SessionPhase::InboundActive, &peer2) {
+                    break;
+                }
+                match crate::sync::transport::read_frame(&mut recv).await {
+                    Ok(bytes) => {
+                        // 发起端结束会话：End 帧与 InputEvent 同半流
+                        if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {
+                            log::info!("[RC] 对端结束会话：{reason}");
+                            svc2.force_end_for_peer(&peer2, &reason).await;
+                            break;
+                        }
+                        if let Ok(ev) = serde_json::from_slice::<super::input::InputEvent>(&bytes) {
+                            // 任意输入/心跳都算活跃
+                            svc2.touch_activity();
+                            if let super::input::InputEvent::Ping { ts } = &ev {
+                                // 回 pong，发起端测 RTT
+                                let msg = serde_json::json!({ "t": "pong", "ts": ts });
+                                if let Ok(b) = serde_json::to_vec(&msg) {
+                                    let mut guard = send2.lock().await;
+                                    let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
+                                }
+                            } else {
+                                handle_inbound_input(&svc2, &peer2, ev, &send2).await;
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            // 输入半流断了：会话也要收口（对端崩溃 / 网络断）
+            svc2
+                .force_end_for_peer(&peer2, "控制通道断开")
+                .await;
+        });
+    }
+
+    let profile = svc.encode_profile();
+    let virt = svc.capture_virtual_screen();
+    svc.reset_stream_opts_from_cfg();
+    let mut interval;
+    let enc = std::sync::Arc::new(std::sync::Mutex::new(
+        super::video::EncoderState::with_profile(profile, virt),
+    ));
+    // R4：主屏 + 允许硬编时优先 DXGI + H.264；失败回退 JPEG
+    #[cfg(target_os = "windows")]
+    let mut dxgi = super::dxgi::DxgiCapture::new();
+    #[cfg(target_os = "windows")]
+    let mut h264 = {
+        let codec = svc
+            .cfg()
+            .get(CFG_CODEC)
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto")
+            .to_string();
+        if codec == "jpeg" || virt {
+            None
+        } else {
+            let p = svc.encode_profile();
+            let fps = (1000 / p.interval_ms.max(50)).clamp(5, 30) as u32;
+            let enc = super::encode_h264::H264SessionEncoder::try_open(1280, 720, fps);
+            if enc.available() {
+                log::info!("[RC] H.264 硬编已启用");
+                Some(enc)
+            } else {
+                None
+            }
+        }
+    };
+    // 会话刚建立：立刻可推流，等首个心跳
+    svc.touch_activity();
+    loop {
+        if !svc.session_is(SessionPhase::InboundActive, &peer) {
+            break;
+        }
+        if svc.session_expired() {
+            log::info!("[RC] 会话超过 TTL，自动结束");
+            svc.force_end_for_peer(&peer, "会话超时").await;
+            break;
+        }
+        if svc.should_pause_stream() {
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            continue;
+        }
+        let opts = svc.stream_opts_snapshot();
+        interval = opts.profile.interval_ms;
+        {
+            let mut st = enc.lock().unwrap_or_else(|p| p.into_inner());
+            if st.profile() != &opts.profile
+                || st.virtual_screen_flag() != opts.virtual_screen
+                || st.monitor() != opts.monitor
+            {
+                st.apply_profile(opts.profile, opts.virtual_screen);
+                if opts.monitor >= 0 {
+                    st.apply_monitor(opts.monitor);
+                }
+            }
+        }
+
+        // —— R4 硬编路径（仅主屏、未指定单屏、未强制 JPEG）——
+        #[cfg(target_os = "windows")]
+        if let Some(henc) = h264.as_mut() {
+            if henc.available() && !opts.virtual_screen && opts.monitor < 0 && !opts.force_jpeg {
+                match dxgi.grab() {
+                    Ok(Some((w, h, bgra))) => match henc.encode_bgra(&bgra, w, h) {
+                        Ok(pkts) => {
+                            if !pkts.is_empty() {
+                                let mut guard = send.lock().await;
+                                let mut failed = false;
+                                for p in pkts {
+                                    if super::video::write_h264(
+                                        &mut guard,
+                                        &p.data,
+                                        p.key,
+                                        p.width,
+                                        p.height,
+                                    )
+                                    .await
+                                    .is_err()
+                                    {
+                                        failed = true;
+                                        break;
+                                    }
+                                }
+                                drop(guard);
+                                if failed {
+                                    svc.force_end_for_peer(&peer, "H.264 推送失败").await;
+                                    break;
+                                }
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
+                            continue;
+                        }
+                        Err(e) => {
+                            log::debug!("[RC] H.264 编码失败，本帧回退 JPEG：{e}");
+                        }
+                    },
+                    Ok(None) => {
+                        tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
+                        continue;
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+
+        let enc2 = enc.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let mut st = enc2.lock().unwrap_or_else(|p| p.into_inner());
+            super::video::capture_and_encode(&mut st)
+        })
+        .await;
+        match result {
+            Ok(Ok(enc_out)) => {
+                if enc_out.frame.jpeg.is_empty() {
+                    tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
+                    continue;
+                }
+                let mut guard = send.lock().await;
+                if let Some(r) = enc_out.rect {
+                    if let Err(e) = super::video::write_dirty_meta(&mut guard, r).await {
+                        log::info!("[RC] 脏矩形元数据写失败：{e}");
+                        drop(guard);
+                        svc.force_end_for_peer(&peer, "画面推送失败").await;
+                        break;
+                    }
+                }
+                if super::video::write_jpeg(&mut guard, &enc_out.frame.jpeg).await.is_err() {
+                    log::info!("[RC] 画面写入失败，停止推流");
+                    drop(guard);
+                    svc.force_end_for_peer(&peer, "画面推送失败").await;
+                    break;
+                }
+            }
+            Ok(Err(e)) => {
+                log::debug!("[RC] 截帧失败：{e}");
+            }
+            Err(e) => {
+                log::warn!("[RC] 截帧任务失败：{e}");
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
+    }
+    log::info!("[RC] 被控推流已停止");
+    *svc.inbound_send.lock().await = None;
+}
+
+/// 被控端处理一条输入（R2）。UIPI / 只看档必须报错不静默。
+async fn handle_inbound_input(
+    svc: &Arc<RcService>,
+    peer: &str,
+    ev: super::input::InputEvent,
+    send: &std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
+) {
+    use super::input::InputEvent;
+    let cap = match svc.session_capability() {
+        Some(c) => c,
+        None => return,
+    };
+
+    match &ev {
+        InputEvent::ClipboardPush { text } => {
+            if super::input::assert_control_allowed(cap).is_err() {
+                return;
+            }
+            if let Err(e) = super::input::set_clipboard_text(text) {
+                log::warn!("[RC] 写入被控剪贴板失败：{e}");
+            }
+            return;
+        }
+        InputEvent::ClipboardPull => {
+            if super::input::assert_control_allowed(cap).is_err() {
+                return;
+            }
+            match super::input::get_clipboard_text() {
+                Ok(t) => {
+                    // 回包也走控制帧 64KB：过大时明确报错，不要静默失败
+                    let msg = if t.len() > CLIPBOARD_MAX_JSON_BYTES {
+                        serde_json::json!({
+                            "t": "clip_err",
+                            "error": "对方剪贴板过大，无法拉取",
+                        })
+                    } else {
+                        serde_json::json!({ "t": "clip", "text": t })
+                    };
+                    if let Ok(b) = serde_json::to_vec(&msg) {
+                        let mut guard = send.lock().await;
+                        let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[RC] 读被控剪贴板失败：{e}");
+                    let msg = serde_json::json!({ "t": "clip_err", "error": format!("读剪贴板失败：{e}") });
+                    if let Ok(b) = serde_json::to_vec(&msg) {
+                        let mut guard = send.lock().await;
+                        let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
+                    }
+                }
+            }
+            return;
+        }
+        InputEvent::SetQuality { quality } => {
+            if super::input::assert_control_allowed(cap).is_err() {
+                return;
+            }
+            if let Err(e) = svc.set_stream_quality(quality) {
+                log::warn!("[RC] {e}");
+            } else {
+                log::info!("[RC] 对端要求画质档：{quality}");
+            }
+            return;
+        }
+        InputEvent::SetCaptureScope { scope } => {
+            if super::input::assert_control_allowed(cap).is_err() {
+                return;
+            }
+            if let Err(e) = svc.set_stream_scope(scope) {
+                log::warn!("[RC] {e}");
+            } else {
+                log::info!("[RC] 对端要求画面范围：{scope}");
+            }
+            return;
+        }
+        InputEvent::SetCodec { codec } => {
+            if super::input::assert_control_allowed(cap).is_err() {
+                return;
+            }
+            if let Err(e) = svc.set_stream_codec(codec) {
+                log::warn!("[RC] {e}");
+            } else {
+                log::info!("[RC] 对端要求编码：{codec}");
+            }
+            return;
+        }
+        _ => {}
+    }
+
+    if super::input::assert_control_allowed(cap).is_err() {
+        log::debug!("[RC] 拒绝只看会话的键鼠注入");
+        return;
+    }
+    let region = {
+        let opts = svc.stream_opts_snapshot();
+        if opts.monitor >= 0 {
+            match crate::screenshot::monitor_region(opts.monitor) {
+                Ok((x, y, w, h)) => super::input::ScreenRegion { x, y, w, h },
+                Err(_) => super::input::ScreenRegion::virtual_screen(),
+            }
+        } else if opts.virtual_screen {
+            super::input::ScreenRegion::virtual_screen()
+        } else {
+            #[cfg(target_os = "windows")]
+            {
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
+                };
+                let (w, h) =
+                    unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+                super::input::ScreenRegion {
+                    x: 0,
+                    y: 0,
+                    w: w.max(1),
+                    h: h.max(1),
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                super::input::ScreenRegion::virtual_screen()
+            }
+        }
+    };
+    let r = super::input::inject(&ev, &region);
+    if !r.ok {
+        log::warn!("[RC] 键鼠注入失败（{peer}）：{}", r.error);
+        // P1：UIPI 等失败要让发起端看见，不能只写日志
+        let msg = serde_json::json!({ "t": "inject_err", "error": r.error });
+        if let Ok(b) = serde_json::to_vec(&msg) {
+            let mut guard = send.lock().await;
+            let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
+        }
+        if let Some(svc) = global() {
+            svc.set_inject_err(r.error.clone());
+        }
+    }
+}
+
+async fn bind_rc_endpoint(me: &NodeIdentity, relay: bool) -> Result<Endpoint, String> {
+    use iroh::endpoint::{presets, RelayMode};
+    let key = me.iroh_secret();
+    let b = if relay {
+        Endpoint::builder(presets::N0).secret_key(key)
+    } else {
+        Endpoint::builder(presets::Minimal)
+            .secret_key(key)
+            .relay_mode(RelayMode::Disabled)
+            .clear_address_lookup()
+    };
+    b.alpns(vec![ALPN.to_vec()])
+        .bind()
+        .await
+        .map_err(|e| format!("绑定远程端点失败：{}", e))
+}
+
+async fn accept_loop(svc: Arc<RcService>, ep: Endpoint, stop: Arc<AtomicBool>) {
+    while !stop.load(Ordering::SeqCst) {
+        let conn = tokio::select! {
+            r = crate::sync::transport::accept_conn(&ep) => match r {
+                Ok(c) => c,
+                Err(e) => {
+                    if stop.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    log::warn!("[RC] 接入连接失败：{e}");
+                    continue;
+                }
+            },
+            _ = tokio::time::sleep(std::time::Duration::from_millis(400)) => {
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                continue;
+            }
+        };
+        let svc2 = svc.clone();
+        tauri::async_runtime::spawn(async move {
+            svc2.handle_inbound_conn(conn).await;
+        });
+    }
+    log::info!("[RC] 入连接循环已停止");
+}
+
+pub fn cfg_enabled(store: &DataStore) -> bool {
+    store
+        .get_config()
+        .ok()
+        .and_then(|c| c.get(CFG_ENABLED).and_then(|v| v.as_bool()))
+        .unwrap_or(false)
+}
+
+/// 从 JPEG 头读 SOF0/SOF2 宽高（不解像素）。
+fn jpeg_dimensions(jpeg: &[u8]) -> Option<(u32, u32)> {
+    if jpeg.len() < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8 {
+        return None;
+    }
+    let mut i = 2usize;
+    while i + 9 < jpeg.len() {
+        if jpeg[i] != 0xFF {
+            i += 1;
+            continue;
+        }
+        let marker = jpeg[i + 1];
+        // SOF0..SOF15（跳过 DHT/DAC 等）
+        if (0xC0..=0xCF).contains(&marker) && marker != 0xC4 && marker != 0xC8 && marker != 0xCC {
+            let h = u16::from_be_bytes([jpeg[i + 5], jpeg[i + 6]]) as u32;
+            let w = u16::from_be_bytes([jpeg[i + 7], jpeg[i + 8]]) as u32;
+            if w > 0 && h > 0 {
+                return Some((w, h));
+            }
+            return None;
+        }
+        if marker == 0xD8 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            i += 2;
+            continue;
+        }
+        if i + 3 >= jpeg.len() {
+            break;
+        }
+        let seglen = u16::from_be_bytes([jpeg[i + 2], jpeg[i + 3]]) as usize;
+        if seglen < 2 {
+            break;
+        }
+        i += 2 + seglen;
+    }
+    None
+}
+
+#[cfg(test)]
+mod jpeg_dim_tests {
+    use super::jpeg_dimensions;
+
+    #[test]
+    fn reads_sof0_dimensions() {
+        // 手工最小 JPEG 头：SOI + SOF0(len=11, precision=8, h=64, w=128)
+        let mut b = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x40, 0x00, 0x80];
+        b.extend_from_slice(&[1, 0x11, 0]);
+        assert_eq!(jpeg_dimensions(&b), Some((128, 64)));
+    }
+
+    #[test]
+    fn rejects_non_jpeg() {
+        assert_eq!(jpeg_dimensions(&[0x00, 0x01]), None);
+    }
+}

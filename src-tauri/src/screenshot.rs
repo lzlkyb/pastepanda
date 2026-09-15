@@ -153,6 +153,146 @@ fn capture_virtual_screen() -> Result<ScreenCapture, String> {
     capture_rect(origin_x, origin_y, width, height)
 }
 
+/// 远程协助用：整屏 RGBA（不编码）。由 `rc::video` 再降采样 + JPEG。
+///
+/// 公开给 crate 内调用：远程每 200ms 一帧，不能走 PNG 全屏那条重编码路径。
+#[cfg(target_os = "windows")]
+pub(crate) fn capture_virtual_screen_rgba() -> Result<(i32, i32, Vec<u8>), String> {
+    let (width, height, origin_x, origin_y) = virtual_screen_metrics();
+    if width <= 0 || height <= 0 {
+        return Err(format!("获取虚拟屏幕尺寸失败: {width}x{height}"));
+    }
+    let rgba = grab_rect_rgba(origin_x, origin_y, width, height)?;
+    Ok((width, height, rgba))
+}
+
+/// 远程协助：仅主屏 RGBA（单显示器场景更省编码）。
+#[cfg(target_os = "windows")]
+pub(crate) fn capture_primary_screen_rgba() -> Result<(i32, i32, Vec<u8>), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    let (width, height) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+    if width <= 0 || height <= 0 {
+        return Err(format!("获取主屏尺寸失败: {width}x{height}"));
+    }
+    let rgba = grab_rect_rgba(0, 0, width, height)?;
+    Ok((width, height, rgba))
+}
+
+/// 一台显示器的几何信息（远程多屏用）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MonitorInfo {
+    /// 0 起，按 EnumDisplayMonitors 顺序；主屏通常是 0。
+    pub index: i32,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub primary: bool,
+}
+
+/// 枚举所有显示器（远程电脑多屏切换）。
+#[cfg(target_os = "windows")]
+pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
+    use windows::Win32::Foundation::{BOOL, LPARAM, RECT};
+    use windows::Win32::Graphics::Gdi::{
+        EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
+    };
+
+    struct Ctx {
+        list: Vec<MonitorInfo>,
+        primary_seen: bool,
+    }
+
+    unsafe extern "system" fn cb(
+        hmon: HMONITOR,
+        _hdc: HDC,
+        _lprc: *mut RECT,
+        lparam: LPARAM,
+    ) -> BOOL {
+        let ctx = &mut *(lparam.0 as *mut Ctx);
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(hmon, &mut mi).as_bool() {
+            let r = mi.rcMonitor;
+            let primary = mi.dwFlags & 0x1 != 0; // MONITORINFOF_PRIMARY
+            let idx = ctx.list.len() as i32;
+            if primary {
+                ctx.primary_seen = true;
+            }
+            ctx.list.push(MonitorInfo {
+                index: idx,
+                x: r.left,
+                y: r.top,
+                w: (r.right - r.left).max(1),
+                h: (r.bottom - r.top).max(1),
+                primary,
+            });
+        }
+        BOOL(1)
+    }
+
+    let mut ctx = Ctx {
+        list: Vec::new(),
+        primary_seen: false,
+    };
+    unsafe {
+        let _ = EnumDisplayMonitors(
+            HDC::default(),
+            None,
+            Some(cb),
+            LPARAM(&mut ctx as *mut Ctx as isize),
+        );
+    }
+    // 主屏排到 index 0，方便前端「显示器1=主屏」
+    if ctx.list.len() > 1 {
+        if let Some(p) = ctx.list.iter().position(|m| m.primary) {
+            ctx.list.swap(0, p);
+            for (i, m) in ctx.list.iter_mut().enumerate() {
+                m.index = i as i32;
+            }
+        }
+    }
+    if ctx.list.is_empty() {
+        return Err("枚举显示器失败".into());
+    }
+    Ok(ctx.list)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
+    Err("多屏枚举目前仅支持 Windows".into())
+}
+
+/// 按 index 抓指定显示器 RGBA。
+#[cfg(target_os = "windows")]
+pub(crate) fn capture_monitor_rgba(index: i32) -> Result<(i32, i32, Vec<u8>), String> {
+    let list = list_monitors()?;
+    let m = list
+        .iter()
+        .find(|m| m.index == index)
+        .ok_or_else(|| format!("显示器 {index} 不存在"))?;
+    let rgba = grab_rect_rgba(m.x, m.y, m.w, m.h)?;
+    Ok((m.w, m.h, rgba))
+}
+
+/// 远程协助：指定显示器区域（与截帧同一坐标系，供键鼠映射）。
+#[cfg(target_os = "windows")]
+pub(crate) fn monitor_region(index: i32) -> Result<(i32, i32, i32, i32), String> {
+    let list = list_monitors()?;
+    let m = list
+        .iter()
+        .find(|m| m.index == index)
+        .ok_or_else(|| format!("显示器 {index} 不存在"))?;
+    Ok((m.x, m.y, m.w, m.h))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn capture_primary_screen_rgba() -> Result<(i32, i32, Vec<u8>), String> {
+    Err("远程画面目前仅支持 Windows".into())
+}
+
 /// GDI 抓像素：按屏幕坐标矩形取 RGBA，**不做任何编码**。
 ///
 /// 从 capture_rect 里拆出来的原因有两个：
