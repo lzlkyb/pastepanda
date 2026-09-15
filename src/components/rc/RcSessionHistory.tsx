@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { rcSessionHistory, type RcHistoryItem } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { formatDuration, formatWhen } from "@/lib/rcSessionStats";
-import styles from "../../Settings.module.css";
+import styles from "../Settings.module.css";
 
 export function RcSessionHistory() {
   const [list, setList] = useState<RcHistoryItem[]>([]);
