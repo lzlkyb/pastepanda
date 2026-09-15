@@ -21,7 +21,10 @@ fn test_kb_health_empty_library_is_all_clear() {
     assert!(h.tag_dups.is_empty());
     assert!(h.title_dups.is_empty());
     assert!(h.tiny_notes.is_empty());
+    assert!(h.unfiled_ai.is_empty());
+    assert_eq!(h.unfiled_ai_count, 0);
     assert_eq!(h.stats.note_count, 0);
+    assert_eq!(h.stats.unfiled_count, 0);
 }
 
 // ============================================================
@@ -258,6 +261,129 @@ fn test_kb_health_stats_ignores_trashed() {
 // ============================================================
 // 上限：面板只展示前几条，但计数要是真的
 // ============================================================
+
+// ============================================================
+// 未分类：总量是统计，只有「AI 自己写的」那半才是问题
+// ============================================================
+//
+// 这一批钉的是 2026-09-15 那次拆分：文档里早就写死「无文件夹 96% 不是缺陷」，
+// 但 AI 维护的库里「AI 建了却没归类」确实是活儿没干完。两者差别不在**数量**，
+// 而在**是谁写的**——所以判据必须落在 `source_agent` 上，不能落在 `folder_id` 上。
+
+/// 人写的笔记全堆在未分类里 → 只进统计，一条问题都不报。
+#[test]
+fn test_kb_health_unfiled_total_is_a_stat_not_an_issue() {
+    let store = make_store();
+    for i in 0..5 {
+        store
+            .note_create(None, &format!("我写的{}", i), &"字".repeat(100))
+            .unwrap();
+    }
+    let h = store.kb_health().unwrap();
+    assert_eq!(h.stats.unfiled_count, 5, "总量要照实报，它只是统计");
+    assert_eq!(h.unfiled_ai_count, 0);
+    assert!(
+        h.unfiled_ai.is_empty(),
+        "人自己没归类是「没用这个功能」，不是缺陷——这条判据 2026-09-05 就定死了"
+    );
+}
+
+/// AI 写的留在未分类 → 报出来，并且给出可点进去的明细。
+#[test]
+fn test_kb_health_reports_ai_notes_stuck_in_unfiled() {
+    let store = make_store();
+    store
+        .note_create_from(None, "AI 甲", &"字".repeat(100), "agent:test")
+        .unwrap();
+    store
+        .note_create_from(None, "AI 乙", &"字".repeat(100), "agent:test")
+        .unwrap();
+    // 一篇已归类的 AI 笔记：它不是问题，不能把计数抬到 3
+    let f = store.folder_create_by_ai("工程", None).unwrap();
+    let filed = store
+        .note_create_from(None, "AI 丙", &"字".repeat(100), "agent:test")
+        .unwrap();
+    store.note_set_folder(&filed.id, Some(&f.id)).unwrap();
+    // 一篇人写的也在未分类：它要计入总量、不计入这一项
+    store
+        .note_create(None, "我写的", &"字".repeat(100))
+        .unwrap();
+
+    let h = store.kb_health().unwrap();
+    assert_eq!(h.unfiled_ai_count, 2);
+    let titles: Vec<&str> = h.unfiled_ai.iter().map(|t| t.title.as_str()).collect();
+    assert_eq!(titles.len(), 2, "实际拿到：{:?}", titles);
+    assert!(titles.contains(&"AI 甲") && titles.contains(&"AI 乙"));
+    assert_eq!(h.stats.unfiled_count, 3, "总量 = 2 篇 AI + 1 篇人写的");
+}
+
+/// 🔴 判据只认「谁建的」，不认「谁改过」。
+///
+/// 人亲手写、只是被 AI 追加过一段的笔记，`last_agent` 非空但 `source_agent` 为空。
+/// 把它算进「AI 没归类」，等于叫 AI 去动用户的笔记——那正是全局边界禁止的事。
+#[test]
+fn test_kb_health_unfiled_ai_ignores_notes_ai_only_edited() {
+    let store = make_store();
+    let n = store
+        .note_create(None, "我写的", &"字".repeat(100))
+        .unwrap();
+    // AI 改了正文（不是新建）：source_agent 仍为空、last_agent 变成 agent:test
+    store
+        .note_update_from(&n.id, "我写的", &"字".repeat(120), "agent:test")
+        .unwrap();
+
+    let h = store.kb_health().unwrap();
+    assert_eq!(h.unfiled_ai_count, 0, "AI 改过 ≠ AI 建的，不能算在它头上");
+    assert_eq!(h.stats.unfiled_count, 1, "但它仍是未分类，总量照算");
+}
+
+#[test]
+fn test_kb_health_unfiled_ai_ignores_trashed() {
+    let store = make_store();
+    let n = store
+        .note_create_from(None, "AI 写的", &"字".repeat(100), "agent:test")
+        .unwrap();
+    assert_eq!(store.kb_health().unwrap().unfiled_ai_count, 1);
+    store.note_delete(&n.id).unwrap();
+    assert_eq!(store.kb_health().unwrap().unfiled_ai_count, 0);
+    assert_eq!(store.kb_health().unwrap().stats.unfiled_count, 0);
+}
+
+/// 堆得最久的排前面——它躺在门口最久，最该先收。
+#[test]
+fn test_kb_health_unfiled_ai_oldest_first() {
+    let store = make_store();
+    for t in ["最早的", "中间的", "最新的"] {
+        store
+            .note_create_from(None, t, &"字".repeat(100), "agent:test")
+            .unwrap();
+    }
+    let titles: Vec<String> = store
+        .kb_health()
+        .unwrap()
+        .unfiled_ai
+        .into_iter()
+        .map(|t| t.title)
+        .collect();
+    assert_eq!(titles, vec!["最早的", "中间的", "最新的"]);
+}
+
+#[test]
+fn test_kb_health_unfiled_ai_detail_capped_but_count_is_real() {
+    let store = make_store();
+    for i in 0..(super::note_health::HEALTH_DETAIL_CAP + 4) {
+        store
+            .note_create_from(None, &format!("AI{}", i), &"字".repeat(100), "agent:test")
+            .unwrap();
+    }
+    let h = store.kb_health().unwrap();
+    assert_eq!(h.unfiled_ai.len(), super::note_health::HEALTH_DETAIL_CAP, "明细封顶");
+    assert_eq!(
+        h.unfiled_ai_count,
+        super::note_health::HEALTH_DETAIL_CAP + 4,
+        "计数不封顶——「还有 N 条」靠它"
+    );
+}
 
 #[test]
 fn test_kb_health_detail_capped_but_count_is_real() {

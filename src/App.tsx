@@ -40,6 +40,7 @@ import appStyles from "./App.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConfirmDialogHost } from "@/components/ConfirmDialogHost";
+import { PromptDialogHost } from "@/components/PromptDialogHost";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { DiffDialog } from "@/components/DiffDialog";
 import { ToolboxView } from "@/components/ToolboxView";
@@ -202,6 +203,7 @@ function App() {
   /** 每日整理（H3）。不进 `dialogOpen`：它自带 FocusTrap 与背景点击关闭，
    *  与周报弹窗同一类（那个也没进）。 */
   const [showDailyBrief, setShowDailyBrief] = useState(false);
+  /** 远程电脑（R1 壳）：工具箱入口 */
   const [showRemote, setShowRemote] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
   const [showEncoding, setShowEncoding] = useState(false);
@@ -1118,6 +1120,7 @@ function App() {
         {/* settingsOpen 让顶栏隐掉模式切换器与搜索/页签行（那两样属于「记录模式」），
             外壳仍保留——无边框窗口靠它拖动和最小化 */}
         <TopBar onSettings={() => setShowSettings(true)} settingsOpen={showSettings} />
+        {/* 远程被控横幅 / 入站确认：任何模式可见（规则 15） */}
         <Suspense fallback={null}>
           <RcOverlay />
         </Suspense>
@@ -1277,20 +1280,12 @@ function App() {
             )}
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="远程电脑">
-
             {showRemote && (
-
               <Suspense fallback={null}>
-
                 <RemoteComputerDialog onClose={() => setShowRemote(false)} />
-
               </Suspense>
-
             )}
-
           </ErrorBoundary>
-
-          
           <ErrorBoundary fallback={null} componentName="编码转换">
             <EncodingDialog open={showEncoding} onClose={() => setShowEncoding(false)} />
           </ErrorBoundary>
@@ -1337,6 +1332,8 @@ function App() {
         />
         {/* 审查：统一确认弹窗宿主（替代散落的 window.confirm） */}
         <ConfirmDialogHost />
+        {/* 统一单行输入弹窗宿主（替代 window.prompt，如新建/重命名文件夹） */}
+        <PromptDialogHost />
       </div>
       </UpdateProvider>
   );

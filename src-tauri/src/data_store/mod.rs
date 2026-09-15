@@ -51,6 +51,10 @@ mod tests_daily;
 // 事件聚合（G3）的用例。
 #[cfg(test)]
 mod tests_events;
+// 「库的脉搏」（L2 信号）那条查询的用例。MCP 层被 FakeKb 挡住，
+// 这条 SQL 只有在数据层才跑得到——详见该文件头部。
+#[cfg(test)]
+mod tests_pulse;
 
 pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,

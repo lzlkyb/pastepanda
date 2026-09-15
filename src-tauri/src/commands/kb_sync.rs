@@ -274,6 +274,35 @@ pub async fn kb_sync_now(svc: State<'_, SyncService>, node_id: String) -> Result
     svc.sync_now(&node_id).await
 }
 
+/// 手动刷新：叫醒所有休眠对端 + 立刻组播一次本机地址，再回一份最新快照。
+///
+/// 🔴 **不只重读库**：只重读的话面板本来就在 5s 轮询，用户会觉得按钮是假的。
+/// 开关关着时跳过重探（不会为了刷一下列表把同步意外打开），只返回当前数据。
+#[tauri::command]
+pub async fn kb_sync_refresh(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, SyncService>,
+) -> Result<SyncDevices, String> {
+    if enabled(&store) {
+        svc.wake_all().await;
+        if let Ok(me) = NodeIdentity::load_or_create(&app_dir(&app)?) {
+            let now = chrono::Utc::now().timestamp_millis();
+            // 公告失败不拦住刷新：列表仍要能读出来（规则 #15.3 由前端 toast 承担）
+            if let Err(e) = presence::announce_once(&me, presence::PORT, now) {
+                log::warn!("[Sync] 手动刷新时地址公告失败：{}", e);
+            }
+        }
+    }
+    Ok(SyncDevices {
+        devices: store.device_list()?,
+        live: svc.live_peers().await,
+        last: svc.last_syncs().await,
+        conflict_backlog: store.note_conflict_count()?,
+        pending: svc.pending_joins(chrono::Utc::now().timestamp_millis()),
+    })
+}
+
 /// 开关当前状态。
 #[tauri::command]
 pub fn get_kb_sync_status(store: State<DataStore>) -> Result<bool, String> {

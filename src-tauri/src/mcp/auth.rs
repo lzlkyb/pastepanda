@@ -16,6 +16,16 @@
 
 use axum::http::HeaderMap;
 
+/// 局域网门禁参数。`None` 表示局域网直连关闭（非回环一律拒）。
+///
+/// 🔴 **不做 IP 白名单**（2026-09-15 拍板）：开着时凭 Bearer 令牌即可，
+/// 非回环请求不再按来源 IP 过滤。`local_ipv4s` 只用于 Host 放行
+/// （远程客户端填的是 `http://10.x.x.x:port/mcp`）。
+#[derive(Debug, Clone)]
+pub struct LanGate {
+    pub local_ipv4s: Vec<std::net::Ipv4Addr>,
+}
+
 /// 门禁拒绝的原因。分开是为了给不同状态码与不同日志级别。
 #[derive(Debug, PartialEq, Eq)]
 pub enum Reject {
@@ -23,6 +33,8 @@ pub enum Reject {
     Origin(String),
     /// 无 `Origin` 但 `Host` 不是本机——DNS rebinding 的另一半，403。
     Host(String),
+    /// 局域网未开启却来了非回环请求。
+    LanClosed,
     /// 缺 `Authorization` 头，401。
     MissingToken,
     /// 令牌不对，401。**不告知“错在哪里”**，避免变成猜令牌的反馈信道。
@@ -32,7 +44,9 @@ pub enum Reject {
 impl Reject {
     pub fn status(&self) -> axum::http::StatusCode {
         match self {
-            Reject::Origin(_) | Reject::Host(_) => axum::http::StatusCode::FORBIDDEN,
+            Reject::Origin(_) | Reject::Host(_) | Reject::LanClosed => {
+                axum::http::StatusCode::FORBIDDEN
+            }
             Reject::MissingToken | Reject::BadToken => axum::http::StatusCode::UNAUTHORIZED,
         }
     }
@@ -42,6 +56,7 @@ impl Reject {
         match self {
             Reject::Origin(_) => "拒绝：请求来自非本机页面",
             Reject::Host(_) => "拒绝：请求的 Host 不是本机地址",
+            Reject::LanClosed => "拒绝：知识库 MCP 未开启局域网访问",
             Reject::MissingToken | Reject::BadToken => "未授权：请求需提供正确的 Bearer 令牌",
         }
     }
@@ -133,11 +148,28 @@ fn token_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
-/// 对一个请求跑完整的两道门。
+/// 对一个请求跑完整的门禁。
 ///
-/// **顺序有意义**：先查 `Origin`。那一步不碰令牌，先拒掉网页扫端口的请求，
-/// 就不会把令牌比较暴露给它们。
-pub fn check(headers: &HeaderMap, expected_token: &str) -> Result<(), Reject> {
+/// **顺序有意义**：
+/// 1. 先拦「局域网关着却来了非回环」（不碰令牌、不碰 Origin）；
+/// 2. 再查 `Origin`。那一步不碰令牌，先拒掉网页扫端口的请求；
+/// 3. Host（无 Origin 时）；
+/// 4. 最后才是 Bearer。
+///
+/// `peer` 为 `None` 表示拿不到对端地址（测试或个别路径），按本机处理。
+/// `lan` 为 `None` 表示局域网直连关闭：非回环一律 `LanClosed`。
+/// 开着时**不查来源 IP**——有令牌就够（见 `LanGate` 头注释）。
+pub fn check(
+    headers: &HeaderMap,
+    expected_token: &str,
+    peer: Option<std::net::IpAddr>,
+    lan: Option<&LanGate>,
+) -> Result<(), Reject> {
+    // ① 对端 IP：回环放行；非回环仅在局域网开着时放行（仍要令牌）
+    if !super::lan::is_loopback_ip(peer) && lan.is_none() {
+        return Err(Reject::LanClosed);
+    }
+
     if let Some(origin) = headers.get(axum::http::header::ORIGIN) {
         // 不是合法 UTF-8 的 Origin 一律拒，不尝试宽容解析
         let origin = origin.to_str().unwrap_or("");
@@ -151,8 +183,13 @@ pub fn check(headers: &HeaderMap, expected_token: &str) -> Result<(), Reject> {
         // 浏览器发的是 `Host: evil.com`。浏览器发起的跨源 POST 通常会带 `Origin`
         // （上面那道就拦住了），但 **Host 这道不依赖 `Origin` 是否存在**，
         // 是它漏时的兵。MCP SDK 在 0.25 之前就是因为不查这一层而中招（CVE-2026-11624）。
+        //
+        // 局域网开启时额外放行本机网卡 IP：远程客户端填的是
+        // `http://10.x.x.x:17650/mcp`，Host 就是那个 IP。
         let host = host.to_str().unwrap_or("");
-        if !is_local_host(host) {
+        let host_ok = is_local_host(host)
+            || lan.is_some_and(|g| super::lan::is_local_lan_host(host, &g.local_ipv4s));
+        if !host_ok {
             return Err(Reject::Host(host.to_string()));
         }
     }
@@ -196,19 +233,27 @@ mod tests {
     fn test_valid_bearer_passes_without_origin() {
         // MCP 客户端是命令行进程，不发 Origin——这是正常路径，不能拦
         let h = headers(&[("authorization", &format!("Bearer {}", TOKEN))]);
-        assert_eq!(check(&h, TOKEN), Ok(()));
+        assert_eq!(check(&h, TOKEN, None, None), Ok(()));
     }
 
     #[test]
     fn test_missing_and_bad_token() {
-        assert_eq!(check(&headers(&[]), TOKEN), Err(Reject::MissingToken));
         assert_eq!(
-            check(&headers(&[("authorization", "Bearer wrong")]), TOKEN),
+            check(&headers(&[]), TOKEN, None, None),
+            Err(Reject::MissingToken)
+        );
+        assert_eq!(
+            check(
+                &headers(&[("authorization", "Bearer wrong")]),
+                TOKEN,
+                None,
+                None
+            ),
             Err(Reject::BadToken)
         );
         // 少了 "Bearer " 前缀（直接放裸令牌）也不能放行
         assert_eq!(
-            check(&headers(&[("authorization", TOKEN)]), TOKEN),
+            check(&headers(&[("authorization", TOKEN)]), TOKEN, None, None),
             Err(Reject::BadToken)
         );
     }
@@ -220,11 +265,11 @@ mod tests {
             ("authorization", &format!("Bearer {}", TOKEN)),
             ("origin", "https://evil.com"),
         ]);
-        assert!(matches!(check(&h, TOKEN), Err(Reject::Origin(_))));
+        assert!(matches!(check(&h, TOKEN, None, None), Err(Reject::Origin(_))));
 
         // 反过来：Origin 是本机但没令牌也要拦
         let h = headers(&[("origin", "http://localhost:5173")]);
-        assert_eq!(check(&h, TOKEN), Err(Reject::MissingToken));
+        assert_eq!(check(&h, TOKEN, None, None), Err(Reject::MissingToken));
     }
 
     #[test]
@@ -235,7 +280,7 @@ mod tests {
             ("authorization", &format!("Bearer {}", TOKEN)),
             ("host", "evil.com"),
         ]);
-        assert!(matches!(check(&h, TOKEN), Err(Reject::Host(_))));
+        assert!(matches!(check(&h, TOKEN, None, None), Err(Reject::Host(_))));
 
         // 本机 Host 正常放行（带不带端口都行）
         for host in [
@@ -248,7 +293,7 @@ mod tests {
                 ("authorization", &format!("Bearer {}", TOKEN)),
                 ("host", host),
             ]);
-            assert_eq!(check(&h, TOKEN), Ok(()), "本机 Host 不应被误伤：{}", host);
+            assert_eq!(check(&h, TOKEN, None, None), Ok(()), "本机 Host 不应被误伤：{}", host);
         }
     }
 
@@ -261,14 +306,14 @@ mod tests {
             ("origin", "http://localhost:1420"),
             ("host", "some-proxy.internal"),
         ]);
-        assert_eq!(check(&h, TOKEN), Ok(()));
+        assert_eq!(check(&h, TOKEN, None, None), Ok(()));
     }
 
     #[test]
     fn test_origin_gate_checked_before_token() {
         // 先 Origin 后令牌：网页扫端口时不应该走到令牌比较那一步
         let h = headers(&[("origin", "https://evil.com")]);
-        assert!(matches!(check(&h, TOKEN), Err(Reject::Origin(_))));
+        assert!(matches!(check(&h, TOKEN, None, None), Err(Reject::Origin(_))));
     }
 
     #[test]
@@ -313,6 +358,67 @@ mod tests {
         assert!(!token_eq(&"x".repeat(10_000), TOKEN));
         assert!(token_eq(TOKEN, TOKEN));
         assert!(token_eq("", ""));
+    }
+
+    #[test]
+    fn test_non_loopback_rejected_when_lan_off() {
+        let peer: std::net::IpAddr = "10.203.5.99".parse().unwrap();
+        let h = headers(&[("authorization", format!("Bearer {}", TOKEN).as_str())]);
+        assert_eq!(check(&h, TOKEN, Some(peer), None), Err(Reject::LanClosed));
+    }
+
+    #[test]
+    fn test_non_loopback_allowed_when_lan_on_with_token() {
+        // 无白名单：局域网开着 + 令牌对 + Host 是本机网卡 IP → 放行
+        let peer: std::net::IpAddr = "10.203.5.99".parse().unwrap();
+        let lan = LanGate {
+            local_ipv4s: vec!["10.203.5.48".parse().unwrap()],
+        };
+        let h = headers(&[
+            ("authorization", format!("Bearer {}", TOKEN).as_str()),
+            ("host", "10.203.5.48:17650"),
+        ]);
+        assert_eq!(check(&h, TOKEN, Some(peer), Some(&lan)), Ok(()));
+
+        // Host 是外网名则仍拒
+        let bad_host = headers(&[
+            ("authorization", format!("Bearer {}", TOKEN).as_str()),
+            ("host", "evil.com:17650"),
+        ]);
+        assert!(matches!(
+            check(&bad_host, TOKEN, Some(peer), Some(&lan)),
+            Err(Reject::Host(_))
+        ));
+    }
+
+    #[test]
+    fn test_lan_on_still_requires_token() {
+        let peer: std::net::IpAddr = "10.203.5.99".parse().unwrap();
+        let lan = LanGate {
+            local_ipv4s: vec!["10.203.5.48".parse().unwrap()],
+        };
+        let h = headers(&[("host", "10.203.5.48:17650")]);
+        assert_eq!(
+            check(&h, TOKEN, Some(peer), Some(&lan)),
+            Err(Reject::MissingToken)
+        );
+    }
+
+    #[test]
+    fn test_web_origin_from_lan_machine_still_rejected() {
+        // 同事机器上的浏览器页面：局域网开着，但 Origin 是外网——仍拒
+        let peer: std::net::IpAddr = "10.203.5.99".parse().unwrap();
+        let lan = LanGate {
+            local_ipv4s: vec!["10.203.5.48".parse().unwrap()],
+        };
+        let h = headers(&[
+            ("authorization", format!("Bearer {}", TOKEN).as_str()),
+            ("origin", "https://evil.com"),
+        ]);
+        assert!(matches!(
+            check(&h, TOKEN, Some(peer), Some(&lan)),
+            Err(Reject::Origin(_))
+        ));
     }
 
     #[test]

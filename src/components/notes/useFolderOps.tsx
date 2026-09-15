@@ -11,6 +11,7 @@ import { FolderPlus, Pencil, Trash2, FolderInput, Library } from "lucide-react";
 import type { MenuItem } from "@/components/ContextMenu";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
+import { promptDialog } from "@/lib/prompt";
 import {
   folderCreate,
   folderDelete,
@@ -67,27 +68,41 @@ export function useFolderOps({
 }) {
   const { toast } = useToast();
 
-  /** 新建（顶层或子级）。名字用 prompt：一个单行输入不值一个弹层。 */
+  /** 新建（顶层或子级）。用应用内 promptDialog，不再用原生 window.prompt。 */
   const create = useCallback(
     async (parentId: string | null) => {
-      const name = window.prompt(parentId ? "新子文件夹名称" : "新文件夹名称", "");
+      const name = await promptDialog({
+        title: parentId ? "新建子文件夹" : "新建文件夹",
+        message: parentId ? "在当前文件夹下新建" : "创建在「文件夹」顶层",
+        placeholder: "文件夹名称",
+        confirmText: "创建",
+      });
       if (name === null) return; // 用户取消
       if (!name.trim()) {
         toast("文件夹名不能为空", "error");
         return;
       }
-      if (await folderCreate(name, parentId)) onChanged();
+      if (await folderCreate(name.trim(), parentId)) onChanged();
     },
     [onChanged, toast],
   );
 
   const rename = useCallback(
     async (node: FolderNode) => {
-      const name = window.prompt("重命名文件夹", node.name);
+      const name = await promptDialog({
+        title: "重命名文件夹",
+        defaultValue: node.name,
+        placeholder: "文件夹名称",
+        confirmText: "保存",
+      });
       if (name === null || name === node.name) return;
-      if (await folderRename(node.id, name)) onChanged();
+      if (!name.trim()) {
+        toast("文件夹名不能为空", "error");
+        return;
+      }
+      if (await folderRename(node.id, name.trim())) onChanged();
     },
-    [onChanged],
+    [onChanged, toast],
   );
 
   /**

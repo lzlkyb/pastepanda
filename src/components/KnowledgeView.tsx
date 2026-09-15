@@ -364,9 +364,15 @@ export function KnowledgeView() {
         >
           {/* 回收站把中栏整个换掉（W1）：它没有搜索 / 分组 / 筛选 / 新建，
               把工具栏留在上面会给人一堆在这里无意义（甚至会报空）的控件。
-              候选条目已从 `notes_fts` 移除，搜也真的搜不到。 */}
+              候选条目已从 `notes_fts` 移除，搜也真的搜不到。
+
+              🔴 必须包一层 `.listWrap`：中栏 `.wrap` 是 flex + `min-height: 0`，
+              没有这层 `flex:1; overflow-y:auto` 时列表会把父级顶穿/被裁掉，
+              条目一多就**滚不动**（2026-09-15 实报）。笔记列表一直有这层。 */}
           {q.folderFilter === "trash" ? (
-            <TrashPanel onChanged={q.refreshAll} folders={q.folders} />
+            <div className={styles.listWrap}>
+              <TrashPanel onChanged={q.refreshAll} folders={q.folders} />
+            </div>
           ) : (
           <>
           {/* 同步状态改为面包屑上的胶囊（方案 A，2026-09）：不再在列表上方堆全宽条。

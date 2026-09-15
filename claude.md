@@ -114,7 +114,9 @@ ocr-rs（vendored PP-OCR 引擎）的 bindgen 阶段需要 `libclang.dll`，项�
 | 文件类型 | 存放目录 |
 |---------|---------|
 | `.md` 文档 | `docs/`（项目根目录下） |
-| `.html` 设计稿 | `design/`（项目根目录下）
+| `.html` 设计稿 | `design/`（项目根目录下） |
+
+找历史设计稿前先读 `design/README.md`（由 `npm run gen:design-index` 生成）：它把 290+ 份稿子按主题分好组，并列明**入库日期**。注意该索引**不标「已落地/已废弃」**——CHANGELOG 用的是用户语言，无法反推设计稿的落地状态（实测 293 份只命中 5 份，别改成靠它猜）。加新稿后跑一次 `npm run gen:design-index`。
 
 ---
 

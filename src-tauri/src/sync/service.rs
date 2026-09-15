@@ -1007,6 +1007,7 @@ impl SyncService {
 
         let me = Arc::new(super::identity::NodeIdentity::load_or_create(app_dir)?);
         let endpoint = super::transport::bind(&me, relay).await?;
+        let presence = Arc::new(PresenceTable::new());
 
         // ❗ 只取端口，**不取 IP**：`bound_sockets()` 给的是通配 `0.0.0.0`，
         //   拨它必然超时（探针阶段栽过）。IP 由对端从我们的源地址取，
@@ -1020,7 +1021,7 @@ impl SyncService {
         let ctx = Arc::new(SyncCtx {
             store: store.clone(),
             endpoint,
-            presence: Arc::new(PresenceTable::new()),
+            presence,
             coord: Arc::new(Coordinator::new(me.node_id())),
             running: Arc::new(AtomicBool::new(true)),
             stop: Arc::new(tokio::sync::Notify::new()),

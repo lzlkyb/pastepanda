@@ -9,8 +9,8 @@
 //!
 //! 抽成 trait 后，生产走 [`AppKbSource`]，测试塞一个手搭的假实现。
 
-use super::gate::{WriteScope, WriteSwitches};
-use std::collections::HashMap;
+use super::gate::{FolderTree, WriteScope, WriteSwitches};
+use super::pulse;
 use crate::data_store::{
     DataStore, Note, NoteFolder, NoteRevision, NoteRevisionMeta, NoteUpdateReport, NoteViewOpts,
 };
@@ -234,6 +234,14 @@ pub trait KbSource: Send + Sync + 'static {
     /// 拿它们去 `kb_search(tag=)` 只会得到空结果。详见 `DataStore::note_tag_names`。
     fn note_tag_names(&self) -> Result<Vec<String>, String>;
 
+    /// L2 信号：库的脉搏（[`pulse::pulse_hint`] 的输入）。
+    ///
+    /// 与 [`Self::title_dups`] 同口径——**附加提示**，拿不到就不显示。
+    /// 但这里仍返回 `Result` 而不是像它那样直接吐默认值：
+    /// 「查失败了」与「库里真是一片空白」在下面那两句话上是**同一个效果**
+    /// （都不说），可这层不该替调用方做那个决定。
+    fn library_pulse(&self) -> Result<pulse::LibraryPulse, String>;
+
     // ===== 写入（M5）=====
     //
     // 写入侧**不做** `ListOutcome` 那种枚举，直接 `Result<_, String>`：
@@ -315,7 +323,7 @@ pub trait KbSource: Send + Sync + 'static {
     /// 🔴 为何要开这一个：已删的笔记**不会**出现在 `kb_search` / `kb_list` 里，
     /// 所以在有它之前，`kb_restore` 只能恢复「本轮刚刚自己删的」——
     /// 上一次会话删的东西永远拿不回来，因为没有任何途径取到那个 id。
-    fn trash_list(&self, limit: u32) -> Result<Vec<Note>, String>;
+    fn trash_list(&self, limit: u32, offset: u32) -> Result<Vec<Note>, String>;
 
     /// AI 可写入的范围快照（项目②）。理由同 `write_switches`。
     fn write_scope(&self) -> WriteScope;
@@ -330,8 +338,11 @@ pub trait KbSource: Send + Sync + 'static {
     /// 超出 limit 的那些会查不到 ⇒ 权限判定静默走错分支。
     fn folder_of(&self, note_id: &str) -> Result<NoteSpot, String>;
 
-    /// 全部文件夹的 `id -> parent_id`。递归判定要沿它往上走。
-    fn folder_parents(&self) -> Result<HashMap<String, Option<String>>, String>;
+    /// 权限判定要的文件夹拓扑（id → parent_id，外加哪些夹是 AI 建的）。
+    ///
+    /// 递归判定要沿 parent 链往上走；`ai_made` 是那条「AI 可以管理自己创建的东西」
+    /// 的旁路所需的（见 `gate::FolderTree`）。
+    fn folder_tree(&self) -> Result<FolderTree, String>;
 
     /// 建一个文件夹（项目③）。`parent` 是**名字**，`None` = 顶层。
     ///
@@ -492,6 +503,15 @@ impl KbSource for AppKbSource {
         self.with_store(|s| s.note_tag_names())?
     }
 
+    fn library_pulse(&self) -> Result<pulse::LibraryPulse, String> {
+        let (unfiled, last_ai_ms, total) = self.with_store(|s| s.note_library_pulse())??;
+        Ok(pulse::LibraryPulse {
+            unfiled,
+            last_ai_ms,
+            total,
+        })
+    }
+
     fn create(
         &self,
         title: &str,
@@ -577,8 +597,8 @@ impl KbSource for AppKbSource {
         crate::auto_cleanup::trash_days(&cfg)
     }
 
-    fn trash_list(&self, limit: u32) -> Result<Vec<Note>, String> {
-        self.with_store(|s| s.note_list_deleted(limit))?
+    fn trash_list(&self, limit: u32, offset: u32) -> Result<Vec<Note>, String> {
+        self.with_store(|s| s.note_list_deleted_paged(limit, offset))?
     }
 
     fn write_scope(&self) -> WriteScope {
@@ -598,9 +618,9 @@ impl KbSource for AppKbSource {
         })
     }
 
-    fn folder_parents(&self) -> Result<HashMap<String, Option<String>>, String> {
+    fn folder_tree(&self) -> Result<FolderTree, String> {
         let list = self.with_store(|s| s.folder_list())??;
-        Ok(list.into_iter().map(|f| (f.id, f.parent_id)).collect())
+        Ok(FolderTree::from_folders(&list))
     }
 
     fn folder_create(&self, name: &str, parent: Option<&str>) -> Result<String, String> {
@@ -838,22 +858,64 @@ fn resolve_tags_on(store: &DataStore, names: &[String]) -> Result<Vec<String>, S
         match tags.iter().find(|t| t.name == *name) {
             Some(t) => ids.push(t.id.clone()),
             None => {
-                // ⚠ 不能简单地叫它「去 kb_folders 看」：那个工具列的是
-                // **笔记在用的**标签（`note_tag_names`），而这里认的是全库标签
-                // （`get_tags`，含只被剪贴板条目用过的）。两边口径不同是故意的，
-                // 但就不能再把 kb_folders 说成「能用哪些」的全部依据——
-                // 否则模型会对一个**真存在**的标签告诉用户「库里没有、得你先建」。
-                return Err(format!(
-                    "没有叫「{}」的标签，且**不会自动新建**。\
-                     注意 kb_folders 只列出了**笔记在用的**标签，\
-                     库里可能还有只被剪贴板条目用过的标签（那些也能直接用）。\
-                     所以这可能只是写法对不上：请让用户确认标签名，不要直接断定「库里没有」。",
-                    name
-                ))
+                let known: Vec<String> = tags.iter().map(|t| t.name.clone()).collect();
+                return Err(unknown_tag_msg(name, &known));
             }
         }
     }
     Ok(ids)
+}
+
+/// 「没这个标签」的报错。**把库里真实的名单给回去**——取舍同 `tools/mod.rs`
+/// 里的兄弟 `unknown_author_msg`。
+///
+/// 🔴 为何必须列名单，而不是像原来那样只说「可能还有别的」：
+/// 模型那份「别的」从哪来？**没有任何工具能列全库标签**——
+/// `kb_folders` 只列**笔记在用的**（`note_tag_names`），而这里认的是全库标签
+/// （`get_tags`，含只被剪贴板条目用过的）。两边口径不同是故意的，
+/// 但就不能再把 `kb_folders` 说成「能用哪些」的全部依据，
+/// 否则模型会对一个**真存在**的标签告诉用户「库里没有、得你先建」。
+///
+/// 名单本来就在 `tags` 里，零额外查询；静态描述写不出这份名单，
+/// 而模型拿到它就能自己改对。这是本项目「报错路径带真实上下文，
+/// 比静态句子说得好」那条原则的正向应用（见 `tools/mod.rs` 的预算注释）。
+///
+/// 抽成纯函数是为了能测——`AppKbSource` 要 `AppHandle`，
+/// 测试里起不来（见本文件头部），所以报错文案得能脱开 `DataStore` 单测。
+fn unknown_tag_msg(asked: &str, known: &[String]) -> String {
+    let list = if known.is_empty() {
+        "（库里一个标签都还没有）".to_string()
+    } else {
+        clip_tag_list(known)
+    };
+    format!(
+        "没有叫「{}」的标签。库里现有的标签是：{}\n\
+         其中含只被剪贴板条目用过的——那些**也能直接用**，\
+         而 kb_folders 不列它们（它只列笔记在用的）。\n\
+         且**不会自动新建**：若上面确实没有，请让用户确认该怎么写，\
+         不要直接断定「库里没有」。",
+        asked, list
+    )
+}
+
+/// 报错里那份标签名单：超过上限就截断，防止报错本身吃掉一大片上下文。
+///
+/// 真库实测量级在几十个（2026-09-04 那次是 38 个全库标签），
+/// 但库会长大，而这条报错**每次写错标签都会付一遍**。
+const TAG_LIST_MAX: usize = 30;
+
+fn clip_tag_list(names: &[String]) -> String {
+    let shown = names.len().min(TAG_LIST_MAX);
+    let mut s = names
+        .iter()
+        .take(shown)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("、");
+    if names.len() > shown {
+        s.push_str(&format!("……（共 {} 个，只列了前 {} 个）", names.len(), shown));
+    }
+    s
 }
 
 fn create_on(
@@ -991,4 +1053,84 @@ fn tag_on(
     let add_ids = resolve_tags_on(store, add)?;
     let remove_ids = resolve_tags_on(store, remove)?;
     store.note_tags_edit(id, &add_ids, &remove_ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clip_tag_list, unknown_tag_msg, TAG_LIST_MAX};
+
+    fn names(n: usize) -> Vec<String> {
+        (1..=n).map(|i| format!("标签{:02}", i)).collect()
+    }
+
+    /// 报错必须**把真实名单给回去**——这是补上「没有工具能列全库标签」那个缺口的地方。
+    #[test]
+    fn test_没这个标签的报错要列出全库标签() {
+        let known = vec!["Rust".to_string(), "CSS".to_string(), "邮箱".to_string()];
+        let msg = unknown_tag_msg("rust", &known);
+
+        assert!(
+            msg.contains("没有叫「rust」的标签"),
+            "得说清是哪个名字写错了：{}",
+            msg
+        );
+        for n in &known {
+            assert!(msg.contains(n.as_str()), "名单里少了「{}」：{}", n, msg);
+        }
+        // 口径说明不能丢：名单里混着剪贴板标签，而 kb_folders 不列它们。
+        assert!(
+            msg.contains("剪贴板") && msg.contains("也能直接用"),
+            "必须说清「名单含剪贴板标签、它们也能用」，否则模型会把它们当无效的：{}",
+            msg
+        );
+        assert!(msg.contains("不会自动新建"), "防呆句不能丢：{}", msg);
+        // 🔴 「不要直接断定库里没有」这句是原文案的核心，改名后必须还在。
+        assert!(
+            msg.contains("不要直接断定"),
+            "原文案这条防「对真存在的标签说库里没有」的话不能丢：{}",
+            msg
+        );
+    }
+
+    /// 空库时不能输出「库里现有的标签是：」后面接一片空白——那读起来像解析失败。
+    #[test]
+    fn test_空库时不输出空白名单() {
+        let msg = unknown_tag_msg("Rust", &[]);
+        assert!(
+            msg.contains("一个标签都还没有"),
+            "空库要给一句话，不能留个空档：{}",
+            msg
+        );
+    }
+
+    /// 名单超上限要截断，且**明说截了**——报错本身不能吃掉一大片上下文。
+    #[test]
+    fn test_标签名单超上限要截断并明说() {
+        let many = names(TAG_LIST_MAX + 5);
+        let msg = unknown_tag_msg("不存在", &many);
+
+        assert!(
+            msg.contains(&format!("共 {} 个", TAG_LIST_MAX + 5)),
+            "截了就要报出总数，否则模型以为这就是全部：{}",
+            msg
+        );
+        // 第 31 个不该出现，但前 30 个都在。
+        assert!(!msg.contains("标签31"), "超上限的没被截掉：{}", msg);
+        for i in 1..=TAG_LIST_MAX {
+            let want = format!("标签{:02}", i);
+            assert!(
+                msg.contains(&want),
+                "前 {} 个应当全列：缺 {}",
+                TAG_LIST_MAX,
+                want
+            );
+        }
+    }
+
+    /// 刚好等于上限时不加截断尾巴——多印一句「共 30 个，只列了前 30 个」是废话。
+    #[test]
+    fn test_名单刚好等于上限时不加截断尾巴() {
+        let s = clip_tag_list(&names(TAG_LIST_MAX));
+        assert!(!s.contains("只列了前"), "刚好等于上限不该报截断：{}", s);
+    }
 }

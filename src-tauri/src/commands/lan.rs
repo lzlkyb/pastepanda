@@ -162,6 +162,22 @@ pub struct PairedDeviceView {
     pub paused: bool,
 }
 
+/// 手动刷新：立刻再喊一次招呼包，让对端能马上看见本机。
+///
+/// 只负责「重探」；名单本身仍由 `get_lan_paired` 读。
+/// 监听没在跑时空操作并返回 `false`，前端据此提示。
+#[tauri::command]
+pub fn lan_poke_hello(app: tauri::AppHandle) -> Result<bool, String> {
+    let Some(lan) = app.try_state::<crate::lan_sync::LanSync>() else {
+        return Ok(false);
+    };
+    if !lan.is_running() {
+        return Ok(false);
+    }
+    lan.poke_hello();
+    Ok(true)
+}
+
 /// 记住的设备名单（含在线情况）。
 #[tauri::command]
 pub fn get_lan_paired(app: tauri::AppHandle) -> Result<Vec<PairedDeviceView>, String> {

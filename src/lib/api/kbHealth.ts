@@ -34,6 +34,12 @@ export interface TinyNote {
   len: number;
 }
 
+/** 一篇由 AI 新建、却还留在未分类里的笔记。 */
+export interface UnfiledAiNote {
+  id: string;
+  title: string;
+}
+
 /** 中性统计——展开面板底部那一行，**不是问题**。 */
 export interface KbStats {
   note_count: number;
@@ -42,6 +48,13 @@ export interface KbStats {
   /** 被活笔记用到的标签数，不是全库标签数。 */
   tag_count: number;
   link_count: number;
+  /**
+   * 未分类的活笔记数。
+   *
+   * 🔴 **中性统计，不是问题**：真库上未分类能到 96%，那是「没用这个功能」。
+   * 该报的只是其中 **AI 自己写的那一半**（见 `unfiled_ai`）。
+   */
+  unfiled_count: number;
 }
 
 /**
@@ -59,6 +72,9 @@ export interface KbHealth {
   title_dup_count: number;
   tiny_notes: TinyNote[];
   tiny_count: number;
+  /** AI 新建、还没归类的笔记。**计数是真实总数**，门槛见 `hasUnfiledAi`。 */
+  unfiled_ai: UnfiledAiNote[];
+  unfiled_ai_count: number;
   stats: KbStats;
 }
 
@@ -88,6 +104,33 @@ export function healthIssueKinds(h: KbHealth): number {
     (h.broken_count > 0 ? 1 : 0) +
     (h.tag_dup_count > 0 ? 1 : 0) +
     (h.title_dup_count > 0 ? 1 : 0) +
-    (h.tiny_count > 0 ? 1 : 0)
+    (h.tiny_count > 0 ? 1 : 0) +
+    (hasUnfiledAi(h) ? 1 : 0)
   );
+}
+
+/**
+ * 未分类里堆到**几篇**「AI 自己写的」才值得报一项。
+ *
+ * ❗ 门槛是**语义的一部分**，不是保守：本项报的是「堆积」，
+ * 而一篇刚建出来、还没来得及归类的笔记不是堆积——它只是**进行中**。
+ * 顶部条跟着 `version` 每次写入都重算，没有门槛的话，
+ * AI 正在正常干活的中间态会闪出一条提示。
+ *
+ * 与 MCP 侧信号（`mcp/pulse.rs` 的 `UNFILED_HINT_MIN` = 5）**故意不同**：
+ * 那边喊给 AI 听，门槛高了不喊、喊了就还能救；
+ * 这边是给**人**看的，人只能等 AI 去收，所以门槛低一点，
+ * 让人更早发现「AI 没在整理」，而不是让 AI 更早被催。
+ */
+export const UNFILED_AI_MIN = 3;
+
+/**
+ * 该不该报「AI 写了没归类」。
+ *
+ * 写成函数而不是在组件里现算：它同时决定**顶部条出不出**（`healthIssueKinds`）
+ * 与**那一行渲不渲染**。两处各写一遍 `>= 3`，迟早会出现
+ * 「条出来了、数字也不为 0、但里面那一行不见了」。同 `healthIssueKinds` 的取向。
+ */
+export function hasUnfiledAi(h: KbHealth): boolean {
+  return h.unfiled_ai_count >= UNFILED_AI_MIN;
 }

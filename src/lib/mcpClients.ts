@@ -132,6 +132,22 @@ export interface McpClientDef {
 export const MCP_ENTRY_NAME = "pastepanda";
 
 /**
+ * 拼一条可直接粘贴的 `claude mcp add` 命令。
+ *
+ * `scope=user`：全局可用（知识库跟项目无关，推荐本机默认）。
+ * `scope=project`：只对当前目录的项目配置生效（远程/局域网场景常这么用）。
+ *
+ * 形状与内置 Claude Code 行的 `cli` 字段同源（规则 #11），两边共用这一份。
+ */
+export function buildClaudeCliCommand(
+  url: string,
+  token: string,
+  scope: "user" | "project" = "user",
+): string {
+  return `claude mcp add --transport http --scope ${scope} ${MCP_ENTRY_NAME} ${url} \\\n  --header "Authorization: Bearer ${token}"`;
+}
+
+/**
  * 默认的容器键。
  *
  * ❗ 与后端 `commands/mcp_connect.rs` 的 `DEFAULT_CONTAINER` 必须一致：
@@ -140,6 +156,63 @@ export const MCP_ENTRY_NAME = "pastepanda";
  *   `mcpClients.test.ts` 直接读 Rust 源码比对这一点。
  */
 export const MCP_CONTAINER_KEY = "mcpServers";
+
+/**
+ * 通用 MCP HTTP 配置片段（不绑定任何一家客户端）。
+ *
+ * 形状取自最常见的 `mcpServers` + `type: http` + `headers.Authorization`
+ * （本机扫描里 Claude / WorkBuddy 等都是这一套）。粘进支持 HTTP MCP 的
+ * 客户端配置即可；个别客户端字段名不同（Gemini 的 `httpUrl`、Codex 的
+ * `http_headers`）时仍应走「接入」列表里对应那一家的卡片。
+ */
+export function buildGenericMcpJson(url: string, token: string): string {
+  return JSON.stringify(
+    {
+      [MCP_CONTAINER_KEY]: {
+        [MCP_ENTRY_NAME]: {
+          type: "http",
+          url,
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * 给**远程机器上的 AI 助手**看的自配置说明（普通用户复制这一段即可）。
+ *
+ * 用法：用户把整段贴进对方电脑上的 Claude / 其它 AI，由 AI 代为写入 MCP 配置。
+ * 写全：目标、JSON、常见路径、只动一条、备份、重启客户端——缺一项 AI 就容易改错。
+ */
+export function buildMcpAiSetupPrompt(url: string, token: string): string {
+  const json = buildGenericMcpJson(url, token);
+  return [
+    "请帮我在这台电脑上添加一个 MCP 服务器，名称是 pastepanda。",
+    "",
+    "服务器信息：",
+    `- 名称：${MCP_ENTRY_NAME}`,
+    "- 传输：HTTP / Streamable HTTP",
+    `- URL：${url}`,
+    `- 认证 Header：Authorization: Bearer ${token}`,
+    "",
+    "请按下面要求操作：",
+    "1. 找到本机当前使用的 AI 编程/MCP 客户端配置（常见如 Claude Code 的 ~/.claude.json、",
+    "   项目里的 .mcp.json、WorkBuddy 的 ~/.workbuddy/mcp.json，或该工具文档里的 MCP 设置路径）。",
+    "2. 把 pastepanda 合并进 mcpServers，**不要覆盖**已有其它服务器。完整片段：",
+    "```json",
+    json,
+    "```",
+    "3. 若目标是 TOML 配置（如 Codex 的 ~/.codex/config.toml），请改成对应格式，",
+    "   Header 字段名可能是 http_headers。",
+    "4. 修改前先备份原文件；改完后重启该 AI 客户端使配置生效。",
+    "5. 不要把这段里的令牌提交到 git 或发到公开渠道。",
+    "",
+    "完成后告诉我：改了哪个文件、是否需要重启、如何验证（列出 MCP 工具里是否出现 pastepanda/kb_*）。",
+  ].join("\n");
+}
 
 /**
  * 令牌占位符。一键接入时拼条目用它占位，由后端换成真令牌。
@@ -177,8 +250,7 @@ export const MCP_CLIENTS: McpClientDef[] = [
     detectPath: "~/.claude",
     transport: "http",
     where: "写进该文件**顶层**的 mcpServers（不是某个 project 下面）。",
-    cli: (url, token) =>
-      `claude mcp add --transport http --scope user pastepanda ${url} \\\n  --header "Authorization: Bearer ${token}"`,
+    cli: (url, token) => buildClaudeCliCommand(url, token, "user"),
     cliNote:
       "❗ `--scope user` 不能省。`claude mcp add` 的默认 scope 是 `local`，" +
       "而 local 只对**执行命令时那一个目录**生效。知识库跟项目无关，" +

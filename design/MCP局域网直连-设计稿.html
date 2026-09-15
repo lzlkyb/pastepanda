@@ -1,0 +1,338 @@
+<!--
+=========================================================================================
+  PastePanda · MCP 局域网直连 · 设置页设计稿
+  日期：2026-09-15
+
+  【一、动笔前读过的真实源码（项目规则 #12）】
+    src/components/settings/McpTab.tsx            服务总开关 + 确认框文案风格
+    src/components/settings/McpServerPanel.tsx    容器：lanPanel + mcpAdvanced 折叠
+    src/components/settings/McpHttpsPanel.tsx     默认关 + 运行态与开关态一起读
+    src/components/settings/McpWritePanel.tsx     8 档写权限开关（局域网共用）
+    src/lib/api/mcp.ts                            McpStatus 类型
+    src-tauri/src/mcp/server.rs                   bind 写死 127.0.0.1；McpStatus
+    src-tauri/src/mcp/auth.rs                     Origin/Host 只认本机 + Bearer
+    src-tauri/src/mcp/gate.rs                     写权限双层门
+    src/components/Settings.module.css            .mcpRow / .mcpLabel / .mcpValue /
+                                                  .mcpAlert / .mcpHint / .mcpApplyBtn /
+                                                  .mcpAdvanced / .lanPanel
+
+  【二、设计取舍（已与用户拍板）】
+    1. 默认关。打开后 bind 0.0.0.0，同一端口；本机 127.0.0.1 路径不变。
+    2. IP 白名单支持 精确 IP + CIDR，开启时至少一条。
+    3. 写权限与本机共用现有 8 档开关，不另设「局域网写」总闸。
+    4. Origin 仍只放行本机页面（防同事机上的网页）；Host 额外放行本机网卡 IP。
+    5. 非回环请求：必须命中白名单 + Bearer 令牌。
+    6. 本期不做局域网 HTTPS（证书仍只对回环）；明文风险写进确认文案。
+    7. 小节位置：高级折叠内、HTTPS 之后、写权限之前——先回答「谁能连进来」，
+       再回答「连进来能写什么」。
+
+  【三、状态必须一起读（规则 #15.3）】
+    lanEnabled（配置）≠ 真的在收局域网包。bind 失败时要有横幅，不能只显示开关。
+    白名单空却开着 = 配置矛盾，界面就地提示，不能静默。
+
+  【四、本稿没有做的事】
+    - 不含实现代码。
+    - 不含「允许局域网写入」独立开关（已拍板与本机共用 8 档）。
+=========================================================================================
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda MCP 局域网直连 · 设置页设计稿</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+    --card:#1d242c; --hover:#243040; --input:#151b22;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da;
+            --card:#fff; --hover:#eef2f6; --input:#f6f8fa;
+            --warn:#9a6700; --danger:#cf222e; --ok:#1a7f37; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 80px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  h2 { font-size:15px; margin:32px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13px; margin:18px 0 8px; color:var(--tx2); }
+  p, li { color:var(--tx2); font-size:13px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; color:var(--tx2); }
+  .note.warn { border-left-color:var(--warn); }
+  .note.danger { border-left-color:var(--danger); }
+  .cap { font-size:11px; color:var(--tx3); margin:8px 0 0; }
+
+  /* ── 设置卡片外壳（照抄 .lanPanel） ── */
+  .panel {
+    width:100%; max-width:560px; border-radius:14px; padding:16px 18px;
+    background:color-mix(in srgb,var(--accent) 6%,var(--panel));
+    border:1px solid var(--line); margin:0 0 18px;
+  }
+  .panelHead { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .status { display:flex; align-items:center; gap:8px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--ok);
+         box-shadow:0 0 6px color-mix(in srgb,var(--ok) 40%,transparent); }
+  .dot.off { background:var(--tx3); box-shadow:none; }
+  .dot.warn { background:var(--warn); box-shadow:none; }
+  .statusText { font-size:13px; font-weight:600; color:var(--tx); }
+
+  details.adv { margin:0; }
+  details.adv > summary {
+    list-style:none; cursor:pointer; user-select:none;
+    font-size:12px; color:var(--tx2); padding:6px 0;
+  }
+  details.adv > summary::-webkit-details-marker { display:none; }
+  details.adv > summary::before { content:"▸ "; }
+  details.adv[open] > summary::before { content:"▾ "; }
+
+  .section {
+    margin:14px 0 0; padding:12px 0 0; border-top:1px solid var(--line);
+  }
+  .sectionTitle { font-size:12px; font-weight:600; color:var(--tx); margin:0 0 8px; }
+
+  .rows { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .row { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .label { flex-shrink:0; width:72px; font-size:12px; color:var(--tx2); }
+  .value {
+    flex:1; min-width:180px; background:var(--input); border:1px solid var(--line);
+    border-radius:6px; padding:5px 8px; font:12px ui-monospace,Consolas,monospace;
+    color:var(--tx); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .hint { flex-basis:100%; font-size:11px; color:var(--tx3); padding-left:79px; }
+  .hint.warn { color:var(--warn); }
+  .hint.ok { color:var(--ok); }
+
+  .btn {
+    border:1px solid var(--line); background:var(--panel2); color:var(--tx);
+    border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;
+  }
+  .btn:hover { background:var(--hover); }
+  .btn.primary { background:var(--accent); border-color:transparent; color:#fff; }
+  .btn.danger { background:color-mix(in srgb,var(--danger) 18%,var(--panel2));
+                border-color:color-mix(in srgb,var(--danger) 40%,var(--line)); color:var(--tx); }
+
+  /* 开关 */
+  .switch { position:relative; width:36px; height:20px; flex-shrink:0; }
+  .switch input { opacity:0; width:0; height:0; }
+  .slider {
+    position:absolute; inset:0; background:var(--line); border-radius:10px;
+    transition:background .15s; cursor:pointer;
+  }
+  .slider::before {
+    content:""; position:absolute; width:14px; height:14px; left:3px; top:3px;
+    background:#fff; border-radius:50%; transition:transform .15s;
+  }
+  .switch input:checked + .slider { background:var(--accent); }
+  .switch input:checked + .slider::before { transform:translateX(16px); }
+
+  textarea.allow {
+    width:100%; min-height:72px; resize:vertical;
+    background:var(--input); border:1px solid var(--line); border-radius:6px;
+    color:var(--tx); font:12px/1.5 ui-monospace,Consolas,monospace; padding:8px 10px;
+  }
+  textarea.allow:focus { outline:1px solid var(--accent); }
+
+  .alert {
+    display:flex; align-items:flex-start; gap:8px; margin-top:10px;
+    padding:8px 10px; border-radius:8px; font-size:12px;
+    background:color-mix(in srgb,var(--warn) 12%,var(--panel2));
+    border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line));
+    color:var(--tx);
+  }
+  .alert.danger {
+    background:color-mix(in srgb,var(--danger) 12%,var(--panel2));
+    border-color:color-mix(in srgb,var(--danger) 35%,var(--line));
+  }
+
+  /* 确认框 mock */
+  .modalMask {
+    position:fixed; inset:0; background:rgba(0,0,0,.55);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal {
+    width:min(440px,100%); background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:18px 18px 14px; box-shadow:0 12px 40px rgba(0,0,0,.35);
+  }
+  .modal h3 { margin:0 0 8px; color:var(--tx); font-size:15px; }
+  .modal p { margin:0 0 8px; font-size:12.5px; }
+  .modal ul { margin:0 0 12px 18px; padding:0; }
+  .modal li { font-size:12.5px; margin:3px 0; }
+  .modalActions { display:flex; justify-content:flex-end; gap:8px; margin-top:6px; }
+
+  table.sec { width:100%; border-collapse:collapse; margin:10px 0 4px; font-size:12.5px; }
+  table.sec th, table.sec td {
+    border:1px solid var(--line); padding:7px 9px; text-align:left; color:var(--tx2);
+  }
+  table.sec th { background:var(--panel2); color:var(--tx); font-weight:600; }
+
+  .states { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+  @media (max-width:720px) { .states { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>MCP 局域网直连 · 设置页设计稿</h1>
+  <p>位置：设置 → MCP → 高级折叠内，HTTPS 之后、写权限之前。默认关。</p>
+
+  <div class="note">
+    <b>一句话</b>：打开后，同一端口额外接受局域网连接；远程机填
+    <code>http://&lt;本机局域网IP&gt;:17650/mcp</code> + 同一枚 Bearer 令牌。
+    本机客户端仍走 <code>127.0.0.1</code>，互不影响。
+  </div>
+
+  <h2>1. 安全模型（改后的门禁）</h2>
+  <table class="sec">
+    <tr><th>门</th><th>本机请求</th><th>局域网请求</th></tr>
+    <tr><td>IP 白名单</td><td>回环直接过</td><td>必须命中白名单（IP 或 CIDR），否则 403</td></tr>
+    <tr><td>Origin</td><td>只放行本机 origin</td><td>有 Origin 仍只认本机（防同事机网页）</td></tr>
+    <tr><td>Host</td><td>localhost / 127.0.0.1 / ::1</td><td>额外放行本机真实网卡 IP</td></tr>
+    <tr><td>Bearer 令牌</td><td>必填</td><td>必填（不变）</td></tr>
+    <tr><td>写权限</td><td colspan="2">与本机共用现有 8 档开关（默认全开，可逐项关）</td></tr>
+  </table>
+  <p class="cap">配置键：<code>mcp_lan_enabled</code> · <code>mcp_lan_allowlist</code>（字符串数组）</p>
+
+  <h2>2. 关态（默认）</h2>
+  <div class="panel">
+    <div class="panelHead">
+      <div class="status">
+        <span class="dot"></span>
+        <span class="statusText">监听中 · 端口 17650</span>
+      </div>
+    </div>
+    <details class="adv" open>
+      <summary>高级：端口 · 令牌 · HTTPS · 写权限 · 调用记录</summary>
+
+      <div class="section">
+        <div class="sectionTitle">局域网访问</div>
+        <div class="row">
+          <span class="label">允许局域网</span>
+          <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+          <span class="hint" style="padding-left:0; flex:1;">关闭 · 仅本机 127.0.0.1 可连接</span>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <h2>3. 开启确认框（每次开都弹，同 MCP 总开关策略）</h2>
+  <div class="modalMask" style="position:static; background:transparent; display:block; padding:0;">
+    <div class="modal">
+      <h3>允许局域网访问知识库 MCP？</h3>
+      <p>打开后，<b>白名单内</b>的局域网机器可以用与本机相同的权限读写你的笔记。</p>
+      <ul>
+        <li>仍需访问令牌；令牌在局域网内以明文 HTTP 传输</li>
+        <li>白名单至少填一条 IP 或网段（如 <code>10.203.5.99</code> / <code>10.203.5.0/24</code>）</li>
+        <li>写权限走下方 8 档开关，与本机同一套</li>
+        <li>删除仍只进回收站；写入计入调用记录</li>
+      </ul>
+      <p style="color:var(--warn);">⚠ 能连上的机器可读你全部笔记。请只放行你信任的设备。</p>
+      <div class="modalActions">
+        <button class="btn">取消</button>
+        <button class="btn primary">开启局域网访问</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>4. 开态（配置齐全）</h2>
+  <div class="panel">
+    <div class="panelHead">
+      <div class="status">
+        <span class="dot"></span>
+        <span class="statusText">监听中 · 端口 17650 · 局域网已开</span>
+      </div>
+    </div>
+    <details class="adv" open>
+      <summary>高级：端口 · 令牌 · HTTPS · 写权限 · 调用记录</summary>
+
+      <div class="section">
+        <div class="sectionTitle">局域网访问</div>
+        <div class="row">
+          <span class="label">允许局域网</span>
+          <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+          <span class="hint ok" style="padding-left:0; flex:1;">已开启 · 白名单 2 条</span>
+        </div>
+
+        <div class="rows">
+          <div class="row">
+            <span class="label">本机地址</span>
+            <span class="value">http://10.203.5.48:17650/mcp</span>
+            <button class="btn">复制</button>
+            <span class="hint">自动探测首个非回环 IPv4；多网卡时下列出全部</span>
+          </div>
+          <div class="row" style="align-items:flex-start;">
+            <span class="label" style="padding-top:8px;">IP 白名单</span>
+            <div style="flex:1; min-width:200px;">
+              <textarea class="allow">10.203.5.99
+10.203.5.0/24</textarea>
+              <div class="hint" style="padding-left:0; margin-top:4px;">每行一条：精确 IP 或 CIDR。保存后立即生效，无需重启。</div>
+            </div>
+            <button class="btn primary" style="align-self:flex-start; margin-top:8px;">保存</button>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <h2>5. 异常态（必须就地可见，规则 #15.3）</h2>
+  <div class="states">
+    <div class="panel" style="margin:0;">
+      <div class="sectionTitle">白名单为空却开着</div>
+      <div class="row">
+        <span class="label">允许局域网</span>
+        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+      </div>
+      <div class="alert">
+        <span>⚠</span>
+        <span>白名单为空，当前没有任何局域网机器能连上。请添加 IP 或网段，或关闭开关。</span>
+      </div>
+    </div>
+    <div class="panel" style="margin:0;">
+      <div class="sectionTitle">bind 失败（端口/权限）</div>
+      <div class="row">
+        <span class="label">允许局域网</span>
+        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+        <span class="hint warn" style="padding-left:0; flex:1;">配置已开，但未能监听局域网</span>
+      </div>
+      <div class="alert danger">
+        <span>✕</span>
+        <span>无法绑定 0.0.0.0:17650：权限不足或被占用。本机 127.0.0.1 服务不受影响。</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>6. 远程客户端配置示例（复制卡片）</h2>
+  <div class="panel">
+    <pre style="margin:0; font:12px/1.55 ui-monospace,Consolas,monospace; color:var(--tx); white-space:pre-wrap;">{
+  "mcpServers": {
+    "pastepanda": {
+      "type": "http",
+      "url": "http://10.203.5.48:17650/mcp",
+      "headers": {
+        "Authorization": "Bearer &lt;你的访问令牌&gt;"
+      }
+    }
+  }
+}</pre>
+    <p class="cap">令牌不在 status 轮询里返回；复制卡片时由「需要令牌」路径按需取一次。</p>
+  </div>
+
+  <h2>7. 实现落点</h2>
+  <ul>
+    <li><code>mcp/mod.rs</code>：配置键常量</li>
+    <li><code>mcp/server.rs</code>：按开关选择 bind <code>127.0.0.1</code> / <code>0.0.0.0</code>；McpStatus 增加 lan 字段</li>
+    <li><code>mcp/auth.rs</code>：CIDR 白名单匹配；Host 放行本机网卡 IP；ConnectInfo 取对端 IP</li>
+    <li><code>commands/mcp.rs</code>：开关 / 白名单保存 / 状态</li>
+    <li>前端 <code>McpLanPanel.tsx</code>（新，&lt;300 行）挂进 <code>McpServerPanel</code></li>
+    <li>测试：CIDR 匹配纯函数 + 过线 HTTP（假对端难做时至少测 auth 单元）</li>
+  </ul>
+
+</div>
+</body>
+</html>

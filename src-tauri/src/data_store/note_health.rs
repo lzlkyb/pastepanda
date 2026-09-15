@@ -14,6 +14,22 @@
 //! 与 AM-8 那 73 对弱候选的差别在于：那里能用长度门槛滤掉噪声，
 //! 而这三项**没有等价的门槛可加**。
 //!
+//! # 🔴 未分类：拆成两半，一半仍是统计、另一半才是问题
+//!
+//! 上一段那句「无文件夹 96% 不是缺陷」**至今有效**：未分类**总数**照旧不进问题列表，
+//! 它落在 [`KbStats::unfiled_count`]，只在展开面板底部那一行里出现，无 ×、无动作。
+//!
+//! 但 AI 维护的库里有一类例外——**AI 新建的笔记还躺在未分类里**
+//! （`source_agent != '' AND folder_id IS NULL`，见 [`UnfiledAiNote`]）。
+//! 那不是「没用这个功能」，是**活儿干了一半**：AI 手里有 `kb_folder_create`
+//! 与 `kb_move` 的授权（见 `mcp/protocol.rs` 的写入约定），却把自己写的东西
+//! 留在了门口。所以只报这一半。
+//!
+//! ❗ 判据**只认 `source_agent`（谁建的），不认 `last_agent`（谁改过）**。
+//! 后者包含「用户亲手写、只是被 AI 追加过一段」的笔记，而全局边界是
+//! **AI 只整理自己写的东西**——把用户写的算进「AI 没归类」，等于叫 AI 去动它。
+//! 这与 `kb_list(author="ai_edited")` 的划分是同一件事的两面。
+//!
 //! # 🔴 冲突副本也故意不在这里
 //!
 //! `KbSyncStatusBar` 已经在知识库顶部报「有 N 处冲突副本还没处理」。
@@ -57,6 +73,16 @@ pub struct TinyNote {
     pub len: i64,
 }
 
+/// 一篇**由 AI 新建、却还留在未分类里**的笔记。
+///
+/// 与 [`TinyNote`] 分两个类型而不是复用：那边带 `len`（长度是它的判据），
+/// 而这里长度完全无关，硬凑一个字段就得给它编个假值。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UnfiledAiNote {
+    pub id: String,
+    pub title: String,
+}
+
 /// 中性统计——展开面板底部那一行，**不是问题**。
 ///
 /// 「超大笔记」就落在这里而不是单列一档：AM-2 节级命中上线后，
@@ -71,6 +97,12 @@ pub struct KbStats {
     pub tag_count: i64,
     /// 活笔记引出的 `[[ ]]` 链总数。
     pub link_count: i64,
+    /// 未分类（`folder_id IS NULL`）的活笔记数。
+    ///
+    /// 🔴 **它是中性统计，不是问题**——理由见本模块文档「未分类：拆成两半」。
+    /// 未分类总数在真库上能到 96%，报成问题等于说库坏了；
+    /// 该报的只是其中**AI 自己写的那一半**（见 [`KbHealth::unfiled_ai`]）。
+    pub unfiled_count: i64,
 }
 
 /// 一份库体检报告。
@@ -87,6 +119,11 @@ pub struct KbHealth {
     pub title_dup_count: usize,
     pub tiny_notes: Vec<TinyNote>,
     pub tiny_count: usize,
+    /// AI 新建、还没归类的笔记。**计数是真实总数**（不设门槛、不封顶），
+    /// 门槛（堆到几篇才算问题）留在界面侧——「值不值得显示」是展示决策，
+    /// 与「有多少篇」是两件事，混在查询里会让计数变成一个说不清口径的数。
+    pub unfiled_ai: Vec<UnfiledAiNote>,
+    pub unfiled_ai_count: usize,
     pub stats: KbStats,
 }
 
@@ -169,16 +206,55 @@ impl DataStore {
             rows.filter_map(Result::ok).collect()
         };
 
-        // 五、中性统计
+        // 五、AI 写了却还留在未分类里的
+        //
+        // ❗ 判据只认 `source_agent`（谁**建**的），不加 `last_agent`：
+        //    加上就会把「用户亲手写、被 AI 追加过」的笔记算进来，
+        //    而那类是全局边界明令 AI 不许动的。详见模块文档与 [`UnfiledAiNote`]。
+        let unfiled_ai_count: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM notes
+                 WHERE deleted_at IS NULL AND folder_id IS NULL AND source_agent != ''",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())? as usize;
+        let unfiled_ai: Vec<UnfiledAiNote> = {
+            // 堆得**最久**的排前面：它已经躺在门口最久，最该先收。
+            // （与极短笔记那边「最短的先看」是同一个取向——最值得先看一眼的排前。）
+            // 用 `created_at` 而不是 `updated_ms`：这里问的是「堆了多久」，
+            // 而 AI 事后追加一句会推高 `updated_ms`，让老账看起来像新账。
+            let mut st = conn
+                .prepare(
+                    "SELECT id, title FROM notes
+                     WHERE deleted_at IS NULL AND folder_id IS NULL AND source_agent != ''
+                     ORDER BY created_at, title LIMIT ?1",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = st
+                .query_map(rusqlite::params![HEALTH_DETAIL_CAP as i64], |r| {
+                    Ok(UnfiledAiNote {
+                        id: r.get(0)?,
+                        title: r.get(1)?,
+                    })
+                })
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(Result::ok).collect()
+        };
+
+        // 六、中性统计
         // 空库时 AVG/MAX 返 NULL，所以接 Option 再兑 0；直接 get::<i64> 会报类型错。
-        let (note_count, avg_len, max_len): (i64, i64, i64) = conn
+        // `unfiled_count` 顺手并进同一条查询：它扫的是同一批行，
+        // 单开一次全表扫只为数未分类，在 1 万篇的预算上是白花的（见本文档「性能」段）。
+        let (note_count, avg_len, max_len, unfiled_count): (i64, i64, i64, i64) = conn
             .query_row(
                 "SELECT COUNT(*),
                         CAST(COALESCE(AVG(LENGTH(content)), 0) AS INTEGER),
-                        COALESCE(MAX(LENGTH(content)), 0)
+                        COALESCE(MAX(LENGTH(content)), 0),
+                        COALESCE(SUM(CASE WHEN folder_id IS NULL THEN 1 ELSE 0 END), 0)
                  FROM notes WHERE deleted_at IS NULL",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .map_err(|e| e.to_string())?;
         let tag_count: i64 = conn
@@ -207,12 +283,15 @@ impl DataStore {
             title_dup_count,
             tiny_notes,
             tiny_count,
+            unfiled_ai,
+            unfiled_ai_count,
             stats: KbStats {
                 note_count,
                 avg_len,
                 max_len,
                 tag_count,
                 link_count,
+                unfiled_count,
             },
         })
     }

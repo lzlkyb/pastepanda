@@ -110,14 +110,12 @@ fn section_schema(extra: Value, required: &[&str]) -> Value {
         },
         "section": {
             "type": "string",
-            "description": "要动的那一节，按**标题路径**定位（如「架构 / 数据流」，\
-                              也可只写尾段「数据流」）。"
+            "description": "按标题路径定位（如「架构/数据流」或尾段）。"
         },
         "index": {
             "type": "integer",
             "minimum": 0,
-            "description": "要动的那一节，按 kb_sections 给的**序号**定位。\
-                              0 = 第一个标题之前的引言部分。"
+            "description": "按 kb_sections 序号定位。0=标题前引言。"
         }
     });
     if let (Some(p), Some(e)) = (props.as_object_mut(), extra.as_object()) {
@@ -131,13 +129,16 @@ fn section_schema(extra: Value, required: &[&str]) -> Value {
 /// 十一个写工具的定义。**本函数不做开关过滤**，过滤在 [`super::definitions`]。
 ///
 /// `trash_days` 只给 `kb_delete` 用，理由见 [`trash_note`]。
+///
+/// 描述压缩判据同 `read_definitions`：能力/政策留，报错恢复删。
+/// 硬约束（整篇覆盖、唯一命中、软删可恢复、只动自己写的）一字不丢。
 pub fn definitions(trash_days: i64) -> Vec<Value> {
     vec![
         json!({
             "name": "kb_create",
-            "description": "在用户的知识库里新建一篇笔记。\n\
-                 先用 kb_search 确认一下同一主题是不是已经有了——如果有，\
-                 用 kb_append 追到那篇里比另开一篇更有用。",
+            "description": "新建笔记。先 kb_search 查同主题——有就用 kb_append。\n\
+                 项目说明（怎么跑/配/架构）→「手册」夹（没有先 kb_folder_create）；\
+                 一次性结论/坑 → 主题夹。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -145,8 +146,7 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
                     "content": { "type": "string", "description": "正文，Markdown。" },
                     "folder": {
                         "type": "string",
-                        "description": "放进哪个文件夹（名字，用 kb_folders 查）。\
-                                          省略 = 未分类。**不存在的名字会直接失败，不会自动新建**。"
+                        "description": "文件夹名，见 kb_folders。省略=未分类。名不存在会失败。"
                     }
                 },
                 "required": ["title", "content"]
@@ -154,22 +154,18 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_folder_create",
-            "description": "新建一个文件夹。\n\
-                 先用 kb_folders 看一眼：很可能已经有一个意思相近的了，\
-                 那就直接用现有的，不要另建一个。\n\
-                 ⚠ 文件夹结构是用户自己的组织方式，**不要主动帮他重排**；\
-                 只在他明确要求、或你真的需要一个地方放新笔记时才建。\n\
-                 🔴 建好的夹子会被标成「由 AI 创建」，用户能在设置里一键撤销\
-                 （撤销 = 删掉它，里面的笔记与子夹都升到父级，不会丢）。\n\
-                 同一个父级下不能重名；层数有上限，超了会直接失败。",
+            "description": "新建文件夹。先 kb_folders，有相近的就用现有的。\n\
+                 🔴 只建来放**你自己写的东西**；用户建的夹别重排。\n\
+                 🔴 会标成「由 AI 创建」（kb_folders 显示 ［AI］），用户可一键撤销\
+                （笔记与子夹升到父级，不丢）。同父不能重名；层数有上限。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "name": { "type": "string", "description": "文件夹名。必填。" },
                     "parent": {
                         "type": "string",
-                        "description": "建在哪个文件夹下（名字，用 kb_folders 查）。\
-                                          省略 = 建在顶层。**不存在的名字会直接失败**。"
+                        "description": "父文件夹名，见 kb_folders。**必填**：只能在已授权夹里建子夹\
+                                      （省略=顶层，通常被拒）。名不存在会失败。"
                     }
                 },
                 "required": ["name"]
@@ -177,33 +173,29 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_append",
-            "description": "往一篇已有笔记的**末尾追加**一段内容，原有内容不动。\n\
-                 只是“再添一条”时请**优先用它而不是 kb_update**：\
-                 kb_update 是整篇覆盖，很容易把用户原有的内容写丢。",
+            "description": "往笔记**末尾追加**，原文不动。添内容优先用它，\
+                 别用 kb_update（整篇覆盖易写丢）。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "笔记 id。" },
-                    "text": { "type": "string", "description": "要追加的内容。会隔一个空行接在末尾。" }
+                    "text": { "type": "string", "description": "要追加的内容。" }
                 },
                 "required": ["id", "text"]
             }
         }),
         json!({
             "name": "kb_update",
-            "description": "改一篇笔记的标题和/或正文。\n\
-                 ⚠ **content 是整篇覆盖**，不是局部修改。只想添内容就用 kb_append；\
-                 真要重写整篇时，请**先 kb_read 拿到当前全文**，在它基础上改，\
-                 不要凭记忆或凭摘要重建——那会把用户写的细节概括掉。\n\
-                 只传 title 就只改标题，只传 content 就只改正文。",
+            "description": "改标题和/或正文。⚠ content=**整篇覆盖**。\
+                 只添内容用 kb_append；重写前先 kb_read 再改，别凭摘要重建。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "笔记 id。" },
-                    "title": { "type": "string", "description": "新标题。省略 = 不改标题。" },
+                    "title": { "type": "string", "description": "新标题。省略=不改。" },
                     "content": {
                         "type": "string",
-                        "description": "新正文（**整篇替换**）。省略 = 不改正文。"
+                        "description": "新正文（**整篇替换**）。省略=不改。"
                     }
                 },
                 "required": ["id"]
@@ -211,20 +203,14 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_update_section",
-            "description": "**只重写某一节的正文**，标题行不动、其它节不动。\n\
-                 先用 kb_sections 看大纲拿到序号或标题路径，再用它改。\n\
-                 🔴 比 kb_update 安全得多：kb_update 是你拿着几十秒前读到的全文整篇覆盖，\
-                 期间用户在界面上改的东西会被抹掉；这里只碰你点名的那一节。\n\
-                 🔴 节是**平的**：改 `## A` 不会动它下面的 `### A1`。\
-                 返回里会告知有几个子节没被动。\n\
-                 🔴 body 传空字符串 = **清空这一节的正文**（标题保留）。\
-                 不想改就别调，不要用空串试探。",
+            "description": "只重写某一节正文，标题与其它节不动。先 kb_sections 拿序号/标题路径。\n\
+                 🔴 比 kb_update 安全：只碰点名的节。节是**平的**，改 `## A` 不动 `### A1`。\n\
+                 🔴 body 空串=**清空本节**。不想改就别调。",
             "inputSchema": section_schema(
                 json!({
                     "body": {
                         "type": "string",
-                        "description": "这一节的新正文（不含标题行）。\
-                                          段落间的空行会自动维护，不用你操心。"
+                        "description": "这一节新正文（不含标题行）。空行自动维护。"
                     }
                 }),
                 &["id", "body"]
@@ -232,21 +218,18 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_insert_at_section",
-            "description": "在某一节的指定位置**插入**一段，原有内容一字不动。\n\
-                 想在某节前面新开一节就用 position=before，\
-                 想往某节末尾补一段就用 position=end。",
+            "description": "在某一节指定位置**插入**，原文不动。\
+                 before=标题前新开节；end=本节末尾。",
             "inputSchema": section_schema(
                 json!({
                     "text": {
                         "type": "string",
-                        "description": "要插入的内容。空内容会报错，而不是让你以为写进去了。"
+                        "description": "要插入的内容。空内容会报错。"
                     },
                     "position": {
                         "type": "string",
                         "enum": ["before", "start", "end"],
-                        "description": "before = 插在这一节的**标题行之前**（用于在它前面新开一节）；\
-                                          start = 标题行之后、本节正文的开头；\
-                                          end = 本节正文的末尾（下一个标题之前）。默认 end。"
+                        "description": "before=标题前；start=正文开头；end=正文末尾。默认 end。"
                     }
                 }),
                 &["id", "text"]
@@ -254,12 +237,9 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_replace_in_note",
-            "description": "把笔记里的一段原文换成另一段。适合改错别字、改一句话这种局部修正。\n\
-                 🔴 **要求全文唯一命中**。命中 0 处或多处都会报错，且**一个字也不改**：\
-                 若默认全换，你想改第一处却改了七处；\
-                 若默认只换第一处，你以为改完了实际还剩六处。两种默认都是你看不出来的错。\n\
-                 命中多处时把 find 向前后加长到唯一，或改用 kb_update_section。\n\
-                 行尾无需操心：LF 与 CRLF 会自动对齐。",
+            "description": "把一段原文换成另一段（改错字/一句话）。\n\
+                 🔴 **全文唯一命中**：0 或多处都报错且一个字不改。\
+                 不唯一就把 find 加长，或改用 kb_update_section。LF/CRLF 自动对齐。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -269,11 +249,11 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
                     },
                     "find": {
                         "type": "string",
-                        "description": "要被替掉的原文，**照 kb_read 拿到的内容一字不改地拷**。"
+                        "description": "被替掉的原文，照 kb_read 一字不改地拷。"
                     },
                     "replace": {
                         "type": "string",
-                        "description": "换成什么。传空字符串 = 删掉 find 那一段。"
+                        "description": "换成什么。空串=删掉 find 那段。"
                     }
                 },
                 "required": ["id", "find", "replace"]
@@ -281,9 +261,8 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_prepend",
-            "description": "把一段内容插到笔记正文的**最开头**，原有内容不动。\
-                 与 kb_append（插到末尾）互为一对，归同一个「追加内容」开关。\n\
-                 带 frontmatter 的笔记会插在 frontmatter 之后，不会撑坏它。",
+            "description": "插到正文**最开头**，原文不动。与 kb_append 一对。\
+                 frontmatter 之后插入。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -301,17 +280,16 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_move",
-            "description": "把一篇笔记移到另一个文件夹。\n\
-                 文件夹结构是用户自己的组织方式，**不要主动帮他重排**；\
-                 除非用户明确要求，否则不要调它。",
+            "description": "把笔记移到另一文件夹。\n\
+                 🔴 只搬**你自己写的**（`kb_list(author=\"me\")`）；用户写的不碰。\n\
+                 可把未分类收进合适的夹。🔴 用户建的夹不要改名/解散/搬。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "笔记 id。" },
                     "folder": {
                         "type": "string",
-                        "description": "目标文件夹名（用 kb_folders 查）。\
-                                          省略 = 移回未分类。**不存在的名字会失败，不会自动新建**。"
+                        "description": "目标文件夹名，见 kb_folders。省略=移回未分类。名不存在会失败。"
                     }
                 },
                 "required": ["id"]
@@ -319,11 +297,9 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_tag",
-            "description": "给一篇笔记加或去标签。只动点名的那几个，其它标签不受影响。\n\
-                 标签体系是用户自己的，**只能用已存在的标签**，不会自动新建。\n\
-                 ⚠ kb_folders 列的是**笔记在用的**标签，那不是「能用哪些」的完整名单\
-                 （库里可能还有只被剪贴板条目用过的标签，那些也能直接用）。\
-                 所以名字对不上时**不要断定「库里没有」**，让用户确认写法。",
+            "description": "加/去标签，只动点名的。**只能用已存在的**，不自动新建。\n\
+                 ⚠ kb_folders 列的是笔记在用的，不是完整可用名单；\
+                 名字对不上别断定没有，问用户。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -331,12 +307,12 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
                     "add": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "要加上的标签名。已有的会被忽略。"
+                        "description": "要加的标签名。已有的忽略。"
                     },
                     "remove": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "要去掉的标签名。本来没有的会被忽略。"
+                        "description": "要去的标签名。本来没有的忽略。"
                     }
                 },
                 "required": ["id"]
@@ -345,10 +321,9 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         json!({
             "name": "kb_delete",
             "description": format!(
-                "把一篇笔记**删到回收站**。{}\n\
-                 没有彻底删除的工具，也不要去找——那一步只能用户自己在界面上做。\n\
-                 ⚠ **删之前先确认用户真的要删这一篇**：拿不准就先 kb_read 把标题与\
-                 开头念给用户听，而不是根据标题像不像自己判。",
+                "把笔记**删到回收站**。{}\n\
+                 没有彻底删除的工具，那一步只能用户在界面上做。\n\
+                 ⚠ 删前确认用户真要删这篇：拿不准先 kb_read 念标题开头。",
                 trash_note(trash_days)
             ),
             "inputSchema": {
@@ -361,10 +336,8 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_restore",
-            "description": "把一篇在回收站里的笔记拿回来。删错了用它自己改回来。\n\
-                 回收站里的笔记**不会**出现在 kb_search / kb_list 的结果里：\
-                 id 从你刚才 kb_delete 的回复里拿，\
-                 或者用 kb_trash_list 列出回收站来找（上一次会话删的只能走这条路）。",
+            "description": "从回收站恢复。id 从刚 delete 的回复或 kb_trash_list 拿\
+                 （上次会话删的只能走 trash_list）。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -375,10 +348,9 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_revert",
-            "description": "把一篇笔记回滚到它的某个历史版本。先用 kb_history 拿版本号。\n\
-                 回滚**前**的内容会先另存一份历史，所以回错了能再回来。\n\
-                 ⚠ 正文会被**整篇**换成旧的那一版：用户在那之后写的东西全部不在了。\
-                 只想拿回其中一段就用 kb_history 读那一版，再用 kb_append 把那段接回去。",
+            "description": "回滚到历史版本（先 kb_history 拿 rev）。回滚前会另存当前版。\n\
+                 ⚠ 正文**整篇**换成旧版：之后用户写的内容会没。\
+                 只取一段用 history 读 + kb_append。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -390,47 +362,44 @@ pub fn definitions(trash_days: i64) -> Vec<Value> {
         }),
         json!({
             "name": "kb_summary",
-            "description": "给一篇笔记写一句摘要。\n\
-                 它会出现在 kb_search / kb_list 的结果里，所以写得好能让以后的检索便宜很多：\
-                 写**这篇解决了什么**，不要复述标题。\n\
-                 text 传空串 = 清掉摘要。",
+            "description": "写一句摘要（进 search/list 结果）。写**解决了什么**，别复述标题。\
+                 空串=清掉。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "笔记 id。" },
-                    "text": { "type": "string", "description": "摘要。一两句就好。" }
+                    "text": { "type": "string", "description": "摘要，一两句。" }
                 },
                 "required": ["id", "text"]
             }
         }),
         json!({
             "name": "kb_folder_rename",
-            "description": "给一个文件夹改名。里面的笔记不动。\n\
-                 ⚠ 文件夹结构是用户自己的组织方式，**不要主动帮他重排**；\
-                 只在他明确要求时才改。",
+            "description": "给文件夹改名，笔记不动。\
+                 🔴 只改**你自己建的**（［AI］）；用户建的别改。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "folder": {
                         "type": "string",
-                        "description": "要改名的文件夹（名字，用 kb_folders 查）。"
+                        "description": "要改名的文件夹，见 kb_folders。"
                     },
-                    "name": { "type": "string", "description": "新名字。同一父级下不能重名。" }
+                    "name": { "type": "string", "description": "新名字。同父不能重名。" }
                 },
                 "required": ["folder", "name"]
             }
         }),
         json!({
             "name": "kb_folder_dissolve",
-            "description": "解散一个文件夹：里面的笔记与子文件夹全部上提到它的父级，再删这一层。\n\
-                 **笔记一篇不删**。用它收拾建多了的空夹子或多余的层级。\n\
-                 ⚠ 同 kb_folder_rename：别主动重排用户的目录。",
+            "description": "解散文件夹：笔记与子夹升到父级，**一篇不删**。\
+                 收拾自己建多的空夹。\n\
+                 🔴 只解散**你自己建的**，用户建的不碰。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "folder": {
                         "type": "string",
-                        "description": "要解散的文件夹（名字，用 kb_folders 查）。"
+                        "description": "要解散的文件夹，见 kb_folders。"
                     }
                 },
                 "required": ["folder"]
@@ -487,7 +456,8 @@ pub(super) async fn call_folder_create(
         Ok(created) => Ok(ToolOutput {
             value: json!({ "content": [{ "type": "text", "text": format!(
                 "已在{}建好文件夹「{}」。\n\
-                 它在设置里会被标成「由 AI 创建」，用户可以一键撤销。\n\
+                 它在设置里会被标成「由 AI 创建」（kb_folders 里显示为 ［AI］），\
+                 用户可以一键撤销。\n\
                  接下来用 kb_create(folder=\"{}\") 或 kb_move 把笔记放进去。",
                 where_, created, created
             ) }] }),

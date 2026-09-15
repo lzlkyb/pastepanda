@@ -42,6 +42,21 @@ pub(super) fn https_enabled(store: &DataStore) -> bool {
         .unwrap_or(false)
 }
 
+/// 局域网直连开关。**缺省为关**。
+pub(super) fn lan_enabled(store: &DataStore) -> bool {
+    store
+        .get_config()
+        .ok()
+        .and_then(|c| c.get(mcp::CFG_LAN_ENABLED).and_then(|v| v.as_bool()))
+        .unwrap_or(false)
+}
+
+fn lan_start_opts(store: &DataStore) -> mcp::LanStartOpts {
+    mcp::LanStartOpts {
+        enabled: lan_enabled(store),
+    }
+}
+
 /// HTTPS 端口。规则同 [`configured_port`]。
 pub(super) fn configured_https_port(store: &DataStore) -> u16 {
     store
@@ -276,7 +291,14 @@ pub fn mcp_set_port(
         server.stop();
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
-        server.start(app.clone(), kb, token, port, https_opts(&app, &store))?;
+        server.start(
+            app.clone(),
+            kb,
+            token,
+            port,
+            https_opts(&app, &store),
+            lan_start_opts(&store),
+        )?;
     }
     persist_port(&store, port)?;
     Ok(server.status(port, configured_https_port(&store)))
@@ -324,7 +346,14 @@ pub fn mcp_set_enabled(
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let port = configured_port(&store);
         let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
-        server.start(app.clone(), kb, token, port, https_opts(&app, &store))?;
+        server.start(
+            app.clone(),
+            kb,
+            token,
+            port,
+            https_opts(&app, &store),
+            lan_start_opts(&store),
+        )?;
         if let Err(e) = persist_enabled(&store, true) {
             server.stop();
             return Err(format!("服务已启动但配置保存失败，已回滚到关闭：{}", e));
@@ -444,4 +473,50 @@ pub fn mcp_tls_install_ca(app: AppHandle) -> Result<mcp::tls::CaStatus, String> 
 #[tauri::command]
 pub fn mcp_tls_remove_ca(app: AppHandle) -> Result<mcp::tls::CaStatus, String> {
     mcp::tls::remove_ca(&app_dir(&app)?)
+}
+
+// ─── 局域网直连 ───
+
+fn persist_lan_enabled(store: &DataStore, enabled: bool) -> Result<(), String> {
+    let mut cfg = store.get_config().unwrap_or_default();
+    let Some(obj) = cfg.as_object_mut() else {
+        return Err("配置格式异常，无法保存局域网设置".to_string());
+    };
+    obj.insert(
+        mcp::CFG_LAN_ENABLED.to_string(),
+        serde_json::Value::Bool(enabled),
+    );
+    store.save_config(&cfg)
+}
+
+/// 开/关局域网直连。服务在跑则重启监听（127.0.0.1 ↔ 0.0.0.0 同端口，必须 rebind）。
+///
+/// 🔴 **不做 IP 白名单**：开着时凭 Bearer 令牌即可连入。
+#[tauri::command]
+pub fn mcp_set_lan_enabled(
+    app: AppHandle,
+    store: State<DataStore>,
+    server: State<McpServer>,
+    enabled: bool,
+) -> Result<McpStatus, String> {
+    persist_lan_enabled(&store, enabled)?;
+
+    if server.is_running() {
+        server.stop();
+        let token = mcp::token::load_or_create(&app_dir(&app)?)?;
+        let port = configured_port(&store);
+        let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
+        server.start(
+            app.clone(),
+            kb,
+            token,
+            port,
+            https_opts(&app, &store),
+            lan_start_opts(&store),
+        )?;
+    }
+    Ok(server.status(
+        configured_port(&store),
+        configured_https_port(&store),
+    ))
 }

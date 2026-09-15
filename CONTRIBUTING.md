@@ -16,8 +16,8 @@
   - `src/lib/` 前端纯函数与类型（`utils.ts`、`screenshot/geometry.ts` 等）
   - `src/styles/` 全局样式
   - `src-tauri/src/` Rust 后端（`commands/`、`screenshot.rs` 等）
-  - `design/` **HTML 设计稿**（UI 改动先看这里、先出稿）
-  - `docs/` 文档
+  - `design/` **HTML 设计稿**（UI 改动先看这里、先出稿；**先读 [`design/README.md`](design/README.md) 索引**——290+ 份稿子按主题分好组，并说明为什么它不标「已落地/已废弃」）
+  - `docs/` 文档（UI 规则、色彩规范、结构设计规范等规范类文档在这里，不在 `design/`）
   - `scripts/` 构建辅助脚本
 
 ---
@@ -43,6 +43,19 @@ git clone git@github.com:lzlkyb/pastepanda.git
 cd pastepanda
 npm install
 ```
+
+#### 别从 Gitee clone 源码
+
+`gitee.com/lzul/pastepanda` 是**下载镜像，不含源码**：CI 只把发版产物（安装包 / 签名 / `updater-gitee.json`）推到它的 `releases` 分支和发行版资源（见 `.github/workflows/release.yml:302-422`）。它的用途是给国内用户加速下载安装包，不是给协作者拉代码。
+
+| 仓库 | 地址 | 装的东西 | 用途 |
+|---|---|---|---|
+| GitHub（唯一源码源） | `github.com/lzlkyb/pastepanda` | 全部源码 + 完整历史 | 开发、提 PR |
+| Gitee（下载镜像） | `gitee.com/lzul/pastepanda` | 只有发版产物 | 国内用户下安装包 |
+
+注意两边 **owner 名字不同**（GitHub `lzlkyb` / Gitee `lzul`）是刻意的，不是笔误。
+
+国内网络拉 GitHub 不稳时，先按 §7 的求助顺序走，别去 Gitee 找源码。
 
 ### 2.3 两样 **不在 git 里**、clone 后必须自备的构建资产
 

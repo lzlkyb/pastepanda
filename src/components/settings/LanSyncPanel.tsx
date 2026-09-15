@@ -16,7 +16,6 @@ import styles from "../Settings.module.css";
  */
 export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void }) {
   const [devices, setDevices] = useState<PairedDevice[]>([]);
-  const [loading, setLoading] = useState(false);
   const [pairingKey, setPairingKey] = useState("");
   const [pairingInput, setPairingInput] = useState("");
   const [pairingBusy, setPairingBusy] = useState(false);
@@ -36,8 +35,10 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
   const onlineCount = devices.filter((d) => d.online).length;
 
   const wasOkRef = useRef(true);
+  /** 手动「刷新」进行中。与 5s 轮询的 loading 分开，轮询不闪按钮。 */
+  const [refreshing, setRefreshing] = useState(false);
+
   const refreshDevices = useCallback(async () => {
-    setLoading(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const [list, alive] = await Promise.all([
@@ -53,10 +54,27 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
         toast(`获取设备列表失败：${e instanceof Error ? e.message : String(e)}`, "error");
       }
       wasOkRef.current = false;
-    } finally {
-      setLoading(false);
     }
   }, [toast]);
+
+  /** 手动刷新：立刻再喊一次招呼包，再拉名单。 */
+  const refreshNow = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const poked = await invoke<boolean>("lan_poke_hello").catch(() => false);
+      await refreshDevices();
+      toast(
+        poked ? "已刷新 · 已向局域网广播本机信息" : "已刷新 · 监听未运行，无法广播",
+        poked ? "success" : "info",
+      );
+    } catch (e) {
+      logger.warn("手动刷新失败", e);
+      toast(`刷新失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshDevices, toast]);
 
   const refreshPairingKey = useCallback(async () => {
     try {
@@ -215,8 +233,13 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
             {devices.length > 0 && <span> · 记住了 {devices.length} 台</span>}
           </span>
         </div>
-        <button className={styles.lanRefreshBtn} onClick={refreshDevices} disabled={loading}>
-          {loading ? "⏳" : "🔄"} 刷新
+        <button
+          className={styles.lanRefreshBtn}
+          onClick={() => void refreshNow()}
+          disabled={refreshing}
+          title="立刻向局域网广播并拉取最新设备名单"
+        >
+          {refreshing ? "⏳ 刷新中…" : "🔄 刷新"}
         </button>
       </div>
 

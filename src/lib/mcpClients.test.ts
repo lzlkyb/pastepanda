@@ -306,3 +306,18 @@ describe("注册表自身的约束", () => {
     }
   });
 });
+
+describe("给 AI 的自配置说明", () => {
+  it("必须包含 URL、Bearer、完整 JSON 与「不要覆盖」约束", async () => {
+    const { buildMcpAiSetupPrompt, buildGenericMcpJson } = await import("./mcpClients");
+    const url = "http://10.203.5.48:17650/mcp";
+    const token = "tok-abc-123";
+    const p = buildMcpAiSetupPrompt(url, token);
+    expect(p).toContain(url);
+    expect(p).toContain(`Bearer ${token}`);
+    expect(p).toContain(buildGenericMcpJson(url, token));
+    expect(p).toContain(MCP_ENTRY_NAME);
+    expect(p).toContain("不要覆盖");
+    expect(p).toContain("备份");
+  });
+});

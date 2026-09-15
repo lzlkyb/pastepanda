@@ -9,10 +9,11 @@
 //! 中间件取自 cc-bridge 但删了压缩层（理由见 [`build_router`]）：
 //! 体上限 → 并发上限，后添加的在外层。
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::sync::{Arc, Mutex};
 
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -36,6 +37,46 @@ const BODY_LIMIT: usize = 1024 * 1024;
 /// 若它按连接各管各的，这个上限就形同虚设。
 const MAX_CONCURRENCY: usize = 64;
 
+/// 局域网直连的运行时状态。与 handler / 命令层共享同一把锁。
+#[derive(Clone)]
+pub struct LanRuntime {
+    /// 配置开关（用户意愿）。真正能不能收局域网包还看 [`Self::bound_lan`]。
+    pub enabled: bool,
+    /// 本机非回环 IPv4，用于 Host 放行与界面展示。
+    pub local_ipv4s: Vec<Ipv4Addr>,
+    /// 开着却没能绑上 `0.0.0.0` 时的原因；正常为空。规则 #15.3。
+    pub error: String,
+    /// 本次启动是否真的绑在 `0.0.0.0` 上（失败则回退 `127.0.0.1`）。
+    pub bound_lan: bool,
+}
+
+impl LanRuntime {
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            local_ipv4s: Vec::new(),
+            error: String::new(),
+            bound_lan: false,
+        }
+    }
+
+    /// 交给 `auth::check` 的门禁视图。局域网关着 → `None`。
+    pub fn auth_gate(&self) -> Option<super::auth::LanGate> {
+        if !self.enabled {
+            return None;
+        }
+        Some(super::auth::LanGate {
+            local_ipv4s: self.local_ipv4s.clone(),
+        })
+    }
+}
+
+impl Default for LanRuntime {
+    fn default() -> Self {
+        Self::disabled()
+    }
+}
+
 /// 交给 handler 的共享上下文。
 ///
 /// 数据源注入的是 `Arc<dyn KbSource>` 而**不是** `AppHandle`：
@@ -54,6 +95,8 @@ struct Ctx {
     /// 所以**重置令牌立即生效**。若靠「停服务 + 带新令牌重启」换令牌，
     /// 优雅停机还没释放旧监听时新 bind 会报端口占用——一个本可不引入的竞态。
     token: Arc<Mutex<String>>,
+    /// 局域网门禁（白名单 / 本机 IP）。与 [`McpServer`] 共享，改白名单即时生效。
+    lan: Arc<Mutex<LanRuntime>>,
 }
 
 /// 运行中的句柄。
@@ -102,6 +145,8 @@ pub struct McpServer {
     running: Mutex<Option<Running>>,
     /// 当前令牌，与正在跑的 handler 共享同一把 Arc。
     token: Arc<Mutex<String>>,
+    /// 局域网门禁，与正在跑的 handler 共享同一把 Arc。
+    lan: Arc<Mutex<LanRuntime>>,
 }
 
 /// 回给前端的状态（R7：界面上要有一条看得见的状态）。
@@ -122,6 +167,14 @@ pub struct McpStatus {
     pub https_url: String,
     /// https 没起来的原因；正常时为空串。
     pub https_error: String,
+    /// 局域网直连开关（用户配置）。
+    pub lan_enabled: bool,
+    /// 真的绑在 `0.0.0.0` 上了吗（配置开 + bind 成功）。与 `lan_enabled` 必须一起读。
+    pub lan_active: bool,
+    /// 本机非回环 IPv4，界面展示「别人该怎么连」。
+    pub lan_ips: Vec<String>,
+    /// 局域网开启却 bind 失败时的原因；正常为空串。
+    pub lan_error: String,
 }
 
 impl Default for McpServer {
@@ -135,7 +188,16 @@ impl McpServer {
         Self {
             running: Mutex::new(None),
             token: Arc::new(Mutex::new(String::new())),
+            lan: Arc::new(Mutex::new(LanRuntime::disabled())),
         }
+    }
+
+    /// 当前局域网运行时快照（状态展示 / 命令层）。
+    pub fn lan_snapshot(&self) -> LanRuntime {
+        self.lan
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| LanRuntime::disabled())
     }
 
     /// 更新令牌。服务在跑时也可调，**下一个请求就用新令牌**，无需重启。
@@ -162,6 +224,7 @@ impl McpServer {
         let running = running_ref.is_some();
         let https = running_ref.and_then(|r| r.https.as_ref());
         let https_port = https.map(|h| h.port).unwrap_or(configured_https_port);
+        let lan = self.lan_snapshot();
         McpStatus {
             running,
             port,
@@ -172,6 +235,10 @@ impl McpServer {
             https_error: running_ref
                 .map(|r| r.https_error.clone())
                 .unwrap_or_default(),
+            lan_enabled: lan.enabled,
+            lan_active: running && lan.bound_lan,
+            lan_ips: lan.local_ipv4s.iter().map(|a| a.to_string()).collect(),
+            lan_error: lan.error,
         }
     }
 
@@ -192,6 +259,8 @@ impl McpServer {
         port: u16,
         // 传 `None` = 不开 https。**默认就是不开**（参数上不能用 `///`）。
         https: Option<HttpsOpts>,
+        // 局域网直连：默认关。开着时 bind `0.0.0.0`；失败回退回环并记 `error`。
+        lan_opts: LanStartOpts,
     ) -> Result<u16, String> {
         let mut guard = self
             .running
@@ -201,22 +270,63 @@ impl McpServer {
             return Ok(r.port);
         }
 
+        let local_ipv4s = if lan_opts.enabled {
+            super::lan::local_ipv4s()
+        } else {
+            Vec::new()
+        };
+
         // 先用同步 bind，目的是把「端口被占」当场变成本函数的 Err。
         // 如果把 bind 丢进异步任务，错误就只能进日志，界面会显示「已开启」
         // 而实际什么都没启——那正是规则 #15.3 要防的静默失败。
-        let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| {
-            format!(
-                "端口 {} 无法绑定：{}。请先确认是否有其他程序（或另一个 PastePanda 实例）占用它。",
-                port, e
-            )
-        })?;
+        let (listener, bound_lan, lan_error) = if lan_opts.enabled {
+            match bind_with_retry(("0.0.0.0", port)) {
+                Ok(l) => (l, true, String::new()),
+                Err(e) => {
+                    log::warn!("[MCP] 局域网 bind 0.0.0.0:{} 失败，回退回环：{}", port, e);
+                    let l = bind_with_retry(("127.0.0.1", port)).map_err(|e2| {
+                        format!(
+                            "端口 {} 无法绑定：{}。请先确认是否有其他程序（或另一个 PastePanda 实例）占用它。",
+                            port, e2
+                        )
+                    })?;
+                    (
+                        l,
+                        false,
+                        format!("无法监听局域网（0.0.0.0:{}）：{}。本机 127.0.0.1 服务不受影响。", port, e),
+                    )
+                }
+            }
+        } else {
+            let l = bind_with_retry(("127.0.0.1", port)).map_err(|e| {
+                format!(
+                    "端口 {} 无法绑定：{}。请先确认是否有其他程序（或另一个 PastePanda 实例）占用它。",
+                    port, e
+                )
+            })?;
+            (l, false, String::new())
+        };
         listener
             .set_nonblocking(true)
             .map_err(|e| format!("监听套接字设为非阻塞失败：{}", e))?;
 
+        // 写回局域网运行时（handler 与 status 共享这一把）
+        {
+            let mut lan = self
+                .lan
+                .lock()
+                .map_err(|_| "MCP 局域网状态锁已中毒".to_string())?;
+            *lan = LanRuntime {
+                enabled: lan_opts.enabled,
+                local_ipv4s,
+                error: lan_error,
+                bound_lan,
+            };
+        }
+
         self.set_token(token)?;
         let audit = Arc::new(super::audit::AppAuditSink::new(app));
-        let router = build_router(audit, kb, self.token.clone());
+        let router = build_router(audit, kb, self.token.clone(), self.lan.clone());
         // https 要用同一套路由与中间件（三道门一样都要过）。
         // Router 是廉价克隆的，不能分两套——那就是两份安全策略了。
         let router_for_https = router.clone();
@@ -230,8 +340,18 @@ impl McpServer {
                     return;
                 }
             };
-            log::info!("[MCP] 服务已启动：http://127.0.0.1:{}/mcp", port);
-            let serve = axum::serve(listener, router).with_graceful_shutdown(async move {
+            let bind_label = if bound_lan { "0.0.0.0" } else { "127.0.0.1" };
+            log::info!(
+                "[MCP] 服务已启动：http://{}:{}/mcp（局域网 {}）",
+                bind_label,
+                port,
+                if bound_lan { "开" } else { "关" }
+            );
+            let serve = axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .with_graceful_shutdown(async move {
                 let _ = rx.await;
             });
             if let Err(e) = serve.await {
@@ -327,7 +447,42 @@ impl McpServer {
             // 接收端已掉（服务自己先挂了）时 send 会失败，那不是错误
             let _ = r.shutdown.send(());
         }
+        // 停机后局域网态回到「关」，避免 status 显示「开着」却没有任何监听。
+        // 配置里的开关还在，下次 start 会按配置重建。
+        if let Ok(mut lan) = self.lan.lock() {
+            *lan = LanRuntime::disabled();
+        }
     }
+}
+
+/// 启服务时的局域网选项。由命令层从配置读出后传入。
+pub struct LanStartOpts {
+    pub enabled: bool,
+}
+
+impl Default for LanStartOpts {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
+/// bind 带短重试：停服后立刻重启时，旧监听可能还没完全释放端口。
+fn bind_with_retry(addr: (&str, u16)) -> Result<StdTcpListener, String> {
+    let mut last = String::new();
+    for i in 0..12 {
+        match StdTcpListener::bind(addr) {
+            Ok(l) => return Ok(l),
+            Err(e) => {
+                last = e.to_string();
+                let in_use = e.kind() == std::io::ErrorKind::AddrInUse;
+                if !in_use || i == 11 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(40));
+            }
+        }
+    }
+    Err(last)
 }
 
 /// 起 https 监听。失败不抛到上层的 `Result`——调用方把它当成可选功能处理。
@@ -360,7 +515,11 @@ fn start_https(opts: &HttpsOpts, router: axum::Router) -> Result<HttpsRunning, S
             }
         };
         log::info!("[MCP] HTTPS 已启动：https://127.0.0.1:{}/mcp", port);
-        if let Err(e) = server.handle(h).serve(router.into_make_service()).await {
+        if let Err(e) = server
+            .handle(h)
+            .serve(router.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+        {
             log::error!("[MCP] HTTPS 异常退出：{}", e);
         } else {
             log::info!("[MCP] HTTPS 已停止");
@@ -375,8 +534,14 @@ pub(super) fn build_router(
     audit: Arc<dyn super::audit::AuditSink>,
     kb: Arc<dyn super::source::KbSource>,
     token: Arc<Mutex<String>>,
+    lan: Arc<Mutex<LanRuntime>>,
 ) -> Router {
-    let ctx = Ctx { audit, kb, token };
+    let ctx = Ctx {
+        audit,
+        kb,
+        token,
+        lan,
+    };
     Router::new()
         .route("/health", get(health_handler))
         .route("/mcp", post(mcp_handler))
@@ -406,7 +571,12 @@ async fn health_handler() -> impl IntoResponse {
 }
 
 /// `/mcp`：JSON-RPC 入口。
-async fn mcp_handler(State(ctx): State<Ctx>, headers: HeaderMap, body: Bytes) -> Response {
+async fn mcp_handler(
+    State(ctx): State<Ctx>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     // 每个请求取一次当前令牌（而不是启动时拷一份），这样重置立即生效。
     let expected = match ctx.token.lock() {
         Ok(g) => g.clone(),
@@ -419,10 +589,12 @@ async fn mcp_handler(State(ctx): State<Ctx>, headers: HeaderMap, body: Bytes) ->
                 .into_response();
         }
     };
-    if let Err(reject) = super::auth::check(&headers, &expected) {
+    let peer: Option<IpAddr> = Some(addr.ip());
+    let lan_gate = ctx.lan.lock().ok().and_then(|g| g.auth_gate());
+    if let Err(reject) = super::auth::check(&headers, &expected, peer, lan_gate.as_ref()) {
         // 鉴权失败写 warn：本机服务被未授权请求敲本身就是个信号。
         // 但**不把对方递交的令牌写进日志**，那等于把凭证落盘。
-        log::warn!("[MCP] 拒绝请求：{:?}", reject);
+        log::warn!("[MCP] 拒绝请求（来自 {:?}）：{:?}", peer, reject);
         return (reject.status(), Json(json!({ "error": reject.message() }))).into_response();
     }
 

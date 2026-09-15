@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "7.1.6"
+version = "7.1.7"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -164,6 +164,15 @@ windows = { version = "0.58", features = [
     "Win32_Storage_FileSystem",
     # DPAPI（CryptProtectData）：加密 AI API Key，避免它进明文的 config 表
     "Win32_Security_Cryptography",
+    # R4：DXGI Desktop Duplication + D3D11 抓帧
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    # R4：Media Foundation 硬件 H.264
+    "Win32_Media_MediaFoundation",
+    "Win32_Media",
+    "Win32_System_Com_StructuredStorage",
 ] }
 winreg = "0.52"
 

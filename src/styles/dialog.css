@@ -73,6 +73,24 @@
   color: var(--text-primary);
 }
 
+/* PromptDialog 单行输入（替代 window.prompt） */
+.prompt-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg, var(--section-bg));
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.prompt-input:focus {
+  border-color: var(--accent);
+}
+
 .dialog-close {
   width: 28px;
   height: 28px;

@@ -48,10 +48,17 @@ const MANUAL = MCP_CLIENTS.filter((c) => !canOneClick(c));
 
 export function McpConnectPanel({
   url,
+  lanUrl,
   onNeedToken,
   toast,
 }: {
+  /** 本机回环地址（一键写入本地配置**永远**用它）。 */
   url: string;
+  /**
+   * 局域网地址；局域网未开或探测不到网卡时为 `""`。
+   * 只影响「复制配置 / 复制命令」，不影响一键写入。
+   */
+  lanUrl?: string;
   /** 懒取真令牌。只在用户点复制时调。 */
   onNeedToken: () => Promise<string | null>;
   toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void;
@@ -59,6 +66,15 @@ export function McpConnectPanel({
   const [openId, setOpenId] = useState<string | null>(null);
   const [probes, setProbes] = useState<Record<string, McpClientProbe | null>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  /**
+   * 复制时用哪个地址。
+   *
+   * 🔴 **一键写入永远用本机 url**：写的是这台机器上的客户端配置，
+   *   填局域网地址会让本机客户端绕一圈还可能被防火墙拦。
+   */
+  const [copyMode, setCopyMode] = useState<"local" | "lan">("local");
+  const lanOn = !!lanUrl;
+  const copyUrl = copyMode === "lan" && lanOn ? lanUrl! : url;
 
   /** 重新探测全部可一键的客户端。 */
   const refresh = useCallback(async () => {
@@ -79,7 +95,7 @@ export function McpConnectPanel({
     void refresh();
   }, [refresh, url]);
 
-  /** 复制时才取真令牌；`build` 决定复的是 JSON 还是 CLI 命令。 */
+  /** 复制时才取真令牌；`build` 决定复的是 JSON 还是 CLI 命令。地址用 `copyUrl`。 */
   const copyFor = useCallback(
     async (
       c: McpClientDef,
@@ -88,10 +104,15 @@ export function McpConnectPanel({
     ) => {
       const t = await onNeedToken();
       if (!t) return;
-      const ok = await copyToClipboard(build(c, url, t));
-      toast(ok ? `${c.name} 的${what}已复制（含令牌）` : "复制失败", ok ? "success" : "error");
+      const ok = await copyToClipboard(build(c, copyUrl, t));
+      toast(
+        ok
+          ? `${c.name} 的${what}已复制（含令牌${lanOn && copyMode === "lan" ? " · 局域网地址" : ""}）`
+          : "复制失败",
+        ok ? "success" : "error",
+      );
     },
-    [onNeedToken, toast, url],
+    [onNeedToken, toast, copyUrl, lanOn, copyMode],
   );
 
   /** 接入：先确认，再写。 */
@@ -116,6 +137,7 @@ export function McpConnectPanel({
 
       const r = await mcpClientConnect(
         c.configPath!,
+        // 🔴 永远写本机回环地址，与 copyMode 无关
         buildMcpEntryForConnect(c, url),
         c.containerKey,
       );
@@ -217,6 +239,30 @@ export function McpConnectPanel({
         )}
       </div>
 
+      {/* 局域网开着才出现：只影响「复制」，一键写入永远本机地址。 */}
+      {lanOn && (
+        <div className={styles.mcpUrlMode}>
+          <span className={styles.mcpUrlModeLabel}>复制地址</span>
+          <button
+            type="button"
+            className={`${styles.mcpUrlModeBtn}${copyMode === "local" ? ` ${styles.mcpUrlModeOn}` : ""}`}
+            onClick={() => setCopyMode("local")}
+          >
+            本机
+          </button>
+          <button
+            type="button"
+            className={`${styles.mcpUrlModeBtn}${copyMode === "lan" ? ` ${styles.mcpUrlModeOn}` : ""}`}
+            onClick={() => setCopyMode("lan")}
+          >
+            局域网
+          </button>
+          <span className={styles.mcpHint} style={{ width: "auto", paddingLeft: 0, flex: 1 }}>
+            选「局域网」时，复制出去的配置/命令给别的机器用；一键接入仍写本机地址
+          </span>
+        </div>
+      )}
+
       {groups.connected.length > 0 && (
         <details className={styles.mcpGroup} open>
           <summary className={styles.mcpGroupSummary}>
@@ -268,22 +314,34 @@ export function McpConnectPanel({
         </details>
       )}
 
-      {/* 🔴 自定义接入永远保留：上面那份内置名单不可能穷举所有工具。 */}
+      {/* 🔴 自定义接入永远保留：上面那份内置名单不可能穷举所有工具。
+          自定义接入写的是**本机**配置文件，所以永远传本机 url。 */}
       <McpCustomConnect url={url} toast={toast} />
 
       <p className={styles.mcpGuideNote}>
         一键接入会先备份对方的配置文件，且<b>只动其中属于本软件的那一条</b>。
+        一键写入永远用本机地址；复制可选本机/局域网。
       </p>
       <p className={styles.mcpGuideNote}>
         展开后显示的是占位符 <code>{TOKEN_PLACEHOLDER}</code>，
         <b>点复制拿到的才是带真令牌的完整内容</b>。
-        服务只监听本机回环地址，同一台电脑上的客户端才连得上。
+        {lanOn
+          ? "选「局域网」时，把复制的内容粘到远程机器上即可接入。"
+          : "默认只监听本机回环地址；若要远程接入，请先在下方打开局域网访问。"}
       </p>
-      <p className={styles.mcpGuideWarn}>
-        ⚠ 别把它写进项目里的 <code>.mcp.json</code>（也就是别用
-        <code>--scope project</code>）——那个文件是提交进仓库给团队共享的，
-        <b>你的访问令牌会跟着进 git</b>。
-      </p>
+      {!lanOn && (
+        <p className={styles.mcpGuideWarn}>
+          ⚠ 别把它写进项目里的 <code>.mcp.json</code>（也就是别用
+          <code>--scope project</code>）——那个文件是提交进仓库给团队共享的，
+          <b>你的访问令牌会跟着进 git</b>。
+        </p>
+      )}
+      {lanOn && copyMode === "lan" && (
+        <p className={styles.mcpGuideWarn}>
+          ⚠ 若用 <code>--scope project</code> 复制命令，注意项目配置若会进 git，
+          <b>令牌也会跟着提交</b>。团队仓库请改用 <code>user</code> scope 或本地私有配置。
+        </p>
+      )}
     </div>
   );
 }

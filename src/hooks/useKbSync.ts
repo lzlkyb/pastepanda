@@ -127,6 +127,8 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   /** 待本机确认的敲门。空数组 = 没人在等。 */
   const [pending, setPending] = useState<KbJoinRequest[]>([]);
   const [busy, setBusy] = useState(false);
+  /** 手动「刷新」进行中。与 5s 轮询的 refreshDevices 分开，轮询不闪按钮。 */
+  const [refreshing, setRefreshing] = useState(false);
   const wasOkRef = useRef(true);
 
   const call = useCallback(async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
@@ -144,18 +146,28 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
     }
   }, [call, toast]);
 
-  const refreshDevices = useCallback(async () => {
-    try {
-      const r = await call<{
-        devices: KbDevice[]; live: string[]; last: KbLastSync[]; conflict_backlog: number;
-        pending: KbJoinRequest[];
-      }>("kb_sync_devices");
+  const applyDevices = useCallback(
+    (r: {
+      devices: KbDevice[]; live: string[]; last: KbLastSync[]; conflict_backlog: number;
+      pending: KbJoinRequest[];
+    }) => {
       setDevices(r.devices);
       setLive(r.live);
       setLast(r.last);
       setBacklog(r.conflict_backlog);
       // 后端把它搭在同一个命令里，所以不多一次往返，也不会两边快照对不上。
       setPending(r.pending ?? []);
+    },
+    [],
+  );
+
+  const refreshDevices = useCallback(async () => {
+    try {
+      const r = await call<{
+        devices: KbDevice[]; live: string[]; last: KbLastSync[]; conflict_backlog: number;
+        pending: KbJoinRequest[];
+      }>("kb_sync_devices");
+      applyDevices(r);
       wasOkRef.current = true;
     } catch (e) {
       logger.warn("读取已配对设备失败", e);
@@ -164,7 +176,36 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
       }
       wasOkRef.current = false;
     }
-  }, [call, toast]);
+  }, [applyDevices, call, toast]);
+
+  /**
+   * 手动刷新：叫醒对端 + 立刻组播本机地址，并回最新快照。
+   *
+   * 与 5s 轮询的 `refreshDevices` 分开：轮询不该闪按钮，手动点必须有反馈。
+   */
+  const refreshNow = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await call<{
+        devices: KbDevice[]; live: string[]; last: KbLastSync[]; conflict_backlog: number;
+        pending: KbJoinRequest[];
+      }>("kb_sync_refresh");
+      applyDevices(r);
+      wasOkRef.current = true;
+      const online = r.live.length;
+      toast(
+        online > 0
+          ? `已刷新 · 唤醒 ${online} 台在线设备`
+          : "已刷新 · 当前没有在线设备",
+        "success",
+      );
+    } catch (e) {
+      logger.warn("手动刷新设备失败", e);
+      toast(`刷新失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [applyDevices, call, toast]);
 
   const winVisible = useWindowVisible();
   useEffect(() => {
@@ -260,8 +301,8 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   }, [call, refreshDevices, toast]);
 
   return {
-    identity, devices, live, last, backlog, pending, busy,
-    refreshIdentity, refreshDevices,
+    identity, devices, live, last, backlog, pending, busy, refreshing,
+    refreshIdentity, refreshDevices, refreshNow,
     createInvite, previewInvite, pair, forget, setPaused, syncNow,
     approveJoin, denyJoin,
   };

@@ -48,4 +48,11 @@ src-tauri/.libclang/
 # 本地诊断 / 构建杂项（勿入库）
 .rcgen.json
 src-tauri/_rust.txt
-design/promo/hyperframes/.bin/
+
+# hyperframes 视频工程（design/promo/ 的渲染工具，~445MB 全是本地依赖）
+# 只保留依赖清单用于复现渲染环境；node_modules（361MB）与 .bin/ffmpeg.exe（87MB）不入库。
+# 注意必须写 `/*` 而不是忽略整个目录：父目录一旦被 ignore，git 就不会再进入其内部，
+# 届时 `!package.json` 不生效，依赖清单会被静默漏掉。
+design/promo/hyperframes/*
+!design/promo/hyperframes/package.json
+!design/promo/hyperframes/package-lock.json

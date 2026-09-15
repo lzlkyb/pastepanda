@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { kbHealth, healthIssueKinds, type KbHealth } from "@/lib/api/kbHealth";
+import { kbHealth, healthIssueKinds, hasUnfiledAi, type KbHealth } from "@/lib/api/kbHealth";
 import styles from "./KbHealthBar.module.css";
 
 /**
@@ -236,10 +236,33 @@ export function KbHealthBar({
             </div>
           </>)}
 
+          {/* AI 写的、还没归类的。
+              用 info 而不是 warn：这不是库坏了，是 AI 的活儿还剩一截。
+              判据走 hasUnfiledAi（门槛在那边），别在这里另写一个 `> 0`——
+              那样会出现「顶部条说只有 1 项，展开却多一行」。 */}
+          {hasUnfiledAi(health) && row("unfiled-ai", "info", <>
+            <b>AI 写了 {health.unfiled_ai_count} 篇还堆在未分类</b>
+            <div className={styles.detail}>
+              它建了夹子却没把自己写的东西收进去。下次跟它说一声让它归一下类即可
+              ——它只动自己写的，不会碰你亲手写的笔记。
+              {health.unfiled_ai.map((t) => (
+                <div key={t.id} className={styles.item}>
+                  <button type="button" className={styles.linkBtn} onClick={() => onOpenNote(t.id)}>
+                    {t.title || "（无标题）"}
+                  </button>
+                </div>
+              ))}
+              {more(health.unfiled_ai.length, health.unfiled_ai_count)}
+            </div>
+          </>)}
+
           {/* 中性统计：无 ×、无动作。「超大笔记」就落在这里而不单列一档——
               AM-2 节级命中上线后，「长」已经不影响检索了。 */}
+          {/* 未分类总数也在这里，**不是问题项**：真库上能到 96%，
+              那是「没用这个功能」。该报的只有 AI 自己写的那一半（上面那一行）。 */}
           <div className={styles.stats}>
-            {s.note_count} 篇 · 平均 {s.avg_len.toLocaleString()} 字 · 最长 {s.max_len.toLocaleString()} 字
+            {s.note_count} 篇（{s.unfiled_count} 篇未分类）
+            {" · "}平均 {s.avg_len.toLocaleString()} 字 · 最长 {s.max_len.toLocaleString()} 字
             {" · "}{s.tag_count} 个标签 · {s.link_count} 条 [[ ]] 链接
           </div>
         </>

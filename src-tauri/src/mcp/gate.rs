@@ -19,6 +19,68 @@
 //! 是即时生效的，所以「没重连」不会变成安全漏洞，只是模型会白试一次。
 
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+
+/// 权限判定要的文件夹拓扑。
+///
+/// # 为什么要带 `ai_made`
+///
+/// `WriteScope` 的白名单是**按 id 沿 parent 链上溯**的，而 AI 建的夹
+/// （`NoteFolder::source == "ai"`）**不在用户勾的名单里**。于是出现一个非对称：
+/// `kb_folder_create` 建出来的夹，`kb_folder_dissolve` / `kb_folder_rename`
+/// 解析出的是**夹子自身 id**，沿 parent 上溯到根级直接 `false`
+/// ⇒ **AI 永远管不了自己刚建的那个夹**（每整理一次就留一个收拾不了的夹子）。
+///
+/// 2026-09-15 在真库上实测到了这一格：用户勾的是「未分类」+ `design`，
+/// AI 建的夹 `parent_id = NULL, source = "ai"`，随后 `kb_folder_dissolve`
+/// 被拦下（原文：「他只开放了 2 个位置给 AI 写入」）。
+///
+/// 语义落点：**AI 可以管理自己创建的容器。** 用户手工建的一律走白名单，
+/// 一个字节都不放宽 —— 见 `test_ai_建的夹不该被白名单拦住` 那组断言。
+///
+/// # 🔴 它**只**服务于「容器自身」那条路（2026-09-15 当天修订）
+///
+/// 第一版把这条旁路也接到了「**往夹里放东西**」上（`kb_create` 的 `folder`、
+/// `kb_move` 的目标那一支），当天就在真库上撞出了逃逸：AI 先借「未分类」
+/// 那条授权在**根级**建了个夹，再把自己的 5 篇笔记搬进去 —— 全程 `ok=1`，
+/// 而那个夹从来不在用户的白名单里。三处证据（`git diff` / `mcp_audit` /
+/// 库里实际的 `folder_id`）完全对得上。
+///
+/// 根因是把「**容器**能不能动」和「**内容**能不能落在这儿」当成了同一件事。
+/// 现在两者分得很死：内容是 [`WriteScope::allows`]（严格白名单），
+/// 容器才是 [`WriteScope::allows_own`]。不分开的话白名单形同虚设 ——
+/// 它是用户唯一能表达「别写这儿」的手段。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FolderTree {
+    /// id → parent_id。
+    pub parents: HashMap<String, Option<String>>,
+    /// `source == "ai"` 的夹子 id。
+    pub ai_made: HashSet<String>,
+}
+
+impl FolderTree {
+    /// 从 `folder_list()` 的结果建。
+    ///
+    /// 收口成一个构造函数（规则 #11）：`tools::check_scope` 与
+    /// `WriteScope::with_scope_view` 都要它，各拼一份的话
+    /// 「哪边算了 `ai_made`」迟早会漂 —— 而漂的表现是权限**静默**放宽或收紧。
+    ///
+    /// `source` 只认字面 `"ai"`：`"manual"` 与（不该出现的）空串都算用户的。
+    /// 判错方向要往**严**的那边倒。
+    pub fn from_folders(folders: &[crate::data_store::NoteFolder]) -> Self {
+        Self {
+            parents: folders
+                .iter()
+                .map(|f| (f.id.clone(), f.parent_id.clone()))
+                .collect(),
+            ai_made: folders
+                .iter()
+                .filter(|f| f.source == "ai")
+                .map(|f| f.id.clone())
+                .collect(),
+        }
+    }
+}
 
 /// 写工具的权限档。一档管一个或多个工具。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -302,18 +364,93 @@ impl WriteScope {
     /// 这一篇（按它所在文件夹）可不可写。`folder` 为 `None` = 未分类。
     ///
     /// **递归**：勾了「工作」就包含它下面所有层。沿 parent 链往上逐级问。
-    /// `parent_of` 由调用方从 `folders()` 拼——取数据不在这里，权限判定全在这里。
-    pub fn allows(
-        &self,
-        folder: Option<&str>,
-        parent_of: &std::collections::HashMap<String, Option<String>>,
-    ) -> bool {
+    /// `tree` 由调用方从 `folder_list()` 建（[`FolderTree::from_folders`]）——
+    /// 取数据不在这里，权限判定全在这里。
+    ///
+    /// # 三个判定函数的分工（别用混）
+    ///
+    /// | 函数 | 回答的问题 | 用在哪 |
+    /// |---|---|---|
+    /// | 本函数 | 这篇笔记 / 这个**内容落点**在授权范围里吗 | `ByNoteId`、`ByFolderArg`、`ByFolderInside`、`BothSides` 的目标支 |
+    /// | [`Self::allows_own`] | 这个**夹子本身**能不能动 | 只给 `ByFolderOwn`（改名 / 解散）|
+    /// | `allows_by_scope`（私有）| 用户**勾**了这一行吗（含继承）| 设置页那两个字段 |
+    ///
+    /// 🔴 **`allows_own` 不得下放到任何「内容落点」上。** 混用的后果见
+    /// [`FolderTree`] 那段：AI 自建一个夹就能把授权范围外的地方变成可写。
+    /// 反过来拿本函数去判「夹子自身」则是另一个 bug：AI 收拾不了自己建的夹
+    /// （第一版就是这么修的，修出了一场逃逸）。
+    pub fn allows(&self, folder: Option<&str>, tree: &FolderTree) -> bool {
         let Some(list) = &self.0 else {
             return true; // 没配过 = 不限制
         };
         let Some(id) = folder else {
+            // 未分类这一支**不看 `ai_made`**：它问的不是「谁建的」，
+            // 而是「用户授没授权 AI 碰没归属的笔记」。两者不是一回事。
             return list.iter().any(|s| s == UNFILED);
         };
+        self.allows_by_scope(id, list, tree)
+    }
+
+    /// 同 [`Self::allows`]，但**多一条**：目标是 AI 建的夹就放行。
+    ///
+    /// # 为什么要有它（2026-09-15 在真库上实测到的 bug）
+    ///
+    /// 见 [`FolderTree`]。一句话：不加这条，`kb_folder_create` 建得出来的夹，
+    /// `kb_folder_dissolve` 删不掉 —— AI 每整理一次就留一个自己收拾不了的夹子。
+    ///
+    /// # 🔴 它**只**用于「目标是文件夹本身」的那条路
+    ///
+    /// 现在只有 `kb_folder_rename` / `kb_folder_dissolve`（`ScopeTarget::ByFolderOwn`）。
+    ///
+    /// 2026-09-15 当天第一版还把它接到了 `kb_create` 的 `folder`、`kb_move` 的
+    /// **目标夹**上 —— 理由是「那也是往自己的夹里放东西」。**那是错的**，
+    /// 当天就在真库上被利用（见 [`FolderTree`] 第二段）：AI 自建一个根级夹，
+    /// 就能把自己的东西搬进去，白名单被绕开。
+    ///
+    /// 判据很简单：**问「这个夹是谁建的」不等于问「这里能不能放内容」。**
+    /// 用户完全可能把自己写的笔记放进 AI 建的夹里 —— 反过来说，
+    /// AI 建的夹也从来不是用户授权过的内容落点。
+    ///
+    /// 🔴 `ByNoteId` 那条路同样不要用它：白名单是用户对**内容**的授权，
+    /// 而「这个夹是 AI 建的」推不出「夹里的东西都归 AI 管」。容器归容器，内容归内容。
+    pub fn allows_own(&self, folder: Option<&str>, tree: &FolderTree) -> bool {
+        if !self.is_unrestricted() {
+            if let Some(id) = folder {
+                if tree.ai_made.contains(id) {
+                    return true;
+                }
+            }
+        }
+        self.allows(folder, tree)
+    }
+
+    /// 授权范围里**可写入的文件夹**有几个（不含未分类）。
+    ///
+    /// 给 L2 信号用：`kb_folders` 那句「未分类里堆了 N 篇，用 kb_move 收进合适的
+    /// 夹子」只在**真有地方可归**时才该说。用户只勾了「未分类」时，`kb_move`
+    /// 的合法目的地只剩未分类自己（等于没搬），那句话就成了空话 ——
+    /// 而空话的下场是被忽略，还白搭一次被拒的往返。
+    ///
+    /// 用 [`FolderTree::parents`] 的键当文件夹全集：它由 `folder_list()` 收口建出，
+    /// 本来就装着每一个夹子，不必再查一次库（这个方法在一次 `kb_folders` 里被调）。
+    ///
+    /// ❗ 判据必须是 [`Self::allows`] 而不是 [`Self::allows_own`]：
+    /// 这里数的是**内容能落到哪儿**。
+    pub fn writable_folder_count(&self, tree: &FolderTree) -> usize {
+        tree.parents
+            .keys()
+            .filter(|id| self.allows(Some(id.as_str()), tree))
+            .count()
+    }
+
+    /// 只按白名单判（沿 parent 链上溯），**不含** AI 所有权旁路。
+    ///
+    /// 设置页那两个字段要用它：
+    /// - `inherited`（这一行的勾是继承来的吗）—— AI 建的夹虽能通过
+    ///   [`Self::allows`]，但那不是继承，标成继承会在界面上变成灰勾，
+    ///   用户会以为父级被勾上了；
+    /// - `covered`（已勾选的覆盖了多少篇）—— 没被勾的夹不该进这个数。
+    fn allows_by_scope(&self, id: &str, list: &[String], tree: &FolderTree) -> bool {
         let mut cur = Some(id.to_string());
         // 步数封顶：正常深度不超 MAX_FOLDER_DEPTH，多给一步容错；
         // 同时它也是环的兜底——脏数据里 parent 链成环时不能死循环。
@@ -322,7 +459,7 @@ impl WriteScope {
             if list.iter().any(|s| *s == c) {
                 return true;
             }
-            cur = parent_of.get(&c).cloned().flatten();
+            cur = tree.parents.get(&c).cloned().flatten();
         }
         false
     }
@@ -373,10 +510,7 @@ impl WriteScope {
         folders: &[crate::data_store::NoteFolder],
         unfiled: i64,
     ) -> WriteScopeView {
-        let parent_of: std::collections::HashMap<String, Option<String>> = folders
-            .iter()
-            .map(|f| (f.id.clone(), f.parent_id.clone()))
-            .collect();
+        let tree = FolderTree::from_folders(folders);
         let entries = self.allowed_entries();
         let is_checked = |id: &str| entries.iter().any(|s| s == id);
 
@@ -397,7 +531,7 @@ impl WriteScope {
                 depth: f.depth,
                 notes: f.note_count,
                 checked,
-                inherited: !checked && self.allows(Some(&f.id), &parent_of),
+                inherited: !checked && self.allows_by_scope(&f.id, entries, &tree),
             });
         }
 
@@ -415,11 +549,12 @@ impl WriteScope {
                 // 只算自己被勾且**祖先都没被勾**的（即勾中森林的根）。
                 .filter(|f| {
                     is_checked(&f.id)
-                        && !parent_of
+                        && !tree
+                            .parents
                             .get(&f.id)
                             .cloned()
                             .flatten()
-                            .is_some_and(|p| self.allows(Some(&p), &parent_of))
+                            .is_some_and(|p| self.allows_by_scope(&p, entries, &tree))
                 })
                 .map(|f| f.note_count)
                 .sum();
@@ -500,5 +635,156 @@ mod tests {
         for kind in WriteKind::ALL {
             assert!(!WriteSwitches::ALL_OFF.allowed(kind));
         }
+    }
+
+    // ===== 文件夹拓扑与 AI 所有权旁路（2026-09-15）=====
+
+    /// 造一个夹，只填权限判定用得到的字段。
+    fn folder(id: &str, parent: Option<&str>, source: &str) -> crate::data_store::NoteFolder {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "name": id,
+            "parent_id": parent,
+            "sort_order": 0,
+            "created_at": "2026-09-01 10:00:00",
+            "note_count": 0,
+            "depth": 1,
+            "source": source,
+        }))
+        .expect("造假文件夹失败（NoteFolder 的必填字段变了？）")
+    }
+
+    #[test]
+    fn test_ai_建的夹不该被白名单拦住() {
+        // 🔴 真机实测（2026-09-15）：用户勾的是「未分类」+ design，AI 借
+        //    「未分类」那条授权在**根级**建了探针夹（parent_id = NULL,
+        //    source = "ai"），随后 `kb_folder_dissolve` 被拦下 ——
+        //    原文「他只开放了 2 个位置给 AI 写入」。
+        //    非对称：**建得出来，收拾不了**。
+        let scope = WriteScope::only([UNFILED]);
+        let tree = FolderTree::from_folders(&[
+            folder("f_ai", None, "ai"),
+            folder("f_user", None, "manual"),
+            // 用户建的、挂在 AI 夹下面 —— 它不该因为父级是 AI 的就放行。
+            folder("f_user_child", Some("f_ai"), "manual"),
+        ]);
+
+        assert!(
+            scope.allows_own(Some("f_ai"), &tree),
+            "AI 建的夹应当能自己管，否则那个非对称还在"
+        );
+        assert!(
+            !scope.allows(Some("f_ai"), &tree),
+            "内容判定不跟着放开：AI 建的夹里可能有用户自己写的笔记"
+        );
+
+        assert!(!scope.allows_own(Some("f_user"), &tree), "用户建的夹不得放行");
+        assert!(!scope.allows(Some("f_user"), &tree), "同上");
+        assert!(
+            !scope.allows_own(Some("f_user_child"), &tree),
+            "用户建的子夹不因父级是 AI 建的就放行"
+        );
+    }
+
+    #[test]
+    fn test_未分类那一支与_ai_旁路无关() {
+        let scope = WriteScope::only(["f_ai"]);
+        let tree = FolderTree::from_folders(&[folder("f_ai", None, "ai")]);
+        // 勾的是夹、没勾未分类 ⇒ 未分类不可写。`ai_made` 管不着这一支。
+        assert!(!scope.allows(None, &tree));
+        assert!(!scope.allows_own(None, &tree));
+    }
+
+    #[test]
+    fn test_不限制时两条路都放行() {
+        let tree = FolderTree::from_folders(&[folder("f_user", None, "manual")]);
+        let scope = WriteScope::unrestricted();
+        assert!(scope.allows(Some("f_user"), &tree));
+        assert!(scope.allows_own(Some("f_user"), &tree));
+        assert!(scope.allows(None, &tree));
+    }
+
+    #[test]
+    fn test_ai_旁路不能污染设置页的勾与继承() {
+        // 🔴 拿 `allows`（含旁路的那套）去算界面字段，AI 建的夹会被标成
+        //    「继承来的勾」——界面上那是灰勾，用户会以为父级被勾上了。
+        //    而它其实只是「AI 能自己管」，与用户勾没勾是两回事。
+        let scope = WriteScope::only([UNFILED]);
+        let v = scope.view(&[folder("f_ai", None, "ai")], 3);
+        let row = v.rows.iter().find(|r| r.id == "f_ai").expect("少了 f_ai 那一行");
+        assert!(!row.checked, "用户没勾它");
+        assert!(!row.inherited, "AI 建的夹不是「继承来的勾」");
+        assert_eq!(v.covered, 3, "只勾了未分类，覆盖的就是那 3 篇");
+        assert_eq!(v.total, 3);
+    }
+
+    #[test]
+    fn test_空树与空范围都不炸() {
+        let tree = FolderTree::default();
+        let scope = WriteScope::only(Vec::<String>::new());
+        assert!(!scope.allows(Some("f_x"), &tree), "空树里查任何 id 都该是 false");
+        assert!(!scope.allows_own(Some("f_x"), &tree));
+        assert!(!scope.allows(None, &tree), "空范围连未分类都不给");
+        assert_eq!(scope.writable_folder_count(&tree), 0);
+    }
+
+    /// 🔴 2026-09-15 真库逃逸的直接回归：AI 借「未分类」那条授权在**根级**
+    /// 建了个夹，再把自己 5 篇笔记搬进去，全程没被拦。
+    ///
+    /// 修法不是「不让它建」（那是容器的事，见 `allows_own`），
+    /// 而是**那个夹不是内容落点** —— 白名单里没有它，就一篇也放不进去。
+    #[test]
+    fn test_ai_建在根级的夹不是内容落点() {
+        let scope = WriteScope::only([UNFILED]);
+        let tree = FolderTree::from_folders(&[
+            // 真库里那个夹：根级、AI 建的、不在白名单。
+            folder("f_ai_root", None, "ai"),
+            folder("f_user", None, "manual"),
+        ]);
+
+        assert!(
+            !scope.allows(Some("f_ai_root"), &tree),
+            "AI 建的根级夹不得成为内容落点 —— 否则自建一个夹就等于自授权"
+        );
+        // 但容器本身它管得着，这是防「建得出来删不掉」的那条（两件事不能混）。
+        assert!(scope.allows_own(Some("f_ai_root"), &tree));
+
+        // 授权夹**里面**的子夹仍然是合法落点：那是用户划的地盘内部。
+        let tree2 = FolderTree::from_folders(&[
+            folder("f_user", None, "manual"),
+            folder("f_ai_child", Some("f_user"), "ai"),
+        ]);
+        let scope2 = WriteScope::only(["f_user"]);
+        assert!(
+            scope2.allows(Some("f_ai_child"), &tree2),
+            "授权夹内部的子夹应当可写 —— 否则 AI 建完就放不进东西（空壳）"
+        );
+    }
+
+    /// L2 信号那句「收进合适的夹子」只在**真有地方可归**时才该说。
+    #[test]
+    fn test_可写夹子计数决定那句提示有没有意义() {
+        // 两层：技术（用户建的）→ 技术/Rust（AI 建的）；另一个根级夹没人勾。
+        let folders = [
+            folder("f_tech", None, "manual"),
+            folder("f_rust", Some("f_tech"), "ai"),
+            folder("f_other", None, "manual"),
+        ];
+        let tree = FolderTree::from_folders(&folders);
+
+        // 只勾「未分类」⇒ 一个可写的目的地都没有。kb_move 只能原地打转。
+        let only_unfiled = WriteScope::only([UNFILED]);
+        assert_eq!(
+            only_unfiled.writable_folder_count(&tree),
+            0,
+            "只勾未分类时不该数出可写夹子 —— 数出来了就会推一句做不到的话"
+        );
+
+        // 勾了技术 ⇒ 它自己 + 子夹 Rust，共 2。
+        let tech = WriteScope::only(["f_tech"]);
+        assert_eq!(tech.writable_folder_count(&tree), 2);
+
+        // 用户没配过 ⇒ 不限制，全部可写。
+        assert_eq!(WriteScope::unrestricted().writable_folder_count(&tree), 3);
     }
 }

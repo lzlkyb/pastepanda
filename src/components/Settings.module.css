@@ -2866,6 +2866,45 @@
   color: var(--text-muted);
 }
 
+/* 复制地址切换（本机 / 局域网）。只影响复制，一键写入永远本机。 */
+.mcpUrlMode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1px solid var(--border-color);
+}
+
+.mcpUrlModeLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.mcpUrlModeBtn {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mcpUrlModeBtn:hover { background: var(--hover); border-color: var(--accent); }
+
+.mcpUrlModeOn {
+  background: color-mix(in srgb, var(--accent) 18%, var(--card-bg));
+  border-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 /* ── 分组折叠 ──
  *
  * 🔴 分的不是「按名字排序」，是「跟你有没有关系」：

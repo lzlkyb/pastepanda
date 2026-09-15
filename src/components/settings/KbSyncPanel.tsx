@@ -7,6 +7,7 @@ import {
 import type { ToastFn } from "@/components/Toast";
 import { KbPairDialog } from "./KbPairDialog";
 import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
+import { RcSyncOffers } from "./RcSyncOffers";
 import styles from "../Settings.module.css";
 
 /**
@@ -70,8 +71,13 @@ export function KbSyncPanel({ toast }: {
           </span>
         </div>
         {s.devices.length > 0 && (
-          <button className={styles.lanRefreshBtn} onClick={() => s.refreshDevices()} disabled={s.busy}>
-            🔄 刷新
+          <button
+            className={styles.lanRefreshBtn}
+            onClick={() => void s.refreshNow()}
+            disabled={s.refreshing || s.busy}
+            title="立刻重探在线设备并拉取最新名单"
+          >
+            {s.refreshing ? "⏳ 刷新中…" : "🔄 刷新"}
           </button>
         )}
       </div>
@@ -83,6 +89,12 @@ export function KbSyncPanel({ toast }: {
       {/* 🔴 摆在最上面：它是本面板里唯一**需要用户现在就做一件事**的块。
           没人敲门时组件自己返 null，不占位。 */}
       <KbJoinRequests {...joins} />
+      {/* 远程配对 → 同步：须用户点头（方案 A 反向门） */}
+      <RcSyncOffers
+        toast={toast}
+        busy={s.busy}
+        onChanged={() => void s.refreshNow()}
+      />
 
       {s.devices.length === 0 ? (
         <>

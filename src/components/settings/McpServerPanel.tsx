@@ -17,6 +17,7 @@ import { McpScopePanel } from "./McpScopePanel";
 import { McpAiFolderPanel } from "./McpAiFolderPanel";
 import { McpAuditPanel } from "./McpAuditPanel";
 import { McpHttpsPanel } from "./McpHttpsPanel";
+import { McpLanPanel } from "./McpLanPanel";
 import styles from "../Settings.module.css";
 
 /** 令牌是 43 个字符的 base64url。遮码时只留头尾，够用户认出是哪一把。 */
@@ -108,14 +109,24 @@ export function McpServerPanel({
 
       {/* 🔴 接入放第一屏。改之前它是**最后一块且默认折叠**，上面压着
           地址/令牌/端口/写权限/调用记录五块——而用户开完服务后
-          想知道的只有一件事：怎么连上。 */}
-      <McpConnectPanel url={status.url} onNeedToken={ensureToken} toast={toast} />
+          想知道的只有一件事：怎么连上。
+          局域网开着时把 lanUrl 传进去，复制可切到远程地址。 */}
+      <McpConnectPanel
+        url={status.url}
+        lanUrl={
+          status.lanActive && status.lanIps[0] != null && status.port
+            ? `http://${status.lanIps[0]}:${status.port}/mcp`
+            : ""
+        }
+        onNeedToken={ensureToken}
+        toast={toast}
+      />
 
       {/* 剩下那五块都是「配好之后才会回来看」的，收进折叠。
           ❗ 默认收着但**不藏掉**：写权限与调用记录是安全相关的，
             找不到比多一次点击更糟。 */}
       <details className={styles.mcpAdvanced}>
-        <summary>高级：端口 · 令牌 · HTTPS · 写权限 · 调用记录</summary>
+        <summary>高级：端口 · 令牌 · HTTPS · 局域网 · 写权限 · 调用记录</summary>
 
         <McpFieldRows
           status={status}
@@ -138,6 +149,14 @@ export function McpServerPanel({
             放在端口之后、写权限之前——它回答的是「地址怎么多一条 https」。 */}
         <McpHttpsPanel
           status={status}
+          onRefresh={onRefresh}
+          toast={toast}
+        />
+
+        {/* 局域网直连：HTTPS 之后、写权限之前——先回答「谁能连进来」。 */}
+        <McpLanPanel
+          status={status}
+          onNeedToken={ensureToken}
           onRefresh={onRefresh}
           toast={toast}
         />

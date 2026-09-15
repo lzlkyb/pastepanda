@@ -48,6 +48,7 @@ mod screenshot;
 pub mod secret_registry;
 /// M6 多机同步。当前只有 P1 身份/配对层，无传输层、无界面。
 pub mod sync;
+/// 远程电脑（远程协助）。默认关；复用 sync 的 iroh 端点（双 ALPN）。
 pub mod rc;
 /// AM-8 近重复判定（纯函数）。
 pub mod similar;
@@ -340,6 +341,12 @@ pub fn run() {
                 .and_then(|p| u16::try_from(p).ok())
                 .filter(|p| *p >= 1024)
                 .unwrap_or(mcp::DEFAULT_HTTPS_PORT);
+            // 局域网直连：默认关。开着时 start 会改绑 0.0.0.0。
+            let mcp_lan_enabled = store
+                .get_config()
+                .ok()
+                .and_then(|c| c.get(mcp::CFG_LAN_ENABLED).and_then(|v| v.as_bool()))
+                .unwrap_or(false);
 
             // 读取保存的热键配置（在 store 被 manage 之前）
             let saved_config = store.get_config().unwrap_or_default();
@@ -596,8 +603,18 @@ pub fn run() {
                 } else {
                     None
                 };
-                let started = mcp::token::load_or_create(&app_dir)
-                    .and_then(|token| mcp_server.start(handle.clone(), kb, token, mcp_port, https));
+                let started = mcp::token::load_or_create(&app_dir).and_then(|token| {
+                    mcp_server.start(
+                        handle.clone(),
+                        kb,
+                        token,
+                        mcp_port,
+                        https,
+                        mcp::LanStartOpts {
+                            enabled: mcp_lan_enabled,
+                        },
+                    )
+                });
                 match started {
                     Ok(port) => {
                         log::info!("[MCP] 知识库服务已启用：http://127.0.0.1:{}/mcp", port)
@@ -620,11 +637,13 @@ pub fn run() {
             // ❗ 必须先 manage 再 boot：`boot` 里要 `try_state::<SyncService>()`。
             log::info!("[BOOT] 6 准备注册 SyncService");
             app.manage(sync::service::SyncService::new());
-            // 远程协助：全局单例；State 也放同一份。
+            // 远程协助：全局单例（sync accept 按 ALPN 路由要用）；State 也放同一份。
+            // ❗ 必须是**同一个** RcService：两份实例会让会话状态与路由各说各话。
             {
                 let rc_state = app.state::<data_store::DataStore>();
                 let rc_svc = std::sync::Arc::new(rc::RcService::new((*rc_state).clone()));
                 rc::install_global(rc_svc.clone());
+                // 状态变化 → emit，前端 Overlay / 对话框立刻跟上（流断开自清也要能看见）
                 {
                     let handle_rc = handle.clone();
                     rc_svc.set_notify(std::sync::Arc::new(move || {
@@ -764,6 +783,7 @@ pub fn run() {
             commands::get_lan_nearby,
             commands::get_lan_running,
             commands::get_lan_paired,
+            commands::lan_poke_hello,
             commands::lan_forget_device,
             commands::lan_set_device_paused,
             commands::get_lan_pair_state,
@@ -781,7 +801,10 @@ pub fn run() {
             commands::kb_sync_forget,
             commands::kb_sync_set_paused,
             commands::kb_sync_now,
-            // 远程电脑
+            commands::kb_sync_refresh,
+            commands::get_kb_sync_status,
+            commands::toggle_kb_sync,
+            // 远程电脑（R0 门禁 + R1 壳）
             commands::rc_status,
             commands::rc_identity,
             commands::rc_targets,
@@ -812,8 +835,6 @@ pub fn run() {
             commands::rc_set_capture_scope,
             commands::rc_pull_clipboard,
             commands::rc_session_history,
-            commands::get_kb_sync_status,
-            commands::toggle_kb_sync,
             commands::mcp_get_status,
             commands::mcp_get_write_switches,
             commands::mcp_get_library_blurb,
@@ -831,6 +852,7 @@ pub fn run() {
             commands::mcp_set_enabled,
             commands::mcp_set_port,
             commands::mcp_set_https_enabled,
+            commands::mcp_set_lan_enabled,
             commands::mcp_tls_ca_status,
             commands::mcp_tls_install_ca,
             commands::mcp_tls_remove_ca,

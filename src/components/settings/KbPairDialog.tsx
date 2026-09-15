@@ -52,9 +52,18 @@ export function KbPairDialog({
 }) {
   const [mode, setMode] = useState<"create" | "paste" | null>(null);
   const [clipCode, setClipCode] = useState("");
-  /** 预读完成前不渲染正文，否则会先闪一下选角色屏再跳走。 */
-  const [ready, setReady] = useState(false);
+  /** 剪贴板预读是否还在跑（只用来给一点提示，**不再挡正文**）。 */
+  const [clipChecking, setClipChecking] = useState(true);
 
+  /**
+   * 剪贴板预读：**不挡正文**。
+   *
+   * 🔴 改前这里 `ready` 没到就把 body 渲成空壳，而预读要等
+   *   `readClipboardText` IPC，剪贴板里若像邀请码还要再 `onPreview`
+   *   （验签）——弹框能空 2 秒以上（2026-09-15 实报）。
+   * 现在立刻出选角色屏；预读完成后若是**别人的**邀请码再跳进粘贴流，
+   * 自己的码继续留在选角色屏。
+   */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -70,18 +79,14 @@ export function KbPairDialog({
           //   生成邀请码时会自动复制到剪贴板（见 KbPairCreate.handleCreate），
           //   所以「生成完 → 关掉 → 再点添加设备想加第三台」时，
           //   预读到的就是自己刚才那串。
-          //   以前直接跳进粘贴流程，等 PasteFlow 里 preview 回来才报
-          //   「这是本机自己的邀请码」——用户本意是添加设备，却被一个
-          //   错误页接住了（2026-09-06 真实反馈）。判断得提到**跳转之前**。
           try {
             const inv = await onPreview(t);
             if (!alive) return;
             if (inv.node_id !== myNodeId) {
               setClipCode(t);
-              setMode("paste");
+              setMode((m) => (m === null ? "paste" : m));
             }
-            // 是自己的码 → 当作没读到，静默落到选角色屏。
-            // 不提示：用户点的是「添加设备」，不是来看一条关于剪贴板的报告。
+            // 是自己的码 → 当作没读到，留在选角色屏。
           } catch {
             // 解不开（过期 / 残缺 / 签名不对）仍然跳进去：
             // 那是一串**长得就像邀请码**的东西，PasteFlow 里会把后端的
@@ -89,22 +94,18 @@ export function KbPairDialog({
             // 比静默回退有用得多（规则 #15.3）。
             if (alive) {
               setClipCode(t);
-              setMode("paste");
+              setMode((m) => (m === null ? "paste" : m));
             }
           }
         }
       } catch {
-        // 读不到剪贴板也静默：用户并没有请求这件事，降级到选角色屏即可。
-        // （他主动点「读取剪贴板」时失败是要报的，见 `PasteFlow.readClip`）
+        // 读不到剪贴板也静默：用户并没有请求这件事，留在选角色屏即可。
       }
-      if (alive) setReady(true);
+      if (alive) setClipChecking(false);
     })();
     return () => { alive = false; };
     // ❗ 故意只跑一次，不把 `onPreview` / `myNodeId` 写进依赖：
     //   这是「弹窗打开那一刻预读一次剪贴板」，不是一个跟着 props 走的订阅。
-    //   `onPreview` 来自父层，它一旦不是稳定引用，写进去就会变成
-    //   **每次重渲染都重读一遍剪贴板**——而读剪贴板正是本文件头部
-    //   反复强调要有分寸的那件事。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -145,16 +146,24 @@ export function KbPairDialog({
           <button onClick={onClose} className="dialog-close"><X size={16} /></button>
         </div>
 
-        {!ready ? (
-          <div className="dialog-body" style={{ minHeight: 120 }} />
-        ) : mode === "create" ? (
+        {mode === "create" ? (
           <CreateFlow defaultName={defaultName} myFingerprint={myFingerprint} devices={devices}
             joins={joins} onCreateInvite={onCreateInvite} onClose={onClose} toast={toast} />
         ) : mode === "paste" ? (
           <PasteFlow initialCode={clipCode} selfNodeId={myNodeId} onPreview={onPreview} onPair={onPair}
             onClose={onClose} toast={toast} />
         ) : (
-          <RolePick onPick={setMode} />
+          <>
+            <RolePick onPick={setMode} />
+            {/* 预读还在跑时给一行提示，避免用户以为卡住；不挡操作。 */}
+            {clipChecking && (
+              <div className="dialog-footer" style={{ justifyContent: "center", paddingTop: 0 }}>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  正在检查剪贴板是否已有邀请码…
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
       </FocusTrap>

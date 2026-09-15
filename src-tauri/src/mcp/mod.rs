@@ -20,7 +20,11 @@
 pub mod auth;
 pub mod blurb;
 pub mod gate;
+/// 局域网直连：白名单 + 本机网卡（默认关）。
+pub mod lan;
 pub mod protocol;
+/// 「库的脉搏」：搭在模型必经之路上的该写/该整理信号（L2）。
+pub mod pulse;
 pub mod audit;
 pub mod server;
 pub mod source;
@@ -32,7 +36,7 @@ pub mod tools;
 #[cfg(test)]
 mod tests;
 
-pub use server::{HttpsOpts, McpServer, McpStatus, DEFAULT_PORT};
+pub use server::{HttpsOpts, LanStartOpts, McpServer, McpStatus, DEFAULT_PORT};
 
 /// 配置项：是否开启 MCP 服务。存在 `config` 表（开关不是秘密，令牌才是）。
 pub const CFG_ENABLED: &str = "mcp_server_enabled";
@@ -53,6 +57,12 @@ pub const CFG_HTTPS_PORT: &str = "mcp_https_port";
 /// HTTPS 的默认端口。刻意选了一个跟 [`DEFAULT_PORT`] 不相邻的值：
 /// 两个监听同时存在，用户改了其中一个时不应该轻易撞上另一个。
 pub const DEFAULT_HTTPS_PORT: u16 = 17660;
+
+/// 配置项：是否允许局域网机器连入 MCP。**默认关**。
+///
+/// 打开后监听改为 `0.0.0.0`（覆盖回环 + 局域网），仍要 Bearer 令牌。
+/// **不做 IP 白名单**（2026-09-15 拍板）：有令牌就够了。
+pub const CFG_LAN_ENABLED: &str = "mcp_lan_enabled";
 
 // 没有「写能力一次性告知」那个配置项：本功能上线前项目尚未发版，
 // 不存在「当初基于只读承诺开过服务」的老用户。无人可告的告知只会误发。

@@ -24,6 +24,11 @@ struct FakeKb {
     /// 不真改 `notes`：本模块要钉的是 **MCP 层**（参数解析、门控、输出形状），
     /// 真写入行为由 `data_store::tests` 盖。而“到没到达数据层”恰好是门控的断言点。
     writes: std::sync::Mutex<Vec<(String, String, String)>>,
+    /// L2 信号（`pulse.rs`）。
+    ///
+    /// ❗ 默认是 `Default`（什么都不说）——否则每一条拿 `kb_folders` 全文
+    /// 做断言的老测试都会被那两句提示污染。要验它时才用 `with_pulse`。
+    pulse: super::pulse::LibraryPulse,
 }
 
 impl FakeKb {
@@ -75,6 +80,30 @@ impl FakeKb {
             ],
             switches,
             writes: std::sync::Mutex::new(Vec::new()),
+            pulse: Default::default(),
+        }
+    }
+
+    /// 造一个**会触发 L2 两条信号**的假源。`kb_folders` 的返回值里应出现它们。
+    ///
+    /// 天数走 `chrono` 现算而不是写死 epoch：`call_folders` 传的是**当下**时间，
+    /// 写死的毫秒数会随着时间流逝慢慢漂出阈值，测试就变成一颗定时炸弹。
+    fn with_pulse() -> Self {
+        Self::with_pulse_and_switches(super::gate::WriteSwitches::ALL_ON)
+    }
+
+    /// 同上，但开关由调用方给——用来钉「移动档关着时不推信号」那一支。
+    fn with_pulse_and_switches(switches: super::gate::WriteSwitches) -> Self {
+        let four_days_ago_ms =
+            chrono::Local::now().timestamp_millis() - 4 * 86_400_000;
+        Self {
+            pulse: super::pulse::LibraryPulse {
+                unfiled: 6,
+                last_ai_ms: Some(four_days_ago_ms),
+                // 有笔记：冷启动只看 `last_ai_ms == None`，这里不会触发。
+                total: 12,
+            },
+            ..Self::with_switches(switches)
         }
     }
 
@@ -331,10 +360,14 @@ impl super::source::KbSource for FakeKb {
             "note_count": 3, "depth": 1,
         }))
         .expect("造假文件夹失败");
+        // ❗ 子夹标成 `"ai"`：这样一次调用里**两种 source 都在**，
+        // 「只给 ai 打标记、manual 不打」这条规则才有断言可钉。
+        // 不写 source 时靠 `#[serde(default)]` 落成 `"manual"`（f1 就是这条路径）。
         let f2 = serde_json::from_value(json!({
             "id": "f2", "name": "Rust", "parent_id": "f1",
             "sort_order": 0, "created_at": "2026-09-01 10:00:00",
             "note_count": 1, "depth": 2,
+            "source": "ai",
         }))
         .expect("造假子文件夹失败");
         Ok(vec![f1, f2])
@@ -348,6 +381,10 @@ impl super::source::KbSource for FakeKb {
         // 本方法现在的语义是「笔记用到的标签」，这里仍然造这一组，
         // 为的是钉住「真有重名时 kb_folders 要报」这一支。
         Ok(vec!["Java".into(), "java".into(), "rust".into()])
+    }
+
+    fn library_pulse(&self) -> Result<super::pulse::LibraryPulse, String> {
+        Ok(self.pulse)
     }
 
     fn create(
@@ -558,15 +595,10 @@ impl super::source::KbSource for FakeKb {
         Ok((2, 1))
     }
 
-    fn folder_parents(
-        &self,
-    ) -> Result<std::collections::HashMap<String, Option<String>>, String> {
-        // 走 `folders()` 而不另写一份：两处对不上的话，递归那条测试会假绿。
-        Ok(self
-            .folders()?
-            .into_iter()
-            .map(|f| (f.id, f.parent_id))
-            .collect())
+    fn folder_tree(&self) -> Result<super::gate::FolderTree, String> {
+        // 走 `folders()` 而不另写一份（收口）：两处对不上的话，
+        // 递归那条测试与「AI 建的夹放行」那条都会假绿。
+        Ok(super::gate::FolderTree::from_folders(&self.folders()?))
     }
 
     // 🔴 故意不是 30：它钉住 `kb_delete` 的描述拿的确实是这个值，
@@ -575,7 +607,7 @@ impl super::source::KbSource for FakeKb {
         7
     }
 
-    fn trash_list(&self, _limit: u32) -> Result<Vec<crate::data_store::Note>, String> {
+    fn trash_list(&self, _limit: u32, _offset: u32) -> Result<Vec<crate::data_store::Note>, String> {
         Ok(vec![fake_note("d1", "删掉的会议纪要", "上周的会议记录。")])
     }
 }
@@ -639,6 +671,13 @@ async fn spawn_server_with_scope(
     (base, fake)
 }
 
+/// 带 L2 信号起服务（`pulse.rs`）。开关全开、范围不限——
+/// 这样出现的一定是信号而不是门控在说话。
+async fn spawn_server_with_pulse() -> (String, std::sync::Arc<FakeKb>) {
+    let (base, fake, _) = spawn_from(FakeKb::with_pulse()).await;
+    (base, fake)
+}
+
 /// 起服务的**真正单一实现**（规则 #11）。上面几个入口全走它。
 async fn spawn_from(
     fake: FakeKb,
@@ -648,13 +687,17 @@ async fn spawn_from(
     let kb: std::sync::Arc<dyn super::source::KbSource> = fake.clone();
     let recorder = std::sync::Arc::new(RecordingAudit::default());
     let audit: std::sync::Arc<dyn super::audit::AuditSink> = recorder.clone();
-    let router = super::server::build_router(audit, kb, token);
+    let router = super::server::build_router(audit, kb, token, Default::default());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("绑定随机端口失败");
     let port = listener.local_addr().expect("取本地地址失败").port();
     tokio::spawn(async move {
-        let _ = axum::serve(listener, router).await;
+        let _ = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await;
     });
     (format!("http://127.0.0.1:{}", port), fake, recorder)
 }
@@ -664,13 +707,17 @@ async fn spawn_server_with_audit() -> (String, std::sync::Arc<RecordingAudit>) {
     let kb: std::sync::Arc<dyn super::source::KbSource> = std::sync::Arc::new(FakeKb::new());
     let recorder = std::sync::Arc::new(RecordingAudit::default());
     let audit: std::sync::Arc<dyn super::audit::AuditSink> = recorder.clone();
-    let router = super::server::build_router(audit, kb, token);
+    let router = super::server::build_router(audit, kb, token, Default::default());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("绑定随机端口失败");
     let port = listener.local_addr().expect("取本地地址失败").port();
     tokio::spawn(async move {
-        let _ = axum::serve(listener, router).await;
+        let _ = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await;
     });
     (format!("http://127.0.0.1:{}", port), recorder)
 }
@@ -1063,7 +1110,7 @@ async fn test_scope_explicitly_empty_is_not_unlimited() {
 #[tokio::test]
 async fn test_scope_covers_descendants() {
     // 勾了父夹 f1 ⇒ 子夹 f2 里的 n1 也能写（递归）。
-    // 这一条靠的是 `folder_parents()` 真的被沿着走了，而不是只比一层。
+    // 这一条靠的是 `folder_tree()` 真的被沿着走了，而不是只比一层。
     let (base, _) = spawn_server_with_scope(super::gate::WriteScope::only(["f1"])).await;
     let (t1, e1) = call_text(&base, "kb_delete", json!({ "id": "n1" })).await;
     assert!(!e1, "子夹里的笔记应该被父夹的授权盖住：{}", t1);
@@ -1095,6 +1142,144 @@ async fn test_scope_unfiled_is_its_own_entry() {
     )
     .await;
     assert!(!ec, "勾了未分类，不带 folder 的新建就该放行：{}", tc);
+}
+
+#[tokio::test]
+async fn test_ai_建的夹能被自己收拾掉() {
+    // 🔴 真机那个非对称（2026-09-15）：用户勾的是「未分类」+ design，
+    //    AI 借「未分类」那条授权在**根级**建了夹，随后却删不掉 ——
+    //    原文「他只开放了 2 个位置给 AI 写入」。修法 = 目标是 AI 建的夹时放行。
+    //
+    // 假源里 `Rust`（f2）的 `source` 是 `"ai"`，`技术`（f1）是 manual。
+    let (base, fake) = spawn_server_with_scope(super::gate::WriteScope::only([
+        super::gate::UNFILED,
+    ]))
+    .await;
+    let (text, is_err) = call_text(&base, "kb_folder_dissolve", json!({ "folder": "Rust" })).await;
+    assert!(!is_err, "AI 建的夹应当能自己解散：{}", text);
+    assert!(
+        fake.writes()
+            .iter()
+            .any(|(m, t, _)| m == "folder_dissolve" && t == "Rust"),
+        "放行了却没到达数据层"
+    );
+}
+
+#[tokio::test]
+async fn test_用户建的夹一个字节都不放宽() {
+    // 边界：旁路只给 AI 自己建的夹。用户手工建的照旧走白名单 ——
+    // 「用户勾了未分类」不等于「AI 可以在他的组织里随便动」。
+    let (base, fake) = spawn_server_with_scope(super::gate::WriteScope::only([
+        super::gate::UNFILED,
+    ]))
+    .await;
+    let (text, is_err) = call_text(&base, "kb_folder_dissolve", json!({ "folder": "技术" })).await;
+    assert!(is_err, "用户建的夹被放行了：{}", text);
+    assert!(
+        fake.writes().is_empty(),
+        "被拦的调用绝不能到达数据层"
+    );
+}
+
+#[tokio::test]
+async fn test_ai_自建的夹不是内容落点() {
+    // 🔴 2026-09-15 真库逃逸的回归。当时那条链路是：
+    //    ① AI 借「未分类」那条授权在**根级**建了个夹（`kb_folder_create` 省略 `parent`）；
+    //    ② 再把自己的 5 篇笔记搬进去 —— `kb_move` 的目标那一支当时走 `allows_own`，
+    //       而那个夹 `source == "ai"` ⇒ 旁路放行。**两次调用全部 `ok=1`**，
+    //       而那个夹从来不在用户的白名单里。
+    //
+    //    根因是把「这个夹是谁建的」当成了「这里能不能放内容」。
+    //    假源里的 `Rust`（f2）正好是那个形状：`source == "ai"`、父夹 `技术`（f1）
+    //    是用户建的、两个都不在白名单里（这里只勾了「未分类」）。
+    let (base, fake) =
+        spawn_server_with_scope(super::gate::WriteScope::only([super::gate::UNFILED])).await;
+
+    // ① 搬进去 ⇒ 拒。
+    let (t1, e1) = call_text(&base, "kb_move", json!({ "id": "n3", "folder": "Rust" })).await;
+    assert!(
+        e1,
+        "AI 自建的夹被当成了内容落点（白名单能靠自建夹绕过）：{}",
+        t1
+    );
+
+    // ② 直接往那儿新建笔记 ⇒ 同样拒。与 ① 是同一根轴的另外半边。
+    let (t2, e2) = call_text(
+        &base,
+        "kb_create",
+        json!({ "title": "x", "content": "y", "folder": "Rust" }),
+    )
+    .await;
+    assert!(e2, "kb_create 那一半没堵上：{}", t2);
+
+    // ③ 但**容器本身**它管得着 —— 两条路不能一起收紧，
+    //    否则「建得出来、删不掉」那个非对称又回来了。
+    let (t3, e3) = call_text(&base, "kb_folder_dissolve", json!({ "folder": "Rust" })).await;
+    assert!(!e3, "AI 连自己建的夹都收拾不了：{}", t3);
+
+    // 除第③步外一字节都没落到数据层。
+    assert_eq!(
+        fake.writes().len(),
+        1,
+        "只应有第③步到达数据层，实得 {:?}",
+        fake.writes()
+    );
+}
+
+#[tokio::test]
+async fn test_建子夹必须落在已授权的父夹里面() {
+    // 逃逸的第一步就是「在顶层开一个新地盘」，而它当时是**允许**的：
+    // `kb_folder_create` 省略 `parent` ⇒ 目标 `None` ⇒ 走「未分类」那条授权。
+    // 但未分类那条授权管的是「没归属的**笔记**能不能动」，
+    // 不是「能不能在知识库顶层新建容器」。
+    let (base, _) =
+        spawn_server_with_scope(super::gate::WriteScope::only([super::gate::UNFILED])).await;
+
+    // ① 省略 parent ⇒ 拒，且要说清缺什么、怎么办。
+    let (t1, e1) = call_text(&base, "kb_folder_create", json!({ "name": "新地盘" })).await;
+    assert!(e1, "省略 parent 时不该能建夹：{}", t1);
+    assert!(t1.contains("parent"), "报错要指明是哪个参数：{}", t1);
+    assert!(t1.contains("可写入的范围"), "没给出怎么解决：{}", t1);
+
+    // ② 父夹在范围外 ⇒ 也拒。
+    let (t2, e2) = call_text(
+        &base,
+        "kb_folder_create",
+        json!({ "name": "新夹子", "parent": "技术" }),
+    )
+    .await;
+    assert!(e2, "范围外的父夹不该能建子夹：{}", t2);
+
+    // ③ 父夹在授权范围内 ⇒ 放行。别把它一路收紧到不可用 ——
+    //    授权范围内建子夹是 AI 整理未分类笔记的**唯一**合法扩张方式。
+    let (base2, fake2) = spawn_server_with_scope(super::gate::WriteScope::only(["f1"])).await;
+    let (t3, e3) = call_text(
+        &base2,
+        "kb_folder_create",
+        json!({ "name": "新夹子", "parent": "技术" }),
+    )
+    .await;
+    assert!(!e3, "授权夹内部建子夹被拒了 —— 收紧过头：{}", t3);
+    assert_eq!(fake2.writes().len(), 1, "放行了却没到达数据层");
+}
+
+#[tokio::test]
+async fn test_授权范围里没有可写夹子时_kb_folders_不推该整理的话() {
+    // 🔴 收紧范围闸之后**新出现**的一种形态：用户只勾了「未分类」。
+    //    这时 `kb_move` 唯一合法的目的地就是未分类自己（等于原地不动），
+    //    而 L2 信号还在喊「收进合适的夹子」—— 那是空话，还会赔上一次被拒的往返。
+    //
+    //    以前不会露出来：AI 可以自建一个夹再搬进去，「有地方可归」看着总成立。
+    let fake = FakeKb {
+        scope: super::gate::WriteScope::only([super::gate::UNFILED]),
+        ..FakeKb::with_pulse()
+    };
+    let (base, _fake, _) = spawn_from(fake).await;
+    let (text, _) = call_text(&base, "kb_folders", json!({})).await;
+
+    assert!(!text.contains("未分类里堆了"), "叫它搬去一个不存在的地方：{}", text);
+    // 另一条信号与「有没有地方可归」无关，不该被连坐。
+    assert!(text.contains("天没有新东西"), "被连坐掉了：{}", text);
 }
 
 #[tokio::test]
@@ -1285,18 +1470,19 @@ async fn test_kb_search_distinguishes_two_kinds_of_empty() {
     assert!(no_terms.contains("没有可检索的词"), "{}", no_terms);
     assert_ne!(no_terms, miss, "两种空结果的文案不得相同");
 
-    // 🔴 取词口径从工具描述搬到了这里——**两条零命中路径都得带**。
-    //    它是模型从「搜不到」走向「换个问法再试」的全部依据；
-    //    少了它，模型就只能告诉用户「你库里没记过」——一个比报错更坏的错答案。
-    //    而描述那一侧有一条反向断言盯着它别被搬回去。
-    for (场景, 文本) in [("搜了但没命中", &miss), ("没拆出词", &no_terms)] {
-        assert!(
-            文本.contains("单个汉字") && 文本.contains("取词口径"),
-            "{} 时没告诉模型拆词规则，它无从知道该怎么重试：{}",
-            场景,
-            文本
-        );
-    }
+    // 🔴 完整取词口径只挂在「词本身拆不出来」（NoSearchableTerms）上——
+    //    那条路径模型别无选择，只能读完才能重试。
+    //    NoMatch 只给短提示：关键词多半写偏了，不必再付 250 多字。
+    assert!(
+        no_terms.contains("单个汉字") && no_terms.contains("取词口径"),
+        "没拆出词时没告诉模型拆词规则，它无从知道该怎么重试：{}",
+        no_terms
+    );
+    assert!(
+        !miss.contains("单个汉字"),
+        "NoMatch 不该再带完整取词口径（那是 NoSearchableTerms 的事）：{}",
+        miss
+    );
 }
 
 #[tokio::test]
@@ -1677,7 +1863,175 @@ async fn test_叶子文件夹不能说含子文件夹() {
     let (text, _) = call_text(&base, "kb_folders", json!({})).await;
     // 技术真有子节点 Rust，该说；Rust 是叶子，不该说。
     assert!(text.contains("技术（3 篇，含子文件夹里的）"), "有子节点的该说：{}", text);
-    assert!(text.contains("Rust（1 篇）"), "叶子文件夹不该带后缀：{}", text);
+    // ❗ `Rust` 这个夹在假源里是 AI 建的，所以行尾带`［AI］`——断言要跟上标记。
+    assert!(
+        text.contains("Rust（1 篇）［AI］"),
+        "叶子文件夹不该带后缀：{}",
+        text
+    );
+}
+
+#[tokio::test]
+async fn test_kb_folders_只给AI建的夹打标记() {
+    // 🔴 不暴露 `source` 的后果：AI 建完文件夹，下次 kb_folders 列出来自己认不出来，
+    //    于是无法区分「这是我上次建的、动它风险低」和「这是用户的组织结构、别乱碰」。
+    //
+    // ❗ 两种 source 必须同时在场才能钉住「只给 ai 打」——
+    //    只造 ai 夹的话，把全部文件夹都打上标记的写法一样能过。
+    //    假源里：技术 = manual（JSON 里没写 source，走 serde default），Rust = ai。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_folders", json!({})).await;
+    assert!(!is_err, "{}", text);
+
+    assert!(
+        text.contains("- Rust（1 篇）［AI］"),
+        "AI 建的夹必须带标记，否则模型认不出自己的产物：{}",
+        text
+    );
+    assert!(
+        !text.contains("- 技术（3 篇，含子文件夹里的）［AI］"),
+        "用户自己建的夹不得带标记（那是默认态，全打等于白花字节）：{}",
+        text
+    );
+    assert!(!text.contains("［AI］［AI］"), "标记只该出现一次：{}", text);
+}
+
+#[tokio::test]
+async fn test_kb_folders_在必经之路上把该整理该回写的信号说出来() {
+    // 起因（2026-09-15 读 `mcp_audit`）：真实客户端 14 天只有两次会话开局
+    // 来过这里（`kb_folders` + `kb_list`，相隔 0–9 秒），此后整场不碰，写入 0 次。
+    // **判据不缺，缺的是触发** —— 所以信号搭在它必经的这一步上。
+    let (base, _fake) = spawn_server_with_pulse().await;
+    let (text, is_err) = call_text(&base, "kb_folders", json!({})).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("未分类里堆了 6 篇"), "没提示堆积：{}", text);
+    assert!(text.contains("天没有新东西"), "没提示久未回写：{}", text);
+    // 🔴 边界必须跟着提示一起出现：未分类里完全可能有用户自己写的笔记，
+    //    而模型的默认理解会是「这一堆都归我管」。
+    assert!(
+        text.contains("只动你自己写的"),
+        "没写边界，模型会去动用户的东西：{}",
+        text
+    );
+}
+
+#[tokio::test]
+async fn test_开关全关时_kb_folders_不推那两条信号() {
+    // 推「你该去归类」而模型根本归不了，是叫它做一件做不到的事。
+    //
+    // ❗ 这条用 `ALL_OFF` 只钉「全关」。**两条信号各有各的闸门**，
+    //    单独关掉一档会连坐另一条的那种错由 `pulse.rs` 的两条单测钉住：
+    //    「关了移动」不该连坐久未回写，「关了新建」不该连坐归类提示。
+    let (base, _, _) = spawn_from(FakeKb::with_pulse_and_switches(
+        super::gate::WriteSwitches::ALL_OFF,
+    ))
+    .await;
+    let (text, _) = call_text(&base, "kb_folders", json!({})).await;
+    assert!(
+        !text.contains("未分类里堆了"),
+        "开关关着还推该整理的话：{}",
+        text
+    );
+    assert!(!text.contains("天没有新东西"), "同上：{}", text);
+    // 只读工具本身照常工作——拦的是那两句话，不是这个工具。
+    assert!(text.contains("文件夹"), "{}", text);
+}
+
+/// 🔴 冷启动：库里有笔记、AI 从没写过 —— 审计里最大的空洞。
+///
+/// 原先 `last_ai_ms == None` 整段沉默，模型摸底完就走，写入永远是 0。
+/// 这条与「久未回写」互斥：从没写过时说「N 天没写」是假话。
+#[tokio::test]
+async fn test_kb_folders_有笔记但ai从没写过时推冷启动() {
+    let cold = FakeKb {
+        pulse: super::pulse::LibraryPulse {
+            unfiled: 2,
+            last_ai_ms: None,
+            total: 8,
+        },
+        ..FakeKb::new()
+    };
+    let (base, _fake, _) = spawn_from(cold).await;
+    let (text, is_err) = call_text(&base, "kb_folders", json!({})).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("还没有 AI 写入过"), "没推冷启动：{}", text);
+    assert!(text.contains("8 篇笔记"), "{}", text);
+    assert!(text.contains("当轮就"), "{}", text);
+    assert!(text.contains("用户不会提醒你"), "{}", text);
+    assert!(!text.contains("天没有新东西"), "从没写过不该说成 N 天没写：{}", text);
+}
+
+#[tokio::test]
+async fn test_kb_folders_描述里说明了标记与标签报错的行为() {
+    // 描述是模型唯一的静态依据：标记的含义（可撤销、别重排）和
+    // 「标签名写错时去哪拿候选」都必须在里面，否则模型只会当成噪声字符。
+    //
+    // `trash_days` 随便给个数：本测试只读 `kb_folders` 的描述，
+    // 它与保留期无关（那个值只影响 `kb_delete` 的文案）。
+    let defs = super::tools::definitions(&super::gate::WriteSwitches::ALL_ON, 30);
+    let kb_folders = defs
+        .iter()
+        .find(|d| d["name"] == "kb_folders")
+        .expect("kb_folders 不在工具表里");
+    let desc = kb_folders["description"]
+        .as_str()
+        .expect("description 不是字符串");
+
+    assert!(
+        desc.contains("［AI］") && desc.contains("由 AI 创建"),
+        "标记的含义必须写进描述，否则它只是个看不懂的字符：{}",
+        desc
+    );
+    assert!(
+        desc.contains("报错") && desc.contains("列全"),
+        "必须告诉模型「写错标签时报错里有候选」，它才知道不必预先猜：{}",
+        desc
+    );
+}
+
+/// 🔴 `kb_folders` 印的是 `［AI］`，而 `kb_folder_create` 许诺的是「由 AI 创建」——
+/// 同一个事实两种叫法。不把映射说出来的话，模型在 `kb_folder_create` 里被许诺一件事、
+/// 下一步去 `kb_folders` 看到另一串字符，**没有任何依据认定这是同一件事**。
+///
+/// ❗ 返回路径比描述更关键：建夹的**那一刻**正是它最需要建立这个映射的时候。
+#[tokio::test]
+async fn test_建夹的返回要说清标记在_kb_folders_里长什么样() {
+    let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    let (text, is_err) = call_text(
+        &base,
+        "kb_folder_create",
+        json!({ "name": "新夹子", "parent": "技术" }),
+    )
+    .await;
+    assert!(!is_err, "{}", text);
+
+    assert!(
+        text.contains("由 AI 创建"),
+        "得说清这个夹会被标成什么（用户会在设置里看到）：{}",
+        text
+    );
+    assert!(
+        text.contains("［AI］") && text.contains("kb_folders"),
+        "必须点明「在 kb_folders 里显示为 ［AI］」，否则模型认不出自己的产物：{}",
+        text
+    );
+}
+
+/// 描述侧同样要带上映射——有客户端会缓存工具表，模型未必每次都能读到返回。
+#[test]
+fn test_建夹的描述也带上标记映射() {
+    let defs = super::tools::definitions(&super::gate::WriteSwitches::ALL_ON, 30);
+    let d = defs
+        .iter()
+        .find(|d| d["name"] == "kb_folder_create")
+        .expect("kb_folder_create 不在工具表里");
+    let desc = d["description"].as_str().expect("description 不是字符串");
+
+    assert!(
+        desc.contains("由 AI 创建") && desc.contains("［AI］"),
+        "描述里也要把两种叫法对上，否则模型仍会当成两件事：{}",
+        desc
+    );
 }
 
 #[tokio::test]

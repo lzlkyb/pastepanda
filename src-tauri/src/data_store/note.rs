@@ -1357,12 +1357,17 @@ impl DataStore {
     ///
     /// LEFT JOIN 而不是 INNER：大部分笔记没有 `history_id`，INNER 会把它们全滤掉。
     pub fn note_list_deleted(&self, limit: u32) -> Result<Vec<Note>, String> {
+        self.note_list_deleted_paged(limit, 0)
+    }
+
+    /// 回收站列表（分页）。`offset` 用于 `kb_trash_list` 翻页。
+    pub fn note_list_deleted_paged(&self, limit: u32, offset: u32) -> Result<Vec<Note>, String> {
         let conn = self.lock_conn();
         let sql = format!(
             "SELECT {}, h.content_type AS src_kind \
              FROM notes LEFT JOIN history h ON h.id = notes.history_id \
              WHERE notes.deleted_at IS NOT NULL \
-             ORDER BY notes.deleted_at DESC, notes.rowid DESC LIMIT ?1",
+             ORDER BY notes.deleted_at DESC, notes.rowid DESC LIMIT ?1 OFFSET ?2",
             // 用带 `notes.` 前缀的列名（而不是给表起别名 `n`）：`note_cols_q()`
             // 拼的就是 `notes.xxx`，起了别名就对不上。join 进来的 `history` 也有
             // `id` / `title` / `content`，不限定就是 ambiguous column name。
@@ -1370,7 +1375,7 @@ impl DataStore {
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let mut rows: Vec<Note> = stmt
-            .query_map([limit], |row| {
+            .query_map(rusqlite::params![limit, offset], |row| {
                 let mut n = row_to_note(row)?;
                 n.source_kind = row.get::<_, Option<String>>("src_kind")?;
                 Ok(n)
@@ -2158,6 +2163,43 @@ impl DataStore {
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
+    }
+
+    /// 「库的脉搏」（L2 信号，给 `mcp/pulse.rs` 用）：
+    /// 未分类篇数 + 最近一次「与 AI 有关」的写入时间。
+    ///
+    /// # 为什么是这两样
+    ///
+    /// 它们是模型唯一能据以行动的两个状态：**东西堆着没人管**、
+    /// **好久没有新东西进来**。别的统计（总篇数、标签数……）它已经在
+    /// `kb_folders` 的正文里看见了，再加一遍是重复。
+    ///
+    /// 🔴 `updated_ms` 是 **HLC 时间戳，不是墙钟**（见 `hlc_now`）。
+    /// 对「距今多少天」这个用途它是**安全**的：HLC 只会 ≥ 墙钟，
+    /// 误差方向永远是「算出的天数偏小」——即该提醒时没提醒，
+    /// 而不会反过来误报「你好久没写了」。调用方另加 `.max(0)` 兜未来时间戳。
+    ///
+    /// `MAX(...)` 在空表上返回 `NULL` ⇒ `None` = **从来没写过**，
+    /// 与「很久没写」是两回事（前者不该被提醒）。
+    /// 库的脉搏（L2 信号）：`(未分类数, 最近一次 AI 有关写入时间, 活笔记总数)`。
+    ///
+    /// 三个数一次查出：`kb_folders` 是开局必经工具，不该为每个数各查一趟。
+    /// `total` 用来区分「空库」与「有内容但 AI 从没写入」——后者才是冷启动信号。
+    pub fn note_library_pulse(&self) -> Result<(i64, Option<i64>, i64), String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT \
+                   COALESCE(SUM(CASE WHEN folder_id IS NULL THEN 1 ELSE 0 END), 0), \
+                   MAX(CASE WHEN source_agent != '' OR last_agent != '' THEN updated_ms END), \
+                   COUNT(*) \
+                 FROM notes WHERE deleted_at IS NULL",
+            )
+            .map_err(|e| e.to_string())?;
+        stmt.query_row([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, i64>(2)?))
+        })
+        .map_err(|e| e.to_string())
     }
 
     /// 问答检索（B2 #10）：按**相关度**取 top-N，不按时间。

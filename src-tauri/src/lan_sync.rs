@@ -508,9 +508,8 @@ pub struct LanDevice {
 
 /// 广播一次招呼包（让未配对的设备看得见本机）。
 ///
-/// ❗ 写成自由函数而不是 `LanSync` 的方法：唯一的调用方是那个
-/// 脱离 `&self` 跑的广播线程。之前两边各写了一份，方法那份没人调、
-/// 被 dead_code 警告逮到——同一件事只留一处。
+/// ❗ 写成自由函数而不是 `LanSync` 的方法：调用方是那个脱离 `&self` 跑的
+/// 广播线程，以及「手动刷新」时的立即触发（方法里再包一层）。
 fn send_hello(device_id: &str) {
     let name = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
@@ -710,6 +709,16 @@ impl LanSync {
     /// 所以它跟配置里那个开关不是一回事，界面上要分开显示。
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    /// 立刻广播一次招呼包（不等下一轮定时器）。监听没在跑则空操作。
+    ///
+    /// 给「手动刷新」用：只重读名单会让用户觉得按钮是假的；
+    /// 同时喊一声，对端能立刻看见本机。
+    pub fn poke_hello(&self) {
+        if self.is_running() {
+            send_hello(&self.device_id);
+        }
     }
 
     /// 从运行期在线表里拿掉一台设备。

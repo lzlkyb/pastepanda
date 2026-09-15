@@ -51,6 +51,14 @@ export interface McpStatus {
   httpsUrl: string;
   /** https 没起来的原因；正常时为空串。 */
   httpsError: string;
+  /** 局域网直连开关（用户配置）。 */
+  lanEnabled: boolean;
+  /** 真的绑在 0.0.0.0 上了吗。必须与 lanEnabled 一起读（规则 #15.3）。 */
+  lanActive: boolean;
+  /** 本机非回环 IPv4。 */
+  lanIps: string[];
+  /** 局域网开启却 bind 失败时的原因；正常空串。 */
+  lanError: string;
 }
 
 /** 默认状态：拿不到时绝不能报「运行中」——宁可显示停机，不能谎报服务开着。 */
@@ -62,6 +70,10 @@ export const MCP_STATUS_UNKNOWN: McpStatus = {
   httpsPort: 0,
   httpsUrl: "",
   httpsError: "",
+  lanEnabled: false,
+  lanActive: false,
+  lanIps: [],
+  lanError: "",
 };
 
 /**
@@ -485,5 +497,25 @@ export async function mcpTlsRemoveCa(): Promise<McpTlsCaStatus | null> {
     logger.error("移除 CA 失败", e);
     toastActionFailed("从信任库移除 CA", e);
     return null;
+  }
+}
+
+// ─── 局域网直连 ───
+
+/**
+ * 开/关局域网直连。
+ *
+ * 服务在跑会重启监听。失败返回错误文案；成功返回最新 status。
+ * 🔴 **不做 IP 白名单**：开着时凭 Bearer 令牌即可连入。
+ */
+export async function mcpSetLanEnabled(
+  enabled: boolean,
+): Promise<{ status: McpStatus | null; err: string | null }> {
+  try {
+    const status = await invoke<McpStatus>("mcp_set_lan_enabled", { enabled });
+    return { status, err: null };
+  } catch (e) {
+    logger.error("切换局域网访问失败", e);
+    return { status: null, err: e instanceof Error ? e.message : String(e) };
   }
 }
