@@ -1,7 +1,7 @@
 /**
- * RcJoinRequests — 入站申请确认条。Enter=同意 / Esc=拒绝（鼠标仍完整可达）。
+ * RcJoinRequests — 入站申请确认条。同意远程是**最高危**操作，不设任何全局快捷键
+ * （B6）：只保留显式按钮点击，避免主窗口列表里按 Enter 正好撞上远程申请而直接被控。
  */
-import { useEffect } from "react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { RcInboundKnock } from "@/lib/api/rc";
 import styles from "./RemoteComputer.module.css";
@@ -17,48 +17,20 @@ export function RcJoinRequests({
   onApprove: (nodeId: string) => void;
   onDeny: (nodeId: string) => void;
 }) {
-  const first = pending[0];
-
-  useEffect(() => {
-    if (!first) return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "Enter") {
-        e.preventDefault();
-        onApprove(first.peer);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        onDeny(first.peer);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [first, onApprove, onDeny]);
-
   if (pending.length === 0) return null;
 
   return (
     <div className={styles.joinGlobal}>
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>
-        🔔 有 {pending.length} 台设备想远程这台电脑
-      </div>
+      <h4>🔔 有 {pending.length} 台设备想远程这台电脑</h4>
       {pending.map((r) => (
-        <div key={r.peer} style={{ marginBottom: 8 }}>
-          <div className={styles.meta} style={{ marginBottom: 4 }}>
-            对方指纹
-          </div>
-          <div style={{ fontFamily: "ui-monospace, Consolas, monospace", fontWeight: 700 }}>
-            {fingerprintOf(r.peer)}
-          </div>
-          <p style={{ margin: "6px 0 8px" }}>
+        <div key={r.peer} className={styles.joinItem}>
+          <div className={`${styles.meta} ${styles.joinMeta}`}>对方指纹</div>
+          <div className={styles.joinFp}>{fingerprintOf(r.peer)}</div>
+          <p className={styles.joinNote}>
             申请能力：<b>{r.capability === "control" ? "可控（含只看）" : "只看"}</b>
             {r.peer_name ? ` · 设备名「${r.peer_name}」（可自称，以指纹为准）` : ""}
           </p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-            <span className={styles.kbdHint}>
-              <kbd>Enter</kbd> 同意 · <kbd>Esc</kbd> 拒绝
-            </span>
+          <div className={styles.joinBtns}>
             <button
               type="button"
               className="btn-secondary"

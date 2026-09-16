@@ -17,14 +17,12 @@ export function RcErrorPanel({
   const info = explainRcError(error);
   return (
     <div className={styles.noteBad}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>{info.title}</div>
-      <div style={{ fontSize: 12, lineHeight: 1.6 }}>{info.hint}</div>
+      <div className={styles.errTitle}>{info.title}</div>
+      <div className={styles.errHint}>{info.hint}</div>
       {info.reason && info.reason !== info.title && (
-        <div className={styles.meta} style={{ marginTop: 4 }}>
-          详情：{info.reason}
-        </div>
+        <div className={`${styles.meta} ${styles.errMeta}`}>详情：{info.reason}</div>
       )}
-      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+      <div className={styles.errActions}>
         {onRetry && (
           <button type="button" className={styles.miniBtnPri} onClick={onRetry}>
             重试

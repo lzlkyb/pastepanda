@@ -1,41 +1,31 @@
 /**
  * RcPairDialog — 远程配对向导：指纹并排对照 + 勾选解锁 + 邀请倒计时。
+ *
+ * 死锁修复：把「解析邀请码 → 出指纹」从「完成配对」里拆出来成独立的 `preview()`，
+ * 由 textarea 的 onBlur / 显式「解析邀请码」按钮 / 剪贴板「填入」三个入口触发，
+ * 用户无需先勾选就能看到指纹，勾选框才会渲染，按钮才解得开锁。
+ * 按钮可用性的唯一判据见 `canSubmitPair`（src/lib/rcPairState.ts），防死锁回归。
+ *
+ * 展示件已拆到 RcPairFpBox / RcPairModeSelect / RcPairCreatePane，本文件只留状态与编排。
  */
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { readClipboardText } from "@/lib/api";
 import { FocusTrap } from "@/components/FocusTrap";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { formatDuration } from "@/lib/rcSessionStats";
+import { useDialogAnim } from "@/lib/dialogMotion";
+import { canSubmitPair } from "@/lib/rcPairState";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
+import { FpBox } from "./RcPairFpBox";
+import { RcPairModeSelect } from "./RcPairModeSelect";
+import { RcPairCreatePane } from "./RcPairCreatePane";
 import styles from "../rc/RemoteComputer.module.css";
 
 export function looksLikeRcInvite(t: string): boolean {
   const s = t.trim();
   return s.length >= 40 && /^[A-Za-z0-9_-]+$/.test(s);
-}
-
-function FpBox({ label, fp, name, accent }: {
-  label: string;
-  fp: string;
-  name?: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className={styles.fpBox}>
-      <div className={styles.fpLabel}>{label}</div>
-      <div className={styles.fpVal} style={accent ? { color: "var(--accent, #4f7cff)" } : undefined}>
-        {fp}
-      </div>
-      {name != null && (
-        <>
-          <div className={styles.fpLabel} style={{ marginTop: 8 }}>设备名</div>
-          <div style={{ fontSize: 12, marginTop: 2 }}>{name || "（未填）"}</div>
-        </>
-      )}
-    </div>
-  );
 }
 
 export function RcPairDialog({
@@ -47,6 +37,7 @@ export function RcPairDialog({
   toast: ToastFn;
   onClose: () => void;
 }) {
+  const anim = useDialogAnim();
   const [mode, setMode] = useState<"create" | "paste" | null>(null);
   const [name, setName] = useState(rc.identity?.device_name ?? "");
   const [code, setCode] = useState("");
@@ -57,6 +48,8 @@ export function RcPairDialog({
   const [previewName, setPreviewName] = useState("");
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [clipInvite, setClipInvite] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -66,10 +59,7 @@ export function RcPairDialog({
         if (alive && looksLikeRcInvite(t)) {
           const inv = await rc.previewInvite(t).catch(() => null);
           if (alive && inv && inv.node_id !== rc.identity?.node_id) {
-            setCode(t);
-            setPreviewFp(fingerprintOf(inv.node_id));
-            setPreviewName(inv.name || "");
-            setMode("paste");
+            setClipInvite(t);
           }
         }
       } catch {
@@ -87,6 +77,36 @@ export function RcPairDialog({
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [created, expiresAt]);
+
+  /**
+   * 解析邀请码 → 出指纹。独立出来，由 onBlur / 「解析邀请码」按钮 / 剪贴板「填入」触发，
+   * 不再依赖「完成」按钮，从而解开死锁。
+   * 失败只走内联红字（styles.noteBad），不弹 toast：toast 会飘走，这类错误用户要对照输入框看。
+   */
+  const preview = async (raw: string) => {
+    const c = raw.trim();
+    if (!c) return;
+    setBusy(true);
+    try {
+      const inv = await rc.previewInvite(c);
+      // 粘自己的码当场拦，不让用户走完「核对指纹 → 勾选 → 完成」三步才失败。
+      if (inv.node_id === rc.identity?.node_id) {
+        setErr("这是本机自己的邀请码。请把它粘到另一台设备上，和自己配对是没有用的。");
+        setPreviewFp(null);
+        setChecked(false);
+        return;
+      }
+      setPreviewFp(fingerprintOf(inv.node_id));
+      setPreviewName(inv.name || "");
+      setChecked(false);
+      setErr("");
+    } catch (e) {
+      setErr(typeof e === "string" ? e : e instanceof Error ? e.message : "邀请码无效");
+      setPreviewFp(null);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleCreate = async () => {
     setBusy(true);
@@ -108,23 +128,17 @@ export function RcPairDialog({
     }
   };
 
+  /** 只做配对。勾选门现在可达：没勾选就点不动（按钮依赖 previewFp）。 */
   const handlePaste = async () => {
+    if (!checked) {
+      toast("请先核对指纹并勾选", "info");
+      return;
+    }
     setBusy(true);
     try {
-      const inv = await rc.previewInvite(code.trim());
-      if (inv.node_id === rc.identity?.node_id) {
-        toast("这是本机自己的邀请码", "error");
-        return;
-      }
-      setPreviewFp(fingerprintOf(inv.node_id));
-      setPreviewName(inv.name || "");
-      if (!checked) {
-        toast("请先核对指纹并勾选", "info");
-        return;
-      }
       const ok = await rc.pair(code.trim());
       if (ok) {
-        toast(`已配对远程设备「${inv.name || "新设备"}」`, "success");
+        toast(`已配对远程设备「${previewName || "新设备"}」`, "success");
         onClose();
       }
     } catch (e) {
@@ -135,12 +149,17 @@ export function RcPairDialog({
   };
 
   const myFp = rc.identity?.fingerprint ?? "读取中…";
-  const remain = expiresAt > 0 ? Math.max(0, expiresAt - now) : 0;
 
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
+    <motion.div
+      key="rc-pair"
+      {...anim.backdrop}
+      className="dialog-backdrop"
+      onClick={onClose}
+    >
       <FocusTrap>
-        <div
+        <motion.div
+          {...anim.panel}
           className="dialog-box"
           style={{ width: "min(480px, 94vw)" }}
           onClick={(e) => e.stopPropagation()}
@@ -157,73 +176,33 @@ export function RcPairDialog({
             </div>
 
             {mode === null && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <button
-                  type="button"
-                  className={styles.miniBtnPri}
-                  onClick={() => setMode("create")}
-                >
-                  生成邀请码（给对方粘）
-                </button>
-                <button
-                  type="button"
-                  className={styles.miniBtn}
-                  onClick={() => setMode("paste")}
-                >
-                  粘贴对方的邀请码
-                </button>
-              </div>
+              <RcPairModeSelect
+                clipInvite={clipInvite}
+                onFill={(clip) => {
+                  setCode(clip);
+                  setMode("paste");
+                  void preview(clip);
+                }}
+                onIgnore={() => setClipInvite(null)}
+                onCreate={() => setMode("create")}
+                onPaste={() => setMode("paste")}
+              />
             )}
 
             {mode === "create" && (
-              <>
-                <div className={styles.pairPane}>
-                  <FpBox label="本机指纹（对方核对用）" fp={myFp} name={name || rc.identity?.device_name || ""} />
-                  <div className={styles.fpBox}>
-                    <div className={styles.fpLabel}>设备名（对方列表里显示）</div>
-                    <input
-                      style={{
-                        width: "100%",
-                        marginTop: 4,
-                        font: "inherit",
-                        fontSize: 12,
-                        padding: "6px 8px",
-                        borderRadius: 6,
-                        border: "1px solid var(--border-color, #e3e6ea)",
-                        background: "var(--card-bg, #fff)",
-                        color: "var(--text-primary)",
-                      }}
-                      placeholder="例如：办公室台式机"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-                    {created && (
-                      <div className={styles.noteWarn} style={{ marginTop: 10 }}>
-                        邀请码已生成，对方粘贴并核对指纹后会出现待确认。
-                        {remain > 0 && (
-                          <>
-                            {" "}
-                            剩余 <b>{formatDuration(remain)}</b>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {!created ? (
-                  <button
-                    type="button"
-                    className={styles.miniBtnPri}
-                    disabled={busy}
-                    onClick={() => void handleCreate()}
-                  >
-                    生成并复制
-                  </button>
-                ) : null}
-                <button type="button" className={styles.miniBtn} onClick={() => setMode(null)}>
-                  返回
-                </button>
-              </>
+              <RcPairCreatePane
+                name={name}
+                setName={setName}
+                created={created}
+                expiresAt={expiresAt}
+                now={now}
+                busy={busy}
+                myFp={myFp}
+                selfName={rc.identity?.device_name ?? ""}
+                toast={toast}
+                onGenerate={handleCreate}
+                onBack={() => setMode(null)}
+              />
             )}
 
             {mode === "paste" && (
@@ -238,17 +217,38 @@ export function RcPairDialog({
                     border: "1px solid var(--border-color, #e3e6ea)",
                     padding: 8,
                     resize: "vertical",
+                    background: "var(--card-bg, #fff)",
+                    color: "var(--text-primary, #1c1f23)",
                   }}
                   placeholder="粘贴对方发来的远程邀请码"
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                    setPreviewFp(null);
+                    setChecked(false);
+                    setErr("");
+                  }}
+                  onBlur={(e) => {
+                    if (!previewFp && e.target.value.trim()) void preview(e.target.value);
+                  }}
                 />
+                {!previewFp && code.trim() && (
+                  <button
+                    type="button"
+                    className={styles.miniBtn}
+                    style={{ alignSelf: "flex-start", marginTop: 8 }}
+                    onClick={() => void preview(code)}
+                  >
+                    解析邀请码
+                  </button>
+                )}
+                {err && <div className={styles.noteBad}>{err}</div>}
                 {previewFp && (
                   <>
                     <div className={styles.pairPane} style={{ marginTop: 10 }}>
-                      <FpBox label="本机指纹" fp={myFp} />
+                      <FpBox label="本机指纹（对方屏幕上应显示这一串）" fp={myFp} />
                       <FpBox
-                        label="对方指纹（必须一致）"
+                        label="对方指纹（在对方设备上核对是否与此相同）"
                         fp={previewFp}
                         name={previewName}
                         accent
@@ -260,7 +260,7 @@ export function RcPairDialog({
                         checked={checked}
                         onChange={(e) => setChecked(e.target.checked)}
                       />
-                      <span>我已与对方核对指纹一致（核对不过就不要勾）</span>
+                      <span>我已在对方设备上核对指纹，两边显示的是同一串（核对不过就不要勾）</span>
                     </label>
                   </>
                 )}
@@ -271,7 +271,7 @@ export function RcPairDialog({
                   <button
                     type="button"
                     className={styles.miniBtnPri}
-                    disabled={busy || !code.trim() || !checked}
+                    disabled={!canSubmitPair({ code, checked, previewFp, busy })}
                     onClick={() => void handlePaste()}
                   >
                     完成远程配对
@@ -280,8 +280,8 @@ export function RcPairDialog({
               </>
             )}
           </div>
-        </div>
+        </motion.div>
       </FocusTrap>
-    </div>
+    </motion.div>
   );
 }

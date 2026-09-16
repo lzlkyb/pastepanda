@@ -90,6 +90,10 @@ export function RcClipboardBar({
         拉取对方剪贴板
       </button>
       <span className={styles.sp} />
+      {/* B5：开启后持续可见的「正在把剪贴板变化发给对方」提示（非每秒刷新，不走 live region） */}
+      {clipAuto && (
+        <span className={`${styles.fb} ${styles.fbInfo}`}>自动同步开 · 剪贴板变化将发给对方</span>
+      )}
       {clipAuto && autoFail >= 3 && (
         <span className={`${styles.fb} ${styles.fbBad}`}>自动同步失败 · 检查剪贴板权限</span>
       )}

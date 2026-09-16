@@ -115,6 +115,34 @@ fn map_abs(x: u16, y: u16, region: &ScreenRegion) -> (i32, i32) {
     )
 }
 
+/// 是否 Windows 扩展键（扫描码带 0xE0 前缀的那批）。
+///
+/// 这类键的 `dwFlags` 必须带 `KEYEVENTF_EXTENDEDKEY`，否则会被解释成小键盘数字键
+/// （方向键变小键盘 4/6/8/2 等）。命中集合覆盖方向键 / 编辑键 / Win 键 / 部分 OEM 键。
+///
+/// ⚠️ 已知取舍：**不放 `0x0D`(Enter)**。前端 `src/lib/rcKeyMap.ts` 把主 Enter 与
+/// NumpadEnter 都映射成 `0x0d`，若把 Enter 放进集合，会让主 Enter 被错发 `E0` 前缀，
+/// 部分应用/游戏会因此识别成别的键。小键盘 Enter 的取舍由前端侧约定承担。
+pub(crate) fn is_extended_vk(vk: u16) -> bool {
+    matches!(
+        vk,
+        // PageUp/PageDown/End/Home
+        0x21 | 0x22 | 0x23 | 0x24
+        // 方向键 ← ↑ → ↓
+        | 0x25 | 0x26 | 0x27 | 0x28
+        // Insert / Delete
+        | 0x2D | 0x2E
+        // Win(L/R) / 右键菜单
+        | 0x5B | 0x5C | 0x5D
+        // 小键盘除号 / NumLock
+        | 0x6F | 0x90
+        // PrintScreen
+        | 0x2C
+        // 右 Ctrl / 右 Alt
+        | 0xA3 | 0xA5
+    )
+}
+
 /// 执行一条输入事件。仅 Windows。
 pub fn inject(ev: &InputEvent, region: &ScreenRegion) -> InjectResult {
     #[cfg(not(target_os = "windows"))]
@@ -137,9 +165,10 @@ pub fn inject(ev: &InputEvent, region: &ScreenRegion) -> InjectResult {
 #[cfg(target_os = "windows")]
 fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
-        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
-        MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT,
+        INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+        KEYEVENTF_KEYUP, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
+        MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
+        MOUSEINPUT,
     };
     use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
 
@@ -201,17 +230,25 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
             send_inputs(&[input])
         }
         InputEvent::Key { vk, down } => {
+            let vk = *vk as u16;
+            let mut flags = if *down {
+                Default::default()
+            } else {
+                KEYEVENTF_KEYUP
+            };
+            // 扩展键（扫描码带 0xE0 前缀，如方向键/Home/End/Win 等）必须带
+            // KEYEVENTF_EXTENDEDKEY，否则 Windows 会把它解释成小键盘数字键
+            //（方向键变小键盘 4/6/8/2 等）。
+            if is_extended_vk(vk) {
+                flags |= KEYEVENTF_EXTENDEDKEY;
+            }
             let input = INPUT {
                 r#type: INPUT_KEYBOARD,
                 Anonymous: INPUT_0 {
                     ki: KEYBDINPUT {
-                        wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(*vk as u16),
+                        wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(vk),
                         wScan: 0,
-                        dwFlags: if *down {
-                            Default::default()
-                        } else {
-                            KEYEVENTF_KEYUP
-                        },
+                        dwFlags: flags,
                         time: 0,
                         dwExtraInfo: 0,
                     },
@@ -311,5 +348,20 @@ mod tests {
         let s = serde_json::to_string(&e).unwrap();
         let back: InputEvent = serde_json::from_str(&s).unwrap();
         assert_eq!(e, back);
+    }
+
+    #[test]
+    fn extended_vk_set() {
+        let vks: [u16; 18] = [
+            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x5B, 0x5C, 0x5D, 0x6F,
+            0x90, 0x2C, 0xA3, 0xA5,
+        ];
+        for vk in vks {
+            assert!(is_extended_vk(vk), "vk {vk:#x} 应为扩展键");
+        }
+        // Enter(0x0D) 故意不在集合（主 Enter 与 NumpadEnter 同值）；A/Space 也不是
+        for vk in [0x41u16, 0x0D, 0x20] {
+            assert!(!is_extended_vk(vk), "vk {vk:#x} 不应为扩展键");
+        }
     }
 }

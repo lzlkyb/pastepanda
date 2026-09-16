@@ -13,6 +13,7 @@ import { rcSetEnabled } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { ToggleRow } from "../ToggleRow";
 import { RcAllowPanel } from "../RcAllowPanel";
+import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcOverlay 统一默认设备名来源
 import { RcPairDialog } from "../RcPairDialog";
 import { RcSessionHistory } from "@/components/rc/RcSessionHistory";
 import styles from "../../Settings.module.css";
@@ -70,17 +71,8 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
 
       {/* 配对入口：方案 A —— 发起远程不依赖「允许被远程」，始终可见 */}
       <div className={styles.lanPanel}>
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
-          本机指纹{" "}
-          <span
-            style={{
-              fontFamily: "ui-monospace, Consolas, monospace",
-              fontWeight: 700,
-              color: "var(--text-primary)",
-            }}
-          >
-            {rc.identity?.fingerprint ?? "读取中…"}
-          </span>
+        <div className={styles.rcFpLine}>
+          本机指纹 <span className={styles.rcFpValue}>{rc.identity?.fingerprint ?? "读取中…"}</span>
           <br />
           远程配对与知识库同步配对<b>分开</b>：这里只授权远程，不同步笔记。
           <br />
@@ -88,8 +80,7 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
         </div>
         <button
           type="button"
-          className={styles.lanTestBtn}
-          style={{ width: "100%" }}
+          className={`${styles.lanTestBtn} ${styles.rcFullBtn}`}
           disabled={!rc.identity}
           onClick={() => setPairOpen(true)}
         >
@@ -97,12 +88,12 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
         </button>
 
         {joins.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>
+          <div className={styles.rcJoinBlock}>
+            <div className={styles.rcJoinTitle}>
               🔔 有 {joins.length} 台设备想完成远程配对
             </div>
             {joins.map((j) => (
-              <div key={j.node_id} className={styles.lanDeviceItem} style={{ marginBottom: 6 }}>
+              <div key={j.node_id} className={`${styles.lanDeviceItem} ${styles.rcJoinRow}`}>
                 <div className={styles.lanDeviceInfo}>
                   <div className={styles.lanDeviceTime}>指纹 {fingerprintOf(j.node_id)}</div>
                 </div>
@@ -123,7 +114,7 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
                   className={styles.lanRefreshBtn}
                   disabled={rc.busy}
                   onClick={() => {
-                    void rc.approveJoin(j.node_id, "").then((ok) => {
+                    void rc.approveJoin(j.node_id, DEFAULT_RC_DEVICE_NAME).then((ok) => {
                       if (ok) toast("已允许远程配对", "success");
                     });
                   }}
@@ -136,27 +127,15 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
         )}
       </div>
 
-      {enabled && (
-        <>
-          {rc.status && (
-            <RcAllowPanel rc={rc} status={rc.status} targets={rc.targets} />
-          )}
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>最近会话</div>
-            <RcSessionHistory />
-          </div>
-          {rc.error && (
-            <div style={{ fontSize: 12, color: "var(--danger, #d64545)", marginTop: 8 }}>
-              {rc.error}
-            </div>
-          )}
-        </>
+      {/* 主开关关时仍渲染能力/设备面板（变灰），避免整块消失导致用户不知道有哪些档可配（规则 15.2） */}
+      {rc.status && (
+        <RcAllowPanel rc={rc} status={rc.status} targets={rc.targets} />
       )}
-      {!enabled && rc.error && (
-        <div style={{ fontSize: 12, color: "var(--danger, #d64545)", marginTop: 8 }}>
-          {rc.error}
-        </div>
-      )}
+      <div className={styles.rcBlockTop}>
+        <div className={styles.rcSubTitle}>最近会话</div>
+        <RcSessionHistory />
+      </div>
+      {rc.error && <div className={styles.rcErrLine}>{rc.error}</div>}
 
       {pairOpen && (
         <RcPairDialog rc={rc} toast={toast} onClose={() => setPairOpen(false)} />

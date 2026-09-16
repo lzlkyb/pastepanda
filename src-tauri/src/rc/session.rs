@@ -120,6 +120,7 @@ pub fn can_transition(from: SessionPhase, to: SessionPhase) -> bool {
         (from, to),
         (Idle, OutboundPending)
             | (Idle, InboundPending)
+            | (Idle, InboundActive)
             | (OutboundPending, OutboundActive)
             | (OutboundPending, Idle)
             | (InboundPending, InboundActive)
@@ -262,5 +263,16 @@ mod tests {
         assert!(must_show_control_banner(SessionPhase::InboundActive));
         assert!(!must_show_control_banner(SessionPhase::InboundPending));
         assert!(!must_show_control_banner(SessionPhase::OutboundActive));
+    }
+
+    #[test]
+    fn can_transition_busy_rules() {
+        use SessionPhase::*;
+        // approve_inbound 从无会话直达 InboundActive 是本就存在的迁移
+        assert!(can_transition(Idle, InboundActive));
+        // 进行中的发起会话不能被新入站申请顶掉（[busy_local] 闸）
+        assert!(!can_transition(OutboundActive, InboundActive));
+        // 已经在进行中的被控会话不能被再次 approve 顶掉
+        assert!(!can_transition(InboundActive, InboundActive));
     }
 }

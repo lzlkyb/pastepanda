@@ -3,7 +3,7 @@
  * - mode=local：写本机配置
  * - mode=remote：会话中发给对端；失败必须回滚选中 + 文案
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { rcSendInput, rcListMonitors, type RcMonitorInfo } from "@/lib/api/rc";
 import type { RcQuality, RcCaptureScope } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
@@ -35,11 +35,14 @@ export function RcQualityBar({
   onPickScope?: (s: RcCaptureScope) => void;
 }) {
   const [fb, setFb] = useState<Fb>(null);
-  const prevQ = useRef<RcQuality>(quality as RcQuality);
-  const prevS = useRef<RcCaptureScope>(captureScope as RcCaptureScope);
   const [monitors, setMonitors] = useState<RcMonitorInfo[]>([]);
 
+  // 会话中（remote）显示器列表必须来自对端，本机列表会误导；只看本地配置时才列本机屏
   useEffect(() => {
+    if (mode === "remote") {
+      setMonitors([]);
+      return;
+    }
     void rcListMonitors()
       .then(setMonitors)
       .catch(() => setMonitors([]));
@@ -75,12 +78,12 @@ export function RcQualityBar({
 
   const pickQuality = (k: RcQuality) => {
     if (k === quality) return;
-    prevQ.current = k;
+    const was = quality as RcQuality;
     onPickQuality?.(k);
     if (mode === "remote") {
       void remoteSend(
         { kind: "set_quality", quality: k },
-        () => onPickQuality?.(prevQ.current),
+        () => onPickQuality?.(was),
         "画质已同步到对方",
       );
     } else {
@@ -90,19 +93,19 @@ export function RcQualityBar({
             ? { kind: "ok", text: "画质已保存" }
             : { kind: "bad", text: "保存失败，已恢复" },
         );
-        if (!ok) onPickQuality?.(prevQ.current);
+        if (!ok) onPickQuality?.(was);
       });
     }
   };
 
   const pickScope = (k: RcCaptureScope) => {
     if (k === captureScope) return;
-    prevS.current = k;
+    const was = captureScope as RcCaptureScope;
     onPickScope?.(k);
     if (mode === "remote") {
       void remoteSend(
         { kind: "set_capture_scope", scope: k },
-        () => onPickScope?.(prevS.current),
+        () => onPickScope?.(was),
         "画面范围已同步到对方",
       );
     } else {
@@ -112,7 +115,7 @@ export function RcQualityBar({
             ? { kind: "ok", text: "范围已保存" }
             : { kind: "bad", text: "保存失败，已恢复" },
         );
-        if (!ok) onPickScope?.(prevS.current);
+        if (!ok) onPickScope?.(was);
       });
     }
   };
@@ -156,9 +159,7 @@ export function RcQualityBar({
         </button>
       ))}
       {mode === "remote" && (
-        <span className={styles.meta} style={{ marginLeft: 4 }}>
-          立即作用于对方
-        </span>
+        <span className={`${styles.meta} ${styles.qMeta}`}>立即作用于对方</span>
       )}
       {fb && <span className={`${styles.fb} ${fbCls}`}>{fb.text}</span>}
     </div>

@@ -198,6 +198,9 @@ pub fn kb_sync_deny_from_rc(store: State<DataStore>, node_id: String) -> Result<
     store.save_config(&config)
 }
 
+/// RC 邀请门开放时长：远程协助场景应短于知识库同步（默认 7 天太长，骚扰面大）。
+const RC_INVITE_DOOR_MS: i64 = 30 * 60 * 1000;
+
 /// 生成远程配对邀请码（开门，等对方粘贴后敲门）。
 #[tauri::command]
 pub async fn rc_invite_create(
@@ -209,7 +212,8 @@ pub async fn rc_invite_create(
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     let now = chrono::Utc::now().timestamp_millis();
     let code = invite::encode(&me, name.trim(), Vec::new(), now)?;
-    let expires_at = now + invite::TTL_SECS * 1000;
+    // 门只开 30 分钟：码本身仍可预览，但过点后敲门进不来
+    let expires_at = now + RC_INVITE_DOOR_MS;
     if let Err(e) = join::open_door(&store, expires_at) {
         log::warn!("[RC] 邀请窗口没能保存（{}）——对方粘完码可能连不上本机", e);
     }
@@ -434,6 +438,13 @@ pub async fn rc_request_session(
 pub async fn rc_cancel_request(app: AppHandle, svc: State<'_, Arc<RcService>>) -> Result<(), String> {
     svc.end_session("用户取消申请").await?;
     emit_changed(&app, &svc);
+    Ok(())
+}
+
+/// 前端展示过后台申请失败后调用，避免每轮 status 都重复弹同一错误。
+#[tauri::command]
+pub fn rc_clear_outbound_error(svc: State<'_, Arc<RcService>>) -> Result<(), String> {
+    svc.clear_outbound_error();
     Ok(())
 }
 

@@ -1,11 +1,45 @@
 /**
  * RcAllowPanel — 「允许被远程」开关下面的能力档 + 设备级限制。
  * 对齐设计稿 §二。主开关在 RcSection 的 ToggleRow 上。
+ *
+ * D11：原先这里的间距/字号/颜色全是内联 style（21 处），现在统一收口到
+ * Settings.module.css 的 rc* 类；只有 deviceAvatarStyle（按设备 id 派生）
+ * 是真正的动态值，保留在 style 上。
  */
 import type { RcStatus, RcTargetDevice } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { deviceAvatarStyle } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
 import styles from "../Settings.module.css";
+
+/** 一组「二选一/三选一」的档位按钮，选中态与禁用态规则一致，抽出来避免三处重复。 */
+function ChoiceRow<T extends string>({
+  options,
+  value,
+  disabled,
+  onPick,
+}: {
+  options: readonly (readonly [T, string])[];
+  value: string;
+  disabled: boolean;
+  onPick: (v: T) => void;
+}) {
+  return (
+    <div className={styles.rcBtnRow}>
+      {options.map(([k, label]) => (
+        <button
+          key={k}
+          type="button"
+          className={`${value === k ? "btn-primary" : "btn-secondary"} ${styles.rcChoiceBtn}`}
+          disabled={disabled}
+          onClick={() => onPick(k)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function RcAllowPanel({
   rc,
@@ -17,111 +51,78 @@ export function RcAllowPanel({
   targets: RcTargetDevice[];
 }) {
   const off = !status.enabled;
+  // 关主开关时：整块降透明度，且交互区禁用（说明文字仍可读）
+  const gate = off ? styles.rcGated : undefined;
 
   return (
-    <div className={styles.lanPanel} style={{ opacity: off ? 0.55 : 1 }}>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+    <div className={`${styles.lanPanel} ${off ? styles.rcPanelOff : ""}`}>
+      <div className={styles.rcIntro}>
         仅限<b>已配对</b>设备；每次会话都要你在本机点同意。远程 shell / 文件管理
         <b>不做</b>。
       </div>
 
       {/* 能力上限：关主开关时仍可读、不可点（规则 15：变灰而不是消失） */}
-      <div style={{ marginBottom: 14, pointerEvents: off ? "none" : "auto" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>能力上限</div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.6 }}>
-          「可控」包含只看。对方申请的能力不能超过这里选的档。
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {(
+      <div className={`${styles.rcBlock} ${gate ?? ""}`}>
+        <div className={styles.rcLabel}>能力上限</div>
+        <div className={styles.rcHint}>「可控」包含只看。对方申请的能力不能超过这里选的档。</div>
+        <ChoiceRow
+          options={
             [
               ["view", "只看"],
               ["control", "可控（含只看）"],
             ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              className={status.capability === k ? "btn-primary" : "btn-secondary"}
-              style={{ fontSize: 12, padding: "4px 12px" }}
-              disabled={off || rc.busy}
-              onClick={() => void rc.setCapability(k)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          }
+          value={status.capability}
+          disabled={off || rc.busy}
+          onPick={(k) => void rc.setCapability(k)}
+        />
       </div>
 
       {/* 画质档 + 截取范围 */}
-      <div style={{ marginTop: 14, marginBottom: 14, pointerEvents: off ? "none" : "auto" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>画质档（被控端编码）</div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.6 }}>
-          流畅优先帧率、清晰优先分辨率；改后下次会话生效。
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {(
+      <div className={`${styles.rcBlockSpaced} ${gate ?? ""}`}>
+        <div className={styles.rcLabel}>画质档（被控端编码）</div>
+        <div className={styles.rcHint}>流畅优先帧率、清晰优先分辨率；改后下次会话生效。</div>
+        <ChoiceRow
+          options={
             [
               ["smooth", "流畅"],
               ["balanced", "均衡"],
               ["sharp", "清晰"],
             ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              className={status.quality === k ? "btn-primary" : "btn-secondary"}
-              style={{ fontSize: 12, padding: "4px 12px" }}
-              disabled={off || rc.busy}
-              onClick={() => void rc.setQuality(k)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 6px" }}>画面范围</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {(
+          }
+          value={status.quality}
+          disabled={off || rc.busy}
+          onPick={(k) => void rc.setQuality(k)}
+        />
+        <div className={styles.rcLabelTop}>画面范围</div>
+        <ChoiceRow
+          options={
             [
               ["virtual", "整个虚拟屏（含副屏）"],
               ["primary", "仅主屏"],
             ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              className={status.capture_scope === k ? "btn-primary" : "btn-secondary"}
-              style={{ fontSize: 12, padding: "4px 12px" }}
-              disabled={off || rc.busy}
-              onClick={() => void rc.setCaptureScope(k)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          }
+          value={status.capture_scope}
+          disabled={off || rc.busy}
+          onPick={(k) => void rc.setCaptureScope(k)}
+        />
       </div>
 
       {/* 设备级：与同步暂停是两个开关 */}
-      <div style={{ pointerEvents: off ? "none" : "auto" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>设备级限制</div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.6 }}>
+      <div className={gate}>
+        <div className={styles.rcLabel}>设备级限制</div>
+        <div className={styles.rcHint}>
           与「暂停同步」是<b>两个开关</b>：暂停停同步，这里停远程。
         </div>
         {targets.length === 0 ? (
-          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            还没有配对设备。先在「远程电脑」里完成远程配对。
-          </div>
+          <div className={styles.rcEmpty}>还没有配对设备。先在「远程电脑」里完成远程配对。</div>
         ) : (
           <div className={styles.lanDeviceList}>
             {targets.map((d) => {
               const denied = status.device_deny[d.node_id] ?? d.denied;
               return (
                 <div key={d.node_id} className={styles.lanDeviceItem}>
-                  <div
-                    className={styles.lanDeviceAvatar}
-                    style={{
-                      background: `hsl(${((d.node_id.charCodeAt(0) || 0) * 40) % 360}, 60%, 55%)`,
-                    }}
-                  >
+                  <div className={styles.lanDeviceAvatar} style={deviceAvatarStyle(d.node_id)}>
                     {(d.name || "?").charAt(0).toUpperCase()}
                   </div>
                   <div className={styles.lanDeviceInfo}>
@@ -131,18 +132,15 @@ export function RcAllowPanel({
                     </div>
                   </div>
                   <span
-                    style={{
-                      fontSize: 11,
-                      color: denied ? "var(--danger, #d64545)" : "var(--green, #2f9e5f)",
-                      flexShrink: 0,
-                    }}
+                    className={`${styles.rcDevState} ${
+                      denied ? styles.rcDevStateOff : styles.rcDevStateOn
+                    }`}
                   >
                     {denied ? "已禁止" : "允许"}
                   </span>
                   <button
                     type="button"
-                    className={styles.lanRefreshBtn}
-                    style={{ flexShrink: 0 }}
+                    className={`${styles.lanRefreshBtn} ${styles.rcDevBtn}`}
                     disabled={off || rc.busy}
                     onClick={() => void rc.setDeviceAllowed(d.node_id, denied)}
                   >

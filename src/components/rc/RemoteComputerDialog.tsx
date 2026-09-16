@@ -19,6 +19,7 @@ import { RcEmptyGuide } from "./RcEmptyGuide";
 import { RcDeviceList } from "./RcDeviceList";
 import { RcPendingWait } from "./RcPendingWait";
 import { RcErrorPanel } from "./RcErrorPanel";
+import { RcAskCard } from "./RcAskCard";
 import type { RcCapability } from "@/lib/api/rc";
 import styles from "./RemoteComputer.module.css";
 
@@ -33,7 +34,6 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
   const [askPeer, setAskPeer] = useState<string | null>(null);
   const [pairOpen, setPairOpen] = useState(false);
   const [lastPeer, setLastPeer] = useState<string | null>(null);
-  const [pendingAt, setPendingAt] = useState(0);
 
   useEffect(() => {
     void rc.refresh();
@@ -53,11 +53,6 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
   const channelUp = rc.status?.running ?? false;
   const hasTargets = rc.targets.length > 0;
   const hasLiveSession = !!(session && session.phase !== "idle");
-
-  useEffect(() => {
-    if (pending && !pendingAt) setPendingAt(Date.now());
-    if (!pending) setPendingAt(0);
-  }, [pending, pendingAt]);
 
   const lastDevice = useMemo(
     () => rc.targets.find((t) => t.node_id === lastPeer) ?? null,
@@ -126,6 +121,7 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
       <motion.div
         {...anim.backdrop}
         className="dialog-backdrop"
+        data-rc-root=""
         onClick={() => void requestClose()}
       >
         <FocusTrap>
@@ -140,7 +136,7 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="dialog-header">
-              <h2 className="dialog-title">🖥️ 远程电脑</h2>
+              <h2 className="dialog-title">远程电脑</h2>
               <button
                 onClick={() => void requestClose()}
                 className="dialog-close"
@@ -155,11 +151,13 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                 <RcErrorPanel
                   error={rc.error}
                   onRetry={
-                    askPeer
-                      ? () => void doRequest(askPeer, cap)
-                      : lastPeer
-                        ? () => void doRequest(lastPeer, cap)
-                        : undefined
+                    rc.isOpError
+                      ? askPeer
+                        ? () => void doRequest(askPeer, cap)
+                        : lastPeer
+                          ? () => void doRequest(lastPeer, cap)
+                          : undefined
+                      : () => void rc.refresh()
                   }
                   onDismiss={() => rc.clearError()}
                 />
@@ -182,7 +180,7 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                 <RcPendingWait
                   peerName={pendingName}
                   capability={session.capability}
-                  waitingMs={pendingAt > 0 ? Date.now() - pendingAt : 0}
+                  startedMs={session.started_ms}
                   busy={rc.busy}
                   onCancel={() => void rc.cancel()}
                 />
@@ -194,10 +192,10 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                     <div className={styles.noteWarn}>
                       已配对 {rc.targets.length} 台，但远程通道未启动。
                       <br />
-                      <span style={{ fontSize: 11, opacity: 0.85 }}>
+                      <span className={styles.devSubNote}>
                         开通道只用于你去远程别人；「允许被远程」在设置里单独控制。
                       </span>
-                      <div style={{ marginTop: 10 }}>
+                      <div className={styles.mt10}>
                         <button
                           type="button"
                           className={styles.miniBtnPri}
@@ -212,8 +210,7 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                         </button>
                         <button
                           type="button"
-                          className={styles.miniBtn}
-                          style={{ marginLeft: 8 }}
+                          className={`${styles.miniBtn} ${styles.ml8}`}
                           onClick={() => setPairOpen(true)}
                         >
                           再配对一台
@@ -243,61 +240,27 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                         onRequest={(id) => setAskPeer(id)}
                         onForget={forgetDevice}
                         onSetAllowed={async (id, allowed) => rc.setDeviceAllowed(id, allowed)}
+                        onPair={() => setPairOpen(true)}
                         toast={toast}
                       />
                       <button
                         type="button"
-                        className={styles.miniBtn}
-                        style={{ alignSelf: "flex-start" }}
+                        className={`${styles.miniBtn} ${styles.selfStart}`}
                         onClick={() => setPairOpen(true)}
                       >
                         ＋ 再配对一台
                       </button>
 
                       {askPeer && (
-                        <div className={styles.joinCard}>
-                          <h4>
-                            申请远程「
-                            {rc.targets.find((t) => t.node_id === askPeer)?.name ||
-                              fingerprintOf(askPeer)}
-                            」
-                          </h4>
-                          <p>对方会看到确认条，同意后才开始传输画面。</p>
-                          <div className={styles.capPills}>
-                            {(
-                              [
-                                ["view", "只看"],
-                                ["control", "可控（需对方同意）"],
-                              ] as const
-                            ).map(([k, label]) => (
-                              <button
-                                key={k}
-                                type="button"
-                                className={cap === k ? styles.pillOn : styles.pill}
-                                onClick={() => setCap(k)}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className={styles.joinBtns}>
-                            <button
-                              type="button"
-                              className={styles.miniBtn}
-                              onClick={() => setAskPeer(null)}
-                            >
-                              取消
-                            </button>
-                            <button
-                              type="button"
-                              className={styles.miniBtnPri}
-                              disabled={rc.busy}
-                              onClick={() => void doRequest(askPeer, cap)}
-                            >
-                              发送申请
-                            </button>
-                          </div>
-                        </div>
+                        <RcAskCard
+                          peerId={askPeer}
+                          targets={rc.targets}
+                          cap={cap}
+                          busy={rc.busy}
+                          onCap={setCap}
+                          onCancel={() => setAskPeer(null)}
+                          onSend={() => void doRequest(askPeer, cap)}
+                        />
                       )}
                     </>
                   )}

@@ -17,6 +17,20 @@ export function scopeLabel(s: string): string {
   return "整屏";
 }
 
+/**
+ * 通知用的完整范围文案（B3）。
+ * 与 HUD 用的短文案 `scopeLabel` 分开：HUD 位置窄、要短；给被控端的提示
+ * 说的是一次**隐私相关**的变更，必须把「含副屏」这类信息说全。
+ */
+export function scopeLabelLong(s: string): string {
+  if (s === "primary") return "仅主屏";
+  if (s.startsWith("monitor:")) {
+    const n = Number(s.slice(8));
+    return Number.isFinite(n) ? `第 ${n + 1} 台显示器` : "指定显示器";
+  }
+  return "整个虚拟屏（含副屏）";
+}
+
 export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600);

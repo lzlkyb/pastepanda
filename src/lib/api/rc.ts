@@ -42,6 +42,8 @@ export interface RcStatus {
   quality: string;
   capture_scope: string;
   rtt_ms?: number;
+  /** 非阻塞发起申请的后台失败原因 */
+  outbound_error?: string | null;
 }
 
 export interface RcTargetDevice {
@@ -150,6 +152,10 @@ export function rcRequestSession(nodeId: string, capability: RcCapability): Prom
 
 export function rcCancelRequest(): Promise<void> {
   return invoke("rc_cancel_request");
+}
+
+export function rcClearOutboundError(): Promise<void> {
+  return invoke("rc_clear_outbound_error");
 }
 
 export function rcApproveInbound(nodeId: string): Promise<RcSession> {

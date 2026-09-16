@@ -3,6 +3,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rcSendInput } from "@/lib/api/rc";
+import { isSessionEscape } from "@/lib/rcKeyGuard";
 
 const MOVE_THROTTLE_MS = 40;
 
@@ -11,11 +12,16 @@ export function mapNormFromCanvas(
   el: HTMLCanvasElement,
   contentW: number,
   contentH: number,
+  fit: "fit" | "actual" | "fill" = "fit",
 ) {
   const rect = el.getBoundingClientRect();
   const nw = contentW || el.width || 1;
   const nh = contentH || el.height || 1;
-  const scale = Math.min(rect.width / nw, rect.height / nh);
+  // contain 用 min（letterbox），cover/fill 用 max（溢出裁切）
+  const scale =
+    fit === "fill"
+      ? Math.max(rect.width / nw, rect.height / nh)
+      : Math.min(rect.width / nw, rect.height / nh);
   const dw = nw * scale;
   const dh = nh * scale;
   const ox = rect.left + (rect.width - dw) / 2;
@@ -30,9 +36,18 @@ export function mapNormFromCanvas(
 }
 
 export async function releaseModifiers() {
+  // 6 个修饰键 vk
   for (const vk of [0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5]) {
     try {
       await rcSendInput({ kind: "key", vk, down: false });
+    } catch {
+      /* 尽力而为 */
+    }
+  }
+  // 鼠标左(1)/右(2)/中(3)键：对端断线时目标机鼠标键会卡住
+  for (const button of [1, 2, 3]) {
+    try {
+      await rcSendInput({ kind: "mouse_button", x: 0, y: 0, button, down: false });
     } catch {
       /* 尽力而为 */
     }
@@ -46,6 +61,7 @@ export function useRcInput({
   canvasRef,
   screenRef,
   onConfirmEnd,
+  fit = "fit",
 }: {
   canControl: boolean;
   hasFrame: boolean;
@@ -53,6 +69,7 @@ export function useRcInput({
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   screenRef: React.RefObject<HTMLDivElement | null>;
   onConfirmEnd: () => void;
+  fit?: "fit" | "actual" | "fill";
 }) {
   const [kbOn, setKbOn] = useState(false);
   const [pointerLocked, setPointerLocked] = useState(false);
@@ -85,9 +102,9 @@ export function useRcInput({
     (e: { clientX: number; clientY: number }) => {
       const el = canvasRef.current;
       if (!el) return null;
-      return mapNormFromCanvas(e, el, contentRef.current.w, contentRef.current.h);
+      return mapNormFromCanvas(e, el, contentRef.current.w, contentRef.current.h, fit);
     },
-    [canvasRef, contentRef],
+    [canvasRef, contentRef, fit],
   );
 
   const releaseKb = useCallback(() => {
@@ -133,18 +150,25 @@ export function useRcInput({
   useEffect(() => {
     if (!canControl) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (!isSessionEscape(e)) return;
+      // 有其它模态时把 Esc 让给它，避免误结束会话。
+      // 会话视图本身永远渲染在带 data-rc-root 的 backdrop 内，因此排除自身，
+      // 只让「嵌套打开、不带该属性」的模态（如 RcPairDialog）优先拿到 Esc。
+      if (document.querySelector(".dialog-backdrop:not([data-rc-root])")) return;
       if (pointerLocked) {
         e.preventDefault();
+        e.stopPropagation();
         void document.exitPointerLock();
         return;
       }
       if (kbOn) {
         e.preventDefault();
+        e.stopPropagation();
         releaseKb();
         return;
       }
       e.preventDefault();
+      e.stopPropagation();
       onConfirmEnd();
     };
     window.addEventListener("keydown", onKey);

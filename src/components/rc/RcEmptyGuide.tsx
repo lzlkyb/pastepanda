@@ -11,13 +11,13 @@ const STEPS = [
 
 export function RcEmptyGuide({ onPair }: { onPair: () => void }) {
   return (
-    <div className={styles.emptyBox} style={{ textAlign: "left", padding: "20px 18px" }}>
-      <div style={{ fontSize: 20, marginBottom: 6 }}>🖥️</div>
+    <div className={`${styles.emptyBox} ${styles.emptyBoxLeft}`}>
+      <div className={styles.emptyIcon}>🖥️</div>
       <div className={styles.guideTitle}>还没有可远程的设备</div>
       <div className={styles.guideLead}>
         配对后，对方可以申请查看或控制这台电脑；你也可以去控别人的电脑。
       </div>
-      <div className={styles.guideLead} style={{ marginBottom: 14 }}>
+      <div className={`${styles.guideLead} ${styles.emptyLeadLast}`}>
         「允许被远程」只影响别人控你；发起远程不需要打开它。
       </div>
       <div className={styles.steps}>
@@ -29,7 +29,7 @@ export function RcEmptyGuide({ onPair }: { onPair: () => void }) {
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+      <div className={styles.emptyActions}>
         <button type="button" className={styles.miniBtnPri} onClick={onPair}>
           远程配对设备
         </button>

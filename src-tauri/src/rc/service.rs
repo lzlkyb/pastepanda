@@ -8,8 +8,8 @@
 use super::join::{self, RcJoins};
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
 use super::session::{
-    gate_inbound, gate_outbound, is_active, new_session_id, Gate, Session, CFG_CAPABILITY,
-    CFG_DEVICE_DENY, CFG_ENABLED,
+    can_transition, gate_inbound, gate_outbound, is_active, new_session_id, Gate, Session,
+    CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED,
 };
 use crate::data_store::DataStore;
 use crate::sync::identity::NodeIdentity;
@@ -32,6 +32,8 @@ const CLIPBOARD_PULL_TIMEOUT_MS: i64 = 4_000;
 
 /// 会话状态变化时通知前端（由 lib.rs 注入，避免 RcService 依赖 AppHandle）。
 type NotifyFn = Arc<dyn Fn() + Send + Sync>;
+/// 被控端画面范围被对端改动时的回调（参数为新的 scope 串）。
+type ScopeNotifyFn = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// 被控端配置键。
 pub const CFG_QUALITY: &str = "rc_quality";
@@ -63,6 +65,8 @@ pub struct RcStatus {
     pub capture_scope: String,
     /// 发起端最近 RTT（毫秒），0=尚未测到。
     pub rtt_ms: i64,
+    /// 非阻塞发起申请的后台失败原因；前端展示后应调 clear_outbound_error。
+    pub outbound_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -97,19 +101,32 @@ pub struct RcService {
     remote_clipboard: Mutex<Option<String>>,
     /// 每次写入 remote_clipboard 自增；pull 用它判断回包是否已到。
     clip_seq: std::sync::atomic::AtomicU64,
+    /// 剪贴板「会话代」。会话收口时自增，用于丢掉**上一个会话**迟到的回包。
+    clip_epoch: std::sync::atomic::AtomicU64,
+    /// 串行化 pull：两个并发 pull 共用一个 seq 时，先到的那个回包会让两个都
+    /// 认为「到了」并同时 take，其中一个只能拿到空值。
+    clip_pull_lock: tokio::sync::Mutex<()>,
     /// 被控端：推 JPEG 时的发送半流（End 帧用；发起端走 outbound_send）。
     inbound_send:
         tokio::sync::Mutex<Option<std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>>>,
     /// 状态变化通知（emit `rc-session-changed` / inject-error）。
     notify: Mutex<Option<NotifyFn>>,
+    /// 被控端：对端改了画面范围时的通知（带 scope 参数）。
+    /// 与 `notify` 分开是因为 payload 不同——`notify` 是无参「有事变了」，
+    /// 这个要告诉前端「被改成了哪个范围」，前端才能给出具体提示。
+    notify_scope: Mutex<Option<ScopeNotifyFn>>,
     /// 最近一次注入失败（UIPI 等），供发起端展示。
     last_inject_err: Mutex<Option<String>>,
+    /// 发起申请后台拨号失败（非阻塞 request）。status() 读出后由前端展示。
+    last_outbound_error: Mutex<Option<String>>,
     /// 被控端：最近一次收到发起端输入/心跳的时间。
     last_activity_ms: std::sync::atomic::AtomicI64,
     /// 发起端最近一次测得的 RTT（毫秒）；0 = 尚未测到。
     last_rtt_ms: std::sync::atomic::AtomicI64,
     /// 会话中可被发起端改的推流参数（画质档 / 截取范围 / 强制 JPEG）。
     stream_opts: Mutex<StreamOpts>,
+    /// 被控端：当前被按住的 vk / 鼠标键集合，会话收口时补发 up（防止 Ctrl/Shift/鼠标键卡死）。
+    pressed: std::sync::Mutex<super::pressed::Pressed>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -143,6 +160,36 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// `pull_clipboard` 等待循环该做什么（C8(b)）。
+///
+/// 抽成纯函数是为了能直接单测这个判断——它的输入只有 4 个数字，
+/// 但判断错了就会「跨会话串剪贴板」，是这套代码里最容易写错、最难在
+/// 集成测试里稳定复现的一处。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ClipWait {
+    /// 回包到了，可以取值
+    Take,
+    /// 还没到，继续等
+    KeepWaiting,
+    /// 会话已切换，本次等待作废（宁可不给，也不给别的会话的内容）
+    Abandon,
+}
+
+pub(crate) fn clip_wait_decision(
+    epoch_now: u64,
+    epoch_at_start: u64,
+    seq_now: u64,
+    seq_before: u64,
+) -> ClipWait {
+    if epoch_now != epoch_at_start {
+        return ClipWait::Abandon;
+    }
+    if seq_now > seq_before {
+        return ClipWait::Take;
+    }
+    ClipWait::KeepWaiting
+}
+
 static GLOBAL: OnceLock<Arc<RcService>> = OnceLock::new();
 
 pub fn install_global(svc: Arc<RcService>) {
@@ -164,12 +211,17 @@ impl RcService {
             outbound_send: tokio::sync::Mutex::new(None),
             remote_clipboard: Mutex::new(None),
             clip_seq: std::sync::atomic::AtomicU64::new(0),
+            clip_epoch: std::sync::atomic::AtomicU64::new(0),
+            clip_pull_lock: tokio::sync::Mutex::new(()),
             inbound_send: tokio::sync::Mutex::new(None),
             notify: Mutex::new(None),
+            notify_scope: Mutex::new(None),
             last_inject_err: Mutex::new(None),
+            last_outbound_error: Mutex::new(None),
             last_activity_ms: std::sync::atomic::AtomicI64::new(0),
             last_rtt_ms: std::sync::atomic::AtomicI64::new(0),
             stream_opts: Mutex::new(StreamOpts::default()),
+            pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
         }
     }
 
@@ -289,6 +341,34 @@ impl RcService {
         }
     }
 
+    /// 注入「对端改了画面范围」的回调（lib.rs 在 manage 之后调用）。
+    pub fn set_scope_notify(&self, f: ScopeNotifyFn) {
+        *self.notify_scope.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
+    }
+
+    /// 被控端：告诉前端「对端把画面范围改成了 scope」。
+    ///
+    /// B3：观察者（**包括只看会话**）能改被观察者的采集范围，被观察者原来只有
+    /// `log::info`，UI 上完全看不到——观察者因此能把画面切到另一块屏（上面可能有
+    /// 隐私内容）而对方毫无察觉。这里把变更显式抛给被控端 UI。
+    ///
+    /// ⚠️ 只有**入站**路径（`handle_inbound_input` 收到 `SetCaptureScope`）该调它。
+    /// 本机自己在设置页改范围走 `set_stream_scope`，那条路径**故意不通知**——
+    /// 用户自己点的操作不需要再弹一条「有人改了你的画面范围」。
+    ///
+    /// `pub(crate)` 是为了让 `rc::tests` 能覆盖「回调确实收到 scope」，
+    /// 不是因为需要跨模块调用。
+    pub(crate) fn emit_scope_changed(&self, scope: &str) {
+        let f = self
+            .notify_scope
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        if let Some(f) = f {
+            f(scope);
+        }
+    }
+
     fn set_inject_err(&self, msg: String) {
         *self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
         self.emit_changed();
@@ -321,10 +401,22 @@ impl RcService {
         inner.session.as_ref().map(|s| s.capability)
     }
 
-    /// 发起端发送输入/剪贴板帧。会话必须 OutboundActive 且能力为 Control（剪贴板也要求可控）。
+    /// 发起端发送输入/剪贴板/流控帧。会话必须 OutboundActive。
+    /// 键鼠与剪贴板要求 Control；**Ping 与流控（画质/范围/编码）只看会话也可发**——
+    /// 否则 View 会话发不出心跳，被控端 3.5s 后暂停推流，画面永久冻结。
     pub async fn send_input(&self, ev: &super::input::InputEvent) -> Result<(), String> {
-        let cap = self.session_capability().ok_or("没有进行中的会话")?;
-        super::input::assert_control_allowed(cap)?;
+        use super::input::InputEvent;
+        let needs_control = !matches!(
+            ev,
+            InputEvent::Ping { .. }
+                | InputEvent::SetQuality { .. }
+                | InputEvent::SetCaptureScope { .. }
+                | InputEvent::SetCodec { .. }
+        );
+        if needs_control {
+            let cap = self.session_capability().ok_or("没有进行中的会话")?;
+            super::input::assert_control_allowed(cap)?;
+        }
         {
             let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             let s = inner.session.as_ref().ok_or("没有进行中的会话")?;
@@ -359,17 +451,40 @@ impl RcService {
 
     /// 发起端请求拉回对方剪贴板，并等回包（修「立刻 take 必空」竞态）。
     /// 超时或对方无回包时返回 `Ok(None)`。
+    ///
+    /// C8(b)：这里有两处必须卡住的串扰，否则会「串剪贴板」：
+    /// 1. 并发 pull 共用一个 `clip_seq` —— 先到的回包会让两个等待都返回，
+    ///    后一个只能拿到空值。用 `clip_pull_lock` 串行化。
+    /// 2. 上一个会话迟到的回包会把 `clip_seq` 顶上去，让本次 pull 误判成
+    ///    「自己要的数据到了」，于是把**上个会话**的剪贴板内容当成本次结果
+    ///    返回。用 `clip_epoch` 认代：代变了就直接作废本次等待。
     pub async fn pull_clipboard(&self) -> Result<Option<String>, String> {
+        let _serial = self.clip_pull_lock.lock().await;
+        let epoch = self.clip_epoch.load(Ordering::SeqCst);
         let before = self.clip_seq.load(Ordering::SeqCst);
         self.send_input(&super::input::InputEvent::ClipboardPull).await?;
         let deadline = now_ms() + CLIPBOARD_PULL_TIMEOUT_MS;
         while now_ms() < deadline {
-            if self.clip_seq.load(Ordering::SeqCst) > before {
-                return Ok(self.take_remote_clipboard());
+            let decision = clip_wait_decision(
+                self.clip_epoch.load(Ordering::SeqCst),
+                epoch,
+                self.clip_seq.load(Ordering::SeqCst),
+                before,
+            );
+            match decision {
+                ClipWait::Take => return Ok(self.take_remote_clipboard()),
+                ClipWait::Abandon => return Ok(None),
+                ClipWait::KeepWaiting => {}
             }
             tokio::time::sleep(std::time::Duration::from_millis(80)).await;
         }
         Ok(None)
+    }
+
+    /// 会话收口时调用：作废仍在等待的 pull，并丢掉可能由迟到回包写入的文本。
+    fn invalidate_clipboard(&self) {
+        self.clip_epoch.fetch_add(1, Ordering::SeqCst);
+        *self.remote_clipboard.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     /// 最近一次从被控端拉回的剪贴板文本（由接收循环写入）。
@@ -476,6 +591,12 @@ impl RcService {
                 .unwrap_or("virtual")
                 .to_string(),
             rtt_ms: self.last_rtt_ms(),
+            // clone 而非 take：Overlay/对话框/设置多处 useRc 并发轮询，take 会只有一处看见
+            outbound_error: self
+                .last_outbound_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone(),
         }
     }
 
@@ -638,12 +759,14 @@ impl RcService {
         g.as_ref().map(|r| (r.endpoint.clone(), r.presence.clone()))
     }
 
+    /// 非阻塞发起远程：立刻落 OutboundPending 并返回，dial 在后台跑。
+    /// 前端可立即展示等待 UI 并取消；结果经 `rc-session-changed` / `outbound_error` 回传。
     pub async fn request_session(
         &self,
         peer: &str,
         capability: Capability,
     ) -> Result<Session, String> {
-        let session_id = {
+        let (session_id, pending_sess) = {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             if gate_outbound(inner.session.is_some()) == Gate::Busy {
                 return Err("[busy_local] 已有进行中的远程会话，请先结束".into());
@@ -659,7 +782,7 @@ impl RcService {
                 log::warn!("[RC] 从同步配对提升到远程失败：{e}");
             }
             let id = new_session_id(now_ms());
-            inner.session = Some(Session {
+            let sess = Session {
                 id: id.clone(),
                 peer: peer.to_string(),
                 peer_name: self.peer_name(peer),
@@ -667,45 +790,79 @@ impl RcService {
                 phase: SessionPhase::OutboundPending,
                 started_ms: now_ms(),
                 granted: false,
-            });
-            id
+            };
+            inner.session = Some(sess.clone());
+            (id, sess)
         };
-
-        match self.dial_and_request(peer, capability).await {
-            Ok((accepted_cap, send, recv)) => {
-                {
-                    let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-                    let Some(sess) = inner.session.as_mut() else {
-                        return Err("会话已失效".into());
-                    };
-                    if sess.id != session_id {
-                        return Err("会话已失效".into());
-                    }
-                    sess.phase = SessionPhase::OutboundActive;
-                    sess.capability = accepted_cap;
-                    sess.granted = true;
-                }
-                let _ = self.store.rc_device_touch(peer, true);
-                self.clear_frame();
-                self.note_rtt(0);
-                *self.outbound_send.lock().await = Some(send);
-                self.spawn_outbound_video(peer, recv);
-                let sess = {
-                    let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-                    inner.session.clone().unwrap()
-                };
-                Ok(sess)
-            }
-            Err(e) => {
-                let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-                if let Some(s) = inner.session.as_ref() {
-                    if s.id == session_id {
-                        inner.session = None;
-                    }
-                }
-                Err(e)
-            }
+        {
+            let mut g = self
+                .last_outbound_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            *g = None;
         }
+        // 立刻让前端看到 Pending，取消按钮才能点
+        self.emit_changed();
+
+        let peer = peer.to_string();
+        tauri::async_runtime::spawn(async move {
+            let Some(svc) = global() else { return };
+            match svc.dial_and_request(&peer, capability).await {
+                Ok((accepted_cap, send, recv)) => {
+                    {
+                        let mut inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
+                        let Some(sess) = inner.session.as_mut() else {
+                            // 用户已取消：关掉刚建好的流
+                            drop(send);
+                            drop(recv);
+                            return;
+                        };
+                        if sess.id != session_id {
+                            drop(send);
+                            drop(recv);
+                            return;
+                        }
+                        sess.phase = SessionPhase::OutboundActive;
+                        sess.capability = accepted_cap;
+                        sess.granted = true;
+                    }
+                    let _ = svc.store.rc_device_touch(&peer, true);
+                    svc.clear_frame();
+                    svc.note_rtt(0);
+                    *svc.outbound_send.lock().await = Some(send);
+                    svc.spawn_outbound_video(&peer, recv);
+                    svc.emit_changed();
+                }
+                Err(e) => {
+                    {
+                        let mut inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
+                        if let Some(s) = inner.session.as_ref() {
+                            if s.id == session_id {
+                                inner.session = None;
+                            }
+                        }
+                    }
+                    {
+                        let mut g = svc
+                            .last_outbound_error
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner());
+                        *g = Some(e);
+                    }
+                    svc.emit_changed();
+                }
+            }
+        });
+
+        Ok(pending_sess)
+    }
+
+    pub fn clear_outbound_error(&self) {
+        let mut g = self
+            .last_outbound_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        *g = None;
     }
 
     /// 发起端：收 JPEG / 脏矩形 / 控制帧。
@@ -715,6 +872,20 @@ impl RcService {
     fn spawn_outbound_video(&self, peer: &str, mut recv: iroh::endpoint::RecvStream) {
         let peer = peer.to_string();
         let Some(svc) = global() else { return };
+        // 捕获本任务启动时那份会话 id：重连（同 peer 新会话）建立后，旧画面流任务
+        // 收尾时只能按 id 收口，不能按 peer 误杀新会话。
+        let my_id = {
+            let inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
+            inner
+                .session
+                .as_ref()
+                .filter(|s| s.phase == SessionPhase::OutboundActive && s.peer == peer)
+                .map(|s| s.id.clone())
+        };
+        let Some(my_id) = my_id else {
+            log::warn!("[RC] 发起端画面流启动前会话已结束，放弃推流");
+            return;
+        };
         tauri::async_runtime::spawn(async move {
             use super::video::{read_incoming, Incoming};
             let mut pending_rect: Option<super::video::DirtyRect> = None;
@@ -723,6 +894,11 @@ impl RcService {
             let mut canvas_h: u32 = 0;
             loop {
                 if !svc.session_is(SessionPhase::OutboundActive, &peer) {
+                    break;
+                }
+                if svc.session_expired() {
+                    log::info!("[RC] 发起端会话超过 TTL，自动结束");
+                    svc.force_end_if_session(&my_id, "会话超时").await;
                     break;
                 }
                 match read_incoming(&mut recv).await {
@@ -810,9 +986,13 @@ impl RcService {
                     }
                 }
             }
-            *svc.outbound_send.lock().await = None;
-            // P0：收流失败 ≠ 用户点了结束，但会话必须收口，否则界面一直「可控」
-            svc.force_end_for_peer(&peer, "画面流中断").await;
+            // P0：收流失败 ≠ 用户点了结束，但会话必须收口，否则界面一直「可控」。
+            // 先比对 id 再清槽位——新会话建立时会直接覆盖 outbound_send，不清不会漏，
+            // 但若不比对，旧任务会把新会话的发送半流清掉。
+            if svc.session_id_is(&my_id) {
+                *svc.outbound_send.lock().await = None;
+            }
+            svc.force_end_if_session(&my_id, "画面流中断").await;
         });
     }
 
@@ -905,7 +1085,10 @@ impl RcService {
         // 未配对（远程/同步都没有）+ 邀请门开着 → 记敲门，等用户核对指纹
         if !self.has_remote_trust(&peer) {
             let now = now_ms();
-            if join::door_open(&self.store, now) && self.joins.knock(&peer, now) {
+            // 红线「未启用 = 零可见零请求零费用」：rc_enabled 关闭时，即便邀请门开着，
+            // 也不记入 pending、不 emit，只回 deny（门禁在下方 gate_inbound 也会拦，
+            // 但这里先挡住，避免禁用期间出现可见的配对请求）。
+            if self.enabled() && join::door_open(&self.store, now) && self.joins.knock(&peer, now) {
                 if let Some(b) = deny("等待对方确认配对", "await_pair_confirm") {
                     let _ = write_frame(&mut send, &b).await;
                 }
@@ -1024,6 +1207,13 @@ impl RcService {
         if !self.has_remote_trust(peer) {
             return Err("设备未配对".into());
         }
+        // 本机已有进行中的会话时，不能硬覆盖（发起侧 request_session 有 [busy_local] 这道闸，
+        // 被控侧之前漏了——补上。对照状态机：OutboundActive/InboundActive 都不能迁移到 InboundActive。
+        if let Some(cur) = inner.session.as_ref() {
+            if !can_transition(cur.phase, SessionPhase::InboundActive) {
+                return Err("[busy_local] 本机已有进行中的远程会话，请先结束".into());
+            }
+        }
         let knock = inner.pending.remove(idx);
         let cap = if knock.capability.allowed_by(self.max_capability()) {
             knock.capability
@@ -1089,6 +1279,13 @@ impl RcService {
                 }
             }
         }
+        // 补发卡住的 up：对端断线/会话结束时，被按住的 Ctrl/Shift/鼠标键不会自动弹起。
+        // ⚠️ 必须在清 session 之前、且直接调注入函数（release_all），不要走 handle_inbound_input——
+        // 会话结束态下它的 session_capability() 返回 None，能力校验会拦掉释放。
+        {
+            let mut g = self.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            g.release_all();
+        }
         {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             inner.session = None;
@@ -1098,7 +1295,14 @@ impl RcService {
         self.append_history(&peer, &peer_name, cap, phase, started, reason);
         self.clear_frame();
         self.note_rtt(0);
+        // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
+        // 避免下一个会话把它当成自己的结果返回。
+        self.invalidate_clipboard();
         *self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        *self
+            .last_outbound_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
         self.emit_changed();
         Ok(())
     }
@@ -1151,16 +1355,22 @@ impl RcService {
             .unwrap_or_default()
     }
 
-    /// 流断开 / 对端消失时本地收口：只清**该对端**的会话，避免误杀别人。
-    pub async fn force_end_for_peer(&self, peer: &str, reason: &str) {
+    /// 当前会话 id 是否等于给定值（收口按 session id 判定，避免重连时被旧任务按 peer 误杀）。
+    pub fn session_id_is(&self, id: &str) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        matches!(inner.session.as_ref(), Some(s) if s.id == id)
+    }
+
+    /// 流断开 / 对端消失时本地收口：只清**该 session id** 的会话，避免误杀同 peer 的新会话。
+    pub async fn force_end_if_session(&self, session_id: &str, reason: &str) {
         let should = {
             let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            matches!(inner.session.as_ref(), Some(s) if s.peer == peer)
+            matches!(inner.session.as_ref(), Some(s) if s.id == session_id)
         };
         if !should {
             return;
         }
-        log::info!("[RC] 强制结束会话（{peer}）：{reason}");
+        log::info!("[RC] 强制结束会话（{session_id}）：{reason}");
         let _ = self.end_session(reason).await;
     }
 
@@ -1201,6 +1411,20 @@ async fn spawn_inbound_video(
     let Some(svc) = global() else {
         return;
     };
+    // 捕获本任务启动时那份会话 id：重连（同 peer 新会话）建立后，旧推流/输入任务
+    // 收尾时只能按 id 收口，不能按 peer 误杀新会话。
+    let my_id = {
+        let inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner
+            .session
+            .as_ref()
+            .filter(|s| s.phase == SessionPhase::InboundActive && s.peer == peer)
+            .map(|s| s.id.clone())
+    };
+    let Some(my_id) = my_id else {
+        log::warn!("[RC] 被控推流启动前会话已结束，放弃推流");
+        return;
+    };
     let send = std::sync::Arc::new(tokio::sync::Mutex::new(send));
     // 被控端结束会话时要用这条半流发 End
     {
@@ -1216,6 +1440,7 @@ async fn spawn_inbound_video(
         let peer2 = peer.clone();
         let svc2 = svc.clone();
         let send2 = send.clone();
+        let my_id2 = my_id.clone();
         tauri::async_runtime::spawn(async move {
             loop {
                 if !svc2.session_is(SessionPhase::InboundActive, &peer2) {
@@ -1226,7 +1451,7 @@ async fn spawn_inbound_video(
                         // 发起端结束会话：End 帧与 InputEvent 同半流
                         if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {
                             log::info!("[RC] 对端结束会话：{reason}");
-                            svc2.force_end_for_peer(&peer2, &reason).await;
+                            svc2.force_end_if_session(&my_id2, &reason).await;
                             break;
                         }
                         if let Ok(ev) = serde_json::from_slice::<super::input::InputEvent>(&bytes) {
@@ -1249,7 +1474,7 @@ async fn spawn_inbound_video(
             }
             // 输入半流断了：会话也要收口（对端崩溃 / 网络断）
             svc2
-                .force_end_for_peer(&peer2, "控制通道断开")
+                .force_end_if_session(&my_id2, "控制通道断开")
                 .await;
         });
     }
@@ -1294,7 +1519,7 @@ async fn spawn_inbound_video(
         }
         if svc.session_expired() {
             log::info!("[RC] 会话超过 TTL，自动结束");
-            svc.force_end_for_peer(&peer, "会话超时").await;
+            svc.force_end_if_session(&my_id, "会话超时").await;
             break;
         }
         if svc.should_pause_stream() {
@@ -1343,7 +1568,7 @@ async fn spawn_inbound_video(
                                 }
                                 drop(guard);
                                 if failed {
-                                    svc.force_end_for_peer(&peer, "H.264 推送失败").await;
+                                    svc.force_end_if_session(&my_id, "H.264 推送失败").await;
                                     break;
                                 }
                             }
@@ -1380,14 +1605,14 @@ async fn spawn_inbound_video(
                     if let Err(e) = super::video::write_dirty_meta(&mut guard, r).await {
                         log::info!("[RC] 脏矩形元数据写失败：{e}");
                         drop(guard);
-                        svc.force_end_for_peer(&peer, "画面推送失败").await;
+                        svc.force_end_if_session(&my_id, "画面推送失败").await;
                         break;
                     }
                 }
                 if super::video::write_jpeg(&mut guard, &enc_out.frame.jpeg).await.is_err() {
                     log::info!("[RC] 画面写入失败，停止推流");
                     drop(guard);
-                    svc.force_end_for_peer(&peer, "画面推送失败").await;
+                    svc.force_end_if_session(&my_id, "画面推送失败").await;
                     break;
                 }
             }
@@ -1401,7 +1626,11 @@ async fn spawn_inbound_video(
         tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
     }
     log::info!("[RC] 被控推流已停止");
-    *svc.inbound_send.lock().await = None;
+    // 先比对 id 再清槽位——新会话建立时会直接覆盖 inbound_send，不清不会漏，
+    // 但不比对会让旧任务清掉新会话的发送半流。
+    if svc.session_id_is(&my_id) {
+        *svc.inbound_send.lock().await = None;
+    }
 }
 
 /// 被控端处理一条输入（R2）。UIPI / 只看档必须报错不静默。
@@ -1458,10 +1687,8 @@ async fn handle_inbound_input(
             }
             return;
         }
+        // 流控（画质/范围/编码）不注入本机输入，只看会话也允许调整
         InputEvent::SetQuality { quality } => {
-            if super::input::assert_control_allowed(cap).is_err() {
-                return;
-            }
             if let Err(e) = svc.set_stream_quality(quality) {
                 log::warn!("[RC] {e}");
             } else {
@@ -1470,20 +1697,17 @@ async fn handle_inbound_input(
             return;
         }
         InputEvent::SetCaptureScope { scope } => {
-            if super::input::assert_control_allowed(cap).is_err() {
-                return;
-            }
             if let Err(e) = svc.set_stream_scope(scope) {
                 log::warn!("[RC] {e}");
             } else {
                 log::info!("[RC] 对端要求画面范围：{scope}");
+                // B3：被控端必须看得见这次变更。只 log 等于没提示——用户不知道
+                // 自己的画面（可能含隐私内容）被切到了别处。
+                svc.emit_scope_changed(scope);
             }
             return;
         }
         InputEvent::SetCodec { codec } => {
-            if super::input::assert_control_allowed(cap).is_err() {
-                return;
-            }
             if let Err(e) = svc.set_stream_codec(codec) {
                 log::warn!("[RC] {e}");
             } else {
@@ -1498,6 +1722,29 @@ async fn handle_inbound_input(
         log::debug!("[RC] 拒绝只看会话的键鼠注入");
         return;
     }
+
+    // 追踪按下/抬起：会话收口时由 end_session 调 release_all 补发 up，
+    // 避免对端断线后 Ctrl/Shift/鼠标键永久卡在按下态。只在会真正注入时记录。
+    match &ev {
+        InputEvent::Key { vk, down } => {
+            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            if *down {
+                g.press_key(*vk);
+            } else {
+                g.release_key(*vk);
+            }
+        }
+        InputEvent::MouseButton { button, down, .. } => {
+            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            if *down {
+                g.press_button(*button);
+            } else {
+                g.release_button(*button);
+            }
+        }
+        _ => {}
+    }
+
     let region = {
         let opts = svc.stream_opts_snapshot();
         if opts.monitor >= 0 {

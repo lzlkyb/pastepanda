@@ -655,6 +655,18 @@ pub fn run() {
                         }
                     }));
                 }
+                // B3：被控端画面范围被对端改动 → 单独抛事件，让被控横幅能说出
+                // 「对方把画面范围改成了 X」。只走 rc-session-changed 不够：
+                // 那只是「状态变了」，被控端分不清是本地设置改的还是对端改的。
+                {
+                    let handle_scope = handle.clone();
+                    rc_svc.set_scope_notify(std::sync::Arc::new(move |scope: &str| {
+                        let _ = handle_scope.emit(
+                            "rc-scope-changed",
+                            serde_json::json!({ "scope": scope, "by_peer": true }),
+                        );
+                    }));
+                }
                 app.manage(rc_svc);
             }
             commands::boot(&handle);
@@ -823,6 +835,7 @@ pub fn run() {
             commands::rc_set_device_allowed,
             commands::rc_request_session,
             commands::rc_cancel_request,
+            commands::rc_clear_outbound_error,
             commands::rc_approve_inbound,
             commands::rc_deny_inbound,
             commands::rc_end_session,

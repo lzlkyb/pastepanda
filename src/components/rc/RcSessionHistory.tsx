@@ -5,44 +5,48 @@ import { useEffect, useState } from "react";
 import { rcSessionHistory, type RcHistoryItem } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { formatDuration, formatWhen } from "@/lib/rcSessionStats";
-import styles from "../Settings.module.css";
+// D10：历史记录用 rc 会话专用的 hist* 类，不再复用「局域网同步」的 lanDevice* 类
+import styles from "./RemoteComputer.module.css";
 
 export function RcSessionHistory() {
   const [list, setList] = useState<RcHistoryItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void rcSessionHistory()
       .then(setList)
-      .catch((e) => setErr(String(e)));
+      .catch((e) => setErr(String(e)))
+      .finally(() => setLoading(false));
   }, []);
 
+  if (loading) {
+    return <div className={styles.histNote}>加载中…</div>;
+  }
   if (err) {
-    return (
-      <div style={{ fontSize: 12, color: "var(--danger, #d64545)" }}>读取会话历史失败：{err}</div>
-    );
+    return <div className={styles.histNoteErr}>读取会话历史失败：{err}</div>;
   }
   if (list.length === 0) {
     return (
-      <div style={{ fontSize: 12, color: "var(--text-muted, #6b7280)" }}>
+      <div className={styles.histNote}>
         暂无会话记录。开始一次远程后会出现在这里（只记元数据）。
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div className={styles.histList}>
       {list.map((h, i) => (
-        <div key={`${h.started_ms}-${i}`} className={styles.lanDeviceItem}>
-          <div className={styles.lanDeviceInfo} style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 600 }}>
+        <div key={`${h.started_ms}-${i}`} className={styles.histItem}>
+          <div className={styles.histInfo}>
+            <div className={styles.histName}>
               {h.peer_name || fingerprintOf(h.peer)}
-              <span style={{ fontWeight: 400, color: "var(--text-muted)", marginLeft: 8 }}>
+              <span className={styles.histNameMeta}>
                 {h.dir === "outbound" ? "我发起" : "对方控我"} ·{" "}
                 {h.capability === "control" ? "可控" : "只看"}
               </span>
             </div>
-            <div className={styles.lanDeviceTime}>
+            <div className={styles.histTime}>
               {formatWhen(h.started_ms)} · {formatDuration(h.duration_ms)} · {h.reason}
             </div>
           </div>

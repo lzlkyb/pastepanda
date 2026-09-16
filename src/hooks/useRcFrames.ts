@@ -51,7 +51,12 @@ export function useRcFrames(sessionId: string, canvasRef: React.RefObject<HTMLCa
       void rcSendInput({ kind: "set_codec", codec: "jpeg" }).catch(() => {});
     };
 
+    // in-flight 守卫：解码/加载慢时，若上一帧还没落地就跳过本次 tick，
+    // 避免后发的 tick 先把新帧落地、早发的 tick 后落地造成的画面回跳。
+    let inflight = false;
     const tick = async () => {
+      if (inflight) return;
+      inflight = true;
       try {
         const f = await rcLatestFrame();
         if (!alive || !f || f.at_ms === lastAt.current) return;
@@ -134,6 +139,8 @@ export function useRcFrames(sessionId: string, canvasRef: React.RefObject<HTMLCa
         setStatusText("");
       } catch {
         /* 单帧失败不打断 */
+      } finally {
+        inflight = false;
       }
     };
     void tick();

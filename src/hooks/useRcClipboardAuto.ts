@@ -1,5 +1,9 @@
 /**
  * useRcClipboardAuto — 自动同步剪贴板，失败累计由 UI 展示。
+ *
+ * B5 隐私红线：开启开关时**不**立即外发当前剪贴板（那一刻可能是密码/验证码）。
+ * 改为把「开启瞬间」的剪贴板设为基线，只有**之后发生变化**才发给对方；用户必须
+ * 主动改动才触发首次发送。
  */
 import { useEffect, useRef, useState } from "react";
 import { rcPushClipboard } from "@/lib/api/rc";
@@ -17,12 +21,21 @@ export function useRcClipboardAuto(opts: {
   const [autoFail, setAutoFail] = useState(0);
   const lastClip = useRef<string | null>(null);
   const failRef = useRef(0);
+  // 首个轮询仅用来建立基线，不发；之后变化才发。
+  const baselineSet = useRef(false);
 
   useEffect(() => {
     if (!enabled || !canControl || !visible) return;
+    baselineSet.current = false;
     const t = window.setInterval(async () => {
       try {
         const text = await navigator.clipboard.readText();
+        if (!baselineSet.current) {
+          // 建立基线：记录开启瞬间剪贴板，不发送
+          lastClip.current = text;
+          baselineSet.current = true;
+          return;
+        }
         if (text && text !== lastClip.current) {
           lastClip.current = text;
           await rcPushClipboard(text);
@@ -39,11 +52,5 @@ export function useRcClipboardAuto(opts: {
     return () => window.clearInterval(t);
   }, [enabled, canControl, visible, sessionId, onFailToast]);
 
-  return {
-    lastAutoAt,
-    autoFail,
-    resetBaseline: () => {
-      lastClip.current = null;
-    },
-  };
+  return { lastAutoAt, autoFail };
 }

@@ -53,7 +53,15 @@
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--card-bg, #f6f7f9);
-  border: 1px solid var(--border-color, #e3e6ea);
+  /* V1：常态去边框（用透明占位保布局高度），hover/focus 才用背景差分 + 边框 */
+  border: 1px solid transparent;
+  position: relative;
+}
+
+.devItem:hover,
+.devItem:focus-within {
+  background: color-mix(in srgb, var(--accent, #4f7cff) 6%, var(--card-bg, #f6f7f9));
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 35%, var(--border-color, #e3e6ea));
 }
 
 .av {
@@ -63,7 +71,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-primary, #1c1f23);
   font-size: 12px;
   font-weight: 700;
   flex-shrink: 0;
@@ -143,29 +151,14 @@
   flex-wrap: wrap;
 }
 
-.pill,
-.pillOn {
-  font: inherit;
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  border: 1px solid var(--border-color, #e3e6ea);
-  background: var(--card-bg, #f6f7f9);
-  color: var(--text-muted, #6b7280);
-  cursor: pointer;
-}
-
-.pillOn {
-  background: color-mix(in srgb, var(--accent, #4f7cff) 14%, transparent);
-  color: var(--accent, #4f7cff);
-  border-color: color-mix(in srgb, var(--accent, #4f7cff) 40%, var(--border-color, #e3e6ea));
-  font-weight: 600;
-}
+/* D6：.pill/.pillOn 原本在这里完整定义过一遍，下方「UX 升级」段又定义了一遍
+（那版多 .pillDanger 与 inline-flex），此处删除旧版，只留唯一实现。 */
 
 .joinBtns {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .viewShell {
@@ -233,11 +226,11 @@
   height: 100vh;
   min-height: 100vh;
   background: #0b0d10;
+  /* 全屏时 canvas 的 contain 仍由内联 object-fit 控制，完整可见，无需额外规则 */
 }
 
-.fakeScreen:fullscreen .screenCanvas {
-  /* contain 由内联 object-fit 控制；全屏时仍完整可见 */
-}
+/* D6：移除空规则（规则体只有注释、无任何声明，属于死代码）。
+   「contain 由内联 object-fit 控制」这一说明已上移到 :fullscreen 块。 */
 
 .sp {
   flex: 1;
@@ -286,6 +279,47 @@
   margin-right: 2px;
 }
 
+/* —— D9：消除「深-浅-深-浅」三明治 ——
+   .viewShell 是深色底（#0d0f12），但内部顶栏 .viewTop 与质量条 .qBar 用不透明的
+   --card-bg 浅色，等于在黑底里夹两条白带。这里把「会话视图内」的浮层统一改成
+   半透明浅色叠层 + 浅色文字。
+   注意：这些类名在设置页/设备列表里也有复用，所以必须用 .viewShell 后代选择器限定，
+   不能直接改基类，否则会把别处的浅色 UI 一起弄黑。 */
+.viewShell .viewTop {
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  color: #c8d0dc;
+}
+.viewShell .qBar {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+/* 深底上的次要文字 */
+.viewShell .meta,
+.viewShell .qLabel,
+.viewShell .kbdHint {
+  color: #9aa6b6;
+}
+/* 深底上的胶囊与按钮：不透明 --card-bg 会在深底上又变成小白块 */
+.viewShell .pill,
+.viewShell .pillOn,
+.viewShell .miniBtn,
+.viewShell .miniBtnPri,
+.viewShell .dangerBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #e6ecf5;
+}
+.viewShell .pillOn {
+  background: color-mix(in srgb, var(--accent, #4f7cff) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 45%, transparent);
+  color: #a8c0ff;
+}
+.viewShell .dangerBtn {
+  color: #ff9d9d;
+  border-color: rgba(255, 120, 120, 0.38);
+}
+
 .qSp {
   flex: 1;
   min-width: 8px;
@@ -326,9 +360,14 @@
 .hud {
   position: absolute;
   left: 10px;
+  right: 10px;
   bottom: 10px;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  /* D7：原本无 flex-wrap / 无宽度约束，窄窗时 5 个 chip 会被 .viewShell 的
+     overflow:hidden 直接裁掉。改为左右贴边 + 换行，保证任何宽度都完整可见。 */
+  max-width: calc(100% - 20px);
 }
 
 .hud span {
@@ -374,6 +413,37 @@
   color: var(--danger, #d64545);
 }
 
+/* B3：被控端「对方改了画面范围」提示。
+   用 warn 语义色（本项目是 --orange，与 .pillWarn/.fbWarn 同源）而不是 danger：
+   这是需要用户知情的变更，不是出错。
+   可换行——这句话比其它 chip 长，窄窗时必须能折行不被裁掉。 */
+.scopeNotice {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--orange, #e0803a) 16%, transparent);
+  color: color-mix(in srgb, var(--orange, #e0803a) 80%, var(--text-primary, #1c1f23));
+  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 45%, transparent);
+}
+.scopeNoticeX {
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 50%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.scopeNoticeX:hover {
+  background: color-mix(in srgb, var(--orange, #e0803a) 18%, transparent);
+}
+
 .joinGlobal {
   border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 40%, var(--border-color, #e3e6ea));
   background: color-mix(in srgb, var(--orange, #e0803a) 8%, var(--card-bg, #fff));
@@ -392,6 +462,26 @@
   font-size: 12px;
   color: var(--text-muted, #6b7280);
   line-height: 1.65;
+}
+
+/* 配对/入站申请条的行内元素。
+   D11：这些间距原先是内联 style 写死的；顺便让上面的 .joinGlobal h4/p 真正被用上
+   ——此前它们一直是没人引用的死规则，因为组件里用的是带内联样式的 div。 */
+.joinItem {
+  margin-bottom: 8px;
+}
+.joinFp {
+  font-family: ui-monospace, Consolas, monospace;
+  font-weight: 700;
+}
+.joinMeta {
+  margin-bottom: 4px;
+}
+.joinNote {
+  margin: 6px 0 8px;
+}
+.joinHint {
+  margin: 4px 0 8px;
 }
 
 /* —— UX 升级 —— */
@@ -516,7 +606,7 @@
 }
 
 .devItemRecent {
-  border-color: color-mix(in srgb, var(--accent, #4f7cff) 45%, var(--border-color, #e3e6ea));
+  /* D2/V1：只用背景差分表达「最近」，不再叠一圈彩色边框（边框只留给 hover/focus） */
   background: color-mix(in srgb, var(--accent, #4f7cff) 5%, var(--card-bg, #f6f7f9));
 }
 
@@ -557,7 +647,17 @@
 }
 .dotOn {
   background: var(--green, #2f9e5f);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green, #2f9e5f) 22%, transparent);
+  /* D3/U2：在线点 2s 呼吸，让「活着」有动作而不是一块死色 */
+  animation: rcDotBreathe 2s ease-in-out infinite;
+}
+@keyframes rcDotBreathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--green, #2f9e5f) 22%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--green, #2f9e5f) 7%, transparent);
+  }
 }
 .dotOff {
   background: var(--text-muted, #6b7280);
@@ -661,6 +761,22 @@
   margin: 10px 0;
 }
 
+.inviteCode {
+  width: 100%;
+  min-height: 56px;
+  margin-top: 8px;
+  font: inherit;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #1c1f23);
+  padding: 8px;
+  resize: none;
+  word-break: break-all;
+}
+
 @media (max-width: 640px) {
   .steps,
   .pairPane {
@@ -700,13 +816,130 @@
   color: var(--danger, #d64545);
 }
 
-.devItem {
+/* —— D10：会话历史专用类 ——
+   原先 RcSessionHistory 复用了 Settings.module.css 里「局域网同步」的
+   lanDeviceItem/Info/Time，跨模块耦合。这里按语义另起 hist* 一套，
+   样式从 lanDevice* 移植（同样的视觉，但归 rc 自己所有）。 */
+.histItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--card-bg, #f6f7f9);
+  border: 1px solid var(--border-color, #e3e6ea);
+}
+.histInfo {
+  /* 组件里原本用内联 style 写 flex/min-width，收进类里 */
+  flex: 1;
+  min-width: 0;
+}
+.histTime {
+  font-size: 10px;
+  color: var(--text-muted, #6b7280);
+}
+/* D11：历史区原先 6 处内联 style 收口到这里 */
+.histList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.histName {
+  font-size: 12px;
+  font-weight: 600;
+}
+.histNameMeta {
+  font-weight: 400;
+  color: var(--text-muted, #6b7280);
+  margin-left: 8px;
+}
+.histNote {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+}
+.histNoteErr {
+  font-size: 12px;
+  color: var(--danger, #d64545);
+}
+
+/* —— D11（续）：工具箱/会话区其余组件的静态内联样式收口 ——
+   放在文件末尾是有意的：这些类要和前面已有的基类（.noteWarn 等）同优先级叠用，
+   靠源码顺序保证覆盖，不能提到基类前面去。 */
+.emptyBoxLeft {
+  text-align: left;
+  padding: 20px 18px;
+}
+.emptyIcon {
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+.emptyLeadLast {
+  margin-bottom: 14px;
+}
+.emptyActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.errTitle {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.errHint {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.errMeta {
+  margin-top: 4px;
+}
+.errActions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+.waitBox {
+  flex-direction: column;
+  align-items: stretch;
+}
+.waitHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.waitMeta {
+  margin-top: 6px;
+}
+.waitActions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+.qMeta {
+  margin-left: 4px;
+}
+.devMenuWrap {
   position: relative;
+}
+.devSubNote {
+  font-size: 11px;
+  opacity: 0.85;
+}
+.mt10 {
+  margin-top: 10px;
+}
+.ml8 {
+  margin-left: 8px;
+}
+.selfStart {
+  align-self: flex-start;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* D3：把真正有动画的 .spin / .dotOn 停掉；.live 从来没有动画，
+     放进来是占位式实现，已移除 */
   .spin,
-  .live {
+  .dotOn {
     animation: none !important;
   }
 }

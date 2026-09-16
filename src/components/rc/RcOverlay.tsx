@@ -1,6 +1,6 @@
 /**
- * RcOverlay — 被控横幅 + 入站确认条 + 配对敲门。挂在 App 层，**任何模式下都可见**（规则 15）。
- * 没人申请且未被控时返回 null，不占位。
+ * RcOverlay — 被控横幅 + 发起端会话横幅 + 入站确认条 + 配对敲门。挂在 App 层，**任何模式下都可见**（规则 15）。
+ * 没人申请且未被控/未发起时返回 null，不占位。
  *
  * ❗ 只看 `rc_enabled`，**不**依赖知识库同步：远程通道是独立的（方案 A）。
  */
@@ -10,6 +10,7 @@ import { useRc } from "@/hooks/useRc";
 import { RcControlBanner } from "./RcControlBanner";
 import { RcJoinRequests } from "./RcJoinRequests";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源
 import styles from "./RemoteComputer.module.css";
 
 export function RcOverlay() {
@@ -18,7 +19,7 @@ export function RcOverlay() {
   const rc = useRc(true);
   const seenPending = useRef(new Set<string>());
 
-  // 窗口可能 hide：有新申请时 toast，避免 120s 超时前用户毫无感知
+  // 窗口可能 hide：有新申请时 toast + 拉起窗口，避免 120s 超时前用户毫无感知
   useEffect(() => {
     const pending = rc.status?.pending ?? [];
     for (const p of pending) {
@@ -30,6 +31,17 @@ export function RcOverlay() {
           }）`,
           "info",
         );
+        // 窗口 hide/失焦时用户看不见 toast：主动拉起（等同系统级提醒）
+        void (async () => {
+          try {
+            const { getCurrentWindow } = await import("@tauri-apps/api/window");
+            const w = getCurrentWindow();
+            if (!(await w.isVisible())) await w.show();
+            await w.setFocus();
+          } catch {
+            /* 非 Tauri 或权限不足时忽略 */
+          }
+        })();
       }
     }
     // 清掉已消失的
@@ -39,12 +51,16 @@ export function RcOverlay() {
     }
   }, [rc.status?.pending, toast]);
 
-  // 被控中 / 有会话申请 / 有配对敲门时才渲染
+  // 被控中 / 有会话申请 / 有配对敲门 / 我方发起中时才渲染
   const session = rc.status?.session ?? null;
   const pending = rc.status?.pending ?? [];
   const joins = rc.status?.joins ?? [];
   const inboundActive = session?.phase === "inbound_active";
-  if (!inboundActive && pending.length === 0 && joins.length === 0) return null;
+  const outboundLive =
+    session?.phase === "outbound_active" || session?.phase === "outbound_pending";
+  if (!inboundActive && !outboundLive && pending.length === 0 && joins.length === 0) {
+    return null;
+  }
 
   return (
     <>
@@ -52,12 +68,52 @@ export function RcOverlay() {
         <RcControlBanner
           session={session}
           busy={rc.busy}
+          scopeNotice={rc.scopeNotice}
+          onDismissScopeNotice={rc.clearScopeNotice}
           onEnd={() => {
             void rc.end().then((ok) => {
               if (ok) toast("已结束远程会话", "success");
             });
           }}
         />
+      )}
+      {outboundLive && session && (
+        <div className={styles.ctrlBanner} role="status">
+          <span className={styles.who}>
+            <span className={styles.live} />
+            {session.phase === "outbound_pending"
+              ? `正在申请远程「${session.peer_name || fingerprintOf(session.peer)}」`
+              : `正在远程「${session.peer_name || fingerprintOf(session.peer)}」`}
+          </span>
+          <span className={styles.pillOn}>
+            {session.capability === "control" ? "可控" : "只看"}
+          </span>
+          <span className={styles.sp} />
+          <span className={styles.meta}>
+            {session.phase === "outbound_pending"
+              ? "等待对方同意"
+              : "打开「远程电脑」可看画面"}
+          </span>
+          <button
+            type="button"
+            className={styles.dangerBtn}
+            disabled={rc.busy}
+            onClick={() => {
+              void (session.phase === "outbound_pending"
+                ? rc.cancel()
+                : rc.end()
+              ).then((ok) => {
+                if (ok)
+                  toast(
+                    session.phase === "outbound_pending" ? "已取消远程申请" : "已结束远程会话",
+                    "success",
+                  );
+              });
+            }}
+          >
+            {session.phase === "outbound_pending" ? "取消申请" : "立即结束"}
+          </button>
+        </div>
       )}
       <RcJoinRequests
         pending={pending}
@@ -75,18 +131,14 @@ export function RcOverlay() {
       />
       {joins.length > 0 && (
         <div className={styles.joinGlobal}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            🔔 有 {joins.length} 台设备想完成远程配对
-          </div>
+          <h4>🔔 有 {joins.length} 台设备想完成远程配对</h4>
           {joins.map((j) => (
-            <div key={j.node_id} style={{ marginBottom: 8 }}>
-              <div style={{ fontFamily: "ui-monospace, Consolas, monospace", fontWeight: 700 }}>
-                {fingerprintOf(j.node_id)}
-              </div>
-              <div className={styles.meta} style={{ margin: "4px 0 8px" }}>
+            <div key={j.node_id} className={styles.joinItem}>
+              <div className={styles.joinFp}>{fingerprintOf(j.node_id)}</div>
+              <div className={`${styles.meta} ${styles.joinHint}`}>
                 核对指纹后再允许（与知识库同步配对无关）
               </div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <div className={styles.joinBtns}>
                 <button
                   type="button"
                   className="btn-secondary"
@@ -104,7 +156,7 @@ export function RcOverlay() {
                   className="btn-primary"
                   disabled={rc.busy}
                   onClick={() => {
-                    void rc.approveJoin(j.node_id, "新设备").then((ok) => {
+                    void rc.approveJoin(j.node_id, DEFAULT_RC_DEVICE_NAME).then((ok) => {
                       if (ok) toast("已允许远程配对", "success");
                     });
                   }}

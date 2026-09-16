@@ -541,13 +541,35 @@ pub async fn write_h264(
 }
 
 async fn write_raw(s: &mut iroh::endpoint::SendStream, bytes: &[u8]) -> Result<(), String> {
-    s.write_all(&(bytes.len() as u32).to_be_bytes())
-        .await
-        .map_err(|e| format!("写帧长度失败：{e}"))?;
-    s.write_all(bytes)
-        .await
-        .map_err(|e| format!("写帧内容失败：{e}"))?;
+    // 分块 + 每块停滞超时：对端不读时流控窗口填满，裸 write_all 会永远阻塞，
+    // 进而长期持有调用方持有的 `send.lock()`，把 `end_session`（取锁）一起挂死。
+    // 参照 sync/transport.rs 的 wr()：每块各自计时，只拦「完全死掉/慢速攻击」的连接。
+    const CHUNK: usize = 64 * 1024;
+    const STALL: std::time::Duration = std::time::Duration::from_secs(30);
+    let len = (bytes.len() as u32).to_be_bytes();
+    stalled_write(s, &len, "写帧长度", STALL).await?;
+    for part in bytes.chunks(CHUNK) {
+        stalled_write(s, part, "写帧内容", STALL).await?;
+    }
     Ok(())
+}
+
+/// 给一次 write_all 包停滞超时（30s 内一个字节都没动 = 中断）。错误信息指出是停滞而非普通 IO。
+async fn stalled_write(
+    s: &mut iroh::endpoint::SendStream,
+    b: &[u8],
+    what: &str,
+    stall: std::time::Duration,
+) -> Result<(), String> {
+    tokio::time::timeout(stall, s.write_all(b))
+        .await
+        .map_err(|_| {
+            format!(
+                "{what}：{:.0}s 内停滞（对端未读取，已中断推流）",
+                stall.as_secs()
+            )
+        })?
+        .map_err(|e| format!("{what}失败：{e}"))
 }
 
 pub enum Incoming {

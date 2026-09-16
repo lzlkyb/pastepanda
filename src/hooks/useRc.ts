@@ -1,168 +1,75 @@
 /**
- * useRc — 远程电脑状态轮询 + 事件。
+ * useRc — 远程电脑状态的薄壳。
  *
- * 轮询用 `useWindowVisible` 门住（规则 #8，同 useKbSync）。
- * 有会话 / 有敲门时 2s；空闲 5s。窗口 hide 时不空转。
+ * 真正的状态与轮询全在 rcStore（单例）。本 hook 只做三件事：
+ *  1. 订阅 store 字段并按原签名返回（调用点零改动）；
+ *  2. 挂载时 acquire（开始 / 续上轮询）、卸载时 release；
+ *  3. 把窗口可见性喂给 store（规则 #8：不可见不空转）。
+ *
+ * 注意：原 useRc 里的 `alive` 守卫已不再需要——状态活在 app 级单例里，
+ * 组件卸载不会让 store 消失，setState 永远安全，也就没有「卸载后 setState」的告警。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useEffect } from "react";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
-import {
-  rcApproveInbound,
-  rcDenyInbound,
-  rcEndSession,
-  rcForget,
-  rcIdentity,
-  rcInviteCreate,
-  rcInvitePreview,
-  rcJoinApprove,
-  rcJoinDeny,
-  rcPair,
-  rcRequestSession,
-  rcSetCapability,
-  rcSetDeviceAllowed,
-  rcSetEnabled,
-  rcStartChannel,
-  rcStatus,
-  rcTargets,
-  rcSetQuality,
-  rcSetCaptureScope,
-  type RcCapability,
-  type RcCaptureScope,
-  type RcIdentity,
-  type RcInvite,
-  type RcInviteCreated,
-  type RcQuality,
-  type RcStatus,
-  type RcTargetDevice,
-} from "@/lib/api/rc";
-
-const IDLE_MS = 5000;
-const ACTIVE_MS = 2000;
+import { useRcStore } from "@/stores/rcStore";
+import type { RcInvite, RcInviteCreated, RcIdentity } from "@/lib/api/rc";
 
 export function useRc(enabled: boolean) {
   const visible = useWindowVisible();
-  const [status, setStatus] = useState<RcStatus | null>(null);
-  const [targets, setTargets] = useState<RcTargetDevice[]>([]);
-  const [identity, setIdentity] = useState<RcIdentity | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const alive = useRef(true);
+  const status = useRcStore((s) => s.status);
+  const targets = useRcStore((s) => s.targets);
+  const identity = useRcStore((s) => s.identity);
+  const busy = useRcStore((s) => s.busy);
+  const error = useRcStore((s) => s.error);
+  const statusError = useRcStore((s) => s.statusError);
+  const scopeNotice = useRcStore((s) => s.scopeNotice);
 
-  const refresh = useCallback(async () => {
-    try {
-      const s = await rcStatus();
-      if (alive.current) {
-        setStatus(s);
-        setError(null);
-      }
-    } catch (e) {
-      if (alive.current) setError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
-
-  const refreshTargets = useCallback(async () => {
-    try {
-      const t = await rcTargets();
-      if (alive.current) setTargets(t);
-    } catch {
-      /* 列表失败不打断主状态 */
-    }
-  }, []);
-
-  const refreshIdentity = useCallback(async () => {
-    try {
-      const id = await rcIdentity();
-      if (alive.current) setIdentity(id);
-    } catch {
-      /* 指纹读失败在设置面板另有提示 */
-    }
-  }, []);
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!enabled || !visible) return;
-    void refresh();
-    void refreshTargets();
-    void refreshIdentity();
-    const active =
-      !!status?.session ||
-      (status?.pending?.length ?? 0) > 0 ||
-      (status?.joins?.length ?? 0) > 0;
-    const t = window.setInterval(() => void refresh(), active ? ACTIVE_MS : IDLE_MS);
-    return () => window.clearInterval(t);
-  }, [
-    enabled,
-    visible,
-    refresh,
-    refreshTargets,
-    refreshIdentity,
-    status?.session,
-    status?.pending?.length,
-    status?.joins?.length,
-  ]);
-
+  // 挂载=订阅，卸载=退订；enabled=false 时不参与轮询（与原语义一致）
   useEffect(() => {
     if (!enabled) return;
-    let off: (() => void) | undefined;
-    void listen("rc-session-changed", () => void refresh()).then((f) => {
-      off = f;
-    });
-    return () => off?.();
-  }, [enabled, refresh]);
+    useRcStore.getState().acquire();
+    return () => useRcStore.getState().release();
+  }, [enabled]);
 
-  const run = useCallback(
-    async (fn: () => Promise<unknown>) => {
-      setBusy(true);
-      setError(null);
-      try {
-        await fn();
-        await refresh();
-        await refreshTargets();
-        return true;
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-        return false;
-      } finally {
-        setBusy(false);
-      }
-    },
-    [refresh, refreshTargets],
-  );
+  // 窗口可见性门控交给 store：可见按节奏、隐藏降频但不断
+  useEffect(() => {
+    useRcStore.getState().setVisible(visible);
+  }, [visible]);
 
+  // actions 在 store 里是稳定引用，渲染期取一次即可
+  const a = useRcStore.getState();
   return {
     status,
     targets,
     identity,
     busy,
-    error,
-    refresh,
-    refreshTargets,
-    refreshIdentity,
-    clearError: () => setError(null),
-    setEnabled: (v: boolean) => run(() => rcSetEnabled(v)),
-    startChannel: () => run(() => rcStartChannel()),
-    setCapability: (c: RcCapability) => run(() => rcSetCapability(c)),
-    setQuality: (q: RcQuality) => run(() => rcSetQuality(q)),
-    setCaptureScope: (s: RcCaptureScope) => run(() => rcSetCaptureScope(s)),
-    setDeviceAllowed: (id: string, ok: boolean) => run(() => rcSetDeviceAllowed(id, ok)),
-    createInvite: (name: string) => rcInviteCreate(name),
-    previewInvite: (code: string) => rcInvitePreview(code),
-    pair: (code: string) => run(() => rcPair(code)),
-    forget: (id: string) => run(() => rcForget(id)),
-    approveJoin: (id: string, name: string) => run(() => rcJoinApprove(id, name)),
-    denyJoin: (id: string) => run(() => rcJoinDeny(id)),
-    request: (id: string, cap: RcCapability) => run(() => rcRequestSession(id, cap)),
-    cancel: () => run(() => rcEndSession()),
-    approve: (id: string) => run(() => rcApproveInbound(id)),
-    deny: (id: string) => run(() => rcDenyInbound(id)),
-    end: () => run(() => rcEndSession()),
+    error: error ?? statusError,
+    /** 是否为操作失败（可重试原操作）；false 表示状态刷新失败，重试只应 refresh */
+    isOpError: !!error,
+    /** 被控端：对端刚改了本机画面范围（B3），非 null 时被控横幅要显示。 */
+    scopeNotice,
+    clearScopeNotice: a.clearScopeNotice,
+    refresh: a.refresh,
+    refreshTargets: a.refreshTargets,
+    refreshIdentity: a.refreshIdentity,
+    clearError: a.clearError,
+    setEnabled: a.setEnabled,
+    startChannel: a.startChannel,
+    setCapability: a.setCapability,
+    setQuality: a.setQuality,
+    setCaptureScope: a.setCaptureScope,
+    setDeviceAllowed: a.setDeviceAllowed,
+    createInvite: a.createInvite,
+    previewInvite: a.previewInvite,
+    pair: a.pair,
+    forget: a.forget,
+    approveJoin: a.approveJoin,
+    denyJoin: a.denyJoin,
+    request: a.request,
+    cancel: a.cancel,
+    end: a.end,
+    approve: a.approve,
+    deny: a.deny,
   };
 }
 
