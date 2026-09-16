@@ -273,3 +273,102 @@ mod scope_notice {
         assert_eq!(*hits.lock().unwrap(), 0, "本机改范围不应通知被控提示");
     }
 }
+
+/// 会话生命周期（实现在 `session.rs` 的 `impl RcService`）。
+///
+/// 这里用「直接塞 `inner.session`」构造最小状态，不走真实握手——
+/// 测的是收口逻辑本身，不是门禁（门禁在别处已有覆盖）。
+mod lifecycle {
+    use super::*;
+    use crate::rc::session::Session;
+
+    fn active_session(id: &str, phase: SessionPhase) -> Session {
+        Session {
+            id: id.to_string(),
+            peer: "peer-a".to_string(),
+            peer_name: "设备A".to_string(),
+            capability: Capability::Control,
+            phase,
+            started_ms: crate::rc::service::now_ms(),
+            granted: true,
+        }
+    }
+
+    fn set_session(svc: &RcService, s: Session) {
+        svc.inner.lock().unwrap_or_else(|p| p.into_inner()).session = Some(s);
+    }
+
+    /// B2 的顺序钉子：收口必须把被按住的键**真的**补发 up 并清空集合。
+    ///
+    /// 抓的回归形态：有人把收口改成「先清 session、再走 handle_inbound_input
+    /// 补发」——那个时点 `session_capability()` 返 `None`，能力校验会拦掉释放，
+    /// pressed 就不再是空的。直接调 `release_all` 的正确实现下它必为空。
+    #[tokio::test]
+    async fn end_session_releases_pressed_keys_and_clears_state() {
+        let svc = RcService::new(store());
+        set_session(&svc, active_session("s1", SessionPhase::OutboundActive));
+        {
+            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            g.press_key(0xA2); // VK_LCONTROL
+            g.press_button(1);
+        }
+        assert!(!svc.pressed.lock().unwrap().is_empty(), "前置：确实按着键");
+
+        svc.end_session("测试收口").await.expect("收口成功");
+
+        assert!(
+            svc.pressed.lock().unwrap().is_empty(),
+            "收口必须补发 up 并清空按住集合（B2 顺序钉子）"
+        );
+        assert!(svc.require_active().is_err(), "收口后不该再有活跃会话");
+        assert!(!svc.session_id_is("s1"));
+        assert!(!svc.must_show_banner());
+        assert!(
+            svc.end_session("再收一次").await.is_err(),
+            "没有会话时收口必须报错，不能静默成功"
+        );
+    }
+
+    /// A2 的回归钉子：旧会话的收尾只能按 session id 命中，不能按 peer 误杀
+    /// 同 peer 的新会话（「点重连画面闪一下又断」就是它）。
+    #[tokio::test]
+    async fn force_end_if_session_only_kills_matching_id() {
+        let svc = RcService::new(store());
+        set_session(&svc, active_session("s1", SessionPhase::OutboundActive));
+        svc.pressed.lock().unwrap().press_key(0xA2);
+
+        // 旧流任务拿着 s1 的 id 醒来，但当前会话已是 s2 ⇒ 必须不动
+        set_session(&svc, active_session("s2", SessionPhase::OutboundActive));
+        svc.force_end_if_session("s1", "画面流中断").await;
+        assert!(
+            svc.session_id_is("s2"),
+            "旧 session id 的收口不得误杀同 peer 的新会话"
+        );
+        assert!(!svc.pressed.lock().unwrap().is_empty(), "没收口就不该补发");
+
+        // id 匹配才真正收口
+        svc.force_end_if_session("s2", "画面流中断").await;
+        assert!(svc.require_active().is_err());
+        assert!(svc.pressed.lock().unwrap().is_empty(), "真收口必须补发 up");
+    }
+
+    #[test]
+    fn session_expired_only_counts_active_phases() {
+        let svc = RcService::new(store());
+        // started_ms = 0（1970 年）⇒ Active 相位必超 TTL
+        let mut old = active_session("s1", SessionPhase::OutboundActive);
+        old.started_ms = 0;
+        set_session(&svc, old);
+        assert!(svc.session_expired(), "Active 且远超 TTL 必须判过期");
+
+        // Idle 相位不该判过期（收口判过期只对活会话有意义）
+        let mut idle = active_session("s1", SessionPhase::Idle);
+        idle.started_ms = 0;
+        set_session(&svc, idle);
+        assert!(!svc.session_expired());
+
+        // 无会话 ⇒ 不过期
+        svc.inner.lock().unwrap_or_else(|p| p.into_inner()).session = None;
+        assert!(!svc.session_expired());
+    }
+}

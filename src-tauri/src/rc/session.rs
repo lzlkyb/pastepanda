@@ -7,7 +7,8 @@
 //! 3. **设备级禁止**优先于能力档。
 //! 4. **申请能力不得超过被控端能力上限**。
 
-use super::protocol::{Capability, SessionPhase};
+use super::protocol::{Capability, RcFrame, SessionPhase};
+use super::service::RcService;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 
@@ -148,6 +149,130 @@ pub fn new_session_id(now_ms: i64) -> String {
         nanos
     };
     format!("rc-{}-{:08x}", now_ms, r)
+}
+
+/// 活跃会话最长持续（毫秒）。超时后推流循环自动结束，避免无人值守挂死。
+pub(super) const SESSION_TTL_MS: i64 = 2 * 60 * 60 * 1000;
+
+/// 会话生命周期（Tier B 第 5 组：从 `service.rs` 归位到状态机文件）。
+///
+/// 为什么放这里：上面是「状态**能不能**变」（转移表 + 门禁），这一块是「状态
+/// **怎么变**」（建立后的收口/判定）。拆在两个文件里，改转移表的人看不到收口
+/// 顺序，改收口的人看不到转移表——A2（重连自杀）那种 bug 正是出在这个缝里。
+///
+/// 这些方法要碰的 `RcService` 字段标了 `pub(super)`（见那边的可见性说明）；
+/// 四个子结构体（clip / notify / stream / pressed 的内部字段）仍然私有。
+impl RcService {
+    pub async fn end_session(&self, reason: &str) -> Result<(), String> {
+        let (peer, peer_name, cap, phase, started) = {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let Some(s) = inner.session.as_ref() else {
+                return Err("没有进行中的会话".into());
+            };
+            log::info!("[RC] 会话结束：{reason}");
+            (s.peer.clone(), s.peer_name.clone(), s.capability, s.phase, s.started_ms)
+        };
+        // 尽力通知对端：发起端走 outbound_send；被控端走 inbound_send
+        {
+            let mut guard = self.outbound_send.lock().await;
+            if let Some(send) = guard.as_mut() {
+                if let Ok(b) = (RcFrame::End {
+                    reason: reason.to_string(),
+                })
+                .encode()
+                {
+                    let _ = crate::sync::transport::write_frame(send, &b).await;
+                }
+            }
+            *guard = None;
+        }
+        {
+            let ib = self.inbound_send.lock().await.take();
+            if let Some(send) = ib {
+                let mut g = send.lock().await;
+                if let Ok(b) = (RcFrame::End {
+                    reason: reason.to_string(),
+                })
+                .encode()
+                {
+                    let _ = crate::sync::transport::write_frame(&mut g, &b).await;
+                }
+            }
+        }
+        // 补发卡住的 up：对端断线/会话结束时，被按住的 Ctrl/Shift/鼠标键不会自动弹起。
+        // ⚠️ 必须在清 session 之前、且直接调注入函数（release_all），不要走 handle_inbound_input——
+        // 会话结束态下它的 session_capability() 返回 None，能力校验会拦掉释放。
+        // `end_session_releases_pressed_keys` 单测钉住「释放确实发生了」。
+        {
+            let mut g = self.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            g.release_all();
+        }
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            inner.session = None;
+            inner.pending.clear();
+        }
+        let _ = self.store.rc_device_touch(&peer, false);
+        super::history::append_history(&self.store, &peer, &peer_name, cap, phase, started, reason);
+        self.clear_frame();
+        self.note_rtt(0);
+        // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
+        // 避免下一个会话把它当成自己的结果返回。
+        self.invalidate_clipboard();
+        // 收口时清空注入错误（已被前端看到或已无意义）
+        self.notify.take_inject_err();
+        *self
+            .last_outbound_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+        self.emit_changed();
+        Ok(())
+    }
+
+    /// 当前会话 id 是否等于给定值（收口按 session id 判定，避免重连时被旧任务按 peer 误杀）。
+    pub fn session_id_is(&self, id: &str) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        matches!(inner.session.as_ref(), Some(s) if s.id == id)
+    }
+
+    /// 流断开 / 对端消失时本地收口：只清**该 session id** 的会话，避免误杀同 peer 的新会话。
+    pub async fn force_end_if_session(&self, session_id: &str, reason: &str) {
+        let should = {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            matches!(inner.session.as_ref(), Some(s) if s.id == session_id)
+        };
+        if !should {
+            return;
+        }
+        log::info!("[RC] 强制结束会话（{session_id}）：{reason}");
+        let _ = self.end_session(reason).await;
+    }
+
+    /// 会话是否超过 TTL（推流循环每圈检查）。
+    pub fn session_expired(&self) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        match inner.session.as_ref() {
+            Some(s) if is_active(s.phase) => super::service::now_ms() - s.started_ms > SESSION_TTL_MS,
+            _ => false,
+        }
+    }
+
+    pub fn require_active(&self) -> Result<Session, String> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        match inner.session.as_ref() {
+            Some(s) if is_active(s.phase) => Ok(s.clone()),
+            Some(_) => Err("会话尚未建立".into()),
+            None => Err("没有进行中的远程会话".into()),
+        }
+    }
+
+    pub fn must_show_banner(&self) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        matches!(
+            inner.session.as_ref(),
+            Some(s) if s.phase == SessionPhase::InboundActive
+        )
+    }
 }
 
 #[cfg(test)]

@@ -9,8 +9,8 @@ use super::clipboard::{ClipWait, ClipboardState};
 use super::join::{self, RcJoins};
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
 use super::session::{
-    can_transition, gate_inbound, gate_outbound, is_active, new_session_id, Gate, Session,
-    CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED,
+    can_transition, gate_inbound, gate_outbound, new_session_id, Gate, Session, CFG_CAPABILITY,
+    CFG_DEVICE_DENY, CFG_ENABLED,
 };
 use super::jpeg::jpeg_dimensions;
 use super::net::{accept_loop, bind_rc_endpoint};
@@ -27,8 +27,6 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-/// 活跃会话最长持续（毫秒）。超时后推流循环自动结束，避免无人值守挂死。
-const SESSION_TTL_MS: i64 = 2 * 60 * 60 * 1000;
 /// 剪贴板推送上限：按 **JSON 帧 UTF-8 字节**卡（控制帧 64KB，留余量）。
 /// 中文 1 字 ≈ 3 字节，不能按字符数卡。
 const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
@@ -86,34 +84,41 @@ struct Running {
     identity: Arc<NodeIdentity>,
 }
 
+/// 会话编排中枢。
+///
+/// 可见性说明：带 `pub(super)` 的字段不是「随手放开」——会话生命周期方法
+/// （`end_session` / `force_end_if_session` / `require_active` …）实现在
+/// `session.rs` 的 `impl RcService` 里，与状态机转移表同处一个文件；它们要
+/// 直接碰这几样状态。四个子结构体（`clip` / `notify` / `stream` / `pressed`
+/// 的内部字段）仍然私有，只能走各自的方法。
 pub struct RcService {
-    store: DataStore,
-    inner: Mutex<Inner>,
+    pub(super) store: DataStore,
+    pub(super) inner: Mutex<Inner>,
     running: Mutex<Option<Running>>,
     joins: Arc<RcJoins>,
     /// 发起端最近一帧（合成后）画面。
     last_frame: Mutex<Option<super::video::VideoFrame>>,
     /// 发起端 → 被控端的发送半流（R2 键鼠 / R3 剪贴板）。tokio Mutex：跨 await 持锁。
-    outbound_send: tokio::sync::Mutex<Option<iroh::endpoint::SendStream>>,
+    pub(super) outbound_send: tokio::sync::Mutex<Option<iroh::endpoint::SendStream>>,
     /// 剪贴板同步的状态与「跨会话串扰」不变量（见 `clipboard.rs`）。
     clip: ClipboardState,
     /// 被控端：推 JPEG 时的发送半流（End 帧用；发起端走 outbound_send）。
-    inbound_send:
+    pub(super) inbound_send:
         tokio::sync::Mutex<Option<std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>>>,
     /// 状态变化 / 画面范围变化 / 注入错误 三类前端通知的收口（见 `notify.rs`）。
-    notify: NotifyState,
+    pub(super) notify: NotifyState,
     /// 发起申请后台拨号失败（非阻塞 request）。status() 读出后由前端展示。
-    last_outbound_error: Mutex<Option<String>>,
+    pub(super) last_outbound_error: Mutex<Option<String>>,
     /// 推流参数（画质 / 截取范围 / 强制 JPEG）+ 心跳与 RTT 活性（见 `stream_cfg.rs`）。
     stream: StreamCfg,
     /// 被控端：当前被按住的 vk / 鼠标键集合，会话收口时补发 up（防止 Ctrl/Shift/鼠标键卡死）。
-    pressed: std::sync::Mutex<super::pressed::Pressed>,
+    pub(super) pressed: std::sync::Mutex<super::pressed::Pressed>,
 }
 
 #[derive(Default)]
-struct Inner {
-    session: Option<Session>,
-    pending: Vec<InboundKnock>,
+pub(super) struct Inner {
+    pub(super) session: Option<Session>,
+    pub(super) pending: Vec<InboundKnock>,
 }
 
 pub(super) fn now_ms() -> i64 {
@@ -208,7 +213,7 @@ impl RcService {
         self.notify.set_notify(f);
     }
 
-    fn emit_changed(&self) {
+    pub(super) fn emit_changed(&self) {
         self.notify.emit_changed();
     }
 
@@ -250,7 +255,7 @@ impl RcService {
         *self.last_frame.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
     }
 
-    fn clear_frame(&self) {
+    pub(super) fn clear_frame(&self) {
         *self.last_frame.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
@@ -336,7 +341,7 @@ impl RcService {
     }
 
     /// 会话收口时调用：作废仍在等待的 pull，并丢掉可能由迟到回包写入的文本。
-    fn invalidate_clipboard(&self) {
+    pub(super) fn invalidate_clipboard(&self) {
         self.clip.invalidate();
     }
 
@@ -1095,119 +1100,9 @@ impl RcService {
         Ok(())
     }
 
-    pub async fn end_session(&self, reason: &str) -> Result<(), String> {
-        let (peer, peer_name, cap, phase, started) = {
-            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            let Some(s) = inner.session.as_ref() else {
-                return Err("没有进行中的会话".into());
-            };
-            log::info!("[RC] 会话结束：{reason}");
-            (s.peer.clone(), s.peer_name.clone(), s.capability, s.phase, s.started_ms)
-        };
-        // 尽力通知对端：发起端走 outbound_send；被控端走 inbound_send
-        {
-            let mut guard = self.outbound_send.lock().await;
-            if let Some(send) = guard.as_mut() {
-                if let Ok(b) = (RcFrame::End {
-                    reason: reason.to_string(),
-                })
-                .encode()
-                {
-                    let _ = crate::sync::transport::write_frame(send, &b).await;
-                }
-            }
-            *guard = None;
-        }
-        {
-            let ib = self.inbound_send.lock().await.take();
-            if let Some(send) = ib {
-                let mut g = send.lock().await;
-                if let Ok(b) = (RcFrame::End {
-                    reason: reason.to_string(),
-                })
-                .encode()
-                {
-                    let _ = crate::sync::transport::write_frame(&mut g, &b).await;
-                }
-            }
-        }
-        // 补发卡住的 up：对端断线/会话结束时，被按住的 Ctrl/Shift/鼠标键不会自动弹起。
-        // ⚠️ 必须在清 session 之前、且直接调注入函数（release_all），不要走 handle_inbound_input——
-        // 会话结束态下它的 session_capability() 返回 None，能力校验会拦掉释放。
-        {
-            let mut g = self.pressed.lock().unwrap_or_else(|p| p.into_inner());
-            g.release_all();
-        }
-        {
-            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            inner.session = None;
-            inner.pending.clear();
-        }
-        let _ = self.store.rc_device_touch(&peer, false);
-        super::history::append_history(&self.store, &peer, &peer_name, cap, phase, started, reason);
-        self.clear_frame();
-        self.note_rtt(0);
-        // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
-        // 避免下一个会话把它当成自己的结果返回。
-        self.invalidate_clipboard();
-        // 收口时清空注入错误（已被前端看到或已无意义）
-        self.notify.take_inject_err();
-        *self
-            .last_outbound_error
-            .lock()
-            .unwrap_or_else(|p| p.into_inner()) = None;
-        self.emit_changed();
-        Ok(())
-    }
-
     /// 读最近若干条会话历史（前端展示用）。实现见 `rc/history.rs`。
     pub fn session_history(&self) -> Vec<serde_json::Value> {
         super::history::list_history(&self.store)
-    }
-
-    /// 当前会话 id 是否等于给定值（收口按 session id 判定，避免重连时被旧任务按 peer 误杀）。
-    pub fn session_id_is(&self, id: &str) -> bool {
-        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        matches!(inner.session.as_ref(), Some(s) if s.id == id)
-    }
-
-    /// 流断开 / 对端消失时本地收口：只清**该 session id** 的会话，避免误杀同 peer 的新会话。
-    pub async fn force_end_if_session(&self, session_id: &str, reason: &str) {
-        let should = {
-            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            matches!(inner.session.as_ref(), Some(s) if s.id == session_id)
-        };
-        if !should {
-            return;
-        }
-        log::info!("[RC] 强制结束会话（{session_id}）：{reason}");
-        let _ = self.end_session(reason).await;
-    }
-
-    /// 会话是否超过 TTL（推流循环每圈检查）。
-    pub fn session_expired(&self) -> bool {
-        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        match inner.session.as_ref() {
-            Some(s) if is_active(s.phase) => now_ms() - s.started_ms > SESSION_TTL_MS,
-            _ => false,
-        }
-    }
-
-    pub fn require_active(&self) -> Result<Session, String> {
-        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        match inner.session.as_ref() {
-            Some(s) if is_active(s.phase) => Ok(s.clone()),
-            Some(_) => Err("会话尚未建立".into()),
-            None => Err("没有进行中的远程会话".into()),
-        }
-    }
-
-    pub fn must_show_banner(&self) -> bool {
-        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        matches!(
-            inner.session.as_ref(),
-            Some(s) if s.phase == SessionPhase::InboundActive
-        )
     }
 }
 
