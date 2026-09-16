@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { mcpGetWriteSwitches, mcpSetWriteSwitch, type McpWriteSwitch } from "@/lib/api/mcp";
-import styles from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 /** 分组点：在哪个配置键之前插一个小标题。 */
 const GROUP_AT: Record<string, string> = {

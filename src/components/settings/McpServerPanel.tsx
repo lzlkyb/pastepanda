@@ -18,7 +18,8 @@ import { McpAiFolderPanel } from "./McpAiFolderPanel";
 import { McpAuditPanel } from "./McpAuditPanel";
 import { McpHttpsPanel } from "./McpHttpsPanel";
 import { McpLanPanel } from "./McpLanPanel";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 /** 令牌是 43 个字符的 base64url。遮码时只留头尾，够用户认出是哪一把。 */
 function mask(token: string): string {
@@ -87,11 +88,11 @@ export function McpServerPanel({
   }, [toast]);
 
   return (
-    <div className={styles.lanPanel}>
-      <div className={styles.lanPanelHeader}>
-        <div className={styles.lanStatus}>
-          <span className={`${styles.lanDot}${status.running ? "" : ` ${styles.off}`}`} />
-          <span className={styles.lanStatusText}>
+    <div className={shared.lanPanel}>
+      <div className={shared.lanPanelHeader}>
+        <div className={shared.lanStatus}>
+          <span className={`${shared.lanDot}${status.running ? "" : ` ${shared.off}`}`} />
+          <span className={shared.lanStatusText}>
             {status.running ? `监听中 · 端口 ${status.port}` : "未运行"}
           </span>
         </div>
@@ -100,7 +101,7 @@ export function McpServerPanel({
       {/* 启动失败必须看得见：最常见的原因是端口被占，而用户能自己改端口解决。
           用横幅而不是 toast：toast 会飘走，而开机自启失败发生在设置页打开之前。 */}
       {startError && (
-        <div className={styles.mcpAlert}>
+        <div className={shared.mcpAlert}>
           <AlertTriangle size={13} />
           <span>{startError}</span>
           <button type="button" onClick={onDismissError}>知道了</button>

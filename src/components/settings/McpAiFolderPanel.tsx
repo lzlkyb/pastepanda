@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { confirmDialog } from "@/lib/confirm";
 import { mcpAiFolders, mcpUndoAiFolder, type McpAiFolder } from "@/lib/api/mcp";
-import styles from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 export function McpAiFolderPanel({
   toast,

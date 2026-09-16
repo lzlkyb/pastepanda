@@ -7,7 +7,7 @@
 import { Copy, ChevronRight, ChevronDown, Info } from "lucide-react";
 import { canOneClick, buildMcpConfigSnippet, type McpClientDef } from "@/lib/mcpClients";
 import type { McpClientProbe } from "@/lib/api/mcp";
-import styles from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 /** 屏幕上的占位符。真令牌只在点复制时才取。 */
 export const TOKEN_PLACEHOLDER = "<你的访问令牌>";

@@ -15,7 +15,7 @@ import {
   type McpScopeRow,
   type McpWriteScope,
 } from "@/lib/api/mcp";
-import styles from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 export function McpScopePanel({
   toast,

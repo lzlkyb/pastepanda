@@ -22,7 +22,8 @@ import {
   buildMcpAiSetupPrompt,
 } from "@/lib/mcpClients";
 import { mcpSetLanEnabled, type McpStatus } from "@/lib/api/mcp";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 export function McpLanPanel({
   status,
@@ -164,7 +165,7 @@ export function McpLanPanel({
       </div>
 
       {lanError && !errDismissed && (
-        <div className={styles.mcpAlert}>
+        <div className={shared.mcpAlert}>
           <span>⚠</span>
           <span>{lanError}</span>
           <button type="button" onClick={() => setErrDismissed(true)}>

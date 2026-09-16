@@ -38,7 +38,7 @@ import {
 } from "@/lib/api/mcp";
 import { McpClientRow, TOKEN_PLACEHOLDER } from "./McpClientRow";
 import { McpCustomConnect } from "./McpCustomConnect";
-import styles from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 /** 只对有磁盘配置路径的客户端探测。 */
 const PROBEABLE = MCP_CLIENTS.filter(canOneClick);

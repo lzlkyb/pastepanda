@@ -20,7 +20,8 @@ import {
   type McpStatus,
   type McpTlsCaStatus,
 } from "@/lib/api/mcp";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 export function McpHttpsPanel({
   status,
@@ -223,7 +224,7 @@ export function McpHttpsPanel({
 
       {/* 🔴 监听失败必须就地可见（#15.3）：toast 会飘走，而端口被占是持续状态 */}
       {status.httpsError && !httpsErrDismissed && (
-        <div className={styles.mcpAlert} style={{ marginTop: 8 }}>
+        <div className={shared.mcpAlert} style={{ marginTop: 8 }}>
           <span>{status.httpsError}</span>
           <button type="button" onClick={() => setHttpsErrDismissed(true)}>
             知道了

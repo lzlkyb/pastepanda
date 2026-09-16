@@ -38,7 +38,7 @@ import {
   type McpClientProbe,
 } from "@/lib/api/mcp";
 import { TOKEN_PLACEHOLDER } from "./McpClientRow";
-import styles from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 /** 记住用户上次选的路径与写法：下次打开设置能直接看到它现在接没接入。 */
 const KEY_PATH = "mcp.customConfigPath";

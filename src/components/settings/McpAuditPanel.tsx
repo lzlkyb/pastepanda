@@ -18,7 +18,8 @@ import {
   type McpAuditRow,
   type McpClientRow,
 } from "@/lib/api/mcp";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Mcp.module.css";
 
 /** 列表只拉这么多条。审计是拿来「看最近发生了什么」的，不是归档查询器。 */
 const LIST_LIMIT = 100;
@@ -72,7 +73,7 @@ export function McpAuditPanel({
       {/* 审计断过必须看得见：静默地丢审计等于审计不可信，
           而不可信的审计比没有审计更糟。 */}
       {auditError && (
-        <div className={styles.mcpAlert}>
+        <div className={shared.mcpAlert}>
           <AlertTriangle size={13} />
           <span>调用记录写入失败，期间的访问没被记下：{auditError}</span>
           <button type="button" onClick={onDismissError}>知道了</button>
