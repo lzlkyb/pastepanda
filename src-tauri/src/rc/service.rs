@@ -340,11 +340,6 @@ impl RcService {
         self.clip.invalidate();
     }
 
-    /// 最近一次从被控端拉回的剪贴板文本（由接收循环写入）。
-    pub fn take_remote_clipboard(&self) -> Option<String> {
-        self.clip.take()
-    }
-
     fn set_remote_clipboard(&self, t: String) {
         self.clip.set_from_peer(t);
     }
