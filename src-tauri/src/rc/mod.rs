@@ -7,6 +7,7 @@ pub mod input;
 pub mod jpeg;
 pub mod join;
 pub mod net;
+pub mod notify;
 pub mod pressed;
 pub mod protocol;
 pub mod service;

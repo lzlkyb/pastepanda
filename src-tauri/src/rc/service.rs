@@ -13,6 +13,7 @@ use super::session::{
 };
 use super::jpeg::jpeg_dimensions;
 use super::net::{accept_loop, bind_rc_endpoint};
+use super::notify::{NotifyFn, NotifyState, ScopeNotifyFn};
 use crate::data_store::DataStore;
 use crate::sync::identity::NodeIdentity;
 use crate::sync::presence::{self, PresenceTable, PORT as PRESENCE_BASE_PORT};
@@ -31,11 +32,6 @@ const SESSION_TTL_MS: i64 = 2 * 60 * 60 * 1000;
 const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
 /// 拉回剪贴板时等回包的总时长。
 const CLIPBOARD_PULL_TIMEOUT_MS: i64 = 4_000;
-
-/// 会话状态变化时通知前端（由 lib.rs 注入，避免 RcService 依赖 AppHandle）。
-type NotifyFn = Arc<dyn Fn() + Send + Sync>;
-/// 被控端画面范围被对端改动时的回调（参数为新的 scope 串）。
-type ScopeNotifyFn = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// 被控端配置键。
 pub const CFG_QUALITY: &str = "rc_quality";
@@ -111,14 +107,8 @@ pub struct RcService {
     /// 被控端：推 JPEG 时的发送半流（End 帧用；发起端走 outbound_send）。
     inbound_send:
         tokio::sync::Mutex<Option<std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>>>,
-    /// 状态变化通知（emit `rc-session-changed` / inject-error）。
-    notify: Mutex<Option<NotifyFn>>,
-    /// 被控端：对端改了画面范围时的通知（带 scope 参数）。
-    /// 与 `notify` 分开是因为 payload 不同——`notify` 是无参「有事变了」，
-    /// 这个要告诉前端「被改成了哪个范围」，前端才能给出具体提示。
-    notify_scope: Mutex<Option<ScopeNotifyFn>>,
-    /// 最近一次注入失败（UIPI 等），供发起端展示。
-    last_inject_err: Mutex<Option<String>>,
+    /// 状态变化 / 画面范围变化 / 注入错误 三类前端通知的收口（见 `notify.rs`）。
+    notify: NotifyState,
     /// 发起申请后台拨号失败（非阻塞 request）。status() 读出后由前端展示。
     last_outbound_error: Mutex<Option<String>>,
     /// 被控端：最近一次收到发起端输入/心跳的时间。
@@ -216,9 +206,7 @@ impl RcService {
             clip_epoch: std::sync::atomic::AtomicU64::new(0),
             clip_pull_lock: tokio::sync::Mutex::new(()),
             inbound_send: tokio::sync::Mutex::new(None),
-            notify: Mutex::new(None),
-            notify_scope: Mutex::new(None),
-            last_inject_err: Mutex::new(None),
+            notify: NotifyState::new(),
             last_outbound_error: Mutex::new(None),
             last_activity_ms: std::sync::atomic::AtomicI64::new(0),
             last_rtt_ms: std::sync::atomic::AtomicI64::new(0),
@@ -333,19 +321,16 @@ impl RcService {
 
     /// 注入前端通知回调（lib.rs 在 manage 之后调用）。
     pub fn set_notify(&self, f: NotifyFn) {
-        *self.notify.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
+        self.notify.set_notify(f);
     }
 
     fn emit_changed(&self) {
-        let f = self.notify.lock().unwrap_or_else(|p| p.into_inner()).clone();
-        if let Some(f) = f {
-            f();
-        }
+        self.notify.emit_changed();
     }
 
     /// 注入「对端改了画面范围」的回调（lib.rs 在 manage 之后调用）。
     pub fn set_scope_notify(&self, f: ScopeNotifyFn) {
-        *self.notify_scope.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
+        self.notify.set_scope_notify(f);
     }
 
     /// 被控端：告诉前端「对端把画面范围改成了 scope」。
@@ -361,23 +346,15 @@ impl RcService {
     /// `pub(crate)` 是为了让 `rc::tests` 能覆盖「回调确实收到 scope」，
     /// 不是因为需要跨模块调用。
     pub(crate) fn emit_scope_changed(&self, scope: &str) {
-        let f = self
-            .notify_scope
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
-        if let Some(f) = f {
-            f(scope);
-        }
+        self.notify.emit_scope_changed(scope);
     }
 
     fn set_inject_err(&self, msg: String) {
-        *self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
-        self.emit_changed();
+        self.notify.set_inject_err(msg);
     }
 
     pub fn take_inject_err(&self) -> Option<String> {
-        self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()).take()
+        self.notify.take_inject_err()
     }
 
     /// 发起端取最近一帧（JPEG bytes）。无画面返 None。
@@ -612,7 +589,12 @@ impl RcService {
         if self.enabled() {
             return true;
         }
-        matches!(self.store.rc_device_list(), Ok(list) if !list.is_empty())
+        if matches!(self.store.rc_device_list(), Ok(list) if !list.is_empty()) {
+            return true;
+        }
+        // 方案 A：仅同步配对的设备也可直接发起远程（同一 iroh 身份/端点），必须让通道起来，
+        // 否则用户看得见设备（source="sync"）却发不起（B9）。
+        matches!(self.store.device_list(), Ok(list) if !list.is_empty())
     }
 
     /// 启动独立通道。幂等。
@@ -1300,7 +1282,8 @@ impl RcService {
         // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
         // 避免下一个会话把它当成自己的结果返回。
         self.invalidate_clipboard();
-        *self.last_inject_err.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        // 收口时清空注入错误（已被前端看到或已无意义）
+        self.notify.take_inject_err();
         *self
             .last_outbound_error
             .lock()
