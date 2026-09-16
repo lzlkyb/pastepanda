@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { KbJoinRequest } from "@/hooks/useKbSync";
 import { fingerprintOf } from "@/lib/fingerprint";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Lan.module.css";
 
 /**
  * 「有人拿着你发出的邀请在敲门」——生成方那一半的核对门。
@@ -44,20 +45,20 @@ export function KbJoinRequests({ pending, busy, onApprove, onDeny }: KbJoinProps
   if (pending.length === 0) return null;
 
   return (
-    <div className={styles.kbPairWarn} style={{ marginBottom: 12 }}>
+    <div className={shared.kbPairWarn} style={{ marginBottom: 12 }}>
       <div style={{ fontWeight: 700, marginBottom: 6 }}>
         🔔 有 {pending.length} 台设备想连到这台
       </div>
-      <div className={styles.kbPairNote} style={{ marginBottom: 10 }}>
+      <div className={shared.kbPairNote} style={{ marginBottom: 10 }}>
         到<b>对方机器</b>上看一眼它的「本机指纹」，确认与下面这串一字不差再允许。
         <br />
         对不上就点拒绝——那意味着邀请码在路上被人换过。
       </div>
 
       {pending.map((r) => (
-        <div key={r.node_id} className={styles.kbPairPeer} style={{ marginBottom: 8 }}>
-          <div className={styles.kbPairNote} style={{ marginBottom: 4 }}>它的指纹</div>
-          <div className={styles.kbPairFp} style={{ color: "var(--accent-strong)" }}>
+        <div key={r.node_id} className={shared.kbPairPeer} style={{ marginBottom: 8 }}>
+          <div className={shared.kbPairNote} style={{ marginBottom: 4 }}>它的指纹</div>
+          <div className={shared.kbPairFp} style={{ color: "var(--accent-strong)" }}>
             {fingerprintOf(r.node_id)}
           </div>
 
@@ -85,7 +86,7 @@ export function KbJoinRequests({ pending, busy, onApprove, onDeny }: KbJoinProps
           {/* 敲了很多次 = 对方一直在试，把这件事说出来，
               否则用户会以为自己错过了什么时机。 */}
           {r.tries > 1 && (
-            <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+            <div className={shared.kbPairNote} style={{ marginTop: 6 }}>
               它已经试了 {r.tries} 次，你确认之前它会一直试下去。
             </div>
           )}

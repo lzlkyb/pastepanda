@@ -4,7 +4,8 @@ import type { ToastFn } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { StepBar, fmtExpire } from "./KbPairSteps";
 import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Lan.module.css";
 
 /** 单按钮的 footer。`.dialog-footer` 是 space-between，不改会靠左。 */
 const footerRight = { justifyContent: "flex-end" as const };
@@ -130,7 +131,7 @@ export function CreateFlow({ defaultName, myFingerprint, devices, joins, onCreat
             <input className={styles.kbPairInput} autoFocus placeholder="例如：书房台式机"
               value={deviceName} onChange={(e) => setDeviceName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && deviceName.trim()) handleCreate(); }} />
-            <p className={styles.kbPairNote}>
+            <p className={shared.kbPairNote}>
               {defaultName
                 ? "已自动填入本机名称，可以改成你认得出的叫法。"
                 : "没有取到本机名称，请起一个你认得出的名字。"}
@@ -158,7 +159,7 @@ export function CreateFlow({ defaultName, myFingerprint, devices, joins, onCreat
             <button className="btn-secondary" onClick={copy}>
               {copied ? "✓ 已复制到剪贴板" : "📋 复制邀请码"}
             </button>
-            <p className={styles.kbPairNote}>
+            <p className={shared.kbPairNote}>
               ⏳ <b>{fmtExpire(expiresAt)}</b> 前有效（还剩 {daysLeft} 天）
             </p>
 
@@ -168,27 +169,27 @@ export function CreateFlow({ defaultName, myFingerprint, devices, joins, onCreat
             <KbJoinRequests {...joins} />
 
             {/* 等待状态与码同屏：用户拿着码去发的时候，这边已经在盯了。 */}
-            <div className={styles.kbPairWarn}>
+            <div className={shared.kbPairWarn}>
               <div className={styles.kbPairCenter} style={{ fontWeight: 700 }}>
                 ⏳ 等着另一台设备粘贴这串码…
               </div>
-              <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+              <div className={shared.kbPairNote} style={{ marginTop: 6 }}>
                 在<b>另一台</b> PastePanda 里打开：设置 → 知识库同步 →
                 <b>＋ 添加设备</b> → <b>我已经拿到邀请码了</b>，把码粘进去。
               </div>
-              <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+              <div className={shared.kbPairNote} style={{ marginTop: 6 }}>
                 🔐 对方会看到一串指纹，让它和本机的{" "}
-                <span className={`${styles.kbPairFp} ${styles.kbPairFpSm}`}>{myFingerprint}</span>{" "}
+                <span className={`${shared.kbPairFp} ${styles.kbPairFpSm}`}>{myFingerprint}</span>{" "}
                 一字不差再确认。
               </div>
               {/* ❗ 把「然后还要回来确认一次」写明白。
                   不写的话，用户在对面粘完就以为完事了，回到这台看到的
                   却是一个要他动手的核对框——而那正是配对能不能成的关键一步。 */}
-              <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+              <div className={shared.kbPairNote} style={{ marginTop: 6 }}>
                 它粘完之后，<b>这里会出现一条要你确认的请求</b>（两边各核对一次指纹）。
               </div>
               {slow && (
-                <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+                <div className={shared.kbPairNote} style={{ marginTop: 6 }}>
                   还没动静？确认两台机器<b>都开了知识库同步开关</b>，以及那串码是整个粘过去的。
                 </div>
               )}
@@ -205,11 +206,11 @@ export function CreateFlow({ defaultName, myFingerprint, devices, joins, onCreat
       {phase === "done" && (
         <>
           <div className="dialog-body">
-            <div className={`${styles.kbPairPulse} ${styles.done}`}>✅</div>
+            <div className={`${styles.kbPairPulse} ${shared.done}`}>✅</div>
             <p className={`${styles.kbPairText} ${styles.kbPairCenter}`} style={{ fontWeight: 700 }}>
               已连上「{peerName}」
             </p>
-            <p className={`${styles.kbPairNote} ${styles.kbPairCenter}`}>笔记开始在两台设备之间同步。</p>
+            <p className={`${shared.kbPairNote} ${styles.kbPairCenter}`}>笔记开始在两台设备之间同步。</p>
           </div>
           <div className="dialog-footer" style={footerRight}>
             <button className="btn-primary" onClick={onClose}>完成</button>

@@ -3,7 +3,8 @@ import type { KbInvite } from "@/hooks/useKbSync";
 import type { ToastFn } from "@/components/Toast";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { logger } from "@/lib/logger";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Lan.module.css";
 import { readClipboardText } from "@/lib/api";
 
 /**
@@ -22,7 +23,7 @@ export function StepBar({ labels, current }: { labels: string[]; current: number
         <Fragment key={l}>
           {i > 0 && <span className={styles.kbPairBar} />}
           <span className={`${styles.kbPairStep} ${
-            i < current ? styles.done : i === current ? styles.on : ""}`}>
+            i < current ? shared.done : i === current ? shared.on : ""}`}>
             <b className={styles.kbPairStepNum}>{i < current ? "✓" : i + 1}</b>{l}
           </span>
         </Fragment>
@@ -60,10 +61,10 @@ export function fmtExpire(ms: number): string {
 /** 对端身份卡：名字 + 指纹。两条路线都要用。 */
 export function PeerCard({ name, nodeId }: { name: string; nodeId: string }) {
   return (
-    <div className={styles.kbPairPeer}>
+    <div className={shared.kbPairPeer}>
       <div className={styles.kbPairPeerName}>💻 {name}</div>
-      <div className={styles.kbPairNote} style={{ marginBottom: 4 }}>它的指纹</div>
-      <div className={styles.kbPairFp} style={{ color: "var(--accent-strong)" }}>
+      <div className={shared.kbPairNote} style={{ marginBottom: 4 }}>它的指纹</div>
+      <div className={shared.kbPairFp} style={{ color: "var(--accent-strong)" }}>
         {fingerprintOf(nodeId)}
       </div>
     </div>
@@ -194,13 +195,13 @@ export function PasteFlow({ initialCode, selfNodeId, onPreview, onPair, onClose,
           <>
             <p className={styles.kbPairText}>把另一台设备生成的邀请码粘进来。</p>
             <textarea rows={4} value={input} placeholder="在这里粘贴邀请码"
-              className={`${styles.kbPairMono}${err ? ` ${styles.bad}` : ""}`}
+              className={`${styles.kbPairMono}${err ? ` ${shared.bad}` : ""}`}
               onChange={(e) => { setInput(e.target.value); setErr(""); setPeer(null); }}
               onBlur={(e) => { if (!peer && e.target.value.trim()) preview(e.target.value); }} />
             {err && (
               <div className={styles.kbPairErr}>
                 ⚠️ {err}
-                <div className={styles.kbPairNote} style={{ marginTop: 4 }}>
+                <div className={shared.kbPairNote} style={{ marginTop: 4 }}>
                   回到另一台机器上重新点一次「📋 复制邀请码」，整串粘过来。
                 </div>
               </div>
@@ -215,9 +216,9 @@ export function PasteFlow({ initialCode, selfNodeId, onPreview, onPair, onClose,
             {/* 🔴 这道核对门不能因为「少一步更友好」而弱化：
                 签名只能证明做码的人持有那把私钥，挡不住中途被换。
                 详细理由见 `src-tauri/src/sync/invite.rs` 的模块注释。 */}
-            <div className={styles.kbPairWarn}>
+            <div className={shared.kbPairWarn}>
               ⚠️ 到<b>另一台机器</b>上看一眼它显示的指纹，确认与上面这串一字不差。
-              <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+              <div className={shared.kbPairNote} style={{ marginTop: 6 }}>
                 邀请码是自签的——它能证明「做码的人有那把私钥」，
                 <b>但证明不了这个码在路上没被人换掉</b>。核对指纹是唯一能挡住这件事的办法。
               </div>

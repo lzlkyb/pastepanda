@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Lan.module.css";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 
 interface NearbyDevice {
@@ -193,14 +194,14 @@ export function LanNearby({ toast, onReady }: {
       {nearby.map((d) => (
         <div key={d.device_id} className={styles.lanNearbyItem}>
           <div
-            className={styles.lanDeviceAvatar}
+            className={shared.lanDeviceAvatar}
             style={{ background: `hsl(${(d.device_id.charCodeAt(0) || 0) * 40 % 360}, 60%, 55%)` }}
           >
             {(d.device_name || "?").charAt(0).toUpperCase()}
           </div>
-          <div className={styles.lanDeviceInfo}>
-            <div className={styles.lanDeviceName}>{d.device_name || "未命名设备"}</div>
-            <div className={styles.lanDeviceTime}>未配对</div>
+          <div className={shared.lanDeviceInfo}>
+            <div className={shared.lanDeviceName}>{d.device_name || "未命名设备"}</div>
+            <div className={shared.lanDeviceTime}>未配对</div>
           </div>
           <button className="btn-primary" disabled={busy} onClick={() => start(d)}>
             配对

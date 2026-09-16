@@ -8,7 +8,8 @@ import type { ToastFn } from "@/components/Toast";
 import { KbPairDialog } from "./KbPairDialog";
 import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
 import { RcSyncOffers } from "./RcSyncOffers";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Lan.module.css";
 
 /**
  * 开始提示星型配对的对端数阈值。
@@ -34,7 +35,7 @@ function ago(ms: number): string {
 /**
  * 「知识库同步」开关下面那块面板。
  *
- * 结构照 `LanSyncPanel`（同一套 `styles.lanPanel` 类），因为它就是同一种东西：
+ * 结构照 `LanSyncPanel`（同一套 `shared.lanPanel` 类），因为它就是同一种东西：
  * 一个开关下面挂设备列表。用户在设置页里看到两块长得一样的，
  * 正好对上「一个同步剪贴板、一个同步笔记」。
  */
@@ -59,12 +60,12 @@ export function KbSyncPanel({ toast }: {
   };
 
   return (
-    <div className={styles.lanPanel}>
-      <div className={styles.lanPanelHeader}>
-        <div className={styles.lanStatus}>
+    <div className={shared.lanPanel}>
+      <div className={shared.lanPanelHeader}>
+        <div className={shared.lanStatus}>
           {/* 点跟随真实状态：一台都不在线就是灰的，不恒亮假绿（LanSyncPanel 改过这个） */}
-          <div className={`${styles.lanDot}${online === 0 ? ` ${styles.off}` : ""}`} />
-          <span className={styles.lanStatusText}>
+          <div className={`${shared.lanDot}${online === 0 ? ` ${shared.off}` : ""}`} />
+          <span className={shared.lanStatusText}>
             {s.devices.length === 0
               ? "还没有配对任何设备"
               : `${s.devices.length} 台设备已配对，${online} 台在线`}
@@ -72,7 +73,7 @@ export function KbSyncPanel({ toast }: {
         </div>
         {s.devices.length > 0 && (
           <button
-            className={styles.lanRefreshBtn}
+            className={shared.lanRefreshBtn}
             onClick={() => void s.refreshNow()}
             disabled={s.refreshing || s.busy}
             title="立刻重探在线设备并拉取最新名单"
@@ -108,7 +109,7 @@ export function KbSyncPanel({ toast }: {
               是本面板里最显眼、也是第一个能复制的东西。
               结果用户直接把**指纹**当邀请码发给了对面（2026-09-06 真实反馈）。
               一个带复制按钮的串放在主流程上，就是在邀请用户把它发出去。 */}
-          <button className={styles.lanTestBtn} style={{ width: "100%" }}
+          <button className={shared.lanTestBtn} style={{ width: "100%" }}
             disabled={!s.identity} onClick={() => setPairOpen(true)}>
             ＋ 添加设备
           </button>
@@ -124,17 +125,17 @@ export function KbSyncPanel({ toast }: {
         </>
       ) : (
         <>
-          <div className={styles.lanDeviceList}>
+          <div className={shared.lanDeviceList}>
             {s.devices.map((d) => {
               const isOnline = !d.paused && isKbDeviceOnline(d, s.live);
               const problem = d.paused ? null : kbDeviceProblem(d, s.last, s.live);
               return (
                 <div
                   key={d.node_id}
-                  className={`${styles.lanDeviceItem}${d.paused ? ` ${styles.lanDevicePaused}` : ""}`}
+                  className={`${shared.lanDeviceItem}${d.paused ? ` ${styles.lanDevicePaused}` : ""}`}
                 >
                   <div
-                    className={styles.lanDeviceAvatar}
+                    className={shared.lanDeviceAvatar}
                     style={{
                       background: `hsl(${(d.node_id.charCodeAt(0) || 0) * 40 % 360}, 60%, 55%)`,
                       opacity: d.paused ? 0.55 : 1,
@@ -142,16 +143,16 @@ export function KbSyncPanel({ toast }: {
                   >
                     {d.name.charAt(0).toUpperCase()}
                   </div>
-                  <div className={styles.lanDeviceInfo}>
-                    <div className={styles.lanDeviceName}>{d.name}</div>
-                    <div className={styles.lanDeviceTime}>
+                  <div className={shared.lanDeviceInfo}>
+                    <div className={shared.lanDeviceName}>{d.name}</div>
+                    <div className={shared.lanDeviceTime}>
                       {fingerprintOf(d.node_id)} · {d.paused ? "已暂停" : ago(d.last_seen)}
                     </div>
                     {/* 🔴 离线时把**原因**说出来。后端一直算好了放在 `last[].error` 里，
                         而这个面板从来没渲染过它——于是「对方还没把这台加回去」这种
                         完全可操作的原因，在界面上只表现为一个字「离线」。 */}
                     {problem && (
-                      <div className={styles.lanDeviceTime}
+                      <div className={shared.lanDeviceTime}
                         style={{ color: "var(--orange)", whiteSpace: "normal", lineHeight: 1.5 }}>
                         {problem}
                       </div>
@@ -178,7 +179,7 @@ export function KbSyncPanel({ toast }: {
                       role="switch"
                       aria-checked={!d.paused}
                       aria-label={d.paused ? "启用与该设备的同步" : "暂停与该设备的同步"}
-                      className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${styles.on}`}`}
+                      className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${shared.on}`}`}
                       disabled={s.busy}
                       onClick={async () => {
                         try {
@@ -201,10 +202,10 @@ export function KbSyncPanel({ toast }: {
                       <span className={styles.lanPauseKnob} />
                     </button>
                   </div>
-                  <button className={styles.lanRefreshBtn} disabled={s.busy || d.paused}
+                  <button className={shared.lanRefreshBtn} disabled={s.busy || d.paused}
                     title={d.paused ? "已暂停" : "立刻同步"}
                     onClick={() => s.syncNow(d.node_id)}>⇅</button>
-                  <button className={styles.lanRefreshBtn} disabled={s.busy}
+                  <button className={shared.lanRefreshBtn} disabled={s.busy}
                     style={{ color: "var(--danger)" }}
                     title="从本机删除，需重新配对"
                     onClick={() => setConfirmForget(d)}>删除</button>
@@ -258,7 +259,7 @@ export function KbSyncPanel({ toast }: {
             display: "flex", justifyContent: "space-between", alignItems: "center",
           }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>本机指纹 {fp}</span>
-            <button className={styles.lanRefreshBtn} disabled={!s.identity}
+            <button className={shared.lanRefreshBtn} disabled={!s.identity}
               onClick={() => setPairOpen(true)}>＋ 添加设备</button>
           </div>
         </>

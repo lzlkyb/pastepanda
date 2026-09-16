@@ -1,0 +1,347 @@
+/* Lan.module.css — 从 Settings.module.css 拆出（2026-09-16 体量红线治理）。
+   搬家式重构：只改文件位置，样式一字未改。
+   消费者见 docs/体量红线治理方案-2026-09-16.md */
+
+/* ===== 附近设备配对（2026-09-06）=====
+   设计稿：design/PastePanda-局域网同步-附近设备配对-设计稿.html */
+.lanSectionLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 10px 0 6px;
+}
+.lanNearbyList { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.lanNearbyItem {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px;
+  background: var(--card-bg); border: 1px solid var(--border-color);
+}
+.lanNearbyEmpty {
+  font-size: 11.5px; color: var(--text-muted); line-height: 1.6;
+  padding: 12px 14px; border-radius: 12px;
+  border: 1px dashed var(--border-color);
+  background: var(--card-bg); margin-bottom: 10px;
+}
+.lanNearbyEmptyTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.lanNearbySteps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+.lanNearbySteps li { margin: 3px 0; }
+/* 监听失败横幅（覆盖 mcpAlert 内布局） */
+.lanAlertBody {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.lanAlertHint {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.lanAlertHint code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--orange, #C54A0A) 12%, transparent);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+/* 高级区：对齐 8/28 阶梯 */
+.lanAdvBody {
+  margin-top: 6px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lanAdvDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.lanAdvRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lanAdvLabel {
+  flex-shrink: 0;
+  width: 56px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.lanKeyInput {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.lanKeyInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow, rgba(2, 132, 199, 0.15));
+  background: var(--card-bg);
+}
+.lanKeyMono {
+  font-family: ui-monospace, Consolas, monospace;
+}
+.lanTip {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.lanTestRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.lanTestMsg {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.lanTestOk {
+  color: var(--green);
+  font-weight: 600;
+}
+/* 配对核对框。盖住列表，只让用户干一件事。 */
+.lanPairBox {
+  padding: 14px; border-radius: 10px; margin-bottom: 10px;
+  background: var(--card-bg); border: 1px solid var(--accent);
+}
+.lanPairTitle { font-size: 12.5px; font-weight: 700; text-align: center; }
+/* 🔴 字号大、字距拉开：这串数字要被人逐位与另一块屏幕对比。
+   它是整套机制里唯一靠人把关的环节，不能做小。 */
+.lanPairPin {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 30px; font-weight: 700; letter-spacing: 9px;
+  text-align: center; color: var(--accent);
+  padding: 12px 0 4px;
+}
+.lanPairHint {
+  font-size: 11.5px; color: var(--text-secondary);
+  text-align: center; line-height: 1.7;
+}
+.lanPairWarn {
+  font-size: 11px; color: var(--text-secondary); line-height: 1.6;
+  margin-top: 8px; padding: 7px 9px; border-radius: 6px;
+  background: var(--section-bg);
+}
+.lanPairBtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+/* 手填密钥降为高级项。保留它是为了能跟旧版本设备配对。 */
+.lanAdvanced { margin-bottom: 10px; }
+.lanAdvancedHead {
+  font-size: 11.5px; color: var(--text-muted);
+  cursor: pointer; padding: 4px 0; user-select: none;
+}
+.lanAdvancedHead:hover { color: var(--accent); }
+.lanDeviceOnline {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.dotOnline {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--green) 40%, transparent);
+}
+/* 设备暂停态 + 行内启用开关（方案 A） */
+.lanDevicePaused {
+  border-style: dashed;
+  opacity: 0.78;
+}
+.lanDevicePausedBadge {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--orange-bg, color-mix(in srgb, var(--orange, #e0803a) 12%, transparent));
+  color: var(--orange, #e0803a);
+  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 35%, var(--border-color));
+  white-space: nowrap;
+}
+.lanPauseSw {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.lanPauseLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 22px;
+  text-align: right;
+}
+.lanPauseToggle {
+  width: 34px;
+  height: 18px;
+  border-radius: 10px;
+  border: none;
+  padding: 0;
+  background: var(--border-color);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.lanPauseToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.lanPauseKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+}
+/* 步骤条。贴在 dialog-header 下面，不跟着 dialog-body 滚 */
+.kbPairSteps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--section-bg, var(--card-bg));
+}
+.kbPairStep {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.kbPairStepNum {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--border-color);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+/* 连接线吃掉剩余宽度，步骤数变化时不用改宽度 */
+.kbPairBar { flex: 1; height: 1px; background: var(--border-color); min-width: 8px; }
+/* 第一屏的角色选择卡 */
+.kbPairPick {
+  display: flex;
+  gap: 11px;
+  width: 100%;
+  padding: 13px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.kbPairPick:hover { border-color: var(--accent); background: var(--hover); }
+.kbPairPickEmoji { font-size: 19px; line-height: 1.2; flex-shrink: 0; }
+.kbPairPickTitle { font-size: 12.5px; font-weight: 700; margin-bottom: 2px; }
+.kbPairPickDesc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+/* 邀请码 / 粘贴框。textarea 与只读展示共用一套 */
+.kbPairMono {
+  width: 100%;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  resize: none;
+}
+/* 设备名输入框。
+   ❗ 不能写 `className="input"`——项目里根本没有那个全局类，
+   写了等于没样式（一直是浏览器默认输入框，2026-09-05 修）。
+   取值与 .kbPairMono 对齐，只是不用等宽。 */
+.kbPairInput {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.kbPairInput:focus { border-color: var(--accent); }
+.kbPairInput::placeholder { color: var(--text-muted); }
+.kbPairFpSm { font-size: 12px; letter-spacing: 1px; }
+.kbPairOk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: var(--green-bg);
+  border: 1px solid var(--green-border, var(--border-color));
+  font-size: 11.5px;
+  color: var(--green);
+}
+.kbPairErr { font-size: 11.5px; line-height: 1.6; color: var(--danger); }
+.kbPairPeerName { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+/* 等待 / 成功 那个大圆圈 */
+.kbPairPulse {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin: 0 auto;
+  animation: kbPairBreathe 2s ease-in-out infinite;
+}
+/* 无障碍：系统关了动画就不呼吸（规则 #9）*/
+@media (prefers-reduced-motion: reduce) {
+  .kbPairPulse { animation: none; }
+}
+/* 「不是这个？手动粘贴」这类次要入口 */
+.kbPairLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.kbPairLink:hover { color: var(--accent); }
+.kbPairCenter { text-align: center; }
+.kbPairText { font-size: 12px; color: var(--text-secondary); line-height: 1.7; margin: 0; }

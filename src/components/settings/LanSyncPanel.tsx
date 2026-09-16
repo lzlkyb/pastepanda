@@ -4,7 +4,8 @@ import { logger } from "@/lib/logger";
 import { LAN_PAIRED_CHANGED } from "@/lib/lanEvents";
 import { LanNearby } from "./LanNearby";
 import { LanPairedList, type PairedDevice } from "./LanPairedList";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Lan.module.css";
 
 /**
  * LanSyncPanel — 剪贴板同步主面板（P0 收口）。
@@ -199,9 +200,9 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
   };
 
   return (
-    <div className={styles.lanPanel}>
+    <div className={shared.lanPanel}>
       {!running && (
-        <div className={styles.mcpAlert}>
+        <div className={shared.mcpAlert}>
           <div className={styles.lanAlertBody}>
             <div>
               <b>监听没能启动</b> — 同网络的设备无法互相发现。
@@ -211,7 +212,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
             </div>
             <button
               type="button"
-              className={styles.lanRefreshBtn}
+              className={shared.lanRefreshBtn}
               onClick={handleRetryListen}
               disabled={retrying}
             >
@@ -221,10 +222,10 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
         </div>
       )}
 
-      <div className={styles.lanPanelHeader}>
-        <div className={styles.lanStatus}>
-          <div className={`${styles.lanDot}${onlineCount === 0 ? ` ${styles.off}` : ""}`} />
-          <span className={styles.lanStatusText}>
+      <div className={shared.lanPanelHeader}>
+        <div className={shared.lanStatus}>
+          <div className={`${shared.lanDot}${onlineCount === 0 ? ` ${shared.off}` : ""}`} />
+          <span className={shared.lanStatusText}>
             {onlineCount > 0
               ? `在线 ${onlineCount} 台`
               : running
@@ -234,7 +235,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
           </span>
         </div>
         <button
-          className={styles.lanRefreshBtn}
+          className={shared.lanRefreshBtn}
           onClick={() => void refreshNow()}
           disabled={refreshing}
           title="立刻向局域网广播并拉取最新设备名单"
@@ -269,7 +270,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
             />
             <button
               type="button"
-              className={styles.lanRefreshBtn}
+              className={shared.lanRefreshBtn}
               onClick={handleRegenerateKey}
               disabled={pairingBusy}
               title="所有已配对设备将断开，需重新配对"
@@ -288,7 +289,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
             />
             <button
               type="button"
-              className={styles.lanTestBtn}
+              className={shared.lanTestBtn}
               onClick={handleApplyPairingKey}
               disabled={pairingBusy || !pairingInput.trim()}
             >
@@ -306,7 +307,7 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
       <div className={styles.lanTestRow}>
         <button
           type="button"
-          className={styles.lanTestBtn}
+          className={shared.lanTestBtn}
           onClick={handleSendTest}
           disabled={testBusy || !running}
         >

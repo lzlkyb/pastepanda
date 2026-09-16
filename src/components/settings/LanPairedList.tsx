@@ -6,7 +6,8 @@
  */
 import { useState } from "react";
 import { logger } from "@/lib/logger";
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./Lan.module.css";
 
 /**
  * 记住的设备。
@@ -112,14 +113,14 @@ export function LanPairedList({
   return (
     <>
       <div className={styles.lanSectionLabel}>记住的设备</div>
-      <div className={styles.lanDeviceList}>
+      <div className={shared.lanDeviceList}>
         {devices.map((d, idx) => (
           <div
             key={d.device_id ? `device-${d.device_id}-${idx}` : `device-${idx}`}
-            className={`${styles.lanDeviceItem}${d.paused ? ` ${styles.lanDevicePaused}` : ""}`}
+            className={`${shared.lanDeviceItem}${d.paused ? ` ${styles.lanDevicePaused}` : ""}`}
           >
             <div
-              className={`${styles.lanDeviceAvatar}`}
+              className={`${shared.lanDeviceAvatar}`}
               style={{
                 // 审查：空 device_id 时 charCodeAt 是 NaN → 兜底 0（无效色）
                 background: `hsl(${((d.device_id.charCodeAt(0) || 0) * 40) % 360}, 60%, 55%)`,
@@ -128,11 +129,11 @@ export function LanPairedList({
             >
               {d.device_name.charAt(0).toUpperCase()}
             </div>
-            <div className={`${styles.lanDeviceInfo}`}>
-              <div className={`${styles.lanDeviceName}`}>{d.device_name}</div>
+            <div className={`${shared.lanDeviceInfo}`}>
+              <div className={`${shared.lanDeviceName}`}>{d.device_name}</div>
               {/* ❗ 这一行把「在线」与「最后同步」分开写。旧版本只有一个时间
                   配上恒亮的绿点，对方已经关机了也看不出来。 */}
-              <div className={`${styles.lanDeviceTime}`}>
+              <div className={`${shared.lanDeviceTime}`}>
                 {d.paused
                   ? "已暂停 · 停止与本机收发剪贴板"
                   : d.online
@@ -159,7 +160,7 @@ export function LanPairedList({
                 role="switch"
                 aria-checked={!d.paused}
                 aria-label={d.paused ? "启用与该设备的同步" : "暂停与该设备的同步"}
-                className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${styles.on}`}`}
+                className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${shared.on}`}`}
                 disabled={pausing === d.device_id}
                 onClick={() => void handleTogglePause(d)}
                 title={
@@ -172,7 +173,7 @@ export function LanPairedList({
               </button>
             </div>
             <button
-              className={styles.lanRefreshBtn}
+              className={shared.lanRefreshBtn}
               onClick={() => void handleDelete(d)}
               disabled={deleting === d.device_id}
               title="从本机名单删除（不会吊销配对密钥）"
