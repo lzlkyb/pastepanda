@@ -3,14 +3,16 @@
  * 对齐设计稿 §二。主开关在 RcSection 的 ToggleRow 上。
  *
  * D11：原先这里的间距/字号/颜色全是内联 style（21 处），现在统一收口到
- * Settings.module.css 的 rc* 类；只有 deviceAvatarStyle（按设备 id 派生）
- * 是真正的动态值，保留在 style 上。
+ * `./RcSettings.module.css` 的 rc* 类（2026-09-16 从 Settings.module.css 拆出）；
+ * 只有 deviceAvatarStyle（按设备 id 派生）是真正的动态值，保留在 style 上。
+ * `shared` 是设置页共用的那几个类（sRow/sSection 等）。
  */
 import type { RcStatus, RcTargetDevice } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { deviceAvatarStyle } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
-import styles from "../Settings.module.css";
+import shared from "../Settings.module.css";
+import styles from "./RcSettings.module.css";
 
 /** 一组「二选一/三选一」的档位按钮，选中态与禁用态规则一致，抽出来避免三处重复。 */
 function ChoiceRow<T extends string>({
@@ -55,7 +57,7 @@ export function RcAllowPanel({
   const gate = off ? styles.rcGated : undefined;
 
   return (
-    <div className={`${styles.lanPanel} ${off ? styles.rcPanelOff : ""}`}>
+    <div className={`${shared.lanPanel} ${off ? styles.rcPanelOff : ""}`}>
       <div className={styles.rcIntro}>
         仅限<b>已配对</b>设备；每次会话都要你在本机点同意。远程 shell / 文件管理
         <b>不做</b>。
@@ -117,17 +119,17 @@ export function RcAllowPanel({
         {targets.length === 0 ? (
           <div className={styles.rcEmpty}>还没有配对设备。先在「远程电脑」里完成远程配对。</div>
         ) : (
-          <div className={styles.lanDeviceList}>
+          <div className={shared.lanDeviceList}>
             {targets.map((d) => {
               const denied = status.device_deny[d.node_id] ?? d.denied;
               return (
-                <div key={d.node_id} className={styles.lanDeviceItem}>
-                  <div className={styles.lanDeviceAvatar} style={deviceAvatarStyle(d.node_id)}>
+                <div key={d.node_id} className={shared.lanDeviceItem}>
+                  <div className={shared.lanDeviceAvatar} style={deviceAvatarStyle(d.node_id)}>
                     {(d.name || "?").charAt(0).toUpperCase()}
                   </div>
-                  <div className={styles.lanDeviceInfo}>
-                    <div className={styles.lanDeviceName}>{d.name || "未命名设备"}</div>
-                    <div className={styles.lanDeviceTime}>
+                  <div className={shared.lanDeviceInfo}>
+                    <div className={shared.lanDeviceName}>{d.name || "未命名设备"}</div>
+                    <div className={shared.lanDeviceTime}>
                       {fingerprintOf(d.node_id)} · {d.conn_state === "online" ? "在线" : "离线"}
                     </div>
                   </div>
@@ -140,7 +142,7 @@ export function RcAllowPanel({
                   </span>
                   <button
                     type="button"
-                    className={`${styles.lanRefreshBtn} ${styles.rcDevBtn}`}
+                    className={`${shared.lanRefreshBtn} ${styles.rcDevBtn}`}
                     disabled={off || rc.busy}
                     onClick={() => void rc.setDeviceAllowed(d.node_id, denied)}
                   >

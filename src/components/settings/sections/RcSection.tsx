@@ -16,7 +16,8 @@ import { RcAllowPanel } from "../RcAllowPanel";
 import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcOverlay 统一默认设备名来源
 import { RcPairDialog } from "../RcPairDialog";
 import { RcSessionHistory } from "@/components/rc/RcSessionHistory";
-import styles from "../../Settings.module.css";
+import shared from "../../Settings.module.css";
+import styles from "../RcSettings.module.css";
 
 interface RcSectionProps {
   config: AppConfig;
@@ -40,7 +41,7 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
 
   return (
     <>
-      <div className={styles.sSection}>远程电脑</div>
+      <div className={shared.sSection}>远程电脑</div>
       <ToggleRow
         icon="🖥️"
         hue="sync"
@@ -70,7 +71,7 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
       />
 
       {/* 配对入口：方案 A —— 发起远程不依赖「允许被远程」，始终可见 */}
-      <div className={styles.lanPanel}>
+      <div className={shared.lanPanel}>
         <div className={styles.rcFpLine}>
           本机指纹 <span className={styles.rcFpValue}>{rc.identity?.fingerprint ?? "读取中…"}</span>
           <br />
@@ -80,7 +81,7 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
         </div>
         <button
           type="button"
-          className={`${styles.lanTestBtn} ${styles.rcFullBtn}`}
+          className={`${shared.lanTestBtn} ${styles.rcFullBtn}`}
           disabled={!rc.identity}
           onClick={() => setPairOpen(true)}
         >
@@ -93,13 +94,13 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
               🔔 有 {joins.length} 台设备想完成远程配对
             </div>
             {joins.map((j) => (
-              <div key={j.node_id} className={`${styles.lanDeviceItem} ${styles.rcJoinRow}`}>
-                <div className={styles.lanDeviceInfo}>
-                  <div className={styles.lanDeviceTime}>指纹 {fingerprintOf(j.node_id)}</div>
+              <div key={j.node_id} className={`${shared.lanDeviceItem} ${styles.rcJoinRow}`}>
+                <div className={shared.lanDeviceInfo}>
+                  <div className={shared.lanDeviceTime}>指纹 {fingerprintOf(j.node_id)}</div>
                 </div>
                 <button
                   type="button"
-                  className={styles.lanRefreshBtn}
+                  className={shared.lanRefreshBtn}
                   disabled={rc.busy}
                   onClick={() => {
                     void rc.denyJoin(j.node_id).then((ok) => {
@@ -111,7 +112,7 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
                 </button>
                 <button
                   type="button"
-                  className={styles.lanRefreshBtn}
+                  className={shared.lanRefreshBtn}
                   disabled={rc.busy}
                   onClick={() => {
                     void rc.approveJoin(j.node_id, DEFAULT_RC_DEVICE_NAME).then((ok) => {

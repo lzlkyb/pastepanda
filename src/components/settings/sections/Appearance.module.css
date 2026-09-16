@@ -1,0 +1,69 @@
+/* Appearance.module.css — 从 Settings.module.css 拆出（2026-09-16 体量红线治理）。
+   搬家式重构：只改文件位置，样式一字未改。
+   消费者见 docs/体量红线治理方案-2026-09-16.md */
+
+/* ===== 主题预览卡（从 AppearanceSection 的内联 style 搬过来） =====
+ *
+ * 搬家同时改了两个数：卡片 64px → 72px、主题名 8px → 11px。
+ * 那串主题名是六个按钮**唯一的名字**（8px 比正文下限 11px 低了将近三成，
+ * 对比度本身达标，纯粹是小到费劲）。卡宽跟着变大是因为「美乐迪」这类 3 字名
+ * 在 11px 下要 33px，加上左侧彩点与内边距后 64px 已经拐不过弯。
+ * 预览色仍然写在内联 style 里——它们是每个主题各自一份的数据，不是样式。 */
+.themeCard {
+  width: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.themeCardOn {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.themeCardBar {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 4px;
+}
+.themeCardDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.themeCardName {
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.themeCardBody {
+  height: 36px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+}
+.themeCardLine {
+  height: 5px;
+  border-radius: 3px;
+}
+.themeCardHeart {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  font-size: 10px;
+  line-height: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .themeCard { transition: none; }
+}

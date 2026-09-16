@@ -1,0 +1,105 @@
+/* RcSettings.module.css — 从 Settings.module.css 拆出（2026-09-16 体量红线治理）。
+   搬家式重构：只改文件位置，样式一字未改。
+   消费者见 docs/体量红线治理方案-2026-09-16.md */
+
+/* —— 远程电脑 · 允许被远程面板（D11：把原本 21 处内联样式收口成类）——
+   关主开关时整块变灰而不是消失（规则 15）：.rcPanelOff 只降透明度，
+   .rcGated 负责禁用交互，两者独立，因为「说明文字」该变灰但不该被挡。 */
+.rcPanelOff {
+  opacity: 0.55;
+}
+.rcIntro {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.rcBlock {
+  margin-bottom: 14px;
+}
+.rcBlockSpaced {
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+.rcGated {
+  pointer-events: none;
+}
+.rcLabel {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.rcLabelTop {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+.rcHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+.rcBtnRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rcChoiceBtn {
+  font-size: 12px;
+  padding: 4px 12px;
+}
+.rcEmpty {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.rcDevState {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.rcDevStateOn {
+  color: var(--green, #2f9e5f);
+}
+.rcDevStateOff {
+  color: var(--danger, #d64545);
+}
+.rcDevBtn {
+  flex-shrink: 0;
+}
+/* —— 远程电脑 · RcSection（D11：同一批内联样式收口）—— */
+.rcFpLine {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.rcFpValue {
+  font-family: ui-monospace, Consolas, monospace;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.rcFullBtn {
+  width: 100%;
+}
+.rcBlockTop {
+  margin-top: 14px;
+}
+.rcJoinBlock {
+  margin-top: 12px;
+}
+.rcJoinTitle {
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.rcJoinRow {
+  margin-bottom: 6px;
+}
+.rcSubTitle {
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.rcErrLine {
+  font-size: 12px;
+  color: var(--danger, #d64545);
+  margin-top: 8px;
+}

@@ -3,7 +3,8 @@ import { emit } from "@tauri-apps/api/event";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { SettingTile } from "../ToggleRow"
-import styles from "../../Settings.module.css";
+import shared from "../../Settings.module.css";
+import styles from "./Appearance.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
   "ocean":      { bg: "#F4F6F9", accent: "#0284C7", text: "#64748B", barBg: "#fff", bodyBg: "linear-gradient(180deg, #EAF6FD 0%, #CFE9F8 40%, #9ED0EA 75%, #79B8DD 100%)", lineBg: "#E0E4EB" },
@@ -26,11 +27,11 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
   return (
     <>
       {/* ── 外观 ── */}
-      <div className={styles.sSection}>外观</div>
-      <div className={styles.sRow} style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+      <div className={shared.sSection}>外观</div>
+      <div className={shared.sRow} style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
         <SettingTile hue="brand">🎨</SettingTile>
-        <div className={styles.sRowBody}>
-          <div className={styles.sRowLabel}>
+        <div className={shared.sRowBody}>
+          <div className={shared.sRowLabel}>
             主题配色
             <HelpTooltip
               tooltip="6种精心调配的主题配色"
@@ -44,7 +45,7 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
               </>}
             />
           </div>
-          <div className={styles.sRowDesc}>选择你喜欢的配色方案</div>
+          <div className={shared.sRowDesc}>选择你喜欢的配色方案</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {THEMES.map((t, idx) => {
@@ -63,7 +64,7 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
                 title={t.displayName}
                 aria-pressed={isActive}>
                 {/* 内联 style 里只剩下「这个主题长什么颜色」这一类真正因主题而异的值，
-                    尺寸/圆角/阴影这些六张卡完全一样的东西都进了 Settings.module.css。 */}
+                    尺寸/圆角/阴影这些六张卡完全一样的东西都进了 ./Appearance.module.css。 */}
                 <div
                   className={styles.themeCardBar}
                   style={{ background: prev.barBg, borderBottom: `1px solid ${prev.lineBg}` }}
@@ -84,13 +85,13 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
           })}
         </div>
       </div>
-      <div className={styles.sRow}>
+      <div className={shared.sRow}>
         <SettingTile hue="system">📑</SettingTile>
-        <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>标签样式</div>
-          <div className={`${styles.sRowDesc}`}>切换筛选标签的显示风格</div>
+        <div className={`${shared.sRowBody}`}>
+          <div className={`${shared.sRowLabel}`}>标签样式</div>
+          <div className={`${shared.sRowDesc}`}>切换筛选标签的显示风格</div>
         </div>
-        <button className={styles.sVal} onClick={() => handleSwitchTabStyle(tabStyle === "segmented" ? "circle" : "segmented")}>
+        <button className={shared.sVal} onClick={() => handleSwitchTabStyle(tabStyle === "segmented" ? "circle" : "segmented")}>
           {tabStyle === "segmented" ? "分段控件" : "圆形图标"}
         </button>
       </div>
