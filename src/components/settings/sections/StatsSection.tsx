@@ -3,7 +3,9 @@ import type { StatsDetail } from "@/lib/api";
 import { resolveSource } from "@/lib/source-mappings";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import type { SettingsData } from "@/hooks/useSettingsData";
-import styles from "../../Settings.module.css";
+// 本组件自己的样式；`.sSection` / `.btnSecondary` 是全设置页共用的两个类，仍来自 Settings.module.css。
+// （2026-09-16 之前这里把 Settings.module.css import 了两次当两个别名用，现已收口。）
+import styles from "./StatsSection.module.css";
 import settings from "../../Settings.module.css";
 
 /** 来源榜图标：真实应用图标 / emoji 双模式走 useSourceIcon（规则 #11） */
@@ -42,7 +44,7 @@ export function StatsSection({
   return (
     <>
       {/* ── 数据统计 ── */}
-      <div className={styles.sSection}>数据统计</div>
+      <div className={settings.sSection}>数据统计</div>
       <div className={styles.statsPanel}>
         <div className={styles.statsPanelHeader}>
           📊 剪贴板数据概览
