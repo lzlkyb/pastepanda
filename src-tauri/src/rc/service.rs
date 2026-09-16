@@ -148,7 +148,7 @@ struct Inner {
     pending: Vec<InboundKnock>,
 }
 
-fn now_ms() -> i64 {
+pub(super) fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
@@ -1276,7 +1276,7 @@ impl RcService {
             inner.pending.clear();
         }
         let _ = self.store.rc_device_touch(&peer, false);
-        self.append_history(&peer, &peer_name, cap, phase, started, reason);
+        super::history::append_history(&self.store, &peer, &peer_name, cap, phase, started, reason);
         self.clear_frame();
         self.note_rtt(0);
         // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
@@ -1292,52 +1292,9 @@ impl RcService {
         Ok(())
     }
 
-    /// 只记元数据：谁 / 方向 / 能力 / 时长 / 结果。不记画面与键鼠。
-    fn append_history(
-        &self,
-        peer: &str,
-        peer_name: &str,
-        cap: Capability,
-        phase: SessionPhase,
-        started_ms: i64,
-        reason: &str,
-    ) {
-        const KEY: &str = "rc_session_history";
-        const MAX: usize = 20;
-        let ended = now_ms();
-        let dir = match phase {
-            SessionPhase::OutboundActive | SessionPhase::OutboundPending => "outbound",
-            _ => "inbound",
-        };
-        let entry = serde_json::json!({
-            "peer": peer,
-            "peer_name": peer_name,
-            "capability": cap.as_str(),
-            "dir": dir,
-            "started_ms": started_ms,
-            "ended_ms": ended,
-            "duration_ms": (ended - started_ms).max(0),
-            "reason": reason,
-        });
-        let mut config = self.store.get_config().unwrap_or_default();
-        let Some(obj) = config.as_object_mut() else { return };
-        let mut list: Vec<serde_json::Value> = obj
-            .get(KEY)
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        list.insert(0, entry);
-        list.truncate(MAX);
-        if let Ok(v) = serde_json::to_value(&list) {
-            obj.insert(KEY.to_string(), v);
-            let _ = self.store.save_config(&config);
-        }
-    }
-
+    /// 读最近若干条会话历史（前端展示用）。实现见 `rc/history.rs`。
     pub fn session_history(&self) -> Vec<serde_json::Value> {
-        self.cfg()
-            .get("rc_session_history")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default()
+        super::history::list_history(&self.store)
     }
 
     /// 当前会话 id 是否等于给定值（收口按 session id 判定，避免重连时被旧任务按 peer 误杀）。

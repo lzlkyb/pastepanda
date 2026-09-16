@@ -6,6 +6,7 @@
 pub mod input;
 pub mod jpeg;
 pub mod join;
+pub mod history;
 pub mod net;
 pub mod notify;
 pub mod pressed;
