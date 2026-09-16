@@ -1,72 +1,3 @@
-/* Tab bar wrapper — scroll hide animation */
-.tabBarWrapper {
-  flex-shrink: 0;
-  overflow: hidden;
-  max-height: 48px;
-  opacity: 1;
-  margin: 8px 12px;
-  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              margin 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.tabBarWrapperHidden {
-  max-height: 0;
-  opacity: 0;
-  margin: 0 12px;
-}
-
-/* Tab bar */
-.tabBar {
-  display: flex;
-  gap: 2px;
-  padding: 4px 8px;
-  background: var(--seg-bg, var(--section-bg));
-  border-radius: 10px;
-}
-
-.tabBtn {
-  flex: 1;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-family: inherit;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  transition: all 0.2s;
-}
-
-.tabBtn:hover {
-  color: var(--text-primary);
-}
-
-.tabBtnActive {
-  background: var(--seg-active-bg, var(--card-bg));
-  color: var(--accent);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-:global([data-theme="blossom"]) .tabBtnActive {
-  background: linear-gradient(135deg, #FFFFFF 0%, #FFDDEC 100%);
-  box-shadow: 0 2px 8px rgba(240, 86, 140, 0.16), 0 0.5px 1px rgba(206, 59, 112, 0.06);
-}
-
-:global([data-theme="blossom"]) .tabBtn:hover {
-  color: var(--accent-strong);
-}
-
-.tabIcon {
-  font-size: 14px;
-  line-height: 1;
-}
-
 /* 未读红点：关于 tab 有更新可用时显示 */
 .tabDot {
   width: 6px;
@@ -81,98 +12,6 @@
 @keyframes dotPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
-}
-
-/* Dialog header compact */
-.dialogHeaderCompact {
-  height: 36px !important;
-  padding: 0 14px !important;
-}
-.dialogTitleCompact {
-  font-size: 12px !important;
-}
-.dialogCloseCompact {
-  width: 24px !important;
-  height: 24px !important;
-}
-
-.settingsSection {
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  overflow: hidden;
-}
-
-.settingsSectionHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: var(--section-bg);
-}
-
-.settingsSectionHeaderIcon {
-  color: var(--accent);
-}
-
-.settingsSectionHeaderText {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.settingsSectionBody {
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.settingsRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.settingsRowLabel {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.toggleTrack {
-  width: 36px;
-  height: 20px;
-  border-radius: 999px;
-  cursor: pointer;
-  position: relative;
-  transition: background 0.2s;
-  border: none;
-}
-
-.toggleTrack.off {
-  background: var(--toggle-off-bg);
-}
-
-.toggleTrack.on {
-  background: var(--accent);
-}
-
-.toggleThumb {
-  position: absolute;
-  top: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-  transition: transform 0.2s;
-}
-
-.toggleTrack.off .toggleThumb {
-  transform: translateX(2px);
-}
-
-.toggleTrack.on .toggleThumb {
-  transform: translateX(18px);
 }
 
 /* ❗ 这里**故意不写** outline: none。
@@ -190,92 +29,6 @@
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   font-family: inherit;
-}
-
-.themeGrid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-}
-
-.themeBtn {
-  height: 40px;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-  border: 1.5px solid transparent;
-  font-family: inherit;
-}
-
-.themeBtn.active {
-  background: var(--accent-light);
-  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
-  color: var(--accent-strong);
-  border-color: var(--accent);
-}
-
-.themeBtn:not(.active) {
-  background: var(--input-bg);
-  color: var(--text-muted);
-  border-color: transparent;
-}
-
-.themeBtn:not(.active):hover {
-  background: var(--hover);
-}
-
-.hotkeyInput {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-family: "SF Mono", "Consolas", monospace;
-  font-weight: 500;
-  cursor: pointer;
-  outline: none;
-  min-width: 100px;
-  text-align: center;
-  transition: all 0.15s;
-  border: 1.5px solid var(--border-color);
-  background: var(--input-bg);
-  color: var(--text-primary);
-}
-
-.hotkeyInput.recording {
-  background: var(--accent-light);
-  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
-  color: var(--accent-strong);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-shadow);
-}
-
-.smallBtn {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.15s;
-  border: 1px solid var(--border-color);
-  background: var(--input-bg);
-  color: var(--text-secondary);
-  font-family: inherit;
-}
-
-.smallBtn:active {
-  transform: scale(0.97);
-}
-
-.smallBtn.danger {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .btnPrimary {
@@ -345,109 +98,6 @@
   background: var(--section-bg);
 }
 
-.bList {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.bItem {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.bItem:hover {
-  background: var(--hover);
-}
-
-.bIcon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 15px;
-  flex-shrink: 0;
-}
-
-.bText {
-  flex: 1;
-  min-width: 0;
-}
-
-.bLabel {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.bDesc {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 1px;
-}
-
-.bRight {
-  font-size: 12px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.bSep {
-  height: 1px;
-  background: var(--border-color);
-  margin: 8px 0;
-}
-
-/* Tab style preview */
-.bTabPreview {
-  display: flex;
-  gap: 4px;
-  padding: 8px;
-  background: var(--seg-bg);
-  border-radius: 8px;
-  margin-top: 8px;
-}
-
-.bTabMini {
-  flex: 1;
-  height: 28px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.15s;
-}
-
-.bTabMini:hover {
-  color: var(--text-primary);
-}
-
-.bTabMini.active {
-  background: var(--seg-active-bg);
-  color: var(--text-primary);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
 @keyframes pp-skel {
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }
@@ -515,18 +165,6 @@
 .settingsSections > *:nth-child(16) { animation-delay: 0.45s; }
 .settingsSections > *:nth-child(n+17) { animation-delay: 0.48s; }
 
-/* U52：设置搜索框 — 吸附在滚动区顶部，便于在长列表中快速定位设置项 */
-.settingsSearch {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background: var(--dialog-bg);
-  border-bottom: 1px solid var(--border-color);  /* 页面分区线（吸顶栏与下方内容的分界），与搜索框本身的边框是两个层级，保留 */
-}
 .settingsSearchIcon {
   display: flex;
   align-items: center;
@@ -1038,28 +676,6 @@
   box-shadow: 0 0 0 2px var(--accent-shadow);
 }
 
-/* Theme selector dots */
-.sThemeGrid { display: flex; gap: 6px; }
-.sThemeDot {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2.5px solid transparent;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.sThemeDot.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-shadow);
-}
-.sThemeDot .sThemeCheck {
-  font-size: 12px;
-  color: #fff;
-}
-
 /* Value badge */
 .sVal {
   font-size: 12px;
@@ -1319,26 +935,6 @@
   color: var(--text-muted);
 }
 
-.sFooterVer {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* 跨组件共享: SettingsDialog 帮助说明 */
-.sSectionDesc {
-  padding: 10px 16px 8px;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  background: var(--card-bg);
-  border-left: 1px solid var(--border-color);
-  border-right: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-}
-
 .sRowRecommend {
   display: inline-flex;
   align-items: center;
@@ -1426,23 +1022,6 @@
 }
 .lanStatusText span { white-space: nowrap; }
 
-.lanDeviceList { display: flex; flex-direction: column; gap: 6px; }
-.lanDevice {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border-radius: 10px;
-  background: var(--card-bg); border: 1px solid var(--border-color);
-}
-.lanDeviceAvatar {
-  width: 32px; height: 32px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; color: #fff; flex-shrink: 0;
-}
-.lanDeviceName { font-size: 12px; font-weight: 600; color: var(--text-primary); }
-.lanDeviceStatus {
-  margin-left: auto; font-size: 10px; padding: 2px 8px; border-radius: 6px;
-  font-weight: 600; flex-shrink: 0;
-}
-.lanDeviceStatus.online { background: var(--green-bg); color: var(--green); }
 .lanTestBtn {
   margin-top: 10px; width: 100%; padding: 6px 0; border-radius: 8px;
   border: 1px solid var(--border-color); background: var(--card-bg);
@@ -1498,22 +1077,6 @@
   transform: translateX(16px);
 }
 
-.sThemeGrid {
-  display: flex; gap: 6px;
-}
-.sThemeDot {
-  width: 32px; height: 32px; border-radius: 10px;
-  border: 2px solid transparent; cursor: pointer;
-  position: relative; transition: all 0.2s;
-  display: flex; align-items: center; justify-content: center;
-}
-.sThemeDot:hover { transform: scale(1.1); }
-.sThemeDot.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-shadow); }
-.sThemeCheck {
-  color: #fff; font-size: 12px; font-weight: 700;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
-}
-
 /* ===== MCP 服务面板（M4 步骤 4）=====
    设计稿：design/知识库MCP服务-设置面板-设计稿.html
    容器直接复用 .lanPanel / .lanPanelHeader / .lanStatus / .lanDot / .lanStatusText，
@@ -1555,17 +1118,6 @@
   white-space: nowrap;
   font-family: inherit;
   opacity: 0.8;
-}
-
-/* 「推荐」小标。全局那一条要一眼看出来是默认该选的。 */
-.mcpRecommend {
-  margin-left: 6px;
-  padding: 0 6px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--green, #3fb950);
-  background: color-mix(in srgb, var(--green, #3fb950) 16%, transparent);
 }
 
 /* ── M5 写权限开关 ── */
