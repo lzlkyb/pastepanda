@@ -37,13 +37,25 @@ function sourceFiles(): string[] {
   return out;
 }
 
-/** 从源码里抓 `<div className={styles.sSection}>标题</div>`。 */
+/**
+ * 从源码里抓 `<div className={X.sSection}>标题</div>`，**不限定别名**。
+ *
+ * ❗ 别名不能写死成 `styles`。CSS module 拆分后，一个分区可以同时 import 两个
+ * 模块（自己的 + 设置页共用的那个），于是标题类通常来自**共用模块**，别名也就
+ * 成了 `shared` / `settings`：
+ *   `AppearanceSection` → `import shared from "../../Settings.module.css"`
+ *   `RcSection`         → 同上
+ *   `StatsSection`      → `import settings from "../../Settings.module.css"`
+ * 这些渲染出来的类仍然是 `Settings.module.css` 的 `sSection`，行为与拆之前一致；
+ * 写死 `styles` 只会让正则抓不到、测试空红。别名的有效性由
+ * `scripts/check-css-classes.mjs` 负责（它才真正验证 `X.sSection` 能解析）。
+ */
 function sectionTitles(): Set<string> {
-  const re = /className=\{styles\.sSection\}>([^<]+)</g;
+  const re = /className=\{([A-Za-z_$][\w$]*)\.sSection\}>([^<]+)</g;
   const titles = new Set<string>();
   for (const p of sourceFiles()) {
     const src = readFileSync(p, "utf8");
-    for (const m of src.matchAll(re)) titles.add(m[1].trim());
+    for (const m of src.matchAll(re)) titles.add(m[2].trim());
   }
   return titles;
 }
