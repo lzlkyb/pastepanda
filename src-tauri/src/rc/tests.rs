@@ -85,6 +85,20 @@ fn needs_channel_when_paired_without_being_remoted() {
 }
 
 #[test]
+fn needs_channel_when_only_sync_paired() {
+    // B9：仅同步配对、无远程配对、未开被控 → 仍要起通道，
+    // 否则用户看得见设备（source="sync"）却发不起。
+    let s = store();
+    s.device_pair(&"ff".repeat(32), "同步机", "").unwrap();
+    let svc = RcService::new(s);
+    assert!(!svc.enabled(), "发起不依赖「允许被远程」");
+    assert!(
+        svc.needs_channel(),
+        "仅同步配对也要起通道（发起），否则列得出却发不起"
+    );
+}
+
+#[test]
 fn sync_pair_grants_remote_trust() {
     // 方案 A：同步配对 → 可直接远程；远程配对 → 不自动进同步
     let s = store();

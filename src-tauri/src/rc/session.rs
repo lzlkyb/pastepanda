@@ -119,12 +119,9 @@ pub fn can_transition(from: SessionPhase, to: SessionPhase) -> bool {
     matches!(
         (from, to),
         (Idle, OutboundPending)
-            | (Idle, InboundPending)
             | (Idle, InboundActive)
             | (OutboundPending, OutboundActive)
             | (OutboundPending, Idle)
-            | (InboundPending, InboundActive)
-            | (InboundPending, Idle)
             | (OutboundActive, Idle)
             | (InboundActive, Idle)
     )
@@ -250,7 +247,6 @@ mod tests {
         use SessionPhase::*;
         assert!(can_transition(Idle, OutboundPending));
         assert!(can_transition(OutboundPending, OutboundActive));
-        assert!(can_transition(InboundPending, InboundActive));
         assert!(can_transition(OutboundActive, Idle));
         // 非法
         assert!(!can_transition(Idle, OutboundActive));
@@ -261,7 +257,6 @@ mod tests {
     #[test]
     fn banner_required_when_inbound_active() {
         assert!(must_show_control_banner(SessionPhase::InboundActive));
-        assert!(!must_show_control_banner(SessionPhase::InboundPending));
         assert!(!must_show_control_banner(SessionPhase::OutboundActive));
     }
 

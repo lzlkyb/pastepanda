@@ -87,8 +87,6 @@ pub enum SessionPhase {
     OutboundPending,
     /// 本机在控制对端。
     OutboundActive,
-    /// 对端申请控本机，等本机用户点头。
-    InboundPending,
     /// 本机正在被控制。
     InboundActive,
 }
