@@ -5,3 +5,12 @@
 # 都崩，就是一个 useState 写在了 `if (!screen) return` 之后——eslint 本来就报 error，
 # 只是那次提交没跑 lint。tsc 太慢，不进这里。
 npx lint-staged
+
+# CSS module 类名引用校验。全量约 0.9s，够快，所以跑全量而不是只跑暂存文件
+# （CSS 类的消费者常与被改文件不在同一目录，只扫暂存文件会漏）。
+#
+# 它要拦的是「styles.X 指向一个 CSS 里不存在的类」：className 直接变 undefined、
+# **样式静默全丢**，而 tsc 和 vitest 都发现不了（CSS module 的类型是宽松的）。
+# 2026-09-16 在 RcSessionHistory.tsx 上真漏过一次：组件已切到 histItem/histInfo/histTime，
+# 但 CSS 里没定义这三个类，会话历史列表样式全丢。
+node scripts/check-css-classes.mjs --quiet

@@ -17,6 +17,8 @@
     "test:watch": "vitest",
     "lint": "eslint src/ --max-warnings=0",
     "lint:fix": "eslint src/ --fix",
+    "lint:css": "node scripts/check-css-classes.mjs",
+    "lint:css:unused": "node scripts/check-css-classes.mjs --unused",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
     "prepare": "husky"
