@@ -4,12 +4,14 @@
 //! **不做** shell / 文件 / 无人值守。默认关闭。
 
 pub mod clipboard;
+pub mod history;
+pub mod inbound;
 pub mod input;
 pub mod jpeg;
 pub mod join;
-pub mod history;
 pub mod net;
 pub mod notify;
+pub mod outbound;
 pub mod pressed;
 pub mod protocol;
 pub mod service;

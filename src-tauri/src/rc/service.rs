@@ -12,7 +12,6 @@ use super::session::{
     can_transition, gate_inbound, gate_outbound, new_session_id, Gate, Session, CFG_CAPABILITY,
     CFG_DEVICE_DENY, CFG_ENABLED,
 };
-use super::jpeg::jpeg_dimensions;
 use super::net::{accept_loop, bind_rc_endpoint};
 use super::notify::{NotifyFn, NotifyState, ScopeNotifyFn};
 use super::stream_cfg::{profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts};
@@ -29,7 +28,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 /// 剪贴板推送上限：按 **JSON 帧 UTF-8 字节**卡（控制帧 64KB，留余量）。
 /// 中文 1 字 ≈ 3 字节，不能按字符数卡。
-const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
+pub(super) const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
 /// 拉回剪贴板时等回包的总时长。
 const CLIPBOARD_PULL_TIMEOUT_MS: i64 = 4_000;
 
@@ -187,7 +186,7 @@ impl RcService {
         self.stream.set_codec(codec)
     }
 
-    fn stream_opts_snapshot(&self) -> StreamOpts {
+    pub(super) fn stream_opts_snapshot(&self) -> StreamOpts {
         self.stream.snapshot()
     }
 
@@ -238,7 +237,7 @@ impl RcService {
         self.notify.emit_scope_changed(scope);
     }
 
-    fn set_inject_err(&self, msg: String) {
+    pub(super) fn set_inject_err(&self, msg: String) {
         self.notify.set_inject_err(msg);
     }
 
@@ -251,7 +250,7 @@ impl RcService {
         self.last_frame.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
-    fn set_frame(&self, f: super::video::VideoFrame) {
+    pub(super) fn set_frame(&self, f: super::video::VideoFrame) {
         *self.last_frame.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
     }
 
@@ -259,12 +258,12 @@ impl RcService {
         *self.last_frame.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
-    fn session_is(&self, phase: SessionPhase, peer: &str) -> bool {
+    pub(super) fn session_is(&self, phase: SessionPhase, peer: &str) -> bool {
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         matches!(inner.session.as_ref(), Some(s) if s.phase == phase && s.peer == peer)
     }
 
-    fn session_capability(&self) -> Option<Capability> {
+    pub(super) fn session_capability(&self) -> Option<Capability> {
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         inner.session.as_ref().map(|s| s.capability)
     }
@@ -345,7 +344,7 @@ impl RcService {
         self.clip.invalidate();
     }
 
-    fn set_remote_clipboard(&self, t: String) {
+    pub(super) fn set_remote_clipboard(&self, t: String) {
         self.clip.set_from_peer(t);
     }
 
@@ -353,7 +352,7 @@ impl RcService {
         self.joins.clone()
     }
 
-    fn cfg(&self) -> serde_json::Value {
+    pub(super) fn cfg(&self) -> serde_json::Value {
         self.store.get_config().unwrap_or_default()
     }
 
@@ -722,135 +721,17 @@ impl RcService {
         *g = None;
     }
 
-    /// 发起端：收 JPEG / 脏矩形 / 控制帧。
+    /// 发起端：收 JPEG / 脏矩形 / 控制帧（实现在 `rc/outbound.rs`）。
     ///
     /// 🔴 **不再合成再编码**：整帧与脏块 JPEG 原样交给前端画布合成，
     /// 避免「网络传脏矩形、本机却整帧 clone + 二次 JPEG」的白做功。
-    fn spawn_outbound_video(&self, peer: &str, mut recv: iroh::endpoint::RecvStream) {
-        let peer = peer.to_string();
+    fn spawn_outbound_video(&self, peer: &str, recv: iroh::endpoint::RecvStream) {
         let Some(svc) = global() else { return };
-        // 捕获本任务启动时那份会话 id：重连（同 peer 新会话）建立后，旧画面流任务
-        // 收尾时只能按 id 收口，不能按 peer 误杀新会话。
-        let my_id = {
-            let inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
-            inner
-                .session
-                .as_ref()
-                .filter(|s| s.phase == SessionPhase::OutboundActive && s.peer == peer)
-                .map(|s| s.id.clone())
-        };
-        let Some(my_id) = my_id else {
+        let Some(video) = super::outbound::OutboundVideo::try_new(svc, peer, recv) else {
             log::warn!("[RC] 发起端画面流启动前会话已结束，放弃推流");
             return;
         };
-        tauri::async_runtime::spawn(async move {
-            use super::video::{read_incoming, Incoming};
-            let mut pending_rect: Option<super::video::DirtyRect> = None;
-            // 画布逻辑尺寸：整帧时从 JPEG 解出，脏块沿用
-            let mut canvas_w: u32 = 0;
-            let mut canvas_h: u32 = 0;
-            loop {
-                if !svc.session_is(SessionPhase::OutboundActive, &peer) {
-                    break;
-                }
-                if svc.session_expired() {
-                    log::info!("[RC] 发起端会话超过 TTL，自动结束");
-                    svc.force_end_if_session(&my_id, "会话超时").await;
-                    break;
-                }
-                match read_incoming(&mut recv).await {
-                    Ok(Incoming::Control(bytes)) => match RcFrame::decode(&bytes) {
-                        Ok(RcFrame::End { reason }) => {
-                            log::info!("[RC] 对端结束：{reason}");
-                            break;
-                        }
-                        Ok(_) => {}
-                        Err(_) => {
-                            // 可能是 vrect 元数据或剪贴板回包
-                            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                                if v.get("t").and_then(|x| x.as_str()) == Some("vrect") {
-                                    pending_rect = Some(super::video::DirtyRect {
-                                        x: v["x"].as_u64().unwrap_or(0) as u32,
-                                        y: v["y"].as_u64().unwrap_or(0) as u32,
-                                        w: v["w"].as_u64().unwrap_or(0) as u32,
-                                        h: v["h"].as_u64().unwrap_or(0) as u32,
-                                    });
-                                } else if v.get("t").and_then(|x| x.as_str()) == Some("clip") {
-                                    if let Some(t) = v.get("text").and_then(|x| x.as_str()) {
-                                        svc.set_remote_clipboard(t.to_string());
-                                    }
-                                } else if v.get("t").and_then(|x| x.as_str()) == Some("clip_err") {
-                                    if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
-                                        log::warn!("[RC] 剪贴板拉回失败：{e}");
-                                        // 推进 seq：让 pull 立刻返回；内容为空表示失败
-                                        svc.set_remote_clipboard(String::new());
-                                    }
-                                } else if v.get("t").and_then(|x| x.as_str()) == Some("pong") {
-                                    if let Some(ts) = v.get("ts").and_then(|x| x.as_i64()) {
-                                        let rtt = now_ms().saturating_sub(ts);
-                                        svc.note_rtt(rtt);
-                                    }
-                                } else if v.get("t").and_then(|x| x.as_str()) == Some("inject_err") {
-                                    if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
-                                        log::warn!("[RC] 被控端注入失败：{e}");
-                                        svc.set_inject_err(e.to_string());
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    Ok(Incoming::Jpeg(f)) => {
-                        let rect = pending_rect.take();
-                        // 整帧：用轻量 JPEG 头读尺寸（不解像素）
-                        if rect.is_none() {
-                            if let Some((w, h)) = jpeg_dimensions(&f.jpeg) {
-                                canvas_w = w;
-                                canvas_h = h;
-                            }
-                        }
-                        let (w, h) = (canvas_w, canvas_h);
-                        svc.set_frame(super::video::VideoFrame {
-                            width: w,
-                            height: h,
-                            jpeg: f.jpeg,
-                            at_ms: chrono::Utc::now().timestamp_millis(),
-                            full: rect.is_none(),
-                            rect,
-                            codec: super::video::FrameCodec::Jpeg,
-                            key: rect.is_none(),
-                        });
-                    }
-                    Ok(Incoming::H264 {
-                        key,
-                        width,
-                        height,
-                        data,
-                    }) => {
-                        svc.set_frame(super::video::VideoFrame {
-                            width,
-                            height,
-                            jpeg: data,
-                            at_ms: chrono::Utc::now().timestamp_millis(),
-                            full: true,
-                            rect: None,
-                            codec: super::video::FrameCodec::H264,
-                            key,
-                        });
-                    }
-                    Err(e) => {
-                        log::info!("[RC] 画面流结束：{e}");
-                        break;
-                    }
-                }
-            }
-            // P0：收流失败 ≠ 用户点了结束，但会话必须收口，否则界面一直「可控」。
-            // 先比对 id 再清槽位——新会话建立时会直接覆盖 outbound_send，不清不会漏，
-            // 但若不比对，旧任务会把新会话的发送半流清掉。
-            if svc.session_id_is(&my_id) {
-                *svc.outbound_send.lock().await = None;
-            }
-            svc.force_end_if_session(&my_id, "画面流中断").await;
-        });
+        tauri::async_runtime::spawn(video.run());
     }
 
     async fn dial_and_request(
@@ -1106,393 +987,20 @@ impl RcService {
     }
 }
 
-/// 被控端：约 5fps 推流（脏矩形/自适应）+ 读输入帧（R2/R3）。
+/// 被控端任务入口：输入读取 + 画面推流（实现在 `rc/inbound.rs`）。
 async fn spawn_inbound_video(
     peer: &str,
     send: iroh::endpoint::SendStream,
-    mut recv: iroh::endpoint::RecvStream,
+    recv: iroh::endpoint::RecvStream,
 ) {
-    let peer = peer.to_string();
     let Some(svc) = global() else {
         return;
     };
-    // 捕获本任务启动时那份会话 id：重连（同 peer 新会话）建立后，旧推流/输入任务
-    // 收尾时只能按 id 收口，不能按 peer 误杀新会话。
-    let my_id = {
-        let inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
-        inner
-            .session
-            .as_ref()
-            .filter(|s| s.phase == SessionPhase::InboundActive && s.peer == peer)
-            .map(|s| s.id.clone())
-    };
-    let Some(my_id) = my_id else {
+    let Some(video) = super::inbound::InboundVideo::try_new(svc, peer, send) else {
         log::warn!("[RC] 被控推流启动前会话已结束，放弃推流");
         return;
     };
-    let send = std::sync::Arc::new(tokio::sync::Mutex::new(send));
-    // 被控端结束会话时要用这条半流发 End
-    {
-        let ib = send.clone();
-        let svc_ib = svc.clone();
-        tauri::async_runtime::spawn(async move {
-            *svc_ib.inbound_send.lock().await = Some(ib);
-        });
-    }
-
-    // 输入读取任务
-    {
-        let peer2 = peer.clone();
-        let svc2 = svc.clone();
-        let send2 = send.clone();
-        let my_id2 = my_id.clone();
-        tauri::async_runtime::spawn(async move {
-            loop {
-                if !svc2.session_is(SessionPhase::InboundActive, &peer2) {
-                    break;
-                }
-                match crate::sync::transport::read_frame(&mut recv).await {
-                    Ok(bytes) => {
-                        // 发起端结束会话：End 帧与 InputEvent 同半流
-                        if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {
-                            log::info!("[RC] 对端结束会话：{reason}");
-                            svc2.force_end_if_session(&my_id2, &reason).await;
-                            break;
-                        }
-                        if let Ok(ev) = serde_json::from_slice::<super::input::InputEvent>(&bytes) {
-                            // 任意输入/心跳都算活跃
-                            svc2.touch_activity();
-                            if let super::input::InputEvent::Ping { ts } = &ev {
-                                // 回 pong，发起端测 RTT
-                                let msg = serde_json::json!({ "t": "pong", "ts": ts });
-                                if let Ok(b) = serde_json::to_vec(&msg) {
-                                    let mut guard = send2.lock().await;
-                                    let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
-                                }
-                            } else {
-                                handle_inbound_input(&svc2, &peer2, ev, &send2).await;
-                            }
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            // 输入半流断了：会话也要收口（对端崩溃 / 网络断）
-            svc2
-                .force_end_if_session(&my_id2, "控制通道断开")
-                .await;
-        });
-    }
-
-    let profile = svc.encode_profile();
-    let virt = svc.capture_virtual_screen();
-    svc.reset_stream_opts_from_cfg();
-    let mut interval;
-    let enc = std::sync::Arc::new(std::sync::Mutex::new(
-        super::video::EncoderState::with_profile(profile, virt),
-    ));
-    // R4：主屏 + 允许硬编时优先 DXGI + H.264；失败回退 JPEG
-    #[cfg(target_os = "windows")]
-    let mut dxgi = super::dxgi::DxgiCapture::new();
-    #[cfg(target_os = "windows")]
-    let mut h264 = {
-        let codec = svc
-            .cfg()
-            .get(CFG_CODEC)
-            .and_then(|v| v.as_str())
-            .unwrap_or("auto")
-            .to_string();
-        if codec == "jpeg" || virt {
-            None
-        } else {
-            let p = svc.encode_profile();
-            let fps = (1000 / p.interval_ms.max(50)).clamp(5, 30) as u32;
-            let enc = super::encode_h264::H264SessionEncoder::try_open(1280, 720, fps);
-            if enc.available() {
-                log::info!("[RC] H.264 硬编已启用");
-                Some(enc)
-            } else {
-                None
-            }
-        }
-    };
-    // 会话刚建立：立刻可推流，等首个心跳
-    svc.touch_activity();
-    loop {
-        if !svc.session_is(SessionPhase::InboundActive, &peer) {
-            break;
-        }
-        if svc.session_expired() {
-            log::info!("[RC] 会话超过 TTL，自动结束");
-            svc.force_end_if_session(&my_id, "会话超时").await;
-            break;
-        }
-        if svc.should_pause_stream() {
-            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-            continue;
-        }
-        let opts = svc.stream_opts_snapshot();
-        interval = opts.profile.interval_ms;
-        {
-            let mut st = enc.lock().unwrap_or_else(|p| p.into_inner());
-            if st.profile() != &opts.profile
-                || st.virtual_screen_flag() != opts.virtual_screen
-                || st.monitor() != opts.monitor
-            {
-                st.apply_profile(opts.profile, opts.virtual_screen);
-                if opts.monitor >= 0 {
-                    st.apply_monitor(opts.monitor);
-                }
-            }
-        }
-
-        // —— R4 硬编路径（仅主屏、未指定单屏、未强制 JPEG）——
-        #[cfg(target_os = "windows")]
-        if let Some(henc) = h264.as_mut() {
-            if henc.available() && !opts.virtual_screen && opts.monitor < 0 && !opts.force_jpeg {
-                match dxgi.grab() {
-                    Ok(Some((w, h, bgra))) => match henc.encode_bgra(&bgra, w, h) {
-                        Ok(pkts) => {
-                            if !pkts.is_empty() {
-                                let mut guard = send.lock().await;
-                                let mut failed = false;
-                                for p in pkts {
-                                    if super::video::write_h264(
-                                        &mut guard,
-                                        &p.data,
-                                        p.key,
-                                        p.width,
-                                        p.height,
-                                    )
-                                    .await
-                                    .is_err()
-                                    {
-                                        failed = true;
-                                        break;
-                                    }
-                                }
-                                drop(guard);
-                                if failed {
-                                    svc.force_end_if_session(&my_id, "H.264 推送失败").await;
-                                    break;
-                                }
-                            }
-                            tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
-                            continue;
-                        }
-                        Err(e) => {
-                            log::debug!("[RC] H.264 编码失败，本帧回退 JPEG：{e}");
-                        }
-                    },
-                    Ok(None) => {
-                        tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
-                        continue;
-                    }
-                    Err(_) => {}
-                }
-            }
-        }
-
-        let enc2 = enc.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            let mut st = enc2.lock().unwrap_or_else(|p| p.into_inner());
-            super::video::capture_and_encode(&mut st)
-        })
-        .await;
-        match result {
-            Ok(Ok(enc_out)) => {
-                if enc_out.frame.jpeg.is_empty() {
-                    tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
-                    continue;
-                }
-                let mut guard = send.lock().await;
-                if let Some(r) = enc_out.rect {
-                    if let Err(e) = super::video::write_dirty_meta(&mut guard, r).await {
-                        log::info!("[RC] 脏矩形元数据写失败：{e}");
-                        drop(guard);
-                        svc.force_end_if_session(&my_id, "画面推送失败").await;
-                        break;
-                    }
-                }
-                if super::video::write_jpeg(&mut guard, &enc_out.frame.jpeg).await.is_err() {
-                    log::info!("[RC] 画面写入失败，停止推流");
-                    drop(guard);
-                    svc.force_end_if_session(&my_id, "画面推送失败").await;
-                    break;
-                }
-            }
-            Ok(Err(e)) => {
-                log::debug!("[RC] 截帧失败：{e}");
-            }
-            Err(e) => {
-                log::warn!("[RC] 截帧任务失败：{e}");
-            }
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
-    }
-    log::info!("[RC] 被控推流已停止");
-    // 先比对 id 再清槽位——新会话建立时会直接覆盖 inbound_send，不清不会漏，
-    // 但不比对会让旧任务清掉新会话的发送半流。
-    if svc.session_id_is(&my_id) {
-        *svc.inbound_send.lock().await = None;
-    }
-}
-
-/// 被控端处理一条输入（R2）。UIPI / 只看档必须报错不静默。
-async fn handle_inbound_input(
-    svc: &Arc<RcService>,
-    peer: &str,
-    ev: super::input::InputEvent,
-    send: &std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
-) {
-    use super::input::InputEvent;
-    let cap = match svc.session_capability() {
-        Some(c) => c,
-        None => return,
-    };
-
-    match &ev {
-        InputEvent::ClipboardPush { text } => {
-            if super::input::assert_control_allowed(cap).is_err() {
-                return;
-            }
-            if let Err(e) = super::input::set_clipboard_text(text) {
-                log::warn!("[RC] 写入被控剪贴板失败：{e}");
-            }
-            return;
-        }
-        InputEvent::ClipboardPull => {
-            if super::input::assert_control_allowed(cap).is_err() {
-                return;
-            }
-            match super::input::get_clipboard_text() {
-                Ok(t) => {
-                    // 回包也走控制帧 64KB：过大时明确报错，不要静默失败
-                    let msg = if t.len() > CLIPBOARD_MAX_JSON_BYTES {
-                        serde_json::json!({
-                            "t": "clip_err",
-                            "error": "对方剪贴板过大，无法拉取",
-                        })
-                    } else {
-                        serde_json::json!({ "t": "clip", "text": t })
-                    };
-                    if let Ok(b) = serde_json::to_vec(&msg) {
-                        let mut guard = send.lock().await;
-                        let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[RC] 读被控剪贴板失败：{e}");
-                    let msg = serde_json::json!({ "t": "clip_err", "error": format!("读剪贴板失败：{e}") });
-                    if let Ok(b) = serde_json::to_vec(&msg) {
-                        let mut guard = send.lock().await;
-                        let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
-                    }
-                }
-            }
-            return;
-        }
-        // 流控（画质/范围/编码）不注入本机输入，只看会话也允许调整
-        InputEvent::SetQuality { quality } => {
-            if let Err(e) = svc.set_stream_quality(quality) {
-                log::warn!("[RC] {e}");
-            } else {
-                log::info!("[RC] 对端要求画质档：{quality}");
-            }
-            return;
-        }
-        InputEvent::SetCaptureScope { scope } => {
-            if let Err(e) = svc.set_stream_scope(scope) {
-                log::warn!("[RC] {e}");
-            } else {
-                log::info!("[RC] 对端要求画面范围：{scope}");
-                // B3：被控端必须看得见这次变更。只 log 等于没提示——用户不知道
-                // 自己的画面（可能含隐私内容）被切到了别处。
-                svc.emit_scope_changed(scope);
-            }
-            return;
-        }
-        InputEvent::SetCodec { codec } => {
-            if let Err(e) = svc.set_stream_codec(codec) {
-                log::warn!("[RC] {e}");
-            } else {
-                log::info!("[RC] 对端要求编码：{codec}");
-            }
-            return;
-        }
-        _ => {}
-    }
-
-    if super::input::assert_control_allowed(cap).is_err() {
-        log::debug!("[RC] 拒绝只看会话的键鼠注入");
-        return;
-    }
-
-    // 追踪按下/抬起：会话收口时由 end_session 调 release_all 补发 up，
-    // 避免对端断线后 Ctrl/Shift/鼠标键永久卡在按下态。只在会真正注入时记录。
-    match &ev {
-        InputEvent::Key { vk, down } => {
-            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
-            if *down {
-                g.press_key(*vk);
-            } else {
-                g.release_key(*vk);
-            }
-        }
-        InputEvent::MouseButton { button, down, .. } => {
-            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
-            if *down {
-                g.press_button(*button);
-            } else {
-                g.release_button(*button);
-            }
-        }
-        _ => {}
-    }
-
-    let region = {
-        let opts = svc.stream_opts_snapshot();
-        if opts.monitor >= 0 {
-            match crate::screenshot::monitor_region(opts.monitor) {
-                Ok((x, y, w, h)) => super::input::ScreenRegion { x, y, w, h },
-                Err(_) => super::input::ScreenRegion::virtual_screen(),
-            }
-        } else if opts.virtual_screen {
-            super::input::ScreenRegion::virtual_screen()
-        } else {
-            #[cfg(target_os = "windows")]
-            {
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
-                };
-                let (w, h) =
-                    unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
-                super::input::ScreenRegion {
-                    x: 0,
-                    y: 0,
-                    w: w.max(1),
-                    h: h.max(1),
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                super::input::ScreenRegion::virtual_screen()
-            }
-        }
-    };
-    let r = super::input::inject(&ev, &region);
-    if !r.ok {
-        log::warn!("[RC] 键鼠注入失败（{peer}）：{}", r.error);
-        // P1：UIPI 等失败要让发起端看见，不能只写日志
-        let msg = serde_json::json!({ "t": "inject_err", "error": r.error });
-        if let Ok(b) = serde_json::to_vec(&msg) {
-            let mut guard = send.lock().await;
-            let _ = crate::sync::transport::write_frame(&mut guard, &b).await;
-        }
-        if let Some(svc) = global() {
-            svc.set_inject_err(r.error.clone());
-        }
-    }
+    video.run(recv).await;
 }
 
 pub fn cfg_enabled(store: &DataStore) -> bool {
