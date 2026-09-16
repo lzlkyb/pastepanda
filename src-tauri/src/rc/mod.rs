@@ -3,6 +3,7 @@
 //! 定位见规划 §3.7：已配对自有设备之间的看屏 +（R2）键鼠；
 //! **不做** shell / 文件 / 无人值守。默认关闭。
 
+pub mod clipboard;
 pub mod input;
 pub mod jpeg;
 pub mod join;

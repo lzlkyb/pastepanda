@@ -5,6 +5,7 @@
 //! 与 `sync/` 同一条界线。身份仍是共用的 `NodeIdentity`，
 //! 但**设备信任表是 `rc_devices`**，通道在 `rc_enabled` 时自建 Endpoint。
 
+use super::clipboard::{ClipWait, ClipboardState};
 use super::join::{self, RcJoins};
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
 use super::session::{
@@ -95,15 +96,8 @@ pub struct RcService {
     last_frame: Mutex<Option<super::video::VideoFrame>>,
     /// 发起端 → 被控端的发送半流（R2 键鼠 / R3 剪贴板）。tokio Mutex：跨 await 持锁。
     outbound_send: tokio::sync::Mutex<Option<iroh::endpoint::SendStream>>,
-    /// 最近从被控端拉回的剪贴板文本。
-    remote_clipboard: Mutex<Option<String>>,
-    /// 每次写入 remote_clipboard 自增；pull 用它判断回包是否已到。
-    clip_seq: std::sync::atomic::AtomicU64,
-    /// 剪贴板「会话代」。会话收口时自增，用于丢掉**上一个会话**迟到的回包。
-    clip_epoch: std::sync::atomic::AtomicU64,
-    /// 串行化 pull：两个并发 pull 共用一个 seq 时，先到的那个回包会让两个都
-    /// 认为「到了」并同时 take，其中一个只能拿到空值。
-    clip_pull_lock: tokio::sync::Mutex<()>,
+    /// 剪贴板同步的状态与「跨会话串扰」不变量（见 `clipboard.rs`）。
+    clip: ClipboardState,
     /// 被控端：推 JPEG 时的发送半流（End 帧用；发起端走 outbound_send）。
     inbound_send:
         tokio::sync::Mutex<Option<std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>>>,
@@ -152,36 +146,6 @@ pub(super) fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-/// `pull_clipboard` 等待循环该做什么（C8(b)）。
-///
-/// 抽成纯函数是为了能直接单测这个判断——它的输入只有 4 个数字，
-/// 但判断错了就会「跨会话串剪贴板」，是这套代码里最容易写错、最难在
-/// 集成测试里稳定复现的一处。
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum ClipWait {
-    /// 回包到了，可以取值
-    Take,
-    /// 还没到，继续等
-    KeepWaiting,
-    /// 会话已切换，本次等待作废（宁可不给，也不给别的会话的内容）
-    Abandon,
-}
-
-pub(crate) fn clip_wait_decision(
-    epoch_now: u64,
-    epoch_at_start: u64,
-    seq_now: u64,
-    seq_before: u64,
-) -> ClipWait {
-    if epoch_now != epoch_at_start {
-        return ClipWait::Abandon;
-    }
-    if seq_now > seq_before {
-        return ClipWait::Take;
-    }
-    ClipWait::KeepWaiting
-}
-
 static GLOBAL: OnceLock<Arc<RcService>> = OnceLock::new();
 
 pub fn install_global(svc: Arc<RcService>) {
@@ -201,10 +165,7 @@ impl RcService {
             joins: RcJoins::new(),
             last_frame: Mutex::new(None),
             outbound_send: tokio::sync::Mutex::new(None),
-            remote_clipboard: Mutex::new(None),
-            clip_seq: std::sync::atomic::AtomicU64::new(0),
-            clip_epoch: std::sync::atomic::AtomicU64::new(0),
-            clip_pull_lock: tokio::sync::Mutex::new(()),
+            clip: ClipboardState::new(),
             inbound_send: tokio::sync::Mutex::new(None),
             notify: NotifyState::new(),
             last_outbound_error: Mutex::new(None),
@@ -431,27 +392,18 @@ impl RcService {
     /// 发起端请求拉回对方剪贴板，并等回包（修「立刻 take 必空」竞态）。
     /// 超时或对方无回包时返回 `Ok(None)`。
     ///
-    /// C8(b)：这里有两处必须卡住的串扰，否则会「串剪贴板」：
-    /// 1. 并发 pull 共用一个 `clip_seq` —— 先到的回包会让两个等待都返回，
-    ///    后一个只能拿到空值。用 `clip_pull_lock` 串行化。
-    /// 2. 上一个会话迟到的回包会把 `clip_seq` 顶上去，让本次 pull 误判成
-    ///    「自己要的数据到了」，于是把**上个会话**的剪贴板内容当成本次结果
-    ///    返回。用 `clip_epoch` 认代：代变了就直接作废本次等待。
+    /// C8(b) 的两处串扰防线（并发 pull 共用一个序号 / 上个会话迟到的回包）
+    /// 全部收在 `clipboard.rs` 里：这里只负责编排顺序 —— **先**拿串行化守卫、
+    /// **再**取起点值、**然后**才发请求。顺序反了会漏掉请求发出后立刻到的回包。
+    /// 判决策与取内容都走 `ClipboardState`，别再在这里直接读序号。
     pub async fn pull_clipboard(&self) -> Result<Option<String>, String> {
-        let _serial = self.clip_pull_lock.lock().await;
-        let epoch = self.clip_epoch.load(Ordering::SeqCst);
-        let before = self.clip_seq.load(Ordering::SeqCst);
+        let _serial = self.clip.lock_pull().await;
+        let (epoch, before) = self.clip.snapshot();
         self.send_input(&super::input::InputEvent::ClipboardPull).await?;
         let deadline = now_ms() + CLIPBOARD_PULL_TIMEOUT_MS;
         while now_ms() < deadline {
-            let decision = clip_wait_decision(
-                self.clip_epoch.load(Ordering::SeqCst),
-                epoch,
-                self.clip_seq.load(Ordering::SeqCst),
-                before,
-            );
-            match decision {
-                ClipWait::Take => return Ok(self.take_remote_clipboard()),
+            match self.clip.decision(epoch, before) {
+                ClipWait::Take => return Ok(self.clip.take()),
                 ClipWait::Abandon => return Ok(None),
                 ClipWait::KeepWaiting => {}
             }
@@ -462,18 +414,16 @@ impl RcService {
 
     /// 会话收口时调用：作废仍在等待的 pull，并丢掉可能由迟到回包写入的文本。
     fn invalidate_clipboard(&self) {
-        self.clip_epoch.fetch_add(1, Ordering::SeqCst);
-        *self.remote_clipboard.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        self.clip.invalidate();
     }
 
     /// 最近一次从被控端拉回的剪贴板文本（由接收循环写入）。
     pub fn take_remote_clipboard(&self) -> Option<String> {
-        self.remote_clipboard.lock().unwrap_or_else(|p| p.into_inner()).take()
+        self.clip.take()
     }
 
     fn set_remote_clipboard(&self, t: String) {
-        *self.remote_clipboard.lock().unwrap_or_else(|p| p.into_inner()) = Some(t);
-        self.clip_seq.fetch_add(1, Ordering::SeqCst);
+        self.clip.set_from_peer(t);
     }
 
     pub fn joins(&self) -> Arc<RcJoins> {

@@ -182,7 +182,7 @@ fn phase_idle_by_default() {
 // 内容当作本次结果返回。所以判定必须同时认「会话代」。
 
 mod clip_wait {
-    use crate::rc::service::{clip_wait_decision, ClipWait};
+    use crate::rc::clipboard::{clip_wait_decision, ClipWait};
 
     #[test]
     fn takes_when_seq_advanced() {
