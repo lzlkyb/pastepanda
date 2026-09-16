@@ -14,6 +14,7 @@ pub mod pressed;
 pub mod protocol;
 pub mod service;
 pub mod session;
+pub mod stream_cfg;
 pub mod video;
 
 #[cfg(target_os = "windows")]

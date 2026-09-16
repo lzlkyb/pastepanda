@@ -15,6 +15,7 @@ use super::session::{
 use super::jpeg::jpeg_dimensions;
 use super::net::{accept_loop, bind_rc_endpoint};
 use super::notify::{NotifyFn, NotifyState, ScopeNotifyFn};
+use super::stream_cfg::{profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts};
 use crate::data_store::DataStore;
 use crate::sync::identity::NodeIdentity;
 use crate::sync::presence::{self, PresenceTable, PORT as PRESENCE_BASE_PORT};
@@ -40,8 +41,6 @@ pub const CFG_QUALITY: &str = "rc_quality";
 pub const CFG_CAPTURE_SCOPE: &str = "rc_capture_scope";
 /// `auto` | `jpeg` | `h264` — R4 硬编开关
 pub const CFG_CODEC: &str = "rc_codec";
-/// 发起端心跳超时（毫秒）：超过则暂停截帧推流（会话仍保留）。
-const HEARTBEAT_TIMEOUT_MS: i64 = 3_500;
 
 /// RC 地址宣告端口。**不是**同步的 5008，两套 presence 互不抢 bind。
 pub const RC_PRESENCE_PORT: u16 = PRESENCE_BASE_PORT + 1;
@@ -105,35 +104,10 @@ pub struct RcService {
     notify: NotifyState,
     /// 发起申请后台拨号失败（非阻塞 request）。status() 读出后由前端展示。
     last_outbound_error: Mutex<Option<String>>,
-    /// 被控端：最近一次收到发起端输入/心跳的时间。
-    last_activity_ms: std::sync::atomic::AtomicI64,
-    /// 发起端最近一次测得的 RTT（毫秒）；0 = 尚未测到。
-    last_rtt_ms: std::sync::atomic::AtomicI64,
-    /// 会话中可被发起端改的推流参数（画质档 / 截取范围 / 强制 JPEG）。
-    stream_opts: Mutex<StreamOpts>,
+    /// 推流参数（画质 / 截取范围 / 强制 JPEG）+ 心跳与 RTT 活性（见 `stream_cfg.rs`）。
+    stream: StreamCfg,
     /// 被控端：当前被按住的 vk / 鼠标键集合，会话收口时补发 up（防止 Ctrl/Shift/鼠标键卡死）。
     pressed: std::sync::Mutex<super::pressed::Pressed>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct StreamOpts {
-    profile: super::video::EncodeProfile,
-    virtual_screen: bool,
-    /// >=0 抓指定显示器；-1 跟随 virtual_screen。
-    monitor: i32,
-    /// 发起端解不出 H.264 时置 true，本会话强制 JPEG。
-    force_jpeg: bool,
-}
-
-impl Default for StreamOpts {
-    fn default() -> Self {
-        Self {
-            profile: super::video::EncodeProfile::default(),
-            virtual_screen: true,
-            monitor: -1,
-            force_jpeg: false,
-        }
-    }
 }
 
 #[derive(Default)]
@@ -169,115 +143,64 @@ impl RcService {
             inbound_send: tokio::sync::Mutex::new(None),
             notify: NotifyState::new(),
             last_outbound_error: Mutex::new(None),
-            last_activity_ms: std::sync::atomic::AtomicI64::new(0),
-            last_rtt_ms: std::sync::atomic::AtomicI64::new(0),
-            stream_opts: Mutex::new(StreamOpts::default()),
+            stream: StreamCfg::new(),
             pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
         }
     }
 
     pub fn note_rtt(&self, rtt_ms: i64) {
-        self.last_rtt_ms.store(rtt_ms.max(0), Ordering::Relaxed);
+        self.stream.note_rtt(rtt_ms);
     }
 
     pub fn last_rtt_ms(&self) -> i64 {
-        self.last_rtt_ms.load(Ordering::Relaxed)
+        self.stream.rtt_ms()
     }
 
     /// 会话建立时用本机配置初始化推流参数。
     pub fn reset_stream_opts_from_cfg(&self) {
-        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
-        g.profile = self.encode_profile();
-        g.virtual_screen = self.capture_virtual_screen();
-        g.monitor = -1;
-        g.force_jpeg = false;
+        self.stream
+            .reset_from_cfg(self.encode_profile(), self.capture_virtual_screen());
     }
 
-    /// 发起端在会话中改画质/范围。
+    /// 发起端在会话中改画质。
     pub fn set_stream_quality(&self, quality: &str) -> Result<(), String> {
-        if !matches!(quality, "sharp" | "balanced" | "smooth") {
-            return Err("画质档只能是 sharp / balanced / smooth".into());
-        }
-        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
-        g.profile = super::video::EncodeProfile::from_str(quality);
-        Ok(())
+        self.stream.set_quality(quality)
     }
 
+    /// 发起端在会话中改截取范围。
+    ///
+    /// ⚠️ 这个入口**故意不发** `emit_scope_changed`：本机用户在设置页自己改范围
+    /// 不该收到「有人改了你的画面范围」。只有入站路径
+    /// （`handle_inbound_input` 的 `SetCaptureScope`）才通知。
+    /// `rc/tests.rs` 有专门断言，搬动时别把通知顺手加进来。
     pub fn set_stream_scope(&self, scope: &str) -> Result<(), String> {
-        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
-        if scope == "virtual" {
-            g.virtual_screen = true;
-            g.monitor = -1;
-            return Ok(());
-        }
-        if scope == "primary" {
-            g.virtual_screen = false;
-            g.monitor = -1;
-            return Ok(());
-        }
-        if let Some(n) = scope.strip_prefix("monitor:") {
-            let idx: i32 = n
-                .parse()
-                .map_err(|_| "显示器编号无效，应为 monitor:0 / monitor:1…")?;
-            if idx < 0 {
-                return Err("显示器编号不能为负".into());
-            }
-            g.virtual_screen = false;
-            g.monitor = idx;
-            return Ok(());
-        }
-        Err("截取范围只能是 virtual / primary / monitor:N".into())
+        self.stream.set_scope(scope)
     }
 
     /// 发起端：H.264 解不出时强制本会话走 JPEG；`codec=h264` 可再打开。
     pub fn set_stream_codec(&self, codec: &str) -> Result<(), String> {
-        let mut g = self.stream_opts.lock().unwrap_or_else(|p| p.into_inner());
-        match codec {
-            "jpeg" => {
-                g.force_jpeg = true;
-                Ok(())
-            }
-            "h264" => {
-                g.force_jpeg = false;
-                Ok(())
-            }
-            _ => Err("编码只能是 jpeg 或 h264".into()),
-        }
+        self.stream.set_codec(codec)
     }
 
     fn stream_opts_snapshot(&self) -> StreamOpts {
-        *self.stream_opts.lock().unwrap_or_else(|p| p.into_inner())
+        self.stream.snapshot()
     }
 
     pub fn touch_activity(&self) {
-        self.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+        self.stream.touch_activity(now_ms());
     }
 
     /// 是否应暂停推流：会话开始后长时间无心跳/输入。
     pub fn should_pause_stream(&self) -> bool {
-        let last = self.last_activity_ms.load(Ordering::Relaxed);
-        if last == 0 {
-            // 尚未收到任何输入：给发起端 5s 窗口发首个心跳
-            return false;
-        }
-        now_ms() - last > HEARTBEAT_TIMEOUT_MS
+        self.stream.should_pause(now_ms())
     }
 
     pub fn encode_profile(&self) -> super::video::EncodeProfile {
-        super::video::EncodeProfile::from_str(
-            self.cfg()
-                .get(CFG_QUALITY)
-                .and_then(|v| v.as_str())
-                .unwrap_or("balanced"),
-        )
+        profile_from_cfg(&self.cfg())
     }
 
     pub fn capture_virtual_screen(&self) -> bool {
-        self.cfg()
-            .get(CFG_CAPTURE_SCOPE)
-            .and_then(|v| v.as_str())
-            .map(|s| s != "primary")
-            .unwrap_or(true)
+        virtual_screen_from_cfg(&self.cfg())
     }
 
     /// 注入前端通知回调（lib.rs 在 manage 之后调用）。
