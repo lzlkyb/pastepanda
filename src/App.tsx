@@ -49,6 +49,9 @@ import type { ToolHandlers } from "@/lib/toolbox";
 import { isEventRange } from "@/lib/eventLabel";
 import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
 import { QREditor } from "@/components/editors/QREditor";
+import { LearningsDialog } from "@/components/LearningsDialog";
+import { ProfileDialog } from "@/components/ProfileDialog";
+import { QuotaDialog } from "@/components/QuotaDialog";
 import { openClipboardTool } from "@/lib/toolEditors";
 
 // 惰加载：它拉进 CodeMirror + Markdown 渲染，而大多数会话根本不会打开笔记
@@ -1207,6 +1210,23 @@ function App() {
             <NoteDialog />
           </ErrorBoundary>
         </Suspense>
+
+        {/*
+          自进化 / 画像 / 免费额度弹窗 —— 与 NoteDialog 同一道理，必须挂 App 根：
+          原先在 CardList 的 portal 里，而 CardList 只在**记录模式**渲染。
+          打开设置（shownView=settings）时 CardList 整棵卸载，这些弹窗跟着消失 ——
+          设置 › AI › 自进化里点「我的画像」「输出偏好指令」「看全部」以及摘要卡的
+          「免费额度」都只改了 store，屏幕上却毫无反应（用户反馈的死按钮）。
+          Portal 到 body：与 CardList 旧做法一致，避免被 contentArea 层叠上下文压住。
+        */}
+        {createPortal(
+          <ErrorBoundary fallback={null} componentName="自进化弹窗">
+            <LearningsDialog />
+            <ProfileDialog />
+            <QuotaDialog />
+          </ErrorBoundary>,
+          document.body,
+        )}
 
         {/* 移动到分组选择弹窗 */}
         <AnimatePresence>

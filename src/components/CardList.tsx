@@ -30,11 +30,10 @@ import { MergeDialog, type MergeItem } from "@/components/MergeDialog";
 import { TransformHubDialog } from "@/components/TransformHubDialog";
 import { ChainRunnerDialog } from "@/components/ChainRunnerDialog";
 import { ChainEditor } from "@/components/ChainEditor";
-import { LearningsDialog } from "@/components/LearningsDialog";
-import { ProfileDialog } from "@/components/ProfileDialog";
+// LearningsDialog / ProfileDialog / QuotaDialog 已上移到 App.tsx：
+// 它们要从设置页（记录模式外）打开，挂在 CardList 里会随设置打开而卸载。
 import { PasteGuardDialog } from "@/components/PasteGuardDialog";
 import { MilestoneDialog } from "@/components/MilestoneDialog";
-import { QuotaDialog } from "@/components/QuotaDialog";
 import { SignFloat } from "@/components/SignFloat";
 import { FreeQuotaOnboarding } from "@/components/FreeQuotaOnboarding";
 
@@ -914,15 +913,14 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           （与 ConfirmDialog / UpdateNotesDialog 的既有做法一致） */}
       {createPortal(
         <>
-          {/* ItemEditorDialog 已上移到 App.tsx：工具模式也要能打开编辑器 */}
+          {/* ItemEditorDialog 已上移到 App.tsx：工具模式也要能打开编辑器。
+              LearningsDialog / ProfileDialog / QuotaDialog 同上移到 App：
+              设置页打开时本组件会卸载，它们从设置里点开必须一直挂着。 */}
           <TransformHubDialog />
           <ChainRunnerDialog />
           <ChainEditor />
-          <LearningsDialog />
-          <ProfileDialog />
           <PasteGuardDialog />
           <MilestoneDialog />
-          <QuotaDialog />
           <SignFloat />
           <FreeQuotaOnboarding />
           {/* AnimatePresence 包裹条件挂载：关闭时子树保留到退场动画结束再卸载。
