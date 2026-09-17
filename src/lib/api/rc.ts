@@ -42,9 +42,29 @@ export interface RcStatus {
   quality: string;
   capture_scope: string;
   rtt_ms?: number;
+  /**
+   * 会话链路实际走的路：`lan` / `direct` / `relay`；空串 = 未测到（不猜）。
+   * 后端从 iroh **活连接**实测（`rc/link.rs` 复用 `sync::path_kind`），
+   * 与设备列表那个基于组播的推测是两回事。
+   */
+  path_kind?: string;
+  /**
+   * 最后一次收到对端 pong 的时间戳（ms）；0 = 还没收到过。
+   * 链路活性判据的唯一来源（见 `useRcLinkState`）——ping 的本地 invoke
+   * 成功与否不代表对端收到了。
+   */
+  last_pong_ms?: number;
   /** 非阻塞发起申请的后台失败原因 */
   outbound_error?: string | null;
 }
+
+/** 路径切换事件 payload（C：relay ↔ 直连 自动切换）。 */
+export interface RcPathChanged {
+  from: string;
+  to: string;
+}
+
+export type RcPresence = "live" | "recent" | "seen" | "never";
 
 export interface RcTargetDevice {
   node_id: string;
@@ -54,6 +74,8 @@ export interface RcTargetDevice {
   denied: boolean;
   /** rc = 远程配对；sync = 仅同步配对（可直接发起远程） */
   source: "rc" | "sync";
+  /** 可达性档位：live / recent / seen / never */
+  presence: RcPresence;
 }
 
 export interface RcSyncOffer {
@@ -91,6 +113,11 @@ export function rcIdentity(): Promise<RcIdentity> {
 
 export function rcTargets(): Promise<RcTargetDevice[]> {
   return invoke<RcTargetDevice[]>("rc_targets");
+}
+
+/** 按需探活：短超时拨一次，通了后端会刷 last_seen。 */
+export function rcProbeTargets(nodeIds: string[]): Promise<Record<string, boolean>> {
+  return invoke<Record<string, boolean>>("rc_probe_targets", { nodeIds });
 }
 
 export function rcSyncOffers(): Promise<RcSyncOffer[]> {

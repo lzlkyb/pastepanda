@@ -194,6 +194,18 @@
   flex-shrink: 0;
 }
 
+/* 链路已判定断开（心跳陈旧超过上限仍未恢复）。
+   与 `.liveOff` 的「不稳但可能自愈」刻意分开：橙色是「等等就好」，
+   红色才是「需要动手」。这两档混用会重演 2026-09-17 那个必然误报
+   （帧静止被当成断链，用户看到红点以为断了）。 */
+.liveBad {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger, #d64545);
+  flex-shrink: 0;
+}
+
 .pillWarn {
   font: inherit;
   font-size: 11px;
@@ -523,6 +535,12 @@
   border-color: rgba(224, 154, 90, 0.45) !important;
   color: #e8b87a !important;
 }
+/* 链路已判定断开。与 hudWarn（橙色「不稳、可能自愈」）分开：
+   橙色是「等等看」，红色是「动手重连」。 */
+.hudBad {
+  border-color: rgba(224, 90, 90, 0.5) !important;
+  color: #f08c8c !important;
+}
 .hudAccent {
   border-color: rgba(107, 147, 255, 0.45) !important;
   color: #9db8ff !important;
@@ -637,7 +655,8 @@
 }
 
 .dotOn,
-.dotOff {
+.dotOff,
+.dotRecent {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -659,8 +678,15 @@
     box-shadow: 0 0 0 6px color-mix(in srgb, var(--green, #2f9e5f) 7%, transparent);
   }
 }
+/* 最近见过（≤2min）：琥珀，不呼吸——刚离开的余温，不是在线 */
+.dotRecent {
+  background: var(--amber, #d4a017);
+}
 .dotOff {
   background: var(--text-muted, #6b7280);
+}
+.metaSub {
+  color: var(--text-muted, #6b7280);
 }
 
 .dotDanger {

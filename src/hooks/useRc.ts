@@ -23,6 +23,7 @@ export function useRc(enabled: boolean) {
   const error = useRcStore((s) => s.error);
   const statusError = useRcStore((s) => s.statusError);
   const scopeNotice = useRcStore((s) => s.scopeNotice);
+  const pathNotice = useRcStore((s) => s.pathNotice);
 
   // 挂载=订阅，卸载=退订；enabled=false 时不参与轮询（与原语义一致）
   useEffect(() => {
@@ -49,8 +50,12 @@ export function useRc(enabled: boolean) {
     /** 被控端：对端刚改了本机画面范围（B3），非 null 时被控横幅要显示。 */
     scopeNotice,
     clearScopeNotice: a.clearScopeNotice,
+    /** 会话中路径自动切换（relay ↔ 直连）；非 null 时提示一次并清掉。 */
+    pathNotice,
+    clearPathNotice: a.clearPathNotice,
     refresh: a.refresh,
     refreshTargets: a.refreshTargets,
+    probeTargets: a.probeTargets,
     refreshIdentity: a.refreshIdentity,
     clearError: a.clearError,
     setEnabled: a.setEnabled,

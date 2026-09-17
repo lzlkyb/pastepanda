@@ -77,6 +77,14 @@ export function useRcInput({
   const movePending = useRef<{ x: number; y: number } | null>(null);
   const moveTimer = useRef<number | null>(null);
   const lockPos = useRef({ x: 32767, y: 32767 });
+  /**
+   * 「有后果的操作」时间戳（点击 / 按键 / 滚轮）。
+   *
+   * 🔴 刻意**不含鼠标移动**：划过画面属于查看行为，对端本来就不该有反应；
+   *    把它记进来会让「操作后画面无响应」变成新的误报源
+   *    （判据见 `rcSessionStats.actionUnansweredMs`）。
+   */
+  const lastActionAt = useRef(0);
 
   const flushMove = useCallback(() => {
     moveTimer.current = null;
@@ -106,6 +114,11 @@ export function useRcInput({
     },
     [canvasRef, contentRef, fit],
   );
+
+  /** 记一次「有后果的操作」。键盘/滚轮在 `RcSessionView` 里调用它。 */
+  const noteAction = useCallback(() => {
+    lastActionAt.current = Date.now();
+  }, []);
 
   const releaseKb = useCallback(() => {
     setKbOn(false);
@@ -184,6 +197,7 @@ export function useRcInput({
   const sendButton = useCallback(
     (e: { clientX: number; clientY: number; button: number }, down: boolean) => {
       if (!canControl || !hasFrame) return;
+      noteAction();
       if (pointerLocked) {
         const button = e.button === 2 ? 2 : e.button === 1 ? 3 : 1;
         void rcSendInput({
@@ -200,7 +214,7 @@ export function useRcInput({
       const button = e.button === 2 ? 2 : e.button === 1 ? 3 : 1;
       void rcSendInput({ kind: "mouse_button", x: r.x, y: r.y, button, down });
     },
-    [canControl, hasFrame, pointerLocked, norm],
+    [canControl, hasFrame, pointerLocked, norm, noteAction],
   );
 
   return {
@@ -213,5 +227,7 @@ export function useRcInput({
     queueMove,
     sendButton,
     lockPos,
+    lastActionAt,
+    noteAction,
   };
 }

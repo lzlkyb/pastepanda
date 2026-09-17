@@ -4,7 +4,6 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import { rcSendInput } from "@/lib/api/rc";
@@ -14,6 +13,8 @@ import { keyToVk, shouldForwardToRemote } from "@/lib/rcKeyMap";
 import { isSessionEscape, shouldSwallowEscape } from "@/lib/rcKeyGuard";
 import { useRcFrames } from "@/hooks/useRcFrames";
 import { useRcInput, releaseModifiers } from "@/hooks/useRcInput";
+import { useRcLinkState } from "@/hooks/useRcLinkState";
+import { useRcSessionNotices } from "@/hooks/useRcSessionNotices";
 import { useRcClipboardAuto } from "@/hooks/useRcClipboardAuto";
 import type { FitMode } from "@/lib/rcSessionStats";
 import { qualityLabel } from "@/lib/rcSessionStats";
@@ -48,9 +49,6 @@ export function RcSessionView({
   const [qPick, setQPick] = useState(quality);
   const [scopePick, setScopePick] = useState(captureScope);
   const [fit, setFit] = useState<FitMode>("fit");
-  const [rttMs, setRttMs] = useState(0);
-  const [heartbeatOk, setHeartbeatOk] = useState(true);
-  const [stalled, setStalled] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const screenRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -95,36 +93,23 @@ export function RcSessionView({
     setQPick(quality);
     setScopePick(captureScope);
   }, [session.id, quality, captureScope]);
-  // 心跳 + RTT：会话中不随窗口失焦停——否则对方 3.5s 后暂停推流，像断线
+  // 会话内不停发心跳（窗口失焦也发，否则对方 3.5s 后暂停推流，像断线）。
+  // 活性判定 / 画面静止 / 操作未响应三条判据各用各的数据源，全在 hook 里。
+  const link = useRcLinkState({
+    sessionId: session.id,
+    hasFrame,
+    lastFrameAt,
+    lastActionAt: input.lastActionAt,
+    rttMs: rc.status?.rtt_ms ?? 0,
+    backendPongMs: rc.status?.last_pong_ms ?? 0,
+    reconnecting: busy,
+  });
+  // 会话结束 / 换会话时补发 key-up 与鼠标松开，防止对端键卡住
   useEffect(() => {
-    const t = window.setInterval(() => {
-      // 成功即自愈，避免 once-fail 后 HUD 永久显示「心跳超时」
-      void rcSendInput({ kind: "ping", ts: Date.now() })
-        .then(() => setHeartbeatOk(true))
-        .catch(() => setHeartbeatOk(false));
-    }, 1000);
     return () => {
-      window.clearInterval(t);
       void releaseModifiers();
     };
   }, [session.id]);
-  useEffect(() => {
-    const r = rc.status?.rtt_ms ?? 0;
-    if (r > 0) {
-      setRttMs(r);
-      setHeartbeatOk(true);
-    } else if (hasFrame) {
-      setHeartbeatOk(true);
-    }
-  }, [rc.status?.rtt_ms, hasFrame]);
-  // 画面停滞检测：有帧之后超过 2.5s 没更新
-  useEffect(() => {
-    const t = window.setInterval(() => {
-      const at = lastFrameAt.current;
-      setStalled(hasFrame && at > 0 && Date.now() - at > 2500);
-    }, 500);
-    return () => window.clearInterval(t);
-  }, [hasFrame, lastFrameAt]);
   const toggleFullscreen = useCallback(() => {
     const el = screenRef.current;
     if (!el) return;
@@ -137,17 +122,14 @@ export function RcSessionView({
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  useEffect(() => {
-    let off: (() => void) | undefined;
-    let last = "";
-    void listen<string>("rc-inject-error", (e) => {
-      const msg = e.payload;
-      if (!msg || msg === last) return;
-      last = msg;
-      toast(`对方未能注入输入：${msg}`, "error");
-    }).then((f) => { off = f; });
-    return () => off?.();
-  }, [toast]);
+  // 会话内的一次性通知（对端注入失败 / 路径自动切换 relay↔直连）收口在 hook 里——
+  // 这两条都是「说一次就够」的消息，留在会话壳里会把这个文件推过 300 行红线。
+  const notify = useCallback((m: string, kind?: "error") => toast(m, kind), [toast]);
+  useRcSessionNotices({
+    pathNotice: rc.pathNotice,
+    onPathConsumed: rc.clearPathNotice,
+    notify,
+  });
 
   const placeholderSub =
     codec === "h264"
@@ -163,6 +145,7 @@ export function RcSessionView({
     if (vk == null) return;
     e.preventDefault();
     e.stopPropagation();
+    input.noteAction();
     void rcSendInput({ kind: "key", vk, down: true });
   };
   const onKeyUp = (e: React.KeyboardEvent) => {
@@ -181,7 +164,8 @@ export function RcSessionView({
         session={session}
         canControl={canControl}
         kbOn={input.kbOn}
-        stalled={stalled}
+        linkState={link.state}
+        unansweredSec={link.unansweredSec}
         busy={busy}
         onReleaseKb={input.releaseKb}
         onReconnect={onReconnect}
@@ -238,6 +222,7 @@ export function RcSessionView({
               if (!r) return;
               // 触控板横滑：优先水平分量，否则回退竖直
               const axis = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+              input.noteAction();
               void rcSendInput({
                 kind: "wheel",
                 x: r.x,
@@ -257,10 +242,12 @@ export function RcSessionView({
         <RcHud
           codec={codec}
           fps={fps}
-          rttMs={rttMs}
+          rttMs={link.rttMs}
           quality={qPick}
           scope={scopePick}
-          heartbeatOk={heartbeatOk && !stalled}
+          linkState={link.state}
+          pathKind={rc.status?.path_kind ?? ""}
+          unansweredSec={link.unansweredSec}
           pointerLocked={input.pointerLocked}
         />
       </div>
@@ -282,7 +269,8 @@ export function RcSessionView({
             pointerLocked={input.pointerLocked}
             fit={fit}
             sizeW={size.w}
-            stalled={stalled}
+            frameIdleSec={link.frameIdleSec}
+            unansweredSec={link.unansweredSec}
           />
         </>
       )}

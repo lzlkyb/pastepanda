@@ -676,6 +676,18 @@ pub fn run() {
                         );
                     }));
                 }
+                // C：会话路径自动切换（iroh 每 60s 会尝试把中继路径升级成直连）
+                // → 单独抛事件。不加这一条，用户只会看到延迟突然变了却不知道为什么；
+                // 「from/to」都要给，前端才能说出「从哪条路换到了哪条路」。
+                {
+                    let handle_path = handle.clone();
+                    rc_svc.set_path_notify(std::sync::Arc::new(move |from: &str, to: &str| {
+                        let _ = handle_path.emit(
+                            "rc-path-changed",
+                            serde_json::json!({ "from": from, "to": to }),
+                        );
+                    }));
+                }
                 app.manage(rc_svc);
             }
             commands::boot(&handle);
@@ -835,6 +847,7 @@ pub fn run() {
             commands::rc_status,
             commands::rc_identity,
             commands::rc_targets,
+            commands::rc_probe_targets,
             commands::rc_sync_offers,
             commands::kb_sync_allow_from_rc,
             commands::kb_sync_deny_from_rc,

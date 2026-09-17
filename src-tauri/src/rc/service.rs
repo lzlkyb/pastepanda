@@ -7,13 +7,14 @@
 
 use super::clipboard::{ClipWait, ClipboardState};
 use super::join::{self, RcJoins};
+use super::link::LinkState;
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
 use super::session::{
     can_transition, gate_inbound, gate_outbound, new_session_id, Gate, Session, CFG_CAPABILITY,
     CFG_DEVICE_DENY, CFG_ENABLED,
 };
 use super::net::{accept_loop, bind_rc_endpoint};
-use super::notify::{NotifyFn, NotifyState, ScopeNotifyFn};
+use super::notify::{NotifyFn, NotifyState, PathNotifyFn, ScopeNotifyFn};
 use super::stream_cfg::{profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts};
 use crate::data_store::DataStore;
 use crate::sync::identity::NodeIdentity;
@@ -60,6 +61,13 @@ pub struct RcStatus {
     pub capture_scope: String,
     /// 发起端最近 RTT（毫秒），0=尚未测到。
     pub rtt_ms: i64,
+    /// 会话链路实际走的路：`lan` / `direct` / `relay`；空串 = 未测到（前端不显示这格）。
+    pub path_kind: String,
+    /// 最后一次收到对端 pong 的时刻（epoch ms）；0 = 本会话还没收到过。
+    ///
+    /// 🔴 前端**只**用它判链路活性。ping 的本地 `invoke` 成功只说明消息进了
+    /// 本地发送队列，不代表对端收到了——那是 2026-09-17 修掉的另一个误报源。
+    pub last_pong_ms: i64,
     /// 非阻塞发起申请的后台失败原因；前端展示后应调 clear_outbound_error。
     pub outbound_error: Option<String>,
 }
@@ -108,8 +116,14 @@ pub struct RcService {
     pub(super) notify: NotifyState,
     /// 发起申请后台拨号失败（非阻塞 request）。status() 读出后由前端展示。
     pub(super) last_outbound_error: Mutex<Option<String>>,
-    /// 推流参数（画质 / 截取范围 / 强制 JPEG）+ 心跳与 RTT 活性（见 `stream_cfg.rs`）。
+    /// 推流参数（画质 / 截取范围 / 强制 JPEG）+ RTT（见 `stream_cfg.rs`）。
     stream: StreamCfg,
+    /// 会话链路：数据走哪条路 + 心跳新鲜度（见 `link.rs`）。
+    ///
+    /// ❗ 与 `stream` 的 `last_rtt_ms` 刻意分开：那个供**码率自适应**用
+    ///   （数值本身是目的），这个供**界面判定活性**用（「收到过 pong」这个
+    ///   事实才是目的）。合并成一个数字会丢掉「什么时候收到的」。
+    pub(super) link: LinkState,
     /// 被控端：当前被按住的 vk / 鼠标键集合，会话收口时补发 up（防止 Ctrl/Shift/鼠标键卡死）。
     pub(super) pressed: std::sync::Mutex<super::pressed::Pressed>,
 }
@@ -148,12 +162,24 @@ impl RcService {
             notify: NotifyState::new(),
             last_outbound_error: Mutex::new(None),
             stream: StreamCfg::new(),
+            link: LinkState::new(),
             pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
         }
     }
 
+    /// RTT 变化通知链路层（`outbound.rs` 解析出 `t:"pong"` 后调用）。
+    ///
+    /// 一次调用喂两个消费者：RTT 数值进 `stream`（码率自适应要用），
+    /// **「收到过 pong」这个事实**进 `link`（界面判活性的唯一证据）。
+    ///
+    /// 🔴 `rtt_ms <= 0` **不算** pong：那是会话开始 / 结束时的清零复位
+    ///   （`note_rtt(0)` 在两个收尾点被调用）。不区分的话，会话一建立
+    ///   界面就报「已连接」，把真正的首包延迟掩盖掉。
     pub fn note_rtt(&self, rtt_ms: i64) {
         self.stream.note_rtt(rtt_ms);
+        if rtt_ms > 0 {
+            self.link.note_pong();
+        }
     }
 
     pub fn last_rtt_ms(&self) -> i64 {
@@ -228,6 +254,14 @@ impl RcService {
     /// 注入「对端改了画面范围」的回调（lib.rs 在 manage 之后调用）。
     pub fn set_scope_notify(&self, f: ScopeNotifyFn) {
         self.notify.set_scope_notify(f);
+    }
+
+    /// 注入「会话换路了」的回调（lib.rs 在 manage 之后调用）。
+    ///
+    /// C：iroh 每 60s 会尝试把中继路径升级成直连（`UPGRADE_INTERVAL`），
+    /// 这个自动升级不通知的话用户只会看到延迟莫名变化。
+    pub fn set_path_notify(&self, f: PathNotifyFn) {
+        self.notify.set_path_notify(f);
     }
 
     /// 被控端：告诉前端「对端把画面范围改成了 scope」。
@@ -429,6 +463,12 @@ impl RcService {
     }
 
     pub fn status(&self) -> RcStatus {
+        // C：路径自动切换（relay ↔ 直连）主动通知一次。
+        // 放在取 `inner` 锁之前：通知会跑前端回调，不该在持锁期间做。
+        // `take_path_change` 自带去重，多处 useRc 并发轮询时只会被消费一次。
+        if let Some((from, to)) = self.link.take_path_change() {
+            self.notify.emit_path_changed(from.as_str(), to.as_str());
+        }
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let running = self.running.lock().unwrap_or_else(|p| p.into_inner()).is_some();
         RcStatus {
@@ -452,6 +492,8 @@ impl RcService {
                 .unwrap_or("virtual")
                 .to_string(),
             rtt_ms: self.last_rtt_ms(),
+            path_kind: self.link.path_kind_str(),
+            last_pong_ms: self.link.last_pong_ms(),
             // clone 而非 take：Overlay/对话框/设置多处 useRc 并发轮询，take 会只有一处看见
             outbound_error: self
                 .last_outbound_error
@@ -463,6 +505,12 @@ impl RcService {
 
     pub fn is_running(&self) -> bool {
         self.running.lock().unwrap_or_else(|p| p.into_inner()).is_some()
+    }
+
+    /// 正在开会话的对端 node_id（无会话时 `None`）。在线判定用。
+    pub fn active_session_peer(&self) -> Option<String> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner.session.as_ref().map(|s| s.peer.clone())
     }
 
     /// 是否需要通道：允许被控 **或** 已有远程配对（要发起）。
@@ -536,22 +584,22 @@ impl RcService {
         {
             let store = self.store.clone();
             let store_online = self.store.clone();
-            presence::spawn(
-                true,
-                presence,
+            presence::spawn(presence::PresenceStart {
+                enabled: true,
+                table: presence,
                 me,
-                port,
-                Arc::new(move |id: &str| {
+                endpoint_port: port,
+                is_paired: Arc::new(move |id: &str| {
                     matches!(store.rc_device_get(id), Ok(Some(_)))
                         || matches!(store.device_get(id), Ok(Some(_)))
                 }),
                 // 听见对端「回来」→ 刷 rc_devices 在线（修纯 RC 配对永远 offline）
-                Arc::new(move |id: &str| {
+                on_fresh: Arc::new(move |id: &str| {
                     let _ = store_online.rc_device_touch(id, true);
                 }),
-                presence_running,
-                RC_PRESENCE_PORT,
-            );
+                running: presence_running,
+                listen_port: RC_PRESENCE_PORT,
+            });
         }
 
         Ok(())
@@ -675,22 +723,27 @@ impl RcService {
             let Some(svc) = global() else { return };
             match svc.dial_and_request(&peer, capability).await {
                 Ok((accepted_cap, send, recv)) => {
-                    {
+                    // 会话是否已经不在（用户点了取消，或已被换成了另一场会话）。
+                    // ❗ 这里**不能**在持 inner 锁的块里 return 并顺手 detach：
+                    //    `link.detach()` 与 `status()` 的加锁顺序相反，会构成 ABBA 死锁。
+                    let cancelled = {
                         let mut inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
-                        let Some(sess) = inner.session.as_mut() else {
-                            // 用户已取消：关掉刚建好的流
-                            drop(send);
-                            drop(recv);
-                            return;
-                        };
-                        if sess.id != session_id {
-                            drop(send);
-                            drop(recv);
-                            return;
+                        match inner.session.as_mut() {
+                            Some(sess) if sess.id == session_id => {
+                                sess.phase = SessionPhase::OutboundActive;
+                                sess.capability = accepted_cap;
+                                sess.granted = true;
+                                false
+                            }
+                            _ => true,
                         }
-                        sess.phase = SessionPhase::OutboundActive;
-                        sess.capability = accepted_cap;
-                        sess.granted = true;
+                    };
+                    if cancelled {
+                        // 用户已取消：先把链路句柄收掉，再关掉刚建好的流
+                        svc.link.detach();
+                        drop(send);
+                        drop(recv);
+                        return;
                     }
                     let _ = svc.store.rc_device_touch(&peer, true);
                     svc.clear_frame();
@@ -708,6 +761,9 @@ impl RcService {
                             }
                         }
                     }
+                    // `dial_and_request` 在连接通了之后就已经 attach（那时才可能走到
+                    // Request 被拒），会话没建成 → 必须清掉，否则路径标签挂在死连接上。
+                    svc.link.detach();
                     {
                         let mut g = svc
                             .last_outbound_error
@@ -744,6 +800,52 @@ impl RcService {
         tauri::async_runtime::spawn(video.run());
     }
 
+    /// 轻量探活：拨通即认为可达，立刻断开（不建会话、不发 Request）。
+    /// 成功则 `touch(true)` 刷 last_seen。给设备列表「按需探活」用。
+    pub async fn probe_peer(&self, peer: &str) -> Result<(), String> {
+        let Some((ep, presence)) = self.transport_ready() else {
+            return Err("远程通道未启动".into());
+        };
+        let id = iroh::EndpointId::from_str(peer)
+            .map_err(|e| format!("node_id 解不开：{}", e))?;
+        let mut addr = EndpointAddr::new(id);
+        for sock in presence.addrs_of(peer, now_ms()) {
+            addr = addr.with_ip_addr(sock);
+        }
+        let conn = tokio::time::timeout(std::time::Duration::from_secs(3), ep.connect(addr, ALPN))
+            .await
+            .map_err(|_| "探测超时".to_string())?
+            .map_err(|e| format!("连不上：{}", e))?;
+        // 探通立刻收：不占对端 accept 槽，也不进入 Request 流程
+        conn.close(0u32.into(), b"probe");
+        let _ = self.store.rc_device_touch(peer, true);
+        Ok(())
+    }
+
+    /// 批量探活：并发短超时拨，结果 node_id → 是否可达。
+    /// 上限 8 台并行——自有设备列表远小于此；再大也是用户自己配的，超时仍 3s/台。
+    pub async fn probe_peers(&self, peers: &[String]) -> std::collections::HashMap<String, bool> {
+        use std::collections::HashMap;
+        let mut out = HashMap::new();
+        if peers.is_empty() {
+            return out;
+        }
+        let chunk = 8usize;
+        for batch in peers.chunks(chunk) {
+            let mut futs = Vec::with_capacity(batch.len());
+            for p in batch {
+                let p = p.clone();
+                // probe_peer 只借用 self；spawn 不了（要 'static），直接并发 future
+                futs.push(async move { (p.clone(), self.probe_peer(&p).await.is_ok()) });
+            }
+            let results = futures_util::future::join_all(futs).await;
+            for (id, ok) in results {
+                out.insert(id, ok);
+            }
+        }
+        out
+    }
+
     async fn dial_and_request(
         &self,
         peer: &str,
@@ -774,6 +876,12 @@ impl RcService {
             .await
             .map_err(|e| format!("开流失败：{}", e))?;
 
+        // 连接已通，先把句柄登记进去：会话进入 Active 之前界面就能报出路径档位
+        // （「是不是绕中继」恰恰是用户连上之前最想知道的）。
+        // 若随后 Request 被拒，调用方的错误分支会 `link.detach()` 清掉——
+        // 那一处不能漏，漏了会残留一条僵尸连接的路径标签。
+        self.link.attach(&conn);
+
         let req = RcFrame::Request { capability };
         crate::sync::transport::write_frame(&mut send, &req.encode()?).await?;
         let resp = RcFrame::decode(&crate::sync::transport::read_frame(&mut recv).await?)?;
@@ -801,6 +909,9 @@ impl RcService {
             log::warn!("[RC] {short} 开流失败");
             return;
         };
+        // 留一份连接 handle：批准之后要拿它读「对方是从哪条路进来的」（`link.rs`）。
+        // 必须在解构之前 clone——`w.send` / `w.recv` 一旦移出就不能再碰 `w`。
+        let link_conn = w.conn.clone();
         let mut send = w.send;
         let mut recv = w.recv;
 
@@ -814,8 +925,12 @@ impl RcService {
         };
 
         let Ok(bytes) = read_frame(&mut recv).await else {
+            // 连接已断，写 Deny 也到不了——只能记日志，不能静默（规则 #15.3）
+            log::warn!("[RC] {short} 读申请帧失败，连接已断");
             return;
         };
+        // 对端把 Request 送到了 = 它在线。刷 last_seen，跨网时设备列表才亮得起来。
+        let _ = self.store.rc_device_touch(&peer, true);
         let requested = match RcFrame::decode(&bytes) {
             Ok(RcFrame::Request { capability }) => capability,
             Ok(_) => {
@@ -826,6 +941,11 @@ impl RcService {
             }
             Err(e) => {
                 log::warn!("[RC] {short} 帧解码失败：{e}");
+                // 🔴 原来这里直接 return：Connection 一 drop，发起端只看到
+                // 「读帧长度失败：connection lost」，分不清网络断还是本端拒了。
+                if let Some(b) = deny("对端协议帧无法识别", "bad_request") {
+                    let _ = write_frame(&mut send, &b).await;
+                }
                 return;
             }
         };
@@ -917,6 +1037,10 @@ impl RcService {
                     if let Ok(b) = (RcFrame::Accept { capability: cap }).encode() {
                         let _ = write_frame(&mut send, &b).await;
                     }
+                    // 用户批准、会话真的建立：登记连接，被控端也能看到「对方是从
+                    // 局域网还是绕中继进来的」。此处不持有 inner 锁（上面那个
+                    // decision 块已结束），与 `status()` 的加锁顺序一致。
+                    self.link.attach(&link_conn);
                     // R1：推 JPEG 画面直到会话结束
                     spawn_inbound_video(&peer, send, recv).await;
                     return;

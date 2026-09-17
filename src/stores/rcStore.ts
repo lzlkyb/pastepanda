@@ -35,6 +35,7 @@ import {
   rcSetCapability,
   rcSetDeviceAllowed,
   rcSetEnabled,
+  rcProbeTargets,
   rcStartChannel,
   rcStatus,
   rcTargets,
@@ -45,6 +46,7 @@ import {
   type RcIdentity,
   type RcInvite,
   type RcInviteCreated,
+  type RcPathChanged,
   type RcQuality,
   type RcStatus,
   type RcTargetDevice,
@@ -92,6 +94,13 @@ interface RcState {
    * 被观察者必须看得见，否则等于悄悄把画面切到别处。
    */
   scopeNotice: string | null;
+  /**
+   * 会话中路径自动切换（relay ↔ 直连，C）。非 null 时由会话视图 toast 一次。
+   *
+   * iroh 每 60s 会尝试把中继升级成直连——不加提示的话，用户只会看到
+   * 「延迟突然从 90ms 掉到 12ms」却不知道为什么。
+   */
+  pathNotice: RcPathChanged | null;
 
   // 轮询引擎
   subscribers: number;
@@ -105,11 +114,16 @@ interface RcState {
   // 数据刷新
   refresh: () => Promise<void>;
   refreshTargets: () => Promise<void>;
+  /** 按需探活：对非 live 设备短超时拨一次，再刷新列表。不空转。 */
+  probeTargets: () => Promise<void>;
   refreshIdentity: () => Promise<void>;
   clearError: () => void;
   /** 记下「对端改了画面范围」待展示提示（由 rc-scope-changed 事件驱动）。 */
   setScopeNotice: (scope: string) => void;
   clearScopeNotice: () => void;
+  /** 记下「换路了」待展示（由 `rc-path-changed` 事件驱动）。 */
+  setPathNotice: (p: RcPathChanged) => void;
+  clearPathNotice: () => void;
 
   // 操作封装
   run: (fn: () => Promise<unknown>) => Promise<boolean>;
@@ -157,7 +171,7 @@ function scheduleNext(get: () => RcState) {
   }, period);
 }
 
-/** rc-session-changed / rc-scope-changed 事件只装一次。 */
+/** rc-session-changed / rc-scope-changed / rc-path-changed 事件只装一次。 */
 async function ensureListener(get: () => RcState) {
   if (unlisteners.length > 0 || listenerStarting) return;
   listenerStarting = true;
@@ -173,7 +187,15 @@ async function ensureListener(get: () => RcState) {
       if (typeof scope !== "string" || !scope) return;
       get().setScopeNotice(scope);
     });
-    unlisteners = [onSession, onScope];
+    // C：会话中自动换路（relay ↔ 直连）。顺带刷一次状态，让 HUD 立刻显示新档位。
+    const onPath = await listen<{ from?: string; to?: string }>("rc-path-changed", (ev) => {
+      const from = ev.payload?.from;
+      const to = ev.payload?.to;
+      if (typeof from !== "string" || typeof to !== "string") return;
+      get().setPathNotice({ from, to });
+      void get().refresh();
+    });
+    unlisteners = [onSession, onScope, onPath];
   } catch {
     /* 非 Tauri 环境：忽略 */
   } finally {
@@ -189,6 +211,7 @@ export const useRcStore = create<RcState>((set, get) => ({
   error: null,
   statusError: null,
   scopeNotice: null,
+  pathNotice: null,
   subscribers: 0,
   visible: true,
 
@@ -223,6 +246,9 @@ export const useRcStore = create<RcState>((set, get) => ({
         // （它只对当时那个会话有意义，留着会让下一个会话看到过期提示）
         scopeNotice:
           s.session && prev.status?.session?.id === s.session.id ? prev.scopeNotice : null,
+        // 换路提示同理：只对当时那个会话有意义，留着会让下一个会话看到过期提示
+        pathNotice:
+          s.session && prev.status?.session?.id === s.session.id ? prev.pathNotice : null,
       }));
       // 非阻塞申请的后台失败：clone 保留在后端，用户 dismiss / 下次发起 / 结束时才清
       if (s.outbound_error) set({ error: s.outbound_error });
@@ -233,6 +259,8 @@ export const useRcStore = create<RcState>((set, get) => ({
   },
   setScopeNotice: (scope) => set({ scopeNotice: scope }),
   clearScopeNotice: () => set({ scopeNotice: null }),
+  setPathNotice: (p) => set({ pathNotice: p }),
+  clearPathNotice: () => set({ pathNotice: null }),
   refreshTargets: async () => {
     try {
       const t = await rcTargets();
@@ -240,6 +268,25 @@ export const useRcStore = create<RcState>((set, get) => ({
     } catch {
       /* 列表失败不打断主状态 */
     }
+  },
+  probeTargets: async () => {
+    const st = get();
+    // live 的不用探；通道没起探了也是 channel_down
+    if (!st.status?.running) {
+      await get().refreshTargets();
+      return;
+    }
+    const ids = st.targets
+      .filter((t) => t.presence !== "live")
+      .map((t) => t.node_id);
+    if (ids.length > 0) {
+      try {
+        await rcProbeTargets(ids);
+      } catch {
+        /* 探活失败不打断列表；后面 refreshTargets 仍展示现状态 */
+      }
+    }
+    await get().refreshTargets();
   },
   refreshIdentity: async () => {
     try {

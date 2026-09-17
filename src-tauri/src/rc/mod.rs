@@ -9,6 +9,7 @@ pub mod inbound;
 pub mod input;
 pub mod jpeg;
 pub mod join;
+pub mod link;
 pub mod net;
 pub mod notify;
 pub mod outbound;
@@ -29,5 +30,8 @@ mod tests;
 
 pub use protocol::{Capability, RcFrame, SessionPhase, ALPN};
 pub use service::{cfg_enabled, global, install_global, RcService, RcStatus};
-pub use session::{gate_inbound, gate_outbound, Gate, Session, CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED};
+pub use session::{
+    gate_inbound, gate_outbound, is_rc_online_for, Gate, Session, CFG_CAPABILITY, CFG_DEVICE_DENY,
+    CFG_ENABLED, ONLINE_STALE_MS,
+};
 pub use video::VideoFrame;
