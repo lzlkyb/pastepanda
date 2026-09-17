@@ -12,6 +12,10 @@ import { toggleStackMode, stackPasteNext, isStackPasteAllRunning, abortStackPast
 // 今日速记热键（B2 #3）：用与右键菜单同一份抽取逻辑，不另写一套取正文
 import { extractNoteDraft } from "@/lib/notes/extract";
 import { noteAppendDaily } from "./noteDaily";
+// 栈浮标的自动跟随：只在**主窗口**启动（下面 `initBackend` 里调用一次）。
+// 独立窗口（快捷面板/全屏编辑器）也经 lib/api 加载本模块，但各自是独立的
+// JS 上下文与 store 实例，在那边注册订阅会让浮标状态被两个地方各推一次。
+import { startHudAutoFollow } from "@/lib/stack/hudBridge";
 
 /** 局域网同步 toast 节流：10s 内只弹一次（P2）。卡片仍在顶部，信息不丢。 */
 let lastLanToastAt = 0;
@@ -19,6 +23,10 @@ let lastLanToastAt = 0;
 /** 初始化 Tauri 后端连接 */
 export async function initBackend(): Promise<() => void> {
   const store = useAppStore.getState();
+
+  // 栈浮标的自动跟随（收集到新条目时刷新条数与目标应用名）。
+  // 放最前面：后面任何一步失败都不该让它没注册上。
+  startHudAutoFollow();
 
   // 修复 C13：先加载配置 — history 必须用配置里的真实 workspace 拉取。
   // 旧顺序（先 history）在 workspace 非默认时用 DEFAULT_CONFIG 的 workspace 拉错数据，
