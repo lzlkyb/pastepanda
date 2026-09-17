@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 交互精简（B 方案）设计稿</title>
+<style>
+  /* ===== 真实主题令牌（src/styles/theme.css）——mockup 用它渲染，不是自配色 ===== */
+  :root {
+    --app-bg: #F4F8FC;
+    --card-bg: #ffffff;
+    --card-border: #E0E4EB;
+    --border-color: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-light: #E0F2FE;
+    --accent-border: rgba(2, 132, 199, 0.35);
+    --orange: #C54A0A;
+    --orange-bg: #FFF7ED;
+    --orange-border: #FED7AA;
+    --danger: #D82525;
+    --red-bg: #FEF2F2;
+    --green: #11813A;
+    --green-bg: #DCFCE7;
+    --hover: #E8ECF2;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+  }
+  [data-theme="midnight"] {
+    --app-bg: #0B0B13;
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border-color: #27272A;
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-solid: #666FC4;
+    --accent-light: #1E1B4B;
+    --accent-border: rgba(129, 140, 248, 0.35);
+    --orange: #FB923C;
+    --orange-bg: #2A1B0E;
+    --orange-border: #7C3D0F;
+    --danger: #F87171;
+    --red-bg: #2A1414;
+    --green: #4ADE80;
+    --green-bg: #0F2417;
+    --hover: #27272A;
+    --section-bg: #0F0F11;
+    --input-bg: #27272A;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 80px;
+    background: #EEF1F5; color: var(--text-primary);
+    font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .doc { max-width: 980px; margin: 0 auto; padding: 32px 24px 0; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+  .sub { color: #55606E; font-size: 12.5px; margin-bottom: 26px; max-width: 780px; }
+  h2 {
+    font-size: 15px; margin: 36px 0 12px; font-weight: 650;
+    padding-bottom: 6px; border-bottom: 1px solid #D8DEE7;
+  }
+  h3 { font-size: 13px; margin: 22px 0 8px; font-weight: 650; color: #2A3444; }
+  p { margin: 0 0 10px; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+    background: #E7ECF2; color: #0B4A6F; padding: 1px 5px; border-radius: 4px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0 4px; }
+  th, td { border: 1px solid #D8DEE7; padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { color: #55606E; font-weight: 600; background: #E9EDF3; }
+  td.v { color: #2A3444; }
+  .bad { color: var(--danger); font-weight: 600; }
+  .good { color: var(--green); font-weight: 600; }
+  .tagx {
+    display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 9px;
+    background: #E9EDF3; color: #55606E; margin-right: 4px;
+  }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-light);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .warn {
+    border-left: 3px solid var(--orange); background: var(--orange-bg);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .cols { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 1 1 380px; min-width: 340px; }
+  .colHd {
+    font-size: 11.5px; font-weight: 650; letter-spacing: .04em;
+    color: #55606E; text-transform: uppercase; margin-bottom: 8px;
+  }
+
+  /* ===== 应用窗口壳（1:1 复刻 dialog-box 视觉）===== */
+  .app {
+    background: var(--app-bg); border: 1px solid var(--border-color); border-radius: 12px;
+    padding: 16px; font-size: 13px; color: var(--text-primary);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10);
+  }
+  .dialog-box {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 12px; overflow: hidden; max-width: 560px; margin: 0 auto;
+  }
+  .dialog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid var(--border-color);
+  }
+  .dialog-title { font-size: 14px; font-weight: 650; margin: 0; }
+  .dialog-close {
+    width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border-color);
+    background: transparent; color: var(--text-muted); cursor: default; font-size: 12px;
+  }
+  .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ===== RemoteComputer.module.css 真实类 ===== */
+  .devList { display: flex; flex-direction: column; gap: 6px; }
+  .devItem {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 8px; background: var(--card-bg); border: 1px solid transparent;
+    position: relative;
+  }
+  .devItem:hover { background: var(--hover); border-color: var(--border-color); }
+  .devItemRecent { border-color: var(--accent-border); background: var(--accent-light); }
+  .av {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+    background: color-mix(in srgb, var(--accent) 16%, var(--card-bg));
+    color: var(--text-primary);
+  }
+  .info { flex: 1; min-width: 0; }
+  .name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .meta {
+    font-size: 11px; color: var(--text-muted); margin-top: 3px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  }
+  .metaSub { color: var(--text-muted); opacity: .82; }
+  .dotOn {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+  }
+  .dotRecent { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #d4a017; }
+  .dotOff { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
+  .tagRecent, .tagRc, .tagSync, .tagDenied {
+    font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    border: 1px solid var(--border-color); color: var(--text-muted); font-weight: 500;
+  }
+  .tagRc { border-color: var(--accent-border); color: var(--accent); }
+  .tagDenied { border-color: var(--orange-border); color: var(--orange); }
+  .miniBtn, .miniBtnPri {
+    font-size: 11px; padding: 5px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: transparent; color: var(--text-primary);
+    cursor: default; white-space: nowrap; font-family: inherit;
+  }
+  .miniBtnPri {
+    background: var(--accent-solid); border-color: var(--accent-solid); color: #fff; font-weight: 600;
+  }
+  .miniBtnPri.wideBtn { padding: 5px 14px; }
+  .devMenuWrap { position: relative; }
+  .devMenu {
+    position: absolute; right: 0; top: 26px; z-index: 5; min-width: 150px;
+    background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14); padding: 4px; display: flex; flex-direction: column;
+  }
+  .devMenu button {
+    text-align: left; font-size: 11.5px; padding: 6px 8px; border-radius: 5px;
+    border: none; background: transparent; color: var(--text-primary);
+    cursor: default; font-family: inherit; white-space: nowrap;
+  }
+  .devMenu button:hover { background: var(--hover); }
+  .devMenu .mSep { height: 1px; background: var(--border-color); margin: 4px 6px; }
+  .devMenu .mDim { color: var(--text-muted); font-size: 10px; padding: 4px 8px 2px; }
+
+  .recentRow { display: flex; align-items: center; gap: 8px; }
+  .noteWarn {
+    border-left: 3px solid var(--orange);
+    background: color-mix(in srgb, var(--orange) 8%, transparent);
+    padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.6;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  }
+  .waitBox { display: block; }
+  .waitHead { display: flex; align-items: center; gap: 7px; }
+  .waitMeta { margin-top: 5px; font-size: 11px; color: var(--text-muted); }
+  .waitActions { margin-top: 9px; }
+  .joinCard {
+    border: 1px solid var(--orange-border); background: var(--orange-bg);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .joinCard h4 { margin: 0 0 6px; font-size: 13px; }
+  .joinCard p { margin: 0 0 10px; font-size: 12px; color: var(--text-muted); line-height: 1.65; }
+  .capPills { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .joinBtns { display: flex; gap: 8px; }
+  .pill, .pillOn {
+    font-size: 11px; padding: 4px 9px; border-radius: 20px;
+    border: 1px solid var(--border-color); background: transparent;
+    color: var(--text-secondary); cursor: default; font-family: inherit;
+  }
+  .pillOn {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent); border-color: var(--accent-border); font-weight: 600;
+  }
+  .pillDanger {
+    font-size: 11px; padding: 4px 9px; border-radius: 20px; cursor: default;
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-color));
+  }
+  .foot { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+  .foot b { color: var(--text-secondary); }
+  .viewTop {
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    padding: 8px 10px; border-bottom: 1px solid var(--border-color); font-size: 12px;
+  }
+  .live { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .liveBad { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex-shrink: 0; }
+  .qBar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 8px 10px; border-top: 1px solid var(--border-color); font-size: 11px;
+  }
+  .qLabel { color: var(--text-muted); font-size: 11px; }
+  .qSp { flex: 1; }
+  .qMeta { color: var(--text-muted); font-size: 10.5px; }
+  .fakeScreen {
+    position: relative; height: 150px; border-radius: 8px; margin: 10px;
+    background: linear-gradient(150deg, #1E293B, #0F172A); overflow: hidden;
+  }
+  .fakeScreenTxt {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #94A3B8; font-size: 11.5px; letter-spacing: .05em;
+  }
+  .hud {
+    position: absolute; left: 8px; bottom: 8px; display: flex; gap: 6px; flex-wrap: wrap;
+    background: rgba(15, 23, 42, 0.72); border-radius: 6px; padding: 4px 7px;
+    font-size: 10px; color: #CBD5E1;
+  }
+  .hudWarn { color: #FDBA74; }
+  .spin { display: inline-block; animation: sp 1.1s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .stepsInline { display: flex; gap: 6px; align-items: center; font-size: 11.5px; flex-wrap: wrap; }
+  .arrow { color: var(--text-muted); }
+  .stepChip {
+    border: 1px solid var(--border-color); border-radius: 6px; padding: 3px 8px;
+    background: var(--card-bg); color: var(--text-secondary); font-size: 11px;
+  }
+  .stepChip.hot { border-color: var(--accent-border); color: var(--accent); background: var(--accent-light); font-weight: 600; }
+  .stepChip.cut { text-decoration: line-through; opacity: .55; }
+  .legend { font-size: 11.5px; color: #55606E; margin-top: 8px; }
+  .kbd {
+    font-family: ui-monospace, Consolas, monospace; font-size: 10.5px;
+    border: 1px solid var(--border-color); border-bottom-width: 2px; border-radius: 4px;
+    padding: 0 4px; background: var(--card-bg);
+  }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <h1>远程电脑 · 交互精简（B 方案）设计稿</h1>
+  <p class="sub">
+    结论先行：<b>B = A（去重与改名）全部 + 点设备行直接发申请 + 发起能力记忆 + 会话内可提权</b>。
+    本稿只做「发起」这一段路的精简，不动画面/输入/剪贴板主链路。
+    所有视觉取自 <code>src/styles/theme.css</code> 与 <code>RemoteComputer.module.css</code> 真实令牌与类名；
+    渲染值用默认主题 <code>ocean</code>（浅色），文末附 <code>midnight</code> 对照。
+  </p>
+
+  <!-- ============================================================= -->
+  <h2>§0 依据（全部带 file:line）</h2>
+  <p>下表每条都在源码里核过。第 5 条是对此前口头结论的<b>自我校正</b>：真实 UI 文案是 4 处，不是最初说的 7 处。</p>
+  <div class="scroll">
+  <table>
+    <tr><th style="width:34px">#</th><th style="width:30%">现象</th><th style="width:30%">证据</th><th>B 的处理</th></tr>
+    <tr>
+      <td>1</td><td class="bad">「远程」名不符实</td>
+      <td><code>RcDeviceList.tsx:176-188</code>：按钮文字「远程」，<code>onClick</code> 只 <code>onRequest(id)</code> → <code>RemoteComputerDialog.tsx:250</code> <code>setAskPeer(id)</code></td>
+      <td>按钮改「发起」，点击<b>直接发申请</b>（不再开卡）</td>
+    </tr>
+    <tr>
+      <td>2</td><td class="bad">固定 2 步：选能力 → 发送</td>
+      <td><code>RcAskCard.tsx:30-46</code>（<code>capPills</code> + <code>onSend</code>），由 <code>RemoteComputerDialog.tsx:278-288</code> 条件渲染</td>
+      <td>删该组件与此分支；改档入口降到设备行菜单</td>
+    </tr>
+    <tr>
+      <td>3</td><td class="bad">能力不记忆</td>
+      <td><code>RemoteComputerDialog.tsx:33</code> <code>useState&lt;RcCapability&gt;("view")</code> —— 每次开面板都回到「只看」</td>
+      <td>新增 <code>localStorage["rc_last_request_cap"]</code>，与既有 <code>LS_LAST</code>（同文件 :26）同法</td>
+    </tr>
+    <tr>
+      <td>4</td><td class="bad">「上次控制 / 重连」行与设备行重复</td>
+      <td><code>RemoteComputerDialog.tsx:232-244</code>：与点设备行主按钮是同一动作</td>
+      <td>删该行；<code>lastPeer</code> 只保留「上次」徽章作用（<code>RcDeviceList.tsx:126</code>）</td>
+    </tr>
+    <tr>
+      <td>5</td><td class="bad">「允许被远程 ≠ 发起远程」<b>4 处</b>文案</td>
+      <td><code>RcEmptyGuide.tsx:21</code>、<code>RemoteComputerDialog.tsx:206</code>、<code>:295-296</code>、<code>RcSection.tsx:80</code></td>
+      <td>面板内两处合一（留 <code>:295</code> 的 foot），空态那处删（空态本身就在面板内）；<b>设置页保留</b>（另一页面，唯一上下文）</td>
+    </tr>
+    <tr>
+      <td>6</td><td>画质 5 档定义两遍，label 不一致</td>
+      <td><code>RcQualityBar.tsx:12-18</code>（流畅/均衡/清晰/超清/原生 + fps·宽度 tooltip）<br />vs <code>RcAllowPanel.tsx:88-96</code>（超清（约 2.5K）/原生（主屏 4K 硬编））</td>
+      <td>抽 <code>src/lib/rcQuality.ts</code> 唯一档位表，两处共用；详细说明降为 <code>title</code></td>
+    </tr>
+    <tr>
+      <td>7</td><td>画面范围两处档位不一致</td>
+      <td><code>RcQualityBar.tsx:53-64</code>（整屏/仅主屏/<b>逐屏 monitor:N</b>）<br />vs <code>RcAllowPanel.tsx:102-108</code>（<b>只有</b>整屏/仅主屏）</td>
+      <td>抽 <code>scopeOptions(monitors)</code> 共用；设置页接 <code>rcListMonitors()</code> 补上逐屏</td>
+    </tr>
+    <tr>
+      <td>8</td><td>同一条状态三处同时显示</td>
+      <td><code>unansweredSec</code> → <code>RcSessionTop.tsx:67</code> + <code>RcStatusBar.tsx:36</code> + <code>RcHud.tsx:73</code></td>
+      <td>只留<b>顶栏</b>（唯二能力档都渲染的位置），删另两处</td>
+    </tr>
+    <tr>
+      <td>9</td><td>「禁止该设备控本机」两个入口</td>
+      <td><code>RcDeviceList.tsx:204</code>（行菜单）与 <code>RcAllowPanel.tsx:149-156</code>（设置页）</td>
+      <td>两处都留（跨页面），只统一文案为「禁止远程本机 / 解除禁止」</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="callout">
+    <b>不进 B 范围的两条</b>（避免方案膨胀）：① 会话一屏 18–20 个控件（<code>RcSessionView</code> 结构性重构，属独立议题）；
+    ② 「允许被远程」与「远程通道」合成一个开关（动了 <code>lib.rs</code> boot 路径 + <code>service.rs</code>，风险收益不成比例）。
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>§1 发起路径：一刀砍掉的中间层</h2>
+
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">Before · 4 步（现状）</div>
+      <div class="app">
+        <div class="dialog-box">
+          <div class="dialog-header"><h3 class="dialog-title">远程电脑</h3><button class="dialog-close">✕</button></div>
+          <div class="body">
+            <div class="recentRow"><span class="meta">上次控制</span><button class="miniBtnPri">重连「笔记本」</button></div>
+            <div class="devList">
+              <div class="devItem devItemRecent">
+                <div class="av">笔</div>
+                <div class="info">
+                  <div class="name">笔记本 <span class="tagRecent">上次</span><span class="tagRc">远程</span></div>
+                  <div class="meta"><span class="dotOn"></span>在线 · 局域网 · 7736-e98f · 仍可尝试<span class="metaSub"> · 上次走局域网</span></div>
+                </div>
+                <button class="miniBtnPri">远程</button>
+                <button class="miniBtn">更多</button>
+              </div>
+            </div>
+            <!-- 点「远程」后弹出的申请卡 -->
+            <div class="joinCard">
+              <h4>申请远程「笔记本」</h4>
+              <p>对方会看到确认条，同意后才开始传输画面。</p>
+              <div class="capPills">
+                <button class="pillOn">只看</button>
+                <button class="pill">可控（需对方同意）</button>
+              </div>
+              <div class="joinBtns">
+                <button class="miniBtn">取消</button>
+                <button class="miniBtnPri">发送申请</button>
+              </div>
+            </div>
+            <div class="foot">本机「允许被远程」（已开）只影响<b>别人控你</b>；发起远程不需要打开它。</div>
+          </div>
+        </div>
+      </div>
+      <div class="stepsInline" style="margin-top:10px">
+        <span class="stepChip">点「远程」</span><span class="arrow">→</span>
+        <span class="stepChip">选能力档</span><span class="arrow">→</span>
+        <span class="stepChip">点「发送申请」</span><span class="arrow">→</span>
+        <span class="stepChip">等待对方同意</span>
+      </div>
+      <div class="legend">
+        能力档每次都重置为「只看」（<code>:33</code>）；「重连」行与设备行主按钮是同一动作，重复。
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="colHd">After · 2 步（B）</div>
+      <div class="app">
+        <div class="dialog-box">
+          <div class="dialog-header"><h3 class="dialog-title">远程电脑</h3><button class="dialog-close">✕</button></div>
+          <div class="body">
+            <div class="devList">
+              <div class="devItem devItemRecent">
+                <div class="av">笔</div>
+                <div class="info">
+                  <div class="name">笔记本 <span class="tagRecent">上次</span><span class="tagRc">远程</span></div>
+                  <div class="meta"><span class="dotOn"></span>在线 · 局域网 · 7736-e98f · 可发起<span class="metaSub"> · 上次走局域网</span></div>
+                </div>
+                <button class="miniBtnPri wideBtn">发起</button>
+                <button class="miniBtn">更多</button>
+              </div>
+            </div>
+            <!-- 点「发起」后：直接进等待态，卡片自带改档入口 -->
+            <div class="noteWarn waitBox">
+              <div class="waitHead">
+                <span class="spin">◌</span>
+                <span>已向 <b>笔记本</b> 发送申请（<b>只看</b>），等待对方确认…</span>
+                <button class="pill" style="margin-left:auto">改为可控</button>
+              </div>
+              <div class="waitMeta">对方需打开 PastePanda 并同意。对方未开「允许被远程」时会直接拒绝。 · 已等待 3 秒</div>
+              <div class="waitActions">
+                <button class="miniBtn">取消申请</button>
+              </div>
+            </div>
+            <div class="foot">本机「允许被远程」（已开）只影响<b>别人控你</b>；发起远程不需要打开它。</div>
+          </div>
+        </div>
+      </div>
+      <div class="stepsInline" style="margin-top:10px">
+        <span class="stepChip hot">点「发起」</span><span class="arrow">→</span>
+        <span class="stepChip hot">等待对方同意</span>
+      </div>
+      <div class="legend">
+        能力档来自上次（<code>rc_last_request_cap</code>），按钮 tooltip 会写明「将以『只看』发起」；
+        想换档就地一点，不用退回列表。
+      </div>
+    </div>
+  </div>
+
+  <div class="warn">
+    <b>「改为可控」放在等待态，而不是发起前</b>：对方还没同意时改档只影响这一次申请，零成本；
+    一旦对方已同意、会话已建立，改档就得走 §3 的重新协商。把便宜的那条放在前面。<br />
+    <b>实现口径</b>：它不是「就地改一个参数」，而是<b>作废重发</b>——
+    <code>rc_cancel_request()</code> 后再 <code>rc_request_session(peer, "control")</code>。
+    对端只会看到一次新敲门，不会看到「改档」这件事本身。
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>§2 设备行：主按钮 + 菜单</h2>
+  <p>
+    主按钮从「远程」改为「发起」并<b>加宽</b>（<code>miniBtnPri</code> + 14px 横内边距）——它是整行唯一的主动作。
+    整行也可以点（<code>onClick</code> 挂在 <code>devItem</code> 上），但<b>行内控件必须 <code>stopPropagation</code></b>，
+    否则点「更多」会顺手发一次申请。
+  </p>
+
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">行本体 / 三种设备</div>
+      <div class="app">
+        <div class="devList">
+          <div class="devItem" style="border-color:var(--accent-border);background:var(--accent-light)">
+            <div class="av">笔</div>
+            <div class="info">
+              <div class="name">笔记本 <span class="tagRc">远程</span></div>
+              <div class="meta"><span class="dotOn"></span>在线 · 局域网 · 7736-e98f · 可发起<span class="metaSub"> · 上次走中继</span></div>
+            </div>
+            <button class="miniBtnPri wideBtn">发起</button>
+            <button class="miniBtn">更多</button>
+          </div>
+          <div class="devItem">
+            <div class="av">台</div>
+            <div class="info">
+              <div class="name">DESKTOP-HHOLIC2 <span class="tagRc">远程</span></div>
+              <div class="meta"><span class="dotRecent"></span>1 分钟前还在 · be0d-5954 · 仍可尝试<span class="metaSub"> · 上次 3 天前</span></div>
+            </div>
+            <button class="miniBtnPri wideBtn">发起</button>
+            <button class="miniBtn">更多</button>
+          </div>
+          <div class="devItem">
+            <div class="av">新</div>
+            <div class="info">
+              <div class="name">新设备 <span class="tagSync">同步</span><span class="tagDenied">已禁止控本机</span></div>
+              <div class="meta"><span class="dotOff"></span>配对后还没连上过 · 核对指纹再试 · 仅同步配对，未建立远程通道</div>
+            </div>
+            <button class="miniBtn">去配对</button>
+            <button class="miniBtn">更多</button>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        meta 段数收口：<code>上次 X</code> 与 <code>上次走 Y</code> 合并为一段（<code>RcDeviceList.tsx:135-148</code>）；
+        路径为空串时整段不显示（承 B-5 的「空白不编默认值」）。
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="colHd">行菜单（点「更多」）</div>
+      <div class="app">
+        <div class="devList">
+          <div class="devItem">
+            <div class="av">笔</div>
+            <div class="info">
+              <div class="name">笔记本 <span class="tagRc">远程</span></div>
+              <div class="meta"><span class="dotOn"></span>在线 · 局域网 · 7736-e98f · 可发起</div>
+            </div>
+            <button class="miniBtnPri wideBtn">发起</button>
+            <button class="miniBtn">更多</button>
+            <div class="devMenuWrap">
+              <div class="devMenu">
+                <div class="mDim">以指定方式发起</div>
+                <button>以「只看」发起</button>
+                <button>以「可控」发起</button>
+                <div class="mSep"></div>
+                <button>禁止远程本机</button>
+                <button>忘记设备</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        「以「可控」发起」是<b>唯一</b>保留的显式改档发起入口——它替代了原申请卡的职能，
+        但只在需要时才展开，常态不占屏。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>§3 会话内提权：做到哪一档，以及为什么</h2>
+
+  <p>这是 B 里唯一有技术分歧的点，先把边界钉死。</p>
+
+  <div class="warn">
+    <b>无缝提权做不到「不加协议」。</b>证据：<br />
+    ① <code>rc/protocol.rs:52-68</code> 的 <code>RcFrame</code> 只有
+    <code>Request / Accept / Deny / End / Ping / Pong</code> 六种帧，没有任何「改档」帧；<br />
+    ② <code>rc/service.rs:1050</code>——被控端在 <code>Accept</code> 回完就把 <code>send/recv</code>
+    交给了 <code>spawn_inbound_video(peer, send, recv)</code>，<b>连接此后被视频流独占，再没有信令通道</b>；<br />
+    ③ 被控端的「同意」只存在于握手期的 pending 循环（<code>service.rs:999-1060</code>，120s 超时），会话中无法二次征得同意。
+  </div>
+
+  <h3>B-1（本次做，纯前端）· 重新协商式提权</h3>
+  <p>
+    会话内（<code>canControl === false</code>）在<b>画质条右侧</b>给一个「申请控制权」按钮（那里是会话中唯一已存在的设置行，
+    不再新增控件行）。点击 → 确认弹窗 → <code>end()</code> + <code>request(peer, "control")</code>。
+  </p>
+  <p>
+    这套动作后端<b>已经具备</b>：<code>RemoteComputerDialog.tsx:181-184</code> 的 <code>onReconnect</code>
+    就是「<code>rc.end()</code> → <code>doRequest(session.peer, session.capability)</code>」，
+    B-1 只是把第二个参数从 <code>session.capability</code> 换成 <code>"control"</code>。
+  </p>
+
+  <div class="app">
+    <div class="dialog-box">
+      <div class="dialog-header"><h3 class="dialog-title">远程电脑</h3><button class="dialog-close">✕</button></div>
+      <div class="body" style="padding-bottom:0">
+        <div class="viewTop">
+          <span class="live"></span><span>正在查看 <b>笔记本</b></span>
+          <span class="pillOn">只看</span>
+          <span class="pill">键盘：未捕获</span>
+        </div>
+        <div class="fakeScreen">
+          <div class="fakeScreenTxt">对方桌面画面</div>
+          <div class="hud"><span>JPEG</span><span>5 fps</span><span>24 ms</span><span>均衡</span><span>局域网</span></div>
+        </div>
+        <div class="qBar">
+          <span class="qLabel">画质</span>
+          <button class="pill">流畅</button><button class="pillOn">均衡</button>
+          <button class="pill">清晰</button><button class="pill">超清</button><button class="pill">原生</button>
+          <span class="qSp"></span>
+          <button class="miniBtnPri">申请控制权</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin-top:10px">确认弹窗文案（复用 <code>confirmDialog</code>）：</p>
+  <div class="app" style="max-width:520px">
+    <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:14px">
+      <div style="font-size:13.5px;font-weight:650;margin-bottom:8px">申请控制权</div>
+      <div style="font-size:12.5px;color:var(--text-secondary);line-height:1.7">
+        将结束当前「只看」会话，并以「可控」重新发起。<br />
+        画面会短暂中断，<b>对方需要再同意一次</b>。
+      </div>
+      <div class="joinBtns" style="justify-content:flex-end;margin-top:14px">
+        <button class="miniBtn">保持只看</button>
+        <button class="miniBtnPri">重新发起（可控）</button>
+      </div>
+    </div>
+  </div>
+
+  <h3>B-2（明确不做，留档）· 无缝提权</h3>
+  <p>真要做到「画面不断、就地提权」，最小改动面是：</p>
+  <div class="scroll">
+  <table>
+    <tr><th style="width:30%">改动点</th><th>内容</th></tr>
+    <tr><td><code>rc/input.rs:20-36</code></td><td>新增 <code>InputEvent::RaiseCapability { capability }</code>（这次要变成 7 个变体）</td></tr>
+    <tr><td><code>rc/inbound.rs:342-419</code></td><td>处理该事件：查 <code>max_capability()</code> → 落一个「提权待批」态 → 等用户决定 → 写回执帧</td></tr>
+    <tr><td><code>rc/service.rs</code></td><td>新增提权待批状态 + <code>approve_raise/deny_raise</code>；被控端 UI 需要常驻可见批准入口</td></tr>
+    <tr><td><code>rc/outbound.rs</code></td><td>收流侧识别回执帧并更新 <code>session.capability</code></td></tr>
+    <tr><td><code>commands/rc.rs</code></td><td>+2 个 <code>#[tauri::command]</code>（IPC 契约）</td></tr>
+  </table>
+  </div>
+  <p class="legend">
+    风险三条：① 被控端在会话中获批意味着<b>「已建立的只读会话」可以升级为可控</b>，安全语义变了，必须在被控端显式确认且落历史；
+    ② 回执帧与视频帧共用流，收流侧分帧逻辑要重验；③ 旧版本对端收到未知事件只能忽略 ⇒ 必须保证「发不出提权请求时静默降级到 B-1」。
+    这一期不做。
+  </p>
+
+  <!-- ============================================================= -->
+  <h2>§4 去重结果一览</h2>
+  <div class="scroll">
+  <table>
+    <tr><th style="width:26%">概念</th><th style="width:26%">改前</th><th style="width:26%">改后</th><th>唯一实现</th></tr>
+    <tr>
+      <td>「允许被远程 ≠ 发起远程」</td>
+      <td class="bad">4 处 UI 文案（面板内 3 处 + 设置页 1 处）</td>
+      <td class="good">2 处（面板 foot 1 + 设置页 1，分属两个页面）</td>
+      <td><code>RemoteComputerDialog.tsx:295</code> / <code>RcSection.tsx:80</code></td>
+    </tr>
+    <tr>
+      <td>画质 5 档</td>
+      <td class="bad">2 套 label</td>
+      <td class="good">1 套</td>
+      <td>新增 <code>src/lib/rcQuality.ts</code></td>
+    </tr>
+    <tr>
+      <td>画面范围</td>
+      <td class="bad">2 套档位（一处缺逐屏）</td>
+      <td class="good">1 套（含逐屏）</td>
+      <td>新增 <code>src/lib/rcScope.ts</code> 的 <code>scopeOptions(monitors)</code></td>
+    </tr>
+    <tr>
+      <td>「操作后 Ns 无画面」</td>
+      <td class="bad">3 处（顶栏 / 控制状态条 / HUD）</td>
+      <td class="good">1 处（顶栏）</td>
+      <td><code>RcSessionTop.tsx:67</code></td>
+    </tr>
+    <tr>
+      <td>发起能力档</td>
+      <td class="bad">每次重置「只看」</td>
+      <td class="good">记忆上次</td>
+      <td><code>localStorage["rc_last_request_cap"]</code></td>
+    </tr>
+    <tr>
+      <td>「上次控制 / 重连」行</td>
+      <td class="bad">独立一行</td>
+      <td class="good">删除</td>
+      <td>点设备行即达成</td>
+    </tr>
+  </table>
+  </div>
+
+  <h3>画质档统一后的文案</h3>
+  <div class="scroll">
+  <table>
+    <tr><th style="width:70px">档</th><th style="width:90px">label</th><th>title（悬停说明，真实值来自 <code>RcQualityBar.tsx:12-18</code>）</th></tr>
+    <tr><td><code>smooth</code></td><td>流畅</td><td>约 6fps · 宽 960 · 弱网</td></tr>
+    <tr><td><code>balanced</code></td><td>均衡</td><td>约 5fps · 宽 1280 · 默认</td></tr>
+    <tr><td><code>sharp</code></td><td>清晰</td><td>约 8fps · 宽 1920 · 局域网</td></tr>
+    <tr><td><code>ultra</code></td><td>超清</td><td>约 5fps · 宽 2560 · JPEG 路径</td></tr>
+    <tr><td><code>uhd</code></td><td>原生</td><td>主屏硬编原生分辨率 · 需 GPU · 无硬编回落超清</td></tr>
+  </table>
+  </div>
+  <p class="legend">
+    设置页原有「约 2.5K」「主屏 4K 硬编」这类补充说明<b>升为 title</b>，不再与 label 打架。
+    设置页多一句「改后下次会话生效」保留（那是设置页才需要的语境）。
+  </p>
+
+  <!-- ============================================================= -->
+  <h2>§5 文案对照表（改前 → 改后）</h2>
+  <div class="scroll">
+  <table>
+    <tr><th style="width:30%">位置</th><th style="width:35%">改前</th><th>改后</th></tr>
+    <tr>
+      <td><code>RcDeviceList.tsx:187</code></td>
+      <td>远程</td><td><b>发起</b>（tooltip：将以「只看」发起 · 上次走局域网）</td>
+    </tr>
+    <tr>
+      <td><code>RcDeviceList.tsx:181-183</code> tooltip</td>
+      <td>发送远程申请 / 未听到局域网宣告，将尝试公网直连或中继</td>
+      <td>合并为一句：将以「{档}」发起 · {可达性提示}</td>
+    </tr>
+    <tr>
+      <td><code>RemoteComputerDialog.tsx:206</code></td>
+      <td>开通道只用于你去远程别人；「允许被远程」在设置里单独控制。</td>
+      <td>删（foot 已覆盖同一信息，不再同屏两遍）</td>
+    </tr>
+    <tr>
+      <td><code>RcEmptyGuide.tsx:21</code></td>
+      <td>「允许被远程」只影响别人控你；发起远程不需要打开它。</td>
+      <td>删（空态本身渲染在面板内，foot 就在下方）</td>
+    </tr>
+    <tr>
+      <td><code>RemoteComputerDialog.tsx:295-296</code></td>
+      <td>本机「允许被远程」（已开）只影响<b>别人控你</b>；发起远程不需要打开它。</td>
+      <td>保留（面板内唯一一处），措辞不变</td>
+    </tr>
+    <tr>
+      <td><code>RcPendingWait.tsx:39-41</code></td>
+      <td>已向 X 发送申请（只看），等待对方确认…</td>
+      <td>保留 + 右侧加「改为可控」按钮（未同意前改档零成本）</td>
+    </tr>
+    <tr>
+      <td><code>RcDeviceList.tsx:156 / :205</code></td>
+      <td>解除禁止 / 禁止远程本机</td>
+      <td>统一为「解除禁止」/「禁止远程本机」（与设置页「允许 / 关闭」对齐为同一套说法）</td>
+    </tr>
+  </table>
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>§6 改动清单</h2>
+  <div class="cols">
+    <div class="col">
+      <h3>前端（B 的全部改动都在这一侧）</h3>
+      <div class="scroll">
+      <table>
+        <tr><th style="width:52%">文件</th><th>动作</th></tr>
+        <tr><td><code>components/rc/RcDeviceList.tsx</code></td><td>主按钮改「发起」直发；行 onClick + 子控件 stopPropagation；菜单加 2 个改档发起项；meta 合并</td></tr>
+        <tr><td><code>components/rc/RcAskCard.tsx</code></td><td><b>删除</b>（职能移入行菜单）</td></tr>
+        <tr><td><code>components/rc/RemoteComputerDialog.tsx</code></td><td>删 <code>askPeer</code> 分支与「重连」行；能力走 <code>rc_last_request_cap</code>；删 <code>:206</code> 文案</td></tr>
+        <tr><td><code>components/rc/RcPendingWait.tsx</code></td><td>加「改为可控」按钮（<code>onRaise</code> 回调）</td></tr>
+        <tr><td><code>components/rc/RcSessionView.tsx</code></td><td>画质条右侧加「申请控制权」（仅 <code>!canControl</code>）</td></tr>
+        <tr><td><code>components/rc/RcSessionTop.tsx</code></td><td>保留 <code>unansweredSec</code></td></tr>
+        <tr><td><code>components/rc/RcStatusBar.tsx</code> / <code>RcHud.tsx</code></td><td>删 <code>unansweredSec</code> 渲染与入参</td></tr>
+        <tr><td><code>components/rc/RcEmptyGuide.tsx</code></td><td>删重复文案（<code>:21</code>）</td></tr>
+        <tr><td><code>components/settings/RcAllowPanel.tsx</code></td><td>接统一档位表（画质 label + 范围含逐屏）</td></tr>
+        <tr><td><code>lib/rcQuality.ts</code> / <code>lib/rcScope.ts</code></td><td><b>新增</b>（唯一档位表）</td></tr>
+        <tr><td><code>lib/rcRequest.ts</code></td><td><b>新增</b>：<code>lastRequestCap()/rememberRequestCap()</code> 读写 localStorage（含 try/catch，与 <code>LS_LAST</code> 同法）</td></tr>
+      </table>
+      </div>
+    </div>
+    <div class="col">
+      <h3>后端</h3>
+      <p><b>零改动。</b>B-1 复用的 <code>rc_end_session</code> / <code>rc_request_session</code> 都已存在
+      （<code>commands/rc.rs:478-502</code>），能力值由前端传入，无需新 IPC。</p>
+      <h3>风险</h3>
+      <ol style="padding-left:18px;margin:0">
+        <li><b>整行可点的误触</b>：行内 4 个可交互元素（主按钮 / 更多 / 解除禁止 / 去配对），
+          漏一个 <code>stopPropagation</code> 就会多点一次申请。→ 加一条守卫单测：点击「更多」不触发 <code>onRequest</code>。</li>
+        <li><b>删 <code>RcAskCard</code> 的回归面</b>：它承担「首次可控发起」入口，删后必须确认菜单两项都工作，
+          且 <code>syncOnly</code> 设备不出现在改档项里。</li>
+        <li><b>能力记忆的静默风险</b>：上次用「可控」→ 这次一键发起即申请可控。为避免「我明明只想看看」，
+          按钮 tooltip <b>必须</b>写明当前档；且 <code>:295</code> 的 foot 保持可见。</li>
+        <li><b>删 <code>RcStatusBar</code> 的 <code>unansweredSec</code></b>：<code>RcStatusBar</code> 仅当 <code>canControl</code> 时渲染
+          （<code>RcSessionView.tsx:255</code>），而顶栏无条件渲染（<code>:163</code>）⇒ 不会出现「只看会话里失去这条提示」。</li>
+      </ol>
+      <h3>验证计划（按项目顺序）</h3>
+      <p style="font-size:12px">
+        <code>npx tsc --noEmit</code> → <code>npm run lint</code> → <code>npm run lint:css</code> →
+        <code>npx vitest run --pool=forks</code>（新增 3 条守卫单测）→ <code>cargo test --lib</code>（后端口径不变，应仍 1400）。
+      </p>
+      <p class="legend">
+        <b>体量红线自查</b>：<code>RemoteComputerDialog.tsx</code> 现 314 行，删掉申请卡分支与重连行后<b>下降</b>；
+        <code>RcDeviceList.tsx</code> 现 222 行，加菜单项后约 250 行，仍在 300 以内。
+      </p>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>§7 暗色主题对照（midnight）</h2>
+  <p>同一套结构，只换主题令牌，确认新控件没有硬编码颜色。</p>
+  <div class="app" data-theme="midnight">
+    <div class="dialog-box">
+      <div class="dialog-header"><h3 class="dialog-title">远程电脑</h3><button class="dialog-close">✕</button></div>
+      <div class="body">
+        <div class="devList">
+          <div class="devItem devItemRecent">
+            <div class="av">笔</div>
+            <div class="info">
+              <div class="name">笔记本 <span class="tagRecent">上次</span><span class="tagRc">远程</span></div>
+              <div class="meta"><span class="dotOn"></span>在线 · 局域网 · 7736-e98f · 可发起<span class="metaSub"> · 上次走中继</span></div>
+            </div>
+            <button class="miniBtnPri wideBtn">发起</button>
+            <button class="miniBtn">更多</button>
+          </div>
+        </div>
+        <div class="noteWarn waitBox">
+          <div class="waitHead">
+            <span class="spin">◌</span>
+            <span>已向 <b>笔记本</b> 发送申请（<b>只看</b>），等待对方确认…</span>
+            <button class="pill" style="margin-left:auto">改为可控</button>
+          </div>
+          <div class="waitMeta">对方需打开 PastePanda 并同意。 · 已等待 3 秒</div>
+          <div class="waitActions"><button class="miniBtn">取消申请</button></div>
+        </div>
+        <div class="foot">本机「允许被远程」（已关）只影响<b>别人控你</b>；发起远程不需要打开它。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:24px">
+    <b>落地顺序建议</b>：① 档位表收口（<code>rcQuality.ts</code>/<code>rcScope.ts</code>，纯搬运、可单独验证）→
+    ② 设备行直发 + 删申请卡 + 能力记忆 → ③ 会话内「申请控制权」+「改为可控」→ ④ 文案去重收尾。
+    每步单独 tsc/vitest 验证，避免一次性大改。
+  </div>
+
+</div>
+</body>
+</html>
