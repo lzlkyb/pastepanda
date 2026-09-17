@@ -285,7 +285,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
           if (isVersionSkipped(e.payload.version)) {
             setStatus("skipped");
           } else {
-            setStatus("available");
+            // 多源 failover 会再次收到 available：已在下载中时不能再弹回 available，
+            // 否则「源过慢 → 切源」会闪一下「发现新版本」再回 downloading。
+            setStatus((prev) => (prev === "downloading" ? prev : "available"));
           }
           setUpdate({ version: e.payload.version, body: e.payload.body });
         }),
@@ -347,6 +349,24 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
               setBytesPerSec(p.bps);
             });
           }
+        }),
+      );
+
+      unlisteners.push(
+        await listen<{ source: string; avg_bps: number }>("update:source_slow", (e) => {
+          // 慢源被后端中止、即将切下一源：进度从 0 重走，不能沿用上一源的百分比
+          logger.warn(
+            `[Update] 源速度过慢，切换中: ${e.payload.source} ≈ ${Math.round(e.payload.avg_bps / 1024)}KB/s`,
+          );
+          clearUptodateTimer();
+          setStatus("downloading");
+          setProgress(0);
+          setProgressIndeterminate(false);
+          setDownloadedBytes(0);
+          setBytesPerSec(0);
+          progressRef.current = { pct: 0, indeterminate: false, downloaded: 0, bps: 0 };
+          speedRef.current = { downloaded: 0, time: Date.now() };
+          toast("当前源较慢，正在切换更快的更新源…", "info");
         }),
       );
 
