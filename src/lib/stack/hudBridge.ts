@@ -32,12 +32,35 @@ const DONE_HOLD_MS = 1500;
 const RECOVER_MS = 3000;
 
 /** 把 `ctrl+alt+p` 格式化成 `Ctrl+Alt+P`（纯展示，不改配置） */
-function hotkeyLabel(): string {
-  const raw = useAppStore.getState().config.stack_paste_hotkey || "ctrl+alt+p";
-  return raw
+function fmtHotkey(raw: string | undefined, fallback: string): string {
+  return (raw || fallback)
     .split("+")
     .map((k) => (k.length > 0 ? k.charAt(0).toUpperCase() + k.slice(1) : k))
     .join("+");
+}
+
+/** 栈粘贴热键（`ctrl+alt+p` → `Ctrl+Alt+P`） */
+function hotkeyLabel(): string {
+  return fmtHotkey(useAppStore.getState().config.stack_paste_hotkey, "ctrl+alt+p");
+}
+
+/** 栈开关热键（`ctrl+alt+k` → `Ctrl+Alt+K`）。循环态用它指出出口 */
+function toggleHotkeyLabel(): string {
+  return fmtHotkey(useAppStore.getState().config.stack_toggle_hotkey, "ctrl+alt+k");
+}
+
+/**
+ * 循环态副行；非循环态返回 `null`（那时浮标按 `phase` 推导默认文案）。
+ *
+ * ❗ 循环**没有自然终点**：队列永不清空（贴过的那条轮转到队尾），
+ *   `stackPasteNext` 里那条「栈空自动退出」永远不触发 —— 出口只剩退出栈模式。
+ *   于是「出口在哪」成了必须写出来的信息，而浮标是主窗口之外唯一的通道。
+ *   它的优先级高于「Ctrl+Alt+P 继续」：用户已经在按那个热键了，不需要被提醒。
+ */
+function loopHint(): string | null {
+  const s = useAppStore.getState();
+  if (!s.stackLoopPaste) return null;
+  return `${toggleHotkeyLabel()} 退出即停`;
 }
 
 /** 预览截断长度：240px 宽 11px 字号下单行约放 20 个汉字，JS 侧先粗截控制负载，
@@ -52,6 +75,11 @@ const PREVIEW_MAX_CHARS = 30;
 function progressFromStore(remaining: number): StackHudProgress | null {
   const s = useAppStore.getState();
   if (!s.stackMode && s.stackPasted === 0) return null;
+  // 循环态：徽章换「第 N 轮」。
+  // ❗ `x/y` 在循环里会一轮一轮地转圈、不指向任何终点，读起来像「怎么贴都贴不完」；
+  //   轮次才有「这是第几遍」的信息量。`done/total` 一并置 0 是刻意的 ——
+  //   浮标渲染优先取 label，这两个数没有消费方，留着只会让人以为还有别的含义。
+  if (s.stackLoopPaste) return { done: 0, total: 0, label: `第 ${s.stackLoopRound} 轮` };
   const total = Math.max(s.stackCollected, s.stackPasted + remaining);
   if (total <= 0) return null;
   return { done: s.stackPasted, total };
@@ -102,7 +130,7 @@ async function pushCollecting(count: number): Promise<void> {
     phase: "collecting",
     count,
     target,
-    hint: null,
+    hint: loopHint(),
     next: nextPreview(),
     hotkey: hotkeyLabel(),
     progress: progressFromStore(count),
@@ -156,7 +184,7 @@ export async function hudPastedOk(remaining: number): Promise<void> {
     phase: "success",
     count: remaining,
     target: null,
-    hint: null,
+    hint: loopHint(),
     next: nextPreview(),
     hotkey: hotkeyLabel(),
     progress: progressFromStore(remaining),
@@ -171,7 +199,7 @@ export async function hudPastedOk(remaining: number): Promise<void> {
  * 副行固定写「这条已保留在栈里」——用户此刻最怕的是**丢数据**，
  * 而这句话才是他需要确认的事。具体失败原因（未找到目标窗口 / 无法切换 /
  * 目标已关闭）由 `reason` 参数记进日志，也由底层 API 的 toast 承载（主窗可见时）。
- * 浮标 208px 宽放不下完整原因，硬塞会被省略号截断。
+ * 浮标 240px 宽放不下完整原因，硬塞会被省略号截断。
  */
 export function hudPastedFailed(reason: string): void {
   logger.warn("栈粘贴失败", reason);

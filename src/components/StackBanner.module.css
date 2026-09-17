@@ -64,6 +64,34 @@
   flex-shrink: 0;
 }
 
+/* 标题文本单独包一层，别让它是 `.title` 的直接文本子节点。
+   ❗ `.title` 是 flex 容器，裸文本会生成**匿名 flex item**，而匿名 item 的
+   `min-width` 是 `auto`（中文串 = 整体 min-content），压不动 ——
+   结果是「栈模式 · 剩余 3 条」这种长标题会把右侧的「循环中」徽章挤出容器、
+   被 `overflow:hidden` 整块裁掉（不留省略号，看起来像徽章根本没渲染）。
+   显式 `min-width: 0` 后省略号落在文本上，徽章保住。 */
+.titleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 循环态徽章：沿用 `.nextTag` 的「实色橙底 + 白字」语言，尺寸同档。
+   ❗ 实色填充配白字走 `--orange-solid`（不是 `--orange`）—— 后者在部分主题里
+   亮度不够，白字会掉到 4.5:1 以下（见 `theme.css` 对 --orange-solid 的说明）。
+   走变量而非硬编码，7 套主题自动跟随，不需要额外的主题覆盖块。 */
+.loopTag {
+  flex-shrink: 0;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #fff;
+  background: var(--orange-solid, #C54A0A);
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .acts {
   display: flex;
   align-items: center;

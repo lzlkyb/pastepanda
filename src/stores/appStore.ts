@@ -259,6 +259,16 @@ interface AppState {
   stackPasteAllActive: boolean; // U58：「全部粘贴」循环进行中（用于显示进度条与中止按钮）
   /** P3 粘贴+Tab 推进开关：开启后每次栈顶粘贴成功后自动补发 Tab 键。默认关 */
   stackTabAdvance: boolean;
+  /**
+   * 循环粘贴开关（**会话态，不落盘**）：开启后栈顶粘贴不出栈，而是**轮转到队尾**，
+   * 整轮贴完自动回到第 1 条进下一轮，直到退出栈模式。
+   *
+   * ❗ 与 `stackTabAdvance` 的复位语义**刻意不同**：那个跨栈粘住，
+   *   这个每次开栈清零（低频功能，不做持久化 —— 见 `setStackMode` / `exitStackMode`）。
+   */
+  stackLoopPaste: boolean;
+  /** 当前循环轮次，从 1 起。仅在 `stackLoopPaste` 为真时有意义 */
+  stackLoopRound: number;
   /** 表格拆分：最近一次拆分的原始整表文本 + 拆出的条目 id 列表，供「撤销拆分」使用。null = 无可撤销 */
   stackLastSplit: { originalText: string; itemIds: string[] } | null;
 
@@ -320,6 +330,8 @@ interface AppState {
   stackRemoveItem: (id: string) => void;
   /** P3 粘贴+Tab 开关取反 */
   toggleStackTabAdvance: () => void;
+  /** 循环粘贴开关取反。开启时轮次从第 1 轮重新起算 */
+  toggleStackLoopPaste: () => void;
   /** P4 模板库载入：替换当前未粘贴的 stackItems、自动进入栈模式，保留已有的已粘贴统计 */
   stackLoadTemplate: (items: { type: HistoryItem["type"]; text: string; content: string }[]) => void;
   /** 表格拆分（方案 A/B）：命中表格则按行拆分逐条入栈并返回拆分统计；未命中/非文本/非栈模式则降级为普通 stackPush 并返回 null */
@@ -477,6 +489,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   stackCollected: 0,
   stackPasteAllActive: false,
   stackTabAdvance: false,
+  stackLoopPaste: false,
+  stackLoopRound: 1,
   stackLastSplit: null,
   realIconCache: {},
   searchHistory: (() => {
@@ -795,7 +809,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setStackMode: (active) =>
     set(
       active
-        ? { stackMode: true, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0 }
+        // ❗ 开栈必须把循环开关归零：它是会话态低频功能，上次开栈点过循环
+        //   不代表这次也要循环（用户明确要求「下次打开默认关」）。
+        ? { stackMode: true, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackLoopPaste: false, stackLoopRound: 1 }
         : { stackMode: false }
     ),
   stackPush: (item) =>
@@ -817,12 +833,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       done.add(pasted.id);
       // 若这一条属于最近一次表格拆分，说明部分内容已经贴出去了——此时如果还允许「撤销拆分」，会把整张原表重新塞回队列，
       // 导致已经贴过的部分被重复粘贴一次，所以要把可撤销记录一并清掉
-      return {
-        stackItems: rest,
+      const consumed = {
         stackDoneIds: done,
         stackPasted: s.stackPasted + 1,
         stackLastSplit: splitAfterPasted(s.stackLastSplit, [pasted.id]),
       };
+      // 非循环态：出栈（原行为，一字未改）
+      if (!s.stackLoopPaste) return { ...consumed, stackItems: rest };
+
+      // 循环态：不出栈，**轮转到队尾**。
+      // ❗ 「栈顶恒为下一条」这个不变量必须靠轮转维持 —— 它撑起了两处零改动：
+      //   `hudBridge.nextPreview()`（浮标预览行）与 chip 的「下一个粘贴」标签
+      //   都只看 `stackItems[0]`。出栈顶到别处就会把这两处一起弄错。
+      const rotated = [...rest, pasted];
+      // 整轮贴空 → 清空本轮标记、进下一轮。
+      // ❗ 轮转一圈后 `rotated` 的排列恰好等于本轮开始时的顺序（[A,B,C] 各贴一遍
+      //   之后又回到 [A,B,C]），所以这里**不需要**额外重排。多加一步重排，反而会在
+      //   「用户中途用 ✕ 删过条目」时把顺序搅乱。
+      // ❗ 判据用 `rotated.every(...)` 而不是 `done.size === rotated.length`：
+      //   ✕ 删除会让 `done` 里留下已不在队列中的死 id，按数量比会误判。
+      if (rotated.every((it) => done.has(it.id))) {
+        return {
+          ...consumed,
+          stackItems: rotated,
+          stackDoneIds: new Set(),
+          stackLoopRound: s.stackLoopRound + 1,
+          // ❗ 一并归零：循环态下这个计数器代表「**本轮**已贴」，跨轮累计会让
+          //   「半路关掉循环」那一刻的脚注 `${stackPasted}/${total}` 变成 10/11
+          //   这种没人能解释的数字（分母也不是队列长度，而是累计次数）。
+          //   归零后它与 `loopProgress` 同源，关闭循环即无缝接回出栈语义。
+          stackPasted: 0,
+        };
+      }
+      return { ...consumed, stackItems: rotated };
     }),
   // 拖拽重排：直接复用 quickOrder.ts 的 reorderAction（id 数组换位纯函数），不再另写一份
   stackReorder: (fromId, toId) =>
@@ -846,6 +889,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { stackItems: next };
     }),
   toggleStackTabAdvance: () => set((s) => ({ stackTabAdvance: !s.stackTabAdvance })),
+  /**
+   * 循环粘贴开关取反。
+   *
+   * ❗ **关闭分支必须把「本轮已贴」真正出栈**（`stackItems` 里滤掉它们）。
+   *   循环态下这些条目不出栈、只被轮转到队尾；若关掉开关后原样留着，它们
+   *   既不会出现在待贴区（横幅按 `stackDoneIds` 过滤掉了），又会被出栈逻辑
+   *   照常贴一遍 —— 实测（3 条队列循环态贴过 a 后关开关）粘贴序列变成
+   *   `a,b,c,a`，且横幅说「剩余 3」而 toast 说「剩余 2」。
+   *   出栈后待贴集合与 `stackDoneIds` 都干净，非循环语义无缝接上。
+   */
+  toggleStackLoopPaste: () =>
+    set((s) => {
+      // 轮次一并归 1：半路开启循环时不该继承上一次的轮次（那个数字对这次循环毫无意义）
+      if (!s.stackLoopPaste) return { stackLoopPaste: true, stackLoopRound: 1 };
+      return {
+        stackLoopPaste: false,
+        stackLoopRound: 1,
+        stackItems: s.stackItems.filter((it) => !s.stackDoneIds.has(it.id)),
+        stackDoneIds: new Set(),
+      };
+    }),
   stackLoadTemplate: (items) =>
     set((s) => {
       const now = new Date().toISOString();
@@ -870,6 +934,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         stackItems: loaded.slice(0, STACK_MAX_ITEMS),
         stackCollected: s.stackCollected + loaded.length,
         stackLastSplit: null,
+        // 🔴 这条路径**绕过** `setStackMode` 直接置 `stackMode: true`，
+        //   所以开栈复位必须在这里再写一遍 —— 漏了就会出现「载入模板后自动进了
+        //   上次留下的循环态」。历史上「三条热键漏接两条」就是这么漏的。
+        stackLoopPaste: false,
+        stackLoopRound: 1,
       };
     }),
   // 表格拆分：检测只对文本/图文类型做，命中则逐行拆分入栈（不登记进 history，避免连带触发只该由真实剪贴板事件产生的副作用）；
@@ -965,8 +1034,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         stackLastSplit: splitAfterPasted(s.stackLastSplit, ids),
       };
     }),
+  // 关栈即复位：循环开关与轮次一并归零 —— 与 `setStackMode(true)` 两端都清，
+  // 是「下次打开默认关」这条约束的双保险（防以后再加第五个开栈入口）。
   exitStackMode: () =>
-    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackPasteAllActive: false, stackLastSplit: null }),
+    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackPasteAllActive: false, stackLastSplit: null, stackLoopPaste: false, stackLoopRound: 1 }),
 
   // 来源图标缓存
   setRealIconUrl: (key, url) => set((s) => ({

@@ -44,6 +44,8 @@ function resetStore() {
     stackPasted: 0,
     stackCollected: 0,
     stackPasteAllActive: false,
+    stackLoopPaste: false,
+    stackLoopRound: 1,
     config: {
       ...useAppStore.getState().config,
       current_workspace: "默认",
@@ -330,6 +332,73 @@ describe("stackPasteAll", () => {
     await stackPasteAll();
 
     expect(messages.some((m) => m.includes("已粘贴，剩余"))).toBe(false);
+    cleanup();
+  }, 10000);
+});
+
+// ============================================================
+// 循环粘贴（stackLoopPaste）在粘贴链路上的行为
+// ============================================================
+describe("循环粘贴（stackLoopPaste）", () => {
+  /** 铺一条确定顺序的队列（`stackPush` 是头插，逐条 push 得到的是反序） */
+  function seedQueue(ids: string[]) {
+    useAppStore.setState({
+      stackMode: true,
+      stackItems: ids.map((id) => makeItem({ id, text: id })),
+      stackDoneIds: new Set(),
+      stackPasted: 0,
+      stackCollected: ids.length,
+    });
+  }
+
+  it("逐条粘贴：贴一条不出栈，toast 报「本轮还剩」而不是队列长度", async () => {
+    seedQueue(["a", "b", "c"]);
+    useAppStore.setState({ stackLoopPaste: true });
+    const { messages, cleanup } = collectToasts();
+
+    const ok = await stackPasteNext();
+
+    expect(ok).toBe(true);
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "a", trigger: "headless" });
+    const s = useAppStore.getState();
+    expect(s.stackItems.map((i) => i.id)).toEqual(["b", "c", "a"]);
+    // 队列非空 ⇒ 走不到「栈空自动退出」那条分支，循环态的唯一出口是退出栈模式
+    expect(s.stackMode).toBe(true);
+    expect(messages.some((m) => m.includes("第 1 轮") && m.includes("本轮还剩 2 条"))).toBe(true);
+    cleanup();
+  });
+
+  it("全部粘贴：循环态下只贴完本轮就停，不会无限贴下去", async () => {
+    seedQueue(["a", "b", "c"]);
+    useAppStore.setState({ stackLoopPaste: true });
+
+    await stackPasteAll();
+
+    // 恰为本轮长度。若终止条件仍写 `stackItems.length > 0`（循环态永真），
+    // 这里会一直贴到测试超时 —— 用户最初报的「什么时候结束」正是这个形状。
+    const pasteCalls = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "paste_text");
+    expect(pasteCalls).toHaveLength(3);
+
+    const s = useAppStore.getState();
+    expect(s.stackMode).toBe(true); // 不自动退出（循环态语义）
+    expect(s.stackLoopRound).toBe(2);
+    expect(s.stackItems.map((i) => i.id)).toEqual(["a", "b", "c"]);
+    expect(s.stackPasteAllActive).toBe(false);
+    expect(isStackPasteAllRunning()).toBe(false);
+  }, 10000);
+
+  it("循环态下中止：toast 说明本轮还剩几条", async () => {
+    seedQueue(["a", "b", "c", "d", "e"]);
+    useAppStore.setState({ stackLoopPaste: true });
+    const { messages, cleanup } = collectToasts();
+
+    const promise = stackPasteAll();
+    await new Promise((r) => setTimeout(r, 150));
+    abortStackPasteAll();
+    await promise;
+
+    expect(messages.some((m) => m.includes("已中止") && m.includes("本轮还剩"))).toBe(true);
+    expect(useAppStore.getState().stackMode).toBe(true); // 中止 ≠ 退出栈模式
     cleanup();
   }, 10000);
 });

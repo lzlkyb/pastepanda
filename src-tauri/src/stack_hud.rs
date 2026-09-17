@@ -70,6 +70,10 @@ pub struct StackHudProgress {
     pub done: usize,
     /// 本轮总条数（收集数与已粘贴+剩余取 max，避免截断导致分母虚低）
     pub total: usize,
+    /// 覆盖徽章文案（如循环态的「第 2 轮」）。`None` = 渲染 `done/total`。
+    /// `serde(default)`：旧前端报文没有这个字段，缺了不能整份状态反序列化失败。
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -706,8 +710,8 @@ pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, Str
     // 退出时保存偏移：当前位置 − 默认落位（不含偏移的锚点/光标落位）
     let cur = window.outer_position().map_err(|e| format!("读取浮标位置失败: {e}"))?;
     let default = default_position(&app);
-    let ox = cur.x as f64 - default.x as f64;
-    let oy = cur.y as f64 - default.y as f64;
+    let ox = cur.x as f64 - default.x;
+    let oy = cur.y as f64 - default.y;
     OFFSET_X.store(ox as i32, Ordering::SeqCst);
     OFFSET_Y.store(oy as i32, Ordering::SeqCst);
 

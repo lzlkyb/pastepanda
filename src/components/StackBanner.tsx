@@ -11,6 +11,7 @@ import { formatHotkey } from "@/components/settings/HotkeyRecorder";
 import { stackItemsToMergeItems } from "@/lib/mergeText";
 import { MergeDialog } from "@/components/MergeDialog";
 import { SaveTemplateDialog, TemplateLibraryDialog } from "@/components/StackTemplateDialog";
+import { loopProgress } from "@/lib/stack/loop";
 import styles from "./StackBanner.module.css";
 import { useClickOutside } from "@/hooks/useClickOutside";
 
@@ -45,6 +46,9 @@ export const StackBanner = memo(function StackBanner() {
   const stackRemoveItem = useAppStore((s) => s.stackRemoveItem);
   const stackTabAdvance = useAppStore((s) => s.stackTabAdvance);
   const toggleStackTabAdvance = useAppStore((s) => s.toggleStackTabAdvance);
+  const stackLoopPaste = useAppStore((s) => s.stackLoopPaste);
+  const stackLoopRound = useAppStore((s) => s.stackLoopRound);
+  const toggleStackLoopPaste = useAppStore((s) => s.toggleStackLoopPaste);
   const stackLastSplit = useAppStore((s) => s.stackLastSplit);
   const stackUndoSplit = useAppStore((s) => s.stackUndoSplit);
   const stackConsumeMerged = useAppStore((s) => s.stackConsumeMerged);
@@ -134,20 +138,51 @@ export const StackBanner = memo(function StackBanner() {
   }, [history, stackDoneIds]);
 
   const remaining = stackItems.length;
+  /**
+   * 待贴 chips。
+   *
+   * ❗ 必须滤掉「本轮已贴」的：循环态下贴过的条目**不出栈**，而是轮转到队尾留在
+   * `stackItems` 里；若照原样逐个渲染，它会在下面的已贴区再渲染一次 ——
+   * 同一条内容在同一行里出现两遍。非循环态下已贴项早已出栈，这个 filter 取不到东西。
+   *
+   * 滤完 `[0]` 仍是「下一条」（轮转保证了 `stackItems[0]` 一定未贴），
+   * 所以 `chipNext` 的 `i === 0` 判据与序号 `i + 1` 都不用改。
+   */
+  const pendingItems = stackItems.filter((it) => !stackDoneIds.has(it.id));
   // 分母用真实收集总数（含被 50 上限截断丢弃的），避免进度虚高
   const total = Math.max(stackCollected, stackPasted + remaining);
-  const progressPct = total > 0 ? Math.min(100, Math.round((stackPasted / total) * 100)) : 0;
+  // 循环态改看**本轮**进度：`stackPasted/total` 那里分子一直涨、分母却不动
+  // （队列不清空），进度条会一轮一轮来回摆，读不出「离贴完这轮还有多远」。
+  const loopInfo = stackLoopPaste ? loopProgress(stackItems, stackDoneIds) : null;
+  const progressPct = loopInfo
+    ? loopInfo.total > 0
+      ? Math.round((loopInfo.done / loopInfo.total) * 100)
+      : 0
+    : total > 0
+      ? Math.min(100, Math.round((stackPasted / total) * 100))
+      : 0;
   const pasteKey = compactHotkey(config.stack_paste_hotkey || "ctrl+alt+p");
   const toggleKey = formatHotkey(config.stack_toggle_hotkey || "ctrl+alt+k");
   const allDone = remaining === 0 && total > 0;
 
   const title = stackPasteAllActive
-    ? `全部粘贴中 · ${stackPasted}/${total}`
-    : allDone
-      ? `栈模式 · 已全部粘贴完成（${total} 条）`
-      : remaining > 0
-        ? `栈模式 · 剩余 ${remaining} 条`
-        : "栈模式";
+    ? // 循环态用**本轮**口径：右边的进度条走的就是 `loopInfo`，而
+      // `stackPasted/total` 的分母是「收集总数」，两者不是一个口径 ——
+      // 贴完一轮那一刻同一行会出现两个互相打架的数字。
+      loopInfo
+      ? `全部粘贴中 · 本轮 ${loopInfo.done}/${loopInfo.total}`
+      : `全部粘贴中 · ${stackPasted}/${total}`
+    : loopInfo
+      // ❗ 循环态**不写**「剩余 N 条」：队列在循环里永不清空，那个数字恒等于
+      //   队列长度，属于误导。轮次与「本轮 x/y」都归脚注行 —— 420px 面板下
+      //   标题只剩约 153px，往这儿塞「第 N 轮」会连同徽章一起被
+      //   `text-overflow: ellipsis` 吃掉（放大截图实测过）。
+      ? "栈模式"
+      : allDone
+        ? `栈模式 · 已全部粘贴完成（${total} 条）`
+        : remaining > 0
+          ? `栈模式 · 剩余 ${remaining} 条`
+          : "栈模式";
 
   return (
     <AnimatePresence>
@@ -169,7 +204,8 @@ export const StackBanner = memo(function StackBanner() {
         <span className={styles.dot} />
         <div className={styles.title}>
           <Layers size={12} />
-          {title}
+          <span className={styles.titleText}>{title}</span>
+          {loopInfo && <span className={styles.loopTag}>循环中</span>}
         </div>
         <div className={styles.acts}>
           {stackPasteAllActive ? (
@@ -194,7 +230,13 @@ export const StackBanner = memo(function StackBanner() {
                 className={styles.btn}
                 onClick={() => stackPasteAll()}
                 disabled={remaining === 0}
-                title={stackTabAdvance ? "连续粘贴剩余全部条目（每条都会自动 Tab 推进）" : "连续粘贴剩余全部条目"}
+                title={
+                  loopInfo
+                    ? "把本轮剩下的条目贴完（不会进入下一轮）"
+                    : stackTabAdvance
+                      ? "连续粘贴剩余全部条目（每条都会自动 Tab 推进）"
+                      : "连续粘贴剩余全部条目"
+                }
               >
                 {stackTabAdvance ? "▶ 全部+Tab" : "▶ 全部"}
               </button>
@@ -202,7 +244,7 @@ export const StackBanner = memo(function StackBanner() {
                 <button
                   className={styles.ghostBtn}
                   onClick={() => setShowOverflow((v) => !v)}
-                  title="更多操作：合并粘贴 / Tab 推进 / 存为模板 / 模板库"
+                  title="更多操作：合并粘贴 / Tab 推进 / 循环粘贴 / 存为模板 / 模板库"
                 >
                   ⋯
                 </button>
@@ -230,7 +272,12 @@ export const StackBanner = memo(function StackBanner() {
                     <div className={styles.overflowDivider} />
                     <button
                       className={styles.overflowItem}
-                      disabled={remaining === 0}
+                      disabled={remaining === 0 || Boolean(loopInfo)}
+                      title={
+                        loopInfo
+                          ? "循环态下队列顺序会轮转，合并粘贴暂不可用（先关掉循环）"
+                          : "把队列里的条目合并成一条后粘贴"
+                      }
                       onClick={() => { setShowMerge(true); setShowOverflow(false); }}
                     >
                       🧩 合并粘贴
@@ -240,6 +287,23 @@ export const StackBanner = memo(function StackBanner() {
                       onClick={() => { toggleStackTabAdvance(); setShowOverflow(false); }}
                     >
                       {stackTabAdvance ? "⇥ 关闭 Tab 推进" : "⇥ 开启 Tab 推进"}
+                    </button>
+                    {/*
+                      循环粘贴开关。**只在栈打开期间可见**，且会话态不落盘（见 appStore
+                      的 `stackLoopPaste`）—— 低频功能，做成设置页开关的话，每次开栈都得
+                      「进设置→点开关→关设置」，用完还得记得关回去。
+                    */}
+                    <button
+                      className={styles.overflowItem}
+                      disabled={remaining === 0}
+                      title={
+                        loopInfo
+                          ? "关闭后恢复「贴一条少一条」，贴完自动退出栈模式"
+                          : "开启后贴过的条目轮转到队尾，贴完一轮自动从头再来（仅本次开栈有效）"
+                      }
+                      onClick={() => { toggleStackLoopPaste(); setShowOverflow(false); }}
+                    >
+                      {loopInfo ? "🔁 关闭循环粘贴" : "🔁 开启循环粘贴"}
                     </button>
                     <button
                       className={styles.overflowItem}
@@ -271,7 +335,7 @@ export const StackBanner = memo(function StackBanner() {
           <span className={styles.queueEmpty}>暂无收集 · 按 Ctrl+C 开始</span>
         ) : (
           <>
-            {stackItems.map((it, i) => (
+            {pendingItems.map((it, i) => (
               <Fragment key={it.id}>
                 {dragOverIdx === i && dragId.current !== null && dragId.current !== it.id && (
                   <span className={styles.insertSlot} />
@@ -338,7 +402,9 @@ export const StackBanner = memo(function StackBanner() {
           <div className={styles.progFill} style={{ width: `${progressPct}%` }} />
         </div>
         <span className={styles.footTxt}>
-          {stackPasted}/{total} 已粘贴 · Ctrl+C 继续收集
+          {loopInfo
+            ? `第 ${stackLoopRound} 轮 · 本轮 ${loopInfo.done}/${loopInfo.total} · Ctrl+C 继续收集`
+            : `${stackPasted}/${total} 已粘贴 · Ctrl+C 继续收集`}
         </span>
       </div>
         </motion.div>

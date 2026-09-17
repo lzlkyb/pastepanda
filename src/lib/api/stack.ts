@@ -11,6 +11,7 @@ import {
   hudPastedOk,
   hudAllDone,
 } from "@/lib/stack/hudBridge";
+import { loopProgress } from "@/lib/stack/loop";
 
 /** 同步栈模式状态到后端（托盘图标） */
 function syncStackModeToBackend(active: boolean) {
@@ -88,9 +89,12 @@ export async function stackPasteNext(): Promise<boolean> {
       invoke("paste_send_tab").catch((e) => logger.warn("Tab 推进失败", e));
     }
 
-    const remaining = useAppStore.getState().stackItems.length;
-    if (remaining === 0) {
+    const after = useAppStore.getState();
+    const info = loopProgress(after.stackItems, after.stackDoneIds);
+    if (after.stackItems.length === 0) {
       // 全部粘贴完毕 → 自动退出
+      // ❗ 这条路在**循环态下走不到**：那时队列永不清空（贴过的那条轮转到队尾），
+      //   所以循环的终点只有一个 —— 退出栈模式。这也是浮标副行必须写「退出即停」的原因。
       useAppStore.getState().exitStackMode();
       syncStackModeToBackend(false);
       hudAllDone();
@@ -98,10 +102,18 @@ export async function stackPasteNext(): Promise<boolean> {
     } else {
       // 「全部粘贴」进行中不逐条弹这个进度 toast——横幅本来就有实时进度条，连发好几个 toast 只会刷屏。
       // 浮标则相反：它是唯一出窗口的通道，循环中每一步的剩余条数正是用户想看的。
+      // ❗ 报的是**本轮**剩余而非队列长度：循环态下队列长度是常数，报它等于每步显示同一个数字。
       if (!stackPasteAllRunning) {
-        window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴，剩余 ${remaining} 条`, type: "success" } }));
+        window.dispatchEvent(new CustomEvent("app-toast", {
+          detail: {
+            message: after.stackLoopPaste
+              ? `已粘贴 · 第 ${after.stackLoopRound} 轮 · 本轮还剩 ${info.remaining} 条`
+              : `已粘贴，剩余 ${info.remaining} 条`,
+            type: "success",
+          },
+        }));
       }
-      void hudPastedOk(remaining);
+      void hudPastedOk(info.remaining);
     }
     return true;
   } finally {
@@ -166,9 +178,25 @@ export async function stackPasteAll() {
   stackPasteAllRunning = true;
   stackPasteAllAbort = false;
   useAppStore.setState({ stackPasteAllActive: true }); // U58：横幅显示进度条 + 中止按钮
+  /**
+   * ❗ 循环态下 `stackItems.length > 0` **永成立**（贴过的轮转到队尾，不出栈），
+   * 拿它当循环条件就是贴不停 —— 用户最初报的「什么时候结束」正是这个形状。
+   *
+   * 改成按**轮次**判定：贴完本轮（`stackLoopRound` 自增）即停，不进下一轮。
+   * 于是「▶ 全部」在循环态下被收敛成一个有界动作「把本轮剩下的贴完」，
+   * 按钮也保住了可用性（不必禁用）。
+   *
+   * 起始轮次在循环外取一次：中途用户关掉循环开关时 `toggleStackLoopPaste`
+   * 会把轮次归 1，若 1 === startRound 会误判成「进了新轮」，所以下面同时用
+   * `cur.stackLoopPaste` 兜住 —— 开关一关就按非循环态语义（队列贴空即停）。
+   */
+  const startRound = store.stackLoopRound;
   let aborted = false;
   try {
-    while (useAppStore.getState().stackMode && useAppStore.getState().stackItems.length > 0) {
+    while (useAppStore.getState().stackMode) {
+      const cur = useAppStore.getState();
+      if (cur.stackItems.length === 0) break;
+      if (cur.stackLoopPaste && cur.stackLoopRound !== startRound) break;
       if (stackPasteAllAbort) { // U58：用户中止
         aborted = true;
         break;
@@ -186,8 +214,16 @@ export async function stackPasteAll() {
     stackPasteAllAbort = false;
     useAppStore.setState({ stackPasteAllActive: false });
     if (aborted) {
-      const remaining = useAppStore.getState().stackItems.length;
-      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已中止全部粘贴，剩余 ${remaining} 条`, type: "info" } }));
+      const cur = useAppStore.getState();
+      const info = loopProgress(cur.stackItems, cur.stackDoneIds);
+      window.dispatchEvent(new CustomEvent("app-toast", {
+        detail: {
+          message: cur.stackLoopPaste
+            ? `已中止 · 第 ${cur.stackLoopRound} 轮 · 本轮还剩 ${info.remaining} 条`
+            : `已中止全部粘贴，剩余 ${info.remaining} 条`,
+          type: "info",
+        },
+      }));
     }
   }
 }

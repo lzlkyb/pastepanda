@@ -33,6 +33,8 @@ function resetStore() {
     stackCollected: 0,
     stackPasteAllActive: false,
     stackLastSplit: null,
+    stackLoopPaste: false,
+    stackLoopRound: 1,
     config: {
       ...useAppStore.getState().config,
       current_workspace: "默认",
@@ -209,6 +211,191 @@ describe("stackMarkPasted", () => {
 });
 
 // ============================================================
+// stackLoopPaste 循环轮转（A 方案）
+// ============================================================
+describe("stackLoopPaste 循环轮转", () => {
+  /** 直接铺一条队列：`stackPush` 是**头插**，逐条 push 会得到反序，而这里的断言要的是确定顺序 */
+  function seedQueue(ids: string[]) {
+    useAppStore.setState({
+      stackMode: true,
+      stackItems: ids.map((id) => makeItem({ id, text: id })),
+      stackDoneIds: new Set(),
+      stackPasted: 0,
+      stackCollected: ids.length,
+    });
+  }
+
+  it("关闭时保持出栈语义（回归钉子：别把轮转做成无条件）", () => {
+    seedQueue(["a", "b"]);
+    useAppStore.getState().stackMarkPasted();
+    const s = useAppStore.getState();
+    expect(s.stackItems.map((i) => i.id)).toEqual(["b"]);
+    expect(s.stackLoopRound).toBe(1);
+  });
+
+  it("开启后贴一条不出栈，而是轮转到队尾", () => {
+    seedQueue(["a", "b", "c"]);
+    useAppStore.setState({ stackLoopPaste: true });
+
+    useAppStore.getState().stackMarkPasted();
+    const s = useAppStore.getState();
+
+    // 队列长度不变 —— 这正是「栈空自动退出」在循环态永远不会触发的原因
+    expect(s.stackItems.map((i) => i.id)).toEqual(["b", "c", "a"]);
+    expect(s.stackDoneIds.has("a")).toBe(true);
+    expect(s.stackPasted).toBe(1);
+    expect(s.stackLoopRound).toBe(1);
+  });
+
+  it("栈顶恒为「本轮还没贴过」的那条（浮标预览与 chip 标签依赖这个不变量）", () => {
+    seedQueue(["a", "b", "c"]);
+    useAppStore.setState({ stackLoopPaste: true });
+
+    for (let i = 0; i < 2; i++) useAppStore.getState().stackMarkPasted();
+
+    const s = useAppStore.getState();
+    expect(s.stackDoneIds.has(s.stackItems[0].id)).toBe(false);
+  });
+
+  it("循环态下 stackItems 与 doneIds 有交集 —— 这是横幅待贴列表必须 filter 的理由", () => {
+    seedQueue(["a", "b"]);
+    useAppStore.setState({ stackLoopPaste: true });
+    useAppStore.getState().stackMarkPasted();
+
+    const loop = useAppStore.getState();
+    // 贴过的 a 仍在队列里（轮转到队尾）。若不过滤就渲染，它会同时出现在待贴区与已贴区
+    expect(loop.stackItems.some((it) => loop.stackDoneIds.has(it.id))).toBe(true);
+
+    // 对照：非循环态下已贴项已出栈，两者永无交集
+    useAppStore.getState().exitStackMode();
+    seedQueue(["a", "b"]);
+    useAppStore.getState().stackMarkPasted();
+    const plain = useAppStore.getState();
+    expect(plain.stackItems.some((it) => plain.stackDoneIds.has(it.id))).toBe(false);
+  });
+
+  it("整轮贴完：本轮标记清空、轮次 +1、顺序回到起始排列", () => {
+    seedQueue(["a", "b", "c"]);
+    useAppStore.setState({ stackLoopPaste: true });
+
+    for (let i = 0; i < 3; i++) useAppStore.getState().stackMarkPasted();
+    const s = useAppStore.getState();
+
+    expect(s.stackItems.map((i) => i.id)).toEqual(["a", "b", "c"]);
+    expect(s.stackDoneIds.size).toBe(0);
+    expect(s.stackLoopRound).toBe(2);
+    // ❗ 归零（不是累计）：循环态下它表示「本轮已贴」，与 loopProgress 同源。
+    //   跨轮累计会让「半路关掉循环」那一刻的脚注 `${stackPasted}/${total}`
+    //   变成 10/11 这种没人能解释的数字。
+    expect(s.stackPasted).toBe(0);
+  });
+
+  it("队列只有一条：贴完即进下一轮，不会卡在本轮", () => {
+    seedQueue(["only"]);
+    useAppStore.setState({ stackLoopPaste: true });
+
+    useAppStore.getState().stackMarkPasted();
+    const s = useAppStore.getState();
+
+    expect(s.stackItems.map((i) => i.id)).toEqual(["only"]);
+    expect(s.stackLoopRound).toBe(2);
+    expect(s.stackDoneIds.size).toBe(0);
+    expect(s.stackPasted).toBe(0); // 同上：单条队列贴一次即一轮结束
+  });
+
+  it("用 ✕ 删掉一条已贴条目后，整轮判据仍成立（doneIds 里的死 id 不干扰）", () => {
+    seedQueue(["a", "b"]);
+    useAppStore.setState({ stackLoopPaste: true });
+
+    useAppStore.getState().stackMarkPasted(); // 贴 a → [b, a]，done = {a}
+    useAppStore.getState().stackRemoveItem("a"); // 删掉已贴的 a → [b]，done 里留下死 id
+    expect(useAppStore.getState().stackItems.map((i) => i.id)).toEqual(["b"]);
+
+    useAppStore.getState().stackMarkPasted(); // 贴 b → 本轮贴空
+    const s = useAppStore.getState();
+
+    // 若判据写成 done.size === 队列长度，这里会因死 id 而错判成「还没贴完」
+    expect(s.stackLoopRound).toBe(2);
+    expect(s.stackDoneIds.size).toBe(0);
+  });
+
+  it("循环到一半收集了新内容：它成为下一条（本轮剩余自然 +1）", () => {
+    seedQueue(["a", "b"]);
+    useAppStore.setState({ stackLoopPaste: true });
+    useAppStore.getState().stackMarkPasted(); // [b, a]
+
+    useAppStore.getState().stackPush(makeItem({ id: "n", text: "new" }));
+    const s = useAppStore.getState();
+
+    expect(s.stackItems.map((i) => i.id)).toEqual(["n", "b", "a"]);
+    expect(s.stackDoneIds.has("n")).toBe(false);
+  });
+
+  it("setStackMode(true) 复位循环开关与轮次（下次开栈默认关）", () => {
+    useAppStore.setState({ stackLoopPaste: true, stackLoopRound: 5, stackMode: false });
+    useAppStore.getState().setStackMode(true);
+    const s = useAppStore.getState();
+    expect(s.stackLoopPaste).toBe(false);
+    expect(s.stackLoopRound).toBe(1);
+  });
+
+  it("stackLoadTemplate 绕过 setStackMode，也必须复位循环开关（漏改点守卫）", () => {
+    useAppStore.setState({ stackLoopPaste: true, stackLoopRound: 4, stackMode: false });
+    useAppStore.getState().stackLoadTemplate([{ type: "text", text: "t", content: "" }]);
+    const s = useAppStore.getState();
+    expect(s.stackMode).toBe(true);
+    expect(s.stackLoopPaste).toBe(false);
+    expect(s.stackLoopRound).toBe(1);
+  });
+
+  it("toggleStackLoopPaste 切换开关时轮次归 1（不继承上一次循环的轮次）", () => {
+    useAppStore.setState({ stackLoopPaste: false, stackLoopRound: 7, stackMode: true });
+    useAppStore.getState().toggleStackLoopPaste();
+    const s = useAppStore.getState();
+    expect(s.stackLoopPaste).toBe(true);
+    expect(s.stackLoopRound).toBe(1);
+  });
+
+  it("🔴 半路关闭循环：本轮已贴的条目必须出栈，否则会被再贴一遍", () => {
+    seedQueue(["a", "b", "c"]);
+    useAppStore.setState({ stackLoopPaste: true });
+
+    useAppStore.getState().stackMarkPasted(); // 贴 a → 轮转成 [b,c,a]
+    expect(useAppStore.getState().stackItems.map((i) => i.id)).toEqual(["b", "c", "a"]);
+
+    useAppStore.getState().toggleStackLoopPaste(); // 关掉循环
+    const s = useAppStore.getState();
+
+    // 关掉后回到「贴一条少一条」：a 已经贴过，就不该再留在队列里
+    expect(s.stackLoopPaste).toBe(false);
+    expect(s.stackItems.map((i) => i.id)).toEqual(["b", "c"]);
+    expect(s.stackDoneIds.size).toBe(0);
+    // 待贴集合 == 队列长度。曾经是 3 vs 2：横幅说「剩余 3 条」而 toast 说「剩余 2 条」
+    expect(s.stackItems.filter((it) => !s.stackDoneIds.has(it.id)).length).toBe(s.stackItems.length);
+
+    // 贴完 b、c 即出栈清空 —— 修复前这里会多出一次 a
+    useAppStore.getState().stackMarkPasted();
+    useAppStore.getState().stackMarkPasted();
+    expect(useAppStore.getState().stackItems).toEqual([]);
+  });
+
+  it("半路关闭循环：进度分母不虚高（stackPasted 是「本轮」口径，不是跨轮累计）", () => {
+    seedQueue(["a", "b"]);
+    useAppStore.setState({ stackLoopPaste: true });
+    // 贴满第 1 轮，再贴第 2 轮的第 1 条
+    for (let i = 0; i < 3; i++) useAppStore.getState().stackMarkPasted();
+    expect(useAppStore.getState().stackLoopRound).toBe(2);
+    expect(useAppStore.getState().stackPasted).toBe(1);
+
+    useAppStore.getState().toggleStackLoopPaste();
+    const s = useAppStore.getState();
+    expect(s.stackItems.map((i) => i.id)).toEqual(["b"]); // 第 2 轮已贴的 a 出栈
+    // 跨轮累计（=3）时这里会得到 max(2, 4)=4 → 脚注「3/4 已粘贴」
+    expect(Math.max(s.stackCollected, s.stackPasted + s.stackItems.length)).toBe(2);
+  });
+});
+
+// ============================================================
 // exitStackMode
 // ============================================================
 describe("exitStackMode", () => {
@@ -221,6 +408,8 @@ describe("exitStackMode", () => {
       stackPasted: 7,
       stackCollected: 12,
       stackPasteAllActive: true,
+      stackLoopPaste: true,
+      stackLoopRound: 3,
     });
 
     useAppStore.getState().exitStackMode();
@@ -232,6 +421,9 @@ describe("exitStackMode", () => {
     expect(s.stackPasted).toBe(0);
     expect(s.stackCollected).toBe(0);
     expect(s.stackPasteAllActive).toBe(false);
+    // 关栈即复位循环态：与 setStackMode(true) 两端都清，「下次打开默认关」的双保险
+    expect(s.stackLoopPaste).toBe(false);
+    expect(s.stackLoopRound).toBe(1);
   });
 
   it("is safe to call when already inactive", () => {

@@ -16,6 +16,13 @@ export interface StackHudProgress {
   done: number;
   /** 本轮总条数（收集数与已粘贴+剩余取 max） */
   total: number;
+  /**
+   * 覆盖徽章文案（如循环态的「第 2 轮」）。`undefined` = 渲染 `${done}/${total}`。
+   *
+   * ❗ 循环态必须走这个：那时 `done/total` 会一轮一轮地转圈，
+   * 它不指向任何终点，读起来像「怎么贴都贴不完」。
+   */
+  label?: string;
 }
 
 export interface StackHudState {

@@ -190,13 +190,16 @@ export function StackHud() {
     sub = hint ?? (target ? `${hotkey} 粘贴下一条` : "切到目标窗口后按热键");
   }
 
-  // 进度徽章：done 不渲染；collecting/success/error 在 total>0 时显示
-  const progressNode =
-    progress && progress.total > 0 && phase !== "done" ? (
-      <span className={styles.prog}>
-        {progress.done}/{progress.total}
-      </span>
-    ) : null;
+  /**
+   * 进度徽章：done 不渲染；其余态在**有 label** 或 total>0 时显示。
+   *
+   * ❗ label 必须绕开 `total > 0` 这道门槛：循环态的 label 是「第 N 轮」，
+   *   它不用分子分母，套旧判据会让循环态徽章整个不渲染 —— 那样「我在循环里」
+   *   这件事在**主窗口之外**就彻底不可见了，而这正是浮标存在的全部理由。
+   */
+  const badge =
+    progress?.label || (progress && progress.total > 0 ? `${progress.done}/${progress.total}` : null);
+  const progressNode = badge && phase !== "done" ? <span className={styles.prog}>{badge}</span> : null;
 
   /**
    * 状态类：**显式映射**而不是 `styles[phase]`。
