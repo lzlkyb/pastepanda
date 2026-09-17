@@ -197,7 +197,10 @@ fn resolve_provider_values(
         let fallback = |ov: Option<String>, legacy_val: String| ov.unwrap_or(legacy_val);
         (
             fallback(get_override("baseUrl"), legacy("ai_base_url")),
-            fallback(get_override("model"), legacy("ai_model")),
+            // 内置服务商的模型是应用提供的，用户配置里可能钉着已退役的旧 id
+            // （换模型时不清会继续烧旧模型的 token 额度）——读路径统一迁移。
+            provider::migrate_builtin_model(&fallback(get_override("model"), legacy("ai_model")))
+                .to_string(),
             fallback(get_override("protocol"), legacy("ai_protocol")),
         )
     } else if let Some(c) = custom_by_id(raw, provider_id) {
@@ -410,6 +413,24 @@ mod tests {
         let (base_url, model, _) = resolve_provider_values(&raw, "deepseek", &legacy);
         assert_eq!(model, "deepseek-chat");
         assert_eq!(base_url, "https://a.example.com/v1");
+    }
+
+    /// 内置免费模型换代：配置里钉着的旧 id 必须在读路径被迁移掉。
+    ///
+    /// 用户在设置页点过模型芯片就会落盘一个具体 model；内置服务商的芯片列表
+    /// 换代后旧 id 不在列表里，不清会让芯片高亮全灭、且继续烧旧模型的额度。
+    #[test]
+    fn test_builtin_retired_model_migrated_on_read() {
+        let store = make_store();
+        let mut cfg = AiConfig::default();
+        cfg.provider = "builtin-agnes".to_string();
+        cfg.model = "agnes-2.5-flash".to_string();
+        write_ai_config(&store, &cfg).unwrap();
+
+        let raw = store.get_config().unwrap();
+        let legacy = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let (_, model, _) = resolve_provider_values(&raw, "builtin-agnes", &legacy);
+        assert_eq!(model, "agnes-3.0-flash", "钉着的退役 id 必须在读时迁移到现行 id");
     }
 
     /// 自定义服务商：写入数组、多实例互不影响

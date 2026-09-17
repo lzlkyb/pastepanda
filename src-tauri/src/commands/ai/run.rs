@@ -42,8 +42,14 @@ pub struct AiRunBudgetExceeded {
 }
 
 /// v6.9 缺陷修复：内置免费额度动作的 max_tokens 下限。
-/// agnes-2.5-flash 是推理模型，reasoning 会先吃掉一部分 token，
-/// max_tokens 太小会导致输出截断/为空（曾实测「16 token 全用在思考」）。
+///
+/// 起因：老的内置模型（agnes-2.5-flash）是推理模型，reasoning 会先吃掉一部分
+/// token，max_tokens 太小会导致输出截断/为空（曾实测「16 token 全用在思考」）。
+///
+/// 2026-09-16 换成 agnes-3.0-flash 后它对同一动作不再单独计 reasoning token
+/// （实测 50 vs 旧模型 299，其中 229 是推理），截断风险已大幅下降。下限仍然保留：
+/// max_tokens 只是上限、不产生费用，而将来再换模型或厂商侧路由到推理变体时，
+/// 它是唯一能兜住「思考占满额度、正文为空」的护栏。
 const BUILTIN_MAX_TOKENS_MIN: u32 = 2048;
 
 // v6.9：内置免费额度本地限流（保护免费 key 的 RPM，免费用户实际 ~20/分钟，

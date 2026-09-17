@@ -180,6 +180,24 @@ pub fn builtin_agnes_key() -> String {
     crate::mask::reveal_xor(BUF, XOR)
 }
 
+/// 内置免费服务商**退役的模型 id → 现行 id**。读配置时过一道。
+///
+/// 为什么需要：内置服务商的模型是应用给的（用户选不到具体型号），但配置里可能
+/// 已经钉着一个具体值——设置页点过模型芯片就会落盘（`AiSetupStep` 的
+/// `onSave({ model: m.id })`）。换了模型却不清掉旧值会同时坏两件事：
+/// ① 设置页芯片列表里已没有它 ⇒ 一个芯片都不高亮，输入框里躺着一个"来路不明"
+///    的模型名（`AiSetupStep` 的 `activeModel` 是拿 config.model 跟芯片比对的）；
+/// ② 继续按旧模型的消耗烧免费额度——这正是升级要解决的问题本身。
+///
+/// 放在**读路径**而不是写一次库：改这里等于单点生效，不用管历史数据分布；
+/// 用户重新保存配置时自然落成新值。要回退只需改本函数。
+pub fn migrate_builtin_model(id: &str) -> &str {
+    match id.trim() {
+        "agnes-2.5-flash" => "agnes-3.0-flash",
+        _ => id,
+    }
+}
+
 /// 写法：`"模型名" => "说明"`；推理模型在后面多写一个 `reasoning`。
 ///
 /// 字面量用 `literal` 而非 `expr`：`expr` 片段后面只允许跟 `=>` / `,` / `;`，
@@ -436,8 +454,16 @@ pub const PROVIDERS: &[ProviderSpec] = &[
         // 2026-08-11 实测：api.agnes-ai.cn 对该 key 返回 401「无效的令牌」，
         // apihub.agnes-ai.com 200 正常——两域名不互通，用 apihub（用户本地自配同款）。
         base_url: "https://apihub.agnes-ai.com/v1",
+        // 2026-09-16 从 agnes-2.5-flash 升到 agnes-3.0-flash。实测（App 真实 system
+        // prompt + max_tokens 2048）：输出同样干净、长输入/JSON 结构化输出/8192
+        // max_tokens 全部正常，而**每次动作的 token 只有旧模型的 1/3~1/6**
+        // ——旧模型是推理模型、每次白烧 ~200 reasoning token（它不吃
+        // thinking_control，客户端关不掉）。免费额度按 token 扣，这个差就是
+        // 用户能多做 3~6 倍的动作。
+        //
+        // ❗换模型时记得同步 `migrate_builtin_model()`：用户配置里可能钉着旧 id。
         models: models![
-            "agnes-2.5-flash" => "免费 · 每日签到送 token",
+            "agnes-3.0-flash" => "免费 · 每日签到送 token",
         ],
         key_url: "",
         note: "内置免费模型：打开即用，送 10 万 token 起步，每天签到领更多（累计到 100 万，兑换码不限）。内容会发送到 Agnes。",
@@ -633,12 +659,12 @@ impl AiConfig {
         raw.trim_end_matches('/').to_string()
     }
 
-    /// 实际生效的模型名。
+    /// 实际生效的模型名。内置免费模型会经 `migrate_builtin_model` 迁到现行 id。
     pub fn effective_model(&self) -> String {
         if self.model.trim().is_empty() {
             self.spec().default_model().to_string()
         } else {
-            self.model.trim().to_string()
+            migrate_builtin_model(self.model.trim()).to_string()
         }
     }
 
@@ -712,9 +738,45 @@ mod tests {
         );
     }
 
+    /// 内置免费模型换代时，旧 id 必须能被读路径迁移掉。
+    ///
+    /// 不迁的后果（两条都要防）：设置页芯片列表里已没有该 id ⇒ 高亮全灭、
+    /// 输入框躺着"来路不明"的模型名；以及继续按旧模型烧免费额度。
     #[test]
-    fn test_default_is_deepseek_and_disabled() {
-        // 默认值必须是国内可直连的厂商，否则用户拿到手第一下就是超时
+    fn test_retired_builtin_model_is_migrated() {
+        assert_eq!(migrate_builtin_model("agnes-2.5-flash"), "agnes-3.0-flash");
+        // 带空格的脏数据也要认（配置是用户可手填的输入框）
+        assert_eq!(migrate_builtin_model("  agnes-2.5-flash  "), "agnes-3.0-flash");
+    }
+
+    /// 现行 id 与清单外的自定义值必须原样通过 —— 迁移只能是白名单，不能顺手改写。
+    #[test]
+    fn test_current_and_custom_models_pass_through() {
+        assert_eq!(migrate_builtin_model("agnes-3.0-flash"), "agnes-3.0-flash");
+        assert_eq!(migrate_builtin_model("my-relay-model"), "my-relay-model");
+        assert_eq!(migrate_builtin_model(""), "");
+    }
+
+    /// 清单首项就是默认模型 —— 用户没填过 model 时会回退到它。
+    #[test]
+    fn test_builtin_default_model_is_current() {
+        let spec = PROVIDERS
+            .iter()
+            .find(|p| p.id == BUILTIN_AGNES_ID)
+            .expect("builtin-agnes 必须在预置列表");
+        assert_eq!(
+            spec.default_model(),
+            "agnes-3.0-flash",
+            "内置免费模型的默认值必须与已实测通过的现行模型一致"
+        );
+        assert!(
+            !spec.models.iter().any(|m| m.id == "agnes-2.5-flash"),
+            "退役模型不该再出现在芯片列表里（会被 migrate 掉，列出来只会造成困惑）"
+        );
+    }
+
+    #[test]
+    fn test_default_is_deepseek_and_disabled() {        // 默认值必须是国内可直连的厂商，否则用户拿到手第一下就是超时
         let cfg = AiConfig::default();
         assert_eq!(cfg.provider, "deepseek");
         assert!(!cfg.enabled, "AI 必须默认关闭");
