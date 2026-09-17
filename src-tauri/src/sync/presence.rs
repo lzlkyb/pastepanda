@@ -50,6 +50,11 @@
 //! 而且双方都会拿到对方的包，然后互相在日志里刷「解密/校验失败」——
 //! 那种噪音会把真问题埋掉。
 //!
+//! ❗ 同一条理由**在本模块内部也成立**：知识库同步和远程电脑是两套独立的
+//! `PresenceTable` + 两个独立线程，各自 `bind` 各自的端口（5008 / 5009）。
+//! 所以「本套用哪个端口」必须是 [`PresenceStart::port`] 的入参，
+//! **监听与广播两侧都得用它**——任何一侧写死常量，都会把另一套的包吞掉。
+//!
 //! # 开关是自己的一个，不是 `lan_sync_enabled`
 //!
 //! 设置里那个「局域网同步」开关管的是**剪贴板**同步。知识库同步是另一件事，
@@ -384,9 +389,13 @@ fn finish_listener(sock: UdpSocket) -> Result<UdpSocket, String> {
 ///
 /// ❗ 复用 `lan_sync` 那套（带 30 秒网卡缓存），不重写一份：
 /// `netdev::get_interfaces()` 不便宜，而它已经在招呼包路径上被缓存过了。
-fn announce_all_ifaces(
+///
+/// 🔴 `group_port` 必须由调用方给：本进程里跑着**两套** presence（5008 知识库同步 /
+/// 5009 远程电脑），写死就串台——2026-09-17 的事故见 [`PresenceStart::port`]。
+pub fn announce_once(
     me: &NodeIdentity,
     endpoint_port: u16,
+    group_port: u16,
     now_ms: i64,
 ) -> Result<(), String> {
     let mut sent = 0usize;
@@ -410,7 +419,7 @@ fn announce_all_ifaces(
         //    代价：每次宣告多签 N-1 次名（ed25519，微秒级）与最多几毫秒的 ts 偏差，
         //    而 `CLOCK_WINDOW_MS` 是分钟级的，不会因此被卡。
         let packet = build(me, endpoint_port, now_ms + i as i64)?;
-        match crate::lan_sync::send_via_iface(&ifaddr, GROUP, PORT, &packet) {
+        match crate::lan_sync::send_via_iface(&ifaddr, GROUP, group_port, &packet) {
             Ok(()) => sent += 1,
             Err(e) => {
                 // 虚拟网卡发不出去是常态，逐块 warn 会刷屏
@@ -426,18 +435,16 @@ fn announce_all_ifaces(
     Ok(())
 }
 
-/// 喊一次。
-pub fn announce_once(me: &NodeIdentity, endpoint_port: u16, now_ms: i64) -> Result<(), String> {
-    // 包在 `announce_all_ifaces` 里**逐网卡**建（每份 ts 不同），理由写在那里。
-    announce_all_ifaces(me, endpoint_port, now_ms)
-}
-
 // ===== 后台线程 =====
 
 /// 起 presence 线程要的全部参数。
 ///
-/// 里面有两个 `u16`（`endpoint_port` / `listen_port`）和三个 `Arc<..>`，
+/// 里面有两个 `u16`（`endpoint_port` / `port`）和三个 `Arc<..>`，
 /// 位置参数下把两个端口写反编译器**不会报错**，只会连不上；收成结构体后按名字赋值。
+///
+/// ❗ `endpoint_port` 是**本机 iroh 端点**的端口（写进公告给别人拨），
+/// `port` 是**本套 presence 的组播端口**（自己听 + 公告发往的地方），
+/// 两者毫无关系，写反的后果是完全静默的。
 pub struct PresenceStart {
     pub enabled: bool,
     pub table: Arc<PresenceTable>,
@@ -447,9 +454,12 @@ pub struct PresenceStart {
     pub is_paired: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     pub on_fresh: Arc<dyn Fn(&str) + Send + Sync>,
     pub running: Arc<AtomicBool>,
-    /// 监听端口。生产传 `PORT`；**测试传 0**（临时端口）——
-    /// 并行跑的测试都去抢固定的 5008，会表现为与被测逻辑无关的随机失败。
-    pub listen_port: u16,
+    /// 本套 presence 的端口：**既用于 bind 监听，也用于组播广播**，两边必须一致。
+    ///
+    /// 生产：知识库同步传 [`PORT`]（5008）、远程电脑传 `rc::RC_PRESENCE_PORT`（5009）；
+    /// 测试传 0（临时端口），此时广播端口回落 [`PORT`]。
+    /// 🔴 2026-09-17 前广播那侧写死 [`PORT`]，两套串台且**全静默**——见模块说明末节。
+    pub port: u16,
 }
 
 /// 起「监听 + 周期宣告」的线程。
@@ -469,7 +479,7 @@ pub fn spawn(p: PresenceStart) {
         is_paired,
         on_fresh,
         running,
-        listen_port,
+        port,
     } = p;
     if !enabled {
         log::info!(
@@ -486,7 +496,9 @@ pub fn spawn(p: PresenceStart) {
         return;
     }
     std::thread::spawn(move || {
-        let listener = match bind_listener_on(listen_port) {
+        // 监听可用临时端口（测试传 0），**广播不能**：往 0 号端口发等于没发。
+        let announce_port = if port == 0 { PORT } else { port };
+        let listener = match bind_listener_on(port) {
             Ok(s) => s,
             Err(e) => {
                 // bind 失败必须复位 running，否则再也起不来（同 lan_sync 的 C8）
@@ -496,14 +508,20 @@ pub fn spawn(p: PresenceStart) {
             }
         };
         let my_id = me.node_id();
-        log::info!("[Presence] 地址宣告已启动，端口 {}", PORT);
+        // 🔴 打**实际**端口：这里原本打常量 `PORT`，于是 rc 那套明明监听 5009、日志却
+        //    写 5008，两套日志一模一样——「端口 5008」出现两次，正是 09-17 那个 bug 的指纹。
+        log::info!(
+            "[Presence] 地址宣告已启动，监听 {}，广播 {}",
+            port,
+            announce_port
+        );
 
         let mut last_announce = 0i64;
         let mut buf = [0u8; MAX_PACKET + 1];
         while running.load(Ordering::SeqCst) {
             let now = chrono::Utc::now().timestamp_millis();
             if now - last_announce >= ANNOUNCE_INTERVAL_SECS as i64 * 1000 {
-                if let Err(e) = announce_once(&me, endpoint_port, now) {
+                if let Err(e) = announce_once(&me, endpoint_port, announce_port, now) {
                     log::warn!("[Presence] {}", e);
                 }
                 last_announce = now;
@@ -529,6 +547,15 @@ pub fn spawn(p: PresenceStart) {
                             //   每份都叫的后果见 `Heard::Fresh::returned` 的注释：
                             //   休眠会被封顶在 15 秒，而且是广播式的、一台喂气全体醒。
                             if returned {
+                                // ❗ info 级：正常的周期心跳走上面那条 debug 就够了，
+                                //   而「从完全听不到到听得见」是状态跃变——正是 09-17
+                                //   那次「rc 静默收不到包」最难查的地方，默认级别要看得见。
+                                log::info!(
+                                    "[Presence] 端口 {}：听到 {} 的地址 {}",
+                                    announce_port,
+                                    &node_id[..8],
+                                    addr
+                                );
                                 on_fresh(&node_id);
                             }
                         }

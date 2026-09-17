@@ -148,6 +148,63 @@ pub fn global() -> Option<Arc<RcService>> {
     GLOBAL.get().cloned()
 }
 
+/// 会话失败时，把**对端主动关闭的理由**拼进错误里。
+///
+/// # 🔴 为什么必须走 `close_reason()`，而不是看错误字符串
+///
+/// noq 的 `ReadError::ConnectionLost` 的 Display **写死成 `"connection lost"`**
+/// （`noq-1.2.0/src/recv_stream.rs:644`），**不插值内层的 `ConnectionError`**。
+/// 于是对端以任何理由关连接，发起端读流时看到的永远只有
+/// `读帧长度失败：connection lost`——上层那套分档（`src/lib/rcDeny.ts` 的
+/// `not_paired / busy / disabled / channel_down`）在**发起失败**这条路径上
+/// 全部退化成同一句兜底文案，界面只能猜「对方是不是关机了」。
+///
+/// 这一手同步侧早就补过（`sync::session::explain`，2026-09-06），
+/// 远程电脑这条路径一直漏着。2026-09-17 排障时用户看到的
+/// 「连接对端时中途断开 / 对方可能刚好关机、切网」就是这么来的：
+/// 真正的原因是对端 QUIC 因 ALPN 不匹配直接拒绝，跟关机无关。
+///
+/// 不去 match 枚举而直接用 Display：`ConnectionError::ApplicationClosed` 的
+/// Display 是 `"closed by peer: {reason} (code N)"`，reason 就在里面。
+fn explain(conn: &iroh::endpoint::Connection, err: String) -> String {
+    match conn.close_reason() {
+        // 还没关（本地逻辑错误、超时等）就原样往上报。
+        None => err,
+        Some(e) => format!("{}（{}）", err, e),
+    }
+}
+
+/// 回一帧 Deny，然后**优雅地**关掉连接。
+///
+/// 🔴 为什么不写成「发完帧就 `return`」、让 `Connection` 随作用域 drop：
+/// drop 走的是**立即关闭**，对端可能还没把帧读完就收到 CONNECTION_CLOSE，
+/// 于是理由全丢。这里多做两件事：
+/// ① `finish()` 告诉对端「数据发完了」——Deny 帧只有几十字节，会先到；
+/// ② `close(code, reason)` 把理由**写进关闭帧**——即便 Deny 帧本身丢了，
+///    对端的 [`explain`] 也能从 `close_reason()` 里把原因读出来。
+///
+/// 两条腿都留着是因为 UDP 上任何一个包都可能丢；只留一条，失败时就退化成
+/// 「connection lost」——正是这次要修的症状。
+async fn deny_and_close(
+    conn: &iroh::endpoint::Connection,
+    send: &mut iroh::endpoint::SendStream,
+    reason: &str,
+    code: &str,
+) {
+    // ❗ 先绑成变量再 `.encode()`：`if let Ok(b) = RcFrame::Deny { .. }.encode()`
+    //   编译不过（`if let` 的条件位置不允许结构体字面量，rustc 会报
+    //   "struct literals are not allowed here"）。
+    let frame = RcFrame::Deny {
+        reason: reason.to_string(),
+        code: Some(code.to_string()),
+    };
+    if let Ok(bytes) = frame.encode() {
+        let _ = crate::sync::transport::write_frame(send, &bytes).await;
+    }
+    let _ = send.finish();
+    conn.close(1u32.into(), format!("[{}] {}", code, reason).as_bytes());
+}
+
 impl RcService {
     pub fn new(store: DataStore) -> Self {
         Self {
@@ -601,7 +658,7 @@ impl RcService {
                     let _ = store_online.rc_device_touch(id, true);
                 }),
                 running: presence_running,
-                listen_port: RC_PRESENCE_PORT,
+                port: RC_PRESENCE_PORT,
             });
         }
 
@@ -888,8 +945,15 @@ impl RcService {
         self.link.attach(&conn);
 
         let req = RcFrame::Request { capability };
-        crate::sync::transport::write_frame(&mut send, &req.encode()?).await?;
-        let resp = RcFrame::decode(&crate::sync::transport::read_frame(&mut recv).await?)?;
+        // ❗ 这一对读写的失败必须过 `explain`：对端要是以「未配对 / 忙 / 被禁」为由
+        //   关掉连接，原始错误只会是 `读帧长度失败：connection lost`（见 `explain`）。
+        crate::sync::transport::write_frame(&mut send, &req.encode()?)
+            .await
+            .map_err(|e| explain(&conn, e))?;
+        let raw = crate::sync::transport::read_frame(&mut recv)
+            .await
+            .map_err(|e| explain(&conn, e))?;
+        let resp = RcFrame::decode(&raw)?;
         match resp {
             RcFrame::Accept { capability } => Ok((capability, send, recv)),
             RcFrame::Deny { reason, code } => {
@@ -920,15 +984,6 @@ impl RcService {
         let mut send = w.send;
         let mut recv = w.recv;
 
-        let deny = |reason: &str, code: &str| {
-            RcFrame::Deny {
-                reason: reason.to_string(),
-                code: Some(code.to_string()),
-            }
-            .encode()
-            .ok()
-        };
-
         let Ok(bytes) = read_frame(&mut recv).await else {
             // 连接已断，写 Deny 也到不了——只能记日志，不能静默（规则 #15.3）
             log::warn!("[RC] {short} 读申请帧失败，连接已断");
@@ -939,18 +994,12 @@ impl RcService {
         let requested = match RcFrame::decode(&bytes) {
             Ok(RcFrame::Request { capability }) => capability,
             Ok(_) => {
-                if let Some(b) = deny("期望 Request 帧", "not_request") {
-                    let _ = write_frame(&mut send, &b).await;
-                }
+                deny_and_close(&link_conn, &mut send, "期望 Request 帧", "not_request").await;
                 return;
             }
             Err(e) => {
                 log::warn!("[RC] {short} 帧解码失败：{e}");
-                // 🔴 原来这里直接 return：Connection 一 drop，发起端只看到
-                // 「读帧长度失败：connection lost」，分不清网络断还是本端拒了。
-                if let Some(b) = deny("对端协议帧无法识别", "bad_request") {
-                    let _ = write_frame(&mut send, &b).await;
-                }
+                deny_and_close(&link_conn, &mut send, "对端协议帧无法识别", "bad_request").await;
                 return;
             }
         };
@@ -962,15 +1011,11 @@ impl RcService {
             // 也不记入 pending、不 emit，只回 deny（门禁在下方 gate_inbound 也会拦，
             // 但这里先挡住，避免禁用期间出现可见的配对请求）。
             if self.enabled() && join::door_open(&self.store, now) && self.joins.knock(&peer, now) {
-                if let Some(b) = deny("等待对方确认配对", "await_pair_confirm") {
-                    let _ = write_frame(&mut send, &b).await;
-                }
+                deny_and_close(&link_conn, &mut send, "等待对方确认配对", "await_pair_confirm").await;
                 log::info!("[RC] {short} 敲门配对，已记入待确认");
                 self.emit_changed();
             } else {
-                if let Some(b) = deny("尚未远程配对", "not_paired") {
-                    let _ = write_frame(&mut send, &b).await;
-                }
+                deny_and_close(&link_conn, &mut send, "尚未远程配对", "not_paired").await;
                 log::info!("[RC] {short} 未远程配对，已拒绝");
             }
             return;
@@ -989,9 +1034,7 @@ impl RcService {
             )
         };
         if gate != Gate::Allow {
-            if let Some(b) = deny(gate.deny_reason(), gate.deny_code()) {
-                let _ = write_frame(&mut send, &b).await;
-            }
+            deny_and_close(&link_conn, &mut send, gate.deny_reason(), gate.deny_code()).await;
             log::info!("[RC] 拒绝 {short}：{}", gate.deny_reason());
             return;
         }
@@ -1015,9 +1058,7 @@ impl RcService {
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             if now_ms() > deadline {
                 self.clear_pending(&peer);
-                if let Some(b) = deny("等待确认超时", "confirm_timeout") {
-                    let _ = write_frame(&mut send, &b).await;
-                }
+                deny_and_close(&link_conn, &mut send, "等待确认超时", "confirm_timeout").await;
                 return;
             }
             let decision = {
@@ -1051,9 +1092,8 @@ impl RcService {
                     return;
                 }
                 Some(Err(_)) => {
-                    if let Some(b) = deny("对方拒绝或会话被占用", "rejected_or_busy") {
-                        let _ = write_frame(&mut send, &b).await;
-                    }
+                    deny_and_close(&link_conn, &mut send, "对方拒绝或会话被占用", "rejected_or_busy")
+                        .await;
                     self.clear_pending(&peer);
                     return;
                 }

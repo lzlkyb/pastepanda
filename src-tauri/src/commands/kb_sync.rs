@@ -287,9 +287,11 @@ pub async fn kb_sync_refresh(
     if enabled(&store) {
         svc.wake_all().await;
         if let Ok(me) = NodeIdentity::load_or_create(&app_dir(&app)?) {
-            let now = chrono::Utc::now().timestamp_millis();
             // 公告失败不拦住刷新：列表仍要能读出来（规则 #15.3 由前端 toast 承担）
-            if let Err(e) = presence::announce_once(&me, presence::PORT, now) {
+            //
+            // 🔴 走 `svc.announce_now` 而不是在这儿拼 `presence::announce_once`：
+            //   端点端口得从服务里的 iroh 拿，见那个函数的注释。
+            if let Err(e) = svc.announce_now(&me).await {
                 log::warn!("[Sync] 手动刷新时地址公告失败：{}", e);
             }
         }

@@ -78,12 +78,40 @@ const BY_CODE: Record<string, Omit<RcErrorInfo, "reason">> = {
     hint: "对方可能刚好关机、切网，或中继不稳。稍后重试；若一直如此，确认对方远程通道在跑、双方网络可达。",
     kind: "offline",
   },
+  not_request: {
+    title: "对端收到了意外的申请",
+    hint: "两台机器的版本可能不一致，先都升到同一版本再试。",
+    kind: "other",
+  },
+  bad_request: {
+    title: "对端无法识别这次申请",
+    hint: "两台机器的版本可能不一致，先都升到同一版本再试。",
+    kind: "other",
+  },
   bad_node_id: {
     title: "设备标识无效",
     hint: "请重新配对这台设备。",
     kind: "other",
   },
 };
+
+/**
+ * 从正文里认「对端关闭连接时带上的 code」。
+ *
+ * 🔴 为什么需要它：后端把 `close_reason()` 拼进了错误串
+ * （`src-tauri/src/rc/service.rs` 的 `explain`），形态是
+ * `读帧长度失败：connection lost（closed by peer: [not_paired] 尚未远程配对 (code 1)）`。
+ * 而下面 `byReasonText` 里「connection lost」那条判据会把整串一口吞掉、
+ * 报成「对方可能关机」——恰恰又把真实理由盖住了。
+ * 所以带 code 的关闭原因必须**先于**文本判据认。
+ */
+function fromCloseReason(reason: string): Omit<RcErrorInfo, "reason"> | null {
+  const m = /closed by peer:\s*\[([a-z_]+)\]/i.exec(reason);
+  const code = m?.[1]?.toLowerCase();
+  if (!code) return null;
+  // 认不出来就返回 null，让后面的文本判据继续兜底（而不是给一个错的分档）。
+  return BY_CODE[code] ?? null;
+}
 
 function byReasonText(reason: string): Omit<RcErrorInfo, "reason"> | null {
   if (reason.includes("未开启") || reason.includes("允许被远程")) {
@@ -114,7 +142,7 @@ export function explainRcError(raw: string): RcErrorInfo {
   const m = /^\[([a-z_]+)\]\s*([\s\S]*)$/i.exec(raw);
   const code = m?.[1]?.toLowerCase() ?? "";
   const reason = (m?.[2] ?? raw).trim();
-  const hit = BY_CODE[code] ?? byReasonText(reason);
+  const hit = BY_CODE[code] ?? fromCloseReason(reason) ?? byReasonText(reason);
   if (hit) return { ...hit, reason };
   return {
     title: "远程申请未成功",

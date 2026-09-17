@@ -969,6 +969,37 @@ impl SyncService {
         }
     }
 
+    /// 立刻组播一次本机地址（面板的「手动刷新」按钮用）。
+    ///
+    /// 🔴 **必须走这里，别让调用方自己拼参数**：公告里的 `endpoint_port` 得是
+    /// iroh **真实绑定**的那个端口，而它只有 `SyncCtx` 手里有（`endpoint.bound_sockets()`）。
+    /// 命令层曾经自己拼过一次，把 presence 的 [`super::presence::PORT`] 当成端点端口
+    /// 写进了公告——对端收到会去拨 5008，必然连不上，而且**从外面看不出来**，
+    /// 只表现为「点了刷新还是同步不上」。
+    ///
+    /// 广播的目标端口用 [`super::presence::PORT`]：生产上 [`Self::start`] 传的就是它
+    /// （只有测试才用临时端口，而测试不调这个）。
+    ///
+    /// 没在跑就是空操作（同 [`Self::wake_all`]）：没有端点，也就没有地址可宣告。
+    pub async fn announce_now(&self, me: &super::identity::NodeIdentity) -> Result<(), String> {
+        let guard = self.inner.lock().await;
+        let Some(ctx) = guard.as_ref() else {
+            return Ok(());
+        };
+        let endpoint_port = ctx
+            .endpoint
+            .bound_sockets()
+            .first()
+            .map(|s| s.port())
+            .ok_or("端点没有绑到任何端口")?;
+        super::presence::announce_once(
+            me,
+            endpoint_port,
+            super::presence::PORT,
+            chrono::Utc::now().timestamp_millis(),
+        )
+    }
+
     /// 起。已经在跑就什么都不做（幂等，前端可以放心重复调）。
     ///
     /// 🔴 开关判断在**函数里面**，同 [`super::presence::spawn`]：
@@ -1062,7 +1093,7 @@ impl SyncService {
             // `SyncCtx::wake` 的注释；多拨出来的量现在由全局并发闸卡着）。
             on_fresh: Arc::new(move |_id: &str| wake.notify_waiters()),
             running: ctx.presence_running.clone(),
-            listen_port: presence_port,
+            port: presence_port,
         });
 
         // ❗ 扫掉上一次崩溃残留的会话暂存目录（里面是**明文笔记**）。
