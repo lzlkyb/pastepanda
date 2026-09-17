@@ -1,19 +1,29 @@
 /**
- * rcPairState.ts — 远程配对「完成配对」按钮可用性的纯函数判定。
+ * rcPairState.ts — 远程配对「发送配对请求」按钮可用性的纯函数判定。
  *
  * ❗ 抽成纯函数是为了让历史死锁回归可测：过去完成按钮依赖 `checked`，
- * 而 `checked` 又依赖 preview 出的指纹，指纹又只能靠能点的按钮去 preview ——
- * 三者互相卡死。防回归关键点：没有 `previewFp` 时即便 `checked` 为真也**必须**
- * 不可点，否则用户换台机器第一次配对会卡死在「勾选框永远不出现」。
+ * 而 `checked` 依赖 preview 出的指纹，指纹又只能靠「能点的按钮」去 preview ——
+ * 三者互相卡死。
+ *
+ * 🔴 **2026-09-17（方案 C）：`checked` 这一项被删掉了。** 两条理由：
+ *
+ * ① **那次核对本来就防不住中间人**。邀请码是**自签**的：攻击者把整串码换成
+ *    自己的那一份，两端显示的都是**攻击者的**指纹，用户认真比对了也会一致
+ *    （完整论证见 `src-tauri/src/sync/invite.rs` 模块头）。
+ * ② **真正把关的是生成方那一侧的确认**（`RcJoinRequests` 的卡片）——
+ *    那次确认发生在**写入白名单的那一侧**，是唯一有后果的一次。
+ *
+ * 顺带的效果：死锁**在结构上不可能回来**了。按钮不再依赖任何「要等别的 UI
+ * 先渲染出来」的状态，剩下的三项都是当场就能知道的量。
  */
 export interface PairSubmitState {
   code: string;
-  checked: boolean;
+  /** 已解析出的对方指纹；`null` = 还没解析出来（按钮此时必须不可点）。 */
   previewFp: string | null;
   busy: boolean;
 }
 
-/** 四要件齐备且不忙，按钮才可点；任一不满足即不可点。 */
+/** 三要件齐备且不忙，按钮才可点；任一不满足即不可点。 */
 export function canSubmitPair(s: PairSubmitState): boolean {
-  return s.code.trim().length > 0 && s.checked && s.previewFp !== null && !s.busy;
+  return s.code.trim().length > 0 && s.previewFp !== null && !s.busy;
 }

@@ -1,0 +1,79 @@
+/* 远程配对对话框 · A3 局域网路径专用样式（2026-09-17）
+ *
+ * 为什么另开一份而不是塞进 `rc/RemoteComputer.module.css`：
+ * 那个文件已经 1000 行，是「远程电脑面板」的样式家；本文件只服务**配对对话框**
+ * 这一条链路（附近设备 / 6 位数字 / 完成屏），谁改谁清楚。
+ *
+ * 三类样式**故意不在这里**，而是复用现成的：
+ *  - 设备行（`devList` / `devItem` / `info` / `name` / `meta` / `wideBtn`）
+ *    → `rc/RemoteComputer.module.css`，与已配对设备列表是同一套视觉词汇；
+ *  - 6 位数字那一块（`lanPairBox` / `lanPairPin` / `lanPairHint` / `lanPairBtns`）
+ *    → `settings/Lan.module.css`。🔴 数字的 30px / 9px / 700 是**唯一来源**，
+ *      知识库同步那边的配对核对用的是同一个类。抄一份数值到这里，下次调字号
+ *      就会两地不一致 —— 而这块正是「要被人逐位比对」的地方。
+ *  - 空态（`lanNearbyEmpty` / `lanNearbySteps`）同样来自 `Lan.module.css`。
+ */
+
+/* 区块小标（「同一局域网（推荐）」/「不在同一局域网」）。 */
+.secLabel {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  letter-spacing: 0.03em;
+}
+
+.sep {
+  height: 1px;
+  background: var(--border-color, #e3e6ea);
+  margin: 2px 0;
+}
+
+/* 未配对邻居的头像：**方圆角**。
+ *
+ * 🔴 形态即语义：已配对设备（`rc/RemoteComputer.module.css` 的 `.av`）是圆形，
+ * 邻居是方圆角。用户一眼就能分清「这台我已经授权过」和「这台是刚路过的」，
+ * 不用去读那行小字。改圆角前先想清楚这一点。 */
+.avSq {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--accent) 16%, var(--card-bg, #fff));
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+}
+
+/* ===== 完成屏 ===== */
+.okBox {
+  text-align: center;
+  padding: 14px 0 4px;
+}
+
+.okMark {
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+.okTitle {
+  font-weight: 700;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.okSub {
+  color: var(--text-muted, #6b7280);
+  font-size: 11.5px;
+  margin-top: 5px;
+  line-height: 1.6;
+}
+
+.btnRowCenter {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 12px;
+}

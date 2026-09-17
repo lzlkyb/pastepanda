@@ -300,3 +300,7 @@ export interface RcMonitorInfo {
 export function rcListMonitors(): Promise<RcMonitorInfo[]> {
   return invoke("rc_list_monitors");
 }
+
+/* A3 的局域网 6 位数字配对**不在本文件**：见 `lib/api/rcPair.ts`。
+ * 那是独立的一条路（对应 `commands/rc_pair.rs`），与这里的邀请码 / 会话
+ * 命令没有共用状态，拆开是为了让两边都别逼近 `.ts ≤ 400` 的红线。 */

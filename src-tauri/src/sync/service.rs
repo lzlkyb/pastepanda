@@ -32,7 +32,7 @@ use super::coordinate::{
     DORMANT_AFTER_FAILS, DORMANT_POLL_SECS, HEARTBEAT_SECS, IDLE_CHECK_SECS, JITTER_SECS,
     MIN_SESSION_GAP_SECS, WRITE_COALESCE_MAX_SECS, WRITE_COALESCE_SECS,
 };
-use super::presence::PresenceTable;
+use super::presence::{PresenceApp, PresenceTable};
 use super::session;
 use crate::data_store::DataStore;
 use iroh::{Endpoint, EndpointAddr};
@@ -994,9 +994,14 @@ impl SyncService {
             .ok_or("端点没有绑到任何端口")?;
         super::presence::announce_once(
             me,
-            endpoint_port,
-            super::presence::PORT,
-            chrono::Utc::now().timestamp_millis(),
+            super::presence::Announce {
+                // 与 [`PresenceTable::new`] 那个一致：写错的后果是接收方
+                // 把本机公告判成串台丢掉（`Heard::WrongApp`）+ 一条 warn。
+                app: PresenceApp::Kb,
+                endpoint_port,
+                group_port: super::presence::PORT,
+                now_ms: chrono::Utc::now().timestamp_millis(),
+            },
         )
     }
 
@@ -1038,7 +1043,8 @@ impl SyncService {
 
         let me = Arc::new(super::identity::NodeIdentity::load_or_create(app_dir)?);
         let endpoint = super::transport::bind(&me, relay).await?;
-        let presence = Arc::new(PresenceTable::new());
+        // 表与 `spawn` 用同一个 `PresenceApp::Kb`，见 `rc` 侧同款注释。
+        let presence = Arc::new(PresenceTable::new(PresenceApp::Kb));
 
         // ❗ 只取端口，**不取 IP**：`bound_sockets()` 给的是通配 `0.0.0.0`，
         //   拨它必然超时（探针阶段栽过）。IP 由对端从我们的源地址取，
@@ -1082,6 +1088,7 @@ impl SyncService {
         let wake = ctx.wake.clone();
         super::presence::spawn(super::presence::PresenceStart {
             enabled: true,
+            app: PresenceApp::Kb,
             table: ctx.presence.clone(),
             me: me.clone(),
             endpoint_port: port,

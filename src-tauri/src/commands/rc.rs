@@ -9,6 +9,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::data_store::DataStore;
 use crate::rc::join;
+// 本机设备名的唯一来源在 rc 域：局域网配对要把名字随握手包自报给对方
+// （`rc/pin.rs` + `rc/discovery.rs`），命令层只是也用它显示。见 `rc/mod.rs`。
+use crate::rc::local_device_name;
 use crate::rc::protocol::Capability;
 use crate::rc::service::{RcService, RcStatus};
 use crate::rc::session::{
@@ -21,12 +24,6 @@ fn app_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("无法获取应用数据目录：{}", e))
-}
-
-fn local_device_name() -> String {
-    hostname::get()
-        .map(|h| h.to_string_lossy().trim().to_string())
-        .unwrap_or_default()
 }
 
 fn emit_changed(app: &AppHandle, svc: &RcService) {
@@ -255,8 +252,16 @@ pub fn kb_sync_deny_from_rc(store: State<DataStore>, node_id: String) -> Result<
     store.save_config(&config)
 }
 
-/// RC 邀请门开放时长：远程协助场景应短于知识库同步（默认 7 天太长，骚扰面大）。
-const RC_INVITE_DOOR_MS: i64 = 30 * 60 * 1000;
+/// RC 邀请门开放时长（毫秒）。
+///
+/// 🔴 **由 [`invite::RC_TTL_SECS`] 派生，不另写一个数**：码的有效期与门的时长
+/// 必须是**同一个口径**——否则用户永远撞在门上，却拿到一句 `not_paired`
+/// （「尚未远程配对」），指不到「回去重新生成一个」这个唯一正确的动作。
+/// 两个各自独立的字面量就是把口径交给未来去漂（2026-09-17 修的正是这个）。
+///
+/// 同宽这条由本文件末尾的 `mod tests` 钉住（`commands::rc` 是私有模块，
+/// 别的测试文件够不到这个常量）。
+const RC_INVITE_DOOR_MS: i64 = invite::RC_TTL_SECS * 1000;
 
 /// 生成远程配对邀请码（开门，等对方粘贴后敲门）。
 #[tauri::command]
@@ -269,7 +274,8 @@ pub async fn rc_invite_create(
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     let now = chrono::Utc::now().timestamp_millis();
     let code = invite::encode(&me, name.trim(), Vec::new(), now)?;
-    // 门只开 30 分钟：码本身仍可预览，但过点后敲门进不来
+    // 门与码同宽（两者都由 `invite::RC_TTL_SECS` 定）：码在窗口内才有效，
+    // 门在窗口内才受理。配对成功后门会被提前关掉（见 `RcService::approve_join`）。
     let expires_at = now + RC_INVITE_DOOR_MS;
     if let Err(e) = join::open_door(&store, expires_at) {
         log::warn!("[RC] 邀请窗口没能保存（{}）——对方粘完码可能连不上本机", e);
@@ -285,7 +291,7 @@ pub async fn rc_invite_create(
 #[tauri::command]
 pub fn rc_invite_preview(code: String) -> Result<Invite, String> {
     let now = chrono::Utc::now().timestamp_millis();
-    invite::decode(&code, now)
+    invite::decode(&code, now, invite::RC_TTL_SECS)
 }
 
 /// 粘贴对方邀请码 → 写入 rc_devices（远程配对，不写同步 devices）。
@@ -297,7 +303,9 @@ pub async fn rc_pair(
     code: String,
 ) -> Result<Invite, String> {
     let now = chrono::Utc::now().timestamp_millis();
-    let inv = invite::decode(&code, now)?;
+    // 与 `rc_invite_create` 同一个窗口：粘贴时先在这里被拦下，
+    // 比「连上了再被门拒」早一步，也早一步把话说清楚。
+    let inv = invite::decode(&code, now, invite::RC_TTL_SECS)?;
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     if inv.node_id == me.node_id() {
         return Err("这是本机自己的邀请码，不能和自己配对。请把它粘到**另一台**设备上。".into());
@@ -679,4 +687,40 @@ pub fn rc_session_history(svc: State<'_, Arc<RcService>>) -> Result<Vec<serde_js
 #[tauri::command]
 pub async fn rc_pull_clipboard(svc: State<'_, Arc<RcService>>) -> Result<Option<String>, String> {
     svc.pull_clipboard().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 🔴 邀请门的时长**必须**由邀请码的窗口派生，不许各写一个数。
+    ///
+    /// 修复前是两个独立字面量：码 7 天（`invite::TTL_SECS`）、门 30 分钟
+    /// （`RC_INVITE_DOOR_MS = 30 * 60 * 1000`）。于是用户手里的码「还有效」，
+    /// 他撞上的是门，而对端只回一句 `not_paired`（「尚未远程配对」）——
+    /// **指不到「回去重新生成一个」这个唯一正确的动作**，他只能反复重试同一个失效窗口。
+    ///
+    /// 这条断言的作用就是：谁把 `RC_INVITE_DOOR_MS` 改回一个字面量，它立刻红。
+    #[test]
+    fn test_邀请门与邀请码同宽() {
+        assert_eq!(
+            RC_INVITE_DOOR_MS,
+            invite::RC_TTL_SECS * 1000,
+            "邀请门必须由 invite::RC_TTL_SECS 派生，不许另写字面量"
+        );
+        assert_eq!(
+            invite::RC_TTL_SECS,
+            30 * 60,
+            "远程配对的窗口是 30 分钟——改它是个产品决定，不该顺手改"
+        );
+        // 先落到局部变量：直接写两个 `const` 比较会被 `assertions_on_constants`
+        // 判成「常量断言」而要求塞进 `const {}`，但 `const {}` 里带不了格式化参数，
+        // 这条断言的「30 vs 604800」恰好是要给人看的。
+        let rc_ttl = invite::RC_TTL_SECS;
+        let kb_ttl = invite::TTL_SECS;
+        assert!(
+            rc_ttl < kb_ttl,
+            "远程那档必须严于知识库那档（{rc_ttl} vs {kb_ttl}）：远程是把别人的屏幕交出去，骚扰面不同"
+        );
+    }
 }

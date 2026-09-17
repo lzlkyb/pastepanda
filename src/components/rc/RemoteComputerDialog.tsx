@@ -304,7 +304,14 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
         </FocusTrap>
       </motion.div>
       {pairOpen && (
-        <RcPairDialog rc={rc} toast={toast} onClose={() => setPairOpen(false)} />
+        <RcPairDialog
+          rc={rc}
+          toast={toast}
+          onClose={() => setPairOpen(false)}
+          /* 配对完的第一意图几乎总是「马上连过去」：直接把出口给到，别让用户
+             走回设备列表再点一次（设计稿 §4.4，结论见 §8 #5）。能力档沿用当前档。 */
+          onStartRemote={(peerId) => void doRequest(peerId, cap)}
+        />
       )}
     </AnimatePresence>
   );

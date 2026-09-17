@@ -26,8 +26,22 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-/// 邀请码有效期（秒）。7 天：够跨一个周末，又不至于让半年前的码还能用。
+/// 知识库同步邀请码的有效期（秒）。7 天：够跨一个周末，又不至于让半年前的码还能用。
+///
+/// ❗ **别拿它当远程电脑配对的窗口**——那边要短得多，见 [`RC_TTL_SECS`]。
 pub const TTL_SECS: i64 = 7 * 24 * 3600;
+
+/// 远程电脑配对邀请码的有效期（秒）。
+///
+/// 🔴 **必须与远程邀请门同宽**：`commands::rc::RC_INVITE_DOOR_MS` 由本常量派生出，
+/// 两处**不允许**各写一个数。
+///
+/// 为什么是 30 分钟：2026-09-17 之前的错配是「码 7 天、门 30 分钟」，
+/// 用户撞的**永远是门**，而对端只会回一句 `not_paired`（「尚未远程配对」）——
+/// **指不到「回去重新生成一个」这个唯一正确的动作**。
+/// 把码也收到 30 分钟后，错误发生在**粘贴那一刻**（`rc_invite_preview` / `rc_pair`），
+/// 话术也就能直接说清该干什么；顺带不再放大「码被泄漏」的窗口。
+pub const RC_TTL_SECS: i64 = 30 * 60;
 
 /// 邀请码的载荷。字段顺序即签名的字节顺序，**不要重排**。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -87,11 +101,16 @@ pub fn encode(
     Ok(b64().encode(json))
 }
 
-/// 解码并校验邀请码。`now_ms` 传当前时刻，用来判过期。
+/// 解码并校验邀请码。`now_ms` 传当前时刻，`ttl_secs` 传**调用方那条路的**窗口
+/// （知识库同步用 [`TTL_SECS`]、远程电脑用 [`RC_TTL_SECS`]）。
+///
+/// ❗ **窗口为什么是参数、不是常量**：码里只带 `ts`，不带「我该活多久」；
+/// 而两条路的窗口相差 336 倍（30 分钟 vs 7 天）。写成常量就必然出现
+/// 「改了一边忘了另一边」——2026-09-17 修的正是这种错配。
 ///
 /// 每一种失败都给**不同**的话：用户手里只有一串 base64，
 /// 统一报「邀请码无效」的话他无从下手（规则 #15.3）。
-pub fn decode(code: &str, now_ms: i64) -> Result<Invite, String> {
+pub fn decode(code: &str, now_ms: i64, ttl_secs: i64) -> Result<Invite, String> {
     let cleaned = normalize(code);
 
     // 🔴 先分开「多粘了别的文字」与「码本身坏了」——这是两种完全不同的失误，
@@ -130,14 +149,41 @@ pub fn decode(code: &str, now_ms: i64) -> Result<Invite, String> {
     // 过期只判「太旧」，不判「来自未来」：对端时钟快几分钟是常态
     // （§7.5 说的就是这件事），因为时钟快一点就拒绝配对是自找麻烦。
     let age = now_ms - wire.invite.ts;
-    if age > TTL_SECS * 1000 {
+    if age > ttl_secs * 1000 {
         return Err(format!(
-            "这个邀请码已过期（生成于 {} 天前，有效期 {} 天）。请在对方那台机器上重新生成一个。",
-            age / 86_400_000,
-            TTL_SECS / 86_400
+            "这份邀请码已过期（生成于 {}前，有效期 {}）。请在对方那台重新生成一份。",
+            human_span_ms(age),
+            human_span_secs(ttl_secs)
         ));
     }
     Ok(wire.invite)
+}
+
+/// 把秒数说成人话。用于「有效期」这类**预先知道**的量。
+///
+/// 只保留一个数量级：窗口要么是几十分钟、要么是几天，
+/// 写「有效期 168 小时」比写「7 天」难读（旧文案写「有效期 0 天」更糟——
+/// 30 分钟的窗口整除 86400 就是 0）。
+fn human_span_secs(secs: i64) -> String {
+    if secs < 3600 {
+        format!("{} 分钟", secs / 60)
+    } else if secs < 86_400 {
+        format!("{} 小时", secs / 3600)
+    } else {
+        format!("{} 天", secs / 86_400)
+    }
+}
+
+/// 把「已经过去了多久」说成人话。向上取整到分钟：差 20 秒说「0 分钟前」很怪。
+fn human_span_ms(ms: i64) -> String {
+    let secs = ms.max(0) / 1000;
+    if secs < 3600 {
+        format!("{} 分钟", (secs + 59) / 60)
+    } else if secs < 86_400 {
+        format!("{} 小时", secs / 3600)
+    } else {
+        format!("{} 天", secs / 86_400)
+    }
 }
 
 fn b64() -> base64::engine::general_purpose::GeneralPurpose {

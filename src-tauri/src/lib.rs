@@ -876,6 +876,11 @@ pub fn run() {
             commands::rc_set_capture_scope,
             commands::rc_pull_clipboard,
             commands::rc_session_history,
+            // 局域网配对（A3）：附近设备 + 6 位数字核对
+            commands::rc_nearby_status,
+            commands::rc_nearby_pair,
+            commands::rc_nearby_confirm,
+            commands::rc_nearby_cancel,
             commands::mcp_get_status,
             commands::mcp_get_write_switches,
             commands::mcp_get_library_blurb,

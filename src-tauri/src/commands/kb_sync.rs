@@ -121,7 +121,7 @@ pub fn kb_sync_invite_create(
 #[tauri::command]
 pub fn kb_sync_invite_preview(code: String) -> Result<invite::Invite, String> {
     let now = chrono::Utc::now().timestamp_millis();
-    invite::decode(&code, now)
+    invite::decode(&code, now, invite::TTL_SECS)
 }
 
 /// 配对。
@@ -144,7 +144,9 @@ pub async fn kb_sync_pair(
     code: String,
 ) -> Result<invite::Invite, String> {
     let now = chrono::Utc::now().timestamp_millis();
-    let inv = invite::decode(&code, now)?;
+    // 知识库同步这一路的窗口就是 7 天（与下面 `open_door` 用同一个常量，
+    // 口径本来就一致，2026-09-17 那次修正针对的是远程电脑那一路）。
+    let inv = invite::decode(&code, now, invite::TTL_SECS)?;
 
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     if inv.node_id == me.node_id() {

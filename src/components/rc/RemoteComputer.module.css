@@ -791,14 +791,10 @@
   font-size: 13px;
   letter-spacing: 0.02em;
 }
-.checkLine {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  font-size: 12px;
-  cursor: pointer;
-  margin: 10px 0;
-}
+/* 方案 C（2026-09-17）：发起侧的「我已核对指纹」勾选删掉了，`.checkLine` 随之删除。
+   核心理由是那次核对防不住中间人（邀请码自签），确认统一到生成方那一侧。
+   注意：删类必须同时删引用——`styles.xxx` 指向不存在的类只拿到 undefined，
+   tsc 与 vitest 都发现不了。 */
 
 .inviteCode {
   width: 100%;

@@ -33,6 +33,20 @@ const BY_CODE: Record<string, Omit<RcErrorInfo, "reason">> = {
     hint: "先完成远程配对（与知识库同步配对无关）。",
     kind: "not_paired",
   },
+  // 🔴 「窗口过期」必须与「从未配对」分开（2026-09-17 拆）。
+  //   后端原先把两者塌缩成同一句 `not_paired`，而用户实际撞到的**几乎总是窗口过期**——
+  //   文案指不到「回去重新生成一个」这个唯一正确的动作，于是他只能反复重试同一个失效的码。
+  //   按钮名照真实 UI 写（`RcPairCreatePane` 的「生成并复制」），别写成不存在的「重新生成」。
+  invite_door_closed: {
+    title: "对方的邀请窗口已过期",
+    hint: "邀请码只在生成后 30 分钟内有效。请让对方重新走一次「生成并复制」，再把新的码发你。",
+    kind: "not_paired",
+  },
+  pair_denied: {
+    title: "对方拒绝过这次配对",
+    hint: "对方此前点了拒绝，30 分钟内不会再弹确认。请让对方重新生成一份邀请码再试。",
+    kind: "not_paired",
+  },
   await_pair_confirm: {
     title: "等待对方确认配对",
     hint: "对方需在弹出的配对请求里核对指纹并允许。",
@@ -118,6 +132,13 @@ function byReasonText(reason: string): Omit<RcErrorInfo, "reason"> | null {
     return BY_CODE.disabled;
   }
   if (reason.includes("禁止")) return BY_CODE.device_denied;
+  // 「窗口过期」必须先于「未配对」判：过期文案里也可能带「配对」二字。
+  // 也兜住 `invite::decode` 那条本地报错（「这份邀请码已过期…」）——
+  // 它不带 `[code]` 前缀，但意思与「对方的窗口过期」完全一致，动作也一样。
+  if (reason.includes("邀请窗口") || reason.includes("已过期")) {
+    return BY_CODE.invite_door_closed;
+  }
+  if (reason.includes("拒绝过")) return BY_CODE.pair_denied;
   if (reason.includes("未配对") || reason.includes("尚未完成远程配对")) {
     return BY_CODE.not_paired;
   }

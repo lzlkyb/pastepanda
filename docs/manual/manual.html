@@ -429,6 +429,7 @@ details.secfold:not([open]) { margin-bottom: 4px; }
   <div class="grp" data-page-node-id="Nd0QNY373gv2N0XqGJyBye">进阶</div>
   <a href="#ai" data-page-node-id="uD9WtoXcUIcILcbfMK1wrY">AI 能力</a>
   <a href="#kb" data-page-node-id="S7a96mx7C60sMrNpSlXMth">知识库</a>
+  <a href="#rc" data-page-node-id="vwqIpwJ9fliVSreisPcB9h">远程电脑</a>
   <a href="#menu" data-page-node-id="xopSP2Bku8ymx5g0Aj0Bn7">右键菜单与托盘</a>
   <a href="#sync" data-page-node-id="fBBmC12QCegUUuPf9YNU98">系统同步</a>
   <a href="#settings" data-page-node-id="20l3ZG7rBM2HEW4bhhjbn1">设置与个性化</a>
@@ -1131,6 +1132,40 @@ details.secfold:not([open]) { margin-bottom: 4px; }
   <ul class="feat" data-page-node-id="fwLOWyRT93ofp01MrGWNoe">
     <li data-page-node-id="tsIyV9gRImXRuXfoYKfoOi">笔记全文存在本机 SQLite；截图的文字识别走本地离线模型（PP-OCRv6），全程不联网。</li>
     <li data-page-node-id="nUc9k8dJKvdPSwWkf3ELdl">AI 开关默认关闭；未开启时零请求、零上传、零费用。自动打标签是纯本地规则，不属于 AI。</li>
+  </ul>
+</section>
+
+<!-- ============ 远程电脑 ============ -->
+<section id="rc" data-page-node-id="VEUlunmYLHDPmjfxnTklCs">
+  <h2 data-page-node-id="tjI32MkXHVoIQw5JKvaXBq">远程电脑</h2>
+  <p class="lede" data-page-node-id="h9B8Y5HGCiUgRNYX6r1Y8a">在一台电脑上看另一台的屏幕，必要时还能替你操作它——帮家里人点两下，或者在外面取公司机器上的一个文件。两台机器<b data-page-node-id="NwKpQdRmLtVfHzJx9bYe2S">直接连接</b>，万一连不上才会绕一次中转，走的是哪条路状态条会如实写明；画面本身不经过我们的服务器。</p>
+
+  <h3 data-page-node-id="LXTidKrixmdZMg7I4GzHmM">两台电脑怎么配对</h3>
+  <ul class="feat" data-page-node-id="DlTMhsF6rikBSMpNw35Y9w">
+    <li data-page-node-id="ysIBiK0dtS5y28wdI6Aj7F"><b data-page-node-id="yIYWvBEURRFzcw6p4QG2Dr">同一 Wi-Fi / 局域网（推荐）</b>：两边都打开「远程电脑」，配对对话框最上面就会列出<b data-page-node-id="Kam207XkI0JrVrMIEupis9">附近的设备</b>。点一下「配对」→ 两台同时显示<b data-page-node-id="jYyo3jSCN4CnpBGWDmiqBy">同一个 6 位数字</b> → 各点一次「两边一样，确认」，配好了。不复制、不粘贴，也不用对着念一串长码。</li>
+    <li data-page-node-id="LzEYs1baEIem5KScl5B6dO"><b data-page-node-id="5pkYIE1laGVNfrRWDyp2mY">不在同一局域网</b>：走邀请码。一台点「生成邀请码」并把它发给对方（会自动复制到剪贴板），对方粘上即可。</li>
+    <li data-page-node-id="pfz74A9nUSsJilGClUs3sq"><b data-page-node-id="oX6xsqubSgQ8EFruNIiKwW">那串数字是双向的保险</b>：它是两台现场协商出来的密钥的摘要，不是密码本身。两边显示的数字<b data-page-node-id="5fMgG86ufHWEBQphnvivgu">不一样就点取消</b>——那说明有人在中间换过公钥。这一步是整条链路上唯一需要你看一眼的地方，字特意做大、字距拉开就是这个原因。</li>
+    <li data-page-node-id="ZcziMh8DsPUba71G6CYd49"><b data-page-node-id="UzRXmXZQ7vvyfoD1RbHLzx">设备名仅供参考</b>：列表里那个名字是对方自己报的、可以随便填（界面上标注了「可自称，以指纹为准」）。真正定对方是谁的，是核对环节那串数字。</li>
+  </ul>
+
+  <h3 data-page-node-id="u5ShT3V6uh7AuSqLAiLn9o">列表里看不到对方？</h3>
+  <ul class="feat" data-page-node-id="CPnVw6D3mf9pPymlNH8611">
+    <li data-page-node-id="Cr8fNjO9azqI9an3hXwGR5">四件事：对方装了并打开 PastePanda、两台在同一个 Wi-Fi / 局域网、两边都打开了<b data-page-node-id="UoOYkhsdhK16Q6W8JDjvYD">「远程电脑」</b>、对方的版本 <b data-page-node-id="iMIuFsfkf7u7oTvnkVKFVx">≥ 7.2.2</b>。旧版本不会回应附近的招呼，所以它们在列表里不会出现——那种情况只能用邀请码。</li>
+    <li data-page-node-id="H5KwIbuefa9pkiyTkAh530">列表按 20 秒内听到的招呼自动增删，不需要点「刷新」。找设备时那台机器得是醒着的（锁屏没关系，睡眠不行）。</li>
+  </ul>
+
+  <h3 data-page-node-id="rbVJaXVnRJt06Xz7tC0Key">配对不等于永久放行</h3>
+  <ul class="feat" data-page-node-id="nJtNHpHrM6X5uuNC4Whug2">
+    <li data-page-node-id="8211IjXSMNkuieISzOWpBG">配对只决定「<b data-page-node-id="ity7c3TPWID3MjZnbbvC0J">谁可以发起</b>」。对方每次发起远程，你这边仍会弹一次确认，点头之后才会连上。</li>
+    <li data-page-node-id="KkBVikNYnM9MOW6jyXpOKf">发起时可以选<b data-page-node-id="dFFMrqNB4aKypkn9j48GqN">只看</b>或<b data-page-node-id="n5mAjje0fekKcExXbWyfwE">可控</b>。以「只看」进来的会话，中途可以申请升级为可控，那次升级对方仍要点一次确认。</li>
+    <li data-page-node-id="QMq3Fp0XqvzzC69HYf8RmN">不想要某台设备了，在设备列表里把它移除即可；对方要再连就得重新配对。</li>
+  </ul>
+
+  <h3 data-page-node-id="m3KnNAj1m476MzUv9jha2w">连接状态怎么看</h3>
+  <ul class="feat" data-page-node-id="BC7U9zhV0ocktfM1ETZR0T">
+    <li data-page-node-id="IsGUSCZaFTSOm30eV2ERcf">画面角落的状态条写明当前走的是哪条路：<b data-page-node-id="cFsK91jK8Jj3qv5MZaOn43">局域网直连</b> / <b data-page-node-id="Ywi1dH221bdEIJSoKsLEJ4">公网直连</b> / <b data-page-node-id="8MONHpYlCfLcDbhtPcAE4x">绕中继</b>。绕中继时延迟比直连高是正常的。</li>
+    <li data-page-node-id="grCN6Omy3M3xFtXRIgPnPO">连接分四档：连接中 / 已连接 / <b data-page-node-id="15SuJzgFI9pU8dOBvBCsvD">连接不稳</b>（网络抖动，会自己恢复）/ 连接已断开。抖动时指示灯是橙色而不是红色——它不等于断了。</li>
+    <li data-page-node-id="wwZdmM22vbRyMoXB4GdJk9">延迟除毫秒数外还有可读档位：很流畅 / 流畅 / 一般 / 偏慢。</li>
   </ul>
 </section>
 

@@ -6,6 +6,7 @@
 //! 但**设备信任表是 `rc_devices`**，通道在 `rc_enabled` 时自建 Endpoint。
 
 use super::clipboard::{ClipWait, ClipboardState};
+use super::discovery::{Discovery, PairedFn};
 use super::join::{self, RcJoins};
 use super::link::LinkState;
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
@@ -18,7 +19,7 @@ use super::notify::{NotifyFn, NotifyState, PathNotifyFn, ScopeNotifyFn};
 use super::stream_cfg::{profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts};
 use crate::data_store::DataStore;
 use crate::sync::identity::NodeIdentity;
-use crate::sync::presence::{self, PresenceTable, PORT as PRESENCE_BASE_PORT};
+use crate::sync::presence::{self, PresenceApp, PresenceTable, PORT as PRESENCE_BASE_PORT};
 use iroh::{Endpoint, EndpointAddr};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -103,6 +104,11 @@ pub struct RcService {
     pub(super) inner: Mutex<Inner>,
     running: Mutex<Option<Running>>,
     joins: Arc<RcJoins>,
+    /// 局域网配对的接线（附近设备 + 明文包收发），见 `discovery.rs`。
+    ///
+    /// 与 `running` 分开持有：通道没起时它也在，只是 `armed` 为空、列不出邻居；
+    /// 界面上「附近设备」为空的事实来自这里，而不是来自一个「没人管的状态」。
+    discovery: Arc<Discovery>,
     /// 发起端最近一帧（合成后）画面。
     last_frame: Mutex<Option<super::video::VideoFrame>>,
     /// 发起端 → 被控端的发送半流（R2 键鼠 / R3 剪贴板）。tokio Mutex：跨 await 持锁。
@@ -136,6 +142,22 @@ pub(super) struct Inner {
 
 pub(super) fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
+}
+
+/// 「这台机器远程可信任」的判据：`rc_devices` ∪ 同步 `devices`（方案 A 的单向继承）。
+///
+/// 🔴 **只有这一处定义。** 三个消费者必须用同一个判据，否则会出现「地址表里有、
+/// 附近列表里没有」这种用户无法解释的现象：
+/// - presence 收包侧：要不要收它的地址公告（[`PresenceStart::is_paired`]）
+/// - 局域网配对侧：附近设备列表要不要列它（`discovery.rs`）
+///
+/// 原先（2026-09-17 之前）这段逻辑只写在 presence 那一个闭包里；
+/// 加局域网配对时抽出来，避免第二个副本。
+fn rc_paired_fn(store: &DataStore) -> PairedFn {
+    let s = store.clone();
+    Arc::new(move |id: &str| {
+        matches!(s.rc_device_get(id), Ok(Some(_))) || matches!(s.device_get(id), Ok(Some(_)))
+    })
 }
 
 static GLOBAL: OnceLock<Arc<RcService>> = OnceLock::new();
@@ -207,11 +229,16 @@ async fn deny_and_close(
 
 impl RcService {
     pub fn new(store: DataStore) -> Self {
+        let joins = RcJoins::new();
+        // 局域网配对与 presence 收包共用同一个「已配对」判据
+        // （见 `rc_paired_fn` 的注释：两个副本迟早对不上）。
+        let discovery = Discovery::new(store.clone(), joins.clone(), rc_paired_fn(&store));
         Self {
             store,
             inner: Mutex::new(Inner::default()),
             running: Mutex::new(None),
-            joins: RcJoins::new(),
+            joins,
+            discovery,
             last_frame: Mutex::new(None),
             outbound_send: tokio::sync::Mutex::new(None),
             clip: ClipboardState::new(),
@@ -606,7 +633,9 @@ impl RcService {
             .first()
             .map(|s| s.port())
             .ok_or("远程端点没有绑到任何端口")?;
-        let presence = Arc::new(PresenceTable::new());
+        // 表与 `spawn` 用同一个 `PresenceApp::Rc`：表按它判串台、广播按它打标识，
+        // 两处不一致会变成「自己拒自己」（收不到任何 RC 地址公告）。
+        let presence = Arc::new(PresenceTable::new(PresenceApp::Rc));
         let stop = Arc::new(AtomicBool::new(false));
         let presence_running = Arc::new(AtomicBool::new(false));
 
@@ -642,17 +671,21 @@ impl RcService {
         // presence：宣告 RC 端口；is_paired 用**远程信任**（rc ∪ 同步），
         // 否则仅同步配对的对端收不到本机 RC 地址，局域网发现会失败。
         {
-            let store = self.store.clone();
             let store_online = self.store.clone();
+            // 明文包（附近招呼 + 配对握手）交给 `discovery`。
+            // ❗ 不注册的话它们只会留一条 debug（`spawn` 里有兜底日志），
+            //   表现是「附近设备永远是空的」，且从界面上完全看不出为什么。
+            let disc = self.discovery.clone();
+            presence.on_plain(Arc::new(move |p: &presence::PlainPacket| {
+                disc.handle_plain(p);
+            }));
             presence::spawn(presence::PresenceStart {
                 enabled: true,
+                app: PresenceApp::Rc,
                 table: presence,
-                me,
+                me: me.clone(),
                 endpoint_port: port,
-                is_paired: Arc::new(move |id: &str| {
-                    matches!(store.rc_device_get(id), Ok(Some(_)))
-                        || matches!(store.device_get(id), Ok(Some(_)))
-                }),
+                is_paired: rc_paired_fn(&self.store),
                 // 听见对端「回来」→ 刷 rc_devices 在线（修纯 RC 配对永远 offline）
                 on_fresh: Arc::new(move |id: &str| {
                     let _ = store_online.rc_device_touch(id, true);
@@ -662,7 +695,71 @@ impl RcService {
             });
         }
 
+        // 挂上「怎么发」：局域网配对的握手包发往 rc 那套 presence 的端口。
+        // 必须在 presence 起来之后做——`arm` 之前发的包会被 `send` 拒掉。
+        self.discovery
+            .arm(me, port, RC_PRESENCE_PORT, super::local_device_name());
+
         Ok(())
+    }
+
+    /// 局域网配对：附近的设备（未配对的邻居）。
+    ///
+    /// ❗ 已配对的不在列表里（判据与 presence 收包侧**同一个** `rc_paired_fn`）——
+    /// 否则设备列表与附近列表会同时显示同一台机器，用户分不清该点哪个。
+    pub fn nearby_neighbors(&self, now_ms: i64) -> Vec<crate::sync::presence::Neighbor> {
+        self.discovery.neighbors(now_ms)
+    }
+
+    /// 局域网配对：当前那一轮（没有就是 `None`）。
+    ///
+    /// ❗ 顺带重传该重传的包（`discovery.tick`）：**界面开着的时候**才有必要重传，
+    /// 而没有界面在读状态时也就不该有配对的包在路上（用户已经走开了）。
+    pub fn nearby_prompt(&self, now_ms: i64) -> Option<super::pin::PairPrompt> {
+        let p = self.discovery.prompt(now_ms);
+        if p.is_some() {
+            self.discovery.tick(now_ms);
+        }
+        p
+    }
+
+    /// 局域网配对：刚成功的那一台（读完即清）。
+    pub fn nearby_take_done(&self) -> Option<super::pin::Done> {
+        self.discovery.take_done()
+    }
+
+    pub fn nearby_pair_start(
+        &self,
+        peer_id: &str,
+        now_ms: i64,
+    ) -> Result<super::pin::PairPrompt, String> {
+        let r = self.discovery.pair_start(peer_id, now_ms);
+        if r.is_ok() {
+            self.emit_pair_changed();
+        }
+        r
+    }
+
+    pub fn nearby_confirm(&self, now_ms: i64) -> Result<super::pin::Confirmed, String> {
+        let r = self.discovery.confirm(now_ms);
+        self.emit_pair_changed();
+        r
+    }
+
+    pub fn nearby_cancel(&self, now_ms: i64) -> bool {
+        let ok = self.discovery.cancel(now_ms);
+        if ok {
+            self.emit_pair_changed();
+        }
+        ok
+    }
+
+    /// 局域网配对状态变了 → 通知前端。
+    ///
+    /// 与 `notify.emit_changed` 是同一件事（同一个 `rc-session-changed` 事件），
+    /// 收成一个方法是为了不让 `discovery.rs` 直接碰 `notify` 这个内部字段。
+    pub fn emit_pair_changed(&self) {
+        self.notify.emit_changed();
     }
 
     /// presence 里当前还听得见的对端（局域网在线）。
@@ -693,6 +790,10 @@ impl RcService {
             r.stop.store(true, Ordering::SeqCst);
             r.presence_running.store(false, Ordering::SeqCst);
             r.endpoint.close().await;
+            // 局域网配对：摘掉「怎么发」并清掉会话与附近表。
+            // ❗ **不清 `rc_devices`** —— 那是落库的配对结果，与通道起停无关。
+            //   清掉的话用户会发现「重启一次配对全没了」。
+            self.discovery.disarm();
             self.joins.clear();
             {
                 let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -721,7 +822,17 @@ impl RcService {
         } else {
             name.trim().to_string()
         };
-        self.store.rc_device_pair(node_id, &n)
+        self.store.rc_device_pair(node_id, &n)?;
+        // 🔴 **配对成功即关门**（2026-09-17 补，`sync::join` 早就是这个做法）。
+        //   码里带的是「node_id + 名字」、**不是一次性 nonce** ⇒ 同一份码在窗口内
+        //   可以被反复使用。「配完就关门」比「把窗口调短」更管用，也更符合直觉：
+        //   一次配对只该消耗一份邀请。
+        //   关门失败不阻断配对本身——设备已经写进白名单了，报错会让用户以为
+        //   白配一场；但也不能静默（规则 #15.3）。
+        if let Err(e) = join::close_door(&self.store) {
+            log::warn!("[RC] 配对成功后关闭邀请窗口失败：{e}——这份码在本轮窗口内仍可使用");
+        }
+        Ok(())
     }
 
     pub fn deny_join(&self, node_id: &str) {
@@ -1007,16 +1118,35 @@ impl RcService {
         // 未配对（远程/同步都没有）+ 邀请门开着 → 记敲门，等用户核对指纹
         if !self.has_remote_trust(&peer) {
             let now = now_ms();
+            // 🔴 **判据交给纯函数**（[`join::deny_unpaired`]），因为「几种成因的区分」
+            //   正是 2026-09-17 修的那个 bug：原先除「门开着且敲门成功」外全部塌缩成一句
+            //   `not_paired`（「尚未远程配对」），而用户实际撞到的**几乎总是窗口过期**——
+            //   那句话指不到「回去重新生成一个」这个唯一正确的动作，
+            //   于是他只能反复重试同一个已经失效的窗口。
+            //   而 accept 循环（网络）在单测里跑不起来 ⇒ 判据必须抽出去才测得动。
+            //
+            //   文案由 `KnockDenial::reason()` 提供，**一律站在收到这句话的人的立场**
+            //   （他是发起方 B，对面是生成方 A），与 `Gate::deny_reason` 的既有约定一致。
+            //
             // 红线「未启用 = 零可见零请求零费用」：rc_enabled 关闭时，即便邀请门开着，
             // 也不记入 pending、不 emit，只回 deny（门禁在下方 gate_inbound 也会拦，
             // 但这里先挡住，避免禁用期间出现可见的配对请求）。
-            if self.enabled() && join::door_open(&self.store, now) && self.joins.knock(&peer, now) {
-                deny_and_close(&link_conn, &mut send, "等待对方确认配对", "await_pair_confirm").await;
-                log::info!("[RC] {short} 敲门配对，已记入待确认");
-                self.emit_changed();
-            } else {
-                deny_and_close(&link_conn, &mut send, "尚未远程配对", "not_paired").await;
-                log::info!("[RC] {short} 未远程配对，已拒绝");
+            match join::deny_unpaired(
+                self.enabled(),
+                join::door_open(&self.store, now),
+                self.joins.is_denied(&peer, now),
+            ) {
+                Some(d) => {
+                    deny_and_close(&link_conn, &mut send, d.reason(), d.code()).await;
+                    log::info!("[RC] {short} 敲门被拒：{}", d.log_label());
+                }
+                None => {
+                    self.joins.knock(&peer, now);
+                    deny_and_close(&link_conn, &mut send, "等待对方确认配对", "await_pair_confirm")
+                        .await;
+                    log::info!("[RC] {short} 敲门配对，已记入待确认");
+                    self.emit_changed();
+                }
             }
             return;
         }

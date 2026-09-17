@@ -77,13 +77,23 @@ fn test_短指纹是node_id的前缀且分组() {
 
 const NOW: i64 = 1_788_500_000_000;
 
+/// 本文件绝大多数用例测的是**邀请码本身**的行为，窗口取「知识库同步」那一档（7 天）。
+///
+/// ❗ 窗口自 2026-09-17 起是 [`invite::decode`] 的**参数**——两条路的窗口相差 336 倍
+/// （30 分钟 vs 7 天），写成常量必然漂，而漂的表现是「用户撞在门上却拿到一句
+/// 指不到动作的错误」。这里只给测试一个省事的默认值；
+/// 远程电脑那一档由 `test_远程配对的窗口是30分钟且与邀请门同宽` 单独钉住。
+fn decode_kb(code: &str, now_ms: i64) -> Result<invite::Invite, String> {
+    invite::decode(code, now_ms, invite::TTL_SECS)
+}
+
 #[test]
 fn test_邀请码能原样解回来() {
     let dir = tmp_dir("inv");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
     let code = invite::encode(&me, "书房台式机", vec!["192.168.1.7:5007".into()], NOW).unwrap();
 
-    let got = invite::decode(&code, NOW + 1000).unwrap();
+    let got = decode_kb(&code, NOW + 1000).unwrap();
     assert_eq!(got.node_id, me.node_id());
     assert_eq!(got.name, "书房台式机");
     assert_eq!(got.addrs, vec!["192.168.1.7:5007"]);
@@ -106,7 +116,7 @@ fn test_改动过的邀请码拒绝() {
     let s = String::from_utf8(raw).unwrap().replace("书房台式机", "攻击者的机器");
     let bad = base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, s);
 
-    let e = invite::decode(&bad, NOW).expect_err("改过的码必须拒");
+    let e = decode_kb(&bad, NOW).expect_err("改过的码必须拒");
     assert!(e.contains("被改动过"), "{}", e);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -118,7 +128,7 @@ fn test_截断的邀请码给得出所以然的错() {
     // ❗ 断言的是**说法具体**，不再断言字面含 "base64"（2026-09-06 改）：
     //   “base64” 是用户看不懂的黑话，而旧文案「可能是复制时少了几个字符」
     //   还把人往错方向引——真正的常见原因是混进了看不见的字符（见下一条用例）。
-    let e = invite::decode("这显然不是邀请码", NOW).expect_err("该拒");
+    let e = decode_kb("这显然不是邀请码", NOW).expect_err("该拒");
     assert!(
         e.contains("不属于邀请码的字符") || e.contains("只复制到了一半"),
         "要说得出所以然，不能只报「无效」：{}",
@@ -143,14 +153,14 @@ fn test_搬运途中混入的不可见字符不影响解码() {
         &code[..mid],
         &code[mid..]
     );
-    let inv = invite::decode(&dirty, NOW).expect("洗掉不可见字符后应该能解开");
+    let inv = decode_kb(&dirty, NOW).expect("洗掉不可见字符后应该能解开");
     assert_eq!(inv.name, "书房台式机");
     assert_eq!(inv.node_id, me.node_id());
 
     // ❗ 放宽不能放到“改过的码也能过”：把身份字段改掉仍须被签名拦下。
     let tampered = dirty.replace("书房台式机", "别的机器");
     if tampered != dirty {
-        assert!(invite::decode(&tampered, NOW).is_err(), "改过的码必须拒");
+        assert!(decode_kb(&tampered, NOW).is_err(), "改过的码必须拒");
     }
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -180,7 +190,7 @@ fn test黑名单漏掉的那五个不可见字符也要能洗掉() {
         // 插在中间，模拟折行处被插入
         let mid = code.len() / 2;
         let dirty = format!("{}{}{}", &code[..mid], ch, &code[mid..]);
-        let inv = invite::decode(&dirty, NOW)
+        let inv = decode_kb(&dirty, NOW)
             .unwrap_or_else(|e| panic!("{} 没被洗掉：{}", name, e));
         assert_eq!(inv.node_id, me.node_id(), "{}", name);
     }
@@ -197,14 +207,14 @@ fn test多粘了别的文字与码本身坏了要报不同的话() {
 
     // ① 把前缀一起粘进来了 → 要明确说「混进了别的字符」
     let with_prefix = format!("邀请码{}", code);
-    let e1 = invite::decode(&with_prefix, NOW).expect_err("多粘了文字该拒");
+    let e1 = decode_kb(&with_prefix, NOW).expect_err("多粘了文字该拒");
     assert!(e1.contains("不属于邀请码的字符"), "该提示混入文字：{}", e1);
 
     // ② 只复制到一半 → 要明确说「只复制到了一半」，而不是说混入了字符
     //   造一个长度 %4==1 的截断（那是洗完之后唯一还能失败的情形）
     let cut = code.len() - (code.len() % 4) - 3;
     let truncated = &code[..cut + 1];
-    let e2 = invite::decode(truncated, NOW).expect_err("截断的码该拒");
+    let e2 = decode_kb(truncated, NOW).expect_err("截断的码该拒");
     assert!(
         !e2.contains("不属于邀请码的字符"),
         "截断不该报成「混入了字符」，那会让用户去找不存在的脏字符：{}",
@@ -212,7 +222,7 @@ fn test多粘了别的文字与码本身坏了要报不同的话() {
     );
 
     // ③ 空串要单独一句，不能跟上面两种混
-    let e3 = invite::decode("   \n  ", NOW).expect_err("空串该拒");
+    let e3 = decode_kb("   \n  ", NOW).expect_err("空串该拒");
     assert!(e3.contains("没有粘进"), "空串要说清楚是空的：{}", e3);
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -225,8 +235,43 @@ fn test_过期的邀请码拒绝且说清怎么办() {
     let code = invite::encode(&me, "老机器", vec![], NOW).unwrap();
 
     let later = NOW + (invite::TTL_SECS + 1) * 1000;
-    let e = invite::decode(&code, later).expect_err("过期必须拒");
+    let e = decode_kb(&code, later).expect_err("过期必须拒");
     assert!(e.contains("已过期") && e.contains("重新生成"), "{}", e);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 🔴 同一个过期时间点，两条路必须给出**不同**的答案（2026-09-17 修的那处错配）。
+///
+/// 修复前：码 TTL 是 7 天、远程邀请门只有 30 分钟 ⇒用户手里的码「还有效」，
+/// 但他撞上的是门，对端只会回一句 `not_paired`（「尚未远程配对」）——
+/// **指不到「回去重新生成一个」这个唯一正确的动作**，于是他只能反复重试同一个失效窗口。
+///
+/// 这条用例同时钉住两件事：
+/// ① 两条路的窗口**真的不同**（拿同一个时间点分别解，一个收一个拒）；
+/// ② 过期话术**说人话**——30 分钟整除 86400 是 0，旧文案会写成「有效期 0 天」。
+#[test]
+fn test_过期的两种情况要说得出是多久() {
+    let dir = tmp_dir("old2");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "老机器", vec![], NOW).unwrap();
+    let later = NOW + 31 * 60 * 1000; // 31 分钟之后
+
+    // 知识库同步那一档（7 天）：远没到期
+    assert!(
+        invite::decode(&code, later, invite::TTL_SECS).is_ok(),
+        "知识库那档是 7 天，31 分钟就拒会打断正常配对"
+    );
+
+    // 远程电脑那一档（30 分钟）：必须拒，且要把「多久之前 / 有效期多久」说清楚
+    let e = invite::decode(&code, later, invite::RC_TTL_SECS).expect_err("31 分钟前的码该拒");
+    assert!(e.contains("已过期"), "{}", e);
+    assert!(e.contains("31 分钟前"), "要说清多久之前生成的，实际：{}", e);
+    assert!(e.contains("30 分钟"), "有效期要说成人话，实际：{}", e);
+    assert!(
+        !e.contains("0 天"),
+        "30 分钟整除 86400 就是 0 天——旧文案正是这样写的，实际：{}",
+        e
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -240,7 +285,7 @@ fn test_对端时钟稍快不影响配对() {
     let me = NodeIdentity::load_or_create(&dir).unwrap();
     // 码上的时间比本机「现在」晚 5 分钟
     let code = invite::encode(&me, "快五分钟的机器", vec![], NOW + 300_000).unwrap();
-    assert!(invite::decode(&code, NOW).is_ok(), "对端时钟快 5 分钟就配不上，那没法用");
+    assert!(decode_kb(&code, NOW).is_ok(), "对端时钟快 5 分钟就配不上，那没法用");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1000,7 +1045,9 @@ fn test_清单里的穿越路径不能删掉外面的文件() {
 mod presence_tests {
     use super::tmp_dir;
     use crate::sync::identity::NodeIdentity;
-    use crate::sync::presence::{build, Heard, PresenceTable, ANNOUNCE_INTERVAL_SECS, STALE_MS};
+    use crate::sync::presence::{
+        build, Heard, PresenceApp, PresenceTable, ANNOUNCE_INTERVAL_SECS, STALE_MS,
+    };
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     /// 固定时刻。测试**不取当前时间**：presence 有 ±120 秒的时间窗，
@@ -1025,9 +1072,9 @@ mod presence_tests {
     fn test_已配对对端的公告被收下并用源ip当地址() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_b")).unwrap();
-        let packet = build(&a, 41234, T0).unwrap();
+        let packet = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
 
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         let heard = table.hear(&packet, ip(20), &b.node_id(), &known, T0 + 100);
 
@@ -1039,6 +1086,8 @@ mod presence_tests {
                 addr: SocketAddr::new(ip(20), 41234),
                 // 第一份公告就是一次跃变（之前表里根本没它）。
                 returned: true,
+                // 本包由当前版本的 `build` 发出，带用途标识。
+                legacy: false,
             }
         );
         assert_eq!(
@@ -1058,12 +1107,12 @@ mod presence_tests {
     fn test_只有从没声音到有声音才算它回来了() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_returned")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_returned_b")).unwrap();
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
 
         // 第一份：表里本没它 → 跃变
         let h1 = table.hear(
-            &build(&a, 41234, T0).unwrap(),
+            &build(&a, PresenceApp::Kb, 41234, T0).unwrap(),
             ip(20),
             &b.node_id(),
             &known,
@@ -1074,7 +1123,7 @@ mod presence_tests {
         // 第二份（一个心跳周期后，地址还新鲜）→ **不是**跃变
         let t2 = T0 + ANNOUNCE_INTERVAL_SECS as i64 * 1000;
         let h2 = table.hear(
-            &build(&a, 41234, t2).unwrap(),
+            &build(&a, PresenceApp::Kb, 41234, t2).unwrap(),
             ip(20),
             &b.node_id(),
             &known,
@@ -1088,7 +1137,7 @@ mod presence_tests {
         // 隐身超过 STALE_MS 后再冒头 → 又是跃变（这才是真的「回来了」）
         let t3 = t2 + STALE_MS + 1;
         let h3 = table.hear(
-            &build(&a, 41234, t3).unwrap(),
+            &build(&a, PresenceApp::Kb, 41234, t3).unwrap(),
             ip(20),
             &b.node_id(),
             &known,
@@ -1100,22 +1149,105 @@ mod presence_tests {
     #[test]
     fn test_公告里没有设备名字段() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_noname")).unwrap();
-        let packet = build(&a, 1234, T0).unwrap();
+        let packet = build(&a, PresenceApp::Kb, 1234, T0).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&packet).unwrap();
         let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
         keys.sort();
         // 钉住线上格式：多一个字段就是多一个能进界面的对端可控字符串。
         // 设备名在配对时已入 devices 表，公告不该再带一份。
-        assert_eq!(keys, vec!["node_id", "port", "sig", "ts", "v"]);
+        //
+        // `app` 是例外——它是**枚举**（只可能取值 kb/rc），不是自由文本，
+        // 进不了界面也就无法承载可控字符串。加它就是为了认串台（见 Heard::WrongApp）。
+        assert_eq!(keys, vec!["app", "node_id", "port", "sig", "ts", "v"]);
+    }
+
+    /// 🔴 回归：2026-09-17 那次串台之所以排查半天，是因为包进错表**完全不报错**——
+    /// 两套 presence 的包除端口外一模一样（同一 `node_id`、同一把签名密钥），
+    /// 全套校验照常通过，地址表被静默写脏，日志与正常心跳长得一样。
+    #[test]
+    fn test_另一套presence的公告被认出来并丢掉() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_wrongapp_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_wrongapp_b")).unwrap();
+        // a 发的是**知识库同步**的公告，却被投进了远程电脑那张表（端口配错）
+        let packet = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        let known = paired(vec![a.node_id()]);
+        let heard = table.hear(&packet, ip(21), &b.node_id(), &known, T0);
+
+        assert_eq!(
+            heard,
+            Heard::WrongApp {
+                claimed: PresenceApp::Kb
+            }
+        );
+        // 🔴 关键：地址一个都不许记。记了就是拿**别的通道**的端点去拨号。
+        assert!(table.addrs_of(&a.node_id(), T0).is_empty());
+        assert!(table.live(T0).is_empty());
+    }
+
+    /// 判定是按**表**来的，不是一刀切拒：同一份包投进对的那张表就正常收下。
+    #[test]
+    fn test_用途对得上就照常收下() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_rightapp_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_rightapp_b")).unwrap();
+        let packet = build(&a, PresenceApp::Rc, 41234, T0).unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        let known = paired(vec![a.node_id()]);
+        let heard = table.hear(&packet, ip(23), &b.node_id(), &known, T0);
+
+        assert!(
+            matches!(heard, Heard::Fresh { legacy: false, .. }),
+            "{:?}",
+            heard
+        );
+        assert_eq!(table.addrs_of(&a.node_id(), T0).len(), 1);
+    }
+
+    /// 🔴 与旧版本的兼容，靠的正是「`app` **不参与签名**」（取舍见 `presence::wire::build`）。
+    ///
+    /// 删掉字段之后老签名仍然验得过——旧版本收新版本的包就是这个道理。
+    /// 反过来，旧包（无 `app`）在新版本这里走 `legacy` 分支**按旧口径收下**：
+    /// 拒掉它等于把旧对端的知识库同步也一起打到中继上，为一个新字段引入
+    /// 一个新的退化，不划算。
+    ///
+    /// 📌 若哪天有人把 `app` 塞进 `signing_bytes`，这个测试会红。别直接改绿它——
+    /// 那次改动的真实代价是「升级过渡期两个方向一起退到 n0 中继」。
+    #[test]
+    fn test_旧版公告没有用途标识时按旧口径收下() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_legacy_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_legacy_b")).unwrap();
+        let packet = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
+
+        // 模拟旧版本发出的包：包体里没有 `app`，签名原样不动
+        let mut v: serde_json::Value = serde_json::from_slice(&packet).unwrap();
+        v.as_object_mut().unwrap().remove("app");
+        let old = serde_json::to_vec(&v).unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Kb);
+        let known = paired(vec![a.node_id()]);
+        let heard = table.hear(&old, ip(22), &b.node_id(), &known, T0);
+
+        assert_eq!(
+            heard,
+            Heard::Fresh {
+                node_id: a.node_id(),
+                addr: SocketAddr::new(ip(22), 41234),
+                returned: true,
+                legacy: true,
+            }
+        );
+        assert_eq!(table.addrs_of(&a.node_id(), T0).len(), 1);
     }
 
     #[test]
     fn test_未配对的节点公告直接丢掉() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_unp_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_unp_b")).unwrap();
-        let packet = build(&a, 1234, T0).unwrap();
+        let packet = build(&a, PresenceApp::Kb, 1234, T0).unwrap();
 
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let heard = table.hear(&packet, ip(30), &b.node_id(), &nobody, T0);
 
         assert_eq!(
@@ -1132,8 +1264,8 @@ mod presence_tests {
     #[test]
     fn test_自己的公告回环时忽略() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_self")).unwrap();
-        let packet = build(&a, 1234, T0).unwrap();
-        let table = PresenceTable::new();
+        let packet = build(&a, PresenceApp::Kb, 1234, T0).unwrap();
+        let table = PresenceTable::new(PresenceApp::Kb);
         // 组播会把自己发的包回环给自己
         let known = paired(vec![a.node_id()]);
         assert_eq!(
@@ -1147,13 +1279,13 @@ mod presence_tests {
     fn test_改过端口的公告签名不通过() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_tamper_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_tamper_b")).unwrap();
-        let packet = build(&a, 41234, T0).unwrap();
+        let packet = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
         let mut v: serde_json::Value = serde_json::from_slice(&packet).unwrap();
         // 把端口改成攻击者自己的，签名不动
         v["port"] = serde_json::json!(9999);
         let tampered = serde_json::to_vec(&v).unwrap();
 
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         let heard = table.hear(&tampered, ip(40), &b.node_id(), &known, T0);
         assert!(
@@ -1168,8 +1300,8 @@ mod presence_tests {
     fn test_原样重放同一份公告会被拒() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_replay_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_replay_b")).unwrap();
-        let packet = build(&a, 41234, T0).unwrap();
-        let table = PresenceTable::new();
+        let packet = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
 
         assert!(matches!(
@@ -1196,8 +1328,8 @@ mod presence_tests {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_skew_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_skew_b")).unwrap();
         // 对端时钟慢 10 分钟，远超 ±120 秒窗口
-        let packet = build(&a, 41234, T0 - 600_000).unwrap();
-        let table = PresenceTable::new();
+        let packet = build(&a, PresenceApp::Kb, 41234, T0 - 600_000).unwrap();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         let heard = table.hear(&packet, ip(60), &b.node_id(), &known, T0);
         assert!(
@@ -1212,8 +1344,8 @@ mod presence_tests {
     fn test_地址过期后不再返回() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_stale_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_stale_b")).unwrap();
-        let packet = build(&a, 41234, T0).unwrap();
-        let table = PresenceTable::new();
+        let packet = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         table.hear(&packet, ip(70), &b.node_id(), &known, T0);
 
@@ -1228,11 +1360,11 @@ mod presence_tests {
     fn test_多网卡的地址都记着且最近的排前面() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_multi_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_multi_b")).unwrap();
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         // 同一台机器两张网卡各发一份（ts 递增，所以都不是重放）
-        let p1 = build(&a, 41234, T0).unwrap();
-        let p2 = build(&a, 41234, T0 + 1).unwrap();
+        let p1 = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
+        let p2 = build(&a, PresenceApp::Kb, 41234, T0 + 1).unwrap();
         table.hear(&p1, ip(80), &b.node_id(), &known, T0);
         table.hear(&p2, ip(81), &b.node_id(), &known, T0 + 1);
 
@@ -1250,11 +1382,11 @@ mod presence_tests {
     fn test_地址条数有上限且淘汰最久没刷新的() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_cap_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_cap_b")).unwrap();
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         // 6 个不同源 IP（换过几次网络后的残留），上限是 4
         for (i, last) in [10u8, 11, 12, 13, 14, 15].iter().enumerate() {
-            let p = build(&a, 41234, T0 + i as i64).unwrap();
+            let p = build(&a, PresenceApp::Kb, 41234, T0 + i as i64).unwrap();
             table.hear(&p, ip(*last), &b.node_id(), &known, T0 + i as i64);
         }
         let addrs = table.addrs_of(&a.node_id(), T0 + 10);
@@ -1269,8 +1401,8 @@ mod presence_tests {
     fn test_忘记设备时地址一起清掉() {
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_forget_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_forget_b")).unwrap();
-        let packet = build(&a, 41234, T0).unwrap();
-        let table = PresenceTable::new();
+        let packet = build(&a, PresenceApp::Kb, 41234, T0).unwrap();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         table.hear(&packet, ip(90), &b.node_id(), &known, T0);
         assert_eq!(table.addrs_of(&a.node_id(), T0).len(), 1);
@@ -1283,7 +1415,7 @@ mod presence_tests {
     #[test]
     fn test_畸形包各给不同的说法() {
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_bad_b")).unwrap();
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let me = b.node_id();
 
         // 不是 JSON
@@ -1344,7 +1476,7 @@ mod presence_tests {
         let forged = serde_json::json!({
             "v": 1, "node_id": a.node_id(), "port": 41234, "ts": T0, "sig": stolen_sig
         });
-        let table = PresenceTable::new();
+        let table = PresenceTable::new(PresenceApp::Kb);
         let known = paired(vec![a.node_id()]);
         let heard = table.hear(
             &serde_json::to_vec(&forged).unwrap(),
@@ -2642,4 +2774,351 @@ fn test_启动时把上次成功时间种回内存表() {
         "种过之后失败仍不能抹掉它——否则重启后第一次失败就又变回「从未成功过」"
     );
     assert!(m["p1"].fails > 0);
+}
+
+/// 明文包（A3：招呼 / 配对握手）的判据。
+///
+/// 单独一个模块而不是塞进 `presence_tests`：那里面全是**地址公告**的判据，
+/// 而这一组测的是「同一个端口上的另一类包」，两者的不变量完全不同
+/// （最要紧的一条：明文包**不查是否已配对**）。
+#[cfg(test)]
+mod presence_plain_tests {
+    use super::tmp_dir;
+    use crate::sync::identity::NodeIdentity;
+    use crate::sync::presence::{
+        build, build_kind, Extras, Heard, PlainPacket, PresenceApp, PresenceTable, WireKind,
+        NAME_MAX_CHARS,
+    };
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::{Arc, Mutex};
+
+    const T0: i64 = 1_757_000_000_000;
+
+    fn ip(last: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(192, 168, 1, last))
+    }
+
+    fn paired(ids: Vec<String>) -> impl Fn(&str) -> bool {
+        move |id| ids.iter().any(|x| x == id)
+    }
+
+    fn nobody(_: &str) -> bool {
+        false
+    }
+
+    /// 把包里的某个 JSON 字段删掉，模拟**旧版本**（没有该字段）发的包。
+    fn strip(packet: &[u8], key: &str) -> Vec<u8> {
+        let mut v: serde_json::Value = serde_json::from_slice(packet).unwrap();
+        v.as_object_mut().unwrap().remove(key);
+        serde_json::to_vec(&v).unwrap()
+    }
+
+    /// 改一个**参与签名**的字段（端口），模拟被篡改的包。
+    fn tamper_port(packet: &[u8], port: u16) -> Vec<u8> {
+        let mut v: serde_json::Value = serde_json::from_slice(packet).unwrap();
+        v.as_object_mut()
+            .unwrap()
+            .insert("port".into(), serde_json::Value::from(port));
+        serde_json::to_vec(&v).unwrap()
+    }
+
+    /// 🔴 全组最要紧的一条：**附近设备按定义就是还没配对的邻居**。
+    ///
+    /// 地址表那条路在验签之前就把未配对设备拦掉了（`if !is_paired { Unpaired }`），
+    /// 而那正是「同网段任何人乱发都能把表灌满」的唯一入口。明文包走另一条路：
+    /// 不查 `is_paired`，但也**一个字都不进地址表**。
+    #[test]
+    fn test_招呼包未配对也收得到但一个字都不入地址表() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_me")).unwrap();
+        let packet = build_kind(
+            &a,
+            PresenceApp::Rc,
+            WireKind::Hello,
+            41234,
+            T0,
+            Extras::hello("办公室台式机"),
+        )
+        .unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        let heard = table.hear(&packet, ip(20), &me.node_id(), &nobody, T0 + 100);
+
+        assert_eq!(
+            heard,
+            Heard::Plain(PlainPacket {
+                kind: WireKind::Hello,
+                node_id: a.node_id(),
+                name: "办公室台式机".to_string(),
+                pk: String::new(),
+                to_id: String::new(),
+                ts: T0,
+                src: SocketAddr::new(ip(20), 41234),
+            })
+        );
+        assert!(
+            table.live(T0 + 100).is_empty(),
+            "明文包绝不能进地址表：那正是「未配对不入表」这条不变量要挡的事"
+        );
+        assert!(table.addrs_of(&a.node_id(), T0 + 100).is_empty());
+    }
+
+    /// 握手包同样不查 `is_paired`，且公钥与目标都要能原样拿出来。
+    #[test]
+    fn test_握手包带上公钥与目标() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_pk_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_pk_me")).unwrap();
+        let pk = "ab".repeat(32);
+        let packet = build_kind(
+            &a,
+            PresenceApp::Rc,
+            WireKind::PinReq,
+            41234,
+            T0,
+            Extras::to(&me.node_id(), &pk),
+        )
+        .unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        match table.hear(&packet, ip(21), &me.node_id(), &nobody, T0) {
+            Heard::Plain(p) => {
+                assert_eq!(p.kind, WireKind::PinReq);
+                assert_eq!(p.pk, pk, "公钥要能原样传给 X25519 协商");
+                assert_eq!(p.to_id, me.node_id(), "定向包要能认出是给谁的");
+                assert_eq!(p.name, "", "握手包不带名字");
+            }
+            other => panic!("应当收成明文包，实际 {:?}", other),
+        }
+    }
+
+    /// 🔴 兼容性：**旧版本发的包里没有 `kind`**，必须按地址公告（`Addr`）处理。
+    ///
+    /// 反了的话（默认值不是 `Addr`），升级过渡期所有旧对端的地址公告都会被
+    /// 判成另一种包而丢掉——局域网发现整个失效，而这一点在界面上完全看不出来。
+    #[test]
+    fn test_老包没有kind字段时按地址公告收下() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_old_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_old_me")).unwrap();
+        let old = strip(&build(&a, PresenceApp::Rc, 41234, T0).unwrap(), "kind");
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        let known = paired(vec![a.node_id()]);
+        assert_eq!(
+            table.hear(&old, ip(20), &me.node_id(), &known, T0 + 100),
+            Heard::Fresh {
+                node_id: a.node_id(),
+                addr: SocketAddr::new(ip(20), 41234),
+                returned: true,
+                legacy: false,
+            },
+            "没有 kind 的老包 = 地址公告，收下并学地址（老行为一模一样）"
+        );
+    }
+
+    /// 明文包**必须带用途标识**：`None` 只可能是中间人抹掉的。
+    ///
+    /// 与地址公告相反（那里读得进没有 `app` 的旧包）。差别有理由：
+    /// 旧版本根本不发明文包，所以这里挡不到任何真实对端；
+    /// 而把一份用途不明的包当本套收下，正是 09-17 那次串台污染的老路。
+    #[test]
+    fn test_明文包没有用途标识就拒() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_noapp_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_noapp_me")).unwrap();
+        let noapp = strip(
+            &build_kind(
+                &a,
+                PresenceApp::Rc,
+                WireKind::Hello,
+                41234,
+                T0,
+                Extras::hello("x"),
+            )
+            .unwrap(),
+            "app",
+        );
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        match table.hear(&noapp, ip(20), &me.node_id(), &nobody, T0) {
+            Heard::Bad(why) => assert!(why.contains("用途标识"), "要说清是缺什么，实际：{}", why),
+            other => panic!("应当拒掉，实际 {:?}", other),
+        }
+    }
+
+    /// 串台在明文这条路上同样要认得出来（否则 rc 的招呼包会进 kb 的附近表）。
+    #[test]
+    fn test_明文包串台也认得出() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_wrong_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_wrong_me")).unwrap();
+        let rc_hello = build_kind(
+            &a,
+            PresenceApp::Rc,
+            WireKind::Hello,
+            41234,
+            T0,
+            Extras::hello("台式机"),
+        )
+        .unwrap();
+
+        let kb_table = PresenceTable::new(PresenceApp::Kb);
+        assert_eq!(
+            kb_table.hear(&rc_hello, ip(20), &me.node_id(), &nobody, T0),
+            Heard::WrongApp {
+                claimed: PresenceApp::Rc
+            },
+            "知识库同步那套不该收远程电脑的招呼包"
+        );
+    }
+
+    /// 签名照旧要验——它挡的是「冒名宣告别人的 node_id」，
+    /// 没有它，同网段的人能让用户看到一台名字对得上、指纹却是别人的设备。
+    #[test]
+    fn test_明文包签名对不上就拒() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_sig_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_sig_me")).unwrap();
+        // 端口参与签名：改了它签名就不对
+        let bad = tamper_port(
+            &build_kind(
+                &a,
+                PresenceApp::Rc,
+                WireKind::Hello,
+                41234,
+                T0,
+                Extras::hello("x"),
+            )
+            .unwrap(),
+            9999,
+        );
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        match table.hear(&bad, ip(20), &me.node_id(), &nobody, T0) {
+            Heard::Bad(why) => assert!(why.contains("签名"), "要说清是签名不过，实际：{}", why),
+            other => panic!("应当拒掉，实际 {:?}", other),
+        }
+    }
+
+    /// 超窗的明文包照丢。没有这条，一份几个月前的招呼包可以随时把列表刷出一台
+    /// 早就不在的机器。
+    #[test]
+    fn test_明文包超窗就丢() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_win_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_win_me")).unwrap();
+        let hello = build_kind(
+            &a,
+            PresenceApp::Rc,
+            WireKind::Hello,
+            41234,
+            T0,
+            Extras::hello("x"),
+        )
+        .unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        match table.hear(&hello, ip(20), &me.node_id(), &nobody, T0 + 121_000) {
+            Heard::OutOfWindow { skew_ms, .. } => assert_eq!(skew_ms, 121_000),
+            other => panic!("超窗该丢，实际 {:?}", other),
+        }
+    }
+
+    /// 组播会回环，自己的招呼包要认出来（不然列表里会多一台自己）。
+    #[test]
+    fn test_自己发的招呼包判成自己的() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_mine_a")).unwrap();
+        let hello = build_kind(
+            &a,
+            PresenceApp::Rc,
+            WireKind::Hello,
+            41234,
+            T0,
+            Extras::hello("我"),
+        )
+        .unwrap();
+        let table = PresenceTable::new(PresenceApp::Rc);
+        assert_eq!(
+            table.hear(&hello, ip(20), &a.node_id(), &nobody, T0),
+            Heard::Mine
+        );
+    }
+
+    /// 名字是**对方自报、不可信**的字符串，会一路进到界面上，所以两头都要卡：
+    /// 长度截断 + 去掉控制字符。
+    #[test]
+    fn test_自报的名字被截断且不含控制字符() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_name_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_name_me")).unwrap();
+        let long = format!("{}\n\t{}", "办".repeat(60), "台式机");
+        let hello = build_kind(
+            &a,
+            PresenceApp::Rc,
+            WireKind::Hello,
+            41234,
+            T0,
+            Extras::hello(&long),
+        )
+        .unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        match table.hear(&hello, ip(20), &me.node_id(), &nobody, T0) {
+            Heard::Plain(p) => {
+                assert_eq!(
+                    p.name.chars().count(),
+                    NAME_MAX_CHARS,
+                    "超长名字要截断到上限"
+                );
+                assert!(
+                    !p.name.chars().any(|c| c.is_control()),
+                    "控制字符（换行 / 制表）不能带进界面，实际：{:?}",
+                    p.name
+                );
+            }
+            other => panic!("应当收成明文包，实际 {:?}", other),
+        }
+    }
+
+    /// 处理器能拿到源地址（附近列表要显示「局域网」那一栏），
+    /// 且**没注册处理器时要说得出没人接**——静默丢弃比报错难查一个量级。
+    #[test]
+    fn test_明文包派发给注册过的处理器() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("plain_disp_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("plain_disp_me")).unwrap();
+        let hello = build_kind(
+            &a,
+            PresenceApp::Rc,
+            WireKind::Hello,
+            41234,
+            T0,
+            Extras::hello("台式机"),
+        )
+        .unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        let got: Arc<Mutex<Vec<PlainPacket>>> = Arc::new(Mutex::new(Vec::new()));
+        let got2 = got.clone();
+        table.on_plain(Arc::new(move |p: &PlainPacket| {
+            got2.lock().unwrap().push(p.clone());
+        }));
+
+        let Heard::Plain(p) = table.hear(&hello, ip(20), &me.node_id(), &nobody, T0) else {
+            panic!("应当收成明文包");
+        };
+        assert!(table.dispatch_plain(&p), "注册过就该有人接");
+        assert_eq!(got.lock().unwrap().as_slice(), &[p]);
+    }
+
+    #[test]
+    fn test_没注册处理器时明说没人接() {
+        let table = PresenceTable::new(PresenceApp::Kb);
+        let p = PlainPacket {
+            kind: WireKind::Hello,
+            node_id: "a".repeat(64),
+            name: "x".to_string(),
+            pk: String::new(),
+            to_id: String::new(),
+            ts: T0,
+            src: SocketAddr::new(ip(20), 41234),
+        };
+        assert!(
+            !table.dispatch_plain(&p),
+            "知识库同步那套没注册处理器，调用方据此留一条 debug"
+        );
+    }
 }

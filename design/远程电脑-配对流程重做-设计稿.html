@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 配对流程重做 · 设计稿</title>
+<style>
+  /* ===== 真实主题令牌（src/styles/theme.css）——mockup 用它渲染，不是自配色 ===== */
+  :root {
+    --app-bg: #F4F8FC;
+    --card-bg: #ffffff;
+    --card-border: #E0E4EB;
+    --border-color: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-light: #E0F2FE;
+    --accent-border: rgba(2, 132, 199, 0.35);
+    --orange: #C54A0A;
+    --orange-bg: #FFF7ED;
+    --orange-border: #FED7AA;
+    --danger: #D82525;
+    --red-bg: #FEF2F2;
+    --green: #11813A;
+    --green-bg: #DCFCE7;
+    --hover: #E8ECF2;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --doc-line: #D8DEE7;
+    --doc-code-bg: #E7ECF2;
+    --doc-code-fg: #0B4A6F;
+    --doc-top: #E9EDF3;
+  }
+  [data-theme="midnight"] {
+    --app-bg: #0B0B13;
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border-color: #27272A;
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-solid: #666FC4;
+    --accent-light: #1E1B4B;
+    --accent-border: rgba(129, 140, 248, 0.35);
+    --orange: #FB923C;
+    --orange-bg: #2A1B0E;
+    --orange-border: #7C3D0F;
+    --danger: #F87171;
+    --red-bg: #2A1414;
+    --green: #4ADE80;
+    --green-bg: #0F2417;
+    --hover: #27272A;
+    --section-bg: #0F0F11;
+    --input-bg: #27272A;
+    --doc-line: #2E2E33;
+    --doc-code-bg: #232327;
+    --doc-code-fg: #9ECBFF;
+    --doc-top: #202024;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 80px;
+    background: var(--app-bg); color: var(--text-primary);
+    font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .doc { max-width: 980px; margin: 0 auto; padding: 32px 24px 0; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+  .sub { color: var(--text-secondary); font-size: 12.5px; margin-bottom: 8px; max-width: 800px; }
+  h2 {
+    font-size: 15px; margin: 36px 0 12px; font-weight: 650;
+    padding-bottom: 6px; border-bottom: 1px solid var(--doc-line);
+  }
+  h3 { font-size: 13px; margin: 22px 0 8px; font-weight: 650; color: var(--text-secondary); }
+  p { margin: 0 0 10px; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+    background: var(--doc-code-bg); color: var(--doc-code-fg); padding: 1px 5px; border-radius: 4px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0 4px; }
+  th, td { border: 1px solid var(--doc-line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { color: var(--text-secondary); font-weight: 600; background: var(--doc-top); }
+  .bad { color: var(--danger); font-weight: 600; }
+  .good { color: var(--green); font-weight: 600; }
+  .tagx {
+    display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 9px;
+    background: var(--doc-top); color: var(--text-secondary); margin-right: 4px;
+  }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-light);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .warn {
+    border-left: 3px solid var(--orange); background: var(--orange-bg);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .warnBad {
+    border-left: 3px solid var(--danger); background: var(--red-bg);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .cols { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 1 1 380px; min-width: 340px; }
+  .colHd {
+    font-size: 11.5px; font-weight: 650; letter-spacing: .04em;
+    color: var(--text-secondary); margin-bottom: 8px;
+  }
+  .scroll { overflow-x: auto; }
+
+  /* ===== 应用窗口壳（1:1 复刻 dialog-box 视觉）===== */
+  .app {
+    background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 12px;
+    padding: 14px; font-size: 13px; color: var(--text-primary);
+  }
+  .dialog-box {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .dialog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid var(--border-color);
+  }
+  .dialog-title { font-size: 14px; font-weight: 650; margin: 0; }
+  .dialog-close {
+    width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border-color);
+    background: transparent; color: var(--text-muted); cursor: default; font-size: 12px;
+  }
+  .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ===== RemoteComputer.module.css / Lan.module.css 真实类 ===== */
+  .devList { display: flex; flex-direction: column; gap: 6px; }
+  .devItem {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 8px; background: var(--card-bg); border: 1px solid transparent;
+  }
+  .devItem:hover { background: var(--hover); border-color: var(--border-color); }
+  .devItemPicked { border-color: var(--accent-border); background: var(--accent-light); }
+  .av {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+    background: color-mix(in srgb, var(--accent) 16%, var(--card-bg));
+    color: var(--accent); border: 1px solid var(--accent-border);
+  }
+  /* 已配对设备用圆形（RcDeviceList 现状），未配对的邻居用方圆角——形态即语义 */
+  .avRound { border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, var(--card-bg)); }
+  .info { flex: 1; min-width: 0; }
+  .name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .meta {
+    font-size: 11px; color: var(--text-muted); margin-top: 3px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  }
+  .dotOn {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+  }
+  .dotOff { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
+  .tagRecent, .tagRc, .tagNew {
+    font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    border: 1px solid var(--border-color); color: var(--text-muted); font-weight: 500;
+  }
+  .tagRc { border-color: var(--accent-border); color: var(--accent); }
+  .tagNew { border-color: var(--green-bg); color: var(--green); }
+  .miniBtn, .miniBtnPri {
+    font-size: 11px; padding: 5px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: transparent; color: var(--text-primary);
+    cursor: default; white-space: nowrap; font-family: inherit;
+  }
+  .miniBtnPri {
+    background: var(--accent-solid); border-color: var(--accent-solid); color: #fff; font-weight: 600;
+  }
+  .miniBtnPri.wideBtn { padding: 5px 14px; }
+  .miniBtn:disabled, .miniBtnPri:disabled { opacity: .45; }
+  .noteWarn {
+    border-left: 3px solid var(--orange);
+    background: color-mix(in srgb, var(--orange) 8%, transparent);
+    padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.6;
+  }
+  .noteBad {
+    border-left: 3px solid var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+    padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.6;
+  }
+  .separator { height: 1px; background: var(--border-color); margin: 2px 0; }
+  .secLabel {
+    font-size: 11px; color: var(--text-muted); letter-spacing: .03em; margin-bottom: 2px;
+  }
+
+  /* ===== 6 位数字核对（Lan.module.css 的 lanPair* 真实尺寸） ===== */
+  .pairBox {
+    padding: 14px; border-radius: 10px;
+    background: var(--card-bg); border: 1px solid var(--accent);
+  }
+  .pairTitle { font-size: 12.5px; font-weight: 700; text-align: center; }
+  /* 🔴 字号大、字距拉开：这串数字要被人逐位与另一块屏幕对比。
+     它是整套机制里唯一靠人把关的环节，不能做小。 */
+  .pairPin {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 30px; font-weight: 700; letter-spacing: 9px;
+    text-align: center; color: var(--accent);
+    padding: 12px 0 4px;
+  }
+  .pairHint {
+    font-size: 11.5px; color: var(--text-secondary);
+    text-align: center; line-height: 1.7;
+  }
+  .pairWarn {
+    font-size: 11px; color: var(--text-secondary); line-height: 1.6;
+    margin-top: 8px; padding: 7px 9px; border-radius: 6px; background: var(--section-bg);
+  }
+  .pairBtns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+
+  /* ===== 附近设备列表（Lan.module.css 的 lanNearby* 真实形态） ===== */
+  .nearbyEmpty {
+    font-size: 11.5px; color: var(--text-muted); line-height: 1.6;
+    padding: 12px 14px; border-radius: 12px;
+    border: 1px dashed var(--border-color);
+    background: var(--card-bg);
+  }
+  .nearbyEmptyTitle {
+    font-size: 12.5px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;
+  }
+  .nearbySteps { margin: 0; padding-left: 18px; color: var(--text-secondary); }
+  .nearbySteps li { margin: 3px 0; }
+
+  /* ===== 邀请码（RemoteComputer.module.css 的 inviteCode） ===== */
+  .inviteCode {
+    width: 100%; min-height: 56px; margin-top: 8px;
+    font: inherit; font-size: 11px; font-family: ui-monospace, Consolas, monospace;
+    border-radius: 6px; border: 1px solid var(--border-color);
+    background: var(--input-bg); color: var(--text-primary);
+    padding: 8px; resize: none; word-break: break-all;
+  }
+  .inviteCode.short { min-height: 40px; font-size: 12.5px; letter-spacing: .04em; }
+  .textArea {
+    width: 100%; min-height: 66px;
+    font: inherit; font-size: 12px; font-family: ui-monospace, Consolas, monospace;
+    border-radius: 8px; border: 1px solid var(--border-color);
+    padding: 8px; resize: vertical; background: var(--card-bg);
+    color: var(--text-primary);
+  }
+  .fpBox {
+    border: 1px solid var(--border-color); border-radius: 8px;
+    padding: 10px 12px; background: var(--card-bg);
+  }
+  .fpLabel { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .fpVal {
+    font-family: ui-monospace, Consolas, monospace; font-weight: 700;
+    font-size: 13px; letter-spacing: .02em; word-break: break-all;
+  }
+  .pairPane { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fieldRow { display: flex; gap: 8px; justify-content: flex-end; }
+  .foot { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+  .foot b { color: var(--text-secondary); }
+  .okBox { text-align: center; padding: 14px 0 4px; }
+  .okMark { font-size: 26px; line-height: 1.2; }
+  .okTitle { font-weight: 700; margin-top: 6px; font-size: 13px; }
+  .okSub { color: var(--text-muted); font-size: 11.5px; margin-top: 5px; }
+  .btnRowCenter { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+
+  /* ===== 演示控制 ===== */
+  .demoBar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px;
+    padding: 8px 10px; margin: 12px 0 0;
+  }
+  .demoBar .sp { flex: 1; }
+  .stepName { font-size: 12px; font-weight: 650; color: var(--text-primary); }
+  .demoBar button {
+    font: inherit; font-size: 11.5px; padding: 4px 11px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary);
+    cursor: pointer;
+  }
+  .demoBar button:hover { background: var(--hover); }
+  .demoBar button.pri { background: var(--accent-solid); border-color: var(--accent-solid); color: #fff; font-weight: 600; }
+  .scrTitle {
+    font-size: 11px; font-weight: 650; color: var(--text-muted);
+    letter-spacing: .04em; margin-bottom: 7px;
+  }
+  .stepsInline { display: flex; gap: 6px; align-items: center; font-size: 11.5px; flex-wrap: wrap; margin-top: 10px; }
+  .arrow { color: var(--text-muted); }
+  .stepChip {
+    border: 1px solid var(--border-color); border-radius: 6px; padding: 3px 8px;
+    background: var(--card-bg); color: var(--text-secondary); font-size: 11px;
+  }
+  .stepChip.hot { border-color: var(--accent-border); color: var(--accent); background: var(--accent-light); font-weight: 600; }
+  .stepChip.cut { text-decoration: line-through; opacity: .55; }
+  .legend { font-size: 11.5px; color: var(--text-secondary); margin-top: 8px; }
+  .kbd {
+    font-family: ui-monospace, Consolas, monospace; font-size: 10.5px;
+    border: 1px solid var(--border-color); border-bottom-width: 2px; border-radius: 4px;
+    padding: 0 4px; background: var(--card-bg);
+  }
+  .themeBar { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+  .themeBar button {
+    font: inherit; font-size: 11.5px; padding: 4px 11px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary);
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="themeBar"><button id="themeBtn">切到 midnight（暗色对照）</button></div>
+
+  <h1>远程电脑 · 配对流程重做</h1>
+  <p class="sub">
+    PastePanda · 设计稿 · 2026-09-17 ·
+    局域网 <b>10 步 → 3 步</b>（零字符串搬运）· 跨网邀请码 <b>308 → 167 字符</b> ·
+    确认点 <b>2 处 → 1 处</b> · 邀请码与邀请门的过期语义统一
+  </p>
+  <p class="sub">
+    依据：<code>docs/远程电脑-配对流程-对标与方案-2026-09-17.md</code>（含实测数据与六家产品对标）。
+    本文那节「🔴 一处技术判断要纠正」是写这份稿时新查出来的，与方案文档有出入，请一并看。
+  </p>
+
+  <div class="legend" style="max-width:820px;border-left:3px solid var(--doc-line);padding-left:10px;margin-top:12px">
+    <b>码长口径</b>：全文码长均按 <code>invite::encode</code> 复算（base64url 无填充，设备名按 UTF-8 字节计入）。
+    基准设备名「<b>办公室台式机</b>」→ <b>308 → 167</b> 字符；设备名每多 1 个汉字，码长约 +4 字符，
+    故示例里那个「笔记本」的码是 <b>296 → 155</b>。下面各图标注的都是<b>该图里那串码的实测值</b>。
+  </div>
+
+  <h2>§0 这一版改什么</h2>
+
+  <div class="scroll">
+  <table>
+    <tr>
+      <th style="width:14%">动作</th><th style="width:30%">现状</th><th style="width:32%">改后</th><th style="width:24%">代价 / 前置</th>
+    </tr>
+    <tr>
+      <td><b>A</b> 局域网快路径</td>
+      <td>看不见附近设备。必须走「生成码 → 带外发 → 粘贴 → 核对 → 勾选」</td>
+      <td>附近设备列表 → 点一下 → <b>两端同一个 6 位数字</b> → 各点一次确认</td>
+      <td>新增一条明文招呼通道（见 §6）；两端需同版本</td>
+    </tr>
+    <tr>
+      <td><b>C</b> 确认点收成 1 处</td>
+      <td>发起方勾选核对 <b>+</b> 生成方确认，两处</td>
+      <td>只留<b>被写入白名单那一侧</b>的确认（生成方）</td>
+      <td>安全性改由 A 的 6 位数字承担；两者要一起上</td>
+    </tr>
+    <tr>
+      <td><b>B1</b> 邀请码瘦身</td>
+      <td>308 字符（JSON 内嵌 <code>sig</code> 占 41%、<code>addrs</code> 是死字段）</td>
+      <td>167 字符（删死字段 + 删挡不住攻击者的自签）</td>
+      <td>⚠️ wire 变更，<b>两端需同版本</b></td>
+    </tr>
+    <tr>
+      <td>过期语义</td>
+      <td>码内 <b>7 天</b>、门 <b>30 分钟</b>；用户撞的是门，报错却说 <code>not_paired</code></td>
+      <td>一个时间口径，文案直说窗口时长与「怎么重来」</td>
+      <td>常量 + 文案，无协议变更</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="callout">
+    <b>为什么先做这三件</b>：它们各自都很小，但合起来恰好覆盖了「重、易错、会卡死」的三处
+    ——「重」是搬 308 字符、「易错」是跨屏核对 16 位 hex、「会卡死」是发起方那一勾。
+    局域网快路径（A）单独一批，因为它才是真正的流程重做。
+  </div>
+
+  <h2>§1 现状：10 步、搬 308 字符、跨屏核对两次</h2>
+
+  <div class="scroll">
+  <table>
+    <tr><th style="width:6%">#</th><th style="width:40%">用户动作</th><th style="width:54%">它真正难在哪</th></tr>
+    <tr><td>1</td><td>A 打开远程电脑面板 → 点「远程配对」</td><td class="v">—</td></tr>
+    <tr><td>2</td><td>A 选「生成邀请码」</td><td class="v">第一屏只有两个按钮，看不出该选哪个</td></tr>
+    <tr><td>3</td><td>A 确认设备名 → 点「生成并复制」</td><td class="v">码长 <b>308 字符</b>，多数 IM 里会被截断/折叠</td></tr>
+    <tr><td>4</td><td><b>A 把码发给 B（带外：微信 / 邮件）</b></td><td class="v">复制到 IM 常带多余换行与「邀请码：」前缀</td></tr>
+    <tr><td>5</td><td>B 打开配对对话框 → 选「粘贴对方的邀请码」</td><td class="v">要自己判断选哪一侧</td></tr>
+    <tr><td>6</td><td>B 粘贴 → 点「解析邀请码」</td><td class="v">粘错会报「码里有 N 处多余字符」，要用户自己删</td></tr>
+    <tr><td>7</td><td><b>B 跨屏核对 A 的 16 位 hex 指纹</b></td><td class="v">要念/看图比对；且两个值都来自同一串明文码</td></tr>
+    <tr><td>8</td><td>B 勾选「我已核对指纹」</td><td class="v">🔴 这一步历史上把按钮和指纹互相卡死过</td></tr>
+    <tr><td>9</td><td>B 点「完成远程配对」</td><td class="v">—</td></tr>
+    <tr><td>10</td><td><b>A 在待确认里再核对一次指纹 → 同意</b></td><td class="v">同一件事做了两遍，且第二遍才真正写入白名单</td></tr>
+  </table>
+  </div>
+
+  <div class="cols" style="margin-top:14px">
+    <div class="col">
+      <div class="colHd">搬运量与核对次数</div>
+      <table>
+        <tr><th>项</th><th>值</th><th>来源</th></tr>
+        <tr><td class="v">邀请码长度</td><td class="v"><b>308</b> 字符</td><td class="v">照 <code>invite::encode</code> 复算<br>（设备名「办公室台式机」）</td></tr>
+        <tr><td class="v">其中 <code>sig</code></td><td class="v">95 B（占 <b>41%</b>）</td><td class="v">同上</td></tr>
+        <tr><td class="v"><code>addrs</code> 字段</td><td class="v">11 B，<b>全库无人消费</b></td><td class="v">仅测试断言引用</td></tr>
+        <tr><td class="v">跨屏核对</td><td class="v">2 次</td><td class="v">步骤 7 与 10</td></tr>
+        <tr><td class="v">带外传递</td><td class="v">1 次</td><td class="v">步骤 4</td></tr>
+      </table>
+      <div class="legend">
+        行业基准：Steam Link / Moonlight <b>2 步</b>；KDE Connect <b>2 步</b>；
+        快速助手 <b>3 步</b>。<b>没有一家要求搬 300 字符</b>。
+      </div>
+    </div>
+    <div class="col">
+      <div class="colHd">两处确认，真正有效的只有一处</div>
+      <div class="warn">
+        步骤 7 那次核对<b>防不住中间人</b>：码是自签的，攻击者把整串码换成自己的那份，
+        两端显示的都是<b>攻击者的</b>指纹，用户比对了也会一致。
+        <br><br>
+        而步骤 10 那次是<b>带内</b>到达的（对方指纹 + 设备名 + 申请能力 + 「可自称，以指纹为准」），
+        确认又发生在<b>被写入白名单</b>的那一侧 —— 这才是有效的那一处。
+      </div>
+      <div class="legend">
+        结论：<b>把确认收到生成方那一侧</b>，用方案 A 的 6 位数字补上「真能发现中间人」的能力。
+      </div>
+    </div>
+  </div>
+
+  <h2>§2 新流程 · 局域网快路径（可点步进）</h2>
+
+  <p>
+    两端都开着「远程电脑」。A 点一下附近的邻居 → 两端弹出<b>同一个 6 位数字</b> → 两边各点一次确认。
+    全过程<b>零字符串搬运、零带外渠道</b>。
+  </p>
+
+  <div class="demoBar">
+    <span class="stepName" id="lanStep">1 / 4　看到附近的设备</span>
+    <span class="sp"></span>
+    <button id="lanPrev">← 上一步</button>
+    <button class="pri" id="lanNext">下一步 →</button>
+    <button id="lanReset">重放</button>
+  </div>
+
+  <div class="cols" style="margin-top:12px">
+    <div class="col">
+      <div class="colHd">A · 笔记本（发起方）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body" id="lanA"></div>
+      </div></div>
+    </div>
+    <div class="col">
+      <div class="colHd">B · 办公室台式机（被配对方）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body" id="lanB"></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="legend" id="lanLegend"></div>
+
+  <h2>§3 新流程 · 跨网（邀请码瘦身后）</h2>
+
+  <p>
+    不在同一局域网时走这条路。与现状相比：码从 <b>308 → 167 字符</b>
+    （基准名「办公室台式机」；下面图里的示例名「笔记本」对应 <b>296 → 155</b>）、
+    发起方<b>不再勾选</b>、粘贴时<b>自动抠出码</b>（不用用户自己删多余字符）。
+  </p>
+
+  <div class="demoBar">
+    <span class="stepName" id="wanStep">1 / 5　生成邀请码</span>
+    <span class="sp"></span>
+    <button id="wanPrev">← 上一步</button>
+    <button class="pri" id="wanNext">下一步 →</button>
+    <button id="wanReset">重放</button>
+  </div>
+
+  <div class="cols" style="margin-top:12px">
+    <div class="col">
+      <div class="colHd">A · 笔记本（生成方 → 也是唯一的确认方）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body" id="wanA"></div>
+      </div></div>
+    </div>
+    <div class="col">
+      <div class="colHd">B · 办公室台式机（粘贴方）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body" id="wanB"></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="legend" id="wanLegend"></div>
+
+  <h2>§4 逐屏规格</h2>
+
+  <h3>4.1　入口屏：多一条「附近的设备」，且放在最上面</h3>
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">Before · 只有两条路，都要搬码</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="noteWarn">检测到剪贴板里可能有一份远程邀请码，要填入吗？
+            <div style="display:flex;gap:8px;margin-top:8px"><button class="miniBtnPri">填入</button><button class="miniBtn">忽略</button></div>
+          </div>
+          <button class="miniBtnPri">生成邀请码（给对方粘）</button>
+          <button class="miniBtn">粘贴对方的邀请码</button>
+          <div class="foot">与「知识库同步」配对是两回事：这里只授权远程协助，不共享笔记。</div>
+        </div>
+      </div></div>
+      <div class="legend">两条路都是「跨网」路数。同一局域网下用户也得走这一套。</div>
+    </div>
+    <div class="col">
+      <div class="colHd">After · 局域网那一条提到最上面（0 搬运）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="secLabel">同一局域网（推荐）</div>
+          <div class="devList">
+            <div class="devItem">
+              <div class="av">办</div>
+              <div class="info">
+                <div class="name">办公室台式机 <span class="tagNew">新</span></div>
+                <div class="meta">未配对 · 刚刚听到</div>
+              </div>
+              <button class="miniBtnPri wideBtn">配对</button>
+            </div>
+            <div class="devItem">
+              <div class="av">笔</div>
+              <div class="info">
+                <div class="name">笔记本</div>
+                <div class="meta">未配对 · 12 秒前</div>
+              </div>
+              <button class="miniBtnPri wideBtn">配对</button>
+            </div>
+          </div>
+          <div class="foot">设备名由对方自报、可随意填写 —— <b>以核对环节的数字为准</b>。</div>
+          <div class="separator"></div>
+          <div class="secLabel">不在同一局域网</div>
+          <button class="miniBtnPri">生成邀请码（给对方粘）</button>
+          <button class="miniBtn">粘贴对方的邀请码</button>
+          <div class="separator"></div>
+          <div class="foot">与「知识库同步」配对是两回事：这里只授权远程协助，不共享笔记。</div>
+        </div>
+      </div></div>
+      <div class="legend">
+        <b>这一块的渲染规则（2026-09-17 定稿）</b>：
+        <b>有设备</b> → 「同一局域网（推荐）」小标 + 列表；
+        <b>一个都没有</b> → <b>只渲染 §4.2 那个空态</b>，小标不渲染，也不重复那个「改用邀请码配对」按钮。
+        <br>不渲染小标的理由不只是省一行：「同一局域网」下面紧接着一句「还没有发现附近设备」
+        是自相矛盾的读法，而空态自带标题（所以也不存在「空标题」）。不重复按钮的理由：
+        邀请码那两个按钮就在本屏下方几行，同一个对话框里出现两次是噪音。
+        <br><b>为什么不整块撤掉</b>（即本节原来那句「没有就不出现」）：§4.2 第 4 条版本要求
+        解决的正是「用户以为找不到设备是网络问题」，而这个误解恰恰发生在<b>看不到任何设备</b>的时候
+        —— 撤掉等于恰好在最需要解释的时候不给解释。
+        <br>实现：<code>RcPairModeSelect</code> 的 <code>has &&</code> 与
+        <code>RcNearbyList</code> 的空态分支。
+      </div>
+    </div>
+  </div>
+
+  <h3>4.2　附近设备列表：找齐了没有 / 一个都没有</h3>
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">有设备 · 每个邻居一行，主按钮只有一个动作</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="devList">
+            <div class="devItem">
+              <div class="av">办</div>
+              <div class="info">
+                <div class="name">办公室台式机</div>
+                <div class="meta">未配对 · 刚刚听到</div>
+              </div>
+              <button class="miniBtnPri wideBtn">配对</button>
+            </div>
+            <div class="devItem">
+              <div class="av">L</div>
+              <div class="info">
+                <div class="name">LAPTOP-9F3K</div>
+                <div class="meta">未配对 · 6 秒前</div>
+              </div>
+              <button class="miniBtnPri wideBtn">配对</button>
+            </div>
+            <div class="devItem">
+              <div class="av">?</div>
+              <div class="info">
+                <div class="name">（未命名）</div>
+                <div class="meta">未配对 · 14 秒前</div>
+              </div>
+              <button class="miniBtnPri wideBtn">配对</button>
+            </div>
+          </div>
+          <div class="foot">
+            设备名由对方自报、可随意填写 —— <b>以核对环节的数字为准</b>。
+            列表 20 秒听不到就自动移除。
+          </div>
+        </div>
+      </div></div>
+      <div class="legend">
+        方圆角头像 + 「未配对」标签区分于已配对设备（那侧是圆形头像 + 「远程」标签）。
+        整行不可点，只有「配对」是动作 —— 避免与设备行「整行可点」的手感打架。
+        <br>meta 只写「未配对 · N 秒前」：这一块本来就全是局域网邻居，再缀一个「局域网」是废话
+        （初稿缀了，已按实现改回）。「N 秒前」由 <code>heardAgo</code> 生成，5 秒内说「刚刚听到」。
+      </div>
+    </div>
+    <div class="col">
+      <div class="colHd">一个都没有 · 空态照渲，但不重复邀请码入口</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="nearbyEmpty">
+            <div class="nearbyEmptyTitle">还没有发现附近设备</div>
+            <ol class="nearbySteps">
+              <li>另一台电脑安装并打开 <b>PastePanda</b></li>
+              <li>确保在同一 Wi-Fi / 局域网</li>
+              <li>两边都打开 <b>远程电脑</b></li>
+              <li>对方版本需 <b>≥ 7.2.2</b>（旧版只能走邀请码）</li>
+            </ol>
+          </div>
+        </div>
+      </div></div>
+      <div class="legend">
+        第 4 条是<b>这次新增</b>的：旧版对端不会回招呼包，用户会以为「找不到设备」是网络问题。
+        写出版本要求，比让他反复重启 Wi-Fi 强。
+        <br><b>❗ 这里没有「改用邀请码配对」按钮（2026-09-17 定稿）</b>：本节初稿画了一个，
+        但它和本屏下面「不在同一局域网」那两个按钮是同一件事，同一个对话框里出现两次是噪音。
+        本节两列都<b>只画「附近的设备」这一块</b>——应用里没有独立的「附近设备」对话框，
+        它始终嵌在「远程配对」对话框里（初稿两列的标题写成「附近设备」，容易让人以为有这么一个屏）。
+      </div>
+    </div>
+  </div>
+
+  <h3>4.3　核对屏（本方案唯一靠人把关的环节，尺寸是设计的一部分）</h3>
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">发起方 A</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="pairBox">
+            <div class="pairTitle">与「办公室台式机」配对</div>
+            <div class="pairPin">472916</div>
+            <div class="pairHint">
+              确认<b>另一台设备</b>上显示的是同一串数字。<br>
+              两台设备<b>各自都要确认一次</b>（谁先点都行）——<br>
+              这串数字只有两边放在一起比才有意义。<br>
+              两边不一样就点取消——那意味着有人在中间插足。
+            </div>
+            <div class="pairBtns">
+              <button class="miniBtn">不一样，取消</button>
+              <button class="miniBtnPri">两边一样，确认</button>
+            </div>
+          </div>
+          <div class="foot">对方会同时被写入你的设备列表；本次配对只是互相授权远程协助。</div>
+        </div>
+      </div></div>
+      <div class="legend">
+        <span class="kbd">font-size: 30px</span>
+        <span class="kbd">letter-spacing: 9px</span>
+        <span class="kbd">font-weight: 700</span>
+        　（沿用 <code>.lanPairPin</code> 的真实尺寸，不新造）
+      </div>
+    </div>
+    <div class="col">
+      <div class="colHd">三条硬约束</div>
+      <div class="warn">
+        <b>① 数字要够大够疏</b>：它是逐位比对用的，做小了等于逼用户猜。
+        <br><br>
+        <b>② 确认按钮不预选</b>：不能用回车直接过（<code>autofocus</code> 要落在「取消」上或都不落）。
+        <br><br>
+        <b>③ 文案直说「不一样就取消」</b>：不写这句，用户会以为两个按钮只是「再想想」。
+      </div>
+      <div class="callout">
+        <b>为什么两端各点一次</b>：这不是「确认对方的确认」，而是
+        「<b>我这边也核对过了</b>」。不写清楚的话，发起方会觉得多一步。
+        这句解释在 <code>LanNearby.tsx</code> 里已经有了（用户原话反馈的产物），照搬。
+      </div>
+    </div>
+  </div>
+
+  <h3>4.4　完成屏：顺手把「发起远程」接上</h3>
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">A（发起方）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="okBox">
+            <div class="okMark">✅</div>
+            <div class="okTitle">已与「办公室台式机」配对</div>
+            <div class="okSub">现在可以发起远程协助了</div>
+          </div>
+          <div class="btnRowCenter">
+            <button class="miniBtn">关闭</button>
+            <button class="miniBtnPri">立刻发起远程</button>
+          </div>
+        </div>
+      </div></div>
+      <div class="legend">配对完成到发起远程之间本来还要回到列表点一次；这里直接给出口。<b>§8 #5 已定：加</b>。
+        但只在<b>有会话上下文</b>的地方显示——设置页那个配对入口没有可发起的目标，那里只有「关闭」。</div>
+    </div>
+    <div class="col">
+      <div class="colHd">B（被配对方）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="okBox">
+            <div class="okMark">✅</div>
+            <div class="okTitle">已与「笔记本」配对</div>
+            <div class="okSub">对方可以向你发起远程申请了；每次仍需要你点头</div>
+          </div>
+          <div class="btnRowCenter"><button class="miniBtnPri">知道了</button></div>
+        </div>
+      </div></div>
+      <div class="legend">明确写「每次仍需要你点头」—— 避免用户以为配对等于永久放行。</div>
+    </div>
+  </div>
+
+  <h3>4.5　跨网路径：生成侧与粘贴侧</h3>
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">生成侧（A）· 码变短，仍要一次复制</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="pairPane">
+            <div class="fpBox">
+              <div class="fpLabel">本机指纹（对方核对用）</div>
+              <div class="fpVal">be0d-5954-a71c-3f82</div>
+              <div class="fpLabel" style="margin-top:8px">设备名</div>
+              <div style="font-size:12px;margin-top:2px">笔记本</div>
+            </div>
+            <div class="fpBox">
+              <div class="fpLabel">设备名（对方列表里显示）</div>
+              <div style="font-size:12px;margin-top:6px">笔记本</div>
+            </div>
+          </div>
+          <div class="noteWarn">
+            邀请码已生成，发给对方即可。<b>30 分钟内有效</b>；过期请回来重新生成。
+          </div>
+          <textarea class="inviteCode" readonly rows="3">eyJub2RlX2lkIjoiYmUwZDU5NTRhNzFjM2Y4MjA5YzRlNmQxYjdhM2Y4YzJlNTA5YTRiN2M4ZDBlMWYyYTNiNGM1ZDZlN2Y4YTliMCIsIm5hbWUiOiLnrJTorrDmnKwiLCJ0cyI6MTc4OTY0NzEyMDIzNn0</textarea>
+          <div class="foot">155 字符（原 296）：这是示例设备名「笔记本」的实测值，基准名「办公室台式机」为 308 → 167（口径见文首）。删掉了全库无人消费的 <code>addrs</code>，与挡不住攻击者、却占约四成的自签。</div>
+          <div class="fieldRow">
+            <button class="miniBtn">返回</button>
+            <button class="miniBtnPri">复制邀请码</button>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="col">
+      <div class="colHd">粘贴侧（B）· 自动抠码 + 不再勾选</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程配对</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <textarea class="textArea" rows="4">对方发我的邀请码：
+eyJub2RlX2lkIjoiYmUwZDU5NTRhNzFjM2Y4MjA5YzRlNmQxYjdhM2Y4YzJlNTA5YT</textarea>
+          <div class="callout" style="margin:0">
+            已识别到邀请码（<b>笔记本</b> · <code>be0d-5954</code>）。多余的「对方发我的邀请码：」已忽略。
+          </div>
+          <div class="fpBox">
+            <div class="fpLabel">将与之配对</div>
+            <div class="fpVal" style="color:var(--accent)">be0d-5954-a71c-3f82</div>
+            <div class="fpLabel" style="margin-top:8px">设备名</div>
+            <div style="font-size:12px;margin-top:2px">笔记本</div>
+          </div>
+          <div class="foot">
+            配对请求发出后，<b>对方那台会弹出确认</b>（含你的指纹与设备名）—— 由对方点头，这一步才算数。
+          </div>
+          <div class="fieldRow">
+            <button class="miniBtn">返回</button>
+            <button class="miniBtnPri">发送配对请求</button>
+          </div>
+        </div>
+      </div></div>
+      <div class="legend">
+        勾选框<span class="stepChip cut">已删</span>，改为一句说明「确认在对方那侧」。
+        粘错不再报「有 N 处多余字符」，而是<b>自动抠出</b>并<b>显示抠到了什么</b>。
+      </div>
+    </div>
+  </div>
+
+  <h3>4.6　唯一的确认点（生成方这一侧，沿用现有组件）</h3>
+  <div class="cols">
+    <div class="col">
+      <div class="colHd">A 收到的待确认（RcJoinRequests 现状形态）</div>
+      <div class="app"><div class="dialog-box">
+        <div class="dialog-header"><h3 class="dialog-title">远程电脑</h3><button class="dialog-close">✕</button></div>
+        <div class="body">
+          <div class="noteWarn" style="flex-direction:column;align-items:stretch">
+            <div><b>🔔 有 1 台设备想与本机配对</b></div>
+            <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">对方指纹</div>
+            <div style="font-family:ui-monospace,Consolas,monospace;font-weight:700;font-size:13px;margin-top:2px">4a1f-90cc-27be-5d31</div>
+            <p style="margin:8px 0 0;font-size:11.5px;color:var(--text-secondary)">
+              设备名「笔记本」（<b>可自称，以指纹为准</b>）
+            </p>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="miniBtn">拒绝</button>
+              <button class="miniBtnPri">同意配对</button>
+            </div>
+          </div>
+          <div class="foot">对方那台此刻也在等你去核对同一串数字（走局域网时）。</div>
+        </div>
+      </div></div>
+      <div class="legend">这条卡片现有实现已具备全部要素，<b>不需要改</b>。方案 C 只是把发起侧那一次核对删掉。</div>
+    </div>
+    <div class="col">
+      <div class="colHd">确认点为什么应该在这一侧</div>
+      <table>
+        <tr><th>判据</th><th>说明</th></tr>
+        <tr><td class="v">写入白名单的一侧</td><td class="v">KDE Connect / Syncthing 都这样</td></tr>
+        <tr><td class="v">信息带内到达</td><td class="v">指纹 + 设备名 + 能力 + 「可自称」提示</td></tr>
+        <tr><td class="v">不产生死锁</td><td class="v">确认按钮不依赖「还没出现的 UI 元素」</td></tr>
+      </table>
+      <div class="legend">
+        发起方那份勾选的根问题是：<b>确认动作绑在一个尚未渲染的元素上</b>
+        （按钮 → 依赖 <code>checked</code> → 依赖 preview 出的指纹 → 只能靠按钮触发）。
+        砍掉这一步，等于砍掉整类复发可能。
+      </div>
+    </div>
+  </div>
+
+  <h2>§5 设计稿元素 → 真实组件对照</h2>
+
+  <div class="scroll">
+  <table>
+    <tr><th style="width:26%">设计稿里的东西</th><th style="width:38%">真实来源</th><th style="width:36%">改动性质</th></tr>
+    <tr><td>对话框壳 / header / body / foot</td><td><code>RemoteComputer.module.css</code>；<code>RcPairDialog.tsx</code></td><td>不改</td></tr>
+    <tr><td>6 位数字的尺寸与字距</td><td><code>Lan.module.css</code> 的 <code>.lanPairPin</code>（30px / 9px / 700）</td><td>搬到 rc 对话框语境，数值照抄</td></tr>
+    <tr><td>三句核对提示文案</td><td><code>LanNearby.tsx:146-156</code></td><td>照抄（含用户反馈沉淀的那句解释）</td></tr>
+    <tr><td>附近设备行</td><td>结构仿 <code>LanNearby.tsx</code>；头像形态对齐 <code>RcDeviceList</code></td><td>新组件</td></tr>
+    <tr><td>空态 4 条引导</td><td><code>LanNearby.tsx:181-189</code> 的 3 条</td><td>+1 条（版本要求）</td></tr>
+    <tr><td>指纹框 / 邀请码 textarea</td><td><code>RcPairFpBox.tsx</code> / <code>.inviteCode</code></td><td>不改</td></tr>
+    <tr><td>待确认卡片</td><td><code>RcJoinRequests.tsx</code></td><td>不改（方案 C 不动它）</td></tr>
+    <tr><td>入口屏三段式</td><td><code>RcPairModeSelect.tsx</code></td><td>改：加局域网段、加分组标题</td></tr>
+    <tr><td>勾选框</td><td><code>RcPairDialog.tsx:257-264</code> + <code>rcPairState.ts::canSubmitPair</code></td><td><b>删</b></td></tr>
+  </table>
+  </div>
+
+  <div class="callout">
+    <b>体量预判</b>（按项目红线）：<code>RemoteComputer.module.css</code> 已 23.5 KB、
+    <code>RcPairDialog.tsx</code> 10.5 KB。新增的附近设备列表与核对框应当<b>各自独立成文件</b>
+    （<code>RcNearbyList.tsx</code> / <code>RcPairPin.tsx</code>），不要继续往现有两个文件里塞。
+  </div>
+
+  <h2>§6 🔴 一处技术判断要纠正（写这份稿时新查出来的）</h2>
+
+  <div class="warnBad">
+    方案文档 §4-A3 写：「rc 的 presence 表里已经有 <code>live_ids</code> + 局域网地址，
+    是现成的『附近』数据源」。
+    <br><br>
+    <b>这句在代码上不成立。</b>
+    <code>sync/presence/table.rs</code> 的 <code>hear()</code> 里，
+    未配对设备的公告在<b>验签之前</b>就被 <code>if !is_paired(&amp;wire.node_id) { return Heard::Unpaired }</code>
+    拦掉，<b>一个字都不记</b>——模块文档写明理由是「否则同网段任何人都能把表灌满」。
+    所以 <code>live()</code> 返回的是「<b>已配对</b>且在线的设备」，不是「附近的设备」。
+  </div>
+
+  <p>
+    结论：<b>附近设备必须另有一条「明文、且不入表」的通道</b>。
+    rc 侧已经有一条明文通道（5009 上的地址公告），所以有两条路可选
+    （编号沿用方案文档 §4-A 的 A1 / A2 / A3，A2 需要第二个实例抢 5007 端口，已排除）：
+  </p>
+
+  <div class="scroll">
+  <table>
+    <tr>
+      <th style="width:8%">路线</th><th style="width:34%">做法</th><th style="width:26%">代价</th><th style="width:32%">我的判断</th>
+    </tr>
+    <tr>
+      <td><b>A3</b><br><span class="tagx">推荐</span></td>
+      <td class="v">给 presence 的 <code>Wire</code> 加 <code>kind</code>（<code>addr</code> / <code>hello</code>），
+          在 <b>5009 同一个端口</b>上跑两种明文包：<code>addr</code> 照旧入表，<code>hello</code> 只进一个
+          带 TTL 的「附近」缓存，不入地址表</td>
+      <td class="v">presence 模块长出一条新能力；<code>hear()</code> 要先判 <code>kind</code>，
+          否则 hello 会被当成「不是地址公告的结构」刷 warn</td>
+      <td class="v"><b>零新端口</b>，改动集中在一个刚拆好的模块里；
+          不破坏「未配对不入表」这条不变量</td>
+    </tr>
+    <tr>
+      <td><b>A1</b></td>
+      <td class="v">把 <code>lan_pair</code> 的发现层（明文 <code>pp-hello</code> + nearby 列表）
+          从 <code>LanSync</code> 里提出来，rc 用自己的端口跑一份</td>
+      <td class="v">改动面大（要处理两个消费者共用一个监听口的问题）；
+          多一个组播端口（5007 / 5008 / 5009 之后再加一个）</td>
+      <td class="v">解耦更彻底（顺带让 <code>lan_pair</code> 不再受 <code>lan_sync_enabled</code> 控制），
+          但成本与风险都更高，<b>不推荐本轮做</b></td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="warn">
+    <b>明文招呼的代价（必须认）</b>：要让同网段的人看得见，就必须发明文包 ——
+    代价是<b>同网段能看到你的设备名</b>。缓解与 <code>lan_pair</code> 保持一致：
+    只在「远程电脑」开着时广播；名字可自定义；界面上标注「可自称，以指纹为准」。
+    <br><br>
+    <b>另一条不变量仍然成立</b>：招呼包<b>不可信</b>，它只用来「列出候选」。
+    真正定对方是谁的，是 6 位数字核对（以及配对之后的 QUIC/TLS 握手）。
+  </div>
+
+  <h2>§7 过期语义统一 + 错误文案对照</h2>
+
+  <div class="scroll">
+  <table>
+    <tr><th style="width:22%">场景</th><th style="width:40%">现状文案</th><th style="width:38%">改后文案</th></tr>
+    <tr>
+      <td class="v">码还在 7 天内、但门（30 分钟）已关<br><span class="tagx">最常见</span></td>
+      <td class="bad">详情：尚未远程配对<br><span class="tagx">指不到「回去重新生成」</span></td>
+      <td class="good"><b>对方的邀请窗口已过期</b><br>邀请码只在生成后 30 分钟内有效。请让对方重新走一次「生成并复制」，再把新的码发你。</td>
+    </tr>
+    <tr>
+      <td class="v">粘进来的码已超过 30 分钟<br><span class="tagx">改后提前到粘贴时拦</span></td>
+      <td class="bad">无法解析邀请码 / 签名校验不通过</td>
+      <td class="good"><b>这份邀请码已过期</b>（生成于 31 分钟前，有效期 30 分钟）。<br>请在对方那台重新生成一份。</td>
+    </tr>
+    <tr>
+      <td class="v">对方之前点过「拒绝」，还在冷却期</td>
+      <td class="bad">尚未远程配对<br><span class="tagx">像是「从来没配过」</span></td>
+      <td class="good"><b>对方拒绝过这次配对</b><br>对方此前点了拒绝，30 分钟内不会再弹确认。请让对方重新生成一份邀请码再试。</td>
+    </tr>
+    <tr>
+      <td class="v">粘进来带了「邀请码：」等前缀</td>
+      <td class="bad">码里有 N 处多余字符，请删掉</td>
+      <td class="good">（短码路径）自动抠出码并显示识别结果，成功就不报错</td>
+    </tr>
+    <tr>
+      <td class="v">局域网里点了旧版对端</td>
+      <td class="bad">—（旧版根本不回招呼）</td>
+      <td class="good">对方版本过旧，收不到局域网配对请求。<br>请让对方改用「生成邀请码」，或升级到 7.2.2+。</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="legend" style="max-width:860px">
+    <b>已实现（2026-09-17）</b>：三条拒绝各有独立 code ——
+    <code>invite_door_closed</code> / <code>pair_denied</code> / <code>disabled</code>，
+    判据在 <code>rc/join.rs::deny_unpaired</code>（纯函数，四档含「记入待确认」）。
+    按钮名照真实 UI 写：<code>RcPairCreatePane</code> 上是「<b>生成并复制</b>」，
+    写成不存在的「重新生成」等于让用户去找一个没有的按钮。
+  </div>
+
+  <div class="cols" style="margin-top:12px">
+    <div class="col">
+      <div class="colHd">窗口统一到哪一档</div>
+      <table>
+        <tr><th>选项</th><th>码 TTL</th><th>邀请门</th><th>评价</th></tr>
+        <tr><td class="v">现状</td><td class="v">7 天</td><td class="v">30 分钟</td><td class="bad">两套口径，用户撞的是门</td></tr>
+        <tr><td class="v"><b>① 收到 30 分钟</b><br><span class="tagx">推荐</span></td><td class="v">30 分钟</td><td class="v">30 分钟</td><td class="good">不放大攻击面，只消除误导；重新生成只是一个按钮</td></tr>
+        <tr><td class="v">② 放宽到 24 小时</td><td class="v">24 小时</td><td class="v">24 小时</td><td class="v">更省心，但「码被泄漏」的窗口从 30 分钟放大到 24 小时</td></tr>
+      </table>
+    </div>
+    <div class="col">
+      <div class="colHd">无论选哪个，都建议加一条</div>
+      <div class="callout">
+        <b>配对成功即关闭邀请门</b>，不等时间窗到期。
+        <br><br>
+        码里带的是「node_id + 名字」，<b>不是一次性 nonce</b> —— 同一份码在窗口内可以被反复使用。
+        所以「配完就关门」比「把窗口调短」更有效，也更符合直觉。
+      </div>
+      <div class="legend">
+        我推荐 <b>①+配对成功即关门</b>：语义唯一、攻击面不放大、不需要用户理解两个时间。
+        <br><br>
+        <b>已采纳并落地（2026-09-17）</b>。两条实现要点：
+        ① ⚠️ <b>只动「远程电脑」这一路</b>——知识库同步仍是 7 天（它的门本来就由同一个
+        <code>TTL_SECS</code> 派生，两边口径一致，无需改）；
+        ② 窗口自本版起是 <code>invite::decode</code> 的 <b>参数</b>，不再是一个全局常量
+        —— 两条路相差 <b>336 倍</b>，写成常量必然漂。
+        「配对成功即关门」补在 <code>RcService::approve_join</code>（<code>sync::join</code> 早就是这个做法）。
+      </div>
+    </div>
+  </div>
+
+  <h2>§8 待拍板</h2>
+
+  <div class="legend" style="max-width:860px">
+    <b>2026-09-17 全部拍板，无遗留</b>：1–6 按建议执行（其中 4 押后），
+    第 7 条是落地时才发现的分歧，也按建议执行。<b>本稿的图例已按结论改过一遍</b>
+    —— 原先 §4.1 与 §4.2 互相矛盾之处已消掉，不再以「取舍」形式挂在正文里。
+  </div>
+
+  <div class="scroll">
+  <table>
+    <tr><th style="width:5%">#</th><th style="width:30%">问题</th><th style="width:43%">我的建议</th><th style="width:22%">结论（09-17）</th></tr>
+    <tr>
+      <td>1</td>
+      <td><b>A 走 A3 还是 A1？</b></td>
+      <td><b>A3</b>：presence 加 <code>kind</code>，5009 同端口跑 <code>addr</code> + <code>hello</code>，
+          零新端口、改动集中。A1 更干净但本轮不做。
+          <br>（编号沿用方案文档 §4-A；本稿初版误写成 A-1 / A-2，已对齐——
+          <b>A3 = 原稿的 A-1</b>，<b>A1 = 原稿的 A-2</b>。）</td>
+      <td><b>定 · A3</b>，已落地</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>过期窗口收到 <b>30 分钟</b>还是放宽到 24 小时？</td>
+      <td><b>收到 30 分钟</b> + 配对成功即关门。不放大攻击面，只消除误导。</td>
+      <td><b>定</b>，已落地</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>附近设备列表<b>是否显示设备名</b>？</td>
+      <td><b>显示</b>，但必须带「可自称，以指纹为准」（<code>RcJoinRequests.tsx:31</code> 已有这个写法）。
+          只显示指纹的话，列表基本没法用。</td>
+      <td><b>定</b>，已落地（脚注在列表下方）</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><b>B1（邀请码瘦身）本轮做不做？</b></td>
+      <td>做，但注意它是 <b>wire 变更 ⇒ 跨版本互斥</b>。
+          按 09-17 <code>presence.app</code> 的教训，要等 v7.2.1 铺开、双向直连确认之后再上，
+          <b>三台同版本</b>。若你想先只做 A + C + 文案，B1 可以拆到下一版。</td>
+      <td><b>押后</b> · 单独一版，排在 A3 之后（与 B3、D 一起）</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>完成屏加不加「立刻发起远程」？</td>
+      <td><b>加</b>。配对完的第一意图几乎总是「马上连过去」，回到列表再点一次是白给的摩擦。</td>
+      <td><b>定 · 加</b>，但只在有会话上下文处显示（见 §8.2 偏差 2）</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>手册要不要补远程配对章节？</td>
+      <td>要（<code>grep</code> 确认现在<b>没有</b>）。等流程定稿后一次补，避免写两遍。</td>
+      <td><b>已补</b>（<code>manual.html</code> 新增 <code>## 远程电脑</code>，含两节超出配对本身）</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td><b>一个设备都没发现时</b>：渲染空态，还是整块不出现？</td>
+      <td>落地时才暴露的分歧（§4.1 与 §4.2 图例矛盾）。<b>渲染空态</b>，
+          但不渲染「同一局域网（推荐）」小标（否则「同一局域网」下一句就是「还没有发现附近设备」），
+          也不重复「改用邀请码配对」按钮（下面几行就是）。</td>
+      <td><b>定</b>，已落地；§4.1 / §4.2 已改</td>
+    </tr>
+  </table>
+  </div>
+
+  <h2>§9 不在本次范围</h2>
+  <ul>
+    <li><b>B3</b>：只发 32 字节公钥（167 → ~52 字符，能一行显示、能对着念；
+        52 = base58(32 B) 44 + CRC 4 + 前缀 4）。
+        需要 base58 + 分组显示 + 抠码正则，且同样是 wire 变更。<b>押后</b>。</li>
+    <li><b>D</b>：会话级「信任此设备」（免每次确认）。默认必须关、不能一键全开。
+        它让「无人在场时被控」成为可能，<b>放最后</b>。</li>
+    <li>把 rc 面板里那一大堆内联 <code>style</code> 收进 CSS Module。值得做，但别和协议改动混在一个改动里。</li>
+    <li><code>rc/service.rs</code>（1194 行）、<code>sync/service.rs</code>（1262 行）、
+        <code>sync/tests.rs</code>（2732 行）的拆分 —— 既有巨无霸，单独排一次。</li>
+  </ul>
+
+  <div class="callout">
+    三条产品红线：本方案<b>不触碰</b>任何一条。
+    反而更本地 —— 局域网路径让配对完全不出局域网；瘦身后的邀请码里不含任何内容数据，
+    只含「公钥 + 名字 + 时间戳」。
+  </div>
+
+  <p class="sub" style="margin-top:26px">
+    相关：<code>docs/远程电脑-配对流程-对标与方案-2026-09-17.md</code>（数据与对标）·
+    <code>design/PastePanda-局域网同步-附近设备配对-设计稿.html</code>（6 位数字的原始方案）·
+    <code>design/远程电脑-交互精简-B方案-设计稿.html</code>（会话内交互，与本文不重叠）
+  </p>
+
+</div>
+
+<script>
+/* ================= 局域网路径演示 ================= */
+const LAN_STEPS = [
+  {
+    name: "1 / 4　看到附近的设备",
+    a: `<div class="secLabel">同一局域网（推荐）</div>
+        <div class="devList">
+          <div class="devItem">
+            <div class="av">办</div>
+            <div class="info"><div class="name">办公室台式机 <span class="tagNew">新</span></div>
+              <div class="meta">未配对 · 刚刚听到</div></div>
+            <button class="miniBtnPri wideBtn">配对</button>
+          </div>
+          <div class="devItem">
+            <div class="av">笔</div>
+            <div class="info"><div class="name">笔记本</div>
+              <div class="meta">未配对 · 12 秒前</div></div>
+            <button class="miniBtnPri wideBtn">配对</button>
+          </div>
+        </div>
+        <div class="foot">设备名由对方自报、可随意填写 —— <b>以核对环节的数字为准</b>。</div>`,
+    b: `<div class="secLabel">同一局域网（推荐）</div>
+        <div class="devList">
+          <div class="devItem">
+            <div class="av">笔</div>
+            <div class="info"><div class="name">笔记本</div>
+              <div class="meta">未配对 · 刚刚听到</div></div>
+            <button class="miniBtnPri wideBtn">配对</button>
+          </div>
+        </div>
+        <div class="foot">两边都能看见对方，谁点都一样。</div>`,
+    legend: "两端各自列出同网段的邻居。列表 20 秒听不到就自动移除，不需要「刷新」按钮。",
+  },
+  {
+    name: "2 / 4　A 点了「配对」",
+    a: `<div class="devItem devItemPicked">
+          <div class="av">办</div>
+          <div class="info"><div class="name">办公室台式机</div>
+            <div class="meta">正在协商安全码…</div></div>
+        </div>
+        <div class="foot">正在与对方建立一次性加密信道（X25519），然后各自算一串 6 位数字。</div>`,
+    b: `<div class="noteWarn">
+          <b>「笔记本」想与本机配对</b>
+          <div style="margin-top:6px;font-size:11.5px;color:var(--text-secondary)">
+            接下来两台会各自显示一串 6 位数字，需要你核对。</div>
+        </div>
+        <div class="foot">这一步<b>不是</b>「同意配对」——真正的确认在核对数字之后。</div>`,
+    legend: "点一下就结束，没有「选能力档」这一步：配对只决定「谁能连」，能力档留给每次发起时选。",
+  },
+  {
+    name: "3 / 4　两端核对同一个 6 位数字",
+    a: `<div class="pairBox">
+          <div class="pairTitle">与「办公室台式机」配对</div>
+          <div class="pairPin">472916</div>
+          <div class="pairHint">
+            确认<b>另一台设备</b>上显示的是同一串数字。<br>
+            两台设备<b>各自都要确认一次</b>（谁先点都行）——<br>
+            这串数字只有两边放在一起比才有意义。<br>
+            两边不一样就点取消——那意味着有人在中间插足。
+          </div>
+          <div class="pairBtns">
+            <button class="miniBtn">不一样，取消</button>
+            <button class="miniBtnPri">两边一样，确认</button>
+          </div>
+        </div>`,
+    b: `<div class="pairBox">
+          <div class="pairTitle">与「笔记本」配对</div>
+          <div class="pairPin">472916</div>
+          <div class="pairHint">
+            确认<b>另一台设备</b>上显示的是同一串数字。<br>
+            两台设备<b>各自都要确认一次</b>（谁先点都行）——<br>
+            这串数字只有两边放在一起比才有意义。<br>
+            两边不一样就点取消——那意味着有人在中间插足。
+          </div>
+          <div class="pairBtns">
+            <button class="miniBtn">不一样，取消</button>
+            <button class="miniBtnPri">两边一样，确认</button>
+          </div>
+        </div>`,
+    legend: "6 位数字是协商密钥的<b>指纹</b>，不是密钥本身。中间人插足会让两端算出不同的值 → 数字对不上 → 用户当场发现。这一步是整套机制唯一靠人把关的环节，所以字号 30px、字距 9px。",
+  },
+  {
+    name: "4 / 4　完成（双端各写白名单）",
+    a: `<div class="okBox">
+          <div class="okMark">✅</div>
+          <div class="okTitle">已与「办公室台式机」配对</div>
+          <div class="okSub">现在可以发起远程协助了</div>
+        </div>
+        <div class="btnRowCenter">
+          <button class="miniBtn">关闭</button>
+          <button class="miniBtnPri">立刻发起远程</button>
+        </div>`,
+    b: `<div class="okBox">
+          <div class="okMark">✅</div>
+          <div class="okTitle">已与「笔记本」配对</div>
+          <div class="okSub">对方可以向你发起远程申请了；每次仍需要你点头</div>
+        </div>
+        <div class="btnRowCenter"><button class="miniBtnPri">知道了</button></div>`,
+    legend: "不需要「生成 → 复制 → 发送 → 粘贴」中的任何一步：局域网路径全程零字符串搬运。",
+  },
+];
+
+/* ================= 跨网路径演示 ================= */
+const WAN_STEPS = [
+  {
+    name: "1 / 5　生成邀请码（A）",
+    a: `<div class="pairPane">
+          <div class="fpBox">
+            <div class="fpLabel">本机指纹（对方核对用）</div>
+            <div class="fpVal">be0d-5954-a71c-3f82</div>
+            <div class="fpLabel" style="margin-top:8px">设备名</div>
+            <div style="font-size:12px;margin-top:2px">笔记本</div>
+          </div>
+          <div class="fpBox">
+            <div class="fpLabel">设备名（对方列表里显示）</div>
+            <div style="font-size:12px;margin-top:6px">笔记本</div>
+          </div>
+        </div>
+        <div class="fieldRow"><button class="miniBtn">返回</button><button class="miniBtnPri">生成并复制</button></div>`,
+    b: `<div class="secLabel">不在同一局域网</div>
+        <button class="miniBtnPri">生成邀请码（给对方粘）</button>
+        <button class="miniBtn">粘贴对方的邀请码</button>
+        <div class="foot">对方在同一局域网时，上面会出现「附近的设备」，不用搬码。</div>`,
+    legend: "同一屏里既有局域网段（有邻居时才出现）也有跨网段。跨网这条路一个字节都没少，只是不再是被迫的唯一选择。",
+  },
+  {
+    name: "2 / 5　A 把码发给 B（带外）",
+    a: `<div class="noteWarn">
+          邀请码已生成，发给对方即可。<b>30 分钟内有效</b>；过期请回来重新生成。
+        </div>
+        <textarea class="inviteCode" readonly rows="3">eyJub2RlX2lkIjoiYmUwZDU5NTRhNzFjM2Y4MjA5YzRlNmQxYjdhM2Y4YzJlNTA5YTRiN2M4ZDBlMWYyYTNiNGM1ZDZlN2Y4YTliMCIsIm5hbWUiOiLnrJTorrDmnKwiLCJ0cyI6MTc4OTY0NzEyMDIzNn0</textarea>
+        <div class="foot">155 字符（原 296）：示例名「笔记本」的实测值，基准名「办公室台式机」为 308 → 167（口径见文首）。删掉了全库无人消费的 <code>addrs</code>，与挡不住攻击者、却占约四成的自签。</div>
+        <div class="fieldRow"><button class="miniBtn">返回</button><button class="miniBtnPri">复制邀请码</button></div>`,
+    b: `<div class="secLabel">不在同一局域网</div>
+        <button class="miniBtnPri">生成邀请码（给对方粘）</button>
+        <button class="miniBtn" style="border-color:var(--accent-border);color:var(--accent)">粘贴对方的邀请码</button>
+        <div class="foot">等对方把码发过来。</div>`,
+    legend: "带外传递这一步省不掉（跨网本来就要靠微信/邮件）。能省的是它的长度与后续的两次核对。",
+  },
+  {
+    name: "3 / 5　B 粘贴（自动抠码 + 不再勾选）",
+    a: `<div class="foot">等对方粘贴并发送配对请求…</div>
+        <div class="noteWarn">对方粘贴后会向你发来配对请求，届时这里会出现待确认。</div>`,
+    b: `<textarea class="textArea" rows="4">对方发我的邀请码：
+eyJub2RlX2lkIjoiYmUwZDU5NTRhNzFjM2Y4MjA5YzRlNmQxYjdhM2Y4YzJlNTA5YT</textarea>
+        <div class="callout" style="margin:0">
+          已识别到邀请码（<b>笔记本</b> · <code>be0d-5954</code>）。多余的「对方发我的邀请码：」已忽略。
+        </div>
+        <div class="fpBox">
+          <div class="fpLabel">将与之配对</div>
+          <div class="fpVal" style="color:var(--accent)">be0d-5954-a71c-3f82</div>
+        </div>
+        <div class="foot">配对请求发出后，<b>对方那台会弹出确认</b>——由对方点头，这一步才算数。</div>
+        <div class="fieldRow"><button class="miniBtn">返回</button><button class="miniBtnPri">发送配对请求</button></div>`,
+    legend: "对照现状：这一步原本是「粘贴 → 点解析 → 核对 16 位 hex → 勾选 → 完成」，现在只剩「粘贴 → 发送」。勾选框已删。",
+  },
+  {
+    name: "4 / 5　A 确认（唯一确认点）",
+    a: `<div class="noteWarn" style="flex-direction:column;align-items:stretch">
+          <div><b>🔔 有 1 台设备想与本机配对</b></div>
+          <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">对方指纹</div>
+          <div style="font-family:ui-monospace,Consolas,monospace;font-weight:700;font-size:13px;margin-top:2px">4a1f-90cc-27be-5d31</div>
+          <p style="margin:8px 0 0;font-size:11.5px;color:var(--text-secondary)">
+            设备名「笔记本」（<b>可自称，以指纹为准</b>）</p>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="miniBtn">拒绝</button><button class="miniBtnPri">同意配对</button>
+          </div>
+        </div>
+        <div class="foot">这一步之后才写入白名单 —— 确认发生在「被加入信任」的那一侧。</div>`,
+    b: `<div class="foot">已发送配对请求，等待对方确认…</div>
+        <div class="noteWarn">对方同意后，两台会各自写入设备列表。</div>`,
+    legend: "现状里发起方那次「跨屏核对 16 位 hex + 勾选」已删；确认只保留生成方这一侧，也就是真正写入白名单的那一侧。",
+  },
+  {
+    name: "5 / 5　完成",
+    a: `<div class="okBox">
+          <div class="okMark">✅</div>
+          <div class="okTitle">已与「笔记本」配对</div>
+          <div class="okSub">对方可以向你发起远程申请了；每次仍需要你点头</div>
+        </div>
+        <div class="btnRowCenter"><button class="miniBtnPri">知道了</button></div>`,
+    b: `<div class="okBox">
+          <div class="okMark">✅</div>
+          <div class="okTitle">已与「笔记本」配对</div>
+          <div class="okSub">现在可以发起远程协助了</div>
+        </div>
+        <div class="btnRowCenter">
+          <button class="miniBtn">关闭</button><button class="miniBtnPri">立刻发起远程</button>
+        </div>`,
+    legend: "跨网路径：10 步 → 6 步（少两次核对与一次勾选，多一次对方确认的等待），搬运长度 308 → 167 字符（基准名口径；示例名「笔记本」为 296 → 155）。",
+  },
+];
+
+function mountDemo(cfg) {
+  const elA = document.getElementById(cfg.a);
+  const elB = document.getElementById(cfg.b);
+  const elStep = document.getElementById(cfg.step);
+  const elLegend = document.getElementById(cfg.legend);
+  let i = 0;
+  function draw() {
+    elA.innerHTML = cfg.steps[i].a;
+    elB.innerHTML = cfg.steps[i].b;
+    elStep.textContent = cfg.steps[i].name;
+    elLegend.innerHTML = cfg.steps[i].legend;
+  }
+  document.getElementById(cfg.prev).onclick = () => { if (i > 0) { i--; draw(); } };
+  document.getElementById(cfg.next).onclick = () => { if (i < cfg.steps.length - 1) { i++; draw(); } };
+  document.getElementById(cfg.reset).onclick = () => { i = 0; draw(); };
+  draw();
+}
+
+mountDemo({ a: "lanA", b: "lanB", step: "lanStep", legend: "lanLegend",
+            prev: "lanPrev", next: "lanNext", reset: "lanReset", steps: LAN_STEPS });
+mountDemo({ a: "wanA", b: "wanB", step: "wanStep", legend: "wanLegend",
+            prev: "wanPrev", next: "wanNext", reset: "wanReset", steps: WAN_STEPS });
+
+document.getElementById("themeBtn").onclick = (e) => {
+  const dark = document.documentElement.dataset.theme === "midnight";
+  document.documentElement.dataset.theme = dark ? "" : "midnight";
+  e.target.textContent = dark ? "切到 midnight（暗色对照）" : "切回浅色";
+};
+</script>
+</body>
+</html>
