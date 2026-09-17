@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Copy, Check, Sparkles, Database, Table, List, ClipboardPaste,
   CaseUpper, CaseLower, Eraser, Pilcrow, Quote, RemoveFormatting, Link as LinkIcon,
+  ListCollapse,
   Globe, Mail, Phone, Code, Minus, Hash, Palette, Folder, FileText,
   Play, ShieldAlert, Languages, PenLine, Search, X, Loader2,
   Clock, UserRound, Info, Workflow, Star,
@@ -54,6 +55,7 @@ const ICONS: Record<string, LucideIcon> = {
   quote: Quote, "remove-formatting": RemoveFormatting, link: LinkIcon, globe: Globe,
   mail: Mail, phone: Phone, code: Code, minus: Minus, hash: Hash, palette: Palette,
   folder: Folder, "file-text": FileText, search: Search,
+  "list-collapse": ListCollapse,
   // AI 动作的图标语义键（后端 ai/actions.rs 里声明的那几个）
   languages: Languages, "pen-line": PenLine,
 };
