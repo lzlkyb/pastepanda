@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 粘贴栈「栈浮标」HUD · 设计稿</title>
+<style>
+/* ========================================================================
+   尺寸与令牌全部取自真实代码，不是通用模板：
+   - src/styles/theme.css  --shot-bar-bg/text/border（悬浮窗玻璃令牌，6 套主题各一份）
+       ocean/forest/blossom/dawn：bg rgba(255,255,255,.92) text var(--text-primary) muted #4E5A6B
+       midnight/ocean-dark     ：bg rgba(20,20,24,.94)  text var(--text-primary) muted var(--text-muted)
+   - src/styles/theme.css  语义色：--orange #C54A0A(#FB923C 深色) / --success #15803D / --danger #D82525
+       --orange 的 4.54:1 是它对 --orange-bg 实测值 → 压白玻璃更高，过 U7 正文 4.5:1
+   - src/components/StackBanner.module.css  栈的身份色 --orange-*、脉冲点 1.5s、tabular-nums
+   - src/styles/screenshot.css:954-1037  longshot-status 悬浮窗范式
+       radius 10（历史值，本稿改守 U5 的 12）· border color-mix(accent 70%) · shadow 0 8px 24px
+       padding 10 · 主行 11.5/副行 10（历史值，本稿统一 11）· lsIn 0.18s 登场动画
+   - docs/PastePanda-UI规则.md  U5 圆角 4/8/12、间距 4/8/12/16/24、字号 11/12/13/15/20
+       U6 只许语义名 · U7 正文 4.5:1 / 边框 3:1 / 目标 24×24 / 颜色不作唯一通道
+   - src-tauri/src/screenshot.rs:1060-1096  pick_status_pos 候选序列 + 「完全在屏内」谓词
+       以及那句实证教训：顺序 = 用户找得到的顺序，不是几何上最不碍事的顺序
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#F7F8FA;color:#33404F;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#0F172A;margin:0 0 4px}
+h2{font-size:15px;color:#0F172A;margin:38px 0 6px}
+h3{font-size:12.5px;color:#627083;margin:22px 0 8px;letter-spacing:.3px;font-weight:600}
+.sub{color:#627083;font-size:12px;margin:0 0 18px}
+.note{color:#4E5A6B;font-size:12px;margin:6px 0 14px;max-width:920px}
+.note b{color:#0F172A;font-weight:600}
+hr{border:0;border-top:1px solid #E0E4EB;margin:36px 0 0}
+code{background:#EDF1F6;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#0B6FA4}
+.stage{display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 0;align-items:flex-start}
+
+/* ===== 模拟「目标应用」——HUD 浮在真实内容上，不是浮在灰底上 ===== */
+.appSim{position:relative;width:520px;height:172px;border-radius:8px;background:#fff;
+  border:1px solid #E0E4EB;box-shadow:0 1px 3px rgba(15,23,42,.06);overflow:hidden}
+.appSim.dk{background:#1B1F27;border-color:#2C323D;box-shadow:none}
+.appTitle{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;font-size:11px;
+  color:#627083;background:#F4F6F9;border-bottom:1px solid #E8ECF2;border-radius:7px 7px 0 0}
+.appSim.dk .appTitle{color:#8FA3C4;background:#22272F;border-bottom-color:#2C323D}
+.appBody{padding:13px 15px;font-size:12px;color:#9AA5B4;line-height:1.95;white-space:pre-line}
+.appSim.dk .appBody{color:#8A94A2}
+.caret{display:inline-block;width:1.5px;height:13px;background:#0284C7;vertical-align:-2px;margin:0 1px}
+.posTag{position:absolute;left:0;top:-19px;font-size:10.5px;color:#8A94A2;white-space:nowrap}
+
+/* ===== 栈浮标 HUD · 208×48（本稿主角） =====
+   高度账：padding 8×2 + 主行 15 + gap 2 + 副行 15 = 48
+   ❗ 刻意没有 backdrop-filter：窗口 transparent(true) 时 WebView2 的 CSS 模糊
+     只作用于 webview 内部元素、穿不出窗口（tauri issue #10064，2024-06 至今）。
+      在 HUD 里它模糊不到任何东西（HUD 元素背后就是透明的窗口），却要多一层 GPU 合成。
+      视觉兜底只能靠「半透明底色 + 边框 + 阴影」—— 即 theme.css:356 那句
+      「浅色玻璃压在任意内容上，辨识靠 --shot-bar-border 描边 + 阴影兜底」。 */
+.hud{position:absolute;width:208px;height:48px;padding:8px 10px;border-radius:12px;
+  display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden;
+  background:rgba(255,255,255,.92);
+  border:1.5px solid rgba(197,74,10,.7);
+  box-shadow:0 4px 16px rgba(15,23,42,.18), 0 0 0 1px rgba(255,255,255,.6) inset;
+  animation:hudIn .18s ease-out}
+@keyframes hudIn{from{opacity:0;transform:translateY(4px) scale(.97)}to{opacity:1;transform:none}}
+.hudMain{display:flex;align-items:center;gap:5px;min-width:0;
+  font-size:11px;font-weight:600;line-height:15px;color:#0F172A;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hudSub{font-size:11px;font-weight:400;line-height:15px;color:#627083;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hudDot{width:8px;height:8px;border-radius:50%;background:#C54A0A;flex-shrink:0;
+  animation:hudPulse 1.5s ease infinite}
+@keyframes hudPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(197,74,10,.45)}
+  50%{opacity:.7;box-shadow:0 0 0 4px rgba(197,74,10,0)}}
+.hudNum{font-variant-numeric:tabular-nums}
+.hudSep{color:#627083;font-weight:400}
+.hudTarget{font-weight:400;color:#495565;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.hud.ok .hudMain{color:#15803D}
+.hud.err .hudMain{color:#D82525}
+.hud.err{border-color:rgba(216,37,37,.6)}
+.hudIdle{opacity:.45}
+
+/* 深色主题变体（midnight / ocean-dark），令牌取 theme.css:456 / 816 */
+.hud.dk{background:rgba(20,20,24,.94);border-color:rgba(251,146,60,.7);
+  box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.hud.dk .hudMain{color:#E6EDF7}
+.hud.dk .hudSub{color:#8FA3C4}
+.hud.dk .hudDot{background:#FB923C}
+.hud.dk .hudTarget{color:#A8B6C8}
+.hud.dk .hudSep{color:#8FA3C4}
+.hud.dk.ok .hudMain{color:#4ADE80}
+.hud.dk.err .hudMain{color:#F87171}
+.hud.dk.err{border-color:rgba(248,113,113,.6)}
+
+/* ===== 2× 放大镜 ===== */
+.lens{zoom:2;transform-origin:0 0}
+.lensWrap{display:inline-block;width:432px;height:112px;margin-bottom:8px}
+
+/* ===== 位置候选序列图 ===== */
+.locGrid{position:relative;width:600px;height:300px;border-radius:10px;background:#fff;
+  border:1px solid #E0E4EB;margin-top:10px}
+.locGrid .work{position:absolute;inset:12px;border-radius:6px;background:#F4F6F9;
+  border:1px dashed #D8DEE6}
+.slotBox{position:absolute;width:120px;height:26px;border-radius:6px;border:1px dashed #C9D2DD;
+  display:flex;align-items:center;justify-content:center;font-size:10.5px;color:#8A94A2;background:#fff}
+.slotBox.best{border:1.5px solid rgba(197,74,10,.7);background:#FFF7ED;color:#C54A0A;
+  font-weight:600;border-style:solid}
+.cursorDot{position:absolute;left:286px;top:168px;width:0;height:0}
+.workTag{position:absolute;left:24px;top:22px;font-size:10.5px;color:#B4B2A9}
+.cursorDot::before{content:'';position:absolute;left:-5px;top:-5px;width:10px;height:10px;
+  border-radius:50%;background:#0284C7;opacity:.9}
+.cursorDot::after{content:'光标';position:absolute;left:10px;top:-8px;font-size:10px;color:#0284C7;white-space:nowrap}
+
+/* ===== 规范表 ===== */
+table{border-collapse:collapse;margin:12px 0 6px;font-size:12px;max-width:920px}
+th,td{border:1px solid #E0E4EB;padding:6px 10px;text-align:left;vertical-align:top}
+th{background:#F4F6F9;color:#0F172A;font-weight:600;font-size:11.5px}
+td code{font-size:11px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;
+  margin-right:5px;border:1px solid rgba(15,23,42,.12)}
+
+/* ===== 注释块 ===== */
+.anno{margin:10px 0 0;padding:9px 12px;border-radius:8px;border:1px solid #E0E4EB;
+  background:#FBFCFD;font-size:12px;color:#4E5A6B;max-width:920px}
+.anno b{color:#0F172A;font-weight:600}
+.anno.warn{border-color:#FED7AA;background:#FFF9F3}
+.anno.warn b{color:#8A3407}
+.anno.risk{border-color:#F7C1C1;background:#FEF6F6}
+.anno.risk b{color:#791F1F}
+.bad{color:#A32D2D;font-weight:600}
+.good{color:#15803D;font-weight:600}
+ul{margin:6px 0;padding-left:20px}
+li{margin:3px 0}
+</style>
+</head>
+<body>
+
+<h1>粘贴栈「栈浮标」HUD · 设计稿</h1>
+<p class="sub">栈模式的反馈通道从主窗口迁出，落到一个贴光标、不抢焦点、点击穿透的独立小窗。</p>
+
+<div class="anno">
+<b>为什么必须迁出</b>——不是 UI 优化，是通道缺失。栈是<b>无窗口热键</b>操作：用户按 <code>Ctrl+Alt+K</code> 开栈、切到别的应用复制、再按 <code>Ctrl+Alt+P</code> 粘贴，全程视线与焦点都在外部应用里。而栈的全部反馈都渲染在主窗口 webview 内：
+<code>StackBanner</code> 在 <code>CardList.tsx:601</code>；所有提示走 <code>app-toast</code> DOM 事件（<code>stack.ts:22/54/80/83/133</code> → 监听在 <code>App.tsx:262</code>，只在主窗口）。<code>hotkey-stack-paste</code> 的回调（<code>hotkey_manager.rs:277-300</code>）只 emit 一个事件、不显示任何窗口。唯一出窗口的是托盘橙点（<code>system.rs:721</code>），信息量为零。
+</div>
+
+<div class="anno warn">
+<b>同一个坑，这个项目已经踩过一次了</b>——<code>LongShotStatus.tsx:138</code> 的注释原话：<br>
+<code>{/* 主窗已隐藏，toast 看不到 —— 提示只能经进度事件带到这里显示 */}</code><br>
+长截图遇到的是同一个问题，解法也是同一个：<b>另开一个独立小窗承接反馈</b>。本稿不是发明新机制，是把 <code>longshot-status</code> 已经跑通的范式搬到栈上。
+</div>
+
+<hr>
+
+<h2>1 · 它在屏幕上的位置</h2>
+<p class="note">用户此刻在目标应用里打字。<b>HUD 要出现在他的视线焦点附近，而不是固定角落。</b>下面所有模拟底都刻意画成<b>密排文字</b>——半透明玻璃到底还读不读得清，只有在密集内容上才验得出来。</p>
+
+<div class="stage">
+  <div class="appSim">
+    <div class="appBody">订单编号：D-HC6239772　　　　　下单时间：09-16 09:42<br>收货人：张三　　　　　　　　　　联系电话：138 1234 5678<br>联系地址：浙江省杭州市西湖区文三路 199 号 3 幢 1201 室<br>邮箱：<span class="caret"></span>　　　　　　　　　　　　发票抬头：杭州某某科技有限公司<br>备注：请在工作日 9:00–18:00 之间送达，放前台即可<br>配送方式：顺丰陆运（预计 09-18 送达）</div>
+    <div class="hud" style="left:67px;top:31px">
+      <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 3</span><span class="hudSep">·</span><span class="hudTarget">→ Chrome</span></div>
+      <div class="hudSub">Ctrl+Alt+P 粘贴下一条</div>
+    </div>
+    <div class="posTag">模拟目标应用（密排文字）· 光标在邮箱输入框</div>
+  </div>
+</div>
+
+<div class="anno">
+<b>为什么要用密排文字当背景</b>：HUD 的底色是 <code>rgba(255,255,255,.92)</code> 且<b>没有模糊</b>（理由见下），它压住的内容会透出 8%。在纯白背景上画什么都好看，只有在表格线、密排文字、深浅交替的内容上，才能看出玻璃够不够实、边框够不够锁边。
+</div>
+
+<div class="anno">
+<b>为什么贴光标、且优先右上</b><br>
+<code>screenshot.rs:1079-1084</code> 那段注释是血泪换来的：长截图状态窗第一版<b>固定四角</b>，理由是「系统通知区，用户天然会往那看」，实测结果是用户在屏幕左上角操作、控制条在对角线另一头 —— <b>「找不到、以为没反应」</b>。注释最后一行是结论：<br>
+<code>顺序 = 用户找得到的顺序，不是几何上最不碍事的顺序。</code><br><br>
+栈 HUD 固定右下角会重蹈覆辙：用户的粘贴现场在屏幕任意位置。<br><br>
+<b>为什么是"右上"而不是"右下"</b>：连续粘贴时内容<b>向下</b>排布（逐行填表、逐条贴单号），右下会盖住刚贴出来的东西。右上盖住的是已经填完的上文。<br><br>
+<b>代价要说清楚</b>：HUD 会盖住光标<b>上方相邻的几行</b>——上面几张图里都是如此，这是选右上必然的代价，不是画错了位置。之所以可接受，是因为它 <code>92%</code> 不透明、被盖内容只从剩下的 8% 缝里透出来；下面 2× 放大图可以把这一点看清楚。
+</div>
+
+<hr>
+
+<h2>2 · 真实尺寸 · 五个状态</h2>
+<p class="note">全部为 1:1 尺寸（<code>208×48</code>），浮在模拟目标应用上。</p>
+
+<h3>① 刚开栈 · 还没有内容</h3>
+<div class="stage">
+  <div class="appSim">
+    <div class="appBody">订单编号：D-HC6239772　　　　　下单时间：09-16 09:42<br>收货人：张三　　　　　　　　　　联系电话：138 1234 5678<br>联系地址：浙江省杭州市西湖区文三路 199 号 3 幢 1201 室<br>邮箱：<span class="caret"></span>　　　　　　　　　　　　发票抬头：杭州某某科技有限公司<br>备注：请在工作日 9:00–18:00 之间送达，放前台即可<br>配送方式：顺丰陆运（预计 09-18 送达）</div>
+    <div class="hud" style="left:67px;top:31px">
+      <div class="hudMain"><span class="hudDot"></span>栈已开启</div>
+      <div class="hudSub">Ctrl+C 收集 · Ctrl+Alt+P 粘贴</div>
+    </div>
+  </div>
+</div>
+<div class="anno">开栈的那一刻用户往往已经切走了，<b>这是他唯一能确认"真的开了"的地方</b>。当前实现的 toast「栈模式已开启 · Ctrl+C 收集 · Ctrl+Alt+P 粘贴」在主窗口里，等于没说。</div>
+
+<h3>② 收集中 · 已有目标窗口</h3>
+<div class="stage">
+  <div class="appSim">
+    <div class="appBody">订单编号：D-HC6239772　　　　　下单时间：09-16 09:42<br>收货人：张三　　　　　　　　　　联系电话：138 1234 5678<br>联系地址：浙江省杭州市西湖区文三路 199 号 3 幢 1201 室<br>邮箱：<span class="caret"></span>　　　　　　　　　　　　发票抬头：杭州某某科技有限公司<br>备注：请在工作日 9:00–18:00 之间送达，放前台即可<br>配送方式：顺丰陆运（预计 09-18 送达）</div>
+    <div class="hud" style="left:67px;top:31px">
+      <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 3</span><span class="hudSep">·</span><span class="hudTarget">→ Chrome</span></div>
+      <div class="hudSub">Ctrl+Alt+P 粘贴下一条</div>
+    </div>
+  </div>
+</div>
+
+<h3>③ 粘贴成功</h3>
+<div class="stage">
+  <div class="appSim">
+    <div class="appBody">订单编号：D-HC6239772　　　　　下单时间：09-16 09:42<br>收货人：张三　　　　　　　　　　联系电话：138 1234 5678<br>联系地址：浙江省杭州市西湖区文三路 199 号 3 幢 1201 室<br>邮箱：zhangsan@qq.com<span class="caret"></span>　　　　　发票抬头：杭州某某科技有限公司<br>备注：请在工作日 9:00–18:00 之间送达，放前台即可<br>配送方式：顺丰陆运（预计 09-18 送达）</div>
+    <div class="hud ok" style="left:67px;top:31px">
+      <div class="hudMain"><span class="hudNum">✓ 已粘贴</span><span class="hudSep">·</span>剩 2 条</div>
+      <div class="hudSub">Ctrl+Alt+P 继续</div>
+    </div>
+  </div>
+</div>
+
+<h3>④ 粘贴失败 · 没有有效目标窗口</h3>
+<div class="stage">
+  <div class="appSim">
+    <div class="appTitle">资源管理器 · 用户按了 Ctrl+Alt+P，但焦点在空白处</div>
+    <div class="appBody" style="padding-top:18px">名称　　　　　　　　修改日期　　　　　类型　　　　大小<br>D-HC6239772.txt　　2026-09-16 09:42　文本文档　　2 KB<br>zhangsan@qq.com　　2026-09-16 09:41　文本文档　　1 KB<br>138 1234 5678　　　2026-09-16 09:40　文本文档　　1 KB<br><span class="caret"></span></div>
+    <div class="hud err" style="left:67px;top:61px">
+      <div class="hudMain"><span>✕</span>未找到目标窗口</div>
+      <div class="hudSub">这条已保留在栈里</div>
+    </div>
+  </div>
+</div>
+<div class="anno warn">
+<b>这一态是本稿相对上一稿的实质改进。</b>上一稿把「未选择窗口」引导放在主窗口横幅的进度行 —— 而用户此刻看不到主窗口。<b>必须在他眼前说这句话</b>，并且明确告诉他"数据没丢"。<br>
+这同时是上轮报告里缺陷②／③的可见化：桌面/任务栏被误判为有效目标时，用户至少能看到"这一条去哪了"。
+</div>
+
+<h3>⑤ 全部粘贴完毕 · 自动退出</h3>
+<div class="stage">
+  <div class="appSim">
+    <div class="appBody">订单编号：D-HC6239772　　　　　下单时间：09-16 09:42<br>收货人：张三　　　　　　　　　　联系电话：138 1234 5678<br>联系地址：浙江省杭州市西湖区文三路 199 号 3 幢 1201 室<br>邮箱：zhangsan@qq.com　　　　　　发票抬头：杭州某某科技有限公司<br>备注：请在工作日 9:00–18:00 之间送达，放前台即可<br>配送方式：顺丰陆运（预计 09-18 送达）</div>
+    <div class="hud ok" style="left:67px;top:31px">
+      <div class="hudMain"><span>✓</span>全部粘贴完毕</div>
+      <div class="hudSub">已退出栈模式</div>
+    </div>
+  </div>
+</div>
+<div class="anno">停留 1.5 秒后窗口关闭。<b>这是必须存在的收尾</b>——否则用户不知道栈已经退了，会继续按热键期待内容出现。</div>
+
+<hr>
+
+<h2>3 · 2× 放大 · 视觉细节</h2>
+<p class="note">字号 11px 在 100% 缩放下就是这条 HUD 的真实观感；放到 2× 检查圆角、边框权重、点与文字的间距。</p>
+
+<h3>常态（②）与失败态（④）放大</h3>
+<div class="lensWrap"><div class="lens">
+  <div class="hud" style="position:relative;left:0;top:0">
+    <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 3</span><span class="hudSep">·</span><span class="hudTarget">→ Chrome</span></div>
+    <div class="hudSub">Ctrl+Alt+P 粘贴下一条</div>
+  </div>
+</div></div>
+<div class="lensWrap"><div class="lens">
+  <div class="hud err" style="position:relative;left:0;top:0">
+    <div class="hudMain"><span>✕</span>未找到目标窗口</div>
+    <div class="hudSub">这条已保留在栈里</div>
+  </div>
+</div></div>
+<div class="lensWrap"><div class="lens">
+  <div class="hud ok" style="position:relative;left:0;top:0">
+    <div class="hudMain"><span>✓ 已粘贴</span><span class="hudSep">·</span>剩 2 条</div>
+    <div class="hudSub">Ctrl+Alt+P 继续</div>
+  </div>
+</div></div>
+
+<div class="anno">
+<b>做法</b><br>
+· 两行：<b>主行=事实</b>（还剩几条 / 粘到哪 / 成没成），<b>副行=下一步动作</b>。这是 <code>LongShotStatus</code> 的 <code>.ls-main</code>／<code>.ls-sub</code> 已经验证过的分工，照搬。<br>
+· 主行 / 副行<b>都用 11px</b>，靠字重（600 vs 400）和颜色（<code>--text-primary</code> vs <code>--text-muted</code>）拉开层级。<br>
+&nbsp;&nbsp;<b>不沿用</b> <code>longshot-status</code> 的 10px 副行 —— U5 的字号表只有 <b>11 / 12 / 13 / 15 / 20</b>，判定标准是「不在表里且<b>说不出理由</b>就算违反」。栈 HUD 的最小可读场景是 125% 缩放的笔记本屏，10px 会糊，我找不到用 10px 的理由，所以守 11。<br>
+· 圆角用 <b>12</b>（U5 大面板弹窗档）。<code>longshot-status</code> 用的是 10px，不在表内 —— 本稿不复制历史值。<br>
+· 边框 <code>1.5px</code> 的 <code>color-mix(--orange 70%)</code>：<code>longshot-status</code> 用 2px accent，因为它<b>是长截图期间唯一的出口</b>，必须有存在感；HUD 是"随时可瞟一眼"的辅助信息，弱一档。<br>
+· 玻璃令牌复用 <code>--shot-bar-*</code>，<b>不新造一套</b>——两者都是浮在任意内容上的小窗，浅色主题走浅玻璃 + 深字，深色主题走深玻璃。<br>
+· <b>不用 <code>backdrop-filter</code></b>：窗口透明时 WebView2 的 CSS 模糊穿不出窗口（tauri issue <code>#10064</code>），在 HUD 里它模糊不到任何东西、只多一层 GPU 合成。长截图小窗也没用。所以「玻璃感」全靠<b>半透明底色 + 描边 + 阴影</b>——这也是为什么边框不能省。<br>
+· 分隔符 <code>·</code> 用 <code>--text-muted</code>（#627083）<b>而不是浅灰</b>：它是字符，属正文，要过 U7 的 4.5:1。浅灰 #B4B2A9 在白玻璃上只有 2.3:1，属于历史实现里很容易漏掉的一类。
+</div>
+
+<hr>
+
+<h2>4 · 深色主题</h2>
+<p class="note">六套主题里 <code>midnight</code> / <code>ocean-dark</code> 走深玻璃。令牌取 <code>theme.css:456</code>，橙色换成 <code>#FB923C</code>。</p>
+
+<div class="stage">
+  <div class="appSim dk">
+    <div class="appTitle">目标应用 · 深色主题</div>
+    <div class="appBody">{"order_id": "D-HC6239772",　"channel": "wechat"}<br>{"receiver_uid": "u_8821",　　"region": "cn-hangzhou"}<br>{"amount": 1280.00,　　　　　"currency": "CNY"}<br>{"api_key": "<span class="caret"></span>",　"endpoint": "api.example.com/v2"}<br>{"remark": "工作日 9:00–18:00 送达，放前台即可"}<br>{"shipping": "SF-Express",　　"eta": "2026-09-18"}</div>
+    <div class="hud dk" style="left:67px;top:31px">
+      <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 3</span><span class="hudSep">·</span><span class="hudTarget">→ VS Code</span></div>
+      <div class="hudSub">Ctrl+Alt+P 粘贴下一条</div>
+    </div>
+  </div>
+  <div class="appSim dk">
+    <div class="appTitle">目标应用 · 深色主题</div>
+    <div class="appBody">{"order_id": "D-HC6239772",　"channel": "wechat"}<br>{"receiver_uid": "u_8821",　　"region": "cn-hangzhou"}<br>{"amount": 1280.00,　　　　　"currency": "CNY"}<br>{"api_key": "sk-live-…",　　"endpoint": "api.example.com/v2"}<br>{"remark": "工作日 9:00–18:00 送达，放前台即可"}<br>{"shipping": "SF-Express",　　"eta": "2026-09-18"}</div>
+    <div class="hud dk err" style="left:67px;top:31px">
+      <div class="hudMain"><span>✕</span>未找到目标窗口</div>
+      <div class="hudSub">这条已保留在栈里</div>
+    </div>
+  </div>
+</div>
+
+<div class="anno">
+深色下橙色改用 <code>--orange</code> 的深色档 <code>#FB923C</code>（<code>theme.css:409/773</code>），<b>不能让浅色档的 <code>#C54A0A</code> 压在深玻璃上</b>——那是 1.9:1，等于看不见。这正是 U6「只用语义名」的意义：跟着主题走的值只有语义名拿得到。
+</div>
+
+<hr>
+
+<h2>5 · 位置候选序列</h2>
+<p class="note">照 <code>pick_status_pos</code>（<code>screenshot.rs:1060-1096</code>）的写法：给出候选序列，取第一个「完全在工作区内」的；全部不满足则钳到工作区。</p>
+
+<div class="locGrid">
+  <div class="work"></div>
+  <div class="workTag">显示器工作区（不含任务栏）</div>
+  <div class="cursorDot"></div>
+
+  <div class="slotBox best" style="left:306px;top:118px">① 右上（首选）</div>
+  <div class="slotBox" style="left:306px;top:182px">② 右下</div>
+  <div class="slotBox" style="left:150px;top:118px">③ 左上</div>
+  <div class="slotBox" style="left:150px;top:182px">④ 左下</div>
+  <div class="slotBox" style="left:446px;top:246px;width:134px">⑤ 工作区右下兜底</div>
+</div>
+
+<div class="anno">
+<ul>
+<li><b>偏移量 16px</b>（光标到 HUD 最近边），够避开系统光标自身的命中区域；<code>quick_paste.rs:53</code> 用的是 8px，那个面板更大、可以更贴。</li>
+<li>谓词与长截图一致：<b>矩形完全落在当前显示器工作区内</b>才选中。工作区而非全屏 —— 任务栏区域不占。</li>
+<li>多显示器 / DPI：位置按<b>光标所在显示器</b>的工作区与缩放算（<code>tray_manager::get_monitor_work_area</code> 已有），逻辑尺寸 <code>208×48</code> 乘 scale 后再钳制。长截图状态窗已经这么做了（<code>screenshot.rs:1239-1240</code>）。</li>
+<li><b>不做</b>"跟随鼠标实时移动"：用户打字时鼠标静止、光标在动，跟随鼠标会在视野里反复重定位，比固定更烦。</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>6 · 视觉规范</h2>
+<table>
+<tr><th>项</th><th>值</th><th>依据 / 说明</th></tr>
+<tr><td>窗口尺寸</td><td><code>208 × 48</code> 逻辑像素</td><td>固定不随内容跳变 —— 窗口 resize 在透明 WebView2 上有闪烁风险，且每次栈数变化都 resize 不划算</td></tr>
+<tr><td>内边距</td><td><code>8px 10px</code></td><td>U5 间距表内值</td></tr>
+<tr><td>行间距</td><td><code>2px</code></td><td>两行紧贴成一块，不与外部元素比间距</td></tr>
+<tr><td>圆角</td><td><code>12px</code></td><td>U5 大面板弹窗档。<span class="bad">不沿用</span> longshot 的 10px（不在表内）</td></tr>
+<tr><td>字号</td><td><code>11px</code> × 2 行</td><td>U5 最小档。<span class="bad">不沿用</span> longshot 的 10 / 10.5px</td></tr>
+<tr><td>字重</td><td>主行 <code>600</code> / 副行 <code>400</code></td><td>与 StackBanner 的 .title 一致；层级靠字重＋颜色，不靠缩小字号</td></tr>
+<tr><td>主色</td><td><span class="sw" style="background:#C54A0A"></span><code>--orange</code> #C54A0A（浅）<br><span class="sw" style="background:#FB923C"></span>#FB923C（深）</td><td><b>栈模式的身份色</b>：托盘橙点、StackBanner 都是它。让它跟着主题变（U6），而不是写死</td></tr>
+<tr><td>成功 / 失败</td><td><span class="sw" style="background:#15803D"></span><code>--success</code> #15803D<br><span class="sw" style="background:#D82525"></span><code>--danger</code> #D82525</td><td>U6 语义名。深色主题自动换档</td></tr>
+<tr><td>背景</td><td><code>--shot-bar-bg</code><br>浅 <code>rgba(255,255,255,.92)</code><br>深 <code>rgba(20,20,24,.94)</code></td><td>复用悬浮窗玻璃令牌，不新造</td></tr>
+<tr><td>模糊</td><td><b>没有</b> <code>backdrop-filter</code></td><td>❗ 不是取舍，是做不到：窗口 <code>transparent(true)</code> 时 WebView2 的 CSS 模糊<b>只作用于 webview 内部元素、穿不出窗口</b>（tauri issue <code>#10064</code>）。HUD 元素背后就是透明的窗口，模糊不到任何东西，却要多一层 GPU 合成、并在 Windows 上加重每次重绘。长截图小窗同样没用它（<code>screenshot.css:954-971</code> 的 <code>.ls-root</code> 无 backdrop-filter）。<b>滑不出玻璃感就只能靠底色 + 描边 + 阴影三件套</b>（<code>theme.css:356</code> 原话）</td></tr>
+<tr><td>边框</td><td><code>1.5px color-mix(--orange 70%, transparent)</code></td><td>浅色下压白玻璃 ≈ 3.6:1，过 U7 对边框的 3:1</td></tr>
+<tr><td>阴影</td><td><code>0 4px 16px rgba(15,23,42,.18)</code></td><td>比 longshot 的 <code>0 8px 24px rgba(0,0,0,.55)</code> 轻：HUD 更小、且不代表"唯一出口"</td></tr>
+<tr><td>空间不透明度</td><td>空闲 8 秒 → <code>opacity .45</code></td><td>用户离开键盘去别的应用时自动让路；任何栈事件立即恢复 1</td></tr>
+<tr><td>登场动画</td><td><code>translateY(4px) scale(.97) → 1</code>，<code>.18s</code></td><td>沿用 longshot 的 <code>lsIn</code></td></tr>
+<tr><td>对比度自查</td><td>主行 17:1 / 副行 5.4:1 / 橙 4.6:1 / 绿 4.9:1 / 红 5.0:1<br>（浅玻璃底实测）</td><td>全部过 U7 正文 4.5:1。<b>注意这组数只对白玻璃成立</b>，深玻璃另算</td></tr>
+</table>
+
+<hr>
+
+<h2>7 · 交互与边界</h2>
+<table>
+<tr><th>边界</th><th>处理</th><th>为什么</th></tr>
+<tr><td>焦点</td><td><code>.focused(false)</code>，<b>永不 set_focus</b></td><td><code>screenshot.rs:1180</code> 已有先例，注释原话：「不抢焦点：抢了会把滚轮目标窗口激活态打乱」。栈的后果更严重 —— 抢焦点会让 <code>Ctrl+V</code> 打到 HUD 自己身上</td></tr>
+<tr><td>点击</td><td>窗口级 <b>click-through</b>（<code>set_ignore_cursor_events(true)</code>）</td><td>v1 纯展示无按钮。挡住目标应用的一次点击，比它传达的信息代价大得多</td></tr>
+<tr><td>可交互性</td><td><b>没有按钮</b>。要中止"全部粘贴"仍按热键（<code>stack.ts:279</code> 已实现），退出栈按 <code>Ctrl+Alt+K</code></td><td>U7 要求可点目标 ≥24×24，HUD 高度只有 48、放按钮会挤掉文案；且用户的手此刻在目标应用里</td></tr>
+<tr><td>横向溢出</td><td>主行 <code>text-overflow: ellipsis</code>；副行同样</td><td>照 <code>ls-main</code> 的做法。应用名超长时允许 <code>→ Visu…</code></td></tr>
+<tr><td>无 <code>hover</code> 承载信息</td><td><b>所有信息都直接出字</b>，不用 <code>title</code></td><td><code>LongShotStatus.tsx:35-38</code> 的教训：把解释放进 <code>title</code> 等于没放 —— 用户的手在滚轮上，不会去 hover；色觉障碍用户完全拿不到</td></tr>
+<tr><td>颜色不作唯一通道</td><td>成功/失败同时有 <code>✓ / ✕</code> 字形</td><td>U7 SC 1.4.1</td></tr>
+<tr><td>无内容可显示时</td><td>栈未开启 → <b>窗口隐藏</b>，不是显示空态</td><td>它是栈的附庸，栈不在就没有存在理由</td></tr>
+<tr><td>创建失败 / 窗口被外部关闭</td><td>记 <code>warn</code> 日志后<b>静默降级</b>，不影响粘贴主流程</td><td>照 <code>quick_paste.rs:199</code> 的做法。HUD 是反馈放大器，不能成为新的失败点</td></tr>
+<tr><td><code>prefers-reduced-motion</code></td><td>关掉登场动画与脉冲</td><td>U2</td></tr>
+<tr><td>快速连按热键</td><td>窗口缓存复用 + <code>AtomicBool</code> 防重入</td><td><code>quick_paste.rs:77/113</code> 已有范式</td></tr>
+<tr><td>窗口标签</td><td><code>stack-hud</code></td><td>下面第 8 节要拿它做排除判断</td></tr>
+</table>
+
+<hr>
+
+<h2>8 · 落地清单</h2>
+
+<h3>⚠ 前置硬依赖 —— 不先做这个，HUD 会引爆已有缺陷</h3>
+<div class="anno risk">
+<code>paste_engine.rs:205-211</code>：<br>
+<code>fn any_own_window_visible(&self) -&gt; bool { … .any(|w| w.is_visible().unwrap_or(false)) }</code><br>
+而 <code>get_target_hwnd</code>（<code>:219-227</code>）用它判定「手动保存的目标窗口是否永久有效」。<br><br>
+<b>只要 HUD 是常驻可见的，这个条件就恒为 <code>true</code></b> —— 上轮报告的缺陷①（陈旧目标被续命）会从"主窗口开着时偶发"恶化成<b>"永远发生"</b>：用户按 <code>Ctrl+Alt+P</code>，内容稳定地飞到几十分钟前那个窗口去。<br><br>
+<b>修法</b>：<code>any_own_window_visible</code> 排除工具窗标签（<code>stack-hud</code> / <code>longshot-status</code> / <code>quick-paste</code> / <code>tray-popup</code>），或按上轮说的给粘贴入口加 <code>PasteTrigger::Headless</code>（无窗口热键 → 实时抓取优先，绝不回退陈旧值）。<br>
+<b>后一个更好</b>：标签排除是打补丁，trigger 分类修的是根因，且顺带解决桌面/任务栏被当有效目标那条。<br>
+<b>同时</b>：<code>longshot-status</code> 现在就已经在污染这个判据了，只是长截图期间没人粘贴、没暴露。
+</div>
+
+<h3>文件</h3>
+<table>
+<tr><th>动作</th><th>路径</th><th>内容</th></tr>
+<tr><td>新增</td><td><code>src-tauri/src/stack_hud.rs</code></td><td>窗口生命周期（缓存复用 + 防重入）、光标定位与候选序列、show/hide/更新。仿 <code>quick_paste.rs</code> 的结构，约 200 行</td></tr>
+<tr><td>新增</td><td><code>stackhud.html</code> + <code>src/stackhud-main.tsx</code></td><td>独立入口。<b>照抄 <code>longshot-main.tsx</code></b>：不引 appStore、不引主窗口状态、只听一个事件；主题跟随用现成的 <code>applyTheme</code> + <code>theme-changed</code></td></tr>
+<tr><td>新增</td><td><code>src/components/stack/StackHud.tsx</code> + <code>.module.css</code></td><td>纯展示（U8：CSS Module，无内联 style）。约 120 行</td></tr>
+<tr><td>新增</td><td><code>src/lib/stack/hudBridge.ts</code></td><td><b>唯一同步出口</b>：订阅 appStore 的栈状态 → <code>emit("stack-hud-update", snapshot)</code>。HUD 是独立 JS 上下文，<code>app-toast</code> 那个 DOM 事件到不了它</td></tr>
+<tr><td>改</td><td><code>src-tauri/src/paste_engine.rs</code></td><td>★ 上面那条前置</td></tr>
+<tr><td>改</td><td><code>src/lib/api/stack.ts</code></td><td>关键节点推 HUD；<b>toast 保留</b>（主窗口可见时它仍是对的通道）</td></tr>
+<tr><td>改</td><td><code>src-tauri/src/lib.rs</code></td><td>命令注册</td></tr>
+<tr><td>测试</td><td><code>stack_hud.rs</code> 内 <code>#[cfg(test)]</code></td><td>候选序列谓词（四种越界情形）、标签排除判据</td></tr>
+</table>
+
+<h3>一条硬约束（与上一稿同源）</h3>
+<div class="anno warn">
+HUD 上显示的「<code>→ Chrome</code>」<b>必须来自粘贴引擎解析目标的同一个函数</b>（同 trigger、同判据），不能在 HUD 侧重算一遍。两处各算会出现「HUD 写着 Chrome、实际粘到记事本」——与历史事故「提示已粘贴却没内容」同形。这条在上一稿里也写过，承载物换了，约束不变。
+</div>
+
+<h3>本轮不做</h3>
+<ul>
+<li><b>不做可点按钮</b>（详见第 7 节）。</li>
+<li><b>不做设置项</b>。HUD 随栈模式存在，栈是用户主动进入的临时状态；嫌烦的粒度问题是"栈模式"，不是 HUD。实测真的干扰再加开关。</li>
+<li><b>不做跟随鼠标</b>（第 5 节）。</li>
+<li><b>不做目标应用图标</b>。<code>icon_extractor</code> / <code>get_source_app_icon</code> 已经能拿到，但异步取图标会给 HUD 引入一次额外 IPC 往返；<code>→ 名字</code> 已经够读。列为后续增强。</li>
+<li><b>不做系统通知</b>（未装 notification 插件；延迟大、连续粘贴会刷屏、专注助手可能静音）。</li>
+<li><b>不做托盘数字角标</b>（16×16 图标画数字辨不清；且它治不了"看不到"）。</li>
+</ul>
+
+<h3>与上一稿的关系</h3>
+<div class="anno">
+上一稿（<code>PastePanda-粘贴栈-目标窗口可见-设计稿.html</code>）的<b>承载物是主窗口横幅</b>，在栈的真实使用场景里用户看不到 —— 那一稿的视觉结论因此要搬迁，但<b>不废弃</b>：
+<ul>
+<li>搬过来的：「未选定目标」的两态（chip 转警示 + 引导句）、「→ 应用名」的文案口径、成功/失败文案。</li>
+<li>留在原地的：主窗口横幅保留其信息（用户切回主窗口时仍需要看到栈的全貌与队列）。<b>两者是同一份状态的两个视角，不是二选一。</b></li>
+<li>作废的：上一稿把目标 chip 挤进 420px 横幅进度行的那套宽度权衡 —— HUD 有独立窗口，不再受横幅宽度账约束。</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>9 · 待确认</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>我的建议</th></tr>
+<tr><td>1</td><td>HUD 常驻 vs 只闪现</td><td><b>常驻 + 空闲 8 秒降到 45%</b>。闪现会让"还剩几条"必须再按一次热键才知道</td></tr>
+<tr><td>2</td><td>前置依赖（<code>any_own_window_visible</code> / <code>Headless</code> trigger）是否一并做</td><td><b>必须一并做</b>，否则 HUD 上线即放大缺陷①</td></tr>
+<tr><td>3</td><td>空闲淡化阈值 8 秒、透明度 45% 是否合适</td><td>待实测。这两个值只影响观感，不影响正确性，可以后调</td></tr>
+<tr><td>4</td><td>深色主题下 <code>rgba(20,20,24,.94)</code> 压住<b>浅色代码</b>时，透出的灰雾是否干扰阅读</td><td>渲染自检里已经能看到轻微透出（浅色主题下几乎没有——白玻璃压深字，透出后与纯白只差 8 个灰阶）。若实测干扰，深色档提到 <code>0.97</code>。<b>浅色档不要动</b>：<code>0.92</code> 是 <code>longshot-status</code> 在任意截图内容上验证过的值</td></tr>
+</table>
+
+</body>
+</html>

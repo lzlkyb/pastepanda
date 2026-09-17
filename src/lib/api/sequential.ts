@@ -63,8 +63,15 @@ async function sequentialPasteInner() {
 
   logger.info(`[sequentialPaste] 粘贴第 ${idx + 1}/${textItems.length} 条: ${item.text.slice(0, 30)}...`);
 
-  // 调用后端粘贴引擎，成功后推进指针，失败不推进
-  const ok = await pasteTextGuarded(item.text);
+  // 调用后端粘贴引擎，成功后推进指针，失败不推进。
+  //
+  // 🔴 第三参 headless=true：依次粘贴是**无窗口热键**入口（`hotkey-sequential-paste`
+  // 只 emit、不开窗，见 `hotkey_manager.rs`），粘贴引擎据此实时抓取目标窗口
+  // ——见 `paste_engine.rs::PasteTrigger` 的注释，那里把本入口与栈粘贴、索引粘贴
+  // 并列为同一类。不带这个标记会退回 `WindowBound`，用手动保存值优先：
+  // 用户在桌面/任务栏上按热键时 `save_foreground_hwnd` 会拒绝并**保留旧值**，
+  // 而主窗口开着时该值永久有效 ⇒ 内容飞到几十分钟前那个窗口。
+  const ok = await pasteTextGuarded(item.text, true);
   if (!ok) {
     logger.warn(`[sequentialPaste] 粘贴失败，指针保持 ${idx}`);
     return; // 粘贴失败不推进指针
@@ -111,7 +118,10 @@ export async function indexPaste(n: number) {
   if (!item) return;
 
   // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
-  const ok = await pasteTextGuarded(item.text);
+  //
+  // 🔴 headless=true 的理由同 `sequentialPasteInner`：索引粘贴（Ctrl+Alt+1~9）也是
+  // 无窗口热键（`hotkey-index-paste` 只 emit、不开窗），必须实时抓取目标窗口。
+  const ok = await pasteTextGuarded(item.text, true);
   if (ok) {
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${n} 条`, type: "success" } }));
     // 粘贴信号回写（同 sequentialPasteInner，此前漏记）。索引粘贴的下标是用户

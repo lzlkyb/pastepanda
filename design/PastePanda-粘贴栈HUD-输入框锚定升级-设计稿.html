@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 粘贴栈 HUD 全面升级 · 输入框锚定方案对比</title>
+<style>
+/* ========================================================================
+   设计稿令牌全部对齐真实代码：
+   - src/components/stack/StackHud.tsx + StackHud.module.css  当前 HUD
+   - src-tauri/src/stack_hud.rs  HUD_W=208 HUD_H=65
+   - src-tauri/src/stack_hud_pos.rs  ANCHOR_MARGIN_RIGHT=16 ANCHOR_CLEAR_TITLEBAR=40
+   - src/styles/theme.css  --shot-bar-* / --orange / --success / --danger
+   - docs/PastePanda-UI规则.md  U2/U5/U6/U7
+   - src-tauri/src/screenshot.rs  uia_control_at 已有 UIA 经验
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:28px 24px 80px;background:#F7F8FA;color:#33404F;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:20px;color:#0F172A;margin:0 0 4px}
+h2{font-size:15px;color:#0F172A;margin:40px 0 8px}
+h3{font-size:12.5px;color:#627083;margin:22px 0 8px;letter-spacing:.2px;font-weight:600}
+.sub{color:#627083;font-size:12.5px;margin:0 0 20px;max-width:920px}
+.note{color:#4E5A6B;font-size:12px;margin:6px 0 14px;max-width:920px}
+.note b{color:#0F172A;font-weight:600}
+hr{border:0;border-top:1px solid #E0E4EB;margin:36px 0 0}
+code{background:#EDF1F6;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#0B6FA4}
+.anno{margin:10px 0 0;padding:10px 14px;border-radius:8px;border:1px solid #E0E4EB;
+  background:#FBFCFD;font-size:12px;color:#4E5A6B;max-width:920px}
+.anno b{color:#0F172A;font-weight:600}
+.anno.warn{border-color:#FED7AA;background:#FFF9F3}
+.anno.warn b{color:#8A3407}
+.anno.risk{border-color:#F7C1C1;background:#FEF6F6}
+.anno.risk b{color:#791F1F}
+.bad{color:#A32D2D;font-weight:600}
+.good{color:#15803D;font-weight:600}
+table{border-collapse:collapse;margin:12px 0 6px;font-size:12px;max-width:960px}
+th,td{border:1px solid #E0E4EB;padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#F4F6F9;color:#0F172A;font-weight:600;font-size:11.5px}
+td code{font-size:11px}
+ul{margin:6px 0;padding-left:20px}
+li{margin:3px 0}
+
+/* ===== 模拟目标应用窗口 ===== */
+.win{position:relative;width:640px;height:380px;border-radius:10px;background:#fff;
+  border:1px solid #D8DEE6;box-shadow:0 8px 24px rgba(15,23,42,.08);overflow:hidden}
+.win.dk{background:#1B1F27;border-color:#2C323D;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.winBar{height:32px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  background:#F4F6F9;border-bottom:1px solid #E8ECF2;font-size:11.5px;color:#627083}
+.win.dk .winBar{background:#22272F;border-bottom-color:#2C323D;color:#8FA3C4}
+.dot3{display:flex;gap:4px}
+.dot3 i{width:8px;height:8px;border-radius:50%;background:#D0D6DF;display:block}
+.winBody{padding:16px 18px;font-size:12px;color:#9AA5B4;line-height:1.9}
+.win.dk .winBody{color:#8A94A2}
+.fieldLabel{font-size:11px;color:#627083;margin-bottom:4px;font-weight:600}
+.win.dk .fieldLabel{color:#8FA3C4}
+.field{width:420px;height:34px;border:1.5px solid #0284C7;border-radius:6px;
+  background:#fff;padding:0 10px;display:flex;align-items:center;font-size:12.5px;color:#0F172A;
+  box-shadow:0 0 0 3px rgba(2,132,199,.15)}
+.win.dk .field{background:#0F1419;color:#E6EDF7;border-color:#38BDF8;box-shadow:0 0 0 3px rgba(56,189,248,.18)}
+.caret{display:inline-block;width:1.5px;height:16px;background:#0284C7;vertical-align:-3px;
+  animation:blink 1.1s step-end infinite}
+.win.dk .caret{background:#38BDF8}
+@keyframes blink{50%{opacity:0}}
+.formNote{margin-top:14px;font-size:11.5px;color:#B0B8C4}
+.win.dk .formNote{color:#6B7380}
+
+/* ===== 方案卡片 ===== */
+.optGrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0 8px}
+.optCard{border:1.5px solid #E0E4EB;border-radius:12px;background:#fff;padding:14px 16px;
+  display:flex;flex-direction:column;gap:8px}
+.optCard.rec{border-color:rgba(197,74,10,.55);background:#FFFBF7;box-shadow:0 0 0 3px rgba(197,74,10,.08)}
+.optCard h4{margin:0;font-size:13.5px;color:#0F172A}
+.optCard .tag{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;
+  background:#FFF7ED;color:#C54A0A;border:1px solid #FED7AA}
+.optCard .tag.gray{background:#F4F6F9;color:#627083;border-color:#E0E4EB}
+.optCard p{margin:0;font-size:12px;color:#4E5A6B}
+.optCard .pros,.optCard .cons{font-size:11.5px;margin:0;padding-left:16px}
+.optCard .pros{color:#166534}
+.optCard .cons{color:#A32D2D}
+
+/* ===== HUD 本体 · 升级版 ===== */
+/* 尺寸账（升级版）：
+   窗口 240×78 = padding 10×2 + 主行 18 + gap 3 + 预览 15 + gap 3 + 副行 15 + progress? 
+   实际采用三行 + 右上角进度徽章：
+   padding 8×2 + 主行 15 + gap 2 + 预览 15 + gap 2 + 副行 15 = 65 与现版同高
+   仅加宽：208 → 240（放得下「2/5」徽章与更长应用名） */
+.hud{position:absolute;width:240px;padding:8px 12px;border-radius:12px;
+  display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden;
+  background:rgba(255,255,255,.93);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(197,74,10,.65),
+    0 4px 16px rgba(15,23,42,.18),
+    0 0 0 1px rgba(255,255,255,.55) inset;
+  animation:hudIn .2s cubic-bezier(.2,.8,.2,1);
+  font-size:11px;line-height:15px;color:#0F172A;user-select:none}
+@keyframes hudIn{
+  from{opacity:0;transform:translateY(6px) scale(.94)}
+  to{opacity:1;transform:none}}
+.hudMain{display:flex;align-items:center;gap:5px;min-width:0;font-weight:600;
+  white-space:nowrap}
+.hudSub{font-size:11px;font-weight:400;color:#4E5A6B;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.hudPreview{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400}
+.hudPreview::before{content:"↓ ";color:#C54A0A;font-weight:600}
+.hudDot{width:7px;height:7px;border-radius:50%;background:#C54A0A;flex-shrink:0;
+  animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(197,74,10,.5)}
+  50%{opacity:.55;box-shadow:0 0 0 4px rgba(197,74,10,0)}}
+.hudNum{font-variant-numeric:tabular-nums}
+.hudSep{color:#627083;font-weight:400}
+.hudTarget{font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#334155}
+.hudProg{margin-left:auto;flex-shrink:0;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums;
+  padding:1px 6px;border-radius:999px;background:#FFF7ED;color:#C54A0A;border:1px solid #FED7AA}
+.hud .markOk{color:#15803D;font-weight:700}
+.hud .markErr{color:#D82525;font-weight:700}
+.hud.ok{box-shadow:inset 0 0 0 1.5px rgba(21,128,61,.55),0 4px 16px rgba(15,23,42,.18)}
+.hud.err{box-shadow:inset 0 0 0 1.5px rgba(216,37,37,.55),0 4px 16px rgba(15,23,42,.18)}
+/* 方向尾：指向输入框的小三角（仅输入框锚定方案使用） */
+.hud.tail::after{content:"";position:absolute;right:18px;bottom:-5px;width:0;height:0;
+  border-left:6px solid transparent;border-right:6px solid transparent;
+  border-top:6px solid rgba(197,74,10,.65)}
+.hud.tail.ok::after{border-top-color:rgba(21,128,61,.55)}
+.hud.tail.err::after{border-top-color:rgba(216,37,37,.55)}
+/* 深色 */
+.hud.dk{background:rgba(20,20,24,.94);color:#E6EDF7;
+  box-shadow:inset 0 0 0 1.5px rgba(251,146,60,.7),0 4px 16px rgba(0,0,0,.45)}
+.hud.dk .hudSub{color:#8FA3C4}
+.hud.dk .hudTarget{color:#A8B6C8}
+.hud.dk .hudDot{background:#FB923C}
+.hud.dk .hudProg{background:#431407;color:#FB923C;border-color:#9A3412}
+.hud.dk .hudPreview::before{color:#FB923C}
+.hud.dk .hudSep{color:#8FA3C4}
+.hud.dk.ok{box-shadow:inset 0 0 0 1.5px rgba(74,222,128,.55),0 4px 16px rgba(0,0,0,.45)}
+.hud.dk.err{box-shadow:inset 0 0 0 1.5px rgba(248,113,113,.55),0 4px 16px rgba(0,0,0,.45)}
+.hud.dk.tail::after{border-top-color:rgba(251,146,60,.7)}
+
+/* 现版对照 */
+.hud.old{width:208px;padding:8px 10px;
+  box-shadow:inset 0 0 0 1.5px rgba(197,74,10,.55),0 4px 16px rgba(15,23,42,.18)}
+.hud.old .hudMain{font-size:11px}
+
+/* 标注线 */
+.anchorLine{position:absolute;border:1.5px dashed rgba(2,132,199,.55);border-radius:8px;
+  pointer-events:none}
+.posLabel{position:absolute;font-size:10px;font-weight:600;white-space:nowrap;
+  background:#fff;padding:1px 6px;border-radius:4px;border:1px solid #D8DEE6;color:#0284C7}
+.posLabel.orange{color:#C54A0A;border-color:#FED7AA;background:#FFF7ED}
+
+/* 场景并排 */
+.sceneRow{display:flex;gap:20px;flex-wrap:wrap;margin:14px 0 0;align-items:flex-start}
+.sceneBox{position:relative}
+.sceneCap{font-size:11.5px;color:#627083;margin-bottom:6px;font-weight:600}
+
+/* 阶段条 */
+.phaseRow{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+.phase{width:200px;border-radius:10px;border:1px solid #E0E4EB;background:#fff;padding:10px 12px}
+.phase .lbl{font-size:10.5px;font-weight:600;color:#627083;margin-bottom:6px;letter-spacing:.3px}
+.phase .hud{position:relative;width:176px;padding:6px 10px;font-size:10.5px}
+.phase .hudProg{font-size:9.5px;padding:0 5px}
+.phase .hudMain,.phase .hudSub,.phase .hudPreview{line-height:14px}
+.phase .hudSub{font-size:10.5px}
+
+/* 链路图 */
+.chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:12px 0;font-size:11.5px}
+.chain .step{padding:6px 10px;border-radius:8px;border:1px solid #E0E4EB;background:#fff;color:#334155}
+.chain .step.hi{border-color:rgba(197,74,10,.5);background:#FFF7ED;color:#C54A0A;font-weight:600}
+.chain .arr{color:#94A3B8;font-weight:600}
+
+/* 对比表 */
+.cmp th:nth-child(1){width:120px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px;border:1px solid rgba(15,23,42,.12)}
+</style>
+</head>
+<body>
+
+<h1>粘贴栈 HUD · 全面升级方案</h1>
+<p class="sub">
+  痛点：浮标虽已锚定「目标窗口右上角内侧」，但在最大化浏览器 / 表单中部输入框场景下，
+  窗口右上角离真正的输入框仍然很远 —— 用户视线在输入框，浮标却在天边，等于「没出现」。
+  目标：把浮标贴到<strong>正在操作的输入框右上方</strong>，并顺手把显眼度、信息密度、状态语言一起拉齐。
+</p>
+
+<div class="anno">
+<b>现状（代码事实）</b>——<code>stack_hud_pos.rs</code> 方案 A：<code>anchor_pos</code> 把 HUD 放在
+目标窗口 <strong>右缘 −16px、顶缘 +40px</strong>（避开标题栏）。锚点来自
+<code>stack_hud.rs::anchor_rect</code> 的 <strong>前台窗口</strong>（<code>GetWindowRect</code>），
+<strong>不是</strong>聚焦控件。窗口是 1920 宽时，输入框可能在中间 x=600，浮标却钉在 x≈1670 —— 视线距离 1000px+。
+项目里已有 UIA 经验：<code>screenshot.rs::uia_control_at</code>（控件级吸附）可直接复用 COM/UIA 封装思路。
+</div>
+
+<hr>
+
+<h2>0 · 问题现场（为什么现在不显眼）</h2>
+<div class="sceneRow">
+  <div class="sceneBox">
+    <div class="sceneCap">现状：窗口右上角 · 远离输入框</div>
+    <div class="win">
+      <div class="winBar"><div class="dot3"><i></i><i></i><i></i></div>Chrome — 表单填写</div>
+      <div class="winBody">
+        <div style="height:90px"></div>
+        <div class="fieldLabel">收件人备注</div>
+        <div class="field">张三的备注信息<span class="caret"></span></div>
+        <div class="formNote">↑ 视线在这里</div>
+      </div>
+      <!-- 现状 HUD：窗口右上内侧 -->
+      <div class="hud old" style="right:16px;top:40px">
+        <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 3</span><span class="hudSep">·</span><span class="hudTarget">→ Chrome</span></div>
+        <div class="hudPreview" style="margin-top:2px">收件人：张三</div>
+        <div class="hudSub" style="margin-top:2px">Ctrl+Alt+P 粘贴下一条</div>
+      </div>
+      <div class="posLabel" style="right:16px;top:112px">现状落位 · 离输入框约 280px</div>
+    </div>
+  </div>
+  <div class="sceneBox">
+    <div class="sceneCap">升级后：贴在聚焦输入框右上方</div>
+    <div class="win">
+      <div class="winBar"><div class="dot3"><i></i><i></i><i></i></div>Chrome — 表单填写</div>
+      <div class="winBody">
+        <div style="height:90px"></div>
+        <div class="fieldLabel">收件人备注</div>
+        <div class="field" style="position:relative">张三的备注信息<span class="caret"></span></div>
+        <div class="formNote">↑ 浮标就贴在它右上</div>
+      </div>
+      <!-- 升级：输入框右上方 -->
+      <div style="position:absolute;left:250px;top:168px;width:420px;height:34px;border:1.5px dashed rgba(2,132,199,.45);border-radius:6px;pointer-events:none"></div>
+      <div class="hud tail" style="right:190px;top:78px">
+        <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 3</span><span class="hudSep">·</span><span class="hudTarget">→ Chrome</span><span class="hudProg">1/3</span></div>
+        <div class="hudPreview" style="margin-top:2px">收件人：张三</div>
+        <div class="hudSub" style="margin-top:2px">Ctrl+Alt+P 粘贴下一条</div>
+      </div>
+      <div class="posLabel orange" style="right:190px;top:154px">目标：输入框 top−8 / right 对齐</div>
+    </div>
+  </div>
+</div>
+
+<div class="anno warn">
+<b>几何约定（方案 A 落地时写死进 <code>stack_hud_pos.rs</code>）</b>：
+输入框矩形 <code>(ix, iy, iw, ih)</code>（物理像素，UIA <code>CurrentBoundingRectangle</code>）→
+默认落位 <code>x = ix + iw − HUD_W</code>，<code>y = iy − HUD_H − 8</code>（右对齐、上方 8px）。
+上方放不下（输入框太靠屏顶）→ 改放下方：<code>y = iy + ih + 8</code>，尾巴翻到上方。
+仍钳制进 workarea；用户拖拽偏移语义不变（相对默认落位的绝对偏移）。
+</div>
+
+<hr>
+
+<h2>1 · 三个方案对比</h2>
+
+<div class="optGrid">
+  <div class="optCard rec">
+    <h4>A · 输入框锚定 <span class="tag">推荐</span></h4>
+    <p>UIA <code>GetFocusedElement</code> → 聚焦控件矩形 → HUD 贴其右上方。取不到再走现有窗口锚 → 光标候选。</p>
+    <p style="font-size:11.5px;color:#627083"><b>改哪里</b>：新增 <code>focused_control_rect()</code>；扩展 <code>anchor_pos</code> 支持控件矩形；保持兜底链。</p>
+    <ul class="pros">
+      <li>正是用户要的「输入框右上方」</li>
+      <li>最大化表单/浏览器场景视线距离从数百 px 降到接近 0</li>
+      <li>项目已有 UIA 经验（screenshot.rs）</li>
+      <li>失败自动降级，不会比现状更差</li>
+    </ul>
+    <ul class="cons">
+      <li>UIA 首次调用约 20–80ms（热键路径需异步/缓存）</li>
+      <li>少数应用不暴露聚焦元素 → 静默降级窗口锚</li>
+      <li>实现量中等（约 150–250 行 Rust + 单测）</li>
+    </ul>
+  </div>
+
+  <div class="optCard">
+    <h4>B · 窗口锚强化 <span class="tag gray">保守</span></h4>
+    <p>不碰定位算法，只把视觉权重加大：HUD 加宽、进度徽章、入场更猛、脉冲环。仍钉窗口右上。</p>
+    <p style="font-size:11.5px;color:#627083"><b>改哪里</b>：只改 <code>StackHud.tsx/css</code> 与 <code>HUD_W</code>，零系统 API。</p>
+    <ul class="pros">
+      <li>改动最小，零定位风险</li>
+      <li>性能零额外开销</li>
+      <li>适合先做一版「立刻变显眼」</li>
+    </ul>
+    <ul class="cons">
+      <li>没有解决「离输入框远」的根因</li>
+      <li>最大化窗口中部表单依旧「找不到」</li>
+      <li>只是放大了错误位置的存在感</li>
+    </ul>
+  </div>
+
+  <div class="optCard">
+    <h4>C · 混合渐进 <span class="tag gray">稳妥分步</span></h4>
+    <p>先落地 B 的视觉升级（当天可发），再在同一迭代里接 A 的输入框锚定；设置里提供「定位方式：智能 / 仅窗口」开关。</p>
+    <p style="font-size:11.5px;color:#627083"><b>改哪里</b>：B 的全部 + A 的全部 + 配置项 <code>stack_hud_anchor_mode</code>。</p>
+    <ul class="pros">
+      <li>用户立刻感知变显眼</li>
+      <li>UIA 异常时可一键退回纯窗口锚</li>
+      <li>便于灰度与回滚</li>
+    </ul>
+    <ul class="cons">
+      <li>总工作量最大</li>
+      <li>多一个设置项（L1 可学性成本）</li>
+      <li>若 A 验证顺利，开关可能是临时脚手架</li>
+    </ul>
+  </div>
+</div>
+
+<div class="anno">
+<b>推荐组合</b>：<span class="good">方案 A 的定位</span> + <span class="good">方案 B 的视觉升级</span>（即 C 的实质、但默认直接开智能锚定，不必先暴露设置开关）。
+理由：B 单独做治标不治本；A 若不带上视觉升级，贴对了位置但 208×65 在复杂表单上仍可能被淹没。
+设置开关建议<strong>先不做</strong>（YAGNI），等真出现「UIA 在某应用上把 HUD 甩飞」的反馈再补。
+</div>
+
+<hr>
+
+<h2>2 · 视觉升级规格（HUD 本体）</h2>
+
+<table class="cmp">
+<tr><th>项</th><th>现版</th><th>升级版</th><th>理由</th></tr>
+<tr><td>窗口尺寸</td><td><code>208 × 65</code></td><td><code>240 × 65</code></td><td>高度账不变（三行 15×3+间隙+padding）；加宽 32px 放得下进度徽章与更长应用名，避免「栈 3 · → Microsoft Edge」被截断</td></tr>
+<tr><td>进度徽章</td><td>无</td><td>主行右侧 <code>1/3</code> 橙色 pill</td><td>连续粘贴时用户最常问「还要贴几条」；<code>tabular-nums</code> 防跳动</td></tr>
+<tr><td>方向尾</td><td>无</td><td>底部 6px 小三角（指向输入框）</td><td>输入框锚定时建立「浮标 ↔ 这个框」的视觉指称；窗口锚定/光标兜底时不显示</td></tr>
+<tr><td>描边</td><td>inset 1.5px / 55%</td><td>inset 1.5px / <b>65%</b> + 外圈白影</td><td>压在彩色表单上更抗干扰；仍走 inset 不吃布局</td></tr>
+<tr><td>入场</td><td><code>0.18s ease-out</code> 上浮 4px</td><td><code>0.20s cubic-bezier(.2,.8,.2,1)</code> 上浮 6px + scale 0.94</td><td>U2 标准档 200ms；曲线给一点「弹出」感，提高扫视捕获率</td></tr>
+<tr><td>空闲淡化</td><td>8s → 45%</td><td>8s → <b>55%</b></td><td>45% 在浅色复杂背景上接近消失；55% 仍可见但不抢</td></tr>
+<tr><td>脉冲点</td><td>1.6s 橙</td><td>1.5s 橙 + 扩散环</td><td>唯一常驻动效，负责「栈还开着」的余光信号</td></tr>
+<tr><td>成功/失败</td><td>描边变色</td><td>描边变色 + 主行标记</td><td>颜色不作唯一通道（U7）：<code>✓</code>/<code>✕</code> 已有，保持</td></tr>
+<tr><td>点击穿透</td><td>是</td><td>是（不变）</td><td>挡住目标应用点击比任何视觉收益都糟</td></tr>
+<tr><td>深色主题</td><td>有</td><td>有（同步升级）</td><td>midnight / ocean-dark 用 <code>#FB923C</code> 系</td></tr>
+</table>
+
+<h3>阶段状态一览（升级版四态）</h3>
+<div class="phaseRow">
+  <div class="phase">
+    <div class="lbl">COLLECTING · 收集中</div>
+    <div class="hud">
+      <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 3</span><span class="hudSep">·</span><span class="hudTarget">→ Chrome</span><span class="hudProg">0/3</span></div>
+      <div class="hudPreview">收件人：张三</div>
+      <div class="hudSub">Ctrl+Alt+P 粘贴下一条</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="lbl">SUCCESS · 已粘贴</div>
+    <div class="hud ok">
+      <div class="hudMain"><span class="markOk">✓</span>已粘贴<span class="hudSep">·</span>剩 2 条<span class="hudProg">1/3</span></div>
+      <div class="hudPreview">电话：138****</div>
+      <div class="hudSub">Ctrl+Alt+P 继续</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="lbl">ERROR · 失败</div>
+    <div class="hud err">
+      <div class="hudMain"><span class="markErr">✕</span>粘贴失败<span class="hudProg">1/3</span></div>
+      <div class="hudPreview">电话：138****</div>
+      <div class="hudSub">这条已保留在栈里</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="lbl">DONE · 全部完毕</div>
+    <div class="hud ok">
+      <div class="hudMain"><span class="markOk">✓</span>全部粘贴完毕</div>
+      <div class="hudSub">已退出栈模式</div>
+    </div>
+  </div>
+</div>
+
+<div class="anno">
+<b>进度语义</b>：<code>done</code> 阶段进场时记录本轮总数 <code>N</code>；每次 success <code>pasted++</code>；
+徽章显示 <code>pasted/N</code>（collecting 刚开栈为 <code>0/N</code>）。状态由 <code>hudBridge.ts</code>
+推入 <code>StackHudState</code> 新增字段 <code>progress?: { done: number; total: number }</code>，
+Rust 侧 serde <code>default</code> 兼容旧报文。
+</div>
+
+<hr>
+
+<h2>3 · 定位链路（方案 A）</h2>
+
+<div class="chain">
+  <div class="step hi">热键 / 状态推送</div><div class="arr">→</div>
+  <div class="step hi">UIA GetFocusedElement</div><div class="arr">→</div>
+  <div class="step">控件矩形合理？<br><span style="font-size:10.5px;color:#627083">面积≥40×16 且落在前台窗内</span></div><div class="arr">是 →</div>
+  <div class="step hi">锚定控件右上<br><span style="font-size:10.5px;color:#627083">显示方向尾</span></div>
+</div>
+<div class="chain">
+  <div class="step">UIA 失败 / 超时</div><div class="arr">→</div>
+  <div class="step">GetGUIThreadInfo<br><span style="font-size:10.5px;color:#627083">rcCaret → ClientToScreen</span></div><div class="arr">有 caret →</div>
+  <div class="step">锚定 caret 右上<br><span style="font-size:10.5px;color:#627083">显示方向尾</span></div>
+</div>
+<div class="chain">
+  <div class="step">仍失败</div><div class="arr">→</div>
+  <div class="step">前台窗口右上（现方案 A）</div><div class="arr">无前台 →</div>
+  <div class="step">光标四象限候选（现兜底）</div>
+</div>
+
+<table>
+<tr><th>层级</th><th>数据源</th><th>预期命中</th><th>耗时</th><th>方向尾</th></tr>
+<tr><td>1</td><td>UIA <code>GetFocusedElement.CurrentBoundingRectangle</code></td><td>Chrome / Edge / VS Code / Electron / WPF / UWP / 飞书</td><td>20–80ms（COM 可缓存）</td><td class="good">显示</td></tr>
+<tr><td>2</td><td><code>GetGUIThreadInfo</code> + <code>rcCaret</code></td><td>记事本 / 经典 Win32 Edit / 部分 Office</td><td>&lt;1ms</td><td class="good">显示</td></tr>
+<tr><td>3</td><td>前台窗口 <code>GetWindowRect</code>（现有）</td><td>无法取得控件时</td><td>&lt;1ms</td><td>不显示</td></tr>
+<tr><td>4</td><td>光标候选序列（现有）</td><td>桌面 / 自身窗口</td><td>&lt;1ms</td><td>不显示</td></tr>
+</table>
+
+<div class="anno risk">
+<b>性能红线（规则 8）</b>：UIA 调用<strong>不得</strong>同步阻塞在热键主路径上超过 100ms。
+对策：① <code>follow_anchor</code> 已在 <code>emit_state</code> 里调用，放入短缓存
+（同一前台窗口 + 500ms 内复用上次控件矩形）；② UIA 仅在缓存未命中时创建，
+复用 <code>screenshot.rs</code> 的 <code>ComInit</code> 模式；③ 任何失败 → 立刻走层级 3，不重试。
+不加 <code>backdrop-filter</code>（透明窗口穿不出，已有注释铁律）。
+</div>
+
+<div class="anno warn">
+<b>正确性约束（规则 11 / 15）</b>：控件矩形必须与「粘贴目标」同一来源语义——
+聚焦控件所在窗口必须是 <code>paste_engine</code> 解析出的目标窗口（或其子窗口），
+否则会出现「浮标贴在 A 窗输入框、实际粘到 B 算」。
+实现上：先取现有 <code>capture_foreground_now</code> 的 hwnd，再 UIA 聚焦元素的
+<code>CurrentNativeWindowHandle</code> 做祖先链校验；不一致则放弃控件锚、退回窗口锚。
+</div>
+
+<hr>
+
+<h2>4 · 深色主题对照</h2>
+<div class="sceneRow">
+  <div class="sceneBox">
+    <div class="sceneCap">浅色 · 输入框锚定</div>
+    <div class="win" style="width:520px;height:280px">
+      <div class="winBar"><div class="dot3"><i></i><i></i><i></i></div>表单</div>
+      <div class="winBody">
+        <div style="height:50px"></div>
+        <div class="fieldLabel">地址</div>
+        <div class="field" style="width:360px">北京市海淀区…<span class="caret"></span></div>
+      </div>
+      <div class="hud tail" style="right:48px;top:88px">
+        <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 2</span><span class="hudSep">·</span><span class="hudTarget">→ 表单</span><span class="hudProg">0/2</span></div>
+        <div class="hudPreview">地址：北京市…</div>
+        <div class="hudSub">Ctrl+Alt+P 粘贴下一条</div>
+      </div>
+    </div>
+  </div>
+  <div class="sceneBox">
+    <div class="sceneCap">深色 · 输入框锚定</div>
+    <div class="win dk" style="width:520px;height:280px">
+      <div class="winBar"><div class="dot3"><i style="background:#3A4150"></i><i style="background:#3A4150"></i><i style="background:#3A4150"></i></div>表单</div>
+      <div class="winBody">
+        <div style="height:50px"></div>
+        <div class="fieldLabel">地址</div>
+        <div class="field" style="width:360px">北京市海淀区…<span class="caret"></span></div>
+      </div>
+      <div class="hud dk tail" style="right:48px;top:88px">
+        <div class="hudMain"><span class="hudDot"></span><span class="hudNum">栈 2</span><span class="hudSep">·</span><span class="hudTarget">→ 表单</span><span class="hudProg">0/2</span></div>
+        <div class="hudPreview">地址：北京市…</div>
+        <div class="hudSub">Ctrl+Alt+P 粘贴下一条</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>5 · 落地改动清单（确认方案后执行）</h2>
+<table>
+<tr><th>文件</th><th>改动</th></tr>
+<tr><td><code>src-tauri/src/stack_hud_pos.rs</code></td><td>新增 <code>control_anchor_pos</code>（控件矩形 → 右上/右下翻转）；纯函数可单测；保留 <code>anchor_pos</code> / <code>pick_pos</code></td></tr>
+<tr><td><code>src-tauri/src/stack_hud.rs</code></td><td><code>calc_position</code> 插入控件锚层级；<code>HUD_W</code> 208→240；方向尾由前端按 <code>anchorKind</code> 判断</td></tr>
+<tr><td><code>src-tauri/src/…（新）focus_anchor.rs</code> 或并入 stack_hud</td><td><code>focused_control_rect</code>：UIA + GetGUIThreadInfo；500ms 缓存；祖先窗校验</td></tr>
+<tr><td><code>src/lib/stack/types.ts</code> + <code>hudBridge.ts</code></td><td><code>StackHudState</code> 增加 <code>progress</code>、<code>anchorKind</code>（"control"|"window"|"cursor"）</td></tr>
+<tr><td><code>src/components/stack/StackHud.tsx</code></td><td>渲染进度徽章；<code>anchorKind==="control"</code> 时加 <code>styles.tail</code></td></tr>
+<tr><td><code>src/components/stack/StackHud.module.css</code></td><td>加宽、进度 pill、尾巴、入场曲线、淡化 55%、描边 65%</td></tr>
+<tr><td>单测</td><td><code>stack_hud_pos.rs</code> 控件锚 + 翻转 + 钳制；<code>stack-hud-next.test.ts</code> 进度字段</td></tr>
+</table>
+
+<div class="anno">
+<b>明确不做</b>（防范围膨胀）：HUD 可点击 / 展开队列 / 心跳动画常驻无限循环 / backdrop-filter /
+改默认热键 / 设置页新增定位开关（等真实反馈再开）。性能：不新增 <code>requestAnimationFrame</code>，
+脉冲与入场均为一次性/可被 reduced-motion 全局兜底的 CSS。
+</div>
+
+<hr>
+
+<h2>6 · 请你拍板</h2>
+<p class="note">
+本稿先对齐方案再动代码。推荐：<b>A 定位 + B 视觉</b> 一次做掉；
+若希望风险更小，可选 <b>C</b>（先视觉后定位，或加设置开关）。
+确认后我再按规则 4 出细化交互稿 / 直接进入实现（仍不自动改版本号、不自动 build）。
+</p>
+
+</body>
+</html>

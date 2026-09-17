@@ -151,7 +151,7 @@ describe("stackPasteNext", () => {
     const result = await stackPasteNext();
 
     expect(result).toBe(true);
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "hello world" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "hello world", trigger: "headless" });
     // 粘贴成功后弹出 → 栈空 → 自动退出（exitStackMode 重置所有栈状态）
     expect(useAppStore.getState().stackMode).toBe(false);
     expect(useAppStore.getState().stackItems).toHaveLength(0);
@@ -164,7 +164,7 @@ describe("stackPasteNext", () => {
     const result = await stackPasteNext();
 
     expect(result).toBe(true);
-    expect(invoke).toHaveBeenCalledWith("paste_image", { imagePath: "C:\\img.png" });
+    expect(invoke).toHaveBeenCalledWith("paste_image", { imagePath: "C:\\img.png", trigger: "headless" });
   });
 
   it("pastes file item via paste_text with content path", async () => {
@@ -174,7 +174,7 @@ describe("stackPasteNext", () => {
     const result = await stackPasteNext();
 
     expect(result).toBe(true);
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "C:\\file.txt" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "C:\\file.txt", trigger: "headless" });
   });
 
   it("returns false and does NOT pop when paste fails", async () => {
@@ -252,8 +252,8 @@ describe("stackPasteAll", () => {
     await stackPasteAll();
 
     // exitStackMode 会重置 stackPasted，所以用 invoke 调用次数验证
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "first" });
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "second" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "first", trigger: "headless" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "second", trigger: "headless" });
     expect(useAppStore.getState().stackItems).toHaveLength(0);
     expect(useAppStore.getState().stackMode).toBe(false);
     expect(useAppStore.getState().stackPasteAllActive).toBe(false);
@@ -339,7 +339,9 @@ describe("stackPasteAll", () => {
 // ============================================================
 describe("stackAutoSplitAndPasteFirst", () => {
   it("栈未开 + 剪贴板最新内容（history[0]）是表格 → 自动开栈拆行并贴第一条", async () => {
-    // 注意：测试数据不能包含邮箱/手机号等敏感内容特征，否则会触发 pasteTextGuarded 的敏感内容确认弹窗（需真实 UI 才能 resolve，测试会卡死超时）
+    // 注意：测试数据不包含邮箱/手机号等敏感内容特征。headless 路径已跳过敏感确认
+    // （见 pasteGuard.test.ts），但保持测试数据干净仍能避免与 maskSensitiveText 的
+    // 检测行为产生无谓耦合。
     const top = makeItem({ id: "raw", text: "姓名\t城市\n张三\t北京\n李四\t上海" });
     useAppStore.setState({ history: [top] });
     const { messages, cleanup } = collectToasts();
@@ -350,7 +352,7 @@ describe("stackAutoSplitAndPasteFirst", () => {
     expect(useAppStore.getState().stackMode).toBe(true);
     // 拆分行顺序必须与表格一致（张三在上），贴第一条应该贴张三，剩下李四
     expect(useAppStore.getState().stackItems.map((i) => i.text)).toEqual(["李四\t上海"]);
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "张三\t北京" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "张三\t北京", trigger: "headless" });
     expect(messages.some((m) => m.includes("已自动拆行入栈并粘贴第 1 条"))).toBe(true);
     cleanup();
   });
@@ -399,5 +401,37 @@ describe("stackAutoSplitAndPasteFirst", () => {
     const handled = await stackAutoSplitAndPasteFirst();
     expect(handled).toBe(false);
     expect(useAppStore.getState().stackMode).toBe(false);
+  });
+});
+
+// ============================================================
+// 反向守卫：非栈路径（卡片 / 主窗 Enter / 托盘）不得传 trigger 字段
+// ============================================================
+
+describe("非栈粘贴的调用形状", () => {
+  /**
+   * 栈粘贴**必须**传 `trigger: "headless"` —— 见上面 `pastes text item and pops from stack`
+   * 的断言。它走的是「按下热键 → 内容直接飞出去」的无窗口路径，用户此刻所在的
+   * **外部窗口**才是目标；不带上这个性质，粘贴引擎就会用手动保存的陈旧目标窗口。
+   *
+   * 反过来，非栈路径必须**不传**这个字段：默认值（WindowBound）由 Rust 侧兜，
+   * 多传一个 `trigger: null` 只会让既有调用形状无谓地变宽。
+   */
+  it("pasteText 默认不传 trigger", async () => {
+    const { pasteText } = await import("@/lib/api/paste");
+    await pasteText("plain");
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "plain" });
+  });
+
+  it("pastePrecheck 默认不传 trigger", async () => {
+    const { pastePrecheck } = await import("@/lib/api/paste");
+    await pastePrecheck();
+    expect(invoke).toHaveBeenCalledWith("paste_precheck");
+  });
+
+  it("pasteText(headless) 传 trigger: headless", async () => {
+    const { pasteText } = await import("@/lib/api/paste");
+    await pasteText("plain", true);
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "plain", trigger: "headless" });
   });
 });

@@ -356,7 +356,10 @@ describe("sequentialPaste", () => {
 
     await sequentialPaste();
 
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "First" });
+    // 依次粘贴是**无窗口热键**入口，必须带 trigger:headless（见 `paste_engine.rs::PasteTrigger`），
+    // 否则会退回 WindowBound、用手动保存的陈旧目标窗口。三条热键入口的完整守卫
+    // 在 `api-paste-signal.test.ts` 的「无窗口热键入口必须带 trigger:headless」。
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "First", trigger: "headless" });
     expect(useAppStore.getState().seqPointer).toBe(1);
   });
 
@@ -406,7 +409,7 @@ describe("sequentialPaste", () => {
 
     await sequentialPaste();
 
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "A" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "A", trigger: "headless" });
     expect(useAppStore.getState().seqPointer).toBe(0); // 循环回到 0
   });
 
@@ -506,7 +509,7 @@ describe("indexPaste", () => {
 
     await indexPaste(2); // 粘贴第二条
 
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "B" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "B", trigger: "headless" });
   });
 
   it("ignores out-of-range index", async () => {
@@ -587,7 +590,7 @@ describe("indexPaste", () => {
 
     await indexPaste(2); // 过滤后按时间倒序：Text B(12:00:02) 第1, Text A(12:00:01) 第2
 
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "Text A" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "Text A", trigger: "headless" });
   });
 
   it("dispatches app-toast after paste", async () => {

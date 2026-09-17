@@ -7,6 +7,42 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
 
+/// 粘贴触发来源 —— 决定「手动保存的目标窗口」在解析时的权重。
+///
+/// ## 为什么需要它
+///
+/// `get_target_hwnd` 原本无条件让「手动保存的句柄」优先。而手动保存值的有效期
+/// 判据是「本应用**任一**窗口可见 ⇒ 永久有效」（对齐 Win+V 语义：用户在主窗浏览时，
+/// 目标就是唤出窗口前的那个应用）。
+///
+/// 这条判据对**无窗口热键**场景是错的：栈粘贴 / 索引粘贴 / 依次粘贴都是
+/// 「按下热键 → 内容直接飞出去」，用户此刻所在的**外部窗口**才是目标，
+/// 却被"手动保存值优先"劫持。更糟的是它还会被工具窗污染：
+/// 长截图状态窗（`longshot-status`）与栈浮标（`stack-hud`）都是**常驻可见的
+/// 无焦点小窗**，只要它们亮着，`any_own_window_visible` 就恒为真 ⇒
+/// 手动保存值永久有效，用户按热键，内容稳定飞到几十分钟前那个窗口。
+///
+/// 所以：入口显式声明自己属于哪一类，而不是靠「有没有自己的窗口可见」反推。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PasteTrigger {
+    /// 有可见窗口的入口：主窗卡片 / Enter / 托盘弹窗 / 快捷面板。
+    /// 手动保存值优先（它就是"唤出窗口前的前台"），窗口可见期间永久有效。
+    WindowBound,
+    /// 无窗口热键：栈粘贴 / 索引粘贴 / 依次粘贴。
+    /// 实时抓取优先，**绝不回退到手动保存的陈旧值**。
+    Headless,
+}
+
+impl PasteTrigger {
+    /// 前端按字符串传，未知值一律按 `WindowBound`（保守：宁可保持既有行为）。
+    pub fn from_opt(value: Option<&str>) -> Self {
+        match value {
+            Some("headless") => Self::Headless,
+            _ => Self::WindowBound,
+        }
+    }
+}
+
 /// 粘贴引擎 — 处理时序敏感的粘贴操作
 pub struct PasteEngine {
     app_handle: AppHandle,
@@ -74,64 +110,46 @@ impl PasteEngine {
         }
     }
 
-    /// 判断窗口是否属于本进程（包括主窗口、子窗口、弹出窗口等）
-    #[cfg(target_os = "windows")]
-    fn is_own_window(&self, hwnd: isize) -> bool {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
-        unsafe {
-            let mut pid: u32 = 0;
-            GetWindowThreadProcessId(HWND(hwnd as *mut _), Some(&mut pid));
-            pid == self.own_pid
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    fn is_own_window(&self, _hwnd: isize) -> bool { false }
-
     /// 手动保存当前前台窗口（在显示窗口之前调用，作为备用）。
     /// 排除 PastePanda 自身的窗口，避免把"自己"当作粘贴目标。
     /// 有效期与窗口会话绑定：本应用窗口可见期间永久有效，全部隐藏后短 TTL 过期。
     pub fn save_foreground_hwnd(&self) {
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::UI::WindowsAndMessaging::{
-                GetDesktopWindow, GetForegroundWindow, GetShellWindow,
-            };
+            use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
             unsafe {
                 let hwnd = GetForegroundWindow();
-                if hwnd.is_invalid() {
-                    return;
-                }
-                // 排除桌面窗口：用户"显示桌面"（Win+D / 点击桌面空白）时前台是桌面，
-                // 若保存它，粘贴会把按键发给桌面导致内容丢失
-                if hwnd == GetDesktopWindow() || hwnd == GetShellWindow() {
-                    return;
-                }
-                // 用进程 ID 过滤自身所有窗口
-                if self.is_own_window(hwnd.0 as isize) {
+                let value = hwnd.0 as isize;
+                // 判据统一走 `paste_target`：桌面 / 任务栏 / 自身进程 / 已销毁窗口一律拒绝。
+                // 拒绝时**保留旧值**——旧值可能是片刻前那个仍然有效的窗口，而
+                // "唤出窗口前保存一次"的调用点紧接着就会用到它。
+                if !crate::paste_target::is_valid_target(value, self.own_pid) {
                     return;
                 }
                 if let Ok(mut guard) = self.last_foreground_hwnd.lock() {
-                    *guard = Some((hwnd.0 as isize, std::time::Instant::now()));
+                    *guard = Some((value, std::time::Instant::now()));
                 }
             }
         }
     }
 
-    /// 实时抓取当前前台窗口（排除自身），用于"粘贴前重抓"流程
+    /// 实时抓取当前前台窗口，用于"粘贴前重抓"流程。
+    ///
+    /// 与 [`Self::save_foreground_hwnd`] **共用同一判据**（`paste_target::is_valid_target`）。
+    /// 此前这里只排除了自身进程，桌面 / 任务栏能过闸——于是「用户点桌面空白后按栈粘贴热键」
+    /// 会拿到桌面句柄，`SetForegroundWindow(桌面)` 成功（前台本来就是桌面）⇒
+    /// `confirmed` 成立 ⇒ 返回 success ⇒ 前端把栈顶永久出队，而用户什么都没粘到。
     #[cfg(target_os = "windows")]
     pub fn capture_foreground_now(&self) -> Option<isize> {
         use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
         unsafe {
             let hwnd = GetForegroundWindow();
-            if hwnd.is_invalid() {
+            let value = hwnd.0 as isize;
+            let valid = crate::paste_target::is_valid_target(value, self.own_pid);
+            if !valid {
                 return None;
             }
-            let hwnd_val = hwnd.0 as isize;
-            if self.is_own_window(hwnd_val) {
-                return None;
-            }
-            Some(hwnd_val)
+            Some(value)
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -139,22 +157,21 @@ impl PasteEngine {
         None
     }
 
-    /// 识别前台应用的名称与类别（v6.2 目标感知粘贴）。
-    /// 优先用手动保存的句柄（用户从主窗/托盘点粘贴前保存的那个），
-    /// 其次实时抓当前前台窗口。返回 (应用名, 类别)。
+    /// 识别目标应用的名称与类别（v6.2 目标感知粘贴）。
+    ///
+    /// 🔴 解析顺序**必须与 [`Self::get_target_hwnd`] 完全一致**（同 trigger、同判据）：
+    /// 这是硬约束——栈浮标上显示的「→ Chrome」与实际粘贴的目标必须来自同一次解析。
+    /// 两处各算一遍就会出现「HUD 写着 Chrome、实际粘到记事本」，与历史事故
+    /// 「提示已粘贴却没内容」同形。所以这里直接复用 `get_target_hwnd`。
     #[cfg(target_os = "windows")]
-    pub fn foreground_app(&self) -> Option<(String, String)> {
+    pub fn foreground_app(&self, trigger: PasteTrigger) -> Option<(String, String)> {
         use windows::Win32::Foundation::CloseHandle;
         use windows::Win32::System::Threading::{
             OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
         };
         use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 
-        let hwnd = {
-            let guard = self.last_foreground_hwnd.lock().ok()?;
-            guard.map(|(h, _)| h)
-        }
-        .or_else(|| self.capture_foreground_now())?;
+        let hwnd = self.get_target_hwnd(trigger, self.capture_foreground_now())?;
 
         unsafe {
             let mut pid: u32 = 0;
@@ -186,7 +203,7 @@ impl PasteEngine {
         }
     }
     #[cfg(not(target_os = "windows"))]
-    pub fn foreground_app(&self) -> Option<(String, String)> {
+    pub fn foreground_app(&self, _trigger: PasteTrigger) -> Option<(String, String)> {
         None
     }
 
@@ -201,30 +218,73 @@ impl PasteEngine {
     /// 对齐 Ditto 的 SendKeys 前置延时实践，给目标应用留出就绪时间。
     const PRE_PASTE_DELAY_MS: u64 = 40;
 
-    /// 本应用当前是否有任一窗口可见（主窗口 / 快捷粘贴面板 / 托盘弹窗 / 编辑器等）
+    /// 目标窗口无效时，三个粘贴入口（文本 / 图文 / 图片）共用的文案。
+    ///
+    /// 收口成常量的两个理由：
+    /// 1. 原先三处硬编码同一句话，改一处必漏另两处；
+    /// 2. **刻意不提「栈」**。这三个入口也被**非栈**路径复用 —— 主窗卡片、Enter、
+    ///    托盘弹窗、快捷面板。那些场景说「这条仍保留在栈里」会让人莫名其妙。
+    ///    栈视角的补充说明由浮标（`stack_hud.rs`）与横幅各自承载，它们知道自己在栈里。
+    ///
+    /// 「剪贴板未改动」是事实而非安慰：判目标已被提到所有写操作之前
+    /// （见 [`Self::execute_paste`] 的顺序说明），这条失败路径真的零副作用。
+    const ERR_NO_TARGET: &'static str = "未找到可粘贴的目标窗口，已取消（剪贴板未改动）";
+
+    /// 工具窗标签：它们是**浮在用户操作现场之上**的反馈层，
+    /// 不代表"用户正在浏览 PastePanda"。
+    ///
+    /// - `longshot-status`：长截图状态条（创建后常驻到长截图结束）
+    /// - `stack-hud`：剪贴板栈浮标（随栈模式常驻）
+    ///
+    /// 刻意**不**排除 `quick-paste` / `tray-popup`：那两者是用户主动唤出的选择界面，
+    /// 用户此刻确实在浏览 PastePanda，它们代表的手动保存值是正确的目标。
+    ///
+    /// `pub(crate)` 而非私有：`stack_hud.rs` 的单测会断言 `WINDOW_LABEL` 在这张表里，
+    /// 防止将来改标签时两处漂移（漂移的后果是「陈旧目标续命」从偶发变必然）。
+    pub(crate) const TOOL_WINDOW_LABELS: &'static [&'static str] = &["longshot-status", "stack-hud"];
+
+    /// 本应用是否有**用户可见的操作界面**处于打开状态
+    /// （主窗口 / 快捷粘贴面板 / 托盘弹窗 / 编辑器）。
+    ///
+    /// ❗ 必须排除工具窗（见 [`Self::TOOL_WINDOW_LABELS`]）：它们是常驻可见的无焦点小窗，
+    /// 算进来会让本判据**恒为真**。而 `get_target_hwnd` 用本判据决定
+    /// 「手动保存的目标窗口是否仍然有效」—— 恒真 = 陈旧目标被无限续命，
+    /// 用户按热键，内容稳定飞到几十分钟前那个窗口。
     fn any_own_window_visible(&self) -> bool {
         use tauri::Manager;
-        self.app_handle
-            .webview_windows()
-            .values()
-            .any(|w| w.is_visible().unwrap_or(false))
+        self.app_handle.webview_windows().iter().any(|(label, w)| {
+            !Self::TOOL_WINDOW_LABELS.contains(&label.as_str()) && w.is_visible().unwrap_or(false)
+        })
     }
 
-    /// 获取最佳目标窗口句柄：手动保存（窗口会话绑定）> 实时抓取（粘贴前一刻）> None
+    /// 获取最佳目标窗口句柄。解析顺序**取决于触发来源**：
     ///
-    /// 手动保存值的有效期与"窗口会话"绑定（对齐 Win+V 语义）：
-    /// - 本应用任一窗口可见 → 永久有效（用户正在浏览历史，目标就是唤出前的窗口）；
-    /// - 全部窗口隐藏 → 仅在 FOREGROUND_TTL_SECS 内有效（防陈旧误粘）。
-    /// 传入的 fallback 是 execute_paste 在粘贴前实时抓取的结果，比轮询更可靠。
-    fn get_target_hwnd(&self, fallback: Option<isize>) -> Option<isize> {
+    /// - [`PasteTrigger::Headless`]：实时抓取优先，绝不回退到手动保存的陈旧值；
+    /// - [`PasteTrigger::WindowBound`]：手动保存（窗口会话绑定）> 实时抓取 > None。
+    ///
+    /// `WindowBound` 的手动保存值有效期与"窗口会话"绑定（对齐 Win+V 语义）：
+    /// - 本应用任一操作窗口可见 → 永久有效（用户正在浏览历史，目标就是唤出前的窗口）；
+    /// - 全部操作窗口隐藏 → 仅在 FOREGROUND_TTL_SECS 内有效（防陈旧误粘）。
+    ///
+    /// 传入的 `fallback` 是调用方在粘贴前实时抓取的结果，比此处的兜底更可靠。
+    fn get_target_hwnd(&self, trigger: PasteTrigger, fallback: Option<isize>) -> Option<isize> {
+        // 无窗口热键：用户按下热键那一刻的前台窗口就是目标。
+        // 这条路**不看**手动保存值——不是因为它一定陈旧，而是因为它的有效期判据
+        // （任一自身窗口可见 ⇒ 永久有效）在这个场景下不成立，且会被常驻工具窗污染。
+        if trigger == PasteTrigger::Headless {
+            return fallback.or_else(|| self.capture_foreground_now());
+        }
+
         if let Ok(manual) = self.last_foreground_hwnd.lock() {
             if let Some((hwnd, timestamp)) = *manual {
                 let window_open = self.any_own_window_visible();
                 let fresh = timestamp.elapsed().as_secs() < Self::FOREGROUND_TTL_SECS;
-                if window_open || fresh {
+                // 即便判定期内，也再确认一次窗口还活着——保存时有效不代表现在有效
+                if (window_open || fresh) && crate::paste_target::is_valid_target(hwnd, self.own_pid)
+                {
                     return Some(hwnd);
                 }
-                // 窗口全隐藏且已过期：不使用陈旧值，落入下方回退
+                // 窗口已销毁，或全部窗口隐藏且已过期：不使用陈旧值，落入下方回退
             }
         }
 
@@ -242,10 +302,16 @@ impl PasteEngine {
         None
     }
 
-    /// 核心粘贴流程：写入剪贴板 → 发送 WM_PASTE 到目标窗口
+    /// 核心粘贴流程。
+    ///
+    /// ❗ 顺序是「**先判目标，后写剪贴板**」，不能颠倒。
+    /// 旧顺序（写剪贴板 → 解析目标 → 投递）在目标无效时会给用户留下一个坏状态：
+    /// 提示"未找到目标窗口"，但他原本复制的内容**已经被本条覆盖**——他随后在别处
+    /// Ctrl+V，粘出来的是栈里那一条。判目标提到所有写操作之前，失败路径就真的零副作用。
     pub fn execute_paste(
         &self,
         text: Option<String>,
+        trigger: PasteTrigger,
     ) -> Result<crate::commands::PasteResult, String> {
         let mut result = crate::commands::PasteResult {
             success: false,
@@ -269,7 +335,28 @@ impl PasteEngine {
         }
         let _guard = LockGuard(&self.paste_lock);
 
-        // 1. 先设置粘贴抑制（必须在写入剪贴板之前）
+        // 1. 解析并确认目标窗口 —— 必须在任何写操作之前
+        #[cfg(target_os = "windows")]
+        let now_hwnd = self.capture_foreground_now();
+        #[cfg(not(target_os = "windows"))]
+        let now_hwnd: Option<isize> = None;
+
+        let target_hwnd = self.get_target_hwnd(trigger, now_hwnd);
+        result.target_hwnd = target_hwnd;
+
+        let hwnd_raw = match target_hwnd {
+            Some(h) => h,
+            None => {
+                // 剪贴板、防抖抑制都不动：用户原样保留他复制的东西
+                log::warn!(
+                    "[PasteEngine] 未找到可粘贴的目标窗口（trigger={:?}），取消本次粘贴且不改动剪贴板",
+                    trigger
+                );
+                return Err(Self::ERR_NO_TARGET.to_string());
+            }
+        };
+
+        // 2. 目标已确认，这才设置粘贴抑制（必须在写入剪贴板之前）
         let content_hash = text.as_ref().map(|t| {
             format!(
                 "{:x}",
@@ -283,26 +370,18 @@ impl PasteEngine {
             self.paste_suppress.set(Duration::from_millis(3000));
         }
 
-        // 2. 写入剪贴板
+        // 3. 写入剪贴板
         if let Some(ref t) = text {
             Self::with_clipboard_retry("写入剪贴板", |cb| cb.set_text(t.as_str()))?;
+            result.clipboard_written = true;
         }
-        result.clipboard_written = true;
 
-        // 3. 粘贴前实时重抓前台窗口（排除自身），作为 get_target_hwnd 的回退值
-        #[cfg(target_os = "windows")]
-        let now_hwnd = self.capture_foreground_now();
-        #[cfg(not(target_os = "windows"))]
-        let now_hwnd: Option<isize> = None;
-
-        // 4. 获取目标窗口句柄：手动保存 > 实时抓取 > None
-        let target_hwnd = self.get_target_hwnd(now_hwnd);
-        result.target_hwnd = target_hwnd;
-
-        // 4. 发送 WM_PASTE 到目标窗口
+        // 4. 发送 Ctrl+V 到目标窗口。
+        //    内部仍有 `IsWindow` / 前台确认两道检查（窗口可能刚刚被关掉）；
+        //    走到那里失败时剪贴板已经写入，错误文案会提示可手动 Ctrl+V。
         #[cfg(target_os = "windows")]
         {
-            self.restore_and_send_ctrl_v(target_hwnd)?;
+            self.restore_and_send_ctrl_v(Some(hwnd_raw))?;
         }
         result.wm_paste_sent = true;
 
@@ -639,9 +718,16 @@ impl PasteEngine {
         Self::write_rich_to_clipboard(html_fragment, plain_text)
     }
 
-    /// 粘贴图文混排内容：写入剪贴板（CF_HTML + 纯文本保底）→ 发送 WM_PASTE
+    /// 粘贴图文混排内容：确认目标 → 写入剪贴板（CF_HTML + 纯文本保底）→ 发送 Ctrl+V。
+    ///
+    /// 与 [`Self::execute_paste`] 同序：先判目标，后写剪贴板。
     #[cfg(target_os = "windows")]
-    pub fn execute_paste_rich(&self, html_fragment: &str, plain_text: &str) -> Result<(), String> {
+    pub fn execute_paste_rich(
+        &self,
+        html_fragment: &str,
+        plain_text: &str,
+        trigger: PasteTrigger,
+    ) -> Result<(), String> {
         // 1. 获取粘贴锁，防止竞态
         if self.paste_lock.swap(true, Ordering::Acquire) {
             log::warn!("[PasteEngine] 上一个粘贴操作仍在进行中，跳过本次图文混排粘贴");
@@ -655,24 +741,42 @@ impl PasteEngine {
         }
         let _guard = LockGuard(&self.paste_lock);
 
-        // 2. 粘贴抑制（hash 口径需与采集时一致：md5(片段字节)，采集时也是这样算的）
-        let content_hash = format!("{:x}", md5::Md5::new().chain_update(html_fragment.as_bytes()).finalize());
+        // 2. 先解析并确认目标（在任何写操作之前）
+        let now_hwnd = self.capture_foreground_now();
+        let hwnd_raw = match self.get_target_hwnd(trigger, now_hwnd) {
+            Some(h) => h,
+            None => {
+                log::warn!(
+                    "[PasteEngine] 图文粘贴未找到目标窗口（trigger={:?}），取消且不改动剪贴板",
+                    trigger
+                );
+                return Err(Self::ERR_NO_TARGET.to_string());
+            }
+        };
+
+        // 3. 粘贴抑制（hash 口径需与采集时一致：md5(片段字节)，采集时也是这样算的）
+        let content_hash =
+            format!("{:x}", md5::Md5::new().chain_update(html_fragment.as_bytes()).finalize());
         self.paste_suppress
             .set_with_hash(Duration::from_millis(3000), content_hash);
 
-        // 3. 写入剪贴板
+        // 4. 写入剪贴板
         Self::write_rich_to_clipboard(html_fragment, plain_text)?;
 
-        // 4. 粘贴前实时重抓前台窗口 + 发送 Ctrl+V（与 execute_paste_image 一致）
-        let now_hwnd = self.capture_foreground_now();
-        let target_hwnd = self.get_target_hwnd(now_hwnd);
-        self.restore_and_send_ctrl_v(target_hwnd)?;
+        // 5. 发送 Ctrl+V（目标已在第 2 步确认）
+        self.restore_and_send_ctrl_v(Some(hwnd_raw))?;
 
         Ok(())
     }
 
-    /// 粘贴图片：读取图片文件 → 写入剪贴板 → 发送 WM_PASTE
-    pub fn execute_paste_image(&self, image_path: &str) -> Result<(), String> {
+    /// 粘贴图片：读取图片文件 → 确认目标 → 写入剪贴板 → 发送 Ctrl+V。
+    ///
+    /// 与 [`Self::execute_paste`] 同序：先判目标，后写剪贴板。
+    pub fn execute_paste_image(
+        &self,
+        image_path: &str,
+        trigger: PasteTrigger,
+    ) -> Result<(), String> {
         // 1. 读取并解码图片（hash 口径须与监听线程一致：对 RGBA 像素字节计算，修复 C9。
         //    旧实现对磁盘文件字节算 hash，而监听线程对 arboard 解码后的 RGBA 算 hash，
         //    两者永不相等，导致图片自粘贴的 hash 主检查永远失效）
@@ -698,11 +802,28 @@ impl PasteEngine {
         }
         let _guard = LockGuard(&self.paste_lock);
 
-        // 3. 设置粘贴抑制（hash = RGBA 像素字节的 MD5，与监听线程匹配）
+        // 3. 先解析并确认目标（在任何写操作之前）
+        #[cfg(target_os = "windows")]
+        let now_hwnd = self.capture_foreground_now();
+        #[cfg(not(target_os = "windows"))]
+        let now_hwnd: Option<isize> = None;
+
+        let hwnd_raw = match self.get_target_hwnd(trigger, now_hwnd) {
+            Some(h) => h,
+            None => {
+                log::warn!(
+                    "[PasteEngine] 图片粘贴未找到目标窗口（trigger={:?}），取消且不改动剪贴板",
+                    trigger
+                );
+                return Err(Self::ERR_NO_TARGET.to_string());
+            }
+        };
+
+        // 4. 设置粘贴抑制（hash = RGBA 像素字节的 MD5，与监听线程匹配）
         self.paste_suppress
             .set_with_hash(Duration::from_millis(3000), content_hash);
 
-        // 4. 写入剪贴板
+        // 5. 写入剪贴板
         let img_data = ImageData {
             width: width as usize,
             height: height as usize,
@@ -711,22 +832,13 @@ impl PasteEngine {
 
         Self::with_clipboard_retry("写入图片", |cb| cb.set_image(img_data.clone()))?;
 
-        // 5. 粘贴前实时重抓前台窗口（排除自身）
-        #[cfg(target_os = "windows")]
-        let now_hwnd = self.capture_foreground_now();
-        #[cfg(not(target_os = "windows"))]
-        let now_hwnd: Option<isize> = None;
-
-        // 4. 获取目标窗口句柄
-        let target_hwnd = self.get_target_hwnd(now_hwnd);
-
-        // 5. 发送 Ctrl+V
+        // 6. 发送 Ctrl+V（目标已在第 3 步确认）
         #[cfg(target_os = "windows")]
         {
-            self.restore_and_send_ctrl_v(target_hwnd)?;
+            self.restore_and_send_ctrl_v(Some(hwnd_raw))?;
         }
 
-        // 5. 不在此处清除 last_foreground_hwnd（依赖窗口会话绑定 + 短 TTL 过期）
+        // 7. 不在此处清除 last_foreground_hwnd（依赖窗口会话绑定 + 短 TTL 过期）
 
         Ok(())
     }
@@ -738,11 +850,16 @@ impl PasteEngine {
         use windows::Win32::UI::Input::KeyboardAndMouse::*;
         use windows::Win32::UI::WindowsAndMessaging::*;
 
-        // 无目标窗口：剪贴板已写入但无法投递按键，明确报错而非静默"成功"（修复 M3）
+        // 无目标窗口：调用方（`execute_paste` 家族）在写剪贴板**之前**就已确认目标，
+        // 所以这里理论上不可达。保留此分支是防御将来有调用方漏掉那一步——
+        // 那种情况下剪贴板尚未写入，文案不能再声称"内容已复制到剪贴板"。
         let hwnd_raw = match hwnd_value {
             Some(h) => h,
             None => {
-                return Err("未找到目标窗口，已取消粘贴（内容已复制到剪贴板，可手动 Ctrl+V）".to_string());
+                log::error!(
+                    "[PasteEngine] restore_and_send_ctrl_v 收到空目标句柄（调用方漏了目标确认）"
+                );
+                return Err("未找到目标窗口，已取消粘贴（剪贴板未改动）".to_string());
             }
         };
 

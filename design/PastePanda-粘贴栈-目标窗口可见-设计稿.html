@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 粘贴栈「粘贴目标」可见与装订 · 设计稿</title>
+<style>
+/* ========================================================================
+   尺寸与结构全部取自真实代码，不是通用模板：
+   - src/components/StackBanner.tsx + StackBanner.module.css
+     横幅 padding 10/12 · radius 12 · gap 7 · 状态行 gap 8 · dot 10px · title 12px/600
+     按钮 height 28 · radius 8 · 11px · kbd 9px mono · chip height 28 / max-width 150
+     进度条 4px · footTxt 10px · 窄幅断点 @container 380px
+   - src/components/Toast.tsx + Toast.module.css
+     容器 top 60 / right 16 / max-width 320 · item padding 9/12 · radius 12 · gap 10
+     图标色块 26×26 radius 8 · 底部 3px 进度条（hover 暂停）
+   - 演示底沿用 design/PastePanda-栈模式UI优化升级-设计稿.html 的深色基准
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:36px 0 6px}
+h3{font-size:12.5px;color:#9FB0C4;margin:18px 0 8px;letter-spacing:.3px}
+.sub{color:#7C8899;font-size:12px;margin:0 0 22px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 14px;max-width:960px}
+.note b{color:#D6DEE8;font-weight:600}
+hr{border:0;border-top:1px solid #262A31;margin:34px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+
+.stage{display:flex;gap:30px;flex-wrap:wrap;margin:18px 0 0;align-items:flex-start}
+.viewport{position:relative;width:420px;border:1px dashed #3A4048;border-radius:10px;
+  background:repeating-linear-gradient(45deg,#191C21,#191C21 10px,#1C2026 10px,#1C2026 20px);
+  padding:22px 16px;overflow:visible}
+.viewport.narrow{width:268px}
+.vpTag{position:absolute;left:0;top:-20px;font-size:10.5px;color:#6E7A8A;white-space:nowrap}
+
+/* ===== 真实 StackBanner 样式 ===== */
+.banner{display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(234,88,12,.09),transparent 65%),rgba(234,88,12,.07);
+  border:1px solid rgba(234,88,12,.28);position:relative}
+.top{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:#EA580C;flex-shrink:0}
+.title{font-size:12px;font-weight:600;color:#EA580C;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.acts{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.primaryBtn{display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:8px;border:none;
+  background:#EA580C;color:#fff;font-size:11px;font-weight:700;white-space:nowrap}
+.btn{height:28px;padding:0 9px;border-radius:8px;font-size:11px;font-weight:600;
+  background:rgba(234,88,12,.14);color:#EA580C;border:1px solid rgba(234,88,12,.28);white-space:nowrap}
+.ghostBtn{width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:transparent;
+  color:#EA580C;opacity:.75;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.kbd{font:600 9px ui-monospace,Consolas,monospace;background:rgba(255,255,255,.2);padding:2px 5px;border-radius:4px}
+.queue{display:flex;gap:6px;overflow-x:auto;padding:8px 2px 2px;flex-wrap:wrap}
+.chip{position:relative;display:flex;align-items:center;gap:5px;flex-shrink:0;max-width:150px;height:28px;padding:0 9px 0 6px;
+  border-radius:8px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.2);
+  font-size:11px;color:#E0E8F0}
+.ord{width:15px;height:15px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;background:rgba(234,88,12,.16);color:#EA580C}
+.txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipNext{border-color:#EA580C;background:rgba(234,88,12,.16)}
+.chipNext .ord{background:#EA580C;color:#fff}
+.foot{display:flex;align-items:center;gap:8px}
+.prog{flex:1;height:4px;border-radius:2px;background:rgba(234,88,12,.28);overflow:hidden}
+.progFill{height:100%;border-radius:2px;background:linear-gradient(90deg,#F97316,#EA580C)}
+.footTxt{font-size:10px;color:#EA580C;opacity:.85;white-space:nowrap}
+.footTxt.guide{color:#F0A868;opacity:1;font-weight:600}
+
+/* ===== 新增：目标 chip（三态）。语义色而非色名：ok=--text-muted / warn=--warning / pick=--accent ===== */
+.target{display:flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:8px;
+  font-size:11px;font-weight:600;white-space:nowrap;flex-shrink:0;cursor:pointer;
+  border:1px solid transparent;max-width:132px}
+.target .tname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.target.ok{color:#9FB0C4;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12)}
+.target.warn{color:#F0A868;background:rgba(234,88,12,.18);border-color:rgba(234,88,12,.45)}
+.target.pick{color:#7FB4E8;background:rgba(56,139,253,.18);border-color:rgba(56,139,253,.5)}
+.target.pulse{animation:tpulse 1.05s ease 2}
+@keyframes tpulse{0%,100%{box-shadow:0 0 0 0 rgba(234,88,12,.5)}50%{box-shadow:0 0 0 4px rgba(234,88,12,0)}}
+
+/* ===== 新增：选择中状态（B-2 候选，落在同一行 foot 里） ===== */
+.pickRing{width:20px;height:20px;border-radius:50%;flex-shrink:0;
+  background:conic-gradient(#378ADD 0turn .62turn, rgba(56,139,253,.2) .62turn 1turn)}
+.pickRing i{display:block;width:14px;height:14px;margin:3px;border-radius:50%;background:#231A14}
+.pickTxt{font-size:11px;color:#7FB4E8;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pickCancel{height:24px;padding:0 8px;border-radius:8px;font-size:11px;font-weight:600;
+  background:transparent;color:#8D9AAB;border:1px solid rgba(255,255,255,.14)}
+
+/* ===== 新增：toast（照 Toast.module.css 的尺寸） ===== */
+.toastStack{display:flex;flex-direction:column;gap:8px;max-width:320px}
+.tItem{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;position:relative;
+  overflow:hidden;background:#22262E;border:1px solid rgba(255,255,255,.1);color:#E6EAF0;font-size:12px}
+.tItem::after{content:'';position:absolute;bottom:0;left:0;height:3px;border-radius:0 3px 3px 0}
+.tItem.warn::after{background:linear-gradient(90deg,#F0A868,rgba(240,168,104,.35));width:100%}
+.tItem.err::after{background:linear-gradient(90deg,#E5797A,rgba(229,121,122,.35));width:70%}
+.tBox{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  border:1px solid transparent;font-size:13px}
+.tBox.warn{background:rgba(234,88,12,.16);border-color:rgba(234,88,12,.3);color:#F0A868}
+.tBox.err{background:rgba(229,121,122,.16);border-color:rgba(229,121,122,.3);color:#E5797A}
+.tMsg{flex:1;min-width:0}
+.tAct{height:24px;padding:0 9px;border-radius:8px;font-size:11px;font-weight:600;white-space:nowrap;
+  background:#EA580C;color:#fff;border:none;flex-shrink:0}
+.tClose{opacity:.55;font-size:14px;flex-shrink:0}
+
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:12px 14px;font-size:12px;color:#9FBF9F;max-width:620px}
+.anno b{color:#6FD68B}
+.anno.warn{background:#1A1210;border-color:#7F1D1D;color:#C9A2A2}
+.anno.warn b{color:#F09A9A}
+.anno.neutral{background:#12161C;border-color:#2A3038;color:#AEB8C4}
+.anno.neutral b{color:#D6DEE8}
+table.t{border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:1060px}
+table.t th,table.t td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+table.t th{background:#1C2027;color:#E4EAF1;font-weight:600}
+table.t td{color:#B4BECB}
+.tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid #2A3038;color:#8D9AAB}
+.pick{color:#6FD68B;font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>粘贴栈「粘贴目标」可见与装订 · 设计稿（B 方案）</h1>
+<p class="sub">解决「按了栈粘贴热键、当时没有有效目标窗口 → 内容没出去、数据看起来丢了」｜候选版本：待定</p>
+<p class="note">结构尺寸<b>全部取自真实代码</b>（<code>StackBanner.tsx</code> / <code>StackBanner.module.css</code> /
+<code>Toast.tsx</code> / <code>Toast.module.css</code>）。本稿只画 UI 与交互，引擎侧的修复（目标判定收口、
+先判目标后写剪贴板）见 <code>docs</code> 侧方案，不在本稿范围。演示统一用横幅 420px 视口
+（侧边栏收起时的真实宽度），另附 268px 窄幅变体。</p>
+
+<hr>
+
+<h2>一、这一版要补的是「信息」而不是「按钮」</h2>
+<p class="note">现有链路里，用户在按下热键之前<b>无从知道这次会粘到哪</b>，按下去之后失败与否又取决于当时前台是谁。
+三种丢失形态（引擎侧成因见代码行号）：</p>
+<table class="t">
+<tr><th style="width:30%">用户看到的</th><th style="width:34%">真实发生</th><th>本稿的对应动作</th></tr>
+<tr><td>提示「已粘贴，剩余 N-1 条」，<br>目标窗口里什么都没有</td><td>桌面/任务栏被当成有效目标 → 投递成功 → 栈顶出队</td><td rowspan="2"><b>目标 chip 常驻显示</b>：没选定就明确写「未选择窗口」，并给出可执行的下一步</td></tr>
+<tr><td>提示「未找到目标窗口」，栈还在，<br>但他刚才复制的内容没了</td><td>剪贴板在判定目标之前就被覆盖</td></tr>
+<tr><td>提示成功、内容也确实出去了，<br>但去了很久以前那个窗口</td><td>保存的目标窗口被「窗口可见期间永久有效」续命</td></tr>
+</table>
+<div class="anno neutral" style="margin-top:12px">
+<b>一句话</b>：用户不需要「选择窗口」这个新动作，他需要的是<b>在按下去之前看见目标是谁</b>；
+真没选定的时候，要有一条<b>当场能照做</b>的指引。所以本稿主线只加两处：
+状态行一个<b>目标 chip</b>、进度行一句<b>引导文案</b>。
+</div>
+
+<hr>
+
+<h2>二、目标只有三种状态</h2>
+<div class="stage">
+  <div class="anno neutral" style="max-width:300px">
+    <b>① 已选定</b><br>
+    <code>→ Chrome</code><br>
+    实时前台可用，或保存的目标窗口仍有效。<br>
+    <span class="tag">点击 = 重新选择（B-2）</span>
+  </div>
+  <div class="anno warn" style="max-width:300px">
+    <b>② 未选定</b><br>
+    <code>未选择窗口</code><br>
+    前台是本应用 / 桌面 / 任务栏，且没有可用的保存值。<br>
+    <span class="tag">栈顶不消费</span>
+  </div>
+  <div class="anno" style="max-width:300px">
+    <b>③ 选择中</b>（仅 B-2）<br>
+    <code>选择中 · 3 秒内切到目标窗口</code><br>
+    用户点了 chip，正在等他切窗口。<br>
+    <span class="tag">Esc 取消</span>
+  </div>
+</div>
+<p class="note" style="margin-top:14px">「上次的目标窗口已关闭」不单独占一个状态——它归入 <b>② 未选定</b>，
+差别只在 toast 里说明一句（<code>上次的目标窗口已关闭</code>）。<b>状态越少，用户越不需要学。</b></p>
+
+<hr>
+
+<h2>三、视觉稿</h2>
+
+<h3>① 已选定目标（正常流，其余都不变）</h3>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">420px · 进度行最左多一枚 24px 目标 chip（状态行与队列行不动）</div>
+    <div class="banner">
+      <div class="top">
+        <span class="dot"></span>
+        <div class="title">栈模式 · 剩余 3 条</div>
+        <div class="acts">
+          <div class="primaryBtn">⏩ <span class="kbd">Ctrl+Alt+P</span></div>
+          <div class="btn">▶ 全部</div>
+          <div class="ghostBtn">⋯</div>
+          <div class="ghostBtn">✕</div>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span></div>
+        <div class="chip"><span class="ord">2</span><span class="txt">李四 · li@qq.com</span></div>
+        <div class="chip"><span class="ord">3</span><span class="txt">D-HC6239772</span></div>
+      </div>
+      <div class="foot">
+        <div class="target ok"><span>→</span><span class="tname">Chrome</span></div>
+        <div class="prog"><div class="progFill" style="width:25%"></div></div>
+        <span class="footTxt">1/4 已粘贴 · Ctrl+C 继续收集</span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>为什么放在进度行最左，而不是状态行</b>（本稿渲染实测的结论）<br>
+      420px 横幅的内容宽度只有 ≈364px，状态行现有元素已占满：脉冲点 10 + 标题（flex）+ 主按钮 110 +
+      「全部」52 + ⋯ 28 + ✕ 28 + 间距 ≈ 270。<b>再插一枚 78px 的 chip，标题只剩 1~2 个字</b>
+      （实测「栈模式 · 剩余 3 条」被截成「栈」）。而进度行本来就空：进度条 140 + 文案 120。
+      <b>把目标放进进度行，三层各归其位</b> —— 状态行=操作、队列行=内容、进度行=信息。<br><br>
+      <b>chip 本身的做法</b><br>
+      · 高 <code>24px</code>（不是 28px）——它是<b>状态徽标</b>不是动作按钮，矮 4px 就和右侧按钮组拉开层级，
+        同时正好满足 U7 的 24×24 点击目标。<br>
+      · 文案就是「<code>→ 应用名</code>」。箭头不用说「粘贴到」三个字也读得懂，窄幅下还能多留 2 个字。<br>
+      · 应用名沿用敏感确认条上的同一口径（<code>PasteGuardDialog.tsx:50</code> 的「将粘贴到 ××」），
+        <b>不新造第二套称呼</b>。<br>
+      · 颜色用语义令牌 <code>--text-muted</code>（不是 <code>--orange</code>，见 U6）。
+    </div>
+  </div>
+</div>
+
+<h3>② 未选定目标（警示 + 一句可照做的引导）</h3>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">420px · chip 转警示态，右侧同一行换成引导文案</div>
+    <div class="banner">
+      <div class="top">
+        <span class="dot"></span>
+        <div class="title">栈模式 · 剩余 3 条</div>
+        <div class="acts">
+          <div class="primaryBtn">⏩ <span class="kbd">Ctrl+Alt+P</span></div>
+          <div class="btn">▶ 全部</div>
+          <div class="ghostBtn">⋯</div>
+          <div class="ghostBtn">✕</div>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span></div>
+        <div class="chip"><span class="ord">2</span><span class="txt">李四 · li@qq.com</span></div>
+        <div class="chip"><span class="ord">3</span><span class="txt">D-HC6239772</span></div>
+      </div>
+      <div class="foot">
+        <div class="target warn"><span>⊘</span><span class="tname">未选择窗口</span></div>
+        <div class="prog"><div class="progFill" style="width:25%"></div></div>
+        <span class="footTxt guide">切到目标窗口后按 Ctrl+Alt+P</span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno warn">
+      <b>警示与引导同处一行</b><br>
+      chip 说「<b>哪里不对</b>」（未选择窗口），紧跟的文案说「<b>怎么办</b>」（切到目标窗口后按热键）——
+      两者之间没有别的东西插入，读起来是一句话。这一行本来就写着「Ctrl+C 继续收集」，
+      按状态换文案是零成本的。<br><br>
+      <b>为什么不用 toast 兜底</b><br>
+      这个状态是<b>持续存在</b>的，而 toast 4–5 秒就没了（U3.5：toast 不能代替常驻状态）。
+      toast 只在「用户按了热键但没成功」那一刻补一次响。<br><br>
+      <b>「切到目标窗口后按热键」就是重选本身</b><br>
+      用户切过去以后，前台就是他想要的窗口，按热键时实时抓取直接命中 ——
+      不需要任何新的「选择」模式。这是本稿推荐先把 B-1 做掉的原因。
+    </div>
+  </div>
+</div>
+
+<h3>③ 选择中（仅 B-2 候选，见第四节）</h3>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">420px · 点了 chip 之后的 3 秒窗口</div>
+    <div class="banner">
+      <div class="top">
+        <span class="dot"></span>
+        <div class="title">栈模式 · 剩余 3 条</div>
+        <div class="acts">
+          <div class="primaryBtn" style="opacity:.45">⏩ <span class="kbd">Ctrl+Alt+P</span></div>
+          <div class="ghostBtn">✕</div>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span></div>
+        <div class="chip"><span class="ord">2</span><span class="txt">李四 · li@qq.com</span></div>
+        <div class="chip"><span class="ord">3</span><span class="txt">D-HC6239772</span></div>
+      </div>
+      <div class="foot">
+        <div class="target pick"><span>◉</span><span class="tname">选择中…</span></div>
+        <span class="pickRing"><i></i></span>
+        <span class="pickTxt">3 秒内切到目标窗口</span>
+        <span class="pickCancel">Esc 取消</span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno warn">
+      <b>位置恒定</b>：三种状态里目标 chip 都在最下面这一行 —— 选择中只是把进度条换成环形倒计时，
+      视线不需要移动。<br><br>
+      <b>代价（这就是它被列为候选而不是主线的理由）</b><br>
+      · 必须<b>临时抑制「失焦自动隐藏」</b>：用户一切窗口主窗就藏了，倒计时和锁定结果全看不到
+        （<code>App.tsx:337-346</code> 的 <code>hide_on_focus_out</code> 分支要加一个 pick 抑制标记，
+        照 <code>dialogOpenRef</code> 的既有范式）。<br>
+      · 多一个状态机（进行中 / 超时 / Esc / 锁定成功），且它的捕获时机依赖失焦回调，
+        与「按热键就粘」是两条不同的时序路径。<br>
+      · 而它能做到的事，<b>「切过去按一下热键」也能做到，且零新概念</b>。
+    </div>
+  </div>
+</div>
+
+<h3>④ 按了热键但没成功：toast（B-1 / B-2 文案不同）</h3>
+<div class="stage">
+  <div class="viewport" style="width:340px;padding:14px 16px">
+    <div class="vpTag">toast 容器：top 60 / right 16 / max-width 320（Toast.module.css）</div>
+    <div class="toastStack">
+      <div class="tItem warn">
+        <span class="tBox warn">⊘</span>
+        <span class="tMsg">还没选粘贴窗口，这条留在栈里了</span>
+        <span class="tClose">✕</span>
+      </div>
+      <div class="tItem err">
+        <span class="tBox err">⚠</span>
+        <span class="tMsg">切不到 Chrome，已中止 · 内容在剪贴板</span>
+        <button class="tAct">重试</button>
+        <span class="tClose">✕</span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno neutral">
+      <b>三条文案（都用现有 toast 能力，不新增组件）</b><br>
+      1. <b>未选定</b>（warning，10 秒）：<code>还没选粘贴窗口，这条留在栈里了</code><br>
+      2. <b>目标窗口已关闭</b>（info）：<code>上次的目标窗口已关闭，已清除</code><br>
+      3. <b>切换失败</b>（error）：<code>切不到 ××，已中止 · 内容在剪贴板</code> + <b>[重试]</b>
+         —— 复用 <code>Toast.tsx:190-198</code> 的 <code>onRetry + actionLabel</code>，零新代码。<br><br>
+      B-2 下第 1 条把按钮换成 <b>[选择窗口]</b>（直接进选择态），其余相同。
+    </div>
+  </div>
+</div>
+
+<h3>⑤ 窄幅（侧边栏展开，横幅 ≈ 268px）</h3>
+<div class="stage">
+  <div class="viewport narrow">
+    <div class="vpTag">268px · 主按钮的 kbd 标签隐藏（已有 @container 380px 规则）</div>
+    <div class="banner">
+      <div class="top">
+        <span class="dot"></span>
+        <div class="title">剩余 3 条</div>
+        <div class="ghostBtn" title="更多：逐条 / 全部 / 合并 / 模板">⋯</div>
+        <div class="ghostBtn">✕</div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="txt">张三 · zhang@…</span></div>
+        <div class="chip"><span class="ord">2</span><span class="txt">李四 · li@qq…</span></div>
+      </div>
+      <div class="foot">
+        <div class="target warn"><span>⊘</span><span class="tname">未选择</span></div>
+        <div class="prog"><div class="progFill" style="width:25%"></div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno neutral">
+      <b>窄幅取舍</b>（268px 横幅的内容宽度只有 ≈212px）<br>
+      · 目标 chip <b>保留</b>——它是本稿的主角，宁可让「▶ 全部」下沉进 ⋯ 菜单也不能砍它。<br>
+      · 应用名允许省略（<code>Chrome → Chro…</code>）、警示文案压成「未选择」。<br>
+      · 引导句在这一档放不下，<b>降级为只靠 toast</b>（窄幅往往意味着用户正在主窗里操作，toast 一定可见）。<br>
+      · 现有 <code>@container 380px</code> 已经在隐藏主按钮里的 <code>kbd</code>，把这部分宽度让给 chip。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>四、两个候选：B-1（推荐） vs B-2</h2>
+<table class="t">
+<tr><th style="width:16%"></th><th style="width:42%">B-1 · 只做「可见 + 可照做的引导」</th><th>B-2 · 再加「点 chip 选窗口」</th></tr>
+<tr><td>新增 UI</td><td>目标 chip（三态里的两态）+ 进度行按状态换文案</td><td>再加「选择中」态（倒计时环 + 取消）</td></tr>
+<tr><td>重选目标怎么做</td><td><b>切到目标窗口，按一次热键</b>（用户本来就在做这件事）</td><td>点 chip → 3 秒内切窗口 → 自动锁定</td></tr>
+<tr><td>失败时的出路</td><td>toast 说明 + 栈顶保留，用户切过去再按</td><td>toast 带 [选择窗口]，一步进选择态</td></tr>
+<tr><td>新增概念</td><td class="pick">0 个</td><td>1 个（「选择窗口」模式）</td></tr>
+<tr><td>额外实现约束</td><td>无</td><td><b>必须抑制失焦自动隐藏</b>；捕获依赖失焦回调这条独立时序</td></tr>
+<tr><td>不覆盖的场景</td><td>主窗<b>常驻且前台</b>、用户想粘到「刚才那个应用」又要不切窗口 —— 这时他仍需切一次</td><td>覆盖（但那个场景下切一次本来就是最直接的动作）</td></tr>
+</table>
+<div class="anno" style="margin-top:12px">
+<b>倾向 B-1</b>：三个丢失形态里有两个半是<b>引擎</b>问题（判据 / 顺序 / 陈旧值），UI 要补的只是「看得见 + 有下一步」。
+B-2 的交互虽然更"主动"，但它把一个已经存在且自然的动作（切窗口）包装成了新模式，还额外依赖失焦时序。
+<b>建议：先落 B-1，跑一周看「未选定」这个状态实际出现多少次</b> —— 如果根本没出现过，
+说明引擎修复已经把问题解决了，B-2 就不必要；如果出现得多，再上 B-2 不迟。
+</div>
+
+<hr>
+
+<h2>五、交互细节与边界</h2>
+<table class="t">
+<tr><th style="width:24%">情形</th><th>行为</th></tr>
+<tr><td>主窗可见，按热键，目标有效</td><td>正常粘贴：写剪贴板 → 激活目标 → Ctrl+V → 栈顶出队。chip 全程不变</td></tr>
+<tr><td>主窗可见，按热键，目标无效</td><td><b>不消费栈顶</b>、<b>不写剪贴板</b>；toast（warning，10 秒）；chip 转为「未选择窗口」；进度行显示引导</td></tr>
+<tr><td>主窗<b>隐藏</b>，按热键，目标无效</td><td>静默失败（栈顶保留，日志留痕）。<b>不抢焦点、不弹窗、不唤出主窗</b>——打断用户正在做的事比不提示更糟。下次唤出主窗时，横幅上就是「未选择窗口」，用户一眼看到</td></tr>
+<tr><td>点「逐条粘贴 / 全部粘贴」按钮，但目标无效</td><td>按钮<b>不禁用</b>（禁用会让用户不知道为什么），点了以后走同一条失败路径：toast + chip 脉冲高亮一次（1.05s ×2），把注意力引到 chip 上</td></tr>
+<tr><td>目标窗口已关闭 / 被关闭后再粘</td><td>解析时发现 <code>IsWindow</code> 失败 → 清掉保存值 → toast「上次的目标窗口已关闭，已清除」→ 转为「未选择窗口」</td></tr>
+<tr><td>目标窗口最小化</td><td>照旧先 <code>SW_RESTORE</code> 再激活（现有逻辑不动）</td></tr>
+<tr><td>目标 chip 的「已选定」有效期</td><td>实时抓取命中的值：本次粘贴用完即弃；保存值：与窗口会话绑定，但<b>只认「用户刚切过去的那个窗口」</b>，不再由「本应用有窗口可见」无限续命（引擎侧改动）</td></tr>
+<tr><td>Esc（B-2 选择态）</td><td>立即取消选择，回到之前的状态（有保存值就回「已选定」，否则回「未选定」）。<b>两级取消</b>：第一下 Esc 退选择态，再一下才退栈模式</td></tr>
+<tr><td>锁定成功（B-2）</td><td>toast（success 4 秒）<code>已锁定目标：Chrome</code>，chip 转「已选定」，倒计时环停止</td></tr>
+</table>
+
+<hr>
+
+<h2>六、代码落点</h2>
+<table class="t">
+<tr><th style="width:34%">文件</th><th>改动</th></tr>
+<tr><td><code>src-tauri/src/paste_target.rs</code>（新增 ≈120 行）</td><td><code>is_valid_target</code>（排自身 / 桌面 <code>Progman·WorkerW</code> / 任务栏 <code>Shell_TrayWnd</code>）、<code>PasteTrigger{WindowBound, Headless}</code>、纯函数 <code>pick_target</code> + 守卫单测</td></tr>
+<tr><td><code>src-tauri/src/paste_engine.rs</code><br><span class="tag">1104 行 · 已是巨无霸，本稿只做委托替换不增体量</span></td><td><code>:94-119</code> <code>:123-136</code> 两处判据委托新模块；<code>:219-243</code> <code>get_target_hwnd</code> 按 trigger 分路（Headless 优先实时抓取）；<code>:286-300 / 663-669 / 705-726</code> 三条路径改为<b>先判目标、后写剪贴板</b></td></tr>
+<tr><td><code>src-tauri/src/commands/paste.rs</code></td><td><code>:16</code> <code>:82</code> <code>:88</code> 三个命令加 trigger 参数；新增 <code>paste_target_info</code>（返回当前目标应用名 + 是否有效 + 保存值的来源）</td></tr>
+<tr><td><code>src/lib/api/stack.ts</code> <code>:42-89</code></td><td>栈顶消费逻辑不动（已经是「仅 ok 才出队」）；失败分支补 toast 文案与 store 状态更新</td></tr>
+<tr><td><code>src/components/StackBanner.tsx</code> <code>:330-343</code></td><td><b>只改进度行</b>：最左插入目标 chip、按状态换文案（状态行与队列行一行不动）。⚠ 该文件 <b>368 行已超 300 红线</b>，建议顺手把进度行抽成 <code>StackFoot.tsx</code>（含 target chip）——这是本次唯一新增渲染逻辑的地方</td></tr>
+<tr><td><code>src/components/StackBanner.module.css</code></td><td>新增 <code>.target.ok/.warn/.pick</code>（语义色 <code>--text-muted / --warning / --accent</code>）、<code>.footTxt.guide</code></td></tr>
+<tr><td><code>src/stores/appStore.ts</code></td><td>新增 <code>pasteTarget: { app: string; valid: boolean } | null</code>（只做显示，<b>不参与粘贴决策</b>）</td></tr>
+<tr><td><code>src/App.tsx</code> <code>:327-347</code></td><td>失焦刷新目标后同步一句到 store（现在只调 <code>saveForeground()</code>，前端并不知道结果）。B-2 另需在此加 pick 抑制标记</td></tr>
+</table>
+<div class="anno warn" style="margin-top:12px">
+<b>🔴 一条硬约束：显示与决策必须同源</b><br>
+目标 chip 显示的应用名，必须来自<b>粘贴引擎实际解析目标所用的同一个函数</b>（同一个 trigger、同一份判据）。
+两处各算一遍的话，就会出现「chip 写着 Chrome、实际粘到记事本」——
+那正是历史上那个「提示已粘贴却没内容」的同形 bug。<b>显示层不许自己再判断一次。</b>
+</div>
+
+<hr>
+
+<h2>七、规则自查（改完 UI 逐条对）</h2>
+<table class="t">
+<tr><th style="width:10%">条</th><th style="width:34%">要求</th><th>本稿怎么满足</th></tr>
+<tr><td>U1</td><td>&lt;100ms 必须有即时响应</td><td>点 chip 立刻转「选择中…」（B-2）；失败时 toast + chip 变色都是同帧</td></tr>
+<tr><td>U2</td><td>只用 150/200/300/400ms</td><td>chip 换态用 150ms；脉冲高亮 1.05s×2 是「必须能被看见」的一次性强调，不承载唯一信息（toast 有文字）</td></tr>
+<tr><td>U3.5</td><td>不能只给 toast 就完事</td><td>「未选定」是<b>常驻状态</b>（chip + 进度行），toast 只补那一刻的响</td></tr>
+<tr><td>U4</td><td>可撤销 &gt; 二次确认</td><td>全程无确认框；失败不消费栈顶本身就是「可恢复」，不需要撤销条</td></tr>
+<tr><td>U5</td><td>圆角 4/8/12、间距 4/8/12/16/24、字号 11/12/13/15/20</td><td>chip 24px 高 / radius 8 / 11px；引导文案 10px 沿用现有 <code>footTxt</code>（既有值，不新增档位）</td></tr>
+<tr><td>U6</td><td>新代码只用语义色</td><td>新增部分用 <code>--text-muted / --warning / --accent</code>，<b>不用 <code>--orange</code></b>（横幅既有样式不在本次改动内）</td></tr>
+<tr><td>U7</td><td>点击目标 ≥24×24、不靠颜色单传状态、有 focus-visible</td><td>chip 高 24；「未选定」除警示色外<b>有文字</b>「未选择窗口」+ <code>⊘</code> 图标；chip 需补 <code>:focus-visible</code></td></tr>
+<tr><td>U8</td><td>新组件用 CSS Module</td><td>沿用 <code>StackBanner.module.css</code>，不写内联 style</td></tr>
+<tr><td>L2</td><td>图标必须有常驻文字标签</td><td><code>⊘</code> / <code>→</code> 后面永远跟着文字，不是裸图标</td></tr>
+<tr><td>L4</td><td>就在地说清，不开教程</td><td>引导文案落在这个状态<b>发生的那一行</b>（进度行），不弹引导框、不写帮助文档</td></tr>
+</table>
+
+<hr>
+
+<h2>八、本轮不做</h2>
+<ul style="font-size:12.5px;color:#B4BECB;max-width:900px">
+<li><b>不做「最近用过的窗口」列表</b>——枚举窗口 + 图标提取是另一件重活，且用户真正的目标窗口九成就在他手上那一个。</li>
+<li><b>不做系统通知</b>——当前未引入 <code>tauri-plugin-notification</code>，为一条失败提示加插件/加 AUMID 不划算；主窗隐藏时的静默失败已经保证「数据不丢」。</li>
+<li><b>不做设置项</b>（如「粘贴失败时自动唤出主窗」）——默认行为由场景决定，多一个开关只会多一种用户配错的可能。</li>
+<li><b>不动 <code>restore_and_send_ctrl_v</code> 的激活细节</b>——虽然它的前台抢占逻辑与 <code>win_foreground::force_foreground</code> 是同源重复（该文件头部注释已记明），但那是核心粘贴路径的独立改造，与本稿分开提交。</li>
+</ul>
+
+</body>
+</html>

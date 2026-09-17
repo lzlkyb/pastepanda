@@ -158,3 +158,50 @@ describe("栈粘贴（Ctrl+Alt+P）", () => {
     expect(ev!.pasteIndex).toBe(-1);
   });
 });
+
+/**
+ * 🔴 三个「无窗口热键」入口必须**都**带 `trigger: headless`。
+ *
+ * 这是 `paste_engine.rs::PasteTrigger` 文档里列的那三条清单
+ * （栈粘贴 / 索引粘贴 / 依次粘贴），也是 `hotkey_manager.rs` 里回调结构完全相同的三条
+ * —— 都是 `save_foreground_hwnd()` + `emit`，**都不显示任何窗口**。
+ *
+ * 为什么必须专门守：正因为三者结构一样，「改了一条忘了另两条」是**完全无声的**
+ * —— 2026-09-16 首次落地只接了栈粘贴，另两条的「按热键后内容飞到几十分钟前那个窗口」
+ * 原样存在，编译、单测、构建全绿，直到人工审查才发现。
+ *
+ * 不带 headless 的后果链：走 `WindowBound` ⇒ 手动保存值优先 ⇒ 主窗口开着时
+ * `any_own_window_visible()` 恒真 ⇒ 该值永久有效；而用户在桌面/任务栏上按热键时
+ * `save_foreground_hwnd` 因 `is_valid_target` 拒绝而**保留旧值** ⇒ 用陈旧目标。
+ * 带 headless 则走实时抓取，抓不到就正确取消（剪贴板不动）。
+ */
+describe("无窗口热键入口必须带 trigger:headless（三条清单的守卫）", () => {
+  it("栈粘贴走 headless", async () => {
+    const item = makeItem({ id: "h1", text: "栈顶" });
+    resetStore([item]);
+    useAppStore.setState({ stackMode: true, stackItems: [item] });
+
+    await stackPasteNext();
+
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "栈顶", trigger: "headless" });
+  });
+
+  it("依次粘贴走 headless", async () => {
+    resetStore([makeItem({ id: "h2", text: "第一条" })]);
+
+    await sequentialPaste();
+
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "第一条", trigger: "headless" });
+  });
+
+  it("索引粘贴走 headless", async () => {
+    resetStore([
+      makeItem({ id: "h3", text: "第一条" }),
+      makeItem({ id: "h4", text: "第二条" }),
+    ]);
+
+    await indexPaste(2);
+
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "第二条", trigger: "headless" });
+  });
+});

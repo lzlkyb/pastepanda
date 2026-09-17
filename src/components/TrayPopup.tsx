@@ -411,6 +411,22 @@ export function TrayPopup() {
       },
     },
     {
+      id: "adjust_hud",
+      iconClass: "icon-purple",
+      iconSvg: <span style={{ fontSize: 13 }}>🎯</span>,
+      label: "调整浮标位置…",
+      hint: "栈粘贴浮标",
+      onClick: () => {
+        // toggle：再点一次可退出；双击浮标也会退出。弹层先收起别挡视线
+        void invoke("stack_hud_adjust", { enter: null })
+          .then(() => safeHide())
+          .catch((e) => {
+            console.error("[TrayPopup] 浮标调整失败:", e);
+            showToast("先开一次栈模式再调整浮标", "error");
+          });
+      },
+    },
+    {
       id: "settings",
       iconClass: "icon-purple",
       iconSvg: <IconSettings />,

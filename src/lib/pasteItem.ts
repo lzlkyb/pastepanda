@@ -52,10 +52,14 @@ export interface PastableItem {
  *
  * @param listIndex 粘的是当前列表第几条（0-based）；无列表位置（栈序、托盘、
  *   独立窗口、编辑器内）传 `-1`，这是既有约定。省略等同于不带。
+ * @param headless 调用方是**无窗口热键**入口（栈粘贴 / 索引粘贴 / 依次粘贴）时传 true。
+ *   它决定粘贴引擎如何解析目标窗口——见 `paste_engine.rs::PasteTrigger`：
+ *   无窗口场景实时抓取优先，绝不回退到手动保存的陈旧值。
  */
 export async function pasteHistoryItem(
   item: PastableItem,
   listIndex?: number,
+  headless = false,
 ): Promise<PasteItemResult> {
   const plainOnly = useAppStore.getState().config.paste_format_default === "plain";
   const content = item.content || "";
@@ -66,19 +70,19 @@ export async function pasteHistoryItem(
   if (item.type === "image" && content) {
     // 图片必须走 pasteImage：走纯文本分支就会把 "[图片] WxH" 占位文本打进用户文档
     kind = "image";
-    ok = await pasteImage(content);
+    ok = await pasteImage(content, headless);
   } else if (!plainOnly && (item.type === "doc" || item.type === "rich") && content) {
     // doc 的 content 是原始 CF_HTML（可能含 mso 噪声），粘贴前先清洗；rich 已是干净片段
     kind = "rich";
     const html = item.type === "doc" ? sanitizeDocHtml(content) : content;
-    ok = await pasteRichGuarded(html, item.text);
+    ok = await pasteRichGuarded(html, item.text, headless);
   } else if (item.type === "file" && content) {
     // 文件粘完整路径（content），不是裸文件名（text）
     kind = "file";
-    ok = await pasteTextGuarded(content);
+    ok = await pasteTextGuarded(content, headless);
   } else {
     kind = "text";
-    ok = await pasteTextGuarded(item.text);
+    ok = await pasteTextGuarded(item.text, headless);
   }
 
   if (ok) {

@@ -1,0 +1,270 @@
+/* 剪贴板栈浮标 · 240×65（与 stack_hud.rs 的 HUD_W/HUD_H 是同一份账）
+   三行结构：上 = 状态（栈 N · → 应用名 ／ ✓ 已粘贴 · 剩 N 条）+ 右侧进度徽章，
+   中 = 下一条内容预览（栈空时不渲染），下 = 提示。
+   anchorKind=control 时底部画方向尾，指向聚焦输入框。
+
+   ❗ 刻意**没有** backdrop-filter：窗口 transparent(true) 时 WebView2 的 CSS 模糊
+      只作用于 webview 内部元素、**穿不出窗口**（tauri issue #10064，2024-06 报至今）。
+      浮标元素背后就是透明的窗口，模糊不到任何东西，却要多一层 GPU 合成、
+      并在 Windows 上加重每次重绘。长截图状态小窗也没用它。
+      玻璃感只能靠「半透明底色 + 描边 + 阴影」——即 theme.css 那句
+      「浅色玻璃压在任意内容上，辨识靠 --shot-bar-border 描边 + 阴影兜底」。
+      所以描边不能省。 */
+
+/* 窗口是 transparent(true)，globals.css 的 body{background:var(--app-bg)} 必须压掉，
+   否则圆角外那四个角是白底方块 */
+:global(html),
+:global(body),
+:global(#root) {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.root {
+  /* 描边色走变量，好让状态类只覆盖这一个值 */
+  --hud-ring: color-mix(in srgb, var(--orange) 65%, transparent);
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--shot-bar-bg);
+  /* ❗ 描边用 **inset 阴影** 而不是 border，理由不是审美：
+     `globals.css` 有 `* { box-sizing: border-box }`，`border: 1.5px` 会吃掉 3px 布局空间，
+     内容可用高只剩 65-3-16 = 46px，而三行内容是 15×3+2×2 = 49px —— 超出被裁。
+     inset 阴影不占布局空间，三行正好 49px = 65 - 8×2，且同样跟随 border-radius。 */
+  box-shadow:
+    inset 0 0 0 1.5px var(--hud-ring),
+    0 4px 16px rgba(15, 23, 42, 0.18);
+  color: var(--shot-bar-text);
+  font-size: 11px;
+  line-height: 15px;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  animation: hudIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.4s ease;
+}
+
+/* 内层三行容器：布局在这一层，跟随滑入也只动这一层 */
+.body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 0;
+}
+
+/* 跟随滑入：窗口已瞬时到位，内容从「旧位置相对新窗口」的偏移滑回 0。
+   位移矢量由 Rust `stack-hud-repositioned` 注入（CSS px，已钳幅）。 */
+.settle {
+  animation: settleIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes settleIn {
+  from {
+    transform: translate(var(--settle-x, 0px), var(--settle-y, 0px));
+    opacity: 0.72;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* 状态色描边：正常态沿用栈的橙色语言，成功/失败转语义色 */
+.success,
+.done {
+  --hud-ring: color-mix(in srgb, var(--success) 60%, transparent);
+}
+.error {
+  --hud-ring: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+/* 空闲淡化：常驻的浮标若一直满不透明度，会像"没消失的弹窗"。
+   45% 在浅色复杂表单上接近消失，提到 55% 保持「还开着」的余光可辨。 */
+.idle {
+  opacity: 0.55;
+}
+
+/* 调整模式：恢复鼠标交互后的视觉语言 —— 虚线描边 + move 光标，
+   与平时（点击穿透、不可交互）一眼可分。Rust 侧已 set_ignore_cursor_events(false)。 */
+.adjusting {
+  --hud-ring: color-mix(in srgb, var(--orange) 85%, transparent);
+  cursor: move;
+  animation: hudIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), hudNudge 0.9s ease-in-out 2;
+  /* 调整中不淡化：用户正在跟它交互 */
+  opacity: 1;
+}
+
+/* 方向尾：仅 anchorKind=control（聚焦输入框锚定）时渲染，建立「浮标 ↔ 这个框」的指称。
+   窗口/光标锚不画 —— 尾巴指向虚空比没有更糟。
+   ❗ 刻意画在卡内底部而不是窗外：`.root` 有 `overflow:hidden`（圆角裁切内容），
+   `bottom:-5px` 的外伸三角会被裁掉。内贴小三角在视觉上仍指向下方输入框。 */
+.tail::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 3px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--hud-ring);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+@keyframes hudNudge {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes hudIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.main {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 进度徽章：主行右侧，tabular-nums 防跳动 */
+.prog {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--orange-bg);
+  color: var(--orange);
+  border: 1px solid var(--orange-border);
+}
+
+.success .prog,
+.done .prog {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: var(--success-border);
+}
+.error .prog {
+  background: var(--red-bg);
+  color: var(--danger);
+  border-color: var(--red-border);
+}
+
+.sub {
+  font-size: 11px;
+  font-weight: 400;
+  /* 它是字符、属正文，要过 U7 的 4.5:1 —— 浅灰在白玻璃上只有 2.3:1 */
+  color: var(--shot-bar-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 预览行：下一条要粘贴的内容。用正文色而不是 muted —— 它和副行不同，
+   是主信息不是提示。行首「↓」放在 ::before 里而不是单独 flex 子元素，
+   是为了让 text-overflow 的省略号仍然作用于整行。 */
+.preview {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview::before {
+  content: "↓ ";
+  color: var(--orange);
+  font-weight: 600;
+}
+
+/* 收集中：橙色脉冲点 = "在等你的下一条" */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--orange);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* 空闲/隐藏后停脉冲：hide() 的 webview DOM 仍活着，infinite 动画会白烧（规则 8.2） */
+.root.idle .dot {
+  animation: none;
+  opacity: 0.7;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--orange) 50%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--orange) 0%, transparent);
+  }
+}
+
+.num {
+  flex-shrink: 0;
+}
+
+/* 应用名可被压缩：窄幅下宁可截名字，也不能挤掉状态 */
+.target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+/* 未选定目标：转警示色，与「已选定」一眼可分 */
+.warn {
+  flex-shrink: 0;
+  color: var(--warning);
+  font-weight: 500;
+}
+
+/* 分隔符 · 用 --text-muted 而不是浅灰 —— 它是字符、属正文，要过 U7 的 4.5:1 */
+.sep {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.markOk {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.markErr {
+  color: var(--danger);
+  font-weight: 700;
+}

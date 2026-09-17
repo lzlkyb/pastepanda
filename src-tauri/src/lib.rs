@@ -41,9 +41,13 @@ pub mod markdown;
 mod mask;
 pub mod mcp;
 mod paste_engine;
+mod paste_target;
 mod pinned_window;
 mod quick_paste;
 mod screenshot;
+mod stack_hud;
+mod stack_hud_focus;
+mod stack_hud_pos;
 // 本机自有凭证的哈希登记处（让剪贴板监听不把我们自己的令牌/密钥记进历史）
 pub mod secret_registry;
 /// M6 多机同步。当前只有 P1 身份/配对层，无传输层、无界面。
@@ -536,6 +540,11 @@ pub fn run() {
             let paste_engine =
                 paste_engine::PasteEngine::new(handle.clone(), paste_suppress.clone());
             app.manage(paste_engine);
+            // 栈浮标的状态缓存：HUD webview 首次 mount 时拉取，避免
+            // "后端 emit 早于 webview 就绪"导致的首帧空白
+            app.manage(stack_hud::HudStateCache::default());
+            // 恢复浮标拖拽保存的位置偏移（须在 DataStore manage 之后）
+            stack_hud::init(&handle);
 
             // 初始化图标缓存（用于来源应用真实图标）
             // 须在监听器启动之前 manage：事件驱动监听的捕获/处理线程依赖 IconCache
@@ -754,6 +763,12 @@ pub fn run() {
             commands::copy_files,
             commands::save_foreground,
             commands::paste_send_tab,
+            // 剪贴板栈浮标（HUD）：栈是无窗口热键操作，反馈必须另开小窗承载
+            stack_hud::stack_hud_update,
+            stack_hud::stack_hud_show,
+            stack_hud::stack_hud_hide,
+            stack_hud::stack_hud_state,
+            stack_hud::stack_hud_adjust,
             commands::stack_template_list,
             commands::stack_template_save,
             commands::stack_template_delete,

@@ -45,6 +45,7 @@ export default defineConfig(async () => ({
         quickpaste: resolve(projectRoot, "quickpaste.html"),
         screenshot: resolve(projectRoot, "screenshot.html"),
         longshot: resolve(projectRoot, "longshot.html"),
+        stackhud: resolve(projectRoot, "stackhud.html"),
       },
     },
   },

@@ -1,4 +1,4 @@
-use crate::paste_engine::PasteEngine;
+use crate::paste_engine::{PasteEngine, PasteTrigger};
 use tauri::{Manager, State};
 
 /// 粘贴诊断结果
@@ -12,14 +12,25 @@ pub struct PasteResult {
 }
 
 /// 复制文本到剪贴板并执行粘贴（Ctrl+V）
+///
+/// `trigger` 由前端显式声明（`"headless"` = 无窗口热键；省略 = 有窗口的入口）。
+/// 详见 [`crate::paste_engine::PasteTrigger`]——它决定「手动保存的目标窗口」在解析时的权重，
+/// 是「按热键后内容飞到几十分钟前那个窗口」的根治点。
 #[tauri::command]
-pub fn paste_text(engine: State<PasteEngine>, text: String) -> Result<PasteResult, String> {
-    engine.execute_paste(Some(text))
+pub fn paste_text(
+    engine: State<PasteEngine>,
+    text: String,
+    trigger: Option<String>,
+) -> Result<PasteResult, String> {
+    engine.execute_paste(Some(text), PasteTrigger::from_opt(trigger.as_deref()))
 }
 
 /// 粘贴前检查（v6.2）：目标应用感知——告诉前端"要粘到哪个应用"。
 /// 敏感检测由前端做（maskSensitiveText 纯本地同步），这里只负责窗口信息
 /// （窗口信息只有 Rust 侧拿得到）。
+///
+/// `trigger` 必须与实际粘贴用**同一个值**，否则会出现「确认条写着 Chrome、
+/// 实际粘到记事本」。栈浮标的「→ 应用名」也走这里，理由相同。
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PastePrecheck {
@@ -30,9 +41,12 @@ pub struct PastePrecheck {
 }
 
 #[tauri::command]
-pub fn paste_precheck(engine: State<PasteEngine>) -> Result<PastePrecheck, String> {
+pub fn paste_precheck(
+    engine: State<PasteEngine>,
+    trigger: Option<String>,
+) -> Result<PastePrecheck, String> {
     let (app, cat) = engine
-        .foreground_app()
+        .foreground_app(PasteTrigger::from_opt(trigger.as_deref()))
         .unwrap_or_else(|| (String::new(), String::new()));
     Ok(PastePrecheck {
         target_app: if app.is_empty() { None } else { Some(app) },
@@ -79,8 +93,12 @@ pub fn copy_files(engine: State<PasteEngine>, paths: Vec<String>) -> Result<(), 
 
 /// 粘贴图片到目标窗口
 #[tauri::command]
-pub fn paste_image(engine: State<PasteEngine>, image_path: String) -> Result<(), String> {
-    engine.execute_paste_image(&image_path)
+pub fn paste_image(
+    engine: State<PasteEngine>,
+    image_path: String,
+    trigger: Option<String>,
+) -> Result<(), String> {
+    engine.execute_paste_image(&image_path, PasteTrigger::from_opt(trigger.as_deref()))
 }
 
 /// 粘贴图文混排内容：同时写入 CF_HTML 富文本 + 纯文本保底，再发送 Ctrl+V
@@ -89,16 +107,22 @@ pub fn paste_rich(
     engine: State<PasteEngine>,
     html_fragment: String,
     plain_text: String,
+    trigger: Option<String>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        engine.execute_paste_rich(&html_fragment, &plain_text)
+        engine.execute_paste_rich(
+            &html_fragment,
+            &plain_text,
+            PasteTrigger::from_opt(trigger.as_deref()),
+        )
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = engine;
         let _ = html_fragment;
         let _ = plain_text;
+        let _ = trigger;
         Err("仅支持 Windows".to_string())
     }
 }

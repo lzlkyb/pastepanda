@@ -5,6 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { splitTableToRows, isTableSplitCandidate } from "@/lib/tableSplit";
+import {
+  hudStackModeEntered,
+  hudStackModeExited,
+  hudPastedOk,
+  hudAllDone,
+} from "@/lib/stack/hudBridge";
 
 /** 同步栈模式状态到后端（托盘图标） */
 function syncStackModeToBackend(active: boolean) {
@@ -18,11 +24,15 @@ export function toggleStackMode() {
   if (active) {
     store.setStackMode(true);
     syncStackModeToBackend(true);
+    // 栈是无窗口热键操作，用户此刻的视线在**别的应用**里：
+    // 主窗口的横幅与 toast 他一条都看不到，反馈必须由浮标承载。
+    void hudStackModeEntered();
     const pasteKey = store.config.stack_paste_hotkey || "ctrl+alt+p";
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `栈模式已开启 · Ctrl+C 收集 · ${pasteKey} 粘贴`, type: "info" } }));
   } else {
     store.exitStackMode();
     syncStackModeToBackend(false);
+    hudStackModeExited();
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈模式已退出", type: "info" } }));
   }
 }
@@ -31,6 +41,7 @@ export function toggleStackMode() {
 export function exitStack() {
   useAppStore.getState().exitStackMode();
   syncStackModeToBackend(false);
+  hudStackModeExited();
   window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈模式已退出", type: "info" } }));
 }
 
@@ -51,15 +62,20 @@ export async function stackPasteNext(): Promise<boolean> {
       // 栈空 → 自动退出
       store.exitStackMode();
       syncStackModeToBackend(false);
+      hudStackModeExited();
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈已清空，自动退出栈模式", type: "success" } }));
       return false;
     }
 
     // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是本文件的
     // 第 3 份拷贝）。栈粘贴按栈序出栈、没有列表位置，故下标传 -1。
+    // 第三参 headless=true：栈粘贴是**无窗口热键**操作，粘贴引擎据此实时抓取目标
+    // （见 `paste_engine.rs::PasteTrigger`），不会把内容送到几十分钟前那个窗口去。
     const { pasteHistoryItem } = await import("@/lib/pasteItem");
-    const { ok } = await pasteHistoryItem(item, -1);
+    const { ok } = await pasteHistoryItem(item, -1, true);
 
+    // 失败的具体提示由底层 API 负责（toast + `onPasteFailure` → 浮标失败态）。
+    // 这里不再推浮标状态，避免两处各推一次把浮标停在错误的状态上。
     if (!ok) return false;
 
     store.stackMarkPasted();
@@ -77,10 +93,15 @@ export async function stackPasteNext(): Promise<boolean> {
       // 全部粘贴完毕 → 自动退出
       useAppStore.getState().exitStackMode();
       syncStackModeToBackend(false);
+      hudAllDone();
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "全部粘贴完毕，已退出栈模式", type: "success" } }));
-    } else if (!stackPasteAllRunning) {
-      // 「全部粘贴」进行中不逐条弹这个进度 toast——横幅本来就有实时进度条，连发好几个 toast 只会刷屏
-      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴，剩余 ${remaining} 条`, type: "success" } }));
+    } else {
+      // 「全部粘贴」进行中不逐条弹这个进度 toast——横幅本来就有实时进度条，连发好几个 toast 只会刷屏。
+      // 浮标则相反：它是唯一出窗口的通道，循环中每一步的剩余条数正是用户想看的。
+      if (!stackPasteAllRunning) {
+        window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴，剩余 ${remaining} 条`, type: "success" } }));
+      }
+      void hudPastedOk(remaining);
     }
     return true;
   } finally {
@@ -123,6 +144,8 @@ export async function stackAutoSplitAndPasteFirst(): Promise<boolean> {
 
   store.setStackMode(true);
   syncStackModeToBackend(true);
+  // 这条路径也会自动开栈（用户没按过开栈热键），浮标同样要亮起来
+  await hudStackModeEntered();
   useAppStore.getState().stackPushOrSplit(top);
   const pasted = await stackPasteNext();
   // 只在真正粘贴成功时才报“已粘贴第 1 条”；失败（如首行命中敏感内容确认框被取消）时不误报成功，
