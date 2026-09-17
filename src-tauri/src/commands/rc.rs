@@ -44,6 +44,9 @@ pub struct RcTargetDevice {
     pub source: String,
     /// 可达性档位：`live` / `recent` / `seen` / `never`（设计稿）。
     pub presence: String,
+    /// 上一次会话**实测**走的路径（`lan` / `direct` / `relay`；空串 = 还没连过）。
+    /// 只有远程配对（`source == "rc"`）有实测值；仅同步配对的设备恒为空串。
+    pub last_path: String,
 }
 
 #[derive(Serialize)]
@@ -118,6 +121,7 @@ pub fn rc_targets(
             last_seen: d.last_seen,
             source: "rc".into(),
             presence: level.as_str().into(),
+            last_path: d.last_path,
         });
     }
     for d in store.device_list()? {
@@ -148,6 +152,9 @@ pub fn rc_targets(
             last_seen: d.last_seen,
             source: "sync".into(),
             presence: level.as_str().into(),
+            // 同步设备表（`devices`）没有路径列——它只做笔记同步，从没跑过 rc 会话。
+            // 空串 = 前端不显示这一格（而不是编一个「绕中继」出来）。
+            last_path: String::new(),
         });
     }
     Ok(out)

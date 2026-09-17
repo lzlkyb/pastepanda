@@ -1445,17 +1445,45 @@ impl DataStore {
         }
 
         // 远程协助配对表（方案 A）：与同步 `devices` 分开。
+        // 🔴 表定义的**唯一真源在这里**。`data_store/rc_device.rs` 里曾有一份
+        //    没人调用的 `init_rc_devices_table` 副本——加列时极易只改一处，
+        //    2026-09-17 已删除。
         if let Err(e) = conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS rc_devices (
                  node_id    TEXT PRIMARY KEY,
                  name       TEXT NOT NULL,
                  paired_at  TEXT NOT NULL,
                  conn_state TEXT NOT NULL DEFAULT 'offline',
-                 last_seen  INTEGER NOT NULL DEFAULT 0
+                 last_seen  INTEGER NOT NULL DEFAULT 0,
+                 last_path  TEXT NOT NULL DEFAULT ''
              );",
         ) {
             log::error!("[DataStore] 建 rc_devices 表失败: {}", e);
             return Err(e);
+        }
+
+        // 数据库迁移：rc_devices.last_path —— 上次会话**实测**走的路径
+        // （`lan` / `direct` / `relay`）。空串 = 还没连过，
+        // **不是**「走了中继」——别拿它当默认值。
+        let has_last_path: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('rc_devices') WHERE name = 'last_path'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_last_path {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE rc_devices ADD COLUMN last_path TEXT NOT NULL DEFAULT '';",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] rc_devices.last_path 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 rc_devices.last_path 列失败: {}", e);
+                    return Err(e);
+                }
+            }
         }
 
         // 数据库迁移：devices.paused —— 用户级暂停（保留配对与游标，只停同步）。

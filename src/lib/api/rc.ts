@@ -76,6 +76,11 @@ export interface RcTargetDevice {
   source: "rc" | "sync";
   /** 可达性档位：live / recent / seen / never */
   presence: RcPresence;
+  /**
+   * 上一次会话**实测**走的路径（`lan` / `direct` / `relay`）。
+   * 空串 = 还没连过（或只做过笔记同步），此时不显示这一格。
+   */
+  last_path?: string;
 }
 
 export interface RcSyncOffer {
@@ -257,6 +262,15 @@ export interface RcHistoryItem {
   ended_ms: number;
   duration_ms: number;
   reason: string;
+  /**
+   * 本次实测走的路径（`lan` / `direct` / `relay`）。
+   * 空串或缺失 = 更早的记录（那时还没记这个）或本次一条路都没通 ⇒ 不显示。
+   */
+  path_kind?: string;
+  /** 本会话 RTT 摘要（毫秒）。全 0 或缺失 = 没采到样本 ⇒ 不显示。 */
+  rtt_min?: number;
+  rtt_avg?: number;
+  rtt_max?: number;
 }
 
 export function rcSessionHistory(): Promise<RcHistoryItem[]> {

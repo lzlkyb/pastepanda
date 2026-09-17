@@ -18,9 +18,16 @@ pub struct RcDevice {
     pub conn_state: String,
     #[serde(default)]
     pub last_seen: i64,
+    /// 上一次会话**实测**走的路径（`lan` / `direct` / `relay`；空串 = 还没连过）。
+    ///
+    /// 🔴 这是实测值，不是推断。此前设备行只能拿「有没有听到局域网宣告」
+    /// 去猜「大概走局域网还是中继」，跨网或组播被拦时必然猜错。
+    /// 现在由 `end_session` 从活连接读一次写进来。
+    #[serde(default)]
+    pub last_path: String,
 }
 
-const COLS: &str = "node_id, name, paired_at, conn_state, last_seen";
+const COLS: &str = "node_id, name, paired_at, conn_state, last_seen, last_path";
 
 fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
     Ok(RcDevice {
@@ -29,23 +36,11 @@ fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
         paired_at: r.get(2)?,
         conn_state: r.get(3)?,
         last_seen: r.get(4)?,
+        last_path: r.get(5)?,
     })
 }
 
 impl DataStore {
-    /// 建表（方案 A：远程配对独立于同步配对）。
-    pub fn init_rc_devices_table(conn: &rusqlite::Connection) -> Result<(), String> {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS rc_devices (
-                 node_id    TEXT PRIMARY KEY,
-                 name       TEXT NOT NULL,
-                 paired_at  TEXT NOT NULL,
-                 conn_state TEXT NOT NULL DEFAULT 'offline',
-                 last_seen  INTEGER NOT NULL DEFAULT 0
-             );",
-        )
-        .map_err(|e| format!("建 rc_devices 表失败：{}", e))
-    }
 
     /// 配对（或更新名字）。与同步的 `device_pair` 互不影响。
     pub fn rc_device_pair(&self, node_id: &str, name: &str) -> Result<(), String> {
@@ -103,5 +98,74 @@ impl DataStore {
         )
         .map(|_| ())
         .map_err(|e| e.to_string())
+    }
+
+    /// 记下本次会话**实测**走的路径（`lan` / `direct` / `relay`）。
+    ///
+    /// 空串会被忽略：`PathKind::None`（一条路都没通）不该覆盖上一次的有效实测，
+    /// 否则失败一次就把设备行上的「上次走局域网直连」抹成空白。
+    pub fn rc_device_note_path(&self, node_id: &str, path: &str) -> Result<(), String> {
+        if path.is_empty() {
+            return Ok(());
+        }
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE rc_devices SET last_path = ?2 WHERE node_id = ?1",
+            rusqlite::params![node_id, path],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store() -> DataStore {
+        DataStore::new(":memory:").expect("open store")
+    }
+
+    #[test]
+    fn new_device_has_empty_last_path() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        let d = s.rc_device_get("peer-a").unwrap().unwrap();
+        assert_eq!(d.last_path, "", "还没连过就是空串——不能编一个默认值假装知道");
+    }
+
+    #[test]
+    fn note_path_roundtrips_and_overwrites() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        s.rc_device_note_path("peer-a", "relay").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().last_path, "relay");
+        // 下一次会话走了局域网直连 → 覆盖旧值
+        s.rc_device_note_path("peer-a", "lan").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().last_path, "lan");
+    }
+
+    #[test]
+    fn empty_path_does_not_overwrite_measured() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        s.rc_device_note_path("peer-a", "direct").unwrap();
+        // `PathKind::None` 落成空串 ⇒ 必须忽略，否则失败一次就抹掉实测值
+        s.rc_device_note_path("peer-a", "").unwrap();
+        assert_eq!(
+            s.rc_device_get("peer-a").unwrap().unwrap().last_path,
+            "direct",
+            "空路径（一条路都没通）不该覆盖上一次的有效实测"
+        );
+    }
+
+    #[test]
+    fn device_list_carries_last_path() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        s.rc_device_note_path("peer-a", "lan").unwrap();
+        let list = s.rc_device_list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].last_path, "lan", "列表查询的 COLS 必须带上 last_path");
     }
 }

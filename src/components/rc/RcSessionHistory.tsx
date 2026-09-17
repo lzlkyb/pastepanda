@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { rcSessionHistory, type RcHistoryItem } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { formatDuration, formatWhen } from "@/lib/rcSessionStats";
+import { formatDuration, formatWhen, pathKindLabel } from "@/lib/rcSessionStats";
 // D10：历史记录用 rc 会话专用的 hist* 类，不再复用「局域网同步」的 lanDevice* 类
 import styles from "./RemoteComputer.module.css";
 
@@ -36,22 +36,34 @@ export function RcSessionHistory() {
 
   return (
     <div className={styles.histList}>
-      {list.map((h, i) => (
-        <div key={`${h.started_ms}-${i}`} className={styles.histItem}>
-          <div className={styles.histInfo}>
-            <div className={styles.histName}>
-              {h.peer_name || fingerprintOf(h.peer)}
-              <span className={styles.histNameMeta}>
-                {h.dir === "outbound" ? "我发起" : "对方控我"} ·{" "}
-                {h.capability === "control" ? "可控" : "只看"}
-              </span>
-            </div>
-            <div className={styles.histTime}>
-              {formatWhen(h.started_ms)} · {formatDuration(h.duration_ms)} · {h.reason}
+      {list.map((h, i) => {
+        // 路径与延迟都是「本次**实测**」，缺了就整段不显示。
+        // 更早的记录没有这两个字段，不能编默认值——那会变成假信息。
+        const path = pathKindLabel(h.path_kind ?? "");
+        const rtt = h.rtt_avg && h.rtt_avg > 0 ? h.rtt_avg : 0;
+        const rttTitle =
+          rtt && h.rtt_max
+            ? `本次实测：最快 ${h.rtt_min ?? 0}ms / 平均 ${rtt}ms / 最慢 ${h.rtt_max}ms`
+            : undefined;
+        return (
+          <div key={`${h.started_ms}-${i}`} className={styles.histItem}>
+            <div className={styles.histInfo}>
+              <div className={styles.histName}>
+                {h.peer_name || fingerprintOf(h.peer)}
+                <span className={styles.histNameMeta}>
+                  {h.dir === "outbound" ? "我发起" : "对方控我"} ·{" "}
+                  {h.capability === "control" ? "可控" : "只看"}
+                </span>
+              </div>
+              <div className={styles.histTime}>
+                {formatWhen(h.started_ms)} · {formatDuration(h.duration_ms)} · {h.reason}
+                {path ? ` · ${path}` : ""}
+                {rtt ? <span title={rttTitle}> · 延迟 ~{rtt}ms</span> : null}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

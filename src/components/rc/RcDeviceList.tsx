@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { confirmDialog } from "@/lib/confirm";
+import { pathKindLabel } from "@/lib/rcSessionStats";
 import type { RcTargetDevice } from "@/lib/api/rc";
 import {
   deviceAvatarStyle,
@@ -134,6 +135,17 @@ export function RcDeviceList({
                 {presence !== "recent" && presence !== "live" && lastSeen && d.last_seen > 0 && (
                   <span className={styles.metaSub}> · 上次 {lastSeen}</span>
                 )}
+                {/* B-5：上次会话**实测**走的路径。空串 = 还没连过 ⇒ 整段不显示，
+                    不编「绕中继」这类默认值。 */}
+                {(() => {
+                  const path = pathKindLabel(d.last_path ?? "");
+                  return path ? (
+                    <span className={styles.metaSub} title="上次会话实测走的路径（不是推断）">
+                      {" "}
+                      · 上次走{path}
+                    </span>
+                  ) : null;
+                })()}
                 {syncOnly && " · 仅同步配对，未建立远程通道"}
               </div>
             </div>

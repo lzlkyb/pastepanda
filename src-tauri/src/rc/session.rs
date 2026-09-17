@@ -289,16 +289,37 @@ impl RcService {
         // 「这一次到底走的是局域网、公网直连还是绕中继」的唯一记录。
         // ❗ 必须在上面那个块**之外**调：`link` 与 `inner` 是两把锁，
         //    若在持 inner 时加 link，会与 `status()` 的加锁顺序相反（ABBA 死锁）。
-        let path = self.link.detach();
-        if path != crate::sync::path_kind::PathKind::None {
-            log::info!("[RC] 本次会话路径：{}", path.label());
+        let end = self.link.detach();
+        if end.path != crate::sync::path_kind::PathKind::None {
+            log::info!(
+                "[RC] 本次会话路径：{}（RTT 均 {}/峰值 {}ms）",
+                end.path.label(),
+                end.rtt_avg,
+                end.rtt_max
+            );
         }
         // 🔴 会话结束 ≠ 对端关机。原来 touch(false) 会把 conn_state 打成 offline
         // 且把 last_seen 清 0——只要开过一次远程，设备就永远显示离线，直到
         // presence 再喊一嗓子或再成功连上一次。跨网/组播被拦时就再也好不了。
         // 改为 touch(true)：刷新 last_seen、保持 online，由 stale 窗口自然过期。
         let _ = self.store.rc_device_touch(&peer, true);
-        super::history::append_history(&self.store, &peer, &peer_name, cap, phase, started, reason);
+        // B-5：把这次**实测**的路径落到设备行，下次打开面板就能看到
+        // 「上次走的是局域网直连」——而不是靠「有没有听到组播」去猜。
+        // 空串（一条路都没通）会被 `rc_device_note_path` 忽略，不会抹掉上一次的实测值。
+        let _ = self.store.rc_device_note_path(&peer, end.path.as_str());
+        // C-4：历史里带上路径与网速摘要（旧记录没有这几个字段，前端按「没有」处理）。
+        super::history::append_history(
+            &self.store,
+            super::history::HistoryFacts {
+                peer: &peer,
+                peer_name: &peer_name,
+                cap,
+                phase,
+                started_ms: started,
+                reason,
+                end,
+            },
+        );
         self.clear_frame();
         self.note_rtt(0);
         // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，

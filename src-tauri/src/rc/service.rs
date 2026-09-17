@@ -177,8 +177,11 @@ impl RcService {
     ///   界面就报「已连接」，把真正的首包延迟掩盖掉。
     pub fn note_rtt(&self, rtt_ms: i64) {
         self.stream.note_rtt(rtt_ms);
+        // ❗ `rtt_ms == 0` 是**清零复位**（`end_session` 与发起失败路径都调它），
+        //    不是一次测量 —— 别把它当成「收到 pong」，否则会话一建立界面就报
+        //    「已连接」，把首包延迟掩盖掉。
         if rtt_ms > 0 {
-            self.link.note_pong();
+            self.link.note_pong(rtt_ms);
         }
     }
 
@@ -739,8 +742,9 @@ impl RcService {
                         }
                     };
                     if cancelled {
-                        // 用户已取消：先把链路句柄收掉，再关掉刚建好的流
-                        svc.link.detach();
+                        // 用户已取消：先把链路句柄收掉，再关掉刚建好的流。
+                        // 交回的路径/网速在这里没有意义（会话根本没成立），显式丢弃。
+                        let _ = svc.link.detach();
                         drop(send);
                         drop(recv);
                         return;
@@ -763,7 +767,8 @@ impl RcService {
                     }
                     // `dial_and_request` 在连接通了之后就已经 attach（那时才可能走到
                     // Request 被拒），会话没建成 → 必须清掉，否则路径标签挂在死连接上。
-                    svc.link.detach();
+                    // 交回的路径同样丢弃：一次失败的发起不该被记成「上次走的哪条路」。
+                    let _ = svc.link.detach();
                     {
                         let mut g = svc
                             .last_outbound_error

@@ -28,10 +28,66 @@ use crate::sync::path_kind::{self, PathKind};
 use iroh::endpoint::Connection;
 use std::sync::Mutex;
 
+/// 会话收尾时交回的东西：这一程**走的是哪条路** + **网速摘要**。
+///
+/// 两者都在 `detach` 时一次性取出——因为它们都只能从活连接读，
+/// 分开两次调用容易出现「读了一个、另一个已经被清空」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinkEnd {
+    /// 本次实际走的路径。
+    pub path: PathKind,
+    /// RTT 摘要（毫秒）：`(min, avg, max)`；全 0 = 本会话没采到样本。
+    pub rtt_min: i64,
+    pub rtt_avg: i64,
+    pub rtt_max: i64,
+}
+
+/// RTT 采样累积（**会话内内存中，不落盘**）。
+///
+/// # 为什么是摘要而不是曲线
+///
+/// 会话历史存在 `config` 的 JSON blob 里（`rc.history::KEY`，最多 20 条），
+/// 每次 `save_config` 都是**整份写盘**。一条 10 分钟的会话按每秒采样就是
+/// 600 个点，20 条历史 = 一万多个数字，成本和收益完全不成比例。
+/// 而「这次会话网速怎么样」用 min/avg/max 就答完了。
+#[derive(Default, Clone, Copy)]
+struct RttAcc {
+    min: i64,
+    max: i64,
+    sum: i64,
+    count: u32,
+}
+
+impl RttAcc {
+    fn push(&mut self, rtt_ms: i64) {
+        // ❗ 只在 `> 0` 时采样。`RcService::note_rtt(0)` 是**清零复位**、
+        //    不是一次测量；把它算进来会让 avg 被拽向 0，看着像「网速突然变好」。
+        if rtt_ms <= 0 {
+            return;
+        }
+        self.min = if self.count == 0 {
+            rtt_ms
+        } else {
+            self.min.min(rtt_ms)
+        };
+        self.max = self.max.max(rtt_ms);
+        self.sum += rtt_ms;
+        self.count += 1;
+    }
+
+    /// `(min, avg, max)`；没采到样本时全 0——前端据此不显示这一格。
+    fn summary(&self) -> (i64, i64, i64) {
+        if self.count == 0 {
+            return (0, 0, 0);
+        }
+        (self.min, self.sum / i64::from(self.count), self.max)
+    }
+}
+
 /// 会话链路状态。
 ///
 /// 生命周期与会话对齐：`attach` 在建会话时登记连接，`detach` 在收尾时清空
-/// 并交回本次走的路（供历史记录落库）。无会话时三个字段都是「空」。
+/// 并交回本次走的路与网速摘要（供历史记录落库）。无会话时字段都是「空」。
 pub struct LinkState {
     /// 会话的 iroh 连接句柄（clone 的 handle）。连接关闭后它仍在，但
     /// `paths()` 会返回最后一份快照——所以只能用来读，不能用来判在线。
@@ -41,6 +97,8 @@ pub struct LinkState {
     /// 上一次上报给前端的路径档位。用于「换路了」通知去重
     /// （多实例并发轮询 `rc_status` 时，变化只该被消费一次）。
     reported: Mutex<PathKind>,
+    /// 本会话的 RTT 采样累积（`detach` 时交出，`attach` 时清零）。
+    rtt: Mutex<RttAcc>,
 }
 
 impl Default for LinkState {
@@ -55,6 +113,12 @@ impl LinkState {
             conn: Mutex::new(None),
             last_pong_ms: Mutex::new(0),
             reported: Mutex::new(PathKind::None),
+            rtt: Mutex::new(RttAcc {
+                min: 0,
+                max: 0,
+                sum: 0,
+                count: 0,
+            }),
         }
     }
 
@@ -66,23 +130,37 @@ impl LinkState {
         *self.conn.lock().unwrap_or_else(|p| p.into_inner()) = Some(conn.clone());
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = 0;
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
+        *self.rtt.lock().unwrap_or_else(|p| p.into_inner()) = RttAcc::default();
     }
 
-    /// 会话收尾：交回本次走的路（落库/历史用）并清空。
+    /// 会话收尾：交回本次走的路与网速摘要（落库/历史用）并清空。
     ///
     /// ❗ 必须在会话还没彻底凉的时候调，或者接受 `paths()` 的最后快照——
     ///   两者都能拿到值，只是前者更准（见 `path_kind::of_conn` 的注释）。
-    pub fn detach(&self) -> PathKind {
-        let kind = self.path_kind().unwrap_or(PathKind::None);
+    pub fn detach(&self) -> LinkEnd {
+        let path = self.path_kind().unwrap_or(PathKind::None);
+        let (rtt_min, rtt_avg, rtt_max) =
+            self.rtt.lock().unwrap_or_else(|p| p.into_inner()).summary();
         *self.conn.lock().unwrap_or_else(|p| p.into_inner()) = None;
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = 0;
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
-        kind
+        *self.rtt.lock().unwrap_or_else(|p| p.into_inner()) = RttAcc::default();
+        LinkEnd {
+            path,
+            rtt_min,
+            rtt_avg,
+            rtt_max,
+        }
     }
 
-    /// 收到对端 pong。**链路活性的唯一证据**——发送侧的成功不算。
-    pub fn note_pong(&self) {
+    /// 收到对端 pong。`rtt_ms` 是本次往返时延（`<= 0` 表示这不是一次测量，
+    /// 见 `RttAcc::push`）。**链路活性的唯一证据**——发送侧的成功不算。
+    pub fn note_pong(&self, rtt_ms: i64) {
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = super::service::now_ms();
+        self.rtt
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(rtt_ms);
     }
 
     /// 最后一次 pong 的时刻（epoch ms）；0 = 本会话还没收到过。
@@ -140,26 +218,70 @@ mod tests {
     fn test_收到pong才记时间_发送成功不算() {
         let l = LinkState::new();
         assert_eq!(l.last_pong_ms(), 0, "还没收到任何 pong");
-        l.note_pong();
+        l.note_pong(20);
         assert!(l.last_pong_ms() > 0, "收到 pong 后必须留下时间戳");
     }
 
     #[test]
     fn test_重复note_pong只保留最近一次() {
         let l = LinkState::new();
-        l.note_pong();
+        l.note_pong(20);
         let first = l.last_pong_ms();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        l.note_pong();
+        l.note_pong(20);
         assert!(l.last_pong_ms() >= first, "后一次必须不早于前一次");
     }
 
     #[test]
     fn test_detach之后状态清空_不能继承上一会话的心跳() {
         let l = LinkState::new();
-        l.note_pong();
+        l.note_pong(20);
         let _ = l.detach();
         assert_eq!(l.last_pong_ms(), 0, "新会话不能继承上一个会话的「刚刚还有心跳」");
         assert_eq!(l.path_kind(), None);
+    }
+
+    #[test]
+    fn test_detach交回rtt摘要() {
+        let l = LinkState::new();
+        for rtt in [40, 20, 60] {
+            l.note_pong(rtt);
+        }
+        let end = l.detach();
+        assert_eq!(end.rtt_min, 20);
+        assert_eq!(end.rtt_max, 60);
+        assert_eq!(end.rtt_avg, 40, "(40+20+60)/3");
+    }
+
+    #[test]
+    fn test_rtt摘要忽略非正样本() {
+        let l = LinkState::new();
+        l.note_pong(30);
+        // 🔴 `note_rtt(0)` 是**清零复位**、不是一次测量。若把它算进来，
+        //    avg 会被拽向 0，看起来像「网速突然变好」。
+        l.note_pong(0);
+        l.note_pong(-5);
+        let end = l.detach();
+        assert_eq!(end.rtt_min, 30, "非正样本不该参与 min");
+        assert_eq!(end.rtt_avg, 30, "非正样本不该参与平均");
+        assert_eq!(end.rtt_max, 30);
+    }
+
+    #[test]
+    fn test_没采样时rtt摘要全零_前端据此不显示() {
+        let l = LinkState::new();
+        let end = l.detach();
+        assert_eq!((end.rtt_min, end.rtt_avg, end.rtt_max), (0, 0, 0));
+    }
+
+    #[test]
+    fn test_新会话的rtt摘要不继承上一会话() {
+        let l = LinkState::new();
+        l.note_pong(100);
+        let _ = l.detach();
+        // 上一程的 100 不该掺进来 ⇒ 新会话只剩 50 这一个样本
+        l.note_pong(50);
+        let end = l.detach();
+        assert_eq!(end.rtt_avg, 50, "detach 必须清空采样累积");
     }
 }
