@@ -324,6 +324,8 @@ interface AppState {
   setStackMode: (active: boolean) => void;
   stackPush: (item: HistoryItem) => void;
   stackMarkPasted: () => void;
+  /** 索引粘贴专用：取出**指定**条目并标记为已贴（`stackMarkPasted` 只动栈顶） */
+  stackMarkPastedById: (id: string) => void;
   /** P1 拖拽重排：把 fromId 拖到 toId 的位置（仅在未粘贴的 stackItems 中排序，不影响已粘贴项） */
   stackReorder: (fromId: string, toId: string) => void;
   /** P1 星号删除角标：从 stackItems 中直接移除该条（不粘贴，不计入已粘贴统计） */
@@ -887,6 +889,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       const next = s.stackItems.filter((i) => i.id !== id);
       if (next.length === s.stackItems.length) return s;
       return { stackItems: next };
+    }),
+  /**
+   * 索引粘贴专用：把**指定**条目取走并记为已贴。
+   *
+   * ❗ 必须是「移除」而不是像 `stackMarkPasted` 循环态那样「轮转到队尾」：
+   *   轮转会打乱用户显式指定的位置，而移除不破坏「`stackItems[0]` 恒为未贴」这个
+   *   不变量 —— `loopProgress`、chip 的「下一个粘贴」标签、浮标预览都只看 `[0]`。
+   * ❗ 与 `stackRemoveItem` 的区别：那个是「删掉、不算贴过」（`stackPasted` 不动），
+   *   这个是「贴过了」（计数 +1 且进 `stackDoneIds`，横幅已贴区会显示它）。
+   */
+  stackMarkPastedById: (id) =>
+    set((s) => {
+      const hit = s.stackItems.find((i) => i.id === id);
+      if (!hit) return s;
+      const done = new Set(s.stackDoneIds);
+      done.add(id);
+      const rest = s.stackItems.filter((i) => i.id !== id);
+      // 已贴出去的部分不能再被「撤销拆分」整表塞回队列重贴一遍（同 stackMarkPasted）
+      const base = { stackLastSplit: splitAfterPasted(s.stackLastSplit, [id]) };
+      // 循环态：取走这条后若队列剩下的**全贴过了**，就整轮复位（与 stackMarkPasted 同口径）。
+      // 不复位的话栈顶会变成已贴项 —— 待贴区空、却仍在报剩余条数，浮标预览也指向一条贴过的内容。
+      if (s.stackLoopPaste && rest.length > 0 && rest.every((i) => done.has(i.id))) {
+        return { ...base, stackItems: rest, stackDoneIds: new Set(), stackLoopRound: s.stackLoopRound + 1, stackPasted: 0 };
+      }
+      return { ...base, stackItems: rest, stackDoneIds: done, stackPasted: s.stackPasted + 1 };
     }),
   toggleStackTabAdvance: () => set((s) => ({ stackTabAdvance: !s.stackTabAdvance })),
   /**

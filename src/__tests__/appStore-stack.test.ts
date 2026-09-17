@@ -842,3 +842,99 @@ describe("stackConsumeMerged", () => {
   });
 
 });
+
+// ============================================================
+// stackMarkPastedById（索引粘贴在栈模式下取走**指定**条目）
+// ============================================================
+describe("stackMarkPastedById", () => {
+  it("取出指定条目并记为已贴，其余条目顺序不变", () => {
+    useAppStore.setState({
+      stackMode: true,
+      stackItems: [
+        makeItem({ id: "a", text: "A" }),
+        makeItem({ id: "b", text: "B" }),
+        makeItem({ id: "c", text: "C" }),
+      ],
+      stackDoneIds: new Set(),
+      stackPasted: 0,
+    });
+
+    useAppStore.getState().stackMarkPastedById("b");
+    const s = useAppStore.getState();
+
+    expect(s.stackItems.map((i) => i.id)).toEqual(["a", "c"]);
+    expect([...s.stackDoneIds]).toEqual(["b"]);
+    expect(s.stackPasted).toBe(1);
+  });
+
+  it("id 不存在时是 no-op（别误取走别的条目）", () => {
+    useAppStore.setState({
+      stackMode: true,
+      stackItems: [makeItem({ id: "a", text: "A" })],
+      stackDoneIds: new Set(),
+      stackPasted: 0,
+    });
+
+    useAppStore.getState().stackMarkPastedById("nope");
+    const s = useAppStore.getState();
+
+    expect(s.stackItems.map((i) => i.id)).toEqual(["a"]);
+    expect(s.stackPasted).toBe(0);
+  });
+
+  it("🔴 循环态下是「移除」而不是「轮转到队尾」（轮转会打乱用户显式指定的位置）", () => {
+    useAppStore.setState({
+      stackMode: true,
+      stackLoopPaste: true,
+      stackLoopRound: 1,
+      stackItems: [
+        makeItem({ id: "a", text: "A" }),
+        makeItem({ id: "b", text: "B" }),
+        makeItem({ id: "c", text: "C" }),
+      ],
+      stackDoneIds: new Set(),
+      stackPasted: 0,
+    });
+
+    useAppStore.getState().stackMarkPastedById("a");
+    const s = useAppStore.getState();
+
+    // 轮转的话会得到 [b, c, a]；移除才是 [b, c]
+    expect(s.stackItems.map((i) => i.id)).toEqual(["b", "c"]);
+    // 不变量：栈顶仍是本轮没贴过的那条（浮标预览 / chip 标签都靠它）
+    expect(s.stackDoneIds.has(s.stackItems[0]!.id)).toBe(false);
+  });
+
+  it("循环态取走最后一条未贴的 → 整轮复位（栈顶不会变成已贴项）", () => {
+    useAppStore.setState({
+      stackMode: true,
+      stackLoopPaste: true,
+      stackLoopRound: 1,
+      stackItems: [
+        makeItem({ id: "a", text: "A" }),
+        makeItem({ id: "b", text: "B" }),
+      ],
+      stackDoneIds: new Set(["a"]), // a 已贴
+      stackPasted: 1,
+    });
+
+    useAppStore.getState().stackMarkPastedById("b"); // 取走最后一条未贴的
+    const s = useAppStore.getState();
+
+    expect(s.stackItems.map((i) => i.id)).toEqual(["a"]);
+    expect(s.stackDoneIds.size).toBe(0); // 整轮清空 → a 回到「未贴」
+    expect(s.stackLoopRound).toBe(2);
+    expect(s.stackPasted).toBe(0);
+  });
+
+  it("取走的是最近一次表格拆分的行 → 撤销记录同步清理（不能整表塞回来重贴）", () => {
+    useAppStore.getState().setStackMode(true);
+    useAppStore.getState().stackPushOrSplit(makeItem({ id: "raw", text: "列A\t列B\n1\ta\n2\tb" }));
+    const first = useAppStore.getState().stackItems[0]!;
+
+    useAppStore.getState().stackMarkPastedById(first.id);
+
+    const split = useAppStore.getState().stackLastSplit;
+    expect(split === null || !split.itemIds.includes(first.id)).toBe(true);
+  });
+});

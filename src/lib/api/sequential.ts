@@ -4,6 +4,9 @@
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { pasteTextGuarded } from "./paste";
+// 直接引 stack 模块而不是 @/lib/api 桶文件（lib 层引桶容易绕出循环依赖，同上一行）。
+// 依赖是单向的：stack.ts 不 import 本文件。
+import { afterStackItemRemoved } from "./stack";
 
 /** 依次粘贴互斥锁：防止快速连按导致同一条被粘贴两次 */
 let seqPasteBusy = false;
@@ -101,12 +104,48 @@ async function sequentialPasteInner() {
   }
 }
 
-/** 索引粘贴：粘贴第 N 条文本记录 (1-based) */
+/** 索引粘贴：粘贴第 N 条记录 (1-based)。栈模式下作用于**队列**，否则作用于过滤后的历史列表 */
 export async function indexPaste(n: number) {
   const store = useAppStore.getState();
+  const idx = n - 1; // 转为 0-based
+
+  /**
+   * 栈模式：作用于 `stackItems`，不是历史列表。
+   *
+   * ❗ 这里以前**无条件**取 `getFilteredItems()`，于是开栈时按 Ctrl+Alt+1~9 贴的是历史
+   *   列表第 N 条 —— 而浮标正显示着「下一条 = 栈里的某条」，两者根本不是一个队列，
+   *   用户在 Excel 里按数字键会贴出几天前的内容。
+   * ❗ 那行还带着 `.filter(h => h.type === "text")`：栈里的图片/文件会被静默跳过。
+   *   所以这里改走 `pasteHistoryItem`（与 `stackPasteNext` 同一条类型分派链）。
+   */
+  if (store.stackMode) {
+    const items = store.stackItems;
+    if (idx < 0 || idx >= items.length) {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `栈里只有 ${items.length} 条，没有第 ${n} 条`, type: "info" } }));
+      return;
+    }
+    const item = items[idx];
+    if (!item) return;
+
+    // 下标传 -1：栈序没有列表位置，这是既有约定（同 `stackPasteNext`）。
+    // 第三参 headless=true 的理由也同它：Ctrl+Alt+1~9 是无窗口热键，必须实时抓取目标窗口，
+    // 否则内容会飞到主窗口几十年前那次激活过的应用里。
+    const { pasteHistoryItem } = await import("@/lib/pasteItem");
+    const { ok } = await pasteHistoryItem(item, -1, true);
+    if (!ok) return; // 失败原因由底层 API 负责提示，条目留在队列里不动
+
+    // ❗ 必须真的把它从队列取走，否则横幅/浮标的「剩余」不准、用户还会重复贴同一条。
+    //   用 `stackMarkPastedById` 而不是 `stackMarkPasted` —— 后者只动栈顶。
+    useAppStore.getState().stackMarkPastedById(item.id);
+    const exited = afterStackItemRemoved();
+    window.dispatchEvent(new CustomEvent("app-toast", {
+      detail: { message: exited ? `已粘贴第 ${n} 条，队列已空并退出栈模式` : `已粘贴第 ${n} 条`, type: "success" },
+    }));
+    return;
+  }
+
   // 修复 Low：与 UI 一致，基于过滤后列表定位第 N 条
   const textItems = store.getFilteredItems().filter((h) => h.type === "text");
-  const idx = n - 1; // 转为 0-based
 
   if (idx < 0 || idx >= textItems.length) {
     // U37：越界不再静默，明确告知当前只有多少条

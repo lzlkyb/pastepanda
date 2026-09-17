@@ -153,7 +153,7 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
           <SubTitle>全局热键</SubTitle>
           <KeyRow desc="唤出 / 隐藏窗口" value={hotkeyShow} />
           <KeyRow desc="依次粘贴（逐条文本）" value={hotkeySeq} />
-          <KeyRow desc="索引粘贴第 N 条" value="Ctrl+Alt+1~9" isStatic />
+          <KeyRow desc="索引粘贴第 N 条（栈内走队列）" value="Ctrl+Alt+1~9" isStatic />
           <KeyRow desc="收集模式 开/关" value={hotkeyStackToggle} />
           <KeyRow desc="粘贴收集内容（栈顶）" value={hotkeyStackPaste} />
           <KeyRow desc="快捷粘贴面板（类 Win+V）" value={hotkeyQuickPaste} />

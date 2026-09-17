@@ -205,3 +205,114 @@ describe("无窗口热键入口必须带 trigger:headless（三条清单的守�
     expect(invoke).toHaveBeenCalledWith("paste_text", { text: "第二条", trigger: "headless" });
   });
 });
+
+/**
+ * 🔴 栈模式下的索引粘贴必须作用于**队列**（`stackItems`），不是历史列表。
+ *
+ * 修复前是两个同源问题：
+ * ① 旧实现无条件取 `getFilteredItems()` —— 开栈时按 Ctrl+Alt+1~9 贴的是**历史列表**
+ *    第 N 条，而浮标正显示着「下一条 = 栈里的某条」，两者根本不是一个队列，
+ *    用户在 Excel 里按数字键会贴出几天前的内容；
+ * ② 旧实现那行还带着 `.filter(h => h.type === "text")` —— 栈里的图片/文件被**静默跳过**。
+ *    所以这里必须改走 `pasteHistoryItem`（与 `stackPasteNext` 同一条类型分派链）。
+ */
+describe("栈模式下的索引粘贴（作用于队列而非历史列表）", () => {
+  /** 进栈模式并铺好队列 */
+  function enterStack(items: HistoryItem[]) {
+    useAppStore.setState({
+      stackMode: true,
+      stackItems: items,
+      stackDoneIds: new Set(),
+      stackPasted: 0,
+      stackLoopPaste: false,
+      stackLoopRound: 1,
+    });
+  }
+
+  it("贴的是栈里第 N 条，不是历史列表第 N 条", async () => {
+    // 历史与栈故意不同序：若仍取 getFilteredItems()，贴出去的会是「历史第二条」
+    resetStore([
+      makeItem({ id: "hist-1", text: "历史第一条" }),
+      makeItem({ id: "hist-2", text: "历史第二条" }),
+    ]);
+    enterStack([
+      makeItem({ id: "s1", text: "栈第一条" }),
+      makeItem({ id: "s2", text: "栈第二条" }),
+    ]);
+
+    await indexPaste(2);
+
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "栈第二条", trigger: "headless" });
+  });
+
+  it("贴走的条目真的从队列移除（否则剩余数不准且会重复贴）", async () => {
+    resetStore([]);
+    enterStack([
+      makeItem({ id: "s1", text: "A" }),
+      makeItem({ id: "s2", text: "B" }),
+      makeItem({ id: "s3", text: "C" }),
+    ]);
+
+    await indexPaste(2);
+
+    const s = useAppStore.getState();
+    expect(s.stackItems.map((i) => i.id)).toEqual(["s1", "s3"]);
+    expect(s.stackDoneIds.has("s2")).toBe(true);
+    expect(s.stackPasted).toBe(1);
+  });
+
+  it("栈里的图片条目不再被静默跳过（旧实现按 type==='text' 过滤掉它）", async () => {
+    resetStore([]);
+    enterStack([makeItem({ id: "img", text: "", type: "image", content: "C:/tmp/a.png" })]);
+
+    await indexPaste(1);
+
+    expect(vi.mocked(invoke).mock.calls.some((c) => c[0] === "paste_image")).toBe(true);
+  });
+
+  it("越界时提示的是栈的条数，不是历史记录条数", async () => {
+    resetStore([
+      makeItem({ id: "hist-1", text: "历史一" }),
+      makeItem({ id: "hist-2", text: "历史二" }),
+      makeItem({ id: "hist-3", text: "历史三" }),
+    ]);
+    enterStack([makeItem({ id: "s1", text: "栈一" })]);
+
+    const messages: string[] = [];
+    const onToast = (e: Event) =>
+      messages.push((e as CustomEvent<{ message: string }>).detail.message);
+    window.addEventListener("app-toast", onToast);
+    try {
+      await indexPaste(5);
+    } finally {
+      window.removeEventListener("app-toast", onToast);
+    }
+
+    expect(messages.some((m) => m.includes("栈里只有 1 条"))).toBe(true);
+    // 不能拿历史条数去报 —— 那会告诉用户「有 3 条」，而栈里其实只有 1 条
+    expect(messages.some((m) => m.includes("文本记录"))).toBe(false);
+    expect(vi.mocked(invoke).mock.calls.some((c) => c[0] === "paste_text")).toBe(false);
+  });
+
+  it("贴走最后一条后自动退出栈模式（与 Ctrl+Alt+P 的收尾同口径）", async () => {
+    resetStore([]);
+    enterStack([makeItem({ id: "only", text: "唯一一条" })]);
+
+    await indexPaste(1);
+
+    const s = useAppStore.getState();
+    expect(s.stackMode).toBe(false);
+    expect(s.stackItems).toEqual([]);
+  });
+
+  it("非栈模式下仍作用于历史列表（回归钉子：栈分支不能吃掉原路径）", async () => {
+    resetStore([
+      makeItem({ id: "hist-1", text: "历史第一条" }),
+      makeItem({ id: "hist-2", text: "历史第二条" }),
+    ]);
+
+    await indexPaste(2);
+
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "历史第二条", trigger: "headless" });
+  });
+});

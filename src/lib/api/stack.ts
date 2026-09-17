@@ -121,6 +121,28 @@ export async function stackPasteNext(): Promise<boolean> {
   }
 }
 
+/**
+ * 栈里被取走一条之后的收尾：队列空了就自动退出栈模式，否则同步浮标。
+ *
+ * ❗ 索引粘贴（`indexPaste`，Ctrl+Alt+1~9）在栈模式下必须走这里。不共用的话会出现
+ *   「Ctrl+Alt+P 贴完最后一条自动退栈、Ctrl+Alt+3 贴完却退不掉」—— 同一个队列两套收尾语义。
+ *   toast 仍由调用方负责（两条路径的文案不同：一条报剩余，一条报「已粘贴第 N 条」）。
+ *
+ * @returns 是否因队列清空而自动退出了栈模式
+ */
+export function afterStackItemRemoved(): boolean {
+  const s = useAppStore.getState();
+  if (s.stackItems.length === 0) {
+    s.exitStackMode();
+    syncStackModeToBackend(false);
+    hudAllDone();
+    return true;
+  }
+  const info = loopProgress(s.stackItems, s.stackDoneIds);
+  void hudPastedOk(info.remaining);
+  return false;
+}
+
 /** 全部粘贴：间隔 300ms 连续粘贴剩余全部条目 */
 let stackPasteAllAbort = false; // U58：中止标志
 
