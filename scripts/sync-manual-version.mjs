@@ -118,13 +118,28 @@ const rules = [
     repl: () => giteeUrl,
   },
   {
+    name: "Gitee 下载链接（tag 页降级形态）",
+    // ❗ 上一条规则只认 releases/download 与 attach_files 两种形态，而降级分支写进去的
+    //    恰恰是第三种：**releases/tag/{tag}**。于是「先降级、等 CI 出包后再同步成直链」
+    //    这条路根本走不通——降级一次之后这条链接再也匹配不到任何规则，版本号被永久冻结。
+    //    （2026-09-17 实测：首页那条一直停在 v7.1.5，而 GitHub 侧已经是 v7.2.0。）
+    //    补一条只认 tag 形态的规则，让下一轮 prebuild 能把它换成 canonical 直链；
+    //    两种形态都写成自身即为幂等（降级时写 tag、API 可用时写 attach_files）。
+    re: /https:\/\/gitee\.com\/lzul\/pastepanda\/releases\/tag\/v?\d+\.\d+\.\d+/g,
+    repl: () => giteeUrl,
+  },
+  {
     name: "品牌版本",
-    re: /(<span class="ver">)v?\d+\.\d+\.\d+(<\/span>)/g,
+    // ❗ 必须容忍 span 上的其它属性：`docs/manual/index.html` 这两处带着
+    //    `data-page-node-id`（Pages 编辑器注的），只写 `<span class="ver">` 匹配不到，
+    //    于是那页的品牌名与顶栏版本**从 v7.1.4 起就再没被同步过**——2026-09-17 实测：
+    //    下载按钮已经是 v7.2.1，页面标题栏还写着 v7.1.4。
+    re: /(<span class="ver"[^>]*>)v?\d+\.\d+\.\d+(<\/span>)/g,
     repl: (_, a, b) => `${a}v${version}${b}`,
   },
   {
     name: "顶栏版本",
-    re: /(<span class="hw-tver">)v?\d+\.\d+\.\d+(<\/span>)/g,
+    re: /(<span class="hw-tver"[^>]*>)v?\d+\.\d+\.\d+(<\/span>)/g,
     repl: (_, a, b) => `${a}v${version}${b}`,
   },
   {
