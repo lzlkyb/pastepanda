@@ -49,6 +49,19 @@ pub(super) struct StreamCfg {
     last_activity_ms: AtomicI64,
     /// 发起端最近一次测得的 RTT（毫秒）；0 = 尚未测到。
     last_rtt_ms: AtomicI64,
+    /// 发起端上报的 RTT（NetHint）；被控端据此缩 H.264 码率。0 = 尚未收到。
+    peer_rtt_ms: AtomicI64,
+}
+
+/// RTT → 码率缩放百分比（25–100）。局域网 <50ms 全速；跨网逐步砍。
+pub fn bitrate_scale_for_rtt(rtt_ms: i64) -> u32 {
+    match rtt_ms.max(0) {
+        0..=49 => 100,
+        50..=99 => 80,
+        100..=199 => 60,
+        200..=399 => 40,
+        _ => 25,
+    }
 }
 
 impl StreamCfg {
@@ -57,6 +70,7 @@ impl StreamCfg {
             opts: Mutex::new(StreamOpts::default()),
             last_activity_ms: AtomicI64::new(0),
             last_rtt_ms: AtomicI64::new(0),
+            peer_rtt_ms: AtomicI64::new(0),
         }
     }
 
@@ -66,6 +80,17 @@ impl StreamCfg {
 
     pub(super) fn rtt_ms(&self) -> i64 {
         self.last_rtt_ms.load(Ordering::Relaxed)
+    }
+
+    /// 被控端：记录对端上报的 RTT，并给出当前码率缩放（%）。
+    pub(super) fn set_peer_rtt(&self, rtt_ms: i64) -> u32 {
+        let v = rtt_ms.max(0);
+        self.peer_rtt_ms.store(v, Ordering::Relaxed);
+        self.bitrate_scale()
+    }
+
+    pub(super) fn bitrate_scale(&self) -> u32 {
+        bitrate_scale_for_rtt(self.peer_rtt_ms.load(Ordering::Relaxed))
     }
 
     /// 会话建立时用本机配置初始化推流参数（画质与范围由调用方从配置解析好后传入）。
@@ -79,12 +104,13 @@ impl StreamCfg {
         g.virtual_screen = virtual_screen;
         g.monitor = -1;
         g.force_jpeg = false;
+        self.peer_rtt_ms.store(0, Ordering::Relaxed);
     }
 
     /// 发起端在会话中改画质。
     pub(super) fn set_quality(&self, quality: &str) -> Result<(), String> {
-        if !matches!(quality, "sharp" | "balanced" | "smooth") {
-            return Err("画质档只能是 sharp / balanced / smooth".into());
+        if !matches!(quality, "uhd" | "ultra" | "sharp" | "balanced" | "smooth") {
+            return Err("画质档只能是 uhd / ultra / sharp / balanced / smooth".into());
         }
         let mut g = self.opts.lock().unwrap_or_else(|p| p.into_inner());
         g.profile = super::video::EncodeProfile::from_str(quality);
@@ -230,13 +256,13 @@ mod tests {
     }
 
     #[test]
-    fn 画质三档合法其余被拒() {
+    fn 画质五档合法其余被拒() {
         let s = c();
-        for q in ["sharp", "balanced", "smooth"] {
+        for q in ["uhd", "ultra", "sharp", "balanced", "smooth"] {
             assert!(s.set_quality(q).is_ok(), "{q} 应合法");
         }
-        let err = s.set_quality("ultra").expect_err("未定义的档位必须被拒");
-        assert_eq!(err, "画质档只能是 sharp / balanced / smooth");
+        let err = s.set_quality("4k").expect_err("未定义的档位必须被拒");
+        assert_eq!(err, "画质档只能是 uhd / ultra / sharp / balanced / smooth");
     }
 
     #[test]
@@ -275,6 +301,19 @@ mod tests {
         assert_eq!(s.rtt_ms(), 0);
         s.note_rtt(37);
         assert_eq!(s.rtt_ms(), 37);
+    }
+
+    #[test]
+    fn rtt_码率缩放分档() {
+        assert_eq!(bitrate_scale_for_rtt(0), 100);
+        assert_eq!(bitrate_scale_for_rtt(30), 100);
+        assert_eq!(bitrate_scale_for_rtt(80), 80);
+        assert_eq!(bitrate_scale_for_rtt(150), 60);
+        assert_eq!(bitrate_scale_for_rtt(250), 40);
+        assert_eq!(bitrate_scale_for_rtt(800), 25);
+        let s = c();
+        assert_eq!(s.set_peer_rtt(200), 40);
+        assert_eq!(s.bitrate_scale(), 40);
     }
 
     #[test]

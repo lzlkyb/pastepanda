@@ -3,6 +3,8 @@
 export type FitMode = "fit" | "actual" | "fill";
 
 export function qualityLabel(q: string): string {
+  if (q === "uhd") return "原生";
+  if (q === "ultra") return "超清";
   if (q === "sharp") return "清晰";
   if (q === "smooth") return "流畅";
   return "均衡";

@@ -54,12 +54,29 @@ export function useRcFrames(sessionId: string, canvasRef: React.RefObject<HTMLCa
     // in-flight 守卫：解码/加载慢时，若上一帧还没落地就跳过本次 tick，
     // 避免后发的 tick 先把新帧落地、早发的 tick 后落地造成的画面回跳。
     let inflight = false;
+    let idleTicks = 0;
+    let pollMs = 80;
+    let timer: number | null = null;
+    const schedule = () => {
+      timer = window.setTimeout(() => void tickThenSchedule(), pollMs);
+    };
+    const tickThenSchedule = async () => {
+      await tick();
+      if (alive) schedule();
+    };
     const tick = async () => {
       if (inflight) return;
       inflight = true;
       try {
         const f = await rcLatestFrame();
-        if (!alive || !f || f.at_ms === lastAt.current) return;
+        if (!alive || !f || f.at_ms === lastAt.current) {
+          // 无新帧：拉长间隔，降低 IPC（4K base64 空拉很贵）
+          idleTicks = Math.min(idleTicks + 1, 20);
+          if (idleTicks > 3) pollMs = 200;
+          return;
+        }
+        idleTicks = 0;
+        pollMs = 80;
         lastAt.current = f.at_ms;
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -143,11 +160,10 @@ export function useRcFrames(sessionId: string, canvasRef: React.RefObject<HTMLCa
         inflight = false;
       }
     };
-    void tick();
-    const t = window.setInterval(() => void tick(), 100);
+    void tickThenSchedule();
     return () => {
       alive = false;
-      window.clearInterval(t);
+      if (timer != null) window.clearTimeout(timer);
       h264?.close();
     };
   }, [sessionId, visible, canvasRef]);

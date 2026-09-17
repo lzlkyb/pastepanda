@@ -26,6 +26,8 @@ pub(super) struct OutboundVideo {
     /// 画布逻辑尺寸：整帧时从 JPEG 解出，脏块沿用。
     canvas_w: u32,
     canvas_h: u32,
+    /// 最近一次告知对端的 RTT；变化明显才再发 NetHint。
+    last_hint_rtt: i64,
 }
 
 impl OutboundVideo {
@@ -51,6 +53,7 @@ impl OutboundVideo {
             pending_rect: None,
             canvas_w: 0,
             canvas_h: 0,
+            last_hint_rtt: -1,
         })
     }
 
@@ -129,6 +132,23 @@ impl OutboundVideo {
                             if let Some(ts) = v.get("ts").and_then(|x| x.as_i64()) {
                                 let rtt = now_ms().saturating_sub(ts);
                                 self.svc.note_rtt(rtt);
+                                // R5.B2：RTT 明显变化时告知被控端缩/放码率（±40ms 或跨 100ms 档）
+                                let prev = self.last_hint_rtt;
+                                let need = prev < 0
+                                    || rtt.abs_diff(prev) >= 40
+                                    || (prev < 100) != (rtt < 100)
+                                    || (prev < 200) != (rtt < 200);
+                                if need {
+                                    self.last_hint_rtt = rtt;
+                                    let svc = self.svc.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        let _ = svc
+                                            .send_input(&super::input::InputEvent::NetHint {
+                                                rtt_ms: rtt,
+                                            })
+                                            .await;
+                                    });
+                                }
                             }
                         }
                         Some("inject_err") => {

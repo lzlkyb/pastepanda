@@ -350,8 +350,11 @@ pub fn rc_boot(app: &AppHandle) {
     };
     let enabled = crate::rc::cfg_enabled(&store);
     let has_rc_devices = matches!(store.rc_device_list(), Ok(list) if !list.is_empty());
-    if !enabled && !has_rc_devices {
-        log::info!("[RC] 未开被控且无远程配对，启动时不起远程通道");
+    // 方案 A：仅同步配对的设备也可直接发起远程（同一 iroh 身份/端点），
+    // 漏了它用户看得见设备（source="sync"）却发不起（B9）。
+    let has_sync = matches!(store.device_list(), Ok(list) if !list.is_empty());
+    if !enabled && !has_rc_devices && !has_sync {
+        log::info!("[RC] 未开被控、无远程配对、无同步配对，启动时不起远程通道");
         return;
     }
     let Ok(dir) = app_dir(app) else {
@@ -530,7 +533,8 @@ pub fn rc_latest_frame(svc: State<'_, Arc<RcService>>) -> Result<Option<RcFrameP
     }))
 }
 
-/// 画质档：sharp | balanced | smooth
+/// 画质档：uhd | ultra | sharp | balanced | smooth
+/// （uhd = 主屏硬编原生分辨率，R5.B；无硬编时 JPEG 兜底约 2.5K）
 #[tauri::command]
 pub async fn rc_set_quality(
     app: AppHandle,
@@ -538,8 +542,8 @@ pub async fn rc_set_quality(
     svc: State<'_, Arc<RcService>>,
     quality: String,
 ) -> Result<(), String> {
-    if !matches!(quality.as_str(), "sharp" | "balanced" | "smooth") {
-        return Err("画质档只能是 sharp / balanced / smooth".into());
+    if !matches!(quality.as_str(), "uhd" | "ultra" | "sharp" | "balanced" | "smooth") {
+        return Err("画质档只能是 uhd / ultra / sharp / balanced / smooth".into());
     }
     let mut config = store.get_config()?;
     let obj = config

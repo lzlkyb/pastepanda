@@ -16,6 +16,7 @@ import { useRcFrames } from "@/hooks/useRcFrames";
 import { useRcInput, releaseModifiers } from "@/hooks/useRcInput";
 import { useRcClipboardAuto } from "@/hooks/useRcClipboardAuto";
 import type { FitMode } from "@/lib/rcSessionStats";
+import { qualityLabel } from "@/lib/rcSessionStats";
 import { RcHud } from "./RcHud";
 import { RcViewTools } from "./RcViewTools";
 import { RcClipboardBar } from "./RcClipboardBar";
@@ -151,7 +152,7 @@ export function RcSessionView({
   const placeholderSub =
     codec === "h264"
       ? "对方正在用 H.264 推流"
-      : `对方编码中 · ${qPick === "sharp" ? "清晰" : qPick === "smooth" ? "流畅" : "均衡"}档`;
+      : `对方编码中 · ${qualityLabel(qPick)}档`;
   const canvasStyle = canvasStyleFor(fit, size, canControl);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!canControl || !input.kbOn) return;

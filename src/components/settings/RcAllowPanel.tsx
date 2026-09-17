@@ -90,6 +90,8 @@ export function RcAllowPanel({
               ["smooth", "流畅"],
               ["balanced", "均衡"],
               ["sharp", "清晰"],
+              ["ultra", "超清（约 2.5K）"],
+              ["uhd", "原生（主屏 4K 硬编）"],
             ] as const
           }
           value={status.quality}

@@ -34,6 +34,9 @@ pub enum InputEvent {
     SetCaptureScope { scope: String },
     /// 发起端要求本会话强制走 JPEG（H.264 解不出时回退）。
     SetCodec { codec: String },
+    /// 发起端把测得的 RTT 告知被控端，用于自适应降码率（R5.B2）。
+    /// 不注入本机、不要求 Control。
+    NetHint { rtt_ms: i64 },
 }
 
 /// 注入结果。
@@ -261,6 +264,7 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
         }
         InputEvent::ClipboardPull => Ok(()),
         InputEvent::Ping { .. } => Ok(()),
+        InputEvent::NetHint { .. } => Ok(()),
         InputEvent::SetQuality { .. }
         | InputEvent::SetCaptureScope { .. }
         | InputEvent::SetCodec { .. } => Ok(()),

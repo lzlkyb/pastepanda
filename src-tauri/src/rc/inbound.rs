@@ -22,7 +22,7 @@ use std::sync::Arc;
 use super::input::{assert_control_allowed, get_clipboard_text, inject, set_clipboard_text};
 use super::input::{InputEvent, ScreenRegion};
 use super::protocol::{RcFrame, SessionPhase};
-use super::service::{RcService, CLIPBOARD_MAX_JSON_BYTES, CFG_CODEC};
+use super::service::{RcService, CLIPBOARD_MAX_JSON_BYTES, CFG_CODEC, CFG_QUALITY};
 use crate::sync::transport::{read_frame, write_frame};
 
 /// 被控端推流任务。
@@ -89,7 +89,8 @@ impl InboundVideo {
         })
     }
 
-    /// R4 硬编会话：配置强制 JPEG 或抓整屏时不开；打不开也回 None（走 JPEG）。
+    /// R5.B 硬编会话：配置强制 JPEG 或抓整屏时不开；打不开也回 None（走 JPEG）。
+    /// 打开尺寸跟**主屏物理分辨率**走，不再写死 1280×720（否则 4K 会先错开再重开）。
     #[cfg(target_os = "windows")]
     fn open_h264(
         svc: &Arc<RcService>,
@@ -105,10 +106,16 @@ impl InboundVideo {
             return None;
         }
         let p = svc.encode_profile();
-        let fps = (1000 / p.interval_ms.max(50)).clamp(5, 30) as u32;
-        let enc = super::encode_h264::H264SessionEncoder::try_open(1280, 720, fps);
+        // uhd 档目标 15fps；其余跟 JPEG 档 interval，硬编至少 10fps
+        let fps = if svc.cfg().get(CFG_QUALITY).and_then(|v| v.as_str()) == Some("uhd") {
+            15
+        } else {
+            (1000 / p.interval_ms.max(50)).clamp(10, 30) as u32
+        };
+        let (pw, ph) = primary_screen_size();
+        let enc = super::encode_h264::H264SessionEncoder::try_open(pw, ph, fps);
         if enc.available() {
-            log::info!("[RC] H.264 硬编已启用");
+            log::info!("[RC] H.264 硬编已启用 @ {pw}x{ph} {fps}fps");
             Some(enc)
         } else {
             None
@@ -178,6 +185,9 @@ impl InboundVideo {
             {
                 return Step::FallThrough;
             }
+            // R5.B2：按对端 RTT 缩码率（变化够大才重开编码器）
+            let scale = self.svc.bitrate_scale();
+            henc.apply_bitrate_scale(scale);
             match self.dxgi.grab() {
                 Ok(Some((w, h, bgra))) => match henc.encode_bgra(&bgra, w, h) {
                     Ok(pkts) => {
@@ -391,6 +401,11 @@ pub(super) async fn handle_inbound_input(
             }
             return;
         }
+        InputEvent::NetHint { rtt_ms } => {
+            let scale = svc.set_peer_rtt(*rtt_ms);
+            log::debug!("[RC] 对端 RTT {rtt_ms}ms → 码率 {scale}%");
+            return;
+        }
         InputEvent::SetCaptureScope { scope } => {
             if let Err(e) = svc.set_stream_scope(scope) {
                 log::warn!("[RC] {e}");
@@ -481,4 +496,12 @@ pub(super) async fn handle_inbound_input(
         }
         svc.set_inject_err(r.error.clone());
     }
+}
+
+/// 主屏逻辑尺寸（硬编打开用）。encode_bgra 在分辨率变化时会按新尺寸重开。
+#[cfg(target_os = "windows")]
+fn primary_screen_size() -> (u32, u32) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+    (w.max(64) as u32, h.max(64) as u32)
 }

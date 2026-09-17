@@ -171,6 +171,15 @@ impl RcService {
         self.stream.set_quality(quality)
     }
 
+    /// 被控端：对端上报 RTT，返回当前 H.264 码率缩放（%）。
+    pub fn set_peer_rtt(&self, rtt_ms: i64) -> u32 {
+        self.stream.set_peer_rtt(rtt_ms)
+    }
+
+    pub fn bitrate_scale(&self) -> u32 {
+        self.stream.bitrate_scale()
+    }
+
     /// 发起端在会话中改截取范围。
     ///
     /// ⚠️ 这个入口**故意不发** `emit_scope_changed`：本机用户在设置页自己改范围
@@ -276,6 +285,7 @@ impl RcService {
         let needs_control = !matches!(
             ev,
             InputEvent::Ping { .. }
+                | InputEvent::NetHint { .. }
                 | InputEvent::SetQuality { .. }
                 | InputEvent::SetCaptureScope { .. }
                 | InputEvent::SetCodec { .. }

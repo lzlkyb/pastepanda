@@ -236,7 +236,7 @@ export function rcSessionHistory(): Promise<RcHistoryItem[]> {
   return invoke("rc_session_history");
 }
 
-export type RcQuality = "sharp" | "balanced" | "smooth";
+export type RcQuality = "uhd" | "ultra" | "sharp" | "balanced" | "smooth";
 export type RcCaptureScope = "virtual" | "primary" | `monitor:${number}`;
 
 export function rcSetQuality(quality: RcQuality): Promise<void> {

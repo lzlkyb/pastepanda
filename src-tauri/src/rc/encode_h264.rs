@@ -1,11 +1,51 @@
 //! R4.1 — Media Foundation 硬件 H.264 编码器。
 //!
 //! 优先硬件 MFT；不可用则整段会话回退 JPEG。输入 NV12，输出 Annex-B。
+//!
+//! R5.B：profile 用 **High(100)**，level 随分辨率抬升（最高 5.1 覆盖 4K@30），
+//! 码率按宽查表。打开尺寸跟抓屏走，不再写死 1280×720。
 
 #![cfg(target_os = "windows")]
 
 use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED};
+
+/// H.264 High profile（MF_MT_MPEG2_PROFILE）。
+pub const H264_PROFILE_HIGH: u32 = 100;
+
+/// 按编码宽高选 H.264 level（MF_MT_MPEG2_LEVEL）。
+/// 5.1 覆盖 4K@30；更小画面用更低 level，兼容性更好。
+pub fn h264_level_for(width: u32, height: u32) -> u32 {
+    let (w, h) = (width.max(1), height.max(1));
+    if w >= 3200 || h >= 1800 {
+        51 // 4K
+    } else if w >= 2560 || h >= 1440 {
+        50
+    } else if w >= 1920 || h >= 1080 {
+        42
+    } else {
+        40
+    }
+}
+
+/// WebCodecs `codec` 字符串（前端同口径）：High + level hex。
+/// 例：2160p → `avc1.640033`（High@5.1）。
+pub fn webcodecs_codec_str(width: u32, height: u32) -> String {
+    let level = h264_level_for(width, height);
+    format!("avc1.64{:04x}", level)
+}
+
+/// 按编码宽度选目标码率（bit/s）。4K 局域网给足带宽，避免糊成马赛克。
+pub fn bitrate_for_width(width: u32) -> u32 {
+    match width {
+        w if w >= 3200 => 22_000_000,
+        w if w >= 2560 => 14_000_000,
+        w if w >= 1920 => 8_000_000,
+        w if w >= 1600 => 5_000_000,
+        w if w >= 1200 => 3_000_000,
+        _ => 1_500_000,
+    }
+}
 
 pub struct H264Packet {
     pub data: Vec<u8>,
@@ -43,10 +83,8 @@ impl MfH264Encoder {
                 return Err("MFStartup 失败".into());
             }
 
-            let mut w = (width & !1).max(64);
-            let mut h = (height & !1).max(64);
-            let _ = &mut w;
-            let _ = &mut h;
+            let w = (width & !1).max(64);
+            let h = (height & !1).max(64);
 
             let transform = create_h264_mft()?;
 
@@ -63,8 +101,12 @@ impl MfH264Encoder {
             out_type
                 .SetUINT64(&MF_MT_FRAME_SIZE, pack_u32x2(w, h))
                 .map_err(mf_err)?;
+            // High profile + 按分辨率选 level（4K 必须 >3.1）
             out_type
-                .SetUINT32(&MF_MT_MPEG2_PROFILE, 66)
+                .SetUINT32(&MF_MT_MPEG2_PROFILE, H264_PROFILE_HIGH)
+                .map_err(mf_err)?;
+            out_type
+                .SetUINT32(&MF_MT_MPEG2_LEVEL, h264_level_for(w, h))
                 .map_err(mf_err)?;
             transform.SetOutputType(0, &out_type, 0).map_err(mf_err)?;
 
@@ -290,6 +332,9 @@ fn to_annex_b(raw: &[u8]) -> Vec<u8> {
 /// 会话包装：open 失败则标记不可用，调用方走 JPEG。
 pub struct H264SessionEncoder {
     enc: Option<MfH264Encoder>,
+    /// 当前码率缩放百分比（25–100），由 RTT 自适应写入。
+    scale_pct: u32,
+    base_bitrate: u32,
 }
 
 // windows-rs COM 指针非 Send；本进程 MTA + 会话任务串行访问。
@@ -297,17 +342,25 @@ unsafe impl Send for H264SessionEncoder {}
 unsafe impl Send for MfH264Encoder {}
 
 impl H264SessionEncoder {
+    /// 按目标分辨率打开；码率由宽度决定（可覆盖）。
     pub fn try_open(width: u32, height: u32, fps: u32) -> Self {
-        let bitrate = match width {
-            w if w >= 1600 => 4_000_000,
-            w if w >= 1200 => 2_500_000,
-            _ => 1_500_000,
-        };
+        Self::try_open_with_bitrate(width, height, fps, bitrate_for_width(width))
+    }
+
+    pub fn try_open_with_bitrate(width: u32, height: u32, fps: u32, bitrate: u32) -> Self {
         match MfH264Encoder::open(width, height, fps, bitrate) {
-            Ok(e) => Self { enc: Some(e) },
+            Ok(e) => Self {
+                enc: Some(e),
+                scale_pct: 100,
+                base_bitrate: bitrate,
+            },
             Err(e) => {
                 log::warn!("[RC] H.264 不可用，回退 JPEG：{e}");
-                Self { enc: None }
+                Self {
+                    enc: None,
+                    scale_pct: 100,
+                    base_bitrate: bitrate,
+                }
             }
         }
     }
@@ -316,14 +369,52 @@ impl H264SessionEncoder {
         self.enc.is_some()
     }
 
-    /// 输入 BGRA。分辨率变化会重开编码器。
+    pub fn scale_pct(&self) -> u32 {
+        self.scale_pct
+    }
+
+    /// RTT 自适应：按百分比缩码率。变化 <15% 不重开（避免 thrashing）。
+    /// 返回 true 表示编码器已按新码率重开。
+    pub fn apply_bitrate_scale(&mut self, scale_pct: u32) -> bool {
+        let scale = scale_pct.clamp(25, 100);
+        if scale == self.scale_pct {
+            return false;
+        }
+        if scale.abs_diff(self.scale_pct) < 15 && self.enc.is_some() {
+            return false;
+        }
+        self.scale_pct = scale;
+        let Some(enc) = self.enc.as_ref() else {
+            return false;
+        };
+        let (w, h) = enc.size();
+        let fps = enc.fps();
+        let br = (self.base_bitrate as u64 * scale as u64 / 100).max(400_000) as u32;
+        match MfH264Encoder::open(w, h, fps, br) {
+            Ok(e) => {
+                log::info!("[RC] H.264 码率调整为 {br} bps（{scale}%）");
+                self.enc = Some(e);
+                true
+            }
+            Err(e) => {
+                log::warn!("[RC] 调整码率失败，保持原编码器：{e}");
+                self.scale_pct = 100;
+                false
+            }
+        }
+    }
+
+    /// 输入 BGRA。分辨率变化会按**新尺寸**重开编码器（含码率/level）。
     pub fn encode_bgra(&mut self, bgra: &[u8], w: u32, h: u32) -> Result<Vec<H264Packet>, String> {
         let Some(enc) = self.enc.as_mut() else {
             return Err("无 H.264 编码器".into());
         };
         let (ew, eh) = enc.size();
         if ew != (w & !1).max(64) || eh != (h & !1).max(64) {
-            *enc = MfH264Encoder::open(w, h, enc.fps(), enc.bitrate())?;
+            // 尺寸变了：基础码率按新宽重算，再叠当前缩放
+            self.base_bitrate = bitrate_for_width(w);
+            let br = (self.base_bitrate as u64 * self.scale_pct as u64 / 100).max(400_000) as u32;
+            *enc = MfH264Encoder::open(w, h, enc.fps(), br)?;
         }
         let nv12 = super::dxgi::bgra_to_nv12(bgra, w, h)?;
         enc.encode_nv12(&nv12)
@@ -332,7 +423,7 @@ impl H264SessionEncoder {
 
 #[cfg(test)]
 mod tests {
-    use super::to_annex_b;
+    use super::*;
 
     #[test]
     fn avcc_to_annexb() {
@@ -346,5 +437,14 @@ mod tests {
     fn already_annexb() {
         let raw = [0u8, 0, 0, 1, 0x67, 0x42];
         assert_eq!(to_annex_b(&raw), raw.to_vec());
+    }
+
+    #[test]
+    fn level_and_bitrate_follow_resolution() {
+        assert_eq!(h264_level_for(1280, 720), 40);
+        assert_eq!(h264_level_for(1920, 1080), 42);
+        assert_eq!(h264_level_for(3840, 2160), 51);
+        assert!(bitrate_for_width(3840) >= 20_000_000);
+        assert_eq!(webcodecs_codec_str(3840, 2160), "avc1.640033");
     }
 }

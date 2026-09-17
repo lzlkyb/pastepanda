@@ -8,9 +8,9 @@ use image::imageops::FilterType;
 use image::{ExtendedColorType, ImageEncoder};
 use std::sync::Mutex;
 
-pub const MAX_JPEG_BYTES: usize = 512 * 1024;
-/// H.264 单包上限：关键帧可能远大于 JPEG 脏块，不能沿用 512KB。
-pub const MAX_H264_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_JPEG_BYTES: usize = 2 * 1024 * 1024;
+/// H.264 单包上限：4K 关键帧可 >2MB，放宽到 8MB（R5.B）。
+pub const MAX_H264_BYTES: usize = 8 * 1024 * 1024;
 pub const TARGET_MAX_W: u32 = 1280;
 pub const JPEG_QUALITY_DEFAULT: u8 = 55;
 pub const JPEG_QUALITY_MIN: u8 = 35;
@@ -24,6 +24,9 @@ const DIRTY_RATIO_SEND: f32 = 0.35;
 const KEYFRAME_EVERY: u32 = 30;
 
 /// 画质档（被控端编码参数）。
+///
+/// 方案 A「伪 4K」：`ultra` 编码宽 **2560**（约 2.5K），不是原生 4K；
+/// 真 4K 主屏硬编见规划文档 R5（方案 B）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncodeProfile {
     pub max_w: u32,
@@ -31,6 +34,10 @@ pub struct EncodeProfile {
     pub q_min: u8,
     pub q_max: u8,
     pub q_default: u8,
+    /// 自适应：近 8 帧均值超过此值则降 quality。
+    pub adapt_down: usize,
+    /// 自适应：近 8 帧均值低于此值则升 quality。
+    pub adapt_up: usize,
 }
 
 impl EncodeProfile {
@@ -42,6 +49,27 @@ impl EncodeProfile {
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
+                adapt_down: 350_000,
+                adapt_up: 80_000,
+            },
+            "ultra" => Self {
+                max_w: 2560,
+                interval_ms: 180,
+                q_min: 50,
+                q_max: 85,
+                q_default: 72,
+                adapt_down: 700_000,
+                adapt_up: 150_000,
+            },
+            // uhd：主屏硬编走原生分辨率；JPEG 兜底仍按 2.5K 控带宽（R5.B）
+            "uhd" => Self {
+                max_w: 2560,
+                interval_ms: 100,
+                q_min: 55,
+                q_max: 85,
+                q_default: 75,
+                adapt_down: 800_000,
+                adapt_up: 180_000,
             },
             "smooth" => Self {
                 max_w: 960,
@@ -49,6 +77,8 @@ impl EncodeProfile {
                 q_min: 25,
                 q_max: 55,
                 q_default: 40,
+                adapt_down: 150_000,
+                adapt_up: 30_000,
             },
             // balanced（默认）
             _ => Self {
@@ -57,6 +87,8 @@ impl EncodeProfile {
                 q_min: JPEG_QUALITY_MIN,
                 q_max: JPEG_QUALITY_MAX,
                 q_default: JPEG_QUALITY_DEFAULT,
+                adapt_down: 220_000,
+                adapt_up: 50_000,
             },
         }
     }
@@ -167,9 +199,10 @@ impl EncoderState {
         }
         let avg: usize = self.recent_sizes.iter().sum::<usize>() / self.recent_sizes.len();
         self.recent_sizes.clear();
-        if avg > 220_000 && self.quality > self.profile.q_min {
+        // 阈值随档位走：ultra/清晰 画面更大，套用 1280 的 220KB 会一直误降质
+        if avg > self.profile.adapt_down && self.quality > self.profile.q_min {
             self.quality = self.quality.saturating_sub(5).max(self.profile.q_min);
-        } else if avg < 50_000 && self.quality < self.profile.q_max {
+        } else if avg < self.profile.adapt_up && self.quality < self.profile.q_max {
             self.quality = (self.quality + 3).min(self.profile.q_max);
         }
     }
@@ -536,20 +569,32 @@ pub async fn write_h264(
         "n": data.len(),
     });
     let b = serde_json::to_vec(&meta).map_err(|e| e.to_string())?;
-    write_raw(s, &b).await?;
-    write_raw(s, data).await
+    // 4K 关键帧可达数 MB，写停滞超时放宽到 60s（R5.B）
+    let stall = if key {
+        std::time::Duration::from_secs(60)
+    } else {
+        std::time::Duration::from_secs(30)
+    };
+    write_raw_stall(s, &b, stall).await?;
+    write_raw_stall(s, data, stall).await
 }
 
 async fn write_raw(s: &mut iroh::endpoint::SendStream, bytes: &[u8]) -> Result<(), String> {
-    // 分块 + 每块停滞超时：对端不读时流控窗口填满，裸 write_all 会永远阻塞，
+    write_raw_stall(s, bytes, std::time::Duration::from_secs(30)).await
+}
+
+async fn write_raw_stall(
+    s: &mut iroh::endpoint::SendStream,
+    bytes: &[u8],
+    stall: std::time::Duration,
+) -> Result<(), String> {
+    // 分块 + 停滞超时：对端不读时流控窗口填满，裸 write_all 会永远阻塞，
     // 进而长期持有调用方持有的 `send.lock()`，把 `end_session`（取锁）一起挂死。
-    // 参照 sync/transport.rs 的 wr()：每块各自计时，只拦「完全死掉/慢速攻击」的连接。
     const CHUNK: usize = 64 * 1024;
-    const STALL: std::time::Duration = std::time::Duration::from_secs(30);
     let len = (bytes.len() as u32).to_be_bytes();
-    stalled_write(s, &len, "写帧长度", STALL).await?;
+    stalled_write(s, &len, "写帧长度", stall).await?;
     for part in bytes.chunks(CHUNK) {
-        stalled_write(s, part, "写帧内容", STALL).await?;
+        stalled_write(s, part, "写帧内容", stall).await?;
     }
     Ok(())
 }
@@ -677,6 +722,22 @@ mod tests {
         assert!(e1.frame.full);
         let e2 = encode_rgba(&mut st, w, h, &rgba).unwrap();
         assert!(e2.frame.jpeg.is_empty(), "静止第二帧应跳过");
+    }
+
+    #[test]
+    fn ultra_profile_is_2560_wide() {
+        let p = EncodeProfile::from_str("ultra");
+        assert_eq!(p.max_w, 2560);
+        assert!(p.adapt_down > EncodeProfile::from_str("balanced").adapt_down);
+        // 超宽图应缩到 2560 而不是 4K
+        let mut st = EncoderState::with_profile(p, true);
+        let (w, h) = (3840u32, 2160u32);
+        let rgb = solid(w, h, 30, 30, 30);
+        let rgba = to_rgba(&rgb);
+        let e = encode_rgba(&mut st, w, h, &rgba).unwrap();
+        assert!(e.frame.full);
+        assert_eq!(e.frame.width, 2560);
+        assert_eq!(e.frame.height, 1440);
     }
 
     #[test]

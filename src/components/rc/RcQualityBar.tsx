@@ -10,9 +10,11 @@ import type { UseRc } from "@/hooks/useRc";
 import styles from "./RemoteComputer.module.css";
 
 const QUALITIES: Array<[RcQuality, string, string]> = [
-  ["smooth", "流畅", "约 8fps · 宽 960 · 弱网"],
+  ["smooth", "流畅", "约 6fps · 宽 960 · 弱网"],
   ["balanced", "均衡", "约 5fps · 宽 1280 · 默认"],
   ["sharp", "清晰", "约 8fps · 宽 1920 · 局域网"],
+  ["ultra", "超清", "约 5fps · 宽 2560 · JPEG 路径"],
+  ["uhd", "原生", "主屏硬编原生分辨率 · 需 GPU · 无硬编回落超清"],
 ];
 
 type Fb = { kind: "ok" | "warn" | "bad" | "info"; text: string } | null;
