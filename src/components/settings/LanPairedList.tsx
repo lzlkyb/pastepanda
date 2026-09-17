@@ -160,7 +160,7 @@ export function LanPairedList({
                 role="switch"
                 aria-checked={!d.paused}
                 aria-label={d.paused ? "启用与该设备的同步" : "暂停与该设备的同步"}
-                className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${shared.on}`}`}
+                className={`${styles.lanPauseToggle}${d.paused ? "" : ` ${styles.lanPauseOn}`}`}
                 disabled={pausing === d.device_id}
                 onClick={() => void handleTogglePause(d)}
                 title={

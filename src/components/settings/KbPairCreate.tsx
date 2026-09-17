@@ -206,7 +206,7 @@ export function CreateFlow({ defaultName, myFingerprint, devices, joins, onCreat
       {phase === "done" && (
         <>
           <div className="dialog-body">
-            <div className={`${styles.kbPairPulse} ${shared.done}`}>✅</div>
+            <div className={`${styles.kbPairPulse} ${styles.done}`}>✅</div>
             <p className={`${styles.kbPairText} ${styles.kbPairCenter}`} style={{ fontWeight: 700 }}>
               已连上「{peerName}」
             </p>

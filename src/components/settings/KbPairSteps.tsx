@@ -23,7 +23,7 @@ export function StepBar({ labels, current }: { labels: string[]; current: number
         <Fragment key={l}>
           {i > 0 && <span className={styles.kbPairBar} />}
           <span className={`${styles.kbPairStep} ${
-            i < current ? shared.done : i === current ? shared.on : ""}`}>
+            i < current ? styles.done : i === current ? styles.on : ""}`}>
             <b className={styles.kbPairStepNum}>{i < current ? "✓" : i + 1}</b>{l}
           </span>
         </Fragment>
@@ -195,7 +195,7 @@ export function PasteFlow({ initialCode, selfNodeId, onPreview, onPair, onClose,
           <>
             <p className={styles.kbPairText}>把另一台设备生成的邀请码粘进来。</p>
             <textarea rows={4} value={input} placeholder="在这里粘贴邀请码"
-              className={`${styles.kbPairMono}${err ? ` ${shared.bad}` : ""}`}
+              className={`${styles.kbPairMono}${err ? ` ${styles.bad}` : ""}`}
               onChange={(e) => { setInput(e.target.value); setErr(""); setPeer(null); }}
               onBlur={(e) => { if (!peer && e.target.value.trim()) preview(e.target.value); }} />
             {err && (

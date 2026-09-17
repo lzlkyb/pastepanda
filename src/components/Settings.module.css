@@ -1070,12 +1070,7 @@
 .lanRefreshBtn:hover { background: var(--hover); }
 .lanRefreshBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.lanPauseToggle.on {
-  background: var(--green);
-}
-.lanPauseToggle.on .lanPauseKnob {
-  transform: translateX(16px);
-}
+/* lanPauseToggle.on 已迁到 Lan.module.css（与基础类同文件，否则 CSS modules 哈希对不上） */
 
 /* ===== MCP 服务面板（M4 步骤 4）=====
    设计稿：design/知识库MCP服务-设置面板-设计稿.html
@@ -1128,12 +1123,9 @@
    样式收在 CSS 而不是写成 tsx 里的内联对象：向导有 6 屏，
    内联会把两个组件都顶过 300 行（规则 #7）。 */
 
-.kbPairStep.on { color: var(--text-primary); font-weight: 700; }
-.kbPairStep.on .kbPairStepNum { background: var(--accent); color: #fff; }
-.kbPairStep.done { color: var(--text-secondary); }
-.kbPairStep.done .kbPairStepNum { background: var(--green); color: #fff; }
+/* kbPairStep.on / .done 已迁到 Lan.module.css（与基础类同文件） */
 
-.kbPairMono.bad { border-color: var(--danger); }
+/* kbPairMono.bad 已迁到 Lan.module.css（与基础类同文件） */
 
 /* 指纹：等宽 + 拉开字距，人肉逐位核对靠这个 */
 .kbPairFp {
@@ -1156,7 +1148,7 @@
 /* 对端身份卡（名字 + 指纹）*/
 .kbPairPeer { background: var(--input-bg); border-radius: 10px; padding: 12px; }
 
-.kbPairPulse.done { background: var(--green-bg); animation: none; }
+/* kbPairPulse.done 已迁到 Lan.module.css（与基础类同文件） */
 @keyframes kbPairBreathe {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.08); opacity: .75; }

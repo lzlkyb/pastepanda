@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 托盘右键菜单 UI 升级 · 设计稿</title>
+<style>
+/* ========================================================================
+   令牌对齐真实代码：
+   - src/styles/popup.css  托盘弹层：glass 根 / header 渐变 / 卡片 accent 7% /
+     item 34 行高语义 / footer 库条 / radius 14·10·8
+   - src/components/TrayPopup.tsx  菜单项、recents、状态点、库体积
+   - src/styles/theme.css  --accent / --green / --danger / --text-* / --border
+   - docs/PastePanda-UI规则.md  U1–U8 / L1–L6 / V1–V6
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:28px 24px 80px;background:#F7F8FA;color:#33404F;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:20px;color:#0F172A;margin:0 0 4px}
+h2{font-size:15px;color:#0F172A;margin:40px 0 8px}
+h3{font-size:12.5px;color:#627083;margin:20px 0 8px;letter-spacing:.2px;font-weight:600}
+.sub{color:#627083;font-size:12.5px;margin:0 0 20px;max-width:920px}
+.note{color:#4E5A6B;font-size:12px;margin:6px 0 14px;max-width:920px}
+.note b{color:#0F172A;font-weight:600}
+hr{border:0;border-top:1px solid #E0E4EB;margin:36px 0 0}
+code{background:#EDF1F6;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#0B6FA4}
+.anno{margin:10px 0 0;padding:10px 14px;border-radius:8px;border:1px solid #E0E4EB;
+  background:#FBFCFD;font-size:12px;color:#4E5A6B;max-width:920px}
+.anno b{color:#0F172A;font-weight:600}
+.anno.warn{border-color:#FED7AA;background:#FFF9F3}
+.anno.warn b{color:#8A3407}
+.good{color:#15803D;font-weight:600}
+table{border-collapse:collapse;margin:12px 0 6px;font-size:12px;max-width:960px}
+th,td{border:1px solid #E0E4EB;padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#F4F6F9;color:#0F172A;font-weight:600;font-size:11.5px}
+td code{font-size:11px}
+ul{margin:6px 0;padding-left:20px}
+li{margin:3px 0}
+.stage{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-top:14px}
+.cap{font-size:11.5px;color:#627083;font-weight:600;margin-bottom:8px}
+.cap .tag{display:inline-block;margin-left:6px;font-size:10px;padding:1px 6px;border-radius:999px;
+  background:#F4F6F9;color:#627083;border:1px solid #E0E4EB;font-weight:600}
+.cap .tag.rec{background:#FFF7ED;color:#C54A0A;border-color:#FED7AA}
+
+/* ===== 模拟托盘弹层（尺寸对齐 popup.css：宽约 300，圆角 14） ===== */
+.tray{
+  width:300px;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;
+  background:rgba(255,255,255,.88);
+  border:1px solid rgba(15,23,42,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7), 0 12px 40px rgba(15,23,42,.18);
+  font-size:12px;color:#0F172A;
+}
+.tray.dk{
+  background:rgba(22,26,34,.94);color:#E6EDF7;
+  border-color:rgba(255,255,255,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 12px 40px rgba(0,0,0,.45);
+}
+/* header：真实代码是 accent 7%→3% 渐变 */
+.hd{
+  display:flex;align-items:center;gap:10px;padding:10px 14px 8px;
+  background:linear-gradient(135deg,rgba(2,132,199,.08),rgba(2,132,199,.03));
+  border-bottom:1px solid #E8ECF2;
+}
+.tray.dk .hd{background:linear-gradient(135deg,rgba(56,189,248,.12),rgba(56,189,248,.04));
+  border-bottom-color:#2C323D}
+.logo{width:32px;height:32px;border-radius:8px;flex-shrink:0;
+  background:linear-gradient(135deg,#3B82F6,#0284C7);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.titles{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.name{font-size:13px;font-weight:600;line-height:1.2}
+.ver{font-size:10px;color:#627083;line-height:1.2}
+.tray.dk .ver{color:#8FA3C4}
+.dot{width:8px;height:8px;border-radius:50%;background:#CCC;flex-shrink:0}
+.dot.on{background:#15803D;box-shadow:0 0 6px rgba(21,128,61,.4)}
+.tray.dk .dot.on{background:#4ADE80}
+
+/* 现状：三卡 */
+.cards{display:flex;gap:6px;padding:6px 10px}
+.card{
+  flex:1;padding:8px 6px 6px;border-radius:10px;text-align:center;
+  background:rgba(2,132,199,.06);border:1px solid rgba(2,132,199,.12);
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+}
+.tray.dk .card{background:rgba(56,189,248,.08);border-color:rgba(56,189,248,.14)}
+.ci{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:12px;font-weight:700}
+.ci.b{background:linear-gradient(135deg,#3B82F6,#0078D4)}
+.ci.p{background:linear-gradient(135deg,#8B5CF6,#5856D6)}
+.ci.o{background:linear-gradient(135deg,#F59E0B,#FF9500)}
+.cv{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.cl{font-size:10px;color:#627083}
+.tray.dk .cl{color:#8FA3C4}
+
+/* 升级：一行摘要 */
+.statline{
+  display:flex;align-items:center;gap:8px;padding:8px 14px;
+  font-size:11px;color:#4E5A6B;border-bottom:1px solid #F0F2F5;
+}
+.tray.dk .statline{color:#8FA3C4;border-bottom-color:#2C323D}
+.statline b{color:#0F172A;font-weight:600;font-variant-numeric:tabular-nums}
+.tray.dk .statline b{color:#E6EDF7}
+.statline .sep{opacity:.4}
+.statline .st{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:10.5px}
+.statline .st i{width:6px;height:6px;border-radius:50%;background:#15803D;display:block}
+.tray.dk .statline .st i{background:#4ADE80}
+.statline .st.off i{background:#94A3B8}
+
+.sec{
+  display:flex;align-items:center;gap:6px;padding:8px 14px 4px;
+  font-size:10.5px;font-weight:600;color:#627083;letter-spacing:.2px;
+}
+.tray.dk .sec{color:#8FA3C4}
+.sec svg{opacity:.7}
+
+.list{display:flex;flex-direction:column;padding:0 8px 4px}
+.item{
+  display:flex;align-items:center;gap:8px;width:100%;
+  padding:6px 8px;border:0;border-radius:8px;background:transparent;
+  font:inherit;color:inherit;text-align:left;cursor:pointer;
+  min-height:34px;
+}
+.item:hover,.item.act{background:rgba(2,132,199,.08)}
+.tray.dk .item:hover,.tray.dk .item.act{background:rgba(56,189,248,.12)}
+.item.danger:hover,.item.danger.act{background:rgba(216,37,37,.10)}
+.tray.dk .item.danger:hover{background:rgba(248,113,113,.12)}
+.ic{
+  width:22px;height:22px;border-radius:6px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;
+}
+.ic.a{background:linear-gradient(135deg,#3B82F6,#0284C7)}
+.ic.o{background:linear-gradient(135deg,#F59E0B,#D97706)}
+.ic.p{background:linear-gradient(135deg,#8B5CF6,#7C3AED)}
+.ic.r{background:linear-gradient(135deg,#EF4444,#DC2626)}
+/* 升级：主操作单色 accent 浅底 + 主题色图标，退出才用红 */
+.ic.n{background:rgba(2,132,199,.12);color:#0284C7}
+.tray.dk .ic.n{background:rgba(56,189,248,.16);color:#38BDF8}
+.ic.rd{background:rgba(216,37,37,.12);color:#D82525}
+.tray.dk .ic.rd{background:rgba(248,113,113,.16);color:#F87171}
+.it{flex:1;min-width:0;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it .meta{display:block;font-size:10px;font-weight:400;color:#627083;margin-top:1px}
+.tray.dk .it .meta{color:#8FA3C4}
+.hint{flex-shrink:0;font-size:10px;color:#627083;padding:1px 6px;border-radius:4px;
+  background:rgba(15,23,42,.04);border:1px solid rgba(15,23,42,.06)}
+.tray.dk .hint{color:#8FA3C4;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.08)}
+.dv{height:1px;background:#E8ECF2;margin:4px 12px}
+.tray.dk .dv{background:#2C323D}
+
+/* 建议条 */
+.sug{
+  margin:0 8px 4px;padding:7px 10px;border-radius:8px;
+  background:rgba(197,74,10,.06);border:1px solid rgba(197,74,10,.15);
+  display:flex;align-items:center;gap:8px;font-size:11px;
+}
+.tray.dk .sug{background:rgba(251,146,60,.10);border-color:rgba(251,146,60,.2)}
+.sug b{color:#C54A0A;font-weight:600}
+.tray.dk .sug b{color:#FB923C}
+
+/* footer 现状 vs 升级 */
+.ft{padding:8px 14px 10px;font-size:10.5px;color:#627083;border-top:1px solid #F0F2F5}
+.tray.dk .ft{color:#8FA3C4;border-top-color:#2C323D}
+.bar{height:3px;border-radius:2px;background:rgba(15,23,42,.08);margin-top:6px;overflow:hidden}
+.tray.dk .bar{background:rgba(255,255,255,.08)}
+.bar i{display:block;height:100%;width:23%;background:linear-gradient(90deg,#3B82F6,#8B5CF6);border-radius:2px}
+
+/* 更多展开态 */
+.more{
+  margin:0 8px 6px;padding:6px;border-radius:10px;
+  background:rgba(15,23,42,.04);border:1px dashed rgba(15,23,42,.12);
+}
+.tray.dk .more{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12)}
+.more .lbl{font-size:10px;font-weight:600;color:#627083;padding:2px 6px 4px}
+.tray.dk .more .lbl{color:#8FA3C4}
+
+.pill{display:inline-block;font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;
+  background:#F4F6F9;color:#627083;border:1px solid #E0E4EB;vertical-align:1px;margin-left:4px}
+.pill.ok{background:#DCFCE7;color:#15803D;border-color:#86EFAC}
+.pill.warn{background:#FFF7ED;color:#C54A0A;border-color:#FED7AA}
+</style>
+</head>
+<body>
+
+<h1>托盘右键菜单 · UI 升级设计稿</h1>
+<p class="sub">
+  右键托盘打开的是自绘 <code>TrayPopup</code>（非系统原生菜单）。现状把「统计仪表盘 + 库体积」和「高频操作」叠在同一屏，
+  低频项（贴图管理 / 调整浮标）常驻，退出与设置挤在一起。本稿按「右键要快」压扁信息密度，收拢低频入口。
+</p>
+
+<div class="anno">
+<b>现状结构</b>（<code>TrayPopup.tsx</code>）：头部（logo+版本+状态点）→ 三张统计卡 → 最近复制（建议+3条）→
+六项操作平铺 → 数据库体积条。宽度约 300px，玻璃根 <code>border-radius:14</code>。
+</div>
+
+<hr>
+
+<h2>1 · 改前 / 改后对照（浅色）</h2>
+
+<div class="stage">
+  <!-- ===== 现状 ===== -->
+  <div>
+    <div class="cap">现状<span class="tag">仪表盘感 · 低频挡路</span></div>
+    <div class="tray">
+      <div class="hd">
+        <div class="logo">P</div>
+        <div class="titles">
+          <div class="name">PastePanda</div>
+          <div class="ver">v7.1.7</div>
+        </div>
+        <span class="dot on"></span>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="ci b">日</div><div class="cv">12</div><div class="cl">今日</div></div>
+        <div class="card"><div class="ci p">总</div><div class="cv">3,482</div><div class="cl">总计</div></div>
+        <div class="card"><div class="ci o">顶</div><div class="cv">5</div><div class="cl">置顶</div></div>
+      </div>
+      <div class="dv"></div>
+      <div class="sec">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        最近复制
+      </div>
+      <div class="sug"><b>建议</b><span>格式化 JSON</span><span class="hint" style="margin-left:auto">Enter</span></div>
+      <div class="list">
+        <button class="item act"><span class="ic a">文</span><span class="it">{"bussiId": 2100134552…</span><span class="hint">粘贴</span></button>
+        <button class="item"><span class="ic a">文</span><span class="it">INSERT INTO MY_TABLE…</span><span class="hint">粘贴</span></button>
+        <button class="item"><span class="ic o">图</span><span class="it">[图片]</span><span class="hint">粘贴</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="ic a">▣</span><span class="it">显示主窗口</span><span class="hint">Alt+V</span></button>
+        <button class="item"><span class="ic o">⏸</span><span class="it">暂停监听</span></button>
+        <button class="item"><span class="ic p">📌</span><span class="it">贴图管理…</span></button>
+        <button class="item"><span class="ic p">🎯</span><span class="it">调整浮标位置…</span><span class="hint">栈粘贴浮标</span></button>
+        <button class="item"><span class="ic p">⚙</span><span class="it">设置…</span><span class="hint">Ctrl+S</span></button>
+        <button class="item danger"><span class="ic r">✕</span><span class="it">退出</span></button>
+      </div>
+      <div class="ft">
+        数据库存储 · 23.4 MB / 100 MB · 23.4%
+        <div class="bar"><i></i></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 升级默认态 ===== -->
+  <div>
+    <div class="cap">升级 · 默认态<span class="tag rec">推荐</span></div>
+    <div class="tray">
+      <div class="hd">
+        <div class="logo">P</div>
+        <div class="titles">
+          <div class="name">PastePanda</div>
+          <!-- 版本不再占第二行主视觉：并进状态行 -->
+          <div class="ver">剪贴板</div>
+        </div>
+        <span class="dot on" title="监听中"></span>
+      </div>
+      <!-- 三卡 → 一行摘要；状态文字与点同排（U7 颜色不作唯一通道） -->
+      <div class="statline">
+        <span>今日 <b>12</b></span><span class="sep">·</span>
+        <span>共 <b>3,482</b></span><span class="sep">·</span>
+        <span>置顶 <b>5</b></span>
+        <span class="st"><i></i>监听中</span>
+      </div>
+      <div class="sec">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        最近复制
+      </div>
+      <div class="sug"><b>建议</b><span>格式化 JSON</span></div>
+      <div class="list">
+        <!-- 第一条默认高亮：右键完直接 Enter 可粘贴 -->
+        <button class="item act"><span class="ic a">文</span><span class="it">{"bussiId": 2100134552…<span class="meta">Chrome · 刚刚</span></span><span class="hint">粘贴</span></button>
+        <button class="item"><span class="ic a">文</span><span class="it">INSERT INTO MY_TABLE…<span class="meta">远程桌面 · 2 分钟前</span></span><span class="hint">粘贴</span></button>
+        <button class="item"><span class="ic o">图</span><span class="it">截图 2026-09-17<span class="meta">截图工具 · 1 小时前</span></span><span class="hint">粘贴</span></button>
+      </div>
+      <div class="dv"></div>
+      <!-- 主区只留 3 项高频；图标单色 accent，不用四色渐变 -->
+      <div class="list">
+        <button class="item"><span class="ic n">▣</span><span class="it">显示主窗口</span><span class="hint">Alt+V</span></button>
+        <button class="item"><span class="ic n">⏸</span><span class="it">暂停监听</span></button>
+        <button class="item"><span class="ic n">⚙</span><span class="it">设置</span></button>
+      </div>
+      <div class="dv"></div>
+      <!-- 退出独立成段 + danger -->
+      <div class="list" style="padding-bottom:8px">
+        <button class="item danger"><span class="ic rd">✕</span><span class="it">退出 PastePanda</span></button>
+      </div>
+      <!-- 库体积默认隐藏（&lt;80% 不出现） -->
+    </div>
+  </div>
+</div>
+
+<div class="anno">
+<b>默认态变化摘要</b>：① 三卡 → 一行数字 +「监听中」文字；② 版本从头部主视觉撤下；
+③ 操作六项 → 主区 3 项 + 独立退出段；④ 库体积条默认隐藏；⑤ recents 带来源/时间 meta；⑥ 第一条默认高亮。
+</div>
+
+<hr>
+
+<h2>2 · 升级 · 「更多」展开（低频收纳）</h2>
+
+<div class="stage">
+  <div>
+    <div class="cap">点「更多工具」后<span class="tag rec">低频不挡主路</span></div>
+    <div class="tray">
+      <div class="hd">
+        <div class="logo">P</div>
+        <div class="titles"><div class="name">PastePanda</div><div class="ver">剪贴板</div></div>
+        <span class="dot on"></span>
+      </div>
+      <div class="statline">
+        <span>今日 <b>12</b></span><span class="sep">·</span>
+        <span>共 <b>3,482</b></span><span class="sep">·</span>
+        <span>置顶 <b>5</b></span>
+        <span class="st"><i></i>监听中</span>
+      </div>
+      <div class="sec">最近复制</div>
+      <div class="list">
+        <button class="item act"><span class="ic a">文</span><span class="it">{"bussiId": 2100134552…<span class="meta">Chrome · 刚刚</span></span><span class="hint">粘贴</span></button>
+        <button class="item"><span class="ic a">文</span><span class="it">INSERT INTO MY_TABLE…</span><span class="hint">粘贴</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="ic n">▣</span><span class="it">显示主窗口</span><span class="hint">Alt+V</span></button>
+        <button class="item"><span class="ic n">⏸</span><span class="it">暂停监听</span></button>
+        <button class="item act"><span class="ic n">⋯</span><span class="it">更多工具</span><span class="hint">收起</span></button>
+      </div>
+      <div class="more">
+        <div class="lbl">不常用</div>
+        <div class="list" style="padding:0">
+          <button class="item"><span class="ic n">图钉</span><span class="it">贴图管理…</span></button>
+          <!-- 栈未开：置灰 + 就地说明，而不是点了才 toast 报错 -->
+          <button class="item" style="opacity:.45;cursor:not-allowed"><span class="ic n">准</span><span class="it">调整浮标位置<span class="meta">先开启粘贴栈</span></span></button>
+        </div>
+      </div>
+      <div class="dv"></div>
+      <div class="list" style="padding-bottom:8px">
+        <button class="item danger"><span class="ic rd">✕</span><span class="it">退出 PastePanda</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cap">栈模式已开启时<span class="tag">浮标项可用</span></div>
+    <div class="tray" style="width:300px">
+      <div class="statline">
+        <span>今日 <b>12</b></span><span class="sep">·</span>
+        <span>栈中 <b>3</b></span><span class="sep">·</span>
+        <span>置顶 <b>5</b></span>
+        <span class="st"><i style="background:#C54A0A"></i><span style="color:#C54A0A">栈模式</span></span>
+      </div>
+      <div class="sec">最近复制</div>
+      <div class="list">
+        <button class="item act"><span class="ic a">文</span><span class="it">{"bussiId":…</span><span class="hint">粘贴</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="ic n">▣</span><span class="it">显示主窗口</span></button>
+        <button class="item"><span class="ic n">⏸</span><span class="it">暂停监听</span></button>
+        <button class="item act"><span class="ic n">⋯</span><span class="it">更多工具</span></button>
+      </div>
+      <div class="more">
+        <div class="lbl">不常用</div>
+        <div class="list" style="padding:0">
+          <button class="item"><span class="ic n">图钉</span><span class="it">贴图管理…</span></button>
+          <button class="item"><span class="ic n">准</span><span class="it">调整浮标位置…</span><span class="hint">可用</span></button>
+        </div>
+      </div>
+      <div class="dv"></div>
+      <div class="list" style="padding-bottom:8px">
+        <button class="item danger"><span class="ic rd">✕</span><span class="it">退出 PastePanda</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>3 · 库体积 / 接近上限</h2>
+
+<div class="stage">
+  <div>
+    <div class="cap">正常（&lt;80%）默认不显示</div>
+    <div class="tray" style="width:280px">
+      <div class="statline"><span>今日 <b>12</b></span><span class="sep">·</span><span>共 <b>3,482</b></span>
+        <span class="st"><i></i>监听中</span></div>
+      <div class="list" style="padding:8px">
+        <button class="item"><span class="ic n">▣</span><span class="it">显示主窗口</span></button>
+        <button class="item danger"><span class="ic rd">✕</span><span class="it">退出 PastePanda</span></button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="cap">≥80% 才出现警示条<span class="tag warn">异常才打断</span></div>
+    <div class="tray" style="width:280px">
+      <div class="statline"><span>今日 <b>12</b></span><span class="sep">·</span><span>共 <b>3,482</b></span>
+        <span class="st off" style="color:#C54A0A"><i style="background:#C54A0A"></i>存储将满</span></div>
+      <div class="list" style="padding:4px 8px 0">
+        <button class="item"><span class="ic n">▣</span><span class="it">显示主窗口</span></button>
+      </div>
+      <div class="ft" style="color:#C54A0A">
+        数据库 86.2 MB / 100 MB · 86% · 建议清理
+        <div class="bar"><i style="width:86%;background:linear-gradient(90deg,#F59E0B,#EF4444)"></i></div>
+      </div>
+      <div class="list" style="padding:0 8px 8px">
+        <button class="item danger"><span class="ic rd">✕</span><span class="it">退出 PastePanda</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>4 · 深色主题</h2>
+
+<div class="stage">
+  <div>
+    <div class="cap">midnight / ocean-dark 对照</div>
+    <div class="tray dk">
+      <div class="hd">
+        <div class="logo">P</div>
+        <div class="titles"><div class="name">PastePanda</div><div class="ver">剪贴板</div></div>
+        <span class="dot on"></span>
+      </div>
+      <div class="statline">
+        <span>今日 <b>12</b></span><span class="sep">·</span>
+        <span>共 <b>3,482</b></span><span class="sep">·</span>
+        <span>置顶 <b>5</b></span>
+        <span class="st"><i></i>监听中</span>
+      </div>
+      <div class="sec">最近复制</div>
+      <div class="list">
+        <button class="item act"><span class="ic a">文</span><span class="it">{"bussiId": 2100134552…<span class="meta">Chrome · 刚刚</span></span><span class="hint">粘贴</span></button>
+        <button class="item"><span class="ic a">文</span><span class="it">INSERT INTO MY_TABLE…</span><span class="hint">粘贴</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="ic n">▣</span><span class="it">显示主窗口</span><span class="hint">Alt+V</span></button>
+        <button class="item"><span class="ic n">⏸</span><span class="it">暂停监听</span></button>
+        <button class="item"><span class="ic n">⚙</span><span class="it">设置</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list" style="padding-bottom:8px">
+        <button class="item danger"><span class="ic rd">✕</span><span class="it">退出 PastePanda</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>5 · 规格表（落地对照）</h2>
+
+<table>
+<tr><th>项</th><th>现状</th><th>升级版</th><th>规则依据</th></tr>
+<tr><td>统计</td><td>三张渐变图标卡（约 72px）</td><td>一行摘要 +「监听中/已暂停/栈模式」文字</td><td>右键要快；U7 颜色不作唯一通道</td></tr>
+<tr><td>头部版本</td><td>VersionBadge 常驻第二行</td><td>副文案改「剪贴板」；版本进设置/关于</td><td>V1 层级：主视觉给状态不给版本号</td></tr>
+<tr><td>主操作</td><td>6 项平铺</td><td>主区 3：显示主窗口 / 暂停监听 / 设置</td><td>规则 17.2 高频一步</td></tr>
+<tr><td>低频</td><td>贴图管理、调整浮标常驻</td><td>收进「更多工具」；浮标项栈关闭时禁用+说明</td><td>不拿错误态当常规路径</td></tr>
+<tr><td>退出</td><td>与设置同列表</td><td>独立段 + 完整文案「退出 PastePanda」</td><td>防误点；L1 说用户的话</td></tr>
+<tr><td>图标</td><td>四色渐变 + emoji 混用</td><td>主操作 accent 单色浅底；仅 danger 用红；全 SVG</td><td>V3 一屏一强调色；符号统一</td></tr>
+<tr><td>recents</td><td>预览 +「粘贴」</td><td>+ 第二行 meta（来源 · 相对时间）；首条默认高亮</td><td>可辨识；右键完 Enter 即贴</td></tr>
+<tr><td>库体积</td><td>常驻进度条</td><td>默认隐藏；≥80% 警示条 + 清理建议</td><td>正常不打断，异常才出现</td></tr>
+<tr><td>快捷键提示</td><td>设置写 Ctrl+S（易误解）</td><td>只保留真实热键（如显示主窗口）；无热键不写</td><td>L5 不靠猜、不给假线索</td></tr>
+<tr><td>高度</td><td>随内容 setSize 易抖动</td><td>默认高度钉住（含 3 条 recents）；仅空态/错误变高</td><td>打开稳定、不跳</td></tr>
+<tr><td>动效</td><td>与主窗弹窗同级</td><td>入场 150–200ms 淡入 + 轻微上移</td><td>U2 快/标准档</td></tr>
+</table>
+
+<div class="anno warn">
+<b>明确不做</b>：托盘菜单里做完整仪表盘 / 可拖拽排序 / 嵌套三级菜单 / 可点击的统计跳转深链。
+右键路径的唯一目标是「快进快出」；要细看数据去主窗口。
+</div>
+
+<hr>
+
+<h2>6 · 落地改动清单（确认后实施）</h2>
+
+<table>
+<tr><th>文件</th><th>改动</th></tr>
+<tr><td><code>TrayPopup.tsx</code></td><td>stats 卡改一行摘要；menuItems 拆 primary / more / exit；more 折叠；浮标项按栈状态禁用；recents 加 meta；首条默认 activeIdx=0</td></tr>
+<tr><td><code>popup.css</code></td><td>新增 <code>.statline</code> / <code>.more</code> / 主操作单色 <code>.ic.n</code>；弱化四色渐变为主区 accent；退出分隔；库条默认 display:none + 阈值类</td></tr>
+<tr><td><code>tray_manager.rs</code>（可选）</td><td>init 数据带 <code>stack_mode</code>，前端据此禁用「调整浮标」</td></tr>
+<tr><td>回归</td><td>键盘 ↑↓/Enter/Esc、失焦关闭、主题 6 套、空库/错误态、栈开/关</td></tr>
+</table>
+
+<div class="anno">
+<b>请你拍板</b>：默认推荐「一行摘要 + 主区 3 项 + 更多收纳 + 库条阈值出现」。
+若希望保留三张统计卡但只做图标/退出分隔，也可走保守档。确认后再动 <code>TrayPopup.tsx</code> / <code>popup.css</code>。
+</div>
+
+</body>
+</html>

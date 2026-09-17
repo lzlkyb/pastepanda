@@ -218,6 +218,16 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   transition: transform 0.15s;
 }
+/* 🔴 启用态必须和基础类同文件。原先 `.lanPauseToggle.on` 写在
+   Settings.module.css，而按钮的 `lanPauseToggle` 来自本文件——
+   CSS modules 每文件各自哈希，两个类名永远拼不到一起，
+   启用/停用看起来一模一样（2026-09 用户报「启用停用显示有问题」）。 */
+.lanPauseToggle.lanPauseOn {
+  background: var(--green);
+}
+.lanPauseToggle.lanPauseOn .lanPauseKnob {
+  transform: translateX(16px);
+}
 /* 步骤条。贴在 dialog-header 下面，不跟着 dialog-body 滚 */
 .kbPairSteps {
   display: flex;
@@ -251,6 +261,12 @@
 }
 /* 连接线吃掉剩余宽度，步骤数变化时不用改宽度 */
 .kbPairBar { flex: 1; height: 1px; background: var(--border-color); min-width: 8px; }
+
+/* on/done 与基础类同文件，原因同 lanPauseOn（CSS modules 哈希） */
+.kbPairStep.on { color: var(--text-primary); font-weight: 700; }
+.kbPairStep.on .kbPairStepNum { background: var(--accent); color: #fff; }
+.kbPairStep.done { color: var(--text-secondary); }
+.kbPairStep.done .kbPairStepNum { background: var(--green); color: #fff; }
 /* 第一屏的角色选择卡 */
 .kbPairPick {
   display: flex;
@@ -282,6 +298,8 @@
   color: var(--text-primary);
   resize: none;
 }
+/* 校验失败态；与基础类同文件（CSS modules 哈希，见 lanPauseOn 注释） */
+.kbPairMono.bad { border-color: var(--danger); }
 /* 设备名输入框。
    ❗ 不能写 `className="input"`——项目里根本没有那个全局类，
    写了等于没样式（一直是浏览器默认输入框，2026-09-05 修）。
@@ -328,6 +346,7 @@
   margin: 0 auto;
   animation: kbPairBreathe 2s ease-in-out infinite;
 }
+.kbPairPulse.done { background: var(--green-bg); animation: none; }
 /* 无障碍：系统关了动画就不呼吸（规则 #9）*/
 @media (prefers-reduced-motion: reduce) {
   .kbPairPulse { animation: none; }

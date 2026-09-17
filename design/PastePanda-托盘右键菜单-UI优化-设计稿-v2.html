@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 托盘右键菜单 UI 优化 · 设计稿 v2</title>
+<style>
+/* ==========================================================================
+   本稿令牌全部取自真实代码，未凭空取值：
+   - src/styles/popup.css          托盘弹层（header/cards/item/footer 全部尺寸）
+   - src/components/TrayPopup.tsx   菜单项、recents、状态点、库体积
+   - src/components/TrayPopupSuggestion.module.css  建议条真实 padding/gap
+   - src/styles/theme.css  ocean: --accent#0284C7 --hover#E8ECF2 --border#E0E4EB
+                              --text-primary#0F172A --text-muted#627083
+                              --danger#D82525 --green#11813A --orange#C54A0A
+                              --glass-dialog-bg:#FFFFFF --glass-popover-shadow
+                            midnight: --accent#818CF8 --hover#1F1F23
+   - src-tauri/src/tray_manager.rs  弹窗逻辑尺寸 280 × 470、DWM ROUNDSMALL
+   ========================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:28px 24px 90px;background:#F7F8FA;color:#33404F;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:20px;color:#0F172A;margin:0 0 4px}
+h2{font-size:15px;color:#0F172A;margin:42px 0 8px;padding-top:14px;border-top:1px solid #E0E4EB}
+h2:first-of-type{border-top:0;padding-top:0}
+h3{font-size:12.5px;color:#627083;margin:22px 0 8px;font-weight:600;letter-spacing:.2px}
+.sub{color:#627083;font-size:12.5px;margin:0 0 18px;max-width:940px}
+.note{color:#4E5A6B;font-size:12px;margin:6px 0 14px;max-width:940px}
+code{background:#EDF1F6;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#0B6FA4}
+b{color:#0F172A}
+.anno{margin:12px 0 0;padding:11px 15px;border-radius:8px;border:1px solid #E0E4EB;
+  background:#FBFCFD;font-size:12px;color:#4E5A6B;max-width:940px}
+.anno b{font-weight:600}
+.anno.warn{border-color:#FED7AA;background:#FFF9F3}
+.anno.warn b{color:#8A3407}
+.anno.bad{border-color:#FECACA;background:#FEF6F6}
+.anno.bad b{color:#991B1B}
+.anno.ok{border-color:#BBF7D0;background:#F5FDF7}
+.anno.ok b{color:#15803D}
+table{border-collapse:collapse;margin:12px 0 6px;font-size:12px;max-width:980px}
+th,td{border:1px solid #E0E4EB;padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#F4F6F9;color:#0F172A;font-weight:600;font-size:11.5px}
+td code{font-size:11px}
+ul{margin:6px 0;padding-left:20px}
+li{margin:3px 0}
+
+/* ===== 版面 ===== */
+.stage{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:16px}
+.col{display:flex;flex-direction:column;gap:14px}
+.cap{font-size:11.5px;color:#627083;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;
+  background:#F4F6F9;color:#627083;border:1px solid #E0E4EB;font-weight:600}
+.tag.rec{background:#E0F2FE;color:#0273AD;border-color:#BAE6FD}
+.tag.old{background:#F4F6F9;color:#627083}
+.tag.bad{background:#FEF2F2;color:#991B1B;border-color:#FECACA}
+.tag.new{background:#FFF7ED;color:#C54A0A;border-color:#FED7AA}
+
+/* ===== 托盘弹层：真实 280px 宽、radius 14、ocean 玻璃底 ===== */
+.tray{
+  width:280px;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;
+  background:#FFFFFF;
+  border:1px solid rgba(0,0,0,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4), 0 12px 36px rgba(0,0,0,.10), 0 2px 8px rgba(0,0,0,.05);
+  font-size:12px;color:#0F172A;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+}
+.tray.dk{background:#14141A;color:#E6EDF7;border-color:rgba(255,255,255,.06);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 12px 40px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.25)}
+
+/* header —— popup.css .tray-popup-header / -logo / -title / -status-dot */
+.hd{display:flex;align-items:center;gap:10px;padding:10px 14px 8px;
+  background:linear-gradient(135deg,rgba(2,132,199,.07),rgba(2,132,199,.03));
+  border-bottom:1px solid #E0E4EB}
+.tray.dk .hd{background:linear-gradient(135deg,rgba(129,140,248,.10),rgba(129,140,248,.04));
+  border-bottom-color:rgba(255,255,255,.07)}
+.logo{width:32px;height:32px;border-radius:8px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center}
+.logo img{width:22px;height:22px;display:block}
+.titles{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.nm{font-size:13px;font-weight:600;line-height:1.2}
+.vb{display:inline-block;font-size:9px;font-weight:600;color:#fff;padding:1px 5px;border-radius:999px;
+  background:linear-gradient(135deg,#0284C7,#0369A1);box-shadow:0 1px 3px rgba(2,132,199,.35);line-height:1.4}
+.dot{width:8px;height:8px;border-radius:50%;background:#CCC;flex-shrink:0}
+.dot.on{background:#11813A;box-shadow:0 0 6px rgba(17,129,58,.4)}
+.tray.dk .dot.on{background:#4ADE80;box-shadow:0 0 6px rgba(74,222,128,.4)}
+
+/* 三张统计卡 —— .tray-popup-cards / -card / .card-icon-slot */
+.cards{display:flex;gap:6px;padding:6px 10px}
+.card{flex:1;padding:8px 6px 6px;border-radius:10px;text-align:center;
+  background:rgba(2,132,199,.06);border:1px solid rgba(2,132,199,.14);
+  box-shadow:0 2px 6px rgba(2,132,199,.10);
+  display:flex;flex-direction:column;align-items:center;gap:3px}
+.tray.dk .card{background:rgba(129,140,248,.08);border-color:rgba(129,140,248,.16);box-shadow:none}
+.ci{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 6px rgba(0,0,0,.18)}
+.ci.b{background:linear-gradient(135deg,#3B82F6,#0078D4)}
+.ci.p{background:linear-gradient(135deg,#8B5CF6,#5856D6)}
+.ci.o{background:linear-gradient(135deg,#F59E0B,#FF9500)}
+.cv{font-size:16px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.card:nth-child(1) .cv{color:#0078D4}
+.card:nth-child(2) .cv{color:#5856D6}
+.card:nth-child(3) .cv{color:#FF9500}
+.tray.dk .card:nth-child(1) .cv{color:#93C5FD}
+.tray.dk .card:nth-child(2) .cv{color:#C4B5FD}
+.tray.dk .card:nth-child(3) .cv{color:#FDE68A}
+.cl{font-size:10px;color:#627083}
+.tray.dk .cl{color:#8FA3C4}
+
+/* 分区标签 —— .tray-popup-section-label */
+.sec{display:flex;align-items:center;gap:7px;padding:6px 14px 2px;
+  font-size:10.5px;font-weight:600;color:#627083;letter-spacing:.5px;text-transform:uppercase}
+.tray.dk .sec{color:#8FA3C4}
+.sec .si{width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#8B5CF6,#5856D6);color:#fff;flex-shrink:0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 6px rgba(0,0,0,.18)}
+
+/* 建议条 —— TrayPopupSuggestion.module.css 真实值 */
+.sug{display:flex;align-items:center;gap:6px;margin:4px 10px 2px;padding:5px 8px;border-radius:7px;
+  background:rgba(127,127,127,.08);border:1px solid rgba(127,127,127,.18);font-size:11px}
+.sug .si2{width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+  background:#E0F2FE;color:#0273AD;flex-shrink:0}
+.sug .tx{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug .ub{display:inline-flex;align-items:center;gap:2px;border-radius:5px;padding:2px 6px;font-size:11px;
+  background:#E0F2FE;color:#0273AD;font-weight:600;flex-shrink:0}
+.sug .xb{width:18px;height:18px;display:flex;align-items:center;justify-content:center;
+  border-radius:5px;color:#627083;flex-shrink:0}
+
+/* 菜单项 —— .tray-popup-item */
+.list{display:flex;flex-direction:column;padding:2px 6px}
+.item{display:flex;align-items:center;gap:10px;width:100%;padding:6px 8px;border-radius:8px;
+  background:transparent;color:inherit;font:inherit;font-size:12.5px;text-align:left;
+  border:0;cursor:pointer;min-height:34px;line-height:1.3}
+.item.act{background:#E8ECF2}
+.tray.dk .item.act{background:#1F1F23}
+.item.danger{color:#D82525}
+.item.danger.act{background:rgba(216,37,37,.10)}
+.it-ic{width:22px;height:22px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-size:11px;line-height:1;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 6px rgba(0,0,0,.18)}
+.ib{background:linear-gradient(135deg,#3B82F6,#0078D4)}
+.io{background:linear-gradient(135deg,#F59E0B,#FF9500)}
+.ip{background:linear-gradient(135deg,#8B5CF6,#AF52DE)}
+.ir{background:linear-gradient(135deg,#EF4444,#FF3B30)}
+.it-tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it-h{flex-shrink:0;font-size:10.5px;color:#627083;opacity:.6}
+.dv{height:1px;background:#E0E4EB;margin:2px 12px;opacity:.6}
+.tray.dk .dv{background:rgba(255,255,255,.10)}
+
+/* footer —— .tray-popup-footer */
+.ft{padding:8px 12px;font-size:10.5px;color:#627083;border-top:1px solid #E0E4EB;
+  display:flex;flex-direction:column;gap:5px}
+.tray.dk .ft{color:#8FA3C4;border-top-color:rgba(255,255,255,.07)}
+.ft-row{display:flex;align-items:center;gap:8px}
+.ft-ic{width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#06B6D4,#3B82F6);color:#fff;flex-shrink:0}
+.ft-lb{font-weight:600;color:#495565;flex-shrink:0}
+.tray.dk .ft-lb{color:#B6C2D4}
+.ft-nm{margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bar{height:4px;border-radius:2px;background:#E0E4EB;overflow:hidden}
+.tray.dk .bar{background:rgba(255,255,255,.10)}
+.bar i{display:block;height:100%;border-radius:2px;background:linear-gradient(90deg,#3B82F6,#0078D4)}
+.bar i.warn{background:linear-gradient(90deg,#F59E0B,#EF4444)}
+
+/* toast —— .tray-popup-toast */
+.toast-wrap{position:relative}
+.toast{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:20px;font-size:12px;
+  font-weight:500;color:#fff;background:rgba(52,199,89,.9);white-space:nowrap;
+  box-shadow:0 4px 16px rgba(0,0,0,.2)}
+
+/* ===== 升级版控件 ===== */
+/* 一行摘要（方案A） */
+.statline{display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:11px;color:#495565;
+  border-bottom:1px solid #F0F2F5}
+.tray.dk .statline{color:#8FA3C4;border-bottom-color:rgba(255,255,255,.06)}
+.statline b{font-weight:600;font-variant-numeric:tabular-nums;font-size:12px}
+.statline .sep{opacity:.35}
+.statline .st{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600}
+.statline .st i{width:6px;height:6px;border-radius:50%;background:#11813A;display:block}
+.statline .st.off i{background:#94A3B8}
+.statline .st.off{color:#8A3407}
+
+/* 主操作单色图标（方案A/B：一屏一强调色） */
+.it-ic.acc{background:#E0F2FE;color:#0273AD;box-shadow:none}
+.tray.dk .it-ic.acc{background:rgba(129,140,248,.18);color:#A5B4FC}
+.it-ic.dgr{background:#FEF2F2;color:#D82525;box-shadow:none}
+.tray.dk .it-ic.dgr{background:rgba(248,113,113,.18);color:#F87171}
+
+.item.dis{opacity:.45;cursor:not-allowed}
+.item .sub2{display:block;font-size:10px;font-weight:400;color:#627083;margin-top:1px}
+.tray.dk .item .sub2{color:#8FA3C4}
+
+/* 底部工具条（方案B） */
+.tbar{display:flex;align-items:center;gap:2px;padding:5px 8px;border-top:1px solid #E0E4EB;
+  background:#FAFBFC}
+.tray.dk .tbar{background:#101014;border-top-color:rgba(255,255,255,.07)}
+.tbar .tb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  padding:4px 0;border:0;border-radius:7px;background:transparent;color:#627083;font:inherit;
+  font-size:9.5px;cursor:pointer;line-height:1.1}
+.tray.dk .tbar .tb{color:#8FA3C4}
+.tbar .tb.on{background:#E8ECF2;color:#0F172A}
+.tray.dk .tbar .tb.on{background:#1F1F23;color:#E6EDF7}
+.tbar .tb.ex{color:#D82525}
+.tray.dk .tbar .tb.ex{color:#F87171}
+.tray.dk .tbar .tb.ex.on{background:rgba(248,113,113,.14)}
+
+/* header 角标（方案B 统计下沉） */
+.hd-stat{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10px;color:#627083;
+  font-variant-numeric:tabular-nums;flex-shrink:0}
+.tray.dk .hd-stat{color:#8FA3C4}
+.hd-stat .st i{width:6px;height:6px;border-radius:50%;background:#11813A;display:inline-block;vertical-align:1px}
+
+/* 圆角差异示意 */
+.corner-demo{display:flex;gap:20px;align-items:flex-start;margin-top:12px}
+.cd{width:120px;height:74px;background:#fff;border:1px solid #E0E4EB;display:flex;align-items:center;
+  justify-content:center;font-size:10px;color:#627083;text-align:center;line-height:1.5}
+.cd.r8{border-radius:8px}
+.cd.r14{border-radius:14px}
+.cd.out{border-radius:8px;position:relative;background:#F4F6F9}
+.cd.out>div{position:absolute;inset:0;border-radius:14px;background:#fff;border:1px solid rgba(0,0,0,.08)}
+.cd.out span{position:relative;z-index:1}
+.pill{display:inline-block;font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;
+  background:#F4F6F9;color:#627083;border:1px solid #E0E4EB;margin-left:4px;vertical-align:1px}
+.pill.red{background:#FEF2F2;color:#991B1B;border-color:#FECACA}
+.pill.grn{background:#DCFCE7;color:#15803D;border-color:#86EFAC}
+.pill.org{background:#FFF7ED;color:#C54A0A;border-color:#FED7AA}
+</style>
+</head>
+<body>
+
+<h1>托盘右键菜单 · UI 优化建议 + 设计稿 <span class="pill org">v2</span></h1>
+<p class="sub">
+  右键托盘打开的是<strong>自绘</strong>弹层（<code>tray-popup</code> 窗口 → <code>popup.html</code> → <code>TrayPopup.tsx</code>），
+  不是 Win32 原生菜单 —— 所以 UI 完全可改，没有系统控件天花板。本稿与今天 11:53 那版共用同一套结论方向，
+  增量在三处：<b>①</b> 补上「设计稿画不出、但真实渲染会走样」的三个问题（圆角 / 阴影 / 高度溢出）；
+  <b>②</b> 找到一份死代码与它带来的双份菜单定义；<b>③</b> 把单一方案扩成 A / B / C 三档供拍板。
+</p>
+
+<div class="anno ok">
+<b>结论先行</b>：推荐 <b>方案 A（信息压缩型）</b>。理由不是审美，是高度账 —— 现状内容实测 <b>593px</b>，
+而 Rust 给弹窗定位用的是 <b>470px</b>，这个差值让弹层底部约 <b>100px</b> 溢出到任务栏下面（详见 §2）。
+方案 A 把内容压到实测 <b>449px</b>，落回定位预算以内，<b>顺手把溢出问题一起修掉</b>。
+方案 B 更快（383px）但砍掉统计；方案 C 最保守（516px）但不解决高度问题。
+所有高度都是 headless 按 280px 宽真实渲染量出来的，不是估的。
+</div>
+
+<h2>§1 · 现状 1:1 还原</h2>
+<p class="note">
+  宽度 <b>280px</b>（<code>tray_manager.rs:316</code> <code>popup_w = 280.0</code>，不是 300），
+  圆角 <code>14px</code>，默认主题 ocean（弹窗底 <code>--glass-dialog-bg: #FFFFFF</code>）。
+  各段真实高度见本节末尾的<b>高度账</b>；深色版为配色对照，省略了与浅色版重复的中间几项。
+</p>
+
+<div class="stage">
+  <div>
+    <div class="cap">现状<span class="tag old">实渲染</span><span class="tag bad">实测 593px</span></div>
+    <div class="tray">
+      <div class="hd">
+        <div class="logo"><img src="../public/icon.png" alt=""></div>
+        <div class="titles">
+          <div class="nm">PastePanda</div>
+          <div><span class="vb">v7.1.7</span></div>
+        </div>
+        <span class="dot on"></span>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <div class="ci b"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+          <div class="cv">12</div><div class="cl">今日</div>
+        </div>
+        <div class="card">
+          <div class="ci p"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+          <div class="cv">3,482</div><div class="cl">总计</div>
+        </div>
+        <div class="card">
+          <div class="ci o"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg></div>
+          <div class="cv">5</div><div class="cl">置顶</div>
+        </div>
+      </div>
+      <div class="dv"></div>
+      <div class="sec"><span class="si"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>最近复制</div>
+      <div class="sug">
+        <span class="si2"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>
+        <span class="tx">用「格式化 JSON」处理这段内容？</span>
+        <span class="ub">使用 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
+        <span class="xb"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+      </div>
+      <div class="list">
+        <button class="item act"><span class="it-ic ib">📝</span><span class="it-tx">{"bussiId": 2100134552…</span><span class="it-h">粘贴</span></button>
+        <button class="item"><span class="it-ic ib">📝</span><span class="it-tx">INSERT INTO MY_TABLE…</span><span class="it-h">粘贴</span></button>
+        <button class="item"><span class="it-ic ip">🖼</span><span class="it-tx">订单截图 2026-09-17</span><span class="it-h">粘贴</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="it-ic ib"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></span><span class="it-tx">显示主窗口</span><span class="it-h">Ctrl+Alt+V</span></button>
+        <button class="item"><span class="it-ic io"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></span><span class="it-tx">暂停监听</span></button>
+        <button class="item"><span class="it-ic ip"><span style="font-size:13px">📌</span></span><span class="it-tx">贴图管理…</span></button>
+        <button class="item"><span class="it-ic ip"><span style="font-size:13px">🎯</span></span><span class="it-tx">调整浮标位置…</span><span class="it-h">栈粘贴浮标</span></button>
+        <button class="item"><span class="it-ic ip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="it-tx">设置…</span><span class="it-h">Ctrl+S</span></button>
+        <button class="item danger"><span class="it-ic ir"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="it-tx">退出</span></button>
+      </div>
+      <div class="ft">
+        <div class="ft-row">
+          <span class="ft-ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
+          <span class="ft-lb">数据库存储</span>
+          <span class="ft-nm">23.4 MB / 100 MB · 23.4%</span>
+        </div>
+        <div class="bar"><i style="width:23.4%"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cap">同一份内容的深色（midnight）<span class="tag">四色渐变 + emoji 在暗底更跳</span></div>
+    <div class="tray dk">
+      <div class="hd"><div class="logo"><img src="../public/icon.png" alt=""></div><div class="titles"><div class="nm">PastePanda</div><div><span class="vb">v7.1.7</span></div></div><span class="dot on"></span></div>
+      <div class="cards">
+        <div class="card"><div class="ci b"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="cv">12</div><div class="cl">今日</div></div>
+        <div class="card"><div class="ci p"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg></div><div class="cv">3,482</div><div class="cl">总计</div></div>
+        <div class="card"><div class="ci o"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg></div><div class="cv">5</div><div class="cl">置顶</div></div>
+      </div>
+      <div class="dv"></div>
+      <div class="sec"><span class="si"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>最近复制</div>
+      <div class="list">
+        <button class="item act"><span class="it-ic ib">📝</span><span class="it-tx">{"bussiId": 2100134552…</span><span class="it-h">粘贴</span></button>
+        <button class="item"><span class="it-ic ib">📝</span><span class="it-tx">INSERT INTO MY_TABLE…</span><span class="it-h">粘贴</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="it-ic ib"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></span><span class="it-tx">显示主窗口</span><span class="it-h">Ctrl+Alt+V</span></button>
+        <button class="item"><span class="it-ic io"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></span><span class="it-tx">暂停监听</span></button>
+        <button class="item"><span class="it-ic ip"><span style="font-size:13px">📌</span></span><span class="it-tx">贴图管理…</span></button>
+        <button class="item danger"><span class="it-ic ir"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="it-tx">退出</span></button>
+      </div>
+      <div class="ft"><div class="ft-row"><span class="ft-ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span><span class="ft-lb">数据库存储</span><span class="ft-nm">23.4 MB / 100 MB · 23.4%</span></div><div class="bar"><i style="width:23.4%"></i></div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cap">Toast 位置<span class="tag bad">盖住底部 42px</span></div>
+    <div class="toast-wrap">
+      <div class="tray" style="height:300px;overflow:hidden">
+        <div class="list" style="padding-top:8px">
+          <button class="item"><span class="it-ic ib"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></span><span class="it-tx">显示主窗口</span></button>
+          <button class="item"><span class="it-ic ip">📌</span><span class="it-tx">贴图管理…</span></button>
+        </div>
+        <div class="dv" style="margin-top:auto"></div>
+        <div class="list" style="padding-bottom:6px">
+          <button class="item danger"><span class="it-ic ir"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="it-tx" style="opacity:.35">退出</span></button>
+        </div>
+        <div class="toast" style="opacity:.92"><span>✓</span><span>已粘贴</span></div>
+      </div>
+    </div>
+    <div class="note" style="max-width:280px;margin-top:8px">
+      <code>popup.css:551</code> toast <code>bottom:12px</code> + 高约 30px，压在最后一个菜单项上。
+      粘贴成功提示 800ms 内点不到「退出」。
+    </div>
+  </div>
+</div>
+
+<h3>高度花在哪（按 popup.css 盒模型逐段相加，末尾用实测校准）</h3>
+<table>
+<tr><th>段</th><th>高</th><th>怎么来的</th></tr>
+<tr><td>header</td><td>51px</td><td><code>padding 10+8</code> + logo 32 + <code>border-bottom 1</code></td></tr>
+<tr><td>三张统计卡</td><td>88px</td><td>容器 <code>padding 6+6</code> + 卡 <code>padding 8+6</code> + icon 28 + gap 6 + value 18 + label 13 + border 2</td></tr>
+<tr><td>「最近复制」标签</td><td>28px</td><td><code>padding 6+2</code> + icon 20</td></tr>
+<tr><td>建议条</td><td>34px</td><td><code>margin 4+2</code> + <code>padding 5+5</code> + icon 18</td></tr>
+<tr><td>recents × 3</td><td>106px</td><td>每项 <code>padding 6+6</code> + max(文字 17, icon 22) = 34；容器 <code>padding 2+2</code></td></tr>
+<tr><td>分隔线 × 2</td><td>10px</td><td>1px + <code>margin 2</code> 上下</td></tr>
+<tr><td>操作项 × 6</td><td>212px</td><td>每项 <code>padding 6+6</code> + icon 22 = 34；容器 <code>padding 2+6</code></td></tr>
+<tr><td>底部库体积条</td><td>46px</td><td><code>padding 8+8</code> + row 20 + gap 5 + bar 4 + <code>border-top 1</code></td></tr>
+<tr><td><b>合计（逐段估算）</b></td><td><b>≈575px</b></td><td>实测 <b>593px</b>，差 18px 来自字号行高取整 —— <b>以实测为准</b></td></tr>
+<tr><td><b>vs 定位预算</b></td><td><b>593 / 470</b></td><td><code>tray_manager.rs:317</code> 给弹窗定位用的是 <b>470px</b> —— 实际超出 <b>123px</b></td></tr>
+</table>
+<div class="anno warn">
+<b>数据来源</b>：上表逐段值是按 CSS 盒模型算的估算；<b>本稿所有方案高度都是实测值</b> ——
+把每一稿按 <b>280px 宽</b>放进 headless 浏览器真实渲染，用 <code>getBoundingClientRect()</code> 量取。实测结论：<br>
+<b>现状 593px</b> · 方案 A 默认态 <b>449px</b> · 方案 A 展开态 <b>449px</b>（就地替换，不增高）·
+方案 B <b>383px</b> · 方案 C <b>516px</b>。定位预算只有 <b>470px</b> —— 只有 A 和 B 落在里面。
+</div>
+
+<h2>§2 · 设计稿画不出来的三件事（本版增量 · 按优先级排）</h2>
+<p class="note">
+这三条不是审美问题，是<b>「稿子画成 A、落地渲染成 B」</b>的根因。不先修，任何视觉稿都只能停留在稿子上。
+</p>
+
+<h3>① 高度账对不上：内容实测 593px，定位按 470px 算 → 底部被任务栏吃掉 <span class="pill red">P0</span></h3>
+<table>
+<tr><th>位置</th><th>代码</th><th>事实</th></tr>
+<tr><td>弹窗定位尺寸</td><td><code>tray_manager.rs:317</code></td><td><code>popup_h = 470.0</code>，<code>calc_popup_position()</code> 用它算 <code>y</code>，并钳制到工作区</td></tr>
+<tr><td>窗口真实高度</td><td><code>TrayPopup.tsx:489–505</code></td><td>渲染后 <code>setSize(LogicalSize(innerWidth, root.scrollHeight))</code>，把高度撑到内容高</td></tr>
+<tr><td>两条路径的交点</td><td>—</td><td><code>setSize</code> 之后 <b>位置从未重算</b>。窗口变高只会向下长，底边突破 <code>max_y</code> 钳制范围</td></tr>
+</table>
+<div class="anno bad">
+<b>后果</b>：任务栏在底部时，窗口底边仍以 <code>tray_y - 470 - 4</code> 为基准，实际高度 593 → 向下多出约 <b>123px</b>，
+减去任务栏自身高度（100% 缩放约 40–48px），仍有约 <b>55–65px 落在任务栏之下</b> —— 正好是「退出」和库体积条所在的区域。<br>
+<b>修法（两选一，建议先做 A）</b>：
+<ul>
+<li><b>A · 把内容压回预算内</b>：方案 A/B 实测降到 <b>449 / 383px</b>，<b>不动一行 Rust</b>，问题自然消失。这是推荐路径。</li>
+<li><b>B · 让定位跟着真实内容走</b>：前端把 <code>root.scrollHeight</code> 通过 <code>invoke</code> 回传，Rust 用真实高重算 <code>calc_popup_position</code>。多一次窗口移动，可能看到"先出现再跳位"。</li>
+</ul>
+<span style="display:block;margin-top:6px">
+<b>为什么建议走 A 而不是 B</b>：改定位时序意味着每次打开弹窗都可能"先出现在旧位置再跳一下"，
+是对"快进快出"的伤害。把内容压进预算内则没有任何时序副作用 —— 而且顺带把 §4 的信息密度问题一起解决了。
+</span>
+</div>
+
+<h3>② 圆角两层：DWM 切成 8px，CSS 写着 14px，中间那圈是 body 底色 <span class="pill org">P1</span></h3>
+<div class="corner-demo">
+  <div><div class="cd r8">DWM ROUNDSMALL<br>≈8px（真实窗口）</div></div>
+  <div><div class="cd r14">CSS border-radius<br>14px（稿子画的）</div></div>
+  <div><div class="cd out"><div></div><span>实际叠加：<br>外 8px 裁掉 14px</span></div></div>
+</div>
+<div class="anno warn">
+<b>链路</b>：<code>tray_manager.rs:454</code> 设 <code>DWMWCP_ROUNDSMALL = 2</code>（Win11 小圆角）；
+<code>popup.css:35</code> 写 <code>border-radius: 14px</code>；
+<code>tray_manager.rs:381</code> 用 <code>.shadow(false)</code> 且 <code>popup.css:10</code> 给 <code>body</code> 铺了实色底 <code>var(--app-bg)</code>。<br>
+三者叠加的结果：<b>①</b> 窗口四角被 DWM 按 8px 切掉，CSS 的 14px 只在窗口内部生效，视觉圆角实际是 8px；
+<b>②</b> 窗口本身是直角矩形 + <code>shadow(false)</code>，<code>.tray-popup-root</code> 向外扩散的
+<code>--glass-popover-shadow</code> 全部落在窗口之外 → <b>阴影实际不可见</b>；
+<b>③</b> 14px 圆角与 8px 窗口圆角之间夹着一圈 <code>body</code> 底色，在浅色主题下表现为「描边内缩、外面留一圈白」。<br>
+<b>建议</b>：把 CSS 圆角对齐到 <code>8px</code>（与 DWM 一致，一了百了），阴影改走 ROUNDSMALL 之外的 DWM 原生投影，
+或干脆接受无阴影并用 1px 描边 + 内高光承担立体感（当前 <code>inset 0 1px 0</code> 已经在做这件事）。
+</div>
+
+<h3>③ 状态点是颜色唯一通道 <span class="pill org">P1 · 无障碍</span></h3>
+<p class="note">
+<code>TrayPopup.tsx:528</code> 只有一个 <code>&lt;span className="tray-popup-status-dot" /&gt;</code>：
+无文字、无 <code>title</code>、无 <code>aria-label</code>。监听中 <code>#11813A</code> / 已暂停 <code>#CCC</code>，
+<b>整个界面判断「是否在监听」就靠这一颗 8px 圆点的颜色</b>。色觉障碍用户看到的是两个灰度相近的点。
+方案 A/B 里把它改成「点 + 文字」（<code>监听中 / 已暂停</code>），顺带省掉一行。
+</p>
+
+<h2>§3 · 结构层：一份死代码，两套菜单定义</h2>
+<p class="note">
+读代码时发现的，与视觉无关但会影响后续每一次改动 —— 值得在这一版一并说清楚。
+</p>
+<table>
+<tr><th>文件</th><th>内容</th><th>被谁引用</th></tr>
+<tr>
+  <td><code>src/lib/trayUtils.ts</code></td>
+  <td><code>buildMenuItems()</code> 返回 <b>4 项</b>：显示主窗口 / 暂停监听 / 设置 / 退出<br>
+      <span style="font-size:11px;color:#627083">另有 <code>formatDbSize</code> / <code>calcMemPercent</code> / <code>clampIndexDown</code> / <code>clampIndexUp</code> / <code>resolvePasteTarget</code> / <code>getTypeColor</code></span></td>
+  <td><code>trayUtils.test.ts</code>（仅测试）<br><code>StackBanner.tsx</code> 只用了 <code>getTypeIcon</code></td>
+</tr>
+<tr>
+  <td><code>TrayPopup.tsx</code></td>
+  <td>内联 <code>menuItems</code> <b>6 项</b>：多了「贴图管理…」「调整浮标位置…」；<br>
+      <code>formatDbSize</code>(373) / <code>memPercent</code>(379) / 类型图标(608) / 键盘钳制(456,458) <b>全部重写了一遍</b></td>
+  <td>线上唯一路径</td>
+</tr>
+</table>
+<div class="anno bad">
+<b>四个已经埋下的雷</b>
+<ul>
+<li><b>双份定义会各自漂移</b>：<code>trayUtils</code> 里没有「贴图管理 / 调整浮标」，谁按它改一次菜单就会把这两个入口<b>删掉</b>。</li>
+<li><code>trayUtils.ts:66</code> 用 <code>iconClass: "icon-gray"</code>，而 <code>popup.css</code> 里
+    <b>没有 <code>.icon-gray</code> 这条规则</b>（全仓 grep 只此一处）。真用起来 → 图标背景<b>静默失效</b>，
+    tsc 和 vitest 都发现不了 —— 正是 <code>css-module-class-safety</code> 那类耦合。</li>
+<li><code>trayUtils.ts:57</code> 硬编码 <code>hint: "Ctrl+Alt+V"</code>；<code>TrayPopup.tsx:159</code> 读用户真实配置。
+    两处对同一个提示给了不同答案。</li>
+<li><code>trayUtils.ts</code> 的 <code>TrayRecentItem</code> 有 <code>time</code> 字段，实际渲染的
+    <code>RecentItem</code> 没有 —— 而本稿正想加「来源 · 相对时间」，会重蹈覆辙。</li>
+</ul>
+<b>建议</b>：方案 A/B 落地时<b>顺手把 <code>trayUtils.ts</code> 收敛成真源</b>（TSX 改为引用它），
+或反向删除无用导出只留 <code>getTypeIcon</code>。<b>不要留着两份</b>。
+</div>
+
+<h2>§4 · 交互与信息层问题清单</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>位置</th><th>依据 / 后果</th><th>优先级</th></tr>
+<tr><td>1</td><td>三张统计卡占 <b>88px</b>（占现状高度 15%）</td><td><code>TrayPopup.tsx:550–573</code></td><td>右键的真实意图是「去粘贴」，统计是路过信息</td><td>P1</td></tr>
+<tr><td>2</td><td>每条 recents 都挂一个「粘贴」</td><td><code>TrayPopup.tsx:627</code></td><td>3 行重复同一个词，横向挤掉预览宽度（预览已截 26 字）</td><td>P1</td></tr>
+<tr><td>3</td><td>emoji 与线性 SVG 混用</td><td><code>:405,416</code>（📌🎯）<br><code>:608</code>（🖼📁📝）</td><td>emoji 不走 <code>currentColor</code>、跨 Windows 版本渲染不一致、无法跟随主题变色</td><td>P1</td></tr>
+<tr><td>4</td><td><code>Ctrl+S</code> 是假线索</td><td><code>TrayPopup.tsx:434</code></td><td><code>Ctrl+S</code> 只在<b>主窗口</b>绑定（<code>keyboardActions.ts:287</code>）；弹层 keydown 只处理 ↑↓/Enter/Esc（<code>:452–479</code>）→ 在弹层里按 Ctrl+S 什么都不发生</td><td>P1</td></tr>
+<tr><td>5</td><td>库体积条常驻</td><td><code>TrayPopup.tsx:665–688</code></td><td>占用率正常时是纯噪音；该在异常时出现</td><td>P2</td></tr>
+<tr><td>6</td><td>「调整浮标位置」点了才报错</td><td><code>TrayPopup.tsx:419–426</code></td><td>栈未开时能点，点了才 toast「先开一次栈模式」→ 把错误态当常规路径</td><td>P2</td></tr>
+<tr><td>7</td><td>Toast 压住最后一个菜单项</td><td><code>popup.css:551</code></td><td>见 §1 第三张图</td><td>P2</td></tr>
+<tr><td>8</td><td>「退出」与「设置」同列表</td><td><code>TrayPopup.tsx:437–444</code></td><td>两个语义相反的项相邻，误点代价不对称</td><td>P2</td></tr>
+<tr><td>9</td><td>recents 只有 3 条，无来源/时间</td><td><code>tray_manager.rs:362</code></td><td><code>get_recent_texts_public(app, 3)</code>；<code>source</code> 已回传但界面没用</td><td>P2</td></tr>
+<tr><td>10</td><td>CSS 有一行悬空声明</td><td><code>popup.css:363–364</code></td><td><code>.tray-popup-item-icon.img img{…}</code> 闭合后多出一行 <code>line-height:1;</code> 与一个多余 <code>}</code>，落在规则之外 —— 图标 <code>line-height:1</code> 从未生效（emoji 居中实际靠 flex 兜住）</td><td>P2</td></tr>
+</table>
+
+<h2>§5 · 三个方案</h2>
+<p class="note">
+三稿共用同一条主张：<b>右键路径的唯一目标是「快进快出」</b>，要细看数据去主窗口。
+差别只在「砍到哪里为止」。<br>
+❗ 三稿里的条目图标<b>已全部换成线性 SVG</b>（现状的 emoji 只在 §1 保留，专门用来做对照），
+统一走 <code>currentColor</code> 才能跟随主题变色 —— 现在的代码里
+「显示主窗口」是 SVG、紧接着的「贴图管理」是 📌 emoji，同一列里两种符号体系，这是 §4 第 3 条。
+</p>
+
+<div class="stage">
+  <!-- ============ 方案 A ============ -->
+  <div class="col">
+    <div class="cap">方案 A · 信息压缩型<span class="tag rec">推荐</span><span class="tag">实测 449px</span></div>
+    <div class="tray">
+      <div class="hd" style="padding-bottom:7px">
+        <div class="logo"><img src="../public/icon.png" alt=""></div>
+        <div class="titles"><div class="nm">PastePanda</div><div style="font-size:10px;color:#627083">剪贴板</div></div>
+        <span class="dot on"></span>
+      </div>
+      <!-- 三卡 → 一行摘要 + 状态文字（U7：颜色不作唯一通道） -->
+      <div class="statline">
+        <span>今日 <b>12</b></span><span class="sep">·</span>
+        <span>共 <b>3,482</b></span><span class="sep">·</span>
+        <span>置顶 <b>5</b></span>
+        <span class="st"><i></i>监听中</span>
+      </div>
+      <div class="sec"><span class="si"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>最近复制</div>
+      <div class="sug">
+        <span class="si2"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>
+        <span class="tx">格式化 JSON？</span>
+        <span class="ub">使用</span>
+      </div>
+      <div class="list">
+        <button class="item act"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">{"bussiId": 2100134552…<span class="sub2">Chrome · 刚刚</span></span></button>
+        <button class="item"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">INSERT INTO MY_TABLE…<span class="sub2">远程桌面 · 2 分钟前</span></span></button>
+        <button class="item"><span class="it-ic ip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span><span class="it-tx">订单截图 2026-09-17<span class="sub2">截图工具 · 1 小时前</span></span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="it-ic acc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></span><span class="it-tx">显示主窗口</span><span class="it-h">Ctrl+Alt+V</span></button>
+        <button class="item"><span class="it-ic acc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></span><span class="it-tx">暂停监听</span></button>
+        <button class="item"><span class="it-ic acc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg></span><span class="it-tx">更多工具</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list" style="padding-bottom:8px">
+        <button class="item danger"><span class="it-ic dgr"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="it-tx">退出 PastePanda</span></button>
+      </div>
+    </div>
+
+    <div class="cap" style="margin-top:4px">方案 A · 点「更多工具」后<span class="tag rec">就地替换，不增高</span><span class="tag">实测 449px</span></div>
+    <div class="tray">
+      <div class="hd" style="padding-bottom:7px">
+        <div class="logo"><img src="../public/icon.png" alt=""></div>
+        <div class="titles"><div class="nm">PastePanda</div><div style="font-size:10px;color:#627083">剪贴板</div></div>
+        <span class="dot on"></span>
+      </div>
+      <div class="statline">
+        <span>今日 <b>12</b></span><span class="sep">·</span><span>共 <b>3,482</b></span><span class="sep">·</span><span>置顶 <b>5</b></span>
+        <span class="st"><i></i>监听中</span>
+      </div>
+      <div class="sec"><span class="si"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>最近复制</div>
+      <div class="sug"><span class="si2"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="tx">格式化 JSON？</span><span class="ub">使用</span></div>
+      
+        <button class="item act"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">{"bussiId": 2100134552…<span class="sub2">Chrome · 刚刚</span></span></button>
+        <button class="item"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">INSERT INTO MY_TABLE…<span class="sub2">远程桌面 · 2 分钟前</span></span></button>
+        <button class="item"><span class="it-ic ip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span><span class="it-tx">订单截图 2026-09-17<span class="sub2">截图工具 · 1 小时前</span></span></button>
+      
+      <div class="dv"></div>
+      
+        <button class="item"><span class="it-ic acc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg></span><span class="it-tx">贴图管理…</span></button>
+        <button class="item dis"><span class="it-ic acc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><span class="it-tx">调整浮标位置<span class="sub2">先开启粘贴栈</span></span></button>
+        <button class="item"><span class="it-ic acc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></span><span class="it-tx">返回</span></button>
+      
+      <div class="dv"></div>
+      <div class="list" style="padding-bottom:8px">
+        <button class="item danger"><span class="it-ic dgr"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="it-tx">退出 PastePanda</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 B ============ -->
+  <div class="col">
+    <div class="cap">方案 B · 任务优先型<span class="tag new">最快</span><span class="tag new">实测 383px</span></div>
+    <div class="tray">
+      <div class="hd" style="padding-bottom:7px">
+        <div class="logo"><img src="../public/icon.png" alt=""></div>
+        <div class="titles"><div class="nm">PastePanda</div><div style="font-size:10px;color:#627083">剪贴板</div></div>
+        <span class="hd-stat">12 · 3,482 · 5</span>
+        <span class="dot on"></span>
+      </div>
+      <div class="sec"><span class="si"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>最近复制</div>
+      <div class="sug"><span class="si2"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="tx">格式化 JSON？</span><span class="ub">使用</span></div>
+      <div class="list">
+        <button class="item act"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">{"bussiId": 2100134552…<span class="sub2">Chrome · 刚刚</span></span></button>
+        <button class="item"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">INSERT INTO MY_TABLE…<span class="sub2">远程桌面 · 2 分钟前</span></span></button>
+        <button class="item"><span class="it-ic ip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span><span class="it-tx">订单截图 2026-09-17<span class="sub2">截图工具 · 1 小时前</span></span></button>
+        <button class="item"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">https://example.com/docs…<span class="sub2">Edge · 3 小时前</span></span></button>
+        <button class="item"><span class="it-ic io"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span><span class="it-tx">设计规范-v3.pdf<span class="sub2">资源管理器 · 昨天</span></span></button>
+      </div>
+      <div class="tbar">
+        <button class="tb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>主窗口</button>
+        <button class="tb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>暂停</button>
+        <button class="tb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>贴图</button>
+        <button class="tb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>设置</button>
+        <button class="tb ex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>退出</button>
+      </div>
+    </div>
+    <div class="anno" style="max-width:280px;margin-top:0">
+      <b>主张</b>：右键托盘的 90% 场景是「把刚才复制的贴到当前窗口」。
+      recents 从 3 条提到 <b>5 条</b>上位成主角，操作降级为底部一条 <b>32px</b> 图标工具条。
+      统计不占行，压进 header 右侧一行小字。<br>
+      <b>高度实测 383px</b>，只有现状的 65%，一屏永远装得下、不滚动。
+      它也是三稿里唯一「不依赖任何折叠交互」就稳定的方案 —— 没有二级状态，就没有二级状态的意外。
+    </div>
+
+    <div class="cap" style="margin-top:4px">方案 B · 深色 + 暂停监听态</div>
+    <div class="tray dk">
+      <div class="hd" style="padding-bottom:7px">
+        <div class="logo"><img src="../public/icon.png" alt=""></div>
+        <div class="titles"><div class="nm">PastePanda</div><div style="font-size:10px;color:#8FA3C4">剪贴板</div></div>
+        <span class="hd-stat">12 · 3,482 · 5</span>
+        <span class="dot"></span>
+      </div>
+      <div class="sec"><span class="si"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>最近复制 · 已暂停</div>
+      <div class="list">
+        <button class="item act"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">{"bussiId": 2100134552…<span class="sub2">Chrome · 刚刚</span></span></button>
+        <button class="item"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">INSERT INTO MY_TABLE…<span class="sub2">远程桌面 · 2 分钟前</span></span></button>
+      </div>
+      <div class="tbar">
+        <button class="tb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>主窗口</button>
+        <button class="tb on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>恢复</button>
+        <button class="tb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>贴图</button>
+        <button class="tb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>设置</button>
+        <button class="tb ex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>退出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 C ============ -->
+  <div class="col">
+    <div class="cap">方案 C · 保守去噪档<span class="tag old">改动最小</span><span class="tag bad">实测 516px</span></div>
+    <div class="tray">
+      <div class="hd">
+        <div class="logo"><img src="../public/icon.png" alt=""></div>
+        <div class="titles"><div class="nm">PastePanda</div><div><span class="vb">v7.1.7</span></div></div>
+        <span class="dot on"></span>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="ci b"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="cv">12</div><div class="cl">今日</div></div>
+        <div class="card"><div class="ci p"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg></div><div class="cv">3,482</div><div class="cl">总计</div></div>
+        <div class="card"><div class="ci o"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg></div><div class="cv">5</div><div class="cl">置顶</div></div>
+      </div>
+      <div class="dv"></div>
+      <div class="sec"><span class="si"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>最近复制</div>
+      <div class="list">
+        <button class="item act"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">{"bussiId": 2100134552…</span></button>
+        <button class="item"><span class="it-ic ib"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span class="it-tx">INSERT INTO MY_TABLE…</span></button>
+        <button class="item"><span class="it-ic ip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span><span class="it-tx">订单截图 2026-09-17</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item"><span class="it-ic ib"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></span><span class="it-tx">显示主窗口</span><span class="it-h">Ctrl+Alt+V</span></button>
+        <button class="item"><span class="it-ic io"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></span><span class="it-tx">暂停监听</span></button>
+        <button class="item"><span class="it-ic ip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg></span><span class="it-tx">贴图管理…</span></button>
+        <button class="item"><span class="it-ic ip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><span class="it-tx">调整浮标位置…</span></button>
+        <button class="item"><span class="it-ic ip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="it-tx">设置…</span></button>
+      </div>
+      <div class="dv"></div>
+      <div class="list">
+        <button class="item danger"><span class="it-ic dgr"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="it-tx">退出 PastePanda</span></button>
+      </div>
+    </div>
+    <div class="anno warn" style="max-width:280px;margin-top:0">
+      <b>保留三卡结构</b>，只做四件低风险事：emoji 换线性 SVG、退出独立 + danger、去掉重复的「粘贴」与假线索 Ctrl+S、库条 ≥80% 才出现。<br>
+      <b>但它不解决高度问题</b>（实测 516px，仍超 470 定位预算 46px），底部照旧被任务栏吃掉 ——
+      也就是说这档的收益只能停在"颜色和图标好看了"。而且它保留了三张卡（93px）和 6 项平铺（212px），
+      这两块正好是 A 动刀的地方。
+    </div>
+  </div>
+</div>
+
+<h2>§6 · 方案对比与推荐</h2>
+<table>
+<tr><th>维度</th><th>A · 信息压缩 <span class="pill grn">推荐</span></th><th>B · 任务优先</th><th>C · 保守去噪</th></tr>
+<tr><td>内容高度（实测）</td><td><b>449px</b> ✔ 余 21px</td><td><b>383px</b> ✔ 余 87px，最稳</td><td>516px ✘ 超 46px</td></tr>
+<tr><td>展开「更多工具」后</td><td><b>449px</b> —— 就地替换主区，<b>不增高</b></td><td>不适用（工具条常驻，无二级态）</td><td>不适用</td></tr>
+<tr><td>一次右键 get 到「最近一条」</td><td>是（第 1 项，默认高亮）</td><td>是（第 1 项，且给 5 条备选）</td><td>是（第 1 项）</td></tr>
+<tr><td>统计可见性</td><td>一行摘要，仍可读</td><td>header 角标一行小字，最弱</td><td>三卡，最强</td></tr>
+<tr><td>主操作可点面积</td><td>34px 行，文字明确</td><td>图标 + 9.5px 标签，最小</td><td>34px 行，同现状</td></tr>
+<tr><td>顺带修好底部溢出</td><td><b>是</b>（默认态与展开态都在预算内）</td><td><b>是</b>（余量最大）</td><td>否</td></tr>
+<tr><td>顺带修好状态点无障碍</td><td>是（点 + 文字）</td><td>是（sec 标题带「已暂停」）</td><td>否</td></tr>
+<tr><td>改动面</td><td><code>TrayPopup.tsx</code> + <code>popup.css</code></td><td>同 A，但改动更激进</td><td>仅 <code>popup.css</code> + 少量 TSX</td></tr>
+<tr><td>风险</td><td>低 —— 不动 Rust、不改窗口尺寸机制</td><td>中 —— 操作区改成图标，<b>需要用户学习成本</b>；统计弱化可能不符合预期</td><td>低但收益也低</td></tr>
+<tr><td>主要缺点</td><td>「更多工具」多一层点击（低频项，可接受）</td><td>5 条 recents 在小屏上会挤压；图标语义需要 title 兜底</td><td>不解决根本问题</td></tr>
+</table>
+
+<div class="anno ok">
+<b>推荐 A，理由按权重排</b>
+<ul>
+<li><b>它同时解决两个问题</b>：视觉信息密度 + §2 的高度溢出。B 也能，但代价是砍功能。</li>
+<li><b>不碰 Rust、不碰窗口尺寸机制</b>：<code>popup_w/popup_h</code> 与 <code>calc_popup_position</code> 一行不动，
+    纯前端改动 = 风险最低、可回滚。</li>
+<li><b>「统计」这个功能被保留但降级</b>：不是删掉，是从 88px 的卡片变成 30px 的一行。想要 B 的极简感可以后续再压。</li>
+</ul>
+<b>如果你更看重「右键完 0.5 秒内贴完」</b>，B 是更纯粹的答案，我不反对 —— 只是它把统计和低频入口都压到了很小，
+需要你确认这三条统计对你是否还有每日查看价值。
+</div>
+
+<h2>§7 · 落地改动清单（确认后实施）</h2>
+<table>
+<tr><th>#</th><th>文件</th><th>改动</th><th>风险</th></tr>
+<tr><td>1</td><td><code>TrayPopup.tsx:550–585</code></td><td>三张统计卡 → 一行摘要 + 状态文字（方案 A）</td><td>低</td></tr>
+<tr><td>2</td><td><code>TrayPopup.tsx:386–445</code></td><td><code>menuItems</code> 拆成 <code>primary</code> / <code>more</code> / <code>exit</code> 三段；「更多工具」<b>就地替换主区三行</b>（<code>useState</code> 控制），<b>不要向下追加折叠块</b> —— 追加会让高度从 449 涨到 559，又超预算</td><td>中 —— 影响键盘索引空间</td></tr>
+<tr><td>3</td><td><code>TrayPopup.tsx:405,416,608</code></td><td>📌🎯🖼📁📝 全部换线性 SVG（沿用 <code>SvgIcon</code> 包装）</td><td>低</td></tr>
+<tr><td>4</td><td><code>TrayPopup.tsx:627,434</code></td><td>删掉重复的「粘贴」hint；删掉假线索 <code>Ctrl+S</code></td><td>低</td></tr>
+<tr><td>5</td><td><code>TrayPopup.tsx:528</code></td><td>状态点补 <code>title</code> / <code>aria-label</code>，并在摘要行显示「监听中 / 已暂停」文字</td><td>低</td></tr>
+<tr><td>6</td><td><code>TrayPopup.tsx:419–426</code></td><td>「调整浮标位置」按栈状态禁用 + 就地说明（需 <code>stack_mode</code> 进 init 数据）</td><td>中 —— 要动 <code>tray_manager.rs</code> init 载荷</td></tr>
+<tr><td>7</td><td><code>TrayPopup.tsx:665–688</code></td><td>库体积条 <code>memPercent &lt; 80</code> 时不渲染；≥80 转警示色 + 一句清理建议</td><td>低</td></tr>
+<tr><td>8</td><td><code>popup.css:35</code></td><td><code>border-radius: 14px</code> → <code>8px</code>（对齐 DWM ROUNDSMALL）；阴影降级为描边 + 内高光</td><td>低（视觉，需实机对一眼）</td></tr>
+<tr><td>9</td><td><code>popup.css:310–364</code></td><td>删掉 363–364 行悬空声明；新增 <code>.statline</code> / <code>.it-ic.acc</code> / <code>.it-ic.dgr</code></td><td>低</td></tr>
+<tr><td>10</td><td><code>popup.css:551</code></td><td>Toast 由 <code>bottom:12px</code> 挪到顶部或改为 <code>top</code> 变体，避免压住退出项</td><td>低</td></tr>
+<tr><td>11</td><td><code>src/lib/trayUtils.ts</code></td><td>收敛为真源（TSX 改为引用），或删除死导出只留 <code>getTypeIcon</code>；顺手补 <code>.icon-gray</code> 或删掉该 <code>iconClass</code></td><td>中 —— 见 §3</td></tr>
+</table>
+
+<h3>回归清单</h3>
+<ul>
+<li>键盘：↑↓ 跨分隔线连续、Enter 触发、Esc 关闭（改折叠后索引空间要重算，<code>activeIdx</code> 钳制逻辑在 <code>:482–484</code>）</li>
+<li>失焦关闭、快速连续右键（<code>POPUP_REBUILDING</code> 守卫）、点击弹窗外关闭</li>
+<li>六套主题（ocean / forest / blossom / midnight / dawn / ocean-dark）—— 本稿新增的 <code>.acc</code> / <code>.dgr</code> 走 <code>--accent-light</code> + <code>--accent-strong</code> 令牌，<b>不要写死 hex</b></li>
+<li>空库（recents 为空）与错误态（<code>stats</code> 为 null）；<code>dataLoaded</code> 骨架态</li>
+<li>粘贴栈开 / 关两种状态；图片条目缩略图（<code>convertFileSrc</code>）</li>
+<li>任务栏在 上 / 下 / 左 / 右 四个位置 + 125% / 150% 缩放下弹层不被裁（这是 §2 的验收点）</li>
+</ul>
+
+<div class="anno warn">
+<b>明确不做</b>：托盘里做完整仪表盘、可拖拽排序、嵌套三级菜单、统计项可点击跳转深链、
+换窗口尺寸机制（<code>popup_w</code> 保持 280）。右键路径的唯一目标是快 —— 要细看数据去主窗口。
+</div>
+
+<div class="anno">
+<b>请你拍板</b>：默认推 <b>A</b>。<br>
+· 回「A」→ 按 §7 清单实施（含 §2 的圆角与高度顺带修复）<br>
+· 回「B」→ 走任务优先型，我另出 B 的落地清单<br>
+· 回「A 的 1/3/4/5 项，先不动更多工具」→ 只做低风险子集，高度问题留到下一轮<br>
+· 想先验证 §2 的高度数字 → 我可以起 dev 实测一次弹层 <code>scrollHeight</code> 再回来
+</div>
+
+</body>
+</html>
