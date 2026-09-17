@@ -132,11 +132,17 @@ pub struct HudStateCache(pub std::sync::Mutex<Option<StackHudState>>);
 // 纯逻辑在 `stack_hud_pos.rs`（可单测）；本节只做系统调用与组装：
 // 锚点矩形（前台窗口）→ workarea → 落位，兜底退回光标候选。
 
-use crate::stack_hud_pos::{anchor_pos, control_anchor_pos, pick_pos, WorkArea};
+use crate::stack_hud_pos::{
+    anchor_pos, can_anchor_at_cursor, control_anchor_pos, pick_pos, should_follow, WorkArea,
+    ANCHOR_CONTROL, ANCHOR_CURSOR, ANCHOR_CURSOR_WINDOW, ANCHOR_NONE, ANCHOR_WINDOW,
+};
 
-/// 最近一次定位用的锚点类型（1=control 2=window 3=cursor 0=未知）。
-/// `emit_state` 读它写入 `StackHudState.anchor_kind`，前端据此决定是否画方向尾。
-static LAST_ANCHOR_KIND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// 最近一次定位用的锚点类型（取值见 `stack_hud_pos::ANCHOR_*`）。
+/// 两个消费方：
+/// 1. `emit_state` 读它写入 `StackHudState.anchor_kind`，前端据此决定是否画方向尾；
+/// 2. `follow_anchor_with` 读它做「跟随白名单」判据（见 `should_follow`）——
+///    连续两次光标锚不允许挪窗口，否则等价于浮标跟随鼠标。
+static LAST_ANCHOR_KIND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(ANCHOR_NONE);
 
 fn store_anchor_kind(kind: u8) {
     LAST_ANCHOR_KIND.store(kind, Ordering::SeqCst);
@@ -144,9 +150,10 @@ fn store_anchor_kind(kind: u8) {
 
 fn last_anchor_kind_str() -> Option<String> {
     match LAST_ANCHOR_KIND.load(Ordering::SeqCst) {
-        1 => Some("control".into()),
-        2 => Some("window".into()),
-        3 => Some("cursor".into()),
+        ANCHOR_CONTROL => Some("control".into()),
+        ANCHOR_WINDOW => Some("window".into()),
+        ANCHOR_CURSOR => Some("cursor".into()),
+        ANCHOR_CURSOR_WINDOW => Some("cursorWindow".into()),
         _ => None,
     }
 }
@@ -247,10 +254,90 @@ fn get_cursor_pos() -> (f64, f64) {
     (100.0, 100.0)
 }
 
+/// 取光标所在**窗口**的矩形（物理像素），供兜底锚定用。
+///
+/// ## 为什么不是「直接贴光标」
+///
+/// 贴光标意味着落位坐标随鼠标变化，而这条定位链会被 450ms 跟随轮询反复调用 ——
+/// 结果就是浮标实时跟随鼠标、一直黏在光标旁边挡住用户视线（实测反馈）。
+/// 贴「光标底下的窗口」把落位钉在一个**不随鼠标移动的矩形**上，
+/// 位置依然落在用户的视线范围内。
+///
+/// 判据在 [`can_anchor_at_cursor`]：排除 HUD 自己（`always_on_top` 会命中它，
+/// 形成"以当前位置重新落位"的回环）与外壳窗口（桌面 / 任务栏），
+/// **允许自身进程窗口** —— 与粘贴目标判据刻意不同，理由见该函数注释。
+///
+/// ❗ HUD 平时是 `set_ignore_cursor_events(true)`（`WS_EX_TRANSPARENT`），
+/// `WindowFromPoint` 的命中测试本就会穿透它；这里的显式排除是第二道保险 ——
+/// 调整模式下它会临时恢复鼠标交互，那时没有这道保险就会自锚。
+#[cfg(target_os = "windows")]
+fn window_rect_at_cursor(app: &AppHandle, cx: f64, cy: f64) -> Option<(f64, f64, f64, f64)> {
+    use windows::Win32::Foundation::{POINT, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetClassNameW, GetWindowRect, WindowFromPoint, GA_ROOT,
+    };
+
+    let pt = POINT {
+        x: cx as i32,
+        y: cy as i32,
+    };
+    let hwnd = unsafe { WindowFromPoint(pt) };
+    if hwnd.0.is_null() {
+        return None;
+    }
+
+    // 提升到**顶层窗口**。`WindowFromPoint` 命中的可能是子控件（Chrome 的渲染区、
+    // 任务栏的按钮区都是子窗口），直接用它会错两处：
+    // 1. 锚点变成"控件区域右上角"，而 `anchor_pos` 里那 40px 是**避让标题栏**用的
+    //    ——控件区已经没有标题栏，偏移会把它推进内容里；
+    // 2. 类名判据会拿子窗口类名去比外壳表（任务栏按钮的子窗口类名不是
+    //    `Shell_TrayWnd`），任务栏会被误判成可锚窗口。
+    // 提升后锚点语义与 ② 目标窗口锚一致：贴窗口右上内侧。
+    let root = unsafe { GetAncestor(hwnd, GA_ROOT) };
+    let hwnd = if root.0.is_null() { hwnd } else { root };
+
+    let excluded = app
+        .get_webview_window(WINDOW_LABEL)
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize)
+        .unwrap_or(0);
+
+    // 类名取不到（窗口正在销毁）时按空串处理 → `can_anchor_at_cursor` 不额外拒绝
+    let mut cls = [0u16; 128];
+    let n = unsafe { GetClassNameW(hwnd, &mut cls) };
+    let class_name = if n > 0 {
+        String::from_utf16_lossy(&cls[..n as usize])
+    } else {
+        String::new()
+    };
+
+    if !can_anchor_at_cursor(hwnd.0 as isize, excluded, &class_name) {
+        return None;
+    }
+
+    let mut r = RECT::default();
+    let ok = unsafe { GetWindowRect(hwnd, &mut r).is_ok() };
+    if !ok || r.right <= r.left || r.bottom <= r.top {
+        return None;
+    }
+    Some((
+        r.left as f64,
+        r.top as f64,
+        (r.right - r.left) as f64,
+        (r.bottom - r.top) as f64,
+    ))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn window_rect_at_cursor(_app: &AppHandle, _cx: f64, _cy: f64) -> Option<(f64, f64, f64, f64)> {
+    None
+}
+
 /// 计算 HUD 位置（物理坐标系，DPI 感知）。
 ///
-/// 链：聚焦输入框右上 + 用户偏移（方案 A 升级）→ 目标窗口右上内侧 → 光标候选。
-/// 全越界再钳工作区角落。
+/// 链：聚焦输入框右上 → 目标窗口右上内侧 → **光标下的窗口右上内侧** → 贴光标候选。
+/// 前三级都加用户拖拽保存的偏移，全越界再钳进所在显示器的工作区。
+/// 后两级属「光标类锚点」，只落位一次不跟随（见 `should_follow`）。
 fn calc_position(app: &AppHandle) -> tauri::PhysicalPosition<f64> {
     let offset = (
         OFFSET_X.load(Ordering::SeqCst) as f64,
@@ -288,7 +375,7 @@ fn calc_position_with_offset(
             if let Some((x, y, _below)) =
                 control_anchor_pos((cx, cy, cw, ch), offset, pw, ph, wa)
             {
-                store_anchor_kind(1);
+                store_anchor_kind(ANCHOR_CONTROL);
                 return tauri::PhysicalPosition { x, y };
             }
         }
@@ -305,13 +392,39 @@ fn calc_position_with_offset(
         };
         let (pw, ph) = (HUD_W * mon.scale, HUD_H * mon.scale);
         if let Some((x, y)) = anchor_pos(Some((ax, ay, aw, ah)), offset, pw, ph, wa) {
-            store_anchor_kind(2);
+            store_anchor_kind(ANCHOR_WINDOW);
             return tauri::PhysicalPosition { x, y };
         }
     }
 
-    // ③ 兜底：贴光标候选（锚点无效——前台是桌面/自身窗口）
+    // ③ 锚定「光标底下的窗口」右上内侧（2026-09-17 加入）
+    //
+    // 触发场景 = 前面两级的前提不成立（`capture_foreground_now()` 拿不到有效目标：
+    // 前台是桌面 / 任务栏 / 本进程窗口）。用户在桌面上开栈、从托盘弹层开栈、
+    // 在主窗口里开栈，都会落到这里。
+    //
+    // 比原来的「贴光标四象限」好在：落位钉在一个**不随鼠标移动**的矩形上，
+    // 且不压在光标上挡住用户正在看的内容。
     let (cx, cy) = get_cursor_pos();
+    if let Some((ax, ay, aw, ah)) = window_rect_at_cursor(app, cx, cy) {
+        let mon = crate::tray_manager::get_monitor_work_area(ax + aw / 2.0, ay + ah / 2.0);
+        let wa = WorkArea {
+            x: mon.work_x,
+            y: mon.work_y,
+            w: mon.work_w,
+            h: mon.work_h,
+        };
+        let (pw, ph) = (HUD_W * mon.scale, HUD_H * mon.scale);
+        if let Some((x, y)) = anchor_pos(Some((ax, ay, aw, ah)), offset, pw, ph, wa) {
+            store_anchor_kind(ANCHOR_CURSOR_WINDOW);
+            return tauri::PhysicalPosition { x, y };
+        }
+    }
+
+    // ④ 最后兜底：贴光标候选（连光标下都没有可锚窗口 —— 光标在桌面上）。
+    //
+    // ❗ 这一级与 ③ 都算「光标类锚点」：`should_follow` 只允许它们落位一次，
+    //    之后钉住不动。没有这道拦截，450ms 轮询会把"贴光标一次"变成"跟随鼠标"。
     let mon = crate::tray_manager::get_monitor_work_area(cx, cy);
     let wa = WorkArea {
         x: mon.work_x,
@@ -321,12 +434,15 @@ fn calc_position_with_offset(
     };
     let (pw, ph) = (HUD_W * mon.scale, HUD_H * mon.scale);
     let (x, y) = pick_pos(cx, cy, pw, ph, wa);
-    store_anchor_kind(3);
+    store_anchor_kind(ANCHOR_CURSOR);
     tauri::PhysicalPosition { x, y }
 }
 
 /// 跟随重定位：状态推送 / 轮询时把浮标挪到聚焦输入框（或目标窗口）旁。
-/// 跳过：调整中（不能跟拖拽抢位置）、窗口不存在/隐藏、位移过小（抖动）。
+///
+/// 跳过四种情形：调整中（不能跟拖拽抢位置）、窗口不存在 / 隐藏、位移过小（抖动取整）、
+/// **连续两次都是光标类锚点** —— 那算出来的是"鼠标此刻在哪"，跟着它挪就等于
+/// 浮标实时跟随鼠标（判据见 `stack_hud_pos::should_follow`）。
 fn follow_anchor(app: &AppHandle) {
     follow_anchor_with(app, false)
 }
@@ -341,6 +457,8 @@ fn follow_anchor_with(app: &AppHandle, force_focus: bool) {
     if !window.is_visible().unwrap_or(false) {
         return;
     }
+    // ❗ 先取"上次落位用的锚点类型"——下面那次计算会把它覆盖成这次的。
+    let prev_kind = LAST_ANCHOR_KIND.load(Ordering::SeqCst);
     let pos = calc_position_with_offset(
         app,
         force_focus,
@@ -349,8 +467,22 @@ fn follow_anchor_with(app: &AppHandle, force_focus: bool) {
             OFFSET_Y.load(Ordering::SeqCst) as f64,
         ),
     );
-    // 落位已算出（含锚点类型）→ 回写缓存，保证前端拉快照时有 anchorKind
+    // 跟随白名单：这次算出的落位是否构成"该把浮标挪过去"的理由。
+    // 光标类锚点只在类型发生**真实变化**时落位一次，之后钉住 —— 没有这道拦截，
+    // 450ms 轮询会让浮标一直黏在鼠标旁（用户实测："挡住视线"）。
+    let now_kind = LAST_ANCHOR_KIND.load(Ordering::SeqCst);
+    let follow = should_follow(prev_kind, now_kind);
+    if !follow {
+        // 不挪 ⇒ 浮标仍停在上一轮的位置上，锚点记录必须回滚成 prev_kind，
+        // 否则 `anchor_kind` 会描述一个**没被采用**的落位，与实际位置不符。
+        store_anchor_kind(prev_kind);
+    }
+    // 回写缓存，保证前端拉快照时有 anchorKind（读的是上面校正过的值）
     inject_anchor_kind_into_cache(app);
+    if !follow {
+        return;
+    }
+
     let prev = window.outer_position().ok();
     if let Some(cur) = prev {
         let dx = cur.x - pos.x as i32;
@@ -443,8 +575,14 @@ static CREATING: AtomicBool = AtomicBool::new(false);
 static HUD_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 /// 声明「浮标要显示」这一意图 —— 递增代次，作废所有挂起的延迟隐藏。
+///
+/// 顺带把锚点类型记录清回 `ANCHOR_NONE`：这是「跟随白名单」的放行条件 ——
+/// 用户显式开一次栈，就是要看见浮标落到**当前**的操作现场，哪怕上一轮它停在光标锚上。
+/// 不清的话，第二次开栈会沿用上一轮的"光标锚不跟随"结论，浮标钉在旧位置不动。
+/// ❗ 只挂在「显示」路径上（`show_hud` / `reveal`）。轮询调它等于白名单永久失效。
 fn mark_shown() {
     HUD_EPOCH.fetch_add(1, Ordering::SeqCst);
+    LAST_ANCHOR_KIND.store(ANCHOR_NONE, Ordering::SeqCst);
 }
 
 /// 排定延迟隐藏时取一份代次快照
@@ -790,6 +928,30 @@ mod tests {
             gen.load(Ordering::SeqCst),
             mine,
             "代次递增后旧轮询线程必须退出"
+        );
+    }
+
+    /// 重新显示浮标必须清掉上一轮的锚点类型记录。
+    ///
+    /// 对应的真实场景：用户上一轮在桌面上开过栈（落在光标锚）→ 关栈 → 又开一次。
+    /// 若 `mark_shown` 不清记录，这一次会命中「光标锚不跟随」白名单，
+    /// 浮标钉在上一轮的旧位置不动 —— 用户看到的是"浮标没跟过来"。
+    #[test]
+    fn test_mark_shown_resets_anchor_kind_for_reopen() {
+        // ① 上一轮停在光标锚：同样的落位不该再挪窗口
+        store_anchor_kind(ANCHOR_CURSOR);
+        assert!(!should_follow(
+            LAST_ANCHOR_KIND.load(Ordering::SeqCst),
+            ANCHOR_CURSOR
+        ));
+
+        // ② 用户重新开栈
+        mark_shown();
+
+        // ③ 这次定位又算出光标锚 —— 必须放行，否则浮标停在旧位置
+        assert!(
+            should_follow(LAST_ANCHOR_KIND.load(Ordering::SeqCst), ANCHOR_CURSOR),
+            "重新显示之后，光标锚必须能重新落位一次"
         );
     }
 }

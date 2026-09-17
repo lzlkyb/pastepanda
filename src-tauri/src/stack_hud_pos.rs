@@ -1,13 +1,27 @@
 //! 栈浮标的**纯定位逻辑** —— 零 Tauri 依赖，全部可单测。
 //!
-//! ## 两套锚点，一条兜底链
+//! ## 三套锚点，两级兜底
 //!
-//! 1. **锚定目标窗口**（首选，2026-09-16 方案 A）：HUD 出现在解析出的粘贴目标
-//!    窗口**右上角内侧**（右缘 16px、标题栏下方 40px），再加用户拖拽保存的偏移，
-//!    最后钳制进锚点窗口所在显示器的 workarea。用户在哪个窗口操作，浮标就贴在
-//!    哪个窗口旁边 —— 这是"显示在你要粘贴的地方"的直译。
-//! 2. **贴光标候选序列**（兜底）：锚点拿不到时（前台是桌面/自身窗口），退回
-//!    原有的光标四象限候选。
+//! 1. **锚定聚焦输入框**（首选）：贴 UIA / caret 探测到的输入框**右上方**。
+//! 2. **锚定目标窗口**（2026-09-16 方案 A）：贴解析出的粘贴目标窗口**右上角内侧**
+//!    （右缘 16px、标题栏下方 40px）。用户在哪个窗口操作，浮标就贴在哪个窗口旁边 ——
+//!    这是"显示在你要粘贴的地方"的直译。
+//! 3. **锚定光标下的窗口**（2026-09-17 加入，兜底一）：前台是桌面 / 任务栏 / 自身
+//!    进程窗口时（上面两级的前提 `capture_foreground_now()` 不成立），退一步贴
+//!    **鼠标底下那个窗口**的右上角。比"贴光标"好在两点：位置钉在**不随鼠标移动**
+//!    的矩形上，且不压在光标上挡住用户正在看的内容。
+//! 4. **贴光标候选序列**（兜底二）：连光标下都没有可锚窗口（光标在桌面上）时，
+//!    退回光标四象限候选。
+//!
+//! 1 / 2 / 3 三级的落位都先加用户拖拽保存的偏移，最后钳制进锚点所在显示器的 workarea。
+//!
+//! ## ❗ 3 / 4 是「一次性落位」，不参与跟随
+//!
+//! 见 [`should_follow`]：光标类锚点算出来的是"鼠标此刻在屏幕的哪儿"，不是"用户的
+//! 操作现场在哪儿"。而这条定位链会被 450ms 跟随轮询反复调用 —— 一旦允许光标锚
+//! 每 tick 重算，等价于**浮标实时跟随鼠标**：用户移动鼠标时浮标一直黏在旁边挡视线。
+//! 所以光标锚只在锚点类型**发生变化**的那一次落位，之后钉住不动
+//! （用户切回目标应用 → 锚点变窗口/控件 → 照常跟过去）。
 //!
 //! 坐标约定：全部**物理像素**（与 `tray_manager::get_monitor_work_area` 一致）。
 
@@ -30,6 +44,69 @@ pub const ANCHOR_MARGIN_RIGHT: f64 = 16.0;
 pub const ANCHOR_CLEAR_TITLEBAR: f64 = 40.0;
 /// 聚焦输入框与 HUD 之间的间距（右上 / 右下翻转时共用）
 pub const CONTROL_GAP: f64 = 8.0;
+
+// ===== 锚点类型 =====
+//
+// 由定位链在算出落位时写入（`stack_hud.rs::store_anchor_kind`），两个消费方：
+// 1. `emit_state` 把它写进 `StackHudState.anchor_kind` → 前端决定是否画方向尾；
+// 2. [`should_follow`] 用它决定这次落位算不算"该把浮标挪过去"。
+
+/// 未知 / 尚未定位过（每次「显示浮标」都会清回这个值，让本次显示能重新落位一次）
+pub const ANCHOR_NONE: u8 = 0;
+/// 聚焦输入框
+pub const ANCHOR_CONTROL: u8 = 1;
+/// 目标窗口右上内侧
+pub const ANCHOR_WINDOW: u8 = 2;
+/// 光标四象限（最后兜底）
+pub const ANCHOR_CURSOR: u8 = 3;
+/// 光标下的窗口右上内侧
+pub const ANCHOR_CURSOR_WINDOW: u8 = 4;
+
+/// 光标类锚点（③ 光标下窗口 / ④ 贴光标）—— 坐标源自**鼠标位置**，
+/// 而不是"用户正在操作哪个窗口"。
+pub fn is_cursor_anchor(kind: u8) -> bool {
+    kind == ANCHOR_CURSOR || kind == ANCHOR_CURSOR_WINDOW
+}
+
+/// 纯判据：这次算出的落位是否构成「该把浮标挪过去」的理由。
+///
+/// 唯一的否决情形：**前后两次都是光标类锚点**。
+///
+/// 理由见模块注释 —— 光标类锚点的坐标源自鼠标位置，而这条链会被 450ms 跟随轮询
+/// 与每次状态推送反复调用。不加这道拦截，浮标就等于实时跟随鼠标：
+/// 用户一移动鼠标它就挪，一直黏在光标旁边挡住正在看的内容（用户实测反馈）。
+///
+/// ❗ 两类光标锚之间也必须互相拦住（3 ↔ 4）。用户把鼠标在桌面与窗口之间来回移动时，
+/// 锚点类型会在两者间反复切换 —— 放行的话浮标就跟着鼠标在两个位置之间来回跳。
+///
+/// 允许的其它组合：
+/// - `prev = NONE` → 首次落位 / 用户显式重新开栈（`mark_shown` 清回 NONE），要落位；
+/// - 光标锚 → 窗口/控件锚：用户切回了某个应用，这是真实的现场变化，要跟过去；
+/// - 窗口/控件锚 → 光标锚：鼠标下的现场变了（上一轮根本没有窗口锚），落一次；
+/// - 窗口/控件锚之间互相切：都是真实操作现场，照常跟随。
+pub fn should_follow(prev_kind: u8, now_kind: u8) -> bool {
+    !(is_cursor_anchor(now_kind) && is_cursor_anchor(prev_kind))
+}
+
+/// 纯判据：光标下的那个窗口能不能当锚点。
+///
+/// ## 与 `paste_target::is_valid_target` 刻意不同
+///
+/// 那个判据回答"这条内容能粘到哪儿"，所以**必须排除自身进程**（粘给自己没意义）。
+/// 这里回答的是"浮标该显示在哪儿"，两件事不同：用户在主窗口里操作时，浮标贴主窗口
+/// 右上角是符合事实的，没必要排除。
+///
+/// 只排除两类：
+/// - `hwnd == excluded_hwnd`：HUD 自己。它会 `always_on_top` 地待在最上层，
+///   命中自己就会"以当前位置为锚点重新落位"，形成位置回环。
+/// - 外壳窗口（桌面 / 任务栏）：贴上去等于浮到屏幕角落，与"贴操作现场"的准则相反
+///   （表复用 `paste_target::SHELL_TARGET_CLASSES`，两处语义在这里是一致的）。
+pub fn can_anchor_at_cursor(hwnd: isize, excluded_hwnd: isize, class_name: &str) -> bool {
+    if hwnd == 0 || hwnd == excluded_hwnd {
+        return false;
+    }
+    !crate::paste_target::is_shell_target_class(class_name)
+}
 
 /// 矩形是否**完整**落在工作区内。不完整就不算落位 —— 半个 HUD 露在屏幕外
 /// 比换个位置更糟。
@@ -355,5 +432,98 @@ mod tests {
         assert!(!control_rect_plausible(20.0, 34.0, 1920.0, 1040.0));
         assert!(!control_rect_plausible(300.0, 10.0, 1920.0, 1040.0));
         assert!(!control_rect_plausible(1900.0, 1000.0, 1920.0, 1040.0));
+    }
+
+    // ===== should_follow（跟随白名单）=====
+
+    /// ❗ 核心判据：光标类锚点之间一律不跟随（含 3 ↔ 4 互相切换）。
+    /// 对应的用户场景：开栈后鼠标一移动浮标就跟着跑、挡住视线。
+    #[test]
+    fn test_cursor_anchors_never_follow_each_other() {
+        for now in [ANCHOR_CURSOR, ANCHOR_CURSOR_WINDOW] {
+            for prev in [ANCHOR_CURSOR, ANCHOR_CURSOR_WINDOW] {
+                assert!(
+                    !should_follow(prev, now),
+                    "光标类锚点（{prev} → {now}）重复算出的落位只是在跟随鼠标，必须拒绝"
+                );
+            }
+        }
+    }
+
+    /// 首次落位（类型未知）必须允许，否则光标兜底这条链永远用不上。
+    /// 少了这条，一个「恒返回 false」的退化实现也能让上面那条测试通过。
+    #[test]
+    fn test_first_placement_allowed() {
+        assert!(should_follow(ANCHOR_NONE, ANCHOR_CURSOR));
+        assert!(should_follow(ANCHOR_NONE, ANCHOR_WINDOW));
+        assert!(should_follow(ANCHOR_NONE, ANCHOR_CONTROL));
+        assert!(should_follow(ANCHOR_NONE, ANCHOR_CURSOR_WINDOW));
+    }
+
+    /// 光标锚 → 真实锚点：用户切回了某个应用，是现场变化，必须跟过去。
+    #[test]
+    fn test_switching_from_cursor_to_real_anchor_follows() {
+        assert!(should_follow(ANCHOR_CURSOR, ANCHOR_WINDOW));
+        assert!(should_follow(ANCHOR_CURSOR, ANCHOR_CONTROL));
+        assert!(should_follow(ANCHOR_CURSOR_WINDOW, ANCHOR_CONTROL));
+        assert!(should_follow(ANCHOR_CURSOR_WINDOW, ANCHOR_WINDOW));
+    }
+
+    /// 真实锚点之间照常跟随（Tab 换输入框、切窗口都要动）；
+    /// 真实锚点 → 光标锚也放行一次（鼠标下的现场变了才会算出这个）。
+    #[test]
+    fn test_real_anchors_always_follow() {
+        assert!(should_follow(ANCHOR_CONTROL, ANCHOR_CONTROL));
+        assert!(should_follow(ANCHOR_WINDOW, ANCHOR_WINDOW));
+        assert!(should_follow(ANCHOR_WINDOW, ANCHOR_CONTROL));
+        assert!(should_follow(ANCHOR_CONTROL, ANCHOR_WINDOW));
+        assert!(should_follow(ANCHOR_WINDOW, ANCHOR_CURSOR_WINDOW));
+        assert!(should_follow(ANCHOR_CONTROL, ANCHOR_CURSOR));
+    }
+
+    // ===== can_anchor_at_cursor（光标下窗口判据）=====
+
+    /// 普通应用窗口可以当锚点 —— 且**不涉及进程归属**（与 is_valid_target 的差异）。
+    #[test]
+    fn test_cursor_window_accepts_normal_window() {
+        assert!(can_anchor_at_cursor(1234, 9999, "Chrome_WidgetWin_1"));
+        assert!(can_anchor_at_cursor(1234, 9999, "Notepad"));
+    }
+
+    /// HUD 自己不能当锚点：它 always_on_top 地待在最上层，
+    /// 命中自己会「以当前位置为锚点重新落位」，形成位置回环。
+    #[test]
+    fn test_cursor_window_rejects_hud_itself() {
+        assert!(!can_anchor_at_cursor(1234, 1234, "Chrome_WidgetWin_1"));
+    }
+
+    /// 空句柄（光标下没有窗口）不能当锚点。
+    #[test]
+    fn test_cursor_window_rejects_empty_hwnd() {
+        assert!(!can_anchor_at_cursor(0, 1234, "Notepad"));
+    }
+
+    /// 桌面 / 任务栏必须拒绝 —— 贴上去等于浮到屏幕角落，与"贴操作现场"的准则相反。
+    #[test]
+    fn test_cursor_window_rejects_shell_windows() {
+        for name in [
+            "Progman",
+            "WorkerW",
+            "Shell_TrayWnd",
+            "Shell_SecondaryTrayWnd",
+        ] {
+            assert!(
+                !can_anchor_at_cursor(1234, 0, name),
+                "外壳窗口 {} 不能当浮标锚点",
+                name
+            );
+        }
+    }
+
+    /// 取不到类名（窗口正在销毁）时不额外拒绝 —— 与 `paste_target` 的取向一致：
+    /// 误拒会白白退化到"贴光标"，而该拦的外壳窗口类名一定取得回来。
+    #[test]
+    fn test_cursor_window_tolerates_empty_class() {
+        assert!(can_anchor_at_cursor(1234, 0, ""));
     }
 }

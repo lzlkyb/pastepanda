@@ -46,7 +46,8 @@ export interface StackHudState {
   progress: StackHudProgress | null;
   /**
    * 锚点类型，由 Rust 在 emit 时按最近一次落位注入：
-   * control=聚焦输入框（显示方向尾） / window=目标窗口 / cursor=光标兜底
+   * control=聚焦输入框（显示方向尾） / window=目标窗口 /
+   * cursorWindow=光标下的窗口 / cursor=贴光标兜底
    */
-  anchorKind: "control" | "window" | "cursor" | null;
+  anchorKind: "control" | "window" | "cursorWindow" | "cursor" | null;
 }
