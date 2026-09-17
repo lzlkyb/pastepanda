@@ -272,14 +272,17 @@ impl super::source::KbSource for FakeKb {
 
     fn search(
         &self,
-        query: &str,
-        folder: Option<&str>,
-        tag: Option<&str>,
-        kind: Option<&str>,
-        author: Option<&str>,
-        me: &str,
-        _limit: u32,
+        args: &super::source::SearchArgs,
     ) -> Result<super::source::SearchOutcome, String> {
+        let super::source::SearchArgs {
+            query,
+            folder,
+            tag,
+            kind,
+            author,
+            me,
+            limit: _limit,
+        } = *args;
         // 照真实取词口径的形状做：单字 = 拆不出词
         if query.chars().count() < 2 {
             return Ok(super::source::SearchOutcome::NoSearchableTerms);

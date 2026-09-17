@@ -118,7 +118,7 @@ fn resolve_author(store: &DataStore, author: &str, me: &str) -> Result<Scope, St
         });
     }
     let known = store.note_writers()?;
-    if known.iter().any(|w| *w == want) {
+    if known.contains(&want) {
         Ok(Scope::Ok {
             folder_id: String::new(),
             tag_ids: Vec::new(),
@@ -197,17 +197,8 @@ pub trait KbSource: Send + Sync + 'static {
         offset: u32,
     ) -> Result<ListOutcome, String>;
 
-    /// `me` 同 [`Self::list`]。
-    fn search(
-        &self,
-        query: &str,
-        folder: Option<&str>,
-        tag: Option<&str>,
-        kind: Option<&str>,
-        author: Option<&str>,
-        me: &str,
-        limit: u32,
-    ) -> Result<SearchOutcome, String>;
+    /// `me` 同 [`Self::list`]；查询条件见 [`SearchArgs`]。
+    fn search(&self, args: &SearchArgs) -> Result<SearchOutcome, String>;
 
     /// 文件夹 id → 名字（展示用）。拿不到就不显示，不报错。
     fn folder_name(&self, folder_id: &str) -> Option<String>;
@@ -446,17 +437,8 @@ impl KbSource for AppKbSource {
         self.with_store(|s| list_on(s, folder, tag, author, me, limit, offset))?
     }
 
-    fn search(
-        &self,
-        query: &str,
-        folder: Option<&str>,
-        tag: Option<&str>,
-        kind: Option<&str>,
-        author: Option<&str>,
-        me: &str,
-        limit: u32,
-    ) -> Result<SearchOutcome, String> {
-        self.with_store(|s| search_on(s, query, folder, tag, kind, author, me, limit))?
+    fn search(&self, args: &SearchArgs) -> Result<SearchOutcome, String> {
+        self.with_store(|s| search_on(s, args))?
     }
 
     fn links_of(&self, id: &str) -> (Vec<String>, Vec<String>) {
@@ -731,16 +713,31 @@ fn list_on(
 /// 🔴 真正的窗口大小要等 AM-5（它扫 `limit ∈ {5,10,20}` 就是在量这个 k）。
 const KIND_OVER_FETCH: u32 = 6;
 
-fn search_on(
-    store: &DataStore,
-    query: &str,
-    folder: Option<&str>,
-    tag: Option<&str>,
-    kind: Option<&str>,
-    author: Option<&str>,
-    me: &str,
-    limit: u32,
-) -> Result<SearchOutcome, String> {
+/// `Source::search` 与 `search_on` 共用的查询条件。
+///
+/// 七项里六项是字符串（4 个 `Option<&str>` + 2 个 `&str`），位置参数下传反了
+/// 编译器一声不吭——`folder` 传成 `tag` 只会静默少几条结果。收成结构体后按名字赋值。
+#[derive(Clone, Copy)]
+pub struct SearchArgs<'a> {
+    pub query: &'a str,
+    pub folder: Option<&'a str>,
+    pub tag: Option<&'a str>,
+    pub kind: Option<&'a str>,
+    pub author: Option<&'a str>,
+    pub me: &'a str,
+    pub limit: u32,
+}
+
+fn search_on(store: &DataStore, args: &SearchArgs) -> Result<SearchOutcome, String> {
+    let SearchArgs {
+        query,
+        folder,
+        tag,
+        kind,
+        author,
+        me,
+        limit,
+    } = *args;
     // 先单独跑一次拆词，就是为了分开那两种「没结果」。
     // 多一次纯字符串处理的开销，换模型一句可执行的提示，很划算。
     if crate::data_store::question_to_or_expr(query).is_none() {
@@ -790,7 +787,7 @@ fn search_on(
     let want = k.to_lowercase();
     let kept: Vec<Note> = notes
         .into_iter()
-        .filter(|n| crate::markdown::kinds_of(&n.content).iter().any(|x| *x == want))
+        .filter(|n| crate::markdown::kinds_of(&n.content).contains(&want))
         .take(limit as usize)
         .collect();
     if kept.is_empty() {

@@ -247,6 +247,6 @@ pub fn get_quick_paste_data(
         })
         .collect();
     // 置顶项排前，其余保持时间倒序（稳定排序）
-    result.sort_by(|a, b| b.pinned.cmp(&a.pinned));
+    result.sort_by_key(|b| std::cmp::Reverse(b.pinned));
     Ok(result)
 }

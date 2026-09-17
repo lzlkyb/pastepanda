@@ -257,11 +257,11 @@ pub(crate) fn build_profile(raw: &ProfileRawStats) -> UserProfile {
                 .sum();
             HourSegment {
                 label: label.to_string(),
-                pct: (c * 100 / total_h) as u32,
+                pct: (c * 100 / total_h),
             }
         })
         .collect();
-    hours.sort_by(|a, b| b.pct.cmp(&a.pct));
+    hours.sort_by_key(|b| std::cmp::Reverse(b.pct));
 
     // 风格偏好：偏好指令 + 被改率
     let mut prefs: Vec<PrefItem> = raw
@@ -578,7 +578,7 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
         Ok(o) => o,
         Err(e) => {
             let msg = e.to_string();
-            let _ = app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
+            app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
                 action_id: "profile-refine".to_string(),
                 provider: spec.id.to_string(),
                 model: cfg.effective_model(),
@@ -593,7 +593,7 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
             return Err(msg);
         }
     };
-    let _ = app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
+    app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
         action_id: "profile-refine".to_string(),
         provider: spec.id.to_string(),
         model: outcome.model.clone(),

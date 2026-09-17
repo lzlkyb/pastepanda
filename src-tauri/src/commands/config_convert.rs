@@ -51,7 +51,7 @@ fn flat_to_nested(map: &BTreeMap<String, String>) -> JsonValue {
             if i == parts.len() - 1 {
                 current[*part] = JsonValue::String(value.clone());
             } else {
-                if !current.get(part).map_or(false, |v| v.is_object()) {
+                if !current.get(part).is_some_and(|v| v.is_object()) {
                     current[*part] = JsonValue::Object(serde_json::Map::new());
                 }
                 current = &mut current[*part];
@@ -89,11 +89,10 @@ fn nested_to_flat(value: &JsonValue, prefix: &str, out: &mut BTreeMap<String, St
 fn detect_format(text: &str) -> &'static str {
     let trimmed = text.trim();
     // JSON：以 { 或 [ 开头
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        if serde_json::from_str::<JsonValue>(trimmed).is_ok() {
+    if (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && serde_json::from_str::<JsonValue>(trimmed).is_ok() {
             return "json";
         }
-    }
     // YAML：包含 "key:" 模式且不以 { 开头，或有 --- 文档标记
     if trimmed.starts_with("---") || trimmed.lines().any(|l| {
         let t = l.trim();

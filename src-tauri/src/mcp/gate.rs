@@ -456,7 +456,7 @@ impl WriteScope {
         // 同时它也是环的兜底——脏数据里 parent 链成环时不能死循环。
         for _ in 0..=crate::data_store::MAX_FOLDER_DEPTH {
             let Some(c) = cur else { return false };
-            if list.iter().any(|s| *s == c) {
+            if list.contains(&c) {
                 return true;
             }
             cur = tree.parents.get(&c).cloned().flatten();

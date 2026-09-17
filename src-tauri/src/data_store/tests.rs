@@ -2465,7 +2465,16 @@ fn test_搜索本身不算找回() {
 
     // ① 全量搜索（search_history）
     let result = store
-        .search_history("默认", "unique-keyword", "all", "", "", "all", &[], 10)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "unique-keyword",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 10,
+        })
         .unwrap();
     assert_eq!(result.len(), 1, "该搜得到");
     assert_eq!(hit(&store), 0, "search_history 不该计数");
@@ -2477,7 +2486,16 @@ fn test_搜索本身不算找回() {
     // ③ 多跑几次也不该涨（旧口径下这里就已经是 3 了）
     for _ in 0..3 {
         store
-            .search_history("默认", "unique-keyword", "all", "", "", "all", &[], 10)
+            .search_history(&SearchQuery {
+                workspace: "默认",
+                search: "unique-keyword",
+                filter: "all",
+                time_filter: "",
+                source: "",
+                group_filter: "all",
+                tag_ids: &[],
+                limit: 10,
+            })
             .unwrap();
     }
     assert_eq!(hit(&store), 0, "搜多少次都是 0；只有真用了才算");
@@ -2565,19 +2583,46 @@ fn test_fts_search_chinese_hit() {
 
     // 中文关键词走 FTS5 bigram 命中
     let items = store
-        .search_history("默认", "复制", "all", "", "", "all", &[], 10)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "复制",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 10,
+        })
         .unwrap();
     assert!(items.iter().any(|i| i.id == "f1"), "中文「复制」应命中 f1");
 
     // 中英混合关键词
     let items = store
-        .search_history("默认", "API文档", "all", "", "", "all", &[], 10)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "API文档",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 10,
+        })
         .unwrap();
     assert!(items.iter().any(|i| i.id == "f1"), "「API文档」应命中 f1");
 
     // 不相关词不命中
     let items = store
-        .search_history("默认", "无关词", "all", "", "", "all", &[], 10)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "无关词",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 10,
+        })
         .unwrap();
     assert!(!items.iter().any(|i| i.id == "f1"));
 }
@@ -2589,13 +2634,31 @@ fn test_fts_delete_removes_index() {
         .insert_history(&make_item("f3", "要删除的临时内容", "2026-08-01 12:00:00", "text"))
         .unwrap();
     assert!(!store
-        .search_history("默认", "临时内容", "all", "", "", "all", &[], 10)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "临时内容",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 10,
+        })
         .unwrap()
         .is_empty());
 
     store.delete_history(&["f3".to_string()]).unwrap();
     assert!(store
-        .search_history("默认", "临时内容", "all", "", "", "all", &[], 10)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "临时内容",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 10,
+        })
         .unwrap()
         .is_empty(), "删除后 FTS 索引应同步移除");
 }
@@ -2609,7 +2672,16 @@ fn test_fts_fallback_like_on_special_chars() {
 
     // 括号是 FTS5 MATCH 语法字符 → fts_safe=false → 回退 LIKE 仍能命中
     let items = store
-        .search_history("默认", "(括号", "all", "", "", "all", &[], 10)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "(括号",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 10,
+        })
         .unwrap();
     assert!(items.iter().any(|i| i.id == "f4"), "特殊字符查询应回退 LIKE 命中");
 }
@@ -4095,7 +4167,16 @@ fn test_search_history_backfills_ocr_text() {
     store.set_ocr_text("C:\\img\\shot.png", "报销单 2024-07").unwrap();
 
     // 搜索命中（content LIKE 命中文件名）
-    let items = store.search_history("默认", "shot", "all", "", "", "", &[], 100).unwrap();
+    let items = store.search_history(&SearchQuery {
+        workspace: "默认",
+        search: "shot",
+        filter: "all",
+        time_filter: "",
+        source: "",
+        group_filter: "",
+        tag_ids: &[],
+        limit: 100,
+    }).unwrap();
     let hit = items.iter().find(|i| i.id == "img-1").unwrap();
     assert_eq!(hit.ocr_text.as_deref(), Some("报销单 2024-07"));
 }
@@ -4119,7 +4200,16 @@ fn test_ocr_text_searchable_after_recognition() {
         .unwrap();
 
     let hits = store
-        .search_history("默认", "季度营收", "all", "", "", "all", &[], 50)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "季度营收",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 50,
+        })
         .unwrap();
     assert_eq!(hits.len(), 1, "OCR 文本里的词应能搜到这张图");
     assert_eq!(hits[0].id, "img-1");
@@ -4137,12 +4227,30 @@ fn test_ocr_reindex_replaces_old_text() {
     store.set_ocr_text(&img.content, "更正后的新文字").unwrap();
 
     let new_hits = store
-        .search_history("默认", "更正后", "all", "", "", "all", &[], 50)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "更正后",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 50,
+        })
         .unwrap();
     assert_eq!(new_hits.len(), 1, "新文本应可搜到");
 
     let old_hits = store
-        .search_history("默认", "错误识别", "all", "", "", "all", &[], 50)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "错误识别",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 50,
+        })
         .unwrap();
     assert!(old_hits.is_empty(), "旧 OCR 文本不应残留在索引里");
 }
@@ -4156,7 +4264,16 @@ fn test_file_path_still_searchable_for_non_image() {
     store.insert_history(&f).unwrap();
 
     let hits = store
-        .search_history("默认", "receivablebill", "all", "", "", "all", &[], 50)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "receivablebill",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 50,
+        })
         .unwrap();
     assert_eq!(hits.len(), 1, "文件路径检索不受 OCR 改动影响");
     assert_eq!(hits[0].id, "file-1");
@@ -4182,7 +4299,16 @@ fn test_backfill_indexes_existing_ocr_cache() {
 
     assert!(
         store
-            .search_history("默认", "存量识别", "all", "", "", "all", &[], 50)
+            .search_history(&SearchQuery {
+                workspace: "默认",
+                search: "存量识别",
+                filter: "all",
+                time_filter: "",
+                source: "",
+                group_filter: "all",
+                tag_ids: &[],
+                limit: 50,
+            })
             .unwrap()
             .is_empty(),
         "回填前搜不到（缓存里有文本，但索引里没有）"
@@ -4195,7 +4321,16 @@ fn test_backfill_indexes_existing_ocr_cache() {
     assert_eq!(n, 1, "应回填 1 条");
 
     let hits = store
-        .search_history("默认", "存量识别", "all", "", "", "all", &[], 50)
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "存量识别",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 50,
+        })
         .unwrap();
     assert_eq!(hits.len(), 1, "回填后应可搜到");
     assert_eq!(hits[0].id, "img-1");
@@ -7098,7 +7233,7 @@ fn test_每一处新建都要给updated_ms而不是落回默认值0() {
         .note_append_daily("2026-09-04", "10:30", None, "第一条速记")
         .unwrap()
     {
-        DailyAppend::Appended(n) => n,
+        DailyAppend::Appended(n) => *n,
         other => panic!("该建出一条新速记，实际 {:?}", other),
     };
     assert!(

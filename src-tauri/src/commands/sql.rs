@@ -34,7 +34,7 @@ fn strip_comments(sql: &str) -> String {
         match c {
             '-' if chars.peek() == Some(&'-') => {
                 // 行注释：吃掉到行尾
-                while let Some(n) = chars.next() {
+                for n in chars.by_ref() {
                     if n == '\n' {
                         out.push('\n');
                         break;

@@ -434,6 +434,24 @@ pub fn announce_once(me: &NodeIdentity, endpoint_port: u16, now_ms: i64) -> Resu
 
 // ===== 后台线程 =====
 
+/// 起 presence 线程要的全部参数。
+///
+/// 里面有两个 `u16`（`endpoint_port` / `listen_port`）和三个 `Arc<..>`，
+/// 位置参数下把两个端口写反编译器**不会报错**，只会连不上；收成结构体后按名字赋值。
+pub struct PresenceStart {
+    pub enabled: bool,
+    pub table: Arc<PresenceTable>,
+    pub me: Arc<NodeIdentity>,
+    /// 本机 iroh endpoint 端口（写进公告，供对端拨号）。
+    pub endpoint_port: u16,
+    pub is_paired: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    pub on_fresh: Arc<dyn Fn(&str) + Send + Sync>,
+    pub running: Arc<AtomicBool>,
+    /// 监听端口。生产传 `PORT`；**测试传 0**（临时端口）——
+    /// 并行跑的测试都去抢固定的 5008，会表现为与被测逻辑无关的随机失败。
+    pub listen_port: u16,
+}
+
 /// 起「监听 + 周期宣告」的线程。
 ///
 /// 🔴 开关判断在**函数里面**：调用方拿不到「绕过开关」的写法。
@@ -442,18 +460,17 @@ pub fn announce_once(me: &NodeIdentity, endpoint_port: u16, now_ms: i64) -> Resu
 /// `is_paired` 由调用方给（通常是查 `devices` 表），这样本模块不依赖 `DataStore`。
 /// `on_fresh` 同理：听到一台已配对设备的新公告时回调，用来把休眠中的
 /// 同步循环叫醒（见 `service::SyncCtx::wake`）——本模块自己不知道那边的存在。
-pub fn spawn(
-    enabled: bool,
-    table: Arc<PresenceTable>,
-    me: Arc<NodeIdentity>,
-    endpoint_port: u16,
-    is_paired: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    on_fresh: Arc<dyn Fn(&str) + Send + Sync>,
-    running: Arc<AtomicBool>,
-    // 监听端口。生产传 `PORT`；**测试传 0**（临时端口）——
-    // 并行跑的测试都去抢固定的 5008，会表现为与被测逻辑无关的随机失败。
-    listen_port: u16,
-) {
+pub fn spawn(p: PresenceStart) {
+    let PresenceStart {
+        enabled,
+        table,
+        me,
+        endpoint_port,
+        is_paired,
+        on_fresh,
+        running,
+        listen_port,
+    } = p;
     if !enabled {
         log::info!(
             "[Presence] 知识库同步开关（{}）是关的，不启动地址宣告",

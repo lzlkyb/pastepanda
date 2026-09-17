@@ -209,6 +209,7 @@ const MD_APP_REG_NAME: &str = "PastePanda";
 /// - explorer.exe 启动带查询参数的 URI（?registeredAppUser=...）：explorer
 ///   解析失败会回退打开"文档"文件夹。必须走 ShellExecuteW 协议激活
 ///   （即官方文档 LaunchUriAsync 的 Win32 等价方式）。
+///
 /// 正解：ShellExecuteW 打开 ms-settings:defaultapps?registeredAppUser=PastePanda
 /// —— 依赖 RegisteredApplications + Capabilities 注册（set_md_association 已写入），
 /// 设置页自动定位到 PastePanda，用户点击 .md 一行即可在带"始终"按钮的
@@ -839,11 +840,10 @@ pub fn clear_source_icon_cache(
     let mut count = 0u32;
     if let Ok(entries) = std::fs::read_dir(&cache_dir) {
         for entry in entries.flatten() {
-            if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                if std::fs::remove_file(entry.path()).is_ok() {
+            if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+                && std::fs::remove_file(entry.path()).is_ok() {
                     count += 1;
                 }
-            }
         }
     }
     Ok(count)

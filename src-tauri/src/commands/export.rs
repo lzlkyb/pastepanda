@@ -73,7 +73,7 @@ pub fn export_history_xlsx(
     let headers = ["时间", "来源", "内容类型", "内容", "标签", "置顶"];
     for (col, h) in headers.iter().enumerate() {
         sheet
-            .write_string(0, col as u16, *h, &header_fmt)
+            .write_string(0, col as u16, h, &header_fmt)
             .map_err(|e| format!("写入表头失败: {e}"))?;
     }
 

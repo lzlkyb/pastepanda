@@ -20,6 +20,25 @@ pub(super) enum TimeBound {
     Between(String, String),
 }
 
+/// 搜索的完整筛选条件（`search_history` 与 FTS 快速路径共用同一份）。
+///
+/// 8 个字段里 7 个是 `&str` / `&[String]`，位置参数下**传反了编译器一声不吭**
+/// （类型完全相同，只会在结果里少几条），收成结构体后调用点必须逐字段写名。
+///
+/// `Copy` 是为了函数内还能 `let SearchQuery { .. } = *q;` 解构出 `&str`，
+/// 让正文代码一行不用改。
+#[derive(Clone, Copy)]
+pub struct SearchQuery<'a> {
+    pub workspace: &'a str,
+    pub search: &'a str,
+    pub filter: &'a str,
+    pub time_filter: &'a str,
+    pub source: &'a str,
+    pub group_filter: &'a str,
+    pub tag_ids: &'a [String],
+    pub limit: u32,
+}
+
 /// 把前端的 `time_filter` 翻成边界。
 ///
 /// # 为什么收口在这里
@@ -294,6 +313,7 @@ impl DataStore {
     /// 读「保护常用内容」开关（v6.1）。默认 true：
     /// - 开：VALUE_PRESERVE_SQL 生效，高价值条目豁免过期清理；
     /// - 关：退回旧的「超期必清」（只看时间 + 置顶），隐私敏感用户可一键退回。
+    ///
     /// 与前端 DEFAULT_CONFIG.preserve_valued_content 对齐（老库没有该 key 时按 true 兜底）。
     fn preserve_valued_enabled(&self) -> bool {
         self.get_config()
@@ -398,17 +418,17 @@ impl DataStore {
 
     /// v6.4 FTS5 快速路径：中文/混合关键词走全文索引（bigram 预处理），
     /// 远快于 LIKE 三字段全扫。失败/空结果返回 Err/空 Vec，由调用方回退 LIKE。
-    fn try_search_fts(
-        &self,
-        workspace: &str,
-        search: &str,
-        filter: &str,
-        time_filter: &str,
-        source: &str,
-        group_filter: &str,
-        tag_ids: &[String],
-        limit: u32,
-    ) -> Result<Vec<HistoryItem>, ()> {
+    fn try_search_fts(&self, q: &SearchQuery) -> Result<Vec<HistoryItem>, ()> {
+        let SearchQuery {
+            workspace,
+            search,
+            filter,
+            time_filter,
+            source,
+            group_filter,
+            tag_ids,
+            limit,
+        } = *q;
         let conn = self.lock_conn();
 
         let mut sql = String::from(
@@ -498,32 +518,24 @@ impl DataStore {
     /// - search 同时匹配 text / pinyin_initials / content（U41：图片文件名、文件路径在 content）
     /// - 时间为左闭区间（time >= cutoff），today/week/month 与前端算法一致
     /// - 标签为 AND 逻辑（每个 tag 一个子查询）
+    ///
     /// 结果按 置顶优先 + 时间倒序，设上限防止宽泛搜索整表返回。
-    pub fn search_history(
-        &self,
-        workspace: &str,
-        search: &str,
-        filter: &str,
-        time_filter: &str,
-        source: &str,
-        group_filter: &str,
-        tag_ids: &[String],
-        limit: u32,
-    ) -> Result<Vec<HistoryItem>, String> {
+    pub fn search_history(&self, q: &SearchQuery) -> Result<Vec<HistoryItem>, String> {
+        let SearchQuery {
+            workspace,
+            search,
+            filter,
+            time_filter,
+            source,
+            group_filter,
+            tag_ids,
+            limit,
+        } = *q;
         // v6.4 FTS5 快速路径：命中即返回；空结果/出错（旧库无索引、语法异常）回退 LIKE。
         // ⚠️ 必须在 lock_conn() 之前调用 try_search_fts（它内部会 lock_conn；
         //     Mutex 不可重入，先锁再调会死锁——delete_history 踩过同一坑）。
         if !search.is_empty() && fts_safe(search) {
-            if let Ok(fts_items) = self.try_search_fts(
-                workspace,
-                search,
-                filter,
-                time_filter,
-                source,
-                group_filter,
-                tag_ids,
-                limit,
-            ) {
+            if let Ok(fts_items) = self.try_search_fts(q) {
                 if !fts_items.is_empty() {
                     // ❗ 原先在这里批量计数，已删——详见 `bump_search_recall`。
                     return Ok(fts_items);
@@ -1311,10 +1323,8 @@ impl DataStore {
                 .map_err(|e| e.to_string())?;
             let mut tag_map: std::collections::HashMap<String, Vec<Tag>> =
                 std::collections::HashMap::new();
-            for row in rows {
-                if let Ok((history_id, tag)) = row {
-                    tag_map.entry(history_id).or_default().push(tag);
-                }
+            for (history_id, tag) in rows.flatten() {
+                tag_map.entry(history_id).or_default().push(tag);
             }
             drop(stmt);
             for item in items.iter_mut() {
@@ -1496,10 +1506,8 @@ impl DataStore {
                 .map_err(|e| e.to_string())?;
             let mut tag_map: std::collections::HashMap<String, Vec<Tag>> =
                 std::collections::HashMap::new();
-            for row in rows {
-                if let Ok((history_id, tag)) = row {
-                    tag_map.entry(history_id).or_default().push(tag);
-                }
+            for (history_id, tag) in rows.flatten() {
+                tag_map.entry(history_id).or_default().push(tag);
             }
             drop(stmt);
             for item in items.iter_mut() {

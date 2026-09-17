@@ -271,10 +271,8 @@ impl DataStore {
             .map_err(|e| e.to_string())?;
 
         let mut map: std::collections::HashMap<String, Vec<Tag>> = std::collections::HashMap::new();
-        for row in rows {
-            if let Ok((history_id, tag)) = row {
-                map.entry(history_id).or_default().push(tag);
-            }
+        for (history_id, tag) in rows.flatten() {
+            map.entry(history_id).or_default().push(tag);
         }
         Ok(map.into_iter().collect())
     }

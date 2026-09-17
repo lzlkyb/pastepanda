@@ -296,7 +296,7 @@ impl PasteEngine {
         // 最后实时抓取当前前台窗口（兜底）
         #[cfg(target_os = "windows")]
         {
-            return self.capture_foreground_now();
+            self.capture_foreground_now()
         }
         #[cfg(not(target_os = "windows"))]
         None
@@ -417,6 +417,7 @@ impl PasteEngine {
     /// 单次尝试失败的典型错误就是
     ///   - os error 1418 = ERROR_CLIPBOARD_NOT_OPEN
     ///   - os error 5    = ERROR_ACCESS_DENIED
+    ///
     /// 这两个都是**瞬时性**的，隔几十毫秒再试几乎总能成功。
     ///
     /// 递增退避而不是固定间隔：占用方可能正在写一大块数据，固定 10ms 转 5 次
@@ -996,7 +997,7 @@ impl PasteEngine {
                 // 2. Ctrl 按下（仅当未物理按住）
                 if !ctrl_held {
                     inputs[n].r#type = INPUT_KEYBOARD;
-                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0);
                     n += 1;
                 }
 
@@ -1012,7 +1013,7 @@ impl PasteEngine {
                 // 4. Ctrl 释放（仅当未物理按住）
                 if !ctrl_held {
                     inputs[n].r#type = INPUT_KEYBOARD;
-                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0);
                     inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
                     n += 1;
                 }
@@ -1090,24 +1091,24 @@ impl PasteEngine {
             for (i, k) in mod_keys.iter().enumerate() {
                 if held[i] {
                     inputs[n].r#type = INPUT_KEYBOARD;
-                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(k.0 as u16);
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(k.0);
                     inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
                     n += 1;
                 }
             }
 
             inputs[n].r#type = INPUT_KEYBOARD;
-            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_TAB.0 as u16);
+            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_TAB.0);
             n += 1;
             inputs[n].r#type = INPUT_KEYBOARD;
-            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_TAB.0 as u16);
+            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_TAB.0);
             inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
             n += 1;
 
             for (i, k) in mod_keys.iter().enumerate() {
                 if held[i] {
                     inputs[n].r#type = INPUT_KEYBOARD;
-                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(k.0 as u16);
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(k.0);
                     n += 1;
                 }
             }

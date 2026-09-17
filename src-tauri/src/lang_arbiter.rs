@@ -85,7 +85,7 @@ pub fn arbitrate(text: &str, candidates: &[&str]) -> Option<&'static str> {
             continue;
         };
         // 严格小于 → 平局时保留先出现的候选（即规则得分更高者）
-        if best.map_or(true, |(_, r)| ratio < r) {
+        if best.is_none_or(|(_, r)| ratio < r) {
             best = Some((def.label, ratio));
         }
     }

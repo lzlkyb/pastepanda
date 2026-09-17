@@ -135,7 +135,7 @@ impl PasteSuppress {
     /// 作为 hash 主检查的兜底——覆盖 hash 已被清除的轮询竞态，以及无 hash 的粘贴路径（如文件）。
     pub fn is_suppressed(&self) -> bool {
         if let Ok(guard) = self.until.lock() {
-            guard.map_or(false, |t| Instant::now() < t)
+            guard.is_some_and(|t| Instant::now() < t)
         } else {
             false
         }
@@ -144,7 +144,7 @@ impl PasteSuppress {
     /// 检查内容 hash 是否匹配预期粘贴内容（即使时间抑制已过期也跳过）
     pub fn is_hash_suppressed(&self, hash: &str) -> bool {
         if let Ok(guard) = self.expected_hash.lock() {
-            guard.as_ref().map_or(false, |h| h == hash)
+            guard.as_ref().is_some_and(|h| h == hash)
         } else {
             false
         }
@@ -458,12 +458,14 @@ impl ClipboardMonitor {
                 run_event_listener(
                     running,
                     app_handle,
-                    paste_suppress,
-                    auto_strip_cache,
-                    sensitive_cache,
-                    excluded_cache,
-                    doc_capture_cache,
-                    thread_id_slot,
+                    ListenerShared {
+                        paste_suppress,
+                        auto_strip_cache,
+                        sensitive_cache,
+                        excluded_cache,
+                        doc_capture_cache,
+                        thread_id_slot,
+                    },
                 );
             });
         }
@@ -502,18 +504,31 @@ impl ClipboardMonitor {
 // Windows 事件驱动实现
 // ═══════════════════════════════════════════════════════════════
 
-/// 监听线程主体：消息-only 窗口 + 剪贴板格式监听 + 防抖/兜底定时器
+/// 监听线程要用的一整套共享状态。
+///
+/// 里面有三项都是 `Arc<RwLock<bool>>`（auto_strip / sensitive / doc_capture）——
+/// 位置参数下顺序写反编译器**不会报错**，只会静默用错配置。收成结构体后按名字赋值。
 #[cfg(target_os = "windows")]
-fn run_event_listener(
-    running: Arc<AtomicBool>,
-    app_handle: AppHandle,
+struct ListenerShared {
     paste_suppress: Arc<PasteSuppress>,
     auto_strip_cache: Arc<std::sync::RwLock<bool>>,
     sensitive_cache: Arc<std::sync::RwLock<bool>>,
     excluded_cache: Arc<std::sync::RwLock<Vec<String>>>,
     doc_capture_cache: Arc<std::sync::RwLock<bool>>,
     thread_id_slot: Arc<Mutex<Option<u32>>>,
-) {
+}
+
+/// 监听线程主体：消息-only 窗口 + 剪贴板格式监听 + 防抖/兜底定时器
+#[cfg(target_os = "windows")]
+fn run_event_listener(running: Arc<AtomicBool>, app_handle: AppHandle, shared: ListenerShared) {
+    let ListenerShared {
+        paste_suppress,
+        auto_strip_cache,
+        sensitive_cache,
+        excluded_cache,
+        doc_capture_cache,
+        thread_id_slot,
+    } = shared;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::DataExchange::{
@@ -1068,9 +1083,7 @@ fn worker_loop(
                 excluded_cache,
                 text,
                 hash,
-                title,
-                exe_path,
-                time,
+                CaptureMeta { source_title: title, exe_path, now_str: time },
             ),
             CapturedItem::Image {
                 rgba,
@@ -1080,7 +1093,14 @@ fn worker_loop(
                 title,
                 exe_path,
                 time,
-            } => process_image(app_handle, rgba, width, height, hash, title, exe_path, time),
+            } => process_image(
+                app_handle,
+                rgba,
+                width,
+                height,
+                hash,
+                CaptureMeta { source_title: title, exe_path, now_str: time },
+            ),
             CapturedItem::Files {
                 paths,
                 title,
@@ -1101,9 +1121,7 @@ fn worker_loop(
                 html_fragment,
                 plain_text,
                 hash,
-                title,
-                exe_path,
-                time,
+                CaptureMeta { source_title: title, exe_path, now_str: time },
             ),
             CapturedItem::Doc {
                 html_fragment,
@@ -1119,9 +1137,7 @@ fn worker_loop(
                 html_fragment,
                 plain_text,
                 hash,
-                title,
-                exe_path,
-                time,
+                CaptureMeta { source_title: title, exe_path, now_str: time },
             ),
         }
     }
@@ -1139,6 +1155,17 @@ fn extract_source_icon(app_handle: &AppHandle, exe_path: &Option<PathBuf>) -> Op
     })
 }
 
+/// 一条采集内容的来源元信息：文本 / 图片 / 富文本 / 文档四条处理路径都要它。
+///
+/// 三项类型相近（`String` / `Option<PathBuf>` / `String`），散在参数表尾**极易传错顺序**；
+/// 收成结构体后由调用点说明每个值是什么。函数内首行解构，故正文完全不用改。
+#[cfg(target_os = "windows")]
+struct CaptureMeta {
+    source_title: String,
+    exe_path: Option<PathBuf>,
+    now_str: String,
+}
+
 /// 处理捕获的文本条目（逻辑与轮询版一致：U36 过滤 → 智能合并 → 入库 → 自动标签 → 推送 → LAN）
 #[cfg(target_os = "windows")]
 fn process_text(
@@ -1147,10 +1174,13 @@ fn process_text(
     excluded_cache: &std::sync::RwLock<Vec<String>>,
     text: String,
     hash: String,
-    source_title: String,
-    exe_path: Option<PathBuf>,
-    now_str: String,
+    meta: CaptureMeta,
 ) {
+    let CaptureMeta {
+        source_title,
+        exe_path,
+        now_str,
+    } = meta;
     // 修复 U36：敏感内容防护 —— 命中应用排除名单或密钥模式时不记录
     // （在入库/合并/推送/局域网同步之前拦截，确保敏感内容不落盘、不外传）
     if is_excluded_app_with(excluded_cache, &source_title) {
@@ -1264,10 +1294,13 @@ fn process_image(
     width: usize,
     height: usize,
     img_hash: String,
-    source_title: String,
-    exe_path: Option<PathBuf>,
-    now_str: String,
+    meta: CaptureMeta,
 ) {
+    let CaptureMeta {
+        source_title,
+        exe_path,
+        now_str,
+    } = meta;
     // 保存图片到磁盘
     let app_dir = match app_handle.path().app_data_dir() {
         Ok(d) => d,
@@ -1445,10 +1478,13 @@ fn process_rich(
     html_fragment: String,
     plain_text: String,
     hash: String,
-    source_title: String,
-    exe_path: Option<PathBuf>,
-    now_str: String,
+    meta: CaptureMeta,
 ) {
+    let CaptureMeta {
+        source_title,
+        exe_path,
+        now_str,
+    } = meta;
     // 与 process_text 一致：排除名单应用 / 敏感内容不入库
     if is_excluded_app_with(excluded_cache, &source_title) {
         log::info!(
@@ -1548,10 +1584,13 @@ fn process_doc(
     html_fragment: String,
     plain_text: String,
     hash: String,
-    source_title: String,
-    exe_path: Option<PathBuf>,
-    now_str: String,
+    meta: CaptureMeta,
 ) {
+    let CaptureMeta {
+        source_title,
+        exe_path,
+        now_str,
+    } = meta;
     // 与 process_text/process_rich 一致：排除名单应用 / 敏感内容不入库
     // （敏感检测作用于纯文本副本——HTML 里同样可能携带密钥模式）
     if is_excluded_app_with(excluded_cache, &source_title) {
@@ -2231,7 +2270,7 @@ pub(crate) fn build_cf_html_buffer(fragment_inner: &str) -> Vec<u8> {
     let header_len = header_template(0, 0, 0, 0).len();
     let start_html = header_len;
     let start_frag = start_html + prefix_html.len();
-    let end_frag = start_frag + fragment_inner.as_bytes().len();
+    let end_frag = start_frag + fragment_inner.len();
     let end_html = end_frag + suffix_html.len();
     let header = header_template(start_html, end_html, start_frag, end_frag);
     let mut buf = Vec::new();
@@ -2300,7 +2339,7 @@ pub(crate) fn parse_cf_html_fragment(raw: &[u8]) -> Option<String> {
     let find_offset = |key: &str| -> Option<usize> {
         let idx = header_text.find(key)?;
         let rest = &header_text[idx + key.len()..];
-        let end = rest.find(|c: char| c == '\r' || c == '\n')?;
+        let end = rest.find(['\r', '\n'])?;
         rest[..end].trim().parse::<usize>().ok()
     };
 

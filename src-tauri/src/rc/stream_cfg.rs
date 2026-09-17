@@ -113,7 +113,7 @@ impl StreamCfg {
             return Err("画质档只能是 uhd / ultra / sharp / balanced / smooth".into());
         }
         let mut g = self.opts.lock().unwrap_or_else(|p| p.into_inner());
-        g.profile = super::video::EncodeProfile::from_str(quality);
+        g.profile = super::video::EncodeProfile::of_name(quality);
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl StreamCfg {
 
 /// 从配置里解析画质档。抽成自由函数是为了能直接单测默认值与非法值的回落。
 pub(super) fn profile_from_cfg(cfg: &serde_json::Value) -> super::video::EncodeProfile {
-    super::video::EncodeProfile::from_str(
+    super::video::EncodeProfile::of_name(
         cfg.get(CFG_QUALITY)
             .and_then(|v| v.as_str())
             .unwrap_or("balanced"),
@@ -334,7 +334,7 @@ mod tests {
         assert!(virtual_screen_from_cfg(&empty), "缺省就是抓整屏");
         assert_eq!(
             profile_from_cfg(&empty),
-            super::super::video::EncodeProfile::from_str("balanced")
+            super::super::video::EncodeProfile::of_name("balanced")
         );
     }
 

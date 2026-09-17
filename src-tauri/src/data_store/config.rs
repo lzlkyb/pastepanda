@@ -162,10 +162,8 @@ impl DataStore {
                     |row| Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?)),
                 )
                 .map_err(|e| e.to_string())?;
-            for row in rows {
-                if let Ok((d, c)) = row {
-                    day_map.insert(d, c);
-                }
+            for (d, c) in rows.flatten() {
+                day_map.insert(d, c);
             }
         }
         let daily: Vec<DailyCount> = (0..7)
@@ -193,12 +191,10 @@ impl DataStore {
                     Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
                 })
                 .map_err(|e| e.to_string())?;
-            for row in rows {
-                if let Ok((h, c)) = row {
-                    if let Ok(idx) = h.parse::<usize>() {
-                        if idx < 24 {
-                            hours[idx] = c;
-                        }
+            for (h, c) in rows.flatten() {
+                if let Ok(idx) = h.parse::<usize>() {
+                    if idx < 24 {
+                        hours[idx] = c;
                     }
                 }
             }
@@ -333,7 +329,7 @@ impl DataStore {
             result
         };
         // 与前端原展示顺序一致：按计数降序
-        sources.sort_by(|a, b| b.count.cmp(&a.count));
+        sources.sort_by_key(|b| std::cmp::Reverse(b.count));
 
         let mut groups: std::collections::HashMap<String, u32> =
             std::collections::HashMap::new();
@@ -350,10 +346,8 @@ impl DataStore {
                     Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
                 })
                 .map_err(|e| e.to_string())?;
-            for row in rows {
-                if let Ok((gid, count)) = row {
-                    groups.insert(gid, count);
-                }
+            for (gid, count) in rows.flatten() {
+                groups.insert(gid, count);
             }
         }
 
@@ -374,10 +368,8 @@ impl DataStore {
                     Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
                 })
                 .map_err(|e| e.to_string())?;
-            for row in rows {
-                if let Ok((tid, count)) = row {
-                    tags.insert(tid, count);
-                }
+            for (tid, count) in rows.flatten() {
+                tags.insert(tid, count);
             }
         }
 
@@ -404,13 +396,11 @@ impl DataStore {
             })
             .map_err(|e| e.to_string())?;
 
-        for row in rows {
-            if let Ok((key, value)) = row {
-                // 尝试解析 JSON 值，否则作为字符串
-                let json_val =
-                    serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
-                map.insert(key, json_val);
-            }
+        for (key, value) in rows.flatten() {
+            // 尝试解析 JSON 值，否则作为字符串
+            let json_val =
+                serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
+            map.insert(key, json_val);
         }
 
         Ok(serde_json::Value::Object(map))
@@ -495,7 +485,7 @@ impl DataStore {
                 })
                 .collect();
             // 按修改时间降序排列，保留最新的 10 个
-            backups.sort_by(|a, b| b.1.cmp(&a.1));
+            backups.sort_by_key(|b| std::cmp::Reverse(b.1));
             for (path, _) in backups.iter().skip(10) {
                 let _ = std::fs::remove_file(path);
             }

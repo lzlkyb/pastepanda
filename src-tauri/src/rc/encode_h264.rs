@@ -158,8 +158,10 @@ impl MfH264Encoder {
 
     unsafe fn drain(&mut self) -> Result<(), String> {
         loop {
-            let mut od = MFT_OUTPUT_DATA_BUFFER::default();
-            od.dwStreamID = 0;
+            let od = MFT_OUTPUT_DATA_BUFFER {
+                dwStreamID: 0,
+                ..Default::default()
+            };
             let mut status = 0u32;
             let mut outs = [od];
             let hr = self.transform.ProcessOutput(0, &mut outs, &mut status);

@@ -54,10 +54,8 @@ impl crate::data_store::DataStore {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(|e| e.to_string())?;
-        for row in rows {
-            if let Ok((path, text)) = row {
-                map.insert(path, text);
-            }
+        for (path, text) in rows.flatten() {
+            map.insert(path, text);
         }
         Ok(map)
     }

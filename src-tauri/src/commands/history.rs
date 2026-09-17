@@ -1,4 +1,6 @@
-use crate::data_store::{DataStore, HistoryItem, SidebarCounts, Stats, StatsDetail, TimeBump};
+use crate::data_store::{
+    DataStore, HistoryItem, SearchQuery, SidebarCounts, Stats, StatsDetail, TimeBump,
+};
 use rusqlite::params;
 use tauri::{Emitter, Manager, State};
 
@@ -405,6 +407,10 @@ pub fn get_sidebar_counts(
 
 /// 全量搜索：全部筛选条件下推到 SQL，扫整表返回命中记录（上限 1000）。
 /// 参数名经 Tauri 默认规则在 JS 侧为 camelCase：timeFilter / groupFilter / tagIds。
+// 参数即前端 IPC 契约：Tauri 命令按字段名逐个接收**扁平**参数，合并成结构体会
+// 直接改变前端调用协议（invoke 传的是 `{ timeFilter, groupFilter, tagIds, ... }`）。
+// 故此处保留多参数，只关掉 lint。
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn search_history(
     store: State<DataStore>,
@@ -417,16 +423,16 @@ pub fn search_history(
     tag_ids: Vec<String>,
     limit: u32,
 ) -> Result<Vec<HistoryItem>, String> {
-    store.search_history(
-        &workspace,
-        &search,
-        &filter,
-        &time_filter,
-        &source,
-        &group_filter,
-        &tag_ids,
+    store.search_history(&SearchQuery {
+        workspace: &workspace,
+        search: &search,
+        filter: &filter,
+        time_filter: &time_filter,
+        source: &source,
+        group_filter: &group_filter,
+        tag_ids: &tag_ids,
         limit,
-    )
+    })
 }
 
 /// 导入历史记录

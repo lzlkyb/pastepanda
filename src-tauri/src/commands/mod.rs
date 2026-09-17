@@ -145,7 +145,7 @@ pub(crate) fn read_from_conf(key: &str) -> Result<String, Box<dyn std::error::Er
             let search = format!("\"{}\"", key);
             if let Some(start) = content.find(&search) {
                 let after_key = &content[start + search.len()..];
-                let trimmed = after_key.trim_start_matches(|c| c == ':' || c == ' ' || c == '"');
+                let trimmed = after_key.trim_start_matches([':', ' ', '"']);
                 if let Some(end) = trimmed.find('"') {
                     return Ok(trimmed[..end].to_string());
                 }

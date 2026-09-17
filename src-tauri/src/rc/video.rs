@@ -41,7 +41,11 @@ pub struct EncodeProfile {
 }
 
 impl EncodeProfile {
-    pub fn from_str(s: &str) -> Self {
+    /// 按档位名取 profile；未知名字回落 `balanced`。
+    ///
+    /// 🔴 刻意不叫 `from_str`：那会与 `std::str::FromStr::from_str` 撞名，
+    /// 而本函数不做解析失败（恒返回 `Self`），语义不同，改名避免误用。
+    pub fn of_name(s: &str) -> Self {
         match s {
             "sharp" => Self {
                 max_w: 1920,
@@ -96,7 +100,7 @@ impl EncodeProfile {
 
 impl Default for EncodeProfile {
     fn default() -> Self {
-        Self::from_str("balanced")
+        Self::of_name("balanced")
     }
 }
 
@@ -726,9 +730,9 @@ mod tests {
 
     #[test]
     fn ultra_profile_is_2560_wide() {
-        let p = EncodeProfile::from_str("ultra");
+        let p = EncodeProfile::of_name("ultra");
         assert_eq!(p.max_w, 2560);
-        assert!(p.adapt_down > EncodeProfile::from_str("balanced").adapt_down);
+        assert!(p.adapt_down > EncodeProfile::of_name("balanced").adapt_down);
         // 超宽图应缩到 2560 而不是 4K
         let mut st = EncoderState::with_profile(p, true);
         let (w, h) = (3840u32, 2160u32);

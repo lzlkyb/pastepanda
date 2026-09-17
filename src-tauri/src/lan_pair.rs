@@ -428,7 +428,7 @@ fn hex(bytes: &[u8]) -> String {
 /// 那边现已改成复用本函数。
 pub(crate) fn hex_to_vec(s: &str) -> Option<Vec<u8>> {
     let b = s.as_bytes();
-    if b.is_empty() || b.len() % 2 != 0 {
+    if b.is_empty() || !b.len().is_multiple_of(2) {
         return None;
     }
     (0..b.len() / 2)

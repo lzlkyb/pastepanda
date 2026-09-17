@@ -80,7 +80,7 @@ impl DataStore {
         let mut rows = st
             .query_map([node_id], row_to)
             .map_err(|e| e.to_string())?;
-        Ok(rows.next().transpose().map_err(|e| e.to_string())?)
+        rows.next().transpose().map_err(|e| e.to_string())
     }
 
     pub fn rc_device_forget(&self, node_id: &str) -> Result<(), String> {

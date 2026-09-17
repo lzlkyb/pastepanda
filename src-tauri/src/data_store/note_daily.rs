@@ -21,7 +21,11 @@ use super::DataStore;
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum DailyAppend {
     /// 追加成功（或当天首次创建）。
-    Appended(Note),
+    ///
+    /// `Note` 字段多、撑到数百字节，而 `Duplicate` 是零负载 —— 不装箱的话整个
+    /// enum 按最大变体占位，每次返回都要搬这么一大块。`Box` 对 serde 透明，
+    /// 前端拿到的 JSON 与直接内联 `Note` 完全一致。
+    Appended(Box<Note>),
     /// 内容与最后一段完全相同。热键手滑连按两下是常态，不该记两遍。
     Duplicate,
 }
@@ -121,7 +125,7 @@ impl DataStore {
         Self::sync_note_indexes_on(&conn, &id);
         let sql = format!("SELECT {} FROM notes WHERE id = ?1", NOTE_COLS);
         conn.query_row(&sql, [&id], row_to_note)
-            .map(DailyAppend::Appended)
+            .map(|n| DailyAppend::Appended(Box::new(n)))
             .map_err(|e| e.to_string())
     }
 

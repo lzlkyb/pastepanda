@@ -1,7 +1,7 @@
 /// 应用图标提取模块
 /// 从 Windows 窗口句柄提取进程图标，缓存到本地文件
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// 图标缓存管理器
@@ -117,7 +117,7 @@ impl IconCache {
 
     /// 根据 exe 路径 hash 查找图标（回退逻辑：窗口标题 → exe 路径 → hash → 图标）
     /// 用于 source_icon 为空但知道窗口标题的场景
-    pub fn get_icon_by_exe_path(&self, exe_path: &PathBuf) -> Option<PathBuf> {
+    pub fn get_icon_by_exe_path(&self, exe_path: &Path) -> Option<PathBuf> {
         let hash = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -299,7 +299,7 @@ impl IconCache {
                     biHeight: -icon_h,
                     biPlanes: 1,
                     biBitCount: 32,
-                    biCompression: BI_RGB.0 as u32,
+                    biCompression: BI_RGB.0,
                     biSizeImage: 0,
                     biXPelsPerMeter: 0,
                     biYPelsPerMeter: 0,

@@ -456,15 +456,11 @@ impl McpServer {
 }
 
 /// 启服务时的局域网选项。由命令层从配置读出后传入。
+#[derive(Default)]
 pub struct LanStartOpts {
     pub enabled: bool,
 }
 
-impl Default for LanStartOpts {
-    fn default() -> Self {
-        Self { enabled: false }
-    }
-}
 
 /// bind 带短重试：停服后立刻重启时，旧监听可能还没完全释放端口。
 fn bind_with_retry(addr: (&str, u16)) -> Result<StdTcpListener, String> {

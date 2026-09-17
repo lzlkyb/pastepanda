@@ -408,7 +408,7 @@ pub async fn ocr_image_cached(store: State<'_, DataStore>, path: String) -> Resu
     }
     // 校验拿 canonical 判存在性/类型/尺寸；失败即返回，不触发识别。
     validate_image_file_path(&path)?;
-    check_image_decode_limits(&std::path::Path::new(&path))?;
+    check_image_decode_limits(std::path::Path::new(&path))?;
     let path_inner = path.clone();
     let result = tokio::task::spawn_blocking(move || ocr_image_cached_impl(&path_inner))
         .await

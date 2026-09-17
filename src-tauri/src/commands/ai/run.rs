@@ -5,6 +5,12 @@
 
 use super::*;
 
+/// 流式回调：把模型的增量文本推给前端做打字机效果。
+///
+/// 抽成别名是因为 `ai_run` 与 `ai_preview_custom` 两处都要它，
+/// 字面写两遍 `Option<Box<dyn Fn(&str) + Send + Sync>>` 又长又容易写歪。
+type StreamCallback = Box<dyn Fn(&str) + Send + Sync>;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiRunOk {
@@ -318,21 +324,18 @@ pub async fn ai_run(
                 return Err("免费额度请求太频繁，请稍后再试（每分钟最多 10 次）".to_string());
             }
             // 前置检查（余额 + 每日上限），细分原因给前端不同引导（v6.9 缺陷修复）
-            match { app.state::<DataStore>().quota_check() } {
-                Err(block) => {
-                    cache::inflight_done(&cache_key);
-                    let reason = match block {
-                        crate::data_store::QuotaBlock::Exhausted => "exhausted",
-                        crate::data_store::QuotaBlock::DailyCap => "dailyCap",
-                    };
-                    return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
-                        spent_cny: 0.0,
-                        budget_cny: 0.0,
-                        is_quota: true,
-                        quota_reason: Some(reason.to_string()),
-                    }));
-                }
-                Ok(_) => {}
+            if let Err(block) = { app.state::<DataStore>().quota_check() } {
+                cache::inflight_done(&cache_key);
+                let reason = match block {
+                    crate::data_store::QuotaBlock::Exhausted => "exhausted",
+                    crate::data_store::QuotaBlock::DailyCap => "dailyCap",
+                };
+                return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
+                    spent_cny: 0.0,
+                    budget_cny: 0.0,
+                    is_quota: true,
+                    quota_reason: Some(reason.to_string()),
+                }));
             }
         } else {
             // 守卫限在这个块里：下面就是 await，DataStore 的锁不能活过去
@@ -382,7 +385,7 @@ pub async fn ai_run(
 
     // v6.10 流式：远程服务商逐块 emit（前端打字机）。本地(Ollama)无意义不发。
     // 闭包捕获 app + action_id，事件带 actionId 让前端结果卡对号入座。
-    let stream_cb: Option<Box<dyn Fn(&str) + Send + Sync>> = if !spec.is_local() {
+    let stream_cb: Option<StreamCallback> = if !spec.is_local() {
         let app2 = app.clone();
         let aid = action_id.clone();
         Some(Box::new(move |d: &str| {
@@ -545,20 +548,17 @@ pub async fn ai_preview_custom(
             if !builtin_rate_ok() {
                 return Err("免费额度请求太频繁，请稍后再试（每分钟最多 10 次）".to_string());
             }
-            match { app.state::<DataStore>().quota_check() } {
-                Err(block) => {
-                    let reason = match block {
-                        crate::data_store::QuotaBlock::Exhausted => "exhausted",
-                        crate::data_store::QuotaBlock::DailyCap => "dailyCap",
-                    };
-                    return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
-                        spent_cny: 0.0,
-                        budget_cny: 0.0,
-                        is_quota: true,
-                        quota_reason: Some(reason.to_string()),
-                    }));
-                }
-                Ok(_) => {}
+            if let Err(block) = { app.state::<DataStore>().quota_check() } {
+                let reason = match block {
+                    crate::data_store::QuotaBlock::Exhausted => "exhausted",
+                    crate::data_store::QuotaBlock::DailyCap => "dailyCap",
+                };
+                return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
+                    spent_cny: 0.0,
+                    budget_cny: 0.0,
+                    is_quota: true,
+                    quota_reason: Some(reason.to_string()),
+                }));
             }
         } else {
             let today = { app.state::<DataStore>().ai_usage_today() };
@@ -575,7 +575,7 @@ pub async fn ai_preview_custom(
 
     let started = std::time::Instant::now();
     // v6.10 流式：试跑也逐块 emit（编辑器里长模板迭代时打字机反馈）
-    let stream_cb: Option<Box<dyn Fn(&str) + Send + Sync>> = if !spec.is_local() {
+    let stream_cb: Option<StreamCallback> = if !spec.is_local() {
         let app2 = app.clone();
         Some(Box::new(move |d: &str| {
             let _ = app2.emit(

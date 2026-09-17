@@ -199,6 +199,7 @@ pub(crate) struct MonitorWorkArea {
 /// 获取包含指定物理坐标点的显示器的工作区（排除任务栏，带原点）与缩放因子。
 /// 使用 MonitorFromPoint（MONITOR_DEFAULTTONEAREST，点不在任何屏上时返回最近屏）
 /// + GetMonitorInfoW（rcWork）+ GetDpiForMonitor（每监视器 DPI）。
+///
 /// 修复要点：
 ///  - 旧实现只用 SPI_GETWORKAREA 取"主显示器"工作区且丢弃原点，多屏/任务栏在
 ///    上或左侧时坐标系错位；
@@ -254,6 +255,7 @@ pub(crate) fn get_monitor_work_area(_px: f64, _py: f64) -> MonitorWorkArea {
 /// - 任务栏顶部 → 弹窗在图标下方，右边缘对齐
 /// - 任务栏左侧 → 弹窗在图标右侧，上边缘对齐
 /// - 任务栏右侧 → 弹窗在图标左侧，上边缘对齐
+///
 /// 全程在"物理像素"坐标系中计算：弹窗逻辑尺寸先按所在显示器缩放因子换算为物理尺寸，
 /// 再钳制到该显示器的工作区（含原点），保证高 DPI / 多显示器 / 任务栏任意边缘下都不越界。
 fn calc_popup_position(

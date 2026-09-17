@@ -181,8 +181,8 @@ impl InboundVideo {
             let Some(henc) = self.h264.as_mut() else {
                 return Step::FallThrough;
             };
-            if !(henc.available() && !opts.virtual_screen && opts.monitor < 0 && !opts.force_jpeg)
-            {
+            // R4 前置条件取反（德摩根展开），任一不满足即走兜底。
+            if !henc.available() || opts.virtual_screen || opts.monitor >= 0 || opts.force_jpeg {
                 return Step::FallThrough;
             }
             // R5.B2：按对端 RTT 缩码率（变化够大才重开编码器）

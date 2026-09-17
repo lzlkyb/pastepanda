@@ -376,6 +376,12 @@ static LANGUAGE_PROFILES: &[LanguageProfile] = &[
 /// 内容分类器
 pub struct ContentClassifier;
 
+impl Default for ContentClassifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ContentClassifier {
     pub fn new() -> Self {
         Self
@@ -548,12 +554,21 @@ impl ContentClassifier {
     }
 
     /// 检测是否为合法 JSON
+    ///
+    /// 除单个 JSON 值外，还接受**多段顶层 JSON**（NDJSON / 连续对象）：
+    /// 真实剪贴板里从接口调试、日志、DB 导出拷出来的一整段，经常是
+    /// `{…}\n{…}` 而不是一个数组。`from_str` 遇到「第一个对象后的剩余」
+    /// 会报 Extra data，整段就被打回纯文本——用户看到的是「明明是 JSON
+    /// 却显示文本」。
+    ///
+    /// 判据：整段 trim 后能被 StreamDeserializer **连续吃成 ≥1 个 JSON 值且吃干净**
+    /// （中间只剩空白）。`{"a":1} trailing` 仍会失败——那是脏数据不是 JSON。
     fn is_json(&self, text: &str) -> bool {
         let trimmed = text.trim();
-        // 快速检查首尾字符
-        if !(trimmed.starts_with('{') && trimmed.ends_with('}'))
-            && !(trimmed.starts_with('[') && trimmed.ends_with(']'))
-        {
+        // 快速检查首尾字符：JSON 顶层只能是对象或数组
+        let is_object = trimmed.starts_with('{') && trimmed.ends_with('}');
+        let is_array = trimmed.starts_with('[') && trimmed.ends_with(']');
+        if !(is_object || is_array) {
             return false;
         }
         // 尝试解析 JSON（也支持 JSONC：去除 // 注释）
@@ -583,7 +598,27 @@ impl ContentClassifier {
         } else {
             trimmed.to_string()
         };
-        serde_json::from_str::<serde_json::Value>(&text_to_parse).is_ok()
+        // 单值快路径（绝大多数剪贴板 JSON 走这里）
+        if serde_json::from_str::<serde_json::Value>(&text_to_parse).is_ok() {
+            return true;
+        }
+        // 多段顶层：流式解析直到吃干净或中途出错
+        let mut stream =
+            serde_json::Deserializer::from_str(&text_to_parse).into_iter::<serde_json::Value>();
+        let mut count = 0usize;
+        loop {
+            match stream.next() {
+                Some(Ok(_)) => count += 1,
+                Some(Err(_)) => return false,
+                None => break,
+            }
+        }
+        // 至少一个值，且剩余只有空白（尾随空白不算垃圾）
+        if count < 1 {
+            return false;
+        }
+        let consumed = stream.byte_offset();
+        text_to_parse[consumed..].trim().is_empty()
     }
 
     /// 检测配置文件类型
@@ -695,7 +730,7 @@ impl ContentClassifier {
                 && lower
                     .as_bytes()
                     .get(cmd.len())
-                    .map_or(true, |b| !b.is_ascii_alphanumeric())
+                    .is_none_or(|b| !b.is_ascii_alphanumeric())
         });
         if !starts_with_cmd {
             return false;
@@ -811,7 +846,7 @@ impl ContentClassifier {
         if trimmed.len() > 30
             && !trimmed.contains(' ')
             && !trimmed.contains('\n')
-            && trimmed.len() % 4 == 0
+            && trimmed.len().is_multiple_of(4)
             && BASE64_RE.is_match(trimmed)
         {
             // 排除明显的文本（包含常见英文单词）
@@ -923,7 +958,7 @@ impl ContentClassifier {
             .map(|p| (p.label, profile_score(p, text, &text_lower)))
             .filter(|(_, s)| *s > 0)
             .collect();
-        scores.sort_by(|a, b| b.1.cmp(&a.1));
+        scores.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         let (best_label, best_score) = *scores.first()?;
         if best_score < 6 {
@@ -1150,6 +1185,25 @@ mod tests {
     fn test_json() {
         let r = classify(r#"{"name": "test", "value": 42}"#);
         assert!(r.contains(&"JSON".to_string()));
+    }
+
+    /// 回归：从接口/日志连拷的多段顶层 JSON（对象之间空白分隔）必须仍是 JSON，
+    /// 不能因为 `from_str` 的 Extra data 落回纯文本。
+    #[test]
+    fn test_json_multi_top_level_objects() {
+        let multi = "{\r\n  \"a\": 1\r\n}\r\n\t {\r\n  \"b\": 2\r\n}";
+        let r = classify(multi);
+        assert!(r.contains(&"JSON".to_string()), "got {:?}", r);
+        // 数组包着的多对象仍是 JSON
+        let arr = "[{\"a\":1},{\"b\":2}]";
+        assert!(classify(arr).contains(&"JSON".to_string()));
+    }
+
+    /// 尾部垃圾不能算 JSON（`{"a":1} trailing`）
+    #[test]
+    fn test_json_trailing_garbage_is_not_json() {
+        let r = classify(r#"{"a": 1} trailing"#);
+        assert!(!r.contains(&"JSON".to_string()), "got {:?}", r);
     }
 
     #[test]

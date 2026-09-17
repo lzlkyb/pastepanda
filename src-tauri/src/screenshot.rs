@@ -87,8 +87,8 @@ pub async fn capture_region(
         if let Some(win) = &status {
             match (win.outer_position(), win.outer_size()) {
                 (Ok(pos), Ok(size)) => {
-                    let sx = pos.x as i32;
-                    let sy = pos.y as i32;
+                    let sx = pos.x;
+                    let sy = pos.y;
                     let sw = size.width as i32;
                     let sh = size.height as i32;
                     hide_status = x < sx + sw && sx < x + w && y < sy + sh && sy < y + h;
@@ -132,7 +132,7 @@ pub async fn capture_region(
             Ok(join) => join.map_err(|e| format!("截图任务失败: {e}"))?,
             Err(_) => {
                 log::warn!("[Screenshot] 区域截图超时（目标窗口可能无响应），已恢复状态窗");
-                return Err("区域截图超时（目标窗口可能无响应）".to_string());
+                Err("区域截图超时（目标窗口可能无响应）".to_string())
             }
         }
     }
@@ -1747,11 +1747,14 @@ pub fn take_pending_shot_edit(state: tauri::State<'_, PendingShotEdit>) -> Optio
 /// 贴图窗口 → 重新编辑的回调注册（open_pinned_image 命令在打开贴图时调用）。
 /// 多贴图并存（V5）：slot 存"最近一次贴图"，窗口创建后按 hwnd 绑定到 map，
 /// 双击哪个贴图就编辑哪张（不再只认最后一张）。
-static PINNED_EDIT_MAP: std::sync::OnceLock<
-    std::sync::Mutex<std::collections::HashMap<isize, (u64, tauri::AppHandle, String)>>,
-> = std::sync::OnceLock::new();
+/// 贴图编辑态：`(时间戳, AppHandle, 待编辑内容)`。
+type PinnedEditEntry = (u64, tauri::AppHandle, String);
+/// hwnd → 该贴图最近的编辑态。
+type PinnedEditMap = std::sync::Mutex<std::collections::HashMap<isize, PinnedEditEntry>>;
 
-fn pinned_edit_map() -> &'static std::sync::Mutex<std::collections::HashMap<isize, (u64, tauri::AppHandle, String)>> {
+static PINNED_EDIT_MAP: std::sync::OnceLock<PinnedEditMap> = std::sync::OnceLock::new();
+
+fn pinned_edit_map() -> &'static PinnedEditMap {
     PINNED_EDIT_MAP.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -2193,15 +2196,6 @@ unsafe fn enum_controls_impl(
     }))
 }
 
-/// 用 **UI Automation** 深度遍历窗口控件树，收集各逻辑控件边界（屏幕物理坐标）。
-///
-/// 为什么不用 legacy MSAA：与 `uia_control_at` 同理，MSAA 的 `AccessibleChildren` 在
-/// Electron / Chrome / VS Code 上拿不到 DOM 内控件；完整 UIA 的 `ElementFromHandle` 能
-/// 直接拿到窗口的 UIA 元素，再 `GetFirstChildElement` / `GetNextSiblingElement` 走完整棵树。
-///
-/// 防爆护栏：`MAX_VISIT` 限制遍历节点总数（浏览器 DOM 可能几千上万），`MAX_CTRL` 限制
-/// 最终返回控件数——宁可漏掉深层控件，也不能因为一次 Tab 把主线程卡死。
-
 /// COM 初始化 RAII 守卫：进入作用域 `CoInitializeEx`，离开（含所有 early return）自动
 /// `CoUninitialize`。
 ///
@@ -2229,6 +2223,14 @@ impl Drop for ComInit {
     }
 }
 
+/// 用 **UI Automation** 深度遍历窗口控件树，收集各逻辑控件边界（屏幕物理坐标）。
+///
+/// 为什么不用 legacy MSAA：与 `uia_control_at` 同理，MSAA 的 `AccessibleChildren` 在
+/// Electron / Chrome / VS Code 上拿不到 DOM 内控件；完整 UIA 的 `ElementFromHandle` 能
+/// 直接拿到窗口的 UIA 元素，再 `GetFirstChildElement` / `GetNextSiblingElement` 走完整棵树。
+///
+/// 防爆护栏：`MAX_VISIT` 限制遍历节点总数（浏览器 DOM 可能几千上万），`MAX_CTRL` 限制
+/// 最终返回控件数——宁可漏掉深层控件，也不能因为一次 Tab 把主线程卡死。
 #[cfg(target_os = "windows")]
 unsafe fn uia_enumerate_controls(
     hwnd: windows::Win32::Foundation::HWND,
@@ -2301,10 +2303,7 @@ unsafe fn uia_enumerate_controls(
             let mut cur = Some(child);
             while let Some(c) = cur {
                 // 先借 c 取兄弟（此时 c 还没被移动），再 push（移动 c）
-                cur = match walker.GetNextSiblingElement(&c) {
-                    Ok(n) => Some(n),
-                    Err(_) => None,
-                };
+                cur = walker.GetNextSiblingElement(&c).ok();
                 stack.push(c);
             }
         }
@@ -2432,6 +2431,7 @@ unsafe fn control_chain_at(
 ///   - 最小边长 40px：排除分隔条 / 滚动条箭头 / 小图标这类“框住没意义”的碎屑；
 ///   - 占顶层窗面积 5%~92%：排除几乎等于整窗的渲染宿主（Chrome/Electron 的
 ///     Chrome_RenderWidgetHostHWND），也排除面积占比过小的残片。
+///
 /// 返回 None = 链上没有可用控件，调用方应退回顶层窗整窗。
 fn select_best_rect(
     rects: &[(i32, i32, i32, i32)],
@@ -2942,7 +2942,7 @@ unsafe extern "system" fn vscroll_enum_cb(
     let py = *ctx.1;
     let cands = &mut *ctx.2;
     let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-    if style & (WS_VSCROLL.0 as u32) != 0 {
+    if style & WS_VSCROLL.0 != 0 {
         let mut rect = windows::Win32::Foundation::RECT::default();
         if GetWindowRect(hwnd, &mut rect).is_ok() {
             let contains = px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom;
@@ -2985,7 +2985,7 @@ fn find_vscroll_hwnd(x: i32, y: i32) -> Option<windows::Win32::Foundation::HWND>
                     break;
                 }
                 let style = GetWindowLongW(cur, GWL_STYLE) as u32;
-                if style & (WS_VSCROLL.0 as u32) != 0 {
+                if style & WS_VSCROLL.0 != 0 {
                     cands.push(VScrollCandidate {
                         hwnd: cur,
                         contains: true,

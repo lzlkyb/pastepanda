@@ -203,28 +203,29 @@ fn to_wide(s: &str) -> Vec<u16> {
 }
 
 fn make_bitmap_info(w: i32, h: i32) -> BITMAPINFO {
-    let mut bmi = BITMAPINFO::default();
-    bmi.bmiHeader = BITMAPINFOHEADER {
-        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-        biWidth: w,
-        biHeight: -h,
-        biPlanes: 1,
-        biBitCount: 32,
-        biCompression: 0,
-        biSizeImage: 0,
-        biXPelsPerMeter: 0,
-        biYPelsPerMeter: 0,
-        biClrUsed: 0,
-        biClrImportant: 0,
-    };
-    bmi
+    BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: w,
+            biHeight: -h,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: 0,
+            biSizeImage: 0,
+            biXPelsPerMeter: 0,
+            biYPelsPerMeter: 0,
+            biClrUsed: 0,
+            biClrImportant: 0,
+        },
+        ..Default::default()
+    }
 }
 
 /// 绘制包围盒（旋转后图实际占的像素尺寸）：旋转 90/270 时宽高互换
 fn effective_box(state: &WindowState) -> (i32, i32) {
     let draw_w = (state.img_width as f32 * state.scale).round().max(1.0) as i32;
     let draw_h = (state.img_height as f32 * state.scale).round().max(1.0) as i32;
-    if state.rotation % 180 != 0 {
+    if !state.rotation.is_multiple_of(180) {
         (draw_h, draw_w)
     } else {
         (draw_w, draw_h)
@@ -432,7 +433,7 @@ fn draw_border(buf: &mut [u8], buf_w: i32, buf_h: i32, radius: f32, active: bool
             }
             let d = round_rect_sdf(x as f32 + 0.5, y as f32 + 0.5, w, h, r);
             // d ∈ [-1.5, 0] 是描边带；再往内快速淡出，得到抗锯齿的圆弧
-            if d > 0.5 || d < -1.8 {
+            if !(-1.8..=0.5).contains(&d) {
                 continue;
             }
             let cov = if d > 0.0 {
@@ -1157,7 +1158,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 crate::screenshot::unbind_pinned_edit(hwnd.0 as isize, gen);
             }
 
-            let _ = PostQuitMessage(0);
+            PostQuitMessage(0);
             LRESULT(0)
         }
 

@@ -110,11 +110,10 @@ fn do_convert(path: &str, target_encoding: &str, remove_bom: bool) -> Result<Opt
     // “要不要给输出加 BOM”只看参数 remove_bom 与目标编码（见下方写入处），
     // 不看源文件原本有没有 BOM，所以这个布尔值在本函数里用不到。
     // （对外暴露 has_bom 的是上面的检测命令，给界面展示用。）
+    // UTF-8 BOM 占 3 字节；UTF-16（LE / BE）BOM 都占 2 字节，剥离动作相同。
     let (_has_bom, content_bytes) = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         (true, &bytes[3..])
-    } else if bytes.starts_with(&[0xFF, 0xFE]) {
-        (true, &bytes[2..])
-    } else if bytes.starts_with(&[0xFE, 0xFF]) {
+    } else if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) {
         (true, &bytes[2..])
     } else {
         (false, bytes.as_slice())

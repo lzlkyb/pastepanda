@@ -68,3 +68,10 @@ impl Pressed {
         self.buttons.clear();
     }
 }
+
+impl Default for Pressed {
+    /// 空集：尚无任何键按下。
+    fn default() -> Self {
+        Self::new()
+    }
+}

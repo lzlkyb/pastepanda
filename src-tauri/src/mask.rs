@@ -12,8 +12,8 @@
 //!    `python3 -c "s='sk-xxx'; print([hex(b^0x5A) for b in s.encode()])"`
 //! 2. 在业务模块里写：
 //!    （标 `ignore` 是必需的：这段带 `0x..` 占位，不是可编译代码。
-//!     不标的话 rustdoc 会把它当 doctest 去编译，`cargo test` 整体退出码
-//!     就永远非 0，把真实失败一起掩掉。）
+//!    不标的话 rustdoc 会把它当 doctest 去编译，`cargo test` 整体退出码
+//!    就永远非 0，把真实失败一起掩掉。）
 //!    ```ignore
 //!    pub fn my_secret() -> String {
 //!        const XOR: u8 = 0x5A;

@@ -237,12 +237,14 @@ pub async fn semantic_index(
     record_semantic_usage(
         &app,
         &cfg,
-        &model,
-        "semantic-index",
-        prompt_tokens,
-        ok,
-        error.clone(),
-        started.elapsed().as_millis() as u64,
+        UsageRecord {
+            model: &model,
+            action_id: "semantic-index",
+            prompt_tokens,
+            ok,
+            error: error.clone(),
+            latency_ms: started.elapsed().as_millis() as u64,
+        },
     );
 
     if !ok {
@@ -325,12 +327,14 @@ pub async fn semantic_search(
                     record_semantic_usage(
                         &app,
                         &cfg,
-                        &model,
-                        "semantic-index",
-                        prompt_tokens,
-                        false,
-                        Some(e.to_string()),
-                        started.elapsed().as_millis() as u64,
+                        UsageRecord {
+                            model: &model,
+                            action_id: "semantic-index",
+                            prompt_tokens,
+                            ok: false,
+                            error: Some(e.to_string()),
+                            latency_ms: started.elapsed().as_millis() as u64,
+                        },
                     );
                     indexed_ok = false;
                     break;
@@ -341,12 +345,14 @@ pub async fn semantic_search(
             record_semantic_usage(
                 &app,
                 &cfg,
-                &model,
-                "semantic-index",
-                prompt_tokens,
-                true,
-                None,
-                started.elapsed().as_millis() as u64,
+                UsageRecord {
+                    model: &model,
+                    action_id: "semantic-index",
+                    prompt_tokens,
+                    ok: true,
+                    error: None,
+                    latency_ms: started.elapsed().as_millis() as u64,
+                },
             );
         }
     }
@@ -361,17 +367,19 @@ pub async fn semantic_search(
         ));
     }
     let started = std::time::Instant::now();
-    let qvec = match client::embedding(&cfg, &key, &model, &[query.clone()]).await {
+    let qvec = match client::embedding(&cfg, &key, &model, std::slice::from_ref(&query)).await {
         Ok(out) => {
             record_semantic_usage(
                 &app,
                 &cfg,
-                &model,
-                "semantic-search",
-                out.prompt_tokens,
-                true,
-                None,
-                started.elapsed().as_millis() as u64,
+                UsageRecord {
+                    model: &model,
+                    action_id: "semantic-search",
+                    prompt_tokens: out.prompt_tokens,
+                    ok: true,
+                    error: None,
+                    latency_ms: started.elapsed().as_millis() as u64,
+                },
             );
             out.vectors.into_iter().next().unwrap_or_default()
         }
@@ -379,12 +387,14 @@ pub async fn semantic_search(
             record_semantic_usage(
                 &app,
                 &cfg,
-                &model,
-                "semantic-search",
-                0,
-                false,
-                Some(e.to_string()),
-                started.elapsed().as_millis() as u64,
+                UsageRecord {
+                    model: &model,
+                    action_id: "semantic-search",
+                    prompt_tokens: 0,
+                    ok: false,
+                    error: Some(e.to_string()),
+                    latency_ms: started.elapsed().as_millis() as u64,
+                },
             );
             return Err(format!("语义搜索失败（已退回关键词搜索）：{e}"));
         }
@@ -409,16 +419,29 @@ pub async fn semantic_search(
     Ok(out)
 }
 
-fn record_semantic_usage(
-    app: &tauri::AppHandle,
-    cfg: &AiConfig,
-    model: &str,
-    action_id: &str,
+/// 一次 AI 调用的用量记录。
+///
+/// `ok` 与 `error` 语义耦合（成功必须 `error = None`、失败必须有值），散成位置参数时
+/// 很容易「改了 ok 忘了改 error」，结果记出一条「成功但带错误信息」的账。
+/// 收成结构体后调用点必须两者同时交代。
+struct UsageRecord<'a> {
+    model: &'a str,
+    action_id: &'a str,
     prompt_tokens: u32,
     ok: bool,
     error: Option<String>,
     latency_ms: u64,
-) {
+}
+
+fn record_semantic_usage(app: &tauri::AppHandle, cfg: &AiConfig, rec: UsageRecord) {
+    let UsageRecord {
+        model,
+        action_id,
+        prompt_tokens,
+        ok,
+        error,
+        latency_ms,
+    } = rec;
     let spec = cfg.spec();
     let cost_usd = budget::estimate_cost(spec, prompt_tokens, 0);
     app.state::<DataStore>()

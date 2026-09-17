@@ -1049,21 +1049,21 @@ impl SyncService {
         // ❗ 只克隆 `wake` 而不是整个 `ctx`：宣告线程比 `SyncCtx` 活得长时
         //   抱着一个 Arc<SyncCtx> 会把端点与数据库句柄一起吊住，而它只需要叫醒。
         let wake = ctx.wake.clone();
-        super::presence::spawn(
-            true,
-            ctx.presence.clone(),
-            me.clone(),
-            port,
-            Arc::new(move |id: &str| {
+        super::presence::spawn(super::presence::PresenceStart {
+            enabled: true,
+            table: ctx.presence.clone(),
+            me: me.clone(),
+            endpoint_port: port,
+            is_paired: Arc::new(move |id: &str| {
                 matches!(paired_store.device_get(id), Ok(Some(d)) if !d.paused)
             }),
             // 听到已配对设备的公告 = 它回来了 → 把休眠中的循环叫起来。
             // 不看 `id`：`notify_waiters()` 本来就是广播式的（理由见
             // `SyncCtx::wake` 的注释；多拨出来的量现在由全局并发闸卡着）。
-            Arc::new(move |_id: &str| wake.notify_waiters()),
-            ctx.presence_running.clone(),
-            presence_port,
-        );
+            on_fresh: Arc::new(move |_id: &str| wake.notify_waiters()),
+            running: ctx.presence_running.clone(),
+            listen_port: presence_port,
+        });
 
         // ❗ 扫掉上一次崩溃残留的会话暂存目录（里面是**明文笔记**）。
         //   放在这儿而不是定时跑：残留只会在“上一次进程死了”时产生，

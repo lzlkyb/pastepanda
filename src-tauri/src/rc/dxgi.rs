@@ -39,15 +39,15 @@ impl DxgiDuplicator {
     fn open_primary_inner() -> Result<Self, String> {
         unsafe {
             let com_owned = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
-            let mut levels = [D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0];
+            let levels = [D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0];
             let mut device: Option<ID3D11Device> = None;
             let mut ctx: Option<ID3D11DeviceContext> = None;
-            let _ = windows::Win32::Graphics::Direct3D11::D3D11CreateDevice(
+            windows::Win32::Graphics::Direct3D11::D3D11CreateDevice(
                 None,
                 D3D_DRIVER_TYPE_HARDWARE,
                 None,
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                Some(&mut levels),
+                Some(&levels),
                 D3D11_SDK_VERSION,
                 Some(&mut device),
                 None,

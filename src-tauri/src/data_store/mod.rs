@@ -89,6 +89,7 @@ pub use note_health::{BrokenLink, KbHealth, KbStats, TinyNote, HEALTH_DETAIL_CAP
 pub use daily_brief::{
     DayExcerptRow, DayMetaRow, DISTILL_EXCERPT_CHARS, DISTILL_LOOKBACK_MAX_DAYS, RECENT_META_CAP,
 };
+pub use history::SearchQuery;
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
 pub use mcp_audit::{McpAuditRow, McpClientRow};

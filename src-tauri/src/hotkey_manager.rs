@@ -57,7 +57,7 @@ fn normalize_hotkey(s: &str) -> String {
                 "alt" => "Alt".to_string(),
                 "meta" | "super" | "cmd" => "Meta".to_string(),
                 // 功能键
-                ref k if k.starts_with("f") && k.len() >= 2 => {
+                k if k.starts_with("f") && k.len() >= 2 => {
                     let mut c = p.chars();
                     c.next(); // skip 'f'
                     let num: String = c.collect();

@@ -250,7 +250,7 @@ pub fn markdown_to_note(text: &str, fallback_title: &str) -> ParsedNote {
                     let body = inline.trim_start_matches('[').trim_end_matches(']');
                     out.tags = Some(
                         body.split(',')
-                            .map(|t| yaml_unscalar(t))
+                            .map(yaml_unscalar)
                             .filter(|t| !t.is_empty())
                             .collect(),
                     );

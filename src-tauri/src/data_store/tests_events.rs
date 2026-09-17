@@ -9,6 +9,7 @@
 use super::history::{time_bound, TimeBound};
 use super::tests::{make_item, make_store};
 use super::DataStore;
+use super::SearchQuery;
 
 fn insert_at(store: &DataStore, id: &str, time: &str) {
     let mut it = make_item(id, "正文", time, "text");
@@ -75,16 +76,17 @@ fn test_search_history_range_is_inclusive_both_ends() {
     insert_at(&store, "after", "2026-09-04 15:26:01");
 
     let rows = store
-        .search_history(
-            "默认",
-            "", // 无关键词——事件筛选就是这个场景
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "",
+            filter: // 无关键词——事件筛选就是这个场景
             "all",
-            "range:2026-09-04 14:31:00~2026-09-04 15:26:00",
-            "",
-            "all",
-            &[],
-            100,
-        )
+            time_filter: "range:2026-09-04 14:31:00~2026-09-04 15:26:00",
+            source: "",
+            group_filter: "all",
+            tag_ids: &[],
+            limit: 100,
+        })
         .unwrap();
     let mut ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
     ids.sort_unstable();

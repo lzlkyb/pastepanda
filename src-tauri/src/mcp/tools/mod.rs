@@ -26,7 +26,7 @@ use serde_json::{json, Value};
 
 use super::gate::{FolderTree, WriteKind, WriteScope, WriteSwitches};
 use super::pulse;
-use super::source::{KbSource, ListOutcome, NoteSpot, SearchOutcome};
+use super::source::{KbSource, ListOutcome, NoteSpot, SearchArgs, SearchOutcome};
 use crate::data_store::Note;
 use crate::markdown::{self, SectionRef};
 
@@ -740,7 +740,7 @@ pub fn definitions(switches: &WriteSwitches, trash_days: i64) -> Vec<Value> {
         let name = d["name"].as_str().unwrap_or("");
         // 表里没有的名字一律不上表（fail-closed）：声明了却没接的工具
         // 让模型看得到、调不通，比它根本不知道更糟。
-        spec_of(name).is_some_and(|s| s.write.map_or(true, |k| switches.allowed(k)))
+        spec_of(name).is_some_and(|s| s.write.is_none_or(|k| switches.allowed(k)))
     });
     // `annotations` 集中注入，不在上面两份定义里手写 17 遍（规则 #11）。
     // 手写一定漏，而漏一个就等于那个工具被客户端按**最坏情况**对待
@@ -981,7 +981,7 @@ pub fn write_tool_names() -> Vec<&'static str> {
 fn available_names(switches: &WriteSwitches) -> Vec<&'static str> {
     TOOLS
         .iter()
-        .filter(|t| t.write.map_or(true, |k| switches.allowed(k)))
+        .filter(|t| t.write.is_none_or(|k| switches.allowed(k)))
         .map(|t| t.name)
         .collect()
 }
@@ -1327,15 +1327,15 @@ async fn call_search(
     let (f, t, k) = (folder.clone(), tag.clone(), kind.clone());
     let (au, me2) = (author.clone(), me.to_string());
     let outcome = match blocking(move || {
-        kb2.search(
-            &q,
-            f.as_deref(),
-            t.as_deref(),
-            k.as_deref(),
-            au.as_deref(),
-            &me2,
+        kb2.search(&SearchArgs {
+            query: &q,
+            folder: f.as_deref(),
+            tag: t.as_deref(),
+            kind: k.as_deref(),
+            author: au.as_deref(),
+            me: &me2,
             limit,
-        )
+        })
     })
     .await
     {
