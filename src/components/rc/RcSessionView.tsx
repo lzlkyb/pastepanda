@@ -17,7 +17,7 @@ import { useRcLinkState } from "@/hooks/useRcLinkState";
 import { useRcSessionNotices } from "@/hooks/useRcSessionNotices";
 import { useRcClipboardAuto } from "@/hooks/useRcClipboardAuto";
 import type { FitMode } from "@/lib/rcSessionStats";
-import { qualityLabel } from "@/lib/rcSessionStats";
+import { qualityLabel } from "@/lib/rcQuality";
 import { RcHud } from "./RcHud";
 import { RcViewTools } from "./RcViewTools";
 import { RcClipboardBar } from "./RcClipboardBar";
@@ -32,6 +32,7 @@ export function RcSessionView({
   busy,
   onEnd,
   onReconnect,
+  onRequestControl,
   rc,
   quality,
   captureScope,
@@ -40,6 +41,10 @@ export function RcSessionView({
   busy: boolean;
   onEnd: () => void;
   onReconnect?: () => void;
+  /** B-1：会话内申请升级为可控。实现口径 = 结束当前会话 + 重新申请（重新协商式），
+   *  复用 RemoteComputerDialog 既有的 end→request 链路；协议层无中途信令通道，
+   *  无缝提权（B-2）明确不做，见 design/远程电脑-交互精简-B方案-设计稿.html §3。 */
+  onRequestControl?: () => void;
   rc: UseRc;
   quality: string;
   captureScope: string;
@@ -79,6 +84,18 @@ export function RcSessionView({
     });
     if (ok) onEnd();
   }, [onEnd]);
+
+  // B-1：会话内申请升级为可控。这条操作会断开当前画面，必须先确认。
+  const requestControl = useCallback(async () => {
+    if (!onRequestControl) return;
+    const ok = await confirmDialog({
+      title: "申请控制权",
+      message:
+        "将结束本次「只看」会话，并向对方重新申请「可控」。\n对方需要再次确认；同意后新会话可控制。",
+      confirmText: "申请控制权",
+    });
+    if (ok) onRequestControl();
+  }, [onRequestControl]);
 
   const input = useRcInput({
     canControl,
@@ -247,7 +264,6 @@ export function RcSessionView({
           scope={scopePick}
           linkState={link.state}
           pathKind={rc.status?.path_kind ?? ""}
-          unansweredSec={link.unansweredSec}
           pointerLocked={input.pointerLocked}
         />
       </div>
@@ -270,9 +286,22 @@ export function RcSessionView({
             fit={fit}
             sizeW={size.w}
             frameIdleSec={link.frameIdleSec}
-            unansweredSec={link.unansweredSec}
           />
         </>
+      )}
+      {!canControl && onRequestControl && (
+        <div className={styles.recentRow}>
+          <button
+            type="button"
+            className={styles.miniBtnPri}
+            disabled={busy}
+            title="结束本次「只看」会话，重新以「可控」发起（对方需再次确认）"
+            onClick={() => void requestControl()}
+          >
+            申请控制权
+          </button>
+          <span className={styles.meta}>重新申请期间画面会断开，对方确认后恢复</span>
+        </div>
       )}
       <RcQualityBar
         rc={rc}

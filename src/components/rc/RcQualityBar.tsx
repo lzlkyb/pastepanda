@@ -6,16 +6,10 @@
 import { useEffect, useState } from "react";
 import { rcSendInput, rcListMonitors, type RcMonitorInfo } from "@/lib/api/rc";
 import type { RcQuality, RcCaptureScope } from "@/lib/api/rc";
+import { RC_QUALITIES } from "@/lib/rcQuality";
+import { scopeOptions } from "@/lib/rcScope";
 import type { UseRc } from "@/hooks/useRc";
 import styles from "./RemoteComputer.module.css";
-
-const QUALITIES: Array<[RcQuality, string, string]> = [
-  ["smooth", "流畅", "约 6fps · 宽 960 · 弱网"],
-  ["balanced", "均衡", "约 5fps · 宽 1280 · 默认"],
-  ["sharp", "清晰", "约 8fps · 宽 1920 · 局域网"],
-  ["ultra", "超清", "约 5fps · 宽 2560 · JPEG 路径"],
-  ["uhd", "原生", "主屏硬编原生分辨率 · 需 GPU · 无硬编回落超清"],
-];
 
 type Fb = { kind: "ok" | "warn" | "bad" | "info"; text: string } | null;
 
@@ -50,18 +44,8 @@ export function RcQualityBar({
       .catch(() => setMonitors([]));
   }, [mode]);
 
-  const scopes: Array<[RcCaptureScope, string, string]> = [
-    ["virtual", "整屏", "整个虚拟屏（含副屏拼接）"],
-    ["primary", "仅主屏", "只截主显示器"],
-    ...monitors.map(
-      (m) =>
-        [
-          `monitor:${m.index}` as RcCaptureScope,
-          m.primary ? `屏${m.index + 1}·主` : `屏${m.index + 1}`,
-          `${m.w}×${m.h} @ (${m.x},${m.y})`,
-        ] as [RcCaptureScope, string, string],
-    ),
-  ];
+  // 档位表与文案的唯一真源在 lib/rcScope，这里只负责取显示器列表
+  const scopes = scopeOptions(monitors);
 
   const remoteSend = async (
     ev: Parameters<typeof rcSendInput>[0],
@@ -134,28 +118,28 @@ export function RcQualityBar({
   return (
     <div className={styles.qBar}>
       <span className={styles.qLabel}>画质</span>
-      {QUALITIES.map(([k, label, tip]) => (
+      {RC_QUALITIES.map(({ key, label, tip }) => (
         <button
-          key={k}
+          key={key}
           type="button"
           title={tip}
           disabled={disabled || rc.busy}
-          className={quality === k ? styles.pillOn : styles.pill}
-          onClick={() => pickQuality(k)}
+          className={quality === key ? styles.pillOn : styles.pill}
+          onClick={() => pickQuality(key)}
         >
           {label}
         </button>
       ))}
       <span className={styles.qSp} />
       <span className={styles.qLabel}>画面</span>
-      {scopes.map(([k, label, tip]) => (
+      {scopes.map(({ key, label, tip }) => (
         <button
-          key={k}
+          key={key}
           type="button"
           title={tip}
           disabled={disabled || rc.busy}
-          className={captureScope === k ? styles.pillOn : styles.pill}
-          onClick={() => pickScope(k)}
+          className={captureScope === key ? styles.pillOn : styles.pill}
+          onClick={() => pickScope(key)}
         >
           {label}
         </button>

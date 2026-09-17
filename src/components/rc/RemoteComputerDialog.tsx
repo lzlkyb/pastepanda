@@ -19,8 +19,8 @@ import { RcEmptyGuide } from "./RcEmptyGuide";
 import { RcDeviceList } from "./RcDeviceList";
 import { RcPendingWait } from "./RcPendingWait";
 import { RcErrorPanel } from "./RcErrorPanel";
-import { RcAskCard } from "./RcAskCard";
 import type { RcCapability } from "@/lib/api/rc";
+import { lastRequestCap, rememberRequestCap } from "@/lib/rcRequest";
 import styles from "./RemoteComputer.module.css";
 
 const LS_LAST = "rc_last_peer";
@@ -30,8 +30,17 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const rcEnabledSelf = useAppStore((s) => s.config.rc_enabled);
   const rc = useRc(true);
-  const [cap, setCap] = useState<RcCapability>("view");
-  const [askPeer, setAskPeer] = useState<string | null>(null);
+  /**
+   * 发起用的能力档：来自上次（`lib/rcRequest`），不再是每次打开都重置的 "view"。
+   * 用 state 而不是只读常量——行菜单换档后主按钮 tooltip 要立刻跟着改。
+   */
+  const [cap, setCap] = useState<RcCapability>(() => lastRequestCap());
+  /**
+   * 上一次「发起」指向的设备。
+   * 用 `lastPeer` 做重试是错的：它只记**成功**过的设备，
+   * 申请失败时重试会打到另一个设备上。
+   */
+  const [lastAttempt, setLastAttempt] = useState<string | null>(null);
   const [pairOpen, setPairOpen] = useState(false);
   const [lastPeer, setLastPeer] = useState<string | null>(null);
   /** 打开面板只探一次；之后靠手动「检测」或发起远程，不空转。 */
@@ -64,11 +73,6 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
   const hasTargets = rc.targets.length > 0;
   const hasLiveSession = !!(session && session.phase !== "idle");
 
-  const lastDevice = useMemo(
-    () => rc.targets.find((t) => t.node_id === lastPeer) ?? null,
-    [rc.targets, lastPeer],
-  );
-
   const pendingName = useMemo(() => {
     if (!session) return "";
     return (
@@ -100,15 +104,18 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
   };
 
   const doRequest = async (id: string, c: RcCapability) => {
+    setLastAttempt(id);
     const ok = await rc.request(id, c);
     if (ok) {
+      // 成功才记「上次用的档」与「上次的设备」——失败不该污染记忆
+      setCap(c);
+      rememberRequestCap(c);
       try {
         localStorage.setItem(LS_LAST, id);
         setLastPeer(id);
       } catch {
         /* ignore */
       }
-      setAskPeer(null);
     }
     return ok;
   };
@@ -162,11 +169,9 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                   error={rc.error}
                   onRetry={
                     rc.isOpError
-                      ? askPeer
-                        ? () => void doRequest(askPeer, cap)
-                        : lastPeer
-                          ? () => void doRequest(lastPeer, cap)
-                          : undefined
+                      ? lastAttempt
+                        ? () => void doRequest(lastAttempt, cap)
+                        : undefined
                       : () => void rc.refresh()
                   }
                   onDismiss={() => rc.clearError()}
@@ -182,6 +187,12 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                     await rc.end();
                     await doRequest(session.peer, session.capability);
                   }}
+                  /** B-1 会话内提权：协议层无中途信令通道 ⇒ 重新协商式
+                   *  （结束当前会话 + 重新申请「可控」），与 onReconnect 同一条链路。 */
+                  onRequestControl={async () => {
+                    await rc.end();
+                    await doRequest(session.peer, "control");
+                  }}
                   rc={rc}
                   quality={rc.status?.quality ?? "balanced"}
                   captureScope={rc.status?.capture_scope ?? "virtual"}
@@ -193,6 +204,15 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                   startedMs={session.started_ms}
                   busy={rc.busy}
                   onCancel={() => void rc.cancel()}
+                  /** B：等待态改档零成本——作废重发，对端只看到一次新敲门。 */
+                  onRaise={
+                    session.capability !== "control"
+                      ? async () => {
+                          await rc.cancel();
+                          await doRequest(session.peer, "control");
+                        }
+                      : undefined
+                  }
                 />
               ) : (
                 <>
@@ -201,10 +221,8 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                   ) : !channelUp ? (
                     <div className={styles.noteWarn}>
                       已配对 {rc.targets.length} 台，但远程通道未启动。
-                      <br />
-                      <span className={styles.devSubNote}>
-                        开通道只用于你去远程别人；「允许被远程」在设置里单独控制。
-                      </span>
+                      {/* B：这里原来还有一句「开通道只用于你去远程别人；允许被远程…」——
+                          与面板底部 foot 说的是同一件事，同屏两遍。已删，只留 foot。 */}
                       <div className={styles.mt10}>
                         <button
                           type="button"
@@ -229,25 +247,16 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                     </div>
                   ) : (
                     <>
-                      {lastDevice && (
-                        <div className={styles.recentRow}>
-                          <span className={styles.meta}>上次控制</span>
-                          <button
-                            type="button"
-                            className={styles.miniBtnPri}
-                            disabled={rc.busy}
-                            onClick={() => void doRequest(lastDevice.node_id, cap)}
-                          >
-                            重连「{lastDevice.name || fingerprintOf(lastDevice.node_id)}」
-                          </button>
-                        </div>
-                      )}
+                      {/* B：删掉「上次控制 / 重连『x』」整行——它与点设备行的
+                          「发起」是同一个动作，`lastPeer` 只保留设备行的「上次」徽章作用。 */}
                       <RcDeviceList
                         targets={rc.targets}
                         lastPeer={lastPeer}
                         deviceDeny={rc.status?.device_deny ?? {}}
                         busy={rc.busy}
-                        onRequest={(id) => setAskPeer(id)}
+                        requestCap={cap}
+                        onRequest={(id) => void doRequest(id, cap)}
+                        onRequestWith={(id, c) => void doRequest(id, c)}
                         onForget={forgetDevice}
                         onSetAllowed={async (id, allowed) => rc.setDeviceAllowed(id, allowed)}
                         onPair={() => setPairOpen(true)}
@@ -274,18 +283,6 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                           ＋ 再配对一台
                         </button>
                       </div>
-
-                      {askPeer && (
-                        <RcAskCard
-                          peerId={askPeer}
-                          targets={rc.targets}
-                          cap={cap}
-                          busy={rc.busy}
-                          onCap={setCap}
-                          onCancel={() => setAskPeer(null)}
-                          onSend={() => void doRequest(askPeer, cap)}
-                        />
-                      )}
                     </>
                   )}
                 </>

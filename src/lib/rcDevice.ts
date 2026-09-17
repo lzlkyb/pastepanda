@@ -89,3 +89,30 @@ export function presenceHint(presence: RcPresenceLevel): string {
       return "核对指纹后再试，或检查对方远程通道";
   }
 }
+
+/**
+ * 设备行尾部「上次 …」段。
+ *
+ * 改前是两个并列的条件 span：「 · 上次 3 天前」与「 · 上次走中继」——
+ * 同一条信息（这台设备上次的会话）被拆成两段、各带一个「上次」。
+ * 现在合成一段：
+ *   - 都有   → 「上次 3 天前 · 走中继」
+ *   - 只有路径 → 「上次走中继」（保持 B-5 的原措辞）
+ *   - 只有时间 → 「上次 3 天前」
+ *   - 都没有 → 空串，整段不渲染（承 B-5 的「空白不编默认值」）
+ *
+ * @param lastSeenLabel `relTime` 已格式化的串；空串 = 没有可信时间
+ * @param showLastSeen  是否显示时间（recent/live 时主文案已含时间，不重复）
+ * @param pathLabel     `pathKindLabel` 已格式化的路径；空串 = 还没连过，不编默认值
+ */
+export function lastSeenHint(
+  lastSeenLabel: string,
+  showLastSeen: boolean,
+  pathLabel: string,
+): string {
+  const hasTime = showLastSeen && !!lastSeenLabel;
+  if (hasTime && pathLabel) return `上次 ${lastSeenLabel} · 走${pathLabel}`;
+  if (pathLabel) return `上次走${pathLabel}`;
+  if (hasTime) return `上次 ${lastSeenLabel}`;
+  return "";
+}

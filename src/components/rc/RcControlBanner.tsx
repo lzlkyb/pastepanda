@@ -7,7 +7,8 @@
  */
 import { useEffect, useState } from "react";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { formatDuration, scopeLabelLong } from "@/lib/rcSessionStats";
+import { formatDuration } from "@/lib/rcSessionStats";
+import { scopeLabelLong } from "@/lib/rcScope";
 import type { RcSession } from "@/lib/api/rc";
 import styles from "./RemoteComputer.module.css";
 

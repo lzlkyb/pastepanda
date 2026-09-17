@@ -1,37 +1,12 @@
-/** 会话 HUD 用的轻量统计：fps 滑动窗、RTT、画质档文案。 */
+/**
+ * 会话 HUD 用的轻量统计：fps 滑动窗、RTT、链路状态判据。
+ *
+ * 画质档 / 画面范围的**文案**不在这里——那两份词汇表的唯一真源是
+ * `rcQuality.ts`（五档 label+tip）与 `rcScope.ts`（短/长两种口径）。
+ * 本文件只留「判据」与「纯计算」，不再持有文案表。
+ */
 
 export type FitMode = "fit" | "actual" | "fill";
-
-export function qualityLabel(q: string): string {
-  if (q === "uhd") return "原生";
-  if (q === "ultra") return "超清";
-  if (q === "sharp") return "清晰";
-  if (q === "smooth") return "流畅";
-  return "均衡";
-}
-
-export function scopeLabel(s: string): string {
-  if (s === "primary") return "主屏";
-  if (s.startsWith("monitor:")) {
-    const n = Number(s.slice(8));
-    return Number.isFinite(n) ? `屏${n + 1}` : "指定屏";
-  }
-  return "整屏";
-}
-
-/**
- * 通知用的完整范围文案（B3）。
- * 与 HUD 用的短文案 `scopeLabel` 分开：HUD 位置窄、要短；给被控端的提示
- * 说的是一次**隐私相关**的变更，必须把「含副屏」这类信息说全。
- */
-export function scopeLabelLong(s: string): string {
-  if (s === "primary") return "仅主屏";
-  if (s.startsWith("monitor:")) {
-    const n = Number(s.slice(8));
-    return Number.isFinite(n) ? `第 ${n + 1} 台显示器` : "指定显示器";
-  }
-  return "整个虚拟屏（含副屏）";
-}
 
 export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

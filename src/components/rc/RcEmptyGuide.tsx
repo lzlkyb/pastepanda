@@ -17,9 +17,8 @@ export function RcEmptyGuide({ onPair }: { onPair: () => void }) {
       <div className={styles.guideLead}>
         配对后，对方可以申请查看或控制这台电脑；你也可以去控别人的电脑。
       </div>
-      <div className={`${styles.guideLead} ${styles.emptyLeadLast}`}>
-        「允许被远程」只影响别人控你；发起远程不需要打开它。
-      </div>
+      {/* B：原来这里还有一句「允许被远程只影响别人控你…」——与主面板底部 foot
+          完全重复，且本空态只在「没有任何设备」时出现，解释为时过早。已删。 */}
       <div className={styles.steps}>
         {STEPS.map((s, i) => (
           <div key={s.t} className={styles.step}>

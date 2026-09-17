@@ -1,17 +1,26 @@
 /**
- * RcDeviceList — 设备卡片：可达性档位 / 上次控制 / 禁止 / 忘记 / 菜单。
+ * RcDeviceList — 设备卡片：可达性档位 / 发起 / 禁止 / 忘记 / 菜单。
  *
  * 🔴 不再用二值「在线/离线」：无中心服务器时组播听不见 ≠ 对端关机。
  * 四档文案见 `rcDevice.presenceMainLabel` 与 design/远程设备多档在线状态-设计稿.html。
+ *
+ * B（2026-09-17，见 design/远程电脑-交互精简-B方案-设计稿.html §1/§2）：
+ * - 主按钮「远程」→「发起」，点击**直接发申请**（不再弹「选能力 → 发送」两步卡）；
+ * - 能力档来自上次（`lib/rcRequest`），tooltip 必须写明「将以『只看』发起」；
+ * - 需要显式换档时才走 ⋯ 菜单（原申请卡的职能收进菜单）；
+ * - 整行也可点 = 同一个主动作；**行内所有控件必须 stopPropagation**，
+ *   否则点「更多」会顺手多发一次申请（设计稿风险 #1）。
  */
 import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { confirmDialog } from "@/lib/confirm";
 import { pathKindLabel } from "@/lib/rcSessionStats";
-import type { RcTargetDevice } from "@/lib/api/rc";
+import { capabilityLabel } from "@/lib/rcRequest";
+import type { RcCapability, RcTargetDevice } from "@/lib/api/rc";
 import {
   deviceAvatarStyle,
+  lastSeenHint,
   relTime,
   presenceMainLabel,
   presenceHint,
@@ -33,7 +42,9 @@ export function RcDeviceList({
   lastPeer,
   deviceDeny,
   busy,
+  requestCap,
   onRequest,
+  onRequestWith,
   onForget,
   onSetAllowed,
   onPair,
@@ -43,7 +54,11 @@ export function RcDeviceList({
   lastPeer: string | null;
   deviceDeny: Record<string, boolean>;
   busy: boolean;
+  /** 主按钮与整行点击用哪个档发起（记住的上次档，见 `lib/rcRequest`）。tooltip 会写明它。 */
+  requestCap: RcCapability;
   onRequest: (id: string) => void;
+  /** ⋯ 菜单里显式指定档发起——原「申请卡」的选档职能，改成按需展开。 */
+  onRequestWith: (id: string, cap: RcCapability) => void;
   onForget: (id: string) => Promise<boolean>;
   onSetAllowed: (id: string, allowed: boolean) => Promise<boolean>;
   /** B9：纯同步配对设备「列得出却发不起」，给一个去完成远程配对的入口。 */
@@ -111,10 +126,40 @@ export function RcDeviceList({
             : dotKey === "dotRecent"
               ? styles.dotRecent
               : styles.dotOff;
+        // 尾部「上次 …」合并成一段：时间与实走的路径（B-5）不再各占一个「上次」。
+        // 两者都取不到 → 空串 ⇒ 整段不渲染（不编默认值）。
+        const tailHint = lastSeenHint(
+          lastSeen,
+          presence !== "recent" && presence !== "live",
+          pathKindLabel(d.last_path ?? ""),
+        );
+        // 整行点击 = 同一个主动作「发起」。纯同步设备没有可发起的动作
+        // （它的下一步是「去配对」），整行点击刻意不做。
+        const rowClickable = !syncOnly;
+        // 行内控件都挂它：漏一个就会「点更多 → 顺手多发一次申请」（设计稿风险 #1）
+        const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
         return (
           <div
             key={d.node_id}
-            className={isLast ? `${styles.devItem} ${styles.devItemRecent}` : styles.devItem}
+            className={
+              isLast
+                ? `${styles.devItem} ${styles.devItemRecent}`
+                : rowClickable
+                  ? `${styles.devItem} ${styles.devItemClickable}`
+                  : styles.devItem
+            }
+            onClick={
+              rowClickable
+                ? () => {
+                    // 菜单开着时点行 = 收菜单，不当成发起（否则等于点了看不见的按钮）
+                    if (menuFor === d.node_id) {
+                      setMenuFor(null);
+                      return;
+                    }
+                    if (!busy) onRequest(d.node_id);
+                  }
+                : undefined
+            }
           >
             {/* D1/C10：头像颜色来自公共纯函数（单色系 + 深色文字），删掉内联随机 hsl */}
             <div className={styles.av} style={deviceAvatarStyle(d.node_id)}>
@@ -132,20 +177,15 @@ export function RcDeviceList({
               <div className={styles.meta}>
                 <span className={dotCls} />
                 {mainLabel} · {fingerprintOf(d.node_id)} · {hint}
-                {presence !== "recent" && presence !== "live" && lastSeen && d.last_seen > 0 && (
-                  <span className={styles.metaSub}> · 上次 {lastSeen}</span>
+                {tailHint && (
+                  <span
+                    className={styles.metaSub}
+                    title="上次会话实测的信息（路径是实测值，不是推断）"
+                  >
+                    {" "}
+                    · {tailHint}
+                  </span>
                 )}
-                {/* B-5：上次会话**实测**走的路径。空串 = 还没连过 ⇒ 整段不显示，
-                    不编「绕中继」这类默认值。 */}
-                {(() => {
-                  const path = pathKindLabel(d.last_path ?? "");
-                  return path ? (
-                    <span className={styles.metaSub} title="上次会话实测走的路径（不是推断）">
-                      {" "}
-                      · 上次走{path}
-                    </span>
-                  ) : null;
-                })()}
                 {syncOnly && " · 仅同步配对，未建立远程通道"}
               </div>
             </div>
@@ -155,7 +195,10 @@ export function RcDeviceList({
                 className={styles.miniBtn}
                 disabled={busy}
                 title="解除后对方才能申请远程本机"
-                onClick={() => void setAllowed(d.node_id, true)}
+                onClick={(e) => {
+                  stop(e);
+                  void setAllowed(d.node_id, true);
+                }}
               >
                 解除禁止
               </button>
@@ -167,7 +210,10 @@ export function RcDeviceList({
                 className={styles.miniBtn}
                 disabled={busy || !onPair}
                 title="仅同步配对，未建立远程通道 · 去完成远程配对"
-                onClick={() => onPair?.()}
+                onClick={(e) => {
+                  stop(e);
+                  onPair?.();
+                }}
               >
                 去配对
               </button>
@@ -175,16 +221,17 @@ export function RcDeviceList({
               // 禁止的是「对方控我」，不挡「我去远程对方」
               <button
                 type="button"
-                className={styles.miniBtnPri}
+                className={`${styles.miniBtnPri} ${styles.wideBtn}`}
                 disabled={busy}
-                title={
-                  presence === "live"
-                    ? "发送远程申请"
-                    : "未听到局域网宣告，将尝试公网直连或中继"
-                }
-                onClick={() => onRequest(d.node_id)}
+                // 能力记忆之后必须写明将以哪一档发起：否则「我只想看看」的人
+                // 会在上次用过「可控」时被一键发起一个可控申请（设计稿风险 #3）。
+                title={`将以「${capabilityLabel(requestCap)}」发起 · ${hint}`}
+                onClick={(e) => {
+                  stop(e);
+                  onRequest(d.node_id);
+                }}
               >
-                远程
+                发起
               </button>
             )}
             <div className={styles.devMenuWrap}>
@@ -193,13 +240,48 @@ export function RcDeviceList({
                 type="button"
                 className={styles.miniBtn}
                 aria-label="更多操作"
-                onClick={() => setMenuFor(menuFor === d.node_id ? null : d.node_id)}
+                onClick={(e) => {
+                  stop(e);
+                  setMenuFor(menuFor === d.node_id ? null : d.node_id);
+                }}
               >
                 <MoreHorizontal size={14} />
                 更多
               </button>
               {menuFor === d.node_id && (
-                <div className={styles.devMenu}>
+                /* 菜单整体吃掉冒泡：菜单项在整行内部，不拦就会连行点击一起触发
+                   ⇒ 点「以『可控』发起」等于发两次申请。挂在容器上一次，
+                   以后往菜单里加项也不会漏（设计稿风险 #1）。 */
+                <div className={styles.devMenu} onClick={stop}>
+                  {/* 原「申请卡」的选档职能收进菜单：只在需要显式换档时才展开，常态不占屏 */}
+                  {!syncOnly && (
+                    <>
+                      <div className={styles.mDim}>以指定方式发起</div>
+                      <button
+                        type="button"
+                        className={styles.mSafe}
+                        disabled={busy}
+                        onClick={() => {
+                          setMenuFor(null);
+                          onRequestWith(d.node_id, "view");
+                        }}
+                      >
+                        以「只看」发起
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.mSafe}
+                        disabled={busy}
+                        onClick={() => {
+                          setMenuFor(null);
+                          onRequestWith(d.node_id, "control");
+                        }}
+                      >
+                        以「可控」发起
+                      </button>
+                      <div className={styles.mSep} />
+                    </>
+                  )}
                   {!denied && !syncOnly && (
                     <button type="button" onClick={() => void setAllowed(d.node_id, false)}>
                       禁止远程本机

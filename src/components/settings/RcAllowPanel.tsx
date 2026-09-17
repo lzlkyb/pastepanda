@@ -7,34 +7,43 @@
  * 只有 deviceAvatarStyle（按设备 id 派生）是真正的动态值，保留在 style 上。
  * `shared` 是设置页共用的那几个类（sRow/sSection 等）。
  */
-import type { RcStatus, RcTargetDevice } from "@/lib/api/rc";
+import type { RcMonitorInfo, RcStatus, RcTargetDevice } from "@/lib/api/rc";
+import { rcListMonitors } from "@/lib/api/rc";
+import { useEffect, useState } from "react";
 import type { UseRc } from "@/hooks/useRc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { deviceAvatarStyle, presenceMainLabel, relTime } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
+import { RC_QUALITIES } from "@/lib/rcQuality";
+import { scopeOptions } from "@/lib/rcScope";
 import shared from "../Settings.module.css";
 import styles from "./RcSettings.module.css";
 
-/** 一组「二选一/三选一」的档位按钮，选中态与禁用态规则一致，抽出来避免三处重复。 */
+/**
+ * 一组档位按钮，选中态与禁用态规则一致，抽出来避免三处重复。
+ * `tip` 是悬停说明——画质/范围的补充事实（fps、分辨率、含不含副屏）都放那里，
+ * 不挤进按钮文案（见 lib/rcQuality 的收口说明）。
+ */
 function ChoiceRow<T extends string>({
   options,
   value,
   disabled,
   onPick,
 }: {
-  options: readonly (readonly [T, string])[];
+  options: readonly { key: T; label: string; tip?: string }[];
   value: string;
   disabled: boolean;
   onPick: (v: T) => void;
 }) {
   return (
     <div className={styles.rcBtnRow}>
-      {options.map(([k, label]) => (
+      {options.map(({ key, label, tip }) => (
         <button
-          key={k}
+          key={key}
           type="button"
-          className={`${value === k ? "btn-primary" : "btn-secondary"} ${styles.rcChoiceBtn}`}
+          title={tip}
+          className={`${value === key ? "btn-primary" : "btn-secondary"} ${styles.rcChoiceBtn}`}
           disabled={disabled}
-          onClick={() => onPick(k)}
+          onClick={() => onPick(key)}
         >
           {label}
         </button>
@@ -55,6 +64,13 @@ export function RcAllowPanel({
   const off = !status.enabled;
   // 关主开关时：整块降透明度，且交互区禁用（说明文字仍可读）
   const gate = off ? styles.rcGated : undefined;
+  // 逐屏档要本机显示器列表——这里配的是「本机作为被控端」时的采集范围，所以是本机的屏
+  const [monitors, setMonitors] = useState<RcMonitorInfo[]>([]);
+  useEffect(() => {
+    void rcListMonitors()
+      .then(setMonitors)
+      .catch(() => setMonitors([]));
+  }, []);
 
   return (
     <div className={`${shared.lanPanel} ${off ? styles.rcPanelOff : ""}`}>
@@ -70,8 +86,8 @@ export function RcAllowPanel({
         <ChoiceRow
           options={
             [
-              ["view", "只看"],
-              ["control", "可控（含只看）"],
+              { key: "view", label: "只看" },
+              { key: "control", label: "可控（含只看）" },
             ] as const
           }
           value={status.capability}
@@ -84,28 +100,17 @@ export function RcAllowPanel({
       <div className={`${styles.rcBlockSpaced} ${gate ?? ""}`}>
         <div className={styles.rcLabel}>画质档（被控端编码）</div>
         <div className={styles.rcHint}>流畅优先帧率、清晰优先分辨率；改后下次会话生效。</div>
+        {/* 与「远程电脑」面板的画质条共用同一张档位表（lib/rcQuality） */}
         <ChoiceRow
-          options={
-            [
-              ["smooth", "流畅"],
-              ["balanced", "均衡"],
-              ["sharp", "清晰"],
-              ["ultra", "超清（约 2.5K）"],
-              ["uhd", "原生（主屏 4K 硬编）"],
-            ] as const
-          }
+          options={RC_QUALITIES}
           value={status.quality}
           disabled={off || rc.busy}
           onPick={(k) => void rc.setQuality(k)}
         />
         <div className={styles.rcLabelTop}>画面范围</div>
+        {/* 与画质条共用 scopeOptions：改前这里只有「整个虚拟屏 / 仅主屏」两项，缺逐屏 */}
         <ChoiceRow
-          options={
-            [
-              ["virtual", "整个虚拟屏（含副屏）"],
-              ["primary", "仅主屏"],
-            ] as const
-          }
+          options={scopeOptions(monitors)}
           value={status.capture_scope}
           disabled={off || rc.busy}
           onPick={(k) => void rc.setCaptureScope(k)}
