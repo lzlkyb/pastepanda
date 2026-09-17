@@ -140,15 +140,88 @@ pub fn must_show_control_banner(phase: SessionPhase) -> bool {
 
 /// 生成会话 id。不用 uuid 依赖：时间 + 随机 4 字节够用（进程内唯一即可）。
 pub fn new_session_id(now_ms: i64) -> String {
-    let r = {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
-        nanos
-    };
-    format!("rc-{}-{:08x}", now_ms, r)
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    format!("rc-{}-{:08x}", now_ms, nanos)
+}
+
+/// `conn_state=online` 但 `last_seen` 多陈旧就不再算在线（毫秒）。
+///
+/// 对齐 kbOnline 量级：presence 15s 一喊、地址 STALE_MS=60s；
+/// 会话收口会 touch(true) 刷 last_seen。两分钟没动静就该显示离线。
+/// 兜的是**进程被杀 / 异常退出**后库里定格在 online 的假在线。
+pub const ONLINE_STALE_MS: i64 = 120_000;
+
+/// 设备可达性档位（比二值在线更诚实，见设计稿）。
+///
+/// - `live`：组播听得见或正在开会话 —— 绿点
+/// - `recent`：2 分钟内还联系过 —— 琥珀
+/// - `seen`：连上过但已过期 —— 灰 + 「仍可尝试」
+/// - `never`：配对后从未连上 —— 灰
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RcPresence {
+    Live,
+    Recent,
+    Seen,
+    Never,
+}
+
+impl RcPresence {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RcPresence::Live => "live",
+            RcPresence::Recent => "recent",
+            RcPresence::Seen => "seen",
+            RcPresence::Never => "never",
+        }
+    }
+}
+
+/// 按 node_id 判定可达性档位（纯函数，便于单测）。
+pub fn rc_presence_level(
+    node_id: &str,
+    last_seen_ms: i64,
+    live_ids: &std::collections::HashSet<String>,
+    session_peer: Option<&str>,
+    now_ms: i64,
+) -> RcPresence {
+    if live_ids.contains(node_id) || session_peer == Some(node_id) {
+        return RcPresence::Live;
+    }
+    if last_seen_ms <= 0 {
+        return RcPresence::Never;
+    }
+    if now_ms - last_seen_ms <= ONLINE_STALE_MS {
+        RcPresence::Recent
+    } else {
+        RcPresence::Seen
+    }
+}
+
+/// 按 node_id 判定在线（纯函数，便于单测）。
+///
+/// 三条证据，任一成立即在线：
+/// 1. presence 组播听得见（局域网最强证据）；
+/// 2. 正在和它开会话（会话本身比 last_seen 更硬）；
+/// 3. 库里标过 online 且 last_seen 未过期（跨网 / 打洞 / 中继——组播听不见时唯一线索）。
+pub fn is_rc_online_for(
+    node_id: &str,
+    conn_state: &str,
+    last_seen_ms: i64,
+    live_ids: &std::collections::HashSet<String>,
+    session_peer: Option<&str>,
+    now_ms: i64,
+) -> bool {
+    if live_ids.contains(node_id) {
+        return true;
+    }
+    if session_peer == Some(node_id) {
+        return true;
+    }
+    conn_state == "online" && last_seen_ms > 0 && now_ms - last_seen_ms <= ONLINE_STALE_MS
 }
 
 /// 活跃会话最长持续（毫秒）。超时后推流循环自动结束，避免无人值守挂死。
@@ -212,7 +285,19 @@ impl RcService {
             inner.session = None;
             inner.pending.clear();
         }
-        let _ = self.store.rc_device_touch(&peer, false);
+        // 链路句柄随会话一起收掉。交回的档位写进日志——真机排查时这是
+        // 「这一次到底走的是局域网、公网直连还是绕中继」的唯一记录。
+        // ❗ 必须在上面那个块**之外**调：`link` 与 `inner` 是两把锁，
+        //    若在持 inner 时加 link，会与 `status()` 的加锁顺序相反（ABBA 死锁）。
+        let path = self.link.detach();
+        if path != crate::sync::path_kind::PathKind::None {
+            log::info!("[RC] 本次会话路径：{}", path.label());
+        }
+        // 🔴 会话结束 ≠ 对端关机。原来 touch(false) 会把 conn_state 打成 offline
+        // 且把 last_seen 清 0——只要开过一次远程，设备就永远显示离线，直到
+        // presence 再喊一嗓子或再成功连上一次。跨网/组播被拦时就再也好不了。
+        // 改为 touch(true)：刷新 last_seen、保持 online，由 stale 窗口自然过期。
+        let _ = self.store.rc_device_touch(&peer, true);
         super::history::append_history(&self.store, &peer, &peer_name, cap, phase, started, reason);
         self.clear_frame();
         self.note_rtt(0);

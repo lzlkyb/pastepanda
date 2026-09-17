@@ -11,7 +11,9 @@ use crate::data_store::DataStore;
 use crate::rc::join;
 use crate::rc::protocol::Capability;
 use crate::rc::service::{RcService, RcStatus};
-use crate::rc::session::{CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED, Session};
+use crate::rc::session::{
+    is_rc_online_for, rc_presence_level, CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED, Session,
+};
 use crate::sync::identity::NodeIdentity;
 use crate::sync::invite::{self, Invite};
 
@@ -40,6 +42,8 @@ pub struct RcTargetDevice {
     pub denied: bool,
     /// `rc` = 远程配对；`sync` = 仅同步配对（方案 A：可直接发起远程）。
     pub source: String,
+    /// 可达性档位：`live` / `recent` / `seen` / `never`（设计稿）。
+    pub presence: String,
 }
 
 #[derive(Serialize)]
@@ -76,7 +80,7 @@ pub async fn rc_identity(
 }
 
 /// 远程可发起目标 = rc_devices ∪ 同步 devices（方案 A 单向继承）。
-/// 在线 = presence 还听得见 **或** 库里最近会话标过 online。
+/// `presence` 四档：live / recent / seen / never（见 `rc_presence_level`）。
 #[tauri::command]
 pub fn rc_targets(
     store: State<DataStore>,
@@ -84,19 +88,36 @@ pub fn rc_targets(
 ) -> Result<Vec<RcTargetDevice>, String> {
     let deny = svc.device_deny();
     let live: std::collections::HashSet<String> = svc.presence_live_ids().into_iter().collect();
+    let session_peer = svc.active_session_peer();
+    let now = chrono::Utc::now().timestamp_millis();
     let mut out: Vec<RcTargetDevice> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     for d in store.rc_device_list()? {
         seen.insert(d.node_id.clone());
-        let online = live.contains(&d.node_id) || d.conn_state == "online";
+        let level = rc_presence_level(
+            &d.node_id,
+            d.last_seen,
+            &live,
+            session_peer.as_deref(),
+            now,
+        );
+        let online = is_rc_online_for(
+            &d.node_id,
+            &d.conn_state,
+            d.last_seen,
+            &live,
+            session_peer.as_deref(),
+            now,
+        );
         out.push(RcTargetDevice {
             denied: deny.get(&d.node_id).copied().unwrap_or(false),
             node_id: d.node_id,
             name: d.name,
-            conn_state: if online { "online".into() } else { d.conn_state },
+            conn_state: if online { "online".into() } else { "offline".into() },
             last_seen: d.last_seen,
             source: "rc".into(),
+            presence: level.as_str().into(),
         });
     }
     for d in store.device_list()? {
@@ -104,16 +125,45 @@ pub fn rc_targets(
             continue;
         }
         seen.insert(d.node_id.clone());
+        let level = rc_presence_level(
+            &d.node_id,
+            d.last_seen,
+            &live,
+            session_peer.as_deref(),
+            now,
+        );
+        let online = is_rc_online_for(
+            &d.node_id,
+            &d.conn_state,
+            d.last_seen,
+            &live,
+            session_peer.as_deref(),
+            now,
+        );
         out.push(RcTargetDevice {
             denied: deny.get(&d.node_id).copied().unwrap_or(false),
             node_id: d.node_id,
             name: d.name,
-            conn_state: d.conn_state,
+            conn_state: if online { "online".into() } else { "offline".into() },
             last_seen: d.last_seen,
             source: "sync".into(),
+            presence: level.as_str().into(),
         });
     }
     Ok(out)
+}
+
+/// 按需探活：对名单里的节点短超时拨一次，通了刷 last_seen。
+/// 返回 node_id → 是否可达。打开设备列表 / 用户点刷新时调用。
+#[tauri::command]
+pub async fn rc_probe_targets(
+    svc: State<'_, Arc<RcService>>,
+    node_ids: Vec<String>,
+) -> Result<std::collections::HashMap<String, bool>, String> {
+    if node_ids.is_empty() {
+        return Ok(Default::default());
+    }
+    Ok(svc.probe_peers(&node_ids).await)
 }
 
 /// 已远程配对、尚未允许同步笔记的设备（方案 A 反向门）。

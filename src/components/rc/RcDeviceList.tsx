@@ -1,13 +1,31 @@
 /**
- * RcDeviceList — 设备卡片：在线态 / 上次控制 / 禁止 / 忘记 / 菜单。
+ * RcDeviceList — 设备卡片：可达性档位 / 上次控制 / 禁止 / 忘记 / 菜单。
+ *
+ * 🔴 不再用二值「在线/离线」：无中心服务器时组播听不见 ≠ 对端关机。
+ * 四档文案见 `rcDevice.presenceMainLabel` 与 design/远程设备多档在线状态-设计稿.html。
  */
 import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { confirmDialog } from "@/lib/confirm";
 import type { RcTargetDevice } from "@/lib/api/rc";
-import { deviceAvatarStyle, relTime } from "@/lib/rcDevice";
+import {
+  deviceAvatarStyle,
+  relTime,
+  presenceMainLabel,
+  presenceHint,
+  presenceDotClass,
+  type RcPresenceLevel,
+} from "@/lib/rcDevice";
 import styles from "./RemoteComputer.module.css";
+
+function normalizePresence(raw: string | undefined): RcPresenceLevel {
+  if (raw === "live" || raw === "recent" || raw === "seen" || raw === "never") {
+    return raw;
+  }
+  // 旧字段兜底：后端未带 presence 时按「见过」处理，不假装在线
+  return "seen";
+}
 
 export function RcDeviceList({
   targets,
@@ -78,11 +96,20 @@ export function RcDeviceList({
   return (
     <div className={styles.devList} ref={listRef}>
       {targets.map((d) => {
-        const online = d.conn_state === "online";
+        const presence = normalizePresence(d.presence);
         const isLast = d.node_id === lastPeer;
         const denied = deviceDeny[d.node_id] ?? d.denied;
         const lastSeen = relTime(d.last_seen); // D4
         const syncOnly = d.source === "sync"; // B9
+        const mainLabel = presenceMainLabel(presence, lastSeen);
+        const hint = presenceHint(presence);
+        const dotKey = presenceDotClass(presence);
+        const dotCls =
+          dotKey === "dotOn"
+            ? styles.dotOn
+            : dotKey === "dotRecent"
+              ? styles.dotRecent
+              : styles.dotOff;
         return (
           <div
             key={d.node_id}
@@ -102,10 +129,11 @@ export function RcDeviceList({
                 {denied && <span className={styles.tagDenied}>已禁止控本机</span>}
               </div>
               <div className={styles.meta}>
-                <span className={online ? styles.dotOn : styles.dotOff} />
-                {online ? "在线" : "离线"} · {fingerprintOf(d.node_id)}
-                {!online && " · 仍可经中继尝试"}
-                {lastSeen && ` · 上次控制 ${lastSeen}`}
+                <span className={dotCls} />
+                {mainLabel} · {fingerprintOf(d.node_id)} · {hint}
+                {presence !== "recent" && presence !== "live" && lastSeen && d.last_seen > 0 && (
+                  <span className={styles.metaSub}> · 上次 {lastSeen}</span>
+                )}
                 {syncOnly && " · 仅同步配对，未建立远程通道"}
               </div>
             </div>
@@ -138,7 +166,9 @@ export function RcDeviceList({
                 className={styles.miniBtnPri}
                 disabled={busy}
                 title={
-                  online ? "发送远程申请" : "未听到局域网宣告，仍可尝试（可能经中继）"
+                  presence === "live"
+                    ? "发送远程申请"
+                    : "未听到局域网宣告，将尝试公网直连或中继"
                 }
                 onClick={() => onRequest(d.node_id)}
               >

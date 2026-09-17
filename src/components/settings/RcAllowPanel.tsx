@@ -10,7 +10,7 @@
 import type { RcStatus, RcTargetDevice } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { deviceAvatarStyle } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
+import { deviceAvatarStyle, presenceMainLabel, relTime } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
 import shared from "../Settings.module.css";
 import styles from "./RcSettings.module.css";
 
@@ -132,7 +132,11 @@ export function RcAllowPanel({
                   <div className={shared.lanDeviceInfo}>
                     <div className={shared.lanDeviceName}>{d.name || "未命名设备"}</div>
                     <div className={shared.lanDeviceTime}>
-                      {fingerprintOf(d.node_id)} · {d.conn_state === "online" ? "在线" : "离线"}
+                      {fingerprintOf(d.node_id)} ·{" "}
+                      {presenceMainLabel(
+                        (d.presence as "live" | "recent" | "seen" | "never") || "seen",
+                        relTime(d.last_seen),
+                      )}
                     </div>
                   </div>
                   <span

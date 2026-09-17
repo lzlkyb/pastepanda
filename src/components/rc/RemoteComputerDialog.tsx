@@ -2,7 +2,7 @@
  * RemoteComputerDialog — 工具箱主面板。
  * 会话中关闭需确认；设备列表/申请等待拆在子组件。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -34,16 +34,26 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
   const [askPeer, setAskPeer] = useState<string | null>(null);
   const [pairOpen, setPairOpen] = useState(false);
   const [lastPeer, setLastPeer] = useState<string | null>(null);
+  /** 打开面板只探一次；之后靠手动「检测」或发起远程，不空转。 */
+  const probedOnce = useRef(false);
+  const [probing, setProbing] = useState(false);
 
   useEffect(() => {
     void rc.refresh();
-    void rc.refreshTargets();
     void rc.refreshIdentity();
     try {
       setLastPeer(localStorage.getItem(LS_LAST));
     } catch {
       /* ignore */
     }
+    // 先拉列表，再对非 live 设备探活（设计稿：按需探活）
+    void (async () => {
+      await rc.refreshTargets();
+      if (!probedOnce.current) {
+        probedOnce.current = true;
+        await rc.probeTargets();
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -243,13 +253,27 @@ export function RemoteComputerDialog({ onClose }: { onClose: () => void }) {
                         onPair={() => setPairOpen(true)}
                         toast={toast}
                       />
-                      <button
-                        type="button"
-                        className={`${styles.miniBtn} ${styles.selfStart}`}
-                        onClick={() => setPairOpen(true)}
-                      >
-                        ＋ 再配对一台
-                      </button>
+                      <div className={styles.recentRow}>
+                        <button
+                          type="button"
+                          className={styles.miniBtn}
+                          disabled={probing}
+                          title="对非「在线」设备短超时探测一次（打开面板时也会自动探）"
+                          onClick={() => {
+                            setProbing(true);
+                            void rc.probeTargets().finally(() => setProbing(false));
+                          }}
+                        >
+                          {probing ? "检测中…" : "检测在线"}
+                        </button>
+                        <button
+                          type="button"
+                          className={`${styles.miniBtn} ${styles.ml8}`}
+                          onClick={() => setPairOpen(true)}
+                        >
+                          ＋ 再配对一台
+                        </button>
+                      </div>
 
                       {askPeer && (
                         <RcAskCard

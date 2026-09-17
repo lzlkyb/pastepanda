@@ -371,4 +371,120 @@ mod lifecycle {
         svc.inner.lock().unwrap_or_else(|p| p.into_inner()).session = None;
         assert!(!svc.session_expired());
     }
+
+    /// 在线判定三条证据：presence live / 正在开会话 / last_seen 未过期的 online。
+    #[test]
+    fn is_rc_online_for_three_evidences() {
+        use crate::rc::session::{is_rc_online_for, ONLINE_STALE_MS};
+        use std::collections::HashSet;
+
+        let now = 1_000_000i64;
+        let mut live = HashSet::new();
+        let peer = "p".repeat(64);
+
+        // 1. presence 听得见 → 无论库里怎么说都在线
+        live.insert(peer.clone());
+        assert!(is_rc_online_for(&peer, "offline", 0, &live, None, now));
+        live.clear();
+
+        // 2. 正在开会话 → 无论库里怎么说都在线
+        assert!(is_rc_online_for(&peer, "offline", 0, &live, Some(&peer), now));
+
+        // 3. 库里 online 且 last_seen 未过期（跨网唯一线索）
+        assert!(is_rc_online_for(
+            &peer,
+            "online",
+            now - ONLINE_STALE_MS,
+            &live,
+            None,
+            now
+        ));
+        assert!(!is_rc_online_for(
+            &peer,
+            "online",
+            now - ONLINE_STALE_MS - 1,
+            &live,
+            None,
+            now
+        ));
+
+        // 刚配对 / last_seen=0 的 online 是假的（进程被杀会定格 online）
+        assert!(!is_rc_online_for(&peer, "online", 0, &live, None, now));
+        // 会话 peer 不是这台 → 不借力
+        assert!(!is_rc_online_for(&peer, "offline", 0, &live, Some("other"), now));
+        // 库里 offline 且没 live → 离线
+        assert!(!is_rc_online_for(&peer, "offline", now - 1, &live, None, now));
+    }
+
+    /// 四档可达性：live / recent / seen / never（设计稿）。
+    #[test]
+    fn rc_presence_level_four_tiers() {
+        use crate::rc::session::{rc_presence_level, RcPresence, ONLINE_STALE_MS};
+        use std::collections::HashSet;
+
+        let now = 10_000_000i64;
+        let peer = "abc";
+        let mut live = HashSet::new();
+
+        assert_eq!(
+            rc_presence_level(peer, 0, &live, None, now),
+            RcPresence::Never
+        );
+
+        live.insert(peer.to_string());
+        assert_eq!(
+            rc_presence_level(peer, 0, &live, None, now),
+            RcPresence::Live
+        );
+        live.clear();
+
+        assert_eq!(
+            rc_presence_level(peer, 0, &live, Some(peer), now),
+            RcPresence::Live
+        );
+
+        assert_eq!(
+            rc_presence_level(peer, now - ONLINE_STALE_MS, &live, None, now),
+            RcPresence::Recent
+        );
+        assert_eq!(
+            rc_presence_level(peer, now - ONLINE_STALE_MS - 1, &live, None, now),
+            RcPresence::Seen
+        );
+        // 会话 peer 不是这台，且 last_seen=0 → Never
+        assert_eq!(
+            rc_presence_level(peer, 0, &live, Some("other"), now),
+            RcPresence::Never
+        );
+    }
+
+    /// 🔴 回归：会话收口**不得**把对端打成 offline、**不得**清 last_seen。
+    /// 旧行为 touch(false) 导致「只要开过一次远程就永远显示离线」。
+    #[tokio::test]
+    async fn end_session_keeps_peer_online_and_last_seen() {
+        let s = store();
+        let peer = "bb".repeat(32);
+        s.rc_device_pair(&peer, "对端").unwrap();
+        // 先标成在线（模拟 presence / 上次会话）
+        s.rc_device_touch(&peer, true).unwrap();
+        let before = s.rc_device_get(&peer).unwrap().unwrap();
+        assert_eq!(before.conn_state, "online");
+        assert!(before.last_seen > 0);
+
+        let svc = RcService::new(s.clone());
+        let mut sess = active_session("s1", SessionPhase::OutboundActive);
+        sess.peer = peer.clone();
+        set_session(&svc, sess);
+        svc.end_session("测试收口").await.expect("收口成功");
+
+        let after = s.rc_device_get(&peer).unwrap().unwrap();
+        assert_eq!(
+            after.conn_state, "online",
+            "收口后对端仍是 online——会话结束 ≠ 对端关机"
+        );
+        assert!(
+            after.last_seen >= before.last_seen,
+            "收口必须刷新或至少保留 last_seen，不能清 0"
+        );
+    }
 }

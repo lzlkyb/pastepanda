@@ -73,6 +73,11 @@ const BY_CODE: Record<string, Omit<RcErrorInfo, "reason">> = {
     hint: "在工具箱点「开启远程通道」，或先完成一次配对。",
     kind: "offline",
   },
+  connection_lost: {
+    title: "连接对端时中途断开",
+    hint: "对方可能刚好关机、切网，或中继不稳。稍后重试；若一直如此，确认对方远程通道在跑、双方网络可达。",
+    kind: "offline",
+  },
   bad_node_id: {
     title: "设备标识无效",
     hint: "请重新配对这台设备。",
@@ -88,7 +93,16 @@ function byReasonText(reason: string): Omit<RcErrorInfo, "reason"> | null {
   if (reason.includes("未配对") || reason.includes("尚未完成远程配对")) {
     return BY_CODE.not_paired;
   }
-  if (reason.includes("超时")) return BY_CODE.confirm_timeout;
+  // 🔴 connection lost 要先于「超时」：它也可能写成「…秒内一个字节都没动」
+  // 之外的形态；真正的停滞超时文案含「秒内」「停滞」，下面单独认。
+  if (
+    reason.includes("connection lost") ||
+    reason.includes("读帧长度失败") ||
+    reason.includes("读帧内容失败")
+  ) {
+    return BY_CODE.connection_lost;
+  }
+  if (reason.includes("超时") || reason.includes("停滞")) return BY_CODE.confirm_timeout;
   if (reason.includes("已有进行中") || reason.includes("占用")) return BY_CODE.busy;
   if (reason.includes("连接对端失败") || reason.includes("离线")) return BY_CODE.connect_failed;
   if (reason.includes("通道未启动")) return BY_CODE.channel_down;

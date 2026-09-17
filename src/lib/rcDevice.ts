@@ -41,3 +41,51 @@ export function relTime(ms: number | null | undefined, now: number = Date.now())
   const mon = Math.floor(day / 30);
   return `${mon} 个月前`;
 }
+
+/** 设备可达性档位（与后端 `RcPresence` 同构）。 */
+export type RcPresenceLevel = "live" | "recent" | "seen" | "never";
+
+/**
+ * 设备行主状态文案（设计稿：多档，不冒充有中心服务器的二值绿点）。
+ * 纯函数便于单测；`lastSeen` 为 `relTime` 已格式化串。
+ */
+export function presenceMainLabel(
+  presence: RcPresenceLevel,
+  lastSeenLabel: string,
+): string {
+  switch (presence) {
+    case "live":
+      return "在线";
+    case "recent":
+      return lastSeenLabel ? `${lastSeenLabel}还在` : "刚刚还在";
+    case "seen":
+      return lastSeenLabel ? `${lastSeenLabel}见过` : "见过";
+    case "never":
+    default:
+      return "配对后还没连上过";
+  }
+}
+
+/** 设备行状态点的 CSS module 类名键。 */
+export function presenceDotClass(
+  presence: RcPresenceLevel,
+): "dotOn" | "dotRecent" | "dotOff" {
+  if (presence === "live") return "dotOn";
+  if (presence === "recent") return "dotRecent";
+  return "dotOff";
+}
+
+/** 设备行尾部补充说明（可操作，不是重复主文案）。 */
+export function presenceHint(presence: RcPresenceLevel): string {
+  switch (presence) {
+    case "live":
+      return "局域网可达";
+    case "recent":
+      return "仍可尝试";
+    case "seen":
+      return "仍可经中继尝试";
+    case "never":
+    default:
+      return "核对指纹后再试，或检查对方远程通道";
+  }
+}

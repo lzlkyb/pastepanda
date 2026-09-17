@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程设备多档在线状态 · 设计稿</title>
+<style>
+  :root {
+    --bg: #0f1216;
+    --card: #171b21;
+    --border: #2a3038;
+    --text: #e8eaed;
+    --muted: #8b949e;
+    --green: #2f9e5f;
+    --amber: #d4a017;
+    --accent: #4f7cff;
+    --danger: #d64545;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px; background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  .note { color: var(--muted); font-size: 12px; margin-bottom: 24px; max-width: 720px; }
+  .panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; max-width: 560px; margin-bottom: 28px;
+  }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .av {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  }
+  .info { flex: 1; min-width: 0; }
+  .name { font-size: 13px; font-weight: 600; }
+  .meta { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot.live { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
+  .dot.recent { background: var(--amber); }
+  .dot.off { background: var(--muted); }
+  .tag {
+    font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    border: 1px solid var(--border); color: var(--muted);
+  }
+  .btn {
+    font-size: 11px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); cursor: pointer;
+  }
+  .btn.pri { background: var(--accent); border-color: var(--accent); color: #fff; }
+  table { border-collapse: collapse; max-width: 720px; font-size: 12px; }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; background: #12161b; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #9ecbff; }
+  h2 { font-size: 14px; margin: 28px 0 10px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>远程电脑 · 设备多档在线状态</h1>
+  <p class="note">
+    对齐 Syncthing / Discord：不再用二值「在线/离线」冒充有中心服务器的产品。
+    绿点只表示「现在真的听见了」；其余用时间与可操作文案说清楚。打开面板时按需探活一次，不空转。
+  </p>
+
+  <div class="panel">
+    <div class="row">
+      <div class="av">D</div>
+      <div class="info">
+        <div class="name">DESKTOP-HHOLIC2 <span class="tag">远程</span></div>
+        <div class="meta"><span class="dot live"></span>在线 · 局域网 · be0d-5954</div>
+      </div>
+      <button class="btn pri">远程</button>
+    </div>
+    <div class="row">
+      <div class="av">新</div>
+      <div class="info">
+        <div class="name">新设备 <span class="tag">上次</span> <span class="tag">远程</span></div>
+        <div class="meta"><span class="dot recent"></span>1 分钟前还在 · 7736-e98f · 仍可尝试</div>
+      </div>
+      <button class="btn pri">远程</button>
+    </div>
+    <div class="row">
+      <div class="av">笔</div>
+      <div class="info">
+        <div class="name">笔记本 <span class="tag">远程</span></div>
+        <div class="meta"><span class="dot off"></span>3 天前见过 · 仍可经中继尝试</div>
+      </div>
+      <button class="btn pri">远程</button>
+    </div>
+    <div class="row">
+      <div class="av">?</div>
+      <div class="info">
+        <div class="name">未命名设备 <span class="tag">远程</span></div>
+        <div class="meta"><span class="dot off"></span>配对后还没连上过 · 核对指纹再试</div>
+      </div>
+      <button class="btn pri">远程</button>
+    </div>
+  </div>
+
+  <h2>四档状态</h2>
+  <table>
+    <tr><th>档位</th><th>判据</th><th>点色</th><th>文案</th></tr>
+    <tr>
+      <td><code>live</code></td>
+      <td>presence 组播听得见 <b>或</b> 正在开会话</td>
+      <td><span class="dot live"></span> 绿 + 呼吸</td>
+      <td>在线 · 局域网</td>
+    </tr>
+    <tr>
+      <td><code>recent</code></td>
+      <td><code>last_seen ≤ 2min</code>（刚会话/presence/探活）</td>
+      <td><span class="dot recent"></span> 琥珀</td>
+      <td>「1 分钟前还在」· 仍可尝试</td>
+    </tr>
+    <tr>
+      <td><code>seen</code></td>
+      <td><code>last_seen &gt; 0</code> 且已过期</td>
+      <td><span class="dot off"></span> 灰</td>
+      <td>「3 天前见过」· 仍可经中继尝试</td>
+    </tr>
+    <tr>
+      <td><code>never</code></td>
+      <td><code>last_seen = 0</code>（刚配对 / 从未连上）</td>
+      <td><span class="dot off"></span> 灰</td>
+      <td>配对后还没连上过</td>
+    </tr>
+  </table>
+
+  <h2>按需探活（打开面板 / 点刷新）</h2>
+  <p class="note">
+    不对 <code>live</code> 设备发探针。对其余设备并发短超时（约 3s）拨一次；
+    通了刷 <code>last_seen</code> → 升到 <code>recent</code>；不通不改动，文案保持。
+    面板关闭不探；不空转轮询。
+  </p>
+</body>
+</html>
