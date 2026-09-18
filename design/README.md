@@ -1,6 +1,6 @@
 # 设计稿索引（design/）
 
-> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-09-17）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
+> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-09-18）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
 
 ## 这份目录是什么
 
@@ -316,7 +316,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`远程电脑-配对流程重做-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E9%85%8D%E5%AF%B9%E6%B5%81%E7%A8%8B%E9%87%8D%E5%81%9A-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 66 KB |
+| [`远程电脑-配对流程重做-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E9%85%8D%E5%AF%B9%E6%B5%81%E7%A8%8B%E9%87%8D%E5%81%9A-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-18 近期 | 66 KB |
 | [`远程设备多档在线状态-设计稿`](./%E8%BF%9C%E7%A8%8B%E8%AE%BE%E5%A4%87%E5%A4%9A%E6%A1%A3%E5%9C%A8%E7%BA%BF%E7%8A%B6%E6%80%81-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-17 近期 | 5 KB |
 | [`远程电脑-交互精简-B方案-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BA%A4%E4%BA%92%E7%B2%BE%E7%AE%80-B%E6%96%B9%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-17 近期 | 40 KB |
 | [`远程电脑-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-15 近期 | 25 KB |
@@ -422,7 +422,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`clipboard-beautify-options`](./clipboard-beautify-options.html) | 2026-07-01 | 28 KB |
 | [`card-contextmenu-preview`](./card-contextmenu-preview.html) | 2026-07-01 | 21 KB |
 
-> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 1 份。
+> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 0 份。
 
 ---
 
