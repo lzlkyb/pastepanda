@@ -2786,8 +2786,8 @@ mod presence_plain_tests {
     use super::tmp_dir;
     use crate::sync::identity::NodeIdentity;
     use crate::sync::presence::{
-        build, build_kind, Extras, Heard, PlainPacket, PresenceApp, PresenceTable, WireKind,
-        NAME_MAX_CHARS,
+        build, build_kind, hello_packet, Extras, Heard, Nearby, PlainPacket, PresenceApp,
+        PresenceTable, WireKind, NAME_MAX_CHARS,
     };
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::{Arc, Mutex};
@@ -3119,6 +3119,90 @@ mod presence_plain_tests {
         assert!(
             !table.dispatch_plain(&p),
             "知识库同步那套没注册处理器，调用方据此留一条 debug"
+        );
+    }
+
+    /// 🔴 **用生产函数造包**，而不是像组里其余用例那样现造。
+    ///
+    /// 它钉的是「发的那一侧真的接上了」。2026-09-17 首版的事故：
+    /// 本文件九条用例全过、`cargo test` 1455 条全绿，而「附近的设备」
+    /// **永远是空的**——因为那些测试里的招呼包全是自己 `build_kind` 现造的，
+    /// 而 `presence::spawn` 里**根本没有发送路径**。
+    /// 改用 `hello_packet`（`spawn` 用的就是它）之后，谁删了那个函数本用例先编译不过。
+    #[test]
+    fn test_生产函数造的招呼包能被附近表收下() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("hello_prod_a")).unwrap();
+        let me = NodeIdentity::load_or_create(&tmp_dir("hello_prod_me")).unwrap();
+
+        let packet = hello_packet(&a, PresenceApp::Rc, 41234, "办公室台式机", T0).unwrap();
+
+        let table = PresenceTable::new(PresenceApp::Rc);
+        let heard = table.hear(&packet, ip(31), &me.node_id(), &nobody, T0 + 100);
+        let Heard::Plain(p) = heard else {
+            panic!("招呼包应当判成明文包，实际：{:?}", heard);
+        };
+        assert_eq!(p.kind, WireKind::Hello);
+        assert_eq!(p.name, "办公室台式机");
+
+        // 收下之后要进附近表——那才是「附近的设备」列表的数据源。
+        let nearby = Nearby::new();
+        assert!(
+            nearby.note(&p.node_id, &p.name, p.src, T0 + 100),
+            "首次听到一台 = 新发现，要报 true 好让调用方只在跃变时记日志"
+        );
+        let list = nearby.list(T0 + 100);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "办公室台式机");
+        assert_eq!(list[0].node_id, a.node_id());
+    }
+
+    /// 🔴 守卫：`presence::spawn` 里必须**真的**在周期发招呼包。
+    ///
+    /// 这条测不了行为（`spawn` 要起线程、发真组播，单测里碰不得），所以退一步
+    /// 断言「发的那段代码还在」。**它不是形式主义**：2026-09-17 的首版就是
+    /// 收包侧全写完（`hear_plain` / `Nearby` / 上面九条用例）、发包侧一行没有，
+    /// 而当时 1455 条测试全绿。删掉那段时这条会红，逼人回答
+    /// 「那『附近的设备』靠什么出现」。
+    ///
+    /// 另一道更早的防线是结构性的：`PresenceStart::hello_name` 是**必填字段**，
+    /// 新建一套 presence 的人会被编译器逼着表态发不发招呼。
+    #[test]
+    fn test_守卫_spawn_里真的在周期发招呼包() {
+        let src = include_str!("presence/mod.rs");
+        assert!(
+            src.contains("hello_packet("),
+            "`presence::spawn` 里必须造招呼包——没有它「附近的设备」永远是空的"
+        );
+        assert!(
+            src.contains("send_all(announce_port, &packet)"),
+            "造出来的招呼包必须真的发出去"
+        );
+        assert!(
+            src.contains("HELLO_INTERVAL_SECS"),
+            "招呼包是周期心跳，不是发一次就完"
+        );
+    }
+
+    /// 招呼间隔与附近表 TTL 必须相称（`HELLO_INTERVAL_SECS` 的注释里承诺了这条）。
+    ///
+    /// TTL 要是**整数倍**才行：否则会有一段时间「下一份心跳还没来、记录已经被
+    /// 剪掉」，邻居在列表里一闪一闪——而这种抖动在界面上看像是「对方网络不稳」，
+    /// 极难往回追到两个常量。
+    #[test]
+    fn test_招呼间隔与附近表_TTL_相称() {
+        use crate::sync::presence::{HELLO_INTERVAL_SECS, NEARBY_TTL_MS};
+        let interval_ms = HELLO_INTERVAL_SECS as i64 * 1000;
+        assert_eq!(
+            NEARBY_TTL_MS % interval_ms,
+            0,
+            "TTL（{}ms）必须是招呼间隔（{}ms）的整数倍",
+            NEARBY_TTL_MS,
+            interval_ms
+        );
+        assert!(
+            NEARBY_TTL_MS / interval_ms >= 3,
+            "TTL 至少要容得下丢 2 份心跳，当前只容得下 {} 份",
+            NEARBY_TTL_MS / interval_ms
         );
     }
 }

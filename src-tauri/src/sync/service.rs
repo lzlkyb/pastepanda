@@ -1101,6 +1101,9 @@ impl SyncService {
             on_fresh: Arc::new(move |_id: &str| wake.notify_waiters()),
             running: ctx.presence_running.clone(),
             port: presence_port,
+            // 知识库同步**不发**招呼包：它没有「附近的设备」这块界面，喊出去
+            // 只是白白告诉同网段「这里有个 PastePanda」。地址公告照旧。
+            hello_name: None,
         });
 
         // ❗ 扫掉上一次崩溃残留的会话暂存目录（里面是**明文笔记**）。

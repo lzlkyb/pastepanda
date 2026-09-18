@@ -315,7 +315,7 @@ impl Discovery {
         }
     }
 
-    /// 落库之后：把这一台从「附近」里拿掉，并告诉界面。
+    /// 落库之后：把这一台从「附近」里拿掉，告诉界面，**并立刻宣告一次自己的地址**。
     fn after_commit(&self, confirmed: &Confirmed) {
         let Confirmed::Committed { peer_id, .. } = confirmed else {
             return;
@@ -323,7 +323,62 @@ impl Discovery {
         self.nearby.forget(peer_id);
         // 之前可能有它留下的敲门记录（邀请码那条路），配对成了就一起清掉。
         self.joins.take(peer_id);
+        self.announce_now();
         emit_changed();
+    }
+
+    /// 立刻发一份自己的**地址公告**，不等下一个 15 秒周期。
+    ///
+    /// 🔴 为什么配对成功后必须喊这一嗓子：地址表**只收已配对设备**
+    /// （`table::hear` 里 `is_paired` 那关在验签之前），而「已配对」是刚刚这一刻
+    /// 才成立的 ⇒ 两端各自那份地址表里都还没有对方（按常规要等对方下一个 15 秒
+    /// 周期的公告）。这段时间里点完成屏上的「立刻发起远程」，`RcService` 建出来的
+    /// 是一个**只有 node_id、没有 IP 的 `EndpointAddr`**（`EndpointAddr::new(id)`
+    /// 拼上一个空的 `addrs_of`）⇒ iroh 回落 n0 公共中继：同一局域网的两台机器
+    /// 绕一次云端，慢，relay 不可达时直接失败。
+    ///
+    /// # 谁需要这一嗓子
+    ///
+    /// 只有**发起方**：完成屏上的「立刻发起远程」按 `RcPairDone.canStart =
+    /// done.initiator` 只长在它那一侧，而它要拨的是被发起方的地址。
+    /// 时序正好对得上——
+    ///
+    /// 1. 发起方确认 ⇒ 先发 `pin_ok`（`confirm` 里 `send` 在前），再喊自己那份；
+    /// 2. 被发起方收到 `pin_ok` ⇒ 这一刻才落库（`Pairs::on_ok`），随即喊它那份；
+    /// 3. 发起方早在第 1 步就落库了，所以第 2 步那份**一定能进**它的地址表。
+    ///
+    /// ❗ 反向不保证：第 1 步那份可能赶在被发起方落库**之前**到达，被判成
+    /// `Heard::Unpaired` 丢掉（UDP 同组播组两份包没有跨套接字的全序保证）。
+    /// 不修：被发起方那侧没有「立刻发起远程」这个按钮，最多等下一个 15 秒周期，
+    /// 而它要远程也只能自己走设备列表——那时早就过了。真想修就得在这里排一个
+    /// 延迟重发，为一个不存在的按钮引入一个定时器不划算。
+    ///
+    /// 失败只记 debug：这一份只是**提前**喊，下一个周期照旧会喊。
+    fn announce_now(&self) {
+        // ❗ 取完参数就**放开锁**再发包，同 [`Discovery::send`]：公告要逐块网卡发，
+        //   握着 `armed` 发等于让并发的 `send` / `arm` 一起等在这上面。
+        //
+        //   两个 `u16` 直接填进 `Announce` 的**命名字段**，不从元组里按位置取——
+        //   位置参数下写反 `endpoint_port` / `group_port` 编译器不报错（同 `Armed` 的教训）。
+        let (me, ann) = {
+            let armed = self.armed.lock().unwrap_or_else(|p| p.into_inner());
+            // 通道没起来时也没有地址可喊（`arm` 之前 `send` 一样会拒）。
+            let Some(a) = armed.as_ref() else {
+                return;
+            };
+            (
+                a.me.clone(),
+                presence::Announce {
+                    app: PresenceApp::Rc,
+                    endpoint_port: a.endpoint_port,
+                    group_port: a.group_port,
+                    now_ms: now_ms(),
+                },
+            )
+        };
+        if let Err(e) = presence::announce_once(&me, ann) {
+            log::debug!("[RC] 配对后立刻宣告地址失败（下一个周期还会喊）：{}", e);
+        }
     }
 }
 
@@ -343,5 +398,38 @@ fn now_ms() -> i64 {
 fn emit_changed() {
     if let Some(svc) = super::global() {
         svc.emit_pair_changed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 🔴 守卫：落库之后**真的**补喊了一次地址公告。
+    ///
+    /// 钉的是「工具写好了、没人调」这一类事故——2026-09-17 的招呼包就是栽在这上面
+    /// （`hello_packet` 收包侧全写完、发包侧一行没接，1455 条单测全绿，而「附近的
+    /// 设备」永远是空的）。本处同理：`announce_now` 定义留在本文件里，`after_commit`
+    /// 要是不调它，编译照过、行为却退回「配对完立刻发起远程必然绕中继」，
+    /// 而这条**只有双机手测才看得见**（见 `docs/远程电脑-双机手测清单` §7.5）。
+    ///
+    /// 所以这里同时要求**有定义**且**调用落在 `after_commit` 里**。
+    /// 用带缩进的整体串匹配，避免匹配到下面这句断言的字符串字面量本身。
+    #[test]
+    fn test_守卫_落库后真的补喊了一次地址公告() {
+        let src = include_str!("discovery.rs");
+        assert!(
+            src.contains("fn announce_now(&self)"),
+            "`announce_now` 的定义没了——配对完立刻发起远程会退回绕中继"
+        );
+        let call = "\n        self.announce_now();\n";
+        let Some(call_at) = src.find(call) else {
+            panic!("`announce_now` 有定义但没有调用；配对完立刻发起远程会退回绕中继");
+        };
+        let commit_at = src
+            .find("fn after_commit")
+            .expect("`after_commit` 还在（本用例按它的位置判调用点）");
+        assert!(
+            call_at > commit_at,
+            "补喊要挂在落库之后那条路径上（`after_commit` 里），而不是别处顺手调一下"
+        );
     }
 }

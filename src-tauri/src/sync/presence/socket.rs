@@ -3,7 +3,7 @@
 //! 收发用**两个不同的套接字**：绑同一个端口再往它发包在各平台行为不一致，
 //! 而发送方根本不需要固定端口（接收方只看源 IP）。理由见 [`announce_once`]。
 
-use super::wire::{build, PresenceApp};
+use super::wire::{build, build_kind, Extras, PresenceApp, WireKind};
 use super::{GROUP, PORT};
 use crate::sync::identity::NodeIdentity;
 use std::net::{Ipv4Addr, UdpSocket};
@@ -148,9 +148,15 @@ pub fn announce_once(me: &NodeIdentity, a: Announce) -> Result<(), String> {
 /// 把一个**已经做好的**包往每一块网卡各发一份。
 ///
 /// 与 [`announce_once`] 的分工是「发」与「做包」：那个负责做包（每块网卡一份、
-/// `ts` 递增），这个只负责发——A3 的招呼包与配对握手包都是**一次性动作包**，
-/// 不需要按网卡错开时间戳（接收侧的严格递增重放检查只对地址公告生效，
-/// 见 `table::hear_plain`）。
+/// `ts` 递增），这个只负责发——**同一份字节往每块网卡各发一遍**。
+///
+/// ❗ 所以两个调用方的要求不一样，别把其中一个的特性当成这个函数的特性：
+/// - 配对握手包（`rc::discovery::send`、`tick`）：一次性动作包，一份字节发全部网卡正合适。
+/// - 招呼包（`presence::spawn` 的 5 秒心跳）：**周期**包，每份靠自己的 `ts`
+///   往下走，同样不需要按网卡错开（接收侧的严格递增重放检查只对地址公告生效，
+///   见 `table::hear_plain`）。
+///
+/// 需要「每块网卡一份、`ts` 递增」的只有地址公告，走 [`announce_once`]。
 ///
 /// `group_port` 与 `announce_once` 同一个理由必须由调用方给：本进程里跑着两套
 /// presence（5008 知识库同步 / 5009 远程电脑），写死就串台。
@@ -173,4 +179,32 @@ pub fn send_all(group_port: u16, packet: &[u8]) -> Result<(), String> {
         return Err(format!("包没能从任何一块网卡发出去：{}", last));
     }
     Ok(())
+}
+
+/// 做一份**招呼包**（[`WireKind::Hello`]）：告诉同网段「我是谁、我叫什么」。
+///
+/// 只做包、不发——发送由调用方走 [`send_all`]。
+///
+/// 🔴 **单独抽出来是为了让它能被测试碰到**。2026-09-17 那版的教训：
+/// 收包侧（`table::hear_plain` → `Nearby`）写得挺全、`sync/tests.rs` 里
+/// 九条用例全过，而**发的那一侧压根没接上**——「附近的设备」永远是空的。
+/// 原因是测试里的招呼包全是**自己用 `build_kind` 现造的**，生产路径一次没跑。
+///
+/// 间隔由调用方定（[`super::HELLO_INTERVAL_SECS`]）：招呼包是**周期心跳**，
+/// 不是一次性动作——收包侧按「最近 [`super::NEARBY_TTL_MS`] 内听到过」判在不在附近。
+pub fn hello_packet(
+    me: &NodeIdentity,
+    app: PresenceApp,
+    endpoint_port: u16,
+    name: &str,
+    now_ms: i64,
+) -> Result<Vec<u8>, String> {
+    build_kind(
+        me,
+        app,
+        WireKind::Hello,
+        endpoint_port,
+        now_ms,
+        Extras::hello(name),
+    )
 }

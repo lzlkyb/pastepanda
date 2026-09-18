@@ -114,7 +114,7 @@ mod table;
 mod wire;
 
 pub use nearby::{Neighbor, Nearby, NEARBY_TTL_MS};
-pub use socket::{announce_once, bind_listener, bind_listener_on, send_all, Announce};
+pub use socket::{announce_once, bind_listener, bind_listener_on, hello_packet, send_all, Announce};
 pub use table::{Heard, PlainPacket, PlainHandler, PresenceTable};
 pub use wire::{build, build_kind, Extras, PresenceApp, WireKind, NAME_MAX_CHARS};
 
@@ -124,6 +124,17 @@ pub const GROUP: Ipv4Addr = Ipv4Addr::new(224, 1, 1, 1);
 pub const PORT: u16 = 5008;
 /// 两次宣告的间隔（秒）。
 pub const ANNOUNCE_INTERVAL_SECS: u64 = 15;
+/// 两份**招呼包**（[`WireKind::Hello`]）的间隔（秒）。只在
+/// [`PresenceStart::hello_name`] 给了的时候用。
+///
+/// 🔴 5 秒这个数是**由 [`NEARBY_TTL_MS`]（20 秒）反推的**：20 / 5 = 4，
+/// 也就是「容得下连丢 3 份心跳」。改动前先想清楚这两者的关系——招呼包发稀了，
+/// 邻居会在列表里一闪一闪（TTL 修剪跑在下一份心跳前面）；发密了白刷组播。
+///
+/// 为什么不直接引用 `lan_pair::HELLO_INTERVAL_SECS`：两套招呼包是**各自协议里的
+/// 各自选择**（格式、承载、消费方都不同），数值撞在一起只是撞在一起。
+/// 守卫单测 `test_招呼间隔与附近表_TTL_相称` 钉的是上面那个比例，不是这个巧合。
+pub const HELLO_INTERVAL_SECS: u64 = 5;
 /// 地址多久没被刷新就当失效（毫秒）。= 4 个宣告周期，容得下丢几个 UDP 包。
 pub const STALE_MS: i64 = 60_000;
 /// 知识库同步的开关键。**故意不是** `lan_sync_enabled`。
@@ -155,6 +166,17 @@ pub struct PresenceStart {
     /// 测试传 0（临时端口），此时广播端口回落 [`PORT`]。
     /// 🔴 2026-09-17 前广播那侧写死 [`PORT`]，两套串台且**全静默**——见模块说明末节。
     pub port: u16,
+    /// 要不要在地址公告之外**再周期发一种招呼包**：带上本机设备名，让同网段
+    /// **还没配对**的邻居把本机列进「附近的设备」（[`Nearby`]）。
+    ///
+    /// - `Some(name)`：发。远程电脑用这个（它需要「附近设备」这块界面）。
+    /// - `None`：不发。知识库同步**不需要**——它没有「附近设备」这个界面，
+    ///   多喊一种包只是白白告诉同网段「这里有个 PastePanda」。地址公告照旧。
+    ///
+    /// 🔴 **这是周期心跳，不是一次性动作**。收包侧的 [`Nearby`] 靠「最近
+    /// [`NEARBY_TTL_MS`] 内听到过」判在不在附近，所以只发一次的话，对端列表里
+    /// 会闪一下就消失（TTL 修剪跑在下一份心跳前面）。间隔见 [`HELLO_INTERVAL_SECS`]。
+    pub hello_name: Option<String>,
 }
 
 /// 起「监听 + 周期宣告」的线程。
@@ -176,6 +198,7 @@ pub fn spawn(p: PresenceStart) {
         on_fresh,
         running,
         port,
+        hello_name,
     } = p;
     if !enabled {
         log::info!(
@@ -215,6 +238,12 @@ pub fn spawn(p: PresenceStart) {
         );
 
         let mut last_announce = 0i64;
+        // 招呼包的定时**独立于**地址公告（5 秒 vs 15 秒）。初值 0 ⇒ 起线程后
+        // 立刻发第一份——否则对端要干等满一个间隔才看得到本机。
+        let mut last_hello = 0i64;
+        // 「上一份招呼包是否发失败」：用来把持续失败压成**一条** warn（跃变时才报）。
+        // 网络断了的时候每 5 秒一条会淹掉日志，而那条信息量并不随时间增加。
+        let mut hello_failed = false;
         let mut buf = [0u8; MAX_PACKET + 1];
         while running.load(Ordering::SeqCst) {
             let now = chrono::Utc::now().timestamp_millis();
@@ -231,6 +260,37 @@ pub fn spawn(p: PresenceStart) {
                     log::warn!("[Presence] {}", e);
                 }
                 last_announce = now;
+            }
+            // 招呼包：让同网段**未配对**的邻居把本机列进「附近的设备」。
+            //
+            // 🔴 挂在同一个循环里而不是另起线程：`running` 一翻就跟着停，
+            //    省掉第二个 running 标志、第二个线程、第二次 bind。
+            //    （2026-09-17 那版的错误在别处——**根本没发**，见 `HELLO_INTERVAL_SECS`。）
+            if let Some(name) = hello_name.as_deref() {
+                if now - last_hello >= HELLO_INTERVAL_SECS as i64 * 1000 {
+                    match hello_packet(&me, app, endpoint_port, name, now) {
+                        Ok(packet) => match send_all(announce_port, &packet) {
+                            Ok(()) => {
+                                if hello_failed {
+                                    log::info!("[Presence] 招呼包恢复发送");
+                                    hello_failed = false;
+                                }
+                            }
+                            // 跃变才报 warn：一块网卡发不出去是常态（`send_all` 内部
+                            // 已逐块 debug），而**一块都发不出去**意味着邻居根本
+                            // 看不到本机——那是要用户知道的，只是不该每 5 秒说一遍。
+                            Err(e) => {
+                                if !hello_failed {
+                                    log::warn!("[Presence] 招呼包发不出去（同网段看不到本机）：{}", e);
+                                    hello_failed = true;
+                                }
+                            }
+                        },
+                        // 签名/序列化失败是「不该发生」，每次报出来（它不会持续）。
+                        Err(e) => log::warn!("[Presence] 做招呼包失败：{}", e),
+                    }
+                    last_hello = now;
+                }
             }
             // 读超时 2 秒，所以这个循环最慢 2 秒转一圈，停止请求最多等 2 秒
             match listener.recv_from(&mut buf) {

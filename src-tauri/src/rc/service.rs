@@ -668,6 +668,10 @@ impl RcService {
             });
         }
 
+        // 本机设备名**只取一次**：`spawn`（招呼包随包自报）与 `arm`（配对握手包
+        // 自报）用的是同一份。两处各调一次 `hostname::get()` 就是两个数据源。
+        let my_name = super::local_device_name();
+
         // presence：宣告 RC 端口；is_paired 用**远程信任**（rc ∪ 同步），
         // 否则仅同步配对的对端收不到本机 RC 地址，局域网发现会失败。
         {
@@ -692,13 +696,16 @@ impl RcService {
                 }),
                 running: presence_running,
                 port: RC_PRESENCE_PORT,
+                // 「附近的设备」全靠这一条：周期发招呼包，把名字自报给同网段
+                // **还没配对**的邻居。少了它，那块列表永远是空的
+                // （2026-09-17 首版就是这样——收包侧写好了，发的那侧没接上）。
+                hello_name: Some(my_name.clone()),
             });
         }
 
         // 挂上「怎么发」：局域网配对的握手包发往 rc 那套 presence 的端口。
         // 必须在 presence 起来之后做——`arm` 之前发的包会被 `send` 拒掉。
-        self.discovery
-            .arm(me, port, RC_PRESENCE_PORT, super::local_device_name());
+        self.discovery.arm(me, port, RC_PRESENCE_PORT, my_name);
 
         Ok(())
     }
