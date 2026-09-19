@@ -45,6 +45,9 @@ import {
   rcSetCaptureScope,
   rcUnoGenerate,
   rcUnoRevoke,
+  rcUnoPassEnable,
+  rcUnoPassDisable,
+  rcUnoPassSetWan,
   type RcCapability,
   type RcCaptureScope,
   type RcIdentity,
@@ -158,6 +161,8 @@ interface RcState {
   request: (id: string, cap: RcCapability) => Promise<boolean>;
   /** Q2：带无人值守接入码发起（目标机器可以没人、未配对）。 */
   requestUno: (id: string, code: string, cap: RcCapability) => Promise<boolean>;
+  /** Q2 方案 C：带固定密码发起（目标机器可以没人、未配对）。 */
+  requestPass: (id: string, pass: string, cap: RcCapability) => Promise<boolean>;
   /** Q2：生成无人值守接入码（被控端）。 */
   unoGenerate: (p: {
     ttlSecs: number;
@@ -167,6 +172,16 @@ interface RcState {
   }) => Promise<RcUnoCreated>;
   /** Q2：撤销全部无人值守接入码。 */
   unoRevoke: () => Promise<boolean>;
+  /** Q2 方案 C：开启 / 换固定密码（被控端）。 */
+  unoPassEnable: (p: {
+    password: string;
+    capability: RcCapability;
+    allowWan: boolean;
+  }) => Promise<boolean>;
+  /** Q2 方案 C：一键全局关闭固定密码。 */
+  unoPassDisable: () => Promise<boolean>;
+  /** Q2 方案 C：只改「允许跨网」开关。 */
+  unoPassSetWan: (allow: boolean) => Promise<boolean>;
   cancel: () => Promise<boolean>;
   end: () => Promise<boolean>;
   approve: (id: string) => Promise<boolean>;
@@ -374,6 +389,7 @@ export const useRcStore = create<RcState>((set, get) => ({
   denyJoin: (id) => get().run(() => rcJoinDeny(id)),
   request: (id, cap) => get().run(() => rcRequestSession(id, cap)),
   requestUno: (id, code, cap) => get().run(() => rcRequestSession(id, cap, code)),
+  requestPass: (id, pass, cap) => get().run(() => rcRequestSession(id, cap, undefined, pass)),
   unoGenerate: (p) =>
     rcUnoGenerate({
       ttlSecs: p.ttlSecs,
@@ -382,6 +398,12 @@ export const useRcStore = create<RcState>((set, get) => ({
       alsoTrust: p.alsoTrust,
     }),
   unoRevoke: () => get().run(() => rcUnoRevoke()),
+  unoPassEnable: (p) =>
+    get().run(() =>
+      rcUnoPassEnable({ password: p.password, capability: p.capability, allowWan: p.allowWan }),
+    ),
+  unoPassDisable: () => get().run(() => rcUnoPassDisable()),
+  unoPassSetWan: (allow) => get().run(() => rcUnoPassSetWan(allow)),
   cancel: () => get().run(() => rcCancelRequest()),
   end: () => get().run(() => rcEndSession()),
   approve: (id) => get().run(() => rcApproveInbound(id)),

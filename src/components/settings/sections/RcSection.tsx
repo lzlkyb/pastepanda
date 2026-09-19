@@ -163,6 +163,43 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
           </button>
         </div>
 
+        {/* Q2 方案 C：固定密码。同一个「无人值守」语义的长期辅路，只服务
+            「自家服务器常驻可连」；带着限速/锁定/常驻横幅一起上（设计稿）。 */}
+        <div className={styles.rcJoinBlock}>
+          <div className={styles.rcJoinTitle}>无人值守固定密码</div>
+          <div className={styles.rcHint}>
+            给长期挂机的机器：设一个固定密码，知道密码的设备随时可连。
+            哈希存储、限速防爆破；默认仅限局域网，横幅常驻、可一键关闭。
+          </div>
+          {rc.status?.uno_pass && (
+            <div className={styles.rcHint}>
+              🟢 无人值守模式中（{rc.status.uno_pass.cap === "control" ? "可控" : "只看"}
+              ·{rc.status.uno_pass.wan ? "跨网已允许" : "仅限局域网"}）
+              <button
+                type="button"
+                className={shared.lanRefreshBtn}
+                style={{ marginLeft: 8 }}
+                disabled={rc.busy}
+                onClick={() => {
+                  void rc.unoPassDisable().then((ok) => {
+                    if (ok) toast("已关闭无人值守固定密码", "info");
+                  });
+                }}
+              >
+                立即关闭
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`${shared.lanTestBtn} ${styles.rcFullBtn}`}
+            disabled={!enabled}
+            onClick={() => setOverlay("unoPass")}
+          >
+            {rc.status?.uno_pass ? "查看 / 修改固定密码" : "设置固定密码"}
+          </button>
+        </div>
+
         {joins.length > 0 && (
           <div className={styles.rcJoinBlock}>
             <div className={styles.rcJoinTitle}>

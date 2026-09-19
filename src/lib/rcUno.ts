@@ -44,3 +44,27 @@ export function parseUnoInput(raw: string): ParsedUno | null {
 export function unoCodeShapeOk(code: string): boolean {
   return /^[0-9A-HJ-NP-TV-Z]{8}$/.test(code.toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1"));
 }
+
+/** 方案 C：固定密码最短长度（与后端 `unop::PASS_MIN_CHARS` 同值，前后端一个口径）。 */
+export const UNO_PASS_MIN_CHARS = 6;
+
+/** 密码最长长度（与后端 `unop::PASS_MAX_CHARS` 同值）。 */
+export const UNO_PASS_MAX_CHARS = 64;
+
+/**
+ * 密码长度按**字符数**数（与后端 `unop::hash_password` 的 `chars().count()` 同口径）。
+ * 🔴 不能用 `String.length`：它数 UTF-16 单元，emoji 一个算 2——前端放行、
+ * 后端拒绝的「看着合法却存不下去」又会回来（`rcDevice` 的 NOTE 教训同源）。
+ */
+export function unoPassCharsOk(pass: string): boolean {
+  const n = [...pass.trim()].length;
+  return n >= UNO_PASS_MIN_CHARS && n <= UNO_PASS_MAX_CHARS;
+}
+
+/**
+ * iroh node_id 的形状：52 位 base32。大小写都收（粘贴容错），
+ * 真正的解析在被控端拨号时（`bad_node_id`）。
+ */
+export function nodeIdShapeOk(raw: string): boolean {
+  return /^[0-9A-Za-z]{52}$/.test(raw.trim());
+}

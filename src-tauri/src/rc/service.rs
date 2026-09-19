@@ -20,6 +20,7 @@ use super::stream_cfg::{
     auto_from_cfg, codec_from_cfg, profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts,
 };
 use super::uno;
+use super::unop;
 use crate::data_store::DataStore;
 use crate::sync::identity::NodeIdentity;
 use crate::sync::presence::{self, PresenceApp, PresenceTable, PORT as PRESENCE_BASE_PORT};
@@ -50,9 +51,11 @@ pub const CFG_BITRATE_PCT: &str = "rc_bitrate_pct";
 pub const RC_PRESENCE_PORT: u16 = PRESENCE_BASE_PORT + 1;
 
 /// 给界面看的完整状态。
-/// [`RcService::uno_admit`] 的结局。`Denied` 带着回给对端的 (话, 稳定错误码)，
-/// 语义与 `Gate::deny_reason` / `deny_code` 一致。
-enum UnoAdmit {
+/// [`RcService::uno_admit`] / [`RcService::pass_admit`] 的结局。`Denied` 带着
+/// 回给对端的 (话, 稳定错误码)，语义与 `Gate::deny_reason` / `deny_code` 一致。
+/// `pub(super)` 只为 `rc::tests` 能引用这个类型名（它经 `pass_admit` 的返回
+/// 类型出现，private 会把函数一并锁死在 crate 内）。
+pub(super) enum UnoAdmit {
     Admitted,
     Denied(String, String),
 }
@@ -67,6 +70,9 @@ pub struct RcStatus {
     pub joins: Vec<join::RcJoinRequest>,
     /// 在效的无人值守接入码摘要（Q2）。只给过期时间/档位，**绝不含码本身**。
     pub uno: Vec<uno::UnoInfo>,
+    /// 无人值守固定密码的当前状态（Q2 方案 C）。None = 未开启。
+    /// 只给能力档/跨网开关/开启时刻，**绝不含密码本身或其哈希**。
+    pub uno_pass: Option<unop::UnoPassInfo>,
     pub device_deny: HashMap<String, bool>,
     /// 通道是否已起来（rc_enabled 且端点绑定成功）。
     pub running: bool,
@@ -181,6 +187,10 @@ pub struct RcService {
     /// 无人值守接入码的内存待验表（Q2 方案 B，见 `uno.rs`）。
     /// 只存摘要、不落盘——进程活着码才活着。
     pub uno: uno::UnoCodes,
+    /// 固定密码的防爆破闸（Q2 方案 C，见 `unop.rs`）：每对端指数退避 +
+    /// 连续 5 次失败锁 10 分钟。纯内存，随进程生灭——密码哈希是持久的，
+    /// 这个闸不必持久（重启清零最坏只是攻击者重吃一轮退避）。
+    pub(super) pass_gate: unop::BruteGate,
     /// 推流参数（画质 / 截取范围 / 强制 JPEG）+ RTT（见 `stream_cfg.rs`）。
     stream: StreamCfg,
     /// 会话链路：数据走哪条路 + 心跳新鲜度（见 `link.rs`）。
@@ -346,6 +356,7 @@ impl RcService {
             auto_reconnect: Mutex::new(None),
             reconnect_epoch: std::sync::atomic::AtomicU64::new(0),
             uno: uno::UnoCodes::default(),
+            pass_gate: unop::BruteGate::default(),
             stream: StreamCfg::new(),
             link: LinkState::new(),
             pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
@@ -942,6 +953,7 @@ impl RcService {
             pending: inner.pending.clone(),
             joins: self.joins.list(now_ms()),
             uno: self.uno.active(now_ms()),
+            uno_pass: unop::cfg_from(&self.cfg()).map(Into::into),
             device_deny: self.device_deny(),
             running,
             quality,
@@ -1267,18 +1279,23 @@ impl RcService {
         peer: &str,
         capability: Capability,
         uno_code: Option<String>,
+        uno_pass: Option<String>,
     ) -> Result<Session, String> {
-        // 无人值守接入码（Q2）：带码发起就是「未配对机器」的唯一路径，
-        // 白名单前置检查必须让位；空串视同没带。
+        // 无人值守（Q2 方案 B 码 / 方案 C 密码）：带凭证发起就是「未配对机器」
+        // 的路径，白名单前置检查必须让位；空串视同没带。
         let uno_code = uno_code
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
+        let uno_pass = uno_pass
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let with_cred = uno_code.is_some() || uno_pass.is_some();
         let (session_id, pending_sess) = {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             if gate_outbound(inner.session.is_some()) == Gate::Busy {
                 return Err("[busy_local] 已有进行中的远程会话，请先结束".into());
             }
-            if uno_code.is_none() && !self.has_remote_trust(peer) {
+            if !with_cred && !self.has_remote_trust(peer) {
                 return Err(
                     "[not_paired] 尚未完成远程配对：请先在远程电脑设置里配对这台设备".into(),
                 );
@@ -1287,7 +1304,7 @@ impl RcService {
                 return Err("[channel_down] 远程通道未启动：请先开启远程通道或完成远程配对".into());
             }
             // 同步设备首次发起远程 → 写入 rc_devices（方案 A）
-            if uno_code.is_none() {
+            if !with_cred {
                 if let Err(e) = self.elevate_from_sync(peer) {
                     log::warn!("[RC] 从同步配对提升到远程失败：{e}");
                 }
@@ -1318,7 +1335,10 @@ impl RcService {
         let peer = peer.to_string();
         tauri::async_runtime::spawn(async move {
             let Some(svc) = global() else { return };
-            match svc.dial_and_request(&peer, capability, uno_code.clone()).await {
+            match svc
+                .dial_and_request(&peer, capability, uno_code.clone(), uno_pass.clone())
+                .await
+            {
                 Ok((accepted_cap, conn, send, recv)) => {
                     // 会话是否已经不在（用户点了取消，或已被换成了另一场会话）。
                     // ❗ 这里**不能**在持 inner 锁的块里 return 并顺手 detach：
@@ -1348,10 +1368,10 @@ impl RcService {
                         return;
                     }
                     let _ = svc.store.rc_device_touch(&peer, true);
-                    // Q2：无人值守接入成功 = 发起侧也把这台写进自己的 rc_devices
-                    // （被控侧在验码时已经写了它那份）。之后这台设备就是普通配对
-                    // 设备：改名 / 免确认 / 遗忘都走既有管理面。
-                    if uno_code.is_some() {
+                    // Q2：无人值守接入成功（码或密码）= 发起侧也把这台写进自己的
+                    // rc_devices（被控侧在验凭证时已经写了它那份）。之后这台设备
+                    // 就是普通配对设备：改名 / 免确认 / 遗忘都走既有管理面。
+                    if with_cred {
                         let name = {
                             let n = svc.peer_name(&peer);
                             if n.is_empty() { "新设备".to_string() } else { n }
@@ -1472,6 +1492,7 @@ impl RcService {
         peer: &str,
         capability: Capability,
         uno_code: Option<String>,
+        uno_pass: Option<String>,
     ) -> Result<
         (
             Capability,
@@ -1512,6 +1533,7 @@ impl RcService {
         let req = RcFrame::Request {
             capability,
             uno_code,
+            uno_pass,
             // 本端支持视频数据报；旧对端 serde 忽略未知字段，照常受理
             vid_dgram: Some(true),
         };
@@ -1561,12 +1583,13 @@ impl RcService {
         };
         // 对端把 Request 送到了 = 它在线。刷 last_seen，跨网时设备列表才亮得起来。
         let _ = self.store.rc_device_touch(&peer, true);
-        let (requested, uno_code, peer_dgram) = match RcFrame::decode(&bytes) {
+        let (requested, uno_code, uno_pass, peer_dgram) = match RcFrame::decode(&bytes) {
             Ok(RcFrame::Request {
                 capability,
                 uno_code,
+                uno_pass,
                 vid_dgram,
-            }) => (capability, uno_code, vid_dgram == Some(true)),
+            }) => (capability, uno_code, uno_pass, vid_dgram == Some(true)),
             Ok(_) => {
                 deny_and_close(&link_conn, &mut send, "期望 Request 帧", "not_request").await;
                 return;
@@ -1580,12 +1603,13 @@ impl RcService {
 
         let mut uno_admitted = false;
         // 未配对（远程/同步都没有）：
-        // 带了无人值守接入码（Q2 方案 B）→ 验码，通过 = 自动配对 + 自动同意，
-        // 全程不需要被控端有人点头；没带码 → 走邀请门/敲门老路，等人核对指纹。
+        // 带了无人值守接入码（Q2 方案 B）→ 验码，通过 = 自动配对 + 自动同意；
+        // 带了固定密码（Q2 方案 C）→ 验密 + 限速闸，通过 = 同上；
+        // 都没带 → 走邀请门/敲门老路，等人核对指纹。
         if !self.has_remote_trust(&peer) {
             let now = now_ms();
-            match uno_code.as_deref() {
-                Some(code) => match self.uno_admit(&peer, requested, code, now) {
+            match (uno_code.as_deref(), uno_pass.as_deref()) {
+                (Some(code), _) => match self.uno_admit(&peer, requested, code, now) {
                     UnoAdmit::Admitted => uno_admitted = true,
                     UnoAdmit::Denied(reason, deny_code) => {
                         deny_and_close(&link_conn, &mut send, &reason, &deny_code).await;
@@ -1593,7 +1617,21 @@ impl RcService {
                         return;
                     }
                 },
-                None => {
+                (None, Some(pass)) => {
+                    // 局域网判定在这里做（函数要拿连接），准入逻辑收进纯函数可测的
+                    // `pass_admit`（`rc/tests.rs` 直接打它）。
+                    let is_lan =
+                        crate::sync::path_kind::of_conn(&link_conn) == crate::sync::path_kind::PathKind::Lan;
+                    match self.pass_admit(&peer, requested, pass, is_lan, now) {
+                        UnoAdmit::Admitted => uno_admitted = true,
+                        UnoAdmit::Denied(reason, deny_code) => {
+                            deny_and_close(&link_conn, &mut send, &reason, &deny_code).await;
+                            log::info!("[RC] {short} 固定密码接入被拒：{reason}");
+                            return;
+                        }
+                    }
+                }
+                (None, None) => {
                     // 🔴 **判据交给纯函数**（[`join::deny_unpaired`]），因为「几种成因的区分」
                     //   正是 2026-09-17 修的那个 bug：原先除「门开着且敲门成功」外全部塌缩成一句
                     //   `not_paired`（「尚未远程配对」），而用户实际撞到的**几乎总是窗口过期**——
@@ -1831,6 +1869,116 @@ impl RcService {
             }
             Err(e) => {
                 log::warn!("[RC] {short} 接入码有效但建立会话失败：{e}");
+                UnoAdmit::Denied(e, "busy".into())
+            }
+        }
+    }
+
+    /// 固定密码准入（Q2 方案 C）。顺序刻意与 [`Self::uno_admit`] 同构：
+    /// 红线 → 政策 → 闸 → 验密 → 逐台禁止 → 落白名单 → 建会话。
+    ///
+    /// 与验码路径的四个差别：
+    /// 1. 验密**之前**先过防爆破闸（[`Self::pass_gate`]）。验密本身要花本机
+    ///    CPU/内存（Argon2id 19 MiB、几十毫秒），先闸后验同时按住「无限慢速
+    ///    爆破」与「拿验密烤 CPU」两种玩法；
+    /// 2. 局域网政策在闸之前：`wan=false`（默认）时非局域网来路直接拒。
+    ///    判据由调用方用 `path_kind::of_conn` 对**活连接**实测后传入
+    ///    （抽成 `is_lan` 参数也让 `rc/tests.rs` 能直接打这条路径）；
+    /// 3. 验密通过即清闸档——建会话失败不算失败（他没在爆破，不该吃退避）；
+    /// 4. 没有「消费」语义：密码可反复用，泄露后的止损 = 一键全局关闭 + 换密码。
+    ///
+    /// # 🔴 与验码共用同一条信任落点
+    ///
+    /// 验密通过 = 该设备写入 rc_devices（与现场配对同一张表），受横幅/历史/
+    /// 禁止/免确认的常规管理。**不**自动开免确认——「知道密码」与「这台设备
+    /// 可信」必须保持分离（`unop.rs` 模块注释，设计稿威胁表第三行）。
+    pub(super) fn pass_admit(
+        &self,
+        peer: &str,
+        requested: Capability,
+        pass: &str,
+        is_lan: bool,
+        now_ms: i64,
+    ) -> UnoAdmit {
+        let short = &peer[..8.min(peer.len())];
+        // 红线先行：未启用 = 一律拒，且不泄露密码对不对（与验码同一句话术）。
+        if !self.enabled() {
+            return UnoAdmit::Denied(
+                Gate::Disabled.deny_reason().to_string(),
+                Gate::Disabled.deny_code().to_string(),
+            );
+        }
+        let Some(cfg) = unop::cfg_from(&self.cfg()) else {
+            return UnoAdmit::Denied("对方未开启固定密码接入".into(), "uno_pass_off".into());
+        };
+        // 局域网政策（设计稿第四条）：默认仅局域网。中继 / 公网打洞都算跨网。
+        if !cfg.wan && !is_lan {
+            log::info!("[RC] {short} 密码接入被拒：来路非局域网，且本机未开「允许跨网」");
+            return UnoAdmit::Denied(
+                "对方的固定密码只允许同一局域网内使用（跨网需对方显式打开）".into(),
+                "uno_pass_wan".into(),
+            );
+        }
+        // 先查闸，后验密。
+        match self.pass_gate.check(peer, now_ms) {
+            unop::GateCheck::Wait(ms) => {
+                log::info!("[RC] {short} 密码接入被限速：还需等 {ms}ms");
+                return UnoAdmit::Denied(
+                    format!("尝试过于频繁，请约 {} 秒后再试", (ms + 999) / 1000),
+                    "uno_pass_throttled".into(),
+                );
+            }
+            unop::GateCheck::Ok => {}
+        }
+        if !unop::verify(&cfg.phc, pass) {
+            self.pass_gate.record_failure(peer, now_ms);
+            log::info!("[RC] {short} 固定密码错误");
+            return UnoAdmit::Denied("接入密码不正确".into(), "uno_pass_invalid".into());
+        }
+        // 验过了就清档：下面的失败（忙/写库）不是爆破，不该让他吃退避。
+        self.pass_gate.record_success(peer);
+        // 逐台禁止优先于密码：用户明确拉黑过的设备，密码不该替他翻案。
+        if self.device_deny().get(peer).copied().unwrap_or(false) {
+            return UnoAdmit::Denied(
+                Gate::DeviceDenied.deny_reason().to_string(),
+                Gate::DeviceDenied.deny_code().to_string(),
+            );
+        }
+        // 落白名单（同验码路径）。设备名先占位，等对方自报。
+        let name = {
+            let n = self.peer_name(peer);
+            if n.is_empty() {
+                "新设备".to_string()
+            } else {
+                n
+            }
+        };
+        if let Err(e) = self.store.rc_device_pair(peer, &name) {
+            // 存储错误原文只进日志；deny 话术不携带本机路径/IO 细节。
+            log::error!("[RC] {short} 密码准入写设备列表失败：{e}");
+            return UnoAdmit::Denied(
+                "对方暂时无法处理该接入请求".into(),
+                "uno_pass_store_error".into(),
+            );
+        }
+        // 申请档超过密码档 → 压档（配置损坏时按只看兜底，不放开）。
+        let grant = cfg.capability().unwrap_or(Capability::View);
+        let cap = if requested.allowed_by(grant) {
+            requested
+        } else {
+            grant
+        };
+        let established = {
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            self.establish_inbound_with(&mut inner, peer, name, cap)
+        };
+        match established {
+            Ok(_) => {
+                log::info!("[RC] {short} 通过固定密码连入（{}）", cap.as_str());
+                UnoAdmit::Admitted
+            }
+            Err(e) => {
+                log::warn!("[RC] {short} 密码正确但建立会话失败：{e}");
                 UnoAdmit::Denied(e, "busy".into())
             }
         }

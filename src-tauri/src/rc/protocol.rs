@@ -61,6 +61,12 @@ pub enum RcFrame {
         /// 字段名别改——它是线上的 JSON 键。
         #[serde(default, skip_serializing_if = "Option::is_none")]
         uno_code: Option<String>,
+        /// 固定接入密码（Q2 方案 C，`rc/unop.rs`）。`None` = 没带。
+        ///
+        /// 与 `uno_code` 互斥携带（同时带时被控端只认码）；兼容三件套同理——
+        /// 旧版被控端不认识这个字段，按敲门处理（退化为「要人点头」）。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        uno_pass: Option<String>,
         /// 发起端视频能力位：true = 支持视频数据报（分片 + FEC）。`None`/false =
         /// 旧版发起端——它没有视频数据报读取任务，P 帧走数据报会静默丢失
         ///（画面退化成每秒一张关键帧的幻灯片），所以被控端按可靠流发 P 帧。
@@ -127,6 +133,7 @@ mod tests {
         let f = RcFrame::Request {
             capability: Capability::Control,
             uno_code: None,
+            uno_pass: None,
             vid_dgram: Some(true),
         };
         let b = f.encode().unwrap();
@@ -135,11 +142,37 @@ mod tests {
         let minimal = RcFrame::Request {
             capability: Capability::View,
             uno_code: None,
+            uno_pass: None,
             vid_dgram: None,
         };
         let s = String::from_utf8(minimal.encode().unwrap()).unwrap();
         assert!(!s.contains("uno_code"));
+        assert!(!s.contains("uno_pass"));
         assert!(!s.contains("vid_dgram"));
+    }
+
+    #[test]
+    fn request_with_uno_pass_roundtrip() {
+        let f = RcFrame::Request {
+            capability: Capability::Control,
+            uno_code: None,
+            uno_pass: Some("s3cret-密码".into()),
+            vid_dgram: None,
+        };
+        let b = f.encode().unwrap();
+        assert_eq!(RcFrame::decode(&b).unwrap(), f);
+        let s = String::from_utf8(b).unwrap();
+        assert!(s.contains("uno_pass"));
+        // uno_code 与 uno_pass 不互相污染：带码不带密码的帧解回来不能多出密码
+        let f2 = RcFrame::Request {
+            capability: Capability::View,
+            uno_code: Some("AB2C-3DEF".into()),
+            uno_pass: None,
+            vid_dgram: None,
+        };
+        let s2 = String::from_utf8(f2.encode().unwrap()).unwrap();
+        assert!(!s2.contains("uno_pass"));
+        assert_eq!(RcFrame::decode(s2.as_bytes()).unwrap(), f2);
     }
 
     #[test]
@@ -147,16 +180,18 @@ mod tests {
         let f = RcFrame::Request {
             capability: Capability::View,
             uno_code: Some("AB2C-3DEF".into()),
+            uno_pass: None,
             vid_dgram: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
-        // 旧版对端发来的 Request 没有 uno_code 字段，也要能解（default 补 None）
+        // 旧版对端发来的 Request 没有 uno_code/uno_pass 字段，也要能解（default 补 None）
         let old = r#"{"t":"request","capability":"control"}"#.as_bytes();
         match RcFrame::decode(old).unwrap() {
-            RcFrame::Request { capability, uno_code, vid_dgram } => {
+            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram } => {
                 assert_eq!(capability, Capability::Control);
                 assert_eq!(uno_code, None, "旧对端没有这个字段，反序列化补 None");
+                assert_eq!(uno_pass, None, "固定密码位同理（方案 C）");
                 assert_eq!(vid_dgram, None, "能力位同理");
             }
             other => panic!("unexpected {other:?}"),

@@ -529,6 +529,8 @@ pub async fn rc_request_session(
     capability: String,
     // 无人值守接入码（Q2 方案 B）。None = 常规发起（必须已配对）。
     uno_code: Option<String>,
+    // 固定接入密码（Q2 方案 C）。与 uno_code 互斥携带；被控端只认其一。
+    uno_pass: Option<String>,
 ) -> Result<Session, String> {
     let cap = Capability::parse(&capability).ok_or("能力档只能是 view 或 control")?;
     if !svc.is_running() {
@@ -540,7 +542,7 @@ pub async fn rc_request_session(
     // 立刻让位。episode 任务睡醒看到状态没了会自行退出。
     svc.clear_auto_reconnect();
     let sess = svc
-        .request_session(&node_id, cap, uno_code)
+        .request_session(&node_id, cap, uno_code, uno_pass)
         .await?;
     emit_changed(&app, &svc);
     Ok(sess)
@@ -612,6 +614,88 @@ pub fn rc_uno_revoke(app: AppHandle, svc: State<'_, Arc<RcService>>) -> Result<u
     }
     emit_changed(&app, &svc);
     Ok(n)
+}
+
+/// 无人值守固定密码（Q2 方案 C）：开启 / 换密码。
+///
+/// 与 `rc_uno_generate` 同一招：开启即武装——通道没起就拉起（服务器场景没有
+/// 人在场去点「开启」）。重复调用 = 换密码（since_ms 刷新，横幅重新计时）。
+/// 密码明文只在本次调用的入参里出现过一次；落盘的是 Argon2id PHC 串
+/// （`rc/unop.rs`），退出本函数后前端与后端都拿不回明文。
+#[tauri::command]
+pub async fn rc_uno_pass_enable(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    password: String,
+    capability: String,
+    allow_wan: bool,
+) -> Result<(), String> {
+    if !svc.enabled() {
+        return Err("请先打开「允许被远程协助」，固定密码才有意义".into());
+    }
+    let cap = Capability::parse(&capability).ok_or("能力档只能是 view 或 control")?;
+    // 长度校验 + Argon2id 都在 unop::hash_password 里
+    let cfg = crate::rc::unop::hash_password(
+        &password,
+        chrono::Utc::now().timestamp_millis(),
+        cap,
+        allow_wan,
+    )?;
+    let mut config = store.get_config()?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
+    obj.insert(
+        crate::rc::unop::CFG_KEY.to_string(),
+        serde_json::to_value(&cfg).map_err(|e| e.to_string())?,
+    );
+    store.save_config(&config)?;
+    if let Err(e) = svc.start(&app_dir(&app)?, true).await {
+        log::warn!("[RC] 开启固定密码后启动通道失败：{}", e);
+    }
+    log::info!("[RC] 无人值守固定密码已开启（{}，跨网={}）", cap.as_str(), allow_wan);
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
+/// 一键全局关闭固定密码（设计稿第三条对策的另一半：横幅常驻 + 这里）。
+/// 幂等；不动通道与其它配置。已接入的会话不受影响——关的是「下一次准入」。
+#[tauri::command]
+pub async fn rc_uno_pass_disable(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+) -> Result<(), String> {
+    let mut config = store.get_config()?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
+    // 存 Null 而不是删键：config 表没有按键删除的口子，读出 Null = 未开启
+    //（`unop::cfg_from` 只认对象）。
+    obj.insert(crate::rc::unop::CFG_KEY.to_string(), serde_json::Value::Null);
+    store.save_config(&config)?;
+    log::info!("[RC] 无人值守固定密码已关闭");
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
+/// 只改「允许跨网」开关，不动密码本体——设置页的开关不该要用户重输密码。
+#[tauri::command]
+pub async fn rc_uno_pass_set_wan(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    allow: bool,
+) -> Result<(), String> {
+    let mut cfg = crate::rc::unop::cfg_from(&store.get_config()?)
+        .ok_or("固定密码未开启，没有可改的跨网开关")?;
+    cfg.wan = allow;
+    let mut config = store.get_config()?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
+    obj.insert(
+        crate::rc::unop::CFG_KEY.to_string(),
+        serde_json::to_value(&cfg).map_err(|e| e.to_string())?,
+    );
+    store.save_config(&config)?;
+    emit_changed(&app, &svc);
+    Ok(())
 }
 
 #[tauri::command]

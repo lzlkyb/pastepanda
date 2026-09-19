@@ -48,7 +48,7 @@ async fn request_without_rc_pair_fails() {
     s.device_pair(&"aa".repeat(32), "同步机", "").unwrap();
     let svc = RcService::new(s);
     let err = svc
-        .request_session(&"aa".repeat(32), Capability::View, None)
+        .request_session(&"aa".repeat(32), Capability::View, None, None)
         .await
         .unwrap_err();
     assert!(err.contains("远程配对") || err.contains("通道"), "{err}");
@@ -63,7 +63,7 @@ async fn request_rc_paired_but_no_transport() {
     assert!(svc.needs_channel());
     assert!(!svc.enabled(), "发起不依赖「允许被远程」");
     let err = svc
-        .request_session(&"bb".repeat(32), Capability::View, None)
+        .request_session(&"bb".repeat(32), Capability::View, None, None)
         .await
         .unwrap_err();
     assert!(err.contains("通道未启动"), "{err}");
@@ -77,19 +77,19 @@ async fn request_with_uno_code_skips_pairing_gate() {
     let s = store();
     let svc = RcService::new(s.clone());
     let err = svc
-        .request_session(&"cc".repeat(32), Capability::Control, Some("AB2C-3DEF".into()))
+        .request_session(&"cc".repeat(32), Capability::Control, Some("AB2C-3DEF".into()), None)
         .await
         .unwrap_err();
     assert!(err.contains("通道未启动"), "带码不该死在配对门：{err}");
     // 对照组：同一台机器，不带码 → 老门照旧拦下
     let err = svc
-        .request_session(&"cc".repeat(32), Capability::Control, None)
+        .request_session(&"cc".repeat(32), Capability::Control, None, None)
         .await
         .unwrap_err();
     assert!(err.contains("远程配对"), "{err}");
     // 空串视同没带码，不绕门
     let err = svc
-        .request_session(&"cc".repeat(32), Capability::Control, Some("  ".into()))
+        .request_session(&"cc".repeat(32), Capability::Control, Some("  ".into()), None)
         .await
         .unwrap_err();
     assert!(err.contains("远程配对"), "{err}");
@@ -713,4 +713,137 @@ fn 发送端序号从1起且回绕跳过0() {
     let mut s = VidDgramSender::new();
     assert_eq!(s.take_seq(), 1, "第一个帧的序号是 1，不是 0");
     assert_eq!(s.take_seq(), 2);
+}
+
+// ── Q2 方案 C：固定密码准入（pass_admit）────────────────────────────
+// UnoAdmit 是 service 的私有枚举；这里只断言**可观测状态**（会话、白名单、
+// 闸），与「黑盒用户会看到什么」对齐。
+
+use crate::rc::unop::{self, GateCheck};
+
+const T0: i64 = 1_757_000_000_000;
+
+fn pass_store(wan: bool, cap: Capability) -> (DataStore, String) {
+    let s = store();
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(true));
+    // 机器全局能力上限给到可控：pass_admit 里密码档与机器档是两级独立压档，
+    // 这里固定机器档，让用例只考察密码档那一层（压档用例见下）。
+    set_cfg(&s, CFG_CAPABILITY, serde_json::json!("control"));
+    let cfg = unop::hash_password("s3cret-密码", T0, cap, wan).unwrap();
+    set_cfg(&s, unop::CFG_KEY, serde_json::to_value(&cfg).unwrap());
+    (s, cfg.phc)
+}
+
+#[test]
+fn pass_admit_正确密码自动配对并建会话() {
+    let (s, _) = pass_store(true, Capability::Control);
+    let svc = RcService::new(s.clone());
+    let peer = "ab".repeat(32);
+    // wan=true：非局域网来路也放行（跨网显式打开的设计就是干这个的）
+    svc.pass_admit(&peer, Capability::Control, " s3cret-密码 ", false, T0 + 1);
+    let st = svc.status();
+    let sess = st.session.expect("密码正确要建会话");
+    assert_eq!(sess.peer, peer);
+    assert_eq!(sess.phase, SessionPhase::InboundActive);
+    assert_eq!(sess.capability, Capability::Control);
+    // 落白名单（与现场配对同一张表）
+    assert!(matches!(s.rc_device_get(&peer), Ok(Some(_))));
+    // 闸清档：密码对了不算失败
+    assert_eq!(svc.pass_gate.check(&peer, T0 + 1), GateCheck::Ok);
+}
+
+#[test]
+fn pass_admit_错密码拒_记失败_不落白名单() {
+    let (s, _) = pass_store(true, Capability::Control);
+    let svc = RcService::new(s.clone());
+    let peer = "ac".repeat(32);
+    svc.pass_admit(&peer, Capability::Control, "错密码", true, T0 + 1);
+    assert!(svc.status().session.is_none(), "错密码不得建会话");
+    assert!(matches!(s.rc_device_get(&peer), Ok(None)), "错密码不得落白名单");
+    // 闸记了一次失败：立刻再试要吃退避
+    assert!(matches!(svc.pass_gate.check(&peer, T0 + 1), GateCheck::Wait(_)));
+}
+
+#[test]
+fn pass_admit_五连错后锁死_密码对了也进不来() {
+    let (s, _) = pass_store(true, Capability::Control);
+    let svc = RcService::new(s.clone());
+    let peer = "ad".repeat(32);
+    for i in 0..5 {
+        // 间隔拉开到退避之外（i*70s > 60s 封顶），确保拦下的是「锁」不是「退避」
+        svc.pass_admit(&peer, Capability::Control, "错密码", true, T0 + i * 70_000);
+    }
+    let st = svc.status();
+    assert!(st.session.is_none());
+    // 锁定期内给正确密码：闸先于验密，照样拒
+    let after = T0 + 4 * 70_000 + 1000;
+    assert!(matches!(svc.pass_gate.check(&peer, after), GateCheck::Wait(_)));
+    svc.pass_admit(&peer, Capability::Control, "s3cret-密码", true, after);
+    assert!(svc.status().session.is_none(), "锁定期内正确密码也不放行");
+    assert!(matches!(s.rc_device_get(&peer), Ok(None)));
+}
+
+#[test]
+fn pass_admit_默认仅局域网_跨网未开直接拒() {
+    let (s, _) = pass_store(false, Capability::Control); // wan=false（默认）
+    let svc = RcService::new(s);
+    let peer = "ae".repeat(32);
+    // 密码对，但来路是打洞/中继（is_lan=false）→ 拒
+    svc.pass_admit(&peer, Capability::Control, "s3cret-密码", false, T0 + 1);
+    assert!(svc.status().session.is_none());
+    // 对照：局域网来路 → 放行
+    let peer2 = "af".repeat(32);
+    svc.pass_admit(&peer2, Capability::Control, "s3cret-密码", true, T0 + 2);
+    assert!(svc.status().session.is_some(), "局域网内正确密码要放行");
+}
+
+#[test]
+fn pass_admit_压档_能力档超上限压到密码档() {
+    let (s, _) = pass_store(true, Capability::View); // 密码档 = 只看
+    let svc = RcService::new(s);
+    let peer = "b0".repeat(32);
+    svc.pass_admit(&peer, Capability::Control, "s3cret-密码", true, T0 + 1);
+    let sess = svc.status().session.expect("验密要过");
+    assert_eq!(
+        sess.capability,
+        Capability::View,
+        "申请可控但密码只授只看 → 压档"
+    );
+}
+
+#[test]
+fn pass_admit_逐台禁止优先于密码() {
+    let (s, _) = pass_store(true, Capability::Control);
+    let peer = "b1".repeat(32);
+    let mut deny = serde_json::Map::new();
+    deny.insert(peer.clone(), serde_json::Value::Bool(true));
+    set_cfg(&s, CFG_DEVICE_DENY, serde_json::Value::Object(deny));
+    let svc = RcService::new(s.clone());
+    svc.pass_admit(&peer, Capability::Control, "s3cret-密码", true, T0 + 1);
+    assert!(svc.status().session.is_none(), "拉黑设备凭密码也进不来");
+    assert!(matches!(s.rc_device_get(&peer), Ok(None)));
+}
+
+#[test]
+fn pass_admit_红线未开被控一律拒() {
+    let (s, _) = pass_store(true, Capability::Control);
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(false));
+    let svc = RcService::new(s);
+    let peer = "b2".repeat(32);
+    svc.pass_admit(&peer, Capability::Control, "s3cret-密码", true, T0 + 1);
+    assert!(svc.status().session.is_none(), "rc_enabled 红线先于一切凭证");
+}
+
+#[test]
+fn status_未开启时uno_pass为空_开启后只投影不含哈希() {
+    let (s, phc) = pass_store(true, Capability::Control);
+    let svc = RcService::new(s);
+    let info = svc.status().uno_pass.expect("开启后要有投影");
+    assert_eq!(info.cap, "control");
+    assert!(info.wan);
+    assert_eq!(info.since_ms, T0);
+    // 🔴 投影里不允许出现 PHC 串的任何片段
+    let json = serde_json::to_string(&info).unwrap();
+    assert!(!json.contains("argon2id"), "投影不得泄露 PHC 串");
+    assert!(!phc.is_empty()); // 用掉变量，防止被当死代码
 }

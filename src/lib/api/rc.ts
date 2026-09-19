@@ -31,6 +31,16 @@ export interface RcJoinRequest {
   tries: number;
 }
 
+/** 无人值守固定密码的开启状态（Q2 方案 C）。后端绝不回传密码或其哈希。 */
+export interface RcUnoPassInfo {
+  /** 密码接入授予的能力档上限。 */
+  cap: RcCapability;
+  /** true = 允许跨网（false = 仅局域网，默认）。 */
+  wan: boolean;
+  /** 开启时刻（epoch 毫秒）。换密码会刷新。 */
+  since_ms: number;
+}
+
 export interface RcStatus {
   enabled: boolean;
   capability: RcCapability;
@@ -39,6 +49,8 @@ export interface RcStatus {
   joins: RcJoinRequest[];
   /** 在效的无人值守接入码摘要（Q2）。不含码本身；空数组 = 没有生效中的码。 */
   uno?: RcUnoInfo[];
+  /** 无人值守固定密码的开启状态（Q2 方案 C）。缺省 = 未开启。 */
+  uno_pass?: RcUnoPassInfo;
   device_deny: Record<string, boolean>;
   running: boolean;
   /** auto / uhd / ultra / sharp / balanced / smooth（auto = 被控端自动换档） */
@@ -251,8 +263,15 @@ export function rcRequestSession(
   nodeId: string,
   capability: RcCapability,
   unoCode?: string,
+  /** 固定接入密码（Q2 方案 C）。与 unoCode 互斥携带。 */
+  unoPass?: string,
 ): Promise<RcSession> {
-  return invoke("rc_request_session", { nodeId, capability, unoCode: unoCode ?? null });
+  return invoke("rc_request_session", {
+    nodeId,
+    capability,
+    unoCode: unoCode ?? null,
+    unoPass: unoPass ?? null,
+  });
 }
 
 /** 生成无人值守接入码（Q2 方案 B，被控端）。`ttlSecs` 只认 900 / 86400。 */
@@ -273,6 +292,29 @@ export function rcUnoGenerate(p: {
 /** 撤销全部无人值守接入码。返回撤销数量。 */
 export function rcUnoRevoke(): Promise<number> {
   return invoke<number>("rc_uno_revoke");
+}
+
+/** 开启 / 换无人值守固定密码（Q2 方案 C，被控端）。 */
+export function rcUnoPassEnable(p: {
+  password: string;
+  capability: RcCapability;
+  allowWan: boolean;
+}): Promise<void> {
+  return invoke("rc_uno_pass_enable", {
+    password: p.password,
+    capability: p.capability,
+    allowWan: p.allowWan,
+  });
+}
+
+/** 一键全局关闭无人值守固定密码（幂等）。 */
+export function rcUnoPassDisable(): Promise<void> {
+  return invoke("rc_uno_pass_disable");
+}
+
+/** 只改「允许跨网」开关，不动密码本体。 */
+export function rcUnoPassSetWan(allow: boolean): Promise<void> {
+  return invoke("rc_uno_pass_set_wan", { allow });
 }
 
 export function rcCancelRequest(): Promise<void> {

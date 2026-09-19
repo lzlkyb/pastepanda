@@ -107,6 +107,42 @@ const BY_CODE: Record<string, Omit<RcErrorInfo, "reason">> = {
     hint: "请重新配对这台设备。",
     kind: "other",
   },
+  // ── Q2 无人值守：接入码（方案 B）与固定密码（方案 C）的准入门 ──
+  uno_invalid: {
+    title: "接入码无效或已过期",
+    hint: "接入码默认 15 分钟有效、限 1 次。请让对方重新生成一个再试。",
+    kind: "not_paired",
+  },
+  uno_store_error: {
+    title: "对方暂时无法处理该接入码",
+    hint: "对方本机存储出了问题，请稍后重试。",
+    kind: "other",
+  },
+  uno_pass_off: {
+    title: "对方未开启固定密码接入",
+    hint: "请对方在「远程电脑 → 无人值守固定密码」里开启，或改用接入码 / 正常配对。",
+    kind: "not_paired",
+  },
+  uno_pass_invalid: {
+    title: "接入密码不正确",
+    hint: "核对密码后重试。注意：连续错 5 次会被对方机器临时锁定 10 分钟。",
+    kind: "not_paired",
+  },
+  uno_pass_wan: {
+    title: "对方的固定密码仅限局域网使用",
+    hint: "连到与对方同一 Wi-Fi / 网段再试，或请对方在固定密码设置里打开「允许跨网」。",
+    kind: "not_paired",
+  },
+  uno_pass_throttled: {
+    title: "尝试过于频繁",
+    hint: "等一会儿再试；连续错 5 次会锁定 10 分钟。",
+    kind: "busy",
+  },
+  uno_pass_store_error: {
+    title: "对方暂时无法处理该接入请求",
+    hint: "对方本机存储出了问题，请稍后重试。",
+    kind: "other",
+  },
 };
 
 /**
@@ -128,6 +164,15 @@ function fromCloseReason(reason: string): Omit<RcErrorInfo, "reason"> | null {
 }
 
 function byReasonText(reason: string): Omit<RcErrorInfo, "reason"> | null {
+  // 方案 C 的具体文案必须**先于**通用「未开启」判：
+  // 「对方未开启固定密码接入」里也有「未开启」，先来先得会误报成「允许被远程」关着。
+  if (reason.includes("固定密码") || reason.includes("接入密码")) {
+    if (reason.includes("过于频繁")) return BY_CODE.uno_pass_throttled;
+    if (reason.includes("不正确")) return BY_CODE.uno_pass_invalid;
+    if (reason.includes("局域网")) return BY_CODE.uno_pass_wan;
+    if (reason.includes("未开启")) return BY_CODE.uno_pass_off;
+  }
+  if (reason.includes("接入码无效")) return BY_CODE.uno_invalid;
   if (reason.includes("未开启") || reason.includes("允许被远程")) {
     return BY_CODE.disabled;
   }

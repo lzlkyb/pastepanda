@@ -24,8 +24,15 @@ import { RcPairDialog } from "./RcPairDialog";
 import { RcAdhocDialog } from "./RcAdhocDialog";
 import { RcUnoDialog } from "./RcUnoDialog";
 
-/** `null` = 没有弹层。五种意图各占一个值，调用方不用再维护第二个布尔量。 */
-export type RcPairLayerMode = "pair" | "helpMe" | "helpOther" | "unoGenerate" | "unoJoin" | null;
+/** `null` = 没有弹层。六种意图各占一个值，调用方不用再维护第二个布尔量。 */
+export type RcPairLayerMode =
+  | "pair"
+  | "helpMe"
+  | "helpOther"
+  | "unoGenerate"
+  | "unoJoin"
+  | "unoPass"
+  | null;
 
 export function RcPairLayer({
   rc,
@@ -48,8 +55,9 @@ export function RcPairLayer({
   if (mode === "pair") {
     return <RcPairDialog rc={rc} toast={toast} onClose={onClose} onStartRemote={onStartRemote} />;
   }
-  if (mode === "unoGenerate" || mode === "unoJoin") {
-    return <RcUnoDialog rc={rc} toast={toast} side={mode === "unoGenerate" ? "generate" : "join"} onClose={onClose} />;
+  if (mode === "unoGenerate" || mode === "unoJoin" || mode === "unoPass") {
+    const side = mode === "unoGenerate" ? "generate" : mode === "unoJoin" ? "join" : "pass";
+    return <RcUnoDialog rc={rc} toast={toast} side={side} onClose={onClose} />;
   }
   return (
     <RcAdhocDialog

@@ -133,6 +133,11 @@ tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-bash = "0.25"
 tree-sitter-sequel = "0.3"
+# 🔴 无人值守固定密码（rc/unop.rs，方案 C）专用：设计稿点名 Argon2id——
+# 密码哈希要落盘（服务器重启后还要能连），离线爆破是真实威胁面，
+# 内存难（19MiB）比 PBKDF2 更抗 GPU。仓库唯一的新直接依赖（2026-09-20）：
+# ring 没有 Argon2，pbkdf2 达不到设计稿的对抗强度；纯 Rust、无 C 构建依赖。
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "rand"] }
 
 [dev-dependencies]
 # v6.10 测试基建：本地 mock OpenAI 服务（tiny_http 轻量、仅测试用，不进发布包）

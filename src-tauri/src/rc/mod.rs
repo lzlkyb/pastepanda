@@ -1,8 +1,8 @@
 //! 远程电脑（远程协助）· R0 协议与门禁 + R1 UI 壳的后端。
 //!
 //! 定位见规划 §3.7：已配对自有设备之间的看屏 +（R2）键鼠；
-//! **不做** shell / 文件。无人值守接入（Q2 方案 B，一次性接入码）2026-09-19 落地。
-//! 默认关闭。
+//! **不做** shell / 文件。无人值守接入（Q2 方案 B 一次性接入码、方案 C 固定密码）
+//! 2026-09-19 落地。默认关闭。
 
 pub mod auto_quality;
 pub mod clipboard;
@@ -23,6 +23,7 @@ pub mod service;
 pub mod session;
 pub mod stream_cfg;
 pub mod uno;
+pub mod unop;
 pub mod video;
 
 #[cfg(target_os = "windows")]

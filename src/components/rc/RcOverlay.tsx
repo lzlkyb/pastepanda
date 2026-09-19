@@ -62,12 +62,16 @@ export function RcOverlay() {
     }
   }, [rc.status?.pending, toast]);
 
-  // 被控中 / 有会话申请 / 有配对敲门 / 我方发起中 / 自动重连中才渲染
+  // 被控中 / 有会话申请 / 有配对敲门 / 我方发起中 / 自动重连中 /
+  // 无人值守固定密码开启（Q2 方案 C 的「常驻横幅」，设计稿第三条对策）才渲染
   const session = rc.status?.session ?? null;
   const pending = rc.status?.pending ?? [];
   const joins = rc.status?.joins ?? [];
   // Q6：免确认设备异常断流后的自动重连进度（此时 session 已被收口）
   const reconnecting = rc.status?.reconnecting ?? null;
+  // 方案 C：固定密码开启中。哪怕此刻什么都没发生也要摆出来——
+  // 「这台机器正对着知道密码的人开着门」这件事不能只有设置页知道。
+  const unoPass = rc.status?.uno_pass ?? null;
   const inboundActive = session?.phase === "inbound_active";
   const outboundLive =
     session?.phase === "outbound_active" || session?.phase === "outbound_pending";
@@ -83,7 +87,14 @@ export function RcOverlay() {
     if (inboundActive) void refreshTargets();
   }, [inboundActive, peer, refreshTargets]);
 
-  if (!inboundActive && !outboundLive && pending.length === 0 && joins.length === 0 && !reconnecting) {
+  if (
+    !inboundActive &&
+    !outboundLive &&
+    pending.length === 0 &&
+    joins.length === 0 &&
+    !reconnecting &&
+    !unoPass
+  ) {
     return null;
   }
 
@@ -245,6 +256,34 @@ export function RcOverlay() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+      {/* Q2 方案 C：无人值守固定密码的**常驻**横幅。会话中被控横幅（RcControlBanner）
+          已经在说「谁在控」，这里不叠加；除此之外的所有时刻都要挂着——
+          一键全局关闭就在这条上，这是泄露密码后的止损按钮。 */}
+      {unoPass && !inboundActive && (
+        <div className={styles.ctrlBanner} role="status">
+          <span className={styles.who}>
+            <span className={styles.live} />
+            无人值守模式中 · 固定密码接入已开启
+          </span>
+          <span className={styles.pillOn}>{unoPass.cap === "control" ? "可控" : "只看"}</span>
+          <span className={styles.sp} />
+          <span className={styles.meta}>
+            {unoPass.wan ? "跨网已允许（有限速防爆破）" : "仅限同一局域网"}
+          </span>
+          <button
+            type="button"
+            className={styles.dangerBtn}
+            disabled={rc.busy}
+            onClick={() => {
+              void rc.unoPassDisable().then((ok) => {
+                if (ok) toast("已关闭无人值守固定密码", "success");
+              });
+            }}
+          >
+            一键关闭
+          </button>
         </div>
       )}
     </>

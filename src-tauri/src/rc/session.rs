@@ -472,8 +472,9 @@ impl RcService {
                 svc.emit_changed();
                 log::info!("[RC] 自动重连第 {attempt}/{RECONNECT_MAX_ATTEMPTS} 次：{peer}");
                 // 自动重连只发生在「已经建立过会话」的设备上（免确认白名单成员），
-                // 永远不走无人值守接入码那条路——码是一次性的，不该在这里被烧掉。
-                match svc.request_session(&peer, cap, None).await {
+                // 永远不走无人值守凭证那两条路——码是一次性的不该烧，密码是
+                // 本机长期秘密、发起侧根本没有它（重连靠的是白名单信任）。
+                match svc.request_session(&peer, cap, None, None).await {
                     // 申请已受理（免确认对端会自动应答）。episode 到此交棒：
                     // 之后若画面再断，断流路径会重新 begin（attempt 重新计数——
                     // 每次「成功重连后再断」是新一轮故障，理应给满重试）。
