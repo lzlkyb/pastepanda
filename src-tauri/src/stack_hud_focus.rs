@@ -97,10 +97,7 @@ fn probe(hwnd: isize) -> Option<(f64, f64, f64, f64)> {
 fn within_window(ctrl: (f64, f64, f64, f64), win: (f64, f64, f64, f64)) -> bool {
     const TOL: f64 = 2.0;
     let (cx, cy) = (ctrl.0 + ctrl.2 / 2.0, ctrl.1 + ctrl.3 / 2.0);
-    cx >= win.0 - TOL
-        && cy >= win.1 - TOL
-        && cx <= win.0 + win.2 + TOL
-        && cy <= win.1 + win.3 + TOL
+    cx >= win.0 - TOL && cy >= win.1 - TOL && cx <= win.0 + win.2 + TOL && cy <= win.1 + win.3 + TOL
 }
 
 #[cfg(target_os = "windows")]
@@ -150,11 +147,12 @@ impl Drop for ComInit {
 /// 失败返回 None，由 caret 路径接手。
 #[cfg(target_os = "windows")]
 fn uia_focused_rect() -> Option<(f64, f64, f64, f64)> {
-    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
     use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 
     let _com = ComInit::new()?;
-    let automation: IUIAutomation = unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.ok()?;
+    let automation: IUIAutomation =
+        unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.ok()?;
     let element = unsafe { automation.GetFocusedElement() }.ok()?;
     let r = unsafe { element.CurrentBoundingRectangle() }.ok()?;
     let w = (r.right - r.left) as f64;

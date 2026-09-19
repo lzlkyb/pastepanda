@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 独立工作台窗口 布局设计稿</title>
+<style>
+  /* ===== 真实主题令牌（src/styles/theme.css）===== */
+  :root {
+    --app-bg: #F4F8FC;
+    --card-bg: #ffffff;
+    --card-border: #E0E4EB;
+    --border-color: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-light: #E0F2FE;
+    --accent-border: rgba(2, 132, 199, 0.35);
+    --orange: #C54A0A;
+    --orange-bg: #FFF7ED;
+    --orange-border: #FED7AA;
+    --danger: #D82525;
+    --green: #11813A;
+    --green-bg: #DCFCE7;
+    --hover: #E8ECF2;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --toggle-off-bg: #E2E8F0;
+  }
+  [data-theme="midnight"] {
+    --app-bg: #0B0B13;
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border-color: #27272A;
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-light: #1E1B4B;
+    --accent-border: rgba(129, 140, 248, 0.35);
+    --orange: #FB923C;
+    --orange-bg: #2A1B0E;
+    --danger: #F87171;
+    --green: #4ADE80;
+    --green-bg: #0F2417;
+    --hover: #27272A;
+    --section-bg: #0F0F11;
+    --toggle-off-bg: #3F3F46;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 80px;
+    background: #EEF1F5; color: var(--text-primary);
+    font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .doc { max-width: 1320px; margin: 0 auto; padding: 32px 24px 0; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+  .sub { color: #55606E; font-size: 12.5px; margin-bottom: 10px; max-width: 860px; }
+  h2 {
+    font-size: 15px; margin: 36px 0 12px; font-weight: 650;
+    padding-bottom: 6px; border-bottom: 1px solid #D8DEE7;
+  }
+  h3 { font-size: 13px; margin: 22px 0 8px; font-weight: 650; color: #2A3444; }
+  p { margin: 0 0 10px; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+    background: #E7ECF2; color: #0B4A6F; padding: 1px 5px; border-radius: 4px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0 4px; }
+  th, td { border: 1px solid #D8DEE7; padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { color: #55606E; font-weight: 600; background: #E9EDF3; }
+  td.v { color: #2A3444; }
+  .good { color: var(--green); font-weight: 600; }
+  .bad { color: var(--danger); font-weight: 600; }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-light);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .warn {
+    border-left: 3px solid var(--orange); background: var(--orange-bg);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .themeBtn {
+    position: fixed; top: 14px; right: 16px; z-index: 9;
+    font: 12px/1 inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #C9D2DE; background: #fff; color: #2A3444;
+    box-shadow: 0 2px 8px rgba(15,23,42,.08);
+  }
+
+  /* ===== 独立窗口壳（1200×780 逻辑尺寸，1:1 标注）===== */
+  .workbench {
+    width: 1200px; height: 780px; margin: 0 auto;
+    background: var(--app-bg); border: 1px solid var(--border-color); border-radius: 10px;
+    box-shadow: 0 12px 36px rgba(15, 23, 42, 0.14);
+    overflow: hidden; display: flex; flex-direction: column;
+    font-size: 13px; color: var(--text-primary);
+  }
+  /* 顶栏（decorations:true 时是系统标题栏，这里画的是应用内顶栏） */
+  .wbTop {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 14px; height: 44px; flex-shrink: 0;
+    background: var(--card-bg); border-bottom: 1px solid var(--border-color);
+  }
+  .wbTitle { font-size: 13.5px; font-weight: 650; }
+  .wbBadge {
+    font-size: 11px; padding: 2px 9px; border-radius: 12px;
+    background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent-border);
+  }
+  .wbTimer { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; color: var(--text-muted); }
+  .wbEnd {
+    font: inherit; font-size: 11.5px; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+    color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-color));
+    background: color-mix(in srgb, var(--danger) 8%, transparent); font-weight: 600;
+  }
+  .wbMain { flex: 1; display: flex; min-height: 0; }
+
+  /* —— 左侧栏 —— */
+  .wbSide {
+    width: 272px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
+    padding: 12px; background: var(--card-bg); border-right: 1px solid var(--border-color);
+    overflow-y: auto;
+  }
+  .sideLabel { font-size: 11px; font-weight: 650; letter-spacing: .04em; color: var(--text-muted); text-transform: uppercase; margin: 2px 0 -2px; }
+  .allowRow {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px; border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+  }
+  .allowRowTxt { flex: 1; min-width: 0; }
+  .allowRowMain { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .allowRowSub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; line-height: 1.5; }
+  .stateChip { font-size: 10px; padding: 1px 7px; border-radius: 10px; font-weight: 600; }
+  .stateChipOn { background: var(--green-bg); color: var(--green); border: 1px solid #BBF7D0; }
+  .stateChipOff { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border); }
+  .sToggle {
+    display: inline-block; width: 44px; height: 26px; border-radius: 13px;
+    border: none; cursor: pointer; position: relative; flex-shrink: 0;
+    transition: background 0.25s; padding: 0; vertical-align: middle;
+  }
+  .sToggle.off { background: var(--toggle-off-bg); }
+  .sToggle.on  { background: var(--green); }
+  .sToggle .sToggleThumb {
+    position: absolute; left: 0; top: 2px; width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .sToggle.off .sToggleThumb { transform: translateX(2px); }
+  .sToggle.on  .sToggleThumb { transform: translateX(20px); }
+  .devList { display: flex; flex-direction: column; gap: 6px; }
+  .devItem {
+    display: flex; align-items: center; gap: 9px; padding: 9px 10px;
+    border-radius: 8px; background: var(--card-bg); border: 1px solid transparent; position: relative;
+  }
+  .devItemRecent { background: color-mix(in srgb, var(--accent) 5%, var(--card-bg)); border-color: var(--accent-border); }
+  .av {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; font-weight: 700; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--accent) 16%, var(--card-bg)); color: var(--text-primary);
+  }
+  .info { flex: 1; min-width: 0; }
+  .name { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; }
+  .meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+  .dotOn { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .dotOff { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .tagRecent { font-size: 10px; padding: 1px 7px; border-radius: 10px; margin-left: 4px; border: 1px solid var(--accent-border); color: var(--accent); }
+  .miniBtn, .miniBtnPri {
+    font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-primary); cursor: pointer; flex-shrink: 0;
+  }
+  .miniBtnPri { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .sideActions { display: flex; gap: 8px; }
+  .sideActions .miniBtn { flex: 1; }
+
+  /* —— 主区 —— */
+  .wbStage { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 12px; gap: 10px; }
+  .viewShell { flex: 1; border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; background: #0d0f12; display: flex; flex-direction: column; min-height: 0; }
+  .viewTop {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; flex-shrink: 0;
+    background: rgba(255,255,255,.06); border-bottom: 1px solid rgba(255,255,255,.08);
+    font-size: 12px; color: #c8d0dc;
+  }
+  .live { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .fakeScreen { flex: 1; position: relative; background: linear-gradient(180deg, #1a2332 0%, #0f141c 100%); display: flex; align-items: center; justify-content: center; }
+  .hud { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .hud span {
+    font-size: 10px; padding: 3px 8px; border-radius: 6px;
+    background: rgba(0,0,0,.55); color: #c8d0dc; border: 1px solid rgba(255,255,255,.08);
+  }
+  .hudOk { border-color: rgba(79,189,128,.4) !important; color: #7dcea0 !important; }
+  .hudAccent { border-color: rgba(107,147,255,.45) !important; color: #9db8ff !important; }
+  .viewTools {
+    position: absolute; right: 10px; top: 10px; display: flex; gap: 4px; padding: 4px;
+    border-radius: 8px; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.08);
+  }
+  .viewTools button {
+    font: inherit; font-size: 11px; padding: 4px 9px; border-radius: 6px; border: none;
+    background: transparent; color: #c8d0dc; cursor: pointer;
+  }
+  .viewShell .qBar { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.08); margin: 8px 10px; flex-shrink: 0; }
+  .viewShell .qLabel { color: #9aa6b6; }
+  .viewShell .meta { color: #9aa6b6; }
+  .viewShell .pill, .viewShell .pillOn {
+    background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14); color: #e6ecf5;
+  }
+  .viewShell .pillOn {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: #a8c0ff;
+  }
+  .qBar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+  }
+  .qLabel { font-size: 11px; color: var(--text-muted); margin-right: 2px; }
+  .qSp { flex: 1; min-width: 8px; }
+  .pill, .pillOn {
+    font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 20px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pillOn {
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color)); font-weight: 600;
+  }
+  .meta { font-size: 11px; color: var(--text-muted); }
+  .screenPlaceholder { color: #7a8699; font-size: 12.5px; }
+
+  /* —— 空态（主区大引导）—— */
+  .emptyStage {
+    flex: 1; border: 1px dashed var(--border-color); border-radius: 10px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; background: var(--card-bg); text-align: center; padding: 24px;
+  }
+  .emptyIcon { font-size: 34px; margin-bottom: 2px; }
+  .guideTitle { font-weight: 650; font-size: 16px; }
+  .guideLead { font-size: 12.5px; color: var(--text-muted); line-height: 1.65; max-width: 460px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; width: 100%; max-width: 720px; }
+  .step { border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; background: color-mix(in srgb, var(--accent) 3%, var(--card-bg)); text-align: left; }
+  .stepNum {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;
+  }
+  .stepT { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .stepD { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+  .emptyActions { display: flex; gap: 8px; margin-top: 18px; }
+
+  .srowLbl { font-size: 11px; color: var(--text-muted); }
+  .dimNote { font-size: 12px; color: #55606E; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <button class="themeBtn" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'midnight' ? '' : 'midnight'">切换深色预览</button>
+  <div class="doc">
+    <h1>远程电脑 · 独立工作台窗口（布局重设计）</h1>
+    <p class="sub">背景：主窗口只有 550×700（<code>tauri.conf.json:17</code>），会话 Dialog 的 960px 视图实际被压到约 534px 宽——远程画面区只有巴掌大。本稿把「远程电脑」从主窗内对话框改为<b>独立大窗口</b>，并按大窗口重新分栏。样式全部取自真实源码令牌。前一份稿子的 1A（开关行）/2A（自动档）成果原样并入新布局。</p>
+
+    <!-- ============ §0 ============ -->
+    <h2>§0 窗口形态选型</h2>
+    <table>
+      <tr><th style="width:150px;">方案</th><th>做法</th><th style="width:90px;">结论</th></tr>
+      <tr>
+        <td class="v"><b>A 独立工作台窗口</b></td>
+        <td class="v">新建 <code>rc.html</code> 入口 + Rust 命令建窗（label <code>rc-workbench</code>），照 <code>md-editor</code> 先例（<code>commands/system.rs:949</code>）：按主窗口所在显示器算尺寸居中。主窗内原 Dialog 保留为精简入口或直接替换</td>
+        <td class="good">推荐</td>
+      </tr>
+      <tr><td class="v">B 会话时才弹大窗</td><td class="v">非会话留在主窗 Dialog，发起会话时再开窗。两段式：设备管理与会话分裂在两个窗口，配对流程跨窗跳</td><td class="bad">否</td></tr>
+      <tr><td class="v">C 主窗临时放大</td><td class="v">点远程时把 550×700 主窗拉大，关闭还原。破坏主窗状态，且主窗其余面板（栈、知识库）被拉伸错版</td><td class="bad">否</td></tr>
+    </table>
+    <div class="callout">
+      <b>窗口参数（方案 A）</b>：默认逻辑尺寸 <b>1200×780</b>（本稿 1:1 按此画），最小 960×640，<code>resizable(true)</code>，<code>decorations(true)</code>（系统标题栏——md-editor 用 false 是因为自定义标题栏，工作台无此需求），位置居中于主窗所在显示器。用户手动拉大后记住尺寸与位置（存 config，P2 可先不做）。
+    </div>
+
+    <div class="warn">
+      <b>职责划分（关键边界）</b>：工作台窗口专注<b>「你去控别人」</b>——设备列表、发起、观看画面、画质。主窗口保留<b>「别人控你」</b>的通知面——被控确认横幅（RcControlBanner）、入站申请条、rc-session-changed 全局监听不搬家。理由：被控是被动事件，人不在工作台时也必须能看到；发起是主动意图，才需要大画面。会话进行中关闭工作台 → 沿用现有确认逻辑（结束会话并关闭 / 保持会话仅关窗）。
+    </div>
+
+    <!-- ============ §1 ============ -->
+    <h2>§1 工作台布局 · 会话态（1:1，1200×780）</h2>
+    <div class="workbench">
+      <div class="wbTop">
+        <span class="wbTitle">远程电脑</span>
+        <span class="wbBadge">工作站-4090 · 只看 · 整屏</span>
+        <span class="wbTimer">00:12:36</span>
+        <span style="flex:1;"></span>
+        <button class="wbEnd">结束会话</button>
+      </div>
+      <div class="wbMain">
+        <div class="wbSide">
+          <div class="sideLabel">本机</div>
+          <div class="allowRow">
+            <div class="allowRowTxt">
+              <div class="allowRowMain">允许被远程 <span class="stateChipOn">开</span></div>
+              <div class="allowRowSub">配对设备可发起远程（每次仍需你点头）</div>
+            </div>
+            <button class="sToggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"><span class="sToggleThumb"></span></button>
+          </div>
+          <div class="sideLabel">默认画质（新会话）</div>
+          <div class="qBar" style="padding:7px 8px;">
+            <button class="pillOn" title="按网络自动换档">自动</button>
+            <button class="pill">流畅</button><button class="pill">均衡</button><button class="pill">清晰</button>
+            <button class="pill">超清</button><button class="pill">原生</button>
+          </div>
+          <div class="sideLabel">设备（1 台在线）</div>
+          <div class="devList">
+            <div class="devItem devItemRecent">
+              <div class="av">工</div>
+              <div class="info">
+                <div class="name">工作站-4090 <span class="tagRecent">上次</span></div>
+                <div class="meta"><span class="dotOn"></span>在线 · 已配对 3 天</div>
+              </div>
+              <button class="miniBtnPri" disabled style="opacity:.55;">会话中</button>
+            </div>
+            <div class="devItem">
+              <div class="av">笔</div>
+              <div class="info">
+                <div class="name">笔记本</div>
+                <div class="meta"><span class="dotOff"></span>离线 · 2 小时前</div>
+              </div>
+              <button class="miniBtnPri" style="opacity:.45;">发起</button>
+            </div>
+          </div>
+          <div class="sideActions">
+            <button class="miniBtn">检测在线</button>
+            <button class="miniBtn">＋ 配对</button>
+          </div>
+        </div>
+        <div class="wbStage">
+          <div class="viewShell">
+            <div class="viewTop">
+              <span class="live"></span><b>工作站-4090</b><span style="opacity:.75;">只看 · 整屏</span>
+              <span style="margin-left:auto;">H.264 · 直连</span>
+            </div>
+            <div class="fakeScreen">
+              <span class="screenPlaceholder">（对端画面 · 撑满主区，约 900×580，约为旧 Dialog 内画面的 3.4 倍面积）</span>
+              <div class="viewTools"><button>适应窗口</button><button>1:1</button><button>全屏</button></div>
+              <div class="hud">
+                <span class="hudOk">已连接 · 直连</span>
+                <span class="hudAccent">画质 自动 · 清晰</span>
+                <span class="hudOk">RTT 18ms</span>
+                <span>32 帧/传入</span>
+              </div>
+            </div>
+            <div class="qBar">
+              <span class="qLabel">画质</span>
+              <button class="pillOn">自动</button><button class="pill">流畅</button><button class="pill">均衡</button><button class="pill">清晰</button><button class="pill">超清</button><button class="pill">原生</button>
+              <span class="qSp"></span>
+              <span class="qLabel">画面</span>
+              <button class="pillOn">整屏</button><button class="pill">主屏</button>
+              <span class="meta">立即作用于对方</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="dimNote">布局逻辑：左栏 272px 放「配置 + 设备」，主区全部让给画面。会话中画质条贴画面底部（remote 模式，改档即时生效）；左栏的「默认画质」只管新会话（local 模式），两处语义在稿内用位置区分开。</p>
+
+    <!-- ============ §2 ============ -->
+    <h2>§2 工作台布局 · 空态（未配对）</h2>
+    <div class="workbench" style="height:560px;">
+      <div class="wbTop">
+        <span class="wbTitle">远程电脑</span>
+        <span style="flex:1;"></span>
+      </div>
+      <div class="wbMain">
+        <div class="wbSide">
+          <div class="sideLabel">本机</div>
+          <div class="allowRow">
+            <div class="allowRowTxt">
+              <div class="allowRowMain">允许被远程 <span class="stateChipOff">关</span></div>
+              <div class="allowRowSub">关闭中：别人无法远程这台电脑</div>
+            </div>
+            <button class="sToggle off" onclick="this.classList.toggle('on');this.classList.toggle('off')"><span class="sToggleThumb"></span></button>
+          </div>
+          <div class="sideLabel">设备（0 台）</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;">还没有配对设备。完成配对后，对方可以申请查看或控制这台电脑。</div>
+          <div class="sideActions"><button class="miniBtnPri">＋ 配对第一台</button></div>
+        </div>
+        <div class="wbStage">
+          <div class="emptyStage">
+            <div class="emptyIcon">🖥️</div>
+            <div class="guideTitle">连接另一台电脑</div>
+            <div class="guideLead">配对一次，之后随时可以发起远程。对方每次都会先点头，被控端横幅可随时结束。</div>
+            <div class="steps">
+              <div class="step"><div class="stepNum">1</div><div class="stepT">双方配对</div><div class="stepD">一边生成邀请码，另一边粘贴并核对指纹。与知识库同步配对无关。</div></div>
+              <div class="step"><div class="stepNum">2</div><div class="stepT">发起申请</div><div class="stepD">选「只看」或「可控」，对方会看到确认条与你的指纹。</div></div>
+              <div class="step"><div class="stepNum">3</div><div class="stepT">对方同意</div><div class="stepD">被控端常驻横幅可随时结束；默认关闭，每次都要点头。</div></div>
+            </div>
+            <div class="emptyActions"><button class="miniBtnPri">远程配对设备</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="dimNote">空态时左栏已经可用：开关行、配对按钮都在——上一稿「空态引导补提示条」的意图保留，但大窗口下左栏常驻比弹条更顺。三步引导居中放大，配对弹层（RcPairDialog）从工作台窗口弹出。</p>
+
+    <!-- ============ §3 ============ -->
+    <h2>§3 主窗口入口改动与状态同步</h2>
+    <table>
+      <tr><th style="width:240px;">位置</th><th>改动</th></tr>
+      <tr><td class="v">工具箱「远程电脑」按钮</td><td class="v">改为调 <code>rc_open_workbench</code>（建窗/聚焦已存在窗口），不再在主窗内开 Dialog</td></tr>
+      <tr><td class="v">被控横幅 / 入站申请条</td><td class="v">留在主窗口不动；横幅加一个「打开工作台」文字按钮（可选，P2）</td></tr>
+      <tr><td class="v">会话状态</td><td class="v">rc-service 状态本就是全局单例，窗口只是视图——工作台窗口轮询 <code>rc_status</code> 与主窗同源，无需新 IPC 通道</td></tr>
+      <tr><td class="v">窗口 label</td><td class="v"><code>rc-workbench</code>，需在 capabilities 里补该 label 的权限（照 md-editor 模式）</td></tr>
+      <tr><td class="v">原 RemoteComputerDialog</td><td class="v">退役删除（约 319 行连带子组件迁移到新入口），超红线问题随之消失</td></tr>
+    </table>
+
+    <h3>实施切分</h3>
+    <table>
+      <tr><th style="width:40px;">#</th><th>改动</th><th style="width:320px;">落点</th><th style="width:90px;">端</th></tr>
+      <tr><td>1</td><td class="v">rc.html 入口 + workbench 壳（顶栏/左栏/主区三段）</td><td class="v">新 <code>rc.html</code> + <code>main_rc.tsx</code> + vite 多入口</td><td class="v">前端</td></tr>
+      <tr><td>2</td><td class="v">建窗命令 + capabilities + 工具箱入口改跳转</td><td class="v"><code>commands/rc.rs</code> + <code>tauri.conf.json</code> 周边配置</td><td class="v">Rust</td></tr>
+      <tr><td>3</td><td class="v">设备列表 / 开关行 / 画质条迁入左栏（并入 1A/2A 成果）</td><td class="v">复用现有子组件（RcDeviceList 等本就独立）</td><td class="v">前端</td></tr>
+      <tr><td>4</td><td class="v">会话视图撑满主区 + HUD/画质条贴边</td><td class="v">RcSessionView 布局参数化</td><td class="v">前端</td></tr>
+      <tr><td>5</td><td class="v">画质「自动」档（前稿 2A，不变）</td><td class="v"><code>rc/stream_cfg.rs</code> 迟滞换档</td><td class="v">Rust</td></tr>
+      <tr><td>6</td><td class="v">原 Dialog 退役清理</td><td class="v"><code>RemoteComputerDialog.tsx</code> 删除</td><td class="v">前端</td></tr>
+    </table>
+    <div class="callout"><b>风险一条</b>：多窗口后 <code>useRc</code> 的轮询会在两个窗口各跑一份（工作台 + 主窗都挂了 rc 监听）——后端命令是幂等读，代价可忽略；但 <code>rc_nearby_status</code> 顺带驱动配对重传的特性要确认多客户端轮询下不重复发（记忆里那条「别把 IPC 当纯读命令优化」的钉子）。实施时先验证这一条再动别的。</div>
+  </div>
+</body>
+</html>

@@ -185,7 +185,11 @@ impl KnockDenial {
 /// `None` = 记入待确认（这一步有副作用，由调用方做）。
 /// **顺序即优先级**：未开启 > 窗口已关 > 冷却期 —— 前一条比后一条更能解释用户的处境，
 /// 所以先报它（例：既没开被控、窗口又过期时，该说的是「去把开关打开」）。
-pub fn deny_unpaired(enabled: bool, door_open: bool, in_deny_cooldown: bool) -> Option<KnockDenial> {
+pub fn deny_unpaired(
+    enabled: bool,
+    door_open: bool,
+    in_deny_cooldown: bool,
+) -> Option<KnockDenial> {
     if !enabled {
         return Some(KnockDenial::Disabled);
     }

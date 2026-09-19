@@ -14,8 +14,10 @@ use crate::rc::join;
 use crate::rc::local_device_name;
 use crate::rc::protocol::Capability;
 use crate::rc::service::{RcService, RcStatus};
+use crate::rc::uno;
+use crate::rc::video::FrameCodec;
 use crate::rc::session::{
-    is_rc_online_for, rc_presence_level, CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED, Session,
+    is_rc_online_for, rc_presence_level, Session, CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED,
 };
 use crate::sync::identity::NodeIdentity;
 use crate::sync::invite::{self, Invite};
@@ -24,6 +26,20 @@ fn app_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("无法获取应用数据目录：{}", e))
+}
+
+/// 备注名长度上限，**按字符数**计（不是字节、也不是 UTF-16 单元）。
+///
+/// 🔴 这里曾经用 `note.len()`（字节数）：60 字节只够 20 个汉字，而前端
+///    `maxLength` / `slice` 数的是 UTF-16 单元 —— 于是 21~60 个汉字的备注
+///    在前端**看着完全合法**、存下去必然被后端拒掉。两边口径分开还会继续漂，
+///    所以前端 `lib/rcDevice.ts` 有一份同值常量与同一个截断函数。
+pub const NOTE_MAX_CHARS: usize = 60;
+
+/// 备注名归一化：trim + 按**字符**截断到上限。前后端同一口径的唯一实现处。
+/// 空串是合法值（= 清除备注，显示回落对端自报名）。
+pub fn normalize_note(raw: &str) -> String {
+    raw.trim().chars().take(NOTE_MAX_CHARS).collect()
 }
 
 fn emit_changed(app: &AppHandle, svc: &RcService) {
@@ -44,6 +60,11 @@ pub struct RcTargetDevice {
     /// 上一次会话**实测**走的路径（`lan` / `direct` / `relay`；空串 = 还没连过）。
     /// 只有远程配对（`source == "rc"`）有实测值；仅同步配对的设备恒为空串。
     pub last_path: String,
+    /// 用户起的本地备注名（A1）。空串 = 没起过，前端回落显示 `name`。
+    /// 仅同步配对的设备没有备注入口——它的行还没进 rc 表。
+    pub note: String,
+    /// 方案 D「免确认直连」：这台设备发起远程时跳过人工同意。默认 false。
+    pub trusted: bool,
 }
 
 #[derive(Serialize)]
@@ -95,13 +116,7 @@ pub fn rc_targets(
 
     for d in store.rc_device_list()? {
         seen.insert(d.node_id.clone());
-        let level = rc_presence_level(
-            &d.node_id,
-            d.last_seen,
-            &live,
-            session_peer.as_deref(),
-            now,
-        );
+        let level = rc_presence_level(&d.node_id, d.last_seen, &live, session_peer.as_deref(), now);
         let online = is_rc_online_for(
             &d.node_id,
             &d.conn_state,
@@ -114,11 +129,17 @@ pub fn rc_targets(
             denied: deny.get(&d.node_id).copied().unwrap_or(false),
             node_id: d.node_id,
             name: d.name,
-            conn_state: if online { "online".into() } else { "offline".into() },
+            conn_state: if online {
+                "online".into()
+            } else {
+                "offline".into()
+            },
             last_seen: d.last_seen,
             source: "rc".into(),
             presence: level.as_str().into(),
             last_path: d.last_path,
+            note: d.note,
+            trusted: d.trusted,
         });
     }
     for d in store.device_list()? {
@@ -126,13 +147,7 @@ pub fn rc_targets(
             continue;
         }
         seen.insert(d.node_id.clone());
-        let level = rc_presence_level(
-            &d.node_id,
-            d.last_seen,
-            &live,
-            session_peer.as_deref(),
-            now,
-        );
+        let level = rc_presence_level(&d.node_id, d.last_seen, &live, session_peer.as_deref(), now);
         let online = is_rc_online_for(
             &d.node_id,
             &d.conn_state,
@@ -145,15 +160,26 @@ pub fn rc_targets(
             denied: deny.get(&d.node_id).copied().unwrap_or(false),
             node_id: d.node_id,
             name: d.name,
-            conn_state: if online { "online".into() } else { "offline".into() },
+            conn_state: if online {
+                "online".into()
+            } else {
+                "offline".into()
+            },
             last_seen: d.last_seen,
             source: "sync".into(),
             presence: level.as_str().into(),
             // 同步设备表（`devices`）没有路径列——它只做笔记同步，从没跑过 rc 会话。
             // 空串 = 前端不显示这一格（而不是编一个「绕中继」出来）。
             last_path: String::new(),
+            // 仅同步配对还没提升进 rc 表，没有备注入口。
+            note: String::new(),
+            // 仅同步配对还没提升进 rc 表，无从谈「免确认」——恒 false。
+            trusted: false,
         });
     }
+    // C1：最近用过的在前。live 的 last_seen 本来就最新，纯 last_seen 排序
+    // 自然把「正在会话/刚见过」的浮到顶；纯同步设备 last_seen=0 沉底（从未连过）。
+    out.sort_by_key(|d| std::cmp::Reverse(d.last_seen));
     Ok(out)
 }
 
@@ -235,9 +261,7 @@ pub async fn kb_sync_allow_from_rc(
 #[tauri::command]
 pub fn kb_sync_deny_from_rc(store: State<DataStore>, node_id: String) -> Result<(), String> {
     let mut config = store.get_config()?;
-    let obj = config
-        .as_object_mut()
-        .ok_or("配置文件不是一个对象")?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
     let mut list: Vec<String> = obj
         .get(CFG_SYNC_OFFER_DENIED)
         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -273,7 +297,7 @@ pub async fn rc_invite_create(
 ) -> Result<RcInviteCreated, String> {
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     let now = chrono::Utc::now().timestamp_millis();
-    let code = invite::encode(&me, name.trim(), Vec::new(), now)?;
+    let code = invite::encode(&me, name.trim())?;
     // 门与码同宽（两者都由 `invite::RC_TTL_SECS` 定）：码在窗口内才有效，
     // 门在窗口内才受理。配对成功后门会被提前关掉（见 `RcService::approve_join`）。
     let expires_at = now + RC_INVITE_DOOR_MS;
@@ -322,6 +346,20 @@ pub async fn rc_pair(
     }
     emit_changed(&app, &svc);
     Ok(inv)
+}
+
+/// A1：设置设备的本地备注名。空串 = 清除（回落显示对端自报名）。
+/// 纯本地展示属性，不发信令、不动配对状态。
+///
+/// 超长**不报错而是按字符截断**（`normalize_note`）：前端输入框已经在同一口径上
+/// 截断，后端再拒一次只会让「看着合法却存不下去」的怪状态回来。
+#[tauri::command]
+pub async fn rc_device_rename(
+    store: State<'_, DataStore>,
+    node_id: String,
+    note: String,
+) -> Result<(), String> {
+    store.rc_device_note_set(&node_id, &normalize_note(&note))
 }
 
 #[tauri::command]
@@ -489,21 +527,98 @@ pub async fn rc_request_session(
     svc: State<'_, Arc<RcService>>,
     node_id: String,
     capability: String,
+    // 无人值守接入码（Q2 方案 B）。None = 常规发起（必须已配对）。
+    uno_code: Option<String>,
 ) -> Result<Session, String> {
     let cap = Capability::parse(&capability).ok_or("能力档只能是 view 或 control")?;
     if !svc.is_running() {
         return Err(
-            "远程通道未启动：请在工具箱「远程电脑」里点「开启远程通道」，或先完成远程配对"
-                .into(),
+            "远程通道未启动：请在工具箱「远程电脑」里点「开启远程通道」，或先完成远程配对".into(),
         );
     }
-    let sess = svc.request_session(&node_id, cap).await?;
+    // Q6：手动发起 = 用户自己做了决定，自动重连 episode（含「重连失败」横幅）
+    // 立刻让位。episode 任务睡醒看到状态没了会自行退出。
+    svc.clear_auto_reconnect();
+    let sess = svc
+        .request_session(&node_id, cap, uno_code)
+        .await?;
     emit_changed(&app, &svc);
     Ok(sess)
 }
 
+/// 无人值守接入码的创建结果。`code` 是 `XXXX-XXXX` 展示码（电话可读），
+/// `full` 是 `PPU-<码>-<node_id>` 完整接入串（跨网必带设备号）。
+#[derive(Serialize)]
+pub struct RcUnoCreated {
+    pub code: String,
+    pub full: String,
+    /// 过期时刻（epoch 毫秒）。
+    pub expires_at: i64,
+}
+
+/// 生成无人值守接入码（Q2 方案 B，被控端）。
+///
+/// 生成即拉起通道：无人值守场景没有人在场去点「开启」——出码的瞬间
+/// 这台机器就必须已经处于可受理状态，否则码是好的、门是关的。
+///
+/// 参数：
+/// - `ttl_secs`：时效秒数，只认 900（15 分钟）/ 86400（24 小时）两档；
+/// - `unlimited`：true = 窗口内不限次（装机档）；false = 限 1 次；
+/// - `capability`：接入授予的能力档（view / control），生成时选定；
+/// - `also_trust`：接入的设备是否同时开免确认（默认否——下次仍要码或现场确认）。
 #[tauri::command]
-pub async fn rc_cancel_request(app: AppHandle, svc: State<'_, Arc<RcService>>) -> Result<(), String> {
+pub async fn rc_uno_generate(
+    app: AppHandle,
+    svc: State<'_, Arc<RcService>>,
+    ttl_secs: i64,
+    unlimited: bool,
+    capability: String,
+    also_trust: bool,
+) -> Result<RcUnoCreated, String> {
+    if !svc.enabled() {
+        return Err("请先打开「允许被远程协助」，接入码才有意义".into());
+    }
+    let ttl_ms = match ttl_secs.checked_mul(1000) {
+        // checked：ttl_secs 来自前端参数，debug 构建下乘法溢出会 panic
+        Some(ms) if ms == uno::TTL_SHORT_MS => uno::TTL_SHORT_MS,
+        Some(ms) if ms == uno::TTL_DAY_MS => uno::TTL_DAY_MS,
+        _ => return Err("接入码时效只能是 15 分钟（限 1 次）或 24 小时".into()),
+    };
+    let cap = Capability::parse(&capability).ok_or("能力档只能是 view 或 control")?;
+    let now = chrono::Utc::now().timestamp_millis();
+    let code = svc
+        .uno
+        .generate(now, ttl_ms, unlimited, cap, also_trust)?;
+    let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
+    let full = uno::full_string(&code, &me.node_id());
+    // 与 rc_invite_create 同一招：出码即武装，通道没起就拉起来
+    if let Err(e) = svc.start(&app_dir(&app)?, true).await {
+        log::warn!("[RC] 生成接入码后启动通道失败：{}", e);
+    }
+    emit_changed(&app, &svc);
+    Ok(RcUnoCreated {
+        code,
+        full,
+        expires_at: now + ttl_ms,
+    })
+}
+
+/// 撤销全部无人值守接入码（被控端「一键作废」）。
+#[tauri::command]
+pub fn rc_uno_revoke(app: AppHandle, svc: State<'_, Arc<RcService>>) -> Result<usize, String> {
+    let n = svc.uno.revoke_all();
+    if n > 0 {
+        log::info!("[RC] 已撤销 {n} 个无人值守接入码");
+    }
+    emit_changed(&app, &svc);
+    Ok(n)
+}
+
+#[tauri::command]
+pub async fn rc_cancel_request(
+    app: AppHandle,
+    svc: State<'_, Arc<RcService>>,
+) -> Result<(), String> {
     svc.end_session("用户取消申请").await?;
     emit_changed(&app, &svc);
     Ok(())
@@ -534,6 +649,19 @@ pub async fn rc_deny_inbound(
     node_id: String,
 ) -> Result<(), String> {
     svc.deny_inbound(&node_id)?;
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
+/// 方案 D：设置某台设备的「免确认直连」。`trusted=false` 即恢复每次询问。
+#[tauri::command]
+pub async fn rc_device_trust_set(
+    app: AppHandle,
+    svc: State<'_, Arc<RcService>>,
+    node_id: String,
+    trusted: bool,
+) -> Result<(), String> {
+    svc.set_device_trust(&node_id, trusted)?;
     emit_changed(&app, &svc);
     Ok(())
 }
@@ -577,7 +705,6 @@ pub struct RcFramePayload {
 #[tauri::command]
 pub fn rc_latest_frame(svc: State<'_, Arc<RcService>>) -> Result<Option<RcFramePayload>, String> {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use crate::rc::video::FrameCodec;
     Ok(svc.latest_frame().map(|f| RcFramePayload {
         jpeg_base64: STANDARD.encode(&f.jpeg),
         at_ms: f.at_ms,
@@ -593,13 +720,144 @@ pub fn rc_latest_frame(svc: State<'_, Arc<RcService>>) -> Result<Option<RcFrameP
         codec: match f.codec {
             FrameCodec::Jpeg => "jpeg".into(),
             FrameCodec::H264 => "h264".into(),
+            FrameCodec::Hevc => "hevc".into(),
         },
         key: f.key,
     }))
 }
 
-/// 画质档：uhd | ultra | sharp | balanced | smooth
-/// （uhd = 主屏硬编原生分辨率，R5.B；无硬编时 JPEG 兜底约 2.5K）
+/// 发起端批量拉帧（原始二进制，`tauri::ipc::Response` 直通 ArrayBuffer）。
+///
+/// 🔴 取代前端 80~200ms 轮询 `rc_latest_frame`（base64 过 JSON IPC）的路径：
+/// 一次调用取走 outbox 里**全部**待显示帧——H.264 的 P 帧互相引用、JPEG 脏块
+/// 帧各管一块画布，都丢不得、乱序不得，所以是「排队全取」而不是「取最新」。
+///
+/// 布局（全部小端）：
+/// `magic "RCF2" u32` | `count u32`，后跟 count 条：
+/// `codec u8`(0=jpeg 1=h264) | `key u8` | `full u8` | `has_rect u8`
+/// | `at_ms i64` | `cap_ms u16` | `enc_ms u16`（P0-2 延迟分段）
+/// | `width u32` | `height u32`
+/// | `rect x,y,w,h 4×u32`（has_rect=0 时忽略）
+/// | `data_len u32` | `data`
+pub fn encode_frame_batch(frames: &[crate::rc::video::VideoFrame]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(8 + frames.len() * 48);
+    buf.extend_from_slice(b"RCF2");
+    buf.extend_from_slice(&(frames.len() as u32).to_le_bytes());
+    for f in frames {
+        buf.push(f.codec.as_u8());
+        buf.push(f.key as u8);
+        buf.push(f.full as u8);
+        let r = f.rect;
+        buf.push(r.is_some() as u8);
+        buf.extend_from_slice(&f.at_ms.to_le_bytes());
+        buf.extend_from_slice(&f.cap_ms.to_le_bytes());
+        buf.extend_from_slice(&f.enc_ms.to_le_bytes());
+        buf.extend_from_slice(&f.width.to_le_bytes());
+        buf.extend_from_slice(&f.height.to_le_bytes());
+        let (rx, ry, rw, rh) = r.map(|r| (r.x, r.y, r.w, r.h)).unwrap_or((0, 0, 0, 0));
+        for v in [rx, ry, rw, rh] {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        buf.extend_from_slice(&(f.jpeg.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&f.jpeg);
+    }
+    buf
+}
+
+/// 前端按帧批量取画面。返回原始字节（前端 invoke 拿到 ArrayBuffer）。
+#[tauri::command]
+pub fn rc_drain_frames(svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
+    let frames = svc.drain_frames();
+    tauri::ipc::Response::new(encode_frame_batch(&frames))
+}
+
+#[cfg(test)]
+mod frame_batch_tests {
+    use super::*;
+
+    /// 编码↔前端解析必须共享同一份布局常量：这里锁死字节布局，
+    /// 前端 `parseFrameBatch` 按同一张表读。改任何一处都要同步另一处。
+    #[test]
+    fn 帧批量编码布局_有脏矩形() {
+        let frames = vec![
+            crate::rc::video::VideoFrame {
+                width: 1280,
+                height: 720,
+                jpeg: vec![1, 2, 3],
+                at_ms: 1_758_000_000_000,
+                full: true,
+                rect: None,
+                codec: crate::rc::video::FrameCodec::Jpeg,
+                key: true,
+                cap_ms: 4,
+                enc_ms: 7,
+            },
+            crate::rc::video::VideoFrame {
+                width: 100,
+                height: 50,
+                jpeg: vec![9; 7],
+                at_ms: 1_758_000_000_001,
+                full: false,
+                rect: Some(crate::rc::video::DirtyRect {
+                    x: 10,
+                    y: 20,
+                    w: 100,
+                    h: 50,
+                }),
+                codec: crate::rc::video::FrameCodec::H264,
+                key: false,
+                cap_ms: 0,
+                enc_ms: 0,
+            },
+        ];
+        let buf = encode_frame_batch(&frames);
+        // 头
+        assert_eq!(&buf[..4], b"RCF2");
+        assert_eq!(u32::from_le_bytes(buf[4..8].try_into().unwrap()), 2);
+        let mut off = 8usize;
+        // 帧 1：整帧 JPEG，无矩形
+        assert_eq!(buf[off], 0); // codec
+        assert_eq!(buf[off + 1], 1); // key
+        assert_eq!(buf[off + 2], 1); // full
+        assert_eq!(buf[off + 3], 0); // has_rect
+        let at = i64::from_le_bytes(buf[off + 4..off + 12].try_into().unwrap());
+        assert_eq!(at, 1_758_000_000_000);
+        let cap = u16::from_le_bytes(buf[off + 12..off + 14].try_into().unwrap());
+        let enc = u16::from_le_bytes(buf[off + 14..off + 16].try_into().unwrap());
+        assert_eq!((cap, enc), (4, 7), "P0-2 分段必须随帧带过去");
+        let w = u32::from_le_bytes(buf[off + 16..off + 20].try_into().unwrap());
+        assert_eq!(w, 1280);
+        let h = u32::from_le_bytes(buf[off + 20..off + 24].try_into().unwrap());
+        assert_eq!(h, 720);
+        let len = u32::from_le_bytes(buf[off + 40..off + 44].try_into().unwrap());
+        assert_eq!(len, 3);
+        assert_eq!(&buf[off + 44..off + 47], &[1, 2, 3]);
+        off += 44 + 3;
+        // 帧 2：H.264 P 帧 + 脏矩形
+        assert_eq!(buf[off], 1);
+        assert_eq!(buf[off + 1], 0);
+        assert_eq!(buf[off + 2], 0);
+        assert_eq!(buf[off + 3], 1);
+        let rx = u32::from_le_bytes(buf[off + 24..off + 28].try_into().unwrap());
+        let ry = u32::from_le_bytes(buf[off + 28..off + 32].try_into().unwrap());
+        let rw = u32::from_le_bytes(buf[off + 32..off + 36].try_into().unwrap());
+        let rh = u32::from_le_bytes(buf[off + 36..off + 40].try_into().unwrap());
+        assert_eq!((rx, ry, rw, rh), (10, 20, 100, 50));
+        let len = u32::from_le_bytes(buf[off + 40..off + 44].try_into().unwrap());
+        assert_eq!(len, 7);
+    }
+
+    #[test]
+    fn 帧批量编码_空队列() {
+        let buf = encode_frame_batch(&[]);
+        assert_eq!(buf.len(), 8);
+        assert_eq!(u32::from_le_bytes(buf[4..8].try_into().unwrap()), 0);
+    }
+}
+
+/// 画质档：auto | uhd | ultra | sharp | balanced | smooth
+/// （auto = 2A 自动档：被控端按 RTT/带宽自动换档；uhd = 主屏硬编原生分辨率，
+/// R5.B；无硬编时 JPEG 兜底约 2.5K）
 #[tauri::command]
 pub async fn rc_set_quality(
     app: AppHandle,
@@ -607,13 +865,17 @@ pub async fn rc_set_quality(
     svc: State<'_, Arc<RcService>>,
     quality: String,
 ) -> Result<(), String> {
-    if !matches!(quality.as_str(), "uhd" | "ultra" | "sharp" | "balanced" | "smooth") {
-        return Err("画质档只能是 uhd / ultra / sharp / balanced / smooth".into());
+    if !matches!(
+        quality.as_str(),
+        "auto" | "uhd" | "uhd60" | "ultra" | "sharp" | "balanced" | "smooth" | "fps60" | "fps120"
+    ) {
+        return Err(
+            "画质档只能是 auto / uhd / uhd60 / ultra / sharp / balanced / smooth / fps60 / fps120"
+                .into(),
+        );
     }
     let mut config = store.get_config()?;
-    let obj = config
-        .as_object_mut()
-        .ok_or("配置文件不是一个对象")?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
     obj.insert(
         crate::rc::service::CFG_QUALITY.to_string(),
         serde_json::Value::String(quality),
@@ -621,6 +883,66 @@ pub async fn rc_set_quality(
     store.save_config(&config)?;
     emit_changed(&app, &svc);
     Ok(())
+}
+
+/// Q5：发起端「码率倍率」偏好（50–200，100 = 跟随链路）。只写本机配置；
+/// 对会话的生效由 outbound 任务在会话建立时推送、会话中改下拉走 rc_send_input。
+#[tauri::command]
+pub async fn rc_set_bitrate_pct(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    pct: u32,
+) -> Result<(), String> {
+    if !(50..=200).contains(&pct) {
+        return Err(format!("码率倍率只能是 50–200 的整数，得到 {pct}"));
+    }
+    let mut config = store.get_config()?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
+    obj.insert(
+        crate::rc::service::CFG_BITRATE_PCT.to_string(),
+        serde_json::Value::Number(pct.into()),
+    );
+    store.save_config(&config)?;
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
+/// P1/P3：本机画面编码能力探测（设置页 / 会话 UI 诚实出档用）。
+/// 结果进程内缓存（`gpu::encode_caps`），重复调用零成本。
+#[derive(Debug, Serialize)]
+pub struct RcEncodeCaps {
+    /// 硬件 D3D11-aware H.264 MFT（零拷贝/fps120 的前提）。
+    pub h264_gpu: bool,
+    /// 硬件 HEVC MFT（P3 实验档的前提）。
+    pub hevc_hw: bool,
+    /// 主显示器刷新率（Hz）。0 = 查不到。
+    pub refresh_hz: u32,
+    /// 在线显示器数量（fps120 档要求单屏捕获）。
+    pub monitors: u32,
+}
+
+#[tauri::command]
+pub fn rc_encode_caps() -> Result<RcEncodeCaps, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let c = crate::rc::gpu::encode_caps();
+        Ok(RcEncodeCaps {
+            h264_gpu: c.h264_gpu,
+            hevc_hw: c.hevc_hw,
+            refresh_hz: c.refresh_hz,
+            monitors: c.monitors,
+        })
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(RcEncodeCaps {
+            h264_gpu: false,
+            hevc_hw: false,
+            refresh_hz: 0,
+            monitors: 0,
+        })
+    }
 }
 
 /// 本机显示器列表（远程多屏切换）。
@@ -647,9 +969,7 @@ pub async fn rc_set_capture_scope(
         return Err("截取范围只能是 virtual / primary / monitor:N".into());
     }
     let mut config = store.get_config()?;
-    let obj = config
-        .as_object_mut()
-        .ok_or("配置文件不是一个对象")?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
     obj.insert(
         crate::rc::service::CFG_CAPTURE_SCOPE.to_string(),
         serde_json::Value::String(scope),
@@ -668,19 +988,73 @@ pub async fn rc_send_input(
     svc.send_input(&event).await
 }
 
+/// 打开「远程电脑」独立工作台窗口（2A 配套，2026-09-18）。
+///
+/// 为什么是独立窗口：主窗口只有 550×700，会话视图 960px 在里面被压成 ~534px，
+/// 画面区根本不够用。独立窗口默认 1200×780（min 960×640），按主窗所在显示器居中。
+///
+/// - 已存在：`present_window`（最小化状态也能拉回）+ 聚焦，不重建。
+/// - async command：同步 command 里建 WebviewWindow 会死锁（tauri#13963，
+///   与 `open_fullscreen_editor` 同一条教训）。
+#[tauri::command]
+pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("rc-workbench") {
+        crate::present_window(&window);
+        return Ok(());
+    }
+    let mut builder = tauri::webview::WebviewWindowBuilder::new(
+        &app,
+        "rc-workbench",
+        tauri::WebviewUrl::App("rc.html".into()),
+    )
+    .title("远程电脑")
+    .inner_size(1200.0, 780.0)
+    .min_inner_size(960.0, 640.0)
+    .resizable(true);
+
+    // 按主窗口所在显示器（回退主显示器）居中——照 md-editor 的先例
+    let monitor = app
+        .get_webview_window("main")
+        .and_then(|w| w.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
+        let scale = monitor.scale_factor();
+        let size = monitor.size();
+        let mon_w = size.width as f64 / scale;
+        let mon_h = size.height as f64 / scale;
+        let win_w = 1200.0_f64.min(mon_w * 0.94);
+        let win_h = 780.0_f64.min(mon_h * 0.9);
+        let pos = monitor.position();
+        let x = pos.x as f64 / scale + (mon_w - win_w) / 2.0;
+        let y = pos.y as f64 / scale + (mon_h - win_h) / 2.0;
+        builder = builder.inner_size(win_w, win_h).position(x, y);
+    } else {
+        builder = builder.center();
+    }
+    builder
+        .build()
+        .map_err(|e| format!("创建远程电脑窗口失败: {}", e))?;
+    Ok(())
+}
+
 /// 发起端：把本机剪贴板文本推到被控端（R3 文本优先）。
 #[tauri::command]
-pub async fn rc_push_clipboard(
-    svc: State<'_, Arc<RcService>>,
-    text: String,
-) -> Result<(), String> {
+pub async fn rc_push_clipboard(svc: State<'_, Arc<RcService>>, text: String) -> Result<(), String> {
     svc.push_clipboard(&text).await
 }
 
 /// 最近会话元数据（只记谁/方向/能力/时长/结果，不记画面）。
 #[tauri::command]
-pub fn rc_session_history(svc: State<'_, Arc<RcService>>) -> Result<Vec<serde_json::Value>, String> {
+pub fn rc_session_history(
+    svc: State<'_, Arc<RcService>>,
+) -> Result<Vec<serde_json::Value>, String> {
     Ok(svc.session_history())
+}
+
+/// 清空全部会话历史（产品红线：日志可见可删除）。幂等：没有记录也返回 Ok。
+#[tauri::command]
+pub fn rc_history_clear(svc: State<'_, Arc<RcService>>) -> Result<(), String> {
+    svc.clear_history()
 }
 
 /// 发起端请求拉回对方剪贴板（后端等回包，修前端立刻 take 竞态）。
@@ -722,5 +1096,35 @@ mod tests {
             rc_ttl < kb_ttl,
             "远程那档必须严于知识库那档（{rc_ttl} vs {kb_ttl}）：远程是把别人的屏幕交出去，骚扰面不同"
         );
+    }
+
+    /// 🔴 备注长度是**字符数**口径。曾经写的是 `note.len()`（字节），
+    /// 60 字节只够 20 个汉字，而前端数的是 UTF-16 单元 —— 21~60 个汉字的备注
+    /// 在前端看着完全合法，存下去必被拒。
+    #[test]
+    fn test_备注按字符截断而不是按字节() {
+        let cn60 = "汉".repeat(60);
+        assert_eq!(cn60.len(), 180, "前提：60 个汉字是 180 字节");
+        assert_eq!(normalize_note(&cn60), cn60, "60 个汉字必须原样留下");
+        assert_eq!(
+            normalize_note(&"汉".repeat(61)).chars().count(),
+            60,
+            "超出的部分截掉，而不是整条拒收"
+        );
+    }
+
+    /// 空白归一：两端 trim；纯空白等价于「清除备注」。
+    #[test]
+    fn test_备注归一化去两端空白_空串合法() {
+        assert_eq!(normalize_note("  客厅 电脑  "), "客厅 电脑");
+        assert_eq!(normalize_note("   "), "", "纯空白 == 清除备注（回落显示自报名）");
+        assert_eq!(normalize_note(""), "");
+    }
+
+    /// emoji / emoji 这类扩展字符按**字符**计数，不能被切成半个代理对。
+    #[test]
+    fn test_备注按字符计数不劈开代理对() {
+        let s = normalize_note(&"🖥".repeat(80));
+        assert_eq!(s, "🖥".repeat(60), "每个 emoji 算 1 个字符，且不被截成乱码");
     }
 }

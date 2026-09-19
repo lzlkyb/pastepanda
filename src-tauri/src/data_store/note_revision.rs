@@ -291,14 +291,7 @@ impl DataStore {
                 // 不记的话 `author="me"` 就看不到自己刚干的这一下。
                 "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
                  updated_ms = MAX(?5, updated_ms + 1), last_agent = ?6 WHERE id = ?1",
-                rusqlite::params![
-                    note_id,
-                    title,
-                    content,
-                    note_now(),
-                    self.hlc_now(),
-                    source
-                ],
+                rusqlite::params![note_id, title, content, note_now(), self.hlc_now(), source],
             )
             .map_err(|e| e.to_string())?;
             Self::prune_revisions_on(&tx, &note_id).map_err(|e| e.to_string())?;

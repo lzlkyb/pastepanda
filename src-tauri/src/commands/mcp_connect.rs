@@ -150,8 +150,8 @@ fn read_root(path: &Path) -> Result<Value, String> {
     if !path.exists() {
         return Ok(Value::Object(serde_json::Map::new()));
     }
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("读不了 {}：{}", path.display(), e))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("读不了 {}：{}", path.display(), e))?;
     // 先削 BOM：Windows 上的配置文件带 UTF-8 BOM 很常见，而 serde_json 碰到它直接报
     // 「expected value at line 1 column 1」——这条错看上去就像文件内容有问题，最难查。
     let text = text.trim_start_matches('\u{feff}');
@@ -194,15 +194,21 @@ fn substitute_token(v: &mut Value, token: &str) -> usize {
 fn merge_entry(root: &mut Value, container: &str, entry: Value) -> Result<bool, String> {
     let mut cur = root;
     for seg in container.split('.') {
-        let obj = cur
-            .as_object_mut()
-            .ok_or_else(|| format!("配置里的 {} 这条路径上有一段不是对象，不敢动它。", container))?;
+        let obj = cur.as_object_mut().ok_or_else(|| {
+            format!(
+                "配置里的 {} 这条路径上有一段不是对象，不敢动它。",
+                container
+            )
+        })?;
         cur = obj
             .entry(seg)
             .or_insert_with(|| Value::Object(serde_json::Map::new()));
     }
     let servers = cur.as_object_mut().ok_or_else(|| {
-        format!("配置里的 {} 不是一个对象，不敢动它。请先手动检查这个文件。", container)
+        format!(
+            "配置里的 {} 不是一个对象，不敢动它。请先手动检查这个文件。",
+            container
+        )
     })?;
     Ok(servers.insert(MCP_ENTRY_NAME.to_string(), entry).is_some())
 }
@@ -289,8 +295,8 @@ fn backup(path: &Path, fmt: ConfigFormat) -> Result<String, String> {
 /// 两空格缩进 + 末尾换行：`~/.claude.json` 本来就是这个样子，
 /// 配上 serde_json 的 `preserve_order`（见 Cargo.toml），写回去的 diff 就只有我们那一块。
 fn write_root(path: &Path, root: &Value) -> Result<(), String> {
-    let mut text = serde_json::to_string_pretty(root)
-        .map_err(|e| format!("序列化配置失败：{}", e))?;
+    let mut text =
+        serde_json::to_string_pretty(root).map_err(|e| format!("序列化配置失败：{}", e))?;
     text.push('\n');
     atomic_write::write_replace(path, &text)
 }
@@ -308,8 +314,8 @@ fn read_toml(path: &Path) -> Result<DocumentMut, String> {
     if !path.exists() {
         return Ok(DocumentMut::new());
     }
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("读不了 {}：{}", path.display(), e))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("读不了 {}：{}", path.display(), e))?;
     // 削 BOM 的理由同 `read_root`。
     let text = text.trim_start_matches('\u{feff}');
     text.parse::<DocumentMut>().map_err(|e| {
@@ -448,9 +454,7 @@ fn toml_entry_to_json(item: &Item) -> Value {
 fn entry_state_toml(doc: &DocumentMut, container: &str, url: &str, token: &str) -> &'static str {
     let mut cur: Option<&dyn toml_edit::TableLike> = Some(doc.as_table());
     for seg in container.split('.') {
-        cur = cur
-            .and_then(|t| t.get(seg))
-            .and_then(|i| i.as_table_like());
+        cur = cur.and_then(|t| t.get(seg)).and_then(|i| i.as_table_like());
     }
     let entry = cur
         .and_then(|t| t.get(MCP_ENTRY_NAME))
@@ -625,7 +629,11 @@ pub fn mcp_client_connect(
     log::info!(
         "[MCP] 已接入 {}（{}）",
         path.display(),
-        if replaced { "替换旧条目" } else { "新增条目" }
+        if replaced {
+            "替换旧条目"
+        } else {
+            "新增条目"
+        }
     );
     Ok(McpConnectOutcome {
         path: path.display().to_string(),
@@ -713,7 +721,8 @@ mod tests {
     #[test]
     fn 合并不能碰到旁边的服务器与其他顶层键() {
         let mut root = claude_like();
-        let replaced = merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "type": "http" })).unwrap();
+        let replaced =
+            merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "type": "http" })).unwrap();
         assert!(!replaced, "本来没有 pastepanda 条目，不应报成替换");
 
         let servers = root["mcpServers"].as_object().unwrap();
@@ -732,7 +741,11 @@ mod tests {
         merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "url": "a" })).unwrap();
         let replaced = merge_entry(&mut root, DEFAULT_CONTAINER, json!({ "url": "b" })).unwrap();
         assert!(replaced);
-        assert_eq!(root["mcpServers"].as_object().unwrap().len(), 4, "不能越接越多");
+        assert_eq!(
+            root["mcpServers"].as_object().unwrap().len(),
+            4,
+            "不能越接越多"
+        );
         assert_eq!(root["mcpServers"]["pastepanda"]["url"], json!("b"));
     }
 
@@ -763,7 +776,11 @@ mod tests {
     fn 服务器表不是对象时宁可报错也不覆盖() {
         let mut root = json!({ "mcpServers": "不知道谁写成了字符串" });
         assert!(merge_entry(&mut root, DEFAULT_CONTAINER, json!({})).is_err());
-        assert_eq!(root["mcpServers"], json!("不知道谁写成了字符串"), "报错了就不能动它");
+        assert_eq!(
+            root["mcpServers"],
+            json!("不知道谁写成了字符串"),
+            "报错了就不能动它"
+        );
     }
 
     #[test]
@@ -801,9 +818,15 @@ mod tests {
         .unwrap();
         assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "tok"), "current");
         // 令牌重置后：客户端其实已经连不上了，不能还显示「已接入」
-        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "new-tok"), "stale");
+        assert_eq!(
+            entry_state(&root, DEFAULT_CONTAINER, url, "new-tok"),
+            "stale"
+        );
         // 换了端口同理
-        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, "http://127.0.0.1:9999/mcp", "tok"), "stale");
+        assert_eq!(
+            entry_state(&root, DEFAULT_CONTAINER, "http://127.0.0.1:9999/mcp", "tok"),
+            "stale"
+        );
     }
 
     /// 🔴 OpenCode 的容器键是 `mcp` 而不是 `mcpServers`（`~/.config/opencode/opencode.json`）。
@@ -838,7 +861,11 @@ mod tests {
         });
         let replaced = merge_entry(&mut root, "mcp.servers", json!({ "type": "http" })).unwrap();
         assert!(!replaced);
-        assert_eq!(root["mcp"]["servers"].as_object().unwrap().len(), 2, "不能碰旁边那条");
+        assert_eq!(
+            root["mcp"]["servers"].as_object().unwrap().len(),
+            2,
+            "不能碰旁边那条"
+        );
         assert_eq!(root["model"], json!("glm-4"));
         // ❗ 绝不能造一个字面量叫 "mcp.servers" 的顶层键
         assert!(root.get("mcp.servers").is_none(), "把点号当成键名了");
@@ -895,15 +922,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "tok"), "current");
-        assert_eq!(entry_state(&root, DEFAULT_CONTAINER, url, "另一把"), "stale");
+        assert_eq!(
+            entry_state(&root, DEFAULT_CONTAINER, url, "另一把"),
+            "stale"
+        );
     }
 
     #[test]
     fn 只收两种后缀并据此分流() {
-        assert_eq!(detect_format(Path::new("C:\\a\\b.json")).unwrap(), ConfigFormat::Json);
-        assert_eq!(detect_format(Path::new("C:\\a\\b.JSON")).unwrap(), ConfigFormat::Json);
-        assert_eq!(detect_format(Path::new("C:\\a\\config.toml")).unwrap(), ConfigFormat::Toml);
-        assert_eq!(detect_format(Path::new("C:\\a\\config.TOML")).unwrap(), ConfigFormat::Toml);
+        assert_eq!(
+            detect_format(Path::new("C:\\a\\b.json")).unwrap(),
+            ConfigFormat::Json
+        );
+        assert_eq!(
+            detect_format(Path::new("C:\\a\\b.JSON")).unwrap(),
+            ConfigFormat::Json
+        );
+        assert_eq!(
+            detect_format(Path::new("C:\\a\\config.toml")).unwrap(),
+            ConfigFormat::Toml
+        );
+        assert_eq!(
+            detect_format(Path::new("C:\\a\\config.TOML")).unwrap(),
+            ConfigFormat::Toml
+        );
         assert!(detect_format(Path::new("C:\\a\\b.md")).is_err());
         assert!(detect_format(Path::new("C:\\a\\b")).is_err());
         // 备份得跟着原格式走，否则双击打不开
@@ -941,10 +983,26 @@ args = [\"serve\"]
         assert!(!replaced);
 
         let out = doc.to_string();
-        assert!(out.contains("# 我自己写的注释，一个字都不能丢"), "注释被抹了：{}", out);
-        assert!(out.contains("model = \"gpt-5\""), "用户自己的设置丢了：{}", out);
-        assert!(out.contains("[mcp_servers.codegraph]"), "把旁边那条弄没了：{}", out);
-        assert!(out.contains("[mcp_servers.pastepanda]"), "没写进去：{}", out);
+        assert!(
+            out.contains("# 我自己写的注释，一个字都不能丢"),
+            "注释被抹了：{}",
+            out
+        );
+        assert!(
+            out.contains("model = \"gpt-5\""),
+            "用户自己的设置丢了：{}",
+            out
+        );
+        assert!(
+            out.contains("[mcp_servers.codegraph]"),
+            "把旁边那条弄没了：{}",
+            out
+        );
+        assert!(
+            out.contains("[mcp_servers.pastepanda]"),
+            "没写进去：{}",
+            out
+        );
         // headers 要是行内表，不另起一个子表头
         assert!(
             out.contains("http_headers = { Authorization = \"Bearer tok\" }"),
@@ -952,7 +1010,11 @@ args = [\"serve\"]
             out
         );
         // 写出来的东西必须能再解开（序列化出非法 TOML 是最坏的结果）
-        assert!(out.parse::<DocumentMut>().is_ok(), "写出了解不开的 TOML：{}", out);
+        assert!(
+            out.parse::<DocumentMut>().is_ok(),
+            "写出了解不开的 TOML：{}",
+            out
+        );
     }
 
     #[test]
@@ -968,7 +1030,11 @@ args = [\"serve\"]
         assert!(remove_entry_toml(&mut doc, "mcp_servers"));
         let out = doc.to_string();
         assert!(!out.contains("pastepanda"), "没删干净：{}", out);
-        assert!(out.contains("[mcp_servers.codegraph]"), "误伤了旁边那条：{}", out);
+        assert!(
+            out.contains("[mcp_servers.codegraph]"),
+            "误伤了旁边那条：{}",
+            out
+        );
         assert!(out.contains("# 我自己写的注释，一个字都不能丢"));
         // 再删一次：幂等
         assert!(!remove_entry_toml(&mut doc, "mcp_servers"));
@@ -999,8 +1065,14 @@ args = [\"serve\"]
         .unwrap();
         assert_eq!(entry_state_toml(&doc, "mcp_servers", url, "tok"), "current");
         // 重置了令牌 / 换了端口：Codex 其实已经连不上了，不能还显示「已接入」
-        assert_eq!(entry_state_toml(&doc, "mcp_servers", url, "另一把"), "stale");
-        assert_eq!(entry_state_toml(&doc, "mcp_servers", "http://127.0.0.1:9999/mcp", "tok"), "stale");
+        assert_eq!(
+            entry_state_toml(&doc, "mcp_servers", url, "另一把"),
+            "stale"
+        );
+        assert_eq!(
+            entry_state_toml(&doc, "mcp_servers", "http://127.0.0.1:9999/mcp", "tok"),
+            "stale"
+        );
     }
 
     #[test]
@@ -1018,7 +1090,10 @@ args = [\"serve\"]
         assert_eq!(read_toml(&p2).unwrap()["model"].as_str(), Some("x"));
 
         // 不存在算空文档（没东西可弄丢）
-        assert!(read_toml(&dir.join("nope.toml")).unwrap().as_table().is_empty());
+        assert!(read_toml(&dir.join("nope.toml"))
+            .unwrap()
+            .as_table()
+            .is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

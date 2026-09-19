@@ -37,17 +37,45 @@ export interface RcStatus {
   session: RcSession | null;
   pending: RcInboundKnock[];
   joins: RcJoinRequest[];
+  /** 在效的无人值守接入码摘要（Q2）。不含码本身；空数组 = 没有生效中的码。 */
+  uno?: RcUnoInfo[];
   device_deny: Record<string, boolean>;
   running: boolean;
+  /** auto / uhd / ultra / sharp / balanced / smooth（auto = 被控端自动换档） */
   quality: string;
+  /**
+   * 自动档当前实际生效的档位（2A）。非 auto 档时与 quality 相同。
+   * HUD / 设置页显示真实档位用它，不猜。
+   */
+  active_quality?: string;
   capture_scope: string;
+  /** 发起端「码率倍率」偏好（Q5，50–200，100 = 跟随链路）。会话下拉初值。 */
+  bitrate_pct?: number;
   rtt_ms?: number;
+  /** 发起端本端丢包率（‰，EMA）；0 = 尚未采样。HUD 显示「丢包 x.x%」。 */
+  loss_permille?: number;
   /**
    * 会话链路实际走的路：`lan` / `direct` / `relay`；空串 = 未测到（不猜）。
    * 后端从 iroh **活连接**实测（`rc/link.rs` 复用 `sync::path_kind`），
    * 与设备列表那个基于组播的推测是两回事。
    */
   path_kind?: string;
+  /**
+   * 时钟偏差（被控端时钟 − 发起端时钟，ms，EMA）。「画面延迟」= 本地时刻 −
+   * (帧采集时刻 − 偏差)。0 = 尚未校准（显示的延迟带两机时钟差）。
+   */
+  clock_skew_ms?: number;
+  /** 发起端视角：被控端是否支持 fps120（P1 caps）。被控端视角恒 false。 */
+  peer_fps120?: boolean;
+  /** 发起端视角：被控端是否支持 HEVC 硬编（Q3 caps）。4K60 档门控用。 */
+  peer_hevc?: boolean;
+  /** 发起端视角：被控端主屏刷新率（Hz）。0 = 未上报。 */
+  peer_refresh_hz?: number;
+  /**
+   * 发起端视角：被控端在线显示器列表（Q7 caps 帧）。空 = 未上报
+   * （旧版本对端）或单屏——会话底栏据此出不出逐屏选项与「下一屏」。
+   */
+  peer_monitors?: RcMonitorInfo[];
   /**
    * 最后一次收到对端 pong 的时间戳（ms）；0 = 还没收到过。
    * 链路活性判据的唯一来源（见 `useRcLinkState`）——ping 的本地 invoke
@@ -56,6 +84,19 @@ export interface RcStatus {
   last_pong_ms?: number;
   /** 非阻塞发起申请的后台失败原因 */
   outbound_error?: string | null;
+  /**
+   * Q6：发起端自动重连进度（免确认设备异常断流后）。null = 没有。
+   * attempt/max 驱动「正在重连 N/M」；gave_up = 次数用尽，提示手动重连。
+   */
+  reconnecting?: {
+    peer: string;
+    peer_name: string;
+    /** 原会话能力档（「重连失败」时手动重连复用） */
+    capability: RcCapability;
+    attempt: number;
+    max: number;
+    gave_up: boolean;
+  } | null;
 }
 
 /** 路径切换事件 payload（C：relay ↔ 直连 自动切换）。 */
@@ -81,6 +122,10 @@ export interface RcTargetDevice {
    * 空串 = 还没连过（或只做过笔记同步），此时不显示这一格。
    */
   last_path?: string;
+  /** A1：本地备注名。空串 = 没起过，显示回落 `name`。仅同步配对设备恒空。 */
+  note?: string;
+  /** 方案 D「免确认直连」：这台设备发起远程时跳过人工同意。默认 false。 */
+  trusted?: boolean;
 }
 
 export interface RcSyncOffer {
@@ -106,6 +151,25 @@ export interface RcInvite {
   name: string;
   addrs: string[];
   ts: number;
+}
+
+/** 在效的无人值守接入码摘要（Q2）。后端绝不给码本身——码只有生成那一刻可见。 */
+export interface RcUnoInfo {
+  /** 过期时刻（epoch 毫秒）。 */
+  expires_ms: number;
+  /** true = 24 小时内不限次。 */
+  unlimited: boolean;
+  capability: RcCapability;
+  /** 接入的设备是否自动开免确认。 */
+  also_trust: boolean;
+}
+
+export interface RcUnoCreated {
+  /** 展示码 `XXXX-XXXX`（电话可读）。 */
+  code: string;
+  /** 完整接入串 `PPU-<码>-<node_id>`（跨网粘贴用）。 */
+  full: string;
+  expires_at: number;
 }
 
 export function rcStatus(): Promise<RcStatus> {
@@ -153,6 +217,11 @@ export function rcForget(nodeId: string): Promise<void> {
   return invoke("rc_forget", { nodeId });
 }
 
+/** A1：设置设备的本地备注名。空串 = 清除（显示回落对端自报名）。 */
+export function rcDeviceRename(nodeId: string, note: string): Promise<void> {
+  return invoke("rc_device_rename", { nodeId, note });
+}
+
 export function rcJoinApprove(nodeId: string, name: string): Promise<void> {
   return invoke("rc_join_approve", { nodeId, name });
 }
@@ -178,8 +247,32 @@ export function rcSetDeviceAllowed(nodeId: string, allowed: boolean): Promise<vo
   return invoke("rc_set_device_allowed", { nodeId, allowed });
 }
 
-export function rcRequestSession(nodeId: string, capability: RcCapability): Promise<RcSession> {
-  return invoke("rc_request_session", { nodeId, capability });
+export function rcRequestSession(
+  nodeId: string,
+  capability: RcCapability,
+  unoCode?: string,
+): Promise<RcSession> {
+  return invoke("rc_request_session", { nodeId, capability, unoCode: unoCode ?? null });
+}
+
+/** 生成无人值守接入码（Q2 方案 B，被控端）。`ttlSecs` 只认 900 / 86400。 */
+export function rcUnoGenerate(p: {
+  ttlSecs: number;
+  unlimited: boolean;
+  capability: RcCapability;
+  alsoTrust: boolean;
+}): Promise<RcUnoCreated> {
+  return invoke<RcUnoCreated>("rc_uno_generate", {
+    ttlSecs: p.ttlSecs,
+    unlimited: p.unlimited,
+    capability: p.capability,
+    alsoTrust: p.alsoTrust,
+  });
+}
+
+/** 撤销全部无人值守接入码。返回撤销数量。 */
+export function rcUnoRevoke(): Promise<number> {
+  return invoke<number>("rc_uno_revoke");
 }
 
 export function rcCancelRequest(): Promise<void> {
@@ -196,6 +289,11 @@ export function rcApproveInbound(nodeId: string): Promise<RcSession> {
 
 export function rcDenyInbound(nodeId: string): Promise<void> {
   return invoke("rc_deny_inbound", { nodeId });
+}
+
+/** 方案 D：设置某台设备的「免确认直连」。`trusted=false` 即恢复每次询问。 */
+export function rcDeviceTrustSet(nodeId: string, trusted: boolean): Promise<void> {
+  return invoke("rc_device_trust_set", { nodeId, trusted });
 }
 
 export function rcEndSession(): Promise<void> {
@@ -220,12 +318,89 @@ export interface RcFramePayload {
   width: number;
   height: number;
   rect: RcFrameRect | null;
-  codec: "jpeg" | "h264";
+  codec: "jpeg" | "h264" | "hevc";
   key: boolean;
 }
 
 export function rcLatestFrame(): Promise<RcFramePayload | null> {
   return invoke<RcFramePayload | null>("rc_latest_frame");
+}
+
+/** 旧 JSON 轮询路径的帧已废弃，新路径：批量原始二进制（无 base64 / JSON 开销）。 */
+export interface RcBinFrame {
+  codec: "jpeg" | "h264" | "hevc";
+  key: boolean;
+  full: boolean;
+  at_ms: number;
+  /** P0-2 延迟分段：被控端采集/编码耗时（ms）。0 = 未统计。 */
+  cap_ms: number;
+  enc_ms: number;
+  width: number;
+  height: number;
+  rect: RcFrameRect | null;
+  data: Uint8Array;
+}
+
+/**
+ * 解析 `rc_drain_frames` 返回的原始字节。布局见后端 `encode_frame_batch`
+ * （全部小端）：`"RCF2" u32 | count u32`，后跟 count 条
+ * `codec u8 | key u8 | full u8 | has_rect u8 | at_ms i64 | cap u16 | enc u16
+ *  | w u32 | h u32 | rect x,y,w,h 4×u32 | data_len u32 | data`。
+ */
+export function parseFrameBatch(buf: ArrayBuffer): RcBinFrame[] {
+  const u8 = new Uint8Array(buf);
+  if (u8.length < 8 || u8[0] !== 0x52 || u8[1] !== 0x43 || u8[2] !== 0x46 || u8[3] !== 0x32) {
+    throw new Error("帧批量数据头不合法（RCF2）");
+  }
+  const v = new DataView(buf);
+  const count = v.getUint32(4, true);
+  const out: RcBinFrame[] = [];
+  let off = 8;
+  for (let i = 0; i < count; i++) {
+    if (off + 44 > u8.length) throw new Error("帧批量数据被截断");
+    const codecByte = v.getUint8(off);
+    const key = v.getUint8(off + 1) === 1;
+    const full = v.getUint8(off + 2) === 1;
+    const hasRect = v.getUint8(off + 3) === 1;
+    const atMs = Number(v.getBigInt64(off + 4, true));
+    const capMs = v.getUint16(off + 12, true);
+    const encMs = v.getUint16(off + 14, true);
+    const width = v.getUint32(off + 16, true);
+    const height = v.getUint32(off + 20, true);
+    let rect: RcFrameRect | null = null;
+    if (hasRect) {
+      rect = {
+        x: v.getUint32(off + 24, true),
+        y: v.getUint32(off + 28, true),
+        w: v.getUint32(off + 32, true),
+        h: v.getUint32(off + 36, true),
+      };
+    }
+    const len = v.getUint32(off + 40, true);
+    off += 44;
+    if (off + len > u8.length) throw new Error("帧数据被截断");
+    // 视图而非拷贝：底层 ArrayBuffer 在本轮应用完成前一直存活
+    const data = new Uint8Array(buf, off, len);
+    off += len;
+    out.push({
+      codec: codecByte === 2 ? "hevc" : codecByte === 1 ? "h264" : "jpeg",
+      key,
+      full,
+      at_ms: atMs,
+      cap_ms: capMs,
+      enc_ms: encMs,
+      width,
+      height,
+      rect,
+      data,
+    });
+  }
+  return out;
+}
+
+/** 批量取走后端攒下的全部待显示帧（H.264 P 帧与脏块帧必须全序不丢）。 */
+export function rcDrainFrames(): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("rc_drain_frames");
 }
 
 export type RcInputEvent =
@@ -238,7 +413,11 @@ export type RcInputEvent =
   | { kind: "ping"; ts?: number }
   | { kind: "set_quality"; quality: string }
   | { kind: "set_capture_scope"; scope: string }
-  | { kind: "set_codec"; codec: string };
+  | { kind: "set_codec"; codec: string }
+  /** Q5：码率倍率（50–200，100 = 跟随链路）。与弱网自动缩放相乘。 */
+  | { kind: "set_bitrate_pct"; pct: number }
+  /** 解码断链 → 请求被控端下一帧强制 IDR（弱网花屏自愈） */
+  | { kind: "request_key" };
 
 export function rcSendInput(event: RcInputEvent): Promise<void> {
   return invoke("rc_send_input", { event });
@@ -277,11 +456,41 @@ export function rcSessionHistory(): Promise<RcHistoryItem[]> {
   return invoke("rc_session_history");
 }
 
-export type RcQuality = "uhd" | "ultra" | "sharp" | "balanced" | "smooth";
+export function rcHistoryClear(): Promise<void> {
+  return invoke("rc_history_clear");
+}
+
+export type RcQuality =
+  | "auto"
+  | "uhd"
+  | "uhd60"
+  | "ultra"
+  | "sharp"
+  | "balanced"
+  | "smooth"
+  | "fps60"
+  | "fps120";
 export type RcCaptureScope = "virtual" | "primary" | `monitor:${number}`;
 
 export function rcSetQuality(quality: RcQuality): Promise<void> {
   return invoke("rc_set_quality", { quality });
+}
+
+/** Q5：保存发起端「码率倍率」偏好（50–200，100 = 跟随链路）。 */
+export function rcSetBitratePct(pct: number): Promise<void> {
+  return invoke("rc_set_bitrate_pct", { pct });
+}
+
+/** P1/P3：本机画面编码能力（设置页 / 会话 UI 诚实出档用）。 */
+export interface RcEncodeCaps {
+  h264_gpu: boolean;
+  hevc_hw: boolean;
+  refresh_hz: number;
+  monitors: number;
+}
+
+export function rcEncodeCaps(): Promise<RcEncodeCaps> {
+  return invoke<RcEncodeCaps>("rc_encode_caps");
 }
 
 export function rcSetCaptureScope(scope: RcCaptureScope): Promise<void> {

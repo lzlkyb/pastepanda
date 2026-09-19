@@ -95,7 +95,12 @@ pub fn export_history_xlsx(
 
         let _ = sheet.write_string(row, 0, &item.time, &default_fmt);
         let _ = sheet.write_string(row, 1, &item.source, &default_fmt);
-        let _ = sheet.write_string(row, 2, item.content_type.as_deref().unwrap_or(""), &default_fmt);
+        let _ = sheet.write_string(
+            row,
+            2,
+            item.content_type.as_deref().unwrap_or(""),
+            &default_fmt,
+        );
         let _ = sheet.write_string(row, 3, &item.content, &default_fmt);
         let _ = sheet.write_string(row, 4, &tags, &default_fmt);
         let _ = sheet.write_string(row, 5, if item.pinned { "是" } else { "否" }, &default_fmt);

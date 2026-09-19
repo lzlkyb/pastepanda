@@ -159,7 +159,10 @@ mod tests {
     fn test_remaining_calls_not_applicable_cases() {
         let fresh = daily(0, 0.0);
         // 预算 0 = 不限制，展示“还能做 N 次”是错的
-        assert_eq!(estimate_remaining_calls(find("deepseek"), &fresh, 0.0), None);
+        assert_eq!(
+            estimate_remaining_calls(find("deepseek"), &fresh, 0.0),
+            None
+        );
         // 本地厂商零费用，同理
         assert_eq!(estimate_remaining_calls(find("ollama"), &fresh, 1.0), None);
     }

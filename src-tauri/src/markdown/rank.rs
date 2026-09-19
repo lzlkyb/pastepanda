@@ -57,7 +57,11 @@ pub fn rank_sections(content: &str, terms: &[String], top: usize) -> Vec<Section
     if terms.is_empty() || top == 0 {
         return Vec::new();
     }
-    let folded: Vec<String> = terms.iter().map(|t| fold(t)).filter(|t| !t.is_empty()).collect();
+    let folded: Vec<String> = terms
+        .iter()
+        .map(|t| fold(t))
+        .filter(|t| !t.is_empty())
+        .collect();
     if folded.is_empty() {
         return Vec::new();
     }

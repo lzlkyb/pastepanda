@@ -205,7 +205,11 @@ pub(crate) fn build_profile(raw: &ProfileRawStats) -> UserProfile {
         })
         .filter(|r| r.score > 0.0)
         .collect();
-    role_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    role_scores.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 内容领域分布。**先按领域合并原始计数，再算一次百分比**——
     // 反过来（每个 content_type 各自整除取整，再把同领域的取整结果相加）会让
@@ -288,7 +292,11 @@ pub(crate) fn build_profile(raw: &ProfileRawStats) -> UserProfile {
             });
         }
     }
-    prefs.sort_by(|a, b| b.edit_rate.partial_cmp(&a.edit_rate).unwrap_or(std::cmp::Ordering::Equal));
+    prefs.sort_by(|a, b| {
+        b.edit_rate
+            .partial_cmp(&a.edit_rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let sample_events = raw.total_events;
     let confidence = (sample_events as f32 / 300.0).clamp(0.0, 1.0);
@@ -320,7 +328,11 @@ fn role_actions(role: &str) -> &'static [(&'static str, f32)] {
             ("sql_format", 0.6),
         ],
         "research" => &[("url-summary", 1.0), ("ai-summarize", 0.7)],
-        "writer" => &[("ai-polish", 1.0), ("ai-rewrite", 0.9), ("ai-merge-polish", 0.7)],
+        "writer" => &[
+            ("ai-polish", 1.0),
+            ("ai-rewrite", 0.9),
+            ("ai-merge-polish", 0.7),
+        ],
         "comm" => &[("ai-reply-draft", 1.0)],
         "ops" => &[
             ("ai-weekly-report", 1.0),
@@ -371,7 +383,11 @@ pub fn profile_action_boosts(store: State<DataStore>) -> Result<Vec<ActionBoost>
         .map(|(action_id, boost)| ActionBoost { action_id, boost })
         .filter(|a| a.boost > 0.05)
         .collect();
-    out.sort_by(|a, b| b.boost.partial_cmp(&a.boost).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.boost
+            .partial_cmp(&a.boost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(out)
 }
 
@@ -535,7 +551,9 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
     let raw = app.state::<DataStore>().profile_raw_stats(PROFILE_DAYS)?;
     let profile = build_profile(&raw);
     if profile.sample_events < 10 {
-        return Err("行为样本不足（至少需要 10 条操作记录），暂时无法生成可靠的画像描述".to_string());
+        return Err(
+            "行为样本不足（至少需要 10 条操作记录），暂时无法生成可靠的画像描述".to_string(),
+        );
     }
 
     // 3. 敏感清洗：走和 profile_export / profile_install_skill **完全同一个**
@@ -558,7 +576,9 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
     if !spec.is_local() {
         let today = app.state::<DataStore>().ai_usage_daily(1)?;
         let today_row = today.first().cloned().unwrap_or_default();
-        if let Err((spent, budget_usd)) = crate::ai::budget::check(&today_row, cfg.daily_budget_usd()) {
+        if let Err((spent, budget_usd)) =
+            crate::ai::budget::check(&today_row, cfg.daily_budget_usd())
+        {
             return Err(format!(
                 "今日预算已用完（已用 ${:.2}，上限 ${:.2}）——画像精炼需要出网计费",
                 spent, budget_usd
@@ -568,7 +588,10 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
 
     // 6. 生成
     let system = "你是用户画像分析师。根据提供的行为统计数据，用简体中文写 2~3 句自然连贯的用户画像描述（像人话，不是列表）。只描述统计里能看到的事实，不编造、不说教、不用敬语。这段描述会被粘贴给其它 AI 工具，让它在任务开始前快速了解用户。";
-    let user = format!("行为统计数据：\n{}", serde_json::to_string_pretty(&input).map_err(|e| e.to_string())?);
+    let user = format!(
+        "行为统计数据：\n{}",
+        serde_json::to_string_pretty(&input).map_err(|e| e.to_string())?
+    );
     let started = std::time::Instant::now();
     let result = crate::ai::chat(&cfg, &key, Some(system), &user, Some(600), None).await;
     let latency_ms = started.elapsed().as_millis() as u64;
@@ -578,33 +601,39 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
         Ok(o) => o,
         Err(e) => {
             let msg = e.to_string();
-            app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
-                action_id: "profile-refine".to_string(),
-                provider: spec.id.to_string(),
-                model: cfg.effective_model(),
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                cost_usd: 0.0,
-                cached: false,
-                latency_ms,
-                ok: false,
-                error: Some(msg.clone()),
-            });
+            app.state::<DataStore>()
+                .ai_usage_add(&crate::data_store::AiUsageEntry {
+                    action_id: "profile-refine".to_string(),
+                    provider: spec.id.to_string(),
+                    model: cfg.effective_model(),
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    cost_usd: 0.0,
+                    cached: false,
+                    latency_ms,
+                    ok: false,
+                    error: Some(msg.clone()),
+                });
             return Err(msg);
         }
     };
-    app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
-        action_id: "profile-refine".to_string(),
-        provider: spec.id.to_string(),
-        model: outcome.model.clone(),
-        prompt_tokens: outcome.prompt_tokens,
-        completion_tokens: outcome.completion_tokens,
-        cost_usd: crate::ai::budget::estimate_cost(spec, outcome.prompt_tokens, outcome.completion_tokens),
-        cached: false,
-        latency_ms,
-        ok: true,
-        error: None,
-    });
+    app.state::<DataStore>()
+        .ai_usage_add(&crate::data_store::AiUsageEntry {
+            action_id: "profile-refine".to_string(),
+            provider: spec.id.to_string(),
+            model: outcome.model.clone(),
+            prompt_tokens: outcome.prompt_tokens,
+            completion_tokens: outcome.completion_tokens,
+            cost_usd: crate::ai::budget::estimate_cost(
+                spec,
+                outcome.prompt_tokens,
+                outcome.completion_tokens,
+            ),
+            cached: false,
+            latency_ms,
+            ok: true,
+            error: None,
+        });
     Ok(outcome.content)
 }
 
@@ -733,8 +762,7 @@ pub fn skill_install_workflows(store: State<DataStore>) -> Result<SkillInstallRe
 
     if actions.is_empty() && chains.is_empty() {
         return Err(
-            "所有自定义动作与动作链都含疑似敏感信息（密钥或个人信息），未导出任何内容"
-                .to_string(),
+            "所有自定义动作与动作链都含疑似敏感信息（密钥或个人信息），未导出任何内容".to_string(),
         );
     }
 
@@ -756,7 +784,10 @@ pub fn skill_install_workflows(store: State<DataStore>) -> Result<SkillInstallRe
                 a.content_types.join(" / ")
             };
             md.push_str(&format!("- 适用内容类型：{}\n", types));
-            md.push_str(&format!("- 提示词模板（`{{{{内容}}}}` 是待处理文本）：{}\n\n", a.template));
+            md.push_str(&format!(
+                "- 提示词模板（`{{{{内容}}}}` 是待处理文本）：{}\n\n",
+                a.template
+            ));
         }
     }
 
@@ -1106,7 +1137,11 @@ mod tests {
         // 动作名里的密钥同样要拦
         assert!(any_sensitive(&[secret, "描述", "模板"]));
         // 正常内容不该误伤
-        assert!(!any_sensitive(&["翻译", "把内容译成中文", "请翻译：{{内容}}"]));
+        assert!(!any_sensitive(&[
+            "翻译",
+            "把内容译成中文",
+            "请翻译：{{内容}}"
+        ]));
         assert!(!any_sensitive(&[]));
     }
 
@@ -1187,7 +1222,11 @@ mod tests {
         assert!(sent.contains("译文更简洁"), "普通偏好要照发");
         let prefs = input.get("风格偏好").unwrap().as_array().unwrap();
         assert_eq!(prefs.len(), 1, "只剩那一条正常偏好");
-        assert_eq!(prefs[0].as_str().unwrap(), "翻译：译文更简洁", "偏好里的 id 也要换成名称");
+        assert_eq!(
+            prefs[0].as_str().unwrap(),
+            "翻译：译文更简洁",
+            "偏好里的 id 也要换成名称"
+        );
     }
 
     /// action_id → 名称：内置动作换成可读 label；两张表都查不到就回退原 id。
@@ -1195,13 +1234,23 @@ mod tests {
     fn test_refine_input_maps_builtin_action_names() {
         let mut p = build_profile(&raw_with(&[("ai-translate", 9)], &[("text", 9)]));
         p.top_actions = vec![
-            TopAction { action_id: "ai-translate".to_string(), count: 9 },
+            TopAction {
+                action_id: "ai-translate".to_string(),
+                count: 9,
+            },
             // 前端本地变换，不在 ACTIONS 也不在自定义表里
-            TopAction { action_id: "json_format".to_string(), count: 4 },
+            TopAction {
+                action_id: "json_format".to_string(),
+                count: 4,
+            },
         ];
         let acts = build_refine_input(&p, &|_| None);
         let acts = acts.get("高频动作").unwrap().as_array().unwrap();
-        assert_eq!(acts[0].as_str().unwrap(), "翻译（9 次）", "内置动作要发可读名");
+        assert_eq!(
+            acts[0].as_str().unwrap(),
+            "翻译（9 次）",
+            "内置动作要发可读名"
+        );
         assert_eq!(
             acts[1].as_str().unwrap(),
             "json_format（4 次）",
@@ -1214,7 +1263,10 @@ mod tests {
     fn test_refine_input_maps_custom_action_name() {
         let uuid = "a3f1c2e8-4b91-4d2a-8f77-9c1e2f3a4b5c";
         let mut p = build_profile(&raw_with(&[("ai-translate", 3)], &[("text", 3)]));
-        p.top_actions = vec![TopAction { action_id: uuid.to_string(), count: 12 }];
+        p.top_actions = vec![TopAction {
+            action_id: uuid.to_string(),
+            count: 12,
+        }];
         let input = build_refine_input(&p, &|id| {
             if id == uuid {
                 Some("转成周报口吻".to_string())
@@ -1235,7 +1287,10 @@ mod tests {
         // 长度 24（正好卡在 MAX_ACTION_NAME_CHARS 上），是个真能存进库的名字
         let secret_name = concat!("sk-", "live-a1b2c3d4e5f6g7h8");
         let mut p = build_profile(&raw_with(&[("ai-translate", 3)], &[("text", 3)]));
-        p.top_actions = vec![TopAction { action_id: uuid.to_string(), count: 7 }];
+        p.top_actions = vec![TopAction {
+            action_id: uuid.to_string(),
+            count: 7,
+        }];
         p.prefs = vec![PrefItem {
             action_id: uuid.to_string(),
             preference: "短一点".to_string(),
@@ -1436,10 +1491,7 @@ mod tests {
 
     #[test]
     fn test_cat_filter_subset() {
-        let cats = Some(vec![
-            "profession".to_string(),
-            "instructions".to_string(),
-        ]);
+        let cats = Some(vec!["profession".to_string(), "instructions".to_string()]);
         let f = cat_filter(&cats);
         assert!(f("profession"));
         assert!(f("instructions"));

@@ -98,9 +98,7 @@ impl PathKind {
 ///   只看 v4 的 `is_private()` 会把 IPv6 局域网当成公网直连。
 fn is_lan_ip(ip: std::net::IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(v4) => {
-            v4.is_private() || v4.is_link_local() || v4.is_loopback()
-        }
+        std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),
         std::net::IpAddr::V6(v6) => {
             v6.is_unique_local() || v6.is_unicast_link_local() || v6.is_loopback()
         }
@@ -271,6 +269,10 @@ mod tests {
             assert!(k.as_str().is_ascii(), "{:?} 存库的值得是 ASCII", k);
             assert!(!k.label().is_empty());
         }
-        assert_eq!(PathKind::None.as_str(), "", "离线存空串，与现有 `transport` 的口径一致");
+        assert_eq!(
+            PathKind::None.as_str(),
+            "",
+            "离线存空串，与现有 `transport` 的口径一致"
+        );
     }
 }

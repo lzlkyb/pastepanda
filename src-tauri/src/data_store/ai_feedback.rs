@@ -69,7 +69,10 @@ pub struct ActionPrefRow {
 impl DataStore {
     /// 记一笔反馈。**写不进去不阻塞**：统计只是记账，不能反过来卡住主流程。
     pub fn ai_feedback_add(&self, fb: &AiFeedback) {
-        if !matches!(fb.outcome.as_str(), FEEDBACK_ACCEPTED | FEEDBACK_EDITED | FEEDBACK_REJECTED) {
+        if !matches!(
+            fb.outcome.as_str(),
+            FEEDBACK_ACCEPTED | FEEDBACK_EDITED | FEEDBACK_REJECTED
+        ) {
             return;
         }
         let conn = self.lock_conn();
@@ -141,9 +144,12 @@ impl DataStore {
         let cutoff = (chrono::Local::now() - chrono::Duration::days(retain_days.max(1) as i64))
             .format("%Y-%m-%d 00:00:00")
             .to_string();
-        conn.execute("DELETE FROM ai_feedback WHERE created_at < ?1", params![cutoff])
-            .map(|n| n as u32)
-            .map_err(|e| e.to_string())
+        conn.execute(
+            "DELETE FROM ai_feedback WHERE created_at < ?1",
+            params![cutoff],
+        )
+        .map(|n| n as u32)
+        .map_err(|e| e.to_string())
     }
 
     /// 一键清空全部反馈（红线②：用户可见可删）。
@@ -180,8 +186,11 @@ impl DataStore {
         let conn = self.lock_conn();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         if pref.is_empty() {
-            conn.execute("DELETE FROM action_prefs WHERE action_id = ?1", params![action_id])
-                .map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM action_prefs WHERE action_id = ?1",
+                params![action_id],
+            )
+            .map_err(|e| e.to_string())?;
         } else {
             conn.execute(
                 "INSERT INTO action_prefs (action_id, preference, updated_at)

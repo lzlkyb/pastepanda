@@ -26,7 +26,11 @@ pub enum ContentEdit {
     /// 把后面的子节静默过继给上一节——要重构结构就用整篇的 `kb_update`。
     UpdateSection { locator: SectionRef, body: String },
     /// 在某节的指定位置插入一段。
-    InsertAtSection { locator: SectionRef, text: String, at: InsertAt },
+    InsertAtSection {
+        locator: SectionRef,
+        text: String,
+        at: InsertAt,
+    },
     /// 按原文片段替换。**要求唯一匹配**，理由见 [`apply`]。
     ReplaceText { find: String, replace: String },
     /// 插到正文最开头（frontmatter 之后）。

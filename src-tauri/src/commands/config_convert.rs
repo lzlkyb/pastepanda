@@ -23,7 +23,10 @@ fn parse_properties(text: &str) -> BTreeMap<String, String> {
             .or_else(|| trimmed.find(':'))
             .unwrap_or(trimmed.len());
         let key = trimmed[..sep_pos].trim().to_string();
-        let value = trimmed[sep_pos..].trim_start_matches(['=', ':']).trim().to_string();
+        let value = trimmed[sep_pos..]
+            .trim_start_matches(['=', ':'])
+            .trim()
+            .to_string();
         if !key.is_empty() {
             map.insert(key, value);
         }
@@ -90,23 +93,29 @@ fn detect_format(text: &str) -> &'static str {
     let trimmed = text.trim();
     // JSON：以 { 或 [ 开头
     if (trimmed.starts_with('{') || trimmed.starts_with('['))
-        && serde_json::from_str::<JsonValue>(trimmed).is_ok() {
-            return "json";
-        }
+        && serde_json::from_str::<JsonValue>(trimmed).is_ok()
+    {
+        return "json";
+    }
     // YAML：包含 "key:" 模式且不以 { 开头，或有 --- 文档标记
-    if trimmed.starts_with("---") || trimmed.lines().any(|l| {
-        let t = l.trim();
-        !t.is_empty()
-            && !t.starts_with('#')
-            && (t.contains(": ") || t.ends_with(':'))
-            && !t.contains('=')
-    }) {
+    if trimmed.starts_with("---")
+        || trimmed.lines().any(|l| {
+            let t = l.trim();
+            !t.is_empty()
+                && !t.starts_with('#')
+                && (t.contains(": ") || t.ends_with(':'))
+                && !t.contains('=')
+        })
+    {
         return "yaml";
     }
     // Properties：包含 key=value 或 key:value 模式
     if trimmed.lines().any(|l| {
         let t = l.trim();
-        !t.is_empty() && !t.starts_with('#') && !t.starts_with('!') && (t.contains('=') || t.contains(':'))
+        !t.is_empty()
+            && !t.starts_with('#')
+            && !t.starts_with('!')
+            && (t.contains('=') || t.contains(':'))
     }) {
         return "properties";
     }
@@ -184,8 +193,7 @@ pub fn batch_convert_config(
     for path_str in &paths {
         let path = std::path::Path::new(path_str);
         let result = (|| -> Result<String, String> {
-            let content =
-                std::fs::read_to_string(path).map_err(|e| format!("读取失败: {e}"))?;
+            let content = std::fs::read_to_string(path).map_err(|e| format!("读取失败: {e}"))?;
             let from = detect_format(&content).to_string();
             let converted = convert_config(content, from, to.clone())?;
 
@@ -212,8 +220,7 @@ pub fn batch_convert_config(
                 path.with_extension(ext)
             };
 
-            std::fs::write(&out_path, &converted)
-                .map_err(|e| format!("写入失败: {e}"))?;
+            std::fs::write(&out_path, &converted).map_err(|e| format!("写入失败: {e}"))?;
             Ok(out_path.to_string_lossy().to_string())
         })();
 
@@ -327,11 +334,13 @@ pub fn diff_config(left: String, right: String) -> Result<ConfigDiffResult, Stri
 
 /// 对两个配置文件做语义对比（读取文件内容后调用 diff_config 逻辑）
 #[tauri::command]
-pub fn diff_config_files(left_path: String, right_path: String) -> Result<ConfigDiffResult, String> {
-    let left = std::fs::read_to_string(&left_path)
-        .map_err(|e| format!("读取左侧文件失败: {e}"))?;
-    let right = std::fs::read_to_string(&right_path)
-        .map_err(|e| format!("读取右侧文件失败: {e}"))?;
+pub fn diff_config_files(
+    left_path: String,
+    right_path: String,
+) -> Result<ConfigDiffResult, String> {
+    let left = std::fs::read_to_string(&left_path).map_err(|e| format!("读取左侧文件失败: {e}"))?;
+    let right =
+        std::fs::read_to_string(&right_path).map_err(|e| format!("读取右侧文件失败: {e}"))?;
     diff_config(left, right)
 }
 

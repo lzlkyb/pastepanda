@@ -45,8 +45,10 @@ impl crate::data_store::DataStore {
             "SELECT image_path, full_text FROM image_ocr_cache WHERE image_path IN ({})",
             placeholders.join(",")
         );
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            paths.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = paths
+            .iter()
+            .map(|p| p as &dyn rusqlite::types::ToSql)
+            .collect();
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
@@ -148,14 +150,14 @@ impl crate::data_store::DataStore {
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let mut n = 0u32;
         {
-            let mut ins = match conn.prepare("INSERT INTO image_ocr_fts (rowid, ocr) VALUES (?1, ?2)")
-            {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = conn.execute_batch("ROLLBACK;");
-                    return Err(e.to_string());
-                }
-            };
+            let mut ins =
+                match conn.prepare("INSERT INTO image_ocr_fts (rowid, ocr) VALUES (?1, ?2)") {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let _ = conn.execute_batch("ROLLBACK;");
+                        return Err(e.to_string());
+                    }
+                };
             for (rowid, full_text) in &pending {
                 // 单条失败不该让整批回填中断（同 history_fts 存量回填的容错取舍）
                 if ins

@@ -90,10 +90,7 @@ pub fn rc_nearby_confirm(svc: State<'_, Arc<RcService>>) -> Result<RcPairResult,
             peer_id,
             peer_name: String::new(),
         },
-        Confirmed::Committed {
-            peer_id,
-            peer_name,
-        } => RcPairResult {
+        Confirmed::Committed { peer_id, peer_name } => RcPairResult {
             state: "committed".to_string(),
             peer_id,
             peer_name,

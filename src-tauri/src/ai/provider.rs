@@ -172,10 +172,10 @@ pub const BUILTIN_AGNES_ID: &str = "builtin-agnes";
 pub fn builtin_agnes_key() -> String {
     const XOR: u8 = 0x5A;
     const BUF: &[u8] = &[
-        0x29, 0x31, 0x77, 0x20, 0x1c, 0x6d, 0x2e, 0x31, 0x09, 0x36, 0x63, 0x17, 0x30, 0x69,
-        0x63, 0x6c, 0x2d, 0x6e, 0x6e, 0x6b, 0x6d, 0x18, 0x02, 0x09, 0x11, 0x1d, 0x38, 0x2c,
-        0x0a, 0x3b, 0x34, 0x1c, 0x0e, 0x36, 0x0f, 0x2b, 0x69, 0x0d, 0x15, 0x2d, 0x38, 0x39,
-        0x13, 0x17, 0x23, 0x6e, 0x14, 0x08, 0x3b, 0x6a, 0x19,
+        0x29, 0x31, 0x77, 0x20, 0x1c, 0x6d, 0x2e, 0x31, 0x09, 0x36, 0x63, 0x17, 0x30, 0x69, 0x63,
+        0x6c, 0x2d, 0x6e, 0x6e, 0x6b, 0x6d, 0x18, 0x02, 0x09, 0x11, 0x1d, 0x38, 0x2c, 0x0a, 0x3b,
+        0x34, 0x1c, 0x0e, 0x36, 0x0f, 0x2b, 0x69, 0x0d, 0x15, 0x2d, 0x38, 0x39, 0x13, 0x17, 0x23,
+        0x6e, 0x14, 0x08, 0x3b, 0x6a, 0x19,
     ];
     crate::mask::reveal_xor(BUF, XOR)
 }
@@ -718,7 +718,11 @@ mod tests {
     fn builtin_agnes_key_reveals_valid_key() {
         // 防误改混淆字节导致还原出坏 key（比如手滑改错一位）
         let k = builtin_agnes_key();
-        assert!(k.starts_with("sk-"), "必须以 sk- 开头，实际: {}", &k[..k.len().min(20)]);
+        assert!(
+            k.starts_with("sk-"),
+            "必须以 sk- 开头，实际: {}",
+            &k[..k.len().min(20)]
+        );
         assert_eq!(k.len(), 51, "内置 key 长度必须保持 51");
         assert!(k.bytes().all(|b| b.is_ascii()), "key 必须全 ASCII");
     }
@@ -746,7 +750,10 @@ mod tests {
     fn test_retired_builtin_model_is_migrated() {
         assert_eq!(migrate_builtin_model("agnes-2.5-flash"), "agnes-3.0-flash");
         // 带空格的脏数据也要认（配置是用户可手填的输入框）
-        assert_eq!(migrate_builtin_model("  agnes-2.5-flash  "), "agnes-3.0-flash");
+        assert_eq!(
+            migrate_builtin_model("  agnes-2.5-flash  "),
+            "agnes-3.0-flash"
+        );
     }
 
     /// 现行 id 与清单外的自定义值必须原样通过 —— 迁移只能是白名单，不能顺手改写。
@@ -776,11 +783,15 @@ mod tests {
     }
 
     #[test]
-    fn test_default_is_deepseek_and_disabled() {        // 默认值必须是国内可直连的厂商，否则用户拿到手第一下就是超时
+    fn test_default_is_deepseek_and_disabled() {
+        // 默认值必须是国内可直连的厂商，否则用户拿到手第一下就是超时
         let cfg = AiConfig::default();
         assert_eq!(cfg.provider, "deepseek");
         assert!(!cfg.enabled, "AI 必须默认关闭");
-        assert_eq!(cfg.request_url(), "https://api.deepseek.com/v1/chat/completions");
+        assert_eq!(
+            cfg.request_url(),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
         assert_eq!(cfg.effective_model(), "deepseek-v4-flash");
         assert_eq!(cfg.effective_protocol(), Protocol::OpenAi);
     }
@@ -843,8 +854,16 @@ mod tests {
             assert!(!p.note.is_empty(), "{} 缺 note", p.id);
 
             if p.id != "custom" {
-                assert!(p.base_url.starts_with("http"), "{} 的 base_url 不合法", p.id);
-                assert!(!p.base_url.ends_with('/'), "{} 的 base_url 不该带尾斜杠", p.id);
+                assert!(
+                    p.base_url.starts_with("http"),
+                    "{} 的 base_url 不合法",
+                    p.id
+                );
+                assert!(
+                    !p.base_url.ends_with('/'),
+                    "{} 的 base_url 不该带尾斜杠",
+                    p.id
+                );
             }
 
             // 不给下拉清单的，必须允许自由输入并给出提示，否则用户无从下手
@@ -858,7 +877,11 @@ mod tests {
                 assert!(p.key_url.starts_with("http"), "{} 缺申请 Key 的链接", p.id);
             }
 
-            assert!(p.price_in >= 0.0 && p.price_out >= 0.0, "{} 单价不能为负", p.id);
+            assert!(
+                p.price_in >= 0.0 && p.price_out >= 0.0,
+                "{} 单价不能为负",
+                p.id
+            );
         }
     }
 
@@ -946,7 +969,10 @@ mod tests {
             ..Default::default()
         };
         // 尾斜杠要去掉，否则拼出 //chat/completions
-        assert_eq!(cfg.request_url(), "https://proxy.example.com/v1/chat/completions");
+        assert_eq!(
+            cfg.request_url(),
+            "https://proxy.example.com/v1/chat/completions"
+        );
     }
 
     #[test]

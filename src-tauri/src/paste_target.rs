@@ -100,12 +100,13 @@ mod tests {
     /// 四种外壳窗口必须被拦。少拦一个就会重演「提示已粘贴、实际啥也没有」。
     #[test]
     fn test_shell_target_classes_blocked() {
-        for name in ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"] {
-            assert!(
-                is_shell_target_class(name),
-                "外壳窗口 {} 必须被拦截",
-                name
-            );
+        for name in [
+            "Progman",
+            "WorkerW",
+            "Shell_TrayWnd",
+            "Shell_SecondaryTrayWnd",
+        ] {
+            assert!(is_shell_target_class(name), "外壳窗口 {} 必须被拦截", name);
         }
     }
 

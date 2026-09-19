@@ -179,9 +179,12 @@ pub(super) fn is_cjk(c: char) -> bool {
 
 /// 判断查询词是否需要回退 LIKE（含 FTS5 MATCH 语法特殊字符）
 fn fts_safe(query: &str) -> bool {
-    !query
-        .chars()
-        .any(|c| matches!(c, '"' | '*' | '-' | ':' | '(' | ')' | '^' | '~' | '\\' | '[' | ']' | '{' | '}' | '+'))
+    !query.chars().any(|c| {
+        matches!(
+            c,
+            '"' | '*' | '-' | ':' | '(' | ')' | '^' | '~' | '\\' | '[' | ']' | '{' | '}' | '+'
+        )
+    })
 }
 
 /// 自我净化（v6.1）：高价值条目不参与过期清理，追加到过期清理的 WHERE 之后。
@@ -752,7 +755,8 @@ impl DataStore {
         let md5_hash = crate::hashing::content_md5(text);
         let pinyin_initials = compute_pinyin_initials(text);
         let labels = crate::content_classifier::ContentClassifier::new().classify(text);
-        let content_type = crate::content_classifier::ContentClassifier::content_type_from_labels(&labels);
+        let content_type =
+            crate::content_classifier::ContentClassifier::content_type_from_labels(&labels);
         let affected = conn
             .execute(
                 "UPDATE history SET text = ?1, md5 = ?2, pinyin_initials = ?3, content_type = ?5 WHERE id = ?4",
@@ -997,7 +1001,8 @@ impl DataStore {
                     let (item_type, content) = row.map_err(|e| e.to_string())?;
                     match item_type.as_str() {
                         "image" if !content.is_empty() => paths.push(content),
-                        "rich" => paths.extend(Self::extract_local_image_files_from_rich_content(&content)),
+                        "rich" => paths
+                            .extend(Self::extract_local_image_files_from_rich_content(&content)),
                         _ => {}
                     }
                 }
@@ -1294,8 +1299,11 @@ impl DataStore {
         //    它会重复加锁导致死锁）
         if !items.is_empty() {
             let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
-            let placeholders: Vec<String> =
-                ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+            let placeholders: Vec<String> = ids
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", i + 1))
+                .collect();
             let sql = format!(
                 "SELECT ht.history_id, t.id, t.name, t.color, COALESCE(ht.source, 'manual'), t.created_at
                  FROM history_tags ht
@@ -1304,8 +1312,10 @@ impl DataStore {
                  ORDER BY t.name ASC",
                 placeholders.join(","),
             );
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = ids
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
             let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             let rows = stmt
                 .query_map(param_refs.as_slice(), |row| {
@@ -1315,7 +1325,9 @@ impl DataStore {
                             id: row.get(1)?,
                             name: row.get(2)?,
                             color: row.get(3)?,
-                            source: row.get::<_, String>(4).unwrap_or_else(|_| "manual".to_string()),
+                            source: row
+                                .get::<_, String>(4)
+                                .unwrap_or_else(|_| "manual".to_string()),
                             created_at: row.get(5)?,
                         },
                     ))
@@ -1477,8 +1489,11 @@ impl DataStore {
         //    它会重复加锁导致死锁）
         if !items.is_empty() {
             let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
-            let placeholders: Vec<String> =
-                ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+            let placeholders: Vec<String> = ids
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", i + 1))
+                .collect();
             let sql = format!(
                 "SELECT ht.history_id, t.id, t.name, t.color, COALESCE(ht.source, 'manual'), t.created_at
                  FROM history_tags ht
@@ -1487,8 +1502,10 @@ impl DataStore {
                  ORDER BY t.name ASC",
                 placeholders.join(","),
             );
-            let tag_param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let tag_param_refs: Vec<&dyn rusqlite::types::ToSql> = ids
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
             let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             let rows = stmt
                 .query_map(tag_param_refs.as_slice(), |row| {
@@ -1498,7 +1515,9 @@ impl DataStore {
                             id: row.get(1)?,
                             name: row.get(2)?,
                             color: row.get(3)?,
-                            source: row.get::<_, String>(4).unwrap_or_else(|_| "manual".to_string()),
+                            source: row
+                                .get::<_, String>(4)
+                                .unwrap_or_else(|_| "manual".to_string()),
                             created_at: row.get(5)?,
                         },
                     ))
@@ -1862,7 +1881,10 @@ impl DataStore {
 
     /// 批量回填图片条目的 OCR 文本（image_ocr_cache 一次性 IN 查询，同 load_tags 模式）。
     /// 只对 type=image 且 content 非空 的条目查询；未识别过的条目保持 None（前端懒触发）。
-    pub(crate) fn load_ocr_texts_into_items(&self, items: &mut [HistoryItem]) -> Result<(), String> {
+    pub(crate) fn load_ocr_texts_into_items(
+        &self,
+        items: &mut [HistoryItem],
+    ) -> Result<(), String> {
         if items.is_empty() {
             return Ok(());
         }
@@ -1893,12 +1915,17 @@ impl DataStore {
         let pending: Vec<(String, String)> = {
             let conn = self.lock_conn();
             let mut stmt = conn
-                .prepare("SELECT id, text FROM history WHERE type = 'text' AND content_type IS NULL")
+                .prepare(
+                    "SELECT id, text FROM history WHERE type = 'text' AND content_type IS NULL",
+                )
                 .map_err(|e| e.to_string())?;
             let rows = stmt
-                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
                 .map_err(|e| e.to_string())?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
         };
 
         if pending.is_empty() {
@@ -1911,7 +1938,8 @@ impl DataStore {
             .iter()
             .map(|(id, text)| {
                 let labels = classifier.classify(text);
-                let ct = crate::content_classifier::ContentClassifier::content_type_from_labels(&labels);
+                let ct =
+                    crate::content_classifier::ContentClassifier::content_type_from_labels(&labels);
                 (id.clone(), ct)
             })
             .collect();

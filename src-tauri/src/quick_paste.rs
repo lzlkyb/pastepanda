@@ -63,12 +63,24 @@ fn calc_position(panel_w: f64, panel_h: f64) -> tauri::PhysicalPosition<f64> {
     // 钳制到工作区；若工作区比面板小则贴左上角
     let (min_x, max_x) = (mon.work_x + margin, mon.work_x + mon.work_w - pw - margin);
     let (min_y, max_y) = (mon.work_y + margin, mon.work_y + mon.work_h - ph - margin);
-    let x = if max_x < min_x { min_x } else { raw_x.max(min_x).min(max_x) };
-    let y = if max_y < min_y { min_y } else { raw_y.max(min_y).min(max_y) };
+    let x = if max_x < min_x {
+        min_x
+    } else {
+        raw_x.max(min_x).min(max_x)
+    };
+    let y = if max_y < min_y {
+        min_y
+    } else {
+        raw_y.max(min_y).min(max_y)
+    };
 
     log::info!(
         "[QuickPaste] 定位: cursor=({:.0},{:.0}) scale={:.2} final=({:.0},{:.0})",
-        cx, cy, mon.scale, x, y
+        cx,
+        cy,
+        mon.scale,
+        x,
+        y
     );
     tauri::PhysicalPosition { x, y }
 }

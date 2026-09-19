@@ -36,7 +36,10 @@ fn extract_domains(text: &str) -> Vec<String> {
 fn extract_emails(text: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for cap in email_re().captures_iter(text) {
-        let e = cap.get(0).map(|m| m.as_str().to_lowercase()).unwrap_or_default();
+        let e = cap
+            .get(0)
+            .map(|m| m.as_str().to_lowercase())
+            .unwrap_or_default();
         if !e.is_empty() && !out.contains(&e) {
             out.push(e);
         }
@@ -384,7 +387,9 @@ impl DataStore {
             .map_err(|e| e.to_string())?;
         for (id, s) in scored {
             let detail = stmt
-                .query_row([&id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .query_row([&id], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })
                 .ok();
             if let Some((time, text)) = detail {
                 out.push((id, s, time, text));

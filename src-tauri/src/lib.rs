@@ -18,7 +18,6 @@ fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fm
 
 pub mod ai;
 mod atomic_write;
-pub mod user_paths;
 mod auto_cleanup;
 /// AM-5 召回基准。`#[cfg(test)]`：只在 `cargo test` 下编译，**不进安装包**。
 /// 真库跑法见模块文档。
@@ -26,10 +25,11 @@ mod auto_cleanup;
 mod bench;
 mod clipboard_monitor;
 mod commands;
+pub mod user_paths;
 // DPAPI 加解密的公共收口（AI 密钥与 MCP 令牌共用同一份 unsafe FFI）
-pub mod dpapi;
 pub mod content_classifier;
 pub mod data_store;
+pub mod dpapi;
 pub mod error;
 pub mod hashing;
 mod hotkey_manager;
@@ -49,13 +49,13 @@ mod stack_hud;
 mod stack_hud_focus;
 mod stack_hud_pos;
 // 本机自有凭证的哈希登记处（让剪贴板监听不把我们自己的令牌/密钥记进历史）
-pub mod secret_registry;
-/// M6 多机同步。当前只有 P1 身份/配对层，无传输层、无界面。
-pub mod sync;
 /// 远程电脑（远程协助）。默认关；复用 sync 的 iroh 端点（双 ALPN）。
 pub mod rc;
+pub mod secret_registry;
 /// AM-8 近重复判定（纯函数）。
 pub mod similar;
+/// M6 多机同步。当前只有 P1 身份/配对层，无传输层、无界面。
+pub mod sync;
 mod tray_manager;
 mod win_foreground;
 
@@ -676,6 +676,18 @@ pub fn run() {
                         );
                     }));
                 }
+                // Q10：被控端画质/编码被对端改动 → 抛事件让被控横幅能说出
+                // 「对方把画质调成了 X」。与 rc-scope-changed 同一组理由：
+                // 只走 rc-session-changed 分不清是本地改的还是对端改的。
+                {
+                    let handle_stream = handle.clone();
+                    rc_svc.set_stream_notify(std::sync::Arc::new(move |kind: &str, name: &str| {
+                        let _ = handle_stream.emit(
+                            "rc-stream-note",
+                            serde_json::json!({ "kind": kind, "name": name }),
+                        );
+                    }));
+                }
                 // C：会话路径自动切换（iroh 每 60s 会尝试把中继路径升级成直连）
                 // → 单独抛事件。不加这一条，用户只会看到延迟突然变了却不知道为什么；
                 // 「from/to」都要给，前端才能说出「从哪条路换到了哪条路」。
@@ -686,6 +698,24 @@ pub fn run() {
                             "rc-path-changed",
                             serde_json::json!({ "from": from, "to": to }),
                         );
+                    }));
+                }
+                // P1-6：远端光标形状变化 → 抛事件，前端切 overlay / 系统光标样式
+                {
+                    let handle_cursor = handle.clone();
+                    rc_svc.set_cursor_notify(std::sync::Arc::new(move |shape: &str| {
+                        let _ = handle_cursor.emit(
+                            "rc-cursor-changed",
+                            serde_json::json!({ "shape": shape }),
+                        );
+                    }));
+                }
+                // 发起端 outbox 有新帧 → 唤醒前端来 rc_drain_frames（原始二进制批量拉帧）。
+                // 事件不带 payload：帧数据走 invoke 返回的 ArrayBuffer，事件只是「门铃」。
+                {
+                    let handle_frame = handle.clone();
+                    rc_svc.set_frame_notify(std::sync::Arc::new(move || {
+                        let _ = handle_frame.emit("rc-frame-ready", ());
                     }));
                 }
                 app.manage(rc_svc);
@@ -855,6 +885,7 @@ pub fn run() {
             commands::rc_invite_preview,
             commands::rc_pair,
             commands::rc_forget,
+            commands::rc_device_rename,
             commands::rc_join_approve,
             commands::rc_join_deny,
             commands::rc_set_enabled,
@@ -862,20 +893,28 @@ pub fn run() {
             commands::rc_set_capability,
             commands::rc_set_device_allowed,
             commands::rc_request_session,
+            commands::rc_uno_generate,
+            commands::rc_uno_revoke,
             commands::rc_cancel_request,
             commands::rc_clear_outbound_error,
             commands::rc_approve_inbound,
             commands::rc_deny_inbound,
+            commands::rc_device_trust_set,
             commands::rc_end_session,
             commands::rc_require_active,
             commands::rc_latest_frame,
+            commands::rc_drain_frames,
             commands::rc_send_input,
+            commands::rc_open_workbench,
             commands::rc_push_clipboard,
             commands::rc_set_quality,
+            commands::rc_set_bitrate_pct,
+            commands::rc_encode_caps,
             commands::rc_list_monitors,
             commands::rc_set_capture_scope,
             commands::rc_pull_clipboard,
             commands::rc_session_history,
+            commands::rc_history_clear,
             // 局域网配对（A3）：附近设备 + 6 位数字核对
             commands::rc_nearby_status,
             commands::rc_nearby_pair,

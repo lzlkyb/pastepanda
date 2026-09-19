@@ -142,7 +142,8 @@ use crate::stack_hud_pos::{
 /// 1. `emit_state` 读它写入 `StackHudState.anchor_kind`，前端据此决定是否画方向尾；
 /// 2. `follow_anchor_with` 读它做「跟随白名单」判据（见 `should_follow`）——
 ///    连续两次光标锚不允许挪窗口，否则等价于浮标跟随鼠标。
-static LAST_ANCHOR_KIND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(ANCHOR_NONE);
+static LAST_ANCHOR_KIND: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(ANCHOR_NONE);
 
 fn store_anchor_kind(kind: u8) {
     LAST_ANCHOR_KIND.store(kind, Ordering::SeqCst);
@@ -194,8 +195,14 @@ pub fn init(app: &AppHandle) {
     let Ok(cfg) = store.get_config() else {
         return;
     };
-    let x = cfg.get(OFFSET_KEY_X).and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let y = cfg.get(OFFSET_KEY_Y).and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let x = cfg
+        .get(OFFSET_KEY_X)
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let y = cfg
+        .get(OFFSET_KEY_Y)
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     OFFSET_X.store(x as i32, Ordering::SeqCst);
     OFFSET_Y.store(y as i32, Ordering::SeqCst);
     log::info!("[StackHud] 已恢复浮标偏移: ({x:.0}, {y:.0})");
@@ -218,9 +225,8 @@ fn anchor_rect(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
     let engine = app.try_state::<crate::paste_engine::PasteEngine>()?;
     let hwnd = engine.capture_foreground_now()?;
     let mut r = RECT::default();
-    let ok = unsafe {
-        GetWindowRect(windows::Win32::Foundation::HWND(hwnd as *mut _), &mut r).is_ok()
-    };
+    let ok =
+        unsafe { GetWindowRect(windows::Win32::Foundation::HWND(hwnd as *mut _), &mut r).is_ok() };
     if !ok || r.right <= r.left || r.bottom <= r.top {
         return None;
     }
@@ -372,9 +378,7 @@ fn calc_position_with_offset(
                 h: mon.work_h,
             };
             let (pw, ph) = (HUD_W * mon.scale, HUD_H * mon.scale);
-            if let Some((x, y, _below)) =
-                control_anchor_pos((cx, cy, cw, ch), offset, pw, ph, wa)
-            {
+            if let Some((x, y, _below)) = control_anchor_pos((cx, cy, cw, ch), offset, pw, ph, wa) {
                 store_anchor_kind(ANCHOR_CONTROL);
                 return tauri::PhysicalPosition { x, y };
             }
@@ -846,7 +850,9 @@ pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, Str
     let _ = app.emit_to(WINDOW_LABEL, EVENT_ADJUST, false);
 
     // 退出时保存偏移：当前位置 − 默认落位（不含偏移的锚点/光标落位）
-    let cur = window.outer_position().map_err(|e| format!("读取浮标位置失败: {e}"))?;
+    let cur = window
+        .outer_position()
+        .map_err(|e| format!("读取浮标位置失败: {e}"))?;
     let default = default_position(&app);
     let ox = cur.x as f64 - default.x;
     let oy = cur.y as f64 - default.y;

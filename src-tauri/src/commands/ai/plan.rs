@@ -153,8 +153,15 @@ pub async fn ai_plan_chain(
     let (system, user) = build_plan_prompt(&text, &actions);
 
     let started = std::time::Instant::now();
-    let result =
-        crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(PLAN_MAX_TOKENS), None).await;
+    let result = crate::ai::chat(
+        &cfg,
+        &key,
+        Some(system.as_str()),
+        &user,
+        Some(PLAN_MAX_TOKENS),
+        None,
+    )
+    .await;
     let latency_ms = started.elapsed().as_millis() as u64;
 
     // 用一个固定的伪动作 id 记账，让用量页能看出“编链花了多少钱”

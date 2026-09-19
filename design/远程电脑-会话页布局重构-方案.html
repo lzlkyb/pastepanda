@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="utf-8">
+<title>远程电脑 · 会话页布局重构 — 方案对比</title>
+<style>
+:root{
+  --card-bg:#fff; --card-border:#E0E4EB; --border-color:#E0E4EB;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --accent:#0284C7; --accent-light:#E0F2FE;
+  --danger:#D64545; --orange:#E0803A; --green:#2F9E5F;
+  --section-bg:#F0F4F8; --input-bg:#F1F5F9;
+  --page-bg:#F4F8FC; --ink:#0F172A;
+  --wb-side-w:272px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:28px 32px 64px;
+  font:13px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  color:var(--text-primary);
+  background:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.10), transparent 55%),
+    linear-gradient(168deg,#F4F8FC 0%,#EEF3F8 42%,#E8F0F7 100%);
+}
+h1{font-size:22px;margin:0 0 6px}
+h2{font-size:16px;margin:36px 0 12px;padding-bottom:7px;border-bottom:2px solid var(--border-color)}
+h3{font-size:14px;margin:22px 0 8px}
+p{margin:8px 0}
+.lead{color:var(--text-secondary);font-size:13.5px;max-width:920px}
+.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:11.5px}
+
+/* —— 通用卡片 / 表格 —— */
+.card{background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:14px 16px;margin:12px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12.5px;background:var(--card-bg)}
+th,td{border:1px solid var(--border-color);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--section-bg);font-weight:600}
+td code,th code{font-family:"Cascadia Mono",Consolas,monospace;font-size:11px;background:var(--input-bg);padding:1px 4px;border-radius:3px}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid;margin-right:4px}
+.tag.bad{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--border-color));background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.tag.warn{color:var(--orange);border-color:color-mix(in srgb,var(--orange) 40%,var(--border-color));background:color-mix(in srgb,var(--orange) 10%,transparent)}
+.tag.good{color:var(--green);border-color:color-mix(in srgb,var(--green) 40%,var(--border-color));background:color-mix(in srgb,var(--green) 10%,transparent)}
+.tag.info{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--border-color));background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.callout{border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--card-bg));padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+.callout.bad{border-left-color:var(--danger);background:color-mix(in srgb,var(--danger) 6%,var(--card-bg))}
+
+/* —— 工作台 1:1 复刻 —— */
+.frameWrap{overflow-x:auto;padding-bottom:6px}
+.frame{
+  width:1200px;height:780px;display:flex;overflow:hidden;
+  border:1px solid var(--border-color);border-radius:10px;
+  background:var(--page-bg);box-shadow:0 6px 24px rgba(15,23,42,.10);
+  position:relative;margin:10px 0;flex-shrink:0;
+}
+/* 左栏（.wbSide） */
+.side{
+  width:var(--wb-side-w);flex-shrink:0;display:flex;flex-direction:column;gap:10px;
+  padding:14px 12px;border-right:1px solid var(--border-color);background:var(--card-bg);
+  overflow:hidden;
+}
+.sideHead{display:flex;align-items:baseline;gap:8px}
+.sideTitle{font-size:15px;font-weight:700;margin:0}
+.meta{font-size:11px;color:var(--text-muted)}
+.sp{flex:1}
+/* 允许被远程行（.selfRow，照 RcSelfToggleRow 的 JSX + RemoteComputer.module.css 抄） */
+.selfRow{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--card-bg)}
+.selfRowInfo{min-width:0}
+.selfRowTitle{font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.selfRowHint{font-size:11px;color:var(--text-muted);margin-top:2px}
+.selfRowSp{flex:1;min-width:8px}
+.selfChipOn{font-size:10px;font-weight:600;padding:1px 8px;border-radius:20px;background:color-mix(in srgb,var(--green) 12%,transparent);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 35%,var(--border-color));white-space:nowrap}
+.selfSettingsLink{font-size:11px;background:none;border:none;color:var(--accent);padding:2px 4px;flex-shrink:0;font-family:inherit}
+/* 开关（设置页 .sToggle，44×26 —— 两个入口必须长得一样） */
+.sToggle{display:inline-block;width:44px;height:26px;border-radius:13px;border:none;position:relative;flex-shrink:0;padding:0;background:var(--green)}
+.sToggle .sToggleThumb{position:absolute;left:0;top:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transform:translateX(20px)}
+.sToggle .sToggleLabel{position:absolute;top:50%;transform:translateY(-50%);left:7px;font-size:11px;font-weight:700;color:#fff;font-style:normal}
+/* 画质条（.qBar） */
+.qBar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg)}
+.qLabel{font-size:11px;color:var(--text-muted);margin-right:2px}
+.pill{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-muted);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.pillOn{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--border-color));background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-weight:600;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.pillDanger{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border-color));background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger);display:inline-flex;align-items:center}
+.qSp{flex:1;min-width:8px}
+.qMeta{font-size:11px;color:var(--text-muted)}
+.fb{font-size:11px;padding:2px 8px;border-radius:6px}
+.fbOk{color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent)}
+.fbInfo{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+/* 按钮 */
+.miniBtn{font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary);white-space:nowrap}
+.miniBtnPri{font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:600;white-space:nowrap}
+.dangerBtn{font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border-color));color:var(--danger);background:var(--card-bg);white-space:nowrap}
+/* 锁定提示 / 空提示 */
+.lockNote{font-size:11px;color:var(--orange);background:color-mix(in srgb,var(--orange) 10%,var(--card-bg));border:1px solid color-mix(in srgb,var(--orange) 30%,var(--border-color));border-radius:6px;padding:6px 9px}
+/* 设备行 */
+.devList{display:flex;flex-direction:column;gap:6px}
+.devItem{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--card-bg);border:1px solid transparent}
+.av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;background:var(--accent-light);color:var(--accent)}
+.devName{font-size:12.5px;font-weight:600}
+.devSub{font-size:11px;color:var(--text-muted)}
+.acts{display:flex;gap:4px;align-items:center}
+.icoBtn{width:26px;height:26px;border-radius:6px;border:1px solid var(--border-color);background:var(--card-bg);display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-secondary)}
+.icoPri{width:26px;height:26px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff}
+.recentRow{display:flex;gap:8px}
+
+/* 主区（.wbMain） */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;padding:14px 16px;overflow:hidden}
+.viewShell{flex:1;display:flex;flex-direction:column;min-height:0;border:1px solid var(--border-color);border-radius:10px;overflow:hidden;background:#0d0f12}
+.viewTop{display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;color:#c8d0dc;flex-wrap:wrap}
+.fakeScreen{flex:1;min-height:0;position:relative;background:linear-gradient(180deg,#1a2332 0%,#0f141c 100%);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.viewTools{position:absolute;right:10px;top:10px;display:flex;gap:4px;padding:4px;border-radius:8px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.08)}
+.viewTools b{font-size:11px;padding:4px 9px;border-radius:6px;color:#c8d0dc;font-weight:400}
+.viewTools .on{background:rgba(107,147,255,.28);color:#fff}
+.hud{position:absolute;left:10px;bottom:10px;display:flex;gap:6px}
+.hud span{font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#c8d0dc;border:1px solid rgba(255,255,255,.08)}
+.ctrlBar{display:flex;gap:8px;flex-wrap:wrap;padding:0 12px 8px}
+.statusBar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(255,255,255,.06);border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#9aa6b6;flex-wrap:wrap}
+.statusBar .miniBtn,.viewShell .miniBtn{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#e6ecf5}
+.statusBar .miniBtnPri{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#e6ecf5}
+.viewShell .pill{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#e6ecf5}
+.viewShell .pillOn{background:color-mix(in srgb,var(--accent) 22%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);color:#a8c0ff}
+.viewShell .qBar{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.08);margin:0 12px 10px}
+.viewShell .qLabel,.viewShell .qMeta{color:#9aa6b6}
+.viewShell .dangerBtn{color:#ff9d9d;border-color:rgba(255,120,120,.38);background:rgba(255,255,255,.08)}
+.dupOutline{outline:2px dashed var(--danger);outline-offset:3px;border-radius:6px;position:relative}
+.anno{position:absolute;top:-11px;left:8px;font-size:10.5px;background:var(--danger);color:#fff;padding:1px 7px;border-radius:4px;z-index:5;white-space:nowrap}
+.annoOk{position:absolute;top:-11px;left:8px;font-size:10.5px;background:var(--green);color:#fff;padding:1px 7px;border-radius:4px;z-index:5;white-space:nowrap}
+.ghostRow{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px dashed var(--border-color);color:var(--text-muted);font-size:11px;background:color-mix(in srgb,var(--section-bg) 60%,transparent)}
+/* 会话工具栏（方案 B） */
+.sessionBar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(255,255,255,.06);border-top:1px solid rgba(255,255,255,.08);flex-wrap:wrap}
+.menuBtn{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#e6ecf5;white-space:nowrap}
+.menuBtn b{font-weight:600;color:#a8c0ff}
+.sideRail{width:52px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px 0;border-right:1px solid var(--border-color);background:var(--card-bg);font-size:16px;color:var(--text-muted)}
+/* 业界线框 */
+.wireGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0}
+.wire{border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg);overflow:hidden}
+.wire .wt{font-size:12px;font-weight:600;padding:7px 10px;background:var(--section-bg);border-bottom:1px solid var(--border-color)}
+.wire .wc{padding:10px}
+.wireBox{border:1px dashed var(--text-muted);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted);background:color-mix(in srgb,var(--section-bg) 55%,transparent)}
+.wireRow{display:flex;gap:6px;height:104px;margin-bottom:6px}
+.wireApp{height:38px;border:1px dashed var(--text-muted);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted);background:color-mix(in srgb,var(--section-bg) 55%,transparent);margin-bottom:6px}
+.wireNote{font-size:11px;color:var(--text-muted);line-height:1.5}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);margin:8px 0 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.rec{border:2px solid var(--green);border-radius:10px;padding:12px 14px;background:color-mix(in srgb,var(--green) 6%,var(--card-bg));margin:14px 0}
+.rec h3{margin-top:0}
+.foot{margin-top:30px;font-size:11.5px;color:var(--text-muted);border-top:1px solid var(--border-color);padding-top:12px}
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 会话页布局重构 — 方案对比</h1>
+<p class="lead">
+  起因：用户指出「画质这个功能重复了」。核实后确认——<b>同一屏里确实同时存在两组同构的画质控件</b>，
+  而且它们改的不是同一个东西。本稿先定性问题，再给业界基线，最后给三个方案与 1:1 复刻。
+</p>
+
+<h2>一、问题：一屏两组「画质」，且它们改的不是同一个对象</h2>
+
+<div class="callout bad">
+  <b>一句话</b>：侧栏那条改的是「<b>本机被控时</b>推给别人的档」（空闲态配置），
+  底栏那条改的是「<b>要求对方</b>推给我的档」（会话中操作）。
+  两者档位名完全一样（自动/流畅/均衡/清晰/超清/原生）、外形完全一样、出现在同一面屏幕里 —— 只有一行 11px 小字在区分。
+</div>
+
+<h3>现状复刻（1200×780，尺寸来自 <span class="mono">RemoteComputer.module.css</span>）</h3>
+
+
+<div class="frameWrap">
+  <div class="frame">
+    <div class="side">
+      <div class="sideHead">
+        <h2 class="sideTitle">远程电脑</h2>
+        <span class="meta">设置与配对设备</span>
+      </div>
+      <div class="selfRow">
+        <div class="selfRowInfo">
+          <div class="selfRowTitle">允许被远程 <span class="selfChipOn">已开</span></div>
+          <div class="selfRowHint">只影响别人控你；发起远程不需要打开它</div>
+        </div>
+        <span class="selfRowSp"></span>
+        <button type="button" class="selfSettingsLink">去设置</button>
+        <button type="button" class="sToggle"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+      </div>
+
+      <div class="dupOutline"><span class="anno">① 侧栏画质条（改本机）</span><div class="qBar">
+        <span class="qLabel">画质</span>
+        <span class="pillOn">自动</span><span class="pill">流畅</span><span class="pill">均衡</span><span class="pill">清晰</span>
+        <span class="pill">超清</span><span class="pill">原生</span>
+        <span class="qSp"></span>
+        <span class="qLabel">画面</span>
+        <span class="pillOn">画面</span><span class="pill">省屏</span><span class="pill">屏-主</span>
+        <span class="qMeta">本机被控画面 · 别人看你时用它</span>
+        <span class="fb fbOk">画质已保存</span>
+      </div></div>
+
+      <div class="sp"></div>
+      <div class="lockNote">远程会话进行中 · 设备操作暂时锁定</div>
+      <div class="devList">
+        <div class="devItem">
+          <span class="av">D</span>
+          <span style="flex:1;min-width:0">
+            <span class="devName">DESKTOP-HHOLIC2</span>
+            <span class="devSub">远程 · 上次</span>
+          </span>
+          <span class="acts"><span class="icoBtn">▶</span><span class="icoBtn">⋯</span></span>
+        </div>
+        <div class="devItem" style="opacity:.55">
+          <span class="av">新</span>
+          <span style="flex:1;min-width:0">
+            <span class="devName">新设备</span>
+            <span class="devSub">远程 · 未配对</span>
+          </span>
+          <span class="acts"><span class="icoBtn">▶</span><span class="icoBtn">⋯</span></span>
+        </div>
+      </div>
+      <div class="recentRow">
+        <span class="miniBtn">检测在线</span>
+        <span class="miniBtn">＋ 再配对一台</span>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="viewShell">
+        <div class="viewTop">
+          <span style="width:8px;height:8px;border-radius:50%;background:#2F9E5F;flex-shrink:0"></span>
+          <span>正在查看 <b>DESKTOP-HHOLIC2</b></span>
+          <span class="pillOn" style="font-size:11px">可控</span>
+          <span class="pill" style="font-size:11px">键盘：未捕获</span>
+          <span class="sp"></span>
+          <span class="miniBtn">重连</span>
+          <span class="dangerBtn">结束会话</span>
+        </div>
+        <div class="fakeScreen">
+          <div class="viewTools">
+            <b class="on">适应</b><b>1:1</b><b>填充</b><b>锁定指针</b><b>全屏</b>
+          </div>
+          <div class="hud"><span>H.264</span><span>24 fps</span><span>RTT 18ms</span><span>自动 · 由对方决定</span></div>
+          <div style="color:#4a5568;font-size:12px">（对方画面）</div>
+        </div>
+        <div class="ctrlBar">
+          <span class="miniBtn">自动同步剪贴板</span>
+          <span class="miniBtn">推送剪贴板</span>
+          <span class="miniBtn">拉取对方剪贴板</span>
+        </div>
+        <div class="statusBar">
+          <span>键盘：未捕获</span><span>指针：未锁定</span><span>适应窗口</span><span>2560×1440</span><span>画面静止 3s</span>
+        </div>
+        <div class="dupOutline" style="margin:10px 12px 0">
+          <span class="anno">② 底栏画质条（改对方）</span>
+          <div class="qBar" style="margin:0">
+            <span class="qLabel">画质</span>
+            <span class="pill">自动</span><span class="pill">流畅</span><span class="pillOn">均衡</span><span class="pill">清晰</span><span class="pill">超清</span><span class="pill">原生</span>
+            <span class="qSp"></span>
+            <span class="qLabel">画面</span>
+            <span class="pillOn">画面</span><span class="pill">省屏</span><span class="pill">仅主屏</span>
+            <span class="qMeta">立即作用于对方</span>
+          </div>
+        </div>
+        <div style="height:10px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>证据（file:line）</h3>
+<table>
+  <tr><th style="width:150px">位置</th><th style="width:250px">渲染点</th><th>语义</th><th style="width:96px">类/行</th></tr>
+  <tr>
+    <td>侧栏</td>
+    <td class="mono">RcWorkbenchSide.tsx:84-91</td>
+    <td>写<b>本机</b>配置 —— <span class="mono">rc.setQuality()</span>，即「我作为被控端时推出去的档」</td>
+    <td class="mono">mode="local"<br>RcQualityBar.tsx:86</td>
+  </tr>
+  <tr>
+    <td>会话底栏</td>
+    <td class="mono">RcSessionView.tsx:268-275</td>
+    <td>发信令给<b>对端</b> —— <span class="mono">rcSendInput({kind:"set_quality"})</span>，即「要求对方改成这个档推给我」</td>
+    <td class="mono">mode="remote"<br>RcQualityBar.tsx:80</td>
+  </tr>
+</table>
+
+<h3>由此带出的另外 5 条</h3>
+<table>
+  <tr><th style="width:34px">#</th><th style="width:88px">级别</th><th>问题</th><th style="width:300px">证据 / 后果</th></tr>
+  <tr><td>1</td><td><span class="tag bad">撒谎级</span></td>
+    <td><b>出站会话中改侧栏那条，画面不会有任何变化</b></td>
+    <td>它改的是"别人看我"的档；而此时会话方向是"我看别人"。反馈却弹「画质已保存」（<span class="mono">RcQualityBar.tsx:88</span>）—— 用户以为调了画面</td></tr>
+  <tr><td>2</td><td><span class="tag warn">干扰</span></td>
+    <td>画面范围（画面 / 省屏 / 仅主屏）<b>也重复</b>了两遍</td>
+    <td>同一个 <span class="mono">.qBar</span> 容器里一半画质一半范围，两处都是整条</td></tr>
+  <tr><td>3</td><td><span class="tag warn">空间</span></td>
+    <td>会话进行中侧栏整块失效，却仍占 <b>272px</b></td>
+    <td>设备列表全部禁用 + 一行橙字「设备操作暂时锁定」（<span class="mono">RcWorkbenchSide.tsx:95</span>），画面被压到 <b>892px</b> 宽；而那条画质条在 247px 可用宽里<b>实测换行成 161px 高</b>（6 档 + 3 项放不下）</td></tr>
+  <tr><td>4</td><td><span class="tag warn">碎片</span></td>
+    <td>一个会话视图里 <b>5 个</b>控制区、<b>3 条</b>各自带边框的横条</td>
+    <td>顶栏 viewTop / 画面浮层 viewTools / ctrlBar / statusBar / qBar</td></tr>
+  <tr><td>5</td><td><span class="tag info">债务</span></td>
+    <td><span class="mono">RcWorkbench.tsx</span> 已 <b>301 行</b>，越过 .tsx≤300 红线</td>
+    <td>CLAUDE.md §7；本轮改动正好顺手拆</td></tr>
+</table>
+
+<h2>二、别人怎么做</h2>
+
+<p class="lead">查了 4 家（含官方文档）。<b>没有一家</b>在会话页里同时摆两组同构控件，也没有一家把"本机配置"常驻在会话页。</p>
+
+<div class="wireGrid">
+  <div class="wire">
+    <div class="wt">AnyDesk</div>
+    <div class="wc">
+      <div class="wireApp">画面（占满）</div>
+      <div class="wireBox" style="height:26px">小工具栏 · 文件 / 截图 / 显示▾</div>
+      <div class="wireNote">画质与视图默认值在 <b>Settings → Display</b>；会话中改则走工具栏的 display 菜单。官方原话：工具栏「stays relatively unobtrusive」。</div>
+    </div>
+  </div>
+  <div class="wire">
+    <div class="wt">RustDesk</div>
+    <div class="wc">
+      <div class="wireApp">画面（占满）</div>
+      <div class="wireBox" style="height:26px">顶部工具栏（可 collapse）</div>
+      <div class="wireNote">有 <span class="mono">collapse-toolbar</span> 设置：<b>连接后自动收起工具栏</b>。画质/视图/滚动样式都是 Settings 里的默认项 + 按对端记忆。</div>
+    </div>
+  </div>
+  <div class="wire">
+    <div class="wt">Chrome 远程桌面</div>
+    <div class="wc">
+      <div class="wireRow">
+        <div class="wireBox" style="flex:1">画面</div>
+        <div class="wireBox" style="width:24px">▸</div>
+      </div>
+      <div class="wireNote">屏幕<b>边缘一个可折叠的小浮条</b>，hover 才展开。设计目标写明是「designed to stay out of the way」。</div>
+    </div>
+  </div>
+  <div class="wire">
+    <div class="wt">TeamViewer</div>
+    <div class="wc">
+      <div class="wireApp">画面（占满）</div>
+      <div class="wireBox" style="height:26px">顶部功能栏：聊天/文件/录制/…</div>
+      <div class="wireNote">主窗口左侧是<b>导航面板</b>（连接/远程控制/会议）—— 但那是<b>连接前</b>的界面，会话开始后不跟着进会话页。</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <b>三条共识</b>
+  <ol style="margin:8px 0 0;padding-left:22px">
+    <li><b>会话页只服务画面。</b>控制项收进<b>一条</b>工具栏，且普遍可折叠/可收起（RustDesk、CRD 都是显式特性）。</li>
+    <li><b>"配置"与"会话操作"分属两个空间。</b>画质、视图这些默认值放设置窗口；会话中改它们属于"临时覆盖"，走菜单而不是平铺。</li>
+    <li><b>连接前的界面不进会话页。</b>ToDesk / 向日葵 / TeamViewer 的主界面（左导航 + 设备区）在会话开始后就让位了。</li>
+  </ol>
+</div>
+
+<h2>三、三个方案</h2>
+
+<p class="lead">共同前提：<b>同一时刻只允许一条画质控件存在</b>。差别在于这条落在哪、以什么形态出现、侧栏要不要让位。</p>
+
+<h3>方案 A｜同屏互斥（最小改动）</h3>
+<p class="lead">
+  只加一条规则：<b>出站会话进行中，侧栏不再渲染画质/画面组</b>；空闲与入站（别人控我）时照旧渲染
+  —— 因为那时它是唯一入口，且入站时它改的正是当前生效的档。底栏保持现在的平铺形态不动。
+</p>
+
+<div class="frameWrap">
+  <div class="frame">
+    <div class="side">
+      <div class="sideHead">
+        <h2 class="sideTitle">远程电脑</h2>
+        <span class="meta">设置与配对设备</span>
+      </div>
+      <div class="selfRow">
+        <div class="selfRowInfo">
+          <div class="selfRowTitle">允许被远程 <span class="selfChipOn">已开</span></div>
+          <div class="selfRowHint">只影响别人控你；发起远程不需要打开它</div>
+        </div>
+        <span class="selfRowSp"></span>
+        <button type="button" class="selfSettingsLink">去设置</button>
+        <button type="button" class="sToggle"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+      </div>
+      <div style="position:relative">
+        <span class="annoOk">① 会话中 → 整块不渲染</span>
+        <div class="ghostRow">本机被控画质：<b style="color:var(--text-secondary)">自动</b> · 会话结束后可改</div>
+      </div>
+      <div class="sp"></div>
+      <div class="lockNote">远程会话进行中 · 设备操作暂时锁定</div>
+      <div class="devList">
+        <div class="devItem">
+          <span class="av">D</span>
+          <span style="flex:1;min-width:0">
+            <span class="devName">DESKTOP-HHOLIC2</span>
+            <span class="devSub">远程 · 上次</span>
+          </span>
+          <span class="acts"><span class="icoBtn">▶</span><span class="icoBtn">⋯</span></span>
+        </div>
+      </div>
+      <div class="recentRow">
+        <span class="miniBtn">检测在线</span>
+        <span class="miniBtn">＋ 再配对一台</span>
+      </div>
+    </div>
+    <div class="main">
+      <div class="viewShell">
+        <div class="viewTop">
+          <span style="width:8px;height:8px;border-radius:50%;background:#2F9E5F;flex-shrink:0"></span>
+          <span>正在查看 <b>DESKTOP-HHOLIC2</b></span>
+          <span class="pillOn" style="font-size:11px">可控</span>
+          <span class="pill" style="font-size:11px">键盘：未捕获</span>
+          <span class="sp"></span>
+          <span class="miniBtn">重连</span>
+          <span class="dangerBtn">结束会话</span>
+        </div>
+        <div class="fakeScreen">
+          <div class="viewTools"><b class="on">适应</b><b>1:1</b><b>填充</b><b>锁定指针</b><b>全屏</b></div>
+          <div class="hud"><span>H.264</span><span>24 fps</span><span>RTT 18ms</span></div>
+          <div style="color:#4a5568;font-size:12px">（对方画面）</div>
+        </div>
+        <div class="ctrlBar">
+          <span class="miniBtn">自动同步剪贴板</span><span class="miniBtn">推送剪贴板</span><span class="miniBtn">拉取对方剪贴板</span>
+        </div>
+        <div class="statusBar">
+          <span>键盘：未捕获</span><span>指针：未锁定</span><span>适应窗口</span><span>2560×1440</span>
+        </div>
+        <div class="qBar" style="margin:10px 12px 10px">
+          <span class="qLabel">画质</span>
+          <span class="pill">自动</span><span class="pill">流畅</span><span class="pillOn">均衡</span><span class="pill">清晰</span><span class="pill">超清</span><span class="pill">原生</span>
+          <span class="qSp"></span>
+          <span class="qLabel">画面</span>
+          <span class="pillOn">画面</span><span class="pill">省屏</span><span class="pill">仅主屏</span>
+          <span class="qMeta">立即作用于对方</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>方案 B｜单条会话工具栏 + 侧栏让位（对标业界）</h3>
+<p class="lead">
+  会话进行中：侧栏收成 <b>52px 图标轨</b>，主区拿到完整的 1200px 宽；
+  会话内所有控制收进<b>底部一条工具栏</b> —— 画质与画面变成<b>两个下拉菜单</b>（当前档上脸），
+  剪贴板三件套、键盘/指针/适配/全屏、结束会话同排。顶栏瘦成"身份 + 链路 + 结束"。
+</p>
+
+<div class="frameWrap">
+  <div class="frame">
+    <div class="sideRail">
+      <span title="设备">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      </span>
+      <span title="配对">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </span>
+      <span title="设置">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </span>
+    </div>
+    <div class="main">
+      <div class="viewShell">
+        <div class="viewTop">
+          <span style="width:8px;height:8px;border-radius:50%;background:#2F9E5F;flex-shrink:0"></span>
+          <span>正在查看 <b>DESKTOP-HHOLIC2</b></span>
+          <span class="pillOn" style="font-size:11px">可控</span>
+          <span class="sp"></span>
+          <span class="miniBtn">重连</span>
+          <span class="dangerBtn">结束会话</span>
+        </div>
+        <div class="fakeScreen">
+          <div class="viewTools"><b class="on">适应</b><b>1:1</b><b>填充</b></div>
+          <div class="hud"><span>H.264</span><span>24 fps</span><span>RTT 18ms</span><span>2560×1440</span><span>键盘未捕获</span></div>
+          <div style="color:#4a5568;font-size:12px">（对方画面 · 实测 1112px 宽，较现状 +220）</div>
+        </div>
+        <div class="sessionBar">
+          <span class="menuBtn">画质 <b>均衡</b> ▾</span>
+          <span class="menuBtn">画面 <b>整屏</b> ▾</span>
+          <span style="width:1px;height:16px;background:rgba(255,255,255,.14)"></span>
+          <span class="menuBtn">自动同步剪贴板</span>
+          <span class="menuBtn">推送</span>
+          <span class="menuBtn">拉取</span>
+          <span class="sp"></span>
+          <span class="menuBtn">键盘</span>
+          <span class="menuBtn">指针</span>
+          <span class="menuBtn">全屏</span>
+          <span class="dangerBtn">结束会话</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>方案 C｜双模式工作台</h3>
+<p class="lead">
+  工作台有两个模式：<b>设备模式</b>（现在这样）/ <b>会话模式</b>（无侧栏、画面铺满、控制条浮在画面边缘、可折叠，
+  即 Chrome 远程桌面那种形态）。会话开始自动切模式，结束切回。
+</p>
+
+<div class="frameWrap">
+  <div class="frame" style="flex-direction:column">
+    <div style="flex:1;position:relative;background:linear-gradient(180deg,#1a2332 0%,#0f141c 100%);display:flex;align-items:center;justify-content:center">
+      <div class="anno" style="left:14px;top:14px;background:var(--green)">会话模式 · 侧栏完全退场</div>
+      <div style="position:absolute;left:1px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.08);border-right:none;border-radius:8px 0 0 8px;padding:10px 6px;color:#c8d0dc;font-size:14px">‹</div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:center;position:absolute;right:12px;bottom:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;color:#c8d0dc;font-size:11px">
+        <span>画质 均衡 ▾</span><span>画面 整屏 ▾</span><span>剪贴板 ▾</span><span style="color:#ff9d9d">结束会话</span>
+      </div>
+      <div style="color:#4a5568;font-size:12px">（对方画面 · 整窗 1198px 宽）</div>
+    </div>
+  </div>
+</div>
+
+<h2>四、对比与推荐</h2>
+
+<table>
+  <tr>
+    <th style="width:120px">维度</th>
+    <th style="width:230px">A · 同屏互斥</th>
+    <th style="width:250px">B · 会话工具栏</th>
+    <th>C · 双模式工作台</th>
+  </tr>
+  <tr><td>消除重复</td><td><span class="tag good">是</span> 同屏只剩一条</td><td><span class="tag good">是</span> 且形态也收口成菜单</td><td><span class="tag good">是</span></td></tr>
+  <tr><td>语义错配（#1）</td><td><span class="tag good">修掉</span></td><td><span class="tag good">修掉</span></td><td><span class="tag good">修掉</span></td></tr>
+  <tr><td>画面可用宽度</td><td>画面区 <b>892px</b>（不变）</td><td>画面区 <b>1112px</b> · 较现状 <b>+220</b></td><td>画面区 <b>1198px</b> · 较现状 <b>+306</b></td></tr>
+  <tr><td>控制区数量</td><td>4 区 / 3 条</td><td><b>2 区 / 1 条</b></td><td>1 条浮层</td></tr>
+  <tr><td>贴近业界形态</td><td><span class="tag warn">部分</span></td><td><span class="tag good">是</span>（AnyDesk/RustDesk）</td><td><span class="tag good">是</span>（Chrome 远程桌面）</td></tr>
+  <tr><td>改动面</td><td>2 个文件、约 30 行</td><td>5-6 个文件（RcSessionView 重组 + 侧栏收起 + 2 个菜单组件）</td><td>8+ 个文件（窗口内模式切换 + 路由/状态）</td></tr>
+  <tr><td>风险</td><td><span class="tag good">低</span> 纯条件渲染</td><td><span class="tag warn">中</span> 会话内布局重排，需回归截图</td><td><span class="tag bad">高</span> 模式切换是新交互，得再定义"怎么退出会话模式"</td></tr>
+  <tr><td>体量红线</td><td>顺带把 RcWorkbench 拆到 300 行内</td><td>RcSessionView 278 行要拆，否则先撞 300</td><td>RcWorkbench 必须大拆</td></tr>
+</table>
+
+<div class="rec">
+  <h3>推荐：A 先落地，B 作为目标形态排期；C 不做</h3>
+  <p>
+    <b>A 直接解决用户报的"重复"，且几乎零风险</b> —— 它只是让两条互斥，顺手把 <span class="mono">RcWorkbench.tsx</span>
+    的 301 行债务还掉。做完这一版，"重复"和"撒谎级语义错配"就都消失了。
+  </p>
+  <p>
+    <b>B 解决的是"然后呢"</b>：画面被侧栏压窄 272px、底部三条横条各自带边框。
+    这是本产品「用户视角指标」上最划算的一步（画面 +220px 宽），但涉及会话内布局重排，
+    建议单独一批做，并配一次真机双机手测（会话中改档的链路要重跑）。
+  </p>
+  <p>
+    <b>C 不建议做</b>：多出一个"模式"概念，就得回答"我在哪个模式""怎么回设备列表"，
+    而这套产品的会话本来就是从工作台发起的低频动作 —— 收益（再宽 52px）撑不起这个复杂度。
+  </p>
+</div>
+
+<h2>五、口径声明</h2>
+<div class="card">
+  <ul style="margin:0;padding-left:22px">
+    <li>复刻稿的尺寸取自实现：侧栏 <span class="mono">272px</span>（<span class="mono">.wbSide</span>）、
+      胶囊 <span class="mono">11px / 3px 10px / radius 20px</span>（<span class="mono">.pill</span>）、
+      画质条 <span class="mono">padding 8px 10px</span>（<span class="mono">.qBar</span>）、
+      顶栏 <span class="mono">padding 8px 12px</span>（<span class="mono">.viewTop</span>），
+      配色取 <span class="mono">[data-theme="ocean"]</span> 的值。会话内深色叠层用的是
+      <span class="mono">.viewShell</span> 后代那套半透明规则，不是浅色基类。</li>
+    <li>业界四家形态来自官方文档与帮助中心（AnyDesk Display settings、RustDesk 高级设置、
+      Chrome 远程桌面会话工具栏说明），线框是<b>特征示意</b>，不是 1:1 复刻。</li>
+    <li>画面宽度三个数字都是 headless Edge <b>实测</b>（量 <span class="mono">.fakeScreen</span> 的
+      <span class="mono">getBoundingClientRect().width</span>）：现状 / 方案 A <b>892px</b>、方案 B <b>1112px</b>、
+      方案 C <b>1198px</b>。⚠️ <b>别用「1200 − 侧栏宽」直推</b> —— 主区还有
+      <span class="mono">padding 14px 16px</span> 与 1px 边框，这次初稿直推出 1148px，实测 1112px，
+      多算了 36px（已按实测改）。侧栏画质条在 247px 可用宽里实测高 <b>161px</b>。</li>
+    <li>本稿只做方案，未改任何产品代码。</li>
+  </ul>
+</div>
+
+<h2>六、落地实测（2026-09-18 补记 · 方案 B 已实施）</h2>
+<p class="lead">
+  方案 B 已落地为纯前端改动。下表的数字是 headless Edge <b>实测</b>：把实现的
+  <span class="mono">RemoteComputer.module.css</span> 抽出来、结构照 JSX 抄，
+  按工作台尺寸 1200×780 渲染后量 <span class="mono">getBoundingClientRect()</span>。
+</p>
+
+<table>
+  <tr>
+    <th style="width:230px">量的是</th>
+    <th style="width:170px">现状（对照）</th>
+    <th style="width:180px">落地后（侧栏收起）</th>
+    <th>差值</th>
+  </tr>
+  <tr><td>侧栏宽</td><td>272px</td><td><b>52px</b></td><td>−220</td></tr>
+  <tr><td>主区可用宽</td><td>928px</td><td><b>1148px</b></td><td>+220</td></tr>
+  <tr><td>画面区宽（<span class="mono">.fakeScreen</span>）</td><td>894px</td><td><b>1114px</b></td><td><b>+220（+24.6%）</b></td></tr>
+  <tr><td>画面区高</td><td>606px</td><td><b>672px</b></td><td>+66</td></tr>
+  <tr><td>画面下方控制区总高</td><td>113px（三条叠）</td><td><b>39px（一条）</b></td><td>−74</td></tr>
+  <tr><td>横向溢出（<span class="mono">scrollWidth − clientWidth</span>）</td><td>0</td><td>0</td><td>—</td></tr>
+</table>
+<p>
+  ⚠️ 画面宽这组比 §五 记的 <span class="mono">892 → 1112</span> 各高 2px：
+  两次复刻页在边框/盒模型上有一处细微差别。两边<b>差值同为 +220</b>，结论不变。
+  底栏 39px 说明 1114px 宽下<b>没有换行</b>（单行 39px = 内容 25 + padding 14）。
+</p>
+
+<h3>落地时改了稿子的五处（都有具体理由）</h3>
+<div class="card">
+  <ul style="margin:0;padding-left:22px">
+    <li><b>① 侧栏收起只在「有画面」时生效（出站会话）。</b>
+      被控会话时主区是信息卡、没有画面，把侧栏收窄换不来任何东西，反而把
+      「允许被远程」这类本机状态藏起来。</li>
+    <li><b>② 侧栏轨只放「展开按钮 + 状态图标」，不是稿里那三个（设备 / 配对 / 设置）。</b>
+      会话中点开配对框、跳主窗设置页都会打断会话；这条轨的语义应该是「侧栏的收起态」，
+      而不是第二套导航。状态用图标（盾 + 对勾 / 盾 + 斜杠）而非色点——「允许被远程」
+      是个开关状态，只靠颜色对色觉障碍用户等于没有信息。</li>
+    <li><b>③ 键盘 / 指针 / 全屏留在画面内的浮层（<span class="mono">RcViewTools</span>），不进底栏。</b>
+      全屏按钮必须在 <span class="mono">.fakeScreen</span> <b>内部</b>：全屏的是画面元素本身，
+      底栏不会被一起全屏，按钮放底栏等于全屏后消失、只剩 Esc 能退出。</li>
+    <li><b>④ 结束会话只留顶栏一处。</b>稿里顶栏与底栏各画了一个（重复）。而且它是危险操作，
+      放在最容易触达的底栏右端反而增加误触；顶栏右上角是它的常规位置。</li>
+    <li><b>⑤ 顶栏的「键盘：未捕获 / 已捕获」胶囊删除。</b>同一状态原来在顶栏是一个胶囊、
+      在底栏 statusBar 是一句话，这就是重复；现在只留底栏状态区一处，并按能力分档
+      （「只看」会话不摆这条——按键本来就发不出去）。</li>
+  </ul>
+</div>
+
+<h3>顺带的改动（不在稿子里，但落地时必要）</h3>
+<div class="card">
+  <ul style="margin:0;padding-left:22px">
+    <li><span class="mono">RcStatusBar.tsx</span> 删除——内容并进底栏状态区。</li>
+    <li><span class="mono">RcQualityBar</span> 删掉 <span class="mono">mode="remote"</span> 那一支：
+      它现在只剩「本机被控画面」一个语义，<span class="mono">localNote</span> 由可选变<b>必填</b>。
+      会话中改对方画质归 <span class="mono">RcSessionBar</span> 的下拉（失败回滚）。</li>
+    <li><span class="mono">RcWorkbench.tsx</span> <b>301 → 282 行</b>：发起链路（能力档 / 上次设备 /
+      重试目标）抽成 <span class="mono">useRcLaunch.ts</span>。这一节本来就是方案 A 要还的债，
+      方案 B 还要往里加「侧栏收起」状态，不抽必撞 <span class="mono">.tsx ≤ 300</span> 红线。</li>
+    <li><span class="mono">RcSessionView.tsx</span> <b>278 → 268 行</b>（三段渲染换成一段组件调用）。</li>
+    <li>CSS：删 <span class="mono">.ctrlBar</span> / <span class="mono">.statusBar</span> /
+      <span class="mono">.viewShell .qBar</span>（前两个随底栏合并失效；最后一个是选择器
+      不再匹配——qBar 不再进会话视图），
+      新增 <span class="mono">.sideRail</span> / <span class="mono">.railBtn</span> /
+      <span class="mono">.sessionBar</span> / <span class="mono">.menu*</span>。</li>
+  </ul>
+</div>
+<p>
+  门禁：tsc ✓ / eslint <span class="mono">--max-warnings=0</span> ✓ /
+  <span class="mono">lint:css</span> ✓ / vitest <b>2462</b>（174 文件，与改动前同数）✓。
+  纯前端，HMR 可见，无需 dev restart。
+</p>
+
+<p class="foot">
+  远程电脑 · 会话页布局重构方案 ／ 2026-09-18 ／ 生成依据：<span class="mono">src/components/rc/</span> 实读源码 + 用户截图
+</p>
+
+</body>
+</html>

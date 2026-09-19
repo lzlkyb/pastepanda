@@ -94,7 +94,11 @@ fn test_setext_equals_is_a_heading() {
     assert_eq!(o.len(), 1);
     assert_eq!(o[0].heading, "标题一");
     assert_eq!(o[0].level, 1);
-    assert_eq!(o[0].heading_line, Some(0), "标题行指的是文字行而不是 === 行");
+    assert_eq!(
+        o[0].heading_line,
+        Some(0),
+        "标题行指的是文字行而不是 === 行"
+    );
     assert_eq!(o[0].body_start, 2, "setext 占两行，正文从第三行起");
 }
 
@@ -468,7 +472,13 @@ fn test_replace_text_empty_find_is_rejected() {
 fn test_prepend_goes_after_frontmatter() {
     // 插在第 0 行会把 frontmatter 撑坏。
     let c = "---\ntitle: x\n---\n\n# A\n正文";
-    let (out, _) = apply(c, &ContentEdit::Prepend { text: "新开头".into() }).unwrap();
+    let (out, _) = apply(
+        c,
+        &ContentEdit::Prepend {
+            text: "新开头".into(),
+        },
+    )
+    .unwrap();
     assert!(
         out.starts_with("---\ntitle: x\n---\n"),
         "frontmatter 被动了：{:?}",
@@ -484,7 +494,13 @@ fn test_prepend_goes_after_frontmatter() {
 
 #[test]
 fn test_prepend_on_plain_note() {
-    let (out, _) = apply("原有内容", &ContentEdit::Prepend { text: "新的".into() }).unwrap();
+    let (out, _) = apply(
+        "原有内容",
+        &ContentEdit::Prepend {
+            text: "新的".into(),
+        },
+    )
+    .unwrap();
     assert_eq!(out, "新的\n\n原有内容");
 }
 
@@ -520,7 +536,11 @@ fn test_editing_a_crlf_note_keeps_crlf_elsewhere() {
         },
     )
     .unwrap();
-    assert!(out.contains("# B\r\nB正文\r\n"), "B 节的 CRLF 丢了：{:?}", out);
+    assert!(
+        out.contains("# B\r\nB正文\r\n"),
+        "B 节的 CRLF 丢了：{:?}",
+        out
+    );
 }
 
 // ===== 节级打分（AM-2）=====
@@ -554,7 +574,11 @@ fn 词(v: &[&str]) -> Vec<String> {
 fn test_节级命中落在人工标注的那一节() {
     let hits = rank_sections(三节样例(), &词(&["灰度"]), 3);
     assert!(!hits.is_empty(), "「灰度」应当命中");
-    assert_eq!(hits[0].heading, "灰度发布", "命中的应是灰度那一节：{:?}", hits);
+    assert_eq!(
+        hits[0].heading, "灰度发布",
+        "命中的应是灰度那一节：{:?}",
+        hits
+    );
     // index 可直接喂给 kb_read(section=)，错了整条链就废了
     assert_eq!(hits[0].index, 2, "节序号要能直接用于 kb_read");
 }
@@ -583,7 +607,11 @@ fn test_堆词不能压过标题命中() {
     }
     let doc = format!("# 灰度发布\n\n灰度分三档推进。\n\n{}\n", 堆);
     let hits = rank_sections(&doc, &词(&["灰度"]), 3);
-    assert_eq!(hits[0].heading, "灰度发布", "堆词把标题命中压下去了：{:?}", hits);
+    assert_eq!(
+        hits[0].heading, "灰度发布",
+        "堆词把标题命中压下去了：{:?}",
+        hits
+    );
 }
 
 #[test]
@@ -611,8 +639,14 @@ fn test_摘录窗口带省略号且不切坏中文() {
 fn test_top_限制与空词表() {
     let hits = rank_sections(三节样例(), &词(&["的"]), 2);
     assert!(hits.len() <= 2, "top 必须封顶");
-    assert!(rank_sections(三节样例(), &[], 3).is_empty(), "没有词就不该有命中");
-    assert!(rank_sections(三节样例(), &词(&["灰度"]), 0).is_empty(), "top=0 不该返回");
+    assert!(
+        rank_sections(三节样例(), &[], 3).is_empty(),
+        "没有词就不该有命中"
+    );
+    assert!(
+        rank_sections(三节样例(), &词(&["灰度"]), 0).is_empty(),
+        "top=0 不该返回"
+    );
 }
 
 #[test]
@@ -650,13 +684,19 @@ fn test_任务复选框不能被当成类别() {
 #[test]
 fn test_类别名归一化为小写且支持中文() {
     let obs = parse_observations("- [Decision] A\n- [技术选型] B\n");
-    assert_eq!(obs[0].kind, "decision", "类别名要归一化，否则 kind 筛选得靠运气");
+    assert_eq!(
+        obs[0].kind, "decision",
+        "类别名要归一化，否则 kind 筛选得靠运气"
+    );
     assert_eq!(obs[1].kind, "技术选型");
 }
 
 #[test]
 fn test_三种列表符号都认() {
-    assert_eq!(parse_observations("- [fact] a\n* [fact] b\n+ [fact] c\n").len(), 3);
+    assert_eq!(
+        parse_observations("- [fact] a\n* [fact] b\n+ [fact] c\n").len(),
+        3
+    );
 }
 
 #[test]
@@ -687,7 +727,7 @@ fn test_不像类别的方括号一律不算() {
         "- [见 §3](../a.md) 链接",
         "- [这个类别名实在是太长了超过十二个字] 正文",
         "-[fact] 列表符号后没空格",
-        "- [fact]",           // 只有类别没内容
+        "- [fact]", // 只有类别没内容
         "- 普通列表项",
         "  普通正文 [fact] 不在行首",
     ] {
@@ -715,10 +755,28 @@ fn test_kinds_of_去重且保持首次出现顺序() {
 
 #[test]
 fn test_is_kind_label_的边界() {
-    for ok in ["decision", "fact", "todo", "question", "技术选型", "a", "P0-1", "a_b"] {
+    for ok in [
+        "decision",
+        "fact",
+        "todo",
+        "question",
+        "技术选型",
+        "a",
+        "P0-1",
+        "a_b",
+    ] {
         assert!(is_kind_label(ok), "{} 该算类别", ok);
     }
-    for bad in ["", " ", "x", "X", "my note", "^1", "见 §3", "一二三四五六七八九十十一十二十三"] {
+    for bad in [
+        "",
+        " ",
+        "x",
+        "X",
+        "my note",
+        "^1",
+        "见 §3",
+        "一二三四五六七八九十十一十二十三",
+    ] {
         assert!(!is_kind_label(bad), "{:?} 不该算类别", bad);
     }
 }
@@ -835,8 +893,11 @@ fn test_改一个字只有一个切片的hash变() {
     // 只有含那个字的切片 hash 变。
     let a = format!("# 甲\n\n{}\n\n{}\n\n{}\n", pad(300), pad(300), pad(300));
     // 把第二段的首字换掉（同为一个字符，长度不变）
-    let b = a.replacen(&format!("\n\n{}\n\n{}", pad(300), pad(300)),
-                       &format!("\n\n{}\n\n改{}", pad(300), pad(299)), 1);
+    let b = a.replacen(
+        &format!("\n\n{}\n\n{}", pad(300), pad(300)),
+        &format!("\n\n{}\n\n改{}", pad(300), pad(299)),
+        1,
+    );
     assert_ne!(a, b, "用例自身得真的改动了一个字");
 
     let (ca, cb) = (chunk_note(&a), chunk_note(&b));
@@ -883,7 +944,9 @@ fn test_超长节每片不超窗口且覆盖全文无洞() {
         assert!(
             w[1].char_start <= w[0].char_end,
             "两片之间漏了一段：{}..{} 与 {}..",
-            w[0].char_start, w[0].char_end, w[1].char_start
+            w[0].char_start,
+            w[0].char_end,
+            w[1].char_start
         );
     }
     // 预期长度直接取 `slice()` 的结果，**不自己再推导一遍 body**。
@@ -901,7 +964,11 @@ fn test_硬切时相邻切片真的重叠() {
     let md = format!("# 甲\n\n{}\n", pad(2000));
     let cs = chunk_note(&md);
     let overlap = cs[0].char_end - cs[1].char_start;
-    assert_eq!(overlap, CHUNK_OVERLAP, "相邻两片该重叠 {} 字", CHUNK_OVERLAP);
+    assert_eq!(
+        overlap, CHUNK_OVERLAP,
+        "相邻两片该重叠 {} 字",
+        CHUNK_OVERLAP
+    );
 }
 
 #[test]
@@ -940,7 +1007,11 @@ fn test上下文卡片留位且不参与hash() {
     // 定案 §5：本次只留位。它若参与 hash，将来把卡片开关一切换就全库重算向量。
     let cs = chunk_note("# 甲\n\n内容\n");
     assert!(cs[0].context_card.is_none(), "本次恒为 None");
-    assert_eq!(cs[0].content_hash, content_hash(&cs[0].text), "hash 只算正文");
+    assert_eq!(
+        cs[0].content_hash,
+        content_hash(&cs[0].text),
+        "hash 只算正文"
+    );
 }
 
 #[test]
@@ -953,7 +1024,10 @@ fn test_切片id可重算() {
     assert_eq!(cs[1].id("n1"), "n1#1.1");
     // 同一份正文重算，ID 一模一样——这就是「可重算」的意思
     assert_eq!(
-        chunk_note(&md).iter().map(|c| c.id("n1")).collect::<Vec<_>>(),
+        chunk_note(&md)
+            .iter()
+            .map(|c| c.id("n1"))
+            .collect::<Vec<_>>(),
         cs.iter().map(|c| c.id("n1")).collect::<Vec<_>>()
     );
 }

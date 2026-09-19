@@ -215,14 +215,8 @@ pub fn mcp_ai_folders(
 /// 「删文件夹」命令，而那条路上本来有自己的确认流程与影响预览
 /// （`folder_delete_impact`）—— 绕过去就把那些护栏全丢了。
 #[tauri::command]
-pub fn mcp_undo_ai_folder(
-    store: State<DataStore>,
-    id: String,
-) -> Result<(usize, usize), String> {
-    let is_ai = store
-        .folder_list_ai()?
-        .iter()
-        .any(|f| f.id == id);
+pub fn mcp_undo_ai_folder(store: State<DataStore>, id: String) -> Result<(usize, usize), String> {
+    let is_ai = store.folder_list_ai()?.iter().any(|f| f.id == id);
     if !is_ai {
         return Err("只能撤销由 AI 创建的文件夹".to_string());
     }
@@ -515,8 +509,5 @@ pub fn mcp_set_lan_enabled(
             lan_start_opts(&store),
         )?;
     }
-    Ok(server.status(
-        configured_port(&store),
-        configured_https_port(&store),
-    ))
+    Ok(server.status(configured_port(&store), configured_https_port(&store)))
 }

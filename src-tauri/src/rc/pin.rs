@@ -105,10 +105,7 @@ pub enum Confirmed {
     /// 本端点了确认，但对方还没点——等他。
     Waiting { peer_id: String },
     /// 两端都确认了：**已经写进 `rc_devices`**。
-    Committed {
-        peer_id: String,
-        peer_name: String,
-    },
+    Committed { peer_id: String, peer_name: String },
     /// 会话已过期（或被取消），这次确认落空。
     Gone,
 }
@@ -444,10 +441,7 @@ impl Pairs {
 
     /// 最近一次配对成功（完成屏用）。`take` 语义：读完即清，不会反复弹。
     pub fn take_done(&self) -> Option<Done> {
-        self.done
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        self.done.lock().unwrap_or_else(|p| p.into_inner()).take()
     }
 
     /// 落库：**两台机器各自写自己那份** `rc_devices`。
@@ -533,12 +527,12 @@ mod tests {
             panic!("发起方要发 pin_req");
         };
         // B 收到 pin_req
-        let (pb, out_b) = b.on_req("aa", "台式机", &pk_a, T0 + 10).expect("应答方要接");
+        let (pb, out_b) = b
+            .on_req("aa", "台式机", &pk_a, T0 + 10)
+            .expect("应答方要接");
         assert_eq!(pb.pin.len(), 6, "数字从第一次就能显示（公钥随包到了）");
         let Outgoing::Packet {
-            kind: k,
-            pk: pk_b,
-            ..
+            kind: k, pk: pk_b, ..
         } = out_b
         else {
             panic!("应答方要回 pin_resp");
@@ -788,9 +782,15 @@ mod tests {
             Some(WireKind::PinOk)
         );
         // 球在用户手里（数字已经显示、本端还没点确认）→ 不重发
-        assert_eq!(should_resend(true, true, false, false, T0, T0 + RESEND_MS), None);
+        assert_eq!(
+            should_resend(true, true, false, false, T0, T0 + RESEND_MS),
+            None
+        );
         // 两端都确认完了 → 不重发
-        assert_eq!(should_resend(true, true, true, true, T0, T0 + RESEND_MS), None);
+        assert_eq!(
+            should_resend(true, true, true, true, T0, T0 + RESEND_MS),
+            None
+        );
         // 还没到重传间隔 → 不重发
         assert_eq!(
             should_resend(true, false, false, false, T0, T0 + RESEND_MS - 1),

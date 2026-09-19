@@ -296,10 +296,7 @@ pub fn get_md_association_status() -> String {
                     Err(_) => return false,
                 };
                 let cmd = hkcu
-                    .open_subkey(format!(
-                        r"Software\Classes\{}\shell\open\command",
-                        prog_id
-                    ))
+                    .open_subkey(format!(r"Software\Classes\{}\shell\open\command", prog_id))
                     .or_else(|_| {
                         RegKey::predef(HKEY_CLASSES_ROOT)
                             .open_subkey(format!(r"{}\shell\open\command", prog_id))
@@ -344,17 +341,23 @@ pub fn set_md_association(enable: bool) -> Result<(), String> {
                 .create_subkey(r"Software\Classes\PastePanda.md")
                 .map_err(|e| e.to_string())?;
             let type_name = "Markdown 文档".to_string();
-            prog_key.set_value("", &type_name).map_err(|e| e.to_string())?;
+            prog_key
+                .set_value("", &type_name)
+                .map_err(|e| e.to_string())?;
             let (icon_key, _) = prog_key
                 .create_subkey("DefaultIcon")
                 .map_err(|e| e.to_string())?;
             let icon_val = format!("\"{}\",0", exe_str);
-            icon_key.set_value("", &icon_val).map_err(|e| e.to_string())?;
+            icon_key
+                .set_value("", &icon_val)
+                .map_err(|e| e.to_string())?;
             let (cmd_key, _) = prog_key
                 .create_subkey(r"shell\open\command")
                 .map_err(|e| e.to_string())?;
             let open_cmd = format!("\"{}\" \"%1\"", exe_str);
-            cmd_key.set_value("", &open_cmd).map_err(|e| e.to_string())?;
+            cmd_key
+                .set_value("", &open_cmd)
+                .map_err(|e| e.to_string())?;
 
             // 出现在右键"打开方式"列表：HKCU\Software\Classes\.md\OpenWithProgids
             let (owp, _) = hkcu
@@ -402,7 +405,8 @@ pub fn set_md_association(enable: bool) -> Result<(), String> {
                 let _ = owp.delete_value(MD_PROG_ID);
             }
             let _ = hkcu.delete_subkey_all(r"Software\PastePanda\Capabilities");
-            if let Ok(ra) = hkcu.open_subkey_with_flags(r"Software\RegisteredApplications", KEY_WRITE)
+            if let Ok(ra) =
+                hkcu.open_subkey_with_flags(r"Software\RegisteredApplications", KEY_WRITE)
             {
                 let _ = ra.delete_value(MD_APP_REG_NAME);
             }
@@ -445,14 +449,16 @@ pub fn read_text_file_preview(path: String) -> Result<serde_json::Value, String>
 
     let meta = match std::fs::metadata(&path) {
         Ok(m) if m.is_file() => m,
-        _ => return Ok(serde_json::json!({
-            "kind": "missing",
-            "file_size": 0,
-            "total_lines": 0,
-            "lines": [],
-            "truncated": false,
-            "extension": "",
-        })),
+        _ => {
+            return Ok(serde_json::json!({
+                "kind": "missing",
+                "file_size": 0,
+                "total_lines": 0,
+                "lines": [],
+                "truncated": false,
+                "extension": "",
+            }))
+        }
     };
 
     let file_size = meta.len();
@@ -476,10 +482,7 @@ pub fn read_text_file_preview(path: String) -> Result<serde_json::Value, String>
         .map_err(|e| format!("读取文件失败: {}", e))?;
 
     // 二进制检测：前 8KB 内是否出现 NUL 字节
-    let is_binary = preview_bytes
-        .iter()
-        .take(8192)
-        .any(|&b| b == 0);
+    let is_binary = preview_bytes.iter().take(8192).any(|&b| b == 0);
 
     if is_binary {
         return Ok(serde_json::json!({
@@ -562,8 +565,7 @@ pub fn read_text_file_full(path: String) -> Result<String, String> {
         return Err("不支持的网络共享路径".to_string());
     }
 
-    let meta = std::fs::metadata(&path)
-        .map_err(|e| format!("无法读取文件: {}", e))?;
+    let meta = std::fs::metadata(&path).map_err(|e| format!("无法读取文件: {}", e))?;
 
     if !meta.is_file() {
         return Err("路径不是文件".to_string());
@@ -576,7 +578,8 @@ pub fn read_text_file_full(path: String) -> Result<String, String> {
 
     let mut file = std::fs::File::open(&path).map_err(|e| format!("打开文件失败: {}", e))?;
     let mut bytes: Vec<u8> = Vec::with_capacity(meta.len() as usize);
-    file.read_to_end(&mut bytes).map_err(|e| format!("读取文件失败: {}", e))?;
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("读取文件失败: {}", e))?;
 
     // 二进制检测：前 8KB 内是否出现 NUL 字节
     let is_binary = bytes.iter().take(8192).any(|&b| b == 0);
@@ -769,15 +772,15 @@ pub fn get_source_app_icon(
     if !window_title.is_empty() {
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-            use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
+            use windows::core::PWSTR;
+            use windows::Win32::Foundation::CloseHandle;
             use windows::Win32::System::Threading::{
                 OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
                 PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
             };
+            use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+            use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
             use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
-            use windows::Win32::Foundation::CloseHandle;
-            use windows::core::PWSTR;
 
             unsafe {
                 let fg = GetForegroundWindow();
@@ -786,7 +789,8 @@ pub fn get_source_app_icon(
                     let mut title_buf = [0u16; 512];
                     let title_len = GetWindowTextW(fg, &mut title_buf);
                     if title_len > 0 {
-                        let current_title = String::from_utf16_lossy(&title_buf[..title_len as usize]);
+                        let current_title =
+                            String::from_utf16_lossy(&title_buf[..title_len as usize]);
                         // 仅当前台窗口标题与目标匹配时才查找（避免错配）
                         if current_title == window_title {
                             // 通过窗口句柄获取进程路径
@@ -795,7 +799,8 @@ pub fn get_source_app_icon(
                             if pid != 0 {
                                 if let Ok(handle) = OpenProcess(
                                     PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                                    false, pid,
+                                    false,
+                                    pid,
                                 ) {
                                     let mut exe_buf = [0u16; 260];
                                     let mut exe_len = exe_buf.len() as u32;
@@ -809,12 +814,16 @@ pub fn get_source_app_icon(
 
                                     if result.is_ok() && exe_len > 0 {
                                         let exe_path = std::path::PathBuf::from(
-                                            String::from_utf16_lossy(&exe_buf[..exe_len as usize])
+                                            String::from_utf16_lossy(&exe_buf[..exe_len as usize]),
                                         );
-                                        if let Some(full_path) = icon_cache.get_icon_by_exe_path(&exe_path) {
+                                        if let Some(full_path) =
+                                            icon_cache.get_icon_by_exe_path(&exe_path)
+                                        {
                                             log::debug!("[get_source_app_icon] 回退命中: title={}, exe={}, icon={}",
                                                 window_title, exe_path.display(), full_path.display());
-                                            return Ok(Some(full_path.to_string_lossy().to_string()));
+                                            return Ok(Some(
+                                                full_path.to_string_lossy().to_string(),
+                                            ));
                                         }
                                     }
                                 }
@@ -825,7 +834,11 @@ pub fn get_source_app_icon(
             }
         }
 
-        log::debug!("[get_source_app_icon] 未找到图标: source_icon={:?}, title={}", source_icon, window_title);
+        log::debug!(
+            "[get_source_app_icon] 未找到图标: source_icon={:?}, title={}",
+            source_icon,
+            window_title
+        );
     }
 
     Ok(None)
@@ -841,9 +854,10 @@ pub fn clear_source_icon_cache(
     if let Ok(entries) = std::fs::read_dir(&cache_dir) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-                && std::fs::remove_file(entry.path()).is_ok() {
-                    count += 1;
-                }
+                && std::fs::remove_file(entry.path()).is_ok()
+            {
+                count += 1;
+            }
         }
     }
     Ok(count)
@@ -855,10 +869,7 @@ pub fn clear_source_icon_cache(
 pub fn take_pending_file_open(
     pending: State<crate::PendingFileOpen>,
 ) -> Result<Vec<String>, String> {
-    let mut guard = pending
-        .0
-        .lock()
-        .map_err(|e| format!("锁获取失败: {}", e))?;
+    let mut guard = pending.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
     Ok(guard.take().unwrap_or_default())
 }
 
@@ -918,10 +929,7 @@ pub async fn open_fullscreen_editor(
 
     // 窗口不存在 → 存初始数据 + 建窗
     {
-        let mut guard = pending
-            .0
-            .lock()
-            .map_err(|e| format!("锁获取失败: {}", e))?;
+        let mut guard = pending.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
         *guard = Some(crate::EditorInitData {
             source_id,
             content,
@@ -945,11 +953,14 @@ pub async fn open_fullscreen_editor(
         _ => "PastePanda Markdown 编辑器",
     };
 
-    let mut builder =
-        WebviewWindowBuilder::new(&app, "md-editor", tauri::WebviewUrl::App("editor.html".into()))
-            .title(title)
-            .decorations(false)
-            .visible(false);
+    let mut builder = WebviewWindowBuilder::new(
+        &app,
+        "md-editor",
+        tauri::WebviewUrl::App("editor.html".into()),
+    )
+    .title(title)
+    .decorations(false)
+    .visible(false);
 
     // 方案 A（近全屏留边）：按主窗口所在显示器（回退主显示器）计算 94%×90% 的居中尺寸，
     // 四周保留呼吸边，不再 100% 霸屏。
@@ -1015,10 +1026,7 @@ pub async fn open_fullscreen_editor(
 pub fn take_editor_init(
     pending: State<crate::PendingEditor>,
 ) -> Result<Option<crate::EditorInitData>, String> {
-    let guard = pending
-        .0
-        .lock()
-        .map_err(|e| format!("锁获取失败: {}", e))?;
+    let guard = pending.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
     Ok(guard.clone())
 }
 

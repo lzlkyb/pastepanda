@@ -109,10 +109,7 @@ impl IconCache {
 
     /// 校验图标文件名是否为安全的纯文件名（无路径分隔符、无 ".."、非空）
     fn is_safe_icon_name(name: &str) -> bool {
-        !name.is_empty()
-            && !name.contains(['/', '\\', ':'])
-            && !name.contains("..")
-            && name != "."
+        !name.is_empty() && !name.contains(['/', '\\', ':']) && !name.contains("..") && name != "."
     }
 
     /// 根据 exe 路径 hash 查找图标（回退逻辑：窗口标题 → exe 路径 → hash → 图标）
@@ -144,14 +141,17 @@ impl IconCache {
     /// 从窗口句柄获取进程可执行文件路径
     /// pub(crate)：事件驱动监听器的捕获阶段需要快速拿到进程路径（图标提取延后到工作线程）
     #[cfg(target_os = "windows")]
-    pub(crate) fn get_process_path(&self, hwnd: windows::Win32::Foundation::HWND) -> Option<PathBuf> {
+    pub(crate) fn get_process_path(
+        &self,
+        hwnd: windows::Win32::Foundation::HWND,
+    ) -> Option<PathBuf> {
+        use windows::core::PWSTR;
         use windows::Win32::Foundation::CloseHandle;
         use windows::Win32::System::Threading::{
-            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-            PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION,
+            PROCESS_VM_READ,
         };
         use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
-        use windows::core::PWSTR;
 
         unsafe {
             let mut pid: u32 = 0;
@@ -160,12 +160,8 @@ impl IconCache {
                 return None;
             }
 
-            let handle = OpenProcess(
-                PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                false,
-                pid,
-            )
-            .ok()?;
+            let handle =
+                OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).ok()?;
 
             let mut buf = [0u16; 260]; // MAX_PATH
             let mut len = buf.len() as u32;
@@ -190,17 +186,15 @@ impl IconCache {
     /// 提取 exe 图标并保存为 PNG 到缓存目录
     #[cfg(target_os = "windows")]
     fn extract_and_save_icon(&self, exe_path: &std::path::Path) -> Option<String> {
-        use windows::Win32::UI::Shell::{
-            SHGetFileInfoW, SHGFI_ICON, SHGFI_LARGEICON, SHFILEINFOW,
-        };
+        use image::codecs::png::PngEncoder;
+        use image::ImageEncoder;
         use windows::Win32::Graphics::Gdi::{
             CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, SelectObject,
             BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
         };
-        use windows::Win32::UI::WindowsAndMessaging::{GetIconInfo, DestroyIcon, ICONINFO};
         use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
-        use image::codecs::png::PngEncoder;
-        use image::ImageEncoder;
+        use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
+        use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
         unsafe {
             let mut sfi = SHFILEINFOW::default();
@@ -392,5 +386,4 @@ impl IconCache {
     fn extract_and_save_icon(&self, _exe_path: &std::path::Path) -> Option<String> {
         None
     }
-
 }

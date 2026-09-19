@@ -31,10 +31,12 @@ pub fn parse_ai_tags(raw: &str) -> Vec<String> {
     // 先按行走，再每行取**冒号之后**的部分：
     // 「好的，标签如下：」这种引导语整行就没了，而「标签：前端, React」还能拿到后半句。
     // （先按分隔符切再判冒号是不行的：开场白会被逗号切碎，前半截「好的」不含冒号就漏进来了。）
-    let bodies = raw.lines().map(|line| match line.rsplit_once([':', '\u{ff1a}']) {
-        Some((_, after)) => after,
-        None => line,
-    });
+    let bodies = raw
+        .lines()
+        .map(|line| match line.rsplit_once([':', '\u{ff1a}']) {
+            Some((_, after)) => after,
+            None => line,
+        });
 
     for piece in bodies.flat_map(|b| b.split([',', '\u{ff0c}', '\u{3001}', ';', '\u{ff1b}'])) {
         let mut t = piece.trim().to_string();
@@ -43,11 +45,15 @@ pub fn parse_ai_tags(raw: &str) -> Vec<String> {
         // ❗ 每剥一层都要 trim：「1. #前端」剥完序号剩的是「 #前端」，
         //   开头是空格的话下一步就剥不掉 `#`。
         t = t
-            .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ')' || c == '\u{3001}')
+            .trim_start_matches(|c: char| {
+                c.is_ascii_digit() || c == '.' || c == ')' || c == '\u{3001}'
+            })
             .trim_start()
             .trim_start_matches(['-', '*', '\u{2022}', '#'])
             .trim()
-            .trim_matches(['"', '\'', '\u{201c}', '\u{201d}', '\u{300a}', '\u{300b}', '`'])
+            .trim_matches([
+                '"', '\'', '\u{201c}', '\u{201d}', '\u{300a}', '\u{300b}', '`',
+            ])
             .trim()
             .to_string();
 

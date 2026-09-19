@@ -40,15 +40,28 @@ fn test_qa_finds_what_plain_search_cannot() {
 #[test]
 fn test_question_expr_is_or_and_drops_stopword_bigrams() {
     let expr = note::question_to_or_expr("这个项目的部署流程").unwrap();
-    assert!(expr.contains(" OR "), "必须是 OR 语义，不能是 AND：{}", expr);
+    assert!(
+        expr.contains(" OR "),
+        "必须是 OR 语义，不能是 AND：{}",
+        expr
+    );
     assert!(expr.contains("部署"));
     assert!(expr.contains("流程"));
     // 含停用字的 bigram 一个都不能在
     for noise in ["这个", "个项", "目的", "的部"] {
-        assert!(!expr.contains(noise), "噪声 bigram {} 不该进查询：{}", noise, expr);
+        assert!(
+            !expr.contains(noise),
+            "噪声 bigram {} 不该进查询：{}",
+            noise,
+            expr
+        );
     }
     // 限定列：pinyin 列不得参与（否则英文词会撞拼音首字母）
-    assert!(expr.starts_with("{title content}"), "必须限定两列：{}", expr);
+    assert!(
+        expr.starts_with("{title content}"),
+        "必须限定两列：{}",
+        expr
+    );
 }
 
 /// 没有可检索词时返 `None`，而不是拼一个空表达式扔给 FTS5（那会语法报错）。

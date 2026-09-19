@@ -46,6 +46,18 @@ export function relTime(ms: number | null | undefined, now: number = Date.now())
 export type RcPresenceLevel = "live" | "recent" | "seen" | "never";
 
 /**
+ * 后端给的 presence 串归一到四档。未知值按「见过」处理——
+ * **刻意不兜底成 "live"**：无中心服务器时组播听不见 ≠ 对端关机，
+ * 但反过来把「不知道」说成「在线」更糟（用户会以为对方一定连得上）。
+ */
+export function normalizeRcPresence(raw: string | undefined): RcPresenceLevel {
+  if (raw === "live" || raw === "recent" || raw === "seen" || raw === "never") {
+    return raw;
+  }
+  return "seen";
+}
+
+/**
  * 设备行主状态文案（设计稿：多档，不冒充有中心服务器的二值绿点）。
  * 纯函数便于单测；`lastSeen` 为 `relTime` 已格式化串。
  */
@@ -115,4 +127,60 @@ export function lastSeenHint(
   if (pathLabel) return `上次走${pathLabel}`;
   if (hasTime) return `上次 ${lastSeenLabel}`;
   return "";
+}
+
+/**
+ * 备注名长度上限，**按字符数**计。
+ *
+ * 🔴 与后端 `commands::rc::NOTE_MAX_CHARS` 同值、同口径。两边分开算的代价：
+ * 后端曾用 `note.len()`（字节），60 字节只够 20 个汉字，而这里的 `maxLength`
+ * 与 `slice` 数的是 UTF-16 单元 —— 21~60 个汉字的备注在前端看着完全合法，
+ * 存下去必被后端拒掉。改口径时两处必须一起改。
+ */
+export const RC_NOTE_MAX = 60;
+
+/**
+ * 只按字符截断，不做 trim。
+ *
+ * 输入过程中不能顺手 trim —— 那样用户打不出「客厅 电脑」这种以空格开头的中缀，
+ * 打一个空格就被吃掉。落库前的归一化走 `normalizeRcNote`。
+ */
+export function truncateRcNote(raw: string): string {
+  return Array.from(raw).slice(0, RC_NOTE_MAX).join("");
+}
+
+/** 落库前的归一化：trim + 按字符截断（与后端 `normalize_note` 同一口径）。 */
+export function normalizeRcNote(raw: string): string {
+  return truncateRcNote(raw.trim());
+}
+
+/**
+ * A5：这条会话记录还能不能「再次连接」。
+ *
+ * 判据缺一即不摆按钮 —— 摆一个注定失败的入口比不摆更糟（本轮反复踩的坑）：
+ *  · 通道在跑（`rc_status.running`）：通道没起时 `rc_request_session` 直接回
+ *    `[channel_down]`，用户点完只得到一句报错；
+ *  · 该设备仍在配对列表里：忘了设备 / 对方重装换了 node_id 之后，旧记录指向的
+ *    设备已经不在 `rc_targets`，点了只会得到 `[not_paired]`。
+ *
+ * 参数取结构化最小类型（只用到 `node_id`），避免这个纯函数模块依赖 api 层。
+ */
+export function canReconnectTo(
+  targets: readonly { node_id: string }[],
+  peer: string,
+  running: boolean,
+): boolean {
+  if (!running) return false;
+  return targets.some((t) => t.node_id === peer);
+}
+
+/**
+ * B1：托盘「连接 <设备>」的目标设备。
+ *
+ * 只认 `source === "rc"` 的设备，且列表已按 `last_seen` 降序（后端如此）——
+ * 取第一台 = 最近用过的那台。纯同步配对设备刻意不取：它们在工作台里都被要求
+ * 先「去配对」建立远程通道，托盘里更不该绕过这条边界。
+ */
+export function lastRcTarget<T extends { source: string }>(targets: readonly T[]): T | null {
+  return targets.find((t) => t.source === "rc") ?? null;
 }

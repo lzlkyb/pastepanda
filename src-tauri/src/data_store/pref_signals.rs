@@ -145,7 +145,10 @@ impl DataStore {
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
         let n = conn
-            .execute("DELETE FROM pref_signals WHERE created_at < ?1", params![cutoff])
+            .execute(
+                "DELETE FROM pref_signals WHERE created_at < ?1",
+                params![cutoff],
+            )
             .map_err(|e| e.to_string())?;
         Ok(n as u32)
     }

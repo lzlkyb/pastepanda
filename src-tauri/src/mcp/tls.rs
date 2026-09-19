@@ -96,10 +96,9 @@ pub fn ensure(app_dir: &Path) -> Result<TlsMaterial, String> {
 }
 
 fn load(app_dir: &Path) -> Result<TlsMaterial, String> {
-    let cert_chain_pem = std::fs::read_to_string(cert_path(app_dir))
-        .map_err(|e| format!("读不了证书：{}", e))?;
-    let cipher =
-        std::fs::read(key_path(app_dir)).map_err(|e| format!("读不了私钥：{}", e))?;
+    let cert_chain_pem =
+        std::fs::read_to_string(cert_path(app_dir)).map_err(|e| format!("读不了证书：{}", e))?;
+    let cipher = std::fs::read(key_path(app_dir)).map_err(|e| format!("读不了私钥：{}", e))?;
     let plain = crate::dpapi::unprotect(&cipher, ENTROPY)?;
     let key_pem = String::from_utf8(plain).map_err(|_| "私钥不是合法文本".to_string())?;
     Ok(TlsMaterial {
@@ -267,10 +266,9 @@ fn generate(app_dir: &Path) -> Result<TlsMaterial, String> {
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     ca_params.not_before = not_before;
     ca_params.not_after = not_after;
-    ca_params.distinguished_name.push(
-        DnType::CommonName,
-        "PastePanda Local CA (127.0.0.1 only)",
-    );
+    ca_params
+        .distinguished_name
+        .push(DnType::CommonName, "PastePanda Local CA (127.0.0.1 only)");
     let ca_cert = ca_params
         .self_signed(&ca_key)
         .map_err(|e| format!("签发 CA 证书失败：{}", e))?;
@@ -400,7 +398,11 @@ mod tests {
         let chain = std::fs::read_to_string(cert_path(&d)).unwrap();
         assert!(!chain.contains("PRIVATE KEY"), "证书链里竟然有私钥");
         // 叶 + CA 两段
-        assert_eq!(chain.matches("BEGIN CERTIFICATE").count(), 2, "证书链应该是叶+CA");
+        assert_eq!(
+            chain.matches("BEGIN CERTIFICATE").count(),
+            2,
+            "证书链应该是叶+CA"
+        );
 
         // 叶私钥文件必须是 DPAPI 密文，不是明文 PEM
         let key_raw = std::fs::read(key_path(&d)).unwrap();

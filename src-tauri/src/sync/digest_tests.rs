@@ -65,7 +65,11 @@ fn test_sql分桶与_rust分桶一致() {
     let s = store();
     let mut ids = Vec::new();
     for i in 0..40 {
-        ids.push(s.note_create(None, &format!("篇 {}", i), "正文").unwrap().id);
+        ids.push(
+            s.note_create(None, &format!("篇 {}", i), "正文")
+                .unwrap()
+                .id,
+        );
     }
     // 再塞几个非 uuid 形状的 id（vault 导入能带这种进来）
     for id in ["zzz-不是-uuid", "中文开头", "-dash"] {
@@ -255,6 +259,9 @@ fn test_整桶重发不动游标() {
 fn test_旧版hello的能力位默认为否() {
     let old = r#"{"v":1,"cursor_ms":5,"high_water_ms":9}"#;
     let h = super::session::hello_from_json_for_test(old).expect("旧版 hello 应该能解开");
-    assert!(!h.0, "digest_capable 必须默认为 false，否则与旧版对端会挂死");
+    assert!(
+        !h.0,
+        "digest_capable 必须默认为 false，否则与旧版对端会挂死"
+    );
     assert!(!h.1, "want_digest 必须默认为 false");
 }

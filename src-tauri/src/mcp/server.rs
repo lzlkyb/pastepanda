@@ -293,7 +293,10 @@ impl McpServer {
                     (
                         l,
                         false,
-                        format!("无法监听局域网（0.0.0.0:{}）：{}。本机 127.0.0.1 服务不受影响。", port, e),
+                        format!(
+                            "无法监听局域网（0.0.0.0:{}）：{}。本机 127.0.0.1 服务不受影响。",
+                            port, e
+                        ),
                     )
                 }
             }
@@ -460,7 +463,6 @@ impl McpServer {
 pub struct LanStartOpts {
     pub enabled: bool,
 }
-
 
 /// bind 带短重试：停服后立刻重启时，旧监听可能还没完全释放端口。
 fn bind_with_retry(addr: (&str, u16)) -> Result<StdTcpListener, String> {

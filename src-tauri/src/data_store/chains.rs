@@ -131,7 +131,12 @@ impl DataStore {
                 let (steps, corrupted) = match steps_from_json(&raw) {
                     Ok(v) => (v, false),
                     Err(e) => {
-                        log::warn!("[Chains] 链 {} 的步骤 JSON 解析失败：{}；原文：{}", id, e, raw);
+                        log::warn!(
+                            "[Chains] 链 {} 的步骤 JSON 解析失败：{}；原文：{}",
+                            id,
+                            e,
+                            raw
+                        );
                         (Vec::new(), true)
                     }
                 };
@@ -170,7 +175,10 @@ impl DataStore {
             return Err("至少要有 1 个步骤".to_string());
         }
         if chain.steps.len() > MAX_CHAIN_STEPS {
-            return Err(format!("步骤最多 {} 个（步骤太多难以排错）", MAX_CHAIN_STEPS));
+            return Err(format!(
+                "步骤最多 {} 个（步骤太多难以排错）",
+                MAX_CHAIN_STEPS
+            ));
         }
         for (i, step) in chain.steps.iter().enumerate() {
             if step.transform_id.trim().is_empty() {

@@ -100,7 +100,7 @@ pub fn kb_sync_invite_create(
     let now = chrono::Utc::now().timestamp_millis();
     // 地址留空：地址会漂，靠 kb_presence 组播现场发现（见 sync::presence）。
     // 邀请码里塞一个当时的 IP，第二天就是错的。
-    let code = invite::encode(&me, name.trim(), Vec::new(), now)?;
+    let code = invite::encode(&me, name.trim())?;
     let expires_at = now + invite::TTL_SECS * 1000;
 
     // 🔴 生成邀请码 = 开一扇有时限的门。
@@ -153,7 +153,13 @@ pub async fn kb_sync_pair(
         return Err("这是本机自己的邀请码，不能和自己配对。请把它粘到**另一台**设备上。".into());
     }
 
-    store.device_pair(&inv.node_id, &inv.name, "")?;
+    // PP1 码允许空名（用户没填设备名），与 `rc_pair` 同一个回退：列表里先叫「新设备」。
+    let name = if inv.name.trim().is_empty() {
+        "新设备".to_string()
+    } else {
+        inv.name.trim().to_string()
+    };
+    store.device_pair(&inv.node_id, &name, "")?;
     svc.add_peer(&inv.node_id).await?;
     Ok(inv)
 }

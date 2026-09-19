@@ -3,8 +3,8 @@
 //! 纯本地只读/记账，不联网、不含内容。计量（quota_spend）由 ai_run
 //! 在 builtin-agnes 分支内部调用，不暴露为命令（防止前端绕过计费逻辑）。
 
-use tauri::State;
 use crate::data_store::{DataStore, QuotaInfo, RedeemResult, SignResult};
+use tauri::State;
 
 /// 免费额度总览（余额 / 签到状态 / 今日用量 / 阶梯）。
 #[tauri::command]

@@ -107,10 +107,10 @@ impl DataStore {
             //
             // SQL 侧：%w 是 0~6（周日=0），距周一的天数 = (%w + 6) % 7。
             let weeks: std::collections::HashSet<String> = {
-                let since_weeks =
-                    (chrono::Local::now() - chrono::Duration::days(STREAK_SCAN_WEEKS * 7))
-                        .format("%Y-%m-%d 00:00:00")
-                        .to_string();
+                let since_weeks = (chrono::Local::now()
+                    - chrono::Duration::days(STREAK_SCAN_WEEKS * 7))
+                .format("%Y-%m-%d 00:00:00")
+                .to_string();
                 let mut stmt = match conn.prepare(
                     "SELECT DISTINCT date(created_at, '-' || ((strftime('%w', created_at) + 6) % 7) || ' days') AS w
                      FROM action_events WHERE created_at >= ?1",

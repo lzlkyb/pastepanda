@@ -49,11 +49,8 @@ export function RcSessionTop({
       <span className={canControl ? styles.pillOn : styles.pill}>
         {canControl ? "可控" : "只看"}
       </span>
-      {canControl && (
-        <span className={kbOn ? styles.pillOn : styles.pill}>
-          {kbOn ? "键盘已捕获 · Esc 释放" : "键盘：未捕获"}
-        </span>
-      )}
+      {/* 键盘状态不在这里摆了（方案 B）：底栏状态区已有一句「点画面可捕获键盘 /
+          键盘已捕获 · Esc 释放」。同一状态在顶栏一个胶囊、底栏一句话，是重复。 */}
       {linkState === "failed" && (
         <span className={styles.pillDanger} title={linkStateHint(linkState)}>
           {linkStateLabel(linkState)}

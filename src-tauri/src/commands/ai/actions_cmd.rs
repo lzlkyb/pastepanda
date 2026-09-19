@@ -59,15 +59,15 @@ pub fn ai_save_custom_action(
 
     let name = action.name.trim();
     if let Some(hit) = actions::ACTIONS.iter().find(|a| a.label == name) {
-        return Err(format!(
-            "“{}”是内置动作的名字，换一个吧",
-            hit.label
-        ));
+        return Err(format!("“{}”是内置动作的名字，换一个吧", hit.label));
     }
 
     // 选了不存在的内容类型 → 这个动作将永远不会出现，而用户看不出来
     for ct in &action.content_types {
-        if !actions::SELECTABLE_CONTENT_TYPES.iter().any(|(id, _)| id == ct) {
+        if !actions::SELECTABLE_CONTENT_TYPES
+            .iter()
+            .any(|(id, _)| id == ct)
+        {
             return Err(format!("不认识的内容类型：{}", ct));
         }
     }
@@ -85,10 +85,7 @@ pub fn ai_delete_custom_action(store: State<DataStore>, id: String) -> Result<()
 }
 
 #[tauri::command]
-pub fn ai_reorder_custom_actions(
-    store: State<DataStore>,
-    ids: Vec<String>,
-) -> Result<(), String> {
+pub fn ai_reorder_custom_actions(store: State<DataStore>, ids: Vec<String>) -> Result<(), String> {
     store.ai_custom_actions_reorder(&ids)
 }
 
@@ -100,5 +97,3 @@ pub(crate) fn template_fingerprint(template: &str) -> String {
     let digest = Md5::new().chain_update(template.as_bytes()).finalize();
     format!("{:x}", digest)[..8].to_string()
 }
-
-

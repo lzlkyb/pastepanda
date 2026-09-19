@@ -63,8 +63,17 @@ fn test_history_day_meta_source_kept_raw_not_normalized() {
     // 🔴 归一化在**前端**做（`cleanSourceName`）。
     // 后端再做一套就是两套规则，而映射表只存在于前端。
     let store = make_store();
-    insert_at(&store, "x", "2026-09-04 09:00:00", "某文档 - 记事本", "text");
-    assert_eq!(store.history_day_meta("2026-09-04").unwrap()[0].source, "某文档 - 记事本");
+    insert_at(
+        &store,
+        "x",
+        "2026-09-04 09:00:00",
+        "某文档 - 记事本",
+        "text",
+    );
+    assert_eq!(
+        store.history_day_meta("2026-09-04").unwrap()[0].source,
+        "某文档 - 记事本"
+    );
 }
 
 #[test]

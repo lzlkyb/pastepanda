@@ -264,8 +264,20 @@ mod tests {
         };
         let j = serde_json::to_string(&p).unwrap();
         assert!(j.contains("\"targetApp\""), "应含 targetApp，实际: {}", j);
-        assert!(j.contains("\"targetCategory\""), "应含 targetCategory，实际: {}", j);
-        assert!(!j.contains("target_app"), "不该出现蛇形 target_app，实际: {}", j);
-        assert!(!j.contains("target_category"), "不该出现蛇形 target_category，实际: {}", j);
+        assert!(
+            j.contains("\"targetCategory\""),
+            "应含 targetCategory，实际: {}",
+            j
+        );
+        assert!(
+            !j.contains("target_app"),
+            "不该出现蛇形 target_app，实际: {}",
+            j
+        );
+        assert!(
+            !j.contains("target_category"),
+            "不该出现蛇形 target_category，实际: {}",
+            j
+        );
     }
 }

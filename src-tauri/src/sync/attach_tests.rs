@@ -110,7 +110,10 @@ fn test_落到对端时用对端自己的路径() {
     let landed = to_local(&portable, peer_images);
     assert!(landed.contains("D:/Data/com.pastepanda.app/images"));
     assert!(!landed.contains("19145"));
-    assert!(landed.starts_with("file:///"), "必须与采集侧同格式，否则前端解不出来");
+    assert!(
+        landed.starts_with("file:///"),
+        "必须与采集侧同格式，否则前端解不出来"
+    );
 }
 
 /// 附件目录**必须**带前导点：`collect_md` 跳过点目录，
@@ -210,13 +213,13 @@ fn test_只落盘形状对的附件名() {
     let bad = [
         "evil.exe".to_string(),
         "README.md".to_string(),
-        format!("{}.PNG", H_EXT),           // 大写扩展名：扫描侧已统一转小写，不可能出现
+        format!("{}.PNG", H_EXT), // 大写扩展名：扫描侧已统一转小写，不可能出现
         format!("{}.png", H_HASH.to_uppercase()), // 大写 hash，同上
-        format!("{}.png", &HASH[..30]),     // hash 短了
-        format!("{}x.png", HASH),           // hash 长了
-        format!("{}.png.exe", HASH),        // 双扩展名
-        format!("{}.toolongext", HASH),     // 扩展名超长
-        HASH.to_string(),                   // 没扩展名
+        format!("{}.png", &HASH[..30]), // hash 短了
+        format!("{}x.png", HASH), // hash 长了
+        format!("{}.png.exe", HASH), // 双扩展名
+        format!("{}.toolongext", HASH), // 扩展名超长
+        HASH.to_string(),         // 没扩展名
     ];
     for b in &bad {
         std::fs::write(staged.join(b), "垃圾".as_bytes()).unwrap();
@@ -226,11 +229,7 @@ fn test_只落盘形状对的附件名() {
     assert_eq!((landed, deduped), (1, 0), "只该落盘那一个真附件");
     assert!(images.join(&good).is_file());
     for b in &bad {
-        assert!(
-            !images.join(b).exists(),
-            "形状不对的文件被落盘了：{}",
-            b
-        );
+        assert!(!images.join(b).exists(), "形状不对的文件被落盘了：{}", b);
     }
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -304,15 +303,11 @@ fn test_w1_带图笔记同步后对端能打开这张图() {
     let raw = png_bytes();
     std::fs::write(p.a_images.join(&name), &raw).unwrap();
 
-    let n = p
-        .a
-        .note_create(
+    let n =
+        p.a.note_create(
             None,
             "带图的",
-            &format!(
-                "<p>看图</p><img src=\"{}\">",
-                url_in(&p.a_images, &name)
-            ),
+            &format!("<p>看图</p><img src=\"{}\">", url_in(&p.a_images, &name)),
         )
         .unwrap();
 

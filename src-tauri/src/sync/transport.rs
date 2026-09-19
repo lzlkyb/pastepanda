@@ -319,8 +319,7 @@ pub async fn read_dir_with(
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p).map_err(|e| format!("建目录失败：{}", e))?;
         }
-        std::fs::write(&path, &buf)
-            .map_err(|e| format!("写文件失败 {}：{}", path.display(), e))?;
+        std::fs::write(&path, &buf).map_err(|e| format!("写文件失败 {}：{}", path.display(), e))?;
     }
     Ok(total)
 }

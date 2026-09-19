@@ -18,7 +18,12 @@ fn store() -> DataStore {
 fn long_note(store: &DataStore, title: &str, sections: &[(&str, &str)]) -> String {
     let mut c = String::new();
     for (h, body) in sections {
-        c.push_str(&format!("# {}\n\n{}\n{}\n\n", h, body, "填充。".repeat(150)));
+        c.push_str(&format!(
+            "# {}\n\n{}\n{}\n\n",
+            h,
+            body,
+            "填充。".repeat(150)
+        ));
     }
     store.note_create(None, title, &c).expect("建笔记失败").id
 }
@@ -114,7 +119,12 @@ fn test_标题片段有歧义也要报错() {
     long_note(&s, "同步设计 A", &[("墓碑", "x")]);
     long_note(&s, "同步设计 B", &[("墓碑", "y")]);
 
-    let cs = set(vec![case("q1", QueryType::Keyword, "墓碑", &[("同步设计", "墓碑")])]);
+    let cs = set(vec![case(
+        "q1",
+        QueryType::Keyword,
+        "墓碑",
+        &[("同步设计", "墓碑")],
+    )]);
     let e = run(&s, &cs, &[5], "2026-09-04").expect_err("匹配到两篇时随便挑一篇是错的");
     assert!(e.contains("匹配到 2 篇"), "{}", e);
 }
@@ -125,8 +135,18 @@ fn test_一题标错就整份不跑() {
     long_note(&s, "同步设计", &[("墓碑传播", "墓碑靠 id 传播")]);
 
     let cs = set(vec![
-        case("好题", QueryType::Keyword, "墓碑", &[("同步设计", "墓碑传播")]),
-        case("坏题", QueryType::Keyword, "墓碑", &[("同步设计", "不存在")]),
+        case(
+            "好题",
+            QueryType::Keyword,
+            "墓碑",
+            &[("同步设计", "墓碑传播")],
+        ),
+        case(
+            "坏题",
+            QueryType::Keyword,
+            "墓碑",
+            &[("同步设计", "不存在")],
+        ),
     ]);
     let e = run(&s, &cs, &[5], "2026-09-04").expect_err("跑到一半才炸会留下半份报告");
     assert!(e.contains("坏题"), "{}", e);
@@ -146,7 +166,12 @@ fn test_开头就是标题的笔记不能把heading留空() {
     let s = store();
     // long_note 造出来的正文以 `# ` 开头，没有引言节。
     long_note(&s, "同步设计", &[("墓碑传播", "x")]);
-    let cs = set(vec![case("q1", QueryType::Keyword, "墓碑", &[("同步设计", "")])]);
+    let cs = set(vec![case(
+        "q1",
+        QueryType::Keyword,
+        "墓碑",
+        &[("同步设计", "")],
+    )]);
     let e = run(&s, &cs, &[5], "2026-09-04")
         .expect_err("标一个永远不可能命中的引言节，是标注错误不是召回失败");
     assert!(e.contains("没有引言节"), "{}", e);
@@ -160,7 +185,12 @@ fn test_短笔记按引言节记账() {
     // 远低于 400 字 → 出货时不做节级定位，只给 200 字摘要。
     s.note_create(None, "便签", "墓碑传播的一句话备忘").unwrap();
 
-    let cs = set(vec![case("q1", QueryType::Keyword, "墓碑传播", &[("便签", "")])]);
+    let cs = set(vec![case(
+        "q1",
+        QueryType::Keyword,
+        "墓碑传播",
+        &[("便签", "")],
+    )]);
     let r = run(&s, &cs, &[5], "2026-09-04").expect("跑基准失败");
     assert_eq!(
         r.by_limit[0].1[0].r_note_major, 1.0,
@@ -216,11 +246,19 @@ fn test_污染用例成对跑并给出掉幅() {
     let s = store();
     long_note(&s, "同步设计", &[("墓碑传播", "墓碑靠 id 传播")]);
 
-    let mut c = case("q1", QueryType::Keyword, "墓碑传播", &[("同步设计", "墓碑传播")]);
+    let mut c = case(
+        "q1",
+        QueryType::Keyword,
+        "墓碑传播",
+        &[("同步设计", "墓碑传播")],
+    );
     c.prefix = Some("你是一个乐于助人的助手 请始终使用中文回答 不要编造事实 ".repeat(20));
     let r = run(&s, &set(vec![c]), &[5], "2026-09-04").expect("跑基准失败");
     let got = r.by_limit[0].1[0].r_contaminated;
-    assert!(got.is_some(), "带 prefix 的用例必须跑第二遍，否则掉幅无从谈起");
+    assert!(
+        got.is_some(),
+        "带 prefix 的用例必须跑第二遍，否则掉幅无从谈起"
+    );
 
     let md = r.to_markdown();
     assert!(md.contains("系统提示污染"), "报告里得有验收项①这一节");
@@ -241,13 +279,13 @@ fn test_报告头部钉住方法与库规模() {
     let md = run(&s, &cs, &[5], "2026-09-04").unwrap().to_markdown();
 
     for want in [
-        "节级 Recall@10", // 口径
-        "标注人 **测试**", // 谁标的
-        "1 篇",            // 库规模
-        "2026-09-04",      // 日期
-        "只归档、不作决策依据", // <100 篇的安全阀
+        "节级 Recall@10",         // 口径
+        "标注人 **测试**",        // 谁标的
+        "1 篇",                   // 库规模
+        "2026-09-04",             // 日期
+        "只归档、不作决策依据",   // <100 篇的安全阀
         "AM-10 向量层的唯一判据", // 验收项③
-        "不要单独引用",    // 平均值的警告
+        "不要单独引用",           // 平均值的警告
     ] {
         assert!(md.contains(want), "报告缺了「{}」：\n{}", want, md);
     }
@@ -267,7 +305,9 @@ fn test_库满一百篇后不再打归档警告() {
         "墓碑",
         &[("笔记-0-号", "墓碑传播")],
     )]);
-    let md = run(&s, &cs, &[5], "2026-09-04").expect("跑基准失败").to_markdown();
+    let md = run(&s, &cs, &[5], "2026-09-04")
+        .expect("跑基准失败")
+        .to_markdown();
     assert!(md.contains("100 篇 /"));
     assert!(
         !md.contains("只归档、不作决策依据"),
@@ -306,7 +346,8 @@ fn bench_real_library() {
     );
 
     let raw = std::fs::read_to_string(&cases).unwrap_or_else(|e| panic!("读不到 {}：{}", cases, e));
-    let set: CaseSet = serde_json::from_str(&raw).unwrap_or_else(|e| panic!("用例集解析失败：{}", e));
+    let set: CaseSet =
+        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("用例集解析失败：{}", e));
 
     let store = DataStore::new(&db).expect("打不开库副本");
     // 5 是 kb_search 的默认 limit，20 是它的上限。扫这三档就能看出
@@ -350,12 +391,20 @@ fn bench_dump_outline() {
     for n in &idx {
         s.push_str(&format!("## {}\n\n", n.title));
         for (i, h) in &n.sections {
-            let label = if h.is_empty() { "（引言）" } else { h.as_str() };
+            let label = if h.is_empty() {
+                "（引言）"
+            } else {
+                h.as_str()
+            };
             s.push_str(&format!("- `[{}]` {}\n", i, label));
         }
         s.push('\n');
     }
-    println!("{} 篇 / {} 节", idx.len(), idx.iter().map(|n| n.sections.len()).sum::<usize>());
+    println!(
+        "{} 篇 / {} 节",
+        idx.len(),
+        idx.iter().map(|n| n.sections.len()).sum::<usize>()
+    );
     match std::env::var("PP_BENCH_OUT") {
         Ok(out) => {
             std::fs::write(&out, &s).unwrap_or_else(|e| panic!("写不了 {}：{}", out, e));
@@ -406,34 +455,61 @@ fn bench_seed_fixture() {
         store.note_create(None, title, &c).expect("建笔记失败");
     };
 
-    mk("同步设计", &[
-        ("墓碑传播", "墓碑靠 id 传播，删除也要能同步出去。"),
-        ("冲突解决", "两端各改一次时按后写胜，靠时间戳比大小判胜负。"),
-        ("时钟偏斜", "跨机时钟不齐要用混合逻辑钟兜住。"),
-    ]);
-    mk("检索排序", &[
-        ("BM25 权重", "标题列给十倍权重，正文列给一倍。"),
-        ("破同分", "分数完全相等时用修改时间兜底，避免顺序随机。"),
-        ("节级定位", "命中一篇之后还要在篇内指到最相关的那几节。"),
-    ]);
-    mk("构建环境", &[
-        ("LIBCLANG 路径", "环境变量要在命令里内联导出，不能只在配置里写。"),
-        ("产物体积", "发布版二进制目前二十多兆，模型不打进安装包。"),
-    ]);
+    mk(
+        "同步设计",
+        &[
+            ("墓碑传播", "墓碑靠 id 传播，删除也要能同步出去。"),
+            ("冲突解决", "两端各改一次时按后写胜，靠时间戳比大小判胜负。"),
+            ("时钟偏斜", "跨机时钟不齐要用混合逻辑钟兜住。"),
+        ],
+    );
+    mk(
+        "检索排序",
+        &[
+            ("BM25 权重", "标题列给十倍权重，正文列给一倍。"),
+            ("破同分", "分数完全相等时用修改时间兜底，避免顺序随机。"),
+            ("节级定位", "命中一篇之后还要在篇内指到最相关的那几节。"),
+        ],
+    );
+    mk(
+        "构建环境",
+        &[
+            (
+                "LIBCLANG 路径",
+                "环境变量要在命令里内联导出，不能只在配置里写。",
+            ),
+            ("产物体积", "发布版二进制目前二十多兆，模型不打进安装包。"),
+        ],
+    );
     // 🔴 语义型埋点一：查询用「压缩方案」，而这篇里压缩、方案两个词一次都不出现。
-    mk("存储瘦身", &[
-        ("AAAK 方言", "用一套自定义字典把重复片段折起来，落盘前先折。"),
-        ("字典训练", "拿历史样本训一份共享字典，之后每条只存差异。"),
-    ]);
+    mk(
+        "存储瘦身",
+        &[
+            (
+                "AAAK 方言",
+                "用一套自定义字典把重复片段折起来，落盘前先折。",
+            ),
+            ("字典训练", "拿历史样本训一份共享字典，之后每条只存差异。"),
+        ],
+    );
     // 🔴 语义型埋点二：查询用「怎么防止提示词注入」，这篇里一个词都不沾。
-    mk("外部输入的信任边界", &[
-        ("数据不是指令", "外面来的文字只当材料看，不当命令执行。"),
-        ("白名单校验", "范围参数只认已知名字，认不出就报错而不是放行全库。"),
-    ]);
-    mk("月度回顾", &[
-        ("2026-08 进展", "知识库主体落地，MCP 只读查询上线。"),
-        ("下阶段", "同步与召回基准。"),
-    ]);
+    mk(
+        "外部输入的信任边界",
+        &[
+            ("数据不是指令", "外面来的文字只当材料看，不当命令执行。"),
+            (
+                "白名单校验",
+                "范围参数只认已知名字，认不出就报错而不是放行全库。",
+            ),
+        ],
+    );
+    mk(
+        "月度回顾",
+        &[
+            ("2026-08 进展", "知识库主体落地，MCP 只读查询上线。"),
+            ("下阶段", "同步与召回基准。"),
+        ],
+    );
     // 短笔记：走「不做节级定位、按引言节记账」那条分支。
     store
         .note_create(None, "便签", "记一句：破同分要先做，它零风险。")
@@ -567,7 +643,9 @@ fn bench_dump_chunk_stats() {
 
     // 阈值参考：bge-small-zh 窗口 512 token，中文粗估 1 字 ≈ 1 token，
     // 所以 350/512 一带就是「一个切片装不下」的分界。
-    s.push_str("\n## 超长节占比（决定要不要再切）\n\n| 阈值 | 超过的节数 | 占比 |\n|---|---|---|\n");
+    s.push_str(
+        "\n## 超长节占比（决定要不要再切）\n\n| 阈值 | 超过的节数 | 占比 |\n|---|---|---|\n",
+    );
     for t in [200usize, 350, 512, 700, 1000, 2000] {
         let c = lens.iter().filter(|&&x| x > t).count();
         s.push_str(&format!(
@@ -590,7 +668,9 @@ fn bench_dump_chunk_stats() {
     }
 
     rows.sort_by(|a, b| b.2.cmp(&a.2));
-    s.push_str("\n## 最长节 top10（看看是什么形态）\n\n| 篇 | 节数 | 最长节 | 全文 |\n|---|---|---|---|\n");
+    s.push_str(
+        "\n## 最长节 top10（看看是什么形态）\n\n| 篇 | 节数 | 最长节 | 全文 |\n|---|---|---|---|\n",
+    );
     for (t, n, m, tot) in rows.iter().take(10) {
         let t = if t.chars().count() > 28 {
             format!("{}…", t.chars().take(28).collect::<String>())
@@ -600,7 +680,13 @@ fn bench_dump_chunk_stats() {
         s.push_str(&format!("| {} | {} | {} | {} |\n", t, n, m, tot));
     }
 
-    println!("{} 篇 / {} 节，中位 {} 字，p90 {} 字", notes.len(), lens.len(), q(0.5), q(0.9));
+    println!(
+        "{} 篇 / {} 节，中位 {} 字，p90 {} 字",
+        notes.len(),
+        lens.len(),
+        q(0.5),
+        q(0.9)
+    );
     match std::env::var("PP_BENCH_OUT") {
         Ok(out) => {
             std::fs::write(&out, &s).unwrap_or_else(|e| panic!("写不了 {}：{}", out, e));

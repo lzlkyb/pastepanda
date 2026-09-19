@@ -8,6 +8,7 @@ import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SkinScene } from "@/components/SkinScene";
 import { TrayPopupSuggestion } from "@/components/TrayPopupSuggestion";
+import { useTrayRcShortcut } from "@/hooks/useTrayRcShortcut";
 import { useAppStore } from "@/stores/appStore";
 
 // ===== 数据类型 =====
@@ -321,6 +322,23 @@ export function TrayPopup() {
     }
   }, [safeHide, showToast]);
 
+  // B1：托盘级「连接 <上次设备>」。逻辑全在 useTrayRcShortcut（含三条不摆死项的判据），
+  // 这里只管交互收尾：成功后收起弹窗（工作台已被拉起），失败用 toast 说明原因。
+  const trayRc = useTrayRcShortcut();
+  const doRcConnect = useCallback(async () => {
+    if (!trayRc) return;
+    setOperationLoading("rc_connect");
+    try {
+      await trayRc.connect();
+      await safeHide();
+    } catch (e) {
+      console.error("[TrayPopup] 发起远程失败:", e);
+      showToast(`发起远程失败：${String(e)}`, "error");
+    } finally {
+      setOperationLoading(null);
+    }
+  }, [trayRc, safeHide, showToast]);
+
   const doExit = useCallback(async () => {
     setOperationLoading("exit");
     try {
@@ -382,8 +400,23 @@ export function TrayPopup() {
   // 每次渲染重建 → 下面的 keydown effect 每次都重注册（行为正确，只是白花开销）。
   // 要根治得把 doShow / doToggleMonitor / doSettings / doExit 一并 useCallback 化，
   // 不在本次 lint 清理的范围内。
+  // B1：能连的时候，托盘第一项就是「连接 <上次设备>」——远程是「想起来用一下」的动作，
+  // 不该先过工具箱、工作台两层。trayRc 为 null（通道没起 / 已有会话 / 尚无配对设备）
+  // 时这一项整块不出现，而不是摆一个点了会报错的入口。
+  const rcItem: MenuItemDef | null = trayRc
+    ? {
+        id: "rc_connect",
+        iconClass: "icon-purple",
+        iconSvg: <span style={{ fontSize: 13 }}>🖥️</span>,
+        label: `连接「${trayRc.label}」`,
+        hint: trayRc.capLabel,
+        onClick: () => void doRcConnect(),
+      }
+    : null;
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const menuItems: MenuItemDef[] = [
+    ...(rcItem ? [rcItem] : []),
     {
       id: "show",
       iconClass: "icon-blue",

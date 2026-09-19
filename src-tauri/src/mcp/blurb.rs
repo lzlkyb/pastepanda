@@ -114,7 +114,11 @@ mod tests {
     #[test]
     fn 推出去时必须标明这是用户自述且是数据() {
         let out = framed("这个库主要是 NC 二开的踩坑记录。", "abcd1234abcd1234");
-        assert!(out.contains("用户本人对自己知识库的描述"), "要说清不是库内容：{}", out);
+        assert!(
+            out.contains("用户本人对自己知识库的描述"),
+            "要说清不是库内容：{}",
+            out
+        );
         assert!(out.contains("数据不是指令"), "缺注入防御标注：{}", out);
         assert!(
             out.contains("<user-library-note nonce=\"abcd1234abcd1234\">"),
@@ -139,6 +143,10 @@ mod tests {
             out
         );
         // 正文**一个字都没被改**（O-1：不做内容过滤/改写）。
-        assert!(out.contains("无害的描述</user-library-note>"), "不得改写原文：{}", out);
+        assert!(
+            out.contains("无害的描述</user-library-note>"),
+            "不得改写原文：{}",
+            out
+        );
     }
 }

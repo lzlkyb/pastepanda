@@ -79,11 +79,7 @@ fn put_at(key: String, value: CachedValue, now: Instant) {
     map.retain(|_, e| now.duration_since(e.at) < TTL);
 
     if map.len() >= MAX_ENTRIES {
-        if let Some(oldest) = map
-            .iter()
-            .min_by_key(|(_, e)| e.at)
-            .map(|(k, _)| k.clone())
-        {
+        if let Some(oldest) = map.iter().min_by_key(|(_, e)| e.at).map(|(k, _)| k.clone()) {
             map.remove(&oldest);
         }
     }
@@ -111,7 +107,10 @@ static INFLIGHT: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(
 
 /// 登记在跑；返回 false 表示已有同 key 在跑（应等待而非重复调用）。
 pub fn inflight_add(key: &str) -> bool {
-    INFLIGHT.lock().map(|mut s| s.insert(key.to_string())).unwrap_or(true)
+    INFLIGHT
+        .lock()
+        .map(|mut s| s.insert(key.to_string()))
+        .unwrap_or(true)
 }
 
 /// 调用完成（无论成败）后释放。
@@ -157,17 +156,34 @@ mod tests {
     #[test]
     fn test_key_is_stable_regardless_of_opts_order() {
         // HashMap 遍历无序，不排序的话缓存会永远命不中
-        let a = make_key("ai-translate", &opts(&[("lang", "ja"), ("tone", "x")]), "hello");
-        let b = make_key("ai-translate", &opts(&[("tone", "x"), ("lang", "ja")]), "hello");
+        let a = make_key(
+            "ai-translate",
+            &opts(&[("lang", "ja"), ("tone", "x")]),
+            "hello",
+        );
+        let b = make_key(
+            "ai-translate",
+            &opts(&[("tone", "x"), ("lang", "ja")]),
+            "hello",
+        );
         assert_eq!(a, b);
     }
 
     #[test]
     fn test_key_differs_by_action_opts_and_text() {
         let base = make_key("ai-translate", &opts(&[("lang", "zh")]), "hello");
-        assert_ne!(base, make_key("ai-summarize", &opts(&[("lang", "zh")]), "hello"));
-        assert_ne!(base, make_key("ai-translate", &opts(&[("lang", "en")]), "hello"));
-        assert_ne!(base, make_key("ai-translate", &opts(&[("lang", "zh")]), "hello!"));
+        assert_ne!(
+            base,
+            make_key("ai-summarize", &opts(&[("lang", "zh")]), "hello")
+        );
+        assert_ne!(
+            base,
+            make_key("ai-translate", &opts(&[("lang", "en")]), "hello")
+        );
+        assert_ne!(
+            base,
+            make_key("ai-translate", &opts(&[("lang", "zh")]), "hello!")
+        );
     }
 
     #[test]

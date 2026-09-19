@@ -55,8 +55,9 @@ pub fn force_foreground(hwnd_raw: isize) -> bool {
         // 2) 把本线程输入队列挂到"当前前台窗口"所在线程，获得设置前台的权限。
         let cur_tid = GetCurrentThreadId();
         let fore_tid = GetWindowThreadProcessId(GetForegroundWindow(), None);
-        let attached =
-            fore_tid != 0 && fore_tid != cur_tid && AttachThreadInput(cur_tid, fore_tid, true).as_bool();
+        let attached = fore_tid != 0
+            && fore_tid != cur_tid
+            && AttachThreadInput(cur_tid, fore_tid, true).as_bool();
 
         // 3) 循环激活并确认。SetForegroundWindow 的返回值不可靠，一律以
         //    GetForegroundWindow 的实测结果为准。

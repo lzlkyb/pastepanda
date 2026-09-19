@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>远程电脑</title>
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:"Microsoft YaHei",sans-serif;
+}
+
+body{
+    height:100vh;
+    background:
+    linear-gradient(
+    135deg,
+    #f5f9ff 0%,
+    #edf4ff 40%,
+    #eaf3ff 100%);
+}
+
+.app{
+    height:100vh;
+    display:flex;
+}
+
+/* 左侧导航 */
+
+.sidebar{
+    width:280px;
+    background:rgba(255,255,255,.75);
+    backdrop-filter:blur(20px);
+    border-right:1px solid #e8eef7;
+    padding:24px;
+}
+
+.logo{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-bottom:30px;
+}
+
+.logo-icon{
+    width:42px;
+    height:42px;
+    border-radius:12px;
+    background:linear-gradient(135deg,#4ea1ff,#006cff);
+}
+
+.logo h2{
+    color:#1e2b45;
+}
+
+.nav{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+}
+
+.nav-item{
+    padding:14px 18px;
+    border-radius:14px;
+    cursor:pointer;
+    transition:.25s;
+}
+
+.nav-item:hover{
+    background:#eef5ff;
+}
+
+.nav-item.active{
+    background:linear-gradient(
+    135deg,
+    #4c9dff,
+    #006cff);
+
+    color:white;
+}
+
+/* 内容区域 */
+
+.main{
+    flex:1;
+    padding:24px;
+}
+
+.topbar{
+    height:64px;
+    background:rgba(255,255,255,.75);
+    border-radius:18px;
+    backdrop-filter:blur(20px);
+
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+
+    padding:0 24px;
+    margin-bottom:20px;
+}
+
+.topbar h3{
+    color:#2c3e50;
+}
+
+/* 内容 */
+
+.content{
+    display:flex;
+    gap:20px;
+    height:calc(100vh - 132px);
+}
+
+/* 左侧卡片 */
+
+.left-panel{
+    width:360px;
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+}
+
+.card{
+    background:rgba(255,255,255,.82);
+    backdrop-filter:blur(20px);
+
+    border:1px solid rgba(255,255,255,.7);
+
+    border-radius:22px;
+    padding:20px;
+
+    box-shadow:
+    0 10px 30px rgba(27,76,164,.08);
+}
+
+.card-title{
+    font-size:18px;
+    font-weight:700;
+    margin-bottom:15px;
+}
+
+/* 开关 */
+
+.switch{
+    width:58px;
+    height:32px;
+    border-radius:30px;
+    background:#0a84ff;
+    position:relative;
+}
+
+.switch::after{
+    content:'';
+    width:26px;
+    height:26px;
+    border-radius:50%;
+    background:white;
+    position:absolute;
+    right:3px;
+    top:3px;
+}
+
+/* 标签 */
+
+.tags{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+}
+
+.tag{
+    padding:8px 16px;
+    border-radius:999px;
+    background:#eef5ff;
+    color:#006cff;
+}
+
+.tag.active{
+    background:#006cff;
+    color:white;
+}
+
+/* 设备 */
+
+.device{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:15px;
+}
+
+.avatar{
+    width:52px;
+    height:52px;
+    border-radius:50%;
+    background:#dbe8ff;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    font-weight:bold;
+}
+
+.device-info{
+    flex:1;
+    margin-left:14px;
+}
+
+.device-name{
+    font-weight:700;
+}
+
+.online{
+    color:#1bbf65;
+    margin-top:4px;
+}
+
+.play{
+    width:42px;
+    height:42px;
+    border-radius:12px;
+    background:#0a84ff;
+    color:white;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+/* 右侧 */
+
+.workspace{
+    flex:1;
+
+    background:
+    linear-gradient(
+    180deg,
+    rgba(255,255,255,.9),
+    rgba(241,247,255,.95));
+
+    border-radius:30px;
+    border:1px solid rgba(255,255,255,.8);
+
+    position:relative;
+    overflow:hidden;
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+.workspace::before{
+    content:'';
+    position:absolute;
+    width:600px;
+    height:600px;
+
+    background:
+    radial-gradient(
+    circle,
+    rgba(79,145,255,.12),
+    transparent 70%);
+
+    top:-150px;
+    right:-100px;
+}
+
+.center-box{
+    text-align:center;
+    z-index:2;
+}
+
+.monitor{
+    width:170px;
+    height:120px;
+    margin:auto;
+    border-radius:20px;
+
+    background:
+    linear-gradient(
+    135deg,
+    #63b2ff,
+    #006cff);
+
+    box-shadow:
+    0 20px 60px rgba(0,108,255,.25);
+}
+
+.monitor::after{
+    content:'';
+    display:block;
+    width:60px;
+    height:12px;
+
+    margin:130px auto 0;
+
+    background:#7daeff;
+    border-radius:30px;
+}
+
+.title{
+    margin-top:40px;
+    font-size:42px;
+    font-weight:800;
+    color:#20324d;
+}
+
+.subtitle{
+    margin-top:14px;
+    color:#7284a0;
+    font-size:18px;
+}
+
+.tip{
+    margin-top:40px;
+
+    background:white;
+    padding:20px 30px;
+
+    border-radius:18px;
+
+    box-shadow:
+    0 10px 30px rgba(0,0,0,.05);
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <aside class="sidebar">
+
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <h2>远程电脑</h2>
+        </div>
+
+        <div class="nav">
+            <div class="nav-item active">远程电脑</div>
+            <div class="nav-item">设备列表</div>
+            <div class="nav-item">文件传输</div>
+            <div class="nav-item">设置中心</div>
+        </div>
+
+    </aside>
+
+    <main class="main">
+
+        <div class="topbar">
+            <h3>安全 · 便捷 · 高效</h3>
+            <span>⚙️</span>
+        </div>
+
+        <div class="content">
+
+            <div class="left-panel">
+
+                <div class="card">
+                    <div class="card-title">
+                        允许被远程
+                    </div>
+
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>只影响别人控制你</span>
+                        <div class="switch"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+
+                    <div class="card-title">
+                        画质设置
+                    </div>
+
+                    <div class="tags">
+                        <div class="tag active">自动</div>
+                        <div class="tag">流畅</div>
+                        <div class="tag">均衡</div>
+                        <div class="tag">清晰</div>
+                        <div class="tag">超清</div>
+                    </div>
+
+                </div>
+
+                <div class="card">
+
+                    <div class="card-title">
+                        我的设备
+                    </div>
+
+                    <div class="device">
+
+                        <div class="avatar">
+                            D
+                        </div>
+
+                        <div class="device-info">
+                            <div class="device-name">
+                                DESKTOP-HHOLIC2
+                            </div>
+
+                            <div class="online">
+                                ● 在线
+                            </div>
+                        </div>
+
+                        <div class="play">
+                            ▶
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="workspace">
+
+                <div class="center-box">
+
+                    <div class="monitor"></div>
+
+                    <div class="title">
+                        正在等待远程会话连接
+                    </div>
+
+                    <div class="subtitle">
+                        在左侧选择一台设备发起远程
+                    </div>
+
+                    <div class="tip">
+                        小贴士：选择合适画质可获得更好的远程体验
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+</div>
+
+</body>
+</html>

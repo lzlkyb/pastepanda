@@ -44,7 +44,9 @@ mod jpeg_dim_tests {
     #[test]
     fn reads_sof0_dimensions() {
         // 手工最小 JPEG 头：SOI + SOF0(len=11, precision=8, h=64, w=128)
-        let mut b = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x40, 0x00, 0x80];
+        let mut b = vec![
+            0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x40, 0x00, 0x80,
+        ];
         b.extend_from_slice(&[1, 0x11, 0]);
         assert_eq!(jpeg_dimensions(&b), Some((128, 64)));
     }

@@ -39,7 +39,11 @@ impl DataStore {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         // 获取最大 sort_order
         let max_order: i32 = conn
-            .query_row("SELECT COALESCE(MAX(sort_order), -1) FROM groups", [], |row| row.get(0))
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM groups",
+                [],
+                |row| row.get(0),
+            )
             .unwrap_or(-1);
         let sort_order = max_order + 1;
         conn.execute(
@@ -57,7 +61,13 @@ impl DataStore {
         })
     }
 
-    pub fn update_group(&self, id: &str, name: &str, color: &str, icon: &str) -> Result<(), String> {
+    pub fn update_group(
+        &self,
+        id: &str,
+        name: &str,
+        color: &str,
+        icon: &str,
+    ) -> Result<(), String> {
         // 校验分组名：trim 后非空，最长 50 个字符
         let trimmed = name.trim();
         if trimmed.is_empty() {
@@ -134,7 +144,11 @@ impl DataStore {
         }
     }
 
-    pub fn move_to_group(&self, history_ids: &[String], group_id: Option<&str>) -> Result<u32, String> {
+    pub fn move_to_group(
+        &self,
+        history_ids: &[String],
+        group_id: Option<&str>,
+    ) -> Result<u32, String> {
         let conn = self.lock_conn();
         let placeholders: Vec<String> = history_ids
             .iter()
@@ -150,8 +164,11 @@ impl DataStore {
         for id in history_ids {
             param_refs.push(Box::new(id.clone()));
         }
-        let params: Vec<&dyn rusqlite::types::ToSql> = param_refs.iter().map(|p| p.as_ref()).collect();
-        let affected = conn.execute(&sql, params.as_slice()).map_err(|e| e.to_string())?;
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            param_refs.iter().map(|p| p.as_ref()).collect();
+        let affected = conn
+            .execute(&sql, params.as_slice())
+            .map_err(|e| e.to_string())?;
         Ok(affected as u32)
     }
 }

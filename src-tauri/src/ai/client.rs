@@ -455,7 +455,11 @@ async fn chat_openai(
     let usage = parsed.usage.unwrap_or_default();
     Ok(ChatOutcome {
         content,
-        model: if parsed.model.is_empty() { model } else { parsed.model },
+        model: if parsed.model.is_empty() {
+            model
+        } else {
+            parsed.model
+        },
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
         truncated,
@@ -614,7 +618,11 @@ async fn chat_anthropic(
     let usage = parsed.usage.unwrap_or_default();
     Ok(ChatOutcome {
         content: content.trim().to_string(),
-        model: if parsed.model.is_empty() { model } else { parsed.model },
+        model: if parsed.model.is_empty() {
+            model
+        } else {
+            parsed.model
+        },
         // 字段名不同：input/output 而非 prompt/completion
         prompt_tokens: usage.input_tokens,
         completion_tokens: usage.output_tokens,
@@ -669,7 +677,8 @@ pub async fn embedding(
     cfg.validate().map_err(AiError::Config)?;
     if cfg.effective_protocol() != Protocol::OpenAi {
         return Err(AiError::Config(
-            "当前服务商不是 OpenAI 兼容协议，没有 /embeddings 接口——语义索引需要 OpenAI 兼容厂商".to_string(),
+            "当前服务商不是 OpenAI 兼容协议，没有 /embeddings 接口——语义索引需要 OpenAI 兼容厂商"
+                .to_string(),
         ));
     }
     if cfg.spec().needs_key && api_key.trim().is_empty() {
@@ -766,7 +775,11 @@ mod tests {
         // 只有开标签没有闭标签。通行的 `<think>.*?</think>` 正则在这里匹配不上，
         // 会把整坑思维链当成正文交给用户——也就是这个 bug 本身。
         let (body, had) = strip_thinking("<think>先数一下字数，然后考虑哪些是冗余表达，接下来");
-        assert!(body.is_empty(), "未闭合 = 正文一个字都没有，实际：{:?}", body);
+        assert!(
+            body.is_empty(),
+            "未闭合 = 正文一个字都没有，实际：{:?}",
+            body
+        );
         assert!(had);
     }
 
@@ -829,7 +842,10 @@ mod tests {
     fn test_thinking_off_serializes_per_vendor() {
         let mk = |thinking, enable_thinking| OaRequest {
             model: "m",
-            messages: vec![OaMessage { role: "user", content: "hi" }],
+            messages: vec![OaMessage {
+                role: "user",
+                content: "hi",
+            }],
             temperature: 0.3,
             stream: false,
             max_tokens: None,
@@ -855,15 +871,36 @@ mod tests {
     fn test_thinking_control_only_for_documented_vendors() {
         use crate::ai::provider::find;
         // 四家有官方文档依据，且均为默认开思考
-        assert_eq!(find("deepseek").thinking_control(), ThinkingControl::TypeObject);
-        assert_eq!(find("zhipu").thinking_control(), ThinkingControl::TypeObject);
-        assert_eq!(find("minimax").thinking_control(), ThinkingControl::TypeObject);
+        assert_eq!(
+            find("deepseek").thinking_control(),
+            ThinkingControl::TypeObject
+        );
+        assert_eq!(
+            find("zhipu").thinking_control(),
+            ThinkingControl::TypeObject
+        );
+        assert_eq!(
+            find("minimax").thinking_control(),
+            ThinkingControl::TypeObject
+        );
         assert_eq!(find("qwen").thinking_control(), ThinkingControl::EnableFlag);
         // 其余必须保持沉默——尤其是 custom（中转服务，背后是什么完全未知）
-        assert_eq!(find("openai").thinking_control(), ThinkingControl::Unsupported);
-        assert_eq!(find("anthropic").thinking_control(), ThinkingControl::Unsupported);
-        assert_eq!(find("ollama").thinking_control(), ThinkingControl::Unsupported);
-        assert_eq!(find("custom").thinking_control(), ThinkingControl::Unsupported);
+        assert_eq!(
+            find("openai").thinking_control(),
+            ThinkingControl::Unsupported
+        );
+        assert_eq!(
+            find("anthropic").thinking_control(),
+            ThinkingControl::Unsupported
+        );
+        assert_eq!(
+            find("ollama").thinking_control(),
+            ThinkingControl::Unsupported
+        );
+        assert_eq!(
+            find("custom").thinking_control(),
+            ThinkingControl::Unsupported
+        );
     }
 
     #[test]
@@ -876,7 +913,10 @@ mod tests {
         // 404 单独分一类：协议选错时就是 404，提示要指向协议
         assert!(matches!(map_status(404, ""), AiError::NotFound));
         assert!(matches!(map_status(429, ""), AiError::RateLimited));
-        assert!(matches!(map_status(500, "boom"), AiError::Http { status: 500, .. }));
+        assert!(matches!(
+            map_status(500, "boom"),
+            AiError::Http { status: 500, .. }
+        ));
     }
 
     #[test]
@@ -944,16 +984,25 @@ mod tests {
             temperature: 0.3,
         };
         let json = serde_json::to_string(&body).unwrap();
-        assert!(json.contains("\"max_tokens\":1024"), "max_tokens 必须序列化出来");
+        assert!(
+            json.contains("\"max_tokens\":1024"),
+            "max_tokens 必须序列化出来"
+        );
         assert!(json.contains("\"system\":"), "system 应在顶层");
-        assert!(!json.contains("\"role\":\"system\""), "system 不能出现在 messages 里");
+        assert!(
+            !json.contains("\"role\":\"system\""),
+            "system 不能出现在 messages 里"
+        );
 
         // 系统提示词为空时应该整个不序列化，而不是传 null
         let no_sys = AnRequest {
             model: "m",
             max_tokens: 16,
             system: None,
-            messages: vec![AnMessage { role: "user", content: "hi" }],
+            messages: vec![AnMessage {
+                role: "user",
+                content: "hi",
+            }],
             temperature: 0.3,
         };
         assert!(!serde_json::to_string(&no_sys).unwrap().contains("system"));
@@ -998,8 +1047,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "需要真实 API Key 且会计费，默认跳过"]
     async fn test_live_connection() {
-        let key = std::env::var("PASTEPANDA_AI_KEY")
-            .expect("请先设置环境变量 PASTEPANDA_AI_KEY");
+        let key = std::env::var("PASTEPANDA_AI_KEY").expect("请先设置环境变量 PASTEPANDA_AI_KEY");
         let cfg = AiConfig::default(); // 默认就是 DeepSeek
 
         let out = chat(

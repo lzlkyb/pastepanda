@@ -173,7 +173,11 @@ mod tests {
 
     #[test]
     fn test_编辑距离按字符不按字节() {
-        assert_eq!(distance_within("纪要", "记要", 2), 1, "中文按字节算会得 3，全废");
+        assert_eq!(
+            distance_within("纪要", "记要", 2),
+            1,
+            "中文按字节算会得 3，全废"
+        );
         assert_eq!(distance_within("abc", "abc", 2), 0);
         assert_eq!(distance_within("abc", "abd", 2), 1);
     }

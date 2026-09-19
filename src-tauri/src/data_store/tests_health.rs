@@ -42,7 +42,11 @@ fn test_kb_health_reports_broken_link() {
         .unwrap();
 
     let h = store.kb_health().unwrap();
-    assert_eq!(h.broken_links.len(), 1, "只有「丢了的那篇」算断链，[[乙]] 解析得到");
+    assert_eq!(
+        h.broken_links.len(),
+        1,
+        "只有「丢了的那篇」算断链，[[乙]] 解析得到"
+    );
     assert_eq!(h.broken_links[0].from_title, "甲");
     assert_eq!(h.broken_links[0].to_title, "丢了的那篇");
 }
@@ -51,10 +55,18 @@ fn test_kb_health_reports_broken_link() {
 fn test_kb_health_broken_link_counts_trashed_target() {
     let store = make_store();
     let b = store
-        .note_create(None, "乙", "被指向的那一篇，写够五十个字以免被当成极短笔记，这句话纯粹是用来凑长度的填充内容。")
+        .note_create(
+            None,
+            "乙",
+            "被指向的那一篇，写够五十个字以免被当成极短笔记，这句话纯粹是用来凑长度的填充内容。",
+        )
         .unwrap();
     store
-        .note_create(None, "甲", "参见 [[乙]]。同样要写够五十个字以免被当成极短笔记，这句话纯粹是用来凑长度的填充内容。")
+        .note_create(
+            None,
+            "甲",
+            "参见 [[乙]]。同样要写够五十个字以免被当成极短笔记，这句话纯粹是用来凑长度的填充内容。",
+        )
         .unwrap();
     assert!(store.kb_health().unwrap().broken_links.is_empty());
 
@@ -74,9 +86,13 @@ fn test_kb_health_broken_link_counts_trashed_target() {
 fn test_kb_health_tiny_notes_threshold() {
     let store = make_store();
     store.note_create(None, "空的", "").unwrap();
-    store.note_create(None, "差一个字", &"字".repeat(49)).unwrap();
+    store
+        .note_create(None, "差一个字", &"字".repeat(49))
+        .unwrap();
     // 正好 50 不算：门槛是「不足 50」，边界必须说死，否则改实现时没人拦得住
-    store.note_create(None, "刚好五十", &"字".repeat(50)).unwrap();
+    store
+        .note_create(None, "刚好五十", &"字".repeat(50))
+        .unwrap();
 
     let h = store.kb_health().unwrap();
     let titles: Vec<&str> = h.tiny_notes.iter().map(|t| t.title.as_str()).collect();
@@ -91,7 +107,9 @@ fn test_kb_health_tiny_notes_measured_in_chars_not_bytes() {
     let store = make_store();
     // 20 个汉字 = 60 字节。按字节算会认为它不短，漏报；
     // 中文库里这一档全靠它，错了等于这个体检项对中文用户彻底失效。
-    store.note_create(None, "二十个汉字", &"字".repeat(20)).unwrap();
+    store
+        .note_create(None, "二十个汉字", &"字".repeat(20))
+        .unwrap();
     assert_eq!(store.kb_health().unwrap().tiny_notes.len(), 1);
 }
 
@@ -115,7 +133,11 @@ fn test_kb_health_tag_dups_only_counts_tags_used_by_notes() {
     store.create_tag("Java", "#888888").unwrap();
     store.create_tag("java", "#888888").unwrap();
     let n = store
-        .note_create(None, "一篇笔记", "正文要写够五十个字，否则它会落进极短笔记那一档，干扰本用例想断言的标签口径。")
+        .note_create(
+            None,
+            "一篇笔记",
+            "正文要写够五十个字，否则它会落进极短笔记那一档，干扰本用例想断言的标签口径。",
+        )
         .unwrap();
 
     assert!(
@@ -143,7 +165,11 @@ fn test_kb_health_tag_dups_only_counts_tags_used_by_notes() {
 fn test_kb_health_tag_dups_ignores_tags_only_on_trashed_notes() {
     let store = make_store();
     let n = store
-        .note_create(None, "要删的", "正文要写够五十个字，否则它会落进极短笔记那一档，干扰本用例想断言的标签口径。")
+        .note_create(
+            None,
+            "要删的",
+            "正文要写够五十个字，否则它会落进极短笔记那一档，干扰本用例想断言的标签口径。",
+        )
         .unwrap();
     tag_note(&store, &n.id, "Java");
     tag_note(&store, &n.id, "java");
@@ -215,10 +241,18 @@ fn test_note_tag_names_dedups_and_sorts() {
 fn test_kb_health_title_dups() {
     let store = make_store();
     store
-        .note_create(None, "Java 笔记", "正文要写够五十个字，否则会落进极短笔记那一档，干扰本用例想断言的标题重名。")
+        .note_create(
+            None,
+            "Java 笔记",
+            "正文要写够五十个字，否则会落进极短笔记那一档，干扰本用例想断言的标题重名。",
+        )
         .unwrap();
     store
-        .note_create(None, "java 笔记", "正文要写够五十个字，否则会落进极短笔记那一档，干扰本用例想断言的标题重名。")
+        .note_create(
+            None,
+            "java 笔记",
+            "正文要写够五十个字，否则会落进极短笔记那一档，干扰本用例想断言的标题重名。",
+        )
         .unwrap();
     let dups = store.kb_health().unwrap().title_dups;
     assert_eq!(dups.len(), 1);
@@ -240,7 +274,10 @@ fn test_kb_health_stats() {
 
     let s = store.kb_health().unwrap().stats;
     assert_eq!(s.note_count, 2);
-    assert_eq!(s.max_len, 205, "`[[甲]]` 是 5 个字符（2 个左括号 + 甲 + 2 个右括号）+ 200");
+    assert_eq!(
+        s.max_len, 205,
+        "`[[甲]]` 是 5 个字符（2 个左括号 + 甲 + 2 个右括号）+ 200"
+    );
     assert_eq!(s.avg_len, 152, "(100 + 205) / 2 = 152.5，取整为 152");
     assert_eq!(s.tag_count, 1, "只数笔记用到的标签");
     assert_eq!(s.link_count, 1);
@@ -249,8 +286,12 @@ fn test_kb_health_stats() {
 #[test]
 fn test_kb_health_stats_ignores_trashed() {
     let store = make_store();
-    let n = store.note_create(None, "要删的", &"字".repeat(9999)).unwrap();
-    store.note_create(None, "留下的", &"字".repeat(100)).unwrap();
+    let n = store
+        .note_create(None, "要删的", &"字".repeat(9999))
+        .unwrap();
+    store
+        .note_create(None, "留下的", &"字".repeat(100))
+        .unwrap();
     store.note_delete(&n.id).unwrap();
 
     let s = store.kb_health().unwrap().stats;
@@ -377,7 +418,11 @@ fn test_kb_health_unfiled_ai_detail_capped_but_count_is_real() {
             .unwrap();
     }
     let h = store.kb_health().unwrap();
-    assert_eq!(h.unfiled_ai.len(), super::note_health::HEALTH_DETAIL_CAP, "明细封顶");
+    assert_eq!(
+        h.unfiled_ai.len(),
+        super::note_health::HEALTH_DETAIL_CAP,
+        "明细封顶"
+    );
     assert_eq!(
         h.unfiled_ai_count,
         super::note_health::HEALTH_DETAIL_CAP + 4,

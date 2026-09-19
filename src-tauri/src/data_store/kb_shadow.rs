@@ -77,12 +77,7 @@ impl DataStore {
             .map_err(|e| e.to_string())?;
         let rows: Vec<(String, String)> = stmt
             .query_map(
-                rusqlite::params![
-                    workspace,
-                    MIN_HIT,
-                    MIN_LEN,
-                    format!("-{MIN_AGE_DAYS} days")
-                ],
+                rusqlite::params![workspace, MIN_HIT, MIN_LEN, format!("-{MIN_AGE_DAYS} days")],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .map_err(|e| e.to_string())?

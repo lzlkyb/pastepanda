@@ -112,6 +112,11 @@ impl NodeIdentity {
         to_hex(&self.public)
     }
 
+    /// 公钥裸字节（32）。PP1 短码的载荷就是它（`invite::encode` 用）。
+    pub fn public_key_bytes(&self) -> &[u8] {
+        &self.public
+    }
+
     /// 给用户看的短指纹（前 4 组，共 16 字符）。
     ///
     /// 🔴 **配对的安全性靠这个，不靠邀请码里的签名。**
@@ -195,7 +200,7 @@ pub fn verify(node_id: &str, msg: &[u8], sig: &[u8]) -> Result<(), String> {
 
 // ===== hex（不引 `hex` crate，就这么点儿）=====
 
-fn to_hex(b: &[u8]) -> String {
+pub(crate) fn to_hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
 }
 

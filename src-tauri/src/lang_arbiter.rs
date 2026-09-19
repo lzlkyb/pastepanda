@@ -169,7 +169,10 @@ mod tests {
 
     #[test]
     fn test_single_line_sql() {
-        let winner = arbitrate("select id, name from users where id = 1", &["SQL", "JavaScript"]);
+        let winner = arbitrate(
+            "select id, name from users where id = 1",
+            &["SQL", "JavaScript"],
+        );
         assert_eq!(winner, Some("SQL"));
     }
 

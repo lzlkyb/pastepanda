@@ -23,6 +23,7 @@ export function useRc(enabled: boolean) {
   const error = useRcStore((s) => s.error);
   const statusError = useRcStore((s) => s.statusError);
   const scopeNotice = useRcStore((s) => s.scopeNotice);
+  const streamNotice = useRcStore((s) => s.streamNotice);
   const pathNotice = useRcStore((s) => s.pathNotice);
 
   // 挂载=订阅，卸载=退订；enabled=false 时不参与轮询（与原语义一致）
@@ -50,6 +51,9 @@ export function useRc(enabled: boolean) {
     /** 被控端：对端刚改了本机画面范围（B3），非 null 时被控横幅要显示。 */
     scopeNotice,
     clearScopeNotice: a.clearScopeNotice,
+    /** 被控端：对端刚改了本机画质/编码档（Q10），非 null 时被控横幅要显示。 */
+    streamNotice,
+    clearStreamNotice: a.clearStreamNotice,
     /** 会话中路径自动切换（relay ↔ 直连）；非 null 时提示一次并清掉。 */
     pathNotice,
     clearPathNotice: a.clearPathNotice,
@@ -64,6 +68,7 @@ export function useRc(enabled: boolean) {
     setQuality: a.setQuality,
     setCaptureScope: a.setCaptureScope,
     setDeviceAllowed: a.setDeviceAllowed,
+    setDeviceTrust: a.setDeviceTrust,
     createInvite: a.createInvite,
     previewInvite: a.previewInvite,
     pair: a.pair,
@@ -71,10 +76,14 @@ export function useRc(enabled: boolean) {
     approveJoin: a.approveJoin,
     denyJoin: a.denyJoin,
     request: a.request,
+    requestUno: a.requestUno,
+    unoGenerate: a.unoGenerate,
+    unoRevoke: a.unoRevoke,
     cancel: a.cancel,
     end: a.end,
     approve: a.approve,
     deny: a.deny,
+    clearHistory: a.clearHistory,
   };
 }
 

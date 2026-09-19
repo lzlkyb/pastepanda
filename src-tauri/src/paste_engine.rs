@@ -241,7 +241,8 @@ impl PasteEngine {
     ///
     /// `pub(crate)` 而非私有：`stack_hud.rs` 的单测会断言 `WINDOW_LABEL` 在这张表里，
     /// 防止将来改标签时两处漂移（漂移的后果是「陈旧目标续命」从偶发变必然）。
-    pub(crate) const TOOL_WINDOW_LABELS: &'static [&'static str] = &["longshot-status", "stack-hud"];
+    pub(crate) const TOOL_WINDOW_LABELS: &'static [&'static str] =
+        &["longshot-status", "stack-hud"];
 
     /// 本应用是否有**用户可见的操作界面**处于打开状态
     /// （主窗口 / 快捷粘贴面板 / 托盘弹窗 / 编辑器）。
@@ -280,7 +281,8 @@ impl PasteEngine {
                 let window_open = self.any_own_window_visible();
                 let fresh = timestamp.elapsed().as_secs() < Self::FOREGROUND_TTL_SECS;
                 // 即便判定期内，也再确认一次窗口还活着——保存时有效不代表现在有效
-                if (window_open || fresh) && crate::paste_target::is_valid_target(hwnd, self.own_pid)
+                if (window_open || fresh)
+                    && crate::paste_target::is_valid_target(hwnd, self.own_pid)
                 {
                     return Some(hwnd);
                 }
@@ -508,7 +510,10 @@ impl PasteEngine {
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
         // hash 口径与监听线程一致：对 RGBA 像素字节计算
-        let content_hash = format!("{:x}", md5::Md5::new().chain_update(rgba.as_raw()).finalize());
+        let content_hash = format!(
+            "{:x}",
+            md5::Md5::new().chain_update(rgba.as_raw()).finalize()
+        );
 
         // 设置粘贴抑制（hash），防止剪贴板监听器重复记录
         self.paste_suppress
@@ -558,7 +563,7 @@ impl PasteEngine {
     #[cfg(target_os = "windows")]
     pub fn copy_files(&self, paths: &[String]) -> Result<(), String> {
         use std::os::windows::ffi::OsStrExt;
-        use windows::Win32::Foundation::{BOOL, GlobalFree, HANDLE, POINT};
+        use windows::Win32::Foundation::{GlobalFree, BOOL, HANDLE, POINT};
         use windows::Win32::System::DataExchange::*;
         use windows::Win32::System::Memory::*;
 
@@ -671,7 +676,11 @@ impl PasteEngine {
                 let _ = CloseClipboard();
                 return Err("GlobalLock(文本) 失败".to_string());
             }
-            std::ptr::copy_nonoverlapping(text_wide.as_ptr(), text_ptr as *mut u16, text_wide.len());
+            std::ptr::copy_nonoverlapping(
+                text_wide.as_ptr(),
+                text_ptr as *mut u16,
+                text_wide.len(),
+            );
             let _ = GlobalUnlock(text_hmem);
 
             const CF_UNICODETEXT: u32 = 13;
@@ -696,7 +705,11 @@ impl PasteEngine {
                 let _ = CloseClipboard();
                 return Err("GlobalLock(HTML) 失败".to_string());
             }
-            std::ptr::copy_nonoverlapping(cf_html_bytes.as_ptr(), html_ptr as *mut u8, cf_html_bytes.len());
+            std::ptr::copy_nonoverlapping(
+                cf_html_bytes.as_ptr(),
+                html_ptr as *mut u8,
+                cf_html_bytes.len(),
+            );
             let _ = GlobalUnlock(html_hmem);
 
             if let Err(e) = SetClipboardData(format_id, HANDLE(html_hmem.0)) {
@@ -713,7 +726,12 @@ impl PasteEngine {
     /// 仅复制图文混排内容到剪贴板（不粘贴）
     #[cfg(target_os = "windows")]
     pub fn copy_rich_only(&self, html_fragment: &str, plain_text: &str) -> Result<(), String> {
-        let content_hash = format!("{:x}", md5::Md5::new().chain_update(html_fragment.as_bytes()).finalize());
+        let content_hash = format!(
+            "{:x}",
+            md5::Md5::new()
+                .chain_update(html_fragment.as_bytes())
+                .finalize()
+        );
         self.paste_suppress
             .set_with_hash(Duration::from_millis(3000), content_hash);
         Self::write_rich_to_clipboard(html_fragment, plain_text)
@@ -756,8 +774,12 @@ impl PasteEngine {
         };
 
         // 3. 粘贴抑制（hash 口径需与采集时一致：md5(片段字节)，采集时也是这样算的）
-        let content_hash =
-            format!("{:x}", md5::Md5::new().chain_update(html_fragment.as_bytes()).finalize());
+        let content_hash = format!(
+            "{:x}",
+            md5::Md5::new()
+                .chain_update(html_fragment.as_bytes())
+                .finalize()
+        );
         self.paste_suppress
             .set_with_hash(Duration::from_millis(3000), content_hash);
 
@@ -788,7 +810,10 @@ impl PasteEngine {
         let img = image::open(image_path).map_err(|e| format!("无法解码图片: {}", e))?;
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
-        let content_hash = format!("{:x}", md5::Md5::new().chain_update(rgba.as_raw()).finalize());
+        let content_hash = format!(
+            "{:x}",
+            md5::Md5::new().chain_update(rgba.as_raw()).finalize()
+        );
 
         // 2. 获取粘贴锁，防止剪贴板写入与粘贴投递之间的竞态条件
         if self.paste_lock.swap(true, Ordering::Acquire) {
@@ -868,7 +893,9 @@ impl PasteEngine {
             let hwnd = HWND(hwnd_raw as *mut _);
 
             if !IsWindow(hwnd).as_bool() {
-                return Err("目标窗口已关闭，已取消粘贴（内容已复制到剪贴板，可手动 Ctrl+V）".to_string());
+                return Err(
+                    "目标窗口已关闭，已取消粘贴（内容已复制到剪贴板，可手动 Ctrl+V）".to_string(),
+                );
             }
 
             // === 激活目标窗口（对齐 Ditto 的成熟配方）===
@@ -959,102 +986,102 @@ impl PasteEngine {
             // 5) 发送前就绪延时：等目标应用的消息循环/焦点控件就绪，避免按键被丢弃。
             std::thread::sleep(std::time::Duration::from_millis(Self::PRE_PASTE_DELAY_MS));
 
-                // 使用 SendInput 模拟 Ctrl+V 按键（兼容所有应用，包括微信/企业微信等 WebView 应用）
-                //
-                // 连按优化：若用户物理按住 Ctrl（"按住 Ctrl 连点粘贴热键"场景），
-                // 只注入 V 按下/释放——物理 Ctrl + 合成 V 在目标应用中即为 Ctrl+V。
-                // 若此时注入合成"Ctrl 释放"，系统会认为 Ctrl 已松开，而长按的 Ctrl
-                // 不会再产生新的按下事件，导致下次点按热键时修饰键不匹配、热键失效
-                // （用户被迫松开 Ctrl 重新按）。未按住时合成完整按下/释放。
-                //
-                // 额外修饰键处理：热键含 Alt/Shift/Win（如默认 Ctrl+Alt+Q）时，用户
-                // 按住它们连点，物理修饰键残留按下会让目标应用收到 Ctrl+Alt+V 而非
-                // Ctrl+V（部分应用中是"粘贴为纯文本"）。故注入 V 前先合成释放这些
-                // 修饰键，V 后再合成按回——恢复逻辑状态，下次热键匹配不受影响。
-                let ctrl_held = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0;
-                let extra_keys = [VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN];
-                let extra_held = [
-                    (GetAsyncKeyState(VK_MENU.0 as i32) as u16) & 0x8000 != 0,   // Alt
-                    (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0,  // Shift
-                    (GetAsyncKeyState(VK_LWIN.0 as i32) as u16) & 0x8000 != 0,   // 左 Win
-                    (GetAsyncKeyState(VK_RWIN.0 as i32) as u16) & 0x8000 != 0,   // 右 Win
-                ];
+            // 使用 SendInput 模拟 Ctrl+V 按键（兼容所有应用，包括微信/企业微信等 WebView 应用）
+            //
+            // 连按优化：若用户物理按住 Ctrl（"按住 Ctrl 连点粘贴热键"场景），
+            // 只注入 V 按下/释放——物理 Ctrl + 合成 V 在目标应用中即为 Ctrl+V。
+            // 若此时注入合成"Ctrl 释放"，系统会认为 Ctrl 已松开，而长按的 Ctrl
+            // 不会再产生新的按下事件，导致下次点按热键时修饰键不匹配、热键失效
+            // （用户被迫松开 Ctrl 重新按）。未按住时合成完整按下/释放。
+            //
+            // 额外修饰键处理：热键含 Alt/Shift/Win（如默认 Ctrl+Alt+Q）时，用户
+            // 按住它们连点，物理修饰键残留按下会让目标应用收到 Ctrl+Alt+V 而非
+            // Ctrl+V（部分应用中是"粘贴为纯文本"）。故注入 V 前先合成释放这些
+            // 修饰键，V 后再合成按回——恢复逻辑状态，下次热键匹配不受影响。
+            let ctrl_held = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0;
+            let extra_keys = [VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN];
+            let extra_held = [
+                (GetAsyncKeyState(VK_MENU.0 as i32) as u16) & 0x8000 != 0, // Alt
+                (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0, // Shift
+                (GetAsyncKeyState(VK_LWIN.0 as i32) as u16) & 0x8000 != 0, // 左 Win
+                (GetAsyncKeyState(VK_RWIN.0 as i32) as u16) & 0x8000 != 0, // 右 Win
+            ];
 
-                // 最多 12 事件：4(释放额外修饰键) + Ctrl↓ + V↓ + V↑ + Ctrl↑ + 4(按回额外修饰键)
-                let mut inputs: [INPUT; 12] = std::mem::zeroed();
-                let mut n = 0usize;
+            // 最多 12 事件：4(释放额外修饰键) + Ctrl↓ + V↓ + V↑ + Ctrl↑ + 4(按回额外修饰键)
+            let mut inputs: [INPUT; 12] = std::mem::zeroed();
+            let mut n = 0usize;
 
-                // 1. 先释放物理按住的额外修饰键（Alt/Shift/Win）
-                for i in 0..4 {
-                    if extra_held[i] {
-                        inputs[n].r#type = INPUT_KEYBOARD;
-                        inputs[n].Anonymous.ki.wVk = extra_keys[i];
-                        inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
-                        n += 1;
-                    }
-                }
-
-                // 2. Ctrl 按下（仅当未物理按住）
-                if !ctrl_held {
+            // 1. 先释放物理按住的额外修饰键（Alt/Shift/Win）
+            for i in 0..4 {
+                if extra_held[i] {
                     inputs[n].r#type = INPUT_KEYBOARD;
-                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0);
-                    n += 1;
-                }
-
-                // 3. V 按下 / V 释放
-                inputs[n].r#type = INPUT_KEYBOARD;
-                inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
-                n += 1;
-                inputs[n].r#type = INPUT_KEYBOARD;
-                inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
-                inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
-                n += 1;
-
-                // 4. Ctrl 释放（仅当未物理按住）
-                if !ctrl_held {
-                    inputs[n].r#type = INPUT_KEYBOARD;
-                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0);
+                    inputs[n].Anonymous.ki.wVk = extra_keys[i];
                     inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
                     n += 1;
                 }
+            }
 
-                // 5. 按回额外修饰键（恢复逻辑状态，保证热键可连按）
-                for i in 0..4 {
-                    if extra_held[i] {
-                        inputs[n].r#type = INPUT_KEYBOARD;
-                        inputs[n].Anonymous.ki.wVk = extra_keys[i];
-                        n += 1;
-                    }
+            // 2. Ctrl 按下（仅当未物理按住）
+            if !ctrl_held {
+                inputs[n].r#type = INPUT_KEYBOARD;
+                inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0);
+                n += 1;
+            }
+
+            // 3. V 按下 / V 释放
+            inputs[n].r#type = INPUT_KEYBOARD;
+            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
+            n += 1;
+            inputs[n].r#type = INPUT_KEYBOARD;
+            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
+            inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+            n += 1;
+
+            // 4. Ctrl 释放（仅当未物理按住）
+            if !ctrl_held {
+                inputs[n].r#type = INPUT_KEYBOARD;
+                inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0);
+                inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                n += 1;
+            }
+
+            // 5. 按回额外修饰键（恢复逻辑状态，保证热键可连按）
+            for i in 0..4 {
+                if extra_held[i] {
+                    inputs[n].r#type = INPUT_KEYBOARD;
+                    inputs[n].Anonymous.ki.wVk = extra_keys[i];
+                    n += 1;
                 }
+            }
 
-                let sent = SendInput(&inputs[..n], std::mem::size_of::<INPUT>() as i32);
+            let sent = SendInput(&inputs[..n], std::mem::size_of::<INPUT>() as i32);
 
-                // SendInput 返回实际成功注入的事件数。与请求数 n 不符，说明部分/全部
-                // 按键被系统拦截——最典型的是 UIPI：目标应用以管理员身份运行而本进程为
-                // 普通权限时，跨完整性级别的合成键盘输入会被静默丢弃。此时绝不能报成功
-                // （这正是"提示已粘贴却没内容"的根因），降级走 WM_PASTE 直投兜底。
-                if sent != n as u32 {
-                    log::warn!(
+            // SendInput 返回实际成功注入的事件数。与请求数 n 不符，说明部分/全部
+            // 按键被系统拦截——最典型的是 UIPI：目标应用以管理员身份运行而本进程为
+            // 普通权限时，跨完整性级别的合成键盘输入会被静默丢弃。此时绝不能报成功
+            // （这正是"提示已粘贴却没内容"的根因），降级走 WM_PASTE 直投兜底。
+            if sent != n as u32 {
+                log::warn!(
                         "[PasteEngine] SendInput 仅注入 {}/{} 个事件（疑似 UIPI 拦截），降级 WM_PASTE，hwnd={:?}",
                         sent, n, hwnd_raw
                     );
-                    if !self.post_wm_paste(hwnd) {
-                        // 兜底也失败：恢复最小化状态后返回明确错误，不再谎报成功
-                        if was_minimized {
-                            let _ = ShowWindow(hwnd, SW_MINIMIZE);
-                        }
-                        return Err("无法向目标窗口投递粘贴（目标应用可能以管理员身份运行，权限高于本应用）。内容已复制到剪贴板，可手动 Ctrl+V".to_string());
+                if !self.post_wm_paste(hwnd) {
+                    // 兜底也失败：恢复最小化状态后返回明确错误，不再谎报成功
+                    if was_minimized {
+                        let _ = ShowWindow(hwnd, SW_MINIMIZE);
                     }
+                    return Err("无法向目标窗口投递粘贴（目标应用可能以管理员身份运行，权限高于本应用）。内容已复制到剪贴板，可手动 Ctrl+V".to_string());
                 }
+            }
 
-                // 如果窗口之前是最小化的，恢复最小化状态。
-                // SendInput 只是把按键放入系统输入队列，目标窗口识别 Ctrl+V 并执行粘贴
-                // 是异步的；如果窗口刚从最小化恢复，消息循环/激活可能还没完全就绪，
-                // 需要多留一点时间，避免立刻重新最小化打断目标窗口的粘贴处理。
-                if was_minimized {
-                    std::thread::sleep(std::time::Duration::from_millis(80));
-                    let _ = ShowWindow(hwnd, SW_MINIMIZE);
-                }
+            // 如果窗口之前是最小化的，恢复最小化状态。
+            // SendInput 只是把按键放入系统输入队列，目标窗口识别 Ctrl+V 并执行粘贴
+            // 是异步的；如果窗口刚从最小化恢复，消息循环/激活可能还没完全就绪，
+            // 需要多留一点时间，避免立刻重新最小化打断目标窗口的粘贴处理。
+            if was_minimized {
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            }
         }
 
         Ok(())
@@ -1201,7 +1228,10 @@ mod tests {
             }
             let read_text = String::from_utf16_lossy(std::slice::from_raw_parts(text_ptr, len));
             let _ = GlobalUnlock(text_hmem);
-            assert_eq!(read_text, plain, "读回的 CF_UNICODETEXT 应与写入的纯文本一致");
+            assert_eq!(
+                read_text, plain,
+                "读回的 CF_UNICODETEXT 应与写入的纯文本一致"
+            );
 
             // -- 读 CF_HTML --
             let format_id = RegisterClipboardFormatW(w!("HTML Format"));

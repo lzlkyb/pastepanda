@@ -64,7 +64,9 @@ pub fn generate_pairing_key() -> String {
 pub fn validate_pairing_key(key: &str) -> Result<(), String> {
     let key = key.trim();
     if key.len() < 16 {
-        return Err("配对密钥至少需要 16 个字符，请使用应用生成的密钥或从另一台设备完整复制".to_string());
+        return Err(
+            "配对密钥至少需要 16 个字符，请使用应用生成的密钥或从另一台设备完整复制".to_string(),
+        );
     }
     if key.len() > 128 {
         return Err("配对密钥不能超过 128 个字符".to_string());
@@ -644,14 +646,8 @@ fn handle_pair_packet(
                 return;
             };
 
-            match accept_peer_pairing_key(
-                app,
-                &p.from_id,
-                &peer_name,
-                &shared,
-                &p.nonce,
-                &p.sealed,
-            ) {
+            match accept_peer_pairing_key(app, &p.from_id, &peer_name, &shared, &p.nonce, &p.sealed)
+            {
                 Ok(()) => {
                     pair.clear();
                     log::info!("[LanPair] 配对完成，已接受对方的配对密钥");
@@ -753,7 +749,10 @@ impl LanSync {
 
     /// 获取当前配对密钥（用于在设置面板中展示，供用户手动同步到其他设备）
     pub fn get_pairing_key(&self) -> String {
-        self.pairing_key.lock().map(|k| k.clone()).unwrap_or_default()
+        self.pairing_key
+            .lock()
+            .map(|k| k.clone())
+            .unwrap_or_default()
     }
 
     /// 更新运行时使用的配对密钥（持久化由调用方负责）
@@ -949,8 +948,7 @@ impl LanSync {
 
                         // 修复 C2/M13：解密 + GCM 认证。密钥不匹配/被篡改/旧版明文消息
                         // 都会在此失败并丢弃 — 不再存在"明文可读、签名可伪造"的通道
-                        let local_key =
-                            pairing_key.lock().map(|k| k.clone()).unwrap_or_default();
+                        let local_key = pairing_key.lock().map(|k| k.clone()).unwrap_or_default();
                         let (msg, nonce) = match open_message(&local_key, text) {
                             Ok(r) => r,
                             Err(_) => {
@@ -984,8 +982,7 @@ impl LanSync {
                         }
                         {
                             // 安全相关锁：中毒时恢复而非 panic，避免重放防护永久失效
-                            let mut seen =
-                                seen_nonces.lock().unwrap_or_else(|p| p.into_inner());
+                            let mut seen = seen_nonces.lock().unwrap_or_else(|p| p.into_inner());
                             if seen.len() >= REPLAY_CACHE_MAX {
                                 seen.retain(|_, ts| (now_ts - *ts).abs() <= REPLAY_WINDOW_SECS * 2);
                             }
@@ -997,9 +994,7 @@ impl LanSync {
 
                         // 更新设备列表
                         {
-                            let now = chrono::Local::now()
-                                .format("%Y-%m-%d %H:%M:%S")
-                                .to_string();
+                            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                             // 🔴 同时记进持久化名单。不记的话，重启后「已配对」就归零，
                             //   而且对方掉线后仍留在内存表里被当成已配对、被从附近设备里过滤掉，
                             //   于是「既看不见也配不回来」（2026-09-06 的真实反馈）。
@@ -1028,8 +1023,7 @@ impl LanSync {
                         }
 
                         // 根据类型处理
-                        let now_str =
-                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let source = format!("局域网: {}", msg.device_name);
                         let item_type = msg.item_type.clone();
 
@@ -1037,10 +1031,9 @@ impl LanSync {
                             "image" if !msg.image_base64.is_empty() => {
                                 // 解码图片并保存到本地
                                 match save_synced_image(&msg.image_base64, &app_handle) {
-                                    Ok(path) => (
-                                        format!("[图片同步] 来自 {}", msg.device_name),
-                                        path,
-                                    ),
+                                    Ok(path) => {
+                                        (format!("[图片同步] 来自 {}", msg.device_name), path)
+                                    }
                                     Err(e) => {
                                         log::warn!("[LanSync] 保存同步图片失败: {}", e);
                                         (format!("[图片同步失败] {}", e), String::new())
@@ -1072,7 +1065,8 @@ impl LanSync {
                             "image" => (Some("image".to_string()), None),
                             "file" => (Some("file".to_string()), None),
                             _ => {
-                                let labels = crate::content_classifier::ContentClassifier::new().classify(&final_text);
+                                let labels = crate::content_classifier::ContentClassifier::new()
+                                    .classify(&final_text);
                                 let ct = crate::content_classifier::ContentClassifier::content_type_from_labels(&labels).to_string();
                                 (Some(ct), Some(labels))
                             }
@@ -1092,23 +1086,23 @@ impl LanSync {
                                 // 写入失败时不能 emit 新时间：那会让界面显示“刚刚”而 DB 里还是
                                 // 旧时间，下次重载就跳回去。内容本身不会丢（那条记录本就存在），
                                 // 所以仍然 merged/continue，只是不拿不存在的时间去骗前端。
-                                let time_written =
-                                    match store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
-                                        Err(e) => {
-                                            log::warn!(
-                                                "[LanSync] 更新重复同步记录时间失败: {}",
-                                                e
-                                            );
-                                            false
-                                        }
-                                        Ok(_) => {
-                                            log::info!(
-                                                "[LanSync] 智能合并重复同步内容 (id={})",
-                                                existing.id
-                                            );
-                                            true
-                                        }
-                                    };
+                                let time_written = match store.update_history_time(
+                                    &existing.id,
+                                    &now_str,
+                                    TimeBump::Recapture,
+                                ) {
+                                    Err(e) => {
+                                        log::warn!("[LanSync] 更新重复同步记录时间失败: {}", e);
+                                        false
+                                    }
+                                    Ok(_) => {
+                                        log::info!(
+                                            "[LanSync] 智能合并重复同步内容 (id={})",
+                                            existing.id
+                                        );
+                                        true
+                                    }
+                                };
                                 let shown_time = if time_written {
                                     now_str.clone()
                                 } else {
@@ -1157,14 +1151,23 @@ impl LanSync {
                                 // 附加自动标签（与本地捕获一致）：解析标签 ID → 写入 → 通知前端
                                 if let Ok(tag_ids) = store.resolve_auto_tag_ids(labels) {
                                     if !tag_ids.is_empty() {
-                                        if let Err(e) = store.add_history_tags(&history_id, &tag_ids) {
+                                        if let Err(e) =
+                                            store.add_history_tags(&history_id, &tag_ids)
+                                        {
                                             log::warn!("[LanSync] 写入自动标签失败: {}", e);
                                         } else {
-                                            log::info!("[LanSync] 自动分类: {:?} → {}", labels, history_id);
-                                            let _ = app_handle.emit("tags-updated", serde_json::json!({
-                                                "history_id": history_id,
-                                                "tag_ids": tag_ids,
-                                            }));
+                                            log::info!(
+                                                "[LanSync] 自动分类: {:?} → {}",
+                                                labels,
+                                                history_id
+                                            );
+                                            let _ = app_handle.emit(
+                                                "tags-updated",
+                                                serde_json::json!({
+                                                    "history_id": history_id,
+                                                    "tag_ids": tag_ids,
+                                                }),
+                                            );
                                         }
                                     }
                                 }

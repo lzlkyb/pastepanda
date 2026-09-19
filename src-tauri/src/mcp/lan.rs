@@ -56,12 +56,10 @@ mod tests {
     fn test_is_loopback_ip() {
         assert!(is_loopback_ip(None));
         assert!(is_loopback_ip(Some(IpAddr::V4(Ipv4Addr::LOCALHOST))));
-        assert!(is_loopback_ip(Some(
-            "::1".parse::<IpAddr>().unwrap()
-        )));
-        assert!(!is_loopback_ip(Some(IpAddr::V4(
-            Ipv4Addr::new(10, 203, 5, 99)
-        ))));
+        assert!(is_loopback_ip(Some("::1".parse::<IpAddr>().unwrap())));
+        assert!(!is_loopback_ip(Some(IpAddr::V4(Ipv4Addr::new(
+            10, 203, 5, 99
+        )))));
     }
 
     #[test]

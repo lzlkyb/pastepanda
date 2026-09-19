@@ -97,12 +97,14 @@ pub fn build_popup_data_public(
 
     let recents_json: Vec<serde_json::Value> = recents
         .iter()
-        .map(|(id, item_type, preview, text, content, source, content_type)| {
-            serde_json::json!({
-                "id": id, "type": item_type, "preview": preview, "text": text,
-                "content": content, "source": source, "contentType": content_type,
-            })
-        })
+        .map(
+            |(id, item_type, preview, text, content, source, content_type)| {
+                serde_json::json!({
+                    "id": id, "type": item_type, "preview": preview, "text": text,
+                    "content": content, "source": source, "contentType": content_type,
+                })
+            },
+        )
         .collect();
 
     let store = app.try_state::<crate::data_store::DataStore>();
@@ -213,7 +215,10 @@ pub(crate) fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
     };
     use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
-    let pt = POINT { x: px as i32, y: py as i32 };
+    let pt = POINT {
+        x: px as i32,
+        y: py as i32,
+    };
     let hmonitor = unsafe { MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST) };
 
     let mut mi = MONITORINFO {
@@ -225,7 +230,9 @@ pub(crate) fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
         let _ = GetMonitorInfoW(hmonitor, &mut mi);
         let mut dpi_x: u32 = 96;
         let mut dpi_y: u32 = 96;
-        if GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() && dpi_x > 0 {
+        if GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok()
+            && dpi_x > 0
+        {
             scale = dpi_x as f64 / 96.0;
         }
     }
@@ -233,8 +240,17 @@ pub(crate) fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
     let work = mi.rcWork;
     // 退化矩形兜底，避免弹窗被定位到屏幕外
     if work.right <= work.left || work.bottom <= work.top {
-        log::warn!("[TrayManager] 获取显示器工作区失败，使用默认 1920x1080 @ scale {}", scale);
-        return MonitorWorkArea { work_x: 0.0, work_y: 0.0, work_w: 1920.0, work_h: 1080.0, scale };
+        log::warn!(
+            "[TrayManager] 获取显示器工作区失败，使用默认 1920x1080 @ scale {}",
+            scale
+        );
+        return MonitorWorkArea {
+            work_x: 0.0,
+            work_y: 0.0,
+            work_w: 1920.0,
+            work_h: 1080.0,
+            scale,
+        };
     }
     MonitorWorkArea {
         work_x: work.left as f64,
@@ -247,7 +263,13 @@ pub(crate) fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
 
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn get_monitor_work_area(_px: f64, _py: f64) -> MonitorWorkArea {
-    MonitorWorkArea { work_x: 0.0, work_y: 0.0, work_w: 1920.0, work_h: 1080.0, scale: 1.0 }
+    MonitorWorkArea {
+        work_x: 0.0,
+        work_y: 0.0,
+        work_w: 1920.0,
+        work_h: 1080.0,
+        scale: 1.0,
+    }
 }
 
 /// 计算弹窗位置，与 Windows 原生托盘右键菜单逻辑一致：
@@ -284,10 +306,24 @@ fn calc_popup_position(
 
     // 钳制到该显示器工作区（带原点）。工作区比弹窗还小（极小屏幕）时贴左上角，
     // 避免 max < min 导致钳制反向把弹窗推出屏幕
-    let (min_x, max_x) = (mon.work_x + margin, mon.work_x + mon.work_w - popup_w - margin);
-    let (min_y, max_y) = (mon.work_y + margin, mon.work_y + mon.work_h - popup_h - margin);
-    let x = if max_x < min_x { min_x } else { raw_x.max(min_x).min(max_x) };
-    let y = if max_y < min_y { min_y } else { raw_y.max(min_y).min(max_y) };
+    let (min_x, max_x) = (
+        mon.work_x + margin,
+        mon.work_x + mon.work_w - popup_w - margin,
+    );
+    let (min_y, max_y) = (
+        mon.work_y + margin,
+        mon.work_y + mon.work_h - popup_h - margin,
+    );
+    let x = if max_x < min_x {
+        min_x
+    } else {
+        raw_x.max(min_x).min(max_x)
+    };
+    let y = if max_y < min_y {
+        min_y
+    } else {
+        raw_y.max(min_y).min(max_y)
+    };
 
     log::info!(
         "[TrayManager] 弹窗定位: taskbar={:?} tray=({:.0},{:.0} {:.0}x{:.0}) scale={:.2} popup_phys=({:.0}x{:.0}) work=({:.0},{:.0} {:.0}x{:.0}) raw=({:.0},{:.0}) final=({:.0},{:.0})",
@@ -613,7 +649,7 @@ pub fn set_tray_stack_mode(app: &AppHandle, active: bool) {
 
     let cx = (w as f64 * 0.78) as isize; // 圆心 x
     let cy = (h as f64 * 0.22) as isize; // 圆心 y
-    let r = (w as f64 * 0.20) as isize;  // 圆点半径
+    let r = (w as f64 * 0.20) as isize; // 圆点半径
     let border = 2.0_f64;
 
     for y in 0..h {

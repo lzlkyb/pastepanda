@@ -34,7 +34,8 @@ pub fn get_app_name() -> String {
 }
 
 /// 图片扩展名白名单：用于校验用户选择/粘贴的图片路径，防止通过这些命令读取或写入任意文件
-pub(crate) const ALLOWED_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp", "ico"];
+pub(crate) const ALLOWED_IMAGE_EXTENSIONS: &[&str] =
+    &["png", "jpg", "jpeg", "gif", "bmp", "webp", "ico"];
 
 /// 校验路径是否为合法的图片文件：规范化路径后确认其存在、是普通文件，且扩展名在允许列表内。
 /// 返回规范化后的路径，调用方应使用该路径进行后续文件操作。
@@ -190,22 +191,18 @@ pub(crate) fn is_unsafe_network_path(path: &str) -> bool {
     trimmed.starts_with("\\\\") || trimmed.starts_with("//")
 }
 
-mod ai;
 mod action_events;
+mod ai;
 mod ai_feedback;
 mod batch_replace;
 mod chains;
-mod stack_template;
 mod config_convert;
 mod content_memory;
 mod semantic;
 mod sql;
+mod stack_template;
 // pub(crate)：`ai::profile_prompt` 要用 build_profile / HOUR_SEGMENTS（避免把角色与
 // 领域分类逻辑再写一份）。对外仍然不暴露。
-pub(crate) mod profile;
-mod sequence;
-mod sticky;
-mod quota;
 mod encoding;
 mod export;
 mod groups;
@@ -224,10 +221,14 @@ mod note_revisions;
 mod note_vault;
 mod notes;
 mod paste;
+pub(crate) mod profile;
+mod quota;
 mod rc;
 mod rc_pair;
 mod regex_rules;
+mod sequence;
 mod snippets;
+mod sticky;
 mod system;
 mod tags;
 mod update;
@@ -236,20 +237,13 @@ mod url_summary;
 #[cfg(test)]
 mod tests;
 
-pub use ai::*;
 pub use action_events::*;
+pub use ai::*;
 pub use ai_feedback::*;
 pub use batch_replace::*;
 pub use chains::*;
-pub use stack_template::*;
 pub use config_convert::*;
 pub use content_memory::*;
-pub use semantic::*;
-pub use sql::*;
-pub use profile::*;
-pub use sequence::*;
-pub use sticky::*;
-pub use quota::*;
 pub use encoding::*;
 pub use export::*;
 pub use groups::*;
@@ -268,10 +262,17 @@ pub use note_revisions::*;
 pub use note_vault::*;
 pub use notes::*;
 pub use paste::*;
+pub use profile::*;
+pub use quota::*;
 pub use rc::*;
 pub use rc_pair::*;
 pub use regex_rules::*;
+pub use semantic::*;
+pub use sequence::*;
 pub use snippets::*;
+pub use sql::*;
+pub use stack_template::*;
+pub use sticky::*;
 pub use system::*;
 pub use tags::*;
 pub use update::*;

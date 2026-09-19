@@ -69,8 +69,7 @@ pub fn write_replace(final_path: &Path, content: &str) -> Result<(), String> {
     // 单独开作用域：要先 fsync 再关句柄，然后才能 rename（Windows 下句柄没关就 rename 会报拒绝访问）
     {
         use std::io::Write;
-        let mut f = std::fs::File::create(&tmp)
-            .map_err(|e| format!("创建临时文件失败：{}", e))?;
+        let mut f = std::fs::File::create(&tmp).map_err(|e| format!("创建临时文件失败：{}", e))?;
         f.write_all(content.as_bytes())
             .and_then(|_| f.sync_all())
             .map_err(|e| {
@@ -93,7 +92,10 @@ mod tests {
         let target = Path::new("C:\\tmp\\abc123.png");
         let a = unique_tmp_path(target);
         let b = unique_tmp_path(target);
-        assert_ne!(a, b, "同一目标的两次调用必须拿到不同的 tmp——这正是 os error 2 的根因");
+        assert_ne!(
+            a, b,
+            "同一目标的两次调用必须拿到不同的 tmp——这正是 os error 2 的根因"
+        );
         assert!(a.to_string_lossy().ends_with(".tmp"));
         assert!(a.to_string_lossy().contains("abc123.png."));
     }

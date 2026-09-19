@@ -1143,7 +1143,7 @@ details.secfold:not([open]) { margin-bottom: 4px; }
   <h3 data-page-node-id="LXTidKrixmdZMg7I4GzHmM">两台电脑怎么配对</h3>
   <ul class="feat" data-page-node-id="DlTMhsF6rikBSMpNw35Y9w">
     <li data-page-node-id="ysIBiK0dtS5y28wdI6Aj7F"><b data-page-node-id="yIYWvBEURRFzcw6p4QG2Dr">同一 Wi-Fi / 局域网（推荐）</b>：两边都打开「远程电脑」，配对对话框最上面就会列出<b data-page-node-id="Kam207XkI0JrVrMIEupis9">附近的设备</b>。点一下「配对」→ 两台同时显示<b data-page-node-id="jYyo3jSCN4CnpBGWDmiqBy">同一个 6 位数字</b> → 各点一次「两边一样，确认」，配好了。不复制、不粘贴，也不用对着念一串长码。</li>
-    <li data-page-node-id="LzEYs1baEIem5KScl5B6dO"><b data-page-node-id="5pkYIE1laGVNfrRWDyp2mY">不在同一局域网</b>：走邀请码。一台点「生成邀请码」并把它发给对方（会自动复制到剪贴板），对方粘上即可。</li>
+    <li data-page-node-id="LzEYs1baEIem5KScl5B6dO"><b data-page-node-id="5pkYIE1laGVNfrRWDyp2mY">不在同一局域网</b>：走邀请码。一台点「生成邀请码」并把它发给对方（会自动复制到剪贴板），对方粘上即可。码只有一行的长度（<b data-page-node-id="5pkYIE1laGVNfrRWDyp2mY">PP1-</b> 开头、末尾 4 位校验），就算连「邀请码：」和聊天文字一起粘进来也能自动抠出码本身；末尾的校验位用来挡抄漏一位这种手滑——真要防「有人换掉整串码」，靠的还是核对指纹那一步。</li>
     <li data-page-node-id="pfz74A9nUSsJilGClUs3sq"><b data-page-node-id="oX6xsqubSgQ8EFruNIiKwW">那串数字是双向的保险</b>：它是两台现场协商出来的密钥的摘要，不是密码本身。两边显示的数字<b data-page-node-id="5fMgG86ufHWEBQphnvivgu">不一样就点取消</b>——那说明有人在中间换过公钥。这一步是整条链路上唯一需要你看一眼的地方，字特意做大、字距拉开就是这个原因。</li>
     <li data-page-node-id="ZcziMh8DsPUba71G6CYd49"><b data-page-node-id="UzRXmXZQ7vvyfoD1RbHLzx">设备名仅供参考</b>：列表里那个名字是对方自己报的、可以随便填（界面上标注了「可自称，以指纹为准」）。真正定对方是谁的，是核对环节那串数字。</li>
   </ul>
@@ -1157,6 +1157,7 @@ details.secfold:not([open]) { margin-bottom: 4px; }
   <h3 data-page-node-id="rbVJaXVnRJt06Xz7tC0Key">配对不等于永久放行</h3>
   <ul class="feat" data-page-node-id="nJtNHpHrM6X5uuNC4Whug2">
     <li data-page-node-id="8211IjXSMNkuieISzOWpBG">配对只决定「<b data-page-node-id="ity7c3TPWID3MjZnbbvC0J">谁可以发起</b>」。对方每次发起远程，你这边仍会弹一次确认，点头之后才会连上。</li>
+    <li data-page-node-id="8211IjXSMNkuieISzOWpBGx"><b data-page-node-id="ity7c3TPWID3MjZnbbvC0Jx">高频使用的设备可以免确认</b>：「允许被远程」设置里的设备列表有「免确认」开关，逐台开启（默认关）。开启后这台设备发起远程会直接连上、不再询问；被「禁止」的设备不受影响——禁止优先级永远更高。开关随时可逆。</li>
     <li data-page-node-id="KkBVikNYnM9MOW6jyXpOKf">发起时可以选<b data-page-node-id="dFFMrqNB4aKypkn9j48GqN">只看</b>或<b data-page-node-id="n5mAjje0fekKcExXbWyfwE">可控</b>。以「只看」进来的会话，中途可以申请升级为可控，那次升级对方仍要点一次确认。</li>
     <li data-page-node-id="QMq3Fp0XqvzzC69HYf8RmN">不想要某台设备了，在设备列表里把它移除即可；对方要再连就得重新配对。</li>
   </ul>

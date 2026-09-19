@@ -113,9 +113,11 @@ mod socket;
 mod table;
 mod wire;
 
-pub use nearby::{Neighbor, Nearby, NEARBY_TTL_MS};
-pub use socket::{announce_once, bind_listener, bind_listener_on, hello_packet, send_all, Announce};
-pub use table::{Heard, PlainPacket, PlainHandler, PresenceTable};
+pub use nearby::{Nearby, Neighbor, NEARBY_TTL_MS};
+pub use socket::{
+    announce_once, bind_listener, bind_listener_on, hello_packet, send_all, Announce,
+};
+pub use table::{Heard, PlainHandler, PlainPacket, PresenceTable};
 pub use wire::{build, build_kind, Extras, PresenceApp, WireKind, NAME_MAX_CHARS};
 
 /// 组播组，沿用 `lan_sync`。
@@ -281,7 +283,10 @@ pub fn spawn(p: PresenceStart) {
                             // 看不到本机——那是要用户知道的，只是不该每 5 秒说一遍。
                             Err(e) => {
                                 if !hello_failed {
-                                    log::warn!("[Presence] 招呼包发不出去（同网段看不到本机）：{}", e);
+                                    log::warn!(
+                                        "[Presence] 招呼包发不出去（同网段看不到本机）：{}",
+                                        e
+                                    );
                                     hello_failed = true;
                                 }
                             }

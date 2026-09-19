@@ -22,9 +22,7 @@ pub struct SqlValidateResult {
 }
 
 /// 只读语句关键字白名单（剥离注释/空白后，取首词判断）
-const READONLY_PREFIXES: &[&str] = &[
-    "select", "with", "explain", "pragma", "values",
-];
+const READONLY_PREFIXES: &[&str] = &["select", "with", "explain", "pragma", "values"];
 
 /// 去掉 SQL 注释（-- 行注释 与 /* */ 块注释），返回剥离后的内容
 fn strip_comments(sql: &str) -> String {
@@ -182,7 +180,12 @@ fn explain_stmt(stmt: &str) -> Result<(), String> {
 pub fn sql_validate(sql: String) -> Result<SqlValidateResult, String> {
     // 空输入 / 超长保护
     if sql.trim().is_empty() {
-        return Ok(SqlValidateResult { ok: true, line: None, message: None, stmt_count: 0 });
+        return Ok(SqlValidateResult {
+            ok: true,
+            line: None,
+            message: None,
+            stmt_count: 0,
+        });
     }
     if sql.len() > 100_000 {
         return Ok(SqlValidateResult {
@@ -219,7 +222,12 @@ pub fn sql_validate(sql: String) -> Result<SqlValidateResult, String> {
         }
     }
 
-    Ok(SqlValidateResult { ok: true, line: None, message: None, stmt_count: total })
+    Ok(SqlValidateResult {
+        ok: true,
+        line: None,
+        message: None,
+        stmt_count: total,
+    })
 }
 
 #[cfg(test)]
@@ -262,14 +270,25 @@ mod tests {
         ] {
             let r = sql_validate(stmt.to_string()).unwrap();
             assert!(!r.ok, "应拦截: {stmt}");
-            assert!(r.message.unwrap().contains("只读"), "消息应提示只读: {stmt}");
+            assert!(
+                r.message.unwrap().contains("只读"),
+                "消息应提示只读: {stmt}"
+            );
         }
     }
 
     #[test]
     fn with_clause_and_pragma_allowed() {
-        assert!(sql_validate("WITH x AS (SELECT 1) SELECT * FROM x;".to_string()).unwrap().ok);
-        assert!(sql_validate("PRAGMA table_info(users);".to_string()).unwrap().ok);
+        assert!(
+            sql_validate("WITH x AS (SELECT 1) SELECT * FROM x;".to_string())
+                .unwrap()
+                .ok
+        );
+        assert!(
+            sql_validate("PRAGMA table_info(users);".to_string())
+                .unwrap()
+                .ok
+        );
     }
 
     #[test]

@@ -234,7 +234,11 @@ mod tests {
     #[test]
     fn test_代码领域不会与角色句重复() {
         let out = profile_to_prompt(&raw_dev(100), None, 9);
-        assert!(!out.contains("JSON/SQL"), "代码领域不该触发结构化数据句：{}", out);
+        assert!(
+            !out.contains("JSON/SQL"),
+            "代码领域不该触发结构化数据句：{}",
+            out
+        );
     }
 
     #[test]
@@ -299,7 +303,11 @@ mod tests {
             edit_rate: 0.8,
         }];
         let out = profile_to_prompt(&raw, Some("ai-explain-code"), 9);
-        assert!(out.chars().count() <= MAX_CHARS, "超长：{}", out.chars().count());
+        assert!(
+            out.chars().count() <= MAX_CHARS,
+            "超长：{}",
+            out.chars().count()
+        );
         // 每一行都应以句号结尾（没被从中间划开）
         for line in out.lines() {
             assert!(line.ends_with('。'), "被截半句了：{}", line);
@@ -308,7 +316,11 @@ mod tests {
 
     #[test]
     fn test_签名随片段变化且空片段无签名() {
-        assert_eq!(profile_sig(""), "", "空片段不该弄出签名，否则关闭态与空态的缓存键会分家");
+        assert_eq!(
+            profile_sig(""),
+            "",
+            "空片段不该弄出签名，否则关闭态与空态的缓存键会分家"
+        );
         let a = profile_sig("甲");
         let b = profile_sig("乙");
         assert_ne!(a, b);

@@ -61,7 +61,9 @@ fn finish_listener(sock: UdpSocket) -> Result<UdpSocket, String> {
         // ❗ 不像 `lan_sync` 那样直接放弃线程：本模块的宣告是**单向也有用**的
         //   （只要对端听得见我们，它就会拨过来，而同步会话本来就是双向的）。
         //   但绝不能静默（规则 #15.3）：这意味着本机永远听不到任何公告。
-        log::error!("[Presence] 没能在任何一块网卡上加入组播组，本机听不到对端的地址公告（同步会退到中继）");
+        log::error!(
+            "[Presence] 没能在任何一块网卡上加入组播组，本机听不到对端的地址公告（同步会退到中继）"
+        );
     } else {
         log::info!("[Presence] 已在 {} 块网卡上加入组播组", joined);
     }

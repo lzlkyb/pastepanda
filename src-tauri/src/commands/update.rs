@@ -44,7 +44,9 @@ enum DownloadOutcome {
     /// download + install 都成功（macOS/Linux 会走到；Windows 上 install 直接退出进程，到不了）。
     Success,
     /// 均速过慢，已中止。携带触发时的均速（B/s），仅用于日志。
-    TooSlow { avg_bps: u64 },
+    TooSlow {
+        avg_bps: u64,
+    },
     Failed(String),
 }
 
@@ -313,7 +315,12 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Va
 
     for (i, group) in groups.iter().enumerate() {
         let source_label = group.first().map(|s| s.as_str()).unwrap_or("custom");
-        log::info!("[Update] 尝试更新源 {}/{}: {}", i + 1, groups.len(), source_label);
+        log::info!(
+            "[Update] 尝试更新源 {}/{}: {}",
+            i + 1,
+            groups.len(),
+            source_label
+        );
 
         let updater = match build_updater(&app, group) {
             Ok(u) => u,
@@ -323,9 +330,17 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Va
             }
         };
 
-        match retry_with_backoff(2, &format!("检查更新({})", source_label), || updater.check()).await {
+        match retry_with_backoff(2, &format!("检查更新({})", source_label), || {
+            updater.check()
+        })
+        .await
+        {
             Ok(Some(update)) => {
-                log::info!("[Update] 发现新版本 v{} (源: {})", update.version, source_label);
+                log::info!(
+                    "[Update] 发现新版本 v{} (源: {})",
+                    update.version,
+                    source_label
+                );
                 return Ok(Some(serde_json::json!({
                     "version": update.version,
                     "body": update.body,
@@ -360,7 +375,12 @@ pub fn start_update(app: tauri::AppHandle) {
 
         for (i, group) in groups.iter().enumerate() {
             let source_label = group.first().map(|s| s.as_str()).unwrap_or("custom");
-            log::info!("[Update] 下载尝试源 {}/{}: {}", i + 1, groups.len(), source_label);
+            log::info!(
+                "[Update] 下载尝试源 {}/{}: {}",
+                i + 1,
+                groups.len(),
+                source_label
+            );
 
             let updater = match build_updater(&app, group) {
                 Ok(u) => u,
@@ -371,18 +391,23 @@ pub fn start_update(app: tauri::AppHandle) {
             };
 
             // 检查更新（带重试，最多 2 次）
-            let update = match retry_with_backoff(2, &format!("检查更新({})", source_label), || updater.check()).await {
-                Ok(Some(u)) => u,
-                Ok(None) => {
-                    let _ = app.emit("update:uptodate", ());
-                    return;
-                }
-                Err(e) => {
-                    last_error = e.to_string();
-                    log::warn!("[Update] 源 {} 检查失败: {}", source_label, last_error);
-                    continue;
-                }
-            };
+            let update =
+                match retry_with_backoff(2, &format!("检查更新({})", source_label), || {
+                    updater.check()
+                })
+                .await
+                {
+                    Ok(Some(u)) => u,
+                    Ok(None) => {
+                        let _ = app.emit("update:uptodate", ());
+                        return;
+                    }
+                    Err(e) => {
+                        last_error = e.to_string();
+                        log::warn!("[Update] 源 {} 检查失败: {}", source_label, last_error);
+                        continue;
+                    }
+                };
 
             // → 通知前端：发现新版本
             let _ = app.emit(
@@ -438,11 +463,8 @@ pub fn start_update(app: tauri::AppHandle) {
                                 "threshold_bps": MIN_DOWNLOAD_SPEED_BPS,
                             }),
                         );
-                        last_error = format!(
-                            "源 {} 下载过慢（约 {} KB/s）",
-                            source_label,
-                            avg_bps / 1024
-                        );
+                        last_error =
+                            format!("源 {} 下载过慢（约 {} KB/s）", source_label, avg_bps / 1024);
                         switched = true;
                         break;
                     }

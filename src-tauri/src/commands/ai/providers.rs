@@ -74,7 +74,10 @@ pub fn ai_delete_custom_provider(
     if cfg.provider == id {
         let mut raw = store.get_config()?;
         if let Some(obj) = raw.as_object_mut() {
-            obj.insert("ai_provider".to_string(), Value::String(provider::DEFAULT_PROVIDER.to_string()));
+            obj.insert(
+                "ai_provider".to_string(),
+                Value::String(provider::DEFAULT_PROVIDER.to_string()),
+            );
         }
         store.save_config(&raw)?;
     }
@@ -84,7 +87,10 @@ pub fn ai_delete_custom_provider(
 }
 
 /// 写入自定义服务商列表。
-pub(crate) fn write_custom_providers(store: &DataStore, items: &[CustomProvider]) -> Result<(), String> {
+pub(crate) fn write_custom_providers(
+    store: &DataStore,
+    items: &[CustomProvider],
+) -> Result<(), String> {
     let mut raw = store.get_config()?;
     if let Some(obj) = raw.as_object_mut() {
         obj.insert(

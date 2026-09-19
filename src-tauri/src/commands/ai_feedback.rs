@@ -7,7 +7,7 @@
 
 use crate::ai::cache;
 use crate::content_classifier::ContentClassifier;
-use crate::data_store::{AiFeedback, AiFeedbackStat, ActionPrefRow, DataStore, PrefSignalTop};
+use crate::data_store::{ActionPrefRow, AiFeedback, AiFeedbackStat, DataStore, PrefSignalTop};
 use tauri::State;
 
 #[tauri::command]
@@ -42,7 +42,11 @@ pub fn action_pref_get(store: State<DataStore>, action_id: String) -> Result<Str
 ///（「换而不是删：删了用户不知道有东西被藏了」）——判定会误伤，拒绝写入会让
 /// 用户连正常偏好都存不进去；而静默存下又不生效同样糟糕，所以把判定结果告诉前端。
 #[tauri::command]
-pub fn action_pref_set(store: State<DataStore>, action_id: String, preference: String) -> Result<bool, String> {
+pub fn action_pref_set(
+    store: State<DataStore>,
+    action_id: String,
+    preference: String,
+) -> Result<bool, String> {
     store.action_pref_set(&action_id, &preference)?;
     // 偏好变了 = 输出会变，旧缓存不能再命中
     cache::clear();

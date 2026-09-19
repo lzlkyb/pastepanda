@@ -51,10 +51,15 @@ fn test_view_sort_accessed_puts_never_opened_last() {
     let _b = store.note_create(None, "没打开过的", "y").unwrap();
     store.note_touch(&a.id);
 
-    let rows = store.note_list_view("all", &[], &view("accessed", ""), 10, 0).unwrap();
+    let rows = store
+        .note_list_view("all", &[], &view("accessed", ""), 10, 0)
+        .unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].id, a.id, "打开过的应该在最前");
-    assert_eq!(rows[1].title, "没打开过的", "从未打开过的（NULL）必须排最后");
+    assert_eq!(
+        rows[1].title, "没打开过的",
+        "从未打开过的（NULL）必须排最后"
+    );
 }
 
 /// 「无摘要」要同时盖住 NULL 与空串两类。
@@ -93,7 +98,9 @@ fn test_view_group_by_tag_keeps_untagged() {
         .note_set_tags(&both.id, &[t1.id.clone(), t2.id.clone()])
         .unwrap();
 
-    let rows = store.note_list_view("all", &[], &view("", "tag"), 20, 0).unwrap();
+    let rows = store
+        .note_list_view("all", &[], &view("", "tag"), 20, 0)
+        .unwrap();
     let keys: Vec<String> = rows
         .iter()
         .map(|n| n.group_key.clone().unwrap_or_default())
@@ -120,16 +127,24 @@ fn test_view_group_counts_match_list() {
     let store = make_store();
     let f = store.folder_create("工作", None).unwrap();
     for i in 0..3 {
-        let n = store.note_create(None, &format!("在文件夹{}", i), "x").unwrap();
+        let n = store
+            .note_create(None, &format!("在文件夹{}", i), "x")
+            .unwrap();
         store.note_set_folder(&n.id, Some(&f.id)).unwrap();
     }
     store.note_create(None, "未分类的", "y").unwrap();
 
-    let counts = store.note_group_counts("all", &[], &view("", "folder")).unwrap();
+    let counts = store
+        .note_group_counts("all", &[], &view("", "folder"))
+        .unwrap();
     let map: std::collections::HashMap<String, i64> =
         counts.into_iter().map(|c| (c.key, c.count)).collect();
     assert_eq!(map.get("工作"), Some(&3));
-    assert_eq!(map.get("未分类"), Some(&1), "folder_id 为 NULL 的组名要是「未分类」");
+    assert_eq!(
+        map.get("未分类"),
+        Some(&1),
+        "folder_id 为 NULL 的组名要是「未分类」"
+    );
 }
 
 /// 待沉淀区：类型多选是**并集**；默认 opts 与旧行为一致。

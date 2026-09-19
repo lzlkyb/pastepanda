@@ -9,8 +9,13 @@
 
 use super::protocol::{Capability, RcFrame, SessionPhase};
 use super::service::RcService;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
+
+/// Q6：自动重连最多试几次、首试等多久（第 N 次延迟 = 基础 × N，2s/4s/6s）。
+pub(super) const RECONNECT_MAX_ATTEMPTS: u32 = 3;
+pub(super) const RECONNECT_BASE_DELAY_MS: u64 = 2_000;
 
 /// 配置键。
 pub const CFG_ENABLED: &str = "rc_enabled";
@@ -130,7 +135,10 @@ pub fn can_transition(from: SessionPhase, to: SessionPhase) -> bool {
 
 /// 会话是否已建立（可谈画面/输入）。
 pub fn is_active(phase: SessionPhase) -> bool {
-    matches!(phase, SessionPhase::OutboundActive | SessionPhase::InboundActive)
+    matches!(
+        phase,
+        SessionPhase::OutboundActive | SessionPhase::InboundActive
+    )
 }
 
 /// 被控横幅是否必须展示。Active 时恒 true——不可关到看不见（规则 15）。
@@ -243,7 +251,13 @@ impl RcService {
                 return Err("没有进行中的会话".into());
             };
             log::info!("[RC] 会话结束：{reason}");
-            (s.peer.clone(), s.peer_name.clone(), s.capability, s.phase, s.started_ms)
+            (
+                s.peer.clone(),
+                s.peer_name.clone(),
+                s.capability,
+                s.phase,
+                s.started_ms,
+            )
         };
         // 尽力通知对端：发起端走 outbound_send；被控端走 inbound_send
         {
@@ -259,6 +273,8 @@ impl RcService {
             }
             *guard = None;
         }
+        // P0-3：连接句柄一并清——留着会把下一场会话的鼠标数据报发进旧连接
+        *self.outbound_conn.lock().await = None;
         {
             let ib = self.inbound_send.lock().await.take();
             if let Some(send) = ib {
@@ -321,10 +337,20 @@ impl RcService {
             },
         );
         self.clear_frame();
+        // 出站帧队列一并清：旧会话攒下的 H.264 P 帧 / 脏块对新会话是毒数据
+        self.clear_outbox();
         self.note_rtt(0);
+        // 自动档与会话同生命周期（2A）：不复位的话 `status()` 会继续报上一场
+        // 停留的「生效档」，而画面早就不推了——陈旧数据比没有数据更坏。
+        // ❗ 必须在这里（inner 锁已放出、link 已 detach 之后）调用，别挪进锁块。
+        self.reset_stream_after_session();
         // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
         // 避免下一个会话把它当成自己的结果返回。
         self.invalidate_clipboard();
+        // Q6：收口顺手清自动重连状态。异常断流路径的顺序是 force_end（清）→
+        // begin（重建），这里清掉不碍触发；它兜的是「用户主动结束」要清掉
+        // 残留的「重连中/重连失败」横幅——用户已经自己做了决定。
+        *self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
         // 收口时清空注入错误（已被前端看到或已无意义）
         self.notify.take_inject_err();
         *self
@@ -354,11 +380,131 @@ impl RcService {
         let _ = self.end_session(reason).await;
     }
 
+    /// 该 peer 是否有一场**活跃**（Pending/Outbound/Inbound Active 任一）会话。
+    /// 自动重连任务睡醒后用它判断「是不是已经不用我重连了」。
+    fn has_session_with(&self, peer: &str) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        matches!(inner.session.as_ref(), Some(s) if s.peer == peer && is_active(s.phase))
+    }
+
+    /// Q6：用户手动发起时清自动重连 episode（含 gave_up 残留横幅）。
+    /// `pub`：commands::rc_request_session（rc 模块外）在用户动作入口调用。
+    pub fn clear_auto_reconnect(&self) {
+        *self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// 收口前取一场会话的（能力、设备名），供自动重连发起点用。
+    /// 只认 session id（与 `session_id_is` 同一纪律：不按 peer 认领）。
+    pub(super) fn session_brief_if(
+        &self,
+        session_id: &str,
+    ) -> Option<(Capability, String)> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner.session.as_ref().filter(|s| s.id == session_id).map(|s| {
+            (s.capability, s.peer_name.clone())
+        })
+    }
+
+    /// Q6：免确认设备异常断流后自动重连（发起端）。
+    ///
+    /// 只在**异常断流**路径调用（画面流 Err）——用户主动结束 / 对端主动结束 /
+    /// TTL 到期都不会走到这，那三种情况默默再敲门是骚扰。逐次确认（非免确认）
+    /// 的设备也不进：每次申请都要对方点头，自动连发等于骚扰对方。
+    ///
+    /// episode 自带重试循环（2s/4s/6s），期间用户任何手动动作（发起/结束）都会
+    /// 清状态、任务睡醒后看到状态没了就退出——不需要 AbortHandle。
+    pub fn begin_auto_reconnect(self: &Arc<Self>, peer: &str, peer_name: String, cap: Capability) {
+        if !self.device_trusted(peer) {
+            log::debug!("[RC] 对端未开免确认，断线后不自动重连");
+            return;
+        }
+        let epoch = self
+            .reconnect_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        {
+            let mut st = self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(s) = st.as_ref() {
+                if s.peer == peer && !s.gave_up {
+                    // episode 已在跑（任务自己在循环重试），不叠加第二个
+                    return;
+                }
+            }
+            *st = Some(super::service::AutoReconnect {
+                peer: peer.to_string(),
+                peer_name,
+                capability: cap,
+                attempt: 0,
+                max: RECONNECT_MAX_ATTEMPTS,
+                gave_up: false,
+                epoch,
+            });
+        }
+        self.emit_changed();
+        let svc = Arc::clone(self);
+        let peer = peer.to_string();
+        tauri::async_runtime::spawn(async move {
+            for attempt in 1..=RECONNECT_MAX_ATTEMPTS {
+                let delay = RECONNECT_BASE_DELAY_MS * attempt as u64;
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                // 睡醒先核对 episode 还归不归我管：状态被清、被换成新 episode
+                //（代次不同）都算易主。只认 peer 不认代次的话，旧任务会在
+                // 「手动重连成功又断流」后收养新 episode，双任务并行重试。
+                let still_mine = {
+                    let st = svc.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner());
+                    matches!(st.as_ref(), Some(s) if s.peer == peer && s.epoch == epoch && !s.gave_up)
+                };
+                if !still_mine {
+                    return;
+                }
+                if svc.has_session_with(&peer) {
+                    // 用户已手动重连上 → episode 完成
+                    *svc.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
+                    svc.emit_changed();
+                    return;
+                }
+                // 进度给 UI：attempt 写回状态再 emit，横幅显示「第 N/M 次」
+                {
+                    let mut st = svc.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner());
+                    if let Some(s) = st.as_mut() {
+                        s.attempt = attempt;
+                    }
+                }
+                svc.emit_changed();
+                log::info!("[RC] 自动重连第 {attempt}/{RECONNECT_MAX_ATTEMPTS} 次：{peer}");
+                // 自动重连只发生在「已经建立过会话」的设备上（免确认白名单成员），
+                // 永远不走无人值守接入码那条路——码是一次性的，不该在这里被烧掉。
+                match svc.request_session(&peer, cap, None).await {
+                    // 申请已受理（免确认对端会自动应答）。episode 到此交棒：
+                    // 之后若画面再断，断流路径会重新 begin（attempt 重新计数——
+                    // 每次「成功重连后再断」是新一轮故障，理应给满重试）。
+                    Ok(_) => {
+                        *svc.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
+                        svc.emit_changed();
+                        return;
+                    }
+                    Err(e) => log::warn!("[RC] 自动重连第 {attempt} 次失败：{e}"),
+                }
+            }
+            // 次数用尽：保留 gave_up 状态给 UI「自动重连失败」，用户手动动作时清
+            {
+                let mut st = svc.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner());
+                if let Some(s) = st.as_mut() {
+                    if s.peer == peer {
+                        s.gave_up = true;
+                    }
+                }
+            }
+            svc.emit_changed();
+        });
+    }
+
     /// 会话是否超过 TTL（推流循环每圈检查）。
     pub fn session_expired(&self) -> bool {
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
-            Some(s) if is_active(s.phase) => super::service::now_ms() - s.started_ms > SESSION_TTL_MS,
+            Some(s) if is_active(s.phase) => {
+                super::service::now_ms() - s.started_ms > SESSION_TTL_MS
+            }
             _ => false,
         }
     }

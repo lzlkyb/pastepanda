@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "rc-workbench-close",
+  "description": "远程电脑工作台专用的窗口权限：只补一个 core:window:allow-destroy，不给其它窗口。",
+  "windows": ["rc-workbench"],
+  "permissions": ["core:window:allow-destroy"]
+}

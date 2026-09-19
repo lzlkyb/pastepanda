@@ -25,23 +25,33 @@ pub struct RcDevice {
     /// 现在由 `end_session` 从活连接读一次写进来。
     #[serde(default)]
     pub last_path: String,
+    /// 用户起的**本地备注名**（A1）。空串 = 没起过；
+    /// 显示时 note 优先、`name`（对端自报 hostname）兜底。
+    /// 🔴 只存在本机：不改对端自报的真名，也不随任何信令同步。
+    #[serde(default)]
+    pub note: String,
+    /// 方案 D「免确认直连」：这台设备发起远程时**跳过人工同意**。
+    /// 默认 `false`；逐台开关（无一键全开）；`device_deny` 优先级更高。
+    #[serde(default)]
+    pub trusted: bool,
 }
 
-const COLS: &str = "node_id, name, paired_at, conn_state, last_seen, last_path";
+const COLS: &str = "node_id, name, note, paired_at, conn_state, last_seen, last_path, trusted";
 
 fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
     Ok(RcDevice {
         node_id: r.get(0)?,
         name: r.get(1)?,
-        paired_at: r.get(2)?,
-        conn_state: r.get(3)?,
-        last_seen: r.get(4)?,
-        last_path: r.get(5)?,
+        note: r.get(2)?,
+        paired_at: r.get(3)?,
+        conn_state: r.get(4)?,
+        last_seen: r.get(5)?,
+        last_path: r.get(6)?,
+        trusted: r.get::<_, i64>(7)? != 0,
     })
 }
 
 impl DataStore {
-
     /// 配对（或更新名字）。与同步的 `device_pair` 互不影响。
     pub fn rc_device_pair(&self, node_id: &str, name: &str) -> Result<(), String> {
         let conn = self.lock_conn();
@@ -64,17 +74,19 @@ impl DataStore {
             ))
             .map_err(|e| e.to_string())?;
         let rows = st.query_map([], row_to).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 
     pub fn rc_device_get(&self, node_id: &str) -> Result<Option<RcDevice>, String> {
         let conn = self.lock_conn();
         let mut st = conn
-            .prepare(&format!("SELECT {} FROM rc_devices WHERE node_id = ?1", COLS))
+            .prepare(&format!(
+                "SELECT {} FROM rc_devices WHERE node_id = ?1",
+                COLS
+            ))
             .map_err(|e| e.to_string())?;
-        let mut rows = st
-            .query_map([node_id], row_to)
-            .map_err(|e| e.to_string())?;
+        let mut rows = st.query_map([node_id], row_to).map_err(|e| e.to_string())?;
         rows.next().transpose().map_err(|e| e.to_string())
     }
 
@@ -116,6 +128,37 @@ impl DataStore {
         .map(|_| ())
         .map_err(|e| e.to_string())
     }
+
+    /// 方案 D：设置「免确认直连」。`false` 即恢复每次询问（开关可逆）。
+    pub fn rc_device_trust_set(&self, node_id: &str, trusted: bool) -> Result<(), String> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE rc_devices SET trusted = ?2 WHERE node_id = ?1",
+            rusqlite::params![node_id, trusted as i64],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    /// A1：设置本地备注名。空串 = 清除备注（回落显示对端自报名）。
+    /// 🔴 刻意不写 `name`：那是对端自报的机器名，是核对身份的锚点，不许被覆盖。
+    ///
+    /// 🔴 影响 0 行必须报错：这台设备不在 `rc_devices` 表里（典型：只在同步
+    ///    `devices` 表、或已被忘记）时，静默 `Ok` 会让界面 toast「备注已保存」
+    ///    而列表毫无变化、再进来编辑框依旧是空的——「成功了但没生效」比报错难查得多。
+    pub fn rc_device_note_set(&self, node_id: &str, note: &str) -> Result<(), String> {
+        let conn = self.lock_conn();
+        let changed = conn
+            .execute(
+                "UPDATE rc_devices SET note = ?2 WHERE node_id = ?1",
+                rusqlite::params![node_id, note.trim()],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("这台设备不在远程配对列表里（可能只做了同步配对，或已被忘记），备注未保存".into());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -131,7 +174,10 @@ mod tests {
         let s = store();
         s.rc_device_pair("peer-a", "A").unwrap();
         let d = s.rc_device_get("peer-a").unwrap().unwrap();
-        assert_eq!(d.last_path, "", "还没连过就是空串——不能编一个默认值假装知道");
+        assert_eq!(
+            d.last_path, "",
+            "还没连过就是空串——不能编一个默认值假装知道"
+        );
     }
 
     #[test]
@@ -139,7 +185,10 @@ mod tests {
         let s = store();
         s.rc_device_pair("peer-a", "A").unwrap();
         s.rc_device_note_path("peer-a", "relay").unwrap();
-        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().last_path, "relay");
+        assert_eq!(
+            s.rc_device_get("peer-a").unwrap().unwrap().last_path,
+            "relay"
+        );
         // 下一次会话走了局域网直连 → 覆盖旧值
         s.rc_device_note_path("peer-a", "lan").unwrap();
         assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().last_path, "lan");
@@ -166,6 +215,74 @@ mod tests {
         s.rc_device_note_path("peer-a", "lan").unwrap();
         let list = s.rc_device_list().unwrap();
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].last_path, "lan", "列表查询的 COLS 必须带上 last_path");
+        assert_eq!(
+            list[0].last_path, "lan",
+            "列表查询的 COLS 必须带上 last_path"
+        );
+    }
+
+    /// 方案 D：默认关、可开可关（开关可逆，不是一次性决定）。
+    #[test]
+    fn trust_defaults_off_and_roundtrips() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        assert!(
+            !s.rc_device_get("peer-a").unwrap().unwrap().trusted,
+            "免确认必须默认关——这是方案 D 的红线之一"
+        );
+        s.rc_device_trust_set("peer-a", true).unwrap();
+        assert!(s.rc_device_get("peer-a").unwrap().unwrap().trusted);
+        s.rc_device_trust_set("peer-a", false).unwrap();
+        assert!(!s.rc_device_get("peer-a").unwrap().unwrap().trusted);
+    }
+
+    /// A1：备注名默认空、可写可清；清空 = 回落显示自报名。
+    #[test]
+    fn note_defaults_empty_and_roundtrips() {
+        let s = store();
+        s.rc_device_pair("peer-a", "DESKTOP-A").unwrap();
+        assert_eq!(
+            s.rc_device_get("peer-a").unwrap().unwrap().note,
+            "",
+            "没起过备注就是空串，显示层回落用 name"
+        );
+        s.rc_device_note_set("peer-a", "客厅的电脑").unwrap();
+        assert_eq!(
+            s.rc_device_get("peer-a").unwrap().unwrap().note,
+            "客厅的电脑"
+        );
+        s.rc_device_note_set("peer-a", "").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().note, "");
+    }
+
+    /// A1：改备注不覆盖自报名；对端改名（重新配对/自报）也不冲掉本地备注。
+    #[test]
+    fn note_and_name_are_independent() {
+        let s = store();
+        s.rc_device_pair("peer-a", "DESKTOP-A").unwrap();
+        s.rc_device_note_set("peer-a", "客厅的电脑").unwrap();
+        // 对端重装后自报名变了 → 重新配对写入新 name
+        s.rc_device_pair("peer-a", "DESKTOP-NEW").unwrap();
+        let d = s.rc_device_get("peer-a").unwrap().unwrap();
+        assert_eq!(d.name, "DESKTOP-NEW");
+        assert_eq!(d.note, "客厅的电脑", "配对更新只动 name，不动本地备注");
+    }
+
+    /// 🔴 影响 0 行必须报错：仅同步配对（只在 `devices` 表）或已被忘记的设备，
+    /// UPDATE 不中任何行。静默 `Ok` 会让界面 toast「备注已保存」而列表毫无变化。
+    #[test]
+    fn note_对不在表里的设备报错而不是静默成功() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        let err = s
+            .rc_device_note_set("peer-only-sync", "客厅")
+            .expect_err("不在 rc 表里就必须显形，不能假装成功");
+        assert!(
+            err.contains("不在远程配对列表"),
+            "报错要说清原因，不能只丢一个 SQL 错误：{err}"
+        );
+        // 已被忘记的设备同理
+        s.rc_device_forget("peer-a").unwrap();
+        assert!(s.rc_device_note_set("peer-a", "客厅").is_err());
     }
 }

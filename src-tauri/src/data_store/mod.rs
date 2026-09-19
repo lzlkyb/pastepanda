@@ -1,35 +1,35 @@
-mod history;
+mod action_events;
+mod ai_action;
+mod ai_feedback;
+mod ai_usage;
+mod chains;
+mod config;
+mod content_memory;
+pub mod device;
 mod group;
-mod tag;
+mod history;
+mod image_ocr;
 mod kb_inbox;
 mod kb_shadow;
 mod mcp_audit;
-pub mod device;
-pub mod rc_device;
 mod note;
-mod note_folder;
-mod note_ai;
 mod note_access;
+mod note_ai;
 mod note_daily;
-mod note_md;
+mod note_folder;
 mod note_links;
+mod note_md;
 mod note_revision;
 mod note_vault;
-mod image_ocr;
-mod snippet;
-mod config;
-mod ai_usage;
-mod ai_action;
-mod chains;
-mod ai_feedback;
 mod pref_signals;
-mod content_memory;
 mod profile;
-mod sequence_memory;
-mod action_events;
-mod sticky;
 mod quota;
+pub mod rc_device;
+mod sequence_memory;
+mod snippet;
 mod stack_templates;
+mod sticky;
+mod tag;
 // 库体检（N3）：只聚合，不新增表。
 mod note_health;
 // 每日整理（H3）：只一条只查五列的查询，同样不新增表。
@@ -56,36 +56,24 @@ mod tests_events;
 #[cfg(test)]
 mod tests_pulse;
 
+pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
 pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
 };
-pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
 // M3-④ 反链面板：只导出命令层要用的那个类型，模块仍保持私有。
-pub use note_links::BackLink;
-pub use chains::{ChainDef, ChainStepDef, MAX_CHAIN_DESC_CHARS, MAX_CHAIN_NAME_CHARS, MAX_CHAIN_STEPS};
+pub use action_events::{
+    hour_bucket, source_cat, ActionDismissal, ActionEvent, ActionEventCount, ActionEventStats,
+    ActionPin, ActionWeightRow, SceneWeightRow, ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE,
+    OUTCOME_ABANDONED, OUTCOME_COPIED, OUTCOME_PASTED,
+};
 pub use ai_feedback::{
     ActionPrefRow, AiFeedback, AiFeedbackStat, AI_FEEDBACK_RETAIN_DAYS, FEEDBACK_ACCEPTED,
     FEEDBACK_EDITED, FEEDBACK_REJECTED,
 };
-pub use pref_signals::{
-    PrefSignalTop, PREF_FEATURES, PREF_SIGNAL_MIN_COUNT, PREF_SIGNAL_RETAIN_DAYS,
+pub use chains::{
+    ChainDef, ChainStepDef, MAX_CHAIN_DESC_CHARS, MAX_CHAIN_NAME_CHARS, MAX_CHAIN_STEPS,
 };
-pub use content_memory::{
-    HistorySummary, cosine_sim, decode_vec, encode_vec, summarize_text,
-};
-pub use profile::ProfileRawStats;
-pub use sequence_memory::{SequencePattern, SequenceTransition};
-pub use action_events::{
-    ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionPin, ActionWeightRow,
-    SceneWeightRow, ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED,
-    OUTCOME_COPIED, OUTCOME_PASTED, hour_bucket, source_cat,
-};
-pub use sticky::{CalendarDay, StickyStats};
-pub use quota::{
-    QuotaBlock, QuotaInfo, RedeemResult, SignResult, generate_redeem_code, redeem_secret,
-    verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
-};
-pub use note_health::{BrokenLink, KbHealth, KbStats, TinyNote, HEALTH_DETAIL_CAP, TINY_NOTE_CHARS};
+pub use content_memory::{cosine_sim, decode_vec, encode_vec, summarize_text, HistorySummary};
 pub use daily_brief::{
     DayExcerptRow, DayMetaRow, DISTILL_EXCERPT_CHARS, DISTILL_LOOKBACK_MAX_DAYS, RECENT_META_CAP,
 };
@@ -93,6 +81,20 @@ pub use history::SearchQuery;
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
 pub use mcp_audit::{McpAuditRow, McpClientRow};
+pub use note_health::{
+    BrokenLink, KbHealth, KbStats, TinyNote, HEALTH_DETAIL_CAP, TINY_NOTE_CHARS,
+};
+pub use note_links::BackLink;
+pub use pref_signals::{
+    PrefSignalTop, PREF_FEATURES, PREF_SIGNAL_MIN_COUNT, PREF_SIGNAL_RETAIN_DAYS,
+};
+pub use profile::ProfileRawStats;
+pub use quota::{
+    generate_redeem_code, redeem_secret, verify_redeem_code, QuotaBlock, QuotaInfo, RedeemResult,
+    SignResult, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
+};
+pub use sequence_memory::{SequencePattern, SequenceTransition};
+pub use sticky::{CalendarDay, StickyStats};
 // `question_to_or_expr` 对外暴露：MCP 的 kb_search 要用它分开「问题里没拆出词」
 // 与「搜了但没命中」——对模型而言这两种的下一步完全不同。
 // `question_terms` 同理暴露（AM-2）：节级打分必须用与 FTS **同一份**切词，
@@ -102,9 +104,9 @@ pub use note::wall_ms_for_test;
 pub use note::{
     question_terms, question_to_or_expr, Note, NoteGroupCount, NoteUpdateReport, NoteViewOpts,
 };
-pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
 pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
 pub use note_daily::DailyAppend;
+pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
 pub use note_md::{
     markdown_to_note, note_to_markdown, safe_file_stem, to_markdown, MdOut, ParsedNote,
 };
@@ -830,8 +832,7 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_last_used {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE snippets ADD COLUMN last_used_at TEXT;")
+            if let Err(e) = conn.execute_batch("ALTER TABLE snippets ADD COLUMN last_used_at TEXT;")
             {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] snippets.last_used_at 列已存在，忽略: {}", e);
@@ -852,8 +853,8 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_history_id {
-            if let Err(e) = conn
-                .execute_batch("ALTER TABLE action_events ADD COLUMN history_id TEXT;")
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE action_events ADD COLUMN history_id TEXT;")
             {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] action_events.history_id 列已存在，忽略: {}", e);
@@ -867,8 +868,14 @@ impl DataStore {
         // v6.15 X3 埋点：paste_index / target_cat（两列一起加，缺一不可——
         // 只有下标没类别无法分组对比，只有类别没下标则什么也算不出来）。
         for (col, ddl) in [
-            ("paste_index", "ALTER TABLE action_events ADD COLUMN paste_index INTEGER;"),
-            ("target_cat", "ALTER TABLE action_events ADD COLUMN target_cat TEXT;"),
+            (
+                "paste_index",
+                "ALTER TABLE action_events ADD COLUMN paste_index INTEGER;",
+            ),
+            (
+                "target_cat",
+                "ALTER TABLE action_events ADD COLUMN target_cat TEXT;",
+            ),
         ] {
             let exists = conn
                 .query_row(
@@ -901,9 +908,7 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_group_id {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE history ADD COLUMN group_id TEXT;")
-            {
+            if let Err(e) = conn.execute_batch("ALTER TABLE history ADD COLUMN group_id TEXT;") {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] group_id 列已存在，忽略: {}", e);
                 } else {
@@ -923,8 +928,8 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_source {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE tags ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';")
+            if let Err(e) = conn
+                .execute_batch("ALTER TABLE tags ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';")
             {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] tags.source 列已存在，忽略: {}", e);
@@ -973,9 +978,7 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_source_icon {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE history ADD COLUMN source_icon TEXT;")
-            {
+            if let Err(e) = conn.execute_batch("ALTER TABLE history ADD COLUMN source_icon TEXT;") {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] source_icon 列已存在，忽略: {}", e);
                 } else {
@@ -995,8 +998,7 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_content_type {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE history ADD COLUMN content_type TEXT;")
+            if let Err(e) = conn.execute_batch("ALTER TABLE history ADD COLUMN content_type TEXT;")
             {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] content_type 列已存在，忽略: {}", e);
@@ -1078,9 +1080,7 @@ impl DataStore {
         //
         // rowid 与 history.rowid 对齐，检索时直接 OR 进 try_search_fts 的子查询。
         // 内容是本地 OCR 产物，与 image_ocr_cache 同级，不出本机。
-        conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS image_ocr_fts USING fts5(ocr);",
-        )?;
+        conn.execute_batch("CREATE VIRTUAL TABLE IF NOT EXISTS image_ocr_fts USING fts5(ocr);")?;
 
         // 存量回填：v6.18 之前识别过的图片，文本已在 image_ocr_cache 里但从未进索引。
         // 空索引才回填（同 history_fts 的 fts_count == 0 惯例），不必额外设迁移标记位。
@@ -1108,9 +1108,9 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_ht_source {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE history_tags ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';")
-            {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE history_tags ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';",
+            ) {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] history_tags.source 列已存在，忽略: {}", e);
                 } else {
@@ -1166,9 +1166,9 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_recopy {
-            if let Err(e) = conn
-                .execute_batch("ALTER TABLE history ADD COLUMN recopy_count INTEGER NOT NULL DEFAULT 0;")
-            {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE history ADD COLUMN recopy_count INTEGER NOT NULL DEFAULT 0;",
+            ) {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] history.recopy_count 列已存在，忽略: {}", e);
                 } else {
@@ -1191,8 +1191,7 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_hit_at {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE history ADD COLUMN search_hit_at TEXT;")
+            if let Err(e) = conn.execute_batch("ALTER TABLE history ADD COLUMN search_hit_at TEXT;")
             {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] history.search_hit_at 列已存在，忽略: {}", e);
@@ -1452,10 +1451,12 @@ impl DataStore {
             "CREATE TABLE IF NOT EXISTS rc_devices (
                  node_id    TEXT PRIMARY KEY,
                  name       TEXT NOT NULL,
+                 note       TEXT NOT NULL DEFAULT '',
                  paired_at  TEXT NOT NULL,
                  conn_state TEXT NOT NULL DEFAULT 'offline',
                  last_seen  INTEGER NOT NULL DEFAULT 0,
-                 last_path  TEXT NOT NULL DEFAULT ''
+                 last_path  TEXT NOT NULL DEFAULT '',
+                 trusted    INTEGER NOT NULL DEFAULT 0
              );",
         ) {
             log::error!("[DataStore] 建 rc_devices 表失败: {}", e);
@@ -1481,6 +1482,54 @@ impl DataStore {
                     log::warn!("[DataStore] rc_devices.last_path 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 rc_devices.last_path 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：rc_devices.note —— 用户给设备起的**本地备注名**。
+        // 与 `name`（对端自报 hostname）分开存：改名不动真名，
+        // 显示时 note 优先、name 兜底；空串 = 没起过备注。
+        let has_note: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('rc_devices') WHERE name = 'note'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_note {
+            if let Err(e) = conn
+                .execute_batch("ALTER TABLE rc_devices ADD COLUMN note TEXT NOT NULL DEFAULT '';")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] rc_devices.note 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 rc_devices.note 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：rc_devices.trusted —— 方案 D「免确认直连」。
+        // 默认 0（每次会话都要人工同意）；**逐台**开关，没有一键全开的入口，
+        // deny 优先级永远高于它（见 `rc/service.rs` 的入站门禁）。
+        let has_trusted: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('rc_devices') WHERE name = 'trusted'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_trusted {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE rc_devices ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0;",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] rc_devices.trusted 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 rc_devices.trusted 列失败: {}", e);
                     return Err(e);
                 }
             }
@@ -1699,8 +1748,8 @@ impl DataStore {
             .unwrap_or(0)
             > 0;
         if !has_note_pinned {
-            if let Err(e) =
-                conn.execute_batch("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")
+            if let Err(e) = conn
+                .execute_batch("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")
             {
                 if is_duplicate_column_error(&e) {
                     log::warn!("[DataStore] notes.pinned 列已存在，忽略: {}", e);

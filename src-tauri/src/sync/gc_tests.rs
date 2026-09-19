@@ -195,5 +195,9 @@ fn test_还原笔记会清掉墓碑() {
     let (id, _) = deleted_note(&s, "甲");
     assert_eq!(tombstone_count(&s), 1);
     s.note_restore_deleted(&id).unwrap();
-    assert_eq!(tombstone_count(&s), 0, "还原了却还留着删除意图，对端会把它又删掉");
+    assert_eq!(
+        tombstone_count(&s),
+        0,
+        "还原了却还留着删除意图，对端会把它又删掉"
+    );
 }

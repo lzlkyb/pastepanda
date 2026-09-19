@@ -151,7 +151,10 @@ fn resolve(idx: &[Indexed], case_id: &str, l: &Label) -> Result<SectionKey, Stri
             let names: Vec<&str> = hits.iter().map(|h| h.title.as_str()).take(5).collect();
             return Err(format!(
                 "[{}] 标题片段「{}」匹配到 {} 篇（{}…），请写得更具体",
-                case_id, l.note, n, names.join(" / ")
+                case_id,
+                l.note,
+                n,
+                names.join(" / ")
             ));
         }
     };
@@ -296,12 +299,7 @@ pub struct Report {
 /// 跑完整份用例集。
 ///
 /// `limits` 通常给 `&[5, 10, 20]`：5 是 `kb_search` 的默认值，20 是它的上限。
-pub fn run(
-    store: &DataStore,
-    set: &CaseSet,
-    limits: &[u32],
-    date: &str,
-) -> Result<Report, String> {
+pub fn run(store: &DataStore, set: &CaseSet, limits: &[u32], date: &str) -> Result<Report, String> {
     let idx = index_all(store)?;
     let lib_sections: usize = idx.iter().map(|n| n.sections.len()).sum();
 
@@ -406,7 +404,13 @@ impl Report {
              - 库规模：**{} 篇 / {} 节**\n\
              - 检索：出货同一条路径（`note_search_relevant` → `section_hits_for`），每篇取前 3 节\n\
              - 日期：{}\n\n",
-            self.top_k, n_cases, labeled, self.labeler, self.lib_notes, self.lib_sections, self.date
+            self.top_k,
+            n_cases,
+            labeled,
+            self.labeler,
+            self.lib_notes,
+            self.lib_sections,
+            self.date
         ));
         if self.lib_notes < 100 {
             s.push_str(&format!(
@@ -478,16 +482,26 @@ impl Report {
                 if dirty.is_empty() {
                     continue;
                 }
-                let d = mean(dirty.iter().map(|r| r.r_contaminated.unwrap() - r.r_note_major));
-                s.push_str(&format!("- limit = {}：平均掉幅 **{:+.0}pp**\n", limit, d * 100.0));
+                let d = mean(
+                    dirty
+                        .iter()
+                        .map(|r| r.r_contaminated.unwrap() - r.r_note_major),
+                );
+                s.push_str(&format!(
+                    "- limit = {}：平均掉幅 **{:+.0}pp**\n",
+                    limit,
+                    d * 100.0
+                ));
             }
             s.push('\n');
         }
 
         // —— 验收项③：AM-10 的判据。单独拎出来，不埋在分组表里。
         if let Some((_, rs)) = self.by_limit.first() {
-            let sem: Vec<&CaseResult> =
-                rs.iter().filter(|r| r.kind == QueryType::Semantic).collect();
+            let sem: Vec<&CaseResult> = rs
+                .iter()
+                .filter(|r| r.kind == QueryType::Semantic)
+                .collect();
             if !sem.is_empty() {
                 s.push_str("## 验收项③ 语义型 —— AM-10 向量层的唯一判据\n\n");
                 s.push_str(&format!(

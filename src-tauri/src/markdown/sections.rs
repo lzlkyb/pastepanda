@@ -109,11 +109,9 @@ impl std::fmt::Display for LocateError {
             LocateError::NotFound { available } if available.is_empty() => {
                 write!(f, "这篇笔记没有任何标题，只能用 index=0（全文）。")
             }
-            LocateError::NotFound { available } => write!(
-                f,
-                "找不到这一节。当前大纲：\n{}",
-                available.join("\n")
-            ),
+            LocateError::NotFound { available } => {
+                write!(f, "找不到这一节。当前大纲：\n{}", available.join("\n"))
+            }
             LocateError::Ambiguous { candidates } => write!(
                 f,
                 "这个标题路径命中了 {} 节，无法确定改哪一节。\
@@ -193,22 +191,32 @@ pub fn locate(content: &str, r: &SectionRef) -> Result<Section, LocateError> {
     let labels = || all.iter().map(Section::outline_label).collect::<Vec<_>>();
 
     match r {
-        SectionRef::Index(i) => all
-            .iter()
-            .find(|s| s.index == *i)
-            .cloned()
-            .ok_or_else(|| LocateError::NotFound { available: labels() }),
+        SectionRef::Index(i) => {
+            all.iter()
+                .find(|s| s.index == *i)
+                .cloned()
+                .ok_or_else(|| LocateError::NotFound {
+                    available: labels(),
+                })
+        }
         SectionRef::Path(p) => {
             let want = split_path(p);
             if want.is_empty() {
-                return Err(LocateError::NotFound { available: labels() });
+                return Err(LocateError::NotFound {
+                    available: labels(),
+                });
             }
             // 后缀匹配：给「数据流」能命中「架构 / 数据流」，
             // 给完整路径也能命中。AI 往往只知道自己要改哪个小标题。
-            let hit: Vec<&Section> = all.iter().filter(|s| path_ends_with(&s.path, &want)).collect();
+            let hit: Vec<&Section> = all
+                .iter()
+                .filter(|s| path_ends_with(&s.path, &want))
+                .collect();
             match hit.len() {
                 1 => Ok(hit[0].clone()),
-                0 => Err(LocateError::NotFound { available: labels() }),
+                0 => Err(LocateError::NotFound {
+                    available: labels(),
+                }),
                 _ => Err(LocateError::Ambiguous {
                     candidates: hit.iter().map(|s| s.label()).collect(),
                 }),
@@ -266,7 +274,12 @@ fn scan_headings(lines: &[&str], start: usize) -> Vec<Head> {
         }
 
         if let Some((level, text)) = atx_heading(line) {
-            heads.push(Head { line: i, span: 1, level, text });
+            heads.push(Head {
+                line: i,
+                span: 1,
+                level,
+                text,
+            });
             continue;
         }
 

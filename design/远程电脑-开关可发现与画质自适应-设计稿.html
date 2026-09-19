@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 开关可发现 + 画质自适应 设计稿</title>
+<style>
+  /* ===== 真实主题令牌（src/styles/theme.css）===== */
+  :root {
+    --app-bg: #F4F8FC;
+    --card-bg: #ffffff;
+    --card-border: #E0E4EB;
+    --border-color: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-light: #E0F2FE;
+    --accent-border: rgba(2, 132, 199, 0.35);
+    --orange: #C54A0A;
+    --orange-bg: #FFF7ED;
+    --orange-border: #FED7AA;
+    --danger: #D82525;
+    --green: #11813A;
+    --green-bg: #DCFCE7;
+    --hover: #E8ECF2;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --toggle-off-bg: #E2E8F0;
+  }
+  [data-theme="midnight"] {
+    --app-bg: #0B0B13;
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border-color: #27272A;
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-light: #1E1B4B;
+    --accent-border: rgba(129, 140, 248, 0.35);
+    --orange: #FB923C;
+    --orange-bg: #2A1B0E;
+    --danger: #F87171;
+    --green: #4ADE80;
+    --green-bg: #0F2417;
+    --hover: #27272A;
+    --section-bg: #0F0F11;
+    --toggle-off-bg: #3F3F46;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 80px;
+    background: #EEF1F5; color: var(--text-primary);
+    font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .doc { max-width: 980px; margin: 0 auto; padding: 32px 24px 0; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+  .sub { color: #55606E; font-size: 12.5px; margin-bottom: 10px; max-width: 780px; }
+  h2 {
+    font-size: 15px; margin: 36px 0 12px; font-weight: 650;
+    padding-bottom: 6px; border-bottom: 1px solid #D8DEE7;
+  }
+  h3 { font-size: 13px; margin: 22px 0 8px; font-weight: 650; color: #2A3444; }
+  p { margin: 0 0 10px; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+    background: #E7ECF2; color: #0B4A6F; padding: 1px 5px; border-radius: 4px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0 4px; }
+  th, td { border: 1px solid #D8DEE7; padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { color: #55606E; font-weight: 600; background: #E9EDF3; }
+  td.v { color: #2A3444; }
+  .bad { color: var(--danger); font-weight: 600; }
+  .good { color: var(--green); font-weight: 600; }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-light);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .warn {
+    border-left: 3px solid var(--orange); background: var(--orange-bg);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .cols { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 1 1 460px; min-width: 420px; }
+  .colHd {
+    font-size: 11.5px; font-weight: 650; letter-spacing: .04em;
+    color: #55606E; text-transform: uppercase; margin-bottom: 8px;
+  }
+  .themeBtn {
+    position: fixed; top: 14px; right: 16px; z-index: 9;
+    font: 12px/1 inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #C9D2DE; background: #fff; color: #2A3444;
+    box-shadow: 0 2px 8px rgba(15,23,42,.08);
+  }
+
+  /* ===== 应用窗口壳（1:1 复刻 dialog-box 视觉）===== */
+  .dialog-box {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 12px; overflow: hidden; max-width: 560px; margin: 0 auto;
+  }
+  .dialog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid var(--border-color);
+  }
+  .dialog-title { font-size: 14px; font-weight: 650; margin: 0; }
+  .dialog-close {
+    width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border-color);
+    background: transparent; color: var(--text-muted); cursor: default; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rbody { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ===== RemoteComputer.module.css 真实类 ===== */
+  .devList { display: flex; flex-direction: column; gap: 6px; }
+  .devItem {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 8px; background: var(--card-bg); border: 1px solid transparent;
+    position: relative;
+  }
+  .devItemRecent { background: color-mix(in srgb, var(--accent) 5%, var(--card-bg)); }
+  .av {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; font-weight: 700; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--accent) 16%, var(--card-bg)); color: var(--text-primary);
+  }
+  .info { flex: 1; min-width: 0; }
+  .name { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; }
+  .meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+  .dotOn { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .dotOff { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .tagRecent {
+    font-size: 10px; padding: 1px 7px; border-radius: 10px; margin-left: 4px;
+    border: 1px solid var(--accent-border); color: var(--accent);
+  }
+  .miniBtn, .miniBtnPri {
+    font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-primary); cursor: pointer; flex-shrink: 0;
+  }
+  .miniBtnPri { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .recentRow { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  .ml8 { margin-left: 8px; }
+
+  .qBar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    margin-top: 0; padding: 8px 10px; border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+  }
+  .qLabel { font-size: 11px; color: var(--text-muted); margin-right: 2px; }
+  .qSp { flex: 1; min-width: 8px; }
+  .qMeta { margin-left: 4px; }
+  .pill, .pillOn {
+    font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 20px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pillOn {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+    font-weight: 600;
+  }
+  .fb { font-size: 11px; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; }
+  .fbOk { background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--green); }
+  .meta { font-size: 11px; color: var(--text-muted); }
+
+  /* —— 现状 foot（不可点小字）—— */
+  .footOld { font-size: 11px; color: var(--text-muted); line-height: 1.7; }
+
+  /* ===== 1A 改后：开关行（foot 升级）===== */
+  .allowRow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+  }
+  .allowRowTxt { flex: 1; min-width: 0; }
+  .allowRowMain { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .allowRowSub { font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.55; }
+  .stateChip {
+    font-size: 10px; padding: 1px 7px; border-radius: 10px; font-weight: 600;
+  }
+  .stateChipOn { background: var(--green-bg); color: var(--green); border: 1px solid #BBF7D0; }
+  .stateChipOff { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border); }
+  /* —— Settings.module.css 真实 sToggle（44×26）—— */
+  .sToggle {
+    display: inline-block; width: 44px; height: 26px; border-radius: 13px;
+    border: none; cursor: pointer; position: relative; flex-shrink: 0;
+    transition: background 0.25s; padding: 0; vertical-align: middle;
+  }
+  .sToggle.off { background: var(--toggle-off-bg); }
+  .sToggle.on  { background: var(--green); }
+  .sToggle .sToggleThumb {
+    position: absolute; left: 0; top: 2px; width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .sToggle.off .sToggleThumb { transform: translateX(2px); }
+  .sToggle.on  .sToggleThumb { transform: translateX(20px); }
+  .allowGoSettings {
+    font: inherit; font-size: 11px; background: transparent; border: none;
+    color: var(--accent); cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+  }
+
+  /* ===== 空态引导（RcEmptyGuide 真实类）===== */
+  .emptyBox {
+    border: 1px dashed var(--border-color); border-radius: 10px;
+    padding: 20px 18px; color: var(--text-muted); font-size: 12.5px; line-height: 1.7;
+    background: var(--card-bg);
+  }
+  .emptyIcon { font-size: 20px; margin-bottom: 6px; }
+  .guideTitle { font-weight: 600; color: var(--text-primary); font-size: 14px; margin-bottom: 4px; }
+  .guideLead { font-size: 12px; color: var(--text-muted); line-height: 1.65; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .step {
+    border: 1px solid var(--border-color); border-radius: 10px; padding: 12px;
+    background: color-mix(in srgb, var(--accent) 3%, var(--card-bg));
+  }
+  .stepNum {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    margin-bottom: 8px;
+  }
+  .stepT { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .stepD { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+  .emptyActions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  /* 新增：空态内的「允许被远程」提示条（noteWarn 真实样式） */
+  .noteWarn {
+    border-left: 3px solid var(--orange);
+    background: color-mix(in srgb, var(--orange) 8%, transparent);
+    padding: 8px 12px; border-radius: 0 8px 8px 0;
+    font-size: 12.5px; line-height: 1.6;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    margin-bottom: 12px;
+  }
+  .noteWarnLink { font: inherit; font-size: 12px; border: none; background: transparent; color: var(--accent); cursor: pointer; padding: 0; font-weight: 600; }
+
+  /* ===== 会话视图（HUD 展示用，viewShell 真实类）===== */
+  .viewShell {
+    border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; background: #0d0f12;
+  }
+  .viewTop {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: rgba(255,255,255,.06); border-bottom: 1px solid rgba(255,255,255,.08);
+    font-size: 12px; color: #c8d0dc;
+  }
+  .live { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .fakeScreen {
+    height: 220px; position: relative;
+    background: linear-gradient(180deg, #1a2332 0%, #0f141c 100%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hud {
+    position: absolute; left: 10px; right: 10px; bottom: 10px;
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .hud span {
+    font-size: 10px; padding: 3px 8px; border-radius: 6px;
+    background: rgba(0,0,0,.55); color: #c8d0dc; border: 1px solid rgba(255,255,255,.08);
+  }
+  .hudAccent { border-color: rgba(107,147,255,.45) !important; color: #9db8ff !important; }
+  .hudOk { border-color: rgba(79,189,128,.4) !important; color: #7dcea0 !important; }
+  .viewShell .pill, .viewShell .pillOn {
+    background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14); color: #e6ecf5;
+  }
+  .viewShell .pillOn {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: #a8c0ff;
+  }
+  .viewShell .qBar { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.08); margin-top: 8px; }
+  .viewShell .qLabel { color: #9aa6b6; }
+  .viewShell .meta { color: #9aa6b6; }
+  .screenPlaceholder { color: #7a8699; font-size: 12px; }
+  .statusBar {
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    background: var(--card-bg); border-top: 1px solid var(--border-color);
+    font-size: 11px; color: var(--text-muted); flex-wrap: wrap;
+  }
+  .timer { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+
+  .srowLbl { font-size: 11px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+  <button class="themeBtn" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'midnight' ? '' : 'midnight'">切换深色预览</button>
+  <div class="doc">
+    <h1>远程电脑 · 开关可发现 + 画质自适应</h1>
+    <p class="sub">对应方案 1A + 2A（2026-09-18）。稿内所有组件样式取自真实源码：主题令牌 <code>theme.css</code>、对话框 <code>RemoteComputer.module.css</code>、开关 <code>Settings.module.css .sToggle</code>。开关与档位按钮可点击预览交互。</p>
+
+    <!-- ============ §1 ============ -->
+    <h2>§1 「允许被远程」从提示文字升级为开关行（方案 1A）</h2>
+    <p>现状问题：开关唯一入口在设置页；面板底部只有一行不可点小字（<code>RemoteComputerDialog.tsx:291</code>），想被控的用户看完三步引导也不知道差在哪。改后：foot 行升级为开关行，就地可开；「去设置」保留为次要路径。</p>
+
+    <div class="cols">
+      <div class="col">
+        <div class="colHd">现状 · 不可点小字</div>
+        <div class="dialog-box">
+          <div class="dialog-header"><h2 class="dialog-title" style="margin:0;font-size:14px;border:none;padding:0;">远程电脑</h2><span class="dialog-close">✕</span></div>
+          <div class="rbody">
+            <div class="devList">
+              <div class="devItem devItemRecent">
+                <div class="av">工</div>
+                <div class="info">
+                  <div class="name">工作站-4090 <span class="tagRecent">上次</span></div>
+                  <div class="meta"><span class="dotOn"></span>在线 · 已配对 3 天</div>
+                </div>
+                <button class="miniBtnPri">发起</button>
+              </div>
+              <div class="devItem">
+                <div class="av">笔</div>
+                <div class="info">
+                  <div class="name">笔记本</div>
+                  <div class="meta"><span class="dotOff"></span>离线 · 2 小时前</div>
+                </div>
+                <button class="miniBtnPri" style="opacity:.45;">发起</button>
+              </div>
+            </div>
+            <div class="recentRow">
+              <button class="miniBtn">检测在线</button>
+              <button class="miniBtn ml8">＋ 再配对一台</button>
+            </div>
+            <div class="footOld">本机「允许被远程」（关）只影响<b>别人控你</b>；发起远程不需要打开它。</div>
+            <div class="qBar">
+              <span class="qLabel">画质</span>
+              <button class="pill">流畅</button><button class="pillOn">均衡</button><button class="pill">清晰</button><button class="pill">超清</button><button class="pill">原生</button>
+              <span class="qSp"></span>
+              <span class="qLabel">画面</span>
+              <button class="pillOn">整屏</button><button class="pill">主屏</button>
+            </div>
+          </div>
+        </div>
+        <p style="margin-top:8px;font-size:12px;color:#55606E;">读得见状态，给不了动作——开关关着的用户只能猜「设置里有个东西没开」。</p>
+      </div>
+
+      <div class="col">
+        <div class="colHd">改后 · 开关行就地可开（1A）</div>
+        <div class="dialog-box">
+          <div class="dialog-header"><h2 class="dialog-title" style="margin:0;font-size:14px;border:none;padding:0;">远程电脑</h2><span class="dialog-close">✕</span></div>
+          <div class="rbody">
+            <div class="devList">
+              <div class="devItem devItemRecent">
+                <div class="av">工</div>
+                <div class="info">
+                  <div class="name">工作站-4090 <span class="tagRecent">上次</span></div>
+                  <div class="meta"><span class="dotOn"></span>在线 · 已配对 3 天</div>
+                </div>
+                <button class="miniBtnPri">发起</button>
+              </div>
+            </div>
+            <div class="recentRow">
+              <button class="miniBtn">检测在线</button>
+              <button class="miniBtn ml8">＋ 再配对一台</button>
+            </div>
+            <!-- 改后开关行 -->
+            <div class="allowRow">
+              <div class="allowRowTxt">
+                <div class="allowRowMain">允许被远程 <span class="stateChipOff" id="chipAllow">关</span></div>
+                <div class="allowRowSub" id="allowSub">关闭中：别人无法发起远程到这台电脑。你自己去控别人不受影响。</div>
+              </div>
+              <button class="sToggle off" id="tAllow" aria-label="允许被远程" onclick="toggleAllow()"><span class="sToggleThumb"></span></button>
+              <button class="allowGoSettings" title="在设置中查看能力上限、画质档、设备级限制">去设置</button>
+            </div>
+            <div class="qBar">
+              <span class="qLabel">画质</span>
+              <button class="pillOn" title="按网络在 流畅→超清 之间自动换档 · 手动点任意档即锁定">自动</button>
+              <button class="pill" title="约 6fps · 宽 960 · 适合弱网">流畅</button>
+              <button class="pill" title="约 5fps · 宽 1280 · 默认档">均衡</button>
+              <button class="pill" title="约 8fps · 宽 1920 · 适合局域网">清晰</button>
+              <button class="pill" title="约 5fps · 宽 2560（约 2.5K）· JPEG 路径">超清</button>
+              <button class="pill" title="主屏硬编原生分辨率（约 4K）· 需 GPU">原生</button>
+              <span class="qSp"></span>
+              <span class="qLabel">画面</span>
+              <button class="pillOn">整屏</button><button class="pill">主屏</button>
+              <span class="meta qMeta" id="qNow">当前：清晰（自动）</span>
+            </div>
+          </div>
+        </div>
+        <p style="margin-top:8px;font-size:12px;color:#55606E;">开关就放在设备列表下方——被控意图出现的位置。开启即时调 <code>rc_set_enabled</code>，无需进设置。画质条同屏预览 §2 的「自动」档。</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>开关行规则</b>：① 状态 chip 颜色语义——绿 = 开（别人能连进来），橙 = 关（有配对设备时才橙显，提醒「有设备但连不进来」；一台都没配过则保持中性灰，避免吓唬新用户）；② toggle 用设置页同款 <code>.sToggle</code>（44×26），两处视觉一致；③「去设置」是次级文字按钮，保留能力上限 / 画质档 / 设备级限制的完整配置入口。
+    </div>
+
+    <h3>空态引导同步补一步（吸收方案 1C）</h3>
+    <div class="dialog-box" style="max-width:560px;">
+      <div class="dialog-header"><h2 class="dialog-title" style="margin:0;font-size:14px;border:none;padding:0;">远程电脑</h2><span class="dialog-close">✕</span></div>
+      <div class="rbody">
+        <div class="emptyBox">
+          <div class="noteWarn">
+            想让别人能远程这台电脑？先在下方开关行打开「允许被远程」——<button class="noteWarnLink">立即打开</button>
+          </div>
+          <div class="emptyIcon">🖥️</div>
+          <div class="guideTitle">还没有可远程的设备</div>
+          <div class="guideLead">配对后，对方可以申请查看或控制这台电脑；你也可以去控别人的电脑。</div>
+          <div class="steps">
+            <div class="step"><div class="stepNum">1</div><div class="stepT">双方配对</div><div class="stepD">一边生成邀请码，另一边粘贴并核对指纹。</div></div>
+            <div class="step"><div class="stepNum">2</div><div class="stepT">发起申请</div><div class="stepD">选「只看」或「可控」，对方会看到确认条。</div></div>
+            <div class="step"><div class="stepNum">3</div><div class="stepT">对方同意</div><div class="stepD">被控端常驻横幅可随时结束；默认每次都要点头。</div></div>
+          </div>
+          <div class="emptyActions"><button class="miniBtnPri">远程配对设备</button></div>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:#55606E;">提示条挂在空态卡内部顶部（orange noteWarn，与「通道未启动」条同款视觉），链接按钮就地开开关；一台设备都没有时 chip 不变橙，避免空态吓人。</p>
+
+    <!-- ============ §2 ============ -->
+    <h2>§2 画质新增「自动」档（方案 2A）</h2>
+    <p>现状缺口：五档是死的，默认 <code>balanced</code> = 宽 1280 @5fps（<code>video.rs:88</code>），局域网用户不懂调就一直糊。已有的两层自适应（RTT 缩 H.264 码率、JPEG 档内 q 值浮动）只优化当前档，不换档。改后：新增「自动」档置于档位表首位并设为默认——被控端按 RTT 与帧大小在档位间带迟滞地升降；点任意具体档 = 手动锁定，语义与现状完全一致。</p>
+
+    <div class="cols">
+      <div class="col">
+        <div class="colHd">会话内 HUD · 现状 vs 改后</div>
+        <div class="viewShell">
+          <div class="viewTop"><span class="live"></span><b>工作站-4090</b><span style="opacity:.75;">只看 · 整屏</span><span style="margin-left:auto;" class="timer">00:12:36</span></div>
+          <div class="fakeScreen">
+            <span class="screenPlaceholder">（对端画面）</span>
+            <div class="hud">
+              <span class="hudOk">已连接 · 直连</span>
+              <span id="hudQOld" class="hudQOld">画质 清晰</span>
+              <span class="hudAccent">RTT 18ms</span>
+              <span>32 帧/传入</span>
+            </div>
+          </div>
+          <div class="statusBar">
+            <span>链路正常</span><span>·</span>
+            <span id="sbQOld">画质 清晰 · 手动</span><span>·</span>
+            <span>画面 整屏</span>
+          </div>
+        </div>
+        <p style="margin-top:8px;font-size:12px;color:#55606E;">现状：HUD 只报配置档名，换不换档、有没有适应，用户无感。</p>
+      </div>
+      <div class="col">
+        <div class="colHd">改后 · HUD 实时显示生效档</div>
+        <div class="viewShell">
+          <div class="viewTop"><span class="live"></span><b>工作站-4090</b><span style="opacity:.75;">只看 · 整屏</span><span style="margin-left:auto;" class="timer">00:12:36</span></div>
+          <div class="fakeScreen">
+            <span class="screenPlaceholder">（对端画面）</span>
+            <div class="hud">
+              <span class="hudOk">已连接 · 直连</span>
+              <span class="hudAccent" id="hudQNew">画质 自动 · 清晰</span>
+              <span class="hudOk">RTT 18ms</span>
+              <span>32 帧/传入</span>
+            </div>
+          </div>
+          <div class="statusBar">
+            <span>链路正常</span><span>·</span>
+            <span id="sbQNew">画质 自动 · 当前 清晰</span><span>·</span>
+            <span>画面 整屏</span>
+          </div>
+        </div>
+        <p style="margin-top:8px;font-size:12px;color:#55606E;">「自动 · 清晰」= 自动模式下当前生效档。网络变差降档时 HUD 文案跟着走（自动 · 均衡），手动锁档则只显示档名（画质 清晰）。数据源：<code>rc_session_changed</code> 事件携带 <code>active_quality</code> 字段。</p>
+      </div>
+    </div>
+
+    <h3>会话内画质条（深底形态，mode=remote）</h3>
+    <div class="viewShell" style="max-width:560px;margin:0 auto;">
+      <div style="padding:10px 12px;">
+        <div class="qBar" style="margin-top:0;">
+          <span class="qLabel">画质</span>
+          <button class="pillOn" title="按网络自动换档">自动</button>
+          <button class="pill" title="约 6fps · 宽 960">流畅</button>
+          <button class="pill" title="约 5fps · 宽 1280">均衡</button>
+          <button class="pill" title="约 8fps · 宽 1920">清晰</button>
+          <button class="pill" title="宽 2560">超清</button>
+          <button class="pill" title="主屏硬编原生分辨率">原生</button>
+          <span class="qSp"></span>
+          <span class="meta">立即作用于对方</span>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:#55606E;margin-top:8px;">「自动」在会话内照常可点（<code>InputEvent::set_quality</code> 加 <code>auto</code> 合法值）；发过去后被控端进入自适应。三处 UI（面板画质条 / 会话画质条 / 设置页画质档行）共用 <code>lib/rcQuality.ts</code> 一张表，加一档自动带出。</p>
+
+    <h3>「自动」档行为规则（初版参数，实现时可调）</h3>
+    <table>
+      <tr><th style="width:130px;">信号</th><th>动作</th><th style="width:220px;">依据（已有链路）</th></tr>
+      <tr><td class="v">RTT ≥ 200ms 持续 10s</td><td class="v">降一档（下限 流畅）</td><td class="v"><code>set_peer_rtt</code>（stream_cfg.rs:86）</td></tr>
+      <tr><td class="v">近 8 帧均值超阈值</td><td class="v">降一档</td><td class="v">JPEG <code>adapt_down</code> 统计已存在（video.rs）</td></tr>
+      <tr><td class="v">RTT &lt; 50ms 持续 30s</td><td class="v">升一档（上限 超清）</td><td class="v">同上；升档保守、降档积极</td></tr>
+      <tr><td class="v">换档冷却</td><td class="v">15s 内不再换档（防抖动）</td><td class="v">新增，迟滞逻辑自带</td></tr>
+      <tr><td class="v">用户点具体档</td><td class="v">锁定该档，本会话不再自动换</td><td class="v">现有 <code>set_quality</code> 语义不变</td></tr>
+      <tr><td class="v">用户点「自动」</td><td class="v">恢复自适应，从当前档出发</td><td class="v">同上</td></tr>
+    </table>
+    <div class="warn">
+      <b>范围控制</b>：换档只发生在<b>被控端本地</b>（改自己的 <code>StreamOpts.profile</code>），零新信令帧；对端只通过 status 字段看到当前生效档。升档上限是「超清」而不是「原生」——原生档依赖 GPU 硬编，不适合作为自动目标。
+    </div>
+
+    <!-- ============ §3 ============ -->
+    <h2>§3 改动清单</h2>
+    <table>
+      <tr><th style="width:40px;">#</th><th>改动</th><th style="width:330px;">落点</th><th style="width:110px;">端</th></tr>
+      <tr><td>1</td><td class="v">拆 RemoteComputerDialog（319 行超红线，foot 区块先拆出）</td><td class="v"><code>RemoteComputerDialog.tsx</code> → 新子组件</td><td class="v">前端</td></tr>
+      <tr><td>2</td><td class="v">foot 行 → 开关行（状态 chip + sToggle + 去设置）</td><td class="v">新子组件 + <code>rc.setEnabled</code></td><td class="v">前端</td></tr>
+      <tr><td>3</td><td class="v">空态引导加「允许被远程」提示条</td><td class="v"><code>RcEmptyGuide.tsx</code></td><td class="v">前端</td></tr>
+      <tr><td>4</td><td class="v">档位表加「自动」并设默认</td><td class="v"><code>lib/rcQuality.ts</code>（三处 UI 自动带出）</td><td class="v">前端</td></tr>
+      <tr><td>5</td><td class="v">auto 档解析 + 迟滞换档器 + 冷却</td><td class="v"><code>rc/stream_cfg.rs</code> + 推流循环</td><td class="v">Rust</td></tr>
+      <tr><td>6</td><td class="v">status / 会话事件带 <code>active_quality</code></td><td class="v"><code>rc/service.rs</code> + HUD / statusBar</td><td class="v">两端</td></tr>
+    </table>
+    <p style="font-size:12px;color:#55606E;">#2/#3/#4 纯前端（tsc/vitest 验证）；#5/#6 动 Rust（cargo test --lib + dev restart + 双机手测画质自动降档/升档）。HUD 与 statusBar 文案遵循既有档位词汇表，不新增第二套说法。</p>
+  </div>
+
+<script>
+  /* —— 开关行可点预览 —— */
+  function toggleAllow() {
+    var t = document.getElementById("tAllow");
+    var chip = document.getElementById("chipAllow");
+    var sub = document.getElementById("allowSub");
+    var on = t.classList.toggle("on");
+    t.classList.toggle("off", !on);
+    chip.className = "stateChip" + (on ? "On" : "Off");
+    chip.textContent = on ? "开" : "关";
+    sub.textContent = on
+      ? "已开启：配对设备可发起远程（每次仍需你点头）。你自己去控别人不受影响。"
+      : "关闭中：别人无法发起远程到这台电脑。你自己去控别人不受影响。";
+  }
+  /* —— 自动档演示：点档位看 HUD 跟随 —— */
+  (function () {
+    var bar = document.querySelectorAll(".qBar")[1];
+    var hud = document.getElementById("hudQNew");
+    var sb = document.getElementById("sbQNew");
+    var now = document.getElementById("qNow");
+    if (!bar) return;
+    var names = { "自动": "自动" };
+    bar.querySelectorAll(".pill, .pillOn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        bar.querySelectorAll(".pill, .pillOn").forEach(function (b) { b.className = "pill"; });
+        btn.className = "pillOn";
+        var k = btn.textContent.trim();
+        if (k === "自动") {
+          hud.textContent = "画质 自动 · 清晰";
+          sb.textContent = "画质 自动 · 当前 清晰";
+          now.textContent = "当前：清晰（自动）";
+        } else {
+          hud.textContent = "画质 " + k;
+          sb.textContent = "画质 " + k + " · 手动";
+          now.textContent = "当前：" + k + "（手动锁定）";
+        }
+      });
+    });
+  })();
+</script>
+</body>
+</html>

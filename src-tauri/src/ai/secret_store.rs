@@ -25,7 +25,10 @@ fn configured_providers_compute(app_dir: &Path) -> Vec<String> {
         .filter_map(|e| e.ok())
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            let id = name.strip_prefix("ai_key_")?.strip_suffix(".bin")?.to_string();
+            let id = name
+                .strip_prefix("ai_key_")?
+                .strip_suffix(".bin")?
+                .to_string();
             // 真去解一次：文件在但解不开（拷自其他机器）不算已配置
             if has_key(app_dir, &id) {
                 Some(id)
@@ -200,7 +203,12 @@ mod tests {
         let dir = temp_dir("round_trip");
         assert!(!has_key(&dir, "deepseek"), "初始应无密钥");
 
-        save_key(&dir, "deepseek", concat!("sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA")).unwrap();
+        save_key(
+            &dir,
+            "deepseek",
+            concat!("sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA"),
+        )
+        .unwrap();
         assert!(has_key(&dir, "deepseek"));
         assert_eq!(
             load_key(&dir, "deepseek").unwrap().as_deref(),

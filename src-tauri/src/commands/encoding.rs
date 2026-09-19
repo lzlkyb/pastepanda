@@ -103,7 +103,11 @@ pub fn batch_convert_encoding(
 }
 
 /// 内部转换逻辑
-fn do_convert(path: &str, target_encoding: &str, remove_bom: bool) -> Result<Option<String>, String> {
+fn do_convert(
+    path: &str,
+    target_encoding: &str,
+    remove_bom: bool,
+) -> Result<Option<String>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("读取文件失败: {e}"))?;
 
     // 检测当前编码。这里只需要剥掉 BOM 后的字节；
@@ -139,10 +143,7 @@ fn do_convert(path: &str, target_encoding: &str, remove_bom: bool) -> Result<Opt
     // 编码为目标格式
     let (encoded, _, enc_errors) = target_enc.encode(&decoded);
     if enc_errors {
-        return Err(format!(
-            "内容包含无法转换为 {} 的字符",
-            target_enc.name()
-        ));
+        return Err(format!("内容包含无法转换为 {} 的字符", target_enc.name()));
     }
 
     // 备份原文件

@@ -284,8 +284,11 @@ impl DataStore {
         let cutoff = (chrono::Local::now() - chrono::Duration::days(retain_days.max(1) as i64))
             .format("%Y-%m-%d 00:00:00")
             .to_string();
-        conn.execute("DELETE FROM ai_usage_log WHERE created_at < ?1", params![cutoff])
-            .map(|n| n as u32)
-            .map_err(|e| e.to_string())
+        conn.execute(
+            "DELETE FROM ai_usage_log WHERE created_at < ?1",
+            params![cutoff],
+        )
+        .map(|n| n as u32)
+        .map_err(|e| e.to_string())
     }
 }

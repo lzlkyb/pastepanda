@@ -56,7 +56,10 @@ fn validated_inbox_view(view: Option<InboxViewOpts>) -> InboxViewOpts {
         log::warn!("[KbInbox] 未知入选原因 `{}`，当作不筛", v.reason);
     }
     if !TRI.contains(&v.pasted.as_str()) {
-        log::warn!("[KbInbox] 筛选 pasted 的值 `{}` 不是三态之一，当作不筛", v.pasted);
+        log::warn!(
+            "[KbInbox] 筛选 pasted 的值 `{}` 不是三态之一，当作不筛",
+            v.pasted
+        );
     }
     v
 }

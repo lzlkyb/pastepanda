@@ -25,7 +25,9 @@ impl DataStore {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     color: row.get(2)?,
-                    source: row.get::<_, String>(3).unwrap_or_else(|_| "manual".to_string()),
+                    source: row
+                        .get::<_, String>(3)
+                        .unwrap_or_else(|_| "manual".to_string()),
                     created_at: row.get(4)?,
                 })
             })
@@ -202,7 +204,11 @@ impl DataStore {
         }
     }
 
-    pub fn remove_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
+    pub fn remove_item_tags(
+        &self,
+        history_ids: &[String],
+        tag_ids: &[String],
+    ) -> Result<u32, String> {
         let conn = self.lock_conn();
         let placeholders_h: Vec<String> = history_ids
             .iter()
@@ -226,12 +232,18 @@ impl DataStore {
         for id in tag_ids {
             params_vec.push(Box::new(id.clone()));
         }
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
-        let affected = conn.execute(&sql, param_refs.as_slice()).map_err(|e| e.to_string())?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let affected = conn
+            .execute(&sql, param_refs.as_slice())
+            .map_err(|e| e.to_string())?;
         Ok(affected as u32)
     }
 
-    pub fn get_items_with_tags(&self, history_ids: &[String]) -> Result<Vec<(String, Vec<Tag>)>, String> {
+    pub fn get_items_with_tags(
+        &self,
+        history_ids: &[String],
+    ) -> Result<Vec<(String, Vec<Tag>)>, String> {
         if history_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -253,7 +265,8 @@ impl DataStore {
         for id in history_ids {
             params_vec.push(Box::new(id.clone()));
         }
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(param_refs.as_slice(), |row| {
@@ -263,7 +276,9 @@ impl DataStore {
                         id: row.get(1)?,
                         name: row.get(2)?,
                         color: row.get(3)?,
-                        source: row.get::<_, String>(4).unwrap_or_else(|_| "manual".to_string()),
+                        source: row
+                            .get::<_, String>(4)
+                            .unwrap_or_else(|_| "manual".to_string()),
                         created_at: row.get(5)?,
                     },
                 ))

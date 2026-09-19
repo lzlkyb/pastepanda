@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程电脑 · 工作台设计稿 v4（质感版）</title>
+<style>
+/* ================= 文档壳 ================= */
+:root{
+  --doc-bg:#F5F9FF; --doc-line:#E4EBF5;
+  --ink:#0F172A; --ink2:#495565; --ink3:#627083; /* 全部 ≥4.5:1 */
+  --accent:#0284C7; --accent-deep:#0369A1; --cyan:#06B6D4;
+  --ok:#15803D; --warn:#B45309; --warn-dot:#D97706;
+  --danger:#D64545; --danger-fg:#B42323;
+  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+  --line:#E8EEF7;
+  --line-strong:rgba(2,132,199,.38);
+  --glass:rgba(255,255,255,.78);
+  --glass-line:rgba(255,255,255,.75);
+  --shadow-card:0 10px 30px rgba(27,76,164,.08),0 1px 3px rgba(27,76,164,.04);
+  --shadow-pop:0 14px 36px rgba(15,23,42,.16);
+  --glow:0 8px 20px rgba(2,132,199,.32);
+  --pill-on-bg:#DCF2FE; --pill-on-fg:#0369A1;
+  --tag-bg:#EDF5FD;
+  --desk1:#1A2332; --desk2:#0F141C;
+  --hud-fg:#C7D6E8; --hud-dim:#7E93A8; --tool:#A8BACD;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(ellipse 900px 420px at 14% -8%, rgba(2,132,199,.10), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 90% 0%, rgba(109,40,217,.05), transparent 50%),
+    linear-gradient(135deg,#F5F9FF 0%,#EDF4FF 45%,#EAF3FF 100%);
+  color:var(--ink);
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  padding:26px 18px 70px;
+}
+.doc{max-width:1260px;margin:0 auto}
+h1{font-size:21px;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+h1 .badge{font-size:11px;font-weight:600;color:var(--pill-on-fg);background:linear-gradient(135deg,#E0F2FE,#CBE9FC);
+  border:1px solid #A5DCF7;border-radius:999px;padding:2px 9px}
+.sub{color:var(--ink3);font-size:12.5px;margin:7px 0 3px;max-width:980px}
+h2{font-size:15px;margin:38px 0 10px;display:flex;align-items:center;gap:9px}
+h2::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,var(--accent),var(--cyan))}
+h2 .hint{font-size:11.5px;font-weight:400;color:var(--ink3)}
+.note{font-size:12px;color:var(--ink3);margin:6px 0 12px;max-width:980px}
+.note b{color:var(--ink2)}
+kbd{font:11px/1 var(--mono);border:1px solid var(--doc-line);border-bottom-width:2px;border-radius:4px;padding:1px 5px;background:#fff;color:var(--ink2)}
+svg{flex:0 0 auto}
+
+/* ================= 应用框架 ================= */
+.app{
+  width:1160px;max-width:100%;height:700px;display:flex;overflow:hidden;
+  border:1px solid rgba(255,255,255,.9);border-radius:18px;
+  background:linear-gradient(135deg,#F6FAFF 0%,#EDF4FF 55%,#EAF3FF 100%);
+  box-shadow:0 30px 70px rgba(15,42,90,.16),0 4px 14px rgba(15,23,42,.06);
+  margin:14px 0 8px;
+}
+
+/* 左侧导航 280 */
+.sidebar{
+  width:280px;flex:0 0 280px;
+  background:linear-gradient(180deg,rgba(255,255,255,.82),rgba(255,255,255,.62));
+  backdrop-filter:blur(20px);
+  border-right:1px solid var(--line);
+  padding:20px 14px;display:flex;flex-direction:column;gap:16px;
+}
+.logo{display:flex;align-items:center;gap:12px;padding:2px 4px}
+.logo-icon{width:42px;height:42px;border-radius:13px;
+  background:linear-gradient(135deg,#38BDF8,#0284C7 55%,#0369A1);
+  box-shadow:var(--glow);
+  display:grid;place-items:center;color:#fff}
+.logo h2{margin:0;font-size:15px;color:var(--ink)}
+.logo .lv{font-size:10.5px;color:var(--ink3);line-height:1.3;margin-top:1px}
+.nav{display:flex;flex-direction:column;gap:6px}
+.nav-item{
+  display:flex;align-items:center;gap:11px;width:100%;
+  padding:11px 13px;border-radius:12px;border:1px solid transparent;background:none;
+  font:500 13px/1.4 inherit;color:var(--ink2);cursor:pointer;text-align:left;
+}
+.nav-item svg{color:var(--ink3)}
+.nav-item:hover{background:rgba(2,132,199,.07);color:var(--accent)}
+.nav-item:hover svg{color:var(--accent)}
+.nav-item.active{
+  background:linear-gradient(135deg,#0369A1,#0284C7);color:#fff;font-weight:600;
+  box-shadow:var(--glow);
+}
+.nav-item.active svg{color:#fff}
+.sideSp{flex:1}
+.sideFoot{font-size:11px;color:var(--ink3);border-top:1px dashed var(--line);padding-top:12px;line-height:1.7}
+
+/* 主列 */
+.mainCol{flex:1;min-width:0;display:flex;flex-direction:column;padding:16px 18px;gap:14px}
+
+/* 顶栏 */
+.topbar{
+  height:60px;flex:0 0 60px;
+  background:var(--glass);backdrop-filter:blur(20px);
+  border:1px solid var(--glass-line);border-radius:16px;
+  box-shadow:var(--shadow-card);
+  display:flex;align-items:center;gap:12px;padding:0 18px;
+}
+.topbar .tt{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.topbar .hint{font-size:11.5px;color:var(--ink3);font-weight:400}
+.topSp{flex:1}
+.chan{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px;border-radius:999px;
+  font-size:11px;font-weight:500;background:rgba(21,128,61,.08);color:var(--ok);border:1px solid rgba(21,128,61,.25)}
+.chan .d{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+.chan.off{background:rgba(98,112,131,.08);color:var(--ink3);border-color:rgba(98,112,131,.25)}
+.chan.off .d{background:var(--ink3)}
+.chan.session{background:rgba(2,132,199,.1);color:var(--pill-on-fg);border-color:rgba(2,132,199,.35)}
+.chan.session .d{background:var(--accent)}
+.icoBtn{width:26px;height:26px;border-radius:8px;border:1px solid transparent;background:transparent;
+  display:grid;place-items:center;color:var(--ink3);cursor:pointer}
+.icoBtn:hover{background:rgba(2,132,199,.08);color:var(--accent);border-color:var(--line-strong)}
+.icoBtn:focus-visible,.nav-item:focus-visible,.tag:focus-visible,.btn:focus-visible,
+.playBtn:focus-visible,.tg:focus-visible,.linkBtn:focus-visible,.menuBtn:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+
+/* 内容行 */
+.content{flex:1;min-height:0;display:flex;gap:16px}
+
+/* 左卡片列 360 */
+.left-panel{width:360px;flex:0 0 360px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.card{
+  background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.78));
+  backdrop-filter:blur(20px);
+  border:1px solid var(--glass-line);border-radius:20px;padding:15px 18px;
+  box-shadow:var(--shadow-card);
+}
+.card-title{font-size:14px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:7px;margin-bottom:10px}
+.card-title svg{color:var(--accent)}
+.card-title .n{font:10.5px/1 var(--mono);color:var(--ink3);background:rgba(98,112,131,.1);border-radius:999px;padding:2px 6px}
+.card-title .sp{flex:1}
+.cardDesc{font-size:11.5px;color:var(--ink3);margin:-4px 0 10px}
+.switchRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.switchRow .lbl{font-size:12.5px;color:var(--ink2)}
+.chip{font-size:11px;font-weight:500;border-radius:999px;padding:1px 8px}
+.chip.on{background:rgba(21,128,61,.1);color:var(--ok);border:1px solid rgba(21,128,61,.3)}
+.chip.offc{background:rgba(98,112,131,.1);color:var(--ink3);border:1px solid rgba(98,112,131,.3)}
+
+/* 开关 */
+.tg{width:46px;height:27px;border-radius:999px;position:relative;flex:0 0 46px;border:1px solid transparent;
+  display:flex;align-items:center;font-size:11px;font-weight:500;cursor:pointer}
+.tg .th{position:absolute;top:2px;left:2px;width:21px;height:21px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 4px rgba(15,23,42,.3);transition:left .22s ease}
+.tg.on{background:linear-gradient(135deg,#0284C7,#0369A1);color:#fff;justify-content:flex-start;padding-left:25px;
+  box-shadow:0 4px 10px rgba(2,132,199,.25)}
+.tg.on .th{left:23px}
+.tg.offt{background:#CBD5E1;color:#fff;justify-content:flex-end;padding-right:25px}
+
+/* 画质标签 */
+.tags{display:flex;flex-wrap:wrap;gap:8px}
+.tag{padding:5px 13px;border-radius:999px;border:1px solid transparent;
+  font:500 12px/1.4 inherit;cursor:pointer;background:var(--tag-bg);color:var(--accent-deep)}
+.tag:hover{border-color:var(--line-strong)}
+.tag.active{background:linear-gradient(135deg,#0369A1,#0284C7);color:#fff;
+  box-shadow:0 6px 14px rgba(2,132,199,.28)}
+.tagHint{font-size:11px;color:var(--ink3);margin-top:9px}
+.tagHint b{color:var(--ink2);font-weight:600}
+
+/* 设备卡 */
+.devList{display:flex;flex-direction:column;gap:8px}
+.device{
+  display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:14px;
+  background:rgba(255,255,255,.9);border:1px solid transparent;cursor:pointer;position:relative;
+}
+.device:hover,.device:focus-visible{border-color:var(--glass-line);box-shadow:0 6px 18px rgba(2,132,199,.1)}
+.device.inSession{background:rgba(2,132,199,.05);border-color:rgba(2,132,199,.3)}
+.av{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;font-size:14px;font-weight:700;flex:0 0 40px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
+.device-info{flex:1;min-width:0}
+.device-name{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.meta{font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:5px;margin-top:2px}
+.fp{font:10.5px/1.4 var(--mono);color:var(--ink3)}
+.tag.mini{font-size:10.5px;font-weight:500;border-radius:999px;padding:0 6px;line-height:15px}
+.tag.last{background:rgba(217,119,6,.12);color:var(--warn)}
+.tag.rc{background:rgba(2,132,199,.1);color:var(--pill-on-fg)}
+.tag.live{background:rgba(21,128,61,.1);color:var(--ok)}
+.tag.denied{background:rgba(214,69,69,.1);color:var(--danger-fg)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:0 0 7px}
+.dot.live{background:var(--ok)}
+.dot.recent{background:var(--warn-dot)}
+.dot.seen{background:#94A3B8}
+.acts{display:flex;gap:4px;align-items:center}
+.playBtn{width:36px;height:36px;border-radius:12px;border:1px solid transparent;cursor:pointer;
+  background:linear-gradient(135deg,#0284C7,#0369A1);color:#fff;display:grid;place-items:center;
+  box-shadow:0 6px 14px rgba(2,132,199,.28)}
+.playBtn:hover{filter:brightness(1.08)}
+.playBtn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.pairRow{border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;display:flex;justify-content:center}
+.linkBtn{font-size:11.5px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;
+  display:inline-flex;align-items:center;gap:4px}
+.linkBtn:hover{text-decoration:underline}
+
+/* 工作区 */
+.workspace{
+  flex:1;min-width:0;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(240,247,255,.96));
+  border:1px solid rgba(255,255,255,.85);border-radius:24px;
+  box-shadow:var(--shadow-card);
+  display:flex;flex-direction:column;
+}
+.workspace::before{
+  content:"";position:absolute;width:640px;height:640px;border-radius:50%;
+  background:radial-gradient(circle,rgba(2,132,199,.14),transparent 68%);
+  top:-180px;right:-140px;pointer-events:none;
+}
+.workspace::after{
+  content:"";position:absolute;width:420px;height:420px;border-radius:50%;
+  background:radial-gradient(circle,rgba(109,40,217,.06),transparent 70%);
+  bottom:-160px;left:-120px;pointer-events:none;
+}
+.center-box{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;position:relative;z-index:2;padding:24px}
+.monitor{width:190px;height:124px;border-radius:20px;position:relative;
+  background:linear-gradient(135deg,#38BDF8,#0284C7 58%,#0369A1);
+  box-shadow:0 24px 60px rgba(2,132,199,.32);
+  display:grid;place-items:center;color:#fff}
+.monitor::after{content:"";position:absolute;left:50%;transform:translateX(-50%);
+  bottom:-18px;width:72px;height:10px;border-radius:999px;background:#A9C9E8}
+.monitor .sheen{position:absolute;inset:0;border-radius:20px;
+  background:linear-gradient(115deg,rgba(255,255,255,.3),transparent 42%)}
+.emptyT{margin-top:42px;font-size:22px;font-weight:700;color:var(--ink);letter-spacing:.2px}
+.emptyD{margin-top:10px;font-size:12.5px;color:var(--ink3);max-width:430px}
+.tip{margin-top:32px;display:flex;align-items:center;gap:9px;background:#fff;
+  padding:12px 22px;border-radius:14px;border:1px solid var(--glass-line);
+  box-shadow:0 12px 30px rgba(15,23,42,.06);font-size:12px;color:var(--ink2)}
+.tip svg{color:var(--accent)}
+.tip b{color:var(--accent-deep);font-weight:600}
+
+/* 会话态：画布 + 会话条 */
+.sessionWrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding:12px;position:relative;z-index:2}
+.fakeScreen{
+  flex:1;min-height:0;border-radius:16px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,var(--desk1),var(--desk2));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 8px 24px rgba(15,23,42,.18);
+  display:flex;align-items:center;justify-content:center;
+}
+.fakeScreen::before{content:"";position:absolute;inset:0;opacity:.35;
+  background:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 46px),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px 46px);}
+.viewOnlyMark{position:relative;z-index:3;display:flex;align-items:center;gap:8px;
+  color:var(--hud-dim);font-size:12px;letter-spacing:2px}
+.hud{position:absolute;top:10px;left:10px;z-index:6;display:flex;gap:6px;flex-wrap:wrap;max-width:80%}
+.hudC{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:7px;
+  background:rgba(9,17,28,.62);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);
+  font-size:10.5px;color:var(--hud-fg)}
+.hudC svg{color:var(--hud-dim)}
+.hudC b{font-weight:500}
+.viewTools{position:absolute;top:10px;right:10px;z-index:6;display:flex;align-items:center;gap:2px;
+  background:rgba(9,17,28,.62);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.1);border-radius:9px;padding:3px}
+.vt{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--tool);cursor:pointer;position:relative;border:none;background:none}
+.vt:hover{background:rgba(255,255,255,.1);color:#fff}
+.vt.on{background:rgba(2,132,199,.35);color:#fff}
+.vt .vtt{position:absolute;top:30px;right:0;background:rgba(9,17,28,.9);color:#E7EEF6;font-size:10.5px;
+  padding:3px 7px;border-radius:5px;white-space:nowrap;display:none}
+.vt:hover .vtt{display:block}
+.deskBar{position:absolute;left:0;right:0;bottom:0;height:32px;z-index:5;
+  background:rgba(9,17,28,.72);backdrop-filter:blur(10px);
+  display:flex;align-items:center;gap:14px;padding:0 12px;
+  border-top:1px solid rgba(255,255,255,.08);border-radius:0 0 16px 16px;
+  font-size:10.5px;color:var(--hud-dim)}
+.deskBar .di{display:flex;align-items:center;gap:5px}
+.deskBar b{color:var(--hud-fg);font-weight:500}
+.deskSp{flex:1}
+.peerCursor{position:absolute;z-index:7;color:#38BDF8;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+
+.sessionBar{flex:0 0 46px;display:flex;align-items:center;gap:6px;padding:0 10px;
+  background:var(--glass);backdrop-filter:blur(16px);
+  border:1px solid var(--glass-line);border-radius:14px;box-shadow:var(--shadow-card)}
+.sbLabel{font-size:11px;color:var(--ink3);flex:0 0 auto}
+.menuBtn{height:26px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:#fff;
+  font-size:11px;color:var(--ink2);display:inline-flex;align-items:center;gap:5px;cursor:pointer;
+  flex:0 0 auto;white-space:nowrap}
+.menuBtn:hover{border-color:var(--line-strong)}
+.menuBtn b{font-weight:600;color:var(--ink)}
+.kbChip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:8px;
+  font-size:11px;background:rgba(98,112,131,.08);color:var(--ink3);border:1px solid var(--line);
+  flex:0 0 auto;white-space:nowrap}
+.sbSp{flex:1}
+.sbStatus{font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:5px;flex:0 0 auto;white-space:nowrap}
+.btn{height:26px;padding:0 12px;border-radius:8px;font-size:11.5px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:#fff;color:var(--ink2);
+  flex:0 0 auto;white-space:nowrap}
+.btn:hover{border-color:var(--line-strong);color:var(--accent);background:rgba(2,132,199,.04)}
+.btn.pri{background:linear-gradient(135deg,#0284C7,#0369A1);border-color:transparent;color:#fff;
+  box-shadow:0 4px 10px rgba(2,132,199,.25)}
+.btn.pri:hover{filter:brightness(1.08);color:#fff}
+.btn.dangerT{background:rgba(214,69,69,.08);border-color:rgba(214,69,69,.35);color:var(--danger-fg)}
+.btn.dangerT:hover{background:rgba(214,69,69,.16)}
+
+/* 出站横幅（顶栏下方挂载位） */
+.banner{display:flex;align-items:center;gap:10px;height:40px;padding:0 16px;flex:0 0 40px;
+  background:linear-gradient(90deg,rgba(2,132,199,.1),rgba(2,132,199,.05));
+  border:1px solid rgba(2,132,199,.2);border-left:3px solid var(--accent);
+  border-radius:12px;color:var(--pill-on-fg);font-size:12.5px;font-weight:600}
+.banner .pill{font-size:11px;font-weight:500;border-radius:999px;padding:1px 8px;background:var(--accent);color:#fff}
+.banner .bMeta{font-size:11px;font-weight:400;color:var(--ink3)}
+.banner .liveB{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.6s ease infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ================= 页面态（设备列表 / 会话记录 / 设置） ================= */
+.pageWrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding:14px 16px;position:relative;z-index:2;overflow-y:auto}
+.pageBar{display:flex;align-items:center;gap:8px}
+.searchIpt{height:30px;flex:0 0 260px;border:1px solid var(--line);border-radius:10px;background:#fff;
+  box-shadow:inset 0 1px 2px rgba(27,76,164,.04);
+  padding:0 11px;font-size:12px;color:var(--ink3);display:flex;align-items:center;gap:7px}
+.listHead{display:flex;align-items:center;gap:10px;padding:0 13px;font-size:11px;color:var(--ink3)}
+.devMenu{
+  position:absolute;right:8px;top:46px;width:192px;z-index:30;
+  background:#fff;border:1px solid var(--glass-line);border-radius:12px;padding:5px;
+  box-shadow:var(--shadow-pop);
+}
+.devMenu button{display:block;width:100%;text-align:left;font-size:12px;color:var(--ink2);
+  background:none;border:none;border-radius:8px;padding:6px 9px;cursor:pointer}
+.devMenu button:hover{background:rgba(2,132,199,.07);color:var(--accent)}
+.devMenu .mDim{font-size:11px;color:var(--ink3);padding:5px 9px 2px}
+.devMenu .mSep{height:1px;background:var(--line);margin:4px 6px}
+.devMenu button.dangerT{color:var(--danger-fg)}
+.devMenu button.dangerT:hover{background:rgba(214,69,69,.08)}
+.renameIpt{height:27px;border:1px solid var(--accent);border-radius:8px;background:#fff;
+  font:600 12.5px/1.4 inherit;color:var(--ink);padding:0 9px;width:184px;outline:none;
+  box-shadow:0 0 0 3px rgba(2,132,199,.16)}
+.histRow{display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:14px;
+  background:rgba(255,255,255,.9);border:1px solid transparent}
+.histRow:hover{border-color:var(--glass-line);box-shadow:0 6px 18px rgba(2,132,199,.1)}
+.dirPill{font-size:10.5px;font-weight:600;border-radius:999px;padding:1px 8px;flex:0 0 auto}
+.dirPill.out{background:rgba(2,132,199,.1);color:var(--pill-on-fg);border:1px solid rgba(2,132,199,.3)}
+.dirPill.in{background:rgba(21,128,61,.1);color:var(--ok);border:1px solid rgba(21,128,61,.3)}
+.histName{flex:1;min-width:0;font-size:12.5px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.histDur{font:11px/1.4 var(--mono);color:var(--ink2);flex:0 0 58px;text-align:right}
+.histTime{font-size:11px;color:var(--ink3);flex:0 0 118px}
+.histRes{font-size:11px;display:flex;align-items:center;gap:4px;flex:0 0 96px}
+.histRes.ok{color:var(--ok)}
+.histRes.warn{color:var(--warn)}
+.histRes.err{color:var(--danger-fg)}
+.histRes.cancel{color:var(--ink3)}
+.setSec{background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.78));
+  border:1px solid var(--glass-line);border-radius:18px;padding:4px 18px;box-shadow:var(--shadow-card)}
+.setRow{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.setRow:last-child{border-bottom:none}
+.setLbl{flex:1;min-width:0}
+.setLbl b{display:block;font-size:12.5px;font-weight:600;color:var(--ink)}
+.setLbl span{display:block;font-size:11px;color:var(--ink3);margin-top:1px}
+.monoIpt{font:12px/1.4 var(--mono);color:var(--ink);background:#fff;border:1px solid var(--line);
+  border-radius:8px;height:27px;padding:0 9px;display:inline-flex;align-items:center}
+
+/* ================= 微动画层 ================= */
+@keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@keyframes ping{0%{box-shadow:0 0 0 0 color-mix(in srgb,currentColor 45%,transparent)}70%,100%{box-shadow:0 0 0 6px transparent}}
+@keyframes floatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes glowBreath{0%,100%{box-shadow:0 24px 60px rgba(2,132,199,.32),0 0 0 0 rgba(56,189,248,.30)}50%{box-shadow:0 24px 60px rgba(2,132,199,.32),0 0 0 16px rgba(56,189,248,0)}}
+@keyframes breathe{0%,100%{opacity:.92}50%{opacity:.5}}
+@keyframes cursorDrift{from{transform:translate(0,0)}to{transform:translate(26px,-14px)}}
+
+/* 入场：侧栏 → 顶栏 → 卡片列逐卡 → 工作区，一次性播完 */
+.app .sidebar{animation:riseIn .45s ease both}
+.app .topbar{animation:riseIn .45s ease .06s both}
+.app .banner{animation:riseIn .4s ease .12s both}
+.app .left-panel .card{animation:riseIn .45s ease both}
+.app .left-panel .card:nth-child(1){animation-delay:.1s}
+.app .left-panel .card:nth-child(2){animation-delay:.16s}
+.app .left-panel .card:nth-child(3){animation-delay:.22s}
+.app .workspace{animation:popIn .5s ease .14s both}
+.app .devMenu{transform-origin:top right;animation:popIn .18s ease .3s both}
+.app .hudC{animation:popIn .3s ease both}
+.app .hud .hudC:nth-child(2){animation-delay:.07s}
+.app .hud .hudC:nth-child(3){animation-delay:.14s}
+.app .hud .hudC:nth-child(4){animation-delay:.21s}
+
+/* hover 微反馈：面层轻浮起，按下回落 */
+.card,.setSec,.histRow,.device,.nav-item,.btn,.menuBtn,.tag,.playBtn,.icoBtn,.vt,.tg,.tip{
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,
+    background-color .18s ease,color .18s ease,filter .18s ease}
+.card:hover,.setSec:hover{transform:translateY(-2px);
+  box-shadow:0 16px 40px rgba(27,76,164,.13),0 1px 3px rgba(27,76,164,.05)}
+.histRow:hover,.device:hover{transform:translateY(-1px)}
+.btn:hover,.menuBtn:hover{transform:translateY(-1px)}
+.btn:active,.menuBtn:active,.tag:active,.playBtn:active{transform:scale(.97)}
+.playBtn:hover{transform:translateY(-1px) scale(1.05);filter:brightness(1.08)}
+.playBtn:disabled{transform:none}
+.nav-item:not(.active):hover{transform:translateX(2px)}
+.tg .th{transition:left .22s ease}
+
+/* 状态呼吸：在线点雷达扩散、等待画面浮动 + 辉光呼吸、光标漂移 */
+.dot.live{animation:ping 2.2s ease-out infinite}
+.chan .d{animation:ping 2.2s ease-out infinite}
+.monitor{animation:floatY 3.4s ease-in-out infinite,glowBreath 3.4s ease-in-out infinite}
+.viewOnlyMark{animation:breathe 2.6s ease-in-out infinite}
+.peerCursor{animation:cursorDrift 5.5s ease-in-out infinite alternate}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+
+/* ================= 规格区 ================= */
+table.tok{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+table.tok th,table.tok td{border:1px solid var(--doc-line);padding:5px 8px;text-align:left;vertical-align:middle}
+table.tok th{background:#F4F8FC;font-weight:600;color:var(--ink2)}
+table.tok td.mono{font-family:var(--mono);font-size:11px}
+.specCard{border:1px solid var(--doc-line);border-radius:14px;background:#fff;padding:14px 16px;max-width:980px;
+  box-shadow:0 10px 30px rgba(27,76,164,.06)}
+ul.layoutSpec{list-style:none;margin-top:6px;display:flex;flex-direction:column;gap:5px}
+ul.layoutSpec li{display:flex;gap:8px;font-size:12px;color:var(--ink2);align-items:baseline}
+ul.layoutSpec .k{font:11px/1.6 var(--mono);color:var(--accent-deep);flex:0 0 178px}
+.footNote{margin-top:28px;font-size:11.5px;color:var(--ink3);border-top:1px solid var(--doc-line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>远程电脑 · 工作台设计稿 v4 <span class="badge">质感版</span></h1>
+<p class="sub">v3 的完整五页结构 × 「远程电脑最新设计稿」的质感层 + 微动画层：柔和蓝天渐变底、大圆角玻璃面、彩色辉光投影；入场级联、hover 浮起、状态呼吸三类动效。文字对比度 / 语义化 / 图标纪律全部沿用规范，动画全部尊重 prefers-reduced-motion。</p>
+
+<!-- ============================================================
+     A. 空态（等待远程会话连接）
+============================================================ -->
+<h2>A · 空态 <span class="hint">通道已开 · 等待会话 —— 参照稿的「等待连接」主画面</span></h2>
+<div class="app">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="logo">
+      <span class="logo-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </span>
+      <div>
+        <h2>远程电脑</h2>
+        <div class="lv">PastePanda 工作台</div>
+      </div>
+    </div>
+    <nav class="nav" aria-label="功能导航">
+      <button class="nav-item active" aria-current="page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        远程电脑
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        设备列表
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        会话记录
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        设置
+      </button>
+    </nav>
+    <div class="sideSp"></div>
+    <div class="sideFoot">局域网直连 · 端到端加密 · 内容不出本机。</div>
+  </aside>
+
+  <div class="mainCol">
+    <div class="topbar">
+      <span class="tt">远程电脑 <span class="hint">局域网直连 · 端到端加密</span></span>
+      <span class="topSp"></span>
+      <span class="chan"><span class="d"></span>远程通道已开启</span>
+      <button class="icoBtn" aria-label="工作台设置" title="工作台设置">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+
+    <div class="content">
+      <div class="left-panel">
+        <section class="card" aria-labelledby="t-perm">
+          <div class="card-title" id="t-perm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+            允许被远程
+          </div>
+          <p class="cardDesc">开启后，已配对设备可申请连接；每次连接都需你在本机确认。</p>
+          <div class="switchRow">
+            <span class="lbl">只影响别人能否控制你</span>
+            <span class="chip on">已开</span>
+            <button class="tg on" role="switch" aria-checked="true" aria-label="允许被远程"><span class="th"></span>开</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="t-quality">
+          <div class="card-title" id="t-quality">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            画质设置
+          </div>
+          <div class="tags" role="group" aria-label="画质档位">
+            <button class="tag active" aria-pressed="true">自动</button>
+            <button class="tag" aria-pressed="false">流畅</button>
+            <button class="tag" aria-pressed="false">均衡</button>
+            <button class="tag" aria-pressed="false">清晰</button>
+            <button class="tag" aria-pressed="false">超清</button>
+          </div>
+          <div class="tagHint">当前 <b>自动</b>：按网络状况在流畅与清晰之间动态调整。</div>
+        </section>
+
+        <section class="card" aria-labelledby="t-devices">
+          <div class="card-title" id="t-devices">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+            我的设备 <span class="n">3</span>
+            <span class="sp"></span>
+            <button class="linkBtn">检测在线</button>
+          </div>
+          <div class="devList">
+            <div class="device" role="button" tabindex="0" aria-label="发起远程到 Studio-Book，当前画质「自动」">
+              <span class="dot live" title="在线"></span>
+              <span class="av" style="background:#DCF2FE;color:#075985">S</span>
+              <div class="device-info">
+                <div class="device-name">Studio-Book <span class="tag mini last">上次</span></div>
+                <div class="meta">在线 · 上次 14:32 · <span class="fp">A3F2…9C41</span></div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" aria-label="发起远程" title="发起远程 · 以「只看」发起 · 对方需确认">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+                <button class="icoBtn" aria-label="更多操作" aria-haspopup="menu" title="更多操作">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="device" role="button" tabindex="0" aria-label="发起远程到 DESKTOP-HHOLIC2，当前画质「自动」">
+              <span class="dot live" title="在线"></span>
+              <span class="av" style="background:#EDE9FE;color:#5B21B6">D</span>
+              <div class="device-info">
+                <div class="device-name">DESKTOP-HHOLIC2 <span class="tag mini rc">免确认</span></div>
+                <div class="meta">在线 · 上次 昨天 · <span class="fp">7B10…E2D8</span></div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" aria-label="发起远程" title="发起远程 · 免确认直接连接">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+                <button class="icoBtn" aria-label="更多操作" aria-haspopup="menu" title="更多操作">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="device" role="button" tabindex="0" aria-label="发起远程到 MINI-LAB，当前画质「自动」">
+              <span class="dot recent" title="最近在线"></span>
+              <span class="av" style="background:#FDE8D7;color:#9A3412">M</span>
+              <div class="device-info">
+                <div class="device-name">MINI-LAB</div>
+                <div class="meta">28 分钟前在线 · <span class="fp">C4D9…10AF</span></div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" aria-label="发起远程" title="发起远程 · 对方需确认">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+                <button class="icoBtn" aria-label="更多操作" aria-haspopup="menu" title="更多操作">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="pairRow">
+            <button class="linkBtn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              配对一台新设备
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <section class="workspace" aria-label="远程画面区">
+        <div class="center-box">
+          <div class="monitor" aria-hidden="true">
+            <span class="sheen"></span>
+            <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <div class="emptyT">正在等待远程会话连接</div>
+          <div class="emptyD">在左侧选择一台设备发起远程；或保持「允许被远程」开启，等待对方申请接入。</div>
+          <div class="tip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span><b>小贴士</b> · 选择合适画质可获得更好的远程体验，弱网环境建议「流畅」。</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<p class="note">骨架与 v3 一致，质感层全部来自参考稿：蓝天渐变底、玻璃卡（blur 20px + 白描边 + 双层柔影）、渐变主元素带同色辉光、工作区双光晕。文本对比度与语义化不回退。</p>
+
+<!-- ============================================================
+     B. 会话进行中（出站 · 只看）
+============================================================ -->
+<h2>B · 会话进行中 <span class="hint">同一布局 · 工作区切换为深色画布 + 会话条 · 顶栏挂出站横幅</span></h2>
+<div class="app">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="logo">
+      <span class="logo-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </span>
+      <div>
+        <h2>远程电脑</h2>
+        <div class="lv">PastePanda 工作台</div>
+      </div>
+    </div>
+    <nav class="nav" aria-label="功能导航">
+      <button class="nav-item active" aria-current="page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        远程电脑
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        设备列表
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        会话记录
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        设置
+      </button>
+    </nav>
+    <div class="sideSp"></div>
+    <div class="sideFoot">会话进行中：本机的画面与输入设备仅供对端按已授权范围使用。</div>
+  </aside>
+
+  <div class="mainCol">
+    <div class="topbar">
+      <span class="tt">远程电脑 <span class="hint">正在远程控制 Studio-Book</span></span>
+      <span class="topSp"></span>
+      <span class="chan session"><span class="d"></span>会话 · 只看模式</span>
+      <button class="btn dangerT">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        断开连接
+      </button>
+    </div>
+
+    <div class="banner" role="status">
+      <span class="liveB" aria-hidden="true"></span>
+      正在远程控制 Studio-Book
+      <span class="pill">只看</span>
+      <span class="bMeta">对方已同意本次连接 · 画质「自动」</span>
+      <span class="topSp"></span>
+      <button class="linkBtn" style="color:var(--pill-on-fg)">申请控制权</button>
+    </div>
+
+    <div class="content">
+      <div class="left-panel">
+        <section class="card" aria-labelledby="t-perm2">
+          <div class="card-title" id="t-perm2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+            允许被远程
+          </div>
+          <div class="switchRow">
+            <span class="lbl">只影响别人能否控制你</span>
+            <span class="chip on">已开</span>
+            <button class="tg on" role="switch" aria-checked="true" aria-label="允许被远程"><span class="th"></span>开</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="t-quality2">
+          <div class="card-title" id="t-quality2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            画质设置
+          </div>
+          <div class="tags" role="group" aria-label="画质档位">
+            <button class="tag active" aria-pressed="true">自动</button>
+            <button class="tag" aria-pressed="false">流畅</button>
+            <button class="tag" aria-pressed="false">均衡</button>
+            <button class="tag" aria-pressed="false">清晰</button>
+            <button class="tag" aria-pressed="false">超清</button>
+          </div>
+          <div class="tagHint">会话中切换即时生效，不中断连接。</div>
+        </section>
+
+        <section class="card" aria-labelledby="t-devices2">
+          <div class="card-title" id="t-devices2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+            我的设备 <span class="n">3</span>
+          </div>
+          <div class="devList">
+            <div class="device inSession" aria-label="与 Studio-Book 的会话进行中">
+              <span class="dot live" title="在线"></span>
+              <span class="av" style="background:#DCF2FE;color:#075985">S</span>
+              <div class="device-info">
+                <div class="device-name">Studio-Book <span class="tag mini live">会话中</span></div>
+                <div class="meta">只看模式 · 已连接 04:12</div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" disabled aria-label="会话进行中" title="会话进行中">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="device" aria-label="DESKTOP-HHOLIC2，会话进行中不可操作">
+              <span class="dot live" title="在线"></span>
+              <span class="av" style="background:#EDE9FE;color:#5B21B6">D</span>
+              <div class="device-info">
+                <div class="device-name">DESKTOP-HHOLIC2 <span class="tag mini rc">免确认</span></div>
+                <div class="meta">在线 · 会话进行中不可同时发起</div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" disabled aria-label="会话进行中，不可发起" title="会话进行中，不可同时发起">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="device" aria-label="MINI-LAB，会话进行中不可操作">
+              <span class="dot recent" title="最近在线"></span>
+              <span class="av" style="background:#FDE8D7;color:#9A3412">M</span>
+              <div class="device-info">
+                <div class="device-name">MINI-LAB</div>
+                <div class="meta">28 分钟前在线</div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" disabled aria-label="会话进行中，不可发起" title="会话进行中，不可同时发起">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="workspace" aria-label="远程画面区">
+        <div class="sessionWrap">
+          <div class="fakeScreen" aria-label="对端桌面实时画面（只看模式）">
+            <div class="hud" aria-hidden="true">
+              <span class="hudC">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                延迟 <b>12ms</b>
+              </span>
+              <span class="hudC">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <b>60 fps</b>
+              </span>
+              <span class="hudC">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <b>2560×1440</b>
+              </span>
+              <span class="hudC">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="18" y1="10" x2="18" y2="10"/></svg>
+                H.264
+              </span>
+            </div>
+            <div class="viewTools" aria-hidden="true">
+              <button class="vt" tabindex="-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg><span class="vtt">全屏</span></button>
+              <button class="vt" tabindex="-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span class="vtt">截屏到剪贴板</span></button>
+              <button class="vt on" tabindex="-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span class="vtt">适合窗口</span></button>
+            </div>
+            <span class="peerCursor" style="top:56%;left:63%" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>
+            </span>
+            <div class="viewOnlyMark" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              只看模式 · 对端桌面实时画面
+            </div>
+            <div class="deskBar" aria-hidden="true">
+              <span class="di"><b>Studio-Book</b> · Windows 11</span>
+              <span class="di">CPU <b>23%</b></span>
+              <span class="di">内存 <b>41%</b></span>
+              <span class="deskSp"></span>
+              <span class="di">指纹 <b>A3F2…9C41</b></span>
+            </div>
+          </div>
+
+          <div class="sessionBar">
+            <button class="menuBtn" aria-haspopup="listbox"><b>画质 自动</b>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <span class="kbChip" title="只看模式下不可用">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="18" y1="10" x2="18" y2="10"/></svg>
+              键盘 · 不可用
+            </span>
+            <button class="btn pri">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>
+              申请控制权
+            </button>
+            <span class="sbSp"></span>
+            <span class="sbStatus"><span class="ok" style="color:var(--ok);font-weight:500">已连接</span> 04:12</span>
+            <button class="btn dangerT">断开</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<p class="note">会话态复用同一骨架：左列三卡片保持原位（<b>发起按钮全部禁用</b>——单会话约束直接体现在控件状态上）；工作区内部切换为「深色画布 + 会话条」。出站横幅挂在<b>顶栏正下方</b>（渐变底 + 左侧 3px 强调条），入站申请卡沿用 v2 D 节规格，同样挂这一层。</p>
+
+<!-- ============================================================
+     C. 设备列表页
+============================================================ -->
+<h2>C · 设备列表页 <span class="hint">导航第二项 · 全量设备管理：搜索 / 筛选 / 菜单展开 / 改名态</span></h2>
+<div class="app">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="logo">
+      <span class="logo-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </span>
+      <div>
+        <h2>远程电脑</h2>
+        <div class="lv">PastePanda 工作台</div>
+      </div>
+    </div>
+    <nav class="nav" aria-label="功能导航">
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        远程电脑
+      </button>
+      <button class="nav-item active" aria-current="page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        设备列表
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        会话记录
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        设置
+      </button>
+    </nav>
+    <div class="sideSp"></div>
+    <div class="sideFoot">移除设备会同时删除双方配对关系与指纹记录。</div>
+  </aside>
+
+  <div class="mainCol">
+    <div class="topbar">
+      <span class="tt">设备列表 <span class="hint">共 4 台 · 2 台在线</span></span>
+      <span class="topSp"></span>
+      <button class="linkBtn">检测在线</button>
+      <button class="btn pri">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        配对设备
+      </button>
+    </div>
+
+    <div class="content">
+      <section class="workspace" aria-label="设备列表">
+        <div class="pageWrap">
+          <div class="pageBar">
+            <span class="searchIpt">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              搜索设备名或指纹…
+            </span>
+            <span class="topSp" style="flex:1"></span>
+            <div class="tags" role="group" aria-label="筛选设备" style="gap:6px">
+              <button class="tag active" aria-pressed="true">全部 4</button>
+              <button class="tag" aria-pressed="false">在线 2</button>
+              <button class="tag" aria-pressed="false">已禁止 1</button>
+            </div>
+          </div>
+
+          <div class="devList">
+            <div class="listHead" aria-hidden="true">
+              <span style="width:19px"></span><span>设备</span>
+              <span class="topSp" style="flex:1"></span><span style="margin-right:64px">操作</span>
+            </div>
+
+            <!-- 行1：在线 · 菜单展开态 -->
+            <div class="device" role="button" tabindex="0" aria-label="发起远程到 Studio-Book">
+              <span class="dot live" title="在线"></span>
+              <span class="av" style="background:#DCF2FE;color:#075985">S</span>
+              <div class="device-info">
+                <div class="device-name">Studio-Book <span class="tag mini last">上次</span></div>
+                <div class="meta">在线 · 上次 14:32 · <span class="fp">A3F2…9C41</span></div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" aria-label="发起远程" title="发起远程 · 以「只看」发起">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+                <button class="icoBtn" aria-label="更多操作" aria-haspopup="menu" aria-expanded="true" title="更多操作">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                </button>
+              </div>
+              <div class="devMenu" role="menu" aria-label="Studio-Book 操作菜单">
+                <div class="mDim" role="presentation">以指定方式发起</div>
+                <button role="menuitem">以「只看」发起</button>
+                <button role="menuitem">以「可控」发起</button>
+                <div class="mSep" role="presentation"></div>
+                <button role="menuitem">设为免确认</button>
+                <button role="menuitem">改名</button>
+                <div class="mSep" role="presentation"></div>
+                <button role="menuitem" class="dangerT">移除设备</button>
+              </div>
+            </div>
+
+            <!-- 行2：在线 · 免确认 -->
+            <div class="device" role="button" tabindex="0" aria-label="发起远程到 DESKTOP-HHOLIC2">
+              <span class="dot live" title="在线"></span>
+              <span class="av" style="background:#EDE9FE;color:#5B21B6">D</span>
+              <div class="device-info">
+                <div class="device-name">DESKTOP-HHOLIC2 <span class="tag mini rc">免确认</span></div>
+                <div class="meta">在线 · 上次 昨天 · <span class="fp">7B10…E2D8</span></div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" aria-label="发起远程" title="发起远程 · 免确认直接连接">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+                <button class="icoBtn" aria-label="更多操作" aria-haspopup="menu" title="更多操作">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 行3：最近在线 · 改名态 -->
+            <div class="device" aria-label="正在重命名设备">
+              <span class="dot recent" title="最近在线"></span>
+              <span class="av" style="background:#FDE8D7;color:#9A3412">M</span>
+              <div class="device-info">
+                <input class="renameIpt" value="MINI-LAB" aria-label="设备名称">
+              </div>
+              <div class="acts">
+                <button class="icoBtn" aria-label="保存名称" title="保存（Enter）">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+                <button class="icoBtn" aria-label="取消改名" title="取消（Esc）">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 行4：已禁止 -->
+            <div class="device" role="button" tabindex="0" aria-label="OLD-LAPTOP，已禁止连接">
+              <span class="dot never" style="background:#CBD5E1" title="从未在线"></span>
+              <span class="av" style="background:rgba(98,112,131,.12);color:var(--ink3)">O</span>
+              <div class="device-info">
+                <div class="device-name" style="color:var(--ink2)">OLD-LAPTOP <span class="tag mini denied">已禁止</span></div>
+                <div class="meta">配对于 08-02 · 从未成功连接</div>
+              </div>
+              <div class="acts">
+                <button class="playBtn" disabled aria-label="已禁止连接" title="已禁止连接，先在菜单中恢复">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+                <button class="icoBtn" aria-label="更多操作" aria-haspopup="menu" title="更多操作">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<p class="note">工作区从「等待画面」切换为<b>全量列表</b>：搜索 + 筛选 + 表头 + 四档可达性行。行 1 演示<b>菜单展开态</b>（role=menu，危险项红字）；行 3 演示<b>改名态</b>（Enter 保存 / Esc 取消）；行 4 演示<b>已禁止</b>（发起钮禁用，恢复入口在菜单内）。</p>
+
+<!-- ============================================================
+     D. 会话记录页
+============================================================ -->
+<h2>D · 会话记录页 <span class="hint">导航第三项 · 仅本机存储，可随时清空（产品红线：日志可见可删除）</span></h2>
+<div class="app">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="logo">
+      <span class="logo-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </span>
+      <div>
+        <h2>远程电脑</h2>
+        <div class="lv">PastePanda 工作台</div>
+      </div>
+    </div>
+    <nav class="nav" aria-label="功能导航">
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        远程电脑
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        设备列表
+      </button>
+      <button class="nav-item active" aria-current="page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        会话记录
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        设置
+      </button>
+    </nav>
+    <div class="sideSp"></div>
+    <div class="sideFoot">记录仅保存在本机，不上传；清空后不可恢复。</div>
+  </aside>
+
+  <div class="mainCol">
+    <div class="topbar">
+      <span class="tt">会话记录 <span class="hint">近 30 天 · 共 5 条</span></span>
+      <span class="topSp"></span>
+      <button class="btn dangerT">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        清空记录
+      </button>
+    </div>
+
+    <div class="content">
+      <section class="workspace" aria-label="会话记录">
+        <div class="pageWrap">
+          <div class="pageBar">
+            <div class="tags" role="group" aria-label="筛选方向" style="gap:6px">
+              <button class="tag active" aria-pressed="true">全部</button>
+              <button class="tag" aria-pressed="false">出站 3</button>
+              <button class="tag" aria-pressed="false">入站 2</button>
+            </div>
+            <span class="topSp" style="flex:1"></span>
+            <span class="sbStatus">时长总计 <b style="color:var(--ink2)">11:26</b></span>
+          </div>
+
+          <div class="devList">
+            <div class="listHead" aria-hidden="true">
+              <span style="width:44px">方向</span><span>设备 / 模式</span>
+              <span class="topSp" style="flex:1"></span>
+              <span style="width:58px;text-align:right;margin-right:10px">时长</span>
+              <span style="width:118px">时间</span>
+              <span style="width:96px">结果</span>
+            </div>
+
+            <div class="histRow">
+              <span class="dirPill out">出站</span>
+              <span class="histName">Studio-Book <span class="tag mini rc">只看</span></span>
+              <span class="histDur">04:12</span>
+              <span class="histTime">今天 14:32</span>
+              <span class="histRes ok">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                正常结束
+              </span>
+            </div>
+            <div class="histRow">
+              <span class="dirPill in">入站</span>
+              <span class="histName">DESKTOP-HHOLIC2 <span class="tag mini rc">可控</span></span>
+              <span class="histDur">03:41</span>
+              <span class="histTime">今天 09:58</span>
+              <span class="histRes ok">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                正常结束
+              </span>
+            </div>
+            <div class="histRow">
+              <span class="dirPill out">出站</span>
+              <span class="histName">MINI-LAB <span class="tag mini rc">只看</span></span>
+              <span class="histDur">02:05</span>
+              <span class="histTime">昨天 21:07</span>
+              <span class="histRes warn">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                对方拒绝
+              </span>
+            </div>
+            <div class="histRow">
+              <span class="dirPill in">入站</span>
+              <span class="histName">Studio-Book <span class="tag mini rc">可控</span></span>
+              <span class="histDur">01:28</span>
+              <span class="histTime">09-16 18:44</span>
+              <span class="histRes cancel">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7" x2="12" y2="12"/></svg>
+                本机取消
+              </span>
+            </div>
+            <div class="histRow">
+              <span class="dirPill out">出站</span>
+              <span class="histName">MINI-LAB <span class="tag mini rc">只看</span></span>
+              <span class="histDur">00:00</span>
+              <span class="histTime">09-15 11:20</span>
+              <span class="histRes err">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                连接失败
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<p class="note">每行五列：<b>方向 pill</b>（出站蓝 / 入站绿）· 设备+模式 · 时长（等宽体右对齐）· 时间 · <b>结果</b>（图标+文字双冗余：正常 / 拒绝 / 取消 / 失败四态）。清空记录放顶栏右侧（危险钮，点击走 ConfirmDialog）。</p>
+
+<!-- ============================================================
+     E. 设置页
+============================================================ -->
+<h2>E · 设置页 <span class="hint">导航第四项 · 工作台级默认值与安全选项</span></h2>
+<div class="app">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="logo">
+      <span class="logo-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </span>
+      <div>
+        <h2>远程电脑</h2>
+        <div class="lv">PastePanda 工作台</div>
+      </div>
+    </div>
+    <nav class="nav" aria-label="功能导航">
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        远程电脑
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        设备列表
+      </button>
+      <button class="nav-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        会话记录
+      </button>
+      <button class="nav-item active" aria-current="page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        设置
+      </button>
+    </nav>
+    <div class="sideSp"></div>
+    <div class="sideFoot">设置只影响「远程电脑」工作台，不改变 PastePanda 主程序行为。</div>
+  </aside>
+
+  <div class="mainCol">
+    <div class="topbar">
+      <span class="tt">设置 <span class="hint">修改即时生效</span></span>
+      <span class="topSp"></span>
+      <button class="linkBtn">恢复默认</button>
+    </div>
+
+    <div class="content">
+      <section class="workspace" aria-label="设置">
+        <div class="pageWrap">
+
+          <div class="setSec" aria-labelledby="s-general">
+            <div class="card-title" id="s-general" style="margin:10px 0 2px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              通用
+            </div>
+            <div class="setRow">
+              <span class="setLbl"><b>默认画质</b><span>发起远程时的初始档位，会话中仍可切换</span></span>
+              <div class="tags" role="group" aria-label="默认画质" style="gap:6px">
+                <button class="tag active" aria-pressed="true">自动</button>
+                <button class="tag" aria-pressed="false">流畅</button>
+                <button class="tag" aria-pressed="false">清晰</button>
+              </div>
+            </div>
+            <div class="setRow">
+              <span class="setLbl"><b>默认发起方式</b><span>「只看」更安全：对方屏幕可见但不可操作</span></span>
+              <div class="tags" role="group" aria-label="默认发起方式" style="gap:6px">
+                <button class="tag active" aria-pressed="true">只看</button>
+                <button class="tag" aria-pressed="false">可控</button>
+              </div>
+            </div>
+            <div class="setRow">
+              <span class="setLbl"><b>启动工作台时自动开启远程通道</b><span>关闭后每次需在主页手动开启</span></span>
+              <span class="chip on">已开</span>
+              <button class="tg on" role="switch" aria-checked="true" aria-label="启动时自动开启远程通道"><span class="th"></span>开</button>
+            </div>
+          </div>
+
+          <div class="setSec" aria-labelledby="s-security">
+            <div class="card-title" id="s-security" style="margin:10px 0 2px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+              安全
+            </div>
+            <div class="setRow">
+              <span class="setLbl"><b>新设备接入默认需要本机确认</b><span>关闭后任何配对设备都可直接接入，不建议</span></span>
+              <span class="chip on">已开</span>
+              <button class="tg on" role="switch" aria-checked="true" aria-label="新设备接入默认需要本机确认"><span class="th"></span>开</button>
+            </div>
+            <div class="setRow">
+              <span class="setLbl"><b>免确认设备</b><span>1 台 · 在设备列表中按设备单独设置</span></span>
+              <button class="btn">管理</button>
+            </div>
+            <div class="setRow">
+              <span class="setLbl"><b>连接端口</b><span>修改后需重启远程通道</span></span>
+              <span class="monoIpt">48620</span>
+              <button class="linkBtn">恢复默认</button>
+            </div>
+          </div>
+
+          <div class="setSec" aria-labelledby="s-data">
+            <div class="card-title" id="s-data" style="margin:10px 0 2px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+              数据
+            </div>
+            <div class="setRow">
+              <span class="setLbl"><b>会话记录</b><span>仅保存在本机，不上传；保留最近 30 天</span></span>
+              <button class="btn dangerT">清空会话记录</button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<p class="note">设置分三组：<b>通用</b>（默认画质 / 默认发起方式 / 自动开通道）、<b>安全</b>（新设备确认总开关——它是「允许被远程」之上的第二道闸、免确认设备管理入口、端口）、<b>数据</b>（会话记录保留与清空，对应红线「日志可见可删除」）。</p>
+
+<!-- ============================================================
+     F. Token 对照
+============================================================ -->
+<h2>F · Token 对照 <span class="hint">沿用 v2 规范，对比度全部实测；v4 只动面层，不动文字色</span></h2>
+<div class="specCard">
+  <table class="tok">
+    <thead><tr><th>用途</th><th>色值</th><th>前景/背景</th><th>对比度</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>主文字 / 卡片标题</td><td class="mono">#0F172A</td><td class="mono">on #FFFFFF</td><td class="mono">16.9 : 1</td><td>标题、设备名</td></tr>
+      <tr><td>次级文字</td><td class="mono">#495565</td><td class="mono">on #FFFFFF</td><td class="mono">8.4 : 1</td><td>说明、开关行标签</td></tr>
+      <tr><td>弱化文字</td><td class="mono">#627083</td><td class="mono">on #FFFFFF</td><td class="mono">4.56 : 1</td><td>meta、侧栏脚注（≥11px）</td></tr>
+      <tr><td>强调 / 主按钮</td><td class="mono">#0284C7</td><td class="mono">#FFF on #0284C7</td><td class="mono">4.7 : 1</td><td>渐变两端 #0369A1–#0284C7 均达标</td></tr>
+      <tr><td>选中标签文字</td><td class="mono">#0369A1</td><td class="mono">on #EDF5FD</td><td class="mono">5.4 : 1</td><td>画质未选中档</td></tr>
+      <tr><td>成功 / 在线</td><td class="mono">#15803D</td><td class="mono">on rgba(21,128,61,.08)</td><td class="mono">4.9 : 1</td><td>状态一律颜色+文字双冗余</td></tr>
+      <tr><td>警示</td><td class="mono">#B45309</td><td class="mono">on rgba(217,119,6,.12)</td><td class="mono">4.8 : 1</td><td>「上次」徽章</td></tr>
+      <tr><td>危险</td><td class="mono">#B42323</td><td class="mono">on rgba(214,69,69,.08)</td><td class="mono">5.1 : 1</td><td>断开连接、危险菜单项</td></tr>
+      <tr><td>HUD 文字</td><td class="mono">#C7D6E8</td><td class="mono">on rgba(9,17,28,.62)</td><td class="mono">12.7 : 1</td><td>10.5px 仅允许出现在深色 HUD</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================
+     G. 质感层规格
+============================================================ -->
+<h2>G · 质感层规格 <span class="hint">v4 相对 v3 的全部面层改动，逐项可落地</span></h2>
+<div class="specCard">
+  <ul class="layoutSpec">
+    <li><span class="k">页面底</span>平色 #F4F8FC → 蓝天渐变 linear-gradient(135deg,#F6FAFF,#EDF4FF 55%,#EAF3FF)</li>
+    <li><span class="k">玻璃面</span>统一 blur(20px)；卡片为纵向白渐变 rgba(255,255,255,.92→.78) + 白描边 rgba(255,255,255,.75)</li>
+    <li><span class="k">投影</span>一层细影 → 双层柔影 0 10px 30px rgba(27,76,164,.08)；弹层 0 14px 36px rgba(15,23,42,.16)</li>
+    <li><span class="k">辉光</span>所有渐变主元素（logo / 导航选中 / 主按钮 / 播放钮 / 开关开态 / 显示器）带同色 glow 0 8px 20px rgba(2,132,199,.32)</li>
+    <li><span class="k">圆角</span>窗口 14→18 · 卡片 16→20 · 工作区 18→24 · 行 12→14 · 输入 8→10</li>
+    <li><span class="k">留白</span>导航项 37→43px 高 · 卡片 padding 13→15/18 · 顶栏 56→60 · 窗口高 676→700</li>
+    <li><span class="k">工作区光晕</span>单光晕 → 双光晕（右上 cyan .14 / 左下 紫 .06），尺寸 640/420</li>
+    <li><span class="k">显示器插画</span>180×118 → 190×124，辉光加深至 .32，底座加宽</li>
+    <li><span class="k">画布</span>深色区不改（HUD 10.5px 纪律保留），加内高光 inset 0 1px 0 rgba(255,255,255,.06)</li>
+    <li><span class="k">不变项</span>文字色四级 / 状态色 / 语义化结构 / 图标纪律 / 五页布局全部沿用 v3</li>
+  </ul>
+</div>
+
+<!-- ============================================================
+     H. 微动画规格
+============================================================ -->
+<h2>H · 微动画规格 <span class="hint">三类动效：入场级联 / hover 反馈 / 状态呼吸；落地对应 CSS transition 与 keyframes</span></h2>
+<div class="specCard">
+  <ul class="layoutSpec">
+    <li><span class="k">入场级联</span>侧栏 0ms → 顶栏 60ms → 左列卡片逐张 100/160/220ms → 工作区 140ms；统一 riseIn（上移 10px + 淡入）450ms ease，一次性播完，不循环</li>
+    <li><span class="k">弹层入场</span>devMenu / HUD 芯片 popIn（scale .97→1）180–300ms，transform-origin: top right（菜单）/ center（芯片），HUD 芯片逐个 70ms 级联</li>
+    <li><span class="k">hover 浮起</span>卡片 / 设置组 translateY(-2px) + 投影加深 180ms；列表行 / 按钮 / 下拉 -1px；播放钮 -1px + scale 1.05 + brightness；导航未选中项右移 2px</li>
+    <li><span class="k">按下回落</span>btn / menuBtn / tag / playBtn :active scale(.97)——按下有「压下去」的物理感</li>
+    <li><span class="k">状态呼吸</span>在线点 / 通道点 ping 雷达扩散 2.2s（box-shadow 0→6px 扩散，currentColor 混色，出站蓝入站绿自动跟随）；横幅 liveB 已有 pulse 1.6s</li>
+    <li><span class="k">等待画面</span>显示器 floatY 上下浮动 3.4s + glowBreath 辉光呼吸（0→16px 扩散圈）——「在等待」不用文字也能感知</li>
+    <li><span class="k">会话态</span>只看水印 breathe 透明度呼吸 2.6s；对端光标 cursorDrift 5.5s ease alternate 漂移 26×-14px——暗示远端正在活动</li>
+    <li><span class="k">开关</span>旋钮 left 220ms ease（原有）——唯一保留的「位移型」交互动画</li>
+    <li><span class="k">动画边界</span>动画只落在装饰元素（点、水印、插画、光标）与面层（transform / box-shadow / opacity），<b>不动文字内容与颜色</b>——SR 朗读不受任何影响</li>
+    <li><span class="k">降级</span>@media (prefers-reduced-motion: reduce) 全量关闭 animation 与 transition——前庭敏感用户零动画</li>
+    <li><span class="k">性能纪律</span>只动画 transform / opacity / box-shadow（合成层属性），禁止 top/left/width 布局属性动画；浮动元素均已有 will-change 语义替代（不显式声明，避免常驻合成层）</li>
+  </ul>
+</div>
+
+<p class="footNote">v4 = v3 结构 × 参考稿质感层 × 微动画层。质感来自「面」的物理属性（渐变、模糊、描边、投影、辉光），动效来自三类微动画（入场级联 / hover 反馈 / 状态呼吸）——均不触碰文字 token 与可访问性纪律。落地映射同 v3：侧栏→RcSideRail、左列→RcSelfToggleRow/RcQualityBar/RcDeviceRow、工作区→RcSessionView/RcSessionBar、横幅→RcControlBanner；设备列表 / 会话记录 / 设置为 RcWorkbench 内路由页；动画层建议收敛为一个 `rc-motion.css`（keyframes + transition 工具类 + reduced-motion 兜底）统一挂载。</p>
+
+</div>
+</body>
+</html>

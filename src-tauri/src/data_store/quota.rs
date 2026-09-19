@@ -34,9 +34,9 @@ pub const SIGN_MAX: u64 = 50_000;
 pub fn redeem_secret() -> String {
     const XOR: u8 = 0x5A;
     const BUF: &[u8] = &[
-        0x2a, 0x3b, 0x29, 0x2e, 0x3f, 0x2a, 0x3b, 0x34, 0x3e, 0x3b, 0x77, 0x28, 0x3f, 0x3e,
-        0x3f, 0x3f, 0x37, 0x77, 0x2c, 0x6b, 0x60, 0x60, 0x36, 0x35, 0x39, 0x3b, 0x36, 0x77,
-        0x2b, 0x2f, 0x35, 0x2e, 0x3b,
+        0x2a, 0x3b, 0x29, 0x2e, 0x3f, 0x2a, 0x3b, 0x34, 0x3e, 0x3b, 0x77, 0x28, 0x3f, 0x3e, 0x3f,
+        0x3f, 0x37, 0x77, 0x2c, 0x6b, 0x60, 0x60, 0x36, 0x35, 0x39, 0x3b, 0x36, 0x77, 0x2b, 0x2f,
+        0x35, 0x2e, 0x3b,
     ];
     crate::mask::reveal_xor(BUF, XOR)
 }
@@ -203,7 +203,11 @@ pub fn verify_redeem_code(code: &str, secret: &str) -> Option<RedeemPayload> {
     if amount == 0 {
         return None;
     }
-    Some(RedeemPayload { batch, amount, expiry })
+    Some(RedeemPayload {
+        batch,
+        amount,
+        expiry,
+    })
 }
 
 impl DataStore {
@@ -289,7 +293,8 @@ impl DataStore {
         let today = today_str();
         let can_sign = row.sign_date.as_deref() != Some(today.as_str());
         // 连续 7 天可得 = 2+3+4+5+5+5+5
-        let week_total = SIGN_BASE + (SIGN_BASE + SIGN_STEP) + (SIGN_BASE + 2 * SIGN_STEP) + 4 * SIGN_MAX;
+        let week_total =
+            SIGN_BASE + (SIGN_BASE + SIGN_STEP) + (SIGN_BASE + 2 * SIGN_STEP) + 4 * SIGN_MAX;
         Ok(QuotaInfo {
             device_id: row.device_id.clone(),
             granted: row.granted,
@@ -299,7 +304,11 @@ impl DataStore {
             sign_date: row.sign_date,
             sign_streak: row.sign_streak,
             can_sign,
-            today_spent: if row.today == today { row.today_spent } else { 0 },
+            today_spent: if row.today == today {
+                row.today_spent
+            } else {
+                0
+            },
             daily_cap: DAILY_SPEND_CAP,
             sign_cap: SIGN_CAP,
             redeemed_count: row.redeemed.len(),
@@ -431,7 +440,11 @@ impl DataStore {
     pub fn quota_check(&self) -> Result<(), QuotaBlock> {
         let row = self.quota_row().map_err(|_| QuotaBlock::Exhausted)?;
         let today = today_str();
-        let today_spent = if row.today == today { row.today_spent } else { 0 };
+        let today_spent = if row.today == today {
+            row.today_spent
+        } else {
+            0
+        };
         if today_spent >= DAILY_SPEND_CAP {
             return Err(QuotaBlock::DailyCap);
         }

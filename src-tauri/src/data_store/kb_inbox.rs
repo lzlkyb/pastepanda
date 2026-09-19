@@ -100,7 +100,8 @@ fn reason_expr() -> String {
 /// ❗ 占位符用**匿名** `?` 而不是 `?1`：字段视图（B2 #9）要往后面拼不定个数的
 /// 筛选参数，编号绑定下每加一个参数就要重排全部序号——而排错不报错，只是结果静默变错。
 fn candidate_where() -> String {
-    format!("
+    format!(
+        "
     WHERE h.workspace = ?
       AND ({SIG_STAR} OR {SIG_RESEARCH})
       -- 带 deleted_at：笔记被删了，那张卡片就又变回「没沉淀过」，该回到收件箱。
@@ -119,7 +120,8 @@ fn candidate_where() -> String {
                                         WHERE o.image_path = h.content
                                           AND TRIM(COALESCE(o.full_text, '')) <> '')
              ELSE TRIM(COALESCE(h.text, '')) <> ''
-           END)")
+           END)"
+    )
 }
 
 /// 待沉淀区的视图选项（B2 #9）。**全默认 = 与做这个功能之前一模一样**。
@@ -330,16 +332,16 @@ impl DataStore {
         let rows: Vec<InboxCandidate> = items
             .into_iter()
             .zip(metas)
-            .map(|(item, (hit, pasted, recopy, group_key, reason))| {
-                InboxCandidate {
+            .map(
+                |(item, (hit, pasted, recopy, group_key, reason))| InboxCandidate {
                     reason,
                     search_hit_count: hit,
                     recopy_count: recopy,
                     recently_pasted: pasted != 0,
                     group_key,
                     item,
-                }
-            })
+                },
+            )
             .collect();
         Ok(rows)
     }

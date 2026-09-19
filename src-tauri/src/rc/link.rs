@@ -237,7 +237,11 @@ mod tests {
         let l = LinkState::new();
         l.note_pong(20);
         let _ = l.detach();
-        assert_eq!(l.last_pong_ms(), 0, "新会话不能继承上一个会话的「刚刚还有心跳」");
+        assert_eq!(
+            l.last_pong_ms(),
+            0,
+            "新会话不能继承上一个会话的「刚刚还有心跳」"
+        );
         assert_eq!(l.path_kind(), None);
     }
 

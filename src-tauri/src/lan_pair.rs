@@ -159,21 +159,14 @@ pub struct PendingPair {
 
 impl PendingPair {
     /// 开一个会话：现生一对临时密钥。
-    pub fn start(
-        peer_id: &str,
-        peer_name: &str,
-        role: PairRole,
-        now: i64,
-    ) -> Result<Self, String> {
+    pub fn start(peer_id: &str, peer_name: &str, role: PairRole, now: i64) -> Result<Self, String> {
         let rng = SystemRandom::new();
         let my_priv = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng)
             .map_err(|_| "生成临时密钥失败".to_string())?;
-        let my_pk = hex(
-            my_priv
-                .compute_public_key()
-                .map_err(|_| "推导公钥失败".to_string())?
-                .as_ref(),
-        );
+        let my_pk = hex(my_priv
+            .compute_public_key()
+            .map_err(|_| "推导公钥失败".to_string())?
+            .as_ref());
         Ok(Self {
             peer_id: peer_id.into(),
             peer_name: peer_name.into(),
@@ -264,7 +257,11 @@ pub fn seal_pairing_key(shared: &[u8], pairing_key: &str) -> Result<(String, Str
 ///
 /// GCM 认证标签保证：共享值不对（= 被中间人换过公钥）就会解密失败，
 /// 而不是静默得到一串垃圾。
-pub fn open_pairing_key(shared: &[u8], nonce_hex: &str, sealed_hex: &str) -> Result<String, String> {
+pub fn open_pairing_key(
+    shared: &[u8],
+    nonce_hex: &str,
+    sealed_hex: &str,
+) -> Result<String, String> {
     use ring::aead;
 
     let nonce_bytes = hex_to_12(nonce_hex).ok_or_else(|| "nonce 格式无效".to_string())?;
@@ -364,11 +361,7 @@ impl PairState {
     }
 
     /// 对进行中的会话做一件事。会话不存在或已过期时返回 `None`。
-    pub fn with_pending<T>(
-        &self,
-        now: i64,
-        f: impl FnOnce(&mut PendingPair) -> T,
-    ) -> Option<T> {
+    pub fn with_pending<T>(&self, now: i64, f: impl FnOnce(&mut PendingPair) -> T) -> Option<T> {
         let mut g = self.pending.lock().ok()?;
         let expired = g.as_ref().map(|p| p.expired(now)).unwrap_or(false);
         if expired {

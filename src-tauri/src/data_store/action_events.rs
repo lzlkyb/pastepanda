@@ -128,17 +128,46 @@ pub fn hour_bucket(hour: i32) -> &'static str {
 pub fn source_cat(app: &str) -> &'static str {
     let a = app.to_lowercase();
     const IDE: &[&str] = &[
-        "vscode", "visual studio", "code", "codebuddy", "idea", "jetbrains", "webstorm",
-        "pycharm", "goland", "xcode",
+        "vscode",
+        "visual studio",
+        "code",
+        "codebuddy",
+        "idea",
+        "jetbrains",
+        "webstorm",
+        "pycharm",
+        "goland",
+        "xcode",
     ];
     const BROWSER: &[&str] = &[
-        "chrome", "edge", "firefox", "safari", "opera", "brave", "360", "qq浏览器", "浏览器",
+        "chrome",
+        "edge",
+        "firefox",
+        "safari",
+        "opera",
+        "brave",
+        "360",
+        "qq浏览器",
+        "浏览器",
     ];
     const TERMINAL: &[&str] = &[
-        "terminal", "powershell", "cmd", "命令提示符", "conhost", "windowsterminal",
+        "terminal",
+        "powershell",
+        "cmd",
+        "命令提示符",
+        "conhost",
+        "windowsterminal",
     ];
     const CHAT: &[&str] = &[
-        "微信", "wechat", "企业微信", "wecom", "qq", "钉钉", "dingtalk", "telegram", "slack",
+        "微信",
+        "wechat",
+        "企业微信",
+        "wecom",
+        "qq",
+        "钉钉",
+        "dingtalk",
+        "telegram",
+        "slack",
         "飞书",
     ];
     if IDE.iter().any(|k| a.contains(k)) {
@@ -374,13 +403,15 @@ impl DataStore {
         }
         let mut out: Vec<SceneWeightRow> = acc
             .into_iter()
-            .map(|((content_type, action_id, hour_bucket, source_cat), count)| SceneWeightRow {
-                action_id,
-                content_type,
-                hour_bucket,
-                source_cat,
-                count,
-            })
+            .map(
+                |((content_type, action_id, hour_bucket, source_cat), count)| SceneWeightRow {
+                    action_id,
+                    content_type,
+                    hour_bucket,
+                    source_cat,
+                    count,
+                },
+            )
             .collect();
         out.sort_by_key(|b| std::cmp::Reverse(b.count));
         out
@@ -424,12 +455,19 @@ impl DataStore {
 
     /// 恢复某条「不再推荐」（智能学习弹窗的恢复按钮）。
     /// 精确匹配 (action_id, content_type) 删除该条负反馈；content_type 空串 = 该动作所有内容类型都恢复。
-    pub fn action_dismiss_remove(&self, action_id: &str, content_type: &str) -> Result<u32, String> {
+    pub fn action_dismiss_remove(
+        &self,
+        action_id: &str,
+        content_type: &str,
+    ) -> Result<u32, String> {
         let conn = self.lock_conn();
         if content_type.is_empty() {
-            conn.execute("DELETE FROM action_dismissals WHERE action_id = ?1", params![action_id])
-                .map(|n| n as u32)
-                .map_err(|e| e.to_string())
+            conn.execute(
+                "DELETE FROM action_dismissals WHERE action_id = ?1",
+                params![action_id],
+            )
+            .map(|n| n as u32)
+            .map_err(|e| e.to_string())
         } else {
             conn.execute(
                 "DELETE FROM action_dismissals WHERE action_id = ?1 AND content_type = ?2",
@@ -496,7 +534,8 @@ impl DataStore {
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 
     /// 取消置顶。

@@ -51,9 +51,26 @@ impl Capability {
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum RcFrame {
     /// 发起端申请会话。
-    Request { capability: Capability },
+    Request {
+        capability: Capability,
+        /// 无人值守接入码（Q2 方案 B）。`None` = 常规申请（配对设备 / 敲门）。
+        ///
+        /// ❗ 兼容性三件套一个不能少：旧对端**收**到带码的 Request 时 serde 默认
+        /// 忽略未知字段，照常按敲门处理（新版连旧版 = 退化为「要人点头」）；
+        /// 旧对端**发**来的 Request 没有这个字段，`default` 补 None。
+        /// 字段名别改——它是线上的 JSON 键。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        uno_code: Option<String>,
+        /// 发起端视频能力位：true = 支持视频数据报（分片 + FEC）。`None`/false =
+        /// 旧版发起端——它没有视频数据报读取任务，P 帧走数据报会静默丢失
+        ///（画面退化成每秒一张关键帧的幻灯片），所以被控端按可靠流发 P 帧。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vid_dgram: Option<bool>,
+    },
     /// 被控端同意。
-    Accept { capability: Capability },
+    Accept {
+        capability: Capability,
+    },
     /// 被控端拒绝 / 门禁未过。`code` 供前端分档文案，旧对端可能没有。
     Deny {
         reason: String,
@@ -61,7 +78,9 @@ pub enum RcFrame {
         code: Option<String>,
     },
     /// 任一方结束会话。
-    End { reason: String },
+    End {
+        reason: String,
+    },
     /// 心跳占位（R1 画面流前先保活）。
     Ping,
     Pong,
@@ -107,9 +126,41 @@ mod tests {
     fn frame_roundtrip() {
         let f = RcFrame::Request {
             capability: Capability::Control,
+            uno_code: None,
+            vid_dgram: Some(true),
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
+        // 可选能力为 None 时不序列化对应字段（线上包保持最小）
+        let minimal = RcFrame::Request {
+            capability: Capability::View,
+            uno_code: None,
+            vid_dgram: None,
+        };
+        let s = String::from_utf8(minimal.encode().unwrap()).unwrap();
+        assert!(!s.contains("uno_code"));
+        assert!(!s.contains("vid_dgram"));
+    }
+
+    #[test]
+    fn request_with_uno_code_roundtrip() {
+        let f = RcFrame::Request {
+            capability: Capability::View,
+            uno_code: Some("AB2C-3DEF".into()),
+            vid_dgram: None,
+        };
+        let b = f.encode().unwrap();
+        assert_eq!(RcFrame::decode(&b).unwrap(), f);
+        // 旧版对端发来的 Request 没有 uno_code 字段，也要能解（default 补 None）
+        let old = r#"{"t":"request","capability":"control"}"#.as_bytes();
+        match RcFrame::decode(old).unwrap() {
+            RcFrame::Request { capability, uno_code, vid_dgram } => {
+                assert_eq!(capability, Capability::Control);
+                assert_eq!(uno_code, None, "旧对端没有这个字段，反序列化补 None");
+                assert_eq!(vid_dgram, None, "能力位同理");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

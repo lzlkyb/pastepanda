@@ -28,16 +28,16 @@
 //! 而那本来只是一次正常碰撞。
 
 use super::coordinate::{
-    backoff_secs, jittered_secs, Admit, Coordinator, HoldErr, BUSY_RETRY_SECS,
-    DORMANT_AFTER_FAILS, DORMANT_POLL_SECS, HEARTBEAT_SECS, IDLE_CHECK_SECS, JITTER_SECS,
-    MIN_SESSION_GAP_SECS, WRITE_COALESCE_MAX_SECS, WRITE_COALESCE_SECS,
+    backoff_secs, jittered_secs, Admit, Coordinator, HoldErr, BUSY_RETRY_SECS, DORMANT_AFTER_FAILS,
+    DORMANT_POLL_SECS, HEARTBEAT_SECS, IDLE_CHECK_SECS, JITTER_SECS, MIN_SESSION_GAP_SECS,
+    WRITE_COALESCE_MAX_SECS, WRITE_COALESCE_SECS,
 };
 use super::presence::{PresenceApp, PresenceTable};
 use super::session;
 use crate::data_store::DataStore;
 use iroh::{Endpoint, EndpointAddr};
-use std::str::FromStr;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -238,7 +238,8 @@ async fn idle_wait(
     if !sleep_or_stop(&ctx.stop, MIN_SESSION_GAP_SECS).await {
         return Woke::Stop;
     }
-    let deadline = now_ms() + jittered_secs(HEARTBEAT_SECS, JITTER_SECS, now_ms() as u64) as i64 * 1000;
+    let deadline =
+        now_ms() + jittered_secs(HEARTBEAT_SECS, JITTER_SECS, now_ms() as u64) as i64 * 1000;
     // 让下面那条 warn 每次 `idle_wait` 只报一次：本循环每 `IDLE_CHECK_SECS`（5 秒）
     // 转一圈，不扣的话一直到心跳会刷几百条。
     let mut warned_stalled = false;
@@ -387,7 +388,11 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 //   一个永远回不来的对端就是每分钟一次、永远下去；而听不到它组播时
                 //   那一拨走的是 n0 公共 relay（真实跨国流量）。
                 let dormant = fails >= DORMANT_AFTER_FAILS;
-                let w = if dormant { DORMANT_POLL_SECS } else { backoff_secs(fails) };
+                let w = if dormant {
+                    DORMANT_POLL_SECS
+                } else {
+                    backoff_secs(fails)
+                };
                 if fails == DORMANT_AFTER_FAILS {
                     // 只在**刚进休眠那一次**说清楚，之后不再刷屏。
                     log::warn!(
@@ -433,7 +438,11 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
         if synced {
             // 写库失败不能把同步循环带崩：它只影响下次重启后的那句提示。
             if let Err(e) = ctx.store.device_mark_synced(&peer, now_ms()) {
-                log::warn!("[sync] 记 last_ok_ms 失败 peer={} : {}", &peer[..8.min(peer.len())], e);
+                log::warn!(
+                    "[sync] 记 last_ok_ms 失败 peer={} : {}",
+                    &peer[..8.min(peer.len())],
+                    e
+                );
             }
         }
         let alive = match wait {
@@ -610,9 +619,7 @@ async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
     // 会同时对同一个库跑 apply。
     let _hold = match ctx.coord.try_hold(peer) {
         Ok(h) => h,
-        Err(HoldErr::PeerBusy) => {
-            return Outcome::Busy("本机已有一个到它的会话在跑".into())
-        }
+        Err(HoldErr::PeerBusy) => return Outcome::Busy("本机已有一个到它的会话在跑".into()),
         // 全局并发闸满（W6 止血）。这**不是故障**：走 `Outcome::Busy` 就不动
         // 退避计数、也不覆盖界面上上一次的结果，`BUSY_RETRY_SECS` 秒后再来。
         // 当成失败的后果是一台正常设备被退到 300 秒一拨，而它只是排了一下队。
@@ -622,7 +629,7 @@ async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
             return Outcome::Busy(format!(
                 "本机同时进行的同步已达上限（{} 个）",
                 ctx.coord.limit()
-            ))
+            ));
         }
     };
     let to = match target(ctx, peer) {
@@ -736,11 +743,8 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
     let short = &peer[..8.min(peer.len())];
 
     // 连上却迟迟不开流的，等一小会儿就放掉——它占的只是这一个任务，不再堵别人
-    let w = match tokio::time::timeout(
-        OPEN_STREAM_TIMEOUT,
-        super::transport::accept_streams(conn),
-    )
-    .await
+    let w = match tokio::time::timeout(OPEN_STREAM_TIMEOUT, super::transport::accept_streams(conn))
+        .await
     {
         Ok(Ok(w)) => w,
         Ok(Err(e)) => {
@@ -765,10 +769,7 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
         if let Ok(Some(d)) = ctx.store.device_get(&peer) {
             if d.paused {
                 session::reject(&w, "peer paused");
-                log::info!(
-                    "[Sync] {} 已被本机暂停，拒绝入站同步",
-                    short
-                );
+                log::info!("[Sync] {} 已被本机暂停，拒绝入站同步", short);
                 return;
             }
         }
@@ -1092,9 +1093,9 @@ impl SyncService {
             table: ctx.presence.clone(),
             me: me.clone(),
             endpoint_port: port,
-            is_paired: Arc::new(move |id: &str| {
-                matches!(paired_store.device_get(id), Ok(Some(d)) if !d.paused)
-            }),
+            is_paired: Arc::new(
+                move |id: &str| matches!(paired_store.device_get(id), Ok(Some(d)) if !d.paused),
+            ),
             // 听到已配对设备的公告 = 它回来了 → 把休眠中的循环叫起来。
             // 不看 `id`：`notify_waiters()` 本来就是广播式的（理由见
             // `SyncCtx::wake` 的注释；多拨出来的量现在由全局并发闸卡着）。
@@ -1115,7 +1116,10 @@ impl SyncService {
         for d in &known {
             // 暂停中的设备不拨；恢复时由 kb_sync_set_paused → add_peer 补循环。
             if d.paused {
-                log::info!("[Sync] 设备 {} 已暂停，不起同步循环", &d.node_id[..8.min(d.node_id.len())]);
+                log::info!(
+                    "[Sync] 设备 {} 已暂停，不起同步循环",
+                    &d.node_id[..8.min(d.node_id.len())]
+                );
                 continue;
             }
             start_peer(&ctx, &d.node_id);

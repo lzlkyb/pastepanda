@@ -16,7 +16,11 @@ fn test_身份落盘后重启是同一个() {
     let dir = tmp_dir("id");
     let a = NodeIdentity::load_or_create(&dir).unwrap();
     let b = NodeIdentity::load_or_create(&dir).unwrap();
-    assert_eq!(a.node_id(), b.node_id(), "重启后身份变了 = 所有已配对设备都认不出这台机器");
+    assert_eq!(
+        a.node_id(),
+        b.node_id(),
+        "重启后身份变了 = 所有已配对设备都认不出这台机器"
+    );
     assert_eq!(a.node_id().len(), 64, "node_id 应为 32 字节的 hex");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -43,7 +47,11 @@ fn test_身份文件损坏时报错而不是悄悄换一个() {
 
     let e = NodeIdentity::load_or_create(&dir).expect_err("损坏的身份文件必须报错");
     assert!(e.contains("不会自动换新身份"), "错误信息要说清后果：{}", e);
-    assert!(e.contains("sync_node_key.bin"), "要告诉用户删哪个文件才能重建：{}", e);
+    assert!(
+        e.contains("sync_node_key.bin"),
+        "要告诉用户删哪个文件才能重建：{}",
+        e
+    );
     drop(first);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -69,7 +77,11 @@ fn test_短指纹是node_id的前缀且分组() {
     let me = NodeIdentity::load_or_create(&dir).unwrap();
     let fp = me.fingerprint();
     assert_eq!(fp.len(), 19, "4 组 4 字符 + 3 个连字符：{}", fp);
-    assert_eq!(fp.replace('-', ""), me.node_id()[..16], "指纹必须真的是 node_id 的前缀");
+    assert_eq!(
+        fp.replace('-', ""),
+        me.node_id()[..16],
+        "指纹必须真的是 node_id 的前缀"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -88,10 +100,10 @@ fn decode_kb(code: &str, now_ms: i64) -> Result<invite::Invite, String> {
 }
 
 #[test]
-fn test_邀请码能原样解回来() {
+fn test_v1旧码能原样解回来() {
     let dir = tmp_dir("inv");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let code = invite::encode(&me, "书房台式机", vec!["192.168.1.7:5007".into()], NOW).unwrap();
+    let code = invite::v1_encode(&me, "书房台式机", vec!["192.168.1.7:5007".into()], NOW).unwrap();
 
     let got = decode_kb(&code, NOW + 1000).unwrap();
     assert_eq!(got.node_id, me.node_id());
@@ -100,24 +112,78 @@ fn test_邀请码能原样解回来() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 🔴 签名管**完整性**：码被改一个字符就该拒，而不是配上一个错身份。
+/// 🔴 现行格式（PP1）的往返：公钥与设备名都要原样回来。
+/// 长度上界钉住「短码」这个立项前提——某天有人往码里塞字段，这里先红。
 #[test]
-fn test_改动过的邀请码拒绝() {
+fn test_pp1码能原样解回来且短到一行() {
+    let dir = tmp_dir("pp1");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "书房台式机").unwrap();
+
+    assert!(code.starts_with("PP1-"), "格式：{}", code);
+    assert!(
+        code.len() <= 80,
+        "5 字符设备名实测 73（44+4 那是空名下限）；超出来的长度：{}",
+        code.len()
+    );
+    let got = decode_kb(&code, NOW + 1000).unwrap();
+    assert_eq!(got.node_id, me.node_id());
+    assert_eq!(got.name, "书房台式机");
+    // addrs 是 v1 遗留字段，PP1 码恒为空
+    assert!(got.addrs.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 空名下限：32B 公钥 ⇒ base58 44 字符 + 校验 4 + 分隔 5 = **53 字符**。
+/// 这条钉的是格式本身（有人改分隔符 / 校验位宽，这里先红）。
+#[test]
+fn test_pp1码空名时的长度钉住格式() {
+    let dir = tmp_dir("pp1min");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "").unwrap();
+    assert_eq!(code.len(), 53, "实际：{}", code);
+    assert_eq!(decode_kb(&code, NOW).unwrap().node_id, me.node_id());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 🔴 v1 签名管**完整性**：码被改一个字符就该拒，而不是配上一个错身份。
+#[test]
+fn test_改动过的v1邀请码被签名拒绝() {
     let dir = tmp_dir("tamper");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let code = invite::encode(&me, "书房台式机", vec![], NOW).unwrap();
+    let code = invite::v1_encode(&me, "书房台式机", vec![], NOW).unwrap();
 
     // 解出 JSON、把设备名改掉、再编回去——签名覆盖了 name，所以必须验不过。
-    let raw = base64::Engine::decode(
-        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-        &code,
-    )
-    .unwrap();
-    let s = String::from_utf8(raw).unwrap().replace("书房台式机", "攻击者的机器");
+    let raw =
+        base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, &code).unwrap();
+    let s = String::from_utf8(raw)
+        .unwrap()
+        .replace("书房台式机", "攻击者的机器");
     let bad = base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, s);
 
     let e = decode_kb(&bad, NOW).expect_err("改过的码必须拒");
     assert!(e.contains("被改动过"), "{}", e);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// PP1 的完整性由**校验位**兜（挡手滑，不装挡攻击者——那是指纹的事）。
+/// 改一个字符就得拒。
+#[test]
+fn test_pp1码改一个字符被校验位拦住() {
+    let dir = tmp_dir("pp1tamper");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "书房台式机").unwrap();
+
+    // 在载荷段（首尾两个 - 之间）换一个 base58 字符
+    let (head, rest) = code.split_at(4); // "PP1-"
+    let (body, _check) = rest.split_at(rest.len() - 5); // 去 "-xxxx"
+    let mut bad = String::from(head);
+    let swapped = if body.starts_with('A') { 'B' } else { 'A' };
+    bad.push_str(&format!("{}{}", swapped, &body[1..]));
+    bad.push_str(&rest[rest.len() - 5..]);
+
+    let e = decode_kb(&bad, NOW).expect_err("改过的码必须拒");
+    assert!(e.contains("校验位不对"), "{}", e);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -144,7 +210,7 @@ fn test_搬运途中混入的不可见字符不影响解码() {
     // 可以同时成立。旧实现只做了 `trim()`，只去得掉首尾空白。
     let dir = tmp_dir("dirty");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let code = invite::encode(&me, "书房台式机", vec![], NOW).unwrap();
+    let code = invite::v1_encode(&me, "书房台式机", vec![], NOW).unwrap();
 
     // 在中间插一堆看不见的东西：换行、回车、空格、制表符、零宽空格、BOM
     let mid = code.len() / 2;
@@ -166,6 +232,21 @@ fn test_搬运途中混入的不可见字符不影响解码() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// PP1 路径的同一类失误：不可见字符插在码中间也要能解开
+/// （提取器对非 ASCII 一律跳过，与 v1 的白名单殊途同归）。
+#[test]
+fn test_pp1码混入不可见字符不影响解码() {
+    let dir = tmp_dir("pp1dirty");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "书房台式机").unwrap();
+
+    let mid = code.len() / 2;
+    let dirty = format!("{}\u{200b}\u{ad}{}", &code[..mid], &code[mid..]);
+    let inv = decode_kb(&dirty, NOW).expect("PP1 码里的不可见字符该被跳过");
+    assert_eq!(inv.node_id, me.node_id());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn test黑名单漏掉的那五个不可见字符也要能洗掉() {
     // 🔴 2026-09-06 的第一版修复用黑名单列举不可见字符，复查时一次就又找出五个漏网的。
@@ -178,7 +259,7 @@ fn test黑名单漏掉的那五个不可见字符也要能洗掉() {
     // 这条挂了 = 有人把白名单改回了黑名单。
     let dir = tmp_dir("invisible");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let code = invite::encode(&me, "书房台式机", vec![], NOW).unwrap();
+    let code = invite::v1_encode(&me, "书房台式机", vec![], NOW).unwrap();
 
     for (name, ch) in [
         ("U+200E LRM 左至右标记", '\u{200e}'),
@@ -190,8 +271,7 @@ fn test黑名单漏掉的那五个不可见字符也要能洗掉() {
         // 插在中间，模拟折行处被插入
         let mid = code.len() / 2;
         let dirty = format!("{}{}{}", &code[..mid], ch, &code[mid..]);
-        let inv = decode_kb(&dirty, NOW)
-            .unwrap_or_else(|e| panic!("{} 没被洗掉：{}", name, e));
+        let inv = decode_kb(&dirty, NOW).unwrap_or_else(|e| panic!("{} 没被洗掉：{}", name, e));
         assert_eq!(inv.node_id, me.node_id(), "{}", name);
     }
 
@@ -199,11 +279,11 @@ fn test黑名单漏掉的那五个不可见字符也要能洗掉() {
 }
 
 #[test]
-fn test多粘了别的文字与码本身坏了要报不同的话() {
+fn test_v1码多粘了别的文字与码本身坏了要报不同的话() {
     // 两种完全不同的失误，给同一句话会把人往错方向引（规则 #15.3）。
     let dir = tmp_dir("junk");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let code = invite::encode(&me, "书房台式机", vec![], NOW).unwrap();
+    let code = invite::v1_encode(&me, "书房台式机", vec![], NOW).unwrap();
 
     // ① 把前缀一起粘进来了 → 要明确说「混进了别的字符」
     let with_prefix = format!("邀请码{}", code);
@@ -228,15 +308,61 @@ fn test多粘了别的文字与码本身坏了要报不同的话() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 🔴 PP1 路径的**行为反转**（2026-09-18，方案 B 的第 2 件必做事）：
+/// 短码的使用场景恰恰是口头 / 微信传递，用户大概率连「邀请码：」一起粘。
+/// v1 时代数 junk 报错让人自己删，对 65 字符的短码是自找麻烦
+/// ⇒ 自动抠码，成功就静默通过。这条挂了 = 有人把 v1 的严厉照搬到了短码上。
 #[test]
-fn test_过期的邀请码拒绝且说清怎么办() {
+fn test_pp1码连聊天文字一起粘也能自动抠出来() {
+    let dir = tmp_dir("pp1junk");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "书房台式机").unwrap();
+
+    // ① 中文前缀 + 中文后缀 + 全角标点
+    let pasted = format!("邀请码：{}（复制后发给对方）", code);
+    let inv = decode_kb(&pasted, NOW).expect("前缀该被自动抠掉");
+    assert_eq!(inv.node_id, me.node_id());
+    assert_eq!(inv.name, "书房台式机");
+
+    // ② 码后面直接跟英文字母（全是 base58 字符，最容易被误拼进载荷的情形）
+    let with_tail = format!("{} enjoy the code", code);
+    let inv2 = decode_kb(&with_tail, NOW).expect("英文尾巴不该毁掉码");
+    assert_eq!(inv2.node_id, me.node_id());
+
+    // ③ 前缀大小写不敏感（用户手敲 pp1）——❗只折前缀，载荷大小写敏感，
+    //   整串 to_lowercase 会把 base58 折坏
+    let typed = format!("code: {}", code).replacen("PP1", "pp1", 1);
+    let inv3 = decode_kb(&typed, NOW).expect("小写 pp1 前缀也该认");
+    assert_eq!(inv3.node_id, me.node_id());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_v1过期的邀请码拒绝且说清怎么办() {
     let dir = tmp_dir("old");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let code = invite::encode(&me, "老机器", vec![], NOW).unwrap();
+    let code = invite::v1_encode(&me, "老机器", vec![], NOW).unwrap();
 
     let later = NOW + (invite::TTL_SECS + 1) * 1000;
     let e = decode_kb(&code, later).expect_err("过期必须拒");
     assert!(e.contains("已过期") && e.contains("重新生成"), "{}", e);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 🔴 PP1 码**没有** ts ⇒ 码内过期判据取消，过期完全由邀请门兜
+/// （门宽与各路 TTL 同源，2026-09-17 修的口径不变）。
+/// 一百天前生成的码在本机解码照样成功——门关着时对端会拿到
+/// 「对方的邀请窗口已过期」，那才是指得到动作的话。
+#[test]
+fn test_pp1码没有码内过期判据_过期由门兜() {
+    let dir = tmp_dir("pp1old");
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let code = invite::encode(&me, "老机器").unwrap();
+
+    let much_later = NOW + 100 * 24 * 3600 * 1000;
+    let inv = decode_kb(&code, much_later).expect("PP1 码不带 ts，不该在本机解码时被判过期");
+    assert_eq!(inv.node_id, me.node_id());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -253,7 +379,7 @@ fn test_过期的邀请码拒绝且说清怎么办() {
 fn test_过期的两种情况要说得出是多久() {
     let dir = tmp_dir("old2");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let code = invite::encode(&me, "老机器", vec![], NOW).unwrap();
+    let code = invite::v1_encode(&me, "老机器", vec![], NOW).unwrap();
     let later = NOW + 31 * 60 * 1000; // 31 分钟之后
 
     // 知识库同步那一档（7 天）：远没到期
@@ -284,8 +410,11 @@ fn test_对端时钟稍快不影响配对() {
     let dir = tmp_dir("skew");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
     // 码上的时间比本机「现在」晚 5 分钟
-    let code = invite::encode(&me, "快五分钟的机器", vec![], NOW + 300_000).unwrap();
-    assert!(decode_kb(&code, NOW).is_ok(), "对端时钟快 5 分钟就配不上，那没法用");
+    let code = invite::v1_encode(&me, "快五分钟的机器", vec![], NOW + 300_000).unwrap();
+    assert!(
+        decode_kb(&code, NOW).is_ok(),
+        "对端时钟快 5 分钟就配不上，那没法用"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -300,10 +429,15 @@ fn test_debug输出里没有私钥() {
     let me = NodeIdentity::load_or_create(&dir).unwrap();
     let s = format!("{:?}", me);
     assert!(s.contains("已隐去"), "{}", s);
-    assert!(s.contains(&me.fingerprint()), "指纹是公开信息，可以露：{}", s);
+    assert!(
+        s.contains(&me.fingerprint()),
+        "指纹是公开信息，可以露：{}",
+        s
+    );
     // 私钥不是 node_id，但确认输出里没有任何 64 字符长的 hex 串。
     assert!(
-        !s.split(|c: char| !c.is_ascii_hexdigit()).any(|t| t.len() >= 64),
+        !s.split(|c: char| !c.is_ascii_hexdigit())
+            .any(|t| t.len() >= 64),
         "输出里出现了 64 位以上的 hex，可能是密钥材料：{}",
         s
     );
@@ -561,7 +695,11 @@ fn test_hlc_对端时钟超前太多要报出来() {
     let (a, b) = (store(), store());
     let n = a.note_create(None, "甲", "正文").unwrap();
     // A 声称自己在 10 年后
-    set_updated_ms(&a, &n.id, crate::data_store::wall_ms_for_test() + 10 * 365 * 86_400_000);
+    set_updated_ms(
+        &a,
+        &n.id,
+        crate::data_store::wall_ms_for_test() + 10 * 365 * 86_400_000,
+    );
 
     let (_, rep) = sync(&a, &b, 0, "hlc3");
     let ahead = rep
@@ -579,10 +717,7 @@ fn test_hlc_下界落盘后重启不回退() {
     let future = crate::data_store::wall_ms_for_test() + 60_000; // 未来 1 分钟，在上限内
     {
         let s = DataStore::new(&db).unwrap();
-        assert_eq!(
-            s.absorb_remote_clock(future),
-            crate::sync::hlc::Absorb::Ok
-        );
+        assert_eq!(s.absorb_remote_clock(future), crate::sync::hlc::Absorb::Ok);
         // 故意**不写任何笔记** —— 那个抬升只存在于内存里
     }
     {
@@ -632,9 +767,7 @@ fn test_两边都改过时留下冲突副本() {
     assert_eq!(rep.conflicts, 1, "两边都改过该判冲突：{:?}", rep);
 
     // 冲突副本要能被 AM-7 的类别筛出来
-    let copies = b
-        .note_search("冲突副本", "all", &[], 10)
-        .unwrap();
+    let copies = b.note_search("冲突副本", "all", &[], 10).unwrap();
     assert_eq!(copies.len(), 1, "该留下一份冲突副本：{:?}", copies.len());
     assert!(
         crate::markdown::kinds_of(&copies[0].content).contains(&"conflict".to_string()),
@@ -659,7 +792,15 @@ fn test_只挪文件夹也要同步过去() {
     let (cursor, _) = sync(&a, &b, 0, "mv1");
     let landed = b.note_get(&n.id).unwrap().unwrap();
     let fid = landed.folder_id.clone().expect("第一轮就该落在「工作」里");
-    assert_eq!(b.folder_list().unwrap().iter().find(|f| f.id == fid).unwrap().name, "工作");
+    assert_eq!(
+        b.folder_list()
+            .unwrap()
+            .iter()
+            .find(|f| f.id == fid)
+            .unwrap()
+            .name,
+        "工作"
+    );
 
     // 只挪文件夹，标题/正文/标签一字不改
     a.note_set_folder(&n.id, Some(&f2.id)).unwrap();
@@ -670,7 +811,12 @@ fn test_只挪文件夹也要同步过去() {
     let moved = b.note_get(&n.id).unwrap().unwrap();
     let fid2 = moved.folder_id.expect("移动后还在未分类？");
     assert_eq!(
-        b.folder_list().unwrap().iter().find(|f| f.id == fid2).unwrap().name,
+        b.folder_list()
+            .unwrap()
+            .iter()
+            .find(|f| f.id == fid2)
+            .unwrap()
+            .name,
         "归档",
         "文件夹移动没传过去"
     );
@@ -723,7 +869,9 @@ fn test_严格赢的一边不存副本但要计数() {
     );
     // 关键断言：A 那份不在这里存副本——A 那台机器会把自己那份存成副本再同步过来
     assert!(
-        b.note_search("冲突副本", "all", &[], 10).unwrap().is_empty(),
+        b.note_search("冲突副本", "all", &[], 10)
+            .unwrap()
+            .is_empty(),
         "严格赢的一边不该再存一份（内容与输家那份完全相同）"
     );
 }
@@ -743,7 +891,10 @@ fn test_只有一边改过不算冲突() {
 
     assert_eq!(rep.conflicts, 0, "{:?}", rep);
     assert_eq!(b.note_get(&n.id).unwrap().unwrap().content, "只有 A 改了");
-    assert!(b.note_search("冲突副本", "all", &[], 10).unwrap().is_empty());
+    assert!(b
+        .note_search("冲突副本", "all", &[], 10)
+        .unwrap()
+        .is_empty());
 }
 
 /// 拿**旧游标**重发一批（比如重试）不该被判成冲突。
@@ -979,18 +1130,17 @@ async fn test_对端发到一半不发了要中断而不是挂死() {
     let inbox2 = inbox.clone();
     let recv = tokio::spawn(async move {
         let mut w = super::transport::accept(&listener).await.unwrap();
-        super::transport::read_dir_with(
-            &mut w.recv,
-            &inbox2,
-            std::time::Duration::from_millis(300),
-        )
-        .await
+        super::transport::read_dir_with(&mut w.recv, &inbox2, std::time::Duration::from_millis(300))
+            .await
     });
 
     // 拨号方：把「名字 + 内容长度」发完，然后**一个内容字节也不发**，也不关连接。
     let mut w = super::transport::dial(&dialer, to).await.unwrap();
     let name = b"a.md";
-    w.send.write_all(&(name.len() as u32).to_be_bytes()).await.unwrap();
+    w.send
+        .write_all(&(name.len() as u32).to_be_bytes())
+        .await
+        .unwrap();
     w.send.write_all(name).await.unwrap();
     w.send.write_all(&1000u64.to_be_bytes()).await.unwrap();
 
@@ -1025,12 +1175,20 @@ fn test_清单里的穿越路径不能删掉外面的文件() {
 
     // 恶意清单：真实 note_id + `incoming = 0`（使 both_changed 为假、不留痕迹）
     // + 一个指向 inbox 外面的绝对路径。走到 `local >= incoming` 就会 remove_file。
-    let evil = format!("{}\t0\t{}\n", n.id, victim.to_string_lossy().replace('\\', "/"));
+    let evil = format!(
+        "{}\t0\t{}\n",
+        n.id,
+        victim.to_string_lossy().replace('\\', "/")
+    );
     std::fs::write(inbox.join(".pp-sync-manifest"), evil).unwrap();
     std::fs::write(inbox.join(".pp-sync-tombstones"), "").unwrap();
 
     let r = apply_delta(&s, &inbox, 0);
-    assert!(r.is_err(), "穿越路径应该把会话停下来，而不是默默执行：{:?}", r);
+    assert!(
+        r.is_err(),
+        "穿越路径应该把会话停下来，而不是默默执行：{:?}",
+        r
+    );
     assert!(
         victim.is_file(),
         "对端通过清单删掉了 inbox 外面的文件——路径穿越回来了"
@@ -1130,7 +1288,13 @@ mod presence_tests {
             t2,
         );
         assert!(
-            matches!(h2, Heard::Fresh { returned: false, .. }),
+            matches!(
+                h2,
+                Heard::Fresh {
+                    returned: false,
+                    ..
+                }
+            ),
             "心跳不能算跃变，否则休眠会被封顶在 15 秒"
         );
 
@@ -1443,7 +1607,13 @@ mod presence_tests {
         let short = serde_json::json!({
             "v": 1, "node_id": "abcd", "port": 1, "ts": T0, "sig": ""
         });
-        let heard = table.hear(&serde_json::to_vec(&short).unwrap(), ip(1), &me, &nobody, T0);
+        let heard = table.hear(
+            &serde_json::to_vec(&short).unwrap(),
+            ip(1),
+            &me,
+            &nobody,
+            T0,
+        );
         assert!(
             matches!(&heard, Heard::Bad(w) if w.contains("长度")),
             "{:?}",
@@ -1466,7 +1636,7 @@ mod presence_tests {
         use base64::Engine as _;
         let a = NodeIdentity::load_or_create(&tmp_dir("pres_cross_a")).unwrap();
         let b = NodeIdentity::load_or_create(&tmp_dir("pres_cross_b")).unwrap();
-        let code = crate::sync::invite::encode(&a, "甲机", vec![], T0).unwrap();
+        let code = crate::sync::invite::v1_encode(&a, "甲机", vec![], T0).unwrap();
         let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(code)
             .unwrap();
@@ -1591,8 +1761,16 @@ async fn test_第二轮什么都不搬也不生冲突副本() {
     //   `updated_ms` 盖回对端的值，下界也不会降回去）。所以第二轮的高水位
     //   比第一轮高。无害：游标只要 ≥ 已发过的最大戳就行。
     for (tag, r) in [("甲", &r2a), ("乙", &r2b)] {
-        assert_eq!(r.applied.created, 0, "{}第二轮不该新建：{:?}", tag, r.applied);
-        assert_eq!(r.applied.updated, 0, "{}第二轮不该更新：{:?}", tag, r.applied);
+        assert_eq!(
+            r.applied.created, 0,
+            "{}第二轮不该新建：{:?}",
+            tag, r.applied
+        );
+        assert_eq!(
+            r.applied.updated, 0,
+            "{}第二轮不该更新：{:?}",
+            tag, r.applied
+        );
         assert_eq!(
             r.applied.conflicts, 0,
             "{}第二轮生成了冲突副本，游标没推对：{:?}",
@@ -1689,7 +1867,11 @@ fn test_戳相同但内容不同仍按平手处理() {
     let dir2 = tmp_dir("tie2");
     write_delta(&a, &delta, &dir2).unwrap();
     let rep = apply_delta(&b, &dir2, 0).expect("应用失败");
-    assert_eq!(rep.identical, 0, "内容不同不该走「一模一样」那条：{:?}", rep);
+    assert_eq!(
+        rep.identical, 0,
+        "内容不同不该走「一模一样」那条：{:?}",
+        rep
+    );
     // 平手时本地赢，且因为两边都在游标之后改过，对端那份留了副本
     assert_eq!(rep.skipped_older, 1, "{:?}", rep);
     assert_eq!(rep.conflicts, 1, "真平手应留冲突副本：{:?}", rep);
@@ -1791,7 +1973,10 @@ mod coordinate_tests {
     fn test_等对方确认算在忙而不是故障() {
         use crate::sync::join::REJECT_PENDING;
         use crate::sync::service::{is_busy_reject, is_not_paired_reject};
-        let real = format!("读帧长度失败：connection lost（closed by peer: {} (code 1)）", REJECT_PENDING);
+        let real = format!(
+            "读帧长度失败：connection lost（closed by peer: {} (code 1)）",
+            REJECT_PENDING
+        );
         // 走短延迟重试：用户刚在对面点完确认，不该再等一分钟。
         assert!(is_busy_reject(&real));
         assert!(!is_not_paired_reject(&real));
@@ -2128,7 +2313,10 @@ mod scratch_gc_tests {
     #[test]
     fn test_根目录不存在不崩() {
         assert_eq!(
-            sweep_scratch_in(std::path::Path::new("D:/这个目录不存在的"), Duration::from_secs(0)),
+            sweep_scratch_in(
+                std::path::Path::new("D:/这个目录不存在的"),
+                Duration::from_secs(0)
+            ),
             0
         );
     }
@@ -2215,7 +2403,11 @@ mod coalesce_tests {
         // 🔴 下界与上界都要断：
         //    每 10ms 写一次、窗口 60ms ⇒ 安静窗口**永远轮不到**，只能由封顶放行。
         //    只断上界的话，“提前从安静窗口跑掉”也会算通过——那就根本没测到封顶。
-        assert!(e >= max, "不是被封顶放行的（只用了 {:?}），这条测的不是封顶", e);
+        assert!(
+            e >= max,
+            "不是被封顶放行的（只用了 {:?}），这条测的不是封顶",
+            e
+        );
         assert!(e < max * 3, "封顶没生效，等了 {:?}", e);
     }
 
@@ -2230,8 +2422,13 @@ mod coalesce_tests {
             poke(&s2);
         });
         assert!(
-            !coalesce_writes(&stop, &wrote, Duration::from_secs(300), Duration::from_secs(3600))
-                .await,
+            !coalesce_writes(
+                &stop,
+                &wrote,
+                Duration::from_secs(300),
+                Duration::from_secs(3600)
+            )
+            .await,
             "开关关了必须返回 false"
         );
     }
@@ -2380,7 +2577,9 @@ mod presence_stop_tests {
         //       **地址发现静默死掉，而界面上开关是开的**。
         let svc = SyncService::new();
         let dir = tmp_dir("presence_stop");
-        svc.start_on(store(), &dir, true, false, 0).await.expect("启动失败");
+        svc.start_on(store(), &dir, true, false, 0)
+            .await
+            .expect("启动失败");
 
         let flag = svc.presence_flag().await.expect("起来之后该有这个标志");
         // spawn 里那个 CAS 成功了才会置 true —— 它同时证明宣告线程真的起来了
@@ -2473,7 +2672,10 @@ fn test_三台机器删除能传到第三台() {
 
     // 🔴 关键：B 再与 C 同步时，清单里必须带着这条删除
     let (_, rep_bc) = sync(&b, &c, cur_bc, "t3_4");
-    assert_eq!(rep_bc.deleted, 1, "C 没收到删除——三台以上删不干净（§12.12）");
+    assert_eq!(
+        rep_bc.deleted, 1,
+        "C 没收到删除——三台以上删不干净（§12.12）"
+    );
     assert!(c.note_get(&n.id).unwrap().is_none(), "C 上那篇该没了");
 }
 
@@ -2522,7 +2724,11 @@ fn test_两类墓碑的分界() {
         "软删只是删除意图，还能还原，不该当成不可恢复"
     );
     // 但它已经能传播了——这正是三机场景需要的
-    assert_eq!(a.note_tombstones_since(0).unwrap().len(), 1, "软删就该落下可转发的墓碑");
+    assert_eq!(
+        a.note_tombstones_since(0).unwrap().len(),
+        1,
+        "软删就该落下可转发的墓碑"
+    );
 
     a.note_purge(&n.id).unwrap();
     assert!(
@@ -2708,9 +2914,30 @@ fn test_失败不覆盖上次成功时间() {
         },
     );
 
-    record_into(&last, "p1", Outcome::Failed("网络不通".to_string()), 3, 30, false);
-    record_into(&last, "p2", Outcome::Failed("超时".to_string()), 1, 5, false);
-    record_into(&last, "p3", Outcome::Failed("一直连不上".to_string()), 20, 1800, true);
+    record_into(
+        &last,
+        "p1",
+        Outcome::Failed("网络不通".to_string()),
+        3,
+        30,
+        false,
+    );
+    record_into(
+        &last,
+        "p2",
+        Outcome::Failed("超时".to_string()),
+        1,
+        5,
+        false,
+    );
+    record_into(
+        &last,
+        "p3",
+        Outcome::Failed("一直连不上".to_string()),
+        20,
+        1800,
+        true,
+    );
 
     let m = last.lock().unwrap();
 
@@ -2720,10 +2947,16 @@ fn test_失败不覆盖上次成功时间() {
     assert_eq!(p1.fails, 3);
     assert!(!p1.dormant);
 
-    assert_eq!(m["p2"].last_ok_ms, 0, "从未成功过就该是 0——界面据此只合并成一行灰字");
+    assert_eq!(
+        m["p2"].last_ok_ms, 0,
+        "从未成功过就该是 0——界面据此只合并成一行灰字"
+    );
 
     // dormant 由循环的 `Wait` 传进来，不在这里再推一遍阀值
-    assert!(m["p3"].dormant, "已休眠要能传到前端，否则它只能拿 fails 阀值再推一遍");
+    assert!(
+        m["p3"].dormant,
+        "已休眠要能传到前端，否则它只能拿 fails 阀值再推一遍"
+    );
 }
 
 /// 重启后不能把「曾经同步成功过」丢掉。
@@ -2767,7 +3000,14 @@ fn test_启动时把上次成功时间种回内存表() {
 
     // 种完之后再失败一次：这才是真正要保的联合行为——
     // 界面应该看到「连不上 p1（多久之前还好好的）」，而不是「还没连上」。
-    record_into(&last, "p1", Outcome::Failed("网络不通".to_string()), 2, 30, false);
+    record_into(
+        &last,
+        "p1",
+        Outcome::Failed("网络不通".to_string()),
+        2,
+        30,
+        false,
+    );
     let m = last.lock().unwrap();
     assert_eq!(
         m["p1"].last_ok_ms, 5_000,
@@ -3189,7 +3429,7 @@ mod presence_plain_tests {
     /// 剪掉」，邻居在列表里一闪一闪——而这种抖动在界面上看像是「对方网络不稳」，
     /// 极难往回追到两个常量。
     #[test]
-    fn test_招呼间隔与附近表_TTL_相称() {
+    fn test_招呼间隔与附近表ttl相称() {
         use crate::sync::presence::{HELLO_INTERVAL_SECS, NEARBY_TTL_MS};
         let interval_ms = HELLO_INTERVAL_SECS as i64 * 1000;
         assert_eq!(

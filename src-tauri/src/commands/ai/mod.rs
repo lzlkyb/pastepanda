@@ -109,7 +109,11 @@ pub(crate) fn read_ai_config(store: &DataStore) -> Result<AiConfig, String> {
     };
     let provider = {
         let p = s("ai_provider");
-        if p.is_empty() { d.provider } else { p }
+        if p.is_empty() {
+            d.provider
+        } else {
+            p
+        }
     };
     let (base_url, model, protocol) = resolve_provider_values(&raw, &provider, &s);
     Ok(AiConfig {
@@ -215,7 +219,10 @@ fn write_ai_config(store: &DataStore, cfg: &AiConfig) -> Result<(), String> {
     let mut raw = store.get_config()?;
     if let Some(obj) = raw.as_object_mut() {
         obj.insert("ai_enabled".to_string(), Value::Bool(cfg.enabled));
-        obj.insert("ai_provider".to_string(), Value::String(cfg.provider.clone()));
+        obj.insert(
+            "ai_provider".to_string(),
+            Value::String(cfg.provider.clone()),
+        );
         // 模型/地址/协议按 provider 独立落位（内置 → overrides；自定义 → 数组项）
         if is_builtin_provider(&cfg.provider) {
             let mut overrides = obj
@@ -227,9 +234,18 @@ fn write_ai_config(store: &DataStore, cfg: &AiConfig) -> Result<(), String> {
                     .entry(cfg.provider.clone())
                     .or_insert_with(|| Value::Object(serde_json::Map::new()));
                 if let Value::Object(e) = entry {
-                    e.insert("baseUrl".to_string(), Value::String(cfg.base_url.trim().to_string()));
-                    e.insert("model".to_string(), Value::String(cfg.model.trim().to_string()));
-                    e.insert("protocol".to_string(), Value::String(cfg.protocol.trim().to_string()));
+                    e.insert(
+                        "baseUrl".to_string(),
+                        Value::String(cfg.base_url.trim().to_string()),
+                    );
+                    e.insert(
+                        "model".to_string(),
+                        Value::String(cfg.model.trim().to_string()),
+                    );
+                    e.insert(
+                        "protocol".to_string(),
+                        Value::String(cfg.protocol.trim().to_string()),
+                    );
                 }
             }
             obj.insert("ai_provider_overrides".to_string(), overrides);
@@ -268,13 +284,13 @@ fn write_ai_config(store: &DataStore, cfg: &AiConfig) -> Result<(), String> {
                 serde_json::to_value(&customs).unwrap_or(Value::Array(vec![])),
             );
         }
-        obj.insert("ai_daily_budget_cny".to_string(), json!(cfg.daily_budget_cny));
+        obj.insert(
+            "ai_daily_budget_cny".to_string(),
+            json!(cfg.daily_budget_cny),
+        );
         obj.insert("ai_timeout_secs".to_string(), json!(cfg.timeout_secs));
         obj.insert("ai_thinking_off".to_string(), json!(cfg.thinking_off));
-        obj.insert(
-            "ai_tags_as_context".to_string(),
-            json!(cfg.tags_as_context),
-        );
+        obj.insert("ai_tags_as_context".to_string(), json!(cfg.tags_as_context));
     }
     store.save_config(&raw)
 }
@@ -314,10 +330,7 @@ pub fn ai_set_config(store: State<DataStore>, config: AiConfig) -> Result<(), St
 }
 
 /// 取要操作的厂商 id：前端显式指定优先，否则用当前生效的。
-fn target_provider(
-    app: &tauri::AppHandle,
-    explicit: Option<String>,
-) -> Result<String, String> {
+fn target_provider(app: &tauri::AppHandle, explicit: Option<String>) -> Result<String, String> {
     if let Some(p) = explicit {
         let pid = p.trim();
         if !pid.is_empty() {
@@ -346,7 +359,11 @@ pub fn ai_get_provider_config(
             .to_string()
     };
     let (base_url, model, protocol) = resolve_provider_values(&raw, &provider_id, &legacy);
-    Ok(ProviderConfigValue { base_url, model, protocol })
+    Ok(ProviderConfigValue {
+        base_url,
+        model,
+        protocol,
+    })
 }
 
 /// 指定服务商的 模型/地址/协议。
@@ -357,9 +374,6 @@ pub struct ProviderConfigValue {
     pub model: String,
     pub protocol: String,
 }
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -409,7 +423,12 @@ mod tests {
         assert_eq!(read.provider, "qwen");
         // 直接读 deepseek 的值
         let raw = store.get_config().unwrap();
-        let legacy = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let legacy = |k: &str| {
+            raw.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
         let (base_url, model, _) = resolve_provider_values(&raw, "deepseek", &legacy);
         assert_eq!(model, "deepseek-chat");
         assert_eq!(base_url, "https://a.example.com/v1");
@@ -428,9 +447,17 @@ mod tests {
         write_ai_config(&store, &cfg).unwrap();
 
         let raw = store.get_config().unwrap();
-        let legacy = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let legacy = |k: &str| {
+            raw.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
         let (_, model, _) = resolve_provider_values(&raw, "builtin-agnes", &legacy);
-        assert_eq!(model, "agnes-3.0-flash", "钉着的退役 id 必须在读时迁移到现行 id");
+        assert_eq!(
+            model, "agnes-3.0-flash",
+            "钉着的退役 id 必须在读时迁移到现行 id"
+        );
     }
 
     /// 自定义服务商：写入数组、多实例互不影响
@@ -460,7 +487,12 @@ mod tests {
 
         // 两个自定义互不影响
         let raw = store.get_config().unwrap();
-        let legacy = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let legacy = |k: &str| {
+            raw.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
         let (_, m2, _) = resolve_provider_values(&raw, "custom_2", &legacy);
         assert_eq!(m2, "", "未配置的自定义返回空，不与 custom_1 串");
     }
@@ -475,7 +507,10 @@ mod tests {
     #[test]
     fn builtin_free_always_uses_builtin_key() {
         let k = pick_ai_key(provider::BUILTIN_AGNES_ID, String::new());
-        assert!(!k.is_empty(), "内置免费服务商拿到了空密钥（就是那个 401 的根因）");
+        assert!(
+            !k.is_empty(),
+            "内置免费服务商拿到了空密钥（就是那个 401 的根因）"
+        );
         assert_eq!(k, provider::builtin_agnes_key());
     }
 

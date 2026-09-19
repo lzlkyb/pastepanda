@@ -247,11 +247,7 @@ impl DataStore {
     ///
     /// 三道校验：名字非空 · 同父下不重名 · 深度不超限。
     /// 同父下重名必须拦：否则树里两行完全一样，用户无法区分哪个是哪个。
-    pub fn folder_create(
-        &self,
-        name: &str,
-        parent_id: Option<&str>,
-    ) -> Result<NoteFolder, String> {
+    pub fn folder_create(&self, name: &str, parent_id: Option<&str>) -> Result<NoteFolder, String> {
         self.folder_create_with_source(name, parent_id, "manual")
     }
 

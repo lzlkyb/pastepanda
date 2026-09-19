@@ -114,11 +114,7 @@ pub struct PresenceTable {
 
 impl std::fmt::Debug for PresenceTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let has_plain = self
-            .plain
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false);
+        let has_plain = self.plain.lock().map(|g| g.is_some()).unwrap_or(false);
         let nodes = self.inner.lock().map(|g| g.len()).unwrap_or(0);
         f.debug_struct("PresenceTable")
             .field("app", &self.app)
@@ -149,11 +145,7 @@ impl PresenceTable {
     /// 把 [`Heard::Plain`] 交给处理器。返回「有没有人接」——
     /// 没人接时调用方留一条 debug（规则 #15.3：静默丢弃比报错难查一个量级）。
     pub fn dispatch_plain(&self, p: &PlainPacket) -> bool {
-        let f = self
-            .plain
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let f = self.plain.lock().unwrap_or_else(|p| p.into_inner()).clone();
         match f {
             Some(f) => {
                 f(p);

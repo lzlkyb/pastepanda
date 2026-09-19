@@ -371,7 +371,8 @@ pub async fn ai_run(
         // `action_prefs` 是用户**显式**写的，画像是**推断**的；两者冲突时必须显式的赢，
         // 而 LLM 对更靠后的指令权重更高。反过来拼的话，用户手写的“译文更简洁”
         // 会被一句统计推出来的“先给结论再给展开”压过去。
-        let system = compose_system_with_profile(system, &profile_fragment, spec.is_local(), &classifier);
+        let system =
+            compose_system_with_profile(system, &profile_fragment, spec.is_local(), &classifier);
         compose_system_with_pref(system, &pref, spec.is_local(), &classifier)
     };
 
@@ -442,11 +443,7 @@ pub async fn ai_run(
             model: outcome.model.clone(),
             prompt_tokens: outcome.prompt_tokens,
             completion_tokens: outcome.completion_tokens,
-            cost_usd: budget::estimate_cost(
-                spec,
-                outcome.prompt_tokens,
-                outcome.completion_tokens,
-            ),
+            cost_usd: budget::estimate_cost(spec, outcome.prompt_tokens, outcome.completion_tokens),
             cached: false,
             latency_ms,
             ok: true,
@@ -726,7 +723,11 @@ mod tests {
     fn test_画像片段拼在用户习惯标题下() {
         let out = compose_profile("用户经常处理代码。", false);
         assert!(out.starts_with(SYS));
-        assert!(out.contains("用户习惯：用户经常处理代码。"), "实际：{}", out);
+        assert!(
+            out.contains("用户习惯：用户经常处理代码。"),
+            "实际：{}",
+            out
+        );
     }
 
     /// 回归：片段现在是本地固定文案，但映射表以后可能加进用户输入的东西，
@@ -734,7 +735,11 @@ mod tests {
     #[test]
     fn test_含敏感信息的画像片段不得出网() {
         let p = "用户经常处理代码，常用密钥 sk-abcdefghijklmnopqrstuvwxyz0123456789。";
-        assert_eq!(compose_profile(p, false), SYS, "含密钥的片段不得拼进出网的 system");
+        assert_eq!(
+            compose_profile(p, false),
+            SYS,
+            "含密钥的片段不得拼进出网的 system"
+        );
     }
 
     #[test]
@@ -770,7 +775,11 @@ mod tests {
     #[test]
     fn test_secret_pref_is_dropped_for_remote() {
         let pref = concat!("sk-", "abcdef1234567890abcdef1234567890");
-        assert_eq!(compose(pref, false), SYS, "含密钥的偏好不得拼进出网的 system");
+        assert_eq!(
+            compose(pref, false),
+            SYS,
+            "含密钥的偏好不得拼进出网的 system"
+        );
     }
 
     #[test]
@@ -785,6 +794,9 @@ mod tests {
     fn test_secret_pref_kept_for_local_provider() {
         let pref = concat!("sk-", "abcdef1234567890abcdef1234567890");
         let out = compose(pref, true);
-        assert!(out.contains(pref), "本地厂商应照常拼接（内容不离开这台电脑）");
+        assert!(
+            out.contains(pref),
+            "本地厂商应照常拼接（内容不离开这台电脑）"
+        );
     }
 }

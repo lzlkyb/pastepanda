@@ -673,9 +673,7 @@ fn push_author_filter(
         // 🔴 它不是 `ai` 的子集名字游戏，而是用户唯一看不见的那一类：
         //    「AI 建了一篇笔记」列表里有图标，而「AI 悄悄改了我写的东西」
         //    在界面上没有任何痕迹。这也是乙案胜过甲案的唯一理由。
-        "ai_edited" => {
-            sql.push_str(" AND notes.source_agent = '' AND notes.last_agent != ''")
-        }
+        "ai_edited" => sql.push_str(" AND notes.source_agent = '' AND notes.last_agent != ''"),
         // 🔴 `human` 要求**两列都空**：人建的、但后来被 AI 改过正文的笔记
         //    不能再算「人亲自写的」——对用户来说那正是他最想看见的一类。
         //    `''` 是字面量，不碰输入。
@@ -821,7 +819,10 @@ impl DataStore {
             .and_then(|(rowid, title, content)| {
                 let pinyin = compute_pinyin_initials(&pinyin_source(&title, &content));
                 // FTS5 不支持 UPSERT：必须先删后插（见本文件头部注释）。
-                conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rowid])?;
+                conn.execute(
+                    "DELETE FROM notes_fts WHERE rowid = ?1",
+                    rusqlite::params![rowid],
+                )?;
                 conn.execute(
                     "INSERT INTO notes_fts (rowid, title, content, pinyin) VALUES (?1, ?2, ?3, ?4)",
                     rusqlite::params![
@@ -1166,15 +1167,13 @@ impl DataStore {
         //
         // 两头都非空才做：旧标题为空时 `[[]]` 本来就不是链；
         // 新标题为空时重写会把引用变成 `[[]]`，那比断链更坏。
-        let relinked = if old_title != title
-            && !old_title.trim().is_empty()
-            && !title.trim().is_empty()
-        {
-            Self::rewrite_wiki_links_on(&tx, id, &old_title, title, source, self.hlc_now())
-                .map_err(|e| e.to_string())?
-        } else {
-            Vec::new()
-        };
+        let relinked =
+            if old_title != title && !old_title.trim().is_empty() && !title.trim().is_empty() {
+                Self::rewrite_wiki_links_on(&tx, id, &old_title, title, source, self.hlc_now())
+                    .map_err(|e| e.to_string())?
+            } else {
+                Vec::new()
+            };
 
         tx.commit().map_err(|e| e.to_string())?;
 
@@ -1324,9 +1323,10 @@ impl DataStore {
             local_ms,
         );
         if let Some(rid) = rowid {
-            if let Err(e) =
-                conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rid])
-            {
+            if let Err(e) = conn.execute(
+                "DELETE FROM notes_fts WHERE rowid = ?1",
+                rusqlite::params![rid],
+            ) {
                 log::warn!("[Notes] FTS 删除失败 (id={}): {}", id, e);
             }
         }
@@ -1477,7 +1477,10 @@ impl DataStore {
         }
         // 软删时已经从 FTS 拿掉了，这里再删一次是兼容性兼底（旧库可能有残留行）。
         if let Some(rid) = rowid {
-            let _ = conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rid]);
+            let _ = conn.execute(
+                "DELETE FROM notes_fts WHERE rowid = ?1",
+                rusqlite::params![rid],
+            );
         }
         Ok(())
     }
@@ -1545,7 +1548,10 @@ impl DataStore {
                                THEN excluded.purged ELSE note_tombstones.purged END"
         );
         if let Err(e) = conn.execute(&sql, params) {
-            log::warn!("[Notes] 落墓碑失败（删除仍会继续，但这条删除可能不传播）: {}", e);
+            log::warn!(
+                "[Notes] 落墓碑失败（删除仍会继续，但这条删除可能不传播）: {}",
+                e
+            );
         }
     }
 
@@ -1575,10 +1581,7 @@ impl DataStore {
     /// 筛选与游标必须是同一个字段，这是游标语义的基本要求。
     ///
     /// 返回 `(note_id, tombstone_ms, local_ms)`——前两项上线，第三项只给游标用。
-    pub fn note_tombstones_since(
-        &self,
-        since_ms: i64,
-    ) -> Result<Vec<(String, i64, i64)>, String> {
+    pub fn note_tombstones_since(&self, since_ms: i64) -> Result<Vec<(String, i64, i64)>, String> {
         self.note_tombstones_since_or_buckets(since_ms, &[])
     }
 
@@ -1647,7 +1650,11 @@ impl DataStore {
              VALUES (?1, ?2, NULL, 0, ?3)",
             rusqlite::params![id, tombstone_ms, local_ms],
         ) {
-            log::warn!("[Notes] 记对端墓碑失败（这条删除不会再转发） (id={}): {}", id, e);
+            log::warn!(
+                "[Notes] 记对端墓碑失败（这条删除不会再转发） (id={}): {}",
+                id,
+                e
+            );
         }
     }
 
@@ -1808,11 +1815,9 @@ impl DataStore {
     /// 恰好只动回收站里的，拿 `note_get` 判它会永远取不到归属。
     pub fn note_folder_of_any(&self, id: &str) -> Result<Option<Option<String>>, String> {
         let conn = self.lock_conn();
-        match conn.query_row(
-            "SELECT folder_id FROM notes WHERE id = ?1",
-            [id],
-            |r| r.get::<_, Option<String>>(0),
-        ) {
+        match conn.query_row("SELECT folder_id FROM notes WHERE id = ?1", [id], |r| {
+            r.get::<_, Option<String>>(0)
+        }) {
             Ok(v) => Ok(Some(v)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.to_string()),
@@ -1888,8 +1893,7 @@ impl DataStore {
         offset: u32,
     ) -> Result<Vec<Note>, String> {
         let conn = self.lock_conn();
-        let (from_where, mut params) =
-            Self::note_view_from_where(folder_filter, tag_ids, opts);
+        let (from_where, mut params) = Self::note_view_from_where(folder_filter, tag_ids, opts);
         let mut sql = format!(
             "SELECT {}, {} AS grp{}",
             note_cols_q(),
@@ -2035,9 +2039,11 @@ impl DataStore {
 
     pub fn note_count(&self) -> i64 {
         self.lock_conn()
-            .query_row("SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
             .unwrap_or(0)
     }
 
@@ -2053,7 +2059,13 @@ impl DataStore {
         tag_ids: &[String],
         limit: u32,
     ) -> Result<Vec<Note>, String> {
-        self.note_search_view(keyword, folder_filter, tag_ids, &NoteViewOpts::default(), limit)
+        self.note_search_view(
+            keyword,
+            folder_filter,
+            tag_ids,
+            &NoteViewOpts::default(),
+            limit,
+        )
     }
 
     /// 带视图选项的搜索（B2 #9）。
@@ -2197,7 +2209,11 @@ impl DataStore {
             )
             .map_err(|e| e.to_string())?;
         stmt.query_row([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, i64>(2)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<i64>>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })
         .map_err(|e| e.to_string())
     }
@@ -2295,7 +2311,9 @@ impl DataStore {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 color: row.get(2)?,
-                source: row.get::<_, String>(3).unwrap_or_else(|_| "manual".to_string()),
+                source: row
+                    .get::<_, String>(3)
+                    .unwrap_or_else(|_| "manual".to_string()),
                 created_at: row.get(4)?,
             })
         })

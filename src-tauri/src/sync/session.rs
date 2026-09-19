@@ -176,11 +176,7 @@ pub async fn accept_session(
 ///
 /// [`accept_session`] 把「accept + 判配对 + 跑」包成一体，而编排层需要在
 /// accept 之后、跑之前插一下（拿会话槽、碰撞让位），所以拆出这一半。
-pub async fn run_accepted(
-    store: &DataStore,
-    w: Wire,
-    peer: &str,
-) -> Result<SessionReport, String> {
+pub async fn run_accepted(store: &DataStore, w: Wire, peer: &str) -> Result<SessionReport, String> {
     let conn = w.conn.clone();
     // ❗ 接入侧同 `accept_session`：自己不提要摘要，拨号方提了就配合。
     run(store, w, peer, false, false)
@@ -281,14 +277,13 @@ async fn run(
     // W2：分桶摘要。两边拿的是同两份摘要，而分叉集是它们的纯函数，
     // 所以两边算出来的 `diverged` 必然一样，不用再多一个「请求重发」帧。
     // 为何不能只一边做（单向修复不收敛）写在 `digest` 模块里。
-    let diverged: Vec<u32> = if mine.digest_capable
-        && theirs.digest_capable
-        && (mine.want_digest || theirs.want_digest)
-    {
-        exchange_digests(store, &mut w).await?
-    } else {
-        Vec::new()
-    };
+    let diverged: Vec<u32> =
+        if mine.digest_capable && theirs.digest_capable && (mine.want_digest || theirs.want_digest)
+        {
+            exchange_digests(store, &mut w).await?
+        } else {
+            Vec::new()
+        };
     if !diverged.is_empty() {
         log::info!(
             "[Sync] 与 {} 有 {} 个桶对不上，这一轮把它们整桶重对账：{:?}",

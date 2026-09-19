@@ -61,11 +61,7 @@ pub fn action_recommend_scene_weights(
 /// 记一条「不再推荐这个」负反馈。(action_id, content_type) 重复记幂等。
 /// content_type 空串 = 该动作在哪儿都不推荐。
 #[tauri::command]
-pub fn action_dismiss_add(
-    store: State<DataStore>,
-    action_id: String,
-    content_type: String,
-) {
+pub fn action_dismiss_add(store: State<DataStore>, action_id: String, content_type: String) {
     store.action_dismiss_add(&action_id, &content_type);
 }
 

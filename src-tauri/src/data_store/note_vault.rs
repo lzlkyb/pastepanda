@@ -439,7 +439,9 @@ impl DataStore {
             }
             None => {
                 let n = match keep_id.as_deref() {
-                    Some(pid) => self.note_create_keeping_id(pid, &parsed.title, &parsed.content)?,
+                    Some(pid) => {
+                        self.note_create_keeping_id(pid, &parsed.title, &parsed.content)?
+                    }
                     None => self.note_create(None, &parsed.title, &parsed.content)?,
                 };
                 if folder_id.is_some() {

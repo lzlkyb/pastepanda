@@ -43,7 +43,10 @@ fn test_中间人会让两端pin对不上() {
     b.accept_peer_key(&mb_pk).unwrap(); // B 以为在跟 A 说话
     m_to_b.accept_peer_key(&b_pk).unwrap();
 
-    assert_ne!(a.pin, b.pin, "被中间人插足时两端 pin 必须不同，否则整套机制失效");
+    assert_ne!(
+        a.pin, b.pin,
+        "被中间人插足时两端 pin 必须不同，否则整套机制失效"
+    );
 }
 
 #[test]
@@ -124,8 +127,16 @@ fn test_非ascii输入不会panic() {
     //
     //    “8 个汉字”那一条尤其阴：它恰好 24 字节，能过长度检查。
     for bad in ["不是 hex", "一二三四五六七八", "你好", "😀😀", "ÿÿ"] {
-        assert!(hex_to_vec(bad).is_none(), "{:?} 应该返回 None 而不是 panic", bad);
-        assert!(hex_to_12(bad).is_none(), "{:?} 应该返回 None 而不是 panic", bad);
+        assert!(
+            hex_to_vec(bad).is_none(),
+            "{:?} 应该返回 None 而不是 panic",
+            bad
+        );
+        assert!(
+            hex_to_12(bad).is_none(),
+            "{:?} 应该返回 None 而不是 panic",
+            bad
+        );
     }
     // 正常的 hex 仍然要能解
     assert_eq!(hex_to_vec("00ff10"), Some(vec![0x00, 0xff, 0x10]));
@@ -145,7 +156,10 @@ fn hello(id: &str, name: &str, ts: i64) -> PairPacket {
 fn test_自己发的招呼包不进列表() {
     let st = PairState::new();
     st.on_hello(&hello("me", "本机", 1000), "me", 1000);
-    assert!(st.list_nearby(1000, &[]).is_empty(), "组播会回环，不滤就会看到自己");
+    assert!(
+        st.list_nearby(1000, &[]).is_empty(),
+        "组播会回环，不滤就会看到自己"
+    );
 }
 
 #[test]
@@ -262,7 +276,10 @@ fn test_发起方先确认_密钥暂存后仍能解开() {
 
     // B 随后点确认 → 拿暂存的密文当场完成。
     b.confirmed = true;
-    let (nonce, sealed) = b.stashed_key.clone().expect("暂存不能丢，否则这种顺序永远配不上");
+    let (nonce, sealed) = b
+        .stashed_key
+        .clone()
+        .expect("暂存不能丢，否则这种顺序永远配不上");
     let key = open_pairing_key(&b.shared.clone().unwrap(), &nonce, &sealed).unwrap();
     assert_eq!(key, "a-very-long-pairing-key-0123456789");
 }

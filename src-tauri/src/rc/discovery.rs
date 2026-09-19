@@ -21,9 +21,7 @@ use crate::data_store::DataStore;
 use crate::rc::join::RcJoins;
 use crate::rc::pin::{Confirmed, Done, Outgoing, PairPrompt, Pairs};
 use crate::sync::identity::NodeIdentity;
-use crate::sync::presence::{
-    self, Extras, Neighbor, Nearby, PlainPacket, PresenceApp, WireKind,
-};
+use crate::sync::presence::{self, Extras, Nearby, Neighbor, PlainPacket, PresenceApp, WireKind};
 use std::sync::{Arc, Mutex};
 
 /// 「这台机器已经配过对了」的判据。由调用方给（通常是查 `rc_devices` ∪ `devices`），
@@ -185,7 +183,11 @@ impl Discovery {
                     log::info!(
                         "[RC] 附近发现设备 {}（{}，{}）",
                         short(&p.node_id),
-                        if p.name.is_empty() { "未命名" } else { &p.name },
+                        if p.name.is_empty() {
+                            "未命名"
+                        } else {
+                            &p.name
+                        },
                         p.src
                     );
                 }
@@ -415,7 +417,10 @@ mod tests {
     /// 用带缩进的整体串匹配，避免匹配到下面这句断言的字符串字面量本身。
     #[test]
     fn test_守卫_落库后真的补喊了一次地址公告() {
-        let src = include_str!("discovery.rs");
+        // 🔴 行尾无关：Windows 上 rustfmt/编辑器会把文件切成 CRLF，
+        // 下面按「整串匹配」的守卫在 CRLF 文件里永远找不到调用点——
+        // 守卫本身没坏，坏的是对行尾做了假设。先归一再匹配。
+        let src = include_str!("discovery.rs").replace("\u{d}\u{a}", "\u{a}");
         assert!(
             src.contains("fn announce_now(&self)"),
             "`announce_now` 的定义没了——配对完立刻发起远程会退回绕中继"

@@ -9,14 +9,17 @@ use super::clipboard::{ClipWait, ClipboardState};
 use super::discovery::{Discovery, PairedFn};
 use super::join::{self, RcJoins};
 use super::link::LinkState;
+use super::net::{accept_loop, bind_rc_endpoint};
+use super::notify::{NotifyFn, NotifyState, PathNotifyFn, ScopeNotifyFn};
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
 use super::session::{
     can_transition, gate_inbound, gate_outbound, new_session_id, Gate, Session, CFG_CAPABILITY,
     CFG_DEVICE_DENY, CFG_ENABLED,
 };
-use super::net::{accept_loop, bind_rc_endpoint};
-use super::notify::{NotifyFn, NotifyState, PathNotifyFn, ScopeNotifyFn};
-use super::stream_cfg::{profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts};
+use super::stream_cfg::{
+    auto_from_cfg, codec_from_cfg, profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts,
+};
+use super::uno;
 use crate::data_store::DataStore;
 use crate::sync::identity::NodeIdentity;
 use crate::sync::presence::{self, PresenceApp, PresenceTable, PORT as PRESENCE_BASE_PORT};
@@ -40,11 +43,20 @@ pub const CFG_QUALITY: &str = "rc_quality";
 pub const CFG_CAPTURE_SCOPE: &str = "rc_capture_scope";
 /// `auto` | `jpeg` | `h264` — R4 硬编开关
 pub const CFG_CODEC: &str = "rc_codec";
+/// 发起端「码率倍率」（Q5，50–200，100 = 跟随链路）。会话建立时推给被控端。
+pub const CFG_BITRATE_PCT: &str = "rc_bitrate_pct";
 
 /// RC 地址宣告端口。**不是**同步的 5008，两套 presence 互不抢 bind。
 pub const RC_PRESENCE_PORT: u16 = PRESENCE_BASE_PORT + 1;
 
 /// 给界面看的完整状态。
+/// [`RcService::uno_admit`] 的结局。`Denied` 带着回给对端的 (话, 稳定错误码)，
+/// 语义与 `Gate::deny_reason` / `deny_code` 一致。
+enum UnoAdmit {
+    Admitted,
+    Denied(String, String),
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct RcStatus {
     pub enabled: bool,
@@ -53,17 +65,37 @@ pub struct RcStatus {
     pub pending: Vec<InboundKnock>,
     /// 生成邀请后、等对方核对指纹敲门的列表。
     pub joins: Vec<join::RcJoinRequest>,
+    /// 在效的无人值守接入码摘要（Q2）。只给过期时间/档位，**绝不含码本身**。
+    pub uno: Vec<uno::UnoInfo>,
     pub device_deny: HashMap<String, bool>,
     /// 通道是否已起来（rc_enabled 且端点绑定成功）。
     pub running: bool,
-    /// 画质档 sharp/balanced/smooth
+    /// 画质档 auto/uhd/ultra/sharp/balanced/smooth（auto = 被控端自动换档，2A）
     pub quality: String,
+    /// 自动档当前**实际生效**的档位（流畅/均衡/清晰/超清之一）。
+    /// 非 auto 档时与 `quality` 相同。前端 HUD / 设置页用它显示真实档。
+    pub active_quality: String,
     /// 截取范围 virtual/primary
     pub capture_scope: String,
+    /// 发起端「码率倍率」（Q5，50–200，100 = 跟随链路）。会话 UI 下拉初值。
+    pub bitrate_pct: u32,
     /// 发起端最近 RTT（毫秒），0=尚未测到。
     pub rtt_ms: i64,
+    /// 发起端本端丢包率（‰，EMA）；0 = 尚未采样。HUD 显示「丢包 x.x%」。
+    pub loss_permille: u32,
     /// 会话链路实际走的路：`lan` / `direct` / `relay`；空串 = 未测到（前端不显示这格）。
     pub path_kind: String,
+    /// 时钟偏差（被控端时钟 − 发起端时钟，ms，EMA）。发起端算「画面延迟」用：
+    /// 帧龄 = 本地时刻 − (帧采集时刻 − 偏差)。0 = 尚未校准（两机时钟差未知）。
+    pub clock_skew_ms: i64,
+    /// 发起端视角：被控端是否支持 fps120（P1 caps）。被控端视角恒 false（本机档看本地能力）。
+    pub peer_fps120: bool,
+    /// 发起端视角：被控端是否支持 HEVC 硬编（Q3 caps）。
+    pub peer_hevc: bool,
+    /// 发起端视角：被控端主屏刷新率（Hz）。0 = 未上报。
+    pub peer_refresh_hz: u32,
+    /// 发起端视角：被控端在线显示器列表（Q7 caps）。空 = 未上报（旧版本对端）。
+    pub peer_monitors: Vec<crate::screenshot::MonitorInfo>,
     /// 最后一次收到对端 pong 的时刻（epoch ms）；0 = 本会话还没收到过。
     ///
     /// 🔴 前端**只**用它判链路活性。ping 的本地 `invoke` 成功只说明消息进了
@@ -71,6 +103,8 @@ pub struct RcStatus {
     pub last_pong_ms: i64,
     /// 非阻塞发起申请的后台失败原因；前端展示后应调 clear_outbound_error。
     pub outbound_error: Option<String>,
+    /// 发起端：自动重连进度（Q6）。None = 没有。前端据此展示「正在重连 N/M」。
+    pub reconnecting: Option<RcReconnectInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -111,8 +145,25 @@ pub struct RcService {
     discovery: Arc<Discovery>,
     /// 发起端最近一帧（合成后）画面。
     last_frame: Mutex<Option<super::video::VideoFrame>>,
+    /// 发起端帧出站队列（[`super::video::FrameOutbox`]）：H.264 P 帧与 JPEG
+    /// 脏块帧不能丢、不能乱序，前端经 `rc_drain_frames` 按序批量取走；
+    /// `last_frame` 槽位只是 latest-wins，留给旧命令 `rc_latest_frame` 兜底。
+    frame_outbox: Mutex<super::video::FrameOutbox>,
     /// 发起端 → 被控端的发送半流（R2 键鼠 / R3 剪贴板）。tokio Mutex：跨 await 持锁。
     pub(super) outbound_send: tokio::sync::Mutex<Option<iroh::endpoint::SendStream>>,
+    /// 发起端本会话的连接句柄：鼠标移动走 QUIC 数据报（P0-3）要用它。
+    pub(super) outbound_conn: tokio::sync::Mutex<Option<iroh::endpoint::Connection>>,
+    /// 发起端最近实测丢包率（‰，EMA）——HUD 显示（P0-4）。
+    remote_loss_permille: std::sync::atomic::AtomicU32,
+    /// 发起端：被控端上报的 fps120 可用性（P1 caps 控制帧）。false = 不可用/未上报。
+    peer_fps120: std::sync::atomic::AtomicBool,
+    /// 发起端：被控端主屏刷新率（Hz）。0 = 未上报。
+    peer_refresh_hz: std::sync::atomic::AtomicU32,
+    /// 发起端：被控端在线显示器列表（Q7 caps 控制帧带几何信息）。
+    /// 空 = 未上报或对端是旧版本——会话 UI 据此决定出不出逐屏选项。
+    peer_monitors: Mutex<Vec<crate::screenshot::MonitorInfo>>,
+    /// 发起端：被控端是否支持 HEVC 硬编（Q3 caps）。false = 不可用/未上报。
+    peer_hevc: std::sync::atomic::AtomicBool,
     /// 剪贴板同步的状态与「跨会话串扰」不变量（见 `clipboard.rs`）。
     clip: ClipboardState,
     /// 被控端：推 JPEG 时的发送半流（End 帧用；发起端走 outbound_send）。
@@ -122,6 +173,14 @@ pub struct RcService {
     pub(super) notify: NotifyState,
     /// 发起申请后台拨号失败（非阻塞 request）。status() 读出后由前端展示。
     pub(super) last_outbound_error: Mutex<Option<String>>,
+    /// 发起端：自动重连 episode 状态（Q6）。None = 没有进行中/待展示的自动重连。
+    /// 由 session.rs 的 `begin_auto_reconnect` 驱动；用户手动发起/结束会清掉。
+    pub(super) auto_reconnect: Mutex<Option<AutoReconnect>>,
+    /// episode 代次发生器（配 [`AutoReconnect::epoch`]，见 session.rs）。
+    pub(super) reconnect_epoch: std::sync::atomic::AtomicU64,
+    /// 无人值守接入码的内存待验表（Q2 方案 B，见 `uno.rs`）。
+    /// 只存摘要、不落盘——进程活着码才活着。
+    pub uno: uno::UnoCodes,
     /// 推流参数（画质 / 截取范围 / 强制 JPEG）+ RTT（见 `stream_cfg.rs`）。
     stream: StreamCfg,
     /// 会话链路：数据走哪条路 + 心跳新鲜度（见 `link.rs`）。
@@ -132,6 +191,37 @@ pub struct RcService {
     pub(super) link: LinkState,
     /// 被控端：当前被按住的 vk / 鼠标键集合，会话收口时补发 up（防止 Ctrl/Shift/鼠标键卡死）。
     pub(super) pressed: std::sync::Mutex<super::pressed::Pressed>,
+}
+
+/// 发起端「免确认设备断线自动重连」的一轮重试 episode 的**内部**状态（Q6）。
+/// 前端看到的是 [`RcReconnectInfo`]（status 里拼出来的投影）。
+#[derive(Debug)]
+pub struct AutoReconnect {
+    pub peer: String,
+    pub peer_name: String,
+    pub capability: super::protocol::Capability,
+    /// 已尝试次数（1 起；0 = 首次 sleep 还没醒）。
+    pub attempt: u32,
+    pub max: u32,
+    /// 次数用尽。留着给 UI 显示「自动重连失败」，用户下一次手动动作时清。
+    pub gave_up: bool,
+    /// 🔴 episode 代次凭证（2026-09-19 审查 P2）：重连任务睡醒后凭它确认
+    /// 「这段状态还归我管」。曾只认 peer——旧任务睡眠期间用户手动重连
+    /// 成功又断流、新 episode 建立时，旧任务醒来误把新状态当成自己的，
+    /// 两个任务并行重试、attempt 互相踩。
+    pub epoch: u64,
+}
+
+/// status 里给前端的自动重连进度（Q6）。
+#[derive(Debug, Clone, Serialize)]
+pub struct RcReconnectInfo {
+    pub peer: String,
+    pub peer_name: String,
+    /// 原会话的能力档（「重连失败」时前端「重新发起」按钮复用它）。
+    pub capability: String,
+    pub attempt: u32,
+    pub max: u32,
+    pub gave_up: bool,
 }
 
 #[derive(Default)]
@@ -188,7 +278,8 @@ pub fn global() -> Option<Arc<RcService>> {
 ///
 /// 不去 match 枚举而直接用 Display：`ConnectionError::ApplicationClosed` 的
 /// Display 是 `"closed by peer: {reason} (code N)"`，reason 就在里面。
-fn explain(conn: &iroh::endpoint::Connection, err: String) -> String {
+/// `pub(super)` 是给 `outbound.rs`（发起端收流循环）用的——它断流时同样要拼。
+pub(super) fn explain(conn: &iroh::endpoint::Connection, err: String) -> String {
     match conn.close_reason() {
         // 还没关（本地逻辑错误、超时等）就原样往上报。
         None => err,
@@ -240,11 +331,21 @@ impl RcService {
             joins,
             discovery,
             last_frame: Mutex::new(None),
+            frame_outbox: Mutex::new(super::video::FrameOutbox::new()),
             outbound_send: tokio::sync::Mutex::new(None),
+            outbound_conn: tokio::sync::Mutex::new(None),
+            remote_loss_permille: std::sync::atomic::AtomicU32::new(0),
+            peer_fps120: std::sync::atomic::AtomicBool::new(false),
+            peer_refresh_hz: std::sync::atomic::AtomicU32::new(0),
+            peer_monitors: Mutex::new(Vec::new()),
+            peer_hevc: std::sync::atomic::AtomicBool::new(false),
             clip: ClipboardState::new(),
             inbound_send: tokio::sync::Mutex::new(None),
             notify: NotifyState::new(),
             last_outbound_error: Mutex::new(None),
+            auto_reconnect: Mutex::new(None),
+            reconnect_epoch: std::sync::atomic::AtomicU64::new(0),
+            uno: uno::UnoCodes::default(),
             stream: StreamCfg::new(),
             link: LinkState::new(),
             pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
@@ -275,18 +376,154 @@ impl RcService {
 
     /// 会话建立时用本机配置初始化推流参数。
     pub fn reset_stream_opts_from_cfg(&self) {
-        self.stream
-            .reset_from_cfg(self.encode_profile(), self.capture_virtual_screen());
+        let cfg = self.cfg();
+        self.stream.reset_from_cfg(
+            profile_from_cfg(&cfg),
+            virtual_screen_from_cfg(&cfg),
+            auto_from_cfg(&cfg),
+            codec_from_cfg(&cfg),
+        );
     }
 
-    /// 发起端在会话中改画质。
+    /// 发起端配置的码率倍率（Q5）。缺省 100 = 跟随链路；配置损坏按缺省算。
+    pub(crate) fn user_bitrate_pct_from_cfg(&self) -> u32 {
+        self.cfg()
+            .get(CFG_BITRATE_PCT)
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+            .unwrap_or(100)
+        .clamp(50, 200)
+    }
+
+    /// 被控端：应用发起端推来的码率倍率（Q5，`SetBitratePct`）。
+    pub fn set_user_bitrate_pct(&self, pct: u32) -> Result<(), String> {
+        self.stream.set_user_bitrate_pct(pct)
+    }
+
+    /// 发起端在会话中改画质（五档实名或 "auto"）。
     pub fn set_stream_quality(&self, quality: &str) -> Result<(), String> {
+        // D6：fps120 / uhd60 是能力档，API 层也要设防——UI 门控（visibleQualities）
+        // 只挡得住正常路径，挡不住直连接口/旧前端的请求；放行会让主机用 CPU 管线
+        // 按 8ms 硬跑。范围中途切到多屏的场景由推流循环的降档兜底（D6b）。
+        if quality == "fps120" {
+            #[cfg(target_os = "windows")]
+            {
+                let caps = super::gpu::encode_caps();
+                if !caps.h264_gpu {
+                    return Err("本机没有硬件 D3D11 编码器，fps120 档不可用".into());
+                }
+                if caps.refresh_hz < 100 {
+                    return Err(format!(
+                        "主屏刷新 {}Hz 不足 100Hz，fps120 档不可用",
+                        caps.refresh_hz
+                    ));
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                return Err("fps120 档仅支持 Windows".into());
+            }
+        }
+        // Q4：uhd60 要求 HEVC 硬编——4K60 的 H.264 需要 L5.2（多数解码端跑不动
+        // 或兼容性差），HEVC L5.1 即覆盖且同画质省一半带宽。没有 HEVC MFT 就
+        // 诚实拒绝，不静默降成超规格流。
+        if quality == "uhd60" {
+            #[cfg(target_os = "windows")]
+            {
+                let caps = super::gpu::encode_caps();
+                if !caps.h264_gpu {
+                    return Err("本机没有硬件 D3D11 编码器，4K60 档不可用".into());
+                }
+                if !caps.hevc_hw {
+                    return Err("本机没有硬件 HEVC 编码器，4K60 档不可用（H.264 无法稳定 4K60）".into());
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                return Err("4K60 档仅支持 Windows".into());
+            }
+        }
         self.stream.set_quality(quality)
+    }
+
+    /// 推流循环每帧喂一次画面字节数；自动档开启时据此换档（2A）。
+    pub fn auto_note_frame(&self, bytes: usize) {
+        self.stream.auto_note_frame(bytes, now_ms());
+    }
+
+    /// 自动档是否开启（status 组装用）。
+    pub fn auto_enabled(&self) -> bool {
+        self.stream.auto_enabled()
+    }
+
+    /// 自动档当前生效的档位名。
+    pub fn auto_tier_name(&self) -> String {
+        self.stream.auto_tier_name()
+    }
+
+    /// 会话收尾时复位推流侧的**会话级**状态（`end_session` 调）。
+    ///
+    /// 目前只有自动档：它与会话同生命周期，跨会话残留会让界面显示上一场
+    /// 会话停留的档位（见 `StreamCfg::auto_reset`）。
+    pub(super) fn reset_stream_after_session(&self) {
+        self.stream.auto_reset();
     }
 
     /// 被控端：对端上报 RTT，返回当前 H.264 码率缩放（%）。
     pub fn set_peer_rtt(&self, rtt_ms: i64) -> u32 {
         self.stream.set_peer_rtt(rtt_ms)
+    }
+
+    /// 被控端：QUIC stats 采样（推流任务）喂本端链路状况 → 码控（P0-4）。
+    pub(super) fn note_stream_health(&self, rtt_ms: i64, loss_permille: i64) {
+        self.stream.note_stream_health(rtt_ms, loss_permille);
+    }
+
+    /// 发起端：pong 带回的时钟偏差样本（P0-1 A3）。
+    pub(super) fn note_clock_skew(&self, sample_ms: i64, rtt_ms: i64) {
+        self.stream.note_clock_skew(sample_ms, rtt_ms);
+    }
+
+    pub(super) fn clock_skew_ms(&self) -> i64 {
+        self.stream.clock_skew_ms()
+    }
+
+    /// 发起端：被控端上报的画面能力（P1 caps 控制帧）。UI 据此诚实出 fps120 档。
+    /// Q3：caps 带 HEVC 硬编可用性；Q7：caps 顺带带上对端在线显示器列表。
+    pub(super) fn note_peer_caps(
+        &self,
+        fps120: bool,
+        refresh_hz: u32,
+        hevc: bool,
+        monitors: Vec<crate::screenshot::MonitorInfo>,
+    ) {
+        self.peer_fps120
+            .store(fps120, std::sync::atomic::Ordering::Relaxed);
+        self.peer_refresh_hz
+            .store(refresh_hz.min(1000), std::sync::atomic::Ordering::Relaxed);
+        self.peer_hevc
+            .store(hevc, std::sync::atomic::Ordering::Relaxed);
+        *self.peer_monitors.lock().unwrap_or_else(|p| p.into_inner()) = monitors;
+    }
+
+    pub fn peer_fps120(&self) -> bool {
+        self.peer_fps120.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// 发起端视角：被控端是否支持 HEVC 硬编（Q3 caps）。
+    pub fn peer_hevc(&self) -> bool {
+        self.peer_hevc.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn peer_refresh_hz(&self) -> u32 {
+        self.peer_refresh_hz
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// 发起端：本端丢包率采样（收流任务）→ status/HUD（P0-4）。
+    pub(super) fn note_remote_loss(&self, permille: u32) {
+        self.remote_loss_permille
+            .store(permille.min(1000), std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn bitrate_scale(&self) -> u32 {
@@ -334,6 +571,11 @@ impl RcService {
         self.notify.set_notify(f);
     }
 
+    /// 注入「outbox 有新帧」的回调（lib.rs 在 manage 之后调用）。
+    pub fn set_frame_notify(&self, f: NotifyFn) {
+        self.notify.set_frame_notify(f);
+    }
+
     pub(super) fn emit_changed(&self) {
         self.notify.emit_changed();
     }
@@ -341,6 +583,16 @@ impl RcService {
     /// 注入「对端改了画面范围」的回调（lib.rs 在 manage 之后调用）。
     pub fn set_scope_notify(&self, f: ScopeNotifyFn) {
         self.notify.set_scope_notify(f);
+    }
+
+    /// 注入「远端光标形状变化」的回调（lib.rs 在 manage 之后调用）。
+    pub fn set_cursor_notify(&self, f: super::notify::CursorNotifyFn) {
+        self.notify.set_cursor_notify(f);
+    }
+
+    /// 被控端上报的光标形状变化 → 抛给发起端前端。
+    pub(super) fn set_remote_cursor(&self, shape: String) {
+        self.notify.emit_cursor_changed(&shape);
     }
 
     /// 注入「会话换路了」的回调（lib.rs 在 manage 之后调用）。
@@ -367,6 +619,20 @@ impl RcService {
         self.notify.emit_scope_changed(scope);
     }
 
+    /// 注入「对端改了画质/编码」的回调（lib.rs 在 manage 之后调用）。
+    pub fn set_stream_notify(&self, f: super::notify::StreamNotifyFn) {
+        self.notify.set_stream_notify(f);
+    }
+
+    /// 被控端：告诉前端「对端把画质/编码改成了 name」。
+    ///
+    /// Q10：对端（连**只看**会话都）能单方面调画质/编码，原来只有 `log::info`，
+    /// 被控者看到画面突然变糊/变清却不知原因。与 `emit_scope_changed` 同一
+    /// 纪律：只有入站路径（`handle_inbound_input`）该调，本机自己改的不通知。
+    pub(crate) fn emit_stream_note(&self, kind: &str, name: &str) {
+        self.notify.emit_stream_note(kind, name);
+    }
+
     pub(super) fn set_inject_err(&self, msg: String) {
         self.notify.set_inject_err(msg);
     }
@@ -377,7 +643,10 @@ impl RcService {
 
     /// 发起端取最近一帧（JPEG bytes）。无画面返 None。
     pub fn latest_frame(&self) -> Option<super::video::VideoFrame> {
-        self.last_frame.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.last_frame
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     pub(super) fn set_frame(&self, f: super::video::VideoFrame) {
@@ -386,6 +655,30 @@ impl RcService {
 
     pub(super) fn clear_frame(&self) {
         *self.last_frame.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// 发起端：一帧入队（收流循环调用），并唤醒前端来取。
+    pub(super) fn push_outbox(&self, f: super::video::VideoFrame) {
+        {
+            let mut g = self.frame_outbox.lock().unwrap_or_else(|p| p.into_inner());
+            g.push(f);
+        }
+        self.notify.emit_frame_ready(now_ms());
+    }
+
+    /// 前端批量取走全部待显示帧（`rc_drain_frames` 命令）。取走即清。
+    pub fn drain_frames(&self) -> Vec<super::video::VideoFrame> {
+        self.frame_outbox
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .drain()
+    }
+
+    pub(super) fn clear_outbox(&self) {
+        self.frame_outbox
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
     }
 
     pub(super) fn session_is(&self, phase: SessionPhase, peer: &str) -> bool {
@@ -399,17 +692,21 @@ impl RcService {
     }
 
     /// 发起端发送输入/剪贴板/流控帧。会话必须 OutboundActive。
-    /// 键鼠与剪贴板要求 Control；**Ping 与流控（画质/范围/编码）只看会话也可发**——
+    /// 键鼠与剪贴板要求 Control；**Ping 与流控（画质/范围/编码/码率倍率）只看会话也可发**——
     /// 否则 View 会话发不出心跳，被控端 3.5s 后暂停推流，画面永久冻结。
+    /// RequestKey 同理（P0-1 A1）：解码断链自愈是画面链路的一部分，
+    /// 只看会话也必须能要关键帧，否则 View 会话的花屏要等 2s 自然 GOP。
     pub async fn send_input(&self, ev: &super::input::InputEvent) -> Result<(), String> {
         use super::input::InputEvent;
         let needs_control = !matches!(
             ev,
             InputEvent::Ping { .. }
                 | InputEvent::NetHint { .. }
+                | InputEvent::SetBitratePct { .. }
                 | InputEvent::SetQuality { .. }
                 | InputEvent::SetCaptureScope { .. }
                 | InputEvent::SetCodec { .. }
+                | InputEvent::RequestKey
         );
         if needs_control {
             let cap = self.session_capability().ok_or("没有进行中的会话")?;
@@ -422,12 +719,47 @@ impl RcService {
                 return Err("会话尚未建立".into());
             }
         }
+        // P0-3：鼠标移动走 QUIC 数据报——不可靠但免队头阻塞，视频大帧堵住
+        // 可靠流时鼠标照样每拍都到。绝对坐标 latest-wins：丢一帧被下一帧校正。
+        // 数据报不支持/发送失败 → 回退可靠流（原路）。
+        if matches!(ev, super::input::InputEvent::MouseMove { .. }) {
+            let json = serde_json::to_vec(ev).map_err(|e| e.to_string())?;
+            let conn = self.outbound_conn.lock().await.clone();
+            if let Some(conn) = conn {
+                if conn.datagram_send_buffer_space() >= json.len()
+                    && conn.send_datagram(json.into()).is_ok()
+                {
+                    return Ok(());
+                }
+            }
+        }
         let mut guard = self.outbound_send.lock().await;
         let Some(send) = guard.as_mut() else {
             return Err("发送通道不可用".into());
         };
         let json = serde_json::to_vec(ev).map_err(|e| e.to_string())?;
         crate::sync::transport::write_frame(send, &json).await
+    }
+
+    /// 发起端会话链路统一收口：发送半流 + 连接句柄一起清。
+    /// 🔴 连接句柄不清，下一场会话的鼠标数据报会发进旧连接（黑洞）。
+    pub(super) async fn clear_outbound_link(&self) {
+        *self.outbound_send.lock().await = None;
+        *self.outbound_conn.lock().await = None;
+        self.remote_loss_permille
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.peer_fps120
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.peer_refresh_hz
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.peer_hevc
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        // Q7：对端屏列表是上一场会话的残留——不清的话，断连后 UI 还能
+        // 「切到」一个早已不在场的显示器。
+        self.peer_monitors
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
     }
 
     /// 发起端：把本地剪贴板文本推给被控端（R3 文本优先）。
@@ -457,7 +789,8 @@ impl RcService {
     pub async fn pull_clipboard(&self) -> Result<Option<String>, String> {
         let _serial = self.clip.lock_pull().await;
         let (epoch, before) = self.clip.snapshot();
-        self.send_input(&super::input::InputEvent::ClipboardPull).await?;
+        self.send_input(&super::input::InputEvent::ClipboardPull)
+            .await?;
         let deadline = now_ms() + CLIPBOARD_PULL_TIMEOUT_MS;
         while now_ms() < deadline {
             match self.clip.decision(epoch, before) {
@@ -539,6 +872,27 @@ impl RcService {
         self.store.rc_device_pair(node_id, &name)
     }
 
+    /// 方案 D：这台设备是否开了「免确认直连」。
+    ///
+    /// 只认 rc 配对表——仅同步配对、还没被远程用过的设备没有行可查，
+    /// 视为未开启（合理：免确认的前提是这台设备已经用过至少一次远程）。
+    pub fn device_trusted(&self, node_id: &str) -> bool {
+        matches!(self.store.rc_device_get(node_id), Ok(Some(d)) if d.trusted)
+    }
+
+    /// 方案 D：设置「免确认直连」。仅同步配对的设备先幂等提升进 rc 表再设。
+    ///
+    /// 🔴 必须先确认**已配对**（rc 表或 sync 表有行）：对未知 id 不能顺手
+    ///    `elevate_from_sync` ——那会凭空造出一行 rc 配对（名字「同步设备」）、
+    ///    `has_remote_trust` 立刻变 true，等于绕过 SAS 配对把陌生设备放进白名单。
+    pub fn set_device_trust(&self, node_id: &str, trusted: bool) -> Result<(), String> {
+        if !self.has_remote_trust(node_id) {
+            return Err("该设备尚未与本机配对，无法设置免确认".into());
+        }
+        self.elevate_from_sync(node_id)?;
+        self.store.rc_device_trust_set(node_id, trusted)
+    }
+
     fn peer_name(&self, node_id: &str) -> String {
         if let Ok(Some(d)) = self.store.rc_device_get(node_id) {
             return d.name;
@@ -557,29 +911,62 @@ impl RcService {
             self.notify.emit_path_changed(from.as_str(), to.as_str());
         }
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let running = self.running.lock().unwrap_or_else(|p| p.into_inner()).is_some();
+        let running = self
+            .running
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_some();
+        let quality = self
+            .cfg()
+            .get(CFG_QUALITY)
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto")
+            .to_string();
+        // 自动档的「真实档位」只有**正在推流**时才存在：换档发生在推流循环里，
+        // 会话没跑（或已结束）时 `tier` 只是上一场的残留。所以除了 auto_enabled，
+        // 还必须要求本机正处在 inbound_active（本机推流）——否则界面会报一个
+        // 早就不存在的档位，比不报还坏。
+        let streaming = inner
+            .session
+            .as_ref()
+            .is_some_and(|s| s.phase == SessionPhase::InboundActive);
+        let active_quality = if streaming && self.auto_enabled() {
+            self.auto_tier_name()
+        } else {
+            quality.clone()
+        };
         RcStatus {
             enabled: self.enabled(),
             capability: self.max_capability().as_str().to_string(),
             session: inner.session.clone(),
             pending: inner.pending.clone(),
             joins: self.joins.list(now_ms()),
+            uno: self.uno.active(now_ms()),
             device_deny: self.device_deny(),
             running,
-            quality: self
-                .cfg()
-                .get(CFG_QUALITY)
-                .and_then(|v| v.as_str())
-                .unwrap_or("balanced")
-                .to_string(),
+            quality,
+            active_quality,
             capture_scope: self
                 .cfg()
                 .get(CFG_CAPTURE_SCOPE)
                 .and_then(|v| v.as_str())
                 .unwrap_or("virtual")
                 .to_string(),
+            bitrate_pct: self.user_bitrate_pct_from_cfg(),
             rtt_ms: self.last_rtt_ms(),
+            loss_permille: self
+                .remote_loss_permille
+                .load(std::sync::atomic::Ordering::Relaxed),
             path_kind: self.link.path_kind_str(),
+            clock_skew_ms: self.clock_skew_ms(),
+            peer_fps120: self.peer_fps120(),
+            peer_hevc: self.peer_hevc(),
+            peer_refresh_hz: self.peer_refresh_hz(),
+            peer_monitors: self
+                .peer_monitors
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone(),
             last_pong_ms: self.link.last_pong_ms(),
             // clone 而非 take：Overlay/对话框/设置多处 useRc 并发轮询，take 会只有一处看见
             outbound_error: self
@@ -587,11 +974,24 @@ impl RcService {
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .clone(),
+            reconnecting: self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()).as_ref().map(
+                |s| RcReconnectInfo {
+                    peer: s.peer.clone(),
+                    peer_name: s.peer_name.clone(),
+                    capability: s.capability.as_str().to_string(),
+                    attempt: s.attempt,
+                    max: s.max,
+                    gave_up: s.gave_up,
+                },
+            ),
         }
     }
 
     pub fn is_running(&self) -> bool {
-        self.running.lock().unwrap_or_else(|p| p.into_inner()).is_some()
+        self.running
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_some()
     }
 
     /// 正在开会话的对端 node_id（无会话时 `None`）。在线判定用。
@@ -808,7 +1208,16 @@ impl RcService {
                 inner.pending.clear();
             }
             *self.outbound_send.lock().await = None;
+            *self.outbound_conn.lock().await = None;
             *self.inbound_send.lock().await = None;
+            // Q2/Q6：通道停了，接入码全部作废（它们只活在内存里），
+            // 自动重连 episode 也失去意义——继续重试只会拿到 [channel_down]，
+            // 三次用尽再给用户挂一条「自动重连失败」横幅纯属误导。
+            let revoked = self.uno.revoke_all();
+            if revoked > 0 {
+                log::info!("[RC] 通道停止，已作废 {revoked} 个无人值守接入码");
+            }
+            *self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
             log::info!("[RC] 远程通道已停止");
         }
     }
@@ -857,21 +1266,31 @@ impl RcService {
         &self,
         peer: &str,
         capability: Capability,
+        uno_code: Option<String>,
     ) -> Result<Session, String> {
+        // 无人值守接入码（Q2）：带码发起就是「未配对机器」的唯一路径，
+        // 白名单前置检查必须让位；空串视同没带。
+        let uno_code = uno_code
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
         let (session_id, pending_sess) = {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             if gate_outbound(inner.session.is_some()) == Gate::Busy {
                 return Err("[busy_local] 已有进行中的远程会话，请先结束".into());
             }
-            if !self.has_remote_trust(peer) {
-                return Err("[not_paired] 尚未完成远程配对：请先在远程电脑设置里配对这台设备".into());
+            if uno_code.is_none() && !self.has_remote_trust(peer) {
+                return Err(
+                    "[not_paired] 尚未完成远程配对：请先在远程电脑设置里配对这台设备".into(),
+                );
             }
             if !self.is_running() {
                 return Err("[channel_down] 远程通道未启动：请先开启远程通道或完成远程配对".into());
             }
             // 同步设备首次发起远程 → 写入 rc_devices（方案 A）
-            if let Err(e) = self.elevate_from_sync(peer) {
-                log::warn!("[RC] 从同步配对提升到远程失败：{e}");
+            if uno_code.is_none() {
+                if let Err(e) = self.elevate_from_sync(peer) {
+                    log::warn!("[RC] 从同步配对提升到远程失败：{e}");
+                }
             }
             let id = new_session_id(now_ms());
             let sess = Session {
@@ -899,8 +1318,8 @@ impl RcService {
         let peer = peer.to_string();
         tauri::async_runtime::spawn(async move {
             let Some(svc) = global() else { return };
-            match svc.dial_and_request(&peer, capability).await {
-                Ok((accepted_cap, send, recv)) => {
+            match svc.dial_and_request(&peer, capability, uno_code.clone()).await {
+                Ok((accepted_cap, conn, send, recv)) => {
                     // 会话是否已经不在（用户点了取消，或已被换成了另一场会话）。
                     // ❗ 这里**不能**在持 inner 锁的块里 return 并顺手 detach：
                     //    `link.detach()` 与 `status()` 的加锁顺序相反，会构成 ABBA 死锁。
@@ -922,13 +1341,31 @@ impl RcService {
                         let _ = svc.link.detach();
                         drop(send);
                         drop(recv);
+                        // conn 同旧版为等价处理：没人再持有它（连接悬着由会话收口兜底），
+                        // 没有显式 close 是刻意的——close 理由会进对端日志，别在「本端取消」
+                        // 这条路径上给对端制造一条需要解释的关闭帧。
+                        drop(conn);
                         return;
                     }
                     let _ = svc.store.rc_device_touch(&peer, true);
+                    // Q2：无人值守接入成功 = 发起侧也把这台写进自己的 rc_devices
+                    // （被控侧在验码时已经写了它那份）。之后这台设备就是普通配对
+                    // 设备：改名 / 免确认 / 遗忘都走既有管理面。
+                    if uno_code.is_some() {
+                        let name = {
+                            let n = svc.peer_name(&peer);
+                            if n.is_empty() { "新设备".to_string() } else { n }
+                        };
+                        if let Err(e) = svc.store.rc_device_pair(&peer, &name) {
+                            log::warn!("[RC] 接入码连入成功，但发起侧写设备列表失败：{e}");
+                        }
+                    }
                     svc.clear_frame();
+                    svc.clear_outbox();
                     svc.note_rtt(0);
                     *svc.outbound_send.lock().await = Some(send);
-                    svc.spawn_outbound_video(&peer, recv);
+                    *svc.outbound_conn.lock().await = Some(conn.clone());
+                    svc.spawn_outbound_video(&peer, recv, conn);
                     svc.emit_changed();
                 }
                 Err(e) => {
@@ -971,9 +1408,14 @@ impl RcService {
     ///
     /// 🔴 **不再合成再编码**：整帧与脏块 JPEG 原样交给前端画布合成，
     /// 避免「网络传脏矩形、本机却整帧 clone + 二次 JPEG」的白做功。
-    fn spawn_outbound_video(&self, peer: &str, recv: iroh::endpoint::RecvStream) {
+    fn spawn_outbound_video(
+        &self,
+        peer: &str,
+        recv: iroh::endpoint::RecvStream,
+        conn: iroh::endpoint::Connection,
+    ) {
         let Some(svc) = global() else { return };
-        let Some(video) = super::outbound::OutboundVideo::try_new(svc, peer, recv) else {
+        let Some(video) = super::outbound::OutboundVideo::try_new(svc, peer, recv, conn) else {
             log::warn!("[RC] 发起端画面流启动前会话已结束，放弃推流");
             return;
         };
@@ -986,8 +1428,7 @@ impl RcService {
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("远程通道未启动".into());
         };
-        let id = iroh::EndpointId::from_str(peer)
-            .map_err(|e| format!("node_id 解不开：{}", e))?;
+        let id = iroh::EndpointId::from_str(peer).map_err(|e| format!("node_id 解不开：{}", e))?;
         let mut addr = EndpointAddr::new(id);
         for sock in presence.addrs_of(peer, now_ms()) {
             addr = addr.with_ip_addr(sock);
@@ -1030,9 +1471,14 @@ impl RcService {
         &self,
         peer: &str,
         capability: Capability,
+        uno_code: Option<String>,
     ) -> Result<
         (
             Capability,
+            // 🔴 连接句柄必须交出去：发起端收流循环（`outbound.rs`）断流时要用
+            //   `conn.close_reason()` 把「对端为什么关」拼回错误（见 `explain`）。
+            //   原先它只在函数内活着，返回即 drop——收流侧只剩 `connection lost`。
+            iroh::endpoint::Connection,
             iroh::endpoint::SendStream,
             iroh::endpoint::RecvStream,
         ),
@@ -1041,7 +1487,8 @@ impl RcService {
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("[channel_down] 远程通道未启动".into());
         };
-        let id = iroh::EndpointId::from_str(peer).map_err(|e| format!("[bad_node_id] node_id 解不开：{}", e))?;
+        let id = iroh::EndpointId::from_str(peer)
+            .map_err(|e| format!("[bad_node_id] node_id 解不开：{}", e))?;
         let mut addr = EndpointAddr::new(id);
         for sock in presence.addrs_of(peer, now_ms()) {
             addr = addr.with_ip_addr(sock);
@@ -1062,7 +1509,12 @@ impl RcService {
         // 那一处不能漏，漏了会残留一条僵尸连接的路径标签。
         self.link.attach(&conn);
 
-        let req = RcFrame::Request { capability };
+        let req = RcFrame::Request {
+            capability,
+            uno_code,
+            // 本端支持视频数据报；旧对端 serde 忽略未知字段，照常受理
+            vid_dgram: Some(true),
+        };
         // ❗ 这一对读写的失败必须过 `explain`：对端要是以「未配对 / 忙 / 被禁」为由
         //   关掉连接，原始错误只会是 `读帧长度失败：connection lost`（见 `explain`）。
         crate::sync::transport::write_frame(&mut send, &req.encode()?)
@@ -1073,7 +1525,7 @@ impl RcService {
             .map_err(|e| explain(&conn, e))?;
         let resp = RcFrame::decode(&raw)?;
         match resp {
-            RcFrame::Accept { capability } => Ok((capability, send, recv)),
+            RcFrame::Accept { capability } => Ok((capability, conn, send, recv)),
             RcFrame::Deny { reason, code } => {
                 let code = code.unwrap_or_default();
                 if code.is_empty() {
@@ -1109,8 +1561,12 @@ impl RcService {
         };
         // 对端把 Request 送到了 = 它在线。刷 last_seen，跨网时设备列表才亮得起来。
         let _ = self.store.rc_device_touch(&peer, true);
-        let requested = match RcFrame::decode(&bytes) {
-            Ok(RcFrame::Request { capability }) => capability,
+        let (requested, uno_code, peer_dgram) = match RcFrame::decode(&bytes) {
+            Ok(RcFrame::Request {
+                capability,
+                uno_code,
+                vid_dgram,
+            }) => (capability, uno_code, vid_dgram == Some(true)),
             Ok(_) => {
                 deny_and_close(&link_conn, &mut send, "期望 Request 帧", "not_request").await;
                 return;
@@ -1122,69 +1578,114 @@ impl RcService {
             }
         };
 
-        // 未配对（远程/同步都没有）+ 邀请门开着 → 记敲门，等用户核对指纹
+        let mut uno_admitted = false;
+        // 未配对（远程/同步都没有）：
+        // 带了无人值守接入码（Q2 方案 B）→ 验码，通过 = 自动配对 + 自动同意，
+        // 全程不需要被控端有人点头；没带码 → 走邀请门/敲门老路，等人核对指纹。
         if !self.has_remote_trust(&peer) {
             let now = now_ms();
-            // 🔴 **判据交给纯函数**（[`join::deny_unpaired`]），因为「几种成因的区分」
-            //   正是 2026-09-17 修的那个 bug：原先除「门开着且敲门成功」外全部塌缩成一句
-            //   `not_paired`（「尚未远程配对」），而用户实际撞到的**几乎总是窗口过期**——
-            //   那句话指不到「回去重新生成一个」这个唯一正确的动作，
-            //   于是他只能反复重试同一个已经失效的窗口。
-            //   而 accept 循环（网络）在单测里跑不起来 ⇒ 判据必须抽出去才测得动。
-            //
-            //   文案由 `KnockDenial::reason()` 提供，**一律站在收到这句话的人的立场**
-            //   （他是发起方 B，对面是生成方 A），与 `Gate::deny_reason` 的既有约定一致。
-            //
-            // 红线「未启用 = 零可见零请求零费用」：rc_enabled 关闭时，即便邀请门开着，
-            // 也不记入 pending、不 emit，只回 deny（门禁在下方 gate_inbound 也会拦，
-            // 但这里先挡住，避免禁用期间出现可见的配对请求）。
-            match join::deny_unpaired(
-                self.enabled(),
-                join::door_open(&self.store, now),
-                self.joins.is_denied(&peer, now),
-            ) {
-                Some(d) => {
-                    deny_and_close(&link_conn, &mut send, d.reason(), d.code()).await;
-                    log::info!("[RC] {short} 敲门被拒：{}", d.log_label());
-                }
+            match uno_code.as_deref() {
+                Some(code) => match self.uno_admit(&peer, requested, code, now) {
+                    UnoAdmit::Admitted => uno_admitted = true,
+                    UnoAdmit::Denied(reason, deny_code) => {
+                        deny_and_close(&link_conn, &mut send, &reason, &deny_code).await;
+                        log::info!("[RC] {short} 无人值守接入被拒：{reason}");
+                        return;
+                    }
+                },
                 None => {
-                    self.joins.knock(&peer, now);
-                    deny_and_close(&link_conn, &mut send, "等待对方确认配对", "await_pair_confirm")
-                        .await;
-                    log::info!("[RC] {short} 敲门配对，已记入待确认");
-                    self.emit_changed();
+                    // 🔴 **判据交给纯函数**（[`join::deny_unpaired`]），因为「几种成因的区分」
+                    //   正是 2026-09-17 修的那个 bug：原先除「门开着且敲门成功」外全部塌缩成一句
+                    //   `not_paired`（「尚未远程配对」），而用户实际撞到的**几乎总是窗口过期**——
+                    //   那句话指不到「回去重新生成一个」这个唯一正确的动作，
+                    //   于是他只能反复重试同一个已经失效的窗口。
+                    //   而 accept 循环（网络）在单测里跑不起来 ⇒ 判据必须抽出去才测得动。
+                    //
+                    //   文案由 `KnockDenial::reason()` 提供，**一律站在收到这句话的人的立场**
+                    //   （他是发起方 B，对面是生成方 A），与 `Gate::deny_reason` 的既有约定一致。
+                    //
+                    // 红线「未启用 = 零可见零请求零费用」：rc_enabled 关闭时，即便邀请门开着，
+                    // 也不记入 pending、不 emit，只回 deny（门禁在下方 gate_inbound 也会拦，
+                    // 但这里先挡住，避免禁用期间出现可见的配对请求）。
+                    match join::deny_unpaired(
+                        self.enabled(),
+                        join::door_open(&self.store, now),
+                        self.joins.is_denied(&peer, now),
+                    ) {
+                        Some(d) => {
+                            deny_and_close(&link_conn, &mut send, d.reason(), d.code()).await;
+                            log::info!("[RC] {short} 敲门被拒：{}", d.log_label());
+                        }
+                        None => {
+                            self.joins.knock(&peer, now);
+                            deny_and_close(
+                                &link_conn,
+                                &mut send,
+                                "等待对方确认配对",
+                                "await_pair_confirm",
+                            )
+                            .await;
+                            log::info!("[RC] {short} 敲门配对，已记入待确认");
+                            self.emit_changed();
+                        }
+                    }
+                    return;
                 }
             }
-            return;
         }
 
-        let gate = {
-            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            gate_inbound(
-                self.enabled(),
-                self.max_capability(),
-                &self.device_deny(),
-                &peer,
-                self.has_remote_trust(&peer),
-                requested,
-                inner.session.is_some(),
-            )
-        };
-        if gate != Gate::Allow {
-            deny_and_close(&link_conn, &mut send, gate.deny_reason(), gate.deny_code()).await;
-            log::info!("[RC] 拒绝 {short}：{}", gate.deny_reason());
-            return;
-        }
+        if !uno_admitted {
+            let gate = {
+                let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                gate_inbound(
+                    self.enabled(),
+                    self.max_capability(),
+                    &self.device_deny(),
+                    &peer,
+                    self.has_remote_trust(&peer),
+                    requested,
+                    inner.session.is_some(),
+                )
+            };
+            if gate != Gate::Allow {
+                deny_and_close(&link_conn, &mut send, gate.deny_reason(), gate.deny_code()).await;
+                log::info!("[RC] 拒绝 {short}：{}", gate.deny_reason());
+                return;
+            }
 
-        {
-            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            if !inner.pending.iter().any(|k| k.peer == peer) {
-                inner.pending.push(InboundKnock {
-                    peer: peer.clone(),
-                    peer_name: self.peer_name(&peer),
-                    capability: requested,
-                    first_seen_ms: now_ms(),
-                });
+            // 方案 D「免确认直连」：门禁全绿（含 deny 检查——DeviceDenied 根本到不了
+            // Allow）且这台设备开了免确认 ⇒ 直接落会话。下面的等待循环 200ms 内
+            // 看到 `InboundActive` 就回 Accept，对端体感是「连上就进」。
+            // 自动接受失败（唯一现实成因是并发下本机已有会话）不静默，
+            // 也不硬拒——落回人工确认，让人看见再说。
+            let auto_accepted = if self.device_trusted(&peer) {
+                let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                match self
+                    .establish_inbound_with(&mut inner, &peer, self.peer_name(&peer), requested)
+                {
+                    Ok(_) => {
+                        log::info!("[RC] {short} 来自免确认设备，自动接受");
+                        true
+                    }
+                    Err(e) => {
+                        log::warn!("[RC] {short} 免确认自动接受失败（{e}），转入人工确认");
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            if !auto_accepted {
+                let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                if !inner.pending.iter().any(|k| k.peer == peer) {
+                    inner.pending.push(InboundKnock {
+                        peer: peer.clone(),
+                        peer_name: self.peer_name(&peer),
+                        capability: requested,
+                        first_seen_ms: now_ms(),
+                    });
+                }
             }
         }
         // 有申请进来立刻通知前端（窗口隐藏时也能 toast）
@@ -1224,13 +1725,19 @@ impl RcService {
                     // 局域网还是绕中继进来的」。此处不持有 inner 锁（上面那个
                     // decision 块已结束），与 `status()` 的加锁顺序一致。
                     self.link.attach(&link_conn);
-                    // R1：推 JPEG 画面直到会话结束
-                    spawn_inbound_video(&peer, send, recv).await;
+                    // R1：推 JPEG 画面直到会话结束（conn 一并交给推流任务：
+                    // 鼠标数据报读取 + stats 采样都挂在它身上）
+                    spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram).await;
                     return;
                 }
                 Some(Err(_)) => {
-                    deny_and_close(&link_conn, &mut send, "对方拒绝或会话被占用", "rejected_or_busy")
-                        .await;
+                    deny_and_close(
+                        &link_conn,
+                        &mut send,
+                        "对方拒绝或会话被占用",
+                        "rejected_or_busy",
+                    )
+                    .await;
                     self.clear_pending(&peer);
                     return;
                 }
@@ -1244,14 +1751,104 @@ impl RcService {
         inner.pending.retain(|k| k.peer != peer);
     }
 
-    pub fn approve_inbound(&self, peer: &str) -> Result<Session, String> {
-        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let idx = inner
-            .pending
-            .iter()
-            .position(|k| k.peer == peer)
-            .ok_or("没有待确认的远程申请")?;
-        // 同意时重查门禁：申请与同意之间最长 120s，配置可能已变（TOCTOU）
+    /// 无人值守接入码准入（Q2 方案 B）。验码 → 落白名单 →（可选）开免确认 →
+    /// 建会话 → 消费一次。任何一步不过都不碰待验表。
+    ///
+    /// 与免确认直连（方案 D）的差别在**信任的来源**：那边的信任是用户提前
+    /// 逐台点过头（rc_devices.trusted），这里的信任是「此刻有人在场生成了
+    /// 一个 15 分钟的码，并把码交到了对方手里」——所以验码通过后**必须落
+    /// 白名单**（与现场配对同一张表），让这台设备从此受横幅/历史/禁止/免确认
+    /// 的常规管理，而不是留在某个隐形的旁门里。
+    ///
+    /// # 🔴 消费时机的顺序不变量
+    ///
+    /// [`Self::uno`] 的 `verify` 只判不消费；`consume` 只在会话真的建立之后调。
+    /// 反过来（验完就消费）的话，「码对、但本机正忙」会把一次有效的接入烧掉，
+    /// 对端看到的是自相矛盾的「码没错但连不上」。
+    fn uno_admit(&self, peer: &str, requested: Capability, code: &str, now_ms: i64) -> UnoAdmit {
+        let short = &peer[..8.min(peer.len())];
+        // 红线先行：未启用 = 一律拒，且**不**泄露「码对不对」（用同一句门禁话）。
+        if !self.enabled() {
+            return UnoAdmit::Denied(
+                Gate::Disabled.deny_reason().to_string(),
+                Gate::Disabled.deny_code().to_string(),
+            );
+        }
+        let Some(grant) = self.uno.verify(code, now_ms) else {
+            return UnoAdmit::Denied("接入码无效或已过期".into(), "uno_invalid".into());
+        };
+        // 逐台禁止优先于码：用户明确拉黑过的设备，一张新码不该替他翻案。
+        if self.device_deny().get(peer).copied().unwrap_or(false) {
+            return UnoAdmit::Denied(
+                Gate::DeviceDenied.deny_reason().to_string(),
+                Gate::DeviceDenied.deny_code().to_string(),
+            );
+        }
+        // 落白名单。设备名此刻无从核对（对方自报名要等招呼包），先给可读的占位。
+        let name = {
+            let n = self.peer_name(peer);
+            if n.is_empty() {
+                "新设备".to_string()
+            } else {
+                n
+            }
+        };
+        if let Err(e) = self.store.rc_device_pair(peer, &name) {
+            // 存储错误原文只进日志；deny 话术回给一个**未通过认证**的连接，
+            // 不该携带本机路径/IO 细节（2026-09-19 审查）。
+            log::error!("[RC] {short} 接入码准入写设备列表失败：{e}");
+            return UnoAdmit::Denied("对方暂时无法处理该接入码".into(), "uno_store_error".into());
+        }
+        // 申请档超过码授予的档 → 压到码的档（Accept 会把真实档回给对端，
+        // 对端 UI 就按「只看」渲染，与既有提权流程一致）。
+        let cap = if requested.allowed_by(grant.capability) {
+            requested
+        } else {
+            grant.capability
+        };
+        let established = {
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            self.establish_inbound_with(&mut inner, peer, name, cap)
+        };
+        match established {
+            Ok(_) => {
+                // 🔴 免确认在**会话真的建立之后**才落库：若在 establish 之前写，
+                // 「码有效但本机正忙」的失败会留下一个 trusted=true 的设备——
+                // 码是一次性的，免确认却是永久的，等于把一次性码洗成常驻后门
+                // （2026-09-19 审查发现的 P1）。白名单本身保留：对方确实持有
+                // 有效码，落库后仍受逐台确认/禁止的常规管理。
+                if grant.also_trust {
+                    if let Err(e) = self.set_device_trust(peer, true) {
+                        log::warn!("[RC] {short} 接入码连入后开免确认失败：{e}");
+                    }
+                }
+                self.uno.consume(&grant.hash);
+                log::info!(
+                    "[RC] {short} 通过无人值守接入码连入（{}）",
+                    cap.as_str()
+                );
+                UnoAdmit::Admitted
+            }
+            Err(e) => {
+                log::warn!("[RC] {short} 接入码有效但建立会话失败：{e}");
+                UnoAdmit::Denied(e, "busy".into())
+            }
+        }
+    }
+
+    /// 建立入站会话的**核心**（人工同意与方案 D 免确认共用）。
+    ///
+    /// 门禁在这里重查一遍：人工路径的申请与同意之间最长 120s，配置可能已变
+    /// （TOCTOU）；免确认路径虽无间隔，同一套判据再走一遍成本为零。
+    /// 只改 `inner.session`，**不碰 pending**——pending 的出入队由调用方负责
+    /// （人工路径从 pending 里来；免确认路径压根没进过 pending）。
+    fn establish_inbound_with(
+        &self,
+        inner: &mut Inner,
+        peer: &str,
+        peer_name: String,
+        requested: Capability,
+    ) -> Result<Session, String> {
         if !self.enabled() {
             return Err("本机已关闭「允许被远程协助」".into());
         }
@@ -1268,22 +1865,34 @@ impl RcService {
                 return Err("[busy_local] 本机已有进行中的远程会话，请先结束".into());
             }
         }
-        let knock = inner.pending.remove(idx);
-        let cap = if knock.capability.allowed_by(self.max_capability()) {
-            knock.capability
+        let cap = if requested.allowed_by(self.max_capability()) {
+            requested
         } else {
             self.max_capability()
         };
         let s = Session {
             id: new_session_id(now_ms()),
             peer: peer.to_string(),
-            peer_name: knock.peer_name,
+            peer_name,
             capability: cap,
             phase: SessionPhase::InboundActive,
             started_ms: now_ms(),
             granted: true,
         };
         inner.session = Some(s.clone());
+        Ok(s)
+    }
+
+    pub fn approve_inbound(&self, peer: &str) -> Result<Session, String> {
+        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let idx = inner
+            .pending
+            .iter()
+            .position(|k| k.peer == peer)
+            .ok_or("没有待确认的远程申请")?;
+        let knock = inner.pending[idx].clone();
+        let s = self.establish_inbound_with(&mut inner, peer, knock.peer_name, knock.capability)?;
+        inner.pending.remove(idx);
         Ok(s)
     }
 
@@ -1301,6 +1910,11 @@ impl RcService {
     pub fn session_history(&self) -> Vec<serde_json::Value> {
         super::history::list_history(&self.store)
     }
+
+    /// 清空全部会话历史（设置页「清空记录」）。实现见 `rc/history.rs`。
+    pub fn clear_history(&self) -> Result<(), String> {
+        super::history::clear_history(&self.store)
+    }
 }
 
 /// 被控端任务入口：输入读取 + 画面推流（实现在 `rc/inbound.rs`）。
@@ -1308,11 +1922,15 @@ async fn spawn_inbound_video(
     peer: &str,
     send: iroh::endpoint::SendStream,
     recv: iroh::endpoint::RecvStream,
+    conn: iroh::endpoint::Connection,
+    peer_dgram: bool,
 ) {
     let Some(svc) = global() else {
         return;
     };
-    let Some(video) = super::inbound::InboundVideo::try_new(svc, peer, send) else {
+    let Some(video) =
+        super::inbound::InboundVideo::try_new(svc, peer, send, conn, peer_dgram)
+    else {
         log::warn!("[RC] 被控推流启动前会话已结束，放弃推流");
         return;
     };

@@ -267,7 +267,11 @@ mod tests {
             move_targets: 0,
         };
         let got = pulse_hint(&p, now, &gates);
-        assert!(!got.contains("未分类里堆了"), "叫它搬去一个不存在的地方：{}", got);
+        assert!(
+            !got.contains("未分类里堆了"),
+            "叫它搬去一个不存在的地方：{}",
+            got
+        );
         // 另一条不受影响 —— 它与「有没有地方可归」无关。
         assert!(got.contains("已经 5 天没有新东西"), "被连坐了：{}", got);
     }

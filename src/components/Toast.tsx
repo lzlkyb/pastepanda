@@ -16,10 +16,19 @@ interface ToastItem {
   actionLabel?: string;
   copyText?: string;
   action?: string;
+  /**
+   * 通用动作回调：渲染成 `actionLabel`（默认「撤销」）那个按钮，点完自动收起 toast。
+   *
+   * 为什么不是复用 `onRetry`：那个字段渲染出的按钮确实是通用动作按钮，名字却是「重试」。
+   * 这里是**撤销**语义（远程申请撤回），塞进 `onRetry` 就是「名字在说谎」——
+   * 本项目已经为同一类问题改过一次名（`setAllowed`，见 `useRcDeviceActions`）。
+   * 与 `action === "undo"` 的区别：那条是历史记录的「撤销删除」，写死了 `restoreDeleted()`。
+   */
+  onAction?: () => void;
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string) => void;
+  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string, onAction?: () => void) => void;
 }
 
 /** toast 函数签名。各组件 props 里原本各写各的窄版本，收口到这里（规则 #11）。 */
@@ -97,11 +106,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return () => { m.forEach((e) => e.t && window.clearTimeout(e.t)); m.clear(); };
   }, []);
 
-  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string) => {
+  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string, onAction?: () => void) => {
     const d = duration ?? (type === "error" ? 5000 : 4000);
     const id = ++toastId;
     setToasts((prev) => {
-      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel, copyText, action }];
+      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel, copyText, action, onAction }];
       // 超出限制时移除最早的 toast
       if (next.length > MAX_TOASTS) {
         return next.slice(next.length - MAX_TOASTS);
@@ -179,12 +188,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   )}
                 </span>
                 <span className={styles.toastMsg}>{t.message}</span>
-                {t.action === "undo" ? (
+                {t.action === "undo" || t.onAction ? (
                   <button
-                    onClick={(e) => { e.stopPropagation(); void restoreDeleted(); dismiss(t.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // 有 onAction 就走调用方给的撤销动作（远程申请撤回等）；
+                      // 没有才是历史记录那条写死的「撤销删除」。两条并成一支，
+                      // 避免两个字段同时被设时渲染出两个「撤销」按钮。
+                      if (t.onAction) t.onAction();
+                      else void restoreDeleted();
+                      dismiss(t.id);
+                    }}
                     className={styles.toastAction}
                   >
-                    撤销
+                    {t.actionLabel ?? "撤销"}
                   </button>
                 ) : null}
                 {t.onRetry && t.actionLabel ? (

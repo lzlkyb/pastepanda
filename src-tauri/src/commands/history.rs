@@ -88,10 +88,7 @@ pub fn insert_markdown_history(
         store
             .update_history_time(&existing.id, &now_str, TimeBump::ResaveOnly)
             .ok();
-        log::info!(
-            "[Markdown 编辑器] 智能合并重复保存 (id={})",
-            existing.id
-        );
+        log::info!("[Markdown 编辑器] 智能合并重复保存 (id={})", existing.id);
         return Ok(());
     }
 
@@ -145,7 +142,11 @@ pub fn insert_diagram_history(
     // 双开两个新建窗口时两边 sourceId 相同，保存会互相覆盖。
     let is_empty_doc = serde_json::from_str::<serde_json::Value>(&content)
         .ok()
-        .and_then(|v| v.get("nodes").and_then(|n| n.as_array()).map(|a| a.is_empty()))
+        .and_then(|v| {
+            v.get("nodes")
+                .and_then(|n| n.as_array())
+                .map(|a| a.is_empty())
+        })
         .unwrap_or(false);
     if !is_empty_doc {
         if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, &target_workspace, "diagram") {
@@ -248,10 +249,7 @@ pub fn delete_history(
     // React 实例，不发事件主窗口的列表与侧边栏计数会一直是脏的
     // （参照本文件 update_history 的做法）。主窗口自己删除时也会收到，
     // 前端按 id 过滤是幂等的，重复执行无副作用。
-    let _ = app.emit(
-        "history-items-deleted",
-        serde_json::json!({ "ids": ids }),
-    );
+    let _ = app.emit("history-items-deleted", serde_json::json!({ "ids": ids }));
     Ok(n)
 }
 
@@ -332,7 +330,13 @@ pub fn preview_history_conditions(
     source: Option<String>,
     limit: Option<u32>,
 ) -> Result<Vec<HistoryItem>, String> {
-    store.preview_history_conditions(&workspace, before_days, item_type, source, limit.unwrap_or(50))
+    store.preview_history_conditions(
+        &workspace,
+        before_days,
+        item_type,
+        source,
+        limit.unwrap_or(50),
+    )
 }
 
 #[tauri::command]
@@ -390,10 +394,7 @@ pub fn get_stats(store: State<DataStore>, workspace: String) -> Result<Stats, St
 }
 
 #[tauri::command]
-pub fn get_stats_detail(
-    store: State<DataStore>,
-    workspace: String,
-) -> Result<StatsDetail, String> {
+pub fn get_stats_detail(store: State<DataStore>, workspace: String) -> Result<StatsDetail, String> {
     store.get_stats_detail(&workspace)
 }
 

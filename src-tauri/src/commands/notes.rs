@@ -179,7 +179,11 @@ fn validated_view(view: Option<NoteViewOpts>) -> NoteViewOpts {
         ("tagged", &v.tagged),
     ] {
         if !TRI.contains(&val.as_str()) {
-            log::warn!("[Notes] 筛选 {} 的值 `{}` 不是三态之一，当作不筛", name, val);
+            log::warn!(
+                "[Notes] 筛选 {} 的值 `{}` 不是三态之一，当作不筛",
+                name,
+                val
+            );
         }
     }
     // B4 时间范围。后端 `within_days()` 本身就是白名单（认不出就不筛），

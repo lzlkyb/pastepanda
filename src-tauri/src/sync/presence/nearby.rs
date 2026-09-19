@@ -157,7 +157,10 @@ mod tests {
     #[test]
     fn 听到一次就进列表_重复听到不重复计() {
         let n = Nearby::new();
-        assert!(n.note("aa", "办公室台式机", addr(1), 1_000), "第一次是新面孔");
+        assert!(
+            n.note("aa", "办公室台式机", addr(1), 1_000),
+            "第一次是新面孔"
+        );
         assert!(!n.note("aa", "办公室台式机", addr(1), 1_500), "第二次不是");
         let l = n.list(1_500);
         assert_eq!(l.len(), 1);
@@ -218,7 +221,8 @@ mod tests {
         let n = Nearby::new();
         n.note("老的", "老的", addr(1), 1_000);
         n.note("新的", "新的", addr(2), 1_000 + NEARBY_TTL_MS + 1);
-        let ids: Vec<String> = n.list(1_000 + NEARBY_TTL_MS + 1)
+        let ids: Vec<String> = n
+            .list(1_000 + NEARBY_TTL_MS + 1)
             .into_iter()
             .map(|n| n.node_id)
             .collect();

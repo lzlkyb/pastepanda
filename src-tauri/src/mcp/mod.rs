@@ -17,6 +17,7 @@
 //! 默认**关闭**（决策 D7）：开一个本机监听端口是用户得知道且同意的事，
 //! 不能因为升级就无声无息地多了一个服务。
 
+pub mod audit;
 pub mod auth;
 pub mod blurb;
 pub mod gate;
@@ -25,7 +26,6 @@ pub mod lan;
 pub mod protocol;
 /// 「库的脉搏」：搭在模型必经之路上的该写/该整理信号（L2）。
 pub mod pulse;
-pub mod audit;
 pub mod server;
 pub mod source;
 /// HTTPS 证书（**默认关闭**，用户手动打开）。

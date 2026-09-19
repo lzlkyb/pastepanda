@@ -88,8 +88,7 @@ fn source(ctx: &CallCtx) -> String {
 fn trash_note(days: i64) -> String {
     if days <= 0 {
         // 0 = 用户关掉了自动销毁。这时再说「N 天后销毁」同样是假话。
-        "可恢复：这台机器上回收站的自动销毁是关着的，删掉的笔记会一直留在回收站里。"
-            .to_string()
+        "可恢复：这台机器上回收站的自动销毁是关着的，删掉的笔记会一直留在回收站里。".to_string()
     } else {
         format!(
             "可恢复：删掉的笔记会在回收站里留 {} 天（用户自己设的值），到期后自动销毁。",
@@ -607,7 +606,9 @@ pub(super) async fn call_insert_at_section(
 ) -> Result<ToolOutput, ToolError> {
     let a = args.as_ref();
     let Some(id) = arg_str(a, "id").map(str::to_string) else {
-        return Err(ToolError::invalid_params("kb_insert_at_section 需要参数 id"));
+        return Err(ToolError::invalid_params(
+            "kb_insert_at_section 需要参数 id",
+        ));
     };
     let locator = need_locator(a, "kb_insert_at_section")?;
     let Some(text) = arg_str(a, "text").map(str::to_string) else {
@@ -803,7 +804,11 @@ pub(super) async fn call_summary(
     // 而空串在这里是一个**有意义的指令**（清掉摘要）。
     // 拿 `arg_str` 的后果是「清摘要」静默变成报参数缺失。
     let text = arg_str_allow_empty(a, "text").unwrap_or("").to_string();
-    let val: Option<String> = if text.trim().is_empty() { None } else { Some(text) };
+    let val: Option<String> = if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    };
     let cleared = val.is_none();
     let kb = ctx.kb.clone();
     let id2 = id.clone();
@@ -830,7 +835,9 @@ pub(super) async fn call_folder_rename(
 ) -> Result<ToolOutput, ToolError> {
     let a = args.as_ref();
     let Some(folder) = arg_str(a, "folder").map(str::to_string) else {
-        return Err(ToolError::invalid_params("kb_folder_rename 需要参数 folder"));
+        return Err(ToolError::invalid_params(
+            "kb_folder_rename 需要参数 folder",
+        ));
     };
     let Some(name) = arg_str(a, "name").map(str::to_string) else {
         return Err(ToolError::invalid_params("kb_folder_rename 需要参数 name"));
@@ -857,7 +864,9 @@ pub(super) async fn call_folder_dissolve(
 ) -> Result<ToolOutput, ToolError> {
     let a = args.as_ref();
     let Some(folder) = arg_str(a, "folder").map(str::to_string) else {
-        return Err(ToolError::invalid_params("kb_folder_dissolve 需要参数 folder"));
+        return Err(ToolError::invalid_params(
+            "kb_folder_dissolve 需要参数 folder",
+        ));
     };
     let shown = folder.clone();
     let kb = ctx.kb.clone();

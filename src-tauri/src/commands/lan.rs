@@ -124,9 +124,7 @@ pub fn regenerate_lan_pairing_key(app: tauri::AppHandle) -> Result<String, Strin
 /// 已配对的不列——它们在 `get_lan_devices` 那个列表里，
 /// 两处都出现会让用户以为没配上、反复点。
 #[tauri::command]
-pub fn get_lan_nearby(
-    app: tauri::AppHandle,
-) -> Result<Vec<crate::lan_pair::NearbyDevice>, String> {
+pub fn get_lan_nearby(app: tauri::AppHandle) -> Result<Vec<crate::lan_pair::NearbyDevice>, String> {
     let Some(lan) = app.try_state::<crate::lan_sync::LanSync>() else {
         return Ok(Vec::new());
     };
@@ -262,8 +260,10 @@ pub fn get_lan_pair_state(app: tauri::AppHandle) -> Result<Option<LanPairState>,
         return Ok(None);
     };
     let now = chrono::Utc::now().timestamp();
-    Ok(lan.pair().snapshot(now).map(|(id, name, pin, role, ok)| {
-        LanPairState {
+    Ok(lan
+        .pair()
+        .snapshot(now)
+        .map(|(id, name, pin, role, ok)| LanPairState {
             peer_id: id,
             peer_name: name,
             pin,
@@ -272,8 +272,7 @@ pub fn get_lan_pair_state(app: tauri::AppHandle) -> Result<Option<LanPairState>,
                 crate::lan_pair::PairRole::Responder => "responder".into(),
             },
             confirmed: ok,
-        }
-    }))
+        }))
 }
 
 /// 发起配对（用户在附近列表里点了某台）。

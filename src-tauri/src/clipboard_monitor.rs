@@ -88,9 +88,9 @@ fn tag_tx() -> &'static mpsc::Sender<TagJob> {
                 }
                 log::info!("[ContentClassifier] auto-tag-writer 通道关闭，worker 退出");
             })
-            {
-                log::error!("[ContentClassifier] 启动 auto-tag-writer 线程失败: {}", e);
-            }
+        {
+            log::error!("[ContentClassifier] 启动 auto-tag-writer 线程失败: {}", e);
+        }
         tx
     })
 }
@@ -576,7 +576,13 @@ fn run_event_listener(running: Arc<AtomicBool>, app_handle: AppHandle, shared: L
             let sensitive_cache = sensitive_cache.clone();
             let excluded_cache = excluded_cache.clone();
             std::thread::spawn(move || {
-                worker_loop(&queue, &running, &app_handle, &sensitive_cache, &excluded_cache);
+                worker_loop(
+                    &queue,
+                    &running,
+                    &app_handle,
+                    &sensitive_cache,
+                    &excluded_cache,
+                );
             });
         }
 
@@ -705,7 +711,12 @@ fn run_event_listener(running: Arc<AtomicBool>, app_handle: AppHandle, shared: L
                             &queue,
                             &app_handle,
                         );
-                        advance_seq(GetClipboardSequenceNumber(), ok, &mut last_seq, &mut fail_streak);
+                        advance_seq(
+                            GetClipboardSequenceNumber(),
+                            ok,
+                            &mut last_seq,
+                            &mut fail_streak,
+                        );
                     } else if timer_id == TIMER_FALLBACK {
                         // 兜底：序列号变化但未经过防抖路径（丢通知/读取失败重试）时补读
                         let seq = GetClipboardSequenceNumber();
@@ -824,7 +835,9 @@ fn stage1_capture(
                         paste_suppress.clear_hash();
                     }
                 } else if paste_suppress.is_suppressed() {
-                    log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·富文本)");
+                    log::info!(
+                        "[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·富文本)"
+                    );
                     *last_text_hash = Some(hash);
                     return true;
                 }
@@ -1083,7 +1096,11 @@ fn worker_loop(
                 excluded_cache,
                 text,
                 hash,
-                CaptureMeta { source_title: title, exe_path, now_str: time },
+                CaptureMeta {
+                    source_title: title,
+                    exe_path,
+                    now_str: time,
+                },
             ),
             CapturedItem::Image {
                 rgba,
@@ -1099,7 +1116,11 @@ fn worker_loop(
                 width,
                 height,
                 hash,
-                CaptureMeta { source_title: title, exe_path, now_str: time },
+                CaptureMeta {
+                    source_title: title,
+                    exe_path,
+                    now_str: time,
+                },
             ),
             CapturedItem::Files {
                 paths,
@@ -1121,7 +1142,11 @@ fn worker_loop(
                 html_fragment,
                 plain_text,
                 hash,
-                CaptureMeta { source_title: title, exe_path, now_str: time },
+                CaptureMeta {
+                    source_title: title,
+                    exe_path,
+                    now_str: time,
+                },
             ),
             CapturedItem::Doc {
                 html_fragment,
@@ -1137,7 +1162,11 @@ fn worker_loop(
                 html_fragment,
                 plain_text,
                 hash,
-                CaptureMeta { source_title: title, exe_path, now_str: time },
+                CaptureMeta {
+                    source_title: title,
+                    exe_path,
+                    now_str: time,
+                },
             ),
         }
     }
@@ -1210,10 +1239,7 @@ fn process_text(
             if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复记录时间失败: {}", e);
             } else {
-                log::info!(
-                    "[ClipboardMonitor] 智能合并重复文本 (id={})",
-                    existing.id
-                );
+                log::info!("[ClipboardMonitor] 智能合并重复文本 (id={})", existing.id);
             }
             // 推送更新后的 item 到前端（前端会 prepend，使旧记录移到顶部）
             // 注意：..existing 的 tags 已被 load_tags_into_items 填充，不能覆盖
@@ -1272,10 +1298,9 @@ fn process_text(
         enqueue_auto_tags(app_handle.clone(), item.id.clone(), labels.clone());
 
         // 推送事件到前端
-        if let Err(e) = app_handle.emit(
-            "clipboard-changed",
-            ClipboardChanged { item: item.clone() },
-        ) {
+        if let Err(e) =
+            app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() })
+        {
             log::warn!("[ClipboardMonitor] 推送文本事件失败: {}", e);
         }
 
@@ -1381,10 +1406,7 @@ fn process_image(
             if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复图片时间失败: {}", e);
             } else {
-                log::info!(
-                    "[ClipboardMonitor] 智能合并重复图片 (id={})",
-                    existing.id
-                );
+                log::info!("[ClipboardMonitor] 智能合并重复图片 (id={})", existing.id);
             }
             // V4 截图记忆：重复图片也补 OCR 摘要（语义检索可命中"那张图的字"）
             ensure_image_ocr_memory(store, &existing.id, &img_path);
@@ -1395,10 +1417,9 @@ fn process_image(
                 group_id: existing.group_id.clone(),
                 ..existing
             };
-            if let Err(e) = app_handle.emit(
-                "clipboard-changed",
-                ClipboardChanged { item: updated_item },
-            ) {
+            if let Err(e) =
+                app_handle.emit("clipboard-changed", ClipboardChanged { item: updated_item })
+            {
                 log::warn!("[ClipboardMonitor] 推送图片合并事件失败: {}", e);
             }
             return;
@@ -1431,21 +1452,14 @@ fn process_image(
             ensure_image_ocr_memory(&store, &item.id, &img_path);
         }
     }
-    if let Err(e) = app_handle.emit(
-        "clipboard-changed",
-        ClipboardChanged { item: item.clone() },
-    ) {
+    if let Err(e) = app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() }) {
         log::warn!("[ClipboardMonitor] 推送图片事件失败: {}", e);
     }
 
     // LAN 同步：发送图片到局域网
     if let Some(lan_sync) = app_handle.try_state::<crate::lan_sync::LanSync>() {
         let img_path_str = img_path.to_string_lossy().to_string();
-        lan_sync.send_item(
-            "image",
-            &format!("[图片] {}", img_path_str),
-            &img_path_str,
-        );
+        lan_sync.send_item("image", &format!("[图片] {}", img_path_str), &img_path_str);
     }
 }
 
@@ -1509,10 +1523,7 @@ fn process_rich(
             if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复富文本时间失败: {}", e);
             } else {
-                log::info!(
-                    "[ClipboardMonitor] 智能合并重复富文本 (id={})",
-                    existing.id
-                );
+                log::info!("[ClipboardMonitor] 智能合并重复富文本 (id={})", existing.id);
             }
             let updated_item = HistoryItem {
                 time: now_str.clone(),
@@ -1521,10 +1532,9 @@ fn process_rich(
                 group_id: existing.group_id.clone(),
                 ..existing
             };
-            if let Err(e) = app_handle.emit(
-                "clipboard-changed",
-                ClipboardChanged { item: updated_item },
-            ) {
+            if let Err(e) =
+                app_handle.emit("clipboard-changed", ClipboardChanged { item: updated_item })
+            {
                 log::warn!("[ClipboardMonitor] 推送富文本合并事件失败: {}", e);
             }
             return;
@@ -1560,12 +1570,13 @@ fn process_rich(
     // 打上「图文」自动标签（同 process_text 的做法）。
     // 类型标识必须走标签体系，不能只在卡片上画个写死的徽标：
     // 标签才能点击筛选、才会出现在筛选标签列表里、才能被用户统一管理。
-    enqueue_auto_tags(app_handle.clone(), item.id.clone(), vec!["图文".to_string()]);
+    enqueue_auto_tags(
+        app_handle.clone(),
+        item.id.clone(),
+        vec!["图文".to_string()],
+    );
 
-    if let Err(e) = app_handle.emit(
-        "clipboard-changed",
-        ClipboardChanged { item: item.clone() },
-    ) {
+    if let Err(e) = app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() }) {
         log::warn!("[ClipboardMonitor] 推送富文本事件失败: {}", e);
     }
 
@@ -1621,10 +1632,7 @@ fn process_doc(
             if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复文档时间失败: {}", e);
             } else {
-                log::info!(
-                    "[ClipboardMonitor] 智能合并重复文档 (id={})",
-                    existing.id
-                );
+                log::info!("[ClipboardMonitor] 智能合并重复文档 (id={})", existing.id);
             }
             let updated_item = HistoryItem {
                 time: now_str,
@@ -1633,10 +1641,9 @@ fn process_doc(
                 group_id: existing.group_id.clone(),
                 ..existing
             };
-            if let Err(e) = app_handle.emit(
-                "clipboard-changed",
-                ClipboardChanged { item: updated_item },
-            ) {
+            if let Err(e) =
+                app_handle.emit("clipboard-changed", ClipboardChanged { item: updated_item })
+            {
                 log::warn!("[ClipboardMonitor] 推送合并事件失败: {}", e);
             }
             return;
@@ -1678,10 +1685,7 @@ fn process_doc(
 
     enqueue_auto_tags(app_handle.clone(), item.id.clone(), labels);
 
-    if let Err(e) = app_handle.emit(
-        "clipboard-changed",
-        ClipboardChanged { item: item.clone() },
-    ) {
+    if let Err(e) = app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() }) {
         log::warn!("[ClipboardMonitor] 推送文档事件失败: {}", e);
     }
 
@@ -1711,13 +1715,12 @@ fn process_files(
         let store = app_handle.try_state::<DataStore>();
         if let Some(ref store) = store {
             if let Ok(Some(existing)) = store.find_latest_by_md5(&file_hash, "默认", "file") {
-                if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
+                if let Err(e) =
+                    store.update_history_time(&existing.id, &now_str, TimeBump::Recapture)
+                {
                     log::warn!("[ClipboardMonitor] 更新重复文件时间失败: {}", e);
                 } else {
-                    log::info!(
-                        "[ClipboardMonitor] 智能合并重复文件 (id={})",
-                        existing.id
-                    );
+                    log::info!("[ClipboardMonitor] 智能合并重复文件 (id={})", existing.id);
                 }
                 let updated_item = HistoryItem {
                     time: now_str.clone(),
@@ -1726,10 +1729,9 @@ fn process_files(
                     group_id: existing.group_id.clone(),
                     ..existing
                 };
-                if let Err(e) = app_handle.emit(
-                    "clipboard-changed",
-                    ClipboardChanged { item: updated_item },
-                ) {
+                if let Err(e) =
+                    app_handle.emit("clipboard-changed", ClipboardChanged { item: updated_item })
+                {
                     log::warn!("[ClipboardMonitor] 推送文件合并事件失败: {}", e);
                 }
                 // 合并命中：不新建记录，但 LAN 同步仍照发（对端更新到顶部）
@@ -1762,10 +1764,9 @@ fn process_files(
                 log::error!("[ClipboardMonitor] 插入文件记录失败: {}", e);
             }
         }
-        if let Err(e) = app_handle.emit(
-            "clipboard-changed",
-            ClipboardChanged { item: item.clone() },
-        ) {
+        if let Err(e) =
+            app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() })
+        {
             log::warn!("[ClipboardMonitor] 推送文件事件失败: {}", e);
         }
 
@@ -1865,9 +1866,7 @@ fn run_polling_listener(
                         paste_suppress.clear_hash();
                     }
                 } else if paste_suppress.is_suppressed() {
-                    log::info!(
-                        "[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内)"
-                    );
+                    log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内)");
                     last_text_hash = Some(hash);
                     continue;
                 }
@@ -1903,13 +1902,15 @@ fn run_polling_listener(
                     let store = app_handle.try_state::<DataStore>();
                     let mut existing_id: Option<String> = None;
                     if let Some(ref store) = store {
-                        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "text") {
+                        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "text")
+                        {
                             existing_id = Some(existing.id.clone());
-                            if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
-                                log::warn!(
-                                    "[ClipboardMonitor] 更新重复记录时间失败: {}",
-                                    e
-                                );
+                            if let Err(e) = store.update_history_time(
+                                &existing.id,
+                                &now_str,
+                                TimeBump::Recapture,
+                            ) {
+                                log::warn!("[ClipboardMonitor] 更新重复记录时间失败: {}", e);
                             } else {
                                 log::info!(
                                     "[ClipboardMonitor] 智能合并重复文本 (id={})",
@@ -1970,16 +1971,13 @@ fn run_polling_listener(
                         // 自动标签写入：发送到 channel，单 worker 顺序消化（突发不丢）
                         enqueue_auto_tags(app_handle.clone(), item.id.clone(), labels.clone());
 
-                        if let Err(e) = app_handle.emit(
-                            "clipboard-changed",
-                            ClipboardChanged { item: item.clone() },
-                        ) {
+                        if let Err(e) = app_handle
+                            .emit("clipboard-changed", ClipboardChanged { item: item.clone() })
+                        {
                             log::warn!("[ClipboardMonitor] 推送文本事件失败: {}", e);
                         }
 
-                        if let Some(lan_sync) =
-                            app_handle.try_state::<crate::lan_sync::LanSync>()
-                        {
+                        if let Some(lan_sync) = app_handle.try_state::<crate::lan_sync::LanSync>() {
                             lan_sync.send(&text);
                         }
                     }
@@ -2005,9 +2003,8 @@ fn get_foreground_window_info(_app_handle: &tauri::AppHandle) -> (String, Option
 }
 
 /// 匹配 <img src="..."> 或 <img src='...'>（大小写不敏感）。
-static IMG_SRC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?i)<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap()
-});
+static IMG_SRC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap());
 
 /// 判断 CF_HTML 片段里是否确实带内嵌图片（用于决定是否走图文混排采集路径，
 /// 避免把绝大多数"纯文本也带 CF_HTML"的普通复制误判为富文本）
@@ -2050,11 +2047,17 @@ fn detect_doc_fragment(fragment: &str, plain_text: &str) -> bool {
     let has_table = lower.contains("<table");
     let has_heading = (1..=6u32).any(|n| lower.contains(&format!("<h{}", n)));
     // <li 后须跟非字母字符，排除 <link（Outlook CF_HTML 偶尔内联 link 标签）
-    let has_list = lower.contains("<ul") || lower.contains("<ol")
-        || lower.contains("<li>") || lower.contains("<li ")
-        || lower.contains("<li\t") || lower.contains("<li\n") || lower.contains("<li\r");
-    let has_link = lower.contains("<a ") || lower.contains("<a\t")
-        || lower.contains("<a\n") || lower.contains("<a\r");
+    let has_list = lower.contains("<ul")
+        || lower.contains("<ol")
+        || lower.contains("<li>")
+        || lower.contains("<li ")
+        || lower.contains("<li\t")
+        || lower.contains("<li\n")
+        || lower.contains("<li\r");
+    let has_link = lower.contains("<a ")
+        || lower.contains("<a\t")
+        || lower.contains("<a\n")
+        || lower.contains("<a\r");
 
     let strong = has_table || has_heading || has_list;
     let weak_link = has_link && plain_text.chars().count() >= 50;
@@ -2119,7 +2122,11 @@ fn text_substantially_matches(a: &str, b: &str) -> bool {
 pub(crate) fn extract_img_srcs(fragment: &str) -> Vec<String> {
     IMG_SRC_RE
         .captures_iter(fragment)
-        .filter_map(|cap| cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str().to_string()))
+        .filter_map(|cap| {
+            cap.get(1)
+                .or_else(|| cap.get(2))
+                .map(|m| m.as_str().to_string())
+        })
         .collect()
 }
 
@@ -2134,7 +2141,11 @@ fn localize_one_image(src: &str, images_dir: &std::path::Path) -> Option<PathBuf
             return None;
         }
         let comma = src.find(',')?;
-        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &src[comma + 1..]).ok()?
+        base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &src[comma + 1..],
+        )
+        .ok()?
     } else if src.starts_with("file:") {
         // Word/Outlook/浏览器常见写法：本地临时文件的 file:// 引用，来源应用
         // 清理临时文件后这个路径就失效，所以必须在采集那一刻立即读出来。
@@ -2159,7 +2170,10 @@ fn localize_one_image(src: &str, images_dir: &std::path::Path) -> Option<PathBuf
         .unwrap_or("png");
     let hash = md5_hex(&bytes);
     if let Err(e) = std::fs::create_dir_all(images_dir) {
-        log::error!("[ClipboardMonitor] 创建图片目录失败（富文本内嵌图片）: {}", e);
+        log::error!(
+            "[ClipboardMonitor] 创建图片目录失败（富文本内嵌图片）: {}",
+            e
+        );
         return None;
     }
     let file_path = images_dir.join(format!("{}.{}", hash, ext));
@@ -2260,13 +2274,15 @@ fn localize_html_images(fragment: &str, images_dir: &std::path::Path) -> (String
 pub(crate) fn build_cf_html_buffer(fragment_inner: &str) -> Vec<u8> {
     let prefix_html = "<html><body>\r\n<!--StartFragment-->";
     let suffix_html = "<!--EndFragment-->\r\n</body></html>";
-    let header_template =
-        |start_html: usize, end_html: usize, start_frag: usize, end_frag: usize| {
-            format!(
+    let header_template = |start_html: usize,
+                           end_html: usize,
+                           start_frag: usize,
+                           end_frag: usize| {
+        format!(
                 "Version:0.9\r\nStartHTML:{:010}\r\nEndHTML:{:010}\r\nStartFragment:{:010}\r\nEndFragment:{:010}\r\n",
                 start_html, end_html, start_frag, end_frag
             )
-        };
+    };
     let header_len = header_template(0, 0, 0, 0).len();
     let start_html = header_len;
     let start_frag = start_html + prefix_html.len();
@@ -2771,7 +2787,11 @@ mod tests {
         );
         let (rewritten, saved) = localize_html_images(&fragment, &images_dir);
 
-        assert_eq!(saved.len(), 2, "两张 data URI 图片都应落盘（同内容同 hash同文件，但均计入返回列表）");
+        assert_eq!(
+            saved.len(),
+            2,
+            "两张 data URI 图片都应落盘（同内容同 hash同文件，但均计入返回列表）"
+        );
         assert!(rewritten.contains("前段文字"));
         assert!(rewritten.contains("后段文字"));
         // 远程引用保持原样
@@ -2789,7 +2809,8 @@ mod tests {
     #[test]
     fn test_detect_doc_fragment_word_table() {
         // Word/Excel 表格片段 + 与纯文本一致 → 命中
-        let fragment = "<table><tr><td>姓名</td><td>年龄</td></tr><tr><td>张三</td><td>28</td></tr></table>";
+        let fragment =
+            "<table><tr><td>姓名</td><td>年龄</td></tr><tr><td>张三</td><td>28</td></tr></table>";
         let plain = "姓名\t年龄\n张三\t28";
         assert!(detect_doc_fragment(fragment, plain));
     }
@@ -2854,7 +2875,10 @@ mod tests {
     fn test_detect_doc_fragment_weak_link_mismatch_rejected() {
         // 弱信号（仅链接+长文本）：片段文本与纯文本对不上 → 不命中
         let body = "This is a long enough sentence that exceeds fifty characters total yes";
-        let fragment = format!("<a href=\"https://example.com\">完全不同的链接文本</a>{}", body);
+        let fragment = format!(
+            "<a href=\"https://example.com\">完全不同的链接文本</a>{}",
+            body
+        );
         let plain = format!("{}\n{}", body, body); // 纯文本与片段内容不匹配
         assert!(!detect_doc_fragment(&fragment, &plain));
     }
@@ -2868,7 +2892,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn test_text_substantially_matches_different() {
-        assert!(!text_substantially_matches("hello world", "completely different text"));
+        assert!(!text_substantially_matches(
+            "hello world",
+            "completely different text"
+        ));
     }
 
     #[cfg(target_os = "windows")]

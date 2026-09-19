@@ -71,7 +71,6 @@ const BatchReplaceDialog = lazy(() => import("@/components/BatchReplaceDialog").
 const ConfigDiffDialog = lazy(() => import("@/components/ConfigDiffDialog").then(m => ({ default: m.ConfigDiffDialog })));
 const SequentialPasteDialog = lazy(() => import("@/components/SequentialPasteDialog").then(m => ({ default: m.SequentialPasteDialog })));
 const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
-const RemoteComputerDialog = lazy(() => import("@/components/rc/RemoteComputerDialog").then(m => ({ default: m.RemoteComputerDialog })));
 const RcOverlay = lazy(() => import("@/components/rc/RcOverlay").then(m => ({ default: m.RcOverlay })));
 
 function App() {
@@ -164,6 +163,39 @@ function App() {
     window.addEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
     return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
   }, []);
+
+  /**
+   * 「远程电脑」工作台窗口（rc-workbench）的「去设置」→ 主窗口打开设置并定位 rc 分区。
+   * 跨窗口只能走 Tauri 事件（DOM 事件不出窗口）；收到后转成本窗口的 DOM 事件，
+   * 复用上面那套 open-settings 管线，并顺手把主窗口拉到前台。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const fn = await listen("pp:open-settings-rc", () => {
+          window.dispatchEvent(
+            new CustomEvent<OpenSettingsDetail>(OPEN_SETTINGS_EVENT, {
+              detail: { tab: "general", section: "rc" },
+            }),
+          );
+          import("@tauri-apps/api/window")
+            .then((m) => m.getCurrentWindow().setFocus())
+            .catch(() => {});
+        });
+        if (cancelled) fn();
+        else unlisten = fn;
+      } catch {
+        /* 非 Tauri 环境（vitest）：忽略 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
   /** v6.4 方案 B：AI 快捷区开关（AI **真能用**时才替代建议条；三态见 @/lib/aiAvailability） */
   const { status: aiStatus } = useAiStatus();
   /** v6.4 引导期：AI 感知 UI 只在「本版本更新后 1 周」显示，之后自动隐藏（不长期占顶部空间） */
@@ -206,8 +238,8 @@ function App() {
   /** 每日整理（H3）。不进 `dialogOpen`：它自带 FocusTrap 与背景点击关闭，
    *  与周报弹窗同一类（那个也没进）。 */
   const [showDailyBrief, setShowDailyBrief] = useState(false);
-  /** 远程电脑（R1 壳）：工具箱入口 */
-  const [showRemote, setShowRemote] = useState(false);
+  /** 远程电脑（2A 配套）：工具箱入口直接开独立工作台窗口（rc_open_workbench），
+   *  不再有主窗口内嵌 dialog——550×700 放不下 960px 的会话视图。 */
   const [showExtract, setShowExtract] = useState(false);
   const [showEncoding, setShowEncoding] = useState(false);
   /** 二维码工具（QREditor 独立弹窗，读剪贴板预填） */
@@ -1098,7 +1130,10 @@ function App() {
     difffull: openFreeDiffFullscreen,
     newdiagram: handleNewDiagram,
     dailybrief: () => setShowDailyBrief(true),
-    remote: () => setShowRemote(true),
+    remote: () => void invoke("rc_open_workbench").catch((e) => {
+      logger.error("打开远程电脑窗口失败", e);
+      toast("打开远程电脑窗口失败：" + String(e), "error");
+    }),
     qr: async () => {
       setQrInitialText(await readClipboardText());
       setShowQr(true);
@@ -1296,13 +1331,6 @@ function App() {
             {showDailyBrief && (
               <Suspense fallback={null}>
                 <DailyBriefDialog onClose={() => setShowDailyBrief(false)} />
-              </Suspense>
-            )}
-          </ErrorBoundary>
-          <ErrorBoundary fallback={null} componentName="远程电脑">
-            {showRemote && (
-              <Suspense fallback={null}>
-                <RemoteComputerDialog onClose={() => setShowRemote(false)} />
               </Suspense>
             )}
           </ErrorBoundary>

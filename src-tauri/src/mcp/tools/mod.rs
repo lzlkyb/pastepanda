@@ -106,11 +106,7 @@ fn want_json(args: Option<&Value>) -> bool {
 }
 
 /// 一篇笔记的结构化摘要（`format=json`）。
-fn note_json(
-    n: &Note,
-    folder: Option<&str>,
-    now: chrono::DateTime<chrono::Local>,
-) -> Value {
+fn note_json(n: &Note, folder: Option<&str>, now: chrono::DateTime<chrono::Local>) -> Value {
     let brief = match n
         .summary
         .as_deref()
@@ -391,9 +387,8 @@ pub struct CallCtx {
 }
 
 /// 注册表的一行。
-type Fut = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<ToolOutput, ToolError>> + Send>,
->;
+type Fut =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolOutput, ToolError>> + Send>>;
 type Runner = fn(CallCtx, Option<Value>) -> Fut;
 
 /// 这个工具的写入目标怎么找 —— 范围检查（项目②）靠它分支。
@@ -653,7 +648,11 @@ struct Hints {
 impl Hints {
     /// 只读工具：读两次和读一次没区别。
     const fn read(name: &'static str) -> Hints {
-        Hints { name, destructive: false, idempotent: true }
+        Hints {
+            name,
+            destructive: false,
+            idempotent: true,
+        }
     }
 }
 
@@ -671,40 +670,104 @@ const HINTS: &[Hints] = &[
     Hints::read("kb_list"),
     Hints::read("kb_trash_list"),
     // 调两次就两篇笔记。
-    Hints { name: "kb_create", destructive: false, idempotent: false },
+    Hints {
+        name: "kb_create",
+        destructive: false,
+        idempotent: false,
+    },
     // 建文件夹：只增不改；同父同名第二次会被拒，一个字不改 ⇒ 幂等。
-    Hints { name: "kb_folder_create", destructive: false, idempotent: true },
+    Hints {
+        name: "kb_folder_create",
+        destructive: false,
+        idempotent: true,
+    },
     // 调两次就追两段——这三个是全表里最不能重试的。
-    Hints { name: "kb_append", destructive: false, idempotent: false },
-    Hints { name: "kb_prepend", destructive: false, idempotent: false },
-    Hints { name: "kb_insert_at_section", destructive: false, idempotent: false },
+    Hints {
+        name: "kb_append",
+        destructive: false,
+        idempotent: false,
+    },
+    Hints {
+        name: "kb_prepend",
+        destructive: false,
+        idempotent: false,
+    },
+    Hints {
+        name: "kb_insert_at_section",
+        destructive: false,
+        idempotent: false,
+    },
     // `content` 是**整篇覆盖**（工具描述里已括号强调）⇒ destructive；
     // 但同参数再覆盖一次结果不变 ⇒ 幂等。两者并不矛盾。
-    Hints { name: "kb_update", destructive: true, idempotent: true },
-    Hints { name: "kb_update_section", destructive: true, idempotent: true },
+    Hints {
+        name: "kb_update",
+        destructive: true,
+        idempotent: true,
+    },
+    Hints {
+        name: "kb_update_section",
+        destructive: true,
+        idempotent: true,
+    },
     // 要求全文唯一命中；第二次 `old` 已不在→报错且一个字不改 ⇒ 仍算幂等。
-    Hints { name: "kb_replace_in_note", destructive: true, idempotent: true },
-    Hints { name: "kb_move", destructive: false, idempotent: true },
+    Hints {
+        name: "kb_replace_in_note",
+        destructive: true,
+        idempotent: true,
+    },
+    Hints {
+        name: "kb_move",
+        destructive: false,
+        idempotent: true,
+    },
     // 只动点名的那几个标签；同一个标签加两次还是一个。
     // （2026-09-07 给 `note_set_tags` 加了「标签集没变就一个字也不写」，幂等是真的。）
-    Hints { name: "kb_tag", destructive: false, idempotent: true },
+    Hints {
+        name: "kb_tag",
+        destructive: false,
+        idempotent: true,
+    },
     // 删到回收站⇒ destructive；已经在回收站里的再删一次不会更差 ⇒ 幂等。
-    Hints { name: "kb_delete", destructive: true, idempotent: false },
-    Hints { name: "kb_restore", destructive: false, idempotent: true },
+    Hints {
+        name: "kb_delete",
+        destructive: true,
+        idempotent: false,
+    },
+    Hints {
+        name: "kb_restore",
+        destructive: false,
+        idempotent: true,
+    },
     Hints::read("kb_history"),
     // 回滚把当前正文换成旧的 ⇒ destructive；同一个 rev 再回一次结果不变 ⇒ 幂等。
     //
     // ⚠ 幂等在这里有一个不好看的尾巴：每次回滚都会把当前版另存一份快照，
     //   所以重试一次 = 历史里多一份重复版。判据看的是**正文状态**（那一字不差），
     //   同 `kb_update` 那条的口径。
-    Hints { name: "kb_revert", destructive: true, idempotent: true },
+    Hints {
+        name: "kb_revert",
+        destructive: true,
+        idempotent: true,
+    },
     // 摘要是整个字段覆盖（可能盖掉用户自己写的）⇒ destructive。
-    Hints { name: "kb_summary", destructive: true, idempotent: true },
+    Hints {
+        name: "kb_summary",
+        destructive: true,
+        idempotent: true,
+    },
     // 改名不碰笔记；改成同一个名字结果一样。
-    Hints { name: "kb_folder_rename", destructive: false, idempotent: true },
+    Hints {
+        name: "kb_folder_rename",
+        destructive: false,
+        idempotent: true,
+    },
     // 解散掉一层目录结构 ⇒ destructive（**笔记不删**，但用户的分类没了）。
     // 第二次调时那个夹子已不存在 ⇒ 报错且一个字不改 ⇒ 仍算幂等。
-    Hints { name: "kb_folder_dissolve", destructive: true, idempotent: true },
+    Hints {
+        name: "kb_folder_dissolve",
+        destructive: true,
+        idempotent: true,
+    },
 ];
 
 fn hints_of(name: &str) -> Option<&'static Hints> {
@@ -746,7 +809,9 @@ pub fn definitions(switches: &WriteSwitches, trash_days: i64) -> Vec<Value> {
     // 手写一定漏，而漏一个就等于那个工具被客户端按**最坏情况**对待
     // （非只读、可破坏、非幂等、开放世界）。
     for d in &mut all {
-        let Some(name) = d["name"].as_str() else { continue };
+        let Some(name) = d["name"].as_str() else {
+            continue;
+        };
         // 上面的 retain 已保证 `spec_of` 不为 None；`hints_of` 的覆盖由测试钉住。
         if let (Some(spec), Some(hints)) = (spec_of(name), hints_of(name)) {
             let ann = annotations_of(spec, hints);
@@ -848,7 +913,9 @@ async fn check_scope(
     let folder_arg = folder_key
         .and_then(|k| args.and_then(|a| arg_str(Some(a), k)))
         .map(str::to_string);
-    let note_id = args.and_then(|a| arg_str(Some(a), "id")).map(str::to_string);
+    let note_id = args
+        .and_then(|a| arg_str(Some(a), "id"))
+        .map(str::to_string);
 
     // 🔴 建子夹**没有**「省略 = 未分类」这一说（那是 `ByFolderArg` 的语义）。
     //    省略 `parent` 是在用户知识库的**顶层**开新地盘：那不是「处理未分类的
@@ -872,7 +939,10 @@ async fn check_scope(
     let tree = blocking(move || kb.folder_tree()).await?;
 
     // ① 按笔记 id 的一边（`ByNoteId` 与 `BothSides` 的源）。
-    if matches!(spec.scope, ScopeTarget::ByNoteId | ScopeTarget::BothSides(_)) {
+    if matches!(
+        spec.scope,
+        ScopeTarget::ByNoteId | ScopeTarget::BothSides(_)
+    ) {
         // 没传 id 就不在这里报：让工具自己报「需要参数 id」，那句话比
         // 一句笼统的「没权限」有用。
         if let Some(id) = note_id.as_deref() {
@@ -930,7 +1000,11 @@ async fn check_scope(
             _ => ctx.scope.allows(target.as_deref(), &tree),
         };
         if !ok {
-            let where_ = if target.is_none() { "未分类" } else { "那个文件夹" };
+            let where_ = if target.is_none() {
+                "未分类"
+            } else {
+                "那个文件夹"
+            };
             return Err(refuse(ctx, where_, spec.name));
         }
     }
@@ -1101,7 +1175,14 @@ async fn call_list(
     let kb2 = kb.clone();
     let (f, t, au, me2) = (folder.clone(), tag.clone(), author.clone(), me.to_string());
     let outcome = match blocking(move || {
-        kb2.list(f.as_deref(), t.as_deref(), au.as_deref(), &me2, limit, offset)
+        kb2.list(
+            f.as_deref(),
+            t.as_deref(),
+            au.as_deref(),
+            &me2,
+            limit,
+            offset,
+        )
     })
     .await
     {
@@ -1397,7 +1478,9 @@ async fn call_search(
             "「{}」匹配到 {} 篇，但**没有一篇**在正文里记过 `[{}]` 类别{}。
              去掉 kind 参数可以看这 {} 篇本身；
              也可能是这个类别在库里根本没被用过——类别是人/AI 写进正文的行内标记，不是自动打的。",
-            query, matched, kind,
+            query,
+            matched,
+            kind,
             scope_label(folder.as_deref(), tag.as_deref()),
             matched
         ))
@@ -1538,7 +1621,11 @@ async fn call_folders(
         // 不告知的话，kb_move 会把笔记移进一个模型没想着的同名文件夹里。
         let mut names: Vec<&str> = folders.iter().map(|f| f.name.as_str()).collect();
         names.sort_unstable();
-        let dups: Vec<&str> = names.windows(2).filter(|w| w[0] == w[1]).map(|w| w[0]).collect();
+        let dups: Vec<&str> = names
+            .windows(2)
+            .filter(|w| w[0] == w[1])
+            .map(|w| w[0])
+            .collect();
         if !dups.is_empty() {
             out.push_str(&format!(
                 "⚠ 有同名文件夹（{}）。按名字指定时只会命中其中一个，\
@@ -1552,11 +1639,7 @@ async fn call_folders(
     if tags.is_empty() {
         out.push_str("标签：笔记上还没有任何标签。\n");
     } else {
-        out.push_str(&format!(
-            "标签（{} 个）：{}\n",
-            tags.len(),
-            tags.join("、")
-        ));
+        out.push_str(&format!("标签（{} 个）：{}\n", tags.len(), tags.join("、")));
         // AM-8：标签近重复。与上面「同名文件夹」是同一类危险——**按名字寻址会撞车**，
         // 只是文件夹撞的是完全同名，标签撞的是大小写/全半角/写岔一个字。
         //
@@ -1594,7 +1677,9 @@ async fn call_folders(
     // 零描述字节、零新工具，也不依赖 `instructions` 能不能投递。
     let kb2 = kb.clone();
     // 拿不到就不说（同 `title_dups` 的取舍）：这是附加提示，不该让整个工具失败。
-    let pulse_data = blocking(move || kb2.library_pulse()).await.unwrap_or_default();
+    let pulse_data = blocking(move || kb2.library_pulse())
+        .await
+        .unwrap_or_default();
     // 🔴 只推模型**做得到**的事 —— 三条闸门缺一不可（见 `pulse::PulseGates`）：
     //   · 移动档关着 ⇒ 它归不了类；
     //   · 授权范围里一个可写的夹子都没有 ⇒ 它同样没地方可归
@@ -1662,11 +1747,18 @@ async fn call_history(
                 } else {
                     format!(" ｜ {} 改的", r.source_agent)
                 },
-                if r.pinned { " ｜ 🔒 锚点（不会被裁掉）" } else { "" },
+                if r.pinned {
+                    " ｜ 🔒 锚点（不会被裁掉）"
+                } else {
+                    ""
+                },
             ));
         }
         out.push_str("\n用 kb_history(id, rev) 读某一版的正文，kb_revert(id, rev) 回滚到它。");
-        return Ok(ToolOutput { value: text_result(out), note_ids: vec![id] });
+        return Ok(ToolOutput {
+            value: text_result(out),
+            note_ids: vec![id],
+        });
     };
 
     match blocking(move || kb2.revision(&id2, rev_id)).await {
@@ -2013,7 +2105,11 @@ fn format_term_coverage(query: &str, terms: &[String], per_note: &[Vec<&str>]) -
         query,
         terms.len(),
         terms.join("、"),
-        if any.is_empty() { "（一个都没有）".to_string() } else { any.join("、") },
+        if any.is_empty() {
+            "（一个都没有）".to_string()
+        } else {
+            any.join("、")
+        },
         missed.join("、")
     )
 }
@@ -2052,9 +2148,17 @@ fn format_outline(content: &str, secs: &[markdown::Section]) -> String {
         let chars = body.chars().filter(|c| !c.is_whitespace()).count();
         // 缩进版标签（见 `Section::outline_label`）：完整路径版会把顶层标题
         // 印 N 遍，47 节的文档实测因此要 11,689 字节。
-        out.push_str(&format!("\n{}  —  {} 行 / {} 字", s.outline_label(), lines, chars));
+        out.push_str(&format!(
+            "\n{}  —  {} 行 / {} 字",
+            s.outline_label(),
+            lines,
+            chars
+        ));
         if s.child_count > 0 {
-            out.push_str(&format!("（含 {} 个子节，改本节不会动它们）", s.child_count));
+            out.push_str(&format!(
+                "（含 {} 个子节，改本节不会动它们）",
+                s.child_count
+            ));
         }
     }
     out
@@ -2260,9 +2364,15 @@ fn format_dups(dups: &[crate::similar::DupGroup], what: &str, why: &str) -> Stri
     for d in dups {
         let joined = d.names.join(" / ");
         if d.strong {
-            s.push_str(&format!("  · {}（**几乎一定是同一个**，只差大小写或全半角）\n", joined));
+            s.push_str(&format!(
+                "  · {}（**几乎一定是同一个**，只差大小写或全半角）\n",
+                joined
+            ));
         } else {
-            s.push_str(&format!("  · {}（只差 {} 个字，可能是写岔了）\n", joined, d.distance));
+            s.push_str(&format!(
+                "  · {}（只差 {} 个字，可能是写岔了）\n",
+                joined, d.distance
+            ));
         }
     }
     s.push_str("  涉及它们时请让用户确认，**不要自己选一个**。\n");
@@ -2279,8 +2389,11 @@ fn format_kinds(content: &str) -> String {
     if kinds.is_empty() {
         return String::new();
     }
-    format!("  记有类别：{}
-", kinds.join(" / "))
+    format!(
+        "  记有类别：{}
+",
+        kinds.join(" / ")
+    )
 }
 
 /// AM-2：把「最相关的几节」拼成一段。命中不到就返空串（不占位、不制造噪声）。
@@ -2362,9 +2475,7 @@ fn format_brief(n: &Note, folder: Option<&str>, now: chrono::DateTime<chrono::Lo
         // 🔴 不报「后来用户改过」：空 `last_agent` 在这一档是歧义的
         //    （迁移前的存量 vs 迁移后人真改过）——详见 `provenance`。
         (created, "") => meta.push_str(&format!(" ｜ 由 {} 写入", created)),
-        (created, last) => {
-            meta.push_str(&format!(" ｜ 由 {} 建的，正文由 {} 改过", created, last))
-        }
+        (created, last) => meta.push_str(&format!(" ｜ 由 {} 建的，正文由 {} 改过", created, last)),
     }
     format!("id={}\n【{}】\n{}\n{}\n", n.id, title, meta, brief)
 }
@@ -2432,7 +2543,11 @@ mod tests {
 
         // 0 = 用户关掉了自动销毁。这时再说「N 天后销毁」同样是假话。
         let d0 = desc_of(&definitions(&WriteSwitches::ALL_ON, 0), "kb_delete");
-        assert!(d0.contains("一直留在回收站"), "关掉自动销毁时说法要变：{}", d0);
+        assert!(
+            d0.contains("一直留在回收站"),
+            "关掉自动销毁时说法要变：{}",
+            d0
+        );
         assert!(!d0.contains("天（用户"), "不该再报一个到期天数：{}", d0);
     }
 
@@ -2553,27 +2668,46 @@ mod tests {
 
             // 规范：`destructiveHint` 仅在非只读时有意义。
             if is_read {
-                assert!(a.get("destructiveHint").is_none(), "{name} 是只读，不该发 destructiveHint");
+                assert!(
+                    a.get("destructiveHint").is_none(),
+                    "{name} 是只读，不该发 destructiveHint"
+                );
             } else {
-                assert!(a["destructiveHint"].is_boolean(), "{name} 缺 destructiveHint");
+                assert!(
+                    a["destructiveHint"].is_boolean(),
+                    "{name} 缺 destructiveHint"
+                );
             }
         }
 
         // 下面几个具体取值，钉的是**意图本身**（删除与整篇覆盖要标破坏性、
         // 追加类不能标幂等），而不是把 `HINTS` 抄一遍——
         // 抄一遍的测试会跟着表一起被改，什么也防不住。
-        let dest_of = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap()["annotations"]
-            ["destructiveHint"]
-            .clone();
+        let dest_of = |n: &str| {
+            tools.iter().find(|t| t["name"] == n).unwrap()["annotations"]["destructiveHint"].clone()
+        };
         assert_eq!(dest_of("kb_delete"), json!(true), "删笔记必须标破坏性");
-        assert_eq!(dest_of("kb_update"), json!(true), "content 是整篇覆盖，必须标破坏性");
+        assert_eq!(
+            dest_of("kb_update"),
+            json!(true),
+            "content 是整篇覆盖，必须标破坏性"
+        );
         assert_eq!(dest_of("kb_append"), json!(false), "追加不动原有内容");
 
         // 追加类**绝不能**标成幂等：模型看到幂等会在超时后重试，
         // 而重试一次就多一段正文。
-        for n in ["kb_append", "kb_prepend", "kb_insert_at_section", "kb_create"] {
+        for n in [
+            "kb_append",
+            "kb_prepend",
+            "kb_insert_at_section",
+            "kb_create",
+        ] {
             let a = tools.iter().find(|t| t["name"] == n).unwrap();
-            assert_eq!(a["annotations"]["idempotentHint"], json!(false), "{n} 不该标幂等");
+            assert_eq!(
+                a["annotations"]["idempotentHint"],
+                json!(false),
+                "{n} 不该标幂等"
+            );
         }
     }
 
@@ -2685,10 +2819,14 @@ mod tests {
         // 这条测试不是要把描述压短，而是**让代价显形**：
         // 加工具或加长描述时数字会涨，涨过预算就得停下来想一想，
         // 而不是不知不觉滑到几千 token。
-        let json = serde_json::to_string(&definitions(&WriteSwitches::ALL_ON, TEST_TRASH_DAYS))
-            .unwrap();
+        let json =
+            serde_json::to_string(&definitions(&WriteSwitches::ALL_ON, TEST_TRASH_DAYS)).unwrap();
         let bytes = json.len();
-        println!("tools/list 序列化后 {} 字节（{} 个工具）", bytes, TOOLS.len());
+        println!(
+            "tools/list 序列化后 {} 字节（{} 个工具）",
+            bytes,
+            TOOLS.len()
+        );
         // 基线（2026-09-03，A-62 后）：13622 字节 / 16 个工具。
         // （2026-09-04，AM-1a 给 kb_search 加了 folder/tag 两个参数）：14034 字节 / 16 个。
         // （2026-09-04，AM-7 再加 kind 参数）：14642 字节 / 16 个。
@@ -2813,22 +2951,45 @@ mod tests {
             // 按字节算，不按字符：中文 UTF-8 三字节一字，
             // 而客户端付的是字节（再转 token）。
             let field = |k: &str| serde_json::to_string(&d[k]).map_or(0, |s| s.len());
-            let (desc, schema, ann) = (field("description"), field("inputSchema"), field("annotations"));
+            let (desc, schema, ann) = (
+                field("description"),
+                field("inputSchema"),
+                field("annotations"),
+            );
             sum_desc += desc;
             sum_schema += schema;
             sum_ann += ann;
-            rows.push((serde_json::to_string(d).unwrap().len(), name, desc, schema, ann));
+            rows.push((
+                serde_json::to_string(d).unwrap().len(),
+                name,
+                desc,
+                schema,
+                ann,
+            ));
         }
         rows.sort_by(|a, b| b.0.cmp(&a.0));
-        println!("{:<22} {:>6} {:>7} {:>7} {:>5} {:>5}", "tool", "total", "desc", "schema", "ann", "pad");
+        println!(
+            "{:<22} {:>6} {:>7} {:>7} {:>5} {:>5}",
+            "tool", "total", "desc", "schema", "ann", "pad"
+        );
         for (total, name, desc, schema, ann) in &rows {
-            let pad = wasted_padding(&serde_json::to_string(&defs.iter().find(|d| d["name"] == name.as_str()).unwrap()).unwrap());
-            println!("{:<22} {:>6} {:>7} {:>7} {:>5} {:>5}", name, total, desc, schema, ann, pad);
+            let pad = wasted_padding(
+                &serde_json::to_string(&defs.iter().find(|d| d["name"] == name.as_str()).unwrap())
+                    .unwrap(),
+            );
+            println!(
+                "{:<22} {:>6} {:>7} {:>7} {:>5} {:>5}",
+                name, total, desc, schema, ann, pad
+            );
         }
         let json = all_json(&defs);
         println!(
             "-- sum: desc={} schema={} ann={} pad={} whole_table={}",
-            sum_desc, sum_schema, sum_ann, wasted_padding(&json), json.len()
+            sum_desc,
+            sum_schema,
+            sum_ann,
+            wasted_padding(&json),
+            json.len()
         );
         // 把整表也吐出来：要找「同一句话付了几次」必须看**运行时**的 JSON。
         // 源码里没法数：`section_schema` 这类共用构造器写一遍、却被多个工具各付一遍。
@@ -2958,12 +3119,10 @@ mod tests {
         assert!(provenance(&mk(json!({}))).contains("手工新建"));
         assert!(provenance(&mk(json!({ "history_id": "h1" }))).contains("剪贴板"));
         // source_agent 优先：那条内容是 AI 自己写进去的，与剪贴板来源是两回事。
-        assert!(
-            provenance(&mk(
-                json!({ "history_id": "h1", "source_agent": "agent:claude-code" })
-            ))
-            .contains("外部 AI")
-        );
+        assert!(provenance(&mk(
+            json!({ "history_id": "h1", "source_agent": "agent:claude-code" })
+        ))
+        .contains("外部 AI"));
     }
 
     #[test]

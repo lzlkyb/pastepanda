@@ -23,20 +23,15 @@ static LOG_LEVEL_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 // ===== 命令行检测 =====
-static CMD_ARG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\s(--?[\w-]+|[\w./\\]+)").unwrap()
-});
+static CMD_ARG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s(--?[\w-]+|[\w./\\]+)").unwrap());
 
 // ===== 配置文件检测 =====
-static YAML_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*[\w.-]+\s*:\s+").unwrap()
-});
-static TOML_SECTION_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*\[[\w.]+\]\s*$").unwrap()
-});
-static ENV_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*[A-Z_][A-Z0-9_]*\s*=\s*").unwrap()
-});
+static YAML_LINE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[\w.-]+\s*:\s+").unwrap());
+static TOML_SECTION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*\[[\w.]+\]\s*$").unwrap());
+static ENV_LINE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*[A-Z_][A-Z0-9_]*\s*=\s*").unwrap());
 
 /// 配置行：`key = value`，key 不含空格。
 ///
@@ -76,8 +71,7 @@ static SQL_EVIDENCE_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// 分两档是因为两类证据强度不同：DDL/DML 开头无歧义；
 /// `select ... from` 会与英文散文撞车，必须再要一道结构证据。
 fn looks_like_sql(text: &str) -> bool {
-    SQL_STMT_RE.is_match(text)
-        || (SQL_SELECT_RE.is_match(text) && SQL_EVIDENCE_RE.is_match(text))
+    SQL_STMT_RE.is_match(text) || (SQL_SELECT_RE.is_match(text) && SQL_EVIDENCE_RE.is_match(text))
 }
 
 /// 中文（CJK 统一表意）字符占非空白字符的比例。
@@ -103,12 +97,10 @@ fn cjk_ratio(text: &str) -> f64 {
 const CODE_MAX_CJK_RATIO: f64 = 0.5;
 
 // ===== 密钥/Token 检测 =====
-static JWT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$").unwrap()
-});
-static BASE64_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[A-Za-z0-9+/]+={0,2}$").unwrap()
-});
+static JWT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$").unwrap());
+static BASE64_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9+/]+={0,2}$").unwrap());
 
 // ===== 个人信息（PII）—— **仅用于出网判据**，不进 `is_secret` =====
 //
@@ -121,9 +113,8 @@ static PII_PHONE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1[3-9][0-9]
 static PII_ID_CARD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]{17}[0-9Xx]").unwrap());
 static PII_IPV4_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[0-9]{1,3}(?:\.[0-9]{1,3}){3}").unwrap());
-static PII_EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}").unwrap()
-});
+static PII_EMAIL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}").unwrap());
 // 与下方已有的 EMAIL_RE / PHONE_RE 区分开：那两个是**锚定**的（`^…$`），回答的是
 // “整条内容就是一个邮箱/手机号吗”，给内容类型分类用；这里的 PII_* 是**内嵌**匹配，
 // 回答的是“文本里含不含个人信息”。两者是不同问题，不能合并。
@@ -175,52 +166,44 @@ const SECRET_PREFIXES: &[(&str, usize)] = &[
 static CODE_KEYWORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(function|return|class|import|export|const|let|var|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|new|this|async|await|yield|typedef|struct|enum|interface|extends|implements|abstract|static|public|private|protected|void|int|float|double|bool|boolean|string|char|byte|long|short|echo|exit|fi|elif)\b").unwrap()
 });
-static CODE_SYNTAX_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[{};]|=>|&&|\|\||== |!= |<= |>= ").unwrap()
-});
-static CODE_INDENT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^[ \t]{2,}\S").unwrap()
-});
+static CODE_SYNTAX_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[{};]|=>|&&|\|\||== |!= |<= |>= ").unwrap());
+static CODE_INDENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[ \t]{2,}\S").unwrap());
 
 // ===== 单行代码检测 =====
 /// 行首强关键字（大小写敏感：代码中这些关键字都是小写，避免 "Let me know"/"Variable costs" 等散文误伤）
-static SINGLE_LINE_KW_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(const|let|var|fn|def|func|pub\s+fn)\b").unwrap()
-});
+static SINGLE_LINE_KW_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(const|let|var|fn|def|func|pub\s+fn)\b").unwrap());
 /// 行首 SQL 强特征（大小写不敏感）：多词短语或 select...from 组合，避免散文 "Select the best option..."
 static SINGLE_LINE_SQL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^(insert\s+into|create\s+table|drop\s+table|alter\s+table|delete\s+from|update\s+\w+\s+set)\b|^select\b.+\bfrom\b").unwrap()
 });
 /// 函数调用结构：标识符紧邻左括号且括号内无换行（区别于散文中的 "think (as noted)"）
-static CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[A-Za-z_]\w*\([^)]*\)").unwrap()
-});
+static CALL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[A-Za-z_]\w*\([^)]*\)").unwrap());
 
 // ===== Email 检测 =====
-static EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$").unwrap()
-});
+static EMAIL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$").unwrap());
 
 // ===== 电话号码检测（中国手机号） =====
-static PHONE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(\+?86)?1[3-9]\d{9}$").unwrap()
-});
+static PHONE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\+?86)?1[3-9]\d{9}$").unwrap());
 
 // ===== 颜色检测 =====
 static COLOR_HEX_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$").unwrap()
 });
 static COLOR_RGB_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$").unwrap()
+    Regex::new(r"(?i)^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$")
+        .unwrap()
 });
 static COLOR_HSL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$").unwrap()
+    Regex::new(r"(?i)^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$")
+        .unwrap()
 });
 
 // ===== 文件路径检测 =====
-static FILE_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^([A-Z]:\\|\\\\|/[\w.]|[.~]/)").unwrap()
-});
+static FILE_PATH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^([A-Z]:\\|\\\\|/[\w.]|[.~]/)").unwrap());
 
 /// 文件名：单 token 且以**小写字母开头**的扩展名结尾。
 ///
@@ -248,48 +231,101 @@ static IDENT_SEP_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9]*([_.][A-Za-z0-9]+)+$").unwrap());
 
 // ===== Markdown 检测 =====
-static MD_HEADING_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^#{1,6}\s+\S").unwrap()
-});
-static MD_BOLD_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\*\*[^*]+\*\*|__[^_]+__").unwrap()
-});
-static MD_LIST_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S").unwrap()
-});
-static MD_CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"```").unwrap()
-});
-static MD_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[[^\]]*\]\([^)]+\)").unwrap()
-});
-static MD_BLOCKQUOTE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^>\s+\S").unwrap()
-});
+static MD_HEADING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#{1,6}\s+\S").unwrap());
+static MD_BOLD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\*\*[^*]+\*\*|__[^_]+__").unwrap());
+static MD_LIST_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S").unwrap());
+static MD_CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"```").unwrap());
+static MD_LINK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[^\]]*\]\([^)]+\)").unwrap());
+static MD_BLOCKQUOTE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^>\s+\S").unwrap());
 
 // ===== HTML 检测 =====
 static HTML_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?s)<(html|head|body|div|span|p|a|img|script|style|table|ul|ol|li|h[1-6]|form|input|button|section|article|nav|header|footer|main)\b[^>]*>").unwrap()
 });
-static HTML_DOCTYPE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)<!DOCTYPE\s+html").unwrap()
-});
+static HTML_DOCTYPE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE\s+html").unwrap());
 
 /// 常用命令白名单
 static COMMON_COMMANDS: &[&str] = &[
-    "git", "docker", "npm", "yarn", "pnpm", "cargo", "rustc",
-    "python", "python3", "node", "npx", "kubectl", "curl", "wget",
-    "ssh", "scp", "rsync", "tar", "gzip", "zip", "unzip",
-    "make", "cmake", "gcc", "clang", "java", "mvn", "gradle",
-    "pip", "pip3", "conda", "brew", "choco", "apt", "apt-get",
-    "yum", "dnf", "pacman", "systemctl", "service",
-    "psql", "mysql", "redis-cli", "sqlite3",
-    "ffmpeg", "adb",
-    "vim", "nvim", "code", "explorer", "start",
-    "cd", "dir", "ls", "cp", "mv", "rm", "mkdir", "touch",
-    "cat", "tail", "head", "grep", "find", "xargs", "tee", "awk", "sed",
-    "chmod", "chown", "ln",
-    "ping", "tracert", "nslookup", "netstat", "tasklist", "taskkill",
+    "git",
+    "docker",
+    "npm",
+    "yarn",
+    "pnpm",
+    "cargo",
+    "rustc",
+    "python",
+    "python3",
+    "node",
+    "npx",
+    "kubectl",
+    "curl",
+    "wget",
+    "ssh",
+    "scp",
+    "rsync",
+    "tar",
+    "gzip",
+    "zip",
+    "unzip",
+    "make",
+    "cmake",
+    "gcc",
+    "clang",
+    "java",
+    "mvn",
+    "gradle",
+    "pip",
+    "pip3",
+    "conda",
+    "brew",
+    "choco",
+    "apt",
+    "apt-get",
+    "yum",
+    "dnf",
+    "pacman",
+    "systemctl",
+    "service",
+    "psql",
+    "mysql",
+    "redis-cli",
+    "sqlite3",
+    "ffmpeg",
+    "adb",
+    "vim",
+    "nvim",
+    "code",
+    "explorer",
+    "start",
+    "cd",
+    "dir",
+    "ls",
+    "cp",
+    "mv",
+    "rm",
+    "mkdir",
+    "touch",
+    "cat",
+    "tail",
+    "head",
+    "grep",
+    "find",
+    "xargs",
+    "tee",
+    "awk",
+    "sed",
+    "chmod",
+    "chown",
+    "ln",
+    "ping",
+    "tracert",
+    "nslookup",
+    "netstat",
+    "tasklist",
+    "taskkill",
     // 注意：这里故意**不收** claude / codebuddy 这类工具名。
     // 它们同时也是日常句子的开头词，收了代价是
     // 「claude.md 做任何功能都要考虑性能问题」被当成命令行（实测命中）。
@@ -314,42 +350,176 @@ macro_rules! re {
 static LANGUAGE_PROFILES: &[LanguageProfile] = &[
     LanguageProfile {
         label: "Python",
-        keywords: &["def ", "import ", "from ", "self.", "print(", "class ", "elif", "pass", "None", "True", "False", "with ", "as "],
-        patterns: &[re!(r"(?m)^\s*def \w+\(.*\):"), re!(r"(?m)^\s*class \w+.*:"), re!(r"\.py\b")],
+        keywords: &[
+            "def ", "import ", "from ", "self.", "print(", "class ", "elif", "pass", "None",
+            "True", "False", "with ", "as ",
+        ],
+        patterns: &[
+            re!(r"(?m)^\s*def \w+\(.*\):"),
+            re!(r"(?m)^\s*class \w+.*:"),
+            re!(r"\.py\b"),
+        ],
     },
     LanguageProfile {
         label: "JavaScript",
-        keywords: &["function", "const", "let", "var", "=>", "import ", "export ", "console.log", "undefined", "null", "typeof", "prototype", "Promise", ".then("],
-        patterns: &[re!(r"\bconst \w+ = "), re!(r"\bfunction \w+\("), re!(r"\.js\b"), re!(r"\.jsx\b")],
+        keywords: &[
+            "function",
+            "const",
+            "let",
+            "var",
+            "=>",
+            "import ",
+            "export ",
+            "console.log",
+            "undefined",
+            "null",
+            "typeof",
+            "prototype",
+            "Promise",
+            ".then(",
+        ],
+        patterns: &[
+            re!(r"\bconst \w+ = "),
+            re!(r"\bfunction \w+\("),
+            re!(r"\.js\b"),
+            re!(r"\.jsx\b"),
+        ],
     },
     LanguageProfile {
         label: "TypeScript",
-        keywords: &[": string", ": number", ": boolean", ": void", "interface ", "type ", "enum ", "as const", "Readonly", "Partial<"],
-        patterns: &[re!(r":\s*(string|number|boolean|void)\b"), re!(r"\binterface \w+\b"), re!(r"\btype \w+ ="), re!(r"\.tsx?\b")],
+        keywords: &[
+            ": string",
+            ": number",
+            ": boolean",
+            ": void",
+            "interface ",
+            "type ",
+            "enum ",
+            "as const",
+            "Readonly",
+            "Partial<",
+        ],
+        patterns: &[
+            re!(r":\s*(string|number|boolean|void)\b"),
+            re!(r"\binterface \w+\b"),
+            re!(r"\btype \w+ ="),
+            re!(r"\.tsx?\b"),
+        ],
     },
     LanguageProfile {
         label: "Rust",
-        keywords: &["fn ", "let mut", "impl", "pub ", "use ", "struct ", "enum ", "match ", "Vec<", "Option<", "Result<", "println!(", "mut ", "&self", "&mut"],
-        patterns: &[re!(r"\bfn \w+\(.*\)"), re!(r"\bimpl \w+"), re!(r"\bpub fn "), re!(r"\blet mut \b"), re!(r"\w+!\(")],
+        keywords: &[
+            "fn ",
+            "let mut",
+            "impl",
+            "pub ",
+            "use ",
+            "struct ",
+            "enum ",
+            "match ",
+            "Vec<",
+            "Option<",
+            "Result<",
+            "println!(",
+            "mut ",
+            "&self",
+            "&mut",
+        ],
+        patterns: &[
+            re!(r"\bfn \w+\(.*\)"),
+            re!(r"\bimpl \w+"),
+            re!(r"\bpub fn "),
+            re!(r"\blet mut \b"),
+            re!(r"\w+!\("),
+        ],
     },
     LanguageProfile {
         label: "Java",
-        keywords: &["public class", "private ", "protected ", "void ", "System.out", "String[]", "ArrayList", "HashMap", "@Override", "@Autowired", "@Service", "@Component"],
-        patterns: &[re!(r"\bpublic (class|interface|enum)\b"), re!(r"\bSystem\.out\.print"), re!(r"\bprivate (String|int|boolean|void)\b")],
+        keywords: &[
+            "public class",
+            "private ",
+            "protected ",
+            "void ",
+            "System.out",
+            "String[]",
+            "ArrayList",
+            "HashMap",
+            "@Override",
+            "@Autowired",
+            "@Service",
+            "@Component",
+        ],
+        patterns: &[
+            re!(r"\bpublic (class|interface|enum)\b"),
+            re!(r"\bSystem\.out\.print"),
+            re!(r"\bprivate (String|int|boolean|void)\b"),
+        ],
     },
     LanguageProfile {
         label: "Go",
-        keywords: &["func ", "package ", "defer", "go func", "chan ", "goroutine", "interface{", "struct{", "fmt.Println", "err != nil"],
-        patterns: &[re!(r"\bfunc \w+\("), re!(r"\bpackage \w+"), re!(r"\bdefer \w+\("), re!(r":=")],
+        keywords: &[
+            "func ",
+            "package ",
+            "defer",
+            "go func",
+            "chan ",
+            "goroutine",
+            "interface{",
+            "struct{",
+            "fmt.Println",
+            "err != nil",
+        ],
+        patterns: &[
+            re!(r"\bfunc \w+\("),
+            re!(r"\bpackage \w+"),
+            re!(r"\bdefer \w+\("),
+            re!(r":="),
+        ],
     },
     LanguageProfile {
         label: "SQL",
-        keywords: &["SELECT", "FROM", "WHERE", "INSERT INTO", "UPDATE", "DELETE FROM", "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "JOIN", "LEFT JOIN", "INNER JOIN", "GROUP BY", "ORDER BY", "HAVING", "LIMIT", "OFFSET"],
-        patterns: &[re!(r"(?i)\bSELECT\b.+\bFROM\b"), re!(r"(?i)\bINSERT INTO\b"), re!(r"(?i)\bCREATE TABLE\b")],
+        keywords: &[
+            "SELECT",
+            "FROM",
+            "WHERE",
+            "INSERT INTO",
+            "UPDATE",
+            "DELETE FROM",
+            "CREATE TABLE",
+            "ALTER TABLE",
+            "DROP TABLE",
+            "JOIN",
+            "LEFT JOIN",
+            "INNER JOIN",
+            "GROUP BY",
+            "ORDER BY",
+            "HAVING",
+            "LIMIT",
+            "OFFSET",
+        ],
+        patterns: &[
+            re!(r"(?i)\bSELECT\b.+\bFROM\b"),
+            re!(r"(?i)\bINSERT INTO\b"),
+            re!(r"(?i)\bCREATE TABLE\b"),
+        ],
     },
     LanguageProfile {
         label: "HTML",
-        keywords: &["<html", "<head", "<body", "<div", "<span", "<p>", "<a ", "<img ", "<script", "<style", "<!DOCTYPE", "</", "/>"],
+        keywords: &[
+            "<html",
+            "<head",
+            "<body",
+            "<div",
+            "<span",
+            "<p>",
+            "<a ",
+            "<img ",
+            "<script",
+            "<style",
+            "<!DOCTYPE",
+            "</",
+            "/>",
+        ],
         patterns: &[re!(r"<\w+[^>]*>"), re!(r"</\w+>"), re!(r"<!DOCTYPE html")],
     },
     LanguageProfile {
@@ -363,12 +533,28 @@ static LANGUAGE_PROFILES: &[LanguageProfile] = &[
         //    两头都不成立，只能删——CSS 的真实信号是 `selector {`、`@media` 与 `property:`。
         //
         // 不删的代价实测看得到：一段 PowerShell 同时被标成 Shell 和 CSS。
-        keywords: &["color:", "background:", "margin:", "padding:", "display:", "position:", "font-size:", "@media", "@keyframes", "@import", "flex", "grid"],
+        keywords: &[
+            "color:",
+            "background:",
+            "margin:",
+            "padding:",
+            "display:",
+            "position:",
+            "font-size:",
+            "@media",
+            "@keyframes",
+            "@import",
+            "flex",
+            "grid",
+        ],
         patterns: &[re!(r"[.#][\w-]+\s*\{"), re!(r"@media"), re!(r"@keyframes")],
     },
     LanguageProfile {
         label: "Shell",
-        keywords: &["#!/bin/", "echo", "chmod", "chown", "if [", "fi", "then", "else", "elif", "for i in", "while ", "do", "done", "export ", "source ", "$(", "${"],
+        keywords: &[
+            "#!/bin/", "echo", "chmod", "chown", "if [", "fi", "then", "else", "elif", "for i in",
+            "while ", "do", "done", "export ", "source ", "$(", "${",
+        ],
         patterns: &[re!(r"^#!/bin/"), re!(r"\$\{?\w+\}?"), re!(r"\$\(\s*\w+")],
     },
 ];
@@ -397,13 +583,29 @@ impl ContentClassifier {
         }
 
         // ===== 0.5 单行精确匹配 =====
-        if self.is_email(text) { return vec!["邮箱".to_string()]; }
-        if self.is_phone(text) { return vec!["电话".to_string()]; }
-        if self.is_color(text) { return vec!["颜色".to_string()]; }
-        if self.is_file_path(text) { return vec!["文件路径".to_string()]; }
+        if self.is_email(text) {
+            return vec!["邮箱".to_string()];
+        }
+        if self.is_phone(text) {
+            return vec!["电话".to_string()];
+        }
+        if self.is_color(text) {
+            return vec!["颜色".to_string()];
+        }
+        if self.is_file_path(text) {
+            return vec!["文件路径".to_string()];
+        }
 
         // 纯数字
-        if text.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-' || c == ' ' || c == '\n' || c == '\r') {
+        if text.chars().all(|c| {
+            c.is_ascii_digit()
+                || c == '.'
+                || c == ','
+                || c == '-'
+                || c == ' '
+                || c == '\n'
+                || c == '\r'
+        }) {
             // 确认不全是标点/空格
             let digit_count = text.chars().filter(|c| c.is_ascii_digit()).count();
             if digit_count > 0 && digit_count as f64 / text.len() as f64 > 0.5 {
@@ -582,7 +784,9 @@ impl ContentClassifier {
                         // 确保 // 不在字符串内（简单检测）
                         // 扣除转义引号 \"，避免 {"url": "\"// x"} 误判为注释
                         // 局限：\\" 边界（转义反斜杠+真引号）仍可能误判，实际 JSON 配置极罕见
-                        let quote_count = before.matches('"').count()
+                        let quote_count = before
+                            .matches('"')
+                            .count()
                             .saturating_sub(before.matches("\\\"").count());
                         if quote_count % 2 == 0 {
                             before
@@ -632,7 +836,9 @@ impl ContentClassifier {
         // ENV: KEY=VALUE 模式
         let env_lines = lines
             .iter()
-            .filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#') && ENV_LINE_RE.is_match(l))
+            .filter(|l| {
+                !l.trim().is_empty() && !l.trim().starts_with('#') && ENV_LINE_RE.is_match(l)
+            })
             .count() as f64;
         if env_lines / total > 0.7 && total > 3.0 {
             return Some("ENV".to_string());
@@ -644,7 +850,10 @@ impl ContentClassifier {
             .iter()
             .filter(|l| {
                 let t = l.trim();
-                !t.is_empty() && !t.starts_with('#') && !t.starts_with('[') && CONFIG_KV_RE.is_match(t)
+                !t.is_empty()
+                    && !t.starts_with('#')
+                    && !t.starts_with('[')
+                    && CONFIG_KV_RE.is_match(t)
             })
             .count() as f64;
         // has_section **不再单独判定 TOML**：只有 `[section]` 而没有任何 key=value 的内容
@@ -680,25 +889,23 @@ impl ContentClassifier {
             return false;
         }
         // 取前 5 行检查
-        let check_lines: Vec<&&str> = lines.iter().take(5).filter(|l| !l.trim().is_empty()).collect();
+        let check_lines: Vec<&&str> = lines
+            .iter()
+            .take(5)
+            .filter(|l| !l.trim().is_empty())
+            .collect();
         if check_lines.len() < 2 {
             return false;
         }
 
         // 尝试逗号分隔
-        let comma_counts: Vec<usize> = check_lines
-            .iter()
-            .map(|l| l.split(',').count())
-            .collect();
+        let comma_counts: Vec<usize> = check_lines.iter().map(|l| l.split(',').count()).collect();
         let all_same_comma = comma_counts.len() >= 2
             && comma_counts.iter().all(|&c| c == comma_counts[0])
             && comma_counts[0] >= 2;
 
         // 尝试制表符分隔
-        let tab_counts: Vec<usize> = check_lines
-            .iter()
-            .map(|l| l.split('\t').count())
-            .collect();
+        let tab_counts: Vec<usize> = check_lines.iter().map(|l| l.split('\t').count()).collect();
         let all_same_tab = tab_counts.len() >= 2
             && tab_counts.iter().all(|&c| c == tab_counts[0])
             && tab_counts[0] >= 2;
@@ -851,7 +1058,10 @@ impl ContentClassifier {
         {
             // 排除明显的文本（包含常见英文单词）
             let upper = trimmed.to_uppercase();
-            let common_words = ["THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HAD", "HER", "WAS", "ONE", "OUR", "OUT", "HAS", "HAVE"];
+            let common_words = [
+                "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HAD", "HER", "WAS",
+                "ONE", "OUR", "OUT", "HAS", "HAVE",
+            ];
             let looks_like_text = common_words.iter().any(|w| upper.contains(w));
 
             // 排除 camelCase/标识符风格字符串：不含 base64 常见符号 + / =，
@@ -989,8 +1199,12 @@ impl ContentClassifier {
     /// 检测颜色值
     fn is_color(&self, text: &str) -> bool {
         let t = text.trim();
-        if t.contains('\n') { return false; }
-        if COLOR_HEX_RE.is_match(t) { return true; }
+        if t.contains('\n') {
+            return false;
+        }
+        if COLOR_HEX_RE.is_match(t) {
+            return true;
+        }
         if COLOR_RGB_RE.is_match(t) {
             // 验证 R/G/B 通道 0-255（正则允许 0-999）
             let nums: Vec<u32> = t
@@ -1077,7 +1291,9 @@ impl ContentClassifier {
     /// 检测文件路径（单行或少量行）
     fn is_file_path(&self, text: &str) -> bool {
         let lines: Vec<&str> = text.lines().collect();
-        if lines.len() > 5 { return false; }
+        if lines.len() > 5 {
+            return false;
+        }
         // 每行都必须是路径格式
         lines.iter().all(|l| {
             let l = l.trim();
@@ -1088,22 +1304,42 @@ impl ContentClassifier {
     /// 检测 Markdown（评分制：命中 ≥ 2 种语法特征）
     fn is_markdown(&self, text: &str) -> bool {
         let lines = text.lines().count();
-        if lines < 2 { return false; }
+        if lines < 2 {
+            return false;
+        }
         let mut score = 0;
-        if MD_HEADING_RE.is_match(text) { score += 1; }
-        if MD_BOLD_RE.is_match(text) { score += 1; }
-        if MD_LIST_RE.is_match(text) { score += 1; }
-        if MD_CODE_BLOCK_RE.is_match(text) { score += 1; }
-        if MD_LINK_RE.is_match(text) { score += 1; }
-        if MD_BLOCKQUOTE_RE.is_match(text) { score += 1; }
+        if MD_HEADING_RE.is_match(text) {
+            score += 1;
+        }
+        if MD_BOLD_RE.is_match(text) {
+            score += 1;
+        }
+        if MD_LIST_RE.is_match(text) {
+            score += 1;
+        }
+        if MD_CODE_BLOCK_RE.is_match(text) {
+            score += 1;
+        }
+        if MD_LINK_RE.is_match(text) {
+            score += 1;
+        }
+        if MD_BLOCKQUOTE_RE.is_match(text) {
+            score += 1;
+        }
         score >= 2
     }
 
     /// 检测 HTML
     fn is_html(&self, text: &str) -> bool {
-        if HTML_DOCTYPE_RE.is_match(text) { return true; }
+        if HTML_DOCTYPE_RE.is_match(text) {
+            return true;
+        }
         // 至少包含 2 个不同的 HTML 标签
-        let matches: Vec<&str> = HTML_TAG_RE.find_iter(text).take(3).map(|m| m.as_str()).collect();
+        let matches: Vec<&str> = HTML_TAG_RE
+            .find_iter(text)
+            .take(3)
+            .map(|m| m.as_str())
+            .collect();
         matches.len() >= 2
     }
 }
@@ -1166,7 +1402,6 @@ fn is_comment_line(t: &str) -> bool {
         || t.starts_with("--")
         || t.starts_with("<!--")
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1241,7 +1476,9 @@ mod tests {
 
     #[test]
     fn test_log() {
-        let r = classify("2024-01-01 12:00:00 [ERROR] Connection failed\n2024-01-01 12:00:01 [INFO] Retrying...");
+        let r = classify(
+            "2024-01-01 12:00:00 [ERROR] Connection failed\n2024-01-01 12:00:01 [INFO] Retrying...",
+        );
         assert!(r.contains(&"日志".to_string()));
     }
 
@@ -1362,7 +1599,8 @@ mod tests {
 
     #[test]
     fn test_json_array() {
-        let r = classify("[\n  {\"id\": 1, \"name\": \"Alice\"},\n  {\"id\": 2, \"name\": \"Bob\"}\n]");
+        let r =
+            classify("[\n  {\"id\": 1, \"name\": \"Alice\"},\n  {\"id\": 2, \"name\": \"Bob\"}\n]");
         assert!(r.contains(&"JSON".to_string()));
     }
 
@@ -1431,9 +1669,18 @@ mod tests {
         let c = ContentClassifier::new();
         // 以下全部含 `-`/`_` 或长度非 4 的倍数，走不到 Base64 分支，
         // 必须由 SECRET_PREFIXES 命中（否则开着「敏感内容防护」仍会入库）。
-        assert!(c.is_secret(concat!("sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")));
-        assert!(c.is_secret(concat!("sk", "-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD")));
-        assert!(c.is_secret(concat!("xoxb-", "1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx")));
+        assert!(c.is_secret(concat!(
+            "sk",
+            "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        )));
+        assert!(c.is_secret(concat!(
+            "sk",
+            "-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+        )));
+        assert!(c.is_secret(concat!(
+            "xoxb-",
+            "1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
+        )));
         assert!(c.is_secret("xapp-1-A01234567-1234567890123-abcdef0123456789"));
         assert!(c.is_secret(concat!("AIza", "SyB1234567890abcdefghijklmnopqrstuv"))); // 39 位
         assert!(c.is_secret(concat!("glpat-", "ABCDEFGHIJKLMNOPQRST")));
@@ -1458,19 +1705,31 @@ mod tests {
         // 内嵌密钥（回归）：旧实现用整串 starts_with + “无空格”，下面这些全部漏过。
         // is_secret 同时是 AI 出网门，漏过就是把密钥发给云端第三方。
         assert!(
-            c.is_secret(concat!("OPENAI_KEY=sk", "-proj-abcdefghijklmnopqrstuvwxyz0123456789")),
+            c.is_secret(concat!(
+                "OPENAI_KEY=sk",
+                "-proj-abcdefghijklmnopqrstuvwxyz0123456789"
+            )),
             "环境变量形式的内嵌密钥应判敏感"
         );
         assert!(
-            c.is_secret(concat!("key: sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")),
+            c.is_secret(concat!(
+                "key: sk",
+                "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            )),
             "冒号形式的内嵌密钥应判敏感"
         );
         assert!(
-            c.is_secret(concat!("给你个 token \"ghp_", "1234567890abcdef1234567890abcdef12\"，帮我看看")),
+            c.is_secret(concat!(
+                "给你个 token \"ghp_",
+                "1234567890abcdef1234567890abcdef12\"，帮我看看"
+            )),
             "引号包裹、中文句子中的内嵌密钥应判敏感"
         );
         assert!(
-            c.is_secret(concat!("line1\nAPI=xoxb-", "1234567890-1234567890123-AbCdEfGhIjKlMnOpQrSt\nline3")),
+            c.is_secret(concat!(
+                "line1\nAPI=xoxb-",
+                "1234567890-1234567890123-AbCdEfGhIjKlMnOpQrSt\nline3"
+            )),
             "多行配置里的内嵌密钥应判敏感"
         );
         // 切 token 后长度阀值仍生效：短前缀不因为“现在支持内嵌”而变成误报
@@ -1494,7 +1753,10 @@ mod tests {
         ] {
             assert!(ContentClassifier::has_pii(s), "应识别为 PII: {s:?}");
             assert!(c.is_sensitive_for_egress(s), "出网应拦: {s:?}");
-            assert!(!c.is_secret(s), "但不该被当成密钥（会影响入库/排除）: {s:?}");
+            assert!(
+                !c.is_secret(s),
+                "但不该被当成密钥（会影响入库/排除）: {s:?}"
+            );
         }
     }
 
@@ -1502,22 +1764,32 @@ mod tests {
     /// （前端 mask.ts 用 `(?<!\d)…(?!\d)`，Rust 无环视，手工查边界必须同语义）
     #[test]
     fn test_pii_digit_boundary() {
-        assert!(!ContentClassifier::has_pii("9913812345678123"), "嵌在长数字串里不算手机号");
-        assert!(ContentClassifier::has_pii("tel:13812345678,谢谢"), "标点包围的手机号应识别");
+        assert!(
+            !ContentClassifier::has_pii("9913812345678123"),
+            "嵌在长数字串里不算手机号"
+        );
+        assert!(
+            ContentClassifier::has_pii("tel:13812345678,谢谢"),
+            "标点包围的手机号应识别"
+        );
         // 普通文本不该误报
         assert!(!ContentClassifier::has_pii("今天天气不错，开了 3 个会"));
-        assert!(!ContentClassifier::has_pii("function add(a, b) { return a + b; }"));
+        assert!(!ContentClassifier::has_pii(
+            "function add(a, b) { return a + b; }"
+        ));
     }
 
     #[test]
     fn test_is_secret_pem_private_key() {
         let c = ContentClassifier::new();
-        let rsa = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234\n-----END RSA PRIVATE KEY-----";
+        let rsa =
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234\n-----END RSA PRIVATE KEY-----";
         assert!(c.is_secret(rsa));
         let openssh = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEA\n-----END OPENSSH PRIVATE KEY-----";
         assert!(c.is_secret(openssh));
         // 证书是公开物，不应拦
-        let cert = "-----BEGIN CERTIFICATE-----\nMIIDdTCCAl2gAwIBAgIJAKl\n-----END CERTIFICATE-----";
+        let cert =
+            "-----BEGIN CERTIFICATE-----\nMIIDdTCCAl2gAwIBAgIJAKl\n-----END CERTIFICATE-----";
         assert!(!c.is_secret(cert));
     }
 
@@ -1700,7 +1972,9 @@ mod tests {
     fn test_content_type_code() {
         let c = ContentClassifier::new();
         assert_eq!(
-            ContentClassifier::content_type_from_labels(&c.classify("function hello() {\n  console.log('hi');\n  return 42;\n}")),
+            ContentClassifier::content_type_from_labels(
+                &c.classify("function hello() {\n  console.log('hi');\n  return 42;\n}")
+            ),
             "code"
         );
     }
@@ -1709,7 +1983,9 @@ mod tests {
     fn test_content_type_markdown() {
         let c = ContentClassifier::new();
         assert_eq!(
-            ContentClassifier::content_type_from_labels(&c.classify("# Title\n\nSome **bold** text\n\n- item 1\n- item 2")),
+            ContentClassifier::content_type_from_labels(
+                &c.classify("# Title\n\nSome **bold** text\n\n- item 1\n- item 2")
+            ),
             "markdown"
         );
     }
@@ -1803,8 +2079,8 @@ mod tests {
             "请把 API Key 填入设置页面",
             "calculateTotalPriceWithDiscountAndTax12345678",
             "hello world this is a normal sentence",
-            "AKIAIOSFODNN7EXAMPL",       // 19 位,不足 20
-            "AKIAIOSFODNN7EXAMPLE!",    // 21 位且含符号
+            "AKIAIOSFODNN7EXAMPL",   // 19 位,不足 20
+            "AKIAIOSFODNN7EXAMPLE!", // 21 位且含符号
             "The quick brown fox jumps over the lazy dog",
         ];
         for s in negatives {
@@ -1840,7 +2116,11 @@ mod tests {
         ];
         for (text, want) in cases {
             let labels = c.classify(text);
-            assert_eq!(labels.first().map(|s| s.as_str()), Some(want), "{text:?} 应为 {want}");
+            assert_eq!(
+                labels.first().map(|s| s.as_str()),
+                Some(want),
+                "{text:?} 应为 {want}"
+            );
             // 故意不新增 content_type，下游不受影响
             assert_eq!(ContentClassifier::content_type_from_labels(&labels), "text");
         }
@@ -1850,20 +2130,53 @@ mod tests {
     fn test_symbol_labels_do_not_swallow_others() {
         let c = ContentClassifier::new();
         // 中文不用空格，“无空白”对中文句子同样成立——它们不是标识符
-        for s in ["这个搬到后端去了应该", "粘贴安全流程", "我送你去1号然后自己开车来高速"] {
-            assert_eq!(c.classify(s).first().map(|x| x.as_str()), Some("纯文本"), "{s:?}");
+        for s in [
+            "这个搬到后端去了应该",
+            "粘贴安全流程",
+            "我送你去1号然后自己开车来高速",
+        ] {
+            assert_eq!(
+                c.classify(s).first().map(|x| x.as_str()),
+                Some("纯文本"),
+                "{s:?}"
+            );
         }
         // 单个纯小写词可能真是外文词，不当标识符
-        assert_eq!(c.classify("serendipity").first().map(|x| x.as_str()), Some("纯文本"));
+        assert_eq!(
+            c.classify("serendipity").first().map(|x| x.as_str()),
+            Some("纯文本")
+        );
         // 版本号不是文件名（`.0` 数字开头）
-        assert_ne!(c.classify("v6.16.0").first().map(|x| x.as_str()), Some("文件名"));
+        assert_ne!(
+            c.classify("v6.16.0").first().map(|x| x.as_str()),
+            Some("文件名")
+        );
         // 裸域名不是文件名（URL_RE 要求 scheme，拦不住，靠 TLD_TAIL）
-        assert_ne!(c.classify("example.com").first().map(|x| x.as_str()), Some("文件名"));
+        assert_ne!(
+            c.classify("example.com").first().map(|x| x.as_str()),
+            Some("文件名")
+        );
         // 专用检测优先：邮箱 / 颜色 / 链接 / 密钥 / 纯数字不能被符号形态抢走
-        assert_eq!(c.classify("yubing_kuang@kingdee.com").first().map(|x| x.as_str()), Some("邮箱"));
-        assert_eq!(c.classify("#F3F5F7").first().map(|x| x.as_str()), Some("颜色"));
-        assert_eq!(c.classify("https://github.com/lzlkyb/cc-bridge").first().map(|x| x.as_str()), Some("链接"));
-        assert_eq!(c.classify("11813361").first().map(|x| x.as_str()), Some("数字"));
+        assert_eq!(
+            c.classify("yubing_kuang@kingdee.com")
+                .first()
+                .map(|x| x.as_str()),
+            Some("邮箱")
+        );
+        assert_eq!(
+            c.classify("#F3F5F7").first().map(|x| x.as_str()),
+            Some("颜色")
+        );
+        assert_eq!(
+            c.classify("https://github.com/lzlkyb/cc-bridge")
+                .first()
+                .map(|x| x.as_str()),
+            Some("链接")
+        );
+        assert_eq!(
+            c.classify("11813361").first().map(|x| x.as_str()),
+            Some("数字")
+        );
     }
 
     /// SQL 曾被三种间接判据分别抢走：配置文件（3 条）、表格（1 条）、纯文本（5 条）。
@@ -1892,11 +2205,15 @@ mod tests {
     /// 本质上不可分——而且它在本机 479 条真实历史里一条都没出现过。
     #[test]
     fn test_select_from_prose_is_not_sql() {
-        assert!(!looks_like_sql("Select the best option from the list and tell me why"));
+        assert!(!looks_like_sql(
+            "Select the best option from the list and tell me why"
+        ));
         // 真 SQL：带结构证据的都认
         assert!(looks_like_sql("select * from t"));
         assert!(looks_like_sql("select a.b, a.c from t a where a.x = 1"));
-        assert!(looks_like_sql("update aier633.po_order_b set vbdef16='112'"));
+        assert!(looks_like_sql(
+            "update aier633.po_order_b set vbdef16='112'"
+        ));
     }
 
     /// 中文过半的内容不是代码/命令行。两个入口（多行/单行）都要守。
@@ -1905,10 +2222,18 @@ mod tests {
         let c = ContentClassifier::new();
         // 单行：带引号、横线与英文 token，恰好凑够了 is_code_single_line 的结构
         let s1 = "模型把 16token 的额度全用在“思考”上了，没留下答案——请把该动作的 token 上限调大(至少 512)";
-        assert_ne!(c.classify(s1).first().map(|x| x.as_str()), Some("代码"), "{s1:?}");
+        assert_ne!(
+            c.classify(s1).first().map(|x| x.as_str()),
+            Some("代码"),
+            "{s1:?}"
+        );
         // `claude` 不在 COMMON_COMMANDS 里，这句不应成命令行
         let s2 = "claude.md 做任何功能都要考虑性能问题";
-        assert_ne!(c.classify(s2).first().map(|x| x.as_str()), Some("命令行"), "{s2:?}");
+        assert_ne!(
+            c.classify(s2).first().map(|x| x.as_str()),
+            Some("命令行"),
+            "{s2:?}"
+        );
     }
 
     /// 关键词要词边界：不该因为 `system` 含 `em` 就拿 CSS 分。
@@ -1950,10 +2275,16 @@ mod tests {
         let c = ContentClassifier::new();
         // 真配置：仍该识别
         let toml = "[package]\nname = \"pastepanda\"\nversion = \"6.17.0\"\nedition = \"2021\"";
-        assert_eq!(c.classify(toml).first().map(|x| x.as_str()), Some("配置文件"));
+        assert_eq!(
+            c.classify(toml).first().map(|x| x.as_str()),
+            Some("配置文件")
+        );
         // Java 赋值行（`String x=...`）key 里带空格，不算配置行
         let java = "String condition=SqlUtils_Pub.getInStr(\"sn.vdef1\", list);\nString other=build(a);\nreturn condition;";
-        assert_ne!(c.classify(java).first().map(|x| x.as_str()), Some("配置文件"), "{java:?}");
+        assert_ne!(
+            c.classify(java).first().map(|x| x.as_str()),
+            Some("配置文件"),
+            "{java:?}"
+        );
     }
 }
-

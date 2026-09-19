@@ -12,8 +12,7 @@ pub fn read_file_as_base64(path: String) -> Result<String, String> {
     // 修复 C15：与 get_image_data_url 一致的 20MB 上限，防止合法扩展名的超大文件导致 OOM
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
     let canonical = validate_image_file_path(&path)?;
-    let metadata =
-        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {e}"))?;
+    let metadata = std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {e}"))?;
     if metadata.len() > MAX_FILE_SIZE {
         return Err(format!(
             "图片文件过大 ({}MB)，超过 20MB 限制",
@@ -139,8 +138,7 @@ pub fn get_image_data_url(path: String) -> Result<String, String> {
 
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
     let canonical = validate_image_file_path(&path)?;
-    let metadata =
-        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
+    let metadata = std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     if metadata.len() > MAX_FILE_SIZE {
         return Err(format!(
             "图片文件过大 ({}MB)，超过 20MB 限制",
@@ -170,8 +168,7 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
 
     // 修复 C16：与其他图片命令一致的严格路径校验（canonicalize + 白名单）
     let canonical = validate_image_file_path(&path)?;
-    let metadata =
-        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
+    let metadata = std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     if metadata.len() > MAX_FILE_SIZE {
         return Err(format!("图片文件过大 ({}MB)", metadata.len() / 1024 / 1024));
     }
@@ -240,8 +237,7 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
 pub fn get_image_info(path: String) -> Result<serde_json::Value, String> {
     // 修复 C16/C18 同类问题：统一路径校验 + 仅读头部获取尺寸（无需完整解码，防解压炸弹）
     let canonical = validate_image_file_path(&path)?;
-    let metadata =
-        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
+    let metadata = std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     let file_size = metadata.len();
 
     let (width, height) = check_image_decode_limits(&canonical)?;
@@ -619,18 +615,16 @@ mod ocr_smoke_tests {
             .join("..")
             .join("..")
             .join("uploads");
-        let sample = std::fs::read_dir(&uploads)
-            .ok()
-            .and_then(|mut d| {
-                d.find_map(|e| {
-                    let p = e.ok()?.path();
-                    if p.extension().map(|x| x == "png").unwrap_or(false) {
-                        Some(p)
-                    } else {
-                        None
-                    }
-                })
-            });
+        let sample = std::fs::read_dir(&uploads).ok().and_then(|mut d| {
+            d.find_map(|e| {
+                let p = e.ok()?.path();
+                if p.extension().map(|x| x == "png").unwrap_or(false) {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+        });
         let sample = match sample {
             Some(p) => p,
             None => {
@@ -640,8 +634,8 @@ mod ocr_smoke_tests {
         };
 
         // 坐标版：验证模型加载成功且能返回行/词框
-        let coords = ocr_recognize(&sample, true)
-            .unwrap_or_else(|e| panic!("OCR(坐标版) 失败: {}", e));
+        let coords =
+            ocr_recognize(&sample, true).unwrap_or_else(|e| panic!("OCR(坐标版) 失败: {}", e));
         println!(
             "[OCR smoke] 坐标版：{} 行，全文长度 {} 字符",
             coords.lines.len(),
@@ -657,8 +651,8 @@ mod ocr_smoke_tests {
         }
 
         // 文本版：仅返回全文
-        let text = ocr_recognize(&sample, false)
-            .unwrap_or_else(|e| panic!("OCR(文本版) 失败: {}", e));
+        let text =
+            ocr_recognize(&sample, false).unwrap_or_else(|e| panic!("OCR(文本版) 失败: {}", e));
         assert!(
             !text.full_text.is_empty() || coords.lines.is_empty(),
             "若图片无文字属正常；有文字则应被识别出来"
@@ -666,8 +660,6 @@ mod ocr_smoke_tests {
         println!("[OCR smoke] 全文预览:\n{}", text.full_text);
     }
 }
-
-
 
 /// 诊断用：拿真实截图文件跑一遍缩略图生成的核心步骤，打印每一步的结果。
 ///
@@ -680,11 +672,9 @@ mod thumb_diag {
     #[test]
     #[ignore]
     fn thumb_diag() {
-        let dir = std::path::PathBuf::from(
-            std::env::var("APPDATA").unwrap_or_default(),
-        )
-        .join("com.pastepanda.app")
-        .join("screenshots");
+        let dir = std::path::PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
+            .join("com.pastepanda.app")
+            .join("screenshots");
         println!("目录: {}", dir.display());
 
         let mut files: Vec<_> = std::fs::read_dir(&dir)
@@ -696,31 +686,53 @@ mod thumb_diag {
 
         for e in files.iter().rev().take(3) {
             let p = e.path();
-            println!("\n=== {} ({} bytes) ===", p.display(), e.metadata().map(|m| m.len()).unwrap_or(0));
+            println!(
+                "\n=== {} ({} bytes) ===",
+                p.display(),
+                e.metadata().map(|m| m.len()).unwrap_or(0)
+            );
 
             match super::validate_image_file_path(&p.to_string_lossy()) {
                 Ok(c) => println!("  validate_image_file_path: OK -> {}", c.display()),
-                Err(err) => { println!("  validate_image_file_path: ERR {err}"); continue; }
+                Err(err) => {
+                    println!("  validate_image_file_path: ERR {err}");
+                    continue;
+                }
             }
             match crate::commands::check_image_decode_limits(&p) {
                 Ok((w, h)) => println!("  check_image_decode_limits: OK {w}x{h}"),
-                Err(err) => { println!("  check_image_decode_limits: ERR {err}"); continue; }
+                Err(err) => {
+                    println!("  check_image_decode_limits: ERR {err}");
+                    continue;
+                }
             }
             let img = match image::open(&p) {
-                Ok(i) => { println!("  image::open: OK color={:?}", i.color()); i }
-                Err(err) => { println!("  image::open: ERR {err}"); continue; }
+                Ok(i) => {
+                    println!("  image::open: OK color={:?}", i.color());
+                    i
+                }
+                Err(err) => {
+                    println!("  image::open: ERR {err}");
+                    continue;
+                }
             };
             // 这一步就是修复点：不先 to_rgb8 的话 RGBA 输入会报
             // "does not support the color type 'Rgba8'"
             let mut buf: Vec<u8> = Vec::new();
             let rgb = image::DynamicImage::ImageRgb8(img.to_rgb8());
-            match rgb.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg) {
+            match rgb.write_to(
+                &mut std::io::Cursor::new(&mut buf),
+                image::ImageFormat::Jpeg,
+            ) {
                 Ok(()) => println!("  写 JPEG（先 to_rgb8）: OK {} bytes", buf.len()),
                 Err(err) => println!("  写 JPEG（先 to_rgb8）: ERR {err}"),
             }
             // 对照：不转 RGB 直接写，验证旧实现的失败
             let mut buf2: Vec<u8> = Vec::new();
-            match img.write_to(&mut std::io::Cursor::new(&mut buf2), image::ImageFormat::Jpeg) {
+            match img.write_to(
+                &mut std::io::Cursor::new(&mut buf2),
+                image::ImageFormat::Jpeg,
+            ) {
                 Ok(()) => println!("  写 JPEG（旧实现，不转）: OK {} bytes", buf2.len()),
                 Err(err) => println!("  写 JPEG（旧实现，不转）: ERR {err}"),
             }

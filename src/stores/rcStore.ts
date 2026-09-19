@@ -23,8 +23,10 @@ import {
   rcCancelRequest,
   rcClearOutboundError,
   rcDenyInbound,
+  rcDeviceTrustSet,
   rcEndSession,
   rcForget,
+  rcHistoryClear,
   rcIdentity,
   rcInviteCreate,
   rcInvitePreview,
@@ -41,6 +43,8 @@ import {
   rcTargets,
   rcSetQuality,
   rcSetCaptureScope,
+  rcUnoGenerate,
+  rcUnoRevoke,
   type RcCapability,
   type RcCaptureScope,
   type RcIdentity,
@@ -50,6 +54,7 @@ import {
   type RcQuality,
   type RcStatus,
   type RcTargetDevice,
+  type RcUnoCreated,
 } from "@/lib/api/rc";
 
 const IDLE_MS = 5000;
@@ -95,6 +100,12 @@ interface RcState {
    */
   scopeNotice: string | null;
   /**
+   * 被控端：对端刚改了本机推流档位（Q10，kind = "quality" | "codec"）。
+   * 对端（连只看会话）能单方面调画质/编码，原来是静默 log——被控者看到
+   * 画面变糊/变清却不知原因；由被控横幅展示，用户确认或会话结束清除。
+   */
+  streamNotice: { kind: string; name: string } | null;
+  /**
    * 会话中路径自动切换（relay ↔ 直连，C）。非 null 时由会话视图 toast 一次。
    *
    * iroh 每 60s 会尝试把中继升级成直连——不加提示的话，用户只会看到
@@ -121,6 +132,9 @@ interface RcState {
   /** 记下「对端改了画面范围」待展示提示（由 rc-scope-changed 事件驱动）。 */
   setScopeNotice: (scope: string) => void;
   clearScopeNotice: () => void;
+  /** 记下「对端改了画质/编码」待展示提示（由 rc-stream-note 事件驱动，Q10）。 */
+  setStreamNotice: (n: { kind: string; name: string }) => void;
+  clearStreamNotice: () => void;
   /** 记下「换路了」待展示（由 `rc-path-changed` 事件驱动）。 */
   setPathNotice: (p: RcPathChanged) => void;
   clearPathNotice: () => void;
@@ -133,6 +147,8 @@ interface RcState {
   setQuality: (q: RcQuality) => Promise<boolean>;
   setCaptureScope: (s: RcCaptureScope) => Promise<boolean>;
   setDeviceAllowed: (id: string, ok: boolean) => Promise<boolean>;
+  /** 方案 D：设置「免确认直连」（默认关，逐台；deny 优先级更高）。 */
+  setDeviceTrust: (id: string, trusted: boolean) => Promise<boolean>;
   createInvite: (name: string) => Promise<RcInviteCreated>;
   previewInvite: (code: string) => Promise<RcInvite>;
   pair: (code: string) => Promise<boolean>;
@@ -140,10 +156,23 @@ interface RcState {
   approveJoin: (id: string, name: string) => Promise<boolean>;
   denyJoin: (id: string) => Promise<boolean>;
   request: (id: string, cap: RcCapability) => Promise<boolean>;
+  /** Q2：带无人值守接入码发起（目标机器可以没人、未配对）。 */
+  requestUno: (id: string, code: string, cap: RcCapability) => Promise<boolean>;
+  /** Q2：生成无人值守接入码（被控端）。 */
+  unoGenerate: (p: {
+    ttlSecs: number;
+    unlimited: boolean;
+    capability: RcCapability;
+    alsoTrust: boolean;
+  }) => Promise<RcUnoCreated>;
+  /** Q2：撤销全部无人值守接入码。 */
+  unoRevoke: () => Promise<boolean>;
   cancel: () => Promise<boolean>;
   end: () => Promise<boolean>;
   approve: (id: string) => Promise<boolean>;
   deny: (id: string) => Promise<boolean>;
+  /** 清空全部会话历史（设置页「清空记录」）。 */
+  clearHistory: () => Promise<boolean>;
 }
 
 /**
@@ -187,6 +216,14 @@ async function ensureListener(get: () => RcState) {
       if (typeof scope !== "string" || !scope) return;
       get().setScopeNotice(scope);
     });
+    // Q10：被控端——对端改了本机画质/编码档。原来是静默 log；画面突然变糊
+    // /变清时要能看见原因。收成提示由被控横幅展示，确认或会话结束清除。
+    const onStream = await listen<{ kind?: string; name?: string }>("rc-stream-note", (ev) => {
+      const kind = ev.payload?.kind;
+      const name = ev.payload?.name;
+      if ((kind !== "quality" && kind !== "codec") || typeof name !== "string" || !name) return;
+      get().setStreamNotice({ kind, name });
+    });
     // C：会话中自动换路（relay ↔ 直连）。顺带刷一次状态，让 HUD 立刻显示新档位。
     const onPath = await listen<{ from?: string; to?: string }>("rc-path-changed", (ev) => {
       const from = ev.payload?.from;
@@ -195,7 +232,7 @@ async function ensureListener(get: () => RcState) {
       get().setPathNotice({ from, to });
       void get().refresh();
     });
-    unlisteners = [onSession, onScope, onPath];
+    unlisteners = [onSession, onScope, onStream, onPath];
   } catch {
     /* 非 Tauri 环境：忽略 */
   } finally {
@@ -211,6 +248,7 @@ export const useRcStore = create<RcState>((set, get) => ({
   error: null,
   statusError: null,
   scopeNotice: null,
+  streamNotice: null,
   pathNotice: null,
   subscribers: 0,
   visible: true,
@@ -249,6 +287,9 @@ export const useRcStore = create<RcState>((set, get) => ({
         // 换路提示同理：只对当时那个会话有意义，留着会让下一个会话看到过期提示
         pathNotice:
           s.session && prev.status?.session?.id === s.session.id ? prev.pathNotice : null,
+        // Q10：改档提示同样只属于当时那个会话
+        streamNotice:
+          s.session && prev.status?.session?.id === s.session.id ? prev.streamNotice : null,
       }));
       // 非阻塞申请的后台失败：clone 保留在后端，用户 dismiss / 下次发起 / 结束时才清
       if (s.outbound_error) set({ error: s.outbound_error });
@@ -259,6 +300,8 @@ export const useRcStore = create<RcState>((set, get) => ({
   },
   setScopeNotice: (scope) => set({ scopeNotice: scope }),
   clearScopeNotice: () => set({ scopeNotice: null }),
+  setStreamNotice: (n) => set({ streamNotice: n }),
+  clearStreamNotice: () => set({ streamNotice: null }),
   setPathNotice: (p) => set({ pathNotice: p }),
   clearPathNotice: () => set({ pathNotice: null }),
   refreshTargets: async () => {
@@ -321,6 +364,7 @@ export const useRcStore = create<RcState>((set, get) => ({
   setQuality: (q) => get().run(() => rcSetQuality(q)),
   setCaptureScope: (s) => get().run(() => rcSetCaptureScope(s)),
   setDeviceAllowed: (id, ok) => get().run(() => rcSetDeviceAllowed(id, ok)),
+  setDeviceTrust: (id, trusted) => get().run(() => rcDeviceTrustSet(id, trusted)),
   // 以下两个不走 run：直接返回 Promise，调用方自己处理 loading / 错误
   createInvite: (name) => rcInviteCreate(name),
   previewInvite: (code) => rcInvitePreview(code),
@@ -329,8 +373,18 @@ export const useRcStore = create<RcState>((set, get) => ({
   approveJoin: (id, name) => get().run(() => rcJoinApprove(id, name)),
   denyJoin: (id) => get().run(() => rcJoinDeny(id)),
   request: (id, cap) => get().run(() => rcRequestSession(id, cap)),
+  requestUno: (id, code, cap) => get().run(() => rcRequestSession(id, cap, code)),
+  unoGenerate: (p) =>
+    rcUnoGenerate({
+      ttlSecs: p.ttlSecs,
+      unlimited: p.unlimited,
+      capability: p.capability,
+      alsoTrust: p.alsoTrust,
+    }),
+  unoRevoke: () => get().run(() => rcUnoRevoke()),
   cancel: () => get().run(() => rcCancelRequest()),
   end: () => get().run(() => rcEndSession()),
   approve: (id) => get().run(() => rcApproveInbound(id)),
   deny: (id) => get().run(() => rcDenyInbound(id)),
+  clearHistory: () => get().run(() => rcHistoryClear()),
 }));

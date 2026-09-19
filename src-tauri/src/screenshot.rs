@@ -155,15 +155,44 @@ fn capture_virtual_screen() -> Result<ScreenCapture, String> {
 
 /// 远程协助用：整屏 RGBA（不编码）。由 `rc::video` 再降采样 + JPEG。
 ///
-/// 公开给 crate 内调用：远程每 200ms 一帧，不能走 PNG 全屏那条重编码路径。
+/// 🔴 P2-13：逐显示器 BitBlt 再拼合。旧的整块 BitBlt 从屏幕 DC 跨显示器拷贝，
+/// 混合 DPI 下 origin 会错位（`grab_rect_rgba` 注释在案）——改成每块 BitBlt
+/// 只触碰本显示器的 DC 区域，天然不存在跨屏拷贝，混合 DPI 虚拟屏不再错位。
+/// 公开给 crate 内调用：远程每 50~100ms 一帧，不能走 PNG 全屏那条重编码路径。
 #[cfg(target_os = "windows")]
 pub(crate) fn capture_virtual_screen_rgba() -> Result<(i32, i32, Vec<u8>), String> {
     let (width, height, origin_x, origin_y) = virtual_screen_metrics();
     if width <= 0 || height <= 0 {
         return Err(format!("获取虚拟屏幕尺寸失败: {width}x{height}"));
     }
-    let rgba = grab_rect_rgba(origin_x, origin_y, width, height)?;
-    Ok((width, height, rgba))
+    let monitors = list_monitors()?;
+    if monitors.is_empty() {
+        return Err("枚举显示器失败".into());
+    }
+    let cw = width as usize;
+    let ch = height as usize;
+    let mut canvas = vec![0u8; cw * ch * 4];
+    for m in &monitors {
+        let rgba = grab_rect_rgba(m.x, m.y, m.w, m.h)?;
+        // 桌面坐标 → 画布局部坐标；越界部分（理论不会有）裁掉
+        let ox = (m.x - origin_x).max(0) as usize;
+        let oy = (m.y - origin_y).max(0) as usize;
+        if ox >= cw || oy >= ch {
+            continue;
+        }
+        let copy_w = (m.w as usize).min(cw - ox);
+        let copy_h = (m.h as usize).min(ch - oy);
+        if copy_w == 0 || copy_h == 0 {
+            continue;
+        }
+        let m_w = m.w as usize;
+        for y in 0..copy_h {
+            let src = &rgba[y * m_w * 4..y * m_w * 4 + copy_w * 4];
+            let dst = (oy + y) * cw + ox;
+            canvas[dst * 4..dst * 4 + copy_w * 4].copy_from_slice(src);
+        }
+    }
+    Ok((width, height, canvas))
 }
 
 /// 远程协助：仅主屏 RGBA（单显示器场景更省编码）。
@@ -179,7 +208,8 @@ pub(crate) fn capture_primary_screen_rgba() -> Result<(i32, i32, Vec<u8>), Strin
 }
 
 /// 一台显示器的几何信息（远程多屏用）。
-#[derive(Debug, Clone, serde::Serialize)]
+/// Deserialize：caps 控制帧把它 JSON 过线到发起端（Q7），对端要能反序列化。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MonitorInfo {
     /// 0 起，按 EnumDisplayMonitors 顺序；主屏通常是 0。
     pub index: i32,
@@ -318,7 +348,6 @@ fn grab_rect_rgba(
     }
 
     unsafe {
-
         let screen_dc = GetDC(HWND(std::ptr::null_mut()));
         let mem_dc = CreateCompatibleDC(screen_dc);
         if mem_dc.0.is_null() {
@@ -347,29 +376,33 @@ fn grab_rect_rgba(
         let mut hbmp = HBITMAP::default();
         let mut old = HGDIOBJ::default();
         let result = (|| -> Result<Vec<u8>, String> {
-        let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
-        hbmp = CreateDIBSection(mem_dc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
-            .map_err(|e| format!("创建 DIB 位图失败: {e}"))?;
-        old = SelectObject(mem_dc, hbmp);
-        // 已知限制（跨屏错位）：origin_x/origin_y 是「虚拟屏幕」物理坐标（整屏 DC 原点）。
-        // 混合 DPI 多显示器下，BitBlt 跨屏拷贝可能出现原点偏移，导致跨显示器选区内容错位。
-        // P2-B2 只保证「每片同比例」（前端 drawImage 拉伸归一），未根治跨屏坐标错位；
-        // 根治需按显示器分块截取再拼合（属大改，本次未做）。见前端 P2-B2 段注释。
-        // 检查返回值：BitBlt 失败（DC 失效 / 参数越界）若静默忽略，会拿未初始化的 DIB 当图，
-        // 表现为黑屏 / 错位且零报错。失败直接返回错误，清理由外层统一处理。
-        if BitBlt(mem_dc, 0, 0, width, height, screen_dc, origin_x, origin_y, SRCCOPY).is_err() {
-            return Err("BitBlt 拷贝屏幕像素失败".to_string());
-        }
+            let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
+            hbmp = CreateDIBSection(mem_dc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
+                .map_err(|e| format!("创建 DIB 位图失败: {e}"))?;
+            old = SelectObject(mem_dc, hbmp);
+            // 已知限制（跨屏错位）：origin_x/origin_y 是「虚拟屏幕」物理坐标（整屏 DC 原点）。
+            // 混合 DPI 多显示器下，BitBlt 跨屏拷贝可能出现原点偏移，导致跨显示器选区内容错位。
+            // 远程的整屏抓取已改为逐显示器截取再拼合（P2-13）；本函数仍被长截图
+            // 「区域截图」路径使用，跨屏选区在混合 DPI 下的错位仍在——长截图暂未迁移。
+            // 检查返回值：BitBlt 失败（DC 失效 / 参数越界）若静默忽略，会拿未初始化的 DIB 当图，
+            // 表现为黑屏 / 错位且零报错。失败直接返回错误，清理由外层统一处理。
+            if BitBlt(
+                mem_dc, 0, 0, width, height, screen_dc, origin_x, origin_y, SRCCOPY,
+            )
+            .is_err()
+            {
+                return Err("BitBlt 拷贝屏幕像素失败".to_string());
+            }
 
-        // BGRA 像素 → RGBA（image crate 用 RGBA）
-        let len = (width as usize) * (height as usize) * 4;
-        let bgra = std::slice::from_raw_parts(bits as *mut u8, len);
-        let mut rgba = Vec::with_capacity(len);
-        for px in bgra.chunks_exact(4) {
-            rgba.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
-        }
+            // BGRA 像素 → RGBA（image crate 用 RGBA）
+            let len = (width as usize) * (height as usize) * 4;
+            let bgra = std::slice::from_raw_parts(bits as *mut u8, len);
+            let mut rgba = Vec::with_capacity(len);
+            for px in bgra.chunks_exact(4) {
+                rgba.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+            }
 
-        Ok(rgba)
+            Ok(rgba)
         })();
 
         // 清理 GDI 资源（先还原对象再删位图，避免悬挂）——成功与失败路径共用
@@ -565,9 +598,7 @@ pub fn open_screenshot_window(app: &AppHandle) {
 
 /// 待取截屏缓存（open_screenshot_window 并行截屏后存入，前端挂载/刷新时 take 走）。
 /// 带写入时间：预截屏只在“刚按下热键”那一瞬有意义，隔了一段时间的一定是残留。
-pub struct PendingShotCapture(
-    pub std::sync::Mutex<Option<(ScreenCapture, std::time::Instant)>>,
-);
+pub struct PendingShotCapture(pub std::sync::Mutex<Option<(ScreenCapture, std::time::Instant)>>);
 
 /// 预截屏的有效期。超过这个时长就不可能是本轮的结果，
 /// 宁可让前端自己重截（多几百毫秒），也不能给一张旧图。
@@ -1189,11 +1220,15 @@ pub async fn open_longshot_status(
         // 内随进程退出释放：首次快速失败且仍在 2500ms 超时预算内时，小等 400ms 重试一次。
         // （真挂起的 build 不会走到这里——它卡住不返回，谈不上"快速失败"。）
         let started = std::time::Instant::now();
-        let mut res = mk().build().map_err(|e| format!("创建长截图状态窗失败: {e}"));
+        let mut res = mk()
+            .build()
+            .map_err(|e| format!("创建长截图状态窗失败: {e}"));
         if res.is_err() && started.elapsed() < std::time::Duration::from_millis(1200) {
             log::warn!("[Screenshot] 状态窗首次 build 失败（疑 UDF 目录锁未释放/旧窗关闭中），400ms 后重试一次");
             std::thread::sleep(std::time::Duration::from_millis(400));
-            res = mk().build().map_err(|e| format!("创建长截图状态窗失败: {e}"));
+            res = mk()
+                .build()
+                .map_err(|e| format!("创建长截图状态窗失败: {e}"));
         }
         let _ = tx.send(res);
     });
@@ -1293,12 +1328,14 @@ fn register_longshot_escape(app: &AppHandle) -> bool {
     let Some(sc) = longshot_esc_shortcut() else {
         return false;
     };
-    let res = app.global_shortcut().on_shortcut(sc, move |app, _sc, event| {
-        if event.state == ShortcutState::Pressed {
-            // 走与状态窗"放弃"按钮完全相同的链路，不另开一条分支（规则 11.1）
-            let _ = app.emit("longshot-control", "abort");
-        }
-    });
+    let res = app
+        .global_shortcut()
+        .on_shortcut(sc, move |app, _sc, event| {
+            if event.state == ShortcutState::Pressed {
+                // 走与状态窗"放弃"按钮完全相同的链路，不另开一条分支（规则 11.1）
+                let _ = app.emit("longshot-control", "abort");
+            }
+        });
     match res {
         Ok(()) => {
             log::info!("[Screenshot] 长截图全局 Esc 已注册");
@@ -1561,7 +1598,10 @@ pub fn update_screenshot_ocr_summary(
     use md5::Digest;
     let img = image::open(&image_path).map_err(|e| format!("无法读取截图: {e}"))?;
     let rgba = img.to_rgba8();
-    let img_hash = format!("{:x}", md5::Md5::new().chain_update(rgba.as_raw()).finalize());
+    let img_hash = format!(
+        "{:x}",
+        md5::Md5::new().chain_update(rgba.as_raw()).finalize()
+    );
     let store = app.state::<crate::data_store::DataStore>();
     let Ok(Some(item)) = store.find_latest_by_md5(&img_hash, "默认", "image") else {
         return Ok(()); // 卡片可能已被删，静默
@@ -1631,7 +1671,10 @@ pub async fn finish_screenshot_rgba(
     }
     let expect = (w as usize) * (h as usize) * 4;
     if rgba.len() != expect {
-        return Err(format!("RGBA 数据长度不匹配: 期望 {expect} 实际 {}", rgba.len()));
+        return Err(format!(
+            "RGBA 数据长度不匹配: 期望 {expect} 实际 {}",
+            rgba.len()
+        ));
     }
 
     // ── 同步段：复制 + 临时图收口（返回前完成 → 前端立即关窗） ──
@@ -1715,7 +1758,9 @@ pub async fn finish_screenshot_rgba(
         if need_ocr {
             match crate::commands::images::ocr_full_text(&path) {
                 Ok(t) if !t.trim().is_empty() => {
-                    if let Err(e) = update_screenshot_ocr_summary(app_bg.clone(), path.clone(), t.clone()) {
+                    if let Err(e) =
+                        update_screenshot_ocr_summary(app_bg.clone(), path.clone(), t.clone())
+                    {
                         log::warn!("[Screenshot] 截图补 OCR 摘要失败: {e}");
                     } else {
                         // 截图窗口已关，主窗口"文字已就绪"提示（原前端 emit_ocr_ready 等价）
@@ -1775,9 +1820,7 @@ pub fn bind_pinned_edit(hwnd: isize, generation: u64, app: &tauri::AppHandle, pa
 /// 带 generation 守卫：HWND 被 OS 复用（旧窗已销毁、新窗拿到同号）时，只删与自己代际匹配的条目，
 /// 不会被别的窗口的 unbind 误删、也不会因旧条目残留串号。
 pub fn unbind_pinned_edit(hwnd: isize, generation: u64) -> Option<(tauri::AppHandle, String)> {
-    let mut m = pinned_edit_map()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let mut m = pinned_edit_map().lock().unwrap_or_else(|p| p.into_inner());
     if let Some(v) = m.get(&hwnd) {
         if v.0 == generation {
             return m.remove(&hwnd).map(|(_, app, path)| (app, path));
@@ -1948,9 +1991,7 @@ fn is_tray_class(name: &str) -> bool {
 /// 直接用 `GetWindowRect`（不做 DWM 视觉边界换算）。用于任务栏这类
 /// `DWMWA_EXTENDED_FRAME_BOUNDS` 会返回整块工作区 / 不准的外壳窗口。
 #[cfg(target_os = "windows")]
-unsafe fn raw_window_rect(
-    hwnd: windows::Win32::Foundation::HWND,
-) -> Option<(i32, i32, i32, i32)> {
+unsafe fn raw_window_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<(i32, i32, i32, i32)> {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
     let mut r = RECT::default();
@@ -1981,7 +2022,11 @@ fn area(r: (i32, i32, i32, i32)) -> i64 {
 /// 用 EnumWindows 从 Z 序最上层开始遍历，跳过截图窗口自身后取第一个包含该点的可见窗口——
 /// 因为截图窗口全屏透明覆盖，WindowFromPoint 只会命中它自己。
 #[tauri::command]
-pub async fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapTargets>, String> {
+pub async fn snap_window_at(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+) -> Result<Option<SnapTargets>, String> {
     // EnumWindows + 命中测试是重活，放 blocking 线程，避免阻塞主线程 / WebView。
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
@@ -2063,11 +2108,12 @@ unsafe extern "system" fn enum_rects_proc(
 ) -> windows::Win32::Foundation::BOOL {
     use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, IsIconic, IsWindowVisible};
 
-    let ctx = lparam.0 as *mut (
-        windows::Win32::Foundation::HWND,
-        windows::Win32::Foundation::HWND,
-        Vec<(i32, i32, i32, i32)>,
-    );
+    let ctx = lparam.0
+        as *mut (
+            windows::Win32::Foundation::HWND,
+            windows::Win32::Foundation::HWND,
+            Vec<(i32, i32, i32, i32)>,
+        );
     let (self_hwnd, desktop, out) = &mut *ctx;
     if hwnd == *self_hwnd || hwnd == *desktop {
         return windows::Win32::Foundation::BOOL(1);
@@ -2105,7 +2151,11 @@ unsafe extern "system" fn enum_rects_proc(
 ///
 /// 桌面空白（无顶层窗）或任务栏（无内部控件）返回 `None` / 空清单，前端据此退回 hover 吸附。
 #[tauri::command]
-pub async fn enum_controls(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<ControlList>, String> {
+pub async fn enum_controls(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+) -> Result<Option<ControlList>, String> {
     // UIA 深度遍历控件树是重活（浏览器 DOM 可能几千节点），放 blocking 线程，避免阻塞主线程。
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
@@ -2236,7 +2286,7 @@ unsafe fn uia_enumerate_controls(
     hwnd: windows::Win32::Foundation::HWND,
     top_rect: (i32, i32, i32, i32),
 ) -> Vec<SnapRect> {
-    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
     use windows::Win32::UI::Accessibility::{
         CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTreeWalker,
     };
@@ -2288,12 +2338,7 @@ unsafe fn uia_enumerate_controls(
                 && t >= top_rect.1 - 4
                 && rr <= top_rect.2 + 4
                 && b <= top_rect.3 + 4;
-            if !off
-                && w >= MIN_SIDE
-                && h >= MIN_SIDE
-                && a <= top_area * 95 / 100
-                && inside
-            {
+            if !off && w >= MIN_SIDE && h >= MIN_SIDE && a <= top_area * 95 / 100 && inside {
                 raw.push(rect);
             }
         }
@@ -2333,10 +2378,7 @@ unsafe fn uia_enumerate_controls(
 
 /// `outer` 是否基本完整包住 `inner`（±2px 容差）。用于容器过滤。
 #[cfg(target_os = "windows")]
-fn contains(
-    outer: (i32, i32, i32, i32),
-    inner: (i32, i32, i32, i32),
-) -> bool {
+fn contains(outer: (i32, i32, i32, i32), inner: (i32, i32, i32, i32)) -> bool {
     const M: i32 = 2;
     outer.0 - M <= inner.0
         && outer.1 - M <= inner.1
@@ -2509,7 +2551,7 @@ unsafe fn uia_control_at(
     pt: windows::Win32::Foundation::POINT,
     top_rect: (i32, i32, i32, i32),
 ) -> Option<(i32, i32, i32, i32)> {
-    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
     use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationElement};
 
     // UIA 在 STA 下最稳定；已初始化（含模式不同 RPC_E_CHANGED_MODE）一律忽略，仍尝试后续调用。
@@ -2616,10 +2658,7 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
                     },
                     screen,
                 );
-                return Ok(Some(SnapTargets {
-                    win,
-                    ctrl: win,
-                }));
+                return Ok(Some(SnapTargets { win, ctrl: win }));
             }
             return Ok(None);
         }
@@ -2768,7 +2807,7 @@ mod snap_tests {
         assert!(!is_shell_class("Shell_TrayWnd"));
         assert!(!is_shell_class("Shell_SecondaryTrayWnd"));
         assert!(!is_shell_class("Chrome_WidgetWin_1")); // 普通应用窗不能被误排
-        // 故意不排：开始菜单显示着的时候用户可能想截它
+                                                        // 故意不排：开始菜单显示着的时候用户可能想截它
         assert!(!is_shell_class("Windows.UI.Core.CoreWindow"));
     }
 
@@ -2871,7 +2910,7 @@ fn send_wheel_via_post(x: i32, y: i32, delta: i32) -> Result<(), String> {
 fn send_wheel_via_input(x: i32, y: i32, delta: i32) -> Result<(), String> {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEINPUT, MOUSEEVENTF_WHEEL,
+        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_WHEEL, MOUSEINPUT,
     };
     use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetCursorPos};
 
@@ -2899,9 +2938,7 @@ fn send_wheel_via_input(x: i32, y: i32, delta: i32) -> Result<(), String> {
             Anonymous: INPUT_0 { mi },
         };
         let sent = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-        log::debug!(
-            "[长截图] SendInput 滚轮 @({x},{y}) delta={delta} moved={moved} sent={sent}"
-        );
+        log::debug!("[长截图] SendInput 滚轮 @({x},{y}) delta={delta} moved={moved} sent={sent}");
         // 恢复光标
         let _ = SetCursorPos(old.x, old.y);
         if sent == 0 {
@@ -2936,7 +2973,9 @@ unsafe extern "system" fn vscroll_enum_cb(
     hwnd: windows::Win32::Foundation::HWND,
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::BOOL {
-    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongW, GetWindowRect, GWL_STYLE, WS_VSCROLL};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongW, GetWindowRect, GWL_STYLE, WS_VSCROLL,
+    };
     let ctx = &mut *(lparam.0 as *mut (&i32, &i32, &mut Vec<VScrollCandidate>));
     let px = *ctx.0;
     let py = *ctx.1;
@@ -2945,7 +2984,8 @@ unsafe extern "system" fn vscroll_enum_cb(
     if style & WS_VSCROLL.0 != 0 {
         let mut rect = windows::Win32::Foundation::RECT::default();
         if GetWindowRect(hwnd, &mut rect).is_ok() {
-            let contains = px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom;
+            let contains =
+                px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom;
             let cx = (rect.left + rect.right) / 2;
             let cy = (rect.top + rect.bottom) / 2;
             let dx = (cx - px) as i64;
@@ -2964,7 +3004,7 @@ unsafe extern "system" fn vscroll_enum_cb(
 fn find_vscroll_hwnd(x: i32, y: i32) -> Option<windows::Win32::Foundation::HWND> {
     use windows::Win32::Foundation::{LPARAM, POINT};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumChildWindows, GetWindowLongW, GWL_STYLE, WindowFromPoint, WS_VSCROLL,
+        EnumChildWindows, GetWindowLongW, WindowFromPoint, GWL_STYLE, WS_VSCROLL,
     };
     unsafe {
         let root = WindowFromPoint(POINT { x, y });
@@ -3000,7 +3040,11 @@ fn find_vscroll_hwnd(x: i32, y: i32) -> Option<windows::Win32::Foundation::HWND>
             }
         }
         let mut ctx: (&i32, &i32, &mut Vec<VScrollCandidate>) = (&x, &y, &mut cands);
-        let _ = EnumChildWindows(root, Some(vscroll_enum_cb), LPARAM(&mut ctx as *mut _ as isize));
+        let _ = EnumChildWindows(
+            root,
+            Some(vscroll_enum_cb),
+            LPARAM(&mut ctx as *mut _ as isize),
+        );
         if cands.is_empty() {
             return None;
         }
@@ -3051,7 +3095,9 @@ pub fn get_scroll_bottom(x: i32, y: i32) -> Result<bool, String> {
             Some(h) => h,
             None => return Ok(false),
         };
-        use windows::Win32::UI::WindowsAndMessaging::{GetScrollInfo, SB_VERT, SCROLLINFO, SIF_ALL};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetScrollInfo, SB_VERT, SCROLLINFO, SIF_ALL,
+        };
         unsafe {
             let mut si = SCROLLINFO {
                 cbSize: std::mem::size_of::<SCROLLINFO>() as u32,
@@ -3108,10 +3154,10 @@ pub fn get_scroll_range(x: i32, y: i32) -> Result<Option<ScrollRangeOut>, String
             Some(h) => h,
             None => return Ok(None),
         };
+        use windows::Win32::Foundation::RECT;
         use windows::Win32::UI::WindowsAndMessaging::{
             GetScrollInfo, GetWindowRect, SB_VERT, SCROLLINFO, SIF_ALL,
         };
-        use windows::Win32::Foundation::RECT;
         unsafe {
             let mut wr = RECT::default();
             if GetWindowRect(hwnd, &mut wr).is_err() {
@@ -3178,9 +3224,7 @@ pub fn scroll_longshot(
         // 两条注入路径量级一致，前端标定出来的步长才对得上（旧版 PAGEDOWN vs 3 行差十几倍）。
         let lines_per_step = (delta.abs() / 120).max(1) * 3;
         if force_input.unwrap_or(false) {
-            log::debug!(
-                "[长截图] scroll_longshot 走 SendInput @({x},{y}) delta={delta} ×{times}"
-            );
+            log::debug!("[长截图] scroll_longshot 走 SendInput @({x},{y}) delta={delta} ×{times}");
             for i in 0..times {
                 send_wheel_via_input(x, y, delta)?;
                 // SendInput 是真实输入，连发太快会被应用当成惯性滚动或直接丢包；
@@ -3359,46 +3403,91 @@ mod tests {
 
     #[test]
     fn clamp_rect_合法矩形原样返回() {
-        let r = SnapRect { x: 100, y: 80, w: 300, h: 200 };
+        let r = SnapRect {
+            x: 100,
+            y: 80,
+            w: 300,
+            h: 200,
+        };
         assert_eq!(clamp_rect_to_screen(r, SCREEN), r);
     }
 
     #[test]
     fn clamp_rect_负坐标钳到原点() {
         // 最大化窗口 EXTENDED_FRAME_BOUNDS 的隐形边框扩展：左/上可能为负
-        let r = SnapRect { x: -7, y: -3, w: 300, h: 200 };
+        let r = SnapRect {
+            x: -7,
+            y: -3,
+            w: 300,
+            h: 200,
+        };
         assert_eq!(
             clamp_rect_to_screen(r, SCREEN),
-            SnapRect { x: 0, y: 0, w: 300, h: 200 }
+            SnapRect {
+                x: 0,
+                y: 0,
+                w: 300,
+                h: 200
+            }
         );
     }
 
     #[test]
     fn clamp_rect_右缘越界时把x收进合法范围() {
         // x=1900 而宽 300 → 右缘 2200 超 1920 → x 收到 1620
-        let r = SnapRect { x: 1900, y: 1000, w: 300, h: 200 };
+        let r = SnapRect {
+            x: 1900,
+            y: 1000,
+            w: 300,
+            h: 200,
+        };
         assert_eq!(
             clamp_rect_to_screen(r, SCREEN),
-            SnapRect { x: 1620, y: 880, w: 300, h: 200 }
+            SnapRect {
+                x: 1620,
+                y: 880,
+                w: 300,
+                h: 200
+            }
         );
     }
 
     #[test]
     fn clamp_rect_宽高超屏时收缩并收x_y() {
         // w 收满到 1920 → 上限退化到原点 → x 钳到 0；y 同理
-        let r = SnapRect { x: 10, y: 20, w: 3000, h: 2000 };
+        let r = SnapRect {
+            x: 10,
+            y: 20,
+            w: 3000,
+            h: 2000,
+        };
         assert_eq!(
             clamp_rect_to_screen(r, SCREEN),
-            SnapRect { x: 0, y: 0, w: 1920, h: 1080 }
+            SnapRect {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080
+            }
         );
     }
 
     #[test]
     fn clamp_rect_空尺寸保底1px() {
-        let r = SnapRect { x: -5, y: -5, w: 0, h: 0 };
+        let r = SnapRect {
+            x: -5,
+            y: -5,
+            w: 0,
+            h: 0,
+        };
         assert_eq!(
             clamp_rect_to_screen(r, SCREEN),
-            SnapRect { x: 0, y: 0, w: 1, h: 1 }
+            SnapRect {
+                x: 0,
+                y: 0,
+                w: 1,
+                h: 1
+            }
         );
     }
 
@@ -3407,7 +3496,12 @@ mod tests {
         // 副屏在主屏左边：虚拟屏 (origin_x=-1920, origin_y=0, width=3840, height=1080)
         let screen = (-1920, 0, 3840, 1080);
         // 主屏（屏幕坐标 0~1920）上的窗口矩形，左/上越界到副屏区域
-        let r = SnapRect { x: -1950, y: -10, w: 1920, h: 1080 };
+        let r = SnapRect {
+            x: -1950,
+            y: -10,
+            w: 1920,
+            h: 1080,
+        };
         let c = clamp_rect_to_screen(r, screen);
         // x 钳回 [-1920, 0]，右缘不超 1920
         assert!(c.x >= -1920 && c.x + c.w <= 1920);
@@ -3471,12 +3565,18 @@ mod encode_bench {
         let t = Instant::now();
         let rgba = super::grab_rect_rgba(ox, oy, w, h).expect("抓屏失败");
         let grab_ms = ms(t);
-        println!("BitBlt + BGRA→RGBA : {grab_ms:7.1} ms   {:6.1} MB 原始", rgba.len() as f64 / 1e6);
+        println!(
+            "BitBlt + BGRA→RGBA : {grab_ms:7.1} ms   {:6.1} MB 原始",
+            rgba.len() as f64 / 1e6
+        );
 
         let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba).expect("构造失败");
         let rgb = image::DynamicImage::ImageRgba8(img.clone()).to_rgb8();
 
-        println!("\n{:<26} {:>9} {:>10} {:>9}", "编码方式", "耗时", "体积", "base64后");
+        println!(
+            "\n{:<26} {:>9} {:>10} {:>9}",
+            "编码方式", "耗时", "体积", "base64后"
+        );
         println!("{}", "-".repeat(58));
 
         let report = |name: &str, enc_ms: f64, bytes: usize| {
@@ -3490,7 +3590,11 @@ mod encode_bench {
             };
             println!(
                 "{:<26} {:>7.1}ms {:>8.2}MB {:>7.2}MB (+{:.0}ms)",
-                name, enc_ms, bytes as f64 / 1e6, bytes as f64 * 4.0 / 3.0 / 1e6, b64_ms
+                name,
+                enc_ms,
+                bytes as f64 / 1e6,
+                bytes as f64 * 4.0 / 3.0 / 1e6,
+                b64_ms
             );
         };
 
@@ -3508,7 +3612,11 @@ mod encode_bench {
         use image::codecs::png::{CompressionType as C, FilterType as F, PngEncoder};
         use image::{ExtendedColorType, ImageEncoder};
         for (cn, c) in [("Fast", C::Fast), ("Default", C::Default)] {
-            for (fnm, f) in [("NoFilter", F::NoFilter), ("Up", F::Up), ("Adaptive", F::Adaptive)] {
+            for (fnm, f) in [
+                ("NoFilter", F::NoFilter),
+                ("Up", F::Up),
+                ("Adaptive", F::Adaptive),
+            ] {
                 let t = Instant::now();
                 let mut buf: Vec<u8> = Vec::new();
                 PngEncoder::new_with_quality(&mut buf, c, f)

@@ -27,7 +27,10 @@ pub enum ListOutcome {
     UnknownFolder(String),
     UnknownTag(String),
     /// ③甲：`author` 点名了一个从未写过东西的 agent。
-    UnknownAuthor { asked: String, known: Vec<String> },
+    UnknownAuthor {
+        asked: String,
+        known: Vec<String>,
+    },
 }
 
 /// `kb_search` 的结果。
@@ -56,9 +59,15 @@ pub enum SearchOutcome {
     ///
     /// 带上 `matched`（筛掉前有几篇）——只说「没找到」会让模型以为
     /// 连关键词都不匹配，从而换一个完全不同的词重试，白跑一轮。
-    NoKindMatch { kind: String, matched: usize },
+    NoKindMatch {
+        kind: String,
+        matched: usize,
+    },
     /// ③甲：`author` 点名了一个从未写过东西的 agent。同上两档的取舍。
-    UnknownAuthor { asked: String, known: Vec<String> },
+    UnknownAuthor {
+        asked: String,
+        known: Vec<String>,
+    },
 }
 
 /// 范围参数（名字）解析后的结果。
@@ -80,7 +89,10 @@ enum Scope {
     ///
     /// 🔴 不能归入「没找到」：模型会把「agent 名写错了」读成
     /// 「那个 agent 确实没记过这个」——同 folder / tag 的取舍。
-    UnknownAuthor { asked: String, known: Vec<String> },
+    UnknownAuthor {
+        asked: String,
+        known: Vec<String>,
+    },
 }
 
 /// `author` 参数的归一与校验。
@@ -910,7 +922,11 @@ fn clip_tag_list(names: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("、");
     if names.len() > shown {
-        s.push_str(&format!("……（共 {} 个，只列了前 {} 个）", names.len(), shown));
+        s.push_str(&format!(
+            "……（共 {} 个，只列了前 {} 个）",
+            names.len(),
+            shown
+        ));
     }
     s
 }
@@ -987,7 +1003,10 @@ fn edit_on(
         //
         // 但这**不是失败**：AI 想要的状态已经达成了。报错会让它去重试，
         // 或者向用户报一个并不存在的故障。
-        let summary = format!("{}（内容与原文完全相同，未写入、未产生新版本）", report.summary);
+        let summary = format!(
+            "{}（内容与原文完全相同，未写入、未产生新版本）",
+            report.summary
+        );
         return Ok((
             old,
             EditReport {

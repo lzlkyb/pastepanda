@@ -265,7 +265,10 @@ mod tests {
             ("authorization", &format!("Bearer {}", TOKEN)),
             ("origin", "https://evil.com"),
         ]);
-        assert!(matches!(check(&h, TOKEN, None, None), Err(Reject::Origin(_))));
+        assert!(matches!(
+            check(&h, TOKEN, None, None),
+            Err(Reject::Origin(_))
+        ));
 
         // 反过来：Origin 是本机但没令牌也要拦
         let h = headers(&[("origin", "http://localhost:5173")]);
@@ -293,7 +296,12 @@ mod tests {
                 ("authorization", &format!("Bearer {}", TOKEN)),
                 ("host", host),
             ]);
-            assert_eq!(check(&h, TOKEN, None, None), Ok(()), "本机 Host 不应被误伤：{}", host);
+            assert_eq!(
+                check(&h, TOKEN, None, None),
+                Ok(()),
+                "本机 Host 不应被误伤：{}",
+                host
+            );
         }
     }
 
@@ -313,7 +321,10 @@ mod tests {
     fn test_origin_gate_checked_before_token() {
         // 先 Origin 后令牌：网页扫端口时不应该走到令牌比较那一步
         let h = headers(&[("origin", "https://evil.com")]);
-        assert!(matches!(check(&h, TOKEN, None, None), Err(Reject::Origin(_))));
+        assert!(matches!(
+            check(&h, TOKEN, None, None),
+            Err(Reject::Origin(_))
+        ));
     }
 
     #[test]

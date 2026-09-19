@@ -505,11 +505,7 @@ impl WriteScope {
     /// 拼出设置页要的视图。
     ///
     /// 取数据不在这里（`folders` 与 `unfiled` 由调用方查），所以它能被单测。
-    pub fn view(
-        &self,
-        folders: &[crate::data_store::NoteFolder],
-        unfiled: i64,
-    ) -> WriteScopeView {
+    pub fn view(&self, folders: &[crate::data_store::NoteFolder], unfiled: i64) -> WriteScopeView {
         let tree = FolderTree::from_folders(folders);
         let entries = self.allowed_entries();
         let is_checked = |id: &str| entries.iter().any(|s| s == id);
@@ -539,7 +535,11 @@ impl WriteScope {
         //   · 全库数 = 未分类 + 所有**顶层**夹子的计数（再加子夹就重复了）；
         //   · 已覆盖数只能加**最外层的勾** —— 父子同时被勾时，
         //     直接相加会把子树算两遍（界面上就成了「可写 128 / 166」这种假数）。
-        let filed: i64 = folders.iter().filter(|f| f.depth == 1).map(|f| f.note_count).sum();
+        let filed: i64 = folders
+            .iter()
+            .filter(|f| f.depth == 1)
+            .map(|f| f.note_count)
+            .sum();
         let total = unfiled + filed;
         let covered = if self.is_unrestricted() {
             total
@@ -614,7 +614,12 @@ mod tests {
             assert!(!s.allowed(kind), "{} 关不掉", kind.cfg_key());
             for other in WriteKind::ALL {
                 if other != kind {
-                    assert!(s.allowed(other), "关 {} 误伤了 {}", kind.cfg_key(), other.cfg_key());
+                    assert!(
+                        s.allowed(other),
+                        "关 {} 误伤了 {}",
+                        kind.cfg_key(),
+                        other.cfg_key()
+                    );
                 }
             }
         }
@@ -678,7 +683,10 @@ mod tests {
             "内容判定不跟着放开：AI 建的夹里可能有用户自己写的笔记"
         );
 
-        assert!(!scope.allows_own(Some("f_user"), &tree), "用户建的夹不得放行");
+        assert!(
+            !scope.allows_own(Some("f_user"), &tree),
+            "用户建的夹不得放行"
+        );
         assert!(!scope.allows(Some("f_user"), &tree), "同上");
         assert!(
             !scope.allows_own(Some("f_user_child"), &tree),
@@ -711,7 +719,11 @@ mod tests {
         //    而它其实只是「AI 能自己管」，与用户勾没勾是两回事。
         let scope = WriteScope::only([UNFILED]);
         let v = scope.view(&[folder("f_ai", None, "ai")], 3);
-        let row = v.rows.iter().find(|r| r.id == "f_ai").expect("少了 f_ai 那一行");
+        let row = v
+            .rows
+            .iter()
+            .find(|r| r.id == "f_ai")
+            .expect("少了 f_ai 那一行");
         assert!(!row.checked, "用户没勾它");
         assert!(!row.inherited, "AI 建的夹不是「继承来的勾」");
         assert_eq!(v.covered, 3, "只勾了未分类，覆盖的就是那 3 篇");
@@ -722,7 +734,10 @@ mod tests {
     fn test_空树与空范围都不炸() {
         let tree = FolderTree::default();
         let scope = WriteScope::only(Vec::<String>::new());
-        assert!(!scope.allows(Some("f_x"), &tree), "空树里查任何 id 都该是 false");
+        assert!(
+            !scope.allows(Some("f_x"), &tree),
+            "空树里查任何 id 都该是 false"
+        );
         assert!(!scope.allows_own(Some("f_x"), &tree));
         assert!(!scope.allows(None, &tree), "空范围连未分类都不给");
         assert_eq!(scope.writable_folder_count(&tree), 0);

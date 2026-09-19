@@ -28,11 +28,7 @@ pub fn note_revision_get(
 
 /// 锚定 / 解除锚定一份快照（W2b）。锚定的那一份永不被 20 份上限挤掉。
 #[tauri::command]
-pub fn note_revision_pin(
-    store: State<DataStore>,
-    rev_id: i64,
-    pinned: bool,
-) -> Result<(), String> {
+pub fn note_revision_pin(store: State<DataStore>, rev_id: i64, pinned: bool) -> Result<(), String> {
     store.note_revision_pin(rev_id, pinned)
 }
 

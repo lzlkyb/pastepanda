@@ -18,25 +18,169 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InputEvent {
-    MouseMove { x: u16, y: u16 },
+    MouseMove {
+        x: u16,
+        y: u16,
+    },
     /// button: 1=左 2=右 3=中；down=按下/抬起
-    MouseButton { x: u16, y: u16, button: u8, down: bool },
-    Wheel { x: u16, y: u16, delta: i32 },
-    Key { vk: u32, down: bool },
-    ClipboardPush { text: String },
+    MouseButton {
+        x: u16,
+        y: u16,
+        button: u8,
+        down: bool,
+    },
+    Wheel {
+        x: u16,
+        y: u16,
+        delta: i32,
+    },
+    Key {
+        vk: u32,
+        down: bool,
+    },
+    ClipboardPush {
+        text: String,
+    },
     ClipboardPull,
     /// 发起端心跳：会话 UI 存活时周期发送；被控端据此暂停/恢复推流。
     /// 可选 `ts` 用于 RTT 测量（被控端原样放进 pong）。
-    Ping { ts: Option<i64> },
+    Ping {
+        ts: Option<i64>,
+    },
     /// 发起端要求被控端改画质档（sharp/balanced/smooth）。
-    SetQuality { quality: String },
+    SetQuality {
+        quality: String,
+    },
     /// 发起端要求被控端改截取范围（virtual/primary）。
-    SetCaptureScope { scope: String },
+    SetCaptureScope {
+        scope: String,
+    },
     /// 发起端要求本会话强制走 JPEG（H.264 解不出时回退）。
-    SetCodec { codec: String },
+    SetCodec {
+        codec: String,
+    },
     /// 发起端把测得的 RTT 告知被控端，用于自适应降码率（R5.B2）。
     /// 不注入本机、不要求 Control。
-    NetHint { rtt_ms: i64 },
+    NetHint {
+        rtt_ms: i64,
+    },
+    /// 发起端设置「码率倍率」（Q5，50–200，100 = 跟随链路）。与 RTT/丢包的
+    /// 自动缩放**相乘**合成——用户调高也不会越过弱网保护，只是抬天花板。
+    /// 不注入本机、不要求 Control（只看会话也该能调自己看到的画质）。
+    SetBitratePct {
+        pct: u32,
+    },
+    /// 发起端解码断链（丢包/花屏）时请求被控端下一帧强制 IDR。
+    /// 不注入本机、不要求 Control——弱网自愈的主通道（2026-09-19）。
+    RequestKey,
+}
+
+/// 远端光标形状。由被控端比对系统标准光标句柄得出，
+/// 发起端据此切换 overlay / 本地光标样式（P1-6 光标形状同步）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CursorShape {
+    Arrow,
+    IBeam,
+    Wait,
+    Cross,
+    SizeNwse,
+    SizeNesw,
+    SizeNs,
+    SizeWe,
+    SizeAll,
+    No,
+    Hand,
+    AppStarting,
+    UpArrow,
+    /// 远端隐藏了光标（游戏/演示软件常见）
+    Hidden,
+    Unknown,
+}
+
+impl CursorShape {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CursorShape::Arrow => "arrow",
+            CursorShape::IBeam => "ibeam",
+            CursorShape::Wait => "wait",
+            CursorShape::Cross => "cross",
+            CursorShape::SizeNwse => "size_nwse",
+            CursorShape::SizeNesw => "size_nesw",
+            CursorShape::SizeNs => "size_ns",
+            CursorShape::SizeWe => "size_we",
+            CursorShape::SizeAll => "size_all",
+            CursorShape::No => "no",
+            CursorShape::Hand => "hand",
+            CursorShape::AppStarting => "app_starting",
+            CursorShape::UpArrow => "up_arrow",
+            CursorShape::Hidden => "hidden",
+            CursorShape::Unknown => "unknown",
+        }
+    }
+}
+
+/// 当前系统光标形状。拿不到（无光标/系统 API 失败）返回 Unknown。
+#[cfg(target_os = "windows")]
+pub fn current_cursor_shape() -> CursorShape {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetCursorInfo, CURSORINFO, CURSOR_SHOWING, HCURSOR, IDC_APPSTARTING, IDC_ARROW, IDC_CROSS,
+        IDC_HAND, IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENWSE, IDC_SIZENS,
+        IDC_SIZEWE, IDC_UPARROW, IDC_WAIT, LoadCursorW,
+    };
+
+    /// 标准光标句柄 → 形状映射。进程内句柄恒定，只建一次。
+    static MAP: OnceLock<HashMap<isize, CursorShape>> = OnceLock::new();
+    let map = MAP.get_or_init(|| {
+        let mut m = HashMap::new();
+        let mut add = |idc: windows::core::PCWSTR, shape: CursorShape| {
+            let h = unsafe { LoadCursorW(None, idc) }.unwrap_or(HCURSOR::default());
+            if !h.0.is_null() {
+                m.insert(h.0 as isize, shape);
+            }
+        };
+        add(IDC_ARROW, CursorShape::Arrow);
+        add(IDC_IBEAM, CursorShape::IBeam);
+        add(IDC_WAIT, CursorShape::Wait);
+        add(IDC_CROSS, CursorShape::Cross);
+        add(IDC_SIZENWSE, CursorShape::SizeNwse);
+        add(IDC_SIZENESW, CursorShape::SizeNesw);
+        add(IDC_SIZENS, CursorShape::SizeNs);
+        add(IDC_SIZEWE, CursorShape::SizeWe);
+        add(IDC_SIZEALL, CursorShape::SizeAll);
+        add(IDC_NO, CursorShape::No);
+        add(IDC_HAND, CursorShape::Hand);
+        add(IDC_APPSTARTING, CursorShape::AppStarting);
+        add(IDC_UPARROW, CursorShape::UpArrow);
+        m
+    });
+
+    unsafe {
+        let mut ci = CURSORINFO {
+            cbSize: std::mem::size_of::<CURSORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetCursorInfo(&mut ci).is_err() {
+            return CursorShape::Unknown;
+        }
+        // CURSOR_SHOWING = 光标可见；置 0 说明远端把光标藏了
+        if (ci.flags.0 & CURSOR_SHOWING.0) == 0 {
+            return CursorShape::Hidden;
+        }
+        let key = ci.hCursor.0 as isize;
+        map
+            .get(&key)
+            .copied()
+            .unwrap_or(CursorShape::Unknown)
+    }
+}
+
+/// 非 Windows 平台恒 Unknown（不参与推流协议时不会被调用）。
+#[cfg(not(target_os = "windows"))]
+pub fn current_cursor_shape() -> CursorShape {
+    CursorShape::Unknown
 }
 
 /// 注入结果。
@@ -48,12 +192,19 @@ pub struct InjectResult {
 }
 
 #[cfg(target_os = "windows")]
-fn send_inputs(inputs: &[windows::Win32::UI::Input::KeyboardAndMouse::INPUT]) -> Result<(), String> {
+fn send_inputs(
+    inputs: &[windows::Win32::UI::Input::KeyboardAndMouse::INPUT],
+) -> Result<(), String> {
     use windows::Win32::UI::Input::KeyboardAndMouse::SendInput;
     if inputs.is_empty() {
         return Ok(());
     }
-    let sent = unsafe { SendInput(inputs, std::mem::size_of::<windows::Win32::UI::Input::KeyboardAndMouse::INPUT>() as i32) };
+    let sent = unsafe {
+        SendInput(
+            inputs,
+            std::mem::size_of::<windows::Win32::UI::Input::KeyboardAndMouse::INPUT>() as i32,
+        )
+    };
     if sent as usize != inputs.len() {
         return Err(format!(
             "SendInput 仅注入 {}/{} 个事件（疑似 UIPI 拦截：目标进程完整性级别更高）",
@@ -98,7 +249,12 @@ impl ScreenRegion {
         }
         #[cfg(not(target_os = "windows"))]
         {
-            Self { x: 0, y: 0, w: 1, h: 1 }
+            Self {
+                x: 0,
+                y: 0,
+                w: 1,
+                h: 1,
+            }
         }
     }
 }
@@ -159,8 +315,14 @@ pub fn inject(ev: &InputEvent, region: &ScreenRegion) -> InjectResult {
     #[cfg(target_os = "windows")]
     {
         match inject_win(ev, region) {
-            Ok(()) => InjectResult { ok: true, error: String::new() },
-            Err(e) => InjectResult { ok: false, error: e },
+            Ok(()) => InjectResult {
+                ok: true,
+                error: String::new(),
+            },
+            Err(e) => InjectResult {
+                ok: false,
+                error: e,
+            },
         }
     }
 }
@@ -184,9 +346,14 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
             Ok(())
         }
         InputEvent::MouseButton { x, y, button, down } => {
-            let (px, py) = map_abs(*x, *y, region);
-            unsafe {
-                SetCursorPos(px, py).map_err(|e| format!("SetCursorPos 失败：{e:?}"))?;
+            // 只有**按下**才重新定位：松开永远发生在当前光标处（OS 语义就是
+            // 抬起不挪鼠标）。否则收口补发的 UP（x=0,y=0）会把远端光标瞬移到
+            // 左上角；若恰有卡住的右键，右键菜单还会在那里凭空弹出。
+            if *down {
+                let (px, py) = map_abs(*x, *y, region);
+                unsafe {
+                    SetCursorPos(px, py).map_err(|e| format!("SetCursorPos 失败：{e:?}"))?;
+                }
             }
             let flag = match (button, down) {
                 (1, true) => MOUSEEVENTF_LEFTDOWN,
@@ -259,15 +426,15 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
             };
             send_inputs(&[input])
         }
-        InputEvent::ClipboardPush { text } => {
-            set_clipboard_text(text)
-        }
+        InputEvent::ClipboardPush { text } => set_clipboard_text(text),
         InputEvent::ClipboardPull => Ok(()),
         InputEvent::Ping { .. } => Ok(()),
         InputEvent::NetHint { .. } => Ok(()),
+        InputEvent::SetBitratePct { .. } => Ok(()),
         InputEvent::SetQuality { .. }
         | InputEvent::SetCaptureScope { .. }
-        | InputEvent::SetCodec { .. } => Ok(()),
+        | InputEvent::SetCodec { .. }
+        | InputEvent::RequestKey => Ok(()),
     }
 }
 

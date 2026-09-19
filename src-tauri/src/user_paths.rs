@@ -42,9 +42,15 @@ mod tests {
     #[test]
     fn 波浪号展开到主目录下() {
         let home = home_dir().unwrap();
-        assert_eq!(expand_home("~/.claude.json").unwrap(), home.join(".claude.json"));
+        assert_eq!(
+            expand_home("~/.claude.json").unwrap(),
+            home.join(".claude.json")
+        );
         // 反斜杠写法要等价，否则用户手填 `~\.claude.json` 会被当成相对路径落到工作目录
-        assert_eq!(expand_home("~\\.claude.json").unwrap(), home.join(".claude.json"));
+        assert_eq!(
+            expand_home("~\\.claude.json").unwrap(),
+            home.join(".claude.json")
+        );
     }
 
     #[test]

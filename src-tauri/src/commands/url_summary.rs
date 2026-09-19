@@ -66,12 +66,21 @@ fn cache_put(url: String, value: UrlSummary) {
         guard.retain(|_, c| c.at.elapsed() < CACHE_TTL);
         if guard.len() >= MAX_ENTRIES {
             // 淘汰最早写入的（先取出 key 再删，避免迭代借用与 remove 冲突）
-            let oldest = guard.iter().min_by_key(|(_, c)| c.at).map(|(k, _)| k.clone());
+            let oldest = guard
+                .iter()
+                .min_by_key(|(_, c)| c.at)
+                .map(|(k, _)| k.clone());
             if let Some(k) = oldest {
                 guard.remove(&k);
             }
         }
-        guard.insert(url, CachedFetch { value, at: Instant::now() });
+        guard.insert(
+            url,
+            CachedFetch {
+                value,
+                at: Instant::now(),
+            },
+        );
     }
 }
 
@@ -86,7 +95,11 @@ fn extract_from_html(url: &str, body: &str) -> UrlSummary {
     // 标题
     let title = Selector::parse("title")
         .ok()
-        .and_then(|sel| doc.select(&sel).next().map(|e| e.text().collect::<String>()))
+        .and_then(|sel| {
+            doc.select(&sel)
+                .next()
+                .map(|e| e.text().collect::<String>())
+        })
         .unwrap_or_default()
         .trim()
         .to_string();
@@ -316,9 +329,9 @@ mod tests {
             "http://169.254.169.254/latest/meta-data/",
             // IPv6：host_str() 带方括号，不先剥掉的话整段 IPv6 处理都是死代码
             "http://[::1]/",
-            "http://[fd00::1]/",              // unique-local
-            "http://[::ffff:192.168.1.1]/",   // v4-mapped 的私有地址
-            "mailto:a@b.com", // 没有 host → 也该拦
+            "http://[fd00::1]/",            // unique-local
+            "http://[::ffff:192.168.1.1]/", // v4-mapped 的私有地址
+            "mailto:a@b.com",               // 没有 host → 也该拦
         ] {
             assert!(url_host_blocked(bad), "应该拦住：{bad}");
         }
@@ -351,7 +364,10 @@ mod tests {
             <p>这是页面真正的一段足够长的正文，用来验证脚本内容被过滤掉。</p>
         </body></html>"#;
         let s = extract_from_html("https://example.com/b", html);
-        assert!(!s.text.contains("不要泄露的脚本内容"), "script 内容不应进入正文");
+        assert!(
+            !s.text.contains("不要泄露的脚本内容"),
+            "script 内容不应进入正文"
+        );
         assert!(s.text.contains("真正的一段足够长"));
     }
 
@@ -367,7 +383,10 @@ mod tests {
     #[test]
     fn extract_truncates_long_body() {
         let long_para = "字".repeat(2000);
-        let html = format!(r#"<html><head><title>长文</title></head><body><p>{}</p></body></html>"#, long_para);
+        let html = format!(
+            r#"<html><head><title>长文</title></head><body><p>{}</p></body></html>"#,
+            long_para
+        );
         let s = extract_from_html("https://example.com/d", &html);
         assert!(s.text.chars().count() <= MAX_BODY_CHARS);
     }

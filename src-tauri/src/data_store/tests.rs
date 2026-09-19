@@ -178,7 +178,12 @@ fn test_image_filter_includes_rich() {
         .insert_history(&make_item("t1", "纯文本", "2024-01-01 10:00:00", "text"))
         .unwrap();
     store
-        .insert_history(&make_item("i1", "[图片] 10x10", "2024-01-01 11:00:00", "image"))
+        .insert_history(&make_item(
+            "i1",
+            "[图片] 10x10",
+            "2024-01-01 11:00:00",
+            "image",
+        ))
         .unwrap();
     store
         .insert_history(&make_item("r1", "图文内容", "2024-01-01 12:00:00", "rich"))
@@ -204,13 +209,23 @@ fn test_image_filter_includes_rich() {
 fn test_get_history_search() {
     let store = make_store();
     store
-        .insert_history(&make_item("s1", "Hello World", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "s1",
+            "Hello World",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     store
         .insert_history(&make_item("s2", "Goodbye", "2024-01-01 10:00:00", "text"))
         .unwrap();
     store
-        .insert_history(&make_item("s3", "Rust Programming", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "s3",
+            "Rust Programming",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
     let result = store.get_history("默认", "all", "Hello", 0, 10).unwrap();
@@ -297,7 +312,12 @@ fn test_get_recent_items_empty() {
 fn test_update_history() {
     let store = make_store();
     store
-        .insert_history(&make_item("upd-1", "Original", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "upd-1",
+            "Original",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
     store.update_history("upd-1", "Modified").unwrap();
@@ -312,9 +332,7 @@ fn test_update_history() {
 #[test]
 fn test_update_history_not_found() {
     let store = make_store();
-    let err = store
-        .update_history("nonexistent", "text")
-        .unwrap_err();
+    let err = store.update_history("nonexistent", "text").unwrap_err();
     assert!(err.contains("不存在"));
 }
 
@@ -337,7 +355,9 @@ fn test_find_latest_by_md5_found() {
 #[test]
 fn test_find_latest_by_md5_not_found() {
     let store = make_store();
-    let found = store.find_latest_by_md5("nonexistent_md5", "默认", "text").unwrap();
+    let found = store
+        .find_latest_by_md5("nonexistent_md5", "默认", "text")
+        .unwrap();
     assert!(found.is_none());
 }
 
@@ -393,7 +413,9 @@ fn test_find_latest_by_md5_workspace_isolated() {
     let found = store.find_latest_by_md5(&md5, "默认", "text").unwrap();
     assert!(found.is_none());
     // 相同 workspace 下应命中
-    let found = store.find_latest_by_md5(&md5, "其他工作区", "text").unwrap();
+    let found = store
+        .find_latest_by_md5(&md5, "其他工作区", "text")
+        .unwrap();
     assert!(found.is_some());
 }
 
@@ -405,7 +427,12 @@ fn test_find_latest_by_md5_workspace_isolated() {
 fn test_update_history_time() {
     let store = make_store();
     store
-        .insert_history(&make_item("time-1", "Content", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "time-1",
+            "Content",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
     store
@@ -453,7 +480,11 @@ fn test_update_history_time_recopy_count() {
     // 真的被重复采集三次
     for d in 4..7 {
         store
-            .update_history_time("rc-1", &format!("2024-01-0{} 10:00:00", d), TimeBump::Recapture)
+            .update_history_time(
+                "rc-1",
+                &format!("2024-01-0{} 10:00:00", d),
+                TimeBump::Recapture,
+            )
             .unwrap();
     }
     assert_eq!(count(), 3, "Recapture 每次 +1");
@@ -471,7 +502,12 @@ fn test_update_history_time_recopy_count() {
 fn test_search_hit_records_time() {
     let store = make_store();
     store
-        .insert_history(&make_item("sh-1", "Rust 的 Pin", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "sh-1",
+            "Rust 的 Pin",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
     let read = |store: &DataStore| -> (i64, Option<String>) {
@@ -533,15 +569,18 @@ fn test_note_touch_does_not_bump_updated_at() {
 fn test_delete_single_history() {
     let store = make_store();
     store
-        .insert_history(&make_item("del-1", "To Delete", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "del-1",
+            "To Delete",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     store
         .insert_history(&make_item("keep-1", "Keep", "2024-01-01 10:00:00", "text"))
         .unwrap();
 
-    let count = store
-        .delete_history(&["del-1".to_string()])
-        .unwrap();
+    let count = store.delete_history(&["del-1".to_string()]).unwrap();
     assert_eq!(count, 1);
 
     let result = store.get_history("默认", "all", "", 0, 10).unwrap();
@@ -580,9 +619,7 @@ fn test_delete_history_empty_list() {
 #[test]
 fn test_delete_nonexistent() {
     let store = make_store();
-    let count = store
-        .delete_history(&["no-such-id".to_string()])
-        .unwrap();
+    let count = store.delete_history(&["no-such-id".to_string()]).unwrap();
     assert_eq!(count, 0);
 }
 
@@ -604,7 +641,10 @@ fn test_delete_image_item_removes_file() {
     assert!(img_path.exists());
 
     store.delete_history(&["img-1".to_string()]).unwrap();
-    assert!(!img_path.exists(), "删除唯一引用该图片的记录后，文件应被清理");
+    assert!(
+        !img_path.exists(),
+        "删除唯一引用该图片的记录后，文件应被清理"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -631,7 +671,10 @@ fn test_delete_image_item_keeps_file_if_still_referenced() {
     store.insert_history(&item2).unwrap();
 
     store.delete_history(&["img-a".to_string()]).unwrap();
-    assert!(img_path.exists(), "img-b 还引用着这张图，不应被删除本次删除的 img-a 误删文件");
+    assert!(
+        img_path.exists(),
+        "img-b 还引用着这张图，不应被删除本次删除的 img-a 误删文件"
+    );
 
     store.delete_history(&["img-b".to_string()]).unwrap();
     assert!(!img_path.exists(), "最后一条引用也删除后，文件才真正清理");
@@ -714,17 +757,13 @@ fn test_clear_history_with_days() {
         .unwrap();
 
     // 插入一条今天的记录
-    let today_str = chrono::Local::now()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
+    let today_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     store
         .insert_history(&make_item("new-1", "New", &today_str, "text"))
         .unwrap();
 
     // 清理 30 天前的
-    let deleted = store
-        .get_history_before_cleanup("默认", Some(30))
-        .unwrap();
+    let deleted = store.get_history_before_cleanup("默认", Some(30)).unwrap();
     assert_eq!(deleted.len(), 1);
     assert_eq!(deleted[0].id, "old-1");
 
@@ -817,9 +856,7 @@ fn test_get_stats_pinned() {
 #[test]
 fn test_get_stats_today() {
     let store = make_store();
-    let today_str = chrono::Local::now()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
+    let today_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     store
         .insert_history(&make_item("today-1", "Today", &today_str, "text"))
         .unwrap();
@@ -846,17 +883,34 @@ fn test_get_stats_detail_daily_and_hours() {
     let store = make_store();
     let now = chrono::Local::now();
     let today = now.format("%Y-%m-%d").to_string();
-    let yesterday = (now - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+    let yesterday = (now - chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
 
     // 今天 2 条（10 时 / 14 时），昨天 1 条（23 时）
     store
-        .insert_history(&make_item("d1", "A", &format!("{} 10:00:00", today), "text"))
+        .insert_history(&make_item(
+            "d1",
+            "A",
+            &format!("{} 10:00:00", today),
+            "text",
+        ))
         .unwrap();
     store
-        .insert_history(&make_item("d2", "B", &format!("{} 14:30:00", today), "image"))
+        .insert_history(&make_item(
+            "d2",
+            "B",
+            &format!("{} 14:30:00", today),
+            "image",
+        ))
         .unwrap();
     store
-        .insert_history(&make_item("d3", "C", &format!("{} 23:00:00", yesterday), "file"))
+        .insert_history(&make_item(
+            "d3",
+            "C",
+            &format!("{} 23:00:00", yesterday),
+            "file",
+        ))
         .unwrap();
 
     let detail = store.get_stats_detail("默认").unwrap();
@@ -994,10 +1048,20 @@ fn test_import_history_new() {
 fn test_import_history_duplicate() {
     let store = make_store();
     store
-        .insert_history(&make_item("imp-1", "Original", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "imp-1",
+            "Original",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
-    let items = vec![make_item("imp-1", "Duplicate", "2024-01-01 11:00:00", "text")];
+    let items = vec![make_item(
+        "imp-1",
+        "Duplicate",
+        "2024-01-01 11:00:00",
+        "text",
+    )];
     let count = store.import_history(&items).unwrap();
     assert_eq!(count, 0); // INSERT OR IGNORE 跳过重复
 
@@ -1087,7 +1151,10 @@ fn test_import_history_nulls_dangling_group_id() {
 
     let result = store.get_history("默认", "all", "", 0, 10).unwrap();
     let imported = result.iter().find(|i| i.id == "imp-grp-1").unwrap();
-    assert_eq!(imported.group_id, None, "本机不存在的分组应置 NULL，而非写入悬空引用");
+    assert_eq!(
+        imported.group_id, None,
+        "本机不存在的分组应置 NULL，而非写入悬空引用"
+    );
 }
 
 #[test]
@@ -1201,9 +1268,7 @@ fn test_get_all_history_empty() {
 #[test]
 fn test_create_group() {
     let store = make_store();
-    let group = store
-        .create_group("Work", "#FF0000", "briefcase")
-        .unwrap();
+    let group = store.create_group("Work", "#FF0000", "briefcase").unwrap();
     assert_eq!(group.name, "Work");
     assert_eq!(group.color, "#FF0000");
     assert_eq!(group.icon, "briefcase");
@@ -1231,9 +1296,7 @@ fn test_get_groups_empty() {
 fn test_update_group() {
     let store = make_store();
     let group = store.create_group("Old", "#000", "old").unwrap();
-    store
-        .update_group(&group.id, "New", "#FFF", "new")
-        .unwrap();
+    store.update_group(&group.id, "New", "#FFF", "new").unwrap();
 
     let groups = store.get_groups().unwrap();
     assert_eq!(groups[0].name, "New");
@@ -1322,9 +1385,7 @@ fn test_move_to_group_null() {
     item.group_id = Some(group.id.clone());
     store.insert_history(&item).unwrap();
 
-    let count = store
-        .move_to_group(&["mg-2".to_string()], None)
-        .unwrap();
+    let count = store.move_to_group(&["mg-2".to_string()], None).unwrap();
     assert_eq!(count, 1);
 
     let result = store.get_history("默认", "all", "", 0, 10).unwrap();
@@ -1376,9 +1437,7 @@ fn test_update_tag() {
 #[test]
 fn test_update_tag_not_found() {
     let store = make_store();
-    let err = store
-        .update_tag("nonexistent", "Name", "#000")
-        .unwrap_err();
+    let err = store.update_tag("nonexistent", "Name", "#000").unwrap_err();
     assert!(err.contains("不存在"));
 }
 
@@ -1398,13 +1457,16 @@ fn test_delete_tag() {
 fn test_set_item_tags() {
     let store = make_store();
     store
-        .insert_history(&make_item("tagged-1", "Tagged", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "tagged-1",
+            "Tagged",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let tag = store.create_tag("TestTag", "#000").unwrap();
 
-    store
-        .set_item_tags("tagged-1", &[tag.id.clone()])
-        .unwrap();
+    store.set_item_tags("tagged-1", &[tag.id.clone()]).unwrap();
 
     let result = store
         .get_items_with_tags(&["tagged-1".to_string()])
@@ -1418,17 +1480,18 @@ fn test_set_item_tags() {
 fn test_set_item_tags_replaces() {
     let store = make_store();
     store
-        .insert_history(&make_item("tagged-2", "Tagged", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "tagged-2",
+            "Tagged",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let tag1 = store.create_tag("T1", "#111").unwrap();
     let tag2 = store.create_tag("T2", "#222").unwrap();
 
-    store
-        .set_item_tags("tagged-2", &[tag1.id.clone()])
-        .unwrap();
-    store
-        .set_item_tags("tagged-2", &[tag2.id.clone()])
-        .unwrap();
+    store.set_item_tags("tagged-2", &[tag1.id.clone()]).unwrap();
+    store.set_item_tags("tagged-2", &[tag2.id.clone()]).unwrap();
 
     let result = store
         .get_items_with_tags(&["tagged-2".to_string()])
@@ -1441,13 +1504,21 @@ fn test_set_item_tags_replaces() {
 fn test_add_item_tags() {
     let store = make_store();
     store
-        .insert_history(&make_item("add-tag-1", "Item", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "add-tag-1",
+            "Item",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let tag1 = store.create_tag("T1", "#111").unwrap();
     let tag2 = store.create_tag("T2", "#222").unwrap();
 
     let count = store
-        .add_item_tags(&["add-tag-1".to_string()], &[tag1.id.clone(), tag2.id.clone()])
+        .add_item_tags(
+            &["add-tag-1".to_string()],
+            &[tag1.id.clone(), tag2.id.clone()],
+        )
         .unwrap();
     assert_eq!(count, 2);
 
@@ -1461,12 +1532,15 @@ fn test_add_item_tags() {
 fn test_remove_item_tags() {
     let store = make_store();
     store
-        .insert_history(&make_item("rem-tag-1", "Item", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "rem-tag-1",
+            "Item",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let tag = store.create_tag("T1", "#111").unwrap();
-    store
-        .set_item_tags("rem-tag-1", &[tag.id.clone()])
-        .unwrap();
+    store.set_item_tags("rem-tag-1", &[tag.id.clone()]).unwrap();
 
     let count = store
         .remove_item_tags(&["rem-tag-1".to_string()], &[tag.id.clone()])
@@ -1490,12 +1564,15 @@ fn test_get_items_with_tags_empty_ids() {
 fn test_get_items_with_tags_no_tags() {
     let store = make_store();
     store
-        .insert_history(&make_item("no-tag", "No tags", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "no-tag",
+            "No tags",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
-    let result = store
-        .get_items_with_tags(&["no-tag".to_string()])
-        .unwrap();
+    let result = store.get_items_with_tags(&["no-tag".to_string()]).unwrap();
     assert!(result.is_empty());
 }
 
@@ -1507,12 +1584,15 @@ fn test_get_items_with_tags_no_tags() {
 fn test_tags_loaded_in_get_history() {
     let store = make_store();
     store
-        .insert_history(&make_item("tl-1", "With tags", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "tl-1",
+            "With tags",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let tag = store.create_tag("MyTag", "#FF0000").unwrap();
-    store
-        .set_item_tags("tl-1", &[tag.id.clone()])
-        .unwrap();
+    store.set_item_tags("tl-1", &[tag.id.clone()]).unwrap();
 
     let result = store.get_history("默认", "all", "", 0, 10).unwrap();
     assert_eq!(result[0].tags.len(), 1);
@@ -1523,12 +1603,15 @@ fn test_tags_loaded_in_get_history() {
 fn test_tags_loaded_in_get_all_history() {
     let store = make_store();
     store
-        .insert_history(&make_item("tl-2", "With tags", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "tl-2",
+            "With tags",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let tag = store.create_tag("AllTag", "#000").unwrap();
-    store
-        .set_item_tags("tl-2", &[tag.id.clone()])
-        .unwrap();
+    store.set_item_tags("tl-2", &[tag.id.clone()]).unwrap();
 
     let result = store.get_all_history("默认").unwrap();
     assert_eq!(result[0].tags.len(), 1);
@@ -1553,7 +1636,11 @@ fn test_ensure_auto_tags() {
     // 流程图 / 文档是后补的：种子表里没有的名字，resolve_auto_tag_ids 会静默跳过，
     // 「文档」因此一直在 push 但从来没落到过卡片上。
     for name in ["图文", "流程图", "文档"] {
-        assert!(tags.iter().any(|t| t.name == name), "缺少类型标签种子: {}", name);
+        assert!(
+            tags.iter().any(|t| t.name == name),
+            "缺少类型标签种子: {}",
+            name
+        );
     }
 }
 
@@ -1597,15 +1684,35 @@ fn test_all_classify_main_labels_resolve() {
     store.ensure_auto_tags().unwrap();
 
     let main_labels: Vec<String> = [
-        "邮箱", "电话", "颜色", "文件路径", "数字", "JSON", "纯文本", "链接",
-        "Markdown", "HTML", "配置文件", "表格", "命令行", "日志", "密钥", "代码",
+        "邮箱",
+        "电话",
+        "颜色",
+        "文件路径",
+        "数字",
+        "JSON",
+        "纯文本",
+        "链接",
+        "Markdown",
+        "HTML",
+        "配置文件",
+        "表格",
+        "命令行",
+        "日志",
+        "密钥",
+        "代码",
     ]
     .iter()
     .map(|s| s.to_string())
     .collect();
 
     let ids = store.resolve_auto_tag_ids(&main_labels).unwrap();
-    assert_eq!(ids.len(), main_labels.len(), "存在未种子化的主标签: 期望 {} 个，实际解析 {} 个", main_labels.len(), ids.len());
+    assert_eq!(
+        ids.len(),
+        main_labels.len(),
+        "存在未种子化的主标签: 期望 {} 个，实际解析 {} 个",
+        main_labels.len(),
+        ids.len()
+    );
 }
 
 #[test]
@@ -1613,26 +1720,25 @@ fn test_add_history_tags() {
     let store = make_store();
     store.ensure_auto_tags().unwrap();
     store
-        .insert_history(&make_item("auto-1", "Code here", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "auto-1",
+            "Code here",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
-    let ids = store
-        .resolve_auto_tag_ids(&["代码".to_string()])
-        .unwrap();
+    let ids = store.resolve_auto_tag_ids(&["代码".to_string()]).unwrap();
     store.add_history_tags("auto-1", &ids).unwrap();
 
-    let result = store
-        .get_items_with_tags(&["auto-1".to_string()])
-        .unwrap();
+    let result = store.get_items_with_tags(&["auto-1".to_string()]).unwrap();
     assert_eq!(result[0].1.len(), 1);
 }
 
 #[test]
 fn test_add_history_tags_empty() {
     let store = make_store();
-    store
-        .add_history_tags("any-id", &[])
-        .unwrap();
+    store.add_history_tags("any-id", &[]).unwrap();
 }
 
 #[test]
@@ -1640,12 +1746,15 @@ fn test_confirm_auto_tags() {
     let store = make_store();
     store.ensure_auto_tags().unwrap();
     store
-        .insert_history(&make_item("confirm-1", "Code", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "confirm-1",
+            "Code",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
-    let ids = store
-        .resolve_auto_tag_ids(&["代码".to_string()])
-        .unwrap();
+    let ids = store.resolve_auto_tag_ids(&["代码".to_string()]).unwrap();
     store.add_history_tags("confirm-1", &ids).unwrap();
 
     store.confirm_auto_tags("confirm-1").unwrap();
@@ -1728,7 +1837,9 @@ fn test_ai_usage_log_has_no_content_column() {
         .collect();
 
     assert!(!cols.is_empty(), "表没建起来");
-    for forbidden in ["text", "content", "input", "output", "prompt", "reply", "result"] {
+    for forbidden in [
+        "text", "content", "input", "output", "prompt", "reply", "result",
+    ] {
         assert!(
             !cols.iter().any(|c| c == forbidden),
             "ai_usage_log 出现了内容字段 `{}`——明细账绝不能变成第二份剪贴板历史",
@@ -1877,7 +1988,11 @@ fn test_custom_action_roundtrip() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].name, "写 commit");
     assert_eq!(list[0].max_tokens, 500);
-    assert_eq!(list[0].content_types, vec!["code", "text"], "类型要能原样读回");
+    assert_eq!(
+        list[0].content_types,
+        vec!["code", "text"],
+        "类型要能原样读回"
+    );
     assert!(list[0].enabled);
     assert!(!list[0].created_at.is_empty());
 }
@@ -1949,9 +2064,15 @@ fn test_custom_action_max_tokens_clamped() {
 #[test]
 fn test_custom_action_new_ones_go_last_and_reorder_works() {
     let store = make_store();
-    let a = store.ai_custom_action_save(&custom_action("A", "{{内容}}")).unwrap();
-    let b = store.ai_custom_action_save(&custom_action("B", "{{内容}}")).unwrap();
-    let c = store.ai_custom_action_save(&custom_action("C", "{{内容}}")).unwrap();
+    let a = store
+        .ai_custom_action_save(&custom_action("A", "{{内容}}"))
+        .unwrap();
+    let b = store
+        .ai_custom_action_save(&custom_action("B", "{{内容}}"))
+        .unwrap();
+    let c = store
+        .ai_custom_action_save(&custom_action("C", "{{内容}}"))
+        .unwrap();
 
     let names: Vec<String> = store
         .ai_custom_actions()
@@ -1980,7 +2101,9 @@ fn test_custom_action_new_ones_go_last_and_reorder_works() {
 #[test]
 fn test_custom_action_delete_and_missing_id() {
     let store = make_store();
-    let id = store.ai_custom_action_save(&custom_action("待删", "{{内容}}")).unwrap();
+    let id = store
+        .ai_custom_action_save(&custom_action("待删", "{{内容}}"))
+        .unwrap();
     store.ai_custom_action_delete(&id).unwrap();
     assert!(store.ai_custom_action(&id).unwrap().is_none());
     // 删不存在的不报错（幂等）
@@ -2040,7 +2163,9 @@ fn test_action_events_table_has_no_content_column() {
         .collect();
 
     assert!(!cols.is_empty(), "表没建起来");
-    for forbidden in ["text", "content", "input", "output", "prompt", "reply", "result"] {
+    for forbidden in [
+        "text", "content", "input", "output", "prompt", "reply", "result",
+    ] {
         assert!(
             !cols.iter().any(|c| c == forbidden),
             "action_events 出现了内容字段 `{}`——事件日志绝不能变成第二份剪贴板历史",
@@ -2052,9 +2177,27 @@ fn test_action_events_table_has_no_content_column() {
 #[test]
 fn test_action_event_add_and_stats() {
     let store = make_store();
-    store.action_event_add(&action_event("sql-in", "text", "VSCode", 10, OUTCOME_COPIED));
-    store.action_event_add(&action_event("sql-in", "text", "VSCode", 10, OUTCOME_COPIED));
-    store.action_event_add(&action_event("ai-translate", "text", "Chrome", 21, OUTCOME_PASTED));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "text",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "text",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
+    store.action_event_add(&action_event(
+        "ai-translate",
+        "text",
+        "Chrome",
+        21,
+        OUTCOME_PASTED,
+    ));
 
     let s = store.action_event_stats(30);
     assert_eq!(s.total, 3);
@@ -2082,7 +2225,13 @@ fn test_action_event_stats_empty_day_is_zero_not_error() {
 #[test]
 fn test_action_event_clear_and_purge() {
     let store = make_store();
-    store.action_event_add(&action_event("sql-in", "text", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "text",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
 
     // 保留期内的记录不该被清掉
     assert_eq!(store.action_event_purge(90).unwrap(), 0);
@@ -2109,9 +2258,19 @@ fn test_action_event_purge_removes_old() {
         )
         .unwrap();
     }
-    store.action_event_add(&action_event("new-action", "text", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event(
+        "new-action",
+        "text",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
 
-    assert_eq!(store.action_event_purge(90).unwrap(), 1, "只清掉 100 天前那条");
+    assert_eq!(
+        store.action_event_purge(90).unwrap(),
+        1,
+        "只清掉 100 天前那条"
+    );
     assert_eq!(store.action_event_stats(30).total, 1);
 }
 
@@ -2139,13 +2298,43 @@ fn test_action_event_with_history_id_round_trip() {
 fn test_action_recommend_weights_aggregates_and_excludes_paste() {
     let store = make_store();
     // sql-in 在 json 内容上被复制 2 次、粘贴 1 次 → 权重 3
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 11, OUTCOME_PASTED));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        11,
+        OUTCOME_PASTED,
+    ));
     // abandoned 不该加权
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 12, OUTCOME_ABANDONED));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        12,
+        OUTCOME_ABANDONED,
+    ));
     // 别的类型 / 别的动作
-    store.action_event_add(&action_event("ai-translate", "text", "Chrome", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event(
+        "ai-translate",
+        "text",
+        "Chrome",
+        10,
+        OUTCOME_COPIED,
+    ));
     // 粘贴哨兵必须被排除——否则"粘贴很多"会被当成"这个动作常用"
     store.action_event_add(&paste_event("h-1", "json"));
     store.action_event_add(&paste_event("h-2", "json"));
@@ -2183,20 +2372,24 @@ fn test_action_dismiss_add_is_idempotent() {
 
     let list = store.action_dismissals().unwrap();
     assert_eq!(list.len(), 3);
-    assert!(
-        list.iter()
-            .any(|d| d.action_id == "ai-translate" && d.content_type == "text")
-    );
-    assert!(
-        list.iter()
-            .any(|d| d.action_id == "ai-translate" && d.content_type.is_empty())
-    );
+    assert!(list
+        .iter()
+        .any(|d| d.action_id == "ai-translate" && d.content_type == "text"));
+    assert!(list
+        .iter()
+        .any(|d| d.action_id == "ai-translate" && d.content_type.is_empty()));
 }
 
 #[test]
 fn test_action_learnings_clear_clears_both() {
     let store = make_store();
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
     store.action_dismiss_add("ai-translate", "text");
 
     let n = store.action_event_clear().unwrap();
@@ -2219,7 +2412,10 @@ fn test_action_pin_add_is_idempotent() {
 
     let list = store.action_pins().unwrap();
     assert_eq!(list.len(), 2, "重复置顶不应该多出一条");
-    assert!(list.iter().all(|p| p.content_type.is_empty()), "本版只有全局置顶");
+    assert!(
+        list.iter().all(|p| p.content_type.is_empty()),
+        "本版只有全局置顶"
+    );
 }
 
 /// 置顶必须顺手清掉该动作的「不再推荐」，否则会出现
@@ -2235,7 +2431,10 @@ fn test_action_pin_add_clears_dismissals_of_same_action() {
 
     let left = store.action_dismissals().unwrap();
     assert_eq!(left.len(), 1, "只应删掉 sql-in 的全部 dismiss：{:?}", left);
-    assert_eq!(left[0].action_id, "ai-translate", "别的动作的 dismiss 不能被误删");
+    assert_eq!(
+        left[0].action_id, "ai-translate",
+        "别的动作的 dismiss 不能被误删"
+    );
 }
 
 /// 回归：`action_pin_remove` 用**精确匹配**，不能像 `action_dismiss_remove`
@@ -2261,7 +2460,13 @@ fn test_action_pin_remove_is_exact_not_wildcard() {
 #[test]
 fn test_learnings_clear_does_not_touch_pins() {
     let store = make_store();
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        10,
+        OUTCOME_COPIED,
+    ));
     store.action_dismiss_add("ai-translate", "text");
     store.action_pin_add("sql-in", "");
 
@@ -2450,7 +2655,12 @@ fn test_preserve_toggle_off_clears_valued() {
 fn test_搜索本身不算找回() {
     let store = make_store();
     store
-        .insert_history(&make_item("find-me", "unique-keyword-xyz", "2026-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "find-me",
+            "unique-keyword-xyz",
+            "2026-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let hit = |store: &DataStore| -> i64 {
         store
@@ -2480,7 +2690,13 @@ fn test_搜索本身不算找回() {
     assert_eq!(hit(&store), 0, "search_history 不该计数");
 
     // ② 列表带关键词（get_history）
-    assert_eq!(store.get_history("默认", "all", "unique", 0, 10).unwrap().len(), 1);
+    assert_eq!(
+        store
+            .get_history("默认", "all", "unique", 0, 10)
+            .unwrap()
+            .len(),
+        1
+    );
     assert_eq!(hit(&store), 0, "get_history 不该计数");
 
     // ③ 多跑几次也不该涨（旧口径下这里就已经是 3 了）
@@ -2526,12 +2742,36 @@ fn test_hour_bucket_and_source_cat() {
 fn test_action_scene_weights_aggregates() {
     let store = make_store();
     // 工作时间（10 点）在 VS Code 复制 json → sql-in
-    store.action_event_add(&action_event("sql-in", "json", "VS Code", 10, OUTCOME_COPIED));
-    store.action_event_add(&action_event("sql-in", "json", "VS Code", 11, OUTCOME_COPIED));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VS Code",
+        10,
+        OUTCOME_COPIED,
+    ));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VS Code",
+        11,
+        OUTCOME_COPIED,
+    ));
     // 晚间（21 点）在 Chrome 复制 text → ai-translate
-    store.action_event_add(&action_event("ai-translate", "text", "Chrome", 21, OUTCOME_COPIED));
+    store.action_event_add(&action_event(
+        "ai-translate",
+        "text",
+        "Chrome",
+        21,
+        OUTCOME_COPIED,
+    ));
     // 同一场景不同 app 合并（Edge 也归 browser）
-    store.action_event_add(&action_event("ai-translate", "text", "Edge", 22, OUTCOME_PASTED));
+    store.action_event_add(&action_event(
+        "ai-translate",
+        "text",
+        "Edge",
+        22,
+        OUTCOME_PASTED,
+    ));
     // paste 哨兵排除
     store.action_event_add(&paste_event("h-1", "json"));
 
@@ -2544,7 +2784,9 @@ fn test_action_scene_weights_aggregates() {
 
     let tr_browser = scenes
         .iter()
-        .find(|s| s.action_id == "ai-translate" && s.hour_bucket == "evening" && s.source_cat == "browser")
+        .find(|s| {
+            s.action_id == "ai-translate" && s.hour_bucket == "evening" && s.source_cat == "browser"
+        })
         .expect("Chrome+Edge 应合并为 browser");
     assert_eq!(tr_browser.count, 2);
 
@@ -2575,10 +2817,20 @@ fn test_to_ngram_chinese_mixed() {
 fn test_fts_search_chinese_hit() {
     let store = make_store();
     store
-        .insert_history(&make_item("f1", "上周复制的那个API文档地址", "2026-08-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "f1",
+            "上周复制的那个API文档地址",
+            "2026-08-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     store
-        .insert_history(&make_item("f2", "这是一条无关的英语内容 hello world", "2026-08-01 11:00:00", "text"))
+        .insert_history(&make_item(
+            "f2",
+            "这是一条无关的英语内容 hello world",
+            "2026-08-01 11:00:00",
+            "text",
+        ))
         .unwrap();
 
     // 中文关键词走 FTS5 bigram 命中
@@ -2631,7 +2883,12 @@ fn test_fts_search_chinese_hit() {
 fn test_fts_delete_removes_index() {
     let store = make_store();
     store
-        .insert_history(&make_item("f3", "要删除的临时内容", "2026-08-01 12:00:00", "text"))
+        .insert_history(&make_item(
+            "f3",
+            "要删除的临时内容",
+            "2026-08-01 12:00:00",
+            "text",
+        ))
         .unwrap();
     assert!(!store
         .search_history(&SearchQuery {
@@ -2648,26 +2905,34 @@ fn test_fts_delete_removes_index() {
         .is_empty());
 
     store.delete_history(&["f3".to_string()]).unwrap();
-    assert!(store
-        .search_history(&SearchQuery {
-            workspace: "默认",
-            search: "临时内容",
-            filter: "all",
-            time_filter: "",
-            source: "",
-            group_filter: "all",
-            tag_ids: &[],
-            limit: 10,
-        })
-        .unwrap()
-        .is_empty(), "删除后 FTS 索引应同步移除");
+    assert!(
+        store
+            .search_history(&SearchQuery {
+                workspace: "默认",
+                search: "临时内容",
+                filter: "all",
+                time_filter: "",
+                source: "",
+                group_filter: "all",
+                tag_ids: &[],
+                limit: 10,
+            })
+            .unwrap()
+            .is_empty(),
+        "删除后 FTS 索引应同步移除"
+    );
 }
 
 #[test]
 fn test_fts_fallback_like_on_special_chars() {
     let store = make_store();
     store
-        .insert_history(&make_item("f4", "含(括号)的内容片段", "2026-08-01 13:00:00", "text"))
+        .insert_history(&make_item(
+            "f4",
+            "含(括号)的内容片段",
+            "2026-08-01 13:00:00",
+            "text",
+        ))
         .unwrap();
 
     // 括号是 FTS5 MATCH 语法字符 → fts_safe=false → 回退 LIKE 仍能命中
@@ -2683,7 +2948,10 @@ fn test_fts_fallback_like_on_special_chars() {
             limit: 10,
         })
         .unwrap();
-    assert!(items.iter().any(|i| i.id == "f4"), "特殊字符查询应回退 LIKE 命中");
+    assert!(
+        items.iter().any(|i| i.id == "f4"),
+        "特殊字符查询应回退 LIKE 命中"
+    );
 }
 
 // ============================================================
@@ -2734,7 +3002,9 @@ fn test_chain_duplicate_name_rejected() {
     // 两条同名链在运行器里分不清，必须在保存时就拦住
     let store = make_store();
     store.chain_save(&chain_def("清洗", &["strip"])).unwrap();
-    let err = store.chain_save(&chain_def("清洗", &["upper"])).unwrap_err();
+    let err = store
+        .chain_save(&chain_def("清洗", &["upper"]))
+        .unwrap_err();
     assert!(err.contains("清洗"), "报错要点出是哪个名字：{}", err);
     assert!(!err.contains("UNIQUE"), "不该把 SQLite 的英文原文抛给用户");
 }
@@ -2743,7 +3013,10 @@ fn test_chain_duplicate_name_rejected() {
 fn test_chain_empty_or_oversized_steps_rejected() {
     let store = make_store();
     assert!(
-        store.chain_save(&chain_def("空链", &[])).unwrap_err().contains("至少"),
+        store
+            .chain_save(&chain_def("空链", &[]))
+            .unwrap_err()
+            .contains("至少"),
         "空步骤链必须被拦"
     );
     let many: Vec<&str> = vec!["strip"; MAX_CHAIN_STEPS + 1];
@@ -2781,7 +3054,10 @@ fn test_chain_corrupt_steps_flagged_not_silently_empty() {
 
     let list = store.chains().unwrap();
     assert_eq!(list.len(), 1);
-    assert!(list[0].steps.is_empty(), "解析不出步骤，确实拿不到可用的 steps");
+    assert!(
+        list[0].steps.is_empty(),
+        "解析不出步骤，确实拿不到可用的 steps"
+    );
     assert!(
         list[0].steps_corrupted,
         "必须把「已损坏」标出来，不能和「没步骤」长得一模一样"
@@ -2797,7 +3073,9 @@ fn test_chain_corrupt_steps_flagged_not_silently_empty() {
 #[test]
 fn test_chain_normal_steps_not_flagged_corrupted() {
     let store = make_store();
-    store.chain_save(&chain_def("正常链", &["strip", "upper"])).unwrap();
+    store
+        .chain_save(&chain_def("正常链", &["strip", "upper"]))
+        .unwrap();
     let list = store.chains().unwrap();
     assert_eq!(list[0].steps.len(), 2);
     assert!(!list[0].steps_corrupted);
@@ -2826,7 +3104,11 @@ fn test_chain_unique_violation_translated_to_chinese() {
         .unwrap_err()
     };
     let msg = super::chains::map_chain_save_err(err, "清洗");
-    assert!(!msg.contains("UNIQUE"), "不该把 SQLite 的英文原文抛给用户：{}", msg);
+    assert!(
+        !msg.contains("UNIQUE"),
+        "不该把 SQLite 的英文原文抛给用户：{}",
+        msg
+    );
     assert!(msg.contains("清洗"), "报错要点出是哪个名字：{}", msg);
 }
 
@@ -2841,7 +3123,11 @@ fn test_chain_non_unique_error_keeps_original_message() {
     };
     let msg = super::chains::map_chain_save_err(err, "无关名字");
     assert!(msg.contains("保存动作链失败"), "应走通用分支：{}", msg);
-    assert!(!msg.contains("换个名字"), "不能把不相关的错误说成重名：{}", msg);
+    assert!(
+        !msg.contains("换个名字"),
+        "不能把不相关的错误说成重名：{}",
+        msg
+    );
 }
 
 #[test]
@@ -2877,8 +3163,6 @@ fn test_chain_update_keeps_id_and_allows_same_name() {
     assert_eq!(store.chains().unwrap().len(), 1, "不该多出一条");
 }
 
-
-
 // ============================================================
 // M3 偏好学习：ai_feedback + action_prefs
 // ============================================================
@@ -2905,18 +3189,29 @@ fn test_ai_feedback_stats_aggregates_and_edit_rate() {
 
     let stats = store.ai_feedback_stats(30).unwrap();
     assert_eq!(stats.len(), 2);
-    let t = stats.iter().find(|s| s.action_id == "ai-translate").unwrap();
+    let t = stats
+        .iter()
+        .find(|s| s.action_id == "ai-translate")
+        .unwrap();
     assert_eq!(t.total, 4);
     assert_eq!(t.accepted, 2);
     assert_eq!(t.edited, 2);
-    assert!((t.edit_rate - 0.5).abs() < 1e-9, "edit_rate 应为 0.5：{}", t.edit_rate);
+    assert!(
+        (t.edit_rate - 0.5).abs() < 1e-9,
+        "edit_rate 应为 0.5：{}",
+        t.edit_rate
+    );
 }
 
 #[test]
 fn test_ai_feedback_ignores_unknown_outcome() {
     let store = make_store();
     store.ai_feedback_add(&fb("ai-translate", "weird"));
-    assert_eq!(store.ai_feedback_stats(30).unwrap().len(), 0, "非法 outcome 不入库");
+    assert_eq!(
+        store.ai_feedback_stats(30).unwrap().len(),
+        0,
+        "非法 outcome 不入库"
+    );
 }
 
 #[test]
@@ -2946,7 +3241,9 @@ fn test_action_pref_roundtrip_and_clear() {
     store.action_pref_set("ai-summarize", "B").unwrap();
     let all = store.action_prefs_all().unwrap();
     assert_eq!(all.len(), 2);
-    assert!(all.iter().any(|r| r.action_id == "ai-summarize" && r.preference == "B"));
+    assert!(all
+        .iter()
+        .any(|r| r.action_id == "ai-summarize" && r.preference == "B"));
 }
 
 // ============================================================
@@ -2985,7 +3282,10 @@ fn test_pref_signal_needs_min_count() {
     assert!(store.pref_signal_top("ai-translate").unwrap().is_none());
 
     store.pref_signal_add("ai-translate", &f);
-    let top = store.pref_signal_top("ai-translate").unwrap().expect("达阈后应该有建议");
+    let top = store
+        .pref_signal_top("ai-translate")
+        .unwrap()
+        .expect("达阈后应该有建议");
     assert_eq!(top.feature, "shorter");
     assert_eq!(top.count, crate::data_store::PREF_SIGNAL_MIN_COUNT);
 }
@@ -3033,7 +3333,9 @@ fn test_pref_signal_done_stops_suggesting() {
 #[test]
 fn test_pref_signal_done_rejects_invalid() {
     let store = make_store();
-    assert!(store.pref_signal_done("ai-translate", "不存在的特征").is_err());
+    assert!(store
+        .pref_signal_done("ai-translate", "不存在的特征")
+        .is_err());
     assert!(store.pref_signal_done("", "shorter").is_err());
 }
 
@@ -3087,7 +3389,9 @@ fn test_pref_signal_purge_keeps_done_marks() {
 #[test]
 fn test_summarize_text_extracts_domain_email_body() {
     use crate::data_store::summarize_text;
-    let s = summarize_text("参考 https://www.github.com/a/b 和 http://docs.rs/rmcp，联系 alice@example.com");
+    let s = summarize_text(
+        "参考 https://www.github.com/a/b 和 http://docs.rs/rmcp，联系 alice@example.com",
+    );
     assert!(s.contains("github.com"), "去 www 的域名：{}", s);
     assert!(s.contains("docs.rs"));
     assert!(s.contains("alice@example.com"));
@@ -3114,14 +3418,21 @@ fn test_summarize_text_empty() {
 fn test_history_summary_ensure_and_read() {
     let store = make_store();
     store
-        .insert_history(&make_item("m1", "文档 https://docs.rs/rmcp 的用法", "2026-08-10 10:00:00", "text"))
+        .insert_history(&make_item(
+            "m1",
+            "文档 https://docs.rs/rmcp 的用法",
+            "2026-08-10 10:00:00",
+            "text",
+        ))
         .unwrap();
     // insert_history 内已同步生成摘要（M5-1 接入）
     let s = store.history_summary("m1").unwrap();
     assert!(s.contains("docs.rs"), "插入时生成的摘要应含域名：{}", s);
 
     // 幂等：再 ensure 一次不报错
-    store.history_summary_ensure("m1", "新文本 https://x.com").unwrap();
+    store
+        .history_summary_ensure("m1", "新文本 https://x.com")
+        .unwrap();
     let s2 = store.history_summary("m1").unwrap();
     assert!(s2.contains("x.com"), "ensure 应更新摘要：{}", s2);
 }
@@ -3131,9 +3442,18 @@ fn test_history_summary_skips_secret() {
     let store = make_store();
     // 密钥内容不生成摘要（指纹也不留）
     store
-        .insert_history(&make_item("sec1", concat!("sk-", "abcdef1234567890abcdef1234567890"), "2026-08-10 10:00:00", "text"))
+        .insert_history(&make_item(
+            "sec1",
+            concat!("sk-", "abcdef1234567890abcdef1234567890"),
+            "2026-08-10 10:00:00",
+            "text",
+        ))
         .unwrap();
-    assert_eq!(store.history_summary("sec1").unwrap(), "", "敏感内容不记摘要");
+    assert_eq!(
+        store.history_summary("sec1").unwrap(),
+        "",
+        "敏感内容不记摘要"
+    );
 }
 
 #[test]
@@ -3141,7 +3461,12 @@ fn test_history_summaries_backfill_and_clear() {
     let store = make_store();
     // 直接插入（模拟存量历史，无摘要）
     store
-        .insert_history(&make_item("b1", "https://example.com/page", "2026-08-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "b1",
+            "https://example.com/page",
+            "2026-08-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     // 手动删掉摘要模拟"存量未回填"（insert 已自动生成，这里清掉再回填验证）
     store.history_summaries_clear().unwrap();
@@ -3153,9 +3478,17 @@ fn test_history_summaries_backfill_and_clear() {
     // 清空
     let c = store.history_summaries_clear().unwrap();
     assert_eq!(c, 1);
-    assert_eq!(store.history_summaries_count().unwrap(), 0, "清空后计数为 0");
+    assert_eq!(
+        store.history_summaries_count().unwrap(),
+        0,
+        "清空后计数为 0"
+    );
     // 清空后不自动补存量
-    assert_eq!(store.history_summaries_backfill(100).unwrap(), 0, "清空后不补存量");
+    assert_eq!(
+        store.history_summaries_backfill(100).unwrap(),
+        0,
+        "清空后不补存量"
+    );
 }
 
 // ============================================================
@@ -3197,10 +3530,20 @@ fn test_semantic_vector_set_count_pending_search() {
     let store = make_store();
     // 两条历史，insert 时生成摘要
     store
-        .insert_history(&make_item("s1", "参考 https://docs.rs/rmcp 的用法", "2026-08-10 10:00:00", "text"))
+        .insert_history(&make_item(
+            "s1",
+            "参考 https://docs.rs/rmcp 的用法",
+            "2026-08-10 10:00:00",
+            "text",
+        ))
         .unwrap();
     store
-        .insert_history(&make_item("s2", "买菜的清单：西红柿 鸡蛋 牛奶", "2026-08-10 10:05:00", "text"))
+        .insert_history(&make_item(
+            "s2",
+            "买菜的清单：西红柿 鸡蛋 牛奶",
+            "2026-08-10 10:05:00",
+            "text",
+        ))
         .unwrap();
 
     // pending = 有摘要无向量的（2 条）
@@ -3220,7 +3563,9 @@ fn test_semantic_vector_set_count_pending_search() {
     store
         .semantic_vector_set("s2", "test-model", &vec![0.9f32, 0.1, 0.0])
         .unwrap();
-    let hits = store.semantic_search_vectors(&vec![0.99f32, 0.01, 0.0], 5).unwrap();
+    let hits = store
+        .semantic_search_vectors(&vec![0.99f32, 0.01, 0.0], 5)
+        .unwrap();
     assert_eq!(hits.len(), 2);
     assert_eq!(hits[0].0, "s1", "s1 应与查询向量更接近");
     assert!(hits[0].1 > hits[1].1, "分数应降序");
@@ -3232,7 +3577,12 @@ fn test_semantic_vector_set_count_pending_search() {
 fn test_semantic_clear_follows_summaries_clear() {
     let store = make_store();
     store
-        .insert_history(&make_item("c1", "https://example.com/page", "2026-08-10 10:00:00", "text"))
+        .insert_history(&make_item(
+            "c1",
+            "https://example.com/page",
+            "2026-08-10 10:00:00",
+            "text",
+        ))
         .unwrap();
     store
         .semantic_vector_set("c1", "test-model", &vec![1.0f32, 0.0])
@@ -3279,8 +3629,14 @@ fn test_profile_raw_stats_aggregates() {
 
     let raw = store.profile_raw_stats(30).unwrap();
     assert_eq!(raw.total_events, 2);
-    assert!(raw.action_counts.iter().any(|(a, c)| a == "ai-explain-code" && *c == 1));
-    assert!(raw.content_type_counts.iter().any(|(ct, c)| ct == "code" && *c == 1));
+    assert!(raw
+        .action_counts
+        .iter()
+        .any(|(a, c)| a == "ai-explain-code" && *c == 1));
+    assert!(raw
+        .content_type_counts
+        .iter()
+        .any(|(ct, c)| ct == "code" && *c == 1));
     // 时段：10 点 → hour_counts 有 (10, 2)
     assert!(raw.hour_counts.iter().any(|(h, c)| *h == 10 && *c == 2));
 }
@@ -3341,7 +3697,8 @@ fn test_sequence_mining_finds_repeated_pattern() {
 
     let pats = store.sequence_mining(30, 3, 4).unwrap();
     assert!(
-        pats.iter().any(|p| p.actions == ["ai-explain-code", "ai-extract-points"]),
+        pats.iter()
+            .any(|p| p.actions == ["ai-explain-code", "ai-extract-points"]),
         "应挖出 解释代码→提取要点：{:?}",
         pats.iter().map(|p| &p.actions).collect::<Vec<_>>()
     );
@@ -3449,8 +3806,18 @@ fn test_sequence_transitions_counts_pairs() {
     let day = day_ago(1);
     // 四次「解释代码 → 提取要点」，每对隔一小时（对内 30 秒，没跨会话）
     for h in 10..14 {
-        insert_action_event_at(&store, &format!("{} {:02}:00:00", day, h), "ai-explain-code", h);
-        insert_action_event_at(&store, &format!("{} {:02}:00:30", day, h), "ai-extract-points", h);
+        insert_action_event_at(
+            &store,
+            &format!("{} {:02}:00:00", day, h),
+            "ai-explain-code",
+            h,
+        );
+        insert_action_event_at(
+            &store,
+            &format!("{} {:02}:00:30", day, h),
+            "ai-extract-points",
+            h,
+        );
     }
 
     let ts = store.sequence_transitions(30, 3).unwrap();
@@ -3479,8 +3846,18 @@ fn test_sequence_transitions_rejects_cross_day_pair() {
     for i in 0..4 {
         let evening = day_ago(8 - i);
         let morning = day_ago(7 - i);
-        insert_action_event_at(&store, &format!("{} 18:00:00", evening), "ai-weekly-report", 18);
-        insert_action_event_at(&store, &format!("{} 09:00:00", morning), "ai-explain-code", 9);
+        insert_action_event_at(
+            &store,
+            &format!("{} 18:00:00", evening),
+            "ai-weekly-report",
+            18,
+        );
+        insert_action_event_at(
+            &store,
+            &format!("{} 09:00:00", morning),
+            "ai-explain-code",
+            9,
+        );
     }
     // 防空跑：事件必须真的在 30 天窗口内，否则下面的 is_empty() 什么也没验到
     assert_eq!(store.action_event_stats(30).total, 8);
@@ -3497,12 +3874,27 @@ fn test_sequence_transitions_threshold_and_self_loop() {
     let day = day_ago(1);
     // A→B 只出现 2 次（< 3）
     for h in 10..12 {
-        insert_action_event_at(&store, &format!("{} {:02}:00:00", day, h), "ai-summarize", h);
-        insert_action_event_at(&store, &format!("{} {:02}:00:30", day, h), "ai-reply-draft", h);
+        insert_action_event_at(
+            &store,
+            &format!("{} {:02}:00:00", day, h),
+            "ai-summarize",
+            h,
+        );
+        insert_action_event_at(
+            &store,
+            &format!("{} {:02}:00:30", day, h),
+            "ai-reply-draft",
+            h,
+        );
     }
     // 同一动作连点 6 次（相邻自转移 5 次，足够过阈值，但不应计入）
     for i in 0..6 {
-        insert_action_event_at(&store, &format!("{} 15:00:{:02}", day, i * 5), "ai-translate", 15);
+        insert_action_event_at(
+            &store,
+            &format!("{} 15:00:{:02}", day, i * 5),
+            "ai-translate",
+            15,
+        );
     }
 
     let ts = store.sequence_transitions(30, 3).unwrap();
@@ -3531,8 +3923,18 @@ fn test_sequence_mining_rejects_cross_day_pair() {
     for i in 0..4 {
         let evening = day_ago(8 - i);
         let morning = day_ago(7 - i);
-        insert_action_event_at(&store, &format!("{} 18:00:00", evening), "ai-weekly-report", 18);
-        insert_action_event_at(&store, &format!("{} 09:00:00", morning), "ai-explain-code", 9);
+        insert_action_event_at(
+            &store,
+            &format!("{} 18:00:00", evening),
+            "ai-weekly-report",
+            18,
+        );
+        insert_action_event_at(
+            &store,
+            &format!("{} 09:00:00", morning),
+            "ai-explain-code",
+            9,
+        );
     }
 
     // 防此条测试“空跑”：若事件根本没插进去 / 掉到统计窗口外，
@@ -3548,7 +3950,9 @@ fn test_sequence_mining_rejects_cross_day_pair() {
         pats.is_empty(),
         "跨天的“伪相邻”不能成为序列（修之前这里会挖出 [周报, 解释代码] × 4），\
          实际挖出：{:?}",
-        pats.iter().map(|p| (&p.actions, p.count)).collect::<Vec<_>>()
+        pats.iter()
+            .map(|p| (&p.actions, p.count))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -3561,8 +3965,18 @@ fn test_sequence_mining_accepts_same_minute_pair() {
     let store = make_store();
     let day = day_ago(1);
     for h in 10..14 {
-        insert_action_event_at(&store, &format!("{} {:02}:00:00", day, h), "ai-explain-code", h);
-        insert_action_event_at(&store, &format!("{} {:02}:00:30", day, h), "ai-extract-points", h);
+        insert_action_event_at(
+            &store,
+            &format!("{} {:02}:00:00", day, h),
+            "ai-explain-code",
+            h,
+        );
+        insert_action_event_at(
+            &store,
+            &format!("{} {:02}:00:30", day, h),
+            "ai-extract-points",
+            h,
+        );
     }
 
     let pats = store.sequence_mining(30, 3, 4).unwrap();
@@ -3576,13 +3990,18 @@ fn test_sequence_mining_accepts_same_minute_pair() {
             )
         });
     assert_eq!(p.count, 4);
-    assert!(!p.last_used.is_empty(), "last_used 要指到真存在的那次连续操作");
+    assert!(
+        !p.last_used.is_empty(),
+        "last_used 要指到真存在的那次连续操作"
+    );
     assert!(
         !pats
             .iter()
             .any(|p| p.actions == ["ai-extract-points", "ai-explain-code"]),
         "隔了 1 小时的跨对拼接不能算模式：{:?}",
-        pats.iter().map(|p| (&p.actions, p.count)).collect::<Vec<_>>()
+        pats.iter()
+            .map(|p| (&p.actions, p.count))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -3593,11 +4012,29 @@ fn test_sequence_mining_accepts_same_minute_pair() {
 #[test]
 fn test_profile_raw_stats_excludes_abandoned() {
     let store = make_store();
-    store.action_event_add(&action_event("ai-polish", "text", "Word", 10, OUTCOME_COPIED));
-    store.action_event_add(&action_event("ai-polish", "text", "Word", 10, OUTCOME_PASTED));
+    store.action_event_add(&action_event(
+        "ai-polish",
+        "text",
+        "Word",
+        10,
+        OUTCOME_COPIED,
+    ));
+    store.action_event_add(&action_event(
+        "ai-polish",
+        "text",
+        "Word",
+        10,
+        OUTCOME_PASTED,
+    ));
     // 同一个动作反复尝试又放弃 3 次
     for _ in 0..3 {
-        store.action_event_add(&action_event("ai-polish", "text", "Word", 10, OUTCOME_ABANDONED));
+        store.action_event_add(&action_event(
+            "ai-polish",
+            "text",
+            "Word",
+            10,
+            OUTCOME_ABANDONED,
+        ));
     }
 
     let raw = store.profile_raw_stats(30).unwrap();
@@ -3628,9 +4065,27 @@ fn test_profile_raw_stats_excludes_abandoned() {
 #[test]
 fn test_profile_raw_stats_hour_counts_match_total_events() {
     let store = make_store();
-    store.action_event_add(&action_event("ai-polish", "text", "Word", 9, OUTCOME_COPIED));
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 14, OUTCOME_PASTED));
-    store.action_event_add(&action_event("sql-in", "json", "VSCode", 14, OUTCOME_ABANDONED));
+    store.action_event_add(&action_event(
+        "ai-polish",
+        "text",
+        "Word",
+        9,
+        OUTCOME_COPIED,
+    ));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        14,
+        OUTCOME_PASTED,
+    ));
+    store.action_event_add(&action_event(
+        "sql-in",
+        "json",
+        "VSCode",
+        14,
+        OUTCOME_ABANDONED,
+    ));
     store.action_event_add(&paste_event("h-1", "text"));
 
     let raw = store.profile_raw_stats(30).unwrap();
@@ -3697,7 +4152,9 @@ fn test_sticky_empty() {
     assert_eq!(s.history_count, 0);
     assert!(s.first_history_at.is_none());
     assert_eq!(s.custom_chain_count, 0);
-    assert!(!s.ai_used && !s.tool_used && !s.triage_used && !s.profile_exported && !s.profile_refined);
+    assert!(
+        !s.ai_used && !s.tool_used && !s.triage_used && !s.profile_exported && !s.profile_refined
+    );
 }
 
 #[test]
@@ -3761,9 +4218,18 @@ fn test_sticky_achievements_and_milestones() {
     let s = store.sticky_stats();
     assert!(s.ai_used, "ai_translate 在 ai_usage_log → ai_used");
     assert!(s.tool_used, "ai-sql-generate 在 ai_usage_log → tool_used");
-    assert!(s.triage_used, "error-triage/chain 在 action_events → triage_used");
-    assert!(s.profile_exported, "profile-export 在 action_events → exported");
-    assert!(s.profile_refined, "profile-refine 在 ai_usage_log → refined");
+    assert!(
+        s.triage_used,
+        "error-triage/chain 在 action_events → triage_used"
+    );
+    assert!(
+        s.profile_exported,
+        "profile-export 在 action_events → exported"
+    );
+    assert!(
+        s.profile_refined,
+        "profile-refine 在 ai_usage_log → refined"
+    );
     assert_eq!(s.custom_chain_count, 2);
     assert_eq!(s.history_count, 3);
     assert_eq!(s.first_history_at.as_deref(), Some("2026-01-05 09:00:00"));
@@ -3850,10 +4316,13 @@ fn test_quota_sign_rewards_streak() {
 fn test_quota_sign_capped_at_1m() {
     let store = make_store();
     store.quota_get().unwrap(); // 先触发账本初始化，UPDATE 才会命中行
-    // 把签到累计推到接近上限：90 万 - 2 万 = 88 万
+                                // 把签到累计推到接近上限：90 万 - 2 万 = 88 万
     let conn = store.lock_conn();
-    conn.execute("UPDATE ai_quota SET sign_added=?1, granted=?2 WHERE id=1",
-        params![880_000i64, 980_000i64]).unwrap();
+    conn.execute(
+        "UPDATE ai_quota SET sign_added=?1, granted=?2 WHERE id=1",
+        params![880_000i64, 980_000i64],
+    )
+    .unwrap();
     drop(conn);
     // 再签到：应得 2 万但只剩 2 万空间 → 实际 2 万（此时满 90 万 = 100 万总）
     let r = store.quota_sign().unwrap();
@@ -3896,7 +4365,8 @@ fn test_quota_redeem_invalid_or_expired() {
     let bad = "P1-ABCD10000020300101-deadbeef";
     assert!(!store.quota_redeem(bad).unwrap().ok);
     // 过期码
-    let expired = crate::data_store::quota::generate_redeem_code("GRP1", 10_000, "20200101", &secret);
+    let expired =
+        crate::data_store::quota::generate_redeem_code("GRP1", 10_000, "20200101", &secret);
     assert!(!store.quota_redeem(&expired).unwrap().ok);
     // 面额为 0 的码
     let zero = crate::data_store::quota::generate_redeem_code("GRP1", 0, "20300101", &secret);
@@ -3918,15 +4388,19 @@ fn test_quota_spend_and_daily_cap() {
     // 余额不足
     {
         let conn = store.lock_conn();
-        conn.execute("UPDATE ai_quota SET granted=500 WHERE id=1", []).unwrap();
+        conn.execute("UPDATE ai_quota SET granted=500 WHERE id=1", [])
+            .unwrap();
     }
     assert!(store.quota_spend(501).is_err());
     assert!(store.quota_spend(500).is_ok());
     // 每日上限
     {
         let conn = store.lock_conn();
-        conn.execute("UPDATE ai_quota SET granted=100000000, today_spent=?1 WHERE id=1",
-            params![99_999i64]).unwrap();
+        conn.execute(
+            "UPDATE ai_quota SET granted=100000000, today_spent=?1 WHERE id=1",
+            params![99_999i64],
+        )
+        .unwrap();
     }
     assert!(store.quota_spend(2).is_err(), "超过每日 10 万上限");
 }
@@ -3981,10 +4455,10 @@ fn test_redeem_seq_uniqueness() {
 
 #[test]
 fn test_quota_check_states() {
-    use crate::data_store::quota::{DAILY_SPEND_CAP, QuotaBlock};
+    use crate::data_store::quota::{QuotaBlock, DAILY_SPEND_CAP};
     let store = make_store();
     store.quota_get().unwrap(); // 触发初始化
-    // 初始：可调用
+                                // 初始：可调用
     assert_eq!(store.quota_check(), Ok(()));
     // 每日上限：今日已用 = cap → DailyCap
     {
@@ -4000,14 +4474,18 @@ fn test_quota_check_states() {
     // 余额 0 → Exhausted
     {
         let conn = store.lock_conn();
-        conn.execute("UPDATE ai_quota SET granted=0, today_spent=0 WHERE id=1", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE ai_quota SET granted=0, today_spent=0 WHERE id=1",
+            [],
+        )
+        .unwrap();
     }
     assert_eq!(store.quota_check(), Err(QuotaBlock::Exhausted));
     // 恢复后可调用
     {
         let conn = store.lock_conn();
-        conn.execute("UPDATE ai_quota SET granted=1000 WHERE id=1", []).unwrap();
+        conn.execute("UPDATE ai_quota SET granted=1000 WHERE id=1", [])
+            .unwrap();
     }
     assert_eq!(store.quota_check(), Ok(()));
 }
@@ -4041,7 +4519,8 @@ fn test_profile_raw_stats_window_truncation() {
         "INSERT INTO action_events (created_at, action_id, content_type, source_app, hour, outcome)
          VALUES (?1, 'ai-summarize', 'text', '', 10, 'copied')",
         params![ts],
-    ).unwrap();
+    )
+    .unwrap();
     drop(conn);
     let w30 = store.profile_raw_stats(30).unwrap();
     assert_eq!(w30.total_events, 1);
@@ -4103,7 +4582,10 @@ fn test_ocr_text_set_get_and_upsert() {
 
     // 空串 → 识别过但无文字（同样命中，防止反复重试）
     store.set_ocr_text("C:\\img\\b.png", "").unwrap();
-    assert_eq!(store.get_ocr_text("C:\\img\\b.png").unwrap(), Some(String::new()));
+    assert_eq!(
+        store.get_ocr_text("C:\\img\\b.png").unwrap(),
+        Some(String::new())
+    );
 
     // 覆盖写 → upsert 生效（不产生第二行）
     store.set_ocr_text("C:\\img\\a.png", "updated").unwrap();
@@ -4150,12 +4632,17 @@ fn test_history_query_backfills_ocr_text() {
     );
 
     // 识别入库后：get_history 回填 ocr_text（含空串）
-    store.set_ocr_text("C:\\img\\shot.png", "识别出的文字").unwrap();
+    store
+        .set_ocr_text("C:\\img\\shot.png", "识别出的文字")
+        .unwrap();
     let after = store.get_history("默认", "all", "", 0, 100).unwrap();
     let hit = after.iter().find(|i| i.id == "img-1").unwrap();
     assert_eq!(hit.ocr_text.as_deref(), Some("识别出的文字"));
     // 文本条目不受影响
-    assert_eq!(after.iter().find(|i| i.id == "txt-1").unwrap().ocr_text, None);
+    assert_eq!(
+        after.iter().find(|i| i.id == "txt-1").unwrap().ocr_text,
+        None
+    );
 }
 
 #[test]
@@ -4164,19 +4651,23 @@ fn test_search_history_backfills_ocr_text() {
     let mut img = make_item("img-1", "[图片] 100x100", "2024-01-01 10:00:00", "image");
     img.content = "C:\\img\\shot.png".to_string();
     store.insert_history(&img).unwrap();
-    store.set_ocr_text("C:\\img\\shot.png", "报销单 2024-07").unwrap();
+    store
+        .set_ocr_text("C:\\img\\shot.png", "报销单 2024-07")
+        .unwrap();
 
     // 搜索命中（content LIKE 命中文件名）
-    let items = store.search_history(&SearchQuery {
-        workspace: "默认",
-        search: "shot",
-        filter: "all",
-        time_filter: "",
-        source: "",
-        group_filter: "",
-        tag_ids: &[],
-        limit: 100,
-    }).unwrap();
+    let items = store
+        .search_history(&SearchQuery {
+            workspace: "默认",
+            search: "shot",
+            filter: "all",
+            time_filter: "",
+            source: "",
+            group_filter: "",
+            tag_ids: &[],
+            limit: 100,
+        })
+        .unwrap();
     let hit = items.iter().find(|i| i.id == "img-1").unwrap();
     assert_eq!(hit.ocr_text.as_deref(), Some("报销单 2024-07"));
 }
@@ -4223,7 +4714,9 @@ fn test_ocr_reindex_replaces_old_text() {
     img.content = "C:\\img\\a.png".to_string();
     store.insert_history(&img).unwrap();
 
-    store.set_ocr_text(&img.content, "错误识别的旧文字").unwrap();
+    store
+        .set_ocr_text(&img.content, "错误识别的旧文字")
+        .unwrap();
     store.set_ocr_text(&img.content, "更正后的新文字").unwrap();
 
     let new_hits = store
@@ -4259,7 +4752,12 @@ fn test_ocr_reindex_replaces_old_text() {
 #[test]
 fn test_file_path_still_searchable_for_non_image() {
     let store = make_store();
-    let mut f = make_item("file-1", "receivablebill_his.xml", "2024-01-01 10:00:00", "file");
+    let mut f = make_item(
+        "file-1",
+        "receivablebill_his.xml",
+        "2024-01-01 10:00:00",
+        "file",
+    );
     f.content = "D:\\work\\receivablebill_his.xml".to_string();
     store.insert_history(&f).unwrap();
 
@@ -4355,7 +4853,12 @@ fn fts_match_count(store: &DataStore, kw: &str) -> i64 {
 fn test_fts_index_receives_new_items() {
     let store = make_store();
     store
-        .insert_history(&make_item("n1", "季度营收报表", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "n1",
+            "季度营收报表",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
 
     // 新条目必须进索引。此前 sync_fts_upsert 用的是 UPSERT，而 FTS5 虚拟表不支持
@@ -4368,7 +4871,12 @@ fn test_fts_index_receives_new_items() {
 fn test_fts_index_cleared_on_delete() {
     let store = make_store();
     store
-        .insert_history(&make_item("d1", "待删除的机密备注", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "d1",
+            "待删除的机密备注",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     assert_eq!(fts_match_count(&store, "机密备注"), 1, "前置：先得进索引");
 
@@ -4384,13 +4892,22 @@ fn test_fts_index_cleared_on_delete() {
 fn test_fts_index_replaces_old_text_on_update() {
     let store = make_store();
     store
-        .insert_history(&make_item("u1", "原始内容甲", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "u1",
+            "原始内容甲",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     store.update_history("u1", "改写后内容乙").unwrap();
 
     // 改写后旧文本不该还能被搜到（UPSERT 失败的年代这里两条都是 0，测不出问题；
     // 改成 DELETE + INSERT 后才真正有「替换」语义）
-    assert_eq!(fts_match_count(&store, "原始内容"), 0, "旧文本必须从索引里消失");
+    assert_eq!(
+        fts_match_count(&store, "原始内容"),
+        0,
+        "旧文本必须从索引里消失"
+    );
     assert_eq!(fts_match_count(&store, "改写后内容"), 1, "新文本必须进索引");
 }
 
@@ -4405,7 +4922,12 @@ fn test_fts_external_content_table_is_rebuilt_on_open() {
     {
         let store = DataStore::new(&db_path).unwrap();
         store
-            .insert_history(&make_item("m1", "旧库里的季度报表", "2024-01-01 10:00:00", "text"))
+            .insert_history(&make_item(
+                "m1",
+                "旧库里的季度报表",
+                "2024-01-01 10:00:00",
+                "text",
+            ))
             .unwrap();
         let conn = store.lock_conn();
         conn.execute_batch(
@@ -4418,12 +4940,19 @@ fn test_fts_external_content_table_is_rebuilt_on_open() {
         // 外部内容表上同一 rowid 可以反复 INSERT 且**不报错**（常规表会 constraint failed），
         // 所以旧库里同一条内容会有 N 份 token，N = 启动次数。
         let rowid: i64 = conn
-            .query_row("SELECT rowid FROM history WHERE id = 'm1'", [], |r| r.get(0))
+            .query_row("SELECT rowid FROM history WHERE id = 'm1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         for _ in 0..3 {
             conn.execute(
                 "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![rowid, crate::data_store::history::to_ngram("旧库里的季度报表"), "", ""],
+                rusqlite::params![
+                    rowid,
+                    crate::data_store::history::to_ngram("旧库里的季度报表"),
+                    "",
+                    ""
+                ],
             )
             .unwrap();
         }
@@ -4451,15 +4980,23 @@ fn test_fts_external_content_table_is_rebuilt_on_open() {
 fn test_fts_syncs_rows_with_null_pinyin() {
     let store = make_store();
     store
-        .insert_history(&make_item("p1", "拼音列为空的内容", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "p1",
+            "拼音列为空的内容",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     {
         let conn = store.lock_conn();
         // 真实库里 1214 条有 195 条 pinyin_initials 是 NULL。旧实现用
         // r.get::<_, String> 读它 → 取值报错 → 整条同步失败、只留一行 warn，
         // 于是这 16% 的内容从来没进过索引。
-        conn.execute("UPDATE history SET pinyin_initials = NULL WHERE id = 'p1'", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE history SET pinyin_initials = NULL WHERE id = 'p1'",
+            [],
+        )
+        .unwrap();
         // 必须先清索引：insert_history 已经用非 NULL 的拼音同步过一次了，
         // 不清的话那条旧记录还在，即使这次同步失败断言也照样通过（测不出问题）。
         conn.execute_batch("DELETE FROM history_fts;").unwrap();
@@ -4472,12 +5009,20 @@ fn test_fts_syncs_rows_with_null_pinyin() {
 fn test_fts_backfill_covers_null_pinyin_rows() {
     let store = make_store();
     store
-        .insert_history(&make_item("b1", "回填也要认空拼音", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "b1",
+            "回填也要认空拼音",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     let n = {
         let conn = store.lock_conn();
-        conn.execute("UPDATE history SET pinyin_initials = NULL WHERE id = 'b1'", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE history SET pinyin_initials = NULL WHERE id = 'b1'",
+            [],
+        )
+        .unwrap();
         conn.execute_batch("DELETE FROM history_fts;").unwrap();
         DataStore::backfill_history_fts_on(&conn).unwrap()
     };
@@ -4492,14 +5037,23 @@ fn test_fts_delete_clears_backfilled_rows() {
     // 没改坏同步，只有这条会红。（bug 2 当初就发生在「回填进得去、删除删不掉」这个组合上。）
     let store = make_store();
     store
-        .insert_history(&make_item("k1", "经回填进索引的内容", "2024-01-01 10:00:00", "text"))
+        .insert_history(&make_item(
+            "k1",
+            "经回填进索引的内容",
+            "2024-01-01 10:00:00",
+            "text",
+        ))
         .unwrap();
     {
         let conn = store.lock_conn();
         conn.execute_batch("DELETE FROM history_fts;").unwrap();
         DataStore::backfill_history_fts_on(&conn).unwrap();
     }
-    assert_eq!(fts_match_count(&store, "经回填进"), 1, "前置：回填要能进索引");
+    assert_eq!(
+        fts_match_count(&store, "经回填进"),
+        1,
+        "前置：回填要能进索引"
+    );
 
     store.delete_history(&["k1".to_string()]).unwrap();
     assert_eq!(fts_match_count(&store, "经回填进"), 0);
@@ -4517,7 +5071,12 @@ fn test_fts_empty_index_is_refilled_on_next_open() {
     {
         let store = DataStore::new(&db_path).unwrap();
         store
-            .insert_history(&make_item("h1", "中断后要能自愈", "2024-01-01 10:00:00", "text"))
+            .insert_history(&make_item(
+                "h1",
+                "中断后要能自愈",
+                "2024-01-01 10:00:00",
+                "text",
+            ))
             .unwrap();
         // 模拟「DROP/CREATE 完成但回填没跑完就退出」后的状态：表在、索引空
         let conn = store.lock_conn();
@@ -4547,7 +5106,12 @@ fn test_fts_rebuild_leaves_migration_record() {
     {
         let store = DataStore::new(&db_path).unwrap();
         store
-            .insert_history(&make_item("r1", "留痕测试内容", "2024-01-01 10:00:00", "text"))
+            .insert_history(&make_item(
+                "r1",
+                "留痕测试内容",
+                "2024-01-01 10:00:00",
+                "text",
+            ))
             .unwrap();
         let conn = store.lock_conn();
         conn.execute_batch(
@@ -4570,7 +5134,11 @@ fn test_fts_rebuild_leaves_migration_record() {
         .expect("重建后必须留下一条 history_fts_rebuild 记录");
     assert_eq!(name, "history_fts_rebuild");
     // detail 要能回答「回填了多少行」，否则记录了也诊断不了
-    assert!(detail.contains("rows=1"), "detail 应含回填行数，实际: {}", detail);
+    assert!(
+        detail.contains("rows=1"),
+        "detail 应含回填行数，实际: {}",
+        detail
+    );
 
     drop(conn);
     drop(store);
@@ -4592,15 +5160,24 @@ fn test_note_crud_roundtrip() {
     // 新建时 created_at 与 updated_at 必须相同（同一个 ?5 绑两次）
     assert_eq!(n.created_at, n.updated_at);
 
-    let got = store.note_get(&n.id).unwrap().expect("刚建的笔记应该取得到");
+    let got = store
+        .note_get(&n.id)
+        .unwrap()
+        .expect("刚建的笔记应该取得到");
     assert_eq!(got.title, "会议记录");
     assert_eq!(got.history_id.as_deref(), Some("h1"));
-    assert_eq!(got.source_agent, "", "手动笔记的 source_agent 是空串（D13）");
+    assert_eq!(
+        got.source_agent, "",
+        "手动笔记的 source_agent 是空串（D13）"
+    );
 
     store.note_update(&n.id, "会议记录 v2", "改了正文").unwrap();
     let got = store.note_get(&n.id).unwrap().unwrap();
     assert_eq!(got.title, "会议记录 v2");
-    assert_eq!(got.created_at, n.created_at, "created_at 不该被 update 改动");
+    assert_eq!(
+        got.created_at, n.created_at,
+        "created_at 不该被 update 改动"
+    );
 
     store.note_delete(&n.id).unwrap();
     assert!(store.note_get(&n.id).unwrap().is_none());
@@ -4614,7 +5191,14 @@ fn test_soft_deleted_note_is_gone_from_every_entry_point() {
     // 新增笔记查询时，**这里也要添一行**（规则 #11.1）。
     let store = make_store();
     let f = store.folder_create("工作", None).unwrap();
-    seed_candidate(&store, "h-del", "反复找回的内容", "2026-08-01 10:00:00", 5, false);
+    seed_candidate(
+        &store,
+        "h-del",
+        "反复找回的内容",
+        "2026-08-01 10:00:00",
+        5,
+        false,
+    );
     let n = store
         .note_create(Some("h-del"), "会议记录", "灰度发布的注意事项")
         .unwrap();
@@ -4632,18 +5216,30 @@ fn test_soft_deleted_note_is_gone_from_every_entry_point() {
     // ① 单条读
     assert!(store.note_get(&n.id).unwrap().is_none(), "note_get");
     // ② 列表 / 计数 / 组头（都走 note_view_from_where）
-    assert!(store.note_list("all", &[], 50, 0).unwrap().is_empty(), "note_list all");
+    assert!(
+        store.note_list("all", &[], 50, 0).unwrap().is_empty(),
+        "note_list all"
+    );
     assert!(
         store.note_list(&f.id, &[], 50, 0).unwrap().is_empty(),
         "note_list 按文件夹"
     );
     assert!(
-        store.note_list_view("all", &[], &opts, 50, 0).unwrap().is_empty(),
+        store
+            .note_list_view("all", &[], &opts, 50, 0)
+            .unwrap()
+            .is_empty(),
         "note_list_view"
     );
     assert_eq!(store.note_count(), 0, "note_count");
     // ③ FTS 检索
-    assert!(store.note_search("会议", "all", &[], 20).unwrap().is_empty(), "note_search");
+    assert!(
+        store
+            .note_search("会议", "all", &[], 20)
+            .unwrap()
+            .is_empty(),
+        "note_search"
+    );
     // ④ 问答相关度（MCP 的 kb_search 走这条）
     assert!(
         store
@@ -4653,21 +5249,42 @@ fn test_soft_deleted_note_is_gone_from_every_entry_point() {
         "note_search_relevant"
     );
     // ⑤ 来源卡片反查
-    assert!(store.note_by_history("h-del").unwrap().is_none(), "note_by_history");
-    assert!(store.note_history_ids().unwrap().is_empty(), "note_history_ids");
+    assert!(
+        store.note_by_history("h-del").unwrap().is_none(),
+        "note_by_history"
+    );
+    assert!(
+        store.note_history_ids().unwrap().is_empty(),
+        "note_history_ids"
+    );
     // ⑥ 文件夹侧栏计数与删除影响预览
     let tree = store.folder_list().unwrap();
     assert_eq!(tree[0].note_count, 0, "folder_list 的 note_count");
-    assert_eq!(store.folder_delete_impact(&f.id).unwrap().1, 0, "folder_delete_impact");
-    assert_eq!(store.folder_unfiled_count().unwrap(), 0, "folder_unfiled_count");
+    assert_eq!(
+        store.folder_delete_impact(&f.id).unwrap().1,
+        0,
+        "folder_delete_impact"
+    );
+    assert_eq!(
+        store.folder_unfiled_count().unwrap(),
+        0,
+        "folder_unfiled_count"
+    );
     // ⑦ 待沉淀区：笔记没了，卡片该变回候选
-    assert_eq!(store.kb_inbox_count("默认").unwrap(), 1, "kb_inbox 该把卡片收回去");
+    assert_eq!(
+        store.kb_inbox_count("默认").unwrap(),
+        1,
+        "kb_inbox 该把卡片收回去"
+    );
 
     // —— 但它必须还在回收站里，否则这一整套就只是把硬删换个写法
     let trash = store.note_list_deleted(50).unwrap();
     assert_eq!(trash.len(), 1);
     assert_eq!(trash[0].id, n.id);
-    assert!(trash[0].deleted_at.is_some(), "回收站里的条目必须带删除时间");
+    assert!(
+        trash[0].deleted_at.is_some(),
+        "回收站里的条目必须带删除时间"
+    );
 }
 
 #[test]
@@ -4722,7 +5339,11 @@ fn test_soft_deleted_daily_note_does_not_block_a_new_one() {
 
     // 日期被占了，恢复旧的必须报人话错误，而不是把裸 SQLite 报错扇出去。
     let err = store.note_restore_deleted(&old_id).unwrap_err();
-    assert!(err.contains("2026-09-02"), "错误里要带上是哪天，实际为: {}", err);
+    assert!(
+        err.contains("2026-09-02"),
+        "错误里要带上是哪天，实际为: {}",
+        err
+    );
 }
 
 #[test]
@@ -4733,7 +5354,10 @@ fn test_note_purge_is_the_only_hard_delete() {
 
     // 没进回收站的不得销毁（防的是将来把它接到外部写入上时一步平掉活笔记）
     let live = store.note_create(None, "活的", "别动我").unwrap();
-    assert!(store.note_purge(&live.id).is_err(), "不在回收站就不能 purge");
+    assert!(
+        store.note_purge(&live.id).is_err(),
+        "不在回收站就不能 purge"
+    );
     assert!(store.note_get(&live.id).unwrap().is_some());
 
     store.note_purge(&n.id).unwrap();
@@ -4772,7 +5396,10 @@ fn test_note_purge_all_empties_the_trash_and_spares_live_notes() {
     // 活的那条一根汗毛都不能碰
     assert_eq!(store.note_count(), 1);
     assert!(store.note_get(&live.id).unwrap().is_some());
-    assert_eq!(store.note_search("别动我", "all", &[], 20).unwrap().len(), 1);
+    assert_eq!(
+        store.note_search("别动我", "all", &[], 20).unwrap().len(),
+        1
+    );
 }
 
 #[test]
@@ -4786,7 +5413,11 @@ fn test_note_purge_expired_counts_from_deleted_at_not_updated_at() {
     store.note_delete(&fresh.id).unwrap();
     backdate_deleted_at(&store, &old.id, "2020-01-01 00:00:00.000");
 
-    assert_eq!(store.note_purge_expired(30).unwrap(), 1, "只该清掉超期的那条");
+    assert_eq!(
+        store.note_purge_expired(30).unwrap(),
+        1,
+        "只该清掉超期的那条"
+    );
     let left = store.note_list_deleted(50).unwrap();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].id, fresh.id, "刚删的必须还在");
@@ -4803,7 +5434,11 @@ fn test_note_purge_expired_zero_days_is_the_escape_hatch() {
 
     assert_eq!(store.note_purge_expired(0).unwrap(), 0);
     assert_eq!(store.note_purge_expired(-1).unwrap(), 0);
-    assert_eq!(store.note_list_deleted(50).unwrap().len(), 1, "一条都不能少");
+    assert_eq!(
+        store.note_list_deleted(50).unwrap().len(),
+        1,
+        "一条都不能少"
+    );
 }
 
 #[test]
@@ -4814,7 +5449,9 @@ fn test_batch_purge_also_clears_the_fts_row() {
     let n = store.note_create(None, "会议记录", "灰度发布").unwrap();
     let rowid: i64 = store
         .lock_conn()
-        .query_row("SELECT rowid FROM notes WHERE id = ?1", [&n.id], |r| r.get(0))
+        .query_row("SELECT rowid FROM notes WHERE id = ?1", [&n.id], |r| {
+            r.get(0)
+        })
         .unwrap();
     store.note_delete(&n.id).unwrap();
     store.note_purge_all().unwrap();
@@ -4838,13 +5475,24 @@ fn test_batch_purge_also_clears_the_fts_row() {
 fn test_mcp_audit_roundtrip_and_client_roster() {
     let store = make_store();
     store
-        .mcp_audit_log("claude-code/2.1", "kb_search", r#"{"query":"x"}"#, true, 2, &[
-            "id-a".into(),
-            "id-b".into(),
-        ])
+        .mcp_audit_log(
+            "claude-code/2.1",
+            "kb_search",
+            r#"{"query":"x"}"#,
+            true,
+            2,
+            &["id-a".into(), "id-b".into()],
+        )
         .unwrap();
     store
-        .mcp_audit_log("claude-code/2.1", "kb_read", r#"{"id":"id-a"}"#, true, 1, &["id-a".into()])
+        .mcp_audit_log(
+            "claude-code/2.1",
+            "kb_read",
+            r#"{"id":"id-a"}"#,
+            true,
+            1,
+            &["id-a".into()],
+        )
         .unwrap();
     store
         .mcp_audit_log("other-client/1.0", "kb_list", "{}", false, 0, &[])
@@ -4860,7 +5508,10 @@ fn test_mcp_audit_roundtrip_and_client_roster() {
     // 花名册不单存一份，就是对审计表 GROUP BY
     let clients = store.mcp_audit_clients().unwrap();
     assert_eq!(clients.len(), 2);
-    let cc = clients.iter().find(|c| c.client == "claude-code/2.1").unwrap();
+    let cc = clients
+        .iter()
+        .find(|c| c.client == "claude-code/2.1")
+        .unwrap();
     assert_eq!(cc.calls, 2);
     assert!(cc.first_seen <= cc.last_seen);
 }
@@ -4874,7 +5525,14 @@ fn test_mcp_audit_never_stores_note_content() {
     let secret = "这是笔记正文里的敏感内容不该进审计表";
     let n = store.note_create(None, "会议记录", secret).unwrap();
     store
-        .mcp_audit_log("c", "kb_read", &format!(r#"{{"id":"{}"}}"#, n.id), true, 1, &[n.id.clone()])
+        .mcp_audit_log(
+            "c",
+            "kb_read",
+            &format!(r#"{{"id":"{}"}}"#, n.id),
+            true,
+            1,
+            &[n.id.clone()],
+        )
         .unwrap();
 
     let dump: String = store
@@ -4890,14 +5548,21 @@ fn test_mcp_audit_never_stores_note_content() {
         "审计表里不得出现笔记正文，实际内容: {}",
         dump
     );
-    assert!(dump.contains(&n.id), "但必须记下 id，否则追溯不了读走的是哪几篇");
+    assert!(
+        dump.contains(&n.id),
+        "但必须记下 id，否则追溯不了读走的是哪几篇"
+    );
 }
 
 #[test]
 fn test_mcp_audit_clear_and_purge() {
     let store = make_store();
-    store.mcp_audit_log("c", "kb_list", "{}", true, 0, &[]).unwrap();
-    store.mcp_audit_log("c", "kb_list", "{}", true, 0, &[]).unwrap();
+    store
+        .mcp_audit_log("c", "kb_list", "{}", true, 0, &[])
+        .unwrap();
+    store
+        .mcp_audit_log("c", "kb_list", "{}", true, 0, &[])
+        .unwrap();
     assert_eq!(store.mcp_audit_count(), 2);
 
     // days = 0 是用户关了自动清理的逃生口，不能被当成「0 天后到期」一次清光
@@ -4914,7 +5579,9 @@ fn test_mcp_audit_clear_and_purge() {
 fn test_note_history_id_can_be_null() {
     // 规划 §1.6 入口 #2：唯一与剪贴板无关的创建路径，history_id 必须可空
     let store = make_store();
-    let n = store.note_create(None, "独立笔记", "跟剪贴板没关系").unwrap();
+    let n = store
+        .note_create(None, "独立笔记", "跟剪贴板没关系")
+        .unwrap();
     let got = store.note_get(&n.id).unwrap().unwrap();
     assert!(got.history_id.is_none());
     // 且它不该出现在「已转过笔记的卡片」集合里
@@ -4926,8 +5593,12 @@ fn test_note_search_chinese_hits_fts() {
     // A 阶段验收原文：「中文与拼音关键词都能命中 notes_fts」。
     // 这条钉的是 to_ngram 的**双侧**预处理——漏掉任一侧中文就搜不到。
     let store = make_store();
-    store.note_create(Some("h1"), "会议记录", "今天讨论了接口设计与灰度发布").unwrap();
-    store.note_create(Some("h2"), "购物清单", "牛奶 面包").unwrap();
+    store
+        .note_create(Some("h1"), "会议记录", "今天讨论了接口设计与灰度发布")
+        .unwrap();
+    store
+        .note_create(Some("h2"), "购物清单", "牛奶 面包")
+        .unwrap();
 
     // 二字词 = bigram 本身精确命中
     let hits = store.note_search("会议", "all", &[], 20).unwrap();
@@ -4939,7 +5610,10 @@ fn test_note_search_chinese_hits_fts() {
     assert_eq!(hits.len(), 1);
 
     // 不存在的词返回空，而不是全量
-    assert!(store.note_search("量子隧穿", "all", &[], 20).unwrap().is_empty());
+    assert!(store
+        .note_search("量子隧穿", "all", &[], 20)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -4949,8 +5623,16 @@ fn test_note_search_pinyin_initials_hits_fts() {
     let store = make_store();
     store.note_create(Some("h1"), "会议记录", "正文").unwrap();
 
-    assert_eq!(store.note_search("HYJL", "all", &[], 20).unwrap().len(), 1, "大写应命中");
-    assert_eq!(store.note_search("hyjl", "all", &[], 20).unwrap().len(), 1, "小写也应命中");
+    assert_eq!(
+        store.note_search("HYJL", "all", &[], 20).unwrap().len(),
+        1,
+        "大写应命中"
+    );
+    assert_eq!(
+        store.note_search("hyjl", "all", &[], 20).unwrap().len(),
+        1,
+        "小写也应命中"
+    );
 }
 
 #[test]
@@ -4959,18 +5641,30 @@ fn test_note_fts_syncs_on_update_and_delete() {
     // history_fts 曾因为用 ON CONFLICT 而首次回填之后再也没进过新内容。
     let store = make_store();
     let n = store.note_create(Some("h1"), "旧标题", "旧正文").unwrap();
-    assert_eq!(store.note_search("旧标题", "all", &[], 20).unwrap().len(), 1);
+    assert_eq!(
+        store.note_search("旧标题", "all", &[], 20).unwrap().len(),
+        1
+    );
 
     store.note_update(&n.id, "新标题", "新正文").unwrap();
     assert!(
-        store.note_search("旧标题", "all", &[], 20).unwrap().is_empty(),
+        store
+            .note_search("旧标题", "all", &[], 20)
+            .unwrap()
+            .is_empty(),
         "改标题后旧词不该还能搜到（说明只插没删）"
     );
-    assert_eq!(store.note_search("新标题", "all", &[], 20).unwrap().len(), 1);
+    assert_eq!(
+        store.note_search("新标题", "all", &[], 20).unwrap().len(),
+        1
+    );
 
     store.note_delete(&n.id).unwrap();
     assert!(
-        store.note_search("新标题", "all", &[], 20).unwrap().is_empty(),
+        store
+            .note_search("新标题", "all", &[], 20)
+            .unwrap()
+            .is_empty(),
         "删笔记后 FTS 行也要清掉（虚拟表没有外键，必须手动删）"
     );
 }
@@ -4989,9 +5683,15 @@ fn test_note_search_special_chars_do_not_panic() {
     // 带引号 / 星号 / NEAR 的查询词是 FTS5 MATCH 的语法雷区。
     // 这里只要求「不 panic、不返回 Err」——真炸了有 LIKE 回退兜着。
     let store = make_store();
-    store.note_create(Some("h1"), "他说\"你好\"", "正文 *").unwrap();
+    store
+        .note_create(Some("h1"), "他说\"你好\"", "正文 *")
+        .unwrap();
     for kw in ["\"", "*", "NEAR(", "a OR", "^"] {
-        assert!(store.note_search(kw, "all", &[], 20).is_ok(), "关键词 {:?} 不该报错", kw);
+        assert!(
+            store.note_search(kw, "all", &[], 20).is_ok(),
+            "关键词 {:?} 不该报错",
+            kw
+        );
     }
 }
 
@@ -5045,7 +5745,9 @@ fn test_note_tags_replace_semantics_and_cascade() {
     let t3 = store.create_tag("归档", "#333").unwrap();
     let n = store.note_create(Some("h1"), "标题", "正文").unwrap();
 
-    store.note_set_tags(&n.id, &[t1.id.clone(), t2.id.clone()]).unwrap();
+    store
+        .note_set_tags(&n.id, &[t1.id.clone(), t2.id.clone()])
+        .unwrap();
     let got = store.note_get(&n.id).unwrap().unwrap();
     assert_eq!(got.tags.len(), 2);
 
@@ -5058,7 +5760,11 @@ fn test_note_tags_replace_semantics_and_cascade() {
     let count_links = |id: &str| -> i64 {
         store
             .lock_conn()
-            .query_row("SELECT COUNT(*) FROM note_tags WHERE note_id = ?1", [id], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM note_tags WHERE note_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
             .unwrap()
     };
 
@@ -5242,9 +5948,23 @@ fn seed_candidate(store: &DataStore, id: &str, text: &str, time: &str, hit: i64,
 fn test_kb_inbox_two_signals_and_threshold() {
     let store = make_store();
     // 找回 1 次：不够门槛（通路#2 要 >= 2）
-    seed_candidate(&store, "h-hit1", "只找回一次", "2026-08-01 10:00:00", 1, false);
+    seed_candidate(
+        &store,
+        "h-hit1",
+        "只找回一次",
+        "2026-08-01 10:00:00",
+        1,
+        false,
+    );
     // 找回 3 次：入选
-    seed_candidate(&store, "h-hit3", "找回三次", "2026-08-02 10:00:00", 3, false);
+    seed_candidate(
+        &store,
+        "h-hit3",
+        "找回三次",
+        "2026-08-02 10:00:00",
+        3,
+        false,
+    );
     // 收藏但零找回：入选（通路#1，两个信号是 OR）
     seed_candidate(&store, "h-star", "只收藏", "2026-08-03 10:00:00", 0, true);
 
@@ -5268,11 +5988,22 @@ fn test_kb_inbox_excludes_items_with_notes() {
     // 排除 1：已有笔记的卡片退出候选。**这是虚拟视图的关键性质**——
     // 转完笔记候选自然消失，不需要任何清理任务。
     let store = make_store();
-    seed_candidate(&store, "h1", "反复找回的内容", "2026-08-01 10:00:00", 5, false);
+    seed_candidate(
+        &store,
+        "h1",
+        "反复找回的内容",
+        "2026-08-01 10:00:00",
+        5,
+        false,
+    );
     assert_eq!(store.kb_inbox_count("默认").unwrap(), 1);
 
     let n = store.note_create(Some("h1"), "标题", "正文").unwrap();
-    assert_eq!(store.kb_inbox_count("默认").unwrap(), 0, "已转笔记就不再是候选");
+    assert_eq!(
+        store.kb_inbox_count("默认").unwrap(),
+        0,
+        "已转笔记就不再是候选"
+    );
 
     // 删掉笔记又回到候选（同样是视图特性，无需额外逻辑）
     store.note_delete(&n.id).unwrap();
@@ -5301,7 +6032,11 @@ fn test_kb_inbox_dismiss_and_undismiss() {
     assert_eq!(reason, "star", "reason 取最后一次");
 
     store.kb_inbox_undismiss("h1").unwrap();
-    assert_eq!(store.kb_inbox_count("默认").unwrap(), 1, "撤销忽略后候选应回来");
+    assert_eq!(
+        store.kb_inbox_count("默认").unwrap(),
+        1,
+        "撤销忽略后候选应回来"
+    );
 }
 
 #[test]
@@ -5309,8 +6044,22 @@ fn test_kb_inbox_order_by_hit_then_pasted() {
     // 排序：hit 降序 → 同分时有 pasted 的往前（A-28）。
     let store = make_store();
     seed_candidate(&store, "h-low", "弱信号", "2026-08-01 10:00:00", 2, false);
-    seed_candidate(&store, "h-tie-a", "同分无pasted", "2026-08-02 10:00:00", 5, false);
-    seed_candidate(&store, "h-tie-b", "同分有pasted", "2026-08-03 10:00:00", 5, false);
+    seed_candidate(
+        &store,
+        "h-tie-a",
+        "同分无pasted",
+        "2026-08-02 10:00:00",
+        5,
+        false,
+    );
+    seed_candidate(
+        &store,
+        "h-tie-b",
+        "同分有pasted",
+        "2026-08-03 10:00:00",
+        5,
+        false,
+    );
     seed_candidate(&store, "h-high", "强信号", "2026-08-04 10:00:00", 9, false);
 
     store
@@ -5443,7 +6192,9 @@ fn test_folder_create_by_ai_shares_the_same_validation() {
 /// 造一个人写一篇、两个 agent 各写一篇的库。
 fn store_with_three_writers() -> DataStore {
     let store = make_store();
-    store.note_create(None, "人写的并发笔记", "并发模型").unwrap();
+    store
+        .note_create(None, "人写的并发笔记", "并发模型")
+        .unwrap();
     store
         .note_create_from(None, "claude 写的并发笔记", "并发模型", "agent:claude-code")
         .unwrap();
@@ -5514,7 +6265,10 @@ fn test_last_agent_written_at_every_content_write() {
         .note_create_from(None, "AI 建的", "正文", "agent:cursor")
         .unwrap();
     assert_eq!(a.source_agent, "agent:cursor", "返回值里的 source_agent");
-    assert_eq!(a.last_agent, "agent:cursor", "返回值里的 last_agent——与 INSERT 对得上");
+    assert_eq!(
+        a.last_agent, "agent:cursor",
+        "返回值里的 last_agent——与 INSERT 对得上"
+    );
     assert_eq!(read(&a.id).last_agent, "agent:cursor", "重读也要一致");
 }
 
@@ -5592,7 +6346,10 @@ fn test_author_filter_applies_on_every_query_path() {
     let all = NoteViewOpts::default();
 
     // 路径一：`note_list_view`（过 `note_view_from_where`）
-    assert_eq!(store.note_list_view("all", &[], &all, 50, 0).unwrap().len(), 3);
+    assert_eq!(
+        store.note_list_view("all", &[], &all, 50, 0).unwrap().len(),
+        3
+    );
     let human = store
         .note_list_view("all", &[], &author_opts("human"), 50, 0)
         .unwrap();
@@ -5697,13 +6454,23 @@ fn test_author_ai_means_any_agent() {
     // 再造一篇「人建的、被 AI 改过正文」——它也得算进 AI 那一档。
     let mixed = store.note_create(None, "人建的并发", "并发模型").unwrap();
     store
-        .note_update_from(&mixed.id, "人建的并发", "并发模型\n\nAI 追的", "agent:claude-code")
+        .note_update_from(
+            &mixed.id,
+            "人建的并发",
+            "并发模型\n\nAI 追的",
+            "agent:claude-code",
+        )
         .unwrap();
 
     let ai = store
         .note_list_view("all", &[], &author_opts("ai"), 50, 0)
         .unwrap();
-    assert_eq!(ai.len(), 3, "两篇 AI 建的 + 一篇被 AI 改过的：{:?}", ai.len());
+    assert_eq!(
+        ai.len(),
+        3,
+        "两篇 AI 建的 + 一篇被 AI 改过的：{:?}",
+        ai.len()
+    );
     assert!(
         ai.iter()
             .all(|n| !n.source_agent.is_empty() || !n.last_agent.is_empty()),
@@ -5748,7 +6515,12 @@ fn test_author_ai_edited_is_the_one_the_user_cannot_otherwise_see() {
     let rows = store
         .note_list_view("all", &[], &author_opts("ai_edited"), 50, 0)
         .unwrap();
-    assert_eq!(rows.len(), 1, "只该剩「我建的、被 AI 改过」那一篇：{:?}", rows.len());
+    assert_eq!(
+        rows.len(),
+        1,
+        "只该剩「我建的、被 AI 改过」那一篇：{:?}",
+        rows.len()
+    );
     assert_eq!(rows[0].id, edited.id);
     assert_eq!(rows[0].source_agent, "", "必须是人建的");
     assert_ne!(rows[0].last_agent, "", "而且正文被 agent 改过");
@@ -5806,9 +6578,13 @@ fn test_note_writers_lists_only_agents_and_skips_deleted() {
 fn test_folder_dissolve_lifts_children_to_parent() {
     let store = make_store();
     let top = store.folder_create("工作", None).unwrap();
-    let mid = store.folder_create_by_ai("AI 建的中间层", Some(&top.id)).unwrap();
+    let mid = store
+        .folder_create_by_ai("AI 建的中间层", Some(&top.id))
+        .unwrap();
     // 🔴 子夹是**用户手建**的：它绝不能因为撤销上层而消失。
-    let sub = store.folder_create("用户手建的子夹", Some(&mid.id)).unwrap();
+    let sub = store
+        .folder_create("用户手建的子夹", Some(&mid.id))
+        .unwrap();
 
     let n1 = store.note_create(None, "在中间层里", "a").unwrap();
     store.note_set_folder(&n1.id, Some(&mid.id)).unwrap();
@@ -5838,12 +6614,22 @@ fn test_folder_dissolve_lifts_children_to_parent() {
 
     // 笔记一篇都不能丢。
     assert_eq!(
-        store.note_get(&n1.id).unwrap().unwrap().folder_id.as_deref(),
+        store
+            .note_get(&n1.id)
+            .unwrap()
+            .unwrap()
+            .folder_id
+            .as_deref(),
         Some(top.id.as_str()),
         "直接在里面的笔记该升到父级"
     );
     assert_eq!(
-        store.note_get(&n2.id).unwrap().unwrap().folder_id.as_deref(),
+        store
+            .note_get(&n2.id)
+            .unwrap()
+            .unwrap()
+            .folder_id
+            .as_deref(),
         Some(sub.id.as_str()),
         "子夹里的笔记跟着子夹走，不动"
     );
@@ -5918,7 +6704,10 @@ fn test_folder_name_rules() {
     // 改名也走同一套校验，但不能把自己算成重名
     store.folder_rename(&a.id, "工作").unwrap();
     store.folder_rename(&a.id, "工作A").unwrap();
-    assert!(store.folder_rename(&a.id, "学习").is_err(), "与兄弟同名应拒");
+    assert!(
+        store.folder_rename(&a.id, "学习").is_err(),
+        "与兄弟同名应拒"
+    );
     assert!(store.folder_rename("不存在", "x").is_err());
 }
 
@@ -5930,7 +6719,10 @@ fn test_folder_move_rejects_cycle() {
     let a = store.folder_create("工作", None).unwrap();
     let b = store.folder_create("NC 二开", Some(&a.id)).unwrap();
 
-    assert!(store.folder_move(&a.id, Some(&a.id)).is_err(), "移到自己应拒");
+    assert!(
+        store.folder_move(&a.id, Some(&a.id)).is_err(),
+        "移到自己应拒"
+    );
     assert!(
         store.folder_move(&a.id, Some(&b.id)).is_err(),
         "移到自己的子文件夹应拒（否则成孤岛子树）"
@@ -6001,7 +6793,10 @@ fn test_folder_delete_keeps_notes_but_cascades_subfolders() {
     store.folder_delete(&a.id).unwrap();
 
     // 子文件夹全没了
-    assert!(store.folder_list().unwrap().is_empty(), "子文件夹应级联删除");
+    assert!(
+        store.folder_list().unwrap().is_empty(),
+        "子文件夹应级联删除"
+    );
     // 但三条笔记一条不少，全变未分类
     assert_eq!(store.note_count(), 3, "笔记绝不能随文件夹删");
     assert_eq!(store.folder_unfiled_count().unwrap(), 3);
@@ -6152,7 +6947,9 @@ fn test_kb_shadow_excludes_noted_and_dismissed() {
     seed_shadow_item(&store, "h-dismiss", &long, 9, 30);
     seed_shadow_item(&store, "h-keep", &long, 9, 30);
 
-    store.note_create(Some("h-note"), "已有笔记", "正文").unwrap();
+    store
+        .note_create(Some("h-note"), "已有笔记", "正文")
+        .unwrap();
     store.kb_inbox_dismiss("h-dismiss", "research").unwrap();
 
     let ids: Vec<String> = store
@@ -6176,7 +6973,10 @@ fn test_kb_shadow_images_never_hit() {
     store.insert_history(&img).unwrap();
     store
         .lock_conn()
-        .execute("UPDATE history SET search_hit_count = 99 WHERE id = 'img'", [])
+        .execute(
+            "UPDATE history SET search_hit_count = 99 WHERE id = 'img'",
+            [],
+        )
         .unwrap();
 
     assert!(
@@ -6222,7 +7022,10 @@ fn test_kb_shadow_precision_none_when_no_data() {
     let store = make_store();
     let s = store.kb_shadow_stats().unwrap();
     assert_eq!(s.hits, 0);
-    assert!(s.precision.is_none(), "无命中时 precision 必须是 None，不是 0.0");
+    assert!(
+        s.precision.is_none(),
+        "无命中时 precision 必须是 None，不是 0.0"
+    );
     assert!(s.since.is_none());
 }
 
@@ -6348,7 +7151,9 @@ fn test_anchor_survives_many_external_writes() {
     // 锚定份不占 20 份配额：否则「保护历史」反而先吃掉一份历史
     assert_eq!(revs.len(), MAX_REVISIONS as usize + 1);
     assert!(
-        revs.iter().filter(|r| !r.pinned).all(|r| r.source_agent == "agent:test"),
+        revs.iter()
+            .filter(|r| !r.pinned)
+            .all(|r| r.source_agent == "agent:test"),
         "外部写入的每一版都该留下来源"
     );
 }
@@ -6480,15 +7285,24 @@ fn test_md_frontmatter_escapes_risky_titles() {
     let n = mk_note_for_md("会议纪要: 8/29 评审", "正文", &["工作", "NC, 二开"]);
     let md = note_to_markdown(&n, true);
 
-    assert!(md.contains(r#"title: "会议纪要: 8/29 评审""#), "含冒号必须加引号：{md}");
+    assert!(
+        md.contains(r#"title: "会议纪要: 8/29 评审""#),
+        "含冒号必须加引号：{md}"
+    );
     // 块式列表：逗号在这里本来就安全（只有流式 `[a, b]` 会把它当分隔符），
     // 所以不需要加引号——真正要钉的是它能原样读回来（见下）。
-    assert!(md.contains("tags:\n  - 工作\n  - NC, 二开"), "标签应是块式列表：{md}");
+    assert!(
+        md.contains("tags:\n  - 工作\n  - NC, 二开"),
+        "标签应是块式列表：{md}"
+    );
     assert!(md.contains("pastepanda_id: "));
 
     // 带逗号的标签读回来仍是**一个**标签——旧的 `tags: [a, b]` 写法在这里就碎成两个了
     let back = markdown_to_note(&md, "x");
-    assert_eq!(back.tags, Some(vec!["工作".to_string(), "NC, 二开".to_string()]));
+    assert_eq!(
+        back.tags,
+        Some(vec!["工作".to_string(), "NC, 二开".to_string()])
+    );
 
     // 复制到剪贴板那份不写 id
     assert!(!note_to_markdown(&n, false).contains("pastepanda_id"));
@@ -6502,7 +7316,10 @@ fn test_md_roundtrip_keeps_title_tags_body() {
 
     assert_eq!(back.title, "会议纪要: 8/29");
     assert_eq!(back.tags, Some(vec!["工作".to_string()]));
-    assert_eq!(back.content, "第一行\n\n[[某个链接]] 原样", "wiki-link 必须一字不改");
+    assert_eq!(
+        back.content, "第一行\n\n[[某个链接]] 原样",
+        "wiki-link 必须一字不改"
+    );
     assert_eq!(back.id.as_deref(), Some(n.id.as_str()));
 }
 
@@ -6641,7 +7458,9 @@ fn test_vault_export_then_import_roundtrip() {
     let work = src.folder_create("工作笔记", None).unwrap();
     let sub = src.folder_create("NC 二开", Some(&work.id)).unwrap();
 
-    let a = src.note_create(None, "会议纪要: 8/29", "第一行\n\n[[某链接]]").unwrap();
+    let a = src
+        .note_create(None, "会议纪要: 8/29", "第一行\n\n[[某链接]]")
+        .unwrap();
     src.note_set_folder(&a.id, Some(&sub.id)).unwrap();
     src.note_create(None, "未分类的一条", "正文").unwrap();
 
@@ -6653,7 +7472,11 @@ fn test_vault_export_then_import_roundtrip() {
     assert!(dir.join("工作笔记").join("NC 二开").is_dir());
     assert!(dir.join("未分类的一条.md").is_file());
     // 标题里的 `:` 与 `/` 被换成 _，文件能建出来
-    assert!(dir.join("工作笔记").join("NC 二开").join("会议纪要_ 8_29.md").is_file());
+    assert!(dir
+        .join("工作笔记")
+        .join("NC 二开")
+        .join("会议纪要_ 8_29.md")
+        .is_file());
 
     // 导进一个全新的库
     let dst = make_store();
@@ -6664,7 +7487,10 @@ fn test_vault_export_then_import_roundtrip() {
 
     // 标题、正文、文件夹层级都还原了（不靠文件名——文件名已被清洗）
     let notes = dst.note_list("all", &[], 50, 0).unwrap();
-    let got = notes.iter().find(|n| n.title == "会议纪要: 8/29").expect("标题应从 frontmatter 还原");
+    let got = notes
+        .iter()
+        .find(|n| n.title == "会议纪要: 8/29")
+        .expect("标题应从 frontmatter 还原");
     assert_eq!(got.content, "第一行\n\n[[某链接]]");
     let folders = dst.folder_list().unwrap();
     assert!(folders.iter().any(|f| f.name == "NC 二开" && f.depth == 2));
@@ -6774,7 +7600,10 @@ fn test_vault_import_is_idempotent_and_never_deletes() {
     let second = store.note_import_dir(dir.to_str().unwrap()).unwrap();
     assert_eq!(second.created, 0, "连导两次不该翻倍");
 
-    assert!(store.note_get(&keep.id).unwrap().is_some(), "导入永远不删库里的笔记");
+    assert!(
+        store.note_get(&keep.id).unwrap().is_some(),
+        "导入永远不删库里的笔记"
+    );
     assert_eq!(store.note_count(), 2);
 
     // 内容没变 ⇒ note_update 是空操作 ⇒ 不该攒出快照
@@ -6800,12 +7629,22 @@ fn test_vault_import_updates_and_leaves_a_revision() {
 
     let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
     assert_eq!(rep.updated, 1);
-    assert_eq!(store.note_get(&n.id).unwrap().unwrap().content, "在 Obsidian 里改过");
+    assert_eq!(
+        store.note_get(&n.id).unwrap().unwrap().content,
+        "在 Obsidian 里改过"
+    );
 
     // #4 联动：更新走 note_update，所以自动留下了导入前的版本
     let revs = store.note_revision_list(&n.id).unwrap();
     assert_eq!(revs.len(), 1);
-    assert_eq!(store.note_revision_get(revs[0].id).unwrap().unwrap().content, "原正文");
+    assert_eq!(
+        store
+            .note_revision_get(revs[0].id)
+            .unwrap()
+            .unwrap()
+            .content,
+        "原正文"
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -6821,7 +7660,11 @@ fn test_vault_import_skips_hidden_and_non_md() {
     let store = make_store();
     let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
     assert_eq!(rep.created, 1);
-    assert!(rep.skipped >= 2, "隐藏目录与非 md 都该被跳过，实得 {}", rep.skipped);
+    assert!(
+        rep.skipped >= 2,
+        "隐藏目录与非 md 都该被跳过，实得 {}",
+        rep.skipped
+    );
     assert!(rep.failed.is_empty());
 
     std::fs::remove_dir_all(&dir).ok();
@@ -6884,7 +7727,11 @@ fn test_vault_export_keeps_user_authored_md() {
     store.note_create(None, "库里的", "正文").unwrap();
 
     // 没有 frontmatter，也就没有 pastepanda_id
-    std::fs::write(dir.join("我自己写的.md"), "# 随手记\n\n不是 PastePanda 导出的").unwrap();
+    std::fs::write(
+        dir.join("我自己写的.md"),
+        "# 随手记\n\n不是 PastePanda 导出的",
+    )
+    .unwrap();
     // frontmatter 有、但没有 id（比如从别处拿来的 Obsidian 笔记）
     std::fs::write(dir.join("别人的.md"), "---\ntitle: 别人的\n---\n\n正文").unwrap();
 
@@ -6968,13 +7815,22 @@ fn test_vault_import_deep_dirs_flatten_without_overwriting() {
     // 上限要跟着报告发出去，否则前端只能写死数字
     assert_eq!(rep.max_depth, MAX_FOLDER_DEPTH);
     // 撞车的那一篇要报出相对路径（光报 `x.md` 用户分不出是哪个）
-    assert_eq!(rep.collided.len(), 1, "第二个文件才算撞车，实得 {:?}", rep.collided);
+    assert_eq!(
+        rep.collided.len(),
+        1,
+        "第二个文件才算撞车，实得 {:?}",
+        rep.collided
+    );
     assert!(
         rep.collided[0].contains('/'),
         "撞车报告要带相对路径，实得 {:?}",
         rep.collided[0]
     );
-    assert!(rep.failed.is_empty(), "平接不是失败，不该进 failed：{:?}", rep.failed);
+    assert!(
+        rep.failed.is_empty(),
+        "平接不是失败，不该进 failed：{:?}",
+        rep.failed
+    );
 
     // 两份正文都在库里（这才是「没丢数据」的真正断言）
     let notes = store.note_list("all", &[], 50, 0).unwrap();
@@ -7008,14 +7864,24 @@ fn test_vault_import_flat_files_do_not_yank_notes_out_of_folders() {
     let flat = tmp_vault_dir("flat");
     std::fs::write(
         flat.join("会议纪要.md"),
-        format!("---\ntitle: 会议纪要\npastepanda_id: {}\n---\n\n改过的正文", n.id),
+        format!(
+            "---\ntitle: 会议纪要\npastepanda_id: {}\n---\n\n改过的正文",
+            n.id
+        ),
     )
     .unwrap();
     let rep = store.note_import_dir(flat.to_str().unwrap()).unwrap();
-    assert_eq!(rep.updated, 1, "该按 id 认出是同一篇，而不是新建；created={}", rep.created);
+    assert_eq!(
+        rep.updated, 1,
+        "该按 id 认出是同一篇，而不是新建；created={}",
+        rep.created
+    );
 
     let got = store.note_get(&n.id).unwrap().unwrap();
-    assert_eq!(got.content, "改过的正文", "正文该更新（证明这一篇真被处理过）");
+    assert_eq!(
+        got.content, "改过的正文",
+        "正文该更新（证明这一篇真被处理过）"
+    );
     assert_eq!(
         got.folder_id.as_deref(),
         Some(work.id.as_str()),
@@ -7028,14 +7894,20 @@ fn test_vault_import_flat_files_do_not_yank_notes_out_of_folders() {
     std::fs::create_dir_all(tree.join("归档")).unwrap();
     std::fs::write(
         tree.join("归档").join("会议纪要.md"),
-        format!("---\ntitle: 会议纪要\npastepanda_id: {}\n---\n\n再改一次", n.id),
+        format!(
+            "---\ntitle: 会议纪要\npastepanda_id: {}\n---\n\n再改一次",
+            n.id
+        ),
     )
     .unwrap();
     store.note_import_dir(tree.to_str().unwrap()).unwrap();
 
     let got = store.note_get(&n.id).unwrap().unwrap();
     let folders = store.folder_list().unwrap();
-    let arch = folders.iter().find(|f| f.name == "归档").expect("该建出「归档」");
+    let arch = folders
+        .iter()
+        .find(|f| f.name == "归档")
+        .expect("该建出「归档」");
     assert_eq!(
         got.folder_id.as_deref(),
         Some(arch.id.as_str()),
@@ -7065,7 +7937,12 @@ fn test_vault_import_absent_tags_key_leaves_local_tags_alone() {
 
     let got = store.note_get(&n.id).unwrap().unwrap();
     assert_eq!(got.content, "新", "正文该更新（证明这一篇真被处理过）");
-    assert_eq!(got.tags.len(), 1, "文件没声明标签 ⇒ 不该动本地标签，实得 {:?}", got.tags);
+    assert_eq!(
+        got.tags.len(),
+        1,
+        "文件没声明标签 ⇒ 不该动本地标签，实得 {:?}",
+        got.tags
+    );
     assert_eq!(got.tags[0].name, "架构");
 
     std::fs::remove_dir_all(&dir).ok();
@@ -7085,13 +7962,20 @@ fn test_vault_import_empty_tags_key_clears_local_tags() {
     let dir = tmp_vault_dir("tags-empty");
     std::fs::write(
         dir.join("T.md"),
-        format!("---\ntitle: T\ntags: []\npastepanda_id: {}\n---\n\n新", n.id),
+        format!(
+            "---\ntitle: T\ntags: []\npastepanda_id: {}\n---\n\n新",
+            n.id
+        ),
     )
     .unwrap();
     store.note_import_dir(dir.to_str().unwrap()).unwrap();
 
     let got = store.note_get(&n.id).unwrap().unwrap();
-    assert!(got.tags.is_empty(), "`tags: []` 是明确的「清空」，实得 {:?}", got.tags);
+    assert!(
+        got.tags.is_empty(),
+        "`tags: []` 是明确的「清空」，实得 {:?}",
+        got.tags
+    );
     // 只解关联，标签本体不该被删（它可能还挂在其它笔记上）
     assert!(store.get_tags().unwrap().iter().any(|x| x.id == t.id));
 
@@ -7118,7 +8002,12 @@ fn test_vault_import_oversize_file_does_not_sink_the_whole_run() {
 
     // 正常的那篇照导，整次不被拖垮
     assert_eq!(rep.created, 1, "大文件不该拖垮其它文件");
-    assert_eq!(rep.failed.len(), 1, "大文件要进 failed，实得 {:?}", rep.failed);
+    assert_eq!(
+        rep.failed.len(),
+        1,
+        "大文件要进 failed，实得 {:?}",
+        rep.failed
+    );
     // 失败条目要**带原因**，不能只给个文件名（规则 #15.3）
     assert!(
         rep.failed[0].contains("过大"),
@@ -7140,9 +8029,15 @@ fn test_vault_import_oversize_file_does_not_sink_the_whole_run() {
 #[test]
 fn test_parse_ai_tags_tolerates_model_chatter() {
     // 理想输出
-    assert_eq!(parse_ai_tags("会议纪要, 发布计划, 回归测试"), vec!["会议纪要", "发布计划", "回归测试"]);
+    assert_eq!(
+        parse_ai_tags("会议纪要, 发布计划, 回归测试"),
+        vec!["会议纪要", "发布计划", "回归测试"]
+    );
     // 中文逗号 / 顿号 / 分号
-    assert_eq!(parse_ai_tags("前端、React；性能"), vec!["前端", "React", "性能"]);
+    assert_eq!(
+        parse_ai_tags("前端、React；性能"),
+        vec!["前端", "React", "性能"]
+    );
     // 编号 + 换行 + # + 引号
     assert_eq!(
         parse_ai_tags("1. #前端\n2. \"React\"\n3. 性能优化"),
@@ -7150,7 +8045,11 @@ fn test_parse_ai_tags_tolerates_model_chatter() {
     );
     // 开场白那行含冒号 ⇒ 丢掉，不能当标签写进去
     let r = parse_ai_tags("好的，标签如下：\n前端, React");
-    assert_eq!(r, vec!["前端", "React"], "带冒号的开场白必须被丢掉，实得 {r:?}");
+    assert_eq!(
+        r,
+        vec!["前端", "React"],
+        "带冒号的开场白必须被丢掉，实得 {r:?}"
+    );
 }
 
 #[test]
@@ -7175,7 +8074,9 @@ fn test_ai_tags_are_appended_and_marked() {
     let manual = store.create_tag("我打的", "#000000").unwrap();
     store.note_set_tags(&n.id, &[manual.id.clone()]).unwrap();
 
-    let added = store.note_add_ai_tags(&n.id, "前端, 我打的, React").unwrap();
+    let added = store
+        .note_add_ai_tags(&n.id, "前端, 我打的, React")
+        .unwrap();
     // 「我打的」已存在 ⇒ 不算新增，也不能被降级成 ai
     assert_eq!(added, vec!["前端".to_string(), "React".to_string()]);
 
@@ -7191,7 +8092,10 @@ fn test_ai_tags_are_appended_and_marked() {
 fn test_summary_write_clear_and_roundtrip() {
     let store = make_store();
     let n = store.note_create(None, "标题", "正文").unwrap();
-    assert!(store.note_get(&n.id).unwrap().unwrap().summary.is_none(), "新建笔记不该有摘要");
+    assert!(
+        store.note_get(&n.id).unwrap().unwrap().summary.is_none(),
+        "新建笔记不该有摘要"
+    );
 
     let before = store.note_get(&n.id).unwrap().unwrap().updated_at;
     store.note_set_summary(&n.id, Some("一句话摘要")).unwrap();
@@ -7201,14 +8105,23 @@ fn test_summary_write_clear_and_roundtrip() {
 
     // 清空存空串，与「从未生成」的 NULL 区分
     store.note_set_summary(&n.id, Some("")).unwrap();
-    assert_eq!(store.note_get(&n.id).unwrap().unwrap().summary.as_deref(), Some(""));
+    assert_eq!(
+        store.note_get(&n.id).unwrap().unwrap().summary.as_deref(),
+        Some("")
+    );
 
     // 导出 → 导入往返带上 summary
     store.note_set_summary(&n.id, Some("会议要点")).unwrap();
     let note = store.note_get(&n.id).unwrap().unwrap();
     let md = note_to_markdown(&note, true);
-    assert!(md.contains("summary: 会议要点"), "frontmatter 应带 summary：{md}");
-    assert_eq!(markdown_to_note(&md, "x").summary.as_deref(), Some("会议要点"));
+    assert!(
+        md.contains("summary: 会议要点"),
+        "frontmatter 应带 summary：{md}"
+    );
+    assert_eq!(
+        markdown_to_note(&md, "x").summary.as_deref(),
+        Some("会议要点")
+    );
 }
 
 // ===== M6-P2：updated_ms =====
@@ -7242,7 +8155,6 @@ fn test_每一处新建都要给updated_ms而不是落回默认值0() {
     );
 }
 
-
 /// 🔴 每一处刷 `updated_at` 的写入都必须同时刷 `updated_ms`。
 ///
 /// 漏一处的后果不是「少个字段」，是**那次改动在同步里没发生过**——
@@ -7257,7 +8169,13 @@ fn test_updated_ms_is_bumped_on_every_write_path() {
 
     let 递增 = |store: &DataStore, 谁: &str, last: &mut i64| {
         let now = store.note_updated_ms(&n.id).expect("笔记还在");
-        assert!(now > *last, "{} 之后 updated_ms 没有前进（{} → {}）", 谁, last, now);
+        assert!(
+            now > *last,
+            "{} 之后 updated_ms 没有前进（{} → {}）",
+            谁,
+            last,
+            now
+        );
         *last = now;
     };
 
@@ -7292,7 +8210,13 @@ fn test_updated_ms_is_strictly_monotonic_within_one_millisecond() {
     for i in 1..=20 {
         store.note_update(&n.id, "标题", &format!("v{i}")).unwrap();
         let now = store.note_updated_ms(&n.id).unwrap();
-        assert!(now > prev, "第 {} 次改动没有严格递增（{} → {}）", i, prev, now);
+        assert!(
+            now > prev,
+            "第 {} 次改动没有严格递增（{} → {}）",
+            i,
+            prev,
+            now
+        );
         prev = now;
     }
 }
@@ -7347,7 +8271,10 @@ fn test_note_tag_link_carries_timestamps() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("关联应当存在");
-    assert!(!c.is_empty() && !u.is_empty(), "关联要带 created_at/updated_at：{c:?} {u:?}");
+    assert!(
+        !c.is_empty() && !u.is_empty(),
+        "关联要带 created_at/updated_at：{c:?} {u:?}"
+    );
 }
 
 // ===== AM-9 破同分 =====
@@ -7360,7 +8287,10 @@ fn test_note_tag_link_carries_timestamps() {
 fn set_updated_ms(store: &DataStore, id: &str, ms: i64) {
     store
         .lock_conn()
-        .execute("UPDATE notes SET updated_ms = ?2 WHERE id = ?1", rusqlite::params![id, ms])
+        .execute(
+            "UPDATE notes SET updated_ms = ?2 WHERE id = ?1",
+            rusqlite::params![id, ms],
+        )
         .expect("改 updated_ms 失败");
 }
 
@@ -7392,7 +8322,11 @@ fn test_相关度相同时最近改过的排在前面() {
 
     // 翻过来：与 rowid 顺序相反，这一半才真正证明接的是时间
     set_updated_ms(&store, &a.id, 3_000);
-    assert_eq!(first(&store), a.id, "a 更新 → a 在前（此时与 rowid 顺序相反）");
+    assert_eq!(
+        first(&store),
+        a.id,
+        "a 更新 → a 在前（此时与 rowid 顺序相反）"
+    );
 }
 
 /// 🔴 方向守卫：`bm25()` 是**负数、越小越相关**，所以 `ORDER BY` 必须是 ASC。
@@ -7455,7 +8389,10 @@ fn test_三条物理删路径都落墓碑() {
     store.note_delete(&n.id).unwrap();
     backdate_deleted_at(&store, &n.id, "2020-01-01 00:00:00.000");
     assert_eq!(store.note_purge_expired(30).unwrap(), 1);
-    assert!(store.note_is_tombstoned(&n.id), "note_purge_expired 没落墓碑");
+    assert!(
+        store.note_is_tombstoned(&n.id),
+        "note_purge_expired 没落墓碑"
+    );
 }
 
 /// 墓碑**永不随 notes 行消失**——这正是它存在的全部理由。
@@ -7502,7 +8439,10 @@ fn test_墓碑时间取软删那一刻而不是清理那一刻() {
 #[test]
 fn test_墓碑按时间筛且升序() {
     let store = make_store();
-    for (title, when) in [("早", "2020-01-01 00:00:00.000"), ("晚", "2021-01-01 00:00:00.000")] {
+    for (title, when) in [
+        ("早", "2020-01-01 00:00:00.000"),
+        ("晚", "2021-01-01 00:00:00.000"),
+    ] {
         let n = store.note_create(None, title, "正文").unwrap();
         store.note_delete(&n.id).unwrap();
         backdate_deleted_at(&store, &n.id, when);
@@ -7520,7 +8460,12 @@ fn test_墓碑按时间筛且升序() {
     // （用第二条的值当 since 会一条不剩——那正是严格大于的目的：
     //   游标就是上一轮取到的最大 local_ms，不该把它再发一遍）
     let recent = store.note_tombstones_since(all[0].2).unwrap();
-    assert_eq!(recent.len(), 1, "since 没按 local_ms 起筛选作用：{:?}", recent);
+    assert_eq!(
+        recent.len(),
+        1,
+        "since 没按 local_ms 起筛选作用：{:?}",
+        recent
+    );
 }
 
 /// 落不下墓碑不能让用户删不掉东西（同 FTS 清理失败的先例）。
@@ -7617,7 +8562,9 @@ fn test_改正文时链表跟着变() {
 fn test_断链包括指向回收站的() {
     let store = make_store();
     let b = store.note_create(None, "乙", "正文").unwrap();
-    let a = store.note_create(None, "甲", "指向 [[乙]] 和 [[根本没这篇]]").unwrap();
+    let a = store
+        .note_create(None, "甲", "指向 [[乙]] 和 [[根本没这篇]]")
+        .unwrap();
 
     let broken = store.note_broken_links().unwrap();
     assert_eq!(broken.len(), 1, "{:?}", broken);
@@ -7627,7 +8574,11 @@ fn test_断链包括指向回收站的() {
     store.note_delete(&b.id).unwrap();
     let broken = store.note_broken_links().unwrap();
     assert_eq!(broken.len(), 2, "指向回收站的也该算断链：{:?}", broken);
-    assert!(store.note_links_out(&a.id).unwrap().iter().all(|l| l.to_id.is_none()));
+    assert!(store
+        .note_links_out(&a.id)
+        .unwrap()
+        .iter()
+        .all(|l| l.to_id.is_none()));
 }
 
 /// 🔴 改标题时反链要跟着走（M3-④ 的验收项）。
@@ -7660,14 +8611,21 @@ fn test_孤立笔记是两边都没有链的() {
     let orphans = store.note_orphans().unwrap();
     let ids: Vec<&str> = orphans.iter().map(|(i, _)| i.as_str()).collect();
     assert!(ids.contains(&lonely.id.as_str()), "独该是孤立的");
-    assert_eq!(orphans.len(), 1, "甲有出链、乙有入链，都不算孤立：{:?}", orphans);
+    assert_eq!(
+        orphans.len(),
+        1,
+        "甲有出链、乙有入链，都不算孤立：{:?}",
+        orphans
+    );
 }
 
 /// 自引用不算反链——`[[自己]]` 在反链面板里列出自己毫无意义。
 #[test]
 fn test_自引用不算反链() {
     let store = make_store();
-    let a = store.note_create(None, "甲", "我引用 [[甲]] 我自己").unwrap();
+    let a = store
+        .note_create(None, "甲", "我引用 [[甲]] 我自己")
+        .unwrap();
     assert!(store.note_backlinks(&a.id).unwrap().is_empty());
     // 但出链仍然记着（它确实解析得到）
     assert_eq!(store.note_links_out(&a.id).unwrap().len(), 1);
@@ -7697,7 +8655,10 @@ fn test_配对与忘记设备() {
     let list = store.device_list().unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].name, "书房台式机");
-    assert_eq!(list[0].conn_state, "offline", "刚配对时还没连上，不能是 online");
+    assert_eq!(
+        list[0].conn_state, "offline",
+        "刚配对时还没连上，不能是 online"
+    );
     assert_eq!(list[0].last_seen, 0);
 
     assert!(store.device_forget("aa").unwrap());
@@ -7714,7 +8675,10 @@ fn test_设备暂停与恢复() {
 
     assert!(store.device_set_paused("aa", true).unwrap());
     assert!(store.device_get("aa").unwrap().unwrap().paused);
-    assert!(!store.device_set_paused("aa", true).unwrap(), "重复暂停该返回 false");
+    assert!(
+        !store.device_set_paused("aa", true).unwrap(),
+        "重复暂停该返回 false"
+    );
     assert_eq!(
         store.device_get("aa").unwrap().unwrap().sync_cursor_ms,
         9_999,
@@ -7733,7 +8697,9 @@ fn test_重复配对不重置在线状态() {
     store.device_pair("aa", "旧名字", "").unwrap();
     store.device_mark_online("aa", "lan", 12_345).unwrap();
 
-    store.device_pair("aa", "新名字", "relay.example:443").unwrap();
+    store
+        .device_pair("aa", "新名字", "relay.example:443")
+        .unwrap();
     let d = store.device_get("aa").unwrap().unwrap();
     assert_eq!(d.name, "新名字");
     assert_eq!(d.relay_addr, "relay.example:443");
@@ -7819,7 +8785,10 @@ fn test_置顶的笔记要排到列表最前() {
     // 先钓住「没置顶时 a 确实不在最前」——否则下面的断言可能只是碰巧。
     let before = store.note_list("all", &[], 50, 0).unwrap();
     assert_eq!(before.len(), 3);
-    assert_ne!(before[0].id, a.id, "前提不成立：a 本来就在最前，这条用例证明不了什么");
+    assert_ne!(
+        before[0].id, a.id,
+        "前提不成立：a 本来就在最前，这条用例证明不了什么"
+    );
 
     assert!(store.note_toggle_pin(&a.id).unwrap(), "切换后应为已置顶");
 
@@ -7865,14 +8834,40 @@ fn test_待沉淀只列能转笔记的并带上识别文字() {
             .unwrap();
     };
 
-    seed("h-text", "text", "一段能转成笔记的正文", "", "2026-08-01 10:00:00");
+    seed(
+        "h-text",
+        "text",
+        "一段能转成笔记的正文",
+        "",
+        "2026-08-01 10:00:00",
+    );
     // 文件卡片：全部内容就是一串路径，转不出正文
-    seed("h-file", "file", "D:\\某个文件.zip", "D:\\某个文件.zip", "2026-08-02 10:00:00");
+    seed(
+        "h-file",
+        "file",
+        "D:\\某个文件.zip",
+        "D:\\某个文件.zip",
+        "2026-08-02 10:00:00",
+    );
     // 有 OCR 的图片：能转
-    seed("h-img-ocr", "image", "", "D:\\shot-1.png", "2026-08-03 10:00:00");
-    store.set_ocr_text("D:\\shot-1.png", "截图里认出来的字").unwrap();
+    seed(
+        "h-img-ocr",
+        "image",
+        "",
+        "D:\\shot-1.png",
+        "2026-08-03 10:00:00",
+    );
+    store
+        .set_ocr_text("D:\\shot-1.png", "截图里认出来的字")
+        .unwrap();
     // 没 OCR 的图片：转出来是一条空笔记
-    seed("h-img-raw", "image", "", "D:\\shot-2.png", "2026-08-04 10:00:00");
+    seed(
+        "h-img-raw",
+        "image",
+        "",
+        "D:\\shot-2.png",
+        "2026-08-04 10:00:00",
+    );
 
     let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
     let ids: Vec<&str> = rows.iter().map(|c| c.item.id.as_str()).collect();
@@ -7898,7 +8893,6 @@ fn test_待沉淀只列能转笔记的并带上识别文字() {
     );
 }
 
-
 /// 三条入选通路各自都能把一张卡片送进待沉淀，且 `reason` 要报对。
 ///
 /// 🔴 为什么要挖这条：旧实现把「入选原因」写在**三处**
@@ -7918,7 +8912,12 @@ fn test_两条入选通路各自都能入选且原因报对() {
 
     // 通路#2 找回 >= 2
     store
-        .insert_history(&make_item("c-hit", "搜出来后真的用过", "2026-08-02 10:00:00", "text"))
+        .insert_history(&make_item(
+            "c-hit",
+            "搜出来后真的用过",
+            "2026-08-02 10:00:00",
+            "text",
+        ))
         .unwrap();
     bump("UPDATE history SET search_hit_count = 2 WHERE id = 'c-hit'");
 
@@ -7927,7 +8926,12 @@ fn test_两条入选通路各自都能入选且原因报对() {
     //    否则以后有人凭「反正反复复制的应该挺重要」把它加回来。
     //    它与蒸馏重叠：反复复制的内容必然也在当天/跨天的簇里。
     store
-        .insert_history(&make_item("c-recopy", "反复复制的那串口令", "2026-08-03 10:00:00", "text"))
+        .insert_history(&make_item(
+            "c-recopy",
+            "反复复制的那串口令",
+            "2026-08-03 10:00:00",
+            "text",
+        ))
         .unwrap();
     bump("UPDATE history SET recopy_count = 9 WHERE id = 'c-recopy'");
 
@@ -7937,17 +8941,26 @@ fn test_两条入选通路各自都能入选且原因报对() {
     let mut shot = make_item("c-shot", "", "2026-08-04 10:00:00", "image");
     shot.content = "img-long.png".to_string();
     store.insert_history(&shot).unwrap();
-    store.set_ocr_text("img-long.png", &"字".repeat(900)).unwrap();
+    store
+        .set_ocr_text("img-long.png", &"字".repeat(900))
+        .unwrap();
 
     // 两条**门槛下方**的，确认不是「什么都往里进」
     store
-        .insert_history(&make_item("c-recopy-lo", "只复制过两次", "2026-08-05 10:00:00", "text"))
+        .insert_history(&make_item(
+            "c-recopy-lo",
+            "只复制过两次",
+            "2026-08-05 10:00:00",
+            "text",
+        ))
         .unwrap();
     bump("UPDATE history SET recopy_count = 2 WHERE id = 'c-recopy-lo'");
     let mut shot_lo = make_item("c-shot-lo", "", "2026-08-06 10:00:00", "image");
     shot_lo.content = "img-short.png".to_string();
     store.insert_history(&shot_lo).unwrap();
-    store.set_ocr_text("img-short.png", &"字".repeat(100)).unwrap();
+    store
+        .set_ocr_text("img-short.png", &"字".repeat(100))
+        .unwrap();
 
     let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
     let by = |id: &str| rows.iter().find(|c| c.item.id == id);
@@ -7980,12 +8993,20 @@ fn test_两条入选通路各自都能入选且原因报对() {
 #[test]
 fn test_同时满足多条通路时只报最强的() {
     let store = make_store();
-    let mut it = make_item("c-all", "又收藏又找回又反复复制", "2026-08-01 10:00:00", "text");
+    let mut it = make_item(
+        "c-all",
+        "又收藏又找回又反复复制",
+        "2026-08-01 10:00:00",
+        "text",
+    );
     it.pinned = true;
     store.insert_history(&it).unwrap();
     store
         .lock_conn()
-        .execute("UPDATE history SET search_hit_count = 9, recopy_count = 9 WHERE id = 'c-all'", [])
+        .execute(
+            "UPDATE history SET search_hit_count = 9, recopy_count = 9 WHERE id = 'c-all'",
+            [],
+        )
         .unwrap();
 
     let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
@@ -7994,13 +9015,21 @@ fn test_同时满足多条通路时只报最强的() {
     let mut opts = crate::data_store::InboxViewOpts::default();
     opts.reason = "research".to_string();
     assert!(
-        store.kb_inbox_list_view("默认", &opts, 50, 0).unwrap().is_empty(),
+        store
+            .kb_inbox_list_view("默认", &opts, 50, 0)
+            .unwrap()
+            .is_empty(),
         "它的原因是 star，不该出现在「只看找回」里"
     );
     opts.reason = "star".to_string();
-    assert_eq!(store.kb_inbox_list_view("默认", &opts, 50, 0).unwrap().len(), 1);
+    assert_eq!(
+        store
+            .kb_inbox_list_view("默认", &opts, 50, 0)
+            .unwrap()
+            .len(),
+        1
+    );
 }
-
 
 /// 每日蒸馏的摘录：必须按**字符**截断，且长度由后端夹死。
 ///
@@ -8019,8 +9048,13 @@ fn test_蒸馏摘录按字符截断且不回全文() {
     store.insert_history(&it).unwrap();
     // 带换行的：摘录要拼进 Markdown 列表项，换行会把列表打断
     store
-        .insert_history(&make_item("d-nl", "第一行
-第二行	带制表", "2026-08-01 10:01:00", "text"))
+        .insert_history(&make_item(
+            "d-nl",
+            "第一行
+第二行	带制表",
+            "2026-08-01 10:01:00",
+            "text",
+        ))
         .unwrap();
 
     let rows = store.history_day_excerpts("2026-08-01").unwrap();
@@ -8130,7 +9164,10 @@ fn test_human_revert_leaves_no_agent_mark_and_no_anchor() {
 
     let back = store.note_restore(rev_v1, "").unwrap();
     assert_eq!(back.content, "v1");
-    assert_eq!(back.last_agent, "", "人手动回滚过之后不应该还声称某个 agent 最后改过");
+    assert_eq!(
+        back.last_agent, "",
+        "人手动回滚过之后不应该还声称某个 agent 最后改过"
+    );
 
     let pinned_after = store
         .note_revision_list(&n.id)

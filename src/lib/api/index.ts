@@ -208,6 +208,7 @@ export {
   rcCancelRequest,
   rcApproveInbound,
   rcDenyInbound,
+  rcDeviceTrustSet,
   rcEndSession,
   rcRequireActive,
 } from "./rc";

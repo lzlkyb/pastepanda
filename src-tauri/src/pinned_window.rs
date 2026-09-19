@@ -28,17 +28,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 /// （这个坑在本文件的 WM_TIMER 上刚踩过一次）。
 const WM_MOUSELEAVE: u32 = 0x02A3;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetClientRect, GetMessageW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetWindowLongPtrW, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassW,
     SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, CS_DROPSHADOW, CS_HREDRAW,
-    CS_VREDRAW,
-    CW_USEDEFAULT,
-    GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_ERASEBKGND,
-    WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_TIMER,
-    WM_PAINT, WM_RBUTTONUP, WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_POPUP, WS_VISIBLE,
+    CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW, WM_CLOSE, WM_CREATE,
+    WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SIZE, WM_TIMER, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 
 /// 窗口运行时状态
@@ -504,7 +500,11 @@ fn fill_buffer(buf: &mut [u8], buf_w: i32, buf_h: i32, state: &WindowState) {
                 // 未旋转图局部 → 源像素坐标
                 let sx = (ux + draw_w * 0.5) / state.scale;
                 let sy = (uy + draw_h * 0.5) / state.scale;
-                if sx >= 0.0 && sx < state.img_width as f32 && sy >= 0.0 && sy < state.img_height as f32 {
+                if sx >= 0.0
+                    && sx < state.img_width as f32
+                    && sy >= 0.0
+                    && sy < state.img_height as f32
+                {
                     let six = sx as u32;
                     let siy = sy as u32;
                     let src = ((siy * state.img_width + six) * 4) as usize;
@@ -645,12 +645,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
             // 底部 HUD：回显 缩放% · 旋转° · 透明度（解决“缩了多少看不见”）。
             // 只在刚改过参数后的 HUD_SHOW_MS 内显示（见 hud_until 的注释）。
-            if state.hud_until.is_some_and(|t| std::time::Instant::now() < t) {
+            if state
+                .hud_until
+                .is_some_and(|t| std::time::Instant::now() < t)
+            {
+                use windows::Win32::Foundation::COLORREF;
                 use windows::Win32::Graphics::Gdi::{
                     CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, FillRect, SelectObject,
-                    SetBkMode, SetTextColor, TRANSPARENT, DT_CENTER, DT_SINGLELINE, DT_VCENTER,
+                    SetBkMode, SetTextColor, DT_CENTER, DT_SINGLELINE, DT_VCENTER, TRANSPARENT,
                 };
-                use windows::Win32::Foundation::COLORREF;
                 use windows::Win32::UI::HiDpi::GetDpiForWindow;
                 let line = match &state.hud_text {
                     Some(t) => format!("  {t}  "),
@@ -770,7 +773,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             // 不申请的话鼠标移出去不会有任何消息，描边就一直亮着。
             if !state.hover {
                 use windows::Win32::UI::Input::KeyboardAndMouse::{
-                    TrackMouseEvent, TRACKMOUSEEVENT, TME_LEAVE,
+                    TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
                 };
                 state.hover = true;
                 let mut tme = TRACKMOUSEEVENT {
@@ -932,7 +935,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             // 双击贴图 → 回到截图标注窗口重新编辑（按 hwnd 区分，多贴图各编辑各的）
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
             if ptr != 0 {
-                if let Some((app, path)) = crate::screenshot::peek_pinned_edit_by_hwnd(hwnd.0 as isize)
+                if let Some((app, path)) =
+                    crate::screenshot::peek_pinned_edit_by_hwnd(hwnd.0 as isize)
                 {
                     // 用 peek 不用 take：take 会把绑定从 map 里移除，双击一次之后
                     // 再双击、以及右键菜单的「复制图片/重新编辑」就全失效了。
@@ -1127,7 +1131,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     _ => {}
                 }
                 apply_transform(hwnd, state);
-                log::info!("[pinned-window] 面板指令变换完成 rotation={}° flip_h={} flip_v={}", state.rotation, state.flip_h, state.flip_v);
+                log::info!(
+                    "[pinned-window] 面板指令变换完成 rotation={}° flip_h={} flip_v={}",
+                    state.rotation,
+                    state.flip_h,
+                    state.flip_v
+                );
             }
             LRESULT(0)
         }
@@ -1211,7 +1220,14 @@ pub fn create_native_window(app: tauri::AppHandle, image_path: &str) -> Result<(
     // app 随窗口线程带下去，供 run_window_loop 内部绑定 (hwnd → path) 使用，
     // 不再依赖全局 slot（连续双击 A/B 时 slot 会被覆盖，导致 A 的窗口绑定到 B 的路径）。
     std::thread::spawn(move || {
-        if let Err(e) = run_window_loop(pixels, img_width, img_height, generation, image_path_owned, app) {
+        if let Err(e) = run_window_loop(
+            pixels,
+            img_width,
+            img_height,
+            generation,
+            image_path_owned,
+            app,
+        ) {
             log::error!("[pinned-window] 窗口消息循环错误: {}", e);
         }
     });
@@ -1267,9 +1283,7 @@ pub fn close_pinned_by_path(path: &str) {
 /// 管理面板按 path 下发变换指令（1=旋转90° 2=水平翻转 3=垂直翻转 4=恢复）。
 /// 跨线程：向该 path 对应的所有贴图窗口 PostMessage 自定义消息，由窗口线程改 state 并重绘。
 pub fn transform_pinned_image_by_path(path: &str, action: u8) {
-    let windows = CURRENT_WINDOW
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let windows = CURRENT_WINDOW.lock().unwrap_or_else(|p| p.into_inner());
     let hwnds: Vec<isize> = windows
         .iter()
         .filter(|w| w.path == path)

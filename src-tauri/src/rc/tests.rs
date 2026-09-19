@@ -48,7 +48,7 @@ async fn request_without_rc_pair_fails() {
     s.device_pair(&"aa".repeat(32), "同步机", "").unwrap();
     let svc = RcService::new(s);
     let err = svc
-        .request_session(&"aa".repeat(32), Capability::View)
+        .request_session(&"aa".repeat(32), Capability::View, None)
         .await
         .unwrap_err();
     assert!(err.contains("远程配对") || err.contains("通道"), "{err}");
@@ -63,16 +63,40 @@ async fn request_rc_paired_but_no_transport() {
     assert!(svc.needs_channel());
     assert!(!svc.enabled(), "发起不依赖「允许被远程」");
     let err = svc
-        .request_session(&"bb".repeat(32), Capability::View)
+        .request_session(&"bb".repeat(32), Capability::View, None)
         .await
         .unwrap_err();
     assert!(err.contains("通道未启动"), "{err}");
     assert!(svc.require_active().is_err());
 }
 
-#[test]
-fn needs_channel_when_paired_without_being_remoted() {
+#[tokio::test]
+async fn request_with_uno_code_skips_pairing_gate() {
+    // Q2 方案 B：带无人值守接入码的发起，目标机器**本来就未配对**——
+    // 老的配对门必须让位，卡点后移到「通道未启动」（对端验码发生在拨通之后）。
     let s = store();
+    let svc = RcService::new(s.clone());
+    let err = svc
+        .request_session(&"cc".repeat(32), Capability::Control, Some("AB2C-3DEF".into()))
+        .await
+        .unwrap_err();
+    assert!(err.contains("通道未启动"), "带码不该死在配对门：{err}");
+    // 对照组：同一台机器，不带码 → 老门照旧拦下
+    let err = svc
+        .request_session(&"cc".repeat(32), Capability::Control, None)
+        .await
+        .unwrap_err();
+    assert!(err.contains("远程配对"), "{err}");
+    // 空串视同没带码，不绕门
+    let err = svc
+        .request_session(&"cc".repeat(32), Capability::Control, Some("  ".into()))
+        .await
+        .unwrap_err();
+    assert!(err.contains("远程配对"), "{err}");
+}
+
+#[test]
+fn needs_channel_when_paired_without_being_remoted() {    let s = store();
     assert!(!RcService::new(s.clone()).needs_channel());
     s.rc_device_pair(&"cc".repeat(32), "甲").unwrap();
     let svc = RcService::new(s.clone());
@@ -388,7 +412,14 @@ mod lifecycle {
         live.clear();
 
         // 2. 正在开会话 → 无论库里怎么说都在线
-        assert!(is_rc_online_for(&peer, "offline", 0, &live, Some(&peer), now));
+        assert!(is_rc_online_for(
+            &peer,
+            "offline",
+            0,
+            &live,
+            Some(&peer),
+            now
+        ));
 
         // 3. 库里 online 且 last_seen 未过期（跨网唯一线索）
         assert!(is_rc_online_for(
@@ -411,9 +442,23 @@ mod lifecycle {
         // 刚配对 / last_seen=0 的 online 是假的（进程被杀会定格 online）
         assert!(!is_rc_online_for(&peer, "online", 0, &live, None, now));
         // 会话 peer 不是这台 → 不借力
-        assert!(!is_rc_online_for(&peer, "offline", 0, &live, Some("other"), now));
+        assert!(!is_rc_online_for(
+            &peer,
+            "offline",
+            0,
+            &live,
+            Some("other"),
+            now
+        ));
         // 库里 offline 且没 live → 离线
-        assert!(!is_rc_online_for(&peer, "offline", now - 1, &live, None, now));
+        assert!(!is_rc_online_for(
+            &peer,
+            "offline",
+            now - 1,
+            &live,
+            None,
+            now
+        ));
     }
 
     /// 四档可达性：live / recent / seen / never（设计稿）。
@@ -525,9 +570,15 @@ fn test_敲门被拒要说清是哪一种() {
     use crate::rc::join::{deny_unpaired, KnockDenial};
 
     // ① 没开被控 → 先去开开关
-    assert_eq!(deny_unpaired(false, true, false), Some(KnockDenial::Disabled));
+    assert_eq!(
+        deny_unpaired(false, true, false),
+        Some(KnockDenial::Disabled)
+    );
     // ② 窗口过期（门已关）→ 回去重新生成一份码。这是最常见的那一档。
-    assert_eq!(deny_unpaired(true, false, false), Some(KnockDenial::DoorClosed));
+    assert_eq!(
+        deny_unpaired(true, false, false),
+        Some(KnockDenial::DoorClosed)
+    );
     // ③ 拒绝冷却期 → 说明对方拒过，别再干等
     assert_eq!(deny_unpaired(true, true, true), Some(KnockDenial::Denied));
     // ④ 都正常 → 记入待确认
@@ -585,4 +636,81 @@ fn test_门可重开且不缩短已开的窗口() {
         crate::rc::join::door_open(&s, T + 30_000),
         "重复开门时窗口被缩短了——用户会莫名其妙地被提前关在门外"
     );
+}
+
+/// 🔴 回归钉（tmp_b1 实测命中）：对**未配对**的 id 设免确认必须拒绝——旧行为
+/// 凭空写一行「同步设备」并让 `has_remote_trust` 变 true = 绕过 SAS 配对放白名单。
+#[test]
+fn test_免确认只能开在已配对设备上() {
+    let s = store();
+    let svc = RcService::new(s.clone());
+    let e = svc.set_device_trust("unknown-id-xyz", true).unwrap_err();
+    assert!(e.contains("尚未与本机配对"), "{}", e);
+    assert!(
+        s.rc_device_get("unknown-id-xyz").unwrap().is_none(),
+        "拒绝的同时不许写行"
+    );
+    assert!(!svc.has_remote_trust("unknown-id-xyz"));
+}
+
+// —— Q6：免确认设备断线自动重连 ——
+
+#[test]
+fn test_非免确认设备断线不安排自动重连() {
+    // store 里没有这台设备的 rc_devices 行 → device_trusted = false。
+    // 逐次确认的设备自动重连 = 自动反复敲对方的门，绝不能默默发起。
+    let svc = std::sync::Arc::new(RcService::new(store()));
+    svc.begin_auto_reconnect("peer-no-trust", "对方".to_string(), Capability::View);
+    assert!(
+        svc.status().reconnecting.is_none(),
+        "未开免确认就不能进入重连状态"
+    );
+}
+
+#[test]
+fn test_免确认设备断线会进入重连状态() {
+    let s = store();
+    // 配对行 + trusted=true 才算免确认（与「免确认只能开在已配对设备上」同一前提）
+    s.rc_device_pair("peer-trusted", "对端机").unwrap();
+    s.rc_device_trust_set("peer-trusted", true).unwrap();
+    let svc = std::sync::Arc::new(RcService::new(s));
+    svc.begin_auto_reconnect("peer-trusted", "对端机".to_string(), Capability::View);
+    let info = svc.status().reconnecting.expect("应进入重连状态");
+    assert_eq!(info.peer, "peer-trusted");
+    assert_eq!(info.max, 3);
+    assert!(!info.gave_up);
+}
+
+// ── Q8 静止精修的运动判定（motion_verdict 纯函数）──────────────────────────
+
+use crate::rc::inbound::{motion_verdict, MotionVerdict};
+
+/// 🔴 精修强制出的 IDR 不能把自己当成「画面动了」——那是 re-arm 死循环
+/// （静止画面每 ~330ms 一个 IDR）的成因，2026-09-19 审查发现的 P1。
+#[test]
+fn 关键帧不参与运动判定_精修IDR不重新武装() {
+    assert_eq!(
+        motion_verdict(true, 100_000, 500_000),
+        MotionVerdict::Ignore,
+        "关键帧无论多大都不是「动了」"
+    );
+    // 基准未建立：首个非关键帧负责建立（算动帧）
+    assert_eq!(motion_verdict(false, 0, 1), MotionVerdict::Moving);
+    // 动帧判据：≥ 基准/6
+    assert_eq!(motion_verdict(false, 60_000, 10_000), MotionVerdict::Moving);
+    assert_eq!(
+        motion_verdict(false, 60_000, 9_999),
+        MotionVerdict::Static,
+        "跳块 P 帧只有基准零头 ⇒ 静止"
+    );
+}
+
+/// 🔴 发送端序号从 1 起：sq=0 是「旧对端无序号」的保留值。曾从 0 起会让
+/// 会话第一个流关键帧被接收端跳过锚定，首 GOP 画面全部滞留（首帧后冻 ~1s）。
+#[test]
+fn 发送端序号从1起且回绕跳过0() {
+    use crate::rc::vid_dgram::VidDgramSender;
+    let mut s = VidDgramSender::new();
+    assert_eq!(s.take_seq(), 1, "第一个帧的序号是 1，不是 0");
+    assert_eq!(s.take_seq(), 2);
 }

@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · UI 优化五项 · 设计稿</title>
+<style>
+  /* ===== 真实主题令牌（src/styles/theme.css · ocean / midnight）===== */
+  :root {
+    --app-bg: #F4F8FC;
+    --card-bg: #ffffff;
+    --card-border: #E0E4EB;
+    --border-color: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --accent-border: rgba(2, 132, 199, 0.35);
+    --orange: #C54A0A;
+    --orange-bg: #FFF7ED;
+    --orange-border: #FED7AA;
+    --warning: var(--orange);
+    --danger: #D82525;
+    --danger-bg: #FEF2F2;
+    --red-bg: #FEF2F2;
+    --green: #11813A;
+    --green-bg: #DCFCE7;
+    --green-border: #BBF7D0;
+    --success: #15803D;
+    --success-bg: #DCFCE7;
+    --success-border: #86EFAC;
+    --amber: #D4A017;
+    --hover: #E8ECF2;
+    --section-bg: #F0F4F8;
+    --input-bg: #F1F5F9;
+    --toggle-off-bg: #E2E8F0;
+
+    /* §6 提案：深色叠层专用令牌（会话区是「播放器式」深色外观，不跟浅色主题走，
+       但也不该散落 6 个魔数）。定义在 [data-rc-root] 上，两套主题共用。 */
+    --rc-on-dark: #E6ECF5;
+    --rc-on-dark-muted: #9AA6B6;
+    --rc-on-dark-chip: #C8D0DC;
+    --rc-on-dark-accent: #C0D2FF;
+    --rc-on-dark-danger: #FFB3B3;
+    --rc-on-dark-scrim: rgba(0, 0, 0, 0.68);
+  }
+  [data-theme="midnight"] {
+    --app-bg: #0B0B13;
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border-color: #27272A;
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-light: #1E1B4B;
+    --accent-border: rgba(129, 140, 248, 0.35);
+    --orange: #FB923C;
+    --orange-bg: #431407;
+    --orange-border: #9A3412;
+    --danger: #F87171;
+    --danger-bg: #450A0A;
+    --red-bg: #450A0A;
+    --green: #4ADE80;
+    --green-bg: #052E16;
+    --green-border: #166534;
+    --success: #4ADE80;
+    --success-bg: #14532D;
+    --success-border: #166534;
+    --hover: #27272A;
+    --section-bg: #0F0F11;
+    --toggle-off-bg: #3F3F46;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 80px;
+    background: #EEF1F5; color: var(--text-primary);
+    font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .doc { max-width: 1320px; margin: 0 auto; padding: 32px 24px 0; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+  .sub { color: #55606E; font-size: 12.5px; margin-bottom: 10px; max-width: 900px; }
+  h2 {
+    font-size: 15px; margin: 40px 0 12px; font-weight: 650;
+    padding-bottom: 6px; border-bottom: 1px solid #D8DEE7;
+  }
+  h3 { font-size: 13px; margin: 24px 0 8px; font-weight: 650; color: #2A3444; }
+  h4 { font-size: 12px; margin: 16px 0 6px; font-weight: 650; color: var(--text-secondary); }
+  p { margin: 0 0 10px; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+    background: #E7ECF2; color: #0B4A6F; padding: 1px 5px; border-radius: 4px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0 4px; }
+  th, td { border: 1px solid #D8DEE7; padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { color: #55606E; font-weight: 600; background: #E9EDF3; }
+  td.v { color: #2A3444; }
+  .good { color: var(--success); font-weight: 600; }
+  .bad { color: var(--danger); font-weight: 600; }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-light);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .warn {
+    border-left: 3px solid var(--warning); background: var(--orange-bg);
+    padding: 9px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; margin: 12px 0;
+  }
+  .themeBtn {
+    position: fixed; top: 14px; right: 16px; z-index: 9;
+    font: 12px/1 inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #C9D2DE; background: #fff; color: #2A3444;
+    box-shadow: 0 2px 8px rgba(15,23,42,.08);
+  }
+  .figLabel {
+    font-size: 11.5px; font-weight: 650; color: var(--text-secondary);
+    margin: 18px 0 6px; display: flex; align-items: center; gap: 8px;
+  }
+  .figLabel .tagNow, .figLabel .tagNew {
+    font-size: 10px; padding: 1px 8px; border-radius: 10px; font-weight: 650;
+  }
+  .tagNow { background: var(--red-bg); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
+  .tagNew { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+  .dimNote { font-size: 11.5px; color: var(--text-muted); margin: 6px 0 0; max-width: 900px; }
+  .stage { background: #DCE2EA; padding: 14px; border-radius: 10px; }
+
+  /* ===== 窗壳 ===== */
+  /* 主窗口 550×700（tauri.conf.json），被控横幅挂在 App 层顶部 */
+  .mainWin {
+    width: 550px; background: var(--app-bg);
+    border: 1px solid var(--border-color); border-radius: 10px;
+    box-shadow: 0 12px 36px rgba(15,23,42,.14); overflow: hidden;
+  }
+  .mwTopBar {
+    height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
+    background: var(--card-bg); border-bottom: 1px solid var(--border-color);
+    font-size: 11.5px; color: var(--text-muted);
+  }
+  .mwBody { padding: 8px 12px; }
+  .mwFake {
+    height: 118px; border: 1px dashed color-mix(in srgb, var(--text-muted) 35%, transparent);
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 11.5px; background: var(--card-bg);
+  }
+
+  /* —— 被控横幅：真实样式（RemoteComputer.module.css:769）—— */
+  .ctrlBanner {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; margin: 8px 12px 0;
+    background: color-mix(in srgb, var(--danger) 12%, var(--card-bg));
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-color));
+    border-radius: 8px; font-size: 12.5px;
+  }
+  /* 图 1a 专用：真实 CSS 里没有任何 white-space:nowrap，各项默认会各自折行。
+     这一支只是把「一行不换行需要多宽」量出来，所以 nowrap 只加在 .natural 下。 */
+  .ctrlBanner.natural { width: 900px; }
+  .ctrlBanner.natural * { white-space: nowrap; }
+  .ctrlBanner.natural .cbNotice { flex-wrap: nowrap; }
+  .cbWho { font-weight: 600; color: var(--danger); }
+  .cbDot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--danger);
+    display: inline-block; margin-right: 5px; vertical-align: 0;
+  }
+  .cbPill {
+    font-size: 11px; padding: 3px 10px; border-radius: 20px;
+    background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger);
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-color));
+  }
+  .cbTimer { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .cbMeta { font-size: 11px; color: var(--text-muted); }
+  .cbSp { flex: 1; }
+  .btnS, .btnSPri, .btnDanger {
+    font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-primary); cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  }
+  .btnSPri { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btnDanger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border-color)); background: color-mix(in srgb, var(--danger) 8%, transparent); font-weight: 600; }
+  .cbTrust {
+    font-size: 11px; padding: 2px 8px; border-radius: 6px; flex-shrink: 0;
+    color: color-mix(in srgb, var(--green) 85%, var(--text-primary));
+    background: color-mix(in srgb, var(--green) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--green) 35%, transparent);
+  }
+  .cbNotice {
+    display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; padding: 3px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--warning) 16%, transparent);
+    color: color-mix(in srgb, var(--warning) 80%, var(--text-primary));
+    border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  }
+
+  /* 方案 A：两行栅格 */
+  .ctrlBanner.v2 {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 10px; align-items: center;
+  }
+  .cbRow1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cbRow1 .cbWho { overflow: hidden; text-overflow: ellipsis; min-width: 0; white-space: nowrap; flex: 0 1 auto; }
+  .cbRow2 { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 11px; color: var(--text-muted); }
+  .cbEnd { grid-row: 1 / span 2; align-self: center; }
+  .cbRowFull { grid-column: 1 / -1; display: flex; }
+
+  /* 标尺 */
+  .ruler { position: relative; height: 20px; margin: 4px 0 0; }
+  .ruler i {
+    position: absolute; top: 6px; height: 8px; border: 1px solid var(--accent);
+    border-top: none; display: block;
+  }
+  .ruler em {
+    position: absolute; top: 0; font-size: 10.5px; font-style: normal; color: var(--accent);
+    white-space: nowrap;
+  }
+  .ruler .over { border-color: var(--danger); }
+  .ruler em.over { color: var(--danger); }
+
+  /* ===== 工作台壳（1200×780）===== */
+  .workbench {
+    width: 1200px; height: 780px; margin: 0 auto;
+    background: var(--app-bg); border: 1px solid var(--border-color); border-radius: 10px;
+    box-shadow: 0 12px 36px rgba(15,23,42,.14); overflow: hidden;
+    display: flex; font-size: 13px; color: var(--text-primary);
+  }
+  .workbench.short { height: 620px; }
+  .wbSide {
+    width: 272px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
+    padding: 14px 12px; overflow-y: auto;
+    border-right: 1px solid var(--border-color); background: var(--card-bg);
+  }
+  .wbSideHead { display: flex; align-items: baseline; gap: 8px; }
+  .wbTitle { font-size: 15px; font-weight: 700; margin: 0; }
+  .meta { font-size: 11px; color: var(--text-muted); }
+  .metaSub { color: var(--text-muted); }
+  .wbMain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; overflow: auto; }
+  .railBtn {
+    width: 32px; height: 32px; margin-left: auto; display: inline-flex; align-items: center;
+    justify-content: center; border-radius: 8px; border: 1px solid var(--border-color);
+    background: transparent; color: var(--text-muted); cursor: pointer; font-size: 14px;
+  }
+
+  /* 开关行 / 画质条 / 空态块 / 设备行 */
+  .selfRow {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    border-radius: 8px; background: var(--section-bg); border: 1px solid var(--border-color);
+  }
+  .selfRowMain { font-size: 12.5px; font-weight: 600; }
+  .selfRowHint { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  .sToggle {
+    display: inline-block; width: 44px; height: 26px; border-radius: 13px; border: none;
+    cursor: pointer; position: relative; flex-shrink: 0; padding: 0; vertical-align: middle;
+  }
+  .sToggle.off { background: var(--toggle-off-bg); }
+  .sToggle.on { background: var(--success); }
+  .sToggle i {
+    position: absolute; left: 0; top: 2px; width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); transform: translateX(2px);
+  }
+  .sToggle.on i { transform: translateX(20px); }
+
+  .qBar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px;
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+  }
+  .qLabel { font-size: 11px; color: var(--text-muted); margin-right: 2px; }
+  .qSp { flex: 1; min-width: 8px; }
+  .pill, .pillOn {
+    font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border-color); background: var(--section-bg); color: var(--text-muted);
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  }
+  .pillOn {
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color)); font-weight: 600;
+  }
+  .qMeta { font-size: 11px; color: var(--text-muted); width: 100%; }
+  .emptyHint {
+    display: flex; flex-direction: column; gap: 6px; padding: 12px;
+    border: 1px dashed var(--border-color); border-radius: 10px; background: var(--card-bg);
+  }
+  .emptyHintTitle { font-size: 12.5px; font-weight: 600; }
+  .emptyHintBody { font-size: 11.5px; line-height: 1.6; color: var(--text-muted); }
+  .adhocBtns { display: flex; gap: 8px; }
+  .wbSideSp { flex: 1; min-height: 6px; }
+  .lockNote {
+    border-left: 3px solid var(--warning); padding: 7px 10px; font-size: 11.5px; line-height: 1.6;
+    background: color-mix(in srgb, var(--warning) 8%, transparent); border-radius: 0 8px 8px 0;
+  }
+  .noteWarn {
+    border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 8%, transparent);
+    padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.6;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  }
+
+  .devList { display: flex; flex-direction: column; gap: 6px; }
+  .devItem {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px;
+    background: var(--section-bg); border: 1px solid transparent; position: relative;
+  }
+  .av {
+    width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; color: var(--text-primary); font-size: 12px; font-weight: 700;
+    flex-shrink: 0; background: var(--accent-light);
+  }
+  .devInfo { flex: 1; min-width: 0; }
+  .devName { font-size: 12.5px; font-weight: 600; }
+  .dotOn, .dotRecent, .dotOff {
+    width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px;
+  }
+  .dotOn { background: var(--success); }
+  .dotRecent { background: var(--amber); }
+  .dotOff { background: var(--text-muted); }
+  .tagRc, .tagTrusted, .tagDenied {
+    font-size: 10px; padding: 1px 7px; border-radius: 10px; margin-left: 4px;
+    border: 1px solid var(--border-color);
+  }
+  .tagRc { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color)); }
+  .tagTrusted {
+    color: color-mix(in srgb, var(--success) 85%, var(--text-primary));
+    border-color: color-mix(in srgb, var(--success) 35%, var(--border-color));
+    background: color-mix(in srgb, var(--success) 8%, transparent);
+  }
+  .tagDenied {
+    color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border-color));
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+  }
+  .icoBtn {
+    width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-secondary); cursor: pointer; font-size: 11px; flex-shrink: 0;
+  }
+  .icoPri { color: var(--accent); border-color: var(--accent-border); background: var(--accent-light); font-weight: 700; }
+
+  /* 主区：空闲占位 / 上次会话卡 / 空态引导 */
+  .wbIdle {
+    flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
+    color: var(--text-muted); font-size: 13px; border: 1px dashed var(--border-color);
+    border-radius: 10px; padding: 20px; background: var(--card-bg);
+  }
+  .idleStage {
+    flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px;
+    border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-bg);
+    padding: 18px 20px; overflow: auto;
+  }
+  .idleHead { display: flex; align-items: baseline; gap: 10px; }
+  .idleKicker { font-size: 11px; font-weight: 650; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; }
+  .lastCard {
+    display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 10px;
+    background: var(--section-bg); border: 1px solid var(--border-color);
+  }
+  .lastAv {
+    width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: flex;
+    align-items: center; justify-content: center; font-size: 15px; font-weight: 700;
+    background: var(--accent-light); color: var(--accent);
+  }
+  .lastInfo { flex: 1; min-width: 0; }
+  .lastName { font-size: 15px; font-weight: 650; }
+  .lastFacts { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.7; }
+  .lastFacts b { color: var(--text-secondary); font-weight: 600; }
+  .lastActs { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .bigBtn {
+    font: inherit; font-size: 13px; padding: 7px 16px; border-radius: 8px; cursor: pointer;
+    background: var(--accent); border: 1px solid var(--accent); color: #fff; font-weight: 600; white-space: nowrap;
+  }
+  .bigBtnS {
+    font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary); white-space: nowrap;
+  }
+  .histWrap { display: flex; flex-direction: column; gap: 2px; }
+  .histHead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .histHead .lk { margin-left: auto; font-size: 11px; color: var(--accent); cursor: pointer; }
+  .histItem {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 8px; border: 1px solid transparent;
+  }
+  .histItem:hover { background: var(--hover); border-color: var(--border-color); }
+  .histName { font-size: 12.5px; font-weight: 600; }
+  .histNameMeta { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+  .histTime { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .histInfo { flex: 1; min-width: 0; }
+  .foot { font-size: 11px; color: var(--text-muted); line-height: 1.7; }
+
+  /* 空态引导（主区完整版） */
+  .emptyBox {
+    flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; text-align: center; padding: 24px 16px;
+    border: 1px dashed var(--border-color); border-radius: 10px; background: var(--card-bg);
+    color: var(--text-muted); font-size: 12.5px; line-height: 1.7;
+  }
+  .emptyIcon { font-size: 26px; }
+  .guideTitle { font-size: 15px; font-weight: 650; color: var(--text-primary); }
+  .guideLead { font-size: 12.5px; max-width: 560px; }
+  .steps {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px; margin-top: 6px; width: 100%; max-width: 720px;
+  }
+  .step {
+    border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;
+    background: var(--section-bg); text-align: left;
+  }
+  .stepNum {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 700; display: flex; align-items: center;
+    justify-content: center; margin-bottom: 8px;
+  }
+  .stepT { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+  .stepD { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+  .emptyActions { display: flex; gap: 8px; margin-top: 4px; }
+  .dupMark {
+    position: absolute; right: -6px; top: -6px; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--danger); color: #fff; font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; z-index: 3;
+  }
+  .rel { position: relative; }
+
+  /* 深色叠层：会话画面 / HUD / 底栏（真实值 vs 提案值） */
+  .screen {
+    position: relative; flex: 1; min-height: 0; border-radius: 8px; overflow: hidden;
+    background: linear-gradient(180deg, #1A2332 0%, #0F141C 100%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .screen.white { background: #FFFFFF; }
+  .screen.white::after {
+    content: "白底桌面（对比度最坏情况）"; position: absolute; top: 10px; left: 12px;
+    font-size: 11px; color: #94A3B8;
+  }
+  .hud { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 20px); }
+  .hud span {
+    font-size: 10px; padding: 3px 8px; border-radius: 6px;
+    background: rgba(0, 0, 0, 0.55); color: #C8D0DC; border: 1px solid rgba(255, 255, 255, .08);
+  }
+  .hud.v2 span { font-size: 11px; background: var(--rc-on-dark-scrim); color: var(--rc-on-dark-chip); }
+  .hud .hudOk { border-color: rgba(79, 189, 128, .4); color: #7DCEA0; }
+  .hud .hudWarn { border-color: rgba(224, 154, 90, .45); color: #E8B87A; }
+  .hud .hudBad { border-color: rgba(224, 90, 90, .5); color: #F08C8C; }
+  .hud.v2 .hudOk { border-color: color-mix(in srgb, var(--success) 45%, transparent); color: #A7EBC0; }
+  .hud.v2 .hudWarn { border-color: color-mix(in srgb, var(--warning) 50%, transparent); color: #F6CE9A; }
+  .hud.v2 .hudBad { border-color: color-mix(in srgb, var(--danger) 55%, transparent); color: var(--rc-on-dark-danger); }
+  .contrastTag {
+    position: absolute; top: 10px; right: 12px; font-size: 11px; padding: 3px 8px;
+    border-radius: 6px; background: rgba(0,0,0,.68); color: #fff; font-weight: 650;
+  }
+  .contrastTag.bad { background: var(--danger); }
+  .contrastTag.ok { background: var(--success); }
+
+  /* 被控信息卡（RcInboundView） */
+  .ibShell { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  .ibCard {
+    width: 100%; max-width: 620px; display: flex; flex-direction: column; gap: 10px;
+    padding: 20px 22px; border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border-color));
+    background: var(--card-bg);
+  }
+  .ibHead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13.5px; }
+  .ibTitle { font-weight: 600; }
+  .ibLead { font-size: 12.5px; line-height: 1.7; color: var(--text-muted); }
+  .ibFacts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 16px;
+    margin: 2px 0 0; padding: 10px 12px; border-radius: 8px;
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  }
+  .ibFact { display: flex; gap: 6px; min-width: 0; font-size: 11.5px; line-height: 1.6; }
+  .ibFact dt { color: var(--text-muted); flex-shrink: 0; }
+  .ibFact dd { margin: 0; min-width: 0; font-family: ui-monospace, Consolas, monospace; }
+  .ibFact.new dd { color: var(--accent); font-weight: 650; }
+  .ibActions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+
+  /* 下拉（RcDropdown 形状，浅色变体） */
+  .menuBtn {
+    font: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 9px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary);
+  }
+  .menuBtn b { font-weight: 650; }
+  .menuBtn .caret { color: var(--text-muted); font-size: 9px; }
+  .menuGroup { display: inline-flex; align-items: center; gap: 5px; }
+
+  .swatch { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .sw { width: 148px; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; font-size: 11px; }
+  .sw i { display: block; height: 40px; }
+  .sw div { padding: 6px 8px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <button class="themeBtn" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'midnight' ? '' : 'midnight'">切换深色预览</button>
+  <div class="doc">
+    <h1>远程电脑 · UI 优化五项（+ 令牌收口）</h1>
+    <p class="sub">
+      背景：2026-09-18 那批未提交的改版（独立工作台 <code>RcWorkbench</code>、会话页方案 B、设备行方案 A、被控视图 <code>RcInboundView</code>）已经解决了一大块问题。
+      本稿<b>只处理那批之后仍然开着的五条</b>，每条给「现状 1:1 → 方案 1:1 → 落点」三段。样式全部取自真实源码：
+      <code>src/components/rc/RemoteComputer.module.css</code>、<code>src/styles/theme.css</code>。
+      评审要点在每节末尾的表格里，不按稿内视觉顺序实施。
+    </p>
+
+    <!-- ==================== §0 ==================== -->
+    <h2>§0 五条速览</h2>
+    <table>
+      <tr><th style="width:64px;">编号</th><th style="width:78px;">级别</th><th>现象</th><th style="width:290px;">落点</th></tr>
+      <tr><td class="v">S1</td><td class="v bad">P0</td><td class="v">主窗「被控中」横幅一行放 7 个元素且没有 <code>flex-wrap</code>：折行不可控，<b>设备名被压到 65px 宽、折 4 行</b>，「立即结束」落点漂移</td><td class="v"><code>RcControlBanner.tsx:46-104</code> + css <code>:769</code></td></tr>
+      <tr><td class="v">S2</td><td class="v bad">P0</td><td class="v">工作台空态一屏出现两套同名入口：标题 ×2、配对 ×2、两个一次性协助 ×2</td><td class="v"><code>RcWorkbenchSide.tsx:137-168</code> vs <code>RcEmptyGuide.tsx:55-86</code></td></tr>
+      <tr><td class="v">S3</td><td class="v">P1</td><td class="v">空闲态 895×752 只有一行灰字；会话历史只存在于设置页</td><td class="v"><code>RcWorkbench.tsx:265</code> + <code>RcSessionHistory</code></td></tr>
+      <tr><td class="v">S4</td><td class="v">P1</td><td class="v">被控视图核对信息缺「实走路径 / 实测延迟」，而数据后端已给</td><td class="v"><code>RcInboundView.tsx</code> 的 <code>ibFacts</code></td></tr>
+      <tr><td class="v">S5</td><td class="v">P1</td><td class="v">侧栏画质条 6+3 个 pill 挤在 245px，与会话底栏同名不同形</td><td class="v"><code>RcQualityBar.tsx</code> + css <code>:338</code></td></tr>
+      <tr><td class="v">S6</td><td class="v">P2</td><td class="v">令牌收口：U6 色名 38 处、U5 尺度表外值、深色叠层 6 个魔数色、HUD 对比度 3.05:1</td><td class="v"><code>RemoteComputer.module.css</code> 全量</td></tr>
+    </table>
+    <div class="warn"><b>仓库约束两条，实施时先记住</b>：① 规则 4 要求改 UI 前先出设计稿（就是本稿）；② <code>.tsx ≤ 300 行</code>，而 <code>RcWorkbench.tsx</code> 现在 296 行 —— S3 的卡片<b>必须</b>新落成独立组件，不能再往 RcWorkbench 里加内容。</div>
+
+    <!-- ==================== §1 ==================== -->
+    <h2>§1 S1 · 主窗被控横幅：一行放不下</h2>
+    <p>
+      <code>.ctrlBanner</code>（css <code>:769</code>）是 <code>display:flex; align-items:center; gap:10px</code>，
+      <b>没有 <code>flex-wrap</code></b> —— 同文件的 <code>.noteWarn:19</code>、<code>.ibHead:675</code>、<code>.hud:438</code> 都补了换行兜底，唯独这条安全相关的没补。
+      一行里最多同时存在 7 个元素（谁 / 能力 / 时长 / 范围变更提示 / 免确认 / 说明句 / 结束）。
+    </p>
+
+    <div class="figLabel"><span class="tagNow">现状</span>图 1a · 先看缺口：若强制不换行（含内部提示也不换行），7 个元素需要 <b>900px</b>，去掉「范围提示 + 免确认」两颗也要 <b>586px</b>，而主窗只给 <b>495px</b>。浏览器不会让它横向溢出 —— 它靠<b>折行</b>消化，代价见下面两图</div>
+    <div class="stage" style="overflow-x:auto;">
+      <div class="ctrlBanner natural">
+        <span class="cbWho"><span class="cbDot"></span>正在被「办公室-台式机」远程</span>
+        <span class="cbPill">可控</span>
+        <span class="cbTimer">00:12</span>
+        <span class="cbNotice">对方把画面范围改成了「仅主屏」 <button class="btnS" style="font-size:10px;padding:1px 6px;">知道了</button></span>
+        <span class="cbTrust">已免确认</span>
+        <span class="cbSp"></span>
+        <span class="cbMeta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+        <button class="btnDanger">立即结束</button>
+      </div>
+      <div class="ruler" style="width:900px;">
+        <i style="left:0;width:495px;"></i><em style="left:0;">495px · 主窗可用宽（550 − 窗框 2 − margin 24 − padding 28 − 条框 2）</em>
+        <i class="over" style="left:495px;width:405px;"></i><em class="over" style="left:501px;">溢出 405px（+82%）</em>
+      </div>
+    </div>
+
+    <div class="figLabel"><span class="tagNow">现状</span>图 1b · 常见情况（5 项，无范围提示）：实测高 <b>64px</b> —— 「谁」折 2 行（147px 宽 / 40px 高），说明句折 2 行（160px 宽 / 35px 高），「立即结束」<code>top = 19px</code></div>
+    <div class="stage">
+      <div class="mainWin">
+        <div class="mwTopBar"><span>PastePanda</span><span style="margin-left:auto;">⚙ · —</span></div>
+        <div class="ctrlBanner" style="margin-top:10px;">
+          <span class="cbWho"><span class="cbDot"></span>正在被「办公室-台式机」远程</span>
+          <span class="cbPill">可控</span>
+          <span class="cbTimer">00:12</span>
+          <span class="cbSp"></span>
+          <span class="cbMeta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+          <button class="btnDanger">立即结束</button>
+        </div>
+        <div class="mwBody"><div class="mwFake">（主窗内容区 · 用户此时其实没在看这里）</div></div>
+      </div>
+    </div>
+
+    <div class="figLabel"><span class="tagNow">现状 · 最坏</span>图 1b2 · 最坏情况（7 项同屏）：实测高 <b>108px</b> —— 「谁」被压到 <b>65px 宽 / 80px 高 = 每行 5 个字、折 4 行</b>，说明句 71px 宽折 3 行，「立即结束」<code>top</code> 从 19px 漂到 <b>40px</b></div>
+    <div class="stage">
+      <div class="mainWin">
+        <div class="mwTopBar"><span>PastePanda</span><span style="margin-left:auto;">⚙ · —</span></div>
+        <div class="ctrlBanner" style="margin-top:10px;">
+          <span class="cbNotice">对方把画面范围改成了「仅主屏」 <button class="btnS" style="font-size:10px;padding:1px 6px;">知道了</button></span>
+          <span class="cbTrust">已免确认</span>
+          <span class="cbWho"><span class="cbDot"></span>正在被「办公室-台式机」远程</span>
+          <span class="cbPill">可控</span>
+          <span class="cbTimer">00:12</span>
+          <span class="cbSp"></span>
+          <span class="cbMeta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+          <button class="btnDanger">立即结束</button>
+        </div>
+        <div class="mwBody"><div class="mwFake">（主窗内容区）</div></div>
+      </div>
+    </div>
+    <p class="dimNote">
+      失效链条（不是横向溢出，是<b>错误的地方被压窄</b>）：按钮（<code>.miniBtn/.dangerBtn</code>）与 <code>.trustOn</code>/<code>.scopeNotice</code> 都写死 <code>flex-shrink:0</code> 或带 <code>nowrap</code> 内容，它们拒绝让宽；
+      可缩的只剩 <code>.who</code> 与 <code>.meta</code> 两个纯文字项 —— 于是<b>最需要看清的那句「谁在控我」被拿去吸收全部缺口</b>，从 147px 压到 65px。
+      落点也不可预测：「立即结束」的 <code>top</code> 随设备名长度和是否出现范围提示，在 19px ~ 40px 之间漂移，在 108px 高的条里落到第三行位置。
+      这条横幅是<b>安全界面</b>：用户正被别人控着，它是主窗口里唯一的知情与终止入口（工作台可能根本没开）。
+    </p>
+
+    <div class="figLabel"><span class="tagNew">方案 A</span>图 1c · 两行栅格：第一行「谁 + 状态 + 结束」，第二行「说明 + 免确认」，范围变更占整行。实测「谁」<b>单行 180px 不折</b>，结束永远 <code>top = 24px</code></div>
+    <div class="stage">
+      <div class="mainWin">
+        <div class="mwTopBar"><span>PastePanda</span><span style="margin-left:auto;">⚙ · —</span></div>
+        <div class="ctrlBanner v2" style="margin-top:10px;">
+          <div class="cbRow1">
+            <span class="cbWho"><span class="cbDot"></span>正在被「办公室-台式机」远程</span>
+            <span class="cbPill">可控</span>
+            <span class="cbTimer">00:12</span>
+          </div>
+          <button class="btnDanger cbEnd">立即结束</button>
+          <div class="cbRow2">对方可操作键鼠与剪贴板 · 你随时可结束 <span class="cbTrust" style="margin-left:4px;">已免确认</span></div>
+          <div class="cbRowFull"><span class="cbNotice" style="white-space:normal;">对方把画面范围改成了「仅主屏」 <button class="btnS" style="font-size:10px;padding:1px 6px;">知道了</button></span></div>
+        </div>
+        <div class="mwBody"><div class="mwFake">（主窗内容区）</div></div>
+      </div>
+    </div>
+
+    <h3>CSS 落点（一处布局改动，不改语义）</h3>
+    <table>
+      <tr><th style="width:190px;">选择器</th><th>改动</th></tr>
+      <tr><td class="v"><code>.ctrlBanner</code></td><td class="v"><code>display:flex</code> → <code>display:grid; grid-template-columns:minmax(0,1fr) auto; gap:5px 10px; align-items:center</code>。栅格比 <code>flex-wrap</code> 好：换行时两列仍对齐，不会散成一行一行随机左对齐</td></tr>
+      <tr><td class="v">新增 <code>.cbRow1 / .cbRow2</code></td><td class="v"><code>display:flex; align-items:center; gap:8px; min-width:0</code>。<b><code>min-width:0</code> 是关键</b>——栅格子项默认 <code>min-width:auto</code>，不给就永远不折</td></tr>
+      <tr><td class="v"><code>.ctrlBanner .who</code></td><td class="v">加 <code>overflow:hidden; text-overflow:ellipsis; min-width:0</code>。设备名是对端自报名，长度不可控</td></tr>
+      <tr><td class="v"><code>.cbEnd</code>（= <code>.dangerBtn</code>）</td><td class="v"><code>grid-row:1 / span 2; align-self:center; flex-shrink:0</code>。<b>结束永远在第一行右上角</b>，不参与任何折行</td></tr>
+      <tr><td class="v"><code>.scopeNotice</code></td><td class="v">包一层 <code>grid-column:1/-1</code> 的行容器；自身已有 <code>flex-wrap</code>，保留</td></tr>
+      <tr><td class="v">删除 <code>.ctrlBanner</code> 内的 <code>&lt;span class="sp"&gt;</code></td><td class="v">栅格下 <code>flex:1</code> 占位符没有意义</td></tr>
+    </table>
+    <div class="callout"><b>诚实地说，这不是省空间的改动</b>（本稿浏览器实测）：现状 64px（5 项）/ 108px（7 项）→ 方案 A <b>75px</b>（无提示）/ <b>107px</b>（有提示）。<b>最坏情况持平，常见情况贵 11px。</b><br>换到的是三件事：<b>①</b>「谁」从 65px 宽折 4 行变成 180px 宽单行（再长走 ellipsis，不再吃版面）；<b>②</b>「立即结束」落点从 19~40px 漂移变成固定 24px；<b>③</b>横幅总高不再取决于对端自报名多长。<b>如果只看高度，这条不值得做；看的是安全界面上最关键的两句能不能一眼读完。</b><br><b>不做</b>：不把说明句收进 <code>title</code>（L2：常驻文字标签，悬停才可见等于没有）；不改「立即结束」的确认语义（现成 <code>confirmDialog</code>）；不给横幅加 <code>max-height</code> + 滚动 —— 那是掩盖布局问题。</div>
+
+    <!-- ==================== §2 ==================== -->
+    <h2>§2 S2 · 空态两套同名入口：一屏 4 组重复</h2>
+    <p>
+      无设备时，<code>RcWorkbench</code> 主区渲染 <code>RcEmptyGuide</code>，<code>RcWorkbenchSide</code> 同时渲染「一次性协助」块 + 「还没有可远程的设备」块。
+      侧栏那段注释（<code>RcWorkbenchSide.tsx:160</code> 前后）写的理由正是「复用会让标题和配对按钮各出现两次」——
+      但精简后的三块仍然把主区的<b>四个动作全复刻了一遍</b>。
+    </p>
+
+    <div class="figLabel"><span class="tagNow">现状</span>图 2a · 1200×780 空态。红圈是同一屏里的重复 affordance</div>
+    <div class="stage">
+      <div class="workbench short">
+        <div class="wbSide">
+          <div class="wbSideHead"><h2 class="wbTitle">远程电脑</h2><span class="meta">设置与配对设备</span></div>
+          <div class="selfRow">
+            <div style="flex:1;min-width:0;">
+              <div class="selfRowMain">允许被远程</div>
+              <div class="selfRowHint">别人可申请看/控这台机器</div>
+            </div>
+            <button class="sToggle off"><i></i></button>
+          </div>
+          <div class="qBar" style="margin-top:0;">
+            <span class="qLabel">画质</span>
+            <span class="pill pillOn">自动</span><span class="pill">流畅</span><span class="pill">均衡</span>
+            <span class="pill">清晰</span><span class="pill">超清</span><span class="pill">原生</span>
+            <span class="qLabel" style="margin-left:2px;">画面</span>
+            <span class="pill pillOn">整屏</span><span class="pill">仅主屏</span>
+            <span class="qMeta">本机被控画面 · 别人看你时用它</span>
+          </div>
+          <div class="wbSideSp"></div>
+          <div class="emptyHint rel">
+            <span class="dupMark">3</span><span class="dupMark" style="right:-6px;left:auto;top:34px;">4</span>
+            <div class="emptyHintTitle">一次性协助</div>
+            <div class="meta">用完即弃 —— 结束后不会留在双方的设备列表里。</div>
+            <div class="adhocBtns"><button class="btnSPri">让别人帮我</button><button class="btnS">帮别人连一次</button></div>
+          </div>
+          <div class="wbSideSp"></div>
+          <div class="emptyHint rel">
+            <span class="dupMark">1</span><span class="dupMark" style="top:44px;">2</span>
+            <div class="emptyHintTitle">还没有可远程的设备</div>
+            <div class="emptyHintBody">在右侧完成一次远程配对，设备会出现在这里。</div>
+            <div><button class="btnS">＋ 配对一台</button></div>
+          </div>
+        </div>
+        <div class="wbMain">
+          <div class="emptyBox rel">
+            <span class="dupMark">1</span><span class="dupMark" style="top:auto;bottom:76px;">2</span>
+            <span class="dupMark" style="top:auto;bottom:52px;">3</span><span class="dupMark" style="top:auto;bottom:28px;">4</span>
+            <div class="emptyIcon">🖥️</div>
+            <div class="guideTitle">还没有可远程的设备</div>
+            <div class="guideLead">配对后，对方可以申请查看或控制这台电脑；你也可以去控别人的电脑。</div>
+            <div class="steps">
+              <div class="step"><div class="stepNum">1</div><div class="stepT">双方配对</div><div class="stepD">一边生成邀请码，另一边粘贴并核对指纹。与知识库同步配对无关。</div></div>
+              <div class="step"><div class="stepNum">2</div><div class="stepT">发起申请</div><div class="stepD">选「只看」或「可控」，对方会看到确认条与你的指纹。</div></div>
+              <div class="step"><div class="stepNum">3</div><div class="stepT">对方同意</div><div class="stepD">被控端常驻横幅可随时结束；默认关闭，每次都要点头。</div></div>
+            </div>
+            <div class="emptyActions"><button class="btnS">让别人帮我</button><button class="btnS">帮别人连一次</button></div>
+            <div class="foot">上面这两个<b>不用配对</b>：用完即弃，不会留在双方的设备列表里。</div>
+            <div class="emptyActions"><button class="btnSPri">远程配对设备</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <table>
+      <tr><th style="width:44px;">#</th><th style="width:200px;">重复的 affordance</th><th>两处位置</th></tr>
+      <tr><td>1</td><td class="v">标题「还没有可远程的设备」</td><td class="v"><code>RcWorkbenchSide.tsx:163</code> / <code>RcEmptyGuide.tsx:55</code></td></tr>
+      <tr><td>2</td><td class="v">配对入口（「＋ 配对一台」/「远程配对设备」）</td><td class="v"><code>:168</code> / <code>:85</code></td></tr>
+      <tr><td>3</td><td class="v">「让别人帮我」</td><td class="v"><code>:141</code> / <code>:74</code></td></tr>
+      <tr><td>4</td><td class="v">「帮别人连一次」</td><td class="v"><code>:149</code> / <code>:77</code></td></tr>
+    </table>
+
+    <div class="figLabel"><span class="tagNew">方案 A（推荐）</span>图 2b · 动作集只归主区；侧栏退成「状态 + 一句下一步」，零按钮</div>
+    <div class="stage">
+      <div class="workbench short">
+        <div class="wbSide">
+          <div class="wbSideHead"><h2 class="wbTitle">远程电脑</h2><span class="meta">设置与配对设备</span></div>
+          <div class="selfRow">
+            <div style="flex:1;min-width:0;">
+              <div class="selfRowMain">允许被远程</div>
+              <div class="selfRowHint">别人可申请看/控这台机器</div>
+            </div>
+            <button class="sToggle off"><i></i></button>
+          </div>
+          <div class="qBar" style="margin-top:0;">
+            <span class="menuGroup"><span class="qLabel">画质</span><button class="menuBtn">自动 <span class="caret">▾</span></button></span>
+            <span class="menuGroup"><span class="qLabel">画面</span><button class="menuBtn">整屏 <span class="caret">▾</span></button></span>
+            <span class="qMeta">本机被控画面 · 别人看你时用它</span>
+          </div>
+          <div class="wbSideSp"></div>
+          <div class="emptyHint">
+            <div class="emptyHintTitle">一次性协助</div>
+            <div class="emptyHintBody">不用配对、用完即弃，不留在双方设备列表里。</div>
+          </div>
+          <div class="wbSideSp"></div>
+          <div class="emptyHint">
+            <div class="emptyHintTitle">配对设备 0 台</div>
+            <div class="emptyHintBody">完成一次远程配对后，设备会出现在这里，可直接发起。</div>
+          </div>
+        </div>
+        <div class="wbMain">
+          <div class="emptyBox">
+            <div class="emptyIcon">🖥️</div>
+            <div class="guideTitle">还没有可远程的设备</div>
+            <div class="guideLead">配对后，对方可以申请查看或控制这台电脑；你也可以去控别人的电脑。</div>
+            <div class="steps">
+              <div class="step"><div class="stepNum">1</div><div class="stepT">双方配对</div><div class="stepD">一边生成邀请码，另一边粘贴并核对指纹。与知识库同步配对无关。</div></div>
+              <div class="step"><div class="stepNum">2</div><div class="stepT">发起申请</div><div class="stepD">选「只看」或「可控」，对方会看到确认条与你的指纹。</div></div>
+              <div class="step"><div class="stepNum">3</div><div class="stepT">对方同意</div><div class="stepD">被控端常驻横幅可随时结束；默认关闭，每次都要点头。</div></div>
+            </div>
+            <div class="emptyActions"><button class="btnSPri">远程配对设备</button></div>
+            <div class="foot">只想让人帮一次？下面两条<b>不用配对</b>，用完即弃。</div>
+            <div class="emptyActions"><button class="btnS">让别人帮我</button><button class="btnS">帮别人连一次</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="dimNote">
+      改动清单：<b>①</b> 侧栏 <code>emptyHint</code> 两块去掉按钮与「一次性协助」的动作行，只留标题+一句；
+      <b>②</b> 主区 <code>RcEmptyGuide</code> 的层级反过来 —— 长期配对是主路径，放上面给主按钮（<code>miniBtnPri</code>），一次性协助降到说明行下面（原先四个按钮平铺，看不出主次）。
+      <b>③</b> 侧栏「一次性协助」块如果保留按钮，就必须让主区不放这两个按钮 —— 二者只能有一处，别两头都留。
+    </p>
+    <h3>方案 B（备选，不推荐）</h3>
+    <p>反过来：动作全归侧栏（245px 实测两个按钮并排各 77/88px 不折字），主区只留三步教学 + 一句导语。
+      好处是「所有能点的地方都在同一栏」；坏处是主区那块 895px 变成纯阅读区，而用户的视线落点恰在主区中央 —— 教学放主区、动作也放视线落点更顺。故取 A。</p>
+
+    <!-- ==================== §3 ==================== -->
+    <h2>§3 S3 · 空闲态：把 895×752 从一行灰字变成「上次会话」卡</h2>
+    <p>
+      <code>RcWorkbench.tsx:265</code>：有设备但没开会话时，主区就是一句「在左侧选择一台设备发起远程」。
+      同时后端已有会话历史（<code>rc_session_history</code>）、设备行已有 <code>last_path</code>/<code>last_seen</code>、
+      <code>RcSessionHistory</code> 组件<b>已经实现了「再次连接」</b>（A5，入参 <code>targets/running/onReconnect</code>），
+      却只挂在设置页 <code>sections/RcSection.tsx:162</code>。这是一次纯搬运。
+    </p>
+
+    <div class="figLabel"><span class="tagNow">现状</span>图 3a · 主区 895×752（工作台最小 960×640 时主区只剩 654px）只有这一行</div>
+    <div class="stage">
+      <div class="workbench">
+        <div class="wbSide">
+          <div class="wbSideHead"><h2 class="wbTitle">远程电脑</h2><span class="meta">设置与配对设备</span></div>
+          <div class="selfRow"><div style="flex:1;"><div class="selfRowMain">允许被远程</div></div><button class="sToggle on"><i></i></button></div>
+          <div class="qBar" style="margin-top:0;">
+            <span class="menuGroup"><span class="qLabel">画质</span><button class="menuBtn">自动 <span class="caret">▾</span></button></span>
+            <span class="menuGroup"><span class="qLabel">画面</span><button class="menuBtn">整屏 <span class="caret">▾</span></button></span>
+          </div>
+          <div class="wbSideSp"></div>
+          <div class="meta" style="font-weight:650;color:var(--text-secondary);">设备（2 台）</div>
+          <div class="devList">
+            <div class="devItem"><div class="av">家</div><div class="devInfo"><div class="devName">家里-笔记本<span class="tagRc">远程</span></div><div class="meta"><span class="dotOn"></span>在线 · A1B2C3 · 可发起</div></div><button class="icoBtn icoPri">▶</button><button class="icoBtn">⋯</button></div>
+            <div class="devItem"><div class="av">办</div><div class="devInfo"><div class="devName">办公室-台式机<span class="tagRc">远程</span><span class="tagTrusted">免确认</span></div><div class="meta"><span class="dotRecent"></span>刚才 · 9F2C41 · 上次直连</div></div><button class="icoBtn icoPri">▶</button><button class="icoBtn">⋯</button></div>
+          </div>
+          <div style="display:flex;gap:8px;"><button class="btnS">检测在线</button><button class="btnS">＋ 再配对一台</button></div>
+        </div>
+        <div class="wbMain"><div class="wbIdle">在左侧选择一台设备发起远程</div></div>
+      </div>
+    </div>
+
+    <div class="figLabel"><span class="tagNew">方案</span>图 3b · 空闲主区 = 上次会话卡（主动作）+ 最近会话（已有组件）。新 <code>RcIdleCard.tsx</code></div>
+    <div class="stage">
+      <div class="workbench">
+        <div class="wbSide">
+          <div class="wbSideHead"><h2 class="wbTitle">远程电脑</h2><span class="meta">设置与配对设备</span></div>
+          <div class="selfRow"><div style="flex:1;"><div class="selfRowMain">允许被远程</div></div><button class="sToggle on"><i></i></button></div>
+          <div class="qBar" style="margin-top:0;">
+            <span class="menuGroup"><span class="qLabel">画质</span><button class="menuBtn">自动 <span class="caret">▾</span></button></span>
+            <span class="menuGroup"><span class="qLabel">画面</span><button class="menuBtn">整屏 <span class="caret">▾</span></button></span>
+          </div>
+          <div class="wbSideSp"></div>
+          <div class="meta" style="font-weight:650;color:var(--text-secondary);">设备（2 台）</div>
+          <div class="devList">
+            <div class="devItem"><div class="av">家</div><div class="devInfo"><div class="devName">家里-笔记本<span class="tagRc">远程</span></div><div class="meta"><span class="dotOn"></span>在线 · A1B2C3 · 可发起</div></div><button class="icoBtn icoPri">▶</button><button class="icoBtn">⋯</button></div>
+            <div class="devItem"><div class="av">办</div><div class="devInfo"><div class="devName">办公室-台式机<span class="tagRc">远程</span><span class="tagTrusted">免确认</span></div><div class="meta"><span class="dotRecent"></span>刚才 · 9F2C41 · 上次直连</div></div><button class="icoBtn icoPri">▶</button><button class="icoBtn">⋯</button></div>
+          </div>
+          <div style="display:flex;gap:8px;"><button class="btnS">检测在线</button><button class="btnS">＋ 再配对一台</button></div>
+        </div>
+        <div class="wbMain">
+          <div class="idleStage">
+            <div class="idleHead"><span class="idleKicker">上次会话</span><span class="meta">办公室-台式机 · 免确认，下次直接连入</span></div>
+            <div class="lastCard">
+              <div class="lastAv">办</div>
+              <div class="lastInfo">
+                <div class="lastName">办公室-台式机</div>
+                <div class="lastFacts">
+                  <b>3 天前</b> · 24 分 11 秒 · 我发起 · 以「可控」 · 上次走 <b>直连</b> · 延迟 ~18ms · 正常结束
+                </div>
+              </div>
+              <div class="lastActs">
+                <button class="bigBtn">再次连接 · 以「可控」</button>
+                <button class="bigBtnS">改用「只看」</button>
+              </div>
+            </div>
+            <div class="histWrap">
+              <div class="histHead"><span class="idleKicker">最近会话</span><span class="meta">只记元数据，不记画面与键鼠</span><span class="lk">在设置页管理 →</span></div>
+              <div class="histItem"><div class="histInfo"><div class="histName">办公室-台式机<span class="histNameMeta">我发起 · 可控</span></div><div class="histTime">3 天前 · 24 分 11 秒 · 正常结束 · 直连 · 延迟 ~18ms</div></div><button class="btnS">再次连接</button></div>
+              <div class="histItem"><div class="histInfo"><div class="histName">家里-笔记本<span class="histNameMeta">对方控我 · 只看</span></div><div class="histTime">5 天前 · 3 分 02 秒 · 本机结束 · 局域网</div></div><button class="btnS">再次连接</button></div>
+              <div class="histItem"><div class="histInfo"><div class="histName">家里-笔记本<span class="histNameMeta">我发起 · 只看</span></div><div class="histTime">5 天前 · 0 分 41 秒 · 对方未同意 · 中继 · 延迟 ~92ms</div></div></div>
+              <div class="histItem"><div class="histInfo"><div class="histName">旧台式（已移除）<span class="histNameMeta">我发起 · 可控</span></div><div class="histTime">3 周前 · 12 分 55 秒 · 正常结束 · 直连</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>判据与三态（U3）</h3>
+    <table>
+      <tr><th style="width:190px;">条件</th><th>主区</th></tr>
+      <tr><td class="v">有设备 + 有历史</td><td class="v">图 3b：上次会话卡 + 最近 4 条</td></tr>
+      <tr><td class="v">有设备 + 无历史</td><td class="v">不放假卡。「还没有会话记录 · 发起后这里显示上次连接」一句 + 设备列表提示。<b>不编默认值</b></td></tr>
+      <tr><td class="v">无设备</td><td class="v">走 §2 的空态引导（不进本卡）</td></tr>
+      <tr><td class="v">历史读取失败</td><td class="v"><code>RcSessionHistory</code> 已分别处理 loading / err / 空 —— <code>catch</code> 不得渲染成空态（U3.5），沿用现组件即可</td></tr>
+    </table>
+    <div class="warn"><b>三条不能含糊</b>：
+      ① <b>「再次连接」的能力档沿用这次记录用的档</b>，按钮文字必须写出档位（沿用 <code>RcSessionHistory</code> 的 tooltip 语义），否则「只想看看」的人会一键发出可控申请；
+      ② <b><code>dir === "inbound"</code>（对方控我）的记录不给连接按钮</b> —— 那是别人的机器，方向反了；
+      ③ <b>是否摆按钮交给 <code>canReconnectTo(targets, peer, running)</code></b>，不自己判断（设备已被移除、通道未启动都靠它兜）。
+    </div>
+    <div class="callout"><b>实现口径</b>：新建 <code>RcIdleCard.tsx</code>（预估 ~150 行），<code>RcWorkbench.tsx:265</code> 的 <code>div.wbIdle</code> 换成 <code>&lt;RcIdleCard .../&gt;</code> —— RcWorkbench 净增 ≤3 行，守住 300 红线。<code>RcSessionHistory</code> 原样复用（入参已齐），设置页那份保留不动：一处是「看一眼 + 马上连」，一处是「完整记录 + 清理」，职责不同不算重复。</div>
+
+    <!-- ==================== §4 ==================== -->
+    <h2>§4 S4 · 被控视图补「实走路径 / 实测延迟」</h2>
+    <p>
+      <code>RcInboundView</code> 的 <code>ibFacts</code> 现在是 4 格：对方指纹 / 画面范围 / 本机画质 / 免确认。
+      被控的人最想知道的「<b>我的画面现在是走局域网、直连还是公网中继出去的</b>」恰好没有 ——
+      而 <code>rc_status.path_kind</code> 与 <code>rtt_ms</code> 后端已经在给，出站 HUD（<code>RcHud.tsx:54</code>）也已经在消费它。
+      这条正是 <code>docs/远程电脑-状态显示-对标与方案-2026-09-17.md</code> §7.5 记的「后端就绪、UI 没吃」。
+    </p>
+
+    <div class="figLabel"><span class="tagNow">现状</span>图 4a · 4 格，缺路径</div>
+    <div class="stage">
+      <div class="workbench">
+        <div class="wbSide" style="justify-content:center;"><div class="meta">（侧栏：设备操作已锁定）</div><div class="lockNote">对方正在远程本机 · 设备操作暂时锁定</div></div>
+        <div class="wbMain">
+          <div class="ibShell"><div class="ibCard">
+            <div class="ibHead"><span class="cbDot" style="width:8px;height:8px;"></span><span class="ibTitle">正在被「<b>办公室-台式机</b>」远程控制</span><span class="cbPill">可控</span><span class="cbTrust">已免确认</span></div>
+            <div><span class="cbTimer">已持续 00:24:11</span></div>
+            <div class="ibLead">对方可以操作你的键鼠与剪贴板。主窗口的常驻横幅一直显示着这条会话，随时可结束。</div>
+            <dl class="ibFacts">
+              <div class="ibFact"><dt>对方指纹</dt><dd>9F2C41</dd></div>
+              <div class="ibFact"><dt>画面范围</dt><dd>整屏（2 台显示器）</dd></div>
+              <div class="ibFact"><dt>本机画质</dt><dd>自动 → 均衡</dd></div>
+              <div class="ibFact"><dt>免确认</dt><dd>已开启（对方下次直接连入）</dd></div>
+            </dl>
+            <div class="ibActions"><span class="cbSp"></span><button class="btnDanger">立即结束</button></div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="figLabel"><span class="tagNew">方案</span>图 4b · 补两格，并把「路径」提到第三位（读序 = 重要度）</div>
+    <div class="stage">
+      <div class="workbench">
+        <div class="wbSide" style="justify-content:center;"><div class="meta">（侧栏：设备操作已锁定）</div><div class="lockNote">对方正在远程本机 · 设备操作暂时锁定</div></div>
+        <div class="wbMain">
+          <div class="ibShell"><div class="ibCard" style="max-width:660px;">
+            <div class="ibHead"><span class="cbDot" style="width:8px;height:8px;"></span><span class="ibTitle">正在被「<b>办公室-台式机</b>」远程控制</span><span class="cbPill">可控</span><span class="cbTrust">已免确认</span></div>
+            <div><span class="cbTimer">已持续 00:24:11</span></div>
+            <div class="ibLead">对方可以操作你的键鼠与剪贴板。主窗口的常驻横幅一直显示着这条会话，随时可结束。</div>
+            <dl class="ibFacts" style="grid-template-columns:repeat(auto-fit,minmax(196px,1fr));">
+              <div class="ibFact new"><dt>实走路径</dt><dd title="局域网 = 同一内网直连；直连 = 公网点对点；中继 = 经中继服务器转发，仍是端到端加密但延迟更高">局域网 · 同一内网</dd></div>
+              <div class="ibFact new"><dt>实测延迟</dt><dd title="最近窗口的往返时延，来自 rc_status.rtt_ms">~18ms</dd></div>
+              <div class="ibFact"><dt>对方指纹</dt><dd>9F2C41</dd></div>
+              <div class="ibFact"><dt>画面范围</dt><dd>整屏（2 台显示器）</dd></div>
+              <div class="ibFact"><dt>本机画质</dt><dd>自动 → 均衡</dd></div>
+              <div class="ibFact"><dt>免确认</dt><dd>已开启（对方下次直接连入）</dd></div>
+            </dl>
+            <div class="ibActions"><span class="cbSp"></span><button class="btnDanger">立即结束</button></div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+    <table>
+      <tr><th style="width:150px;">要点</th><th>口径</th></tr>
+      <tr><td class="v">文案源</td><td class="v">复用 <code>pathKindLabel()</code> + <code>pathKindHint()</code>（<code>lib/rcSessionStats</code>），<b>不要另写一套</b>；HUD 已在用同一对函数</td></tr>
+      <tr><td class="v">取不到时</td><td class="v"><code>path_kind === ""</code> → <b>整格不渲染</b>，不显示「未知」占位（与 <code>RcDeviceMeta</code> 里「上次实走路径」同一纪律：实测值，取不到就不编）</td></tr>
+      <tr><td class="v">中继要说清</td><td class="v">中继<b>仍是端到端加密</b>，只是多一跳、画质更低。写「经中继转发 · 仍加密 · 延迟更高」，不要写成「走公网 · 有风险」——那是假信息，会让人在会话中途怀疑自己</td></tr>
+      <tr><td class="v">布局</td><td class="v"><code>minmax(196px,1fr)</code>：660px 卡内宽约 616 → 3 列 × 2 行。6 格比 4 格更满但仍一屏读完，<code>auto-fit</code> 保证窄处自动降列</td></tr>
+      <tr><td class="v">顺带</td><td class="v">主窗横幅（§1 方案 A 的第二行）也可挂同一个 <code>pathKindLabel</code>，让没开工作台的人也知道走的是中继 —— 但<b>只在 <code>relay</code> 时挂</b>，局域网时那是一句废话</td></tr>
+    </table>
+
+    <!-- ==================== §5 ==================== -->
+    <h2>§5 S5 · 侧栏画质条：pill 墙 → 两个下拉</h2>
+    <p>
+      <code>RcQualityBar</code> 在 245px 内容宽里要排：<b>6 个画质档</b>（<code>rcQuality.ts:30</code> 自动/流畅/均衡/清晰/超清/原生，每颗约 44px = 264px）+ 2~N 个画面范围 + 两个前缀名 + <code>localNote</code>，
+      靠 <code>.qBar{flex-wrap:wrap}</code>（css <code>:338</code>）折行 —— 本稿浏览器实测 <b>129px 高</b>（约 5 行，单显示器时最短，多显示器更长）。
+      而同一窗口<b>会话底栏</b>（<code>RcSessionBar.tsx:104-117</code>）干同样的事用的是两个 <code>RcDropdown</code>。同名（都叫「画质」「画面」）、同义（都是选档），两种形状。
+    </p>
+
+    <div class="figLabel"><span class="tagNow">现状</span>图 5a · 侧栏 272px，画质条实测 129px 高、折 5 行，把设备区顶下去</div>
+    <div class="stage" style="width:296px;padding:10px;">
+      <div style="width:272px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 12px;display:flex;flex-direction:column;gap:10px;">
+        <div class="wbSideHead"><h2 class="wbTitle" style="font-size:15px;">远程电脑</h2></div>
+        <div class="selfRow"><div style="flex:1;"><div class="selfRowMain">允许被远程</div></div><button class="sToggle on"><i></i></button></div>
+        <div class="qBar" style="margin-top:0;">
+          <span class="qLabel">画质</span>
+          <span class="pill pillOn">自动</span><span class="pill">流畅</span><span class="pill">均衡</span><span class="pill">清晰</span><span class="pill">超清</span><span class="pill">原生</span>
+          <span class="qLabel" style="margin-left:2px;">画面</span>
+          <span class="pill pillOn">整屏</span><span class="pill">仅主屏</span><span class="pill">屏1·主</span><span class="pill">屏2</span>
+          <span class="qMeta">本机被控画面 · 别人看你时用它</span>
+        </div>
+        <div class="meta" style="font-weight:650;color:var(--text-secondary);">设备（2 台）</div>
+        <div class="devItem"><div class="av">家</div><div class="devInfo"><div class="devName">家里-笔记本</div><div class="meta"><span class="dotOn"></span>在线 · A1B2C3</div></div><button class="icoBtn icoPri">▶</button><button class="icoBtn">⋯</button></div>
+      </div>
+    </div>
+
+    <div class="figLabel"><span class="tagNew">方案</span>图 5b · 与会话底栏同一控件形状；高度 129px → <b>68px</b>（含 <code>localNote</code>；不含则 45px）</div>
+    <div class="stage" style="width:296px;padding:10px;">
+      <div style="width:272px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 12px;display:flex;flex-direction:column;gap:10px;">
+        <div class="wbSideHead"><h2 class="wbTitle" style="font-size:15px;">远程电脑</h2></div>
+        <div class="selfRow"><div style="flex:1;"><div class="selfRowMain">允许被远程</div></div><button class="sToggle on"><i></i></button></div>
+        <div class="qBar" style="margin-top:0;display:grid;grid-template-columns:auto auto;gap:6px 8px;align-items:center;">
+          <span class="menuGroup"><span class="qLabel">画质</span><button class="menuBtn">自动 <span class="caret">▾</span></button></span>
+          <span class="menuGroup"><span class="qLabel">画面</span><button class="menuBtn">整屏 <span class="caret">▾</span></button></span>
+          <span class="qMeta" style="grid-column:1/-1;width:auto;">本机被控画面 · 别人看你时用它</span>
+        </div>
+        <div class="meta" style="font-weight:650;color:var(--text-secondary);">设备（2 台）</div>
+        <div class="devItem"><div class="av">家</div><div class="devInfo"><div class="devName">家里-笔记本</div><div class="meta"><span class="dotOn"></span>在线 · A1B2C3</div></div><button class="icoBtn icoPri">▶</button><button class="icoBtn">⋯</button></div>
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:170px;">要点</th><th>说明</th></tr>
+      <tr><td class="v">菜单向上弹 → 向下弹</td><td class="v"><code>RcDropdown</code> 的 <code>.menuPop</code> 写死向上（因为它贴窗口下沿）。侧栏在窗口上部，向上弹会被窗口顶边裁掉 ⇒ 需一个 <code>drop="down"</code> 入参或 <code>data-drop</code> 属性，<b>不能只换个 class</b></td></tr>
+      <tr><td class="v">深色叠层 vs 浅色底</td><td class="v"><code>.menuBtn</code> 底色写死 <code>rgba(255,255,255,.08)</code>（会话条专用）。侧栏是浅色主题面板，直接复用会是个隐形按钮 ⇒ 需浅色变体（照 <code>.viewShell</code> 后代选择器的先例反着做一次）</td></tr>
+      <tr><td class="v">档位说明不能丢</td><td class="v">pill 墙的一个隐性好处是「一眼看到全部档位」。下拉里必须保住：<code>RC_QUALITIES</code> 每项自带 <code>tip</code>（约 6fps · 宽 960…），<code>RcDropdown</code> 已经在菜单项上渲染 <code>tip</code> —— 复用它就白拿</td></tr>
+      <tr><td class="v"><code>localNote</code> 保留</td><td class="v">方案 B 定的「必填、就地写明在改谁」不变。省的是形状与行数，不是这句语义说明</td></tr>
+      <tr><td class="v">省下的空间给谁</td><td class="v">61px（129→68）。优先给 §2 精简后仍显挤的侧栏底部，或让设备列表少滚一屏 —— <b>不要</b>用来塞新按钮，那会直接顶回 §2</td></tr>
+    </table>
+
+    <!-- ==================== §6 ==================== -->
+    <h2>§6 S6 · 令牌收口（跟着上面四条一起改，别单独 sweep）</h2>
+    <h3>6a · U6 色名 → 语义名</h3>
+    <p><code>RemoteComputer.module.css</code> 里 <code>var(--orange</code> 22 处、<code>var(--green</code> 16 处。规则 U6 明文「色名变量不得在新代码里出现」。
+      <b>但要说清收益在哪</b>：<code>theme.css:288</code> 写的是 <code>--warning: var(--orange)</code>，所以 <code>--orange → --warning</code> 目前是<b>纯别名替换，零视觉变化</b>（收益是语义正确 + 未来主题只改 <code>--warning</code> 就能带动 38 处）。</p>
+    <table>
+      <tr><th style="width:130px;">替换</th><th style="width:80px;">处数</th><th>视觉影响</th></tr>
+      <tr><td class="v"><code>--orange</code> → <code>--warning</code></td><td class="v">22</td><td class="v good">无（别名，<code>theme.css:288/411/506/593</code>）</td></tr>
+      <tr><td class="v"><code>--orange-bg</code> → <code>--warning-bg</code></td><td class="v">若干</td><td class="v good">无（同上，<code>--warning-bg: var(--orange-bg)</code>）</td></tr>
+      <tr><td class="v"><code>--green</code> → <code>--success</code></td><td class="v">16</td><td class="v bad">有，需肉眼过</td></tr>
+      <tr><td class="v"><code>--green-bg/border</code> → <code>--success-bg/border</code></td><td class="v">若干</td><td class="v bad">有，需肉眼过</td></tr>
+    </table>
+    <div class="warn"><b><code>--green → --success</code> 为什么不是别名</b>：浅色下 <code>--green:#11813A</code> 而 <code>--success:#15803D</code>（差一点点，都在 <code>.tagTrusted</code> 的 85% 混合里被吃掉）；<b>深色下两套不同</b> —— midnight 里 <code>--green-bg:#052E16</code>、<code>--success-bg:#14532D</code>。受影响的是 <code>.tagTrusted</code>（免确认徽章）、<code>.dotOn</code>（在线呼吸点）、<code>.railIconOn</code>（侧栏盾牌）、<code>.live</code>（连接灯）。
+      改完必须在 6 套主题下逐一看，尤其 midnight / ocean-dark 的 <code>.tagTrusted</code> 底色。<code>theme.css:209-218</code> 那段注释已经记过这个坑（<code>--warning-bg</code> 与 <code>--orange-bg</code> 的配对问题），不是新坑，但别当成免费替换。</div>
+
+    <h3>6b · U5 尺度表</h3>
+    <table>
+      <tr><th style="width:76px;">维度</th><th style="width:150px;">表内允许</th><th>本文件实际出现（次数）</th><th style="width:190px;">收法</th></tr>
+      <tr><td class="v">字号</td><td class="v">11 / 12 / 13 / 15 / 20</td><td class="v"><span class="bad">12.5×8</span>、<span class="bad">11.5×4</span>、<span class="bad">10×5</span>、<span class="bad">10.5×1</span>、<span class="bad">13.5×1</span>、<span class="bad">14×1</span> · 合规 11×21 / 12×14 / 13×5 / 15×1 / 20×1</td><td class="v">12.5→12、11.5→11、13.5→13、10/10.5→11（HUD 见 6c 有额外理由）</td></tr>
+      <tr><td class="v">圆角</td><td class="v">4 / 8 / 12</td><td class="v"><span class="bad">6px×12</span>、<span class="bad">10px×8</span>、<span class="bad">20px×3</span> · 合规 8px×11 / 4px×1 / 12px×1 / 50%×7</td><td class="v">6→8（小控件按表是 4，但 6→4 会让 <code>.pill</code> 变方，取 8）；10→8；20→12。全大面板 <code>.viewShell/.ibCard/.step</code> 一并回 8/12</td></tr>
+      <tr><td class="v">间距</td><td class="v">4 / 8 / 12 / 16 / 24</td><td class="v"><span class="bad">6px（gap）约 20 处</span>、<span class="bad">10px 约 14 处</span>、<span class="bad">9px（按钮左右 padding）</span>、<span class="bad">28px（<code>.emptyBox</code> 上下）</span></td><td class="v">gap 6→8、10→8 或 12；按钮 padding <code>4px 9px</code>→<code>4px 8px</code>；<code>28px 16px</code>→<code>24px 16px</code></td></tr>
+    </table>
+    <div class="callout"><b>为什么这批值现在收最合适</b>：这批未提交改动新写/重写了 <code>RcWorkbenchSide</code>/<code>RcSessionBar</code>/<code>RcInboundView</code>/<code>RcDeviceRow</code> 及它们的全部 class —— 也就是「碰到的代码」。规则 §10 明说只改新写与碰到的、不做全量 sweep，所以 <code>10px 圆角</code> 这类散在别处的不动。代价：改完要跑 <code>npm run lint:css</code>（那三个 <code>styles.foot</code> 静默丢样式的历史教训，见 css <code>:458</code> 注释）。</div>
+
+    <h3>6c · 深色叠层：6 个魔数色收进一组局部变量 + HUD 对比度实测</h3>
+    <p>会话区做成深色「播放器外观」是对的（画面本来就该被暗背景包住），不必跟浅色主题走。问题不是深色，是 <code>#C8D0DC</code>、<code>#9AA6B6</code>、<code>#E6ECF5</code>、<code>#A8C0FF</code>、<code>#FF9D9D</code>、<code>#7A8699</code> 六个字面量（外加 <code>.hud</code> 四颗语义色 <code>#7DCEA0/#E8B87A/#F08C8C/#9DB8FF</code>）散在 <code>.hud span</code>、<code>.sessionBar</code>、<code>.viewShell .*</code> 五支、<code>.placeholder</code> 里 —— 想调一次「深底上的次要文字」得改 12 处。提案定义在 <code>[data-rc-root]</code> 上（<code>RcWorkbench.tsx:149</code> 已经挂了这个属性），会话区与非会话区自动隔离。</p>
+    <div class="figLabel"><span class="tagNow">现状</span>图 6a · HUD 在<b>白底桌面</b>（最坏情况）上：10px 字 + <code>rgba(0,0,0,.55)</code> —— 基色 3.05、绿 2.53、橙 2.61、<b>红 1.99</b>，U7 要求正文 4.5:1 → <b>四颗全不达标</b></div>
+    <div class="stage">
+      <div class="screen white" style="height:150px;">
+        <span class="contrastTag bad">基色 3.05 · 红 1.99 · 10px · FAIL 4.5</span>
+        <div class="hud">
+          <span>H.264 · 12fps</span><span>延迟 ~18ms · 良好</span><span>直连</span><span>自动 · 整屏</span><span>已连接</span>
+        </div>
+      </div>
+    </div>
+    <div class="figLabel"><span class="tagNew">方案</span>图 6b · 11px + 底色 <code>0.68</code> + <b>四颗语义色一并提亮</b>：基色 5.03 / 绿 5.69 / 橙 5.29 / 红 4.60，全部达标</div>
+    <div class="stage">
+      <div class="screen white" style="height:150px;">
+        <span class="contrastTag ok">基色 5.03 · 红 4.60 · 11px · PASS</span>
+        <div class="hud v2">
+          <span class="hudOk">H.264 · 12fps</span><span class="hudOk">延迟 ~18ms · 良好</span><span>直连</span><span>自动 · 整屏</span><span class="hudOk">已连接</span><span class="hudWarn">不稳 · 等待自愈</span><span class="hudBad">已断开</span>
+        </div>
+      </div>
+    </div>
+    <table>
+      <tr><th style="width:128px;">底色 alpha<br>（白底桌面 = 最坏情况）</th><th style="width:74px;">等效底色</th><th style="width:66px;">基色 chip</th><th style="width:62px;">绿 ok</th><th style="width:62px;">橙 warn</th><th style="width:62px;">红 bad</th><th>结论</th></tr>
+      <tr><td class="v">0.55（现值）+ 现四色</td><td class="v">#737373</td><td class="v bad">3.05</td><td class="v bad">2.53</td><td class="v bad">2.61</td><td class="v bad">1.99</td><td class="v"><b>全不合格。</b>四颗语义 chip 连 3:1 的大字线都不到，红字 1.99 等于没有</td></tr>
+      <tr><td class="v">0.62 + 现四色</td><td class="v">#616161</td><td class="v bad">3.98</td><td class="v">3.31</td><td class="v">3.41</td><td class="v bad">2.61</td><td class="v">仍差。红字还是不及 3:1</td></tr>
+      <tr><td class="v">0.68 + 现四色</td><td class="v">#525252</td><td class="v good">5.03</td><td class="v">4.17</td><td class="v">4.30</td><td class="v bad">3.29</td><td class="v"><b>基色过了，红字没过</b> —— 只提 alpha 是半个修复</td></tr>
+      <tr><td class="v">0.72 + 现四色</td><td class="v">#474747</td><td class="v good">5.98</td><td class="v good">4.96</td><td class="v good">5.12</td><td class="v bad">3.91</td><td class="v">红字仍 3.91。再加黑只会让 HUD 压过画面本身</td></tr>
+      <tr><td class="v"><b>0.68 + 提亮四色<br>（方案）</b></td><td class="v">#525252</td><td class="v good">5.03</td><td class="v good">5.69</td><td class="v good">5.29</td><td class="v good">4.60</td><td class="v good"><b>全部 ≥4.5:1</b>。不需要把底色压到 0.72</td></tr>
+    </table>
+    <p class="dimNote">
+      提案色值（写进 <code>--rc-on-dark-*</code>）：基色 chip 保持 <code>#C8D0DC</code>；绿 <code>#7DCEA0</code> → <code>#A7EBC0</code>；橙 <code>#E8B87A</code> → <code>#F6CE9A</code>；
+      <b>红 <code>#F08C8C</code> → <code>#FFB3B3</code></b>；蓝（指针锁定）<code>#9DB8FF</code> → <code>#C0D2FF</code>。
+      🔴 <b>关键结论：只改底色不够。</b>红色那颗在 0.72 的黑底上也才 3.91:1，必须同时提亮字色 —— 这也是为什么 <code>hudBad</code>（「已断开」，最需要看清的一颗）现值 1.99:1 是最严重的一处。
+      数值为按 WCAG 2.2 相对亮度公式算出（本稿内用脚本复核），非估算；<code>#C8D0DC</code> 5.03 / <code>#FFB3B3</code> 4.60 已含 4.5 的地板余量。
+    </p>
+    <p class="dimNote"><code>.viewTools</code>（右上角 缩放/锁定指针/全屏）现值 <code>rgba(0,0,0,.5)</code> 同病，一起提到 <code>--rc-on-dark-scrim</code>。这两个是<b>唯一</b>需要改对比度的地方 —— 其余深色叠层文字（<code>.sessionBar</code>、<code>.menuBtn</code>）压在<b>不透明</b>条上，不涉及画面透底。</p>
+
+    <!-- ==================== §7 ==================== -->
+    <h2>§7 实施切分与不做</h2>
+    <table>
+      <tr><th style="width:40px;">#</th><th>改动</th><th style="width:300px;">落点</th><th style="width:64px;">端</th><th style="width:56px;">收益</th></tr>
+      <tr><td>1</td><td class="v">被控横幅两行栅格（§1）</td><td class="v"><code>RcControlBanner.tsx</code> + css <code>:769-790</code></td><td class="v">前端</td><td class="v bad">P0</td></tr>
+      <tr><td>2</td><td class="v">空态入口归一（§2）</td><td class="v"><code>RcWorkbenchSide.tsx:137-168</code> + <code>RcEmptyGuide.tsx:70-88</code></td><td class="v">前端</td><td class="v bad">P0</td></tr>
+      <tr><td>3</td><td class="v">新 <code>RcIdleCard.tsx</code>，复用 <code>RcSessionHistory</code>（§3）</td><td class="v">新组件 + <code>RcWorkbench.tsx:265</code> 换一行</td><td class="v">前端</td><td class="v">P1</td></tr>
+      <tr><td>4</td><td class="v">被控卡补「实走路径 / 实测延迟」两格（§4）</td><td class="v"><code>RcInboundView.tsx</code> 的 <code>ibFacts</code>；<b>零后端改动</b></td><td class="v">前端</td><td class="v">P1</td></tr>
+      <tr><td>5</td><td class="v"><code>RcDropdown</code> 加浅色变体 + <code>drop="down"</code>，侧栏画质条收两个下拉（§5）</td><td class="v"><code>RcDropdown.tsx</code> + <code>RcQualityBar.tsx</code> + css <code>:984,1011</code></td><td class="v">前端</td><td class="v">P1</td></tr>
+      <tr><td>6</td><td class="v">令牌收口：色名 38 处 + 尺度表 + 深色叠层变量（§6）</td><td class="v"><code>RemoteComputer.module.css</code>（只碰本批改到的 class）</td><td class="v">前端</td><td class="v">P2</td></tr>
+    </table>
+    <p>
+      <b>建议顺序</b>：1 + 2 一起（都是那批未提交改版留下的真回归，且互相独立，改完能立刻双机验证）→ 4（最小、纯前端）→ 3（新组件，最大一块）→ 5、6 一起（都在侧栏那一片，同一次改动、同一次 <code>lint:css</code>）。
+    </p>
+
+    <h3>本稿明确不做</h3>
+    <table>
+      <tr><th style="width:250px;">不做什么</th><th>理由</th></tr>
+      <tr><td class="v">把被控横幅搬进工作台、或主窗只留图标</td><td class="v">被动事件必须主窗常驻（规则 15 / 方案 B 既定分工）—— 人不在工作台时也得看得见「谁在控我」</td></tr>
+      <tr><td class="v">侧栏与主区各留一套动作，用样式区分主次</td><td class="v">§2 的病根就是这个。一套动作只有一个落点，别靠颜色分清「哪个才是真的」</td></tr>
+      <tr><td class="v">空闲态显示远程画面缩略图 / 实时预览</td><td class="v">要真发起会话才有帧；缩略图等于先斩后奏地连对方 —— 与「不做无人值守」的红线冲突</td></tr>
+      <tr><td class="v">被控视图补路径时顺手做「复合质量分」</td><td class="v">状态稿 §7.6 已排在「等历史积累之后」，现在没有可信的分可显示</td></tr>
+      <tr><td class="v">给 <code>.hud</code> 加 <code>backdrop-filter</code> 磨砂</td><td class="v">提 alpha 已经解决对比度，磨砂在 H.264 逐帧画面上每帧重算一次 —— 为一个已解决的问题付渲染预算</td></tr>
+      <tr><td class="v">全量 sweep 其余 CSS 的 10px 圆角 / 12.5px 字号</td><td class="v">规则 §10：只改新写与碰到的</td></tr>
+      <tr><td class="v">把「允许被远程」与「远程通道」并成一个开关、无缝提权、跨设备粘贴栈、文件传输</td><td class="v">既定拒绝清单，不重开（<code>src-tauri/src/rc/mod.rs:4</code> + 状态稿/配对稿的取舍记录）</td></tr>
+    </table>
+    <div class="warn"><b>验证清单（改完必须过）</b>：① §1/§2 是双机手测项 —— 被控时主窗 550px 下截图看横幅折行，空态下截图数重复按钮个数；② §3 的「再次连接」要专门测 <code>inbound</code> 记录不给按钮、设备已移除不给按钮、通道未启动不给按钮三种；③ §6 的 <code>--green→--success</code> 在 6 套主题下逐一看 <code>.tagTrusted</code>/<code>.dotOn</code>；④ <code>npm run lint:css</code>（丢 class 静默无样式，只有它拦得住）；⑤ 工作台最小尺寸 960×640 下 <code>.wbSide</code> 不出现滚动条叠滚动条。</div>
+  </div>
+</body>
+</html>

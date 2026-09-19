@@ -95,8 +95,7 @@ pub fn execute_replace(
 
     for path in &paths {
         let result = (|| -> Result<(usize, String), String> {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| format!("读取失败: {e}"))?;
+            let content = std::fs::read_to_string(path).map_err(|e| format!("读取失败: {e}"))?;
 
             let mut count = 0usize;
             let new_content = re

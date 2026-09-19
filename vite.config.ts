@@ -46,6 +46,7 @@ export default defineConfig(async () => ({
         screenshot: resolve(projectRoot, "screenshot.html"),
         longshot: resolve(projectRoot, "longshot.html"),
         stackhud: resolve(projectRoot, "stackhud.html"),
+        rc: resolve(projectRoot, "rc.html"),
       },
     },
   },

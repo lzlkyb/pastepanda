@@ -45,17 +45,16 @@ impl DataStore {
     /// 失败只 `warn`：链表是派生数据，重建不了不该让用户存不了笔记。
     /// 代价是反链暂时不准，下次保存这一篇就自愈。
     pub(super) fn sync_note_links_on(conn: &rusqlite::Connection, id: &str) {
-        let content: String = match conn.query_row(
-            "SELECT content FROM notes WHERE id = ?1",
-            [id],
-            |r| r.get(0),
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("[Links] 读不到正文，跳过重建 {}: {}", id, e);
-                return;
-            }
-        };
+        let content: String =
+            match conn.query_row("SELECT content FROM notes WHERE id = ?1", [id], |r| {
+                r.get(0)
+            }) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("[Links] 读不到正文，跳过重建 {}: {}", id, e);
+                    return;
+                }
+            };
         // 先删后插：链会被改掉、删掉，增量更新算不清。
         if let Err(e) = conn.execute("DELETE FROM note_links WHERE from_id = ?1", [id]) {
             log::warn!("[Links] 清旧链失败 {}: {}", id, e);
@@ -75,7 +74,9 @@ impl DataStore {
     ///
     /// 不做「表空就补」：本机库现在**一条 `[[ ]]` 都没有**（0/25 实测），
     /// 那样判的话每次启动都要全库扫一遍正文，而结果永远是空。
-    pub(super) fn backfill_note_links_on(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
+    pub(super) fn backfill_note_links_on(
+        conn: &rusqlite::Connection,
+    ) -> Result<(), rusqlite::Error> {
         let ids: Vec<String> = {
             let mut st = conn.prepare("SELECT id FROM notes")?;
             let rows = st.query_map([], |r| r.get::<_, String>(0))?;

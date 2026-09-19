@@ -123,9 +123,15 @@ pub fn semantic_set_config(
 ) -> Result<(), String> {
     let mut raw = store.get_config()?;
     if let Some(obj) = raw.as_object_mut() {
-        obj.insert("mem_enhance_enabled".to_string(), serde_json::Value::Bool(enabled));
+        obj.insert(
+            "mem_enhance_enabled".to_string(),
+            serde_json::Value::Bool(enabled),
+        );
         if let Some(m) = model {
-            obj.insert("mem_embed_model".to_string(), serde_json::Value::String(m.trim().to_string()));
+            obj.insert(
+                "mem_embed_model".to_string(),
+                serde_json::Value::String(m.trim().to_string()),
+            );
         }
     }
     store.save_config(&raw)?;
@@ -284,8 +290,7 @@ pub async fn semantic_search(
     let classifier = ContentClassifier::new();
     if classifier.is_sensitive_for_egress(&query) {
         return Err(
-            "搜索词含敏感信息（密钥或个人信息），已拦截——语义搜索不会把它们发送到云端"
-                .to_string(),
+            "搜索词含敏感信息（密钥或个人信息），已拦截——语义搜索不会把它们发送到云端".to_string(),
         );
     }
 
@@ -444,19 +449,18 @@ fn record_semantic_usage(app: &tauri::AppHandle, cfg: &AiConfig, rec: UsageRecor
     } = rec;
     let spec = cfg.spec();
     let cost_usd = budget::estimate_cost(spec, prompt_tokens, 0);
-    app.state::<DataStore>()
-        .ai_usage_add(&AiUsageEntry {
-            action_id: action_id.to_string(),
-            provider: spec.id.to_string(),
-            model: model.to_string(),
-            prompt_tokens,
-            completion_tokens: 0,
-            cost_usd,
-            cached: false,
-            latency_ms,
-            ok,
-            error,
-        });
+    app.state::<DataStore>().ai_usage_add(&AiUsageEntry {
+        action_id: action_id.to_string(),
+        provider: spec.id.to_string(),
+        model: model.to_string(),
+        prompt_tokens,
+        completion_tokens: 0,
+        cost_usd,
+        cached: false,
+        latency_ms,
+        ok,
+        error,
+    });
 }
 
 #[cfg(test)]

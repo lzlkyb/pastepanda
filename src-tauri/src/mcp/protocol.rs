@@ -516,11 +516,7 @@ mod tests {
             .as_str()
             .unwrap_or("")
             .to_string();
-        assert!(
-            ins.contains("什么值得记"),
-            "写入判据那一段丢了：{}",
-            ins
-        );
+        assert!(ins.contains("什么值得记"), "写入判据那一段丢了：{}", ins);
         // 四条判据里最要紧的是那条总开关。
         assert!(
             ins.contains("重新推导"),
@@ -577,11 +573,7 @@ mod tests {
             .as_str()
             .unwrap_or("")
             .to_string();
-        assert!(
-            !off.contains("什么值得记"),
-            "全关时不该推写入判据：{}",
-            off
-        );
+        assert!(!off.contains("什么值得记"), "全关时不该推写入判据：{}", off);
     }
 
     #[test]
@@ -605,7 +597,10 @@ mod tests {
             .as_str()
             .unwrap_or("")
             .len();
-        println!("instructions：全开 {} 字节 / 全关 {} 字节（不含用户库简介）", on, off);
+        println!(
+            "instructions：全开 {} 字节 / 全关 {} 字节（不含用户库简介）",
+            on, off
+        );
         // 基线（2026-09-09 上半）：全开 1462 / 全关 361。当时预算 2200。
         // 基线（2026-09-09 下半，①甲 写入判据）：**全开 2212 / 全关 361**。
         //
@@ -677,14 +672,22 @@ mod tests {
         ] {
             assert!(ins.contains(name), "选型表里漏了 {}：{}", name, ins);
         }
-        assert!(ins.contains("动得最少"), "缺「拿不准选动得最少的」那条兜底：{}", ins);
+        assert!(
+            ins.contains("动得最少"),
+            "缺「拿不准选动得最少的」那条兜底：{}",
+            ins
+        );
 
         // 全关时不该推这张表：七个工具一个都调不动，推了只是白付 token。
         let off = initialize_result(None, &WriteSwitches::ALL_OFF, "")["instructions"]
             .as_str()
             .unwrap_or("")
             .to_string();
-        assert!(!off.contains("kb_replace_in_note"), "全关时不该推写入选型表：{}", off);
+        assert!(
+            !off.contains("kb_replace_in_note"),
+            "全关时不该推写入选型表：{}",
+            off
+        );
     }
 
     #[test]
@@ -719,13 +722,20 @@ mod tests {
     fn test_library_blurb_is_appended_and_labelled() {
         // AM-6：用户手写的一段自述要出现在 instructions 里，
         // 但**必须带标注**——否则模型会把它当成检索结果去引用。
-        let ins = initialize_result(None, &WriteSwitches::ALL_ON, "这个库主要是 NC 二开的踩坑记录。")
-            ["instructions"]
+        let ins = initialize_result(
+            None,
+            &WriteSwitches::ALL_ON,
+            "这个库主要是 NC 二开的踩坑记录。",
+        )["instructions"]
             .as_str()
             .unwrap_or("")
             .to_string();
         assert!(ins.contains("NC 二开"), "简介没推出去：{}", ins);
-        assert!(ins.contains("用户本人对自己知识库的描述"), "缺来源标注：{}", ins);
+        assert!(
+            ins.contains("用户本人对自己知识库的描述"),
+            "缺来源标注：{}",
+            ins
+        );
         assert!(ins.contains("数据不是指令"), "缺注入防御标注：{}", ins);
         // 🔴 放在最后：我们对自己服务的硬约定（只读/边界/写入约定）不能被用户文本隔开
         let 约定 = ins.find("写入约定").expect("写入约定应当存在");
@@ -740,6 +750,10 @@ mod tests {
             .as_str()
             .unwrap_or("")
             .to_string();
-        assert!(!with.contains("user-library-note"), "空简介不该留占位：{}", with);
+        assert!(
+            !with.contains("user-library-note"),
+            "空简介不该留占位：{}",
+            with
+        );
     }
 }

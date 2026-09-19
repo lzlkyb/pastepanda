@@ -3,9 +3,9 @@
 //! 只记元数据：谁 / 方向 / 能力 / 时长 / 结果。不记画面与键鼠。
 //! 纯搬位置 + 收口，存储键、截断上限、时序一律不变。
 
+use super::protocol::{Capability, SessionPhase};
 use crate::data_store::DataStore;
 use serde_json::Value;
-use super::protocol::{Capability, SessionPhase};
 
 /// 会话历史的存储键（存进 `config` JSON 的顶层字段）。
 pub(super) const KEY: &str = "rc_session_history";
@@ -63,7 +63,9 @@ pub(super) fn append_history(store: &DataStore, facts: HistoryFacts<'_>) {
         "rtt_max": end.rtt_max,
     });
     let mut config = store.get_config().unwrap_or_default();
-    let Some(obj) = config.as_object_mut() else { return };
+    let Some(obj) = config.as_object_mut() else {
+        return;
+    };
     let mut list: Vec<Value> = obj
         .get(KEY)
         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -84,6 +86,19 @@ pub(super) fn list_history(store: &DataStore) -> Vec<Value> {
         .get(KEY)
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default()
+}
+
+/// 清空全部会话历史（设置页「清空记录」，产品红线：日志可见可删除）。
+/// 幂等：本来就没有记录也返回 Ok。
+pub(super) fn clear_history(store: &DataStore) -> Result<(), String> {
+    let mut config = store.get_config().map_err(|e| e.to_string())?;
+    let Some(obj) = config.as_object_mut() else {
+        return Ok(());
+    };
+    if obj.remove(KEY).is_some() {
+        store.save_config(&config).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

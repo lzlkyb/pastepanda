@@ -118,8 +118,16 @@ pub fn fits(x: f64, y: f64, w: f64, h: f64, wa: WorkArea) -> bool {
 pub fn clamp(x: f64, y: f64, w: f64, h: f64, wa: WorkArea) -> (f64, f64) {
     let max_x = wa.x + wa.w - w;
     let max_y = wa.y + wa.h - h;
-    let x = if max_x < wa.x { wa.x } else { x.max(wa.x).min(max_x) };
-    let y = if max_y < wa.y { wa.y } else { y.max(wa.y).min(max_y) };
+    let x = if max_x < wa.x {
+        wa.x
+    } else {
+        x.max(wa.x).min(max_x)
+    };
+    let y = if max_y < wa.y {
+        wa.y
+    } else {
+        y.max(wa.y).min(max_y)
+    };
     (x, y)
 }
 
@@ -141,10 +149,10 @@ pub fn clamp(x: f64, y: f64, w: f64, h: f64, wa: WorkArea) -> (f64, f64) {
 /// 那就不是真实位置了。靠不透明度（0.92 白 / 0.94 深）+ 描边让被盖内容透出后不可辨。
 pub fn pick_pos(cx: f64, cy: f64, w: f64, h: f64, wa: WorkArea) -> (f64, f64) {
     let candidates = [
-        (cx + CURSOR_GAP, cy - CURSOR_GAP - h), // ① 右上（首选）
-        (cx + CURSOR_GAP, cy + CURSOR_GAP),     // ② 右下
+        (cx + CURSOR_GAP, cy - CURSOR_GAP - h),     // ① 右上（首选）
+        (cx + CURSOR_GAP, cy + CURSOR_GAP),         // ② 右下
         (cx - CURSOR_GAP - w, cy - CURSOR_GAP - h), // ③ 左上
-        (cx - CURSOR_GAP - w, cy + CURSOR_GAP), // ④ 左下
+        (cx - CURSOR_GAP - w, cy + CURSOR_GAP),     // ④ 左下
         (wa.x + wa.w - EDGE_MARGIN - w, wa.y + wa.h - EDGE_MARGIN - h), // ⑤ 工作区右下
         (wa.x + wa.w - EDGE_MARGIN - w, wa.y + EDGE_MARGIN), // ⑥ 工作区右上
     ];
@@ -292,7 +300,10 @@ mod tests {
             for cy in [0.0, 200.0, 520.0, 900.0, 1039.0] {
                 let (x, y) = pick_pos(cx, cy, 208.0, 48.0, area);
                 assert!(
-                    x >= area.x && y >= area.y && x + 208.0 <= area.x + area.w && y + 48.0 <= area.y + area.h,
+                    x >= area.x
+                        && y >= area.y
+                        && x + 208.0 <= area.x + area.w
+                        && y + 48.0 <= area.y + area.h,
                     "cursor=({},{}) 落位=({},{}) 越出工作区",
                     cx,
                     cy,
@@ -334,7 +345,12 @@ mod tests {
         let anchor = Some((0.0, 0.0, 1920.0, 1040.0));
         let (x, _) = anchor_pos(anchor, (0.0, 0.0), 208.0, 48.0, wa()).unwrap();
         // 默认 x = 1920 - 16 - 208 = 1696，未越界；构造更小的屏验证钳制：
-        let small = WorkArea { x: 0.0, y: 0.0, w: 300.0, h: 1040.0 };
+        let small = WorkArea {
+            x: 0.0,
+            y: 0.0,
+            w: 300.0,
+            h: 1040.0,
+        };
         let anchor2 = Some((0.0, 0.0, 400.0, 1040.0));
         let (x2, _) = anchor_pos(anchor2, (0.0, 0.0), 208.0, 48.0, small).unwrap();
         assert_eq!(x2, 300.0 - 208.0, "必须钳到工作区右缘内侧");
@@ -365,7 +381,12 @@ mod tests {
     /// 多显示器：锚点窗口在第二屏（workarea 原点非零），落位随其 workarea
     #[test]
     fn test_anchor_respects_second_monitor_origin() {
-        let second = WorkArea { x: 1920.0, y: 0.0, w: 1920.0, h: 1040.0 };
+        let second = WorkArea {
+            x: 1920.0,
+            y: 0.0,
+            w: 1920.0,
+            h: 1040.0,
+        };
         let anchor = Some((2100.0, 200.0, 800.0, 500.0));
         let (x, y) = anchor_pos(anchor, (0.0, 0.0), 208.0, 48.0, second).unwrap();
         assert_eq!(x, 2100.0 + 800.0 - 16.0 - 208.0);
@@ -379,8 +400,22 @@ mod tests {
     #[test]
     fn test_anchor_none_on_degenerate_rect() {
         assert!(anchor_pos(None, (0.0, 0.0), 208.0, 48.0, wa()).is_none());
-        assert!(anchor_pos(Some((10.0, 10.0, 0.0, 400.0)), (0.0, 0.0), 208.0, 48.0, wa()).is_none());
-        assert!(anchor_pos(Some((10.0, 10.0, 400.0, -1.0)), (0.0, 0.0), 208.0, 48.0, wa()).is_none());
+        assert!(anchor_pos(
+            Some((10.0, 10.0, 0.0, 400.0)),
+            (0.0, 0.0),
+            208.0,
+            48.0,
+            wa()
+        )
+        .is_none());
+        assert!(anchor_pos(
+            Some((10.0, 10.0, 400.0, -1.0)),
+            (0.0, 0.0),
+            208.0,
+            48.0,
+            wa()
+        )
+        .is_none());
     }
 
     // ===== control_anchor_pos（锚定聚焦输入框）=====
@@ -389,8 +424,7 @@ mod tests {
     #[test]
     fn test_control_default_above_right() {
         let control = (600.0, 400.0, 300.0, 34.0);
-        let (x, y, below) =
-            control_anchor_pos(control, (0.0, 0.0), 240.0, 65.0, wa()).unwrap();
+        let (x, y, below) = control_anchor_pos(control, (0.0, 0.0), 240.0, 65.0, wa()).unwrap();
         assert_eq!(x, 600.0 + 300.0 - 240.0);
         assert_eq!(y, 400.0 - CONTROL_GAP - 65.0);
         assert!(!below);
@@ -400,8 +434,7 @@ mod tests {
     #[test]
     fn test_control_flips_below_near_top() {
         let control = (600.0, 20.0, 300.0, 34.0);
-        let (x, y, below) =
-            control_anchor_pos(control, (0.0, 0.0), 240.0, 65.0, wa()).unwrap();
+        let (x, y, below) = control_anchor_pos(control, (0.0, 0.0), 240.0, 65.0, wa()).unwrap();
         assert_eq!(x, 600.0 + 300.0 - 240.0);
         assert_eq!(y, 20.0 + 34.0 + CONTROL_GAP);
         assert!(below);
@@ -422,7 +455,9 @@ mod tests {
     #[test]
     fn test_control_none_on_degenerate() {
         assert!(control_anchor_pos((0.0, 0.0, 0.0, 30.0), (0.0, 0.0), 240.0, 65.0, wa()).is_none());
-        assert!(control_anchor_pos((0.0, 0.0, 100.0, 0.0), (0.0, 0.0), 240.0, 65.0, wa()).is_none());
+        assert!(
+            control_anchor_pos((0.0, 0.0, 100.0, 0.0), (0.0, 0.0), 240.0, 65.0, wa()).is_none()
+        );
     }
 
     /// 控件合理性：太小 / 几乎整窗都拒绝

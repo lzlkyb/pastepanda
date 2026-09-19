@@ -172,16 +172,37 @@ pub struct AiAction {
 }
 
 const LANG_VALUES: &[ActionOptionValue] = &[
-    ActionOptionValue { value: "zh", label: "中文" },
-    ActionOptionValue { value: "en", label: "英文" },
-    ActionOptionValue { value: "ja", label: "日文" },
-    ActionOptionValue { value: "ko", label: "韩文" },
+    ActionOptionValue {
+        value: "zh",
+        label: "中文",
+    },
+    ActionOptionValue {
+        value: "en",
+        label: "英文",
+    },
+    ActionOptionValue {
+        value: "ja",
+        label: "日文",
+    },
+    ActionOptionValue {
+        value: "ko",
+        label: "韩文",
+    },
 ];
 
 const TONE_VALUES: &[ActionOptionValue] = &[
-    ActionOptionValue { value: "concise", label: "简洁" },
-    ActionOptionValue { value: "formal", label: "正式" },
-    ActionOptionValue { value: "casual", label: "口语" },
+    ActionOptionValue {
+        value: "concise",
+        label: "简洁",
+    },
+    ActionOptionValue {
+        value: "formal",
+        label: "正式",
+    },
+    ActionOptionValue {
+        value: "casual",
+        label: "口语",
+    },
 ];
 
 const TRANSLATE_OPTS: &[ActionOptionSpec] = &[ActionOptionSpec {
@@ -200,9 +221,18 @@ const REWRITE_OPTS: &[ActionOptionSpec] = &[ActionOptionSpec {
 
 /// 回复草稿的态度。比语气更关键——同一封邮件答应还是拒绝，写法完全不同。
 const REPLY_STANCE_VALUES: &[ActionOptionValue] = &[
-    ActionOptionValue { value: "accept", label: "答应" },
-    ActionOptionValue { value: "decline", label: "委婉拒绝" },
-    ActionOptionValue { value: "ask", label: "追问细节" },
+    ActionOptionValue {
+        value: "accept",
+        label: "答应",
+    },
+    ActionOptionValue {
+        value: "decline",
+        label: "委婉拒绝",
+    },
+    ActionOptionValue {
+        value: "ask",
+        label: "追问细节",
+    },
 ];
 
 const REPLY_OPTS: &[ActionOptionSpec] = &[ActionOptionSpec {
@@ -213,11 +243,26 @@ const REPLY_OPTS: &[ActionOptionSpec] = &[ActionOptionSpec {
 }];
 
 const TYPE_TARGET_VALUES: &[ActionOptionValue] = &[
-    ActionOptionValue { value: "ts", label: "TypeScript" },
-    ActionOptionValue { value: "java", label: "Java" },
-    ActionOptionValue { value: "rust", label: "Rust" },
-    ActionOptionValue { value: "go", label: "Go" },
-    ActionOptionValue { value: "python", label: "Python" },
+    ActionOptionValue {
+        value: "ts",
+        label: "TypeScript",
+    },
+    ActionOptionValue {
+        value: "java",
+        label: "Java",
+    },
+    ActionOptionValue {
+        value: "rust",
+        label: "Rust",
+    },
+    ActionOptionValue {
+        value: "go",
+        label: "Go",
+    },
+    ActionOptionValue {
+        value: "python",
+        label: "Python",
+    },
 ];
 
 /// JSON 转类型的目标语言。
@@ -512,10 +557,7 @@ pub fn find_action(id: &str) -> Option<&'static AiAction> {
 /// 从 opts 取值；缺失或不在允许集里时回退到默认值。
 ///
 /// 不报错是故意的：前端传个离谱值不应该让用户看到报错，按默认跑就行。
-fn opt_or_default(
-    spec: &ActionOptionSpec,
-    opts: &HashMap<String, String>,
-) -> &'static str {
+fn opt_or_default(spec: &ActionOptionSpec, opts: &HashMap<String, String>) -> &'static str {
     match opts.get(spec.key) {
         Some(v) => spec
             .values
@@ -823,13 +865,20 @@ mod tests {
 
     #[test]
     fn test_unknown_action_rejected() {
-        let err = build_prompt("ai-不存在", "x", &HashMap::new(), PromptCtx::default()).unwrap_err();
+        let err =
+            build_prompt("ai-不存在", "x", &HashMap::new(), PromptCtx::default()).unwrap_err();
         assert!(err.contains("未知的 AI 动作"));
     }
 
     #[test]
     fn test_empty_input_rejected() {
-        let err = build_prompt("ai-summarize", "   \n  ", &HashMap::new(), PromptCtx::default()).unwrap_err();
+        let err = build_prompt(
+            "ai-summarize",
+            "   \n  ",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap_err();
         assert!(err.contains("为空"));
     }
 
@@ -837,7 +886,8 @@ mod tests {
     fn test_oversized_input_rejected_not_truncated() {
         // 宁可报错也不静默截断——截断会悄无声息地改变语义
         let long: String = "字".repeat(MAX_INPUT_CHARS + 1);
-        let err = build_prompt("ai-translate", &long, &HashMap::new(), PromptCtx::default()).unwrap_err();
+        let err =
+            build_prompt("ai-translate", &long, &HashMap::new(), PromptCtx::default()).unwrap_err();
         assert!(err.contains("过长"));
         assert!(err.contains(&MAX_INPUT_CHARS.to_string()));
     }
@@ -845,14 +895,25 @@ mod tests {
     #[test]
     fn test_input_at_exact_limit_accepted() {
         let exact: String = "字".repeat(MAX_INPUT_CHARS);
-        assert!(build_prompt("ai-summarize", &exact, &HashMap::new(), PromptCtx::default()).is_ok());
+        assert!(build_prompt(
+            "ai-summarize",
+            &exact,
+            &HashMap::new(),
+            PromptCtx::default()
+        )
+        .is_ok());
     }
 
     // v6.4 六大王牌：C 合并增强 + E 周报的动作提示词
     #[test]
     fn test_merge_polish_prompt() {
-        let (_, user, _) =
-            build_prompt("ai-merge-polish", "段落一\n段落二", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user, _) = build_prompt(
+            "ai-merge-polish",
+            "段落一\n段落二",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user.contains("重复"));
         assert!(user.contains("段落一"));
     }
@@ -921,8 +982,13 @@ mod tests {
     // v6.1 S3：修复代码动作
     #[test]
     fn test_fix_code_prompt() {
-        let (_, user, _) =
-            build_prompt("ai-fix-code", "function a( { return 1 }", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user, _) = build_prompt(
+            "ai-fix-code",
+            "function a( { return 1 }",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user.contains("修复"), "prompt 应要求修复代码");
         assert!(user.contains("function a( { return 1 }"), "原文应完整带入");
     }
@@ -930,8 +996,13 @@ mod tests {
     // v6.4 E：自然语言 → 正则
     #[test]
     fn test_regex_generate_prompt() {
-        let (_, user, _) =
-            build_prompt("ai-regex-generate", "把 138 开头的手机号换掉", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user, _) = build_prompt(
+            "ai-regex-generate",
+            "把 138 开头的手机号换掉",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user.contains("正则"), "prompt 应要求生成正则");
         assert!(user.contains("138 开头的手机号"), "描述应完整带入");
         assert!(user.contains("只输出一行"), "应要求只输出一行正则");
@@ -940,8 +1011,13 @@ mod tests {
     // v6.7：自然语言 → SQL
     #[test]
     fn test_sql_generate_prompt() {
-        let (_, user, _) =
-            build_prompt("ai-sql-generate", "查昨天下单超过 100 元的订单", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user, _) = build_prompt(
+            "ai-sql-generate",
+            "查昨天下单超过 100 元的订单",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user.contains("SQL"), "prompt 应要求生成 SQL");
         assert!(user.contains("昨天下单超过 100 元"), "描述应完整带入");
     }
@@ -979,19 +1055,23 @@ mod tests {
 
     #[test]
     fn test_reply_draft_max_tokens_enough_for_three_candidates() {
-        let (_, _, max_tokens) = build_prompt(
-            "ai-reply-draft",
-            "x",
-            &HashMap::new(),
-            PromptCtx::default(),
-        )
-        .unwrap();
-        assert!(max_tokens >= 1800, "3 个候选需要更大上限，当前 {max_tokens}");
+        let (_, _, max_tokens) =
+            build_prompt("ai-reply-draft", "x", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(
+            max_tokens >= 1800,
+            "3 个候选需要更大上限，当前 {max_tokens}"
+        );
     }
 
     #[test]
     fn test_translate_option_applied() {
-        let (_, user, _) = build_prompt("ai-translate", "hello", &opts(&[("lang", "ja")]), PromptCtx::default()).unwrap();
+        let (_, user, _) = build_prompt(
+            "ai-translate",
+            "hello",
+            &opts(&[("lang", "ja")]),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user.contains("日文"));
         assert!(!user.contains("韩文"));
     }
@@ -999,11 +1079,22 @@ mod tests {
     #[test]
     fn test_unknown_option_value_falls_back_to_default() {
         // 前端传了离谱值不应该报错，按默认跑
-        let (_, user, _) =
-            build_prompt("ai-translate", "hello", &opts(&[("lang", "火星文")]), PromptCtx::default()).unwrap();
+        let (_, user, _) = build_prompt(
+            "ai-translate",
+            "hello",
+            &opts(&[("lang", "火星文")]),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user.contains("中文"), "应回退到默认的中文");
 
-        let (_, user2, _) = build_prompt("ai-rewrite", "hello", &opts(&[("tone", "xxx")]), PromptCtx::default()).unwrap();
+        let (_, user2, _) = build_prompt(
+            "ai-rewrite",
+            "hello",
+            &opts(&[("tone", "xxx")]),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user2.contains("简洁"), "应回退到默认的简洁");
     }
 
@@ -1020,10 +1111,17 @@ mod tests {
     fn test_internal_action_ids_all_exist() {
         // 防止名单里拼错 id：拼错不会报错，只会让该动作静默泄露到变换中心里
         for id in INTERNAL_ACTION_IDS {
-            assert!(find_action(id).is_some(), "INTERNAL_ACTION_IDS 里的 {} 不在 ACTIONS 表里", id);
+            assert!(
+                find_action(id).is_some(),
+                "INTERNAL_ACTION_IDS 里的 {} 不在 ACTIONS 表里",
+                id
+            );
             assert!(is_internal_action(id));
         }
-        assert!(!is_internal_action("ai-rewrite"), "普通动作不能被当成内部动作");
+        assert!(
+            !is_internal_action("ai-rewrite"),
+            "普通动作不能被当成内部动作"
+        );
     }
 
     /// 流程图三条动作的 prompt 必须自己带全部指令。
@@ -1032,22 +1130,49 @@ mod tests {
     /// 结果落到 ai-rewrite 模板的内容槽里 → 模型去改写指令而不是画图。
     #[test]
     fn test_diagram_prompts_are_self_contained() {
-        let (_, user, max_tokens) =
-            build_prompt("ai-diagram", "登录流程", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user, max_tokens) = build_prompt(
+            "ai-diagram",
+            "登录流程",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user.contains("flowchart TD"), "必须告诉模型首行格式");
-        assert!(user.contains("不要用中文做 id"), "parseMermaid 只认 ASCII 节点 id");
-        assert!(user.contains("C{判断}"), "format! 里的 {{}} 转义写错会把语法例子吐掉");
-        assert!(user.trim_end().ends_with("登录流程"), "用户内容在末尾，指令在前");
+        assert!(
+            user.contains("不要用中文做 id"),
+            "parseMermaid 只认 ASCII 节点 id"
+        );
+        assert!(
+            user.contains("C{判断}"),
+            "format! 里的 {{}} 转义写错会把语法例子吐掉"
+        );
+        assert!(
+            user.trim_end().ends_with("登录流程"),
+            "用户内容在末尾，指令在前"
+        );
         assert_eq!(max_tokens, 1500);
 
-        let (_, user2, _) =
-            build_prompt("ai-diagram-expand", "校验参数", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user2, _) = build_prompt(
+            "ai-diagram-expand",
+            "校验参数",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user2.contains("flowchart TD") && user2.contains("3~6"));
 
-        let (_, user3, _) =
-            build_prompt("ai-diagram-label", "处理", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user3, _) = build_prompt(
+            "ai-diagram-label",
+            "处理",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(user3.contains("只返回改写后的文字本身"));
-        assert!(!user3.contains("flowchart"), "润色只改文字，不该让模型输出图");
+        assert!(
+            !user3.contains("flowchart"),
+            "润色只改文字，不该让模型输出图"
+        );
     }
 
     /// 真实跑一遍全部动作，验证**系统提示词真的压住了前言**。
@@ -1059,12 +1184,14 @@ mod tests {
     #[tokio::test]
     #[ignore = "需要真实 API Key 且会计费，默认跳过"]
     async fn test_live_all_actions() {
-        let key = std::env::var("PASTEPANDA_AI_KEY")
-            .expect("请先设置环境变量 PASTEPANDA_AI_KEY");
+        let key = std::env::var("PASTEPANDA_AI_KEY").expect("请先设置环境变量 PASTEPANDA_AI_KEY");
         let cfg = crate::ai::AiConfig::default();
 
         let samples: &[(&str, &str)] = &[
-            ("ai-translate", "The quick brown fox jumps over the lazy dog."),
+            (
+                "ai-translate",
+                "The quick brown fox jumps over the lazy dog.",
+            ),
             (
                 "ai-summarize",
                 "会议决定下周一上线新版本，前端负责改改页面，后端负责数据库迁移，\
@@ -1076,10 +1203,18 @@ mod tests {
 
         for (id, text) in samples {
             let (system, user, max_tokens) =
-                build_prompt(id, text, &HashMap::new(), PromptCtx::default()).expect("prompt 构造失败");
-            let out = crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(max_tokens), None)
-                .await
-                .unwrap_or_else(|e| panic!("{} 调用失败：{}", id, e));
+                build_prompt(id, text, &HashMap::new(), PromptCtx::default())
+                    .expect("prompt 构造失败");
+            let out = crate::ai::chat(
+                &cfg,
+                &key,
+                Some(system.as_str()),
+                &user,
+                Some(max_tokens),
+                None,
+            )
+            .await
+            .unwrap_or_else(|e| panic!("{} 调用失败：{}", id, e));
 
             println!("[live] {} => {:?}", id, out.content);
 
@@ -1107,10 +1242,17 @@ mod tests {
         // 这是整个自定义动作的核心约束：没占位符就不知道内容放哪，
         // 而自动拼在末尾会把“只输出结果本身”这类收尾约束挤掉
         let err = validate_template("把这段话润色一下。").unwrap_err();
-        assert!(err.contains("{{内容}}"), "报错要直接告诉用户缺什么：{}", err);
+        assert!(
+            err.contains("{{内容}}"),
+            "报错要直接告诉用户缺什么：{}",
+            err
+        );
 
         assert!(validate_template("润色：{{内容}}").is_ok());
-        assert!(validate_template("polish: {{content}}").is_ok(), "英文占位符也要认");
+        assert!(
+            validate_template("polish: {{content}}").is_ok(),
+            "英文占位符也要认"
+        );
     }
 
     #[test]
@@ -1134,8 +1276,7 @@ mod tests {
 
     #[test]
     fn test_custom_prompt_replaces_every_placeholder() {
-        let (_, user, _) =
-            build_custom_prompt("A{{内容}}B{{content}}C", "x", 100, None).unwrap();
+        let (_, user, _) = build_custom_prompt("A{{内容}}B{{content}}C", "x", 100, None).unwrap();
         assert_eq!(user, "AxBxC");
     }
 
@@ -1176,8 +1317,13 @@ mod tests {
     /// 不能出现“这段  代码”这种双空格或坠落的占位符。
     #[test]
     fn test_no_language_leaves_prompt_clean() {
-        let (_, user, _) =
-            build_prompt("ai-explain-code", "x = 1", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, user, _) = build_prompt(
+            "ai-explain-code",
+            "x = 1",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(!user.contains("{}"), "占位符没被填：{user}");
         assert!(!user.contains("  "), "留下了双空格：{user}");
     }
@@ -1223,8 +1369,13 @@ mod tests {
         let bi = with_tags.find("BODYMARK").expect("正文丢了");
         assert!(ti < bi, "标签必须在正文之前：{with_tags}");
 
-        let (_, plain, _) =
-            build_prompt("ai-summarize", "BODYMARK", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (_, plain, _) = build_prompt(
+            "ai-summarize",
+            "BODYMARK",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(!plain.contains("TAGMARK"));
         // 空串/纯空白等于没标签，不能拼一行空提示进去
         let (_, blank, _) = build_prompt(
@@ -1242,17 +1393,38 @@ mod tests {
 
     #[test]
     fn test_content_type_goes_into_system_prompt() {
-        let (with, _, _) =
-            build_prompt("ai-summarize", "hello", &HashMap::new(), PromptCtx { content_type: Some("json"), ..Default::default() }).unwrap();
+        let (with, _, _) = build_prompt(
+            "ai-summarize",
+            "hello",
+            &HashMap::new(),
+            PromptCtx {
+                content_type: Some("json"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(with.contains("JSON"), "内容类型没注入：{}", with);
 
-        let (without, _, _) =
-            build_prompt("ai-summarize", "hello", &HashMap::new(), PromptCtx::default()).unwrap();
+        let (without, _, _) = build_prompt(
+            "ai-summarize",
+            "hello",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
         assert!(!without.contains("内容类型是"));
 
         // 认不出来的类型不注入，而不是把原始 id 喂给模型
-        let (unknown, _, _) =
-            build_prompt("ai-summarize", "hello", &HashMap::new(), PromptCtx { content_type: Some("火星类型"), ..Default::default() }).unwrap();
+        let (unknown, _, _) = build_prompt(
+            "ai-summarize",
+            "hello",
+            &HashMap::new(),
+            PromptCtx {
+                content_type: Some("火星类型"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(!unknown.contains("火星类型"));
     }
 
@@ -1260,7 +1432,9 @@ mod tests {
     fn test_secret_is_not_a_selectable_content_type() {
         // 不应该存在一个“专门在密钥上冒出来”的云端动作
         assert!(
-            !SELECTABLE_CONTENT_TYPES.iter().any(|(id, _)| *id == "secret"),
+            !SELECTABLE_CONTENT_TYPES
+                .iter()
+                .any(|(id, _)| *id == "secret"),
             "secret 不得出现在可选类型里"
         );
     }

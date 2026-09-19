@@ -36,6 +36,8 @@ export function RcPairPastePane({
   toast,
   onBack,
   onPaired,
+  adhoc,
+  onAdhocPaired,
 }: {
   previewInvite: (code: string) => Promise<RcInvite>;
   /** 返回是否成功；失败原因由 store 收进 `error`（`rcStore.run` 的语义）。 */
@@ -45,11 +47,23 @@ export function RcPairPastePane({
   initialCode?: string;
   toast: ToastFn;
   onBack: () => void;
-  /** 配对成功：把对方名字交给调用方去 toast 并关闭对话框。 */
-  onPaired: (peerName: string) => void;
+  /** 配对成功（长期）：把对方名字交给调用方去 toast 并关闭对话框。 */
+  onPaired?: (peerName: string) => void;
+  /**
+   * 一次性协助（方案甲 · 协助方）：配对成功**不进完成屏**，直接连过去。
+   * 文案改成「连接」——「配对」这个词在一次性场景里是多余的中间概念。
+   */
+  adhoc?: boolean;
+  /** 一次性协助专用收尾：带 `peer_id`（调用方要拿它点名遗忘）。 */
+  onAdhocPaired?: (peerId: string, peerName: string) => void;
 }) {
   const [code, setCode] = useState(initialCode ?? "");
   const [fp, setFp] = useState<string | null>(null);
+  /**
+   * 对方 node_id。原先只留了格式化后的指纹（`fp`），而一次性协助的收尾要用
+   * 原始 id 去 `rc_forget` —— 指纹是给人念的，反解不回来。
+   */
+  const [peerId, setPeerId] = useState<string | null>(null);
   const [peerName, setPeerName] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,14 +84,17 @@ export function RcPairPastePane({
       if (inv.node_id === selfNodeId) {
         setErr("这是本机自己的邀请码。请把它粘到另一台设备上，和自己配对是没有用的。");
         setFp(null);
+        setPeerId(null);
         return;
       }
       setFp(fingerprintOf(inv.node_id));
+      setPeerId(inv.node_id);
       setPeerName(inv.name || "");
       setErr("");
     } catch (e) {
       setErr(typeof e === "string" ? e : e instanceof Error ? e.message : "邀请码无效");
       setFp(null);
+      setPeerId(null);
     } finally {
       setBusy(false);
     }
@@ -94,13 +111,22 @@ export function RcPairPastePane({
     setBusy(true);
     try {
       const ok = await pair(code.trim());
-      if (ok) onPaired(peerName);
+      if (!ok) return;
+      /**
+       * 一次性协助的收尾交给调用方：他要「点名遗忘 + 直接发起」两件事，
+       * 而这两件都需要 `peer_id`。走不进 `onAdhocPaired`（没解析出 id）时
+       * 退回长期那条收尾，至少不会让用户点完按钮什么都没发生。
+       */
+      if (adhoc && onAdhocPaired && peerId) onAdhocPaired(peerId, peerName);
+      else onPaired?.(peerName);
     } catch (e) {
       toast(String(e), "error");
     } finally {
       setBusy(false);
     }
   };
+  /** 一次性协助的文案要避开「配对」——这一步的心智是「连过去」，不是「建立长期关系」。 */
+  const primaryLabel = adhoc ? "连接" : "发送配对请求";
   return (
     <>
       <textarea
@@ -121,6 +147,7 @@ export function RcPairPastePane({
         onChange={(e) => {
           setCode(e.target.value);
           setFp(null);
+          setPeerId(null);
           setErr("");
         }}
         onBlur={(e) => {
@@ -167,7 +194,7 @@ export function RcPairPastePane({
           disabled={!canSubmitPair({ code, previewFp: fp, busy })}
           onClick={() => void submit()}
         >
-          发送配对请求
+          {primaryLabel}
         </button>
       </div>
     </>

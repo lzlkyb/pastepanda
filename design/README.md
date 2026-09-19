@@ -1,6 +1,6 @@
 # 设计稿索引（design/）
 
-> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-09-18）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
+> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-09-19）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
 
 ## 这份目录是什么
 
@@ -45,9 +45,9 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `logo-options/` | 13 | 9.2 MB | Logo 备选方案（有 index.html 汇总页） |
 | `icon-options/` | 5 | 4.3 MB | 应用图标备选方案 |
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
-| `*.html`（根目录） | 303 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 317 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（303 份，按主题分组）
+## 设计稿清单（317 份，按主题分组）
 
 ### 视觉与品牌（28）
 
@@ -239,12 +239,14 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`ai-custom-actions`](./ai-custom-actions.html) | 2026-08-08 近期 | 11 KB |
 | [`ai-badge`](./ai-badge.html) | 2026-08-08 近期 | 15 KB |
 
-### 设置与帮助（12）
+### 设置与帮助（14）
 
 *设置页、关于页、帮助页的版式与信息架构。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`远程电脑-设置去摆设与美化-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E7%BD%AE%E5%8E%BB%E6%91%86%E8%AE%BE%E4%B8%8E%E7%BE%8E%E5%8C%96-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 53 KB |
+| [`远程电脑-开关可发现与画质自适应-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%BC%80%E5%85%B3%E5%8F%AF%E5%8F%91%E7%8E%B0%E4%B8%8E%E7%94%BB%E8%B4%A8%E8%87%AA%E9%80%82%E5%BA%94-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 30 KB |
 | [`设置页-风格对齐优化对照稿`](./%E8%AE%BE%E7%BD%AE%E9%A1%B5-%E9%A3%8E%E6%A0%BC%E5%AF%B9%E9%BD%90%E4%BC%98%E5%8C%96%E5%AF%B9%E7%85%A7%E7%A8%BF.html) | 2026-09-14 近期 | 20 KB |
 | [`设置页-体验升级第二档`](./%E8%AE%BE%E7%BD%AE%E9%A1%B5-%E4%BD%93%E9%AA%8C%E5%8D%87%E7%BA%A7%E7%AC%AC%E4%BA%8C%E6%A1%A3.html) | 2026-09-14 近期 | 20 KB |
 | [`设置开关-三套方案对照`](./%E8%AE%BE%E7%BD%AE%E5%BC%80%E5%85%B3-%E4%B8%89%E5%A5%97%E6%96%B9%E6%A1%88%E5%AF%B9%E7%85%A7.html) | 2026-09-14 近期 | 14 KB |
@@ -310,12 +312,23 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`diff-dialog`](./diff-dialog.html) | 2026-07-22 | 14 KB |
 | [`代码高亮预览`](./%E4%BB%A3%E7%A0%81%E9%AB%98%E4%BA%AE%E9%A2%84%E8%A7%88.html) | 2026-07-01 | 23 KB |
 
-### 同步与更新（23）
+### 同步与更新（34）
 
 *设备同步/配对/冲突，以及自动更新、发版说明弹框、版本徽标。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`远程电脑最新设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91%E6%9C%80%E6%96%B0%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 8 KB |
+| [`远程电脑-质感重做-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%B4%A8%E6%84%9F%E9%87%8D%E5%81%9A-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 68 KB |
+| [`远程电脑-设备行布局-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E5%A4%87%E8%A1%8C%E5%B8%83%E5%B1%80-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 78 KB |
+| [`远程电脑-独立工作台窗口-布局设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E7%8B%AC%E7%AB%8B%E5%B7%A5%E4%BD%9C%E5%8F%B0%E7%AA%97%E5%8F%A3-%E5%B8%83%E5%B1%80%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 25 KB |
+| [`远程电脑-工作台设计稿-v4-质感版`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%B7%A5%E4%BD%9C%E5%8F%B0%E8%AE%BE%E8%AE%A1%E7%A8%BF-v4-%E8%B4%A8%E6%84%9F%E7%89%88.html) | — | 82 KB |
+| [`远程电脑-工作台设计稿-v3-布局参照版`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%B7%A5%E4%BD%9C%E5%8F%B0%E8%AE%BE%E8%AE%A1%E7%A8%BF-v3-%E5%B8%83%E5%B1%80%E5%8F%82%E7%85%A7%E7%89%88.html) | — | 76 KB |
+| [`远程电脑-工作台设计稿-v2-规范落地版`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%B7%A5%E4%BD%9C%E5%8F%B0%E8%AE%BE%E8%AE%A1%E7%A8%BF-v2-%E8%A7%84%E8%8C%83%E8%90%BD%E5%9C%B0%E7%89%88.html) | — | 45 KB |
+| [`远程电脑-会话页布局重构-方案`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BC%9A%E8%AF%9D%E9%A1%B5%E5%B8%83%E5%B1%80%E9%87%8D%E6%9E%84-%E6%96%B9%E6%A1%88.html) | — | 41 KB |
+| [`远程电脑-一次性协助-方案C-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%B8%80%E6%AC%A1%E6%80%A7%E5%8D%8F%E5%8A%A9-%E6%96%B9%E6%A1%88C-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 37 KB |
+| [`远程电脑-v5-沉浸工作台-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-v5-%E6%B2%89%E6%B5%B8%E5%B7%A5%E4%BD%9C%E5%8F%B0-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 69 KB |
+| [`远程电脑-UI优化-五项-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-UI%E4%BC%98%E5%8C%96-%E4%BA%94%E9%A1%B9-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 78 KB |
 | [`远程电脑-配对流程重做-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E9%85%8D%E5%AF%B9%E6%B5%81%E7%A8%8B%E9%87%8D%E5%81%9A-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-18 近期 | 66 KB |
 | [`远程设备多档在线状态-设计稿`](./%E8%BF%9C%E7%A8%8B%E8%AE%BE%E5%A4%87%E5%A4%9A%E6%A1%A3%E5%9C%A8%E7%BA%BF%E7%8A%B6%E6%80%81-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-17 近期 | 5 KB |
 | [`远程电脑-交互精简-B方案-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BA%A4%E4%BA%92%E7%B2%BE%E7%AE%80-B%E6%96%B9%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-17 近期 | 40 KB |
@@ -340,12 +353,13 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`version-badge-designs`](./version-badge-designs.html) | 2026-07-03 | 20 KB |
 | [`version-badge-all-themes`](./version-badge-all-themes.html) | 2026-07-03 | 23 KB |
 
-### 主窗口与导航（75）
+### 主窗口与导航（76）
 
 *主界面骨架：侧栏、顶栏、标签/分组、搜索、时间线、卡片、悬浮卡、托盘、详情弹窗。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`2026-ThreeUI借鉴-GlassDock与统计仪表-设计稿`](./2026-ThreeUI%E5%80%9F%E9%89%B4-GlassDock%E4%B8%8E%E7%BB%9F%E8%AE%A1%E4%BB%AA%E8%A1%A8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 28 KB |
 | [`PastePanda-托盘右键菜单-UI优化-设计稿-v2`](./PastePanda-%E6%89%98%E7%9B%98%E5%8F%B3%E9%94%AE%E8%8F%9C%E5%8D%95-UI%E4%BC%98%E5%8C%96-%E8%AE%BE%E8%AE%A1%E7%A8%BF-v2.html) | 2026-09-17 近期 | 69 KB |
 | [`查找悬浮卡-移动交互三方案`](./%E6%9F%A5%E6%89%BE%E6%82%AC%E6%B5%AE%E5%8D%A1-%E7%A7%BB%E5%8A%A8%E4%BA%A4%E4%BA%92%E4%B8%89%E6%96%B9%E6%A1%88.html) | 2026-09-14 近期 | 27 KB |
 | [`2026-主窗口视觉升级-对照稿`](./2026-%E4%B8%BB%E7%AA%97%E5%8F%A3%E8%A7%86%E8%A7%89%E5%8D%87%E7%BA%A7-%E5%AF%B9%E7%85%A7%E7%A8%BF.html) | 2026-09-10 近期 | 35 KB |
@@ -422,8 +436,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`clipboard-beautify-options`](./clipboard-beautify-options.html) | 2026-07-01 | 28 KB |
 | [`card-contextmenu-preview`](./card-contextmenu-preview.html) | 2026-07-01 | 21 KB |
 
-> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 0 份。
+> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 14 份。
 
 ---
 
-_共 303 份设计稿。重新生成：`npm run gen:design-index`_
+_共 317 份设计稿。重新生成：`npm run gen:design-index`_

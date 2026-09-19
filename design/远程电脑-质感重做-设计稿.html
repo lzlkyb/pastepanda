@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程电脑 · 质感重做 设计稿</title>
+<style>
+/* =====================================================================
+   文档壳（浅色，与窗口稿同一调性）
+   ===================================================================== */
+:root{
+  --doc-bg:#F7FAFD; --doc-card:#FFFFFF; --doc-line:#E2E9F2; --doc-line-soft:#EDF2F8;
+  --doc-text:#0F172A; --doc-dim:#5A6B80; --doc-faint:#8394A8;
+  --doc-accent:#0284C7; --doc-cyan:#06B6D4;
+  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(ellipse 900px 420px at 14% -8%, rgba(2,132,199,.10), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 90% 0%, rgba(109,40,217,.06), transparent 50%),
+    var(--doc-bg);
+  color:var(--doc-text);
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  padding:26px 18px 70px;
+}
+.doc{max-width:1260px;margin:0 auto}
+h1{font-size:21px;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+h1 .badge{font-size:10.5px;font-weight:600;color:#0369A1;background:linear-gradient(135deg,#E0F2FE,#CBE9FC);
+  border:1px solid #A5DCF7;border-radius:999px;padding:2px 9px;letter-spacing:0}
+.sub{color:var(--doc-dim);font-size:12.5px;margin:7px 0 3px;max-width:960px}
+h2{font-size:15px;margin:36px 0 10px;display:flex;align-items:center;gap:9px;scroll-margin-top:14px}
+h2::before{content:"";width:3px;height:15px;border-radius:2px;
+  background:linear-gradient(180deg,var(--doc-accent),var(--doc-cyan))}
+h2 .hint{font-size:11.5px;font-weight:400;color:var(--doc-faint);letter-spacing:0}
+h3{font-size:13px;margin:20px 0 8px;color:#1E293B;display:flex;align-items:center;gap:7px}
+h3::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--doc-accent);flex:none}
+p.note{color:var(--doc-dim);font-size:12.5px;margin:5px 0 12px;max-width:1000px}
+p.note b{color:#0F172A}
+code{font-family:var(--mono);font-size:11.5px;background:#EFF5FB;border:1px solid var(--doc-line);
+  border-radius:4px;padding:0 5px;color:#0369A1;white-space:nowrap}
+a{color:var(--doc-accent)}
+ul.tight{margin:6px 0 12px 18px;font-size:12.5px;color:#25314A}
+ul.tight li{margin:3px 0}
+ul.tight b{color:#0F172A}
+
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:10px;background:#fff;
+  border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.04),0 6px 18px rgba(2,132,199,.06)}
+th,td{border-bottom:1px solid var(--doc-line-soft);padding:7px 11px;text-align:left;vertical-align:top}
+th{background:#F3F8FD;color:var(--doc-dim);font-weight:600;white-space:nowrap;font-size:11.5px;
+  border-bottom:1px solid var(--doc-line)}
+tbody tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+td .y{color:#0369A1;font-weight:600}
+td .n{color:#94A3B8}
+.ok{color:#11813A;font-weight:600}
+.no{color:#B91C1C;font-weight:600}
+
+.callout{background:#fff;border:1px solid var(--doc-line);border-left:3px solid var(--doc-accent);
+  border-radius:0 10px 10px 0;padding:11px 14px;font-size:12.5px;color:#25314A;margin:12px 0;max-width:1000px}
+.callout b{color:#0369A1}
+.callout.warn{border-left-color:#C54A0A}
+.callout.warn b{color:#8A3407}
+
+/* =====================================================================
+   通用：窗口外壳 + 说明标注
+   ===================================================================== */
+.screen{display:flex;flex-direction:column;gap:8px;margin:14px 0 6px}
+.screenCap{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;font-size:12px;color:var(--doc-dim)}
+.screenCap b{color:#0F172A;font-size:12.5px}
+.screenCap .dim{color:var(--doc-faint);font-size:11.5px;font-family:var(--mono)}
+.winbox{position:relative;border-radius:14px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.06),0 18px 50px rgba(2,60,110,.16);
+  border:1px solid rgba(15,23,42,.10)}
+.measure{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}
+.measure span{font-family:var(--mono);font-size:11px;color:#0369A1;background:#EFF7FD;
+  border:1px solid #D3E8F7;border-radius:6px;padding:1px 7px}
+
+/* =====================================================================
+   真实 token 快照 · ocean（theme.css [data-theme=ocean]）
+   —— 下面所有窗口稿都用这一份，不另造色值
+   ===================================================================== */
+.rcroot{
+  /* —— ocean 主题原值 —— */
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2, 132, 199, 0.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109, 40, 217, 0.08), transparent 50%),
+    linear-gradient(168deg, #F4F8FC 0%, #EEF3F8 42%, #E8F0F7 100%);
+  --card-bg:#fff; --card-border:#E0E4EB; --border-color:#E0E4EB;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD; --accent-solid:#027CBB;
+  --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+  --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+  --danger:#D82525; --red-bg:#FEF2F2;
+  --shell-bg:rgba(244,247,251,.72);
+  --shell-border:rgba(255,255,255,.85);
+  --shell-blur:blur(16px) saturate(1.2);
+  --card-top-light:linear-gradient(180deg, rgba(255,255,255,.55) 0%, transparent 45%);
+  --glass-card-shadow:0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+
+  /* —— 本稿新增：rc 域玻璃/圆角/投影（作用域 [data-rc-root]，六主题自动继承）—— */
+  --rc-glass:      color-mix(in srgb, var(--card-bg) 70%, transparent);
+  --rc-glass-soft: color-mix(in srgb, var(--card-bg) 54%, transparent);
+  --rc-glass-hard: color-mix(in srgb, var(--card-bg) 88%, transparent);
+  --rc-blur:       blur(18px) saturate(1.25);
+  --rc-edge:       color-mix(in srgb, var(--accent) 13%, transparent);
+  --rc-hair:       color-mix(in srgb, var(--accent) 9%, transparent);
+  --rc-shadow:     0 1px 2px rgba(15,23,42,.04), 0 8px 24px color-mix(in srgb, var(--accent) 12%, transparent);
+  --rc-shadow-lift:0 2px 6px rgba(15,23,42,.05), 0 14px 34px color-mix(in srgb, var(--accent) 18%, transparent);
+  --rc-r-ctl:9px; --rc-r-row:12px; --rc-r-card:14px; --rc-r-stage:18px;
+
+  /* 主按钮渐变：起点 #0378B4 白字 4.88:1、终点 #026AA0 白字 5.96:1，两端口都过 AA */
+  --rc-cta: linear-gradient(135deg, #0378B4 0%, #026AA0 100%);
+  --rc-cta-shadow: 0 1px 2px rgba(2,106,160,.35), inset 0 1px 0 rgba(255,255,255,.24);
+
+  width:100%;height:100%;display:flex;overflow:hidden;
+  background:var(--app-bg); color:var(--text-primary);
+  font:13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  position:relative;
+}
+.rcroot *{box-sizing:border-box}
+
+/* =====================================================================
+   工作台窗口 —— 左栏 272px（真实 .wbSide）
+   ===================================================================== */
+.wbSide{
+  width:272px;flex:0 0 272px;display:flex;flex-direction:column;gap:10px;
+  padding:14px 12px;overflow:hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 34%),
+    var(--rc-glass);
+  backdrop-filter:var(--rc-blur);
+  border-right:1px solid var(--rc-edge);
+  box-shadow:inset -1px 0 0 rgba(255,255,255,.7);
+  position:relative;z-index:2;
+}
+.wbSideHead{display:flex;align-items:baseline;gap:8px}
+.wbTitle{font-size:15px;font-weight:700;margin:0}
+.wbSideHead .meta{margin-left:auto}
+
+/* 新增：本机身份卡（数据全部来自已有 rc_identity） */
+.idCard{
+  border-radius:var(--rc-r-card);padding:11px 12px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg, var(--rc-glass-hard) 0%, var(--rc-glass) 100%);
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:var(--rc-shadow);
+}
+.idCard::after{content:"";position:absolute;inset:0;background:var(--card-top-light);pointer-events:none}
+.idRow{display:flex;align-items:center;gap:9px;position:relative;z-index:1}
+.idGlyph{width:30px;height:30px;border-radius:9px;flex:none;color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#93C5FD 0%,#3B82F6 45%,#6366F1 100%);
+  box-shadow:0 2px 6px rgba(59,130,246,.30), inset 0 1px 0 rgba(255,255,255,.4)}
+.idName{font-size:12.5px;font-weight:700;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idFp{display:flex;align-items:center;gap:6px;margin-top:8px;position:relative;z-index:1}
+.idFp .fp{font-family:var(--mono);font-size:11px;letter-spacing:.4px;color:var(--text-secondary)}
+.idChip{font-size:10.5px;font-weight:600;border-radius:999px;padding:1px 7px;border:1px solid transparent}
+.idChip.on{color:#0B6A2F;background:linear-gradient(135deg,#E4FCEB,#CDF7DA);border-color:var(--green-border)}
+.idChip.off{color:#8A3407;background:linear-gradient(135deg,#FFF7ED,#FFEDD5);border-color:var(--orange-border)}
+
+/* 面板卡 */
+.panel{
+  border-radius:var(--rc-r-card);padding:12px;position:relative;
+  background:var(--rc-glass-hard);
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:var(--rc-shadow);
+}
+.panel.tight{padding:11px 12px}
+.panelT{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px}
+.panelD{font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.55}
+.panelHd{display:flex;align-items:center;gap:8px}
+.panelHd .sp{flex:1}
+.linkBtn{font:inherit;font-size:11px;background:none;border:0;color:var(--accent-strong);
+  cursor:pointer;padding:0;text-decoration:none}
+.linkBtn:hover{text-decoration:underline}
+
+/* 开关：严格复用设置页 .sToggle 44×26 + 轨道内文字（同一个控件两处必须一样） */
+.sw44{width:44px;height:26px;border-radius:999px;position:relative;flex:none;cursor:pointer;
+  border:1px solid transparent;transition:.2s}
+.sw44.on{background:var(--rc-cta);border-color:#026AA0;box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.sw44.off{background:#E2E8F0;border-color:#D3DCE6}
+.sw44 i{position:absolute;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgba(15,23,42,.22);transition:.2s}
+.sw44.on i{right:2px} .sw44.off i{left:2px}
+.sw44 em{position:absolute;top:0;height:26px;display:flex;align-items:center;
+  font-style:normal;font-size:10px;font-weight:700;line-height:1}
+.sw44.on em{left:8px;color:#fff}
+.sw44.off em{right:7px;color:#4B5563}
+
+/* 画质/范围：胶囊组（侧栏 = 本机被控档） */
+.qLabel{font-size:11px;color:var(--text-muted);flex:none}
+.pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.pill{font-size:11px;padding:4px 9px;border-radius:999px;border:1px solid var(--border-color);
+  background:var(--card-bg);color:var(--text-secondary);white-space:nowrap}
+.pillOn{font-size:11px;font-weight:600;padding:4px 9px;border-radius:999px;border:1px solid #A5DCF7;
+  color:#0369A1;background:linear-gradient(135deg,#F0FAFF,#DCF2FE);white-space:nowrap;
+  box-shadow:0 1px 3px rgba(2,132,199,.14)}
+.secLabel{font-size:10.5px;font-weight:700;color:#6E8095;letter-spacing:.3px}
+
+/* 按钮 */
+.btn{font:inherit;font-size:11px;padding:5px 10px;border-radius:var(--rc-r-ctl);
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary);
+  cursor:pointer;white-space:nowrap;transition:.16s}
+.btn:hover{border-color:color-mix(in srgb, var(--accent) 34%, var(--border-color));
+  background:linear-gradient(180deg,#fff,color-mix(in srgb,var(--accent) 6%,#fff))}
+.btnPri{font:inherit;font-size:11px;font-weight:600;padding:5px 11px;border-radius:var(--rc-r-ctl);
+  border:1px solid #026AA0;background:var(--rc-cta);color:#fff;cursor:pointer;white-space:nowrap;
+  box-shadow:var(--rc-cta-shadow)}
+.btnDanger{font:inherit;font-size:11px;font-weight:600;padding:5px 11px;border-radius:var(--rc-r-ctl);
+  border:1px solid #B91C1C;background:linear-gradient(135deg,#E03737,#C81E1E);color:#fff;cursor:pointer;
+  box-shadow:0 1px 2px rgba(185,28,28,.32), inset 0 1px 0 rgba(255,255,255,.2);white-space:nowrap}
+.btnRow{display:flex;gap:7px;margin-top:10px}
+.btnRow .btn,.btnRow .btnPri{flex:1;justify-content:center;text-align:center}
+
+/* 26px 图标按钮（方案 A 实测：操作区 56px，名称区回到 118px） */
+.icoBtn{width:26px;height:26px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);cursor:pointer}
+.icoBtn:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--border-color));color:var(--accent)}
+.icoPri{border:1px solid #026AA0;background:var(--rc-cta);color:#fff;box-shadow:var(--rc-cta-shadow)}
+.icoPri:hover{color:#fff;border-color:#025E8E}
+
+/* 设备行（真实结构：头像 / info / acts） */
+.devList{display:flex;flex-direction:column;gap:6px}
+.devItem{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--rc-r-row);
+  background:var(--rc-glass-hard);border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 1px 2px rgba(15,23,42,.035);position:relative;transition:.16s}
+.devItem:hover{border-color:color-mix(in srgb,var(--accent) 30%,transparent);
+  background:linear-gradient(180deg,#fff,color-mix(in srgb,var(--accent) 5%,#fff));
+  box-shadow:var(--rc-shadow)}
+.devRecent{background:linear-gradient(135deg, color-mix(in srgb,var(--accent) 9%,#fff) 0%, #fff 62%);
+  border-color:color-mix(in srgb,var(--accent) 22%,transparent)}
+.devRecent::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:2px;border-radius:2px;
+  background:linear-gradient(180deg,#38BDF8,#0284C7)}
+.av{width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;color:var(--text-primary);
+  background:color-mix(in srgb, var(--accent) 16%, var(--card-bg))}
+.info{flex:1;min-width:0}
+.name{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.meta{font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.metaSub{color:#7C8CA0}
+.tag{font-size:10px;font-weight:600;border-radius:999px;padding:1px 6px;border:1px solid transparent;white-space:nowrap}
+.tagRc{color:#0369A1;background:linear-gradient(135deg,#F0FAFF,#DCF2FE);border-color:#A5DCF7}
+.tagSync{color:#0E7490;background:linear-gradient(135deg,#EFFCFE,#D6F6FB);border-color:#A5E8F2}
+.tagRecent{color:#0B6A2F;background:linear-gradient(135deg,#E4FCEB,#CDF7DA);border-color:var(--green-border)}
+.tagDenied{color:#B91C1C;background:linear-gradient(135deg,#FEF2F2,#FDE4E4);border-color:#FBC5C5}
+.tagTrusted{color:#0B6A2F;background:linear-gradient(135deg,#E4FCEB,#CDF7DA);border-color:var(--green-border)}
+.dot{width:6px;height:6px;border-radius:50%;flex:none}
+.dotOn{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 15%,transparent)}
+.dotRecent{background:#D97706;box-shadow:0 0 0 3px rgba(217,119,6,.14)}
+.dotOff{background:#B7C2D0;box-shadow:none}
+.acts{display:flex;gap:4px;flex:none}
+
+/* 主区 */
+.wbMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;padding:14px 16px;overflow:hidden}
+.stage{
+  flex:1;border-radius:var(--rc-r-stage);position:relative;overflow:hidden;
+  background:linear-gradient(180deg, var(--rc-glass-soft) 0%, color-mix(in srgb,var(--card-bg) 62%, transparent) 100%);
+  border:1px solid rgba(255,255,255,.92);
+  box-shadow:var(--rc-shadow), inset 0 1px 0 rgba(255,255,255,.9);
+  display:flex;align-items:center;justify-content:center;
+}
+.stage::before{content:"";position:absolute;width:520px;height:520px;border-radius:50%;right:-110px;top:-170px;
+  background:radial-gradient(circle, color-mix(in srgb,var(--accent) 13%,transparent), transparent 68%)}
+.stage::after{content:"";position:absolute;width:360px;height:360px;border-radius:50%;left:-90px;bottom:-140px;
+  background:radial-gradient(circle, color-mix(in srgb,#6D28D9 9%,transparent), transparent 68%)}
+.stageIn{position:relative;z-index:1;width:100%;display:flex;flex-direction:column;align-items:center}
+
+/* 空态引导 */
+.glyphLg{width:78px;height:78px;border-radius:22px;display:flex;align-items:center;justify-content:center;
+  color:#fff;position:relative;
+  background:linear-gradient(135deg,#63B3ED 0%,#0EA5E9 45%,#0284C7 100%);
+  box-shadow:0 16px 40px rgba(2,132,199,.30), inset 0 1px 0 rgba(255,255,255,.45)}
+.glyphLg::after{content:"";position:absolute;inset:-1px;border-radius:23px;
+  background:var(--card-top-light);pointer-events:none}
+.guideTitle{font-size:17px;font-weight:700;margin-top:20px;letter-spacing:.2px}
+.guideLead{font-size:12.5px;color:var(--text-secondary);margin-top:8px;text-align:center;max-width:520px;line-height:1.7}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px;width:100%;max-width:720px}
+.step{border-radius:var(--rc-r-card);padding:12px;text-align:left;background:var(--rc-glass-hard);
+  border:1px solid rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(15,23,42,.035);position:relative}
+.stepNum{width:20px;height:20px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:#fff;background:var(--rc-cta);box-shadow:var(--rc-cta-shadow)}
+.stepT{font-size:12.5px;font-weight:700;margin-top:9px}
+.stepD{font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.65}
+.emptyActs{display:flex;gap:8px;margin-top:18px}
+.foot{font-size:11px;color:var(--text-muted);margin-top:12px}
+.foot b{color:var(--text-secondary)}
+.noteWarn{display:flex;align-items:center;gap:8px;width:100%;max-width:720px;margin-bottom:18px;
+  border-left:3px solid var(--orange);border-radius:0 10px 10px 0;padding:9px 12px;font-size:12px;
+  background:linear-gradient(90deg, color-mix(in srgb,var(--orange) 10%,transparent), transparent)}
+.noteWarn b{color:#8A3407}
+
+/* 等待态 */
+.waitCard{width:100%;max-width:560px;border-radius:var(--rc-r-card);padding:18px 20px;
+  background:linear-gradient(180deg,#fff, color-mix(in srgb,var(--orange) 6%,#fff));
+  border:1px solid color-mix(in srgb,var(--orange) 30%,transparent);
+  box-shadow:0 2px 6px rgba(15,23,42,.05), 0 14px 34px rgba(197,74,10,.14);
+  display:flex;flex-direction:column;align-items:center;text-align:center}
+.spinner{width:26px;height:26px;border-radius:50%;border:2.5px solid color-mix(in srgb,var(--orange) 26%,transparent);
+  border-top-color:var(--orange);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.waitT{font-size:13.5px;font-weight:700;margin-top:12px}
+.waitD{font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.7}
+.waitActs{display:flex;gap:8px;margin-top:14px}
+
+/* 会话 */
+.sessionWrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px}
+.sessTop{display:flex;align-items:center;gap:8px;font-size:12.5px;
+  border-radius:var(--rc-r-row);padding:8px 12px;background:var(--rc-glass-hard);
+  border:1px solid rgba(255,255,255,.9);box-shadow:var(--rc-shadow)}
+.sessTop .sp{flex:1}
+.pillBig{border-radius:999px;font-size:11px;font-weight:600;padding:2px 9px;border:1px solid transparent}
+.pillOn2{color:#0369A1;background:linear-gradient(135deg,#F0FAFF,#DCF2FE);border-color:#A5DCF7}
+.pillWarn2{color:#8A3407;background:linear-gradient(135deg,#FFF7ED,#FFEDD5);border-color:var(--orange-border)}
+.pillDanger2{color:#B91C1C;background:linear-gradient(135deg,#FEF2F2,#FDE4E4);border-color:#FBC5C5}
+
+.screenBox{position:relative;flex:1;min-height:0;border-radius:var(--rc-r-card);overflow:hidden;
+  background:#0B1522;
+  border:1px solid rgba(2,132,199,.28);
+  box-shadow:0 2px 8px rgba(15,23,42,.14), 0 18px 46px rgba(2,60,110,.22), inset 0 1px 0 rgba(255,255,255,.08)}
+.desk{position:absolute;inset:0;
+  background:radial-gradient(ellipse 700px 420px at 26% -6%, #204A7A 0%, #12304F 45%, #0A1B2E 100%)}
+.deskWin{position:absolute;border-radius:8px;border:1px solid rgba(255,255,255,.13);
+  background:rgba(255,255,255,.05);box-shadow:0 10px 30px rgba(0,0,0,.28)}
+.deskBar{position:absolute;left:0;right:0;bottom:0;height:26px;background:rgba(6,14,24,.72);
+  border-top:1px solid rgba(255,255,255,.10);display:flex;align-items:center;gap:6px;padding:0 10px}
+.deskBar i{width:14px;height:14px;border-radius:4px;background:rgba(255,255,255,.14);display:block}
+.viewTools{position:absolute;left:10px;top:10px;display:flex;gap:4px;padding:4px;border-radius:10px;
+  background:rgba(9,17,28,.62);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.viewTools b{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center}
+.viewTools .on{background:linear-gradient(135deg,#0378B4,#026AA0);box-shadow:inset 0 1px 0 rgba(255,255,255,.24)}
+.hud{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;flex-wrap:wrap;padding:5px 9px;
+  border-radius:9px;background:rgba(9,17,28,.62);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.13);font-size:10.5px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+.hud span{color:#C7D6E8}
+.hud .ok{color:#4ADE80} .hud .warn{color:#FBBF24} .hud .accent{color:#7DD3FC}
+
+.sessBar{display:flex;align-items:center;gap:8px;border-radius:var(--rc-r-row);padding:7px 10px;
+  background:var(--rc-glass-hard);border:1px solid rgba(255,255,255,.9);box-shadow:var(--rc-shadow)}
+.dd{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 9px;border-radius:var(--rc-r-ctl);
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary)}
+.dd b{color:var(--text-primary);font-weight:600}
+.barSep{width:1px;height:16px;background:var(--rc-edge)}
+.barStatus{font-size:10.5px;color:var(--text-muted)}
+.fbOk2{font-size:10.5px;color:#0B6A2F;background:linear-gradient(135deg,#E4FCEB,#CDF7DA);
+  border:1px solid var(--green-border);border-radius:999px;padding:1px 7px}
+
+/* 侧栏收起轨 52px */
+.rail{width:52px;flex:0 0 52px;display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:14px 0;background:var(--rc-glass);backdrop-filter:var(--rc-blur);
+  border-right:1px solid var(--rc-edge);box-shadow:inset -1px 0 0 rgba(255,255,255,.7)}
+.railSep{width:20px;height:1px;background:var(--rc-edge)}
+.railOn{color:var(--green)} .railOff{color:var(--text-muted)}
+
+/* 被控态 */
+.ibCard{width:100%;max-width:600px;border-radius:var(--rc-r-card);padding:20px 22px;position:relative;
+  background:linear-gradient(180deg,#fff, color-mix(in srgb,var(--danger) 4%,#fff));
+  border:1px solid color-mix(in srgb,var(--danger) 26%,transparent);
+  box-shadow:0 2px 6px rgba(15,23,42,.05), 0 18px 44px rgba(216,37,37,.16)}
+.ibHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ibTitle{font-size:14.5px;font-weight:700}
+.ibTimer{margin-top:9px;font-size:11.5px;color:var(--text-muted);font-family:var(--mono)}
+.ibLead{font-size:12px;color:var(--text-secondary);margin-top:12px;line-height:1.7;
+  border-radius:10px;padding:9px 11px;background:var(--rc-glass-hard);border:1px solid rgba(255,255,255,.9)}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+.fact{border-radius:11px;padding:9px 11px;background:var(--rc-glass-hard);
+  border:1px solid rgba(255,255,255,.9)}
+.fact dt{font-size:10.5px;color:var(--text-muted)}
+.fact dd{font-size:12px;font-weight:600;margin-top:3px}
+.ibActs{display:flex;align-items:center;gap:8px;margin-top:16px}
+
+/* =====================================================================
+   主窗口 550×700 场景
+   ===================================================================== */
+.mainWin{width:550px;height:700px;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--app-bg);font:13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.mwTop{padding:10px 14px;display:flex;align-items:center;gap:7px;font-size:12px;
+  background:linear-gradient(180deg,var(--header-bg-start),var(--header-bg-end))}
+.mwBody{flex:1;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.bannerTop{margin:10px 12px 0;border-radius:12px;padding:9px 11px;display:flex;align-items:center;gap:8px;
+  font-size:11.5px;flex-wrap:wrap;position:relative;overflow:hidden;
+  background:linear-gradient(135deg, color-mix(in srgb,var(--danger) 10%,#fff), color-mix(in srgb,var(--danger) 4%,#fff));
+  border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);
+  box-shadow:0 2px 6px rgba(15,23,42,.05), 0 10px 26px rgba(216,37,37,.14)}
+.dangerDot{width:7px;height:7px;border-radius:50%;background:var(--danger);flex:none;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 18%,transparent)}
+.card550{border-radius:14px;padding:13px 14px;background:var(--rc-glass-hard);
+  border:1px solid rgba(255,255,255,.9);box-shadow:var(--shadow-md);margin-bottom:10px}
+.mwLabel{font-size:10.5px;font-weight:700;color:#6E8095;letter-spacing:.3px;margin-bottom:8px}
+
+/* 规格/清单 表 */
+.specRow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.spec{flex:1;min-width:150px;background:#fff;border:1px solid var(--doc-line);border-radius:10px;padding:10px 12px}
+.spec .k{font-size:11px;color:var(--doc-faint)}
+.spec .v{font-size:13px;font-weight:700;margin-top:3px}
+.spec .c{font-size:11px;color:var(--doc-dim);margin-top:4px;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>远程电脑 · 质感重做设计稿 <span class="badge">v1 · 全部基于真实组件与 token</span></h1>
+<p class="sub">
+参照稿：<code>design/远程电脑最新设计稿.html</code>（外部参考，非本产品 UI）——取它的<strong>材质与分层语言</strong>，
+不取它的色值与信息架构。落地对象：<code>「远程电脑」独立工作台窗口</code>（1200×780 起）＋ 主窗口内三条 rc 常驻条。
+</p>
+
+<!-- ============================================================ -->
+<h2>〇 · 取法：那张稿的「质感」拆成 6 条，我们全都有对应 token</h2>
+<p class="note">
+那张稿看起来「有质感」，不是因为它用了什么高级色，而是因为它把六件事做齐了：<b>柔光渐变底 / 玻璃层 / 白描边 + 顶部高光 / 大圆角 / 带色柔影 / 克制的一组色</b>。
+对照我们的 <code>theme.css</code>：<b>这六条里五条已经是现成 token</b>（ocean 主题早就打开了 <code>--shell-blur</code>），
+问题只是 <code>RemoteComputer.module.css</code> 一条都没消费 —— 全库 grep <code>--shell-bg</code> / <code>--app-bg</code> / <code>--glass-card-*</code>，rc 域命中数为 <b>0</b>。
+所以这次不是「引入外来风格」，而是<b>把自家视觉层的账补齐</b>：底子照旧，材质补上，圆角扩一档。
+</p>
+
+<table>
+<thead><tr><th>参照稿的手法</th><th>我们已有的对应物（ocean 主题原值）</th><th>rc 域现状</th></tr></thead>
+<tbody>
+<tr><td>柔光渐变底</td><td><code>--app-bg</code> = 青 radial + 紫 radial + <code>linear-gradient(168deg,#F4F8FC,#EEF3F8,#E8F0F7)</code></td><td><span class="no">没消费</span>（靠 body 兜着，等于白拿）</td></tr>
+<tr><td>玻璃层 <code>rgba(255,255,255,.75)</code> + <code>blur(20px)</code></td><td><code>--shell-bg: rgba(244,247,251,.72)</code> + <code>--shell-blur: blur(16px) saturate(1.2)</code></td><td><span class="no">没消费</span>（侧栏是 <code>#fff</code> 死白板）</td></tr>
+<tr><td>卡片顶部高光</td><td><code>--card-top-light</code> / <code>--glass-card-elev</code></td><td><span class="no">没消费</span></td></tr>
+<tr><td>大圆角（22 / 30）</td><td>阶梯 <code>控件 8 / 浮层 12 / 弹窗 16</code></td><td><span class="no">需为 rc 扩一档</span>（本稿新增 9 / 12 / 14 / 18）</td></tr>
+<tr><td>蓝色渐变主按钮</td><td><code>--accent-solid:#027CBB</code>（白字 4.56:1）+ <code>--ic-capture</code> 渐变</td><td><span class="no">没消费</span>（按钮是纯色小方块）</td></tr>
+<tr><td>带色柔影 <code>rgba(27,76,164,.08)</code></td><td><code>--glass-card-shadow</code> / <code>--card-selected-glow</code></td><td><span class="no">没消费</span>（只有灰影 <code>--shadow-md</code>）</td></tr>
+<tr><td>状态色点 + 胶囊</td><td>语义三件套 <code>--green/-bg/-border</code> 等</td><td><span class="ok">已用</span>（但都是实色底，本稿升级为渐变徽章）</td></tr>
+</tbody>
+</table>
+
+<div class="callout">
+<b>一句话</b>：底色用 <code>--app-bg</code>、侧栏用 <code>--shell-bg + --shell-blur</code>、卡片用 <code>--glass-card-* + --card-top-light</code>、
+主按钮用 <code>--accent-solid</code> / <code>--ic-capture</code> 渐变 —— 全部 <code>color-mix</code> 自现有 token 推导，
+<b>六套主题零改动自动继承</b>（深色两套靠 <code>--card-bg</code> 变深自动变成「深色玻璃」，不需要各写一份）。
+作用域挂在 <code>RcWorkbench</code> 已有的 <code>data-rc-root</code> 上 —— 这个挂点现成，不必新增。
+</div>
+
+<h3>新增：rc 域玻璃 token（本稿定义的唯一新东西）</h3>
+<pre style="font-family:var(--mono);font-size:11.5px;line-height:1.75;background:#fff;border:1px solid var(--doc-line);
+border-radius:10px;padding:12px 14px;overflow-x:auto;color:#243B53;box-shadow:0 1px 2px rgba(15,23,42,.04)">[data-rc-root]{
+  --rc-glass:      color-mix(in srgb, var(--card-bg) 70%, transparent);  /* 侧栏 / 轨 */
+  --rc-glass-soft: color-mix(in srgb, var(--card-bg) 54%, transparent);  /* 主区舞台 */
+  --rc-glass-hard: color-mix(in srgb, var(--card-bg) 88%, transparent);  /* 行 / 卡 / 底栏 */
+  --rc-blur:       blur(18px) saturate(1.25);
+  --rc-edge:       color-mix(in srgb, var(--accent) 13%, transparent);   /* 结构描边 */
+  --rc-shadow:     0 1px 2px rgba(15,23,42,.04), 0 8px 24px color-mix(in srgb, var(--accent) 12%, transparent);
+  --rc-r-ctl:9px; --rc-r-row:12px; --rc-r-card:14px; --rc-r-stage:18px;  /* 圆角阶梯扩档 */
+
+  /* 主按钮渐变：起点 #0378B4（白字 4.88:1）、终点 #026AA0（白字 5.96:1），两端口都过 AA */
+  --rc-cta: linear-gradient(135deg, #0378B4 0%, #026AA0 100%);
+  --rc-cta-shadow: 0 1px 2px rgba(2,106,160,.35), inset 0 1px 0 rgba(255,255,255,.24);
+}</pre>
+<p class="note">
+<b>为什么主按钮不加亮</b>：参照稿的 <code>#006cff</code> 压白字只有 3.1:1。渐变起点每上一档都要重算 ——
+<code>#0386C9</code> 是 4.01:1（不合格）、<code>#0B8FD4</code> 是 3.56:1（不合格），
+<b>起点最亮只能到 <code>#0378B4</code></b>。质感靠「微渐变 + 顶部内高光」拿，不靠提亮。
+</p>
+
+<!-- ============================================================ -->
+<h2>一 · 工作台 · 空闲态（空态引导）<span class="hint">1200×780 · 1:1</span></h2>
+<p class="note">
+这是改动最大的一屏。现状：侧栏是一块 <code>#fff</code> 死白板 + 一条 <code>1px</code> 硬灰右边框，主区空态是一张<b>虚线框</b>里塞 emoji 🖥️。
+新稿：底子吃 <code>--app-bg</code>，侧栏变玻璃并带顶光，空态换成「渐变显示器徽标 + 三道玻璃步骤卡 + 渐变主按钮」——
+把参照稿 <code>.workspace</code> 那个大圆角容器 + <code>.monitor</code> 渐变块的做法，落到我们的空态上。
+</p>
+
+<div class="screen">
+  <div class="screenCap"><b>① 空闲态</b> <span>侧栏「允许被远程」关着 · 无配对设备 · 通道未启动</span> <span class="dim">1200 × 780</span></div>
+  <div class="measure">
+    <span>侧栏 272</span><span>侧栏内容宽 248</span><span>主区 928</span><span>舞台圆角 18</span><span>步骤卡 3 列 × 233</span><span>主按钮 高 29</span>
+  </div>
+  <div class="winbox" style="width:1200px;height:780px">
+  <div class="rcroot">
+
+    <!-- 侧栏 -->
+    <aside class="wbSide">
+      <div class="wbSideHead">
+        <h2 class="wbTitle">远程电脑</h2>
+        <span class="meta">设置与配对设备</span>
+      </div>
+
+      <!-- 新增：本机身份卡（数据源 rc_identity，已存在） -->
+      <div class="idCard">
+        <div class="idRow">
+          <div class="idGlyph">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <div style="min-width:0">
+            <div class="idName">DESKTOP-HHOLIC2</div>
+            <div class="meta" style="margin-top:2px">本机 · 等待被连接</div>
+          </div>
+        </div>
+        <div class="idFp">
+          <span class="fp">A3F2·9C11</span>
+          <span class="idChip off">不允许被远程</span>
+          <span class="idChip on">通道运行中</span>
+        </div>
+      </div>
+
+      <!-- 允许被远程（开关复用设置页 44×26） -->
+      <div class="panel tight">
+        <div class="panelHd">
+          <div>
+            <div class="panelT">允许被远程</div>
+            <div class="panelD">只影响别人控你；发起远程不需要打开它</div>
+          </div>
+          <span class="sp"></span>
+          <button class="linkBtn">去设置</button>
+          <div class="sw44 off"><em>关</em><i></i></div>
+        </div>
+      </div>
+
+      <!-- 本机被控画质 -->
+      <div class="panel tight">
+        <div class="panelT">本机被控画面 <span class="secLabel">别人看你时用它</span></div>
+        <div class="pills">
+          <span class="pillOn">自动</span><span class="pill">流畅</span><span class="pill">均衡</span>
+          <span class="pill">清晰</span><span class="pill">超清</span><span class="pill">原生</span>
+        </div>
+        <div class="pills" style="margin-top:6px">
+          <span class="pill" style="color:#94A3B8">整屏</span><span class="pillOn">仅主屏</span>
+        </div>
+      </div>
+
+      <div style="flex:1;min-height:6px"></div>
+
+      <!-- 一次性协助 -->
+      <div class="panel tight">
+        <div class="panelT">一次性协助</div>
+        <div class="panelD">用完即弃 —— 结束后不会留在双方的设备列表里。</div>
+        <div class="btnRow">
+          <button class="btnPri">让别人帮我</button>
+          <button class="btn">帮别人连一次</button>
+        </div>
+      </div>
+
+      <div style="flex:1;min-height:6px"></div>
+
+      <div class="panel tight" style="background:var(--rc-glass-soft)">
+        <div class="panelT">还没有可远程的设备</div>
+        <div class="panelD">在右侧完成一次远程配对，设备会出现在这里。</div>
+        <div style="margin-top:9px"><button class="btn">＋ 配对一台</button></div>
+      </div>
+    </aside>
+
+    <!-- 主区 -->
+    <main class="wbMain">
+      <div class="stage">
+        <div class="stageIn" style="padding:0 40px">
+          <div class="noteWarn">
+            <span>想让别人能连到这台电脑，先打开本机「允许被远程」。</span>
+            <span style="flex:1"></span>
+            <button class="btnPri">立即打开</button>
+          </div>
+
+          <div class="glyphLg">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <div class="guideTitle">还没有可远程的设备</div>
+          <div class="guideLead">配对后，对方可以申请查看或控制这台电脑；你也可以去控别人的电脑。</div>
+
+          <div class="steps">
+            <div class="step">
+              <div class="stepNum">1</div>
+              <div class="stepT">双方配对</div>
+              <div class="stepD">一边生成邀请码，另一边粘贴并核对指纹。与知识库同步配对无关。</div>
+            </div>
+            <div class="step">
+              <div class="stepNum">2</div>
+              <div class="stepT">发起申请</div>
+              <div class="stepD">选「只看」或「可控」，对方会看到确认条与你的指纹。</div>
+            </div>
+            <div class="step">
+              <div class="stepNum">3</div>
+              <div class="stepT">对方同意</div>
+              <div class="stepD">被控端常驻横幅可随时结束；默认关闭，每次都要点头。</div>
+            </div>
+          </div>
+
+          <div class="emptyActs">
+            <button class="btn">让别人帮我</button>
+            <button class="btn">帮别人连一次</button>
+          </div>
+          <div class="foot">上面这两个<b>不用配对</b>：用完即弃，不会留在双方的设备列表里。</div>
+          <div class="emptyActs" style="margin-top:12px"><button class="btnPri" style="padding:6px 16px">远程配对设备</button></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>二 · 工作台 · 有设备（设备列表）<span class="hint">1200×780 · 1:1</span></h2>
+<p class="note">
+设备行是这次「质感」收益最直接的地方：<code>8px</code> 圆角 + 灰底 + 无描边 → <code>12px</code> 玻璃行 + 白描边 + 悬停时 accent 渐变描边与柔影；
+<b>「上次」那一行走 accent 渐变底 + 左缘 2px 色条</b>（一眼认出去过哪台）。
+尺寸一个没动：行 <code>padding:10px 12px</code>、头像 <code>30</code>、操作区 <code>2×26 + 4</code>，名称区仍是 <code>118px</code>（方案 A 实测值）。
+</p>
+
+<div class="screen">
+  <div class="screenCap"><b>② 有设备</b> <span>3 台已配对 · 通道运行中 · 侧栏「允许被远程」已开</span> <span class="dim">1200 × 780</span></div>
+  <div class="measure">
+    <span>行高 52</span><span>名称区 118</span><span>操作区 56</span><span>四行合计 ≈ 232</span><span>徽章 高 15</span>
+  </div>
+  <div class="winbox" style="width:1200px;height:780px">
+  <div class="rcroot">
+
+    <aside class="wbSide">
+      <div class="wbSideHead">
+        <h2 class="wbTitle">远程电脑</h2>
+        <span class="meta">设置与配对设备</span>
+        <span class="sp" style="flex:1"></span>
+        <button class="icoBtn" title="收起侧栏，把宽度让给画面" aria-label="收起侧栏">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+      </div>
+
+      <div class="idCard">
+        <div class="idRow">
+          <div class="idGlyph">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <div style="min-width:0">
+            <div class="idName">DESKTOP-HHOLIC2</div>
+            <div class="meta" style="margin-top:2px">本机 · 可被 3 台设备连接</div>
+          </div>
+        </div>
+        <div class="idFp">
+          <span class="fp">A3F2·9C11</span>
+          <span class="idChip on">允许被远程</span>
+          <span class="idChip on">通道运行中</span>
+        </div>
+      </div>
+
+      <div class="panel tight">
+        <div class="panelHd">
+          <div>
+            <div class="panelT">允许被远程</div>
+            <div class="panelD">只影响别人控你；发起远程不需要打开它</div>
+          </div>
+          <span class="sp"></span>
+          <button class="linkBtn">去设置</button>
+          <div class="sw44 on"><em>开</em><i></i></div>
+        </div>
+      </div>
+
+      <div class="panel tight">
+        <div class="panelT">本机被控画面 <span class="secLabel">别人看你时用它</span></div>
+        <div class="pills">
+          <span class="pillOn">自动</span><span class="pill">流畅</span><span class="pill">均衡</span>
+          <span class="pill">清晰</span><span class="pill">超清</span><span class="pill">原生</span>
+        </div>
+      </div>
+
+      <div style="flex:1;min-height:6px"></div>
+
+      <div class="devList">
+        <!-- 行 1：上次 -->
+        <div class="devItem devRecent">
+          <div class="av">M</div>
+          <div class="info">
+            <div class="name">会议室那台 <span class="tag tagRecent">上次</span><span class="tag tagRc">远程</span></div>
+            <div class="meta"><span class="dot dotOn"></span>在线 · 4F2A·88C3 · 局域网可达</div>
+          </div>
+          <div class="acts">
+            <button class="icoBtn icoPri" title="发起远程 · 将以「可控」发起 · 局域网可达" aria-label="发起远程">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="icoBtn" title="更多操作" aria-label="更多操作">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+          </div>
+        </div>
+        <!-- 行 2：免确认 -->
+        <div class="devItem">
+          <div class="av">X</div>
+          <div class="info">
+            <div class="name">小新的笔记本 <span class="tag tagRc">远程</span><span class="tag tagTrusted">免确认</span></div>
+            <div class="meta"><span class="dot dotRecent"></span>12 分钟前还在 · 71B9·04DE · 仍可尝试</div>
+          </div>
+          <div class="acts">
+            <button class="icoBtn icoPri" title="发起远程 · 将以「只看」发起 · 仍可尝试" aria-label="发起远程">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="icoBtn" title="更多操作" aria-label="更多操作">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+          </div>
+        </div>
+        <!-- 行 3：已禁止 -->
+        <div class="devItem">
+          <div class="av">L</div>
+          <div class="info">
+            <div class="name">旧台式 <span class="tag tagRc">远程</span><span class="tag tagDenied">已禁止控本机</span></div>
+            <div class="meta"><span class="dot dotOff"></span>配对后还没连上过 · C8A0·5517 · 核对指纹后再试，或检查对方远程通道</div>
+          </div>
+          <div class="acts">
+            <button class="icoBtn icoPri" title="发起远程 · 将以「可控」发起 · 核对指纹后再试" aria-label="发起远程">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="icoBtn" title="更多操作" aria-label="更多操作">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+          </div>
+        </div>
+        <!-- 行 4：仅同步配对 -->
+        <div class="devItem">
+          <div class="av">S</div>
+          <div class="info">
+            <div class="name">同步配对的那台 <span class="tag tagSync">同步</span></div>
+            <div class="meta"><span class="dot dotOff"></span>3 小时前见过 · 09D4·7F12 · 仍可经中继尝试 · 仅同步配对，未建立远程通道</div>
+          </div>
+          <div class="acts">
+            <button class="icoBtn" title="仅同步配对，未建立远程通道 · 去完成远程配对" aria-label="去配对">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+            </button>
+            <button class="icoBtn" title="更多操作" aria-label="更多操作">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:7px;margin-top:2px">
+        <button class="btn">检测在线</button>
+        <button class="btn">＋ 再配对一台</button>
+      </div>
+    </aside>
+
+    <main class="wbMain">
+      <div class="stage" style="align-items:center">
+        <div class="stageIn">
+          <div class="glyphLg" style="width:60px;height:60px;border-radius:18px;box-shadow:0 12px 30px rgba(2,132,199,.22), inset 0 1px 0 rgba(255,255,255,.45)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <div style="font-size:13.5px;font-weight:600;margin-top:16px;color:var(--text-secondary)">在左侧选择一台设备发起远程</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px">点整行即发起；「更多」里可以换档、设备备注与免确认。</div>
+        </div>
+      </div>
+    </main>
+  </div>
+  </div>
+</div>
+
+<h3>设备行 · 三种状态的细节（放大）</h3>
+<div class="screen">
+  <div class="winbox" style="width:272px;height:auto;border-radius:14px;padding:12px;background:var(--app-bg)">
+    <div class="rcroot" style="display:block;height:auto;background:transparent;padding:0">
+      <div class="devList">
+        <div class="devItem devRecent">
+          <div class="av">M</div>
+          <div class="info">
+            <div class="name">会议室那台 <span class="tag tagRecent">上次</span><span class="tag tagRc">远程</span></div>
+            <div class="meta"><span class="dot dotOn"></span>在线 · 4F2A·88C3 · 局域网可达</div>
+          </div>
+          <div class="acts">
+            <button class="icoBtn icoPri"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+            <button class="icoBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+          </div>
+        </div>
+        <div class="devItem">
+          <div class="av">X</div>
+          <div class="info">
+            <div class="name">小新的笔记本 <span class="tag tagRc">远程</span><span class="tag tagTrusted">免确认</span></div>
+            <div class="meta"><span class="dot dotRecent"></span>12 分钟前还在 · 71B9·04DE · 仍可尝试</div>
+          </div>
+          <div class="acts">
+            <button class="icoBtn icoPri"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+            <button class="icoBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:2px">
+    徽章全部改成<b>渐变底 + 语义描边</b>（对齐设置页彩砖与版本徽章 <code>--version-badge-gradient</code> 的既有做法）：
+    同一屏里「远程」青、「同步」蓝绿、「上次」绿、「免确认」绿、「已禁止控本机」红 ——
+    色相有分工，且每个徽章都<b>带文字</b>，不靠颜色单独承载信息（色觉障碍可读）。
+  </p>
+</div>
+
+<!-- ============================================================ -->
+<h2>三 · 工作台 · 会话中<span class="hint">1200×780 · 侧栏收成 52px 轨</span></h2>
+<p class="note">
+方案 B 的「单条底栏 + 侧栏让位」保留不动（画面 <code>894 → 1114</code> 那组实测值不变）。
+这屏只做材质与分层：画面加<b>青描边 + 外发光</b>（原来是一圈灰边），底栏与顶栏从「三条带边框的横条」统一成玻璃条，
+HUD 与视图工具浮层做半透明磨砂。左侧轨道加玻璃与白内高光，盾牌图标表状态。
+</p>
+
+<div class="screen">
+  <div class="screenCap"><b>③ 出站会话</b> <span>正控「会议室那台」· 可控 · 走局域网直连 · 键盘已捕获</span> <span class="dim">1200 × 780</span></div>
+  <div class="measure">
+    <span>侧轨 52</span><span>主区 1148</span><span>顶栏 高 37</span><span>画面 高 601</span><span>底栏 高 38</span><span>HUD 高 24</span>
+  </div>
+  <div class="winbox" style="width:1200px;height:780px">
+  <div class="rcroot">
+
+    <!-- 收起轨 -->
+    <aside class="rail">
+      <button class="icoBtn" style="width:32px;height:32px" title="展开设置与设备" aria-label="展开设置与设备">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <span class="railSep"></span>
+      <svg class="railOn" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+    </aside>
+
+    <main class="wbMain">
+      <div class="sessionWrap">
+        <!-- 顶栏 -->
+        <div class="sessTop">
+          <span class="dot dotOn"></span>
+          <span>正在查看 <b>会议室那台</b></span>
+          <span class="pillBig pillOn2">可控</span>
+          <span class="sp"></span>
+          <button class="btn">释放键盘</button>
+          <button class="btn">重连</button>
+          <button class="btnDanger">结束会话</button>
+        </div>
+
+        <!-- 画面 -->
+        <div class="screenBox">
+          <div class="desk"></div>
+          <div class="deskWin" style="left:6%;top:10%;width:44%;height:52%"></div>
+          <div class="deskWin" style="left:52%;top:22%;width:40%;height:44%"></div>
+          <div class="deskBar">
+            <i></i><i></i><i></i><i></i>
+            <span style="flex:1"></span>
+            <span style="font-family:var(--mono);font-size:10px;color:#7E93A8">1920×1080 · 对端桌面</span>
+          </div>
+
+          <!-- 视图工具（全屏按钮必须留在画面内部） -->
+          <div class="viewTools">
+            <b class="on"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></b>
+            <b><span style="font-size:9.5px;color:#A8BACD;font-weight:600">1:1</span></b>
+            <b><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A8BACD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/></svg></b>
+            <b><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A8BACD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51z"/></svg></b>
+          </div>
+
+          <!-- HUD -->
+          <div class="hud">
+            <span class="ok">H.264 · 30fps</span>
+            <span class="ok">延迟 ~18ms · 很流畅</span>
+            <span>局域网直连</span>
+            <span>可控 · 整屏</span>
+            <span class="ok">已连接</span>
+            <span class="accent">指针已锁定</span>
+          </div>
+        </div>
+
+        <!-- 底栏（一条） -->
+        <div class="sessBar">
+          <span class="dd">画质 <b>自动</b>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </span>
+          <span class="dd">画面 <b>整屏</b>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </span>
+          <span class="barSep"></span>
+          <button class="btnPri">自动同步：开</button>
+          <button class="btn">推送剪贴板</button>
+          <button class="btn">拉取对方剪贴板</button>
+          <span class="fbOk2">自动同步正常</span>
+          <span class="sp" style="flex:1"></span>
+          <span class="barStatus">键盘已捕获 · Esc 释放 · 指针已锁定 · 画面静止 3s</span>
+        </div>
+      </div>
+    </main>
+  </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>四 · 工作台 · 被控态<span class="hint">1200×780 · 主区是核对信息面</span></h2>
+<p class="note">
+被控是最需要「看得见、随时能停」的状态，信息密度最高，所以这一屏用<b>危险色描边 + 危险色柔影</b>把卡片从柔光底里提出来（不是铺一片红底）。
+四个核对事实（指纹 / 范围 / 画质 / 免确认）排成 2×2 格，视觉上从「一串列表」变成「一张能扫的核对表」。
+</p>
+
+<div class="screen">
+  <div class="screenCap"><b>④ 被控中</b> <span>被「小新的笔记本」控制 · 已持续 12:07 · 对方已免确认</span> <span class="dim">1200 × 780</span></div>
+  <div class="measure">
+    <span>侧栏 272（不收起）</span><span>信息卡 600</span><span>事实格 2×2</span><span>危险描边 26%</span>
+  </div>
+  <div class="winbox" style="width:1200px;height:780px">
+  <div class="rcroot">
+
+    <aside class="wbSide">
+      <div class="wbSideHead">
+        <h2 class="wbTitle">远程电脑</h2>
+        <span class="meta">设置与配对设备</span>
+      </div>
+      <div class="idCard">
+        <div class="idRow">
+          <div class="idGlyph" style="background:linear-gradient(135deg,#FB7185 0%,#F43F5E 45%,#E11D48 100%);box-shadow:0 2px 6px rgba(225,29,72,.30), inset 0 1px 0 rgba(255,255,255,.4)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div style="min-width:0">
+            <div class="idName">DESKTOP-HHOLIC2</div>
+            <div class="meta" style="margin-top:2px;color:#B91C1C;font-weight:600">本机 · 正被远程控制</div>
+          </div>
+        </div>
+        <div class="idFp">
+          <span class="fp">A3F2·9C11</span>
+          <span class="idChip on">允许被远程</span>
+        </div>
+      </div>
+      <div class="panel tight">
+        <div class="panelHd">
+          <div>
+            <div class="panelT">允许被远程</div>
+            <div class="panelD">只影响别人控你；发起远程不需要打开它</div>
+          </div>
+          <span class="sp"></span>
+          <div class="sw44 on"><em>开</em><i></i></div>
+        </div>
+      </div>
+      <div style="flex:1;min-height:6px"></div>
+      <div class="panel tight" style="border-color:color-mix(in srgb,var(--orange) 34%,transparent);background:linear-gradient(180deg,#FFFDFA, color-mix(in srgb,var(--orange) 7%,#fff))">
+        <div class="panelT" style="color:#8A3407">对方正在远程本机</div>
+        <div class="panelD">设备操作暂时锁定 —— 后端只有一个会话位，此时发起必然被拒。</div>
+      </div>
+      <div style="flex:1;min-height:6px"></div>
+      <div class="devList" style="opacity:.55">
+        <div class="devItem">
+          <div class="av">X</div>
+          <div class="info">
+            <div class="name">小新的笔记本 <span class="tag tagRc">远程</span></div>
+            <div class="meta"><span class="dot dotOn"></span>在线 · 71B9·04DE</div>
+          </div>
+          <div class="acts">
+            <button class="icoBtn icoPri" disabled style="opacity:.45"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+            <button class="icoBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="wbMain">
+      <div class="stage" style="align-items:center">
+        <div class="stageIn" style="padding:0 40px">
+          <div class="ibCard" style="text-align:left">
+            <div class="ibHead">
+              <span class="dangerDot"></span>
+              <span class="ibTitle">正在被「<b>小新的笔记本</b>」远程控制</span>
+              <span class="pillBig pillDanger2">可控</span>
+              <span class="pillBig pillOn2" style="color:#0B6A2F;background:linear-gradient(135deg,#E4FCEB,#CDF7DA);border-color:var(--green-border)">已免确认</span>
+            </div>
+            <div class="ibTimer">已持续 12:07</div>
+            <div class="ibLead">对方可以操作你的键鼠与剪贴板。主窗口的常驻横幅一直显示着这条会话，随时可结束。</div>
+            <div class="facts">
+              <div class="fact"><dt>对方指纹</dt><dd style="font-family:var(--mono);letter-spacing:.3px">71B9·04DE</dd></div>
+              <div class="fact"><dt>画面范围</dt><dd>整个虚拟屏（含副屏）</dd></div>
+              <div class="fact"><dt>本机画质</dt><dd>自动 · 清晰</dd></div>
+              <div class="fact"><dt>免确认</dt><dd>已开启（对方下次直接连入）</dd></div>
+            </div>
+            <div class="ibActs">
+              <span style="flex:1"></span>
+              <button class="btnDanger" style="padding:6px 14px">立即结束</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>五 · 主窗口里的三条 rc 常驻条<span class="hint">550×700 · 1:1</span></h2>
+<p class="note">
+这三条挂在主窗 <code>App</code> 层，<b>任何模式下都可见</b>（规则 15），是「人不在工作台也得看得见」的那一档。
+它们现在都是「实色底 + 硬边框」的横条；新稿统一成玻璃卡，被控横幅用危险色描边 + 危险色柔影，
+入站确认条用<b>强调卡</b>（这是最高危动作，视觉上必须比别的条更重）。
+</p>
+
+<div class="screen">
+  <div class="screenCap"><b>⑤ 主窗口</b> <span>被控横幅 + 入站确认条 + 配对敲门</span> <span class="dim">550 × 700</span></div>
+  <div class="winbox" style="width:550px;height:700px">
+  <div class="rcroot mainWin">
+    <div class="mwTop">
+      <span style="width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;background:linear-gradient(135deg,#93C5FD,#3B82F6 45%,#6366F1)">P</span>
+      <b style="font-size:12px">PastePanda</b>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted)">剪贴板 · 内容中枢</span>
+    </div>
+
+    <!-- 被控横幅 -->
+    <div class="bannerTop">
+      <span class="dangerDot"></span>
+      <b>正在被「小新的笔记本」远程</b>
+      <span class="pillBig pillDanger2">可控</span>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--text-muted)">12:07</span>
+      <span style="flex:1"></span>
+      <button class="btn">以后不再询问</button>
+      <button class="btnDanger">立即结束</button>
+      <div style="flex-basis:100%;font-size:10.5px;color:var(--text-muted);margin-top:2px">
+        对方可操作键鼠与剪贴板 · 你随时可结束
+      </div>
+    </div>
+
+    <div class="mwBody">
+      <!-- 入站确认条 -->
+      <div class="card550" style="border-color:color-mix(in srgb,var(--accent) 32%,transparent);
+        background:linear-gradient(180deg,#fff, color-mix(in srgb,var(--accent) 5%,#fff));
+        box-shadow:0 2px 6px rgba(15,23,42,.05),0 14px 34px rgba(2,132,199,.16)">
+        <div style="font-size:12.5px;font-weight:700">🔔 有 1 台设备想远程这台电脑</div>
+        <div style="margin-top:8px;border-radius:11px;padding:9px 11px;background:var(--rc-glass-hard);border:1px solid rgba(255,255,255,.9)">
+          <div style="font-size:10.5px;color:var(--text-muted)">对方指纹</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.6px;margin-top:2px">71B9·04DE</div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:6px">
+            申请能力：<b>可控（含只看）</b> · 设备名「小新的笔记本」（可自称，以指纹为准）
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:11px">
+          <button class="btn" style="flex:1;text-align:center">拒绝</button>
+          <button class="btnPri" style="flex:1;text-align:center;padding:6px 12px">同意远程</button>
+        </div>
+      </div>
+
+      <!-- 配对敲门 -->
+      <div class="card550">
+        <div style="font-size:12.5px;font-weight:700">🔔 有 1 台设备想完成远程配对</div>
+        <div style="font-size:12px;font-family:var(--mono);letter-spacing:.5px;margin-top:8px;color:var(--text-primary)">4F2A·88C3</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">核对指纹后再允许（与知识库同步配对无关）</div>
+        <div style="display:flex;gap:8px;margin-top:11px">
+          <button class="btn" style="flex:1;text-align:center">拒绝</button>
+          <button class="btnPri" style="flex:1;text-align:center;padding:6px 12px">允许配对</button>
+        </div>
+      </div>
+
+      <!-- 列表底（示意主窗内容） -->
+      <div style="flex:1;border-radius:14px;padding:12px;background:var(--rc-glass-soft);border:1px solid rgba(255,255,255,.9);
+        display:flex;flex-direction:column;gap:8px;overflow:hidden">
+        <div style="font-size:10.5px;font-weight:700;color:#6E8095;letter-spacing:.3px">剪贴板</div>
+        <div style="border-radius:10px;padding:9px 11px;background:#fff;border:1px solid rgba(15,23,42,.06);font-size:11.5px">
+          <div style="font-weight:600">会议纪要 v3</div>
+          <div style="color:var(--text-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">— 三个待办：① 对齐接口 ② 确认发布窗口 ③ 补一轮回归…</div>
+        </div>
+        <div style="border-radius:10px;padding:9px 11px;background:#fff;border:1px solid rgba(15,23,42,.06);font-size:11.5px">
+          <div style="font-weight:600">git log --oneline -5</div>
+          <div style="color:var(--text-muted);margin-top:3px;font-family:var(--mono);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">f8d8836 chore(release): v7.2.1</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>六 · 视觉规格（全部实测，不按盒模型估）</h2>
+<div class="specRow">
+  <div class="spec"><div class="k">圆角阶梯（rc 域新增）</div><div class="v">9 / 12 / 14 / 18</div>
+    <div class="c">控件 9 · 设备行 12 · 面板卡 14 · 主区舞台 18。层差 ≥ 4px，避免「圆角打架」。</div></div>
+  <div class="spec"><div class="k">主按钮渐变</div><div class="v">#0378B4 → #026AA0</div>
+    <div class="c">白字对比度 4.88:1 → 5.96:1，两端口均过 AA。起点再亮一档即不合格。</div></div>
+  <div class="spec"><div class="k">侧栏</div><div class="v">272px · 内容宽 248</div>
+    <div class="c">不变。设备行名称区 118px、操作区 56px（方案 A 实测值原样保留）。</div></div>
+  <div class="spec"><div class="k">会话侧轨</div><div class="v">52px</div>
+    <div class="c">不变。画面区因此拿到 +220px（894 → 1114）。</div></div>
+</div>
+<div class="specRow">
+  <div class="spec"><div class="k">玻璃模糊</div><div class="v">blur(18px) saturate(1.25)</div>
+    <div class="c">比 <code>--shell-blur</code> 的 16px 略重，因为工作台是大窗口、背景有渐变光斑，需要更强的采样。</div></div>
+  <div class="spec"><div class="k">结构描边</div><div class="v">accent 13%</div>
+    <div class="c">取代 <code>#E0E4EB</code> 硬灰边；用 color-mix 派生，六主题自动跟随。</div></div>
+  <div class="spec"><div class="k">状态点柔光</div><div class="v">0 0 0 3px / 15%</div>
+    <div class="c">在线绿、最近橙、离线灰。点仍配文字标签，不单靠颜色。</div></div>
+  <div class="spec"><div class="k">开关</div><div class="v">44 × 26</div>
+    <div class="c">严格复用设置页 <code>.sToggle</code>，含轨道内「开 / 关」文字（不依赖颜色的状态信息）。</div></div>
+</div>
+
+<div class="callout warn">
+<b>两条不能破的既有钉子</b>（改之前先读一遍，它们都是实测撞出来的）：
+<ul class="tight" style="margin-bottom:0">
+<li><b>全屏按钮必须留在画面元素内部</b>（<code>.fakeScreen</code> 里），放到底栏等于全屏后按钮消失、只剩 Esc 能退出。</li>
+<li><b>侧栏收起只在出站会话生效</b>。被控时主区是信息卡、没画面，收窄只会把「允许被远程」这类本机状态藏起来。</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2>七 · 落地清单</h2>
+<table>
+<thead><tr><th>#</th><th>改哪里</th><th>怎么改</th><th>风险</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>RemoteComputer.module.css</code> 顶部（新增 <code>[data-rc-root]</code> 块）</td>
+  <td>写入本稿的 8 个 <code>--rc-*</code> token。<b>零组件改动</b>，先落地这一层不影响任何现有视觉。</td><td class="ok">低</td></tr>
+<tr><td>2</td><td><code>.wbSide</code> / <code>.sideRail</code></td>
+  <td><code>background: var(--card-bg)</code> → 玻璃 + 顶光层；<code>border-right</code> 灰 → <code>--rc-edge</code>；补 <code>backdrop-filter</code>。</td><td class="ok">低</td></tr>
+<tr><td>3</td><td><code>.devItem</code> 系列</td>
+  <td>圆角 8 → 12、灰底 → <code>--rc-glass-hard</code>、<code>:hover</code> 加 accent 渐变描边与柔影；<code>.devItemRecent</code> 加左缘 2px 色条。</td><td class="ok">低</td></tr>
+<tr><td>4</td><td><code>.miniBtnPri</code> / <code>.icoPri</code> / <code>.dangerBtn</code></td>
+  <td>换 <code>--rc-cta</code> 渐变 + <code>--rc-cta-shadow</code>；圆角 6 → 9。</td><td class="ok">低</td></tr>
+<tr><td>5</td><td>徽章 <code>.tagRecent</code> / <code>.tagRc</code> / <code>.tagTrusted</code> / <code>.tagDenied</code></td>
+  <td>实色底 → 渐变底 + 语义描边。文字色沿用现有 <code>--green</code> / <code>--danger</code> 等（对比度已验过）。</td><td class="ok">低</td></tr>
+<tr><td>6</td><td><code>RcEmptyGuide.tsx</code></td>
+  <td>emoji 🖥️ → 渐变徽标 + SVG 图标（新增 1 个内联 svg，不引 lucide 图标表）；三步块换成 <code>.step</code> 卡；<b>文案一个字不改</b>。</td><td>中（组件结构变动）</td></tr>
+<tr><td>7</td><td>新增 <code>.stage</code> 容器（<code>RcWorkbench</code> 主区包裹层）</td>
+  <td>空闲 / 等待 / 被控三态套一层玻璃舞台；会话态不套（画面自己就是舞台）。<b>判据沿用 <code>workbenchMainMode</code>，不新增状态。</b></td><td>中</td></tr>
+<tr><td>8</td><td><code>RcSessionView</code> 的 <code>.fakeScreen</code></td>
+  <td>灰边 → 青描边 + 外发光；<code>.hud</code> / <code>.viewTools</code> 加 <code>backdrop-filter</code>。</td><td class="ok">低</td></tr>
+<tr><td>9</td><td>侧栏新增「本机身份卡」</td>
+  <td><b>建议项，可砍</b>。数据源 <code>rc_identity</code>（<code>node_id</code> / <code>fingerprint</code> / <code>device_name</code> / <code>running</code>）后端已存在、<code>RcWorkbench</code> 已在调 <code>refreshIdentity()</code>，<b>零后端改动</b>。</td><td>中（新增信息块）</td></tr>
+</tbody>
+</table>
+
+<p class="note" style="margin-top:14px">
+<b>验证口径</b>：改完按现有节奏走 <code>tsc</code> / <code>vitest</code> / <code>lint:css</code>；视觉侧用真实 dev 窗口截图核对，重点看三处容易踩的 ——
+玻璃层叠后的文字对比度（模糊会吃掉一点对比）、圆角嵌套是否打架、以及 <code>backdrop-filter</code> 在深色主题下是否发灰。
+<b>深色两套主题必须各看一眼</b>：本稿的 <code>color-mix</code> 写法理论上自动跟随，但深色下 70% 卡片色 + 模糊仍可能偏亮。
+</p>
+
+</div>
+</body>
+</html>

@@ -200,7 +200,11 @@ impl DataStore {
                 }
             })
             .collect();
-        out.sort_by(|a, b| b.count.cmp(&a.count).then(b.actions.len().cmp(&a.actions.len())));
+        out.sort_by(|a, b| {
+            b.count
+                .cmp(&a.count)
+                .then(b.actions.len().cmp(&a.actions.len()))
+        });
         out.truncate(10);
         Ok(out)
     }

@@ -2,8 +2,8 @@
 //!
 //! 纯本地只读聚合，不出网、不含内容；前端负责展示与本地"已读"状态。
 
-use tauri::State;
 use crate::data_store::{DataStore, StickyStats};
+use tauri::State;
 
 /// 粘性数据总览（活跃日历 / 连续周数 / 成就判定 / 里程碑原料）。
 #[tauri::command]

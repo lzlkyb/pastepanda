@@ -145,9 +145,10 @@ impl DataStore {
             .map_err(|e| e.to_string())?;
 
         // 近 7 天（含今天）按天聚合：SQL 只返回有数据的日期，Rust 侧按连续日期补 0
-        let week_start = (now - chrono::Duration::days(6)).format("%Y-%m-%d").to_string();
-        let mut day_map: std::collections::HashMap<String, u32> =
-            std::collections::HashMap::new();
+        let week_start = (now - chrono::Duration::days(6))
+            .format("%Y-%m-%d")
+            .to_string();
+        let mut day_map: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         {
             let mut stmt = conn
                 .prepare(
@@ -331,8 +332,7 @@ impl DataStore {
         // 与前端原展示顺序一致：按计数降序
         sources.sort_by_key(|b| std::cmp::Reverse(b.count));
 
-        let mut groups: std::collections::HashMap<String, u32> =
-            std::collections::HashMap::new();
+        let mut groups: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         {
             let mut stmt = conn
                 .prepare(
@@ -351,8 +351,7 @@ impl DataStore {
             }
         }
 
-        let mut tags: std::collections::HashMap<String, u32> =
-            std::collections::HashMap::new();
+        let mut tags: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         {
             let mut stmt = conn
                 .prepare(
@@ -398,8 +397,7 @@ impl DataStore {
 
         for (key, value) in rows.flatten() {
             // 尝试解析 JSON 值，否则作为字符串
-            let json_val =
-                serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
+            let json_val = serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
             map.insert(key, json_val);
         }
 
@@ -455,8 +453,8 @@ impl DataStore {
 
         // 序列化当前配置
         let config = self.get_config()?;
-        let backup_json = serde_json::to_string_pretty(&config)
-            .map_err(|e| format!("序列化配置失败: {}", e))?;
+        let backup_json =
+            serde_json::to_string_pretty(&config).map_err(|e| format!("序列化配置失败: {}", e))?;
 
         // 写入临时文件 + 原子 rename（防止写入中途崩溃损坏备份）
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
@@ -474,9 +472,7 @@ impl DataStore {
             let mut backups: Vec<_> = entries
                 .filter_map(|e| e.ok())
                 .filter(|e| {
-                    e.file_name()
-                        .to_string_lossy()
-                        .starts_with("config_")
+                    e.file_name().to_string_lossy().starts_with("config_")
                         && e.file_name().to_string_lossy().ends_with(".json")
                 })
                 .filter_map(|e| {

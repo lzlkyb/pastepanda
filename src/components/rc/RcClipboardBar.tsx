@@ -1,5 +1,12 @@
 /**
- * RcClipboardBar — 剪贴板操作 + 状态；连续失败必须可见（U1/15.1）。
+ * RcClipboardBar — 会话底栏里的剪贴板操作组（不自带外框，由 RcSessionBar 承载）。
+ *
+ * 方案 B 改造：原先自己裹一层 `.ctrlBar`（各带 margin-top + 边框），是画面下方
+ * 三条横条里的第一条。现在只返回内容，排版交给底栏。
+ *
+ * 常驻的「自动同步开 · 剪贴板变化将发给对方」删掉了：按钮本身就叫「自动同步：开」
+ * 且是高亮态，同一句话说两遍只会挤掉底栏里别的东西。只在**失败连续 3 次**时补警示
+ * ——那才是需要用户动手的状态。
  */
 import { useState } from "react";
 import { rcPullClipboard, rcPushClipboard } from "@/lib/api/rc";
@@ -74,7 +81,7 @@ export function RcClipboardBar({
     p === "ok" ? styles.fbOk : p === "err" ? styles.fbBad : p === "loading" ? styles.fbInfo : "";
 
   return (
-    <div className={styles.ctrlBar}>
+    <>
       <button
         type="button"
         className={clipAuto ? styles.miniBtnPri : styles.miniBtn}
@@ -89,16 +96,11 @@ export function RcClipboardBar({
       <button type="button" className={styles.miniBtn} onClick={() => void pull()}>
         拉取对方剪贴板
       </button>
-      <span className={styles.sp} />
-      {/* B5：开启后持续可见的「正在把剪贴板变化发给对方」提示（非每秒刷新，不走 live region） */}
-      {clipAuto && (
-        <span className={`${styles.fb} ${styles.fbInfo}`}>自动同步开 · 剪贴板变化将发给对方</span>
-      )}
       {clipAuto && autoFail >= 3 && (
         <span className={`${styles.fb} ${styles.fbBad}`}>自动同步失败 · 检查剪贴板权限</span>
       )}
       {clipAuto && autoFail < 3 && lastAutoAt > 0 && (
-        <span className={`${styles.fb} ${styles.fbOk}`}>自动同步最近成功</span>
+        <span className={`${styles.fb} ${styles.fbOk}`}>自动同步正常</span>
       )}
       {pushPhase !== "idle" && (
         <span className={`${styles.fb} ${phaseCls(pushPhase)}`}>{pushMsg}</span>
@@ -106,6 +108,6 @@ export function RcClipboardBar({
       {pullPhase !== "idle" && (
         <span className={`${styles.fb} ${phaseCls(pullPhase)}`}>{pullMsg}</span>
       )}
-    </div>
+    </>
   );
 }
