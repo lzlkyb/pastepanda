@@ -44,6 +44,7 @@ function setup(
   const onRequestWith = vi.fn();
   const onRename = vi.fn().mockResolvedValue(true);
   const onTrustToggle = vi.fn().mockResolvedValue(true);
+  const onAutoAcceptToggle = vi.fn().mockResolvedValue(true);
   const onSetAllowed = vi.fn().mockResolvedValue(true);
   render(
     <RcDeviceList
@@ -59,12 +60,20 @@ function setup(
       onForget={vi.fn().mockResolvedValue(true)}
       onSetAllowed={onSetAllowed}
       onTrustToggle={onTrustToggle}
+      onAutoAcceptToggle={onAutoAcceptToggle}
       onRename={onRename}
       onPair={vi.fn()}
       toast={vi.fn()}
     />,
   );
-  return { onRequest, onRequestWith, onRename, onTrustToggle, onSetAllowed };
+  return {
+    onRequest,
+    onRequestWith,
+    onRename,
+    onTrustToggle,
+    onAutoAcceptToggle,
+    onSetAllowed,
+  };
 }
 
 /** 设备行根节点（className 含 devItem 哈希） */
@@ -173,6 +182,7 @@ describe("RcDeviceList 守卫（B 方案：整行可点后的副作用隔离）"
         onForget={vi.fn().mockResolvedValue(true)}
         onSetAllowed={vi.fn().mockResolvedValue(true)}
         onTrustToggle={vi.fn().mockResolvedValue(true)}
+        onAutoAcceptToggle={vi.fn().mockResolvedValue(true)}
         onRename={onRenameFail}
         toast={vi.fn()}
       />,
@@ -229,6 +239,51 @@ describe("RcDeviceList 守卫（B 方案：整行可点后的副作用隔离）"
     // 已免确认 + 刚被禁止：徽章也不能留着（那时真实状态是「已禁止」）
     setup([{ ...DEV, denied: true, trusted: true }]);
     expect(screen.queryByText("免确认")).toBeNull();
+    expect(screen.getByText("已禁止控本机")).toBeTruthy();
+  });
+
+  // —— 决策 10（自动接收文件）：与免确认一样，入口在菜单、当前态在行上 ——
+  it("决策 10：自动接收入口在菜单里，点它调 onAutoAcceptToggle(id, true)，不触发发起", async () => {
+    const { onAutoAcceptToggle, onRequest } = setup([DEV]); // auto_accept 缺省 = false
+    expect(screen.queryByText("自动收文件")).toBeNull(); // 没开就没有徽章
+    fireEvent.click(screen.getByLabelText("更多操作"));
+    fireEvent.click(screen.getByText("自动接收此设备的文件"));
+    expect(onAutoAcceptToggle).toHaveBeenCalledTimes(1);
+    expect(onAutoAcceptToggle).toHaveBeenCalledWith("peerA", true);
+    expect(onRequest).not.toHaveBeenCalled();
+    await act(async () => {});
+    expect(screen.queryByText("自动接收此设备的文件")).toBeNull();
+  });
+
+  it("决策 10：已开启的设备行有常驻徽章，菜单改成「关闭自动接收文件」并回调 on=false", async () => {
+    const { onAutoAcceptToggle } = setup([{ ...DEV, auto_accept: true }]);
+    // 🔴 徽章文案必须与「免确认」区分开：一个是「能控我屏幕」，一个是「文件会自动落盘」
+    expect(screen.getByText("自动收文件")).toBeTruthy();
+    expect(screen.queryByText("免确认")).toBeNull();
+    fireEvent.click(screen.getByLabelText("更多操作"));
+    expect(screen.queryByText("自动接收此设备的文件")).toBeNull();
+    fireEvent.click(screen.getByText("关闭自动接收文件"));
+    expect(onAutoAcceptToggle).toHaveBeenCalledWith("peerA", false);
+    await act(async () => {});
+  });
+
+  it("🔴 决策 10：syncOnly 与 denied 都不摆自动接收项；denied 时徽章也不留", () => {
+    // 同步配对设备：还没有 rc_devices 行可写
+    setup([SYNC_ONLY]);
+    fireEvent.click(screen.getByLabelText("更多操作"));
+    expect(screen.queryByText("自动接收此设备的文件")).toBeNull();
+    expect(screen.queryByText("关闭自动接收文件")).toBeNull();
+    cleanup();
+
+    // 已禁止远程本机：deny 优先级更高，开了也不生效（摆出来就是死项）
+    setup([{ ...DEV, denied: true }]);
+    fireEvent.click(screen.getByLabelText("更多操作"));
+    expect(screen.queryByText("自动接收此设备的文件")).toBeNull();
+    cleanup();
+
+    // 已开启 + 刚被禁止：徽章不能留着（否则读起来像「还在自动收」）
+    setup([{ ...DEV, denied: true, auto_accept: true }]);
+    expect(screen.queryByText("自动收文件")).toBeNull();
     expect(screen.getByText("已禁止控本机")).toBeTruthy();
   });
 
@@ -319,6 +374,7 @@ describe("RcDeviceList 守卫（B 方案：整行可点后的副作用隔离）"
         onForget={vi.fn().mockResolvedValue(true)}
         onSetAllowed={vi.fn().mockResolvedValue(true)}
         onTrustToggle={vi.fn().mockResolvedValue(true)}
+        onAutoAcceptToggle={vi.fn().mockResolvedValue(true)}
         onRename={vi.fn().mockResolvedValue(true)}
         onPair={onPair}
         toast={vi.fn()}

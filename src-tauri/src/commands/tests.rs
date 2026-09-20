@@ -251,3 +251,108 @@ fn test_validate_media_accepts_native_and_is_case_insensitive() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ============================================================
+// 命令注册守卫（Tauri invoke_handler）
+//
+// 🔴 为什么必须有：`#[tauri::command] pub fn x` 声明了、`pub use` 也导出了、
+//    clippy / cargo test / tsc / vitest **全都发现不了**它没进 `lib.rs` 的
+//    `generate_handler!`。前端一 `invoke` 才报「命令不存在」——运行期、
+//    还是在用户机器上才炸。「写完了但没接上」这类静默缺口只能靠对账单测钉住。
+//
+// 做法：把 `lib.rs` 与 `commands/` 下的源文件当**文本**读进来对账，不需要真启动
+// 应用。目录是**递归扫**出来的，所以新增命令文件**不用改这里**——否则守卫自己
+// 就变成了下一个「要人手维护」的缺口。
+// ============================================================
+
+/// 从源码文本里抽出 `#[tauri::command]` 紧跟着的那个函数名。
+///
+/// 只做这一件事，手写扫描比多引一个正则依赖省。
+fn tauri_command_names(src: &str) -> Vec<String> {
+    const MARK: &str = "#[tauri::command]";
+    /// 属性与 `fn` 之间可能还夹着别的属性/空行，只看接下来这么长一段。
+    const WINDOW: usize = 200;
+    let mut out = Vec::new();
+    let mut rest = src;
+    while let Some(i) = rest.find(MARK) {
+        let after = &rest[i + MARK.len()..];
+        let mut end = after.len().min(WINDOW);
+        while end > 0 && !after.is_char_boundary(end) {
+            end -= 1;
+        }
+        if let Some(fi) = after[..end].find("fn ") {
+            let name: String = after[fi + 3..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                out.push(name);
+            }
+        }
+        rest = after;
+    }
+    out
+}
+
+fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            collect_rs(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            out.push(p);
+        }
+    }
+}
+
+#[test]
+fn test_all_tauri_commands_are_registered_in_invoke_handler() {
+    let lib = include_str!("../lib.rs");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands");
+    let mut files = Vec::new();
+    collect_rs(&root, &mut files);
+    assert!(
+        files.len() > 10,
+        "没扫到 commands 源文件，路径八成写错了：{}",
+        root.display()
+    );
+
+    let mut checked = 0usize;
+    let mut missing = Vec::new();
+    for f in &files {
+        // 🔴 跳过测试文件：守卫自己的用例里必须写出 `#[tauri::command]` 这个字面量
+        //    （否则没法测抽取器），扫进去就会把 `foo_bar` 这类示例名当成真命令误报。
+        //    这也是为什么扫描要认「文件」而不是认「名字」。
+        if f.file_name().is_some_and(|n| n == "tests.rs") {
+            continue;
+        }
+        let Ok(src) = std::fs::read_to_string(f) else {
+            continue;
+        };
+        for name in tauri_command_names(&src) {
+            checked += 1;
+            if !lib.contains(&format!("commands::{name},")) {
+                missing.push(format!("{}::{name}", f.display()));
+            }
+        }
+    }
+    // 🔴 下界守卫：扫描逻辑一旦失效（比如把 `fn ` 改了写法），这个测试会「零样本通过」，
+    //    变成永远绿的空转守卫——那比没有守卫更危险。
+    assert!(
+        checked > 300,
+        "对账样本只有 {checked} 条，扫描逻辑可能已失效，别让它空转通过"
+    );
+    assert!(
+        missing.is_empty(),
+        "这些命令声明了但没进 lib.rs 的 generate_handler!，前端一调就报「命令不存在」：{missing:#?}"
+    );
+}
+
+#[test]
+fn test_tauri_command_name_extractor_handles_extra_attributes() {
+    let src = "#[tauri::command]\n#[specta::specta]\npub async fn foo_bar(\n    a: String,\n) -> Result<(), String> {\n    Ok(())\n}";
+    assert_eq!(tauri_command_names(src), vec!["foo_bar"]);
+    // 没有 `#[tauri::command]` 的普通函数不算（否则守卫会误报一大堆）
+    assert!(tauri_command_names("pub fn plain() {}").is_empty());
+}

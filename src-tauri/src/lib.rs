@@ -710,6 +710,20 @@ pub fn run() {
                         );
                     }));
                 }
+                // G6：文件传输状态（待响应请求 + 进度）→ 抛完整快照。
+                // 传 JSON 载荷而不是「有事变了」：确认条与进度条需要**立即**知道
+                // 是哪一条、到什么程度了；让前端再轮询一次命令是白跑一趟。
+                {
+                    let handle_file = handle.clone();
+                    rc_svc.set_file_notify(std::sync::Arc::new(move |json: &str| {
+                        match serde_json::from_str::<serde_json::Value>(json) {
+                            Ok(v) => {
+                                let _ = handle_file.emit("rc-file-state", v);
+                            }
+                            Err(e) => log::warn!("[RC] 文件状态事件载荷不合法：{e}"),
+                        }
+                    }));
+                }
                 // 发起端 outbox 有新帧 → 唤醒前端来 rc_drain_frames（原始二进制批量拉帧）。
                 // 事件不带 payload：帧数据走 invoke 返回的 ArrayBuffer，事件只是「门铃」。
                 {
@@ -903,10 +917,21 @@ pub fn run() {
             commands::rc_approve_inbound,
             commands::rc_deny_inbound,
             commands::rc_device_trust_set,
+            commands::rc_device_auto_accept_set,
             commands::rc_end_session,
             commands::rc_require_active,
             commands::rc_latest_frame,
             commands::rc_drain_frames,
+            commands::rc_file_send,
+            commands::rc_file_pull,
+            commands::rc_file_respond,
+            commands::rc_file_cancel,
+            commands::rc_file_clear_finished,
+            commands::rc_file_snapshot,
+            commands::rc_file_default_dir,
+            commands::rc_drain_audio,
+            commands::rc_audio_toggle,
+            commands::rc_set_audio_local_mute,
             commands::rc_send_input,
             commands::rc_open_workbench,
             commands::rc_push_clipboard,

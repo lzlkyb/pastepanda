@@ -19,6 +19,12 @@ pub(super) type CursorNotifyFn = Arc<dyn Fn(&str) + Send + Sync>;
 pub(super) type PathNotifyFn = Arc<dyn Fn(&str, &str) + Send + Sync>;
 /// 被控端画质/编码被对端改动时的回调（kind = "quality" | "codec"，name 为原始值串）。
 pub(super) type StreamNotifyFn = Arc<dyn Fn(&str, &str) + Send + Sync>;
+/// 文件传输状态变化时的回调（参数是完整快照的 JSON 串）。
+///
+/// 传 JSON 而不是结构体：这一层的调用者是 `lib.rs` 注入的闭包，它只该
+/// `emit` 一次；把序列化放在这里，前端拿到的事件 payload 与
+/// `rc_file_snapshot` 命令的返回**天然是同一个形状**。
+pub(super) type FileNotifyFn = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// 两次「有新帧」事件的最小间隔（毫秒）。帧率上限 30fps（33ms），
 /// 5ms 节流只防异常风暴；被节流掉的唤醒由前端的兜底短轮询补上。
@@ -38,6 +44,8 @@ pub(super) struct NotifyState {
     notify_path: Mutex<Option<PathNotifyFn>>,
     /// 远端光标形状变化（P1-6）。
     notify_cursor: Mutex<Option<CursorNotifyFn>>,
+    /// 文件传输状态（G6）：待响应请求 + 任务进度。
+    notify_file: Mutex<Option<FileNotifyFn>>,
     /// 发起端：outbox 有新帧时的唤醒通知（emit `rc-frame-ready`，无 payload）。
     notify_frame: Mutex<Option<NotifyFn>>,
     /// 上次 emit_frame_ready 的时刻（epoch ms），节流用。
@@ -54,6 +62,7 @@ impl NotifyState {
             notify_stream: Mutex::new(None),
             notify_path: Mutex::new(None),
             notify_cursor: Mutex::new(None),
+            notify_file: Mutex::new(None),
             notify_frame: Mutex::new(None),
             last_frame_emit_ms: std::sync::atomic::AtomicI64::new(0),
             last_inject_err: Mutex::new(None),
@@ -63,6 +72,26 @@ impl NotifyState {
     /// 注入前端通知回调（lib.rs 在 manage 之后调用）。
     pub(super) fn set_notify(&self, f: NotifyFn) {
         *self.notify.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
+    }
+
+    /// 注入文件状态回调（lib.rs 在 manage 之后调用）。
+    pub(super) fn set_file_notify(&self, f: FileNotifyFn) {
+        *self.notify_file.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
+    }
+
+    /// 文件传输状态变了（待响应请求增删 / 进度推进 / 落终态）。
+    ///
+    /// ⚠️ 调用方负责节流：进度按 1 MiB 分块，一秒能推几十块，而**画面流走的是
+    /// 同一个事件通道**——不节流会把视频挤卡（节流判据在 `file_state::should_emit`）。
+    pub(super) fn emit_file_state(&self, json: &str) {
+        let f = self
+            .notify_file
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        if let Some(f) = f {
+            f(json);
+        }
     }
 
     /// 状态变化通知前端（emit `rc-session-changed` / inject-error）。

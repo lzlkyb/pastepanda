@@ -40,6 +40,10 @@ pub struct EncodeProfile {
     /// 目前只有 uhd60 置位：4K60 的 H.264 要 L5.2（解码端兼容性差），HEVC
     /// L5.1 即覆盖且同画质省约一半带宽。其余档位走 H.264（生态最稳）。
     pub hevc: bool,
+    /// P1/G5：本档是否该走 D3D11 零拷贝路径。实际走不走还看「单输出」与「GPU 路径
+    /// 是否已判死」——三条判据集中在 `inbound::want_zero_copy`。true 只给 fps120 与
+    /// uhd60：CPU 管线每帧的读回 + 色彩转换在这两档吃不下（1080p60 CPU 能扛，不置位）。
+    pub gpu: bool,
     pub q_min: u8,
     pub q_max: u8,
     pub q_default: u8,
@@ -60,6 +64,7 @@ impl EncodeProfile {
                 max_w: 1920,
                 interval_ms: 66,
                 hevc: false,
+                gpu: false,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
@@ -70,6 +75,7 @@ impl EncodeProfile {
                 max_w: 2560,
                 interval_ms: 80,
                 hevc: false,
+                gpu: false,
                 q_min: 50,
                 q_max: 85,
                 q_default: 72,
@@ -81,19 +87,24 @@ impl EncodeProfile {
                 max_w: 2560,
                 interval_ms: 50,
                 hevc: false,
+                gpu: false,
                 q_min: 55,
                 q_max: 85,
                 q_default: 75,
                 adapt_down: 800_000,
                 adapt_up: 180_000,
             },
-            // uhd60（Q4）：原生分辨率 60fps——4K 屏即 4K60。硬编专属体感档：
+            // uhd60（Q4/G5）：原生分辨率 60fps——4K 屏即 4K60。硬编专属体感档：
             // UI 门槛 = 硬件 MFT + HEVC MFT（4K60 的 H.264 要 L5.2，解码端
             // 兼容性差；HEVC L5.1 即覆盖，且同画质省一半带宽）。JPEG 兜底按 2.5K。
+            // G5：本档也走 D3D11 零拷贝——4K 每帧 CPU 读回 + BGRA→NV12 转换
+            // （约 33MB/帧 × 60）是 CPU 管线跑不到 60fps 的根本原因；抓取纹理
+            // 不出显存才谈得上「持续 60」。单输出条件与 fps120 同一门控。
             "uhd60" => Self {
                 max_w: 2560,
                 interval_ms: 16,
                 hevc: true,
+                gpu: true,
                 q_min: 55,
                 q_max: 85,
                 q_default: 75,
@@ -106,19 +117,22 @@ impl EncodeProfile {
                 max_w: 1920,
                 interval_ms: 16,
                 hevc: false,
+                gpu: false,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
                 adapt_down: 350_000,
                 adapt_up: 80_000,
             },
-            // fps120：高帧率+（P1 零拷贝专属档）——8ms 节拍。CPU 管线跑不到这个
-            // 节拍，跑不满时 pace_scale 自动降频（8→16/24/32ms = 120/60/40/30fps）。
+            // fps120：高帧率+（P1 零拷贝档，G5 起与 uhd60 共用同一门控）——8ms 节拍。
+            // CPU 管线跑不到这个节拍，跑不满时 pace_scale 自动降频
+            //（8→16/24/32ms = 120/60/40/30fps）。
             // UI 门槛：单屏 + 硬件 MFT + D3D11 零拷贝路径 + 高刷屏，缺一不显示。
             "fps120" => Self {
                 max_w: 1920,
                 interval_ms: 8,
                 hevc: false,
+                gpu: true,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
@@ -129,6 +143,7 @@ impl EncodeProfile {
                 max_w: 960,
                 interval_ms: 100,
                 hevc: false,
+                gpu: false,
                 q_min: 25,
                 q_max: 55,
                 q_default: 40,
@@ -140,6 +155,7 @@ impl EncodeProfile {
                 max_w: TARGET_MAX_W,
                 interval_ms: 100,
                 hevc: false,
+                gpu: false,
                 q_min: JPEG_QUALITY_MIN,
                 q_max: JPEG_QUALITY_MAX,
                 q_default: JPEG_QUALITY_DEFAULT,
@@ -153,6 +169,19 @@ impl EncodeProfile {
 impl Default for EncodeProfile {
     fn default() -> Self {
         Self::of_name("balanced")
+    }
+}
+
+impl EncodeProfile {
+    /// P1/G5：本条会话是否走 D3D11 零拷贝路径。三条判据，缺一回落 CPU 管线：
+    /// ① 档位本身吃不下 CPU 管线（`gpu`：fps120 的 8ms 节拍 / uhd60 的 4K60）；
+    /// ② **单输出**——多屏拼接要在 GPU 侧跨屏合成，没有这条路（`dxgi::grab_gpu` 也拒）；
+    /// ③ 本会话 GPU 路径没被判死（连续 3 次打不开或编码失败会置位）。
+    ///
+    /// 做成纯函数/方法是因为**判据错了不会崩**——只会静默跑 CPU 管线，表现为
+    /// 「档位给了但跑不满」，这种问题在双机手测里极难定位（见 11.7 的教训）。
+    pub fn wants_zero_copy(&self, virtual_screen: bool, gpu_disabled: bool) -> bool {
+        self.gpu && !virtual_screen && !gpu_disabled
     }
 }
 
@@ -1094,6 +1123,26 @@ mod tests {
         let chg = encode_rgba_ts(&mut st, w, h, rgba, t0 + 1200).unwrap();
         assert!(!chg.frame.jpeg.is_empty());
         assert!(!chg.refine);
+    }
+
+    /// G5：零拷贝门控（判据写错不崩，只会静默跑 CPU 管线——所以必须有单测钉住）。
+    #[test]
+    fn 零拷贝门控_只给高带宽档且要求单输出() {
+        // uhd60（4K60）与 fps120（8ms 节拍）走零拷贝；1080p60 留在 CPU（扛得住）
+        assert!(EncodeProfile::of_name("uhd60").wants_zero_copy(false, false));
+        assert!(EncodeProfile::of_name("fps120").wants_zero_copy(false, false));
+        for q in ["fps60", "uhd", "ultra", "sharp", "balanced", "smooth", "auto"] {
+            assert!(
+                !EncodeProfile::of_name(q).wants_zero_copy(false, false),
+                "{q} 不该走零拷贝（CPU 管线够用）"
+            );
+        }
+        // 多屏拼接：GPU 侧没有跨屏合成这条路
+        assert!(!EncodeProfile::of_name("uhd60").wants_zero_copy(true, false));
+        assert!(!EncodeProfile::of_name("fps120").wants_zero_copy(true, false));
+        // 本会话 GPU 路径已被判死：两档都不再尝试
+        assert!(!EncodeProfile::of_name("uhd60").wants_zero_copy(false, true));
+        assert!(!EncodeProfile::of_name("fps120").wants_zero_copy(false, true));
     }
 
     #[test]

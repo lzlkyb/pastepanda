@@ -7,11 +7,14 @@
  * 提示一直留到用户点「知道了」或会话结束（store 在会话切换/结束时清）。
  */
 import { useEffect, useState } from "react";
+import { Volume2, VolumeX } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { formatDuration } from "@/lib/rcSessionStats";
 import { scopeLabelLong } from "@/lib/rcScope";
 import { qualityLabel } from "@/lib/rcQuality";
+import { useRcFile } from "@/hooks/useRcFile";
 import type { RcSession } from "@/lib/api/rc";
+import { RcFileAskLine } from "./RcFileAsk";
 import styles from "./RemoteComputer.module.css";
 
 export function RcControlBanner({
@@ -24,6 +27,8 @@ export function RcControlBanner({
   onDismissScopeNotice,
   streamNotice,
   onDismissStreamNotice,
+  audioLocalMute,
+  onToggleAudioLocalMute,
 }: {
   session: RcSession;
   busy: boolean;
@@ -43,12 +48,23 @@ export function RcControlBanner({
   /** Q10：对端刚改的推流档位（quality / codec）；null 表示没有待展示的变更 */
   streamNotice?: { kind: string; name: string } | null;
   onDismissStreamNotice?: () => void;
+  /** G3：本机是否已静音系统声音（一票否决——对端开着也听不到）。 */
+  audioLocalMute?: boolean;
+  /**
+   * G3：切换本机静音。不传 = 不显示按钮（例如非 Windows 被控端，音频链路不存在）。
+   */
+  onToggleAudioLocalMute?: () => void;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [session.id]);
+
+  // G6：文件请求可能**在没有会话时**到达（文件通道独立于会话），那种情况走
+  // RcOverlay 的常驻分支。有会话时在这条横幅里出——人不在工作台也看得见（规则 15）。
+  const file = useRcFile(session.peer);
+  const ask = file.asks[0] ?? null;
 
   return (
     <div className={styles.ctrlBanner}>
@@ -79,12 +95,21 @@ export function RcControlBanner({
           </button>
         </span>
       )}
-      {/* Q10：画质/编码被对端改动同上——一次性状态变化，播一次 */}
+      {/* Q10：画质/编码被对端改动同上——一次性状态变化，播一次。
+          G3：系统声音同理——「我的声音正在被对方听」不比画面被切走次要。 */}
       {streamNotice && (
         <span className={styles.scopeNotice} role="status" aria-live="polite">
-          {streamNotice.kind === "codec"
-            ? `对方把编码切成了「${streamNotice.name === "h264" ? "H.264" : streamNotice.name === "hevc" ? "HEVC" : "JPEG"}」`
-            : `对方把画质调成了「${qualityLabel(streamNotice.name)}」`}
+          {streamNotice.kind === "audio"
+            ? streamNotice.name === "off"
+              ? "对方已停止接收本机系统声音"
+              : // ❗ 本机已静音时这句不能照说：「对方开始接收」是事实，但
+                // 「对方能听到」是假话（本机静音一票否决）。宁啰嗦不骗人。
+                audioLocalMute
+                ? "对方开启了系统声音接收，但你已在本机静音——对方仍听不到"
+                : "对方开始接收本机系统声音（你现在播放的声音对方能听到）"
+            : streamNotice.kind === "codec"
+              ? `对方把编码切成了「${streamNotice.name === "h264" ? "H.264" : streamNotice.name === "hevc" ? "HEVC" : "JPEG"}」`
+              : `对方把画质调成了「${qualityLabel(streamNotice.name)}」`}
           <button
             type="button"
             className={styles.scopeNoticeX}
@@ -94,7 +119,39 @@ export function RcControlBanner({
           </button>
         </span>
       )}
+      {/* G6：文件请求确认条（一行版）。与「对方改了画质」同一位置、同一优先级——
+          「有东西要写进我的磁盘」至少和「我的画面被改了」一样需要立刻被看见。
+          60s 不回应 = 拒绝，倒计时在组件里；点接受会弹系统目录/文件选择框
+          （模态，不受主窗口焦点影响）。 */}
+      {ask && <RcFileAskLine ask={ask} busy={busy} onRespond={file.respond} />}
       <span className={styles.sp} />
+      {/* G3：被控者本机静音。放在「以后不再询问」之前——两者都是本人对此刻的即时
+          决定，且要和右侧「立即结束」（误触代价不对称）拉开距离。
+          它是一票否决：对端开得再欢也听不到；跨会话保持，不开新会话就一直是关的。 */}
+      {onToggleAudioLocalMute && (
+        <button
+          type="button"
+          className={
+            audioLocalMute
+              ? `${styles.audioMuteBtn} ${styles.audioMuteBtnOn}`
+              : styles.audioMuteBtn
+          }
+          aria-pressed={audioLocalMute ? true : false}
+          title={
+            audioLocalMute
+              ? "本机系统声音现在不会被对方听到（一票否决，对端自己开着也没用）。点此恢复发送。"
+              : "对方将听不到本机播放的系统声音（不影响影音之外的画面与控制）。关了就跨会话保持，直到你点回来。"
+          }
+          onClick={onToggleAudioLocalMute}
+        >
+          {audioLocalMute ? (
+            <VolumeX size={12} aria-hidden="true" />
+          ) : (
+            <Volume2 size={12} aria-hidden="true" />
+          )}
+          {audioLocalMute ? "恢复发送声音" : "不发送声音"}
+        </button>
+      )}
       {/* A2：这里开的是一次性会话里的「长期放行」，文案必须说清边界——
           它是「不再逐次询问」，不是「无人值守」，会话横幅照常常驻、随时可结束。 */}
       {trusted ? (

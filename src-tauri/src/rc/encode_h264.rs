@@ -189,6 +189,24 @@ pub struct MfH264Encoder {
     gpu: Option<super::gpu::GpuNv12Converter>,
 }
 
+/// MFStartup 进程级一次（视频/音频编码器共用；线程安全）。
+pub fn ensure_mf_startup() -> Result<(), String> {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    static INIT_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    INIT.call_once(|| unsafe {
+        let r = MFStartup(MF_SDK_VERSION, MFSTARTUP_FULL);
+        if let Err(e) = &r {
+            log::warn!("[RC] MFStartup 失败：{e}");
+        }
+        INIT_OK.store(r.is_ok(), std::sync::atomic::Ordering::SeqCst);
+    });
+    if INIT_OK.load(std::sync::atomic::Ordering::SeqCst) {
+        Ok(())
+    } else {
+        Err("MFStartup 失败".into())
+    }
+}
+
 fn mf_err(e: windows::core::Error) -> String {
     format!("MF：{e}")
 }
@@ -231,16 +249,7 @@ impl MfH264Encoder {
     ) -> Result<Self, String> {
         unsafe {
             let com_owned = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
-            static INIT: std::sync::Once = std::sync::Once::new();
-            static INIT_OK: std::sync::atomic::AtomicBool =
-                std::sync::atomic::AtomicBool::new(false);
-            INIT.call_once(|| {
-                let r = MFStartup(MF_SDK_VERSION, MFSTARTUP_FULL);
-                INIT_OK.store(r.is_ok(), std::sync::atomic::Ordering::SeqCst);
-            });
-            if !INIT_OK.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err("MFStartup 失败".into());
-            }
+            ensure_mf_startup()?;
 
             let w = (width & !1).max(64);
             let h = (height & !1).max(64);

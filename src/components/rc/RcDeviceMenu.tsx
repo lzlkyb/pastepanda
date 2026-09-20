@@ -14,12 +14,16 @@ export function RcDeviceMenu({
   onToggle,
   syncOnly,
   busy,
+  fileBusy,
   denied,
   trusted,
+  autoAccept,
   onRequestWith,
+  onSendFiles,
   onAllowToggle,
   onDenyToggle,
   onTrustToggle,
+  onAutoAcceptToggle,
   onRename,
   onForget,
 }: {
@@ -28,14 +32,28 @@ export function RcDeviceMenu({
   /** 纯同步设备没有「以指定方式发起」（没有可发起的主动作语义）。 */
   syncOnly: boolean;
   busy: boolean;
+  /**
+   * G6：文件传输项的禁用态，**与 `busy` 分开**。
+   *
+   * `busy` 进到这里时已经被调用点并成了「busy || 会话进行中」——那是给发起类
+   * 用的（后端只有一个会话位）。而文件走**独立 ALPN**，正在被别人远程时照样能传，
+   * 用同一个锁会把一个本来能用的入口显示成灰的。
+   */
+  fileBusy: boolean;
   denied: boolean;
   /** 方案 D：该设备是否已开免确认（发起远程时跳过对端人工同意）。 */
   trusted: boolean;
+  /** 决策 10：该设备推送文件过来时是否跳过确认条（存进 `rc_devices.auto_accept`）。 */
+  autoAccept: boolean;
   onRequestWith: (cap: RcCapability) => void;
+  /** G6：打开「文件传输」页并预选这台设备（不建立远程会话）。不传 = 不摆这一项。 */
+  onSendFiles?: () => void;
   /** 方案 A：解除禁止的唯一入口（行内那个按钮已收进本菜单）。 */
   onAllowToggle: () => void;
   onDenyToggle: () => void;
   onTrustToggle: () => void;
+  /** 决策 10：切换「自动接收此设备的文件」。不传 = 不摆这一项。 */
+  onAutoAcceptToggle?: () => void;
   onRename: () => void;
   onForget: () => void;
 }) {
@@ -92,11 +110,35 @@ export function RcDeviceMenu({
               <div className={styles.mSep} />
             </>
           )}
+          {/* G6（决策 8）：文件传输是**独立通道**——不建远程会话、对方屏幕上不出现
+              你的画面。所以它与上面的「发起」组之间用分隔线断开，语义上不是同一件事。
+              `!syncOnly`：与「发起」同一门槛（纯同步配对设备先「去配对」）。
+              禁用只看 fileBusy，**不跟会话进行中走**（见 fileBusy 的说明）。 */}
+          {!syncOnly && onSendFiles && (
+            <button
+              type="button"
+              disabled={fileBusy}
+              title="不建立远程会话，直接把文件发给对方 / 或向对方要文件"
+              onClick={onSendFiles}
+            >
+              传文件
+            </button>
+          )}
           {/* ⚠️ 菜单项一律跟 `busy` 走：busy 期间点任何一项都会发一个注定失败或
               重复的信令（尤其「发起」类）。按钮已禁用，菜单不能留成后门。 */}
           {!syncOnly && (
             <button type="button" disabled={busy} onClick={onRename}>
               设置备注名
+            </button>
+          )}
+          {/* 决策 10（2026-09-20）：自动接收。紧挨「传文件」——同一件事的两个方向：
+              上面那条是「我要发出去」，这条是「别人发给我时要不要问」。
+              判据同「免确认」：`syncOnly`（设定写在 `rc_devices.auto_accept`，
+              同步配对设备还没有那行）+ `denied`（deny 优先级更高，被禁止时开了也不生效）。
+              标签写「下一步做什么」，当前态由行上徽章表达。 */}
+          {!syncOnly && !denied && onAutoAcceptToggle && (
+            <button type="button" disabled={busy} onClick={onAutoAcceptToggle}>
+              {autoAccept ? "关闭自动接收文件" : "自动接收此设备的文件"}
             </button>
           )}
           {/* A1（2026-09-18）：把已经做好的「免确认直连」从设置页第四层拿到设备行。

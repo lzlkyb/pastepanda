@@ -281,6 +281,84 @@ impl InboundVideo {
         });
     }
 
+    /// G3：音频任务。对端申请了系统声音时启动：采集 worker（独立线程，
+    /// WASAPI 环回 + 收件箱 AAC）→ 通道 → 本任务把包写进**专用 QUIC 单向流**
+    ///（与视频可靠流分属不同流，互不队头阻塞）。会话中静音/恢复由 wanted
+    /// 标志驱动：停时关采集、关流；恢复时 worker 重发 Cfg → 开新流，
+    /// 发起端的 accept 循环天然承接「一条流结束了、又来一条」。
+    #[cfg(target_os = "windows")]
+    fn spawn_audio_task(&self) {
+        use std::sync::atomic::AtomicBool;
+        if !self.svc.audio_peer_wants() {
+            return;
+        }
+        let svc = self.svc.clone();
+        let peer = self.peer.clone();
+        let conn = self.conn.clone();
+        tauri::async_runtime::spawn(async move {
+            let (tx, mut rx) =
+                tokio::sync::mpsc::unbounded_channel::<super::audio::AudioOut>();
+            let mut worker: Option<super::audio::AudioWorker> = None;
+            let wanted_flag = Arc::new(AtomicBool::new(false));
+            let mut stream: Option<iroh::endpoint::SendStream> = None;
+            loop {
+                if !svc.session_is(SessionPhase::InboundActive, &peer) {
+                    break;
+                }
+                let wanted = svc.audio_wanted();
+                wanted_flag.store(wanted, std::sync::atomic::Ordering::SeqCst);
+                if !wanted {
+                    // 停采集 + 关流；对端读到 EOF 回 accept 循环等新流
+                    if let Some(w) = worker.as_mut() {
+                        w.stop();
+                    }
+                    worker = None;
+                    stream = None;
+                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                    continue;
+                }
+                if worker.is_none() {
+                    worker =
+                        Some(super::audio::AudioWorker::start(wanted_flag.clone(), tx.clone()));
+                }
+                let msg = tokio::select! {
+                    m = rx.recv() => match m {
+                        Some(m) => m,
+                        None => break,
+                    },
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(400)) => continue,
+                };
+                match msg {
+                    super::audio::AudioOut::Cfg(cfg) => {
+                        if stream.is_none() {
+                            stream = conn.open_uni().await.ok();
+                        }
+                        if let Some(s) = stream.as_mut() {
+                            let header = super::audio::encode_stream_header(&cfg);
+                            if s.write_all(&header).await.is_err() {
+                                stream = None;
+                            }
+                        }
+                    }
+                    super::audio::AudioOut::Pkt { pts_ms, data } => {
+                        if stream.is_none() {
+                            stream = conn.open_uni().await.ok();
+                        }
+                        if let Some(s) = stream.as_mut() {
+                            let pkt = super::audio::encode_packet(pts_ms, &data);
+                            if s.write_all(&pkt).await.is_err() {
+                                stream = None;
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(w) = worker.as_ref() {
+                w.stop();
+            }
+        });
+    }
+
     /// P0-4：QUIC stats 采样——被控端**本端**的 RTT / 丢包率，每 500ms 喂给码控。
     /// 丢包按窗口增量算（‰）并做指数平滑；窗口内没有新包就不更新（保留旧值）。
     fn spawn_stats_sampler(&self) {
@@ -444,9 +522,10 @@ impl InboundVideo {
                 30
             };
             henc.set_fps(want_fps);
-            // P1 零拷贝门控：高帧率+档 + 单输出（virtual=false ⇒ 主屏或指定单屏）
-            let want_gpu =
-                opts.profile.interval_ms <= 10 && !opts.virtual_screen && !self.gpu_disabled;
+            // P1/G5 零拷贝门控：档位要（fps120 / uhd60）+ 单输出 + GPU 路径没被判死。
+            // 判据集中在 `EncodeProfile::wants_zero_copy`（有单测）——写错不崩、
+            // 只会静默跑 CPU 管线。
+            let want_gpu = opts.profile.wants_zero_copy(opts.virtual_screen, self.gpu_disabled);
             if want_gpu {
                 // P0-2 延迟分段：抓帧耗时单独记
                 let cap_t0 = std::time::Instant::now();
@@ -708,6 +787,8 @@ impl InboundVideo {
         // P0-3 / P0-4：鼠标数据报通道 + 本端链路状况采样
         self.spawn_datagram_reader();
         self.spawn_stats_sampler();
+        // G3：对端申请了系统声音 → 音频采集 + 专用流
+        self.spawn_audio_task();
         // 会话刚建立：立刻可推流，等首个心跳
         self.svc.touch_activity();
         // P1-6：会话建立先报一次当前光标形状
@@ -972,6 +1053,16 @@ pub(super) async fn handle_inbound_input(
                 // Q10：编码切换同样要被控端可见（H.264 ↔ JPEG 观感差异明显）
                 svc.emit_stream_note("codec", codec);
             }
+            return;
+        }
+        // G3：发起端开关系统声音。不注入输入；被控端必须看得见——
+        // 「我的声音正在被对方听」和「画面被切走」是同一级别的可见性。
+        InputEvent::AudioOn { on } => {
+            svc.set_audio_muted(!*on);
+            // 与 quality/codec 同款分工：note 里传**原值**（on/off），中文文案归前端。
+            // 传句子会让被控横幅的「不是 codec 就是画质」分支把它读成画质。
+            svc.emit_stream_note("audio", if *on { "on" } else { "off" });
+            log::info!("[RC] 对端{}系统声音", if *on { "开启" } else { "关闭" });
             return;
         }
         _ => {}

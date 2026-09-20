@@ -22,6 +22,7 @@
  * 一起进全屏态；放到底栏等于全屏后按钮消失（只剩 Esc 能退出）。
  */
 import { useMemo, useState } from "react";
+import { Volume2, VolumeX } from "lucide-react";
 import { rcSendInput, rcSetBitratePct, type RcQuality, type RcCaptureScope } from "@/lib/api/rc";
 import { RC_BITRATE_OPTIONS, visibleQualities } from "@/lib/rcQuality";
 import { scopeOptions } from "@/lib/rcScope";
@@ -29,6 +30,7 @@ import type { FitMode } from "@/lib/rcSessionStats";
 import type { UseRc } from "@/hooks/useRc";
 import { RcDropdown } from "./RcDropdown";
 import { RcClipboardBar } from "./RcClipboardBar";
+import { RcFileBar } from "./RcFileBar";
 import styles from "./RemoteComputer.module.css";
 
 type Fb = { kind: "ok" | "bad" | "info"; text: string } | null;
@@ -42,6 +44,8 @@ export function RcSessionBar({
   onPickQuality,
   onPickScope,
   onPickBitrate,
+  audioOn,
+  onToggleAudio,
   clipAuto,
   onToggleClipAuto,
   lastAutoAt,
@@ -63,6 +67,9 @@ export function RcSessionBar({
   onPickQuality: (q: RcQuality) => void;
   onPickScope: (s: RcCaptureScope) => void;
   onPickBitrate: (pct: number) => void;
+  /** G3：系统声音开关（默认开）。被控端有可见提示。 */
+  audioOn: boolean;
+  onToggleAudio: () => void;
   clipAuto: boolean;
   onToggleClipAuto: () => void;
   lastAutoAt: number;
@@ -75,6 +82,8 @@ export function RcSessionBar({
   frameIdleSec: number;
 }) {
   const [fb, setFb] = useState<Fb>(null);
+  /** G6：文件操作组（传文件 / 取文件 / 进度）要对端 node_id——从会话里取。 */
+  const peer = rc.status?.session?.peer ?? "";
   // Q7：会话中显示器列表来自**对端**（caps 控制帧带几何信息），本机的会误导
   // （本机有 3 屏不等于对方有）。旧版本对端没有上报 → 空表，只出两项。
   const peerMonitors = useMemo(
@@ -219,15 +228,35 @@ export function RcSessionBar({
           onPick={pickBitrate}
         />
       </span>
+      {/* G3：系统声音开关。只看会话也该有声音——音频不要求控制权，放在
+          剪贴板栏（仅可控）之前，两种能力档都可见。 */}
+      <button
+        type="button"
+        className={styles.menuBtn}
+        title={
+          audioOn
+            ? "关闭系统声音（对方将停止听到本机播放的声音）"
+            : "开启系统声音（对方将听到本机播放的声音）"
+        }
+        onClick={onToggleAudio}
+      >
+        {audioOn ? <Volume2 size={14} aria-hidden="true" /> : <VolumeX size={14} aria-hidden="true" />}
+        声音
+      </button>
       <span className={styles.barSep} />
       {canControl && (
-        <RcClipboardBar
-          clipAuto={clipAuto}
-          onToggleAuto={onToggleClipAuto}
-          lastAutoAt={lastAutoAt}
-          autoFail={autoFail}
-          onStatus={onStatus}
-        />
+        <>
+          <RcClipboardBar
+            clipAuto={clipAuto}
+            onToggleAuto={onToggleClipAuto}
+            lastAutoAt={lastAutoAt}
+            autoFail={autoFail}
+            onStatus={onStatus}
+          />
+          {/* G6：文件操作组（传文件 / 取文件 / 进度）。写对端磁盘与「推送剪贴板」
+              同级，所以同样在 canControl 门内——「只看」会话不该能往对方机器写文件。 */}
+          <RcFileBar peer={peer} />
+        </>
       )}
       {fb && <span className={`${styles.fb} ${fbCls}`}>{fb.text}</span>}
       <span className={styles.sp} />

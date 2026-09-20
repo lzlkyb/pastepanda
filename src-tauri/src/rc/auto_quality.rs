@@ -51,16 +51,30 @@ pub(super) fn ladder_index_of(p: &super::video::EncodeProfile) -> Option<usize> 
 /// 否则冷却一过还要从头再等 30s，升档会莫名变慢。
 ///
 /// 返回 (新档位下标（None = 不动），更新后的 high_since，更新后的 low_since)。
-pub(super) fn auto_decide(
-    tier: usize,
-    rtt_ms: i64,
-    avg_bytes: usize,
-    loss_permille: u64,
-    high_since: Option<i64>,
-    low_since: Option<i64>,
-    last_change_ms: i64,
-    now_ms: i64,
-) -> (Option<usize>, Option<i64>, Option<i64>) {
+pub(super) struct LinkSample {
+    pub tier: usize,
+    pub rtt_ms: i64,
+    pub avg_bytes: usize,
+    pub loss_permille: u64,
+    pub high_since: Option<i64>,
+    pub low_since: Option<i64>,
+    pub last_change_ms: i64,
+    pub now_ms: i64,
+}
+
+pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<i64>) {
+    // 收口成结构体（clippy too_many_arguments）：调用点读起来是「一次链路采样」，
+    // 以后加字段也不用再动签名。首行解构，下面全是原样逻辑。
+    let LinkSample {
+        tier,
+        rtt_ms,
+        avg_bytes,
+        loss_permille,
+        high_since,
+        low_since,
+        last_change_ms,
+        now_ms,
+    } = s;
     // 链路「差」的判据：RTT 高 **或** 丢包重（≥5%），任一成立都算差
     let link_bad = rtt_ms >= AUTO_DOWN_RTT_MS || loss_permille >= 50;
     let high_since = if link_bad {

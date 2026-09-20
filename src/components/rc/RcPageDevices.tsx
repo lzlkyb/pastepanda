@@ -31,6 +31,7 @@ export function RcPageDevices({
   onForget,
   onRequest,
   onRequestWith,
+  onSendFiles,
 }: {
   rc: UseRc;
   toast: ReturnType<typeof useToast>["toast"];
@@ -43,6 +44,8 @@ export function RcPageDevices({
   onForget: (id: string) => Promise<boolean>;
   onRequest: (id: string) => void;
   onRequestWith: (id: string, c: RcCapability) => void;
+  /** G6：设备行菜单「传文件」→ 切到文件传输页并预选这台设备。 */
+  onSendFiles?: (id: string) => void;
 }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -151,9 +154,11 @@ export function RcPageDevices({
             requestCap={cap}
             onRequest={onRequest}
             onRequestWith={onRequestWith}
+            onSendFiles={onSendFiles}
             onForget={onForget}
             onSetAllowed={async (id, allowed) => rc.setDeviceAllowed(id, allowed)}
             onTrustToggle={async (id, trusted) => rc.setDeviceTrust(id, trusted)}
+            onAutoAcceptToggle={async (id, on) => rc.setDeviceAutoAccept(id, on)}
             onRename={async (id, note) => {
               try {
                 await rcDeviceRename(id, note);

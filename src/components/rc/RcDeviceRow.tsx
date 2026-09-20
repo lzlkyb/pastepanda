@@ -33,6 +33,7 @@ import {
 import { useRcDeviceActions } from "@/hooks/useRcDeviceActions";
 import { RcDeviceMenu } from "./RcDeviceMenu";
 import { RcDeviceMeta } from "./RcDeviceMeta";
+import { RcDeviceTags } from "./RcDeviceTags";
 import { RcRenameInput } from "./RcRenameInput";
 import styles from "./RemoteComputer.module.css";
 
@@ -46,9 +47,11 @@ export function RcDeviceRow({
   requestCap,
   onRequest,
   onRequestWith,
+  onSendFiles,
   onForget,
   onSetAllowed,
   onTrustToggle,
+  onAutoAcceptToggle,
   onRename,
   onPair,
   toast,
@@ -64,9 +67,13 @@ export function RcDeviceRow({
   requestCap: RcCapability;
   onRequest: (id: string) => void;
   onRequestWith: (id: string, cap: RcCapability) => void;
+  /** G6：打开工作台「文件传输」页并预选这台设备。**不走** `locked`——文件是独立通道，会话进行中照样能传。 */
+  onSendFiles?: (id: string) => void;
   onForget: (id: string) => Promise<boolean>;
   onSetAllowed: (id: string, allowed: boolean) => Promise<boolean>;
   onTrustToggle: (id: string, trusted: boolean) => Promise<boolean>;
+  /** 决策 10：切换「自动接收此设备推送的文件」（= `rc_devices.auto_accept`）。 */
+  onAutoAcceptToggle: (id: string, on: boolean) => Promise<boolean>;
   onRename: (id: string, note: string) => Promise<boolean>;
   onPair?: () => void;
   toast: (m: string, k: "success" | "error" | "info") => void;
@@ -78,6 +85,7 @@ export function RcDeviceRow({
     onForget,
     onSetAllowed,
     onTrustToggle,
+    onAutoAcceptToggle,
     onRename,
     toast,
   });
@@ -101,6 +109,7 @@ export function RcDeviceRow({
   const isLast = d.node_id === lastPeer;
   const denied = deviceDeny[d.node_id] ?? d.denied;
   const trusted = d.trusted ?? false;
+  const autoAccept = d.auto_accept ?? false;
   const syncOnly = d.source === "sync"; // B9
   const presence = normalizeRcPresence(d.presence);
   const hint = presenceHint(presence);
@@ -173,31 +182,13 @@ export function RcDeviceRow({
             onCancel={() => setEditing(false)}
           />
         ) : (
-          <div className={styles.name}>
-            {displayName}
-            {d.note?.trim() && (
-              <span className={styles.metaSub} title="本机备注 · 对端自报名保留不动">
-                {" "}
-                ({d.name})
-              </span>
-            )}
-            {isLast && <span className={styles.tagRecent}>上次</span>}
-            <span className={syncOnly ? styles.tagSync : styles.tagRc}>
-              {syncOnly ? "同步" : "远程"}
-            </span>
-            {denied && <span className={styles.tagDenied}>已禁止控本机</span>}
-            {/* A1：免确认的当前态要用行上的常驻徽章说清——否则「以后不再询问」只活在
-                菜单里，用户翻遍界面看不出这台设备已经被放行。deny 优先于免确认，
-                被禁止时不摆（那时 tagDenied 已经解释了真实状态）。 */}
-            {trusted && !denied && (
-              <span
-                className={styles.tagTrusted}
-                title="这台设备发起远程时不再弹确认条 · 可随时在菜单里恢复"
-              >
-                免确认
-              </span>
-            )}
-          </div>
+          <RcDeviceTags
+            d={d}
+            displayName={displayName}
+            isLast={isLast}
+            syncOnly={syncOnly}
+            denied={denied}
+          />
         )}
         <RcDeviceMeta d={d} />
       </div>
@@ -247,12 +238,23 @@ export function RcDeviceRow({
           // 会话进行中菜单项一并锁住：busy 期间点任何一项都会发一个注定失败
           // 或重复的信令（尤其「发起」类），按钮禁用了、菜单不能留成后门。
           busy={requestBlocked}
+          /* G6：文件传输项的锁是**原始的** busy——会话进行中不影响传文件（独立 ALPN） */
+          fileBusy={busy}
           denied={denied}
           trusted={trusted}
+          autoAccept={autoAccept}
           onRequestWith={(cap) => {
             setMenuOpen(false);
             onRequestWith(d.node_id, cap);
           }}
+          onSendFiles={
+            onSendFiles
+              ? () => {
+                  setMenuOpen(false);
+                  onSendFiles(d.node_id);
+                }
+              : undefined
+          }
           onAllowToggle={() => {
             // 方案 A：行内「解除禁止」按钮已收进菜单（三个图标在 245px 里放不下），
             // 这里是解除禁止的唯一入口。
@@ -268,6 +270,11 @@ export function RcDeviceRow({
           }}
           onTrustToggle={() => {
             void act.toggleTrust(d.node_id, !trusted).then((ok) => {
+              if (ok) setMenuOpen(false);
+            });
+          }}
+          onAutoAcceptToggle={() => {
+            void act.toggleAutoAccept(d.node_id, !autoAccept).then((ok) => {
               if (ok) setMenuOpen(false);
             });
           }}

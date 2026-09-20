@@ -108,7 +108,9 @@ pub fn bitrate_scale_for_loss(permille: u64) -> u32 {
 
 // 画质「自动」档的判据与状态在 `auto_quality.rs`（2A）。这里只做存放与喂帧。
 
-use super::auto_quality::{auto_decide, ladder_index_of, AutoTier, AUTO_LADDER, FRAME_WINDOW};
+use super::auto_quality::{
+    auto_decide, ladder_index_of, AutoTier, LinkSample, AUTO_LADDER, FRAME_WINDOW,
+};
 
 impl StreamCfg {
     pub(super) fn new() -> Self {
@@ -303,16 +305,16 @@ impl StreamCfg {
         } else {
             self.path_rtt_ms.load(Ordering::Relaxed)
         };
-        let (new_tier, high, low) = auto_decide(
-            a.tier,
-            rtt,
-            avg,
-            self.loss_permille(),
-            a.high_since,
-            a.low_since,
-            a.last_change_ms,
+        let (new_tier, high, low) = auto_decide(LinkSample {
+            tier: a.tier,
+            rtt_ms: rtt,
+            avg_bytes: avg,
+            loss_permille: self.loss_permille(),
+            high_since: a.high_since,
+            low_since: a.low_since,
+            last_change_ms: a.last_change_ms,
             now_ms,
-        );
+        });
         a.high_since = high;
         a.low_since = low;
         let Some(t) = new_tier else {

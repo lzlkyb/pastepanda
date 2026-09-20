@@ -31,11 +31,12 @@ import { useRcAdhoc } from "@/hooks/useRcAdhoc";
 import { useRcWorkbenchClose } from "@/hooks/useRcWorkbenchClose";
 import { RcPairLayer, type RcPairLayerMode } from "@/components/settings/RcPairLayer";
 import { RcNavRail } from "./RcNavRail";
-import { RcTopBar } from "./RcTopBar";
+import { RcWorkbenchHead } from "./RcWorkbenchHead";
 import { RcStage } from "./RcStage";
 import { RcWorkbenchSide } from "./RcWorkbenchSide";
-import { RcPageDevices, RcDevicesTopActions } from "./RcPageDevices";
-import { RcPageHistory, RcHistoryClearButton } from "./RcPageHistory";
+import { RcPageDevices } from "./RcPageDevices";
+import { RcPageFiles } from "./RcPageFiles";
+import { RcPageHistory } from "./RcPageHistory";
 import { RcPageSettings } from "./RcPageSettings";
 import {
   isSessionActive,
@@ -60,8 +61,14 @@ export function RcWorkbench() {
   const { cap, setDefaultCap, lastPeer, lastAttempt, doRequest, forgetDevice } = useRcLaunch(rc, toast);
   /** 当前开着的弹层：长期配对 / 让别人帮我 / 帮别人连一次（见 RcPairLayer）。 */
   const [overlay, setOverlay] = useState<RcPairLayerMode>(null);
-  /** v4 导航态：「远程电脑」是主页，其余三页见顶部说明。 */
+  /** v4 导航态：「远程电脑」是主页，其余各页见顶部说明。 */
   const [page, setPage] = useState<WbPage>("rc");
+  /** G6：设备卡片「传文件」→ 切到文件传输页并预选这台设备（一次性传递，不在外层维护第二份真源）。 */
+  const [filesPeer, setFilesPeer] = useState<string | null>(null);
+  const openFiles = (id: string) => {
+    setFilesPeer(id);
+    setPage("files");
+  };
   /**
    * 会话进行中左列是否被**手动**展开。默认收起把宽度让给画面；
    * 非会话状态下一律展开（collapsed 的 effect 负责复位）。
@@ -179,34 +186,20 @@ export function RcWorkbench() {
       />
 
       <div className={styles.wbCol}>
-        <RcTopBar
+        <RcWorkbenchHead
           page={page}
           channelUp={channelUp}
           busy={rc.busy}
+          session={session}
           sessionLabel={sessionLabel}
-          /* v4 对稿（B 窗）：会话 chip 带每秒走字的时长（计时器在 live region 外）。 */
-          sessionStartedMs={session?.started_ms}
-          /* v4 对稿（C 窗）：设备列表页副标题念实时计数；其余页沿用静态 meta。 */
-          hintOverride={
-            page === "devices"
-              ? `共 ${rc.targets.length} 台 · ${rc.targets.filter((t) => t.presence === "live").length} 台在线`
-              : undefined
-          }
-          /* v5：devices 页动作 = 检测在线 + 配对设备；history 页动作 = 清空记录。
-             JSX 外移到各自页面文件（RcDevicesTopActions / RcHistoryClearButton）。 */
-          actions={
-            page === "devices" ? (
-              <RcDevicesTopActions probing={probing} onProbe={probe} onPair={() => setOverlay("pair")} />
-            ) : page === "history" ? (
-              <RcHistoryClearButton
-                rc={rc}
-                toast={toast}
-                onCleared={() => setHistoryEpoch((n) => n + 1)}
-              />
-            ) : undefined
-          }
+          probing={probing}
+          onProbe={probe}
+          onPair={() => setOverlay("pair")}
+          onCleared={() => setHistoryEpoch((n) => n + 1)}
           onStartChannel={startChannel}
           onOpenSettings={() => setPage("settings")}
+          rc={rc}
+          toast={toast}
         />
 
         {page === "devices" ? (
@@ -222,7 +215,10 @@ export function RcWorkbench() {
             onForget={forgetDevice}
             onRequest={requestCap}
             onRequestWith={requestWith}
+            onSendFiles={openFiles}
           />
+        ) : page === "files" ? (
+          <RcPageFiles rc={rc} initialPeer={filesPeer} />
         ) : page === "history" ? (
           <RcPageHistory
             key={historyEpoch}
@@ -261,6 +257,7 @@ export function RcWorkbench() {
                 onStartChannel={startChannel}
                 onRequest={requestCap}
                 onRequestWith={requestWith}
+                onSendFiles={openFiles}
                 onForget={forgetDevice}
                 /* 收起按钮只在有画面时才有意义（见上面 collapsed 的说明） */
                 onCollapse={active ? () => setSideOpen(false) : undefined}

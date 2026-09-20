@@ -72,6 +72,9 @@ const ConfigDiffDialog = lazy(() => import("@/components/ConfigDiffDialog").then
 const SequentialPasteDialog = lazy(() => import("@/components/SequentialPasteDialog").then(m => ({ default: m.SequentialPasteDialog })));
 const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
 const RcOverlay = lazy(() => import("@/components/rc/RcOverlay").then(m => ({ default: m.RcOverlay })));
+/* G6：文件请求的常驻面。**必须独立于 RcOverlay**——文件通道走独立 ALPN，
+   没有任何会话时也可能有请求到达，而 RcOverlay 的早返回条件全是「有没有会话」。 */
+const RcFileOverlay = lazy(() => import("@/components/rc/RcFileOverlay").then(m => ({ default: m.RcFileOverlay })));
 
 function App() {
   const appMode = useAppStore((s) => s.appMode);
@@ -1161,6 +1164,10 @@ function App() {
         {/* 远程被控横幅 / 入站确认：任何模式可见（规则 15） */}
         <Suspense fallback={null}>
           <RcOverlay />
+        </Suspense>
+        {/* G6：文件请求（独立通道，可能与任何会话都无关）——同样任何模式可见 */}
+        <Suspense fallback={null}>
+          <RcFileOverlay />
         </Suspense>
         {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
             v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。

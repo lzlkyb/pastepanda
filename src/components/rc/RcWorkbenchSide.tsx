@@ -38,6 +38,7 @@ export function RcWorkbenchSide({
   onStartChannel,
   onRequest,
   onRequestWith,
+  onSendFiles,
   onForget,
   onHelpMe,
   onHelpOther,
@@ -67,6 +68,8 @@ export function RcWorkbenchSide({
   onStartChannel: () => void;
   onRequest: (id: string) => void;
   onRequestWith: (id: string, c: RcCapability) => void;
+  /** G6：设备行菜单「传文件」→ 切到文件传输页并预选这台设备。 */
+  onSendFiles?: (id: string) => void;
   onForget: (id: string) => Promise<boolean>;
   /** 方案甲：被协助方——出码让对方连一次（用完即忘）。 */
   onHelpMe: () => void;
@@ -202,11 +205,14 @@ export function RcWorkbenchSide({
               requestCap={cap}
               onRequest={onRequest}
               onRequestWith={onRequestWith}
+              onSendFiles={onSendFiles}
               onForget={onForget}
               onSetAllowed={async (id, allowed) => rc.setDeviceAllowed(id, allowed)}
               // A1：免确认直连（方案 D 能力）直接复用 store 的 setDeviceTrust；
               // 它走 run()，失败会落到工作台的错误行，与「禁止/允许」同一套反馈。
               onTrustToggle={async (id, trusted) => rc.setDeviceTrust(id, trusted)}
+              // 决策 10：同一个 store 口径，失败同样落到工作台错误行。
+              onAutoAcceptToggle={async (id, on) => rc.setDeviceAutoAccept(id, on)}
               onRename={async (id, note) => {
                 try {
                   await rcDeviceRename(id, note);

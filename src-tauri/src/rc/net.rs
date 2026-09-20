@@ -7,7 +7,7 @@ use iroh::Endpoint;
 
 use crate::sync::identity::NodeIdentity;
 
-use super::protocol::ALPN;
+use super::protocol::{ALPN, FILE_ALPN};
 use super::service::RcService;
 
 pub(crate) async fn bind_rc_endpoint(me: &NodeIdentity, relay: bool) -> Result<Endpoint, String> {
@@ -21,7 +21,9 @@ pub(crate) async fn bind_rc_endpoint(me: &NodeIdentity, relay: bool) -> Result<E
             .relay_mode(RelayMode::Disabled)
             .clear_address_lookup()
     };
-    b.alpns(vec![ALPN.to_vec()])
+    // 双 ALPN：画面/控制走 `rc/1`，文件走 `rc-file/1`（G6）。两条路共用同一个
+    // 端点与同一个 accept 循环，**不新绑端口、不新开 relay 连接**。
+    b.alpns(vec![ALPN.to_vec(), FILE_ALPN.to_vec()])
         .bind()
         .await
         .map_err(|e| format!("绑定远程端点失败：{}", e))
@@ -48,8 +50,14 @@ pub(crate) async fn accept_loop(svc: Arc<RcService>, ep: Endpoint, stop: Arc<Ato
             }
         };
         let svc2 = svc.clone();
+        // 按 ALPN 分派。❗ 必须在把 `conn` 移进任务**之前**读出来。
+        let is_file = conn.alpn() == FILE_ALPN;
         tauri::async_runtime::spawn(async move {
-            svc2.handle_inbound_conn(conn).await;
+            if is_file {
+                svc2.handle_file_conn(conn).await;
+            } else {
+                svc2.handle_inbound_conn(conn).await;
+            }
         });
     }
     log::info!("[RC] 入连接循环已停止");

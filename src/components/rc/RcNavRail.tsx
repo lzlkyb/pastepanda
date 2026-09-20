@@ -16,13 +16,29 @@
  * 🔴 会话折叠（沿用 v4 的有意偏差，见 RcWorkbench 顶部说明）：出站会话进行中收成
  * 56px 图标轨，收起态保留展开入口，离开会话即复位。
  */
-import { History, List, Monitor, Settings, ChevronRight, ShieldCheck, ShieldOff } from "lucide-react";
+import {
+  History,
+  List,
+  Monitor,
+  Settings,
+  FolderUp,
+  ChevronRight,
+  ShieldCheck,
+  ShieldOff,
+} from "lucide-react";
 import type { RcIdentity } from "@/lib/api/rc";
 import type { WbPage } from "@/lib/rcWorkbench";
 import styles from "./RemoteComputer.module.css";
 
-const NAV_ITEMS: { key: WbPage; label: string; icon: typeof Monitor }[] = [
+/**
+ * 导航项。**导出是为了守卫单测**（`rcWorkbench.test.ts` 拿它与 `WB_PAGES` 对账）：
+ * 新增一个 `WbPage` 却忘了往这里加，那一页就永远到不了——`tsc` 不报、运行时也没有
+ * 报错，只是「这个功能好像不存在」。
+ */
+export const RC_NAV_ITEMS: { key: WbPage; label: string; icon: typeof Monitor }[] = [
   { key: "rc", label: "远程电脑", icon: Monitor },
+  // G6：文件传输是独立通道（不建会话也能传），所以它是并列的一页，不是主页面板
+  { key: "files", label: "文件传输", icon: FolderUp },
   { key: "devices", label: "设备列表", icon: List },
   { key: "history", label: "会话记录", icon: History },
   { key: "settings", label: "设置", icon: Settings },
@@ -69,7 +85,7 @@ export function RcNavRail({
           <ChevronRight size={16} />
         </button>
         <div className={styles.navCompactSep} />
-        {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
+        {RC_NAV_ITEMS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             type="button"
@@ -98,7 +114,7 @@ export function RcNavRail({
 
   const activeIndex = Math.max(
     0,
-    NAV_ITEMS.findIndex(({ key }) => key === page),
+    RC_NAV_ITEMS.findIndex(({ key }) => key === page),
   );
 
   return (
@@ -120,7 +136,7 @@ export function RcNavRail({
           aria-hidden="true"
           style={{ transform: `translateY(${activeIndex * NAV_STRIDE}px)` }}
         />
-        {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
+        {RC_NAV_ITEMS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             type="button"

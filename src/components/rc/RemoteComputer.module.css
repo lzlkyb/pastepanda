@@ -946,6 +946,40 @@
   border: 1px solid color-mix(in srgb, var(--green, #11813a) 35%, transparent);
 }
 
+/* G3：被控横幅上的「不发送声音 / 恢复发送声音」。尺寸与相邻的 .miniBtn 一致，
+   但自带 inline-flex——它是图标 + 文字，只有 padding 会基线错位。
+   （不去改 .miniBtn：它被「以后不再询问」用着，那边是纯文字。） */
+.audioMuteBtn {
+  font: inherit;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #1c1f23);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.audioMuteBtn:hover {
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 38%, var(--border-color, #e3e6ea));
+  color: var(--accent, #4f7cff);
+}
+/* 已静音：绿色（已生效的隐私开关），与 .trustOn 同源语义——「现在生效的状态」，
+   不是告警。文案已经切成「恢复发送声音」，形状不变，只换语义色。 */
+.audioMuteBtnOn {
+  border-color: color-mix(in srgb, var(--green, #11813a) 45%, transparent);
+  background: color-mix(in srgb, var(--green, #11813a) 12%, var(--card-bg, #fff));
+  color: color-mix(in srgb, var(--green, #11813a) 85%, var(--text-primary, #1c1f23));
+  font-weight: 600;
+}
+.audioMuteBtnOn:hover {
+  border-color: color-mix(in srgb, var(--green, #11813a) 70%, transparent);
+  color: color-mix(in srgb, var(--green, #11813a) 95%, var(--text-primary, #1c1f23));
+}
+
 .joinGlobal {
   border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 40%, var(--border-color, #e3e6ea));
   background: color-mix(in srgb, var(--orange, #e0803a) 8%, var(--card-bg, #fff));
@@ -1276,6 +1310,14 @@
   color: color-mix(in srgb, var(--green, #11813a) 85%, var(--text-primary, #1c1f23));
   border-color: color-mix(in srgb, var(--green, #11813a) 35%, var(--border-color, #e3e6ea));
   background: color-mix(in srgb, var(--green, #11813a) 8%, transparent);
+}
+/* 决策 10「自动收文件」：刻意**不用**绿色——绿在这张行上已经是「免确认」（对方能控
+   我的屏幕），两个都绿会让人读成一件事。用橙：它是「会自动落盘，请知悉」的语义，
+   也正好是这一行里唯一需要用户留意的状态。 */
+.tagAutoAccept {
+  color: color-mix(in srgb, var(--orange, #e0803a) 88%, var(--text-primary, #1c1f23));
+  border-color: color-mix(in srgb, var(--orange, #e0803a) 38%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--orange, #e0803a) 9%, transparent);
 }
 
 @keyframes rcDotBreathe {
@@ -2627,4 +2669,313 @@
 .listHead .phDur {
   text-align: right;
   margin-right: 10px;
+}
+/* ─────────────────────────────────────────────────────────────
+   G6 文件传输（2026-09-20）
+   确认条（卡片 / 一行）、进度面板、独立文件页。
+   语义色沿用本项目既有口径：确认条用 danger（写盘请求 = 需要警觉），
+   进度用 accent，续传标记用 orange（warn 语义：这次不是从头开始）。
+   ───────────────────────────────────────────────────────────── */
+
+/* ── 确认条：工作台完整卡片 ── */
+.fileAskCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger, #d64545) 35%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--danger, #d64545) 7%, var(--card-bg, #fff));
+  border-radius: 10px;
+}
+.fileAskHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fileAskTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary, #1c1f23);
+}
+.fileAskKind {
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger, #d64545) 14%, transparent);
+  color: var(--danger, #d64545);
+}
+.fileAskLead {
+  font-size: 11.5px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.6;
+}
+/* 文件名可能含空格/中文/长串，必须是可断行等宽体——净化后的名字要能逐字符核对 */
+.fileAskMono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  word-break: break-all;
+}
+.fileAskActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fileAskCd {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+.fileAskCdLate {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--danger, #d64545);
+  font-variant-numeric: tabular-nums;
+}
+.fileAskNote {
+  font-size: 10.5px;
+  color: var(--text-muted, #6b7280);
+}
+/* 决策 10：确认条上的「以后自动接收此设备的文件」。
+   勾选本身用系统控件（不重画），只需要把两行文字排好：主文案 + 一行更小的落点说明
+   ——落点是用户最需要知道、又最容易忽略的那句话（文件会去哪儿）。 */
+.fileAskAuto {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-primary, #1c1f23);
+  cursor: pointer;
+  user-select: none;
+}
+.fileAskAuto input {
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+  accent-color: var(--accent, #4f7cff);
+  cursor: pointer;
+}
+/* 说明行是 label 的**兄弟**（不嵌在里面：嵌进去会污染勾选框的无障碍名）。
+   所以左边距要手动对齐到文字起点：13px 勾选框 + 7px 间距。 */
+.fileAskAutoHint {
+  margin: 2px 0 0 20px;
+  font-size: 10.5px;
+  color: var(--text-muted, #6b7280);
+}
+/* 确认条：常驻横幅一行版 */
+.fileAskLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-primary, #1c1f23);
+  flex-wrap: wrap;
+}
+.fileAskLine b {
+  font-weight: 600;
+}
+
+/* ── 进度面板 ── */
+.filePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.filePanelHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.filePanelWho {
+  font-size: 12.5px;
+  color: var(--text-secondary, #4b5563);
+}
+.fileEmpty {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.75;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-color, #e3e6ea);
+  border-radius: 10px;
+}
+.fileList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fileRow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 8px;
+  background: var(--card-bg, #fff);
+}
+/* 已结束的行压暗一档：列表里还在跑的那些要一眼跳出来 */
+.fileRowOver {
+  opacity: 0.72;
+}
+.fileRowTop {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.fileDirBadge {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  background: color-mix(in srgb, var(--accent, #4f7cff) 14%, transparent);
+  color: var(--accent-strong, #3b5bdb);
+}
+.fileName {
+  font-size: 12px;
+  color: var(--text-primary, #1c1f23);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+.fileResume {
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--orange, #e0803a) 16%, transparent);
+  color: var(--orange, #e0803a);
+}
+.fileState {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fileCancel {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+}
+.fileCancel:hover {
+  color: var(--danger, #d64545);
+  border-color: color-mix(in srgb, var(--danger, #d64545) 45%, var(--border-color, #e3e6ea));
+}
+/* 「打开所在文件夹」：与取消同尺寸同位置，但语义是中性的 → 不沿用 danger 的 hover */
+.fileOpen {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+}
+.fileOpen:hover {
+  color: var(--accent, #4f7cff);
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 45%, var(--border-color, #e3e6ea));
+}
+.fileBar {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted, #6b7280) 18%, transparent);
+  overflow: hidden;
+}
+.fileBarFill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--accent, #4f7cff),
+    color-mix(in srgb, var(--accent, #4f7cff) 62%, #06b6d4)
+  );
+  transition: width 0.18s ease;
+}
+.fileHint {
+  font-size: 10.5px;
+  color: var(--text-muted, #6b7280);
+}
+
+/* ── 独立「文件传输」页 ── */
+.filePage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  overflow: auto;
+  min-height: 0;
+}
+.fileTargets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fileTarget {
+  font: inherit;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #1c1f23);
+  cursor: pointer;
+}
+.fileTargetOn {
+  border-color: color-mix(in srgb, var(--accent, #4f7cff) 55%, var(--border-color, #e3e6ea));
+  background: color-mix(in srgb, var(--accent, #4f7cff) 12%, var(--card-bg, #fff));
+}
+.fileTargetName {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileTargetDot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted, #6b7280);
+}
+/* 「在线」是四档可达性里唯一确定的一档——只有它上绿色 */
+.ftDotLive {
+  background: var(--green, #2f9e5f);
+}
+.fileTargetDeny {
+  font-size: 10px;
+  color: var(--danger, #d64545);
+}
+.filePageNote {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.75;
 }

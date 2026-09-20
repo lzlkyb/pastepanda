@@ -177,6 +177,8 @@ windows = { version = "0.58", features = [
     # R4：Media Foundation 硬件 H.264
     "Win32_Media_MediaFoundation",
     "Win32_Media",
+    # G3：WASAPI 环回采集（系统声音）。只加绑定，链接的是系统 mmdevapi.dll，不进 exe
+    "Win32_Media_Audio",
     "Win32_System_Com_StructuredStorage",
 ] }
 winreg = "0.52"

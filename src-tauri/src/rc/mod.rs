@@ -7,6 +7,9 @@
 pub mod auto_quality;
 pub mod clipboard;
 pub mod discovery;
+pub mod file_proto;
+pub mod file_state;
+pub mod file_transfer;
 pub mod history;
 pub mod inbound;
 pub mod input;
@@ -26,6 +29,8 @@ pub mod uno;
 pub mod unop;
 pub mod video;
 
+#[cfg(target_os = "windows")]
+pub mod audio;
 #[cfg(target_os = "windows")]
 pub mod dxgi;
 #[cfg(target_os = "windows")]

@@ -9,6 +9,16 @@ use serde::{Deserialize, Serialize};
 /// 远程协助 ALPN。带版本：协议不兼容时连不上，好过连上后乱解析。
 pub const ALPN: &[u8] = b"pastepanda/rc/1";
 
+/// G6 文件传输 ALPN。**挂同一个 RC 端点**（`rc/net.rs` 双 ALPN），
+/// 不新绑端口、不新开 relay 连接。
+///
+/// 为什么不复用 `rc/1` 会话连接开条 uni 流：会话有 TTL + 2s 心跳、断流即
+/// 收口（`outbound.rs` 的 force_end），传大文件必废；且旧版对端不会
+/// `accept_uni`，数据会堵在流控窗口里**静默卡死**（没有错误，只有「点了没反应」）。
+/// 独立 ALPN 的失败是**明确拒绝**——版本不匹配时对端根本连不上这条流，
+/// 于是前端能说清「对方版本不支持文件传输」，而不是塌缩成「连接失败」。
+pub const FILE_ALPN: &[u8] = b"pastepanda/rc-file/1";
+
 /// 能力档。`Control` 包含 `View`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -72,6 +82,10 @@ pub enum RcFrame {
         ///（画面退化成每秒一张关键帧的幻灯片），所以被控端按可靠流发 P 帧。
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vid_dgram: Option<bool>,
+        /// G3：发起端申请系统声音（音频流）。`None`/false = 旧版发起端或用户
+        /// 关了声音——被控端不开音频采集。与 `vid_dgram` 同款兼容三件套。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        audio: Option<bool>,
     },
     /// 被控端同意。
     Accept {
@@ -135,6 +149,7 @@ mod tests {
             uno_code: None,
             uno_pass: None,
             vid_dgram: Some(true),
+            audio: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
@@ -144,6 +159,7 @@ mod tests {
             uno_code: None,
             uno_pass: None,
             vid_dgram: None,
+            audio: None,
         };
         let s = String::from_utf8(minimal.encode().unwrap()).unwrap();
         assert!(!s.contains("uno_code"));
@@ -158,6 +174,7 @@ mod tests {
             uno_code: None,
             uno_pass: Some("s3cret-密码".into()),
             vid_dgram: None,
+            audio: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
@@ -169,6 +186,7 @@ mod tests {
             uno_code: Some("AB2C-3DEF".into()),
             uno_pass: None,
             vid_dgram: None,
+            audio: None,
         };
         let s2 = String::from_utf8(f2.encode().unwrap()).unwrap();
         assert!(!s2.contains("uno_pass"));
@@ -182,17 +200,19 @@ mod tests {
             uno_code: Some("AB2C-3DEF".into()),
             uno_pass: None,
             vid_dgram: None,
+            audio: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
         // 旧版对端发来的 Request 没有 uno_code/uno_pass 字段，也要能解（default 补 None）
         let old = r#"{"t":"request","capability":"control"}"#.as_bytes();
         match RcFrame::decode(old).unwrap() {
-            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram } => {
+            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram, audio } => {
                 assert_eq!(capability, Capability::Control);
                 assert_eq!(uno_code, None, "旧对端没有这个字段，反序列化补 None");
                 assert_eq!(uno_pass, None, "固定密码位同理（方案 C）");
                 assert_eq!(vid_dgram, None, "能力位同理");
+                assert_eq!(audio, None, "音频申请位同理（G3）");
             }
             other => panic!("unexpected {other:?}"),
         }

@@ -23,6 +23,7 @@ import {
   rcCancelRequest,
   rcClearOutboundError,
   rcDenyInbound,
+  rcDeviceAutoAcceptSet,
   rcDeviceTrustSet,
   rcEndSession,
   rcForget,
@@ -152,6 +153,12 @@ interface RcState {
   setDeviceAllowed: (id: string, ok: boolean) => Promise<boolean>;
   /** 方案 D：设置「免确认直连」（默认关，逐台；deny 优先级更高）。 */
   setDeviceTrust: (id: string, trusted: boolean) => Promise<boolean>;
+  /**
+   * 决策 10：设置「自动接收此设备推送的文件」（默认关，逐台）。
+   *
+   * 🔴 只跳确认条，**不跳门禁**（`gate_inbound` 一律先跑）；只对推送方向生效。
+   */
+  setDeviceAutoAccept: (id: string, on: boolean) => Promise<boolean>;
   createInvite: (name: string) => Promise<RcInviteCreated>;
   previewInvite: (code: string) => Promise<RcInvite>;
   pair: (code: string) => Promise<boolean>;
@@ -233,10 +240,12 @@ async function ensureListener(get: () => RcState) {
     });
     // Q10：被控端——对端改了本机画质/编码档。原来是静默 log；画面突然变糊
     // /变清时要能看见原因。收成提示由被控横幅展示，确认或会话结束清除。
+    // G3：同理收「对端开关了本机系统声音」（kind=audio，name=on/off）。
     const onStream = await listen<{ kind?: string; name?: string }>("rc-stream-note", (ev) => {
       const kind = ev.payload?.kind;
       const name = ev.payload?.name;
-      if ((kind !== "quality" && kind !== "codec") || typeof name !== "string" || !name) return;
+      const known = kind === "quality" || kind === "codec" || kind === "audio";
+      if (!known || typeof name !== "string" || !name) return;
       get().setStreamNotice({ kind, name });
     });
     // C：会话中自动换路（relay ↔ 直连）。顺带刷一次状态，让 HUD 立刻显示新档位。
@@ -380,6 +389,7 @@ export const useRcStore = create<RcState>((set, get) => ({
   setCaptureScope: (s) => get().run(() => rcSetCaptureScope(s)),
   setDeviceAllowed: (id, ok) => get().run(() => rcSetDeviceAllowed(id, ok)),
   setDeviceTrust: (id, trusted) => get().run(() => rcDeviceTrustSet(id, trusted)),
+  setDeviceAutoAccept: (id, on) => get().run(() => rcDeviceAutoAcceptSet(id, on)),
   // 以下两个不走 run：直接返回 Promise，调用方自己处理 loading / 错误
   createInvite: (name) => rcInviteCreate(name),
   previewInvite: (code) => rcInvitePreview(code),

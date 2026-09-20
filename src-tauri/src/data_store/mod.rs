@@ -1456,7 +1456,8 @@ impl DataStore {
                  conn_state TEXT NOT NULL DEFAULT 'offline',
                  last_seen  INTEGER NOT NULL DEFAULT 0,
                  last_path  TEXT NOT NULL DEFAULT '',
-                 trusted    INTEGER NOT NULL DEFAULT 0
+                 trusted    INTEGER NOT NULL DEFAULT 0,
+                 auto_accept INTEGER NOT NULL DEFAULT 0
              );",
         ) {
             log::error!("[DataStore] 建 rc_devices 表失败: {}", e);
@@ -1530,6 +1531,34 @@ impl DataStore {
                     log::warn!("[DataStore] rc_devices.trusted 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 rc_devices.trusted 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：rc_devices.auto_accept —— 决策 10「按设备记忆自动接收文件」。
+        //
+        // 🔴 它**只跳「每个文件都问一次」这一步，不跳门禁**：`gate_inbound`
+        //    （是否允许该设备接入）仍先跑，被禁用/未配对的设备照样进不来。
+        //    默认 0（每次都问）；**逐台**开关，可撤销；与 `trusted` 一样不提供一键全开。
+        // 🔴 只对「推送」方向有效（对方发给我）。取回方向是「我挑文件发给对方」，
+        //    没有可自动的东西——别把它做成语义含糊的全局开关。
+        let has_auto_accept: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('rc_devices') WHERE name = 'auto_accept'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_auto_accept {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE rc_devices ADD COLUMN auto_accept INTEGER NOT NULL DEFAULT 0;",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] rc_devices.auto_accept 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 rc_devices.auto_accept 列失败: {}", e);
                     return Err(e);
                 }
             }

@@ -4,7 +4,7 @@
  *
  * ❗ 只看 `rc_enabled`，**不**依赖知识库同步：远程通道是独立的（方案 A）。
  */
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { useRc } from "@/hooks/useRc";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
@@ -13,7 +13,8 @@ import { RcControlBanner } from "./RcControlBanner";
 import { RcJoinRequests } from "./RcJoinRequests";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源
-import type { RcCapability } from "@/lib/api/rc";
+import { rcSetAudioLocalMute, type RcCapability } from "@/lib/api/rc";
+import { summonMainWindow } from "@/lib/rcWindow";
 import styles from "./RemoteComputer.module.css";
 
 export function RcOverlay() {
@@ -30,6 +31,22 @@ export function RcOverlay() {
   useRcAdhoc(rc);
   const seenPending = useRef(new Set<string>());
 
+  /**
+   * G3：被控者本机静音。status 在会话中是 2s 一拍（IDLE/ACTIVE 周期），纯 status
+   * 驱动会让按钮点下去两秒才动——所以本地先落乐观值，status 到达后再校正。
+   * 后端已生效，校正值与乐观值一致，不会闪。
+   */
+  const [audioLocalMute, setAudioLocalMute] = useState(false);
+  useEffect(() => {
+    setAudioLocalMute(rc.status?.audio_local_mute ?? false);
+  }, [rc.status?.audio_local_mute]);
+  const toggleAudioLocalMute = useCallback(() => {
+    const next = !audioLocalMute;
+    setAudioLocalMute(next);
+    // 失败（例如后端拒绝）必须回滚，否则按钮停在一个假状态上
+    void rcSetAudioLocalMute(next).catch(() => setAudioLocalMute(!next));
+  }, [audioLocalMute]);
+
   // 窗口可能 hide：有新申请时 toast + 拉起窗口，避免 120s 超时前用户毫无感知
   useEffect(() => {
     const pending = rc.status?.pending ?? [];
@@ -43,16 +60,7 @@ export function RcOverlay() {
           "info",
         );
         // 窗口 hide/失焦时用户看不见 toast：主动拉起（等同系统级提醒）
-        void (async () => {
-          try {
-            const { getCurrentWindow } = await import("@tauri-apps/api/window");
-            const w = getCurrentWindow();
-            if (!(await w.isVisible())) await w.show();
-            await w.setFocus();
-          } catch {
-            /* 非 Tauri 或权限不足时忽略 */
-          }
-        })();
+        void summonMainWindow();
       }
     }
     // 清掉已消失的
@@ -125,6 +133,8 @@ export function RcOverlay() {
           onDismissScopeNotice={rc.clearScopeNotice}
           streamNotice={rc.streamNotice}
           onDismissStreamNotice={rc.clearStreamNotice}
+          audioLocalMute={audioLocalMute}
+          onToggleAudioLocalMute={toggleAudioLocalMute}
           onEnd={() => {
             void rc.end().then((ok) => {
               if (ok) toast("已结束远程会话", "success");

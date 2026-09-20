@@ -99,6 +99,8 @@ impl OutboundVideo {
         self.spawn_loss_sampler();
         // P2-1：视频数据报读取（P 帧低延迟通道），与可靠流并行
         self.spawn_video_dgram_reader();
+        // G3：音频流接收（被控端另开的单向流），与视频两条路并行
+        self.spawn_audio_acceptor();
         // 断流的真实理由（Err 路径才有）；其它退出路径维持原来的「画面流中断」。
         let mut end_reason: Option<String> = None;
         loop {
@@ -228,6 +230,82 @@ impl OutboundVideo {
         #[cfg(not(target_os = "windows"))]
         {
             let _ = &self.conn;
+        }
+    }
+
+    /// G3：音频流接收。被控端为音频**另开**单向 QUIC 流：先写 `PPAUD1` 头 +
+    /// AAC 配置（采样率/声道/ASC），其后每包 `u32 len | u8 type | u64 pts | payload`。
+    /// 本循环持续 accept_uni：被控端静音→恢复会换新流，旧流 EOF 后新流会被这里
+    /// 兜住。非音频流（旧版本对端不会发；陌生协议）头识别失败直接关。
+    /// 有界退出同 P0-1 B5：500ms 一拍查会话。
+    fn spawn_audio_acceptor(&self) {
+        #[cfg(target_os = "windows")]
+        {
+            let svc = self.svc.clone();
+            let peer = self.peer.clone();
+            let conn = self.conn.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    if !svc.session_is(super::protocol::SessionPhase::OutboundActive, &peer) {
+                        break;
+                    }
+                    let mut stream = tokio::select! {
+                        r = conn.accept_uni() => match r {
+                            Ok(s) => s,
+                            Err(_) => break,
+                        },
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => continue,
+                    };
+                    // ── 流头 ──
+                    let mut head = [0u8; super::audio::MAGIC.len() + 4];
+                    if stream.read_exact(&mut head).await.is_err() {
+                        continue;
+                    }
+                    let json_len = u32::from_le_bytes(head[super::audio::MAGIC.len()..].try_into().unwrap()) as usize;
+                    if json_len == 0 || json_len > 4096 {
+                        continue;
+                    }
+                    let mut json = vec![0u8; json_len];
+                    if stream.read_exact(&mut json).await.is_err() {
+                        continue;
+                    }
+                    let mut whole = Vec::with_capacity(head.len() + json.len());
+                    whole.extend_from_slice(&head);
+                    whole.extend_from_slice(&json);
+                    let Some((cfg, _used)) = super::audio::try_parse_stream_header(&whole) else {
+                        log::debug!("[RC] 收到非音频单向流，已忽略");
+                        continue;
+                    };
+                    log::info!(
+                        "[RC] 音频流已接通：{}Hz 立体声 {}kbps",
+                        cfg.sr,
+                        cfg.br
+                    );
+                    svc.audio_begin(cfg);
+                    // ── 包循环 ──
+                    loop {
+                        let mut lb = [0u8; 4];
+                        if stream.read_exact(&mut lb).await.is_err() {
+                            break;
+                        }
+                        let n = u32::from_le_bytes(lb) as usize;
+                        // type(1) + pts(8) + payload；上限 64KB（128kbps 一帧几百字节）
+                        if !(9..=64 * 1024).contains(&n) {
+                            break;
+                        }
+                        let mut body = vec![0u8; n];
+                        if stream.read_exact(&mut body).await.is_err() {
+                            break;
+                        }
+                        let pts = u64::from_le_bytes(body[1..9].try_into().unwrap());
+                        svc.audio_push(pts, body[9..].to_vec());
+                    }
+                }
+            });
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (&self.svc, &self.peer, &self.conn);
         }
     }
 

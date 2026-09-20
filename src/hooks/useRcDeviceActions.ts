@@ -20,12 +20,15 @@ export function useRcDeviceActions({
   onForget,
   onSetAllowed,
   onTrustToggle,
+  onAutoAcceptToggle,
   onRename,
   toast,
 }: {
   onForget: (id: string) => Promise<boolean>;
   onSetAllowed: (id: string, allowed: boolean) => Promise<boolean>;
   onTrustToggle: (id: string, trusted: boolean) => Promise<boolean>;
+  /** 决策 10：切换「自动接收此设备推送的文件」。 */
+  onAutoAcceptToggle: (id: string, on: boolean) => Promise<boolean>;
   onRename: (id: string, note: string) => Promise<boolean>;
   toast: ToastFn;
 }) {
@@ -95,5 +98,28 @@ export function useRcDeviceActions({
     [onTrustToggle, toast],
   );
 
-  return { forget, setAllowed, saveRename, toggleTrust };
+  /**
+   * 决策 10：自动接收文件（对方推送时跳过确认条）。
+   *
+   * 与 `toggleTrust` 是两件独立的事，**文案必须说清方向**：这条只影响「别人发文件给我」，
+   * 不影响「要不要接管我的屏幕」——两句话混用会让人以为开了这个对方就能控制本机。
+   */
+  const toggleAutoAccept = useCallback(
+    async (id: string, on: boolean): Promise<boolean> => {
+      const ok = await onAutoAcceptToggle(id, on);
+      if (ok) {
+        toast(
+          on
+            ? "已开启自动接收：这台设备发来的文件会自动存到默认接收目录"
+            : "已关闭自动接收：这台设备发文件前会先询问你",
+          "success",
+        );
+      }
+      return ok;
+    },
+    [onAutoAcceptToggle, toast],
+  );
+
+  return { forget, setAllowed, saveRename, toggleTrust, toggleAutoAccept };
 }
+

@@ -73,6 +73,11 @@ pub enum InputEvent {
     /// 发起端解码断链（丢包/花屏）时请求被控端下一帧强制 IDR。
     /// 不注入本机、不要求 Control——弱网自愈的主通道（2026-09-19）。
     RequestKey,
+    /// G3：发起端开关系统声音（音频流）。会话中切换，被控端以可见提示回显
+    ///（emit_stream_note，同画质变更的 Q10 通道）。不注入本机、不要求 Control。
+    AudioOn {
+        on: bool,
+    },
 }
 
 /// 远端光标形状。由被控端比对系统标准光标句柄得出，
@@ -434,7 +439,8 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
         InputEvent::SetQuality { .. }
         | InputEvent::SetCaptureScope { .. }
         | InputEvent::SetCodec { .. }
-        | InputEvent::RequestKey => Ok(()),
+        | InputEvent::RequestKey
+        | InputEvent::AudioOn { .. } => Ok(()),
     }
 }
 

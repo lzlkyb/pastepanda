@@ -750,6 +750,21 @@ pub async fn rc_device_trust_set(
     Ok(())
 }
 
+/// 决策 10：设置某台设备的「自动接收文件」。`on=false` 即恢复每次确认。
+///
+/// 🔴 它只影响**要不要弹确认条**，不影响门禁（`gate_inbound` 一律先跑）。
+#[tauri::command]
+pub async fn rc_device_auto_accept_set(
+    app: AppHandle,
+    svc: State<'_, Arc<RcService>>,
+    node_id: String,
+    on: bool,
+) -> Result<(), String> {
+    svc.set_device_auto_accept(&node_id, on)?;
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn rc_end_session(app: AppHandle, svc: State<'_, Arc<RcService>>) -> Result<(), String> {
     svc.end_session("用户结束会话").await?;
@@ -853,6 +868,92 @@ pub fn encode_frame_batch(frames: &[crate::rc::video::VideoFrame]) -> Vec<u8> {
 pub fn rc_drain_frames(svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
     let frames = svc.drain_frames();
     tauri::ipc::Response::new(encode_frame_batch(&frames))
+}
+
+// ── G3 音频 ─────────────────────────────────────────────────────────────
+
+/// 发起端批量取音频（原始二进制直通 ArrayBuffer，同 `rc_drain_frames` 思路）。
+///
+/// 布局（小端）：`magic "RCA1"` | `count u32`，后跟 count 条：
+/// `type u8`（0=cfg 1=AAC帧）| `pts_ms i64`（cfg 恒 0）| `len u32` | data
+/// cfg 的 data 是 JSON `{"sr","ch","asc","br"}`（asc=base64 的 AudioSpecificConfig，
+/// 前端喂 WebCodecs `description`）；每次 drain 都带当前 cfg，前端按内容变化才重配。
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn rc_drain_audio(svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let (cfg, pkts) = svc.drain_audio();
+    let mut items: Vec<(u8, i64, Vec<u8>)> = Vec::with_capacity(pkts.len() + 1);
+    if let Some(c) = cfg {
+        let json = serde_json::json!({
+            "sr": c.sr,
+            "ch": c.ch,
+            "asc": STANDARD.encode(&c.asc),
+            "br": c.br,
+        });
+        items.push((0, 0, json.to_string().into_bytes()));
+    }
+    for p in pkts {
+        items.push((1, p.pts_ms as i64, p.data));
+    }
+    let mut buf = Vec::with_capacity(8 + items.len() * 16);
+    buf.extend_from_slice(b"RCA1");
+    buf.extend_from_slice(&(items.len() as u32).to_le_bytes());
+    for (t, pts, data) in items {
+        buf.push(t);
+        buf.extend_from_slice(&pts.to_le_bytes());
+        buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&data);
+    }
+    tauri::ipc::Response::new(buf)
+}
+
+/// 非 Windows 平台的空批（本功能只在 Windows 被控端产生数据）。
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn rc_drain_audio(_svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
+    tauri::ipc::Response::new(b"RCA1\x00\x00\x00\x00".to_vec())
+}
+
+/// 发起端：会话中开关系统声音。被控端有可见提示（emit_stream_note）。
+#[tauri::command]
+pub async fn rc_audio_toggle(svc: State<'_, Arc<RcService>>, on: bool) -> Result<(), String> {
+    svc.send_input(&crate::rc::input::InputEvent::AudioOn { on })
+        .await
+}
+
+/// 被控端：本机静音系统声音（G3）。一票否决——对端开着也听不到。
+///
+/// 与 `rc_audio_toggle` 分工相反：那条是**发起端**的开关，会出网（`InputEvent::AudioOn`）、
+/// 并让被控端横幅出现提示；这条是**被控者本人**的开关，**纯本机状态、不出网**。
+/// 代价是对端此刻没有「对方静音了」的提示——它只会听到静音（已知限制，见清单 G3）。
+///
+/// 跨会话保持：关了就是关了，下次会话仍是关（隐私开关不做自动回退）。
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn rc_set_audio_local_mute(svc: State<'_, Arc<RcService>>, muted: bool) -> Result<(), String> {
+    svc.set_audio_local_mute(muted);
+    log::info!(
+        "[RC] 本机系统声音{}（{}）",
+        if muted { "已静音" } else { "已恢复" },
+        if muted {
+            "对方将听不到本机播放的声音"
+        } else {
+            "对方可再次听到本机播放的声音"
+        }
+    );
+    Ok(())
+}
+
+/// 非 Windows：音频链路整体是 Windows 被控端专属。**明确报错**而不是静默成功——
+/// 前端据返回值提示，静默成功会让按钮切到一个假状态。
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn rc_set_audio_local_mute(
+    _svc: State<'_, Arc<RcService>>,
+    _muted: bool,
+) -> Result<(), String> {
+    Err("系统声音只支持 Windows 被控端".into())
 }
 
 #[cfg(test)]

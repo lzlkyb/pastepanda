@@ -209,6 +209,12 @@ pub struct DxgiPool {
 unsafe impl Send for DxgiPool {}
 unsafe impl Send for OutputDup {}
 
+impl Default for DxgiPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DxgiPool {
     pub fn new() -> Self {
         Self {

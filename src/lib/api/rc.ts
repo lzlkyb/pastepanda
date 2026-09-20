@@ -109,6 +109,13 @@ export interface RcStatus {
     max: number;
     gave_up: boolean;
   } | null;
+  /**
+   * G3：被控端**本机**是否已静音系统声音（被控者自己在横幅上关的）。
+   *
+   * 与「对端开关」不是一回事：这个为 true 时对端开不开都听不到。**跨会话保持**，
+   * 所以会话结束后仍可能为 true（下次被控时横幅按钮仍是「已静音」态）。
+   */
+  audio_local_mute?: boolean;
 }
 
 /** 路径切换事件 payload（C：relay ↔ 直连 自动切换）。 */
@@ -138,6 +145,12 @@ export interface RcTargetDevice {
   note?: string;
   /** 方案 D「免确认直连」：这台设备发起远程时跳过人工同意。默认 false。 */
   trusted?: boolean;
+  /**
+   * 决策 10：这台设备**推送**文件过来时跳过确认条（自动落进系统下载目录）。
+   * 默认 false。与 `trusted` 是两件独立的事：那条管「接管我的屏幕」，
+   * 这条只管「自动收下它发的文件」——可以只允许后者。
+   */
+  auto_accept?: boolean;
 }
 
 export interface RcSyncOffer {
@@ -338,6 +351,17 @@ export function rcDeviceTrustSet(nodeId: string, trusted: boolean): Promise<void
   return invoke("rc_device_trust_set", { nodeId, trusted });
 }
 
+/**
+ * 决策 10：设置某台设备的「自动接收文件」。`on=false` 即恢复每次确认。
+ *
+ * 🔴 它**只影响要不要弹确认条，不影响门禁**：被禁用 / 未配对的设备照样进不来。
+ * 🔴 只对**推送**方向生效（对方发给本机）。取回方向是「我挑文件发给对方」，
+ *    没有可自动的东西，所以那一边不显示这个开关。
+ */
+export function rcDeviceAutoAcceptSet(nodeId: string, on: boolean): Promise<void> {
+  return invoke("rc_device_auto_accept_set", { nodeId, on });
+}
+
 export function rcEndSession(): Promise<void> {
   return invoke("rc_end_session");
 }
@@ -445,6 +469,92 @@ export function rcDrainFrames(): Promise<ArrayBuffer> {
   return invoke<ArrayBuffer>("rc_drain_frames");
 }
 
+// ── G3 音频 ─────────────────────────────────────────────────────────────
+
+/** 音频流配置（后端 `AudioCfg`）。asc = AudioSpecificConfig，喂 AudioDecoder `description`。 */
+export interface RcAudioCfg {
+  sr: number;
+  ch: number;
+  asc: Uint8Array;
+  br: number;
+}
+
+/** 一帧裸 AAC（AAC-LC 帧相互独立，丢一帧只咔一声）。 */
+export interface RcAudioFrame {
+  ptsMs: number;
+  data: Uint8Array;
+}
+
+export type RcAudioItem = { type: 0; cfg: RcAudioCfg } | ({ type: 1 } & RcAudioFrame);
+
+/**
+ * 解析 `rc_drain_audio` 返回的原始字节。布局见后端 `rc_drain_audio` 命令
+ * （全部小端）：`"RCA1" u32 | count u32`，后跟 count 条
+ * `type u8 | pts_ms i64 | len u32 | data`。type 0 = cfg（JSON），1 = AAC 帧。
+ * 头不合法/截断返回空结果——音频可以无声，不能让解析异常打断会话。
+ */
+export function parseAudioBatch(buf: ArrayBuffer): { cfg: RcAudioCfg | null; items: RcAudioFrame[] } {
+  const u8 = new Uint8Array(buf);
+  const empty = { cfg: null, items: [] as RcAudioFrame[] };
+  if (u8.length < 8 || u8[0] !== 0x52 || u8[1] !== 0x43 || u8[2] !== 0x41 || u8[3] !== 0x31) {
+    return empty;
+  }
+  const v = new DataView(buf);
+  const count = v.getUint32(4, true);
+  let cfg: RcAudioCfg | null = null;
+  const items: RcAudioFrame[] = [];
+  let off = 8;
+  for (let i = 0; i < count; i++) {
+    if (off + 13 > u8.length) break;
+    const type = v.getUint8(off);
+    const ptsMs = Number(v.getBigInt64(off + 1, true));
+    const len = v.getUint32(off + 9, true);
+    off += 13;
+    if (off + len > u8.length) break;
+    const data = new Uint8Array(buf, off, len);
+    off += len;
+    if (type === 0) {
+      try {
+        const j = JSON.parse(new TextDecoder().decode(data)) as {
+          sr: number;
+          ch: number;
+          asc: string;
+          br: number;
+        };
+        const bin = atob(j.asc);
+        const asc = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) asc[k] = bin.charCodeAt(k);
+        cfg = { sr: j.sr, ch: j.ch, asc, br: j.br };
+      } catch {
+        /* 坏包忽略 */
+      }
+    } else if (len > 0) {
+      items.push({ ptsMs, data });
+    }
+  }
+  return { cfg, items };
+}
+
+/** 批量取走后端攒下的全部音频包（每次都带当前 cfg，内容变了才重配解码器）。 */
+export function rcDrainAudio(): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("rc_drain_audio");
+}
+
+/** G3：会话中开关系统声音（被控端有可见提示）。 */
+export function rcAudioToggle(on: boolean): Promise<void> {
+  return invoke("rc_audio_toggle", { on });
+}
+
+/**
+ * G3：被控端**本机**静音系统声音（一票否决——对端开着也听不到）。
+ *
+ * 纯本机状态、不出网：对端此刻拿不到「对方静音了」的信号，只表现为没有声音。
+ * 跨会话保持（隐私开关不做自动回退），应用重启回到默认「可被听」。
+ */
+export function rcSetAudioLocalMute(muted: boolean): Promise<void> {
+  return invoke("rc_set_audio_local_mute", { muted });
+}
+
 export type RcInputEvent =
   | { kind: "mouse_move"; x: number; y: number }
   | { kind: "mouse_button"; x: number; y: number; button: number; down: boolean }
@@ -459,7 +569,9 @@ export type RcInputEvent =
   /** Q5：码率倍率（50–200，100 = 跟随链路）。与弱网自动缩放相乘。 */
   | { kind: "set_bitrate_pct"; pct: number }
   /** 解码断链 → 请求被控端下一帧强制 IDR（弱网花屏自愈） */
-  | { kind: "request_key" };
+  | { kind: "request_key" }
+  /** G3：开关系统声音（音频流）。被控端有可见提示。 */
+  | { kind: "audio_on"; on: boolean };
 
 export function rcSendInput(event: RcInputEvent): Promise<void> {
   return invoke("rc_send_input", { event });

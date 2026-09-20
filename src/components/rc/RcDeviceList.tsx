@@ -23,9 +23,11 @@ export function RcDeviceList({
   requestCap,
   onRequest,
   onRequestWith,
+  onSendFiles,
   onForget,
   onSetAllowed,
   onTrustToggle,
+  onAutoAcceptToggle,
   onRename,
   onPair,
   toast,
@@ -41,10 +43,14 @@ export function RcDeviceList({
   onRequest: (id: string) => void;
   /** ⋯ 菜单里显式指定档发起——原「申请卡」的选档职能，改成按需展开。 */
   onRequestWith: (id: string, cap: RcCapability) => void;
+  /** G6：打开「文件传输」页并预选这台设备（独立通道，不受会话进行中限制）。 */
+  onSendFiles?: (id: string) => void;
   onForget: (id: string) => Promise<boolean>;
   onSetAllowed: (id: string, allowed: boolean) => Promise<boolean>;
   /** A1：切换「免确认直连」（返回 false 时调用方已 toast）。 */
   onTrustToggle: (id: string, trusted: boolean) => Promise<boolean>;
+  /** 决策 10：切换「自动接收此设备推送的文件」。 */
+  onAutoAcceptToggle: (id: string, on: boolean) => Promise<boolean>;
   /** A1：保存备注名。返回 false 时编辑框保持打开。 */
   onRename: (id: string, note: string) => Promise<boolean>;
   /** B9：纯同步配对设备「列得出却发不起」，给一个去完成远程配对的入口。 */
@@ -65,9 +71,11 @@ export function RcDeviceList({
           requestCap={requestCap}
           onRequest={onRequest}
           onRequestWith={onRequestWith}
+          onSendFiles={onSendFiles}
           onForget={onForget}
           onSetAllowed={onSetAllowed}
           onTrustToggle={onTrustToggle}
+          onAutoAcceptToggle={onAutoAcceptToggle}
           onRename={onRename}
           onPair={onPair}
           toast={toast}

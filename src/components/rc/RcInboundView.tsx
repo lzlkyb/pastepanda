@@ -18,7 +18,9 @@ import { formatDuration } from "@/lib/rcSessionStats";
 import { scopeLabelLong } from "@/lib/rcScope";
 import { capabilityLabel } from "@/lib/rcRequest";
 import { qualityHudLabel } from "@/lib/rcQuality";
+import { useRcFile } from "@/hooks/useRcFile";
 import type { RcSession } from "@/lib/api/rc";
+import { RcFileAskCard } from "./RcFileAsk";
 import styles from "./RemoteComputer.module.css";
 
 export function RcInboundView({
@@ -57,6 +59,12 @@ export function RcInboundView({
 
   const canControl = session.capability === "control";
   const name = session.peer_name || fingerprintOf(session.peer);
+
+  // G6：文件请求的**完整卡片**（工作台这一份）。主窗常驻横幅那份是一行版，
+  // 两者渲染同一份状态；这里多摆指纹 + 文件名 + 大小，因为工作台是用户
+  // 「做判断的地方」——核对信息比省版面重要。
+  const file = useRcFile(session.peer);
+  const ask = file.asks[0] ?? null;
 
   const endWithConfirm = async () => {
     const ok = await confirmDialog({
@@ -112,6 +120,10 @@ export function RcInboundView({
             </button>
           </div>
         )}
+
+        {/* G6：文件请求确认条。放在「核对用的事实」之前——它是**现在就要做的决定**，
+            而下面是「我交出去了什么」的回顾。 */}
+        {ask && <RcFileAskCard ask={ask} busy={busy} onRespond={file.respond} />}
 
         {/* 核对用的事实，不是装饰：指纹是身份锚点，范围和画质是「我交出去了什么」。 */}
         <dl className={styles.ibFacts}>

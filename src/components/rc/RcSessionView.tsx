@@ -6,9 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Eye, Loader2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
-import type { RcSession } from "@/lib/api/rc";
+import { rcAudioToggle, type RcSession } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcFrames } from "@/hooks/useRcFrames";
+import { useRcAudio } from "@/hooks/useRcAudio";
 import { useRcCursor } from "@/hooks/useRcCursor";
 import { useRcInput, releaseModifiers } from "@/hooks/useRcInput";
 import { useRcLinkState } from "@/hooks/useRcLinkState";
@@ -86,6 +87,14 @@ export function RcSessionView({
   });
   // P1-6：远端光标形状（非箭头形状换用本地系统光标渲染）
   const cursorShape = useRcCursor(session.id);
+  // G3：系统声音（默认开）。开关变化（含挂载断言默认态）→ AudioOn 发被控端；
+  // 旧版本对端解不出这个事件，安全忽略。
+  const [audioOn, setAudioOn] = useState(true);
+  useRcAudio(session.id, audioOn);
+  const toggleAudio = useCallback(() => setAudioOn((v) => !v), []);
+  useEffect(() => {
+    void rcAudioToggle(audioOn).catch(() => {});
+  }, [audioOn, session.id]);
 
   const onAutoFailToast = useCallback(
     (e: string) => toast(`自动同步剪贴板失败：${e}`, "error"),
@@ -327,6 +336,8 @@ export function RcSessionView({
         onPickQuality={(k) => setQPick(k)}
         onPickScope={(s) => setScopePick(s)}
         onPickBitrate={(p) => setBitratePick(p)}
+        audioOn={audioOn}
+        onToggleAudio={toggleAudio}
         clipAuto={clipAuto}
         // B5：基线由 hook 在开启时自动建立，这里只切开关，不手动 reset
         onToggleClipAuto={() => setClipAuto((v) => !v)}

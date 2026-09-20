@@ -134,14 +134,33 @@ fn test_pp1码能原样解回来且短到一行() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 空名下限：32B 公钥 ⇒ base58 44 字符 + 校验 4 + 分隔 5 = **53 字符**。
+/// 空名下限：32B 公钥 ⇒ base58 **43 或 44** 字符 + 校验 4 + 分隔 5 = **52 或 53 字符**。
 /// 这条钉的是格式本身（有人改分隔符 / 校验位宽，这里先红）。
+///
+/// 🔴 长度是**两档**、不是一档：数值 `< 58^43` 的公钥（约 6%）base58 只有 43 位。
+///    这里用的是**随机身份**，钉死 53 就变成 ~6% 概率的偶发失败——
+///    2026-09-20 全量跑实测命中过一次（`left: 52, right: 53`），
+///    而同一次里隔壁 `test_43位body的短码必须能解回` 是绿的：**两条测试对同一个
+///    条件给了相反的期望**，这就是偶发的确证，不是环境问题。
+///    43 位那档的确定性回归由隔壁那条（`[0x01; 32]` 构造）负责，这里只保证「落在两档之内」。
 #[test]
 fn test_pp1码空名时的长度钉住格式() {
     let dir = tmp_dir("pp1min");
     let me = NodeIdentity::load_or_create(&dir).unwrap();
     let code = invite::encode(&me, "").unwrap();
-    assert_eq!(code.len(), 53, "实际：{}", code);
+    assert!(
+        code.len() == 52 || code.len() == 53,
+        "空名码只可能是 52（43 位 body）或 53（44 位 body），实际 {}：{}",
+        code.len(),
+        code
+    );
+    // 结构比长度更值得钉：`PP1-` 前缀 + 末段恰好 4 位校验
+    assert!(code.starts_with("PP1-"), "前缀变了：{code}");
+    assert_eq!(
+        code.rsplit('-').next().map(str::len),
+        Some(4),
+        "校验位宽从 4 变了（改这里要同步改 `invite.rs::CHECK_MOD` 的注释与 v1 兼容说明）：{code}"
+    );
     assert_eq!(decode_kb(&code, NOW).unwrap().node_id, me.node_id());
     let _ = std::fs::remove_dir_all(&dir);
 }

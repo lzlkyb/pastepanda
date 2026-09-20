@@ -69,6 +69,7 @@ export function useRc(enabled: boolean) {
     setCaptureScope: a.setCaptureScope,
     setDeviceAllowed: a.setDeviceAllowed,
     setDeviceTrust: a.setDeviceTrust,
+    setDeviceAutoAccept: a.setDeviceAutoAccept,
     createInvite: a.createInvite,
     previewInvite: a.previewInvite,
     pair: a.pair,

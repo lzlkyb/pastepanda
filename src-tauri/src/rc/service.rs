@@ -111,6 +111,11 @@ pub struct RcStatus {
     pub outbound_error: Option<String>,
     /// 发起端：自动重连进度（Q6）。None = 没有。前端据此展示「正在重连 N/M」。
     pub reconnecting: Option<RcReconnectInfo>,
+    /// G3：被控端**本机**是否已静音系统声音（被控者自己在横幅上关的）。
+    ///
+    /// 与「对端开关」是两件事：这个为 true 时，对端开不开都听不到。跨会话保持，
+    /// 所以会话结束后仍可能为 true（下次被控时横幅按钮仍是「已静音」态）。
+    pub audio_local_mute: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -172,6 +177,12 @@ pub struct RcService {
     peer_hevc: std::sync::atomic::AtomicBool,
     /// 剪贴板同步的状态与「跨会话串扰」不变量（见 `clipboard.rs`）。
     clip: ClipboardState,
+    /// G6 文件传输的状态（待响应请求 + 任务列表，见 `file_state.rs`）。
+    ///
+    /// 与 `clip` 同一种收法：**字段 / 判据 / 作废入口三者同文件**。文件通道
+    /// 独立于 RC 会话（独立 ALPN），所以这里没有「会话代」概念，只有任务 id——
+    /// 断连由 `file_transfer.rs` 显式收口。
+    pub(super) file: super::file_state::FileState,
     /// 被控端：推 JPEG 时的发送半流（End 帧用；发起端走 outbound_send）。
     pub(super) inbound_send:
         tokio::sync::Mutex<Option<std::sync::Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>>>,
@@ -201,6 +212,27 @@ pub struct RcService {
     pub(super) link: LinkState,
     /// 被控端：当前被按住的 vk / 鼠标键集合，会话收口时补发 up（防止 Ctrl/Shift/鼠标键卡死）。
     pub(super) pressed: std::sync::Mutex<super::pressed::Pressed>,
+    // ── G3 音频 ──
+    /// 发起端：音频收流状态（cfg + 待取包）。accept_uni 的音频流写入，
+    /// `rc_drain_audio` 命令取走。
+    #[cfg(target_os = "windows")]
+    audio_rx: Mutex<super::audio::AudioRx>,
+    /// 被控端：对端申请了系统声音（Request.audio）。false = 旧对端 / 对端关声音。
+    #[cfg(target_os = "windows")]
+    audio_peer_wants: std::sync::atomic::AtomicBool,
+    /// 被控端：**对端**会话中开关的镜像（对端 AudioOn(false) 置位；worker 每轮读）。
+    ///
+    /// ❗ 名字叫 muted，语义其实是「对端此刻想不想要」——**不是**「本机给不给」。
+    /// 本机自己的意愿在 [`audio_local_mute`](Self::audio_local_mute)：两者都与
+    /// `audio_peer_wants` 相与（见 `audio_wanted`），任一为否即不出声。
+    #[cfg(target_os = "windows")]
+    audio_muted: std::sync::atomic::AtomicBool,
+    /// 被控端：**本机**静音（被控者自己在横幅上关的）。一票否决——对端开着也不出声。
+    ///
+    /// **跨会话保持**：这是隐私意愿，不做自动回退（关了就是关了，下次会话仍是关），
+    /// 只有被控者自己再点开才恢复；不落盘，重启应用回到默认「可被听」。
+    #[cfg(target_os = "windows")]
+    audio_local_mute: std::sync::atomic::AtomicBool,
 }
 
 /// 发起端「免确认设备断线自动重连」的一轮重试 episode 的**内部**状态（Q6）。
@@ -350,6 +382,7 @@ impl RcService {
             peer_monitors: Mutex::new(Vec::new()),
             peer_hevc: std::sync::atomic::AtomicBool::new(false),
             clip: ClipboardState::new(),
+            file: super::file_state::FileState::new(),
             inbound_send: tokio::sync::Mutex::new(None),
             notify: NotifyState::new(),
             last_outbound_error: Mutex::new(None),
@@ -360,6 +393,14 @@ impl RcService {
             stream: StreamCfg::new(),
             link: LinkState::new(),
             pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
+            #[cfg(target_os = "windows")]
+            audio_rx: Mutex::new(super::audio::AudioRx::default()),
+            #[cfg(target_os = "windows")]
+            audio_peer_wants: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(target_os = "windows")]
+            audio_muted: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(target_os = "windows")]
+            audio_local_mute: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -601,6 +642,11 @@ impl RcService {
         self.notify.set_cursor_notify(f);
     }
 
+    /// 注入文件传输状态回调（G6，lib.rs 在 manage 之后调用）。
+    pub fn set_file_notify(&self, f: super::notify::FileNotifyFn) {
+        self.notify.set_file_notify(f);
+    }
+
     /// 被控端上报的光标形状变化 → 抛给发起端前端。
     pub(super) fn set_remote_cursor(&self, shape: String) {
         self.notify.emit_cursor_changed(&shape);
@@ -628,6 +674,99 @@ impl RcService {
     /// 不是因为需要跨模块调用。
     pub(crate) fn emit_scope_changed(&self, scope: &str) {
         self.notify.emit_scope_changed(scope);
+    }
+
+    // ── G3 音频 ─────────────────────────────────────────────────────────
+
+    /// 被控端：登记对端的音频申请（Accept 前调用）。
+    #[cfg(target_os = "windows")]
+    pub(super) fn audio_set_peer_wants(&self, wants: bool) {
+        self.audio_peer_wants
+            .store(wants, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// 被控端：对端是否申请了系统声音（音频任务只看这个决定起不起）。
+    #[cfg(target_os = "windows")]
+    pub(super) fn audio_peer_wants(&self) -> bool {
+        self.audio_peer_wants
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 音频此刻该不该出。三因子取与，任一为否即不出声：
+    /// 对端申请了（Request.audio）&& 对端没在会话里关掉 && **本机没静音**。
+    /// 采集 worker 每轮读，三者会话中任意时刻翻转都即时生效（停即关流、开即重发 Cfg）。
+    #[cfg(target_os = "windows")]
+    pub(super) fn audio_wanted(&self) -> bool {
+        self.audio_peer_wants.load(std::sync::atomic::Ordering::SeqCst)
+            && !self.audio_muted.load(std::sync::atomic::Ordering::SeqCst)
+            && !self.audio_local_mute.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 被控端：**对端**的开关（只由 `InputEvent::AudioOn` 驱动，不接本机 UI）。
+    #[cfg(target_os = "windows")]
+    pub fn set_audio_muted(&self, muted: bool) {
+        self.audio_muted
+            .store(muted, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// 被控端：**本机**静音（被控者自己关的，一票否决）。跨会话保持，见字段注释。
+    #[cfg(target_os = "windows")]
+    pub fn set_audio_local_mute(&self, muted: bool) {
+        self.audio_local_mute
+            .store(muted, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// 被控端：本机是否已静音。status 上报给前端画按钮态；与字段同名同
+    /// `audio_peer_wants()` 的先例。
+    #[cfg(target_os = "windows")]
+    pub fn audio_local_mute(&self) -> bool {
+        self.audio_local_mute
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 发起端：音频流头部到了（新音频流开始）——替换缓冲。
+    #[cfg(target_os = "windows")]
+    pub(super) fn audio_begin(&self, cfg: super::audio::AudioCfg) {
+        self.audio_rx
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .begin(cfg);
+    }
+
+    /// 发起端：音频包入队（满则丢最旧——声音要新鲜）。
+    #[cfg(target_os = "windows")]
+    pub(super) fn audio_push(&self, pts_ms: u64, data: Vec<u8>) {
+        self.audio_rx
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(pts_ms, data);
+    }
+
+    /// 发起端：前端取音频（cfg 每次都带，前端按 asc 变了才重配解码器）。
+    #[cfg(target_os = "windows")]
+    pub fn drain_audio(&self) -> (Option<super::audio::AudioCfg>, Vec<super::audio::AudioPkt>) {
+        let mut rx = self.audio_rx.lock().unwrap_or_else(|p| p.into_inner());
+        (
+            rx.cfg.clone(),
+            rx.queue.drain(..).collect(),
+        )
+    }
+
+    /// 会话收口：音频状态清零（对端申请位、对端开关、收流缓冲）。
+    ///
+    /// ❗ **不清 `audio_local_mute`**：它是被控者本人的隐私意愿，属于「跨会话保持」
+    /// 的状态（字段注释里有理由）。会话结束顺手把它抹掉，等于每来一个人就把用户的
+    /// 静音自动解开一次——隐私开关不该有这种自动回退。
+    #[cfg(target_os = "windows")]
+    pub(super) fn audio_reset(&self) {
+        self.audio_peer_wants
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.audio_muted
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.audio_rx
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .reset();
     }
 
     /// 注入「对端改了画质/编码」的回调（lib.rs 在 manage 之后调用）。
@@ -891,6 +1030,14 @@ impl RcService {
         matches!(self.store.rc_device_get(node_id), Ok(Some(d)) if d.trusted)
     }
 
+    /// 决策 10：这台设备是否开了「自动接收文件」。
+    ///
+    /// 与 `device_trusted` 同一口径：只认 rc 配对表，仅同步配对、还没被远程用过
+    /// 的设备没有行可查 → 视为未开启（合理：自动接收的前提是它已经用过至少一次）。
+    pub fn device_auto_accept(&self, node_id: &str) -> bool {
+        matches!(self.store.rc_device_get(node_id), Ok(Some(d)) if d.auto_accept)
+    }
+
     /// 方案 D：设置「免确认直连」。仅同步配对的设备先幂等提升进 rc 表再设。
     ///
     /// 🔴 必须先确认**已配对**（rc 表或 sync 表有行）：对未知 id 不能顺手
@@ -904,7 +1051,22 @@ impl RcService {
         self.store.rc_device_trust_set(node_id, trusted)
     }
 
-    fn peer_name(&self, node_id: &str) -> String {
+    /// 决策 10：设置「自动接收此设备推送的文件」。
+    ///
+    /// 前置条件与 `set_device_trust` 完全一致（要先是本机认可的设备），
+    /// 少任何一个都会让开关在界面上点得动、却写不进去。
+    ///
+    /// 🔴 它只影响**要不要弹确认条**，不影响门禁：`gate_inbound` 一律先跑。
+    /// 🔴 只对推送方向生效（对方发给我）。
+    pub fn set_device_auto_accept(&self, node_id: &str, on: bool) -> Result<(), String> {
+        if !self.has_remote_trust(node_id) {
+            return Err("该设备尚未与本机配对，无法设置自动接收".into());
+        }
+        self.elevate_from_sync(node_id)?;
+        self.store.rc_device_auto_accept_set(node_id, on)
+    }
+
+    pub(super) fn peer_name(&self, node_id: &str) -> String {
         if let Ok(Some(d)) = self.store.rc_device_get(node_id) {
             return d.name;
         }
@@ -996,6 +1158,18 @@ impl RcService {
                     gave_up: s.gave_up,
                 },
             ),
+            // G3：本机静音。字段本身不带 cfg（与 peer_hevc 同例，跨平台可编译），
+            // 非 Windows 上没有音频链路，恒 false。
+            audio_local_mute: {
+                #[cfg(target_os = "windows")]
+                {
+                    self.audio_local_mute()
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    false
+                }
+            },
         }
     }
 
@@ -1267,7 +1441,9 @@ impl RcService {
         self.joins.deny(node_id, now_ms());
     }
 
-    fn transport_ready(&self) -> Option<(Endpoint, Arc<PresenceTable>)> {
+    /// 拿「已启动的端点 + presence 表」。`pub(super)` 是因为文件通道（G6）
+    /// 要自己拨号——它独立于 RC 会话，不复用会话的连接。
+    pub(super) fn transport_ready(&self) -> Option<(Endpoint, Arc<PresenceTable>)> {
         let g = self.running.lock().unwrap_or_else(|p| p.into_inner());
         g.as_ref().map(|r| (r.endpoint.clone(), r.presence.clone()))
     }
@@ -1382,6 +1558,8 @@ impl RcService {
                     }
                     svc.clear_frame();
                     svc.clear_outbox();
+                    #[cfg(target_os = "windows")]
+                    svc.audio_reset();
                     svc.note_rtt(0);
                     *svc.outbound_send.lock().await = Some(send);
                     *svc.outbound_conn.lock().await = Some(conn.clone());
@@ -1536,6 +1714,8 @@ impl RcService {
             uno_pass,
             // 本端支持视频数据报；旧对端 serde 忽略未知字段，照常受理
             vid_dgram: Some(true),
+            // G3：本端支持音频。会话中由 AudioOn 开关；被控端无渲染设备时自动无声
+            audio: Some(true),
         };
         // ❗ 这一对读写的失败必须过 `explain`：对端要是以「未配对 / 忙 / 被禁」为由
         //   关掉连接，原始错误只会是 `读帧长度失败：connection lost`（见 `explain`）。
@@ -1583,13 +1763,20 @@ impl RcService {
         };
         // 对端把 Request 送到了 = 它在线。刷 last_seen，跨网时设备列表才亮得起来。
         let _ = self.store.rc_device_touch(&peer, true);
-        let (requested, uno_code, uno_pass, peer_dgram) = match RcFrame::decode(&bytes) {
+        let (requested, uno_code, uno_pass, peer_dgram, peer_audio) = match RcFrame::decode(&bytes) {
             Ok(RcFrame::Request {
                 capability,
                 uno_code,
                 uno_pass,
                 vid_dgram,
-            }) => (capability, uno_code, uno_pass, vid_dgram == Some(true)),
+                audio,
+            }) => (
+                capability,
+                uno_code,
+                uno_pass,
+                vid_dgram == Some(true),
+                audio == Some(true),
+            ),
             Ok(_) => {
                 deny_and_close(&link_conn, &mut send, "期望 Request 帧", "not_request").await;
                 return;
@@ -1765,7 +1952,7 @@ impl RcService {
                     self.link.attach(&link_conn);
                     // R1：推 JPEG 画面直到会话结束（conn 一并交给推流任务：
                     // 鼠标数据报读取 + stats 采样都挂在它身上）
-                    spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram).await;
+                    spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_audio).await;
                     return;
                 }
                 Some(Err(_)) => {
@@ -2072,13 +2259,17 @@ async fn spawn_inbound_video(
     recv: iroh::endpoint::RecvStream,
     conn: iroh::endpoint::Connection,
     peer_dgram: bool,
+    peer_audio: bool,
 ) {
     let Some(svc) = global() else {
         return;
     };
+    // G3：对端申请了系统声音 → 音频 worker 由 InboundVideo::run 启动
+    svc.audio_set_peer_wants(peer_audio);
     let Some(video) =
-        super::inbound::InboundVideo::try_new(svc, peer, send, conn, peer_dgram)
+        super::inbound::InboundVideo::try_new(svc.clone(), peer, send, conn, peer_dgram)
     else {
+        svc.audio_reset();
         log::warn!("[RC] 被控推流启动前会话已结束，放弃推流");
         return;
     };
