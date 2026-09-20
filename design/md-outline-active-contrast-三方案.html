@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 大纲选中态对比度 · 三方案</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:28px 24px 60px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:18px;color:#fff;margin:0 0 4px}
+.sub{color:#7C8899;font-size:12px;margin:0 0 20px}
+h2{font-size:14px;color:#fff;margin:28px 0 8px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 12px;max-width:920px}
+.note b{color:#D6DEE8}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+.row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.card{width:280px;border-radius:10px;overflow:hidden;border:1px solid #2A2F37}
+.card .tag{font-size:11px;padding:6px 10px;background:#1C2027;color:#8fa3c4;border-bottom:1px solid #2A2F37}
+/* 大纲面板 — 结构抄 MarkdownOutline */
+.ol{width:100%;min-height:220px;display:flex;flex-direction:column}
+.olHead{padding:8px 12px 6px;font-size:11px;letter-spacing:.04em}
+.olList{padding:0 6px 10px;display:flex;flex-direction:column;gap:2px}
+.item{display:block;width:100%;border:none;text-align:left;padding:5px 8px;border-radius:5px;
+  font-size:12.5px;line-height:1.45;font-family:inherit;cursor:default;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.lv1{padding-left:8px;font-weight:600}
+.lv2{padding-left:18px;font-weight:500}
+.lv3{padding-left:28px}
+
+/* ── 现状（问题）暗/亮同款硬编码 ── */
+.cur-dark{background:rgba(0,0,0,.35)}
+.cur-dark .olHead{color:#8fa3c4}
+.cur-dark .item{color:#c4d0e4;background:transparent}
+.cur-dark .item.active{background:rgba(59,158,255,.2);color:#9fd0ff;box-shadow:inset 2px 0 0 #3b9eff}
+
+.cur-light{background:#E8EAEE}
+.cur-light .olHead{color:#8a8f98}
+.cur-light .item{color:#555;background:transparent}
+.cur-light .item.active{background:rgba(59,158,255,.2);color:#9fd0ff;box-shadow:inset 2px 0 0 #3b9eff}
+
+/* ── 方案 A：语义 token 自适应 ── */
+.tok-dark{background:#1a1d24}
+.tok-dark .olHead{color:#8fa3c4}
+.tok-dark .item{color:#c4d0e4;background:transparent}
+.tok-dark .item.active{background:#0A1E3A;color:#3B9EFF;box-shadow:inset 2px 0 0 #3B9EFF;font-weight:600}
+
+.tok-light{background:#E8EAEE}
+.tok-light .olHead{color:#8a8f98}
+.tok-light .item{color:#555;background:transparent}
+.tok-light .item.active{background:#E0F2FE;color:#0273AD;box-shadow:inset 2px 0 0 #0284C7;font-weight:600}
+
+/* ── 方案 B：亮色单独加码（更强底+更深字+更粗条） ── */
+.strong-light{background:#E8EAEE}
+.strong-light .olHead{color:#8a8f98}
+.strong-light .item{color:#555;background:transparent}
+.strong-light .item.active{
+  background:color-mix(in srgb,#0284C7 22%,#fff);
+  color:#025E8F;
+  box-shadow:inset 3px 0 0 #0284C7;
+  font-weight:700;
+}
+
+/* ── 方案 C：大纲固定深色条 ── */
+.fix-dark{background:#1e1e2e}
+.fix-dark .olHead{color:#8fa3c4}
+.fix-dark .item{color:#c4d0e4;background:transparent}
+.fix-dark .item.active{background:rgba(59,158,255,.28);color:#9fd0ff;box-shadow:inset 2px 0 0 #3B9EFF;font-weight:600}
+.fix-light-frame{background:linear-gradient(90deg,#1e1e2e 0 100%,#E8EAEE 0);padding:0}
+.fix-light-frame .fakeEditor{background:#F5F6F8;color:#333;padding:12px;font-size:12px;min-height:80px}
+
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:8px;padding:10px 12px;
+  font-size:12px;color:#9FBF9F;max-width:920px;margin:10px 0}
+.anno b{color:#6FD68B}
+table.t{border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:920px}
+table.t th,table.t td{border:1px solid #2A2F37;padding:7px 10px;text-align:left;vertical-align:top}
+table.t th{background:#1C2027;color:#E4EAF1}
+</style>
+</head>
+<body>
+<h1>大纲选中态「看不清」· 三方案对照</h1>
+<p class="sub">问题：亮色主题下选中项文字 <code>#9FD0FF</code> 压在浅灰面板上 ≈ 不可见 ｜ 根因：选中态写死暗色假设</p>
+<p class="note">真实代码：<code>MarkdownOutline.module.css</code> 的 <code>.itemActive</code> 写死浅蓝字 + 半透明蓝底；
+而全屏编辑器已支持 <code>data-theme-mode="light"</code>，面板底已是浅色。工具栏 <code>.tbBtnActive</code> 已改用
+<code>var(--accent-light)</code> + <code>var(--accent-strong)</code>，大纲没跟上。</p>
+
+<h2>现状（你框到的问题）</h2>
+<div class="row">
+  <div class="card cur-dark">
+    <div class="tag">现状 · 暗色（勉强能看）</div>
+    <div class="ol"><div class="olHead">大纲 · 5</div><div class="olList">
+      <div class="item lv1">远程电脑工作台 · UX</div>
+      <div class="item lv2">结论先行</div>
+      <div class="item lv3 active">3. ConfirmDialog 无 dialog…</div>
+      <div class="item lv2">P1（键盘用户路径…）</div>
+      <div class="item lv2">4. 设备行整行可点…</div>
+    </div></div>
+  </div>
+  <div class="card cur-light">
+    <div class="tag">现状 · 亮色（你截图里看不清）</div>
+    <div class="ol"><div class="olHead">大纲 · 5</div><div class="olList">
+      <div class="item lv1">远程电脑工作台 · UX</div>
+      <div class="item lv2">结论先行</div>
+      <div class="item lv3 active">3. ConfirmDialog 无 dialog…</div>
+      <div class="item lv2">P1（键盘用户路径…）</div>
+      <div class="item lv2">4. 设备行整行可点…</div>
+    </div></div>
+  </div>
+</div>
+
+<h2>方案 A · 语义 token 自适应（推荐）</h2>
+<p class="note">与工具栏激活态同一套令牌：<code>background: var(--accent-light)</code> +
+<code>color: var(--accent-strong)</code> + 左侧条 <code>var(--accent)</code> + 字重 600。
+各主题自动切换，不写死色值（U6）。暗色主题里 accent-light 本身就是深蓝底、accent-strong=亮蓝，仍然清楚。</p>
+<div class="row">
+  <div class="card tok-dark">
+    <div class="tag">A · 暗色（ocean-dark 令牌）</div>
+    <div class="ol"><div class="olHead">大纲 · 5</div><div class="olList">
+      <div class="item lv1">远程电脑工作台 · UX</div>
+      <div class="item lv2">结论先行</div>
+      <div class="item lv3 active">3. ConfirmDialog 无 dialog…</div>
+      <div class="item lv2">P1（键盘用户路径…）</div>
+      <div class="item lv2">4. 设备行整行可点…</div>
+    </div></div>
+  </div>
+  <div class="card tok-light">
+    <div class="tag">A · 亮色（default 令牌）</div>
+    <div class="ol"><div class="olHead">大纲 · 5</div><div class="olList">
+      <div class="item lv1">远程电脑工作台 · UX</div>
+      <div class="item lv2">结论先行</div>
+      <div class="item lv3 active">3. ConfirmDialog 无 dialog…</div>
+      <div class="item lv2">P1（键盘用户路径…）</div>
+      <div class="item lv2">4. 设备行整行可点…</div>
+    </div></div>
+  </div>
+</div>
+
+<h2>方案 B · 亮色单独加码</h2>
+<p class="note">在 A 的基础上，亮色再压一档：底 22% accent、文字用更深的 <code>#025E8F</code>、左条 3px、字重 700。
+更「跳」，但要写亮色分轨 CSS；若以后主题再改容易漏改。</p>
+<div class="row">
+  <div class="card strong-light">
+    <div class="tag">B · 亮色（更强调）</div>
+    <div class="ol"><div class="olHead">大纲 · 5</div><div class="olList">
+      <div class="item lv1">远程电脑工作台 · UX</div>
+      <div class="item lv2">结论先行</div>
+      <div class="item lv3 active">3. ConfirmDialog 无 dialog…</div>
+      <div class="item lv2">P1（键盘用户路径…）</div>
+      <div class="item lv2">4. 设备行整行可点…</div>
+    </div></div>
+  </div>
+</div>
+
+<h2>方案 C · 大纲侧栏固定深色</h2>
+<p class="note">不管应用主题，大纲永远深色条（像 VS Code 活动栏）。选中态沿用现在的亮蓝字，对比度稳。
+代价：亮色工具栏 + 深色侧栏视觉割裂；面板整套色都要写死，不再跟主题 token。</p>
+<div class="row">
+  <div class="card fix-dark" style="width:360px">
+    <div class="tag">C · 亮色应用里大纲仍深色</div>
+    <div style="display:flex;min-height:220px">
+      <div class="ol" style="width:200px;flex:0 0 200px;border-right:1px solid #111">
+        <div class="olHead">大纲 · 5</div>
+        <div class="olList">
+          <div class="item lv1">远程电脑工作台 · UX</div>
+          <div class="item lv2">结论先行</div>
+          <div class="item lv3 active">3. ConfirmDialog 无 dialog…</div>
+          <div class="item lv2">P1（键盘用户路径…）</div>
+        </div>
+      </div>
+      <div class="fakeEditor" style="flex:1">编辑 / 预览区（亮色）</div>
+    </div>
+  </div>
+</div>
+
+<h2>对照</h2>
+<table class="t">
+  <tr><th>方案</th><th>亮色对比度</th><th>与工具栏一致</th><th>改动量</th><th>风险</th></tr>
+  <tr><td><b>A token 自适应</b></td><td>达标（accent-strong ≈4.5:1+）</td><td>✅ 同一套</td><td>小（只改 CSS）</td><td>低</td></tr>
+  <tr><td>B 亮色加码</td><td>最强</td><td>略不同</td><td>中（分轨）</td><td>主题扩展时易漏</td></tr>
+  <tr><td>C 固定深色条</td><td>稳（暗底亮字）</td><td>❌ 割裂</td><td>中（整面板定色）</td><td>视觉不统一</td></tr>
+</table>
+
+<div class="anno">
+  <b>无论选哪个，建议一并做：</b>① 左条加粗到 3px 或改用 <code>accent</code> 实色（不只靠底色）；
+  ② 选中项字重 600/700（不只靠颜色，色弱用户也能分）；③ 面板底色亮色下不要用
+  <code>rgba(0,0,0,.12)</code> 半透，改主题实色，避免选中底被冲淡。
+</div>
+
+</body>
+</html>

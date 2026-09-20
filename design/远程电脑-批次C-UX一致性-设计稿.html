@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 批次C UX一致性 · 设计稿</title>
+<!-- status: draft batch-C UX · 2026-09-20 · 基于真实组件 RcOverlay / RcControlBanner / RcDeviceRow / RcEmptyGuide / RcPendingWait / RcStage -->
+<style>
+  :root {
+    --accent: #4f7cff;
+    --accent2: #06b6d4;
+    --danger: #d64545;
+    --warn: #d97706;
+    --ok: #16a34a;
+    --bg: #0f1218;
+    --panel: #161b24;
+    --card: #1c2330;
+    --line: #2a3344;
+    --ink: #e8ecf4;
+    --muted: #8b95a8;
+    --font: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    padding: 28px 20px 60px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+  h2 {
+    font-size: 15px; font-weight: 600; margin: 36px 0 12px;
+    padding-top: 20px; border-top: 1px solid var(--line);
+  }
+  h2 .id { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 20px 0 8px; color: var(--ink); }
+  .lead { font-size: 12.5px; color: var(--muted); margin-bottom: 20px; }
+  .tag {
+    display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); margin-right: 6px; vertical-align: middle;
+  }
+  .tag.new { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--accent); }
+  .tag.keep { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); color: var(--ok); }
+  .tag.opt { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); color: var(--warn); }
+  .note {
+    font-size: 12px; color: var(--muted); border-left: 2px solid var(--accent);
+    padding: 8px 12px; margin: 12px 0; background: color-mix(in srgb, var(--accent) 6%, transparent);
+    border-radius: 0 6px 6px 0;
+  }
+  .note.warn { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .panel h4 {
+    margin: 0 0 10px; font-size: 11px; font-weight: 500; color: var(--muted);
+    text-transform: none; letter-spacing: 0;
+  }
+  /* —— 仿真横幅（对齐 RemoteComputer.module.css 的 ctrlBanner）—— */
+  .banner {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; border-radius: 8px; font-size: 12.5px;
+    background: color-mix(in srgb, var(--danger) 12%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  }
+  .banner.live-ok {
+    background: color-mix(in srgb, var(--accent) 10%, var(--card));
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  }
+  .who { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .who.danger { color: var(--danger); }
+  .who.ok { color: var(--accent); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .dot.d { background: var(--danger); }
+  .dot.a { background: var(--accent); }
+  .pill {
+    font-size: 11px; padding: 3px 10px; border-radius: 20px;
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  }
+  .pill.on {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+    font-weight: 600;
+  }
+  .pill.dg {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  }
+  .sp { flex: 1; }
+  .meta { font-size: 11px; color: var(--muted); }
+  .dangerBtn {
+    font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+    background: var(--card); color: var(--danger); cursor: pointer; flex-shrink: 0;
+  }
+  .miniBtn {
+    font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer;
+  }
+  .miniBtnPri {
+    font: inherit; font-size: 11px; padding: 4px 12px; border-radius: 6px;
+    border: none; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 62%, var(--accent2)));
+    color: #fff; cursor: pointer; font-weight: 600;
+  }
+  /* confirm dialog mock */
+  .cd-backdrop {
+    background: rgba(0,0,0,.45); border-radius: 8px; padding: 24px 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cd {
+    width: min(340px, 100%); background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 18px;
+  }
+  .cd h5 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+  .cd p { margin: 0 0 14px; font-size: 12px; color: var(--muted); line-height: 1.55; }
+  .cd-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .btn-danger {
+    font: inherit; font-size: 12px; padding: 6px 14px; border-radius: 6px; border: none;
+    background: var(--danger); color: #fff; cursor: pointer; font-weight: 600;
+  }
+  .btn-ghost {
+    font: inherit; font-size: 12px; padding: 6px 14px; border-radius: 6px;
+    border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;
+  }
+  /* device row mock */
+  .devItem {
+    display: flex; align-items: center; gap: 10px; padding: 9px 11px;
+    border-radius: 12px; background: color-mix(in srgb, var(--card) 88%, transparent);
+    border: 1px solid transparent;
+  }
+  .devItem:hover { background: var(--card); border-color: var(--line); }
+  .av {
+    width: 34px; height: 34px; border-radius: 11px; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;
+    position: relative; color: var(--ink); background: #3d4f6f;
+  }
+  .av.ok { background: #2f6b4f; }
+  .av.off { background: #4a5060; }
+  .info { flex: 1; min-width: 0; }
+  .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acts { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
+  .icoBtn {
+    width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    cursor: pointer; font-size: 12px;
+  }
+  .icoPri {
+    width: 36px; height: 36px; border-radius: 12px; border-color: transparent;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 62%, var(--accent2)));
+    color: #fff; box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 28%, transparent);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .txtPri {
+    height: 28px; padding: 0 10px; border-radius: 8px; border: none;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 62%, var(--accent2)));
+    color: #fff; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  }
+  .txtSec {
+    height: 28px; padding: 0 8px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .label11 { font-size: 10px; color: var(--muted); margin-top: 2px; text-align: center; }
+  /* empty guide mock */
+  .emptyBox {
+    border: 1px dashed var(--line); border-radius: 10px; padding: 24px 16px;
+    text-align: center; color: var(--muted); font-size: 12.5px; background: var(--panel);
+  }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; text-align: left; }
+  .step {
+    background: color-mix(in srgb, var(--card) 80%, transparent); border-radius: 10px;
+    padding: 12px; border: 1px solid var(--line);
+  }
+  .stepNum {
+    width: 26px; height: 26px; border-radius: 9px; color: #fff;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 62%, var(--accent2)));
+    font: 700 13px/1 ui-monospace, Consolas, monospace; display: grid; place-items: center; margin-bottom: 8px;
+  }
+  .stepT { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+  .stepD { font-size: 12px; color: var(--muted); line-height: 1.55; }
+  .emptyActions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0; }
+  table.dec {
+    width: 100%; border-collapse: collapse; font-size: 12px; margin: 12px 0 24px;
+  }
+  table.dec th, table.dec td {
+    border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.dec th { background: var(--panel); color: var(--muted); font-weight: 500; font-size: 11px; }
+  table.dec td.pick { color: var(--accent); font-weight: 600; }
+  ul.tight { margin: 6px 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+  ul.tight li { margin: 4px 0; }
+  .toast {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;
+    padding: 8px 12px; border-radius: 8px; font-size: 12px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .toast .undo {
+    color: var(--accent); font-weight: 600; cursor: pointer; font-size: 12px;
+  }
+  .measure {
+    font-size: 10px; color: var(--muted); font-family: ui-monospace, Consolas, monospace;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>远程电脑 · 批次 C UX 一致性 · 设计稿</h1>
+  <p class="lead">
+    <span class="tag new">待确认</span>
+    日期 2026-09-20 · 源码依据：<code>RcOverlay.tsx</code> ·
+    <code>RcControlBanner.tsx</code>（已含 U1 确认）·
+    <code>RcDeviceRow.tsx</code>（方案 A 图标化）·
+    <code>RcEmptyGuide.tsx</code> ·
+    <code>RcPendingWait.tsx</code> ·
+    <code>RcStage.tsx</code> ·
+    <code>RemoteComputer.module.css</code> ·
+    <code>lib/confirm.ts</code>。
+    规则：U4（可撤销&gt;确认）、U1、L2（常驻文字标签）、规则 15（反馈与触发同域）、规则 17。
+  </p>
+
+  <!-- ═══ 1 出站横幅 ═══ -->
+  <h2><span class="id">C-UI1</span>出站横幅：120s 文案 + 结束/取消确认（F-1 / F-10）</h2>
+  <div class="note">
+    <b>问题</b>：被控横幅（<code>RcControlBanner</code>）「立即结束」已接 <code>confirmDialog</code>；
+    出站横幅（<code>RcOverlay</code> outbound）仍裸点即断，且 pending 只写「等待对方同意」，
+    未告知 <b>2 分钟自动取消</b>（工作台 <code>RcPendingWait</code> 已写）。
+    <b>本稿对齐两侧反馈等级</b>，不改横幅结构。
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h4>现状 · pending（无超时说明 · 无确认）</h4>
+      <div class="banner live-ok">
+        <span class="who ok"><span class="dot a"></span>正在申请远程「客厅台式机」</span>
+        <span class="pill on">只看</span>
+        <span class="sp"></span>
+        <span class="meta">等待对方同意</span>
+        <button type="button" class="dangerBtn">取消申请</button>
+      </div>
+      <div class="measure">RcOverlay.tsx outboundLive · dangerBtn 无 confirmDialog</div>
+    </div>
+    <div class="panel">
+      <h4>目标 · pending（补超时 · 取消确认）</h4>
+      <div class="banner live-ok">
+        <span class="who ok"><span class="dot a"></span>正在申请远程「客厅台式机」</span>
+        <span class="pill on">只看</span>
+        <span class="sp"></span>
+        <span class="meta">等待对方同意 · 2 分钟内未响应将自动取消</span>
+        <button type="button" class="dangerBtn">取消申请</button>
+      </div>
+      <div class="measure">meta 与 RcPendingWait 同口径；点「取消申请」→ 下方确认框</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h4>目标 · active 会话</h4>
+      <div class="banner live-ok">
+        <span class="who ok"><span class="dot a"></span>正在远程「客厅台式机」</span>
+        <span class="pill on">可控</span>
+        <span class="sp"></span>
+        <span class="meta">打开「远程电脑」可看画面</span>
+        <button type="button" class="dangerBtn">立即结束</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>确认框（复用 lib/confirm · 与被控侧同款 danger）</h4>
+      <div class="cd-backdrop">
+        <div class="cd">
+          <h5>取消远程申请</h5>
+          <p>将撤回对「客厅台式机」的远程申请。对方若尚未同意，将不再看到这条申请。</p>
+          <div class="cd-actions">
+            <button type="button" class="btn-ghost">再想想</button>
+            <button type="button" class="btn-danger">取消申请</button>
+          </div>
+        </div>
+      </div>
+      <div class="measure">pending → 标题「取消申请」/ active →「结束远程会话」（与 ControlBanner 文案对齐）</div>
+    </div>
+  </div>
+
+  <h3>落地口径（拍板后写代码）</h3>
+  <ul class="tight">
+    <li><b>文案</b> pending meta 追加「· 2 分钟内未响应将自动取消」；不改按钮标签。</li>
+    <li><b>交互</b> 点 dangerBtn → <code>confirmDialog</code>；确认后才 <code>rc.cancel()</code> / <code>rc.end()</code>；成功 toast 保持现状。</li>
+    <li><b>不确认的一侧</b> 撤销窗口内的「撤销申请」toast 仍免二次确认（U4：可撤销优先）。</li>
+    <li><b>「重新发起」</b>（reconnecting 横幅）保持免确认：它是重试，不是破坏性结束。</li>
+  </ul>
+
+  <!-- ═══ 2 设备行 L2 ═══ -->
+  <h2><span class="id">C-UI6</span>设备行主操作：L2 常驻文字（F-11）</h2>
+  <div class="note warn">
+    <b>冲突</b>：方案 A（<code>design/远程电脑-设备行布局-设计稿.html</code>）把操作区收成 26/36px 图标，
+    名称区从 51px 回到 115px——<b>宽度是硬约束</b>。规则 L2 要求常驻文字，不能只靠 title。
+    下面三案都在真宽 245px 侧栏 / 工作台设备列表两种容器里量过示意宽度；请选一案。
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h4>现状 · 图标-only（title 悬停才有语义）</h4>
+      <div class="devItem">
+        <div class="av ok">客</div>
+        <div class="info">
+          <div class="name">客厅台式机</div>
+          <div class="sub">最近 · 将以「可控」发起 · 已免确认</div>
+        </div>
+        <div class="acts">
+          <div style="text-align:center">
+            <button class="icoPri" title="发起远程">▶</button>
+          </div>
+          <button class="icoBtn" title="更多">⋯</button>
+        </div>
+      </div>
+      <div class="measure">acts ≈ 36+4+26 = 66px · 违反 L2（主操作无常驻字）</div>
+    </div>
+    <div class="panel">
+      <h4>案 A · 主操作加字 + 菜单保图标<span class="tag opt">推荐</span></h4>
+      <div class="devItem">
+        <div class="av ok">客</div>
+        <div class="info">
+          <div class="name">客厅台式机</div>
+          <div class="sub">最近 · 可控 · 已免确认</div>
+        </div>
+        <div class="acts">
+          <button class="txtPri">▶ 发起</button>
+          <button class="icoBtn" title="更多操作" aria-label="更多操作">⋯</button>
+        </div>
+      </div>
+      <div class="measure">发起 ≈ 64px + ⋯ 26px = 94px · 名称区仍 &gt; 100px<br/>title 仍保留「将以「可控」发起」细节</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h4>案 B · 双行：第二行动作字常驻</h4>
+      <div class="devItem">
+        <div class="av ok">客</div>
+        <div class="info">
+          <div class="name">客厅台式机</div>
+          <div class="sub">发起远程 · 可控 · 在线</div>
+        </div>
+        <div class="acts">
+          <button class="icoPri" title="发起远程">▶</button>
+          <button class="icoBtn">⋯</button>
+        </div>
+      </div>
+      <div class="measure">宽度不变 · 第二行把「发起」写进名字区（L2：常驻可见）<br/>sync 设备第二行改为「去远程配对」</div>
+    </div>
+    <div class="panel">
+      <h4>案 C · 图标 + 图下 10px 字（紧凑）</h4>
+      <div class="devItem">
+        <div class="av ok">客</div>
+        <div class="info">
+          <div class="name">客厅台式机</div>
+          <div class="sub">最近 · 可控</div>
+        </div>
+        <div class="acts">
+          <div style="text-align:center">
+            <button class="icoPri" title="发起远程">▶</button>
+            <div class="label11">发起</div>
+          </div>
+          <div style="text-align:center">
+            <button class="icoBtn">⋯</button>
+            <div class="label11">更多</div>
+          </div>
+        </div>
+      </div>
+      <div class="measure">行高 +14px · 宽度 +0 · 字在图标正下方常驻</div>
+    </div>
+  </div>
+
+  <table class="dec">
+    <tr><th>案</th><th>L2</th><th>方案 A 宽度</th><th>扫视成本</th><th>备注</th></tr>
+    <tr>
+      <td>A 发起+字</td>
+      <td class="pick">通过</td>
+      <td>略增 ~28px</td>
+      <td>最低（字贴按钮）</td>
+      <td class="pick">推荐：主操作语义最清楚；⋯ 仍靠 aria-label + title</td>
+    </tr>
+    <tr>
+      <td>B 第二行</td>
+      <td>通过（字在名字区）</td>
+      <td>不变</td>
+      <td>中（字不在按钮旁）</td>
+      <td>侧栏最省宽；与 RcDeviceMeta 可能抢一行</td>
+    </tr>
+    <tr>
+      <td>C 图下小字</td>
+      <td class="pick">通过</td>
+      <td>不变</td>
+      <td>低</td>
+      <td>行高变高，列表一屏少 1–2 台</td>
+    </tr>
+  </table>
+
+  <h3>配套（任一案共用）</h3>
+  <ul class="tight">
+    <li>sync-only 设备：主操作字改为「<b>去配对</b>」（不再是 Play）。</li>
+    <li>会话进行中（locked）：字保留 + disabled，title 写「已有会话，暂不能发起」。</li>
+    <li>菜单项保持纯文字（本就 L2 合规）；「解除禁止」唯一入口不变。</li>
+  </ul>
+
+  <!-- ═══ 3 空态 ═══ -->
+  <h2><span class="id">C-UI2</span>空态三步：附近 6 位码主路径（U-D1）</h2>
+  <div class="note">
+    <span class="tag keep">代码已改文案</span>
+    批次 A 已改 <code>RcEmptyGuide.STEPS</code>。本稿确认视觉不变、仅信息架构；
+    若你认可下列结构，实现时无需再动布局。
+  </div>
+  <div class="emptyBox">
+    <div style="font-weight:600;color:var(--ink);font-size:14px;margin-bottom:4px">还没有可远程的设备</div>
+    <div style="font-size:12px;margin-bottom:4px">配对后，对方可以申请查看或控制这台电脑；你也可以去控别人的电脑。</div>
+    <div class="steps">
+      <div class="step">
+        <div class="stepNum">1</div>
+        <div class="stepT">双方配对</div>
+        <div class="stepD">同一网络：打开配对后在「附近的设备」点对方，两边核对同一个 <b>6 位数字</b>。跨网才用邀请码。<b>知识库同步配对不会自动获得远程/文件权限。</b></div>
+      </div>
+      <div class="step">
+        <div class="stepNum">2</div>
+        <div class="stepT">发起申请</div>
+        <div class="stepD">选「只看」或「可控」，对方会看到确认条与你的指纹。同意一次后该设备会记入远程列表。</div>
+      </div>
+      <div class="step">
+        <div class="stepNum">3</div>
+        <div class="stepT">对方同意</div>
+        <div class="stepD">被控端常驻横幅可随时结束；默认关闭，每次都要点头（或逐台开免确认）。</div>
+      </div>
+    </div>
+    <div class="emptyActions">
+      <button class="miniBtn">让别人帮我</button>
+      <button class="miniBtn">帮别人连一次</button>
+      <button class="miniBtn">有接入码直连</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+      前两个<b>不用配对</b>：用完即弃，不会留在双方的设备列表里。
+      第三个用于对方不在电脑前（无人值守接入码，会过期、可撤销）。
+    </div>
+    <div class="emptyActions"><button class="miniBtnPri">远程配对设备</button></div>
+  </div>
+
+  <!-- ═══ 4 设置页发起 ═══ -->
+  <h2><span class="id">C-UI4</span>设置页「再次发起」：补齐撤销（F-9 / S2）</h2>
+  <div class="note">
+    目标：所有「发起远程」入口同一反馈等级——成功给 6s 撤销 toast；失败原因进工作台错误面板或同源 toast。
+    设置页可继续直调 <code>rc.request</code>，但 toast 形状必须与托盘/工作台一致。
+  </div>
+  <div class="panel">
+    <h4>成功 toast（UNDO_WINDOW_MS = 6s · hover 暂停）</h4>
+    <div class="banner live-ok" style="margin-bottom:0">
+      <span class="who ok">已向「客厅台式机」发起远程（可控）</span>
+      <span class="sp"></span>
+      <span class="toast" style="border:none;background:transparent;padding:0">
+        <button class="miniBtnPri">撤销</button>
+        <span class="meta">6 秒内可撤回</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- ═══ 5 声音反馈 ═══ -->
+  <h2><span class="id">C-UI3</span>会话底栏声音开关失败（F-2）</h2>
+  <div class="note">
+    与 <code>RcAudioBar</code>「对方外放」同款：失败 → 回滚乐观值 + 底栏 <code>fb</code> 条报错
+    （不要静默 catch）。文案示例：
+  </div>
+  <div class="panel">
+    <div class="banner" style="background:color-mix(in srgb, var(--danger) 8%, var(--card));border-color:color-mix(in srgb, var(--danger) 30%, var(--line))">
+      <span class="meta" style="color:var(--danger)">声音开关失败：对方未开启「允许被远程」或会话已结束</span>
+    </div>
+  </div>
+
+  <!-- ═══ 拍板表 ═══ -->
+  <h2><span class="id">拍板</span>请确认后改代码</h2>
+  <table class="dec">
+    <tr><th>项</th><th>建议</th><th>需要你选</th></tr>
+    <tr>
+      <td>C-UI1 出站横幅</td>
+      <td class="pick">确认框 + pending 补 120s 文案（与被控/等待区对齐）</td>
+      <td>直接采纳 / 只补文案不加确认</td>
+    </tr>
+    <tr>
+      <td>C-UI6 设备行 L2</td>
+      <td class="pick">案 A「发起」带字按钮</td>
+      <td>A / B / C</td>
+    </tr>
+    <tr>
+      <td>C-UI2 空态</td>
+      <td class="pick">维持已改文案，布局不动</td>
+      <td>采纳 / 要改文案</td>
+    </tr>
+    <tr>
+      <td>C-UI4 设置页撤销</td>
+      <td class="pick">统一 6s 撤销 toast</td>
+      <td>采纳 / 设置页保持现状</td>
+    </tr>
+    <tr>
+      <td>C-UI3 声音失败</td>
+      <td class="pick">回滚 + 底栏 fb 错误条</td>
+      <td>直接采纳</td>
+    </tr>
+  </table>
+
+  <p class="lead">
+    确认后实现范围：仅 <code>RcOverlay</code>、<code>RcDeviceRow</code>（+ styles 一两处）、
+    <code>RcSection</code>（撤销）、<code>RcSessionView</code>（声音 fb）。
+    不升版本号、不擅自 build。设备行方案 A 仍要跑一次侧栏 245px 目测。
+  </p>
+</div>
+</body>
+</html>

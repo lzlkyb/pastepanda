@@ -14,6 +14,7 @@ import { RcJoinRequests } from "./RcJoinRequests";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源
 import { rcSetAudioLocalMute, rcHostMuteSet, type RcCapability } from "@/lib/api/rc";
+import { confirmDialog } from "@/lib/confirm";
 import { summonMainWindow } from "@/lib/rcWindow";
 import styles from "./RemoteComputer.module.css";
 
@@ -177,26 +178,39 @@ export function RcOverlay() {
             {session.capability === "control" ? "可控" : "只看"}
           </span>
           <span className={styles.sp} />
+          {/* F-10：pending 与工作台 RcPendingWait 同口径——不说超时用户会干等到错误面板 */}
           <span className={styles.meta}>
             {session.phase === "outbound_pending"
-              ? "等待对方同意"
+              ? "等待对方同意 · 2 分钟内未响应将自动取消"
               : "打开「远程电脑」可看画面"}
           </span>
+          {/* F-1 / U4：与被控横幅同一道 danger 确认——误触代价不对称；
+              撤销窗口内的 toast 撤回仍免确认（可撤销优先）。 */}
           <button
             type="button"
             className={styles.dangerBtn}
             disabled={rc.busy}
             onClick={() => {
-              void (session.phase === "outbound_pending"
-                ? rc.cancel()
-                : rc.end()
-              ).then((ok) => {
-                if (ok)
+              void (async () => {
+                const isPending = session.phase === "outbound_pending";
+                const name = session.peer_name || fingerprintOf(session.peer);
+                const ok = await confirmDialog({
+                  title: isPending ? "取消远程申请" : "结束远程会话",
+                  message: isPending
+                    ? `将撤回对「${name}」的远程申请。对方若尚未同意，将不再看到这条申请。`
+                    : `将断开与「${name}」的连接。你这边的画面与控制会立刻结束。`,
+                  confirmText: isPending ? "取消申请" : "结束会话",
+                  variant: "danger",
+                });
+                if (!ok) return;
+                const done = await (isPending ? rc.cancel() : rc.end());
+                if (done) {
                   toast(
-                    session.phase === "outbound_pending" ? "已取消远程申请" : "已结束远程会话",
+                    isPending ? "已取消远程申请" : "已结束远程会话",
                     "success",
                   );
-              });
+                }
+              })();
             }}
           >
             {session.phase === "outbound_pending" ? "取消申请" : "立即结束"}

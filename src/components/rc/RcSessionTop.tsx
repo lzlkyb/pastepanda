@@ -1,11 +1,12 @@
 /**
- * RcSessionTop — 会话顶栏：谁 / 能力 / 键盘 / 链路状态 / 未响应 / 重连 / 结束。
+ * RcSessionTop — 会话顶栏：谁 / 能力 / 链路 / 旧版提示 / ⋯ / 结束。
  *
  * 🔴 连接灯只由 `linkState` 驱动（对端 pong 的新鲜度），**不再看画面停滞**。
- *    「帧静止」与「链路故障」是两件不相干的事：被控端在画面无变化时本来就
- *    不推帧，拿它当断链证据会让用户看一屏静止桌面 2.5s 就见到红灯
- *    （2026-09-17 改造，判据见 `rcSessionStats.linkStateOf`）。
+ * 案 A 瘦身：释放键盘 / 重连收进「⋯」——结束会话保持常驻（破坏性操作可达性）。
+ * R3：可控且对端未声明 dgram_input 时显示「对方版本偏旧」。
  */
+import { useEffect, useRef, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { RcSession } from "@/lib/api/rc";
 import { linkStateHint, linkStateLabel, type RcLinkState } from "@/lib/rcSessionStats";
@@ -18,6 +19,7 @@ export function RcSessionTop({
   linkState,
   unansweredSec,
   busy,
+  peerDgramInput,
   onReleaseKb,
   onReconnect,
   onRequestEnd,
@@ -29,11 +31,28 @@ export function RcSessionTop({
   /** 操作后未响应秒数；0 = 不提示。 */
   unansweredSec: number;
   busy: boolean;
+  /**
+   * R3：对端 caps 是否声明能读鼠标数据报。false = 旧版（7.2.1 及更早）
+   * 或尚未收到 caps——可控会话下提示升级对端；true = 不提示。
+   */
+  peerDgramInput?: boolean;
   onReleaseKb: () => void;
   onReconnect?: () => void;
   onRequestEnd: () => void;
 }) {
-  // 三色分工：绿=已连接 · 橙=不稳（会自愈，等等就好）· 红=已断开（要动手）
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const hasOverflow = (canControl && kbOn) || !!onReconnect;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
+
   const dotCls =
     linkState === "connected"
       ? styles.live
@@ -49,8 +68,15 @@ export function RcSessionTop({
       <span className={canControl ? styles.pillOn : styles.pill}>
         {canControl ? "可控" : "只看"}
       </span>
-      {/* 键盘状态不在这里摆了（方案 B）：底栏状态区已有一句「点画面可捕获键盘 /
-          键盘已捕获 · Esc 释放」。同一状态在顶栏一个胶囊、底栏一句话，是重复。 */}
+      {/* R3：可控 + 对端未声明 dgram_input = 旧版被控端。常驻胶囊，与链路警示同级可见性。 */}
+      {canControl && peerDgramInput === false && (
+        <span
+          className={styles.pillWarn}
+          title="远程鼠标移动走数据报通道，官方 7.2.1 及更早的被控端收不到。请对方升级 PastePanda 到最新版后重新连接；按键/点击仍可尝试。"
+        >
+          对方版本偏旧
+        </span>
+      )}
       {linkState === "failed" && (
         <span className={styles.pillDanger} title={linkStateHint(linkState)}>
           {linkStateLabel(linkState)}
@@ -67,15 +93,49 @@ export function RcSessionTop({
         </span>
       )}
       <span className={styles.sp} />
-      {canControl && kbOn && (
-        <button type="button" className={styles.miniBtn} onClick={onReleaseKb}>
-          释放键盘
-        </button>
-      )}
-      {onReconnect && (
-        <button type="button" className={styles.miniBtn} disabled={busy} onClick={onReconnect}>
-          重连
-        </button>
+      {hasOverflow && (
+        <div className={styles.topMoreWrap} ref={menuRef}>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            title="更多会话操作"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            <MoreHorizontal size={14} aria-hidden />
+            <span className={styles.topMoreLabel}>更多</span>
+          </button>
+          {menuOpen && (
+            <div className={styles.topMoreMenu} role="menu">
+              {canControl && kbOn && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onReleaseKb();
+                  }}
+                >
+                  释放键盘
+                </button>
+              )}
+              {onReconnect && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onReconnect();
+                  }}
+                >
+                  重连
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
       <button
         type="button"

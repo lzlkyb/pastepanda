@@ -40,6 +40,7 @@ function mapCategory(headerText) {
     "新增": "feat",
     "新功能": "feat",
     "修复": "fix",
+    "改进": "change",
     "变更": "change",
     "安全": "security",
     "性能": "perf",

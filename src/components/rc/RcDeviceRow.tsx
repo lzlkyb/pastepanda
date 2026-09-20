@@ -196,11 +196,12 @@ export function RcDeviceRow({
           工具提示（title）与无障碍名（aria-label）必须成对给——图标省下的宽度
           只能靠这两处补回语义。 */}
       <div className={styles.acts}>
-        {/* B9：纯同步配对设备列得出却发不起 —— 不做「发起」，给下一步指引 */}
+        {/* B9：纯同步配对设备列得出却发不起 —— 不做「发起」，给下一步指引。
+            批次 C · L2 案 A：主操作带常驻文字，不再只靠 title。 */}
         {syncOnly ? (
           <button
             type="button"
-            className={`${styles.icoBtn} ${styles.icoBig}`}
+            className={`${styles.actText} ${styles.actTextPri}`}
             aria-label="去配对"
             title="仅同步配对，未建立远程通道 · 去完成远程配对"
             disabled={busy || !onPair}
@@ -209,15 +210,14 @@ export function RcDeviceRow({
               onPair?.();
             }}
           >
-            {/* 图标选型实测过：14px 下 Cable 像两根竖刺、「Link」是两个扣环，
-                Link2（链环 + 横杠）在小尺寸里最认得出「配对/连接」这层意思。 */}
-            <Link2 size={14} />
+            <Link2 size={12} />
+            配对
           </button>
         ) : (
           // 禁止的是「对方控我」，不挡「我去远程对方」
           <button
             type="button"
-            className={`${styles.icoBtn} ${styles.icoPri}`}
+            className={`${styles.actText} ${styles.actTextPri}`}
             aria-label="发起远程"
             disabled={requestBlocked}
             // 能力记忆之后必须写明将以哪一档发起：否则「我只想看看」的人
@@ -228,7 +228,8 @@ export function RcDeviceRow({
               onRequest(d.node_id);
             }}
           >
-            <Play size={13} fill="currentColor" />
+            <Play size={12} fill="currentColor" />
+            发起
           </button>
         )}
         <RcDeviceMenu

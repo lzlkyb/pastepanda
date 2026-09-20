@@ -236,6 +236,42 @@
   filter: none;
 }
 
+/* 批次 C · 设备行案 A（L2）：主操作带常驻文字「发起 / 配对」。
+   宽度略增 ~28px，名称区仍 &gt;100px；title 仍补「将以哪一档发起」细节。 */
+.actText {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.actTextPri {
+  background: linear-gradient(135deg, var(--accent, #4f7cff), color-mix(in srgb, var(--accent, #4f7cff) 62%, #06b6d4));
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--accent, #4f7cff) 24%, transparent);
+  color: #fff;
+}
+
+.actTextPri:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+.actTextPri:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  filter: none;
+}
+
 .dangerBtn {
   color: var(--danger, #d64545);
   border-color: color-mix(in srgb, var(--danger, #d64545) 40%, var(--border-color, #e3e6ea));
@@ -460,6 +496,115 @@
 .viewShell .dangerBtn {
   color: #ff9d9d;
   border-color: rgba(255, 120, 120, 0.38);
+}
+
+/* 案 A：顶栏「更多」溢出菜单（释放键盘 / 重连）。深色 viewShell 语境。 */
+.topMoreWrap {
+  position: relative;
+  display: inline-flex;
+}
+.topMoreLabel {
+  margin-left: 2px;
+}
+.topMoreMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(20, 26, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.topMoreMenu button {
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #e6ecf5;
+  cursor: pointer;
+}
+.topMoreMenu button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.topMoreMenu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 案 A：非全屏「画面偏小」轻提示条（挂在 .fakeScreen 内，与 RcHud 同级） */
+.fsHint {
+  position: absolute;
+  left: 50%;
+  top: 42px;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92%, 420px);
+  padding: 8px 10px 8px 12px;
+  border-radius: 10px;
+  background: rgba(9, 17, 28, 0.78);
+  border: 1px solid color-mix(in srgb, var(--accent, #4f7cff) 40%, rgba(255, 255, 255, 0.12));
+  backdrop-filter: blur(10px);
+  color: #d5deec;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  animation: rcFadeIn 0.2s ease both;
+  pointer-events: auto;
+}
+.fsHintTxt {
+  flex: 1;
+  min-width: 0;
+}
+.fsHintTxt small {
+  display: block;
+  font-size: 10px;
+  color: #8b95a8;
+  margin-top: 2px;
+}
+.fsHintBtn {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 12px;
+  cursor: pointer;
+  background: linear-gradient(
+    135deg,
+    var(--accent, #4f7cff),
+    color-mix(in srgb, var(--accent, #4f7cff) 60%, var(--accent2, #06b6d4))
+  );
+  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.fsHintGhost {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  padding: 4px 8px;
+  cursor: pointer;
+  background: transparent;
+  color: #8b95a8;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.fsHintGhost:hover {
+  color: #c8d0dc;
 }
 
 /* 键盘捕获态：一圈强调色描边，一眼能看出按键会发给谁（叠加画布内高光） */
@@ -758,7 +903,8 @@
 .wbMain .fakeScreen {
   height: auto;
   flex: 1;
-  min-height: 300px;
+  /* 案 A：画面高度保底 300→360，减少「必须全屏才能看」 */
+  min-height: 360px;
 }
 /* 主区空态容器：把引导卡在竖直 + 水平方向都居中（引导卡自己限宽见 .emptyBoxCenter） */
 .wbEmptyWrap {
@@ -1127,12 +1273,15 @@
 }
 .sessionBar {
   flex: 0 0 auto;
-  min-height: 46px;
+  /* 案 A：会话中默认密一档（46→36）；换行高度封顶，优先把竖向空间留给画面 */
+  min-height: 36px;
+  max-height: 72px;
+  overflow-y: auto;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  padding: 6px 10px;
+  padding: 4px 8px;
   background: var(--rc-glass);
   backdrop-filter: blur(16px);
   border: 1px solid var(--rc-glass-line);

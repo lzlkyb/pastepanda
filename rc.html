@@ -5,6 +5,23 @@
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>远程电脑</title>
+    <!-- 防闪黑：JS/主题 CSS 就绪前先铺近似底色，避免 WebView 露出系统黑底。
+         与后端 rc_open_workbench 的 visible(false)+background_color 叠加生效。
+         色值对齐 ocean / ocean-dark 的 --app-bg 起点。 -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #f4f8fc;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: #0b0b13;
+        }
+      }
+    </style>
   </head>
 
   <body>

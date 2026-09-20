@@ -6,17 +6,18 @@
  */
 import { useEffect, useState } from "react";
 import type { AppConfig } from "@/stores/appStore";
-import { useToast } from "@/components/Toast";
+import { useToast, UNDO_WINDOW_MS } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { useRc } from "@/hooks/useRc";
-import { rcSetEnabled } from "@/lib/api/rc";
+import { rcCancelRequest, rcSetEnabled } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { ToggleRow } from "../ToggleRow";
 import { RcAllowPanel } from "../RcAllowPanel";
 import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcOverlay 统一默认设备名来源
-import { rememberRequestCap } from "@/lib/rcRequest";
+import { capabilityLabel, rememberRequestCap } from "@/lib/rcRequest";
 import { RcPairLayer, type RcPairLayerMode } from "../RcPairLayer";
 import { RcSessionHistory } from "@/components/rc/RcSessionHistory";
+import { useRcStore } from "@/stores/rcStore";
 import shared from "../../Settings.module.css";
 import styles from "../RcSettings.module.css";
 
@@ -254,7 +255,37 @@ export function RcSection({ config, updateAndSave }: RcSectionProps) {
             // 沿用这条记录用过的档，并记为下次的默认档——与设备列表「沿用上次」同一语义
             rememberRequestCap(cap);
             void rc.request(id, cap).then((ok) => {
-              if (ok) toast(`已向「${name}」再次发起远程申请`, "success");
+              if (!ok) return;
+              // F-9 / S2：设置页与托盘/工作台同一反馈等级——成功给 6s 撤销
+              toast(
+                `已向「${name}」再次发起远程（${capabilityLabel(cap)}）`,
+                "info",
+                UNDO_WINDOW_MS,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                () => {
+                  void (async () => {
+                    if (
+                      useRcStore.getState().status?.session?.phase !==
+                      "outbound_pending"
+                    ) {
+                      toast(
+                        "对方已同意，申请无法撤回（可在会话里结束）",
+                        "info",
+                      );
+                      return;
+                    }
+                    try {
+                      await rcCancelRequest();
+                      toast(`已撤回对「${name}」的申请`, "success");
+                    } catch {
+                      toast("撤回失败", "error");
+                    }
+                  })();
+                },
+              );
             });
           }}
         />

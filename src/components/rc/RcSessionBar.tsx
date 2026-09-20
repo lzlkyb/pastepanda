@@ -218,6 +218,7 @@ export function RcSessionBar({
           label="画质"
           value={quality as RcQuality}
           options={qualities}
+          // D-2：只看仍可调画质/编码（流控），不改主机采集范围
           disabled={rc.busy}
           onPick={pickQuality}
         />
@@ -226,18 +227,23 @@ export function RcSessionBar({
           label="画面"
           value={captureScope as RcCaptureScope}
           options={scopes}
-          disabled={rc.busy}
+          // D-2 拍板：改画面范围要求可控——只看会切到对方其它屏，属改主机可观测内容
+          disabled={rc.busy || !canControl}
           onPick={pickScope}
         />
-        {/* Q7：对端有 ≥2 块屏才出「下一屏」——单屏给这个按钮等于谎话 */}
+        {/* Q7：对端有 ≥2 块屏才出「下一屏」；只看同样不可切（与画面下拉同门禁） */}
         {canCycleScreen && (
           <>
             <span className={styles.segSep} aria-hidden="true" />
             <button
               type="button"
               className={styles.menuBtn}
-              disabled={rc.busy}
-              title="切换到对方的下一块显示器（循环）"
+              disabled={rc.busy || !canControl}
+              title={
+                canControl
+                  ? "切换到对方的下一块显示器（循环）"
+                  : "只看会话不能改画面范围，需可控会话"
+              }
               onClick={cycleScreen}
             >
               下一屏

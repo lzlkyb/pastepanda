@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 全屏与画面高度 · 设计稿</title>
+<!-- status: draft 2026-09-20 · 基于 RcSessionView / RcSessionTop / RcSessionBar / RcViewTools / RcHud / RcWorkbench / RemoteComputer.module.css -->
+<style>
+  :root {
+    --accent: #4f7cff;
+    --accent2: #06b6d4;
+    --danger: #d64545;
+    --warn: #d97706;
+    --ok: #16a34a;
+    --bg: #0f1218;
+    --panel: #161b24;
+    --card: #1c2330;
+    --line: #2a3344;
+    --ink: #e8ecf4;
+    --muted: #8b95a8;
+    --canvas0: #1a2332;
+    --canvas1: #0f141c;
+    --shell: #0d0f12;
+    --font: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    padding: 28px 20px 60px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+  h2 {
+    font-size: 15px; font-weight: 600; margin: 36px 0 12px;
+    padding-top: 20px; border-top: 1px solid var(--line);
+  }
+  h2 .id { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 20px 0 8px; }
+  .lead { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
+  .tag {
+    display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); margin-right: 6px;
+  }
+  .tag.new { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--accent); }
+  .tag.keep { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); color: var(--ok); }
+  .tag.cut { border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); color: #f0a0a0; }
+  .tag.opt { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); color: var(--warn); }
+  .note {
+    font-size: 12px; color: var(--muted); border-left: 2px solid var(--accent);
+    padding: 8px 12px; margin: 12px 0; background: color-mix(in srgb, var(--accent) 6%, transparent);
+    border-radius: 0 6px 6px 0;
+  }
+  .note.warn { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+  @media (max-width: 780px) { .grid2 { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .panel h4 { margin: 0 0 10px; font-size: 11px; font-weight: 500; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: color-mix(in srgb, var(--card) 80%, transparent); color: var(--muted); font-weight: 500; font-size: 11px; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #a8c0ff; }
+  ul.compact { margin: 8px 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+  ul.compact li { margin: 4px 0; }
+  ul.compact strong { color: var(--ink); font-weight: 600; }
+
+  /* —— 工作台仿真（对齐 RcWorkbench + RemoteComputer.module.css）—— */
+  .wb {
+    width: 100%;
+    max-width: 920px;
+    height: 520px;
+    margin: 14px 0 8px;
+    display: flex;
+    background: #e8eef6;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    color: #1c1e21;
+    font-size: 12px;
+  }
+  .wb.dark-frame { background: #0b0d12; }
+  .wbRail {
+    width: 56px; flex-shrink: 0;
+    background: color-mix(in srgb, #0d0f12 92%, #4f7cff 8%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 14px 0; color: #8b95a8;
+  }
+  .wbRail .rbtn {
+    width: 32px; height: 32px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.1);
+    display: grid; place-items: center; font-size: 11px;
+  }
+  .wbRail .rbtn.on {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+    color: #a8c0ff; border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .wbMain {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    gap: 10px; padding: 12px; overflow: hidden;
+  }
+  .wbHead {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; color: #3a4555; flex-shrink: 0; height: 28px;
+  }
+  .sessionWrap {
+    flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px;
+  }
+  .viewShell {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    border-radius: 16px; overflow: hidden; background: var(--shell);
+    border: 1px solid rgba(255,255,255,.06);
+  }
+  .viewTop {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 12px; font-size: 12px; color: #c8d0dc;
+    background: rgba(255,255,255,.06);
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    flex-shrink: 0;
+  }
+  .viewTop.slim { padding: 5px 10px; font-size: 11px; gap: 6px; }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: #2f9e5f; flex-shrink: 0;
+  }
+  .pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(255,255,255,.08); color: #e6ecf5;
+  }
+  .pill.on {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    color: #a8c0ff;
+  }
+  .pill.warn {
+    background: color-mix(in srgb, var(--warn) 16%, transparent);
+    border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+    color: #f0c080;
+  }
+  .sp { flex: 1; }
+  .miniBtn, .dangerBtn {
+    font: inherit; font-size: 11px; padding: 3px 9px; border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(255,255,255,.08); color: #e6ecf5; cursor: pointer;
+  }
+  .dangerBtn {
+    color: #ff9d9d; border-color: rgba(255,120,120,.38);
+  }
+  .fakeScreen {
+    flex: 1; min-height: 0; position: relative;
+    background: linear-gradient(180deg, var(--canvas0), var(--canvas1));
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .fakeScreen.short { flex: 0 0 auto; height: 210px; }
+  .fakeScreen.tall { min-height: 280px; }
+  .remoteFrame {
+    width: 72%; aspect-ratio: 16/10; max-height: 88%;
+    border-radius: 4px; border: 1px dashed rgba(255,255,255,.18);
+    background:
+      linear-gradient(135deg, rgba(79,124,255,.12), transparent 40%),
+      linear-gradient(180deg, #243044, #1a2434);
+    display: grid; place-items: center; color: #8b95a8; font-size: 11px;
+  }
+  .remoteFrame.wide { width: 92%; max-height: 92%; }
+  .hud {
+    position: absolute; top: 10px; left: 10px;
+    display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 150px);
+  }
+  .hud span {
+    font-size: 10px; padding: 3px 8px; border-radius: 7px;
+    background: rgba(9,17,28,.62); color: #c8d0dc;
+    border: 1px solid rgba(255,255,255,.1);
+  }
+  .viewTools {
+    position: absolute; top: 10px; right: 10px;
+    display: flex; gap: 4px; padding: 4px 6px; border-radius: 8px;
+    background: rgba(9,17,28,.72); border: 1px solid rgba(255,255,255,.1);
+  }
+  .viewTools b {
+    font-weight: 500; font-size: 10px; color: #c8d0dc; padding: 2px 6px; border-radius: 4px;
+  }
+  .viewTools b.on { background: rgba(107,147,255,.28); color: #fff; }
+
+  /* 非全屏轻提示条（案 A / 案 B 核心） */
+  .fsHint {
+    position: absolute; left: 50%; top: 42px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    max-width: min(92%, 420px);
+    padding: 8px 10px 8px 12px;
+    border-radius: 10px;
+    background: rgba(9,17,28,.78);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, rgba(255,255,255,.12));
+    backdrop-filter: blur(10px);
+    color: #d5deec; font-size: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  }
+  .fsHint .txt { flex: 1; min-width: 0; line-height: 1.4; }
+  .fsHint .txt small { display: block; font-size: 10px; color: #8b95a8; margin-top: 2px; }
+  .fsHint button {
+    font: inherit; font-size: 11px; font-weight: 600;
+    border: none; border-radius: 7px; padding: 5px 12px; cursor: pointer;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--accent2)));
+    color: #fff; white-space: nowrap;
+  }
+  .fsHint .ghost {
+    background: transparent; color: #8b95a8; border: 1px solid rgba(255,255,255,.14);
+    font-weight: 500; padding: 4px 8px;
+  }
+  .sessionBar {
+    flex: 0 0 auto; min-height: 46px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 6px 10px; border-radius: 14px;
+    background: rgba(255,255,255,.88);
+    border: 1px solid rgba(20,30,50,.08);
+    font-size: 11px; color: #495565;
+    box-shadow: 0 4px 16px rgba(20,30,50,.06);
+  }
+  .sessionBar.dense { min-height: 36px; padding: 4px 8px; gap: 4px; }
+  .seg {
+    display: inline-flex; align-items: center; height: 28px; border-radius: 9px;
+    border: 1px solid #e3e6ea; background: rgba(28,30,33,.04); padding: 0 2px;
+  }
+  .sessionBar.dense .seg { height: 24px; }
+  .seg b { font-weight: 500; font-size: 11px; padding: 0 10px; color: #1c1e21; }
+  .seg i { font-style: normal; width: 1px; height: 14px; background: #e3e6ea; }
+  .barBtn {
+    font: inherit; font-size: 11px; padding: 4px 8px; border-radius: 6px;
+    border: 1px solid #e3e6ea; background: transparent; color: #495565; cursor: pointer;
+  }
+  .barStatus { font-size: 10px; color: #6b7280; margin-left: auto; }
+
+  /* 高度预算条 */
+  .budget {
+    display: flex; height: 28px; border-radius: 6px; overflow: hidden;
+    border: 1px solid var(--line); margin: 8px 0 4px; font-size: 10px;
+  }
+  .budget > div {
+    display: grid; place-items: center; color: #0f1218; font-weight: 600;
+  }
+  .b-rail { background: #5b6578; color: #e8ecf4 !important; }
+  .b-head { background: #8b95a8; }
+  .b-top { background: #c4cddc; }
+  .b-canvas { background: color-mix(in srgb, var(--accent) 75%, #fff); color: #0b1020 !important; }
+  .b-bar { background: #d97706; color: #1a1000 !important; }
+  .budget-legend { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+  .budget-legend i { font-style: normal; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+
+  .cmp-row { display: flex; gap: 8px; align-items: stretch; margin: 8px 0; }
+  .cmp-col { flex: 1; }
+  .cmp-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; text-align: center; }
+  .hl { color: var(--accent); font-weight: 600; }
+  .hl-w { color: var(--warn); font-weight: 600; }
+  .rec {
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>远程电脑 · 全屏与画面高度 UI</h1>
+<p class="lead">
+  实测痛点：工作台里远程画面被 chrome 压小 →「必须点全屏才能看到」；画面越小，绝对坐标映射的放大比越大，远程鼠标越「飘」。
+  本稿只做 UI 方案对比，<strong>不改传输</strong>（鼠标数据报 / 版本提示已另案 R3）。
+  仿真对齐真实组件：<span class="mono">RcWorkbench</span> + <span class="mono">RcSessionView</span> + <span class="mono">RcSessionTop</span> + <span class="mono">RcSessionBar</span> + <span class="mono">RcViewTools</span> + <span class="mono">RcHud</span>。
+</p>
+<p>
+  <span class="tag keep">保留</span>全屏按钮必须在画面区内（<span class="mono">RcViewTools</span>）——底栏不进全屏，放底栏会消失
+  <span class="tag keep">保留</span>浮现式工具条（上缘唤出 / 2.5s 淡出）
+  <span class="tag new">本稿</span>画面高度 · 非全屏提示 · 底栏密度 · 顶栏瘦身
+</p>
+
+<h2><span class="id">0</span>问题诊断（高度预算）</h2>
+<div class="panel">
+  <h4>工作台会话中 · 竖向高度去哪了（示意，窗口高 ≈780）</h4>
+  <div class="budget">
+    <div class="b-rail" style="width:7%" title="导航轨 56px（会话中已收）">轨</div>
+    <div class="b-head" style="width:8%" title="顶栏 ~56px">顶栏</div>
+    <div class="b-top" style="width:6%" title="viewTop ~40px">会话顶</div>
+    <div class="b-canvas" style="width:52%" title="fakeScreen 有效高度">画面 fakeScreen</div>
+    <div class="b-bar" style="width:18%" title="sessionBar 换行后 ~70–90px">底栏</div>
+    <div class="b-head" style="width:9%" title="padding/gap">间隙</div>
+  </div>
+  <div class="budget-legend">
+    <i class="b-rail"></i>导航轨（会话中已是 56px 图标轨，此项已优化）
+    <i class="b-head"></i>工作台顶栏 / 间隙
+    <i class="b-top"></i>会话顶条 <span class="mono">.viewTop</span>
+    <i class="b-canvas"></i>画面 <span class="mono">.fakeScreen</span>
+    <i class="b-bar"></i>会话底栏 <span class="mono">.sessionBar</span>（控件多时会 <strong>flex-wrap 换行</strong>，高度翻倍）
+  </div>
+  <ul class="compact">
+    <li><strong>现状</strong>：dialog 里 <span class="mono">height: min(62vh, 560px)</span>；工作台 <span class="mono">.wbMain .fakeScreen { flex:1; min-height:300px }</span>——理论能撑满，但底栏 wrap + 顶条常驻后，画面被吃掉一截。</li>
+    <li><strong>全屏是现成解</strong>：<span class="mono">.fakeScreen:fullscreen { height:100vh }</span> + 画面内工具条。问题是<strong>入口不显眼</strong>（要靠近上缘唤出），用户不知道/懒得点。</li>
+    <li><strong>速度感受</strong>：远端分辨率不变时，画布显示越小 → 本地 1px 对应远端更多像素 → 鼠标越「快」。全屏后比值接近 1:1，所以「点全屏才顺手」。</li>
+    <li><strong>R3 顶栏</strong>：可控且对端旧版时多一枚「对方版本偏旧」胶囊，顶条更挤——更需要瘦身/合并。</li>
+  </ul>
+</div>
+
+<h2><span class="id">A</span>案 A（推荐）· 保底高度 + 非全屏轻提示 + 底栏可收</h2>
+<p class="lead">三件事同时做：把画面高度从 chrome 手里抢回来；全屏入口从「要发现」变成「主动说」；底栏默认更瘦。不自动强制全屏（规则 17：高频路径一步可达，但不抢用户控制权）。</p>
+
+<div class="panel">
+  <h4>A-1 会话建立后 · 非全屏（提示条 + 更高画面 + 瘦顶栏 + 密底栏）</h4>
+  <div class="wb">
+    <div class="wbRail">
+      <div class="rbtn on">RC</div>
+      <div class="rbtn">设</div>
+      <div class="rbtn">历</div>
+    </div>
+    <div class="wbMain">
+      <div class="wbHead"><b>远程电脑</b><span style="color:#6b7280">局域网直连 · 端到端加密</span></div>
+      <div class="sessionWrap">
+        <div class="viewShell">
+          <div class="viewTop slim">
+            <span class="dot"></span>
+            <span>正在查看 <b>DESKTOP-HHOLIC2</b></span>
+            <span class="pill on">可控</span>
+            <span class="pill warn" title="对端官方 7.2.1 及更早，鼠标移动数据报收不到；请对方升级后重连">对方版本偏旧</span>
+            <span class="sp"></span>
+            <button class="miniBtn" title="释放键盘 / 重连收进溢出菜单">⋯</button>
+            <button class="dangerBtn">结束会话</button>
+          </div>
+          <div class="fakeScreen tall">
+            <div class="hud">
+              <span>JPEG · 28fps</span><span>延迟 ~18ms</span><span>已连接</span>
+            </div>
+            <div class="viewTools"><b class="on">适应</b><b>1:1</b><b>填充</b><b>全屏</b></div>
+            <div class="remoteFrame wide">远端画面（letterbox 已尽量吃满）</div>
+            <div class="fsHint">
+              <div class="txt">
+                画面偏小，远程鼠标会显得更快
+                <small>全屏后与对方分辨率更接近，操作更跟手</small>
+              </div>
+              <button type="button">全屏</button>
+              <button type="button" class="ghost" title="本会话不再提示">知道了</button>
+            </div>
+          </div>
+        </div>
+        <div class="sessionBar dense">
+          <span class="seg"><b>画质 超清</b><i></i><b>画面 整屏</b><i></i><b>码率 100%</b></span>
+          <button class="barBtn">声音</button>
+          <button class="barBtn">剪贴板</button>
+          <button class="barBtn">传文件</button>
+          <span class="barStatus">键盘已捕获 · Esc 释放</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:8px">
+    <span class="tag new">新</span>画面区内<strong>非全屏轻提示</strong>（不是 modal，不挡操作）
+    <span class="tag new">新</span>会话顶条<strong>瘦身</strong>：释放键盘/重连 →「⋯」
+    <span class="tag new">新</span>底栏<strong>密一档</strong>（高度 46→36，次要操作可再收）
+    <span class="tag new">新</span><span class="mono">fakeScreen</span> 工作台 <span class="mono">min-height</span> 300→<strong>360</strong>，且底栏 wrap 时优先压缩底栏而不是画面
+  </p>
+</div>
+
+<div class="panel">
+  <h4>A-2 同一会话 · 点「全屏」后（现状行为，本稿不改语义）</h4>
+  <div class="wb dark-frame" style="background:#0b0d10">
+    <div class="wbMain" style="padding:0; gap:0">
+      <div class="fakeScreen" style="border-radius:0; height:100%">
+        <div class="hud">
+          <span>H.264 · 60fps</span><span>延迟 ~12ms</span><span>已连接</span><span>指针已锁定</span>
+        </div>
+        <div class="viewTools"><b class="on">适应</b><b>1:1</b><b>填充</b><b class="on">退出全屏</b></div>
+        <div class="remoteFrame wide" style="width:96%; max-height:96%">远端画面 · 撑满</div>
+      </div>
+    </div>
+  </div>
+  <ul class="compact">
+    <li>全屏目标仍是 <span class="mono">screenRef</span>（<span class="mono">.fakeScreen</span>）：工具条 / HUD / 画面一起进全屏；<strong>底栏与工作台 chrome 不进</strong>（与现行代码一致）。</li>
+    <li>Esc 两级：先退出指针锁定 / 键盘捕获，再退全屏，再确认结束会话（规则 17.6，不改）。</li>
+    <li>提示条在全屏态<strong>不出现</strong>（已经在全屏）。</li>
+  </ul>
+</div>
+
+<div class="grid2">
+  <div class="panel">
+    <h4>触发与关闭规则（可判定）</h4>
+    <table>
+      <tr><th>条件</th><th>行为</th></tr>
+      <tr><td>可控会话 · 非全屏 · 画面显示宽 &lt; 远端内容宽 × 0.55<br><span class="mono">（或 fakeScreen 高 &lt; 360）</span></td><td>出现提示条</td></tr>
+      <tr><td>点「全屏」</td><td>进入 fullscreen，提示消失</td></tr>
+      <tr><td>点「知道了」</td><td>本会话不再出现（session 级）</td></tr>
+      <tr><td>只看会话</td><td>仍提示全屏（视野问题一样存在），副文案可改为「画面偏小」</td></tr>
+      <tr><td>全屏中 / 窗口已够大</td><td>不出现</td></tr>
+      <tr><td>对端 <span class="mono">peer_dgram_input=false</span></td><td>顶栏仍显示「对方版本偏旧」；两提示可同时存在，不互相吃掉</td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h4>改哪些文件（实现时）</h4>
+    <table>
+      <tr><th>文件</th><th>改动</th></tr>
+      <tr><td><span class="mono">RcSessionView.tsx</span></td><td>提示条状态 + 调用已有 <span class="mono">toggleFullscreen</span></td></tr>
+      <tr><td><span class="mono">RcSessionTop.tsx</span></td><td>瘦身：次要按钮进「⋯」菜单（需 ≤300 行）</td></tr>
+      <tr><td><span class="mono">RcSessionBar.tsx</span> / css</td><td><span class="mono">.sessionBar</span> 密档类</td></tr>
+      <tr><td><span class="mono">RemoteComputer.module.css</span></td><td><span class="mono">.fsHint</span>、<span class="mono">.wbMain .fakeScreen</span> min-height、底栏 wrap 时优先保画面</td></tr>
+      <tr><td><span class="mono">RcViewTools.tsx</span></td><td><strong>不改交互</strong>；可选：挂载时 shown 时间略延长，与提示条错开</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="note">
+  <strong>U/L 对齐</strong>：提示条文案说人话（L1）；「全屏」按钮带字（L2）；非强制、可「知道了」（规则 17 误触低成本）；与顶栏版本提示同一可见性域（规则 15）。动效只用 200ms 淡入（U2）。
+</div>
+
+<h2><span class="id">B</span>案 B · 会话沉浸态（chrome 自动后撤）</h2>
+<p class="lead">进入可控会话后默认「半沉浸」：顶栏并入画面顶部浮层，底栏收成一条 36px 图标轨，展开需点一下。比 A 更激进，画面高度收益更大。</p>
+
+<div class="panel">
+  <h4>B 仿真 · 会话沉浸态</h4>
+  <div class="wb dark-frame">
+    <div class="wbRail" style="width:0; padding:0; overflow:hidden"></div>
+    <div class="wbMain" style="padding:8px; gap:0">
+      <div class="sessionWrap" style="gap:0">
+        <div class="viewShell" style="border-radius:12px">
+          <div class="fakeScreen" style="height:420px">
+            <div class="hud">
+              <span class="dot" style="width:6px;height:6px;background:#2f9e5f;display:inline-block;border-radius:50%"></span>
+              <span>DESKTOP-HHOLIC2 · 可控</span>
+              <span>H.264 · 60fps</span>
+              <span>对方版本偏旧</span>
+              <span style="color:#ff9d9d">结束</span>
+            </div>
+            <div class="viewTools"><b class="on">适应</b><b>全屏</b></div>
+            <div class="remoteFrame wide">远端画面 · 高度优先</div>
+          </div>
+        </div>
+        <div class="sessionBar dense" style="margin-top:6px">
+          <span class="seg"><b>画质</b><i></i><b>画面</b><i></i><b>⋯</b></span>
+          <span class="barStatus">点开 ⋯ 看剪贴板 / 文件 / 声音</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="grid2">
+  <div class="panel">
+    <h4>优点</h4>
+    <ul class="compact">
+      <li>画面高度最大化，接近「未点全屏也够看」</li>
+      <li>身份/链路/结束与 HUD 同层，全屏前后信息不丢</li>
+      <li>符合 Chrome RDP / Moonlight 心智</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h4>缺点 / 风险</h4>
+    <ul class="compact">
+      <li><strong>结束会话</strong>从常驻按钮变成浮层内操作——U1 破坏性操作可达性下降，需确认是否接受</li>
+      <li>底栏控件藏进「⋯」后，L2/L5 可学性变差（要多一次点击才知道有什么）</li>
+      <li>与 v4/v5 工作台设计稿的「顶栏常驻」叙事冲突，改动面大</li>
+      <li>浮层 HUD 加字后更挤，chip 换行可能挡画面上缘</li>
+    </ul>
+  </div>
+</div>
+
+<h2><span class="id">C</span>案 C · 可控会话默认进全屏（产品策略）</h2>
+<p class="lead">会话 <span class="mono">capability=control</span> 且用户手势允许时，建立后自动 <span class="mono">requestFullscreen()</span>；失败则回落案 A 提示条。</p>
+<div class="grid2">
+  <div class="panel">
+    <h4>优点</h4>
+    <ul class="compact">
+      <li>一步到位解决「被挡 + 速度放大」</li>
+      <li>实现最小（调用已有 <span class="mono">toggleFullscreen</span>）</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h4>缺点 / 风险</h4>
+    <ul class="compact">
+      <li>浏览器/WebView 对无手势 fullscreen 有限制，可能静默失败</li>
+      <li>多屏办公时用户常要对照本机文件——强制全屏反而烦</li>
+      <li>与规则 17「用户可控」冲突，除非提供「总是/从不/本次」偏好</li>
+      <li>偏好项又增加设置面（S3 类复杂度）</li>
+    </ul>
+  </div>
+</div>
+<div class="note warn">
+  <strong>不推荐单独用 C。</strong> 若做，仅作为「案 A 提示条上的主按钮旁」可选记忆：「本次会话结束后记住我的选择」——默认不自动全屏。
+</div>
+
+<h2><span class="id">D</span>方案对比与推荐</h2>
+<table>
+  <tr>
+    <th>维度</th>
+    <th>A 保底+提示+密底栏</th>
+    <th>B 沉浸态</th>
+    <th>C 默认全屏</th>
+  </tr>
+  <tr>
+    <td>解决「被挡/要全屏」</td>
+    <td>提示 + 更高画面，仍可能要点一次全屏</td>
+    <td><strong>最好</strong></td>
+    <td>最好（若 fullscreen 成功）</td>
+  </tr>
+  <tr>
+    <td>解决「鼠标速度不一致」</td>
+    <td>提示引导全屏；非全屏仍放大</td>
+    <td>画面变大后缓解</td>
+    <td>全屏后基本消失</td>
+  </tr>
+  <tr>
+    <td>实现成本</td>
+    <td><strong>中</strong>（CSS + 提示条 + 顶栏菜单）</td>
+    <td>大（信息架构重排）</td>
+    <td><strong>小</strong>（但要偏好项）</td>
+  </tr>
+  <tr>
+    <td>可学性 L1–L6</td>
+    <td>好：按钮带字、文案说人话</td>
+    <td>中：藏起来的功能要教</td>
+    <td>中：突然全屏需说明</td>
+  </tr>
+  <tr>
+    <td>与既有 v4/v5 稿冲突</td>
+    <td>小（在现行结构上收紧）</td>
+    <td>大</td>
+    <td>小</td>
+  </tr>
+  <tr>
+    <td>推荐</td>
+    <td><span class="hl">主推</span></td>
+    <td>二期可选</td>
+    <td>仅作 A 的可选记忆</td>
+  </tr>
+</table>
+
+<div class="panel rec">
+  <h4 style="color:#a8c0ff">推荐落地包 = 案 A（可拆两步）</h4>
+  <ul class="compact">
+    <li><strong>A-step1（先做）</strong>：非全屏提示条 +「全屏」主按钮 +「知道了」；<span class="mono">.wbMain .fakeScreen</span> min-height 300→360；底栏密档 CSS。文案见下。</li>
+    <li><strong>A-step2（同批或紧随）</strong>：会话顶条瘦身（⋯ 收释放键盘/重连）；底栏 wrap 时优先压缩底栏高度。</li>
+    <li><strong>不做本轮</strong>：案 B 信息架构重排；案 C 自动全屏；鼠标传输 R1/R2（已拍板不做）。</li>
+    <li><strong>度量（手测）</strong>：1200×780 工作台、会话中、非全屏时 <span class="mono">fakeScreen</span> 有效高度 ≥ 当前 +40px；提示条不挡住 HUD 与画面中心；全屏/退出全屏/Esc 路径与现行一致。</li>
+  </ul>
+</div>
+
+<h2><span class="id">E</span>文案与组件落点（案 A）</h2>
+<div class="grid2">
+  <div class="panel">
+    <h4>提示条文案</h4>
+    <table>
+      <tr><th>场景</th><th>标题</th><th>副文案</th></tr>
+      <tr>
+        <td>可控</td>
+        <td>画面偏小，远程鼠标会显得更快</td>
+        <td>全屏后与对方分辨率更接近，操作更跟手</td>
+      </tr>
+      <tr>
+        <td>只看</td>
+        <td>画面偏小</td>
+        <td>全屏可以看清对方屏幕细节</td>
+      </tr>
+      <tr>
+        <td>按钮</td>
+        <td colspan="2"><span class="mono">全屏</span>（主） · <span class="mono">知道了</span>（次，session 级关闭）</td>
+      </tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h4>结构（对齐现行 JSX）</h4>
+    <ul class="compact">
+      <li>提示条挂在 <span class="mono">.fakeScreen</span> 内、<span class="mono">RcScreenCanvas</span> 之后（与 <span class="mono">RcHud</span> / placeholder 同级）</li>
+      <li><span class="mono">pointer-events</span>：条本身 auto，其余穿透原则不变（U/HUD 纪律）</li>
+      <li>点击「全屏」= <span class="mono">toggleFullscreen()</span>（已有）</li>
+      <li>条件纯函数建议放 <span class="mono">src/lib/rcSessionStats.ts</span> 或新建小模块，便于单测：<span class="mono">shouldShowFsHint({fullscreen, canControl, displayW, contentW, sessionDismissed})</span></li>
+    </ul>
+  </div>
+</div>
+
+<h2><span class="id">F</span>请你拍板</h2>
+<ul class="compact">
+  <li><strong>1.</strong> 是否按 <span class="hl">案 A</span> 做？（推荐）还是改 B / C / A+C 记忆？</li>
+  <li><strong>2.</strong> A-step1 与 A-step2 是否<strong>同一轮</strong>落地？（推荐同一轮，避免顶栏更挤）</li>
+  <li><strong>3.</strong> 提示条是否对「只看」也出现？（推荐出现，副文案不同）</li>
+  <li><strong>4.</strong> 底栏密档是<strong>会话中默认密</strong>，还是保留现状高度、只做 wrap 时优先保画面？（推荐：会话中默认密 + 可手动展开到全量控件）</li>
+</ul>
+<div class="note">
+  确认前<strong>不改业务代码</strong>。你回复例如「按 A，step1+2 一起，只看也提示，底栏默认密」后我再动
+  <span class="mono">RcSessionView / RcSessionTop / RemoteComputer.module.css</span> 等。
+  版本号仍不自动升；不 build、不 commit。
+</div>
+
+<p class="lead" style="margin-top:28px">
+  设计稿：MiMo Agent · 2026-09-20 · 依据真实组件源码与实测痛点（§9 二次审查）· 未改代码
+</p>
+
+</div>
+</body>
+</html>

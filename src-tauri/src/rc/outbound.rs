@@ -462,7 +462,10 @@ impl OutboundVideo {
                                 .get("monitors")
                                 .and_then(|x| serde_json::from_value(x.clone()).ok())
                                 .unwrap_or_default();
-                            self.svc.note_peer_caps(fps120, hz, hevc, monitors);
+                            // R3：旧版对端（官方 7.2.1 及更早）没有这个字段 → false
+                            let dgram_input =
+                                v.get("dgram_input").and_then(|x| x.as_bool()).unwrap_or(false);
+                            self.svc.note_peer_caps(fps120, hz, hevc, monitors, dgram_input);
                         }
                         Some("inject_err") => {
                             if let Some(e) = v.get("error").and_then(|x| x.as_str()) {

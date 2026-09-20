@@ -243,9 +243,16 @@ impl RcService {
         }
         // ❗ 失败要单独分档：旧版对端根本没有这条 ALPN，握手必然失败。
         //   塌缩成「连接失败」会让用户去查网络，而实际要做的是升级对方。
-        ep.connect(addr, FILE_ALPN).await.map_err(|e| {
-            format!("[file_unsupported] 对方没有响应文件通道（可能是不支持文件传输的旧版本）：{e}")
-        })
+        // C-3：与 dial_and_request 同款超时——网络黑洞下后台任务不得无限挂。
+        match tokio::time::timeout(Duration::from_secs(15), ep.connect(addr, FILE_ALPN)).await {
+            Err(_) => Err(
+                "[connect_timeout] 连接对方文件通道超时（对方可能离线或网络不可达）".into(),
+            ),
+            Ok(Err(e)) => Err(format!(
+                "[file_unsupported] 对方没有响应文件通道（可能是不支持文件传输的旧版本）：{e}"
+            )),
+            Ok(Ok(c)) => Ok(c),
+        }
     }
 
     /// 一批文件**串行**发完（一条连接，每个文件一条 bi-stream）。
@@ -256,11 +263,36 @@ impl RcService {
     ) -> Result<(), String> {
         let conn = self.dial_file(peer).await?;
         let peer_name = self.peer_name(peer);
-        for (path, name, size) in items {
-            let (mut send, mut recv) = conn
-                .open_bi()
-                .await
-                .map_err(|e| format!("开流失败：{}", e))?;
+        // C-4：用索引循环，开流失败时把「当前 + 剩余」全部落 Failed task。
+        let items = items;
+        let n = items.len();
+        for idx in 0..n {
+            let (path, name, size) = items[idx].clone();
+            let (mut send, mut recv) = match conn.open_bi().await {
+                Ok(v) => v,
+                Err(e) => {
+                    let reason = format!("开流失败：{e}");
+                    log::warn!(
+                        "[RC] 批传第 {}/{} 个文件开流失败，剩余标记失败：{reason}",
+                        idx + 1,
+                        n
+                    );
+                    for (p, nm, sz) in &items[idx..] {
+                        let tid = self.file.task_start(
+                            peer,
+                            &peer_name,
+                            TaskDir::Send,
+                            nm,
+                            *sz,
+                            0,
+                            now_ms(),
+                        );
+                        self.file.task_note_path(&tid, p);
+                        self.finish_file(&tid, TaskState::Failed, Some(reason.clone()), *sz);
+                    }
+                    break;
+                }
+            };
 
             let task_id = self.file.task_start(
                 peer,
@@ -437,12 +469,16 @@ impl RcService {
         // 🔴 「单独禁止这台设备」必须在这里生效。它的语义是「这台设备从我这儿拿不到
         //    任何东西」——只挡画面却放它往我的磁盘写文件，等于没禁止。B2 初版漏了这条，
         //    B4 补上（`Gate::DeviceDenied` 是 gate_inbound 的既定分支，天然就能用）。
+        // B-b：文件通道**只认 rc_devices**。同步配对设备必须先经会话批准
+        // elevate（approve_inbound）或设备菜单允许，才获得文件准入——
+        // 「只同步笔记」不应自动可写磁盘。
+        let rc_paired = self.is_rc_paired(&peer);
         let gate = super::session::gate_inbound(
             self.enabled(),
             self.max_capability(),
             &self.device_deny(),
             &peer,
-            self.has_remote_trust(&peer),
+            rc_paired,
             super::protocol::Capability::View,
             false,
         );
@@ -450,10 +486,17 @@ impl RcService {
             // 数值码只做粗分类（沿用本文件既有约定），细因在 reason 字节串里
             let code: u32 = match gate {
                 super::session::Gate::DeviceDenied => 4,
+                super::session::Gate::NotPaired if self.has_remote_trust(&peer) => 3,
                 _ => 1,
             };
             conn.close(code.into(), gate.deny_code().as_bytes());
-            log::info!("[RC] {short} 文件连接被拒：{}", gate.deny_reason());
+            if gate == super::session::Gate::NotPaired && self.has_remote_trust(&peer) {
+                log::info!(
+                    "[RC] {short} 文件连接被拒：仅笔记同步配对，尚未获得远程/文件权限"
+                );
+            } else {
+                log::info!("[RC] {short} 文件连接被拒：{}", gate.deny_reason());
+            }
             return;
         }
         if self.file_busy(&peer) {
@@ -551,7 +594,11 @@ impl RcService {
                             break None;
                         }
                         AskOutcome::Gone => {
-                            conn.close(4u32.into(), b"canceled");
+                            // C-5：MAX_ASKS 顶掉最老 ask 时 outcome=Gone。
+                            // 关整条连接会把同批后续文件全灭——只拒这一条。
+                            deny_file(&mut send, conn, "确认条已失效（请让对方重试）", code::DENIED)
+                                .await;
+                            log::info!("[RC] {short} 文件确认条已失效，本条拒绝：{name}");
                             return;
                         }
                     }

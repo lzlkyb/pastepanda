@@ -39,6 +39,8 @@
   margin: 32px 0 12px;
   padding-left: 13px;
   position: relative;
+  /* 锚点跳转后不被滚动容器顶边裁掉标题 */
+  scroll-margin-top: 12px;
 }
 
 .md h2::before {
@@ -52,19 +54,61 @@
   background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 35%, transparent));
 }
 
-/* 悬停锚点（装饰性，文档站惯例） */
-.md h2::after,
-.md h3::after {
-  content: " #";
+/* 标题真实锚点（heading 渲染器注入的 a.md-hanchor）。
+   旧版是 ::after 装饰「#」，不可点；L6：能点的要看得出能点。 */
+.md :global(.md-hanchor) {
+  margin-left: 4px;
   color: var(--accent);
   font-weight: 400;
+  font-size: 0.85em;
+  text-decoration: none;
   opacity: 0;
   transition: opacity 0.15s;
+  cursor: pointer;
 }
 
-.md h2:hover::after,
-.md h3:hover::after {
-  opacity: 0.6;
+.md h1:hover :global(.md-hanchor),
+.md h2:hover :global(.md-hanchor),
+.md h3:hover :global(.md-hanchor),
+.md h4:hover :global(.md-hanchor),
+.md h5:hover :global(.md-hanchor),
+.md h6:hover :global(.md-hanchor),
+.md :global(.md-hanchor):focus-visible {
+  opacity: 0.85;
+}
+
+.md :global(.md-hanchor):hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.md h1,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  scroll-margin-top: 12px;
+}
+
+/* 锚点失效提示：预览容器顶部，与点击同域（规则 15 / U3） */
+.md :global(.md-anchor-miss) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--danger, #FF6B8A) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger, #FF6B8A) 35%, transparent);
+  color: var(--danger, #FF6B8A);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.md :global(.md-anchor-miss.show) {
+  opacity: 1;
 }
 
 .md h3 { font-size: 16px; font-weight: 600; margin: 24px 0 8px; }
@@ -464,6 +508,41 @@
   outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 8px;
   transition: background 0.5s, outline 0.5s;
+}
+
+/* 大纲/锚点跳转入场：左移 6px→0 + 底色从左扫入（300ms，U2 中档）。
+   与 md-flash 同挂：入场结束后 flash 仍保持约 900ms。
+   reduced-motion 由 globals.css 全局 * 兜底，位移会退化为仅颜色。 */
+.md :global(.md-hit) {
+  position: relative;
+  animation: mdHitIn 0.3s ease;
+}
+.md :global(.md-hit)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  animation: mdHitSweep 0.3s ease;
+  pointer-events: none;
+}
+@keyframes mdHitIn {
+  from {
+    transform: translateX(-6px);
+    opacity: 0.85;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes mdHitSweep {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 /* 代码块行结构（hljs 高亮后按行包裹） */

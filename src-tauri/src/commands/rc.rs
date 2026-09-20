@@ -1235,7 +1235,13 @@ pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
     .title("远程电脑")
     .inner_size(1200.0, 780.0)
     .min_inner_size(960.0, 640.0)
-    .resizable(true);
+    .resizable(true)
+    // 防闪黑（方案 A，照 md-editor / 截图窗先例）：
+    // ① 先隐藏建窗——Tauri 默认 visible=true，`build()` 返回时 HWND 已上屏，
+    //    WebView 尚未 paint，Windows 客户区会露出系统默认黑底（整窗闪一下黑框）。
+    // ② 客户区底色对齐主窗 `backgroundColor: #F4F6F9`，隐藏阶段也不会是黑的。
+    .visible(false)
+    .background_color(tauri::window::Color(244, 246, 249, 255)); // #F4F6F9
 
     // 按主窗口所在显示器（回退主显示器）居中——照 md-editor 的先例
     let monitor = app
@@ -1256,9 +1262,12 @@ pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
     } else {
         builder = builder.center();
     }
-    builder
+    let window = builder
         .build()
         .map_err(|e| format!("创建远程电脑窗口失败: {}", e))?;
+    // 先隐藏建窗再显示，避免创建瞬间的闪烁（与 open_fullscreen_editor 同款纪律）。
+    // async command 已规避 tauri#13963 死锁；present_window 含 unminimize + show + focus。
+    crate::present_window(&window);
     Ok(())
 }
 

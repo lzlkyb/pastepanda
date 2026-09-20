@@ -22,6 +22,7 @@ import { THEMES, DEFAULT_THEME, type ThemeKey } from "@/lib/theme";
 import { useCodeMirrorEditor } from "./useCodeMirrorEditor";
 import { insertPastedImages as savePastedImages } from "./mdImagePaste";
 import { MarkdownOutline } from "./fullscreen/MarkdownOutline";
+import { useOutlineJump } from "./useOutlineJump";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SkinScene } from "@/components/SkinScene";
 import { invoke } from "@tauri-apps/api/core";
@@ -289,6 +290,20 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
 
   // Preview scroll sync
   const previewScrollRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 大纲点击分派：编辑→CM；预览→DOM#slug；分屏→两侧都跳。
+   * 策略在 useOutlineJump（规则 #7，本文件已超 300 行）。
+   */
+  const hasPreviewSpec = !!spec.Preview;
+  const handleOutlineJump = useOutlineJump({
+    viewMode,
+    jumpToLine,
+    previewScrollRef,
+    hasPreview: hasPreviewSpec,
+    onJumpFail: (h) => toast(`预览中未找到标题「${h.text}」`, "error"),
+  });
+
   /** 滚动同步的“谁在驱动”时间窗（防回声，详见 syncScroll） */
   const scrollSyncLock = useRef<{ side: "editor" | "preview"; until: number } | null>(null);
 
@@ -787,7 +802,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     );
   }
 
-  const hasPreview = !!spec.Preview;
+  const hasPreview = hasPreviewSpec;
 
   return (
     <div
@@ -879,7 +894,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       {/* Main Content */}
       <div className={styles.main} ref={containerRef}>
         {spec.key === "markdown" && showOutline && (
-          <MarkdownOutline text={text} onJump={jumpToLine} />
+          <MarkdownOutline text={text} onJump={handleOutlineJump} />
         )}
         {/* Editor Pane — 始终挂载，仅预览时用 display:none 隐藏而非卸载。
             若条件卸载，CodeMirror 视图会随 DOM 移除而脱离文档，切回分屏时

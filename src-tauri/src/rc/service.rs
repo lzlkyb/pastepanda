@@ -102,6 +102,10 @@ pub struct RcStatus {
     pub peer_refresh_hz: u32,
     /// 发起端视角：被控端在线显示器列表（Q7 caps）。空 = 未上报（旧版本对端）。
     pub peer_monitors: Vec<crate::screenshot::MonitorInfo>,
+    /// 发起端视角：被控端是否声明「能读鼠标移动数据报」（R3 caps）。
+    /// false = 未上报（官方 7.2.1 及更早）——发起端 UI 据此提示升级对端；
+    /// **不改传输**（MouseMove 仍走数据报，旧对端收不到是已知限制）。
+    pub peer_dgram_input: bool,
     /// 最后一次收到对端 pong 的时刻（epoch ms）；0 = 本会话还没收到过。
     ///
     /// 🔴 前端**只**用它判链路活性。ping 的本地 `invoke` 成功只说明消息进了
@@ -183,6 +187,8 @@ pub struct RcService {
     peer_monitors: Mutex<Vec<crate::screenshot::MonitorInfo>>,
     /// 发起端：被控端是否支持 HEVC 硬编（Q3 caps）。false = 不可用/未上报。
     peer_hevc: std::sync::atomic::AtomicBool,
+    /// 发起端：被控端 caps 是否声明 `dgram_input`（R3）。false = 旧版/未上报。
+    peer_dgram_input: std::sync::atomic::AtomicBool,
     /// 剪贴板同步的状态与「跨会话串扰」不变量（见 `clipboard.rs`）。
     clip: ClipboardState,
     /// G6 文件传输的状态（待响应请求 + 任务列表，见 `file_state.rs`）。
@@ -418,6 +424,7 @@ impl RcService {
             peer_refresh_hz: std::sync::atomic::AtomicU32::new(0),
             peer_monitors: Mutex::new(Vec::new()),
             peer_hevc: std::sync::atomic::AtomicBool::new(false),
+            peer_dgram_input: std::sync::atomic::AtomicBool::new(false),
             clip: ClipboardState::new(),
             file: super::file_state::FileState::new(),
             inbound_send: tokio::sync::Mutex::new(None),
@@ -587,6 +594,7 @@ impl RcService {
         refresh_hz: u32,
         hevc: bool,
         monitors: Vec<crate::screenshot::MonitorInfo>,
+        dgram_input: bool,
     ) {
         self.peer_fps120
             .store(fps120, std::sync::atomic::Ordering::Relaxed);
@@ -594,6 +602,8 @@ impl RcService {
             .store(refresh_hz.min(1000), std::sync::atomic::Ordering::Relaxed);
         self.peer_hevc
             .store(hevc, std::sync::atomic::Ordering::Relaxed);
+        self.peer_dgram_input
+            .store(dgram_input, std::sync::atomic::Ordering::Relaxed);
         *self.peer_monitors.lock().unwrap_or_else(|p| p.into_inner()) = monitors;
     }
 
@@ -604,6 +614,11 @@ impl RcService {
     /// 发起端视角：被控端是否支持 HEVC 硬编（Q3 caps）。
     pub fn peer_hevc(&self) -> bool {
         self.peer_hevc.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// 发起端视角：被控端 caps 是否声明可读鼠标数据报（R3）。false = 旧版。
+    pub fn peer_dgram_input(&self) -> bool {
+        self.peer_dgram_input.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn peer_refresh_hz(&self) -> u32 {
@@ -963,10 +978,13 @@ impl RcService {
     }
 
     /// 发起端发送输入/剪贴板/流控帧。会话必须 OutboundActive。
-    /// 键鼠与剪贴板要求 Control；**Ping 与流控（画质/范围/编码/码率倍率）只看会话也可发**——
-    /// 否则 View 会话发不出心跳，被控端 3.5s 后暂停推流，画面永久冻结。
-    /// RequestKey 同理（P0-1 A1）：解码断链自愈是画面链路的一部分，
-    /// 只看会话也必须能要关键帧，否则 View 会话的花屏要等 2s 自然 GOP。
+    ///
+    /// 免 Control 白名单（2026-09-20 二次审查拍板）：
+    /// - **Ping / NetHint / SetBitratePct / SetQuality / SetCodec / RequestKey**：
+    ///   只看会话的流控与自愈——否则 View 发不出心跳会误暂停推流。
+    /// - **AudioOn**：只看可收系统声音（收声不改主机环境）。
+    /// - **SetCaptureScope 要求 Control**：改采集范围会切到对方其它屏，属于
+    ///   改主机可观测内容，只看不得改（与 SetHostMute 同级）。
     pub async fn send_input(&self, ev: &super::input::InputEvent) -> Result<(), String> {
         use super::input::InputEvent;
         let needs_control = !matches!(
@@ -975,8 +993,8 @@ impl RcService {
                 | InputEvent::NetHint { .. }
                 | InputEvent::SetBitratePct { .. }
                 | InputEvent::SetQuality { .. }
-                | InputEvent::SetCaptureScope { .. }
                 | InputEvent::SetCodec { .. }
+                | InputEvent::AudioOn { .. }
                 | InputEvent::RequestKey
         );
         if needs_control {
@@ -1024,6 +1042,8 @@ impl RcService {
         self.peer_refresh_hz
             .store(0, std::sync::atomic::Ordering::Relaxed);
         self.peer_hevc
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.peer_dgram_input
             .store(false, std::sync::atomic::Ordering::Relaxed);
         // Q7：对端屏列表是上一场会话的残留——不清的话，断连后 UI 还能
         // 「切到」一个早已不在场的显示器。
@@ -1127,13 +1147,17 @@ impl RcService {
     }
 
     /// 是否在**远程**配对表里。
-    fn is_rc_paired(&self, node_id: &str) -> bool {
+    /// 是否在**远程**配对表里（只认 `rc_devices`，不含笔记同步表）。
+    /// B-b：文件通道 / 免确认 / 自动收文件的准入判据。
+    pub(super) fn is_rc_paired(&self, node_id: &str) -> bool {
         matches!(self.store.rc_device_get(node_id), Ok(Some(_)))
     }
 
-    /// 远程信任（方案 A 单向继承）：远程配对 **或** 同步配对。
+    /// 远程信任：远程配对 **或** 同步配对（方案 A 单向继承）。
     ///
-    /// 同步配对的设备可直接发起/接受远程；远程配对**不会**自动进同步。
+    /// 🔴 B-b（2026-09-20 拍板）：这条只用于「能不能敲门 / 列表可见」；
+    ///    **文件通道与免确认/自动接收只认 `rc_devices`**（`is_rc_paired`）。
+    ///    同步配对设备首次要通过会话批准 elevate 写入 rc 表后，才获得文件准入。
     pub fn has_remote_trust(&self, node_id: &str) -> bool {
         if self.is_rc_paired(node_id) {
             return true;
@@ -1141,7 +1165,10 @@ impl RcService {
         matches!(self.store.device_get(node_id), Ok(Some(_)))
     }
 
-    /// 同步设备首次用于远程时写入 rc_devices（幂等），便于 presence 勾选与列表稳定。
+    /// 同步设备首次被**人工批准**远程会话时写入 rc_devices（幂等）。
+    ///
+    /// B-b：同意一次会话 = 用户确认「这台同步设备可以远程我」，此后它就是
+    /// 正式远程设备（可开免确认 / 自动收文件）。不在敲门时自动 elevate。
     pub fn elevate_from_sync(&self, node_id: &str) -> Result<(), String> {
         if self.is_rc_paired(node_id) {
             return Ok(());
@@ -1269,6 +1296,7 @@ impl RcService {
             clock_skew_ms: self.clock_skew_ms(),
             peer_fps120: self.peer_fps120(),
             peer_hevc: self.peer_hevc(),
+            peer_dgram_input: self.peer_dgram_input(),
             peer_refresh_hz: self.peer_refresh_hz(),
             peer_monitors: self
                 .peer_monitors
@@ -1375,6 +1403,12 @@ impl RcService {
 
         {
             let mut g = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            // C-7：双开竞态——两次 start 都看到 None 时，后到者不得覆盖先写入的
+            // Running（会泄漏端点与 accept 循环）。写槽前再判一次。
+            if g.is_some() {
+                log::info!("[RC] start 并发：另一请求已完成绑定，本次丢弃");
+                return Ok(());
+            }
             *g = Some(Running {
                 endpoint: endpoint.clone(),
                 presence: presence.clone(),
@@ -1690,6 +1724,12 @@ impl RcService {
                         // 这条路径上给对端制造一条需要解释的关闭帧。
                         drop(conn);
                         return;
+                    }
+                    // B-b：会话在对端获批 = 首次远程信任确认。发起侧同步写入
+                    // rc_devices（对端 approve 时也会 elevate 它自己那份），
+                    // 之后双向文件通道与免确认才都有行可查。
+                    if let Err(e) = svc.elevate_from_sync(&peer) {
+                        log::warn!("[RC] 发起侧 elevate 失败：{e}");
                     }
                     let _ = svc.store.rc_device_touch(&peer, true);
                     // Q2：无人值守接入成功（码或密码）= 发起侧也把这台写进自己的
@@ -2427,6 +2467,13 @@ impl RcService {
         let knock = inner.pending[idx].clone();
         let s = self.establish_inbound_with(&mut inner, peer, knock.peer_name, knock.capability)?;
         inner.pending.remove(idx);
+        drop(inner);
+        // B-b：人工批准 = 首次 elevate 确认。仅同步配对的设备在此写入 rc_devices，
+        // 此后可开免确认/自动收文件；已是 rc 设备则幂等无操作。
+        if let Err(e) = self.elevate_from_sync(peer) {
+            log::warn!("[RC] 批准入站后 elevate 失败（不影响本次会话）：{e}");
+        }
+        self.emit_changed();
         Ok(s)
     }
 

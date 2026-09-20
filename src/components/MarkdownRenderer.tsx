@@ -9,6 +9,11 @@ import {
   imageMissingHtml,
   toAssetUrl,
 } from "@/lib/markdown/imageSrc";
+import {
+  resetHeadingSlugState,
+  headingHtml,
+  handleAnchorClick,
+} from "@/lib/markdown/headingAnchor";
 import styles from "./MarkdownRenderer.module.css";
 
 // marked 全局配置（只执行一次）
@@ -49,6 +54,21 @@ marked.use({
         `<pre><code${language ? ` class="language-${escapeHtml(language)}"` : ""}>${escapeHtml(text)}</code></pre>` +
         `</div>`
       );
+    },
+    /**
+     * 标题注入 id + 可点「#」锚点。slug 与大纲 scanHeadings 同源。
+     * `this.parser.parseInline` 保留行内格式；slug 用纯文本，避免 `**` 进 id。
+     */
+    heading(this: unknown, token: Tokens.Heading): string {
+      const parser = (this as { parser?: { parseInline: (t: Tokens.Generic[]) => string } }).parser;
+      const inner = parser?.parseInline
+        ? parser.parseInline(token.tokens ?? [])
+        : escapeHtml(token.text || "");
+      const plain = (token.text || "")
+        .replace(/[*_`~]/g, "")
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .trim();
+      return headingHtml(token.depth, inner, plain);
     },
   },
 });
@@ -232,6 +252,8 @@ function renderMarkdownHtml(text: string, baseDir?: string | null): string {
   // image 渲染器靠这个模块变量拿 baseDir（见 activeBaseDir 注释），
   // finally 里必须清掉：不清的话下一个不传 baseDir 的调用方会接手上一次的目录
   activeBaseDir = baseDir ?? null;
+  // 标题 slug 计数必须每次解析归零，否则同一文档重渲染会得到安装步骤-1
+  resetHeadingSlugState();
   try {
     const raw = transformAlerts(marked.parse(rewriteLocalImagePaths(text, baseDir)) as string);
     return DOMPurify.sanitize(raw, {
@@ -406,6 +428,13 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     const el = containerRef.current;
     if (!el) return;
     const onClick = (e: MouseEvent) => {
+      // 预览内锚点：`#章节` / 标题旁「#」→ 容器内滚动（不能靠原生 hash，会滚 window）
+      const anchor = (e.target as HTMLElement).closest('a[href^="#"]') as HTMLAnchorElement | null;
+      if (anchor && el.contains(anchor)) {
+        e.preventDefault();
+        handleAnchorClick(el, anchor);
+        return;
+      }
       // 块级行号：点击闪烁高亮整个内容块，辅助浏览定位
       const blknum = (e.target as HTMLElement).closest(".md-blknum") as HTMLElement | null;
       if (blknum && el.contains(blknum)) {

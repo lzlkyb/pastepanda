@@ -22,6 +22,7 @@ import { RcViewTools } from "./RcViewTools";
 import { RcSessionTop } from "./RcSessionTop";
 import { RcSessionBar } from "./RcSessionBar";
 import { RcScreenCanvas } from "./RcScreenCanvas";
+import { RcFsHint } from "./RcFsHint";
 import styles from "./RemoteComputer.module.css";
 
 export function RcSessionView({
@@ -55,6 +56,8 @@ export function RcSessionView({
   const [bitratePick, setBitratePick] = useState(rc.status?.bitrate_pct ?? 100);
   const [fit, setFit] = useState<FitMode>("fit");
   const [fullscreen, setFullscreen] = useState(false);
+  /** 案 A：非全屏「画面偏小」提示，「知道了」仅本会话生效 */
+  const [fsHintDismissed, setFsHintDismissed] = useState(false);
   const screenRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // P4：每次输入发出的本地时刻（useRcInput 写、useRcFrames 读），操作延迟 HUD 用
@@ -91,10 +94,25 @@ export function RcSessionView({
   // 旧版本对端解不出这个事件，安全忽略。
   const [audioOn, setAudioOn] = useState(true);
   useRcAudio(session.id, audioOn);
-  const toggleAudio = useCallback(() => setAudioOn((v) => !v), []);
+  // C-UI3：失败必须回滚 + 说人话（与 RcAudioBar「对方外放」同款），禁止静默 catch。
+  const toggleAudio = useCallback(() => {
+    const next = !audioOn;
+    setAudioOn(next);
+    void rcAudioToggle(next).catch((e) => {
+      setAudioOn((cur) => (cur === next ? !next : cur));
+      toast(
+        `声音开关失败：${typeof e === "string" && e ? e : String(e)}`,
+        "error",
+      );
+    });
+  }, [audioOn, toast]);
+  // 会话建立时按默认「开」同步一次给对端；换会话不继承上一场的本地开关。
   useEffect(() => {
-    void rcAudioToggle(audioOn).catch(() => {});
-  }, [audioOn, session.id]);
+    setAudioOn(true);
+    void rcAudioToggle(true).catch(() => {
+      // 挂载同步失败不打断画面：会话里仍可手动点开关，失败路径在 toggleAudio
+    });
+  }, [session.id]);
 
   const onAutoFailToast = useCallback(
     (e: string) => toast(`自动同步剪贴板失败：${e}`, "error"),
@@ -186,6 +204,10 @@ export function RcSessionView({
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
+  // 换会话时提示条恢复（上一场点过「知道了」不带到下一场）
+  useEffect(() => {
+    setFsHintDismissed(false);
+  }, [session.id]);
 
   // 会话内的一次性通知（对端注入失败 / 路径自动切换 relay↔直连）收口在 hook 里——
   // 这两条都是「说一次就够」的消息，留在会话壳里会把这个文件推过 300 行红线。
@@ -216,6 +238,8 @@ export function RcSessionView({
           linkState={link.state}
           unansweredSec={link.unansweredSec}
           busy={busy}
+          // R3：false = 对端 caps 未声明数据报鼠标（7.2.1 及更早）→ 顶栏提示升级
+          peerDgramInput={rc.status?.peer_dgram_input}
           onReleaseKb={input.releaseKb}
           onReconnect={onReconnect}
           onRequestEnd={() => void requestEnd()}
@@ -307,6 +331,18 @@ export function RcSessionView({
             linkState={link.state}
             pathKind={rc.status?.path_kind ?? ""}
             pointerLocked={input.pointerLocked}
+          />
+          {/* 案 A：非全屏轻提示（判据 lib/rcFsHint；不挡画面中心操作） */}
+          <RcFsHint
+            canControl={canControl}
+            hasFrame={hasFrame}
+            fullscreen={fullscreen}
+            dismissed={fsHintDismissed}
+            contentSize={size}
+            canvasRef={canvasRef}
+            screenRef={screenRef}
+            onFullscreen={toggleFullscreen}
+            onDismiss={() => setFsHintDismissed(true)}
           />
         </div>
       </div>

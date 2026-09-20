@@ -89,6 +89,12 @@ export interface RcStatus {
    */
   peer_monitors?: RcMonitorInfo[];
   /**
+   * 发起端视角：被控端 caps 是否声明「能读鼠标移动数据报」（R3）。
+   * false / 缺省 = 官方 7.2.1 及更早——会话顶栏提示升级对端；
+   * **不改传输**（MouseMove 仍走数据报，旧对端收不到是已知限制）。
+   */
+  peer_dgram_input?: boolean;
+  /**
    * 最后一次收到对端 pong 的时间戳（ms）；0 = 还没收到过。
    * 链路活性判据的唯一来源（见 `useRcLinkState`）——ping 的本地 invoke
    * 成功与否不代表对端收到了。

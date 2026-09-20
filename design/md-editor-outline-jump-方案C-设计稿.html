@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · MD 全屏编辑器目录跳转修复 · 方案 C 设计稿</title>
+<style>
+/* ========================================================================
+   尺寸与变量抄自真实代码：
+   - FullscreenEditor.module.css：toolbar 48px / editorPane #1e1e2e / outline 216px
+   - MarkdownOutline.module.css：panel 216px / item 12.5px / lv 缩进 +10px
+   - MarkdownRenderer.module.css：.md h2 渐变 # 装饰 / max-width 900px
+   - 全屏编辑器固定深色底（非主题变量实色）
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:36px 0 6px}
+h3{font-size:13px;color:#E6EDF5;margin:18px 0 6px;font-weight:600}
+.sub{color:#7C8899;font-size:12px;margin:0 0 20px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 14px;max-width:980px}
+.note b{color:#D6DEE8;font-weight:600}
+.pick{color:#6FD68B;font-weight:600}
+.bad{color:#F09A9A;font-weight:600}
+.ok{color:#6FD68B}
+hr{border:0;border-top:1px solid #262A31;margin:34px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+.kbd{background:#0E1A2C;border:1px solid #1C2C42;border-radius:4px;padding:0 5px;font-family:Consolas,monospace;font-size:11px;color:#7CC7FF}
+table.t{border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:980px}
+table.t th,table.t td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+table.t th{background:#1C2027;color:#E4EAF1;font-weight:600}
+table.t td{color:#B4BECB}
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:12px 14px;font-size:12px;color:#9FBF9F;max-width:980px;margin:10px 0}
+.anno b{color:#6FD68B}
+.anno.warn{background:#1A1210;border-color:#7F1D1D;color:#C9A2A2}
+.anno.warn b{color:#F09A9A}
+.anno.info{background:#0E1A2C;border-color:#1C2C42;color:#9FB6D0}
+.anno.info b{color:#7CC7FF}
+
+/* ===== 全屏编辑器 mock（抄 FullscreenEditor 真实尺寸） ===== */
+.fe{width:100%;max-width:920px;background:#0F1218;border:1px solid #1C2430;border-radius:12px;overflow:hidden;
+  box-shadow:0 14px 44px rgba(0,0,0,.45);margin:14px 0 8px}
+.feTag{font-size:11px;color:#6E7A8A;margin:0 0 6px}
+.feBar{display:flex;align-items:center;height:48px;padding:0 14px;gap:8px;
+  background:linear-gradient(180deg,#1a2030 0%,#141820 100%);border-bottom:1px solid #1C2430}
+.feIcon{width:22px;height:22px;border-radius:6px;background:#1C2C42;color:#7CC7FF;font-size:11px;
+  display:flex;align-items:center;justify-content:center;font-weight:700}
+.feName{font-size:12.5px;color:#E0E8F0;font-weight:600}
+.feRight{margin-left:auto;display:flex;gap:4px;align-items:center}
+.feBtn{height:28px;padding:0 10px;border-radius:7px;border:1px solid #1C2C42;background:#0A1628;
+  color:#A2B6CD;font-size:11.5px;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.feBtn.on{background:rgba(59,158,255,.16);border-color:rgba(59,158,255,.45);color:#7CC7FF}
+.feBtn.mode{padding:0 8px}
+.feBtn.mode.on{background:rgba(59,158,255,.2)}
+.feMain{display:flex;min-height:280px;background:#12151c}
+/* 大纲侧栏 — 抄 MarkdownOutline.module.css */
+.ol{width:216px;min-width:216px;border-right:1px solid rgba(255,255,255,.08);
+  background:rgba(0,0,0,.12);display:flex;flex-direction:column}
+.olHead{padding:8px 12px 6px;font-size:11px;letter-spacing:.04em;color:#8fa3c4;user-select:none}
+.olList{flex:1;overflow:auto;padding:0 6px 10px}
+.olItem{display:block;width:100%;border:none;background:transparent;color:#c4d0e4;
+  font-size:12.5px;line-height:1.45;text-align:left;padding:4px 8px;border-radius:5px;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit}
+.olItem:hover{background:rgba(255,255,255,.07);color:#e6edf7}
+.olItem.lv1{padding-left:8px;font-weight:600;color:#e6edf7}
+.olItem.lv2{padding-left:18px;font-weight:500}
+.olItem.lv3{padding-left:28px}
+.olItem.hit{background:rgba(59,158,255,.22);color:#9fd0ff;box-shadow:inset 2px 0 0 #3B9EFF}
+/* 编辑 / 预览面板 */
+.pane{flex:1;min-width:0;display:flex;flex-direction:column;background:#1e1e2e}
+.pane.preview{background:#161a22}
+.pane.hide{display:none}
+.paneHdr{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;flex-shrink:0;
+  background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.06)}
+.paneLbl{font-size:11px;font-weight:600;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px}
+.cmBody{flex:1;padding:10px 0;font-family:Consolas,'Cascadia Code',monospace;font-size:12.5px;line-height:1.65;color:#c8d0dc;overflow:auto}
+.cmLine{display:flex;padding:0 12px;gap:10px}
+.cmLn{width:28px;text-align:right;color:rgba(255,255,255,.25);user-select:none;flex-shrink:0}
+.cmLine.focus{background:rgba(59,158,255,.12)}
+.cmLine.focus .cmLn{color:#7CC7FF}
+.mdBody{flex:1;padding:14px 18px;font-size:13px;line-height:1.8;color:var(--text-primary,#d5dde8);overflow:auto}
+.mdBody h1,.mdBody h2,.mdBody h3{margin:0 0 8px;scroll-margin-top:12px}
+.mdBody h1{font-size:20px;font-weight:800;color:#e8eef7}
+.mdBody h2{font-size:16px;font-weight:700;color:#e0e8f0;padding-left:10px;position:relative}
+.mdBody h2::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;
+  background:linear-gradient(180deg,#3B9EFF,rgba(59,158,255,.35))}
+.mdBody h3{font-size:13.5px;font-weight:600;color:#c4d0e4}
+.mdBody p{margin:6px 0;color:#9aa8bb;font-size:12.5px}
+.mdBody .tocLink{color:#7CC7FF;cursor:pointer;text-decoration:none}
+.mdBody .tocLink:hover{text-decoration:underline}
+.mdBody .anchorHash{color:#3B9EFF;opacity:0;font-weight:400;transition:opacity .15s;margin-left:4px}
+.mdBody h2:hover .anchorHash,.mdBody h3:hover .anchorHash{opacity:.7}
+.mdBody h2.flash,.mdBody h3.flash{animation:hlFlash .9s ease}
+@keyframes hlFlash{
+  0%,100%{background:transparent}
+  20%,60%{background:rgba(59,158,255,.2);box-shadow:inset 3px 0 0 #3B9EFF}
+}
+/* 三态说明条 */
+.flow{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.flowCard{flex:1;min-width:200px;background:#0E1A2C;border:1px solid #1C2C42;border-radius:10px;padding:12px}
+.flowCard .t{font-size:12px;font-weight:700;color:#7CC7FF;margin-bottom:6px}
+.flowCard .d{font-size:12px;color:#9FB6D0;line-height:1.6}
+.arrow{color:#4A5568;font-size:18px;align-self:center}
+</style>
+</head>
+<body>
+
+<h1>MD 全屏编辑器 · 目录跳转修复（方案 C）</h1>
+<p class="sub">大纲侧栏三视图智能跳转 + 预览正文锚点可点 ｜ 基于真实源码诊断 ｜ 确认后落地</p>
+<p class="note">
+  源码依据：<code>MarkdownOutline.tsx</code> / <code>useCodeMirrorEditor.ts:224-240</code> /
+  <code>FullscreenEditor.tsx:881-882</code> / <code>MarkdownRenderer.tsx</code>（无 heading id、无锚点点击）/
+  <code>MarkdownRenderer.module.css:55-68</code>（hover「#」只是 CSS 装饰）。
+</p>
+
+<hr>
+
+<h2>① 问题诊断（为什么会「点了没反应」）</h2>
+
+<div class="anno warn">
+  <b>根因 A — 大纲只滚隐藏的编辑区。</b>
+  <code>jumpToLine</code> → <code>scrollToLine</code> 只对 CodeMirror <code>view.dispatch(scrollIntoView)</code>。
+  仅预览时编辑区是 <code>display:none</code>，滚动发生在看不见的节点上；分屏时预览靠<b>比例</b>滚动同步，长文档对不齐。
+  与 U1/规则 15 直接冲突：常驻可见的大纲按钮，结果反馈却在不可见域。
+</div>
+<div class="anno warn">
+  <b>根因 B — 预览正文目录锚点从未实现。</b>
+  marked 默认<b>不给标题写 id</code>；DOMPurify 虽默认放行 id，但源头就没有。
+  CSS 里 hover 的 <code>" #"</code> 是纯装饰、不可点；文档里手写的 <code>[标题](#锚)</code> 点了也不会滚预览容器。
+  即便以后有了 id，原生 hash 跳转会滚 window 而不是预览滚动容器——仍需点击拦截。
+</div>
+
+<table class="t">
+  <tr><th>场景</th><th>现状</th><th>用户感知</th></tr>
+  <tr>
+    <td>大纲 · 仅编辑</td>
+    <td class="ok">能跳（CM 顶到行首）</td>
+    <td>正常</td>
+  </tr>
+  <tr>
+    <td>大纲 · 仅预览</td>
+    <td class="bad">滚了 display:none 的编辑区</td>
+    <td>点了没反应</td>
+  </tr>
+  <tr>
+    <td>大纲 · 分屏</td>
+    <td class="bad">只精确滚编辑区；预览比例同步易漂</td>
+    <td>像失效 / 对不齐</td>
+  </tr>
+  <tr>
+    <td>正文「## 目录」链接</td>
+    <td class="bad">无 heading id + 无点击拦截</td>
+    <td>点了没反应</td>
+  </tr>
+  <tr>
+    <td>标题 hover「#」</td>
+    <td class="bad">CSS content 装饰，不可点</td>
+    <td>以为能点，点了没反应</td>
+  </tr>
+</table>
+
+<hr>
+
+<h2>② 方案 C：三视图大纲跳转 + 预览锚点（一起做）</h2>
+
+<div class="flow">
+  <div class="flowCard">
+    <div class="t">共享 slug 单源</div>
+    <div class="d"><code>src/lib/markdown/headingSlug.ts</code><br>
+    扫源文算标题 + 唯一 slug（重复标题 → <code>-1</code>/<code>-2</code>）。<br>
+    <b>大纲 scanHeadings</b> 与 <b>MarkdownRenderer heading 渲染</b>共用同一算法，保证 id 对得上。</div>
+  </div>
+  <div class="flowCard">
+    <div class="t">大纲智能跳转</div>
+    <div class="d">宿主 <code>handleOutlineJump(heading)</code> 按 <code>viewMode</code> 分支：<br>
+    编辑 → CM；预览 → 滚预览 DOM 到 <code>#slug</code>；分屏 → 两侧都跳。<br>
+    目标标题闪一下（复用 md-flash 语言）。</div>
+  </div>
+  <div class="flowCard">
+    <div class="t">预览锚点闭环</div>
+    <div class="d">marked heading 写 <code>id=slug</code>；点击委托拦截 <code>a[href^="#"]</code>，
+    在预览容器内 <code>scrollIntoView</code>；hover「#」做成真锚点可点。</div>
+  </div>
+</div>
+
+<h3>2.1 大纲 · 仅编辑（现状保留，补反馈）</h3>
+<div class="feTag">点大纲 → CodeMirror 光标到该标题行，行高亮；大纲项保持选中态</div>
+<div class="fe">
+  <div class="feBar">
+    <div class="feIcon">M↓</div><div class="feName">未命名.md</div>
+    <div class="feRight">
+      <button class="feBtn on">大纲</button>
+      <button class="feBtn mode on">仅编辑</button>
+      <button class="feBtn mode">分屏</button>
+      <button class="feBtn mode">仅预览</button>
+    </div>
+  </div>
+  <div class="feMain">
+    <div class="ol">
+      <div class="olHead">大纲 · 4</div>
+      <div class="olList">
+        <button class="olItem lv1">PastePanda 使用手册</button>
+        <button class="olItem lv2 hit">安装步骤</button>
+        <button class="olItem lv3">Windows 配置</button>
+        <button class="olItem lv2">常见问题</button>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="paneHdr"><span class="paneLbl">编辑</span></div>
+      <div class="cmBody">
+        <div class="cmLine"><span class="cmLn">1</span><span># PastePanda 使用手册</span></div>
+        <div class="cmLine"><span class="cmLn">2</span><span></span></div>
+        <div class="cmLine focus"><span class="cmLn">3</span><span>## 安装步骤</span></div>
+        <div class="cmLine"><span class="cmLn">4</span><span>下载安装包后双击运行……</span></div>
+        <div class="cmLine"><span class="cmLn">5</span><span></span></div>
+        <div class="cmLine"><span class="cmLn">6</span><span>### Windows 配置</span></div>
+        <div class="cmLine"><span class="cmLn">7</span><span>设置 LIBCLANG_PATH……</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="anno info">
+  <b>交互：</b>大纲项点击后有 <code>.hit</code> 选中态（与触发同域可见，规则 15）；
+  编辑区目标行 <code>activeLine</code> 高亮。跳转失败（view 为空）时 toast，不再静默 return。
+</div>
+
+<h3>2.2 大纲 · 仅预览（本次修复重点）</h3>
+<div class="feTag">点大纲 → 预览滚动到对应标题并短暂高亮；编辑区保持 display:none</div>
+<div class="fe">
+  <div class="feBar">
+    <div class="feIcon">M↓</div><div class="feName">未命名.md</div>
+    <div class="feRight">
+      <button class="feBtn on">大纲</button>
+      <button class="feBtn mode">仅编辑</button>
+      <button class="feBtn mode">分屏</button>
+      <button class="feBtn mode on">仅预览</button>
+    </div>
+  </div>
+  <div class="feMain">
+    <div class="ol">
+      <div class="olHead">大纲 · 4</div>
+      <div class="olList">
+        <button class="olItem lv1">PastePanda 使用手册</button>
+        <button class="olItem lv2 hit">安装步骤</button>
+        <button class="olItem lv3">Windows 配置</button>
+        <button class="olItem lv2">常见问题</button>
+      </div>
+    </div>
+    <div class="pane preview">
+      <div class="paneHdr"><span class="paneLbl">预览</span></div>
+      <div class="mdBody" id="pvPreview">
+        <h1 id="pastepanda-使用手册">PastePanda 使用手册</h1>
+        <p>本手册覆盖安装、配置与常见问题。</p>
+        <h2 id="安装步骤" class="flash">安装步骤 <span class="anchorHash">#</span></h2>
+        <p>下载安装包后双击运行……</p>
+        <h3 id="windows-配置">Windows 配置 <span class="anchorHash">#</span></h3>
+        <p>设置 LIBCLANG_PATH 后启动 dev。</p>
+        <h2 id="常见问题">常见问题 <span class="anchorHash">#</span></h2>
+        <p>端口占用、编译失败等。</p>
+        <div style="height:80px"></div>
+        <p>（长文末尾，用来示意滚动到位）</p>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="anno">
+  <b>跳转路径：</b>大纲项存 <code>slug</code> → <code>previewScrollRef.querySelector('#'+CSS.escape(slug))</code>
+  → <code>scrollIntoView({block:'start'})</code> → 加 <code>md-heading-flash</code> 900ms 后移除。
+  不依赖比例同步，长文档也准。
+</div>
+
+<h3>2.3 大纲 · 分屏（两侧都跳）</h3>
+<div class="feTag">编辑区 CM 顶到该行 + 预览滚到同名标题；两边落点语义一致</div>
+<div class="fe">
+  <div class="feBar">
+    <div class="feIcon">M↓</div><div class="feName">未命名.md</div>
+    <div class="feRight">
+      <button class="feBtn on">大纲</button>
+      <button class="feBtn mode">仅编辑</button>
+      <button class="feBtn mode on">分屏</button>
+      <button class="feBtn mode">仅预览</button>
+    </div>
+  </div>
+  <div class="feMain">
+    <div class="ol">
+      <div class="olHead">大纲 · 4</div>
+      <div class="olList">
+        <button class="olItem lv1">PastePanda 使用手册</button>
+        <button class="olItem lv2 hit">安装步骤</button>
+        <button class="olItem lv3">Windows 配置</button>
+        <button class="olItem lv2">常见问题</button>
+      </div>
+    </div>
+    <div class="pane" style="flex:0 0 42%">
+      <div class="paneHdr"><span class="paneLbl">编辑</span></div>
+      <div class="cmBody">
+        <div class="cmLine"><span class="cmLn">1</span><span># PastePanda 使用手册</span></div>
+        <div class="cmLine focus"><span class="cmLn">3</span><span>## 安装步骤</span></div>
+        <div class="cmLine"><span class="cmLn">4</span><span>下载安装包后双击运行……</span></div>
+      </div>
+    </div>
+    <div class="pane preview" style="flex:1">
+      <div class="paneHdr"><span class="paneLbl">预览</span></div>
+      <div class="mdBody">
+        <h1>PastePanda 使用手册</h1>
+        <h2 class="flash">安装步骤 <span class="anchorHash">#</span></h2>
+        <p>下载安装包后双击运行……</p>
+        <h3>Windows 配置 <span class="anchorHash">#</span></h3>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="anno info">
+  <b>为何两侧都跳而不只靠 scrollSync：</b>比例同步在代码块/图片高度不均时会漂。
+  大纲手里已有精确的 line + slug，两侧各自定位到语义落点，比「滚一边再镜像」可靠。
+  跳转后短暂忽略 scrollSync 回声（复用现有 <code>SCROLL_SYNC_ECHO_MS</code> 锁）。
+</div>
+
+<hr>
+
+<h2>③ 预览正文目录锚点（方案 B）</h2>
+
+<div class="feTag">文档里的「## 目录」链接 + 标题 hover「#」都可点，在预览容器内跳转</div>
+<div class="fe">
+  <div class="feBar">
+    <div class="feIcon">M↓</div><div class="feName">手册.md</div>
+    <div class="feRight">
+      <button class="feBtn mode">仅编辑</button>
+      <button class="feBtn mode">分屏</button>
+      <button class="feBtn mode on">仅预览</button>
+    </div>
+  </div>
+  <div class="feMain">
+    <div class="pane preview">
+      <div class="paneHdr"><span class="paneLbl">预览</span><span style="font-size:11px;color:rgba(255,255,255,.25)">实时渲染</span></div>
+      <div class="mdBody">
+        <h2>目录</h2>
+        <p>
+          <a class="tocLink" href="#安装步骤">安装步骤</a> ·
+          <a class="tocLink" href="#windows-配置">Windows 配置</a> ·
+          <a class="tocLink" href="#常见问题">常见问题</a>
+        </p>
+        <div style="height:40px"></div>
+        <h2 id="安装步骤">安装步骤 <span class="anchorHash">#</span></h2>
+        <p>……</p>
+        <h3 id="windows-配置">Windows 配置 <span class="anchorHash">#</span></h3>
+        <p>……</p>
+        <h2 id="常见问题">常见问题 <span class="anchorHash">#</span></h2>
+        <p>……</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<table class="t">
+  <tr><th>交互</th><th>行为</th><th>规则依据</th></tr>
+  <tr>
+    <td>点 <code>[安装步骤](#安装步骤)</code></td>
+    <td><code>preventDefault</code> → 容器内滚到 <code>id</code> → 标题 flash</td>
+    <td>U1 即时响应；规则 17 移动即预览</td>
+  </tr>
+  <tr>
+    <td>hover 标题「#」</td>
+    <td>由 CSS 装饰改为可点锚点（复制链接 / 滚到自身顶部）</td>
+    <td>L6 能点的要看得出能点</td>
+  </tr>
+  <tr>
+    <td>点不存在的锚</td>
+    <td>不跳；不静默——预览区顶部 toast「未找到对应标题」</td>
+    <td>U3 错误态；规则 15 反馈同域</td>
+  </tr>
+  <tr>
+    <td>slug 生成</td>
+    <td>保留中文；小写拉丁；空白→<code>-</code>；去标点；重复加 <code>-n</code></td>
+    <td>与 GitHub 习惯接近，手写目录好猜</td>
+  </tr>
+</table>
+
+<div class="anno">
+  <b>slug 示例（与大纲 scan 共用同一函数）：</b><br>
+  <code>## 安装步骤</code> → <code>安装步骤</code><br>
+  <code>## Windows 配置</code> → <code>windows-配置</code><br>
+  <code>## 示例</code> … 第二次 <code>## 示例</code> → <code>示例</code> / <code>示例-1</code>
+</div>
+
+<hr>
+
+<h2>④ 架构落地（规则 7 / 11 / 8 / 16）</h2>
+
+<table class="t">
+  <tr><th>文件</th><th>动作</th><th>要点</th></tr>
+  <tr>
+    <td><code>src/lib/markdown/headingSlug.ts</code>（新）</td>
+    <td>纯函数单源</td>
+    <td><code>slugifyHeading</code> + <code>assignUniqueSlugs</code>；无环境依赖，可单测。规则 11</td>
+  </tr>
+  <tr>
+    <td><code>src/components/editors/fullscreen/MarkdownOutline.tsx</code></td>
+    <td>扩展 scan + 回调</td>
+    <td>scanHeadings 改调共用 slug；<code>onJump(h: Heading)</code> 传 level/text/line/slug；文件会变长则拆 hook</td>
+  </tr>
+  <tr>
+    <td><code>src/components/editors/useOutlineJump.ts</code>（新）</td>
+    <td>宿主跳转策略</td>
+    <td>按 viewMode 分支；接收 jumpToLine + previewScrollRef；避免 FullscreenEditor.tsx 继续膨胀（现已 989 行，规则 7）</td>
+  </tr>
+  <tr>
+    <td><code>src/components/editors/FullscreenEditor.tsx</code></td>
+    <td>接线</td>
+    <td>只换 <code>onJump={handleOutlineJump}</code>，逻辑进 hook</td>
+  </tr>
+  <tr>
+    <td><code>src/components/MarkdownRenderer.tsx</code></td>
+    <td>heading id + 锚点点击</td>
+    <td>marked heading renderer 写 id；点击委托扩一段 <code>a[href^="#"]</code>；大文件注意勿再堆逻辑，必要时抽 <code>lib/markdown/headingAnchor.ts</code></td>
+  </tr>
+  <tr>
+    <td><code>src/components/MarkdownRenderer.module.css</code></td>
+    <td>锚点样式 + scroll-margin</td>
+    <td><code>h1–h6 { scroll-margin-top: 12px }</code>；hover「#」可点；flash 动画 900ms（U2 只用允许时长的话 flash 用 animation 不走 transition 档）</td>
+  </tr>
+  <tr>
+    <td><code>src/__tests__/headingSlug.test.ts</code>（新）</td>
+    <td>守卫单测</td>
+    <td>中文/重复/围栏内 # 不生成/大纲与 renderer 同序同 slug</td>
+  </tr>
+</table>
+
+<div class="anno info">
+  <b>性能（规则 8）：</b>slug 分配 O(标题数)，随已有 scan 一趟完成；无常驻动画、无 backdrop-filter；
+  flash 是一次性 900ms class。多窗口乘法：跳转只发生在用户点击时，不新增常驻开销。<br>
+  <b>AI 红线（规则 16）：</b>全程本地 DOM/CM 操作，零 AI、零网络。<br>
+  <b>版本号：</b>按规则 2，本次<b>不</b>自动递增；是否升到 6.x 由你拍板。
+</div>
+
+<hr>
+
+<h2>⑤ 请你确认</h2>
+<div class="anno">
+  <b>方案 C 已是你选中的方向。</b>请打开本稿核对三处交互是否符合预期：<br>
+  1. 仅预览点大纲 → 滚预览 + 标题闪烁（而不是切回编辑）<br>
+  2. 分屏点大纲 → 编辑区与预览区都到同一语义标题<br>
+  3. 预览里正文目录链接与标题「#」可点；找不到锚点时预览区有错误提示<br>
+  确认后我按上表改代码（先 lib 后组件，补单测）；dev 若在跑则 HMR 直接看效果，不重启。
+</div>
+
+</body>
+</html>

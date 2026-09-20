@@ -986,12 +986,15 @@ async fn send_caps_frame(
     let monitors = crate::screenshot::list_monitors().unwrap_or_default();
     #[cfg(not(target_os = "windows"))]
     let monitors: Vec<crate::screenshot::MonitorInfo> = Vec::new();
+    // R3：声明本机能读「鼠标移动数据报」。旧版对端没有这个字段 → 发起端
+    // 解析为 false，会话 UI 提示升级；**不改传输路径**（见 §9 方案 R3）。
     let msg = serde_json::json!({
         "t": "caps",
         "fps120": fps120,
         "hz": hz,
         "hevc": hevc,
         "monitors": monitors,
+        "dgram_input": true,
     });
     if let Ok(b) = serde_json::to_vec(&msg) {
         let mut guard = send.lock().await;
@@ -1006,6 +1009,11 @@ pub(super) async fn handle_inbound_input(
     ev: InputEvent,
     send: &Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
 ) {
+    // C-2：会话切换竞态窗口内，旧连接迟到的输入不得挂在新会话能力上执行。
+    // 只读 capability 会在「旧 peer 的半流还活着、槽位已是新 peer」时误放行。
+    if !svc.session_is(SessionPhase::InboundActive, peer) {
+        return;
+    }
     let cap = match svc.session_capability() {
         Some(c) => c,
         None => return,
@@ -1014,6 +1022,14 @@ pub(super) async fn handle_inbound_input(
     match &ev {
         InputEvent::ClipboardPush { text } => {
             if assert_control_allowed(cap).is_err() {
+                return;
+            }
+            // C-8：入站与出站同上限（按 JSON 帧 UTF-8 字节），超限拒绝写入。
+            if text.len() > CLIPBOARD_MAX_JSON_BYTES {
+                log::warn!(
+                    "[RC] 入站剪贴板过大（{} 字节），已拒绝",
+                    text.len()
+                );
                 return;
             }
             if let Err(e) = set_clipboard_text(text) {
@@ -1052,7 +1068,8 @@ pub(super) async fn handle_inbound_input(
             }
             return;
         }
-        // 流控（画质/范围/编码）不注入本机输入，只看会话也允许调整
+        // 流控不注入本机输入：画质/编码/码率只看也可调（不改主机采集范围）；
+        // SetCaptureScope 要求 Control（见上）。
         InputEvent::SetQuality { quality } => {
             if let Err(e) = svc.set_stream_quality(quality) {
                 log::warn!("[RC] {e}");
@@ -1080,6 +1097,12 @@ pub(super) async fn handle_inbound_input(
             return;
         }
         InputEvent::SetCaptureScope { scope } => {
+            // D-2：改采集范围 = 改主机可观测内容（可能切到隐私屏）→ 要求 Control。
+            // 只看会话拒绝；发起端 UI 已置灰，这里兜改包/旧客户端。
+            if assert_control_allowed(cap).is_err() {
+                log::info!("[RC] 只看会话试图改画面范围，已拒绝：{scope}");
+                return;
+            }
             if let Err(e) = svc.set_stream_scope(scope) {
                 log::warn!("[RC] {e}");
             } else {
@@ -1105,6 +1128,8 @@ pub(super) async fn handle_inbound_input(
         // G3：发起端开关系统声音。不注入输入；被控端必须看得见——
         // 「我的声音正在被对方听」和「画面被切走」是同一级别的可见性。
         InputEvent::AudioOn { on } => {
+            // C-1 拍板：只看可收系统声音。AudioOn 只切换发起端收听开关，
+            // 不改主机环境，故 inbound 侧不要求 Control（与 send_input 白名单一致）。
             svc.set_audio_muted(!*on);
             // 与 quality/codec 同款分工：note 里传**原值**（on/off），中文文案归前端。
             // 传句子会让被控横幅的「不是 codec 就是画质」分支把它读成画质。

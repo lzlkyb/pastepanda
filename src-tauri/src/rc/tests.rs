@@ -992,3 +992,105 @@ fn 守卫_双敲门推流所有权标记接线() {
         "inbound_streaming 标记没接线（P2-1 复发）——双连接批准后会 spawn 两个推流任务"
     );
 }
+
+/// 守卫：send_input 免 Control 白名单（2026-09-20 拍板）。
+/// 只看可 AudioOn；SetCaptureScope 必须要求 Control。
+#[test]
+fn 守卫_send_input_只看可AudioOn_不得改画面范围() {
+    let src = include_str!("service.rs");
+    let start = src
+        .find("pub async fn send_input")
+        .expect("找不到 send_input");
+    let body = &src[start..src[start..]
+        .find("clear_outbound_link")
+        .map(|i| start + i)
+        .unwrap_or(src.len())];
+    assert!(
+        body.contains("InputEvent::AudioOn"),
+        "只看会话应能发送 AudioOn（收系统声音）"
+    );
+    assert!(
+        !body.contains("InputEvent::SetCaptureScope"),
+        "SetCaptureScope 不得出现在免 Control 白名单里（只看不得改采集范围）"
+    );
+}
+
+/// 守卫：文件通道准入只认 rc_devices（B-b），同步配对须先 elevate。
+#[test]
+fn 守卫_文件通道门禁只认rc_devices() {
+    let src = include_str!("file_transfer.rs");
+    assert!(
+        src.contains("self.is_rc_paired(&peer)"),
+        "handle_file_conn 的 paired 参数应来自 is_rc_paired，而不是 has_remote_trust 并集"
+    );
+}
+
+/// 守卫：入站 input 必须先校验 session peer（防旧连接迟到输入）。
+#[test]
+fn 守卫_入站输入先校验会话peer() {
+    let src = include_str!("inbound.rs");
+    let start = src
+        .find("pub(super) async fn handle_inbound_input")
+        .expect("找不到 handle_inbound_input");
+    let body = &src[start..start + 900];
+    assert!(
+        body.contains("session_is(SessionPhase::InboundActive, peer)"),
+        "handle_inbound_input 入口必须按 peer 校验 InboundActive 会话"
+    );
+}
+
+/// 守卫：批准入站会话会 elevate 同步设备写入 rc_devices（B-b）。
+#[test]
+fn 守卫_approve_inbound会elevate同步设备() {
+    let src = include_str!("service.rs");
+    let start = src
+        .find("pub fn approve_inbound")
+        .expect("找不到 approve_inbound");
+    let body = &src[start..start + 900];
+    assert!(
+        body.contains("elevate_from_sync"),
+        "approve_inbound 成功后必须 elevate_from_sync"
+    );
+}
+
+/// 守卫：dial_file 必须带超时（C-3）。
+#[test]
+fn 守卫_dial_file带超时() {
+    let src = include_str!("file_transfer.rs");
+    assert!(
+        src.contains("connect_timeout") && src.contains("timeout(Duration::from_secs(15)"),
+        "dial_file 缺少 15s 超时"
+    );
+}
+
+/// 守卫：批传 open_bi 失败不得静默中断（C-4）。
+#[test]
+fn 守卫_批传开流失败落task() {
+    let src = include_str!("file_transfer.rs");
+    let start = src.find("async fn run_send_batch").expect("run_send_batch");
+    let body = &src[start..start + 2200];
+    assert!(
+        body.contains("TaskState::Failed") && body.contains("items[idx..]"),
+        "run_send_batch 开流失败路径必须为剩余文件落 Failed task"
+    );
+}
+
+/// 守卫：caps 必须上报 dgram_input（R3）；旧对端缺字段 → 发起端提示升级。
+#[test]
+fn 守卫_caps上报dgram_input() {
+    let inbound = include_str!("inbound.rs");
+    assert!(
+        inbound.contains("\"dgram_input\": true") || inbound.contains("\"dgram_input\":true"),
+        "send_caps_frame 必须带上 dgram_input: true，否则新被控端也会被误判为旧版"
+    );
+    let outbound = include_str!("outbound.rs");
+    assert!(
+        outbound.contains("dgram_input"),
+        "outbound 解析 caps 时必须读 dgram_input（缺省 false = 旧版）"
+    );
+    let service = include_str!("service.rs");
+    assert!(
+        service.contains("peer_dgram_input"),
+        "RcStatus 必须暴露 peer_dgram_input，前端升级提示才有数据源"
+    );
+}

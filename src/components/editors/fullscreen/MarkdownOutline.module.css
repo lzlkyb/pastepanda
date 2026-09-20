@@ -6,9 +6,9 @@
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  /* `--panel-bg` / `--hover-bg` 从未定义（已扫全仓）。全屏编辑器这层本来就是
-     固定深色底，需要的是半透叠加而不是主题实色，所以写字面值。 */
-  background: rgba(0, 0, 0, 0.12);
+  /* 半透黑在亮色主题下几乎无层次，且会冲淡选中底。
+     用 text-muted 少量混入透明，暗/亮都跟主题走（不再写死 rgba(0,0,0,.12)）。 */
+  background: color-mix(in srgb, var(--text-muted, #888) 10%, transparent);
 }
 
 .head {
@@ -26,6 +26,24 @@
   min-height: 0;
   overflow-y: auto;
   padding: 0 6px 10px;
+  /* 指示条 absolute 定位参考系 */
+  position: relative;
+}
+
+/* 左侧滑动指示条：top/height 过渡 200ms（U2 标准档）。仅一个合成层元素，点击时才动 */
+.indicator {
+  position: absolute;
+  left: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent, #3b9eff);
+  opacity: 0;
+  pointer-events: none;
+  transition: top 0.2s cubic-bezier(0.2, 0, 0, 1), height 0.2s cubic-bezier(0.2, 0, 0, 1),
+    opacity 0.15s;
+}
+.indicatorOn {
+  opacity: 1;
 }
 
 .item {
@@ -44,10 +62,39 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
 }
 .item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--hover, rgba(0, 0, 0, 0.05));
   color: var(--text-primary, #e6edf7);
+}
+
+/* 点击轻压：150ms（U2 快档）。类由 JS 加 150ms 后移除，连点可重播 */
+.item.itemPress {
+  animation: olPress 0.15s ease;
+}
+@keyframes olPress {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.98);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 点选态：与工具栏 .tbBtnActive 同一套令牌（U6）。
+   亮色下 accent-strong 压 accent-light ≥4.5:1（theme.css 已调过）；
+   暗色下 accent-light 为深蓝底、accent-strong=accent 亮蓝，同样清楚。
+   ❌ 不要写死 #9fd0ff：那是暗底专用浅蓝，亮色面板上几乎不可见。 */
+.item.itemActive {
+  background: var(--accent-light, rgba(59, 158, 255, 0.2));
+  color: var(--accent-strong, var(--accent, #3b9eff));
+  /* 左条交给 .indicator 滑动；这里只保留底色与字重，避免双条叠影 */
+  box-shadow: none;
+  font-weight: 600;
 }
 
 /* 层级缩进：h1 不缩，每深一级 +10px。h1/h2 加重，拉开主次 */
@@ -57,6 +104,17 @@
 .lv4 { padding-left: 38px; opacity: 0.9; }
 .lv5 { padding-left: 48px; opacity: 0.8; }
 .lv6 { padding-left: 58px; opacity: 0.75; }
+
+/* 选中时压过层级默认色/字重（.lv* 在后面声明，需双类抬特异性） */
+.item.lv1.itemActive,
+.item.lv2.itemActive,
+.item.lv3.itemActive,
+.item.lv4.itemActive,
+.item.lv5.itemActive,
+.item.lv6.itemActive {
+  color: var(--accent-strong, var(--accent, #3b9eff));
+  font-weight: 600;
+}
 
 .empty {
   padding: 10px 12px;
