@@ -13,7 +13,7 @@ import { RcControlBanner } from "./RcControlBanner";
 import { RcJoinRequests } from "./RcJoinRequests";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源
-import { rcSetAudioLocalMute, type RcCapability } from "@/lib/api/rc";
+import { rcSetAudioLocalMute, rcHostMuteSet, type RcCapability } from "@/lib/api/rc";
 import { summonMainWindow } from "@/lib/rcWindow";
 import styles from "./RemoteComputer.module.css";
 
@@ -43,9 +43,30 @@ export function RcOverlay() {
   const toggleAudioLocalMute = useCallback(() => {
     const next = !audioLocalMute;
     setAudioLocalMute(next);
-    // 失败（例如后端拒绝）必须回滚，否则按钮停在一个假状态上
-    void rcSetAudioLocalMute(next).catch(() => setAudioLocalMute(!next));
+    // 失败（例如后端拒绝）必须回滚，否则按钮停在一个假状态上。
+    // B3：函数式更新 + 先比对——连点两下时先发的失败回滚不得覆盖后一次的乐观值。
+    void rcSetAudioLocalMute(next).catch(() =>
+      setAudioLocalMute((cur) => (cur === next ? !next : cur)),
+    );
   }, [audioLocalMute]);
+
+  /**
+   * G3-C：对端远程静音了本机扬声器。同款乐观 + 校正——点「恢复外放」后提示
+   * 要立刻收，两秒后才变会让人觉得没点上；失败再把它摆回来。
+   */
+  const [spkByPeer, setSpkByPeer] = useState(false);
+  useEffect(() => {
+    setSpkByPeer(rc.status?.spk_muted_by_peer ?? false);
+  }, [rc.status?.spk_muted_by_peer]);
+  const restoreSpk = useCallback(() => {
+    setSpkByPeer(false);
+    void rcHostMuteSet(false)
+      .then(() => toast("已恢复本机扬声器外放", "success"))
+      .catch((e) => {
+        setSpkByPeer(true);
+        toast(`恢复失败：${e}`, "error");
+      });
+  }, [toast]);
 
   // 窗口可能 hide：有新申请时 toast + 拉起窗口，避免 120s 超时前用户毫无感知
   useEffect(() => {
@@ -135,6 +156,8 @@ export function RcOverlay() {
           onDismissStreamNotice={rc.clearStreamNotice}
           audioLocalMute={audioLocalMute}
           onToggleAudioLocalMute={toggleAudioLocalMute}
+          spkMutedByPeer={spkByPeer}
+          onRestoreSpk={restoreSpk}
           onEnd={() => {
             void rc.end().then((ok) => {
               if (ok) toast("已结束远程会话", "success");

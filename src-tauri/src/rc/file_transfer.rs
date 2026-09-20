@@ -391,12 +391,20 @@ impl RcService {
         // 不信任对端报的数字胜过不信任自己的盘。
         let plan = prepare_recv(&dir, &name, size)?;
         let offset = if plan.offset == offset { offset } else { 0 };
+        // 🔴 P1-4：回落 0 就绝不能留着旧 part——`recv_bytes` 以 append 打开，
+        // 旧残余 + 全量新数据拼出来的是损坏文件，且收满即 rename 成 Done。
+        // （命中场景：hints 被截掉 / 幻影 hint 对上了别的 part。）
+        if offset == 0 && plan.offset > 0 {
+            let _ = tokio::fs::remove_file(&plan.part).await;
+            log::info!("[RC] 续传偏移对不上，已丢弃旧 part 从头接收：{}", plan.final_name);
+        }
 
         let task_id = self
             .file
             .task_start(peer, &peer_name, TaskDir::Recv, &plan.final_name, size, offset, now_ms());
-        // 实际落盘路径（收侧）。
-        self.file.task_note_path(&task_id, &plan.final_path);
+        // 实际落盘路径（收侧）：给前端展示的用**原始**路径——`plan.final_path`
+        // 可能带 `\\?\` 长路径前缀（C6），explorer 打开不认那个形态。
+        self.file.task_note_path(&task_id, &dir.join(&plan.final_name));
         self.emit_file_state();
         let plan = RecvPlan {
             offset,
@@ -454,46 +462,56 @@ impl RcService {
             return;
         }
 
-        // ── 等对端开流（带超时：连上却不开流不能把这条连接永远吊着）──
-        let Ok(Ok((mut send, mut recv))) =
-            tokio::time::timeout(Duration::from_secs(OPEN_STREAM_SECS), conn.accept_bi()).await
-        else {
-            log::warn!("[RC] {short} 文件连接未开流，已放弃");
-            conn.close(3u32.into(), b"no_stream");
-            return;
-        };
+        // ── 流循环（P1-3 修复）──
+        // 一条连接承载**一批**文件：发送端 `run_send_batch` 每个文件开一条
+        // bi-stream；这里循环 accept，传完一条接下一条，连接由**发送端**收尾
+        // （close/drop → accept_bi 报错 → 本循环退出）。原先接收端传完第一个
+        // 文件就 `conn.close`，多文件批次从第 2 个起必然失败且 UI 无痕迹
+        // （静默数据丢失）。
+        loop {
+            // 等对端开流（带超时：连上却不开流不能把这条连接永远吊着）
+            let Ok(Ok((mut send, mut recv))) =
+                tokio::time::timeout(Duration::from_secs(OPEN_STREAM_SECS), conn.accept_bi()).await
+            else {
+                log::info!("[RC] {short} 文件连接结束（对端收尾或未再开流）");
+                conn.close(0u32.into(), b"done");
+                return;
+            };
 
-        // ── 魔数 + 头帧 ──
-        let mut magic = [0u8; 6];
-        if recv_exact(&mut recv, &mut magic).await.is_err() || !file_proto::is_magic(&magic) {
-            deny_file(&mut send, &conn, "不是文件流", code::BAD_HEAD).await;
-            log::warn!("[RC] {short} 文件流魔数不对");
-            return;
-        }
-        let raw = match read_frame(&mut recv).await {
-            Ok(b) => b,
-            Err(e) => {
-                log::warn!("[RC] {short} 读文件头失败：{e}");
+            // ── 魔数 + 头帧 ──
+            let mut magic = [0u8; 6];
+            if recv_exact(&mut recv, &mut magic).await.is_err() || !file_proto::is_magic(&magic) {
+                deny_file(&mut send, &conn, "不是文件流", code::BAD_HEAD).await;
+                log::warn!("[RC] {short} 文件流魔数不对");
                 return;
             }
-        };
-        let head = match file_proto::decode_head(&raw) {
-            Ok(h) => h,
-            Err(d) => {
-                deny_file(&mut send, &conn, &d.reason, d.code).await;
-                log::info!("[RC] {short} 文件头被拒：{}", d.reason);
-                return;
-            }
-        };
+            let raw = match read_frame(&mut recv).await {
+                Ok(b) => b,
+                Err(e) => {
+                    log::warn!("[RC] {short} 读文件头失败：{e}");
+                    return;
+                }
+            };
+            let head = match file_proto::decode_head(&raw) {
+                Ok(h) => h,
+                Err(d) => {
+                    deny_file(&mut send, &conn, &d.reason, d.code).await;
+                    log::info!("[RC] {short} 文件头被拒：{}", d.reason);
+                    return;
+                }
+            };
 
-        match head {
-            FileHead::Push { name, size, .. } => {
-                self.serve_push(&conn, &peer, &short, &name, size, send, recv)
-                    .await
-            }
-            FileHead::PullReq { resume, .. } => {
-                self.serve_pull(&conn, &peer, &short, &resume, send, recv)
-                    .await
+            match head {
+                FileHead::Push { name, size, .. } => {
+                    self.serve_push(&conn, &peer, &short, &name, size, send, recv)
+                        .await
+                }
+                FileHead::PullReq { resume, .. } => {
+                    // 取回是「一次一个文件」的会话式动作，发端收尾即整条连接结束
+                    self.serve_pull(&conn, &peer, &short, &resume, send, recv)
+                        .await;
+                    return;
+                }
             }
         }
     }
@@ -566,7 +584,12 @@ impl RcService {
             size: None,
             offset: plan.offset,
         };
-        let Ok(bytes) = encode_ack(&ack) else { return };
+        // P2：编码确认帧失败也要关连接——裸 return 会让对端干等 ACK 超时
+        //（75s），违背本文件「两条腿都留着」的收尾纪律。
+        let Ok(bytes) = encode_ack(&ack) else {
+            conn.close(5u32.into(), b"ack_encode");
+            return;
+        };
         if write_frame(&mut send, &bytes).await.is_err() {
             log::warn!("[RC] {short} 回确认失败");
             return;
@@ -585,7 +608,8 @@ impl RcService {
             now_ms(),
         );
         // 实际落盘路径（收侧）——净化过重名后的最终路径，不是对端报的那个名字。
-        self.file.task_note_path(&task_id, &plan.final_path);
+        // 用**原始**路径：plan.final_path 可能带 `\\?\` 前缀（C6），explorer 不认。
+        self.file.task_note_path(&task_id, &dir.join(&plan.final_name));
         self.emit_file_state();
         let (outcome, got) = recv_bytes(self, &mut recv, &plan, size, &task_id).await;
         let (state, err) = outcome.finish(got, size);
@@ -595,8 +619,9 @@ impl RcService {
             log::warn!("[RC] {short} 接收 {} 未完成：{state:?} {err:?}", plan.final_name);
         }
         self.finish_file(&task_id, state, err, size);
+        // P1-3：**不在这里关连接**——多文件批次里后面还有文件要接，
+        // 连接由发送端收尾（run_send_batch 传完 close → 本侧 accept_bi 报错退出）。
         let _ = send.finish();
-        conn.close(0u32.into(), b"done");
     }
 
     /// 对方要我发文件：先问人（选文件），再灌字节。
@@ -679,7 +704,11 @@ impl RcService {
             size: Some(size),
             offset,
         };
-        let Ok(bytes) = encode_ack(&ack) else { return };
+        // P2：同 serve_push——编码失败必须关连接，别让对端干等超时。
+        let Ok(bytes) = encode_ack(&ack) else {
+            conn.close(5u32.into(), b"ack_encode");
+            return;
+        };
         if write_frame(&mut send, &bytes).await.is_err() {
             log::warn!("[RC] {short} 回确认失败");
             return;
@@ -699,7 +728,8 @@ impl RcService {
         }
         self.finish_file(&task_id, state, err, size);
         let _ = recv.stop(0u32.into());
-        conn.close(0u32.into(), b"done");
+        // P1-3：连接由对端（run_pull）收尾，这里不关——本侧 handle_file_conn
+        // 的流循环在 serve_pull 返回后统一 return。
     }
 
     /// 魔数 + 头帧（帧格式与 `rc/1` 的 write_frame 同款：大端长度前缀）。
@@ -852,14 +882,45 @@ async fn recv_bytes(
 /// 续传判据（设计稿决策 9）：`<name>.pppart` 存在**且**长度 ≤ `size` ⇒ 续；
 /// 否则删掉旧的从头来。`Last-Modified` 不参与判断——FAT/exFAT 精度不够，
 /// 比了反而误判。
+/// Windows 长路径兜底（C6）：落盘路径逼近 MAX_PATH(260) 时加 `\\?\` 前缀，
+/// 让 NT 命名空间接管（实际上限 32767）。触发场景：深层接收目录 + 长文件名。
+/// 已带扩展前缀的、不够长的原样返回；UNC 走 `\\?\UNC\` 变体。
+#[cfg(target_os = "windows")]
+fn extend_long_path(p: PathBuf) -> PathBuf {
+    let s = p.as_os_str().to_string_lossy();
+    if s.len() < 240 || s.starts_with(r"\\?\") {
+        return p;
+    }
+    let abs = if p.is_absolute() {
+        p
+    } else {
+        match std::env::current_dir() {
+            Ok(c) => c.join(&p),
+            Err(_) => return p,
+        }
+    };
+    let abs_s = abs.to_string_lossy().replace('/', r"\");
+    if let Some(rest) = abs_s.strip_prefix(r"\\") {
+        return PathBuf::from(format!(r"\\?\UNC\{rest}"));
+    }
+    PathBuf::from(format!(r"\\?\{abs_s}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn extend_long_path(p: PathBuf) -> PathBuf {
+    p
+}
+
 fn prepare_recv(dir: &Path, name: &str, size: u64) -> Result<RecvPlan, String> {
     if !dir.is_dir() {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("建目录失败（{}）：{}", dir.display(), e))?;
     }
     let final_name = file_proto::unique_name(name, |n| dir.join(n).exists())?;
-    let final_path = dir.join(&final_name);
-    let part = dir.join(part_path(&final_name));
+    // fs 操作（append / rename / remove）走前缀化路径；给前端展示 /
+    // 「打开所在文件夹」的路径保持原样（explorer 不认 `\\?\` 形态）。
+    let final_path = extend_long_path(dir.join(&final_name));
+    let part = extend_long_path(dir.join(part_path(&final_name)));
     let offset = match std::fs::metadata(&part) {
         Ok(m) if m.is_file() => {
             let len = m.len();

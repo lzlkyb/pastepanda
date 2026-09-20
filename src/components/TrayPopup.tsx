@@ -329,8 +329,14 @@ export function TrayPopup() {
     if (!trayRc) return;
     setOperationLoading("rc_connect");
     try {
-      await trayRc.connect();
-      await safeHide();
+      // B5：connect 返回 false = 发起失败——错误已落工作台错误面板，
+      // 这里只做「为什么托盘上看不到等待画面」的提示。
+      const ok = await trayRc.connect();
+      if (ok) {
+        await safeHide();
+      } else {
+        showToast("发起远程失败，详见远程工作台", "error");
+      }
     } catch (e) {
       console.error("[TrayPopup] 发起远程失败:", e);
       showToast(`发起远程失败：${String(e)}`, "error");

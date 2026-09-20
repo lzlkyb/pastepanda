@@ -807,6 +807,8 @@ pub struct H264SessionEncoder {
     /// 触发重开——否则每帧「切 HEVC → 打不开 → 回 H.264」来回翻烧饼，
     /// 隔帧掉 JPEG。
     hevc_broken: bool,
+    /// P2-8：CPU 路径 NV12 输出缓冲（跨帧复用，尺寸变化时 resize 自适应）。
+    nv12_buf: Vec<u8>,
 }
 
 // windows-rs COM 指针非 Send；本进程 MTA + 会话任务串行访问。
@@ -847,6 +849,7 @@ impl H264SessionEncoder {
                 gpu_fail_streak: 0,
                 hevc_fail_streak: 0,
                 hevc_broken: false,
+                nv12_buf: Vec::new(),
             }
         };
         match MfH264Encoder::open(codec, width, height, fps, initial) {
@@ -861,6 +864,7 @@ impl H264SessionEncoder {
                 gpu_fail_streak: 0,
                 hevc_fail_streak: 0,
                 hevc_broken: false,
+                nv12_buf: Vec::new(),
             },
             Err(e) => {
                 if codec == VideoCodec::Hevc {
@@ -880,6 +884,7 @@ impl H264SessionEncoder {
                             hevc_fail_streak: 0,
                             // 本会话已证实 HEVC 打不开：挡住后续 SetCodec(hevc) 反复重试
                             hevc_broken: true,
+                            nv12_buf: Vec::new(),
                         };
                     }
                 }
@@ -974,8 +979,9 @@ impl H264SessionEncoder {
             }
         }
         let enc = self.enc.as_mut().ok_or("无视频编码器")?;
-        let nv12 = super::dxgi::bgra_to_nv12(bgra, ew, eh)?;
-        enc.encode_nv12(&nv12)
+        // P2-8：NV12 输出缓冲挂在编码器上复用，4K 每帧省一次 12MB 分配。
+        super::dxgi::bgra_to_nv12_into(bgra, ew, eh, &mut self.nv12_buf)?;
+        enc.encode_nv12(&self.nv12_buf)
     }
 
     /// Q3：打开失败时的编码标准回退。HEVC 连续 2 次打不开 → 本会话回落
@@ -1166,6 +1172,7 @@ mod tests {
             gpu_fail_streak: 0,
             hevc_fail_streak: 0,
             hevc_broken: false,
+            nv12_buf: Vec::new(),
         };
         // 1080p120：8M × 2.6 = 20.8M——不是 ×2.6² 的 54M
         assert_eq!(enc.scaled_bitrate(), 20_800_000);

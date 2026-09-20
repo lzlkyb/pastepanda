@@ -245,9 +245,13 @@ pub(super) const SESSION_TTL_MS: i64 = 2 * 60 * 60 * 1000;
 /// 四个子结构体（clip / notify / stream / pressed 的内部字段）仍然私有。
 impl RcService {
     pub async fn end_session(&self, reason: &str) -> Result<(), String> {
+        // 🔴 take 语义（2026-09-20 审计 P2：end_session 可重入）：从槽里**取出**
+        // 会话而不是只读——用户点结束与断流 `force_end_if_session` 并发触发时，
+        // 旧实现两次都能读到同一份快照 → 双份历史 + 双份 End 帧。改成取走后，
+        // 第二个调用方在这里就拿到 None（返回「没有进行中的会话」）。
         let (peer, peer_name, cap, phase, started) = {
-            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            let Some(s) = inner.session.as_ref() else {
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let Some(s) = inner.session.take() else {
                 return Err("没有进行中的会话".into());
             };
             log::info!("[RC] 会话结束：{reason}");
@@ -298,8 +302,10 @@ impl RcService {
         }
         {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            inner.session = None;
+            inner.session = None; // take 已清，这里兜底（快照块只 take 了 session）
             inner.pending.clear();
+            // 双连接守卫的标记随会话一起收（service.rs 审计 P2-1）
+            inner.inbound_streaming = false;
         }
         // 链路句柄随会话一起收掉。交回的档位写进日志——真机排查时这是
         // 「这一次到底走的是局域网、公网直连还是绕中继」的唯一记录。
@@ -347,6 +353,14 @@ impl RcService {
         // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
         // 避免下一个会话把它当成自己的结果返回。
         self.invalidate_clipboard();
+        // 🔴 音频状态随会话收口（2026-09-20 审计 P1-1）：audio_reset 本就按
+        // 「会话收口」语义设计（清对端申请位 / 对端开关镜像 / 收流缓冲，
+        // 刻意不动 audio_local_mute），但此前只有发起端 request 成功与
+        // inbound video 失败兜底两处调用——被控端的 `audio_muted` /
+        // `spk_muted_by_peer` 会跨会话残留：上一场对端关过声音，下一场
+        // 换个对端申请音频也听不到，无报错无横幅。接线补在这里，与
+        // `reset_stream_after_session` 同层（inner 锁已放出）。
+        self.audio_reset();
         // Q6：收口顺手清自动重连状态。异常断流路径的顺序是 force_end（清）→
         // begin（重建），这里清掉不碍触发；它兜的是「用户主动结束」要清掉
         // 残留的「重连中/重连失败」横幅——用户已经自己做了决定。

@@ -285,10 +285,13 @@ pub fn safe_file_name(raw: &str) -> Result<String, String> {
         return Err(format!("非法文件名：{}", raw));
     }
     // 3. 替换非法字符与控制字符（控制字符包含 NUL——它能让 C 侧 API 提前截断）。
+    //    🔴 Cf 类（格式控制符）也要拦（P1-6）：`U+202E`（RTL Override）能把
+    //    `gpj.exe` 显示成 `exe.jpg`——RTLO 欺骗，确认条与资源管理器都会中招。
+    //    `is_control()` 只覆盖 Cc 类，Cf 类要显式按码位拦。
     let mut out: String = trimmed
         .chars()
         .map(|c| {
-            if c.is_control() || ILLEGAL.contains(&c) {
+            if c.is_control() || is_format_control(c) || ILLEGAL.contains(&c) {
                 '_'
             } else {
                 c
@@ -313,6 +316,18 @@ pub fn safe_file_name(raw: &str) -> Result<String, String> {
 /// 分隔符时**只有最后一段**才是对端想传的文件名。
 fn basename(raw: &str) -> &str {
     raw.rsplit(SEP).next().unwrap_or("")
+}
+
+/// Unicode Cf 类（格式控制符）要拦：`is_control()` 只覆盖 Cc 类，
+/// `U+202E`（RTL Override）等 Cf 字符会把显示顺序整个翻转（RTLO 欺骗）。
+/// 覆盖 Bidi 嵌入/覆盖、隔离符与零宽系列——文件名里它们没有合法用途。
+fn is_format_control(c: char) -> bool {
+    matches!(u32::from(c),
+        0x200B..=0x200F   // 零宽空格/连接符 + LRM/RLM
+        | 0x202A..=0x202E // LRE/LRO/RLE/RLO/PDF（含 RTL Override）
+        | 0x2066..=0x2069 // LRI/RLI/FSI/PDI
+        | 0xFEFF          // BOM / 零宽不换行空格
+    )
 }
 
 /// 主干是不是 Windows 保留设备名（大小写不敏感，忽略扩展名）。
@@ -693,5 +708,19 @@ mod tests {
         assert_eq!(part_path("报告.zip"), "报告.zip.pppart");
         assert_eq!(final_from_part("报告.zip.pppart"), Some("报告.zip"));
         assert_eq!(final_from_part("报告.zip"), None);
+    }
+
+    /// P1-6：RTLO（U+202E）欺骗必须被净化——否则 `报价\u{202E}gpj.exe`
+    /// 在确认条/资源管理器里显示成「报价exe.jpg」，双击即执行。
+    #[test]
+    fn rtl混淆字符被替换() {
+        let cleaned = safe_file_name("报价\u{202E}gpj.exe").expect("净化不该失败");
+        assert!(!cleaned.contains('\u{202E}'), "U+202E 穿透了净化：{cleaned}");
+        assert!(cleaned.ends_with(".exe"), "净化后真实扩展名必须还在：{cleaned}");
+        // 其它 Cf 类一并拦
+        assert!(!safe_file_name("a\u{200B}b.txt").unwrap().contains('\u{200B}'));
+        assert!(!safe_file_name("a\u{2066}b.txt").unwrap().contains('\u{2066}'));
+        // 正常名不受影响
+        assert_eq!(safe_file_name("报价.txt").unwrap(), "报价.txt");
     }
 }

@@ -932,6 +932,7 @@ pub fn run() {
             commands::rc_drain_audio,
             commands::rc_audio_toggle,
             commands::rc_set_audio_local_mute,
+            commands::rc_host_mute_set,
             commands::rc_send_input,
             commands::rc_open_workbench,
             commands::rc_push_clipboard,

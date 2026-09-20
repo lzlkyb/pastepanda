@@ -31,6 +31,11 @@ pub(crate) const EMIT_MIN_INTERVAL_MS: i64 = 100;
 /// 任务表上限。只清「已结束」的老条目，运行中的永远不清。
 const MAX_TASKS: usize = 64;
 
+/// 待响应确认条上限。正常一屏最多几条；超限只可能是对端失控狂发。
+/// 超限时顶掉最老的一条（它的 outcome 变 Gone → 对应 serve 循环按
+/// 「已取消」收尾），比让列表无限膨胀、确认条堆满屏幕可靠。
+const MAX_ASKS: usize = 32;
+
 /// 用户对确认条的回应。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AskReply {
@@ -192,6 +197,12 @@ impl FileState {
     ) -> String {
         let id = self.next_id("ask", now_ms);
         let mut g = self.asks.lock().unwrap_or_else(|p| p.into_inner());
+        // 并发防洪（C5）：先到先得，顶掉最老的等待者
+        if g.len() >= MAX_ASKS {
+            let cut = g.len() - MAX_ASKS + 1;
+            log::warn!("[RC] 待响应确认条超过 {MAX_ASKS} 条，顶掉最老的 {cut} 条");
+            g.drain(0..cut);
+        }
         g.push(FileAsk {
             id: id.clone(),
             peer: peer.to_string(),

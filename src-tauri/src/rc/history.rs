@@ -11,6 +11,19 @@ use serde_json::Value;
 pub(super) const KEY: &str = "rc_session_history";
 /// 最多保留最近多少条历史。
 pub(super) const MAX: usize = 20;
+/// reason 字段的最长字符数：reason 来自收口理由/断流 explain 串，可能很长
+/// （带对端关闭帧全文），不截断会整串进 config 并回吐前端。
+const REASON_MAX_CHARS: usize = 200;
+
+/// `get_config → 改 → save_config` 这类**读改写**的进程内串行闸。
+///
+/// 🔴 2026-09-20 审计（P2-11）：`save_config` 的事务只保证**单次写入**原子，
+/// 不保证「读-改-写」两次调用之间没人插进来。两个会话并发收口（用户点结束 +
+/// 断流 force_end 各跑各的线程）时，双方读到同一份旧列表、互相覆盖——
+/// 丢一条历史且无告警；更糟的是**任何其他 config 键**在这窗口里的写入
+/// 也会被旧快照回退。进程内一把互斥锁把 RMW 串起来（跨进程仍有理论窗口，
+/// 本应用单进程写 config，够用）。
+static CONFIG_RMW_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 一条会话历史的事实来源（由收口方填）。
 ///
@@ -54,7 +67,7 @@ pub(super) fn append_history(store: &DataStore, facts: HistoryFacts<'_>) {
         "started_ms": started_ms,
         "ended_ms": ended,
         "duration_ms": (ended - started_ms).max(0),
-        "reason": reason,
+        "reason": truncate_reason(reason),
         // 路径与网速摘要：留空/留 0 表示这次没测到（旧记录也没有这几个字段，
         // 前端一律按「没有」处理，不做默认值推断）。
         "path_kind": end.path.as_str(),
@@ -62,6 +75,9 @@ pub(super) fn append_history(store: &DataStore, facts: HistoryFacts<'_>) {
         "rtt_avg": end.rtt_avg,
         "rtt_max": end.rtt_max,
     });
+    let _rmw = CONFIG_RMW_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
     let mut config = store.get_config().unwrap_or_default();
     let Some(obj) = config.as_object_mut() else {
         return;
@@ -74,7 +90,21 @@ pub(super) fn append_history(store: &DataStore, facts: HistoryFacts<'_>) {
     list.truncate(MAX);
     if let Ok(v) = serde_json::to_value(&list) {
         obj.insert(KEY.to_string(), v);
-        let _ = store.save_config(&config);
+        // P2-11：不再静默吞错——磁盘满/库坏时至少日志里要留痕。
+        if let Err(e) = store.save_config(&config) {
+            log::warn!("[RC] 会话历史写盘失败：{e}");
+        }
+    }
+}
+
+/// reason 截断到 [`REASON_MAX_CHARS`]（按字符不按字节，别把中文截成坏 UTF-8）。
+fn truncate_reason(reason: &str) -> String {
+    if reason.chars().count() <= REASON_MAX_CHARS {
+        reason.to_string()
+    } else {
+        let mut s: String = reason.chars().take(REASON_MAX_CHARS).collect();
+        s.push('…');
+        s
     }
 }
 

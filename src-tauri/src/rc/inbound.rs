@@ -59,6 +59,11 @@ pub(super) struct InboundVideo {
     /// R4 硬编会话；None = 不走硬编（配置 jpeg / 打不开）。
     #[cfg(target_os = "windows")]
     h264: Option<super::encode_h264::H264SessionEncoder>,
+    /// P2-9：硬编连续失败计数。每次成功清零；连续 60 帧（~4s@15fps）失败
+    /// 说明编码器环境坏了（驱动卸载 / MFT 损坏），置 `h264 = None` 熔断——
+    /// 否则每帧都走「重开编码器 → 失败 → 回 JPEG」，重开本身每帧烧几百 ms。
+    #[cfg(target_os = "windows")]
+    enc_fail_streak: u32,
     /// P1：GPU 零拷贝路径已判定不可用（连续失败），本会话不再尝试。
     #[cfg(target_os = "windows")]
     gpu_disabled: bool,
@@ -166,6 +171,8 @@ impl InboundVideo {
             dxgi: super::dxgi::DxgiPool::new(),
             #[cfg(target_os = "windows")]
             h264,
+            #[cfg(target_os = "windows")]
+            enc_fail_streak: 0,
             #[cfg(target_os = "windows")]
             gpu_disabled: false,
             #[cfg(target_os = "windows")]
@@ -301,6 +308,10 @@ impl InboundVideo {
             let mut worker: Option<super::audio::AudioWorker> = None;
             let wanted_flag = Arc::new(AtomicBool::new(false));
             let mut stream: Option<iroh::endpoint::SendStream> = None;
+            // 当前流头写过的 Cfg（P2-7）：设备切换/编码器重开会送来新 Cfg——
+            // 格式变了必须换新流（对端按流头重建解码器）；裸包流会被对端
+            // 判成「非音频流」整条丢弃。
+            let mut stream_cfg: Option<super::audio::AudioCfg> = None;
             loop {
                 if !svc.session_is(SessionPhase::InboundActive, &peer) {
                     break;
@@ -330,19 +341,38 @@ impl InboundVideo {
                 };
                 match msg {
                     super::audio::AudioOut::Cfg(cfg) => {
-                        if stream.is_none() {
+                        // 没流 / 格式变了（设备切换、编码器重开）→ 开新流并先写流头。
+                        // 同格式重复的 Cfg 忽略（头已写过，别把头塞进包序列中间）。
+                        if stream.is_none() || stream_cfg.as_ref() != Some(&cfg) {
+                            // 显式弃旧流（drop 让对端读到 EOF 回 accept 循环等新流）
+                            drop(stream.take());
                             stream = conn.open_uni().await.ok();
-                        }
-                        if let Some(s) = stream.as_mut() {
-                            let header = super::audio::encode_stream_header(&cfg);
-                            if s.write_all(&header).await.is_err() {
-                                stream = None;
+                            if let Some(s) = stream.as_mut() {
+                                let header = super::audio::encode_stream_header(&cfg);
+                                if s.write_all(&header).await.is_err() {
+                                    stream = None;
+                                    stream_cfg = None;
+                                } else {
+                                    stream_cfg = Some(cfg);
+                                }
                             }
                         }
                     }
                     super::audio::AudioOut::Pkt { pts_ms, data } => {
                         if stream.is_none() {
-                            stream = conn.open_uni().await.ok();
+                            // P2-7：重建流必须先补流头——原先只在 Cfg 消息时写头，
+                            // 头那次 write 失败后，后续裸包流会被对端判成
+                            // 「非音频流」整条丢弃，本场会话永久无声。
+                            // 没有 stream_cfg 时只能丢包（还没拿到过格式）。
+                            if let Some(cfg) = stream_cfg.clone() {
+                                stream = conn.open_uni().await.ok();
+                                if let Some(s) = stream.as_mut() {
+                                    let header = super::audio::encode_stream_header(&cfg);
+                                    if s.write_all(&header).await.is_err() {
+                                        stream = None;
+                                    }
+                                }
+                            }
                         }
                         if let Some(s) = stream.as_mut() {
                             let pkt = super::audio::encode_packet(pts_ms, &data);
@@ -584,9 +614,23 @@ impl InboundVideo {
                     let encoded = henc.encode_bgra(&bgra, w, h);
                     let enc_ms = enc_t0.elapsed().as_millis().min(u16::MAX as u128) as u16;
                     match encoded {
-                        Ok(pkts) => self.send_h264_pkts(pkts, ts, cap_ms, enc_ms).await,
+                        Ok(pkts) => {
+                            self.enc_fail_streak = 0;
+                            self.send_h264_pkts(pkts, ts, cap_ms, enc_ms).await
+                        }
                         Err(e) => {
-                            log::debug!("[RC] 视频编码失败，本帧回退 JPEG：{e}");
+                            // P2-9：连续失败熔断——每帧重开编码器的代价比「画质
+                            // 降级到 JPEG」高得多，烧到会话结束更不划算。
+                            self.enc_fail_streak = self.enc_fail_streak.saturating_add(1);
+                            if self.enc_fail_streak >= 60 {
+                                log::error!(
+                                    "[RC] 硬编连续 {} 帧失败，本会话熔断硬编改走 JPEG：{e}",
+                                    self.enc_fail_streak
+                                );
+                                self.h264 = None;
+                            } else {
+                                log::debug!("[RC] 视频编码失败（第 {} 帧），本帧回退 JPEG：{e}", self.enc_fail_streak);
+                            }
                             Step::FallThrough
                         }
                     }
@@ -795,6 +839,9 @@ impl InboundVideo {
         self.maybe_send_cursor().await;
         // P1：把画面能力（fps120 可用性）报给对端，UI 才能诚实出档
         send_caps_frame(&self.svc, &self.send).await;
+        // G3-B：音频状态也报一次初值。被控者的「不发送声音」是跨会话保持的，
+        // 不报初值的话发起端这一场只能看到空/上次残留，误判成「对方没静音」。
+        self.svc.emit_host_audio(None).await;
         // 固定节奏锚点：下一帧的抓取时刻。每圈干完活后重设为
         // frame_start + interval —— 编码耗时不再叠加进帧间隔。
         let mut next_tick = tokio::time::Instant::now();
@@ -1063,6 +1110,35 @@ pub(super) async fn handle_inbound_input(
             // 传句子会让被控横幅的「不是 codec 就是画质」分支把它读成画质。
             svc.emit_stream_note("audio", if *on { "on" } else { "off" });
             log::info!("[RC] 对端{}系统声音", if *on { "开启" } else { "关闭" });
+            return;
+        }
+        // G3-C：发起端要求静音 / 恢复**本机（被控端）主机扬声器**。
+        //
+        // 🔴 要求 Control —— 这动的是本机的**物理输出环境**（屋里人听不听得到），
+        // 与「改画质」那类只影响发起端自己画面的指令不同档，和键鼠注入同级。
+        // 「只看」会话拒绝，并且**明确回一条失败**，免得发起端的按钮点了没反应。
+        InputEvent::SetHostMute { on } => {
+            let err = if assert_control_allowed(cap).is_err() {
+                Some("当前会话仅为「只看」，无法改对方主机声音".to_string())
+            } else {
+                match super::audio::spk_mute_set(*on) {
+                    Ok(actual) => {
+                        // 记「对端操作过且未撤销」——横幅据此摆提示与恢复入口。
+                        svc.set_spk_muted_by_peer(actual);
+                        // 本机前端的快照要跟着变，否则横幅提示与恢复按钮不会出现
+                        // （这个分支不像命令层那样自带 emit）。
+                        svc.notify.emit_changed();
+                        log::info!("[RC] 对端{}本机扬声器", if actual { "静音了" } else { "恢复了" });
+                        None
+                    }
+                    Err(e) => {
+                        log::warn!("[RC] 切换本机扬声器静音失败：{e}");
+                        Some(format!("切换主机扬声器失败：{e}"))
+                    }
+                }
+            };
+            // 回帧带**读回的真实值**（可能与我们请求的不同），发起端的按钮态以它为准。
+            svc.emit_host_audio(err.as_deref()).await;
             return;
         }
         _ => {}

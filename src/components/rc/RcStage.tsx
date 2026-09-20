@@ -15,6 +15,7 @@ import type { UseRc } from "@/hooks/useRc";
 import { useRcLaunch } from "@/hooks/useRcLaunch";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
 import { useToast } from "@/components/Toast";
+import { explainRcError } from "@/lib/rcDeny";
 import { RcSessionView } from "./RcSessionView";
 import { RcPendingWait } from "./RcPendingWait";
 import { RcErrorPanel } from "./RcErrorPanel";
@@ -75,6 +76,13 @@ export function RcStage({
   const peerTrusted = peerTarget?.trusted ?? false;
   const peerDenied = peerTarget?.denied ?? false;
 
+  // B2：重试按钮只给「再点一次可能成功」的错误——busy/timeout/offline 类重试
+  // 有意义；disabled / device_denied / not_paired / capability 的 hint 已指明
+  // 要去改设置/配对，给重试就是假按钮（点了必然原样再失败）。
+  const retryable =
+    rc.error != null &&
+    ["busy", "timeout", "offline"].includes(explainRcError(rc.error).kind);
+
   return (
     <main className={styles.wbMain}>
       {rc.error && (
@@ -82,7 +90,7 @@ export function RcStage({
           error={rc.error}
           onRetry={
             rc.isOpError
-              ? lastAttempt
+              ? retryable && lastAttempt
                 ? () => void doRequest(lastAttempt, cap)
                 : undefined
               : () => void rc.refresh()

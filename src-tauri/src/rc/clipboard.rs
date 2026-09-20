@@ -53,6 +53,10 @@ pub(crate) fn clip_wait_decision(
 pub(crate) struct ClipboardState {
     /// 最近从被控端拉回的剪贴板文本。
     text: Mutex<Option<String>>,
+    /// P2-5：pull 的失败原因（被控端回 `clip_err` 时写入）。推进 seq 唤醒
+    /// 等待循环，`pull_clipboard` 取走后转成 Err——失败不能折叠成空串，
+    /// 否则「对方剪贴板是空的」和「拉取失败」无法区分，用户只会莫名拿到空。
+    pull_error: Mutex<Option<String>>,
     /// 每次写入 `text` 自增；pull 用它判断回包是否已到。
     seq: AtomicU64,
     /// 剪贴板「会话代」。会话收口时自增，用于丢掉**上一个会话**迟到的回包。
@@ -66,6 +70,7 @@ impl ClipboardState {
     pub(crate) fn new() -> Self {
         Self {
             text: Mutex::new(None),
+            pull_error: Mutex::new(None),
             seq: AtomicU64::new(0),
             epoch: AtomicU64::new(0),
             pull_lock: tokio::sync::Mutex::new(()),
@@ -106,10 +111,26 @@ impl ClipboardState {
         self.text.lock().unwrap_or_else(|p| p.into_inner()).take()
     }
 
+    /// 对端回 `clip_err` 时调用：记下失败原因并推进序号唤醒等待循环
+    /// （P2-5——失败走 `take_pull_error` 转 Err，不再折叠成空串）。
+    pub(crate) fn set_pull_error(&self, e: String) {
+        *self.pull_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(e);
+        self.seq.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// 取走本轮的失败原因（有 = 本次 pull 失败）。
+    pub(crate) fn take_pull_error(&self) -> Option<String> {
+        self.pull_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
+    }
+
     /// 会话收口时调用：作废仍在等待的 pull，并丢掉可能由迟到回包写入的文本。
     pub(crate) fn invalidate(&self) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
         *self.text.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        *self.pull_error.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     /// 仅供测试断言：本轮等待是否会作废。

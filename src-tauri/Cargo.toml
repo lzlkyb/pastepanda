@@ -179,6 +179,9 @@ windows = { version = "0.58", features = [
     "Win32_Media",
     # G3：WASAPI 环回采集（系统声音）。只加绑定，链接的是系统 mmdevapi.dll，不进 exe
     "Win32_Media_Audio",
+    # G3-C：端点音量接口（IAudioEndpointVolume）——控制端远程静音主机扬声器。
+    # 同样只是绑定，运行时走系统 mmdevapi.dll，不进 exe。
+    "Win32_Media_Audio_Endpoints",
     "Win32_System_Com_StructuredStorage",
 ] }
 winreg = "0.52"

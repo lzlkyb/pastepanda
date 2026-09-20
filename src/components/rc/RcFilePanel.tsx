@@ -14,8 +14,8 @@
  */
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderDown, FolderOpen, FolderUp, Loader2, X } from "lucide-react";
-import { rcFileDefaultDir } from "@/lib/api/rcFile";
+import { FolderDown, FolderOpen, FolderUp, Loader2, RotateCcw, X } from "lucide-react";
+import { rcFileDefaultDir, rcFileSend } from "@/lib/api/rcFile";
 import { canOpenPath, isTerminal, classifyErr, taskLine, waitingHint } from "@/lib/rcFile";
 import { useRcFile } from "@/hooks/useRcFile";
 import { useToast } from "@/components/Toast";
@@ -72,6 +72,18 @@ export function RcFilePanel({
       await invoke("open_file_location", { path });
     } catch (e) {
       toast(typeof e === "string" && e ? e : "无法打开所在文件夹", "error");
+    }
+  };
+
+  // U4：发送方向的就地重试——同一个文件再 push 一次；对端还留着 .pppart
+  // 断点的话，收侧按偏移续传，不用从头灌。
+  const retrySend = async (t: RcFileTask) => {
+    if (!t.path) return;
+    try {
+      await rcFileSend(t.peer, [t.path]);
+      toast(`已重新发起「${t.name}」的传输`, "success");
+    } catch (e) {
+      toast(typeof e === "string" && e ? e : "重试失败", "error");
     }
   };
 
@@ -163,6 +175,7 @@ export function RcFilePanel({
               rate={file.rateOf(t)}
               onCancel={file.cancel}
               onOpenPath={openPath}
+              onRetry={retrySend}
             />
           ))}
         </ul>
@@ -176,11 +189,13 @@ function FileRow({
   rate,
   onCancel,
   onOpenPath,
+  onRetry,
 }: {
   t: RcFileTask;
   rate: number;
   onCancel: (taskId: string) => Promise<void>;
   onOpenPath: (path: string) => Promise<void>;
+  onRetry: (t: RcFileTask) => Promise<void>;
 }) {
   const pct = t.size > 0 ? Math.min(100, Math.floor((t.done / t.size) * 100)) : 0;
   const running = t.state === "awaiting" || t.state === "transferring";
@@ -199,8 +214,11 @@ function FileRow({
         <span className={styles.fileName} title={t.name}>
           {t.name}
         </span>
-        {t.offset > 0 && running && (
-          <span className={styles.fileResume} title="从上次断点继续，不是从头重传">
+        {t.offset > 0 && (running || t.state === "failed" || t.state === "canceled") && (
+          <span
+            className={styles.fileResume}
+            title="从上次断点继续，不是从头重传"
+          >
             续传
           </span>
         )}
@@ -229,6 +247,19 @@ function FileRow({
             onClick={() => void onCancel(t.id)}
           >
             <X size={13} />
+          </button>
+        )}
+        {/* U4：发送方向失败给就地重试——源路径在手，一键重发（对端有断点则自动续传）。
+            收方向不就地重试：文件名/选择权在对端，再拉一次要走「对方选文件」流程。 */}
+        {t.state === "failed" && t.dir === "send" && t.path && onRetry && (
+          <button
+            type="button"
+            className={styles.fileOpen}
+            title="重试发送（对端已有断点时自动续传）"
+            aria-label="重试发送"
+            onClick={() => void onRetry(t)}
+          >
+            <RotateCcw size={13} />
           </button>
         )}
       </div>

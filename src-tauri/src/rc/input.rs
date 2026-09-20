@@ -78,6 +78,16 @@ pub enum InputEvent {
     AudioOn {
         on: bool,
     },
+    /// G3-C：发起端要求把**被控端主机扬声器**静音 / 恢复（本地外放闭嘴）。
+    ///
+    /// ❗ **要求 `Control`**：这改的是被控端的**物理输出环境**（屋里人听不听得到），
+    /// 与「改画质档」那类只影响发起端自己画面的指令不同——「只看」会话不该能
+    /// 悄悄关掉对方的喇叭。与键鼠注入同为「操作对方机器」量级。
+    ///
+    /// 不影响环回采集：WASAPI 抽头在端点静音之前，音频照常串过来（见 `audio.rs`）。
+    SetHostMute {
+        on: bool,
+    },
 }
 
 /// 远端光标形状。由被控端比对系统标准光标句柄得出，
@@ -440,7 +450,9 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
         | InputEvent::SetCaptureScope { .. }
         | InputEvent::SetCodec { .. }
         | InputEvent::RequestKey
-        | InputEvent::AudioOn { .. } => Ok(()),
+        | InputEvent::AudioOn { .. }
+        // G3-C：不注入键鼠（由 `inbound.rs` 直接调端点音量接口处理）
+        | InputEvent::SetHostMute { .. } => Ok(()),
     }
 }
 
@@ -540,5 +552,20 @@ mod tests {
         for vk in [0x41u16, 0x0D, 0x20] {
             assert!(!is_extended_vk(vk), "vk {vk:#x} 不应为扩展键");
         }
+    }
+
+    /// G3-C：线上键名是 JSON，改了它新旧版本就对不上（失败形态是**静默无效**——
+    /// 旧被控端把不认识的 `kind` 落在 match 的 `_` 上，一声不吭）。
+    #[test]
+    fn set_host_mute_线格式钉住() {
+        let v = serde_json::to_value(InputEvent::SetHostMute { on: true }).unwrap();
+        assert_eq!(v["kind"], "set_host_mute");
+        assert_eq!(v["on"], true);
+        let back: InputEvent = serde_json::from_value(v).unwrap();
+        assert_eq!(back, InputEvent::SetHostMute { on: true });
+        // 关的那一档也要能往返（bool 编码反了会「只能静音、恢复不了」）
+        let v2 = serde_json::to_value(InputEvent::SetHostMute { on: false }).unwrap();
+        let back2: InputEvent = serde_json::from_value(v2).unwrap();
+        assert_eq!(back2, InputEvent::SetHostMute { on: false });
     }
 }

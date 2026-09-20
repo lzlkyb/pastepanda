@@ -581,6 +581,20 @@ pub fn bgra_to_rgba(bgra: &[u8]) -> Vec<u8> {
 /// 之前「向下取偶」的行为已删除：调用方（H.264 路径）在进入前就保证偶数
 /// （inbound 对奇数抓帧直接回 JPEG），这里再兜一次但**显式报错**。
 pub fn bgra_to_nv12(bgra: &[u8], w: u32, h: u32) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    bgra_to_nv12_into(bgra, w, h, &mut out)?;
+    Ok(out)
+}
+
+/// P2-8：带复用缓冲的 NV12 转换。每帧 `vec![0u8; 12MB]`（4K）在编码热路径上
+/// 是纯浪费——调用方（编码器）持一个缓冲反复用；尺寸变了 resize 会自动适配。
+/// 语义与 [`bgra_to_nv12`] 完全一致，只是把输出缓冲交给调用方持有。
+pub fn bgra_to_nv12_into(
+    bgra: &[u8],
+    w: u32,
+    h: u32,
+    out: &mut Vec<u8>,
+) -> Result<(), String> {
     if w == 0 || h == 0 {
         return Err("空画面".into());
     }
@@ -593,7 +607,8 @@ pub fn bgra_to_nv12(bgra: &[u8], w: u32, h: u32) -> Result<Vec<u8>, String> {
         return Err("BGRA 长度不足".into());
     }
     let y_size = w * h;
-    let mut out = vec![0u8; y_size + (w / 2) * (h / 2) * 2];
+    out.clear();
+    out.resize(y_size + (w / 2) * (h / 2) * 2, 0);
     let (y_plane, uv_plane) = out.split_at_mut(y_size);
     for by in 0..h / 2 {
         let y0 = by * 2;
@@ -635,7 +650,7 @@ pub fn bgra_to_nv12(bgra: &[u8], w: u32, h: u32) -> Result<Vec<u8>, String> {
             uv_row[bx * 2 + 1] = v;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]

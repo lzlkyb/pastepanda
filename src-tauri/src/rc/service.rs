@@ -116,6 +116,14 @@ pub struct RcStatus {
     /// 与「对端开关」是两件事：这个为 true 时，对端开不开都听不到。跨会话保持，
     /// 所以会话结束后仍可能为 true（下次被控时横幅按钮仍是「已静音」态）。
     pub audio_local_mute: bool,
+    /// G3-B/C：**对端**报来的主机音频状态（发起端视角）。`None` = 旧对端不发这条帧
+    /// （或本会话还没收到）→ 前端据此不摆「对方已静音」这类断言。
+    pub peer_audio: Option<PeerHostAudio>,
+    /// G3-C：对端静音了**本机**扬声器（被控端视角，横幅提示 + 恢复入口用）。
+    ///
+    /// 只反映「对端做过这个动作且没人撤销」——本机用户自己按静音键**不会**置位
+    /// （我们不监听系统静音变化），所以它不声称等于扬声器当前物理态。
+    pub spk_muted_by_peer: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -233,6 +241,29 @@ pub struct RcService {
     /// 只有被控者自己再点开才恢复；不落盘，重启应用回到默认「可被听」。
     #[cfg(target_os = "windows")]
     audio_local_mute: std::sync::atomic::AtomicBool,
+    /// 发起端：从对端 `host_audio` 帧收到的**对方主机侧音频状态**（G3-B/C）。
+    /// None = 还没收到（旧对端不发这条帧）。
+    pub(super) peer_host_audio: Mutex<Option<PeerHostAudio>>,
+    /// 被控端：**对端**把本机扬声器静音了、且尚未恢复（G3-C）。
+    ///
+    /// 与「扬声器此刻是否静音」不是一回事：本机用户自己按静音键**不会**置位
+    /// （我们不监听系统静音变化，见 `MEMORY-rc`），所以它回答的是「对端做过这个
+    /// 动作且没人撤销」，用来决定横幅上那条提示与「恢复声音」按钮摆不摆。
+    pub(super) spk_mute_by_peer: std::sync::atomic::AtomicBool,
+}
+
+/// 发起端侧看到的「对端主机音频状态」（G3-B/C，见 `RcService::peer_host_audio`）。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct PeerHostAudio {
+    /// 对端被控者按了「不发送声音」。
+    pub local_mute: bool,
+    /// 对端**主机扬声器**静音中。
+    pub spk_mute: bool,
+    /// 上一次切换动作的失败原因（对端执行失败时带；成功/未操作 = None）。
+    /// 摆在快照里而不是 stream note：note 的文案分支属于**被控端横幅**，
+    /// 发起端根本不渲染那个组件，借用它只会落进「对方把画质调成了…」的错文案。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub err: Option<String>,
 }
 
 /// 发起端「免确认设备断线自动重连」的一轮重试 episode 的**内部**状态（Q6）。
@@ -270,6 +301,12 @@ pub struct RcReconnectInfo {
 pub(super) struct Inner {
     pub(super) session: Option<Session>,
     pub(super) pending: Vec<InboundKnock>,
+    /// 被控端推流任务的所有权标记：同一 peer 双连接敲门时（旧版重试/网络抖动
+    /// 都可能造出第二条连接），批准后两个等待循环都会看到 `InboundActive`——
+    /// 不加这道闸就会 spawn 两个 InboundVideo（双份采集编码 CPU、`inbound_send`
+    /// 槽互相覆盖）。第一个抢到的循环负责推流，其余连接在 Err 分支被拒。
+    /// 建会话时置 false、end_session 清 session 时一并清。
+    pub(super) inbound_streaming: bool,
 }
 
 pub(super) fn now_ms() -> i64 {
@@ -401,6 +438,8 @@ impl RcService {
             audio_muted: std::sync::atomic::AtomicBool::new(false),
             #[cfg(target_os = "windows")]
             audio_local_mute: std::sync::atomic::AtomicBool::new(false),
+            peer_host_audio: Mutex::new(None),
+            spk_mute_by_peer: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -710,6 +749,10 @@ impl RcService {
     }
 
     /// 被控端：**本机**静音（被控者自己关的，一票否决）。跨会话保持，见字段注释。
+    ///
+    /// ❗ 只改状态，**不推帧**——推送是 async，而这里是同步方法且调用方就在命令层。
+    /// 命令层改完必须跟一句 [`emit_host_audio`](Self::emit_host_audio)，否则对端
+    /// 只会发现「声音没了」而不知道是对方静音（G3-B 要消掉的正是这个）。
     #[cfg(target_os = "windows")]
     pub fn set_audio_local_mute(&self, muted: bool) {
         self.audio_local_mute
@@ -722,6 +765,79 @@ impl RcService {
     pub fn audio_local_mute(&self) -> bool {
         self.audio_local_mute
             .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 被控端：把本机音频状态推给对端（G3-B/C，控制流上一条 JSON，与 `cursor`/`clip` 同路）。
+    ///
+    /// 三个时机：**会话刚建立**（给初值，见 `inbound.rs` 的 `run`）、**被控者切
+    /// 「不发送声音」**、**收到 `SetHostMute` 之后**（回读回的真实值）。
+    ///
+    /// `err` 只在动作失败时带——对端据此提示「切换失败」，而不是点了没反应。
+    /// 没有控制流（未 Accept / 已断开）时静默返回：它不是关键路径。
+    ///
+    /// 可见性是 `pub` 是因为**命令层也要用**（被控者切「不发送声音」后必须跟着推）。
+    pub async fn emit_host_audio(&self, err: Option<&str>) {
+        #[cfg(target_os = "windows")]
+        {
+            let spk = super::audio::spk_mute_get().unwrap_or(false);
+            let local = self.audio_local_mute.load(std::sync::atomic::Ordering::SeqCst);
+            let mut msg = serde_json::json!({
+                "t": "host_audio",
+                "local_mute": local,
+                "spk_mute": spk,
+            });
+            if let Some(e) = err {
+                msg["err"] = serde_json::Value::String(e.to_string());
+            }
+            let Ok(b) = serde_json::to_vec(&msg) else {
+                return;
+            };
+            let guard = self.inbound_send.lock().await;
+            if let Some(send) = guard.as_ref() {
+                let mut g = send.lock().await;
+                let _ = crate::sync::transport::write_frame(&mut g, &b).await;
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = err;
+        }
+    }
+
+    /// 发起端：记下对端报来的主机音频状态（`outbound.rs` 解出 `host_audio` 后调用）。
+    pub(super) fn set_peer_host_audio(&self, st: PeerHostAudio) {
+        *self.peer_host_audio.lock().unwrap_or_else(|p| p.into_inner()) = Some(st);
+    }
+
+    /// 发起端：对端报来的主机音频状态（快照用）。None = 旧对端不发这条帧。
+    pub(super) fn peer_host_audio(&self) -> Option<PeerHostAudio> {
+        self.peer_host_audio
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// 被控端：对端静音了本机扬声器且尚未恢复（横幅提示 + 恢复入口摆不摆）。
+    pub fn spk_muted_by_peer(&self) -> bool {
+        self.spk_mute_by_peer.load(Ordering::SeqCst)
+    }
+
+    /// 被控端：记「对端静音了本机扬声器」。`false` = 已恢复，或本就是本机自己改的。
+    pub fn set_spk_muted_by_peer(&self, on: bool) {
+        self.spk_mute_by_peer.store(on, Ordering::SeqCst);
+    }
+
+    /// 被控端本机：设置主机扬声器静音，并把新状态告知对端（命令层入口）。
+    ///
+    /// 与「对端发 `SetHostMute`」的区别：**这是本机自己的操作**，所以顺手清掉
+    /// 「对端静音的」标记（横幅提示与恢复按钮随之收起），并推一次状态帧——
+    /// 否则对端那个按钮会停在一个已经不成立的状态上。返回读回的真实值。
+    #[cfg(target_os = "windows")]
+    pub async fn host_mute_local(&self, on: bool) -> Result<bool, String> {
+        let actual = super::audio::spk_mute_set(on)?;
+        self.set_spk_muted_by_peer(false);
+        self.emit_host_audio(None).await;
+        Ok(actual)
     }
 
     /// 发起端：音频流头部到了（新音频流开始）——替换缓冲。
@@ -767,6 +883,11 @@ impl RcService {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .reset();
+        // G3-B/C：两边的主机音频状态都是**本会话**的事实，会话收口即作废。
+        // ❗ 唯独不动 `audio_local_mute`（被控者的隐私意愿，跨会话保持，见上）。
+        *self.peer_host_audio.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        self.spk_mute_by_peer
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// 注入「对端改了画质/编码」的回调（lib.rs 在 manage 之后调用）。
@@ -944,13 +1065,26 @@ impl RcService {
         let deadline = now_ms() + CLIPBOARD_PULL_TIMEOUT_MS;
         while now_ms() < deadline {
             match self.clip.decision(epoch, before) {
-                ClipWait::Take => return Ok(self.clip.take()),
+                ClipWait::Take => {
+                    // P2-5：先看是不是失败回包——失败转 Err 报给用户，
+                    // 绝不折叠成空串（空串与「对方剪贴板是空的」不可区分）。
+                    if let Some(e) = self.clip.take_pull_error() {
+                        return Err(e);
+                    }
+                    return Ok(self.clip.take());
+                }
                 ClipWait::Abandon => return Ok(None),
                 ClipWait::KeepWaiting => {}
             }
             tokio::time::sleep(std::time::Duration::from_millis(80)).await;
         }
         Ok(None)
+    }
+
+    /// 接收循环：对端回了 `clip_err`（P2-5）。记失败原因并唤醒等待循环，
+    /// 让 `pull_clipboard` 以 Err 收场。
+    pub(super) fn clip_pull_failed(&self, e: String) {
+        self.clip.set_pull_error(e);
     }
 
     /// 会话收口时调用：作废仍在等待的 pull，并丢掉可能由迟到回包写入的文本。
@@ -1170,6 +1304,20 @@ impl RcService {
                     false
                 }
             },
+            // G3-B/C：**对端**报来的主机音频状态（发起端才有；被控端侧恒 None）。
+            // `None` = 旧对端不发这条帧 → 前端不摆「对方已静音」那类断言。
+            peer_audio: {
+                #[cfg(target_os = "windows")]
+                {
+                    self.peer_host_audio()
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    None
+                }
+            },
+            // G3-C：被控端视角——对端静音了本机扬声器（提示 + 恢复入口）。
+            spk_muted_by_peer: self.spk_muted_by_peer(),
         }
     }
 
@@ -1561,9 +1709,22 @@ impl RcService {
                     #[cfg(target_os = "windows")]
                     svc.audio_reset();
                     svc.note_rtt(0);
-                    *svc.outbound_send.lock().await = Some(send);
-                    *svc.outbound_conn.lock().await = Some(conn.clone());
-                    svc.spawn_outbound_video(&peer, recv, conn);
+                    // 🔴 取消竞态收口（2026-09-20 审计 P2-3）：从 cancelled 判定到
+                    // 写槽之间隔着 store 写盘等 await 点，用户恰好取消时——
+                    // end_session 写 End 时槽位还是 None（对端收不到 End），
+                    // 随后句柄仍被写回成僵尸。写槽前再查一次会话 id；
+                    // 仍存在的残余窗口（查完到写完之间收口）不足 1ms，
+                    // 且僵尸句柄会被下一场会话的写槽覆盖、end_session 也会清。
+                    if svc.session_id_is(&session_id) {
+                        *svc.outbound_send.lock().await = Some(send);
+                        *svc.outbound_conn.lock().await = Some(conn.clone());
+                        svc.spawn_outbound_video(&peer, recv, conn);
+                    } else {
+                        log::info!("[RC] 会话在建立途中已被取消，丢弃刚建好的流句柄");
+                        drop(send);
+                        drop(recv);
+                        drop(conn);
+                    }
                     svc.emit_changed();
                 }
                 Err(e) => {
@@ -1693,9 +1854,13 @@ impl RcService {
             addr = addr.with_ip_addr(sock);
         }
 
-        let conn = ep
-            .connect(addr, ALPN)
+        // 🔴 拨号必须带超时（2026-09-20 审计 P2-4）：裸等在网络黑洞下会让
+        // OutboundPending 挂死、占住 busy 闸，用户只能手动取消。15 秒对
+        // 「绕中继 + 国内网络」是宽松上限（probe_peer 的 3 秒是给探测用的，
+        // 正式拨号放一倍以上余量）。
+        let conn = tokio::time::timeout(std::time::Duration::from_secs(15), ep.connect(addr, ALPN))
             .await
+            .map_err(|_| "[connect_failed] 连接对端超时（15 秒）：对方可能不在线".to_string())?
             .map_err(|e| format!("[connect_failed] 连接对端失败：{}", e))?;
         let (mut send, mut recv) = conn
             .open_bi()
@@ -1919,16 +2084,23 @@ impl RcService {
         let deadline = now_ms() + 120_000;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            if now_ms() > deadline {
-                self.clear_pending(&peer);
-                deny_and_close(&link_conn, &mut send, "等待确认超时", "confirm_timeout").await;
-                return;
-            }
+            // 🔴 超时判定必须放在 decision **之后**（2026-09-20 审计 P1-2）：
+            // 原先超时检查在读取会话之前，批准落在最后 <200ms 窗口时——
+            // approve_inbound 已建会话、pending 已删，这里却先按超时把连接
+            // deny_and_close 掉：会话槽是活跃态但推流任务永不执行，且这个
+            // 僵尸会话没有任何看门者（TTL 检查只存在于视频循环里），
+            // 横幅卡「被控中」直到手动结束。
             let decision = {
-                let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-                match inner.session.as_ref() {
+                let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                // 先在不可变借用里判状态、出借后再写标记（推流所有权的
+                // 判定与置位必须在同一把锁里完成，否则双循环都能抢到）。
+                let verdict = match inner.session.as_ref() {
                     Some(s) if s.peer == peer && s.phase == SessionPhase::InboundActive => {
-                        Some(Ok(s.capability))
+                        if inner.inbound_streaming {
+                            Some(Err("already_streaming"))
+                        } else {
+                            Some(Ok(s.capability))
+                        }
                     }
                     Some(s) if s.peer != peer => Some(Err("busy")),
                     Some(_) => None,
@@ -1939,7 +2111,12 @@ impl RcService {
                             None
                         }
                     }
+                };
+                // 抢到推流所有权：出借结束后置位（P2-1 双连接守卫）
+                if matches!(verdict, Some(Ok(_))) {
+                    inner.inbound_streaming = true;
                 }
+                verdict
             };
             match decision {
                 Some(Ok(cap)) => {
@@ -1955,6 +2132,16 @@ impl RcService {
                     spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_audio).await;
                     return;
                 }
+                Some(Err("already_streaming")) => {
+                    // 输掉推流所有权的重复连接：安静收掉即可，不算拒绝。
+                    // 对端若在这条连接上等 Accept，收到的关闭理由是会话已被
+                    // 另一条连接接管——它的真实会话仍然活着。
+                    log::info!("[RC] {short} 重复连接：会话已由另一条连接接管，关闭本条");
+                    let _ = send.finish();
+                    link_conn.close(0u32.into(), b"session taken");
+                    self.clear_pending(&peer);
+                    return;
+                }
                 Some(Err(_)) => {
                     deny_and_close(
                         &link_conn,
@@ -1966,7 +2153,16 @@ impl RcService {
                     self.clear_pending(&peer);
                     return;
                 }
-                None => continue,
+                None => {
+                    // 只有「还在等」才允许超时（P1-2 修正：超时判定移到 decision 之后）
+                    if now_ms() > deadline {
+                        self.clear_pending(&peer);
+                        deny_and_close(&link_conn, &mut send, "等待确认超时", "confirm_timeout")
+                            .await;
+                        return;
+                    }
+                    continue;
+                }
             }
         }
     }
@@ -2215,6 +2411,9 @@ impl RcService {
             granted: true,
         };
         inner.session = Some(s.clone());
+        // 新会话的推流所有权从头分配（上一场的标记必须清，否则第一个批准循环
+        // 会误判「已有人推流」而拒绝回 Accept）。
+        inner.inbound_streaming = false;
         Ok(s)
     }
 

@@ -5,6 +5,7 @@
  * ⇒ 点「以『可控』发起」等于发两次申请。挂在容器上一次，
  * 以后往菜单里加项也不会漏（设计稿风险 #1）。
  */
+import { useEffect, useRef } from "react";
 import { MoreHorizontal } from "lucide-react";
 import type { RcCapability } from "@/lib/api/rc";
 import styles from "./RemoteComputer.module.css";
@@ -57,6 +58,39 @@ export function RcDeviceMenu({
   onRename: () => void;
   onForget: () => void;
 }) {
+  // U6：键盘可达性——打开即落焦点到第一个可用项；↑/↓ 逐项移动、Esc 关闭
+  // 并把焦点还给触发钮。没有这套，纯键盘用户只能 Tab 硬闯（菜单项与页面
+  // 其余按钮混在同一序列里，Tab 顺序不可预期）。
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const first = menuRef.current?.querySelector<HTMLButtonElement>(
+      "button:not(:disabled)",
+    );
+    first?.focus();
+  }, [open]);
+
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onToggle();
+      triggerRef.current?.focus();
+      return;
+    }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
+    );
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === "ArrowDown"
+        ? items[(idx + 1 + items.length) % items.length]
+        : items[(idx - 1 + items.length) % items.length];
+    next?.focus();
+  };
   // 🔴 菜单项要**逐项**判「对这台设备真的成立吗」，不能整块隐藏也不能整块保留：
   //    ·「以指定方式发起」——纯同步设备（只在同步 `devices` 表、不在 `rc_devices` 表）
   //      没有可发起的主动作（B9：它的下一步是「去配对」）；
@@ -73,6 +107,7 @@ export function RcDeviceMenu({
           现在换回纯图标 —— 代价用 aria-label（无障碍名）+ title（悬停提示）补，
           二者缺一就会变成「一个看不出是什么的方块」。 */}
       <button
+        ref={triggerRef}
         type="button"
         className={`${styles.icoBtn} ${styles.icoBig}`}
         aria-label="更多操作"
@@ -86,7 +121,13 @@ export function RcDeviceMenu({
         <MoreHorizontal size={16} />
       </button>
       {open && (
-        <div className={styles.devMenu} onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={menuRef}
+          className={styles.devMenu}
+          role="menu"
+          onKeyDown={onMenuKeyDown}
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* 原「申请卡」的选档职能收进菜单：只在需要显式换档时才展开，常态不占屏 */}
           {!syncOnly && (
             <>

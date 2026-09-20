@@ -21,8 +21,7 @@
  * 全屏/适配为什么不在这里：它们渲染在 `.fakeScreen` **内部**，全屏时才会跟画面
  * 一起进全屏态；放到底栏等于全屏后按钮消失（只剩 Esc 能退出）。
  */
-import { useMemo, useState } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { rcSendInput, rcSetBitratePct, type RcQuality, type RcCaptureScope } from "@/lib/api/rc";
 import { RC_BITRATE_OPTIONS, visibleQualities } from "@/lib/rcQuality";
 import { scopeOptions } from "@/lib/rcScope";
@@ -31,6 +30,7 @@ import type { UseRc } from "@/hooks/useRc";
 import { RcDropdown } from "./RcDropdown";
 import { RcClipboardBar } from "./RcClipboardBar";
 import { RcFileBar } from "./RcFileBar";
+import { RcAudioBar } from "./RcAudioBar";
 import styles from "./RemoteComputer.module.css";
 
 type Fb = { kind: "ok" | "bad" | "info"; text: string } | null;
@@ -107,6 +107,17 @@ export function RcSessionBar({
     [],
   );
 
+  // B3：三个下拉的**最新渲染值**——回滚回调在异步失败后才执行，闭包里的
+  // props 是旧快照；回滚前用 ref 判断「UI 还停在本次设置值吗」。
+  const qualityRef = useRef(quality);
+  const scopeRef = useRef(captureScope);
+  const bitrateRef = useRef(bitrate);
+  useEffect(() => {
+    qualityRef.current = quality;
+    scopeRef.current = captureScope;
+    bitrateRef.current = bitrate;
+  }, [quality, captureScope, bitrate]);
+
   const remoteSend = async (
     ev: Parameters<typeof rcSendInput>[0],
     restore: () => void,
@@ -128,7 +139,15 @@ export function RcSessionBar({
     if (k === quality) return;
     const was = quality as RcQuality;
     onPickQuality(k);
-    void remoteSend({ kind: "set_quality", quality: k }, () => onPickQuality(was), "画质已同步到对方");
+    void remoteSend(
+      { kind: "set_quality", quality: k },
+      // B3：只有 UI 还停在**本次**设置值时才回滚——快速连改两档时，先发的
+      // 请求失败了，其回滚不能覆盖后一档已落下的乐观值。
+      () => {
+        if (qualityRef.current === k) onPickQuality(was);
+      },
+      "画质已同步到对方",
+    );
   };
 
   const pickScope = (k: RcCaptureScope) => {
@@ -137,7 +156,9 @@ export function RcSessionBar({
     onPickScope(k);
     void remoteSend(
       { kind: "set_capture_scope", scope: k },
-      () => onPickScope(was),
+      () => {
+        if (scopeRef.current === k) onPickScope(was);
+      },
       "画面范围已同步到对方",
     );
   };
@@ -150,11 +171,15 @@ export function RcSessionBar({
     if (pct === bitrate) return;
     const was = bitrate;
     onPickBitrate(pct);
-    void remoteSend({ kind: "set_bitrate_pct", pct }, () => onPickBitrate(was), "码率已同步到对方").then(
-      (ok) => {
-        if (ok) void rcSetBitratePct(pct).catch(() => {});
+    void remoteSend(
+      { kind: "set_bitrate_pct", pct },
+      () => {
+        if (bitrateRef.current === pct) onPickBitrate(was);
       },
-    );
+      "码率已同步到对方",
+    ).then((ok) => {
+      if (ok) void rcSetBitratePct(pct).catch(() => {});
+    });
   };
 
   // Q7：「下一屏」——多屏高频操作不想开下拉。在**对端的物理屏**之间循环：
@@ -228,21 +253,16 @@ export function RcSessionBar({
           onPick={pickBitrate}
         />
       </span>
-      {/* G3：系统声音开关。只看会话也该有声音——音频不要求控制权，放在
-          剪贴板栏（仅可控）之前，两种能力档都可见。 */}
-      <button
-        type="button"
-        className={styles.menuBtn}
-        title={
-          audioOn
-            ? "关闭系统声音（对方将停止听到本机播放的声音）"
-            : "开启系统声音（对方将听到本机播放的声音）"
-        }
-        onClick={onToggleAudio}
-      >
-        {audioOn ? <Volume2 size={14} aria-hidden="true" /> : <VolumeX size={14} aria-hidden="true" />}
-        声音
-      </button>
+      {/* G3 / G3-B / G3-C：声音组（本机开关 + 对方静音的告知 + 静音对方外放）。
+          只看会话也该有声音——音频不要求控制权，所以这组摆在剪贴板栏（仅可控）之前，
+          两种能力档都看得见。 */}
+      <RcAudioBar
+        rc={rc}
+        canControl={canControl}
+        audioOn={audioOn}
+        onToggleAudio={onToggleAudio}
+        onStatus={onStatus}
+      />
       <span className={styles.barSep} />
       {canControl && (
         <>

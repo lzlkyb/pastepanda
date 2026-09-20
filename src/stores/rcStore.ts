@@ -93,6 +93,10 @@ interface RcState {
   targets: RcTargetDevice[];
   identity: RcIdentity | null;
   busy: boolean;
+  /** B4：并发操作计数——先完成者不得提前解除后到者的禁用 */
+  busyCount: number;
+  /** B1：用户刚主动清掉的后端错误串——同串在清除生效前被轮询拿回时不回显 */
+  lastClearedError: string | null;
   /** 操作失败（可重试原操作） */
   error: string | null;
   /** 仅状态刷新失败（重试只应 refresh，不算操作失败） */
@@ -269,6 +273,8 @@ export const useRcStore = create<RcState>((set, get) => ({
   targets: [],
   identity: null,
   busy: false,
+  busyCount: 0,
+  lastClearedError: null,
   error: null,
   statusError: null,
   scopeNotice: null,
@@ -316,7 +322,11 @@ export const useRcStore = create<RcState>((set, get) => ({
           s.session && prev.status?.session?.id === s.session.id ? prev.streamNotice : null,
       }));
       // 非阻塞申请的后台失败：clone 保留在后端，用户 dismiss / 下次发起 / 结束时才清
-      if (s.outbound_error) set({ error: s.outbound_error });
+      // B1：与用户刚清掉的是**同一串**（异步清除还没在后端生效）→ 不回显，
+      // 只有新出现的错误串（不同内容）才重新弹。
+      if (s.outbound_error && s.outbound_error !== get().lastClearedError) {
+        set({ error: s.outbound_error });
+      }
     } catch (e) {
       // 状态刷新失败 ≠ 远程申请失败，不能诱导用户重发申请
       set({ statusError: e instanceof Error ? e.message : String(e) });
@@ -364,12 +374,19 @@ export const useRcStore = create<RcState>((set, get) => ({
     }
   },
   clearError: () => {
-    set({ error: null, statusError: null });
+    // B1：记下被清的后端串。异步 rcClearOutboundError 生效前的窗口期里，
+    // refresh 轮询会带回同一个 outbound_error——同串不回显（见 refresh）。
+    set((st) => ({
+      error: null,
+      statusError: null,
+      lastClearedError: st.error,
+    }));
     void rcClearOutboundError().catch(() => {});
   },
 
   run: async (fn) => {
-    set({ busy: true, error: null });
+    // B4：计数制——并发时后完成者收尾，busy 才归 false
+    set((st) => ({ busyCount: st.busyCount + 1, busy: true, error: null }));
     try {
       await fn();
       await get().refresh();
@@ -379,7 +396,10 @@ export const useRcStore = create<RcState>((set, get) => ({
       set({ error: e instanceof Error ? e.message : String(e) });
       return false;
     } finally {
-      set({ busy: false });
+      set((st) => {
+        const n = Math.max(0, st.busyCount - 1);
+        return { busyCount: n, busy: n > 0 };
+      });
     }
   },
   setEnabled: (v) => get().run(() => rcSetEnabled(v)),

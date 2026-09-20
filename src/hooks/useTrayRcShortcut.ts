@@ -16,17 +16,19 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { rcRequestSession, rcStatus, rcTargets } from "@/lib/api/rc";
+import { rcRequestSession, rcStatus, rcTargets, rcCancelRequest } from "@/lib/api/rc";
 import { lastRcTarget } from "@/lib/rcDevice";
 import { capabilityLabel, lastRequestCap } from "@/lib/rcRequest";
+import { useRcStore } from "@/stores/rcStore";
+import { useToast, UNDO_WINDOW_MS } from "@/components/Toast";
 
 export interface TrayRcShortcut {
   /** 设备显示名（备注优先，与工作台同一口径）。 */
   label: string;
   /** 将以哪一档连接（「只看」/「可控」）——托盘行的 hint，沿用上次用过的档。 */
   capLabel: string;
-  /** 打开工作台并发起申请；失败抛出（调用方负责 toast）。 */
-  connect: () => Promise<void>;
+  /** 打开工作台并发起申请；返回 false = 发起失败（错误已进工作台错误面板）。 */
+  connect: () => Promise<boolean>;
 }
 
 export function useTrayRcShortcut(): TrayRcShortcut | null {
@@ -54,14 +56,47 @@ export function useTrayRcShortcut(): TrayRcShortcut | null {
     };
   }, []);
 
+  const { toast } = useToast();
   const connect = useCallback(async () => {
-    if (!target) return;
+    if (!target) return false;
     const cap = lastRequestCap();
     // 先开工作台再发申请：申请是异步的（等对方同意），用户需要在工作台里看到
     // 「等待对方同意」和随后的画面，而不是只看到托盘收起。
     await invoke("rc_open_workbench");
-    await rcRequestSession(target.nodeId, cap);
-  }, [target]);
+    // B5：走 store 的 run——失败原因落工作台错误面板（不再只靠托盘 toast 兜），
+    // 成功后给**与工作台发起同款**的 6 秒撤销窗口。原先直接裸调
+    // rcRequestSession，绕过了撤销链路：误触之后没有「撤回」这步可走。
+    const ok = await useRcStore
+      .getState()
+      .run(() => rcRequestSession(target.nodeId, cap));
+    if (ok) {
+      const name = target.label;
+      toast(
+        `已向「${name}」发起远程（${capabilityLabel(cap)}）`,
+        "info",
+        UNDO_WINDOW_MS,
+        undefined,
+        "撤销",
+        undefined,
+        undefined,
+        () => {
+          void (async () => {
+            if (useRcStore.getState().status?.session?.phase !== "outbound_pending") {
+              toast("对方已同意，申请无法撤回（可在会话里结束）", "info");
+              return;
+            }
+            try {
+              await rcCancelRequest();
+              toast(`已撤回对「${name}」的申请`, "success");
+            } catch {
+              toast("撤回失败", "error");
+            }
+          })();
+        },
+      );
+    }
+    return ok;
+  }, [target, toast]);
 
   if (!target) return null;
   return { label: target.label, capLabel: capabilityLabel(lastRequestCap()), connect };

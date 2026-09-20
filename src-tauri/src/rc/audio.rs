@@ -28,10 +28,11 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
     eMultimedia, eRender, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
-    AUDCLNT_STREAMFLAGS_LOOPBACK, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator,
-    MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
+    AUDCLNT_STREAMFLAGS_LOOPBACK, IAudioCaptureClient, IAudioClient, IMMDevice,
+    IMMDeviceEnumerator, MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
 };
 use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL};
@@ -327,6 +328,13 @@ impl AacEncoder {
         }
     }
 
+    /// 设定 pts 时间轴基点（P2-6）：编码器重开（编码失败 / 设备切换）时，
+    /// worker 把**本会话累计喂过的帧数**传进来——原先重开即归零，
+    /// 对端 WebCodecs 的播放时间轴突然倒退，表现为声音卡顿/重播。
+    pub fn set_sample_offset(&mut self, total_frames: u64) {
+        self.samples_in = total_frames;
+    }
+
     /// 喂一段 s16 立体声 interleaved 采样，取回编出的 AAC 帧。
     /// 内部凑满 1024×2 才提交；不满的留在蓄水池。
     pub fn encode(&mut self, pcm: &[i16]) -> Result<Vec<AacPacket>, String> {
@@ -495,12 +503,43 @@ enum SampleFmt {
     S16,
 }
 
+/// 默认播放设备（`eRender` + `eMultimedia`）。
+///
+/// **必须在已 `CoInitializeEx` 的线程上调用。** 没有默认设备（无头机 / 声卡被
+/// 禁用）时 Err，调用方据此禁用音频。
+fn default_render_device() -> Result<IMMDevice, String> {
+    unsafe {
+        let enumr: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(mf_err)?;
+        enumr
+            .GetDefaultAudioEndpoint(eRender, eMultimedia)
+            .map_err(|e| format!("无默认播放设备：{e}"))
+    }
+}
+
+/// 当前默认渲染端点的 id（P1-5：worker 定期比对，发现默认设备被切换就重建
+/// 采集——WASAPI 环回**不会**跟随默认设备迁移）。查不到返回 None（忽略本次检查）。
+fn default_render_device_id() -> Option<String> {
+    unsafe {
+        let enumr: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        enumr
+            .GetDefaultAudioEndpoint(eRender, eMultimedia)
+            .ok()?
+            .GetId()
+            .ok()
+            .and_then(|s| s.to_string().ok())
+    }
+}
+
 pub struct LoopbackCapture {
     client: IAudioClient,
     capture: IAudioCaptureClient,
     sr: u32,
     ch: usize,
     fmt: SampleFmt,
+    /// 采集绑定的默认渲染端点 id（P1-5 设备失效/切换检测用）。
+    device_id: String,
 }
 
 impl LoopbackCapture {
@@ -508,11 +547,13 @@ impl LoopbackCapture {
     /// 没有默认设备（无头机/禁用声卡）→ Err，调用方禁用音频。
     pub fn new() -> Result<Self, String> {
         unsafe {
-            let enumr: IMMDeviceEnumerator =
-                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(mf_err)?;
-            let dev = enumr
-                .GetDefaultAudioEndpoint(eRender, eMultimedia)
-                .map_err(|e| format!("无默认播放设备：{e}"))?;
+            let dev = default_render_device()?;
+            // 端点 id 留底：worker 靠它发现「默认设备被切换了」（P1-5）
+            let dev_id = dev
+                .GetId()
+                .ok()
+                .and_then(|s| s.to_string().ok())
+                .unwrap_or_default();
             let client: IAudioClient = dev.Activate(CLSCTX_ALL, None).map_err(mf_err)?;
             let wf = client.GetMixFormat().map_err(mf_err)?;
             if wf.is_null() {
@@ -532,7 +573,7 @@ impl LoopbackCapture {
                 .map_err(mf_err)?;
             let capture: IAudioCaptureClient = client.GetService().map_err(mf_err)?;
             client.Start().map_err(mf_err)?;
-            Ok(Self { client, capture, sr, ch, fmt })
+            Ok(Self { client, capture, sr, ch, fmt, device_id: dev_id })
         }
     }
 
@@ -540,12 +581,22 @@ impl LoopbackCapture {
         self.sr
     }
 
+    /// 本采集绑定的默认渲染端点 id。
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
     /// 取走当前攒下的全部采样 → 立体声 s16 interleaved。没货返回空。
-    pub fn pump(&self) -> Vec<i16> {
+    /// 第二个返回值 = **设备失效**（P1-5）：`GetNextPacketSize`/`GetBuffer`
+    /// 出错（典型：端点被拔出/禁用）。原先错误被吞成「没货」，worker 拿着
+    /// 死掉的采集永远空转，会话内静默断声。设备失效时旧数据照常返回。
+    pub fn pump(&mut self) -> (Vec<i16>, bool) {
         let mut out = Vec::new();
+        let mut broken = false;
         unsafe {
             loop {
                 let Ok(n) = self.capture.GetNextPacketSize() else {
+                    broken = true;
                     break;
                 };
                 if n == 0 {
@@ -559,6 +610,7 @@ impl LoopbackCapture {
                     .GetBuffer(&mut p, &mut frames, &mut flags, None, None)
                     .is_err()
                 {
+                    broken = true;
                     break;
                 }
                 let bytes = (frames as usize) * self.ch * self.bytes_per_sample();
@@ -584,7 +636,7 @@ impl LoopbackCapture {
                 let _ = self.capture.ReleaseBuffer(frames);
             }
         }
-        out
+        (out, broken)
     }
 
     fn bytes_per_sample(&self) -> usize {
@@ -683,6 +735,11 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
     let _ = com;
     let mut cap: Option<LoopbackCapture> = None;
     let mut enc: Option<AacEncoder> = None;
+    // P2-6：本会话累计喂给编码器的**帧数**（立体声 interleaved 的一半）。
+    // 编码器重开时以此为 pts 基点，时间轴不倒退。
+    let mut samples_total: u64 = 0;
+    // P1-5：默认设备比对节流（每 5 秒一次，别每轮 8ms 都查 COM）。
+    let mut last_dev_check = std::time::Instant::now();
     log::info!("[RC] 音频 worker 启动");
     while !stop.load(Ordering::SeqCst) {
         if !wanted.load(Ordering::SeqCst) {
@@ -698,11 +755,15 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
                 let e = AacEncoder::open(c.sample_rate())?;
                 Ok((c, e))
             })() {
-                Ok((c, e)) => {
+                Ok((c, mut e)) => {
+                    // pts 时间轴接续（P2-6）：设备切换导致采样率变化时，
+                    // 用累计帧数当基点在毫秒尺度上依然近似正确。
+                    e.set_sample_offset(samples_total);
                     let _ = tx.send(AudioOut::Cfg(e.cfg()));
+                    log::info!("[RC] 音频采集启动（系统声音 → 对端）");
                     cap = Some(c);
                     enc = Some(e);
-                    log::info!("[RC] 音频采集启动（系统声音 → 对端）");
+                    last_dev_check = std::time::Instant::now();
                 }
                 Err(e) => {
                     log::warn!("[RC] 音频采集打不开（本场会话没有声音）：{e}");
@@ -717,15 +778,39 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
                 }
             }
         }
-        let (Some(c), Some(e)) = (cap.as_ref(), enc.as_mut()) else {
+        // P1-5：默认渲染设备被切换了？环回采集绑的是打开那一刻的端点，
+        // 不会自己跟过去——定期比对端点 id，变了就重建（重建会重发 Cfg，
+        // 对端解码器随之换新流）。
+        if last_dev_check.elapsed() >= std::time::Duration::from_secs(5) {
+            last_dev_check = std::time::Instant::now();
+            if let (Some(c), Some(current)) = (cap.as_ref(), default_render_device_id()) {
+                if !c.device_id().is_empty() && current != c.device_id() {
+                    log::info!("[RC] 默认播放设备已切换，重建音频采集");
+                    cap = None;
+                    enc = None;
+                    continue;
+                }
+            }
+        }
+        let (Some(c), Some(e)) = (cap.as_mut(), enc.as_mut()) else {
             std::thread::sleep(std::time::Duration::from_millis(250));
             continue;
         };
-        let pcm = c.pump();
+        let (pcm, broken) = c.pump();
+        // P1-5：设备失效（端点拔出/禁用）→ 丢弃旧采集，走上面的重建路径。
+        // 原先错误被吞成「没货」，这里永远空转，会话内静默断声到结束。
+        if broken {
+            log::warn!("[RC] 音频采集设备失效（被拔出或禁用），准备重建");
+            cap = None;
+            enc = None;
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            continue;
+        }
         if pcm.is_empty() {
             std::thread::sleep(std::time::Duration::from_millis(8));
             continue;
         }
+        samples_total += (pcm.len() / 2) as u64; // 立体声 interleaved → 帧数
         match e.encode(&pcm) {
             Ok(pkts) => {
                 for p in pkts {
@@ -735,8 +820,20 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
                 }
             }
             Err(err) => {
-                log::warn!("[RC] AAC 编码失败，重开编码器：{err}");
-                enc = None;
+                log::warn!("[RC] AAC 编码失败，重开编码器（pts 基点接续在 {} 帧）：{err}", samples_total);
+                // 编码器换了但设备没换：只重开编码器，pts 基点用累计帧数接续（P2-6）。
+                match AacEncoder::open(c.sample_rate()) {
+                    Ok(mut e2) => {
+                        e2.set_sample_offset(samples_total);
+                        let _ = tx.send(AudioOut::Cfg(e2.cfg()));
+                        enc = Some(e2);
+                    }
+                    Err(e) => {
+                        log::warn!("[RC] 编码器重开失败，整链重建：{e}");
+                        cap = None;
+                        enc = None;
+                    }
+                }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
@@ -765,6 +862,44 @@ impl Drop for ComGuard {
             unsafe { windows::Win32::System::Com::CoUninitialize() };
         }
     }
+}
+
+// ── 主机扬声器静音（G3-C：控制端远程静音）──────────────────────────────
+//
+// 为什么走端点音量而不是我们的软件开关：用户在外地远程连回家，家里有人时
+// 不想让主机外放出声（半夜、开会），要能一键让**主机本地**闭嘴。
+// 这与「不发送声音」（`audio_local_mute`）是两个维度——后者是给不给对端听，
+// 这里影响的是主机本地的物理输出。
+//
+// 🔴 WASAPI 环回采集的抽头在端点静音**之前**（GStreamer `wasapi2src` 专门有个
+//    `loopback-silence-on-device-mute` 开关，默认 false 即默认不注入静音），
+//    所以静音主机扬声器**不影响**已采集的音频——对端照样听得到。
+//    这正是 Parsec / NVIDIA GameStream「mute host speakers」的既定行为。
+
+/// 读默认播放设备的端点静音态。
+///
+/// 自带 COM 初始化（可在任意线程调用，成对 `CoUninitialize`）。
+pub fn spk_mute_get() -> Result<bool, String> {
+    let _com = ComGuard::new();
+    let vol = endpoint_volume()?;
+    unsafe { vol.GetMute().map(|b| b.as_bool()).map_err(mf_err) }
+}
+
+/// 设主机扬声器静音，返回**设置后读回的真实值**（不回显入参——设备可能拒绝）。
+///
+/// 自带 COM 初始化。没有默认播放设备时 Err（无头机 / 声卡被禁用）。
+pub fn spk_mute_set(on: bool) -> Result<bool, String> {
+    let _com = ComGuard::new();
+    let vol = endpoint_volume()?;
+    unsafe {
+        vol.SetMute(on, std::ptr::null()).map_err(mf_err)?;
+        vol.GetMute().map(|b| b.as_bool()).map_err(mf_err)
+    }
+}
+
+fn endpoint_volume() -> Result<IAudioEndpointVolume, String> {
+    let dev = default_render_device()?;
+    unsafe { dev.Activate(CLSCTX_ALL, None).map_err(mf_err) }
 }
 
 #[cfg(test)]

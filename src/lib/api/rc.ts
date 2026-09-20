@@ -116,6 +116,21 @@ export interface RcStatus {
    * 所以会话结束后仍可能为 true（下次被控时横幅按钮仍是「已静音」态）。
    */
   audio_local_mute?: boolean;
+  /**
+   * G3-B/C：**对端**报来的主机音频状态（发起端视角）。
+   *
+   * `null` / 缺失 = 旧对端不发这条帧（或本会话还没收到）→ 不摆相关断言。
+   */
+  peer_audio?: {
+    /** 对方按了「不发送声音」（对方可见、可自行恢复）。 */
+    local_mute: boolean;
+    /** 对方**主机扬声器**静音中（G3-C 按钮态以它为准，不做乐观置位）。 */
+    spk_mute: boolean;
+    /** 上一次切换动作在对方那边失败的原因（成功 = 空）。 */
+    err?: string | null;
+  } | null;
+  /** G3-C：对端静音了**本机**扬声器（被控端视角，横幅提示 + 恢复入口）。 */
+  spk_muted_by_peer?: boolean;
 }
 
 /** 路径切换事件 payload（C：relay ↔ 直连 自动切换）。 */
@@ -548,11 +563,25 @@ export function rcAudioToggle(on: boolean): Promise<void> {
 /**
  * G3：被控端**本机**静音系统声音（一票否决——对端开着也听不到）。
  *
- * 纯本机状态、不出网：对端此刻拿不到「对方静音了」的信号，只表现为没有声音。
+ * ❗ 2026-09-20（G3-B）之后它**不再只是本机状态**：切换时会推一条 `host_audio`
+ * 帧给对端，对端据此显示「对方已静音（不发送声音）」。在此之前对端只能感到
+ * 声音没了、无从判断是不是坏了。
+ *
  * 跨会话保持（隐私开关不做自动回退），应用重启回到默认「可被听」。
  */
 export function rcSetAudioLocalMute(muted: boolean): Promise<void> {
   return invoke("rc_set_audio_local_mute", { muted });
+}
+
+/**
+ * G3-C：被控端**本机**设置主机扬声器静音（对端操作过之后的一键恢复入口）。
+ *
+ * 与 `rcSendInput({ kind: "set_host_mute" })` 的分工：那个是发起端请对端静音，
+ * 这个是本机自己改。**不影响**环回采集——发起端照样听得到（同 Parsec /
+ * GameStream 的「mute host speakers」：让主机本地闭嘴，不改变串流）。
+ */
+export function rcHostMuteSet(on: boolean): Promise<void> {
+  return invoke("rc_host_mute_set", { on });
 }
 
 export type RcInputEvent =
@@ -571,7 +600,9 @@ export type RcInputEvent =
   /** 解码断链 → 请求被控端下一帧强制 IDR（弱网花屏自愈） */
   | { kind: "request_key" }
   /** G3：开关系统声音（音频流）。被控端有可见提示。 */
-  | { kind: "audio_on"; on: boolean };
+  | { kind: "audio_on"; on: boolean }
+  /** G3-C：请被控端把**主机扬声器**静音/恢复（要求 Control 会话）。 */
+  | { kind: "set_host_mute"; on: boolean };
 
 export function rcSendInput(event: RcInputEvent): Promise<void> {
   return invoke("rc_send_input", { event });

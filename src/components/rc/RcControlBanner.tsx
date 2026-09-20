@@ -13,6 +13,7 @@ import { formatDuration } from "@/lib/rcSessionStats";
 import { scopeLabelLong } from "@/lib/rcScope";
 import { qualityLabel } from "@/lib/rcQuality";
 import { useRcFile } from "@/hooks/useRcFile";
+import { confirmDialog } from "@/lib/confirm";
 import type { RcSession } from "@/lib/api/rc";
 import { RcFileAskLine } from "./RcFileAsk";
 import styles from "./RemoteComputer.module.css";
@@ -29,6 +30,8 @@ export function RcControlBanner({
   onDismissStreamNotice,
   audioLocalMute,
   onToggleAudioLocalMute,
+  spkMutedByPeer,
+  onRestoreSpk,
 }: {
   session: RcSession;
   busy: boolean;
@@ -54,6 +57,12 @@ export function RcControlBanner({
    * G3：切换本机静音。不传 = 不显示按钮（例如非 Windows 被控端，音频链路不存在）。
    */
   onToggleAudioLocalMute?: () => void;
+  /**
+   * G3-C：对端静音了本机扬声器（物理外放被远程关掉）。不传/否 = 不摆提示。
+   */
+  spkMutedByPeer?: boolean;
+  /** G3-C：本机一键恢复外放。不传 = 只提示不给入口（不摆半条路）。 */
+  onRestoreSpk?: () => void;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -64,7 +73,6 @@ export function RcControlBanner({
   // G6：文件请求可能**在没有会话时**到达（文件通道独立于会话），那种情况走
   // RcOverlay 的常驻分支。有会话时在这条横幅里出——人不在工作台也看得见（规则 15）。
   const file = useRcFile(session.peer);
-  const ask = file.asks[0] ?? null;
 
   return (
     <div className={styles.ctrlBanner}>
@@ -123,7 +131,23 @@ export function RcControlBanner({
           「有东西要写进我的磁盘」至少和「我的画面被改了」一样需要立刻被看见。
           60s 不回应 = 拒绝，倒计时在组件里；点接受会弹系统目录/文件选择框
           （模态，不受主窗口焦点影响）。 */}
-      {ask && <RcFileAskLine ask={ask} busy={busy} onRespond={file.respond} />}
+      {/* B6：同 RcInboundView——全部待响应请求都摆出来，别只摆第一条 */}
+      {file.asks.map((a) => (
+        <RcFileAskLine key={a.id} ask={a} busy={busy} onRespond={file.respond} />
+      ))}
+      {/* G3-C：对端把**本机扬声器**远程静音了。必须说出来——物理外放突然没了，
+          用户第一反应是「电脑/声卡坏了」。恢复入口就摆在旁边（本机一键恢复，
+          并顺手告诉对端，免得它那边的按钮停在旧状态）。 */}
+      {spkMutedByPeer && (
+        <span className={styles.scopeNotice} role="status" aria-live="polite">
+          对方静音了本机扬声器外放
+          {onRestoreSpk && (
+            <button type="button" className={styles.scopeNoticeX} disabled={busy} onClick={onRestoreSpk}>
+              恢复外放
+            </button>
+          )}
+        </span>
+      )}
       <span className={styles.sp} />
       {/* G3：被控者本机静音。放在「以后不再询问」之前——两者都是本人对此刻的即时
           决定，且要和右侧「立即结束」（误触代价不对称）拉开距离。
@@ -179,7 +203,26 @@ export function RcControlBanner({
           ? "对方可操作键鼠与剪贴板 · 你随时可结束"
           : "对方仅可观看画面 · 你随时可结束"}
       </span>
-      <button type="button" className={styles.dangerBtn} disabled={busy} onClick={onEnd}>
+      {/* U1：与工作台被控视图同一道 danger 确认——按钮紧挨着「恢复外放」这类
+          高频钮，误触「结束会话」的代价（对方画面全断）远大于多点一下确认。 */}
+      <button
+        type="button"
+        className={styles.dangerBtn}
+        disabled={busy}
+        onClick={() => {
+          void (async () => {
+            const ok = await confirmDialog({
+              title: "结束远程会话",
+              message: `将断开与「${
+                session.peer_name || fingerprintOf(session.peer)
+              }」的连接。对方会立刻失去画面与控制。`,
+              confirmText: "结束会话",
+              variant: "danger",
+            });
+            if (ok) onEnd();
+          })();
+        }}
+      >
         立即结束
       </button>
     </div>

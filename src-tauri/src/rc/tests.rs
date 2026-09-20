@@ -2,7 +2,7 @@
 
 use crate::data_store::DataStore;
 use crate::rc::protocol::{Capability, SessionPhase};
-use crate::rc::service::RcService;
+use crate::rc::service::{PeerHostAudio, RcService};
 use crate::rc::session::{gate_inbound, CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED};
 
 fn store() -> DataStore {
@@ -903,4 +903,92 @@ fn 本机静音跨会话保持() {
         "本机静音不该被会话收口解开（隐私开关不做自动回退）"
     );
     assert!(!svc.audio_wanted(), "收口后没有新申请，仍不出声");
+}
+
+/// G3-B：对端报来的主机音频状态是**本会话**的事实，会话收口即作废——
+/// 不然下一场会话会带着上一场的「对方已静音」显示出来（对端可能早就改回来了）。
+#[cfg(target_os = "windows")]
+#[test]
+fn 对端音频状态随会话收口作废() {
+    let svc = RcService::new(store());
+    assert!(svc.peer_host_audio().is_none(), "默认没收到过（旧对端也恒 None）");
+
+    svc.set_peer_host_audio(PeerHostAudio {
+        local_mute: true,
+        spk_mute: true,
+        err: None,
+    });
+    let got = svc.peer_host_audio().expect("刚写入的该读得到");
+    assert!(got.local_mute && got.spk_mute);
+
+    svc.audio_reset();
+    assert!(svc.peer_host_audio().is_none(), "会话收口要清，否则串到下一场");
+}
+
+/// G3-C：「对端静音了本机扬声器」的标记同样只属于本会话。
+///
+/// 它与「扬声器此刻是否静音」是两回事——本机用户自己按静音键**不会**置位
+/// （我们不监听系统静音变化），所以它只回答「对端做过这个动作且没人撤销」，
+/// 正是横幅提示与「恢复外放」按钮的显示条件。
+#[cfg(target_os = "windows")]
+#[test]
+fn 对端静音标记只由对端动作驱动且随会话清掉() {
+    let svc = RcService::new(store());
+    assert!(!svc.spk_muted_by_peer(), "默认没有");
+
+    svc.set_spk_muted_by_peer(true);
+    assert!(svc.spk_muted_by_peer());
+    // 本机一键恢复的语义 = 清掉标记（提示与按钮随之收起）
+    svc.set_spk_muted_by_peer(false);
+    assert!(!svc.spk_muted_by_peer());
+
+    svc.set_spk_muted_by_peer(true);
+    svc.audio_reset();
+    assert!(!svc.spk_muted_by_peer(), "会话收口该清（那是本会话的事实）");
+}
+
+// ===== 2026-09-20 全量审计（docs/远程电脑-全量审计-2026-09-20.md）修复守卫 =====
+
+/// P1-1：`audio_reset` 必须接进 `end_session`——否则被控端的 audio_muted /
+/// spk_muted_by_peer 跨会话残留，下一场会话静默无声且无任何提示。
+/// 这正是 wiring-gap 的形态：函数有、测试有、生产路径没人调。
+#[test]
+fn 守卫_end_session_真的调了audio_reset() {
+    let src = include_str!("session.rs");
+    assert!(
+        src.contains("self.audio_reset()"),
+        "end_session 没调 audio_reset——被控端音频状态会跨会话泄漏（P1-1）"
+    );
+}
+
+/// P1-2：批准等待循环里，超时判定必须在 decision **之后**——
+/// 批准落在最后 <200ms 窗口时，先按超时 deny 会造出没有看门者的僵尸会话。
+#[test]
+fn 守卫_批准循环_超时判定在decision之后() {
+    let src = include_str!("service.rs");
+    let loop_body = src
+        .split("let deadline = now_ms() + 120_000;")
+        .nth(1)
+        .expect("批准等待循环不见了");
+    let head = &loop_body[..loop_body.find("fn ").unwrap_or(loop_body.len())];
+    let decision_pos = head.find("let decision").expect("decision 读取不见了");
+    let timeout_pos = head
+        .find("now_ms() > deadline")
+        .expect("超时判定不见了");
+    assert!(
+        timeout_pos > decision_pos,
+        "超时判定在 decision 读取之前（P1-2 复发）——批准落在超时窗口里会造僵尸会话"
+    );
+}
+
+/// P2-1：同一 peer 双连接敲门时推流任务只能有一个——
+/// Inner 上的 inbound_streaming 标记必须存在且在建立/收口两处维护。
+#[test]
+fn 守卫_双敲门推流所有权标记接线() {
+    let svc = include_str!("service.rs");
+    let ses = include_str!("session.rs");
+    assert!(
+        svc.contains("inbound_streaming") && ses.contains("inbound_streaming"),
+        "inbound_streaming 标记没接线（P2-1 复发）——双连接批准后会 spawn 两个推流任务"
+    );
 }

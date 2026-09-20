@@ -64,7 +64,6 @@ export function RcInboundView({
   // 两者渲染同一份状态；这里多摆指纹 + 文件名 + 大小，因为工作台是用户
   // 「做判断的地方」——核对信息比省版面重要。
   const file = useRcFile(session.peer);
-  const ask = file.asks[0] ?? null;
 
   const endWithConfirm = async () => {
     const ok = await confirmDialog({
@@ -123,7 +122,10 @@ export function RcInboundView({
 
         {/* G6：文件请求确认条。放在「核对用的事实」之前——它是**现在就要做的决定**，
             而下面是「我交出去了什么」的回顾。 */}
-        {ask && <RcFileAskCard ask={ask} busy={busy} onRespond={file.respond} />}
+        {/* B6：渲染**全部**待响应请求——只摆 asks[0] 时，并发第二个文件请求静默不可见 */}
+        {file.asks.map((a) => (
+          <RcFileAskCard key={a.id} ask={a} busy={busy} onRespond={file.respond} />
+        ))}
 
         {/* 核对用的事实，不是装饰：指纹是身份锚点，范围和画质是「我交出去了什么」。 */}
         <dl className={styles.ibFacts}>

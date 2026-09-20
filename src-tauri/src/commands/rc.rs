@@ -925,23 +925,32 @@ pub async fn rc_audio_toggle(svc: State<'_, Arc<RcService>>, on: bool) -> Result
 /// 被控端：本机静音系统声音（G3）。一票否决——对端开着也听不到。
 ///
 /// 与 `rc_audio_toggle` 分工相反：那条是**发起端**的开关，会出网（`InputEvent::AudioOn`）、
-/// 并让被控端横幅出现提示；这条是**被控者本人**的开关，**纯本机状态、不出网**。
-/// 代价是对端此刻没有「对方静音了」的提示——它只会听到静音（已知限制，见清单 G3）。
+/// 并让被控端横幅出现提示；这条是**被控者本人**的开关。
+///
+/// ❗ 2026-09-20（G3-B）之后它**不再只是本机状态**：切换时会主动推一条
+/// `host_audio` 帧给对端（见 `RcService::emit_host_audio`），对端据此显示
+/// 「对方已静音（不发送声音）」。在此之前对端只能听到静音、无从判断是不是坏了。
 ///
 /// 跨会话保持：关了就是关了，下次会话仍是关（隐私开关不做自动回退）。
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn rc_set_audio_local_mute(svc: State<'_, Arc<RcService>>, muted: bool) -> Result<(), String> {
+pub async fn rc_set_audio_local_mute(
+    svc: State<'_, Arc<RcService>>,
+    muted: bool,
+) -> Result<(), String> {
     svc.set_audio_local_mute(muted);
     log::info!(
         "[RC] 本机系统声音{}（{}）",
         if muted { "已静音" } else { "已恢复" },
         if muted {
-            "对方将听不到本机播放的声音"
+            "对端将听不到本机播放的声音"
         } else {
-            "对方可再次听到本机播放的声音"
+            "对端可再次听到本机播放的声音"
         }
     );
+    // G3-B：对端必须知道这是**你主动静的**，而不是链路/设备坏了。
+    // （`set_audio_local_mute` 只改状态，推帧是这一步的职责。）
+    svc.emit_host_audio(None).await;
     Ok(())
 }
 
@@ -954,6 +963,37 @@ pub fn rc_set_audio_local_mute(
     _muted: bool,
 ) -> Result<(), String> {
     Err("系统声音只支持 Windows 被控端".into())
+}
+
+/// 被控端本机：设置**主机扬声器**静音（对端操作过之后的一键恢复入口）。
+///
+/// 与 `rc_send_input(SetHostMute)` 的分工：那个是**发起端**请对端静音，走网络；
+/// 这个是**本机**自己改。两端都能改同一件事，所以这条是给被控端 UI 用的本机入口
+/// （本机操作会顺手清掉「对端静音的」标记并把新状态推给对端）。
+///
+/// 注意它**不**影响环回采集：WASAPI 抽头在端点静音之前，发起端照样听得到
+/// （与 Parsec / GameStream 的「mute host speakers」同义）。
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn rc_host_mute_set(
+    app: AppHandle,
+    svc: State<'_, Arc<RcService>>,
+    on: bool,
+) -> Result<(), String> {
+    let actual = svc.host_mute_local(on).await?;
+    log::info!("[RC] 本机扬声器{}（本机操作）", if actual { "已静音" } else { "已恢复" });
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
+/// 非 Windows：同上，明确报错而不是静默成功。
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub async fn rc_host_mute_set(
+    _svc: State<'_, Arc<RcService>>,
+    _on: bool,
+) -> Result<(), String> {
+    Err("主机扬声器静音只支持 Windows".into())
 }
 
 #[cfg(test)]

@@ -265,6 +265,13 @@ export function RcFileAskLine({
   return (
     <span className={styles.fileAskLine} role="alert">
       <b>{p.title}</b>
+      {/* U3：一行版也要能看到「是什么文件」——倒计时催人 60s 内回应，
+          却不给文件名/大小，用户只能盲点。 */}
+      {ask.name && (
+        <span className={styles.fileAskName} title={ask.name}>
+          {ask.name}（{formatBytes(ask.size)}）
+        </span>
+      )}
       <span className={late ? styles.fileAskCdLate : styles.fileAskCd}>{remainSec}s</span>
       {a.failed && <span className={`${styles.fb} ${styles.fbBad}`}>回应失败</span>}
       <button type="button" className={styles.miniBtn} disabled={busy || a.picking} onClick={a.deny}>

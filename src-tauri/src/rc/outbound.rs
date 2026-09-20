@@ -38,6 +38,10 @@ pub(super) struct OutboundVideo {
     canvas_h: u32,
     /// 最近一次告知对端的 RTT；变化明显才再发 NetHint。
     last_hint_rtt: i64,
+    /// 对端主动 End 帧带的理由（P2-10）：原先 End 只 return false，理由被丢，
+    /// 会话历史里记成「画面流中断」。注意它与 `end_reason`（断流 Err）分工：
+    /// 对端主动结束**不**触发自动重连，断流才触发。
+    peer_end_reason: Option<String>,
     /// P2-1：数据报视频重组器（流路径与数据报路径共用一把 seq 尺子）。
     #[cfg(target_os = "windows")]
     reasm: std::sync::Arc<std::sync::Mutex<super::vid_dgram::VidReassembler>>,
@@ -74,6 +78,7 @@ impl OutboundVideo {
             canvas_w: 0,
             canvas_h: 0,
             last_hint_rtt: -1,
+            peer_end_reason: None,
             #[cfg(target_os = "windows")]
             reasm: std::sync::Arc::new(std::sync::Mutex::new(
                 super::vid_dgram::VidReassembler::new(),
@@ -152,11 +157,16 @@ impl OutboundVideo {
             self.svc.clear_outbound_link().await;
         }
         // 断流理由能带就带（`end_session` 会把它记进历史 / 显示给用户）；
-        // 非断流退出（对端 End、会话已不在）维持原话。
-        let reason = end_reason.as_deref().unwrap_or("画面流中断");
+        // 对端主动 End 的理由优先级最高（P2-10 修正：原先被丢、显示成
+        // 「画面流中断」）；非断流退出（会话已不在）维持原话。
+        let reason = self
+            .peer_end_reason
+            .clone()
+            .or_else(|| end_reason.clone())
+            .unwrap_or_else(|| "画面流中断".to_string());
         // Q6：断流前取一场会话的能力/设备名（force_end 之后就没有会话可查了）
         let ended = self.svc.session_brief_if(&self.my_id);
-        self.svc.force_end_if_session(&self.my_id, reason).await;
+        self.svc.force_end_if_session(&self.my_id, &reason).await;
         // Q6：只在**异常断流**（读流 Err）时安排自动重连——用户主动结束、
         // 对端主动结束、TTL 到期都不走这条（那些路径 end_reason 为 None）。
         if end_reason.is_some() {
@@ -346,6 +356,9 @@ impl OutboundVideo {
         match RcFrame::decode(bytes) {
             Ok(RcFrame::End { reason }) => {
                 log::info!("[RC] 对端结束：{reason}");
+                // 理由带出去进会话历史（P2-10）。不设 end_reason（那是断流
+                // Err 的标记，is_some 会触发自动重连）——对端主动结束不重连。
+                self.peer_end_reason = Some(reason);
                 return false;
             }
             Ok(_) => {}
@@ -382,8 +395,9 @@ impl OutboundVideo {
                         Some("clip_err") => {
                             if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
                                 log::warn!("[RC] 剪贴板拉回失败：{e}");
-                                // 推进 seq：让 pull 立刻返回；内容为空表示失败
-                                self.svc.set_remote_clipboard(String::new());
+                                // P2-5：失败原因带给 pull_clipboard 转 Err（并推进
+                                // seq 唤醒等待）——不再折叠成空串冒充「剪贴板为空」。
+                                self.svc.clip_pull_failed(e.to_string());
                             }
                         }
                         Some("pong") => {
@@ -418,6 +432,20 @@ impl OutboundVideo {
                                     });
                                 }
                             }
+                        }
+                        Some("host_audio") => {
+                            // G3-B/C：对端报来的**主机侧音频状态**。两者都是对端的事实，
+                            // 本机只负责如实显示：`local_mute` = 对方按了「不发送声音」，
+                            // `spk_mute` = 对方主机扬声器静音中。`err` 只在对方动作失败时带。
+                            let st = super::service::PeerHostAudio {
+                                local_mute: v
+                                    .get("local_mute")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                spk_mute: v.get("spk_mute").and_then(|x| x.as_bool()).unwrap_or(false),
+                                err: v.get("err").and_then(|x| x.as_str()).map(str::to_string),
+                            };
+                            self.svc.set_peer_host_audio(st);
                         }
                         Some("caps") => {
                             // P1：被控端画面能力（fps120 可用性 + 刷新率），UI 诚实出档
@@ -583,8 +611,9 @@ mod tests {
             "收流 Err 分支没过 `explain`——对端关连接的理由会退化成 `connection lost`"
         );
         assert!(
-            src.contains("let reason = end_reason"),
-            "explain 拼出的理由要带进 `force_end_if_session`（进会话历史、给用户看）；只在日志里有不算接上"
+            src.contains("let reason = self")
+                && src.contains("peer_end_reason"),
+            "对端 End 帧的理由要带进 `force_end_if_session`（P2-10：否则历史记成「画面流中断」）"
         );
         // 连接句柄必须从 `dial_and_request` 交出来——没有它，收流侧拿不到 `close_reason`。
         let svc = include_str!("service.rs");
