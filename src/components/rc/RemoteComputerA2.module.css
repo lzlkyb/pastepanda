@@ -1,0 +1,721 @@
+.root {
+  min-width: 0;
+  min-height: 0;
+  color: var(--text-primary);
+  background: var(--app-bg);
+  font-family:
+    "SF Pro Text",
+    "Microsoft YaHei",
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.workbench {
+  width: 100vw;
+  height: 100vh;
+  min-width: 760px;
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--app-bg);
+  font-family:
+    "SF Pro Text",
+    "Microsoft YaHei",
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.titleBar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  z-index: 2;
+}
+
+.brandIcon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--accent-light);
+  border-radius: 8px;
+}
+
+.brandCopy {
+  min-width: 0;
+  flex: 1;
+}
+
+.brandCopy strong,
+.brandCopy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brandCopy strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.brandCopy span {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.titleActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.channelReady {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: var(--success);
+  background: var(--success-bg);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border-color));
+  border-radius: 8px;
+  font: inherit;
+}
+
+.workbenchBody {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+}
+
+.mainSurface {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+
+.mainColumn {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.errorSlot {
+  flex: none;
+  padding: 8px 12px 0;
+  background: var(--app-bg);
+}
+
+.mainSurface > :global(main),
+.mainSurface > :global(section),
+.mainSurface > :global(div) {
+  min-width: 0;
+  flex: 1;
+}
+
+.sessionSurface {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+
+.sidebar {
+  width: 306px;
+  min-width: 306px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--section-bg);
+  border-right: 1px solid var(--border-color);
+}
+
+.sidebarHead {
+  padding: 14px 12px 10px;
+}
+
+.sidebarTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sidebarTitleRow h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.searchBox {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.searchBox:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  outline-offset: 1px;
+}
+
+.searchBox input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.deviceList {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 8px 12px;
+}
+
+.deviceItem {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.deviceItem:hover {
+  background: var(--hover);
+}
+
+.deviceItemSelected {
+  background: var(--accent-light);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+}
+
+.deviceSelect {
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deviceIcon,
+.detailDeviceIcon,
+.emptyDeviceIcon {
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent) 10%, var(--card-bg));
+  border-radius: 8px;
+}
+
+.deviceIcon {
+  position: relative;
+  width: 34px;
+  height: 34px;
+}
+
+.deviceIcon::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--section-bg);
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.deviceIcon[data-presence="live"]::after {
+  background: var(--success);
+}
+
+.deviceIcon[data-presence="recent"]::after {
+  background: var(--warning);
+}
+
+.deviceCopy {
+  min-width: 0;
+}
+
+.deviceCopy strong,
+.deviceCopy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceCopy strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deviceCopy small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.primaryButton,
+.secondaryButton,
+.connectButton,
+.dangerButton {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 150ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.primaryButton,
+.connectButton {
+  color: var(--text-on-accent);
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  font-weight: 600;
+}
+
+.secondaryButton {
+  color: var(--text-primary);
+  background: var(--card-bg);
+}
+
+.dangerButton {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border-color));
+}
+
+.connectButton {
+  min-width: 52px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.primaryButton:hover:not(:disabled),
+.connectButton:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+}
+
+.dangerButton:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.connectButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.dangerButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.sidebarEmpty {
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 14px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.sidebarEmpty p {
+  margin: 10px 0 4px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sidebarEmpty span {
+  margin-bottom: 14px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.receiveRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.receiveRow > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.receiveRow strong,
+.receiveRow small {
+  display: block;
+}
+
+.receiveRow strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.receiveRow small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.receiveOn,
+.receiveOff {
+  min-width: 58px;
+  min-height: 28px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.receiveOn {
+  color: var(--success);
+  background: var(--success-bg);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border-color));
+}
+
+.receiveOff {
+  color: var(--text-secondary);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.assistActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.assistActions button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.assistActions button:hover {
+  color: var(--text-primary);
+  background: var(--hover);
+}
+
+.assistActions .assistJoin {
+  grid-column: 1 / -1;
+}
+
+.toolNav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.toolNav button {
+  min-height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.toolNav button:hover,
+.toolNav .toolActive {
+  color: var(--text-primary);
+  background: var(--hover);
+}
+
+.detail {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: var(--app-bg);
+}
+
+.detailHead {
+  min-height: 104px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.detailDeviceIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+}
+
+.detailName {
+  min-width: 0;
+  flex: 1;
+}
+
+.detailName h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.detailTitleRow,
+.renameForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detailTitleRow button,
+.renameForm button {
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.detailTitleRow button:hover,
+.renameForm button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--hover);
+  border-color: var(--border-color);
+}
+
+.renameForm input {
+  width: min(280px, 100%);
+  height: 34px;
+  padding: 0 10px;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  outline: 2px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  outline-offset: 1px;
+}
+
+.detailName p {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+}
+
+.onlineText[data-presence="live"] {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.detailActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detailBody {
+  padding: 20px 24px 28px;
+}
+
+.detailBody h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.factList {
+  margin: 0;
+  overflow: hidden;
+  background: var(--card-bg);
+  border-radius: 12px;
+}
+
+.factList > div {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.factList > div:last-child {
+  border-bottom: 0;
+}
+
+.factList dt {
+  color: var(--text-secondary);
+}
+
+.factList dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.factList span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mono {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.detailBody .managementTitle {
+  margin-top: 24px;
+}
+
+.managementActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px;
+  background: var(--card-bg);
+  border-radius: 12px;
+}
+
+.warningNotice {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-left: 3px solid var(--warning);
+  border-radius: 0 8px 8px 0;
+}
+
+.emptyDetail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  background: var(--app-bg);
+}
+
+.emptyDeviceIcon {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+}
+
+.emptyDetail h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.emptyDetail p {
+  max-width: 480px;
+  margin: 7px 0 18px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primaryButton,
+  .secondaryButton,
+  .connectButton {
+    transition-duration: 0.01ms;
+  }
+}

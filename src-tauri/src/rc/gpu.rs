@@ -258,25 +258,30 @@ unsafe fn probe_encode_caps() -> GpuEncodeCaps {
     caps
 }
 
-/// 枚举硬件编码 MFT（NV12→codec），返回第一台是否 D3D11-aware。
-/// 只查属性，不 ActivateObject——探测要便宜。
+/// 枚举硬件编码 MFT（NV12→codec），返回是否存在 D3D11-aware 的编码器。
+/// 只查属性，不实例化——探测要便宜。
+///
+/// ⚠️ 2026-09-21 修正两处（探针 `probe/rc-mft-type` 实测）：
+/// ① **枚举参数过去传反了**：`guidSubtype` 槽要填的是**输出**格式（H.264/HEVC），
+///    `MFT_REGISTER_TYPE_INFO` 的 NV12 是**输入**格式。原代码把两者对调，
+///    `MFTEnumEx` 枚举 0 台 → `h264_gpu` 恒 false → fps120/uhd60 档永远不可用。
+/// ② **只看 `slice.first()` 太脆**：多 GPU 机型上第一台可能恰是不 aware 的软编回退，
+///    任意一台 aware 即说明硬编路径可用。
 unsafe fn hardware_mft_d3d11_aware(subtype: &windows::core::GUID) -> bool {
     use windows::Win32::Media::MediaFoundation::*;
-    let in_info = MFT_REGISTER_TYPE_INFO {
+    let out_info = MFT_REGISTER_TYPE_INFO {
         guidMajorType: MFMediaType_Video,
         guidSubtype: *subtype,
     };
-    let out_info_nv12 = MFT_REGISTER_TYPE_INFO {
-        guidMajorType: MFMediaType_Video,
-        guidSubtype: MFVideoFormat_NV12,
-    };
     let mut count = 0u32;
     let mut acts: *mut Option<IMFActivate> = std::ptr::null_mut();
+    // 输入格式**不能**作为枚举约束：探针实测硬编 MFT 在设输出类型前
+    // `GetInputAvailableType` 返回空，带 NV12 约束会枚举 0 台。
     let _ = MFTEnumEx(
         MFT_CATEGORY_VIDEO_ENCODER,
         MFT_ENUM_FLAG_HARDWARE,
-        Some(&in_info),
-        Some(&out_info_nv12),
+        None,
+        Some(&out_info),
         &mut acts,
         &mut count,
     );
@@ -284,19 +289,24 @@ unsafe fn hardware_mft_d3d11_aware(subtype: &windows::core::GUID) -> bool {
         return false;
     }
     let slice = std::slice::from_raw_parts(acts, count as usize);
-    let aware = match slice.first() {
-        Some(Some(act)) => match act.ActivateObject::<IMFTransform>() {
-            Ok(t) => match t.GetAttributes() {
-                Ok(attrs) => attrs
+    let mut aware = false;
+    for a in slice.iter().flatten() {
+        if let Ok(t) = a.ActivateObject::<IMFTransform>() {
+            if let Ok(attrs) = t.GetAttributes() {
+                if attrs
                     .GetUINT32(&MF_SA_D3D11_AWARE)
                     .map(|v| v != 0)
-                    .unwrap_or(false),
-                Err(_) => false,
-            },
-            Err(_) => false,
-        },
-        _ => false,
-    };
+                    .unwrap_or(false)
+                {
+                    aware = true;
+                }
+            }
+            let _ = a.ShutdownObject();
+        }
+        if aware {
+            break;
+        }
+    }
     for a in slice.iter().flatten() {
         let _ = a.ShutdownObject();
     }

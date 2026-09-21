@@ -6,7 +6,9 @@
  */
 
 /* ===== 全局盒模型 ===== */
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 /* ===== 全局主题切换过渡 ===== */
 /* 本列表原有 38 个 kebab-case 全局选择器，用于统一主题切换时的过渡动画。
@@ -18,29 +20,53 @@
 .dialog-box,
 .dialog-body,
 .h-key {
-  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 /* ===== 全局动画 keyframes ===== */
 @keyframes backdrop-in {
-  from { backdrop-filter: blur(0px); }
-  to { backdrop-filter: blur(4px); }
+  from {
+    backdrop-filter: blur(0px);
+  }
+  to {
+    backdrop-filter: blur(4px);
+  }
 }
 @keyframes card-pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.015); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.015);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 @keyframes toast-progress {
-  from { width: 100%; }
-  to { width: 0%; }
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
 }
 @keyframes fab-icon-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 @keyframes editSaveSpin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ===== ErrorBoundary 错误界面动画 ===== */
@@ -67,11 +93,19 @@
   animation: errorInitFadeIn 0.35s ease;
 }
 @keyframes errorInitFadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .error-init-state { animation-duration: 0.01ms; }
+  .error-init-state {
+    animation-duration: 0.01ms;
+  }
 }
 
 .error-init-icon {
@@ -160,18 +194,18 @@
      取 #C54A0A（即浅色主题的 --orange）：白字 4.82:1 达标，且在深海 #0A1628 /
      午夜 #18181B 卡片底上仍有 3.76 / 3.68 的对比度（图形元素门槛 3.0）。
      6 套主题同值，所以只在这里写一次；浅色四套因此**零视觉变化**。 */
-  --orange-solid: #C54A0A;
+  --orange-solid: #c54a0a;
 
   /* ===== 设置页图标 · 8 语义彩砖（design/设置图标-emoji彩砖白圆盘最终稿.html）=====
      高饱和渐变，固定色不随主题；白圆盘在 Settings.module.css .sRowIconGlyph。 */
-  --ic-system:  linear-gradient(135deg, #FBBF24 0%, #F59E0B 45%, #EA580C 100%);
-  --ic-capture: linear-gradient(135deg, #38BDF8 0%, #0EA5E9 45%, #0284C7 100%);
-  --ic-save:    linear-gradient(135deg, #34D399 0%, #10B981 45%, #059669 100%);
-  --ic-editor:  linear-gradient(135deg, #A5B4FC 0%, #6366F1 45%, #4F46E5 100%);
-  --ic-privacy: linear-gradient(135deg, #FB7185 0%, #F43F5E 45%, #E11D48 100%);
-  --ic-sync:    linear-gradient(135deg, #22D3EE 0%, #06B6D4 45%, #0891B2 100%);
-  --ic-paste:   linear-gradient(135deg, #C4B5FD 0%, #8B5CF6 45%, #7C3AED 100%);
-  --ic-brand:   linear-gradient(135deg, #93C5FD 0%, #3B82F6 45%, #6366F1 100%);
+  --ic-system: linear-gradient(135deg, #fbbf24 0%, #f59e0b 45%, #ea580c 100%);
+  --ic-capture: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 45%, #0284c7 100%);
+  --ic-save: linear-gradient(135deg, #34d399 0%, #10b981 45%, #059669 100%);
+  --ic-editor: linear-gradient(135deg, #a5b4fc 0%, #6366f1 45%, #4f46e5 100%);
+  --ic-privacy: linear-gradient(135deg, #fb7185 0%, #f43f5e 45%, #e11d48 100%);
+  --ic-sync: linear-gradient(135deg, #22d3ee 0%, #06b6d4 45%, #0891b2 100%);
+  --ic-paste: linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 45%, #7c3aed 100%);
+  --ic-brand: linear-gradient(135deg, #93c5fd 0%, #3b82f6 45%, #6366f1 100%);
 
   /* ===== UI 视觉升级 · 壳层 / 表面 token（2026-09，详见 docs/UI视觉升级-Token改动表.md）=====
      组件一律 `var(--x, 旧值)` 消费；未覆写主题行为不变。
@@ -184,11 +218,12 @@
   --card-top-light: linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, transparent 45%);
   --card-selected-glow: color-mix(in srgb, var(--accent) 16%, transparent);
   --control-glass: color-mix(in srgb, var(--card-bg) 72%, transparent);
-  --control-ring: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
+  --control-ring:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
     0 1px 4px color-mix(in srgb, var(--accent) 12%, transparent);
   /* 控件静息投影（搜索框等）：近影 + 中影 + 内高光，可叠在 glass 底上 */
-  --control-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --control-elev:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.85);
 
   /* ===== 工具浮层卡（方案 B · 双轨材质，2026-09）=====
      双轨判定（写给以后加浮层的人）：
@@ -202,8 +237,7 @@
   --float-card-bg: var(--card-bg);
   --float-card-border: var(--border-color);
   --float-card-shadow:
-    0 0 0 1px color-mix(in srgb, #000 3%, transparent),
-    0 8px 24px color-mix(in srgb, #000 12%, transparent);
+    0 0 0 1px color-mix(in srgb, #000 3%, transparent), 0 8px 24px color-mix(in srgb, #000 12%, transparent);
 
   /* ===== 语义色补全（UI 规则 U6）=====
      U6 说新代码只许用语义名（--warning / --danger）、不许用色名（--orange / --red-bg）。
@@ -232,29 +266,30 @@
   --app-bg:
     radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2, 132, 199, 0.14), transparent 55%),
     radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109, 40, 217, 0.08), transparent 50%),
-    linear-gradient(168deg, #F4F8FC 0%, #EEF3F8 42%, #E8F0F7 100%);
+    linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
   /* 顶栏壳渐变：半透白淡入透明，与列表拉开景深（场景主题仍全 transparent） */
   --header-bg-start: rgba(255, 255, 255, 0.55);
   --header-bg-end: rgba(255, 255, 255, 0.18);
   --card-bg: #fff;
-  --card-border: #E0E4EB;
-  --text-primary: #0F172A;
+  --card-border: #e0e4eb;
+  --text-primary: #0f172a;
   --text-secondary: #495565; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.06:1→改后1.50:1 */
   --text-muted: #627083; /* 对比度改进：正文场景(卡片时间戳/设置说明等) 最差背景对比度 改前3.26:1→改后4.56:1 */
-  --border-color: #E0E4EB;
-  --accent: #0284C7;
-  --accent-light: #E0F2FE;
+  --border-color: #e0e4eb;
+  --accent: #0284c7;
+  --accent-light: #e0f2fe;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #027CBB; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前4.10:1→改后4.56:1 */
-  --accent-strong: #0273AD; /* 对比度改进新增：压在 --accent-light 浅色高亮上的文字/图标色（侧边栏选中项/激活标签页/Toast info图标），不改 --accent-light 本身；对比度 改前3.57:1→改后4.51:1 */
-  --seg-bg: #E8E8ED;
+  --accent-solid: #027cbb; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前4.10:1→改后4.56:1 */
+  --text-on-accent: #fff;
+  --accent-strong: #0273ad; /* 对比度改进新增：压在 --accent-light 浅色高亮上的文字/图标色（侧边栏选中项/激活标签页/Toast info图标），不改 --accent-light 本身；对比度 改前3.57:1→改后4.51:1 */
+  --seg-bg: #e8e8ed;
   --seg-active-bg: #fff;
   --search-bg: #fff;
-  --search-border: #E0E4EB;
-  --input-bg: #F1F5F9;
+  --search-border: #e0e4eb;
+  --input-bg: #f1f5f9;
   --dialog-bg: #fff;
-  --section-bg: #F0F4F8;
-  --toggle-off-bg: #E2E8F0;
+  --section-bg: #f0f4f8;
+  --toggle-off-bg: #e2e8f0;
   /* 品牌 AI 上标（顶栏标识）：蓝 → 紫渐变的两个端点。
      **品牌色恒定，不跟主题变色**——它标的是产品身份，不是当前状态；
      跟着 --accent 走的话，同一个标识在六套主题里会长成六个样。
@@ -264,32 +299,43 @@
        #6D28D9 → ocean 6.63:1 / blossom 5.95:1
      顺带记一笔别再踩：--accent 自己压 app-bg 只有 3.82:1（ocean），
      它是为「压在 --accent-light 上」调的，不能拿来当正文小字色。 */
-  --brand-ai-from: #1D4ED8;
-  --brand-ai-to: #6D28D9;
-  --toggle-off-label: #4B5563; --toggle-on-label: #fff;
+  --brand-ai-from: #1d4ed8;
+  --brand-ai-to: #6d28d9;
+  --toggle-off-label: #4b5563;
+  --toggle-on-label: #fff;
   /* 选中：白→浅蓝渐变底 + 柔环（替代硬色块 + 2px 硬圈） */
-  --card-selected-bg: linear-gradient(180deg, #FFFFFF 0%, #F0F9FF 100%);
-  --card-selected-border: color-mix(in srgb, #0284C7 35%, transparent);
+  --card-selected-bg: linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
+  --card-selected-border: color-mix(in srgb, #0284c7 35%, transparent);
   --card-selected-shadow: 0 0 0 3px rgba(2, 132, 199, 0.16), 0 8px 24px rgba(2, 132, 199, 0.16);
   --accent-shadow: rgba(2, 132, 199, 0.15);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --hover: #E8ECF2;
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --hover: #e8ecf2;
   /* 侧栏壳：半透 + 磨砂（仅 ocean 有 --shell-blur；规则 8.3 只挂在这一个容器） */
   --sidebar-bg: rgba(244, 247, 251, 0.72);
   --shell-bg: rgba(244, 247, 251, 0.72);
   --shell-border: rgba(255, 255, 255, 0.85);
   --shell-blur: blur(16px) saturate(1.2);
-  --sidebar-section-label: #696D75; /* 对比度改进：侧边栏分区标题(如“智能分类”) 改前2.25:1→改后4.59:1 */
+  --sidebar-section-label: #696d75; /* 对比度改进：侧边栏分区标题(如“智能分类”) 改前2.25:1→改后4.59:1 */
   --timeline-bg: rgba(244, 246, 249, 0.95);
   /* 工具浮层（含 Toast）已改 --float-card-* 不透明卡（方案 B），--glass-popover-* 仍给窗口级/场景玻璃用 */
-  --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
-  --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
+  --green: #11813a;
+  --green-bg: #dcfce7;
+  --green-border: #bbf7d0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
+  --orange: #c54a0a;
+  --orange-bg: #fff7ed;
+  --orange-border: #fed7aa; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange);
+  --orange-strong: #8a3407;
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
-  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
-  --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
-  --danger-hover: #B91C1C;
+  --success: #15803d;
+  --success-bg: #dcfce7;
+  --success-border: #86efac; /* v6.4 AI UI：缓存绿（浅色主题） */
+  --red-bg: #fef2f2;
+  --danger: #d82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
+  --danger-hover: #b91c1c;
   /* 红色档补齐 border：原本只有 --red-bg / --danger，而 green/orange/success
      三档都是 bg + 主色 + border 三件套。ChainEditor / ChainRunnerDialog 里有
      7 处无兵底的 `var(--red-border)`，之前声明直接失效、边框回落成继承色。
@@ -301,24 +347,25 @@
      （边框不承载文字，适用 3:1 非文本对比度；35% 混入量可辨。若后续想要
      和 green-border 完全对齐的手选色，在各主题块里覆写本变量即可。） */
   --red-border: color-mix(in srgb, var(--danger) 35%, var(--red-bg));
-  --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+  --version-badge-gradient: linear-gradient(135deg, #0284c7, #0369a1);
   --version-badge-shadow: rgba(2, 132, 199, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
   /* 玻璃拟态 — 海洋浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨海场景透出） */
-  --glass-card-bg: #FFFFFF;   /* 经典白：不透明纯白卡片。ocean 无场景层，半透明混不出纯白（0.55 白压 #F4F6F9 实际只有 #FAFBFC，发灰） */
+  --glass-card-bg: #ffffff; /* 经典白：不透明纯白卡片。ocean 无场景层，半透明混不出纯白（0.55 白压 #F4F6F9 实际只有 #FAFBFC，发灰） */
   /* 卡片玻璃模糊：整个属性走变量，因为只有背景静止的主题适合开模糊。
      不能写成 blur(var(--…)) 形式——那种写法无法表达 none。 */
   --glass-card-filter: none;
   /* hover 扫光仍关：白扫光在白卡上不可见，infinite 动画白付 GPU。
      静态顶光改用冷色 --card-top-light，display 由下方 block 打开。 */
   --card-shimmer-anim: none;
-  --glass-card-border: rgba(0,0,0,0.08);
-  --glass-card-hover-border: rgba(0,0,0,0.14);
-  --glass-card-hover-glow: rgba(2,132,199,0.10);
+  --glass-card-border: rgba(0, 0, 0, 0.08);
+  --glass-card-hover-border: rgba(0, 0, 0, 0.14);
+  --glass-card-hover-glow: rgba(2, 132, 199, 0.1);
   /* 三段：近影 + 中影 + 描边环（替代原 1px 3px 单层浅影）。
      仍不写 inset 白高光：压在纯白卡上不可见。 */
-  --glass-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --glass-card-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07), 0 0 0 1px rgba(15, 23, 42, 0.04);
   --glass-card-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07);
   /* 白卡顶光：冷色淡染；纯白 inset 在 #FFF 上不可见 */
   --card-top-light: linear-gradient(180deg, rgba(224, 240, 250, 0.55) 0%, transparent 45%);
@@ -326,22 +373,23 @@
   /* 控件玻璃：比 :root 更透，配合顶栏壳渐变 */
   --control-glass: rgba(255, 255, 255, 0.78);
   --control-ring: inset 0 0 0 1px rgba(2, 132, 199, 0.22), 0 1px 4px rgba(2, 132, 199, 0.12);
-  --control-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.07),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --control-elev:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.9);
   /* hover：近影抬升 + accent 柔环，不再叠三层硬描边 */
-  --glass-card-hover-shadow: 0 2px 6px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.10), 0 0 0 1px rgba(2, 132, 199, 0.22);
-  --glass-shimmer: rgba(255,255,255,0.40);
-  --glass-shimmer-static: rgba(255,255,255,0.50);
-  --glass-icon-bg: rgba(0,0,0,0.04);
-  --glass-icon-border: rgba(0,0,0,0.07);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.97);
+  --glass-card-hover-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(2, 132, 199, 0.22);
+  --glass-shimmer: rgba(255, 255, 255, 0.4);
+  --glass-shimmer-static: rgba(255, 255, 255, 0.5);
+  --glass-icon-bg: rgba(0, 0, 0, 0.04);
+  --glass-icon-border: rgba(0, 0, 0, 0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.5), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --glass-popover-bg: rgba(255, 255, 255, 0.97);
   /* 经典白：回到 v5.2.0 的 0.97。其余 6 套主题的 0.85 是为了让场景透出，ocean 无场景不需要 */
-  --glass-popover-border: rgba(0,0,0,0.06);
-  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
-  --glass-dialog-bg: #FFFFFF;
+  --glass-popover-border: rgba(0, 0, 0, 0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+  --glass-dialog-bg: #ffffff;
   /* 经典白：对话框回到 v5.2.0 的实心白（原这里是 0.66 透明 + 22px 模糊，为让皮肤场景透出，ocean 已无场景） */
-  --glass-dialog-blur: 22px;  /* 已无处使用（被下行 --glass-dialog-filter 取代），保留仅为避免变量缺失报错 */
+  --glass-dialog-blur: 22px; /* 已无处使用（被下行 --glass-dialog-filter 取代），保留仅为避免变量缺失报错 */
   /* 对话框模糊：整个属性走变量（与卡片同一套思路）。
      dialog.css 等 6 处消费方写的是 var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4))，
      其余主题不定义这个变量就走 fallback，行为不变。 */
@@ -349,477 +397,550 @@
   /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
   --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(2,132,199, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,0.10), transparent);
+  --accent-glow: rgba(2, 132, 199, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2, 132, 199, 0.1), transparent);
   /* ===== 截图浮层令牌（方案 B：screenshot.css 全面令牌化；浅色档 = 浅玻璃 + 深字） =====
      工具栏 / 属性条 / 胶囊 / 提示条 / toast / 放大镜 / 长截图状态条等全部浮层表面共用。
      浅色玻璃压在任意截图内容上，辨识靠 --shot-bar-border 描边 + 阴影兜底。 */
   --shot-bar-bg: rgba(255, 255, 255, 0.92);
   --shot-bar-border: rgba(15, 23, 42, 0.16);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: #4E5A6B;
+  --shot-bar-muted: #4e5a6b;
   --shot-hover: var(--hover);
   /* 出口语义色：浅色档统一换深色档（accent-strong 浅底 4.5:1；粉/薄荷无主题令牌，手选深色档） */
   --shot-save: var(--accent-strong);
   --shot-long: var(--accent-strong);
-  --shot-pin: #BE185D;
-  --shot-ocr: #0E8A6D;
+  --shot-pin: #be185d;
+  --shot-ocr: #0e8a6d;
 }
 
 /* ── 2. midnight 午夜（默认深色·OLED）── */
 [data-theme="midnight"] {
   /* 皮肤场景：静谧星夜 — 靛紫夜空径向渐变（SkinScene 极光/满天星/流星/月亮/山影衬于其上） */
-  --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #1c1832 0%, #0b0b13 55%, #07070c 100%);
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
-  --card-bg: #18181B;
-  --card-border: #27272A;
-  --text-primary: #E4E4E7;
-  --text-secondary: #AFAFB7; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.29:1→改后1.51:1 */
-  --text-muted: #8D8D95; /* 对比度改进：正文场景 最差背景对比度 改前3.08:1→改后4.52:1 */
-  --border-color: #27272A;
-  --accent: #818CF8;
-  --accent-light: #1E1B4B;
+  --card-bg: #18181b;
+  --card-border: #27272a;
+  --text-primary: #e4e4e7;
+  --text-secondary: #afafb7; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.29:1→改后1.51:1 */
+  --text-muted: #8d8d95; /* 对比度改进：正文场景 最差背景对比度 改前3.08:1→改后4.52:1 */
+  --border-color: #27272a;
+  --accent: #818cf8;
+  --accent-light: #1e1b4b;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #666FC4; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前2.98:1→改后4.53:1 */
-  --accent-strong: var(--accent); /* 对比度改进新增：压在 --accent-light 上的文字/图标色；本主题 accent-on-accent-light 本来就达标(5.36:1)，等于 --accent，无需变化 */
-  --seg-bg: #27272A;
-  --seg-active-bg: #3F3F46;
-  --search-bg: #27272A;
-  --search-border: #3F3F46;
-  --input-bg: #27272A;
-  --dialog-bg: #18181B;
-  --section-bg: #0F0F11;
-  --toggle-off-bg: #3F3F46;
+  --accent-solid: #666fc4; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前2.98:1→改后4.53:1 */
+  --text-on-accent: #fff;
+  --accent-strong: var(
+    --accent
+  ); /* 对比度改进新增：压在 --accent-light 上的文字/图标色；本主题 accent-on-accent-light 本来就达标(5.36:1)，等于 --accent，无需变化 */
+  --seg-bg: #27272a;
+  --seg-active-bg: #3f3f46;
+  --search-bg: #27272a;
+  --search-border: #3f3f46;
+  --input-bg: #27272a;
+  --dialog-bg: #18181b;
+  --section-bg: #0f0f11;
+  --toggle-off-bg: #3f3f46;
   /* 品牌 AI 上标：深色档（浅色档的值定义在 :root，深色主题在这里整体覆盖）。
      midnight 底极暗（#1C1832），这对值有 12:1 以上，宽裕。 */
-  --brand-ai-from: #A8DEFF;
-  --brand-ai-to: #D8CCFF;
-  --toggle-off-label: #B4B4BC; --toggle-on-label: #0B2417;
-  --card-selected-bg: #1E1B4B;
-  --card-selected-border: #818CF8;
+  --brand-ai-from: #a8deff;
+  --brand-ai-to: #d8ccff;
+  --toggle-off-label: #b4b4bc;
+  --toggle-on-label: #0b2417;
+  --card-selected-bg: #1e1b4b;
+  --card-selected-border: #818cf8;
   --accent-shadow: rgba(129, 140, 248, 0.2);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.45);
-  --hover: #1F1F23;
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --hover: #1f1f23;
   --sidebar-bg: #131315;
-  --sidebar-section-label: #7D7D84; /* 对比度改进：侧边栏分区标题 改前2.40:1→改后4.54:1 */
+  --sidebar-section-label: #7d7d84; /* 对比度改进：侧边栏分区标题 改前2.40:1→改后4.54:1 */
   --timeline-bg: rgba(9, 9, 11, 0.95);
-  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
-  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --green: #4ade80;
+  --green-bg: #052e16;
+  --green-border: #166534;
+  --orange: #fb923c;
+  --orange-bg: #431407;
+  --orange-border: #9a3412;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --orange-strong: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange);
+  --orange-strong: var(--orange);
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
-  --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
-  --red-bg: #450A0A; --danger: #F87171;
-  --danger-hover: #FCA5A5;
-  --version-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
+  --success: #4ade80;
+  --success-bg: #14532d;
+  --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
+  --red-bg: #450a0a;
+  --danger: #f87171;
+  --danger-hover: #fca5a5;
+  --version-badge-gradient: linear-gradient(135deg, #818cf8, #6366f1);
   --version-badge-shadow: rgba(129, 140, 248, 0.35);
-  --update-badge-gradient: linear-gradient(135deg, #38BDF8, #0EA5E9);
+  --update-badge-gradient: linear-gradient(135deg, #38bdf8, #0ea5e9);
   --update-badge-shadow: rgba(56, 189, 248, 0.45);
   /* 玻璃拟态 — 午夜深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让星夜场景透出） */
-  --glass-card-bg: rgba(24,24,27,0.22);
+  --glass-card-bg: rgba(24, 24, 27, 0.22);
   /* 场景整层透明度（midnight）—— 压缩背景色彩范围，与 --app-bg 混合 */
   --scene-opacity: 0.5;
   /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
   --glass-card-filter: none;
-  --glass-card-border: rgba(255,255,255,0.06);
-  --glass-card-hover-border: rgba(255,255,255,0.14);
-  --glass-card-hover-glow: rgba(129,140,248,0.10);
-  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
-  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(129,140,248,0.10);
+  --glass-card-border: rgba(255, 255, 255, 0.06);
+  --glass-card-hover-border: rgba(255, 255, 255, 0.14);
+  --glass-card-hover-glow: rgba(129, 140, 248, 0.1);
+  --glass-card-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --glass-card-hover-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px rgba(129, 140, 248, 0.1);
   /* 深色顶光：白 inset 已够，不覆写 --card-top-light；选中改柔环 */
   --card-selected-shadow: 0 0 0 3px rgba(129, 140, 248, 0.22), 0 8px 28px rgba(129, 140, 248, 0.14);
-  --control-elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --glass-shimmer: rgba(255,255,255,0.06);
-  --glass-shimmer-static: rgba(255,255,255,0.05);
-  --glass-icon-bg: rgba(255,255,255,0.05);
-  --glass-icon-border: rgba(255,255,255,0.07);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.3);
-  --glass-popover-bg: rgba(20,20,24,0.85);
-  --glass-popover-border: rgba(255,255,255,0.07);
-  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  --control-elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --glass-shimmer: rgba(255, 255, 255, 0.06);
+  --glass-shimmer-static: rgba(255, 255, 255, 0.05);
+  --glass-icon-bg: rgba(255, 255, 255, 0.05);
+  --glass-icon-border: rgba(255, 255, 255, 0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.04), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --glass-popover-bg: rgba(20, 20, 24, 0.85);
+  --glass-popover-border: rgba(255, 255, 255, 0.07);
+  --glass-popover-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
   /* 深色浮层卡阴影抬高：不透明卡压在深底上，细环改白、抬升改更深黑 */
-  --float-card-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 8px 28px rgba(0, 0, 0, 0.45);
+  --float-card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 28px rgba(0, 0, 0, 0.45);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(20,20,24,0.66);
+  --glass-dialog-bg: rgba(20, 20, 24, 0.66);
   --glass-dialog-blur: 22px;
   /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
   --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(129,140,248, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129,140,248,0.10), transparent);
+  --accent-glow: rgba(129, 140, 248, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129, 140, 248, 0.1), transparent);
   /* 截图浮层令牌：深色档 = 深玻璃 + 亮字（与旧观感一致，出口语义色沿用历史值） */
   --shot-bar-bg: rgba(20, 20, 24, 0.94);
   --shot-bar-border: rgba(255, 255, 255, 0.14);
   --shot-bar-text: var(--text-primary);
   --shot-bar-muted: var(--text-muted);
   --shot-hover: var(--hover);
-  --shot-save: #A5C8FF;
-  --shot-long: #8CC5FF;
-  --shot-pin: #F9A8D4;
-  --shot-ocr: #7DE0C4;
+  --shot-save: #a5c8ff;
+  --shot-long: #8cc5ff;
+  --shot-pin: #f9a8d4;
+  --shot-ocr: #7de0c4;
 }
 
 /* ── 3. forest 森林（浅色·护眼绿）── */
 [data-theme="forest"] {
   /* 皮肤场景：晨雾纸感 — 暖纸色渐变（SkinScene 树冠/竹/晨雾/落叶/萤火虫衬于其上） */
-  --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+  --app-bg: linear-gradient(180deg, #f5f1e3 0%, #eae5d1 55%, #dcd6bd 100%);
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
   --card-bg: #fff;
-  --card-border: #D1D9D3;
+  --card-border: #d1d9d3;
   --text-primary: #171717;
-  --text-secondary: #58524F; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.05:1→改后1.52:1 */
-  --text-muted: #726E6B; /* 对比度改进：正文场景 最差背景对比度 改前2.31:1→改后4.63:1 */
-  --border-color: #D1D9D3;
+  --text-secondary: #58524f; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.05:1→改后1.52:1 */
+  --text-muted: #726e6b; /* 对比度改进：正文场景 最差背景对比度 改前2.31:1→改后4.63:1 */
+  --border-color: #d1d9d3;
   --accent: #059669;
-  --accent-light: #ECFDF5;
+  --accent-light: #ecfdf5;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #05875F; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前3.77:1→改后4.53:1 */
-  --accent-strong: #04835B; /* 对比度改进新增：压在 --accent-light 浅色高亮上的文字/图标色，不改 --accent-light 本身；对比度 改前3.58:1→改后4.53:1 */
-  --seg-bg: #E4E8E5;
+  --accent-solid: #05875f; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前3.77:1→改后4.53:1 */
+  --text-on-accent: #fff;
+  --accent-strong: #04835b; /* 对比度改进新增：压在 --accent-light 浅色高亮上的文字/图标色，不改 --accent-light 本身；对比度 改前3.58:1→改后4.53:1 */
+  --seg-bg: #e4e8e5;
   --seg-active-bg: #fff;
   --search-bg: #fff;
-  --search-border: #D1D9D3;
-  --input-bg: #F5F5F4;
+  --search-border: #d1d9d3;
+  --input-bg: #f5f5f4;
   --dialog-bg: #fff;
-  --section-bg: #ECFDF5;
-  --toggle-off-bg: #D1D9D3;
-  --toggle-off-label: #4A5750; --toggle-on-label: #fff;
-  --card-selected-bg: #ECFDF5;
+  --section-bg: #ecfdf5;
+  --toggle-off-bg: #d1d9d3;
+  --toggle-off-label: #4a5750;
+  --toggle-on-label: #fff;
+  --card-selected-bg: #ecfdf5;
   --card-selected-border: #059669;
   --card-selected-shadow: 0 0 0 3px rgba(5, 150, 105, 0.16), 0 8px 24px rgba(5, 150, 105, 0.12);
   --accent-shadow: rgba(5, 150, 105, 0.15);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --hover: #E8EDE8;
-  --sidebar-bg: #E8EFEB;
-  --sidebar-section-label: #676C73; /* 对比度改进：侧边栏分区标题 改前2.17:1→改后4.53:1 */
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --hover: #e8ede8;
+  --sidebar-bg: #e8efeb;
+  --sidebar-section-label: #676c73; /* 对比度改进：侧边栏分区标题 改前2.17:1→改后4.53:1 */
   --timeline-bg: rgba(242, 247, 245, 0.95);
-  --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
-  --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
+  --green: #11813a;
+  --green-bg: #dcfce7;
+  --green-border: #bbf7d0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
+  --orange: #c54a0a;
+  --orange-bg: #fff7ed;
+  --orange-border: #fed7aa; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange);
+  --orange-strong: #8a3407;
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
-  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
-  --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
-  --danger-hover: #B91C1C;
+  --success: #15803d;
+  --success-bg: #dcfce7;
+  --success-border: #86efac; /* v6.4 AI UI：缓存绿（浅色主题） */
+  --red-bg: #fef2f2;
+  --danger: #d82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
+  --danger-hover: #b91c1c;
   --version-badge-gradient: linear-gradient(135deg, #059669, #047857);
   --version-badge-shadow: rgba(5, 150, 105, 0.35);
-  --update-badge-gradient: linear-gradient(135deg, #0891B2, #0E7490);
+  --update-badge-gradient: linear-gradient(135deg, #0891b2, #0e7490);
   --update-badge-shadow: rgba(8, 145, 178, 0.4);
   /* 玻璃拟态 — 森林浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨雾场景透出） */
-  --glass-card-bg: rgba(255,255,255,0.22);
+  --glass-card-bg: rgba(255, 255, 255, 0.22);
   /* 场景整层透明度（forest）—— 压缩背景色彩范围，与 --app-bg 混合 */
   --scene-opacity: 0.55;
   /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
   --glass-card-filter: none;
-  --glass-card-border: rgba(0,0,0,0.07);
-  --glass-card-hover-border: rgba(0,0,0,0.14);
-  --glass-card-hover-glow: rgba(5,150,105,0.10);
-  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
-  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(5,150,105,0.10);
-  --glass-shimmer: rgba(255,255,255,0.40);
-  --glass-shimmer-static: rgba(255,255,255,0.50);
-  --glass-icon-bg: rgba(0,0,0,0.04);
-  --glass-icon-border: rgba(0,0,0,0.07);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.85);
-  --glass-popover-border: rgba(0,0,0,0.06);
-  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  --glass-card-border: rgba(0, 0, 0, 0.07);
+  --glass-card-hover-border: rgba(0, 0, 0, 0.14);
+  --glass-card-hover-glow: rgba(5, 150, 105, 0.1);
+  --glass-card-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --glass-card-hover-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 1px rgba(5, 150, 105, 0.1);
+  --glass-shimmer: rgba(255, 255, 255, 0.4);
+  --glass-shimmer-static: rgba(255, 255, 255, 0.5);
+  --glass-icon-bg: rgba(0, 0, 0, 0.04);
+  --glass-icon-border: rgba(0, 0, 0, 0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.5), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --glass-popover-bg: rgba(255, 255, 255, 0.85);
+  --glass-popover-border: rgba(0, 0, 0, 0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(255,255,255,0.66);
+  --glass-dialog-bg: rgba(255, 255, 255, 0.66);
   --glass-dialog-blur: 22px;
   /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
   --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(5,150,105, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(5,150,105,0.10), transparent);
+  --accent-glow: rgba(5, 150, 105, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(5, 150, 105, 0.1), transparent);
   /* 截图浮层令牌：浅色档（森林 = 中性偏暖浅玻璃） */
-  --shot-bar-bg: rgba(255, 255, 255, 0.90);
+  --shot-bar-bg: rgba(255, 255, 255, 0.9);
   --shot-bar-border: rgba(23, 23, 23, 0.16);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: #4E5A6B;
+  --shot-bar-muted: #4e5a6b;
   --shot-hover: var(--hover);
   --shot-save: var(--accent-strong);
   --shot-long: var(--accent-strong);
-  --shot-pin: #BE185D;
-  --shot-ocr: #0E8A6D;
+  --shot-pin: #be185d;
+  --shot-ocr: #0e8a6d;
 }
 
 /* ── 4. blossom 美乐蒂（浅色·甜系卡通粉）── */
 [data-theme="blossom"] {
   /* 皮肤场景：美乐蒂糖果粉天空渐变（SkinScene 爱心雨/蝴蝶结/星光/官方美乐蒂立绘衬于其上） */
-  --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
+  --app-bg: linear-gradient(168deg, #ffe4ef 0%, #ffc9dd 42%, #ffaecf 78%, #ff9bc4 100%);
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
   --card-bg: #fff;
-  --card-border: #F9D3E2;
-  --text-primary: #3D2231;
-  --text-secondary: #5F4755; /* 与text-muted拉开三级文字层级间距（8.34:1 on white） */
-  --text-muted: #86596D; /* 对比度校验：正文场景 最差背景对比度 5.73:1（≥4.5:1 达标） */
-  --border-color: #F9D3E2;
-  --accent: #F0568C;
-  --accent-light: #FFDDEC;
+  --card-border: #f9d3e2;
+  --text-primary: #3d2231;
+  --text-secondary: #5f4755; /* 与text-muted拉开三级文字层级间距（8.34:1 on white） */
+  --text-muted: #86596d; /* 对比度校验：正文场景 最差背景对比度 5.73:1（≥4.5:1 达标） */
+  --border-color: #f9d3e2;
+  --accent: #f0568c;
+  --accent-light: #ffddec;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #CE3B70; /* 实心主按钮专用底色（白字压其上）；白字对比度 4.68:1 */
-  --accent-strong: #B02C5D; /* 压在 --accent-light 浅色高亮上的文字/图标色；对比度 5.00:1 */
-  --seg-bg: #F6DDE8;
+  --accent-solid: #ce3b70; /* 实心主按钮专用底色（白字压其上）；白字对比度 4.68:1 */
+  --text-on-accent: #fff;
+  --accent-strong: #b02c5d; /* 压在 --accent-light 浅色高亮上的文字/图标色；对比度 5.00:1 */
+  --seg-bg: #f6dde8;
   --seg-active-bg: #fff;
   --search-bg: #fff;
-  --search-border: #F9D3E2;
-  --input-bg: #FFF0F6;
+  --search-border: #f9d3e2;
+  --input-bg: #fff0f6;
   --dialog-bg: #fff;
-  --section-bg: #FFF0F6;
-  --toggle-off-bg: #F3D5E2;
-  --toggle-off-label: #6E4557; --toggle-on-label: #fff;
-  --card-selected-bg: #FFDDEC;
-  --card-selected-border: #F0568C;
+  --section-bg: #fff0f6;
+  --toggle-off-bg: #f3d5e2;
+  --toggle-off-label: #6e4557;
+  --toggle-on-label: #fff;
+  --card-selected-bg: #ffddec;
+  --card-selected-border: #f0568c;
   --card-selected-shadow: 0 0 0 3px rgba(240, 86, 140, 0.18), 0 8px 24px rgba(240, 86, 140, 0.12);
   --accent-shadow: rgba(240, 86, 140, 0.15);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --hover: #FBE7F0;
-  --sidebar-bg: #FFF0F6;
-  --sidebar-section-label: #8A6478; /* 对比度校验：侧边栏分区标题 4.56:1（≥4.5:1 达标） */
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --hover: #fbe7f0;
+  --sidebar-bg: #fff0f6;
+  --sidebar-section-label: #8a6478; /* 对比度校验：侧边栏分区标题 4.56:1（≥4.5:1 达标） */
   --timeline-bg: rgba(255, 250, 252, 0.95);
-  --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
-  --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --green: #11813a;
+  --green-bg: #dcfce7;
+  --green-border: #bbf7d0;
+  --orange: #c54a0a;
+  --orange-bg: #fff7ed;
+  --orange-border: #fed7aa;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange);
+  --orange-strong: #8a3407;
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
-  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
-  --red-bg: #FEF2F2; --danger: #D82525;
-  --danger-hover: #B91C1C;
-  --version-badge-gradient: linear-gradient(135deg, #F0568C, #CE3B70);
+  --success: #15803d;
+  --success-bg: #dcfce7;
+  --success-border: #86efac; /* v6.4 AI UI：缓存绿（浅色主题） */
+  --red-bg: #fef2f2;
+  --danger: #d82525;
+  --danger-hover: #b91c1c;
+  --version-badge-gradient: linear-gradient(135deg, #f0568c, #ce3b70);
   --version-badge-shadow: rgba(240, 86, 140, 0.35);
-  --update-badge-gradient: linear-gradient(135deg, #7EC8E3, #5BB8DC); /* 蝴蝶结淡蓝 */
+  --update-badge-gradient: linear-gradient(135deg, #7ec8e3, #5bb8dc); /* 蝴蝶结淡蓝 */
   --update-badge-shadow: rgba(126, 200, 227, 0.4);
   /* 玻璃拟态 — 美乐蒂糖果粉浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让甜粉场景透出） */
-  --glass-card-bg: rgba(255,255,255,0.22);
+  --glass-card-bg: rgba(255, 255, 255, 0.22);
   /* 场景整层透明度（blossom）—— 压缩背景色彩范围，与 --app-bg 混合 */
   --scene-opacity: 0.55;
   /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
   --glass-card-filter: none;
-  --glass-card-border: rgba(0,0,0,0.07);
-  --glass-card-hover-border: rgba(0,0,0,0.14);
-  --glass-card-hover-glow: rgba(240,86,140,0.10);
-  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
-  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(240,86,140,0.10);
-  --glass-shimmer: rgba(255,255,255,0.40);
-  --glass-shimmer-static: rgba(255,255,255,0.50);
-  --glass-icon-bg: rgba(0,0,0,0.04);
-  --glass-icon-border: rgba(0,0,0,0.07);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.85);
-  --glass-popover-border: rgba(0,0,0,0.06);
-  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  --glass-card-border: rgba(0, 0, 0, 0.07);
+  --glass-card-hover-border: rgba(0, 0, 0, 0.14);
+  --glass-card-hover-glow: rgba(240, 86, 140, 0.1);
+  --glass-card-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --glass-card-hover-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 1px rgba(240, 86, 140, 0.1);
+  --glass-shimmer: rgba(255, 255, 255, 0.4);
+  --glass-shimmer-static: rgba(255, 255, 255, 0.5);
+  --glass-icon-bg: rgba(0, 0, 0, 0.04);
+  --glass-icon-border: rgba(0, 0, 0, 0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.5), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --glass-popover-bg: rgba(255, 255, 255, 0.85);
+  --glass-popover-border: rgba(0, 0, 0, 0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(255,255,255,0.66);
+  --glass-dialog-bg: rgba(255, 255, 255, 0.66);
   --glass-dialog-blur: 22px;
   /* 遮罩层 — 玫瑰色遮罩：压暗甜粉场景但不发灰（替代硬编码灰黑 rgba(0,0,0,0.35~0.4)） */
   --overlay-bg: rgba(122, 31, 70, 0.32);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(240,86,140, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(240,86,140,0.10), transparent);
+  --accent-glow: rgba(240, 86, 140, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(240, 86, 140, 0.1), transparent);
   /* 截图浮层令牌：浅色档（美乐蒂 = 白玻璃 + 粉描边，主题色） */
-  --shot-bar-bg: rgba(255, 255, 255, 0.90);
+  --shot-bar-bg: rgba(255, 255, 255, 0.9);
   --shot-bar-border: rgba(240, 86, 140, 0.35);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: #4E5A6B;
+  --shot-bar-muted: #4e5a6b;
   --shot-hover: var(--hover);
   --shot-save: var(--accent-strong);
   --shot-long: var(--accent-strong);
-  --shot-pin: #BE185D;
-  --shot-ocr: #0E8A6D;
+  --shot-pin: #be185d;
+  --shot-ocr: #0e8a6d;
 }
 
 /* ── 5. dawn 晨曦（浅色·暖阳晨光）── */
 [data-theme="dawn"] {
   /* 皮肤场景：晨曦暖光 — 朝霞天空渐变（SkinScene 朝阳/光柱/流云衬于其上） */
-  --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
+  --app-bg: linear-gradient(180deg, #fff8ee 0%, #ffe9d2 42%, #ffd9ae 72%, #f9c78f 100%);
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
   --card-bg: #fff;
-  --card-border: #F0DDC8;
-  --text-primary: #2B2016;
-  --text-secondary: #5C4B38; /* 与text-muted拉开三级文字层级间距（≥1.5:1） */
-  --text-muted: #7D6B58; /* 对比度改进：正文场景 最差背景对比度 ≈4.8:1（沿用项目≥4.5:1标准，较效果图 #A08C72 压暗一档） */
-  --border-color: #F0DDC8;
-  --accent: #E8734A;
-  --accent-light: #FFEDE2;
+  --card-border: #f0ddc8;
+  --text-primary: #2b2016;
+  --text-secondary: #5c4b38; /* 与text-muted拉开三级文字层级间距（≥1.5:1） */
+  --text-muted: #7d6b58; /* 对比度改进：正文场景 最差背景对比度 ≈4.8:1（沿用项目≥4.5:1标准，较效果图 #A08C72 压暗一档） */
+  --border-color: #f0ddc8;
+  --accent: #e8734a;
+  --accent-light: #ffede2;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #C85A34; /* 实心主按钮专用底色（白字压其上）；白字对比度 ≈4.6:1 */
-  --accent-strong: #B95432; /* 压在 --accent-light 浅色高亮上的文字/图标色；对比度 ≈5.0:1 */
-  --seg-bg: #F3E4D3;
+  --accent-solid: #b95432; /* 实心主按钮专用底色（白字压其上）；白字对比度 ≥4.5:1 */
+  --text-on-accent: #fff;
+  --accent-strong: #b95432; /* 压在 --accent-light 浅色高亮上的文字/图标色；对比度 ≈5.0:1 */
+  --seg-bg: #f3e4d3;
   --seg-active-bg: #fff;
   --search-bg: #fff;
-  --search-border: #F0DDC8;
-  --input-bg: #FFF4E6;
+  --search-border: #f0ddc8;
+  --input-bg: #fff4e6;
   --dialog-bg: #fff;
-  --section-bg: #FFF4E6;
-  --toggle-off-bg: #EFDCC6;
-  --toggle-off-label: #6B5638; --toggle-on-label: #fff;
-  --card-selected-bg: #FFEDE2;
-  --card-selected-border: #E8734A;
+  --section-bg: #fff4e6;
+  --toggle-off-bg: #efdcc6;
+  --toggle-off-label: #6b5638;
+  --toggle-on-label: #fff;
+  --card-selected-bg: #ffede2;
+  --card-selected-border: #e8734a;
   --card-selected-shadow: 0 0 0 3px rgba(232, 115, 74, 0.18), 0 8px 24px rgba(232, 115, 74, 0.12);
   --accent-shadow: rgba(232, 115, 74, 0.15);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --hover: #F7E9DA;
-  --sidebar-bg: #FBF0E1;
-  --sidebar-section-label: #6E5D49; /* 对比度改进：侧边栏分区标题 ≈4.6:1 */
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --hover: #f7e9da;
+  --sidebar-bg: #fbf0e1;
+  --sidebar-section-label: #6e5d49; /* 对比度改进：侧边栏分区标题 ≈4.6:1 */
   --timeline-bg: rgba(255, 250, 242, 0.95);
-  --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
-  --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --green: #11813a;
+  --green-bg: #dcfce7;
+  --green-border: #bbf7d0;
+  --orange: #c54a0a;
+  --orange-bg: #fff7ed;
+  --orange-border: #fed7aa;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --orange-strong: #8A3407; --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange);
+  --orange-strong: #8a3407;
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
-  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
-  --red-bg: #FEF2F2; --danger: #D82525;
-  --danger-hover: #B91C1C;
-  --version-badge-gradient: linear-gradient(135deg, #E8734A, #C85A34);
+  --success: #15803d;
+  --success-bg: #dcfce7;
+  --success-border: #86efac; /* v6.4 AI UI：缓存绿（浅色主题） */
+  --red-bg: #fef2f2;
+  --danger: #d82525;
+  --danger-hover: #b91c1c;
+  --version-badge-gradient: linear-gradient(135deg, #e8734a, #c85a34);
   --version-badge-shadow: rgba(232, 115, 74, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
   /* 玻璃拟态 — 晨曦浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨光场景透出） */
-  --glass-card-bg: rgba(255,255,255,0.22);
+  --glass-card-bg: rgba(255, 255, 255, 0.22);
   /* 场景整层透明度（dawn）—— 压缩背景色彩范围，与 --app-bg 混合 */
   --scene-opacity: 0.55;
   /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
   --glass-card-filter: none;
-  --glass-card-border: rgba(0,0,0,0.07);
-  --glass-card-hover-border: rgba(0,0,0,0.14);
-  --glass-card-hover-glow: rgba(232,115,74,0.10);
-  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
-  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(232,115,74,0.10);
-  --glass-shimmer: rgba(255,255,255,0.40);
-  --glass-shimmer-static: rgba(255,255,255,0.50);
-  --glass-icon-bg: rgba(0,0,0,0.04);
-  --glass-icon-border: rgba(0,0,0,0.07);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.85);
-  --glass-popover-border: rgba(0,0,0,0.06);
-  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  --glass-card-border: rgba(0, 0, 0, 0.07);
+  --glass-card-hover-border: rgba(0, 0, 0, 0.14);
+  --glass-card-hover-glow: rgba(232, 115, 74, 0.1);
+  --glass-card-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --glass-card-hover-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 1px rgba(232, 115, 74, 0.1);
+  --glass-shimmer: rgba(255, 255, 255, 0.4);
+  --glass-shimmer-static: rgba(255, 255, 255, 0.5);
+  --glass-icon-bg: rgba(0, 0, 0, 0.04);
+  --glass-icon-border: rgba(0, 0, 0, 0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.5), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --glass-popover-bg: rgba(255, 255, 255, 0.85);
+  --glass-popover-border: rgba(0, 0, 0, 0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(255,255,255,0.66);
+  --glass-dialog-bg: rgba(255, 255, 255, 0.66);
   --glass-dialog-blur: 22px;
   /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
   --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(232,115,74, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(232,115,74,0.10), transparent);
+  --accent-glow: rgba(232, 115, 74, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(232, 115, 74, 0.1), transparent);
   /* 截图浮层令牌：浅色档（晨曦 = 白玻璃 + 橙描边，主题色） */
-  --shot-bar-bg: rgba(255, 255, 255, 0.90);
-  --shot-bar-border: rgba(232, 115, 74, 0.30);
+  --shot-bar-bg: rgba(255, 255, 255, 0.9);
+  --shot-bar-border: rgba(232, 115, 74, 0.3);
   --shot-bar-text: var(--text-primary);
-  --shot-bar-muted: #4E5A6B;
+  --shot-bar-muted: #4e5a6b;
   --shot-hover: var(--hover);
   --shot-save: var(--accent-strong);
   --shot-long: var(--accent-strong);
-  --shot-pin: #BE185D;
-  --shot-ocr: #0E8A6D;
+  --shot-pin: #be185d;
+  --shot-ocr: #0e8a6d;
 }
 
 /* ── 6. ocean-dark 海洋深色（玻璃拟态专用）── */
 [data-theme="ocean-dark"] {
   /* 皮肤场景：海面透光径向渐变（SkinScene 气泡/浮游生物/水母衬于其上）；C 提亮一档 */
-  --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+  --app-bg: radial-gradient(130% 110% at 70% -5%, #1e5a82 0%, #0e3355 42%, #061a33 100%);
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
-  --card-bg: #0A1628;
-  --card-border: #162B45;
-  --text-primary: #E0E8F0;
-  --text-secondary: #A2B6CD; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.22:1→改后1.51:1 */
-  --text-muted: #7994B4; /* 对比度改进：正文场景 最差背景对比度 改前3.09:1→改后4.58:1 */
-  --border-color: #162B45;
-  --accent: #3B9EFF;
-  --accent-light: #0A1E3A;
+  --card-bg: #0a1628;
+  --card-border: #162b45;
+  --text-primary: #e0e8f0;
+  --text-secondary: #a2b6cd; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.22:1→改后1.51:1 */
+  --text-muted: #7994b4; /* 对比度改进：正文场景 最差背景对比度 改前3.09:1→改后4.58:1 */
+  --border-color: #162b45;
+  --accent: #3b9eff;
+  --accent-light: #0a1e3a;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #2D78C2; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前2.79:1→改后4.59:1 */
-  --accent-strong: var(--accent); /* 对比度改进新增：压在 --accent-light 上的文字/图标色；本主题本来就达标(5.97:1)，等于 --accent，无需变化 */
-  --seg-bg: #162B45;
-  --seg-active-bg: #1E3D60;
-  --search-bg: #162B45;
-  --search-border: #1E3D60;
-  --input-bg: #162B45;
-  --dialog-bg: #0A1628;
+  --accent-solid: #2d78c2; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前2.79:1→改后4.59:1 */
+  --text-on-accent: #fff;
+  --accent-strong: var(
+    --accent
+  ); /* 对比度改进新增：压在 --accent-light 上的文字/图标色；本主题本来就达标(5.97:1)，等于 --accent，无需变化 */
+  --seg-bg: #162b45;
+  --seg-active-bg: #1e3d60;
+  --search-bg: #162b45;
+  --search-border: #1e3d60;
+  --input-bg: #162b45;
+  --dialog-bg: #0a1628;
   --section-bg: #081018;
-  --toggle-off-bg: #1E3D60;
+  --toggle-off-bg: #1e3d60;
   /* 品牌 AI 上标：深色档。**本主题是两档里最紧的一个**——app-bg 顶部是
      #1E5A82，比 midnight 亮得多，浅色档那对压上去只有 2.6:1，必须整体提亮。
      紫比蓝天生更暗（绿分量低），所以紫端要提得更多才追得上：
        #A8DEFF 5.13:1 / #D8CCFF 4.93:1。再往下调任何一档都会跌破 4.5。 */
-  --brand-ai-from: #A8DEFF;
-  --brand-ai-to: #D8CCFF;
-  --toggle-off-label: #9FB6D0; --toggle-on-label: #062015;
-  --card-selected-bg: #0A1E3A;
-  --card-selected-border: #3B9EFF;
+  --brand-ai-from: #a8deff;
+  --brand-ai-to: #d8ccff;
+  --toggle-off-label: #9fb6d0;
+  --toggle-on-label: #062015;
+  --card-selected-bg: #0a1e3a;
+  --card-selected-border: #3b9eff;
   --card-selected-shadow: 0 0 0 3px rgba(59, 158, 255, 0.22), 0 8px 28px rgba(59, 158, 255, 0.14);
-  --control-elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --accent-shadow: rgba(59,158,255,0.2);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.45);
-  --hover: #0F1F35;
-  --sidebar-bg: #060F1A;
-  --sidebar-section-label: #627E99; /* 对比度改进：侧边栏分区标题 改前3.45:1→改后4.55:1 */
+  --control-elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --accent-shadow: rgba(59, 158, 255, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --hover: #0f1f35;
+  --sidebar-bg: #060f1a;
+  --sidebar-section-label: #627e99; /* 对比度改进：侧边栏分区标题 改前3.45:1→改后4.55:1 */
   --timeline-bg: rgba(6, 13, 20, 0.95);
-  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
-  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --green: #4ade80;
+  --green-bg: #052e16;
+  --green-border: #166534;
+  --orange: #fb923c;
+  --orange-bg: #431407;
+  --orange-border: #9a3412;
   /* 语义色三件套，取值不变。缘由见文件头 :root 处的「语义色补全」。 */
-  --warning: var(--orange); --orange-strong: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --warning: var(--orange);
+  --orange-strong: var(--orange);
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
   --danger-bg: var(--red-bg);
-  --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
-  --red-bg: #3A1525; --danger: #FF6B8A;
-  --danger-hover: #FF9DBD;
-  --version-badge-gradient: linear-gradient(135deg, #3B9EFF, #1A7DE0);
-  --version-badge-shadow: rgba(59,158,255,0.35);
-  --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
-  --update-badge-shadow: rgba(45,212,191,0.45);
+  --success: #4ade80;
+  --success-bg: #14532d;
+  --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
+  --red-bg: #3a1525;
+  --danger: #ff6b8a;
+  --danger-hover: #ff9dbd;
+  --version-badge-gradient: linear-gradient(135deg, #3b9eff, #1a7de0);
+  --version-badge-shadow: rgba(59, 158, 255, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #2dd4bf, #14b8a6);
+  --update-badge-shadow: rgba(45, 212, 191, 0.45);
   /* 玻璃拟态 — 深海深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让海面场景透出） */
-  --glass-card-bg: rgba(10,22,40,0.22);
+  --glass-card-bg: rgba(10, 22, 40, 0.22);
   /* 场景整层透明度（ocean-dark）—— 压缩背景色彩范围，与 --app-bg 混合 */
   --scene-opacity: 0.5;
   /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
   --glass-card-filter: none;
-  --glass-card-border: rgba(255,255,255,0.07);
-  --glass-card-hover-border: rgba(255,255,255,0.15);
-  --glass-card-hover-glow: rgba(59,158,255,0.12);
-  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05);
-  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.07), 0 0 0 1px rgba(59,158,255,0.12);
-  --glass-shimmer: rgba(255,255,255,0.07);
-  --glass-shimmer-static: rgba(255,255,255,0.05);
-  --glass-icon-bg: rgba(255,255,255,0.05);
-  --glass-icon-border: rgba(255,255,255,0.08);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.30);
-  --glass-popover-bg: rgba(10,22,40,0.85);
-  --glass-popover-border: rgba(255,255,255,0.08);
-  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  --glass-card-border: rgba(255, 255, 255, 0.07);
+  --glass-card-hover-border: rgba(255, 255, 255, 0.15);
+  --glass-card-hover-glow: rgba(59, 158, 255, 0.12);
+  --glass-card-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --glass-card-hover-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 0 1px rgba(59, 158, 255, 0.12);
+  --glass-shimmer: rgba(255, 255, 255, 0.07);
+  --glass-shimmer-static: rgba(255, 255, 255, 0.05);
+  --glass-icon-bg: rgba(255, 255, 255, 0.05);
+  --glass-icon-border: rgba(255, 255, 255, 0.08);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.04), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --glass-popover-bg: rgba(10, 22, 40, 0.85);
+  --glass-popover-border: rgba(255, 255, 255, 0.08);
+  --glass-popover-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.25);
   /* 深色浮层卡阴影抬高（与 midnight 同款：白细环 + 深抬升） */
-  --float-card-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 8px 28px rgba(0, 0, 0, 0.45);
+  --float-card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 28px rgba(0, 0, 0, 0.45);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(10,22,40,0.66);
+  --glass-dialog-bg: rgba(10, 22, 40, 0.66);
   --glass-dialog-blur: 22px;
   /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
   --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(56,189,248, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(56,189,248,0.10), transparent);
+  --accent-glow: rgba(56, 189, 248, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(56, 189, 248, 0.1), transparent);
   /* 截图浮层令牌：深色档（深海 = 深蓝玻璃，描边带 indigo 调，与旧观感一致） */
   --shot-bar-bg: rgba(10, 22, 40, 0.94);
-  --shot-bar-border: rgba(148, 168, 255, 0.30);
+  --shot-bar-border: rgba(148, 168, 255, 0.3);
   --shot-bar-text: var(--text-primary);
   --shot-bar-muted: var(--text-muted);
   --shot-hover: var(--hover);
-  --shot-save: #A5C8FF;
-  --shot-long: #8CC5FF;
-  --shot-pin: #F9A8D4;
-  --shot-ocr: #7DE0C4;
+  --shot-save: #a5c8ff;
+  --shot-long: #8cc5ff;
+  --shot-pin: #f9a8d4;
+  --shot-ocr: #7de0c4;
 }

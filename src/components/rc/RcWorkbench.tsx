@@ -1,155 +1,106 @@
 /**
- * RcWorkbench — 「远程电脑」独立工作台窗口的页面（rc.html 入口，2A 配套）。
+ * RcWorkbench — A2 设备优先工作台。
  *
- * 为什么要独立窗口：主窗口只有 550×700（tauri.conf.json），原 Dialog 里的
- * 960px 会话视图被压成 ~534px，画面区巴掌大。工作台 1200×780 起（min 960×640），
- * 建窗逻辑在后端 `rc_open_workbench`（照 md-editor 先例）。
- *
- * 布局（v4，2026-09-19）：导航栏（RcNavRail）+ 顶栏（RcTopBar）+ 四个页签：
- *   rc       → 卡片列（RcWorkbenchSide）+ 主区四态（RcStage，判据在 lib/rcWorkbench）
- *   devices  → 设备列表页（RcPageDevices，同一份 targets 的全量浏览）
- *   history  → 会话记录页（RcPageHistory，复用设置页的 RcSessionHistory）
- *   settings → 工作台设置页（RcPageSettings）
- *
- * 🔴 会话折叠（对 v4 稿的一处有意偏差）：出站会话进行中，导航收成 56px 图标轨、
- * 卡片列退场，画面区拿回方案 B 实测的 +220px——照稿全侧栏会把画面压回 ~520px。
- * 展开入口保留（导航轨上的按钮）；离开会话即复位（collapsed 的 effect）。
- *
- * 多窗口轮询说明：rcStore 是**每窗口一份**的模块单例，主窗 + 工作台各跑一份
- * rc_status 轮询。安全性依赖两个后端事实：`status()` 的 path-change 通知自带
- * 去重（take 只被一处消费也无所谓），outbound_error 是 clone 不是 take。
- *
- * ⚠️ 「每窗口一份」还有一个后果：「允许被远程」这类状态**不能读 appStore**
- * （没人给独立窗口水合它），必须读 `rc_status`。见 rcEnabledSelf。
+ * 空闲时设备侧栏是唯一导航真源；文件页复用同一选择，避免再画一套设备列表。
+ * 会话态由 `resolveRcA2Surface` 强制置顶，不能被设置或历史页遮住。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { emitTo } from "@tauri-apps/api/event";
 import { useToast } from "@/components/Toast";
-import { useRc } from "@/hooks/useRc";
-import { useRcLaunch } from "@/hooks/useRcLaunch";
-import { useRcAdhoc } from "@/hooks/useRcAdhoc";
-import { useRcWorkbenchClose } from "@/hooks/useRcWorkbenchClose";
 import { RcPairLayer, type RcPairLayerMode } from "@/components/settings/RcPairLayer";
-import { RcNavRail } from "./RcNavRail";
-import { RcWorkbenchHead } from "./RcWorkbenchHead";
-import { RcStage } from "./RcStage";
-import { RcWorkbenchSide } from "./RcWorkbenchSide";
-import { RcPageDevices } from "./RcPageDevices";
+import { useRc } from "@/hooks/useRc";
+import { useRcAdhoc } from "@/hooks/useRcAdhoc";
+import { useRcLaunch } from "@/hooks/useRcLaunch";
+import { useRcWorkbenchClose } from "@/hooks/useRcWorkbenchClose";
+import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDeviceRename } from "@/lib/api/rc";
+import { readAutoStartChannel } from "@/lib/rcPrefs";
+import { capabilityLabel } from "@/lib/rcRequest";
+import { isSessionActive, workbenchMainMode } from "@/lib/rcWorkbench";
+import { resolveRcA2Selection, resolveRcA2Surface, type RcA2Page } from "@/lib/rcWorkbenchA2";
+import { RcA2DeviceDetail } from "./RcA2DeviceDetail";
+import { RcA2Sidebar } from "./RcA2Sidebar";
+import { RcA2TitleBar } from "./RcA2TitleBar";
+import { RcErrorPanel } from "./RcErrorPanel";
 import { RcPageFiles } from "./RcPageFiles";
 import { RcPageHistory } from "./RcPageHistory";
 import { RcPageSettings } from "./RcPageSettings";
-import {
-  isSessionActive,
-  workbenchMainMode,
-  type WbPage,
-} from "@/lib/rcWorkbench";
-import { capabilityLabel } from "@/lib/rcRequest";
-import { readAutoStartChannel } from "@/lib/rcPrefs";
-import { fingerprintOf } from "@/lib/fingerprint";
-import styles from "./RemoteComputer.module.css";
+import { RcStage } from "./RcStage";
+import styles from "./RemoteComputerA2.module.css";
 
 export function RcWorkbench() {
   const { toast } = useToast();
   const rc = useRc(true);
-  /**
-   * 「允许被远程」的唯一真源是**后端** `rc_status.enabled`，不是 appStore。
-   * （原先读 appStore 的翻车现场见 git 历史：appStore 在独立窗口恒为 DEFAULT，
-   * 开关视觉恒「关」。）设置页一直读 status，所以两边一致。
-   */
-  const rcEnabledSelf = rc.status?.enabled ?? false;
-  /** 发起链路的记忆与动作（能力档 / 上次设备 / 重试目标 / 撤销窗口）——见 useRcLaunch。 */
   const { cap, setDefaultCap, lastPeer, lastAttempt, doRequest, forgetDevice } = useRcLaunch(rc, toast);
-  /** 当前开着的弹层：长期配对 / 让别人帮我 / 帮别人连一次（见 RcPairLayer）。 */
   const [overlay, setOverlay] = useState<RcPairLayerMode>(null);
-  /** v4 导航态：「远程电脑」是主页，其余各页见顶部说明。 */
-  const [page, setPage] = useState<WbPage>("rc");
-  /** G6：设备卡片「传文件」→ 切到文件传输页并预选这台设备（一次性传递，不在外层维护第二份真源）。 */
-  const [filesPeer, setFilesPeer] = useState<string | null>(null);
-  const openFiles = (id: string) => {
-    setFilesPeer(id);
-    setPage("files");
-  };
-  /**
-   * 会话进行中左列是否被**手动**展开。默认收起把宽度让给画面；
-   * 非会话状态下一律展开（collapsed 的 effect 负责复位）。
-   */
-  const [sideOpen, setSideOpen] = useState(false);
-  /** 打开只探一次活；之后靠手动「检测」或发起远程，不空转。 */
-  const probedOnce = useRef(false);
+  const [page, setPage] = useState<RcA2Page>("devices");
+  const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
+  const [autoStartDone, setAutoStartDone] = useState(false);
 
   useEffect(() => {
     void rc.refresh();
     void rc.refreshIdentity();
     void (async () => {
+      // 🔴 2026-09-21：打开页面**只刷新列表，不再自动探活**。
+      // 旧实现这里跟着跑一次全量探测，后果有两个：
+      // ① 打开页面即发起一轮并发拨号（上限 8 台 × 3s 超时），慢且没必要；
+      // ② 配合当时的「探测成功就写 last_seen」，「打开页面」会把所有能拨通的
+      //    设备集体续命——表现就是「一打开，几个设备的在线状态全变了」。
+      // 列表状态由 presence 四档如实展示；真要确认某台可达，用户点它时再探。
       await rc.refreshTargets();
-      if (!probedOnce.current) {
-        probedOnce.current = true;
-        await rc.probeTargets();
-      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const mode = workbenchMainMode(rc.status);
-  const active = mode === "outbound";
-  const pending = mode === "pending";
-  const inbound = mode === "inbound";
+  const surface = resolveRcA2Surface(mode, page);
   const session = rc.status?.session ?? null;
   const channelUp = rc.status?.running ?? false;
-  const hasTargets = rc.targets.length > 0;
   const hasLiveSession = isSessionActive(rc.status);
+  const selectedId = resolveRcA2Selection(rc.targets, selectedPeer ?? lastPeer);
+  const selectedTarget = rc.targets.find((target) => target.node_id === selectedId) ?? null;
 
-  /**
-   * 「启动工作台时自动开启远程通道」（设置页偏好，lib/rcPrefs）。
-   * 只在**首次 rc_status 回包**（成功或失败）之后动作：之前不知道通道在不在跑；
-   * 后端 svc.start 自带运行中守卫，就算撞上重复 start 也是 no-op。
-   * 静默成功（顶栏 chip 变绿已可见），失败才提醒。
-   */
-  const [autoStartDone, setAutoStartDone] = useState(false);
-  /** 会话记录页的刷新纪元：顶栏清空记录成功后 +1，用 key 重挂页面重新拉列表。 */
-  const [historyEpoch, setHistoryEpoch] = useState(0);
   useEffect(() => {
     if (autoStartDone) return;
-    if (rc.status === null && rc.error === null) return; // 首包未到，再等一等
+    if (rc.status === null && rc.error === null) return;
     setAutoStartDone(true);
     if (readAutoStartChannel() && !channelUp) {
       void rc.startChannel().then((ok) => {
-        if (!ok) toast("远程通道自动启动失败，可点顶栏「远程通道未启动」重试", "error");
+        if (!ok) toast("远程通道自动启动失败，可点顶部“启动远程通道”重试", "error");
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 首包判据一到位就动作一次，不随轮询重放
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStartDone, channelUp]);
 
-  /**
-   * 侧栏收起（方案 B）：**只在出站会话进行中**（有画面）才收——被控时主区是信息卡、
-   * 没有画面，收窄侧栏换不来任何东西，反而把「允许被远程」这类本机状态藏起来。
-   */
-  const collapsed = active && !sideOpen;
-  useEffect(() => {
-    if (!active) setSideOpen(false);
-  }, [active]);
-
-  // 会话中点系统关闭钮：沿用原 Dialog 的确认语义（结束会话 or 保持会话仅关窗）。
   useRcWorkbenchClose(hasLiveSession, rc.end);
-
-  /** 一次性协助的「用后即忘」结账点（判据在 `lib/rcAdhoc`）。 */
   useRcAdhoc(rc);
 
-  /** 跳主窗口设置页的 rc 分区（跨窗口只能走 Tauri 事件，主窗里有桥） */
   const openMainWindowSettings = () => {
     void emitTo("main", "pp:open-settings-rc").catch(() => {
       toast("跳转设置失败：主窗口不可达", "error");
     });
   };
+  const startChannel = () => {
+    void rc.startChannel().then((ok) => {
+      if (ok) toast("远程通道已启动", "success");
+    });
+  };
+  // 用户主动点「刷新」= 明确要求重探这一批，这里探全量是**对的**——
+  // 与「打开页面自动探」的区别就在于是不是用户的意思（2026-09-21）。
+  const probe = () => {
+    setProbing(true);
+    const all = rc.targets.map((t) => t.node_id);
+    void rc.probeTargets(all).finally(() => setProbing(false));
+  };
+  const openFiles = (id: string) => {
+    setSelectedPeer(id);
+    setPage("files");
+  };
 
-  const lockedLabel = inbound
-    ? "对方正在远程本机"
-    : pending
-      ? "已有申请在等对方同意"
-      : "远程会话进行中";
-
-  /** 顶栏会话 chip 的一行状态；空 = 不摆。 */
+  const inbound = mode === "inbound";
+  const pending = mode === "pending";
+  const lockedLabel = inbound ? "对方正在远程本机" : pending ? "已有申请在等对方同意" : "远程会话进行中";
   const sessionLabel = !session
     ? ""
     : inbound
@@ -158,132 +109,114 @@ export function RcWorkbench() {
         ? "等待对方同意接入"
         : `正在远程控制 ${session.peer_name || fingerprintOf(session.peer)} · ${capabilityLabel(session.capability)}`;
 
-  /** 共享回调束：三个页面与主页用的同一批发起/配对动作。 */
-  const startChannel = () => {
-    void rc.startChannel().then((ok) => {
-      if (ok) toast("远程通道已启动", "success");
-    });
-  };
-  const probe = () => {
-    setProbing(true);
-    void rc.probeTargets().finally(() => setProbing(false));
-  };
-  const requestCap = (id: string) => void doRequest(id, cap);
-  const requestWith = (id: string, c: Parameters<typeof doRequest>[1]) =>
-    void doRequest(id, c);
+  const stage = (
+    <RcStage
+      rc={rc}
+      cap={cap}
+      lastAttempt={lastAttempt}
+      doRequest={doRequest}
+      onPair={() => setOverlay("pair")}
+      onHelpMe={() => setOverlay("helpMe")}
+      onHelpOther={() => setOverlay("helpOther")}
+      onUnoJoin={() => setOverlay("unoJoin")}
+    />
+  );
+
+  const content =
+    surface === "pending" || surface === "inbound" ? (
+      stage
+    ) : surface === "files" ? (
+      <RcPageFiles rc={rc} selectedPeer={selectedId} onSelectPeer={setSelectedPeer} showTargetPicker={false} />
+    ) : surface === "history" ? (
+      <RcPageHistory rc={rc} onReconnect={(id, _name, c) => void doRequest(id, c)} />
+    ) : surface === "settings" ? (
+      <RcPageSettings
+        rc={rc}
+        cap={cap}
+        toast={toast}
+        onSetDefaultCap={setDefaultCap}
+        onOpenSettings={openMainWindowSettings}
+        onNavigateHistory={() => setPage("history")}
+        onNavigateDevices={() => setPage("devices")}
+      />
+    ) : (
+      <RcA2DeviceDetail
+        target={selectedTarget}
+        busy={rc.busy}
+        locked={hasLiveSession}
+        onConnect={(id, capability) => void doRequest(id, capability)}
+        onSendFiles={openFiles}
+        onPair={() => setOverlay("pair")}
+        onSetAllowed={(id, allowed) => rc.setDeviceAllowed(id, allowed)}
+        onSetTrust={(id, trusted) => rc.setDeviceTrust(id, trusted)}
+        onSetAutoAccept={(id, enabled) => rc.setDeviceAutoAccept(id, enabled)}
+        onForget={forgetDevice}
+        onRename={async (id, note) => {
+          try {
+            await rcDeviceRename(id, note);
+            await rc.refreshTargets();
+            return true;
+          } catch (error) {
+            toast(String(error), "error");
+            return false;
+          }
+        }}
+        toast={toast}
+      />
+    );
 
   return (
-    <div className={styles.wbPage} data-rc-root="">
-      <RcNavRail
-        page={page}
-        compact={collapsed}
-        selfEnabled={rcEnabledSelf}
+    <div className={styles.workbench} data-rc-root="">
+      <RcA2TitleBar
         channelUp={channelUp}
-        identity={rc.identity}
-        onNavigate={setPage}
-        onExpand={() => setSideOpen(true)}
+        busy={rc.busy}
+        probing={probing}
+        sessionLabel={sessionLabel}
+        onProbe={probe}
         onStartChannel={startChannel}
       />
 
-      <div className={styles.wbCol}>
-        <RcWorkbenchHead
-          page={page}
-          channelUp={channelUp}
-          busy={rc.busy}
-          session={session}
-          sessionLabel={sessionLabel}
-          probing={probing}
-          onProbe={probe}
-          onPair={() => setOverlay("pair")}
-          onCleared={() => setHistoryEpoch((n) => n + 1)}
-          onStartChannel={startChannel}
-          onOpenSettings={() => setPage("settings")}
-          rc={rc}
-          toast={toast}
-        />
-
-        {page === "devices" ? (
-          <RcPageDevices
-            rc={rc}
-            toast={toast}
-            cap={cap}
-            lastPeer={lastPeer}
+      {surface === "session" ? (
+        <div className={styles.sessionSurface}>{stage}</div>
+      ) : (
+        <div className={styles.workbenchBody}>
+          <RcA2Sidebar
+            page={page}
+            targets={rc.targets}
+            selectedId={selectedId}
+            busy={rc.busy}
             locked={hasLiveSession}
             lockedLabel={lockedLabel}
+            onSelect={setSelectedPeer}
+            onConnect={(id, capability) => void doRequest(id, capability)}
             onPair={() => setOverlay("pair")}
-            onStartChannel={startChannel}
-            onForget={forgetDevice}
-            onRequest={requestCap}
-            onRequestWith={requestWith}
-            onSendFiles={openFiles}
+            onNavigate={setPage}
+            selfEnabled={rc.status?.enabled ?? false}
+            onToggleSelf={(enabled) => void rc.setEnabled(enabled)}
+            onHelpMe={() => setOverlay("helpMe")}
+            onHelpOther={() => setOverlay("helpOther")}
+            onUnoJoin={() => setOverlay("unoJoin")}
           />
-        ) : page === "files" ? (
-          <RcPageFiles rc={rc} initialPeer={filesPeer} />
-        ) : page === "history" ? (
-          <RcPageHistory
-            key={historyEpoch}
-            rc={rc}
-            onReconnect={(id, _name, c) => void doRequest(id, c)}
-          />
-        ) : page === "settings" ? (
-          <RcPageSettings
-            rc={rc}
-            cap={cap}
-            toast={toast}
-            onSetDefaultCap={setDefaultCap}
-            onOpenSettings={openMainWindowSettings}
-            onNavigateHistory={() => setPage("history")}
-            onNavigateDevices={() => setPage("devices")}
-          />
-        ) : (
-          <div className={styles.wbBody}>
-            {!collapsed && (
-              <RcWorkbenchSide
-                rc={rc}
-                rcEnabledSelf={rcEnabledSelf}
-                cap={cap}
-                lastPeer={lastPeer}
-                probing={probing}
-                channelUp={channelUp}
-                hasTargets={hasTargets}
-                locked={hasLiveSession}
-                lockedLabel={lockedLabel}
-                toast={toast}
-                onToggleSelf={(v) => void rc.setEnabled(v)}
-                onPair={() => setOverlay("pair")}
-                onHelpMe={() => setOverlay("helpMe")}
-                onHelpOther={() => setOverlay("helpOther")}
-                onProbe={probe}
-                onStartChannel={startChannel}
-                onRequest={requestCap}
-                onRequestWith={requestWith}
-                onSendFiles={openFiles}
-                onForget={forgetDevice}
-                /* 收起按钮只在有画面时才有意义（见上面 collapsed 的说明） */
-                onCollapse={active ? () => setSideOpen(false) : undefined}
-              />
+          <div className={styles.mainColumn}>
+            {rc.error && (
+              <div className={styles.errorSlot} role="status">
+                <RcErrorPanel
+                  error={rc.error}
+                  onRetry={rc.isOpError ? undefined : () => void rc.refresh()}
+                  onDismiss={rc.clearError}
+                />
+              </div>
             )}
-            <RcStage
-              rc={rc}
-              cap={cap}
-              lastAttempt={lastAttempt}
-              doRequest={doRequest}
-              onPair={() => setOverlay("pair")}
-              onHelpMe={() => setOverlay("helpMe")}
-              onHelpOther={() => setOverlay("helpOther")}
-              onUnoJoin={() => setOverlay("unoJoin")}
-            />
+            <div className={styles.mainSurface}>{content}</div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* 配对 / 一次性协助两个弹层都由它挂（见 RcPairLayer 的说明）。 */}
       <RcPairLayer
         rc={rc}
         toast={toast}
         mode={overlay}
         onClose={() => setOverlay(null)}
-        /* 配对/连上完的第一意图几乎总是「马上连过去」：出口直接给到，能力档沿用当前档。 */
         onStartRemote={(peerId) => void doRequest(peerId, cap)}
       />
     </div>
