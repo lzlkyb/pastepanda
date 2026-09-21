@@ -14,15 +14,15 @@
  *   - 窗口已存在时 Rust 经 md-editor-load 事件推送新数据（key 变更整体重载）。
  */
 import { useRef, useState, useCallback, useEffect, useMemo, Suspense, lazy } from "react";
-import { FolderOpen, Save, X, Maximize2, Minimize2, RefreshCw, ListTree } from "lucide-react";
 import type { EditorView } from "@codemirror/view";
 import { THEMES, DEFAULT_THEME, type ThemeKey } from "@/lib/theme";
 // CM6 装配与全套编辑命令已抽到 useCodeMirrorEditor（规划 §8.1 1️⃣），
 // 笔记编辑器将复用同一个 hook。本文件只剩「窗口 + 文件 + 布局」。
 import { useCodeMirrorEditor } from "./useCodeMirrorEditor";
 import { insertPastedImages as savePastedImages } from "./mdImagePaste";
-import { MarkdownOutline } from "./fullscreen/MarkdownOutline";
+import { MarkdownOutline, scanHeadings, readOutlinePref, writeOutlinePref, type OutlineHeading } from "./fullscreen/MarkdownOutline";
 import { useOutlineJump } from "./useOutlineJump";
+import { useOutlineSpy } from "./useOutlineSpy";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SkinScene } from "@/components/SkinScene";
 import { invoke } from "@tauri-apps/api/core";
@@ -32,7 +32,12 @@ import { save, open, ask } from "@tauri-apps/plugin-dialog";
 import { useFileWatch } from "./useFileWatch";
 import { useToast } from "@/components/Toast";
 import { resolveFullscreenType } from "./fullscreen/registry";
-import { LanguagePicker } from "./fullscreen/LanguagePicker";
+import { EditorToolbar } from "./fullscreen/EditorToolbar";
+import { EditorStatusBar, type CursorInfo } from "./fullscreen/EditorStatusBar";
+import { PaneHeader, PreviewPaneHeader } from "./fullscreen/PaneHeader";
+import { useFocusMode } from "./fullscreen/useFocusMode";
+import { FocusChrome } from "./fullscreen/FocusChrome";
+import { PreviewErrorBoundary } from "./fullscreen/PreviewErrorBoundary";
 import { loadLanguageSupport, languageFileExtension } from "./fullscreen/languages";
 import type { ViewMode } from "./fullscreen/types";
 import styles from "./FullscreenEditor.module.css";
@@ -228,6 +233,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   const [text, setText] = useState(initFilePath ? "" : initContent || "");
   const [viewMode, setViewMode] = useState<ViewMode>(spec.defaultMode);
   const [isDirty, setIsDirty] = useState(false);
+  // 写盘进行中（手动 Ctrl+S / 自动保存防抖到期后的实际写盘段）。
+  // 防抖等待期不算：那还是「未保存」，写盘只有几十毫秒，转瞬即过是正确的反馈节奏。
+  const [isSaving, setIsSaving] = useState(false);
   // 自动保存写盘失败（只读文件/盘满/路径被占）。必须单独记：状态栏只有两态时，
   // "防抖期间还没存"与"根本存不进去"长得一模一样；用户开着自动保存就是为了不管保存，
   // 连续失败十分钟后关窗、守卫弹二选一，他会因为"相信自动保存一直在跑"而选不保存 —— 终点是丢稿。
@@ -244,8 +252,19 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
 
   // Split pane
   const [splitRatio, setSplitRatio] = useState(50);
-  // 大纲侧栏（仅 markdown）。默认收起：短文档开着只是白占地方。
-  const [showOutline, setShowOutline] = useState(false);
+  // 大纲开关：记住上次状态（localStorage，首用默认展示——用户拍板）。
+  // 旧注释「默认收起：短文档开着白占地方」被使用习惯推翻：用户要打开即在。
+  const [showOutline, setShowOutline] = useState<boolean>(() => readOutlinePref());
+  const toggleOutline = useCallback(() => {
+    setShowOutline((v) => {
+      writeOutlinePref(!v);
+      return !v;
+    });
+  }, []);
+  // 专注模式（P1-3）：chrome 全隐藏 + 居中纸张；Esc 两级取消在下方键盘 effect 裁决
+  const { focusMode, toastVisible, exit: exitFocus, toggle: toggleFocus } = useFocusMode();
+  // 预览重试 key：PreviewErrorBoundary 的「重试预览」靠递增它强制重挂载预览组件
+  const [previewRetryKey, setPreviewRetryKey] = useState(0);
   /**
    * 保存命令的「现取」口。handleSave / handleSaveAs 定义在下方（它们依赖
    * currentFilePath 等状态），而 hook 要在这里就拿到快捷键回调，故用 ref 中转。
@@ -275,6 +294,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   }, [docDir, toast]);
 
   // ─── CodeMirror 内核（装配 + 主题/语言舱 + 全套编辑命令）───
+  // B4 光标定位：仅编辑/分屏有光标；仅预览置 null 让状态栏不渲染该组
+  const [cursor, setCursor] = useState<CursorInfo>({ line: 1, col: 1, selLen: 0 });
   const { editorRef, viewRef, bridge, jumpToLine, reconfigureLanguage } = useCodeMirrorEditor({
     initialText: initialContent,
     ready: !loading,
@@ -286,6 +307,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     onDocChange: handleDocChange,
     onSave: () => saveCmdsRef.current.save(),
     onSaveAs: () => saveCmdsRef.current.saveAs(),
+    onCursorChange: setCursor,
   });
 
   // Preview scroll sync
@@ -294,15 +316,44 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   /**
    * 大纲点击分派：编辑→CM；预览→DOM#slug；分屏→两侧都跳。
    * 策略在 useOutlineJump（规则 #7，本文件已超 300 行）。
+   * 点选即置当前节（与 scrollspy 共用同一个 state）：跳转引发的滚动随后被
+   * spy 接管覆盖，落点一致，不会出现「高亮卡在点过的旧项」。
    */
   const hasPreviewSpec = !!spec.Preview;
-  const handleOutlineJump = useOutlineJump({
+  const handleOutlineJumpBase = useOutlineJump({
     viewMode,
     jumpToLine,
     previewScrollRef,
     hasPreview: hasPreviewSpec,
     onJumpFail: (h) => toast(`预览中未找到标题「${h.text}」`, "error"),
   });
+
+  // markdown 标题表：大纲与 scrollspy（useOutlineSpy）共用一份，避免重复扫描
+  const isMarkdown = spec.key === "markdown";
+  const outlineHeadings = useMemo(
+    () => (isMarkdown ? scanHeadings(text) : []),
+    [isMarkdown, text],
+  );
+
+  // 滚动跟随（scrollspy）：内容滚动 → 大纲高亮当前节 + 列表自动滚到可见。
+  // 大纲收起/专注模式时不必算（enabled=false 卸载监听）。
+  const { activeSlug: outlineActiveSlug, setActiveSlug: setOutlineActive } = useOutlineSpy({
+    enabled: isMarkdown && showOutline && !focusMode,
+    viewMode,
+    headings: outlineHeadings,
+    viewRef,
+    editorRef,
+    previewScrollRef,
+    loading,
+  });
+  // 点选即置当前节（与 spy 共用同一个 state，滚动会被 spy 覆盖，不会卡旧项）
+  const handleOutlineJump = useCallback(
+    (h: OutlineHeading) => {
+      setOutlineActive(h.slug);
+      handleOutlineJumpBase(h);
+    },
+    [handleOutlineJumpBase, setOutlineActive],
+  );
 
   /** 滚动同步的“谁在驱动”时间窗（防回声，详见 syncScroll） */
   const scrollSyncLock = useRef<{ side: "editor" | "preview"; until: number } | null>(null);
@@ -438,6 +489,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   const handleSave = useCallback(async () => {
     // 1) 来自剪贴板卡片：回写数据库（主窗口经 history-item-updated 事件刷新）
     if (effectiveSourceId) {
+      setIsSaving(true);
       try {
         await invoke("update_history", { id: effectiveSourceId, text });
         setInitialContent(text);
@@ -447,10 +499,12 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         toast("保存失败: " + msg, "error");
+      } finally {
+        setIsSaving(false);
       }
       return;
     }
-    // 2) 无文件路径：另存为
+    // 2) 无文件路径：另存为（弹系统对话框可能停很久，不算「保存中」）
     if (!currentFilePath) {
       return handleSaveAs();
     }
@@ -473,6 +527,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
           return;
         }
       }
+      setIsSaving(true); // 冲突弹窗期间不算「保存中」——对话框可能停很久
       // 走后端命令而不是 fs 插件：外部打开的文件不在 fs scope 里，插件会直接拒
       // （forbidden path … allow-write-file）。读取本来就走 read_text_file_full，写跟上。
       await invoke("write_text_file_full", { path: currentFilePath, text });
@@ -496,6 +551,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast("保存失败: " + msg, "error");
+    } finally {
+      setIsSaving(false);
     }
     // 不能补 handleSaveAs：它就定义在下一行，写进依赖数组会 TDZ ReferenceError。
     // 也不能补 fileWatch：useFileWatch 没 useMemo 包返回值，每渲染都是新对象。
@@ -577,6 +634,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(async () => {
       const snapshot = text;
+      setIsSaving(true);
       try {
         if (effectiveSourceId) {
           // 卡片 → 回写数据库（主窗口经 history-item-updated 事件刷新）
@@ -601,6 +659,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
         // 仍不弹窗（自动保存是无人值守的），但必须在状态栏把"存不进去"这件事显式化，
         // 否则界面与"还没到存盘时机"完全一样。脏状态保留，用户仍可 Ctrl+S 手动重试。
         setAutoSaveError(true);
+      } finally {
+        setIsSaving(false);
       }
     }, 1000);
 
@@ -654,14 +714,25 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   // ─── Keyboard shortcuts ─────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // 专注模式开关（稿子 P1-3：⋯ 菜单与快捷键双入口）
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        toggleFocus();
+        return;
+      }
       if (e.key === "Escape") {
         e.preventDefault();
+        // 两级取消：专注态的第一次 Esc 只回普通模式，绝不直接动到关闭守卫
+        if (focusMode) {
+          exitFocus();
+          return;
+        }
         handleClose();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleClose]);
+  }, [handleClose, focusMode, exitFocus, toggleFocus]);
 
   // ─── Fullscreen state sync ─────────────────────────
   useEffect(() => {
@@ -752,29 +823,42 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   }, [handleEditorScroll, handlePreviewScroll, viewMode, spec.scrollSync, loading, editorRef]);
 
   // ─── Resize drag ────────────────────────────────────
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+  // 分屏比例的参照系是 .splitWrap（编辑+把手+预览），**不含大纲栏**——
+  // 否则大纲打开时 50% 意味着「编辑占整条 main 的一半」，预览被压得明显更窄。
+  const splitWrapRef = useRef<HTMLDivElement>(null);
+  const handleResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    // Pointer Capture：捕获后即使光标扫过预览 iframe（HTML 沙箱），
+    // move/up 仍派发给把手。旧实现 mousemove 挂 window，iframe 吞事件
+    // 导致拖动「卡住→突然漂移」。
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* 指针已释放等边界：退化为不捕获，拖拽仍可用 */
+    }
     isDragging.current = true;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+  }, []);
 
-    const onMove = (ev: MouseEvent) => {
-      if (!isDragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
-      setSplitRatio(Math.min(70, Math.max(30, pct)));
-    };
+  const handleResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging.current || !splitWrapRef.current) return;
+    const rect = splitWrapRef.current.getBoundingClientRect();
+    // 把手 6px：按「把手中心对准光标」折算，按下瞬间不跳 3px
+    const pct = ((e.clientX - rect.left - 3) / (rect.width - 6)) * 100;
+    setSplitRatio(Math.min(70, Math.max(30, pct)));
+  }, []);
 
-    const onUp = () => {
-      isDragging.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+  const handleResizeEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* 已释放则忽略 */
+    }
   }, []);
 
   // ─── Stats ──────────────────────────────────────────
@@ -806,86 +890,41 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
 
   return (
     <div
-      className={styles.overlay}
+      className={`${styles.overlay} ${focusMode ? styles.focusMode : ""}`}
       data-theme-mode={isDarkTheme ? "dark" : "light"}
     >
       {/* 皮肤场景层：fixed z-0，衬于工具栏/编辑区（z-1）之后，
           主题场景从透明 header（--header-bg-start: transparent）透出 */}
       <SkinScene />
       {/* Toolbar（deep 拖拽区：按住文件名/图标/空白处可移动窗口，按钮自动豁免） */}
-      <div className={styles.toolbar} data-tauri-drag-region="deep">
-        <div className={styles.toolbarLeft}>
-          <div className={styles.fileIcon}>{spec.icon}</div>
-          <span className={styles.fileName}>{fileName}</span>
-          {currentFilePath && (
-            <span className={styles.filePath}>— {currentFilePath.replace(/[\\/][^\\/]+$/, "")}</span>
-          )}
-          {isDirty && <div className={styles.unsavedDot} />}
-          {spec.dynamicLanguage && (
-            <LanguagePicker value={languageName} onChange={setLanguageName} />
-          )}
-        </div>
-        <div className={styles.toolbarRight}>
-          {/* 仅文件模式显示：剪贴板内容模式没有磁盘文件可重载，
-              摆一个点了没反应的按钮比不摆更坏（所以不是禁用，是不出现）。 */}
-          {currentFilePath && (
-            <button
-              className={styles.tbBtn}
-              onClick={() => void handleReloadFromDisk()}
-              title="从磁盘重新加载（文件在外部被修改过时用）"
-            >
-              <RefreshCw size={14} />
-            </button>
-          )}
-          {/* 大纲：只对 markdown 有意义（其它类型没有 # 标题结构）。
-              跟上面那个「重载」同一个思路：不适用就不出现，而不是摆个点了没反应的按钮。 */}
-          {spec.key === "markdown" && (
-            <button
-              className={`${styles.tbBtn} ${showOutline ? styles.tbBtnActive : ""}`}
-              onClick={() => setShowOutline((v) => !v)}
-              title="大纲（按标题跳转）"
-            >
-              <ListTree size={14} />
-            </button>
-          )}
-          <button className={styles.tbBtn} onClick={handleOpen} title="打开文件">
-            <FolderOpen size={14} />
-          </button>
-          <button className={`${styles.tbBtn} ${styles.tbBtnPrimary}`} onClick={handleSave} title="保存 Ctrl+S">
-            <Save size={14} />
-            <span>保存</span>
-          </button>
-          {spec.modes.length > 1 && (
-            <>
-              <div className={styles.tbSep} />
-              {spec.modes.map(({ key, title, Icon }) => (
-                <button
-                  key={key}
-                  className={`${styles.tbBtnIcon} ${viewMode === key ? styles.tbBtnActive : ""}`}
-                  onClick={() => setViewMode(key)}
-                  title={title}
-                >
-                  <Icon size={15} />
-                </button>
-              ))}
-            </>
-          )}
-          <div className={styles.tbSep} />
-          <button
-            className={styles.tbBtnIcon}
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "缩回窗口" : "放大到真全屏"}
-          >
-            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
-          <button className={`${styles.tbBtnIcon} ${styles.tbBtnClose}`} onClick={handleClose} title="关闭 Esc">
-            <X size={15} />
-          </button>
-        </div>
-      </div>
+      <EditorToolbar
+        icon={spec.icon}
+        fileName={fileName}
+        currentFilePath={currentFilePath}
+        isDirty={isDirty}
+        isSaving={isSaving}
+        dynamicLanguage={!!spec.dynamicLanguage}
+        languageName={languageName}
+        onLanguageChange={setLanguageName}
+        modes={spec.modes}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        showOutlineButton={spec.key === "markdown"}
+        showOutline={showOutline}
+        onToggleOutline={toggleOutline}
+        isFullscreen={isFullscreen}
+        onFullscreenToggle={() => void toggleFullscreen()}
+        onMinimize={() => void getCurrentWindow().minimize()}
+        onReload={() => void handleReloadFromDisk()}
+        onOpen={() => void handleOpen()}
+        onSave={() => void handleSave()}
+        onClose={handleClose}
+        onFocusMode={toggleFocus}
+      />
 
-      {/* Format Bar（类型专属，无则不渲染） */}
-      {spec.FormatBar && (
+      {/* Format Bar（类型专属，无则不渲染）。B5：仅预览模式整栏隐藏——
+          预览态不可编辑，按钮全无意义，留着就是「点了没反应」的变体。 */}
+      {spec.FormatBar && viewMode !== "preview" && (
         <div className={styles.formatBar}>
           <spec.FormatBar bridge={bridge} />
         </div>
@@ -893,28 +932,47 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
 
       {/* Main Content */}
       <div className={styles.main} ref={containerRef}>
-        {spec.key === "markdown" && showOutline && (
-          <MarkdownOutline text={text} onJump={handleOutlineJump} />
+        {/* 专注模式隐藏大纲侧栏（条件渲染而非 CSS：MarkdownOutline 自带模块类，外层 CSS 钩不到） */}
+        {spec.key === "markdown" && showOutline && !focusMode && (
+          <MarkdownOutline
+            headings={outlineHeadings}
+            activeSlug={outlineActiveSlug}
+            onJump={handleOutlineJump}
+          />
         )}
+        {/* 分屏对（编辑+把手+预览）：splitRatio 的参照系——不含左侧大纲栏，
+            保证「各占一半」是真的各占一半（2026-09-21 用户反馈占比不等 + 拖拽漂移） */}
+        <div className={styles.splitWrap} ref={splitWrapRef}>
         {/* Editor Pane — 始终挂载，仅预览时用 display:none 隐藏而非卸载。
             若条件卸载，CodeMirror 视图会随 DOM 移除而脱离文档，切回分屏时
             新建的空 div 不会被重新填充（初始化 effect 仅依赖 loading），导致编辑区被清空。 */}
         <div
           className={styles.editorPane}
           style={{
-            flex: viewMode === "split" ? `0 0 ${splitRatio}%` : "1",
-            display: viewMode === "preview" ? "none" : undefined,
+            /* 专注模式：居中限宽纸张（inline flex 覆盖分屏比例；退出后原样恢复）。
+               inline style 优先级高于样式表，所以这里必须在 JS 里裁决。 */
+            flex: focusMode ? "0 1 760px" : viewMode === "split" ? `0 0 ${splitRatio}%` : "1",
+            display: viewMode === "preview" && !focusMode ? "none" : undefined,
           }}
         >
-          <div className={styles.paneHeader}>
-            <span className={styles.paneLabel}>编辑</span>
-          </div>
+          {/* P0-2 面板身份：用户语言替代「编辑」灰字。
+              有预览的类型用「X 源文」与预览面板对仗（csv 显式「CSV 源文」）；
+              无预览的类型（纯文本/代码等）只有一个面板，直接显示类型名。 */}
+          <PaneHeader
+            label={spec.editorPaneLabel ?? (spec.Preview ? `${spec.label} 源文` : spec.label)}
+          />
           <div className={styles.editorBody} ref={editorRef} />
         </div>
 
         {/* Resize Handle */}
         {viewMode === "split" && hasPreview && (
-          <div className={styles.resizeHandle} onMouseDown={handleResizeStart} />
+          <div
+            className={styles.resizeHandle}
+            onPointerDown={handleResizeStart}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeEnd}
+            onPointerCancel={handleResizeEnd}
+          />
         )}
 
         {/* Preview Pane */}
@@ -926,77 +984,78 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
                贴右边缘的预览滚动条会被裁掉大半 */
             style={{ flex: viewMode === "split" ? "1 1 0" : "1" }}
           >
-            <div className={styles.paneHeader}>
-              <span className={styles.paneLabel}>预览</span>
-              <span className={styles.paneSubLabel}>{spec.previewSubLabel}</span>
-              {spec.key === "markdown" && (
-                <button
-                  type="button"
-                  className={`${styles.lnToggle} ${previewLineNumbers ? styles.lnToggleActive : ""}`}
-                  onClick={togglePreviewLineNumbers}
-                  title="预览区行号（块级编号 + 代码行号）"
-                >
-                  <span className={styles.lnToggleDot} />
-                  行号
-                </button>
-              )}
-            </div>
+            <PreviewPaneHeader
+              label={spec.previewPaneLabel ?? "预览"}
+              subLabel={spec.previewSubLabel}
+              showLineNumbersToggle={spec.key === "markdown"}
+              lineNumbersOn={previewLineNumbers}
+              onToggleLineNumbers={togglePreviewLineNumbers}
+            />
             <div
               className={`${styles.previewBody} ${spec.previewFill ? styles.previewBodyFill : ""}`}
               ref={previewScrollRef}
             >
               <Suspense fallback={<div className={styles.previewLoading}>预览加载中…</div>}>
-                <spec.Preview
-                  text={text}
-                  bridge={bridge}
-                  lineNumbers={previewLineNumbers}
-                  baseDir={docDir}
-                />
+                {/* 守护-1：预览组件渲染期抛错不能白屏 —— 边界兜住给「重试 / 显示源码」 */}
+                <PreviewErrorBoundary
+                  onRetry={() => setPreviewRetryKey((k) => k + 1)}
+                  onShowSource={() => setViewMode("edit")}
+                >
+                  <spec.Preview
+                    key={previewRetryKey}
+                    text={text}
+                    bridge={bridge}
+                    lineNumbers={previewLineNumbers}
+                    baseDir={docDir}
+                  />
+                </PreviewErrorBoundary>
               </Suspense>
             </div>
           </div>
         )}
+        </div>{/* /splitWrap */}
       </div>
 
       {/* Status Bar */}
-      <div className={styles.statusBar}>
-        <div className={styles.statusLeft}>
-          <span className={styles.statusItem}>{fileName}</span>
-          <span className={styles.statusItem}>{stats.lines} 行</span>
-          <span className={styles.statusItem}>{stats.chars} 字符</span>
-          <span className={styles.statusItem}>{stats.words} 字</span>
-          {stats.readMin > 0 && (
-            <span className={styles.statusItem} title="按 300 字/分钟估算">
-              约 {stats.readMin} 分钟读完
-            </span>
-          )}
-          <span className={styles.statusItem}>UTF-8</span>
-        </div>
-        <div className={styles.statusRight}>
-          {/* 三态：已保存 / 未保存（防抖期）/ 自动保存失败。
-              第三态不能并进前两态："还没存"会自己好，"存不进去"不会，必须提示手动重试。*/}
-          <span
-            className={`${styles.statusItem} ${autoSaveError ? styles.statusFailed : !isDirty ? styles.statusSaved : ""}`}
-            title={autoSaveError ? "自动保存写盘失败，改动还在编辑器里。请按 Ctrl+S 重试或另存为其他路径" : undefined}
-          >
-            {autoSaveError ? "● 自动保存失败 · Ctrl+S 重试" : isDirty ? "● 未保存" : "✓ 已保存"}
-          </span>
-          <span className={styles.statusItem}>
-            {spec.dynamicLanguage ? (languageName ?? "纯文本") : spec.label}
-          </span>
-        </div>
-      </div>
+      <EditorStatusBar
+        lines={stats.lines}
+        words={stats.words}
+        readMin={stats.readMin}
+        isDirty={isDirty}
+        isSaving={isSaving}
+        autoSaveError={autoSaveError}
+        typeLabel={spec.dynamicLanguage ? (languageName ?? "纯文本") : spec.label}
+        cursor={viewMode === "preview" ? null : cursor}
+        onSaveRetry={() => void handleSave()}
+      />
 
-      {/* Confirm Close Dialog */}
+      {/* 专注模式浮层 chrome（迷你工具栏/保存钉/toast；chrome 本体由 .focusMode CSS 隐藏） */}
+      {focusMode && (
+        <FocusChrome
+          icon={spec.icon}
+          fileName={fileName}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          autoSaveError={autoSaveError}
+          onSave={() => void handleSave()}
+          onExit={exitFocus}
+          toastVisible={toastVisible}
+        />
+      )}
+
+      {/* Confirm Close Dialog（守护-2：三选一，安全默认 = 返回编辑） */}
       {showConfirmClose && (
         <ConfirmDialog
           open={showConfirmClose}
-          title="有未保存的修改"
-          message="关闭前是否保存更改？"
+          title="还有未保存的修改"
+          message="如果现在关闭，这次编辑的内容将不会保留。"
           confirmText="保存并关闭"
-          cancelText="不保存"
+          cancelText="返回编辑"
+          extraText="不保存"
+          variant="warning"
           onConfirm={handleConfirmClose}
-          onCancel={() => { setShowConfirmClose(false); onClose(); }}
+          onExtra={() => { setShowConfirmClose(false); onClose(); }}
+          onCancel={() => setShowConfirmClose(false)}
         />
       )}
     </div>

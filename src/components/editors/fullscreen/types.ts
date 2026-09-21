@@ -47,10 +47,16 @@ export interface ExtensionCtx {
   insertPastedImages: (files: File[], view: EditorView) => void;
 }
 
-/** 视图模式按钮定义（工具栏切换器按此渲染） */
+/** 视图模式按钮定义（工具栏分段控件按此渲染） */
 export interface SpecMode {
   key: ViewMode;
+  /** tooltip 全称（悬停时展示，如「仅编辑」） */
   title: string;
+  /**
+   * 分段控件常驻文字（L2：图标必须有常驻标签，不能只靠 title）。
+   * 比 title 短，如「编辑」；csv/log 等自定义模式用它表达各自语义（「源码」「表格」）。
+   */
+  label: string;
   /** lucide 图标组件 */
   Icon: ComponentType<{ size?: number }>;
 }
@@ -65,9 +71,9 @@ export interface SpecMode {
  *   写两份则会在图标或文案改动时静默分歧，而那正是「操作习惯统一」要防的东西。
  */
 export const TRI_MODES: SpecMode[] = [
-  { key: "edit", title: "仅编辑", Icon: PanelLeft },
-  { key: "split", title: "分屏", Icon: Columns2 },
-  { key: "preview", title: "仅预览", Icon: Eye },
+  { key: "edit", title: "仅编辑", label: "编辑", Icon: PanelLeft },
+  { key: "split", title: "分屏", label: "分屏", Icon: Columns2 },
+  { key: "preview", title: "仅预览", label: "预览", Icon: Eye },
 ];
 
 /** 类型规格：描述一个内容类型在全屏外壳中的全部差异点 */
@@ -77,6 +83,14 @@ export interface FullscreenTypeSpec {
   icon: string;
   /** 状态栏类型标签 */
   label: string;
+  /**
+   * 编辑面板头文案（P0-2 面板身份，用户语言）。
+   * 不传时按「有无预览」派生：有预览 = `${label} 源文`（与预览面板对仗），无预览 = label。
+   * csv 显式给「CSV 源文」（「表格 源文」读不通）。
+   */
+  editorPaneLabel?: string;
+  /** 预览面板头主文案；不传 = 「预览」。markdown 给「排版预览」（稿子 P0-2）。 */
+  previewPaneLabel?: string;
   /** 新建文档默认名 */
   defaultFileName: string;
   /** 打开/另存为对话框文件过滤 */

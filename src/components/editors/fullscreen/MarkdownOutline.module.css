@@ -5,20 +5,44 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  /* 半透黑在亮色主题下几乎无层次，且会冲淡选中底。
-     用 text-muted 少量混入透明，暗/亮都跟主题走（不再写死 rgba(0,0,0,.12)）。 */
-  background: color-mix(in srgb, var(--text-muted, #888) 10%, transparent);
+  /* 2026-09-21 用户拍板方案 A：贴齐工作台层级（批次 1 的令牌体系）。
+     ❌ 旧实现 color-mix(text-muted 10%) 是拿**文字灰**当表面色——
+     不跟随主题表面层级，六主题下都是同一种灰蒙蒙的贴膜感。
+     现在用 --workbench-bg（凹层）对 --paper-bg（编辑纸面）：
+     纸面浮起、大纲凹下去，主次由令牌体系保证，六主题自动和谐。 */
+  border-right: 1px solid var(--status-border, var(--border-color, rgba(0, 0, 0, 0.08)));
+  background: var(--workbench-bg, color-mix(in srgb, var(--section-bg, #f2f4f8) 72%, var(--card-bg, #fff)));
 }
 
 .head {
   flex: 0 0 auto;
-  padding: 8px 12px 6px;
+  padding: 8px 12px 7px;
   font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--text-muted, #8fa3c4);
   -webkit-user-select: none;
   user-select: none;
+  /* 头部与列表的半透明分隔（同 --status-border 一个体系） */
+  border-bottom: 1px solid var(--status-border, transparent);
+}
+
+/* 细滚动条：默认几乎隐形，悬停面板时显形（4px，thumb 半透明） */
+.list {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.panel:hover .list {
+  scrollbar-color: var(--border-color, rgba(0, 0, 0, 0.12)) transparent;
+}
+.list::-webkit-scrollbar {
+  width: 4px;
+}
+.list::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: transparent;
+}
+.panel:hover .list::-webkit-scrollbar-thumb {
+  background: var(--border-color, rgba(0, 0, 0, 0.12));
 }
 
 .list {

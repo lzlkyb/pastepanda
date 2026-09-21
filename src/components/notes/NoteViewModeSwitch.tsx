@@ -76,7 +76,7 @@ export function NoteViewModeSwitch({
 
   return (
     <div className={styles.wrap} role="group" aria-label="视图形态">
-      {TRI_MODES.map(({ key, title, Icon }) => {
+      {TRI_MODES.map(({ key, title, label, Icon }) => {
         const off = key === "split" && splitDisabled;
         return (
           <button
@@ -89,7 +89,9 @@ export function NoteViewModeSwitch({
             aria-label={title}
             aria-pressed={value === key}
           >
+            {/* P0-1 对齐：图标 + 常驻文字（label 来自 TRI_MODES，同一份数据源） */}
             <Icon size={13} />
+            <span>{label}</span>
           </button>
         );
       })}

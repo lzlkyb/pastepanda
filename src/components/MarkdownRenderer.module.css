@@ -654,3 +654,15 @@
 .md :global(.md-mermaid-error .md-mermaid-raw) { display: block !important; }
 .md :global(.md-mermaid-error .md-mermaid-body) { display: none; }
 .md :global(.md-mermaid-error .md-mermaid-edit) { display: none; }
+
+/* Mermaid 渲染失败的持久提示（U3.5：不能只留裸源码让用户猜） */
+.md :global(.md-mermaid-fail-note) {
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: var(--warning-bg, color-mix(in srgb, #f59e0b 12%, transparent));
+  border: 1px solid var(--warning-border, transparent);
+  color: var(--warning, #b45309);
+  font-size: 12px;
+  line-height: 1.6;
+}

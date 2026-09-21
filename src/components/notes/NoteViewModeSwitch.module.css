@@ -17,12 +17,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  gap: 4px;
+  /* P0-1 对齐全屏编辑器：图标 + 常驻文字。
+     原先写死 width:24px 只装得下图标；改 min-width + padding 自适应文字。 */
+  min-width: 24px;
   height: 22px;
+  padding: 0 7px;
   border: none;
   border-radius: 5px;
   background: transparent;
   color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }

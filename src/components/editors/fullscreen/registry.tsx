@@ -77,6 +77,7 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     FormatBar: MarkdownFormatBar,
     Preview: MarkdownPreview,
     previewSubLabel: "实时渲染",
+    previewPaneLabel: "排版预览",
     scrollSync: true,
   },
 
@@ -116,7 +117,7 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     defaultFileName: "未命名.txt",
     fileFilter: { name: "所有文件", extensions: ["*"] },
     language: () => [],
-    modes: [{ key: "edit" as const, title: "仅编辑", Icon: PanelLeft }],
+    modes: [{ key: "edit" as const, title: "仅编辑", label: "编辑", Icon: PanelLeft }],
     defaultMode: "edit",
   },
 
@@ -124,12 +125,14 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     key: "csv",
     icon: "📊",
     label: "表格",
+    // 「表格 源文」读不通；编辑侧展示的就是 CSV 文本
+    editorPaneLabel: "CSV 源文",
     defaultFileName: "未命名.csv",
     fileFilter: { name: "CSV / TSV", extensions: ["csv", "tsv", "txt"] },
     language: () => [],
     modes: [
-      { key: "edit" as const, title: "编辑源码", Icon: PanelLeft },
-      { key: "preview" as const, title: "表格视图", Icon: Table },
+      { key: "edit" as const, title: "编辑源码", label: "源码", Icon: PanelLeft },
+      { key: "preview" as const, title: "表格视图", label: "表格", Icon: Table },
     ],
     defaultMode: "preview",
     Preview: CsvTablePreview,
@@ -145,9 +148,9 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     fileFilter: { name: "日志", extensions: ["log", "txt"] },
     language: () => [],
     modes: [
-      { key: "edit" as const, title: "编辑源码", Icon: PanelLeft },
-      { key: "split" as const, title: "分屏", Icon: Columns2 },
-      { key: "preview" as const, title: "日志视图", Icon: List },
+      { key: "edit" as const, title: "编辑源码", label: "源码", Icon: PanelLeft },
+      { key: "split" as const, title: "分屏", label: "分屏", Icon: Columns2 },
+      { key: "preview" as const, title: "日志视图", label: "日志", Icon: List },
     ],
     defaultMode: "preview",
     Preview: LogPreview,
@@ -164,7 +167,7 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     // 动态语言：不在此处挂载静态模式，外壳按 languageName 从 language-data 懒加载
     language: () => [],
     dynamicLanguage: true,
-    modes: [{ key: "edit" as const, title: "仅编辑", Icon: PanelLeft }],
+    modes: [{ key: "edit" as const, title: "仅编辑", label: "编辑", Icon: PanelLeft }],
     defaultMode: "edit",
     FormatBar: CodeFormatBar,
   },
@@ -178,7 +181,7 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     defaultFileName: "未命名.panda",
     fileFilter: { name: "PastePanda 流程图", extensions: ["panda"] },
     language: () => [],
-    modes: [{ key: "edit" as const, title: "仅编辑", Icon: PanelLeft }],
+    modes: [{ key: "edit" as const, title: "仅编辑", label: "编辑", Icon: PanelLeft }],
     defaultMode: "edit",
   },
 
@@ -191,7 +194,7 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     defaultFileName: "文本对比",
     fileFilter: { name: "所有文件", extensions: ["*"] },
     language: () => [],
-    modes: [{ key: "edit" as const, title: "仅编辑", Icon: PanelLeft }],
+    modes: [{ key: "edit" as const, title: "仅编辑", label: "编辑", Icon: PanelLeft }],
     defaultMode: "edit",
   },
 };

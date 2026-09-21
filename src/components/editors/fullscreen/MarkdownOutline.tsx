@@ -8,7 +8,7 @@
  * 否则仅预览/分屏时按 id 找预览节点会对不上。
  */
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { assignUniqueSlugs } from "@/lib/markdown/headingSlug";
 import styles from "./MarkdownOutline.module.css";
 
@@ -60,8 +60,34 @@ export function scanHeadings(src: string): OutlineHeading[] {
   return assignUniqueSlugs(raw).map((h, i) => ({ ...h, line: raw[i].line }));
 }
 
+// ─── 开关偏好持久化（用户拍板：记住上次状态，首次默认开） ─────────
+
+const OUTLINE_PREF_KEY = "md_outline_open";
+
+/** 读大纲开关偏好：无记录 → true（默认展示）；脏值按 false 容错 */
+export function readOutlinePref(): boolean {
+  try {
+    const raw = localStorage.getItem(OUTLINE_PREF_KEY);
+    if (raw === null) return true;
+    return raw === "1";
+  } catch {
+    return true;
+  }
+}
+
+export function writeOutlinePref(open: boolean): void {
+  try {
+    localStorage.setItem(OUTLINE_PREF_KEY, open ? "1" : "0");
+  } catch {
+    /* 存不了就只用当前会话，不为此打断写作 */
+  }
+}
+
 interface Props {
-  text: string;
+  /** 宿主扫好的标题（FullscreenEditor 持有，scrollspy 与本组件共用一份，避免重复扫描） */
+  headings: OutlineHeading[];
+  /** 当前节 slug：scrollspy 写入（useOutlineSpy），点击跳转也走它 —— 高亮与指示条随滚动走 */
+  activeSlug: string | null;
   /** 跳转到某条标题（行号 + slug，宿主按视图模式分派） */
   onJump: (heading: OutlineHeading) => void;
 }
@@ -69,10 +95,7 @@ interface Props {
 /** 按压反馈时长（U2 快档） */
 const PRESS_MS = 150;
 
-export function MarkdownOutline({ text, onJump }: Props) {
-  const headings = useMemo(() => scanHeadings(text), [text]);
-  /** 点选态：与触发同一可见性域（规则 15），否则用户以为点了没反应 */
-  const [activeSlug, setActiveSlug] = useState<string | null>(null);
+export function MarkdownOutline({ headings, activeSlug, onJump }: Props) {
   /** 刚点过的项：加 .itemPress 做 150ms 轻压，到点移除防连点堆积 */
   const [pressSlug, setPressSlug] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -84,18 +107,25 @@ export function MarkdownOutline({ text, onJump }: Props) {
     on: false,
   });
 
-  // 指示条跟随选中项：测量 offsetTop，避免每帧读布局
+  // 指示条跟随当前项 + 列表自动滚到可见（「内容滚动大纲跟着滚」的一半）。
+  // ❌ 不用 scrollIntoView：它会沿祖先链滚动一切可滚容器（可能连动外层面板），
+  // 手算本容器 scrollTop 最稳。
   useLayoutEffect(() => {
-    if (!activeSlug) {
+    const list = listRef.current;
+    const el = itemRefs.current.get(activeSlug ?? "");
+    if (!activeSlug || !list || !el) {
       setInd((p) => (p.on ? { ...p, on: false } : p));
       return;
     }
-    const list = listRef.current;
-    const el = itemRefs.current.get(activeSlug);
-    if (!list || !el) return;
     const top = el.offsetTop + 4;
     const height = Math.max(18, el.offsetHeight - 8);
     setInd({ top, height, on: true });
+    const margin = 8;
+    if (top - margin < list.scrollTop) {
+      list.scrollTop = top - margin;
+    } else if (top + height + margin > list.scrollTop + list.clientHeight) {
+      list.scrollTop = top + height + margin - list.clientHeight;
+    }
   }, [activeSlug, headings]);
 
   return (
@@ -123,7 +153,6 @@ export function MarkdownOutline({ text, onJump }: Props) {
                 activeSlug === h.slug ? ` ${styles.itemActive}` : ""
               }${pressSlug === h.slug ? ` ${styles.itemPress}` : ""}`}
               onClick={() => {
-                setActiveSlug(h.slug);
                 setPressSlug(h.slug);
                 window.setTimeout(() => {
                   setPressSlug((cur) => (cur === h.slug ? null : cur));

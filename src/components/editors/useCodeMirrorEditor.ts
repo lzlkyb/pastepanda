@@ -80,13 +80,18 @@ export interface CodeMirrorEditorOptions {
   onSave?: () => void;
   /** Mod-Shift-s。 */
   onSaveAs?: () => void;
+  /**
+   * B4 光标/选区变化（文档或选区变更时推送；行/列从 1 计）。
+   * 走 hostRef 现取口：宿主传 setState 即可，不必 useMemo 回调。
+   */
+  onCursorChange?: (info: { line: number; col: number; selLen: number }) => void;
 }
 
 export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
   const {
     initialText, ready, isDark, text,
     language, dynamicLanguage, insertPastedImages,
-    onDocChange, onSave, onSaveAs,
+    onDocChange, onSave, onSaveAs, onCursorChange,
   } = opts;
 
   const editorRef = useRef<HTMLDivElement>(null);
@@ -100,11 +105,12 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
    * 宿主回调的“现取”口。每次渲染重写——原因见文件头部那条硬规矩。
    * 注意 `initialText` 也在里面：它参与脏标记判定（由宿主算），不能冻。
    */
-  const hostRef = useRef({ onDocChange, onSave, onSaveAs, insertPastedImages, insertFormat: (_b: string, _a?: string) => {} });
+  const hostRef = useRef({ onDocChange, onSave, onSaveAs, onCursorChange, insertPastedImages, insertFormat: (_b: string, _a?: string) => {} });
   hostRef.current.onDocChange = onDocChange;
   hostRef.current.onSave = onSave;
   hostRef.current.onSaveAs = onSaveAs;
   hostRef.current.insertPastedImages = insertPastedImages;
+  hostRef.current.onCursorChange = onCursorChange;
 
   // ─── 编辑命令（全部只依赖 viewRef，所以依赖数组恒空）───
 
@@ -280,6 +286,16 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
       if (update.docChanged) {
         // 走 ref：直接用 onDocChange 会把初次渲染的那个闭包冻死
         hostRef.current.onDocChange?.(update.state.doc.toString());
+      }
+      // B4 光标/选区：文档或选区任一变化都重算（打字会同时动两者，去重交给宿主 setState 浅比较）
+      if (update.selectionSet || update.docChanged) {
+        const { main } = update.state.selection;
+        const line = update.state.doc.lineAt(main.head);
+        hostRef.current.onCursorChange?.({
+          line: line.number,
+          col: main.head - line.from + 1,
+          selLen: main.to - main.from,
+        });
       }
     });
 

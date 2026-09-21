@@ -117,6 +117,15 @@
   font-weight: 600;
   color: var(--text-primary, #1a1a1a);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* 🔴 文件名**永不收缩**（2026-09 工作台化 B1）。
+     原先没有 flex-shrink，默认 1 → 路径一长，被压短的先是文件名，
+     而文件名才是用户用来确认「我在编辑哪个文件」的唯一依据。
+     正确的主次：路径可省（它只用来区分同名文件），文件名不可省。 */
+  flex-shrink: 0;
+  /* 极端窄窗下的最后一道防线：真放不下时省略号，而不是把右侧按钮顶出去 */
+  min-width: 0;
 }
 
 .filePath {
@@ -125,6 +134,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* 可收缩的一方。min-width:0 是 flex 子项能真正收缩（让 ellipsis 生效）的前提：
+     只写 overflow:hidden 而不解除 min-width:auto，元素仍按内容撑开。 */
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .unsavedDot {
@@ -134,6 +147,10 @@
   background: var(--orange, #FF6B35);
   flex-shrink: 0;
   animation: pulse 1.5s infinite;
+  /* 紧贴文件名：toolbarLeft 的 gap 是 8px（给按钮组用的），
+     对这个小圆点太松，会看起来像一个独立元素而不是文件名的附属标记。
+     用负 margin 收成 4px。 */
+  margin-left: -4px;
 }
 
 @keyframes pulse {
@@ -212,6 +229,139 @@
   height: 20px;
   background: var(--border-color, rgba(0, 0, 0, 0.08));
   margin: 0 2px;
+}
+
+/* ─── 视图分段控件（P0-1）：图标 + 常驻文字，令牌六主题齐备 ─── */
+
+.viewSeg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--seg-bg);
+}
+
+.viewSegBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #555);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+.viewSegBtn:hover {
+  color: var(--text-primary, #1a1a1a);
+}
+
+.viewSegBtnOn {
+  /* 与 NoteViewModeSwitch 的分段形态一致：凹槽里浮起的当前项 */
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  color: var(--text-primary, #1a1a1a);
+}
+
+/* ─── 通用小型下拉菜单（工具栏 ⋯ / 格式栏菜单共用，DropdownMenu.tsx） ─── */
+
+.menuAnchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.menuTriggerActive {
+  background: var(--hover, rgba(0, 0, 0, 0.05));
+  color: var(--text-primary, #1a1a1a);
+}
+
+/* 浮层卡：--float-card-* 不透明令牌（规则 8.3，不用玻璃） */
+.menuPop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 208px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--float-card-bg, var(--card-bg, #fff));
+  border: 1px solid var(--float-card-border, var(--border-color, rgba(0, 0, 0, 0.1)));
+  box-shadow: var(--float-card-shadow, 0 8px 24px rgba(0, 0, 0, 0.14));
+  animation: menuIn 0.14s ease;
+}
+
+.menuPopLeft {
+  right: auto;
+  left: 0;
+}
+
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 「窗口动画」关闭（no-anim）时即时出现，与面板切换动画同策略 */
+:global(.no-anim) .menuPop {
+  animation: none;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary, #1a1a1a);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--hover, rgba(0, 0, 0, 0.05));
+}
+
+.menuItem:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menuItemIcon {
+  display: inline-flex;
+  color: var(--text-secondary, #555);
+}
+
+.menuItemLabel {
+  flex: 1;
+}
+
+/* kbd 常驻（L5）：快捷键是菜单条目的一部分，不藏进 tooltip */
+.menuItemKbd {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+  background: var(--section-bg, rgba(0, 0, 0, 0.03));
+  color: var(--text-muted, rgba(0, 0, 0, 0.45));
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.menuSep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-color, rgba(0, 0, 0, 0.08));
 }
 
 /* ─── 语言选择器（code 类型工具栏） ─── */
@@ -365,9 +515,12 @@
   background: var(--header-bg-start, #fff);
   border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.04));
   flex-shrink: 0;
-  /* 皮肤场景：内容层统一 z-1，压在 SkinScene（fixed z-0）之上 */
+  /* 这里不能用通用的 z-1：position+z-index 会创建层叠上下文，格式栏菜单
+     （.menuPop z-30）会被困在内部、对外只算第 1 层；DOM 在后的 .main（z-1）
+     会整层画在弹出菜单上面，点菜单项实际点到编辑器（=「点击失效」）。
+     与 .toolbar 同理给 30，高于画布内所有 chrome 层（最高 20）。 */
   position: relative;
-  z-index: 1;
+  z-index: 30;
 }
 
 .fmtBtn {
@@ -418,6 +571,34 @@
   background: var(--accent-light, rgba(0, 120, 212, 0.08));
   /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
   color: var(--accent-strong, #0078D4);
+}
+
+/* 格式栏菜单触发器（P0-5：「标题 ▾」带文字按钮，形态对齐 fmtBtnText） */
+.fmtMenuBtn {
+  height: 28px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #555);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.fmtMenuBtn:hover {
+  background: var(--accent-light, rgba(0, 120, 212, 0.08));
+  color: var(--accent-strong, #0078D4);
+}
+
+/* 格式栏菜单：条目少，浮层不用 208px 那么宽 */
+.fmtMenuPop {
+  min-width: 148px;
 }
 
 /* JSON 实时校验徽章（靠右对齐，胶囊形） */
@@ -709,6 +890,12 @@
 
 /* ─── Resize Handle ─── */
 
+.splitWrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
 .resizeHandle {
   width: 6px;
   background: transparent;
@@ -749,19 +936,43 @@
   justify-content: space-between;
   height: 28px;
   padding: 0 16px;
-  background: var(--version-badge-gradient, linear-gradient(135deg, #0078D4, #005A9E));
-  color: rgba(255, 255, 255, 0.85);
+  /* 中性表面（2026-09 工作台化）：原先是 --version-badge-gradient 蓝渐变底 + 白字，
+     那是「版本号徽章」的皮肤，被借来当状态栏底用。问题是它把状态栏变成一条
+     与内容无关的彩色带 —— 用户视线被反复拽走，且浅色主题下白字细看发虚。
+     改后与工具栏同属「外围 chrome」，用 --status-bg（比 --section-bg 略实）
+     + 上沿 1px 弱分隔线，把视觉重量还给正文。 */
+  background: var(--status-bg, var(--section-bg, #f0f4f8));
+  color: var(--text-muted, #627083);
+  box-shadow: 0 -1px 0 var(--status-border, var(--border-color, #e0e4eb));
   font-size: 11px;
   flex-shrink: 0;
   /* 皮肤场景：内容层统一 z-1，压在 SkinScene（fixed z-0）之上 */
   position: relative;
   z-index: 1;
+  /* 状态栏是纯读数区，选中文字没有意义，反而容易误拖 */
+  user-select: none;
 }
 
 .statusLeft, .statusRight {
   display: flex;
   align-items: center;
   gap: 16px;
+  /* 窄窗时让右侧保存态优先保住（见 .statusRight 的 flex-shrink:0） */
+  min-width: 0;
+}
+
+/* 🔴 右侧（保存态 + 类型）**永不收缩**：
+   规则 15 要求「反馈与触发同域可见」——保存触发在工具栏，反馈在这里。
+   窗口窄时宁可截掉左边的字数统计，也不能让「未保存 / 保存失败」消失；
+   那正是用户最需要看到它的一刻。 */
+.statusRight {
+  flex-shrink: 0;
+}
+
+/* 左侧是可牺牲的一侧：字数/行数窄窗里压缩、溢出省略 */
+.statusLeft {
+  flex-shrink: 1;
+  overflow: hidden;
 }
 
 .statusItem {
@@ -769,19 +980,63 @@
   align-items: center;
   gap: 4px;
   opacity: 0.8;
+  white-space: nowrap;
 }
 
-.statusSaved {
-  color: #a6e3a1;
-  opacity: 1;
-}
+/* 保存态升级：从「一行白字」改成**带色徽章**（2026-09 工作台化 P0-3）。
+   动机：原先三态共用同一个 .statusItem 外观，只靠文字和一个 ● 区分；
+   状态栏底色改中性后，纯文字态的强调度进一步下降。
+   徽章用**语义色三件套**（主色 + 底 + 描边），自带底色 → 在中性底上依然成立，
+   且「图形（圆点）+ 文字 + 颜色」三重编码，不只靠颜色辨认（色觉障碍友好）。
 
-/* 自动保存失败态：用语义色令牌 --danger，不用 --red-bg 那套色名。
-   opacity 拉满，否则跟旁边 0.8 的普通状态项混在一起看不出来。*/
-.statusFailed {
-  color: var(--danger, #d82525);
-  opacity: 1;
+   🔴 三态必须互斥、不可合并（规则 15）：见 EditorStatusBar.tsx 的注释 ——
+      「还没存」会自己好，「存不进去」不会，后者必须显式提示手动重试。 */
+.saveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
   font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  opacity: 1;
+}
+
+/* 圆点：用 currentColor，跟着语义色走，不额外定色值 */
+.saveBadgeDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.saveBadgeSaved {
+  color: var(--success, #15803d);
+  background: var(--success-bg, #dcfce7);
+  border-color: var(--success-border, #86efac);
+}
+
+.saveBadgeDirty {
+  color: var(--warning, #c54a0a);
+  background: var(--warning-bg, #fff7ed);
+  border-color: var(--warning-border, #fed7aa);
+}
+
+/* 「保存中…」过渡态（稿子 saving）：accent 配色但不加粗——转瞬即过，不与失败态抢重 */
+.saveBadgeSaving {
+  color: var(--accent-strong, #0078d4);
+  background: var(--accent-light, rgba(0, 120, 212, 0.08));
+  border-color: var(--accent-border, transparent);
+}
+
+.saveBadgeFailed {
+  color: var(--danger, #d82525);
+  background: var(--danger-bg, #fef2f2);
+  border-color: color-mix(in srgb, var(--danger, #d82525) 35%, transparent);
+  font-weight: 700;
 }
 
 /* ─── JSON 结构树预览（方案 B · 卡片化文档风）─── */
@@ -1564,4 +1819,228 @@
   color: var(--text-muted, #8a8f98);
   font-size: 12.5px;
   text-align: center;
+}
+
+/* ─── 专注模式（P1-3）：chrome 全隐藏 + 居中纸张 + 悬停唤出迷你工具栏 ───
+   隐藏走 CSS（.focusMode 挂在 overlay 根上），DOM 保持稳定——退出专注时
+   分屏比例 / 大纲开关 / 视图模式等状态原样恢复，不用 JS 存档回放。
+   例外：编辑面板 flex 被内联样式占用，只能在内联里裁决（见 tsx）；
+   大纲侧栏是另一份 CSS module，钩不到，用条件渲染。 */
+
+.focusMode .toolbar,
+.focusMode .formatBar,
+.focusMode .statusBar,
+.focusMode .editorPane .paneHeader,
+.focusMode .previewPane,
+.focusMode .resizeHandle {
+  display: none;
+}
+
+.focusMode .main {
+  justify-content: center;
+}
+
+.focusMode .splitWrap {
+  justify-content: center;
+}
+
+/* 专注纸张：编辑区微浮起，与背景拉开（稿子 V1：背景对比 > 边框） */
+.focusMode .editorPane {
+  margin: 28px 16px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 12px 32px rgba(15, 23, 42, 0.1);
+}
+
+.overlay[data-theme-mode="dark"] .focusMode .editorPane {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* 迷你工具栏：默认上滑藏起，悬停顶部热区滑出（300ms 面板档） */
+.focusTbHotzone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  z-index: 50;
+}
+
+.focusTb {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -110%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  background: var(--float-card-bg, var(--card-bg, #fff));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  border-radius: 0 0 12px 12px;
+  box-shadow: var(--float-card-shadow, 0 8px 24px rgba(0, 0, 0, 0.14));
+  transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+  z-index: 51;
+  white-space: nowrap;
+}
+
+.focusTbHotzone:hover ~ .focusTb,
+.focusTb:hover,
+.focusTb:focus-within {
+  transform: translate(-50%, 0);
+}
+
+.focusTb .fileIcon {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+  border-radius: 6px;
+}
+
+.focusTbName {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.focusTbExit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary, #555);
+  font-size: 11.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.focusTbExit:hover {
+  background: var(--hover, rgba(0, 0, 0, 0.05));
+  color: var(--text-primary, #1a1a1a);
+}
+
+.focusTbExit kbd {
+  font-family: inherit;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* 保存徽章常驻钉（规则 15：失败反馈不能被专注模式藏起来） */
+.focusSavePin {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 52;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.12));
+}
+
+/* 进入提示：延时自关，不是唯一出口线索（迷你工具栏热区才是常驻出口） */
+.focusToast {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--float-card-bg, var(--card-bg, #fff));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  box-shadow: var(--float-card-shadow, 0 8px 24px rgba(0, 0, 0, 0.14));
+  color: var(--text-secondary, #555);
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 6px 16px;
+  z-index: 52;
+  white-space: nowrap;
+}
+
+.focusToast kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin: 0 1px;
+  color: var(--text-muted);
+}
+
+/* ─── 预览错误态（守护-1 / U3.5）：渲染失败不能变空白页 ─── */
+
+.previewError {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 32px;
+}
+
+.previewErrorTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.previewErrorMsg {
+  margin: 0;
+  max-width: 480px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-secondary, #555);
+}
+
+.previewErrorActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.previewErrorBtnPrimary {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent, #0078d4);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.previewErrorBtn {
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary, #555);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.previewErrorBtnPrimary:hover { opacity: 0.9; }
+.previewErrorBtn:hover { background: var(--hover, rgba(0, 0, 0, 0.05)); }
+
+/* ─── B4：光标定位等宽数字（行/列跳动不挤相邻项）─── */
+.statusMono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── P0-3 细节：自动保存失败徽章可点重试（= Ctrl+S）───
+   仅失败态渲染为 button，这里做按钮默认样式重置，视觉与 span 徽章一致。 */
+.saveBadgeAsBtn {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.saveBadgeAsBtn:hover {
+  filter: brightness(1.06);
 }

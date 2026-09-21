@@ -289,6 +289,28 @@
   --input-bg: #f1f5f9;
   --dialog-bg: #fff;
   --section-bg: #f0f4f8;
+  /* ===== 全屏编辑器「工作台化」层级令牌（A+ 方案，2026-09）=====
+     目标层级：**皮肤只留在外围，工作区用高不透明实体面**。
+     全屏编辑器从「整窗透明玻璃」改成「外围留皮肤 + 中间一块实心工作区」，
+     于是需要四个「比 card-bg 更实、比 app-bg 更亮」的中性表面。
+
+     🔴 为什么不放 :root 统一派生：`--section-bg` **不在 `:root` 里**（只在各主题块），
+        而 CSS 自定义属性继承的是**已计算的值** —— `:root` 上派生出失效值后，
+        子元素不会拿自己作用域里的 --section-bg 重新求值。故必须逐主题写。
+     🔴 为什么不硬编码色值：这四档要跟主题走（深色主题下 workbench 必须比 card 暗），
+        用 color-mix 从 --section-bg / --card-bg 派生 → 六主题自动一致，
+        以后调「工作区再实一点」也只改这里的百分比。
+
+     --workbench-bg   工作区主背景（编辑区/预览区所在面的最底层）
+     --chrome-bg      工具栏/格式栏（半透，从它透出皮肤）
+     --paper-bg       预览纸张面（= card-bg，预览要读字，最实）
+     --status-bg      状态栏底（中性表面，替代原来的蓝渐变）
+     --status-border  状态栏上沿分隔线（比 border-color 弱，不抢视线） */
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
   --toggle-off-bg: #e2e8f0;
   /* 品牌 AI 上标（顶栏标识）：蓝 → 紫渐变的两个端点。
      **品牌色恒定，不跟主题变色**——它标的是产品身份，不是当前状态；
@@ -442,6 +464,12 @@
   --input-bg: #27272a;
   --dialog-bg: #18181b;
   --section-bg: #0f0f11;
+  /* 工作台层级令牌：派生式同 ocean，理由见 :root 处说明 */
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
   --toggle-off-bg: #3f3f46;
   /* 品牌 AI 上标：深色档（浅色档的值定义在 :root，深色主题在这里整体覆盖）。
      midnight 底极暗（#1C1832），这对值有 12:1 以上，宽裕。 */
@@ -552,6 +580,12 @@
   --input-bg: #f5f5f4;
   --dialog-bg: #fff;
   --section-bg: #ecfdf5;
+  /* 工作台层级令牌：派生式同 ocean，理由见 :root 处说明 */
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
   --toggle-off-bg: #d1d9d3;
   --toggle-off-label: #4a5750;
   --toggle-on-label: #fff;
@@ -654,6 +688,12 @@
   --input-bg: #fff0f6;
   --dialog-bg: #fff;
   --section-bg: #fff0f6;
+  /* 工作台层级令牌：派生式同 ocean，理由见 :root 处说明 */
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
   --toggle-off-bg: #f3d5e2;
   --toggle-off-label: #6e4557;
   --toggle-on-label: #fff;
@@ -756,6 +796,12 @@
   --input-bg: #fff4e6;
   --dialog-bg: #fff;
   --section-bg: #fff4e6;
+  /* 工作台层级令牌：派生式同 ocean，理由见 :root 处说明 */
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
   --toggle-off-bg: #efdcc6;
   --toggle-off-label: #6b5638;
   --toggle-on-label: #fff;
@@ -860,6 +906,12 @@
   --input-bg: #162b45;
   --dialog-bg: #0a1628;
   --section-bg: #081018;
+  /* 工作台层级令牌：派生式同 ocean，理由见 :root 处说明 */
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
   --toggle-off-bg: #1e3d60;
   /* 品牌 AI 上标：深色档。**本主题是两档里最紧的一个**——app-bg 顶部是
      #1E5A82，比 midnight 亮得多，浅色档那对压上去只有 2.6:1，必须整体提亮。

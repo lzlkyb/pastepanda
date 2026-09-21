@@ -14,6 +14,12 @@ interface ConfirmDialogProps {
   variant?: "danger" | "warning";
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * 可选的第三个动作（如关闭守卫的「不保存」——危险但有意为之的路径）。
+   * 排版在 取消 与 确认 之间。不传则维持原有两键形态，存量调用方零感知。
+   */
+  extraText?: string;
+  onExtra?: () => void;
 }
 
 export function ConfirmDialog({
@@ -25,6 +31,8 @@ export function ConfirmDialog({
   variant = "danger",
   onConfirm,
   onCancel,
+  extraText,
+  onExtra,
 }: ConfirmDialogProps) {
   const anim = useDialogAnim();
 
@@ -57,7 +65,7 @@ export function ConfirmDialog({
           className="dialog-backdrop z-confirm"
           onClick={onCancel}
         >
-          <FocusTrap>
+          <FocusTrap initialFocus="[data-autofocus]">
           <motion.div
             {...anim.panel}
             className="dialog-box w400"
@@ -84,9 +92,16 @@ export function ConfirmDialog({
             {/* Footer */}
             <div className="dialog-footer" style={{ justifyContent: "flex-end" }}>
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn-secondary" onClick={onCancel} autoFocus>
+                {/* 安全默认（守护-2）：取消是唯一不丢东西的路，默认焦点与 Esc 都归它。
+                    data-autofocus 供 FocusTrap 的 initialFocus 用——否则它会抢焦到头部 X。 */}
+                <button className="btn-secondary" onClick={onCancel} autoFocus data-autofocus>
                   {cancelText}
                 </button>
+                {extraText && onExtra && (
+                  <button className="btn-danger" onClick={onExtra}>
+                    {extraText}
+                  </button>
+                )}
                 <button
                   className={variant === "danger" ? "btn-danger" : "btn-primary"}
                   onClick={() => { onConfirm(); }}

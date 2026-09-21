@@ -377,10 +377,20 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
             if (cancelled) return;
             body.innerHTML = svg;
             b.classList.remove("md-mermaid-error");
+            // 渲染成功后撤掉失败提示（重试/主题切换会重新 renderAll）
+            b.querySelector<HTMLElement>(".md-mermaid-fail-note")?.remove();
           })
           .catch(() => {
             if (cancelled) return;
             b.classList.add("md-mermaid-error");
+            // 守护-1（U3.5）：失败不能只显示裸源码——持久告知发生了什么。
+            // 源码块已在 md-mermaid-error 下显示，其余内容不受影响。
+            if (!b.querySelector(".md-mermaid-fail-note")) {
+              const note = document.createElement("div");
+              note.className = "md-mermaid-fail-note";
+              note.textContent = "此图表语法无法渲染，已改显源码；文档其余部分不受影响。";
+              b.prepend(note);
+            }
             const pre = b.querySelector<HTMLElement>(".md-mermaid-raw");
             if (pre) pre.style.display = "";
             body.style.display = "none";
