@@ -1,0 +1,49 @@
+# 硬编类型协商探针（2026-09-21）。**独立工程，不进主仓库构建**。
+#
+# 目标：验证 `MF_E_INVALIDMEDIATYPE (0xC00D6D60)` 是不是
+# 「自造 NV12 输入类型缺 MF_MT_FRAME_RATE」造成的。
+#
+# 与 pastePanda 的 [profile.release] 一致，保证数字可比。
+[package]
+name = "rc-mft-type-probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_Media",
+    "Win32_Media_MediaFoundation",
+] }
+
+# 四个探针入口：
+#   cargo run --release --bin type   → main.rs（三种设法 A/B/C）
+#   cargo run --release --bin dump   → dump.rs（输入/输出子类型全貌）
+#   cargo run --release --bin e2e    → e2e.rs （顺序修正后端到端真编）
+#   cargo run --release --bin heal   → heal.rs（运行时流变化自愈验证）
+[[bin]]
+name = "type"
+path = "src/main.rs"
+
+[[bin]]
+name = "dump"
+path = "src/dump.rs"
+
+[[bin]]
+name = "e2e"
+path = "src/e2e.rs"
+
+[[bin]]
+name = "heal"
+path = "src/heal.rs"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+strip = "symbols"
+
+[[bin]]
+name = "pick"
+path = "src/pick.rs"

@@ -1,0 +1,36 @@
+# 远程控制编码链路探针（2026-09-21）。**独立工程，不进主仓库构建**。
+#
+# 为什么要它：真机日志显示「编码跑不满档位间隔（EMA 1175/100ms）」——
+# 单帧 1.18 秒，1fps。而 h264_gpu=false。需要实测回答三个问题：
+#   1. 本机到底枚举出哪些 H.264 编码 MFT？（硬编/软编/是否 D3D11-aware/在哪个适配器）
+#   2. 每台 MFT 的初始化与单帧编码真实耗时各是多少？
+#   3. 同样的 BGRA 帧走 JPEG 编码要多久？——1175ms 到底是编码慢还是抓屏慢？
+#
+# 教训来自 M3/M6：只扫静态符号就标 PASS 是自欺。这里**真的初始化、真的编码、真的计时**。
+
+[package]
+name = "rc-encode-probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Media",
+    "Win32_Media_MediaFoundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+anyhow = "1"
+
+# 与 pastePanda 的 [profile.release] 一致，否则量出来的数不可比。
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+strip = "symbols"
