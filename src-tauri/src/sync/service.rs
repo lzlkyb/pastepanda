@@ -641,6 +641,12 @@ async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
             let _ = ctx
                 .store
                 .device_mark_online(peer, mark_path(peer, r.path), now_ms());
+            // [SYNC-LEASE] 临时探针（2026-09-21 加，定窗口取值用，定完删）。
+            //   目的：`kbOnline.ts` 的 `ONLINE_STALE_MS`（现 90_000）是**推算**的
+            //   （按同步周期 30s ± 10s），不是实测。这里把两次「真续约」之间的
+            //   实际间隔打出来，用真机数据校正窗口。
+            //   ❗ 只读不写、只加一条日志，不影响任何行为。
+            crate::sync::lease_probe::record(peer, now_ms());
             log::info!(
                 "[Sync] 与 {} 同步完成：收 {} 篇 / 更新 {} 篇 / 删 {} 篇 / 冲突 {} 处 / {} 字节",
                 &peer[..8.min(peer.len())],

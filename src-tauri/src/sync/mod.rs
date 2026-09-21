@@ -33,6 +33,7 @@ pub mod hlc;
 pub mod identity;
 pub mod invite;
 pub mod join;
+pub mod lease_probe;
 pub mod path_kind;
 pub mod presence;
 pub mod service;

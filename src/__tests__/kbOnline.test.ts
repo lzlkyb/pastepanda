@@ -63,6 +63,46 @@ describe("知识库设备在线判据", () => {
     expect(isKbDeviceOnline(d, [], NOW)).toBe(true);
   });
 
+  /**
+   * 🔴 守卫：`conn_state` 与 `last_seen` 是 **AND**，缺一不可。
+   *
+   * 上面那条钉了「`conn_state=online` + `last_seen` 陈旧 ⇒ 离线」。
+   * 这里补的是**另一半**——`last_seen` 很新但 `conn_state` 说 offline。
+   *
+   * 为何必须钉住：`last_seen` **只由 `device_mark_online` 写**，而它只在
+   * `Synced` 分支调（即「这一拨真的同步成功了」）。`device_mark_offline`
+   * 刻意**不碰 `last_seen`**（见其 doc：语义是「最后一次在线是什么时候」）。
+   * 于是会出现「`last_seen` 很新、`conn_state=offline`」——那正是
+   * **设备刚被标离线、但上次在线时刻还留着**的正常状态，必须判离线。
+   *
+   * 危险改法：有人觉得「`last_seen` 才 1 秒前，肯定在线」，把
+   * `d.conn_state === "online"` 这一半删掉。后果是 `device_mark_offline`
+   * **彻底失效**——它写的 `conn_state` 再没人读，设备掉线后仍显示在线，
+   * 直到 `ONLINE_STALE_MS` 过期。那就退回了「状态位写了没用」的老毛病。
+   */
+  it("守卫：last_seen 很新但 conn_state=offline → 必须离线（AND 两半都在）", () => {
+    const d = dev({ conn_state: "offline", transport: "wan", last_seen: NOW - 1_000 });
+    expect(isKbDeviceOnline(d, [], NOW)).toBe(false);
+  });
+
+  // 另一半：`last_seen=0` 配 `conn_state=online` 也是离线（空时间戳不算接触过）。
+  it("守卫：conn_state=online 但 last_seen=0 → 必须离线", () => {
+    const d = dev({ conn_state: "online", transport: "wan", last_seen: 0 });
+    expect(isKbDeviceOnline(d, [], NOW)).toBe(false);
+  });
+
+  /**
+   * 🔴 守卫：组播是**独立于库**的第一证据，`conn_state` 说离线也照样在线。
+   *
+   * 这不是 bug 而是设计：presence 组播是**内存态**，压根不碰数据库——
+   * 组播听得见就证明同子网可达，比库里那个可能过期的行更硬。
+   * 删掉这条会让「刚开机、还没同步过第一拨」的局域网对端显示离线。
+   */
+  it("守卫：组播听得见时 conn_state=offline 也算在线", () => {
+    const d = dev({ conn_state: "offline", last_seen: 0 });
+    expect(isKbDeviceOnline(d, [d.node_id], NOW)).toBe(true);
+  });
+
   // 🔴 这条与改之前相反，是刻意的。改之前 transport 是猜的，所以宁可信组播；
   //    现在它是「上一次同步成功时数据实际走的那条路」，而组播只证明同子网可见。
   //    组播听得见、数据却在绕中继（AP 隔离挡了打洞但没挡组播）正是这个标签要
