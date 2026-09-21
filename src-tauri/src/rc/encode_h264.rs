@@ -4,14 +4,21 @@
 //!
 //! R5.B：profile 用 **High(100)**，level 随分辨率抬升（最高 5.1 覆盖 4K@30），
 //! 码率按宽查表。打开尺寸跟抓屏走，不再写死 1280×720。
+//!
+//! ⚠️ 2026-09-21 拆分：**MFT 选型与探测**（枚举/试编/媒体类型构造）已移到
+//! [`super::mft_pick`]；本文件只管「编码器怎么用」（open / encode / drain）。
+//! 两个文件的变更理由不同——前者随显卡与驱动演进，后者随 MF 协议演进。
 
 #![cfg(target_os = "windows")]
 
 use windows::core::Interface;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D};
 use windows::Win32::Media::MediaFoundation::*;
-use windows::Win32::System::Com::{
-    CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED,
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
+
+use super::mft_pick::{
+    adapter_luid_of, create_h264_mft, create_video_type, lock_buf, make_dxgi_sample, make_sample,
+    pack_ratio, pick_output_type,
 };
 
 /// H.264 High profile（MF_MT_MPEG2_PROFILE）。
@@ -207,7 +214,8 @@ pub fn ensure_mf_startup() -> Result<(), String> {
     }
 }
 
-fn mf_err(e: windows::core::Error) -> String {
+/// MF 错误码 → 可读字符串（`encode_h264` 与 `mft_pick` 共用）。
+pub(super) fn mf_err(e: windows::core::Error) -> String {
     format!("MF：{e}")
 }
 
@@ -294,30 +302,46 @@ impl MfH264Encoder {
                     .map_err(mf_err)?;
             }
 
-            let in_type = create_video_type(&MFVideoFormat_NV12, w, h)?;
+            // ⚠️ 2026-09-21 修正（探针 `probe/rc-mft-type` 实测）：
+            // **必须先 SetOutputType 再 SetInputType**。硬件 MFT 全是 async，
+            // 在设输出类型之前 `GetInputAvailableType` 返回 0 个类型
+            //（连遍历 24 次都拿不到 NV12），此时 SetInputType 必报
+            // `MF_E_INVALIDMEDIATYPE (0xC00D6D60)`。
+            // 原代码顺序反了 —— 这正是「硬编永远打不开、静默退回 JPEG」的根因。
+            //
+            // 🔴 另一条实测约束：**输出类型的第一次 SetOutputType 必须成功**。
+            // 自造一个 2560×1440 的 H.264 输出类型去设，NVIDIA MFT 直接报
+            // `MF_E_DXGI_UNSUPPORTED_DEVICE (0xC00D6D76)`；一旦失败，该 MFT
+            // **实例进入坏状态**，随后连正确的类型也设不上（干净进程里复现过）。
+            // 所以这里改为**先取 MFT 自己给出的可用类型、只改帧尺寸与码率**：
+            // 实测 2560×1440 下 30/30 帧成功、10.08ms/帧（99fps）；
+            // 1920×1080 下 7.15ms/帧（140fps）。
+            let out_type = pick_output_type(&transform, codec, w, h, fps, bitrate)
+                .or_else(|e| {
+                    log::warn!("[RC] 取 MFT 基准输出类型失败，退回自造：{e}");
+                    create_video_type(codec.mf_subtype(), w, h, fps)
+                })?;
+            transform.SetOutputType(0, &out_type, 0).map_err(mf_err)?;
+
+            let in_type = create_video_type(&MFVideoFormat_NV12, w, h, fps)?;
             transform.SetInputType(0, &in_type, 0).map_err(mf_err)?;
 
-            let out_type = create_video_type(codec.mf_subtype(), w, h)?;
-            out_type
-                .SetUINT32(&MF_MT_AVG_BITRATE, bitrate)
-                .map_err(mf_err)?;
-            out_type
-                .SetUINT64(&MF_MT_FRAME_RATE, pack_ratio(fps.max(1), 1))
-                .map_err(mf_err)?;
-            out_type
-                .SetUINT64(&MF_MT_FRAME_SIZE, pack_u32x2(w, h))
-                .map_err(mf_err)?;
-            // Q3：profile/level 标注只有 H.264 设——HEVC MFT 按默认 Main 出流，
-            // 强写 H.264 语义的 MF_MT_MPEG2_PROFILE/LEVEL 在部分 HEVC MFT 上会拒开。
-            if codec == VideoCodec::H264 {
-                out_type
-                    .SetUINT32(&MF_MT_MPEG2_PROFILE, H264_PROFILE_HIGH)
-                    .map_err(mf_err)?;
-                out_type
-                    .SetUINT32(&MF_MT_MPEG2_LEVEL, h264_level_for(w, h, fps))
-                    .map_err(mf_err)?;
+            // ⚠️ 硬编设完类型后会要求**流变化再协商**：SPS/PPS 在此时才定稿。
+            // 实测 NVIDIA 在此处抛 `MF_E_TRANSFORM_STREAM_CHANGE (0xC00D6D61)`，
+            // 按 `GetOutputAvailableType(0)` 重设一次即可；Intel 更晚（首帧的
+            // ProcessOutput 才抛），那一路由 `submit_and_collect` 兜。
+            for _ in 0..2 {
+                match transform.GetOutputAvailableType(0, 0) {
+                    Ok(mt) => {
+                        let _ = mt.SetUINT32(&MF_MT_AVG_BITRATE, bitrate);
+                        let _ = mt.SetUINT64(&MF_MT_FRAME_RATE, pack_ratio(fps.max(1), 1));
+                        if transform.SetOutputType(0, &mt, 0).is_ok() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
             }
-            transform.SetOutputType(0, &out_type, 0).map_err(mf_err)?;
 
             // P1：VideoProcessor 转换器（BGRA → NV12，显存内）
             let gpu_conv = match gpu {
@@ -460,6 +484,14 @@ impl MfH264Encoder {
     /// 异步 MFT 走事件协议：等 NeedInput → 喂 → 等 HaveOutput → 收。
     /// 任何等待都有上界（首帧 2s、之后 300ms）——超时报错让调用方回退 JPEG，
     /// 绝不卡死推流循环。
+    ///
+    /// ⚠️ 2026-09-21：**不加运行时流变化自愈**（探针 `probe/rc-mft-type` 实测）。
+    /// Intel QSV H.264 那台会在首帧的 ProcessOutput 抛
+    /// `MF_E_TRANSFORM_STREAM_CHANGE (0xC00D6D61)`，但实测**再协商也救不回来**：
+    /// 重设输出类型能成功，随后事件流彻底挂死（`NeedInput` 永不再来），
+    /// 重开全新实例同样如此 → 该 MFT 在 `MFT_ENUM_FLAG_HARDWARE` 下本身就不可用。
+    /// 正确处置是**让它走既有的失败计数**（`enc_fail_streak` → 熔断 → 退避重试），
+    /// 由调用方回退 JPEG；其余三台（NVENC H.264/HEVC、Intel H265）实测 6/6 帧稳定。
     fn submit_and_collect(&mut self, sample: IMFSample) -> Result<(), String> {
         unsafe {
             match self.events.clone() {
@@ -565,9 +597,18 @@ impl MfH264Encoder {
         match self.transform.ProcessOutput(0, &mut outs, &mut status) {
             Ok(()) => {}
             Err(e) if e.code() == MF_E_TRANSFORM_NEED_MORE_INPUT => return Ok(false),
-            Err(e) => return Err(format!("ProcessOutput：{e}")),
-        }
-        if let Some(sample) = outs[0].pSample.as_ref() {
+            Err(e) => {
+                // 探针（2026-09-21）：流变化是「这台 MFT 其实不可用」的特征错误
+                //（Intel QSV H.264 首帧必抛）。计一次数，收尾行就能回答
+                //「这场会话碰到过几次流变化」——不计数的话它只混在
+                // `enc_fail_streak` 里，看不出是同一类根因。
+                const MF_E_TRANSFORM_STREAM_CHANGE_CODE: i32 = 0xC00D6D61u32 as i32;
+                if e.code() == windows::core::HRESULT(MF_E_TRANSFORM_STREAM_CHANGE_CODE) {
+                    super::perf::bump_u32(&super::perf::counters::STREAM_CHANGE);
+                }
+                return Err(format!("ProcessOutput：{e}"));
+            }
+        }        if let Some(sample) = outs[0].pSample.as_ref() {
             if let Ok(buf) = sample.ConvertToContiguousBuffer() {
                 if let Ok(bytes) = lock_buf(&buf) {
                     let key = match sample.GetUINT32(&MFSampleExtension_CleanPoint) {
@@ -600,155 +641,6 @@ impl Drop for MfH264Encoder {
     }
 }
 
-/// 提取 D3D11 设备所在 DXGI 适配器的 LUID（打包成 u64：High<<32 | Low）。
-/// 提不到（异常驱动）返回 None，调用方退回「枚举第一个」的旧行为。
-fn adapter_luid_of(device: &ID3D11Device) -> Option<u64> {
-    use windows::Win32::Graphics::Dxgi::{IDXGIDevice, IDXGIAdapter};
-    unsafe {
-        let dxgi: IDXGIDevice = device.cast().ok()?;
-        let adapter: IDXGIAdapter = dxgi.GetAdapter().ok()?;
-        let desc = adapter.GetDesc().ok()?;
-        Some(((desc.AdapterLuid.HighPart as i64 as u64) << 32) | desc.AdapterLuid.LowPart as u64)
-    }
-}
-
-unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCodec) -> Result<IMFTransform, String> {
-    let in_info = MFT_REGISTER_TYPE_INFO {
-        guidMajorType: MFMediaType_Video,
-        guidSubtype: MFVideoFormat_NV12,
-    };
-    let out_info = MFT_REGISTER_TYPE_INFO {
-        guidMajorType: MFMediaType_Video,
-        guidSubtype: *codec.mf_subtype(),
-    };
-    let mut count = 0u32;
-    let mut acts: *mut Option<IMFActivate> = std::ptr::null_mut();
-    // 硬件 MFT 多为 async：不能只用 HARDWARE|SYNCMFT（会枚举 0 个掉进软编）
-    for flags in [
-        MFT_ENUM_FLAG_HARDWARE,
-        MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SYNCMFT,
-        MFT_ENUM_FLAG_ALL,
-    ] {
-        count = 0;
-        acts = std::ptr::null_mut();
-        let _ = MFTEnumEx(
-            MFT_CATEGORY_VIDEO_ENCODER,
-            flags,
-            Some(&in_info),
-            Some(&out_info),
-            &mut acts,
-            &mut count,
-        );
-        if count > 0 && !acts.is_null() {
-            break;
-        }
-    }
-    if count == 0 || acts.is_null() {
-        return Err(format!("无 {} MFT", codec.as_str()));
-    }
-    let slice = std::slice::from_raw_parts(acts, count as usize);
-    // 审查 M1：混合显卡上按适配器 LUID 挑 MFT（MFT_ENUM_ADAPTER_LUID，
-    // VT_UI8 = High<<32|Low）。属性读不到/没有匹配项 → 退回第一个（旧行为）。
-    let mut chosen: Option<IMFActivate> = None;
-    if let Some(want) = prefer_adapter {
-        for a in slice.iter().flatten() {
-            if let Ok(attrs) = a.GetUINT64(&MFT_ENUM_ADAPTER_LUID) {
-                if attrs == want {
-                    chosen = Some(a.clone());
-                    break;
-                }
-            }
-        }
-        if chosen.is_none() {
-            log::warn!("[RC] 没有 LUID 匹配的编码 MFT，退回枚举第一个（跨适配器可能失败）");
-        }
-    }
-    let first = chosen.or_else(|| slice[0].clone()).ok_or("MFT activate 为空")?;
-    CoTaskMemFree(Some(acts as _));
-    first
-        .ActivateObject::<IMFTransform>()
-        .map_err(|e| format!("ActivateObject：{e}"))
-}
-
-unsafe fn create_video_type(
-    subtype: &windows::core::GUID,
-    w: u32,
-    h: u32,
-) -> Result<IMFMediaType, String> {
-    let t = MFCreateMediaType().map_err(mf_err)?;
-    t.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
-        .map_err(mf_err)?;
-    t.SetGUID(&MF_MT_SUBTYPE, subtype).map_err(mf_err)?;
-    t.SetUINT32(&MF_MT_INTERLACE_MODE, 2).map_err(mf_err)?;
-    t.SetUINT64(&MF_MT_FRAME_SIZE, pack_u32x2(w, h))
-        .map_err(mf_err)?;
-    t.SetUINT64(&MF_MT_PIXEL_ASPECT_RATIO, pack_u32x2(1, 1))
-        .map_err(mf_err)?;
-    Ok(t)
-}
-
-fn pack_u32x2(a: u32, b: u32) -> u64 {
-    ((a as u64) << 32) | b as u64
-}
-
-fn pack_ratio(n: u32, d: u32) -> u64 {
-    pack_u32x2(n, d)
-}
-
-/// P1：把 NV12 GPU 纹理包装成编码器输入 sample（D3D11-aware MFT 用）。
-unsafe fn make_dxgi_sample(
-    tex: &ID3D11Texture2D,
-    idx: u64,
-    fps: u32,
-) -> Result<IMFSample, String> {
-    let iid = <ID3D11Texture2D as Interface>::IID;
-    let buf = MFCreateDXGISurfaceBuffer(&iid, tex, 0, false).map_err(mf_err)?;
-    let sample = MFCreateSample().map_err(mf_err)?;
-    sample.AddBuffer(&buf).map_err(mf_err)?;
-    let time = (idx * 10_000_000u64) / fps.max(1) as u64;
-    let dur = 10_000_000u64 / fps.max(1) as u64;
-    sample.SetSampleTime(time as i64).map_err(mf_err)?;
-    sample.SetSampleDuration(dur as i64).map_err(mf_err)?;
-    Ok(sample)
-}
-
-unsafe fn make_sample(nv12: &[u8], len: usize, idx: u64, fps: u32) -> Result<IMFSample, String> {
-    let buf = MFCreateMemoryBuffer(len as u32).map_err(mf_err)?;
-    {
-        let mut data: *mut u8 = std::ptr::null_mut();
-        let mut max = 0u32;
-        let mut cur = 0u32;
-        buf.Lock(&mut data, Some(&mut max), Some(&mut cur))
-            .map_err(mf_err)?;
-        if !data.is_null() {
-            std::ptr::copy_nonoverlapping(nv12.as_ptr(), data, len);
-        }
-        buf.SetCurrentLength(len as u32).map_err(mf_err)?;
-        buf.Unlock().map_err(mf_err)?;
-    }
-    let sample = MFCreateSample().map_err(mf_err)?;
-    sample.AddBuffer(&buf).map_err(mf_err)?;
-    let time = (idx * 10_000_000u64) / fps.max(1) as u64;
-    let dur = 10_000_000u64 / fps.max(1) as u64;
-    sample.SetSampleTime(time as i64).map_err(mf_err)?;
-    sample.SetSampleDuration(dur as i64).map_err(mf_err)?;
-    Ok(sample)
-}
-
-unsafe fn lock_buf(buf: &IMFMediaBuffer) -> Result<Vec<u8>, String> {
-    let mut data: *mut u8 = std::ptr::null_mut();
-    let mut max = 0u32;
-    let mut cur = 0u32;
-    buf.Lock(&mut data, Some(&mut max), Some(&mut cur))
-        .map_err(mf_err)?;
-    let n = if cur > 0 { cur as usize } else { max as usize };
-    let mut out = vec![0u8; n];
-    if !data.is_null() && n > 0 {
-        std::ptr::copy_nonoverlapping(data, out.as_mut_ptr(), n);
-    }
-    buf.Unlock().map_err(mf_err)?;
-    Ok(out)
-}
 
 fn to_annex_b(raw: &[u8]) -> Vec<u8> {
     if raw.len() >= 4 && raw[0] == 0 && raw[1] == 0 && raw[2] == 0 && raw[3] == 1 {

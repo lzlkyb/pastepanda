@@ -156,12 +156,22 @@ pub fn new_session_id(now_ms: i64) -> String {
     format!("rc-{}-{:08x}", now_ms, nanos)
 }
 
-/// `conn_state=online` 但 `last_seen` 多陈旧就不再算在线（毫秒）。
+/// `last_seen` 多陈旧就不再算在线（毫秒）。
 ///
-/// 对齐 kbOnline 量级：presence 15s 一喊、地址 STALE_MS=60s；
-/// 会话收口会 touch(true) 刷 last_seen。两分钟没动静就该显示离线。
-/// 兜的是**进程被杀 / 异常退出**后库里定格在 online 的假在线。
-pub const ONLINE_STALE_MS: i64 = 120_000;
+/// # 2026-09-21 从 120_000 收到 30_000（在线状态准确性修复）
+///
+/// 原值 120s 是「宽」的那头：它让**对端已关机**的设备在库里继续显示在线 2 分钟。
+/// 配合当时「`probe` 拨通就刷 `last_seen`」的行为，用户点一下刷新就能把窗口重新充满
+/// ——表现是「点一下就变在线」「打开页面状态不准」「一直显示在线」。
+///
+/// 🔴 30s 的依据：`last_seen` 现在**只由真实解除刷新**（真握手 / 会话建立 / 组播听见），
+/// 探测行为不再写入。所以这个窗口的含义变纯粹了——「最近 30 秒内确实接触过」。
+/// 组播 `STALE_MS`（60s）比它宽，是因为组播丢了还能靠下一轮补；这里是跨网唯一线索，
+/// 必须比组播更保守，宁可显示离线也不显示假在线。
+///
+/// 改这个数之前先想清楚：**调大 = 更多假在线，调小 = 更多假离线**，
+/// 在无中心服务器下两者不可兼得（见 `is_rc_online_for` 的说明）。
+pub const ONLINE_STALE_MS: i64 = 30_000;
 
 /// 设备可达性档位（比二值在线更诚实，见设计稿）。
 ///
@@ -211,13 +221,29 @@ pub fn rc_presence_level(
 
 /// 按 node_id 判定在线（纯函数，便于单测）。
 ///
-/// 三条证据，任一成立即在线：
+/// # 🔴 2026-09-21 重做：不再读 `conn_state`
+///
+/// 旧实现第三条证据是 `conn_state == "online" && last_seen 未过期`。问题在于
+/// `conn_state` 是一个**只写 online 从不写 offline 的状态位**（`rc_device_touch(x, false)`
+/// 在当时的代码里零调用点）——它一旦变真就永远为真，任何判定只要读它就必然产生假在线。
+///
+/// 现在判定**完全由证据实时推导**，不读任何可能过期的布尔位：
 /// 1. presence 组播听得见（局域网最强证据）；
-/// 2. 正在和它开会话（会话本身比 last_seen 更硬）；
-/// 3. 库里标过 online 且 last_seen 未过期（跨网 / 打洞 / 中继——组播听不见时唯一线索）。
+/// 2. 正在和它开会话（会话本身比时间戳更硬）；
+/// 3. `last_seen` 在 [`ONLINE_STALE_MS`] 内（跨网 / 打洞 / 中继——组播听不见时唯一线索）。
+///
+/// `conn_state` 参数**已删除**：留着它只会诱使调用方再读一次那个脏字段。
+/// 调用方（`commands/rc.rs`）拿本函数的返回值去填 `RcTargetDevice::conn_state`，
+/// 方向是「判定 → 展示」，不再是「存储 → 展示」。
+///
+/// ❗ 第 3 条的两个前提缺一不可，改动时别拆散：
+///
+/// - `last_seen` 只由**真接触**刷新（探测不再写它，见 `RcService::probe_peer`）；
+/// - 窗口是 30s 而不是 120s。
+///
+/// 少任何一条，「点一下就变在线」都会回来。
 pub fn is_rc_online_for(
     node_id: &str,
-    conn_state: &str,
     last_seen_ms: i64,
     live_ids: &std::collections::HashSet<String>,
     session_peer: Option<&str>,
@@ -229,7 +255,7 @@ pub fn is_rc_online_for(
     if session_peer == Some(node_id) {
         return true;
     }
-    conn_state == "online" && last_seen_ms > 0 && now_ms - last_seen_ms <= ONLINE_STALE_MS
+    last_seen_ms > 0 && now_ms - last_seen_ms <= ONLINE_STALE_MS
 }
 
 /// 活跃会话最长持续（毫秒）。超时后推流循环自动结束，避免无人值守挂死。
@@ -320,11 +346,19 @@ impl RcService {
                 end.rtt_max
             );
         }
-        // 🔴 会话结束 ≠ 对端关机。原来 touch(false) 会把 conn_state 打成 offline
-        // 且把 last_seen 清 0——只要开过一次远程，设备就永远显示离线，直到
-        // presence 再喊一嗓子或再成功连上一次。跨网/组播被拦时就再也好不了。
-        // 改为 touch(true)：刷新 last_seen、保持 online，由 stale 窗口自然过期。
-        let _ = self.store.rc_device_touch(&peer, true);
+        // 🔴 会话结束 → 标设备离线（2026-09-21 在线状态修复）。
+        //
+        // 这里的历史包袱值得记一笔，别再走回头路：
+        // - 最初调 `rc_device_touch(&peer, false)` → 它**顺带把 last_seen 清 0**，
+        //   于是「上次在线」永远显示不出来，且设备**永远离线**（跨网/组播被拦时
+        //   再也好不了）——这是第一个极端。
+        // - 为了修它改成 `touch(&peer, true)` → 于是只有写 online 没有写 offline，
+        //   `conn_state` 只置位不复位，产生**假在线**——这是第二个极端。
+        //
+        // 两个极端同源：`rc_device_touch(x, false)` 把「标离线」和「清 last_seen」
+        // 耦合成一个动作。现在拆开——用 `rc_device_mark_offline`（只动 conn_state）。
+        // 「上次在线：3 小时前」由 `last_seen` 保留，离线判定不再被它误导。
+        let _ = self.store.rc_device_mark_offline(&peer);
         // B-5：把这次**实测**的路径落到设备行，下次打开面板就能看到
         // 「上次走的是局域网直连」——而不是靠「有没有听到组播」去猜。
         // 空串（一条路都没通）会被 `rc_device_note_path` 忽略，不会抹掉上一次的实测值。

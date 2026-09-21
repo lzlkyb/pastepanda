@@ -12,6 +12,7 @@ pub mod file_state;
 pub mod file_transfer;
 pub mod history;
 pub mod inbound;
+pub mod inbound_tasks;
 pub mod input;
 pub mod join;
 pub mod jpeg;
@@ -19,6 +20,7 @@ pub mod link;
 pub mod net;
 pub mod notify;
 pub mod outbound;
+pub mod perf;
 pub mod pin;
 pub mod pressed;
 pub mod protocol;
@@ -37,6 +39,8 @@ pub mod dxgi;
 pub mod encode_h264;
 #[cfg(target_os = "windows")]
 pub mod gpu;
+#[cfg(target_os = "windows")]
+pub mod mft_pick;
 #[cfg(target_os = "windows")]
 pub mod vid_dgram;
 

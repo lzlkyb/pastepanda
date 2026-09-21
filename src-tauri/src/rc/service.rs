@@ -1822,7 +1822,20 @@ impl RcService {
     }
 
     /// 轻量探活：拨通即认为可达，立刻断开（不建会话、不发 Request）。
-    /// 成功则 `touch(true)` 刷 last_seen。给设备列表「按需探活」用。
+    ///
+    /// # 🔴 2026-09-21：本方法**不再写任何库状态**
+    ///
+    /// 旧实现拨通后 `rc_device_touch(peer, true)`——这是「在线状态不准」的主因之一：
+    /// - 探测结果是**「这一刻可达」的瞬时事实**，不是「在线」这个持久状态；
+    /// - 它写的 `last_seen` 语义是「最后一次**在线**是什么时候」，
+    ///   被探测刷新后，「上次在线：3 小时前」会变成「刚刚」，污染历史语义；
+    /// - 用户点一下刷新 → 所有能拨通的设备集体续命 → 表现为「点一下就变在线」。
+    ///
+    /// 现在的结果**只回传给调用方**（`probe_peers` 的 `HashMap` → IPC → 前端），
+    /// 由前端渲染成「本次探测可达」的**独立标记**，与在线状态分开显示。
+    ///
+    /// ❗ 别在这里"顺手"把 touch 加回来。在线状态的真源是三条证据
+    /// （见 `session::is_rc_online_for`），不是探测结果。
     pub async fn probe_peer(&self, peer: &str) -> Result<(), String> {
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("远程通道未启动".into());
@@ -1838,7 +1851,8 @@ impl RcService {
             .map_err(|e| format!("连不上：{}", e))?;
         // 探通立刻收：不占对端 accept 槽，也不进入 Request 流程
         conn.close(0u32.into(), b"probe");
-        let _ = self.store.rc_device_touch(peer, true);
+        // ❗ 到这里**故意什么库都不写**：探测是瞬时事实，不是在线状态。
+        //    写 last_seen 会污染「上次在线」语义并制造假在线（见上面 doc）。
         Ok(())
     }
 

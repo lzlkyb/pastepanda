@@ -28,14 +28,17 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use super::input::{
-    assert_control_allowed, current_cursor_shape, get_clipboard_text, inject, set_clipboard_text,
-};
+use super::input::{assert_control_allowed, get_clipboard_text, inject, set_clipboard_text};
 use super::input::{InputEvent, ScreenRegion};
 use super::encode_h264::VideoCodec;
-use super::protocol::{RcFrame, SessionPhase};
+use super::protocol::SessionPhase;
 use super::service::{RcService, CLIPBOARD_MAX_JSON_BYTES};
-use crate::sync::transport::{read_frame, write_frame};
+use crate::sync::transport::write_frame;
+
+// 后台任务与画面能力上报已拆到 `inbound_tasks.rs`（2026-09-21）；
+// 尺寸工具（primary/virtual_screen_size）也一并搬过去，这里通过下面的
+// `use` 把它们拉回来，调用点保持原样。
+use super::inbound_tasks::{primary_screen_size, send_caps_frame, virtual_screen_size};
 
 /// 输入提帧的最小帧间隔：取 min(档位间隔, 33ms)（普通档拖动上限 30fps），
 /// fps60 档 16ms → 上限 60fps、fps120 档 8ms → 上限 120fps。
@@ -45,54 +48,72 @@ const BOOST_GAP_MIN_MS: u64 = 16;
 
 /// 被控端推流任务。
 pub(super) struct InboundVideo {
-    svc: Arc<RcService>,
-    peer: String,
+    pub(super) svc: Arc<RcService>,
+    pub(super) peer: String,
     /// 任务启动时的会话 id；收口只认它。
-    my_id: String,
+    pub(super) my_id: String,
     /// 输入与画面共用的发送半流（对端收到的一切都从这里出去）。
-    send: Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
-    enc: Arc<std::sync::Mutex<super::video::EncoderState>>,
+    pub(super) send: Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
+    pub(super) enc: Arc<std::sync::Mutex<super::video::EncoderState>>,
     /// 本会话连接句柄：数据报读取（鼠标低延迟通道）与 QUIC stats 采样都要用。
-    conn: iroh::endpoint::Connection,
+    pub(super) conn: iroh::endpoint::Connection,
     #[cfg(target_os = "windows")]
-    dxgi: super::dxgi::DxgiPool,
+    pub(super) dxgi: super::dxgi::DxgiPool,
     /// R4 硬编会话；None = 不走硬编（配置 jpeg / 打不开）。
     #[cfg(target_os = "windows")]
-    h264: Option<super::encode_h264::H264SessionEncoder>,
+    pub(super) h264: Option<super::encode_h264::H264SessionEncoder>,
     /// P2-9：硬编连续失败计数。每次成功清零；连续 60 帧（~4s@15fps）失败
-    /// 说明编码器环境坏了（驱动卸载 / MFT 损坏），置 `h264 = None` 熔断——
-    /// 否则每帧都走「重开编码器 → 失败 → 回 JPEG」，重开本身每帧烧几百 ms。
+    /// 说明编码器环境坏了（驱动卸载 / MFT 损坏），暂停硬编走 JPEG。
+    /// ⚠️ 2026-09-21 起**不再是永久熔断**——见 `enc_retry_after`。
     #[cfg(target_os = "windows")]
-    enc_fail_streak: u32,
+    pub(super) enc_fail_streak: u32,
+    /// 硬编熔断的冷却截止时刻（None = 未熔断）。到期自动重开硬编，
+    /// 避免一次瞬态失败（分辨率切换 / 全屏 DRM / 显示器热插拔）把
+    /// 7ms/帧 的硬编一路丢到会话结束。
+    #[cfg(target_os = "windows")]
+    pub(super) enc_retry_after: Option<std::time::Instant>,
+    /// 重试退避秒数（首次 5s，每次熔断翻倍，上限 60s）。
+    #[cfg(target_os = "windows")]
+    pub(super) enc_retry_backoff: u64,
     /// P1：GPU 零拷贝路径已判定不可用（连续失败），本会话不再尝试。
     #[cfg(target_os = "windows")]
-    gpu_disabled: bool,
+    pub(super) gpu_disabled: bool,
     /// P2-1：视频数据报发送端（帧序号 + 分片 + XOR FEC）。
     #[cfg(target_os = "windows")]
-    dgram: super::vid_dgram::VidDgramSender,
+    pub(super) dgram: super::vid_dgram::VidDgramSender,
     /// 对端是否支持视频数据报（Request 帧能力位）。false = 旧版发起端：
     /// 它没有视频数据报读取任务，P 帧必须继续走可靠流，否则画面退化成
     /// 每秒一张关键帧的幻灯片。
-    peer_dgram: bool,
+    pub(super) peer_dgram: bool,
     /// 输入提帧信号：键鼠事件到达时 `notify_waiters`，推流循环提前醒。
-    input_boost: Arc<tokio::sync::Notify>,
+    pub(super) input_boost: Arc<tokio::sync::Notify>,
     /// 上一帧抓取起点（提帧限速用）。
-    last_frame_at: tokio::time::Instant,
+    pub(super) last_frame_at: tokio::time::Instant,
     /// 对端解码断链 → 请求下一帧强制 IDR（P0-2 弱网自愈）。
-    force_key: Arc<AtomicBool>,
+    pub(super) force_key: Arc<AtomicBool>,
     /// 最近一次发出的光标形状（变化才发）。
-    last_cursor: Option<&'static str>,
+    pub(super) last_cursor: Option<&'static str>,
     /// P1-7 自适应降频：档位间隔放大倍数（1~4）。编码持续跑不满档位间隔时翻倍。
-    pace_scale: u32,
+    pub(super) pace_scale: u32,
     /// 单圈工作量（抓帧+编码+发送）的指数平滑，ms。
-    work_ema_ms: u64,
+    pub(super) work_ema_ms: u64,
     /// Q8：**动帧**字节数 EMA——静止判定的稳定基线（静止时 P 帧几乎全是跳块，
     /// 极小）。只对判为「在动」的帧更新，静止期间不衰减。
-    motion_ema_bytes: u64,
+    pub(super) motion_ema_bytes: u64,
     /// Q8：画面进入静止的时刻（None = 非静止）。
-    static_since: Option<std::time::Instant>,
+    pub(super) static_since: Option<std::time::Instant>,
     /// Q8：本轮静止是否已做过 IDR 精修（画面再动才重新武装）。
-    static_refined: bool,
+    pub(super) static_refined: bool,
+    /// 诊断探针（2026-09-21）：分段耗时采样器 + 选型报告槽。
+    /// 纯旁路——任何统计失败都不影响推流（见 `perf` 模块头注释）。
+    pub(super) perf: super::perf::FrameStats,
+    /// 探针暂存：本圈各分段耗时（抓屏/编码/发送，ms）与是否真的推出了一帧。
+    /// 由 `try_hardware_path` / `jpeg_path` 填，`run` 在圈末一次性喂给 `perf`。
+    ///
+    /// 为什么用暂存而不是让两条路径直接调 `note_frame`：一份耗时同时服务
+    /// 「H.264 硬编 / JPEG 兜底」两条路径、且「抓到帧」与「没抓到（屏幕未变）」
+    /// 要区分——只在一个地方收口判定，比散在两处各写一遍少一个出错点。
+    pub(super) perf_last: super::perf::FrameTiming,
 }
 
 /// 一圈推流的走向。命名决策替代三层嵌套 match。
@@ -174,6 +195,10 @@ impl InboundVideo {
             #[cfg(target_os = "windows")]
             enc_fail_streak: 0,
             #[cfg(target_os = "windows")]
+            enc_retry_after: None,
+            #[cfg(target_os = "windows")]
+            enc_retry_backoff: 5,
+            #[cfg(target_os = "windows")]
             gpu_disabled: false,
             #[cfg(target_os = "windows")]
             dgram: super::vid_dgram::VidDgramSender::new(),
@@ -188,6 +213,8 @@ impl InboundVideo {
             motion_ema_bytes: 0,
             static_since: None,
             static_refined: false,
+            perf: super::perf::FrameStats::new(),
+            perf_last: super::perf::FrameTiming::idle(),
         })
     }
 
@@ -253,264 +280,68 @@ impl InboundVideo {
         });
     }
 
-    /// P0-3：数据报读取任务——发起端的鼠标移动走 QUIC 不可靠数据报
-    /// （绝对坐标 latest-wins，丢包被下一帧校正；按键/滚轮仍在可靠流）。
-    /// 视频大帧把可靠流堵住时，鼠标依然每一拍都进得来。
-    fn spawn_datagram_reader(&self) {
-        let svc = self.svc.clone();
-        let peer = self.peer.clone();
-        let send = self.send.clone();
-        let boost = self.input_boost.clone();
-        let conn = self.conn.clone();
-        tauri::async_runtime::spawn(async move {
-            loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
-                    break;
-                }
-                // P0-1 B5：`read_datagram` 没有超时语义——会话结束后若连接还活着
-                //（对端没关 / QUIC 空闲超时未到），这个任务会一直挂着 conn 克隆。
-                // 用 500ms 一拍的会话检查把退出变成有界的。
-                let bytes = tokio::select! {
-                    r = conn.read_datagram() => match r {
-                        Ok(b) => b,
-                        Err(_) => break,
-                    },
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => continue,
-                };
-                if let Ok(ev) = serde_json::from_slice::<InputEvent>(&bytes) {
-                    svc.touch_activity();
-                    // 数据报只承载鼠标移动；提帧与可靠流同款语义
-                    boost.notify_waiters();
-                    handle_inbound_input(&svc, &peer, ev, &send).await;
-                }
-            }
-            // 数据报通道断开不单独收口会话：输入半流的断开兜底（连接级）
-        });
-    }
-
-    /// G3：音频任务。对端申请了系统声音时启动：采集 worker（独立线程，
-    /// WASAPI 环回 + 收件箱 AAC）→ 通道 → 本任务把包写进**专用 QUIC 单向流**
-    ///（与视频可靠流分属不同流，互不队头阻塞）。会话中静音/恢复由 wanted
-    /// 标志驱动：停时关采集、关流；恢复时 worker 重发 Cfg → 开新流，
-    /// 发起端的 accept 循环天然承接「一条流结束了、又来一条」。
-    #[cfg(target_os = "windows")]
-    fn spawn_audio_task(&self) {
-        use std::sync::atomic::AtomicBool;
-        if !self.svc.audio_peer_wants() {
-            return;
-        }
-        let svc = self.svc.clone();
-        let peer = self.peer.clone();
-        let conn = self.conn.clone();
-        tauri::async_runtime::spawn(async move {
-            let (tx, mut rx) =
-                tokio::sync::mpsc::unbounded_channel::<super::audio::AudioOut>();
-            let mut worker: Option<super::audio::AudioWorker> = None;
-            let wanted_flag = Arc::new(AtomicBool::new(false));
-            let mut stream: Option<iroh::endpoint::SendStream> = None;
-            // 当前流头写过的 Cfg（P2-7）：设备切换/编码器重开会送来新 Cfg——
-            // 格式变了必须换新流（对端按流头重建解码器）；裸包流会被对端
-            // 判成「非音频流」整条丢弃。
-            let mut stream_cfg: Option<super::audio::AudioCfg> = None;
-            loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
-                    break;
-                }
-                let wanted = svc.audio_wanted();
-                wanted_flag.store(wanted, std::sync::atomic::Ordering::SeqCst);
-                if !wanted {
-                    // 停采集 + 关流；对端读到 EOF 回 accept 循环等新流
-                    if let Some(w) = worker.as_mut() {
-                        w.stop();
-                    }
-                    worker = None;
-                    stream = None;
-                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                    continue;
-                }
-                if worker.is_none() {
-                    worker =
-                        Some(super::audio::AudioWorker::start(wanted_flag.clone(), tx.clone()));
-                }
-                let msg = tokio::select! {
-                    m = rx.recv() => match m {
-                        Some(m) => m,
-                        None => break,
-                    },
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(400)) => continue,
-                };
-                match msg {
-                    super::audio::AudioOut::Cfg(cfg) => {
-                        // 没流 / 格式变了（设备切换、编码器重开）→ 开新流并先写流头。
-                        // 同格式重复的 Cfg 忽略（头已写过，别把头塞进包序列中间）。
-                        if stream.is_none() || stream_cfg.as_ref() != Some(&cfg) {
-                            // 显式弃旧流（drop 让对端读到 EOF 回 accept 循环等新流）
-                            drop(stream.take());
-                            stream = conn.open_uni().await.ok();
-                            if let Some(s) = stream.as_mut() {
-                                let header = super::audio::encode_stream_header(&cfg);
-                                if s.write_all(&header).await.is_err() {
-                                    stream = None;
-                                    stream_cfg = None;
-                                } else {
-                                    stream_cfg = Some(cfg);
-                                }
-                            }
-                        }
-                    }
-                    super::audio::AudioOut::Pkt { pts_ms, data } => {
-                        if stream.is_none() {
-                            // P2-7：重建流必须先补流头——原先只在 Cfg 消息时写头，
-                            // 头那次 write 失败后，后续裸包流会被对端判成
-                            // 「非音频流」整条丢弃，本场会话永久无声。
-                            // 没有 stream_cfg 时只能丢包（还没拿到过格式）。
-                            if let Some(cfg) = stream_cfg.clone() {
-                                stream = conn.open_uni().await.ok();
-                                if let Some(s) = stream.as_mut() {
-                                    let header = super::audio::encode_stream_header(&cfg);
-                                    if s.write_all(&header).await.is_err() {
-                                        stream = None;
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(s) = stream.as_mut() {
-                            let pkt = super::audio::encode_packet(pts_ms, &data);
-                            if s.write_all(&pkt).await.is_err() {
-                                stream = None;
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(w) = worker.as_ref() {
-                w.stop();
-            }
-        });
-    }
-
-    /// P0-4：QUIC stats 采样——被控端**本端**的 RTT / 丢包率，每 500ms 喂给码控。
-    /// 丢包按窗口增量算（‰）并做指数平滑；窗口内没有新包就不更新（保留旧值）。
-    fn spawn_stats_sampler(&self) {
-        let svc = self.svc.clone();
-        let peer = self.peer.clone();
-        let conn = self.conn.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut prev: Option<(u64, u64)> = None;
-            let mut ema_permille: u64 = 0;
-            let mut has_ema = false;
-            loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                let st = conn.stats();
-                // iroh 的 ConnectionStats 是连接级扁平计数：丢包分母用发出的
-                // UDP 包数（udp_tx.datagrams），RTT 走 conn.rtt(初始路径)
-                let (lost, sent) = (st.lost_packets, st.udp_tx.datagrams);
-                let sample: i64 = match prev {
-                    Some((pl, ps)) if sent > ps => {
-                        let d_sent = sent - ps;
-                        let d_lost = lost.saturating_sub(pl);
-                        let pm = d_lost * 1000 / d_sent.max(1);
-                        // 指数平滑：单窗口抖动别直接打到码控上
-                        let next = if has_ema {
-                            (ema_permille * 7 + pm * 3) / 10
-                        } else {
-                            pm
-                        };
-                        has_ema = true;
-                        ema_permille = next;
-                        ema_permille as i64
-                    }
-                    _ => -1,
-                };
-                prev = Some((lost, sent));
-                let rtt = conn
-                    .rtt(iroh::endpoint::PathId::ZERO)
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                svc.note_stream_health(rtt, sample);
-            }
-        });
-    }
-
-    /// P1-6：光标形状变化时发一条控制帧（每圈比对一次，变化才发）。
-    async fn maybe_send_cursor(&mut self) {
-        let shape = current_cursor_shape();
-        let s = shape.as_str();
-        if self.last_cursor == Some(s) {
-            return;
-        }
-        self.last_cursor = Some(s);
-        let msg = serde_json::json!({ "t": "cursor", "s": s });
-        if let Ok(b) = serde_json::to_vec(&msg) {
-            let mut guard = self.send.lock().await;
-            let _ = write_frame(&mut guard, &b).await;
-        }
-    }    /// 输入读取任务：End 帧收口；其余解成 InputEvent，心跳回 pong，其它交
-    /// `handle_inbound_input`。半流断开同样收口（对端崩溃 / 网络断）。
+    /// 探针（2026-09-21）：组装汇总行的运行时上下文——档位 / 节奏 / 实际管线。
     ///
-    /// 🔴 任何键鼠事件都先 `notify_waiters` 提帧：让推流循环立刻醒过来抓一帧，
-    /// 拖动窗口时画面跟着输入走，而不是等下一档位间隔。
-    fn spawn_input_reader(&self, mut recv: iroh::endpoint::RecvStream) {
-        let svc = self.svc.clone();
-        let peer = self.peer.clone();
-        let send = self.send.clone();
-        let my_id = self.my_id.clone();
-        let boost = self.input_boost.clone();
-        let force_key = self.force_key.clone();
-        tauri::async_runtime::spawn(async move {
-            loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
-                    break;
-                }
-                // P0-1 B5：与数据报读取同款有界退出——read_frame 无超时，
-                // 连接悬着时这个任务会陪着挂到 QUIC 空闲超时。
-                let bytes = tokio::select! {
-                    r = read_frame(&mut recv) => match r {
-                        Ok(b) => b,
-                        Err(_) => break,
-                    },
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => continue,
-                };
-                // 发起端结束会话：End 帧与 InputEvent 同半流
-                if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {
-                    log::info!("[RC] 对端结束会话：{reason}");
-                    svc.force_end_if_session(&my_id, &reason).await;
-                    break;
-                }
-                if let Ok(ev) = serde_json::from_slice::<InputEvent>(&bytes) {
-                    // 任意输入/心跳都算活跃
-                    svc.touch_activity();
-                    if let InputEvent::Ping { ts } = &ev {
-                        // 回 pong，发起端测 RTT；hts = 本机时钟（epoch ms），
-                        // 发起端据此算两机时钟偏差——「画面延迟」显示才有意义
-                        //（P0-1 A3：跨机时钟偏差会污染帧龄）
-                        let msg = serde_json::json!({
-                            "t": "pong",
-                            "ts": ts,
-                            "hts": super::service::now_ms(),
-                        });
-                        if let Ok(b) = serde_json::to_vec(&msg) {
-                            let mut guard = send.lock().await;
-                            let _ = write_frame(&mut guard, &b).await;
-                        }
-                    } else if matches!(ev, InputEvent::RequestKey) {
-                        // P0-2：解码断链请求关键帧——只立标志，推流循环
-                        // 下一帧前对编码器 ForceKeyFrame
-                        force_key.store(true, Ordering::SeqCst);
-                    } else {
-                        // 输入提帧：注入前就唤醒（DXGI 的 AcquireNextFrame
-                        // 等待窗口正好覆盖注入生效所需的几毫秒）
-                        boost.notify_waiters();
-                        handle_inbound_input(&svc, &peer, ev, &send).await;
-                    }
-                }
+    /// `pipeline` 取「本圈实际走的路径」而不是「期望走的路径」：
+    /// `perf_last.produced` + `self.h264.is_some()` 才能区分
+    /// 「H.264 出了帧」和「硬编开着但这帧其实回退了 JPEG」——后者正是
+    /// 排查时要抓的（日志里 `管线 JPEG` 却挂着 `h264_gpu: true` 就是它）。
+    fn perf_extra(
+        &self,
+        opts: &super::stream_cfg::StreamOpts,
+        interval: u64,
+    ) -> super::perf::ReportExtra {
+        let pipeline = if !self.perf_last.produced {
+            "空转".to_string()
+        } else if self.h264.is_some() {
+            // 编码标准取自编码器本体（HEVC 可能已回落 H.264）
+            let std = self
+                .h264
+                .as_ref()
+                .map(|e| e.codec().as_str().to_uppercase())
+                .unwrap_or_else(|| "?".into());
+            // GPU 模式不好从外面读（`gpu_mode` 私有）——但 `gpu_disabled`
+            // 能区分「零拷贝可用」与「已判死回落 CPU」，够诊断用了。
+            if self.gpu_disabled {
+                format!("{std}-CPU（零拷贝已判死）")
+            } else {
+                std
             }
-            // 输入半流断了：会话也要收口（对端崩溃 / 网络断）
-            svc.force_end_if_session(&my_id, "控制通道断开").await;
-        });
+        } else {
+            "JPEG".to_string()
+        };
+        let active_quality = if self.svc.auto_enabled() {
+            self.svc.auto_tier_name()
+        } else {
+            String::new()
+        };
+        super::perf::ReportExtra {
+            profile: super::perf::profile_name(&opts.profile),
+            interval_ms: interval,
+            pace_scale: self.pace_scale,
+            pipeline,
+            active_quality,
+            pick: None,
+        }
+    }
+
+    /// 收尾行的上下文。档位取自**最后一次快照**（会话参数在结束时已不可靠）。
+    fn perf_extra_last(&self) -> super::perf::ReportExtra {
+        let opts = self.svc.stream_opts_snapshot();
+        let interval = opts.profile.interval_ms;
+        // 收尾时 `perf_last` 可能停在最后一个空转圈 → 别让它把管线谎报成「空转」
+        let mut extra = self.perf_extra(&opts, interval);
+        if extra.pipeline == "空转" {
+            extra.pipeline = if self.h264.is_some() {
+                self.h264
+                    .as_ref()
+                    .map(|e| e.codec().as_str().to_uppercase())
+                    .unwrap_or_else(|| "H264".into())
+            } else {
+                "JPEG".to_string()
+            };
+        }
+        extra
     }
 
     /// R6 硬编路径：主屏 / 指定单屏 / 虚拟屏都走 DXGI + H.264；仅强制 JPEG 时回退。
@@ -519,6 +350,21 @@ impl InboundVideo {
     async fn try_hardware_path(&mut self, opts: &super::stream_cfg::StreamOpts) -> Step {
         #[cfg(target_os = "windows")]
         {
+            // 硬编熔断冷却期满 → 自动重开一次（2026-09-21）。
+            // 放在入口、而不是埋在「本帧编码失败」分支里：那个分支每帧都会进，
+            // 且开编码器要几百 ms，在那里重开会把推流拖垮。
+            if self.h264.is_none() {
+                if let Some(t) = self.enc_retry_after {
+                    if std::time::Instant::now() >= t {
+                        log::info!("[RC] 硬编熔断冷却期满，尝试重新启用");
+                        self.h264 = Self::open_h264(&self.svc, opts.virtual_screen);
+                        self.enc_fail_streak = 0;
+                        self.enc_retry_after = None;
+                        // 退避翻倍（上限 60s）：坏环境里别把 CPU 烧在反复重开上
+                        self.enc_retry_backoff = (self.enc_retry_backoff * 2).min(60);
+                    }
+                }
+            }
             let Some(henc) = self.h264.as_mut() else {
                 return Step::FallThrough;
             };
@@ -620,23 +466,53 @@ impl InboundVideo {
                         }
                         Err(e) => {
                             // P2-9：连续失败熔断——每帧重开编码器的代价比「画质
-                            // 降级到 JPEG」高得多，烧到会话结束更不划算。
+                            // 降级到 JPEG」高得多。
+                            // ⚠️ 2026-09-21 修正：过去熔断是**整场会话永久**的
+                            // （`h264 = None` 后再没机会回硬编）。但硬编失败常常是
+                            // **瞬态**的（分辨率切换 / 显示器热插拔 / 全屏切换），
+                            // 永久放弃等于把 7ms/帧 的硬编一路白丢到会话结束。
+                            // 现改为**带冷却的自动重试**：熔断时按老做法置
+                            // `h264 = None`（停止每帧重开编码器），记下冷却截止；
+                            // 冷却期内稳定走 JPEG，期满自动 `open_h264` 重试一次。
+                            // 退避 5s → 10s → 20s → 40s → 60s（上限），
+                            // 避免在坏环境里反复重开把 CPU 烧光。
                             self.enc_fail_streak = self.enc_fail_streak.saturating_add(1);
                             if self.enc_fail_streak >= 60 {
-                                log::error!(
-                                    "[RC] 硬编连续 {} 帧失败，本会话熔断硬编改走 JPEG：{e}",
+                                if self.enc_retry_after.is_none() {
+                                    log::warn!(
+                                        "[RC] 硬编连续 {} 帧失败，暂停硬编走 JPEG；{}s 后自动重试：{e}",
+                                        self.enc_fail_streak,
+                                        self.enc_retry_backoff
+                                    );
+                                    self.enc_retry_after = Some(
+                                        std::time::Instant::now()
+                                            + std::time::Duration::from_secs(self.enc_retry_backoff),
+                                    );
+                                    // 真正的熔断动作：停掉每帧重开编码器
+                                    self.h264 = None;
+                                    // 探针：熔断次数（收尾行会带上）
+                                    super::perf::bump_u32(&super::perf::counters::ENC_FUSE);
+                                }
+                                // 冷却是「暂停」不是「永久放弃」——但重开**不能在这里**：
+                                // 本分支每帧都会进，且开编码器要几百 ms，必须等
+                                // 冷却期满后再由下面的独立判断处理。
+                            } else {
+                                log::debug!(
+                                    "[RC] 视频编码失败（第 {} 帧），本帧回退 JPEG：{e}",
                                     self.enc_fail_streak
                                 );
-                                self.h264 = None;
-                            } else {
-                                log::debug!("[RC] 视频编码失败（第 {} 帧），本帧回退 JPEG：{e}", self.enc_fail_streak);
                             }
                             Step::FallThrough
                         }
                     }
                 }
                 Ok(None) => Step::Sleep,
-                Err(_) => Step::FallThrough,
+                Err(_) => {
+                    // 探针：抓屏失败计数（`grab` 返回 Err 而非 Ok(None)——后者是
+                    // 「屏幕没变」的正常空转，混为一谈会看不出真实故障）
+                    super::perf::bump(&super::perf::counters::CAPTURE_FAIL);
+                    Step::FallThrough
+                }
             }
         }
         #[cfg(not(target_os = "windows"))]
@@ -664,6 +540,14 @@ impl InboundVideo {
         if pkts.is_empty() {
             return Step::Sleep;
         }
+        // 探针：H.264 路径出了帧。发送耗时在最后统一算——
+        // 关键帧走可靠流、P 帧走数据报，两条路的 send 都要计入。
+        let send_t0 = std::time::Instant::now();
+        self.perf_last = super::perf::FrameTiming::produced(
+            cap_ms as u64,
+            enc_ms as u64,
+            None, // 结尾补上真实发送耗时
+        );
         // Q3：编码标准取自编码器本体（HEVC 打不开自动回落 H.264 时，同帧起即换）
         let hevc = self
             .h264
@@ -749,6 +633,9 @@ impl InboundVideo {
                 }
             }
         }
+        // 探针：补上真实发送耗时（上面循环里两种发送方式各自计时不划算，
+        // 这里统一取整段时长——诊断要的是「发送这一段占了多少预算」）
+        self.perf_last.send_ms = Some(send_t0.elapsed().as_millis() as u64);
         Step::Sleep
     }
 
@@ -767,6 +654,10 @@ impl InboundVideo {
                 if enc_out.frame.jpeg.is_empty() {
                     return Step::Sleep;
                 }
+                // 探针：JPEG 路径出了帧。`cap/enc` 由 `capture_and_encode` 自带
+                //（与它写给对端 HUD 的是同一组数——两侧口径天然一致，不会出现
+                // 「日志说 30ms、HUD 说 80ms」这种自相矛盾）
+                let send_t0 = std::time::Instant::now();
                 let mut guard = self.send.lock().await;
                 if let Some(r) = enc_out.rect {
                     if let Err(e) = super::video::write_dirty_meta(&mut guard, r).await {
@@ -807,6 +698,13 @@ impl InboundVideo {
                     return Step::End;
                 }
                 drop(guard);
+                // 探针：JPEG 路径的分段耗时（抓屏+编码来自 capture_and_encode，
+                // 发送取上面三次 write 的合计）
+                self.perf_last = super::perf::FrameTiming::produced(
+                    enc_out.frame.cap_ms as u64,
+                    enc_out.frame.enc_ms as u64,
+                    Some(send_t0.elapsed().as_millis() as u64),
+                );
                 // 2A 自动档：把这一帧的字节数喂给迟滞判据。换档不改 opts 之外的任何
                 // 状态——run() 下一圈的 stream_opts_snapshot 比对会自己套用新 profile。
                 // ❗ 高保真回补帧不计入：它是一次性画质投资，喂进去会把正常档压低。
@@ -845,6 +743,10 @@ impl InboundVideo {
         // 固定节奏锚点：下一帧的抓取时刻。每圈干完活后重设为
         // frame_start + interval —— 编码耗时不再叠加进帧间隔。
         let mut next_tick = tokio::time::Instant::now();
+        // 探针（2026-09-21）：会话开始先报一条，说明探针活着 + 怎么关。
+        // 没有这条的话，日志里没出现 `[RC-PERF]` 会分不清是「探针没生效」
+        // 还是「还没到 5s 间隔」。
+        super::perf::log_startup_hint();
         loop {
             if !self.svc.session_is(SessionPhase::InboundActive, &self.peer) {
                 break;
@@ -909,6 +811,9 @@ impl InboundVideo {
             self.maybe_send_cursor().await;
 
             let work_start = tokio::time::Instant::now();
+            // 探针：本圈起点先清暂存——两条路径各自按需覆盖，
+            // 没覆盖就说明本圈空转（`produced = false`）
+            self.perf_last = super::perf::FrameTiming::idle();
             let ended = match self.try_hardware_path(&opts).await {
                 // Sleep = 本圈已推完或屏幕无变化。jpeg_path 是一次全量 GDI 截屏 +
                 // 差分：H264 会话里跑它就是每圈白烧 CPU（8ms 预算装不下，直接把
@@ -917,14 +822,23 @@ impl InboundVideo {
                 // 单帧失败）。2026-09-19 审查 R1：节奏重做时曾把这条回归掉。
                 Step::Sleep => false,
                 Step::End => true,
-                Step::FallThrough => matches!(self.jpeg_path().await, Step::End),
+                Step::FallThrough => {
+                    // 探针：走 JPEG 兜底说明硬编这条路这一圈没成。
+                    // 只在「硬编本该可用却回退了」时才有诊断价值——
+                    // 一开始就没开硬编（用户选 JPEG / 机器不支持）不算回退。
+                    if self.h264.is_some() || self.enc_retry_after.is_some() {
+                        super::perf::bump(&super::perf::counters::JPEG_FALLBACK);
+                    }
+                    matches!(self.jpeg_path().await, Step::End)
+                }
             };
             if ended {
                 break;
             }
             // P1-7 自适应降频：单圈工作量持续贴着当前间隔跑 → 放大间隔；
             // 富余出来再缩回。EMA 平滑 + 2x/4x 判据，避免来回抖。
-            let work_ms = (tokio::time::Instant::now() - work_start).as_millis() as u64;
+            let loop_ms = (tokio::time::Instant::now() - work_start).as_millis() as u64;
+            let work_ms = loop_ms;
             self.work_ema_ms = if self.work_ema_ms == 0 {
                 work_ms
             } else {
@@ -940,8 +854,27 @@ impl InboundVideo {
             } else if self.pace_scale > 1 && self.work_ema_ms * 4 < scaled {
                 self.pace_scale -= 1;
             }
+            // ── 诊断探针（2026-09-21）：喂本圈采样 + 到期输出汇总 ──
+            // 只在**真的出了一帧**时计入分段均值：空转圈（屏幕未变化）的
+            // cap/enc 几乎为 0，混进去会把「慢在编码」的真实信号稀释掉。
+            // 空转仍要让 `report` 有机会触发（否则静止画面时日志一片空白）。
+            {
+                let t = self.perf_last;
+                if t.produced {
+                    self.perf.note_frame(t.cap_ms, t.enc_ms, t.send_ms, loop_ms);
+                }
+                if let Some(line) = self.perf.report(self.perf_extra(&opts, interval)) {
+                    log::info!("{line}");
+                }
+            }
             // 下一帧锚在「本帧开始 + 档位间隔×降频倍数」：固定节奏，不受编码耗时影响
             next_tick = frame_start + std::time::Duration::from_millis(scaled);
+        }
+        // 探针（2026-09-21）：会话收尾无条件打一条全量摘要。
+        // 周期性汇总会随退出丢掉最后一截（不足 5s 的部分），而那一截往往
+        // 正是「刚改完设置重启会话」的现场。
+        if let Some(line) = self.perf.summary(self.perf_extra_last()) {
+            log::info!("{line}");
         }
         log::info!("[RC] 被控推流已停止");
         // 先比对 id 再清槽位——新会话建立时会直接覆盖 inbound_send，不清不会漏，
@@ -949,56 +882,6 @@ impl InboundVideo {
         if self.svc.session_id_is(&self.my_id) {
             *self.svc.inbound_send.lock().await = None;
         }
-    }
-}
-
-/// P1：向发起端报告本机画面能力（fps120「高帧率+」可用性与主屏刷新率）。
-/// 零拷贝门槛：硬件 D3D11-aware H.264 MFT + 单输出捕获范围 + 刷新 ≥100Hz，
-/// 三者缺一就不许选——跑不到的档不卖。会话建立与范围变更时各发一次。
-async fn send_caps_frame(
-    svc: &Arc<RcService>,
-    send: &Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
-) {
-    #[cfg(target_os = "windows")]
-    let caps = super::gpu::encode_caps();
-    let opts = svc.stream_opts_snapshot();
-    let single_out = !opts.virtual_screen;
-    #[cfg(target_os = "windows")]
-    let (fps120, hz) = {
-        // M2：刷新率按**被抓的那块屏**算——抓指定单屏时，主屏的刷新率不代表它
-        let hz = if single_out && opts.monitor >= 0 {
-            super::gpu::refresh_hz_for_monitor(opts.monitor)
-        } else {
-            caps.refresh_hz
-        };
-        (caps.h264_gpu && single_out && hz >= 100, hz)
-    };
-    #[cfg(not(target_os = "windows"))]
-    let (fps120, hz) = (false, 0u32);
-    // Q3：HEVC 硬编可用性。旧版本对端忽略；uhd60 档的 UI 门控靠它。
-    #[cfg(target_os = "windows")]
-    let hevc = caps.hevc_hw;
-    #[cfg(not(target_os = "windows"))]
-    let hevc = false;
-    // Q7：顺带报告在线显示器列表（几何信息齐全），发起端会话内出逐屏选项 +
-    // 「下一屏」轮换按钮。旧版本对端会忽略这个字段，无兼容问题。
-    #[cfg(target_os = "windows")]
-    let monitors = crate::screenshot::list_monitors().unwrap_or_default();
-    #[cfg(not(target_os = "windows"))]
-    let monitors: Vec<crate::screenshot::MonitorInfo> = Vec::new();
-    // R3：声明本机能读「鼠标移动数据报」。旧版对端没有这个字段 → 发起端
-    // 解析为 false，会话 UI 提示升级；**不改传输路径**（见 §9 方案 R3）。
-    let msg = serde_json::json!({
-        "t": "caps",
-        "fps120": fps120,
-        "hz": hz,
-        "hevc": hevc,
-        "monitors": monitors,
-        "dgram_input": true,
-    });
-    if let Ok(b) = serde_json::to_vec(&msg) {
-        let mut guard = send.lock().await;
-        let _ = write_frame(&mut guard, &b).await;
     }
 }
 
@@ -1236,30 +1119,5 @@ pub(super) async fn handle_inbound_input(
             let _ = write_frame(&mut guard, &b).await;
         }
         svc.set_inject_err(r.error.clone());
-    }
-}
-
-/// 主屏逻辑尺寸（硬编打开用）。encode_bgra 在分辨率变化时会按新尺寸重开。
-#[cfg(target_os = "windows")]
-fn primary_screen_size() -> (u32, u32) {
-    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-    let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
-    (w.max(64) as u32, h.max(64) as u32)
-}
-
-/// 虚拟屏几何（硬编初始打开用）。会话中换范围时 encode_bgra 按新尺寸重开。
-#[cfg(target_os = "windows")]
-fn virtual_screen_size() -> (i32, i32, i32, i32) {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-        SM_YVIRTUALSCREEN,
-    };
-    unsafe {
-        (
-            GetSystemMetrics(SM_XVIRTUALSCREEN),
-            GetSystemMetrics(SM_YVIRTUALSCREEN),
-            GetSystemMetrics(SM_CXVIRTUALSCREEN),
-            GetSystemMetrics(SM_CYVIRTUALSCREEN),
-        )
     }
 }

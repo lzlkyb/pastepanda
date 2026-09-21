@@ -396,7 +396,10 @@ mod lifecycle {
         assert!(!svc.session_expired());
     }
 
-    /// 在线判定三条证据：presence live / 正在开会话 / last_seen 未过期的 online。
+    /// 在线判定三条证据：presence live / 正在开会话 / last_seen 未过期。
+    ///
+    /// 🔴 2026-09-21 重做：删掉了 `conn_state` 参数。新语义下「库里标过 online」
+    /// **不再是证据**——那个字段只写 online 从不写 offline，读它必然假在线。
     #[test]
     fn is_rc_online_for_three_evidences() {
         use crate::rc::session::{is_rc_online_for, ONLINE_STALE_MS};
@@ -406,59 +409,84 @@ mod lifecycle {
         let mut live = HashSet::new();
         let peer = "p".repeat(64);
 
-        // 1. presence 听得见 → 无论库里怎么说都在线
+        // 1. presence 听得见 → 在线（哪怕 last_seen 是 0）
         live.insert(peer.clone());
-        assert!(is_rc_online_for(&peer, "offline", 0, &live, None, now));
+        assert!(is_rc_online_for(&peer, 0, &live, None, now));
         live.clear();
 
-        // 2. 正在开会话 → 无论库里怎么说都在线
-        assert!(is_rc_online_for(
-            &peer,
-            "offline",
-            0,
-            &live,
-            Some(&peer),
-            now
-        ));
+        // 2. 正在开会话 → 在线（哪怕 last_seen 是 0、组播听不见）
+        assert!(is_rc_online_for(&peer, 0, &live, Some(&peer), now));
 
-        // 3. 库里 online 且 last_seen 未过期（跨网唯一线索）
-        assert!(is_rc_online_for(
-            &peer,
-            "online",
-            now - ONLINE_STALE_MS,
-            &live,
-            None,
-            now
-        ));
+        // 3. last_seen 未过期（跨网唯一线索）
+        assert!(is_rc_online_for(&peer, now - ONLINE_STALE_MS, &live, None, now));
+        assert!(is_rc_online_for(&peer, now - 1, &live, None, now));
+        // 刚过窗口 1ms → 离线
         assert!(!is_rc_online_for(
             &peer,
-            "online",
             now - ONLINE_STALE_MS - 1,
             &live,
             None,
             now
         ));
 
-        // 刚配对 / last_seen=0 的 online 是假的（进程被杀会定格 online）
-        assert!(!is_rc_online_for(&peer, "online", 0, &live, None, now));
+        // last_seen=0（从未接触过）→ 离线，不能被"刚配对"骗过
+        assert!(!is_rc_online_for(&peer, 0, &live, None, now));
         // 会话 peer 不是这台 → 不借力
+        assert!(!is_rc_online_for(&peer, 0, &live, Some("other"), now));
+        // 三条证据全缺（没有 live、会话不是它、last_seen 已过窗口）→ 离线
         assert!(!is_rc_online_for(
             &peer,
-            "offline",
-            0,
-            &live,
+            now - ONLINE_STALE_MS - 1,
+            &HashSet::new(),
             Some("other"),
             now
         ));
-        // 库里 offline 且没 live → 离线
-        assert!(!is_rc_online_for(
-            &peer,
-            "offline",
-            now - 1,
-            &live,
-            None,
-            now
-        ));
+    }
+
+    /// 🔴 回归守卫：判定**不允许**读回 `conn_state`。
+    ///
+    /// 这条守卫钉的是「2026-09-21 在线状态准确性修复」的核心不变量：
+    /// `conn_state` 是个只写 online 从不写 offline 的脏字段，任何判定只要读它，
+    /// 「假在线」就会从机制上回来。删掉 `is_rc_online_for` 的 `conn_state` 参数
+    /// 只是手段，真正要守住的是「别再把它加回去」。
+    #[test]
+    fn 守卫_在线判定不得读conn_state() {
+        let src = include_str!("session.rs");
+        let start = src
+            .find("pub fn is_rc_online_for(")
+            .expect("找不到 is_rc_online_for");
+        let body = &src[start..start + 1400];
+        assert!(
+            !body.contains("conn_state"),
+            "is_rc_online_for 不得再碰 conn_state——那个字段只写 online 从不写 offline，\
+             读它必然产生假在线。要判断在线请用 live_ids / session_peer / last_seen 三条证据。"
+        );
+    }
+
+    /// 🔴 回归守卫：`rc_device_touch` 的 **offline 分支必须有调用点**。
+    ///
+    /// 这是本 bug 的根本成因：只有写 online 的路径，没有写 offline 的路径，
+    /// 状态位一旦置真就永不复位。守卫泛型地钉住「两个方向都得有人调」——
+    /// 将来有人删掉 offline 写回，这条会立刻红。
+    #[test]
+    fn 守卫_offline写回路径存在() {
+        // 扫整个 rc/ 目录的源码（用多个 include_str! 拼起来）
+        let sources = [
+            ("session.rs", include_str!("session.rs")),
+            ("inbound.rs", include_str!("inbound.rs")),
+            ("outbound.rs", include_str!("outbound.rs")),
+            ("service.rs", include_str!("service.rs")),
+        ];
+        let all: String = sources.iter().map(|(_, s)| *s).collect();
+        assert!(
+            all.contains("rc_device_touch(peer, false)")
+                || all.contains("rc_device_touch(&peer, false)")
+                || all.contains("rc_device_touch(&self.peer, false)")
+                || all.contains("rc_device_touch(peer,false)"),
+            "必须有地方调 rc_device_touch(x, false) 把设备标回离线——\
+             否则 conn_state 只写 online 不写 offline，假在线必然复现。\
+             已知调用点：end_session / outbound 断链收口 / inbound 收口。"
+        );
     }
 
     /// 四档可达性：live / recent / seen / never（设计稿）。
@@ -503,10 +531,24 @@ mod lifecycle {
         );
     }
 
-    /// 🔴 回归：会话收口**不得**把对端打成 offline、**不得**清 last_seen。
-    /// 旧行为 touch(false) 导致「只要开过一次远程就永远显示离线」。
+    /// 🔴 回归：会话收口**不得清 `last_seen`**（否则「上次在线」永远显示不出来）。
+    ///
+    /// # 2026-09-21 修正（在线状态准确性修复）
+    ///
+    /// 旧版本这条测试的名字叫 `end_session_keeps_peer_online_and_last_seen`，
+    /// 断言「收口后 conn_state 仍是 online」。那个断言来自上一轮的修复：
+    /// 当时 `rc_device_touch(x, false)` 会**顺带把 last_seen 清 0**，导致设备
+    /// 永远显示离线——为了绕开它，只好改调 `touch(true)`，于是收口不再标离线。
+    ///
+    /// 后果就是假在线：`conn_state` 只写 online 从不写 offline，一旦置真永不复位。
+    ///
+    /// 现在把两件事拆开了：`rc_device_mark_offline` **只动 conn_state、不动 last_seen**。
+    /// 所以「保留 last_seen」和「标离线」不再互相冲突——两个正确行为可以同时做。
+    ///
+    /// ❗ 本测试守的是**下半条**（last_seen 必须保留）。上半条（收口后应为 offline）
+    /// 由 `end_session_marks_offline_and_keeps_last_seen` 守。
     #[tokio::test]
-    async fn end_session_keeps_peer_online_and_last_seen() {
+    async fn end_session_keeps_last_seen() {
         let s = store();
         let peer = "bb".repeat(32);
         s.rc_device_pair(&peer, "对端").unwrap();
@@ -523,13 +565,41 @@ mod lifecycle {
         svc.end_session("测试收口").await.expect("收口成功");
 
         let after = s.rc_device_get(&peer).unwrap().unwrap();
-        assert_eq!(
-            after.conn_state, "online",
-            "收口后对端仍是 online——会话结束 ≠ 对端关机"
-        );
         assert!(
-            after.last_seen >= before.last_seen,
-            "收口必须刷新或至少保留 last_seen，不能清 0"
+            after.last_seen >= before.last_seen && after.last_seen > 0,
+            "收口必须保留 last_seen，不能清 0——它是「上次在线是什么时候」，\
+             界面靠它显示「上次在线：3 小时前」"
+        );
+    }
+
+    /// 🔴 回归：会话收口**必须把设备标回 offline**（补平「只写 online 不写 offline」）。
+    ///
+    /// 这是 2026-09-21 在线状态修复的核心不变量之一。缺失它 = `conn_state`
+    /// 只置位不复位 = 假在线必然复现。
+    #[tokio::test]
+    async fn end_session_marks_offline_and_keeps_last_seen() {
+        let s = store();
+        let peer = "cc".repeat(32);
+        s.rc_device_pair(&peer, "对端").unwrap();
+        s.rc_device_touch(&peer, true).unwrap();
+        let before = s.rc_device_get(&peer).unwrap().unwrap();
+
+        let svc = RcService::new(s.clone());
+        let mut sess = active_session("s1", SessionPhase::OutboundActive);
+        sess.peer = peer.clone();
+        set_session(&svc, sess);
+        svc.end_session("测试收口").await.expect("收口成功");
+
+        let after = s.rc_device_get(&peer).unwrap().unwrap();
+        assert_eq!(
+            after.conn_state, "offline",
+            "会话收口必须标 offline——否则 conn_state 只写 online 不写 offline，\
+             状态位永不复位，假在线必然复现"
+        );
+        assert_eq!(
+            after.last_seen, before.last_seen,
+            "标 offline 不得动 last_seen（rc_device_mark_offline 只改 conn_state）——\
+             否则「上次在线」显示不出来"
         );
     }
 }
@@ -1076,11 +1146,16 @@ fn 守卫_批传开流失败落task() {
 }
 
 /// 守卫：caps 必须上报 dgram_input（R3）；旧对端缺字段 → 发起端提示升级。
+///
+/// ⚠️ 2026-09-21：`send_caps_frame` 已从 `inbound.rs` 搬到 `inbound_tasks.rs`，
+/// 本守卫的 `include_str!` 目标随之更新——**搬家不是理由删掉守卫**，
+/// 而是跟着改成扫新家，否则「字段丢了」这件事会重新变成无人看守。
 #[test]
 fn 守卫_caps上报dgram_input() {
-    let inbound = include_str!("inbound.rs");
+    let inbound_tasks = include_str!("inbound_tasks.rs");
     assert!(
-        inbound.contains("\"dgram_input\": true") || inbound.contains("\"dgram_input\":true"),
+        inbound_tasks.contains("\"dgram_input\": true")
+            || inbound_tasks.contains("\"dgram_input\":true"),
         "send_caps_frame 必须带上 dgram_input: true，否则新被控端也会被误判为旧版"
     );
     let outbound = include_str!("outbound.rs");

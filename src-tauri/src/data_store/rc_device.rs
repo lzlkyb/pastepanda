@@ -13,7 +13,18 @@ pub struct RcDevice {
     pub node_id: String,
     pub name: String,
     pub paired_at: String,
-    /// `online` / `offline`（由 presence 刷新，可空闲时为 offline）。
+    /// 🔴 **仅供展示/调试，不得作为「在线」判定依据**（2026-09-21）。
+    ///
+    /// 存 `online` / `offline`，是「最后一次记录到的状态」——**历史快照，不是当前事实**。
+    /// 判定在线请看 `rc::session::is_rc_online_for`（三条证据：presence live /
+    /// 正在会话 / `last_seen` 窗口）。
+    ///
+    /// 为什么保留：`devices` 表有同名列，两侧结构对齐便于排查；且 `end_session`
+    /// 会把它标回 offline（补平「只写 online」的不对称）。
+    ///
+    /// ❗ **任何判定都不要读它**——它在 2026-09-21 之前长期只写 online 从不写 offline，
+    /// 读它必然产生假在线（见 `is_rc_online_for` 的说明与回归守卫
+    /// `守卫_在线判定不得读conn_state`）。
     #[serde(default)]
     pub conn_state: String,
     #[serde(default)]
@@ -109,6 +120,12 @@ impl DataStore {
             .map_err(|e| e.to_string())
     }
 
+    /// 标设备为在线，并把 `last_seen` 刷成现在。
+    ///
+    /// ⚠️ 这是**唯一**该刷新 `last_seen` 的入口。它只应由**真实接触**调用：
+    /// 会话建立 / 真握手成功 / 组播听见对端。**探测（probe）不许调它**——
+    /// 探测是「此刻可达」的瞬时事实，不是「在线」这个持久状态，
+    /// 写进去会制造假在线（2026-09-21 修复，见 `RcService::probe_peer` 的注释）。
     pub fn rc_device_touch(&self, node_id: &str, online: bool) -> Result<(), String> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().timestamp_millis();
@@ -119,6 +136,29 @@ impl DataStore {
                 if online { "online" } else { "offline" },
                 if online { now } else { 0i64 }
             ],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    /// 标设备为离线，**不动 `last_seen`**。
+    ///
+    /// # 为什么需要它（而不是 `rc_device_touch(x, false)`）
+    ///
+    /// `rc_device_touch(x, false)` 会把 `last_seen` 清成 0。这在会话收口时用是错的：
+    /// 「会话结束」只是「**这次**接触结束了」，不代表「从未在线过」。清 0 的后果
+    /// 是「上次在线」这句话永远显示不出来，且配合旧的判定逻辑会让设备**永远离线**
+    /// （这正是 2026-09-21 之前那轮修复把 offline 写回整个删掉的原因——
+    /// 它在两个错误极端之间来回摆）。
+    ///
+    /// 语义与 `devices` 表的 [`Self::device_mark_offline`] 对齐：**只动 `conn_state`**。
+    /// 本方法与它是一对——那张表有的，这张表也要有，否则调用方没有正确的工具可用，
+    /// 只能被迫用 `touch(x, false)` 或干脆不写。
+    pub fn rc_device_mark_offline(&self, node_id: &str) -> Result<(), String> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE rc_devices SET conn_state = 'offline' WHERE node_id = ?1",
+            rusqlite::params![node_id],
         )
         .map(|_| ())
         .map_err(|e| e.to_string())

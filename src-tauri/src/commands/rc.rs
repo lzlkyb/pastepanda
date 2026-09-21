@@ -117,9 +117,10 @@ pub fn rc_targets(
     for d in store.rc_device_list()? {
         seen.insert(d.node_id.clone());
         let level = rc_presence_level(&d.node_id, d.last_seen, &live, session_peer.as_deref(), now);
+        // 🔴 2026-09-21：不再把库里的 `d.conn_state` 传进去——那个字段只写 online
+        //    从不写 offline，读它必然产生假在线（详见 `is_rc_online_for` 的说明）。
         let online = is_rc_online_for(
             &d.node_id,
-            &d.conn_state,
             d.last_seen,
             &live,
             session_peer.as_deref(),
@@ -148,9 +149,10 @@ pub fn rc_targets(
         }
         seen.insert(d.node_id.clone());
         let level = rc_presence_level(&d.node_id, d.last_seen, &live, session_peer.as_deref(), now);
+        // 🔴 2026-09-21：不再把库里的 `d.conn_state` 传进去——那个字段只写 online
+        //    从不写 offline，读它必然产生假在线（详见 `is_rc_online_for` 的说明）。
         let online = is_rc_online_for(
             &d.node_id,
-            &d.conn_state,
             d.last_seen,
             &live,
             session_peer.as_deref(),
