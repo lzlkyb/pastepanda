@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PastePanda 远程电脑 · 设备优先 Windows 工作台</title>
+  <style>
+    :root {
+      --page: #e8edf4;
+      --window: #f7f9fc;
+      --pane: #eef2f7;
+      --surface: #ffffff;
+      --surface-hover: #f6f8fb;
+      --surface-selected: #e9f0ff;
+      --line: #dce3ec;
+      --line-strong: #b8c5d5;
+      --ink: #172033;
+      --ink-2: #465267;
+      --ink-3: #657186;
+      --accent: #356ae6;
+      --accent-strong: #2356c8;
+      --accent-soft: #e8efff;
+      --success: #157a47;
+      --success-soft: #e7f6ee;
+      --warning: #9a5b06;
+      --warning-soft: #fff4da;
+      --danger: #ba3038;
+      --danger-soft: #fff0f1;
+      --canvas: #10151d;
+      --canvas-2: #17202c;
+      --canvas-line: #273244;
+      --shadow-window: 0 24px 70px rgba(36, 49, 69, 0.22), 0 2px 10px rgba(36, 49, 69, 0.08);
+      --shadow-popover: 0 16px 40px rgba(30, 42, 60, 0.18), 0 2px 8px rgba(30, 42, 60, 0.08);
+      --ease: cubic-bezier(0.2, 0, 0, 1);
+      --ease-in: cubic-bezier(0.05, 0.7, 0.1, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body {
+      margin: 0;
+      min-width: 1264px;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 13px;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    svg { width: 16px; height: 16px; stroke-width: 1.8; }
+
+    .design-page { padding: 32px 32px 56px; }
+    .design-head {
+      width: 1200px;
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .design-title { margin: 0; font-size: 20px; line-height: 1.35; font-weight: 650; }
+    .design-sub { margin: 6px 0 0; color: var(--ink-2); line-height: 1.65; max-width: 760px; }
+    .design-mark {
+      color: var(--ink-3);
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .state-switcher {
+      width: 1200px;
+      margin: 0 auto 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 8px;
+      background: #dfe5ed;
+    }
+    .state-switcher button {
+      min-height: 32px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--ink-2);
+      cursor: pointer;
+      transition: background-color 150ms var(--ease), color 150ms var(--ease);
+    }
+    .state-switcher button:hover { background: rgba(255,255,255,.55); }
+    .state-switcher button[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: 0 1px 3px rgba(30, 42, 60, 0.12);
+      font-weight: 600;
+    }
+
+    .window {
+      width: 1200px;
+      height: 780px;
+      margin: 0 auto;
+      border: 1px solid #bcc7d5;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--window);
+      box-shadow: var(--shadow-window);
+      display: flex;
+      flex-direction: column;
+    }
+    .titlebar {
+      height: 48px;
+      flex: 0 0 48px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding-left: 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 249, 252, .96);
+      user-select: none;
+    }
+    .brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .brand-mark {
+      width: 26px; height: 26px; border-radius: 8px;
+      display: grid; place-items: center;
+      background: var(--accent); color: #fff;
+    }
+    .brand-mark svg { width: 15px; height: 15px; }
+    .brand-name { font-size: 13px; font-weight: 650; }
+    .brand-section { color: var(--ink-3); margin-left: 2px; }
+    .channel-status {
+      display: inline-flex; align-items: center; gap: 7px;
+      color: var(--ink-2); font-size: 12px;
+    }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+    .window-actions { justify-self: end; height: 100%; display: flex; }
+    .window-action {
+      width: 46px; height: 100%; border: 0; background: transparent;
+      display: grid; place-items: center; cursor: default; color: var(--ink-2);
+    }
+    .window-action:hover { background: #e7ebf1; }
+    .window-action.close:hover { background: #c42b1c; color: #fff; }
+    .window-action svg { width: 13px; height: 13px; }
+
+    .window > .screen { display: none; flex: 1; min-height: 0; }
+    .window[data-state="devices"] .screen-devices,
+    .window[data-state="pair"] .screen-pair,
+    .window[data-state="connecting"] .screen-connecting,
+    .window[data-state="session"] .screen-session,
+    .window[data-state="inbound"] .screen-inbound,
+    .window[data-state="files"] .screen-files,
+    .window[data-state="history"] .screen-history,
+    .window[data-state="settings"] .screen-settings { display: flex; }
+    .window[data-state="session"] .titlebar { display: none; }
+
+    .workspace { flex: 1; min-width: 0; display: flex; }
+    .device-pane {
+      width: 306px;
+      flex: 0 0 306px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--pane);
+      border-right: 1px solid var(--line);
+    }
+    .device-pane-head { padding: 14px 12px 10px; }
+    .pane-command { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .pane-title { flex: 1; font-size: 15px; font-weight: 650; }
+    .icon-button, .text-button, .primary-button, .danger-button {
+      min-height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 12px;
+      cursor: pointer;
+      transition: background-color 150ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease);
+    }
+    .icon-button { width: 32px; padding: 0; }
+    .text-button:hover, .icon-button:hover { background: var(--surface-hover); border-color: #9fadc0; }
+    .primary-button {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+    .primary-button:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+    .primary-button.large { min-height: 40px; padding: 0 18px; font-size: 13px; }
+    .danger-button { color: var(--danger); border-color: #e5b6ba; background: var(--danger-soft); }
+    .danger-button:hover { background: #ffe2e4; border-color: #d98f95; }
+    .button-quiet { border-color: transparent; background: transparent; color: var(--ink-2); }
+    .button-quiet:hover { background: #e5eaf1; border-color: transparent; }
+    .search {
+      height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      color: var(--ink-3);
+    }
+    .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); }
+    .device-scroll { flex: 1; min-height: 0; overflow: auto; padding: 2px 8px 12px; }
+    .list-label {
+      display: flex; align-items: center; justify-content: space-between;
+      color: var(--ink-3); font-size: 11px; padding: 10px 6px 6px;
+    }
+    .device-row {
+      width: 100%;
+      min-height: 58px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+      cursor: pointer;
+      margin-bottom: 2px;
+    }
+    .device-row:hover { background: rgba(255,255,255,.62); }
+    .device-row.selected { background: var(--surface-selected); border-color: #bdcff8; }
+    .device-avatar {
+      position: relative; width: 34px; height: 34px; border-radius: 8px;
+      display: grid; place-items: center; background: #dce5f1; color: #35445b;
+    }
+    .device-avatar::after {
+      content: ""; position: absolute; right: -2px; bottom: -2px;
+      width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--pane);
+      background: #9aa6b6;
+    }
+    .device-avatar.online::after { background: var(--success); }
+    .device-main { min-width: 0; }
+    .device-name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .device-meta { display: block; color: var(--ink-3); font-size: 11px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row-connect { min-width: 52px; min-height: 28px; padding: 0 10px; border-radius: 4px; font-size: 12px; }
+    .utility-nav {
+      flex: 0 0 auto;
+      padding: 8px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+    }
+    .utility-nav button {
+      min-height: 46px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--ink-2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .utility-nav button:hover, .utility-nav button.active { background: #e1e7ef; color: var(--ink); }
+    .utility-nav svg { width: 15px; height: 15px; }
+
+    .content-pane { flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--window); }
+    .detail-head {
+      min-height: 104px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .detail-device {
+      width: 56px; height: 56px; border-radius: 12px;
+      background: #dfe7f2; color: #34445b; display: grid; place-items: center;
+    }
+    .detail-device svg { width: 26px; height: 26px; }
+    .detail-title { flex: 1; min-width: 0; }
+    .detail-title h2 { margin: 0; font-size: 20px; font-weight: 650; }
+    .detail-title p { margin: 5px 0 0; color: var(--ink-2); }
+    .online-text { color: var(--success); font-weight: 600; }
+    .detail-actions { display: flex; align-items: center; gap: 8px; }
+    .detail-body { padding: 20px 24px 28px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .section-head h3 { margin: 0; font-size: 13px; font-weight: 650; }
+    .section-link { border: 0; background: transparent; color: var(--accent-strong); cursor: pointer; padding: 4px; }
+    .facts {
+      background: var(--surface);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .fact-row {
+      min-height: 48px;
+      padding: 0 14px;
+      display: grid;
+      grid-template-columns: 160px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #edf0f4;
+    }
+    .fact-row:last-child { border-bottom: 0; }
+    .fact-label { color: var(--ink-2); }
+    .fact-value { font-weight: 550; }
+    .fact-note { color: var(--ink-3); font-size: 11px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      min-height: 22px; padding: 0 8px; border-radius: 4px;
+      font-size: 11px; color: var(--ink-2); background: #edf1f6;
+    }
+    .badge.success { color: var(--success); background: var(--success-soft); }
+    .badge.warning { color: var(--warning); background: var(--warning-soft); }
+    .history-list { background: var(--surface); border-radius: 12px; overflow: hidden; }
+    .history-line {
+      min-height: 52px;
+      display: grid;
+      grid-template-columns: 1fr 92px 138px 82px;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      border-bottom: 1px solid #edf0f4;
+    }
+    .history-line:last-child { border-bottom: 0; }
+    .history-line strong { font-weight: 600; }
+    .history-line span { color: var(--ink-3); font-size: 12px; }
+    .history-line .result { color: var(--success); }
+
+    .empty-device-list {
+      padding: 28px 14px;
+      color: var(--ink-3);
+      text-align: center;
+      line-height: 1.7;
+    }
+    .pair-body { flex: 1; display: grid; place-items: center; padding: 28px; }
+    .pair-panel { width: min(650px, 100%); }
+    .pair-panel h2 { margin: 0; font-size: 20px; font-weight: 650; }
+    .pair-panel > p { color: var(--ink-2); line-height: 1.7; margin: 7px 0 18px; }
+    .pair-option {
+      width: 100%; min-height: 86px; padding: 14px 16px;
+      border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+      display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 12px;
+      text-align: left; cursor: pointer; margin-bottom: 8px;
+    }
+    .pair-option:hover { border-color: #9fb4e9; background: #fbfcff; }
+    .pair-option-icon { width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-strong); }
+    .pair-option strong { display: block; font-size: 13px; }
+    .pair-option small { display: block; color: var(--ink-3); line-height: 1.55; margin-top: 3px; }
+    .pair-foot { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; color: var(--ink-2); }
+
+    .connecting-body { flex: 1; display: grid; place-items: center; padding: 28px; }
+    .wait-panel { width: 520px; text-align: center; }
+    .wait-device {
+      width: 72px; height: 72px; border-radius: 12px; display: grid; place-items: center;
+      margin: 0 auto 18px; background: #dfe7f2; color: #34445b; position: relative;
+    }
+    .wait-device svg { width: 32px; height: 32px; }
+    .wait-pulse {
+      position: absolute; inset: -7px; border: 2px solid #9bb5f2; border-radius: 12px;
+      opacity: .72;
+    }
+    .wait-panel h2 { margin: 0; font-size: 20px; font-weight: 650; }
+    .wait-panel p { margin: 7px 0 0; color: var(--ink-2); line-height: 1.7; }
+    .wait-progress { height: 4px; width: 280px; margin: 22px auto 16px; border-radius: 4px; background: #dce3ec; overflow: hidden; }
+    .wait-progress::after { content: ""; display: block; width: 44%; height: 100%; background: var(--accent); transform: translateX(78px); }
+    .wait-meta { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 12px; }
+    .wait-actions { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
+
+    .session-shell { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--canvas); }
+    .session-bar {
+      height: 48px; flex: 0 0 48px; display: flex; align-items: center; gap: 8px;
+      padding: 0 10px 0 14px; background: #161d27; color: #e7edf7; border-bottom: 1px solid var(--canvas-line);
+    }
+    .session-peer { display: flex; align-items: center; gap: 9px; min-width: 190px; }
+    .session-peer .device-avatar::after { border-color: #161d27; }
+    .session-peer strong { font-size: 12px; }
+    .session-peer small { display: block; color: #9dacbf; margin-top: 2px; font-size: 11px; }
+    .session-tools { flex: 1; display: flex; align-items: center; justify-content: center; gap: 2px; }
+    .session-tool {
+      min-height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: 4px;
+      background: transparent; color: #c5d0df; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    }
+    .session-tool:hover, .session-tool.on { background: #222c3a; border-color: #334156; color: #fff; }
+    .session-end { margin-left: auto; min-height: 34px; color: #ffc4c7; background: #3b2025; border-color: #663038; }
+    .session-end:hover { background: #53252c; border-color: #823640; }
+    .remote-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #0b1016; padding: 12px; }
+    .remote-desktop {
+      width: 100%; height: 100%; position: relative; overflow: hidden; border-radius: 4px;
+      background: linear-gradient(145deg, #193457 0%, #2572a7 48%, #6a8da4 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+    }
+    .remote-wall-shape { position: absolute; border-radius: 50%; border: 28px solid rgba(255,255,255,.16); width: 340px; height: 340px; right: 11%; top: 14%; transform: rotate(-18deg); }
+    .remote-window {
+      position: absolute; width: 430px; height: 270px; left: 18%; top: 17%; border-radius: 8px;
+      background: rgba(248,250,253,.96); border: 1px solid rgba(255,255,255,.6); box-shadow: 0 20px 50px rgba(0,0,0,.26);
+    }
+    .remote-window-head { height: 34px; background: #edf1f6; border-bottom: 1px solid #d9e0ea; display: flex; align-items: center; gap: 5px; padding: 0 10px; }
+    .remote-window-head span { width: 8px; height: 8px; border-radius: 50%; background: #a6b0bf; }
+    .remote-window-body { padding: 22px; display: grid; gap: 12px; }
+    .remote-line { height: 9px; border-radius: 4px; background: #d8dfe9; }
+    .remote-line.w70 { width: 70%; } .remote-line.w45 { width: 45%; } .remote-line.w85 { width: 85%; }
+    .remote-taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: rgba(19,27,37,.84); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; gap: 7px; }
+    .task-icon { width: 24px; height: 24px; border-radius: 4px; background: rgba(255,255,255,.18); }
+    .keyboard-tip {
+      position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%);
+      min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+      border-radius: 8px; background: rgba(15,21,29,.88); color: #dce5f2; border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 8px 24px rgba(0,0,0,.28); font-size: 12px;
+    }
+    .session-detail {
+      position: absolute; top: 12px; right: 12px; width: 290px; padding: 12px; border-radius: 8px;
+      background: rgba(20,27,37,.96); border: 1px solid #334156; color: #dce5f2; box-shadow: var(--shadow-popover);
+      display: none;
+    }
+    .session-detail.open { display: block; animation: popIn 200ms var(--ease-in) both; }
+    .session-detail h4 { margin: 0 0 10px; font-size: 12px; }
+    .telemetry-row { min-height: 28px; display: grid; grid-template-columns: 92px 1fr; align-items: center; border-top: 1px solid #2a3546; }
+    .telemetry-row span:first-child { color: #9dacbf; }
+    .telemetry-row span:last-child { text-align: right; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+
+    .inbound-body { flex: 1; display: grid; place-items: center; padding: 28px; background: #f5f7fa; }
+    .inbound-panel { width: 660px; background: var(--surface); border-radius: 12px; overflow: hidden; }
+    .inbound-alert { min-height: 52px; padding: 0 16px; display: flex; align-items: center; gap: 10px; color: var(--danger); background: var(--danger-soft); border-left: 4px solid var(--danger); font-weight: 600; }
+    .inbound-main { padding: 22px; }
+    .inbound-who { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .inbound-who h2 { margin: 0; font-size: 18px; }
+    .inbound-who p { margin: 4px 0 0; color: var(--ink-2); }
+    .permission-list { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+    .permission-row { min-height: 42px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid #edf0f4; color: var(--ink-2); }
+    .permission-row:last-child { border-bottom: 0; }
+    .permission-row svg { color: var(--success); }
+    .inbound-actions { display: flex; justify-content: space-between; align-items: center; }
+
+    .page-layout { flex: 1; display: flex; min-height: 0; }
+    .page-main { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 28px; }
+    .page-titlebar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .page-titlebar h2 { margin: 0; font-size: 18px; font-weight: 650; flex: 1; }
+    .device-picker { min-height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); }
+    .transfer-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .transfer-summary span { color: var(--ink-2); }
+    .transfer-list { background: var(--surface); border-radius: 12px; overflow: hidden; }
+    .transfer-row { min-height: 70px; padding: 10px 14px; display: grid; grid-template-columns: 32px 1fr 92px 74px 32px; gap: 10px; align-items: center; border-bottom: 1px solid #edf0f4; }
+    .transfer-row:last-child { border-bottom: 0; }
+    .file-icon { width: 30px; height: 34px; border-radius: 4px; background: #e4eaf2; display: grid; place-items: center; color: var(--ink-2); }
+    .file-name strong { display: block; font-weight: 600; }
+    .file-name small { color: var(--ink-3); }
+    .progress { height: 4px; margin-top: 7px; border-radius: 4px; background: #e1e6ed; overflow: hidden; }
+    .progress > span { display: block; height: 100%; background: var(--accent); }
+    .progress-68 > span { width: 68%; }
+    .progress-100 > span { width: 100%; background: var(--success); }
+    .transfer-speed { color: var(--ink-2); font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+    .transfer-state { color: var(--ink-3); font-size: 12px; }
+
+    .history-table { background: var(--surface); border-radius: 12px; overflow: hidden; }
+    .history-head, .history-record { display: grid; grid-template-columns: 1fr 100px 150px 110px 100px; gap: 12px; align-items: center; padding: 0 14px; }
+    .history-head { min-height: 38px; color: var(--ink-3); font-size: 11px; background: #f0f3f7; }
+    .history-record { min-height: 56px; border-bottom: 1px solid #edf0f4; }
+    .history-record:last-child { border-bottom: 0; }
+    .history-record span { color: var(--ink-2); }
+    .history-record .path { color: var(--success); }
+
+    .settings-sheet { background: var(--surface); border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+    .settings-title { padding: 13px 14px 8px; color: var(--ink-3); font-size: 11px; font-weight: 600; }
+    .setting-row { min-height: 58px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; padding: 8px 14px; border-top: 1px solid #edf0f4; }
+    .setting-row strong { display: block; font-weight: 600; }
+    .setting-row small { display: block; color: var(--ink-3); margin-top: 3px; }
+    .choice-group { display: flex; padding: 3px; border-radius: 8px; background: #e9edf3; }
+    .choice-group button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-2); cursor: pointer; }
+    .choice-group button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(30,42,60,.12); font-weight: 600; }
+    .switch { width: 42px; height: 24px; padding: 2px; border: 0; border-radius: 12px; background: #9ba7b6; cursor: pointer; }
+    .switch::before { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform 200ms var(--ease); }
+    .switch.on { background: var(--accent); }
+    .switch.on::before { transform: translateX(18px); }
+
+    .design-notes {
+      width: 1200px;
+      margin: 28px auto 0;
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 1fr;
+      gap: 12px;
+    }
+    .note-panel { background: rgba(255,255,255,.72); border-radius: 12px; padding: 16px; }
+    .note-panel h3 { margin: 0 0 10px; font-size: 13px; }
+    .note-panel ul { margin: 0; padding-left: 18px; color: var(--ink-2); line-height: 1.75; }
+    .token-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .token { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 11px; }
+    .swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.1); }
+    .swatch.base { background: var(--window); } .swatch.pane { background: var(--pane); }
+    .swatch.ink { background: var(--ink); } .swatch.accent { background: var(--accent); }
+    .swatch.success { background: var(--success); } .swatch.canvas { background: var(--canvas); }
+    .mapping { display: grid; gap: 6px; color: var(--ink-2); }
+    .mapping-row { display: grid; grid-template-columns: 120px 16px 1fr; align-items: center; }
+
+    @keyframes popIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      .wait-pulse { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" width="0" height="0" class="svg-defs">
+    <defs>
+      <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m8 5 11 7-11 7V5Z"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h7l2 2h9v10H3V7Z"/></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.8 1.8 0 0 0 .4 2l.1.1-2.8 2.8-.1-.1a1.8 1.8 0 0 0-2-.4 1.8 1.8 0 0 0-1 1.6v.2h-4V21a1.8 1.8 0 0 0-1-1.6 1.8 1.8 0 0 0-2 .4l-.1.1-2.8-2.8.1-.1a1.8 1.8 0 0 0 .4-2A1.8 1.8 0 0 0 3 14H2.8v-4H3a1.8 1.8 0 0 0 1.6-1 1.8 1.8 0 0 0-.4-2l-.1-.1 2.8-2.8.1.1a1.8 1.8 0 0 0 2 .4A1.8 1.8 0 0 0 10 3v-.2h4V3a1.8 1.8 0 0 0 1 1.6 1.8 1.8 0 0 0 2-.4l.1-.1 2.8 2.8-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.6 1h.2v4H21a1.8 1.8 0 0 0-1.6 1Z"/></symbol>
+      <symbol id="i-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></symbol>
+      <symbol id="i-ticket" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18v4a2 2 0 0 0 0 4v4H3v-4a2 2 0 0 0 0-4V7Z"/><path d="M13 7v12"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m9 18 6-6-6-6"/></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/></symbol>
+      <symbol id="i-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M8 10h8M8 14h8"/></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></symbol>
+      <symbol id="i-layout" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v5c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-3Z"/><path d="m9 12 2 2 4-5"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 2h8l4 4v16H6V2Z"/><path d="M14 2v5h5"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m7 7 10 10M17 7 7 17"/></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14"/></symbol>
+      <symbol id="i-square" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="6" y="6" width="12" height="12"/></symbol>
+    </defs>
+  </svg>
+
+  <main class="design-page">
+    <header class="design-head">
+      <div>
+        <h1 class="design-title">远程电脑 · 设备优先 Windows 工作台</h1>
+        <p class="design-sub">主路径只有一条：选设备，立即连接。无设备时直接进入配对；连接后让远程画面接管整个工作台。</p>
+      </div>
+      <span class="design-mark">A 方案 · 1200 × 780 · 交互稿</span>
+    </header>
+
+    <nav class="state-switcher" aria-label="设计稿状态切换">
+      <button type="button" data-state-btn="devices" aria-pressed="true">设备中心</button>
+      <button type="button" data-state-btn="pair" aria-pressed="false">无设备 / 配对</button>
+      <button type="button" data-state-btn="connecting" aria-pressed="false">连接等待</button>
+      <button type="button" data-state-btn="session" aria-pressed="false">远程会话</button>
+      <button type="button" data-state-btn="inbound" aria-pressed="false">正在被控</button>
+      <button type="button" data-state-btn="files" aria-pressed="false">文件传输</button>
+      <button type="button" data-state-btn="history" aria-pressed="false">会话记录</button>
+      <button type="button" data-state-btn="settings" aria-pressed="false">设置</button>
+    </nav>
+
+    <section class="window" id="prototype" data-state="devices" aria-label="PastePanda 远程电脑新界面">
+      <header class="titlebar">
+        <div class="brand">
+          <span class="brand-mark"><svg><use href="#i-monitor"/></svg></span>
+          <span class="brand-name">PastePanda</span>
+          <span class="brand-section">远程电脑</span>
+        </div>
+        <div class="channel-status"><span class="status-dot"></span>远程通道已开启</div>
+        <div class="window-actions" aria-label="窗口控制">
+          <button type="button" class="window-action" aria-label="最小化"><svg><use href="#i-minus"/></svg></button>
+          <button type="button" class="window-action" aria-label="最大化"><svg><use href="#i-square"/></svg></button>
+          <button type="button" class="window-action close" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
+        </div>
+      </header>
+
+      <div class="screen screen-devices workspace">
+        <aside class="device-pane">
+          <div class="device-pane-head">
+            <div class="pane-command"><span class="pane-title">我的设备</span><button class="text-button" type="button" data-go="pair"><svg><use href="#i-plus"/></svg>添加设备</button></div>
+            <label class="search"><svg><use href="#i-search"/></svg><input aria-label="搜索设备" placeholder="搜索设备" /></label>
+          </div>
+          <div class="device-scroll">
+            <div class="list-label"><span>在线</span><span>2</span></div>
+            <button type="button" class="device-row selected"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><span class="device-main"><span class="device-name">工作电脑</span><span class="device-meta">局域网直连 · 8 ms</span></span><span class="primary-button row-connect">连接</span></button>
+            <button type="button" class="device-row"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><span class="device-main"><span class="device-name">家里的电脑</span><span class="device-meta">公网直连 · 42 ms</span></span><span class="primary-button row-connect">连接</span></button>
+            <div class="list-label"><span>最近使用</span><span>1</span></div>
+            <button type="button" class="device-row"><span class="device-avatar"><svg><use href="#i-monitor"/></svg></span><span class="device-main"><span class="device-name">旧笔记本</span><span class="device-meta">昨天 22:16 连接过</span></span><span class="text-button row-connect">检测</span></button>
+          </div>
+          <div class="utility-nav">
+            <button type="button" data-go="files"><svg><use href="#i-folder"/></svg><span>文件</span></button>
+            <button type="button" data-go="history"><svg><use href="#i-history"/></svg><span>记录</span></button>
+            <button type="button" data-go="settings"><svg><use href="#i-settings"/></svg><span>设置</span></button>
+          </div>
+        </aside>
+        <section class="content-pane">
+          <header class="detail-head">
+            <div class="detail-device"><svg><use href="#i-monitor"/></svg></div>
+            <div class="detail-title"><h2>工作电脑</h2><p><span class="online-text">在线</span> · Windows 11 · 局域网直连</p></div>
+            <div class="detail-actions">
+              <button type="button" class="primary-button large" data-go="connecting"><svg><use href="#i-play"/></svg>连接并控制</button>
+              <button type="button" class="text-button"><svg><use href="#i-eye"/></svg>只看</button>
+              <button type="button" class="text-button" data-go="files"><svg><use href="#i-folder"/></svg>传文件</button>
+              <button type="button" class="icon-button" aria-label="更多设备操作"><svg><use href="#i-more"/></svg></button>
+            </div>
+          </header>
+          <div class="detail-body">
+            <div class="section-head"><h3>连接与权限</h3><button class="section-link" type="button">管理此设备</button></div>
+            <div class="facts">
+              <div class="fact-row"><span class="fact-label">当前连接</span><span class="fact-value"><span class="badge success"><svg><use href="#i-wifi"/></svg>局域网直连</span></span><span class="fact-note">预计延迟 8–12 ms</span></div>
+              <div class="fact-row"><span class="fact-label">连接方式</span><span class="fact-value">每次由对方确认</span><span class="fact-note">未开启无人值守</span></div>
+              <div class="fact-row"><span class="fact-label">默认权限</span><span class="fact-value">可操作键盘与鼠标</span><span class="fact-note">可在发起前改为只看</span></div>
+              <div class="fact-row"><span class="fact-label">文件接收</span><span class="fact-value">每次询问</span><span class="fact-note">未授权自动接收</span></div>
+            </div>
+            <div class="section-head"><h3>最近会话</h3><button class="section-link" type="button" data-go="history">查看全部</button></div>
+            <div class="history-list">
+              <div class="history-line"><strong>远程控制</strong><span>18 分 24 秒</span><span>今天 09:42</span><span class="result">正常结束</span></div>
+              <div class="history-line"><strong>只看模式</strong><span>4 分 11 秒</span><span>昨天 16:08</span><span class="result">正常结束</span></div>
+              <div class="history-line"><strong>文件传输</strong><span>3 个文件</span><span>9 月 18 日</span><span class="result">已完成</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="screen screen-pair workspace">
+        <aside class="device-pane">
+          <div class="device-pane-head"><div class="pane-command"><span class="pane-title">我的设备</span><button class="text-button" type="button"><svg><use href="#i-plus"/></svg>添加设备</button></div><label class="search"><svg><use href="#i-search"/></svg><input aria-label="搜索设备" placeholder="搜索设备" /></label></div>
+          <div class="device-scroll"><div class="empty-device-list">还没有已配对的设备。<br />配对后会出现在这里。</div></div>
+          <div class="utility-nav"><button type="button" data-go="files"><svg><use href="#i-folder"/></svg><span>文件</span></button><button type="button" data-go="history"><svg><use href="#i-history"/></svg><span>记录</span></button><button type="button" data-go="settings"><svg><use href="#i-settings"/></svg><span>设置</span></button></div>
+        </aside>
+        <section class="content-pane pair-body">
+          <div class="pair-panel">
+            <h2>配对第一台设备</h2>
+            <p>配对只需做一次。以后打开远程电脑，直接点设备即可连接。</p>
+            <button type="button" class="pair-option"><span class="pair-option-icon"><svg><use href="#i-wifi"/></svg></span><span><strong>查找附近设备</strong><small>两台电脑在同一网络时，用 6 位数字码核对。</small></span><svg><use href="#i-chevron"/></svg></button>
+            <button type="button" class="pair-option"><span class="pair-option-icon"><svg><use href="#i-link"/></svg></span><span><strong>输入对方的邀请码</strong><small>不在同一网络时，让对方复制邀请码发给你。</small></span><svg><use href="#i-chevron"/></svg></button>
+            <div class="pair-foot"><span>只用这一次？不用加到设备列表。</span><button type="button" class="text-button button-quiet"><svg><use href="#i-ticket"/></svg>一次性协助</button></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="screen screen-connecting workspace">
+        <aside class="device-pane">
+          <div class="device-pane-head"><div class="pane-command"><span class="pane-title">我的设备</span></div></div>
+          <div class="device-scroll"><div class="list-label"><span>正在连接</span></div><button type="button" class="device-row selected"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><span class="device-main"><span class="device-name">工作电脑</span><span class="device-meta">等待对方同意</span></span><span class="badge warning">12 秒</span></button></div>
+          <div class="utility-nav"><button type="button"><svg><use href="#i-folder"/></svg><span>文件</span></button><button type="button"><svg><use href="#i-history"/></svg><span>记录</span></button><button type="button"><svg><use href="#i-settings"/></svg><span>设置</span></button></div>
+        </aside>
+        <section class="content-pane connecting-body">
+          <div class="wait-panel">
+            <div class="wait-device"><svg><use href="#i-monitor"/></svg><span class="wait-pulse"></span></div>
+            <h2>正在等待“工作电脑”同意</h2>
+            <p>已申请“可控”。对方同意后会自动进入远程画面。</p>
+            <div class="wait-progress"></div><div class="wait-meta">已等待 12 秒 · 1 分 48 秒后自动取消</div>
+            <div class="wait-actions"><button type="button" class="text-button">改为只看</button><button type="button" class="text-button" data-go="devices">取消申请</button><button type="button" class="primary-button" data-go="session">模拟对方已同意</button></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="screen screen-session">
+        <section class="session-shell">
+          <header class="session-bar">
+            <div class="session-peer"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><span><strong>工作电脑</strong><small>已连接 · 局域网直连 · 00:18:24</small></span></div>
+            <div class="session-tools">
+              <button type="button" class="session-tool on"><svg><use href="#i-layout"/></svg>适应窗口</button>
+              <button type="button" class="session-tool"><svg><use href="#i-monitor"/></svg>显示器 1</button>
+              <button type="button" class="session-tool on"><svg><use href="#i-volume"/></svg>声音</button>
+              <button type="button" class="session-tool on"><svg><use href="#i-clipboard"/></svg>剪贴板</button>
+              <button type="button" class="session-tool" data-go="files"><svg><use href="#i-folder"/></svg>传文件</button>
+              <button type="button" class="session-tool"><svg><use href="#i-expand"/></svg>全屏</button>
+              <button type="button" class="session-tool" id="detailToggle"><svg><use href="#i-info"/></svg>连接详情</button>
+            </div>
+            <button type="button" class="danger-button session-end" data-go="devices">结束会话</button>
+          </header>
+          <div class="remote-canvas">
+            <div class="remote-desktop">
+              <div class="remote-wall-shape"></div>
+              <div class="remote-window"><div class="remote-window-head"><span></span><span></span><span></span></div><div class="remote-window-body"><div class="remote-line w45"></div><div class="remote-line w85"></div><div class="remote-line w70"></div><div class="remote-line w85"></div><div class="remote-line w45"></div></div></div>
+              <div class="remote-taskbar"><span class="task-icon"></span><span class="task-icon"></span><span class="task-icon"></span><span class="task-icon"></span></div>
+            </div>
+            <div class="keyboard-tip">键盘已发送给对方 · 按 Esc 释放</div>
+            <aside class="session-detail" id="sessionDetail"><h4>连接详情</h4><div class="telemetry-row"><span>连接路径</span><span>LAN DIRECT</span></div><div class="telemetry-row"><span>画面</span><span>2560×1440 / 60 FPS</span></div><div class="telemetry-row"><span>编码</span><span>H.264 / 14.2 Mbps</span></div><div class="telemetry-row"><span>网络延迟</span><span>8 ms</span></div><div class="telemetry-row"><span>画面延迟</span><span>24 ms</span></div><div class="telemetry-row"><span>丢包</span><span>0.02%</span></div></aside>
+          </div>
+        </section>
+      </div>
+
+      <div class="screen screen-inbound workspace">
+        <section class="content-pane inbound-body">
+          <div class="inbound-panel">
+            <div class="inbound-alert">你的电脑正在被远程操作</div>
+            <div class="inbound-main">
+              <div class="inbound-who"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><div><h2>王磊的笔记本</h2><p>已连接 08:16 · 可控模式 · 局域网直连</p></div></div>
+              <div class="permission-list"><div class="permission-row"><svg><use href="#i-shield"/></svg>可查看当前显示器</div><div class="permission-row"><svg><use href="#i-shield"/></svg>可操作键盘与鼠标</div><div class="permission-row"><svg><use href="#i-shield"/></svg>剪贴板自动同步已开启</div><div class="permission-row"><svg><use href="#i-shield"/></svg>文件仍需要你逐次接受</div></div>
+              <div class="inbound-actions"><button type="button" class="text-button">本次结束后免确认</button><button type="button" class="danger-button">立即结束远程</button></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="screen screen-files page-layout">
+        <aside class="device-pane">
+          <div class="device-pane-head"><div class="pane-command"><span class="pane-title">选择设备</span></div><label class="search"><svg><use href="#i-search"/></svg><input aria-label="搜索设备" placeholder="搜索设备" /></label></div>
+          <div class="device-scroll"><button type="button" class="device-row selected"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><span class="device-main"><span class="device-name">工作电脑</span><span class="device-meta">在线 · 局域网直连</span></span></button><button type="button" class="device-row"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><span class="device-main"><span class="device-name">家里的电脑</span><span class="device-meta">在线 · 公网直连</span></span></button></div>
+          <div class="utility-nav"><button type="button" class="active"><svg><use href="#i-folder"/></svg><span>文件</span></button><button type="button" data-go="history"><svg><use href="#i-history"/></svg><span>记录</span></button><button type="button" data-go="settings"><svg><use href="#i-settings"/></svg><span>设置</span></button></div>
+        </aside>
+        <main class="page-main">
+          <div class="page-titlebar"><h2>与“工作电脑”传输文件</h2><button type="button" class="text-button">向对方索取文件</button><button type="button" class="primary-button"><svg><use href="#i-plus"/></svg>发送文件</button></div>
+          <div class="transfer-summary"><span class="badge success">已连接</span><span>文件传输与画面会话相互独立，对方接受后才会写入电脑。</span></div>
+          <div class="transfer-list">
+            <div class="transfer-row"><span class="file-icon"><svg><use href="#i-file"/></svg></span><div class="file-name"><strong>项目素材.zip</strong><small>1.42 GB · 发送到工作电脑</small><div class="progress progress-68"><span></span></div></div><span class="transfer-speed">18.6 MB/s</span><span class="transfer-state">68%</span><button class="icon-button" type="button" aria-label="取消传输"><svg><use href="#i-x"/></svg></button></div>
+            <div class="transfer-row"><span class="file-icon"><svg><use href="#i-file"/></svg></span><div class="file-name"><strong>需求清单.xlsx</strong><small>486 KB · 从工作电脑接收</small><div class="progress progress-100"><span></span></div></div><span class="transfer-speed">—</span><span class="transfer-state online-text">已完成</span><button class="icon-button" type="button" aria-label="打开所在文件夹"><svg><use href="#i-folder"/></svg></button></div>
+          </div>
+        </main>
+      </div>
+
+      <div class="screen screen-history page-layout">
+        <aside class="device-pane">
+          <div class="device-pane-head"><div class="pane-command"><span class="pane-title">我的设备</span><button class="text-button" type="button" data-go="devices">返回设备</button></div></div>
+          <div class="device-scroll"><div class="list-label"><span>按设备筛选</span></div><button type="button" class="device-row selected"><span class="device-avatar"><svg><use href="#i-history"/></svg></span><span class="device-main"><span class="device-name">全部设备</span><span class="device-meta">12 条会话记录</span></span></button><button type="button" class="device-row"><span class="device-avatar online"><svg><use href="#i-monitor"/></svg></span><span class="device-main"><span class="device-name">工作电脑</span><span class="device-meta">7 条记录</span></span></button></div>
+          <div class="utility-nav"><button type="button" data-go="files"><svg><use href="#i-folder"/></svg><span>文件</span></button><button type="button" class="active"><svg><use href="#i-history"/></svg><span>记录</span></button><button type="button" data-go="settings"><svg><use href="#i-settings"/></svg><span>设置</span></button></div>
+        </aside>
+        <main class="page-main">
+          <div class="page-titlebar"><h2>会话记录</h2><button type="button" class="text-button">清空记录</button></div>
+          <div class="transfer-summary"><span>只记录时间、时长、结果与连接路径，不保存画面和键盘鼠标内容。</span></div>
+          <div class="history-table"><div class="history-head"><span>设备</span><span>方向</span><span>时间</span><span>时长</span><span>结果</span></div><div class="history-record"><strong>工作电脑</strong><span>我连对方</span><span>今天 09:42</span><span>18 分 24 秒</span><span class="path">局域网直连</span></div><div class="history-record"><strong>家里的电脑</strong><span>我连对方</span><span>昨天 21:08</span><span>42 分 09 秒</span><span class="path">公网直连</span></div><div class="history-record"><strong>王磊的笔记本</strong><span>对方连我</span><span>9 月 18 日</span><span>8 分 16 秒</span><span>用户结束</span></div></div>
+        </main>
+      </div>
+
+      <div class="screen screen-settings page-layout">
+        <aside class="device-pane">
+          <div class="device-pane-head"><div class="pane-command"><span class="pane-title">远程设置</span><button class="text-button" type="button" data-go="devices">返回设备</button></div></div>
+          <div class="device-scroll"><button type="button" class="device-row selected"><span class="device-avatar"><svg><use href="#i-settings"/></svg></span><span class="device-main"><span class="device-name">常用设置</span><span class="device-meta">连接、权限与启动</span></span></button><button type="button" class="device-row"><span class="device-avatar"><svg><use href="#i-shield"/></svg></span><span class="device-main"><span class="device-name">无人值守</span><span class="device-meta">临时接入码与固定密码</span></span></button></div>
+          <div class="utility-nav"><button type="button" data-go="files"><svg><use href="#i-folder"/></svg><span>文件</span></button><button type="button" data-go="history"><svg><use href="#i-history"/></svg><span>记录</span></button><button type="button" class="active"><svg><use href="#i-settings"/></svg><span>设置</span></button></div>
+        </aside>
+        <main class="page-main">
+          <div class="page-titlebar"><h2>常用设置</h2></div>
+          <section class="settings-sheet"><div class="settings-title">连接</div><div class="setting-row"><div><strong>启动工作台时开启远程通道</strong><small>打开后，设备可以立即发起或接收远程请求。</small></div><button class="switch on" type="button" role="switch" aria-checked="true" aria-label="自动开启远程通道"></button></div><div class="setting-row"><div><strong>默认连接方式</strong><small>点击设备上的“连接”时使用。</small></div><div class="choice-group"><button type="button">只看</button><button type="button" class="active">可控</button></div></div></section>
+          <section class="settings-sheet"><div class="settings-title">这台电脑允许的操作</div><div class="setting-row"><div><strong>允许其他设备连接本机</strong><small>关闭后，你仍可以连接别人，但别人不能连入这台电脑。</small></div><button class="switch on" type="button" role="switch" aria-checked="true" aria-label="允许连接本机"></button></div><div class="setting-row"><div><strong>对方可申请的最高权限</strong><small>对方申请可控时，仍需要你同意。</small></div><div class="choice-group"><button type="button">只看</button><button type="button" class="active">可控</button></div></div></section>
+          <section class="settings-sheet"><div class="settings-title">无人值守</div><div class="setting-row"><div><strong>临时接入码</strong><small>生成 15 分钟单次码或 24 小时码，可指定只看或可控。</small></div><button type="button" class="text-button">生成接入码</button></div><div class="setting-row"><div><strong>固定密码</strong><small>当没人在这台电脑旁边时，使用独立密码连接。默认仅局域网。</small></div><button type="button" class="text-button">设置密码</button></div></section>
+        </main>
+      </div>
+    </section>
+
+    <section class="design-notes">
+      <article class="note-panel"><h3>这份方案删掉了什么</h3><ul><li>不再分“远程电脑主页”和“设备列表页”。</li><li>不再用欢迎插画、极光、扫光和卡片悬浮填充空闲态。</li><li>不再把延迟、码率、编解码全部常驻铺在画面上。</li><li>不再在设备页、设置页和被控卡里维护多份同义状态。</li></ul></article>
+      <article class="note-panel"><h3>视觉 token</h3><div class="token-list"><span class="token"><i class="swatch base"></i>窗口底</span><span class="token"><i class="swatch pane"></i>设备栏</span><span class="token"><i class="swatch ink"></i>主文字</span><span class="token"><i class="swatch accent"></i>唯一强调</span><span class="token"><i class="swatch success"></i>在线/成功</span><span class="token"><i class="swatch canvas"></i>远程画面</span></div><ul><li>字体：Segoe UI / 微软雅黑；遥测数据用 Cascadia Code。</li><li>圆角只用 4 / 8 / 12；动效只用 150 / 200 / 300ms。</li><li>没有渐变主按钮，没有固定青色/紫色装饰。</li></ul></article>
+      <article class="note-panel"><h3>职责收口</h3><div class="mapping"><div class="mapping-row"><span>主页 + 设备页</span><span>→</span><b>设备工作台</b></div><div class="mapping-row"><span>左导航 + 顶栏</span><span>→</span><b>标题栏 + 底部工具</b></div><div class="mapping-row"><span>HUD + 状态条</span><span>→</span><b>连接详情</b></div><div class="mapping-row"><span>多处文件面板</span><span>→</span><b>传输中心</b></div><div class="mapping-row"><span>多处免确认</span><span>→</span><b>设备权限</b></div></div></article>
+    </section>
+  </main>
+
+  <script>
+    const prototype = document.getElementById("prototype");
+    const stateButtons = [...document.querySelectorAll("[data-state-btn]")];
+    const setState = (state) => {
+      prototype.dataset.state = state;
+      stateButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.stateBtn === state)));
+      document.getElementById("sessionDetail")?.classList.remove("open");
+    };
+    stateButtons.forEach((button) => button.addEventListener("click", () => setState(button.dataset.stateBtn)));
+    document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => setState(button.dataset.go)));
+    document.getElementById("detailToggle")?.addEventListener("click", () => document.getElementById("sessionDetail")?.classList.toggle("open"));
+  </script>
+</body>
+</html>

@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设计稿：全屏 Markdown 编辑器 · 克制文档工作台 A+</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   真值来源（规则 12，已逐条对照源码）：
+   - 主题令牌：src/styles/theme.css  [data-theme="ocean"] / [data-theme="midnight"]
+   - 现状结构：src/components/editors/FullscreenEditor.tsx（工具栏/格式栏/分栏/状态栏）
+   - 现状样式：src/components/editors/FullscreenEditor.module.css
+   - 大纲侧栏：fullscreen/MarkdownOutline.module.css（216px 宽、指示条）
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── ocean 海洋（默认浅色）令牌真值 ── */
+:root, [data-theme="ocean"] {
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
+  --header-bg-start: rgba(255,255,255,.55);
+  --card-bg: #fff;
+  --text-primary: #0f172a;
+  --text-secondary: #495565;
+  --text-muted: #627083;
+  --border-color: #e0e4eb;
+  --accent: #0284c7;
+  --accent-light: #e0f2fe;
+  --accent-solid: #027cbb;
+  --accent-strong: #0273ad;
+  --text-on-accent: #fff;
+  --seg-bg: #e8e8ed;
+  --seg-active-bg: #fff;
+  --section-bg: #f0f4f8;
+  --hover: #e8ecf2;
+  --green: #11813a;  --green-bg: #dcfce7;  --green-border: #bbf7d0;
+  --orange: #c54a0a; --orange-bg: #fff7ed; --orange-border: #fed7aa;
+  --danger: #dc2626; --red-bg: #fee2e2;
+  --success: #15803d; --success-bg: #dcfce7; --success-border: #86efac;
+  --warning: #c54a0a; --warning-bg: #fff7ed; --warning-border: #fed7aa;
+  --danger-bg: #fee2e2;
+  --version-badge-gradient: linear-gradient(135deg, #0ea5e9, #0284c7);
+  --float-card-shadow: 0 12px 36px rgba(0,0,0,.10), 0 2px 8px rgba(0,0,0,.05);
+  --float-card-border: rgba(0,0,0,.06);
+  --float-card-bg: #ffffff;
+  /* 编辑区底色：「没有」 --cm-* 令牌，真实来源是 useCodeMirrorEditor.ts 的
+     lightEditorChrome（& → var(--card-bg)、.cm-gutters 透明、.cm-activeLine → var(--hover)）。
+     下面这三个别名只为稿子内部书写方便，实施时不要新增它们。 */
+  --demo-cm-bg: var(--card-bg);
+  --demo-cm-gutter: var(--text-muted);
+  --demo-cm-line: var(--hover);
+  /* A+ 目标层级：皮肤只留在外围，工作区使用高不透明实体面。
+     这些是设计稿语义别名；落地时优先由现有主题令牌派生。 */
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+/* ── midnight 午夜（默认深色）令牌真值 ── */
+[data-theme="midnight"] {
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #1c1832 0%, #0b0b13 55%, #07070c 100%);
+  --header-bg-start: transparent;
+  --card-bg: #18181b;
+  --text-primary: #e4e4e7;
+  --text-secondary: #afafb7;
+  --text-muted: #8d8d95;
+  --border-color: #27272a;
+  --accent: #818cf8;
+  --accent-light: #1e1b4b;
+  --accent-solid: #666fc4;
+  --accent-strong: #818cf8;
+  --text-on-accent: #fff;
+  --seg-bg: #27272a;
+  --seg-active-bg: #3f3f46;
+  --section-bg: #0f0f11;
+  --hover: #1f1f23;
+  --green: #4ade80;  --green-bg: #052e16;  --green-border: #166534;
+  --orange: #fb923c; --orange-bg: #431407; --orange-border: #9a3412;
+  --danger: #f87171; --red-bg: #450a0a;
+  --success: #4ade80; --success-bg: #14532d; --success-border: #166534;
+  --warning: #fb923c; --warning-bg: #431407; --warning-border: #9a3412;
+  --danger-bg: #450a0a;
+  --version-badge-gradient: linear-gradient(135deg, #818cf8, #6366f1);
+  --float-card-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 8px 28px rgba(0,0,0,.45);
+  --float-card-border: rgba(255,255,255,.07);
+  --float-card-bg: #18181b;
+  /* 编辑区底色别名（同上，真实来源是 EditorView.theme 里的 var(--card-bg) / var(--hover)） */
+  --demo-cm-bg: var(--card-bg);
+  --demo-cm-gutter: var(--text-muted);
+  --demo-cm-line: var(--hover);
+  --workbench-bg: #101014;
+  --chrome-bg: #18181b;
+  --paper-bg: #18181b;
+  --status-bg: #121216;
+  --status-border: rgba(255,255,255,.06);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  background: #2b2f36;
+  padding: 24px 24px 80px;
+  color: #e8eaf0;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; }
+button:focus-visible {
+  outline: 2px solid var(--accent, #0284c7);
+  outline-offset: 2px;
+}
+
+/* ── 设计稿说明条（交付后删）── */
+.doc-note {
+  max-width: 1240px; margin: 0 auto 16px;
+  background: #fef3c7; color: #78350f;
+  border: 1px solid #fcd34d; border-radius: 10px;
+  padding: 10px 16px; font-size: 12.5px; line-height: 1.7;
+}
+.doc-note b { color: #92400e; }
+
+/* ── 演示控制台 ── */
+.demo-controls {
+  max-width: 1240px; margin: 0 auto 20px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 12px; color: #aab0bd;
+}
+.demo-controls .lbl { font-size: 11.5px; color: #7d8494; margin-right: -4px; }
+.dc-btn {
+  border: 1px solid #454b57; background: #343945; color: #d5d9e2;
+  border-radius: 7px; padding: 4px 12px; font-size: 12px; cursor: pointer;
+  transition: all .15s;
+}
+.dc-btn:hover { border-color: #6b7285; }
+.dc-btn.on { background: #0284c7; border-color: #0284c7; color: #fff; }
+
+h2.sec {
+  max-width: 1240px; margin: 34px auto 6px;
+  font-size: 17px; font-weight: 700; color: #f0f2f7;
+}
+p.sec-sub {
+  max-width: 1240px; margin: 0 auto 14px;
+  font-size: 12.5px; color: #9aa1af; line-height: 1.7;
+}
+p.sec-sub code { background: #3a404c; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+
+/* ═══════════ 窗口框架（模拟独立 OS 窗口 .overlay） ═══════════ */
+.window {
+  max-width: 1240px; margin: 0 auto;
+  height: 700px;
+  border-radius: 12px; overflow: hidden;
+  display: flex; flex-direction: column;
+  background: var(--workbench-bg);
+  box-shadow: 0 24px 64px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08);
+  position: relative;
+  color: var(--text-primary);
+}
+
+/* ═══════════ ① 工具栏（重构后） ═══════════ */
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  /* 真实 .toolbar：height 48px / padding 0 16px / gap 8px（module.css:65-73） */
+  height: 48px; padding: 0 16px;
+  /* 真实 .toolbar（module.css:71）：linear-gradient(180deg, --header-bg-start, --app-bg)。
+     注意终点是 --app-bg 不是 transparent —— 场景主题下 --header-bg-start 为 transparent，
+     渐变终点决定 toolbar 与内容区是否有分界。 */
+  background: var(--chrome-bg);
+  box-shadow: 0 1px 0 var(--status-border);
+  flex-shrink: 0;
+}
+
+.tb-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+
+.file-icon {
+  /* 真实 .fileIcon：28px / 圆角 6px / 字号 12px（module.css:101-113） */
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--accent-light);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-strong); font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+}
+/* 方案C：文件名区回退同行拼接（与真实代码一致，工具栏保持 48px）
+   ── 真实 FullscreenEditor.tsx:819-825 是 fileName 与 filePath 同处一个
+      toolbarLeft flex 行，中间用「— 」拼接；模块化 CSS 里 .fileName/.filePath
+      本来就是两个独立类，并没有纵向排布容器。
+   ── 改双行要多占 14px（48→62px），收益只有「路径长时文件名不被压短」，
+      而它带来的代价是：① 工具栏变高、内容区变矮；② 文件名与路径的
+      从属关系在视觉上被割成两块。故方案C 回退。 */
+.file-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.file-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; flex-shrink: 0; }
+.file-name {
+  /* 真实 .fileName：13px / 600（module.css:115-120） */
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.unsaved-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--warning); flex-shrink: 0;
+}
+/* 方案C：路径只在「同名文件区分」时才需要，改为可收缩 + 省略号，
+   并把破折号一起放进 content，避免它在窄窗口下变成孤立的一个字 */
+.file-meta .file-path { margin-left: -4px; }
+.file-path {
+  /* 真实 .filePath：11px / --text-muted（module.css:122-128） */
+  font-size: 11px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0; flex-shrink: 1;
+}
+
+.tb-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }  /* 真实 gap 4px */
+
+/* 保存是唯一实色主操作；去掉渐变与装饰阴影，不与文档内容抢焦点。 */
+.btn-save {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 32px; padding: 0 14px;
+  border: none; border-radius: 8px;
+  background: var(--accent-solid);
+  color: var(--text-on-accent); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background 150ms cubic-bezier(.2,0,0,1), transform 150ms cubic-bezier(.2,0,0,1), opacity 150ms cubic-bezier(.2,0,0,1), filter 150ms cubic-bezier(.2,0,0,1);
+}
+.btn-save:hover { filter: brightness(1.06); }
+.btn-save:active { transform: scale(.96); }
+.btn-save:disabled { opacity: .72; cursor: wait; transform: none; }
+.btn-save kbd {
+  font-family: inherit; font-size: 10px; opacity: .75;
+  border: 1px solid rgba(255,255,255,.35); border-radius: 4px;
+  padding: 0 4px; line-height: 14px; margin-left: 2px;
+}
+
+/* 视图分段控件（改后：图标+常驻文字，修 L2；令牌 --seg-bg/--seg-active-bg 是现成的） */
+.view-seg {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--seg-bg); border-radius: 8px; padding: 3px;
+}
+.view-seg button {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: background 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1);
+  white-space: nowrap;
+}
+.view-seg button:hover { color: var(--text-primary); }
+.view-seg button.on {
+  background: var(--seg-active-bg); color: var(--accent-strong);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15,23,42,.08), 0 0 0 1px rgba(15,23,42,.04);
+}
+[data-theme="midnight"] .view-seg button.on {
+  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+
+/* 工具栏图标按钮（大纲 / ⋯ / 关闭） */
+.tb-icon {
+  width: 32px; height: 32px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 8px;
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; transition: background 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1);
+}
+.tb-icon:hover { background: var(--hover); color: var(--text-primary); }
+.tb-icon.on { background: var(--accent-light); color: var(--accent-strong); }
+.tb-icon.close:hover { background: var(--red-bg); color: var(--danger); }
+.tb-action {
+  height:32px; padding:0 10px;
+  display:inline-flex; align-items:center; gap:6px;
+  border:0; border-radius:8px;
+  background:transparent; color:var(--text-secondary);
+  font-size:12px; cursor:pointer;
+  transition:background 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1);
+}
+.tb-action:hover { background:var(--hover); color:var(--text-primary); }
+.tb-action.on { background:var(--accent-light); color:var(--accent-strong); }
+
+/* ── ⋯更多菜单浮层（复用 --float-card-* 令牌） ── */
+.more-wrap { position: relative; }
+.more-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 208px; padding: 6px;
+  background: var(--float-card-bg);
+  border: 1px solid var(--float-card-border);
+  border-radius: 12px;
+  box-shadow: var(--float-card-shadow);
+  z-index: 100;
+  animation: pop-in 150ms cubic-bezier(.05,.7,.1,1) both;
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
+.more-menu .mi {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 7px 10px;
+  border: none; border-radius: 7px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 12.5px; cursor: pointer; text-align: left;
+  transition: all .15s;
+}
+.more-menu .mi:hover { background: var(--hover); color: var(--text-primary); }
+.more-menu .mi svg { flex-shrink: 0; color: var(--text-muted); }
+.more-menu .mi:hover svg { color: var(--accent-strong); }
+.more-menu .mi kbd {
+  margin-left: auto; font-family: inherit; font-size: 10.5px;
+  color: var(--text-muted);
+}
+.more-menu .msep { height: 1px; background: var(--border-color); margin: 5px 8px; }
+
+/* ═══════════ ② 格式栏（A+：高频直达 + 四个带字菜单） ═══════════ */
+.format-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 16px;
+  background: var(--chrome-bg);
+  box-shadow: 0 1px 0 var(--status-border);
+  flex-shrink: 0;
+}
+.fmt-cluster { display: inline-flex; align-items: center; gap: 2px; }
+.fmt-btn {
+  width: 30px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; transition: background 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1);
+}
+.fmt-btn:hover { background: var(--accent-light); color: var(--accent-strong); }
+/* 真实 .fmtBtnText：高 28 / padding 0 10 / gap 5 / 字号 12（module.css:401-415） */
+.fmt-btn-text {
+  height: 28px; padding: 0 10px;
+  display: inline-flex; align-items: center; gap: 5px;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 12px; white-space: nowrap;
+  cursor: pointer; transition: background 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1);
+}
+.fmt-btn-text:hover { background: var(--accent-light); color: var(--accent-strong); }
+.fmt-btn.letter { font-size: 13px; font-weight: 700; }
+.fmt-btn.letter.italic { font-family: Georgia, serif; font-style: italic; font-weight: 600; }
+.fmt-menu-btn {
+  height: 28px; padding: 0 10px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 12px; cursor: pointer;
+  transition: background 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1);
+}
+.fmt-menu-btn:hover { background: var(--hover); color: var(--text-primary); }
+.fmt-menu-btn .chev { color: var(--text-muted); font-size: 10px; margin-left: 1px; }
+.fmt-spacer { flex: 1; }
+.fmt-hint { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* ═══════════ ③ 主区：大纲 / 编辑 / 预览 ═══════════ */
+.main {
+  flex: 1; min-height: 0;
+  display: flex; overflow: hidden;
+  background: var(--workbench-bg);
+}
+
+/* 大纲侧栏（沿用 MarkdownOutline 现状：216px + 指示条） */
+.outline {
+  flex: 0 0 auto; width: 210px; min-width: 210px;
+  display: flex; flex-direction: column; overflow: hidden;
+  margin: 8px 0 8px 8px;
+  border-radius: 8px;
+  background: var(--chrome-bg);
+}
+.outline-head {
+  padding: 9px 12px 6px; font-size: 11px; letter-spacing: .04em;
+  color: var(--text-muted); user-select: none;
+}
+.outline-list { flex: 1; overflow: hidden; padding: 0 6px 10px; position: relative; }
+.ol-ind {
+  position: absolute; left: 6px; width: 3px; border-radius: 2px;
+  background: var(--accent);
+  transition: top .2s cubic-bezier(.2,0,0,1), height .2s cubic-bezier(.2,0,0,1);
+}
+.ol-item {
+  display: block; width: 100%;
+  border: none; background: transparent;
+  color: var(--text-secondary); font-size: 12px; line-height: 1.5;
+  text-align: left; padding: 4px 8px; border-radius: 4px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background .15s, color .15s;
+}
+.ol-item:hover { background: var(--hover); color: var(--text-primary); }
+.ol-item.on { background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+.ol-lv1 { padding-left: 8px; font-weight: 600; color: var(--text-primary); }
+.ol-lv2 { padding-left: 18px; font-weight: 500; }
+.ol-lv3 { padding-left: 28px; }
+
+/* 面板靠实体背景与留白分层，不再用彩色圆点标记身份。 */
+.pane { display: flex; flex-direction: column; min-width: 0; margin: 8px 0; background: var(--paper-bg); overflow: hidden; }
+.pane-editor { flex: 0 0 47%; margin-left: 8px; border-radius: 8px 0 0 8px; }
+.pane-preview { flex: 1 1 0; margin-right: 8px; border-radius: 0 8px 8px 0; }
+.pane-head {
+  display: flex; align-items: center; gap: 7px;
+  min-height: 32px; padding: 0 14px;
+  flex-shrink: 0; user-select: none;
+  background: color-mix(in srgb, var(--section-bg) 44%, var(--paper-bg));
+}
+.pane-label {
+  font-size: 12px; font-weight: 600; color: var(--text-primary);
+}
+.pane-sub { font-size: 11px; color: var(--text-muted); }
+.live-state { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--text-muted); }
+.live-state::before { content:""; width:5px; height:5px; border-radius:50%; background:var(--success); }
+
+/* 改后：行号开关做成同款小胶囊（沿用现状 lnToggle 思路） */
+.ln-toggle {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none;
+  background: var(--hover);
+  color: var(--text-muted); font-size: 11px;
+  padding: 3px 9px; border-radius: 8px; cursor: pointer;
+  transition: background 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1);
+}
+.ln-toggle .d { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); }
+.ln-toggle.on { color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.ln-toggle.on .d { background: var(--accent); box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 80%, transparent); }
+
+/* 编辑区（CodeMirror 观感模拟：行号 + 等宽 + 语法色）
+   ── 方案C 校正：原稿写 12.5px/1.75，与真实值不符且方向是倒退。
+      真值来源 FullscreenEditor.module.css:513-518：
+        .editorBody .cm-editor { font-size: 13.5px; line-height: 1.65;
+                                  font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace }
+      原稿把小字 + 疏行当「纸张感」，实际效果是字更小、每屏行数更少（负收益）。 */
+.editor-body {
+  flex: 1; min-height: 0; overflow: hidden;
+  display: flex;
+  background: var(--demo-cm-bg);
+  font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13.5px; line-height: 1.65;
+}
+.cm-gutters {
+  flex: 0 0 auto; padding: 12px 0;
+  width: 44px; text-align: right;
+  color: var(--demo-cm-gutter); opacity: .55;
+  user-select: none; font-size: 11.5px; line-height: 1.65;
+}
+.cm-gutters div { padding-right: 12px; }
+/* 真实 .cm-content padding 12px 0、.cm-line padding 0 16px —— 合计左侧 16px */
+.cm-content { flex: 1; padding: 12px 0 12px 16px; white-space: pre; color: var(--text-primary); overflow: hidden; line-height: 1.65; }
+.cm-content .tk-h { color: var(--accent-strong); font-weight: 700; }
+.cm-content .tk-fmt { color: var(--text-muted); }
+.cm-content .tk-b { font-weight: 700; }
+.cm-content .tk-i { font-style: italic; }
+.cm-content .tk-code { color: var(--orange); }
+.cm-content .tk-quote { color: var(--green); }
+.cm-active-line { background: var(--demo-cm-line); }
+
+/* 分栏拖拽把手：视觉只显示中心 2px，实际命中区 8px。 */
+.resize-handle {
+  flex: 0 0 8px; cursor: col-resize; position: relative;
+}
+.resize-handle::after {
+  content: ""; position: absolute; left: 3px; top: 40%; bottom: 40%; width: 2px;
+  border-radius: 2px; background: var(--border-color); transition: background 150ms cubic-bezier(.2,0,0,1);
+}
+.resize-handle:hover::after { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* 预览区（MarkdownRenderer 观感模拟） */
+.preview-body {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 28px 32px 40px;
+  color: var(--text-primary);
+}
+.preview-paper { max-width: 72ch; margin: 0 auto; font-size: 15px; line-height: 1.8; }
+.preview-body h1 {
+  font-size: 24px; line-height: 1.3; font-weight: 700; letter-spacing: -.02em; margin: 0 0 20px;
+}
+.preview-body h2 { font-size: 18px; line-height: 1.4; font-weight: 650; margin: 28px 0 10px; }
+.preview-body p { margin: 10px 0; color: var(--text-secondary); }
+.preview-body code {
+  font-family: "Cascadia Code", Consolas, monospace; font-size: 11.5px;
+  background: var(--section-bg); border: none;
+  border-radius: 4px; padding: 2px 6px; color: var(--text-primary);
+}
+.preview-body blockquote {
+  margin: 8px 0; padding: 4px 12px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-radius: 0 8px 8px 0; color: var(--text-secondary);
+}
+.preview-body ul { padding-left: 20px; color: var(--text-secondary); }
+.preview-body li { margin: 3px 0; }
+
+/* ═══════════ ④ 状态栏（改后：分组 + 保存状态徽章） ═══════════ */
+/* A+ 将整条强调色降为中性信息带；颜色只留给保存状态。 */
+.status-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 28px; padding: 0 16px;
+  background: var(--status-bg);
+  color: var(--text-muted);
+  box-shadow: 0 -1px 0 var(--status-border);
+  flex-shrink: 0;
+  font-size: 11px;
+  user-select: none;
+  position: relative; z-index: 1;
+}
+.sb-left, .sb-right { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.sb-item { display: flex; align-items: center; gap: 4px; white-space: nowrap; opacity: .8; }
+.sb-item.strong { opacity: 1; font-weight: 600; color: var(--text-secondary); }
+/* 新增：光标位置（等宽数字，选中字数在其旁，有选中才出现） */
+.sb-cursor { font-family: "Cascadia Code", Consolas, monospace; font-size: 10.5px; }
+.sb-sel { color: var(--text-secondary); font-weight: 600; opacity: 1; }
+
+/* 保存状态徽章：文字 + 图形 + 语义色，不只靠颜色辨认。 */
+.save-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  background: var(--section-bg);
+  font-family: inherit;
+  cursor: default;
+}
+.save-badge .d { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.save-badge.saved   { color: var(--success); background: var(--success-bg); border-color: var(--success-border); }
+.save-badge.saving  { color: var(--accent-strong); background: var(--accent-light); border-color: var(--accent-border, transparent); }
+.save-badge.dirty   { color: var(--warning); background: var(--warning-bg); border-color: var(--warning-border); }
+.save-badge.failed  {
+  color: var(--danger); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 35%, transparent); font-weight: 700;
+  cursor: pointer;
+}
+
+/* ═══════════ ⑤ 专注模式 ═══════════ */
+/* 专注模式：chrome 全隐藏，编辑区居中限宽 760px，悬停顶部唤出迷你工具栏 */
+.window.focus-mode .format-bar,
+.window.focus-mode .status-bar,
+.window.focus-mode .outline { display: none; }
+.window.focus-mode .pane-preview,
+.window.focus-mode .resize-handle { display: none; }
+.window.focus-mode .main { justify-content: center; }
+.window.focus-mode .pane-editor {
+  flex: 0 1 760px;
+  /* 专注纸张：编辑区微浮起，与背景拉开（V1：背景对比 > 边框） */
+  margin: 28px 16px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--demo-cm-bg);
+  box-shadow: 0 1px 2px rgba(15,23,42,.06), 0 12px 32px rgba(15,23,42,.10);
+}
+[data-theme="midnight"] .window.focus-mode .pane-editor {
+  box-shadow: 0 4px 16px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+}
+.window.focus-mode .pane-head { display: none; }
+.window.focus-mode .editor-body { background: transparent; }
+
+/* 专注模式迷你工具栏：默认上滑隐藏，悬停顶部 48px 热区滑出（300ms 面板档） */
+.focus-tb-hotzone {
+  position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 50;
+}
+.focus-tb {
+  position: absolute; top: 0; left: 50%; transform: translate(-50%, -110%);
+  display: flex; align-items: center; gap: 10px;
+  height: 40px; padding: 0 12px;
+  background: var(--float-card-bg);
+  border: 1px solid var(--float-card-border);
+  border-radius: 0 0 12px 12px;
+  box-shadow: var(--float-card-shadow);
+  transition: transform 300ms cubic-bezier(.2,0,0,1);
+  z-index: 51;
+  white-space: nowrap;
+}
+.focus-tb-hotzone:hover + .focus-tb,
+.focus-tb:focus-within,
+.focus-tb:hover { transform: translate(-50%, 0); }
+.focus-tb .ft-name { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.focus-tb .ft-exit {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border-color); border-radius: 7px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 11.5px; padding: 4px 10px; cursor: pointer; transition: all .15s;
+}
+.focus-tb .ft-exit:hover { background: var(--hover); color: var(--text-primary); }
+.focus-save-pin {
+  position: absolute; top: 12px; right: 16px; z-index: 52;
+  box-shadow: 0 1px 2px rgba(15,23,42,.06), 0 6px 18px rgba(15,23,42,.08);
+}
+
+/* 进入专注模式时的静态提示：不用长时间动画承载唯一出口。 */
+.focus-toast {
+  position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+  background: var(--float-card-bg); border: 1px solid var(--float-card-border);
+  box-shadow: var(--float-card-shadow);
+  color: var(--text-secondary); font-size: 12px;
+  border-radius: 999px; padding: 6px 16px;
+  z-index: 52;
+}
+.focus-toast kbd {
+  font-family: inherit; font-size: 10.5px;
+  border: 1px solid var(--border-color); border-radius: 4px;
+  padding: 0 5px; margin: 0 1px; color: var(--text-muted);
+}
+
+/* ═══════════ ⑥ 细节放大区 / 标注 / 清单表 ═══════════ */
+.zoom-grid {
+  max-width: 1240px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.zoom-card {
+  border-radius: 12px; padding: 18px 20px;
+  background: var(--card-bg); border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+.zoom-card h4 { font-size: 12.5px; font-weight: 700; margin-bottom: 4px; }
+.zoom-card .zsub { font-size: 11px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }
+.zoom-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* 改动点标注（气泡数字） */
+.callout {
+  position: absolute; z-index: 60;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #f59e0b; color: #fff;
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 3px rgba(245,158,11,.25);
+  cursor: help;
+}
+.legend {
+  max-width: 1240px; margin: 10px auto 0;
+  font-size: 12px; color: #9aa1af; line-height: 2;
+}
+.legend b { color: #f59e0b; margin-right: 2px; }
+.legend .sep { color: #4b5160; margin: 0 8px; }
+
+table.changes {
+  max-width: 1240px; margin: 0 auto; width: 100%;
+  border-collapse: collapse; font-size: 12.5px;
+  background: #1e222b; border-radius: 12px; overflow: hidden;
+  color: #d5d9e2;
+}
+table.changes th {
+  text-align: left; padding: 10px 14px; font-size: 11.5px;
+  color: #9aa1af; background: #262b36; font-weight: 600;
+}
+table.changes td { padding: 10px 14px; border-top: 1px solid #2c323e; line-height: 1.65; vertical-align: top; }
+table.changes td:first-child { white-space: nowrap; font-weight: 600; color: #f0f2f7; }
+/* 回归注意行的首列要允许换行（默认 nowrap 会把「（内容类型侧）」挤成一行） */
+table.changes td.rowline:first-child { white-space: normal; }
+table.changes code { background: #343945; border-radius: 4px; padding: 1px 6px; font-size: 11px; color: #a8c7fa; }
+/* v2 新增：风险提示色（原稿没有这两个类，表格里已引用） */
+table.changes .warn { color: #fbbf24; font-weight: 600; }
+table.changes td.rowline { white-space: normal; color: #f0f2f7; }
+/* 中性状态带上的实拍对照卡 */
+.badge-on-band { background: var(--status-bg); border-radius: 8px; padding: 8px 12px; display: inline-flex; gap: 8px; align-items: center; }
+.state-mock { width:100%; padding:16px; border-radius:8px; background:var(--section-bg); color:var(--text-primary); }
+.state-mock h5 { font-size:13px; margin-bottom:6px; }
+.state-mock p { font-size:12px; line-height:1.6; color:var(--text-secondary); }
+.state-actions { display:flex; gap:8px; margin-top:12px; }
+.state-actions button { min-height:28px; padding:0 10px; border-radius:6px; border:0; background:var(--hover); color:var(--text-secondary); cursor:pointer; }
+.state-actions .primary { background:var(--accent-solid); color:var(--text-on-accent); }
+.state-actions .danger { color:var(--danger); background:var(--danger-bg); }
+.state-actions .safe { box-shadow:0 0 0 2px var(--accent-border, color-mix(in srgb,var(--accent) 35%,transparent)); }
+.format-demo { padding:8px 10px; border-radius:8px; background:var(--chrome-bg); box-shadow:0 1px 0 var(--status-border); }
+.format-demo .format-bar { padding:0; box-shadow:none; background:transparent; flex-wrap:wrap; }
+.doc-type-sample { background:var(--paper-bg); }
+.doc-type-inner { max-width:38ch; margin:0 auto; }
+.doc-type-inner h5 { font-size:20px; margin-bottom:12px; }
+.doc-type-note { font-size:11px; color:var(--text-muted); margin-top:10px; line-height:1.6; }
+.doc-type-note b { color:var(--text-secondary); }
+@media (max-width: 980px) {
+  .file-path, .fmt-hint { display:none; }
+  .outline { width:176px; min-width:176px; }
+  .view-seg button { padding:0 8px; }
+}
+@media (max-width: 760px) {
+  body { padding:12px 12px 56px; }
+  .window { height:720px; }
+  .toolbar, .format-bar, .status-bar { padding-left:8px; padding-right:8px; }
+  .outline { display:none; }
+  .pane-editor { margin-left:8px; }
+  .sb-left .sb-item:nth-child(n+2) { display:none; }
+  .tb-left { gap:6px; }
+}
+@media (max-width: 620px) {
+  .view-seg button { padding:0 7px; }
+  .view-seg button svg, .btn-save kbd, .outline-action { display:none; }
+  .btn-save { padding:0 10px; }
+  .preview-body { padding:24px 20px 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.tag-a { color: #7dd3fc; } .tag-b { color: #c4b5fd; } .tag-c { color: #86efac; }
+</style>
+</head>
+<body data-theme="ocean">
+
+<div class="doc-note">
+  <b>设计稿说明：</b>在方案 B 工作台结构上直接升级为 <b>A+ 「克制文档工作台 + 可切换专注模式」</b>。
+  保留文件信息、分屏、大纲和专注模式；将皮肤氛围限制在工作台外围，正文区使用高不透明实体面。
+  主要改动：顶栏收束、格式栏按语义分组、状态栏中性化、预览正文限定 72ch 行长、补齐保存中/失败/预览错误/关闭保护状态。
+  <br>顶部控制台可切换主题 / 保存状态 / 视图模式做演示。
+  本外壳被 markdown / json / html / csv / log / code 六类型共用，改动均需逐类型回归。
+</div>
+
+<div class="demo-controls">
+  <span class="lbl">主题</span>
+  <button class="dc-btn on" id="themeOcean">🌊 ocean 浅色</button>
+  <button class="dc-btn" id="themeMidnight">🌙 midnight 深色</button>
+  <span style="width:10px"></span>
+  <span class="lbl">保存状态</span>
+  <button class="dc-btn on" data-save="saved">✓ 已保存</button>
+  <button class="dc-btn" data-save="saving">… 保存中</button>
+  <button class="dc-btn" data-save="dirty">● 未保存</button>
+  <button class="dc-btn" data-save="failed">● 自动保存失败</button>
+  <span style="width:10px"></span>
+  <span class="lbl">视图</span>
+  <button class="dc-btn" data-view="edit">仅编辑</button>
+  <button class="dc-btn on" data-view="split">分屏</button>
+  <button class="dc-btn" data-view="preview">仅预览</button>
+</div>
+
+<!-- ═══════════════ 屏幕①：改后全景（分屏态） ═══════════════ -->
+<h2 class="sec">① A+ 改后全景 · 分屏态（默认）</h2>
+<p class="sec-sub">
+  <b>❶</b> 文件身份与脏状态同域 ｜ <b>❷</b> 保存是唯一实色主操作 ｜
+  <b>❸</b> 视图分段带常驻文字 ｜ <b>❹</b> 低频操作收进 ⋯ ｜
+  <b>❺</b> 面板身份改用文字与背景层级 ｜ <b>❻</b> 中性状态栏只局部上语义色。
+</p>
+
+<div class="window" id="winMain">
+  <!-- 工具栏（重构后） -->
+  <div class="toolbar">
+    <div class="tb-left">
+      <div class="file-icon">MD</div>
+      <!-- 方案C：同行拼接（真实代码 FullscreenEditor.tsx:819-825 就是把 fileName
+           与「— 目录」放进同一个 flex 行）。脏点移到文件名右侧，仍是「反馈与所属同域」。 -->
+      <div class="file-meta">
+        <div class="file-name-row">
+          <span class="file-name">产品周报-第38周.md</span>
+          <span class="unsaved-dot" id="dirtyDot" style="display:none"></span>
+        </div>
+        <span class="file-path">— D:\Documents\周报\</span>
+      </div>
+    </div>
+    <div class="tb-right">
+      <span class="callout" style="position:relative; margin-right:2px" title="❶ 文件名与路径同行（同真实代码）；脏点从孤立圆点移到文件名右侧（反馈与所属同域）">❶</span>
+      <button class="btn-save" id="saveButton">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span id="saveButtonText">保存</span> <kbd>Ctrl+S</kbd>
+      </button>
+      <span class="callout" style="position:relative" title="❷ 保存是工具栏唯一主按钮（V3：一屏一个强调色）">❷</span>
+      <div class="view-seg" id="viewSeg">
+        <button data-vm="edit">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          编辑
+        </button>
+        <button data-vm="split" class="on">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+          分屏
+        </button>
+        <button data-vm="preview">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          预览
+        </button>
+      </div>
+      <span class="callout" style="position:relative" title="❸ 修 L2：裸图标 → 图标+常驻文字；分段控件令牌 --seg-bg/--seg-active-bg 现成">❸</span>
+      <button class="tb-action outline-action on" title="大纲（Markdown 专属，高频保留可见）">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg>
+        <span>大纲</span>
+      </button>
+      <div class="more-wrap">
+        <button class="tb-action" id="moreBtn" title="更多">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+          <span>更多</span>
+        </button>
+      </div>
+      <span class="callout" style="position:relative" title="❹ 重载/打开/全屏收进 ⋯（低频），右侧从 9 元素减到 5 元素">❹</span>
+      <button class="tb-icon close" title="关闭 Esc">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- A+ 格式栏：高频字形直达，其余按「标题 / 列表 / 插入」分组。 -->
+  <div class="format-bar" id="formatBar">
+    <button class="fmt-btn-text"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span>查找</span></button>
+    <div class="fmt-cluster">
+      <button class="fmt-btn letter" title="粗体 Ctrl+B">B</button>
+      <button class="fmt-btn letter italic" title="斜体 Ctrl+I">I</button>
+      <button class="fmt-btn letter" title="删除线"><s>S</s></button>
+      <button class="fmt-btn letter" title="行内代码">&lt;/&gt;</button>
+    </div>
+    <button class="fmt-menu-btn"><span>标题</span><span class="chev">▾</span></button>
+    <button class="fmt-menu-btn"><span>列表</span><span class="chev">▾</span></button>
+    <button class="fmt-menu-btn"><span>引用与代码块</span><span class="chev">▾</span></button>
+    <button class="fmt-menu-btn"><span>插入</span><span class="chev">▾</span></button>
+    <span class="fmt-spacer"></span>
+    <span class="fmt-hint">选中文字后可再点一次取消格式</span>
+  </div>
+
+  <!-- 主区 -->
+  <div class="main">
+    <!-- 大纲侧栏（现状沿用） -->
+    <div class="outline" id="outline">
+      <div class="outline-head">大纲 · 6</div>
+      <div class="outline-list">
+        <div class="ol-ind" style="top:32px; height:19px"></div>
+        <button class="ol-item ol-lv1">本周概览</button>
+        <button class="ol-item ol-lv2 on">关键指标</button>
+        <button class="ol-item ol-lv2">发布进展</button>
+        <button class="ol-item ol-lv3">编辑器优化</button>
+        <button class="ol-item ol-lv2">问题与风险</button>
+        <button class="ol-item ol-lv1">下周计划</button>
+      </div>
+    </div>
+
+    <!-- 编辑面板 -->
+    <div class="pane pane-editor" id="paneEditor">
+      <div class="pane-head">
+        <span class="pane-label">Markdown 源文</span>
+        <span class="pane-sub">可编辑</span>
+        <span class="callout" style="position:relative; margin-left:2px" title="❺ 去掉双强调色圆点，面板靠标题和背景层级区分">❺</span>
+      </div>
+      <div class="editor-body">
+        <div class="cm-gutters"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>10</div><div>11</div></div>
+        <div class="cm-content"><span class="tk-h"># 本周概览</span>
+<span class="tk-fmt"></span>
+<span class="cm-active-line">本周完成 <span class="tk-b">**14**</span> 项迭代，重点交付全屏编辑器的<span class="tk-i">*工作台化改造*</span>，</span>
+分屏预览与大纲跳转保持既有体验不变。
+<span class="tk-fmt"></span>
+<span class="tk-h">## 关键指标</span>
+<span class="tk-fmt"></span>
+<span class="tk-quote">&gt; 数据截至周五 18:00，来源为本地统计</span>
+<span class="tk-fmt"></span>
+- 启动耗时 <span class="tk-code">`120ms`</span> → <span class="tk-code">`86ms`</span>
+- 保存成功率 99.7%</div>
+      </div>
+    </div>
+
+    <!-- 分栏把手 -->
+    <div class="resize-handle" id="resizeHandle"></div>
+
+    <!-- 预览面板 -->
+    <div class="pane pane-preview" id="panePreview">
+      <div class="pane-head">
+        <span class="pane-label">排版预览</span>
+        <span class="live-state">实时</span>
+        <button class="ln-toggle on"><span class="d"></span>行号</button>
+      </div>
+      <div class="preview-body">
+        <article class="preview-paper">
+          <h1>本周概览</h1>
+          <p>本周完成 <b>14</b> 项迭代，重点交付全屏编辑器的<i>工作台化改造</i>，分屏预览与大纲跳转保持既有体验不变。</p>
+          <h2>关键指标</h2>
+          <blockquote>数据截至周五 18:00，来源为本地统计</blockquote>
+          <ul>
+            <li>启动耗时 <code>120ms</code> → <code>86ms</code></li>
+            <li>保存成功率 99.7%</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态栏（改后） -->
+  <div class="status-bar">
+    <div class="sb-left">
+      <span class="sb-item">612 字</span>
+      <span class="sb-item">约 2 分钟读完</span>
+      <span class="sb-item">UTF-8</span>
+    </div>
+    <div class="sb-right">
+      <span class="sb-item sb-cursor">行 12，列 5</span>
+      <span class="sb-item sb-sel" id="selInfo" style="display:none">已选 26 字</span>
+      <button type="button" class="save-badge saved" id="saveBadge"><span class="d"></span><span id="saveBadgeText">已保存</span></button>
+      <span class="sb-item">Markdown</span>
+      <span class="callout" style="position:relative; margin-left:4px" title="❻ 光标位置新增；保存三态从文字变带色徽章（绿/橙/红），一眼可辨">❻</span>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <b>❶</b> 文件名区同行（同真实代码），脏点移到文件名右侧（反馈与所属同域）｜
+  <span class="sep">│</span>
+  <b>❷</b> 保存 = 唯一实色主按钮；<code>Ctrl+S</code> 以 kbd 常驻展示（L5 不靠记忆）
+  <span class="sep">│</span>
+  <b>❸</b> 分段控件：编辑/分屏/预览裸图标终于有字（修 L2）
+  <span class="sep">│</span>
+  <b>❹</b> ⋯：专注模式 / 重载 / 打开 / 真全屏
+  <span class="sep">│</span>
+  <b>❺</b> 面板用「Markdown 源文 / 排版预览」与背景层级区分，不再用两个强调色圆点
+  <span class="sep">│</span>
+  <b>❻</b> 状态栏右端：行:列 + 保存徽章；整条改为中性底，只让保存状态使用语义色
+</div>
+
+
+<!-- ═══════════════ 屏幕②：专注模式 ═══════════════ -->
+<h2 class="sec">② 专注模式（新增）</h2>
+<p class="sec-sub">
+  入口：<code>⋯ 菜单 → 专注模式</code> 或 <code>Ctrl Shift F</code>。
+  格式栏 / 状态栏 / 大纲 / 面板头全部隐去，编辑区<b>居中限宽 760px</b> 微浮起（纸张感）。
+  <b>鼠标移到顶部</b>滑出迷你工具栏（文件名 + 退出）；保存状态在右上角常驻，不会被专注模式隐藏。
+  退出：<kbd>Esc</kbd> 先退出专注（两级取消，不直接关窗），或点迷你工具栏「退出专注」。
+  👇 <b>把鼠标移到下方窗口顶部试试</b>（迷你工具栏滑出）
+</p>
+
+<div class="window focus-mode" id="winFocus">
+  <!-- 悬停热区 + 迷你工具栏 -->
+  <div class="focus-tb-hotzone"></div>
+  <div class="focus-tb">
+    <div class="file-icon" style="width:24px; height:24px; font-size:10px; border-radius:6px">MD</div>
+    <span class="ft-name">产品周报-第38周.md</span>
+    <button class="ft-exit">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+      退出专注 <kbd style="font-family:inherit; font-size:10px; opacity:.6">Esc</kbd>
+    </button>
+  </div>
+  <button type="button" class="save-badge saved focus-save-pin" id="focusSaveBadge"><span class="d"></span><span id="focusSaveText">已保存</span></button>
+
+  <div class="main">
+    <div class="pane pane-editor">
+      <div class="editor-body">
+        <div class="cm-gutters"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>10</div><div>11</div><div>12</div><div>13</div><div>14</div></div>
+        <div class="cm-content"><span class="tk-h"># 本周概览</span>
+<span class="tk-fmt"></span>
+本周完成 <span class="tk-b">**14**</span> 项迭代，重点交付全屏编辑器的<span class="tk-i">*工作台化改造*</span>，
+分屏预览与大纲跳转保持既有体验不变。
+<span class="tk-fmt"></span>
+<span class="tk-h">## 关键指标</span>
+<span class="tk-fmt"></span>
+<span class="tk-quote">&gt; 数据截至周五 18:00，来源为本地统计</span>
+<span class="tk-fmt"></span>
+- 启动耗时 <span class="tk-code">`120ms`</span> → <span class="tk-code">`86ms`</span>
+- 保存成功率 99.7%
+- 大纲跳转、滚动同步零回归
+<span class="tk-fmt"></span>
+<span class="cm-active-line">|</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 进入时的短暂提示；真实实现用延时关闭 + 300ms 淡出 -->
+  <div class="focus-toast">已进入专注模式 · <kbd>Esc</kbd> 退出 · 鼠标移到顶部显示工具栏</div>
+</div>
+
+<div class="legend">
+  <b>设计要点：</b>专注模式 = 仅编辑态 + chrome 全隐藏 + 居中纸张（760px）
+  <span class="sep">│</span>
+  迷你工具栏<b>不常驻</b>（不挡写作视野），悬停或键盘聚焦顶部热区唤出
+  <span class="sep">│</span>
+  右上角保存徽章<b>持续可见</b>（规则 15：失败反馈不能被专注模式藏起来）
+  <span class="sep">│</span>
+  两级取消：Esc 先回普通模式，再 Esc 才关窗
+</div>
+
+<!-- ═══════════════ 屏幕③：细节放大 ═══════════════ -->
+<h2 class="sec">③ 细节放大</h2>
+<p class="sec-sub">分段控件三态 / 保存徽章三态 / ⋯ 更多菜单展开态，1.5 倍观感确认。</p>
+
+<div class="zoom-grid">
+  <!-- 视图分段控件 -->
+  <div class="zoom-card">
+    <h4>视图分段控件（修 L2）</h4>
+    <div class="zsub">现状是 3 个裸图标（title 里藏「仅编辑/分屏/仅预览」），小白只能靠猜。改后图标+常驻文字；容器 <code>--seg-bg</code>、选中 <code>--seg-active-bg</code> + 轻影，令牌全部现成。</div>
+    <div class="zoom-row">
+      <div class="view-seg">
+        <button class="on"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>编辑</button>
+        <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>分屏</button>
+        <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>预览</button>
+      </div>
+      <div class="view-seg">
+        <button>编辑</button>
+        <button class="on"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>分屏</button>
+        <button>预览</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 格式栏语义分组 -->
+  <div class="zoom-card">
+    <h4>格式栏：从 14 个裸图标收成 5 组可读操作</h4>
+    <div class="zsub">粗体/斜体/删除线/行内代码保留一键直达；标题、列表、引用与代码块、插入收进带文字菜单。不靠一排竖线制造分组。</div>
+    <div class="format-demo">
+      <div class="format-bar">
+        <button class="fmt-btn-text">查找</button>
+        <div class="fmt-cluster"><button class="fmt-btn letter">B</button><button class="fmt-btn letter italic">I</button><button class="fmt-btn letter"><s>S</s></button><button class="fmt-btn">&lt;/&gt;</button></div>
+        <button class="fmt-menu-btn">标题 <span class="chev">▾</span></button>
+        <button class="fmt-menu-btn">列表 <span class="chev">▾</span></button>
+        <button class="fmt-menu-btn">插入 <span class="chev">▾</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存徽章三态 -->
+  <div class="zoom-card">
+    <h4>保存状态徽章（规则 15：反馈必须与触发同域可见）</h4>
+    <div class="zsub">现状：状态栏里一行灰字「✓ 已保存 / ● 未保存」，与 6 项统计同样式平排，最重要的反馈被淹没。改后带色徽章三态；失败态点按可重试（= Ctrl+S）。</div>
+    <div class="zoom-row">
+      <span class="save-badge saved"><span class="d"></span>已保存</span>
+      <span class="save-badge saving"><span class="d"></span>保存中…</span>
+      <span class="save-badge dirty"><span class="d"></span>未保存</span>
+      <span class="save-badge failed"><span class="d"></span>自动保存失败 · 点击重试</span>
+    </div>
+  </div>
+
+  <!-- 文档排版尺度 -->
+  <div class="zoom-card">
+    <h4>排版预览：文档尺度与界面尺度分开</h4>
+    <div class="zsub">界面仍遵守 11/12/13/15/20px；用户文档单独使用 15px 正文、24px H1、18px H2，最大行长 72ch。这是内容排版 token，不是新的 UI 尺度。</div>
+    <div class="state-mock doc-type-sample">
+      <div class="doc-type-inner">
+        <h5>本周概览</h5>
+        <p>用字重、行宽与留白建立层级，不再依赖渐变标题、彩色竖条和多重边框。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⋯ 更多菜单展开 -->
+  <div class="zoom-card">
+    <h4>⋯ 更多菜单（低频收编）</h4>
+    <div class="zsub">重载（仅文件模式出现）/ 打开文件 / 真全屏 / 专注模式。浮层卡复用 <code>--float-card-*</code> 令牌；快捷键以 <code>kbd</code> 常驻（L5）。</div>
+    <div class="more-menu" style="position:static; animation:none; display:block">
+      <button class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/></svg>专注模式 <kbd>Ctrl+Shift+F</kbd></button>
+      <div class="msep"></div>
+      <button class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>从磁盘重新加载</button>
+      <button class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>打开文件…</button>
+      <div class="msep"></div>
+      <button class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>放大到真全屏</button>
+    </div>
+  </div>
+
+  <!-- 状态栏前后对照 -->
+  <div class="zoom-card">
+    <h4>状态栏右侧 · 改前 vs 改后</h4>
+    <div class="zsub">改前整条蓝渐变与保存主按钮同时抢焦点。改后：状态栏使用中性表面，光标/选区/格式是普通信息，只有保存徽章使用语义色。</div>
+    <div class="zoom-row" style="flex-direction:column; align-items:flex-start; gap:10px">
+      <div style="font-size:11px; color:var(--text-muted)">改前：<span style="color:var(--text-muted)">✓ 已保存</span> &nbsp;·&nbsp; <span style="color:var(--text-muted)">Markdown</span></div>
+      <div style="display:flex; align-items:center; gap:2px; font-size:11px; color:var(--text-muted)">
+        改后：
+        <span class="sb-item sb-cursor">行 12，列 5</span>
+        <span class="sb-item sb-sel">已选 26 字</span>
+        <span class="save-badge saved"><span class="d"></span>已保存</span>
+        <span class="sb-item">Markdown</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 预览错误态 -->
+  <div class="zoom-card">
+    <h4>预览错误态（U3.5：不能变成空白页）</h4>
+    <div class="zsub">解析或 Mermaid 渲染失败时，在预览面板持久告知发生了什么，并提供重试和查看源码。</div>
+    <div class="state-mock">
+      <h5>预览没有生成</h5>
+      <p>第 28 行的 Mermaid 图表语法无法解析。你的 Markdown 源文和未保存修改都还在。</p>
+      <div class="state-actions"><button class="primary">重试预览</button><button>显示源码</button></div>
+    </div>
+  </div>
+
+  <!-- 关闭保护 -->
+  <div class="zoom-card">
+    <h4>关闭保护：危险操作不做默认焦点</h4>
+    <div class="zsub">只有「保存并关闭」「不保存」「返回编辑」三条路。Esc 和点遮罩只返回编辑，绝不丢稿。</div>
+    <div class="state-mock">
+      <h5>还有未保存的修改</h5>
+      <p>如果现在关闭，这次编辑的内容将不会保留。</p>
+      <div class="state-actions"><button class="primary">保存并关闭</button><button class="danger">不保存</button><button class="safe">返回编辑</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 屏幕④：改动清单 ═══════════════ -->
+<h2 class="sec">④ 改动清单（痛点 → 修复 → 落点）</h2>
+<p class="sec-sub"><span class="tag-a">◆ P0</span> = 专业感与可学性底线 ｜ <span class="tag-b">◆ P1</span> = 写作效率与沉浸体验 ｜ <span class="tag-c">◆ 守护</span> = 保存、错误与关闭安全。规则引用见 <code>docs/PastePanda-UI规则.md</code> 与 AGENTS.md。</p>
+
+<table class="changes">
+  <tr><th style="width:180px">项</th><th style="width:290px">痛点（现状）</th><th>修复（改后）</th><th style="width:270px">落点</th></tr>
+  <tr>
+    <td><span class="tag-a">◆ A1</span> 视图分段控件</td>
+    <td>编辑/分屏/预览是 3 个裸图标，文字只在 title 里 —— <b>违反 L2</b>（图标必须有常驻标签）</td>
+    <td>分段控件：图标 + 常驻文字「编辑/分屏/预览」；容器 <code>--seg-bg</code>、激活 <code>--seg-active-bg</code>（token 现成）</td>
+    <td><code>types.ts</code> 的 <code>SpecMode</code> 加 <code>label</code>；<code>FullscreenEditor.tsx</code> modes 渲染分支<br>
+        <b class="warn">⚠ 连带</b>：<code>notes/NoteViewModeSwitch.tsx</code></td>
+  </tr>
+  <tr>
+    <td><span class="tag-a">◆ P0-2</span> 面板身份</td>
+    <td>「编辑」「预览」只是灰色小字，两个面板头分不清谁是谁</td>
+    <td>直接使用「Markdown 源文 / 排版预览」用户语言；面板靠背景对比分层，不再添加蓝/绿双强调色圆点</td>
+    <td><code>FullscreenEditor.module.css</code> 的 <code>.paneHeader/.paneLabel</code></td>
+  </tr>
+  <tr>
+    <td><span class="tag-a">◆ P0-3</span> 保存状态徽章</td>
+    <td>三态是状态栏里同样式的灰字，与统计信息平排被淹没（规则 15 反馈弱化）</td>
+    <td>中性状态栏 + 局部语义徽章：「已保存 / 保存中 / 未保存 / 自动保存失败 · 点击重试」<br>
+        <b class="warn">⚠ 文案须保留「自动」二字</b>：真实是 <code>● 自动保存失败 · Ctrl+S 重试</code>，不能简写成「保存失败」（语义从「自动存不进去」变成「按了没存上」）</td>
+    <td><code>FullscreenEditor.tsx</code> 状态栏 statusRight（现 <code>tsx:975-987</code>）；module.css 新增 <code>.saveBadge*</code></td>
+  </tr>
+  <tr>
+    <td><span class="tag-a">◆ P0-4</span> 工具栏分组</td>
+    <td>右侧最多 9 个元素一排（重载/大纲/打开/保存/3×分段/全屏/关闭），功能分组靠 1px 竖线勉强区隔</td>
+    <td>收束为 5 元素：保存（主按钮）｜视图分段｜大纲（md 专属）｜⋯｜关闭</td>
+    <td><code>FullscreenEditor.tsx</code> toolbarRight（现 <code>tsx:828-884</code>）</td>
+  </tr>
+  <tr>
+    <td><span class="tag-a">◆ P0-5</span> 格式栏收束</td>
+    <td>除「查找」外的 14 个常驻裸图标需要逐个猜，且占据一整行</td>
+    <td>高频字形操作直达；其余收成「标题 / 列表 / 引用与代码块 / 插入」带文字菜单</td>
+    <td><code>fullscreen/MarkdownFormatBar.tsx</code> + 新的小型菜单子组件</td>
+  </tr>
+  <tr>
+    <td><span class="tag-a">◆ P0-6</span> 中性状态栏</td>
+    <td>整条蓝渐变与保存主按钮、文件图标同时争抢强调色</td>
+    <td>状态栏改为中性表面；删去重复文件名和字符数，保留字数/阅读时间、光标/选区、保存状态与文件类型</td>
+    <td><code>FullscreenEditor.module.css</code> <code>.statusBar</code> + statusLeft 渲染</td>
+  </tr>
+  <tr>
+    <td><span class="tag-b">◆ B1</span> 文件名区</td>
+    <td>「文件名 — 路径」同行拼接（<code>tsx:820-822</code> 用 <code>— {dir}</code>），路径无收缩约束，长了挤压文件名；脏点孤立在末尾</td>
+    <td><b>方案C 回退为同行</b>，但把 path 改为 <code>flex-shrink:1 + min-width:0 + ellipsis</code>（原样无收缩约束），脏点移贴文件名右侧（反馈与所属同域）</td>
+    <td><code>FullscreenEditor.tsx</code> toolbarLeft（<code>tsx:816-826</code>）+ module.css <code>.filePath</code></td>
+  </tr>
+  <tr>
+    <td><span class="tag-b">◆ B2</span> ⋯ 更多菜单</td>
+    <td>重载/打开/真全屏三个低频按钮常驻占位（全屏按钮几乎没点过——窗口本来就是覆盖态）</td>
+    <td>收进 ⋯ 浮层（复用 <code>--float-card-*</code>）；重载仍仅文件模式出现；快捷键 kbd 常驻（L5）</td>
+    <td>新组件 <code>fullscreen/MoreMenu.tsx</code>（规则 7：主文件已 1004 行，不再堆）</td>
+  </tr>
+  <tr>
+    <td><span class="tag-b">◆ P1-3</span> 专注模式</td>
+    <td>写长文时格式栏/状态栏/大纲全是干扰；编辑区铺满全屏视线跨度过大</td>
+    <td>chrome 全隐藏 + 编辑区居中限宽 760px；顶部悬停/键盘聚焦唤出迷你栏；保存状态右上角常驻；<kbd>Ctrl+Shift+F</kbd> 切换</td>
+    <td>新 hook <code>useFocusMode.ts</code> + module.css；仅对编辑类模式生效（markdown/text/code）</td>
+  </tr>
+  <tr>
+    <td><span class="tag-c">◆ 守护-1</span> 预览错误</td>
+    <td>Markdown 或 Mermaid 解析失败时可能只剩空白预览</td>
+    <td>持久错误态：说明失败位置，明确源文未丢失，提供「重试预览 / 显示源码」</td>
+    <td><code>MarkdownRenderer.tsx</code> 错误状态 + 预览面板重试入口</td>
+  </tr>
+  <tr>
+    <td><span class="tag-c">◆ 守护-2</span> 关闭三选一</td>
+    <td>「不保存」不应成为 Esc/遮罩或默认焦点的结果</td>
+    <td>保存并关闭 / 不保存 / 返回编辑；默认焦点与 Esc 都落在「返回编辑」</td>
+    <td>专用关闭确认组件，不复用二选一 <code>ConfirmDialog</code> 语义</td>
+  </tr>
+  <tr>
+    <td><span class="tag-b">◆ B4</span> 光标位置/选中字数</td>
+    <td>状态栏无定位信息，长文里不知道自己写到哪</td>
+    <td>右端新增「行 12，列 5」（等宽）；有选中时显示「已选 N 字」；CodeMirror <code>selection</code> 现成 API</td>
+    <td><code>useCodeMirrorEditor.ts</code> 暴露光标状态；状态栏渲染</td>
+  </tr>
+  <tr>
+    <td><span class="tag-b">◆ B5</span> 格式栏预览隐藏</td>
+    <td>「仅预览」模式下格式栏仍占一整行且所有按钮点了无意义（预览态不可编辑）</td>
+    <td>仅预览模式下整栏自动隐藏（200ms 收起过渡）；切回编辑/分屏即恢复</td>
+    <td><code>FullscreenEditor.tsx</code> formatBar 渲染条件：<code>spec.FormatBar && viewMode !== "preview"</code></td>
+  </tr>
+  <tr>
+    <td class="rowline">⚠️ 回归注意<br>（内容类型侧）</td>
+    <td colspan="3">
+      本外壳被 <b>markdown / json / html / csv / log / code</b> 六类型共用：
+      <code>registry.tsx</code> 实测 —— markdown/json/html 用 <code>TRI_MODES</code>（三分段）；
+      <b>text</b> 与 <b>code</b> 只有 <code>[{key:"edit"}]</code> 一项；
+      <b>csv</b> 是 <code>[edit, preview]</code>（无分屏）；<b>log</b> 是 <code>[edit, split, preview]</code> 但 title 换成「编辑源码/日志视图」；
+      <b>code</b> 另有 <code>LanguagePicker</code>（在 toolbarLeft，不受本方案影响）。
+      → 分段控件必须按 <code>spec.modes</code> 数组渲染；<code>spec.modes.length &gt; 1</code> 判断沿用现状。
+      ⚠️ <b>文案要跟着 modes 的 title 走</b>，不能硬编码「编辑/分屏/预览」——否则 log/csv 会显示错名。
+    </td>
+  </tr>
+  <tr>
+    <td class="rowline">⚠️ 回归注意<br>（知识库侧）</td>
+    <td colspan="3">
+      🔴 <b>原稿漏项</b>：<code>TRI_MODES</code> 有 <b>4 个消费点</b>，
+      除注册表三处，还有 <code>notes/NoteViewModeSwitch.tsx:79</code>（知识库笔记编辑器）。
+      该文件头注释明写「按钮的 key / 文案 / 图标 / 顺序全部来自 TRI_MODES——与全屏 Markdown 编辑器同一份定义」，
+      正是为防两边分歧。两条路：
+      <br>① <b>只给全屏侧加文字</b> → 需另立一份 spec，破坏「同一份定义」的初衷；
+      <br>② <b>两边都加</b> → <code>NoteViewModeSwitch.module.css</code> 的 <code>.btn</code> 是 <b>写死 <code>width:24px</code></b>，
+      三个「图标+双字」会溢出，须同步改成 <code>min-width + padding</code>。
+      <br><b>建议②</b>：L2 是底线，且改动量可控（一处 CSS 尺寸 + aria-label 已有，不必重写）。
+    </td>
+  </tr>  <tr>
+    <td><span class="tag-c">◆ C1</span> 编辑区字号行高</td>
+    <td>原方案B 稿里写 12.5px / 行高 1.75（自拟值）</td>
+    <td><b>13.5px / 1.65</b>，与 <code>module.css:516-517</code> 真值一致；<code>.cm-content</code> padding 12px 0 + <code>.cm-line</code> 0 16px</td>
+    <td>纯稿内校正，<b>无代码改动</b>（现状已正确）</td>
+  </tr>
+</table>
+
+
+
+
+<script>
+/* ── 主题切换 ── */
+const body = document.body;
+const tOcean = document.getElementById('themeOcean');
+const tMid = document.getElementById('themeMidnight');
+tOcean.onclick = () => { body.dataset.theme = 'ocean'; tOcean.classList.add('on'); tMid.classList.remove('on'); };
+tMid.onclick = () => { body.dataset.theme = 'midnight'; tMid.classList.add('on'); tOcean.classList.remove('on'); };
+
+/* ── 保存状态四态演示 ── */
+const badge = document.getElementById('saveBadge');
+const badgeText = document.getElementById('saveBadgeText');
+const dirtyDot = document.getElementById('dirtyDot');
+const focusBadge = document.getElementById('focusSaveBadge');
+const focusBadgeText = document.getElementById('focusSaveText');
+const saveButton = document.getElementById('saveButton');
+const saveButtonText = document.getElementById('saveButtonText');
+const SAVE_TEXT = { saved: '已保存', saving: '保存中…', dirty: '未保存', failed: '自动保存失败 · 点击重试' };
+function applySaveState(s) {
+  document.querySelectorAll('[data-save]').forEach(b => b.classList.toggle('on', b.dataset.save === s));
+  badge.className = 'save-badge ' + s;
+  badgeText.textContent = SAVE_TEXT[s];
+  focusBadge.className = 'save-badge focus-save-pin ' + s;
+  focusBadgeText.textContent = SAVE_TEXT[s];
+  dirtyDot.style.display = s === 'saved' ? 'none' : '';
+  saveButton.disabled = s === 'saving';
+  saveButtonText.textContent = s === 'saving' ? '保存中…' : '保存';
+}
+document.querySelectorAll('[data-save]').forEach(btn => {
+  btn.onclick = () => applySaveState(btn.dataset.save);
+});
+badge.onclick = () => { if (badge.classList.contains('failed')) applySaveState('saving'); };
+focusBadge.onclick = () => { if (focusBadge.classList.contains('failed')) applySaveState('saving'); };
+
+/* ── 视图模式演示（联动分段控件 + 格式栏隐藏 + 面板显隐） ── */
+const seg = document.getElementById('viewSeg');
+const paneEditor = document.getElementById('paneEditor');
+const panePreview = document.getElementById('panePreview');
+const resizeHandle = document.getElementById('resizeHandle');
+const formatBar = document.getElementById('formatBar');
+function applyView(vm) {
+  seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.vm === vm));
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === vm));
+  paneEditor.style.display = vm === 'preview' ? 'none' : '';
+  panePreview.style.display = vm === 'edit' ? 'none' : '';
+  resizeHandle.style.display = vm === 'split' ? '' : 'none';
+  paneEditor.style.flex = vm === 'split' ? '0 0 47%' : '1';
+  formatBar.style.display = vm === 'preview' ? 'none' : '';   // ◆ B5
+}
+seg.querySelectorAll('button').forEach(b => b.onclick = () => applyView(b.dataset.vm));
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => applyView(b.dataset.view));
+
+/* ── ⋯ 更多菜单开合 ── */
+const moreBtn = document.getElementById('moreBtn');
+let menu = null;
+moreBtn.onclick = (e) => {
+  e.stopPropagation();
+  if (menu) { menu.remove(); menu = null; return; }
+  menu = document.querySelector('.zoom-card .more-menu').cloneNode(true);
+  menu.style.cssText = '';
+  menu.id = 'liveMoreMenu';
+  moreBtn.parentElement.appendChild(menu);
+  menu.querySelector('.mi').onclick = () => {
+    document.getElementById('winFocus').scrollIntoView({ behavior: 'smooth' });
+    menu.remove(); menu = null;
+  };
+  document.addEventListener('click', function close() { menu?.remove(); menu = null; document.removeEventListener('click', close); });
+};
+</script>
+</body>
+</html>
+
