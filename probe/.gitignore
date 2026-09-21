@@ -1,0 +1,13 @@
+# 探针工程的编译产物（每个 ~70-125MB，本地可重建）
+#
+# ❗ 为什么这里必须有这条：根 `.gitignore` **没有** `target` 规则，
+#    全局唯一那条在 `src-tauri/.gitignore` 里，写的是 `/target/`
+#    —— `/` 前缀把它**锚定在 src-tauri 目录内**，管不到这里。
+#    2026-09-21 实测：`probe/*/target/` 合计 195MB 在 `git status` 里
+#    以几百个 `.rlib/.exe/.fingerprint/*` 逐条暴露，一次 `git add -A`
+#    就会把它们永久写进历史。
+#
+# ⚠️ 刻意写成 `target/`（**不带**前导 `/`）：带前导斜杠会锚定到本文件所在
+#    目录，只匹配 `probe/target/`——而真正要拦的是更深一层的
+#    `probe/rc-encode/target/`、`probe/rc-mft-type/target/`（以后还会加）。
+target/
