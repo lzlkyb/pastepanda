@@ -628,7 +628,7 @@ mod tests {
             "对端 End 帧的理由要带进 `force_end_if_session`（P2-10：否则历史记成「画面流中断」）"
         );
         // 连接句柄必须从 `dial_and_request` 交出来——没有它，收流侧拿不到 `close_reason`。
-        let svc = include_str!("service.rs");
+        let svc = include_str!("service/outbound.rs");
         assert!(
             svc.contains("Ok((capability, conn, send, recv))"),
             "`dial_and_request` 不再返回连接句柄了——收流侧的 `explain` 会拿不到 `close_reason`"

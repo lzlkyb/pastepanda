@@ -176,7 +176,7 @@ fn 守卫_offline写回路径存在() {
         ("session/lifecycle.rs", include_str!("../session/lifecycle.rs")),
         ("inbound.rs", include_str!("../inbound.rs")),
         ("outbound.rs", include_str!("../outbound.rs")),
-        ("service.rs", include_str!("../service.rs")),
+        ("service/mod.rs", include_str!("../service/mod.rs")),
     ];
     let all: String = sources.iter().map(|(_, s)| *s).collect();
     assert!(

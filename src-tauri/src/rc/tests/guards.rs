@@ -21,7 +21,7 @@ fn 守卫_end_session_真的调了audio_reset() {
 /// 批准落在最后 <200ms 窗口时，先按超时 deny 会造出没有看门者的僵尸会话。
 #[test]
 fn 守卫_批准循环_超时判定在decision之后() {
-    let src = include_str!("../service.rs");
+    let src = include_str!("../service/inbound.rs");
     let loop_body = src
         .split("let deadline = now_ms() + 120_000;")
         .nth(1)
@@ -41,7 +41,7 @@ fn 守卫_批准循环_超时判定在decision之后() {
 /// Inner 上的 inbound_streaming 标记必须存在且在建立/收口两处维护。
 #[test]
 fn 守卫_双敲门推流所有权标记接线() {
-    let svc = include_str!("../service.rs");
+    let svc = include_str!("../service/inbound.rs");
     let ses = include_str!("../session/lifecycle.rs");
     assert!(
         svc.contains("inbound_streaming") && ses.contains("inbound_streaming"),
@@ -53,7 +53,7 @@ fn 守卫_双敲门推流所有权标记接线() {
 /// 只看可 AudioOn；SetCaptureScope 必须要求 Control。
 #[test]
 fn 守卫_send_input_只看可AudioOn_不得改画面范围() {
-    let src = include_str!("../service.rs");
+    let src = include_str!("../service/frames_clip.rs");
     let start = src
         .find("pub async fn send_input")
         .expect("找不到 send_input");
@@ -118,9 +118,9 @@ fn 守卫_会话快照peer与能力同源() {
         body.contains("self.peer") && body.contains("self.phase") && body.contains("self.capability"),
         "snapshot 必须从同一条 Session 取 peer/phase/capability（同源）"
     );
-    let svc = include_str!("../service.rs");
+    let svc = include_str!("../service/frames_clip.rs");
     let start = svc
-        .find("pub(super) fn session_snapshot_for")
+        .find("fn session_snapshot_for")
         .expect("找不到 session_snapshot_for");
     let body = window(svc, start, 500);
     assert!(
@@ -136,16 +136,17 @@ fn 守卫_会话快照peer与能力同源() {
 /// 守卫：剪贴板 48KB 量纲必须统一为「编码后 JSON 字节」（P1-12）。
 #[test]
 fn 守卫_剪贴板量纲统一JSON字节() {
-    let svc = include_str!("../service.rs");
+    let svc = include_str!("../service/mod.rs");
     assert!(
         svc.contains("fn clip_payload_ok") && svc.contains("fn clip_push_json_bytes"),
         "必须收口 clip_payload_ok / clip_push_json_bytes"
     );
     // 三处都走 clip_payload_ok
-    let push_at = svc
+    let push_src = include_str!("../service/frames_clip.rs");
+    let push_at = push_src
         .find("pub async fn push_clipboard")
         .expect("push_clipboard");
-    let push_body = window(svc, push_at, 600);
+    let push_body = window(push_src, push_at, 600);
     assert!(
         push_body.contains("clip_payload_ok"),
         "push_clipboard 必须走 clip_payload_ok"
@@ -271,7 +272,7 @@ fn 会话快照_三字段同源() {
 /// 守卫：批准入站会话会 elevate 同步设备写入 rc_devices（B-b）。
 #[test]
 fn 守卫_approve_inbound会elevate同步设备() {
-    let src = include_str!("../service.rs");
+    let src = include_str!("../service/inbound_accept.rs");
     // 🔴 用「下一个函数」当结束锚点，不用 `start + N` 固定字节窗口：
     //    固定窗口会因为函数体变长而悄悄把要断言的这行挤出窗口（安静地假绿），
     //    也会因切进中文多字节字符直接 panic（2026-09-22 实测）。
@@ -456,7 +457,7 @@ fn 守卫_caps上报dgram_input() {
         outbound.contains("dgram_input"),
         "outbound 解析 caps 时必须读 dgram_input（缺省 false = 旧版）"
     );
-    let service = include_str!("../service.rs");
+    let service = include_str!("../service/streaming.rs");
     assert!(
         service.contains("peer_dgram_input"),
         "RcStatus 必须暴露 peer_dgram_input，前端升级提示才有数据源"
@@ -471,13 +472,16 @@ fn 守卫_caps上报dgram_input() {
 /// （见 `守卫_caps上报dgram_input`）用 `include_str!` 钉住源码里的接线。
 #[test]
 fn 守卫_accept_自报os两端接线成对() {
-    let service = include_str!("../service.rs");
+    // 两端分家（2026-09-22 service.rs 拆分）：发 os 在被控端 handle_inbound_conn
+    // （service/inbound.rs），收 os 写库在发起端 dial_and_request（service/outbound.rs）。
+    let host_side = include_str!("../service/inbound.rs");
     assert!(
-        service.contains("local_os_label"),
+        host_side.contains("local_os_label"),
         "被控端发 Accept 时必须带上本机系统（否则对端永远拿不到）"
     );
+    let controller_side = include_str!("../service/outbound.rs");
     assert!(
-        service.contains("rc_device_note_os"),
+        controller_side.contains("rc_device_note_os"),
         "控制端收到 Accept 后必须把 os 写进设备行（否则协议的字段白传）"
     );
 }
