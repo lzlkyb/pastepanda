@@ -28,6 +28,7 @@ import {
   filterHistory,
   historyCapabilityLabel,
   historyPeerLabel,
+  resultTone,
   type RcHistoryDirFilter,
 } from "@/lib/rcHistory";
 import { capabilityLabel } from "@/lib/rcRequest";
@@ -35,15 +36,8 @@ import { formatDuration, formatWhen, pathKindLabel } from "@/lib/rcSessionStats"
 // D10：历史记录用 rc 会话专用的 hist* 类，不再复用「局域网同步」的 lanDevice* 类
 import styles from "./RemoteComputer.module.css";
 
-/** 结果列的四态着色。reason 是后端的自由中文串（「用户结束会话」…），不是枚举
- * ——所以这里只**按关键词给色**、文本原样展示：把「远程通道关闭」硬翻成
- * 「正常结束」才是造假。 */
-function resultTone(reason: string): "ok" | "warn" | "cancel" | "err" {
-  if (/取消/.test(reason)) return "cancel";
-  if (/拒绝/.test(reason)) return "warn";
-  if (/失败|错误|异常/.test(reason)) return "err";
-  return "ok";
-}
+/** 结果列的四态着色见 `@/lib/rcHistory` 的 `resultTone` —— 抽出去是因为详情面
+ * 「最近会话」要用同一份判据（原先两处各判一次，同一 `reason` 会一绿一灰）。 */
 
 interface HistorySource {
   list: RcHistoryItem[];
@@ -246,14 +240,6 @@ function PageRow({
   const path = pathKindLabel(h.path_kind ?? "");
   const rtt = h.rtt_avg && h.rtt_avg > 0 ? h.rtt_avg : 0;
   const tone = resultTone(h.reason);
-  const resCls =
-    tone === "ok"
-      ? styles.phOk
-      : tone === "warn"
-        ? styles.phWarn
-        : tone === "err"
-          ? styles.phErr
-          : styles.phCancel;
   return (
     <div
       className={styles.histRow}
@@ -274,8 +260,10 @@ function PageRow({
       </span>
       <span className={styles.phDur}>{formatDuration(h.duration_ms)}</span>
       <span className={styles.phTime}>{formatWhen(h.started_ms)}</span>
-      {/* v5：结果图标退化成状态点（.phRes::before，颜色随语义类），文字自足 */}
-      <span className={`${styles.phRes} ${resCls}`}>{h.reason}</span>
+      {/* v5：结果图标退化成状态点（.phRes::before，颜色随 data-tone），文字自足。
+          用 data-tone 而非四个语义类：详情面「最近会话」共用同一套色，
+          同一个属性名让两处能一眼对上、也不会有「漏配某档」的空档。 */}
+      <span className={styles.phRes} data-tone={tone}>{h.reason}</span>
       {canRetry && (
         <button
           type="button"

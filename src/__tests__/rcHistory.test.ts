@@ -8,6 +8,7 @@ import {
   lastMeasuredRtt,
   normalizeHistoryPeer,
   recentSessionsFor,
+  resultTone,
   summarizeHistoryDevices,
 } from "@/lib/rcHistory";
 
@@ -203,5 +204,37 @@ describe("historyPeerLabel / historyCapabilityLabel", () => {
 
   it("peer 键就是 node_id，与显示名无关", () => {
     expect(historyPeerKey(item({ peer_name: "改过的名字" }))).toBe(A);
+  });
+});
+
+describe("resultTone（结果列四态 · 唯一真源，历史页与详情面共用）", () => {
+  it("正常结束与自由串兜底 → ok（不把「远程通道关闭」翻译成别的）", () => {
+    expect(resultTone("用户结束会话")).toBe("ok");
+    expect(resultTone("远程通道关闭")).toBe("ok");
+    expect(resultTone("")).toBe("ok");
+  });
+
+  it("🔴 超时 → warn：既不是用户意图也不是正常完成，不许落进成功绿", () => {
+    expect(resultTone("会话超时")).toBe("warn");
+    expect(resultTone("连接超时")).toBe("warn");
+  });
+
+  it("拒绝 → warn", () => {
+    expect(resultTone("对端拒绝了申请")).toBe("warn");
+  });
+
+  it("失败/错误/异常 → err", () => {
+    expect(resultTone("传输失败")).toBe("err");
+    expect(resultTone("发生错误")).toBe("err");
+    expect(resultTone("状态异常")).toBe("err");
+  });
+
+  it("取消 → cancel（用户主动行为，不是异常；两处都按中性渲染）", () => {
+    expect(resultTone("用户取消申请")).toBe("cancel");
+  });
+
+  it("取消优先于超时/失败：用户意图优先于附带原因", () => {
+    expect(resultTone("用户取消（等待超时）")).toBe("cancel");
+    expect(resultTone("用户取消，通道异常")).toBe("cancel");
   });
 });

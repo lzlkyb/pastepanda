@@ -19,19 +19,26 @@ const MOVE_THROTTLE_MS = 16;
 // 可靠流洪泛；16ms 内的滚动合成一条（方向可能混合，delta 直接累加）。
 const WHEEL_THROTTLE_MS = 16;
 
+/**
+ * 修饰键兜底：松开六个修饰键（避免焦点切换后对端卡在 Ctrl/Shift）。
+ *
+ * 🔴 这里**不再**盲发鼠标左/右/中的 up（2026-09-22 删）。旧实现无条件补发三个
+ * 鼠标 up，而本函数挂在画面区 `.fakeScreen` 的 onBlur 上——用户每次点底栏/顶栏
+ * 按钮（焦点离开画面）都会触发一次。远端收到**孤立的** RBUTTONUP 时，Windows 会
+ * 由 WM_RBUTTONUP 生成 WM_CONTEXTMENU（DefWindowProc 行为），表现就是「没碰右键
+ * 却弹出右键菜单」；`inbound.rs` 里那句「若恰有卡住的右键，右键菜单还会在那里
+ * 凭空弹出」说的就是这个坑。
+ *
+ * 鼠标的按下态兜底交给 [`useRcInput`] 返回的 `releaseTracked()`：它按
+ * `pressedButtons` 精确跟踪，只补发**真的按下过**的键。两个调用点
+ * （`RcSessionStage` 的 onBlur、`releaseKb`）本来就是成对调用的，
+ * 而 `useRcDisplayMode` 的换会话卸载点**不该**再往旧会话发东西。
+ */
 export async function releaseModifiers() {
   // 6 个修饰键 vk
   for (const vk of [0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5]) {
     try {
       await rcSendInput({ kind: "key", vk, down: false });
-    } catch {
-      /* 尽力而为 */
-    }
-  }
-  // 鼠标左(1)/右(2)/中(3)键：对端断线时目标机鼠标键会卡住
-  for (const button of [1, 2, 3]) {
-    try {
-      await rcSendInput({ kind: "mouse_button", x: 0, y: 0, button, down: false });
     } catch {
       /* 尽力而为 */
     }

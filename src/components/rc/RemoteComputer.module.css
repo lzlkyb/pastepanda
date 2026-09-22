@@ -760,11 +760,17 @@
   }
 }
 
-/* 被控确认条（挂 App 层） */
+/* 被控确认条（挂 App 层）。本类是**共享壳**：RcControlBanner 一条、
+   RcOverlay 三条（发起端 / 自动重连 / 无人值守）、RcFileOverlay 一条都在用，
+   所以只放「视觉 + 行内 flex 默认值」，纵向三段式布局走 .ctrlStack 变体。 */
 .ctrlBanner {
   display: flex;
   align-items: center;
-  gap: 10px;
+  /* ❗ 拆成 column-gap / row-gap 两条，而不是 gap 简写——简写会重置后面的 row-gap。
+     2026-09-22 窄窗崩坏修复：原来不给折行，超宽时中文被压到 min-content，表现成竖排长条。 */
+  column-gap: 10px; /* ui-rule-ok: 沿用共享壳原有 10px——它会同时作用于另外四条横幅，本次不改它们的观感 */
+  row-gap: 8px;
+  flex-wrap: wrap;
   padding: 10px 14px;
   margin: 8px 12px 0;
   background: color-mix(in srgb, var(--danger, #d64545) 12%, var(--card-bg, #fff));
@@ -776,6 +782,135 @@
 .ctrlBanner .who {
   font-weight: 600;
   color: var(--danger, #d64545);
+}
+
+/* ============================================================
+   方案 A：被控横幅纵向三段式（2026-09-22 窄窗崩坏修复）
+   根因与 CDP 实测数字：design/远程电脑-被控横幅窄窗崩坏修复-设计稿.html
+   崩坏链条：一条单行 flex 要塞 8 个元素，可用宽 496px(550 窗)/268px(320 窗)；
+   只有按钮声明了 flex-shrink:0，其余被压到 min-content——中文无词间空格，
+   min-content 就是「一个字宽」，于是「放不下」表现为**竖排**而不是溢出。
+   ============================================================ */
+
+/* 纵向三段式容器。必须与 .ctrlBanner 同时使用（视觉壳仍在那边）。 */
+.ctrlBanner.ctrlStack {
+  flex-direction: column;
+  align-items: stretch;
+  /* ❗ 显式复位：.ctrlBanner 为旧结构横幅开了 flex-wrap，在 column 方向会变成
+     「按列换行」——这里必须关掉，否则横幅会裂成多列。 */
+  flex-wrap: nowrap;
+  row-gap: 8px;
+}
+
+/* 第 1 行：身份段 + 计时 + 动作组 */
+.ctrlTop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  row-gap: 8px;
+}
+
+/* 身份段。❗ 不参与 grow：否则胶囊与计时会被推到行尾、脱离设备名。
+   右贴由 .ctrlActs 的 margin-left:auto 负责。 */
+.ctrlWho {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* ❗ 压缩量全部交给 .who 一个元素：它 min-width:0 + overflow-wrap，中文正常折行；
+   其余三个 flex-shrink:0 永不变形。这是原 bug 的直接解药。 */
+.ctrlWho .who {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* ❗ .whoLive 把 who + pill 绑成**同一个** flex 项：窄窗下整个身份组内部折行，
+   而不是让计时器单独跳到下一行（实测差 15px，见设计稿 §9）。
+   role=status 挂在它身上，计时器在它外面——屏幕阅读器不播每秒变化的时长（C5）。 */
+.ctrlWho .whoLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ctrlWho .dotDanger,
+.ctrlWho .pillDanger,
+.ctrlWho .timer {
+  flex-shrink: 0;
+}
+
+/* 动作组：整组右贴。
+   ❗ 用 margin-left:auto 而不是 justify-content——折行后新行上只有这一组，
+   没有 auto 外边距时「立即结束」会落到最左下角（危险按钮跑到最不显眼的位置，
+   与「误触代价不对称」的既有约束冲突，见设计稿 §6）。 */
+.ctrlActs {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  row-gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+/* 危险按钮与「不发送声音 / 以后不再询问」拉开距离（沿用原注释的意图） */
+.ctrlActs .dangerBtn {
+  margin-left: 8px;
+}
+
+/* 第 2 段：一对多的提示条（画面范围变更 / 推流档位 / 文件请求 / 扬声器被静音）。
+   无内容时整段不渲染（组件侧判定），否则 row-gap 会白留一条空行。
+   ❗ stretch：文件请求卡要占满整行；胶囊类提示靠 .scopeNotice 自己 align-self 收窄。 */
+.ctrlNotes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+}
+.ctrlNotes .scopeNotice {
+  align-self: flex-start;
+}
+
+/* 第 3 段：能力说明（原先挤在动作组与「立即结束」之间的 .meta）。
+   ❗ 它是「人在被控时该知道的事」，任何折叠态下都常驻可见（规则 15）。 */
+.ctrlFoot {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* —— 旧结构横幅兜底（设计稿 §5「共同必做」）——
+   RcOverlay 另三条会话横幅（发起端 / 自动重连 / 无人值守）仍是单行平铺结构，
+   重连那条在默认 550px 下就超 74px、会把 .meta 压成竖排。本次不改它们的结构：
+   RcOverlay.tsx 已 338 行 > 300 红线，文件头自己写着「下次改它必须先拆子组件」。
+   所以只做 CSS 层防退化——压缩量只由 .who 承担，其余原子元素不参与收缩，
+   配合上面 .ctrlBanner 的折行，最差也只是多占一行，不会退化成竖排长条。
+   结构性重写（与本文件 .ctrlStack 同款三段式）留作后续任务，需先拆 RcOverlay。 */
+.ctrlBanner .who {
+  min-width: 0;
+}
+.ctrlBanner .timer,
+.ctrlBanner .pillOn,
+.ctrlBanner .pillDanger,
+.ctrlBanner .meta,
+.ctrlBanner .audioMuteBtn,
+.ctrlBanner .miniBtn,
+.ctrlBanner .dangerBtn,
+.ctrlBanner .trustOn {
+  flex-shrink: 0;
+}
+/* 折行后收尾按钮右贴。不加这条，最后那枚按钮会孤零零落在下一行**最左边**——
+   正是设计稿 §6 批评过的位置（危险按钮跑到最不显眼处）。
+   只在折行时生效：不折行时空余已被 .sp 吃掉，auto 外边距分不到空间，观感不变。
+   用子选择器（> ）限定——新结构的按钮都在 .ctrlActs 里，不会被这条碰到。 */
+.ctrlBanner > .miniBtn,
+.ctrlBanner > .miniBtnPri,
+.ctrlBanner > .dangerBtn {
+  margin-left: auto;
 }
 
 /* B3：被控端「对方改了画面范围」提示。
@@ -1115,40 +1250,100 @@
 .menuCaret {
   opacity: 0.7;
 }
+/* 菜单已 portal 到 body（见 `RcDropdown` 文件头）：坐标由组件内联的
+   left/bottom/minWidth 给出（fixed 定位，视口基准），这里只管外观。
+   ❗ 不要再改回 `position: absolute; bottom: calc(100% + 6px)` —— 底栏有
+   `overflow-y: auto`，向上弹的菜单会被自己的滚动容器整块裁掉（实测
+   elementFromPoint 命中画面区），且 backdrop-filter 会把它困在底栏的层叠上下文里。
+
+   外观对齐项目浮层基准（`ContextMenu.module.css` 的 `.ctxMenu`）：12px 圆角 /
+   `--float-card-*` 三件套 / hover 走中性 `--hover`。改前它是 radius 10、padding 4、
+   硬编码 `0 14px 36px rgba(15,23,42,.16)`，hover 还把文字染成 accent——与选中态
+   只差 5% 底色，鼠标扫过时分不清哪个是当前档。 */
 .menuPop {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  min-width: 100%;
-  display: flex;
-  flex-direction: column;
+  position: fixed;
+  z-index: var(--z-context);
+  display: grid;
+  /* 默认单列。`auto` 而不是 `1fr`：列宽跟着内容走，菜单不会被撑到按钮宽以外 */
+  grid-template-columns: auto;
+  gap: 4px;
   padding: 4px;
-  border-radius: 10px;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--rc-glass-line, var(--border-color, #e3e6ea));
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+  border-radius: 12px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
 }
+/* 双列（画质）：8–9 项单列是根 200px 高的细长条，双列把它压成一张信息卡。 */
+.menuPopTwo {
+  grid-template-columns: auto auto;
+}
+/* 项。高度 28 而不是项目浮层基准的 32：底栏按钮本身 24px 高，菜单是它的直接延续，
+   `ContextMenu` 那套 32px 在 4 行双列下会把菜单顶到 200px+。28 仍高于
+   WCAG 2.5.8 的 24px 下限。 */
 .menuItem {
-  font: inherit;
-  font-size: 11.5px;
-  text-align: left;
-  padding: 5px 10px;
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  /* 0 4px 是内缩，8px 与分隔线的左右缩进对齐（见 `.menuSep`） */
+  padding: 0 8px;
   border: none;
+  /* 8 = 外层 12 − 容器 padding 4，内壁的有效圆角（同 `.ctxItem` 的推导） */
+  border-radius: 8px;
   background: transparent;
-  color: var(--text-secondary, #495565);
-  cursor: pointer;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
   white-space: nowrap;
+  cursor: pointer;
 }
 .menuItem:hover {
-  background: color-mix(in srgb, var(--accent, #4f7cff) 7%, transparent);
-  color: var(--accent, #4f7cff);
+  background: var(--hover);
 }
 .menuItemOn {
-  background: color-mix(in srgb, var(--accent, #4f7cff) 12%, transparent);
-  color: var(--accent, #4f7cff);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
   font-weight: 600;
+}
+/* 勾位**常驻**、靠 opacity 切换，不做条件渲染：一旦不渲染，未选中项的文字就会
+   比选中项左移一整个勾宽，鼠标扫过时整列文字在跳。 */
+.menuCheck {
+  flex: 0 0 12px;
+  color: var(--accent);
+  opacity: 0;
+}
+.menuItemOn .menuCheck {
+  opacity: 1;
+}
+/* 档位差异（fps · 宽度）。11px 是规则给 meta 的档；tabular-nums 让数字列上下对齐。 */
+.menuMeta {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* 选中项里的 meta：继承 accent 再降透明度，不混灰——彩色底上混灰正是 V6 说的「脏」。 */
+.menuItemOn .menuMeta {
+  color: inherit;
+  opacity: 0.72;
+}
+/* 单列时 meta 右贴（列宽一致，贴着读像「值」）；双列不右贴——两列宽度不同，
+   右贴会让两列各自成一套对齐，反而更乱。 */
+.menuPop:not(.menuPopTwo) .menuMeta {
+  margin-left: auto;
+}
+/* 独占一整行的项（`solo`，当前只有画质「自动」）与它后面的分隔线 */
+.menuItemSolo,
+.menuSep {
+  grid-column: 1 / -1;
+}
+.menuSep {
+  height: 1px;
+  /* 左右 8px 对齐项的 padding-left（同 `ContextMenu` 的 `.ctxSep` 口径：缩进跟项对齐） */
+  margin: 4px 8px;
+  background: var(--float-card-border, var(--border-color));
 }
 
 .fb {
@@ -1833,17 +2028,24 @@
   background: currentColor;
   flex: 0 0 6px;
 }
-.phOk {
-  color: var(--green, #2f9e5f);
+/* 结果列四态着色。档位由 `@/lib/rcHistory` 的 `resultTone` 判（唯一真源），
+   这里只负责「档 → 语义色」。
+   🔴 详情面「最近会话」用**同名** data-tone 属性（RemoteComputerA2.module.css
+   的 `.recentResult[data-tone]`）—— 两处色号一一对应，改这里必须同步那边，
+   否则同一个 `reason` 会在两个视图里显示成不同颜色。
+   U6：色名变量不得出现在新代码里，故 ok 档由 `var(--green,…)` 改为 `var(--success)`；
+   六套主题均已定义 --success，去掉硬编码兜底色是安全的。 */
+.phRes[data-tone="ok"] {
+  color: var(--success);
 }
-.phWarn {
-  color: var(--warning, #b45309);
+.phRes[data-tone="warn"] {
+  color: var(--warning);
 }
-.phErr {
-  color: var(--danger, #d64545);
+.phRes[data-tone="err"] {
+  color: var(--danger);
 }
-.phCancel {
-  color: var(--text-muted, #6b7280);
+.phRes[data-tone="cancel"] {
+  color: var(--text-muted);
 }
 /* 表头列宽与数据列对齐（listHead 里的五列占位） */
 .phDir {

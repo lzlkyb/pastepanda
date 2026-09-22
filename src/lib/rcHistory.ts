@@ -117,6 +117,32 @@ export function historyCapabilityLabel(capability: string): string {
   return capability === "control" ? "可控" : "只看";
 }
 
+/** 结果列四态。`cancel` 单列一档而不并进 `warn`：取消是用户主动行为、不是异常，
+ * 两处都按中性渲染。 */
+export type RcResultTone = "ok" | "warn" | "cancel" | "err";
+
+/**
+ * 🔴 会话结果着色的**唯一真源**。历史页（`.phRes`）与详情面「最近会话」
+ * （`.recentResult`）两个视图共用本函数 —— 原先是 `RcSessionHistory.tsx` 的
+ * 私有函数，往详情面复制一份必然分叉：同一个 `reason` 串在一边绿、在另一边灰。
+ *
+ * `reason` 是后端给的**自由中文串**（「用户结束会话」/「远程通道关闭」…），不是
+ * 枚举 —— 所以只**按关键词给色**、文本原样展示：把「远程通道关闭」硬翻成
+ * 「正常结束」才是造假。
+ *
+ * 2026-09-22 补 `/超时/ → warn`：超时既不是用户意图、也不是正常完成，原先落进
+ * 兜底的 `ok` 被染成成功绿（记录页实测能看到）。判定顺序 = 语义优先级：
+ * 先「取消」（用户意图，即使原因是超时也以用户动作为准）→ 再「超时」→ 再「拒绝」
+ * → 最后「失败|错误|异常」，其余兜底 `ok`。
+ */
+export function resultTone(reason: string): RcResultTone {
+  if (/取消/.test(reason)) return "cancel";
+  if (/超时/.test(reason)) return "warn";
+  if (/拒绝/.test(reason)) return "warn";
+  if (/失败|错误|异常/.test(reason)) return "err";
+  return "ok";
+}
+
 /**
  * 当前筛的设备已不在列表里（记录被清空、或那台设备的记录被淘汰出 20 条上限）
  * 时退回「全部设备」——否则侧栏会出现「一项都没选中」的死角：列表看着是空，

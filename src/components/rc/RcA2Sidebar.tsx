@@ -148,7 +148,7 @@ export function RcA2Sidebar({
             aria-current={page === toolPage ? "page" : undefined}
             onClick={() => onNavigate(toolPage)}
           >
-            <Icon size={15} aria-hidden="true" />
+            <Icon size={16} aria-hidden="true" />
             <span>{label}</span>
           </button>
         ))}

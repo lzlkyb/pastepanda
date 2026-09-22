@@ -21,7 +21,6 @@ import {
   Monitor,
   Pencil,
   Play,
-  ShieldCheck,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -31,6 +30,7 @@ import { normalizeRcPresence, osLabel, presenceHint, presenceMainLabel, relTime 
 import { pathKindLabel } from "@/lib/rcSessionStats";
 import { useRcDeviceActions } from "@/hooks/useRcDeviceActions";
 import type { RcDeviceUi } from "@/hooks/useRcDeviceUi";
+import { RcA2ConnectionFacts } from "./RcA2ConnectionFacts";
 import { RcDeviceManageActions } from "./RcDeviceManageActions";
 import { RcRecentSessions } from "./RcRecentSessions";
 import styles from "./RemoteComputerA2.module.css";
@@ -101,7 +101,7 @@ export function RcA2DeviceDetail({
     return (
       <section className={styles.emptyDetail} aria-labelledby="a2-pair-title">
         <span className={styles.emptyDeviceIcon} aria-hidden="true">
-          <Monitor size={30} />
+          <Monitor size={28} />
         </span>
         <h2 id="a2-pair-title">配对第一台设备</h2>
         <p>配对只需一次。以后打开远程电脑，选中设备即可连接。</p>
@@ -139,7 +139,7 @@ export function RcA2DeviceDetail({
     <section className={styles.detail} aria-label={`${name}设备详情`}>
       <header className={styles.detailHead}>
         <span className={styles.detailDeviceIcon} aria-hidden="true">
-          <Monitor size={25} />
+          <Monitor size={28} />
         </span>
         <div className={styles.detailName}>
           {editingName ? (
@@ -164,6 +164,14 @@ export function RcA2DeviceDetail({
           ) : target.source === "rc" ? (
             <div className={styles.detailTitleRow}>
               <h2>{name}</h2>
+              {/* 在线 pill（C 的观感四件套之一）。只在这一态渲染 —— 药丸是强调，
+                  状态的完整出口仍是下面那行 `presenceMainLabel` 文案，两者不重复表达。 */}
+              {presence === "live" && (
+                <span className={styles.detailPill}>
+                  <Check size={12} aria-hidden="true" />
+                  在线
+                </span>
+              )}
               <button
                 type="button"
                 aria-label="重命名设备"
@@ -239,12 +247,12 @@ export function RcA2DeviceDetail({
             aria-controls="rc-a2-manage"
             onClick={() => setManageOpen(!manageOpen)}
           >
-            <SlidersHorizontal size={13} aria-hidden="true" />
+            <SlidersHorizontal size={14} aria-hidden="true" />
             管理此设备
             {manageOpen ? (
-              <ChevronUp size={13} aria-hidden="true" />
+              <ChevronUp size={14} aria-hidden="true" />
             ) : (
-              <ChevronDown size={13} aria-hidden="true" />
+              <ChevronDown size={14} aria-hidden="true" />
             )}
           </button>
         </div>
@@ -259,33 +267,14 @@ export function RcA2DeviceDetail({
             />
           </div>
         )}
-        <dl className={styles.factList}>
-          <div>
-            <dt>上次连接</dt>
-            <dd>{connection}</dd>
-            <span>
-              {target.last_path ? "来自最近一次会话实测" : "首次连接后显示实际路径"}
-              {measuredRtt > 0 ? ` · 最近实测 ~${measuredRtt} ms` : ""}
-            </span>
-          </div>
-          <div>
-            <dt>连接确认</dt>
-            <dd>{target.trusted ? "免确认连接" : "每次由对方确认"}</dd>
-            <span>{target.trusted ? "仍可随时结束会话" : "默认更安全"}</span>
-          </div>
-          <div>
-            <dt>文件接收</dt>
-            <dd>{target.auto_accept ? "自动接收" : "每次询问"}</dd>
-            <span>{target.auto_accept ? "文件会保存到默认目录" : "接受后才写入电脑"}</span>
-          </div>
-          <div>
-            <dt>设备身份</dt>
-            <dd className={styles.mono}>{fingerprintOf(target.node_id)}</dd>
-            <span>
-              <ShieldCheck size={13} aria-hidden="true" /> 已完成配对核验
-            </span>
-          </div>
-        </dl>
+        <RcA2ConnectionFacts
+          connection={connection}
+          hasPath={Boolean(target.last_path)}
+          measuredRtt={measuredRtt}
+          trusted={Boolean(target.trusted)}
+          autoAccept={Boolean(target.auto_accept)}
+          fingerprint={fingerprintOf(target.node_id)}
+        />
 
         <RcRecentSessions list={historyList} peer={target.node_id} onViewAll={onViewHistory} />
       </div>

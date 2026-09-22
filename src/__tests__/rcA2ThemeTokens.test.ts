@@ -49,6 +49,24 @@ describe("远程电脑 A2 真实主题守卫", () => {
     expect(css).not.toContain("var(--toggle-on-label)");
   });
 
+  /* 详情头横幅的底：A2 文件禁 gradient 字面量（上一条），所以渐变只能装在
+     令牌里。令牌漏一套主题的后果不是报错，是该主题下这一横条没有底色 ——
+     tsc / vitest 都看不出来，只有这条守卫能拦。 */
+  it("详情头横幅令牌 --rc-head-bg 六套主题齐全，且表达式一致、从令牌派生", () => {
+    const values = [...theme.matchAll(/^\s*--rc-head-bg:\s*(.+);/gm)].map((m) => m[1].trim());
+    expect(values, "--rc-head-bg 应有 6 处（六套主题各一）").toHaveLength(6);
+
+    for (const value of values) {
+      expect(value, `不应写死颜色：${value}`).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+      expect(value, `应从现有令牌派生：${value}`).toMatch(/var\(--/);
+    }
+    // --accent / --card-bg 各自跟着主题走，表达式本身不该分叉
+    expect(new Set(values).size, "--rc-head-bg 在六套主题里的表达式应完全相同").toBe(1);
+
+    // 而消费方必须走这个令牌，不能在 A2 里自己拼一份渐变（那会被上一条拦下）
+    expect(css).toContain("var(--rc-head-bg)");
+  });
+
   it("独立工作台从真实配置读取主题，并实时跟随主窗口", () => {
     expect(entry).toContain('invoke<{ theme?: string }>("get_config")');
     expect(entry).toContain('"theme-changed"');

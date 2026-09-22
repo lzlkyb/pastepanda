@@ -321,6 +321,10 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  /* 远程电脑工作台 · 设备详情头那一横条的底：8% 的 accent 往右下淡出，
+     叠在本主题的卡片色上。表达式只依赖 --accent / --card-bg，6 套主题共用同一份
+     （守卫见 src/__tests__/rcA2ThemeTokens.test.ts）。 */
+  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
   --toggle-off-bg: #e2e8f0;
   /* 品牌 AI 上标（顶栏标识）：蓝 → 紫渐变的两个端点。
      **品牌色恒定，不跟主题变色**——它标的是产品身份，不是当前状态；
@@ -480,6 +484,7 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
   --toggle-off-bg: #3f3f46;
   /* 品牌 AI 上标：深色档（浅色档的值定义在 :root，深色主题在这里整体覆盖）。
      midnight 底极暗（#1C1832），这对值有 12:1 以上，宽裕。 */
@@ -596,6 +601,7 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
   --toggle-off-bg: #d1d9d3;
   --toggle-off-label: #4a5750;
   --toggle-on-label: #fff;
@@ -704,6 +710,7 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
   --toggle-off-bg: #f3d5e2;
   --toggle-off-label: #6e4557;
   --toggle-on-label: #fff;
@@ -812,6 +819,7 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
   --toggle-off-bg: #efdcc6;
   --toggle-off-label: #6b5638;
   --toggle-on-label: #fff;
@@ -922,6 +930,7 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
   --toggle-off-bg: #1e3d60;
   /* 品牌 AI 上标：深色档。**本主题是两档里最紧的一个**——app-bg 顶部是
      #1E5A82，比 midnight 亮得多，浅色档那对压上去只有 2.6:1，必须整体提亮。

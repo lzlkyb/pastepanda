@@ -471,21 +471,23 @@ describe("RcA2DeviceDetail 最近会话（批5a）", () => {
     };
   }
 
-  it("只取本设备的最近 3 条，跨设备与更早的记录都不进来", () => {
+  it("只取本设备的最近 5 条，跨设备与更早的记录都不进来", () => {
     renderDetail({
       historyList: [
-        item({ started_ms: 5000, reason: "最新一次" }),
-        item({ started_ms: 4000, reason: "第二次" }),
-        item({ started_ms: 3000, reason: "第三次" }),
-        item({ started_ms: 2000, reason: "该被截掉的第四条" }),
+        item({ started_ms: 7000, reason: "最新一次" }),
+        item({ started_ms: 6000, reason: "第二次" }),
+        item({ started_ms: 5000, reason: "第三次" }),
+        item({ started_ms: 4000, reason: "第四次" }),
+        item({ started_ms: 3000, reason: "第五次" }),
+        item({ started_ms: 2000, reason: "该被截掉的第六条" }),
         item({ started_ms: 9000, peer: "peer-b", peer_name: "别的电脑", reason: "别的设备的记录" }),
       ],
     });
 
     expect(screen.getByText("最新一次")).toBeTruthy();
-    expect(screen.getByText("第三次")).toBeTruthy();
-    // 超过 3 条的部分、以及别的设备的记录，都不该出现在详情面
-    expect(screen.queryByText("该被截掉的第四条")).toBeNull();
+    expect(screen.getByText("第五次")).toBeTruthy();
+    // 超过 5 条的部分、以及别的设备的记录，都不该出现在详情面
+    expect(screen.queryByText("该被截掉的第六条")).toBeNull();
     expect(screen.queryByText("别的设备的记录")).toBeNull();
   });
 

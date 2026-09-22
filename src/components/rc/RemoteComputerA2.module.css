@@ -221,8 +221,8 @@
 }
 
 .sidebar {
-  width: 306px;
-  min-width: 306px;
+  width: 288px;
+  min-width: 288px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -231,14 +231,14 @@
 }
 
 .sidebarHead {
-  padding: 14px 12px 10px;
+  padding: 12px 12px 8px;
 }
 
 .sidebarTitleRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .sidebarTitleRow h2 {
@@ -271,6 +271,10 @@
   width: 100%;
   border: 0;
   outline: 0;
+  /* font: inherit 是必须的：不写的话输入框走浏览器表单默认字体，
+     与工作台字体不一致（原先就是这个问题）。 */
+  font: inherit;
+  font-size: 12px;
   color: var(--text-primary);
   background: transparent;
 }
@@ -279,7 +283,9 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 2px 8px 12px;
+  /* 下内边距给到 12px：这一格是滚动容器，末行 hover 的 --shadow-md 向下溢出 12px，
+     留不够会被容器裁掉一条。顶部 4px 是顺手落档。 */
+  padding: 4px 8px 12px;
 }
 
 /* 分组标题（稿 `.list-label`）：左组名、右计数，11px 弱化文字。
@@ -288,13 +294,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 6px 6px;
+  padding: 8px 8px 4px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .listLabel:first-child {
-  padding-top: 2px;
+  padding-top: 4px;
 }
 
 /* 计数用等宽数字：分组切换时不因位数变化抖动 */
@@ -302,25 +308,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 设备行 = 一张卡片（C）。层级靠 --card-bg 与侧栏 --section-bg 的明度差，
+   不靠阴影 —— V2 要求 box-shadow 只能是令牌，而项目只有 --shadow-md 一档，
+   拿它当默认态会让每一行都「浮」着。hover 才上 --shadow-md。 */
 .deviceItem {
-  min-height: 58px;
+  min-height: 62px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 4px;
   padding: 4px;
+  background: var(--card-bg);
   border: 1px solid transparent;
   border-radius: 8px;
 }
 
 .deviceItem:hover {
-  background: var(--hover);
+  box-shadow: var(--shadow-md);
 }
 
+/* 选中态用 theme.css 里那套 --card-selected-*（A2 之前一处没用过）：
+   值是「渐变浅蓝底 + 同色描边 + 3px 光环」，六套主题各调过，
+   比原先的 --accent-light 平涂多一层「被选中」的确定性。 */
 .deviceItemSelected {
-  background: var(--accent-light);
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow);
 }
 
 .deviceSelect {
@@ -339,14 +353,33 @@
   cursor: pointer;
 }
 
+/* 🔴 这三种图标原先共用一条（同一个淡底 + 同一个灰图标）。详情头要变成
+   实色强调块之后必须拆开：不拆的话改一处会把列表头像和空态图标一起改掉。 */
 .deviceIcon,
 .detailDeviceIcon,
 .emptyDeviceIcon {
   display: grid;
   place-items: center;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--accent) 10%, var(--card-bg));
   border-radius: 8px;
+}
+
+/* 列表行头像：中性底 + 次级图标色。
+   🔴 2026-09-22 由「--accent-light 底 + --accent-strong 图标」改中性，**有实害**：
+   逐主题比对，--accent-light 与 --card-selected-bg 在 6 套主题里有 5 套**完全同值**
+   （ocean 下前者比选中渐变更蓝），于是每条设备行的头像都长得跟「选中行底」一样
+   —— 「选中」不再独占任何视觉资源，深色主题里尤其明显。
+   取 --hover 而不是 --section-bg：forest 主题里 --section-bg == --accent-light ==
+   --card-selected-bg（同一浅绿，三值全等），换它等于没改；--hover 是唯一在 6/6 主题
+   下都不与选中底撞色的中性表面档（值即「比 --section-bg 深一档的中性」，项目里
+   已有 30+ 处静态表面先例）。
+   在线状态本就由右下圆点色 + 副标题文字双编码（U7 SC 1.4.1 不靠颜色独担），
+   头像不承载信息，把强调色让给真正有语义的地方（选中环、主按钮）。
+   范围只限列表头像：空态 .emptyDeviceIcon 的容器底是 --app-bg 渐变，中性 token
+   在深色/粉橙主题下会融底，且空态区没有可选中行、无撞色实害 —— 保持 accent。
+   详情头 .detailDeviceIcon（实色强调块）与权限行 .factIcon 的蓝都有含义，不动。 */
+.deviceIcon {
+  color: var(--text-secondary);
+  background: var(--hover);
 }
 
 .deviceIcon {
@@ -360,9 +393,10 @@
   position: absolute;
   right: -2px;
   bottom: -2px;
-  width: 8px;
-  height: 8px;
-  border: 2px solid var(--section-bg);
+  /* 描边必须跟行卡片同色：行变白底之后再用 --section-bg 会显出一圈灰边 */
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--card-bg);
   border-radius: 50%;
   background: var(--text-muted);
 }
@@ -388,14 +422,15 @@
 }
 
 .deviceCopy strong {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .deviceCopy small {
-  margin-top: 3px;
+  /* ui-rule-ok: 设备名与副标题的行间微调；抬到 4px 会把两行撑开，62px 行高的密实节奏就散了 */
+  margin-top: 1px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .primaryButton,
@@ -403,14 +438,14 @@
 /* 离线设备行右格：稿子给的是 text-button「检测」（在线行才是 primary「连接」）。
    视觉更轻——检测只回答「这一台还在不在」，不是主操作。 */
 .probeButton {
-  min-height: 32px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 10px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: transparent;
+  background: var(--card-bg);
   color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
@@ -472,7 +507,8 @@
   min-width: 52px;
   min-height: 28px;
   padding: 0 10px;
-  border-radius: 4px;
+  /* 4px 与周围卡片的 8px 打架，是「看着不精致」最容易被忽略的一种 */
+  border-radius: 8px;
   font-size: 12px;
 }
 
@@ -517,6 +553,7 @@
 .sidebarEmpty p {
   margin: 10px 0 4px;
   color: var(--text-primary);
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -526,12 +563,15 @@
   line-height: 1.6;
 }
 
+/* 侧栏内部的两条细分割线（这里与 .toolNav）统一走 --status-border：
+   只改一条会让同一个侧栏里两条线深浅不同，看着像疏漏。
+   结构性的边（.sidebar 右边界、.detailHead 下边界）仍用 --border-color。 */
 .receiveRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--border-color);
+  padding: 12px;
+  border-top: 1px solid var(--status-border);
 }
 
 .receiveRow > span {
@@ -545,14 +585,14 @@
 }
 
 .receiveRow strong {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .receiveRow small {
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .receiveOn,
@@ -561,7 +601,7 @@
   min-height: 28px;
   border-radius: 8px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -580,7 +620,7 @@
 .assistActions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 8px;
   padding: 0 8px 8px;
 }
 
@@ -589,13 +629,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   color: var(--text-secondary);
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -613,7 +653,7 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   padding: 8px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--status-border);
 }
 
 .toolNav button {
@@ -622,13 +662,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   border: 0;
   border-radius: 8px;
   color: var(--text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -646,20 +686,30 @@
   background: var(--app-bg);
 }
 
+/* 详情头 = C 的横幅。取 104 而不是 132：104 − 上下 padding 40 = 64，
+   正好等于下面那个图标的高，C 的四件套一件没少，省下的 28px 全给了会话列表。 */
 .detailHead {
   min-height: 104px;
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 20px 24px;
-  background: var(--card-bg);
+  /* 渐变只能装在令牌里：本文件禁 gradient 字面量（rcA2ThemeTokens.test.ts），
+     六套主题各一份见 theme.css 的 --rc-head-bg。 */
+  background: var(--rc-head-bg);
   border-bottom: 1px solid var(--border-color);
 }
 
+/* C 的「实色图标」：稿子是三段蓝渐变，本文件禁 gradient ⇒ 用 --accent-solid
+   实色 + --text-on-accent，与标题栏的 .brandIcon 同一套语言
+   （暗色主题下 --accent-solid 与 --text-on-accent 成对变，不会糊）。 */
 .detailDeviceIcon {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   border-radius: 12px;
+  color: var(--text-on-accent);
+  background: var(--accent-solid);
+  box-shadow: 0 8px 20px var(--accent-shadow);
 }
 
 .detailName {
@@ -670,7 +720,7 @@
 .detailName h2 {
   margin: 0;
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .detailTitleRow,
@@ -687,14 +737,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   padding: 0 8px;
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 8px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -721,8 +771,23 @@
 }
 
 .detailName p {
-  margin: 5px 0 0;
+  margin: 8px 0 0;
   color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* 在线 pill（C 的观感四件套之一）。文案仍由 presenceMainLabel 出，
+   药丸只负责把「在线」这一态从灰字里挑出来。 */
+.detailPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--success);
+  background: var(--success-bg);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .onlineText[data-presence="live"] {
@@ -737,7 +802,8 @@
 }
 
 .detailBody {
-  padding: 20px 24px 28px;
+  /* ui-rule-ok: 20px 与 .detailHead 的上下内边距对齐，两块内容的左/上呼吸才连得上 */
+  padding: 20px 24px 24px;
 }
 
 .detailBody h3 {
@@ -754,12 +820,12 @@
 }
 
 .factList > div {
-  min-height: 52px;
+  min-height: 56px;
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -768,20 +834,59 @@
 }
 
 .factList dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .factList dd {
   margin: 0;
   font-weight: 600;
+  font-size: 13px;
 }
 
-.factList span {
+/* 权限项的语义色图标块（C）。只用语义名（U6：新代码禁 --green/--orange 这类色名变量）。
+   项目没有紫色语义令牌，所以「设备身份」那行走中性 —— 它本来就是客观事实，
+   不是状态，用灰反而比硬凑一个紫色更准。 */
+.factIcon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  color: var(--accent-strong);
+  background: var(--accent-light);
+}
+
+.factIcon[data-tone="ok"] {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.factIcon[data-tone="file"] {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.factIcon[data-tone="id"] {
+  color: var(--text-secondary);
+  background: var(--section-bg);
+}
+
+/* 🔴 只选**行尾说明** span（div 的直接子），不能写 `.factList span`：
+   裸标签选择器特异 (0,1,1) 会压过 `.factIcon` 的 display:grid（(0,1,0)）——
+   place-items:center 对 flex 无效，图标块里的字形整体偏左。
+   2026-09-22 真机截图实测抓到（.factList span 是 HEAD 既有，.factIcon 是后加，
+   叠加时没查同文件高特异性选择器 —— 老坑：叠 CSS 必查同文件更长选择器）。 */
+.factList > div > span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .mono {
@@ -801,6 +906,7 @@
 .warningNotice {
   margin-bottom: 16px;
   padding: 10px 12px;
+  font-size: 13px;
   color: var(--warning);
   background: var(--warning-bg);
   border-left: 3px solid var(--warning);
@@ -822,7 +928,7 @@
 .emptyDeviceIcon {
   width: 72px;
   height: 72px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   border-radius: 12px;
 }
 
@@ -833,7 +939,8 @@
 
 .emptyDetail p {
   max-width: 480px;
-  margin: 7px 0 18px;
+  margin: 8px 0 16px;
+  font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.7;
 }
@@ -854,7 +961,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .sectionHead h3 {
   margin: 0;
@@ -864,7 +971,7 @@
 .sectionLink {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   padding: 0;
   border: 0;
   background: none;
@@ -882,40 +989,76 @@
 }
 
 
-/* 最近会话 3 条：设备名不重复（在页头），四列 = 模式 / 时长 / 时间 / 结果 */
+/* 最近会话：设备名不重复（在页头），三列 = 能力+时间 / 时长 / 结果。
+   行卡片化（C）——容器透明，每行自己是一张卡。 */
 .recentBlock {
   margin-top: 24px;
 }
 .recentList {
   margin-bottom: 4px;
-  background: var(--card-bg);
-  border-radius: 12px;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .recentLine {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, auto);
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
-  padding: 9px 14px;
-  font-size: 12px;
+  /* 46 = A 的 5 条能放进 dbody、又容得下 21px 药丸的那个值（60 放不下 5 条） */
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  font-size: 13px;
   color: var(--text-secondary);
-  border-top: 1px solid var(--border-color);
-}
-.recentLine:first-child {
-  border-top: 0;
-}
-.recentLine strong {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-primary);
 }
 .recentLine span {
   font-variant-numeric: tabular-nums;
 }
+/* 第一列：能力药丸 + 时间。时间在药丸右边而不是单独一列，
+   因为「什么时候」跟着「哪种会话」走，拆两列会让 4 列挤在一行里。 */
+.recentCap {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.capChip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--section-bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.capChip[data-cap="control"] {
+  color: var(--accent-strong);
+  background: var(--accent-light);
+}
+.recentDuration {
+  color: var(--text-primary);
+  font-weight: 600;
+}
 .recentResult {
+  min-width: 104px;
   color: var(--text-muted);
   text-align: right;
+}
+/* 结果列四态：档位由 `@/lib/rcHistory` 的 `resultTone` 判（唯一真源），
+   色号与记录页 `.phRes[data-tone]`（RemoteComputer.module.css）一一对应 ——
+   改这里必须同步那边，否则同一个 `reason` 在两个视图里颜色不同。 */
+.recentResult[data-tone="ok"] {
+  color: var(--success);
+}
+.recentResult[data-tone="warn"] {
+  color: var(--warning);
+}
+.recentResult[data-tone="err"] {
+  color: var(--danger);
+}
+.recentResult[data-tone="cancel"] {
+  color: var(--text-muted);
 }
 .recentEmpty {
   margin: 0;

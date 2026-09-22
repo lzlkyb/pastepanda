@@ -159,7 +159,7 @@ export function RcA2DeviceList({
                       }}
                     >
                       <span className={styles.deviceIcon} data-presence={presence}>
-                        <Monitor size={17} aria-hidden="true" />
+                        <Monitor size={16} aria-hidden="true" />
                       </span>
                       <span className={styles.deviceCopy}>
                         <strong>{name}</strong>
