@@ -5,10 +5,12 @@
  * 所以全部可单测。理由与 `rc/audio.rs` 拆出判据同源：进度/速率/倒计时/文案
  * 这些最容易写错、又最难在真机上复现的决定，要让测试直接钉住。
  *
- * # 与 `imageFormat.formatBytes` 的关系
+ * # 与 `imageFormat.formatBytes` 的关系（2026-09-22 起失效）
  *
- * 不复用：那个封顶在 MB（本通道上限 8 GiB，要 GB 档），且 `0` 返回 `"—"`
- * ——对 0 字节文件和「还没开始」是两回事，在这里会读出假信息。
+ * 曾因「MB 封顶 + 0 返回 —」两处口径不合而各持一份；现已统一收口到
+ * `lib/utils.ts` 的 `formatBytes`（B/KB/MB/GB，0 → `"0 B"`，非法 → `"—"`），
+ * 两个模块都 re-export 它。0 字节与「还没开始」的区分交给**调用方**的
+ * null/未开始状态，不再由格式化函数代劳。
  */
 import type { RcFileAsk, RcFileSnapshot, RcFileTask, RcFileTaskState } from "@/lib/api/rcFile";
 
@@ -60,20 +62,17 @@ function isTaskLike(v: unknown): v is RcFileTask {
   return typeof t.id === "string" && typeof t.size === "number" && typeof t.done === "number";
 }
 
-/** 字节数 → 人类可读（B/KB/MB/GB）。0 是合法值（空文件），不是「无」。 */
-export function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "—";
-  if (n < 1024) return `${Math.round(n)} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
+import { formatBytes, formatRate } from "@/lib/utils";
 
-/** 速率 → `6.2 MB/s`。低于 1 KB/s 显示 `—`（还没量到，别报假数）。 */
-export function formatRate(bytesPerSec: number): string {
-  if (!Number.isFinite(bytesPerSec) || bytesPerSec < 1024) return "—";
-  return `${formatBytes(bytesPerSec)}/s`;
-}
+/**
+ * 字节数 → 人类可读（B/KB/MB/GB）。0 是合法值（空文件），不是「无」。
+ *
+ * 实现**收口在 `lib/utils.ts`**（规则 11，2026-09-22）：本模块曾与
+ * `imageFormat.ts` 各持一份同名实现、口径互不一致。这里 re-export 保持
+ * 既有 import 路径（`@/lib/rcFile`）与测试锚点不变——新代码请直接从
+ * `@/lib/utils` 引。
+ */
+export { formatBytes, formatRate };
 
 /** 剩余时间 → `剩 12s` / `剩 3m` / `剩 1.2h`。 */
 export function formatEta(ms: number): string {

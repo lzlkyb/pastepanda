@@ -63,11 +63,20 @@ describe("formatBytes", () => {
   });
 
   it("formats megabytes", () => {
-    expect(formatBytes(3 * 1024 * 1024)).toBe("3.00 MB");
+    expect(formatBytes(3 * 1024 * 1024)).toBe("3.0 MB");
   });
 
-  it("returns dash for zero/negative/invalid", () => {
-    expect(formatBytes(0)).toBe("—");
+  it("formats gigabytes (unified with lib/utils, 2026-09-22)", () => {
+    expect(formatBytes(3 * 1024 * 1024 * 1024)).toBe("3.00 GB");
+  });
+
+  it("zero is a valid size, not 'no data'", () => {
+    expect(formatBytes(0)).toBe("0 B");
+  });
+
+  it("returns dash for negative/invalid", () => {
     expect(formatBytes(-5)).toBe("—");
+    expect(formatBytes(Number.NaN)).toBe("—");
+    expect(formatBytes(Number.POSITIVE_INFINITY)).toBe("—");
   });
 });

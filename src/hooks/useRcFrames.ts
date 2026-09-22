@@ -27,7 +27,9 @@ import { listen } from "@tauri-apps/api/event";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { rcDrainFrames, parseFrameBatch, rcSendInput, type RcBinFrame } from "@/lib/api/rc";
 import { H264Decoder, type HwCodec } from "@/lib/rcH264";
-import { FpsMeter } from "@/lib/rcSessionStats";
+// 统计与抖动缓冲的纯计算收口在 rcSessionStats（2026-09-22 拆出，.ts ≤ 400 红线）；
+// 本 hook 只留「取帧 → 解码 → 上屏 → setState」的编排。
+import { FpsMeter, FrameStats, RenderDelayBuffer } from "@/lib/rcSessionStats";
 
 export function useRcFrames(
   sessionId: string,
@@ -61,6 +63,9 @@ export function useRcFrames(
   const contentRef = useRef({ w: 0, h: 0 });
   const lastFrameAt = useRef(0);
   const fpsMeter = useRef(new FpsMeter());
+  // 帧遥测 EMA 与微抖动缓冲：纯计算在类里，换会话时 reset（与 fpsMeter 同法）
+  const stats = useRef(new FrameStats());
+  const jitter = useRef(new RenderDelayBuffer());
 
   // skew / 输入时刻 / 画质档提示不参与取帧循环的依赖——用 ref 透传，
   // status 刷新或换档不打断播放循环
@@ -91,12 +96,18 @@ export function useRcFrames(
     setRespMs(0);
     contentRef.current = { w: 0, h: 0 };
     fpsMeter.current.reset();
+    stats.current.reset();
+    jitter.current.reset();
     const c = canvasRef.current;
     if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
   }, [sessionId, canvasRef]);
 
   useEffect(() => {
     if (!visible) return;
+    // 与原实现一致：EMA/抖动缓冲是 effect 局部状态——visible 每次由假转真
+    // 都重置（停播期间的旧样本不该污染恢复后的延迟/码率显示）
+    stats.current.reset();
+    jitter.current.reset();
     let alive = true;
     let h264: H264Decoder | null = null;
     let h264Miss = 0;
@@ -129,84 +140,26 @@ export function useRcFrames(
       void rcSendInput({ kind: "set_codec", codec: "h264" }).catch(() => {});
     };
 
-    // P2-10：画面链路延迟 EMA（采集→上屏）。at_ms 是被控端抓屏时刻（对方时钟），
-    // P0-1 A3：加上时钟偏差校准（skew = 对端时钟 − 本机时钟）
-    let latEma = 0;
-    // P0-2 分段 EMA
-    let capEma = 0;
-    let encEma = 0;
-    let decEma = 0;
-    let netEma = 0;
-    const noteLatency = (atMs: number, capMs: number, encMs: number) => {
-      const age = Date.now() - atMs + skewRef.current;
-      if (age < 0 || age > 10_000) return; // 时钟偏差/停顿后的一帧不算
-      latEma = latEma === 0 ? age : (latEma * 7 + age) / 8;
-      setLatencyMs(Math.round(latEma));
-      if (capMs > 0) capEma = capEma === 0 ? capMs : (capEma * 7 + capMs) / 8;
-      if (encMs > 0) encEma = encEma === 0 ? encMs : (encEma * 7 + encMs) / 8;
-      // 网络段 = 总龄 − 采集 − 编码 − 解码（解码段是本地实测 EMA）。
-      // 负值说明校准不足或对端没带遥测，clamp 到 0。
-      if (capMs > 0 || encMs > 0) {
-        const net = Math.max(0, age - capMs - encMs - decEma);
-        netEma = netEma === 0 ? net : (netEma * 7 + net) / 8;
-        setSegNetMs(Math.round(netEma));
-      }
-      setSegCapMs(Math.round(capEma));
-      setSegEncMs(Math.round(encEma));
-      setSegDecMs(Math.round(decEma));
+    // P2-10 / P0-2 / P0-4 / P4 / P1-8：全部 EMA 与抖动缓冲已收口到
+    // FrameStats / RenderDelayBuffer（lib/rcSessionStats.ts）。这里只把
+    // 类的计算结果搬进 state（getter → setState 的同步器）。
+    const syncStats = () => {
+      setLatencyMs(stats.current.latencyMs);
+      setSegCapMs(stats.current.capMs);
+      setSegEncMs(stats.current.encMs);
+      setSegDecMs(stats.current.decMs);
+      setSegNetMs(stats.current.netMs);
     };
-    // P4：操作延迟近似——输入发出 → 下一帧到达（纯本机时钟）
+    const noteLatency = (atMs: number, capMs: number, encMs: number) => {
+      if (stats.current.noteLatency(atMs, capMs, encMs, skewRef.current)) syncStats();
+    };
     const noteResponse = () => {
       const t0 = lastInputRef.current?.current ?? 0;
-      if (!t0) return;
-      const d = Date.now() - t0;
-      if (d <= 0 || d > 500) return; // 只统计「正在等响应」的帧
-      setRespMs((prev) => Math.round(prev === 0 ? d : prev * 0.7 + d * 0.3));
+      if (stats.current.noteResponse(t0)) setRespMs(stats.current.respMs);
     };
-    // P0-4：画面码率估计（1s 窗口，EMA）
-    let bytesWindow = 0;
-    let windowStart = 0;
-    let brEma = 0;
     const noteBytes = (n: number) => {
-      bytesWindow += n;
-      const now = Date.now();
-      if (windowStart === 0) windowStart = now;
-      const span = now - windowStart;
-      if (span >= 1000) {
-        const kbps = Math.round((bytesWindow * 8) / span);
-        brEma = brEma === 0 ? kbps : (brEma * 7 + kbps) / 8;
-        setBitrateKbps(brEma);
-        bytesWindow = 0;
-        windowStart = now;
-      }
-    };
-
-    // P1-8：自适应微抖动缓冲。弱网帧到达忽快忽慢，直接到一帧画一帧必抖；
-    // 按最近 8 个到达间隔的离散度缓一点上屏（LAN 平稳时为 0）。
-    const arrivalGaps: number[] = [];
-    let lastArrival = 0;
-    let renderDelayMs = 0;
-    const computeRenderDelay = () => {
-      const now = Date.now();
-      if (lastArrival > 0) {
-        const gap = now - lastArrival;
-        if (gap > 250) {
-          // M3：空闲退避把轮询间隔（最高 200ms）拉出来的 gap 不是网络抖动，
-          // 混进样本会让恢复后的前几帧背上 ~50ms 的假缓冲——清空重来
-          arrivalGaps.length = 0;
-        } else if (gap > 0) {
-          arrivalGaps.push(gap);
-          if (arrivalGaps.length > 8) arrivalGaps.shift();
-        }
-      }
-      lastArrival = now;
-      if (arrivalGaps.length >= 4) {
-        const max = Math.max(...arrivalGaps);
-        const avg = arrivalGaps.reduce((a, b) => a + b, 0) / arrivalGaps.length;
-        const target = Math.min(Math.max((max - avg) * 0.5, 0), 60);
-        renderDelayMs = renderDelayMs * 0.7 + target * 0.3;
-      }
-      return renderDelayMs > 5 ? Math.round(renderDelayMs) : 0;
+      const kbps = stats.current.noteBytes(n);
+      if (kbps != null) setBitrateKbps(kbps);
     };
 
     // 「门铃」：后端 outbox 有新帧时 emit rc-frame-ready。挂起一次唤醒
@@ -356,7 +309,7 @@ export function useRcFrames(
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         // P0-1 A2：弱网抖动缓冲**整批只等一次**——放在逐帧循环里会被放大 N 倍
-        const delay = computeRenderDelay();
+        const delay = jitter.current.next();
         if (delay > 0) await new Promise((r) => setTimeout(r, delay));
         for (const f of frames) {
           if (f.codec !== "jpeg") {
@@ -381,7 +334,7 @@ export function useRcFrames(
             const decMs = Date.now() - decT0;
             // 解码是异步产出（VideoFrame 回调）才算完——这里量的是排队+提交，
             // 回调里的绘制不计。取 EMA 时以提交耗时为主即可（量级正确）。
-            if (decMs > 0) decEma = decEma === 0 ? decMs : (decEma * 7 + decMs) / 8;
+            stats.current.noteDecode(decMs);
             noteBytes(f.data.length);
             noteLatency(f.at_ms, f.cap_ms, f.enc_ms);
             noteResponse();

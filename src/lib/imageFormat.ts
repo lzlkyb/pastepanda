@@ -35,10 +35,12 @@ export function withExportExt(fileName: string, format: ExportFormat): string {
   return `${base}.${EXPORT_FORMATS[format].ext}`;
 }
 
-/** 字节数格式化为人类可读字符串（B/KB/MB） */
-export function formatBytes(bytes: number): string {
-  if (!bytes || bytes < 0) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
+/**
+ * 字节数格式化为人类可读字符串（B/KB/MB/GB）。
+ *
+ * 实现**收口在 `lib/utils.ts`**（规则 11，2026-09-22）：旧本地版封顶 MB、
+ * 且把 0 与非法输入混为 `"—"`。统一后 0 → `"0 B"`（空文件是合法值）、
+ * 非法（负数/NaN/±∞）→ `"—"`。两处调用方（ImagePreviewDialog /
+ * useImagePreview）实际传入的都是真实字节数或已判空的估计值，行为不受影响。
+ */
+export { formatBytes } from "@/lib/utils";

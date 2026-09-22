@@ -5,6 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { rcSendInput } from "@/lib/api/rc";
 import { isSessionEscape, shouldSwallowEscape } from "@/lib/rcKeyGuard";
 import { keyToVk, shouldForwardToRemote } from "@/lib/rcKeyMap";
+// 几何换算收口在 lib/rcPointer（2026-09-22 拆出，本文件压回 400 行内）。
+// re-export 保持既有 import 路径（@/hooks/useRcInput）不变。
+import { mapNormFromCanvas, type RcCursorPos } from "@/lib/rcPointer";
+export { mapNormFromCanvas };
+export type { RcCursorPos };
 
 // 16ms = 60Hz：P0-3 输入提速。绝对坐标 latest-wins，高频率只有好处；
 // 数据报通道下每拍都进得来，可靠流场景也只是多几个小 JSON 帧。
@@ -13,39 +18,6 @@ const MOVE_THROTTLE_MS = 16;
 // 滚轮合并发送周期：触控板一拍可产生上百个 wheel 事件，逐条转发 = IPC +
 // 可靠流洪泛；16ms 内的滚动合成一条（方向可能混合，delta 直接累加）。
 const WHEEL_THROTTLE_MS = 16;
-/** B1：本地光标的内容坐标（0..1，相对远程画面）。 */
-export interface RcCursorPos {
-  u: number;
-  v: number;
-}
-
-export function mapNormFromCanvas(
-  e: { clientX: number; clientY: number },
-  el: HTMLCanvasElement,
-  contentW: number,
-  contentH: number,
-  fit: "fit" | "actual" | "fill" = "fit",
-) {
-  const rect = el.getBoundingClientRect();
-  const nw = contentW || el.width || 1;
-  const nh = contentH || el.height || 1;
-  // contain 用 min（letterbox），cover/fill 用 max（溢出裁切）
-  const scale =
-    fit === "fill"
-      ? Math.max(rect.width / nw, rect.height / nh)
-      : Math.min(rect.width / nw, rect.height / nh);
-  const dw = nw * scale;
-  const dh = nh * scale;
-  const ox = rect.left + (rect.width - dw) / 2;
-  const oy = rect.top + (rect.height - dh) / 2;
-  const u = (e.clientX - ox) / dw;
-  const v = (e.clientY - oy) / dh;
-  const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
-  return {
-    x: Math.round(clamp01(u) * 65535),
-    y: Math.round(clamp01(v) * 65535),
-  };
-}
 
 export async function releaseModifiers() {
   // 6 个修饰键 vk

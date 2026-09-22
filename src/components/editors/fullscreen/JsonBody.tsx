@@ -11,6 +11,7 @@ import { linter, type Diagnostic } from "@codemirror/lint";
 import type { EditorView } from "@codemirror/view";
 import { useToast } from "@/components/Toast";
 import { sqlInFromJson, parseJsonArray } from "@/lib/jsonToolbox";
+import { formatBytes } from "@/lib/utils";
 import type { ShellBridge } from "./types";
 import styles from "../FullscreenEditor.module.css";
 
@@ -472,12 +473,8 @@ function JTableView({ table, q }: { table: JTable; q: string }) {
 }
 
 // ─── 预览主组件 ─────────────────────────────────────────
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-}
+// formatBytes 收口到 lib/utils（规则 11，2026-09-22）：旧的本地内联版无
+// 负数/NaN 守卫，与 rcFile / imageFormat 两份口径也不一致。
 
 export function JsonPreview({ text, bridge }: { text: string; bridge?: ShellBridge }) {
   const [query, setQuery] = useState("");

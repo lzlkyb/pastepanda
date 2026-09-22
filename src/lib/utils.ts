@@ -39,6 +39,30 @@ export function truncate(text: string, maxLen: number): string {
   return codePoints.length > maxLen ? codePoints.slice(0, maxLen).join("") + "..." : cleaned;
 }
 
+/**
+ * 字节数 → 人类可读（B/KB/MB/GB）。**全项目唯一权威版**（规则 11 收口，
+ * 2026-09-22）：此前 `lib/rcFile.ts` 与 `lib/imageFormat.ts` 各有一份、
+ * `JsonBody.tsx` 还有一份无守卫内联拷贝，三份口径互不一致。
+ *
+ * 语义（取 rcFile 版超集——文件传输通道上限 8 GiB，必须留 GB 档）：
+ * - `0` 是**合法值**（空文件），返回 `"0 B"`，不是「无」；
+ * - 非法输入（负数 / NaN / ±∞）返回 `"—"`——那才是「没有数据」。
+ * 旧 `imageFormat` 版把 0 与非法混为 `"—"`、MB 两位小数，已统一到本版。
+ */
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/** 速率 → `6.2 MB/s`。低于 1 KB/s 显示 `—`（还没量到，别报假数）。 */
+export function formatRate(bytesPerSec: number): string {
+  if (!Number.isFinite(bytesPerSec) || bytesPerSec < 1024) return "—";
+  return `${formatBytes(bytesPerSec)}/s`;
+}
+
 /** 剥离 HTML 标签，返回纯文本 */
 export function stripHtml(text: string): string {
   try {

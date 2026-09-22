@@ -217,3 +217,145 @@ export class FpsMeter {
     this.times = [];
   }
 }
+
+/**
+ * 帧遥测统计器：延迟总龄 / 四段拆分 / 码率 / 操作响应，全部 EMA 收口一处
+ * （2026-09-22 从 `useRcFrames` 拆出，.ts ≤ 400 红线；`FpsMeter` 的同类邻居）。
+ *
+ * 类只做**纯计算**，不碰 React——hook 负责把 getter 值 setState。
+ * EMA 系数与原实现一致：α = 1/8（新样本占 12.5%）。
+ */
+export class FrameStats {
+  private lat = 0;
+  private cap = 0;
+  private enc = 0;
+  private dec = 0;
+  private net = 0;
+  private br = 0;
+  private resp = 0;
+  private bytesWindow = 0;
+  private windowStart = 0;
+
+  get latencyMs(): number {
+    return Math.round(this.lat);
+  }
+  get capMs(): number {
+    return Math.round(this.cap);
+  }
+  get encMs(): number {
+    return Math.round(this.enc);
+  }
+  get decMs(): number {
+    return Math.round(this.dec);
+  }
+  get netMs(): number {
+    return Math.round(this.net);
+  }
+  /** 与原实现一致：码率 EMA 不取整（窗口闭合时的 kbps 已是整数起点）。 */
+  get bitrateKbps(): number {
+    return this.br;
+  }
+  get respMs(): number {
+    return this.resp;
+  }
+
+  /** 本地实测解码耗时进 EMA（须在 noteLatency 之前调：net 段要减它）。 */
+  noteDecode(ms: number) {
+    if (ms > 0) this.dec = this.dec === 0 ? ms : (this.dec * 7 + ms) / 8;
+  }
+
+  /**
+   * 记一帧的链路遥测。`atMs` 是被控端抓屏时刻（对方时钟），`skewMs` =
+   * 对端时钟 − 本机时钟。返回是否真的记录了——时钟偏差/停顿后的一帧不算
+   * （age < 0 或 > 10s），此时调用方不必刷新 state。
+   */
+  noteLatency(atMs: number, capMs: number, encMs: number, skewMs: number): boolean {
+    const age = Date.now() - atMs + skewMs;
+    if (age < 0 || age > 10_000) return false;
+    this.lat = this.lat === 0 ? age : (this.lat * 7 + age) / 8;
+    if (capMs > 0) this.cap = this.cap === 0 ? capMs : (this.cap * 7 + capMs) / 8;
+    if (encMs > 0) this.enc = this.enc === 0 ? encMs : (this.enc * 7 + encMs) / 8;
+    // 网络段 = 总龄 − 采集 − 编码 − 解码（解码段是本地实测 EMA）。
+    // 负值说明校准不足或对端没带遥测，clamp 到 0。
+    if (capMs > 0 || encMs > 0) {
+      const net = Math.max(0, age - capMs - encMs - this.dec);
+      this.net = this.net === 0 ? net : (this.net * 7 + net) / 8;
+    }
+    return true;
+  }
+
+  /** P4：操作延迟近似。`lastInputAt` = 输入发出的本地时刻；0 = 尚无输入。 */
+  noteResponse(lastInputAt: number): boolean {
+    if (!lastInputAt) return false;
+    const d = Date.now() - lastInputAt;
+    if (d <= 0 || d > 500) return false; // 只统计「正在等响应」的帧
+    // 存的就是展示值（取整），与原 setState(prev => round(...)) 逐位一致
+    this.resp = Math.round(this.resp === 0 ? d : this.resp * 0.7 + d * 0.3);
+    return true;
+  }
+
+  /** P0-4：画面码率估计（1s 窗口，EMA）。窗口闭合时返回新码率，否则 null。 */
+  noteBytes(n: number): number | null {
+    this.bytesWindow += n;
+    const now = Date.now();
+    if (this.windowStart === 0) this.windowStart = now;
+    const span = now - this.windowStart;
+    if (span < 1000) return null;
+    const kbps = Math.round((this.bytesWindow * 8) / span);
+    this.br = this.br === 0 ? kbps : (this.br * 7 + kbps) / 8;
+    this.bytesWindow = 0;
+    this.windowStart = now;
+    return this.br;
+  }
+
+  reset() {
+    this.lat = 0;
+    this.cap = 0;
+    this.enc = 0;
+    this.dec = 0;
+    this.net = 0;
+    this.br = 0;
+    this.resp = 0;
+    this.bytesWindow = 0;
+    this.windowStart = 0;
+  }
+}
+
+/**
+ * P1-8：自适应微抖动缓冲。弱网帧到达忽快忽慢，直接到一帧画一帧必抖；
+ * 按最近 8 个到达间隔的离散度缓一点上屏（LAN 平稳时为 0）。
+ * 每批帧调一次 `next()`，返回本批应等待的 ms（≤5 折算为 0）。
+ */
+export class RenderDelayBuffer {
+  private gaps: number[] = [];
+  private lastArrival = 0;
+  private ema = 0;
+
+  next(now = Date.now()): number {
+    if (this.lastArrival > 0) {
+      const gap = now - this.lastArrival;
+      if (gap > 250) {
+        // M3：空闲退避把轮询间隔（最高 200ms）拉出来的 gap 不是网络抖动，
+        // 混进样本会让恢复后的前几帧背上 ~50ms 的假缓冲——清空重来
+        this.gaps.length = 0;
+      } else if (gap > 0) {
+        this.gaps.push(gap);
+        if (this.gaps.length > 8) this.gaps.shift();
+      }
+    }
+    this.lastArrival = now;
+    if (this.gaps.length >= 4) {
+      const max = Math.max(...this.gaps);
+      const avg = this.gaps.reduce((a, b) => a + b, 0) / this.gaps.length;
+      const target = Math.min(Math.max((max - avg) * 0.5, 0), 60);
+      this.ema = this.ema * 0.7 + target * 0.3;
+    }
+    return this.ema > 5 ? Math.round(this.ema) : 0;
+  }
+
+  reset() {
+    this.gaps.length = 0;
+    this.lastArrival = 0;
+    this.ema = 0;
+  }
+}

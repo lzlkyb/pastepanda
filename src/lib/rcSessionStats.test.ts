@@ -7,6 +7,8 @@ import {
   pathKindHint,
   pathKindLabel,
   rttGrade,
+  FrameStats,
+  RenderDelayBuffer,
   ACTION_UNANSWERED_MS,
   HEARTBEAT_FAIL_MS,
   HEARTBEAT_STALE_MS,
@@ -124,5 +126,112 @@ describe("pathKindLabel / pathKindHint（走哪条路）", () => {
   it("绕中继必须给解释：延迟高≠故障", () => {
     expect(pathKindHint("relay")).toContain("正常");
     expect(pathKindHint("")).toBe("");
+  });
+});
+
+describe("FrameStats（帧遥测 EMA，2026-09-22 自 useRcFrames 拆出）", () => {
+  it("noteLatency：age 越界（<0 / >10s）的帧不算", () => {
+    const st = new FrameStats();
+    const now = Date.now();
+    expect(st.noteLatency(now + 500, 0, 0, 0)).toBe(false); // age<0：时钟没校准
+    expect(st.noteLatency(now - 11_000, 0, 0, 0)).toBe(false); // 停顿后的一帧
+    expect(st.latencyMs).toBe(0);
+  });
+
+  it("EMA 系数 α=1/8：首个样本直取，其后按 7/8 混合", () => {
+    const st = new FrameStats();
+    // 🔴 0 是「无样本」哨兵：age≈0 的首样本存进去仍读作 0（原实现语义，
+    // 类忠实保留）——所以 EMA 行为必须用非零首样本考察。
+    st.noteLatency(Date.now() - 100, 0, 0, 0); // age ≈ 100+ε → 首样本直取
+    expect(st.latencyMs).toBeGreaterThanOrEqual(100);
+    expect(st.latencyMs).toBeLessThanOrEqual(101);
+    st.noteLatency(Date.now() - 1000, 0, 0, 0); // (100*7+1000+ε)/8 ≈ 212.5
+    expect(st.latencyMs).toBeGreaterThanOrEqual(212);
+    expect(st.latencyMs).toBeLessThanOrEqual(214);
+  });
+
+  it("网络段 = 总龄 − 采集 − 编码 − 解码，负值 clamp 到 0", () => {
+    const st = new FrameStats();
+    st.noteDecode(30); // dec EMA = 30（先于 noteLatency，net 段要减它）
+    // age ≈ 100+ε → net = age-40-20-30 ≈ 10+ε（容忍真实时钟的毫秒差）
+    st.noteLatency(Date.now() - 100, 40, 20, 0);
+    expect(st.netMs).toBeGreaterThanOrEqual(10);
+    expect(st.netMs).toBeLessThan(25);
+    const st2 = new FrameStats();
+    st2.noteLatency(Date.now() - 50, 90, 20, 0); // 50-90-20 < 0 → 0
+    expect(st2.netMs).toBe(0);
+  });
+
+  it("码率：1s 窗口闭合才出数，EMA 首样本直取", () => {
+    const st = new FrameStats();
+    expect(st.noteBytes(1000)).toBeNull(); // 窗口未满
+    // 把窗口起点拨回 1001ms 前：绕开真实时钟等待
+    (st as unknown as { windowStart: number }).windowStart -= 1001;
+    const kbps = st.noteBytes(1_000_000);
+    // (1000 + 1_000_000) * 8 / ~1001ms ≈ 7999 kbps
+    expect(kbps).not.toBeNull();
+    expect(kbps!).toBeGreaterThan(7000);
+  });
+
+  it("noteResponse：只统计 0<d≤500 的样本", () => {
+    const st = new FrameStats();
+    expect(st.noteResponse(Date.now() - 600)).toBe(false); // 太久 = 没在等
+    expect(st.noteResponse(Date.now() + 50)).toBe(false); // 未来时刻
+    expect(st.noteResponse(Date.now() - 120)).toBe(true);
+    expect(st.respMs).toBeGreaterThanOrEqual(119); // d = 120±1ms
+    expect(st.respMs).toBeLessThanOrEqual(121);
+  });
+
+  it("reset 后全部归零", () => {
+    const st = new FrameStats();
+    st.noteLatency(Date.now() - 100, 40, 20, 0);
+    st.reset();
+    expect(st.latencyMs).toBe(0);
+    expect(st.netMs).toBe(0);
+  });
+});
+
+describe("RenderDelayBuffer（P1-8 微抖动缓冲）", () => {
+  it("样本不足 4 个 → 0（LAN 平稳不垫缓冲）", () => {
+    const jb = new RenderDelayBuffer();
+    let t = 1_000_000;
+    for (let i = 0; i < 3; i++) {
+      t += 20;
+      expect(jb.next(t)).toBe(0);
+    }
+  });
+
+  it("平稳 gap（20ms）→ target=0，即便凑够样本也不垫", () => {
+    const jb = new RenderDelayBuffer();
+    let t = 1_000_000;
+    for (let i = 0; i < 10; i++) {
+      t += 20;
+      jb.next(t);
+    }
+    expect(jb.next(t + 20)).toBe(0); // max≈avg → target=0
+  });
+
+  it("抖动样本（gap 忽大忽小）→ 垫 (max−avg)/2，封顶 60ms", () => {
+    const jb = new RenderDelayBuffer();
+    let t = 1_000_000;
+    const gaps = [20, 20, 100, 20]; // max=100 avg=40 → target=30
+    for (const g of gaps) {
+      t += g;
+      jb.next(t);
+    }
+    // ema = 0*0.7 + 30*0.3 = 9 > 5
+    expect(jb.next(t + 20)).toBe(9);
+  });
+
+  it(">250ms 的 gap 是空闲退避不是抖动：清空样本重来", () => {
+    const jb = new RenderDelayBuffer();
+    let t = 1_000_000;
+    for (const g of [20, 20, 100, 20]) {
+      t += g;
+      jb.next(t);
+    }
+    t += 400; // 空闲退避拉出来的大 gap
+    jb.next(t);
+    expect(jb.next(t + 20)).toBe(0); // 样本已清空，不足 4 个
   });
 });
