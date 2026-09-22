@@ -110,6 +110,34 @@ pub struct EditorInitData {
 
 pub struct PendingEditor(pub std::sync::Mutex<Option<EditorInitData>>);
 
+/// window-state 插件该持久化哪些窗口属性。
+///
+/// 🔴 `DECORATIONS` 必须摘掉 —— 本项目的窗口装饰**全部由代码决定**
+/// （`tauri.conf.json` 的 main ＋ 每个 `WebviewWindowBuilder` 显式 `.decorations(false)`），
+/// 它不是用户运行时可调的偏好，不该被持久化。
+///
+/// 踩坑经过（2026-09-22）：让插件持久化装饰位会造成一次「污染即永久」的自我延续 ——
+/// 某次运行把 rc-workbench 的 `decorated: true` 写进
+/// `%APPDATA%/com.pastepanda.app/.window-state.json`，此后每次启动插件都在建窗后
+/// 把 `set_decorations(true)` 恢复回来 ⇒ 源码里的 `.decorations(false)` 形同虚设，
+/// 工作台多出一条原生标题栏，与自绘 `RcA2TitleBar` 叠成两排窗口按钮。
+///
+/// 「有标题栏」是可量的，不是看岔了：外框高 − 客户区高 = 47px
+/// （`SM_CYCAPTION(29) + SM_SIZEFRAME(4) + SM_CXPADDEDBORDER(5)`，均 @120dpi），
+/// 而同进程 tray-popup 只有 10px（纯边框）。摘掉该位后真机实测 47 → 10、
+/// 外框高 1010 → 971、标题栏下分割线 97 → 59（= 48 逻辑 px × 1.25）。
+///
+/// ⚠️ 残留物（无害，但别误以为会自动消失）：插件把 `WindowState` 当**整结构体**落盘
+/// （`lib.rs` 的 `save_window_state` 遍历 cache 全字段写出），`update_state` 只是
+/// 「标记位不在就不覆盖该字段」。所以 `.window-state.json` 里那条 `"decorated": true`
+/// 会一直留在文件里、每次保存照写，只是 `restore_state` 也查标记位 ⇒ **永不生效**。
+/// 想清干净得手动删这个键（纯清理，不影响行为）。
+#[cfg(desktop)]
+fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    tauri_plugin_window_state::StateFlags::all()
+        & !tauri_plugin_window_state::StateFlags::DECORATIONS
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // `env_logger::init()` 在 RUST_LOG 未设时默认只放行 **error**，于是全项目
@@ -169,11 +197,17 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             log::info!("[BOOT] 0 setup 进入");
-            // 窗口状态恢复 — 必须在 window.show() 之前注册，确保先恢复后显示
+            // 窗口状态恢复 — 必须在 window.show() 之前注册，确保先恢复后显示。
+            // 状态位为什么必须摘掉 DECORATIONS、以及「两排标题栏」的量化判据，
+            // 见 `window_state_flags()` 的文档注释（别把那条摘除改回来）。
             #[cfg(desktop)]
             if let Err(e) = app
                 .handle()
-                .plugin(tauri_plugin_window_state::Builder::default().build())
+                .plugin(
+                    tauri_plugin_window_state::Builder::default()
+                        .with_state_flags(window_state_flags())
+                        .build(),
+                )
             {
                 log::error!("window-state 插件初始化失败: {}", e);
                 fatal_startup_error(
@@ -1239,4 +1273,35 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 窗口状态位的守卫：这套断言是防「有人顺手把 DECORATIONS 加回来」的。
+/// 症状不像崩溃那样显眼——只表现为工作台窗口凭空多一条原生标题栏、按钮变两排，
+/// 靠肉眼 code review 很容易放过，所以钉成单测。
+#[cfg(all(test, desktop))]
+mod window_state_flags_tests {
+    use super::window_state_flags;
+    use tauri_plugin_window_state::StateFlags;
+
+    #[test]
+    fn decorations_must_not_be_persisted() {
+        assert!(
+            !window_state_flags().contains(StateFlags::DECORATIONS),
+            "DECORATIONS 又被加回状态位了：装饰由代码决定，持久化它会复现两排标题栏 \
+             （真机实测外框高 971 → 1010、纵向差 10 → 47）。详见 window_state_flags() 注释"
+        );
+    }
+
+    #[test]
+    fn other_state_flags_are_kept() {
+        let flags = window_state_flags();
+        for flag in [
+            StateFlags::POSITION,
+            StateFlags::SIZE,
+            StateFlags::MAXIMIZED,
+            StateFlags::VISIBLE,
+        ] {
+            assert!(flags.contains(flag), "状态位 {flag:?} 被误删，窗口偏好会丢失");
+        }
+    }
 }
