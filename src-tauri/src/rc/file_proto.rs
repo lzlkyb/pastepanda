@@ -304,7 +304,8 @@ pub fn safe_file_name(raw: &str) -> Result<String, String> {
     if is_reserved_name(&out) {
         out.insert(0, '_');
     }
-    // 5. 长度：按字符截，但**保留扩展名**（截断后仍要能双击打开）。
+    // 5. 长度：按 **UTF-16 码元**截（Windows 的口径），但**保留扩展名**
+    //    （截断后仍要能双击打开）。见 `clamp_component` 的 D8 注释。
     let out = clamp_component(&out);
     if out.is_empty() {
         return Err("文件名净化后为空".to_string());
@@ -331,13 +332,18 @@ fn is_format_control(c: char) -> bool {
 }
 
 /// 主干是不是 Windows 保留设备名（大小写不敏感，忽略扩展名）。
+///
+/// D8（2026-09-22 审计）：`CONIN$` / `CONOUT$` 也是保留设备名（控制台输入/输出
+/// 句柄），原清单只覆盖 CON/PRN/AUX/NUL/COM*/LPT*。它们的 `$` 是名字的一部分，
+/// 且**不带扩展名语义**——`CONIN$.txt` 在 Windows 上照样是设备，所以这里和
+/// 其它保留名一样按「取第一个点之前的主干」比对即可。
 fn is_reserved_name(name: &str) -> bool {
     let stem = match name.find('.') {
         Some(i) => &name[..i],
         None => name,
     };
     let up = stem.trim().to_ascii_uppercase();
-    if up == "CON" || up == "PRN" || up == "AUX" || up == "NUL" {
+    if up == "CON" || up == "PRN" || up == "AUX" || up == "NUL" || up == "CONIN$" || up == "CONOUT$" {
         return true;
     }
     // COM0-9 / LPT0-9。0 也一并算上：部分 Windows 版本把 COM0/LPT0 同样
@@ -349,19 +355,48 @@ fn is_reserved_name(name: &str) -> bool {
     rest.len() == 1 && rest.as_bytes()[0].is_ascii_digit()
 }
 
+/// 按 **UTF-16 码元**预算取前缀（Windows 的长度口径，见 `clamp_component` 的 D8 注释）。
+///
+/// 收成一个函数是因为「按码元算」这件事在本文件出现三处（主干截断 / 扩展名判长 /
+/// 重名后缀预留），三处口径必须一致：只改一处的话，辅助平面字符组成的名字会
+/// 在某个环节被多算一倍，表现为「截得不够 → 后面的 clamp 又把刚加的 `(1)` 削掉」。
+fn take_units(s: &str, budget: usize) -> String {
+    let mut used = 0usize;
+    s.chars()
+        .take_while(|c| {
+            let w = c.len_utf16();
+            if used + w > budget {
+                return false;
+            }
+            used += w;
+            true
+        })
+        .collect()
+}
+
 /// 截断到 Windows 单组件上限内，**保留扩展名**。
+///
+/// 🔴 D8（2026-09-22 审计）：Windows 的 255 上限按 **UTF-16 码元**算，不是码点。
+/// 辅助平面字符（emoji、CJK 扩展 B 及以后）**一个码点 = 2 个码元**，原实现用
+/// `chars().count() <= 255` 判断会放过最坏 510 码元的文件名——落盘时才失败，
+/// 而那时用户已经在等传输了。这里所有长度口径统一改成码元。
 fn clamp_component(name: &str) -> String {
-    if name.chars().count() <= MAX_COMPONENT && name.len() <= MAX_NAME_BYTES {
+    if name.encode_utf16().count() <= MAX_COMPONENT && name.len() <= MAX_NAME_BYTES {
         return name.to_string();
     }
     let (stem, ext) = split_ext(name);
     // 扩展名超过 16 个字符基本不是扩展名（是名字里带的点），不保。
-    let keep_ext = !ext.is_empty() && ext.chars().count() <= 16;
-    let reserve = if keep_ext { ext.chars().count() + 1 } else { 0 };
+    let keep_ext = !ext.is_empty() && ext.encode_utf16().count() <= 16;
+    let reserve = if keep_ext {
+        ext.encode_utf16().count() + 1
+    } else {
+        0
+    };
     let budget = MAX_COMPONENT.saturating_sub(reserve);
-    let mut out: String = stem.chars().take(budget).collect();
+    // 按**码元**预算取主干（一个 emoji 要吃掉 2 格）
+    let stem = take_units(stem, budget);
     // 截断后可能又落回结尾 `.`/空格（`a. .b` 之类），再剥一次。
-    out = out.trim_end_matches(['.', ' ']).to_string();
+    let mut out = stem.trim_end_matches(['.', ' ']).to_string();
     if out.len() > MAX_NAME_BYTES {
         let mut cut = String::new();
         for c in out.chars() {
@@ -401,7 +436,7 @@ where
     }
     let (stem, ext) = split_ext(name);
     // 扩展名超过 16 个字符基本不是扩展名（是名字里带的点），不保。
-    let keep_ext = !ext.is_empty() && ext.chars().count() <= 16;
+    let keep_ext = !ext.is_empty() && ext.encode_utf16().count() <= 16;
     for i in 1..=9999u32 {
         let suffix = if keep_ext {
             format!(" ({}).{}", i, ext)
@@ -410,9 +445,12 @@ where
         };
         // 🔴 先按**后缀长度**截主干，再拼后缀——反过来（先拼再 clamp）会把刚加的
         //    `(1)` 截掉，候选于是等于原名、永远冲突，一直空转到 9999 次才报错。
-        let budget = MAX_COMPONENT.saturating_sub(suffix.chars().count());
-        let mut head: String = stem.chars().take(budget).collect();
-        head = head.trim_end_matches(['.', ' ']).to_string();
+        //    D8：口径是 **UTF-16 码元**（与 `clamp_component` 一致）——按码点数截
+        //    时，辅助平面字符组成的名字会截不够长，`clamp_component` 再把刚拼上
+        //    的 `(1)` 削掉，于是候选又等于原名，退化成上面那个空转。
+        let budget = MAX_COMPONENT.saturating_sub(suffix.encode_utf16().count());
+        let head = take_units(stem, budget);
+        let head = head.trim_end_matches(['.', ' ']);
         let cand = clamp_component(&format!("{}{}", head, suffix));
         if !exists(&cand) {
             return Ok(cand);
@@ -493,18 +531,23 @@ mod tests {
         assert_eq!(safe_file_name("com1.log").unwrap(), "_com1.log");
         assert_eq!(safe_file_name("LPT9").unwrap(), "_LPT9");
         assert_eq!(safe_file_name("COM0").unwrap(), "_COM0");
+        // D8：控制台输入/输出句柄同样是保留设备名（含带扩展名的形态）
+        assert_eq!(safe_file_name("CONIN$").unwrap(), "_CONIN$");
+        assert_eq!(safe_file_name("conout$").unwrap(), "_conout$");
+        assert_eq!(safe_file_name("CONOUT$.txt").unwrap(), "_CONOUT$.txt");
         // 不是保留名的不能被误伤
         assert_eq!(safe_file_name("CONSOLE.txt").unwrap(), "CONSOLE.txt");
         assert_eq!(safe_file_name("com10.txt").unwrap(), "com10.txt");
         assert_eq!(safe_file_name("MYCON.txt").unwrap(), "MYCON.txt");
         assert_eq!(safe_file_name("a.com1.txt").unwrap(), "a.com1.txt", "主干是 a 不是 com1");
+        assert_eq!(safe_file_name("CONIN2.txt").unwrap(), "CONIN2.txt", "CONIN2 不是设备名");
     }
 
     #[test]
     fn 超长名字被截断且保留扩展名() {
         let long = format!("{}.zip", "字".repeat(500));
         let out = safe_file_name(&long).unwrap();
-        assert!(out.chars().count() <= MAX_COMPONENT);
+        assert!(out.encode_utf16().count() <= MAX_COMPONENT);
         assert!(out.ends_with(".zip"), "扩展名要留住：{}", out);
         assert!(out.len() <= MAX_NAME_BYTES);
 
@@ -513,6 +556,28 @@ mod tests {
         let out = safe_file_name(&ascii).unwrap();
         assert!(out.chars().count() <= MAX_COMPONENT);
         assert!(out.ends_with(".txt"));
+    }
+
+    /// 🔴 D8 回归钉：255 上限按 **UTF-16 码元**算。
+    ///
+    /// 辅助平面字符（emoji 等）一个码点占 2 个码元。按 `chars().count()` 卡上限
+    /// 会放过最坏 510 码元的名字——落盘才失败，而那时用户已经在等传输了。
+    #[test]
+    fn 超长名字按utf16码元截断_emoji不吃两份预算() {
+        let long = format!("{}.png", "😀".repeat(300));
+        let out = safe_file_name(&long).unwrap();
+        assert!(
+            out.encode_utf16().count() <= MAX_COMPONENT,
+            "码元数必须落在 255 以内，实得 {}",
+            out.encode_utf16().count()
+        );
+        assert!(out.ends_with(".png"), "扩展名要留住：{}", out);
+        // 255 码元 - ".png"（4）= 251 码元 → 125 个 emoji（每个 2 码元）
+        assert_eq!(out, format!("{}.png", "😀".repeat(125)));
+        // 边界：不超限就不该被动（125 个 emoji + ".png" = 254 码元，贴着 255 上限）
+        let exact = format!("{}.png", "😀".repeat(125));
+        assert_eq!(exact.encode_utf16().count(), 254);
+        assert_eq!(safe_file_name(&exact).unwrap(), exact);
     }
 
     // ── 重名递增 ───────────────────────────────────────────────────────
@@ -530,6 +595,25 @@ mod tests {
         assert_eq!(
             unique_name(".env", |n| n == ".env").unwrap(),
             ".env (1)"
+        );
+    }
+
+    /// 🔴 D8 同族回归钉：重名递增的预算也必须按 **UTF-16 码元**算。
+    ///
+    /// 边缘用例是一个已经把 255 码元用满的 emoji 名字要加 `(1)`：按码点数算预算
+    /// 时截得不够长，`clamp_component` 会把刚拼上的 `(1)` 削掉 → 候选等于原名 →
+    /// 一直冲突到 9999 次才报错（同规则 15 的「点了没反应」）。
+    #[test]
+    fn 重名递增_emoji名字也能腾出后缀位置() {
+        let base = format!("{}.png", "😀".repeat(125)); // 254 码元，贴着上限
+        assert_eq!(base.encode_utf16().count(), 254);
+        let out = unique_name(&base, |n| n == base).unwrap();
+        assert!(out.ends_with(".png"), "扩展名要留住：{out}");
+        assert!(out.contains(" (1)"), "要真的腾出后缀位置：{out}");
+        assert!(
+            out.encode_utf16().count() <= MAX_COMPONENT,
+            "码元数仍要落回 255 以内：{}",
+            out.encode_utf16().count()
         );
     }
 

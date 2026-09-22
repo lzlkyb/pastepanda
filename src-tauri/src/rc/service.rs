@@ -38,6 +38,13 @@ pub(super) const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
 /// 拉回剪贴板时等回包的总时长。
 const CLIPBOARD_PULL_TIMEOUT_MS: i64 = 4_000;
 
+/// 待确认入站申请表（`Inner::pending`）的硬上限（D10）。
+///
+/// 灌它的前提是「已配对设备」，且入队按 peer 去重，所以现实中要撑爆得先凑够一批
+/// 已配对的 node_id——当前不是可达的攻击面。加这道闸是为了不让「无上限」这件事
+/// 留在代码里靠推理成立：真出现异常时表会停在这个尺寸并留一条 warn。
+const PENDING_KNOCK_MAX: usize = 8;
+
 /// 被控端配置键。
 pub const CFG_QUALITY: &str = "rc_quality";
 /// `virtual` | `primary`
@@ -58,6 +65,27 @@ pub const RC_PRESENCE_PORT: u16 = PRESENCE_BASE_PORT + 1;
 pub(super) enum UnoAdmit {
     Admitted,
     Denied(String, String),
+}
+
+/// 建立入站会话的**信任来源**（[`RcService::establish_inbound_with`] 的门禁入参）。
+///
+/// 常规两条路（人工批准 / 方案 D 免确认直连）走到那一步时，对方必然已在
+/// 白名单里——人工批准的前提是能敲门（`has_remote_trust` 为真才进 pending），
+/// 免确认开关本身也只能开在已配对设备上——所以 `has_remote_trust` 这道闸
+/// 对它们是成立的复核。
+///
+/// 无人值守的码 / 密码两条路是**唯一**的例外：信任来自「此刻刚验过的凭证」，
+/// 不来自白名单行。因为写白名单这件事本身必须发生在会话真的建立**之后**
+/// （2026-09-22 审计 D1：落点早于会话建立，等于让「码对但本机忙」这种失败
+/// 也留下一行凭空多出来的白名单，且未 consume 前一个码能被多台设备洗进表里）。
+/// 本枚举存在的理由不是放宽，而是让「先建会话、后落白名单」这个顺序在类型上
+/// 说得清楚、且在新增调用点时不会有人随手写成默认那条。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum InboundTrust {
+    /// 信任来自白名单行，门禁按原样复核。
+    Whitelist,
+    /// 信任来自刚验过的凭证（接入码 / 固定密码），放行白名单那一条。
+    Credential,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -927,6 +955,16 @@ impl RcService {
         self.notify.take_inject_err()
     }
 
+    /// 发起端：被控端回 `clip_push_err`（D11）。收口进通知层，由 lib.rs 抛
+    /// `rc-clip-push-error` 事件；前端 toast 用。
+    pub(super) fn set_clip_push_err(&self, msg: String) {
+        self.notify.set_clip_push_err(msg);
+    }
+
+    pub fn take_clip_push_err(&self) -> Option<String> {
+        self.notify.take_clip_push_err()
+    }
+
     /// 发起端取最近一帧（JPEG bytes）。无画面返 None。
     pub fn latest_frame(&self) -> Option<super::video::VideoFrame> {
         self.last_frame
@@ -1244,7 +1282,29 @@ impl RcService {
         if let Some((from, to)) = self.link.take_path_change() {
             self.notify.emit_path_changed(from.as_str(), to.as_str());
         }
-        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        // 🔴 D6（2026-09-22 审计）：显式把 `inner` 放掉，别依赖 NLL 的隐式丢弃点。
+        //
+        // 本函数在构造 `RcStatus` 的字段时要调 `self.link.*`（路径档位 / 最后 pong
+        // / 帧率），而 link 侧存在「持 link 锁再取 inner」的路径（收口链 / emit 链）。
+        // 现在 NLL 恰好在 `session` / `pending` 两个 clone 之后就不再需要 `inner`，
+        // 顺序侥幸是 link→inner，暂无 ABBA；但「最后一次使用点」会随下一次编辑移动
+        // ——只要有人往字段里多取一个 inner 的东西，或把 link 调用挪到 clone 之前，
+        // 就变成持 inner 取 link。用作用域把顺序写成**显式**的，不再靠推断。
+        let (session, pending, streaming) = {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            (
+                inner.session.clone(),
+                inner.pending.clone(),
+                // 自动档的「真实档位」只有**正在推流**时才存在：换档发生在推流
+                // 循环里，会话没跑（或已结束）时 `tier` 只是上一场的残留。所以
+                // 除了 auto_enabled，还必须要求本机正处在 inbound_active（本机推流）
+                // ——否则界面会报一个早就不存在的档位，比不报还坏。
+                inner
+                    .session
+                    .as_ref()
+                    .is_some_and(|s| s.phase == SessionPhase::InboundActive),
+            )
+        };
         let running = self
             .running
             .lock()
@@ -1256,14 +1316,6 @@ impl RcService {
             .and_then(|v| v.as_str())
             .unwrap_or("auto")
             .to_string();
-        // 自动档的「真实档位」只有**正在推流**时才存在：换档发生在推流循环里，
-        // 会话没跑（或已结束）时 `tier` 只是上一场的残留。所以除了 auto_enabled，
-        // 还必须要求本机正处在 inbound_active（本机推流）——否则界面会报一个
-        // 早就不存在的档位，比不报还坏。
-        let streaming = inner
-            .session
-            .as_ref()
-            .is_some_and(|s| s.phase == SessionPhase::InboundActive);
         let active_quality = if streaming && self.auto_enabled() {
             self.auto_tier_name()
         } else {
@@ -1272,8 +1324,8 @@ impl RcService {
         RcStatus {
             enabled: self.enabled(),
             capability: self.max_capability().as_str().to_string(),
-            session: inner.session.clone(),
-            pending: inner.pending.clone(),
+            session,
+            pending,
             joins: self.joins.list(now_ms()),
             uno: self.uno.active(now_ms()),
             uno_pass: unop::cfg_from(&self.cfg()).map(Into::into),
@@ -2104,9 +2156,13 @@ impl RcService {
             // 也不硬拒——落回人工确认，让人看见再说。
             let auto_accepted = if self.device_trusted(&peer) {
                 let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-                match self
-                    .establish_inbound_with(&mut inner, &peer, self.peer_name(&peer), requested)
-                {
+                match self.establish_inbound_with(
+                    &mut inner,
+                    &peer,
+                    self.peer_name(&peer),
+                    requested,
+                    InboundTrust::Whitelist,
+                ) {
                     Ok(_) => {
                         log::info!("[RC] {short} 来自免确认设备，自动接受");
                         true
@@ -2123,6 +2179,22 @@ impl RcService {
             if !auto_accepted {
                 let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
                 if !inner.pending.iter().any(|k| k.peer == peer) {
+                    // 🔴 D10（2026-09-22 审计）：待确认表是**无上限**的。灌它的前提
+                    // 是「已配对设备」（`gate_inbound` 的 paired 那条），而按 peer
+                    // 去重又挡住同一台设备连发，所以现实中要撑爆得先凑够一批已配对
+                    // 的 id——是个假想面，不是当前可达的攻击面。但「无上限」这件事
+                    // 不该留在代码里靠推理成立，加一道硬闸。
+                    //
+                    // 满了丢**最早**那条而不是拒新的：拒新的会让用户看到「我点了
+                    // 确认却什么都没发生」；而最早那条按 120s 窗口本来也已经快失效、
+                    // 用户多半不会去点了。
+                    if inner.pending.len() >= PENDING_KNOCK_MAX {
+                        let dropped = inner.pending.remove(0);
+                        log::warn!(
+                            "[RC] {short} 待确认申请已满（{PENDING_KNOCK_MAX}），丢弃最早一条"
+                        );
+                        log::debug!("[RC] 被丢弃的待确认申请来自 {}", dropped.peer);
+                    }
                     inner.pending.push(InboundKnock {
                         peer: peer.clone(),
                         peer_name: self.peer_name(&peer),
@@ -2226,8 +2298,8 @@ impl RcService {
         inner.pending.retain(|k| k.peer != peer);
     }
 
-    /// 无人值守接入码准入（Q2 方案 B）。验码 → 落白名单 →（可选）开免确认 →
-    /// 建会话 → 消费一次。任何一步不过都不碰待验表。
+    /// 无人值守接入码准入（Q2 方案 B）。验码 → 建会话 → 落白名单 →
+    /// （可选）开免确认 → 消费一次。任何一步不过都不碰待验表。
     ///
     /// 与免确认直连（方案 D）的差别在**信任的来源**：那边的信任是用户提前
     /// 逐台点过头（rc_devices.trusted），这里的信任是「此刻有人在场生成了
@@ -2240,7 +2312,24 @@ impl RcService {
     /// [`Self::uno`] 的 `verify` 只判不消费；`consume` 只在会话真的建立之后调。
     /// 反过来（验完就消费）的话，「码对、但本机正忙」会把一次有效的接入烧掉，
     /// 对端看到的是自相矛盾的「码没错但连不上」。
-    fn uno_admit(&self, peer: &str, requested: Capability, code: &str, now_ms: i64) -> UnoAdmit {
+    ///
+    /// # 🔴 落白名单也在会话真的建立之后（2026-09-22 审计 D1）
+    ///
+    /// 旧实现把 [DataStore::rc_device_pair] 放在 `establish_inbound_with` **之前**，
+    /// 于是「码对但本机忙 / 本机已关「允许被远程」/ 该设备被拉黑」这些失败路径
+    /// 全都先往 `rc_devices` 里写了一行——对方在你的设备列表里凭空出现了，
+    /// 而它一次会话都没建立过。更坏的是它顺带堵不住多设备：`verify` 只判不消费，
+    /// 未 `consume` 之前同一个码可被**多台**设备命中，每命中一台就先写一行，
+    /// 一次接入被洗成 N 台白名单设备。写库点后移到 Ok 分支后，失败路径零副作用。
+    ///
+    /// `pub(super)`：`rc::tests` 要直接打这条路径（与 `pass_admit` 同一理由）。
+    pub(super) fn uno_admit(
+        &self,
+        peer: &str,
+        requested: Capability,
+        code: &str,
+        now_ms: i64,
+    ) -> UnoAdmit {
         let short = &peer[..8.min(peer.len())];
         // 红线先行：未启用 = 一律拒，且**不**泄露「码对不对」（用同一句门禁话）。
         if !self.enabled() {
@@ -2259,7 +2348,8 @@ impl RcService {
                 Gate::DeviceDenied.deny_code().to_string(),
             );
         }
-        // 落白名单。设备名此刻无从核对（对方自报名要等招呼包），先给可读的占位。
+        // 设备名先算好（后面落白名单要用）。此刻无从核对真名——对方自报名要等
+        // 招呼包——所以给可读的占位。
         let name = {
             let n = self.peer_name(peer);
             if n.is_empty() {
@@ -2268,12 +2358,6 @@ impl RcService {
                 n
             }
         };
-        if let Err(e) = self.store.rc_device_pair(peer, &name) {
-            // 存储错误原文只进日志；deny 话术回给一个**未通过认证**的连接，
-            // 不该携带本机路径/IO 细节（2026-09-19 审查）。
-            log::error!("[RC] {short} 接入码准入写设备列表失败：{e}");
-            return UnoAdmit::Denied("对方暂时无法处理该接入码".into(), "uno_store_error".into());
-        }
         // 申请档超过码授予的档 → 压到码的档（Accept 会把真实档回给对端，
         // 对端 UI 就按「只看」渲染，与既有提权流程一致）。
         let cap = if requested.allowed_by(grant.capability) {
@@ -2283,15 +2367,30 @@ impl RcService {
         };
         let established = {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            self.establish_inbound_with(&mut inner, peer, name, cap)
+            // Credential：白名单行还没写（D1），信任由刚验过的码提供。
+            self.establish_inbound_with(&mut inner, peer, name.clone(), cap, InboundTrust::Credential)
         };
         match established {
             Ok(_) => {
+                // 🔴 白名单落在这里（而不是验码之后）：见上方 D1 注释。
+                // 失败则**回滚刚建立的会话**——准入要么全成、要么全不成。
+                // 保留「回滚」而不是「留着会话只记日志」，是因为后者会让对端
+                // 连上一个「本机设备列表里不存在的设备」，且 `uno_store_error`
+                // 这个稳定错误码与前端文案会变成死码（`src/lib/rcDeny.ts:116`）。
+                if let Err(e) = self.store.rc_device_pair(peer, &name) {
+                    // 存储错误原文只进日志；deny 话术回给一个**未通过认证**的连接，
+                    // 不该携带本机路径/IO 细节（2026-09-19 审查）。
+                    log::error!("[RC] {short} 接入码准入写设备列表失败，回滚会话：{e}");
+                    self.rollback_inbound(peer);
+                    return UnoAdmit::Denied(
+                        "对方暂时无法处理该接入码".into(),
+                        "uno_store_error".into(),
+                    );
+                }
                 // 🔴 免确认在**会话真的建立之后**才落库：若在 establish 之前写，
                 // 「码有效但本机正忙」的失败会留下一个 trusted=true 的设备——
                 // 码是一次性的，免确认却是永久的，等于把一次性码洗成常驻后门
-                // （2026-09-19 审查发现的 P1）。白名单本身保留：对方确实持有
-                // 有效码，落库后仍受逐台确认/禁止的常规管理。
+                // （2026-09-19 审查发现的 P1）。白名单同理，见上。
                 if grant.also_trust {
                     if let Err(e) = self.set_device_trust(peer, true) {
                         log::warn!("[RC] {short} 接入码连入后开免确认失败：{e}");
@@ -2329,6 +2428,10 @@ impl RcService {
     /// 验密通过 = 该设备写入 rc_devices（与现场配对同一张表），受横幅/历史/
     /// 禁止/免确认的常规管理。**不**自动开免确认——「知道密码」与「这台设备
     /// 可信」必须保持分离（`unop.rs` 模块注释，设计稿威胁表第三行）。
+    ///
+    /// 落白名单的时机与验码路径**同构**：都在会话真的建立之后（D1，见
+    /// [`Self::uno_admit`] 的模块注释）。旧实现在这里先写库再建会话，
+    /// 「密码对但本机忙」同样会留下一行凭空多出来的设备。
     pub(super) fn pass_admit(
         &self,
         peer: &str,
@@ -2381,7 +2484,7 @@ impl RcService {
                 Gate::DeviceDenied.deny_code().to_string(),
             );
         }
-        // 落白名单（同验码路径）。设备名先占位，等对方自报。
+        // 设备名先算好（落白名单要用）。先占位，等对方自报真名。
         let name = {
             let n = self.peer_name(peer);
             if n.is_empty() {
@@ -2390,14 +2493,6 @@ impl RcService {
                 n
             }
         };
-        if let Err(e) = self.store.rc_device_pair(peer, &name) {
-            // 存储错误原文只进日志；deny 话术不携带本机路径/IO 细节。
-            log::error!("[RC] {short} 密码准入写设备列表失败：{e}");
-            return UnoAdmit::Denied(
-                "对方暂时无法处理该接入请求".into(),
-                "uno_pass_store_error".into(),
-            );
-        }
         // 申请档超过密码档 → 压档（配置损坏时按只看兜底，不放开）。
         let grant = cfg.capability().unwrap_or(Capability::View);
         let cap = if requested.allowed_by(grant) {
@@ -2407,10 +2502,23 @@ impl RcService {
         };
         let established = {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            self.establish_inbound_with(&mut inner, peer, name, cap)
+            // Credential：白名单行还没写（D1），信任由刚验过的密码提供。
+            self.establish_inbound_with(&mut inner, peer, name.clone(), cap, InboundTrust::Credential)
         };
         match established {
             Ok(_) => {
+                // 🔴 白名单落在会话真的建立之后（D1，理由见 `uno_admit`）。
+                // 失败同样回滚会话，保住 `uno_pass_store_error` 这条错误契约、
+                // 也避免「对端连上了、本机设备列表里却没有它」。
+                if let Err(e) = self.store.rc_device_pair(peer, &name) {
+                    // 存储错误原文只进日志；deny 话术不携带本机路径/IO 细节。
+                    log::error!("[RC] {short} 密码准入写设备列表失败，回滚会话：{e}");
+                    self.rollback_inbound(peer);
+                    return UnoAdmit::Denied(
+                        "对方暂时无法处理该接入请求".into(),
+                        "uno_pass_store_error".into(),
+                    );
+                }
                 log::info!("[RC] {short} 通过固定密码连入（{}）", cap.as_str());
                 UnoAdmit::Admitted
             }
@@ -2433,6 +2541,7 @@ impl RcService {
         peer: &str,
         peer_name: String,
         requested: Capability,
+        trust: InboundTrust,
     ) -> Result<Session, String> {
         if !self.enabled() {
             return Err("本机已关闭「允许被远程协助」".into());
@@ -2440,7 +2549,9 @@ impl RcService {
         if self.device_deny().get(peer).copied().unwrap_or(false) {
             return Err("该设备已被禁止远程本机".into());
         }
-        if !self.has_remote_trust(peer) {
+        // 凭证路径（码 / 密码）此刻白名单行还没写（D1），所以跳过这一条；
+        // 逐台禁止那一条仍在上面照跑，凭证不能替被拉黑的设备翻案。
+        if trust == InboundTrust::Whitelist && !self.has_remote_trust(peer) {
             return Err("设备未配对".into());
         }
         // 本机已有进行中的会话时，不能硬覆盖（发起侧 request_session 有 [busy_local] 这道闸，
@@ -2471,6 +2582,27 @@ impl RcService {
         Ok(s)
     }
 
+    /// 回滚一次「会话已建立、但随后的准入步骤失败」的入站会话（D1）。
+    ///
+    /// 只清**peer 匹配且 phase 为 `InboundActive`** 的那一场——与
+    /// [`Self::force_end_if_session`] 同一纪律：认领条件收得越紧越好，
+    /// 不按 peer 之外的任何推测去动别人的会话。
+    /// 前置事实：调用点紧跟在 `establish_inbound_with` 返回 Ok 之后，
+    /// 所以此刻槽里必然是**刚刚**建立的那一场（上一个会话若存在则必然是
+    /// `InboundActive`，而 `can_transition` 不允许它被顶掉，establish 会先报忙）。
+    fn rollback_inbound(&self, peer: &str) {
+        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let mine = inner
+            .session
+            .as_ref()
+            .is_some_and(|s| s.peer == peer && s.phase == SessionPhase::InboundActive);
+        if mine {
+            inner.session = None;
+            inner.inbound_streaming = false;
+            log::warn!("[RC] 准入后续步骤失败，已回滚刚建立的入站会话（{peer:.8}）");
+        }
+    }
+
     pub fn approve_inbound(&self, peer: &str) -> Result<Session, String> {
         let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let idx = inner
@@ -2479,7 +2611,13 @@ impl RcService {
             .position(|k| k.peer == peer)
             .ok_or("没有待确认的远程申请")?;
         let knock = inner.pending[idx].clone();
-        let s = self.establish_inbound_with(&mut inner, peer, knock.peer_name, knock.capability)?;
+        let s = self.establish_inbound_with(
+            &mut inner,
+            peer,
+            knock.peer_name,
+            knock.capability,
+            InboundTrust::Whitelist,
+        )?;
         inner.pending.remove(idx);
         drop(inner);
         // B-b：人工批准 = 首次 elevate 确认。仅同步配对的设备在此写入 rc_devices，

@@ -44,10 +44,12 @@
 //! - 连续成功验密即清档。**清档点在验密通过之后、建会话之前**——「密码对但
 //!   本机忙」不算失败（他没在爆破），不该吃退避。
 //! - 键上限 [`PEERS_CAP`]：node_id 虽验真但密钥对免费，无上限的表就是内存
-//!   DoS。满了逐出「最久没失败」的（最不可能是正在进行的攻击）。
+//!   DoS。满了逐出「最久没失败**且未锁定**」的（最不可能是正在进行的攻击）。
+//!   🔴 逐出必须跳过仍锁定的条目——否则刷满表就能把正在锁的攻击者条目顶掉，
+//!   等于自己给自己解爆破锁（P2-1）。全锁定时拒新。
 
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use argon2::Argon2;
+use argon2::{Algorithm, Argon2, Params, Version};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -139,6 +141,22 @@ pub fn normalize(pass: &str) -> String {
     pass.trim().to_string()
 }
 
+/// 🔴 密码哈希参数**写死**，不用 `Argon2::default()`（D7，2026-09-22 审计）。
+///
+/// 值本身就是 `argon2` crate 当前的默认值（OWASP 最低配：m=19456 KiB=19 MiB /
+/// t=2 / p=1），所以这是**纯加固、零行为变化**：PHC 串自带参数，旧哈希照常验证，
+/// 新哈希的代价也一样。写死的理由只有一个——`default()` 的正确性依赖
+/// **依赖版本**：将来 argon2 升版把默认参数调低（这类库历史上真做过），
+/// 本项目的口令强度会在一次无关的 `cargo update` 里**静默变弱**，
+/// 而没有任何测试会红。参数一旦写死，升级只可能带来编译错误，不会带来静默降级。
+fn argon2_owasp() -> Argon2<'static> {
+    Argon2::new(
+        Algorithm::Argon2id,
+        Version::V0x13,
+        Params::new(19_456, 2, 1, None).expect("参数是常量，必然合法"),
+    )
+}
+
 /// 设密码：归一 → 长度校验 → Argon2id（OWASP 最低配）→ PHC 串。
 /// 明文只在入参里出现这一次，返回值可直接落 [`CFG_KEY`]。
 pub fn hash_password(raw: &str, now_ms: i64, cap: Capability, wan: bool) -> Result<PassCfg, String> {
@@ -151,7 +169,7 @@ pub fn hash_password(raw: &str, now_ms: i64, cap: Capability, wan: bool) -> Resu
         return Err(format!("密码太长：最多 {PASS_MAX_CHARS} 个字符"));
     }
     let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
-    let phc = Argon2::default()
+    let phc = argon2_owasp()
         .hash_password(pass.as_bytes(), &salt)
         .map_err(|e| format!("密码哈希失败：{e}"))?
         .to_string();
@@ -165,12 +183,15 @@ pub fn hash_password(raw: &str, now_ms: i64, cap: Capability, wan: bool) -> Resu
 
 /// 验密码。归一与 [`hash_password`] 同一条 `normalize`；Argon2 的比对内部即
 /// 常数时间（subtle），这里不再叠一层自写比较。
+///
+/// ❗ 验证侧用同一组显式参数：PHC 串里本来也带着自己的参数，两处一致只是为了
+/// 让「强度从哪来」在这一个文件里说完（见 [`argon2_owasp`]）。
 pub fn verify(phc: &str, raw: &str) -> bool {
     let Ok(hash) = PasswordHash::new(phc) else {
         // 哈希串坏了 = 这条配置已不可用；如实判否，让用户去重设密码
         return false;
     };
-    Argon2::default()
+    argon2_owasp()
         .verify_password(normalize(raw).as_bytes(), &hash)
         .is_ok()
 }
@@ -228,13 +249,21 @@ impl BruteGate {
     pub fn record_failure(&self, peer: &str, now: i64) {
         let mut g = self.peers.lock().unwrap_or_else(|p| p.into_inner());
         if g.len() >= PEERS_CAP && !g.contains_key(peer) {
-            // 逐出最久没失败的：最不可能是正在进行的攻击
-            if let Some(oldest) = g
+            // 🔴 P2-1：逐出必须**跳过仍锁定**的条目。
+            // 旧实现 `min_by_key(last_fail_ms)` 可能把 `locked_until_ms > now`
+            // 的攻击者条目删掉——刷满表就重置了自己的爆破锁。
+            // 优先逐出「未锁定且最久没失败」；全锁定则**拒新**：
+            // 攻击者不能借满表把自己（或同伙）从锁里放出来。
+            let oldest_unlocked = g
                 .iter()
+                .filter(|(_, p)| now >= p.locked_until_ms)
                 .min_by_key(|(_, p)| p.last_fail_ms)
-                .map(|(k, _)| k.clone())
-            {
-                g.remove(&oldest);
+                .map(|(k, _)| k.clone());
+            match oldest_unlocked {
+                Some(oldest) => {
+                    g.remove(&oldest);
+                }
+                None => return,
             }
         }
         let e = g.entry(peer.to_string()).or_insert(PeerFail {
@@ -272,6 +301,26 @@ mod tests {
         assert!(verify(&cfg.phc, " s3cret-密码 "), "两端空白剥掉后应能验过");
         assert!(!verify(&cfg.phc, "s3cret-密码x"), "错密码必须拒");
         assert!(!verify(&cfg.phc, "S3CRET-密码"), "大小写敏感（与 uno 码的宽松归一不同）");
+    }
+
+    /// 🔴 D7（2026-09-22 审计）回归钉：口令强度参数必须**写死**在代码里。
+    ///
+    /// 这条测试的价值不在「现在对不对」，而在**将来什么时候会红**：如果谁把它改回
+    /// `Argon2::default()`，而 argon2 又在某次升级里调低了默认参数，这里立刻失败
+    /// ——否则口令强度会在一次无关的 `cargo update` 里静默变弱，没有任何测试会红。
+    #[test]
+    fn 密码哈希参数写死为owasp最低配() {
+        let c = hash_password("s3cret-密码", T0, Capability::View, false).unwrap();
+        assert!(
+            c.phc.starts_with("$argon2id$v=19$"),
+            "算法与版本要锁定 Argon2id / v0x13：{}",
+            &c.phc[..30.min(c.phc.len())]
+        );
+        assert!(
+            c.phc.contains("m=19456,t=2,p=1"),
+            "内存代价 / 迭代 / 并行度必须锁死在 OWASP 最低配：{}",
+            &c.phc[..40.min(c.phc.len())]
+        );
     }
 
     #[test]
@@ -413,5 +462,63 @@ mod tests {
         let len = g.peers.lock().unwrap_or_else(|p| p.into_inner()).len();
         assert_eq!(len, PEERS_CAP, "满了要顶替，不能无限长");
         assert!(!g.peers.lock().unwrap_or_else(|p| p.into_inner()).contains_key("peer0"));
+    }
+
+    /// 🔴 P2-1：满表逐出不得清掉**仍锁定**的条目（否则刷满表 = 自己解爆破锁）。
+    #[test]
+    fn 闸_满表逐出不得清掉锁定条目() {
+        let g = BruteGate::default();
+        // victim 连错 5 次 → 锁 10 分钟；last_fail_ms 比 filler 们更老
+        for i in 0..LOCK_THRESHOLD {
+            g.record_failure("victim", T0 + i64::from(i) * 1000);
+        }
+        assert!(
+            matches!(g.check("victim", T0 + 20_000), GateCheck::Wait(_)),
+            "victim 必须已锁定"
+        );
+        for i in 0..PEERS_CAP - 1 {
+            g.record_failure(&format!("filler{i}"), T0 + 30_000 + i as i64);
+        }
+        assert_eq!(g.peers.lock().unwrap_or_else(|p| p.into_inner()).len(), PEERS_CAP);
+
+        // 新人触发满表逐出：目标应是某个 filler，绝不能是锁定中的 victim
+        g.record_failure("newcomer", T0 + 200_000);
+        let map = g.peers.lock().unwrap_or_else(|p| p.into_inner());
+        assert_eq!(map.len(), PEERS_CAP, "满了要顶替");
+        assert!(
+            map.contains_key("victim"),
+            "锁定条目不得被逐出——逐出它等于重置爆破锁（P2-1）"
+        );
+        drop(map);
+        assert!(
+            matches!(g.check("victim", T0 + 200_000), GateCheck::Wait(_)),
+            "victim 的锁必须还在"
+        );
+    }
+
+    /// 全锁定时拒新：不许借「满表逐出」把锁定条目放出来。
+    #[test]
+    fn 闸_全锁定时拒新不借逐出清锁() {
+        let g = BruteGate::default();
+        // PEERS_CAP 个对端各自连错 LOCK_THRESHOLD 次 → 全部进锁
+        for i in 0..PEERS_CAP {
+            for f in 0..LOCK_THRESHOLD {
+                g.record_failure(&format!("lock{i}"), T0 + (i as i64) * 10 + i64::from(f));
+            }
+        }
+        let now = T0 + 10_000; // 仍远小于 LOCK_MS，全部仍在锁内
+        g.record_failure("newcomer", now);
+        let map = g.peers.lock().unwrap_or_else(|p| p.into_inner());
+        assert_eq!(map.len(), PEERS_CAP, "全锁定时拒新，表长不变");
+        assert!(
+            !map.contains_key("newcomer"),
+            "全锁定时不得插入新人，也不得逐出任何锁定条目"
+        );
+        for i in 0..PEERS_CAP {
+            assert!(
+                map.contains_key(&format!("lock{i}")),
+                "锁定条目必须原样保留"
+            );
+        }
     }
 }

@@ -52,6 +52,12 @@ pub(super) struct NotifyState {
     last_frame_emit_ms: std::sync::atomic::AtomicI64,
     /// 最近一次注入失败（UIPI 等），供发起端展示。
     last_inject_err: Mutex<Option<String>>,
+    /// 最近一次**推送剪贴板失败**（D11）：被控端明确拒绝或写不进去时带回的原因。
+    ///
+    /// 与 `last_inject_err` 分开而不是复用：两者的 toast 文案与用户动作都不同
+    /// （一个是「对方未能注入输入」，一个是「你推过去的剪贴板没写进去」），
+    /// 合成一条会让用户拿到一句指向错误动作的话。
+    last_clip_push_err: Mutex<Option<String>>,
 }
 
 impl NotifyState {
@@ -66,6 +72,7 @@ impl NotifyState {
             notify_frame: Mutex::new(None),
             last_frame_emit_ms: std::sync::atomic::AtomicI64::new(0),
             last_inject_err: Mutex::new(None),
+            last_clip_push_err: Mutex::new(None),
         }
     }
 
@@ -224,6 +231,28 @@ impl NotifyState {
             .unwrap_or_else(|p| p.into_inner())
             .take()
     }
+
+    /// 记录「推给对方的剪贴板没写进去」；同时通知前端。
+    ///
+    /// 🔴 D11（2026-09-22 审计）：被控端过去在「只看会话 / 超限 / 写剪贴板失败」
+    /// 三种情况下只写日志、不回帧，发起端界面照样报「已推送 · N 字符」——
+    /// 用户到对端粘贴才发现是旧内容。这条与 [`Self::set_inject_err`] 同一纪律：
+    /// 失败必须走到用户眼前（项目规则 15.3）。
+    pub(super) fn set_clip_push_err(&self, msg: String) {
+        *self
+            .last_clip_push_err
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(msg);
+        self.emit_changed();
+    }
+
+    /// 取出并清空最近一次推送剪贴板失败。
+    pub(super) fn take_clip_push_err(&self) -> Option<String> {
+        self.last_clip_push_err
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
+    }
 }
 
 #[cfg(test)]
@@ -257,6 +286,25 @@ mod tests {
         // 且顺带通知了前端
         assert!(hit.load(std::sync::atomic::Ordering::SeqCst));
         // take 之后清空
+        assert_eq!(s.take_inject_err(), None);
+    }
+
+    #[test]
+    fn set_clip_push_err_records_and_emit_changed_fires() {
+        let s = NotifyState::new();
+        let hit = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let hit2 = hit.clone();
+        s.set_notify(Arc::new(move || {
+            hit2.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+        s.set_clip_push_err("剪贴板内容约 60 KB，超过 48 KB 上限".to_string());
+        assert_eq!(
+            s.take_clip_push_err().as_deref(),
+            Some("剪贴板内容约 60 KB，超过 48 KB 上限")
+        );
+        assert!(hit.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(s.take_clip_push_err(), None, "take 之后清空");
+        // 与 inject_err 互不串台：两条通知各有各的槽
         assert_eq!(s.take_inject_err(), None);
     }
 

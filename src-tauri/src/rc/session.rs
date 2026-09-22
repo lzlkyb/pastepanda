@@ -17,6 +17,15 @@ use std::sync::Arc;
 pub(super) const RECONNECT_MAX_ATTEMPTS: u32 = 3;
 pub(super) const RECONNECT_BASE_DELAY_MS: u64 = 2_000;
 
+/// 🔴 D12（2026-09-22 审计）：一轮重连「落地没落地」的轮询间隔与窗口。
+///
+/// [`RcService::request_session`] 是**非阻塞**的——它落一个 OutboundPending 就
+/// 返回 Ok，真正的拨号在后台任务里跑（`dial_and_request` 带 15s 超时）。
+/// 所以窗口必须盖过那 15s，否则会把「还在拨」误判成「失败了」。
+/// 250ms × 72 = 18s。
+pub(super) const RECONNECT_SETTLE_POLL_MS: u64 = 250;
+pub(super) const RECONNECT_SETTLE_POLLS: u32 = 72;
+
 /// 配置键。
 pub const CFG_ENABLED: &str = "rc_enabled";
 pub const CFG_CAPABILITY: &str = "rc_capability";
@@ -37,6 +46,29 @@ pub struct Session {
     pub started_ms: i64,
     /// 被控侧：是否本机用户已点头。
     pub granted: bool,
+}
+
+/// 一次读出的会话三元组（P1-2）。
+///
+/// 🔴 `peer` / `phase` / `capability` 必须**同源**（来自同一次加锁的同一条
+/// `Session`）。旧路径 `session_is` + `session_capability` 两次加锁之间会话
+/// 可被换掉——旧 peer 的迟到输入会挂到**新会话**的能力上执行。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionSnapshot {
+    pub peer: String,
+    pub phase: SessionPhase,
+    pub capability: Capability,
+}
+
+impl Session {
+    /// 从同一条会话抽出快照。三元组同源的唯一取值点。
+    pub fn snapshot(&self) -> SessionSnapshot {
+        SessionSnapshot {
+            peer: self.peer.clone(),
+            phase: self.phase,
+            capability: self.capability,
+        }
+    }
 }
 
 /// 门禁判定结果。
@@ -441,6 +473,61 @@ impl RcService {
         *self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
+    /// 🔴 D12（2026-09-22 审计）：等这一轮重连**落地**，返回是否成功。
+    ///
+    /// # 为什么必须等
+    ///
+    /// [`RcService::request_session`] 是非阻塞的：它把会话落到 `OutboundPending`
+    /// 就返回 `Ok`，拨号在后台任务里跑。旧实现的重试循环见 `Ok` 就 `return`，
+    /// 于是——**第一次尝试永远「成功」**，循环体的第二次、第三次尝试与末尾的
+    /// `gave_up` 全是死代码。真实症状是：免确认设备断线后横幅显示「重连中 1/3」，
+    /// 拨号在 200ms 后失败（对端还没回来），横幅当场消失，用户以为自动重连
+    /// 成功了；`gave_up`（「自动重连失败」）永远不会出现。
+    ///
+    /// # 判据只看会话槽位，不看 `last_outbound_error`
+    ///
+    /// 错误槽是全局单值、多个发起路径共用，按它归因会互相踩（用户手动发起的
+    /// 失败会被误算成重连失败）。会话槽位带 id，归因是准的：
+    /// - 槽里还是本 id 且 phase 已 `Active` → **成功**；
+    /// - 槽里已不是本 id（被拨号失败分支清掉 / 被换成别的会话）→ 本轮结束，`false`；
+    /// - 到窗口上限仍是 `OutboundPending`（拨号还在跑）→ 也回 `false`：
+    ///   下一轮循环顶部的 `has_session_with` 会兜住「迟到的成功」，
+    ///   而它若真的失败，那时槽已清、重试照常发生。**不存在两边都漏的组合。**
+    ///
+    /// 窗口参数开放给单测（生产调用走 [`RECONNECT_SETTLE_POLLS`]）。
+    pub(super) async fn reconnect_round_settled_with(
+        &self,
+        session_id: &str,
+        polls: u32,
+        poll_ms: u64,
+    ) -> bool {
+        for _ in 0..polls {
+            tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            match inner.session.as_ref() {
+                // 还是本场会话：只有进 Active 才算落地
+                Some(s) if s.id == session_id => {
+                    if is_active(s.phase) {
+                        return true;
+                    }
+                }
+                // 槽位易主或已空：本轮已经没有可等的东西了
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    /// 生产口径的一轮落地等待（见 [`Self::reconnect_round_settled_with`]）。
+    async fn reconnect_round_settled(&self, session_id: &str) -> bool {
+        self.reconnect_round_settled_with(
+            session_id,
+            RECONNECT_SETTLE_POLLS,
+            RECONNECT_SETTLE_POLL_MS,
+        )
+        .await
+    }
+
     /// 收口前取一场会话的（能力、设备名），供自动重连发起点用。
     /// 只认 session id（与 `session_id_is` 同一纪律：不按 peer 认领）。
     pub(super) fn session_brief_if(
@@ -523,13 +610,22 @@ impl RcService {
                 // 永远不走无人值守凭证那两条路——码是一次性的不该烧，密码是
                 // 本机长期秘密、发起侧根本没有它（重连靠的是白名单信任）。
                 match svc.request_session(&peer, cap, None, None).await {
-                    // 申请已受理（免确认对端会自动应答）。episode 到此交棒：
-                    // 之后若画面再断，断流路径会重新 begin（attempt 重新计数——
-                    // 每次「成功重连后再断」是新一轮故障，理应给满重试）。
-                    Ok(_) => {
-                        *svc.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
-                        svc.emit_changed();
-                        return;
+                    // 🔴 D12：`Ok` 只代表**申请已受理**，拨号还在后台跑。必须等它
+                    // 落地再决定——旧实现见 Ok 就 return，于是第一圈无论成败都
+                    // 「成功」，第二次/第三次尝试与末尾的 gave_up 全是死代码。
+                    Ok(sess) => {
+                        if svc.reconnect_round_settled(&sess.id).await {
+                            // 真的连上了。episode 到此交棒：之后若画面再断，
+                            // 断流路径会重新 begin（attempt 重新计数——每次
+                            // 「成功重连后再断」是新一轮故障，理应给满重试）。
+                            log::info!("[RC] 自动重连成功（第 {attempt} 轮）：{peer}");
+                            *svc.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
+                            svc.emit_changed();
+                            return;
+                        }
+                        log::warn!(
+                            "[RC] 自动重连第 {attempt}/{RECONNECT_MAX_ATTEMPTS} 轮未落地（会话未激活）"
+                        );
                     }
                     Err(e) => log::warn!("[RC] 自动重连第 {attempt} 次失败：{e}"),
                 }

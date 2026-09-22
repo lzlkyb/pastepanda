@@ -43,6 +43,33 @@ const HOLE_GRACE_MS: u64 = 50;
 /// 缓冲中的帧数上限（含不完整帧）：恶意/异常对端不能把内存撑爆。
 /// 96 帧 × ~13KB 分片 ≈ 1.2MB，远小于一个 GOP 的正常量。
 const MAP_MAX: usize = 96;
+/// 单帧分片数上限。`frag_count` 取自**线上包**，不夹住的话一个 34B 的畸形数据报
+/// 声明 `frag_count = 65535` 就能让 `frags` 分配 81919 个槽（≈2MB），
+/// 再配合 `MAP_MAX = 96` 放大到近百 MB（见 `feed_inner` 的脏包防御）。
+/// 正常帧远低于此：8MB 单包上限 ÷ 1000B ≈ 8193，取 16384 留一倍余量。
+const MAX_FRAG_COUNT: u16 = 16_384;
+/// 重组时 `Vec::with_capacity(frame_len)` 的硬上限（P0-1）。
+///
+/// `frame_len` 是**线上 u32**，不夹住就能声明 0xFFFF_FFFF 让 `drain_ready`
+/// 直接 `with_capacity(4GiB)` 远程 OOM。取 16MB：视频侧单帧上限
+/// [`super::video::MAX_H264_BYTES`] 是 8MB，留一倍余量给 HEVC / 将来档位。
+const MAX_REASM_BYTES: usize = 16 * 1024 * 1024;
+
+/// 声明帧长是否合法。纯函数，**分配前**必须调用（P0-1）。
+///
+/// 三条一起判的原因：
+/// 1. `frame_len == 0`：空帧声明没有意义，且会让完整性判据退化；
+/// 2. `> MAX_REASM_BYTES`：挡住 `with_capacity` 被线上 u32 放大；
+/// 3. `> frag_count * FRAG`：分片槽位的物理上界装不下声明长度 = 脏包
+///    （即便前两条侥幸通过，`drain_ready` 也会因字节数不符报废整帧，
+///    但那已经分配过一次了——必须在入口拦）。
+fn frame_len_ok(frame_len: u32, frag_count: u16) -> bool {
+    let fl = frame_len as usize;
+    if frame_len == 0 || fl > MAX_REASM_BYTES {
+        return false;
+    }
+    fl <= frag_count as usize * FRAG
+}
 
 /// flags 位。
 const FLAG_KEY: u8 = 1;
@@ -304,6 +331,12 @@ impl VidReassembler {
         if payload.len() > FRAG {
             return None;
         }
+        // 🔴 脏包防御 ③（P0-1）：`frame_len` 夹上限。必须在**任何分配与
+        // 状态推进之前**——`drain_ready` 会 `Vec::with_capacity(frame_len)`，
+        // 线上 u32 不夹就是远程 OOM。与下面的 `MAX_FRAG_COUNT` 同一类问题。
+        if !frame_len_ok(frame_len, frag_count) {
+            return None;
+        }
         let parity = flags & FLAG_PARITY != 0;
         let key = flags & FLAG_KEY != 0;
         let codec = if flags & FLAG_HEVC != 0 {
@@ -361,8 +394,22 @@ impl VidReassembler {
             // 交付被拦——锚定关键帧到达后按序补交付。
         }
 
+        // 🔴 脏包防御 ①：分片数上界。`frag_count` 取自**线上包**，
+        // 不夹住就能用畸形包放大 `frags` 的分配量（见 `MAX_FRAG_COUNT` 的注释）。
+        if frag_count == 0 || frag_count > MAX_FRAG_COUNT {
+            return None;
+        }
         let slot = frag_idx as usize;
         let total = frag_count as usize + Self::group_count(frag_count) as usize;
+        // 🔴 脏包防御 ②：`FLAG_PARITY` 必须与槽位**自洽**——奇偶片的 frag_idx
+        // 只能落在 `[frag_count, total)`。此前不校验会让同一个畸形包两次得逞：
+        //   ① 奇偶数据被写进**数据槽**（`frags[slot]`），`complete()` 因而把
+        //      注定不完整的帧判成完整（引用链白断一次 + 多余的 request_key）；
+        //   ② 同一条件走进 `try_recover`，`parity_slot - frag_count` 无符号下溢
+        //      —— debug 构建直接 panic 掉接收任务（画面永久冻结且无提示）。
+        if parity != (slot >= frag_count as usize) {
+            return None;
+        }
         if slot >= total {
             return None;
         }
@@ -425,6 +472,8 @@ impl VidReassembler {
             let reasm = self.map.remove(&self.next_seq).expect("刚检查过存在");
             self.hole_since = None;
             self.corrupt = false;
+            // 入口 `frame_len_ok` 已夹过；这里仍按声明长度分配——它等于
+            // 各片真实长度之和的校验在下面，不符即报废。
             let mut data = Vec::with_capacity(reasm.frame_len as usize);
             for i in 0..reasm.frag_count as usize {
                 data.extend_from_slice(reasm.frags[i].as_deref().unwrap_or(&[]));
@@ -457,7 +506,14 @@ impl VidReassembler {
         let Some(reasm) = self.map.get_mut(&seq) else {
             return;
         };
-        let g = parity_slot - frag_count as usize;
+        // 🔴 纵深防御：调用方（`feed_inner`）已校验过「置 PARITY 位的包其 frag_idx
+        // 必落在 [frag_count, total)」，这里仍用 `checked_sub` —— **不依赖上游的
+        // 不变量成立**。否则一旦上游判据被人改动或将来新增调用点，这里就是 usize
+        // 下溢：debug 构建直接 panic（接收任务死、画面永久冻结），release 静默 wrap
+        // ——两条路都不是我们要的。
+        let Some(g) = parity_slot.checked_sub(frag_count as usize) else {
+            return;
+        };
         let start = g * GROUP;
         let end = (((start + GROUP) as u16).min(frag_count)) as usize;
         let missing: Vec<usize> = (start..end).filter(|i| reasm.frags[*i].is_none()).collect();
@@ -686,6 +742,114 @@ mod tests {
         assert!(r.feed(&dg).is_empty());
         // 正常片不受影响
         assert_eq!(feed_all(&mut r, &dgrams(0, &data, true)).len(), 1);
+    }
+
+    /// 手工拼一个数据报（造畸形包用）。字段布局见 `HEADER` 的注释。
+    fn build_dg(
+        seq: u32,
+        flags: u8,
+        frag_idx: u16,
+        frag_count: u16,
+        frame_len: u32,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let mut dg = Vec::new();
+        dg.push(DGRAM_TAG);
+        dg.extend_from_slice(&seq.to_le_bytes());
+        dg.push(flags);
+        dg.extend_from_slice(&frag_idx.to_le_bytes());
+        dg.extend_from_slice(&frag_count.to_le_bytes());
+        dg.extend_from_slice(&frame_len.to_le_bytes());
+        dg.extend_from_slice(&0i64.to_le_bytes()); // at_ms
+        dg.extend_from_slice(&0u16.to_le_bytes()); // cap_ms
+        dg.extend_from_slice(&0u16.to_le_bytes()); // enc_ms
+        dg.extend_from_slice(&1920u32.to_le_bytes());
+        dg.extend_from_slice(&1080u32.to_le_bytes());
+        dg.extend_from_slice(payload);
+        dg
+    }
+
+    /// 🔴 审查 2026-09-22 D2/D3：置 `FLAG_PARITY` 却用**数据槽** frag_idx 的畸形包
+    /// 必须被拒，且**不得**触发 `parity_slot - frag_count` 下溢。
+    ///
+    /// 修复前：同一个包既会把奇偶数据写进数据槽（`complete()` 误判完整），
+    /// 又会走进 `try_recover` 让 usize 下溢 —— debug 构建直接 panic 掉接收任务。
+    #[test]
+    fn 畸形奇偶片_槽位不自洽必须被拒且不下溢() {
+        let data: Vec<u8> = (0..2500u32).map(|i| (i % 251) as u8).collect();
+        let mut r = VidReassembler::new();
+        assert_eq!(feed_all(&mut r, &dgrams(0, &data, true)).len(), 1);
+        // frag_count = 3（数据槽 0..3、奇偶槽 3..4），却谎称 frag_idx = 0 是奇偶片
+        let bad = build_dg(1, FLAG_PARITY, 0, 3, 2500, &[0xAA; 100]);
+        assert!(r.feed(&bad).is_empty(), "槽位不自洽的包必须被丢弃（且不得 panic）");
+        // 反向不自洽：frag_idx 落在奇偶槽却**没**置 PARITY 位
+        let bad2 = build_dg(1, 0, 3, 3, 2500, &[0xBB; 100]);
+        assert!(r.feed(&bad2).is_empty(), "奇偶槽却没标 PARITY：同样不自洽");
+        // 正常包不受影响：合法分片仍能走完并交付
+        assert_eq!(feed_all(&mut r, &dgrams(3, &data, true)).len(), 1);
+    }
+
+    /// 🔴 审查 2026-09-22 D4：畸形 `frag_count` 不得放大分配（`MAX_FRAG_COUNT` 上界）。
+    #[test]
+    fn 脏包_分片数超上界被拒() {
+        let data: Vec<u8> = vec![1u8; 1500];
+        let mut r = VidReassembler::new();
+        assert_eq!(feed_all(&mut r, &dgrams(0, &data, true)).len(), 1);
+        // 修复前：`frag_count = u16::MAX` 会分配 ~81919 个槽（≈2MB/帧）
+        let bad = build_dg(1, 0, 0, u16::MAX, 8 << 20, &[0xCC; 100]);
+        assert!(r.feed(&bad).is_empty(), "frag_count 超上界必须被拒");
+        // frag_count = 0 同样非法（会让 total 退化成 0，slot 校验失去意义）
+        let zero = build_dg(1, 0, 0, 0, 0, &[]);
+        assert!(r.feed(&zero).is_empty(), "frag_count = 0 必须被拒");
+        // 正常帧不受影响
+        assert_eq!(feed_all(&mut r, &dgrams(1, &data, true)).len(), 1);
+    }
+
+    /// 🔴 P0-1：`frame_len` 纯函数边界——0 / u32::MAX / 超过 frag_count*FRAG 全拒。
+    #[test]
+    fn frame_len_ok_三条边界全拒() {
+        assert!(!frame_len_ok(0, 1), "frame_len=0 必须拒");
+        assert!(!frame_len_ok(u32::MAX, 1), "u32::MAX 必须拒（远程 OOM）");
+        assert!(
+            !frame_len_ok(16_384, 1),
+            "超过 frag_count*FRAG（1*1000）必须拒"
+        );
+        assert!(
+            !frame_len_ok((MAX_REASM_BYTES as u32) + 1, MAX_FRAG_COUNT),
+            "超过 MAX_REASM_BYTES 必须拒"
+        );
+        // 合法边界：min(MAX_REASM_BYTES, frag_count*FRAG)
+        assert!(frame_len_ok(1, 1));
+        assert!(frame_len_ok(FRAG as u32, 1));
+        assert!(
+            frame_len_ok((MAX_FRAG_COUNT as usize * FRAG) as u32, MAX_FRAG_COUNT),
+            "frag_count 满配时的物理最大帧长应放行"
+        );
+    }
+
+    /// 🔴 P0-1：畸形 `frame_len` 不得被接受进重组器（不分配、不推进状态）。
+    #[test]
+    fn 脏包_frame_len超限被拒且不进重组器() {
+        let data: Vec<u8> = vec![1u8; 1500];
+        let mut r = VidReassembler::new();
+        assert_eq!(feed_all(&mut r, &dgrams(0, &data, true)).len(), 1);
+
+        // ① frame_len = 0
+        let z = build_dg(1, FLAG_KEY, 0, 1, 0, &[0xAA; 10]);
+        assert!(r.feed(&z).is_empty(), "frame_len=0 必须被拒");
+        // ② frame_len = u32::MAX：修复前 drain_ready 会 with_capacity(4GiB)
+        let huge = build_dg(1, FLAG_KEY, 0, 2, u32::MAX, &[0xBB; 10]);
+        assert!(r.feed(&huge).is_empty(), "frame_len=u32::MAX 必须被拒");
+        // ③ 超过 frag_count*FRAG（1 片装不下 5000B）
+        let over = build_dg(1, FLAG_KEY, 0, 1, 5_000, &[0xCC; 10]);
+        assert!(r.feed(&over).is_empty(), "超过 frag_count*FRAG 必须被拒");
+
+        assert!(
+            r.map.is_empty(),
+            "脏包不得占住重组槽位（不分配、不推进状态）"
+        );
+        // 正常帧不受影响
+        assert_eq!(feed_all(&mut r, &dgrams(2, &data, true)).len(), 1);
     }
 
     #[test]

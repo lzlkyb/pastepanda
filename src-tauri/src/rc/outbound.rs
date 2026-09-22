@@ -473,6 +473,15 @@ impl OutboundVideo {
                                 self.svc.set_inject_err(e.to_string());
                             }
                         }
+                        Some("clip_push_err") => {
+                            // D11：本端推过去的剪贴板，被控端明确没写进去
+                            // （只看会话 / 超限 / 写剪贴板失败）。过去这条腿连回帧
+                            // 都没有，界面照样报「已推送」——现在立刻报出原因。
+                            if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
+                                log::warn!("[RC] 推送剪贴板被拒/失败：{e}");
+                                self.svc.set_clip_push_err(e.to_string());
+                            }
+                        }
                         _ => {}
                     }
                 }

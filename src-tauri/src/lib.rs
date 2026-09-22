@@ -661,6 +661,11 @@ pub fn run() {
                             if let Some(err) = svc.take_inject_err() {
                                 let _ = handle_rc.emit("rc-inject-error", err);
                             }
+                            // D11：被控端拒收/写不进剪贴板 → 发起端 toast。
+                            // 与 inject-error 同一招：取走即清，避免同一句刷屏。
+                            if let Some(err) = svc.take_clip_push_err() {
+                                let _ = handle_rc.emit("rc-clip-push-error", err);
+                            }
                         }
                     }));
                 }

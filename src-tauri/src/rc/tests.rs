@@ -2,7 +2,7 @@
 
 use crate::data_store::DataStore;
 use crate::rc::protocol::{Capability, SessionPhase};
-use crate::rc::service::{PeerHostAudio, RcService};
+use crate::rc::service::{PeerHostAudio, RcService, UnoAdmit};
 use crate::rc::session::{gate_inbound, CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED};
 
 fn store() -> DataStore {
@@ -13,6 +13,23 @@ fn set_cfg(store: &DataStore, key: &str, val: serde_json::Value) {
     let mut c = store.get_config().unwrap_or_default();
     c.as_object_mut().unwrap().insert(key.to_string(), val);
     store.save_config(&c).unwrap();
+}
+
+/// 守卫单测的「锚点 + 窗口」截取：`src[start..start+len]`，但把结束点**对齐到
+/// 字符边界**。
+///
+/// 🔴 为什么需要它：这些守卫用固定**字节**窗口圈住一段函数体，而被圈的源码里
+/// 有中文（一个字 3 字节）。窗口尾端落在多字节字符中间时会直接
+/// `byte index … is not a char boundary` **panic**——2026-09-22 实测：给
+/// `approve_inbound` 加了几行（合法改动）就炸了 `守卫_approve_inbound会elevate同步设备`。
+/// 窗口本来只是「大致划个范围」，往前收最多 3 字节不影响断言语义，
+/// 但把「改无关代码就炸」这类假失败去掉了。
+fn window(src: &str, start: usize, len: usize) -> &str {
+    let mut end = (start + len).min(src.len());
+    while end > start && !src.is_char_boundary(end) {
+        end -= 1;
+    }
+    &src[start..end]
 }
 
 #[test]
@@ -455,7 +472,7 @@ mod lifecycle {
         let start = src
             .find("pub fn is_rc_online_for(")
             .expect("找不到 is_rc_online_for");
-        let body = &src[start..start + 1400];
+        let body = super::window(src, start, 1400);
         assert!(
             !body.contains("conn_state"),
             "is_rc_online_for 不得再碰 conn_state——那个字段只写 online 从不写 offline，\
@@ -1102,7 +1119,7 @@ fn 守卫_入站输入先校验会话peer() {
     let start = src
         .find("pub(super) async fn handle_inbound_input")
         .expect("找不到 handle_inbound_input");
-    let body = &src[start..start + 900];
+    let body = window(src, start, 900);
     assert!(
         body.contains("session_is(SessionPhase::InboundActive, peer)"),
         "handle_inbound_input 入口必须按 peer 校验 InboundActive 会话"
@@ -1113,10 +1130,18 @@ fn 守卫_入站输入先校验会话peer() {
 #[test]
 fn 守卫_approve_inbound会elevate同步设备() {
     let src = include_str!("service.rs");
+    // 🔴 用「下一个函数」当结束锚点，不用 `start + N` 固定字节窗口：
+    //    固定窗口会因为函数体变长而悄悄把要断言的这行挤出窗口（安静地假绿），
+    //    也会因切进中文多字节字符直接 panic（2026-09-22 实测）。
+    //    函数边界是稳定锚点，断言范围还更精确。
     let start = src
         .find("pub fn approve_inbound")
         .expect("找不到 approve_inbound");
-    let body = &src[start..start + 900];
+    let body = &src[start..];
+    let end = body
+        .find("pub fn deny_inbound")
+        .expect("找不到 deny_inbound（approve_inbound 之后的结束锚点）");
+    let body = &body[..end];
     assert!(
         body.contains("elevate_from_sync"),
         "approve_inbound 成功后必须 elevate_from_sync"
@@ -1138,7 +1163,7 @@ fn 守卫_dial_file带超时() {
 fn 守卫_批传开流失败落task() {
     let src = include_str!("file_transfer.rs");
     let start = src.find("async fn run_send_batch").expect("run_send_batch");
-    let body = &src[start..start + 2200];
+    let body = window(src, start, 2200);
     assert!(
         body.contains("TaskState::Failed") && body.contains("items[idx..]"),
         "run_send_batch 开流失败路径必须为剩余文件落 Failed task"
@@ -1167,5 +1192,104 @@ fn 守卫_caps上报dgram_input() {
     assert!(
         service.contains("peer_dgram_input"),
         "RcStatus 必须暴露 peer_dgram_input，前端升级提示才有数据源"
+    );
+}
+// ── 2026-09-22 审计 D1 / D12 回归钉 ──────────────────────────────────
+
+/// 🔴 D1：白名单必须落在**会话真的建立之后**。
+///
+/// 旧实现先落白名单再建会话，于是「密码对、但本机正忙」这种失败也留下了一行
+/// `rc_devices`——那台设备一次会话都没建立过，却已经出现在你的设备列表里，
+/// 还带着 `has_remote_trust = true`（此后可被当成已配对设备再敲门）。
+#[test]
+fn pass_admit_建会话失败时设备不入白名单() {
+    let (s, _) = pass_store(true, Capability::Control);
+    let svc = RcService::new(s.clone());
+    let a = "ab".repeat(32);
+    let b = "cd".repeat(32);
+    // 第一台正常连入：会话建立 + 落白名单（同时证明凭证路径确实走得通——
+    // 没有「信任绕过白名单」这条入参，这一步会死在「设备未配对」）
+    assert!(matches!(
+        svc.pass_admit(&a, Capability::Control, "s3cret-密码", true, T0 + 1),
+        UnoAdmit::Admitted
+    ));
+    assert_eq!(svc.status().session.expect("第一台要建会话").peer, a);
+    assert!(s.rc_device_get(&a).unwrap().is_some(), "连入成功要落白名单");
+    // 第二台：密码同样正确，但本机已有会话 → establish 失败 → 不许留白名单行
+    assert!(
+        !matches!(
+            svc.pass_admit(&b, Capability::Control, "s3cret-密码", true, T0 + 2),
+            UnoAdmit::Admitted
+        ),
+        "本机忙时必须拒"
+    );
+    assert!(
+        s.rc_device_get(&b).unwrap().is_none(),
+        "会话没建立就不该落白名单——对方会凭空出现在设备列表里"
+    );
+    assert!(!svc.has_remote_trust(&b));
+}
+
+/// 🔴 D1（码路径）：`verify` 只判不消费，未 `consume` 之前一个码可被**多台**
+/// 设备命中。旧实现的写库点在验码之后，于是每命中一台就写一行白名单——
+/// 一次接入被洗成 N 台「已配对设备」。写库点后移后失败路径零副作用。
+#[test]
+fn uno_admit_建会话失败时设备不入白名单() {
+    let s = store();
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(true));
+    set_cfg(&s, CFG_CAPABILITY, serde_json::json!("control"));
+    let svc = RcService::new(s.clone());
+    let a = "ab".repeat(32);
+    let b = "cd".repeat(32);
+    // unlimited=true：窗口内可反复命中，正是考察「一个码洗多台」的场景
+    let code = svc
+        .uno
+        .generate(T0, 900_000, true, Capability::View, false)
+        .expect("生成接入码");
+    assert!(matches!(
+        svc.uno_admit(&a, Capability::View, &code, T0 + 1),
+        UnoAdmit::Admitted
+    ));
+    assert!(s.rc_device_get(&a).unwrap().is_some(), "连入成功要落白名单");
+    // 第二台拿同一个码，但本机已被占用 → 拒，且一行都不许留
+    assert!(
+        !matches!(
+            svc.uno_admit(&b, Capability::View, &code, T0 + 2),
+            UnoAdmit::Admitted
+        ),
+        "本机忙时必须拒"
+    );
+    assert!(
+        s.rc_device_get(&b).unwrap().is_none(),
+        "会话没建立就不该落白名单"
+    );
+    assert!(!svc.has_remote_trust(&b));
+}
+
+/// 🔴 D12：一轮重连的落地判据只认**本 id 且已 Active** 的会话。
+///
+/// 旧行为是「`request_session` 回 `Ok` 即视为成功」——而它是非阻塞的，
+/// 落一个 `OutboundPending` 就返回，于是第一圈永远「成功」、重试与 `gave_up`
+/// 不可达。网络拨号在单测里跑不起来，所以这里钉住判据本身。
+#[tokio::test]
+async fn 重连落地判据_只认本id的active会话() {
+    let (s, _) = pass_store(true, Capability::Control);
+    let svc = RcService::new(s.clone());
+    // 槽位为空 = 拨号失败后 `request_session` 的错误分支留下的状态 → 不算落地
+    assert!(!svc.reconnect_round_settled_with("sess-none", 1, 1).await);
+    // 造一场 InboundActive 会话当替身
+    let peer = "ab".repeat(32);
+    assert!(matches!(
+        svc.pass_admit(&peer, Capability::View, "s3cret-密码", true, T0 + 1),
+        UnoAdmit::Admitted
+    ));
+    let id = svc.status().session.expect("要有会话").id;
+    assert!(
+        svc.reconnect_round_settled_with(&id, 1, 1).await,
+        "本 id 且 Active 才算落地"
+    );
+    assert!(
+        !svc.reconnect_round_settled_with("别人的会话", 1, 1).await,
+        "别人的会话槽不算我的落地"
     );
 }

@@ -885,6 +885,24 @@ impl InboundVideo {
     }
 }
 
+/// 剪贴板控制帧的**失败回执**（`clip_err` / `clip_push_err` 共用一条写帧路径）。
+///
+/// 🔴 D11（2026-09-22 审计）：`ClipboardPush` 那条腿过去在「只看会话 / 超限 /
+/// 写剪贴板失败」三种情况下**只写日志不回帧**，发起端界面照样报「已推送」——
+/// 用户到对端粘贴才发现是旧内容（项目规则 15.3：静默失败比报错难查一个量级）。
+/// 收成一个函数是为了让两条腿（pull / push）的回帧写法没有第二种版本。
+async fn reply_clip_err(
+    send: &Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
+    t: &str,
+    error: String,
+) {
+    let msg = serde_json::json!({ "t": t, "error": error });
+    if let Ok(b) = serde_json::to_vec(&msg) {
+        let mut guard = send.lock().await;
+        let _ = write_frame(&mut guard, &b).await;
+    }
+}
+
 /// 被控端处理一条输入（R2）。UIPI / 只看档必须报错不静默。
 pub(super) async fn handle_inbound_input(
     svc: &Arc<RcService>,
@@ -904,7 +922,15 @@ pub(super) async fn handle_inbound_input(
 
     match &ev {
         InputEvent::ClipboardPush { text } => {
+            // D11：三种失败都要回帧。过去这里静默 return，发起端界面报「已推送」，
+            // 用户到对端粘贴才发现还是旧内容，且无从知道原因。
             if assert_control_allowed(cap).is_err() {
+                reply_clip_err(
+                    send,
+                    "clip_push_err",
+                    "当前是只看会话，不能写入对方剪贴板".into(),
+                )
+                .await;
                 return;
             }
             // C-8：入站与出站同上限（按 JSON 帧 UTF-8 字节），超限拒绝写入。
@@ -913,46 +939,66 @@ pub(super) async fn handle_inbound_input(
                     "[RC] 入站剪贴板过大（{} 字节），已拒绝",
                     text.len()
                 );
+                reply_clip_err(
+                    send,
+                    "clip_push_err",
+                    format!(
+                        "剪贴板内容约 {} KB，超过 {} KB 上限，未写入对方剪贴板",
+                        text.len() / 1024,
+                        CLIPBOARD_MAX_JSON_BYTES / 1024
+                    ),
+                )
+                .await;
                 return;
             }
             if let Err(e) = set_clipboard_text(text) {
                 log::warn!("[RC] 写入被控剪贴板失败：{e}");
+                reply_clip_err(send, "clip_push_err", format!("写入对方剪贴板失败：{e}")).await;
             }
             return;
         }
         InputEvent::ClipboardPull => {
             if assert_control_allowed(cap).is_err() {
+                // 与 push 对齐：只看会话拉不了主机剪贴板，回帧让对端立刻说清，
+                // 而不是干等 4s 超时后报一句含糊的「对方剪贴板为空或拉取失败」。
+                reply_clip_err(send, "clip_err", "当前是只看会话，不能读取对方剪贴板".into())
+                    .await;
                 return;
             }
             match get_clipboard_text() {
                 Ok(t) => {
                     // 回包也走控制帧 64KB：过大时明确报错，不要静默失败
-                    let msg = if t.len() > CLIPBOARD_MAX_JSON_BYTES {
-                        serde_json::json!({
-                            "t": "clip_err",
-                            "error": "对方剪贴板过大，无法拉取",
-                        })
+                    if t.len() > CLIPBOARD_MAX_JSON_BYTES {
+                        reply_clip_err(send, "clip_err", "对方剪贴板过大，无法拉取".into()).await;
                     } else {
-                        serde_json::json!({ "t": "clip", "text": t })
-                    };
-                    if let Ok(b) = serde_json::to_vec(&msg) {
-                        let mut guard = send.lock().await;
-                        let _ = write_frame(&mut guard, &b).await;
+                        let msg = serde_json::json!({ "t": "clip", "text": t });
+                        if let Ok(b) = serde_json::to_vec(&msg) {
+                            let mut guard = send.lock().await;
+                            let _ = write_frame(&mut guard, &b).await;
+                        }
                     }
                 }
                 Err(e) => {
                     log::warn!("[RC] 读被控剪贴板失败：{e}");
-                    let msg = serde_json::json!({ "t": "clip_err", "error": format!("读剪贴板失败：{e}") });
-                    if let Ok(b) = serde_json::to_vec(&msg) {
-                        let mut guard = send.lock().await;
-                        let _ = write_frame(&mut guard, &b).await;
-                    }
+                    reply_clip_err(send, "clip_err", format!("读剪贴板失败：{e}")).await;
                 }
             }
             return;
         }
-        // 流控不注入本机输入：画质/编码/码率只看也可调（不改主机采集范围）；
-        // SetCaptureScope 要求 Control（见上）。
+        // ── 流控组：**免 Control，只看会话也可以调**（D5 边界成文，2026-09-22 审计）
+        //
+        // 🔴 这条边界的准确说法是：**允许 View 改的是「推给对方的这幅画面」，
+        //    不含任何主机侧副作用。** 三件事都不属于它：
+        //    1) 不注入本机输入（键鼠仍是 Control 专属）；
+        //    2) 不改采集范围（`SetCaptureScope` 要求 Control——它可能切到隐私屏，
+        //       改的是「主机上被看到的内容」，不是「画面怎么编码」）；
+        //    3) 不碰本机剪贴板（push/pull 同样要求 Control）。
+        //
+        // 越权面已被下游 clamp 兜住，不是「靠信任」：`set_peer_rtt` 做 `max(0)`、
+        // `set_user_bitrate_pct` 硬校验 50..=200、最终 `((auto * user) / 100).clamp(10, 300)`。
+        // 所以最坏结果是「被控端码率被顶到 300% 或压到 10%」——是**资源影响**，
+        // 不是越权动作。取舍是刻意保留的：View 得能调自己正看着的画质。
+        // 改这一段之前先问：新加的东西有没有主机侧副作用？有就别放在这里。
         InputEvent::SetQuality { quality } => {
             if let Err(e) = svc.set_stream_quality(quality) {
                 log::warn!("[RC] {e}");
