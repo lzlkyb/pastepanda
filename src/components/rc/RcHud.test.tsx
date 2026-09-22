@@ -3,7 +3,7 @@ import { act, fireEvent, render } from "@testing-library/react";
 import { RcHud } from "./RcHud";
 import styles from "./RemoteComputer.module.css";
 
-/** jsdom 无布局：这里只测交互逻辑（悬停/点击展开、点外收起、行条件渲染）。 */
+/** jsdom 无布局：这里只测交互逻辑（点击开合、点外收起、行条件渲染）。 */
 
 const baseProps = {
   codec: "h264",
@@ -23,7 +23,11 @@ function panel(container: HTMLElement) {
   return container.querySelector(`.${styles.hudPanel}`);
 }
 
-describe("RcHud 状态明细面板", () => {
+function trigger(container: HTMLElement) {
+  return container.querySelector<HTMLButtonElement>(`.${styles.hudBtn}`);
+}
+
+describe("RcHud 连接详情入口", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -31,53 +35,41 @@ describe("RcHud 状态明细面板", () => {
     vi.useRealTimers();
   });
 
-  it("初始只有 chip 条，没有面板", () => {
+  it("常驻只有一个入口按钮，没有面板（遥测不再铺在画面上）", () => {
     const { container } = renderHud();
+    const btn = trigger(container);
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent).toContain("连接详情");
     expect(panel(container)).toBeNull();
-    expect(container.querySelector(`.${styles.hud}`)).not.toBeNull();
+    // 常驻 DOM = wrapper + 按钮两个盒子。chip 格子（原来最多 10 格）已收编，
+    // 这是「不常驻铺陈」的守卫：以后想再往画面常驻区塞信息，这条会挡住。
+    expect(container.firstElementChild!.children.length).toBe(1);
   });
 
-  it("点击 chip 条展开明细；再点收起", () => {
+  it("点击入口展开明细；再点收起", () => {
     const { container } = renderHud({ respMs: 24 });
-    const hud = container.querySelector(`.${styles.hud}`)!;
-    fireEvent.click(hud);
+    const btn = trigger(container)!;
+    fireEvent.click(btn);
     expect(panel(container)).not.toBeNull();
-    expect(hud.getAttribute("aria-expanded")).toBe("true");
+    expect(btn.getAttribute("aria-expanded")).toBe("true");
     // 数据驱动的行：有样本的格才有行
     expect(panel(container)!.textContent).toContain("操作");
-    fireEvent.click(hud);
+    fireEvent.click(btn);
     expect(panel(container)).toBeNull();
   });
 
-  it("悬停 300ms 展开，移出 250ms 收起（chip → 面板的空隙不会闪关）", () => {
+  it("鼠标掠过不弹面板（旧的 hover 自动展开已去掉）", () => {
     const { container } = renderHud();
-    const wrap = container.firstElementChild!;
     act(() => {
-      fireEvent.mouseEnter(wrap);
-      vi.advanceTimersByTime(299);
-    });
-    expect(panel(container)).toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
-    expect(panel(container)).not.toBeNull();
-    act(() => {
-      fireEvent.mouseLeave(wrap);
-      vi.advanceTimersByTime(249);
-    });
-    expect(panel(container)).not.toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(1);
+      fireEvent.mouseEnter(container.firstElementChild!);
+      vi.advanceTimersByTime(2000);
     });
     expect(panel(container)).toBeNull();
   });
 
   it("打开时点外面（画面上）收起", () => {
     const { container } = renderHud();
-    act(() => {
-      fireEvent.mouseEnter(container.firstElementChild!);
-      vi.advanceTimersByTime(300);
-    });
+    fireEvent.click(trigger(container)!);
     expect(panel(container)).not.toBeNull();
     act(() => {
       document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
@@ -87,13 +79,19 @@ describe("RcHud 状态明细面板", () => {
 
   it("无样本的格不出行：最小 props 下只有基础四行", () => {
     const { container } = renderHud({ rttMs: 0, pathKind: "" });
-    fireEvent.click(container.querySelector(`.${styles.hud}`)!);
+    fireEvent.click(trigger(container)!);
     const text = panel(container)!.textContent ?? "";
     for (const label of ["编码", "画质", "画面", "链路"]) {
       expect(text).toContain(label);
     }
-    for (const label of ["往返", "画面龄", "分段", "操作", "丢包", "码率", "路径"]) {
+    for (const label of ["分辨率", "往返", "画面龄", "分段", "操作", "丢包", "码率", "路径"]) {
       expect(text).not.toContain(label);
     }
+  });
+
+  it("有画面尺寸时补出「分辨率」行（稿里有、原来缺的那条）", () => {
+    const { container } = renderHud({ frameSize: { w: 2560, h: 1440 } });
+    fireEvent.click(trigger(container)!);
+    expect(panel(container)!.textContent).toContain("2560×1440");
   });
 });

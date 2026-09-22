@@ -457,13 +457,16 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
 }
 
 /// 写入系统剪贴板文本。走 arboard（与 paste_engine 同一依赖，带瞬时占用重试）。
+///
+/// 同步入口（`inject` 等）。**async 上下文必须走 `set_clipboard_text_async`**——
+/// 这里的 `thread::sleep` 重试会占死 tokio worker。
 #[cfg(target_os = "windows")]
 pub fn set_clipboard_text(text: &str) -> Result<(), String> {
     use arboard::Clipboard;
     let mut last = String::new();
     for i in 0..6 {
         if i > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(40 * i as u64));
+            std::thread::sleep(std::time::Duration::from_millis(clipboard_retry_delay_ms(i)));
         }
         match Clipboard::new() {
             Ok(mut cb) => match cb.set_text(text) {
@@ -476,14 +479,14 @@ pub fn set_clipboard_text(text: &str) -> Result<(), String> {
     Err(format!("写入剪贴板失败：{last}"))
 }
 
-/// 读系统剪贴板文本（R3 拉回）。
+/// 读系统剪贴板文本（R3 拉回）。async 上下文请用 `get_clipboard_text_async`。
 #[cfg(target_os = "windows")]
 pub fn get_clipboard_text() -> Result<String, String> {
     use arboard::Clipboard;
     let mut last = String::new();
     for i in 0..6 {
         if i > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(40 * i as u64));
+            std::thread::sleep(std::time::Duration::from_millis(clipboard_retry_delay_ms(i)));
         }
         match Clipboard::new() {
             Ok(mut cb) => match cb.get_text() {
@@ -494,6 +497,25 @@ pub fn get_clipboard_text() -> Result<String, String> {
         }
     }
     Err(format!("读取剪贴板失败：{last}"))
+}
+
+/// 剪贴板占用重试的退避（纯函数，可单测）。第 i 次失败后等 `40 * i` ms。
+pub fn clipboard_retry_delay_ms(attempt: u32) -> u64 {
+    40u64 * u64::from(attempt)
+}
+
+/// async 包装：把带 sleep 重试的剪贴板写入丢进 blocking 池，不占 tokio worker。
+pub async fn set_clipboard_text_async(text: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || set_clipboard_text(&text))
+        .await
+        .map_err(|e| format!("剪贴板写入任务失败：{e}"))?
+}
+
+/// async 包装：同上，读方向。
+pub async fn get_clipboard_text_async() -> Result<String, String> {
+    tokio::task::spawn_blocking(get_clipboard_text)
+        .await
+        .map_err(|e| format!("剪贴板读取任务失败：{e}"))?
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -524,6 +546,13 @@ mod tests {
     fn view_session_rejects_input_gate() {
         assert!(assert_control_allowed(Capability::View).is_err());
         assert!(assert_control_allowed(Capability::Control).is_ok());
+    }
+
+    #[test]
+    fn 剪贴板重试退避按40ms递增() {
+        assert_eq!(clipboard_retry_delay_ms(0), 0);
+        assert_eq!(clipboard_retry_delay_ms(1), 40);
+        assert_eq!(clipboard_retry_delay_ms(5), 200);
     }
 
     #[test]

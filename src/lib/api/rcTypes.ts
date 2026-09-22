@@ -173,6 +173,13 @@ export interface RcTargetDevice {
    * 这条只管「自动收下它发的文件」——可以只允许后者。
    */
   auto_accept?: boolean;
+  /**
+   * 对端**自报的系统**短标签（如 `Windows 11`）。
+   *
+   * 来源是会话 `Accept` 帧；空串 / 缺失 = 还没建立过会话，或对端是旧版 /
+   * 采不到。此时**不渲染这一格**，不编默认值。仅同步配对设备恒为空。
+   */
+  os?: string;
 }
 
 export interface RcSyncOffer {

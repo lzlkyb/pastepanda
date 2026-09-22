@@ -56,12 +56,18 @@ let unlisteners: UnlistenFn[] = [];
 let listenerStarting = false;
 /** 单例 tracker：速率估算必须只有一份，否则多挂载点各算各的。 */
 const tracker = new RateTracker();
+/** P1-11：事件到达时 ++，令 in-flight snapshot 作废（事件优先）。 */
+let eventGen = 0;
+/** P1-11：snapshot 请求代数，发起 ++，落地时非当前丢弃。 */
+let snapSeq = 0;
 
 async function ensureListener(get: () => RcFileState) {
   if (unlisteners.length > 0 || listenerStarting) return;
   listenerStarting = true;
   try {
     const off = await listen("rc-file-state", (ev) => {
+      // 事件比仍在途的 snapshot 新（或至少与之竞争）——先 bump gen 让在途丢弃
+      eventGen++;
       get().applySnapshot(ev.payload);
     });
     unlisteners = [off];
@@ -92,10 +98,16 @@ export const useRcFileStore = create<RcFileState>((set, get) => ({
   },
 
   refresh: async () => {
+    // P1-11：记下发起时的代数，落地时非当前一律丢——旧响应不得覆盖新状态
+    const genAtStart = eventGen;
+    const seq = ++snapSeq;
     try {
-      get().applySnapshot(await rcFileSnapshot());
+      const raw = await rcFileSnapshot();
+      if (genAtStart !== eventGen || seq !== snapSeq) return;
+      get().applySnapshot(raw);
       set({ error: null });
     } catch (e) {
+      if (genAtStart !== eventGen || seq !== snapSeq) return;
       set({ error: String(e) });
     }
   },

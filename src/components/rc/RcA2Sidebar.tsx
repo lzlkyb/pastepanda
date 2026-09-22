@@ -1,9 +1,21 @@
-import { useMemo, useState } from "react";
-import { FileUp, HandHelping, History, KeyRound, Monitor, Plus, Search, Settings, Users } from "lucide-react";
+/**
+ * RcA2Sidebar — A2 工作台的常驻设备栏（306px）。
+ *
+ * 上半部随页切换（批5）：
+ *  - 设备/文件/设置页 → `RcA2DeviceList`（标题行 + 搜索 + 分组设备列表）
+ *  - 记录页 → `RcA2HistoryFilter`（按设备筛选）。稿的 history 屏就是这一形态，
+ *    而设备列表在记录页点一下会跳回设备页，等于给了一个「不该按的按钮」。
+ * 底部三类入口常驻：被连接开关、一次性协助、工具导航。
+ *
+ * 「允许别人连接本机」开关留在侧栏而稿只把它放在设置页：这是高频操作，留在
+ * 侧栏一抬手就能切（设置页同款仍在）。此偏离已写进设计稿实施备注。
+ */
+import { FileUp, HandHelping, History, KeyRound, Settings, Users } from "lucide-react";
 import type { RcCapability, RcTargetDevice } from "@/lib/api/rc";
+import type { RcHistoryDevice } from "@/lib/rcHistory";
 import type { RcA2Page } from "@/lib/rcWorkbenchA2";
-import { fingerprintOf } from "@/lib/fingerprint";
-import { normalizeRcPresence, presenceMainLabel, relTime } from "@/lib/rcDevice";
+import { RcA2DeviceList } from "./RcA2DeviceList";
+import { RcA2HistoryFilter } from "./RcA2HistoryFilter";
 import styles from "./RemoteComputerA2.module.css";
 
 const TOOLS: { page: Exclude<RcA2Page, "devices">; label: string; icon: typeof FileUp }[] = [
@@ -12,8 +24,12 @@ const TOOLS: { page: Exclude<RcA2Page, "devices">; label: string; icon: typeof F
   { page: "settings", label: "设置", icon: Settings },
 ];
 
-function targetName(target: RcTargetDevice): string {
-  return target.note?.trim() || target.name?.trim() || fingerprintOf(target.node_id);
+/** 记录页侧栏的筛选态（打包成一个 prop：它整体来自 RcWorkbench 的同一份历史快照）。 */
+export interface RcA2HistoryFilterState {
+  devices: RcHistoryDevice[];
+  total: number;
+  peer: string | null;
+  onSelect: (peer: string | null) => void;
 }
 
 export function RcA2Sidebar({
@@ -25,6 +41,7 @@ export function RcA2Sidebar({
   lockedLabel,
   onSelect,
   onConnect,
+  onProbe,
   onPair,
   onNavigate,
   selfEnabled,
@@ -32,6 +49,7 @@ export function RcA2Sidebar({
   onHelpMe,
   onHelpOther,
   onUnoJoin,
+  historyFilter,
 }: {
   page: RcA2Page;
   targets: RcTargetDevice[];
@@ -41,6 +59,8 @@ export function RcA2Sidebar({
   lockedLabel: string;
   onSelect: (id: string) => void;
   onConnect: (id: string, capability: RcCapability) => void;
+  /** 批7：单台探测（透传给设备行离线态的「检测」）。 */
+  onProbe: (id: string) => Promise<unknown>;
   onPair: () => void;
   onNavigate: (page: RcA2Page) => void;
   selfEnabled?: boolean;
@@ -48,91 +68,34 @@ export function RcA2Sidebar({
   onHelpMe?: () => void;
   onHelpOther?: () => void;
   onUnoJoin?: () => void;
+  historyFilter?: RcA2HistoryFilterState;
 }) {
-  const [query, setQuery] = useState("");
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLocaleLowerCase();
-    if (!keyword) return targets;
-    return targets.filter((target) =>
-      `${targetName(target)} ${target.name} ${target.node_id}`.toLocaleLowerCase().includes(keyword),
-    );
-  }, [query, targets]);
-
   return (
     <aside className={styles.sidebar} aria-label="我的设备与工具">
-      <div className={styles.sidebarHead}>
-        <div className={styles.sidebarTitleRow}>
-          <h2>我的设备</h2>
-          <button type="button" className={styles.secondaryButton} onClick={onPair}>
-            <Plus size={14} aria-hidden="true" />
-            添加设备
-          </button>
-        </div>
-        <label className={styles.searchBox}>
-          <Search size={14} aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索设备"
-            aria-label="搜索设备"
-          />
-        </label>
-      </div>
-
-      <div className={styles.deviceList}>
-        {targets.length === 0 ? (
-          <div className={styles.sidebarEmpty}>
-            <Monitor size={22} aria-hidden="true" />
-            <p>还没有已配对的设备</p>
-            <span>添加后会显示在这里，以后可以直接连接。</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className={styles.sidebarEmpty}>
-            <p>没有匹配的设备</p>
-            <span>换个名称或指纹前缀试试。</span>
-          </div>
-        ) : (
-          filtered.map((target) => {
-            const name = targetName(target);
-            const selected = target.node_id === selectedId;
-            const presence = normalizeRcPresence(target.presence);
-            const unavailable = target.source !== "rc" || locked;
-            return (
-              <div key={target.node_id} className={`${styles.deviceItem} ${selected ? styles.deviceItemSelected : ""}`}>
-                <button
-                  type="button"
-                  className={styles.deviceSelect}
-                  aria-label={`选择设备“${name}”`}
-                  aria-pressed={selected}
-                  onClick={() => {
-                    onSelect(target.node_id);
-                    if (page !== "devices" && page !== "files") onNavigate("devices");
-                  }}
-                >
-                  <span className={styles.deviceIcon} data-presence={presence}>
-                    <Monitor size={17} aria-hidden="true" />
-                  </span>
-                  <span className={styles.deviceCopy}>
-                    <strong>{name}</strong>
-                    <small>{presenceMainLabel(presence, relTime(target.last_seen))}</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={styles.connectButton}
-                  aria-label={`连接${name}`}
-                  title={unavailable ? lockedLabel || "此设备当前不可连接" : `连接并控制${name}`}
-                  disabled={busy || unavailable}
-                  onClick={() => onConnect(target.node_id, "control")}
-                >
-                  连接
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
+      {page === "history" && historyFilter ? (
+        <RcA2HistoryFilter
+          devices={historyFilter.devices}
+          total={historyFilter.total}
+          peer={historyFilter.peer}
+          targets={targets}
+          onSelect={historyFilter.onSelect}
+          onBack={() => onNavigate("devices")}
+        />
+      ) : (
+        <RcA2DeviceList
+          page={page}
+          targets={targets}
+          selectedId={selectedId}
+          busy={busy}
+          locked={locked}
+          lockedLabel={lockedLabel}
+          onSelect={onSelect}
+          onConnect={onConnect}
+          onProbe={onProbe}
+          onPair={onPair}
+          onNavigate={onNavigate}
+        />
+      )}
 
       {onToggleSelf && (
         <div className={styles.receiveRow}>

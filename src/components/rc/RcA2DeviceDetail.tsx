@@ -1,11 +1,38 @@
-import { useState } from "react";
-import { Check, Download, Eye, FileUp, Monitor, Pencil, Play, Shield, ShieldCheck, Trash2, X } from "lucide-react";
-import type { RcCapability, RcTargetDevice } from "@/lib/api/rc";
+/**
+ * RcA2DeviceDetail — 右侧设备详情面（选中设备后的「下一步做什么」）。
+ *
+ * 批5 两处对稿：
+ *  ① 「连接与权限」区块标题右侧加「管理此设备」入口，把原先常驻的 4 个权限
+ *     按钮（`RcDeviceManageActions`）收进折叠区。折叠态默认关，换设备时重置
+ *     ——否则切到另一台还留着上一台的管理面板。
+ *  ② 新增「最近会话」3 条（`RcRecentSessions`），数据取工作台那份历史快照。
+ *
+ * P3-7 / 规则 15.2：改名草稿与管理展开态在**工作台层**（`useRcDeviceUi`），
+ * 不放在本组件——切页卸载详情会把未保存的草稿一并丢掉。
+ */
+import type { RcCapability, RcHistoryItem, RcTargetDevice } from "@/lib/api/rc";
 import type { ToastFn } from "@/components/Toast";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  FileUp,
+  Monitor,
+  Pencil,
+  Play,
+  ShieldCheck,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { normalizeRcPresence, presenceHint, presenceMainLabel, relTime } from "@/lib/rcDevice";
+import { lastMeasuredRtt } from "@/lib/rcHistory";
+import { normalizeRcPresence, osLabel, presenceHint, presenceMainLabel, relTime } from "@/lib/rcDevice";
 import { pathKindLabel } from "@/lib/rcSessionStats";
 import { useRcDeviceActions } from "@/hooks/useRcDeviceActions";
+import type { RcDeviceUi } from "@/hooks/useRcDeviceUi";
+import { RcDeviceManageActions } from "./RcDeviceManageActions";
+import { RcRecentSessions } from "./RcRecentSessions";
 import styles from "./RemoteComputerA2.module.css";
 
 function displayName(target: RcTargetDevice): string {
@@ -16,6 +43,8 @@ export function RcA2DeviceDetail({
   target,
   busy,
   locked,
+  historyList,
+  ui,
   onConnect,
   onSendFiles,
   onPair,
@@ -24,11 +53,16 @@ export function RcA2DeviceDetail({
   onSetAutoAccept,
   onForget,
   onRename,
+  onViewHistory,
   toast,
 }: {
   target: RcTargetDevice | null;
   busy: boolean;
   locked: boolean;
+  /** 工作台级的会话历史快照（与侧栏筛选、记录页同源）。 */
+  historyList: RcHistoryItem[];
+  /** 改名/管理展开态（上提，见 useRcDeviceUi）。 */
+  ui: RcDeviceUi;
   onConnect: (id: string, capability: RcCapability) => void;
   onSendFiles: (id: string) => void;
   onPair: () => void;
@@ -37,11 +71,20 @@ export function RcA2DeviceDetail({
   onSetAutoAccept: (id: string, autoAccept: boolean) => Promise<boolean>;
   onForget: (id: string) => Promise<boolean>;
   onRename: (id: string, note: string) => Promise<boolean>;
+  /** 「查看全部」跳到记录页。 */
+  onViewHistory: () => void;
   toast: ToastFn;
 }) {
-  const [editingName, setEditingName] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [savingName, setSavingName] = useState(false);
+  const {
+    editingName,
+    setEditingName,
+    draftName,
+    setDraftName,
+    savingName,
+    setSavingName,
+    manageOpen,
+    setManageOpen,
+  } = ui;
   const actions = useRcDeviceActions({
     onForget,
     onSetAllowed,
@@ -50,6 +93,9 @@ export function RcA2DeviceDetail({
     onRename,
     toast,
   });
+
+  /* 换设备收起/清理由工作台层 `deviceUi.syncPeer` 在渲染期处理（规则 15.2：
+     草稿态上提，本组件只消费）。 */
 
   if (!target) {
     return (
@@ -70,6 +116,14 @@ export function RcA2DeviceDetail({
   const presence = normalizeRcPresence(target.presence);
   const cannotConnect = locked || target.source !== "rc";
   const connection = pathKindLabel(target.last_path ?? "") || "尚无成功连接记录";
+  /* 稿这一格画的是「在线 · Windows 11 · 局域网直连」。系统是对端**自报**的
+     （会话 Accept 帧带来的 `target.os`），本机推断不出来——没建立过会话就是空串，
+     此时整段不渲染（同「最近实测 RTT」的处理：宁可少一格也不编一个数）。 */
+  const deviceOs = osLabel(target.os);
+  /* 稿这一格写的是「预计延迟 8–12 ms」——**预计**没有数据源（设备列表不带时延），
+     能拿到的只有历史里的会话实测 RTT。所以文案是「最近实测」，采不到样本就整段
+     不显示（同历史页对 rtt 的处理：宁可少一格也不编一个数）。 */
+  const measuredRtt = lastMeasuredRtt(historyList, target.node_id);
   const saveName = async () => {
     setSavingName(true);
     try {
@@ -129,6 +183,7 @@ export function RcA2DeviceDetail({
             <span className={styles.onlineText} data-presence={presence}>
               {presenceMainLabel(presence, relTime(target.last_seen))}
             </span>
+            {deviceOs && <span> · {deviceOs}</span>}
             <span> · {presenceHint(presence)}</span>
           </p>
         </div>
@@ -175,12 +230,43 @@ export function RcA2DeviceDetail({
           </div>
         )}
 
-        <h3>连接与权限</h3>
+        <div className={styles.sectionHead}>
+          <h3>连接与权限</h3>
+          <button
+            type="button"
+            className={styles.sectionLink}
+            aria-expanded={manageOpen}
+            aria-controls="rc-a2-manage"
+            onClick={() => setManageOpen(!manageOpen)}
+          >
+            <SlidersHorizontal size={13} aria-hidden="true" />
+            管理此设备
+            {manageOpen ? (
+              <ChevronUp size={13} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={13} aria-hidden="true" />
+            )}
+          </button>
+        </div>
+        {manageOpen && (
+          <div id="rc-a2-manage">
+            <RcDeviceManageActions
+              target={target}
+              name={name}
+              busy={busy}
+              actions={actions}
+              onPair={onPair}
+            />
+          </div>
+        )}
         <dl className={styles.factList}>
           <div>
             <dt>上次连接</dt>
             <dd>{connection}</dd>
-            <span>{target.last_path ? "来自最近一次会话实测" : "首次连接后显示实际路径"}</span>
+            <span>
+              {target.last_path ? "来自最近一次会话实测" : "首次连接后显示实际路径"}
+              {measuredRtt > 0 ? ` · 最近实测 ~${measuredRtt} ms` : ""}
+            </span>
           </div>
           <div>
             <dt>连接确认</dt>
@@ -201,53 +287,7 @@ export function RcA2DeviceDetail({
           </div>
         </dl>
 
-        <h3 className={styles.managementTitle}>设备权限</h3>
-        <div className={styles.managementActions}>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            disabled={busy}
-            onClick={() => void actions.setAllowed(target.node_id, target.denied)}
-          >
-            <Shield size={14} aria-hidden="true" />
-            {target.denied ? "允许连接本机" : "禁止连接本机"}
-          </button>
-          {target.source === "rc" ? (
-            <>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                disabled={busy || target.denied}
-                onClick={() => void actions.toggleTrust(target.node_id, !target.trusted)}
-              >
-                <ShieldCheck size={14} aria-hidden="true" />
-                {target.trusted ? "关闭免确认连接" : "开启免确认连接"}
-              </button>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                disabled={busy || target.denied}
-                onClick={() => void actions.toggleAutoAccept(target.node_id, !target.auto_accept)}
-              >
-                <Download size={14} aria-hidden="true" />
-                {target.auto_accept ? "关闭自动接收文件" : "开启自动接收文件"}
-              </button>
-              <button
-                type="button"
-                className={styles.dangerButton}
-                disabled={busy}
-                onClick={() => void actions.forget(target.node_id, name)}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                移除设备
-              </button>
-            </>
-          ) : (
-            <button type="button" className={styles.primaryButton} onClick={onPair}>
-              完成远程配对
-            </button>
-          )}
-        </div>
+        <RcRecentSessions list={historyList} peer={target.node_id} onViewAll={onViewHistory} />
       </div>
     </section>
   );

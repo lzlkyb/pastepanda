@@ -165,6 +165,17 @@ pub(super) struct Wire {
     /// 仅配对握手：这包给谁。空 = 没指定（招呼包就是这样）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) to_id: Option<String>,
+    /// 仅 [`WireKind::PinOk`]：附加证明（HMAC-SHA256 hex）。
+    ///
+    /// 🔴 P1-1：签名只盖 `node_id|port|ts`（见 [`signing_bytes`]——不能扩，
+    /// 会废掉与旧版互通），所以 `kind`/`pk`/`to_id` 在明文包上可被中间人
+    /// **偷换**（拿任意一份合法签名包改成 `pin_ok` 冒充「我这侧确认了」）。
+    /// 本字段是对配对会话 X25519 shared 的 HMAC，绑定
+    /// `"pin-ok"|node_id|to_id|ts`——无 proof / 错 proof 一律不认。
+    ///
+    /// `skip_serializing_if`：地址公告与招呼包不带它，字节与升级前一致。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) ok_proof: Option<String>,
     /// 签名的 base64url。
     pub(super) sig: String,
 }
@@ -182,6 +193,8 @@ pub struct Extras {
     pub name: Option<String>,
     pub pk: Option<String>,
     pub to_id: Option<String>,
+    /// 仅 [`WireKind::PinOk`]：HMAC 证明（见 [`Wire::ok_proof`]）。
+    pub ok_proof: Option<String>,
 }
 
 impl Extras {
@@ -287,6 +300,7 @@ pub fn build_kind(
         name: extras.name,
         pk: extras.pk,
         to_id: extras.to_id,
+        ok_proof: extras.ok_proof,
         sig: b64().encode(sig),
     };
     serde_json::to_vec(&wire).map_err(|e| format!("序列化地址公告失败：{}", e))

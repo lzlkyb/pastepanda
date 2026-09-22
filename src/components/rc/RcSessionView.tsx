@@ -1,28 +1,30 @@
 /**
- * RcSessionView — 会话壳。确认用 ConfirmDialog（非 window.confirm）。
- * 1:1 可横向/纵向滚动平移；画面停滞与自动剪贴板失败可见。
+ * RcSessionView — 会话壳。只做编排：调用 hooks、组合画面区与会话底栏。
+ *
+ * 拆分史（`.tsx ≤ 300` 红线）：
+ * - 2026-09-18：抽出 RcScreenCanvas；
+ * - 2026-09-21：抽出 useRcSessionPrefs / useRcSessionAudio / useRcDisplayMode 与
+ *   RcSessionStage（原 394 行）。画面区块的 props 一律**整组**接收 hook 返回值
+ *   （`input` / `link` / `frames`），不再逐个摊平——摊平只是把解构搬个家。
+ *
+ * 确认一律用 ConfirmDialog（非 window.confirm，见 lib/confirm）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, Loader2 } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
-import { rcAudioToggle, type RcSession } from "@/lib/api/rc";
+import type { RcSession } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcFrames } from "@/hooks/useRcFrames";
-import { useRcAudio } from "@/hooks/useRcAudio";
 import { useRcCursor } from "@/hooks/useRcCursor";
-import { useRcInput, releaseModifiers } from "@/hooks/useRcInput";
+import { useRcInput } from "@/hooks/useRcInput";
 import { useRcLinkState } from "@/hooks/useRcLinkState";
 import { useRcSessionNotices } from "@/hooks/useRcSessionNotices";
 import { useRcClipboardAuto } from "@/hooks/useRcClipboardAuto";
-import type { FitMode } from "@/lib/rcSessionStats";
-import { qualityLabel } from "@/lib/rcQuality";
-import { RcHud } from "./RcHud";
-import { RcViewTools } from "./RcViewTools";
-import { RcSessionTop } from "./RcSessionTop";
+import { useRcSessionPrefs } from "@/hooks/useRcSessionPrefs";
+import { useRcSessionAudio } from "@/hooks/useRcSessionAudio";
+import { useRcDisplayMode } from "@/hooks/useRcDisplayMode";
+import { RcSessionStage } from "./RcSessionStage";
 import { RcSessionBar } from "./RcSessionBar";
-import { RcScreenCanvas } from "./RcScreenCanvas";
-import { RcFsHint } from "./RcFsHint";
 import styles from "./RemoteComputer.module.css";
 
 export function RcSessionView({
@@ -49,75 +51,40 @@ export function RcSessionView({
 }) {
   const { toast } = useToast();
   const [clipAuto, setClipAuto] = useState(false);
-  const [qPick, setQPick] = useState(quality);
-  const [scopePick, setScopePick] = useState(captureScope);
-  // Q5：码率倍率。初值取本机配置（后端在会话建立时已把该值推给被控端，
-  // 所以下拉显示的就是生效值）；会话内改下拉会同步对方并回写配置。
-  const [bitratePick, setBitratePick] = useState(rc.status?.bitrate_pct ?? 100);
-  const [fit, setFit] = useState<FitMode>("fit");
-  const [fullscreen, setFullscreen] = useState(false);
-  /** 案 A：非全屏「画面偏小」提示，「知道了」仅本会话生效 */
-  const [fsHintDismissed, setFsHintDismissed] = useState(false);
   const screenRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // P4：每次输入发出的本地时刻（useRcInput 写、useRcFrames 读），操作延迟 HUD 用
   const inputEpochRef = useRef(0);
   const canControl = session.capability === "control";
-  /** 本机是否正作为**被控端**推流（决定 HUD 能不能拿到自动档的「生效档」，见下方 RcHud）。 */
-  const inboundActive = session.phase === "inbound_active";
 
-  const {
-    hasFrame,
-    statusText,
-    codec,
-    fps,
-    contentRef,
-    lastFrameAt,
-    size,
-    latencyMs,
-    bitrateKbps,
-    segCapMs,
-    segEncMs,
-    segNetMs,
-    segDecMs,
-    respMs,
-  } = useRcFrames(session.id, canvasRef, {
+  // 显示模式（缩放 / 全屏 / 非全屏提示 + 换会话清理）、声音开关、会话内可调项
+  // （画质 / 范围 / 码率）各自独立成 hook，见 hooks/useRc*.ts。
+  const display = useRcDisplayMode(session.id, screenRef);
+  const { audioOn, toggleAudio } = useRcSessionAudio(session.id, toast);
+  const prefs = useRcSessionPrefs({
+    sessionId: session.id,
+    quality,
+    captureScope,
+    bitratePct: rc.status?.bitrate_pct,
+    peerFps120: rc.status?.peer_fps120,
+  });
+
+  const frames = useRcFrames(session.id, canvasRef, {
     // P0-1 A3：时钟偏差校准（后端 pong 估算）；未校准时为 0，延迟显示带「≈」
     clockSkewMs: rc.status?.clock_skew_ms ?? 0,
     lastInputAt: inputEpochRef,
     // D4：fps120 档解码配置要抬 H.264 level（1080p120 超出 L4.2 规格）
-    qualityHint: qPick,
+    qualityHint: prefs.qPick,
   });
   // P1-6：远端光标形状（非箭头形状换用本地系统光标渲染）
   const cursorShape = useRcCursor(session.id);
-  // G3：系统声音（默认开）。开关变化（含挂载断言默认态）→ AudioOn 发被控端；
-  // 旧版本对端解不出这个事件，安全忽略。
-  const [audioOn, setAudioOn] = useState(true);
-  useRcAudio(session.id, audioOn);
-  // C-UI3：失败必须回滚 + 说人话（与 RcAudioBar「对方外放」同款），禁止静默 catch。
-  const toggleAudio = useCallback(() => {
-    const next = !audioOn;
-    setAudioOn(next);
-    void rcAudioToggle(next).catch((e) => {
-      setAudioOn((cur) => (cur === next ? !next : cur));
-      toast(
-        `声音开关失败：${typeof e === "string" && e ? e : String(e)}`,
-        "error",
-      );
-    });
-  }, [audioOn, toast]);
-  // 会话建立时按默认「开」同步一次给对端；换会话不继承上一场的本地开关。
-  useEffect(() => {
-    setAudioOn(true);
-    void rcAudioToggle(true).catch(() => {
-      // 挂载同步失败不打断画面：会话里仍可手动点开关，失败路径在 toggleAudio
-    });
-  }, [session.id]);
 
+  // C-UI3：自动同步剪贴板失败要说人话，禁止静默 catch。
   const onAutoFailToast = useCallback(
     (e: string) => toast(`自动同步剪贴板失败：${e}`, "error"),
     [toast],
   );
+  // B5：基线由 hook 在开启时自动建立，这里只切开关，不手动 reset
   const clip = useRcClipboardAuto({
     enabled: clipAuto,
     canControl,
@@ -149,65 +116,28 @@ export function RcSessionView({
 
   const input = useRcInput({
     canControl,
-    hasFrame,
-    contentRef,
+    hasFrame: frames.hasFrame,
+    contentRef: frames.contentRef,
     canvasRef,
     screenRef,
     onConfirmEnd: () => void requestEnd(),
-    fit,
+    fit: display.fit,
     // P4：fps120 档鼠标采样提到 8ms（datagram 不排队，纯采样密度问题）
-    moveThrottleMs: qPick === "fps120" ? 8 : 16,
+    moveThrottleMs: prefs.qPick === "fps120" ? 8 : 16,
     inputEpochRef,
   });
-  useEffect(() => {
-    setQPick(quality);
-    setScopePick(captureScope);
-    // 换会话时码率倍率回到本机配置（上一场的临时选择不该带到下一场）；
-    // 依赖里带上 cfg 值：首帧 status 尚未加载时初值按 100 兜底，status 到达
-    // 后这里会把下拉纠正成真正的配置值。会话内改下拉也会回写 cfg，值一致，
-    // 不会造成选中值跳变。
-    setBitratePick(rc.status?.bitrate_pct ?? 100);
-  }, [session.id, quality, captureScope, rc.status?.bitrate_pct]);
-  // D6：对端 caps 重报 fps120 不可用（如范围切到多屏）时，本地的 fps120 选中值
-  // 自动回落——否则下拉框会显示一个已不可选的档（RcDropdown 回退裸 key），
-  // 被控端也已由能力校验/推流降档兜底，不会再按 8ms 硬跑。
-  useEffect(() => {
-    if (qPick === "fps120" && rc.status?.peer_fps120 === false) {
-      setQPick("fps60");
-    }
-  }, [qPick, rc.status?.peer_fps120]);
+
   // 会话内不停发心跳（窗口失焦也发，否则对方 3.5s 后暂停推流，像断线）。
   // 活性判定 / 画面静止 / 操作未响应三条判据各用各的数据源，全在 hook 里。
   const link = useRcLinkState({
     sessionId: session.id,
-    hasFrame,
-    lastFrameAt,
+    hasFrame: frames.hasFrame,
+    lastFrameAt: frames.lastFrameAt,
     lastActionAt: input.lastActionAt,
     rttMs: rc.status?.rtt_ms ?? 0,
     backendPongMs: rc.status?.last_pong_ms ?? 0,
     reconnecting: busy,
   });
-  // 会话结束 / 换会话时补发 key-up 与鼠标松开，防止对端键卡住
-  useEffect(() => {
-    return () => {
-      void releaseModifiers();
-    };
-  }, [session.id]);
-  const toggleFullscreen = useCallback(() => {
-    const el = screenRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void el.requestFullscreen().catch(() => {});
-  }, []);
-  useEffect(() => {
-    const onChange = () => setFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-  // 换会话时提示条恢复（上一场点过「知道了」不带到下一场）
-  useEffect(() => {
-    setFsHintDismissed(false);
-  }, [session.id]);
 
   // 会话内的一次性通知（对端注入失败 / 路径自动切换 relay↔直连）收口在 hook 里——
   // 这两条都是「说一次就够」的消息，留在会话壳里会把这个文件推过 300 行红线。
@@ -218,134 +148,29 @@ export function RcSessionView({
     notify,
   });
 
-  const placeholderSub =
-    codec === "h264"
-      ? "对方正在用 H.264 推流"
-      : `对方编码中 · ${qualityLabel(qPick)}档`;
-  const onKeyDown = (e: React.KeyboardEvent) => input.onKeyDown(e);
-  const onKeyUp = (e: React.KeyboardEvent) => input.onKeyUp(e);
-
-  /* v4 对稿（第三轮，B 窗）：根容器改为 sessionWrap——深色画布块（viewShell：
-     顶条 + fakeScreen）与下方「申请控制权行 + 会话底栏」分层，底栏是画布下方
-     独立的亮玻璃条（稿 .sessionBar），不再贴在深色画布里连成一片。 */
   return (
     <div className={styles.sessionWrap}>
-      <div className={styles.viewShell}>
-        <RcSessionTop
-          session={session}
-          canControl={canControl}
-          kbOn={input.kbOn}
-          linkState={link.state}
-          unansweredSec={link.unansweredSec}
-          busy={busy}
-          // R3：false = 对端 caps 未声明数据报鼠标（7.2.1 及更早）→ 顶栏提示升级
-          peerDgramInput={rc.status?.peer_dgram_input}
-          onReleaseKb={input.releaseKb}
-          onReconnect={onReconnect}
-          onRequestEnd={() => void requestEnd()}
-        />
-
-        <div
-          ref={screenRef}
-          className={input.kbOn ? `${styles.fakeScreen} ${styles.fakeScreenKb}` : styles.fakeScreen}
-          tabIndex={canControl ? 0 : -1}
-          onFocus={() => {
-            if (canControl) input.setKbOn(true);
-          }}
-          onBlur={() => {
-            if (canControl) {
-              input.setKbOn(false);
-              void releaseModifiers();
-              // 普通键/鼠标键的按下态跟踪释放（releaseModifiers 只管修饰键+鼠标）
-              input.releaseTracked();
-            }
-          }}
-          onMouseDown={() => {
-            if (canControl) screenRef.current?.focus();
-          }}
-          onContextMenu={(e) => {
-            // 误触右键菜单修复③：会话表面（画面 letterbox / HUD / 工具）只有
-            // canvas 屏蔽过本地右键菜单——其余区域右键会弹出 WebView2 默认菜单
-            //（刷新/打印/检查…）。这里统一屏蔽；远端右键不受影响（它走
-            // mousedown/mouseup 注入，与 contextmenu 无关）。
-            e.preventDefault();
-          }}
-          onKeyDown={onKeyDown}
-          onKeyUp={onKeyUp}
-        >
-          <RcViewTools
-            fit={fit}
-            onFit={setFit}
-            pointerLocked={input.pointerLocked}
-            onTogglePointer={input.togglePointerLock}
-            canControl={canControl}
-            fullscreen={fullscreen}
-            onToggleFullscreen={toggleFullscreen}
-          />
-          <RcScreenCanvas
-            canvasRef={canvasRef}
-            contentRef={contentRef}
-            size={size}
-            fit={fit}
-            canControl={canControl}
-            hasFrame={hasFrame}
-            input={input}
-            cursorShape={cursorShape}
-          />
-          {!hasFrame && (
-            <div className={styles.placeholder}>
-              <Loader2 size={22} className={styles.spin} />
-              <div>{statusText || "等待对方画面…"}</div>
-              <div className={styles.placeholderSub}>{placeholderSub}</div>
-            </div>
-          )}
-          {/* v4 对稿（B 窗）：只看水印，透明度呼吸 2.6s——「对面是活的」的最低成本
-              表达。只在**只看且已有画面**时出现：等待态中央是 placeholder，可控态
-              没有「只看」可说；pointer-events:none 不挡画布的任何交互。 */}
-          {!canControl && hasFrame && (
-            <div className={styles.viewOnlyMark} aria-hidden="true">
-              <Eye size={14} />
-              只看模式 · 对端桌面实时画面
-            </div>
-          )}
-          {/* 🔴 自动档的落点只有**推流那台机器**知道。本组件当前只在出站会话渲染
-              （RcWorkbench 判 `outbound_active`），所以 activeQuality 实际总是空、
-              走 peerDriven 分支显示「自动 · 由对方决定」；inbound 那一支留着，
-              是为了将来复用时不撒谎（被控端才是拿得到生效档的一方）。 */}
-          <RcHud
-            codec={codec}
-            fps={fps}
-            rttMs={link.rttMs}
-            frameLatencyMs={latencyMs}
-            lossPermille={rc.status?.loss_permille}
-            bitrateKbps={bitrateKbps}
-            segCapMs={segCapMs}
-            segEncMs={segEncMs}
-            segNetMs={segNetMs}
-            segDecMs={segDecMs}
-            respMs={respMs}
-            quality={qPick}
-            activeQuality={inboundActive ? rc.status?.active_quality : undefined}
-            peerDriven={!inboundActive}
-            scope={scopePick}
-            linkState={link.state}
-            pathKind={rc.status?.path_kind ?? ""}
-            pointerLocked={input.pointerLocked}
-          />
-          {/* 案 A：非全屏轻提示（判据 lib/rcFsHint；不挡画面中心操作） */}
-          <RcFsHint
-            canControl={canControl}
-            hasFrame={hasFrame}
-            fullscreen={fullscreen}
-            dismissed={fsHintDismissed}
-            contentSize={size}
-            canvasRef={canvasRef}
-            screenRef={screenRef}
-            onFullscreen={toggleFullscreen}
-            onDismiss={() => setFsHintDismissed(true)}
-          />
-        </div>
-      </div>
+      <RcSessionStage
+        session={session}
+        busy={busy}
+        rc={rc}
+        input={input}
+        link={link}
+        frames={frames}
+        cursorShape={cursorShape}
+        fit={display.fit}
+        onFit={display.setFit}
+        fullscreen={display.fullscreen}
+        onToggleFullscreen={display.toggleFullscreen}
+        fsHintDismissed={display.fsHintDismissed}
+        onDismissFsHint={display.dismissFsHint}
+        qPick={prefs.qPick}
+        scopePick={prefs.scopePick}
+        screenRef={screenRef}
+        canvasRef={canvasRef}
+        onReconnect={onReconnect}
+        onRequestEnd={() => void requestEnd()}
+      />
 
       {!canControl && onRequestControl && (
         <div className={styles.recentRow}>
@@ -366,24 +191,23 @@ export function RcSessionView({
       <RcSessionBar
         rc={rc}
         canControl={canControl}
-        quality={qPick}
-        captureScope={scopePick}
-        bitrate={bitratePick}
-        onPickQuality={(k) => setQPick(k)}
-        onPickScope={(s) => setScopePick(s)}
-        onPickBitrate={(p) => setBitratePick(p)}
+        quality={prefs.qPick}
+        captureScope={prefs.scopePick}
+        bitrate={prefs.bitratePick}
+        onPickQuality={(k) => prefs.setQPick(k)}
+        onPickScope={(s) => prefs.setScopePick(s)}
+        onPickBitrate={(p) => prefs.setBitratePick(p)}
         audioOn={audioOn}
         onToggleAudio={toggleAudio}
         clipAuto={clipAuto}
-        // B5：基线由 hook 在开启时自动建立，这里只切开关，不手动 reset
         onToggleClipAuto={() => setClipAuto((v) => !v)}
         lastAutoAt={clip.lastAutoAt}
         autoFail={clip.autoFail}
         onStatus={(m, k) => toast(m, k)}
         kbOn={input.kbOn}
         pointerLocked={input.pointerLocked}
-        fit={fit}
-        sizeW={size.w}
+        fit={display.fit}
+        sizeW={frames.size.w}
         frameIdleSec={link.frameIdleSec}
       />
     </div>

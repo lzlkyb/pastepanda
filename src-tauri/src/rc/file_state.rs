@@ -14,6 +14,7 @@
 //! （`FileTask.path` 只是个**展示用的字符串**，上面这句仍然成立：这里不读写磁盘。）
 
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -166,6 +167,11 @@ pub struct AskView {
 pub(crate) struct FileState {
     asks: Mutex<Vec<FileAsk>>,
     tasks: Mutex<Vec<FileTask>>,
+    /// P2-6: inbound connection peer slot (claim at accept, release when conn ends).
+    /// Busy check merges peers+asks+tasks to kill the file_busy / task_start TOCTOU.
+    peers: Mutex<HashSet<String>>,
+    /// P1-4: in-flight `.pppart` name slots. Same part name = single writer.
+    parts: Mutex<HashSet<String>>,
     seq: AtomicU64,
 }
 
@@ -174,6 +180,8 @@ impl FileState {
         Self {
             asks: Mutex::new(Vec::new()),
             tasks: Mutex::new(Vec::new()),
+            peers: Mutex::new(HashSet::new()),
+            parts: Mutex::new(HashSet::new()),
             seq: AtomicU64::new(0),
         }
     }
@@ -382,6 +390,65 @@ impl FileState {
     pub(crate) fn is_running(&self, id: &str) -> bool {
         let g = self.tasks.lock().unwrap_or_else(|p| p.into_inner());
         g.iter().any(|t| t.id == id && !t.state.is_over())
+    }
+
+    // ── 占位（P1-4 / P2-6：busy 检查与占位必须同一临界区）────────────────
+
+    /// Same peer busy if: reserved slot, live ask, or non-over task.
+    /// Lock order: peers -> asks -> tasks (matches try_reserve_peer).
+    fn peer_busy_inner(&self, peers: &HashSet<String>, peer: &str) -> bool {
+        if peers.contains(peer) {
+            return true;
+        }
+        {
+            let asks = self.asks.lock().unwrap_or_else(|p| p.into_inner());
+            if asks.iter().any(|a| a.peer == peer) {
+                return true;
+            }
+        }
+        let tasks = self.tasks.lock().unwrap_or_else(|p| p.into_inner());
+        tasks.iter().any(|t| t.peer == peer && !t.state.is_over())
+    }
+
+    /// Claim a peer slot at accept time (one file connection per device).
+    /// false = already busy (caller rejects with busy).
+    ///
+    /// P2-6: the old "file_busy snapshot then task_start" was two separate
+    /// locks, so two connections could both pass. Claim+check share one
+    /// peers critical section; release_peer frees it when the conn ends.
+    pub(crate) fn try_reserve_peer(&self, peer: &str) -> bool {
+        let mut peers = self.peers.lock().unwrap_or_else(|p| p.into_inner());
+        if self.peer_busy_inner(&peers, peer) {
+            return false;
+        }
+        peers.insert(peer.to_string());
+        true
+    }
+
+    pub(crate) fn release_peer(&self, peer: &str) {
+        let mut peers = self.peers.lock().unwrap_or_else(|p| p.into_inner());
+        peers.remove(peer);
+    }
+
+    /// Is this `.pppart` name reserved by an in-flight transfer?
+    pub(crate) fn part_reserved(&self, part_name: &str) -> bool {
+        let parts = self.parts.lock().unwrap_or_else(|p| p.into_inner());
+        parts.contains(part_name)
+    }
+
+    /// Claim a `.pppart` name. false = already taken.
+    pub(crate) fn try_reserve_part(&self, part_name: &str) -> bool {
+        let mut parts = self.parts.lock().unwrap_or_else(|p| p.into_inner());
+        if parts.contains(part_name) {
+            return false;
+        }
+        parts.insert(part_name.to_string());
+        true
+    }
+
+    pub(crate) fn release_part(&self, part_name: &str) {
+        let mut parts = self.parts.lock().unwrap_or_else(|p| p.into_inner());
+        parts.remove(part_name);
     }
 
     /// 单条任务的状态（测试用；命令层拿整份快照）。
@@ -637,5 +704,45 @@ mod tests {
         assert!(st.is_running(&live));
         st.task_finish(&live, TaskState::Canceled, None, T0);
         assert!(!st.is_running(&live));
+    }
+
+    // ── 占位（P1-4 / P2-6）────────────────────────────────────────────
+
+    #[test]
+    fn peer占位互斥且可释放() {
+        let st = FileState::new();
+        assert!(st.try_reserve_peer("p1"));
+        assert!(!st.try_reserve_peer("p1"), "second claim of same peer must fail");
+        assert!(st.try_reserve_peer("p2"));
+        st.release_peer("p1");
+        assert!(st.try_reserve_peer("p1"), "after release, claim must succeed");
+    }
+
+    #[test]
+    fn peer占位与未结束任务互斥() {
+        let st = FileState::new();
+        let id = st.task_start("p", "n", TaskDir::Send, "a", 10, 0, T0);
+        assert!(!st.try_reserve_peer("p"), "live task blocks reserve");
+        st.task_finish(&id, TaskState::Done, None, T0 + 1);
+        assert!(st.try_reserve_peer("p"), "finished task must not block reserve");
+    }
+
+    #[test]
+    fn peer占位与待响应确认条互斥() {
+        let st = FileState::new();
+        let _ = st.ask("p", "n", AskKind::Push, "a", 1, T0);
+        assert!(!st.try_reserve_peer("p"));
+    }
+
+    #[test]
+    fn part槽互斥且可释放() {
+        let st = FileState::new();
+        assert!(st.try_reserve_part("a.bin.pppart"));
+        assert!(st.part_reserved("a.bin.pppart"));
+        assert!(!st.try_reserve_part("a.bin.pppart"), "same part must not double-claim");
+        assert!(st.try_reserve_part("b.bin.pppart"));
+        st.release_part("a.bin.pppart");
+        assert!(!st.part_reserved("a.bin.pppart"));
+        assert!(st.try_reserve_part("a.bin.pppart"));
     }
 }

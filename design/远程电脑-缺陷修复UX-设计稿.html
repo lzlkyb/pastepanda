@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · RC 前端缺陷修复 UX 说明</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --card: #fff;
+    --text: #1c1e21;
+    --muted: #6b7280;
+    --accent: #4f7cff;
+    --danger: #d64545;
+    --warning: #e0803a;
+    --success: #2f9e5f;
+    --border: #e3e6ea;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.6 system-ui, "Segoe UI", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .lead { color: var(--muted); margin: 0 0 24px; max-width: 720px; }
+  .grid { display: grid; gap: 16px; max-width: 960px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    margin-right: 6px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+  .tag.err { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+  .tag.ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
+  .tag.warn { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; width: 22%; }
+  code { font-size: 11px; background: #eef1f5; padding: 1px 5px; border-radius: 4px; }
+  .state {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin: 2px 4px 2px 0;
+  }
+  .s-empty { background: #eef1f5; color: var(--muted); }
+  .s-load { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+  .s-err { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+  .s-ok { background: color-mix(in srgb, var(--success) 10%, transparent); color: var(--success); }
+  .note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>远程电脑 · RC 前端缺陷修复</h1>
+  <p class="lead">
+    对照现有 RC 设计语言（深色会话壳 / 浅色设置面板 / <code>miniBtn</code>·<code>fb</code> 体系），
+    逐条列出 U3.5 / L2 / P2 / P3 债的<strong>交互、文案与状态</strong>。本稿是修 bug 说明，不引入新视觉体系。
+  </p>
+
+  <div class="grid">
+    <section class="card">
+      <h2><span class="tag err">U3.5</span>1 · 能力加载失败 ≠ 能力不存在</h2>
+      <table>
+        <tr><th>位置</th><td>设置 ·「允许被远程」→ 画质档 / 画面范围（<code>RcAllowPanel</code>）</td></tr>
+        <tr><th>原状</th><td><code>catch</code> 把 monitors / caps 落成空，档位看起来像「本机没有高帧率能力」</td></tr>
+        <tr><th>状态</th><td>
+          <span class="state s-load">正在读取本机能力…</span>
+          <span class="state s-err">未能读取本机能力 · 重试</span>
+          <span class="state s-ok">正常档位</span>
+        </td></tr>
+        <tr><th>文案</th><td>
+          错误条：<code>未能读取本机能力</code> / <code>未能读取本机显示器列表</code> +「重试」<br/>
+          降级提示：能力未知时写明 <code>未能读取本机能力，已隐藏高帧率+/4K60</code>；屏列表未知时 <code>未能读取本机显示器列表，已隐藏逐屏选项</code>
+        </td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag err">U3.5</span>2 · 剪贴板「空」与「失败」分开说</h2>
+      <table>
+        <tr><th>位置</th><td>会话底栏 ·「拉取对方剪贴板」（<code>RcClipboardBar</code>）</td></tr>
+        <tr><th>原状</th><td><code>对方剪贴板为空或拉取失败</code> 一句糊两种相反事实</td></tr>
+        <tr><th>状态</th><td>
+          <span class="state s-empty">对方剪贴板是空的</span>
+          <span class="state s-err">拉取失败 · 重试</span>
+          <span class="state s-ok">已写入本机 · N 字符</span>
+        </td></tr>
+        <tr><th>文案</th><td>
+          真空白（空串）→ <code>对方剪贴板是空的</code>（info，不需要重试）<br/>
+          超时/失败（null）→ <code>拉取对方剪贴板失败</code> +「重试」<br/>
+          异常 → 原因原文 +「重试」
+        </td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag warn">P2</span>3 · 码率本地保存失败要出声</h2>
+      <table>
+        <tr><th>位置</th><td>会话底栏 · 码率下拉（<code>RcSessionBar.pickBitrate</code>）</td></tr>
+        <tr><th>原状</th><td>远端已生效，本地偏好 <code>catch(() =&gt; {})</code> 静默吞掉</td></tr>
+        <tr><th>文案</th><td><code>本次生效，下次会话可能恢复原码率</code>（info，走同一 <code>onStatus</code> 可见域）</td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag warn">P2</span>4 · 工具条隐藏时不可 Tab · 不再挂全局 mousemove</h2>
+      <table>
+        <tr><th>位置</th><td>画面右上浮现工具条（<code>RcViewTools</code>）</td></tr>
+        <tr><th>原状</th><td>隐藏仍可 Tab 聚焦；<code>window.mousemove</code> 常开（规则 8）</td></tr>
+        <tr><th>修法</th><td>
+          隐藏态 <code>visibility:hidden</code> + 按钮 <code>tabIndex={-1}</code>（移出 Tab 环）<br/>
+          监听改挂在画面容器（stage）上，不再吃全窗口 mousemove；转场 200ms（U2）
+        </td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag ok">U4</span>5 · 成功浮条 6s 自动清</h2>
+      <table>
+        <tr><th>位置</th><td><code>RcSessionBar</code> / <code>RcFileBar</code> / <code>RcClipboardBar</code> 的 <code>fb</code> 浮条</td></tr>
+        <tr><th>规则</th><td>成功/信息 6s 自动清（对齐撤销条 <code>UNDO_WINDOW_MS</code>）；<strong>错误保留</strong>并给重试</td></tr>
+        <tr><th>状态</th><td>
+          <span class="state s-ok">画质已同步到对方 · 6s 后消失</span>
+          <span class="state s-err">改档失败：… · 常驻</span>
+        </td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag warn">15.2</span>6 · 切页不丢改名草稿</h2>
+      <table>
+        <tr><th>位置</th><td>设备详情面（<code>RcA2DeviceDetail</code>）的改名 / 管理展开</td></tr>
+        <tr><th>原状</th><td>详情面随切页卸载，<code>editingName</code>/<code>draftName</code>/<code>manageOpen</code> 一并丢失</td></tr>
+        <tr><th>修法</th><td>草稿态上提到不会卸载的工作台层（历史已用同一模式）；换设备才重置</td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag warn">15</span>7 · 重连要确认 · 有中间态 · 失败可中止</h2>
+      <table>
+        <tr><th>位置</th><td>会话顶栏「⋯ → 重连」（<code>RcStage</code> / <code>RcSessionTop</code>）</td></tr>
+        <tr><th>流程</th><td>
+          短确认（<code>将断开与「X」的当前连接并重新发起</code> ·「重连」）<br/>
+          → 过程 <code>正在重连</code><br/>
+          → <code>end</code> 失败则中止：<code>结束当前会话失败，已中止重连</code>
+        </td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag">L2</span>8 · 文件行操作带常驻文字</h2>
+      <table>
+        <tr><th>位置</th><td>文件传输行（<code>RcFilePanel</code>）FolderOpen / X / RotateCcw</td></tr>
+        <tr><th>原状</th><td>常驻图标只有 <code>title</code>/aria，无可见文字（L2 违规）</td></tr>
+        <tr><th>修法</th><td>图标 + 常驻文字，叫法与 aria/别处一致：<code>打开所在文件夹</code> / <code>取消</code> / <code>重试</code></td></tr>
+        <tr><th>备注</th><td>任务中的 <code>RcDeviceMenu.tsx</code> 在现网不存在；A2 设备行已是「连接/检测」文字钮，会话顶栏「更多」已有常驻文字</td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag">体量</span>9 · RcOverlay 超限待拆</h2>
+      <table>
+        <tr><th>现状</th><td><code>RcOverlay.tsx</code> 338 行 &gt; 300。本批未改它的行为，按纪律<strong>只在文件头注明超限待拆</strong>，不顺手重构</td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2><span class="tag warn">P3</span>10 · 光标 overlay 跟随 resize</h2>
+      <table>
+        <tr><th>位置</th><td><code>rcCanvasStyle.cursorOverlayStyle</code> + <code>RcScreenCanvas</code></td></tr>
+        <tr><th>原状</th><td>只在渲染期算定位，窗口 resize 后到下次鼠标移动才自校正</td></tr>
+        <tr><th>修法</th><td><code>ResizeObserver</code> 观察 canvas，尺寸变化即重算 overlay 坐标</td></tr>
+      </table>
+    </section>
+  </div>
+
+  <p class="note">
+    视觉沿用现有 token：圆角 4/8/12 · 间距 4/8/12/16/24 · 字号 11/12/13/15/20（U5）；
+    语义色 <code>--danger</code>/<code>--warning</code>/<code>--success</code>/<code>--accent</code>（U6）；新样式进 CSS Module（U8）。
+  </p>
+</body>
+</html>

@@ -46,9 +46,9 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `logo-options/` | 13 | 9.2 MB | Logo 备选方案（有 index.html 汇总页） |
 | `icon-options/` | 5 | 4.3 MB | 应用图标备选方案 |
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
-| `*.html`（根目录） | 208 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 209 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（208 份，按主题分组）
+## 设计稿清单（209 份，按主题分组）
 
 ### 视觉与品牌（16）
 
@@ -265,12 +265,13 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`doc-editor-preview`](./doc-editor-preview.html) | 2026-08-07 | 8 KB |
 | [`rich-content-card-editor`](./rich-content-card-editor.html) | 2026-08-06 | 8 KB |
 
-### 同步与更新（30）
+### 同步与更新（31）
 
 *设备同步/配对/冲突，以及自动更新、发版说明弹框、版本徽标。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`远程电脑-缺陷修复UX-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E7%BC%BA%E9%99%B7%E4%BF%AE%E5%A4%8DUX-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 9 KB |
 | [`远程电脑-设备优先Windows工作台-A方案-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E5%A4%87%E4%BC%98%E5%85%88Windows%E5%B7%A5%E4%BD%9C%E5%8F%B0-A%E6%96%B9%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-21 近期 | 64 KB |
 | [`远程电脑-批次C-UX一致性-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%89%B9%E6%AC%A1C-UX%E4%B8%80%E8%87%B4%E6%80%A7-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-20 近期 | 23 KB |
 | [`远程电脑-全屏与画面高度-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%85%A8%E5%B1%8F%E4%B8%8E%E7%94%BB%E9%9D%A2%E9%AB%98%E5%BA%A6-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-20 近期 | 28 KB |
@@ -335,8 +336,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 |---|---|---|
 | [`md-outline-jump-microanim-方案2`](./md-outline-jump-microanim-%E6%96%B9%E6%A1%882.html) | 2026-09-20 | 11 KB |
 
-> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 0 份。
+> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 1 份。
 
 ---
 
-_共 208 份设计稿。重新生成：`npm run gen:design-index`_
+_共 209 份设计稿。重新生成：`npm run gen:design-index`_

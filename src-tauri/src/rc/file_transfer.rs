@@ -60,7 +60,18 @@ enum TxOutcome {
 impl TxOutcome {
     fn finish(&self, got: u64, size: u64) -> (TaskState, Option<String>) {
         match self {
-            TxOutcome::Done => (TaskState::Done, None),
+            // P1-5: Done must mean the on-disk byte count matches the declared
+            // size. Trusting plan.offset alone produced short-file "Done".
+            TxOutcome::Done => {
+                if got == size {
+                    (TaskState::Done, None)
+                } else {
+                    (
+                        TaskState::Failed,
+                        Some(format!("完成态字节数不一致：{got}/{size}")),
+                    )
+                }
+            }
             TxOutcome::Canceled => (TaskState::Canceled, None),
             TxOutcome::Stalled => (
                 TaskState::Failed,
@@ -79,8 +90,35 @@ impl TxOutcome {
 struct RecvPlan {
     final_name: String,
     part: PathBuf,
+    #[allow(dead_code)] // 展示用绝对路径；收尾改名按 dir+final_name 重算
     final_path: PathBuf,
     offset: u64,
+    /// `FileState` 里的 part 槽名（传输结束必须 `release_part`）。
+    part_key: String,
+}
+
+/// part 槽 RAII：收/失败/取消路径统一释放，不靠每条分支手写。
+struct PartSlotGuard<'a> {
+    file: &'a super::file_state::FileState,
+    key: String,
+}
+
+impl Drop for PartSlotGuard<'_> {
+    fn drop(&mut self) {
+        self.file.release_part(&self.key);
+    }
+}
+
+/// peer 占位 RAII（P2-6）：handle_file_conn 返回时释放。
+struct PeerSlotGuard<'a> {
+    file: &'a super::file_state::FileState,
+    peer: String,
+}
+
+impl Drop for PeerSlotGuard<'_> {
+    fn drop(&mut self) {
+        self.file.release_peer(&self.peer);
+    }
 }
 
 impl RcService {
@@ -221,6 +259,10 @@ impl RcService {
     }
 
     /// 这条 peer 是否已有文件任务在跑（同一台设备同时只跑一条连接）。
+    /// P2-6: real claim is `FileState::try_reserve_peer` (atomic). This remains
+    /// a cheap snapshot for logs/diagnostics.
+    /// Snapshot busy check (logs/diagnostics). Real claim is `try_reserve_peer`.
+    #[allow(dead_code)]
     fn file_busy(&self, peer: &str) -> bool {
         let snap = self.file.snapshot();
         snap.asks.iter().any(|a| a.peer == peer)
@@ -264,7 +306,6 @@ impl RcService {
         let conn = self.dial_file(peer).await?;
         let peer_name = self.peer_name(peer);
         // C-4：用索引循环，开流失败时把「当前 + 剩余」全部落 Failed task。
-        let items = items;
         let n = items.len();
         for idx in 0..n {
             let (path, name, size) = items[idx].clone();
@@ -405,6 +446,7 @@ impl RcService {
         let ack = decode_ack(&raw)?;
         let (name, size, offset) = match ack {
             FileAck::Deny { reason, code } => {
+                conn.close(1u32.into(), b"denied");
                 return Err(match code.as_deref() {
                     Some(c) => format!("[{c}] {reason}"),
                     None => reason,
@@ -421,7 +463,11 @@ impl RcService {
         let peer_name = self.peer_name(peer);
         // 对方报的断点要与本机 part 的实际长度对得上，否则从头来——
         // 不信任对端报的数字胜过不信任自己的盘。
-        let plan = prepare_recv(&dir, &name, size)?;
+        let plan = prepare_recv(&dir, &name, size, &self.file)?;
+        let _part_slot = PartSlotGuard {
+            file: &self.file,
+            key: plan.part_key.clone(),
+        };
         let offset = if plan.offset == offset { offset } else { 0 };
         // 🔴 P1-4：回落 0 就绝不能留着旧 part——`recv_bytes` 以 append 打开，
         // 旧残余 + 全量新数据拼出来的是损坏文件，且收满即 rename 成 Done。
@@ -499,11 +545,16 @@ impl RcService {
             }
             return;
         }
-        if self.file_busy(&peer) {
+        if !self.file.try_reserve_peer(&peer) {
             conn.close(2u32.into(), b"busy");
             log::info!("[RC] {short} 文件连接被拒：这条设备已有文件任务在跑");
             return;
         }
+        // P2-6: hold the peer slot for the whole connection; drop releases it.
+        let _peer_slot = PeerSlotGuard {
+            file: &self.file,
+            peer: peer.clone(),
+        };
 
         // ── 流循环（P1-3 修复）──
         // 一条连接承载**一批**文件：发送端 `run_send_batch` 每个文件开一条
@@ -524,22 +575,25 @@ impl RcService {
             // ── 魔数 + 头帧 ──
             let mut magic = [0u8; 6];
             if recv_exact(&mut recv, &mut magic).await.is_err() || !file_proto::is_magic(&magic) {
-                deny_file(&mut send, &conn, "不是文件流", code::BAD_HEAD).await;
+                deny_file(&mut send, "不是文件流", code::BAD_HEAD).await;
                 log::warn!("[RC] {short} 文件流魔数不对");
+                conn.close(1u32.into(), b"bad_head");
                 return;
             }
             let raw = match read_frame(&mut recv).await {
                 Ok(b) => b,
                 Err(e) => {
                     log::warn!("[RC] {short} 读文件头失败：{e}");
+                    conn.close(1u32.into(), b"bad_head");
                     return;
                 }
             };
             let head = match file_proto::decode_head(&raw) {
                 Ok(h) => h,
                 Err(d) => {
-                    deny_file(&mut send, &conn, &d.reason, d.code).await;
+                    deny_file(&mut send, &d.reason, d.code).await;
                     log::info!("[RC] {short} 文件头被拒：{}", d.reason);
+                    conn.close(1u32.into(), b"bad_head");
                     return;
                 }
             };
@@ -553,6 +607,7 @@ impl RcService {
                     // 取回是「一次一个文件」的会话式动作，发端收尾即整条连接结束
                     self.serve_pull(&conn, &peer, &short, &resume, send, recv)
                         .await;
+                    conn.close(0u32.into(), b"done");
                     return;
                 }
             }
@@ -596,7 +651,7 @@ impl RcService {
                         AskOutcome::Gone => {
                             // C-5：MAX_ASKS 顶掉最老 ask 时 outcome=Gone。
                             // 关整条连接会把同批后续文件全灭——只拒这一条。
-                            deny_file(&mut send, conn, "确认条已失效（请让对方重试）", code::DENIED)
+                            deny_file(&mut send, "确认条已失效（请让对方重试）", code::DENIED)
                                 .await;
                             log::info!("[RC] {short} 文件确认条已失效，本条拒绝：{name}");
                             return;
@@ -608,7 +663,7 @@ impl RcService {
                 match picked {
                     Some(d) => d,
                     None => {
-                        deny_file(&mut send, conn, "对方拒绝了这次传输", code::DENIED).await;
+                        deny_file(&mut send, "对方拒绝了这次传输", code::DENIED).await;
                         log::info!("[RC] {short} 本机用户拒收文件：{name}");
                         return;
                     }
@@ -617,13 +672,17 @@ impl RcService {
         };
 
         // ── 落点（重名递增 + 续传）──
-        let plan = match prepare_recv(&dir, name, size) {
+        let plan = match prepare_recv(&dir, name, size, &self.file) {
             Ok(p) => p,
             Err(e) => {
-                deny_file(&mut send, conn, &e, code::LOCAL).await;
+                deny_file(&mut send, &e, code::LOCAL).await;
                 log::warn!("[RC] {short} 无法落盘：{e}");
                 return;
             }
+        };
+        let _part_slot = PartSlotGuard {
+            file: &self.file,
+            key: plan.part_key.clone(),
         };
         // 回确认：**此刻才允许对方开始灌字节**
         let ack = FileAck::Accept {
@@ -706,7 +765,7 @@ impl RcService {
         self.emit_file_state();
 
         let Some(path) = picked else {
-            deny_file(&mut send, conn, "对方取消了这次请求", code::DENIED).await;
+            deny_file(&mut send, "对方取消了这次请求", code::DENIED).await;
             return;
         };
 
@@ -714,17 +773,17 @@ impl RcService {
         let meta = match tokio::fs::metadata(&path).await {
             Ok(m) if m.is_file() => m,
             Ok(_) => {
-                deny_file(&mut send, conn, "只支持传文件，目录留到后续版本", code::LOCAL).await;
+                deny_file(&mut send, "只支持传文件，目录留到后续版本", code::LOCAL).await;
                 return;
             }
             Err(e) => {
-                deny_file(&mut send, conn, &format!("读不到这个文件：{e}"), code::LOCAL).await;
+                deny_file(&mut send, &format!("读不到这个文件：{e}"), code::LOCAL).await;
                 return;
             }
         };
         let size = meta.len();
         if size > MAX_FILE_BYTES {
-            deny_file(&mut send, conn, "文件超过上限", code::SIZE_LIMIT).await;
+            deny_file(&mut send, "文件超过上限", code::SIZE_LIMIT).await;
             return;
         }
         let raw_name = path
@@ -734,7 +793,7 @@ impl RcService {
         let name = match safe_file_name(&raw_name) {
             Ok(n) => n,
             Err(e) => {
-                deny_file(&mut send, conn, &format!("文件名不能用：{e}"), code::BAD_NAME).await;
+                deny_file(&mut send, &format!("文件名不能用：{e}"), code::BAD_NAME).await;
                 return;
             }
         };
@@ -855,7 +914,7 @@ async fn send_bytes(
     (TxOutcome::Done, sent)
 }
 
-/// 把流里的字节写到 `plan.part`，收满后 `rename` 成最终名。
+/// 把流里的字节写到 `plan.part`，收满后以**绝不覆盖**的方式改成最终名。
 async fn recv_bytes(
     svc: &Arc<RcService>,
     recv: &mut RecvStream,
@@ -877,8 +936,38 @@ async fn recv_bytes(
             )
         }
     };
-    let mut buf = vec![0u8; CHUNK];
+    // P1-5: never trust plan.offset alone. If the on-disk part length disagrees,
+    // starting from that offset produces a short/corrupt file that still renames
+    // to Done. Offset 0 + leftover tail -> truncate and take the full stream.
+    // Negotiated resume offset + mismatch -> abort (sender is mid-file; we cannot
+    // rewind without a new handshake).
+    let actual = match f.metadata().await {
+        Ok(m) => m.len(),
+        Err(e) => {
+            return (
+                TxOutcome::Io(format!("读落盘文件长度失败：{e}")),
+                plan.offset,
+            )
+        }
+    };
     let mut got = plan.offset;
+    if actual != plan.offset {
+        if plan.offset == 0 {
+            if let Err(e) = f.set_len(0).await {
+                return (TxOutcome::Io(format!("清空落盘残余失败：{e}")), 0);
+            }
+            got = 0;
+        } else {
+            return (
+                TxOutcome::Io(format!(
+                    "续传偏移与磁盘长度不一致（声明 {}，实际 {}），请重试",
+                    plan.offset, actual
+                )),
+                0,
+            );
+        }
+    }
+    let mut buf = vec![0u8; CHUNK];
     while got < size {
         if !svc.file.is_running(task_id) {
             // 主动取消：**保留 `.pppart`**，下次可续（设计稿 11.4 白送的暂停/恢复）
@@ -915,11 +1004,73 @@ async fn recv_bytes(
         return (TxOutcome::Io(format!("落盘失败：{e}")), got);
     }
     drop(f);
-    // 🔴 只有收满才改名。补零凑满这种事一次都不能做——那会让「完成」变成谎言。
-    if let Err(e) = tokio::fs::rename(&plan.part, &plan.final_path).await {
-        return (TxOutcome::Io(format!("改名失败：{e}")), got);
+    // P1-5: assert real on-disk length before claiming Done / renaming.
+    let final_len = match std::fs::metadata(&plan.part) {
+        Ok(m) => m.len(),
+        Err(e) => return (TxOutcome::Io(format!("收尾读长度失败：{e}")), got),
+    };
+    if got != size || final_len != size {
+        return (
+            TxOutcome::Io(format!(
+                "落盘长度与声明大小不一致（got={got}, disk={final_len}, size={size}）"
+            )),
+            got,
+        );
     }
-    (TxOutcome::Done, got)
+    // P1-4: rename must never clobber an existing final file. Windows
+    // std::fs::rename uses MOVEFILE_REPLACE_EXISTING — hard_link fails if dest
+    // exists, then drop the part name. Same-dir = same volume = hard_link ok.
+    let dir = plan
+        .part
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    match finalize_recv_name(&plan.part, &dir, &plan.final_name) {
+        Ok(_final_name) => (TxOutcome::Done, got),
+        Err(e) => (TxOutcome::Io(e), got),
+    }
+}
+
+/// Claim the final name without overwriting. On conflict, bump the name and retry.
+/// `dir` is the receive directory used to re-check disk occupancy.
+fn finalize_recv_name(
+    part: &Path,
+    dir: &Path,
+    preferred: &str,
+) -> Result<String, String> {
+    let mut name = preferred.to_string();
+    let mut tried: Vec<String> = vec![name.clone()];
+    for _ in 0..32 {
+        let dest = extend_long_path(dir.join(&name));
+        match rename_no_overwrite(part, &dest) {
+            Ok(()) => return Ok(name),
+            Err(e) if is_name_conflict(&e) => {
+                name = file_proto::unique_name(preferred, |n| {
+                    tried.iter().any(|t| t == n) || dir.join(n).exists()
+                })?;
+                tried.push(name.clone());
+            }
+            Err(e) => return Err(format!("改名失败：{e}")),
+        }
+    }
+    Err("同名文件过多，无法为收尾腾出空位".into())
+}
+
+fn is_name_conflict(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::PermissionDenied
+    ) || e.raw_os_error() == Some(183) /* ERROR_ALREADY_EXISTS */
+}
+
+/// 收尾改名：**绝不覆盖**已有最终文件。
+///
+/// Windows 的 `std::fs::rename` 走 `MOVEFILE_REPLACE_EXISTING`，目标存在会被
+/// 静默替换。`hard_link` 在目标存在时失败；同目录 = 同卷，必可 hard_link。
+fn rename_no_overwrite(part: &Path, dest: &Path) -> std::io::Result<()> {
+    std::fs::hard_link(part, dest)?;
+    std::fs::remove_file(part)?;
+    Ok(())
 }
 
 // ── 落点与目录 ──────────────────────────────────────────────────────────
@@ -958,16 +1109,35 @@ fn extend_long_path(p: PathBuf) -> PathBuf {
     p
 }
 
-fn prepare_recv(dir: &Path, name: &str, size: u64) -> Result<RecvPlan, String> {
+fn prepare_recv(
+    dir: &Path,
+    name: &str,
+    size: u64,
+    file: &super::file_state::FileState,
+) -> Result<RecvPlan, String> {
     if !dir.is_dir() {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("建目录失败（{}）：{}", dir.display(), e))?;
     }
-    let final_name = file_proto::unique_name(name, |n| dir.join(n).exists())?;
+    // P1-4: final name OR its .pppart counts as taken (on disk or reserved).
+    let mut local_taken: Vec<String> = Vec::new();
+    let final_name = loop {
+        let candidate = file_proto::unique_name(name, |n| {
+            file_proto::name_or_part_taken(n, |p| dir.join(p).exists())
+                || file.part_reserved(file_proto::part_path(n).as_str())
+                || local_taken.iter().any(|t| t == n)
+        })?;
+        let key = file_proto::part_path(&candidate);
+        if file.try_reserve_part(&key) {
+            break candidate;
+        }
+        local_taken.push(candidate);
+    };
     // fs 操作（append / rename / remove）走前缀化路径；给前端展示 /
     // 「打开所在文件夹」的路径保持原样（explorer 不认 `\\?\` 形态）。
     let final_path = extend_long_path(dir.join(&final_name));
     let part = extend_long_path(dir.join(part_path(&final_name)));
+    let part_key = part_path(&final_name);
     let offset = match std::fs::metadata(&part) {
         Ok(m) if m.is_file() => {
             let len = m.len();
@@ -979,7 +1149,10 @@ fn prepare_recv(dir: &Path, name: &str, size: u64) -> Result<RecvPlan, String> {
                 0
             }
         }
-        Ok(_) => return Err("落点上有个同名的目录，写不进去".to_string()),
+        Ok(_) => {
+            file.release_part(&part_key);
+            return Err("落点上有个同名的目录，写不进去".to_string());
+        }
         Err(_) => 0,
     };
     Ok(RecvPlan {
@@ -987,6 +1160,7 @@ fn prepare_recv(dir: &Path, name: &str, size: u64) -> Result<RecvPlan, String> {
         part,
         final_path,
         offset,
+        part_key,
     })
 }
 
@@ -1060,11 +1234,12 @@ async fn recv_exact(r: &mut RecvStream, buf: &mut [u8]) -> Result<(), String> {
         .map_err(|e| format!("读流出错：{e}"))
 }
 
-/// 拒绝一条文件请求：先回 `deny` 帧、再关连接。
+/// 拒绝一条文件请求：回 `deny` 帧并结束**本条 bi-stream**。
 ///
-/// 照 `service.rs::deny_and_close` 的「两条腿都留着」：只关不说是「点了没反应」，
-/// 只说不关会让对端流悬着。
-async fn deny_file(send: &mut SendStream, conn: &Connection, reason: &str, c: &str) {
+/// P2-5: do **not** close the whole connection — a multi-file batch must keep
+/// going after one file is denied. The sender closes the connection when the
+/// batch ends. Single-file callers close on their own exit path.
+async fn deny_file(send: &mut SendStream, reason: &str, c: &str) {
     let ack = FileAck::Deny {
         reason: reason.to_string(),
         code: Some(c.to_string()),
@@ -1073,5 +1248,58 @@ async fn deny_file(send: &mut SendStream, conn: &Connection, reason: &str, c: &s
         let _ = write_frame(send, &bytes).await;
     }
     let _ = send.finish();
-    conn.close(1u32.into(), format!("[{}] {}", c, reason).as_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 完成态必须字节数一致() {
+        let (st, err) = TxOutcome::Done.finish(100, 100);
+        assert_eq!(st, TaskState::Done);
+        assert!(err.is_none());
+        // 短文件不得假 Done（P1-5）
+        let (st, err) = TxOutcome::Done.finish(50, 100);
+        assert_eq!(st, TaskState::Failed);
+        assert!(err.unwrap().contains("不一致"));
+    }
+
+    #[test]
+    fn rename绝不覆盖已有文件() {
+        let dir = std::env::temp_dir().join(format!("pp-rename-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("a.bin.pppart");
+        let dest = dir.join("a.bin");
+        std::fs::write(&part, b"new").unwrap();
+        std::fs::write(&dest, b"old").unwrap();
+        let r = rename_no_overwrite(&part, &dest);
+        assert!(r.is_err(), "目标存在时不得覆盖");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"old", "旧文件必须原样");
+        assert!(part.exists(), "part 应保留，便于换名重试");
+        // 目标空闲时成功，且 part 消失
+        let dest2 = dir.join("b.bin");
+        std::fs::write(&part, b"new").unwrap();
+        rename_no_overwrite(&part, &dest2).unwrap();
+        assert_eq!(std::fs::read(&dest2).unwrap(), b"new");
+        assert!(!part.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 收尾冲突时递增换名() {
+        let dir = std::env::temp_dir().join(format!("pp-final-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("报告.zip.pppart");
+        std::fs::write(&part, b"payload").unwrap();
+        std::fs::write(dir.join("报告.zip"), b"existing").unwrap();
+        let name = finalize_recv_name(&part, &dir, "报告.zip").unwrap();
+        assert_ne!(name, "报告.zip", "冲突时必须换名");
+        assert_eq!(std::fs::read(dir.join("报告.zip")).unwrap(), b"existing");
+        assert_eq!(std::fs::read(dir.join(&name)).unwrap(), b"payload");
+        assert!(!part.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

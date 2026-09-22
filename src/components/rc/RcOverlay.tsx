@@ -3,6 +3,9 @@
  * 没人申请且未被控/未发起时返回 null，不占位。
  *
  * ❗ 只看 `rc_enabled`，**不**依赖知识库同步：远程通道是独立的（方案 A）。
+ *
+ * ⚠️ 体量红线：本文件 338 行 &gt; 300。按纪律本批未改行为故不拆；下次碰到要改它时
+ *    必须先拆子组件（横幅拆分：outbound / reconnect / unoPass / joins 各一块）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";

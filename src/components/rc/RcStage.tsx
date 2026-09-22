@@ -5,16 +5,18 @@
  * 已贴红线（.tsx ≤ 300）。四态判据本身在 `lib/rcWorkbench`（纯函数），这里只做
  * 「按态渲染」；被控时补刷 trusted 的副作用也搬进来——它与 RcInboundView 同生共死。
  *
- * 空态 / 等待态的视觉按 v4 稿 hero 化：等待态不再是一行孤字，而是显示器插画 +
- * 一句话 + 小贴士（数据不变，纯表现层）。
+ * 2026-09-21（A 方案稿对账）：去掉空闲态的装饰层——欢迎插画 / 极光 / 扫光 /
+ * 悬浮，等待态只留「一句话 + 小贴士」。那层装饰带 4 条常驻 infinite 动画，
+ * 而本项目有 4 个窗口各挂一份 DOM（AGENTS 规则 8.1 / 8.2），稿债与性能账同源。
  */
 import { useEffect, useMemo } from "react";
-import { MonitorUp, Lightbulb } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcLaunch } from "@/hooks/useRcLaunch";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
 import { useToast } from "@/components/Toast";
+import { confirmDialog } from "@/lib/confirm";
 import { explainRcError } from "@/lib/rcDeny";
 import { RcSessionView } from "./RcSessionView";
 import { RcPendingWait } from "./RcPendingWait";
@@ -129,7 +131,21 @@ export function RcStage({
           busy={rc.busy}
           onEnd={() => void rc.end()}
           onReconnect={async () => {
-            await rc.end();
+            // P3-8：重连会掐断当前画面，先短确认（可撤销类操作不该静默一键断连）
+            const name = session.peer_name || fingerprintOf(session.peer);
+            const ok = await confirmDialog({
+              title: "重新连接",
+              message: `将断开与「${name}」的当前连接并重新发起。`,
+              confirmText: "重连",
+            });
+            if (!ok) return;
+            toast("正在重连", "info");
+            const ended = await rc.end();
+            // end 失败必须中止：继续 doRequest 会变成「连上又立刻被自己掐掉」
+            if (!ended) {
+              toast("结束当前会话失败，已中止重连", "error");
+              return;
+            }
             await doRequest(session.peer, session.capability);
           }}
           /** B-1 会话内提权：重新协商式（结束 + 重新申请「可控」）。 */
@@ -161,16 +177,8 @@ export function RcStage({
       ) : (
         !rc.error &&
         (hasTargets ? (
-          // v4 hero：等待连接不再是一行孤字。数据与原 wbIdle 完全一致，纯表现层。
+          // 装饰层已删（2026-09-21）：只留文字。数据与原 wbIdle 完全一致，纯表现层。
           <div className={styles.wbHero}>
-            <span className={styles.heroMonitor} aria-hidden="true">
-              {/* v5：呼吸辉光（opacity）+ 高光游移（transform）——都是合成器层，
-                  替代 v4 的 box-shadow 扩散动画（性能预算 F 节落地纪律①） */}
-              <span className={styles.heroGlow} />
-              <span className={styles.heroSheen} />
-              <MonitorUp size={46} strokeWidth={1.6} />
-            </span>
-            <span className={styles.heroShadow} aria-hidden="true" />
             <div className={styles.heroTitle}>正在等待远程会话连接</div>
             <div className={styles.heroLead}>
               在左侧选择一台设备发起远程；或保持「允许被远程」开启，等待对方申请接入。

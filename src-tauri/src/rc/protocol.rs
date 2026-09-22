@@ -90,6 +90,20 @@ pub enum RcFrame {
     /// 被控端同意。
     Accept {
         capability: Capability,
+        /// 被控端**自报的操作系统**短标签（如 `Windows 11`）。
+        ///
+        /// 兼容三件套与 `vid_dgram` 同款：旧被控端不认这个字段，serde 忽略未知键
+        /// 照常受理（新版连旧版 = 设备行上少一格系统，不影响会话）；旧被控端
+        /// **发**来的 Accept 没有它，`default` 补 None。控制端收到后写进设备行
+        /// （`rc_devices.os`），设备详情显示。
+        ///
+        /// ❗ 为什么挂在 `Accept` 而不是配对手势包（`sync::presence::Extras` /
+        ///   邀请码）：所有会话——敲门 / 邀请码 / 无人值守码 / 固定密码 / 免确认
+        ///   自动接受——**都必经这一处** Accept（`service.rs` 里 `Accept` 只有一处
+        ///   构造）。单承载点没有「某条配对路径漏传」的缺口；而 `Extras` 是 rc 与
+        ///   笔记同步**共用**结构，改它要连带回归同步域。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        os: Option<String>,
     },
     /// 被控端拒绝 / 门禁未过。`code` 供前端分档文案，旧对端可能没有。
     Deny {
@@ -232,6 +246,42 @@ mod tests {
             RcFrame::Deny { reason, code } => {
                 assert_eq!(reason, "busy");
                 assert_eq!(code, None);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accept_carries_os_and_stays_compatible() {
+        // 带系统：原样往返
+        let f = RcFrame::Accept {
+            capability: Capability::Control,
+            os: Some("Windows 11".into()),
+        };
+        let b = f.encode().unwrap();
+        assert_eq!(RcFrame::decode(&b).unwrap(), f);
+        assert!(
+            String::from_utf8(b).unwrap().contains("Windows 11"),
+            "自报的系统要真的在线上包里"
+        );
+
+        // 不带系统（旧本机 / 注册表采不到）：不序列化该字段，线上包保持最小
+        let minimal = RcFrame::Accept {
+            capability: Capability::View,
+            os: None,
+        };
+        let s = String::from_utf8(minimal.encode().unwrap()).unwrap();
+        assert!(
+            !s.contains("\"os\""),
+            "没有系统时不该把 os 发出去（发 null 是多余的线上字节）：{s}"
+        );
+
+        // 旧被控端发来的 Accept 没有 os 字段，也要能解（default 补 None）
+        let old = br#"{"t":"accept","capability":"view"}"#;
+        match RcFrame::decode(old).unwrap() {
+            RcFrame::Accept { capability, os } => {
+                assert_eq!(capability, Capability::View);
+                assert_eq!(os, None, "旧被控端没有这个字段，反序列化补 None");
             }
             other => panic!("unexpected {other:?}"),
         }

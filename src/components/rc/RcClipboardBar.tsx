@@ -8,11 +8,12 @@
  * 且是高亮态，同一句话说两遍只会挤掉底栏里别的东西。只在**失败连续 3 次**时补警示
  * ——那才是需要用户动手的状态。
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { rcPullClipboard, rcPushClipboard } from "@/lib/api/rc";
+import { useOkAutoClear } from "@/hooks/useOkAutoClear";
 import styles from "./RemoteComputer.module.css";
 
-export type ClipPhase = "idle" | "loading" | "ok" | "err";
+export type ClipPhase = "idle" | "loading" | "ok" | "info" | "err";
 
 export function RcClipboardBar({
   clipAuto,
@@ -32,6 +33,17 @@ export function RcClipboardBar({
   const [pushPhase, setPushPhase] = useState<ClipPhase>("idle");
   const [pullMsg, setPullMsg] = useState("");
   const [pushMsg, setPushMsg] = useState("");
+  // P3-5：成功/信息浮条 6s 自清；错误保留并给重试
+  const clearPush = useCallback(() => {
+    setPushPhase("idle");
+    setPushMsg("");
+  }, []);
+  const clearPull = useCallback(() => {
+    setPullPhase("idle");
+    setPullMsg("");
+  }, []);
+  useOkAutoClear(pushPhase === "idle" ? null : pushPhase, clearPush);
+  useOkAutoClear(pullPhase === "idle" ? null : pullPhase, clearPull);
 
   const push = async () => {
     setPushPhase("loading");
@@ -39,7 +51,8 @@ export function RcClipboardBar({
     try {
       const t = await navigator.clipboard.readText();
       if (!t) {
-        setPushPhase("err");
+        // 真空白不是失败：不给重试（重试也还是空）
+        setPushPhase("info");
         setPushMsg("剪贴板是空的");
         onStatus("剪贴板是空的", "info");
         return;
@@ -59,11 +72,17 @@ export function RcClipboardBar({
     setPullPhase("loading");
     setPullMsg("等待对方剪贴板…");
     try {
+      // 后端约定：空串 = 对方真空白；null = 超时/失败（见 rcPullClipboard）
       const t = await rcPullClipboard();
-      if (t == null || t === "") {
+      if (t === "") {
+        // 真空白 ≠ 拉取失败（U3.5）：不给重试
+        setPullPhase("info");
+        setPullMsg("对方剪贴板是空的");
+        onStatus("对方剪贴板是空的", "info");
+      } else if (t == null) {
         setPullPhase("err");
-        setPullMsg("对方剪贴板为空或拉取失败");
-        onStatus("对方剪贴板为空或拉取失败", "info");
+        setPullMsg("拉取对方剪贴板失败");
+        onStatus("拉取对方剪贴板失败", "error");
       } else {
         await navigator.clipboard.writeText(t);
         setPullPhase("ok");
@@ -78,7 +97,13 @@ export function RcClipboardBar({
   };
 
   const phaseCls = (p: ClipPhase) =>
-    p === "ok" ? styles.fbOk : p === "err" ? styles.fbBad : p === "loading" ? styles.fbInfo : "";
+    p === "ok"
+      ? styles.fbOk
+      : p === "err"
+        ? styles.fbBad
+        : p === "loading" || p === "info"
+          ? styles.fbInfo
+          : "";
 
   return (
     <>
@@ -107,6 +132,16 @@ export function RcClipboardBar({
       )}
       {pullPhase !== "idle" && (
         <span className={`${styles.fb} ${phaseCls(pullPhase)}`}>{pullMsg}</span>
+      )}
+      {/* U3.5：失败必须给重试入口（空态不需要——对方空剪贴板重试也还是空） */}
+      {(pushPhase === "err" || pullPhase === "err") && (
+        <button
+          type="button"
+          className={styles.miniBtn}
+          onClick={() => void (pushPhase === "err" ? push() : pull())}
+        >
+          重试
+        </button>
       )}
     </>
   );

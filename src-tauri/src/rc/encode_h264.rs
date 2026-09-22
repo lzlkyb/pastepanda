@@ -169,7 +169,8 @@ pub struct H264Packet {
 }
 
 pub struct MfH264Encoder {
-    transform: IMFTransform,
+    /// COM 引用。`release_com` 里**先**置空再 `CoUninitialize`（同 `dxgi.rs::drop_com`）。
+    transform: Option<IMFTransform>,
     /// Q3：本编码器出的是什么流（H.264/HEVC）。发送侧写进帧元数据，
     /// 前端据此选解码器。
     codec: VideoCodec,
@@ -399,7 +400,7 @@ impl MfH264Encoder {
                 .map_err(mf_err)?;
 
             Ok(Self {
-                transform,
+                transform: Some(transform),
                 codec,
                 events,
                 need_input: false,
@@ -496,7 +497,11 @@ impl MfH264Encoder {
         unsafe {
             match self.events.clone() {
                 None => {
-                    self.transform.ProcessInput(0, &sample, 0).map_err(mf_err)?;
+                    self.transform
+                        .as_ref()
+                        .ok_or_else(|| "H.264 编码器已释放".to_string())?
+                        .ProcessInput(0, &sample, 0)
+                        .map_err(mf_err)?;
                     self.drain()?;
                 }
                 Some(events) => {
@@ -507,7 +512,11 @@ impl MfH264Encoder {
                         self.pump_one(&events, Some(deadline))?;
                     }
                     self.need_input = false;
-                    self.transform.ProcessInput(0, &sample, 0).map_err(mf_err)?;
+                    self.transform
+                        .as_ref()
+                        .ok_or_else(|| "H.264 编码器已释放".to_string())?
+                        .ProcessInput(0, &sample, 0)
+                        .map_err(mf_err)?;
                     // 低延迟模式一进一出；队列里残留的旧 HaveOutput 也一并收掉，
                     // 否则输出逐帧漂移、延迟累积。
                     let mut collected = 0usize;
@@ -594,7 +603,10 @@ impl MfH264Encoder {
         };
         let mut status = 0u32;
         let mut outs = [od];
-        match self.transform.ProcessOutput(0, &mut outs, &mut status) {
+        let Some(transform) = self.transform.as_ref() else {
+            return Err("H.264 编码器已释放".into());
+        };
+        match transform.ProcessOutput(0, &mut outs, &mut status) {
             Ok(()) => {}
             Err(e) if e.code() == MF_E_TRANSFORM_NEED_MORE_INPUT => return Ok(false),
             Err(e) => {
@@ -628,16 +640,31 @@ impl MfH264Encoder {
     }
 }
 
-impl Drop for MfH264Encoder {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = self
-                .transform
-                .ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+impl MfH264Encoder {
+    /// 🔴 必须先放掉所有 COM 引用再 `CoUninitialize`，顺序反了就是悬垂释放
+    /// （同 `dxgi.rs::drop_com`）。字段在 `Drop::drop` 返回后才自动 drop，
+    /// 所以不能把 `CoUninitialize` 写在 Drop 体末尾就完事——那时 transform
+    /// /events/codec_api/gpu 还活着。
+    fn release_com(&mut self) {
+        if let Some(t) = self.transform.as_ref() {
+            unsafe {
+                let _ = t.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+            }
         }
+        self.transform = None;
+        self.events = None;
+        self.codec_api = None;
+        self.gpu = None;
         if self.com_owned {
             unsafe { CoUninitialize() };
+            self.com_owned = false;
         }
+    }
+}
+
+impl Drop for MfH264Encoder {
+    fn drop(&mut self) {
+        self.release_com();
     }
 }
 

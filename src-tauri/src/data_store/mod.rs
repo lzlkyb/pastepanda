@@ -1457,7 +1457,8 @@ impl DataStore {
                  last_seen  INTEGER NOT NULL DEFAULT 0,
                  last_path  TEXT NOT NULL DEFAULT '',
                  trusted    INTEGER NOT NULL DEFAULT 0,
-                 auto_accept INTEGER NOT NULL DEFAULT 0
+                 auto_accept INTEGER NOT NULL DEFAULT 0,
+                 os         TEXT NOT NULL DEFAULT ''
              );",
         ) {
             log::error!("[DataStore] 建 rc_devices 表失败: {}", e);
@@ -1559,6 +1560,36 @@ impl DataStore {
                     log::warn!("[DataStore] rc_devices.auto_accept 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 rc_devices.auto_accept 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：rc_devices.os —— 对端**自报的操作系统**短标签
+        // （`Windows 11` / `macOS` / `Linux`）。
+        //
+        // 来源是会话里的 `Accept` 帧（`rc/protocol.rs` 的 `Accept::os`）：被控端
+        // 自报、控制端收到即写。空串 = 还没建立过会话（或对端是旧版、采不到），
+        // **不是**「未知系统」——别拿它当默认值摆出去。
+        //
+        // 为什么不走配对握手（`sync::presence::Extras` / 邀请码）：`Extras` 是 rc 与
+        // 笔记同步**共用**结构，且配对有多条路径，改一处必漏一处；`Accept` 只有一处构造。
+        let has_os: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('rc_devices') WHERE name = 'os'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_os {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE rc_devices ADD COLUMN os TEXT NOT NULL DEFAULT '';",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] rc_devices.os 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 rc_devices.os 列失败: {}", e);
                     return Err(e);
                 }
             }

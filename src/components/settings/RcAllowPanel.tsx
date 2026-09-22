@@ -7,9 +7,9 @@
  * 只有 deviceAvatarStyle（按设备 id 派生）是真正的动态值，保留在 style 上。
  * `shared` 是设置页共用的那几个类（sRow/sSection 等）。
  */
-import type { RcMonitorInfo, RcStatus, RcTargetDevice } from "@/lib/api/rc";
+import type { RcEncodeCaps, RcMonitorInfo, RcStatus, RcTargetDevice } from "@/lib/api/rc";
 import { rcListMonitors, rcEncodeCaps } from "@/lib/api/rc";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { UseRc } from "@/hooks/useRc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { deviceAvatarStyle, presenceMainLabel, relTime } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
@@ -67,17 +67,38 @@ export function RcAllowPanel({
   // 关主开关时：整块降透明度，且交互区禁用（说明文字仍可读）
   const gate = off ? styles.rcGated : undefined;
   // 逐屏档要本机显示器列表——这里配的是「本机作为被控端」时的采集范围，所以是本机的屏
-  const [monitors, setMonitors] = useState<RcMonitorInfo[]>([]);
+  // null = 未知（加载中或失败），[] = 真的只有固定两档。失败不能落成 []（U3.5）。
+  const [monitors, setMonitors] = useState<RcMonitorInfo[] | null>(null);
   // P1：fps120 档门控要本机编码能力（硬件 D3D11-aware MFT + 刷新率）
-  const [caps, setCaps] = useState<{ h264_gpu: boolean; hevc_hw: boolean; refresh_hz: number } | null>(null);
-  useEffect(() => {
-    void rcListMonitors()
-      .then(setMonitors)
-      .catch(() => setMonitors([]));
-    void rcEncodeCaps()
-      .then(setCaps)
-      .catch(() => setCaps(null));
+  const [caps, setCaps] = useState<RcEncodeCaps | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadDone, setLoadDone] = useState(false);
+
+  const loadLocalAbility = useCallback(async () => {
+    setLoadError(null);
+    setLoadDone(false);
+    const [mRes, cRes] = await Promise.allSettled([rcListMonitors(), rcEncodeCaps()]);
+    if (mRes.status === "fulfilled") setMonitors(mRes.value);
+    else setMonitors(null);
+    if (cRes.status === "fulfilled") setCaps(cRes.value);
+    else setCaps(null);
+    // 两条都失败时合并成一句「能力」；单条失败说清单条（U3.5：失败 ≠ 不存在）
+    if (mRes.status === "rejected" && cRes.status === "rejected") {
+      setLoadError("未能读取本机能力");
+    } else if (cRes.status === "rejected") {
+      setLoadError("未能读取本机编码能力");
+    } else if (mRes.status === "rejected") {
+      setLoadError("未能读取本机显示器列表");
+    }
+    setLoadDone(true);
   }, []);
+
+  useEffect(() => {
+    void loadLocalAbility();
+  }, [loadLocalAbility]);
+
+  const capsUnknown = loadDone && caps === null;
+  const monitorsUnknown = loadDone && monitors === null;
   const qualities = visibleQualities({
     h264Gpu: caps?.h264_gpu,
     refreshHz: caps?.refresh_hz,
@@ -111,9 +132,24 @@ export function RcAllowPanel({
 
       {/* 画质档 + 截取范围 */}
       <div className={`${styles.rcBlockSpaced} ${gate ?? ""}`}>
+        {/* U3.5：读失败要出错误条 + 重试，禁止落成「能力不存在」的空档位表 */}
+        {loadError && (
+          <div className={styles.rcLoadError} role="alert">
+            <span>{loadError}</span>
+            <button
+              type="button"
+              className={styles.rcRetryBtn}
+              onClick={() => void loadLocalAbility()}
+            >
+              重试
+            </button>
+          </div>
+        )}
         <div className={styles.rcLabel}>画质档（被控端编码）</div>
         <div className={styles.rcHint}>
-          默认「自动」：会话中按延迟与带宽在 流畅/均衡/清晰/超清 间自动切换；选其它档即锁定。
+          {capsUnknown
+            ? "未能读取本机能力，已隐藏高帧率+/4K60。"
+            : "默认「自动」：会话中按延迟与带宽在 流畅/均衡/清晰/超清 间自动切换；选其它档即锁定。"}
         </div>
         {/* 与「远程电脑」面板的画质条共用同一张档位表（lib/rcQuality）；
             fps120 档只在能力达标（P1 visibleQualities）时出现 */}
@@ -133,9 +169,12 @@ export function RcAllowPanel({
           </div>
         )}
         <div className={styles.rcLabelTop}>画面范围</div>
+        {monitorsUnknown && (
+          <div className={styles.rcHint}>未能读取本机显示器列表，已隐藏逐屏选项。</div>
+        )}
         {/* 与画质条共用 scopeOptions：改前这里只有「整个虚拟屏 / 仅主屏」两项，缺逐屏 */}
         <ChoiceRow
-          options={scopeOptions(monitors)}
+          options={scopeOptions(monitors ?? [])}
           value={status.capture_scope}
           disabled={off || rc.busy}
           onPick={(k) => void rc.setCaptureScope(k)}

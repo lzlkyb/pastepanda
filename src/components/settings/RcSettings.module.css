@@ -52,6 +52,30 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+/* U3.5：能力/显示器读取失败条。必须与「真的没有该档」可区分，并自带重试。 */
+.rcLoadError {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.rcRetryBtn {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
 .rcDevState {
   font-size: 11px;
   flex-shrink: 0;

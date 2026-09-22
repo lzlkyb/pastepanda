@@ -21,12 +21,13 @@
  * 全屏/适配为什么不在这里：它们渲染在 `.fakeScreen` **内部**，全屏时才会跟画面
  * 一起进全屏态；放到底栏等于全屏后按钮消失（只剩 Esc 能退出）。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { rcSendInput, rcSetBitratePct, type RcQuality, type RcCaptureScope } from "@/lib/api/rc";
 import { RC_BITRATE_OPTIONS, visibleQualities } from "@/lib/rcQuality";
 import { scopeOptions } from "@/lib/rcScope";
 import type { FitMode } from "@/lib/rcSessionStats";
 import type { UseRc } from "@/hooks/useRc";
+import { useOkAutoClear } from "@/hooks/useOkAutoClear";
 import { RcDropdown } from "./RcDropdown";
 import { RcClipboardBar } from "./RcClipboardBar";
 import { RcFileBar } from "./RcFileBar";
@@ -82,6 +83,9 @@ export function RcSessionBar({
   frameIdleSec: number;
 }) {
   const [fb, setFb] = useState<Fb>(null);
+  // P3-5：成功浮条 6s 自动清（对齐 U4 撤销条）；错误保留
+  const clearFb = useCallback(() => setFb(null), []);
+  useOkAutoClear(fb?.kind ?? null, clearFb);
   /** G6：文件操作组（传文件 / 取文件 / 进度）要对端 node_id——从会话里取。 */
   const peer = rc.status?.session?.peer ?? "";
   // Q7：会话中显示器列表来自**对端**（caps 控制帧带几何信息），本机的会误导
@@ -178,7 +182,12 @@ export function RcSessionBar({
       },
       "码率已同步到对方",
     ).then((ok) => {
-      if (ok) void rcSetBitratePct(pct).catch(() => {});
+      if (ok) {
+        // 本地偏好写失败不能静默（U3.5）：会话内已生效，下次会话可能回落旧值
+        void rcSetBitratePct(pct).catch(() => {
+          onStatus("本次生效，下次会话可能恢复原码率", "info");
+        });
+      }
     });
   };
 

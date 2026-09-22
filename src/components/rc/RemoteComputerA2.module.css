@@ -1,16 +1,5 @@
-.root {
-  min-width: 0;
-  min-height: 0;
-  color: var(--text-primary);
-  background: var(--app-bg);
-  font-family:
-    "SF Pro Text",
-    "Microsoft YaHei",
-    "Segoe UI",
-    system-ui,
-    -apple-system,
-    sans-serif;
-}
+
+
 
 .workbench {
   width: 100vw;
@@ -31,69 +20,157 @@
     sans-serif;
 }
 
+/* ── 标题栏（批7：窗口改 decorations(false)，这一条兼作拖拽区 ＋ 自绘窗口按钮）
+   48px 三格「品牌 | 状态位 | 窗口按钮」，照 A 方案稿 `.titlebar`。
+   🔴 右侧 **不留 padding**：窗口按钮要贴住窗口右边缘（Windows 原生位置），
+      留一条 14px 的缝出来，那条缝会被 drag-region 当成拖动区。 */
 .titleBar {
-  min-height: 58px;
-  display: flex;
+  flex: 0 0 48px;
+  height: 48px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 10px;
-  padding: 0 14px;
+  padding-left: 14px;
   background: var(--card-bg);
   border-bottom: 1px solid var(--border-color);
   box-shadow: var(--shadow-md);
+  /* 拖动区上按下鼠标不该选中文字（Tauri 的 drag.js 只在命中时 preventDefault，
+     命中判定之外的 mousedown 仍会走到这里，所以这条不能省） */
+  user-select: none;
   z-index: 2;
 }
 
+.brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .brandIcon {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
-  color: var(--accent);
-  background: var(--accent-light);
+  flex: 0 0 auto;
+  /* 稿子写的是纯白；这里用 accent 底上的语义文字色——dark 主题的 accent 变浅，
+     写死白字会糊（本文件禁写死颜色，守卫见 rcA2ThemeTokens.test.ts）。 */
+  color: var(--text-on-accent);
+  background: var(--accent);
   border-radius: 8px;
 }
 
-.brandCopy {
-  min-width: 0;
-  flex: 1;
-}
-
-.brandCopy strong,
-.brandCopy span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.brandName {
+  font-size: 13px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
-.brandCopy strong {
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.brandCopy span {
-  margin-top: 2px;
+/* 与品牌名同号同重，只换色——稿子 `.brand-section` 就是继承过去的 */
+.brandSection {
+  margin-left: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.titleActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.channelReady {
-  min-height: 32px;
+/* 中间状态位。两种渲染：已启动 = 只读一行；未启动 = 同一位置的可点按钮
+   （自动启动失败时的补救入口，「把状态的唯一出口藏起来」是这类错误的老毛病）。
+   有会话态文案（正在被别人远程 / 已有申请等待）时优先显示它——比通道状态紧急。 */
+.channelStatus {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 0 12px;
-  color: var(--success);
-  background: var(--success-bg);
-  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border-color));
+  padding: 0 10px;
+  min-height: 28px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.channelBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  min-height: 28px;
+  background: transparent;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
   font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.channelBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border-color));
+  color: var(--accent);
+}
+
+.channelBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.channelDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.channelDotOff {
+  background: var(--text-muted);
+}
+
+/* ── 自绘窗口按钮（批7）。尺寸照稿子 `.window-action`：46px 宽 × 满高，
+   `cursor: default`（Windows 原生窗口键不是手形）。hover 灰用主题混色替掉稿子里
+   写死的那个浅灰——工作台跟随主题，暗色下写死浅灰会糊成一片。
+   不留外侧 margin：两条宿主（标题栏 / 会话顶条）都是带 gap 的 flex 或 grid，
+   间距由父容器给；这里再加一份会和「贴住窗口右边缘」的负 margin 打架。 */
+.winControls {
+  justify-self: end;
+  align-self: stretch;
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.winBtn {
+  width: 46px;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  cursor: default;
+  transition: background 0.12s, color 0.12s;
+}
+
+.winBtn:hover {
+  background: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  color: var(--text-primary);
+}
+
+.winBtn:active {
+  background: color-mix(in srgb, var(--text-primary) 18%, transparent);
+}
+
+.winBtn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* 关闭键 hover 红底白字：Windows 原生配色。两个值走 theme.css `:root` 的语义变量
+   ——那是系统级语义，不随主题变（本文件也不许写死颜色）。 */
+.winBtnClose:hover,
+.winBtnClose:active {
+  background: var(--win-close-hover-bg);
+  color: var(--win-close-hover-fg);
 }
 
 .workbenchBody {
@@ -205,6 +282,26 @@
   padding: 2px 8px 12px;
 }
 
+/* 分组标题（稿 `.list-label`）：左组名、右计数，11px 弱化文字。
+   第一组不吃上边距——上面紧接的是搜索框，再顶 10px 会把搜索与列表拉散。 */
+.listLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 6px 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.listLabel:first-child {
+  padding-top: 2px;
+}
+
+/* 计数用等宽数字：分组切换时不因位数变化抖动 */
+.listLabel span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
 .deviceItem {
   min-height: 58px;
   display: grid;
@@ -303,6 +400,38 @@
 
 .primaryButton,
 .secondaryButton,
+/* 离线设备行右格：稿子给的是 text-button「检测」（在线行才是 primary「连接」）。
+   视觉更轻——检测只回答「这一台还在不在」，不是主操作。 */
+.probeButton {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 150ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.probeButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-color));
+  color: var(--accent);
+}
+
+.probeButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .connectButton,
 .dangerButton {
   min-height: 32px;
@@ -659,9 +788,6 @@
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
-.detailBody .managementTitle {
-  margin-top: 24px;
-}
 
 .managementActions {
   display: flex;
@@ -718,4 +844,81 @@
   .connectButton {
     transition-duration: 0.01ms;
   }
+}
+
+/* —— 批5：区块标题行 / 最近会话 / 管理动作折叠 ——
+   放在文件末尾是有意的：`.sectionHead h3 { margin: 0 }` 要靠「更靠后」压掉
+   上面 `.detailBody h3 { margin: 0 0 10px }` 的下外边距（两者特异性相同）。 */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.sectionHead h3 {
+  margin: 0;
+}
+
+/* 标题行右侧的文字入口（稿 section-link）：「管理此设备」「查看全部」 */
+.sectionLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sectionLink:hover {
+  text-decoration: underline;
+}
+.sectionLink:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+/* 最近会话 3 条：设备名不重复（在页头），四列 = 模式 / 时长 / 时间 / 结果 */
+.recentBlock {
+  margin-top: 24px;
+}
+.recentList {
+  margin-bottom: 4px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.recentLine {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-color);
+}
+.recentLine:first-child {
+  border-top: 0;
+}
+.recentLine strong {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.recentLine span {
+  font-variant-numeric: tabular-nums;
+}
+.recentResult {
+  color: var(--text-muted);
+  text-align: right;
+}
+.recentEmpty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }

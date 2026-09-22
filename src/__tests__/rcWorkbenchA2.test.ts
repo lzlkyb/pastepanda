@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveRcA2Selection, resolveRcA2Surface, type RcA2Page } from "@/lib/rcWorkbenchA2";
+import {
+  hidesWorkbenchTitleBar,
+  resolveRcA2Selection,
+  resolveRcA2Surface,
+  type RcA2Page,
+} from "@/lib/rcWorkbenchA2";
 
 const targets = [{ node_id: "alpha" }, { node_id: "beta" }];
 
@@ -28,5 +33,12 @@ describe("远程电脑 A2 工作台状态模型", () => {
     expect(resolveRcA2Surface("idle", "files")).toBe("files");
     expect(resolveRcA2Surface("idle", "history")).toBe("history");
     expect(resolveRcA2Surface("idle", "settings")).toBe("settings");
+  });
+
+  it("只有出站会话态收标题栏；等待与被控态要留着（那两态还要用它的按钮）", () => {
+    expect(hidesWorkbenchTitleBar("session")).toBe(true);
+    for (const surface of ["pending", "inbound", "devices", "files", "history", "settings"] as const) {
+      expect(hidesWorkbenchTitleBar(surface)).toBe(false);
+    }
   });
 });

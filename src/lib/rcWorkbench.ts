@@ -43,34 +43,3 @@ export function isSessionActive(status: RcStatus | null): boolean {
   return workbenchMainMode(status) !== "idle";
 }
 
-/**
- * 工作台的导航页（v4 布局 2026-09-19；G6 增第 5 页 2026-09-20）。
- *
- * 「远程电脑」是主功能页；「文件传输」是**独立于画面会话**的另一件事
- * （竞品三范式里的范式 A，见 G6 设计稿 §11.3）——它能不建会话就传文件，
- * 所以它不是「远程电脑」页里的一个面板，而是并列的一页。
- * 其余三页是同一份数据的另一种浏览方式（设备列表 = 全量行 + 搜索筛选；
- * 会话记录 = 历史；设置 = 本机开关与画质）。
- */
-export type WbPage = "rc" | "files" | "devices" | "history" | "settings";
-
-/**
- * `WbPage` 的**运行期镜像**——只为一件事存在：守卫单测要对账
- * 「`WbPage` 里有的页，导航栏里是不是都挂上了」。
- *
- * 为什么要这条：加了新页却忘了往 `RcNavRail` 的列表里加，页面就**永远到不了**
- * ——`tsc` 不会报（两个列表各自都对），运行时也看不出（没有入口就没有报错）。
- * 这类「写完了但没接上」的缺口只能靠两侧对账测出来。
- *
- * ⚠️ 加页时这里必须同步（`rcWorkbench.test.ts` 会拿它与导航项比对）。
- */
-export const WB_PAGES: WbPage[] = ["rc", "files", "devices", "history", "settings"];
-
-/** 顶栏标题与副标题的唯一来源——导航项与顶栏必须念同一名词。 */
-export const WB_PAGE_META: Record<WbPage, { title: string; hint: string }> = {
-  rc: { title: "远程电脑", hint: "局域网直连 · 端到端加密" },
-  files: { title: "文件传输", hint: "独立通道 · 不需要远程会话" },
-  devices: { title: "设备列表", hint: "全部配对设备 · 名称与指纹" },
-  history: { title: "会话记录", hint: "只存本机 · 上限 20 条" },
-  settings: { title: "设置", hint: "本机开关 · 被控画质" },
-};

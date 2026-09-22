@@ -4,7 +4,10 @@
  * 浮现式（2026-09-19 误触排查引入）：Chrome RDP 连接条 / Moonlight 同款——
  * 常驻悬浮的控制条会永久占据画面一角、吃掉那一带的远程点击；改为
  * 「靠近画面上缘或悬停工具条时滑入，离开 2.5s 后淡出」。隐藏态
- * pointer-events:none，画面右上完全让给远程。
+ * pointer-events:none + visibility:hidden（移出 Tab 环，P2-12）。
+ *
+ * P2-12 / 规则 8：mousemove 只挂在**画面容器**（stage）上，不再用 window——
+ * 全局 mousemove 在工具条无关区域也常开，4 窗口还要各自乘一份。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FitMode } from "@/lib/rcSessionStats";
@@ -49,16 +52,17 @@ export function RcViewTools({
 
   useEffect(() => {
     scheduleHide();
+    // 监听挂在父级画面容器上（fakeScreen），不挂在 window
+    const root = rootRef.current;
+    const stage = root?.parentElement;
+    if (!stage) return;
     const onMove = (e: MouseEvent) => {
-      const root = rootRef.current;
-      // 工具条的直接父级就是 fakeScreen（画面区）
-      const stage = root?.parentElement;
-      if (!root || !stage) return;
+      const r = root?.getBoundingClientRect();
       const s = stage.getBoundingClientRect();
+      if (!root || !r) return;
       const inStage =
         e.clientX >= s.left && e.clientX <= s.right && e.clientY >= s.top && e.clientY <= s.bottom;
       if (!inStage) return;
-      const r = root.getBoundingClientRect();
       const overBar =
         e.clientX >= r.left - 4 && e.clientX <= r.right + 4 && e.clientY >= r.top - 4 && e.clientY <= r.bottom + 4;
       const nearTop = e.clientY - s.top <= REVEAL_BAND_PX;
@@ -74,24 +78,28 @@ export function RcViewTools({
         scheduleHide();
       }
     };
-    window.addEventListener("mousemove", onMove);
+    stage.addEventListener("mousemove", onMove);
     return () => {
-      window.removeEventListener("mousemove", onMove);
+      stage.removeEventListener("mousemove", onMove);
       if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
     };
   }, [scheduleHide]);
 
+  // P2-12：隐藏时按钮 tabIndex={-1} + visibility:hidden，双重确保进不了 Tab 环
+  const hidden = !shown;
+
   return (
     <div
       ref={rootRef}
-      className={`${styles.viewTools} ${shown ? "" : styles.viewToolsHidden}`}
-      aria-hidden={!shown}
+      className={`${styles.viewTools} ${hidden ? styles.viewToolsHidden : ""}`}
+      aria-hidden={hidden}
       onMouseLeave={scheduleHide}
     >
       {FITS.map(([k, label]) => (
         <button
           key={k}
           type="button"
+          tabIndex={hidden ? -1 : undefined}
           className={fit === k ? styles.toolOn : undefined}
           onClick={() => onFit(k)}
         >
@@ -101,6 +109,7 @@ export function RcViewTools({
       {canControl && (
         <button
           type="button"
+          tabIndex={hidden ? -1 : undefined}
           className={pointerLocked ? styles.toolOn : undefined}
           title="捕获系统指针，拖出画面边缘不丢事件"
           onClick={onTogglePointer}
@@ -110,6 +119,7 @@ export function RcViewTools({
       )}
       <button
         type="button"
+        tabIndex={hidden ? -1 : undefined}
         className={fullscreen ? styles.toolOn : undefined}
         title="全屏显示远程画面"
         onClick={onToggleFullscreen}

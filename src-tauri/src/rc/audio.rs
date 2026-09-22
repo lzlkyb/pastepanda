@@ -118,6 +118,31 @@ pub enum AudioOut {
     Pkt { pts_ms: u64, data: Vec<u8> },
 }
 
+/// 有界音频队列容量（约 64 × AAC 帧 ≈ 1.3s @48k）。满了丢最旧语义由
+/// `try_push_audio` 的 try_send+计数近似：不堆积、不阻塞采集线程。
+pub const AUDIO_CHAN_CAP: usize = 64;
+
+/// 生产侧入口：有界 channel + `try_send`，满则丢包计数，**禁止无界堆积**。
+/// 返回 `false` = 通道已关（会话结束，采集线程应退出）。
+pub fn try_push_audio(
+    tx: &tokio::sync::mpsc::Sender<AudioOut>,
+    msg: AudioOut,
+    dropped: &std::sync::atomic::AtomicU64,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    match tx.try_send(msg) {
+        Ok(()) => true,
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+            let n = dropped.fetch_add(1, Ordering::Relaxed) + 1;
+            if n == 1 || n.is_multiple_of(50) {
+                log::warn!("[RC] 音频队列已满，丢包计数 {n}");
+            }
+            true
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
+    }
+}
+
 /// 组音频流头部。
 pub fn encode_stream_header(cfg: &AudioCfg) -> Vec<u8> {
     let json = serde_json::to_vec(cfg).expect("AudioCfg 序列化不会失败");
@@ -214,7 +239,8 @@ pub struct AacPacket {
 }
 
 pub struct AacEncoder {
-    transform: IMFTransform,
+    /// COM 引用。`release_com` 里**先**置空再 `CoUninitialize`（同 `dxgi.rs::drop_com`）。
+    transform: Option<IMFTransform>,
     /// 协商好的输出类型里读出的 AudioSpecificConfig（头部 JSON 用）。
     asc: Vec<u8>,
     sr: u32,
@@ -308,7 +334,7 @@ impl AacEncoder {
                 asc.len()
             );
             Ok(Self {
-                transform,
+                transform: Some(transform),
                 asc,
                 sr,
                 samples_in: 0,
@@ -373,7 +399,11 @@ impl AacEncoder {
             sample
                 .SetSampleDuration(AAC_SAMPLES_PER_FRAME as i64 * 10_000_000 / self.sr.max(1) as i64)
                 .map_err(mf_err)?;
-            self.transform.ProcessInput(0, &sample, 0).map_err(mf_err)?;
+            self.transform
+                .as_ref()
+                .ok_or_else(|| "AAC 编码器已释放".to_string())?
+                .ProcessInput(0, &sample, 0)
+                .map_err(mf_err)?;
 
             let mut out = Vec::new();
             loop {
@@ -390,7 +420,10 @@ impl AacEncoder {
                 };
                 let mut status = 0u32;
                 let mut outs = [odb];
-                match self.transform.ProcessOutput(0, &mut outs, &mut status) {
+                let Some(transform) = self.transform.as_ref() else {
+                    return Err("AAC 编码器已释放".into());
+                };
+                match transform.ProcessOutput(0, &mut outs, &mut status) {
                     Ok(()) => {}
                     Err(e) if e.code() == MF_E_TRANSFORM_NEED_MORE_INPUT => break,
                     Err(e) => return Err(format!("ProcessOutput：{e}")),
@@ -408,14 +441,26 @@ impl AacEncoder {
     }
 }
 
-impl Drop for AacEncoder {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = self.transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+impl AacEncoder {
+    /// 🔴 必须先放掉所有 COM 引用再 `CoUninitialize`，顺序反了就是悬垂释放
+    /// （同 `dxgi.rs::drop_com` / `encode_h264.rs::release_com`）。
+    fn release_com(&mut self) {
+        if let Some(t) = self.transform.as_ref() {
+            unsafe {
+                let _ = t.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+            }
         }
+        self.transform = None;
         if self.com_owned {
             unsafe { windows::Win32::System::Com::CoUninitialize() };
+            self.com_owned = false;
         }
+    }
+}
+
+impl Drop for AacEncoder {
+    fn drop(&mut self) {
+        self.release_com();
     }
 }
 
@@ -707,7 +752,7 @@ pub struct AudioWorker {
 }
 
 impl AudioWorker {
-    pub fn start(wanted: WantedFlag, tx: tokio::sync::mpsc::UnboundedSender<AudioOut>) -> Self {
+    pub fn start(wanted: WantedFlag, tx: tokio::sync::mpsc::Sender<AudioOut>) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
         // ❗ 线程刻意 **detach**（不保 JoinHandle）：stop() 在 async 任务里被调，
@@ -730,7 +775,7 @@ impl Drop for AudioWorker {
     }
 }
 
-fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc::UnboundedSender<AudioOut>) {
+fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc::Sender<AudioOut>) {
     let com = ComGuard::new();
     let _ = com;
     let mut cap: Option<LoopbackCapture> = None;
@@ -740,6 +785,7 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
     let mut samples_total: u64 = 0;
     // P1-5：默认设备比对节流（每 5 秒一次，别每轮 8ms 都查 COM）。
     let mut last_dev_check = std::time::Instant::now();
+    let dropped = std::sync::atomic::AtomicU64::new(0);
     log::info!("[RC] 音频 worker 启动");
     while !stop.load(Ordering::SeqCst) {
         if !wanted.load(Ordering::SeqCst) {
@@ -759,7 +805,9 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
                     // pts 时间轴接续（P2-6）：设备切换导致采样率变化时，
                     // 用累计帧数当基点在毫秒尺度上依然近似正确。
                     e.set_sample_offset(samples_total);
-                    let _ = tx.send(AudioOut::Cfg(e.cfg()));
+                    if !try_push_audio(&tx, AudioOut::Cfg(e.cfg()), &dropped) {
+                        return;
+                    }
                     log::info!("[RC] 音频采集启动（系统声音 → 对端）");
                     cap = Some(c);
                     enc = Some(e);
@@ -814,7 +862,14 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
         match e.encode(&pcm) {
             Ok(pkts) => {
                 for p in pkts {
-                    if tx.send(AudioOut::Pkt { pts_ms: p.pts_ms, data: p.data }).is_err() {
+                    if !try_push_audio(
+                        &tx,
+                        AudioOut::Pkt {
+                            pts_ms: p.pts_ms,
+                            data: p.data,
+                        },
+                        &dropped,
+                    ) {
                         return; // 写流任务没了：会话已结束
                     }
                 }
@@ -825,7 +880,9 @@ fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc
                 match AacEncoder::open(c.sample_rate()) {
                     Ok(mut e2) => {
                         e2.set_sample_offset(samples_total);
-                        let _ = tx.send(AudioOut::Cfg(e2.cfg()));
+                        if !try_push_audio(&tx, AudioOut::Cfg(e2.cfg()), &dropped) {
+                            return;
+                        }
                         enc = Some(e2);
                     }
                     Err(e) => {
@@ -1059,5 +1116,26 @@ mod tests {
         let n = u32::from_le_bytes(wire[0..4].try_into().unwrap()) as usize;
         assert_eq!(n, wire.len() - 4);
         assert_eq!(&wire[13..], pkts[0].data.as_slice());
+    }
+
+    /// P2-3: bounded queue must drop-on-full and never block/accumulate unboundedly.
+    #[test]
+    fn 音频队列满则丢包计数不阻塞() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let (tx, rx) = tokio::sync::mpsc::channel::<AudioOut>(2);
+        let dropped = AtomicU64::new(0);
+        let pkt = |i| AudioOut::Pkt {
+            pts_ms: i,
+            data: vec![0u8; 4],
+        };
+        assert!(try_push_audio(&tx, pkt(0), &dropped));
+        assert!(try_push_audio(&tx, pkt(1), &dropped));
+        // third is full -> drop + count, still "ok" for the producer
+        assert!(try_push_audio(&tx, pkt(2), &dropped));
+        assert_eq!(dropped.load(Ordering::Relaxed), 1);
+        // channel stays bounded at 2
+        assert_eq!(rx.len(), 2);
+        drop(rx);
+        assert!(!try_push_audio(&tx, pkt(3), &dropped), "closed channel must signal stop");
     }
 }

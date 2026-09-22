@@ -19,7 +19,7 @@
 
 use crate::data_store::DataStore;
 use crate::rc::join::RcJoins;
-use crate::rc::pin::{Confirmed, Done, Outgoing, PairPrompt, Pairs};
+use crate::rc::pin::{Confirmed, Done, Outgoing, PairPrompt, PinOkIn, Pairs};
 use crate::sync::identity::NodeIdentity;
 use crate::sync::presence::{self, Extras, Nearby, Neighbor, PlainPacket, PresenceApp, WireKind};
 use std::sync::{Arc, Mutex};
@@ -96,12 +96,20 @@ impl Discovery {
             .unwrap_or_default()
     }
 
-    fn make_extras(&self, out: &Outgoing) -> Option<Extras> {
+    /// 拼握手包的附加字段。`armed` 由调用方在**已持锁**状态下传入——
+    /// 这里再 `self.armed.lock()` 会自锁（`std::sync::Mutex` 不可重入）。
+    fn make_extras(&self, out: &Outgoing, armed: &Armed, now: i64) -> Option<Extras> {
         let Outgoing::Packet { kind, peer_id, pk } = out else {
             return None;
         };
-        let armed = self.armed.lock().unwrap_or_else(|p| p.into_inner());
-        let armed = armed.as_ref()?;
+        // PinOk 必须带「知道 X25519 shared」的附加证明（P1-1）。
+        // 证明绑定的 ts 必须与**整包**的 ts 一致——所以在这里、和 build_kind
+        // 用同一个 `now`，不能各算各的。
+        let ok_proof = if *kind == WireKind::PinOk {
+            Some(self.pairs.pin_ok_proof_for(&armed.me.node_id(), now)?)
+        } else {
+            None
+        };
         Some(Extras {
             // 名字随包自报（对方写设备列表用）。招呼包之外也带上，见 `Armed::my_name`。
             name: Some(armed.my_name.clone()),
@@ -113,6 +121,7 @@ impl Discovery {
                 Some(pk.clone())
             },
             to_id: Some(peer_id.clone()),
+            ok_proof,
         })
     }
 
@@ -121,11 +130,8 @@ impl Discovery {
     /// 🔴 失败**必须**往上报：调用它的都是用户刚点过的动作（发起 / 确认），
     /// 静默失败的表现是「对方一直没动静」，那是最难查的一类（规则 15.3）。
     fn send(&self, out: &Outgoing) -> Result<(), String> {
-        let Some(extras) = self.make_extras(out) else {
-            return Ok(()); // Outgoing::None
-        };
         let Outgoing::Packet { kind, .. } = out else {
-            return Ok(());
+            return Ok(()); // Outgoing::None
         };
         let (packet, group_port) = {
             let armed = self.armed.lock().unwrap_or_else(|p| p.into_inner());
@@ -133,6 +139,9 @@ impl Discovery {
                 .as_ref()
                 .ok_or("远程通道还没起来，局域网配对发不出去")?;
             let now = now_ms();
+            let extras = self
+                .make_extras(out, armed, now)
+                .ok_or("配对包缺少必要字段，发不出去（PinOk 必须带证明）")?;
             let packet = presence::build_kind(
                 &armed.me,
                 PresenceApp::Rc,
@@ -245,7 +254,14 @@ impl Discovery {
                 if p.to_id != me {
                     return;
                 }
-                if let Some(confirmed) = self.pairs.on_ok(&p.node_id, now) {
+                // P1-1：证明材料与包内字段一起交给状态机；无/错 proof 会被拒。
+                let req = PinOkIn {
+                    peer_id: p.node_id.clone(),
+                    my_node_id: me,
+                    ts: p.ts,
+                    ok_proof: p.ok_proof.clone(),
+                };
+                if let Some(confirmed) = self.pairs.on_ok(req, now) {
                     self.after_commit(&confirmed);
                 }
             }

@@ -30,6 +30,9 @@ pub struct PlainPacket {
     pub pk: String,
     /// 这包给谁。空串 = 没指定（招呼包）。
     pub to_id: String,
+    /// 仅 [`WireKind::PinOk`]：HMAC 附加证明 hex。空 = 没带（接收端应拒）。
+    /// 绑定说明见 [`super::wire::Wire::ok_proof`]（P1-1）。
+    pub ok_proof: String,
     /// 包里的时刻（epoch 毫秒）。
     pub ts: i64,
     /// 发送方在**本套 presence 端口**上的源地址。
@@ -313,6 +316,7 @@ impl PresenceTable {
             name: wire.name.as_deref().map(clean_name).unwrap_or_default(),
             pk: wire.pk.clone().unwrap_or_default(),
             to_id: wire.to_id.clone().unwrap_or_default(),
+            ok_proof: wire.ok_proof.clone().unwrap_or_default(),
             ts: wire.ts,
             // IP 取源地址（同地址公告那条路上的一条铁律），端口取包里自报的
             // **端点**端口——两者合起来是对端自报的可达地址。

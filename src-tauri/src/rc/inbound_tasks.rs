@@ -88,7 +88,7 @@ impl InboundVideo {
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
             let (tx, mut rx) =
-                tokio::sync::mpsc::unbounded_channel::<super::audio::AudioOut>();
+                tokio::sync::mpsc::channel::<super::audio::AudioOut>(super::audio::AUDIO_CHAN_CAP);
             let mut worker: Option<super::audio::AudioWorker> = None;
             let wanted_flag = Arc::new(AtomicBool::new(false));
             let mut stream: Option<iroh::endpoint::SendStream> = None;

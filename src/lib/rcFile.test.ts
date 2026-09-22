@@ -187,13 +187,44 @@ describe("barSummary", () => {
 
   it("多文件串行时序号按「总数 - 剩余」推算，不是 1/1", () => {
     const list = [
-      task({ id: "a", state: "done", size: 100, done: 100 }),
-      task({ id: "b", state: "done", size: 100, done: 100 }),
-      task({ id: "c", state: "transferring", size: 100, done: 10 }),
-      task({ id: "d", state: "transferring", size: 100, done: 0 }),
+      task({ id: "a", state: "done", size: 100, done: 100, started_ms: 1 }),
+      task({ id: "b", state: "done", size: 100, done: 100, started_ms: 2 }),
+      task({ id: "c", state: "transferring", size: 100, done: 10, started_ms: 3 }),
+      task({ id: "d", state: "awaiting", size: 100, done: 0, started_ms: 4 }),
     ];
-    // 剩 2 条 → 当前是第 4-2+1 = 3 条
-    expect(barSummary(list, rate)).toBe("传文件中 3/4 · 0%");
+    // 剩 2 条 → 当前是第 4-2+1 = 3 条；进度跟唯一 transferring 的 c（10%）
+    expect(barSummary(list, rate)).toBe("传文件中 3/4 · 10%");
+  });
+
+  it("多条 transferring 取最早开始的那条（串行当前文件），不是数组末尾", () => {
+    const list = [
+      task({ id: "later", state: "transferring", size: 100, done: 10, started_ms: 3000 }),
+      task({ id: "earlier", state: "transferring", size: 100, done: 0, started_ms: 1000 }),
+    ];
+    // 跟 earlier（0%），不跟 later（10%）
+    expect(barSummary(list, rate)).toBe("传文件中 1/2 · 0%");
+  });
+
+  it("优先 transferring，不跟更早的 awaiting", () => {
+    const list = [
+      task({ id: "wait", state: "awaiting", size: 100, done: 0, started_ms: 1000 }),
+      task({ id: "xfer", state: "transferring", size: 100, done: 42, started_ms: 5000 }),
+    ];
+    expect(barSummary(list, rate)).toBe("传文件中 1/2 · 42%");
+  });
+
+  it("没有 transferring 只剩 awaiting 时取最早开始的", () => {
+    const list = [
+      task({ id: "late", state: "awaiting", size: 100, done: 0, started_ms: 5000 }),
+      task({ id: "early", state: "awaiting", size: 100, done: 0, started_ms: 1000 }),
+    ];
+    // 两条都是 0%，用 rate 回调断言喂进去的是 early
+    const seen: string[] = [];
+    barSummary(list, (t) => {
+      seen.push(t.id);
+      return 0;
+    });
+    expect(seen).toEqual(["early"]);
   });
 
   it("有速率时补速率与 ETA", () => {

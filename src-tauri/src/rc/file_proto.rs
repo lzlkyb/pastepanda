@@ -464,6 +464,17 @@ pub fn part_path(final_name: &str) -> String {
     format!("{}{}", final_name, PART_SUFFIX)
 }
 
+/// 占用判定：最终名**或**其 `.pppart` 任一被占都算冲突。
+///
+/// P1-4：只查最终名时，同名 `.pppart` 在写会被当成空位，两个接收方互写同一
+/// 个 part，收满 rename 后得到的是两段数据拼出来的损坏文件。
+pub fn name_or_part_taken<F>(name: &str, exists: F) -> bool
+where
+    F: Fn(&str) -> bool,
+{
+    exists(name) || exists(&part_path(name))
+}
+
 /// 从 `.pppart` 反推最终名。不是 part 文件返回 `None`。
 pub fn final_from_part(part_name: &str) -> Option<&str> {
     part_name.strip_suffix(PART_SUFFIX)
@@ -596,6 +607,25 @@ mod tests {
             unique_name(".env", |n| n == ".env").unwrap(),
             ".env (1)"
         );
+    }
+
+    /// P1-4：同名 `.pppart` 存在时必须换名——只查最终名会撞上正在写的 part。
+    #[test]
+    fn 同名pppart占用时换名() {
+        // 磁盘上只有 `.pppart`，没有最终名
+        let out = unique_name("报告.zip", |n| {
+            name_or_part_taken(n, |p| p == format!("报告.zip{}", PART_SUFFIX))
+        })
+        .unwrap();
+        assert_eq!(out, "报告 (1).zip");
+        // 最终名与 part 都空闲 → 原样
+        assert_eq!(
+            unique_name("新.zip", |n| name_or_part_taken(n, |_| false)).unwrap(),
+            "新.zip"
+        );
+        // 只占最终名也仍要换名（回归 name_or_part_taken 的或语义）
+        let out2 = unique_name("报告.zip", |n| name_or_part_taken(n, |p| p == "报告.zip")).unwrap();
+        assert_eq!(out2, "报告 (1).zip");
     }
 
     /// 🔴 D8 同族回归钉：重名递增的预算也必须按 **UTF-16 码元**算。

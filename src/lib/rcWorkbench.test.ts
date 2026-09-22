@@ -7,8 +7,7 @@
  * 但把判据变成可枚举的纯函数后，一条表驱动测试就能钉死全部分支。
  */
 import { describe, it, expect } from "vitest";
-import { WB_PAGES, WB_PAGE_META, isSessionActive, workbenchMainMode } from "@/lib/rcWorkbench";
-import { RC_NAV_ITEMS } from "@/components/rc/RcNavRail";
+import { isSessionActive, workbenchMainMode } from "@/lib/rcWorkbench";
 import type { RcSession, RcStatus } from "@/lib/api/rc";
 
 const session = (phase: RcSession["phase"]): RcSession => ({
@@ -58,22 +57,3 @@ describe("isSessionActive", () => {
   });
 });
 
-/**
- * 两侧对账：`WbPage` 的每一项都必须**在导航栏里有入口**。
- *
- * 加页忘挂导航 = 这一页永远到不了。`tsc` 不报（两个列表各自都自洽），
- * 运行时也不报（没有入口就没有报错）——只会表现为「这个功能好像没做」。
- * G6 新增「文件传输」页时补的这条守卫，就是为了让下一次加页在这里红。
- */
-describe("导航项与页面清单对账", () => {
-  it("RC_NAV_ITEMS 与 WB_PAGES 同集合、同顺序", () => {
-    expect(RC_NAV_ITEMS.map((i) => i.key)).toEqual(WB_PAGES);
-  });
-
-  it("每一项都有非空标签，且 WB_PAGE_META 也覆盖到了", () => {
-    for (const item of RC_NAV_ITEMS) {
-      expect(item.label.trim(), `key=${item.key}`).not.toBe("");
-      expect(WB_PAGE_META[item.key]?.title, `key=${item.key}`).toBeTruthy();
-    }
-  });
-});

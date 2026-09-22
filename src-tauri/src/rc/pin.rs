@@ -30,9 +30,25 @@
 //!
 //! 「谁先点都行」：先点的一侧只是把会话标记成已确认，等对方那边也点上才落库
 //! （见 [`commit_allowed`]）。这条也是给用户看的原话，写在 `RcPairPin.tsx` 里。
+//!
+//! # 🔴 P1-1：`pin_ok` 必须带共享秘密证明
+//!
+//! 线上签名只盖 `node_id|port|ts`（`presence::wire::signing_bytes` **不能扩**，
+//! 扩了会废掉与旧版的互通——那里的模块注释有论证）。于是中间人可以**偷换
+//! `kind`/`to_id`**：拿任意一份合法签名包改成 `pin_ok`，冒充「他那侧也确认了」，
+//! 在本端已点过确认时把设备提前写进信任表。
+//!
+//! 对策是给 `WireKind::PinOk` 加**附加证明** `ok_proof` =
+//! HMAC-SHA256(X25519 shared 派生值, `"pin-ok"|node_id|to_id|ts`)：
+//! 不知道 shared 就算不出来。接收端 [`Pairs::on_ok`] **只认带合法 proof 的**，
+//! 无 proof / 错 proof 一律不置 `peer_ok` ⇒ [`commit_allowed`] 进不去。
+//!
+//! **残余风险（有意不覆盖）**：`PinReq`/`PinResp` 的 `pk` 仍在签名外，中间人
+//! 仍可偷换公钥。那条路的检测靠两端 6 位数字人眼核对（SAS）——系统验不了
+//! 「两端显示的数字一样」，这是本方案的边界，不是遗漏。
 
 use crate::data_store::DataStore;
-use crate::lan_pair::{PairRole, PendingPair};
+use crate::lan_pair::{hex, hkdf32, PairRole, PendingPair};
 use crate::sync::presence::WireKind;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -164,8 +180,62 @@ impl Session {
 /// 系统验不了它——「两端看到的数字一样」只有用户的眼睛能确认，而那正是
 /// 「各自点一次确认」这一步存在的全部意义。函数名说的是**谁确认了**，
 /// 不是**数字对不对**，免得后人以为这里该补一个比较。
+///
+/// ❗ `peer_ok` 的前置条件是 [`verify_pin_ok_proof`] 通过（P1-1）。
+/// 本函数不重复验 proof——它只回答「确认状态齐了没有」。
 pub fn commit_allowed(me_ok: bool, peer_ok: bool, pin_ready: bool, expired: bool) -> bool {
     me_ok && peer_ok && pin_ready && !expired
+}
+
+/// 一份待验证的 `pin_ok`（由明文包拆出；证明材料齐了才认）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct PinOkIn {
+    /// 发信人 node_id（= 对端）。
+    pub peer_id: String,
+    /// 本机 node_id（= 包里的 `to_id`，调用方已比对过）。
+    pub my_node_id: String,
+    /// 包内时间戳（参与证明绑定，不是接收时刻）。
+    pub ts: i64,
+    /// 附加证明 hex。**空 = 没带，拒**（P1-1）。
+    pub ok_proof: String,
+}
+
+/// `pin_ok` 附加证明的消息字节。纯函数，收发两侧共用同一份绑定材料。
+///
+/// 绑 `"pin-ok"` 前缀（防跨用途重用）+ 发信人 + 收信人 + 包内 ts。
+/// 不绑 `port`：证明走的是另一条信道（HMAC over shared），端口变化不影响语义。
+pub fn pin_ok_proof_msg(node_id: &str, to_id: &str, ts: i64) -> String {
+    format!("pin-ok|{node_id}|{to_id}|{ts}")
+}
+
+/// 算一份 `pin_ok` 证明：HMAC-SHA256(hkdf32(shared, "pp-pin-ok"), msg) 的 hex。
+///
+/// 🔴 HKDF info 与 pin / 密钥传输**分道**（同 `lan_pair::hkdf32` 的理由）：
+/// pin 会显示给人看（等于公开），不能让证明材料与它同源。
+pub fn pin_ok_proof(shared: &[u8], node_id: &str, to_id: &str, ts: i64) -> String {
+    use ring::hmac;
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &hkdf32(shared, "pp-pin-ok"));
+    let tag = hmac::sign(&key, pin_ok_proof_msg(node_id, to_id, ts).as_bytes());
+    hex(tag.as_ref())
+}
+
+/// 验 `pin_ok` 证明。走 `ring::hmac::verify`（常数时间比对认证标签）。
+pub fn verify_pin_ok_proof(
+    shared: &[u8],
+    node_id: &str,
+    to_id: &str,
+    ts: i64,
+    proof_hex: &str,
+) -> bool {
+    if proof_hex.is_empty() {
+        return false;
+    }
+    use ring::hmac;
+    let Some(got) = crate::lan_pair::hex_to_vec(proof_hex) else {
+        return false;
+    };
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &hkdf32(shared, "pp-pin-ok"));
+    hmac::verify(&key, pin_ok_proof_msg(node_id, to_id, ts).as_bytes(), &got).is_ok()
 }
 
 /// 该不该重发、重发哪一种。纯函数（时间由调用方传入）。
@@ -330,11 +400,33 @@ impl Pairs {
 
     /// 收到对方的 `pin_ok`：他那侧也点过确认了。
     ///
+    /// # 🔴 P1-1：先验 `ok_proof`，再谈确认
+    ///
+    /// 签名只盖 `node_id|port|ts`（`wire::signing_bytes` 不能扩），中间人可
+    /// 偷换 `kind`/`to_id` 冒充 `pin_ok`。所以：
+    /// 1. 没 shared（还没协商完）→ 不认；
+    /// 2. 无 proof / 错 proof → **不置 `peer_ok`**，`commit_allowed` 进不去；
+    /// 3. 验过才置 `peer_ok`，后续与原先一致。
+    ///
     /// 返回 `Some(Confirmed)` = 该落库了（本端也确认过时），调用方拿去写库。
-    pub fn on_ok(&self, peer_id: &str, now_ms: i64) -> Option<Confirmed> {
+    pub fn on_ok(&self, req: PinOkIn, now_ms: i64) -> Option<Confirmed> {
         let mut guard = self.cur.lock().unwrap_or_else(|p| p.into_inner());
         let s = guard.as_mut()?;
-        if s.pair.peer_id != peer_id || s.expired(now_ms) {
+        if s.pair.peer_id != req.peer_id || s.expired(now_ms) {
+            return None;
+        }
+        let shared = s.pair.shared.as_ref()?;
+        if !verify_pin_ok_proof(
+            shared,
+            &req.peer_id,
+            &req.my_node_id,
+            req.ts,
+            &req.ok_proof,
+        ) {
+            log::warn!(
+                "[RC] 伪造或过期的 pin_ok 证明，已拒绝（{}）",
+                short_id(&req.peer_id)
+            );
             return None;
         }
         s.peer_ok = true;
@@ -346,6 +438,17 @@ impl Pairs {
             return Some(self.commit(&id, &name, initiator, now_ms));
         }
         None
+    }
+
+    /// 发送侧：算一份 `pin_ok` 证明（与 [`discovery`] 发包时同一时刻、同一材料）。
+    ///
+    /// `me_node_id` 是**发信人**（本机），`to_id` 取当前会话的对端。
+    /// 没 shared 时返回 `None`——那种会话本就不该发 `pin_ok`，调用方应报错。
+    pub fn pin_ok_proof_for(&self, me_node_id: &str, ts: i64) -> Option<String> {
+        let guard = self.cur.lock().unwrap_or_else(|p| p.into_inner());
+        let s = guard.as_ref()?;
+        let shared = s.pair.shared.as_ref()?;
+        Some(pin_ok_proof(shared, me_node_id, &s.pair.peer_id, ts))
     }
 
     /// 本端点了「两边一样，确认」。返回 `Outgoing` 让调用方把 `pin_ok` 发出去。
@@ -516,17 +619,32 @@ mod tests {
 
     const T0: i64 = 1_757_000_000_000;
 
-    /// 🔴 全组最要紧的一条：**两端拿到同一个公钥，数字就必须一样**。
-    /// 这就是「用户对一眼数字」能成立的全部前提。
-    #[test]
-    fn 走完一轮握手两端数字一致且是六位() {
+    /// 测试辅助：用**发送侧**会话算一份 pin_ok 证明（与 discovery 发送同源）。
+    fn pin_ok_proof_sender(sender: &Pairs, sender_node_id: &str, ts: i64) -> String {
+        sender
+            .pin_ok_proof_for(sender_node_id, ts)
+            .expect("协商完成后必须能算出证明")
+    }
+
+    /// 测试辅助：填一份 [`PinOkIn`]。
+    fn ok_in(peer_id: &str, my_node_id: &str, ts: i64, ok_proof: &str) -> PinOkIn {
+        PinOkIn {
+            peer_id: peer_id.to_string(),
+            my_node_id: my_node_id.to_string(),
+            ts,
+            ok_proof: ok_proof.to_string(),
+        }
+    }
+
+    /// 走完 A→B 握手到「两边公钥齐、数字已出」。返回 (a, b)。
+    fn handshake() -> (Pairs, Pairs) {
         let a = Pairs::new(store());
         let b = Pairs::new(store());
-        let (_, out) = a.start("bb", "笔记本", T0).unwrap();
+        let (pa, out) = a.start("bb", "笔记本", T0).unwrap();
         let Outgoing::Packet { pk: pk_a, .. } = out else {
             panic!("发起方要发 pin_req");
         };
-        // B 收到 pin_req
+        assert_eq!(pa.pin.len(), 0, "发起方一开始还没有数字（在等对方公钥）");
         let (pb, out_b) = b
             .on_req("aa", "台式机", &pk_a, T0 + 10)
             .expect("应答方要接");
@@ -538,9 +656,15 @@ mod tests {
             panic!("应答方要回 pin_resp");
         };
         assert_eq!(k, WireKind::PinResp);
-        // A 收到 pin_resp
         assert!(a.on_resp("bb", &pk_b, T0 + 20), "协商要成功");
+        (a, b)
+    }
 
+    /// 🔴 全组最要紧的一条：**两端拿到同一个公钥，数字就必须一样**。
+    /// 这就是「用户对一眼数字」能成立的全部前提。
+    #[test]
+    fn 走完一轮握手两端数字一致且是六位() {
+        let (a, b) = handshake();
         assert_eq!(
             a.prompt(T0 + 20).unwrap().pin,
             b.prompt(T0 + 20).unwrap().pin,
@@ -629,9 +753,10 @@ mod tests {
             }
         );
 
-        // A 收到 B 的 pin_ok → 这下该落库了
+        // A 收到 B 的 pin_ok（带合法证明）→ 这下该落库了
+        let proof = pin_ok_proof_sender(&b, "bb", T0 + 3);
         assert_eq!(
-            a.on_ok("bb", T0 + 3),
+            a.on_ok(ok_in("bb", "aa", T0 + 3, &proof), T0 + 3),
             Some(Confirmed::Committed {
                 peer_id: "bb".to_string(),
                 peer_name: "笔记本".to_string()
@@ -661,7 +786,12 @@ mod tests {
 
         b.confirm(T0 + 1);
         // A 先收到对方的 pin_ok（A 自己还没点）
-        assert_eq!(a.on_ok("bb", T0 + 2), None, "本端没确认，还不该落库");
+        let proof = pin_ok_proof_sender(&b, "bb", T0 + 2);
+        assert_eq!(
+            a.on_ok(ok_in("bb", "aa", T0 + 2, &proof), T0 + 2),
+            None,
+            "本端没确认，还不该落库"
+        );
         assert!(s.rc_device_get("bb").unwrap().is_none());
 
         let (res, out) = a.confirm(T0 + 3);
@@ -829,7 +959,8 @@ mod tests {
         };
         assert!(a.on_resp("bb", &pk_b, T0));
         a.confirm(T0 + 1);
-        a.on_ok("bb", T0 + 2);
+        let proof = pin_ok_proof_sender(&b, "bb", T0 + 2);
+        a.on_ok(ok_in("bb", "aa", T0 + 2, &proof), T0 + 2);
 
         let d = a.take_done().expect("应该有完成信息");
         assert_eq!(d.peer_id, "bb");
@@ -863,11 +994,15 @@ mod tests {
         // B（应答方）先点确认 → 等 A
         b.confirm(T0 + 1);
         // A 收到 B 的 pin_ok，但 A 自己还没点 → 还不落库
-        assert_eq!(a.on_ok("bb", T0 + 2), None);
+        let proof_b = pin_ok_proof_sender(&b, "bb", T0 + 2);
+        assert_eq!(a.on_ok(ok_in("bb", "aa", T0 + 2, &proof_b), T0 + 2), None);
+        // 🔴 先把 A 那侧的 pin_ok 证明算出来：A 点确认时若两端都已确认会当场落库
+        // 并清会话，之后就算不出 shared 证明了（测试里模拟「B 收到 A 的 pin_ok」）。
+        let proof_a = pin_ok_proof_sender(&a, "aa", T0 + 4);
         // A 点确认 → A 落库
         a.confirm(T0 + 3);
         // B 收到 A 的 pin_ok → B 落库
-        b.on_ok("aa", T0 + 4);
+        b.on_ok(ok_in("aa", "bb", T0 + 4, &proof_a), T0 + 4);
 
         let da = a.take_done().expect("A 应该有完成信息");
         assert!(da.initiator, "A 点的是「配对」，它是发起方");
@@ -876,6 +1011,85 @@ mod tests {
         let db = b.take_done().expect("B 应该有完成信息");
         assert!(!db.initiator, "B 是被请求的那一侧");
         assert_eq!(db.peer_id, "aa");
+    }
+
+    /// 🔴 P1-1：伪造 pin_ok（无 proof / 错 proof）不得 `commit_allowed`。
+    #[test]
+    fn 伪造pin_ok无证明或错证明不得落库() {
+        let s = store();
+        let a = Pairs::new(s.clone());
+        let b = Pairs::new(store());
+        let (_, out) = a.start("bb", "笔记本", T0).unwrap();
+        let Outgoing::Packet { pk: pk_a, .. } = out else {
+            panic!()
+        };
+        let (_, out_b) = b.on_req("aa", "台式机", &pk_a, T0).unwrap();
+        let Outgoing::Packet { pk: pk_b, .. } = out_b else {
+            panic!()
+        };
+        assert!(a.on_resp("bb", &pk_b, T0));
+        // A 已点确认，在等对方 pin_ok——此刻伪造最容易得手
+        assert!(matches!(
+            a.confirm(T0 + 1).0,
+            Confirmed::Waiting { .. }
+        ));
+
+        // ① 无 proof：中间人偷换 kind 冒充 pin_ok 的典型形态
+        assert_eq!(
+            a.on_ok(ok_in("bb", "aa", T0 + 2, ""), T0 + 2),
+            None,
+            "无 proof 的 pin_ok 一律不认"
+        );
+        // ② 错 proof
+        assert_eq!(
+            a.on_ok(ok_in("bb", "aa", T0 + 2, "deadbeef"), T0 + 2),
+            None,
+            "错 proof 一律不认"
+        );
+        // ③ proof 与 ts 不绑：换 ts 后旧 proof 失效
+        let proof = pin_ok_proof_sender(&b, "bb", T0 + 2);
+        assert_eq!(
+            a.on_ok(ok_in("bb", "aa", T0 + 2 + 1, &proof), T0 + 3),
+            None,
+            "proof 必须绑定包内 ts"
+        );
+        assert!(
+            s.rc_device_get("bb").unwrap().is_none(),
+            "伪造 pin_ok 绝不能落库"
+        );
+
+        // 合法 proof 才放行（B 真的点过确认）
+        b.confirm(T0 + 4);
+        let proof = pin_ok_proof_sender(&b, "bb", T0 + 5);
+        assert!(
+            matches!(
+                a.on_ok(ok_in("bb", "aa", T0 + 5, &proof), T0 + 5),
+                Some(Confirmed::Committed { .. })
+            ),
+            "合法证明必须能走完"
+        );
+        assert!(s.rc_device_get("bb").unwrap().is_some());
+    }
+
+    /// 证明纯函数：往返一致、分道不串、空 proof 拒。
+    #[test]
+    fn pin_ok_proof_往返与分道() {
+        let shared = [7u8; 32];
+        let p = pin_ok_proof(&shared, "aa", "bb", T0);
+        assert!(verify_pin_ok_proof(&shared, "aa", "bb", T0, &p));
+        assert!(!verify_pin_ok_proof(&shared, "aa", "bb", T0, ""), "空 proof 拒");
+        assert!(!verify_pin_ok_proof(&shared, "aa", "bb", T0, "00"), "错 proof 拒");
+        assert!(
+            !verify_pin_ok_proof(&shared, "aa", "cc", T0, &p),
+            "to_id 必须进绑定"
+        );
+        assert!(!verify_pin_ok_proof(&shared, "bb", "bb", T0, &p), "node_id 必须进绑定");
+        assert!(!verify_pin_ok_proof(&shared, "aa", "bb", T0 + 1, &p), "ts 必须进绑定");
+        let other = [8u8; 32];
+        assert!(
+            !verify_pin_ok_proof(&other, "aa", "bb", T0, &p),
+            "不同 shared 算不出同一份证明"
+        );
     }
 
     /// 自己跟自己（同 node_id）不该能配起来——组播会回环，这是必然出现的一份包。

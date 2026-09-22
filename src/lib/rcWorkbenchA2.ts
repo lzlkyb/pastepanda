@@ -26,3 +26,22 @@ export function resolveRcA2Surface(mode: WbMainMode, page: RcA2Page): RcA2Surfac
   if (mode === "inbound") return "inbound";
   return page;
 }
+
+/**
+ * 会话态要不要收掉工作台标题栏（稿：`.window[data-state="session"] .titlebar { display:none }`）。
+ *
+ * 只收「正在控制别人画面」这一态——画面铺满整个工作台，不再被 48px 内嵌栏压着。
+ * 连接中 / 等待对方同意 / 被控态都**留**标题栏：那三态下工作台本体还是「侧栏 + 主区」，
+ * 标题栏仍要承担**通道状态位 + 窗口控制 + 拖拽区**（批7 起窗口 `decorations(false)`，
+ * 没有系统标题栏，这三样只剩它能给）；被控态的画面本来就在别处（RcInboundView）。
+ * 注意：这条判据早先的论据是标题栏上的「检测设备」「启动远程通道」两个按钮，批7 已把
+ * 它们下架（前者进设备行、后者变成状态位自适应），结论没变但论据换了。
+ *
+ * 🔴 单独抽成纯函数而非在 JSX 里写 `surface === "session"`，是为了让守卫单测
+ * 钉住这个判据。批7 落地自绘窗口控制（`decorations(false)`）时，会话态没有系统
+ * 标题栏可拖，**必须在这一态补一条可拖拽细条**——改这里与 RcWorkbench 的同一个
+ * 分支即可，不要在会话视图里另写一套显隐判断。
+ */
+export function hidesWorkbenchTitleBar(surface: RcA2Surface): boolean {
+  return surface === "session";
+}

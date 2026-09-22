@@ -10,6 +10,7 @@ import { MoreHorizontal } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { RcSession } from "@/lib/api/rc";
 import { linkStateHint, linkStateLabel, type RcLinkState } from "@/lib/rcSessionStats";
+import { RcCloseButton } from "./RcWindowControls";
 import styles from "./RemoteComputer.module.css";
 
 export function RcSessionTop({
@@ -60,7 +61,10 @@ export function RcSessionTop({
         ? styles.liveBad
         : styles.liveOff;
   return (
-    <div className={styles.viewTop}>
+    /* 批7：会话态整条工作台标题栏被 `hidesWorkbenchTitleBar` 收掉（画面铺满），
+       而没有标题栏的窗口既拖不动也关不掉——本条兼作拖拽区。`deep` 让整个子树可拖，
+       条内的胶囊 / 按钮由 Tauri 自动豁免（可点击元素不带该属性即阻断拖动）。 */
+    <div className={styles.viewTop} data-tauri-drag-region="deep">
       <span className={dotCls} />
       <span>
         正在查看 <b>{session.peer_name || fingerprintOf(session.peer)}</b>
@@ -145,6 +149,12 @@ export function RcSessionTop({
       >
         结束会话
       </button>
+      {/* 批7：窗口没有系统标题栏了，这里是**会话态唯一能关掉窗口的地方**——
+          少了它，用户只能去杀进程。只补关闭：最小化 / 最大化另有系统替代
+          （任务栏、双击本条、Win+方向键），不必再占顶条宽度。 */}
+      <div className={styles.winControlsFlush} data-tauri-drag-region="false">
+        <RcCloseButton />
+      </div>
     </div>
   );
 }

@@ -28,11 +28,15 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use super::input::{assert_control_allowed, get_clipboard_text, inject, set_clipboard_text};
+use super::input::{
+    assert_control_allowed, get_clipboard_text_async, inject, set_clipboard_text_async,
+};
 use super::input::{InputEvent, ScreenRegion};
 use super::encode_h264::VideoCodec;
 use super::protocol::SessionPhase;
-use super::service::{RcService, CLIPBOARD_MAX_JSON_BYTES};
+use super::service::{
+    clip_payload_ok, clip_pull_json_bytes, clip_push_json_bytes, RcService, CLIPBOARD_MAX_JSON_BYTES,
+};
 use crate::sync::transport::write_frame;
 
 // 后台任务与画面能力上报已拆到 `inbound_tasks.rs`（2026-09-21）；
@@ -910,15 +914,17 @@ pub(super) async fn handle_inbound_input(
     ev: InputEvent,
     send: &Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
 ) {
-    // C-2：会话切换竞态窗口内，旧连接迟到的输入不得挂在新会话能力上执行。
-    // 只读 capability 会在「旧 peer 的半流还活着、槽位已是新 peer」时误放行。
-    if !svc.session_is(SessionPhase::InboundActive, peer) {
+    // C-2 / P1-2：会话切换竞态窗口内，旧连接迟到的输入不得挂在新会话能力上执行。
+    // 🔴 一次加锁取快照，入口与能力校验**同源**——旧写法
+    // `session_is` + `session_capability` 两次加锁，中间可换会话。
+    // 数据报路径与可靠流共用本函数，自动受益。
+    let Some(snap) = svc.session_snapshot_for(peer) else {
+        return;
+    };
+    if snap.phase != SessionPhase::InboundActive {
         return;
     }
-    let cap = match svc.session_capability() {
-        Some(c) => c,
-        None => return,
-    };
+    let cap = snap.capability;
 
     match &ev {
         InputEvent::ClipboardPush { text } => {
@@ -933,25 +939,33 @@ pub(super) async fn handle_inbound_input(
                 .await;
                 return;
             }
-            // C-8：入站与出站同上限（按 JSON 帧 UTF-8 字节），超限拒绝写入。
-            if text.len() > CLIPBOARD_MAX_JSON_BYTES {
+            // C-8 / P1-12：入站与出站同量纲——**编码后 JSON 字节**（`clip_payload_ok`）。
+            // 发起端本地也会先卡一道（`push_clipboard`）；这里是兜改包 / 旧客户端的
+            // 第二道。超限必须回 `clip_push_err`，禁止静默。
+            let json_bytes = clip_push_json_bytes(text);
+            if !clip_payload_ok(json_bytes) {
                 log::warn!(
-                    "[RC] 入站剪贴板过大（{} 字节），已拒绝",
-                    text.len()
+                    "[RC] 入站剪贴板帧过大（JSON {} 字节），已拒绝",
+                    json_bytes
                 );
                 reply_clip_err(
                     send,
                     "clip_push_err",
                     format!(
                         "剪贴板内容约 {} KB，超过 {} KB 上限，未写入对方剪贴板",
-                        text.len() / 1024,
+                        json_bytes / 1024,
                         CLIPBOARD_MAX_JSON_BYTES / 1024
                     ),
                 )
                 .await;
                 return;
             }
-            if let Err(e) = set_clipboard_text(text) {
+            // 写主机剪贴板前复核会话（P1-2）：快照到此之间 peer 可能已换。
+            if !svc.session_peer_unchanged(&snap) {
+                return;
+            }
+            // P2-4: clipboard retry sleeps; keep it off the tokio worker.
+            if let Err(e) = set_clipboard_text_async(text.clone()).await {
                 log::warn!("[RC] 写入被控剪贴板失败：{e}");
                 reply_clip_err(send, "clip_push_err", format!("写入对方剪贴板失败：{e}")).await;
             }
@@ -965,10 +979,14 @@ pub(super) async fn handle_inbound_input(
                     .await;
                 return;
             }
-            match get_clipboard_text() {
+            if !svc.session_peer_unchanged(&snap) {
+                return;
+            }
+            match get_clipboard_text_async().await {
                 Ok(t) => {
-                    // 回包也走控制帧 64KB：过大时明确报错，不要静默失败
-                    if t.len() > CLIPBOARD_MAX_JSON_BYTES {
+                    // P1-12：回包同样按**编码后 JSON 字节**卡；超限回 `clip_err`，禁止静默。
+                    let json_bytes = clip_pull_json_bytes(&t);
+                    if !clip_payload_ok(json_bytes) {
                         reply_clip_err(send, "clip_err", "对方剪贴板过大，无法拉取".into()).await;
                     } else {
                         let msg = serde_json::json!({ "t": "clip", "text": t });
@@ -1125,6 +1143,14 @@ pub(super) async fn handle_inbound_input(
         _ => {}
     }
 
+    // P1-2：注入前再确认 peer/phase/capability 没换——快照到此之间会话可能
+    // 已经切给另一台，迟到输入不得打在新会话上。
+    // 紧贴 inject：region 计算期间会话同样可能已切换。
+    if !svc.session_peer_unchanged(&snap) {
+        log::debug!("[RC] 会话在注入前已切换，丢弃迟到输入（{peer}）");
+        return;
+    }
+
     let region = {
         let opts = svc.stream_opts_snapshot();
         if opts.monitor >= 0 {
@@ -1155,6 +1181,11 @@ pub(super) async fn handle_inbound_input(
             }
         }
     };
+    // P1-2：region 计算后再钉一次——窗口拉长了检查与注入的间距。
+    if !svc.session_peer_unchanged(&snap) {
+        log::debug!("[RC] 会话在注入前已切换，丢弃迟到输入（{peer}）");
+        return;
+    }
     let r = inject(&ev, &region);
     if !r.ok {
         log::warn!("[RC] 键鼠注入失败（{peer}）：{}", r.error);

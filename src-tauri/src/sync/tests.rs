@@ -3111,6 +3111,7 @@ mod presence_plain_tests {
                 name: "办公室台式机".to_string(),
                 pk: String::new(),
                 to_id: String::new(),
+                ok_proof: String::new(),
                 ts: T0,
                 src: SocketAddr::new(ip(20), 41234),
             })
@@ -3372,6 +3373,7 @@ mod presence_plain_tests {
             name: "x".to_string(),
             pk: String::new(),
             to_id: String::new(),
+            ok_proof: String::new(),
             ts: T0,
             src: SocketAddr::new(ip(20), 41234),
         };

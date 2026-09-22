@@ -4,11 +4,17 @@
  * 纪律：**每一行都必须有真数据或真动作**——盘点发现旧版 6 行里 2 行与主页重复、
  * 1 行是纯文字说明、3 行只是跳转（design/远程电脑-设置去摆设与美化-设计稿.html）。
  * 同一设置只有一个家：
- * - 「允许被远程」「本机画质」常驻主页左栏，这里不再重复渲染；
+ * - 「允许被远程」常驻工作台侧栏；「本机画质 / 采集范围」只在主窗口设置页（本页页脚有入口），
+ *   工作台内不提供——A2 设计稿本就没给画质留位置（2026-09-22 校正：旧文案「常驻主页左栏」
+ *   在 A2 重构后已不成立，旧侧栏 `RcWorkbenchSide` 亦已作死代码删除）；
  * - 「被控能力上限」= 后端 `rc_status.capability`（rc_set_capability 持久写
  *   config，服务端 max_capability() 真实钳制入站授权）；主窗 RcAllowPanel 同款；
  * - 「默认发起方式」「自动开通道」是纯前端偏好（lib/rcRequest / lib/rcPrefs）。
  * 顶栏不摆「恢复默认」：没有对应后端，摆了就是新的摆设。
+ *
+ * 2026-09-21（A 方案稿对账）：补上「无人值守」分区——稿在设置页就摆了这两行，
+ * 而实现此前只留一个「更多设置在主窗口」的跳转链接。功能与弹层（RcUnoDialog
+ * 的 generate / pass 两种 side）早已齐全，缺的只是本页入口。
  */
 import { useEffect, useState } from "react";
 import { rcSessionHistory, type RcCapability } from "@/lib/api/rc";
@@ -57,6 +63,7 @@ export function RcPageSettings({
   onOpenSettings,
   onNavigateHistory,
   onNavigateDevices,
+  onOpenUno,
 }: {
   rc: UseRc;
   /** 「默认发起方式」当前档（useRcLaunch 的记忆档，localStorage 持久）。 */
@@ -67,6 +74,11 @@ export function RcPageSettings({
   onOpenSettings: () => void;
   onNavigateHistory: () => void;
   onNavigateDevices: () => void;
+  /**
+   * 无人值守的两个入口（生成接入码 / 设置固定密码）。
+   * 弹层由调用方挂载 —— 与配对弹层同一个 `RcPairLayer`，这里只发意图。
+   */
+  onOpenUno: (mode: "unoGenerate" | "unoPass") => void;
 }) {
   /** 「免确认设备」计数（targets.trusted）。 */
   const trustedCount = rc.targets.filter((t) => t.trusted).length;
@@ -181,6 +193,47 @@ export function RcPageSettings({
           </div>
           <button type="button" className={styles.miniBtn} onClick={onNavigateDevices}>
             管理
+          </button>
+        </div>
+      </section>
+
+      <section className={styles.setCard}>
+        <h3 className={styles.setSecTitle} id="rc-set-unattended">
+          无人值守
+        </h3>
+        <div className={styles.setRow}>
+          <div className={styles.setRowInfo}>
+            <div className={styles.setRowTitle}>临时接入码</div>
+            <div className={styles.setRowHint}>
+              对方不在电脑前也能连进来：生成 15 分钟单次码或 24 小时码，可指定只看或可控
+            </div>
+          </div>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            disabled={rc.busy}
+            onClick={() => onOpenUno("unoGenerate")}
+          >
+            生成接入码
+          </button>
+        </div>
+        <div className={styles.setRow}>
+          <div className={styles.setRowInfo}>
+            <div className={styles.setRowTitle}>固定密码</div>
+            <div className={styles.setRowHint}>
+              长期挂机的机器用：知道密码的设备随时可连，哈希落盘 · 连续错 5 次锁 10 分钟
+            </div>
+          </div>
+          <span className={rc.status?.uno_pass ? styles.selfChipOn : styles.selfChipOff}>
+            {rc.status?.uno_pass ? "已开启" : "未开启"}
+          </span>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            disabled={rc.busy}
+            onClick={() => onOpenUno("unoPass")}
+          >
+            {rc.status?.uno_pass ? "管理" : "设置密码"}
           </button>
         </div>
       </section>

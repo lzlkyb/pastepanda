@@ -13,10 +13,11 @@
  *  3. 失败必须出字。文件通道独立于会话（独立 ALPN），失败不会表现为画面异常，
  *     不说就完全无声。
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { FolderDown, FolderUp } from "lucide-react";
 import { rcFileDefaultDir } from "@/lib/api/rcFile";
 import { useRcFile } from "@/hooks/useRcFile";
+import { useOkAutoClear } from "@/hooks/useOkAutoClear";
 import styles from "./RemoteComputer.module.css";
 
 type Fb = { kind: "ok" | "bad" | "info"; text: string } | null;
@@ -24,6 +25,9 @@ type Fb = { kind: "ok" | "bad" | "info"; text: string } | null;
 export function RcFileBar({ peer }: { peer: string }) {
   const file = useRcFile(peer || null);
   const [fb, setFb] = useState<Fb>(null);
+  // P3-5：成功/信息 6s 自清，错误保留
+  const clearFb = useCallback(() => setFb(null), []);
+  useOkAutoClear(fb?.kind ?? null, clearFb);
 
   // 拿不到对端 node_id 时不摆——`useRcFile(null)` 是「不过滤」，那会把**别的设备**
   // 的任务念进这场会话的底栏里，比不显示更糟。

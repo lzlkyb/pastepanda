@@ -250,6 +250,16 @@
        --danger-bg                      →  --red-bg
      取值一个没改，七套主题零视觉变化；色名变量作为存量继续活着，不做大扫除（§10）。
      --warning 上的对比度已经由 --orange 那行注释验过：orange-on-orange-bg = 4.54:1。 */
+
+  /* ===== 自绘窗口 chrome（批7）=====
+     Windows 原生窗口按钮的既定配色：关闭键 hover 是**实红底 + 白字**。
+     🔴 **故意不随主题变**——这是系统级语义（「关掉这个窗口」），不是应用配色；
+     用户对那个红有肌肉记忆，主题一换变成浅红反而陌生。六套主题共用一个值，
+     所以放 `:root` 而不是各主题块。
+     消费方是 `RemoteComputerA2.module.css` 的 `.winBtnClose`（该文件禁止写死颜色，
+     由 `src/__tests__/rcA2ThemeTokens.test.ts` 守着）。 */
+  --win-close-hover-bg: #c42b1c;
+  --win-close-hover-fg: #ffffff;
 }
 
 /* ===== 主题变量 ===== */

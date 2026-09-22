@@ -155,6 +155,17 @@ export function normalizeRcNote(raw: string): string {
 }
 
 /**
+ * 设备系统标签（详情面「在线 · Windows 11 · 局域网可达」中间那一段）。
+ *
+ * 后端给的是对端**自报**的值（会话 `Accept` 帧带来的，本机推断不出来）。
+ * 空串 / 空白 / 缺失一律归成空串，调用方据空串**整段不渲染**——不编默认值：
+ * 摆一个「未知系统」比留白更糟，那会让用户以为我们真的探测过。
+ */
+export function osLabel(raw: string | null | undefined): string {
+  return (raw ?? "").trim();
+}
+
+/**
  * A5：这条会话记录还能不能「再次连接」。
  *
  * 判据缺一即不摆按钮 —— 摆一个注定失败的入口比不摆更糟（本轮反复踩的坑）：
@@ -183,4 +194,77 @@ export function canReconnectTo(
  */
 export function lastRcTarget<T extends { source: string }>(targets: readonly T[]): T | null {
   return targets.find((t) => t.source === "rc") ?? null;
+}
+
+/**
+ * A2 侧栏的设备分组键（2026-09-21 批4）。
+ *
+ * 稿给的是两组「在线 / 最近使用」，而后端可达性是**四档**（live/recent/seen/never）。
+ * 这里刻意分三组而不是照稿压成两组：`never`（配对后从没连上过）不属于「最近使用」，
+ * 塞进那一组等于把「还没用过」说成「用过」——而文案如实正是这四档存在的全部意义
+ * （无中心服务器时组播听不见 ≠ 对端关机，见 `normalizeRcPresence`）。
+ * `seen` 与 `recent` 同组：两者差别只是时间远近，都属于「用过、现在仍可能连得上」。
+ */
+export type RcDeviceGroupKey = "live" | "recent" | "never";
+
+export const RC_DEVICE_GROUP_LABEL: Record<RcDeviceGroupKey, string> = {
+  live: "在线",
+  recent: "最近使用",
+  never: "尚未连接",
+};
+
+/** 分组渲染顺序：可达性从高到低。空组不渲染（见 `groupRcTargets`）。 */
+const RC_DEVICE_GROUP_ORDER: RcDeviceGroupKey[] = ["live", "recent", "never"];
+
+export function deviceGroupOf(presence: RcPresenceLevel): RcDeviceGroupKey {
+  if (presence === "live") return "live";
+  if (presence === "never") return "never";
+  return "recent";
+}
+
+/**
+ * 把设备列表切成带计数的小组（稿：`<span>在线</span><span>2</span>`）。
+ *
+ * 三条不变量，都有守卫单测：
+ *  - **组内保持输入顺序**（后端已按 `last_seen` 降序）——重排会让「最近用过哪些」这条线索失效；
+ *  - **空组不产出**：一台在线设备都没有时，不该出现一个写着「在线 0」的空标题；
+ *  - **总数守恒**：各组 items 长度之和 === 输入长度，一台不丢、一台不重。
+ *
+ * 参数取结构化最小类型（只用到 `presence`），避免这个纯函数模块反向依赖 api 层。
+ */
+export function groupRcTargets<T extends { presence?: string }>(
+  targets: readonly T[],
+): { key: RcDeviceGroupKey; label: string; items: T[] }[] {
+  const buckets: Record<RcDeviceGroupKey, T[]> = { live: [], recent: [], never: [] };
+  for (const target of targets) {
+    buckets[deviceGroupOf(normalizeRcPresence(target.presence))].push(target);
+  }
+  return RC_DEVICE_GROUP_ORDER.filter((key) => buckets[key].length > 0).map((key) => ({
+    key,
+    label: RC_DEVICE_GROUP_LABEL[key],
+    items: buckets[key],
+  }));
+}
+
+/**
+ * A2 侧栏设备行的第二行（2026-09-21 批4）。
+ *
+ * 与 `presenceMainLabel` 分开，因为两处的信息预算不同：设备行（`RcDeviceRow` 的
+ * `RcDeviceMeta`）第二行已经排了「状态 · 提示 · 上次…」三段，主文案复用最省；
+ * 而 A2 侧栏一行只有「名称 + 一行副文案」，且**分组标题已经承担了状态**——
+ * 「在线」组里再写一遍「在线」是纯重复，位置该让给**实测路径**（用户在列表里
+ * 真正要判断的是「现在连它快不快」）。
+ *
+ * 反过来，离线设备**不能**这样替换：路径是上次的、可能早已失效，此时「多久前
+ * 用过」才是有效信息（稿里「最近使用」组那行也确实是时间）。
+ *
+ * @param pathLabel `pathKindLabel` 已格式化的路径；空串 = 还没连过，走回落
+ */
+export function deviceRowSubLabel(
+  presence: RcPresenceLevel,
+  lastSeenLabel: string,
+  pathLabel: string,
+): string {
+  if (presence === "live") return pathLabel || "在线";
+  return presenceMainLabel(presence, lastSeenLabel);
 }

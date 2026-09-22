@@ -5,6 +5,7 @@
  * 🔴 wrapper 必须包住 canvas 且 position:relative：光标坐标按 canvas
  * 内容几何（contain/cover 居中裁切）换算，overlay 与 canvas 同域才能对得上。
  */
+import { useEffect, useState } from "react";
 import { MousePointer2 } from "lucide-react";
 import type { FitMode } from "@/lib/rcSessionStats";
 import type { RcCursorShape } from "@/hooks/useRcCursor";
@@ -36,6 +37,15 @@ export function RcScreenCanvas({
   cursorShape?: RcCursorShape | null;
 }) {
   const baseStyle = canvasStyleFor(fit, size, canControl);
+  // P3-6：canvas 尺寸变化时重算光标 overlay（否则 resize 后偏移到下次鼠标移动才校正）
+  const [geomTick, setGeomTick] = useState(0);
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setGeomTick((t) => t + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [canvasRef]);
   // P1-6：远端换形状（I-beam/缩放柄/隐藏……）→ 用本地系统光标按形状渲染；
   // 箭头（及未收到）→ 维持 B1 overlay。hidden 时 overlay 也要藏。
   const cssCursor = canControl && hasFrame ? cursorCssFor(cursorShape ?? null) : null;
@@ -44,9 +54,11 @@ export function RcScreenCanvas({
   const baseCursor =
     canControl && hasFrame && input.cursor && !cssCursor ? ("none" as const) : cssCursor ? cssCursor : baseStyle.cursor;
   const canvasStyle = { ...baseStyle, cursor: baseCursor };
+  // geomTick 参与计算：ResizeObserver 触发 re-render 后立刻按新矩形定位
   const cursorPos = input.cursor
     ? cursorOverlayStyle(input.cursor, canvasRef.current, contentRef.current.w, contentRef.current.h, fit)
     : undefined;
+  void geomTick;
   // 「画面区整体接管指针」（业界基线，noVNC/Guacamole 同款）：指针事件挂在
   // 最外层容器而不是 canvas 元素上——object-fit 留出的黑边（fit/fill 模式上下
   // 的留白）同样命中处理器，映射时 clamp 到画面边缘，远程最边缘可点。

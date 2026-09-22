@@ -109,6 +109,8 @@ export function useRcFrames(
     let waitingSinceMs = 0;
     // 当前流的标准（看门狗用）：HEVC 等不到关键帧先退 H.264，H.264 才砸 JPEG
     let curStd: "h264" | "hevc" = "h264";
+    // P1-10：脏块 miss 时 request_key 的限频（1s/次）
+    let lastDirtyMissAt = 0;
     const forceJpeg = () => {
       h264Miss = 0;
       waitingKey = false;
@@ -246,7 +248,16 @@ export function useRcFrames(
           setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
           ctx.drawImage(bmp, 0, 0);
         } else {
-          if (contentRef.current.w === 0) return;
+          // P1-10：脏块帧无基准画布 → 禁止静默丢（丢一块 = 花屏缺块）。
+          // 记一次 miss 并限频向被控端要关键帧（等 full / key 自愈）。
+          if (contentRef.current.w === 0) {
+            const now = Date.now();
+            if (now - lastDirtyMissAt > 1000) {
+              lastDirtyMissAt = now;
+              void rcSendInput({ kind: "request_key" }).catch(() => {});
+            }
+            return;
+          }
           if (canvas.width !== contentRef.current.w) {
             canvas.width = contentRef.current.w;
             canvas.height = contentRef.current.h;
@@ -263,7 +274,6 @@ export function useRcFrames(
     const handleH264Frame = (f: RcBinFrame) => {
       setCodec(f.codec);
       const std: HwCodec = f.codec === "hevc" ? "hevc" : "h264";
-      const isHevc = std === "hevc";
       curStd = std;
       h264 ??= new H264Decoder(
         (vf) => {
@@ -292,8 +302,10 @@ export function useRcFrames(
             void rcSendInput({ kind: "request_key" }).catch(() => {});
           }
           h264Miss += 1;
-          // Q3：HEVC 解码连续失败先退 H.264（生态稳），H.264 再失败才 JPEG
-          if (h264Miss >= 3) (isHevc ? forceH264 : forceJpeg)();
+          // Q3：HEVC 解码连续失败先退 H.264（生态稳），H.264 再失败才 JPEG。
+          // P1-8：必须看**当前** curStd——解码器创建时的 isHevc 快照在中途换码后是错的
+          //（先 HEVC 后 H.264 会误 forceH264，反之会跳过 H.264 直接砸 JPEG）。
+          if (h264Miss >= 3) (curStd === "hevc" ? forceH264 : forceJpeg)();
         },
       );
       h264.ensureConfigured(
@@ -308,7 +320,7 @@ export function useRcFrames(
         return;
       }
       h264Miss += 1;
-      if (h264Miss >= 3) (isHevc ? forceH264 : forceJpeg)();
+      if (h264Miss >= 3) (curStd === "hevc" ? forceH264 : forceJpeg)();
     };
 
     // 等待下一轮：新帧事件（立即）或兜底轮询（空闲时指数退避，最低 16ms）。

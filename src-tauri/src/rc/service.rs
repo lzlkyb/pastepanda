@@ -13,8 +13,8 @@ use super::net::{accept_loop, bind_rc_endpoint};
 use super::notify::{NotifyFn, NotifyState, PathNotifyFn, ScopeNotifyFn};
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
 use super::session::{
-    can_transition, gate_inbound, gate_outbound, new_session_id, Gate, Session, CFG_CAPABILITY,
-    CFG_DEVICE_DENY, CFG_ENABLED,
+    can_transition, gate_inbound, gate_outbound, new_session_id, Gate, Session, SessionSnapshot,
+    CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED,
 };
 use super::stream_cfg::{
     auto_from_cfg, codec_from_cfg, profile_from_cfg, virtual_screen_from_cfg, StreamCfg, StreamOpts,
@@ -34,7 +34,35 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 /// 剪贴板推送上限：按 **JSON 帧 UTF-8 字节**卡（控制帧 64KB，留余量）。
 /// 中文 1 字 ≈ 3 字节，不能按字符数卡。
-pub(super) const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
+pub(crate) const CLIPBOARD_MAX_JSON_BYTES: usize = 48 * 1024;
+
+/// 剪贴板载荷是否在上限内（P1-12）。
+///
+/// 🔴 **唯一量纲是编码后 JSON 字节**。出站（[`RcService::push_clipboard`]）
+/// 与入站/回包（`inbound.rs`）曾一处按 `json.len()`、两处按 raw `text.len()`——
+/// 中文下两边尺子不一致：出站放行的会被入站拒掉，或入站放行后写出超帧。
+/// 三处全部收口到本函数，判的是**同一份 JSON 编码后的长度**。
+pub(crate) fn clip_payload_ok(json_bytes: usize) -> bool {
+    json_bytes <= CLIPBOARD_MAX_JSON_BYTES
+}
+
+/// `ClipboardPush` 帧编码后字节数。出站预检与入站校验共用同一把尺子。
+/// 序列化失败时返回 `usize::MAX`（= 一律拒），不静默放行。
+pub(crate) fn clip_push_json_bytes(text: &str) -> usize {
+    serde_json::to_vec(&super::input::InputEvent::ClipboardPush {
+        text: text.to_string(),
+    })
+    .map(|b| b.len())
+    .unwrap_or(usize::MAX)
+}
+
+/// `clip` 回包编码后字节数（入站 pull 回包校验用，与发送帧同构）。
+/// 序列化失败时返回 `usize::MAX`（= 一律拒）。
+pub(crate) fn clip_pull_json_bytes(text: &str) -> usize {
+    serde_json::to_vec(&serde_json::json!({ "t": "clip", "text": text }))
+        .map(|b| b.len())
+        .unwrap_or(usize::MAX)
+}
 /// 拉回剪贴板时等回包的总时长。
 const CLIPBOARD_PULL_TIMEOUT_MS: i64 = 4_000;
 
@@ -1015,6 +1043,32 @@ impl RcService {
         inner.session.as_ref().map(|s| s.capability)
     }
 
+    /// 一次加锁取出「这个 peer 的当前会话」快照（P1-2）。
+    ///
+    /// 🔴 入口判定与能力校验必须用**同一快照**，不要再拆成
+    /// `session_is` + `session_capability` 两次加锁——中间会话可被换掉，
+    /// 旧 peer 的迟到输入会挂到新会话的能力上。
+    pub(super) fn session_snapshot_for(&self, peer: &str) -> Option<SessionSnapshot> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let s = inner.session.as_ref()?;
+        if s.peer != peer {
+            return None;
+        }
+        Some(s.snapshot())
+    }
+
+    /// 注入/写主机前复核：快照对应的会话是否还是同一条（P1-2）。
+    ///
+    /// 快照到真正注入之间仍有窗口；键鼠与剪贴板这类主机副作用前再比一次
+    /// `peer/phase/capability`，变了就丢弃这次迟到输入。
+    pub(super) fn session_peer_unchanged(&self, snap: &SessionSnapshot) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        matches!(
+            inner.session.as_ref(),
+            Some(s) if s.peer == snap.peer && s.phase == snap.phase && s.capability == snap.capability
+        )
+    }
+
     /// 发起端发送输入/剪贴板/流控帧。会话必须 OutboundActive。
     ///
     /// 免 Control 白名单（2026-09-20 二次审查拍板）：
@@ -1093,12 +1147,13 @@ impl RcService {
 
     /// 发起端：把本地剪贴板文本推给被控端（R3 文本优先）。
     /// 按 **JSON 帧字节**卡上限，避免中文字符数过了但 write_frame 超 64KB。
+    /// 量纲与入站校验同源（[`clip_payload_ok`]）。
     pub async fn push_clipboard(&self, text: &str) -> Result<(), String> {
         let ev = super::input::InputEvent::ClipboardPush {
             text: text.to_string(),
         };
         let json = serde_json::to_vec(&ev).map_err(|e| e.to_string())?;
-        if json.len() > CLIPBOARD_MAX_JSON_BYTES {
+        if !clip_payload_ok(json.len()) {
             return Err(format!(
                 "剪贴板过大（约 {} KB，上限约 {} KB），请改用文件或其他方式传输",
                 json.len() / 1024,
@@ -1998,7 +2053,15 @@ impl RcService {
             .map_err(|e| explain(&conn, e))?;
         let resp = RcFrame::decode(&raw)?;
         match resp {
-            RcFrame::Accept { capability } => Ok((capability, conn, send, recv)),
+            RcFrame::Accept { capability, os } => {
+                // 对端**自报的系统**：写进设备行，设备详情显示「在线 · Windows 11 · …」。
+                // None / 空串（旧对端没这个字段，或它采不到）不覆盖已有值——
+                // 升级前最后一次会话不该把设备行这一格抹白（同 `last_path` 的判据）。
+                if let Some(os) = os {
+                    let _ = self.store.rc_device_note_os(peer, &os);
+                }
+                Ok((capability, conn, send, recv))
+            }
             RcFrame::Deny { reason, code } => {
                 let code = code.unwrap_or_default();
                 if code.is_empty() {
@@ -2246,7 +2309,14 @@ impl RcService {
             };
             match decision {
                 Some(Ok(cap)) => {
-                    if let Ok(b) = (RcFrame::Accept { capability: cap }).encode() {
+                    // 自报本机系统：控制端记进设备行，它的设备详情才说得出
+                    // 「Windows 11」。采不到时 `local_os_label` 返回空串，
+                    // 对端按「没带」处理、不覆盖它已有的值。
+                    let accept = RcFrame::Accept {
+                        capability: cap,
+                        os: Some(crate::rc::local_os_label()),
+                    };
+                    if let Ok(b) = accept.encode() {
                         let _ = write_frame(&mut send, &b).await;
                     }
                     // 用户批准、会话真的建立：登记连接，被控端也能看到「对方是从

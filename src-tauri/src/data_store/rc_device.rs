@@ -56,9 +56,19 @@ pub struct RcDevice {
     /// 🔴 只对「推送」方向有效。取回方向是「我挑文件发给对方」，没有可自动的东西。
     #[serde(default)]
     pub auto_accept: bool,
+    /// 对端**自报的操作系统**短标签（`Windows 11` / `macOS` / `Linux`）。
+    ///
+    /// 来源：会话里对端发的 `Accept` 帧（`rc/protocol.rs` 的 `Accept::os`），
+    /// 控制端收到即写（`service.rs` 的读帧分支）。空串 = 还没建立过会话，
+    /// 或对端是旧版 / 采不到——显示层据空串**不渲染这一格**，不编默认值。
+    ///
+    /// 与 `last_path` 同款：这是**对端说的**，不是本机推断的；
+    /// 同理它也不随任何配对信令同步（那些路径有多个承载点，见数据迁移处的说明）。
+    #[serde(default)]
+    pub os: String,
 }
 
-const COLS: &str = "node_id, name, note, paired_at, conn_state, last_seen, last_path, trusted, auto_accept";
+const COLS: &str = "node_id, name, note, paired_at, conn_state, last_seen, last_path, trusted, auto_accept, os";
 
 fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
     Ok(RcDevice {
@@ -71,6 +81,7 @@ fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
         last_path: r.get(6)?,
         trusted: r.get::<_, i64>(7)? != 0,
         auto_accept: r.get::<_, i64>(8)? != 0,
+        os: r.get(9)?,
     })
 }
 
@@ -176,6 +187,30 @@ impl DataStore {
         conn.execute(
             "UPDATE rc_devices SET last_path = ?2 WHERE node_id = ?1",
             rusqlite::params![node_id, path],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    /// 记下对端**自报**的操作系统短标签（会话 `Accept` 帧带来）。
+    ///
+    /// 空串会被忽略：对端是旧版（`Accept` 没有这个字段）或采不到时不该覆盖
+    /// 上一次的有效值——否则升级前的最后一次会话会把设备行这一格抹白。
+    /// 同 `rc_device_note_path` 的判据。
+    ///
+    /// 与 `note_set` / `auto_accept_set` 的「影响 0 行必须报错」**刻意不同**：
+    /// 那两条是用户点了按钮、界面会 toast「已保存」，静默失效能骗出一个假确认；
+    /// 这条是会话过程中后台顺手写的一笔，没有对应的用户动作，
+    /// 且设备尚未落库（首次走无人值守码时可能还没写完）属正常竞态，
+    /// 报错只会污染会话流程。
+    pub fn rc_device_note_os(&self, node_id: &str, os: &str) -> Result<(), String> {
+        if os.trim().is_empty() {
+            return Ok(());
+        }
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE rc_devices SET os = ?2 WHERE node_id = ?1",
+            rusqlite::params![node_id, os.trim()],
         )
         .map(|_| ())
         .map_err(|e| e.to_string())
@@ -421,5 +456,66 @@ mod tests {
         // 已被忘记的设备同理
         s.rc_device_forget("peer-a").unwrap();
         assert!(s.rc_device_note_set("peer-a", "客厅").is_err());
+    }
+
+    /// os：默认空串（还没建立过会话）；写入后往返；**空串不覆盖已有值**。
+    #[test]
+    fn os_defaults_empty_and_empty_does_not_wipe_measured() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        assert_eq!(
+            s.rc_device_get("peer-a").unwrap().unwrap().os,
+            "",
+            "还没建立过会话就是空串——不能编一个「未知系统」当默认值"
+        );
+        s.rc_device_note_os("peer-a", "Windows 11").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().os, "Windows 11");
+        // 对端换成旧版（Accept 不带 os）→ 空串必须忽略，不能抹掉上一次的有效值
+        s.rc_device_note_os("peer-a", "").unwrap();
+        s.rc_device_note_os("peer-a", "   ").unwrap();
+        assert_eq!(
+            s.rc_device_get("peer-a").unwrap().unwrap().os,
+            "Windows 11",
+            "空串（采不到 / 旧对端）不该覆盖上一次的有效实测"
+        );
+        // 对端重装换了系统 → 覆盖
+        s.rc_device_note_os("peer-a", "macOS").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().os, "macOS");
+    }
+
+    /// 🔴 `COLS` 必须带上 `os`——列表查询漏列会让设备详情永远不显示系统，
+    /// 而库里有值（同 `device_list_carries_auto_accept` 的教训，是最难查的一类）。
+    #[test]
+    fn device_list_carries_os() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        s.rc_device_note_os("peer-a", "Windows 11").unwrap();
+        let list = s.rc_device_list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].os, "Windows 11", "列表查询的 COLS 必须带上 os");
+    }
+
+    /// 写入时 trim 两端空白（对端可能带来带空白的值）。
+    #[test]
+    fn os_写入时trim两端空白() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        s.rc_device_note_os("peer-a", "  Windows 11  ").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().os, "Windows 11");
+    }
+
+    /// 设备还没落库时写 os 是**静默 no-op**，不报错。
+    ///
+    /// 与 `note_set` / `auto_accept_set` 的「影响 0 行必须报错」刻意不同：
+    /// 那两条是用户点了按钮、界面会 toast「已保存」，静默失效能骗出假确认；
+    /// 这条是会话过程中后台顺手写的一笔（首次走无人值守码时设备可能还没写完），
+    /// 报错只会污染会话流程。
+    #[test]
+    fn os_对不在表里的设备静默忽略而不是报错() {
+        let s = store();
+        assert!(
+            s.rc_device_note_os("peer-only-sync", "Windows 11").is_ok(),
+            "后台顺手写的字段，设备尚未落库属正常竞态，不该污染会话流程"
+        );
     }
 }

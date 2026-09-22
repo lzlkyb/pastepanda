@@ -232,10 +232,9 @@ function FileRow({
             type="button"
             className={styles.fileOpen}
             title={`在资源管理器中显示：${localPath}`}
-            aria-label="打开所在文件夹"
             onClick={() => void onOpenPath(localPath)}
           >
-            <FolderOpen size={13} />
+            <FolderOpen size={13} aria-hidden="true" /> 打开所在文件夹
           </button>
         )}
         {running && (
@@ -243,10 +242,9 @@ function FileRow({
             type="button"
             className={styles.fileCancel}
             title="取消这次传输（已收到的部分保留，下次可续传）"
-            aria-label="取消传输"
             onClick={() => void onCancel(t.id)}
           >
-            <X size={13} />
+            <X size={13} aria-hidden="true" /> 取消
           </button>
         )}
         {/* U4：发送方向失败给就地重试——源路径在手，一键重发（对端有断点则自动续传）。
@@ -256,10 +254,9 @@ function FileRow({
             type="button"
             className={styles.fileOpen}
             title="重试发送（对端已有断点时自动续传）"
-            aria-label="重试发送"
             onClick={() => void onRetry(t)}
           >
-            <RotateCcw size={13} />
+            <RotateCcw size={13} aria-hidden="true" /> 重试
           </button>
         )}
       </div>

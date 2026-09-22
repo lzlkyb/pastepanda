@@ -122,8 +122,12 @@ export function barSummary(tasks: RcFileTask[], rateOf: (t: RcFileTask) => numbe
   if (run.length === 0) return null;
   const total = tasks.length;
   const idx = total - run.length + 1;
-  // 多文件串行：进度按**当前这一条**算，整体百分比会把 5 个文件算成一个长条
-  const cur = run[run.length - 1];
+  // 多文件串行：进度按**当前这一条**算，整体百分比会把 5 个文件算成一个长条。
+  // P2-7：优先真正 `transferring` 的（串行时它才是正在动的）；都没有 transferring
+  // （只剩 awaiting 等确认）时取最早 `started_ms`，而不是数组末尾那条。
+  const transferring = run.filter((t) => t.state === "transferring");
+  const pool = transferring.length > 0 ? transferring : run;
+  const cur = pool.reduce((a, b) => (a.started_ms <= b.started_ms ? a : b));
   const parts = [`传文件中 ${idx}/${total}`, `${taskPercent(cur)}%`];
   const rate = rateOf(cur);
   if (rate > 0) {

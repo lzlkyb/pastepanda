@@ -1,27 +1,27 @@
 /**
- * RcHud — 会话画面左上角状态条（诚实文案）。
+ * RcHud — 会话画面左上角的「连接详情」入口（2026-09-21 A 方案稿对账后收编）。
  *
- * 每一格只说自己那一件事，互不代言（2026-09-17 改造）：
- * - `linkState` = 链路还活着吗（对端 pong 的新鲜度）
- * - `pathKind`  = 数据走的哪条路（局域网直连 / 公网直连 / 绕中继）
- * - 延迟分档    = 网速感受（<30ms 很流畅 … >200ms 偏慢）
+ * 稿的要求：遥测**不再常驻铺在画面上**。原先这里是一条最多 10 格的 chip 条
+ * （编码 / 延迟 / 画面龄 / 四段 / 操作 / 丢包 / 码率 / 路径 / 画质·画面 / 链路），
+ * 本项目有 4 个窗口、同一组件可能各挂一份，画面顶部长期被信息条占住。
+ * 现在收成**一个按钮**：默认只占约 90×22px，点击开合明细面板，数据一格不少
+ * （并补了稿里有、原来缺的「分辨率」）。
  *
- * 交互（2026-09-19 重做）：`.hud` 曾整体 `pointer-events: none`（纯信息层，
- * 不拦截远程点击），代价是 chip 上的 title 悬停提示一并失效。现在恢复
- * **chip 条自身**的指针交互：悬停 300ms 或点击，浮出「状态明细」面板——
- * 收编原 title 文案并扩全（四段延迟 / 码率 / 丢包 / 路径……）。穿透保证不变：
- * 外层 wrapper 与面板之外的区域照旧穿透，只有 chip 条与面板自己的盒子是
- * 交互面（刻意保留的死区，且面板关闭后完全让给远程）。
- * HUD 不在画面 stage（RcScreenCanvas）子树内，这里的点击/移动不会漏给远程，
- * 无需再 stopPropagation。
+ * 为什么去掉 hover 自动展开（原悬停 300ms 开）：入口从一条宽信息条缩成一个小按钮后，
+ * 鼠标掠过画面左上角就弹面板的误触概率明显上升；稿里的同类入口也是点击式。
+ * 键盘可达改由真 `<button>` 天然承担（不再手写 role="button" + onKeyDown）。
  *
- * B（设计稿 §6）：「操作后未响应」不再在这里渲染——收口到 RcSessionTop 一处。
- * 🔴 原来那一格「心跳正常 / 心跳超时」是拿 ping 的本地 invoke 结果 + 画面停滞
- *    一起算的，两个方向都会错。现在只认 pong 新鲜度。
+ * 诚实性底线不变（2026-09-17 改造留下的分格口径，各格只说自己那一件事）：
+ * `linkState` = 链路还活着吗（对端 pong 新鲜度）；`pathKind` = 数据走的哪条路；
+ * 延迟分档 = 心跳实测的网速感受。**链路异常时的常驻可见性由会话顶条承担**
+ * （RcSessionTop 的 pillDanger / pillWarn），这里不在按钮上重复播报。
+ *
+ * 穿透纪律：wrapper 与面板之外的区域照旧 pointer-events:none（远程点击不被挡），
+ * 只有按钮与面板自己的盒子是交互面。
  */
 import { useEffect, useRef, useState } from "react";
+import { Info } from "lucide-react";
 import styles from "./RemoteComputer.module.css";
-import { Activity, Monitor, MousePointer2, Network, Video, Zap } from "lucide-react";
 import {
   linkStateLabel,
   pathKindHint,
@@ -31,12 +31,7 @@ import {
   type RcLinkState,
 } from "@/lib/rcSessionStats";
 import { qualityHudLabel } from "@/lib/rcQuality";
-import { scopeLabel, scopeLabelLong } from "@/lib/rcScope";
-
-/** 悬停多久才展开（ms）。太短会路过就弹，太长不如点。 */
-const HOVER_OPEN_MS = 300;
-/** 移出后多久收起（ms）。给「chip → 面板」的空隙留余量。 */
-const HOVER_CLOSE_MS = 250;
+import { scopeLabelLong } from "@/lib/rcScope";
 
 interface HudRow {
   label: string;
@@ -64,6 +59,7 @@ export function RcHud({
   linkState,
   pathKind,
   pointerLocked,
+  frameSize,
 }: {
   codec: string;
   fps: number;
@@ -88,40 +84,14 @@ export function RcHud({
   peerDriven?: boolean;
   scope: string;
   linkState: RcLinkState;
-  /** `lan` / `direct` / `relay`；空串 = 未测到，不显示这一格。 */
+  /** `lan` / `direct` / `relay`；空串 = 未测到，不显示这一行。 */
   pathKind: string;
   pointerLocked?: boolean;
+  /** 画面原始像素尺寸（useRcFrames 的 size）；宽高任一为 0 = 无样本不显示。 */
+  frameSize?: { w: number; h: number };
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const openTimer = useRef<number | null>(null);
-  const closeTimer = useRef<number | null>(null);
-
-  const clearTimers = () => {
-    if (openTimer.current != null) window.clearTimeout(openTimer.current);
-    if (closeTimer.current != null) window.clearTimeout(closeTimer.current);
-    openTimer.current = null;
-    closeTimer.current = null;
-  };
-  const scheduleOpen = () => {
-    if (closeTimer.current != null) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-    if (open) return;
-    openTimer.current = window.setTimeout(() => setOpen(true), HOVER_OPEN_MS);
-  };
-  const scheduleClose = () => {
-    if (openTimer.current != null) {
-      window.clearTimeout(openTimer.current);
-      openTimer.current = null;
-    }
-    closeTimer.current = window.setTimeout(() => setOpen(false), HOVER_CLOSE_MS);
-  };
-  const toggle = () => {
-    clearTimers();
-    setOpen((v) => !v);
-  };
 
   // 打开时点外面（画面/工具栏/窗外）就收——与 RcDropdown 同一交互口径
   useEffect(() => {
@@ -132,7 +102,6 @@ export function RcHud({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
-  useEffect(() => clearTimers, []);
 
   const grade = rttGrade(rttMs);
   const rttCls = grade === "unknown" ? "" : grade === "poor" ? styles.hudWarn : styles.hudOk;
@@ -143,11 +112,8 @@ export function RcHud({
         ? styles.hudBad
         : styles.hudWarn;
   const path = pathKindLabel(pathKind);
-  /* v4 对稿（B 窗）：每格配 11px 图标，图标+文字双冗余（图标 aria-hidden）。
-     导航纪律：图标一律 aria-hidden，文案本身自足。 */
-  const icon = (I: typeof Video) => <I size={11} aria-hidden="true" />;
 
-  // 明细面板的内容。与 chip 同一套数据、同一套出现条件——chip 有哪格，面板就有哪行。
+  // 面板内容。每一行对应一个真实数据源，无样本就不出行（不拿 0 充数）。
   const rows: HudRow[] = [
     {
       label: "编码",
@@ -157,6 +123,15 @@ export function RcHud({
           ? "硬编（D3D11）或 CPU 编码，按画质档与能力选择"
           : "浏览器解不出 H.264 时的兜底路径",
     },
+  ];
+  if (frameSize && frameSize.w > 0 && frameSize.h > 0) {
+    rows.push({
+      label: "分辨率",
+      value: `${frameSize.w}×${frameSize.h}`,
+      hint: "对方画面的原始像素尺寸（与「画面」行的采集范围不是一回事）",
+    });
+  }
+  rows.push(
     {
       label: "画质",
       value: qualityHudLabel(quality, activeQuality, peerDriven),
@@ -167,9 +142,9 @@ export function RcHud({
             ? "档位由对方机器决定"
             : undefined,
     },
-    { label: "画面", value: scopeLabelLong(scope) },
+    { label: "画面", value: scopeLabelLong(scope), hint: "对方采集的画面范围" },
     { label: "链路", value: linkStateLabel(linkState), cls: linkCls, hint: "按对端 pong 的新鲜度判定" },
-  ];
+  );
   if (path) {
     rows.push({ label: "路径", value: path, hint: pathKindHint(pathKind) });
   }
@@ -218,90 +193,24 @@ export function RcHud({
     });
   }
   if (pointerLocked) {
-    rows.push({ label: "指针", value: "已锁定", hint: "拖出画面边缘不丢事件" });
+    rows.push({ label: "指针", value: "已锁定", cls: styles.hudAccent, hint: "拖出画面边缘不丢事件" });
   }
 
   return (
-    <div className={styles.hudWrap} ref={wrapRef} onMouseEnter={scheduleOpen} onMouseLeave={scheduleClose}>
-      <div
-        className={styles.hud}
-        title="悬停/点击展开状态明细"
-        role="button"
-        tabIndex={0}
+    <div className={styles.hudWrap} ref={wrapRef}>
+      <button
+        type="button"
+        className={styles.hudBtn}
+        title="连接详情：编码 / 分辨率 / 延迟 / 丢包 / 码率"
         aria-expanded={open}
-        onClick={toggle}
-        onKeyDown={(e) => {
-          // 键盘可达：Enter/Space 等价点击（读屏用户不靠 hover）
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            toggle();
-          }
-        }}
+        onClick={() => setOpen((v) => !v)}
       >
-        <span className={styles.hudOk}>
-          {icon(Video)}
-          {codec === "h264" ? "H.264" : codec === "hevc" ? "HEVC" : "JPEG"}
-          {fps > 0 ? ` · ${fps}fps` : ""}
-        </span>
-        {rttMs > 0 && (
-          <span className={rttCls}>
-            {icon(Zap)}
-            延迟 ~{rttMs}ms{grade !== "unknown" ? ` · ${rttGradeLabel(grade)}` : ""}
-          </span>
-        )}
-        {frameLatencyMs != null && frameLatencyMs > 0 && (
-          <span>
-            {icon(Video)}
-            画面 ≈{frameLatencyMs}ms
-          </span>
-        )}
-        {(segCapMs ?? 0) > 0 && (segEncMs ?? 0) > 0 && (
-          <span>
-            {icon(Activity)}
-            采{segCapMs}·编{segEncMs}·网≈{segNetMs}·解{segDecMs} ms
-          </span>
-        )}
-        {(respMs ?? 0) > 0 && (
-          <span>
-            {icon(Zap)}
-            操作 ≈{respMs}ms
-          </span>
-        )}
-        {lossPermille != null && lossPermille > 0 && (
-          <span className={lossPermille >= 20 ? styles.hudWarn : styles.hudOk}>
-            {icon(Activity)}
-            丢包 {(lossPermille / 10).toFixed(1)}%
-          </span>
-        )}
-        {bitrateKbps != null && bitrateKbps > 0 && (
-          <span>
-            {icon(Network)}
-            {bitrateKbps >= 1000 ? `${(bitrateKbps / 1000).toFixed(1)}Mbps` : `${bitrateKbps}kbps`}
-          </span>
-        )}
-        {path && (
-          <span>
-            {icon(Network)}
-            {path}
-          </span>
-        )}
-        <span>
-          {icon(Monitor)}
-          {qualityHudLabel(quality, activeQuality, peerDriven)} · {scopeLabel(scope)}
-        </span>
-        <span className={linkCls}>
-          {icon(Activity)}
-          {linkStateLabel(linkState)}
-        </span>
-        {pointerLocked && (
-          <span className={styles.hudAccent}>
-            {icon(MousePointer2)}
-            指针已锁定
-          </span>
-        )}
-      </div>
-      {open && rows.length > 0 && (
-        <div className={styles.hudPanel} aria-label="画面状态明细">
+        <Info size={12} aria-hidden="true" />
+        连接详情
+      </button>
+      {open && (
+        <div className={styles.hudPanel} aria-label="连接详情">
+          <div className={styles.hudPanelHead}>连接详情</div>
           {rows.map((r) => (
             <div key={r.label} className={styles.hudRow}>
               <span className={styles.hudRowLabel}>{r.label}</span>

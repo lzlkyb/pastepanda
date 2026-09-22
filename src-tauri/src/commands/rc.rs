@@ -65,6 +65,12 @@ pub struct RcTargetDevice {
     pub note: String,
     /// 方案 D「免确认直连」：这台设备发起远程时跳过人工同意。默认 false。
     pub trusted: bool,
+    /// 对端**自报的系统**短标签（`Windows 11` / `macOS` / `Linux`）。
+    ///
+    /// 来源是会话 `Accept` 帧（`rc/protocol.rs`）；空串 = 还没建立过会话，
+    /// 或对端是旧版 / 采不到——前端据空串**不渲染这一格**，不编默认值。
+    /// 仅同步配对的设备恒为空串（它从没跑过 rc 会话）。
+    pub os: String,
 }
 
 #[derive(Serialize)]
@@ -141,6 +147,7 @@ pub fn rc_targets(
             last_path: d.last_path,
             note: d.note,
             trusted: d.trusted,
+            os: d.os,
         });
     }
     for d in store.device_list()? {
@@ -177,6 +184,8 @@ pub fn rc_targets(
             note: String::new(),
             // 仅同步配对还没提升进 rc 表，无从谈「免确认」——恒 false。
             trusted: false,
+            // 同理：它从没跑过 rc 会话，没有 Accept 帧可读系统，恒空串。
+            os: String::new(),
         });
     }
     // C1：最近用过的在前。live 的 last_seen 本来就最新，纯 last_seen 排序
@@ -1238,6 +1247,16 @@ pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
     .inner_size(1200.0, 780.0)
     .min_inner_size(960.0, 640.0)
     .resizable(true)
+    // 自绘标题栏（批7，2026-09-22）：去掉系统标题栏，由前端 `RcA2TitleBar` 承担
+    // 品牌 / 通道状态 / 最小化·最大化·关闭。三条要点：
+    // ① 拖拽与「双击拖动区最大化」是 Tauri 内置能力（`data-tauri-drag-region`
+    //    + 注入的 drag.js 打 `start_dragging` / `internal_toggle_maximize`），
+    //    前端不必自己实现；`decorations(false)` 后这些才真正生效。
+    // ② **会话态**（画面铺满、标题栏隐去）必须另挂一条拖拽区，否则那一态既拖不动
+    //    也关不掉——见 `RcSessionTop` 的 drag-region 与 `chromeHidden` 分支。
+    // ③ `.resizable(true)` 要保留：`decorations(false)` 仍带 WS_THICKFRAME，
+    //    边框拖拽调整大小、Aero Snap 都还在（需真机确认，见批7 验收清单）。
+    .decorations(false)
     // 防闪黑（方案 A，照 md-editor / 截图窗先例）：
     // ① 先隐藏建窗——Tauri 默认 visible=true，`build()` 返回时 HWND 已上屏，
     //    WebView 尚未 paint，Windows 客户区会露出系统默认黑底（整窗闪一下黑框）。
