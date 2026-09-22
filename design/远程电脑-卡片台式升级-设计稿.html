@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="EI1K7fj73tySJhLz80EgfK">
+<head data-page-node-id="Tvj1zRA3Bg5Z124VWH4deL">
+<meta charset="utf-8" data-page-node-id="tOKBLaMYiMu0SFC5FQGeDo">
+<title>远程电脑工作台 · B 卡片台式升级 设计稿</title>
+<style>
+/* ══ ocean 主题真实 token（theme.css:268-447 摘录，未改值） ══ */
+:root{
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg,#f4f8fc 0%,#eef3f8 42%,#e8f0f7 100%);
+  --card-bg:#fff;
+  --section-bg:#f0f4f8;
+  --border-color:#e0e4eb;
+  --text-primary:#0f172a;
+  --text-secondary:#495565;
+  --text-muted:#627083;
+  --accent:#0284c7;
+  --accent-light:#e0f2fe;
+  --accent-solid:#027cbb;
+  --text-on-accent:#fff;
+  --success:#15803d;
+  --success-bg:#dcfce7;
+  --warning:#c54a0a;
+  --warning-bg:#fff7ed;
+  --danger:#d82525;
+  --danger-bg:#fef2f2;
+  --hover:#e8ecf2;
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+  --glass-card-shadow:0 1px 2px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.07),0 0 0 1px rgba(15,23,42,.04);
+  --sidebar-bg:rgba(244,247,251,.72);
+  --shell-border:rgba(255,255,255,.85);
+  --shell-blur:blur(16px) saturate(1.2);
+  --card-selected-bg:linear-gradient(180deg,#fff 0%,#f0f9ff 100%);
+  --card-selected-border:color-mix(in srgb,#0284c7 35%,transparent);
+  --card-selected-shadow:0 0 0 3px rgba(2,132,199,.16),0 8px 24px rgba(2,132,199,.16);
+  --card-selected-glow:color-mix(in srgb,var(--accent) 16%,transparent);
+  --win-close-hover-bg:#dc2626;
+  --win-close-hover-fg:#fff;
+  --font:"SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;padding:0 0 48px;background:#e9edf2;color:#0f172a;
+  font-family:var(--font);font-size:13px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.pagehead{width:1200px;margin:0 auto;padding:34px 0 20px}
+.pagehead h1{margin:0 0 8px;font-size:20px;font-weight:600}
+.pagehead p{margin:0;max-width:860px;color:#495565;font-size:13px;line-height:1.75}
+.pagehead b{color:#0f172a;font-weight:600}
+.stage{display:flex;justify-content:center;padding-bottom:30px}
+
+/* ══ 画布：严格 1200×780（rc.rs 的 rc_open_workbench 尺寸） ══ */
+.frame{
+  width:1200px;height:780px;display:flex;flex-direction:column;overflow:hidden;
+  color:var(--text-primary);background:var(--app-bg);font-family:var(--font);
+  border-radius:10px;box-shadow:0 12px 40px rgba(15,23,42,.18);
+}
+
+/* ── 标题栏 48px：未改动，照现状复刻 ── */
+.titlebar{
+  flex:0 0 48px;height:48px;display:grid;grid-template-columns:1fr auto 1fr;
+  align-items:center;gap:10px;padding-left:14px;background:var(--card-bg);
+  border-bottom:1px solid var(--border-color);box-shadow:var(--shadow-md);
+  user-select:none;z-index:2;
+}
+.brand{min-width:0;display:flex;align-items:center;gap:9px}
+.brandIcon{
+  width:26px;height:26px;display:grid;place-items:center;flex:0 0 auto;
+  color:var(--text-on-accent);background:var(--accent);border-radius:8px;
+}
+.brandName{font-size:13px;font-weight:650;white-space:nowrap}
+.brandSection{margin-left:2px;color:var(--text-muted);font-size:13px;white-space:nowrap}
+.channelStatus{
+  display:inline-flex;align-items:center;gap:7px;padding:0 10px;min-height:28px;
+  color:var(--text-secondary);font-size:12px;white-space:nowrap;
+}
+.dot{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:var(--success)}
+.winControls{justify-self:end;align-self:stretch;display:flex;flex:0 0 auto}
+.winBtn{
+  width:46px;border:0;background:transparent;display:grid;place-items:center;
+  color:var(--text-secondary);cursor:default;
+}
+.winBtnClose:hover{background:var(--win-close-hover-bg);color:var(--win-close-hover-fg)}
+
+.body{flex:1;min-height:0;display:flex}
+
+/* ── 侧栏：★改动 1 —— 材质换 --sidebar-bg + shell-blur（不再用纯色 section-bg） ── */
+.sidebar{
+  width:306px;min-width:306px;min-height:0;display:flex;flex-direction:column;
+  background:var(--sidebar-bg);
+  backdrop-filter:var(--shell-blur);
+  border-right:1px solid var(--shell-border);
+}
+.sidebarHead{padding:14px 12px 10px}
+.sidebarTitleRow{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sidebarTitleRow h2{flex:1;margin:0;font-size:15px;font-weight:600}
+.btnSecondary{
+  display:inline-flex;align-items:center;gap:5px;padding:0 10px;min-height:30px;
+  color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;
+  font:inherit;font-size:12px;cursor:pointer;
+}
+.searchBox{
+  height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;
+  color:var(--text-muted);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;
+}
+.searchBox input{min-width:0;width:100%;border:0;outline:0;color:var(--text-primary);background:transparent;font-family:inherit}
+.deviceList{flex:1;min-height:0;overflow:auto;padding:2px 8px 12px}
+.listLabel{
+  display:flex;align-items:center;justify-content:space-between;padding:10px 6px 6px;
+  color:var(--text-muted);font-size:11px;
+}
+.listLabel:first-child{padding-top:2px}
+.listLabel span:last-child{font-variant-numeric:tabular-nums}
+/* ★改动 7 —— 设备行 58→56 */
+.deviceItem{
+  min-height:56px;display:grid;grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;gap:6px;margin-bottom:4px;padding:4px;
+  border:1px solid transparent;border-radius:8px;
+}
+.deviceItem:hover{background:var(--hover)}
+/* ★改动 3 —— 选中态启用早已定义但没被用的 --card-selected-* */
+.deviceItemSelected{
+  background:var(--card-selected-bg);
+  border-color:var(--card-selected-border);
+  box-shadow:0 0 0 3px var(--card-selected-glow);
+}
+.deviceSelect{
+  min-width:0;min-height:48px;display:grid;grid-template-columns:34px minmax(0,1fr);
+  align-items:center;gap:9px;padding:4px;border:0;border-radius:4px;
+  color:var(--text-primary);background:transparent;text-align:left;cursor:pointer;
+}
+.deviceIcon{
+  position:relative;width:34px;height:34px;display:grid;place-items:center;
+  color:var(--text-secondary);background:color-mix(in srgb,var(--accent) 10%,var(--card-bg));
+  border-radius:8px;
+}
+.deviceIcon::after{
+  content:"";position:absolute;right:-2px;bottom:-2px;width:8px;height:8px;
+  border:2px solid var(--sidebar-bg);border-radius:50%;background:var(--text-muted);
+}
+.deviceIcon[data-presence="live"]::after{background:var(--success)}
+.deviceIcon[data-presence="recent"]::after{background:var(--warning)}
+.deviceCopy{min-width:0}
+.deviceCopy strong,.deviceCopy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deviceCopy strong{font-size:12px;font-weight:600}
+.deviceCopy small{margin-top:3px;color:var(--text-muted);font-size:11px}
+.connectButton{
+  min-width:52px;min-height:28px;padding:0 10px;border-radius:8px;font:inherit;
+  font-size:12px;cursor:pointer;color:var(--text-on-accent);background:var(--accent-solid);
+  border:1px solid transparent;
+}
+.probeButton{
+  min-width:52px;min-height:28px;padding:0 10px;border-radius:8px;font:inherit;
+  font-size:12px;cursor:pointer;color:var(--text-secondary);
+  background:var(--card-bg);border:1px solid var(--border-color);
+}
+
+/* ── 侧栏底部：★改动 5 —— 协助区 2 列+跨列(78px) → 3 列一行(44px) ── */
+.receiveRow{
+  display:flex;align-items:center;gap:8px;padding:10px 12px;
+  border-top:1px solid var(--border-color);
+}
+.receiveRow>span{min-width:0;flex:1}
+.receiveRow strong,.receiveRow small{display:block}
+/* ★改动 4 —— 说明文字 11→12（11px 只留给 meta） */
+.receiveRow strong{font-size:12px;font-weight:600}
+.receiveRow small{margin-top:2px;color:var(--text-muted);font-size:12px}
+.receiveOn,.receiveOff{
+  min-width:58px;min-height:28px;border-radius:8px;font:inherit;font-size:12px;cursor:pointer;
+}
+.receiveOn{
+  color:var(--success);background:var(--success-bg);
+  border:1px solid color-mix(in srgb,var(--success) 35%,var(--border-color));
+}
+.receiveOff{color:var(--text-secondary);background:var(--card-bg);border:1px solid var(--border-color)}
+.assistActions{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 8px 8px}
+.assistActions button{
+  min-height:36px;display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;
+  font:inherit;font-size:12px;cursor:pointer;padding:0 4px;white-space:nowrap;
+}
+.toolNav{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:8px;border-top:1px solid var(--border-color)}
+.toolNav button{
+  min-height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  border:0;border-radius:8px;color:var(--text-secondary);background:transparent;
+  font:inherit;font-size:12px;cursor:pointer;
+}
+.toolNav .toolActive{color:var(--text-primary);background:var(--hover)}
+
+/* ── 详情区：★改动 2 —— 取消 104px 通栏 detailHead，改 Bento 4 列网格 ── */
+.main{flex:1;min-width:0;min-height:0;display:flex;overflow:hidden;background:var(--app-bg)}
+.detailBody{
+  flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:12px;
+  padding:20px 24px 28px;overflow:auto;
+}
+.bento{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.row1{flex:0 0 168px}
+.row2{flex:0 0 124px}
+.card{background:var(--card-bg);border-radius:12px;box-shadow:var(--glass-card-shadow);min-width:0}
+.span2{grid-column:span 2}
+
+.cardIcon{
+  width:32px;height:32px;display:grid;place-items:center;flex:0 0 auto;
+  color:var(--text-secondary);background:color-mix(in srgb,var(--accent) 10%,var(--card-bg));
+  border-radius:8px;
+}
+.cardIcon.lg{width:56px;height:56px;border-radius:12px}
+
+/* 设备主卡（2 列） */
+.mainCard{grid-column:span 2;display:flex;flex-direction:column;justify-content:space-between;padding:22px}
+.mcTop{display:flex;align-items:flex-start;gap:16px;min-width:0}
+.mcName{min-width:0;flex:1}
+.nameRow{display:flex;align-items:center;gap:8px}
+.nameRow h2{margin:0;font-size:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ghostBtn{
+  display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 8px;flex:0 0 auto;
+  color:var(--text-secondary);background:transparent;border:1px solid transparent;
+  border-radius:4px;font:inherit;font-size:12px;cursor:pointer;
+}
+.mcName p{margin:5px 0 0;color:var(--text-secondary);font-size:12px}
+.onlineText{color:var(--success);font-weight:600}
+.mcActions{display:flex;align-items:center;gap:8px}
+.btnPrimary{
+  display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;
+  color:var(--text-on-accent);background:var(--accent-solid);
+  border:1px solid transparent;border-radius:8px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;
+}
+.btnSecondary{
+  display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;
+  color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;font:inherit;font-size:13px;cursor:pointer;
+}
+
+/* 事实小卡（1 列） */
+.factCard{display:flex;flex-direction:column;gap:6px;padding:18px 18px 16px}
+.factCard .cardIcon{margin-bottom:4px}
+.factLabel{color:var(--text-secondary);font-size:12px}
+.factValue{font-size:15px;font-weight:600;letter-spacing:-.1px}
+.factNote{color:var(--text-muted);font-size:12px;line-height:1.5}
+
+/* 宽事实卡（2 列） */
+.wideCard{display:flex;align-items:center;gap:16px;padding:0 20px}
+.wcText{min-width:0;display:flex;flex-direction:column;gap:4px}
+.wcText .factValue{font-size:15px}
+.factNote.row{display:inline-flex;align-items:center;gap:5px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* 最近会话（4 列） */
+.recentBlock{display:flex;flex-direction:column;flex:1;min-height:0}
+.sectionHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.sectionHead h3{margin:0;font-size:13px;font-weight:600}
+.sectionLink{
+  display:inline-flex;align-items:center;gap:5px;padding:0;border:0;background:none;
+  color:var(--accent);font:inherit;font-size:12px;cursor:pointer;
+}
+.recentList{background:var(--card-bg);border-radius:12px;overflow:hidden;box-shadow:var(--glass-card-shadow)}
+.recentLine{
+  display:grid;grid-template-columns:minmax(0,1fr) 64px 108px minmax(0,auto);
+  align-items:center;gap:14px;height:56px;padding:0 18px;
+  font-size:12px;color:var(--text-secondary);border-top:1px solid var(--border-color);
+}
+.recentLine:first-child{border-top:0}
+.recentLine strong{font-size:12.5px;font-weight:500;color:var(--text-primary)}
+.recentLine span{font-variant-numeric:tabular-nums}
+/* 时长/时间右对齐：各行数字右边缘对齐，可以按列比较而不是逐行找 */
+.recentLine>span:nth-child(2),.recentLine>span:nth-child(3){text-align:right}
+.recentResult{display:inline-flex;align-items:center;gap:7px;color:var(--text-muted);text-align:right;justify-self:end}
+.toneDot{width:6px;height:6px;flex:0 0 auto;border-radius:50%;display:inline-block}
+.toneOk{background:var(--success)}
+.toneWarn{background:var(--warning)}
+.toneFail{background:var(--danger)}
+
+/* ── 改动清单 ── */
+.notes{width:1200px;margin:0 auto;padding-top:6px}
+.notes h2{margin:0 0 6px;font-size:15px;font-weight:600}
+.notes>p{margin:0 0 16px;color:#495565;font-size:13px;line-height:1.75}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06)}
+th,td{padding:11px 14px;text-align:left;font-size:12.5px;border-bottom:1px solid #e6eaf0;vertical-align:top;line-height:1.6}
+th{background:#f6f8fb;color:#495565;font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td code{font-family:var(--mono);font-size:11.5px;color:#1e3a5f;background:#eef4fa;padding:1px 5px;border-radius:4px}
+.tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;white-space:nowrap}
+.tag.s{background:#dcfce7;color:#15803d}
+.tag.m{background:#fff7ed;color:#c54a0a}
+.tag.l{background:#fef2f2;color:#d82525}
+</style>
+</head>
+<body data-page-node-id="CyrmEsON6LqVOY1xXEVxes">
+
+<header class="pagehead" data-page-node-id="j4p3vDDvItLgi9o9mvXZjn">
+  <h1 data-page-node-id="mUMug2warJcYbKqULZDPFF">远程电脑工作台 · B 卡片台式升级</h1>
+  <p data-page-node-id="I9WOsa9E6Bxqx6CSeC4G5G">按真实窗口 <b data-page-node-id="QEizgZJV65tsUEMpJ0RJAm">1200×780</b> 渲染，主题取 <b data-page-node-id="xEBHeruQwwibdoOuOyQ3qZ">ocean</b>（rc 跟随用户配置的主题，本稿只验 ocean 一套；
+     所有取值都走 token，其余 5 套随之成立）。结构照 <code data-page-node-id="17ih1y5xtHQlST47IT4Lpo">RcWorkbench</code> /
+     <code data-page-node-id="iRkfKNJeWkxOqJWxVWVTzh">RcA2Sidebar</code> / <code data-page-node-id="3F0SEJMqCMDKWn07nvqrsQ">RcA2DeviceDetail</code> 的真实 DOM 复刻，文案取自
+     <code data-page-node-id="p9ZjjvQqLArJIPLatllhIw">rcDevice.ts</code> / <code data-page-node-id="KPKKQlURmhjQkYQlkEVi8c">rcSessionStats.ts</code> / <code data-page-node-id="QuSlKPKyrqSHdAaCUkgP0q">rcHistory.ts</code> 的真实输出。</p>
+</header>
+
+<div class="stage" data-page-node-id="rwfJYBlSkDNTXJkoAGwGWE">
+  <div class="frame" id="pane-b" data-page-node-id="nWZaKzz45bkK83pJDkwPih">
+
+    <header class="titlebar" data-page-node-id="nls7BX0YFoxqcmBAw0IBRS">
+      <div class="brand" data-page-node-id="7Wybo9SVslRjXEUjEArlKL">
+        <span class="brandIcon" data-page-node-id="eAoAUbbvfvSQxbcHwR8OqM">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="Yxo0FaRRG6ocW8CwKcyRYx"><path d="m9 10 3-3 3 3" data-page-node-id="RAsTtK7PoqFp4gYe9A1LzQ"/><path d="M12 13V7" data-page-node-id="EKIKd74rJtDkt92wCMNhVI"/><rect width="20" height="14" x="2" y="3" rx="2" data-page-node-id="Vc1ft3iDcIED8o8uBkI8WW"/><path d="M12 17v4" data-page-node-id="YggeGsNznh40JiiPFj1wE8"/><path d="M8 21h8" data-page-node-id="dHoWKz1ooPqvRX3rZ8KPIz"/></svg>
+        </span>
+        <span class="brandName" data-page-node-id="v2FFoapbpVA9UbkLDoCz8N">PastePanda</span>
+        <span class="brandSection" data-page-node-id="VsFHoyHKhDk85JQbK6TbcF">远程电脑</span>
+      </div>
+      <span class="channelStatus" data-page-node-id="dFVBDeS3hth4a4QO7q0vaJ"><span class="dot" data-page-node-id="d4w1lyEYALLm1aBevGfIks"></span>远程通道已开启</span>
+      <div class="winControls" data-page-node-id="6ikBePVKqKG6nrlRsIP8eF">
+        <button class="winBtn" aria-label="最小化" data-page-node-id="5f7pns39IHMNlHX5jxdyIL"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" data-page-node-id="6FvSC1OGBrjFSZfIkz32Xc"><path d="M5 12h14" data-page-node-id="mwMIVYixkcsVnC4jedUhCA"/></svg></button>
+        <button class="winBtn" aria-label="最大化" data-page-node-id="lZ6rfFlewDBSJ0jVTpjkAj"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" data-page-node-id="SF0uPhXaLL2QkDC7nFhTXA"><rect x="5" y="5" width="14" height="14" rx="1.5" data-page-node-id="sqrnLBEA5Lpe3b0XktH8Rp"/></svg></button>
+        <button class="winBtn winBtnClose" aria-label="关闭" data-page-node-id="qrbUNo8hb8woVynavFit6J"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" data-page-node-id="nJFA84Zh8HeSOchBbyIc8i"><path d="M18 6 6 18M6 6l12 12" data-page-node-id="zHMK1PBkdqvhHDXHHN38CZ"/></svg></button>
+      </div>
+    </header>
+
+    <div class="body" data-page-node-id="etTYB5vfLycRUWxuuQmkRo">
+      <aside class="sidebar" data-page-node-id="vdLum17YVpLrxOPqrLe0jd">
+        <div class="sidebarHead" data-page-node-id="ElreoF6LL6cMJaeK8HHHHz">
+          <div class="sidebarTitleRow" data-page-node-id="Hxu3kAExPAjWMG3GLs9huP">
+            <h2 data-page-node-id="CqftIyLuWP6ZdHPnw9TuUb">我的设备</h2>
+            <button class="btnSecondary" data-page-node-id="l6PGEl45gUupnRPVcLHxxZ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="BYQAjqqPSASBQl6c4NkxBs"><path d="M5 12h14M12 5v14" data-page-node-id="hAT09TwF43SrDZit7SXWKW"/></svg>添加设备</button>
+          </div>
+          <label class="searchBox" data-page-node-id="1pNbbzZnGDNPRH2jE60wUX">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="SVBmEm6Yj4Jd6AfNxbljpA"><circle cx="11" cy="11" r="8" data-page-node-id="Uq93as3WOvbOFIsDAOUP69"/><path d="m21 21-4.3-4.3" data-page-node-id="Hq2bhG9cmEbTr6oKUF86Wl"/></svg>
+            <input type="search" placeholder="搜索设备" data-page-node-id="HGfaPkY6sw0AmWGGKwqxuA">
+          </label>
+        </div>
+
+        <div class="deviceList" data-page-node-id="evVIOplXSmLdFYVBc2jm03">
+          <div class="listLabel" data-page-node-id="aIlec4fjGjnlRYFOPXavCG"><span data-page-node-id="MaQljHu4GGDcrTSP5PKFGS">在线</span><span data-page-node-id="xRpt46BQABmV4P2b6PIvVW">2</span></div>
+
+          <div class="deviceItem deviceItemSelected" data-page-node-id="9yuStVQ76LLP39iIhLWNXh">
+            <button class="deviceSelect" data-page-node-id="w26JMxHAlEy6xz7RCLU6qd">
+              <span class="deviceIcon" data-presence="live" data-page-node-id="jEWVSkRd5ML6IdhpyYfvZO">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="qpOb0aSCdLiEBnNWOkAjl2"><rect width="20" height="14" x="2" y="3" rx="2" data-page-node-id="C3BFczJRnrkL5eSCLEOodr"/><path d="M8 21h8M12 17v4" data-page-node-id="IZmGjKKvtZ5Ezzkaeaw7K4"/></svg>
+              </span>
+              <span class="deviceCopy" data-page-node-id="hMize3EAoY5yebPzE4zhM8"><strong data-page-node-id="trAzCkeOzy5miYgOPEkvP8">家里的台式机</strong><small data-page-node-id="lLdw6OFhOfhdxdJcgytK1S">局域网直连</small></span>
+            </button>
+            <button class="connectButton" data-page-node-id="I0AFSTtgbR4P5PT29CNRd4">连接</button>
+          </div>
+
+          <div class="deviceItem" data-page-node-id="ZmGn8rUvYaduqPFetUsaAS">
+            <button class="deviceSelect" data-page-node-id="KbawAj3CFqcsmTZRIJLhrc">
+              <span class="deviceIcon" data-presence="live" data-page-node-id="kb3WRwKPdSzLVXRADGDpGE">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="AnSea66Ah6PSDIJazxgLQG"><rect width="20" height="14" x="2" y="3" rx="2" data-page-node-id="2CrkukaQQtwo8IrSMK7GTc"/><path d="M8 21h8M12 17v4" data-page-node-id="448FDHtm74eOFiFIVnXo8K"/></svg>
+              </span>
+              <span class="deviceCopy" data-page-node-id="1Sh2kekH1JdKLmXl09MgRg"><strong data-page-node-id="D6hUeaJK6XXqDkIwZGoBzT">工作电脑</strong><small data-page-node-id="LQ3IAwPDeaxwHVa3deXcWe">公网直连</small></span>
+            </button>
+            <button class="connectButton" data-page-node-id="BmO8BRI6RErCiaiB6MpwHW">连接</button>
+          </div>
+
+          <div class="listLabel" data-page-node-id="FlAH4wapVCQCDyWi3WqF4e"><span data-page-node-id="5AYOYzVLVsVYMe9UGiT2BB">最近使用</span><span data-page-node-id="vZIXrb5iea55cVh77KA0GV">1</span></div>
+
+          <div class="deviceItem" data-page-node-id="a8NNk9PmhOOJkaS97VYuYi">
+            <button class="deviceSelect" data-page-node-id="SQuA7fBT76GEBsAnYw2tjg">
+              <span class="deviceIcon" data-presence="recent" data-page-node-id="gZmAq4tXMYAvppmFwz3XrK">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="9oAYFe5gTAywaZVZ6w1EsY"><rect width="20" height="14" x="2" y="3" rx="2" data-page-node-id="l2d21d5ZzvfC5FSpygxFzC"/><path d="M8 21h8M12 17v4" data-page-node-id="JXQw1uZ1429A2fdPJ0ceA9"/></svg>
+              </span>
+              <span class="deviceCopy" data-page-node-id="qZ9rTiZZh5zaQcpi5EcIvk"><strong data-page-node-id="Q7iyNuHty5kQM699ElyYTd">老爸的笔记本</strong><small data-page-node-id="kGgevF3RV6X9HXuUjRYOFv">2 小时前还在</small></span>
+            </button>
+            <button class="probeButton" data-page-node-id="jcC0wOZOLYOm47FkZBEVlO">检测</button>
+          </div>
+
+          <div class="listLabel" data-page-node-id="uBy5GuJngFSYyEntd4zAFn"><span data-page-node-id="7ImrIDQbNBTAbhaWLyxwxA">尚未连接</span><span data-page-node-id="GUhA8wqFqFSmczsbicPo0B">1</span></div>
+
+          <div class="deviceItem" data-page-node-id="xQrF1XGg6kW07L930BI9nv">
+            <button class="deviceSelect" data-page-node-id="wBLJ4q9Fpl1Hcv2y8Z12Xu">
+              <span class="deviceIcon" data-presence="never" data-page-node-id="fv2clxQCubLgdAELKPI1XI">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="NqFaa1UxGH0SBQeybTtLnM"><rect width="20" height="14" x="2" y="3" rx="2" data-page-node-id="S33plGreQdDd7mzoB0IDr5"/><path d="M8 21h8M12 17v4" data-page-node-id="2rDdBogNTuaNms4liHZvYQ"/></svg>
+              </span>
+              <span class="deviceCopy" data-page-node-id="HqrIgbFCMV8lCvrBjbbozS"><strong data-page-node-id="X1FmVni4MjhloYv28AJBYP">会议室主机</strong><small data-page-node-id="7MhyZzQL5MProy6dAL2ISS">配对后还没连上过</small></span>
+            </button>
+            <button class="probeButton" data-page-node-id="qzr4U8IBkwUrgccy6IVhd9">检测</button>
+          </div>
+        </div>
+
+        <div class="receiveRow" data-page-node-id="zE9MP0UAWtpf3DxwB0gt1e">
+          <span data-page-node-id="G262FLYj4GeIoBkOV59yEj">
+            <strong data-page-node-id="7zHBKD0MoCB7LYeODOBzod">允许别人连接本机</strong>
+            <small data-page-node-id="Oq8PKlQ2D0KB6I3pP7KeuR">已开启，可接收远程请求</small>
+          </span>
+          <button class="receiveOn" data-page-node-id="c0e5l0uAEkdY3un6gHx1Wl">已允许</button>
+        </div>
+
+        <div class="assistActions" data-page-node-id="FyxW4WUHpryWa4G0jVvDsk">
+          <button data-page-node-id="sorAASMHpeH25RX09mBJE8"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="47QFGGLb4O2eXTyHlaiY92"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" data-page-node-id="JXWD8ErWANWAlCBwmCuLPp"/><circle cx="9" cy="7" r="4" data-page-node-id="egtDFBuwFoy995mcCvFFHk"/><path d="M22 21v-2a4 4 0 0 0-3-3.87" data-page-node-id="fUVkzBynyxgtD0Ljk18zwt"/></svg>让别人帮我</button>
+          <button data-page-node-id="Os4XY3ZMwP9bAG3HXOPy2v"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="5k0vvrBKKdyJWr268H1gjY"><path d="M11 12H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1Z" data-page-node-id="1GzmGbrM6WOZKO9nrWdWS0"/><path d="M7 12V7a5 5 0 0 1 10 0v5" data-page-node-id="lDLyCrXvBVWAGxV7D7Xxws"/><path d="M14 7h4a2 2 0 0 1 2 2v9" data-page-node-id="itecP9s6QN2MQMoyDMFlji"/><path d="m18 18 2 2 2-2" data-page-node-id="NhEx82EEy7uO2Zznjs8lhw"/></svg>帮助别人</button>
+          <button data-page-node-id="Pz32E8Uwy4G4CDHBlBFbsm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="U6tqGj6nAfUctfAa8hfqyJ"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4" data-page-node-id="xzg02KKXIhUw3CtE6VdpZE"/><path d="m21 2-9.6 9.6" data-page-node-id="U6Ob4swRv0D8rE1RlLTBd3"/><circle cx="7.5" cy="15.5" r="5.5" data-page-node-id="gPY6eXH4PfQc9j5UYqWBqF"/></svg>输入接入码</button>
+        </div>
+
+        <nav class="toolNav" data-page-node-id="miDd94wCrpyfvb63EIrxWW">
+          <button data-page-node-id="BxANPeVnSzJMPwHWtzpRqb"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="O5rZyzC5kj6hTwnpOFThUe"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" data-page-node-id="6EorDB7UyNMO9YCEbXUNkY"/><path d="M14 2v4a2 2 0 0 0 2 2h4" data-page-node-id="aSRCcCAvPoSHO89MCyqzEc"/><path d="M12 18v-6" data-page-node-id="QUpAatpzr6Yg1qzwchVfQb"/><path d="m9 15 3-3 3 3" data-page-node-id="XReqewmuNvWjG99i9d30Pe"/></svg><span data-page-node-id="AeAl7qZSf2uoIIefrKS45P">文件</span></button>
+          <button data-page-node-id="2QEkFF2E52p9Xs8TCupuTV"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="rLoqEabAlWCJyuIwdsn3uU"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" data-page-node-id="CMSUuCJT9V3sBsplfu7Yne"/><path d="M3 3v5h5" data-page-node-id="nczu9gIFpie7RxelOfvqZ7"/><path d="M12 7v5l4 2" data-page-node-id="LmstU8kzpNMA3aaR4w9a4V"/></svg><span data-page-node-id="NWSA2lg0MyBwpvu31yAJ11">记录</span></button>
+          <button data-page-node-id="eqBwp3wZbBwO2maZEExkdM"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="TUR5an2yaCHKSoXViArqdT"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" data-page-node-id="bp2nD1w2NzEG5zm5YkTTvC"/><circle cx="12" cy="12" r="3" data-page-node-id="O95iqUshdqraNlKkzLc6H8"/></svg><span data-page-node-id="9kQkoeTMULoMbijTDntK7K">设置</span></button>
+        </nav>
+      </aside>
+
+      <main class="main" data-page-node-id="uUSEZgy4UvhGMaDEjJEbDk">
+        <div class="detailBody" data-page-node-id="etqM5fkLFRSYu6x3hY7gse">
+
+          <div class="bento row1" data-page-node-id="pYpZx2uixe0bMGTfnfUN1f">
+            <article class="card mainCard" data-page-node-id="c4AbnUpRiUCDyQHBTRyHH4">
+              <div class="mcTop" data-page-node-id="y2Ol9y7TpUOHR8FcqqNyDI">
+                <span class="cardIcon lg" aria-hidden="true" data-page-node-id="TPq0whuGWMzE7mTBHhg14e">
+                  <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" data-page-node-id="r61dqvZHM516mEaeeNZJL6"><rect width="20" height="14" x="2" y="3" rx="2" data-page-node-id="FV2r6M0rm2DsE43RbokmaE"/><path d="M8 21h8M12 17v4" data-page-node-id="AuwsEDjunelE08LuO9GuFA"/></svg>
+                </span>
+                <div class="mcName" data-page-node-id="xCjco0YuGLkKAr7G4E8iy4">
+                  <div class="nameRow" data-page-node-id="WWIsCihRLimX5NyjJc9dwW">
+                    <h2 data-page-node-id="RnVq6QTsMXAMcziztXvaUR">家里的台式机</h2>
+                    <button class="ghostBtn" data-page-node-id="BVYnG2gYKO9HLd4hQEcibq"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="Uf4i40ReyVje8PUcyuAIA4"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" data-page-node-id="jAbC7ZAPeeKLAIXhyEM8wH"/></svg>重命名</button>
+                  </div>
+                  <p data-page-node-id="XyvkmDBezjDNf4zUfcrxWu"><span class="onlineText" data-page-node-id="mqYgx38yQFKtTYYe56i0SI">在线</span> · Windows 11 · 局域网可达</p>
+                </div>
+              </div>
+              <div class="mcActions" data-page-node-id="dTUgvmQHTbMGecR5Fhw5XH">
+                <button class="btnPrimary" data-page-node-id="fCqoI9YVA8Xh02FBOJsfwZ"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" data-page-node-id="B1pDffAasuVZOhjh25nxRL"><path d="M6 3v18l14-9z" data-page-node-id="PUxsb047fg4x7KcO2CuggM"/></svg>连接并控制</button>
+                <button class="btnSecondary" data-page-node-id="QMUPLpzoY7M8kmNdSHeqbk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="D8cefnMR87y35VWWComabm"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0" data-page-node-id="Y96fDFh3V08OzmiHtYQUxe"/><circle cx="12" cy="12" r="3" data-page-node-id="hA34yu6LaJyEpscnwYAUY7"/></svg>只看</button>
+                <button class="btnSecondary" data-page-node-id="xVuS2WCU7Y7pakiZvTlYn3"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="JB3y76eyO0sxpGQhKL9WcO"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" data-page-node-id="OqDCTyFz9bc6h7zAVOtHTz"/><path d="M14 2v4a2 2 0 0 0 2 2h4" data-page-node-id="4N77OzGJMCiaNMGndw8o0P"/><path d="M12 18v-6" data-page-node-id="m6wGEk18KyiInPQvZH0rRk"/><path d="m9 15 3-3 3 3" data-page-node-id="NB37TwYsfFbHnwLUHHE9XS"/></svg>传文件</button>
+              </div>
+            </article>
+
+            <article class="card factCard" data-page-node-id="27QiqRXHfabEBASVEsCllb">
+              <span class="cardIcon" aria-hidden="true" data-page-node-id="ey2OvxJImBjKmqe7izsCSZ"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="i69qW8ZnL7meJE1e7LizbH"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" data-page-node-id="QhJPJU9llADsnVamuVVIlN"/><path d="m9 12 2 2 4-4" data-page-node-id="pz3qayzqabeUtPKlbTGky3"/></svg></span>
+              <span class="factLabel" data-page-node-id="l34Cd90uk4Zw72jdgBMYpS">连接确认</span>
+              <strong class="factValue" data-page-node-id="c9fZ2A9PjCXYb6w3xSdIju">免确认连接</strong>
+              <span class="factNote" data-page-node-id="4cfbptlgYd062CkN3ENwCW">仍可随时结束会话</span>
+            </article>
+
+            <article class="card factCard" data-page-node-id="8gHD1vYDKUQO7uPlaLOE5d">
+              <span class="cardIcon" aria-hidden="true" data-page-node-id="rfKU8oWROjBBTecmP0NarS"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="qInXzULF3Q5SA8qo2CezXI"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" data-page-node-id="Pr0g8EDHCHU3glpMB071rV"/><path d="M12 10v6" data-page-node-id="0hoDt4BZcwZB9wKStG5lUI"/><path d="m15 13-3 3-3-3" data-page-node-id="tACnc37qsGn2Ada1BWU7h1"/></svg></span>
+              <span class="factLabel" data-page-node-id="U4JJ6fO0jxKc1sv6vJNEbD">文件接收</span>
+              <strong class="factValue" data-page-node-id="K1A0iwPXTqcivaR7Obz6dM">自动接收</strong>
+              <span class="factNote" data-page-node-id="ovlS2QaR3jBcb07d20nPIy">文件会保存到默认目录</span>
+            </article>
+          </div>
+
+          <div class="bento row2" data-page-node-id="bGqBLoNAlGipgmks9eoCTM">
+            <article class="card wideCard span2" data-page-node-id="ljZvexUAWxit8WfbSQ11Af">
+              <span class="cardIcon" aria-hidden="true" data-page-node-id="1KZBiRzPDMvqKQGi4HlEnT"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="PISGD3qC98CiVoB8A4fSPX"><circle cx="6" cy="19" r="3" data-page-node-id="qYl328PwwpmlRBHtezp5qz"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" data-page-node-id="LC0PyOUTyWY9cDim7jjl3L"/><circle cx="18" cy="5" r="3" data-page-node-id="7VWNPnN1wcYEZWmzF7mIjf"/></svg></span>
+              <div class="wcText" data-page-node-id="eG0z7XlMTkFMqeKlREpE4E">
+                <span class="factLabel" data-page-node-id="SFjhlWR0oy1iZjyh9GCxJa">上次连接</span>
+                <strong class="factValue" data-page-node-id="2XAYELi4x0aHs2n8T4Htrz">局域网直连</strong>
+                <span class="factNote" data-page-node-id="1q9ogAtbYWHli8P2dBASvz">来自最近一次会话实测 · 最近实测 ~9 ms</span>
+              </div>
+            </article>
+
+            <article class="card wideCard span2" data-page-node-id="o1KeYVzWwefZi9QGBrig7b">
+              <span class="cardIcon" aria-hidden="true" data-page-node-id="xwPBiXFfVL1FmDODSxVZwF"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="TUSDMUIznG0WHOZHFDlsIc"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" data-page-node-id="0vdZUCRXKvvf7XCdRi5rxh"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88" data-page-node-id="8CQx4L33nn8s29QJmbPWVO"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" data-page-node-id="S6Nk83pLLDH0sDZHFA83kn"/><path d="M2 12a10 10 0 0 1 18-6" data-page-node-id="o0pQmzAH71XlNBkRILD1Ny"/><path d="M2 16h.01" data-page-node-id="qxbZGE5CbID6nMklAz8pWj"/><path d="M21.8 16c.2-2 .131-5.354 0-6" data-page-node-id="3osOIji3fecWTSFDPf19CY"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" data-page-node-id="Jd6ZSGePIKtAKP6mwgX4Jq"/><path d="M8.65 22c.21-.66.45-1.32.57-2" data-page-node-id="UAruZfiyt98s7tWTU0T1mV"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2" data-page-node-id="KR0Hu9AzhXN0pGq2zsX3ov"/></svg></span>
+              <div class="wcText" data-page-node-id="QuFYuxUPq4bT7Dp29JXZ80">
+                <span class="factLabel" data-page-node-id="A9RwZaVFgn23dpybZriPOp">设备身份</span>
+                <strong class="factValue mono" data-page-node-id="4boDeGBGINc91ltgICFpU0">a3f1-9c42-7b08-d15e</strong>
+                <span class="factNote row" data-page-node-id="uakfYUlszQyygoPnKF1eG8"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="1AqQvWfDs3YltBfnw0SeIM"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" data-page-node-id="1IiEEoAOXEBuD1rNGqlkhc"/><path d="m9 12 2 2 4-4" data-page-node-id="DYO3xiBHgnUtd008tE3dGR"/></svg>已完成配对核验</span>
+              </div>
+            </article>
+          </div>
+
+          <section class="recentBlock" aria-label="最近会话" data-page-node-id="d7T9xipoLx1je3IL5VHqzE">
+            <div class="sectionHead" data-page-node-id="UuAMa6cjDfYydF4NM6yyK9">
+              <h3 data-page-node-id="8N0mKiotC4v8kpNaHXJ46q">最近会话</h3>
+              <button class="sectionLink" data-page-node-id="DAuHKV23s8rQ77AgGd9Zxw">查看全部</button>
+            </div>
+            <div class="recentList" data-page-node-id="vHOAcF8RhcX9UZJtJBaLnC">
+              <div class="recentLine" data-page-node-id="dHZxSlyg4Tbn6u2mNTKDKH">
+                <strong data-page-node-id="qTmx0FqEWrtHz379TpIL1I">可控</strong><span data-page-node-id="9UpOHTp2xdI4ZNeBLFGynC">12:30</span><span data-page-node-id="q14KDAxVBU98d67Lax2elD">今天 14:20</span>
+                <span class="recentResult" data-page-node-id="RpLquPQxWao56i4N4pLrhs"><i class="toneDot toneOk" data-page-node-id="INnOajh1ivxD27LUsBJxHH"></i>用户结束会话</span>
+              </div>
+              <div class="recentLine" data-page-node-id="Dz8tb8xgfHdOXadyVe0HsI">
+                <strong data-page-node-id="H4ZF5ClMUw8AdsODxTFBAH">只看</strong><span data-page-node-id="IR5AN07n0cfNVfPstc2Vq6">03:45</span><span data-page-node-id="URxEdKI6MhrqUjhCZHkIJ2">今天 11:02</span>
+                <span class="recentResult" data-page-node-id="fW1zej7k1Byz9rBAfydZl9"><i class="toneDot toneOk" data-page-node-id="uPSfBn7i0vBbQ5nlXczm54"></i>远程通道关闭</span>
+              </div>
+              <div class="recentLine" data-page-node-id="VuGLbHCDARmNPDAMQe1MlJ">
+                <strong data-page-node-id="KyOQvVmZksq8QUEtkSzWUO">可控</strong><span data-page-node-id="ocTKmXkfiqYGQSLCs8vgnE">48:12</span><span data-page-node-id="jfRuKIwoR17HJDpRvWiqPZ">今天 09:31</span>
+                <span class="recentResult" data-page-node-id="By6weDdMfZiIKTygecywh1"><i class="toneDot toneWarn" data-page-node-id="zmmfUxiMldP3WmMouRrMOx"></i>会话超时</span>
+              </div>
+              <div class="recentLine" data-page-node-id="zrpRkMNhpLpycx0p9GW8Yx">
+                <strong data-page-node-id="aEQjg5xc8eqrJwfvtMGyUA">可控</strong><span data-page-node-id="CewR5x1Jhulg8mZcIYR8r0">07:08</span><span data-page-node-id="NBZjxpV3X3j6nBNK7q8j4r">9/21 20:15</span>
+                <span class="recentResult" data-page-node-id="kSGCAlH1lECwtK94OzUEdF"><i class="toneDot toneFail" data-page-node-id="gTLnupGkaNGqQ9WaTA7IOB"></i>画面推送失败</span>
+              </div>
+              <div class="recentLine" data-page-node-id="yrqK2bLLIAJGX51WZ8WwsT">
+                <strong data-page-node-id="TvanAlojrXMruPjBOQVks6">只看</strong><span data-page-node-id="OoegKHWfJkUmtw4hOqGVc0">21:54</span><span data-page-node-id="2s8Cg9w79Jxoxva0yRxNvi">9/21 16:40</span>
+                <span class="recentResult" data-page-node-id="szMdriQCNCrfO1PAzUXzfb"><i class="toneDot toneFail" data-page-node-id="ygz4YuPEMCCG1TggKYbLxS"></i>控制通道断开</span>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </main>
+    </div>
+
+  </div>
+</div>
+
+<section class="notes" data-page-node-id="kbDpMtA0khTzSwfgCv112K">
+  <h2 data-page-node-id="42VQneizCl5rJPIrehlSuE">改动清单</h2>
+  <p data-page-node-id="2PrNnytFkIhGkxVuHggfKG">七处改动，全部落在 token 与既有档位内（<code data-page-node-id="izBG4FsgvEVcBf3EdRlnq5">RADII [0,4,8,12]</code> /
+     <code data-page-node-id="m9x2qMIzsATspMqjAFOoVt">SPACINGS [4,8,12,16,24]</code> / <code data-page-node-id="eCmUDdbH1Rez3KOb9fXGcL">FONT_SIZES [11,12,13,15,20]</code> /
+     <code data-page-node-id="SLbNvkHEgBZ3IjQUsGeb1h">DURATIONS [150,200,300,400]</code>），不会撞上 <code data-page-node-id="P8F25OmILHUtiifUJ8PrP5">lint:ui</code> 校验链。</p>
+  <table data-page-node-id="xN5q99l97Yte2hbEyGp0Vt">
+    <thead data-page-node-id="IKXlfABdLor2vTEwO8ycib">
+      <tr data-page-node-id="m8zQMU5owoXBM4mrF1zQa6"><th style="width:34px" data-page-node-id="NZRm0PBdEAYn9euSWm1633">#</th><th style="width:150px" data-page-node-id="cj1CHPbh07kIdH0UDiHUlL">改动</th><th data-page-node-id="mv4qVsHh8xl8otg4L88ybq">做法</th><th style="width:180px" data-page-node-id="H8YB1wLWplWdZdgtbS3trB">落到哪个文件</th><th style="width:60px" data-page-node-id="6SBcLDeD4opZr30gFxaLCn">代价</th></tr>
+    </thead>
+    <tbody data-page-node-id="Py7IlDxDJc3yHnjD7YAXd4">
+      <tr data-page-node-id="7h50G1zZ1VsjDJBdvbuv9V">
+        <td data-page-node-id="RC6bzWERFpvHNUeCM4ktL0">1</td>
+        <td data-page-node-id="fU3JIJOCeuOQyDDezueh7W">侧栏材质</td>
+        <td data-page-node-id="SHXiNhLW1kQjT1txK5ef3j"><code data-page-node-id="prT8KKQ4FomGurpHhWABBi">.sidebar</code> 的 <code data-page-node-id="yJNv5M8OoG2h9PlaJBXT96">background: var(--section-bg)</code> 换成
+            <code data-page-node-id="UircizFGgRC1D2QRF0OoYY">var(--sidebar-bg)</code> + <code data-page-node-id="xh9KZl4Leju7AJoMjAKwGH">backdrop-filter: var(--shell-blur)</code> +
+            <code data-page-node-id="wezGvuiKTkjN6GnBLnk9VL">border-right: var(--shell-border)</code>。<b data-page-node-id="38SR5ZNWXnj0KeCuHxyWWI">这三条 token ocean 主题早就定义好了</b>
+            （theme.css:346-349，注释写着「只挂在这一个容器」），rc 没用——同一个 app 里主窗口侧栏是磨砂、工作台侧栏是纯色。
+            <br data-page-node-id="AaNT4YMdO9bpQAnPjMI7zU"><span style="color:#5f6b7a" data-page-node-id="hSr2Xnp07KGF24K5kjDLf0">已逐条核过 6 套主题的 token 覆盖：<code data-page-node-id="scLYWfDadv0E6iyJHvP6RE">--sidebar-bg</code> 6/6 各自定义；
+            <code data-page-node-id="orfdtT9PUYs6ivgfV6PFzy">--shell-border</code> 与 <code data-page-node-id="Ysn9cy3qGRfihiLA8T9ylW">--shell-blur</code> 在 <code data-page-node-id="PzZxxvmWSyiqtZT5o7w5q9">:root</code> 有兜底
+            ⇒ 非 ocean 主题下 <code data-page-node-id="l4i72uoG2B1BShAleimW6r">--shell-blur</code> 取 <code data-page-node-id="xriWD90gnittECZTM3VxMm">none</code>（侧栏保持半透但不磨砂），
+            这是 theme.css 的既有设计，不是缺值。</span></td>
+        <td data-page-node-id="lwQpOCjDVZJ8cak7hUzCGu"><code data-page-node-id="fE927MthAxLC1G4EVSAiqj">RemoteComputerA2.module.css</code> <code data-page-node-id="p8kmd3inkq1UvuJlCL2eEw">.sidebar</code>（3 行）</td>
+        <td data-page-node-id="E8BVfspm9XgqoOZGALJPmW"><span class="tag s" data-page-node-id="i3S804GGB5TILIXzC2CLz8">小</span></td>
+      </tr>
+      <tr data-page-node-id="XjYALfngjNQGzCYCHCZ9rU">
+        <td data-page-node-id="VtKOlEZe3Ud2PH8Mc4qpHK">2</td>
+        <td data-page-node-id="fa7MUY3KrstiSj2eEmE6zd">详情区结构</td>
+        <td data-page-node-id="FDvleFthhZ5oGwvJCRoYa3">取消 104px 通栏 <code data-page-node-id="nLWUIkRCExFsmrnN1KMjeL">.detailHead</code>，改 4 列 Bento 网格：
+            行1 设备主卡(跨2) + 连接确认(1) + 文件接收(1)；行2 上次连接(跨2) + 设备身份(跨2)；行3 最近会话(跨4)。
+            卡片尺寸从「全等宽长条」变成 <b data-page-node-id="O0iN46gNDCLqBEgDEnkZDL">2列/1列/4列三种跨度 + 两种行高</b>，这是 Bento 的定义特征。</td>
+        <td data-page-node-id="OHt80ImZytjBOYHwvbyKqr"><code data-page-node-id="h4nZchbqn05CYG76pf64VL">RcA2DeviceDetail.tsx</code> 重构 + 新增一组 <code data-page-node-id="IbtYbVsuDpyglUGuv1DdxW">.card/.bento</code> 类</td>
+        <td data-page-node-id="xohNfDjYu5aC9F4JBQS8T4"><span class="tag m" data-page-node-id="AQS4FpK947ehNs41TjZKZE">中</span></td>
+      </tr>
+      <tr data-page-node-id="xCN2VuvgsUwi5FG1TZHZK0">
+        <td data-page-node-id="b38DWRGnYzJRNeeRHdkRIW">3</td>
+        <td data-page-node-id="zIF7THRuvRw1FEMuZiwDsW">选中设备行</td>
+        <td data-page-node-id="ukaGXILCWVducQBMHBDcHs"><code data-page-node-id="D9mwGCRdK4qwBqhiaNOEGc">.deviceItemSelected</code> 从 <code data-page-node-id="8DBUMLtArfpK0KMqyZVPOj">--accent-light</code> 平铺，换成
+            <code data-page-node-id="PC7Cgc5p7uqDWOv0NxuGbz">--card-selected-bg</code>（白→浅蓝渐变）+ <code data-page-node-id="vohM2nnLCZTJERoq2mtLTv">--card-selected-border</code> +
+            <code data-page-node-id="cwXfhR9FgKUyYJRiywFETf">0 0 0 3px var(--card-selected-glow)</code> 柔环。这三条同样<b data-page-node-id="OzGEfqg3yWFGKSre6ACZCm">早已定义、从未启用</b>。</td>
+        <td data-page-node-id="oy5LAbEPolgymjV2FBbCpu">同文件 <code data-page-node-id="5sfGDaJQxnM3Z8hA1R494g">.deviceItemSelected</code></td>
+        <td data-page-node-id="E89HdHWpEnx9iCF1JVm4HF"><span class="tag s" data-page-node-id="B3G3axCglGErkBUVCN3C2M">小</span></td>
+      </tr>
+      <tr data-page-node-id="QeymDKavLKyTIKBNmpdyUS">
+        <td data-page-node-id="xUtGGGzg6yNCIOnObFOHAn">4</td>
+        <td data-page-node-id="BtfdeXu23d39vea7cic2eX">字号归位</td>
+        <td data-page-node-id="ovc1GecRfMD4Kk0rW7KEGD">6 处把 <b data-page-node-id="Dh7v1jc6hFoxCb2Z7hf2kA">说明文字/动作标签</b>从 11px 抬到 12px：权限卡说明、接收开关的 strong 与 small、
+            协助三按钮、工具导航标签、重命名按钮。<b data-page-node-id="u0W40XfZVK42W2Z3eDrfLX">11px 只保留给真正的 meta</b>（分组计数、设备行第二行的路径、指纹）。</td>
+        <td data-page-node-id="QVyUPkuXNnImmm2dTRrAvJ">同文件 6 处 <code data-page-node-id="olcP1cMaQBbqJ3iuQgskQ7">font-size</code></td>
+        <td data-page-node-id="BbZVdxrtaiHHKxkl05AOXI"><span class="tag s" data-page-node-id="jIUPB4OZ071w0VK6ilvBBD">小</span></td>
+      </tr>
+      <tr data-page-node-id="mDIeABWiwRr3QJiplMcmxD">
+        <td data-page-node-id="szD0NTxsZHIg0qf4u40Z6t">5</td>
+        <td data-page-node-id="dDu94CmExRBQGpy8esG5v4">侧栏底部收口</td>
+        <td data-page-node-id="XsSRLkWLtDz3dK8lSp5lEB">协助区从「2 列 + 1 条跨列」（78px）改成 <b data-page-node-id="xCAzgkXZ83HhG1lRjVQAhR">3 列一行</b>（44px），省下的 34px 全部给设备列表——
+            现在能多显示一台设备。三格宽 <code data-page-node-id="zRDfI6dwrdOsRLW6C9hg0B">(306-16-12)/3 = 92px</code>，最长标签「让别人帮我」12px×5字+图标 = 80px，放得下。</td>
+        <td data-page-node-id="Q5cBlCa9OI2qta4veI0gFe">同文件 <code data-page-node-id="D6GoBjPpkrFETawqF0HzVq">.assistActions</code> + <code data-page-node-id="nMDwwC9Z8LsxlWwwBu0GHP">RcA2Sidebar.tsx</code> 去掉 <code data-page-node-id="PPjpWZisL7U40Ibzzzxi4t">assistJoin</code> 类</td>
+        <td data-page-node-id="qnFzWcOBEv3WnJ3c7C0Iro"><span class="tag s" data-page-node-id="lgEuKEzPG7BMgfbAk4ps9e">小</span></td>
+      </tr>
+      <tr data-page-node-id="PAQMVVS6jZUxyhpXR2jtYp">
+        <td data-page-node-id="Wht6TCOzJEvZZAp13CgnWr">6</td>
+        <td data-page-node-id="EMDkaA9VVShA5aF0FiF4kQ">会话结果语义色</td>
+        <td data-page-node-id="iVnvw4D1MilRASG0ND6VFy">结果列加 6px 色点：正常结束（用户结束 / 通道关闭）绿、超时橙、推送失败与控制通道断开红。
+            <b data-page-node-id="RGJFXOFTRhSg4EQVRBmYfu">色点与文字并存</b>——不靠颜色单独传意。需要新增一个 <code data-page-node-id="NZeBaOfIzGQg1PPrf0VoyT">reason → tone</code> 的纯函数收口在
+            <code data-page-node-id="VNEKR5cTC0YecMsPHDcFrf">lib/rcHistory.ts</code>（后端 reason 是自由字符串，共 7 种：用户取消申请 / 用户结束会话 /
+            会话超时 / 画面推送失败 / H.264 推送失败 / 控制通道断开 / 远程通道关闭）。</td>
+        <td data-page-node-id="2w44pJBeHH25oYy4Nu2XEo">新增 <code data-page-node-id="XDNGYl2YcsuZ6W2mfUiajK">lib/rcHistory.ts</code> 纯函数 + <code data-page-node-id="yBHuH3uWz2iPp0hCLAa4hr">RcRecentSessions.tsx</code></td>
+        <td data-page-node-id="ZgJgjjG63Jzgu6f9vdONf4"><span class="tag m" data-page-node-id="IC4vzt1nBckbiOuA6VBJ7V">中</span></td>
+      </tr>
+      <tr data-page-node-id="zE70tHj1DsqY8AS0FuFUsM">
+        <td data-page-node-id="pDCBA5Fvfiu5HLk4SE7zgA">7</td>
+        <td data-page-node-id="6mFA5GlD73QILXQFvUn9qD">列表密度</td>
+        <td data-page-node-id="Lk7pMpXNvd48cbL6jTE7Ch">设备行 <code data-page-node-id="5wdFF0bRRBlKZLAg9AtCJy">58 → 56px</code>，最近会话从 3 条提到 <b data-page-node-id="THvpFBenJK6R0NxAavbKlj">5 条</b>（<code data-page-node-id="sqHV3rmjUYDSksaktcYu4H">recentSessionsFor(list, peer, 3)</code> 改 5）。
+            两条一起把详情区的「右下空 177px」填到只剩约 68px。</td>
+        <td data-page-node-id="3l4VbO6fGT0z6lHP32rLqv">同文件 <code data-page-node-id="N53ha8bOG00OZ25zBEoOCh">.deviceItem</code> + <code data-page-node-id="jZKRZ3FTI58wLqxSXc05xd">RcRecentSessions.tsx</code>（1 行常量）</td>
+        <td data-page-node-id="224mweFsOQpLAuS4hs3OD5"><span class="tag s" data-page-node-id="ZlAMeNNQxEFrZRxMvdQEQT">小</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:28px" data-page-node-id="P8lC1anhU8GceHToBkIE6c">两处刻意没动</h2>
+  <p data-page-node-id="MfcmqeaZzz4UBNC8jlzGXP">
+    <b data-page-node-id="k5rHQxVCoEagZXreYOSmSe">① 配色不动。</b>技能库首查给的 teal <code data-page-node-id="BoYOQU4RSkzu2DfsNBDIaG">#0D9488</code> + orange <code data-page-node-id="kXb7Rfl99Xayv3NUdzRvwR">#EA580C</code> 是落地页配色，
+    而 rc 跟随用户主题共 6 套，本稿所有颜色都取自 <code data-page-node-id="rhBFIYt6h96ecotL5uYo8Z">theme.css</code> 的 ocean 块，一个新色号都没造。<br data-page-node-id="PlyJJpLHXUySHytnWdxrX6">
+    <b data-page-node-id="oRbB85M15I37DNZXpxNhjB">② 字体不动。</b>保持 <code data-page-node-id="N0BpCxo6tjZh8luya3firk">"SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui</code>。
+    换成技能库建议的 Inter 会让中文回落到雅黑，混排反而变差。
+  </p>
+</section>
+
+</body>
+</html>

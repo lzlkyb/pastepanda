@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>远程电脑工作台 · 层级语言升级 设计稿</title>
+<style>
+/* ═══ ocean 主题真实 token（theme.css:268-447 摘录，值未改） ═══ */
+:root{
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg,#f4f8fc 0%,#eef3f8 42%,#e8f0f7 100%);
+  --card-bg:#fff;
+  --section-bg:#f0f4f8;
+  --border-color:#e0e4eb;
+  --text-primary:#0f172a;
+  --text-secondary:#495565;
+  --text-muted:#627083;
+  --accent:#0284c7;
+  --accent-solid:#027cbb;
+  --text-on-accent:#fff;
+  --success:#15803d;
+  --warning:#c54a0a;
+  --danger:#d82525;
+  --hover:#e8ecf2;
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+  --glass-card-shadow:0 1px 2px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.07),0 0 0 1px rgba(15,23,42,.04);
+  --sidebar-bg:rgba(244,247,251,.72);
+  --shell-blur:blur(16px) saturate(1.2);
+  --card-selected-bg:linear-gradient(180deg,#fff 0%,#f0f9ff 100%);
+  --card-selected-border:color-mix(in srgb,#0284c7 35%,transparent);
+  --card-selected-shadow:0 0 0 3px rgba(2,132,199,.16),0 8px 24px rgba(2,132,199,.16);
+  /* ── 本次新增的三档表面（全部由既有 token 派生，不手写 hex） ── */
+  --workbench-bg:color-mix(in srgb,var(--section-bg) 72%,var(--card-bg)); /* #f4f7fa 面板内凹层 */
+  --chrome-bg:color-mix(in srgb,var(--card-bg) 94%,transparent);          /* 已在 theme.css 定义 */
+  --status-border:color-mix(in srgb,var(--border-color) 55%,transparent); /* 弱分隔线 */
+  --win-close-hover-bg:#dc2626;
+  --win-close-hover-fg:#fff;
+  --font:"SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;padding:0 0 56px;background:#e9edf2;color:#0f172a;
+  font-family:var(--font);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+.pagehead{width:1200px;margin:0 auto;padding:34px 0 18px}
+.pagehead h1{margin:0 0 8px;font-size:20px;font-weight:600}
+.pagehead p{margin:0;max-width:900px;color:#495565;font-size:13px;line-height:1.75}
+.pagehead b{color:#0f172a;font-weight:600}
+.pagehead code,.notes code{font-family:var(--mono);font-size:11.5px;background:#eef4fa;color:#1e3a5f;padding:1px 5px;border-radius:4px}
+.stage{display:flex;justify-content:center;padding-bottom:28px}
+
+/* ═══ 画布：严格 1200×780（commands/rc.rs 的 rc_open_workbench） ═══ */
+.frame{
+  width:1200px;height:780px;display:flex;flex-direction:column;overflow:hidden;
+  color:var(--text-primary);background:var(--app-bg);font-family:var(--font);
+  border-radius:10px;box-shadow:0 12px 40px rgba(15,23,42,.18);
+}
+
+/* ── 标题栏 48px：★ 去白底、去阴影 —— 壳层退回画布，只留一条弱分隔线 ── */
+.titlebar{
+  flex:0 0 48px;height:48px;display:grid;grid-template-columns:1fr auto 1fr;
+  align-items:center;gap:12px;padding-left:16px;
+  background:transparent;border-bottom:1px solid var(--status-border);
+  user-select:none;z-index:2;
+}
+.brand{min-width:0;display:flex;align-items:center;gap:8px}
+.brandIcon{width:24px;height:24px;display:grid;place-items:center;flex:0 0 auto;color:var(--text-secondary)}
+.brandName{font-size:13px;font-weight:500;white-space:nowrap}
+.brandSep{width:1px;height:14px;flex:0 0 auto;background:var(--status-border)}
+.brandSection{color:var(--text-muted);font-size:13px;white-space:nowrap}
+.channelStatus{
+  display:inline-flex;align-items:center;gap:8px;padding:0 12px;min-height:28px;
+  color:var(--text-secondary);font-size:12px;white-space:nowrap;
+}
+.dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:var(--success)}
+.winControls{justify-self:end;align-self:stretch;display:flex;flex:0 0 auto}
+.winBtn{width:46px;border:0;background:transparent;display:grid;place-items:center;color:var(--text-secondary);cursor:default}
+.winBtnClose:hover{background:var(--win-close-hover-bg);color:var(--win-close-hover-fg)}
+
+.body{flex:1;min-height:0;display:flex}
+
+/* ── 侧栏 288px（306→288）：★ 玻璃层，与主窗口 Sidebar 同一条 token 链 ── */
+.sidebar{
+  width:288px;min-width:288px;min-height:0;display:flex;flex-direction:column;
+  background:var(--sidebar-bg);
+  backdrop-filter:var(--shell-blur);
+  border-right:1px solid var(--status-border);
+}
+.sidebarHead{padding:16px 12px 12px}
+.sidebarTitleRow{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.sidebarTitleRow h2{flex:1;margin:0;font-size:15px;font-weight:500}
+.btnSecondary{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:28px;padding:0 10px;color:var(--text-secondary);background:var(--chrome-bg);
+  border:1px solid var(--status-border);border-radius:8px;font:inherit;font-size:12px;cursor:pointer;
+}
+.searchBox{
+  height:32px;display:flex;align-items:center;gap:8px;padding:0 10px;
+  color:var(--text-muted);background:var(--chrome-bg);
+  border:1px solid var(--status-border);border-radius:8px;
+}
+.searchBox input{min-width:0;width:100%;border:0;outline:0;color:var(--text-primary);background:transparent;font-family:inherit;font-size:12px}
+.searchBox input::placeholder{color:var(--text-muted)}
+.deviceList{flex:1;min-height:0;overflow:auto;padding:0 8px 12px}
+.listLabel{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 8px 3px;color:var(--text-muted);font-size:11px;
+}
+.listLabel:first-child{padding-top:4px}
+.listLabel span:last-child{font-variant-numeric:tabular-nums}
+.deviceItem{
+  position:relative;min-height:52px;display:grid;grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;gap:8px;padding:4px 8px 4px 4px;border-radius:8px;
+  border:1px solid transparent;
+}
+.deviceItem+.deviceItem{margin-top:2px}
+.deviceItem:hover{background:var(--hover)}
+.deviceItemSelected{
+  background:var(--card-selected-bg);
+  border-color:var(--card-selected-border);
+  box-shadow:var(--card-selected-shadow);
+}
+.deviceSelect{
+  min-width:0;display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center;
+  gap:12px;padding:2px 0;border:0;border-radius:8px;color:var(--text-primary);
+  background:transparent;text-align:left;cursor:pointer;font:inherit;
+}
+/* ★ 图标底：删掉 accent 10% 彩底，改中性（Linear 刷新同款动作） */
+.deviceIcon{
+  position:relative;width:28px;height:28px;display:grid;place-items:center;flex:0 0 auto;
+  color:var(--text-secondary);background:var(--hover);border-radius:8px;
+}
+.deviceIcon::after{
+  content:"";position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;
+  border:2px solid var(--sidebar-bg);border-radius:50%;background:var(--text-muted);
+}
+.deviceIcon[data-presence="live"]::after{background:var(--success)}
+.deviceIcon[data-presence="recent"]::after{background:var(--warning)}
+.deviceCopy{min-width:0}
+.deviceCopy strong,.deviceCopy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ★ 行高钉死：不靠默认值浮动，否则改字号就会把行高连带顶出去，把设备列表挤成滚动条 */
+.deviceCopy strong{font-size:13px;font-weight:500;line-height:18px}
+.deviceCopy small{margin-top:2px;color:var(--text-muted);font-size:12px;line-height:16px}
+/* ★ 渐进披露：动作只在选中行常显，其余行 hover 淡入 */
+.rowAction{
+  min-width:52px;min-height:28px;padding:0 10px;border-radius:8px;font:inherit;font-size:12px;
+  cursor:pointer;color:var(--text-on-accent);background:var(--accent-solid);border:1px solid transparent;
+  opacity:0;transition:opacity .15s ease;
+}
+.deviceItem:hover .rowAction,.deviceItemSelected .rowAction{opacity:1}
+.rowAction:focus-visible{opacity:1}
+.deviceItemSelected .rowAction{background:var(--accent-solid)}
+
+/* ── 侧栏底部：弱分隔，按钮不再全挂 1px 边框 ── */
+.receiveRow{display:flex;align-items:center;gap:8px;padding:12px 12px 10px;border-top:1px solid var(--status-border)}
+.receiveRow>span{min-width:0;flex:1}
+.receiveRow strong,.receiveRow small{display:block}
+.receiveRow strong{font-size:12px;font-weight:500}
+.receiveRow small{margin-top:2px;color:var(--text-muted);font-size:12px}
+.receiveOn{
+  min-width:64px;min-height:28px;padding:0 10px;border-radius:999px;font:inherit;font-size:12px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  color:var(--success);background:color-mix(in srgb,var(--success) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--success) 28%,transparent);
+}
+.receiveOn i{width:6px;height:6px;border-radius:50%;background:var(--success);flex:0 0 auto}
+.assistActions{display:flex;gap:4px;padding:0 8px 10px;justify-content:space-between}
+.assistActions button{
+  flex:0 0 auto;min-height:32px;display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  color:var(--text-secondary);background:transparent;border:1px solid transparent;
+  border-radius:8px;font:inherit;font-size:12px;cursor:pointer;padding:0 4px;white-space:nowrap;
+}
+.assistActions button:hover{background:var(--hover);color:var(--text-primary)}
+.toolNav{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:8px;border-top:1px solid var(--status-border)}
+.toolNav button{
+  min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  border:0;border-radius:8px;color:var(--text-secondary);background:transparent;font:inherit;font-size:12px;cursor:pointer;
+}
+.toolNav button:hover{background:var(--hover);color:var(--text-primary)}
+
+/* ── 主区：★ 一块白色工作面板浮在画布上（不是 N 张小卡） ── */
+.main{flex:1;min-width:0;min-height:0;display:flex;padding:12px}
+.panel{
+  flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--card-bg);border-radius:12px;box-shadow:var(--shadow-md);
+}
+
+/* 面板头 104px：凹层 --workbench-bg，与面板体形成读得出来的前后关系 */
+.panelHead{
+  flex:0 0 104px;display:flex;align-items:center;gap:16px;padding:0 24px;
+  background:var(--workbench-bg);border-bottom:1px solid var(--status-border);
+}
+.headIcon{
+  width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--text-secondary);background:var(--card-bg);border-radius:8px;
+}
+.headText{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}
+.headName{display:flex;align-items:center;gap:8px;min-width:0}
+.headName h2{margin:0;font-size:20px;font-weight:500;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconBtn{
+  width:24px;height:24px;flex:0 0 auto;display:grid;place-items:center;padding:0;
+  color:var(--text-muted);background:transparent;border:0;border-radius:8px;cursor:pointer;
+}
+.iconBtn:hover{background:var(--hover);color:var(--text-primary)}
+.headMeta{display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:12px;min-width:0}
+.statePill{
+  display:inline-flex;align-items:center;gap:4px;padding:0 8px;height:20px;border-radius:999px;
+  color:var(--success);background:color-mix(in srgb,var(--success) 10%,transparent);
+  font-size:11px;font-weight:500;flex:0 0 auto;
+}
+.statePill i{width:6px;height:6px;border-radius:50%;background:var(--success)}
+.headActions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.btnPrimary{
+  display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 14px;
+  color:var(--text-on-accent);background:var(--accent-solid);border:1px solid transparent;
+  border-radius:8px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;
+}
+.btnGhost{
+  display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 12px;
+  color:var(--text-secondary);background:transparent;border:1px solid var(--status-border);
+  border-radius:8px;font:inherit;font-size:13px;cursor:pointer;
+}
+.btnGhost:hover{background:var(--card-bg);color:var(--text-primary)}
+
+.panelBody{flex:1;min-height:0;display:flex;flex-direction:column}
+.secHead{flex:0 0 40px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 24px}
+.secHead h3{margin:0;font-size:13px;font-weight:500}
+.secLink{
+  display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:none;
+  color:var(--accent);font:inherit;font-size:12px;cursor:pointer;
+}
+
+/* ★ 形式变化 1：权限从「4 行表格」→「一行 4 列」，横向节奏 */
+.permGrid{flex:0 0 120px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:0 24px}
+.perm{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 18px 0 0}
+.perm+.perm{padding-left:18px;border-left:1px solid var(--status-border)}
+.permLabel{display:flex;align-items:center;gap:4px;color:var(--text-muted);font-size:11px}
+.permValue{font-size:15px;font-weight:500;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.permValue.mono{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
+.permNote{color:var(--text-muted);font-size:12px;line-height:1.5}
+.permNote.ok{display:inline-flex;align-items:center;gap:4px;color:var(--success)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ★ 形式变化 2：最近会话保持纵向列表 —— 与上面那一横行形成横/纵对比 */
+.recent{flex:1;min-height:0;display:flex;flex-direction:column}
+.recentList{flex:1;min-height:0;overflow:auto;border-top:1px solid var(--status-border)}
+.recentLine{
+  display:grid;grid-template-columns:minmax(0,1fr) 84px 116px minmax(0,auto);
+  align-items:center;gap:16px;height:56px;padding:0 24px;
+  font-size:12px;color:var(--text-secondary);
+}
+.recentLine+.recentLine{border-top:1px solid var(--status-border)}
+.recentMode{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--text-primary)}
+.recentMode i{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--text-muted)}
+.recentMode[data-mode="可控"] i{background:var(--accent)}
+.recentLine span{font-variant-numeric:tabular-nums}
+.recentLine>span:nth-child(2),.recentLine>span:nth-child(3){text-align:right}
+.recentResult{display:inline-flex;align-items:center;gap:8px;color:var(--text-muted);justify-self:end}
+.toneDot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;display:inline-block}
+.toneOk{background:var(--success)}
+.toneWarn{background:var(--warning)}
+.toneFail{background:var(--danger)}
+
+/* ── 改动清单 ── */
+.notes{width:1200px;margin:0 auto;padding-top:6px}
+.notes h2{margin:0 0 6px;font-size:15px;font-weight:500}
+.notes h2+.notesP,.notesP{margin:0 0 16px;color:#495565;font-size:13px;line-height:1.75}
+.notes h2.later{margin-top:30px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06)}
+th,td{padding:11px 14px;text-align:left;font-size:12.5px;border-bottom:1px solid #e6eaf0;vertical-align:top;line-height:1.6}
+th{background:#f6f8fb;color:#495565;font-weight:500;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;white-space:nowrap;font-weight:500}
+.tag.s{background:#dcfce7;color:#15803d}
+.tag.m{background:#fff7ed;color:#c54a0a}
+.tag.l{background:#fef2f2;color:#d82525}
+</style>
+</head>
+<body>
+
+<header class="pagehead">
+  <h1>远程电脑工作台 · 层级语言升级</h1>
+  <p>方向：<b>明度台阶 + 侧栏玻璃</b>。核心不是发明新 token，而是把 rc <b>接进本项目已有的层级语言</b>——
+     <code>--sidebar-bg</code> / <code>--shell-blur</code> / <code>--workbench-bg</code> / <code>--status-border</code> /
+     <code>--card-selected-*</code> 这套主窗口与全屏编辑器都在用的 token，rc 当前用了 <b>0 个</b>。
+     按真实窗口 <b>1200×780</b> 渲染，主题取 <b>ocean</b>。结构照 <code>RcWorkbench</code> / <code>RcA2Sidebar</code> /
+     <code>RcA2DeviceDetail</code> 的真实 DOM 复刻，文案取自 <code>rcDevice.ts</code> / <code>rcSessionStats.ts</code> /
+     <code>rcHistory.ts</code> 的真实输出。</p>
+</header>
+
+<div class="stage">
+  <div class="frame" id="frame">
+
+    <header class="titlebar">
+      <div class="brand">
+        <span class="brandIcon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 10 3-3 3 3"/><path d="M12 13V7"/><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M12 17v4"/><path d="M8 21h8"/></svg>
+        </span>
+        <span class="brandName">PastePanda</span>
+        <span class="brandSep"></span>
+        <span class="brandSection">远程电脑</span>
+      </div>
+      <span class="channelStatus"><span class="dot"></span>远程通道已开启</span>
+      <div class="winControls">
+        <button class="winBtn" aria-label="最小化"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+        <button class="winBtn" aria-label="最大化"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg></button>
+        <button class="winBtn winBtnClose" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+    </header>
+
+    <div class="body">
+      <aside class="sidebar">
+        <div class="sidebarHead">
+          <div class="sidebarTitleRow">
+            <h2>我的设备</h2>
+            <button class="btnSecondary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg>添加设备</button>
+          </div>
+          <label class="searchBox">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="search" placeholder="搜索设备">
+          </label>
+        </div>
+
+        <div class="deviceList">
+          <div class="listLabel"><span>在线</span><span>2</span></div>
+
+          <div class="deviceItem deviceItemSelected">
+            <button class="deviceSelect">
+              <span class="deviceIcon" data-presence="live">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </span>
+              <span class="deviceCopy"><strong>家里的台式机</strong><small>局域网直连 · 2 分钟前</small></span>
+            </button>
+            <button class="rowAction">连接</button>
+          </div>
+
+          <div class="deviceItem">
+            <button class="deviceSelect">
+              <span class="deviceIcon" data-presence="live">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </span>
+              <span class="deviceCopy"><strong>工作电脑</strong><small>公网直连 · 12 分钟前</small></span>
+            </button>
+            <button class="rowAction">连接</button>
+          </div>
+
+          <div class="listLabel"><span>最近使用</span><span>3</span></div>
+
+          <div class="deviceItem">
+            <button class="deviceSelect">
+              <span class="deviceIcon" data-presence="recent">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </span>
+              <span class="deviceCopy"><strong>老爸的笔记本</strong><small>2 小时前还在</small></span>
+            </button>
+            <button class="rowAction">连接</button>
+          </div>
+
+          <div class="deviceItem">
+            <button class="deviceSelect">
+              <span class="deviceIcon" data-presence="recent">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </span>
+              <span class="deviceCopy"><strong>LAPTOP-THINKPAD-X1</strong><small>3 天前见过</small></span>
+            </button>
+            <button class="rowAction">连接</button>
+          </div>
+
+          <div class="deviceItem">
+            <button class="deviceSelect">
+              <span class="deviceIcon" data-presence="recent">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </span>
+              <span class="deviceCopy"><strong>会议平板</strong><small>5 天前见过</small></span>
+            </button>
+            <button class="rowAction">连接</button>
+          </div>
+
+          <div class="listLabel"><span>尚未连接</span><span>2</span></div>
+
+          <div class="deviceItem">
+            <button class="deviceSelect">
+              <span class="deviceIcon" data-presence="never">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </span>
+              <span class="deviceCopy"><strong>会议室主机</strong><small>配对后还没连上过</small></span>
+            </button>
+            <button class="rowAction">连接</button>
+          </div>
+
+          <div class="deviceItem">
+            <button class="deviceSelect">
+              <span class="deviceIcon" data-presence="never">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </span>
+              <span class="deviceCopy"><strong>备用机</strong><small>配对后还没连上过</small></span>
+            </button>
+            <button class="rowAction">连接</button>
+          </div>
+        </div>
+
+        <div class="receiveRow">
+          <span>
+            <strong>允许别人连接本机</strong>
+            <small>已开启，可接收远程请求</small>
+          </span>
+          <button class="receiveOn"><i></i>已允许</button>
+        </div>
+
+        <div class="assistActions">
+          <button><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>让别人帮我</button>
+          <button><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M11 12H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1Z"/><path d="M7 12V7a5 5 0 0 1 10 0v5"/><path d="M14 7h4a2 2 0 0 1 2 2v9"/><path d="m18 18 2 2 2-2"/></svg>帮助别人</button>
+          <button><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>输入接入码</button>
+        </div>
+
+        <nav class="toolNav">
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg><span>文件</span></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>记录</span></button>
+          <button><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>设置</span></button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <section class="panel" aria-label="设备详情">
+
+          <header class="panelHead">
+            <span class="headIcon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            </span>
+            <div class="headText">
+              <div class="headName">
+                <h2>家里的台式机</h2>
+                <button class="iconBtn" aria-label="重命名" title="重命名">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+                </button>
+              </div>
+              <div class="headMeta">
+                <span class="statePill"><i></i>在线</span>
+                <span>Windows 11 · 局域网可达 · 最近实测 ~9 ms</span>
+              </div>
+            </div>
+            <div class="headActions">
+              <button class="btnPrimary"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 3v18l14-9z"/></svg>连接并控制</button>
+              <button class="btnGhost"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></svg>只看</button>
+              <button class="btnGhost"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>传文件</button>
+            </div>
+          </header>
+
+          <div class="panelBody">
+
+            <div class="secHead">
+              <h3>连接与权限</h3>
+              <button class="secLink">管理此设备<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            </div>
+
+            <div class="permGrid">
+              <div class="perm">
+                <span class="permLabel">上次连接</span>
+                <strong class="permValue">局域网直连</strong>
+                <span class="permNote">来自最近一次会话实测</span>
+              </div>
+              <div class="perm">
+                <span class="permLabel">连接确认</span>
+                <strong class="permValue">免确认连接</strong>
+                <span class="permNote">仍可随时结束会话</span>
+              </div>
+              <div class="perm">
+                <span class="permLabel">文件接收</span>
+                <strong class="permValue">每次询问</strong>
+                <span class="permNote">接受后才写入电脑</span>
+              </div>
+              <div class="perm">
+                <span class="permLabel">设备身份</span>
+                <strong class="permValue mono">a3f1-9c42-7b08-d15e</strong>
+                <span class="permNote ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>已完成配对核验</span>
+              </div>
+            </div>
+
+            <section class="recent" aria-label="最近会话">
+              <div class="secHead">
+                <h3>最近会话</h3>
+                <button class="secLink">查看全部<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg></button>
+              </div>
+              <div class="recentList">
+                <div class="recentLine">
+                  <span class="recentMode" data-mode="可控"><i></i>可控</span><span>12:30</span><span>今天 14:20</span>
+                  <span class="recentResult"><i class="toneDot toneOk"></i>用户结束会话</span>
+                </div>
+                <div class="recentLine">
+                  <span class="recentMode" data-mode="只看"><i></i>只看</span><span>03:45</span><span>今天 11:02</span>
+                  <span class="recentResult"><i class="toneDot toneOk"></i>对方结束会话</span>
+                </div>
+                <div class="recentLine">
+                  <span class="recentMode" data-mode="可控"><i></i>可控</span><span>48:12</span><span>今天 09:31</span>
+                  <span class="recentResult"><i class="toneDot toneWarn"></i>会话超时</span>
+                </div>
+                <div class="recentLine">
+                  <span class="recentMode" data-mode="可控"><i></i>可控</span><span>07:08</span><span>9/21 20:15</span>
+                  <span class="recentResult"><i class="toneDot toneFail"></i>画面推送失败</span>
+                </div>
+                <div class="recentLine">
+                  <span class="recentMode" data-mode="只看"><i></i>只看</span><span>21:54</span><span>9/21 16:40</span>
+                  <span class="recentResult"><i class="toneDot toneFail"></i>控制通道断开</span>
+                </div>
+                <div class="recentLine">
+                  <span class="recentMode" data-mode="可控"><i></i>可控</span><span>1:05:20</span><span>9/21 09:12</span>
+                  <span class="recentResult"><i class="toneDot toneOk"></i>远程通道关闭</span>
+                </div>
+                <div class="recentLine">
+                  <span class="recentMode" data-mode="只看"><i></i>只看</span><span>02:18</span><span>9/20 15:47</span>
+                  <span class="recentResult"><i class="toneDot toneOk"></i>用户结束会话</span>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </section>
+      </main>
+    </div>
+
+  </div>
+</div>
+
+<section class="notes">
+  <h2>改动清单</h2>
+  <p class="notesP">七条改动落在三层：<b>壳层</b>（标题栏 / 侧栏）、<b>面板层</b>（主区容器与分区）、<b>元素层</b>（强调色 / 图标 / 图标底）。
+     每条都能对应到一句可复述的判据，不是配色偏好。</p>
+  <table>
+    <thead><tr><th>层</th><th>改什么</th><th>从</th><th>到</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>壳</td><td>侧栏材质</td>
+        <td><code>background: var(--section-bg)</code><br>纯色 #f0f4f8</td>
+        <td><code>var(--sidebar-bg)</code> +<br><code>backdrop-filter: var(--shell-blur)</code></td>
+        <td>主窗口 <code>Sidebar.module.css:7-10</code> 早就是这么写的。同一个 app 里两个侧栏两套材质。</td>
+      </tr>
+      <tr>
+        <td>壳</td><td>侧栏宽度</td><td>306px</td><td>288px</td>
+        <td>306 不是 4 的倍数，与全仓间距刻度（4/8/12/16/24）不同源。收回来的 18px 全给工作面板。</td>
+      </tr>
+      <tr>
+        <td>壳</td><td>标题栏</td>
+        <td>白底 + <code>--shadow-md</code> + <code>--border-color</code> 下边线</td>
+        <td>透出画布，只留 <code>--status-border</code> 一条弱线</td>
+        <td>壳层不该是「最亮的一层」。壳退到画布高度，白色只留给真正在工作的那一块。</td>
+      </tr>
+      <tr>
+        <td>面板</td><td>主区容器</td>
+        <td>散落的白卡直接铺在渐变上</td>
+        <td><b>一块</b>白色面板，四周留 12px 露出渐变</td>
+        <td>三级明度台阶：画布 ≈95% &lt; 侧栏 ≈97% &lt; 面板 100%。现状只有两级且顺序是反的（侧栏比主区亮）。</td>
+      </tr>
+      <tr>
+        <td>面板</td><td>详情头</td>
+        <td>104px 通栏，白底</td>
+        <td>104px 通栏，<code>--workbench-bg</code> 凹层 + <code>--status-border</code> 下沿</td>
+        <td>面板内要有读得出来的前后关系，靠明度差而不是靠边框。</td>
+      </tr>
+      <tr>
+        <td>面板</td><td>分隔线</td>
+        <td><code>--border-color</code>（17 处 <code>1px solid</code>）</td>
+        <td><code>--status-border</code>（55% 半透）</td>
+        <td>全屏编辑器状态栏就是这么降的。线还在，但不再抢视线——「结构被感觉到，而不是被看见」。</td>
+      </tr>
+      <tr>
+        <td>元素</td><td>图标底</td>
+        <td><code>color-mix(accent 10%, card-bg)</code> 浅蓝底</td>
+        <td><code>var(--hover)</code> 中性底</td>
+        <td>每个设备行 + 详情头各一块。<code>.deviceIcon</code> / <code>.detailDeviceIcon</code> / <code>.emptyDeviceIcon</code> 三个类共用 <code>RemoteComputerA2.module.css:348</code> 这一条规则——在跟主按钮抢强调色。图标底是装饰，不该用品牌色。</td>
+      </tr>
+      <tr>
+        <td>元素</td><td>选中设备行</td>
+        <td><code>var(--accent-light)</code> 平铺 + 硬边框</td>
+        <td><code>--card-selected-bg</code> / <code>-border</code> / <code>-shadow</code></td>
+        <td>这三条 <code>theme.css:339-341</code> 早就定义了，<code>CardList</code> / <code>KnowledgeView</code> 在用，rc 没用。</td>
+      </tr>
+      <tr>
+        <td>元素</td><td>行内动作</td>
+        <td>每行常挂「连接」/「检测」</td>
+        <td>选中行常显；其余行 hover 淡入</td>
+        <td>侧栏同时出现 4 个同级按钮 ⇒ 没有主次。侧栏负责导航与状态，动作归详情面板。</td>
+      </tr>
+      <tr>
+        <td>形式</td><td>连接与权限</td>
+        <td>4 行纵向表格</td>
+        <td>一行 4 列（竖分隔线）</td>
+        <td>与下方的纵向会话列表形成横 / 纵对比。原来整屏只有一种形体。</td>
+      </tr>
+      <tr>
+        <td>细节</td><td>行高</td>
+        <td>靠默认值浮动（13px 行 → 实测 19.5px）</td>
+        <td>钉死 <code>line-height:18px / 16px</code> + <code>min-height:52px</code></td>
+        <td>浮动的行高意味着「改字号 = 顺带改行高」，设备列表会被挤成滚动条。这是本轮实测抓到的真问题，不是洁癖。</td>
+      </tr>
+      <tr>
+        <td>细节</td><td>图标尺寸</td>
+        <td>rc 目录共 <b>11 种</b>（10 / 11 / 12 / 13 / 14 / 15 / 17 / 18 / 22 / 25 / 30）</td>
+        <td>14 / 16 / 20 三档</td>
+        <td>11 种尺寸里 8 种只出现 1~3 次——是随手写的，不是刻度。图标尺寸不在同一刻度上，是「不精致」最直接的来源。</td>
+      </tr>
+      <tr>
+        <td>细节</td><td>字号</td>
+        <td>共 <b>12 种</b>：10 / 10.5 / 11 / 11.5 / 12 / 12.5 / 13 / 13.5 / 14 / 15 / 20 / 24<br>（<b>7 种不在档位</b>，39 处声明）<br>11px 独占 <b>41 处</b></td>
+        <td>11 / 12 / 13 / 15 / 20<br>（11 只给微文注）</td>
+        <td>档位表 <code>docs/PastePanda-UI规则.md</code> §4 只认 11/12/13/15/20。11px 是「微文注」，现状却占全部字号声明的 35%，把说明文字压成了注脚。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="later">渲染实测（Chrome CDP，视口 1280×900）</h2>
+  <p class="notesP">下面每个数字都是无头浏览器量出来的，不是按盒模型估的。稿子能过 <code>npm run lint:ui</code> 的档位判据。</p>
+  <table>
+    <thead><tr><th>项</th><th>实测</th></tr></thead>
+    <tbody>
+      <tr><td>窗口</td>
+        <td>1200×780，双轴零溢出；<code>document.scrollWidth == innerWidth</code>（无横向滚动）</td></tr>
+      <tr><td>三级明度台阶</td>
+        <td>画布（<code>--app-bg</code> 渐变）→ 侧栏 288×732（<code>--sidebar-bg</code> 实为 72% 白 + <code>--shell-blur</code> 16px 磨砂）→
+            面板 888×708（<code>--card-bg</code> + <code>--shadow-md</code>），四周各留 12px 露出渐变</td></tr>
+      <tr><td>面板内分区</td>
+        <td>面板头 104px（<code>--workbench-bg</code> 凹层）· 权限行 120px（4 列各 210px）·
+            会话列表 7 行 × 56px，列表底部余 11px</td></tr>
+      <tr><td>侧栏</td>
+        <td>7 个设备行 × 52px；末行到页脚余 16px（无裁切、无滚动条出现，<code>deviceList.scrollHeight == clientHeight</code>）</td></tr>
+      <tr><td>档位</td>
+        <td>字号 <b>11 / 12 / 13 / 15 / 20</b>；圆角 <b>8 / 12</b>（另 pill 999 / 圆点 50%）；
+            图标 <b>14 / 16 / 20</b>；gap <b>4 / 8 / 12 / 16</b>——与 <code>scripts/ui-rules/rules.mjs</code> 的白名单逐项一致</td></tr>
+      <tr><td>文字完整性</td>
+        <td>全窗口遍历：文字被裁的元素 <b>0</b>，溢出父容器的元素 <b>0</b>。
+            底部三个协助按钮各 88px、需求 86px（余 2px）；原来是等分列，只剩 0.67px 余量</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="later">两处需要你拍板</h2>
+  <p class="notesP">这两条会改变操作路径，不是纯视觉，所以没替你决定。</p>
+  <table>
+    <thead><tr><th>项</th><th>做法</th><th>代价</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>侧栏每行的「连接」按钮</td>
+        <td>A：只保留 hover 淡入 + 选中行常显（本稿）<br>B：全部常显（维持现状，只做视觉收敛）</td>
+        <td>A 更干净，但「扫一眼列表连某台」要先把鼠标移上去。B 无路径变化，侧栏会继续有 4 个同级按钮。</td>
+      </tr>
+      <tr>
+        <td>严格<span class="tag s">小</span>的两处
+        </td>
+        <td>设备行副标题由「局域网直连」改成「局域网直连 · 2 分钟前」；详情头 meta 行合并了设备型号、可达方式、实测延迟</td>
+        <td>信息量增加、行数没增加，但副标题变长，窄侧栏下会省略号截断。</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<script>
+/* 供逐屏截图与逐屏对比：加 #only 只留窗口本体（去掉页头与说明），窗口落在 (0,0)。 */
+window.__only = function () {
+  document.querySelectorAll(".pagehead,.notes").forEach(function (n) { n.style.display = "none"; });
+  var st = document.querySelector(".stage");
+  if (st) { st.style.padding = "0"; st.style.display = "block"; }
+  document.body.style.padding = "0";
+  document.body.style.background = "#fff";
+  return "ok";
+};
+if (location.hash === "#only") window.__only();
+</script>
+</body>
+</html>

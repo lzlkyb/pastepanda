@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>被控横幅窄窗崩坏 — 修复设计稿</title>
+<style>
+:root{
+  --danger:#d64545; --orange:#e0803a; --card-bg:#fff; --border-color:#e3e6ea;
+  --text-primary:#1c1f23; --text-muted:#6b7280; --accent:#4f7cff; --green:#11813a;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:24px 28px 60px; background:#f6f7f9; color:var(--text-primary);
+  font-family:"Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif; font-size:13px;
+}
+h1{font-size:19px;margin:0 0 8px;letter-spacing:-.2px}
+h2{font-size:14.5px;margin:32px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--border-color)}
+h3{font-size:13px;margin:18px 0 8px;font-weight:600}
+p{margin:0 0 8px;line-height:1.75}
+.lead{color:var(--text-muted);font-size:12.5px}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+  background:#eceef2;padding:1px 5px;border-radius:4px;color:#333}
+.tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:20px;
+  border:1px solid var(--border-color);background:#fff;color:var(--text-muted);
+  vertical-align:2px;margin-left:6px}
+.tagRec{background:color-mix(in srgb,var(--green) 12%,#fff);color:var(--green);
+  border-color:color-mix(in srgb,var(--green) 40%,var(--border-color))}
+.tagNo{background:color-mix(in srgb,var(--danger) 9%,#fff);color:var(--danger);
+  border-color:color-mix(in srgb,var(--danger) 30%,var(--border-color))}
+
+/* ---------- 窗口模拟 ---------- */
+.demoRow{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin:10px 0 4px}
+.demo{flex:0 0 auto}
+.demoHead{font-size:11.5px;color:var(--text-muted);margin-bottom:6px;
+  font-family:ui-monospace,Consolas,monospace}
+.demoHead b{color:var(--text-primary);font-size:12px}
+.win{background:#fbfcfd;border:1px solid var(--border-color);border-radius:10px;
+  overflow:hidden;padding-bottom:12px}
+.w550{width:550px}
+.w320{width:320px}
+.winTop{display:flex;align-items:center;gap:6px;padding:7px 12px;
+  border-bottom:1px solid #eef0f3;background:#fff}
+.winTab{font-size:11px;padding:2px 9px;border-radius:6px;color:var(--text-muted)}
+.winTabOn{background:var(--accent);color:#fff;font-weight:600}
+.winSearch{margin:8px 12px 0;height:26px;border:1px solid var(--border-color);
+  border-radius:6px;background:#fff;color:#a8aeb8;font-size:11px;
+  display:flex;align-items:center;padding:0 9px}
+.winHint{font-size:10.5px;color:#b6bcc4;margin:8px 12px 0;text-align:center}
+
+/* ============================================================
+   修复前快照：逐字照抄**修复前**的 src/components/rc/RemoteComputer.module.css
+   （2026-09-22 本方案落地后，这段只作崩坏证据保留；现行 CSS 见 §2 与 §8）
+   ============================================================ */
+.ctrlBanner{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px; margin:8px 12px 0;
+  background:color-mix(in srgb,var(--danger) 12%,var(--card-bg));
+  border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border-color));
+  border-radius:8px; font-size:12.5px;
+}
+.who{font-weight:600;color:var(--danger)}
+.dotDanger{width:7px;height:7px;border-radius:50%;background:var(--danger);display:inline-block}
+.live{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+.pillDanger{font:inherit;font-size:11px;padding:3px 10px;border-radius:20px;
+  border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border-color));
+  background:color-mix(in srgb,var(--danger) 12%,transparent);
+  color:var(--danger);cursor:default;display:inline-flex;align-items:center;gap:4px}
+.pillOn{font:inherit;font-size:11px;padding:3px 10px;border-radius:20px;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,var(--border-color));
+  background:color-mix(in srgb,var(--accent) 14%,transparent);
+  color:var(--accent);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.timer{font-family:ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums;font-size:12px}
+.meta{font-size:11px;color:var(--text-muted)}
+.sp{flex:1}
+.scopeNotice{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0;
+  font-size:11px;padding:3px 8px;border-radius:6px;
+  background:color-mix(in srgb,var(--orange) 16%,transparent);
+  color:color-mix(in srgb,var(--orange) 80%,var(--text-primary));
+  border:1px solid color-mix(in srgb,var(--orange) 45%,transparent)}
+.scopeNoticeX{font:inherit;font-size:10px;padding:1px 6px;border-radius:4px;
+  border:1px solid color-mix(in srgb,var(--orange) 50%,transparent);
+  background:transparent;color:inherit;cursor:pointer}
+.miniBtn,.dangerBtn{font:inherit;font-size:11px;padding:4px 10px;border-radius:6px;
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary);
+  cursor:pointer;flex-shrink:0}
+.dangerBtn{color:var(--danger);
+  border-color:color-mix(in srgb,var(--danger) 40%,var(--border-color))}
+.audioMuteBtn{font:inherit;font-size:11px;display:inline-flex;align-items:center;gap:4px;
+  padding:4px 10px;border-radius:6px;border:1px solid var(--border-color);
+  background:var(--card-bg);color:var(--text-primary);cursor:pointer;flex-shrink:0}
+.trustOn{font-size:11px;padding:2px 8px;border-radius:6px;flex-shrink:0;
+  color:color-mix(in srgb,var(--green) 85%,var(--text-primary));
+  background:color-mix(in srgb,var(--green) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--green) 35%,transparent)}
+
+/* ============================================================
+   方案 A：纵向三段式结构分组
+   ❗ 以下取值与 2026-09-22 落地的 CSS 逐条对齐（间距已归到 4/8 节拍，
+      所以 §2/§6 的实测数字是落地后的复测值，不是定稿时的估值）。
+   ============================================================ */
+.scopeA .ctrlBanner{flex-direction:column;align-items:stretch;flex-wrap:nowrap;row-gap:8px}
+.scopeA .ctrlTop{display:flex;align-items:center;flex-wrap:wrap;column-gap:8px;row-gap:8px}
+.scopeA .ctrlWho{display:flex;align-items:center;gap:8px;flex:0 1 auto;min-width:0}
+.scopeA .ctrlWho .dotDanger,.scopeA .ctrlWho .pillDanger,
+.scopeA .ctrlWho .timer{flex-shrink:0}
+/* ❗ who + pill 绑成同一个 flex 项（role=status 也挂在它身上），计时器留在它外面：
+   窄窗下整个身份组内部折行，计时器不会被挤成单独一行（实测差 15px，见 §8）。 */
+.scopeA .ctrlWho .whoLive{display:inline-flex;align-items:center;gap:8px;flex:0 1 auto;min-width:0}
+/* ❗ .who 不参与 grow：pill/timer 必须紧跟设备名，不能被推到行尾。
+   压缩量仍由 .who 承担（min-width:0 + overflow-wrap），其它三个 flex-shrink:0 永不变形。 */
+.scopeA .ctrlWho .who{flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
+/* ❗ 折行后整组右贴：否则窄窗下「立即结束」会单独掉到左下角（危险按钮最差的位置）。 */
+.scopeA .ctrlActs{display:flex;align-items:center;justify-content:flex-end;
+  column-gap:8px;row-gap:8px;flex-wrap:wrap;margin-left:auto;min-width:0}
+/* 危险按钮与「不发送声音 / 以后不再询问」拉开距离（原注释的意图） */
+.scopeA .ctrlActs .dangerBtn{margin-left:8px}
+.scopeA .ctrlNotes{display:flex;flex-direction:column;gap:8px;align-items:stretch;min-width:0}
+.scopeA .ctrlNotes .scopeNotice{align-self:flex-start}
+.scopeA .ctrlFoot{font-size:11px;color:var(--text-muted)}
+/* 落地时把原来那个 .sp（flex:1）**从结构里删掉**了——三段式下不再需要占位元素，
+   留一个 display:none 的规则比删掉它更容易让后来人疑惑。 */
+.scopeA .sp{display:none}
+
+/* ============================================================
+   方案 B：纯 CSS 兜底补丁
+   ============================================================ */
+.scopeB .ctrlBanner{flex-wrap:wrap;row-gap:8px}
+.scopeB .ctrlBanner .who,.scopeB .ctrlBanner .timer,.scopeB .ctrlBanner .pillDanger,
+.scopeB .ctrlBanner .meta{flex-shrink:0}
+.scopeB .scopeNotice{flex:1 1 100%}
+
+/* ============================================================
+   方案 C：窄窗折叠（仅作对照）
+   ============================================================ */
+.scopeC .ctrlBanner{flex-wrap:wrap;row-gap:8px}
+.scopeC .ctrlBanner .who,.scopeC .ctrlBanner .timer,.scopeC .ctrlBanner .pillDanger{flex-shrink:0}
+.scopeC .scopeNotice{flex:1 1 100%}
+.scopeC .w320 .meta,.scopeC .w320 .sp{display:none}
+
+/* ============================================================
+   落地后的共享壳（2026-09-22 实际改动）
+   旧结构横幅（RcOverlay 三条）**只做了 CSS 兜底、没改结构**：
+   压缩量只由 .who 承担，其余原子元素不参与收缩 + 允许折行。
+   ============================================================ */
+.newShell .ctrlBanner{flex-wrap:wrap;column-gap:10px;row-gap:8px}
+.newShell .ctrlBanner .who{min-width:0}
+.newShell .ctrlBanner .timer,.newShell .ctrlBanner .pillOn,
+.newShell .ctrlBanner .pillDanger,.newShell .ctrlBanner .meta,
+.newShell .ctrlBanner .miniBtn,.newShell .ctrlBanner .dangerBtn{flex-shrink:0}
+/* 折行后收尾按钮右贴（子选择器，不碰新结构里 .ctrlActs 内的按钮） */
+.newShell .ctrlBanner>.miniBtn,.newShell .ctrlBanner>.dangerBtn{margin-left:auto}
+
+.verdict{background:#fff;border:1px solid var(--border-color);border-radius:10px;
+  padding:14px 16px;margin-top:10px}
+.verdict ul{margin:6px 0 0;padding-left:20px;line-height:1.85}
+.verdict li{margin:2px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px;background:#fff}
+th,td{border:1px solid var(--border-color);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#f0f2f5;font-weight:600;font-size:11.5px}
+td.num{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+.bad{color:var(--danger);font-weight:600}
+.ok{color:var(--green);font-weight:600}
+.measure{font-size:11.5px;color:var(--text-muted);font-family:ui-monospace,Consolas,monospace;
+  margin:6px 0 0}
+</style>
+</head>
+<body>
+
+<h1>被控横幅窄窗崩坏 — 修复设计稿</h1>
+<p class="lead">
+  对象：<code>src/components/rc/RcControlBanner.tsx</code> +
+  <code>RemoteComputer.module.css</code> 的 <code>.ctrlBanner</code> 一族。
+  复现宽度：主窗默认 550px、最小 320px（<code>tauri.conf.json</code>）。
+</p>
+
+<h2>0 · 根因</h2>
+<p>
+  <code>.ctrlBanner</code> 是<strong>单行 flex</strong>（<code>display:flex</code>，没有 <code>flex-wrap</code>）。
+  这一行要装 8 个元素，实测固有宽度合计约 <b>1160px</b>：
+</p>
+<table>
+  <thead><tr><th>元素</th><th>声明 <code>flex-shrink:0</code></th><th>550px 窗口 · 实测宽×高</th><th>320px 窗口 · 实测宽×高</th></tr></thead>
+  <tbody>
+    <tr><td>live region 容器（who + pillDanger）</td><td class="bad">否</td><td class="num bad">63 × 48（文本折 3 行）</td><td class="num bad">63 × 48</td></tr>
+    <tr><td><code>.who</code>「正在被「LAPTOP-LZL」远程」</td><td class="bad">否</td><td class="num bad">63 × 48</td><td class="num bad">63 × 48</td></tr>
+    <tr><td><code>.pillDanger</code>「可控」</td><td class="bad">否</td><td class="num">44 × 23</td><td class="num">44 × 23</td></tr>
+    <tr><td><code>.timer</code> 00:13</td><td class="bad">否</td><td class="num">33 × 14</td><td class="num">33 × 14</td></tr>
+    <tr><td><code>.scopeNotice</code> 声音提示</td><td class="bad">否（另有 <code>min-width:0</code>）</td><td class="num bad">57 × 181</td><td class="num bad">18 × 270</td></tr>
+    <tr><td><code>.meta</code> 能力说明</td><td class="bad">否</td><td class="num bad">22 × 135</td><td class="num bad">11 × 270</td></tr>
+    <tr><td><code>.audioMuteBtn</code> / <code>.miniBtn</code> / <code>.dangerBtn</code></td><td class="ok">是</td><td class="num ok">保持完整</td><td class="num ok">保持完整</td></tr>
+  </tbody>
+</table>
+<p class="measure">
+  横幅内容可用宽度 = 窗口宽 − 24(margin) − 2(border) − 28(padding)：
+  550px 窗口 → <b>496px</b>；320px 窗口 → <b>268px</b>。
+  上表数字为 CDP 实测（<code>getBoundingClientRect</code>，Edge headless，deviceScaleFactor=1），非盒模型估算。
+  <br>判据：<b>宽 &lt; 高</b> 即已退化为竖排 —— <code>.scopeNotice</code> 320px 下 18 × 270、<code>.meta</code> 11 × 270，都是「一个字宽、270px 高」的竖条。
+</p>
+<p>
+  中文没有词间空格，<code>min-content</code> 就是<strong>一个字</strong>，所以「压不动就换行」在这里表现为「压成竖排」——
+  这不是溢出，是 flex 的正常压缩行为，所以没有滚动条、没有报错，只有视觉崩坏。
+</p>
+
+<h2>1 · 现状复现（当前代码）</h2>
+<p class="lead">DOM 顺序与 <code>RcControlBanner.tsx</code> 逐项一致。默认宽度下已经崩。</p>
+<div class="demoRow">
+  <div class="demo">
+    <div class="demoHead">窗口 <b>550px</b> · 内容区 496px</div>
+    <div class="win w550">
+      <div class="winTop"><span class="winTab">记录</span><span class="winTab winTabOn">工具</span><span class="winTab">知识</span></div>
+      <div class="ctrlBanner">
+        <div role="status" aria-live="polite">
+          <span class="who"><span class="dotDanger"></span>正在被「LAPTOP-LZL」远程</span>
+          <span class="pillDanger">可控</span>
+        </div>
+        <span class="timer" aria-hidden="true">00:13</span>
+        <span class="scopeNotice" role="status" aria-live="polite">
+          对方开始接收本机系统声音（你现在播放的声音对方能听到）
+          <button type="button" class="scopeNoticeX">知道了</button>
+        </span>
+        <span class="sp"></span>
+        <button type="button" class="audioMuteBtn">🔊 不发送声音</button>
+        <button type="button" class="miniBtn">以后不再询问</button>
+        <span class="meta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+        <button type="button" class="dangerBtn">立即结束</button>
+      </div>
+      <div class="winSearch">筛选工具… Ctrl+F</div>
+      <div class="winHint">— 工具列表 —</div>
+    </div>
+  </div>
+  <div class="demo">
+    <div class="demoHead">窗口 <b>320px</b> · 内容区 268px</div>
+    <div class="win w320">
+      <div class="winTop"><span class="winTab">记录</span><span class="winTab winTabOn">工具</span><span class="winTab">知识</span></div>
+      <div class="ctrlBanner">
+        <div role="status" aria-live="polite">
+          <span class="who"><span class="dotDanger"></span>正在被「LAPTOP-LZL」远程</span>
+          <span class="pillDanger">可控</span>
+        </div>
+        <span class="timer" aria-hidden="true">00:13</span>
+        <span class="scopeNotice" role="status" aria-live="polite">
+          对方开始接收本机系统声音（你现在播放的声音对方能听到）
+          <button type="button" class="scopeNoticeX">知道了</button>
+        </span>
+        <span class="sp"></span>
+        <button type="button" class="audioMuteBtn">🔊 不发送声音</button>
+        <button type="button" class="miniBtn">以后不再询问</button>
+        <span class="meta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+        <button type="button" class="dangerBtn">立即结束</button>
+      </div>
+      <div class="winSearch">筛选工具…</div>
+    </div>
+  </div>
+</div>
+
+<h2>2 · 方案 A：纵向三段式结构分组 <span class="tag tagRec">已落地</span></h2>
+<p>
+  横幅改成 <strong>纵向容器 + 三行语义分段</strong>：第 1 行「我是谁 + 危险动作」，第 2 行「提示条」，第 3 行「能力说明」。
+  动作按钮收进一个 <code>.ctrlActs</code> 组，用 <code>margin-left:auto</code> 右贴——
+  这样按钮<b>整组</b>换行，不会单蹦一个到下一行。
+</p>
+<p class="lead">
+  同时补齐 <code>flex-shrink:0</code>：<code>.timer</code> / <code>.pillDanger</code> / <code>.dotDanger</code> 永不被压，
+  压缩量全部交给 <code>.who</code> 单个元素吸收（中文可断，Text 自然折行而不是竖排）。
+</p>
+<div class="demoRow scopeA">
+  <div class="demo">
+    <div class="demoHead">窗口 <b>550px</b></div>
+    <div class="win w550">
+      <div class="winTop"><span class="winTab">记录</span><span class="winTab winTabOn">工具</span><span class="winTab">知识</span></div>
+      <div class="ctrlBanner">
+        <div class="ctrlTop">
+          <div class="ctrlWho">
+            <span class="dotDanger"></span>
+            <span class="whoLive" role="status" aria-live="polite">
+              <span class="who">正在被「LAPTOP-LZL」远程</span>
+              <span class="pillDanger">可控</span>
+            </span>
+            <!-- ❗ 计时器在 live region 之外：否则屏幕阅读器每秒播报一次时长（C5） -->
+            <span class="timer" aria-hidden="true">00:13</span>
+          </div>
+          <div class="ctrlActs">
+            <button type="button" class="audioMuteBtn">🔊 不发送声音</button>
+            <button type="button" class="miniBtn">以后不再询问</button>
+            <button type="button" class="dangerBtn">立即结束</button>
+          </div>
+        </div>
+        <div class="ctrlNotes">
+          <span class="scopeNotice">
+            对方开始接收本机系统声音（你现在播放的声音对方能听到）
+            <button type="button" class="scopeNoticeX">知道了</button>
+          </span>
+        </div>
+        <div class="ctrlFoot">对方可操作键鼠与剪贴板 · 你随时可结束</div>
+      </div>
+      <div class="winSearch">筛选工具… Ctrl+F</div>
+      <div class="winHint">— 工具列表 —</div>
+    </div>
+  </div>
+  <div class="demo">
+    <div class="demoHead">窗口 <b>320px</b></div>
+    <div class="win w320">
+      <div class="winTop"><span class="winTab">记录</span><span class="winTab winTabOn">工具</span><span class="winTab">知识</span></div>
+      <div class="ctrlBanner">
+        <div class="ctrlTop">
+          <div class="ctrlWho">
+            <span class="dotDanger"></span>
+            <span class="whoLive" role="status" aria-live="polite">
+              <span class="who">正在被「LAPTOP-LZL」远程</span>
+              <span class="pillDanger">可控</span>
+            </span>
+            <!-- ❗ 计时器在 live region 之外：否则屏幕阅读器每秒播报一次时长（C5） -->
+            <span class="timer" aria-hidden="true">00:13</span>
+          </div>
+          <div class="ctrlActs">
+            <button type="button" class="audioMuteBtn">🔊 不发送声音</button>
+            <button type="button" class="miniBtn">以后不再询问</button>
+            <button type="button" class="dangerBtn">立即结束</button>
+          </div>
+        </div>
+        <div class="ctrlNotes">
+          <span class="scopeNotice">
+            对方开始接收本机系统声音（你现在播放的声音对方能听到）
+            <button type="button" class="scopeNoticeX">知道了</button>
+          </span>
+        </div>
+        <div class="ctrlFoot">对方可操作键鼠与剪贴板 · 你随时可结束</div>
+      </div>
+      <div class="winSearch">筛选工具…</div>
+    </div>
+  </div>
+</div>
+<p class="measure">
+  实测横幅高：550px → <b>135px</b>（现状 203px）；320px → <b>213px</b>（现状 292px）。
+  两档宽度下竖排检测均为 <b>none</b>。
+  <br>550px：4 行 = 身份 / 按钮组 / 提示条 / 能力说明。320px：身份组折 2 行（<code>who</code>）+ 按钮组折 2 行（靠右下）+ 提示条折 2 行。
+  <br>❗ 320px 那 213px 是<b>落地复测值</b>（定稿时估的是 211px）：<code>who</code> + 胶囊 + 计时器必须绑成同一个
+  flex 项（<code>.whoLive</code>），否则计时器会被挤成单独一行、横幅变成 226px。
+</p>
+
+<h2>3 · 方案 B：纯 CSS 兜底补丁</h2>
+<p class="lead">
+  只加 4 条 CSS，不改结构：<code>.ctrlBanner{flex-wrap:wrap}</code> + 关键元素 <code>flex-shrink:0</code> +
+  <code>.scopeNotice{flex:1 1 100%}</code>。竖排确实消失，但<strong>折断位置由 <code>.sp</code>（<code>flex:1</code>）随机决定</strong>，
+  且 <code>.sp</code> 换行后会留下一条 0 高度的空行（多出 <code>row-gap</code> 的空白）。
+</p>
+<div class="demoRow scopeB">
+  <div class="demo">
+    <div class="demoHead">窗口 <b>550px</b></div>
+    <div class="win w550">
+      <div class="winTop"><span class="winTab">记录</span><span class="winTab winTabOn">工具</span><span class="winTab">知识</span></div>
+      <div class="ctrlBanner">
+        <div role="status" aria-live="polite">
+          <span class="who"><span class="dotDanger"></span>正在被「LAPTOP-LZL」远程</span>
+          <span class="pillDanger">可控</span>
+        </div>
+        <span class="timer" aria-hidden="true">00:13</span>
+        <span class="scopeNotice" role="status" aria-live="polite">
+          对方开始接收本机系统声音（你现在播放的声音对方能听到）
+          <button type="button" class="scopeNoticeX">知道了</button>
+        </span>
+        <span class="sp"></span>
+        <button type="button" class="audioMuteBtn">🔊 不发送声音</button>
+        <button type="button" class="miniBtn">以后不再询问</button>
+        <span class="meta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+        <button type="button" class="dangerBtn">立即结束</button>
+      </div>
+      <div class="winSearch">筛选工具… Ctrl+F</div>
+    </div>
+  </div>
+  <div class="demo">
+    <div class="demoHead">窗口 <b>320px</b></div>
+    <div class="win w320">
+      <div class="winTop"><span class="winTab">记录</span><span class="winTab winTabOn">工具</span><span class="winTab">知识</span></div>
+      <div class="ctrlBanner">
+        <div role="status" aria-live="polite">
+          <span class="who"><span class="dotDanger"></span>正在被「LAPTOP-LZL」远程</span>
+          <span class="pillDanger">可控</span>
+        </div>
+        <span class="timer" aria-hidden="true">00:13</span>
+        <span class="scopeNotice" role="status" aria-live="polite">
+          对方开始接收本机系统声音（你现在播放的声音对方能听到）
+          <button type="button" class="scopeNoticeX">知道了</button>
+        </span>
+        <span class="sp"></span>
+        <button type="button" class="audioMuteBtn">🔊 不发送声音</button>
+        <button type="button" class="miniBtn">以后不再询问</button>
+        <span class="meta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+        <button type="button" class="dangerBtn">立即结束</button>
+      </div>
+      <div class="winSearch">筛选工具…</div>
+    </div>
+  </div>
+</div>
+
+<p class="measure">
+  实测横幅高：550px → <b>112px</b>（比方案 A 矮 23px，是四档里最紧凑的）；320px → <b>204px</b>。
+  竖排检测同样 <code>none</code>。<b>但 320px 下「立即结束」会单独掉到最后一行最左侧</b> ——
+  红框按钮落在整条横幅最不显眼的位置，与项目「误触代价不对称」的既有约束相冲。
+</p>
+
+<h2>4 · 方案 C：窄窗折叠 <span class="tag tagNo">不单独采用</span></h2>
+<p class="lead">
+  窄窗下 <code>.meta</code> 直接 <code>display:none</code>。省空间，但把「对方可操作键鼠与剪贴板」
+  这条<strong>安全告知</strong>藏掉了——违反项目规则 15（反馈与触发必须在同一可见性域）。
+  只能作为方案 A 的锦上添花（把 <code>.ctrlFoot</code> 文案再缩一档），不能当主方案。
+</p>
+<div class="demoRow scopeC">
+  <div class="demo">
+    <div class="demoHead">窗口 <b>320px</b> · meta 已隐藏</div>
+    <div class="win w320">
+      <div class="winTop"><span class="winTab">记录</span><span class="winTab winTabOn">工具</span><span class="winTab">知识</span></div>
+      <div class="ctrlBanner">
+        <div role="status" aria-live="polite">
+          <span class="who"><span class="dotDanger"></span>正在被「LAPTOP-LZL」远程</span>
+          <span class="pillDanger">可控</span>
+        </div>
+        <span class="timer" aria-hidden="true">00:13</span>
+        <span class="scopeNotice" role="status" aria-live="polite">
+          对方开始接收本机系统声音（你现在播放的声音对方能听到）
+          <button type="button" class="scopeNoticeX">知道了</button>
+        </span>
+        <span class="sp"></span>
+        <button type="button" class="audioMuteBtn">🔊 不发送声音</button>
+        <button type="button" class="miniBtn">以后不再询问</button>
+        <span class="meta">对方可操作键鼠与剪贴板 · 你随时可结束</span>
+        <button type="button" class="dangerBtn">立即结束</button>
+      </div>
+      <div class="winSearch">筛选工具…</div>
+    </div>
+  </div>
+</div>
+
+<p class="measure">
+  实测横幅高：320px → <b>181px</b>（<code>.meta</code> 量到 <b>0 × 0</b>，确认已隐藏）。
+  省下的 30px 换来的是一条安全告知的消失。
+</p>
+
+<h2>5 · 同源受害面（本次只做 CSS 兜底）</h2>
+<p>
+  <code>RcOverlay.tsx</code> 另外 3 条横幅复用同一个 <code>.ctrlBanner</code>，内容宽度按
+  <b>max-content 逐个量出后相加</b>（含 <code>column-gap</code>，排除 <code>.sp</code> 的弹性宽度）。
+  下表是<b>落地后的实测值</b>——定稿时那一列写的是估算（<code>~436/~502/~570/~455</code>），
+  实测下来第二条被低估了 13px：
+</p>
+<table>
+  <thead><tr><th>变体</th><th>固有宽度（实测）</th><th>550px 可用 494px → 兜底后</th></tr></thead>
+  <tbody>
+    <tr><td>① 发起端已连接「正在远程「X」」</td><td class="num">417px</td><td class="ok">单行，横幅 47px</td></tr>
+    <tr><td>② 发起端待同意「等待对方同意 · 2 分钟内…」</td><td class="num">515px</td><td>超 21px → 折 2 行，横幅 78px</td></tr>
+    <tr><td>③ 自动重连「「X」连接中断，正在自动重连（3/5）」+「重新发起」</td><td class="num">550px</td><td>超 56px → 折 2 行，横幅 71px</td></tr>
+    <tr><td>④ 无人值守「无人值守模式中 · 固定密码接入已开启」</td><td class="num">427px</td><td class="ok">单行，横幅 47px<br><span class="lead">（跨网那条文案更长，会接近 494px）</span></td></tr>
+  </tbody>
+</table>
+<p class="lead">
+  <b>本次只加了 CSS 兜底、没改它们的结构</b>：压缩量只由 <code>.who</code> 承担，
+  其余原子元素补 <code>flex-shrink:0</code>，容器允许折行，收尾按钮折行后靠右。
+  原因写在代码注释里——<code>RcOverlay.tsx</code> 已 338 行 &gt; 300 红线，
+  文件头自己写着「下次改它必须先拆子组件」，结构重写要连着拆分一起做，属于另一件事。
+  最坏那条（③）在 320px 的实测：
+</p>
+<div class="demoRow newShell">
+  <div class="demo">
+    <div class="demoHead">③ 自动重连（最坏）· <b>550px</b></div>
+    <div class="win w550">
+      <div class="ctrlBanner" role="status">
+        <span class="who"><span class="live"></span>「LAPTOP-LZL」连接中断，正在自动重连（3/5）</span>
+        <span class="sp"></span>
+        <span class="meta">对方是免确认设备，重连无需对方确认</span>
+        <button type="button" class="miniBtn">重新发起</button>
+      </div>
+      <div class="winSearch">筛选工具… Ctrl+F</div>
+      <div class="winHint">— 工具列表 —</div>
+    </div>
+  </div>
+  <div class="demo">
+    <div class="demoHead">③ 自动重连（最坏）· <b>320px</b></div>
+    <div class="win w320">
+      <div class="ctrlBanner" role="status">
+        <span class="who"><span class="live"></span>「LAPTOP-LZL」连接中断，正在自动重连（3/5）</span>
+        <span class="sp"></span>
+        <span class="meta">对方是免确认设备，重连无需对方确认</span>
+        <button type="button" class="miniBtn">重新发起</button>
+      </div>
+      <div class="winSearch">筛选工具…</div>
+    </div>
+  </div>
+</div>
+<p class="measure">
+  实测：550px → <b>71px</b>（折 2 行：<code>who</code> + <code>meta</code> 一行，按钮靠右一行）；
+  320px → <b>110px</b>（<code>who</code> 折 2 行 + <code>meta</code> 单行 + 按钮靠右），
+  <b>竖排 none、无横向溢出</b>。
+  <br>结论：<b>折行会发生，竖排不会</b>——这就是兜底要买的东西。
+</p>
+<div class="demoRow newShell">
+  <div class="demo">
+    <div class="demoHead">① 发起端已连接 · <b>550px</b></div>
+    <div class="win w550">
+      <div class="ctrlBanner" role="status">
+        <span class="who"><span class="live"></span>正在远程「LAPTOP-LZL」</span>
+        <span class="pillOn">可控</span>
+        <span class="sp"></span>
+        <span class="meta">打开「远程电脑」可看画面</span>
+        <button type="button" class="dangerBtn">立即结束</button>
+      </div>
+      <div class="winSearch">筛选工具… Ctrl+F</div>
+    </div>
+  </div>
+  <div class="demo">
+    <div class="demoHead">② 发起端待同意 · <b>550px</b></div>
+    <div class="win w550">
+      <div class="ctrlBanner" role="status">
+        <span class="who"><span class="live"></span>正在申请远程「LAPTOP-LZL」</span>
+        <span class="pillOn">可控</span>
+        <span class="sp"></span>
+        <span class="meta">等待对方同意 · 2 分钟内未响应将自动取消</span>
+        <button type="button" class="dangerBtn">取消申请</button>
+      </div>
+      <div class="winSearch">筛选工具… Ctrl+F</div>
+    </div>
+  </div>
+</div>
+<div class="demoRow newShell">
+  <div class="demo">
+    <div class="demoHead">④ 无人值守 · <b>550px</b></div>
+    <div class="win w550">
+      <div class="ctrlBanner" role="status">
+        <span class="who"><span class="live"></span>无人值守模式中 · 固定密码接入已开启</span>
+        <span class="pillOn">可控</span>
+        <span class="sp"></span>
+        <span class="meta">仅限同一局域网</span>
+        <button type="button" class="dangerBtn">一键关闭</button>
+      </div>
+      <div class="winSearch">筛选工具… Ctrl+F</div>
+    </div>
+  </div>
+</div>
+
+<h2>6 · 四档实测对账</h2>
+<table>
+  <thead><tr><th>方案</th><th>550px 横幅高</th><th>550px 竖排</th><th>320px 横幅高</th><th>320px 竖排</th><th>320px 「立即结束」位置</th></tr></thead>
+  <tbody>
+    <tr><td>现状</td><td class="num bad">203px</td><td class="bad">scopeNotice 57×181、meta 22×135</td><td class="num bad">292px</td><td class="bad">scopeNotice 18×270、meta 11×270</td><td class="bad">与其它按钮挤在同一行尾部</td></tr>
+    <tr><td><b>方案 A</b>（已落地）</td><td class="num">135px</td><td class="ok">none</td><td class="num">213px</td><td class="ok">none</td><td class="ok">右下角，独占一行</td></tr>
+    <tr><td>方案 B</td><td class="num ok">112px</td><td class="ok">none</td><td class="num">204px</td><td class="ok">none</td><td class="bad">左下角孤行</td></tr>
+    <tr><td>方案 C</td><td class="num ok">112px</td><td class="ok">none</td><td class="num">181px</td><td class="ok">none</td><td class="bad">左下角孤行</td></tr>
+  </tbody>
+</table>
+
+<h2>7 · 结论</h2>
+<div class="verdict">
+  <ul>
+    <li><b>方案 A（推荐）</b>：改 <code>RcControlBanner.tsx</code> 结构 + 新增 5 个 CSS 类。
+        两档宽度下均无竖排、无横向溢出，危险按钮始终在右下角。
+        <b>代价</b>：550px 下比方案 B 高 23px（多一行能力说明），换来的是元素归位、换行可控。</li>
+    <li><b>方案 B</b>：4 条 CSS 完事，改动最小，550px 下实测反而是四档里最矮的（112px），单行读数也正常。
+        <b>代价</b>：320px 下「立即结束」掉到左下角孤行（实测 204px 高）——
+        危险按钮跑到了最不显眼的位置，与项目「误触代价不对称」的既有约束冲突；另有 <code>.sp</code> 换行后留下的空行。</li>
+    <li><b>方案 C</b>：不建议单独使用（藏安全告知，违反规则 15）。</li>
+    <li><b>共同必做（已做）</b>：给 <code>.meta</code> / <code>.timer</code> / <code>.pillDanger</code> /
+        <code>.pillOn</code> / <code>.trustOn</code> / 三个按钮补 <code>flex-shrink:0</code>，
+        并让 <code>.ctrlBanner</code> 允许折行 + 收尾按钮折行后靠右——
+        RcOverlay 里另外 3 条旧结构横幅因此不再竖排（实测见 §5）。
+        但它们的**结构没改**（原因见 §5），所以 ②③ 两条在默认宽度下会从单行变两行。</li>
+  </ul>
+</div>
+
+<h2>8 · 落地记录（2026-09-22）</h2>
+<p class="lead">
+  改动落在两处，本稿的 CSS 已在 §2 / §5 与实现对齐：
+</p>
+<ul>
+  <li><code>src/components/rc/RcControlBanner.tsx</code>：JSX 改成三段式；删掉占位的 <code>.sp</code>；
+      身份段包一层 <code>.whoLive</code>（live region 只包 who + pill，计时器在它外面）。</li>
+  <li><code>src/components/rc/RemoteComputer.module.css</code>：<code>.ctrlBanner</code> 拆
+      <code>column-gap</code> / <code>row-gap</code> + 加 <code>flex-wrap:wrap</code>；
+      新增 <code>.ctrlStack</code> / <code>.ctrlTop</code> / <code>.ctrlWho</code>（含 <code>.whoLive</code>）/
+      <code>.ctrlActs</code> / <code>.ctrlNotes</code> / <code>.ctrlFoot</code>；旧结构横幅的兜底一组规则。</li>
+</ul>
+<p class="lead">
+  <b>落地与定稿的两处偏差</b>（都是复测才发现的，不是设计改了）：
+</p>
+<ul>
+  <li>间距归到 4/8 节拍：<code>ctrlTop</code> 的 10px → 8px、<code>ctrlActs</code> 的
+      <code>row-gap</code> / 危险按钮间距 6px → 8px、<code>ctrlNotes</code> 的 6px → 8px。
+      320px 高度因此从 211px 变成 213px。<b>唯一保留的非节拍值是共享壳的 <code>column-gap:10px</code></b>
+      ——它同时作用于另外四条横幅，本次不动它们的观感，已在代码里写 <code>ui-rule-ok</code> 说明。</li>
+  <li>计时器位置：定稿的 demo 把计时器放在 <code>.ctrlWho</code> 里（靠内层折行）。
+      落地时一度把它移到 <code>.ctrlWho</code> 外面（为让它脱离 live region），复测发现
+      320px 下它会独占一行、横幅变成 226px；改成 <code>.whoLive</code> 包 who + pill 后复原成 213px。
+      <b>这条偏差正是「设计稿必须真渲染一遍」的价值</b>。</li>
+</ul>
+<p class="lead">
+  测量口径：Edge headless + CDP <code>getBoundingClientRect</code>；「竖排」判据为
+  <code>height &gt; width × 1.5 且 height &gt; 24px</code>；固有宽度 = 各直接子元素宽度之和
+  + <code>column-gap</code> × (n−1)，排除 <code>.sp</code> 的弹性宽度。
+</p>
+
+</body>
+</html>

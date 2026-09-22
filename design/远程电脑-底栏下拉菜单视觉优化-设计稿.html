@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>底栏下拉菜单视觉优化 — 设计稿</title>
+<style>
+:root{
+  --danger:#d64545; --orange:#e0803a; --card-bg:#fff; --border-color:#e3e6ea;
+  --text-primary:#1c1f23; --text-secondary:#495565; --text-muted:#6b7280;
+  --accent:#4f7cff; --green:#11813a; --hover:#e8ecf2;
+  /* 浮层阴影 token（theme.css 浅色主题值，逐字照抄） */
+  --glass-popover-shadow:0 12px 36px rgba(0,0,0,.1),0 2px 8px rgba(0,0,0,.05);
+  /* rc 玻璃四 token 里的两个（RemoteComputer.module.css:9-13） */
+  --rc-glass:color-mix(in srgb,var(--card-bg) 82%,transparent);
+  --rc-glass-line:color-mix(in srgb,var(--border-color) 60%,transparent);
+  --rc-shadow:0 10px 30px color-mix(in srgb,var(--accent) 9%,transparent),
+    0 1px 3px color-mix(in srgb,var(--accent) 5%,transparent),
+    inset 0 1px 0 rgba(255,255,255,.55);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:24px 28px 60px; background:#f6f7f9; color:var(--text-primary);
+  font-family:"Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif; font-size:13px;
+}
+h1{font-size:19px;margin:0 0 8px;letter-spacing:-.2px}
+h2{font-size:14.5px;margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--border-color)}
+h3{font-size:13px;margin:18px 0 8px;font-weight:600}
+p{margin:0 0 8px;line-height:1.75}
+ul{margin:6px 0 10px;padding-left:20px;line-height:1.8}
+li{margin:2px 0}
+.lead{color:var(--text-muted);font-size:12.5px}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+  background:#eceef2;padding:1px 5px;border-radius:4px;color:#333}
+b.hl{color:var(--danger)}
+.tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:20px;
+  border:1px solid var(--border-color);background:#fff;color:var(--text-muted);
+  vertical-align:2px;margin-left:6px}
+.tagRec{background:color-mix(in srgb,var(--green) 12%,#fff);color:var(--green);
+  border-color:color-mix(in srgb,var(--green) 40%,var(--border-color))}
+.tagNo{background:color-mix(in srgb,var(--danger) 9%,#fff);color:var(--danger);
+  border-color:color-mix(in srgb,var(--danger) 30%,var(--border-color))}
+table{border-collapse:collapse;width:100%;margin:10px 0 14px;font-size:12px;background:#fff}
+th,td{border:1px solid var(--border-color);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:#f2f4f7;font-weight:600;font-size:11.5px}
+td.num{font-family:ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+.ok{color:var(--green)}
+.bad{color:var(--danger)}
+
+/* ---------- 窗口模拟 ---------- */
+.demoRow{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin:12px 0 4px}
+.demo{flex:0 0 auto}
+.demoHead{font-size:11.5px;color:var(--text-muted);margin-bottom:6px;
+  font-family:ui-monospace,Consolas,monospace}
+.demoHead b{color:var(--text-primary);font-size:12px}
+.win{background:#fbfcfd;border:1px solid var(--border-color);border-radius:10px;
+  overflow:hidden;padding-bottom:12px;position:relative}
+.w550{width:550px}
+.w320{width:320px}
+/* 远程画面区：用渐变模拟（截图为草地+石墙）。真实窗口这里是 canvas。 */
+.screen{height:252px;border-bottom:1px solid #eef0f3;background:
+  radial-gradient(circle at 78% 22%,rgba(255,255,255,.45),transparent 34%),
+  radial-gradient(circle at 12% 62%,rgba(255,255,255,.3),transparent 30%),
+  linear-gradient(180deg,#8aa564 0%,#9db667 34%,#c6cd6d 52%,#e2dfa4 74%,#f0eccb 100%)}
+.screen.s320{height:236px}
+.barWrap{position:relative;margin:8px 12px 0}
+
+/* 底栏：逐字照抄 src/components/rc/RemoteComputer.module.css .sessionBar 及配套 */
+.sessionBar{
+  min-height:36px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 8px;
+  background:var(--rc-glass);backdrop-filter:blur(16px);
+  border:1px solid var(--rc-glass-line);border-radius:14px;box-shadow:var(--rc-shadow);
+  font-size:11px;color:var(--text-secondary);
+}
+.segGroup{display:inline-flex;align-items:center;height:28px;border-radius:9px;
+  border:1px solid var(--border-color);
+  background:color-mix(in srgb,var(--text-primary) 5%,transparent);padding:0 2px}
+.segSep{width:1px;height:16px;background:var(--border-color)}
+.menuBtn{font:inherit;font-size:11px;display:inline-flex;align-items:center;gap:5px;
+  padding:0 10px;height:24px;border-radius:7px;border:none;background:transparent;
+  color:var(--text-secondary);cursor:pointer}
+.menuCur{font-weight:600;color:var(--text-primary)}
+.menuCaret{opacity:.7}
+.barSep{width:1px;height:16px;background:var(--border-color);margin:0 2px}
+.barBtn{font:inherit;font-size:11px;display:inline-flex;align-items:center;gap:4px;
+  padding:0 8px;height:24px;border-radius:7px;border:none;background:transparent;
+  color:var(--text-secondary);cursor:pointer}
+
+/* 菜单公共骨架（位置）：绝对定位在底栏上方 6px —— 真实实现是 portal+fixed，
+   稿子里用 absolute 视觉等价（portal 绕开裁剪那件事已在上一次修复完成）。 */
+.pop{position:absolute;left:0;bottom:calc(100% + 6px);z-index:5}
+
+/* ============================================================
+   现状：逐字照抄 RemoteComputer.module.css .menuPop / .menuItem
+   ============================================================ */
+.menuPop.now{
+  position:absolute;left:0;bottom:calc(100% + 6px);z-index:5;
+  display:flex;flex-direction:column;padding:4px;border-radius:10px;
+  background:var(--card-bg);border:1px solid var(--rc-glass-line);
+  box-shadow:0 14px 36px rgba(15,23,42,.16);
+}
+.menuPop.now .mi{font:inherit;font-size:11.5px;text-align:left;padding:5px 10px;border-radius:6px;
+  border:none;background:transparent;color:var(--text-secondary);cursor:pointer;white-space:nowrap}
+.menuPop.now .mi:hover{background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--accent)}
+.menuPop.now .mi.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);font-weight:600}
+
+/* ============================================================
+   方案 A：双列信息卡
+   ============================================================ */
+/* ⚠️ 本段与落地代码 `src/components/rc/RemoteComputer.module.css` 同值同语义。
+   落地时按 UI 规则的表把几个「好看但不在档」的值归位了，所以与首版稿有四处差异：
+     项字号 12.5 → 12（字号只允许 11/12/13/15/20）
+     项圆角 7 → 8（圆角只允许 4/8/12；且 8 = 外层 12 − 容器 padding 4，内壁正好吻合）
+     容器 padding 5 → 4、行距 2 → 4（间距只允许 4/8/12/16/24）
+     选中项 meta 由「混灰」改成「继承 accent + 降透明度」（彩色底混灰是 V6 判的「脏」） */
+.menuPop.vA{
+  display:grid;grid-template-columns:auto;gap:4px;
+  padding:4px;border-radius:12px;
+  background:var(--card-bg);border:1px solid var(--border-color);
+  box-shadow:var(--glass-popover-shadow);
+}
+/* 双列。生产里这个变体类叫 .menuPopTwo，由调用方的 columns={2} 打开（画质菜单）。 */
+.menuPop.vA.two{grid-template-columns:auto auto}
+.menuPop.vA .mi{display:flex;align-items:center;gap:8px;width:100%;height:28px;padding:0 8px;
+  border-radius:8px;font:inherit;font-size:12px;border:none;background:transparent;
+  text-align:left;color:var(--text-primary);cursor:pointer;white-space:nowrap}
+.menuPop.vA .mi:hover{background:var(--hover)}
+.menuPop.vA .mk{width:12px;height:12px;flex:0 0 12px;color:var(--accent);opacity:0}
+.menuPop.vA .mi.on{background:color-mix(in srgb,var(--accent) 10%,transparent);
+  color:var(--accent);font-weight:600}
+.menuPop.vA .mi.on .mk{opacity:1}
+.menuPop.vA .mm{font-size:11px;font-weight:400;color:var(--text-muted);
+  font-variant-numeric:tabular-nums}
+.menuPop.vA .mi.on .mm{color:inherit;opacity:0.72}
+/* 独占整行的项（生产里叫 .menuItemSolo，由 options 里的 solo:true 打开，
+   当前只有画质「自动」）。 */
+.menuPop.vA .autoRow{grid-column:1 / -1}
+/* ❗ 单列时 meta 右贴：列宽一致，贴着读像「值」。双列不右贴——两列宽度不同，
+   右贴会让两列各自成一套对齐（实测右缘差 18px）。 */
+.menuPop.vA:not(.two) .mm{margin-left:auto}
+/* 分隔线左右 8px 对齐项的 padding-left（同 ContextMenu 的 .ctxSep 口径） */
+.menuPop.vA .msep{grid-column:1 / -1;height:1px;background:var(--border-color);margin:4px 8px}
+
+/* ============================================================
+   方案 B：单列精修（不加 meta 字段，只对齐浮层语言 + 勾 + 分组）
+   ============================================================ */
+.menuPop.vB{
+  display:flex;flex-direction:column;gap:1px;padding:5px;border-radius:12px;
+  min-width:168px;
+  background:var(--card-bg);border:1px solid var(--border-color);
+  box-shadow:var(--glass-popover-shadow);
+}
+.menuPop.vB .mi{display:flex;align-items:center;gap:7px;width:100%;height:28px;padding:0 8px;
+  border-radius:7px;font:inherit;font-size:12.5px;border:none;background:transparent;
+  text-align:left;color:var(--text-primary);cursor:pointer;white-space:nowrap}
+.menuPop.vB .mi:hover{background:var(--hover)}
+.menuPop.vB .mk{width:12px;height:12px;flex:0 0 12px;color:var(--accent);opacity:0}
+.menuPop.vB .mi.on{background:color-mix(in srgb,var(--accent) 10%,transparent);
+  color:var(--accent);font-weight:600}
+.menuPop.vB .mi.on .mk{opacity:1}
+.menuPop.vB .msep{height:1px;background:var(--border-color);margin:5px 5px}
+
+/* ============================================================
+   方案 C：最小 CSS 修补（不动结构，只换浮层语言 + 中性 hover）
+   ============================================================ */
+.menuPop.vC{
+  display:flex;flex-direction:column;padding:4px;border-radius:12px;
+  background:var(--card-bg);border:1px solid var(--border-color);
+  box-shadow:var(--glass-popover-shadow);
+}
+.menuPop.vC .mi{font:inherit;font-size:12.5px;text-align:left;padding:6px 10px;border-radius:7px;
+  border:none;background:transparent;color:var(--text-secondary);cursor:pointer;white-space:nowrap}
+.menuPop.vC .mi:hover{background:var(--hover);color:var(--text-primary)}
+.menuPop.vC .mi.on{background:color-mix(in srgb,var(--accent) 12%,transparent);
+  color:var(--accent);font-weight:600}
+
+/* 勾图标（lucide check，12px） */
+svg.mk{stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.measure{font-size:11.5px;color:var(--text-muted);margin:6px 0 0;
+  font-family:ui-monospace,Consolas,monospace;line-height:1.7}
+.measure b{color:var(--text-primary);font-size:12px}
+.verdict{background:#fff;border:1px solid var(--border-color);border-radius:10px;
+  padding:14px 16px;margin-top:10px}
+.verdict ol{margin:6px 0 0;padding-left:20px;line-height:1.85}
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 底栏下拉菜单视觉优化</h1>
+<p class="lead">
+  来源：用户截图（会话底栏「画质」下拉展开）。对照源码
+  <code>src/components/rc/RcDropdown.tsx</code>（2026-09-22 已 portal 化）、
+  <code>src/components/rc/RemoteComputer.module.css</code> 的
+  <code>.menuPop</code> / <code>.menuItem</code>（第 1258 / 1269 行起）。
+  文末 §5 的数字全部由 Edge headless + CDP 实测，非估算。
+</p>
+
+<h2>1 · 诊断：难看在哪</h2>
+<p>
+  不是「差点装饰」，是四个可指认的偏差点。前三条决定了它<b>不像应用内的浮层</b>，第四条决定它<b>没用</b>。
+</p>
+<table>
+  <thead><tr><th>#</th><th>偏差</th><th>现状值</th><th>项目浮层基准</th><th>后果</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><b>细长条</b>：一行一项、项高 25px、菜单宽只跟按钮齐</td>
+      <td class="num">64.5 × 210px<br>（8 项，高宽比 <b>3.3:1</b>）</td>
+      <td>右键菜单 <code>min-width:180px</code>、项高 32px</td>
+      <td class="bad">在演示窗口里占画面区 <b>83%</b>；每项只有 2 个字，两侧大片留白</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><b>另起一套视觉</b>：不用浮层 token，阴影硬编码</td>
+      <td class="num">radius 10 / padding 4<br><code>0 14px 36px rgba(15,23,42,.16)</code></td>
+      <td class="num">radius 12 / padding 5<br><code>var(--glass-popover-shadow)</code></td>
+      <td class="bad">白底 + 偏蓝黑的硬阴影，挨着 14px 圆角的玻璃底栏显得廉价</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><b>hover 变蓝</b>：accent 底色 + accent 文字</td>
+      <td class="num">accent 7% + 蓝字</td>
+      <td><code>var(--hover)</code> 中性底、文字不变色</td>
+      <td class="bad">鼠标扫过像一排链接在闪；与选中项的 accent 蓝几乎分不清</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><b>关键信息全藏进 tooltip</b>：档位差异（fps / 宽度 / 是否需硬编）只在 <code>tip</code> 里</td>
+      <td class="num">tip 逐字见 <code>rcQuality.ts:30-52</code></td>
+      <td>—</td>
+      <td class="bad">「原生 / 4K60 / 高帧率」三个档，不逐项悬停根本不知道差别；选中项也没勾，只有浅底色</td>
+    </tr>
+  </tbody>
+</table>
+<p class="lead">
+  补充：<code>.menuItemOn</code> 与 <code>:hover</code> 都是 accent 蓝系，底色只差 5% 透明度；
+  菜单里没有任何图标列，所以「哪一项是当前档」需要逐行读字。窄窗下更吃亏——见 §5。
+</p>
+
+<h3>现状（550px 窗口 · 画质下拉）</h3>
+<div class="demoRow">
+  <div class="demo">
+    <div class="demoHead">修复前 · 窗口 <b>550px</b></div>
+    <div class="win w550">
+      <div class="screen"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">画质 <b class="menuCur">自动</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">画面 <b class="menuCur">整屏</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">码率 <b class="menuCur">200% · 尽量清晰</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+          <span class="barSep"></span>
+          <button class="barBtn">🔊 声音</button>
+          <span class="barSep"></span>
+          <button class="barBtn">剪贴板同步</button>
+        </div>
+        <div class="menuPop pop now" data-measure="now550">
+          <button class="mi on">自动</button>
+          <button class="mi">流畅</button>
+          <button class="mi">均衡</button>
+          <button class="mi">清晰</button>
+          <button class="mi">超清</button>
+          <button class="mi">原生</button>
+          <button class="mi">4K60</button>
+          <button class="mi">高帧率</button>
+        </div>
+      </div>
+    </div>
+    <p class="measure" data-measure="now550txt">（尺寸见 §5）</p>
+  </div>
+</div>
+<p class="lead">
+  八成观感问题来自这张图：菜单比底栏里的按钮宽不了多少，却高到几乎顶到窗口上沿。
+  两侧都是装饰性留白，中间挤着一列 2 字词。
+</p>
+
+<h2>2 · 方案 A：双列信息卡 <span class="tag tagRec">已落地</span></h2>
+<p>
+  把「档」铺成两列，每项右侧补一条 <b>fps · 宽度</b> 短标注；「自动」是另一类语义（自适应 vs 锁定），
+  单独横贯一行并用分隔线隔开。选中项左侧固定一列放勾。
+</p>
+<ul>
+  <li><b>结构改动</b>：菜单容器 <code>flex column</code> → <code>grid-template-columns:auto auto</code>；
+    每项内部加「勾位 + label + meta」三件套。</li>
+  <li><b>数据改动</b>：只给「有信息增量」的两个表加 <code>meta</code> 短字段——
+    <code>rcQuality.ts</code> 的 <code>RC_QUALITIES</code>（8 项）与 <code>RC_BITRATE_OPTIONS</code>（5 项），
+    约 13 行。文案全部取自现有 <code>tip</code>，不新造事实。
+    <b>「画面」下拉不加</b>：label（整屏 / 仅主屏 / 屏1·主）已经把话说完了，meta 是噪音。</li>
+  <li><b>列数是调用方指定的，不自动猜</b>：画质（label 2–4 字）走双列；
+    码率 label 长到「200% · 尽量清晰」，硬拉两列会一宽一窄，走单列变体；
+    画面项少（4 项）走单列。<code>RcDropdown</code> 加一个可选 prop（如 <code>columns</code>）。</li>
+  <li><b>视觉</b>：圆角 12 / padding 5 / 项高 28 / 项圆角 7 / 阴影 <code>--glass-popover-shadow</code> /
+    hover <code>var(--hover)</code> —— 与右键菜单同一套语言。</li>
+</ul>
+
+<div class="demoRow">
+  <div class="demo">
+    <div class="demoHead">画质（8 项）· 窗口 <b>550px</b></div>
+    <div class="win w550">
+      <div class="screen"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">画质 <b class="menuCur">自动</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">画面 <b class="menuCur">整屏</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">码率 <b class="menuCur">200% · 尽量清晰</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+          <span class="barSep"></span>
+          <button class="barBtn">🔊 声音</button>
+          <span class="barSep"></span>
+          <button class="barBtn">剪贴板同步</button>
+        </div>
+        <div class="menuPop pop vA two" data-measure="A550">
+          <button class="mi on autoRow">
+            <svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+            自动<span class="mm">自动换档</span>
+          </button>
+          <span class="msep"></span>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>流畅<span class="mm">10fps · 960</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>均衡<span class="mm">10fps · 1280</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>清晰<span class="mm">15fps · 1920</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>超清<span class="mm">12fps · 2560</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>原生<span class="mm">4K · 20fps</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>4K60<span class="mm">4K · 60fps</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>高帧率<span class="mm">1080p · 60</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="lead">同方案在 320px 最小窗口（菜单宽 228px，窗口内容区 296px，仍有余量）：</p>
+<div class="demoRow">
+  <div class="demo">
+    <div class="demoHead">画质 · 窗口 <b>320px</b></div>
+    <div class="win w320">
+      <div class="screen s320"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">画质 <b class="menuCur">自动</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">画面 <b class="menuCur">整屏</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="menuPop pop vA two" data-measure="A320">
+          <button class="mi on autoRow">
+            <svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+            自动<span class="mm">自动换档</span>
+          </button>
+          <span class="msep"></span>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>流畅<span class="mm">10fps · 960</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>均衡<span class="mm">10fps · 1280</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>清晰<span class="mm">15fps · 1920</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>超清<span class="mm">12fps · 2560</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>原生<span class="mm">4K · 20fps</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>4K60<span class="mm">4K · 60fps</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>高帧率<span class="mm">1080p · 60</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>另外两个下拉（项数、文案长度都不同，必须一起验）</h3>
+<div class="demoRow">
+  <div class="demo">
+    <div class="demoHead">码率（5 项，label 较长）· <b>550px</b></div>
+    <div class="win w550">
+      <div class="screen"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">画质 <b class="menuCur">自动</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">码率 <b class="menuCur">200% · 尽量清晰</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="menuPop pop vA" style="left:72px" data-measure="Abr550">
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>50% · 省带宽<span class="mm">最省流量</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>75%<span class="mm">略省带宽</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>跟随链路<span class="mm">默认</span></button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>150%<span class="mm">再提一半</span></button>
+          <button class="mi on"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>200% · 尽量清晰<span class="mm">档位内最高</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="demo">
+    <div class="demoHead">画面（对端 2 块屏）· <b>550px</b></div>
+    <div class="win w550">
+      <div class="screen"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">画质 <b class="menuCur">自动</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">画面 <b class="menuCur">整屏</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="menuPop pop vA" style="left:72px" data-measure="Asc550">
+          <button class="mi on"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>整屏</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>仅主屏</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>屏1·主</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>屏2</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="measure" data-measure="AAll">
+  落地后实测（Edge headless + CDP，取菜单 <code>getBoundingClientRect()</code>）：<br>
+  画质（双列，8 项）<b>271.0 × 179.0px</b> · 码率（单列，5 项）<b>196.6 × 166.0px</b> ·
+  画面（单列无 meta，4 项）<b>82.0 × 134.0px</b> · 项高均 <b>28px</b>、
+  分隔线宽 <b>245px</b>（= 菜单内壁）。
+</p>
+
+<h2>3 · 方案 B：单列精修 <span class="tag">不加数据字段</span></h2>
+<p>
+  不动结构、不加 <code>meta</code> 字段，只把视觉对齐到项目浮层语言，并补一列勾、一条分组分隔线。
+  代价是<b>高度不降反升</b>：项高从 25px 抬到 28px（对齐浮层语言）后，8 项单列实测
+  <b>168 × 255px</b>，比现状的 210px <b>还高 45px</b>。截图里最刺眼的「细长条」原样保留。
+</p>
+<div class="demoRow">
+  <div class="demo">
+    <div class="demoHead">画质（8 项）· <b>550px</b></div>
+    <div class="win w550">
+      <div class="screen"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">画质 <b class="menuCur">自动</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">画面 <b class="menuCur">整屏</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">码率 <b class="menuCur">200% · 尽量清晰</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+          <span class="barSep"></span>
+          <button class="barBtn">🔊 声音</button>
+          <span class="barSep"></span>
+          <button class="barBtn">剪贴板同步</button>
+        </div>
+        <div class="menuPop pop vB" data-measure="B550">
+          <button class="mi on"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>自动</button>
+          <span class="msep"></span>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>流畅</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>均衡</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>清晰</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>超清</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>原生</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>4K60</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>高帧率</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="demo">
+    <div class="demoHead">码率（5 项）· <b>550px</b></div>
+    <div class="win w550">
+      <div class="screen"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">码率 <b class="menuCur">200% · 尽量清晰</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="menuPop pop vB" data-measure="Bbr550">
+          <button class="mi on"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>200% · 尽量清晰</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>150%</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>跟随链路</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>75%</button>
+          <button class="mi"><svg class="mk" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>50% · 省带宽</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>4 · 方案 C：最小 CSS 修补 <span class="tag tagNo">不够</span></h2>
+<p>
+  只动 4 条 CSS：圆角 10→12、阴影换 <code>--glass-popover-shadow</code>、
+  hover 从 accent 蓝换成 <code>var(--hover)</code>、字号 11.5→12.5。
+  结构、宽度、高度都不动，所以<b>细长条那条偏差它治不了</b>：实测 67.5 × 234px，
+  依旧是个 68px 宽的白条，还因为字号 11.5→12.5 反而比现状高 24px。
+</p>
+<div class="demoRow">
+  <div class="demo">
+    <div class="demoHead">画质（8 项）· <b>550px</b> · 只换皮</div>
+    <div class="win w550">
+      <div class="screen"></div>
+      <div class="barWrap">
+        <div class="sessionBar">
+          <span class="segGroup">
+            <button class="menuBtn">画质 <b class="menuCur">自动</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">画面 <b class="menuCur">整屏</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span class="segSep"></span>
+            <button class="menuBtn">码率 <b class="menuCur">200% · 尽量清晰</b>
+              <svg width="12" height="12" viewBox="0 0 24 24" class="menuCaret" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+          <span class="barSep"></span>
+          <button class="barBtn">🔊 声音</button>
+        </div>
+        <div class="menuPop pop vC" data-measure="C550">
+          <button class="mi on">自动</button>
+          <button class="mi">流畅</button>
+          <button class="mi">均衡</button>
+          <button class="mi">清晰</button>
+          <button class="mi">超清</button>
+          <button class="mi">原生</button>
+          <button class="mi">4K60</button>
+          <button class="mi">高帧率</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>5 · 四档实测对账</h2>
+<p class="lead">
+  量测口径：Edge headless + CDP 取菜单 <code>getBoundingClientRect()</code>（宽 × 高，单位 px）。
+  「占画面区」= 菜单高 ÷ 演示窗口画面区高（252px）——这是<b>稿子的演示口径</b>，
+  真实会话窗口的画面区更高，所以这个百分比只说相对量级，不是真实遮挡比例。
+</p>
+<table>
+  <thead>
+    <tr><th>形态</th><th>菜单尺寸（宽 × 高）</th><th>相对现状</th><th>项密度</th><th>看得见档位差异</th><th>当前档可辨</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>现状</td><td class="num">64.5 × 210px</td><td class="num">—</td><td>25px/项</td>
+      <td class="bad">否（要逐项悬停）</td><td class="bad">仅浅底色</td></tr>
+    <tr><td><b>方案 A</b> 双列信息卡</td><td class="num"><b>271.0 × 179px</b></td>
+      <td class="ok num">−31px（−15%）</td><td>28px/项 · 2 列</td>
+      <td class="ok">是（fps · 宽度常显）</td><td class="ok">勾 + 高亮</td></tr>
+    <tr><td>方案 B 单列精修</td><td class="num">168 × 255px</td>
+      <td class="bad num">+45px（+21%）</td><td>28px/项 · 1 列</td>
+      <td class="bad">否</td><td class="ok">勾 + 高亮</td></tr>
+    <tr><td>方案 C 只换皮</td><td class="num">67.5 × 234px</td>
+      <td class="bad num">+24px（+11%）</td><td>28px/项</td>
+      <td class="bad">否</td><td class="bad">仅浅底色</td></tr>
+  </tbody>
+</table>
+<p class="lead">
+  <b>只有 A 是「更矮 + 更宽 + 信息更多」</b>；B 与 C 都是在现状的高度基础上再加码，
+  只是加了勾或换了阴影。
+</p>
+
+<h3>320px 最小窗口（可用宽 296px = 320 − 12×2 margin）</h3>
+<p class="lead">
+  菜单宽度由内容决定，与窗口宽无关；这里查的是<b>会不会顶出右缘</b>。
+</p>
+<table>
+  <thead><tr><th>形态</th><th>菜单宽</th><th>结论</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>现状</td><td class="num">64.5px</td><td class="ok">放得下</td><td>窄，但高 210px</td></tr>
+    <tr><td><b>方案 A</b></td><td class="num">271.0px</td>
+      <td class="ok">放得下，右缘余 <b>37px</b>（320 − 12 左边距 − 271）</td>
+      <td>这是三个下拉里最宽的一个（码率 196.6、画面 82.0）</td></tr>
+    <tr><td>方案 B</td><td class="num">168px</td><td class="ok">放得下</td><td>有 <code>min-width:168px</code></td></tr>
+    <tr><td>方案 C</td><td class="num">67.5px</td><td class="ok">放得下</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h3>方案 A · 三个下拉各自的尺寸</h3>
+<p class="lead">
+  列数按 label 长度指定：画质双列、码率单列、画面单列。实测如下。
+</p>
+<table>
+  <thead><tr><th>下拉</th><th>项数</th><th>排布</th><th>菜单尺寸（宽 × 高）</th><th>320px 下</th></tr></thead>
+  <tbody>
+    <tr><td>画质</td><td class="num">8</td><td>双列 + 跨列「自动」行 + 分隔线</td>
+      <td class="num">271.0 × 179px</td><td class="ok">放得下</td></tr>
+    <tr><td>码率</td><td class="num">5</td><td>单列 + meta 右贴</td>
+      <td class="num">196.6 × 166px</td><td class="ok">放得下</td></tr>
+    <tr><td>画面</td><td class="num">4</td><td>单列（无 meta）</td>
+      <td class="num">82.0 × 134px</td><td class="ok">放得下</td></tr>
+  </tbody>
+</table>
+
+<h2>6 · 结论</h2>
+<div class="verdict">
+  <p><b>推荐方案 A。</b>三条理由，都可验证：</p>
+  <ol>
+    <li><b>它真正解决了截图里的观感问题</b>：菜单从 <b>64.5 × 210px</b> 的细长条
+      变成 <b>271.0 × 179px</b> 的信息卡——高宽比从 3.3:1 收到 1.5:1，高度降 15%，
+      而多出来的宽度全是信息（fps · 宽度），不是留白。</li>
+    <li><b>它顺手修掉了「信息被藏起来」</b>：档位差异常显，不必逐个悬停；
+      选中项有勾，不必逐行读字比对底色。</li>
+    <li><b>它把菜单并回项目既有的浮层语言</b>（圆角 12 / padding 5 / 项高 30 / 圆角 7 /
+      <code>--glass-popover-shadow</code> / 中性 hover），和右键菜单成为同一套东西——
+      这条无论选哪个方案都该做。</li>
+  </ol>
+  <p style="margin-top:10px">
+    <b>不做 B</b>：它省钱（不加数据字段），但实测高度从 210px <b>升到 255px</b>——
+    项高一旦对齐浮层语言，单列 8 项的代价就是更高。截图里最刺眼的「细长条」原样保留，
+    约等于花一次改动的钱办一半的事。<br>
+    <b>不做 C</b>：4 条 CSS 能让它不难看，但也不会好看——菜单依旧是个 68px 宽的白条，
+    还因为字号变大比现状高 24px。它适合作为「本轮只批 10 分钟」的兜底。
+  </p>
+  <p style="margin-top:10px">
+    <b>改动清单（方案 A）</b>：
+    <code>RcDropdown.tsx</code>（选项渲染加勾位 + meta 位，约 +12 行）·
+    <code>RemoteComputer.module.css</code> 的 <code>.menuPop</code>/<code>.menuItem</code> 段（约 ±30 行）·
+    <code>rcQuality.ts</code> 的 <code>RC_QUALITIES</code> / <code>RC_BITRATE_OPTIONS</code>
+    加 <code>meta</code> 字段（约 13 行，文案取自现有 tip；<code>rcScope.ts</code> 不动）·
+    守卫单测：选中项必须有勾、声明了双列时项数能整除成两列（整除不了会留空格）。
+  </p>
+</div>
+
+</body>
+</html>
+
+<h2>7 · 落地记录（2026-09-22）</h2>
+<p class="lead">方案 A 已落地，动了四个文件：</p>
+<table>
+  <thead><tr><th>文件</th><th>改了什么</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/components/rc/RcDropdown.tsx</code></td>
+      <td>新增 <code>columns</code> prop（1 / 2）；选项类型加 <code>meta</code> 与
+        <code>solo</code>；每项一个<b>常驻</b>勾位（靠 <code>opacity</code> 切换，不做条件渲染
+        ——一旦不渲染，未选中项的文字会比选中项左移一整个勾宽）</td></tr>
+    <tr><td><code>src/components/rc/RemoteComputer.module.css</code></td>
+      <td>菜单段重写：grid 单列 + <code>.menuPopTwo</code> 双列 + 勾/分隔线/meta 样式；
+        外观对齐 <code>ContextMenu</code> 的浮层基准（12 圆角 / <code>--float-card-*</code> /
+        hover 走中性 <code>--hover</code>）</td></tr>
+    <tr><td><code>src/components/rc/RcSessionBar.tsx</code></td>
+      <td>画质下拉 <code>columns={2}</code>；码率选项透传 <code>meta</code>。
+        <b>画面下拉不动</b>——它的 label（整屏 / 仅主屏 / 屏1·主）已经把话说完了</td></tr>
+    <tr><td><code>src/lib/rcQuality.ts</code></td>
+      <td>画质 9 档 + 码率 5 项各加 <code>meta</code>，文案全部取自现有 <code>tip</code>，不新造事实</td></tr>
+  </tbody>
+</table>
+<p class="lead">
+  另新增守卫单测 <code>RcDropdown.test.tsx</code>（10 例），钉住三条肉眼看不出的不变量：
+  菜单必须 portal 到 body、勾位必须常驻、<code>solo</code> 项只在「后面还有项」时补分隔线。
+</p>
+<div class="verdict">
+  <h3>一处与首版稿的偏差：值被 UI 规则的表归位了</h3>
+  <p>
+    稿里为对齐 <code>ContextMenu</code> 取的 <b>12.5px 字号 / 7px 项圆角 / 5px 容器内距 /
+    2px 行距</b>，都不在规则表里（字号只允许 11/12/13/15/20、圆角 4/8/12、
+    间距 4/8/12/16/24）。落地时按表归位成 <b>12px / 8px / 4px / 4px</b>。
+  </p>
+  <p>
+    顺带得到一个更自洽的推导：<b>外层圆角 12 − 容器内距 4 = 内壁 8</b>，正好就是项圆角
+    （<code>ContextMenu</code> 的 7 = 12 − 5 是同一套算法）。
+  </p>
+  <p>
+    <b>代价</b>：行距 2 → 4px，菜单比首版稿高 6px（<b>179 vs 173</b>），宽 271.0 vs 271.5。
+    换到的是「所有值都在档上」+ 行与行之间真的透了口气。
+  </p>
+</div>

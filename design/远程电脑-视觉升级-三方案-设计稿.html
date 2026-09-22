@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>远程电脑 · 视觉升级三方案</title>
+<style>
+:root{
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg,#f4f8fc 0%,#eef3f8 42%,#e8f0f7 100%);
+  --card-bg:#fff; --section-bg:#f0f4f8; --border-color:#e0e4eb;
+  --text-primary:#0f172a; --text-secondary:#495565; --text-muted:#627083;
+  --accent:#0284c7; --accent-solid:#027cbb; --accent-light:#e0f2fe; --accent-strong:#0273ad;
+  --hover:#e8ecf2; --green:#11813a; --green-bg:#dcfce7; --green-border:#bbf7d0;
+  --orange:#c54a0a; --orange-bg:#fff7ed; --orange-border:#fed7aa;
+  --purple:#6d28d9; --purple-bg:#ede9fe; --purple-border:#ddd6fe;
+  --danger:#b42323; --danger-bg:#fee2e2;
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+  --sel-bg:linear-gradient(180deg,#ffffff 0%,#f0f9ff 100%);
+  --sel-shadow:0 0 0 3px rgba(2,132,199,.16), 0 8px 24px rgba(2,132,199,.16);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#e9edf2;
+  font-family:"Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;}
+.ic{width:14px;height:14px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;
+   stroke-linecap:round;stroke-linejoin:round}
+
+.frame{width:1200px;height:780px;position:relative;overflow:hidden;border-radius:10px;
+  background:var(--app-bg);color:var(--text-primary);font-size:13px;line-height:1.5;
+  box-shadow:0 14px 44px rgba(15,23,42,.20)}
+.tb{height:48px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  gap:10px;padding-left:14px;background:var(--card-bg);border-bottom:1px solid var(--border-color);
+  box-shadow:var(--shadow-md)}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.bmark{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;
+  background:var(--accent);color:#fff}
+.bmark .ic{width:15px;height:15px}
+.bname{font-size:13px;font-weight:650;white-space:nowrap}
+.bsec{color:var(--text-muted);font-size:13px;white-space:nowrap}
+.cstat{display:inline-flex;align-items:center;gap:7px;padding:0 10px;min-height:28px;
+  color:var(--text-secondary);font-size:12px;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex:0 0 auto}
+.wctl{justify-self:end;align-self:stretch;display:flex}
+.wbtn{width:46px;border:0;background:transparent;display:grid;place-items:center;
+  color:var(--text-secondary)}
+.wbtn .ic{width:13px;height:13px;stroke-width:1.4}
+.wbtn:hover{background:var(--hover);color:var(--text-primary)}
+.wclose:hover{background:#c42b1c;color:#fff}
+.body{height:732px;display:flex}
+
+/* 侧栏 */
+.sb{min-height:0;display:flex;flex-direction:column;background:var(--section-bg);
+  border-right:1px solid var(--border-color)}
+.sbhead{padding:14px 12px 10px}
+.sbtitle{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sbtitle h2{margin:0;flex:1;font-size:15px;font-weight:600}
+.btnadd{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 10px;
+  font:inherit;font-size:12px;color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;cursor:pointer}
+.btnadd:hover{color:var(--text-primary);background:var(--hover)}
+.search{height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;
+  color:var(--text-muted);background:var(--card-bg);border:1px solid var(--border-color);
+  border-radius:8px}
+.search span{font-size:12.5px}
+.devlist{flex:1;min-height:0;overflow:hidden;padding:2px 8px 12px}
+.grp{display:flex;align-items:center;justify-content:space-between;padding:10px 6px 6px;
+  color:var(--text-muted);font-size:11.5px}
+.grp:first-child{padding-top:2px}
+.grp b{font-weight:400}
+.dev{min-height:58px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
+  gap:6px;margin-bottom:4px;padding:4px;border:1px solid transparent;border-radius:8px}
+.dev:hover{background:var(--hover)}
+.dev.on{background:var(--accent-light);
+  border-color:color-mix(in srgb,var(--accent) 35%,var(--border-color))}
+.dsel{min-width:0;min-height:48px;display:grid;grid-template-columns:34px minmax(0,1fr);
+  align-items:center;gap:9px;padding:4px;text-align:left;background:transparent;
+  border:0;color:inherit;font:inherit;cursor:pointer}
+.dico{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  background:#dfe7f2;color:#34445b;position:relative}
+.dico .ic{width:17px;height:17px;stroke-width:1.7}
+.dcopy{min-width:0}
+.dcopy strong{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.dcopy small{display:block;margin-top:1px;color:var(--text-muted);font-size:11.5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini{min-height:28px;padding:0 10px;font:inherit;font-size:11.5px;border-radius:8px;
+  color:var(--text-secondary);background:var(--card-bg);border:1px solid var(--border-color);
+  cursor:pointer;white-space:nowrap}
+.mini:hover{color:var(--text-primary);background:var(--hover)}
+.mini.pri{color:#fff;background:var(--accent-solid);border-color:transparent}
+.mini.pri:hover{background:var(--accent);color:#fff}
+
+/* 侧栏底部 */
+.recv{display:flex;align-items:center;gap:8px;padding:10px 12px;
+  border-top:1px solid var(--border-color)}
+.recv>span{flex:1;min-width:0}
+.recv strong{display:block;font-size:12px;font-weight:600}
+.recv small{display:block;margin-top:2px;color:var(--text-muted);font-size:11.5px}
+.sw{min-width:58px;min-height:28px;font:inherit;font-size:11.5px;border-radius:8px;cursor:pointer}
+.sw.on{color:var(--green);background:var(--green-bg);
+  border:1px solid color-mix(in srgb,var(--green) 35%,var(--border-color))}
+.assist{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 8px 8px}
+.assist button{min-height:32px;display:inline-flex;align-items:center;justify-content:center;
+  gap:6px;font:inherit;font-size:11.5px;color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;cursor:pointer}
+.assist button:hover{color:var(--text-primary);background:var(--hover)}
+.assist .wide{grid-column:1/-1}
+.toolnav{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:8px;
+  border-top:1px solid var(--border-color)}
+.toolnav button{min-height:46px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;border:0;border-radius:8px;background:transparent;
+  color:var(--text-secondary);font:inherit;font-size:11.5px;cursor:pointer}
+.toolnav button:hover{color:var(--text-primary);background:var(--hover)}
+.toolnav .ic{width:15px;height:15px}
+
+/* 主区 */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.detail{flex:1;min-height:0;display:flex;flex-direction:column}
+.dhead{display:flex;align-items:center;gap:16px;padding:20px 24px;background:var(--card-bg);
+  border-bottom:1px solid var(--border-color)}
+.dicon{width:56px;height:56px;border-radius:12px;display:grid;place-items:center;
+  background:#dfe7f2;color:#34445b;position:relative}
+.dicon .ic{width:25px;height:25px;stroke-width:1.6}
+.dname{flex:1;min-width:0}
+.dnamerow{display:flex;align-items:center;gap:8px}
+.dnamerow h2{margin:0;font-size:20px;font-weight:600}
+.ghostbtn{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 8px;
+  font:inherit;font-size:11.5px;color:var(--text-secondary);background:transparent;
+  border:1px solid transparent;border-radius:6px;cursor:pointer}
+.ghostbtn:hover{color:var(--text-primary);background:var(--hover);border-color:var(--border-color)}
+.dsub{margin:5px 0 0;color:var(--text-secondary);font-size:12.5px}
+.online{color:var(--green);font-weight:600}
+.dact{display:flex;align-items:center;gap:8px}
+.pri{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;
+  font:inherit;font-size:12.5px;font-weight:600;color:#fff;background:var(--accent-solid);
+  border:1px solid transparent;border-radius:8px;cursor:pointer}
+.sec{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;
+  font:inherit;font-size:12.5px;color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;cursor:pointer}
+.sec:hover{color:var(--text-primary);background:var(--hover)}
+.dbody{flex:1;min-height:0;overflow:hidden;padding:20px 24px 28px}
+.secHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.secHead h3{margin:0;font-size:13px;font-weight:600}
+.secLink{display:inline-flex;align-items:center;gap:5px;padding:4px;border:0;
+  background:transparent;color:var(--accent-strong);font:inherit;font-size:12px;cursor:pointer}
+.secLink .ic{width:13px;height:13px}
+
+/* 事实表（A / C 共用骨架） */
+.facts{margin:0;overflow:hidden;background:var(--card-bg);border-radius:12px}
+.facts>div{display:grid;grid-template-columns:150px minmax(0,1fr) auto;align-items:center;
+  gap:12px;padding:0 14px;border-bottom:1px solid var(--border-color)}
+.facts>div:last-child{border-bottom:0}
+.facts dt{color:var(--text-secondary);font-size:12.5px}
+.facts dd{margin:0;font-weight:650;font-size:13.5px}
+.facts .note{display:inline-flex;align-items:center;gap:5px;color:var(--text-muted);
+  font-size:11.5px}
+.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12.5px}
+
+/* 最近会话（A / C 共用骨架） */
+.recent{margin-top:24px}
+.rlist{background:var(--card-bg);border-radius:12px;overflow:hidden}
+.rline{display:grid;grid-template-columns:minmax(0,1fr) auto auto minmax(0,auto);
+  align-items:center;gap:12px;padding:0 14px;font-size:12px;color:var(--text-secondary);
+  border-top:1px solid var(--border-color)}
+.rline:first-child{border-top:0}
+.rline b{font-size:12.5px;font-weight:600;color:var(--text-primary)}
+.rres{color:var(--text-muted);text-align:right}
+.frac{justify-self:end}
+
+
+.v-a .sb{width:288px;min-width:288px}
+.v-a .dhead{min-height:104px}
+.v-a .facts>div{min-height:56px}
+.v-a .rlist .rline{min-height:44px}
+.v-a .rres{min-width:104px}
+.v-a .rline .rcap{display:inline-flex;align-items:center;gap:7px}
+.v-a .capdot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.v-a .capdot[data-c="ctrl"]{background:var(--accent)}
+.v-a .capdot[data-c="view"]{background:var(--text-muted)}
+.v-a .rtime{display:flex;flex-direction:column;align-items:flex-end;line-height:1.35}
+.v-a .rtime b{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums}
+.v-a .rtime em{font-style:normal;color:var(--text-muted);font-size:11.5px}
+.v-a .dev{min-height:62px}
+.v-a .assist button,.v-a .recv strong{font-size:12px}
+.v-a .recv small{font-size:12px}
+.v-a .toolnav button{font-size:12px}
+.v-a .toolnav .ic{width:16px;height:16px}
+
+.v-b .sb{width:296px;min-width:296px}
+.v-b .dicon{width:52px;height:52px;border-radius:14px}
+.v-b .dicon::after{content:"";position:absolute;right:-3px;bottom:-3px;width:15px;height:15px;
+  border-radius:50%;border:3px solid var(--card-bg);background:var(--green)}
+.v-b .fcards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.v-b .fcard{min-height:100px;display:flex;flex-direction:column;gap:5px;padding:12px 15px;
+  background:var(--card-bg);border-radius:12px;box-shadow:var(--shadow-md)}
+.v-b .fico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;margin-bottom:1px}
+.v-b .fico .ic{width:16px;height:16px;stroke-width:1.8}
+.v-b .fico[data-tone="link"]{background:var(--accent-light);color:var(--accent-strong)}
+.v-b .fico[data-tone="ok"]{background:var(--green-bg);color:var(--green)}
+.v-b .fico[data-tone="file"]{background:var(--orange-bg);color:var(--orange)}
+.v-b .fico[data-tone="id"]{background:var(--purple-bg);color:var(--purple)}
+.v-b .flab{color:var(--text-secondary);font-size:12px}
+.v-b .fval{font-size:14.5px;font-weight:650;letter-spacing:-.1px}
+.v-b .fnote{color:var(--text-muted);font-size:11.5px;line-height:1.45}
+.v-b .rlist{background:transparent;display:flex;flex-direction:column}
+.v-b .rline{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;gap:14px;min-height:52px;padding:0 14px 0 30px;background:var(--card-bg);
+  border:0;border-radius:12px;margin-bottom:4px;box-shadow:var(--shadow-md)}
+.v-b .rline::before{content:"";position:absolute;left:13px;top:0;bottom:-8px;width:2px;
+  background:var(--border-color)}
+.v-b .rline:last-child::before{bottom:50%}
+.v-b .rline::after{content:"";position:absolute;left:9px;top:50%;margin-top:-4px;
+  width:10px;height:10px;border-radius:50%;background:var(--text-muted);
+  box-shadow:0 0 0 3px var(--card-bg)}
+.v-b .rline[data-c="ctrl"]::after{background:var(--accent)}
+.v-b .rline[data-c="view"]::after{background:#94a3b8}
+.v-b .rcap{display:flex;flex-direction:column;gap:2px}
+.v-b .rcap b{font-size:13px;font-weight:650;color:var(--text-primary)}
+.v-b .rcap small{color:var(--text-muted);font-size:11.5px}
+.v-b .rdur{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;
+  color:var(--text-primary)}
+.v-b .rres{font-size:11.5px;padding:3px 8px;border-radius:999px;background:var(--section-bg);
+  color:var(--text-secondary)}
+.v-b .rres[data-r="ok"]{background:var(--green-bg);color:var(--green)}
+.v-b .rres[data-r="warn"]{background:var(--orange-bg);color:var(--orange)}
+.v-b .dev{background:var(--card-bg);border-color:transparent;border-radius:10px;
+  box-shadow:0 1px 2px rgba(15,23,42,.05);margin-bottom:6px}
+.v-b .dev:hover{box-shadow:var(--shadow-md)}
+.v-b .dev.on{background:var(--sel-bg);border-color:transparent;box-shadow:var(--sel-shadow)}
+.v-b .dico[data-p="live"]{background:var(--green-bg);color:var(--green)}
+.v-b .dico[data-p="recent"]{background:var(--orange-bg);color:var(--orange)}
+.v-b .dico[data-p="never"]{background:var(--section-bg);color:var(--text-muted)}
+.v-b .rowcard{background:var(--card-bg);border-radius:12px;margin:10px 8px 8px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.v-b .rowcard .recv{padding:10px 12px;border-top:0}
+.v-b .rowcard .assist{padding:0 8px 8px}
+
+.v-c .sb{width:276px;min-width:276px}
+.v-c .dhead{min-height:132px;padding:24px;
+  background:linear-gradient(135deg, rgba(2,132,199,.07) 0%, rgba(109,40,217,.04) 58%, transparent 100%), var(--card-bg)}
+.v-c .dicon{width:64px;height:64px;border-radius:16px;color:#fff;
+  background:linear-gradient(140deg,#38bdf8 0%,#0284c7 55%,#0369a1 100%);
+  box-shadow:0 8px 20px rgba(2,132,199,.28)}
+.v-c .dicon .ic{width:29px;height:29px;stroke-width:1.5}
+.v-c .dnamerow h2{font-size:23px;font-weight:700;letter-spacing:-.3px}
+.v-c .dsub{margin-top:7px}
+.v-c .dpill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  background:var(--green-bg);color:var(--green);font-size:11.5px;font-weight:600}
+.v-c .dpill .ic{width:12px;height:12px}
+.v-c .facts>div{min-height:56px}
+.v-c .facts dt{display:inline-flex;align-items:center;gap:8px}
+.v-c .ftone{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}
+.v-c .ftone .ic{width:14px;height:14px;stroke-width:1.8}
+.v-c .ftone[data-tone="link"]{background:var(--accent-light);color:var(--accent-strong)}
+.v-c .ftone[data-tone="ok"]{background:var(--green-bg);color:var(--green)}
+.v-c .ftone[data-tone="file"]{background:var(--orange-bg);color:var(--orange)}
+.v-c .ftone[data-tone="id"]{background:var(--purple-bg);color:var(--purple)}
+.v-c .rlist{background:transparent;display:flex;flex-direction:column;gap:8px}
+.v-c .rline{grid-template-columns:minmax(0,1fr) auto auto;min-height:60px;padding:0 16px;
+  background:var(--card-bg);border:0;border-radius:10px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.v-c .rcap{display:flex;align-items:center;gap:9px}
+.v-c .capchip{padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600}
+.v-c .capchip[data-c="ctrl"]{background:var(--accent-light);color:var(--accent-strong)}
+.v-c .capchip[data-c="view"]{background:var(--section-bg);color:var(--text-secondary)}
+.v-c .rdur{font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--text-primary);font-weight:600}
+.v-c .rres{min-width:104px}
+.v-c .devlist{padding-bottom:6px}
+.v-c .dev{background:var(--card-bg);border-color:transparent;border-radius:10px;
+  margin-bottom:6px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.v-c .dev:hover{box-shadow:var(--shadow-md)}
+.v-c .dev.on{background:var(--sel-bg);box-shadow:var(--sel-shadow)}
+.v-c .dico{background:var(--accent-light);color:var(--accent-strong)}
+.v-c .dico::after{content:"";position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;
+  border-radius:50%;border:2px solid var(--card-bg);background:var(--text-muted)}
+.v-c .dico[data-p="live"]::after{background:var(--green)}
+.v-c .dico[data-p="recent"]::after{background:var(--orange)}
+.v-c .toolnav{grid-template-columns:1fr;gap:2px;margin:0 8px 8px;padding:4px;
+  background:var(--section-bg);border:1px solid var(--border-color);border-radius:12px;
+  border-top:1px solid var(--border-color)}
+.v-c .toolnav button{flex-direction:row;min-height:30px;gap:9px;justify-content:flex-start;
+  padding:0 10px;border-radius:9px}
+.v-c .toolnav button.active{background:var(--card-bg);color:var(--accent-strong);
+  font-weight:600;box-shadow:0 1px 3px rgba(15,23,42,.08)}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-fileup" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+  <symbol id="i-chevd" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.63l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-hands" viewBox="0 0 24 24"><path d="M11 12h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 14"/><path d="m7 18 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9"/><path d="m2 13 6 6"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><path d="M2.59 17.41A2 2 0 0 0 2 18.83V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.17a1 1 0 0 0 .71-.29l.28-.28a6.5 6.5 0 1 0-3-3z"/><circle cx="16.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-wmin" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-wmax" viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13"/></symbol>
+  <symbol id="i-wclose" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+</svg>
+<div class="pagehead" style="padding:26px 28px 10px;width:1200px"><h1 style="margin:0 0 6px;font-size:20px;color:#0f172a">远程电脑工作台 · 视觉升级三方案</h1><p style="margin:0;font-size:13px;color:#495565;line-height:1.7">按真实 1200×780 窗口尺寸渲染（<code>rc.rs</code> 的 <code>rc_open_workbench</code>）。三份稿共用同一套主题 token（<code>theme.css</code> ocean）与同一份数据，只有视觉处理不同。</p></div><div class="stagewrap" style="padding:0 28px 60px;display:flex;flex-direction:column;gap:40px"><div class="stage-item" data-v="a"><div class="capblock" style="width:1200px;margin-bottom:12px"><h2 style="margin:0 0 5px;font-size:16px;color:#0f172a">方案 A · 密实化</h2><p style="margin:0;font-size:12.5px;color:#495565;line-height:1.7">只改尺寸与条数，不动信息架构：字号抬一档、区块节奏拉开、「最近会话」3 → 5 条，把右栏下部那块空白填掉。改动面最小，风险最低。</p></div>
+    <section class="frame v-a" id="pane-a">
+
+      <header class="tb">
+        <div class="brand">
+          <span class="bmark"><svg class="ic"><use href="#i-monitor"/></svg></span>
+          <span class="bname">PastePanda</span><span class="bsec">远程电脑</span>
+        </div>
+        <span class="cstat"><i class="dot"></i>远程通道已开启</span>
+        <div class="wctl">
+          <button class="wbtn"><svg class="ic"><use href="#i-wmin"/></svg></button>
+          <button class="wbtn"><svg class="ic"><use href="#i-wmax"/></svg></button>
+          <button class="wbtn wclose"><svg class="ic"><use href="#i-wclose"/></svg></button>
+        </div>
+      </header>
+      <div class="body">
+
+        <aside class="sb">
+          <div class="sbhead">
+            <div class="sbtitle">
+              <h2>我的设备</h2>
+              <button class="btnadd"><svg class="ic"><use href="#i-plus"/></svg>添加设备</button>
+            </div>
+            <div class="search"><svg class="ic"><use href="#i-search"/></svg><span>搜索设备</span></div>
+          </div>
+          <div class="devlist">
+            <div class="grp"><b>在线</b><span>1</span></div>
+
+          <div class="dev on">
+            <button class="dsel">
+              <span class="dico" data-p="live"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>工作电脑</strong><small>局域网直连 · ~11 ms</small></span>
+            </button>
+            <button class="mini pri">连接</button>
+          </div>
+            <div class="grp"><b>最近使用</b><span>2</span></div>
+
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>家里的台式机（老爸用）</strong><small>2 小时前还在</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>LAPTOP-THINKPAD-X1</strong><small>3 天前见过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+            <div class="grp"><b>尚未连接</b><span>1</span></div>
+
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="never"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>会议室平板</strong><small>配对后还没连上过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          </div>
+
+          <div class="recv">
+            <span><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></span>
+            <button class="sw on">已允许</button>
+          </div>
+          <div class="assist">
+            <button><svg class="ic"><use href="#i-users"/></svg>让别人帮我</button>
+            <button><svg class="ic"><use href="#i-hands"/></svg>帮助别人</button>
+            <button class="wide"><svg class="ic"><use href="#i-key"/></svg>输入接入码</button>
+          </div>
+          <nav class="toolnav">
+            <button><svg class="ic"><use href="#i-fileup"/></svg><span>文件</span></button>
+            <button><svg class="ic"><use href="#i-history"/></svg><span>记录</span></button>
+            <button><svg class="ic"><use href="#i-settings"/></svg><span>设置</span></button>
+          </nav>
+        </aside>
+        <div class="main">
+          <section class="detail">
+
+        <header class="dhead">
+          <span class="dicon"><svg class="ic"><use href="#i-monitor"/></svg></span>
+          <div class="dname">
+            <div class="dnamerow">
+              <h2>工作电脑</h2>
+              <button class="ghostbtn"><svg class="ic"><use href="#i-pencil"/></svg>重命名</button>
+            </div>
+            <p class="dsub"><span class="online">在线</span> · Windows 11 · 局域网可达</p>
+          </div>
+          <div class="dact">
+            <button class="pri"><svg class="ic"><use href="#i-play"/></svg>连接并控制</button>
+            <button class="sec"><svg class="ic"><use href="#i-eye"/></svg>只看</button>
+            <button class="sec"><svg class="ic"><use href="#i-fileup"/></svg>传文件</button>
+          </div>
+        </header>
+            <div class="dbody">
+              <div class="secHead">
+                <h3>连接与权限</h3>
+                <button class="secLink"><svg class="ic"><use href="#i-sliders"/></svg>管理此设备<svg class="ic"><use href="#i-chevd"/></svg></button>
+              </div>
+<dl class="facts">
+          <div>
+            <dt>上次连接</dt>
+            <dd class="">局域网直连</dd>
+            <span class="note">来自最近一次会话实测 · 最近实测 ~11 ms</span>
+          </div>
+          <div>
+            <dt>连接确认</dt>
+            <dd class="">免确认连接</dd>
+            <span class="note">仍可随时结束会话</span>
+          </div>
+          <div>
+            <dt>文件接收</dt>
+            <dd class="">每次询问</dd>
+            <span class="note">接受后才写入电脑</span>
+          </div>
+          <div>
+            <dt>设备身份</dt>
+            <dd class="mono">peer-a1b2-c3d4-e5f6</dd>
+            <span class="note"><svg class="ic"><use href="#i-shield"/></svg>已完成配对核验</span>
+          </div>
+        </dl>
+
+              <div class="recent">
+                <div class="secHead">
+                  <h3>最近会话</h3>
+                  <button class="secLink">查看全部</button>
+                </div>
+<div class="rlist">
+            <div class="rline">
+              <span class="rcap"><i class="capdot" data-c="ctrl"></i><b>可控</b></span>
+              <span class="frac"><span class="rtime"><b>01:00</b><em>今天 18:39</em></span></span>
+              <span class="rres">用户结束会话</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><i class="capdot" data-c="view"></i><b>只看</b></span>
+              <span class="frac"><span class="rtime"><b>02:05</b><em>9/21 19:39</em></span></span>
+              <span class="rres">对方结束会话</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><i class="capdot" data-c="ctrl"></i><b>可控</b></span>
+              <span class="frac"><span class="rtime"><b>01:30</b><em>9/18 19:39</em></span></span>
+              <span class="rres">会话超时</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><i class="capdot" data-c="ctrl"></i><b>可控</b></span>
+              <span class="frac"><span class="rtime"><b>00:12</b><em>9/17 10:02</em></span></span>
+              <span class="rres">用户取消申请</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><i class="capdot" data-c="view"></i><b>只看</b></span>
+              <span class="frac"><span class="rtime"><b>05:48</b><em>9/15 21:20</em></span></span>
+              <span class="rres">用户结束会话</span>
+            </div>
+          </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section></div><div class="stage-item" data-v="b"><div class="capblock" style="width:1200px;margin-bottom:12px"><h2 style="margin:0 0 5px;font-size:16px;color:#0f172a">方案 B · 事实卡网格</h2><p style="margin:0;font-size:12.5px;color:#495565;line-height:1.7">把两条横排长条打散：「连接与权限」改 2×2 方块卡（彩色图标 + 标签 + 值 + 说明四层），「最近会话」改时间轴，侧栏设备行卡片化并给头像上语义色。形体有变化，扫视快。</p></div>
+    <section class="frame v-b" id="pane-b">
+
+      <header class="tb">
+        <div class="brand">
+          <span class="bmark"><svg class="ic"><use href="#i-monitor"/></svg></span>
+          <span class="bname">PastePanda</span><span class="bsec">远程电脑</span>
+        </div>
+        <span class="cstat"><i class="dot"></i>远程通道已开启</span>
+        <div class="wctl">
+          <button class="wbtn"><svg class="ic"><use href="#i-wmin"/></svg></button>
+          <button class="wbtn"><svg class="ic"><use href="#i-wmax"/></svg></button>
+          <button class="wbtn wclose"><svg class="ic"><use href="#i-wclose"/></svg></button>
+        </div>
+      </header>
+      <div class="body">
+
+        <aside class="sb">
+          <div class="sbhead">
+            <div class="sbtitle">
+              <h2>我的设备</h2>
+              <button class="btnadd"><svg class="ic"><use href="#i-plus"/></svg>添加设备</button>
+            </div>
+            <div class="search"><svg class="ic"><use href="#i-search"/></svg><span>搜索设备</span></div>
+          </div>
+          <div class="devlist">
+            <div class="grp"><b>在线</b><span>1</span></div>
+
+          <div class="dev on">
+            <button class="dsel">
+              <span class="dico" data-p="live"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>工作电脑</strong><small>局域网直连 · ~11 ms</small></span>
+            </button>
+            <button class="mini pri">连接</button>
+          </div>
+            <div class="grp"><b>最近使用</b><span>2</span></div>
+
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>家里的台式机（老爸用）</strong><small>2 小时前还在</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>LAPTOP-THINKPAD-X1</strong><small>3 天前见过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+            <div class="grp"><b>尚未连接</b><span>1</span></div>
+
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="never"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>会议室平板</strong><small>配对后还没连上过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          </div>
+
+          <div class="rowcard">
+            <div class="recv">
+              <span><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></span>
+              <button class="sw on">已允许</button>
+            </div>
+            <div class="assist">
+              <button><svg class="ic"><use href="#i-users"/></svg>让别人帮我</button>
+              <button><svg class="ic"><use href="#i-hands"/></svg>帮助别人</button>
+              <button class="wide"><svg class="ic"><use href="#i-key"/></svg>输入接入码</button>
+            </div>
+          </div>
+          <nav class="toolnav">
+            <button><svg class="ic"><use href="#i-fileup"/></svg><span>文件</span></button>
+            <button><svg class="ic"><use href="#i-history"/></svg><span>记录</span></button>
+            <button><svg class="ic"><use href="#i-settings"/></svg><span>设置</span></button>
+          </nav>
+        </aside>
+        <div class="main">
+          <section class="detail">
+
+        <header class="dhead">
+          <span class="dicon"><svg class="ic"><use href="#i-monitor"/></svg></span>
+          <div class="dname">
+            <div class="dnamerow">
+              <h2>工作电脑</h2>
+              <button class="ghostbtn"><svg class="ic"><use href="#i-pencil"/></svg>重命名</button>
+            </div>
+            <p class="dsub"><span class="online">在线</span> · Windows 11 · 局域网可达</p>
+          </div>
+          <div class="dact">
+            <button class="pri"><svg class="ic"><use href="#i-play"/></svg>连接并控制</button>
+            <button class="sec"><svg class="ic"><use href="#i-eye"/></svg>只看</button>
+            <button class="sec"><svg class="ic"><use href="#i-fileup"/></svg>传文件</button>
+          </div>
+        </header>
+            <div class="dbody">
+              <div class="secHead">
+                <h3>连接与权限</h3>
+                <button class="secLink"><svg class="ic"><use href="#i-sliders"/></svg>管理此设备<svg class="ic"><use href="#i-chevd"/></svg></button>
+              </div>
+<div class="fcards">
+            <div class="fcard">
+              <span class="fico" data-tone="link"><svg class="ic"><use href="#i-link"/></svg></span>
+              <span class="flab">上次连接</span>
+              <span class="fval">局域网直连</span>
+              <span class="fnote">来自最近一次会话实测 · 最近实测 ~11 ms</span>
+            </div>
+            <div class="fcard">
+              <span class="fico" data-tone="ok"><svg class="ic"><use href="#i-check"/></svg></span>
+              <span class="flab">连接确认</span>
+              <span class="fval">免确认连接</span>
+              <span class="fnote">仍可随时结束会话</span>
+            </div>
+            <div class="fcard">
+              <span class="fico" data-tone="file"><svg class="ic"><use href="#i-fileup"/></svg></span>
+              <span class="flab">文件接收</span>
+              <span class="fval">每次询问</span>
+              <span class="fnote">接受后才写入电脑</span>
+            </div>
+            <div class="fcard">
+              <span class="fico" data-tone="id"><svg class="ic"><use href="#i-shield"/></svg></span>
+              <span class="flab">设备身份</span>
+              <span class="fval mono">peer-a1b2-c3d4-e5f6</span>
+              <span class="fnote">已完成配对核验</span>
+            </div>
+          </div>
+
+              <div class="recent">
+                <div class="secHead">
+                  <h3>最近会话</h3>
+                  <button class="secLink">查看全部</button>
+                </div>
+<div class="rlist">
+            <div class="rline" data-c="ctrl">
+              <span class="rcap"><b>可控</b><small>今天 18:39</small></span>
+              <span class="rdur">01:00</span>
+              <span class="rres" data-r="ok">用户结束会话</span>
+            </div>
+            <div class="rline" data-c="view">
+              <span class="rcap"><b>只看</b><small>9/21 19:39</small></span>
+              <span class="rdur">02:05</span>
+              <span class="rres">对方结束会话</span>
+            </div>
+            <div class="rline" data-c="ctrl">
+              <span class="rcap"><b>可控</b><small>9/18 19:39</small></span>
+              <span class="rdur">01:30</span>
+              <span class="rres" data-r="warn">会话超时</span>
+            </div>
+            <div class="rline" data-c="ctrl">
+              <span class="rcap"><b>可控</b><small>9/17 10:02</small></span>
+              <span class="rdur">00:12</span>
+              <span class="rres" data-r="warn">用户取消申请</span>
+            </div>
+          </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section></div><div class="stage-item" data-v="c"><div class="capblock" style="width:1200px;margin-bottom:12px"><h2 style="margin:0 0 5px;font-size:16px;color:#0f172a">方案 C · 仪表台</h2><p style="margin:0;font-size:12.5px;color:#495565;line-height:1.7">视觉语言升级：详情头做成 132px 横幅（accent 渐变 + 实色图标 + 在线 pill），权限项配语义色图标，会话与设备行改卡片（选中态启用已有但未被使用的 --card-selected-* token），底部导航从三格图标改成侧栏导轨。</p></div>
+    <section class="frame v-c" id="pane-c">
+
+      <header class="tb">
+        <div class="brand">
+          <span class="bmark"><svg class="ic"><use href="#i-monitor"/></svg></span>
+          <span class="bname">PastePanda</span><span class="bsec">远程电脑</span>
+        </div>
+        <span class="cstat"><i class="dot"></i>远程通道已开启</span>
+        <div class="wctl">
+          <button class="wbtn"><svg class="ic"><use href="#i-wmin"/></svg></button>
+          <button class="wbtn"><svg class="ic"><use href="#i-wmax"/></svg></button>
+          <button class="wbtn wclose"><svg class="ic"><use href="#i-wclose"/></svg></button>
+        </div>
+      </header>
+      <div class="body">
+
+        <aside class="sb">
+          <div class="sbhead">
+            <div class="sbtitle">
+              <h2>我的设备</h2>
+              <button class="btnadd"><svg class="ic"><use href="#i-plus"/></svg>添加设备</button>
+            </div>
+            <div class="search"><svg class="ic"><use href="#i-search"/></svg><span>搜索设备</span></div>
+          </div>
+          <div class="devlist">
+            <div class="grp"><b>在线</b><span>1</span></div>
+
+          <div class="dev on">
+            <button class="dsel">
+              <span class="dico" data-p="live"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>工作电脑</strong><small>局域网直连 · ~11 ms</small></span>
+            </button>
+            <button class="mini pri">连接</button>
+          </div>
+            <div class="grp"><b>最近使用</b><span>2</span></div>
+
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>家里的台式机（老爸用）</strong><small>2 小时前还在</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>LAPTOP-THINKPAD-X1</strong><small>3 天前见过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+            <div class="grp"><b>尚未连接</b><span>1</span></div>
+
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="never"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>会议室平板</strong><small>配对后还没连上过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          </div>
+
+          <div class="recv">
+            <span><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></span>
+            <button class="sw on">已允许</button>
+          </div>
+          <div class="assist">
+            <button><svg class="ic"><use href="#i-users"/></svg>让别人帮我</button>
+            <button><svg class="ic"><use href="#i-hands"/></svg>帮助别人</button>
+            <button class="wide"><svg class="ic"><use href="#i-key"/></svg>输入接入码</button>
+          </div>
+          <nav class="toolnav">
+            <button class="active"><svg class="ic"><use href="#i-monitor"/></svg><span>设备</span></button>
+            <button><svg class="ic"><use href="#i-fileup"/></svg><span>文件</span></button>
+            <button><svg class="ic"><use href="#i-history"/></svg><span>记录</span></button>
+            <button><svg class="ic"><use href="#i-settings"/></svg><span>设置</span></button>
+          </nav>
+        </aside>
+        <div class="main">
+          <section class="detail">
+
+        <header class="dhead">
+          <span class="dicon"><svg class="ic"><use href="#i-monitor"/></svg></span>
+          <div class="dname">
+            <div class="dnamerow">
+              <h2>工作电脑</h2>
+              <span class="dpill"><svg class="ic"><use href="#i-check"/></svg>在线</span>
+              <button class="ghostbtn"><svg class="ic"><use href="#i-pencil"/></svg>重命名</button>
+            </div>
+            <p class="dsub">Windows 11 · 局域网可达 · 最近实测 11 ms</p>
+          </div>
+          <div class="dact">
+            <button class="pri"><svg class="ic"><use href="#i-play"/></svg>连接并控制</button>
+            <button class="sec"><svg class="ic"><use href="#i-eye"/></svg>只看</button>
+            <button class="sec"><svg class="ic"><use href="#i-fileup"/></svg>传文件</button>
+          </div>
+        </header>
+            <div class="dbody">
+              <div class="secHead">
+                <h3>连接与权限</h3>
+                <button class="secLink"><svg class="ic"><use href="#i-sliders"/></svg>管理此设备<svg class="ic"><use href="#i-chevd"/></svg></button>
+              </div>
+<dl class="facts">
+          <div>
+            <dt><span class="ftone" data-tone="link"><svg class="ic"><use href="#i-link"/></svg></span>上次连接</dt>
+            <dd class="">局域网直连</dd>
+            <span class="note">来自最近一次会话实测 · 最近实测 ~11 ms</span>
+          </div>
+          <div>
+            <dt><span class="ftone" data-tone="ok"><svg class="ic"><use href="#i-check"/></svg></span>连接确认</dt>
+            <dd class="">免确认连接</dd>
+            <span class="note">仍可随时结束会话</span>
+          </div>
+          <div>
+            <dt><span class="ftone" data-tone="file"><svg class="ic"><use href="#i-fileup"/></svg></span>文件接收</dt>
+            <dd class="">每次询问</dd>
+            <span class="note">接受后才写入电脑</span>
+          </div>
+          <div>
+            <dt><span class="ftone" data-tone="id"><svg class="ic"><use href="#i-shield"/></svg></span>设备身份</dt>
+            <dd class="mono">peer-a1b2-c3d4-e5f6</dd>
+            <span class="note"><svg class="ic"><use href="#i-shield"/></svg>已完成配对核验</span>
+          </div>
+        </dl>
+
+              <div class="recent">
+                <div class="secHead">
+                  <h3>最近会话</h3>
+                  <button class="secLink">查看全部</button>
+                </div>
+<div class="rlist">
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="ctrl">可控</span><span>今天 18:39</span></span>
+              <span class="rdur">01:00</span>
+              <span class="rres">用户结束会话</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="view">只看</span><span>9/21 19:39</span></span>
+              <span class="rdur">02:05</span>
+              <span class="rres">对方结束会话</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="ctrl">可控</span><span>9/18 19:39</span></span>
+              <span class="rdur">01:30</span>
+              <span class="rres">会话超时</span>
+            </div>
+          </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section></div></div>
+
+<script>
+/* __only("a"|"b"|"c") → 只显示该方案并去掉页边留白，供逐屏截图；
+   __only(null) 复原三方案同屏。带 #pane-x 打开时自动调用（正常浏览不受影响）。 */
+window.__only = function (v) {
+  document.querySelectorAll(".stage-item").forEach(function (item) {
+    item.style.display = (!v || item.dataset.v === v) ? "" : "none";
+  });
+  document.querySelectorAll(".capblock,.pagehead").forEach(function (b) {
+    b.style.display = v ? "none" : "";
+  });
+  var wrap = document.querySelector(".stagewrap");
+  if (wrap) { wrap.style.padding = v ? "0" : "0 28px 60px"; wrap.style.gap = v ? "0" : "40px"; }
+  document.body.style.background = v ? "#fff" : "#e9edf2";
+  return "ok";
+};
+(function () {
+  var m = location.hash.match(/^#pane-([abc])$/);
+  if (m) window.__only(m[1]);
+})();
+</script>
+</body>
+</html>

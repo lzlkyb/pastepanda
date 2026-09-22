@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>远程电脑 · A 布局 × C 样式 融合稿</title>
+<style>
+:root{
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg,#f4f8fc 0%,#eef3f8 42%,#e8f0f7 100%);
+  --card-bg:#fff; --section-bg:#f0f4f8; --border-color:#e0e4eb;
+  --text-primary:#0f172a; --text-secondary:#495565; --text-muted:#627083;
+  --accent:#0284c7; --accent-solid:#027cbb; --accent-light:#e0f2fe; --accent-strong:#0273ad;
+  --hover:#e8ecf2; --green:#11813a; --green-bg:#dcfce7; --green-border:#bbf7d0;
+  --orange:#c54a0a; --orange-bg:#fff7ed; --orange-border:#fed7aa;
+  --purple:#6d28d9; --purple-bg:#ede9fe; --purple-border:#ddd6fe;
+  --danger:#b42323; --danger-bg:#fee2e2;
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+  --sel-bg:linear-gradient(180deg,#ffffff 0%,#f0f9ff 100%);
+  --sel-shadow:0 0 0 3px rgba(2,132,199,.16), 0 8px 24px rgba(2,132,199,.16);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#e9edf2;
+  font-family:"Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;}
+.ic{width:14px;height:14px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;
+   stroke-linecap:round;stroke-linejoin:round}
+
+.frame{width:1200px;height:780px;position:relative;overflow:hidden;border-radius:10px;
+  background:var(--app-bg);color:var(--text-primary);font-size:13px;line-height:1.5;
+  box-shadow:0 14px 44px rgba(15,23,42,.20)}
+.tb{height:48px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  gap:10px;padding-left:14px;background:var(--card-bg);border-bottom:1px solid var(--border-color);
+  box-shadow:var(--shadow-md)}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.bmark{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;
+  background:var(--accent);color:#fff}
+.bmark .ic{width:15px;height:15px}
+.bname{font-size:13px;font-weight:650;white-space:nowrap}
+.bsec{color:var(--text-muted);font-size:13px;white-space:nowrap}
+.cstat{display:inline-flex;align-items:center;gap:7px;padding:0 10px;min-height:28px;
+  color:var(--text-secondary);font-size:12px;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex:0 0 auto}
+.wctl{justify-self:end;align-self:stretch;display:flex}
+.wbtn{width:46px;border:0;background:transparent;display:grid;place-items:center;
+  color:var(--text-secondary)}
+.wbtn .ic{width:13px;height:13px;stroke-width:1.4}
+.wbtn:hover{background:var(--hover);color:var(--text-primary)}
+.wclose:hover{background:#c42b1c;color:#fff}
+.body{height:732px;display:flex}
+
+/* 侧栏 */
+.sb{min-height:0;display:flex;flex-direction:column;background:var(--section-bg);
+  border-right:1px solid var(--border-color)}
+.sbhead{padding:14px 12px 10px}
+.sbtitle{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sbtitle h2{margin:0;flex:1;font-size:15px;font-weight:600}
+.btnadd{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 10px;
+  font:inherit;font-size:12px;color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;cursor:pointer}
+.btnadd:hover{color:var(--text-primary);background:var(--hover)}
+.search{height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;
+  color:var(--text-muted);background:var(--card-bg);border:1px solid var(--border-color);
+  border-radius:8px}
+.search span{font-size:12.5px}
+.devlist{flex:1;min-height:0;overflow:hidden;padding:2px 8px 12px}
+.grp{display:flex;align-items:center;justify-content:space-between;padding:10px 6px 6px;
+  color:var(--text-muted);font-size:11.5px}
+.grp:first-child{padding-top:2px}
+.grp b{font-weight:400}
+.dev{min-height:58px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
+  gap:6px;margin-bottom:4px;padding:4px;border:1px solid transparent;border-radius:8px}
+.dev:hover{background:var(--hover)}
+.dev.on{background:var(--accent-light);
+  border-color:color-mix(in srgb,var(--accent) 35%,var(--border-color))}
+.dsel{min-width:0;min-height:48px;display:grid;grid-template-columns:34px minmax(0,1fr);
+  align-items:center;gap:9px;padding:4px;text-align:left;background:transparent;
+  border:0;color:inherit;font:inherit;cursor:pointer}
+.dico{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  background:#dfe7f2;color:#34445b;position:relative}
+.dico .ic{width:17px;height:17px;stroke-width:1.7}
+.dcopy{min-width:0}
+.dcopy strong{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.dcopy small{display:block;margin-top:1px;color:var(--text-muted);font-size:11.5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini{min-height:28px;padding:0 10px;font:inherit;font-size:11.5px;border-radius:8px;
+  color:var(--text-secondary);background:var(--card-bg);border:1px solid var(--border-color);
+  cursor:pointer;white-space:nowrap}
+.mini:hover{color:var(--text-primary);background:var(--hover)}
+.mini.pri{color:#fff;background:var(--accent-solid);border-color:transparent}
+.mini.pri:hover{background:var(--accent);color:#fff}
+
+/* 侧栏底部 */
+.recv{display:flex;align-items:center;gap:8px;padding:10px 12px;
+  border-top:1px solid var(--border-color)}
+.recv>span{flex:1;min-width:0}
+.recv strong{display:block;font-size:12px;font-weight:600}
+.recv small{display:block;margin-top:2px;color:var(--text-muted);font-size:11.5px}
+.sw{min-width:58px;min-height:28px;font:inherit;font-size:11.5px;border-radius:8px;cursor:pointer}
+.sw.on{color:var(--green);background:var(--green-bg);
+  border:1px solid color-mix(in srgb,var(--green) 35%,var(--border-color))}
+.assist{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 8px 8px}
+.assist button{min-height:32px;display:inline-flex;align-items:center;justify-content:center;
+  gap:6px;font:inherit;font-size:11.5px;color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;cursor:pointer}
+.assist button:hover{color:var(--text-primary);background:var(--hover)}
+.assist .wide{grid-column:1/-1}
+.toolnav{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:8px;
+  border-top:1px solid var(--border-color)}
+.toolnav button{min-height:46px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;border:0;border-radius:8px;background:transparent;
+  color:var(--text-secondary);font:inherit;font-size:11.5px;cursor:pointer}
+.toolnav button:hover{color:var(--text-primary);background:var(--hover)}
+.toolnav .ic{width:15px;height:15px}
+
+/* 主区 */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.detail{flex:1;min-height:0;display:flex;flex-direction:column}
+.dhead{display:flex;align-items:center;gap:16px;padding:20px 24px;background:var(--card-bg);
+  border-bottom:1px solid var(--border-color)}
+.dicon{width:56px;height:56px;border-radius:12px;display:grid;place-items:center;
+  background:#dfe7f2;color:#34445b;position:relative}
+.dicon .ic{width:25px;height:25px;stroke-width:1.6}
+.dname{flex:1;min-width:0}
+.dnamerow{display:flex;align-items:center;gap:8px}
+.dnamerow h2{margin:0;font-size:20px;font-weight:600}
+.ghostbtn{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 8px;
+  font:inherit;font-size:11.5px;color:var(--text-secondary);background:transparent;
+  border:1px solid transparent;border-radius:6px;cursor:pointer}
+.ghostbtn:hover{color:var(--text-primary);background:var(--hover);border-color:var(--border-color)}
+.dsub{margin:5px 0 0;color:var(--text-secondary);font-size:12.5px}
+.online{color:var(--green);font-weight:600}
+.dact{display:flex;align-items:center;gap:8px}
+.pri{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;
+  font:inherit;font-size:12.5px;font-weight:600;color:#fff;background:var(--accent-solid);
+  border:1px solid transparent;border-radius:8px;cursor:pointer}
+.sec{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;
+  font:inherit;font-size:12.5px;color:var(--text-secondary);background:var(--card-bg);
+  border:1px solid var(--border-color);border-radius:8px;cursor:pointer}
+.sec:hover{color:var(--text-primary);background:var(--hover)}
+.dbody{flex:1;min-height:0;overflow:hidden;padding:20px 24px 28px}
+.secHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.secHead h3{margin:0;font-size:13px;font-weight:600}
+.secLink{display:inline-flex;align-items:center;gap:5px;padding:4px;border:0;
+  background:transparent;color:var(--accent-strong);font:inherit;font-size:12px;cursor:pointer}
+.secLink .ic{width:13px;height:13px}
+
+/* 事实表（A / C 共用骨架） */
+.facts{margin:0;overflow:hidden;background:var(--card-bg);border-radius:12px}
+.facts>div{display:grid;grid-template-columns:150px minmax(0,1fr) auto;align-items:center;
+  gap:12px;padding:0 14px;border-bottom:1px solid var(--border-color)}
+.facts>div:last-child{border-bottom:0}
+.facts dt{color:var(--text-secondary);font-size:12.5px}
+.facts dd{margin:0;font-weight:650;font-size:13.5px}
+.facts .note{display:inline-flex;align-items:center;gap:5px;color:var(--text-muted);
+  font-size:11.5px}
+.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12.5px}
+
+/* 最近会话（A / C 共用骨架） */
+.recent{margin-top:24px}
+.rlist{background:var(--card-bg);border-radius:12px;overflow:hidden}
+.rline{display:grid;grid-template-columns:minmax(0,1fr) auto auto minmax(0,auto);
+  align-items:center;gap:12px;padding:0 14px;font-size:12px;color:var(--text-secondary);
+  border-top:1px solid var(--border-color)}
+.rline:first-child{border-top:0}
+.rline b{font-size:12.5px;font-weight:600;color:var(--text-primary)}
+.rres{color:var(--text-muted);text-align:right}
+.frac{justify-self:end}
+.sb{width:288px;min-width:288px}
+.dhead{min-height:104px}
+.facts>div{min-height:56px}
+.rlist .rline{min-height:44px}
+.rres{min-width:104px}
+.rline .rcap{display:inline-flex;align-items:center;gap:7px}
+.capdot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.capdot[data-c="ctrl"]{background:var(--accent)}
+.capdot[data-c="view"]{background:var(--text-muted)}
+.rtime{display:flex;flex-direction:column;align-items:flex-end;line-height:1.35}
+.rtime b{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums}
+.rtime em{font-style:normal;color:var(--text-muted);font-size:11.5px}
+.dev{min-height:62px}
+.assist button,.recv strong{font-size:12px}
+.recv small{font-size:12px}
+.toolnav button{font-size:12px}
+.toolnav .ic{width:16px;height:16px}
+.sb{width:276px;min-width:276px}
+.dhead{min-height:132px;padding:24px;
+  background:linear-gradient(135deg, rgba(2,132,199,.07) 0%, rgba(109,40,217,.04) 58%, transparent 100%), var(--card-bg)}
+.dicon{width:64px;height:64px;border-radius:16px;color:#fff;
+  background:linear-gradient(140deg,#38bdf8 0%,#0284c7 55%,#0369a1 100%);
+  box-shadow:0 8px 20px rgba(2,132,199,.28)}
+.dicon .ic{width:29px;height:29px;stroke-width:1.5}
+.dnamerow h2{font-size:23px;font-weight:700;letter-spacing:-.3px}
+.dsub{margin-top:7px}
+.dpill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  background:var(--green-bg);color:var(--green);font-size:11.5px;font-weight:600}
+.dpill .ic{width:12px;height:12px}
+.facts>div{min-height:56px}
+.facts dt{display:inline-flex;align-items:center;gap:8px}
+.ftone{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}
+.ftone .ic{width:14px;height:14px;stroke-width:1.8}
+.ftone[data-tone="link"]{background:var(--accent-light);color:var(--accent-strong)}
+.ftone[data-tone="ok"]{background:var(--green-bg);color:var(--green)}
+.ftone[data-tone="file"]{background:var(--orange-bg);color:var(--orange)}
+.ftone[data-tone="id"]{background:var(--purple-bg);color:var(--purple)}
+.rlist{background:transparent;display:flex;flex-direction:column;gap:8px}
+.rline{grid-template-columns:minmax(0,1fr) auto auto;min-height:60px;padding:0 16px;
+  background:var(--card-bg);border:0;border-radius:10px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.rcap{display:flex;align-items:center;gap:9px}
+.capchip{padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600}
+.capchip[data-c="ctrl"]{background:var(--accent-light);color:var(--accent-strong)}
+.capchip[data-c="view"]{background:var(--section-bg);color:var(--text-secondary)}
+.rdur{font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--text-primary);font-weight:600}
+.rres{min-width:104px}
+.devlist{padding-bottom:6px}
+.dev{background:var(--card-bg);border-color:transparent;border-radius:10px;
+  margin-bottom:6px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.dev:hover{box-shadow:var(--shadow-md)}
+.dev.on{background:var(--sel-bg);box-shadow:var(--sel-shadow)}
+.dico{background:var(--accent-light);color:var(--accent-strong)}
+.dico::after{content:"";position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;
+  border-radius:50%;border:2px solid var(--card-bg);background:var(--text-muted)}
+.dico[data-p="live"]::after{background:var(--green)}
+.dico[data-p="recent"]::after{background:var(--orange)}
+.toolnav{grid-template-columns:1fr;gap:2px;margin:0 8px 8px;padding:4px;
+  background:var(--section-bg);border:1px solid var(--border-color);border-radius:12px;
+  border-top:1px solid var(--border-color)}
+.toolnav button{flex-direction:row;min-height:30px;gap:9px;justify-content:flex-start;
+  padding:0 10px;border-radius:9px}
+.toolnav button.active{background:var(--card-bg);color:var(--accent-strong);
+  font-weight:600;box-shadow:0 1px 3px rgba(15,23,42,.08)}
+
+/* 融合层用到的既有 token 补齐：theme.css 在全部 7 套主题里都定义了 --status-border
+   （内部细分割线 = --border-color 55%），而本稿自带的精简 token 块里没有它。
+   不补的后果不是报错，是 var() 取不到值 ⇒ 整条 border 在计算值阶段作废 ⇒ 线根本画不出来
+   （本稿实测复现过一次：导航上沿那条分隔线一直没渲染）。值照抄 theme.css，不另发明。 */
+:root{--status-border:color-mix(in srgb,var(--border-color) 55%,transparent)}
+/* ═══════════════════════════════════════════════════════════════
+   Ⅰ  布局：全部取 A（信息架构 / 节奏 / 条数 / 区块顺序）
+   ═══════════════════════════════════════════════════════════════ */
+.frame{border-radius:12px}
+.sb{width:288px;min-width:288px}
+.dhead{min-height:104px;padding:20px 24px}
+.facts>div{min-height:56px}
+.recent{margin-top:24px}
+.dbody{padding:20px 24px 24px}
+
+/* ═══════════════════════════════════════════════════════════════
+   Ⅱ  皮肤：全部取 C（横幅 / 语义色图标 / 卡片行）
+   ═══════════════════════════════════════════════════════════════ */
+/* 详情头横幅：104 高 − 上下 padding 40 = 内容 64，正好等于 dicon 高 */
+.dhead{
+  background:linear-gradient(135deg, rgba(2,132,199,.07) 0%, rgba(109,40,217,.04) 58%, transparent 100%), var(--card-bg)}
+.dicon{width:64px;height:64px;border-radius:12px;color:#fff;
+  background:linear-gradient(140deg,#38bdf8 0%,#0284c7 55%,#0369a1 100%);
+  box-shadow:0 8px 20px rgba(2,132,199,.28)}
+.dicon .ic{width:28px;height:28px;stroke-width:1.5}
+.dnamerow h2{font-size:20px;font-weight:700;letter-spacing:-.3px}
+.dsub{margin-top:8px}
+/* 在线 pill */
+.dpill{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;
+  background:var(--green-bg);color:var(--green);font-size:12px;font-weight:600}
+.dpill .ic{width:12px;height:12px}
+/* 权限项语义色图标（A 的 4 行纵向布局 × C 的 ftone） */
+.facts dt{display:inline-flex;align-items:center;gap:8px}
+.ftone{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}
+.ftone .ic{width:14px;height:14px;stroke-width:1.8}
+.ftone[data-tone="link"]{background:var(--accent-light);color:var(--accent-strong)}
+.ftone[data-tone="ok"]{background:var(--green-bg);color:var(--green)}
+.ftone[data-tone="file"]{background:var(--orange-bg);color:var(--orange)}
+.ftone[data-tone="id"]{background:var(--purple-bg);color:var(--purple)}
+/* 会话行卡片化 + 能力药丸 */
+.rlist{background:transparent;display:flex;flex-direction:column;gap:8px}
+.rline{grid-template-columns:minmax(0,1fr) auto auto;min-height:46px;padding:0 16px;
+  background:var(--card-bg);border:0;border-radius:8px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.rcap{display:flex;align-items:center;gap:8px}
+.capchip{padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+.capchip[data-c="ctrl"]{background:var(--accent-light);color:var(--accent-strong)}
+.capchip[data-c="view"]{background:var(--section-bg);color:var(--text-secondary)}
+.rdur{font-variant-numeric:tabular-nums;font-weight:600}
+.rres{min-width:104px}
+/* 设备行卡片化 + 选中态启用既有的 --sel-*（即 --card-selected-* 那一套） */
+.dev{background:var(--card-bg);border-color:transparent;border-radius:8px;
+  margin-bottom:4px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.dev:hover{box-shadow:var(--shadow-md)}
+.dev.on{background:var(--sel-bg);border-color:transparent;box-shadow:var(--sel-shadow)}
+.dico{border-radius:8px;background:var(--accent-light);color:var(--accent-strong)}
+.dico::after{content:"";position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;
+  border-radius:50%;border:2px solid var(--card-bg);background:var(--text-muted)}
+.dico[data-p="live"]::after{background:var(--green)}
+.dico[data-p="recent"]::after{background:var(--orange)}
+/* 底部导航：三格横排（图标在上、文字在下）。
+   09-22 用真机截图对比过：三格横排比 C 的侧栏导轨好看 ⇒ 导轨作废，形态回到现状
+   （min-height 46 · 圆角 8 · padding 8 · 格间 4，与 RemoteComputerA2.module.css:611 一致）。
+   只做两件事：① 分隔线从 --border-color 并入明度语言 --status-border；
+              ② 现状的 15px 图标 / gap 3px 落到全稿档位 16px / 4px。 */
+/* 侧栏内的细分割线（接收开关 / 导航）统一走 --status-border：
+   两条都在侧栏内部，深浅不一致看着像疏漏；结构性的边（.sb 右边界、.dhead 下边界）仍用 --border-color。 */
+.recv{border-top-color:var(--status-border)}
+.toolnav{grid-template-columns:repeat(3,1fr);gap:4px;margin:0;padding:8px;
+  background:transparent;border:0;border-top:1px solid var(--status-border);border-radius:0}
+.toolnav button{flex-direction:column;min-height:46px;gap:4px;justify-content:center;
+  padding:0;border-radius:8px}
+.toolnav button:hover{color:var(--text-primary);background:var(--hover)}
+.toolnav button.active{background:var(--hover);color:var(--text-primary);
+  font-weight:600;box-shadow:none}
+
+/* ═══════════════════════════════════════════════════════════════
+   Ⅲ  冲突处的取舍（A 与 C 直接对撞的两条 + 一条已经自动解除，取舍理由见稿尾说明）
+   ═══════════════════════════════════════════════════════════════ */
+/* ① 详情头高度：C 要 132（横幅体量），A 给的是 104。
+     取 104 —— 104 − 40 = 64，正好塞下 C 的 64px 实色图标，
+       C 的四件套（渐变底 / 实色图标 / 20px/700 标题 / 在线 pill）一件没少，
+       而右侧多留 28px 给会话列表（这是 A 的核心目的：填掉下部空白）。 */
+/* ② 设备行高：A 是 62px。原先为了让出 C 的导轨压到了 58 ——
+     09-22 导航改回三格横排后这条冲突自动消失，行高回到 A 的 62px。
+     腾出的 79px 全部给设备列表，用来补第 5 个设备（见说明区），而不是留成空白。 */
+/* ③ 会话行高：C 是 60（3 条），A 是 44（5 条）。5 条 × 60 放不进 dbody。
+     取 46 —— 保住 A 的 5 条，同时容得下 C 的能力药丸（21px 高）。
+     注意必须写成 .rlist .rline：A 段那条 ".rlist .rline{min-height:44px}" 是 (0,2,0)，
+     单写 ".rline" 会被它按特异性顶掉（实测就是这么发生的，行高量出来还是 44）。 */
+.rlist .rline{min-height:46px;gap:12px}
+
+/* ═══════════════════════════════════════════════════════════════
+   Ⅳ  档位归一：原稿的字号/圆角/图标不在 docs/PastePanda-UI规则.md §4 的档位上，
+       逐项落到 字号 11·12·13·15·20 / 圆角 8·12 / 间距 4·8·12·16·24。
+       （两稿原值 → 落档 的对照见稿尾表格）
+
+       间距的取舍判据：图标↔文字在一枚控件内部 = 元素内 = 4px；
+       控件↔控件 = 元素间 = 8px；列↔列 = 组间 = 12px。
+   ═══════════════════════════════════════════════════════════════ */
+/* 元素内 4px：图标 ↔ 它紧跟的文字 */
+.btnadd{gap:4px}
+.ghostbtn{gap:4px}
+.assist button{gap:4px}
+.pri{gap:4px}
+.sec{gap:4px}
+.mini{gap:4px}
+.secLink{gap:4px}
+.facts .note{gap:4px}
+.dpill{gap:4px}
+/* 会话行里 rcap 的 gap 必须写成 .rline .rcap —— A 段那条是 (0,2,0)，单写 .rcap 会被顶掉 */
+.rline .rcap{gap:8px}
+/* 控件↔控件 8px / 组间 12px */
+.tb{gap:8px}
+.brand{gap:8px}
+.cstat{gap:8px;padding:0 12px}
+.search{gap:8px}
+.dsel{gap:8px}          /* 原 9px */
+.dev{gap:8px}           /* 原 6px */
+/* 圆角落档：原稿的 6 / 9 / 10 / 16 一律并到 8（控件）或 12（面板） */
+.ghostbtn{border-radius:8px}
+.dico{border-radius:8px}
+.dicon{border-radius:12px}
+/* 图标落档 12 / 14 / 16 / 28 */
+.bmark .ic{width:16px;height:16px}
+.wbtn .ic{width:14px;height:14px}
+.dico .ic{width:16px;height:16px}
+.secLink .ic{width:14px;height:14px}
+.toolnav .ic{width:16px;height:16px}
+/* 字号落档：11.5→12、12.5→13、13.5→13、23→20 */
+.bsec{font-size:13px}
+.btnadd{font-size:12px}
+.search span{font-size:12px}
+.sbtitle{margin-bottom:8px}
+.sbhead{padding:12px 12px 8px}
+.grp{padding:8px 8px 4px;font-size:12px}
+.grp:first-child{padding-top:4px}
+.dcopy strong{font-size:13px}
+.dcopy small{font-size:12px}
+.mini{font-size:12px}
+.recv{padding:12px}
+.recv strong{font-size:13px}
+.recv small{font-size:12px}
+.sw{font-size:12px}
+.assist{gap:8px;padding:0 8px 8px}
+.ghostbtn{font-size:12px}
+.dsub{font-size:13px}
+.pri,.sec{font-size:13px}
+.pri{padding:0 16px}
+.secHead{margin-bottom:8px}
+.secHead h3{font-size:13px}
+.secLink{font-size:12px}
+.facts>div{padding:0 16px;gap:12px}
+.facts dt{font-size:13px}
+.facts dd{font-size:13px}
+.facts .note{font-size:12px}
+.mono{font-size:13px}
+.rline{font-size:13px}
+.rcap b{font-size:13px}
+.rdur{font-size:13px}
+.rres{font-size:12px}
+.toolnav button{font-size:12px}
+
+.devlist .dev:last-child{margin-bottom:0}
+
+/* 稿纸自身（非 UI 交付物，仅供阅读） */
+body{background:#e9edf2}
+.pagehead{width:1200px;margin:0 auto;padding:26px 28px 10px}
+.pagehead h1{margin:0 0 6px;font-size:20px;color:#0f172a}
+.pagehead p{margin:0;font-size:13px;color:#495565;line-height:1.7}
+.pagehead code{background:#e3e9f1;border-radius:4px;padding:1px 5px;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.stagewrap{padding:0 28px 40px;display:flex;flex-direction:column;gap:16px;
+  align-items:center;justify-content:center;min-height:820px}
+.notes{width:1200px;margin:0 auto;padding:8px 28px 80px;
+  color:#1f2937;font-size:13px;line-height:1.7;
+  font-family:"Microsoft YaHei","Segoe UI",system-ui,sans-serif}
+.notes h2{margin:32px 0 8px;padding-bottom:6px;font-size:15px;color:#0f172a;
+  border-bottom:1px solid #d8dee7}
+.notes h2:first-child{margin-top:0}
+.notes p{margin:6px 0 12px;font-size:13px;color:#475569}
+.notes table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;
+  overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.notes th{background:#f1f5f9;padding:9px 12px;text-align:left;font-size:12px;
+  font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0}
+.notes td{padding:9px 12px;font-size:13px;vertical-align:top;
+  border-bottom:1px solid #eef2f7;color:#334155}
+.notes tr:last-child td{border-bottom:0}
+.notes code{background:#eef2f7;border-radius:4px;padding:1px 5px;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.notes b{color:#0f172a}
+.notes .a{color:#0369a1;font-weight:600}
+.notes .c{color:#6d28d9;font-weight:600}
+.notes .take{color:#b45309;font-weight:600}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-fileup" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+  <symbol id="i-chevd" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.63l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-hands" viewBox="0 0 24 24"><path d="M11 12h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 14"/><path d="m7 18 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9"/><path d="m2 13 6 6"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><path d="M2.59 17.41A2 2 0 0 0 2 18.83V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.17a1 1 0 0 0 .71-.29l.28-.28a6.5 6.5 0 1 0-3-3z"/><circle cx="16.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-wmin" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-wmax" viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13"/></symbol>
+  <symbol id="i-wclose" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+</svg>
+
+<div class="pagehead">
+  <h1>远程电脑工作台 · A 布局 × C 样式</h1>
+  <p>骨架取自 <b>方案 A · 密实化</b>（不动信息架构，只调节奏与条数）；皮肤取自 <b>方案 C · 仪表台</b>（横幅头 / 语义色图标 / 卡片行）。底部导航按 09-22 的真机截图定为 <b>三格横排</b>，C 的侧栏导轨作废。<br>
+  按真实 <b>1200×780</b> 窗口渲染（<code>rc.rs</code> 的 <code>rc_open_workbench</code>），token 全部来自 <code>theme.css</code> ocean，数据与文案沿用三方案稿。</p>
+</div>
+<div class="stagewrap">
+  <section class="frame" id="pane">
+
+    <header class="tb">
+      <div class="brand">
+        <span class="bmark"><svg class="ic"><use href="#i-monitor"/></svg></span>
+        <span class="bname">PastePanda</span><span class="bsec">远程电脑</span>
+      </div>
+      <span class="cstat"><i class="dot"></i>远程通道已开启</span>
+      <div class="wctl">
+          <button class="wbtn"><svg class="ic"><use href="#i-wmin"/></svg></button>
+          <button class="wbtn"><svg class="ic"><use href="#i-wmax"/></svg></button>
+          <button class="wbtn wclose"><svg class="ic"><use href="#i-wclose"/></svg></button>
+      </div>
+    </header>
+    <div class="body">
+
+      <aside class="sb">
+        <div class="sbhead">
+          <div class="sbtitle">
+            <h2>我的设备</h2>
+            <button class="btnadd"><svg class="ic"><use href="#i-plus"/></svg>添加设备</button>
+          </div>
+          <div class="search"><svg class="ic"><use href="#i-search"/></svg><span>搜索设备</span></div>
+        </div>
+        <div class="devlist">
+            <div class="grp"><b>在线</b><span>1</span></div>
+          <div class="dev on">
+            <button class="dsel">
+              <span class="dico" data-p="live"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>工作电脑</strong><small>局域网直连 · ~11 ms</small></span>
+            </button>
+            <button class="mini pri">连接</button>
+          </div>
+            <div class="grp"><b>最近使用</b><span>3</span></div>
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>家里的台式机（老爸用）</strong><small>2 小时前还在</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>LAPTOP-THINKPAD-X1</strong><small>3 天前见过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="recent"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>客厅迷你主机</strong><small>上周三见过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+            <div class="grp"><b>尚未连接</b><span>1</span></div>
+          <div class="dev">
+            <button class="dsel">
+              <span class="dico" data-p="never"><svg class="ic"><use href="#i-monitor"/></svg></span>
+              <span class="dcopy"><strong>会议室平板</strong><small>配对后还没连上过</small></span>
+            </button>
+            <button class="mini">检测</button>
+          </div>
+        </div>
+
+        <div class="recv">
+          <span><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></span>
+          <button class="sw on">已允许</button>
+        </div>
+        <div class="assist">
+          <button><svg class="ic"><use href="#i-users"/></svg>让别人帮我</button>
+          <button><svg class="ic"><use href="#i-hands"/></svg>帮助别人</button>
+          <button class="wide"><svg class="ic"><use href="#i-key"/></svg>输入接入码</button>
+        </div>
+        <nav class="toolnav">
+            <button class="active"><svg class="ic"><use href="#i-fileup"/></svg><span>文件</span></button>
+            <button><svg class="ic"><use href="#i-history"/></svg><span>记录</span></button>
+            <button><svg class="ic"><use href="#i-settings"/></svg><span>设置</span></button>
+        </nav>
+      </aside>
+      <div class="main">
+        <section class="detail">
+
+          <header class="dhead">
+            <span class="dicon"><svg class="ic"><use href="#i-monitor"/></svg></span>
+            <div class="dname">
+              <div class="dnamerow">
+                <h2>工作电脑</h2>
+                <span class="dpill"><svg class="ic"><use href="#i-check"/></svg>在线</span>
+                <button class="ghostbtn"><svg class="ic"><use href="#i-pencil"/></svg>重命名</button>
+              </div>
+              <p class="dsub">Windows 11 · 局域网可达 · 最近实测 11 ms</p>
+            </div>
+            <div class="dact">
+              <button class="pri"><svg class="ic"><use href="#i-play"/></svg>连接并控制</button>
+              <button class="sec"><svg class="ic"><use href="#i-eye"/></svg>只看</button>
+              <button class="sec"><svg class="ic"><use href="#i-fileup"/></svg>传文件</button>
+            </div>
+          </header>
+          <div class="dbody">
+            <div class="secHead">
+              <h3>连接与权限</h3>
+              <button class="secLink"><svg class="ic"><use href="#i-sliders"/></svg>管理此设备<svg class="ic"><use href="#i-chevd"/></svg></button>
+            </div>
+            <dl class="facts">
+          <div>
+            <dt><span class="ftone" data-tone="link"><svg class="ic"><use href="#i-link"/></svg></span>上次连接</dt>
+            <dd class="">局域网直连</dd>
+            <span class="note">来自最近一次会话实测 · 最近实测 ~11 ms</span>
+          </div>
+          <div>
+            <dt><span class="ftone" data-tone="ok"><svg class="ic"><use href="#i-check"/></svg></span>连接确认</dt>
+            <dd class="">免确认连接</dd>
+            <span class="note">仍可随时结束会话</span>
+          </div>
+          <div>
+            <dt><span class="ftone" data-tone="file"><svg class="ic"><use href="#i-fileup"/></svg></span>文件接收</dt>
+            <dd class="">每次询问</dd>
+            <span class="note">接受后才写入电脑</span>
+          </div>
+          <div>
+            <dt><span class="ftone" data-tone="id"><svg class="ic"><use href="#i-shield"/></svg></span>设备身份</dt>
+            <dd class="mono">peer-a1b2-c3d4-e5f6</dd>
+            <span class="note"><svg class="ic"><use href="#i-shield"/></svg>已完成配对核验</span>
+          </div>
+            </dl>
+
+            <div class="recent">
+              <div class="secHead">
+                <h3>最近会话</h3>
+                <button class="secLink">查看全部</button>
+              </div>
+              <div class="rlist">
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="ctrl">可控</span><span>今天 18:39</span></span>
+              <span class="rdur">01:00</span>
+              <span class="rres">用户结束会话</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="view">只看</span><span>9/21 19:39</span></span>
+              <span class="rdur">02:05</span>
+              <span class="rres">对方结束会话</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="ctrl">可控</span><span>9/18 19:39</span></span>
+              <span class="rdur">01:30</span>
+              <span class="rres">会话超时</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="ctrl">可控</span><span>9/17 10:02</span></span>
+              <span class="rdur">00:12</span>
+              <span class="rres">用户取消申请</span>
+            </div>
+            <div class="rline">
+              <span class="rcap"><span class="capchip" data-c="view">只看</span><span>9/15 21:20</span></span>
+              <span class="rdur">05:48</span>
+              <span class="rres">用户结束会话</span>
+            </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* __only() → 只留窗口本身并对齐到 (0,0)，供逐屏截图；带 #only 打开时自动执行 */
+window.__only = function () {
+  document.querySelectorAll(".pagehead,.notes").forEach(function (n) { n.style.display = "none"; });
+  var w = document.querySelector(".stagewrap");
+  if (w) { w.style.cssText = "padding:0;display:block;min-height:0"; }
+  document.body.style.cssText = "margin:0;padding:0;background:#e9edf2";
+  return "ok";
+};
+if (location.hash === "#only") window.__only();
+</script>
+</body>
+</html>
+
+
+<section class="notes">
+  <h2>这份稿把 A 和 C 怎么合的</h2>
+  <p>一句话：<b>骨架全取 A，皮肤全取 C</b>。逐部件对照如下。</p>
+  <table>
+    <thead><tr><th style="width:23%">部件</th><th style="width:22%">取 <span class="a">A</span></th><th style="width:23%">取 <span class="c">C</span></th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>整体骨架</td><td>侧栏 + 详情区两栏、区块顺序、4 行权限表 + 会话列表</td><td>—</td>
+        <td>A 的前提就是「不动信息架构」，所以结构一件不改。</td></tr>
+      <tr><td>体积与节奏</td><td>侧栏 288 · 详情头 104 · 权限行 56 · 区块间距 24</td><td>—</td>
+        <td>这是 A 叫「密实化」的全部内容，保。</td></tr>
+      <tr><td>会话条数</td><td><b>5 条</b>（3 → 5）</td><td>—</td>
+        <td>A 的主要卖点：把右栏下部那块空白填掉。C 只有 3 条。</td></tr>
+      <tr><td>详情头</td><td>高度 104、padding 20/24</td><td>accent 渐变底 · 64px 实色渐变图标 · 20px/700 标题 · 在线 pill</td>
+        <td>104 − 40 = 64，<b>正好等于 C 的图标高度</b>，四件套一件没少（见下表冲突 ①）。</td></tr>
+      <tr><td>连接与权限</td><td><b>4 行纵向</b>事实表（标签 / 值 / 说明三列）</td><td>每行标签前 26px 语义色图标（link / ok / file / id 四色）</td>
+        <td>最干净的一处融合：A 的行结构原位不动，C 把图标插进 <code>dt</code>，两稿零冲突。</td></tr>
+      <tr><td>会话列表</td><td>5 条、右对齐结果列、时长用等宽数字</td><td>行改白底卡片 + 轻阴影、能力做 <code>capchip</code> 药丸</td>
+        <td>行内部排布取 C（药丸 + 时长 + 结果三列），行高按 A 的密度压到 46（见冲突 ③）。</td></tr>
+      <tr><td>设备列表</td><td>分组与节奏、<b>条数 5</b>（在线 1 / 最近 3 / 尚未 1）</td><td>白底卡片 + 圆角、头像 accent 底、<b>选中态启用 <code>--sel-bg/-shadow</code></b></td>
+        <td>C 的选中态用的正是 <code>theme.css</code> 里定义了却全项目没用的那套卡片选中 token。<br>
+        <b>09-22</b>：导航改回三格横排后侧栏多出 79px，按 A 的一贯做法用真实内容填掉 —— 设备 4 → 5 条（补了「客厅迷你主机」），行高同时回到 A 的 62px。</td></tr>
+      <tr><td>底部导航</td><td>位置（侧栏最底）、<b>三格横排</b>（图标在上、文字在下）、项数</td><td>—（导轨作废）</td>
+        <td><b>09-22 改</b>：用真机截图逐像素比过（<code>#f0f4f8</code> = <code>--section-bg</code>、<code>#e8ecf2</code> = <code>--hover</code>，125% DPI 反推出 3 格 × 94px / 46 高 / 圆角 8），确认三格横排比 C 的侧栏导轨好看 ⇒ 导轨弃用，形态回到现状，项数也回到真实 <code>TOOLS</code> 的三项（C 多加的「设备」项取消）。只做两件事：① 侧栏内两条细分割线（接收开关 / 导航）统一并入明度语言 <code>--status-border</code>；② 把现状的 15px 图标 / 11px 文字 / 3px 间隙落到全稿档位 <b>16 / 12 / 4</b>（各差 1px）。<br>
+        <b>注</b>：本页就是「设备」页，而它不在 <code>TOOLS</code> 里 —— 真实实现下三项都不高亮；稿里给「文件」挂 <code>active</code> 只是把高亮样式展示出来。</td></tr>
+      <tr><td>标题栏 / 辅助按钮</td><td>—</td><td>—</td>
+        <td>两稿完全相同，原样保留。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>渲染实测（Chrome CDP，视口 1280×900）</h2>
+  <p>下面每个数字都是无头浏览器量出来的，不是按盒模型估的。这一节是交付前必须走的一步 —— 前两稿都是在「估着能放下」的地方翻的车。</p>
+  <table>
+    <thead><tr><th style="width:22%">项</th><th>实测</th></tr></thead>
+    <tbody>
+      <tr><td>窗口</td><td>1200×780，双轴零溢出，<code>documentElement.scrollWidth == innerWidth</code>（无横向滚动）</td></tr>
+      <tr><td>侧栏 288×732</td>
+        <td>头 92 · 设备列表 433 · 接收开关 65 · 辅助按钮 80 · 导航 63（含 1px 分隔线）= 733</td></tr>
+      <tr><td>设备列表</td>
+        <td><code>scrollHeight == clientHeight</code>（<b>不溢出、不出滚动条</b>）；5 行 × <b>62px</b>（回到 A 的原值）；末行到页脚余 <b>19px</b></td></tr>
+      <tr><td>底部导航</td>
+        <td>3 格 × <b>88px</b> 宽 × <b>46px</b> 高；选中项填充色实测 <b>rgb(232,236,242)</b> = <code>--hover</code>，与真机截图<b>逐像素一致</b><br>
+        侧栏内两条细分割线实测均为 <b>rgb(231,235,241)</b>（= <code>--border-color</code> 混 55%，即 <code>theme.css</code> 的 <code>--status-border</code>），比原来用的 <code>--border-color</code> <b>rgb(224,228,235)</b> 更淡</td></tr>
+      <tr><td>详情头</td>
+        <td><b>105px</b>（min-height 104 + 1px 下边框）；内容高 65 ≥ 图标 64 —— <b>正好装下</b></td></tr>
+      <tr><td>权限表</td><td>4 行 × <b>56px</b></td></tr>
+      <tr><td>会话列表</td>
+        <td>5 行 × <b>46px</b>，<code>scrollHeight == clientHeight</code>；末行到内容区底余 5px（把 A 要填的那块空白填掉了）</td></tr>
+      <tr><td>完整性</td><td>文字被裁的元素 <b>0</b>；溢出父容器的元素 <b>0</b></td></tr>
+      <tr><td>档位</td>
+        <td>字号 <b>12 / 13 / 15 / 20</b>（11px 本稿用不到）· 圆角 <b>8 / 12</b>（另 pill 999、圆点 50%）·
+            图标 <b>12 / 14 / 16 / 28</b> · 间距 <b>4 / 8 / 12 / 16</b> —— 与 <code>scripts/ui-rules/rules.mjs</code> 白名单逐项比对，<b>违规 0 项</b></td></tr>
+    </tbody>
+  </table>
+
+  <h2>三处量级不一致，以及最终怎么取的</h2>
+  <p>A 和 C 在三个地方量级不一致（其中<b>② 已随导航改动自动解除</b>）。下面是我替你做的决定，理由都写明了；不同意就说，改起来都是单值。</p>
+  <table>
+    <thead><tr><th style="width:14%">冲突</th><th style="width:15%">A 的值</th><th style="width:15%">C 的值</th><th style="width:20%">本稿取法</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>① 详情头高度</td><td>104px</td><td>132px</td><td class="take">取 104</td>
+        <td>104 减去上下 padding 40 正好 64 —— 刚好装下 C 的 64px 实色图标，C 的观感四件套全在；而省下的 28px 全部给了会话列表，这正是 A 的目的。若取 132，5 条会话只能压到 40px/行，会挤。</td></tr>
+      <tr><td>② 设备行高</td><td>62px</td><td>—（导轨已作废）</td><td class="take">回到 62px · 冲突解除</td>
+        <td>这条原本是为让出 C 的导轨才压到 58。导航回到三格横排后侧栏多出 79px，行高回到 A 的 62px；多出来的高度按 A 的一贯做法用真实内容填掉 —— 补第 5 个设备（4 → 5），而不是在列表底部留一块空白。</td></tr>
+      <tr><td>③ 会话行高</td><td>44px</td><td>60px</td><td class="take">取 46px</td>
+        <td>A 是 44 但只有 3 条的时候用的；要保住 A 的 5 条，60px 卡片放不下（5×60 + 4×8 间距 = 332 &gt; 可用 268）。46px 容得下 C 的 21px 药丸，也不丢 5 条。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>顺手把档位收回来了</h2>
+  <p>三方案稿（A/B/C 都是）的字号、圆角、图标刻度不在 <code>docs/PastePanda-UI规则.md</code> §4 的档位上，<code>npm run lint:ui</code> 会拦。本稿按规则收口，视觉差异肉眼基本看不出。</p>
+  <table>
+    <thead><tr><th style="width:26%">档位</th><th style="width:34%">原稿用的值</th><th>本稿</th></tr></thead>
+    <tbody>
+      <tr><td>字号</td>
+        <td>11.5 / 12 / 12.5 / 13 / 13.5 / 14.5 / 15 / 20 / 23</td>
+        <td><b>11 / 12 / 13 / 15 / 20</b>　（11.5→12、12.5→13、13.5→13、23→20）</td></tr>
+      <tr><td>圆角</td><td>8 / 9 / 10 / 12 / 16 / 999</td>
+        <td><b>8 / 12 / 999</b>　（9、10→8；16→12；药丸保留 999）</td></tr>
+      <tr><td>图标</td><td>12 / 13 / 14 / 15 / 16 / 17 / 25 / 29</td>
+        <td><b>12 / 14 / 16 / 28</b>　（13→14；15、17→16；25、29→28）</td></tr>
+      <tr><td>间距</td><td>2 / 3 / 5 / 6 / 7 / 9 / 10 / 14 / 28</td>
+        <td><b>4 / 8 / 12 / 16 / 24</b>　（判据：图标↔文字 = 元素内 4px；控件↔控件 8px；列↔列 12px）</td></tr>
+    </tbody>
+  </table>
+
+  <h2>还有两条我没替你决定</h2>
+  <table>
+    <thead><tr><th style="width:26%">项</th><th style="width:37%">A 的做法（本稿）</th><th>另一种</th></tr></thead>
+    <tbody>
+      <tr><td>设备头像底色</td>
+        <td>C 统一给 <code>--accent-light</code> 浅蓝底，靠右下角小圆点区分状态</td>
+        <td>按状态分色：在线绿底 / 最近橙底 / 从未灰底（那是 B 的做法）。同屏 4 块浅蓝确实在跟主按钮抢强调色，但这是 C 的既定样式，我没改。</td></tr>
+      <tr><td>会话行的「结果」</td>
+        <td>一律中性灰（A、C 都这么写）</td>
+        <td>给「会话超时」「用户取消申请」这类非正常结束上语义色。属于加信息，不属视觉，所以留着。</td></tr>
+    </tbody>
+  </table>
+</section>
