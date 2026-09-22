@@ -1,6 +1,8 @@
 //! InboundVideo 构造与硬编（H.264）路径：try_new / open_h264 / try_hardware_path / send_h264_pkts。
 
 use super::*;
+// 推流节拍判据收口在 `rc::pace`（inbound.rs 的主题是会话结构与生命周期）。
+use crate::rc::pace::{auto_key_due, want_fps_for, AUTO_KEY_MIN_GAP_MS};
 
 impl InboundVideo {
     /// 会话存在、是入站活跃、且属于本 peer 才建；否则 `None`（启动前会话已结束）。
@@ -54,6 +56,8 @@ impl InboundVideo {
             input_boost: Arc::new(tokio::sync::Notify::new()),
             last_frame_at: tokio::time::Instant::now(),
             force_key: Arc::new(AtomicBool::new(false)),
+            #[cfg(target_os = "windows")]
+            auto_key_at: None,
             last_cursor: None,
             pace_scale: 1,
             work_ema_ms: 0,
@@ -97,14 +101,11 @@ impl InboundVideo {
         } else {
             primary_screen_size()
         };
-        // fps120/fps60/uhd60 档按 120/60/60fps 出时间戳；其余档位提帧上限 30fps
-        let fps = if svc.encode_profile().interval_ms <= 10 {
-            120
-        } else if svc.encode_profile().interval_ms <= 20 {
-            60
-        } else {
-            30
-        };
+        // 时间戳 fps 按**本档位提帧上限**算（见 `want_fps_for`）：拖动时真实
+        // 帧率就是它，编码器的 PTS 步进与码控分配才对得上。
+        // 新建会话时还没跑过零拷贝判据 ⇒ `gpu_disabled = false`，但抓取范围
+        // 已知，虚拟屏场景的降频仍要算进去。
+        let fps = want_fps_for(svc.encode_profile().interval_ms, virt, false);
         let enc = crate::rc::encode_h264::H264SessionEncoder::try_open(codec, pw, ph, fps);
         if enc.available() {
             log::info!(
@@ -236,15 +237,15 @@ impl InboundVideo {
                 let ok = henc.force_key();
                 log::debug!("[RC] 对端请求关键帧：{}", if ok { "已强制" } else { "编码器不支持" });
             }
-            // 时间戳 fps 跟档位走（120/60/30），编码器按需重开
-            let want_fps = if opts.profile.interval_ms <= 10 {
-                120
-            } else if opts.profile.interval_ms <= 20 {
-                60
-            } else {
-                30
-            };
-            henc.set_fps(want_fps);
+            // 时间戳 fps 跟档位走（120/60/30），判据收口在 `want_fps_for`：
+            // 按**提帧上限**算而不是静止间隔——拖动时真实帧率就是它，
+            // 编码器的 PTS 步进与 CBR 每帧 bit 分配才对得上（写错不崩，
+            // 只会静默让码率腰斩，见该函数注释）。
+            henc.set_fps(want_fps_for(
+                opts.profile.interval_ms,
+                opts.virtual_screen,
+                self.gpu_disabled,
+            ));
             // P1/G5 零拷贝门控：档位要（fps120 / uhd60）+ 单输出 + GPU 路径没被判死。
             // 判据集中在 `EncodeProfile::wants_zero_copy`（有单测）——写错不崩、
             // 只会静默跑 CPU 管线。
@@ -414,6 +415,21 @@ impl InboundVideo {
         //   关键帧（无论自然 GOP 还是精修产物）不参与运动判定，见该函数。
         let frame_bytes: u64 = pkts.iter().map(|p| p.data.len() as u64).sum();
         let is_key = pkts.iter().any(|p| p.key);
+        // 2A 自动档喂帧（2026-09-22 补）。
+        //
+        // 🔴 此前 H.264 路径**从不**调用 `auto_note_frame`——全项目只有 JPEG
+        //    兜底路径喂（`video_run.rs::jpeg_path`）。后果：判据窗口永远是空的，
+        //    自动档连一次换档判定都做不了，档位**永远停在起跑档**。而正常有硬编
+        //    的机器走的都是这条路 ⇒ 「自动」实际等于「均衡 = 10fps」，
+        //    正是「拖动窗口明显卡顿、窗口开关动画看不到」的主因之一。
+        //    这种失效不报错、不掉帧，只能靠读调用点发现。
+        //
+        // 口径与 JPEG 路径一致：**关键帧不喂**——IDR 是节拍产物/一次性的
+        //    大帧，喂进去会把「近帧均值」基准抬高一截（JPEG 路径同理跳过
+        //    refine 帧，见 `jpeg_path` 的 `if !enc_out.refine`）。
+        if !is_key {
+            self.svc.auto_note_frame(frame_bytes as usize);
+        }
         match motion_verdict(is_key, self.motion_ema_bytes, frame_bytes) {
             MotionVerdict::Ignore => {}
             MotionVerdict::Moving => {
@@ -440,43 +456,57 @@ impl InboundVideo {
         }
         for p in pkts {
             let sq = self.dgram.take_seq();
-            // 关键帧走可靠流（重组锚）；对端是旧版发起端时 P 帧也走可靠流
-            //（能力位缺省 = 它读不了视频数据报，见 `peer_dgram` 字段注释）。
-            if p.key || !self.peer_dgram {
-                let mut guard = self.send.lock().await;
-                if crate::rc::video::write_h264(
-                    &mut guard, &p.data, p.key, p.width, p.height, ts, cap_ms, enc_ms, sq, hevc,
-                )
-                .await
-                .is_err()
-                {
-                    drop(guard);
-                    self.svc
-                        .force_end_if_session(&self.my_id, "H.264 推送失败")
-                        .await;
+            // 对端是旧版发起端时**一律**走可靠流（能力位缺省 = 它读不了视频
+            // 数据报，见 `peer_dgram` 字段注释）。
+            if !self.peer_dgram {
+                if !self.send_pkt_via_stream(&p, sq, ts, cap_ms, enc_ms, hevc).await {
                     return Step::End;
                 }
                 continue;
             }
+            // 关键帧也走数据报（2026-09-22 C1）。
+            //
+            // 🔴 旧实现把关键帧一律塞可靠流，理由是「有 seq 锚、安全」。代价是
+            //    **队头阻塞**：可靠流与输入事件、心跳共用同一条 SendStream，
+            //    而 1s GOP 的 IDR 常在几百 KB 量级（4K 更大）——拖动窗口时画面
+            //    全屏变化、IDR 频繁且大，注入的鼠标事件就排在大帧后面，
+            //    「操作跟手」直接失效。
+            //    接收端其实**早就支持**数据报关键帧（`vid_dgram::feed_inner`
+            //    收到 FLAG_KEY 会重锚 `next_seq`、清 `corrupt` 与 `hole_since`，
+            //    单测 `组内丢两片整帧报废_corrupt等关键帧` 钉着「关键帧必须能
+            //    重新起链」），只是一直没有发送方这么用。
             match self.dgram.send_frame(
-                &self.conn,
-                sq,
-                &p.data,
-                false,
-                ts,
-                cap_ms,
-                enc_ms,
-                p.width,
-                p.height,
-                hevc,
+                &self.conn, sq, &p.data, p.key, ts, cap_ms, enc_ms, p.width, p.height, hevc,
             ) {
                 Ok(()) => {}
+                Err(crate::rc::vid_dgram::SendErr::Busy) if p.key => {
+                    // 关键帧**不能弃**：丢了要等下一个 GOP（1s）才有锚，这期间
+                    // 对端看到的全是花屏。数据报装不下（大 IDR 超过 iroh 的
+                    // `datagram_send_buffer_size`，默认 1MiB）就回退可靠流——
+                    // 慢一点，但一定到得了。
+                    log::debug!("[RC] 关键帧装不进数据报缓冲，回退可靠流 #{sq}");
+                    if !self.send_pkt_via_stream(&p, sq, ts, cap_ms, enc_ms, hevc).await {
+                        return Step::End;
+                    }
+                }
                 Err(crate::rc::vid_dgram::SendErr::Busy) => {
-                    // 数据报缓冲满 = 拥塞。弃帧：接收端成洞 → corrupt → 要关键帧。
-                    log::debug!("[RC] 数据报缓冲满，弃 P 帧 #{sq}（走自愈）");
+                    // P 帧：数据报缓冲满 = 拥塞。弃帧（接收端成洞 → corrupt →
+                    // 要关键帧，走自愈）。
+                    //
+                    // C2：**主动**告知对端要 IDR，不等它发现缺口再走一个 RTT。
+                    // 拖动窗口时这一路会连续命中（全屏变化的 P 帧动辄上百个
+                    // 分片），被动自愈意味着「每次弃帧都要等一个往返 + 下一个
+                    // IDR」，正是「拖起来一顿一顿」的来源。
+                    crate::rc::perf::bump(&crate::rc::perf::counters::DGRAM_DROP);
+                    self.request_key_after_drop();
+                    log::debug!("[RC] 数据报缓冲满，弃 P 帧 #{sq} 并主动要 IDR");
                 }
                 Err(crate::rc::vid_dgram::SendErr::Dropped(e)) => {
-                    log::debug!("[RC] P 帧分片发送中断（{e}）——接收端将走自愈");
+                    crate::rc::perf::bump(&crate::rc::perf::counters::DGRAM_DROP);
+                    // 分片发了一半就中断：本帧必然成洞，同样主动要 IDR
+                    // （接收端也会走到同一结论，但要多花一个往返）。
+                    self.request_key_after_drop();
+                    log::debug!("[RC] P 帧分片发送中断（{e}）——主动要 IDR");
                 }
             }
         }
@@ -484,5 +514,64 @@ impl InboundVideo {
         // 这里统一取整段时长——诊断要的是「发送这一段占了多少预算」）
         self.perf_last.send_ms = Some(send_t0.elapsed().as_millis() as u64);
         Step::Sleep
+    }
+
+    /// C2：数据报弃帧后**主动**要一个 IDR（带限频）。
+    ///
+    /// 不主动要的话，要等对端发现缺口 → 发 `request_key` → 再走一个 RTT，
+    /// 这期间对端只能拿花屏或冻结的旧帧。拖动窗口时这一路会连续命中，
+    /// 正是「拖起来一顿一顿」的来源之一。
+    ///
+    /// 🔴 限频不可省：IDR 是整帧大包，无节制地要会「拥塞→弃帧→要 IDR→
+    /// 更拥塞」自激。门限见 [`AUTO_KEY_MIN_GAP_MS`]（同模块常量）。
+    #[cfg(target_os = "windows")]
+    fn request_key_after_drop(&mut self) {
+        let now = std::time::Instant::now();
+        if !auto_key_due(self.auto_key_at, now, AUTO_KEY_MIN_GAP_MS) {
+            return;
+        }
+        self.auto_key_at = Some(now);
+        // 消费点在 `try_hardware_path` 圈首：下一圈编码前 `henc.force_key()`。
+        self.force_key.store(true, Ordering::SeqCst);
+    }
+
+    /// 走**可靠流**发一个 H.264/HEVC 包（关键帧的锚点路径，也是旧版发起端
+    /// 与「关键帧装不进数据报缓冲」时的兜底）。
+    ///
+    /// 返回 `false` = 写失败、会话已收口，调用方必须立刻 `return Step::End`。
+    ///
+    /// 抽成方法而不是内联：调用点从 1 个变成 3 个（旧版发起端全走流 /
+    /// 数据报装不下的关键帧回退 / 将来可能的其它兜底），三处各写一遍
+    /// `write_h264` + 失败收口，必然漏掉一处（漏了就是「推流失败但循环
+    /// 继续跑」的僵尸会话）。
+    /// ❗ 必须 `&mut self` 而不是 `&self`：本方法有 await 点，`&self` 会把
+    /// `&InboundVideo` 带进 future，而 spawn 要求 `Send` ⇒ 需要
+    /// `InboundVideo: Sync`；`DxgiPool` 持有 `NonNull<c_void>`，它是 `Send`
+    /// 但不是 `Sync`。`&mut T` 只要求 `T: Send`。（同一条钉子见 `rc/mod.rs`
+    /// 的并发说明，2026-09-22 这里又踩了一次。）
+    #[cfg(target_os = "windows")]
+    async fn send_pkt_via_stream(
+        &mut self,
+        p: &crate::rc::encode_h264::H264Packet,
+        sq: u32,
+        ts: i64,
+        cap_ms: u16,
+        enc_ms: u16,
+        hevc: bool,
+    ) -> bool {
+        let mut guard = self.send.lock().await;
+        if crate::rc::video::write_h264(
+            &mut guard, &p.data, p.key, p.width, p.height, ts, cap_ms, enc_ms, sq, hevc,
+        )
+        .await
+        .is_err()
+        {
+            drop(guard);
+            self.svc
+                .force_end_if_session(&self.my_id, "H.264 推送失败")
+                .await;
+            return false;
+        }
+        true
     }
 }

@@ -60,13 +60,16 @@ fn 范围_乱字符串被拒() {
 #[test]
 fn 画质五档加auto合法其余被拒() {
     let s = c();
-    for q in ["uhd", "uhd60", "ultra", "sharp", "balanced", "smooth", "auto"] {
+    for q in [
+        "uhd", "uhd60", "ultra", "sharp", "balanced", "smooth", "auto", "fps60", "fps120",
+        "fps144", "fps165",
+    ] {
         assert!(s.set_quality(q).is_ok(), "{q} 应合法");
     }
     let err = s.set_quality("4k").expect_err("未定义的档位必须被拒");
     assert_eq!(
         err,
-        "画质档只能是 auto / uhd / uhd60 / ultra / sharp / balanced / smooth / fps60 / fps120"
+        "画质档只能是 auto / uhd / uhd60 / ultra / sharp / balanced / smooth / fps60 / fps120 / fps144 / fps165"
     );
 }
 
@@ -165,7 +168,7 @@ fn 码率倍率与自动缩放相乘_越界被拒() {
     assert!(s.set_user_bitrate_pct(201).is_err());
     assert_eq!(s.bitrate_scale(), 50, "被拒就不能留下半截改动");
     // 新会话复位：上一场的用户倍率不带走
-    s.reset_from_cfg(super::super::video::EncodeProfile::default(), true, false, StreamCodec::Auto);
+    s.reset_from_cfg(super::super::video::EncodeProfile::default(), true, false, StreamCodec::Auto, false);
     s.set_peer_rtt(300);
     assert_eq!(s.bitrate_scale(), 40, "复位后回到纯自动缩放");
 }
@@ -175,7 +178,7 @@ fn 会话初始化会重置推流参数() {
     let s = c();
     s.set_scope("primary").expect("合法");
     s.set_codec("jpeg").expect("合法");
-    s.reset_from_cfg(super::super::video::EncodeProfile::default(), true, false, StreamCodec::Auto);
+    s.reset_from_cfg(super::super::video::EncodeProfile::default(), true, false, StreamCodec::Auto, false);
     let o = s.snapshot();
     assert!(o.virtual_screen, "由配置决定");
     assert_eq!(o.monitor, -1);

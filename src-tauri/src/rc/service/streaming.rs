@@ -32,11 +32,18 @@ impl RcService {
     /// 会话建立时用本机配置初始化推流参数。
     pub fn reset_stream_opts_from_cfg(&self) {
         let cfg = self.cfg();
+        // 2026-09-22：硬编可用性进自动梯子（fps60 天花板只给有硬编的机器）。
+        // caps 是 OnceLock 单例，便宜；非 Windows 无硬编 → false。
+        #[cfg(target_os = "windows")]
+        let h264_gpu = crate::rc::gpu::encode_caps().h264_gpu;
+        #[cfg(not(target_os = "windows"))]
+        let h264_gpu = false;
         self.stream.reset_from_cfg(
             profile_from_cfg(&cfg),
             virtual_screen_from_cfg(&cfg),
             auto_from_cfg(&cfg),
             codec_from_cfg(&cfg),
+            h264_gpu,
         );
     }
 
@@ -57,26 +64,29 @@ impl RcService {
 
     /// 发起端在会话中改画质（五档实名或 "auto"）。
     pub fn set_stream_quality(&self, quality: &str) -> Result<(), String> {
-        // D6：fps120 / uhd60 是能力档，API 层也要设防——UI 门控（visibleQualities）
-        // 只挡得住正常路径，挡不住直连接口/旧前端的请求；放行会让主机用 CPU 管线
-        // 按 8ms 硬跑。范围中途切到多屏的场景由推流循环的降档兜底（D6b）。
-        if quality == "fps120" {
+        // D6：能力档 API 层也要设防——UI 门控（visibleQualities）只挡得住正常
+        // 路径，挡不住直连接口/旧前端的请求；放行会让主机用 CPU 管线按 8ms
+        // 硬跑。范围中途切到多屏的场景由推流循环的降档兜底（D6b）。
+        // 2026-09-22：fps120 特判泛化成能力档表（fps144/fps165 进表），刷新率
+        // 下限按档位各自要求；判据与 caps 上报的 fps_high 同源，写两遍必漂移。
+        if let Some(min_hz) = crate::rc::video::high_fps_min_hz(quality) {
             #[cfg(target_os = "windows")]
             {
                 let caps = crate::rc::gpu::encode_caps();
                 if !caps.h264_gpu {
-                    return Err("本机没有硬件 D3D11 编码器，fps120 档不可用".into());
+                    return Err(format!("{quality} 档需要硬件 D3D11 编码器，本机不可用"));
                 }
-                if caps.refresh_hz < 100 {
+                if caps.refresh_hz < min_hz {
                     return Err(format!(
-                        "主屏刷新 {}Hz 不足 100Hz，fps120 档不可用",
-                        caps.refresh_hz
+                        "主屏刷新 {}Hz，{} 档需要 ≥{min_hz}Hz",
+                        caps.refresh_hz, quality
                     ));
                 }
             }
             #[cfg(not(target_os = "windows"))]
             {
-                return Err("fps120 档仅支持 Windows".into());
+                let _ = min_hz;
+                return Err(format!("{quality} 档仅支持 Windows"));
             }
         }
         // Q4：uhd60 要求 HEVC 硬编——4K60 的 H.264 需要 L5.2（多数解码端跑不动

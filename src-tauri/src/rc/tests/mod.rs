@@ -4,6 +4,7 @@
 //! - `clip_wait` / `scope_notice` / `lifecycle`：剪贴板等待、范围通知、会话收口
 //! - `join_door`：邀请门与免确认重连
 //! - `motion`：运动判定与发送序号
+//! - `pace`：推流节拍判据（提帧上限 / 编码器 fps / IDR 限频）
 //! - `pass_admit`：固定密码 / 接入码准入（含 D1/D12 回归钉）
 //! - `audio`：G3 音频三因子（仅 Windows）
 //! - `guards`：2026-09-20 全量审计的 include_str! 接线守卫
@@ -18,6 +19,7 @@ mod guards;
 mod join_door;
 mod lifecycle;
 mod motion;
+mod pace;
 mod pass_admit;
 mod scope_notice;
 

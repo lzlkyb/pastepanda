@@ -36,10 +36,13 @@ export function useRcSessionPrefs({
     setBitratePick(bitratePct ?? 100);
   }, [sessionId, quality, captureScope, bitratePct]);
 
-  // D6：对端 caps 重报 fps120 不可用（如范围切到多屏）时自动回落。被控端也已由
+  // D6：对端 caps 重报不可用（如范围切到多屏）时自动回落——被控端也已由
   // 能力校验/推流降档兜底，不会再按 8ms 硬跑。
+  // 2026-09-22：fps144/fps165 同一处理——它们与 fps120 共享「硬编 + 单屏」前置
+  // （peerFps120=false 即全被挡），回落 fps60。
   useEffect(() => {
-    if (qPick === "fps120" && peerFps120 === false) setQPick("fps60");
+    const isHighFps = qPick === "fps120" || qPick === "fps144" || qPick === "fps165";
+    if (isHighFps && peerFps120 === false) setQPick("fps60");
   }, [qPick, peerFps120]);
 
   return { qPick, scopePick, bitratePick, setQPick, setScopePick, setBitratePick };

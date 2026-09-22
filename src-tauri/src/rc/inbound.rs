@@ -13,8 +13,8 @@
 //! 🔴 推流节奏（2026-09-19 重做）：旧实现「干完活再睡 interval」，每帧周期 =
 //! 档位间隔 + 抓帧编码耗时，拖窗口时全帧编码最重，实际掉到 3~5fps。现在：
 //! - **固定节奏**：下一帧锚在 `frame_start + interval`，编码耗时不再叠加；
-//! - **输入驱动提帧**：收到键鼠事件 `notify_waiters` 立刻醒过来抓一帧
-//!   （`input_boost`），静止时保持慢节奏，拖动时逼近 BOOST_MIN_GAP 上限；
+//! - **输入驱动提帧**：收到键鼠事件 `boost_frame` 立刻醒过来抓一帧
+//!   （`input_boost`），静止时保持慢节奏，拖动时逼近 `BOOST_GAP_MS`（16ms＝60fps）；
 //! - **硬编覆盖全范围**：主屏 / 指定单屏 / 虚拟屏（多输出拼接）都走
 //!   DXGI + H.264（`DxgiPool`），JPEG 只做编码器打不开或单帧失败时的兜底。
 //!
@@ -43,12 +43,6 @@ use crate::sync::transport::write_frame;
 // 尺寸工具（primary/virtual_screen_size）也一并搬过去，这里通过下面的
 // `use` 把它们拉回来，调用点保持原样。
 use super::inbound_tasks::{primary_screen_size, send_caps_frame, virtual_screen_size};
-
-/// 输入提帧的最小帧间隔：取 min(档位间隔, 33ms)（普通档拖动上限 30fps），
-/// fps60 档 16ms → 上限 60fps、fps120 档 8ms → 上限 120fps。
-/// 下限跟随档位间隔（提帧再快也不会超过档位本身）。
-const BOOST_GAP_MAX_MS: u64 = 33;
-const BOOST_GAP_MIN_MS: u64 = 16;
 
 /// 被控端推流任务。
 pub(super) struct InboundVideo {
@@ -89,12 +83,20 @@ pub(super) struct InboundVideo {
     /// 它没有视频数据报读取任务，P 帧必须继续走可靠流，否则画面退化成
     /// 每秒一张关键帧的幻灯片。
     pub(super) peer_dgram: bool,
-    /// 输入提帧信号：键鼠事件到达时 `notify_waiters`，推流循环提前醒。
+    /// 输入提帧信号：键鼠事件到达时 `boost_frame`（notify_one，存许可），
+    /// 推流循环提前醒。**别改回 notify_waiters**，理由见 `boost_frame`。
     pub(super) input_boost: Arc<tokio::sync::Notify>,
     /// 上一帧抓取起点（提帧限速用）。
     pub(super) last_frame_at: tokio::time::Instant,
     /// 对端解码断链 → 请求下一帧强制 IDR（P0-2 弱网自愈）。
     pub(super) force_key: Arc<AtomicBool>,
+    /// C2：最近一次**由被控端主动**要求 IDR 的时刻（数据报弃帧触发）。
+    ///
+    /// 🔴 为什么必须限频：不限的话「拥塞 → 弃帧 → 立刻要 IDR → IDR 是整帧
+    /// 大包、更拥塞 → 继续弃帧」会自激成 IDR 风暴，把链路彻底打死。
+    /// 门限由 `crate::rc::pace::AUTO_KEY_MIN_GAP_MS` 定。
+    #[cfg(target_os = "windows")]
+    pub(super) auto_key_at: Option<std::time::Instant>,
     /// 最近一次发出的光标形状（变化才发）。
     pub(super) last_cursor: Option<&'static str>,
     /// P1-7 自适应降频：档位间隔放大倍数（1~4）。编码持续跑不满档位间隔时翻倍。
@@ -393,21 +395,35 @@ pub(super) async fn handle_inbound_input(
 
     // 追踪按下/抬起：会话收口时由 end_session 调 release_all 补发 up，
     // 避免对端断线后 Ctrl/Shift/鼠标键永久卡在按下态。只在会真正注入时记录。
+    //
+    // 🔴 顺带丢弃「未配对的抬起」（2026-09-22）：抬起态在 `pressed` 里查不到对应
+    // 按下，说明这颗键在本机从未按下过。继续注入它的代价是**远端凭空弹菜单**——
+    // Windows 对孤立的 WM_RBUTTONUP 会生成 WM_CONTEXTMENU（DefWindowProc 行为），
+    // 而发起端的 `releaseModifiers()` 曾经在每次焦点离开画面时盲发三个鼠标 up
+    // （前端已删，这里是第二道防线）。
+    //
+    // 误丢真实抬起的风险极低：鼠标的按下与抬起走同一路（数据报），真丢的是 DOWN，
+    // 那时远端本来就没按下；万一乱序导致 DOWN 晚到，下一次点击会重发 DOWN
+    // （重复按下照常注入）+ 配对的 UP，自愈。
     match &ev {
         InputEvent::Key { vk, down } => {
             let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
             if *down {
                 g.press_key(*vk);
-            } else {
-                g.release_key(*vk);
+            } else if !g.release_key(*vk) {
+                log::debug!("[RC] 丢弃未配对的抬起（vk={vk}）");
+                drop(g);
+                return;
             }
         }
         InputEvent::MouseButton { button, down, .. } => {
             let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
             if *down {
                 g.press_button(*button);
-            } else {
-                g.release_button(*button);
+            } else if !g.release_button(*button) {
+                log::debug!("[RC] 丢弃未配对的抬起（button={button}）");
+                drop(g);
+                return;
             }
         }
         _ => {}

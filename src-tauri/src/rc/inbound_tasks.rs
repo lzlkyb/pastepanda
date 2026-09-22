@@ -19,9 +19,10 @@
 //!
 //! # 🔴 两条不变量（搬到这里时保持原样，别顺手改）
 //!
-//! 1. **任何键鼠事件先 `notify_waiters` 再注入**（`spawn_input_reader`）：
+//! 1. **任何键鼠事件先 `boost_frame` 再注入**（`spawn_input_reader`）：
 //!    唤醒发生在注入前，DXGI 的 `AcquireNextFrame` 等待窗口正好覆盖注入
 //!    生效所需的几毫秒——顺序反了拖动就跟不上手。
+//!    （`boost_frame` 内部用 `notify_one` 而非 `notify_waiters`，理由见该函数。）
 //! 2. **`spawn_input_reader` 与 `spawn_datagram_reader` 必须有界退出**：
 //!    `read_frame` 自身无超时，连接悬着时任务会陪挂到 QUIC 空闲超时，
 //!    所以每轮都包一层 500ms `select!`。
@@ -63,8 +64,9 @@ impl InboundVideo {
                 };
                 if let Ok(ev) = serde_json::from_slice::<InputEvent>(&bytes) {
                     svc.touch_activity();
-                    // 数据报只承载鼠标移动；提帧与可靠流同款语义
-                    boost.notify_waiters();
+                    // 数据报只承载鼠标移动；提帧与可靠流同款语义（见
+                    // `boost_frame` 的注释：必须用 notify_one 存许可）
+                    boost_frame(&boost);
                     handle_inbound_input(&svc, &peer, ev, &send).await;
                 }
             }
@@ -237,7 +239,7 @@ impl InboundVideo {
     /// 输入读取任务：End 帧收口；其余解成 InputEvent，心跳回 pong，其它交
     /// `handle_inbound_input`。半流断开同样收口（对端崩溃 / 网络断）。
     ///
-    /// 🔴 任何键鼠事件都先 `notify_waiters` 提帧：让推流循环立刻醒过来抓一帧，
+    /// 🔴 任何键鼠事件都先 `boost_frame` 提帧：让推流循环立刻醒过来抓一帧，
     /// 拖动窗口时画面跟着输入走，而不是等下一档位间隔。
     pub(super) fn spawn_input_reader(&self, mut recv: iroh::endpoint::RecvStream) {
         let svc = self.svc.clone();
@@ -289,7 +291,7 @@ impl InboundVideo {
                     } else {
                         // 输入提帧：注入前就唤醒（DXGI 的 AcquireNextFrame
                         // 等待窗口正好覆盖注入生效所需的几毫秒）
-                        boost.notify_waiters();
+                        boost_frame(&boost);
                         handle_inbound_input(&svc, &peer, ev, &send).await;
                     }
                 }
@@ -298,6 +300,23 @@ impl InboundVideo {
             svc.force_end_if_session(&my_id, "控制通道断开").await;
         });
     }
+}
+
+/// 输入提帧：唤醒推流循环立刻抓一帧（拖动跟手）。
+///
+/// 🔴 **必须 `notify_one`（会存许可），不能用 `notify_waiters`**（2026-09-22 修）。
+/// `notify_waiters` 只唤醒**当前正在等**的 waiter、**不保存许可**；而推流循环
+/// 每圈有大半时间在抓屏/编码/发送（几毫秒到几十毫秒），这期间到达的鼠标移动
+/// 事件全部落空，只能等下一档位间隔（默认 100ms）才醒。表象是「拖动窗口时
+/// 帧率忽高忽低、不平顺」，而非稳定帧率 —— 与「档位间隔太长」是两回事。
+/// `notify_one` 无 waiter 时存下一个许可，下次 `notified()` 立即完成；最多
+/// 多跑一圈空转（抓屏无变化 → `Step::Sleep`），不会自旋。
+///
+/// 收口成一个函数而不是两处各写一遍：调用点有输入流与鼠标数据报两条
+/// （`spawn_input_reader` / `spawn_datagram_reader`），判据写两遍必漏一处。
+/// 🔴 调用顺序不变量见模块头第 1 条：唤醒必须在注入**之前**。
+pub(super) fn boost_frame(boost: &tokio::sync::Notify) {
+    boost.notify_one();
 }
 
 /// P1：向发起端报告本机画面能力（fps120「高帧率+」可用性与主屏刷新率）。
@@ -323,6 +342,21 @@ pub(super) async fn send_caps_frame(
     };
     #[cfg(not(target_os = "windows"))]
     let (fps120, hz) = (false, 0u32);
+    // 2026-09-22：fps144/fps165 档 caps。后端统一判定最高可用档（跑不到的档
+    // 不卖），发起端按它过滤菜单；旧版发起端忽略此字段，无兼容问题。
+    // 🔴 门槛与 API 防设共用 `video::HIGH_FPS_LADDER`——判据写两遍必漂移。
+    #[cfg(target_os = "windows")]
+    let fps_high: u32 = if caps.h264_gpu && single_out {
+        crate::rc::video::HIGH_FPS_LADDER
+            .iter()
+            .find(|(_, _, min_hz)| hz >= *min_hz)
+            .map(|(_, fps, _)| *fps)
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    #[cfg(not(target_os = "windows"))]
+    let fps_high: u32 = 0;
     // Q3：HEVC 硬编可用性。旧版本对端忽略；uhd60 档的 UI 门控靠它。
     #[cfg(target_os = "windows")]
     let hevc = caps.hevc_hw;
@@ -339,6 +373,7 @@ pub(super) async fn send_caps_frame(
     let msg = serde_json::json!({
         "t": "caps",
         "fps120": fps120,
+        "fps_high": fps_high,
         "hz": hz,
         "hevc": hevc,
         "monitors": monitors,

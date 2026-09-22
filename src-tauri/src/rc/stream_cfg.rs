@@ -108,9 +108,7 @@ pub fn bitrate_scale_for_loss(permille: u64) -> u32 {
 
 // 画质「自动」档的判据与状态在 `auto_quality.rs`（2A）。这里只做存放与喂帧。
 
-use super::auto_quality::{
-    auto_decide, ladder_index_of, AutoTier, LinkSample, AUTO_LADDER, FRAME_WINDOW,
-};
+use super::auto_quality::{auto_decide, auto_ladder, ladder_index_of, AutoTier, LinkSample, FRAME_WINDOW};
 
 impl StreamCfg {
     pub(super) fn new() -> Self {
@@ -216,12 +214,15 @@ impl StreamCfg {
     /// `auto`：配置里画质档是不是「自动」。是则开启自动模式并从当前档起跑
     /// （"auto" 解析出的 profile 是 balanced，起跑档就是均衡）。
     /// `codec`（Q3）：本机配置的编码标准（CFG_CODEC：auto/jpeg/h264/hevc）。
+    /// `h264_gpu`（2026-09-22）：硬编可用性——决定自动梯子是否含 fps60 天花板
+    /// （caps 是 OnceLock 单例，一次会话内不变，tier 与梯子不会错位）。
     pub(super) fn reset_from_cfg(
         &self,
         profile: super::video::EncodeProfile,
         virtual_screen: bool,
         auto: bool,
         codec: StreamCodec,
+        h264_gpu: bool,
     ) {
         let mut g = self.opts.lock().unwrap_or_else(|p| p.into_inner());
         g.profile = profile;
@@ -240,7 +241,8 @@ impl StreamCfg {
         self.clock_skew_ms.store(0, Ordering::Relaxed);
         let mut a = self.auto.lock().unwrap_or_else(|p| p.into_inner());
         a.enabled = auto;
-        a.tier = ladder_index_of(&profile).unwrap_or(1);
+        a.has_gpu = h264_gpu;
+        a.tier = ladder_index_of(&profile, h264_gpu).unwrap_or(1);
         a.last_change_ms = 0;
         a.high_since = None;
         a.low_since = None;
@@ -252,13 +254,14 @@ impl StreamCfg {
     /// "auto" = 打开被控端的自动换档（2A）；五档实名 = 锁定并关掉自动。
     pub(super) fn set_quality(&self, quality: &str) -> Result<(), String> {
         if quality == "auto" {
-            // 从当前档起跑，别凭空跳回均衡——会话中开自动不该先抖一下画面
-            let cur_tier = {
+            // 从当前档起跑，别凭空跳回均衡——会话中开自动不该先抖一下画面。
+            // 锁序不变量（见 auto_note_frame）：opts → auto 单向，先放 opts 再锁 auto。
+            let cur_profile = {
                 let g = self.opts.lock().unwrap_or_else(|p| p.into_inner());
-                ladder_index_of(&g.profile).unwrap_or(1)
+                g.profile
             };
             let mut a = self.auto.lock().unwrap_or_else(|p| p.into_inner());
-            a.tier = cur_tier;
+            a.tier = ladder_index_of(&cur_profile, a.has_gpu).unwrap_or(1);
             a.enabled = true;
             a.last_change_ms = 0;
             a.high_since = None;
@@ -269,9 +272,10 @@ impl StreamCfg {
         if !matches!(
             quality,
             "uhd" | "uhd60" | "ultra" | "sharp" | "balanced" | "smooth" | "fps60" | "fps120"
+                | "fps144" | "fps165"
         ) {
             return Err(
-                "画质档只能是 auto / uhd / uhd60 / ultra / sharp / balanced / smooth / fps60 / fps120"
+                "画质档只能是 auto / uhd / uhd60 / ultra / sharp / balanced / smooth / fps60 / fps120 / fps144 / fps165"
                     .into(),
             );
         }
@@ -305,8 +309,14 @@ impl StreamCfg {
         } else {
             self.path_rtt_ms.load(Ordering::Relaxed)
         };
+        // 2026-09-22：梯子动态化——has_gpu 决定天花板是否含 fps60（见 auto_ladder）。
+        // has_gpu 在会话内不变（caps 单例），tier 与梯子不会错位。
+        let ladder = auto_ladder(a.has_gpu);
+        let down_bytes = super::video::EncodeProfile::of_name(ladder[a.tier]).adapt_down;
         let (new_tier, high, low) = auto_decide(LinkSample {
             tier: a.tier,
+            ladder_len: ladder.len(),
+            down_bytes,
             rtt_ms: rtt,
             avg_bytes: avg,
             loss_permille: self.loss_permille(),
@@ -322,7 +332,7 @@ impl StreamCfg {
         };
         a.tier = t;
         a.last_change_ms = now_ms;
-        let name = AUTO_LADDER[t];
+        let name = ladder[t];
         // 🔴 锁序：必须先放掉 `auto` 再取 `opts`。
         //    `set_quality` / `reset_from_cfg` 走的是 opts → auto，而本函数由
         //    **推流任务**调用（inbound.rs 每帧）、那两个由**输入读取任务**调用
@@ -343,7 +353,10 @@ impl StreamCfg {
     /// 自动档当前生效的档位名（仅 auto_enabled 时有意义）。
     pub(super) fn auto_tier_name(&self) -> String {
         let a = self.auto.lock().unwrap_or_else(|p| p.into_inner());
-        AUTO_LADDER[a.tier].to_string()
+        let ladder = auto_ladder(a.has_gpu);
+        // 🔴 tier 越界防御：has_gpu 理论上会话内不变，但 reset 竞态下 tier 可能
+        // 短暂指向旧梯子的高位——取不到就退最低档，别 panic 在推流线程上。
+        ladder.get(a.tier).unwrap_or(&ladder[0]).to_string()
     }
 
     /// 会话收尾：自动档状态整体复位。

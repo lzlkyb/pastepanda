@@ -8,7 +8,7 @@ import {
 } from "@/lib/rcQuality";
 
 describe("qualityLabel（短文案）", () => {
-  it("八档的中文名", () => {
+  it("十一档的中文名", () => {
     expect(qualityLabel("auto")).toBe("自动");
     expect(qualityLabel("smooth")).toBe("流畅");
     expect(qualityLabel("balanced")).toBe("均衡");
@@ -17,6 +17,8 @@ describe("qualityLabel（短文案）", () => {
     expect(qualityLabel("uhd")).toBe("原生");
     expect(qualityLabel("fps60")).toBe("高帧率");
     expect(qualityLabel("fps120")).toBe("高帧率+");
+    expect(qualityLabel("fps144")).toBe("高帧率·144");
+    expect(qualityLabel("fps165")).toBe("高帧率·165");
   });
 
   it("未知 / 空串回落默认档文案，不显示空字符串", () => {
@@ -36,9 +38,9 @@ describe("RC_QUALITIES（画质档唯一真源）", () => {
     }
   });
 
-  it("九档且顺序固定为 自动 → 流畅 → 均衡 → 清晰 → 超清 → 原生 → 4K60 → 高帧率 → 高帧率+（界面按这个顺序排）", () => {
+  it("十一档且顺序固定为 自动 → 流畅 → 均衡 → 清晰 → 超清 → 原生 → 4K60 → 高帧率 → 高帧率+ → 144 → 165（界面按这个顺序排）", () => {
     // uhd60（4K60，Q3/Q4）插在「原生」之后：HEVC 硬编专属档，仅在能力达标时
-    // 由 visibleQualities 放出；fps60/fps120（高帧率系）再排其后
+    // 由 visibleQualities 放出；fps60/fps120/fps144/fps165（高帧率系）再排其后
     expect(RC_QUALITIES.map((o) => o.key)).toEqual([
       "auto",
       "smooth",
@@ -49,6 +51,8 @@ describe("RC_QUALITIES（画质档唯一真源）", () => {
       "uhd60",
       "fps60",
       "fps120",
+      "fps144",
+      "fps165",
     ]);
   });
 
@@ -66,15 +70,26 @@ describe("RC_QUALITIES（画质档唯一真源）", () => {
     expect(ultra.tip).toContain("2.5K");
     expect(ultra.label).toBe("超清");
   });
+
+  it("🔴 每档都有 meta：菜单的「双列信息卡」全靠它把档位差异摆到明面", () => {
+    // 缺 meta 的那一档在双列网格里会短一截，用户又只能回到「逐项悬停 tip」的老路
+    for (const o of RC_QUALITIES) expect(o.meta?.trim().length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("🔴 solo 只给「模式」项（当前只有 auto）：它是唯一跨列独占一行的项", () => {
+    expect(RC_QUALITIES.filter((o) => o.solo).map((o) => o.key)).toEqual(["auto"]);
+  });
 });
 
 describe("visibleQualities（P1：跑不到的档不卖）", () => {
-  it("能力不达标时 fps120/uhd60 不出现在可选列表，其余档齐全", () => {
+  it("能力不达标时高帧率系/uhd60 都不出现在可选列表，其余档齐全", () => {
     const q = visibleQualities({});
     expect(q.map((o) => o.key)).not.toContain("fps120");
+    expect(q.map((o) => o.key)).not.toContain("fps144");
+    expect(q.map((o) => o.key)).not.toContain("fps165");
     expect(q.map((o) => o.key)).not.toContain("uhd60");
     expect(q.map((o) => o.key)).toContain("fps60");
-    expect(q.length).toBe(RC_QUALITIES.length - 2);
+    expect(q.length).toBe(RC_QUALITIES.length - 4);
   });
 
   it("Q3/Q4：uhd60 只在 HEVC 可用时出现（发起端看对端 caps / 设置页看本机探测）", () => {
@@ -88,9 +103,35 @@ describe("visibleQualities（P1：跑不到的档不卖）", () => {
     expect(visibleQualities({ peerHevc: true }).map((o) => o.key)).not.toContain("fps120");
   });
 
-  it("发起端视角：对端 caps 报了 fps120 才显示", () => {
+  it("发起端视角：对端 caps 报了 fps120 才显示（fps120 兼容旧口径：不带 hz 也放行）", () => {
     expect(visibleQualities({ peerFps120: true }).map((o) => o.key)).toContain("fps120");
     expect(visibleQualities({ peerFps120: false }).map((o) => o.key)).not.toContain("fps120");
+  });
+
+  it("2026-09-22：fps144/fps165 必须有刷新率证据——按对端/本机屏刷新率分档", () => {
+    // 对端报了能力但没报刷新率（旧对端/异常）：只出 fps120，144/165 宁缺毋滥
+    const noHz = visibleQualities({ peerFps120: true });
+    expect(noHz.map((o) => o.key)).not.toContain("fps144");
+    expect(noHz.map((o) => o.key)).not.toContain("fps165");
+    // 120Hz 屏：fps120 有、144/165 无
+    const hz120 = visibleQualities({ peerFps120: true, refreshHz: 120 }).map((o) => o.key);
+    expect(hz120).toContain("fps120");
+    expect(hz120).not.toContain("fps144");
+    // 150Hz 屏：+144 仍无 165
+    const hz150 = visibleQualities({ peerFps120: true, refreshHz: 150 }).map((o) => o.key);
+    expect(hz150).toContain("fps144");
+    expect(hz150).not.toContain("fps165");
+    // 170Hz 屏：全出
+    const hz170 = visibleQualities({ peerFps120: true, refreshHz: 170 }).map((o) => o.key);
+    expect(hz170).toContain("fps144");
+    expect(hz170).toContain("fps165");
+    // 设置页视角：本机探测同口径
+    expect(visibleQualities({ h264Gpu: true, refreshHz: 144 }).map((o) => o.key)).toContain(
+      "fps144",
+    );
+    expect(visibleQualities({ h264Gpu: true, refreshHz: 100 }).map((o) => o.key)).not.toContain(
+      "fps144",
+    );
   });
 
   it("本机视角：硬件 D3D11-aware MFT + 刷新 ≥100Hz 才显示", () => {

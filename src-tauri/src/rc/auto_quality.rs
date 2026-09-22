@@ -7,15 +7,34 @@
 //! 可无网络单测），而 `stream_cfg` 是推流参数的收口处。混在一起会把那个文件
 //! 顶过 600 行红线，也让「判据」和「存放」两种职责挤在一处。
 //!
-//! ❗ 「原生」刻意不进自动阶梯：它依赖 GPU 硬编，能否打开随机器而定，
-//!    不适合做自动目标。自动的天花板就是「超清」（2560 宽 JPEG 路径）。
+//! ❗ 「原生」/ fps120+ 刻意不进自动阶梯：它们依赖 GPU 零拷贝，能否打开
+//!    随机器与刷新率而定，不适合做自动目标。
+//!
+//! 2026-09-22：梯子纳入 **fps60**（硬编专属天花板）——但**动态**：只有
+//! `h264_gpu` 可用的机器才追加。无硬编机器绝不能含 fps60：JPEG 全量截屏
+//! 按 16ms 节拍跑是 CPU 灾难（每秒 60 次全屏抓取+编码），pace_scale 兜得住
+//! 节奏兜不住白烧。所以梯子不再是常量，`tier` 下标的语义跟随
+//! [`auto_ladder`] 的返回值，AutoTier 里必须存 `has_gpu`。
 //!
 //! 换档如何生效：[`StreamCfg::auto_note_frame`]（见 `stream_cfg.rs`）判定要换档时
 //! 直接改写 `opts.profile`——推流循环每圈都会 `stream_opts_snapshot()` 比对并套用，
 //! **零新信令**；会话中的 `SetQuality { quality: "auto" }` 也走同一条路。
 
-/// 自动阶梯（低 → 高）。下标即 `AutoTier::tier`。
-pub(super) const AUTO_LADDER: [&str; 4] = ["smooth", "balanced", "sharp", "ultra"];
+/// 基础梯（JPEG 路径口径，低 → 高）。下标即 `AutoTier::tier`。
+const BASE_LADDER: [&str; 4] = ["smooth", "balanced", "sharp", "ultra"];
+
+/// 会话的实际自动梯子（低 → 高）：基础梯 + 硬编可用时的 fps60 天花板。
+/// `tier` 下标语义跟着返回值走——**同一会话内 has_gpu 不变**（caps 是
+/// OnceLock 单例），所以 tier 与梯子不会错位。
+pub(super) fn auto_ladder(has_gpu: bool) -> Vec<&'static str> {
+    if has_gpu {
+        let mut v = BASE_LADDER.to_vec();
+        v.push("fps60");
+        v
+    } else {
+        BASE_LADDER.to_vec()
+    }
+}
 
 /// RTT ≥ 200ms 持续这么久 → 降一档（与码率缩放最差档的门槛同源）。
 const AUTO_DOWN_RTT_MS: i64 = 200;
@@ -30,15 +49,17 @@ const AUTO_UP_BYTES: usize = 60_000;
 /// 参与 auto 判定的近帧窗口（与 `EncoderState::adapt` 的 8 帧同口径）。
 const AUTO_FRAME_WINDOW: usize = 8;
 
-/// 当前档画面持续重过本档预算 → 降档。阈值与该档 JPEG 自适应的 adapt_down 同源：
-/// 一个档位自己的 q 值自适应都压不住的帧大小，说明这个档对这条链路太重了。
-fn auto_down_bytes(tier: usize) -> usize {
-    super::video::EncodeProfile::of_name(AUTO_LADDER[tier]).adapt_down
-}
+// 当前档画面持续重过本档预算 → 降档。阈值与该档自适应的 adapt_down 同源：
+// 一个档位自己的 q 值自适应都压不住的帧大小，说明这个档对这条链路太重了。
+// （2026-09-22：不再按下标查梯子——预算由调用方按 `auto_ladder` 算好传入
+// `LinkSample.down_bytes`，判据保持纯函数。）
 
-/// profile → 自动阶梯下标（不在阶梯内如 uhd 返回 None）。
-pub(super) fn ladder_index_of(p: &super::video::EncodeProfile) -> Option<usize> {
-    AUTO_LADDER
+/// profile → 自动阶梯下标（不在阶梯内如 uhd/fps120 返回 None）。
+pub(super) fn ladder_index_of(
+    p: &super::video::EncodeProfile,
+    has_gpu: bool,
+) -> Option<usize> {
+    auto_ladder(has_gpu)
         .iter()
         .position(|name| &super::video::EncodeProfile::of_name(name) == p)
 }
@@ -53,6 +74,10 @@ pub(super) fn ladder_index_of(p: &super::video::EncodeProfile) -> Option<usize> 
 /// 返回 (新档位下标（None = 不动），更新后的 high_since，更新后的 low_since)。
 pub(super) struct LinkSample {
     pub tier: usize,
+    /// 实际梯子长度（`auto_ladder(has_gpu).len()`）——升档天花板随硬编能力变。
+    pub ladder_len: usize,
+    /// 当前档的降档预算（`of_name(ladder[tier]).adapt_down`）。
+    pub down_bytes: usize,
     pub rtt_ms: i64,
     pub avg_bytes: usize,
     pub loss_permille: u64,
@@ -67,6 +92,8 @@ pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<
     // 以后加字段也不用再动签名。首行解构，下面全是原样逻辑。
     let LinkSample {
         tier,
+        ladder_len,
+        down_bytes,
         rtt_ms,
         avg_bytes,
         loss_permille,
@@ -93,8 +120,8 @@ pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<
     }
     let link_bad_sustained = high_since.is_some_and(|s| now_ms - s >= AUTO_DOWN_HOLD_MS);
     let rtt_good_sustained = low_since.is_some_and(|s| now_ms - s >= AUTO_UP_HOLD_MS);
-    let want_down = link_bad_sustained || avg_bytes > auto_down_bytes(tier);
-    let want_up = tier + 1 < AUTO_LADDER.len() && rtt_good_sustained && avg_bytes < AUTO_UP_BYTES;
+    let want_down = link_bad_sustained || avg_bytes > down_bytes;
+    let want_up = tier + 1 < ladder_len && rtt_good_sustained && avg_bytes < AUTO_UP_BYTES;
     let new_tier = if want_down && tier > 0 {
         Some(tier - 1)
     } else if !want_down && want_up {
@@ -108,7 +135,10 @@ pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<
 /// 「自动」档的运行状态。每份推流配置一份（随 `StreamCfg` 存活）。
 pub(super) struct AutoTier {
     pub(super) enabled: bool,
-    /// 当前落在 `AUTO_LADDER` 的第几档。
+    /// 本机是否有硬编 H.264——决定梯子是否含 fps60（见 [`auto_ladder`]）。
+    /// 会话建立时由 `reset_from_cfg` 按 caps 设置；off() 默认 false（保守）。
+    pub(super) has_gpu: bool,
+    /// 当前落在 `auto_ladder(has_gpu)` 的第几档。
     pub(super) tier: usize,
     /// 上一次换档时刻；0 = 本会话还没换过（冷却判据用）。
     pub(super) last_change_ms: i64,
@@ -124,6 +154,7 @@ impl AutoTier {
     pub(super) fn off() -> Self {
         Self {
             enabled: false,
+            has_gpu: false,
             tier: 1, // balanced
             last_change_ms: 0,
             high_since: None,
@@ -283,5 +314,34 @@ mod tests {
             assert!(!feed(&s, 1_000, i), "rtt 未测到不该升档");
         }
         assert_eq!(s.auto_tier_name(), "balanced");
+    }
+
+    /// 2026-09-22 动态梯子回归钉：fps60 天花板只给有硬编的机器。
+    /// 无硬编机器若混进 fps60，JPEG 全量截屏按 16ms 跑 = CPU 灾难。
+    #[test]
+    fn 有硬编时自动梯子天花板是fps60_无硬编是超清() {
+        use crate::rc::stream_cfg::StreamCodec;
+        use crate::rc::video::EncodeProfile as EP;
+        // 有硬编：balanced → sharp → ultra → fps60（三次升档，各自 30s 持续 + 15s 冷却）
+        let s = StreamCfg::new();
+        s.reset_from_cfg(EP::of_name("balanced"), false, true, StreamCodec::Auto, true);
+        s.set_peer_rtt(20);
+        let mut hit = false;
+        for i in 0..400 {
+            if feed(&s, 1_000, i) && s.auto_tier_name() == "fps60" {
+                hit = true;
+                break;
+            }
+        }
+        assert!(hit, "有硬编时应能升到 fps60 天花板");
+        // 无硬编：怎么喂都到不了 fps60
+        let s2 = StreamCfg::new();
+        s2.reset_from_cfg(EP::of_name("balanced"), false, true, StreamCodec::Auto, false);
+        s2.set_peer_rtt(20);
+        for i in 0..400 {
+            feed(&s2, 1_000, i);
+        }
+        assert_ne!(s2.auto_tier_name(), "fps60", "无硬编机器梯子不含 fps60");
+        assert_eq!(s2.auto_tier_name(), "ultra", "无硬编天花板仍是超清");
     }
 }

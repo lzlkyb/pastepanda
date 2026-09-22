@@ -105,7 +105,9 @@ export type RcQuality =
   | "balanced"
   | "smooth"
   | "fps60"
-  | "fps120";
+  | "fps120"
+  | "fps144"
+  | "fps165";
 export type RcCaptureScope = "virtual" | "primary" | `monitor:${number}`;
 
 /** P1/P3：本机画面编码能力（设置页 / 会话 UI 诚实出档用）。 */

@@ -224,6 +224,31 @@ impl MfH264Encoder {
                     eAVEncVideoColorNominalRange_16_235.0 as u32,
                     "OutputColorNominalRange=16_235",
                 );
+                // C3（2026-09-22）：再压一层编码延迟。远程交互场景「原生手感」
+                // 优先，这两项都是延迟收益明确、对屏幕内容画质影响很小的开关。
+                //
+                // ① **禁 B 帧**：B 帧需要等后续参考帧才能编码/输出，直接多出
+                //    一帧以上的编码延迟与重排序缓冲。屏幕内容（大量静止块 +
+                //    突变区域）本来就不吃 B 帧的码率收益，远程画面更没有理由用。
+                codecapi_set_u32(
+                    api,
+                    &CODECAPI_AVEncMPVDefaultBPictureCount,
+                    0,
+                    "DefaultBPictureCount=0(禁B帧)",
+                );
+                // ② **参考帧压到 1**：解码端内存与出错恢复范围都变小，编码器
+                //    也不需要维护长参考列表。代价是多帧参考带来的压缩收益，
+                //    对「静止为主 + 局部运动」的桌面画面影响很小。
+                codecapi_set_u32(
+                    api,
+                    &CODECAPI_AVEncVideoMaxNumRefFrame,
+                    1,
+                    "MaxNumRefFrame=1",
+                );
+                // ❗ 刻意**不设** `CODECAPI_AVEncCommonQualityVsSpeed`：它是
+                //    「画质 ↔ 编码耗时」的权衡旋钮，设成偏速度会直接糊画面。
+                //    该不该动、动多少要看 `[RC-PERF]` 的 `enc` 段实测（编码是否
+                //    真的成为拖动帧率的瓶颈），不该在这里拍一个数。
             }
 
             transform

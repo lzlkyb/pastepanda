@@ -79,13 +79,21 @@ fn level_and_bitrate_follow_resolution() {
     // 审查 D4：高帧率必须抬 level——1080p120 超出 L4.2 宏块率 87%
     assert_eq!(h264_level_for(1920, 1080, 120), 51);
     assert_eq!(h264_level_for(1920, 1080, 60), 42, "1080p60 在 L4.2 内");
+    // 2026-09-22：fps144/165 档（1080p144≈1.17M、1080p165≈1.35M MB/s）超出
+    // L5.1（983040），宏块率校验必须自动抬到 L5.2——写错就是超规格流。
+    assert_eq!(h264_level_for(1920, 1080, 144), 52);
+    assert_eq!(h264_level_for(1920, 1080, 165), 52);
     assert_eq!(webcodecs_codec_str(3840, 2160, 30), "avc1.640033");
     assert_eq!(webcodecs_codec_str(1920, 1080, 120), "avc1.640033");
+    assert_eq!(webcodecs_codec_str(1920, 1080, 165), "avc1.640034", "L5.2=0x34");
     assert!(bitrate_for_width(3840) >= 20_000_000);
     // 审查 D3：码率随帧率抬升——fps120 不能沿用 30fps 的表
     assert_eq!(fps_bitrate_factor(30), 100);
     assert_eq!(fps_bitrate_factor(60), 160);
     assert_eq!(fps_bitrate_factor(120), 260);
+    // 2026-09-22：144/165 沿斜率外推（每 +60fps +100 点）
+    assert_eq!(fps_bitrate_factor(144), 300);
+    assert_eq!(fps_bitrate_factor(165), 335);
     assert_eq!(bitrate_for(1920, 30), bitrate_for_width(1920));
     assert!(bitrate_for(1920, 120) >= bitrate_for_width(1920) * 2);
 }

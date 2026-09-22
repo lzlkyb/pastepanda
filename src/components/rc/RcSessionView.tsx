@@ -122,8 +122,10 @@ export function RcSessionView({
     screenRef,
     onConfirmEnd: () => void requestEnd(),
     fit: display.fit,
-    // P4：fps120 档鼠标采样提到 8ms（datagram 不排队，纯采样密度问题）
-    moveThrottleMs: prefs.qPick === "fps120" ? 8 : 16,
+    // P4：高帧率档鼠标采样跟随档位节拍（datagram 不排队，纯采样密度问题）——
+    // fps144 档 7ms / fps165 档 6ms，与各自帧间隔对齐
+    moveThrottleMs:
+      prefs.qPick === "fps165" ? 6 : prefs.qPick === "fps144" ? 7 : prefs.qPick === "fps120" ? 8 : 16,
     inputEpochRef,
   });
 

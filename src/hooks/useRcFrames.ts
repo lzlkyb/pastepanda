@@ -27,9 +27,21 @@ import { listen } from "@tauri-apps/api/event";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { rcDrainFrames, parseFrameBatch, rcSendInput, type RcBinFrame } from "@/lib/api/rc";
 import { H264Decoder, type HwCodec } from "@/lib/rcH264";
+// JPEG 上屏编排（整帧覆盖 / 脏块贴块 + 两条不变量）拆在这里，本文件压在 400 行内
+import { createJpegSink } from "@/lib/rcJpegSink";
+// 积压时丢掉过期帧的判据（纯函数 + 单测），安全边界见该文件头
+import { frameApplyStart } from "@/lib/rcFramePlan";
 // 统计与抖动缓冲的纯计算收口在 rcSessionStats（2026-09-22 拆出，.ts ≤ 400 红线）；
 // 本 hook 只留「取帧 → 解码 → 上屏 → setState」的编排。
 import { FpsMeter, FrameStats, RenderDelayBuffer } from "@/lib/rcSessionStats";
+
+/** 高帧率档 → 解码配置用的真实 fps（与后端档位表 interval_ms 同源）。 */
+const QUALITY_FPS: Record<string, number> = {
+  fps60: 60,
+  fps120: 120,
+  fps144: 144,
+  fps165: 165,
+};
 
 export function useRcFrames(
   sessionId: string,
@@ -39,7 +51,7 @@ export function useRcFrames(
     clockSkewMs?: number;
     /** P4：最近一次键鼠输入发出的本地时刻（ms）；0 = 尚无输入。useRcInput 提供。 */
     lastInputAt?: React.RefObject<number>;
-    /** D4：当前画质档名。fps120 档解码配置要抬 H.264 level（L5.1）。 */
+    /** D4：当前画质档名。高帧率档解码配置要按真实 fps 抬 H.264 level（144/165 → L5.2）。 */
     qualityHint?: string;
   },
 ) {
@@ -120,8 +132,6 @@ export function useRcFrames(
     let waitingSinceMs = 0;
     // 当前流的标准（看门狗用）：HEVC 等不到关键帧先退 H.264，H.264 才砸 JPEG
     let curStd: "h264" | "hevc" = "h264";
-    // P1-10：脏块 miss 时 request_key 的限频（1s/次）
-    let lastDirtyMissAt = 0;
     const forceJpeg = () => {
       h264Miss = 0;
       waitingKey = false;
@@ -184,45 +194,18 @@ export function useRcFrames(
       setStatusText("");
     };
 
-    const drawJpegFrame = async (f: RcBinFrame, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
-      const bmp = await createImageBitmap(new Blob([f.data], { type: "image/jpeg" }));
-      try {
-        if (!alive) return;
-        if (f.full || !f.rect) {
-          const w = f.width || bmp.width;
-          const h = f.height || bmp.height;
-          if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = w;
-            canvas.height = h;
-          }
-          contentRef.current = { w, h };
-          // 宽高没变就不 setState：fps120 下这是每帧路径，无谓的 setState
-          // 会让会话视图整树按帧率重渲染
-          setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
-          ctx.drawImage(bmp, 0, 0);
-        } else {
-          // P1-10：脏块帧无基准画布 → 禁止静默丢（丢一块 = 花屏缺块）。
-          // 记一次 miss 并限频向被控端要关键帧（等 full / key 自愈）。
-          if (contentRef.current.w === 0) {
-            const now = Date.now();
-            if (now - lastDirtyMissAt > 1000) {
-              lastDirtyMissAt = now;
-              void rcSendInput({ kind: "request_key" }).catch(() => {});
-            }
-            return;
-          }
-          if (canvas.width !== contentRef.current.w) {
-            canvas.width = contentRef.current.w;
-            canvas.height = contentRef.current.h;
-          }
-          const r = f.rect;
-          ctx.drawImage(bmp, r.x, r.y);
-        }
-        noteFrameShown();
-      } finally {
-        bmp.close();
-      }
-    };
+    // JPEG 上屏：整帧覆盖 / 脏块贴块。判据与两条不变量（宽高没变不 setState、
+    // 脏块缺基准不许静默丢）都在 lib/rcJpegSink。限频用的 lastDirtyMissAt
+    // 变成 sink 的内部状态，本处不必再持有。
+    const drawJpegFrame = createJpegSink({
+      alive: () => alive,
+      content: contentRef,
+      setSize,
+      onShown: noteFrameShown,
+      requestKey: () => {
+        void rcSendInput({ kind: "request_key" }).catch(() => {});
+      },
+    });
 
     const handleH264Frame = (f: RcBinFrame) => {
       setCodec(f.codec);
@@ -264,7 +247,10 @@ export function useRcFrames(
       h264.ensureConfigured(
         f.width || 1280,
         f.height || 720,
-        qualityRef.current === "fps120" ? 120 : 0,
+        // 2026-09-22：fps144/fps165 档进表——1080p144/165 超出 L5.1 宏块率，
+        // 解码配置必须按真实 fps 抬 L5.2（与后端编码口径一致），fps=0 会按
+        // 60 兜底配出超规格之下的解码器，严格端直接拒。
+        QUALITY_FPS[qualityRef.current] ?? 0,
         std,
       );
       if (h264.available) {
@@ -311,7 +297,10 @@ export function useRcFrames(
         // P0-1 A2：弱网抖动缓冲**整批只等一次**——放在逐帧循环里会被放大 N 倍
         const delay = jitter.current.next();
         if (delay > 0) await new Promise((r) => setTimeout(r, delay));
-        for (const f of frames) {
+        // 队列积压时丢掉过期帧：一批里只要有整帧，它之前的帧就都可以安全丢
+        //（判据与「哪两种情况不能丢」见 lib/rcFramePlan）。这是「操作后画面几秒
+        // 才变」的直接解药——积压的每一帧都在线性放大端到端延迟。
+        for (const f of frames.slice(frameApplyStart(frames))) {
           if (f.codec !== "jpeg") {
             // P0-2：等关键帧期间拦下 delta 帧
             if (waitingKey && !f.key) {
@@ -342,7 +331,14 @@ export function useRcFrames(
           }
           h264Miss = 0;
           setCodec("jpeg");
+          // P0-2 口径补全（2026-09-22）：JPEG 路径此前**从不**量解码，HUD 上的
+          // 「解码 0ms」不是「解码不耗时」而是从没测过 —— 于是
+          // createImageBitmap + drawImage 的耗时就全被算进了「网络」段
+          //（net 是余数：总龄 − 采集 − 编码 − 解码）。量出来才分得清
+          // 「链路慢」和「本机解不动」。须在 noteLatency 之前调：net 要减它。
+          const decT0 = Date.now();
           await drawJpegFrame(f, canvas, ctx);
+          stats.current.noteDecode(Date.now() - decT0);
           noteBytes(f.data.length);
           noteLatency(f.at_ms, f.cap_ms, f.enc_ms);
           noteResponse();

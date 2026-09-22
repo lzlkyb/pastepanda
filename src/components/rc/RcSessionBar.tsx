@@ -95,19 +95,28 @@ export function RcSessionBar({
     [rc.status?.peer_monitors],
   );
   const scopes = useMemo(() => scopeOptions(peerMonitors), [peerMonitors]);
-  // P1：fps120 档以**被控端**上报的能力为准（caps 控制帧），跑不到的档不出现在菜单里
+  // P1：高帧率档以**被控端**上报的能力为准（caps 控制帧），跑不到的档不出现在菜单里。
+  // 2026-09-22：fps144/fps165 按对端屏刷新率分档（peer_refresh_hz 也是 caps 带回的）。
   const qualities = useMemo(
     () =>
       visibleQualities({
         peerFps120: rc.status?.peer_fps120,
+        refreshHz: rc.status?.peer_refresh_hz,
         // Q3/Q4：uhd60 档的判定还要被控端是否支持 HEVC 硬编（缺了它 uhd60 永远被过滤）
         peerHevc: rc.status?.peer_hevc,
       }),
-    [rc.status?.peer_fps120, rc.status?.peer_hevc],
+    [rc.status?.peer_fps120, rc.status?.peer_refresh_hz, rc.status?.peer_hevc],
   );
   // Q5：码率下拉选项。key 走字符串以复用 RcDropdown 的 string 泛型约束。
+  // meta 只作用于菜单（label 右侧的短补充）；按钮上的当前值仍只写 label。
   const bitrateOptions = useMemo(
-    () => RC_BITRATE_OPTIONS.map((o) => ({ key: String(o.pct), label: o.label, tip: o.tip })),
+    () =>
+      RC_BITRATE_OPTIONS.map((o) => ({
+        key: String(o.pct),
+        label: o.label,
+        tip: o.tip,
+        meta: o.meta,
+      })),
     [],
   );
 
@@ -227,6 +236,9 @@ export function RcSessionBar({
           label="画质"
           value={quality as RcQuality}
           options={qualities}
+          // 画质走双列：8–9 项、label 都只 2–3 字，单列会是根 200px 高的细长条。
+          // 画面（项少）与码率（label 长到「200% · 尽量清晰」）保持单列。
+          columns={2}
           // D-2：只看仍可调画质/编码（流控），不改主机采集范围
           disabled={rc.busy}
           onPick={pickQuality}

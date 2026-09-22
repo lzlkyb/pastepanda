@@ -20,6 +20,7 @@ pub mod link;
 pub mod net;
 pub mod notify;
 pub mod outbound;
+pub mod pace;
 pub mod perf;
 pub mod pin;
 pub mod pressed;

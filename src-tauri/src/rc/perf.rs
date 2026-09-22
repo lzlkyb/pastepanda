@@ -357,9 +357,12 @@ pub fn render_pick(r: &MftPickReport) -> String {
 ///
 /// 走 [`super::auto_quality::ladder_index_of`]——它本来就是「profile 是否等于
 /// 阶梯里某一档」的判据，比另写一张对照表少一个数据源。
+/// 2026-09-22：梯子动态化（fps60 天花板随硬编能力）——诊断口径按**无硬编基础梯**
+/// 反查（fps60 档这里会显示空，可接受；诊断名不该依赖硬件能力，否则两台机器
+/// 同一档位打出不同名字，日志没法横向对比）。
 pub fn profile_name(p: &super::video::EncodeProfile) -> String {
-    super::auto_quality::ladder_index_of(p)
-        .map(|i| super::auto_quality::AUTO_LADDER[i].to_string())
+    super::auto_quality::ladder_index_of(p, false)
+        .map(|i| super::auto_quality::auto_ladder(false)[i].to_string())
         .unwrap_or_default()
 }
 
@@ -395,15 +398,22 @@ pub mod counters {
     pub static JPEG_FALLBACK: AtomicU64 = AtomicU64::new(0);
     /// 抓屏失败次数。
     pub static CAPTURE_FAIL: AtomicU64 = AtomicU64::new(0);
+    /// 数据报通道丢弃的帧数（缓冲满弃 P 帧 / 分片发送中断）。
+    ///
+    /// C2（2026-09-22）新增：此前数据报丢帧**完全没有计数**，只有两条
+    /// `log::debug!`，而 debug 在默认过滤下看不到 ⇒ 「拖动窗口时画面偶尔
+    /// 跳一下」这类现场在 `[RC-PERF]` 汇总里是隐形的，只能靠猜。
+    pub static DGRAM_DROP: AtomicU64 = AtomicU64::new(0);
 
     /// 一次性读出全部计数（供日志行）。
     pub fn snapshot() -> String {
         format!(
-            "熔断 {} 流变化 {} JPEG兜底 {} 抓屏失败 {}",
+            "熔断 {} 流变化 {} JPEG兜底 {} 抓屏失败 {} 数据报丢弃 {}",
             ENC_FUSE.load(Ordering::Relaxed),
             STREAM_CHANGE.load(Ordering::Relaxed),
             JPEG_FALLBACK.load(Ordering::Relaxed),
             CAPTURE_FAIL.load(Ordering::Relaxed),
+            DGRAM_DROP.load(Ordering::Relaxed),
         )
     }
 }

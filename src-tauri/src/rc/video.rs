@@ -139,6 +139,34 @@ impl EncodeProfile {
                 adapt_down: 350_000,
                 adapt_up: 80_000,
             },
+            // fps144 / fps165（2026-09-22）：电竞屏档——7ms / 6ms 节拍，与 fps120
+            // 同一零拷贝门控 + 各自的刷新率下限（144/165Hz，见 set_stream_quality）。
+            // 1080p144/165 超出 H.264 L5.1 宏块率，`h264_level_for` 按宏块率自动
+            // 抬 L5.2；码率系数 300/335（`fps_bitrate_factor`，1080p165 线上
+            // 含 FEC ≈ 33Mbps）。240 及以上刻意不做：编码预算 4.2ms 贴硬编
+            // 极限、宏块率贴死 L5.2，受众极窄——档位表到 165 为止。
+            "fps165" => Self {
+                max_w: 1920,
+                interval_ms: 6,
+                hevc: false,
+                gpu: true,
+                q_min: 45,
+                q_max: 85,
+                q_default: 70,
+                adapt_down: 350_000,
+                adapt_up: 80_000,
+            },
+            "fps144" => Self {
+                max_w: 1920,
+                interval_ms: 7,
+                hevc: false,
+                gpu: true,
+                q_min: 45,
+                q_max: 85,
+                q_default: 70,
+                adapt_down: 350_000,
+                adapt_up: 80_000,
+            },
             "smooth" => Self {
                 max_w: 960,
                 interval_ms: 100,
@@ -164,6 +192,24 @@ impl EncodeProfile {
             },
         }
     }
+}
+
+/// 高帧率能力档表（2026-09-22）：档名 → (目标 fps, 被控端刷新率下限 Hz)。
+///
+/// 「跑不到的档不卖」：caps 上报（`fps_high`，inbound_tasks）与 API 防设
+/// （`set_stream_quality`）共用这张表——判据写两遍必漂移。按 fps 从高到低
+/// 排列，caps 判定取第一个刷新率达标的档。
+/// 🔴 240 及以上刻意不进表：编码预算 4.2ms 贴硬编极限、1080p240 宏块率贴死
+/// L5.2（1.96M / 2.07M MB/s），受众极窄——档位表到 165 为止。
+pub const HIGH_FPS_LADDER: [(&str, u32, u32); 3] =
+    [("fps165", 165, 165), ("fps144", 144, 144), ("fps120", 120, 100)];
+
+/// 档位对应的刷新率下限；非高帧率档返回 None（不走能力校验）。
+pub fn high_fps_min_hz(quality: &str) -> Option<u32> {
+    HIGH_FPS_LADDER
+        .iter()
+        .find(|(q, _, _)| *q == quality)
+        .map(|(_, _, hz)| *hz)
 }
 
 impl Default for EncodeProfile {

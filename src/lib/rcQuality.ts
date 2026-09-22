@@ -19,35 +19,73 @@ export interface RcQualityOption {
   label: string;
   /** 悬停说明 */
   tip: string;
+  /**
+   * 下拉菜单里跟在 label 右侧的短补充（`10fps · 1280` 这类**档位差异**）。
+   * 这些数字原先只写在 `tip` 里，要逐项悬停才看得见——菜单的「双列信息卡」把它们
+   * 摆到明面，才看得出相邻档位差在哪。只摘 `tip` 已有的口径，不新造事实。
+   */
+  meta?: string;
+  /**
+   * 在下拉菜单里**独占一整行**，并在其后画一条分隔线。
+   * 给「不是档次、而是模式」的项用（当前只有 `auto`）：它和下面各实名档不在同一维度，
+   * 混进两列网格会被读成又一个档位。
+   */
+  solo?: boolean;
 }
 
 /**
  * 档位表，顺序 = 界面上的呈现顺序（从自适应到最高）。
  * `auto` 是默认档（2A）：被控端会话内按 RTT/带宽在 流畅/均衡/清晰/超清 之间
  * 自动换档；其余实名档 = 锁定。fps120（P1 零拷贝专属）仅在能力达标时展示。
- * `tip` 里保留了设置页原有口径——它们是同一档的补充事实。
+ * `tip` 里保留了设置页原有口径——它们是同一档的补充事实；`meta` 是它的短摘。
  */
 export const RC_QUALITIES: readonly RcQualityOption[] = [
   {
     key: "auto",
     label: "自动",
     tip: "按延迟与带宽在 流畅/均衡/清晰/超清 间自动切换（默认）；选其它档即锁定",
+    meta: "自动换档",
+    solo: true,
   },
-  { key: "smooth", label: "流畅", tip: "约 10fps · 宽 960 · 适合弱网" },
-  { key: "balanced", label: "均衡", tip: "约 10fps · 宽 1280" },
-  { key: "sharp", label: "清晰", tip: "约 15fps · 宽 1920 · 适合局域网" },
-  { key: "ultra", label: "超清", tip: "约 12fps · 宽 2560（约 2.5K）· JPEG 路径" },
-  { key: "uhd", label: "原生", tip: "硬编原生分辨率（约 4K · 20fps）· 需 GPU · 无硬编时回落超清" },
+  { key: "smooth", label: "流畅", tip: "约 10fps · 宽 960 · 适合弱网", meta: "10fps · 960" },
+  { key: "balanced", label: "均衡", tip: "约 10fps · 宽 1280", meta: "10fps · 1280" },
+  { key: "sharp", label: "清晰", tip: "约 15fps · 宽 1920 · 适合局域网", meta: "15fps · 1920" },
+  { key: "ultra", label: "超清", tip: "约 12fps · 宽 2560（约 2.5K）· JPEG 路径", meta: "12fps · 2560" },
+  {
+    key: "uhd",
+    label: "原生",
+    tip: "硬编原生分辨率（约 4K · 20fps）· 需 GPU · 无硬编时回落超清",
+    meta: "4K · 20fps",
+  },
   {
     key: "uhd60",
     label: "4K60",
     tip: "原生分辨率 60fps（4K 屏即 4K60）· 需 HEVC 硬编 · 同画质比 H.264 省约一半带宽",
+    meta: "4K · 60fps",
   },
-  { key: "fps60", label: "高帧率", tip: "1080p 60fps · 拖动最跟手 · 需硬编，跑不满时自动降频" },
+  {
+    key: "fps60",
+    label: "高帧率",
+    tip: "1080p 60fps · 拖动最跟手 · 需硬编，跑不满时自动降频",
+    meta: "1080p · 60",
+  },
   {
     key: "fps120",
     label: "高帧率+",
     tip: "单屏 1080p 120fps（零拷贝硬编）· 需 ≥100Hz 高刷屏 + 硬件编码器，跑不满时自动降频",
+    meta: "1080p · 120",
+  },
+  {
+    key: "fps144",
+    label: "高帧率·144",
+    tip: "单屏 1080p 144fps（零拷贝硬编 · H.264 L5.2）· 需 ≥144Hz 屏 + 硬件编码器，跑不满时自动降频",
+    meta: "1080p · 144",
+  },
+  {
+    key: "fps165",
+    label: "高帧率·165",
+    tip: "单屏 1080p 165fps（零拷贝硬编 · H.264 L5.2）· 需 ≥165Hz 屏 + 硬件编码器，线上约 33Mbps",
+    meta: "1080p · 165",
   },
 ];
 
@@ -55,15 +93,26 @@ export const RC_QUALITIES: readonly RcQualityOption[] = [
 export const DEFAULT_QUALITY: RcQuality = "auto";
 
 /**
- * P1：fps120「高帧率+」只在能力达标时出现——跑不到的档不卖。
- * - 发起端视角：以被控端 caps 上报为准（`peerFps120`）；
- * - 被控端/设置页视角：本机探测（`h264Gpu` 硬件 D3D11-aware MFT + 刷新 ≥100Hz）。
- * 两者都没给时不出 fps120（宁缺毋滥）。
+ * P1：高帧率档只在能力达标时出现——跑不到的档不卖。
+ * - 发起端视角：以被控端 caps 上报为准（`peerFps120` = 硬编 + 单屏 + ≥100Hz）；
+ * - 被控端/设置页视角：本机探测（`h264Gpu` 硬件 D3D11-aware MFT + 刷新率）。
+ * 两者都没给时不出高帧档（宁缺毋滥）。
+ *
+ * 2026-09-22：fps144/fps165 进门槛表——与后端 `video::HIGH_FPS_LADDER` 同源
+ * 的刷新率下限（100/144/165），硬编 + 单屏是共同前置。`refreshHz` 两个视角
+ * 语义不同（发起端 = 对端屏 / 设置页 = 本机屏），调用方各自传对。
  *
  * Q3/Q4：`uhd60`（4K60）同理——4K60 的 H.264 要 L5.2（解码端兼容性差），
  * 必须走 HEVC；发起端看 `peerHevc`（对端 caps），设置页看本机
  * `h264Gpu && hevcHw`。后端 `set_stream_quality` 有同一套校验兜直连。
  */
+/** 高帧率档 → 被控端刷新率下限（Hz）。与后端 HIGH_FPS_LADDER 同源。 */
+const HIGH_FPS_MIN_HZ: Partial<Record<RcQuality, number>> = {
+  fps120: 100,
+  fps144: 144,
+  fps165: 165,
+};
+
 export function visibleQualities(opts: {
   peerFps120?: boolean;
   h264Gpu?: boolean;
@@ -71,12 +120,19 @@ export function visibleQualities(opts: {
   peerHevc?: boolean;
   hevcHw?: boolean;
 }): readonly RcQualityOption[] {
-  const ok =
-    opts.peerFps120 === true ||
-    (opts.h264Gpu === true && (opts.refreshHz ?? 0) >= 100);
+  const hz = opts.refreshHz ?? 0;
+  let list = RC_QUALITIES.filter((o) => {
+    const minHz = HIGH_FPS_MIN_HZ[o.key as RcQuality];
+    if (minHz === undefined) return true;
+    // fps120：沿用旧口径——peerFps120=true 即显示（对端 caps 已统一判定
+    // 硬编+单屏+≥100Hz），refreshHz 只是设置页视角的本地证据，undefined 不拦。
+    if (o.key === "fps120")
+      return opts.peerFps120 === true || (opts.h264Gpu === true && hz >= 100);
+    // fps144/fps165：必须有刷新率证据——宁缺毋滥，不让跑不到的档进菜单
+    return (opts.peerFps120 === true || opts.h264Gpu === true) && hz >= minHz;
+  });
   const hevcOk =
     opts.peerHevc === true || (opts.h264Gpu === true && opts.hevcHw === true);
-  let list = ok ? RC_QUALITIES : RC_QUALITIES.filter((o) => o.key !== "fps120");
   if (!hevcOk) list = list.filter((o) => o.key !== "uhd60");
   return list;
 }
@@ -117,14 +173,21 @@ export interface RcBitrateOption {
   pct: number;
   label: string;
   tip: string;
+  /** 下拉菜单里 label 右侧的短补充，与 `RcQualityOption.meta` 同一用途。 */
+  meta?: string;
 }
 
 export const RC_BITRATE_OPTIONS: readonly RcBitrateOption[] = [
-  { pct: 50, label: "50% · 省带宽", tip: "画质明显下降，流量最省" },
-  { pct: 75, label: "75%", tip: "略省带宽，画质略降" },
-  { pct: 100, label: "跟随链路", tip: "默认。按延迟/丢包自动调节，弱网自动降低" },
-  { pct: 150, label: "150%", tip: "档位上限内再提一半码率，弱网时仍会自动让路" },
-  { pct: 200, label: "200% · 尽量清晰", tip: "档位内最高画质；弱网保护仍生效，不会硬塞" },
+  { pct: 50, label: "50% · 省带宽", tip: "画质明显下降，流量最省", meta: "最省流量" },
+  { pct: 75, label: "75%", tip: "略省带宽，画质略降", meta: "略省带宽" },
+  { pct: 100, label: "跟随链路", tip: "默认。按延迟/丢包自动调节，弱网自动降低", meta: "默认" },
+  { pct: 150, label: "150%", tip: "档位上限内再提一半码率，弱网时仍会自动让路", meta: "再提一半" },
+  {
+    pct: 200,
+    label: "200% · 尽量清晰",
+    tip: "档位内最高画质；弱网保护仍生效，不会硬塞",
+    meta: "档位内最高",
+  },
 ];
 
 /** 下拉当前值的短文案（未知 pct 直接显示百分比，不猜档名）。 */
