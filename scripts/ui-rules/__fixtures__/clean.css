@@ -1,0 +1,52 @@
+/**
+ * 全部合规的样本：断言**零命中**。
+ * 只有「违规能被抓到」还不够——误报一次，人就再也不看输出了。
+ */
+
+.ok-u2 {
+  transition: color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ok-u2-token {
+  --dur-fast: 150ms;
+  transition: color var(--dur-fast);
+}
+
+.ok-u5 {
+  border-radius: 8px;
+  font-size: 13px;
+  padding: 12px;
+  gap: 8px;
+}
+
+.ok-u5-pill {
+  border-radius: 999px;
+}
+
+.ok-u6 {
+  color: var(--danger);
+  background: var(--card-bg);
+}
+
+.ok-v2 {
+  box-shadow: var(--shadow-md);
+}
+
+.ok-v3 {
+  color: var(--text-primary);
+}
+
+.ok-v6 {
+  background: var(--accent);
+  color: var(--accent-strong);
+}
+
+.ok-v6-neutral {
+  background: var(--card-bg);
+  color: var(--text-muted);
+}
+
+/* 环境动画（≥1s）不参与 U2，这是文档明确写了的豁免 */
+.ok-env-anim {
+  animation: drift 3.4s ease-in-out infinite;
+}

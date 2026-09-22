@@ -19,6 +19,9 @@
     "lint:fix": "eslint src/ --fix",
     "lint:css": "node scripts/check-css-classes.mjs",
     "lint:css:unused": "node scripts/check-css-classes.mjs --unused",
+    "lint:ui": "node scripts/check-ui-rules.mjs",
+    "lint:ui:all": "node scripts/check-ui-rules.mjs --all",
+    "lint:ui:selftest": "node scripts/ui-rules/self-test.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
     "prepare": "husky"

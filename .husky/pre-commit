@@ -14,3 +14,19 @@ npx lint-staged
 # 2026-09-16 在 RcSessionHistory.tsx 上真漏过一次：组件已切到 histItem/histInfo/histTime，
 # 但 CSS 里没定义这三个类，会话历史列表样式全丢。
 node scripts/check-css-classes.mjs --quiet
+
+# UI 规则校验（U1–U8 / L1–L6 / V1–V6 的机器可判定子集，判据见 docs/PastePanda-UI规则.md）。
+# diff 作用域约 0.7s，全量约 7.6s，所以跑 --staged。
+#
+# 🔴 它只查**暂存的那几行**，不查整份文件。这是有意的（文档 §10「不搞大扫除」）：
+# 扫整份文件会让「改一个字号」连带报出这份 CSS 里 260 处存量硬编码颜色，
+# 没人会去修，于是所有人开始加 --no-verify，校验等于不存在。
+# 存量走 `npm run lint:ui:all`（只报告、不拦）。
+#
+# 它要拦的是「改的时候没对着规则查」：2026-09-22 审远程电脑工作台，
+# 11px 灰字用在说明文字而非 meta、--section-bg 与 --app-bg 差值过小导致材质分层失效
+# 这类偏离全是这么漏出去的——不是不知道规则，是没对着查。
+#
+# 确有理由（如「间距和背景色都试过，边框是唯一能表达分组的手段」）时，
+# 在那一行写 `/* ui-rule-ok: <理由> */`，理由必写。
+node scripts/check-ui-rules.mjs --staged
