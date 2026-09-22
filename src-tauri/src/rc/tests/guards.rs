@@ -10,7 +10,7 @@ use super::window;
 /// 这正是 wiring-gap 的形态：函数有、测试有、生产路径没人调。
 #[test]
 fn 守卫_end_session_真的调了audio_reset() {
-    let src = include_str!("../session.rs");
+    let src = include_str!("../session/lifecycle.rs");
     assert!(
         src.contains("self.audio_reset()"),
         "end_session 没调 audio_reset——被控端音频状态会跨会话泄漏（P1-1）"
@@ -42,7 +42,7 @@ fn 守卫_批准循环_超时判定在decision之后() {
 #[test]
 fn 守卫_双敲门推流所有权标记接线() {
     let svc = include_str!("../service.rs");
-    let ses = include_str!("../session.rs");
+    let ses = include_str!("../session/lifecycle.rs");
     assert!(
         svc.contains("inbound_streaming") && ses.contains("inbound_streaming"),
         "inbound_streaming 标记没接线（P2-1 复发）——双连接批准后会 spawn 两个推流任务"

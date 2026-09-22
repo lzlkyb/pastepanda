@@ -173,7 +173,7 @@ fn 守卫_在线判定不得读conn_state() {
 fn 守卫_offline写回路径存在() {
     // 扫整个 rc/ 目录的源码（用多个 include_str! 拼起来）
     let sources = [
-        ("session.rs", include_str!("../session.rs")),
+        ("session/lifecycle.rs", include_str!("../session/lifecycle.rs")),
         ("inbound.rs", include_str!("../inbound.rs")),
         ("outbound.rs", include_str!("../outbound.rs")),
         ("service.rs", include_str!("../service.rs")),
