@@ -177,6 +177,7 @@ function subdirSummary() {
     "logo-options": "Logo 备选方案（有 index.html 汇总页）",
     "icon-options": "应用图标备选方案",
     installer: "NSIS 安装器品牌位图",
+    _archive: "已归档历史设计稿（2026-07 及以前的早期批次、误放文件），不进上方主清单",
   };
   const rows = [];
   for (const d of fs.readdirSync(DESIGN, { withFileTypes: true })) {
