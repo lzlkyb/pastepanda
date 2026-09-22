@@ -74,7 +74,7 @@ fn 守卫_send_input_只看可AudioOn_不得改画面范围() {
 /// 守卫：文件通道准入只认 rc_devices（B-b），同步配对须先 elevate。
 #[test]
 fn 守卫_文件通道门禁只认rc_devices() {
-    let src = include_str!("../file_transfer.rs");
+    let src = include_str!("../file_transfer/serve.rs");
     assert!(
         src.contains("self.is_rc_paired(&peer)"),
         "handle_file_conn 的 paired 参数应来自 is_rc_paired，而不是 has_remote_trust 并集"
@@ -188,11 +188,13 @@ fn 守卫_BruteGate逐出跳过锁定() {
 /// 守卫：pin_ok 必须验附加证明（P1-1）。
 #[test]
 fn 守卫_pin_ok必须验附加证明() {
-    let pin = include_str!("../pin.rs");
+    // 证明函数 2026-09-22 拆到 pin/proof.rs；on_ok 仍在 pin.rs。
+    let proof = include_str!("../pin/proof.rs");
     assert!(
-        pin.contains("fn pin_ok_proof") && pin.contains("fn verify_pin_ok_proof"),
+        proof.contains("fn pin_ok_proof") && proof.contains("fn verify_pin_ok_proof"),
         "必须有 pin_ok_proof / verify_pin_ok_proof"
     );
+    let pin = include_str!("../pin.rs");
     let start = pin.find("pub fn on_ok").expect("找不到 on_ok");
     let body = window(pin, start, 900);
     assert!(
@@ -294,7 +296,7 @@ fn 守卫_approve_inbound会elevate同步设备() {
 /// 守卫：dial_file 必须带超时（C-3）。
 #[test]
 fn 守卫_dial_file带超时() {
-    let src = include_str!("../file_transfer.rs");
+    let src = include_str!("../file_transfer/api.rs");
     assert!(
         src.contains("connect_timeout") && src.contains("timeout(Duration::from_secs(15)"),
         "dial_file 缺少 15s 超时"
@@ -304,7 +306,7 @@ fn 守卫_dial_file带超时() {
 /// 守卫：批传 open_bi 失败不得静默中断（C-4）。
 #[test]
 fn 守卫_批传开流失败落task() {
-    let src = include_str!("../file_transfer.rs");
+    let src = include_str!("../file_transfer/transfer.rs");
     let start = src.find("async fn run_send_batch").expect("run_send_batch");
     let body = window(src, start, 2200);
     assert!(
@@ -317,8 +319,8 @@ fn 守卫_批传开流失败落task() {
 #[test]
 fn 守卫_COM释放先于Uninit() {
     for (name, src) in [
-        ("encode_h264.rs", include_str!("../encode_h264.rs")),
-        ("audio.rs", include_str!("../audio.rs")),
+        ("encode_h264/mf.rs", include_str!("../encode_h264/mf.rs")),
+        ("audio/encode.rs", include_str!("../audio/encode.rs")),
     ] {
         let start = src.find("fn release_com").unwrap_or_else(|| panic!("{name} 缺 release_com"));
         // 取 release_com 到 impl Drop 之间的函数体
@@ -425,7 +427,7 @@ fn 守卫_收尾改名不覆盖() {
 /// 守卫：file_busy 不得与 task_start 分两把锁（P2-6 TOCTOU）。
 #[test]
 fn 守卫_入站accept原子占位() {
-    let ft = include_str!("../file_transfer.rs");
+    let ft = include_str!("../file_transfer/serve.rs");
     assert!(
         ft.contains("try_reserve_peer"),
         "handle_file_conn 必须 try_reserve_peer 占位"
