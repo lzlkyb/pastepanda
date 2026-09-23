@@ -260,6 +260,28 @@
      由 `src/__tests__/rcA2ThemeTokens.test.ts` 守着）。 */
   --win-close-hover-bg: #c42b1c;
   --win-close-hover-fg: #ffffff;
+
+  /* ===== 动效令牌（design/远程电脑-质感升级-交互反馈与微动画-设计稿.html §4）=====
+     全项目只此一组曲线 cubic-bezier(.2,0,0,1)（快出缓停），不引入第二种；
+     亮暗同值，按 --orange-solid 的先例只在这里写一次。
+     fast=按压/拨动（:active 用 100ms 直接写，不设令牌）；base=hover/选中/展开；
+     slow=入场类（横幅滑入、列表 stagger）。 */
+  --motion-fast: 120ms;
+  --motion-base: 150ms;
+  --motion-slow: 240ms;
+
+  /* ===== 三级浮起 · 静息档阴影 =====
+     设备行等卡片：静止 --shadow-sm（近影）→ hover --shadow-md → 选中再加强调。
+     亮色默认在此写一次（浅色四套继承）；深色两套在各自主题块里加重。
+     设计稿假定项目已有 --shadow-sm，实测只有 --shadow-md 一档 ⇒ 新增本令牌，
+     值即设计稿的 0 1px 2px 6%。 */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+
+  /* ===== 探测中 shimmer 骨架底 =====
+     A2 文件禁 gradient 字面量（rcA2ThemeTokens.test.ts），渐变装进令牌；
+     值全部引用主题自身令牌，运行时惰性求值 → 6 主题自适应（--diagram-* 先例）。
+     深色主题的 border/section 自身变暗，无需逐主题重写。 */
+  --rc-shimmer-bg: linear-gradient(90deg, var(--border-color) 25%, var(--section-bg) 50%, var(--border-color) 75%);
 }
 
 /* ===== 主题变量 ===== */
@@ -496,6 +518,7 @@
   --card-selected-border: #818cf8;
   --accent-shadow: rgba(129, 140, 248, 0.2);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --hover: #1f1f23;
   --sidebar-bg: #131315;
   --sidebar-section-label: #7d7d84; /* 对比度改进：侧边栏分区标题 改前2.40:1→改后4.54:1 */
@@ -946,6 +969,7 @@
   --control-elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --accent-shadow: rgba(59, 158, 255, 0.2);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --hover: #0f1f35;
   --sidebar-bg: #060f1a;
   --sidebar-section-label: #627e99; /* 对比度改进：侧边栏分区标题 改前3.45:1→改后4.55:1 */

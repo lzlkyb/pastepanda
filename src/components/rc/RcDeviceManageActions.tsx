@@ -45,10 +45,11 @@ export function RcDeviceManageActions({
             type="button"
             className={styles.secondaryButton}
             disabled={busy || target.denied}
-            onClick={() => void actions.toggleTrust(target.node_id, !target.trusted)}
+            onClick={() => void actions.toggleTrust(target.node_id, !target.trusted, name)}
           >
             <ShieldCheck size={14} aria-hidden="true" />
-            {target.trusted ? "关闭免确认连接" : "开启免确认连接"}
+            {/* U8 术语统一：与设置页「免确认设备」、被控视图「开启免确认」同名 */}
+            {target.trusted ? "关闭免确认" : "开启免确认"}
           </button>
           <button
             type="button"

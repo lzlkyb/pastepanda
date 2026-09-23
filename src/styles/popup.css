@@ -339,6 +339,23 @@ body {
   color: var(--danger);
 }
 
+/* 禁用占位项（远程状态读取失败时的说明行）：看得见、点不动（L6/U7）。
+   放在 :hover/.active 之后——禁用项不参与高亮，去色后层级依然可辨（V5）。 */
+.tray-popup-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+  background: transparent;
+}
+
+.tray-popup-item:disabled:hover,
+.tray-popup-item:disabled.active {
+  background: transparent;
+}
+
+.tray-popup-item:disabled:active {
+  transform: none;
+}
+
 .tray-popup-item.danger:hover,
 .tray-popup-item.danger.active {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
@@ -356,12 +373,11 @@ body {
   flex-shrink: 0;
   color: #fff;
   font-size: 11px;
+  line-height: 1;
   overflow: hidden; /* V6.19：图片缩略图填充 */
 }
 .tray-popup-item-icon.img { background: #101A30; padding: 0; }
 .tray-popup-item-icon.img img { width: 100%; height: 100%; object-fit: cover; }
-  line-height: 1;
-}
 
 .tray-popup-item-icon.icon-blue {
   background: linear-gradient(135deg, #3B82F6, #0078D4);

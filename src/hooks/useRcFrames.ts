@@ -174,21 +174,39 @@ export function useRcFrames(
 
     // 「门铃」：后端 outbox 有新帧时 emit rc-frame-ready。挂起一次唤醒
     //（waitNext 里 race），事件丢了也有下面的短轮询兜底。
+    // U3.5：listen 注册失败不能变成 unhandled rejection（对齐 useRcSessionNotices 写法）
     let unlisten: (() => void) | undefined;
     let wake: (() => void) | null = null;
+    /** 连续整轮取帧失败计数；任一帧上屏即清零（见 noteFrameShown）。 */
+    let tickFails = 0;
+    const noteTickFailure = (e: unknown) => {
+      tickFails += 1;
+      console.warn("[rc] 取帧轮次失败", e);
+      // 偶发单轮失败会由下一轮自愈；连续失败 = drain/解码真的坏了，
+      // 必须让占位文案说实话，而不是继续演「等待对方画面…」。
+      if (tickFails === 5) setStatusText("画面接收异常，正在自动重试…");
+    };
     void listen("rc-frame-ready", () => {
       wake?.();
-    }).then((u) => {
-      if (!alive) {
-        u();
-        return;
-      }
-      unlisten = u;
-    });
+    })
+      .then((u) => {
+        if (!alive) {
+          u();
+          return;
+        }
+        unlisten = u;
+      })
+      .catch((e) => {
+        console.warn("[rc] rc-frame-ready 监听注册失败，退化为纯轮询", e);
+      });
 
     const noteFrameShown = () => {
+      tickFails = 0;
       fpsMeter.current.push();
-      lastFrameAt.current = Date.now();
+      // 🔴 C3：performance.now 域——此 ref 唯一消费者是 `useRcLinkState`
+      // （停滞/未响应判据），整条判据链不碰墙钟。别的 epoch 用量（画面延迟
+      // 校准）不走这里。
+      lastFrameAt.current = performance.now();
       setFps(fpsMeter.current.fps());
       setHasFrame(true);
       setStatusText("");
@@ -343,8 +361,11 @@ export function useRcFrames(
           noteLatency(f.at_ms, f.cap_ms, f.enc_ms);
           noteResponse();
         }
-      } catch {
-        /* 单轮失败不打断 */
+      } catch (e) {
+        // U3.5：不许静默——连续失败说明 drain/解码真的坏了（比如 WebCodecs
+        // 崩了），和「对方没推帧」是两回事。计数到阈值才 toast 一次，
+        // 收到帧即清零，避免偶发单帧失败也刷屏。
+        noteTickFailure(e);
       }
     };
 
@@ -366,6 +387,9 @@ export function useRcFrames(
   }, [sessionId, visible, canvasRef]);
 
   return {
+    /** B1：窗口当前是否「可见且在前台」（= 取帧循环在跑）。消费方（RcScreenCanvas
+     * 的指针门控）必须与画面同域：画面暂停时还把移动/点击发给远端就是瞎操作。 */
+    visible,
     hasFrame,
     statusText,
     codec,

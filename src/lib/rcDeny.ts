@@ -203,6 +203,17 @@ function byReasonText(reason: string): Omit<RcErrorInfo, "reason"> | null {
   return null;
 }
 
+/**
+ * 「再点一次重试可能成功」的错误判据（B2，唯一真源）。
+ *
+ * busy / timeout / offline 三类重试有意义；disabled / device_denied / not_paired /
+ * capability 的 hint 已指明要去改设置/配对，给重试就是假按钮（点了必然原样再失败）。
+ * RcStage（会话主区）与 RcWorkbench（设备页错误槽）共用，别再各写一份数组。
+ */
+export function rcErrorRetryable(raw: string): boolean {
+  return ["busy", "timeout", "offline"].includes(explainRcError(raw).kind);
+}
+
 /** 解析后端错误串（`[code] reason` 或裸 reason）。 */
 export function explainRcError(raw: string): RcErrorInfo {
   const m = /^\[([a-z_]+)\]\s*([\s\S]*)$/i.exec(raw);

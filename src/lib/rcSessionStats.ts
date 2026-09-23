@@ -101,17 +101,28 @@ export type RcLinkState = "connecting" | "connected" | "unstable" | "reconnectin
 /**
  * 由「最后一次 pong 的时间」推链路状态。
  *
+ * 🔴 C3：三个时间参数必须同域（调用方用 `performance.now()` 单调域），
+ * 只比差值、不碰墙钟——混域（epoch vs perf）会算出天文数字的新鲜度。
+ *
  * @param lastPongMs 最后一次收到对端 pong 的时间戳；0 = 还没收到过（刚连上）
  * @param now 当前时间戳
  * @param reconnecting 正在执行重连动作（由调用方传入，优先级最高之外）
+ * @param sinceMs 「从未收到过 pong」的起点（会话建立时刻）：死链在拿到过
+ *   任何 pong 之前也会永远满足 `lastPongMs <= 0`，旧实现因此永远停在
+ *   connecting，加载态不出错（U3 缺错误态）。超过 `HEARTBEAT_FAIL_MS`
+ *   一个 pong 都没见过就判死。
  */
 export function linkStateOf(
   lastPongMs: number,
   now: number,
   reconnecting = false,
+  sinceMs = 0,
 ): RcLinkState {
   if (reconnecting) return "reconnecting";
-  if (lastPongMs <= 0) return "connecting";
+  if (lastPongMs <= 0) {
+    if (sinceMs > 0 && now - sinceMs >= HEARTBEAT_FAIL_MS) return "failed";
+    return "connecting";
+  }
   const age = now - lastPongMs;
   if (age < HEARTBEAT_STALE_MS) return "connected";
   if (age < HEARTBEAT_FAIL_MS) return "unstable";

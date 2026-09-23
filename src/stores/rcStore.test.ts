@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const rcStatus = vi.fn();
 const rcTargets = vi.fn(async () => [] as unknown[]);
+const rcProbeTargets = vi.fn();
 const rcClearOutboundError = vi.fn(async () => {});
 const noop = vi.fn(async () => true);
 
@@ -27,7 +28,7 @@ vi.mock("@/lib/api/rc", () => ({
   rcSetCapability: noop,
   rcSetDeviceAllowed: noop,
   rcSetEnabled: noop,
-  rcProbeTargets: noop,
+  rcProbeTargets,
   rcStartChannel: noop,
   rcSetQuality: noop,
   rcSetCaptureScope: noop,
@@ -102,6 +103,70 @@ describe("rcStore refresh 代数（P1-11）", () => {
     rejectFirst(new Error("stale network"));
     await p1;
     expect(useRcStore.getState().statusError).toBeNull();
+  });
+});
+
+describe("设备可达性结果", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    rcStatus.mockReset().mockResolvedValue(emptyStatus() as never);
+    rcTargets.mockReset().mockResolvedValue([]);
+    rcProbeTargets.mockReset();
+  });
+
+  it("短连接的成功和失败结果分别留在内存中供设备行显示", async () => {
+    const useRcStore = await loadStore();
+    await useRcStore.getState().refresh();
+    rcTargets.mockResolvedValue([
+      { node_id: "peer-a", presence: "seen", source: "rc" },
+      { node_id: "peer-b", presence: "never", source: "rc" },
+    ]);
+    rcProbeTargets.mockResolvedValue({ "peer-a": true, "peer-b": false });
+    await useRcStore.getState().refreshTargets();
+
+    await useRcStore.getState().probeTargets(["peer-a", "peer-b"]);
+
+    expect(useRcStore.getState().reachability["peer-a"]?.state).toBe("reachable");
+    expect(useRcStore.getState().reachability["peer-b"]?.state).toBe("unreachable");
+  });
+
+  it("设备列表读取失败保留旧设备并暴露错误，不伪装成空列表", async () => {
+    const useRcStore = await loadStore();
+    rcTargets.mockResolvedValueOnce([{ node_id: "peer-a", name: "工作电脑" }]);
+    await useRcStore.getState().refreshTargets();
+    rcTargets.mockRejectedValueOnce(new Error("读取失败"));
+
+    await useRcStore.getState().refreshTargets();
+
+    expect(useRcStore.getState().targets).toHaveLength(1);
+    expect(useRcStore.getState().targetsError).toBe("读取失败");
+  });
+
+  it("较旧的设备列表响应不能覆盖新列表", async () => {
+    const useRcStore = await loadStore();
+    let releaseOld!: (value: unknown[]) => void;
+    rcTargets.mockReturnValueOnce(new Promise((resolve) => { releaseOld = resolve; }));
+    rcTargets.mockResolvedValueOnce([{ node_id: "peer-new" }]);
+    const old = useRcStore.getState().refreshTargets();
+    await useRcStore.getState().refreshTargets();
+    releaseOld([{ node_id: "peer-old" }]);
+    await old;
+    expect(useRcStore.getState().targets[0]?.node_id).toBe("peer-new");
+  });
+
+  it("较旧的短连接结果不能覆盖同一设备的新结果", async () => {
+    const useRcStore = await loadStore();
+    await useRcStore.getState().refresh();
+    rcTargets.mockResolvedValueOnce([{ node_id: "peer-a", source: "rc" }]);
+    await useRcStore.getState().refreshTargets();
+    let releaseOld!: (value: Record<string, boolean>) => void;
+    rcProbeTargets.mockReturnValueOnce(new Promise((resolve) => { releaseOld = resolve; }));
+    rcProbeTargets.mockResolvedValueOnce({ "peer-a": false });
+    const old = useRcStore.getState().probeTargets(["peer-a"]);
+    await useRcStore.getState().probeTargets(["peer-a"]);
+    releaseOld({ "peer-a": true });
+    await old;
+    expect(useRcStore.getState().reachability["peer-a"]?.state).toBe("unreachable");
   });
 });
 
@@ -180,7 +245,9 @@ describe("rcStore lastClearedError 短窗口（P3-4）", () => {
   it("2s 内同串不回显，窗口过后同串算新错误", async () => {
     vi.setSystemTime(1_000_000);
     const useRcStore = await loadStore();
-    rcStatus.mockResolvedValue(emptyStatus({ outbound_error: "timeout once" }) as never);
+    rcStatus.mockResolvedValue(
+      emptyStatus({ outbound_error: { peer: "a", session_id: "s1", error: "timeout once" } }) as never,
+    );
     await useRcStore.getState().refresh();
     expect(useRcStore.getState().error).toBe("timeout once");
 
@@ -200,11 +267,15 @@ describe("rcStore lastClearedError 短窗口（P3-4）", () => {
   it("不同串始终回显", async () => {
     vi.setSystemTime(2_000_000);
     const useRcStore = await loadStore();
-    rcStatus.mockResolvedValue(emptyStatus({ outbound_error: "err-A" }) as never);
+    rcStatus.mockResolvedValue(
+      emptyStatus({ outbound_error: { peer: "a", session_id: "s1", error: "err-A" } }) as never,
+    );
     await useRcStore.getState().refresh();
     useRcStore.getState().clearError();
 
-    rcStatus.mockResolvedValue(emptyStatus({ outbound_error: "err-B" }) as never);
+    rcStatus.mockResolvedValue(
+      emptyStatus({ outbound_error: { peer: "b", session_id: "s2", error: "err-B" } }) as never,
+    );
     await useRcStore.getState().refresh();
     expect(useRcStore.getState().error).toBe("err-B");
   });

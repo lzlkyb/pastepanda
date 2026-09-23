@@ -222,13 +222,26 @@ impl RcService {
         self.stream.snapshot()
     }
 
+    /// 🔴 C3：喂给 `StreamCfg` 的「现在」换成单调钟——3.5s 暂停判据与 15s 看门狗
+    /// 共用同一份 `last_activity_ms`，域必须一致（`inbound_heartbeat_stale` 已 mono 化）。
+    /// `StreamCfg` 本身保持假时钟纪律（时间由调用方传入，便于单测）。
     pub fn touch_activity(&self) {
-        self.stream.touch_activity(now_ms());
+        self.stream.touch_activity(crate::rc::mono::mono_ms());
     }
 
     /// 是否应暂停推流：会话开始后长时间无心跳/输入。
     pub fn should_pause_stream(&self) -> bool {
-        self.stream.should_pause(now_ms())
+        self.stream.should_pause(crate::rc::mono::mono_ms())
+    }
+
+    /// 🔴 P1-5（2026-09-23 审计）：被控端最后一次收到对端输入/心跳的时刻
+    /// （🔴 C3 起为**单调 ms**，0 = 还没收到过）。
+    ///
+    /// 半开链路看门狗要的是**证据本身**：`should_pause_stream` 那个布尔只答
+    /// 「超过 3.5s 没有」，撑不起「超过 15s 该收口」这第二个判据——自己再记一份
+    /// 时间就是两个数据源，迟早对不上。
+    pub(in crate::rc) fn last_activity_ms(&self) -> i64 {
+        self.stream.last_activity_ms()
     }
 
     pub fn encode_profile(&self) -> crate::rc::video::EncodeProfile {

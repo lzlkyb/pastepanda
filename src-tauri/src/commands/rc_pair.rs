@@ -31,8 +31,12 @@ pub struct RcNearbyStatus {
     pub neighbors: Vec<Neighbor>,
     /// 正在进行的那一轮配对（没有则为 `null`）。
     pub pair: Option<PairPrompt>,
-    /// 刚配对成功的那一台。**读完即清**（本命令会消费它），
-    /// 所以完成屏拿到之后要自己留在组件状态里。
+    /// 刚配对成功的那一台。
+    ///
+    /// 🔴 P1-7（2026-09-23 审计）：语义从「读完即清」改成「**60 秒窗口内多重可读**」——
+    /// 主窗口与工作台两个轮询者并发调本命令，旧语义下先读到的那个把成功屏独占走，
+    /// 另一个永远看不见。载荷形状没变（`Done`，带 `at_ms`），所以「这一条我已经弹过了」
+    /// 的去重归界面（按 `at_ms` 比对），不归后端。
     pub done: Option<Done>,
 }
 
@@ -62,7 +66,7 @@ pub fn rc_nearby_status(svc: State<'_, Arc<RcService>>) -> RcNearbyStatus {
     RcNearbyStatus {
         neighbors: svc.nearby_neighbors(now),
         pair: svc.nearby_prompt(now),
-        done: svc.nearby_take_done(),
+        done: svc.nearby_done(now),
     }
 }
 

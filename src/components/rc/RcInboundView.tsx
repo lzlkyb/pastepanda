@@ -12,6 +12,7 @@
  * 被控端不渲染画面：推流方向是「本机 → 对方」，看自己的屏幕没有意义。
  */
 import { useEffect, useState } from "react";
+import { useToast } from "@/components/Toast";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import { confirmDialog } from "@/lib/confirm";
@@ -20,6 +21,7 @@ import { scopeLabelLong } from "@/lib/rcScope";
 import { capabilityLabel } from "@/lib/rcRequest";
 import { qualityHudLabel } from "@/lib/rcQuality";
 import { useRcFile } from "@/hooks/useRcFile";
+import { useRcLocalInjectNotice } from "@/hooks/useRcSessionNotices";
 import type { RcSession } from "@/lib/api/rc";
 import { RcFileAskCard } from "./RcFileAsk";
 import styles from "./RemoteComputer.module.css";
@@ -52,7 +54,11 @@ export function RcInboundView({
   onDismissScopeNotice?: () => void;
   onEnd: () => void;
 }) {
+  const { toast } = useToast();
   const [now, setNow] = useState(Date.now());
+  useRcLocalInjectNotice(toast);
+  // U9：「开启免确认」的行内二段确认展开态
+  const [confirmTrust, setConfirmTrust] = useState(false);
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
@@ -149,18 +155,50 @@ export function RcInboundView({
         </dl>
 
         <div className={styles.ibActions}>
-          {/* 只在「正被控、最有判断力」的时刻给长期放行入口，文案必须说清它**不是**
-              无人值守：会话横幅照常、随时可结束、deny 优先级更高。 */}
+          {/* U9：只在「正被控、最有判断力」的时刻给长期放行入口。这是**降低安全门槛**
+              的操作，一次误点就永久生效太轻率——先行内展开二段确认（不弹模态、
+              不打断会话），文案写清影响与撤销路径。收紧方向（关闭）保持一键。 */}
           {!trusted && onTrust && (
-            <button
-              type="button"
-              className={styles.miniBtn}
-              disabled={busy}
-              title="这台设备以后发起远程时直接连入，不再弹确认；可随时在设备菜单里关回。仍可随时结束会话。"
-              onClick={onTrust}
-            >
-              以后不再询问
-            </button>
+            confirmTrust ? (
+              <div className={styles.trustWarn} role="alertdialog" aria-label="确认开启免确认">
+                <b>对「{name}」开启免确认？</b>
+                <span>
+                  开启后这台设备连入本机不再弹确认，仍可随时结束会话。
+                  撤销路径：设备详情 → 管理此设备 → 关闭免确认。
+                </span>
+                <span className={styles.trustWarnBtns}>
+                  <button
+                    type="button"
+                    className={styles.miniBtnPri}
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirmTrust(false);
+                      onTrust();
+                    }}
+                  >
+                    确认开启
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.miniBtn}
+                    disabled={busy}
+                    onClick={() => setConfirmTrust(false)}
+                  >
+                    先不
+                  </button>
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={styles.miniBtn}
+                disabled={busy}
+                title="这台设备以后发起远程时直接连入，不再弹确认；可随时在设备菜单里关回。仍可随时结束会话。"
+                onClick={() => setConfirmTrust(true)}
+              >
+                开启免确认
+              </button>
+            )
           )}
           <span className={styles.sp} />
           <button

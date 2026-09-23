@@ -9,7 +9,30 @@ impl RcService {
         peer: &str,
         items: Vec<(PathBuf, String, u64)>,
     ) -> Result<(), String> {
-        let conn = self.dial_file(peer).await?;
+        // C1（2026-09-23 复审）：连不上是最常见的失败，过去只有一行 log——
+        // 用户点完「发送」传输面板毫无动静（静默失败）。现在与下面
+        // 「开流失败」同一处理：整批各落一条 Failed task，面板看得见原因。
+        let conn = match self.dial_file(peer).await {
+            Ok(c) => c,
+            Err(e) => {
+                let peer_name = self.peer_name(peer);
+                let reason = format!("连不上对方，未发送：{e}");
+                for (p, nm, sz) in &items {
+                    let tid = self.file.task_start(
+                        peer,
+                        &peer_name,
+                        TaskDir::Send,
+                        nm,
+                        *sz,
+                        0,
+                        now_ms(),
+                    );
+                    self.file.task_note_path(&tid, p);
+                    self.finish_file(&tid, TaskState::Failed, Some(reason.clone()), *sz);
+                }
+                return Err(e);
+            }
+        };
         let peer_name = self.peer_name(peer);
         // C-4：用索引循环，开流失败时把「当前 + 剩余」全部落 Failed task。
         let n = items.len();
@@ -126,7 +149,24 @@ impl RcService {
     }
 
     /// 向对方要一个文件，落到 `dir`。
+    ///
+    /// C1（2026-09-23 复审）：inner 里所有 `?` 都发生在**建任务行之前**
+    /// （连不上 / 开流失败 / 对方没响应 / 头帧坏）——这类失败过去只留一行
+    /// 日志，传输面板静悄悄。外层兜底补一条 Failed 任务，让失败看得见。
     pub(in crate::rc) async fn run_pull(self: Arc<Self>, peer: &str, dir: PathBuf) -> Result<(), String> {
+        let err = match self.clone().run_pull_inner(peer, dir).await {
+            Ok(()) => return Ok(()),
+            Err(e) => e,
+        };
+        let peer_name = self.peer_name(peer);
+        let tid = self
+            .file
+            .task_start(peer, &peer_name, TaskDir::Recv, "取回文件", 0, 0, now_ms());
+        self.finish_file(&tid, TaskState::Failed, Some(err.clone()), 0);
+        Err(err)
+    }
+
+    async fn run_pull_inner(self: Arc<Self>, peer: &str, dir: PathBuf) -> Result<(), String> {
         let conn = self.dial_file(peer).await?;
         let (mut send, mut recv) = conn
             .open_bi()

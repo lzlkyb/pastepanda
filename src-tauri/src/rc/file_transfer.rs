@@ -260,7 +260,9 @@ async fn recv_bytes(
             }
         };
         if let Err(e) = f.write_all(&buf[..n]).await {
-            return (TxOutcome::Io(format!("写盘失败（磁盘满？）：{e}")), got);
+            // C6：不猜原因——OS 错误串里本来就有「磁盘已满」这类信息，
+            // 括号里问一句「磁盘满？」反而把真实原因埋了。
+            return (TxOutcome::Io(format!("写盘失败：{e}")), got);
         }
         got += n as u64;
         if svc.file.task_progress(task_id, got, now_ms()) {

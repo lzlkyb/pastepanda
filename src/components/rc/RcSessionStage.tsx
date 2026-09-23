@@ -77,6 +77,7 @@ export function RcSessionStage({
   /** 本机是否正作为**被控端**推流（决定 HUD 能不能拿到自动档的「生效档」）。 */
   const inboundActive = session.phase === "inbound_active";
   const {
+    visible,
     hasFrame,
     statusText,
     codec,
@@ -108,6 +109,7 @@ export function RcSessionStage({
         linkState={link.state}
         unansweredSec={link.unansweredSec}
         busy={busy}
+        fullscreen={fullscreen}
         // R3：false = 对端 caps 未声明数据报鼠标（7.2.1 及更早）→ 顶栏提示升级
         peerDgramInput={rc.status?.peer_dgram_input}
         onReleaseKb={input.releaseKb}
@@ -159,15 +161,45 @@ export function RcSessionStage({
           fit={fit}
           canControl={canControl}
           hasFrame={hasFrame}
+          active={visible}
           input={input}
           cursorShape={cursorShape}
         />
-        {!hasFrame && (
-          <div className={styles.placeholder}>
-            <Loader2 size={22} className={styles.spin} />
-            <div>{statusText || "等待对方画面…"}</div>
-            <div className={styles.placeholderSub}>{placeholderSub}</div>
+        {/* B3（2026-09-23）：statusText 原先只在 !hasFrame 的占位块里渲染——
+            连续取帧失败到阈值写进画面的「画面接收异常，正在自动重试…」在
+            有画面的会话里永远看不到（U3.5：不许落到静默）。B1 的暂停提示
+            同用这条常驻位。 */}
+        {hasFrame && (statusText || !visible) && (
+          <div className={styles.stageNotice} role="status">
+            {!visible
+              ? "已暂停：窗口失去焦点，画面与控制暂停，点击本窗口恢复"
+              : statusText}
           </div>
+        )}
+        {!hasFrame && (
+          /* U3：一帧都没等到且链路已判死 = 错误态，不能继续演「等待中」。 */
+          link.state === "failed" ? (
+            <div className={styles.placeholder}>
+              <div>连接已断开，未能收到画面</div>
+              <div className={styles.placeholderSub}>可尝试重新连接，或检查双方网络</div>
+              {onReconnect && (
+                <button
+                  type="button"
+                  className={styles.miniBtnPri}
+                  disabled={busy}
+                  onClick={onReconnect}
+                >
+                  重新连接
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className={styles.placeholder}>
+              <Loader2 size={22} className={styles.spin} />
+              <div>{statusText || "等待对方画面…"}</div>
+              <div className={styles.placeholderSub}>{placeholderSub}</div>
+            </div>
+          )
         )}
         {/* v4 对稿（B 窗）：只看水印，透明度呼吸 2.6s——「对面是活的」的最低成本
             表达。只在**只看且已有画面**时出现：等待态中央是 placeholder，可控态

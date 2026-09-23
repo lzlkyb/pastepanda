@@ -18,6 +18,46 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { pathKindLabel } from "@/lib/rcSessionStats";
 
+/**
+ * 🔴 2026-09-23 复审：`rc-inject-error` 事件在**两侧机器语义不同**——
+ * 发起端收到的是对端转发来的注入失败（「对方未能注入输入」，见下方 hook）；
+ * 被控端收到的却是**本机自己**出问题的两条：① UIPI 拦了对方键鼠（inbound.rs
+ * 本地 set）② 会话收口时释放按住键失败（P1-3）。原先只有 `RcSessionView`
+ * （发起端视图）挂着监听，被控端这两个本地故障**没有任何接收者**——
+ * 键卡在按下态的人恰恰看不到提示。本 hook 补上被控侧，主语写对。
+ *
+ * 模块级去重：同一窗口里若被双挂（横幅 + 会话视图），同串只弹一次。
+ * 跨窗口各弹各的是本应用的既有形态（横幅本来就每窗一份）。
+ *
+ * `enabled` 是给主窗口（RcOverlay）准备的：同一个事件在发起端机器上也会
+ * 到达（对端转发），若不分相位常驻监听，控制端用户会看到以「本机」为主语
+ * 的提示——主语错了。被控视图（RcInboundView）天然只在被控时挂载，可省。
+ */
+let lastLocalInject = "";
+
+export function useRcLocalInjectNotice(
+  notify: (msg: string, kind?: "error") => void,
+  enabled = true,
+) {
+  useEffect(() => {
+    if (!enabled) return;
+    let off: (() => void) | undefined;
+    void listen<string>("rc-inject-error", (e) => {
+      const msg = e.payload;
+      if (!msg || msg === lastLocalInject) return;
+      lastLocalInject = msg;
+      notify(`本机未能注入输入：${msg}`, "error");
+    })
+      .then((f) => {
+        off = f;
+      })
+      .catch(() => {
+        /* 非 Tauri 环境：忽略（理由同发起端那条监听） */
+      });
+    return () => off?.();
+  }, [notify, enabled]);
+}
+
 export function useRcSessionNotices({
   pathNotice,
   onPathConsumed,

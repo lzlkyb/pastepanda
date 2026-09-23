@@ -72,7 +72,8 @@ export function RcClipboardBar({
     setPullPhase("loading");
     setPullMsg("等待对方剪贴板…");
     try {
-      // 后端约定：空串 = 对方真空白；null = 超时/失败（见 rcPullClipboard）
+      // 后端约定（C5 起）：空串 = 对方真空白；失败/超时以 reject 报出，
+      // 不再是 null（null 曾被前端当失败，语义太脆）
       const t = await rcPullClipboard();
       if (t === "") {
         // 真空白 ≠ 拉取失败（U3.5）：不给重试

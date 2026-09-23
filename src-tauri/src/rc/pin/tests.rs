@@ -332,9 +332,13 @@ fn 取消之后不再有会话() {
     assert_eq!(a.confirm(T0 + 1).0, Confirmed::Gone);
 }
 
-/// 落库成功之后完成屏能拿到「刚配了谁」，而且**只拿到一次**。
+/// 落库成功之后完成屏能拿到「刚配了谁」，而且**窗口内每个读者都拿得到**。
+///
+/// 🔴 P1-7（2026-09-23 审计）：原名字是「读一次就清」——那条语义在有两个并发
+/// 轮询者（主窗口 + 工作台）的界面下是错的，第二个读者永远看不到成功屏。
+/// 窗口期到点自灭由 `完成屏超过可见窗口后不再重复弹` 钉住。
 #[test]
-fn 完成屏信息读一次就清() {
+fn 完成屏信息窗口内多重可读() {
     let s = store();
     let a = Pairs::new(s.clone());
     let b = Pairs::new(store());
@@ -351,13 +355,42 @@ fn 完成屏信息读一次就清() {
     let proof = pin_ok_proof_sender(&b, "bb", T0 + 2);
     a.on_ok(ok_in("bb", "aa", T0 + 2, &proof), T0 + 2);
 
-    let d = a.take_done().expect("应该有完成信息");
+    let d = a.peek_done(T0 + 2).expect("应该有完成信息");
     assert_eq!(d.peer_id, "bb");
     assert_eq!(d.peer_name, "笔记本");
     assert_eq!(d.at_ms, T0 + 2);
     assert!(d.initiator, "A 是发起方（它 start 的）");
-    assert!(a.take_done().is_none(), "读完即清，不能反复弹完成屏");
+    // 🔴 P1-7：窗口内**读而不清**——主窗口与工作台两个轮询者都要看得见这一条
+    assert!(
+        a.peek_done(T0 + 2).is_some(),
+        "同一窗口内第二次读必须还在（旧 take 语义下第二个读者永远看不到完成屏）"
+    );
     assert!(s.rc_device_get("bb").unwrap().is_some());
+}
+
+/// 🔴 P1-7（2026-09-23 审计）：完成屏**到点自灭**。
+///
+/// 不清的话更坏：用户下次打开设置页还会再弹一次「已与 X 配对 / 立刻发起远程」，
+/// 像是刚刚又配了一次。所以「多重可读」必须配一个窗口期。
+#[test]
+fn 完成屏超过可见窗口后不再重复弹() {
+    let pairs = Pairs::new(store());
+    *pairs.done.lock().unwrap() = Some(Done {
+        peer_id: "bb".to_string(),
+        peer_name: "笔记本".to_string(),
+        initiator: true,
+        at_ms: T0,
+    });
+
+    // 正好卡在边界上：还看得见（判据是严格 `>`）
+    assert!(pairs.peek_done(T0 + DONE_VISIBLE_MS).is_some());
+    // 越过窗口：读不到
+    assert!(pairs.peek_done(T0 + DONE_VISIBLE_MS + 1).is_none());
+    // 而且**读到时就当场清掉**——不是留着让下一个人继续读到旧闻
+    assert!(
+        pairs.done.lock().unwrap().is_none(),
+        "过期后读到即清，槽里不该继续留着旧闻"
+    );
 }
 
 /// 🔴 完成屏的文案靠 `initiator` 分流，而它**只能由后端给**。
@@ -393,11 +426,11 @@ fn 完成屏能分清谁是发起方() {
     // B 收到 A 的 pin_ok → B 落库
     b.on_ok(ok_in("aa", "bb", T0 + 4, &proof_a), T0 + 4);
 
-    let da = a.take_done().expect("A 应该有完成信息");
+    let da = a.peek_done(T0 + 4).expect("A 应该有完成信息");
     assert!(da.initiator, "A 点的是「配对」，它是发起方");
     assert_eq!(da.peer_id, "bb");
 
-    let db = b.take_done().expect("B 应该有完成信息");
+    let db = b.peek_done(T0 + 4).expect("B 应该有完成信息");
     assert!(!db.initiator, "B 是被请求的那一侧");
     assert_eq!(db.peer_id, "aa");
 }

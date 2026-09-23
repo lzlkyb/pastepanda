@@ -7,10 +7,13 @@ import styles from "./RemoteComputer.module.css";
 export function RcErrorPanel({
   error,
   onRetry,
+  retryLabel = "重试",
   onDismiss,
 }: {
   error: string;
   onRetry?: () => void;
+  /** U3：重试按钮写明动作对象（如「重试连接「客厅的电脑」」），别让人猜它重试什么。 */
+  retryLabel?: string;
   onDismiss?: () => void;
 }) {
   if (!error) return null;
@@ -25,7 +28,7 @@ export function RcErrorPanel({
       <div className={styles.errActions}>
         {onRetry && (
           <button type="button" className={styles.miniBtnPri} onClick={onRetry}>
-            重试
+            {retryLabel}
           </button>
         )}
         {onDismiss && (

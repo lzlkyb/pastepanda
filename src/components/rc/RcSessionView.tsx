@@ -51,6 +51,8 @@ export function RcSessionView({
 }) {
   const { toast } = useToast();
   const [clipAuto, setClipAuto] = useState(false);
+  // 全屏目标 = 会话壳（见 useRcDisplayMode 注释）；screenRef 仍是输入坐标的基准
+  const wrapRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // P4：每次输入发出的本地时刻（useRcInput 写、useRcFrames 读），操作延迟 HUD 用
@@ -59,7 +61,7 @@ export function RcSessionView({
 
   // 显示模式（缩放 / 全屏 / 非全屏提示 + 换会话清理）、声音开关、会话内可调项
   // （画质 / 范围 / 码率）各自独立成 hook，见 hooks/useRc*.ts。
-  const display = useRcDisplayMode(session.id, screenRef);
+  const display = useRcDisplayMode(session.id, wrapRef);
   const { audioOn, toggleAudio } = useRcSessionAudio(session.id, toast);
   const prefs = useRcSessionPrefs({
     sessionId: session.id,
@@ -137,7 +139,7 @@ export function RcSessionView({
     lastFrameAt: frames.lastFrameAt,
     lastActionAt: input.lastActionAt,
     rttMs: rc.status?.rtt_ms ?? 0,
-    backendPongMs: rc.status?.last_pong_ms ?? 0,
+    backendPongAgeMs: rc.status?.pong_age_ms ?? null,
     reconnecting: busy,
   });
 
@@ -151,7 +153,7 @@ export function RcSessionView({
   });
 
   return (
-    <div className={styles.sessionWrap}>
+    <div className={styles.sessionWrap} ref={wrapRef}>
       <RcSessionStage
         session={session}
         busy={busy}

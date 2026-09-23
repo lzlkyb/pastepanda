@@ -5,7 +5,7 @@
 //! | 问题 | 来源 |
 //! |---|---|
 //! | 数据实际走的哪条路 | 复用 [`crate::sync::path_kind`]，从 iroh **活连接**实测 |
-//! | 链路还活着吗 | 最后一次收到对端 pong 的时刻（`last_pong_ms`） |
+//! | 链路还活着吗 | 最后一次收到对端 pong 的时刻（`last_pong_ms`，C3 起为单调口径） |
 //!
 //! # 🔴 它刻意不答什么（这是本模块存在的主要理由）
 //!
@@ -26,7 +26,39 @@
 
 use crate::sync::path_kind::{self, PathKind};
 use iroh::endpoint::Connection;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
+
+/// 🔴 P1-5（2026-09-23 审计）：半开链路看门狗的踢人阈值（毫秒）。
+///
+/// # 为什么是 15 秒
+///
+/// 心跳是发起端 UI 每约 1 秒一条 ping、被控端立刻回 pong：
+/// - 3.5s（`stream_cfg::HEARTBEAT_TIMEOUT_MS`）没动静 → **暂停推流**，
+///   这是省带宽的软判据，一条丢包就能触发，绝不能拿来做收口；
+/// - 15s ≈ 连着丢 15 条心跳，且给了「对端整机睡眠 3 秒后醒来」两轮的余量。
+///   半开连接（QUIC 不会立刻报错、对端进程被杀/拔网线）此前只有
+///   `SESSION_TTL_MS`（2 小时）兜底——被控端可以挂着「正在被控制」的横幅、
+///   发起端可以挂着「已连接」的画面，两小时不放。
+///
+/// 阈值定义成常量而不是散在两处循环里的字面量：两边（发起/被控）必须是同一个数，
+/// 否则「一侧认为还活着、另一侧已经收口」。
+pub const LINK_STALE_KICK_MS: i64 = 15_000;
+
+/// 半开判定（纯函数，时间由调用方传入 —— 同 `stream_cfg` 的假时钟纪律）：
+/// 这条链路是不是已经**没有任何证据**了？
+///
+/// - `last_evidence_ms` 是被控侧的「最后一次收到对端输入/心跳」或发起侧的
+///   「最后一次登记连接 / 收到 pong」，取哪个由调用方决定（两边证据的来源不同）；
+/// - `0` 表示该证据还没有过 ⇒ 回落成从 `started_ms` 起算的宽限期，
+///   刚建好的会话不该因为「还没来得及收心跳」被踢；
+/// - 两个都是 0（调用方连会话开始时间都没给）→ **不踢**。宁可漏踢一次
+///   （还有 TTL 兜底），也不能因为拿不到数据就收掉别人正在用的会话。
+/// - 边界取严格 `>`：正好卡在阈值上不算失联（与 `should_pause` 同口径）。
+pub fn link_stale_kick(started_ms: i64, last_evidence_ms: i64, now_ms: i64, timeout_ms: i64) -> bool {
+    let base = started_ms.max(last_evidence_ms);
+    base > 0 && now_ms - base > timeout_ms
+}
 
 /// 会话收尾时交回的东西：这一程**走的是哪条路** + **网速摘要**。
 ///
@@ -92,8 +124,19 @@ pub struct LinkState {
     /// 会话的 iroh 连接句柄（clone 的 handle）。连接关闭后它仍在，但
     /// `paths()` 会返回最后一份快照——所以只能用来读，不能用来判在线。
     conn: Mutex<Option<Connection>>,
-    /// 最后一次收到对端 pong 的时刻（epoch ms）；0 = 还没收到过。
+    /// 🔴 C3（2026-09-23 审计）：最后一次收到对端 pong 的时刻（**单调 ms**，
+    /// `mono::mono_ms()` 口径）；0 = 还没收到过。原先存 epoch ms——墙钟一跳，
+    /// 发起侧看门狗的「距最后一次 pong」就会算错（向前跳误踢、向后跳永不断）。
+    /// 单调基座是进程私有的：这个裸值**不得**直接发给前端（跨基座无意义），
+    /// 出网一律换算成 age，见 `pong_age_ms`。
     last_pong_ms: Mutex<i64>,
+    /// 🔴 P1-5：本次连接登记（`attach`）的时刻（单调 ms，同上 C3）；0 = 没有活动会话。
+    ///
+    /// 看门狗在**发起侧**的起算锚点。为什么不能直接用会话的 `started_ms`：
+    /// 拨号本身最长 15 秒（`dial_and_request` 的超时），拿「申请发出」当锚点
+    /// 会让一场慢连接刚建立就被判失联。`attach` 发生在连接真通之后、
+    /// 会话转 Active 之前，才是「这条链路开始活着」的时刻。
+    attached_ms: AtomicI64,
     /// 上一次上报给前端的路径档位。用于「换路了」通知去重
     /// （多实例并发轮询 `rc_status` 时，变化只该被消费一次）。
     reported: Mutex<PathKind>,
@@ -112,6 +155,7 @@ impl LinkState {
         Self {
             conn: Mutex::new(None),
             last_pong_ms: Mutex::new(0),
+            attached_ms: AtomicI64::new(0),
             reported: Mutex::new(PathKind::None),
             rtt: Mutex::new(RttAcc {
                 min: 0,
@@ -129,6 +173,8 @@ impl LinkState {
     pub fn attach(&self, conn: &Connection) {
         *self.conn.lock().unwrap_or_else(|p| p.into_inner()) = Some(conn.clone());
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = 0;
+        // 🔴 P1-5：连接真通的那一刻起表，看门狗拿它当「本会话最早的链路证据」
+        self.attached_ms.store(super::mono::mono_ms(), Ordering::Relaxed);
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
         *self.rtt.lock().unwrap_or_else(|p| p.into_inner()) = RttAcc::default();
     }
@@ -143,6 +189,7 @@ impl LinkState {
             self.rtt.lock().unwrap_or_else(|p| p.into_inner()).summary();
         *self.conn.lock().unwrap_or_else(|p| p.into_inner()) = None;
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = 0;
+        self.attached_ms.store(0, Ordering::Relaxed);
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
         *self.rtt.lock().unwrap_or_else(|p| p.into_inner()) = RttAcc::default();
         LinkEnd {
@@ -156,16 +203,33 @@ impl LinkState {
     /// 收到对端 pong。`rtt_ms` 是本次往返时延（`<= 0` 表示这不是一次测量，
     /// 见 `RttAcc::push`）。**链路活性的唯一证据**——发送侧的成功不算。
     pub fn note_pong(&self, rtt_ms: i64) {
-        *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = super::service::now_ms();
+        *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = super::mono::mono_ms();
         self.rtt
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .push(rtt_ms);
     }
 
-    /// 最后一次 pong 的时刻（epoch ms）；0 = 本会话还没收到过。
+    /// 最后一次 pong 的时刻（单调 ms，见字段注释）；0 = 本会话还没收到过。
+    ///
+    /// ❗ 只在**本进程内**比较（看门狗与 `mono_ms()` 同基座）。要给前端就换
+    ///   [`Self::pong_age_ms`]，裸值出网即失效。
     pub fn last_pong_ms(&self) -> i64 {
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// C3：把最后一次 pong 换算成「距今多少毫秒」——**跨基座唯一安全的投影**。
+    /// 前端拿 age 用 `performance.now()` 外推，不接触两端各自的单调/墙钟基座。
+    /// `None` = 本会话还没收到过任何 pong。`now_mono` 由调用方传 `mono_ms()`
+    /// （假时钟纪律，便于单测）。
+    pub fn pong_age_ms(&self, now_mono: i64) -> Option<i64> {
+        let pong = self.last_pong_ms();
+        (pong > 0).then(|| now_mono - pong)
+    }
+
+    /// 本次连接登记的时刻（单调 ms，见字段注释）；0 = 没有活动会话。见 P1-5 字段注释。
+    pub fn attached_ms(&self) -> i64 {
+        self.attached_ms.load(Ordering::Relaxed)
     }
 
     /// 当前路径档位；没有活动连接时 `None`（**不是** `PathKind::None`——
@@ -233,6 +297,23 @@ mod tests {
     }
 
     #[test]
+    fn test_pong只投影age_裸单调值与假想墙钟都不出网() {
+        // 🔴 C3：pong 时间戳是进程私有单调基座；前端只能拿到 age。
+        // 若哪天有人把裸 mono（或墙钟 epoch）塞进 RcStatus，跨基座比较
+        // 会静默算错新鲜度——这条守卫钉住投影的形状。
+        let l = LinkState::new();
+        assert_eq!(l.pong_age_ms(9_999_999), None, "没见过 pong 时必须给 None");
+        l.note_pong(20);
+        let now = crate::rc::mono::mono_ms();
+        let age = l.pong_age_ms(now).expect("收到 pong 后应有 age");
+        assert!((0..5_000).contains(&age), "刚收到的 pong age 必须很小：{age}");
+        // 假时钟外推：把「现在」拨后 10s，age 线性增长
+        assert_eq!(l.pong_age_ms(now + 10_000), Some(age + 10_000));
+        let _ = l.detach();
+        assert_eq!(l.pong_age_ms(crate::rc::mono::mono_ms()), None, "detach 后回 None");
+    }
+
+    #[test]
     fn test_detach之后状态清空_不能继承上一会话的心跳() {
         let l = LinkState::new();
         l.note_pong(20);
@@ -287,5 +368,48 @@ mod tests {
         l.note_pong(50);
         let end = l.detach();
         assert_eq!(end.rtt_avg, 50, "detach 必须清空采样累积");
+    }
+
+    // —— 🔴 P1-5：半开链路看门狗的纯判据（假时钟，不需要网络与会话）——
+
+    const T: i64 = 1_757_000_000_000;
+
+    #[test]
+    fn test_有pong证据时按最后一次算() {
+        // 会话 0s 开始，第 10s 收到 pong，此后 12s 无响应 ⇒ 距最后一次证据 12s < 15s
+        assert!(!link_stale_kick(T, T + 10_000, T + 22_000, LINK_STALE_KICK_MS));
+        // 再撑 3s，超过 15s ⇒ 踢
+        assert!(link_stale_kick(T, T + 10_000, T + 25_001, LINK_STALE_KICK_MS));
+    }
+
+    #[test]
+    fn test_阈值边界正好卡住不算失联() {
+        // 严格 `>`：正好 15s 还在容忍范围内（与 should_pause 同口径）
+        assert!(!link_stale_kick(T, T, T + LINK_STALE_KICK_MS, LINK_STALE_KICK_MS));
+        assert!(link_stale_kick(T, T, T + LINK_STALE_KICK_MS + 1, LINK_STALE_KICK_MS));
+    }
+
+    #[test]
+    fn test_还没收到任何证据时从会话开始算宽限() {
+        // evidence = 0（新会话一条心跳都没收到）⇒ 锚点回落 started_ms，不能立刻踢
+        assert!(!link_stale_kick(T, 0, T + 5_000, LINK_STALE_KICK_MS));
+        assert!(link_stale_kick(T, 0, T + LINK_STALE_KICK_MS + 1, LINK_STALE_KICK_MS));
+        // 两个都没有（拿不到数据）⇒ 宁可漏踢，交给 TTL 兜底
+        assert!(!link_stale_kick(0, 0, T, LINK_STALE_KICK_MS));
+    }
+
+    #[test]
+    fn test_证据早于会话开始时以会话为准_不被上一场的心跳续命() {
+        // 极端但真实：link 上残留着旧会话的 pong，新会话刚开始
+        assert!(link_stale_kick(T, T - 60_000, T + LINK_STALE_KICK_MS + 1, LINK_STALE_KICK_MS));
+    }
+
+    #[test]
+    fn test_阈值取值本身有依据_远大于暂停阈值远小于会话ttl() {
+        // 3.5s 只是「暂停推流」的软判据，15s 才是收口判据；两者不能相等，
+        // 否则丢一条包就结束会话。同时必须远小于 SESSION_TTL_MS（2h），
+        // 否则半开连接要挂两个小时才释放。
+        assert!(LINK_STALE_KICK_MS > 3_500 * 3, "得给心跳留足重传余量");
+        assert!(LINK_STALE_KICK_MS < 60_000, "半开不该挂一分钟以上");
     }
 }

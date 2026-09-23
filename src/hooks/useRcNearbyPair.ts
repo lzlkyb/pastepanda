@@ -16,9 +16,10 @@
  *
  * # `done` 为什么必须留一份在本地
  *
- * 后端 `rc_nearby_status` 里那个 `done` 是**读完即清**（take）的：
- * 它只负责把「刚刚配上了」这一件事播一次。界面必须自己记住，否则下一轮
- * 2 秒轮询就会把完成屏擦掉，用户看到的是回到入口屏。
+ * 后端 `rc_nearby_status` 里那个 `done`（🔴 P1-7 起）**60 秒窗口内多重可读**——
+ * 主窗口与工作台两个轮询者都看得见，谁先读到不影响另一个。界面仍要自留一份：
+ * 轮询拿回的是「后端投影」，完成屏要一直挂到本对话框关闭；窗口内每 2 秒都会
+ * 拿回同一条，按 `at_ms` 去重防止无谓重渲染（去重归界面，后端不归）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
@@ -42,6 +43,14 @@ import {
  * 只有对话框开着时才跑，所以这个频率的影响面很小。
  */
 export const NEARBY_POLL_MS = 2000;
+
+/**
+ * A4（2026-09-23 复审）：`done` 在后端 60 秒窗口内**多重可读**（P1-7），而
+ * 挂载内的 `prev?.at_ms` 比较挡不住「关掉对话框又打开 → 上一次配对的完成屏
+ * 重播」。模块级记「已经给用户看过的那条的 at_ms」：比它旧或相同的不再入
+ * state——完成屏一次会话只弹一次，跨挂载有效。
+ */
+let shownDoneAtMs = 0;
 
 export interface RcNearbyPair {
   neighbors: RcNeighbor[];
@@ -75,8 +84,13 @@ export function useRcNearbyPair(): RcNearbyPair {
       setNeighbors(st.neighbors);
       // 后端是唯一权威：它说没有会话了就是没有了（过期 / 被对方取消）。
       setPair(st.pair);
-      // ❗ 只在拿到时写入，不拿 None 去清——见文件头「done 为什么必须留一份在本地」。
-      if (st.done) setDone(st.done);
+      // ❗ 只在拿到时写入，不拿 None 去清——见文件头。
+      // A4：去重收口到模块级 `shownDoneAtMs`（见其注释）——同一条既不逐 2s 重渲染，
+      // 也不会在重开对话框时重播。
+      if (st.done && st.done.at_ms > shownDoneAtMs) {
+        shownDoneAtMs = st.done.at_ms;
+        setDone(st.done);
+      }
     } catch (e) {
       // 不 toast：这是 2 秒一次的轮询，失败弹一次就是刷屏。
       logger.warn("获取附近设备失败", e);

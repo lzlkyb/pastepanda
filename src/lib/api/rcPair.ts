@@ -41,7 +41,8 @@ export interface RcPairPrompt {
   started_ms: number;
 }
 
-/** 刚配对成功的那一台（后端**读完即清**，前端要留在自己状态里）。 */
+/** 刚配对成功的那一台。🔴 P1-7：后端 60 秒窗口内**多重可读**（多轮询者公平），
+ * 到点自灭；「弹过没有」的去重在界面（按 `at_ms` 比对，见 useRcNearbyPair）。 */
 export interface RcPairDone {
   peer_id: string;
   peer_name: string;

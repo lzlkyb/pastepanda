@@ -280,12 +280,24 @@ pub async fn kb_sync_allow_from_rc(
         name.trim().to_string()
     };
     store.device_pair(&node_id, &n, "")?;
+    // 🔴 P1-2（2026-09-23 审计）：先把设备列表刷出去，再接同步循环。
+    //
+    // 原来 emit 排在最后：`add_peer` 一失败（旧代码只 warn，见下）连这条刷新都
+    // 跑不到，界面上表现为「点了没反应」，而**同步配对其实已经写进库了**——
+    // 用户只能再点一次，或去设置页里找那台根本不存在的设备。
+    let _ = app.emit("kb-sync-devices-changed", ());
     if sync.is_running().await {
+        // `add_peer` 失败是「这台配好了但笔记根本不同步」，属于功能不可用，
+        // 不是可以咽掉的告警：咽掉的表现是用户以为同步已开，很久之后才发现
+        // 对面拿到的是旧笔记。**不回滚**上面的配对——那是用户刚做出的授权，
+        // 而且抹掉设备行比「重试一次同步接入」更糟（规则 #15.3：报错要说清哪半件成了）。
         if let Err(e) = sync.add_peer(&node_id).await {
             log::warn!("[Sync] 从远程配对接入后起同步循环失败：{e}");
+            return Err(format!("配对已写入，但同步接入启动失败：{e}，请稍后重试"));
         }
     }
-    let _ = app.emit("kb-sync-devices-changed", ());
+    // 同步通道没在跑：不报错也不强行拉起——启动它归 `sync` 自己的开关管，
+    // 这台已经写进设备表，通道下次起来自然会带上它。
     Ok(())
 }
 
@@ -333,12 +345,23 @@ pub async fn rc_invite_create(
     // 门与码同宽（两者都由 `invite::RC_TTL_SECS` 定）：码在窗口内才有效，
     // 门在窗口内才受理。配对成功后门会被提前关掉（见 `RcService::approve_join`）。
     let expires_at = now + RC_INVITE_DOOR_MS;
+    // 🔴 P1-2（2026-09-23 审计）：这里原来是 `log::warn!` 然后照样把码返回给界面
+    // ——「功能不可用」的失败不能咽。门没开 = 对方粘完码敲门必被拒，
+    // 而用户手里已经拿到一份看起来合法的码，只能反复试、完全不知道卡在哪。
+    // 现在直接报错：码根本不发出去，用户看到的是「生成失败，请重试」，
+    // 而不是「生成了但连不上」。
     if let Err(e) = join::open_door(&store, expires_at) {
-        log::warn!("[RC] 邀请窗口没能保存（{}）——对方粘完码可能连不上本机", e);
+        return Err(format!("邀请窗口没能打开：{e}，对方会连不上，请重试"));
     }
     // 开门同时拉起通道：否则对端敲门时本机 accept 循环没在跑
     if let Err(e) = svc.start(&app_dir(&app)?, true).await {
-        log::warn!("[RC] 生成邀请后启动通道失败：{}", e);
+        // 通道起不来 = 这份码发出去也没人接。门已经开了，**必须补一步关门**，
+        // 否则会把一道「没人监听但有效期还在」的门留在配置里。
+        // 关门本身失败只记日志：此刻已经要报错了，再叠一个错误只会盖掉真原因。
+        if let Err(e2) = join::close_door(&store) {
+            log::warn!("[RC] 通道启动失败后的补救关门也失败：{e2}");
+        }
+        return Err(format!("远程通道启动失败：{e}，邀请码没有生成，请重试"));
     }
     emit_changed(&app, &svc);
     Ok(RcInviteCreated { code, expires_at })
@@ -373,8 +396,15 @@ pub async fn rc_pair(
     };
     store.rc_device_pair(&inv.node_id, &name)?;
     // 配对成功即拉起通道（发起不必等打开「允许被远程」）
+    // 🔴 P1-2（2026-09-23 审计）：配对已经落库了，通道起不来就是「配上了但用不了」
+    // —— 咽进 warn 等于让用户以为一切正常，直到第一次发起远程才撞墙。
+    // 报错但**把话说清**：配对本身已生效，失败的是通道，用户不需要重配一次码。
+    // （不能回滚配对：那是用户刚建立的信任关系，且对方那侧也已经写了它那份。）
     if let Err(e) = svc.start(&app_dir(&app)?, true).await {
-        log::warn!("[RC] 配对后启动通道失败：{}", e);
+        emit_changed(&app, &svc);
+        return Err(format!(
+            "已与该设备配对，但远程通道启动失败：{e}。设备已保存，修好网络后直接发起即可。"
+        ));
     }
     emit_changed(&app, &svc);
     Ok(inv)
@@ -401,6 +431,17 @@ pub async fn rc_forget(
     svc: State<'_, Arc<RcService>>,
     node_id: String,
 ) -> Result<(), String> {
+    // 🔴 P1-1（2026-09-23 审计）：忘记设备 = 撤销信任，正在跑的会话必须一起收。
+    //
+    // 原来只删表 + 有条件停通道：只要还有别的配对设备（或本机开着被控），
+    // 通道就留着，于是「已经被忘掉」的那台还在控这台机器（或还在看这台屏幕），
+    // 设备行都没了、会话还挂着。两个方向都收：不管是谁在控谁，
+    // 信任已经撤销，就不该有一条输入路径还通向它。
+    // 顺序也有讲究：先收会话（End 帧要发给对方、历史要落），再考虑停通道。
+    if let Some(id) = svc.session_id_for_peer(&node_id) {
+        log::info!("[RC] 忘记设备，当场结束与它的会话：{node_id}");
+        svc.force_end_if_session(&id, "设备已从信任列表移除").await;
+    }
     store.rc_device_forget(&node_id)?;
     // 忘掉最后一台且未开被控 → 收通道
     if !svc.needs_channel() {
@@ -420,8 +461,14 @@ pub async fn rc_join_approve(
 ) -> Result<(), String> {
     svc.approve_join(&node_id, &name)?;
     // 生成方放行后也要能收会话；通道若未起则拉起
+    // 🔴 P1-2（2026-09-23 审计）：放行已经写进白名单了，通道起不来对方就是敲不开门。
+    // 咽掉的话用户会以为「我已经同意了，为什么他还连不上」。
+    // 同 `rc_pair`：报错但不回滚放行——那是用户刚做出的授权，撤它得再点一次。
     if let Err(e) = svc.start(&app_dir(&app)?, true).await {
-        log::warn!("[RC] 放行配对后启动通道失败：{}", e);
+        emit_changed(&app, &svc);
+        return Err(format!(
+            "已放行该设备，但远程通道启动失败：{e}。放行已保存，修好网络后对方重试即可。"
+        ));
     }
     emit_changed(&app, &svc);
     Ok(())
@@ -456,8 +503,25 @@ pub async fn rc_set_enabled(
         // relay=true：R3 异地路径（与同步同一 n0 relay）；LAN 仍优先直连
         svc.start(&app_dir(&app)?, true).await?;
     } else {
-        // 关「允许被远程」≠ 关通道：若还有远程配对（还要发起），通道留着；
-        // 入站已由 gate_inbound 按 rc_enabled 拒掉。
+        // 🔴 P1-1（2026-09-23 审计）：关开关必须**当场收掉正在进行的被控会话**。
+        //
+        // 原来这里只写配置 + 有条件停通道，注释还说「入站已由 gate_inbound 拒掉」
+        // ——那句只对**新**的连接成立。`handle_inbound_input` 的门禁读的是
+        // **会话建立时**快照下来的能力档，不看 `rc_enabled`，于是：
+        // 用户在自己机器上点「不再允许被远程」→ 配置存了、通道可能还开着
+        // （还有别的配对设备要发起）→ **对方还在继续控这台机器的键鼠**，
+        // 横幅还挂着，用户以为已经断了。这是撤销授权，不是设置项。
+        //
+        // 收口走 `force_end_if_session`（按 session id 认领）→ `end_session` 这条
+        // 唯一漏斗：补发 up（`release_all`）、发 End 帧、标离线、落历史一次做完。
+        //
+        // ❗ 只收 `InboundActive`（别人控我），不动用户自己发起的出站会话——
+        // 那个开关管的是「别人能不能控我」，与「我去控别人」无关。
+        if let Some(id) = svc.inbound_active_session_id() {
+            log::info!("[RC] 关闭「允许被远程」，当场结束进行中的被控会话");
+            svc.force_end_if_session(&id, "「允许被远程」已关闭").await;
+        }
+        // 关「允许被远程」≠ 关通道：若还有远程配对（还要发起），通道留着。
         if !svc.needs_channel() {
             svc.stop().await;
         }
@@ -592,8 +656,9 @@ pub struct RcUnoCreated {
 
 /// 生成无人值守接入码（Q2 方案 B，被控端）。
 ///
-/// 生成即拉起通道：无人值守场景没有人在场去点「开启」——出码的瞬间
-/// 这台机器就必须已经处于可受理状态，否则码是好的、门是关的。
+/// 🔴 武装先于出码（P1-2）：通道起不来就直接报错、**码根本不生成**。无人值守
+/// 场景没有人在场去点「开启」——出码的瞬间这台机器必须已经处于可受理状态，
+/// 否则用户拿着一份发出去的码，对面却永远连不上（比「没码」更难排查）。
 ///
 /// 参数：
 /// - `ttl_secs`：时效秒数，只认 900（15 分钟）/ 86400（24 小时）两档；
@@ -619,16 +684,22 @@ pub async fn rc_uno_generate(
         _ => return Err("接入码时效只能是 15 分钟（限 1 次）或 24 小时".into()),
     };
     let cap = Capability::parse(&capability).ok_or("能力档只能是 view 或 control")?;
+    // 🔴 P1-2（2026-09-23 审计）：**先武装，再出码**。
+    //
+    // 原来是「生成码 → `start` 失败只 warn → 照样把码返回」：通道没起来时用户
+    // 手里已经多了一份 15 分钟（或 24 小时）有效的接入码，他会把它发给对方，
+    // 而本机根本没在监听。无人值守场景没有人在场看日志，唯一的表现就是
+    // 「对方说连不上」，而界面上那份码还显示着。起不来就根本不出码。
+    // `start` 幂等（已在跑直接 `Ok`），所以这条不改变「出码即武装」的原意。
+    svc.start(&app_dir(&app)?, true)
+        .await
+        .map_err(|e| format!("远程通道启动失败：{e}，接入码没有生成，请重试"))?;
     let now = chrono::Utc::now().timestamp_millis();
     let code = svc
         .uno
         .generate(now, ttl_ms, unlimited, cap, also_trust)?;
     let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
     let full = uno::full_string(&code, &me.node_id());
-    // 与 rc_invite_create 同一招：出码即武装，通道没起就拉起来
-    if let Err(e) = svc.start(&app_dir(&app)?, true).await {
-        log::warn!("[RC] 生成接入码后启动通道失败：{}", e);
-    }
     emit_changed(&app, &svc);
     Ok(RcUnoCreated {
         code,
@@ -650,8 +721,9 @@ pub fn rc_uno_revoke(app: AppHandle, svc: State<'_, Arc<RcService>>) -> Result<u
 
 /// 无人值守固定密码（Q2 方案 C）：开启 / 换密码。
 ///
-/// 与 `rc_uno_generate` 同一招：开启即武装——通道没起就拉起（服务器场景没有
-/// 人在场去点「开启」）。重复调用 = 换密码（since_ms 刷新，横幅重新计时）。
+/// 与 `rc_uno_generate` 同一招，且同样是**先武装再落凭据**（P1-2）：通道起不来
+/// 就一个字都不写（服务器场景没有人在场去点「开启」，更不能留一把没人受理的钥匙）。
+/// 重复调用 = 换密码（since_ms 刷新，横幅重新计时）。
 /// 密码明文只在本次调用的入参里出现过一次；落盘的是 Argon2id PHC 串
 /// （`rc/unop.rs`），退出本函数后前端与后端都拿不回明文。
 #[tauri::command]
@@ -667,6 +739,17 @@ pub async fn rc_uno_pass_enable(
         return Err("请先打开「允许被远程协助」，固定密码才有意义".into());
     }
     let cap = Capability::parse(&capability).ok_or("能力档只能是 view 或 control")?;
+    // 🔴 P1-2（2026-09-23 审计）：**先武装，再落密码**。
+    //
+    // 固定密码与接入码不同——它是**长期凭据**，落盘就一直在那儿。原来
+    // 「哈希 → 存盘 → `start` 失败只 warn」的结果是：配置里静静躺着一把
+    // 没人受理的钥匙，界面显示「已开启」，而通道根本没起（跨网那档
+    // `allow_wan` 更是直接把这台机器挂在一个不存在的入口上）。
+    // 起不来就一个字都不写，用户重新点一次即可。
+    // `start` 不依赖密码本身（它只绑端点/起 accept），所以这个顺序没有副作用。
+    svc.start(&app_dir(&app)?, true)
+        .await
+        .map_err(|e| format!("远程通道启动失败：{e}，固定密码没有保存，请重试"))?;
     // 长度校验 + Argon2id 都在 unop::hash_password 里
     let cfg = crate::rc::unop::hash_password(
         &password,
@@ -681,9 +764,6 @@ pub async fn rc_uno_pass_enable(
         serde_json::to_value(&cfg).map_err(|e| e.to_string())?,
     );
     store.save_config(&config)?;
-    if let Err(e) = svc.start(&app_dir(&app)?, true).await {
-        log::warn!("[RC] 开启固定密码后启动通道失败：{}", e);
-    }
     log::info!("[RC] 无人值守固定密码已开启（{}，跨网={}）", cap.as_str(), allow_wan);
     emit_changed(&app, &svc);
     Ok(())
@@ -1379,6 +1459,7 @@ pub fn rc_history_clear(svc: State<'_, Arc<RcService>>) -> Result<(), String> {
 }
 
 /// 发起端请求拉回对方剪贴板（后端等回包，修前端立刻 take 竞态）。
+/// C5：超时/作废现在是 Err（以前折叠成 Ok(None)，与「对方剪贴板为空」不可区分）。
 #[tauri::command]
 pub async fn rc_pull_clipboard(svc: State<'_, Arc<RcService>>) -> Result<Option<String>, String> {
     svc.pull_clipboard().await

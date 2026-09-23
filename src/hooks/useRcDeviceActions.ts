@@ -13,6 +13,7 @@
 import { useCallback } from "react";
 import { confirmDialog } from "@/lib/confirm";
 import { normalizeRcNote } from "@/lib/rcDevice";
+import { trustEnableConfirm } from "@/lib/rcTrust";
 
 type ToastFn = (m: string, k: "success" | "error" | "info") => void;
 
@@ -83,9 +84,19 @@ export function useRcDeviceActions({
     [onRename, toast],
   );
 
-  /** A1：免确认直连（方案 D 能力，原先只藏在设置页第四层）。 */
+  /** A1：免确认直连（方案 D 能力，原先只藏在设置页第四层）。
+   *
+   * 🔴 2026-09-23 审计（规则 11.1 收口）：**开启方向必须先过确认框**。这是免确认
+   *    放权的第二个入口（设备详情「管理此设备」），以前它裸调 toggleTrust——
+   *    与会话内入口（`useRcTrustEnable`）双轨不一致，误触就是把本机长期交出去。
+   *    确认参数两边共用 `lib/rcTrust.ts` 的同一份；**关闭**是收回授权、可逆，
+   *    按 U4 不打断。守卫单测见 `rcDangerGuards.test.tsx`。 */
   const toggleTrust = useCallback(
-    async (id: string, trusted: boolean): Promise<boolean> => {
+    async (id: string, trusted: boolean, deviceName?: string): Promise<boolean> => {
+      if (trusted) {
+        const confirmed = await confirmDialog(trustEnableConfirm(deviceName));
+        if (!confirmed) return false;
+      }
       const ok = await onTrustToggle(id, trusted);
       if (ok) {
         toast(

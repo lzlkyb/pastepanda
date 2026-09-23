@@ -23,6 +23,7 @@ export function RcScreenCanvas({
   fit,
   canControl,
   hasFrame,
+  active,
   input,
   cursorShape,
 }: {
@@ -32,6 +33,10 @@ export function RcScreenCanvas({
   fit: FitMode;
   canControl: boolean;
   hasFrame: boolean;
+  /** B1：窗口「可见且在前台」（useRcFrames.visible）。画面暂停时指针也要哑——
+   *  否则用户只是把鼠标滑过一个失焦窗口，远端光标就跟着动、点一下还打在
+   *  一帧已经不更新的旧画面上。 */
+  active: boolean;
   input: RcInput;
   /** P1-6：远端光标形状；null = 尚未收到（视为箭头）。 */
   cursorShape?: RcCursorShape | null;
@@ -70,7 +75,7 @@ export function RcScreenCanvas({
       // 按住期间捕获指针：松开发生在画面外（letterbox / 窗口外）时，
       // mouseup 仍会派发到本元素——否则按键在远端卡死在按下态，
       // 之后任何补发的 UP 都会弹出「凭空」的右键菜单。拖拽出界同理。
-      if (!canControl || !hasFrame) return;
+      if (!canControl || !hasFrame || !active) return;
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
@@ -78,14 +83,21 @@ export function RcScreenCanvas({
       }
     },
     onMouseMove: (e: React.MouseEvent) => {
-      if (!canControl || !hasFrame || input.pointerLocked) return;
+      if (!canControl || !hasFrame || !active || input.pointerLocked) return;
       const r = input.norm(e);
       if (r) input.queueMove(r.x, r.y);
     },
-    onMouseDown: (e: React.MouseEvent) => input.sendButton(e, true),
-    onMouseUp: (e: React.MouseEvent) => input.sendButton(e, false),
+    // B1：down/up 同样门控。点在失焦窗口上的那一下先用来唤醒（焦点事件把
+    // active 翻真），下一次点击才注入——宁可多点一下，也不让点击落在
+    // 一帧早已不更新的旧画面上。配合 RcSessionStage 的暂停提示，不静默。
+    onMouseDown: (e: React.MouseEvent) => {
+      if (active) input.sendButton(e, true);
+    },
+    onMouseUp: (e: React.MouseEvent) => {
+      if (active) input.sendButton(e, false);
+    },
     onWheel: (e: React.WheelEvent) => {
-      if (!canControl || !hasFrame) return;
+      if (!canControl || !hasFrame || !active) return;
       const r = input.norm(e);
       if (!r) return;
       // 触控板横滑：优先水平分量，否则回退竖直

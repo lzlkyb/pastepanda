@@ -37,12 +37,14 @@ import { UNDO_WINDOW_MS } from "@/components/Toast";
 import type { ToastFn } from "@/components/Toast";
 import { useRcLaunch } from "@/hooks/useRcLaunch";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
+import { useRcDeviceActions } from "@/hooks/useRcDeviceActions";
+import { trustEnableConfirm } from "@/lib/rcTrust";
 import type { UseRc } from "@/hooks/useRc";
 
 /** 只造本用例用得到的字段（真 UseRc 有二十来个成员，逐字段填只会淹掉重点）。 */
 function fakeRc(over: Record<string, unknown> = {}) {
   return {
-    status: { session: { phase: "outbound_pending" } },
+    status: { running: true, session: { phase: "outbound_pending" } },
     targets: [{ node_id: "peerA", name: "甲机", note: "客厅机" }],
     request: vi.fn().mockResolvedValue(true),
     cancel: vi.fn().mockResolvedValue(true),
@@ -165,12 +167,91 @@ describe("D2 免确认放权", () => {
     expect(h.toast).toHaveBeenCalledWith(expect.stringContaining("已开启免确认"), "success");
   });
 
-  it("写入失败不 toast 成功（失败由工作台错误行负责）", async () => {
+  it("写入失败不 toast 成功（失败必须出声，但绝不许假报成功）", async () => {
     const rc = fakeRc({ setDeviceTrust: vi.fn().mockResolvedValue(false) });
     const { result } = renderHook(() => useRcTrustEnable(rc, asToast()));
     await act(async () => {
       await result.current("peerA", "客厅机");
     });
+    // 🔴 B2（2026-09-23）改口径：原断言是「完全不出现 toast」，但这条 hook 同时挂在
+    // **主窗横幅**上，而主窗没有错误面板（RcErrorPanel 只在工作台）——静默失败正是
+    // 规则 15.3 说的「点了没反应」。现在失败必须报，只是**不许报成功**（本条原意）。
+    const kinds = h.toast.mock.calls.map((call) => (call as unknown[])[1]);
+    expect(kinds).not.toContain("success");
+    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining("开启免确认失败"), "error");
+  });
+});
+
+/**
+ * D2b（2026-09-23 审计，规则 11.1 收口）：免确认曾被发现**双轨不一致**——
+ * 会话内入口（useRcTrustEnable）有 warning 确认，设备详情「管理此设备」入口
+ * （useRcDeviceActions.toggleTrust）却裸调写入。现在两处的确认参数都来自
+ * `lib/rcTrust.ts` 同一份；这组守卫钉住：
+ *   · 两个入口的**开启**方向都必须先过确认框；
+ *   · **关闭**是收回授权、可逆，按 U4 不打断（不弹确认）。
+ */
+describe("D2b 免确认的两个入口都走同一份确认", () => {
+  function deviceActions() {
+    const onTrustToggle = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() =>
+      useRcDeviceActions({
+        onForget: vi.fn(),
+        onSetAllowed: vi.fn(),
+        onTrustToggle,
+        onAutoAcceptToggle: vi.fn(),
+        onRename: vi.fn(),
+        toast: asToast(),
+      }),
+    );
+    return { result, onTrustToggle };
+  }
+
+  it("设备详情入口：开启免确认先弹确认，取消则绝不写入", async () => {
+    const { result, onTrustToggle } = deviceActions();
+    h.confirmDialog.mockResolvedValueOnce(false);
+    await act(async () => {
+      await result.current.toggleTrust("peerA", true, "客厅机");
+    });
+    expect(h.confirmDialog).toHaveBeenCalledTimes(1);
+    expect(onTrustToggle).not.toHaveBeenCalled();
     expect(h.toast).not.toHaveBeenCalled();
+  });
+
+  it("🔴 两个入口的确认参数一字不差（单一文案源，漂不了）", async () => {
+    const rc = fakeRc();
+    const { result: enable } = renderHook(() => useRcTrustEnable(rc, asToast()));
+    await act(async () => {
+      await enable.current("peerA", "客厅机");
+    });
+    const { result: actions } = renderHook(() =>
+      useRcDeviceActions({
+        onForget: vi.fn(),
+        onSetAllowed: vi.fn(),
+        onTrustToggle: vi.fn().mockResolvedValue(true),
+        onAutoAcceptToggle: vi.fn(),
+        onRename: vi.fn(),
+        toast: asToast(),
+      }),
+    );
+    await act(async () => {
+      await actions.current.toggleTrust("peerA", true, "客厅机");
+    });
+
+    expect(h.confirmDialog).toHaveBeenCalledTimes(2);
+    const calls = h.confirmDialog.mock.calls as unknown as [Record<string, unknown>][];
+    expect(calls[1][0]).toEqual(calls[0][0]);
+    // 且就是 lib/rcTrust 那份（warning + 说清后果与关回入口）
+    expect(calls[0][0]).toEqual(trustEnableConfirm("客厅机"));
+    expect(calls[0][0].variant).toBe("warning");
+  });
+
+  it("关闭免确认是收回授权：不弹确认、直接写入（U4 可撤销 > 二次确认）", async () => {
+    const { result, onTrustToggle } = deviceActions();
+    await act(async () => {
+      await result.current.toggleTrust("peerA", false, "客厅机");
+    });
+    expect(h.confirmDialog).not.toHaveBeenCalled();
+    expect(onTrustToggle).toHaveBeenCalledWith("peerA", false);
+    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining("已恢复每次询问"), "success");
   });
 });

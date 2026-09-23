@@ -18,7 +18,7 @@ import { useRcLaunch } from "@/hooks/useRcLaunch";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
-import { explainRcError } from "@/lib/rcDeny";
+import { rcErrorRetryable } from "@/lib/rcDeny";
 import { RcSessionView } from "./RcSessionView";
 import { RcPendingWait } from "./RcPendingWait";
 import { RcErrorPanel } from "./RcErrorPanel";
@@ -29,7 +29,7 @@ import styles from "./RemoteComputer.module.css";
 
 export function RcStage({
   rc,
-  cap,
+  capFor,
   lastAttempt,
   doRequest,
   onPair,
@@ -38,8 +38,8 @@ export function RcStage({
   onUnoJoin,
 }: {
   rc: UseRc;
-  /** 发起链路的记忆档（useRcLaunch 返回）——见该 hook。 */
-  cap: ReturnType<typeof useRcLaunch>["cap"];
+  /** 发起档取值口（useRcLaunch.capOf）：按设备记忆优先，全局默认兜底。 */
+  capFor: (id: string) => ReturnType<typeof useRcLaunch>["cap"];
   lastAttempt: ReturnType<typeof useRcLaunch>["lastAttempt"];
   doRequest: ReturnType<typeof useRcLaunch>["doRequest"];
   /** 空态引导的入口（配对 / 方案甲两条 / Q2 接入码直连），弹层由 RcPairLayer 挂。 */
@@ -80,12 +80,9 @@ export function RcStage({
   const peerTrusted = peerTarget?.trusted ?? false;
   const peerDenied = peerTarget?.denied ?? false;
 
-  // B2：重试按钮只给「再点一次可能成功」的错误——busy/timeout/offline 类重试
-  // 有意义；disabled / device_denied / not_paired / capability 的 hint 已指明
-  // 要去改设置/配对，给重试就是假按钮（点了必然原样再失败）。
-  const retryable =
-    rc.error != null &&
-    ["busy", "timeout", "offline"].includes(explainRcError(rc.error).kind);
+  // B2：重试按钮只给「再点一次可能成功」的错误——判据收口在 lib/rcDeny.rcErrorRetryable
+  // （RcWorkbench 设备页错误槽共用同一份，U3）。
+  const retryable = rc.error != null && rcErrorRetryable(rc.error);
 
   return (
     <main className={styles.wbMain}>
@@ -95,7 +92,7 @@ export function RcStage({
           onRetry={
             rc.isOpError
               ? retryable && lastAttempt
-                ? () => void doRequest(lastAttempt, cap)
+                ? () => void doRequest(lastAttempt, capFor(lastAttempt))
                 : undefined
               : () => void rc.refresh()
           }
@@ -124,6 +121,8 @@ export function RcStage({
           onEnd={() => {
             void rc.end().then((ok) => {
               if (ok) toast("已结束远程会话", "success");
+              // 失败要说话：被控端点「结束」没反应 = 用户眼里的「关不掉」
+              else toast("结束失败，请重试；对方画面可能仍在推送", "error");
             });
           }}
         />
@@ -131,7 +130,12 @@ export function RcStage({
         <RcSessionView
           session={session}
           busy={rc.busy}
-          onEnd={() => void rc.end()}
+          onEnd={() => {
+            void rc.end().then((ok) => {
+              // 失败必须说出来：静默失败时用户以为已断开，对方却还挂着
+              if (!ok) toast("结束会话失败，请重试", "error");
+            });
+          }}
           onReconnect={async () => {
             // P3-8：重连会掐断当前画面，先短确认（可撤销类操作不该静默一键断连）
             const name = rcDisplayName(session, fingerprintOf(session.peer));
@@ -152,7 +156,12 @@ export function RcStage({
           }}
           /** B-1 会话内提权：重新协商式（结束 + 重新申请「可控」）。 */
           onRequestControl={async () => {
-            await rc.end();
+            // 与上面重连同一判据：end 失败继续 doRequest 会变成「连上又被自己掐掉」
+            const ended = await rc.end();
+            if (!ended) {
+              toast("结束当前会话失败，已中止提权申请", "error");
+              return;
+            }
             await doRequest(session.peer, "control");
           }}
           rc={rc}
@@ -165,12 +174,21 @@ export function RcStage({
           capability={session.capability}
           startedMs={session.started_ms}
           busy={rc.busy}
-          onCancel={() => void rc.cancel()}
+          onCancel={() => {
+            void rc.cancel().then((ok) => {
+              if (!ok) toast("取消申请失败，请重试", "error");
+            });
+          }}
           /** 等待态改档零成本——作废重发，对端只看到一次新敲门。 */
           onRaise={
             session.capability !== "control"
               ? async () => {
-                  await rc.cancel();
+                  // cancel 失败还重发 = 旧申请没作废就敲第二下，busy_local
+                  const cancelled = await rc.cancel();
+                  if (!cancelled) {
+                    toast("取消原申请失败，已中止改档", "error");
+                    return;
+                  }
                   await doRequest(session.peer, "control");
                 }
               : undefined

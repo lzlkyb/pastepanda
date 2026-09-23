@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程电脑 · UX 体检：操作友好度改进 设计稿</title>
+<style>
+/* ===== 令牌：取自 src/styles/theme.css 亮色主题（浅色 IDE 主题），值照抄原定义 ===== */
+:root{
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #eef3f8 0%, #e8edf3 55%, #e2e8f0 100%);
+  --card-bg:#fff;
+  --section-bg:#f0f4f8;
+  --border-color:#e0e4eb;
+  --accent:#0284c7;
+  --accent-solid:#027cbb;
+  --accent-strong:#0273ad;
+  --accent-bg:#e3f2fc;
+  --text-primary:#0f172a;
+  --text-secondary:#495565;
+  --text-muted:#627083;
+  --text-on-accent:#fff;
+  --hover:#e8ecf2;
+  --success:#15803d;
+  --success-bg:#e5f5ea;
+  --warning:#b45309;
+  --warning-bg:#fdf3e2;
+  --danger:#d82525;
+  --danger-bg:#fdecec;
+  --shadow-md:0 4px 12px rgba(15,23,42,.08);
+  --sel-ring:0 0 0 3px rgba(2,124,187,.16);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:32px 24px 64px;
+  font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  color:var(--text-primary);
+  background:var(--app-bg);
+}
+.doc{max-width:1060px;margin:0 auto}
+h1{font-size:24px;margin:0 0 6px}
+.sub{color:var(--text-muted);font-size:13px;margin:0 0 4px}
+h2{font-size:19px;margin:44px 0 4px;padding-top:18px;border-top:1px solid var(--border-color)}
+h3{font-size:15px;margin:26px 0 8px}
+p{font-size:13.5px;line-height:1.7;color:var(--text-secondary);margin:6px 0}
+p b,td b{color:var(--text-primary)}
+code{
+  font-family:Consolas,monospace;font-size:12px;background:var(--hover);
+  border:1px solid var(--border-color);border-radius:4px;padding:0 4px;
+}
+.lead{font-size:13px;color:var(--text-muted)}
+
+/* ===== 概览表 ===== */
+table{border-collapse:collapse;width:100%;font-size:12.5px;background:var(--card-bg)}
+th,td{border:1px solid var(--border-color);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--section-bg);font-weight:600;font-size:12px;color:var(--text-secondary)}
+td{line-height:1.55}
+.badge{display:inline-block;font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;white-space:nowrap}
+.b-p0{background:var(--danger-bg);color:var(--danger)}
+.b-p1{background:var(--warning-bg);color:var(--warning)}
+.b-p2{background:var(--hover);color:var(--text-muted)}
+.idchip{font-family:Consolas,monospace;font-weight:700;color:var(--accent)}
+
+/* ===== 对比双栏 ===== */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:12px 0 6px}
+.pane{background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:14px}
+.pane h4{margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:.05em}
+.pane.now h4{color:var(--text-muted)}
+.pane.fix h4{color:var(--success)}
+.tagline{font-size:11px;color:var(--text-muted);margin:10px 2px 0;line-height:1.6}
+
+/* ===== 侧栏复刻（对齐 RemoteComputerA2.module.css 真实值） ===== */
+.sb{width:288px;background:var(--section-bg);border:1px solid var(--border-color);border-radius:10px;padding:10px;overflow:hidden}
+.sbTitle{display:flex;align-items:center;justify-content:space-between;margin:2px 2px 8px}
+.sbTitle strong{font-size:14px}
+.addBtn{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:4px 9px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary)}
+.search{display:flex;align-items:center;gap:7px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:6px 9px;color:var(--text-muted);font-size:12px;margin-bottom:7px}
+.meta{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text-muted);margin:0 2px 8px}
+.meta .rf{display:inline-flex;align-items:center;gap:3px}
+.row{min-height:62px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin-bottom:6px;padding:4px;background:var(--card-bg);border:1px solid transparent;border-radius:8px}
+.row.sel{box-shadow:var(--sel-ring);border-color:var(--accent)}
+.selBtn{min-width:0;min-height:48px;display:grid;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:9px;padding:4px;border:0;border-radius:4px;background:transparent;text-align:left;cursor:pointer}
+.dicon{position:relative;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);background:var(--hover)}
+.dicon .dot{position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;border:2px solid var(--card-bg);border-radius:50%;background:var(--text-muted)}
+.dicon .dot.on{background:var(--success)}
+.dcopy{min-width:0}
+.dcopy strong{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcopy small{display:block;font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcopy small.ok{color:var(--success)}
+.dcopy small.warn{color:var(--warning)}
+.dcopy small.bad{color:var(--danger)}
+.conn{min-width:52px;min-height:28px;padding:0 10px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid var(--accent-solid);background:var(--accent-solid);color:var(--text-on-accent);cursor:pointer}
+.conn:hover{background:var(--accent-strong)}
+.conn.sec{background:var(--card-bg);color:var(--text-primary);border-color:var(--border-color)}
+/* 改进：分档连接（split button） */
+.split{display:inline-flex}
+.split .conn{border-radius:8px 0 0 8px;border-right:0}
+.split .caret{min-width:22px;min-height:28px;padding:0;border:1px solid var(--accent-solid);border-radius:0 8px 8px 0;background:var(--accent-solid);color:var(--text-on-accent);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.caret:hover,.conn:hover{background:var(--accent-strong)}
+.menu{position:absolute;top:56px;right:8px;z-index:30;width:196px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;box-shadow:var(--shadow-md);padding:5px;text-align:left}
+.menu .mi{display:block;width:100%;border:0;background:transparent;border-radius:7px;padding:7px 9px;font-size:12.5px;color:var(--text-primary);text-align:left;cursor:pointer}
+.menu .mi:hover{background:var(--hover)}
+.menu .mi small{display:block;font-size:11px;color:var(--text-muted);margin-top:2px}
+.menu .mi em{font-style:normal;color:var(--accent);font-weight:600}
+/* 改进：行内被禁止标记 */
+.shield{display:inline-flex;align-items:center;gap:3px;color:var(--danger);font-weight:600}
+/* 改进：传输角标 */
+.toolnav{display:flex;gap:6px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border-color)}
+.tool{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--text-secondary);background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:7px 4px}
+.tool.on{color:var(--accent-strong);border-color:color-mix(in srgb, var(--accent) 35%, var(--border-color))}
+.tool .cnt{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;border-radius:8px;background:var(--accent-solid);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
+.tool .cnt.done{background:var(--success)}
+.tool .cnt.fail{background:var(--danger)}
+.xfer{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-secondary);background:var(--accent-bg);border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));border-radius:8px;padding:6px 9px;margin-bottom:7px}
+.xbar{flex:1;height:4px;border-radius:2px;background:var(--hover);overflow:hidden}
+.xbar i{display:block;height:100%;width:68%;background:var(--accent-solid);border-radius:2px}
+
+/* ===== 错误面板 / toast 复刻（RemoteComputer.module.css 形态） ===== */
+.errbox{background:var(--danger-bg);border:1px solid color-mix(in srgb, var(--danger) 28%, var(--border-color));border-radius:10px;padding:12px 14px}
+.errbox .et{font-weight:700;font-size:13px;color:var(--danger)}
+.errbox .eh{font-size:12px;color:var(--text-secondary);margin:4px 0 10px}
+.miniBtn{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary);cursor:pointer}
+.miniBtn.pri{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--text-on-accent);font-weight:600}
+.toasts{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+.toast{display:flex;align-items:center;gap:8px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;box-shadow:var(--shadow-md);padding:9px 12px;font-size:12.5px}
+.toast .tdot{width:8px;height:8px;border-radius:50%;flex:none}
+.toast.err .tdot{background:var(--danger)}
+.toast.info .tdot{background:var(--accent)}
+.toast.ok .tdot{background:var(--success)}
+
+/* ===== 历史行 / 管理区 复刻 ===== */
+.hrow{display:grid;grid-template-columns:58px minmax(0,1fr) 56px 120px 70px auto;gap:8px;align-items:center;font-size:12.5px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:9px 12px;margin-bottom:6px}
+.dirp{display:inline-flex;align-items:center;gap:3px;font-size:11px;border-radius:9px;padding:1px 7px}
+.dirp.out{background:var(--accent-bg);color:var(--accent-strong)}
+.dirp.in{background:var(--hover);color:var(--text-muted)}
+.linkBtn{border:0;background:transparent;color:var(--accent);font-size:12px;cursor:pointer;padding:2px 4px}
+.capside{font-size:11px;color:var(--text-muted);background:var(--hover);border-radius:8px;padding:1px 6px;margin-left:6px}
+.histfoot{font-size:11.5px;color:var(--text-muted);border-top:1px dashed var(--border-color);margin-top:8px;padding:8px 4px 0}
+.setRowLike{background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:12px 14px}
+.filterbar{display:flex;align-items:center;gap:10px;background:var(--accent-bg);border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));border-radius:9px;padding:8px 12px;font-size:12.5px;margin-bottom:10px}
+.filterbar b{color:var(--accent-strong)}
+.warn2{background:var(--warning-bg);border:1px solid color-mix(in srgb, var(--warning) 30%, var(--border-color));border-radius:9px;padding:8px 12px;font-size:12.5px;color:var(--text-secondary)}
+.wordtable td:first-child{color:var(--text-muted)}
+.wordtable td:last-child{color:var(--text-primary);font-weight:600}
+.note{background:var(--section-bg);border:1px solid var(--border-color);border-radius:10px;padding:12px 14px;font-size:12.5px;color:var(--text-secondary);line-height:1.7}
+.ic{flex:none}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>远程电脑 · UX 体检：操作友好度改进</h1>
+<p class="sub">2026-09-23 · 基于当前实现（A2 工作台 + 会话 + 文件 + 记录 + 设置）逐组件通读产出 · 亮色主题</p>
+<p class="sub">样式全部取自 <code>src/styles/theme.css</code> 与 <code>RemoteComputerA2.module.css</code> / <code>RemoteComputer.module.css</code> 真实令牌与尺寸，可直接照稿落码。</p>
+
+<h2>问题总览（10 项）</h2>
+<table>
+  <tr><th style="width:44px">编号</th><th style="width:52px">严重度</th><th style="width:190px">位置</th><th>问题</th><th style="width:250px">改进</th></tr>
+  <tr><td class="idchip">U1</td><td><span class="badge b-p0">高</span></td><td>侧栏设备行「连接」</td><td>写死发「可控」申请；设置页承诺的「行内临时改档」实际不存在，想只看的人一键把「允许控制」的确认弹到对方脸上</td><td>连接改分体按钮：主按钮沿用默认档，右侧 ⌄ 展开可控 / 只看</td></tr>
+  <tr><td class="idchip">U2</td><td><span class="badge b-p0">高</span></td><td>文件传输 × 侧栏导航</td><td>传输进度只在文件页可见；切到设备页 / 记录页后传完、失败都毫无感知</td><td>侧栏「文件」加进行中 / 完成角标 + 传输摘要条；离开文件页时用 toast 通报终态</td></tr>
+  <tr><td class="idchip">U3</td><td><span class="badge b-p0">高</span></td><td>设备页错误面板</td><td>发起连接失败后，面板的「重试」只刷新列表（操作类错误连刷新都没有），要重新找设备再点一遍</td><td>可重试类错误（busy / 超时 / 离线）给「重试连接 <设备名>」按钮，复用 lastAttempt</td></tr>
+  <tr><td class="idchip">U4</td><td><span class="badge b-p0">高</span></td><td>等待确认 → 结束</td><td>申请被对方拒绝或 2 分钟超时后静默跳回设备页，没有任何说明，用户分不清「拒绝了还是卡了」</td><td>按结束原因分档 toast：对方拒绝 / 等待超时自动取消</td></tr>
+  <tr><td class="idchip">U5</td><td><span class="badge b-p1">中</span></td><td>侧栏设备行状态</td><td>被禁止连接本机的设备在行上没有任何标记，要进详情面才知道；文件页却只有悬浮 title</td><td>状态行加红色「已禁止」盾标（你仍可主动连它，不 disable）</td></tr>
+  <tr><td class="idchip">U6</td><td><span class="badge b-p1">中</span></td><td>历史页「再次连接」</td><td>档位只藏在悬浮提示里，误点会以「可控」发出申请（对方弹确认框）</td><td>按钮文案写明档位：「再次连接 · 可控」</td></tr>
+  <tr><td class="idchip">U7</td><td><span class="badge b-p1">中</span></td><td>会话记录页</td><td>历史上限 20 条，老记录被静默丢弃，页面只有一句常驻说明，翻不到时不知道「没了」还是「没记」</td><td>达到上限时列表尾部追加一行截断提示</td></tr>
+  <tr><td class="idchip">U8</td><td><span class="badge b-p1">中</span></td><td>全 UI 术语 / 状态文案</td><td>同一概念三名（「以后不再询问」「免确认」「免确认连接」）；设备状态「尚未确认」不说人话</td><td>术语统一为「免确认」；状态文案改为「局域网在线 / 最近在线 · 未实测」</td></tr>
+  <tr><td class="idchip">U9</td><td><span class="badge b-p1">中</span></td><td>被控视图「以后不再询问」</td><td>安全敏感操作（降低下次确认门槛）一次点击直接落库生效，无任何确认</td><td>改为行内二段确认，写清影响与撤销路径</td></tr>
+  <tr><td class="idchip">U10</td><td><span class="badge b-p1">中</span></td><td>设置 → 免确认设备「管理」</td><td>跳到设备页后没有引导，用户要逐台展开「管理此设备」才能找到那 N 台</td><td>跳转后设备页顶部挂过滤条：只看免确认设备，一键退出</td></tr>
+</table>
+
+<h2>U1 · 侧栏「连接」分档（split button）</h2>
+<p>现状：设备行唯一按钮写死 <code>onConnect(id, "control")</code>；设置页「默认发起方式」写着「发起前仍可在行内临时改」，但侧栏行内根本没有改档入口——承诺不成立。想「只看看」的人从侧栏一键发出可控申请，对方要面对「允许控制键鼠」的确认。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="sb">
+      <div class="sbTitle"><strong>我的设备</strong><span class="addBtn"><svg class="ic" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>添加设备</span></div>
+      <div class="search"><svg class="ic" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4 14 14"/></svg>搜索设备</div>
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot on"></span></span><span class="dcopy"><strong>客厅的电脑</strong><small class="ok">局域网在线</small></span></button>
+        <button class="conn">连接</button>
+      </div>
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot"></span></span><span class="dcopy"><strong>书房主机</strong><small>最近在线 · 未实测</small></span></button>
+        <button class="conn">连接</button>
+      </div>
+    </div>
+    <p class="tagline">两个按钮长得一样、行为也一样——都发「可控」。默认档设置形同虚设。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进</h4>
+    <div class="sb" style="position:relative">
+      <div class="sbTitle"><strong>我的设备</strong><span class="addBtn"><svg class="ic" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>添加设备</span></div>
+      <div class="search"><svg class="ic" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4 14 14"/></svg>搜索设备</div>
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot on"></span></span><span class="dcopy"><strong>客厅的电脑</strong><small class="ok">局域网在线</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret" title="选择发起档位"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg></button></span>
+        <div class="menu">
+          <button class="mi"><em>●</em> 可控（默认）<small>对方可操作键鼠与剪贴板</small></button>
+          <button class="mi">○ 只看<small>仅查看画面，不能操作</small></button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot"></span></span><span class="dcopy"><strong>书房主机</strong><small>最近在线 · 未实测</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret" title="选择发起档位"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+    </div>
+    <p class="tagline">主按钮文案跟随默认档记忆（与 <code>lib/rcRequest.lastRequestCap</code> 同源）；⌄ 展开两档，选项自带一句后果说明。详情面的「连接并控制 / 只看」双按钮保持不变。悬浮提示同步写「将以 X 发起」。</p>
+  </div>
+</div>
+
+<h2>U2 · 文件传输进度全局可见</h2>
+<p>现状：<code>RcFilePanel</code> 只在文件页渲染；切到设备页 / 记录页后，传输完成、失败、进度全部不可见（<code>RcFileOverlay</code> 只管「请求确认」，不管已有任务）。大文件传着传着人就去看别的页了。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状 · 用户在设备页</h4>
+    <div class="sb">
+      <div class="sbTitle"><strong>我的设备</strong><span class="addBtn">添加设备</span></div>
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot on"></span></span><span class="dcopy"><strong>客厅的电脑</strong><small class="ok">局域网在线</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+      <div class="toolnav">
+        <span class="tool"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>文件</span>
+        <span class="tool"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>记录</span>
+        <span class="tool"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 01-.4 2.3l2 1.6-2 3.4-2.4-1a7 7 0 01-2 1.2L13.8 22h-3.6l-.4-2.5a7 7 0 01-2-1.2l-2.4 1-2-3.4 2-1.6A7 7 0 015 12"/></svg>设置</span>
+      </div>
+    </div>
+    <p class="tagline">后台正传着 1.2 GB，这里看不到任何痕迹。传完/失败也不知道。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进 · 同一时刻</h4>
+    <div class="sb">
+      <div class="xfer"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 16V4M7 9l5-5 5 5"/></svg><span>传给 客厅的电脑 · 68%</span><span class="xbar"><i></i></span><span>12.4 MB/s</span></div>
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot on"></span></span><span class="dcopy"><strong>客厅的电脑</strong><small class="ok">局域网在线</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+      <div class="toolnav">
+        <span class="tool on"><span class="cnt">1</span><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>文件</span>
+        <span class="tool"><span class="cnt done">✓</span><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>记录</span>
+        <span class="tool"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 01-.4 2.3l2 1.6-2 3.4-2.4-1a7 7 0 01-2 1.2L13.8 22h-3.6l-.4-2.5a7 7 0 01-2-1.2l-2.4 1-2-3.4 2-1.6A7 7 0 015 12"/></svg>设置</span>
+      </div>
+    </div>
+    <p class="tagline">三层反馈：① 侧栏顶部摘要条（进行中：设备 + 百分比 + 速率，点击回文件页）；② 「文件」导航角标 = 进行中数；③ 终态角标（完成 ✓ 绿 / 失败红）+ toast 通报，进文件页即清。数据全部来自既有 <code>rcFileStore</code> 快照，不新增后端。</p>
+  </div>
+</div>
+
+<h2>U3 · 连接失败可就地重试</h2>
+<p>现状：设备页发起失败，<code>RcWorkbench</code> 的错误槽只给 <code>rc.refresh()</code>（列表刷新），操作类错误连这个都没有。RcStage 里的重试判据（busy / timeout / offline 可重试）只在等待/会话主区生效，设备页吃不到。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="errbox">
+      <div class="et">连接超时</div>
+      <div class="eh">对方可能不在线或网络不可达。可以稍后再试，或先确认对方设备已开机。</div>
+      <button class="miniBtn">知道了</button>
+    </div>
+    <p class="tagline">想再试一次：自己回侧栏找到那台设备，再点一遍连接。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进</h4>
+    <div class="errbox">
+      <div class="et">连接超时</div>
+      <div class="eh">对方可能不在线或网络不可达。可以稍后再试，或先确认对方设备已开机。</div>
+      <button class="miniBtn pri">重试连接「客厅的电脑」</button>
+      <button class="miniBtn">知道了</button>
+    </div>
+    <p class="tagline">复用 <code>useRcLaunch.lastAttempt</code> + RcStage 已有的 retryable 判据（busy / timeout / offline 三类才给重试，deny / 未配对类给假按钮点了必败）。重试语义 = 对同一台、同一档再发一次。</p>
+  </div>
+</div>
+
+<h2>U4 · 申请结束的当下反馈</h2>
+<p>现状：pending 会话被对方拒绝（reason=denied）或 2 分钟超时（reason=timeout）后，<code>surface</code> 直接回设备页，零提示。用户面前整个界面突然「弹回」，不知道发生了什么。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="sb" style="min-height:120px">
+      <div class="sbTitle"><strong>我的设备</strong><span class="addBtn">添加设备</span></div>
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot on"></span></span><span class="dcopy"><strong>客厅的电脑</strong><small class="ok">局域网在线</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+    </div>
+    <p class="tagline">等待页无声消失，界面跳回这里。拒绝？超时？掉了？没人说。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进</h4>
+    <div class="toasts">
+      <div class="toast err"><span class="tdot"></span>「客厅的电脑」拒绝了这个申请。可以去记录页看详情，或改用「只看」再试。</div>
+      <div class="toast info"><span class="tdot"></span>等待 2 分钟未响应，申请已自动取消。对方可能不在电脑前。</div>
+    </div>
+    <p class="tagline">挂会话状态监听：phase 从 pending 退出且非用户主动取消时，按 <code>session_ended</code> 的 reason 分档 toast。文案与历史页 <code>resultTone</code> 的 reason 口径一致。</p>
+  </div>
+</div>
+
+<h2>U5 · 侧栏行直接可见「已禁止」</h2>
+<p>现状：denied 设备在侧栏行上与普通设备无差别（状态行只有在线语义），进详情面才看得到警告条；文件页目标条只有悬浮 title。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="sb">
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot"></span></span><span class="dcopy"><strong>旧笔记本</strong><small>最近在线 · 未实测</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+    </div>
+    <p class="tagline">这台已经被本机禁止连接，行上完全看不出来。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进</h4>
+    <div class="sb">
+      <div class="row">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot"></span></span><span class="dcopy"><strong>旧笔记本</strong><small class="bad"><span class="shield"><svg class="ic" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l7 3v5c0 4.4-3 7.4-7 9-4-1.6-7-4.6-7-9V6z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>已禁止连接本机</span> · 最近在线</small></span></button>
+        <span class="split"><button class="conn sec" title="这台设备已被你禁止远程本机；你仍可主动连接它">已禁止</button><button class="caret" style="background:var(--card-bg);color:var(--text-primary);border-color:var(--border-color)"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+    </div>
+    <p class="tagline">状态行加红色盾标；连接按钮降级为中性描边并改文案「已禁止」，悬浮写清「你仍可主动连接」——语义与详情面警告条一致（deny 只挡对方进来，不挡你出去）。</p>
+  </div>
+</div>
+
+<h2>U6 · 「再次连接」写明档位</h2>
+<p>现状：历史页与详情面「最近会话」的再次连接按钮，档位只写在悬浮 title。一键下去可能直接发「可控」申请。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="hrow" style="grid-template-columns:58px minmax(0,1fr) 56px 120px 70px 84px">
+      <span class="dirp out">出站</span>
+      <span>客厅的电脑<span class="capside">可控</span></span>
+      <span>23 分钟</span>
+      <span>今天 14:02</span>
+      <span style="color:var(--success)">正常结束</span>
+      <button class="linkBtn">再次连接</button>
+    </div>
+    <p class="tagline">按钮看不出会用哪一档（悬浮才有）。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进</h4>
+    <div class="hrow" style="grid-template-columns:58px minmax(0,1fr) 56px 120px 70px 110px">
+      <span class="dirp out">出站</span>
+      <span>客厅的电脑<span class="capside">可控</span></span>
+      <span>23 分钟</span>
+      <span>今天 14:02</span>
+      <span style="color:var(--success)">正常结束</span>
+      <button class="linkBtn">再次连接 · 可控</button>
+    </div>
+    <p class="tagline">档位上脸（沿用该条记录当时用的档，语义不变）；紧凑模式（主窗设置页）同改。</p>
+  </div>
+</div>
+
+<h2>U7 · 历史截断提示</h2>
+<p>现状：历史上限 20 条，超出即丢。页面常驻说明写了「上限 20 条」，但列表满时用户不知道「我 8 月的记录」是被删了还是没记。</p>
+<div class="duo">
+  <div class="pane now" style="grid-column:1/3">
+    <h4>改进（仅一态）</h4>
+    <div>
+      <div class="hrow" style="grid-template-columns:58px minmax(0,1fr) 56px 120px 70px 110px">
+        <span class="dirp in">入站</span><span>书房主机<span class="capside">只看</span></span><span>5 分钟</span><span>今天 09:11</span><span style="color:var(--success)">正常结束</span><button class="linkBtn">再次连接 · 只看</button>
+      </div>
+      <div class="hrow" style="grid-template-columns:58px minmax(0,1fr) 56px 120px 70px 110px">
+        <span class="dirp out">出站</span><span>客厅的电脑<span class="capside">可控</span></span><span>23 分钟</span><span>今天 14:02</span><span style="color:var(--success)">正常结束</span><button class="linkBtn">再次连接 · 可控</button>
+      </div>
+      <div class="histfoot">已到 20 条上限：仅保留最近 20 条，更早的记录不再保留。本次会话数据只存本机。</div>
+    </div>
+    <p class="tagline">仅当 <code>list.length &gt;= 20</code> 时渲染这一行（没满不出现，不占空间）。落在 <code>RcSessionHistory</code> page 变体与 compact 变体尾部。</p>
+  </div>
+</div>
+
+<h2>U8 · 术语与状态文案统一</h2>
+<p>同一概念在三个界面用了三个名字；设备状态「尚未确认」是从实现视角写的，不是用户视角。按下表统一：</p>
+<table class="wordtable">
+  <tr><th style="width:220px">现状（出现位置）</th><th style="width:200px">统一为</th><th>理由</th></tr>
+  <tr><td>「以后不再询问」（被控视图按钮）</td><td>「开启免确认」</td><td>与设置页「免确认设备」、管理面板「免确认连接」同名；「不再询问」没说清是「对这个设备永久」</td></tr>
+  <tr><td>「开启免确认连接 / 关闭免确认连接」（管理面板）</td><td>「开启免确认 / 关闭免确认」</td><td>去掉冗余的「连接」，词更短、行内按钮放得下</td></tr>
+  <tr><td>「尚未确认」（设备状态行，非 live 且无新鲜探测结果时）</td><td>「最近在线 · 未实测」</td><td>原词是开发语义（「还没探测」）；用户关心的是「它上一秒还在，现在没实测过，可以直接试着连」</td></tr>
+  <tr><td>「在线 · 局域网」</td><td>「局域网在线」</td><td>去掉间隔号，状态行扫读更快；语义不变</td></tr>
+  <tr><td>「对方需打开 PastePanda 并同意…」（等待页说明）</td><td>「对方电脑上会弹确认，同意后开始」</td><td>原文像说明书；改成一句话说清「对面会发生什么」</td></tr>
+</table>
+
+<h2>U9 · 「开启免确认」二段确认</h2>
+<p>现状：被控视图中一键点击即写设备记录（trusted=true），之后该设备连入<b>不再有任何本机确认</b>。这是降低安全门槛的操作，成本却只要一次误点。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="setRowLike">
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">对方可以操作你的键鼠与剪贴板。</div>
+      <button class="miniBtn">以后不再询问</button>
+      <span style="font-size:12px;color:var(--text-muted);margin-left:8px">立即生效，无确认</span>
+    </div>
+  </div>
+  <div class="pane fix">
+    <h4>改进</h4>
+    <div class="setRowLike">
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">对方可以操作你的键鼠与剪贴板。</div>
+      <button class="miniBtn">开启免确认</button>
+      <div class="warn2" style="margin-top:10px">
+        <b>对「客厅的电脑」开启免确认？</b><br>
+        开启后这台设备连入本机不再弹确认，仍可随时结束会话。撤销路径：设备详情 → 管理此设备 → 关闭免确认。<br>
+        <span style="margin-top:6px;display:inline-flex;gap:8px"><button class="miniBtn pri">确认开启</button><button class="miniBtn">先不</button></span>
+      </div>
+    </div>
+    <p class="tagline">行内展开二段确认（不弹模态、不打断会话），文案写清影响 + 撤销路径。对应关闭方向（从「已开启」收回）保持一键——收紧权限不需要确认。</p>
+  </div>
+</div>
+
+<h2>U10 · 设置「管理免确认设备」直达过滤</h2>
+<p>现状：设置页「免确认设备 · N 台 → 管理」只切到设备页，没有后续引导；用户要逐台展开「管理此设备」折叠区找到那几台。</p>
+<div class="duo">
+  <div class="pane now" style="grid-column:1/3">
+    <h4>改进</h4>
+    <div class="sb" style="width:100%">
+      <div class="filterbar">
+        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l7 3v5c0 4.4-3 7.4-7 9-4-1.6-7-4.6-7-9V6z"/></svg>
+        正在查看：<b>免确认设备（2 台）</b>
+        <span style="flex:1"></span>
+        <button class="miniBtn">显示全部设备</button>
+      </div>
+      <div class="row" style="border-color:color-mix(in srgb, var(--success) 35%, var(--border-color))">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot on"></span></span><span class="dcopy"><strong>客厅的电脑</strong><small class="ok">局域网在线 · 免确认已开启</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+      <div class="row" style="border-color:color-mix(in srgb, var(--success) 35%, var(--border-color))">
+        <button class="selBtn"><span class="dicon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="dot"></span></span><span class="dcopy"><strong>书房主机</strong><small>最近在线 · 免确认已开启</small></span></button>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></span>
+      </div>
+    </div>
+    <p class="tagline">「管理」点击 = 切到设备页 + 打开 trusted 过滤；过滤条绿色描边区分态，一键「显示全部设备」退出。免确认设备状态行尾追加「免确认已开启」，与 U8 术语对齐。</p>
+  </div>
+</div>
+
+<h2>落地备注</h2>
+<table>
+  <tr><th style="width:60px">编号</th><th>涉及组件 / 文件</th><th style="width:80px">体量</th></tr>
+  <tr><td class="idchip">U1</td><td><code>RcA2DeviceList.tsx</code>（分体按钮 + 菜单，可抽 <code>RcCapMenu</code> 复用）、<code>useRcLaunch</code> 不变</td><td>中</td></tr>
+  <tr><td class="idchip">U2</td><td><code>RcA2Sidebar.tsx</code>（角标 + 摘要条）、<code>rcFileStore</code> 暴露聚合快照、<code>RcWorkbench</code> 挂终态 toast</td><td>中</td></tr>
+  <tr><td class="idchip">U3</td><td><code>RcWorkbench.tsx</code> errorSlot（把 RcStage 的 retryable 判据提到 <code>lib/rcDeny</code> 共用）</td><td>小</td></tr>
+  <tr><td class="idchip">U4</td><td><code>RcWorkbench.tsx</code> 会话 phase 监听 + reason 分档文案（口径对齐 <code>lib/rcHistory.resultTone</code>）</td><td>小</td></tr>
+  <tr><td class="idchip">U5</td><td><code>RcA2DeviceList.tsx</code> 状态行 + 连接按钮降级</td><td>小</td></tr>
+  <tr><td class="idchip">U6</td><td><code>RcSessionHistory.tsx</code> 两个变体按钮文案</td><td>小</td></tr>
+  <tr><td class="idchip">U7</td><td><code>RcSessionHistory.tsx</code> 尾注（list.length &gt;= 20 时）</td><td>小</td></tr>
+  <tr><td class="idchip">U8</td><td>文案散点替换：<code>RcInboundView</code> / <code>RcDeviceManageActions</code> / <code>lib/utils.rcDeviceStatus</code> / <code>RcPendingWait</code>，各处守卫测试同步改</td><td>小</td></tr>
+  <tr><td class="idchip">U9</td><td><code>RcInboundView.tsx</code> 行内二段确认</td><td>小</td></tr>
+  <tr><td class="idchip">U10</td><td><code>RcPageSettings.tsx</code>（携带过滤意图）、<code>RcWorkbench</code> / <code>RcA2DeviceList</code>（消费过滤态 + 过滤条）</td><td>中</td></tr>
+</table>
+
+<h3>本次体检收录但未画稿的小项（随批顺带）</h3>
+<p>① 详情面「连接并控制 / 只看 / 传文件」在会话锁定（locked）时禁用但没有悬浮说明——补 title=「有会话进行中，结束后可操作」。② 设置页「自动开启远程通道」一行里状态字与开关重复（「已开」chip + toggle），去掉状态字只留 toggle。③ 空态三步引导第一步文案过长（三句挤一格），拆成「同网配对」与「跨网用邀请码」两条短句。④ 文件页底部常驻说明占一行空间，可收进标题旁 ⓘ 悬浮。</p>
+
+<h3>刻意不做</h3>
+<p>① 不给「发起远程」加确认弹窗——现有 6 秒撤销条（D1）已覆盖误触，确认框只会拦住每一次正确操作。② 不把等待页改成可切页——pending 期占用会话位，允许切页会造成「以为切走了其实还占着」的新困惑；U4 的反馈补齐后痛点已解。③ 不动文件确认条显示对方自报名的设计——那是「可自称、以指纹为准」的安全语境，2026-09-23 显示名收口时已刻意保留。</p>
+
+</div>
+</body>
+</html>

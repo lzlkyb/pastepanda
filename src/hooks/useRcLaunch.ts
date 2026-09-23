@@ -23,9 +23,18 @@ import { capabilityLabel, lastRequestCap, rememberRequestCap } from "@/lib/rcReq
 import { rcDisplayName } from "@/lib/rcDevice";
 
 const LS_LAST = "rc_last_peer";
+const LS_DEVICE_CAPS = "rc_device_caps";
 
 export function useRcLaunch(rc: UseRc, toast: ToastFn) {
   const [cap, setCap] = useState<RcCapability>(() => lastRequestCap());
+  /**
+   * 按设备记忆的发起档（2026-09-23）：行内 ⌄ 菜单给某台选过档后只记那一台的，
+   * 不再改写全局 `cap`——原先成功后 setCap(c) 会让所有设备行的主按钮和
+   * 菜单默认标记一起变（用户实测：给一台选「只看」，列表全部变「只看」）。
+   * 全局 `cap` 现在只由设置页「默认发起方式」（setDefaultCap）改写，
+   * 作为没有按设备记忆时的兜底档。`capOf` 是唯一取值口。
+   */
+  const [deviceCaps, setDeviceCaps] = useState<Record<string, RcCapability>>({});
   const [lastAttempt, setLastAttempt] = useState<string | null>(null);
   const [lastPeer, setLastPeer] = useState<string | null>(null);
 
@@ -48,7 +57,16 @@ export function useRcLaunch(rc: UseRc, toast: ToastFn) {
     } catch {
       /* ignore：隐私模式下 localStorage 会抛，退化成「没有上次」 */
     }
+    try {
+      const raw = localStorage.getItem(LS_DEVICE_CAPS);
+      if (raw) setDeviceCaps(JSON.parse(raw) as Record<string, RcCapability>);
+    } catch {
+      /* ignore：坏数据当作没有按设备记忆 */
+    }
   }, []);
+
+  /** 某台设备的发起档：按设备记忆优先，没有则落全局默认档。唯一取值口。 */
+  const capOf = (id: string): RcCapability => deviceCaps[id] ?? cap;
 
   /** 显示名与设备行同口径：走 `rcDisplayName`（统一显示名收口，备注优先）。 */
   const nameOf = (id: string) => {
@@ -82,17 +100,47 @@ export function useRcLaunch(rc: UseRc, toast: ToastFn) {
     }
     const ok = await rc.cancel();
     if (ok) toast(`已撤回对「${deviceName}」的申请`, "success");
+    // 撤回失败必须说出来——否则用户以为申请已消失，对端却还挂着确认框
+    else toast("撤回失败，申请可能仍在对方屏幕上，可在会话里结束", "error");
   };
 
+  /** 在途闸：`rc.busy` 要等 invoke 落地才翻真，连点两下的第二发会在
+   *  busy 生效前挤进 startChannel/request，变成两条并发发起（busy_local）。 */
+  const launchingRef = useRef(false);
+
   const doRequest = async (id: string, c: RcCapability) => {
+    if (launchingRef.current) return false;
+    launchingRef.current = true;
+    try {
+      return await doRequestInner(id, c);
+    } finally {
+      launchingRef.current = false;
+    }
+  };
+
+  const doRequestInner = async (id: string, c: RcCapability) => {
     setLastAttempt(id);
     // 名字在点击这一刻取：撤销回调要在 6 秒后才用，那时 targets 可能已经刷新
     const name = nameOf(id);
+    if (!rc.status?.running && !(await rc.startChannel())) {
+      toast("远程通道未能启动，请点顶部通道状态重试", "error");
+      return false;
+    }
     const ok = await rc.request(id, c);
     if (ok) {
-      // 成功才记「上次用的档」与「上次的设备」——失败不该污染记忆
-      setCap(c);
-      rememberRequestCap(c);
+      // 只记「这台设备用的档」与「上次的设备」——失败不该污染记忆。
+      // 🔴 不再写全局 cap/rememberRequestCap：行内选档是单台的选择，
+      //    写全局会让所有设备行一起变（2026-09-23 实测串台）。
+      //    全局默认档的唯一写入口是设置页 setDefaultCap。
+      setDeviceCaps((prev) => {
+        const next = { ...prev, [id]: c };
+        try {
+          localStorage.setItem(LS_DEVICE_CAPS, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
       try {
         localStorage.setItem(LS_LAST, id);
         setLastPeer(id);
@@ -133,5 +181,5 @@ export function useRcLaunch(rc: UseRc, toast: ToastFn) {
     rememberRequestCap(c);
   };
 
-  return { cap, setDefaultCap, lastPeer, lastAttempt, doRequest, forgetDevice };
+  return { cap, capOf, setDefaultCap, lastPeer, lastAttempt, doRequest, forgetDevice };
 }

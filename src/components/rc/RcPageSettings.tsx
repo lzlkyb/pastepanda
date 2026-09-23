@@ -62,7 +62,7 @@ export function RcPageSettings({
   onSetDefaultCap,
   onOpenSettings,
   onNavigateHistory,
-  onNavigateDevices,
+  onManageTrusted,
   onOpenUno,
 }: {
   rc: UseRc;
@@ -73,7 +73,8 @@ export function RcPageSettings({
   /** 页脚逃生门：跳主窗口设置页的 rc 分区。 */
   onOpenSettings: () => void;
   onNavigateHistory: () => void;
-  onNavigateDevices: () => void;
+  /** U10：管理免确认设备 = 切到设备页并打开 trusted 过滤（不再让用户逐台翻）。 */
+  onManageTrusted: () => void;
   /**
    * 无人值守的两个入口（生成接入码 / 设置固定密码）。
    * 弹层由调用方挂载 —— 与配对弹层同一个 `RcPairLayer`，这里只发意图。
@@ -188,12 +189,20 @@ export function RcPageSettings({
             <div className={styles.setRowTitle}>免确认设备</div>
             <div className={styles.setRowHint}>
               <span className={styles.cntBadge}>{trustedCount} 台</span>
-              对这些设备跳过本机确认；在设备行 ⋯ 菜单里可随时关闭
+              对这些设备跳过本机确认；可在设备详情页「管理此设备」里随时关闭
             </div>
           </div>
-          <button type="button" className={styles.miniBtn} onClick={onNavigateDevices}>
+          <button type="button" className={styles.miniBtn} onClick={onManageTrusted}>
             管理
           </button>
+        </div>
+        <div className={styles.setRow}>
+          <div className={styles.setRowInfo}>
+            <div className={styles.setRowTitle}>系统级组合键</div>
+            <div className={styles.setRowHint}>
+              出于系统安全，Ctrl+Alt+Del 等系统级组合键无法远程发送；需要时请让对方在现场按键
+            </div>
+          </div>
         </div>
       </section>
 

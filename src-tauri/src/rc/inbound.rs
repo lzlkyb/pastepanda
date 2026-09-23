@@ -175,7 +175,10 @@ async fn reply_clip_err(
     let msg = serde_json::json!({ "t": t, "error": error });
     if let Ok(b) = serde_json::to_vec(&msg) {
         let mut guard = send.lock().await;
-        let _ = write_frame(&mut guard, &b).await;
+        // C6：回执写不进去（连接已断）至少留痕——否则「回帧了」只是注释里的一厢情愿。
+        if let Err(e) = write_frame(&mut guard, &b).await {
+            log::debug!("[RC] 剪贴板回执帧写入失败（连接可能已断）：{e}");
+        }
     }
 }
 
@@ -264,7 +267,11 @@ pub(super) async fn handle_inbound_input(
                         let msg = serde_json::json!({ "t": "clip", "text": t });
                         if let Ok(b) = serde_json::to_vec(&msg) {
                             let mut guard = send.lock().await;
-                            let _ = write_frame(&mut guard, &b).await;
+                            // C6：回帧写失败留痕——对端只会看到 4s 超时，日志里
+                            // 得能分清「它拉得慢」还是「链路已断」。
+                            if let Err(e) = write_frame(&mut guard, &b).await {
+                                log::warn!("[RC] 剪贴板回包写帧失败：{e}");
+                            }
                         }
                     }
                 }
@@ -393,42 +400,6 @@ pub(super) async fn handle_inbound_input(
         return;
     }
 
-    // 追踪按下/抬起：会话收口时由 end_session 调 release_all 补发 up，
-    // 避免对端断线后 Ctrl/Shift/鼠标键永久卡在按下态。只在会真正注入时记录。
-    //
-    // 🔴 顺带丢弃「未配对的抬起」（2026-09-22）：抬起态在 `pressed` 里查不到对应
-    // 按下，说明这颗键在本机从未按下过。继续注入它的代价是**远端凭空弹菜单**——
-    // Windows 对孤立的 WM_RBUTTONUP 会生成 WM_CONTEXTMENU（DefWindowProc 行为），
-    // 而发起端的 `releaseModifiers()` 曾经在每次焦点离开画面时盲发三个鼠标 up
-    // （前端已删，这里是第二道防线）。
-    //
-    // 误丢真实抬起的风险极低：鼠标的按下与抬起走同一路（数据报），真丢的是 DOWN，
-    // 那时远端本来就没按下；万一乱序导致 DOWN 晚到，下一次点击会重发 DOWN
-    // （重复按下照常注入）+ 配对的 UP，自愈。
-    match &ev {
-        InputEvent::Key { vk, down } => {
-            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
-            if *down {
-                g.press_key(*vk);
-            } else if !g.release_key(*vk) {
-                log::debug!("[RC] 丢弃未配对的抬起（vk={vk}）");
-                drop(g);
-                return;
-            }
-        }
-        InputEvent::MouseButton { button, down, .. } => {
-            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
-            if *down {
-                g.press_button(*button);
-            } else if !g.release_button(*button) {
-                log::debug!("[RC] 丢弃未配对的抬起（button={button}）");
-                drop(g);
-                return;
-            }
-        }
-        _ => {}
-    }
-
     // P1-2：注入前再确认 peer/phase/capability 没换——快照到此之间会话可能
     // 已经切给另一台，迟到输入不得打在新会话上。
     // 紧贴 inject：region 计算期间会话同样可能已切换。
@@ -472,6 +443,45 @@ pub(super) async fn handle_inbound_input(
         log::debug!("[RC] 会话在注入前已切换，丢弃迟到输入（{peer}）");
         return;
     }
+
+    // C2（2026-09-23 复审）：按下追踪**紧贴注入**、在所有早退门控之后。
+    // 原先记在守卫之前，「会话已切换」的丢弃路径会把按键留在 pressed 里——
+    // 这颗键本机根本没按下，却等着被 release_all 补发一个凭空的 up。
+    //
+    // 追踪按下/抬起：会话收口时由 end_session 调 release_all 补发 up，
+    // 避免对端断线后 Ctrl/Shift/鼠标键永久卡在按下态。只在会真正注入时记录。
+    //
+    // 🔴 顺带丢弃「未配对的抬起」（2026-09-22）：抬起态在 `pressed` 里查不到对应
+    // 按下，说明这颗键在本机从未按下过。继续注入它的代价是**远端凭空弹菜单**——
+    // Windows 对孤立的 WM_RBUTTONUP 会生成 WM_CONTEXTMENU（DefWindowProc 行为），
+    // 而发起端的 `releaseModifiers()` 曾经在每次焦点离开画面时盲发三个鼠标 up
+    // （前端已删，这里是第二道防线）。
+    //
+    // 误丢真实抬起的风险极低：鼠标的按下与抬起走同一路（数据报），真丢的是 DOWN，
+    // 那时远端本来就没按下；万一乱序导致 DOWN 晚到，下一次点击会重发 DOWN
+    // （重复按下照常注入）+ 配对的 UP，自愈。
+    match &ev {
+        InputEvent::Key { vk, down } => {
+            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            if *down {
+                g.press_key(*vk);
+            } else if !g.release_key(*vk) {
+                log::debug!("[RC] 丢弃未配对的抬起（vk={vk}）");
+                return;
+            }
+        }
+        InputEvent::MouseButton { button, down, .. } => {
+            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            if *down {
+                g.press_button(*button);
+            } else if !g.release_button(*button) {
+                log::debug!("[RC] 丢弃未配对的抬起（button={button}）");
+                return;
+            }
+        }
+        _ => {}
+    }
+
     let r = inject(&ev, &region);
     if !r.ok {
         log::warn!("[RC] 键鼠注入失败（{peer}）：{}", r.error);
@@ -479,7 +489,10 @@ pub(super) async fn handle_inbound_input(
         let msg = serde_json::json!({ "t": "inject_err", "error": r.error });
         if let Ok(b) = serde_json::to_vec(&msg) {
             let mut guard = send.lock().await;
-            let _ = write_frame(&mut guard, &b).await;
+            // C6：连「通知对方注入失败」这条帧都写丢了的话，必须留痕。
+            if let Err(e) = write_frame(&mut guard, &b).await {
+                log::warn!("[RC] inject_err 回执写帧失败：{e}");
+            }
         }
         svc.set_inject_err(r.error.clone());
     }

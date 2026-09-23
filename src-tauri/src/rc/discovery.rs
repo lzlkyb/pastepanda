@@ -168,9 +168,13 @@ impl Discovery {
         self.pairs.prompt(now_ms)
     }
 
-    /// 刚配对成功的那一台（完成屏）。**读完即清**，不会反复弹。
-    pub fn take_done(&self) -> Option<Done> {
-        self.pairs.take_done()
+    /// 刚配对成功的那一台（完成屏）。
+    ///
+    /// 🔴 P1-7（2026-09-23 审计）：**读而不清**，`now_ms` 之后到点自灭——
+    /// 主窗口与工作台两个轮询者都要能看见它（判据与理由在
+    /// [`Pairs::peek_done`]）。
+    pub fn peek_done(&self, now_ms: i64) -> Option<Done> {
+        self.pairs.peek_done(now_ms)
     }
 
     /// presence 收到的明文包入口（注册在 `PresenceTable::on_plain` 上）。

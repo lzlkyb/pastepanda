@@ -53,6 +53,8 @@ interface MenuItemDef {
   label: string;
   hint?: string;
   danger?: boolean;
+  /** true = 禁用占位项（如远程状态读取失败时的说明行），看得见、点不动。 */
+  disabled?: boolean;
   iconClass: string;
   iconSvg: React.ReactNode;
   onClick: () => void;
@@ -326,7 +328,7 @@ export function TrayPopup() {
   // 这里只管交互收尾：成功后收起弹窗（工作台已被拉起），失败用 toast 说明原因。
   const trayRc = useTrayRcShortcut();
   const doRcConnect = useCallback(async () => {
-    if (!trayRc) return;
+    if (!trayRc || trayRc.disabled) return;
     setOperationLoading("rc_connect");
     try {
       // B5：connect 返回 false = 发起失败——错误已落工作台错误面板，
@@ -409,13 +411,16 @@ export function TrayPopup() {
   // B1：能连的时候，托盘第一项就是「连接 <上次设备>」——远程是「想起来用一下」的动作，
   // 不该先过工具箱、工作台两层。trayRc 为 null（通道没起 / 已有会话 / 尚无配对设备）
   // 时这一项整块不出现，而不是摆一个点了会报错的入口。
+  // 2026-09-23 审计修：若是「读状态失败」，hook 会给 disabled 占位——项要留着
+  // 并写明原因，不再静默消失（用户分得清「没配过」与「刚才没读到」）。
   const rcItem: MenuItemDef | null = trayRc
     ? {
         id: "rc_connect",
         iconClass: "icon-purple",
         iconSvg: <span style={{ fontSize: 13 }}>🖥️</span>,
-        label: `连接「${trayRc.label}」`,
+        label: trayRc.disabled ? trayRc.label : `连接「${trayRc.label}」`,
         hint: trayRc.capLabel,
+        disabled: trayRc.disabled,
         onClick: () => void doRcConnect(),
       }
     : null;
@@ -505,7 +510,8 @@ export function TrayPopup() {
             if (recent) doPaste(recent);
           } else {
             const mi = menuItems.find((m) => m.id === item.id);
-            mi?.onClick();
+            // 禁用占位项（如远程状态读取失败）：键盘 Enter 也不能触发
+            if (mi && !mi.disabled) mi.onClick();
           }
         }
       } else if (e.key === "Escape") {
@@ -690,7 +696,7 @@ export function TrayPopup() {
               className={`tray-popup-item${isActive ? " active" : ""}${item.danger ? " danger" : ""}${isLoading ? " loading" : ""}`}
               onClick={item.onClick}
               onMouseEnter={() => setActiveIdx(idx)}
-              disabled={!!operationLoading}
+              disabled={!!operationLoading || !!item.disabled}
             >
               <span className={`tray-popup-item-icon ${item.iconClass}`}>{item.iconSvg}</span>
               <span className="tray-popup-item-text">{isLoading ? "请稍候…" : item.label}</span>

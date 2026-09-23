@@ -7,6 +7,10 @@ const css = readFileSync(resolve(root, "src/components/rc/RemoteComputerA2.modul
 const entry = readFileSync(resolve(root, "src/rc-main.tsx"), "utf8");
 const theme = readFileSync(resolve(root, "src/styles/theme.css"), "utf8");
 const workbench = readFileSync(resolve(root, "src/components/rc/RcWorkbench.tsx"), "utf8");
+const errorSlot = readFileSync(
+  resolve(root, "src/components/rc/RcWorkbenchErrorSlot.tsx"),
+  "utf8",
+);
 
 function luminance(hex: string): number {
   const full = hex.length === 4 ? hex.replace(/./g, (value, index) => (index ? value + value : value)) : hex;
@@ -83,8 +87,12 @@ describe("远程电脑 A2 真实主题守卫", () => {
   });
 
   it("非会话页面也常驻展示并可关闭远程错误", () => {
+    // 2026-09-23：错误条拆进 RcWorkbenchErrorSlot（.tsx ≤ 300 红线）。守卫跟着迁移
+    // ——只钉外壳不够：外壳在、里面没挂 RcErrorPanel，同样是「错误看不见」。
     expect(workbench).toContain("rc.error &&");
-    expect(workbench).toContain("<RcErrorPanel");
+    expect(workbench).toContain("<RcWorkbenchErrorSlot");
     expect(workbench).toContain("onDismiss={rc.clearError}");
+    expect(errorSlot).toContain("<RcErrorPanel");
+    expect(errorSlot).toContain("onDismiss={onDismiss}");
   });
 });

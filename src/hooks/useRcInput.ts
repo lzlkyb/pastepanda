@@ -142,7 +142,10 @@ export function useRcInput({
 
   /** 记一次「有后果的操作」。键盘/滚轮在 `RcSessionView` 里调用它。 */
   const noteAction = useCallback(() => {
-    lastActionAt.current = Date.now();
+    // 🔴 C3：performance.now 域——唯一消费者是 `useRcLinkState` 的「操作未响应」
+    // 判据，它拿的是 `lastFrameAt`（同为 perf 域）；别处记的 `inputEpochRef`
+    // 才是 epoch 域（给画面延迟用），两域不许互比。
+    lastActionAt.current = performance.now();
   }, []);
 
   /** M4：滚轮也要记操作时刻——「操作 ≈Nms」的响应样本不能漏掉滚动。 */
@@ -268,9 +271,11 @@ export function useRcInput({
     };
   }, [canControl, pointerLocked, norm, releaseTracked]);
 
-  // 两级 Esc：捕获中先释放键盘；再按确认结束
+  // 两级 Esc：捕获中先释放键盘；再按确认结束。
+  // 2026-09-23：只看档不再整段早退——它没有键盘/指针锁可释放，Esc 天然
+  // 落到「确认结束」这一级，给只看会话一条键盘退出加速路径（顶栏按钮仍是
+  // 鼠标主路，规则 17.1）。
   useEffect(() => {
-    if (!canControl) return;
     const onKey = (e: KeyboardEvent) => {
       if (!isSessionEscape(e)) return;
       // 有其它模态时把 Esc 让给它，避免误结束会话。

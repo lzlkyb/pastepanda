@@ -12,6 +12,7 @@
  */
 import type { RcCapability, RcHistoryItem, RcTargetDevice } from "@/lib/api/rc";
 import type { ToastFn } from "@/components/Toast";
+import type { RcReachability } from "@/stores/rcStoreTypes";
 import {
   Check,
   ChevronDown,
@@ -26,7 +27,8 @@ import {
 } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { lastMeasuredRtt } from "@/lib/rcHistory";
-import { normalizeRcPresence, osLabel, presenceHint, presenceMainLabel, rcDisplayName, relTime } from "@/lib/rcDevice";
+import { osLabel, rcDisplayName } from "@/lib/rcDevice";
+import { rcCheckTime, rcDeviceStatus } from "@/lib/utils";
 import { pathKindLabel } from "@/lib/rcSessionStats";
 import { useRcDeviceActions } from "@/hooks/useRcDeviceActions";
 import type { RcDeviceUi } from "@/hooks/useRcDeviceUi";
@@ -41,6 +43,8 @@ function displayName(target: RcTargetDevice): string {
 
 export function RcA2DeviceDetail({
   target,
+  check,
+  channelUp = true,
   busy,
   locked,
   historyList,
@@ -57,6 +61,8 @@ export function RcA2DeviceDetail({
   toast,
 }: {
   target: RcTargetDevice | null;
+  check?: RcReachability;
+  channelUp?: boolean | null;
   busy: boolean;
   locked: boolean;
   /** 工作台级的会话历史快照（与侧栏筛选、记录页同源）。 */
@@ -113,7 +119,9 @@ export function RcA2DeviceDetail({
   }
 
   const name = displayName(target);
-  const presence = normalizeRcPresence(target.presence);
+  const status: ReturnType<typeof rcDeviceStatus> = target.source === "rc"
+    ? rcDeviceStatus(target.presence, check, channelUp)
+    : { label: "需完成远程配对", tone: "unknown" as const };
   const cannotConnect = locked || target.source !== "rc";
   const connection = pathKindLabel(target.last_path ?? "") || "尚无成功连接记录";
   /* 稿这一格画的是「在线 · Windows 11 · 局域网直连」。系统是对端**自报**的
@@ -164,9 +172,9 @@ export function RcA2DeviceDetail({
           ) : target.source === "rc" ? (
             <div className={styles.detailTitleRow}>
               <h2>{name}</h2>
-              {/* 在线 pill（C 的观感四件套之一）。只在这一态渲染 —— 药丸是强调，
-                  状态的完整出口仍是下面那行 `presenceMainLabel` 文案，两者不重复表达。 */}
-              {presence === "live" && (
+              {/* U8 后状态行文案是「局域网在线」，pill 判据改按 presence 判，
+                  别绑字符串（文案再改这里就静默失效） */}
+              {target.presence === "live" && (
                 <span className={styles.detailPill}>
                   <Check size={12} aria-hidden="true" />
                   在线
@@ -188,11 +196,11 @@ export function RcA2DeviceDetail({
             <h2>{name}</h2>
           )}
           <p>
-            <span className={styles.onlineText} data-presence={presence}>
-              {presenceMainLabel(presence, relTime(target.last_seen))}
+            <span className={styles.onlineText} data-tone={status.tone}>
+              {status.label}
             </span>
             {deviceOs && <span> · {deviceOs}</span>}
-            <span> · {presenceHint(presence)}</span>
+            {status.checkedAt && <span> · {rcCheckTime(status.checkedAt)} 检查</span>}
           </p>
         </div>
         <div className={styles.detailActions}>

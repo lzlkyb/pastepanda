@@ -17,6 +17,7 @@ pub mod input;
 pub mod join;
 pub mod jpeg;
 pub mod link;
+pub mod mono;
 pub mod net;
 pub mod notify;
 pub mod outbound;

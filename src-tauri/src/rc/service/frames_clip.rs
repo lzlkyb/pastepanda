@@ -178,7 +178,11 @@ impl RcService {
     }
 
     /// 发起端请求拉回对方剪贴板，并等回包（修「立刻 take 必空」竞态）。
-    /// 超时或对方无回包时返回 `Ok(None)`。
+    ///
+    /// C5（2026-09-23 复审）：超时/作废**不再是 `Ok(None)`，而是 `Err`**——
+    /// `None` 唯一诚实的含义是「回包说了、对方剪贴板为空」，前端已把空串
+    /// 当「对方是空的」；把链路问题折叠成空值就是撒谎（规则 15.3）。
+    /// 前端约定：空串 = 真空白；Err 串 = 超时/失败，给重试。
     ///
     /// C8(b) 的两处串扰防线（并发 pull 共用一个序号 / 上个会话迟到的回包）
     /// 全部收在 `clipboard.rs` 里：这里只负责编排顺序 —— **先**拿串行化守卫、
@@ -200,7 +204,9 @@ impl RcService {
                     }
                     return Ok(self.clip.take());
                 }
-                ClipWait::Abandon => return Ok(None),
+                ClipWait::Abandon => {
+                    return Err("对方未响应（连接可能已断开），未拉到剪贴板".into())
+                }
                 ClipWait::KeepWaiting => {}
             }
             tokio::time::sleep(std::time::Duration::from_millis(80)).await;

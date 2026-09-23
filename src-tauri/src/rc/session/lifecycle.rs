@@ -10,9 +10,9 @@
 //! `pub(in crate::rc)` 语义不变。
 
 use crate::rc::protocol::{Capability, RcFrame, SessionPhase};
-use crate::rc::service::{now_ms, AutoReconnect, RcService};
+use crate::rc::service::{AutoReconnect, RcService};
 use super::{
-    is_active, Session, SESSION_TTL_MS, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_ATTEMPTS,
+    is_active, Session, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_ATTEMPTS,
     RECONNECT_SETTLE_POLLS, RECONNECT_SETTLE_POLL_MS,
 };
 use crate::rc::history::{append_history, HistoryFacts};
@@ -71,10 +71,11 @@ impl RcService {
         // ⚠️ 必须在清 session 之前、且直接调注入函数（release_all），不要走 handle_inbound_input——
         // 会话结束态下它的 session_capability() 返回 None，能力校验会拦掉释放。
         // `end_session_releases_pressed_keys` 单测钉住「释放确实发生了」。
-        {
+        // 🔴 P1-3：返回值不再丢掉——重试一次仍失败的项要走到用户眼前（见下面上报处）。
+        let release_failures = {
             let mut g = self.pressed.lock().unwrap_or_else(|p| p.into_inner());
-            g.release_all();
-        }
+            g.release_all()
+        };
         {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             inner.session = None; // take 已清，这里兜底（快照块只 take 了 session）
@@ -150,10 +151,36 @@ impl RcService {
         *self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
         // 收口时清空注入错误（已被前端看到或已无意义）
         self.notify.take_inject_err();
-        *self
-            .last_outbound_error
-            .lock()
-            .unwrap_or_else(|p| p.into_inner()) = None;
+        // 🔴 P1-3（2026-09-23 审计）：释放「被按住的输入」失败的兜底上报。
+        //
+        // 顺序有讲究：必须排在上面那行 `take_inject_err()` **之后**。`set_inject_err`
+        // 走的是同一条 `rc-inject-error` 通道（lib.rs 的回调取走即清），排在前面
+        // 会被这一句顺手清掉——失败又变成只有日志看得见。
+        //
+        // 为什么这值得弹一条 toast：up 注入失败 = 本机 Ctrl/Shift/鼠标键**卡在
+        // 按下态**，用户接下来的每一次本地操作都是错的，而且没有任何自动恢复路径。
+        if !release_failures.is_empty() {
+            let list = release_failures
+                .iter()
+                .map(|f| format!("{}（{}）", f.what, f.error))
+                .collect::<Vec<_>>()
+                .join("、");
+            log::error!("[RC] 会话收口时释放按住的输入失败：{list}");
+            self.notify.set_inject_err(format!(
+                "释放被按住的输入失败：{list}（已重试一次仍未成功，若本机键鼠手感异常，请手动按一下对应键）"
+            ));
+        }
+        // 🔴 P1-4：清失败槽按 **peer** 条件化。无条件清会让「结束 A 的会话」把
+        // B 的发起失败横幅一起抹掉——那是另一台设备、另一场申请的失败。
+        {
+            let mut g = self
+                .last_outbound_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            if g.as_ref().is_some_and(|e| e.peer == peer) {
+                *g = None;
+            }
+        }
         self.emit_changed();
         Ok(())
     }
@@ -175,6 +202,93 @@ impl RcService {
         }
         log::info!("[RC] 强制结束会话（{session_id}）：{reason}");
         let _ = self.end_session(reason).await;
+    }
+
+    /// 🔴 P1-1（2026-09-23 审计）：本机**正在被远程控制**时返回那场会话的 id。
+    ///
+    /// 为什么只看 `InboundActive`：关「允许被远程」这个开关要收掉的是
+    /// 「别人正在控我」这条入站会话。用户自己发起的出站会话（我在控别人）
+    /// 与这个开关无关——拨过去关自己这边的开关，不该把对方的画面断掉。
+    ///
+    /// 为什么交 id 而不是直接在服务层收口：收口必须按 session id 认领
+    /// （见 [`Self::force_end_if_session`] 的 A2 教训），命令入口拿到 id 之后
+    /// 会话可能已经换了，那时 force_end 自己会 no-op。
+    pub fn inbound_active_session_id(&self) -> Option<String> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner
+            .session
+            .as_ref()
+            .filter(|s| s.phase == SessionPhase::InboundActive)
+            .map(|s| s.id.clone())
+    }
+
+    /// 🔴 P1-1：某台设备**占着会话槽**时返回它的 id（**不看 phase**，含未激活的
+    /// `OutboundPending`）。
+    ///
+    /// 为什么这里要放宽到 Pending（与上面的 `inbound_active_session_id` 相反）：
+    /// 调用方是「忘记这台设备」——撤销信任后，**正在拨的那一通也不该继续**，
+    /// 否则会出现「表里已经没这台机器、画面却连上了」。而 `end_session` 对
+    /// Pending 同样成立（发 End、清句柄、落历史），收口没有phase要求。
+    /// 拨号任务那边靠 `session_id_is` 自查，会自己把迟到的流句柄丢掉。
+    pub fn session_id_for_peer(&self, peer: &str) -> Option<String> {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner
+            .session
+            .as_ref()
+            .filter(|s| s.peer == peer)
+            .map(|s| s.id.clone())
+    }
+
+    /// 🔴 P1-5（2026-09-23 审计）：被控端 — 发起端是否已经失联（半开链路）。
+    ///
+    /// 证据是 `StreamCfg` 的 `last_activity_ms`（经 `RcService::last_activity_ms`
+    /// 读出）：每一条入站输入/心跳都会刷它。注意这与
+    /// `should_pause_stream`（3.5s）不是同一件事——那个只是**省带宽**的暂停，
+    /// 这一条才是收口：半开连接（对端进程被杀、拔网线、笔记本合盖）下
+    /// QUIC 不会立刻报错，此前只有 2 小时的 TTL 兜底，横幅能挂两个小时。
+    ///
+    /// 🔴 C3：三个时间全是单调钟口径（`mono_ms`）——证据锚、会话起点、现在。
+    /// 混墙钟会让系统时间一跳就把在用会话判死（或反向让死链永不断）。
+    ///
+    /// 锁序 stream → inner（与 `status()` 一致，见那边 D6 的 ABBA 说明）。
+    pub fn inbound_heartbeat_stale(&self) -> bool {
+        let evidence = self.last_activity_ms();
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        match inner.session.as_ref() {
+            Some(s) if s.phase == SessionPhase::InboundActive => {
+                crate::rc::link::link_stale_kick(
+                    s.started_mono,
+                    evidence,
+                    crate::rc::mono::mono_ms(),
+                    crate::rc::link::LINK_STALE_KICK_MS,
+                )
+            }
+            _ => false,
+        }
+    }
+
+    /// 🔴 P1-5：发起端 — 被控端是否已经失联（同一判据的镜像侧）。
+    ///
+    /// 证据取 `max(attached_ms, last_pong_ms)`：pong 是链路活性的唯一证据，
+    /// 而一条 pong 都还没收到时用「连接登记时刻」当锚点（不用 `started_ms`——
+    /// 拨号本身最长 15 秒，拿申请时刻当锚点会让慢连接刚建好就被踢）。
+    ///
+    /// 🔴 C3：attached/pong 已在 link.rs 内改存单调时刻，与会话的 `started_mono`
+    /// 同基座，无需换算。
+    ///
+    /// 锁序 link → inner，同上。
+    pub fn outbound_heartbeat_stale(&self) -> bool {
+        let evidence = self.link.attached_ms().max(self.link.last_pong_ms());
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        match inner.session.as_ref() {
+            Some(s) if s.phase == SessionPhase::OutboundActive => crate::rc::link::link_stale_kick(
+                s.started_mono,
+                evidence,
+                crate::rc::mono::mono_ms(),
+                crate::rc::link::LINK_STALE_KICK_MS,
+            ),
+            _ => false,
+        }
     }
 
     /// 该 peer 是否有一场**活跃**（Pending/Outbound/Inbound Active 任一）会话。
@@ -361,12 +475,18 @@ impl RcService {
     }
 
     /// 会话是否超过 TTL（推流循环每圈检查）。
+    ///
+    /// 🔴 C3：判据收口到 [`ttl_expired`]，两个时间都是单调口径——
+    /// 墙钟跳变不再能把 2 小时的 TTL 变成秒级误杀或永久豁免。
     pub fn session_expired(&self) -> bool {
+        self.session_expired_with(crate::rc::mono::mono_ms())
+    }
+
+    /// 假时钟入口（单测注入「现在」）；生产走 [`Self::session_expired`]。
+    pub(in crate::rc) fn session_expired_with(&self, now_mono: i64) -> bool {
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
-            Some(s) if is_active(s.phase) => {
-                now_ms() - s.started_ms > SESSION_TTL_MS
-            }
+            Some(s) if is_active(s.phase) => super::ttl_expired(s.started_mono, now_mono),
             _ => false,
         }
     }

@@ -123,6 +123,22 @@ impl InboundVideo {
                 self.svc.force_end_if_session(&self.my_id, "会话超时").await;
                 break;
             }
+            // 🔴 P1-5（2026-09-23 审计）：半开链路看门狗（被控侧）。
+            //
+            // 下面那条 `should_pause_stream` 只是**省带宽**（3.5s 无心跳就停推帧，
+            // 心跳回来就继续），它 `continue` 掉的是整圈循环，因此旧实现里
+            // 「对端进程被杀 / 拔网线 / 笔记本合盖」这种半开连接只能等
+            // `SESSION_TTL_MS`（2 小时）才收口——期间横幅一直挂着「正在被控制」、
+            // busy 闸一直被占。15 秒零入站证据已经不是抖动而是失联，直接收口：
+            // 走 `force_end_if_session`（按 session id 认领，绝不误杀同 peer 的
+            // 新会话），于是 `release_all` 补发 up、历史落库、设备标离线全部照走。
+            if self.svc.inbound_heartbeat_stale() {
+                log::info!("[RC] 发起端失联（心跳超时），自动结束会话");
+                self.svc
+                    .force_end_if_session(&self.my_id, "对端失联（心跳超时）")
+                    .await;
+                break;
+            }
             if self.svc.should_pause_stream() {
                 tokio::time::sleep(std::time::Duration::from_millis(400)).await;
                 continue;

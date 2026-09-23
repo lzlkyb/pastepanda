@@ -54,17 +54,22 @@ impl RcService {
                 capability,
                 phase: SessionPhase::OutboundPending,
                 started_ms: now_ms(),
+                started_mono: crate::rc::mono::mono_ms(),
                 granted: false,
             };
             inner.session = Some(sess.clone());
             (id, sess)
         };
         {
+            // 🔴 P1-4（2026-09-23 审计）：只清**同一台设备**的旧失败。无条件清会让「去点 B」把 A 的
+            // 失败横幅抹掉——A 的错误用户还没看到就没了，而它跟 B 这次申请无关。
             let mut g = self
                 .last_outbound_error
                 .lock()
                 .unwrap_or_else(|p| p.into_inner());
-            *g = None;
+            if g.as_ref().is_some_and(|e| e.peer == peer) {
+                *g = None;
+            }
         }
         // 立刻让前端看到 Pending，取消按钮才能点
         self.emit_changed();
@@ -160,11 +165,25 @@ impl RcService {
                     // 交回的路径同样丢弃：一次失败的发起不该被记成「上次走的哪条路」。
                     let _ = svc.link.detach();
                     {
-                        let mut g = svc
-                            .last_outbound_error
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner());
-                        *g = Some(e);
+                        // 🔴 被拒 ≠ 通道故障（2026-09-23 复审）：Deny 是正当结局，
+                        // 已有 requestEndNotice 的「拒绝了这个申请」toast 报过一次；
+                        // 再写错误槽就是双重反馈，而且那条带着「重新发起」按钮——
+                        // 刚被拒绝就怂恿用户重试，是错的引导。网络类失败照旧进槽。
+                        let is_rejection = e.contains("拒绝");
+                        if !is_rejection {
+                            let mut g = svc
+                                .last_outbound_error
+                                .lock()
+                                .unwrap_or_else(|p| p.into_inner());
+                            // 🔴 P1-4：写进槽的一刻就把「是谁、哪一场」一起写进去。
+                            // 归因只能在这里做——这是唯一同时握着 peer 与 session_id
+                            // 的地方；到 status() 投影时只剩一句文案，谁都说不清是谁的失败。
+                            *g = Some(RcOutboundError {
+                                peer: peer.clone(),
+                                session_id: session_id.clone(),
+                                error: e,
+                            });
+                        }
                     }
                     svc.emit_changed();
                 }
@@ -174,6 +193,11 @@ impl RcService {
         Ok(pending_sess)
     }
 
+    /// 前端显式确认过错误横幅 → 清掉它。
+    ///
+    /// 🔴 P1-4 之后槽里带归因，但**这个入口仍然全清**：它是「用户已经看到了」的
+    /// 回执（`rc_clear_outbound_error`），不是某台设备的生命周期动作。按 peer 条件
+    /// 清的是 `request_session` 与 `end_session` 那两处。
     pub fn clear_outbound_error(&self) {
         let mut g = self
             .last_outbound_error

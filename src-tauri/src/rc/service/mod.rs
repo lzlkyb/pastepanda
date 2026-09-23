@@ -162,13 +162,22 @@ pub struct RcStatus {
     /// false = 未上报（官方 7.2.1 及更早）——发起端 UI 据此提示升级对端；
     /// **不改传输**（MouseMove 仍走数据报，旧对端收不到是已知限制）。
     pub peer_dgram_input: bool,
-    /// 最后一次收到对端 pong 的时刻（epoch ms）；0 = 本会话还没收到过。
+    /// 🔴 C3（2026-09-23 审计）：最后一次收到对端 pong 是「距今多少毫秒」；
+    /// `None` = 本会话还没收到过任何 pong。
     ///
-    /// 🔴 前端**只**用它判链路活性。ping 的本地 `invoke` 成功只说明消息进了
-    /// 本地发送队列，不代表对端收到了——那是 2026-09-17 修掉的另一个误报源。
-    pub last_pong_ms: i64,
+    /// 前端**链路活性判据的唯一来源**（ping 的本地 `invoke` 成功只说明消息进了
+    /// 本地发送队列，不代表对端回 pong——那是 2026-09-17 修掉的误报源）。
+    /// 之所以投影 **age** 而不是时刻：后端 pong 时间戳是进程私有单调基座
+    /// （墙钟一跳会把新鲜度判据打乱，见 `rc/link.rs`），裸时刻跨进程/跨端比较
+    /// 全无意义；age 是唯一两边都能解释的形状——前端收到后立刻用
+    /// `performance.now()` 定锚外推，同样不碰墙钟。
+    pub pong_age_ms: Option<i64>,
     /// 非阻塞发起申请的后台失败原因；前端展示后应调 clear_outbound_error。
-    pub outbound_error: Option<String>,
+    ///
+    /// 🔴 P1-4（2026-09-23 审计）：形状从 `Option<String>` 换成带归因的
+    /// [`RcOutboundError`]。投影**字段名不变**，只是值多了 `peer` / `session_id`
+    /// 两个坐标——前端读文案请改取 `.error`（见该结构体注释）。
+    pub outbound_error: Option<RcOutboundError>,
     /// 发起端：自动重连进度（Q6）。None = 没有。前端据此展示「正在重连 N/M」。
     pub reconnecting: Option<RcReconnectInfo>,
     /// G3：被控端**本机**是否已静音系统声音（被控者自己在横幅上关的）。
@@ -261,7 +270,10 @@ pub struct RcService {
     /// 状态变化 / 画面范围变化 / 注入错误 三类前端通知的收口（见 `notify.rs`）。
     pub(super) notify: NotifyState,
     /// 发起申请后台拨号失败（非阻塞 request）。status() 读出后由前端展示。
-    pub(super) last_outbound_error: Mutex<Option<String>>,
+    ///
+    /// 🔴 P1-4：槽里带归因（peer + session_id）。清空是**条件化**的：只有同一台
+    /// 设备的申请/收口才清它，别让 B 的动作抹掉 A 的失败（见 [`RcOutboundError`]）。
+    pub(super) last_outbound_error: Mutex<Option<RcOutboundError>>,
     /// 发起端：自动重连 episode 状态（Q6）。None = 没有进行中/待展示的自动重连。
     /// 由 session.rs 的 `begin_auto_reconnect` 驱动；用户手动发起/结束会清掉。
     pub(super) auto_reconnect: Mutex<Option<AutoReconnect>>,
@@ -347,6 +359,24 @@ pub struct AutoReconnect {
     /// 成功又断流、新 episode 建立时，旧任务醒来误把新状态当成自己的，
     /// 两个任务并行重试、attempt 互相踩。
     pub epoch: u64,
+}
+
+/// 🔴 P1-4（2026-09-23 审计）：一次**非阻塞发起**失败的带归因投影。
+///
+/// 槽位是全局单值（同一个 `RcService` 只有一个），而写它的路径有两条：
+/// 用户手动发起与自动重连 episode，多台设备各自的任务都会往里写。旧形状
+/// 只有裸文案，于是「A 的失败」会被显示成「B 的失败」——用户对着 B 的
+/// 卡片看到一条与自己无关的错误，或反过来把 A 的真失败当成 B 的（归因漂移）。
+/// 现在把**是谁、哪一场**一起写进槽里：
+/// - `peer`：这次发起的目标 node_id，前端据此把横幅挂到正确的设备行；
+/// - `session_id`：哪一场申请的失败（清槽按它/peer 条件化，见
+///   [`RcService::request_session`] 与 `end_session`），旧的不会再误伤新的；
+/// - `error`：给用户看的文案（原 `Option<String>` 的内容）。
+#[derive(Debug, Clone, Serialize)]
+pub struct RcOutboundError {
+    pub peer: String,
+    pub session_id: String,
+    pub error: String,
 }
 
 /// status 里给前端的自动重连进度（Q6）。

@@ -69,7 +69,10 @@ export function useMcpServer(
         logger.warn("MCP 服务自启失败", e.payload);
         setStartError(String(e.payload));
       });
-    })();
+    })().catch((e) =>
+      // 审计修：listen 注册失败以前是 unhandled rejection，整条通知链路静默丢掉
+      logger.warn("MCP mcp-start-failed 监听注册失败", e),
+    );
     return () => un?.();
   }, []);
 
@@ -82,7 +85,7 @@ export function useMcpServer(
         logger.warn("MCP 审计写入失败", e.payload);
         setAuditError(String(e.payload));
       });
-    })();
+    })().catch((e) => logger.warn("MCP mcp-audit-failed 监听注册失败", e));
     return () => un?.();
   }, []);
 

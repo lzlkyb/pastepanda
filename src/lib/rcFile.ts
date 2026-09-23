@@ -12,7 +12,7 @@
  * 两个模块都 re-export 它。0 字节与「还没开始」的区分交给**调用方**的
  * null/未开始状态，不再由格式化函数代劳。
  */
-import type { RcFileAsk, RcFileSnapshot, RcFileTask, RcFileTaskState } from "@/lib/api/rcFile";
+import type { RcFileAsk, RcFileSnapshot, RcFileTask, RcFileTaskDir, RcFileTaskState } from "@/lib/api/rcFile";
 
 /** 确认条超时，与后端 `file_state::ASK_TIMEOUT_MS` **必须一致**（两端同倒计时）。 */
 export const ASK_TIMEOUT_MS = 60_000;
@@ -93,6 +93,17 @@ export function taskPercent(t: RcFileTask): number {
 /** 进行中（未结束）的任务。 */
 export function runningTasks(tasks: RcFileTask[]): RcFileTask[] {
   return tasks.filter((t) => !isTerminal(t.state));
+}
+
+/**
+ * 摘要条的方向前缀（本机视角）。
+ *
+ * 🔴 2026-09-23 审计修：侧栏摘要条曾写死「传给 X」，而 `runningTasks[0]`
+ * 完全可能是**收**方向任务——方向是说谎的。`dir` 就是后端的权威方向字段
+ * （`taskLine` / `closingText` 同源），前缀收口在这里单一实现，守卫单测钉住。
+ */
+export function transferStripLabel(dir: RcFileTaskDir, name: string): string {
+  return dir === "recv" ? `${name} 传来` : `传给 ${name}`;
 }
 
 /** 完成的任务数。 */

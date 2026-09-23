@@ -104,8 +104,11 @@ impl RcService {
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .clone(),
-            last_pong_ms: self.link.last_pong_ms(),
+            // C3：投影 age（投影时刻 = 现在），裸单调值不出进程。
+            pong_age_ms: self.link.pong_age_ms(crate::rc::mono::mono_ms()),
             // clone 而非 take：Overlay/对话框/设置多处 useRc 并发轮询，take 会只有一处看见
+            // 🔴 P1-4：连同归因（peer / session_id）一起投影出去，前端才知道这条
+            // 失败该挂在哪个设备上。
             outbound_error: self
                 .last_outbound_error
                 .lock()
@@ -300,9 +303,13 @@ impl RcService {
         p
     }
 
-    /// 局域网配对：刚成功的那一台（读完即清）。
-    pub fn nearby_take_done(&self) -> Option<crate::rc::pin::Done> {
-        self.discovery.take_done()
+    /// 局域网配对：刚成功的那一台（完成屏）。
+    ///
+    /// 🔴 P1-7（2026-09-23 审计）：改名并改语义——原来是 `nearby_take_done`
+    /// （读完即清），两个并发轮询者只有一个能看见成功屏。现在窗口内多重可读、
+    /// 到点自灭，判据见 `pin::Pairs::peek_done`。
+    pub fn nearby_done(&self, now_ms: i64) -> Option<crate::rc::pin::Done> {
+        self.discovery.peek_done(now_ms)
     }
 
     pub fn nearby_pair_start(

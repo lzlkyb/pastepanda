@@ -38,7 +38,6 @@ function renderSidebar(props: Partial<ComponentProps<typeof RcA2Sidebar>> = {}) 
     lockedLabel: "",
     onSelect: vi.fn(),
     onConnect: vi.fn(),
-    onProbe: vi.fn(),
     onPair: vi.fn(),
     onNavigate: vi.fn(),
   };
@@ -59,7 +58,6 @@ describe("RcA2Sidebar", () => {
         lockedLabel=""
         onSelect={onSelect}
         onConnect={onConnect}
-        onProbe={vi.fn()}
         onPair={vi.fn()}
         onNavigate={vi.fn()}
       />,
@@ -86,7 +84,6 @@ describe("RcA2Sidebar", () => {
         lockedLabel=""
         onSelect={vi.fn()}
         onConnect={vi.fn()}
-        onProbe={vi.fn()}
         onPair={onPair}
         onNavigate={onNavigate}
       />,
@@ -114,7 +111,6 @@ describe("RcA2Sidebar", () => {
         lockedLabel=""
         onSelect={onSelect}
         onConnect={vi.fn()}
-        onProbe={vi.fn()}
         onPair={vi.fn()}
         onNavigate={onNavigate}
       />,
@@ -140,7 +136,6 @@ describe("RcA2Sidebar", () => {
         lockedLabel=""
         onSelect={vi.fn()}
         onConnect={vi.fn()}
-        onProbe={vi.fn()}
         onPair={vi.fn()}
         onNavigate={vi.fn()}
         selfEnabled={false}
@@ -173,7 +168,6 @@ describe("RcA2Sidebar", () => {
         lockedLabel=""
         onSelect={vi.fn()}
         onConnect={onConnect}
-        onProbe={vi.fn()}
         onPair={vi.fn()}
         onNavigate={vi.fn()}
       />,
@@ -185,7 +179,7 @@ describe("RcA2Sidebar", () => {
     expect(onConnect).toHaveBeenCalledWith("peer-a", "control");
   });
 
-  it("按可达性分组并带计数：三个具名组各有台数", () => {
+  it("状态更新时设备保留原顺序，不因分组跳行", () => {
     renderSidebar({
       targets: [
         TARGET,
@@ -194,29 +188,21 @@ describe("RcA2Sidebar", () => {
       ],
     });
 
-    // 组名 + 台数对屏幕阅读器可用（视觉那行 aria-hidden，不重复播报）
-    expect(screen.getByRole("group", { name: "在线，1 台设备" })).toBeTruthy();
-    expect(screen.getByRole("group", { name: "最近使用，1 台设备" })).toBeTruthy();
-    expect(screen.getByRole("group", { name: "尚未连接，1 台设备" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /选择设备/ }).map((row) => row.getAttribute("aria-label"))).toEqual([
+      "选择设备“工作电脑”",
+      "选择设备“家里的电脑”",
+      "选择设备“旧笔记本”",
+    ]);
   });
 
-  it("空组不渲染——不摆一个写着「在线 0」的空标题", () => {
-    renderSidebar({ targets: [{ ...TARGET, presence: "never" }] });
-
-    expect(screen.queryByRole("group", { name: /在线/ })).toBeNull();
-    expect(screen.getByRole("group", { name: "尚未连接，1 台设备" })).toBeTruthy();
-  });
-
-  it("在线行的第二行给实测路径，不重复分组标题里的「在线」", () => {
-    // TARGET：presence = live、last_path = lan
+  it("在线状态直接写在设备行", () => {
     renderSidebar({ targets: [TARGET] });
 
     const row = screen.getByRole("button", { name: /选择设备“工作电脑”/ });
-    expect(row.textContent).toContain("局域网直连");
-    expect(row.textContent).not.toContain("在线");
+    expect(row.textContent).toContain("在线");
   });
 
-  it("离线行的第二行给上次时间，被让位的路径进 title 补回", () => {
+  it("未知状态不再把历史时间冒充当前状态", () => {
     renderSidebar({
       targets: [
         {
@@ -231,11 +217,12 @@ describe("RcA2Sidebar", () => {
     });
 
     const row = screen.getByRole("button", { name: /选择设备“旧笔记本”/ });
-    expect(row.textContent).toContain("3 天前见过");
-    expect(row.querySelector("small")?.getAttribute("title")).toBe("上次实测路径：绕中继");
+    // U8：「尚未确认」改说用户视角的话
+    expect(row.textContent).toContain("最近在线 · 未实测");
+    expect(row.textContent).not.toContain("局域网在线");
   });
 
-  it("搜索不拆散分组：过滤后仍按组渲染", () => {
+  it("搜索只过滤设备，不改变剩余设备的状态文字", () => {
     renderSidebar({
       targets: [
         TARGET,
@@ -247,7 +234,7 @@ describe("RcA2Sidebar", () => {
       target: { value: "家里" },
     });
 
-    expect(screen.getByRole("group", { name: "在线，1 台设备" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /选择设备“家里的电脑”/ }).textContent).toContain("在线");
     expect(screen.queryByRole("button", { name: /选择设备“工作电脑”/ })).toBeNull();
   });
 });
@@ -381,12 +368,14 @@ describe("RcA2DeviceDetail", () => {
     expect(onSendFiles).toHaveBeenCalledWith("peer-a");
 
     // 权限动作收在「管理此设备」里：未展开时不该常驻占位
-    expect(screen.queryByRole("button", { name: "开启免确认连接" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "开启免确认" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /管理此设备/ }));
-    fireEvent.click(screen.getByRole("button", { name: "开启免确认连接" }));
+    fireEvent.click(screen.getByRole("button", { name: "开启免确认" }));
     fireEvent.click(screen.getByRole("button", { name: "开启自动接收文件" }));
     fireEvent.click(screen.getByRole("button", { name: "移除设备" }));
-    expect(onSetTrust).toHaveBeenCalledWith("peer-a", true);
+    // 2026-09-23 审计收口后，「开启免确认」先过共享确认框（lib/rcTrust）再写入，
+    // 所以 trust 的落地比其它按钮晚一个微任务——用 waitFor 断言。
+    await waitFor(() => expect(onSetTrust).toHaveBeenCalledWith("peer-a", true));
     expect(onSetAutoAccept).toHaveBeenCalledWith("peer-a", true);
     await waitFor(() => expect(onForget).toHaveBeenCalledWith("peer-a"));
     expect(confirmDialog).toHaveBeenCalled();
@@ -438,7 +427,7 @@ describe("RcA2DeviceDetail", () => {
     renderDetail({ target: { ...TARGET, source: "sync" }, onPair });
 
     fireEvent.click(screen.getByRole("button", { name: /管理此设备/ }));
-    expect(screen.queryByRole("button", { name: "开启免确认连接" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "开启免确认" })).toBeNull();
     expect(screen.queryByRole("button", { name: "开启自动接收文件" })).toBeNull();
     expect(screen.queryByRole("button", { name: "移除设备" })).toBeNull();
     expect(screen.queryByRole("button", { name: "重命名设备" })).toBeNull();
@@ -532,131 +521,82 @@ describe("RcA2DeviceDetail 最近会话（批5a）", () => {
 });
 
 describe("RcA2DeviceDetail 系统标签（批6b）", () => {
-  it("对端自报过系统时，标题行是「状态 · 系统 · 提示」三段", () => {
+  it("短连接刚成功时徽标不误称在线", () => {
+    renderDetail({
+      target: { ...TARGET, presence: "seen" },
+      check: { state: "reachable", checkedAt: Date.now() },
+    });
+    expect(screen.getByText("刚刚可连接")).toBeTruthy();
+    expect(screen.queryByText("在线")).toBeNull();
+  });
+  it("对端自报过系统时，标题行展示当前状态和系统", () => {
     renderDetail({ target: { ...TARGET, os: "Windows 11" } });
 
-    const line = screen.getByText(/局域网可达/).parentElement;
-    expect(line?.textContent).toBe("在线 · Windows 11 · 局域网可达");
+    const line = screen.getAllByText(/局域网在线/).find((el) => el.hasAttribute("data-tone"))?.parentElement;
+    expect(line?.textContent).toBe("局域网在线 · Windows 11");
   });
 
   it("采不到系统（空串）时整段不渲染，不留一个孤立的「 · 」", () => {
     renderDetail({ target: { ...TARGET, os: "" } });
 
     expect(screen.queryByText(/Windows/)).toBeNull();
-    const line = screen.getByText(/局域网可达/).parentElement;
-    expect(line?.textContent).toBe("在线 · 局域网可达");
+    const line = screen.getAllByText(/局域网在线/).find((el) => el.hasAttribute("data-tone"))?.parentElement;
+    expect(line?.textContent).toBe("局域网在线");
   });
 
   it("字段整个缺失（旧后端 / 仅同步配对设备）同样不渲染，不炸", () => {
     // 默认 TARGET 刻意不带 os：代表「还没建立过会话」这一类设备
     renderDetail();
 
-    const line = screen.getByText(/局域网可达/).parentElement;
-    expect(line?.textContent).toBe("在线 · 局域网可达");
+    const line = screen.getAllByText(/局域网在线/).find((el) => el.hasAttribute("data-tone"))?.parentElement;
+    expect(line?.textContent).toBe("局域网在线");
   });
 });
 
-describe("RcA2DeviceList 右格按在线/离线分流（批7，照 A 方案稿）", () => {
+describe("RcA2DeviceList 自动状态与一步连接", () => {
   const withPresence = (presence: RcTargetDevice["presence"]): RcTargetDevice => ({
     ...TARGET,
     presence,
   });
 
-  it("在线设备给「连接」（稿子那格是 primary-button）", () => {
+  it("在线设备可连接", () => {
     renderSidebar({ targets: [withPresence("live")] });
 
     expect(screen.getByRole("button", { name: "连接工作电脑" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /是否可达/ })).toBeNull();
   });
 
-  it("离线设备改给「检测」——先确认还在不在，别直接发起一次会失败的会话", () => {
-    renderSidebar({ targets: [withPresence("seen")] });
+  it("最近在线的设备也能一步连接，不要求先点检测", () => {
+    const onConnect = vi.fn();
+    renderSidebar({ targets: [withPresence("seen")], onConnect });
 
-    expect(screen.queryByRole("button", { name: "连接工作电脑" })).toBeNull();
-    expect(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ })).toBeTruthy();
+    const connect = screen.getByRole("button", { name: "连接工作电脑" });
+    expect((connect as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(connect);
+    expect(onConnect).toHaveBeenCalledWith("peer-a", "control");
   });
 
-  it("点「检测」只探这一台（不是把整列全拨一遍）", async () => {
-    const onProbe = vi.fn().mockResolvedValue(true);
-    renderSidebar({ targets: [withPresence("never")], onProbe });
-
-    fireEvent.click(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ }));
-
-    expect(onProbe).toHaveBeenCalledTimes(1);
-    expect(onProbe).toHaveBeenCalledWith("peer-a");
-    // 等 onProbe 的 finally 把这一台从 probingIds 里摘掉——不 await 的话那次 setState
-    // 落在 act 之外，React 会警告（状态本身是对的，只是测试没等它）。
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ })).toHaveProperty(
-        "disabled",
-        false,
-      ),
-    );
-  });
-
-  it("探测进行中那一行显示「检测中」并禁用，回来后复原", async () => {
-    let done!: (v: unknown) => void;
-    const onProbe = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          done = resolve;
-        }),
-    );
-    renderSidebar({ targets: [withPresence("seen")], onProbe });
-
-    fireEvent.click(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ }));
-
-    const busyBtn = screen.getByRole("button", { name: /检测“工作电脑”是否可达/ });
-    expect(busyBtn.textContent).toBe("检测中");
-    expect(busyBtn).toHaveProperty("disabled", true);
-
-    done(true);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ }).textContent).toBe(
-        "检测",
-      ),
-    );
-  });
-
-  it("会话进行中（locked）不给探测", () => {
+  it("自动确认的结果在行内常驻可见，失败不写成已离线", () => {
     renderSidebar({
       targets: [withPresence("seen")],
-      locked: true,
-      lockedLabel: "远程会话进行中",
+      reachability: { "peer-a": { state: "unreachable", checkedAt: Date.now() } },
     });
-
-    expect(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    const row = screen.getByRole("button", { name: /选择设备“工作电脑”/ });
+    expect(row.textContent).toContain("暂时连不上");
+    expect(row.textContent).toContain("检查");
+    expect(screen.getByRole("button", { name: "连接工作电脑" })).toHaveProperty("disabled", false);
   });
 
-  it("多台同时探测互不串台：先回来的那台只清自己", async () => {
-    const other: RcTargetDevice = { ...TARGET, node_id: "peer-b", name: "设备乙", presence: "seen" };
-    let doneA!: () => void;
-    /* 只让甲能结束，乙一直挂在拨号中——这正是串台 bug 的观察窗口。
-       修复前 probingId 是单值：甲的 finally 会把乙的「检测中」一起清掉，
-       乙于是变回可点的「检测」，用户再点一次就对同一台并发拨两遍。 */
-    const onProbe = vi.fn(
-      (id: string) =>
-        new Promise<void>((resolve) => {
-          if (id === "peer-a") doneA = resolve;
-        }),
-    );
-    renderSidebar({ targets: [withPresence("never"), other], onProbe });
+  it("检查进行中在侧栏显示台数", () => {
+    renderSidebar({
+      targets: [withPresence("seen")],
+      reachability: { "peer-a": { state: "checking" } },
+    });
+    expect(screen.getByText("1 台设备 · 正在确认 1 台")).toBeTruthy();
+  });
 
-    const btnA = () => screen.getByRole("button", { name: /检测“工作电脑”是否可达/ });
-    const btnB = () => screen.getByRole("button", { name: /检测“设备乙”是否可达/ });
-
-    fireEvent.click(btnA());
-    fireEvent.click(btnB());
-    expect(btnB().textContent).toBe("检测中");
-
-    doneA();
-    await waitFor(() => expect(btnA().textContent).toBe("检测"));
-
-    // 🔴 乙还在飞行中，必须仍是「检测中」且不可重复点
-    expect(btnB().textContent).toBe("检测中");
-    expect(btnB()).toHaveProperty("disabled", true);
+  it("列表读取失败显示重试，不误称没有设备", () => {
+    renderSidebar({ targets: [], targetsLoaded: false, targetsError: "读取失败" });
+    expect(screen.getByText(/设备列表暂时无法加载/)).toBeTruthy();
+    expect(screen.queryByText("还没有已配对的设备")).toBeNull();
   });
 });

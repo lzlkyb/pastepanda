@@ -16,9 +16,17 @@ import type {
   RcUnoCreated,
 } from "@/lib/api/rc";
 
+export type RcReachability = {
+  state: "checking" | "reachable" | "unreachable" | "error";
+  checkedAt?: number;
+};
+
 export interface RcState {
   status: RcStatus | null;
   targets: RcTargetDevice[];
+  targetsLoaded: boolean;
+  targetsError: string | null;
+  reachability: Record<string, RcReachability>;
   identity: RcIdentity | null;
   busy: boolean;
   /** B4：并发操作计数——先完成者不得提前解除后到者的禁用 */
@@ -62,22 +70,8 @@ export interface RcState {
 
   // 数据刷新
   refresh: () => Promise<void>;
-  refreshTargets: () => Promise<void>;
-  /**
-   * 按需探活：对指定设备短超时拨一次，再刷新列表。
-   *
-   * # 🔴 2026-09-21 从「全量」改为「白名单」
-   *
-   * 旧实现探**所有非 live 设备**，且打开页面时自动跑一次。两个后果：
-   * ① 打开页面 = 一轮并发拨号风暴（上限 8 台并行 × 3s 超时）；
-   * ② 从前 probe 拨通会写 `last_seen`，于是「打开页面/点刷新」把所有能拨通的
-   *    设备集体续命 2 分钟——表现就是「点一下就变在线」「打开页面显示不准」。
-   *
-   * 现在：**默认不探**（不传 `only` 就只刷新列表）；调用方按需指定要探谁
-   * （通常是用户当前选中/正要连的那台）。后端也已不再因探测写库。
-   *
-   * @param only 要探的设备 id 白名单。省略 = 不探，只刷新。
-   */
+  refreshTargets: () => Promise<RcTargetDevice[] | null>;
+  /** 对指定设备做短连接确认，结果只更新内存中的临时状态，不改历史在线时间。 */
   probeTargets: (only?: string[]) => Promise<void>;
   refreshIdentity: () => Promise<void>;
   clearError: () => void;

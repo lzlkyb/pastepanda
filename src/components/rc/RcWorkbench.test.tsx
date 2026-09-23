@@ -17,7 +17,7 @@
  *
  * 会话视图 / 配对层 / 四个 hook 全 mock：本用例只关心骨架接线。
  */
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RcSession, RcStatus, RcTargetDevice } from "@/lib/api/rc";
 
@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   status: null as RcStatus | null,
   targets: [] as RcTargetDevice[],
   probeTargets: vi.fn().mockResolvedValue(undefined),
+  refreshTargets: vi.fn(),
+  visible: true,
 }));
 /** 批7 审查补：toast 要能被断言——「通道未启动时点检测」的修复靠的就是它。 */
 const toastSpy = vi.hoisted(() => vi.fn());
@@ -39,9 +41,12 @@ vi.mock("@/hooks/useRc", () => ({
     busy: false,
     isOpError: false,
     targets: h.targets,
+    reachability: {},
+    targetsLoaded: true,
+    targetsError: null,
     refresh: vi.fn(),
     refreshIdentity: vi.fn(),
-    refreshTargets: vi.fn(),
+    refreshTargets: h.refreshTargets,
     probeTargets: h.probeTargets,
     startChannel: vi.fn().mockResolvedValue(true),
     end: vi.fn().mockResolvedValue(true),
@@ -52,6 +57,7 @@ vi.mock("@/hooks/useRc", () => ({
     clearError: vi.fn(),
   }),
 }));
+vi.mock("@/hooks/useWindowVisible", () => ({ useWindowVisible: () => h.visible }));
 vi.mock("@/hooks/useRcLaunch", () => ({
   useRcLaunch: () => ({
     cap: "control",
@@ -221,37 +227,56 @@ const OFFLINE_TARGET: RcTargetDevice = {
   auto_accept: false,
 };
 
-describe("RcWorkbench 接线：设备行「检测」的通道前置（批7 审查补）", () => {
+describe("RcWorkbench 接线：自动确认与通道前置", () => {
   beforeEach(() => {
     h.targets = [];
     toastSpy.mockReset();
     h.probeTargets.mockReset();
     h.probeTargets.mockResolvedValue(undefined);
+    h.refreshTargets.mockReset().mockImplementation(async () => h.targets);
+    h.visible = true;
   });
 
-  it("通道未启动时点「检测」→ 明确提示先开通道，且不发探测", async () => {
+  it("通道未启动时状态明确可见，且不发探测", async () => {
     h.status = status(null); // running=false
     h.targets = [OFFLINE_TARGET];
     render(<RcWorkbench />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ }));
-    });
+    await act(async () => { await Promise.resolve(); });
 
-    expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining("远程通道未启动"), "error");
+    expect(screen.getByRole("button", { name: /选择设备“工作电脑”/ }).textContent).toContain("状态无法获取 · 通道未启动");
     expect(h.probeTargets).not.toHaveBeenCalled();
   });
 
-  it("通道已启动时照常探测，不弹通道提示（守卫不能挡住正常路径）", async () => {
+  it("通道已启动时自动探测，无需手动点设备行", async () => {
     h.status = status(null, true); // running=true
     h.targets = [OFFLINE_TARGET];
     render(<RcWorkbench />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /检测“工作电脑”是否可达/ }));
-    });
+    await waitFor(() => expect(h.probeTargets).toHaveBeenCalledWith(["peer-a"]));
 
-    expect(h.probeTargets).toHaveBeenCalledWith(["peer-a"]);
     expect(toastSpy).not.toHaveBeenCalledWith(expect.stringContaining("远程通道未启动"), "error");
+  });
+});
+
+describe("RcWorkbench 自动确认设备", () => {
+  beforeEach(() => {
+    h.targets = [OFFLINE_TARGET];
+    h.status = status(null, true);
+    h.visible = true;
+    h.probeTargets.mockReset().mockResolvedValue(undefined);
+    h.refreshTargets.mockReset().mockImplementation(async () => h.targets);
+  });
+
+  it("打开可见工作台后自动确认设备，无需先点检测", async () => {
+    render(<RcWorkbench />);
+    await waitFor(() => expect(h.probeTargets).toHaveBeenCalledWith(["peer-a"]));
+  });
+
+  it("隐藏工作台不会自动探测设备", async () => {
+    h.visible = false;
+    render(<RcWorkbench />);
+    await act(async () => { await Promise.resolve(); });
+    expect(h.probeTargets).not.toHaveBeenCalled();
   });
 });

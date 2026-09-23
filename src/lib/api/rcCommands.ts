@@ -238,7 +238,8 @@ export function rcPushClipboard(text: string): Promise<void> {
   return invoke("rc_push_clipboard", { text });
 }
 
-/** 后端等回包（最长约 4s）；超时/失败返回 null。 */
+/** 后端等回包（最长约 4s）；空串 = 对方剪贴板真空白。C5 起超时/失败直接 reject，
+ *  不再折叠成 null（null 与「拉到了但没内容」必须可区分）。 */
 export function rcPullClipboard(): Promise<string | null> {
   return invoke("rc_pull_clipboard");
 }

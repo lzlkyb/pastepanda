@@ -16,6 +16,7 @@ fn active_session(id: &str, phase: SessionPhase) -> Session {
         capability: Capability::Control,
         phase,
         started_ms: crate::rc::service::now_ms(),
+        started_mono: crate::rc::mono::mono_ms(),
         granted: true,
     }
 }
@@ -81,17 +82,28 @@ async fn force_end_if_session_only_kills_matching_id() {
 #[test]
 fn session_expired_only_counts_active_phases() {
     let svc = RcService::new(store());
-    // started_ms = 0（1970 年）⇒ Active 相位必超 TTL
+    // 🔴 C3：TTL 判据在单调钟上，用假时钟入口注入「现在」。
+    // 会话锚 1ms，「现在」= TTL + 10s ⇒ Active 必判过期。
     let mut old = active_session("s1", SessionPhase::OutboundActive);
-    old.started_ms = 0;
+    old.started_mono = 1;
     set_session(&svc, old);
-    assert!(svc.session_expired(), "Active 且远超 TTL 必须判过期");
+    assert!(
+        svc.session_expired_with(crate::rc::session::SESSION_TTL_MS + 10_000),
+        "Active 且远超 TTL 必须判过期"
+    );
+
+    // 🔴 started_mono = 0（构造点漏填/反序列化残值）⇒ 保守判不过期——
+    // 宁可漏判（心跳看门狗还在兜底），也不能让活会话被 0 锚点秒杀。
+    let mut unfilled = active_session("s2", SessionPhase::InboundActive);
+    unfilled.started_mono = 0;
+    set_session(&svc, unfilled);
+    assert!(!svc.session_expired_with(crate::rc::session::SESSION_TTL_MS * 100));
 
     // Idle 相位不该判过期（收口判过期只对活会话有意义）
     let mut idle = active_session("s1", SessionPhase::Idle);
-    idle.started_ms = 0;
+    idle.started_mono = 1;
     set_session(&svc, idle);
-    assert!(!svc.session_expired());
+    assert!(!svc.session_expired_with(crate::rc::session::SESSION_TTL_MS + 10_000));
 
     // 无会话 ⇒ 不过期
     svc.inner.lock().unwrap_or_else(|p| p.into_inner()).session = None;

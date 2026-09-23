@@ -265,7 +265,11 @@ impl InboundVideo {
                 // 发起端结束会话：End 帧与 InputEvent 同半流
                 if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {
                     log::info!("[RC] 对端结束会话：{reason}");
-                    svc.force_end_if_session(&my_id, &reason).await;
+                    // 🔴 前缀「对端结束：」是**归因**，不是修辞：End 帧的理由串在对方
+                    // 那侧叫「用户结束会话」，落进本机历史若不加以区分，前端
+                    // `sessionEndNotice` 无法把它和「我自己点的结束」拆开，反馈只能静默。
+                    svc.force_end_if_session(&my_id, &format!("对端结束：{reason}"))
+                        .await;
                     break;
                 }
                 if let Ok(ev) = serde_json::from_slice::<InputEvent>(&bytes) {

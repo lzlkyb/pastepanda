@@ -28,6 +28,7 @@ import {
   filterHistory,
   historyCapabilityLabel,
   historyPeerLabel,
+  RC_HISTORY_MAX,
   resultTone,
   type RcHistoryDirFilter,
 } from "@/lib/rcHistory";
@@ -168,13 +169,20 @@ export function RcSessionHistory({
             ))}
           </div>
         )}
+        {/* U7：满 20 条时明说「更早的没了」，别让人猜是被删了还是没记 */}
+        {source.list.length >= RC_HISTORY_MAX && (
+          <div className={styles.histFoot}>
+            已到 {RC_HISTORY_MAX} 条上限：仅保留最近 {RC_HISTORY_MAX} 条，更早的记录不再保留。会话数据只存本机。
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className={styles.histList}>
-      {source.list.map((h, i) => {
+    <div>
+      <div className={styles.histList}>
+        {source.list.map((h, i) => {
         // 路径与延迟都是「本次**实测**」，缺了就整段不显示。
         // 更早的记录没有这两个字段，不能编默认值——那会变成假信息。
         const path = pathKindLabel(h.path_kind ?? "");
@@ -207,15 +215,23 @@ export function RcSessionHistory({
                 type="button"
                 className={styles.miniBtn}
                 disabled={busy}
-                title={`将以「${capabilityLabel(cap)}」再次发起（沿用这次会话用过的档）`}
+                title={`沿用这次会话用过的档，再次发起`}
                 onClick={() => onReconnect(h.peer, peerLabel, cap)}
               >
-                再次连接
+                {/* U6：档位上脸——一键可能直接发「可控」，藏在悬浮提示里不够 */}
+                再次连接 · {capabilityLabel(cap)}
               </button>
             )}
           </div>
         );
       })}
+      </div>
+      {/* U7：compact 变体同款截断提示（主窗设置页） */}
+      {source.list.length >= RC_HISTORY_MAX && (
+        <div className={styles.histFoot}>
+          已到 {RC_HISTORY_MAX} 条上限：仅保留最近 {RC_HISTORY_MAX} 条，更早的记录不再保留。会话数据只存本机。
+        </div>
+      )}
     </div>
   );
 }
@@ -269,10 +285,11 @@ function PageRow({
           type="button"
           className={styles.linkBtn}
           disabled={busy}
-          title={`将以「${capabilityLabel(cap)}」再次发起（沿用这次会话用过的档）`}
+          title={`沿用这次会话用过的档，再次发起`}
           onClick={() => onReconnect(h.peer, peerLabel, cap)}
         >
-          再次连接
+          {/* U6：档位上脸——一键可能直接发「可控」，藏在悬浮提示里不够 */}
+          再次连接 · {capabilityLabel(cap)}
         </button>
       )}
     </div>

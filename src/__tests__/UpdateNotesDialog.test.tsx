@@ -113,6 +113,25 @@ describe("UpdateNotesDialog（方案 B 发行说明式）", () => {
     expect(screen.getByText("稍后看")).toBeTruthy();
   });
 
+  it("「**标题**：明细」条目只显示标题，明细由手册承接（2026-09-23 方案 A）", () => {
+    // 真实数据格式：98 个版本的条目全是 `**标题**：明细…`；弹窗是扫读视图，
+    // 明细不进弹窗（完整明细在 GitHub Releases 页与手册）。无粗体标题的
+    // 条目保留全文兜底——判据命中才裁，宁多显示不误杀。
+    mockUpdate({
+      update: {
+        version: "0.0.2",
+        body: '### 新增\n\n- **远程电脑高帧率档 144 / 165（电竞屏档）**：档位表新增「高帧率·144」与「高帧率·165」，跑不到的档不卖。\n- 无粗体标题的兜底条目：全文保留',
+      },
+    });
+    render(<UpdateNotesDialog open onClose={() => {}} currentVersion="9.9.8" />);
+
+    expect(screen.getByText("远程电脑高帧率档 144 / 165（电竞屏档）")).toBeTruthy();
+    // Hero 主题句 = entry.summary（截断摘要，可能含明细开头字样），所以明细断言
+    // 用截断不可能携带的**靠后片段**
+    expect(screen.queryByText(/跑不到的档不卖/)).toBeNull(); // 明细不渲染
+    expect(screen.getByText(/无粗体标题的兜底条目/)).toBeTruthy(); // 不命中判据 → 全文
+  });
+
   it("点「下载并更新」：触发下载并立即关闭弹框", () => {
     // 旧行为是不关弹框、把按钮兼作进度条。现在进度统一由 TopBar 的
     // UpdateBadge 承担（圆环百分比 + 速率，ready 后变「重启」）。

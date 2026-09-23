@@ -20,6 +20,7 @@ import {
   sortTasks,
   taskLine,
   taskPercent,
+  transferStripLabel,
   waitingHint,
 } from "@/lib/rcFile";
 
@@ -173,8 +174,15 @@ describe("状态分档", () => {
   });
 });
 
-describe("barSummary", () => {
-  const rate = () => 0;
+describe("transferStripLabel（侧栏摘要条方向前缀）", () => {
+  // 2026-09-23 审计：侧栏曾写死「传给 X」，收方向任务时方向说谎。
+  it("发方向说「传给」，收方向说「传来」", () => {
+    expect(transferStripLabel("send", "客厅机")).toBe("传给 客厅机");
+    expect(transferStripLabel("recv", "客厅机")).toBe("客厅机 传来");
+  });
+});
+
+describe("barSummary", () => {  const rate = () => 0;
 
   it("没有运行中的任务就不占位", () => {
     expect(barSummary([task({ state: "done" })], rate)).toBeNull();

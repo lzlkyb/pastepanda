@@ -11,7 +11,11 @@ import type { FitMode } from "@/lib/rcSessionStats";
 
 export function useRcDisplayMode(
   sessionId: string,
-  screenRef: React.RefObject<HTMLDivElement | null>,
+  /** 全屏目标 = 整条会话壳（顶栏 + 画面 + 底栏）。旧版只全屏画面元素，
+   *  结果全屏后「结束会话 / 画质 / 剪贴板 / 链路灯」全被挡在屏幕外，且
+   *  Esc 被浏览器收去退全屏——用户没有鼠标路径可退出。现改为壳整体进
+   *  全屏，所有会话控件保持可见；Esc 退全屏正好构成两级取消的第一级。 */
+  fullscreenRef: React.RefObject<HTMLDivElement | null>,
 ) {
   const [fit, setFit] = useState<FitMode>("fit");
   const [fullscreen, setFullscreen] = useState(false);
@@ -19,11 +23,11 @@ export function useRcDisplayMode(
   const [fsHintDismissed, setFsHintDismissed] = useState(false);
 
   const toggleFullscreen = useCallback(() => {
-    const el = screenRef.current;
+    const el = fullscreenRef.current;
     if (!el) return;
     if (document.fullscreenElement) void document.exitFullscreen();
     else void el.requestFullscreen().catch(() => {});
-  }, [screenRef]);
+  }, [fullscreenRef]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(!!document.fullscreenElement);

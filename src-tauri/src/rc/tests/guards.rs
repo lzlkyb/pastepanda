@@ -264,6 +264,7 @@ fn 会话快照_三字段同源() {
         capability: Capability::Control,
         phase: SessionPhase::InboundActive,
         started_ms: 1,
+        started_mono: 0,
         granted: true,
     };
     let snap = s.snapshot();

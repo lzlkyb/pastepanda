@@ -14,6 +14,9 @@ import { rcDisplayName } from "@/lib/rcDevice";
 
 export type RcHistoryDirFilter = "all" | "outbound" | "inbound";
 
+/** 历史条数上限（后端 `rc_session_history` 只保留最近 N 条，超出即丢）。 */
+export const RC_HISTORY_MAX = 20;
+
 /** 一条记录属于哪台设备。node_id 是稳定主键；`peer_name` 只是显示名，会变。 */
 export function historyPeerKey(h: RcHistoryItem): string {
   return h.peer;
@@ -146,6 +149,58 @@ export function resultTone(reason: string): RcResultTone {
   if (/拒绝/.test(reason)) return "warn";
   if (/失败|错误|异常/.test(reason)) return "err";
   return "ok";
+}
+
+/**
+ * U4：发起的申请**非本人取消**而结束时的当下反馈（与 `resultTone` 同一 reason 口径）。
+ *
+ * 只认两类用户真正困惑的结局——「被拒」和「超时」；其余不发声：
+ * - 「取消」是用户自己点的撤回，撤销条已经给过 toast，再报就是重复；
+ * - 网络类失败走的是 `rc.error` 错误槽（RcErrorPanel），那里有完整标题+下一步。
+ */
+export function requestEndNotice(
+  reason: string,
+): { tone: "error" | "info"; text: string } | null {
+  if (/取消/.test(reason)) return null;
+  if (/拒绝/.test(reason)) {
+    return { tone: "error", text: "拒绝了这个申请。可以改用「只看」再试，或到记录页看详情。" };
+  }
+  if (/超时/.test(reason)) {
+    return { tone: "info", text: "等待 2 分钟未响应，申请已自动取消。对方可能不在电脑前。" };
+  }
+  return null;
+}
+
+/**
+ * U3：会话**进行中结束**（outbound_active 消失）的当下反馈。
+ *
+ * 2026-09-23 补：旧版只有 `requestEndNotice` 管「申请阶段」的收场；一旦会话
+ * 建立过，被对方结束 / 链路异常结束时画面会**静默弹回设备页**，用户分不清
+ * 是对方动了手还是自己软件坏了。
+ *
+ * 🔴 2026-09-23 复审反转默认档：旧版按中文关键词识别故障，QUIC 快于 15 秒
+ * 自然报错时 reason 是英文（"connection lost"…）接不住 → 静默。而「静默的
+ * 意外结束」正是这条通知要消灭的东西。现在改为**本机主动收场白名单 → 静默；
+ * 其余一律报错**——后端将来新增任何 reason 串，默认有反馈而不是默认静默
+ * （U3.5 的方向：未知 ≠ 没事）。白名单与各触发点一一对应：
+ * 用户点结束 / 关通道 / 忘设备 / 关被控开关 / 主动取消——它们的反馈都在触发处。
+ */
+const SELF_INITIATED_END_RE =
+  /^用户结束会话|^远程通道关闭|^设备已从信任列表移除|^「允许被远程」已关闭|^取消|^已取消/;
+
+export function sessionEndNotice(
+  reason: string,
+): { tone: "error" | "info"; text: string } | null {
+  if (SELF_INITIATED_END_RE.test(reason)) return null;
+  if (/对端结束/.test(reason)) {
+    return { tone: "info", text: "对方结束了这次会话" };
+  }
+  // TTL 到期的串是后端固定的「会话超时」；「对端失联（心跳超时）」含 超时
+  // 但语义是失联，必须走默认 error 档——所以这里匹配整串而不是关键词。
+  if (/^会话超时/.test(reason)) {
+    return { tone: "info", text: "达到会话时长上限，已自动结束" };
+  }
+  return { tone: "error", text: "连接已中断，可在设备页重新发起，或检查双方网络" };
 }
 
 /**

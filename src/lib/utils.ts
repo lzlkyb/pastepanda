@@ -7,6 +7,32 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** 设备行与详情共用的可连接状态。探测只证明当时拨得通，不改写历史在线状态。 */
+export function rcDeviceStatus(
+  presence: string | undefined,
+  check: { state: "checking" | "reachable" | "unreachable" | "error"; checkedAt?: number } | undefined,
+  channelUp: boolean | null,
+  now = Date.now(),
+): { label: string; tone: "ok" | "checking" | "unknown"; checkedAt?: number } {
+  if (channelUp === null) return { label: "正在获取状态", tone: "checking" };
+  if (!channelUp) return { label: "状态无法获取 · 通道未启动", tone: "unknown" };
+  if (check?.state === "checking") return { label: "正在确认是否可连接", tone: "checking" };
+  const fresh = check?.checkedAt != null && now - check.checkedAt < 45_000;
+  if (fresh) {
+    if (check.state === "reachable") return { label: "刚刚可连接", tone: "ok", checkedAt: check.checkedAt };
+    if (check.state === "unreachable") return { label: "暂时连不上", tone: "unknown", checkedAt: check.checkedAt };
+    if (check.state === "error") return { label: "状态无法获取", tone: "unknown", checkedAt: check.checkedAt };
+  }
+  if (presence === "live") return { label: "局域网在线", tone: "ok" };
+  // U8：原「尚未确认」是实现语义（「还没探测」）；用户视角是「上一秒还在，现在没实测」
+  return { label: "最近在线 · 未实测", tone: "unknown" };
+}
+
+/** 设备短连接确认的本地时间，用于列表与详情统一提示时效。 */
+export function rcCheckTime(checkedAt: number): string {
+  return new Date(checkedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 /** 相对时间格式化 */
 export function relativeTime(timeStr: string): string {
   if (!timeStr) return "";

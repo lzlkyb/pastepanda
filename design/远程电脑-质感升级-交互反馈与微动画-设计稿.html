@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑-质感升级-交互反馈与微动画-设计稿</title>
+<style>
+  /* ═══ 真实主题令牌（src/styles/theme.css 亮色，逐项对照）═══ */
+  :root {
+    --app-bg: radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+              radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+              linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
+    --card-bg: #fff;
+    --section-bg: #f0f4f8;
+    --border-color: #e0e4eb;
+    --text-primary: #0f172a;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284c7;
+    --accent-solid: #027cbb;
+    --accent-strong: #0273ad;
+    --accent-light: #e0f2fe;
+    --text-on-accent: #fff;
+    --success: #15803d;
+    --danger: #d82525;
+    --hover: #e8ecf2;
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, .08);
+    --shadow-lg: 0 8px 24px rgba(15, 23, 42, .12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--app-bg);
+    color: var(--text-primary);
+    padding: 32px 40px 64px;
+    max-width: 1240px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: var(--text-muted); margin-bottom: 28px; }
+  h2 { font-size: 17px; margin: 40px 0 6px; padding-top: 18px; border-top: 1px solid var(--border-color); }
+  .h2sub { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 16px; }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .pane { border-radius: 10px; padding: 16px; }
+  .pane.now  { background: var(--section-bg); border: 1px dashed var(--border-color); }
+  .pane.fix  { background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); }
+  .pane h4 { font-size: 12px; letter-spacing: .12em; margin-bottom: 12px; }
+  .now h4 { color: var(--text-muted); }
+  .fix h4 { color: var(--accent); }
+  .tagline { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+  .tagline b { color: var(--text-secondary); }
+
+  /* ═══ 通用按钮（与 RcA2 现状同源）═══ */
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px; justify-content: center;
+    min-height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--accent-solid); background: var(--accent-solid); color: var(--text-on-accent);
+    cursor: pointer;
+  }
+  .btn.sec { background: var(--card-bg); color: var(--text-primary); border-color: var(--border-color); }
+
+  /* ═══ §1 反馈三件套 ═══ */
+  .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .strip .cell { text-align: center; }
+  .strip .cell small { display: block; margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+  /* 改进：统一过渡 + 按压 + 焦点环（落码即这段） */
+  .fix .btn { transition: background-color .14s cubic-bezier(.2,0,0,1), border-color .14s cubic-bezier(.2,0,0,1), transform .1s cubic-bezier(.2,0,0,1), box-shadow .14s cubic-bezier(.2,0,0,1); }
+  .fix .btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .fix .btn:active { transform: scale(.97); }
+  .fix .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .fix .btn.sec:hover { background: var(--hover); border-color: var(--text-secondary); }
+  .fix .btn.sec:active { transform: scale(.97); }
+  .fix .btn.demo-hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .fix .btn.demo-active { transform: scale(.97); box-shadow: inset 0 2px 4px rgba(0,0,0,.18); }
+  .fix .btn.demo-focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .now .strip .cell .btn { cursor: default; }
+  .now .strip .cell:nth-child(2) .btn { background: var(--accent-strong); border-color: var(--accent-strong); }
+
+  /* ═══ §2 阴影层级与选中态（设备行）═══ */
+  .sb { background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; }
+  .sbTitle { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
+  .sbTitle .add { font-size: 11.5px; color: var(--accent); }
+  .row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center;
+         background: var(--card-bg); border: 1px solid transparent; border-radius: 8px;
+         padding: 6px 8px; margin-bottom: 6px; }
+  .selWrap { min-width: 0; display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 9px; align-items: center; }
+  .dico { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+          background: var(--accent-light); color: var(--accent-solid); position: relative; font-size: 15px; }
+  .dot { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%;
+         background: #9aa7b5; border: 2px solid var(--card-bg); }
+  .dot.on { background: var(--success); }
+  .dcopy strong { display: block; font-size: 13px; }
+  .dcopy small { font-size: 11px; color: var(--text-secondary); }
+  .dcopy small.ok { color: var(--success); }
+  .conn { min-width: 52px; min-height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+          border: 1px solid var(--accent-solid); background: var(--accent-solid); color: var(--text-on-accent); cursor: pointer; }
+  .caret { min-width: 22px; min-height: 28px; padding: 0; border: 1px solid var(--accent-solid); border-radius: 0 8px 8px 0;
+           background: var(--accent-solid); color: var(--text-on-accent); cursor: pointer; font-size: 9px; }
+  .split { display: inline-flex; }
+  .split .conn { border-radius: 8px 0 0 8px; border-right: 0; }
+  /* 现状：选中=细边框，行无浮起 */
+  .now .row.sel { border-color: var(--accent); }
+  /* 改进：三级浮起 + 选中三要素 */
+  .fix .row { box-shadow: var(--shadow-sm);
+              transition: box-shadow .16s cubic-bezier(.2,0,0,1), transform .16s cubic-bezier(.2,0,0,1), border-color .16s cubic-bezier(.2,0,0,1), background-color .16s cubic-bezier(.2,0,0,1); }
+  .fix .row.hov { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .fix .row.sel { background: color-mix(in srgb, var(--accent-light) 55%, var(--card-bg));
+                  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+                  box-shadow: var(--shadow-md); position: relative; }
+  .fix .row.sel::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px;
+                          border-radius: 1px; background: var(--accent); }
+
+  /* ═══ §3 微动画（真跑）═══ */
+  .motionGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .demoPane { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px;
+              box-shadow: var(--shadow-sm); padding: 16px; }
+  .demoPane h4 { font-size: 13px; margin-bottom: 4px; }
+  .demoPane .spec { font-size: 11px; color: var(--text-muted); margin-bottom: 14px; font-family: Consolas, monospace; }
+  .stage { background: var(--section-bg); border-radius: 8px; min-height: 96px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  /* 3.1 绿点呼吸 —— 唯一常驻动画 */
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  .pulse .dot.on { animation: breathe 2s ease-in-out infinite; }
+  /* 3.2 菜单弹出 —— 循环重播便于看稿（停留 70% 周期，不闪） */
+  @keyframes popIn { 0% { opacity: 0; transform: scale(.96) translateY(-3px); } 12% { opacity: 1; transform: scale(1) translateY(0); } 78% { opacity: 1; transform: scale(1) translateY(0); } 90% { opacity: 0; transform: scale(.96) translateY(-3px); } 100% { opacity: 0; transform: scale(.96) translateY(-3px); } }
+  .menuDemo { position: relative; width: 100%; padding: 8px 10px 10px; display: flex; justify-content: flex-end; }
+  .menuStage { min-height: 170px; align-items: flex-start; }
+  .capMenu { position: absolute; top: 44px; right: 10px; width: 196px; background: var(--card-bg);
+             border: 1px solid var(--border-color); border-radius: 8px; box-shadow: var(--shadow-lg); padding: 5px;
+             transform-origin: top right; animation: popIn 2.2s cubic-bezier(.2,0,0,1) infinite; }
+  .capMenu button { display: block; width: 100%; padding: 7px 9px; border: 0; border-radius: 8px; background: transparent;
+                    text-align: left; font-size: 13px; color: var(--text-primary); font-family: inherit; cursor: pointer; }
+  .capMenu button:hover { background: var(--hover); }
+  .capMenu small { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .capMenu em { font-style: normal; color: var(--accent); font-weight: 600; margin-right: 4px; }
+  .capMenu .off { color: var(--text-muted); margin-right: 4px; }
+  /* 3.3 shimmer 骨架 */
+  @keyframes shimmer { from { background-position: -180px 0; } to { background-position: 180px 0; } }
+  .sk { border-radius: 6px; height: 12px; margin: 8px 10px;
+        background: linear-gradient(90deg, var(--border-color) 25%, var(--section-bg) 50%, var(--border-color) 75%);
+        background-size: 360px 100%; animation: shimmer 1.3s linear infinite; }
+  .sk.w60 { width: 60%; }
+  .sk.w40 { width: 40%; }
+  /* 3.4 横幅滑入 —— 停留 70% 周期再重播 */
+  @keyframes slideDown { 0% { opacity: 0; transform: translateY(-10px); } 10% { opacity: 1; transform: translateY(0); } 80% { opacity: 1; transform: translateY(0); } 92% { opacity: 0; transform: translateY(-10px); } 100% { opacity: 0; transform: translateY(-10px); } }
+  .banner { margin: 10px 12px 14px; padding: 8px 12px; border-radius: 8px; background: var(--accent-light);
+            color: var(--accent-strong); font-size: 12.5px; display: flex; gap: 6px; align-items: center;
+            animation: slideDown 2.8s cubic-bezier(.2,0,0,1) infinite; }
+  /* 3.5 列表 stagger：整组循环重播 */
+  @keyframes riseIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .stagger .row { animation: riseIn .24s cubic-bezier(.2,0,0,1) backwards; }
+  .stagger .row:nth-child(2) { animation-delay: .04s; } .stagger .row:nth-child(3) { animation-delay: .08s; }
+  .stagger .row:nth-child(4) { animation-delay: .12s; } .stagger .row:nth-child(5) { animation-delay: .16s; }
+  .staggerWrap { animation: none; }
+
+  /* ═══ §4 规格表 ═══ */
+  table { width: 100%; border-collapse: collapse; background: var(--card-bg); border: 1px solid var(--border-color);
+          border-radius: 10px; overflow: hidden; font-size: 12.5px; box-shadow: var(--shadow-sm); }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  th { background: var(--section-bg); font-size: 12px; color: var(--text-secondary); }
+  tr:last-child td { border-bottom: 0; }
+  code { font-family: Consolas, monospace; font-size: 11.5px; background: var(--section-bg); padding: 1px 5px; border-radius: 4px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .p-red { background: #fee2e2; color: var(--danger); }
+  .p-ok { background: #dcfce7; color: var(--success); }
+  .warn { margin-top: 14px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border-color));
+          border-radius: 8px; font-size: 12.5px; color: var(--text-secondary); background: var(--card-bg); }
+  .warn b { color: var(--danger); }
+</style>
+</head>
+<body>
+
+<h1>远程电脑工作台 · 质感升级（B 方案）</h1>
+<p class="sub">交互反馈层 + 阴影材质体系 + 微动画。实测底账：A2 样式 33 处 hover（几乎全为变色）、2 处 :active、4 处 transition、0 个 @keyframes——「平」是数值，不是感觉。所有示例均为真实令牌与真实结构，可直接照抄落码。</p>
+
+<h2>1 · 反馈三件套：按压、过渡、焦点</h2>
+<p class="h2sub">落码即右侧这一段 CSS（挂在 .connectButton / .secondaryButton / .dangerButton / 各行钮上）。改后任何可点元素都有 hover 升、active 沉、键盘焦点环。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="strip">
+      <div class="cell"><button class="btn">默认</button><small>静止</small></div>
+      <div class="cell"><button class="btn" style="background:var(--accent-strong);border-color:var(--accent-strong)">hover</button><small>只有变色，硬切无过渡</small></div>
+      <div class="cell"><button class="btn">按下</button><small>无任何 :active 反馈</small></div>
+      <div class="cell"><button class="btn">Tab 聚焦</button><small>无焦点环，键盘用户失明</small></div>
+    </div>
+    <p class="tagline">33 处 hover 全是「颜色瞬变」；按压和键盘导航完全无感。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进（可交互，把鼠标放上来）</h4>
+    <div class="strip">
+      <div class="cell"><button class="btn">默认</button><small>静止</small></div>
+      <div class="cell"><button class="btn demo-hover">hover</button><small>140ms 渐变到深档</small></div>
+      <div class="cell"><button class="btn demo-active">active</button><small>scale(.97)，实按可感</small></div>
+      <div class="cell"><button class="btn demo-focus">focus</button><small>2px 焦点环 + 2px 偏移</small></div>
+    </div>
+    <p class="tagline"><b>统一令牌</b>：过渡一律 140–160ms <code>cubic-bezier(.2,0,0,1)</code>（快出缓停）；按压 100ms。全局只此一组曲线，不加第二种。</p>
+  </div>
+</div>
+
+<h2>2 · 阴影层级与选中态：把平面变桌面</h2>
+<p class="h2sub">设备行从「一张平贴的纸」改为三级浮起。选中态三要素：accent 浅底（55% 混白）+ 左缘 2px 竖条 + 阴影升至 md。</p>
+<div class="duo">
+  <div class="pane now">
+    <h4>现状</h4>
+    <div class="sb">
+      <div class="sbTitle"><strong>我的设备</strong><span class="add">＋ 添加设备</span></div>
+      <div class="row sel">
+        <span class="selWrap">
+        <span class="dico">🖥<span class="dot on"></span></span>
+        <span class="dcopy"><strong>李清泉</strong><small class="ok">局域网在线</small></span>
+        </span>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span>
+      </div>
+      <div class="row">
+        <span class="selWrap">
+        <span class="dico">🖥<span class="dot"></span></span>
+        <span class="dcopy"><strong>旭辉机械革命</strong><small>最近在线 · 未实测</small></span>
+        </span>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span>
+      </div>
+    </div>
+    <p class="tagline">行与背景同层贴平，选中只换 1px 边框，hover 无指示——层次全靠脑补。</p>
+  </div>
+  <div class="pane fix">
+    <h4>改进（可交互）</h4>
+    <div class="sb" style="padding:12px 10px;">
+      <div class="sbTitle" style="padding:0 4px;"><strong>我的设备</strong><span class="add">＋ 添加设备</span></div>
+      <div class="row hov">
+        <span class="selWrap">
+        <span class="dico">🖥<span class="dot on"></span></span>
+        <span class="dcopy"><strong>李清泉</strong><small class="ok">局域网在线</small></span>
+        </span>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span>
+      </div>
+      <div class="row sel">
+        <span class="selWrap">
+        <span class="dico">🖥<span class="dot"></span></span>
+        <span class="dcopy"><strong>旭辉机械革命</strong><small>最近在线 · 未实测</small></span>
+        </span>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span>
+      </div>
+      <div class="row">
+        <span class="selWrap">
+        <span class="dico">🖥<span class="dot"></span></span>
+        <span class="dcopy"><strong>车间一体机</strong><small>状态无法获取 · 通道未启动</small></span>
+        </span>
+        <span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span>
+      </div>
+    </div>
+    <p class="tagline"><b>三级浮起</b>：静止 <code>0 1px 2px 6%</code> 微影 → hover 上浮 1px + <code>0 4px 12px</code> → 选中再加 accent 浅底 + 左竖条。历史行 / 文件行 / 会话记录同规则复用。</p>
+  </div>
+</div>
+
+<h2>3 · 微动画（五个，全部真跑）</h2>
+<p class="h2sub">只动 transform / opacity（合成层属性，不触发重排）。常驻动画仅绿点一个；其余全是一次性入场/反馈。</p>
+<div class="motionGrid">
+  <div class="demoPane pulse">
+    <h4>3.1 在线点呼吸 <span class="pill p-ok">唯一常驻</span></h4>
+    <p class="spec">opacity 1→.45→1 · 2s ease-in-out infinite</p>
+    <div class="stage">
+      <span class="dico" style="width:44px;height:44px;font-size:19px;">🖥<span class="dot on" style="width:12px;height:12px;"></span></span>
+    </div>
+  </div>
+  <div class="demoPane">
+    <h4>3.2 档位菜单弹出</h4>
+    <p class="spec">scale .96→1 + fade · 140ms · origin 右上（往按钮方向长出来）</p>
+    <div class="stage menuDemo menuStage">
+      <span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span>
+      <div class="capMenu" role="menu">
+        <button><em>●</em>可控（默认）<small>对方可操作键鼠与剪贴板</small></button>
+        <button><span class="off">○</span>只看<small>仅查看画面，不能操作</small></button>
+      </div>
+    </div>
+  </div>
+  <div class="demoPane">
+    <h4>3.3 探测中 shimmer 骨架 <span class="pill p-ok">替代静默</span></h4>
+    <p class="spec">背景位移动画 · 1.3s linear infinite · 「正在确认 N 台」期间</p>
+    <div class="stage" style="display:block;padding:6px 0;">
+      <div class="sk" style="width:52%;"></div>
+      <div class="sk w60"></div>
+      <div class="sk w40"></div>
+    </div>
+  </div>
+  <div class="demoPane">
+    <h4>3.4 会话横幅滑入</h4>
+    <p class="spec">translateY(-10px)→0 + fade · 240ms · 会话建立/被控确认时一次</p>
+    <div class="stage" style="display:block;">
+      <div class="banner">🖥 旭辉机械革命 正在远程本机 · 已授权「可控」</div>
+    </div>
+  </div>
+  <div class="demoPane" style="grid-column: 1 / -1;">
+    <h4>3.5 列表逐项入场（stagger）</h4>
+    <p class="spec">translateY(6px)→0 + fade · 240ms · 逐项延迟 40ms · 仅首屏进入时一次</p>
+    <div class="stage staggerWrap" style="display:block;">
+      <div class="sb stagger" style="background:var(--section-bg);">
+        <div class="row"><span class="selWrap"><span class="dico">🖥<span class="dot on"></span></span><span class="dcopy"><strong>李清泉</strong><small class="ok">局域网在线</small></span></span><span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span></div>
+        <div class="row"><span class="selWrap"><span class="dico">🖥<span class="dot"></span></span><span class="dcopy"><strong>旭辉机械革命</strong><small>最近在线 · 未实测</small></span></span><span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span></div>
+        <div class="row"><span class="selWrap"><span class="dico">🖥<span class="dot"></span></span><span class="dcopy"><strong>车间一体机</strong><small>暂离</small></span></span><span class="split"><button class="conn">连接 · 可控</button><button class="caret">▼</button></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>4 · 动效规格与红线</h2>
+<table>
+  <tr><th style="width:120px;">令牌</th><th style="width:200px;">值</th><th>用途</th></tr>
+  <tr><td><code>--motion-fast</code></td><td>120ms / 按压 100ms</td><td>:active 按压、开关拨动</td></tr>
+  <tr><td><code>--motion-base</code></td><td>140–160ms</td><td>所有 hover/选中/展开过渡，缓动统一 <code>cubic-bezier(.2,0,0,1)</code></td></tr>
+  <tr><td><code>--motion-slow</code></td><td>240ms</td><td>入场类（横幅、列表 stagger、详情滑入）</td></tr>
+  <tr><td><code>--shadow-sm/md</code></td><td>现有令牌复用</td><td>三级浮起直接用已有 shadow 令牌，不新增阴影值</td></tr>
+</table>
+<table style="margin-top:12px;">
+  <tr><th style="width:120px;">落码位置</th><th>内容</th><th style="width:110px;">量级</th></tr>
+  <tr><td><code>RemoteComputerA2.module.css</code></td><td>反馈三件套（:active / focus-visible / 统一 transition 挂到全部可点类）、三级浮起、选中态重做、绿点呼吸、shimmer、菜单弹出、横幅滑入</td><td>主要工作量</td></tr>
+  <tr><td><code>RcA2DeviceList.tsx</code></td><td>stagger 用 CSS <code>:nth-child</code> 延迟即可，无需 JS；shimmer 替换「正在加载设备…」纯文本态</td><td>小</td></tr>
+  <tr><td><code>theme.css</code></td><td>新增 --motion-fast/base/slow 三个令牌（亮暗同值）</td><td>3 行</td></tr>
+</table>
+<div class="warn">
+  <b>性能红线（AGENTS.md 规则 8）</b>：① 只动 transform / opacity，禁止动 width/top/color 做动画；② 常驻动画仅绿点呼吸一个（每设备 1 个 9px 小元素的 opacity，合成层零重排）；③ 不引入 backdrop-filter；④ stagger 只在列表首屏出现时播一次，翻页/刷新不重播；⑤ 全部动效挂进现有 <code>prefers-reduced-motion: reduce</code> 兜底（A2 文件 997 行已有该块，动效统一在其中关闭）；⑥ 工作台窗口隐藏时 CSS 动画自动降频，无需 JS。
+</div>
+
+</body>
+</html>

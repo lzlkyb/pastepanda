@@ -12,8 +12,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
  * 一开始就不跑），之后由 `onFocusChanged` 驱动（获焦时必已可见，失焦即暂停）。
  * 非 Tauri 环境（单测 / 浏览器预览）拿不到窗口 API，默认可见、不暂停。
  */
-export function useWindowVisible(): boolean {
-  const [visible, setVisible] = useState(true);
+export function useWindowVisible(initialVisible = true): boolean {
+  const [visible, setVisible] = useState(initialVisible);
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -29,7 +29,8 @@ export function useWindowVisible(): boolean {
         if (cancelled) un();
         else unlisten = un;
       } catch {
-        /* 非 Tauri 环境：保持可见，不暂停 */
+        /* 非 Tauri 环境：视作可见；需要初始隐藏的调用方也能正常预览。 */
+        if (!cancelled) setVisible(true);
       }
     })();
     return () => {

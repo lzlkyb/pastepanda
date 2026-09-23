@@ -21,6 +21,7 @@ export function RcSessionTop({
   linkState,
   unansweredSec,
   busy,
+  fullscreen,
   peerDgramInput,
   onReleaseKb,
   onReconnect,
@@ -33,6 +34,8 @@ export function RcSessionTop({
   /** 操作后未响应秒数；0 = 不提示。 */
   unansweredSec: number;
   busy: boolean;
+  /** 会话壳全屏中——顶条此时是画面顶边，禁用拖窗（拖拽区会牵动窗口）。 */
+  fullscreen?: boolean;
   /**
    * R3：对端 caps 是否声明能读鼠标数据报。false = 旧版（7.2.1 及更早）
    * 或尚未收到 caps——可控会话下提示升级对端；true = 不提示。
@@ -65,7 +68,10 @@ export function RcSessionTop({
     /* 批7：会话态整条工作台标题栏被 `hidesWorkbenchTitleBar` 收掉（画面铺满），
        而没有标题栏的窗口既拖不动也关不掉——本条兼作拖拽区。`deep` 让整个子树可拖，
        条内的胶囊 / 按钮由 Tauri 自动豁免（可点击元素不带该属性即阻断拖动）。 */
-    <div className={styles.viewTop} data-tauri-drag-region="deep">
+    <div
+      className={styles.viewTop}
+      data-tauri-drag-region={fullscreen ? "false" : "deep"}
+    >
       <span className={dotCls} />
       <span>
         正在查看 <b>{rcDisplayName(session, fingerprintOf(session.peer))}</b>
@@ -86,6 +92,19 @@ export function RcSessionTop({
         <span className={styles.pillDanger} title={linkStateHint(linkState)}>
           {linkStateLabel(linkState)}
         </span>
+      )}
+      {/* 案 17.2：failed 时「重连」是唯一自救动作，贴着胶囊一步直达，
+          不要求先开「更多」菜单（菜单里的入口照旧，供非失败态使用）。 */}
+      {linkState === "failed" && onReconnect && (
+        <button
+          type="button"
+          className={styles.miniBtn}
+          disabled={busy}
+          title="断开当前连接并重新发起"
+          onClick={onReconnect}
+        >
+          重连
+        </button>
       )}
       {(linkState === "unstable" || linkState === "reconnecting") && (
         <span className={styles.pillWarn} title={linkStateHint(linkState)}>

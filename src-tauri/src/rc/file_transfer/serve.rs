@@ -201,8 +201,11 @@ impl RcService {
             conn.close(5u32.into(), b"ack_encode");
             return;
         };
-        if write_frame(&mut send, &bytes).await.is_err() {
-            log::warn!("[RC] {short} 回确认失败");
+        // C4：写确认帧失败同样要关连接——上面 encode 失败那条就是照手写的，
+        // 漏了这条会让对端干等 ACK 超时（75s）才知道出事。
+        if let Err(e) = write_frame(&mut send, &bytes).await {
+            log::warn!("[RC] {short} 回确认失败：{e}");
+            conn.close(5u32.into(), b"ack_write");
             return;
         }
         if plan.offset > 0 {
@@ -320,8 +323,11 @@ impl RcService {
             conn.close(5u32.into(), b"ack_encode");
             return;
         };
-        if write_frame(&mut send, &bytes).await.is_err() {
-            log::warn!("[RC] {short} 回确认失败");
+        // C4：写确认帧失败同样要关连接——上面 encode 失败那条就是照手写的，
+        // 漏了这条会让对端干等 ACK 超时（75s）才知道出事。
+        if let Err(e) = write_frame(&mut send, &bytes).await {
+            log::warn!("[RC] {short} 回确认失败：{e}");
+            conn.close(5u32.into(), b"ack_write");
             return;
         }
 

@@ -18,6 +18,9 @@ export function useRc(enabled: boolean) {
   const visible = useWindowVisible();
   const status = useRcStore((s) => s.status);
   const targets = useRcStore((s) => s.targets);
+  const targetsLoaded = useRcStore((s) => s.targetsLoaded);
+  const targetsError = useRcStore((s) => s.targetsError);
+  const reachability = useRcStore((s) => s.reachability);
   const identity = useRcStore((s) => s.identity);
   const busy = useRcStore((s) => s.busy);
   const error = useRcStore((s) => s.error);
@@ -43,6 +46,9 @@ export function useRc(enabled: boolean) {
   return {
     status,
     targets,
+    targetsLoaded,
+    targetsError,
+    reachability,
     identity,
     busy,
     error: error ?? statusError,

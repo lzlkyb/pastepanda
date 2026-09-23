@@ -4,22 +4,27 @@
  *
  * ❗ 只看 `rc_enabled`，**不**依赖知识库同步：远程通道是独立的（方案 A）。
  *
- * ⚠️ 体量红线：本文件 338 行 &gt; 300。按纪律本批未改行为故不拆；下次碰到要改它时
- *    必须先拆子组件（横幅拆分：outbound / reconnect / unoPass / joins 各一块）。
+ * B2（2026-09-23）：原先 338 行超红线，四条横幅拆为
+ * `RcOutboundBanner` / `RcReconnectBanner` / `RcUnoPassBanner` / `RcPairJoins`，
+ * 所有动作经 `runRcAction` 收口——失败也有 toast（规则 15.3，主窗没有错误面板）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { useRc } from "@/hooks/useRc";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
 import { useRcAdhoc } from "@/hooks/useRcAdhoc";
+import { useRcLocalInjectNotice } from "@/hooks/useRcSessionNotices";
+import { runRcAction } from "@/lib/rcFeedback";
 import { RcControlBanner } from "./RcControlBanner";
 import { RcJoinRequests } from "./RcJoinRequests";
+import { RcOutboundBanner } from "./RcOutboundBanner";
+import { RcReconnectBanner } from "./RcReconnectBanner";
+import { RcUnoPassBanner } from "./RcUnoPassBanner";
+import { RcPairJoins } from "./RcPairJoins";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { DEFAULT_RC_DEVICE_NAME, rcDisplayName } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源；显示名收口见 rcDisplayName
-import { rcSetAudioLocalMute, rcHostMuteSet, type RcCapability } from "@/lib/api/rc";
-import { confirmDialog } from "@/lib/confirm";
+import { rcDisplayName } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源；显示名收口见 rcDisplayName
+import { rcSetAudioLocalMute, rcHostMuteSet } from "@/lib/api/rc";
 import { summonMainWindow } from "@/lib/rcWindow";
-import styles from "./RemoteComputer.module.css";
 
 export function RcOverlay() {
   const { toast } = useToast();
@@ -34,6 +39,27 @@ export function RcOverlay() {
    */
   useRcAdhoc(rc);
   const seenPending = useRef(new Set<string>());
+
+  /**
+   * 被控中 / 有会话申请 / 有配对敲门 / 我方发起中 / 自动重连中 /
+   * 无人值守固定密码开启（Q2 方案 C 的「常驻横幅」，设计稿第三条对策）才渲染
+   */
+  const session = rc.status?.session ?? null;
+  const pending = rc.status?.pending ?? [];
+  const joins = rc.status?.joins ?? [];
+  // Q6：免确认设备异常断流后的自动重连进度（此时 session 已被收口）
+  const reconnecting = rc.status?.reconnecting ?? null;
+  // 方案 C：固定密码开启中。哪怕此刻什么都没发生也要摆出来——
+  // 「这台机器正对着知道密码的人开着门」这件事不能只有设置页知道。
+  const unoPass = rc.status?.uno_pass ?? null;
+  const inboundActive = session?.phase === "inbound_active";
+  const outboundLive =
+    session?.phase === "outbound_active" || session?.phase === "outbound_pending";
+
+  // A2：本机注入失败（UIPI 拦截对方键鼠 / 释放按住键失败）在**被控机器**上发出。
+  // 只在 inbound_active 时监听：同一事件在发起端机器上装的是「对端转发」语义，
+  // 常驻监听会给控制端用户弹出一条主语错误（「本机」）的提示。
+  useRcLocalInjectNotice(toast, inboundActive);
 
   /**
    * G3：被控者本机静音。status 在会话中是 2s 一拍（IDLE/ACTIVE 周期），纯 status
@@ -95,20 +121,6 @@ export function RcOverlay() {
     }
   }, [rc.status?.pending, toast]);
 
-  // 被控中 / 有会话申请 / 有配对敲门 / 我方发起中 / 自动重连中 /
-  // 无人值守固定密码开启（Q2 方案 C 的「常驻横幅」，设计稿第三条对策）才渲染
-  const session = rc.status?.session ?? null;
-  const pending = rc.status?.pending ?? [];
-  const joins = rc.status?.joins ?? [];
-  // Q6：免确认设备异常断流后的自动重连进度（此时 session 已被收口）
-  const reconnecting = rc.status?.reconnecting ?? null;
-  // 方案 C：固定密码开启中。哪怕此刻什么都没发生也要摆出来——
-  // 「这台机器正对着知道密码的人开着门」这件事不能只有设置页知道。
-  const unoPass = rc.status?.uno_pass ?? null;
-  const inboundActive = session?.phase === "inbound_active";
-  const outboundLive =
-    session?.phase === "outbound_active" || session?.phase === "outbound_pending";
-
   // A2：被控横幅上的「以后不再询问」需要这台设备的免确认当前态，而 `rc_status` 不带
   // trusted（它在 rc_devices 行上）。主窗的 targets 只在少数动作里刷——被控一开始就
   // 补一次列表，拿到就是准的；拿不到按「未开」处理（按钮点了也只是重复置真，无害）。
@@ -147,7 +159,7 @@ export function RcOverlay() {
           onTrust={
             peerDenied
               ? undefined
-              : // D2：放权前必须先确认（它就挨着「立即结束」，误触代价不对称）
+              : // D2：放权前必须先确认（它挨着「立即结束」，误触代价不对称）
                 () =>
                   void enableTrust(
                     session.peer,
@@ -163,178 +175,58 @@ export function RcOverlay() {
           spkMutedByPeer={spkByPeer}
           onRestoreSpk={restoreSpk}
           onEnd={() => {
-            void rc.end().then((ok) => {
-              if (ok) toast("已结束远程会话", "success");
-            });
+            void runRcAction(
+              () => rc.end(),
+              { ok: "已结束远程会话", fail: "结束会话失败" },
+              toast,
+            );
           }}
         />
       )}
       {outboundLive && session && (
-        <div className={styles.ctrlBanner} role="status">
-          <span className={styles.who}>
-            <span className={styles.live} />
-            {session.phase === "outbound_pending"
-              ? `正在申请远程「${rcDisplayName(session, fingerprintOf(session.peer))}」`
-              : `正在远程「${rcDisplayName(session, fingerprintOf(session.peer))}」`}
-          </span>
-          <span className={styles.pillOn}>
-            {session.capability === "control" ? "可控" : "只看"}
-          </span>
-          <span className={styles.sp} />
-          {/* F-10：pending 与工作台 RcPendingWait 同口径——不说超时用户会干等到错误面板 */}
-          <span className={styles.meta}>
-            {session.phase === "outbound_pending"
-              ? "等待对方同意 · 2 分钟内未响应将自动取消"
-              : "打开「远程电脑」可看画面"}
-          </span>
-          {/* F-1 / U4：与被控横幅同一道 danger 确认——误触代价不对称；
-              撤销窗口内的 toast 撤回仍免确认（可撤销优先）。 */}
-          <button
-            type="button"
-            className={styles.dangerBtn}
-            disabled={rc.busy}
-            onClick={() => {
-              void (async () => {
-                const isPending = session.phase === "outbound_pending";
-                const name = rcDisplayName(session, fingerprintOf(session.peer));
-                const ok = await confirmDialog({
-                  title: isPending ? "取消远程申请" : "结束远程会话",
-                  message: isPending
-                    ? `将撤回对「${name}」的远程申请。对方若尚未同意，将不再看到这条申请。`
-                    : `将断开与「${name}」的连接。你这边的画面与控制会立刻结束。`,
-                  confirmText: isPending ? "取消申请" : "结束会话",
-                  variant: "danger",
-                });
-                if (!ok) return;
-                const done = await (isPending ? rc.cancel() : rc.end());
-                if (done) {
-                  toast(
-                    isPending ? "已取消远程申请" : "已结束远程会话",
-                    "success",
-                  );
-                }
-              })();
-            }}
-          >
-            {session.phase === "outbound_pending" ? "取消申请" : "立即结束"}
-          </button>
-        </div>
+        <RcOutboundBanner
+          session={session}
+          busy={rc.busy}
+          onCancel={rc.cancel}
+          onEnd={rc.end}
+        />
       )}
       {/* Q6：免确认设备异常断流 → 自动重连进度 / 失败提示。会话已被收口，
           不与上面两条横幅同时出现。 */}
       {reconnecting && !outboundLive && (
-        <div className={styles.ctrlBanner} role="status" aria-live="polite">
-          <span className={styles.who}>
-            <span className={styles.live} />
-            {reconnecting.gave_up
-              ? `「${rcDisplayName(reconnecting, fingerprintOf(reconnecting.peer))}」自动重连失败`
-              : `「${rcDisplayName(reconnecting, fingerprintOf(reconnecting.peer))}」连接中断，正在自动重连（${reconnecting.attempt}/${reconnecting.max}）`}
-          </span>
-          <span className={styles.sp} />
-          <span className={styles.meta}>
-            {reconnecting.gave_up
-              ? "对方可能不在线；也可稍等对方恢复后自动恢复"
-              : "对方是免确认设备，重连无需对方确认"}
-          </span>
-          {reconnecting.gave_up && (
-            <button
-              type="button"
-              className={styles.miniBtn}
-              disabled={rc.busy}
-              title="立即向这台设备重新发起远程申请"
-              onClick={() => {
-                void rc
-                  .request(reconnecting.peer, reconnecting.capability as RcCapability)
-                  .then((ok) => {
-                    if (ok) toast("已重新发起远程申请", "success");
-                  });
-              }}
-            >
-              重新发起
-            </button>
-          )}
-        </div>
+        <RcReconnectBanner
+          reconnecting={reconnecting}
+          busy={rc.busy}
+          onRetry={rc.request}
+        />
       )}
       <RcJoinRequests
         pending={pending}
         busy={rc.busy}
         onApprove={(id) => {
-          void rc.approve(id).then((ok) => {
-            if (ok) toast("已同意远程协助", "success");
-          });
+          void runRcAction(
+            () => rc.approve(id),
+            { ok: "已同意远程协助", fail: "同意失败" },
+            toast,
+          );
         }}
         onDeny={(id) => {
-          void rc.deny(id).then((ok) => {
-            if (ok) toast("已拒绝远程申请", "info");
-          });
+          void runRcAction(
+            () => rc.deny(id),
+            { ok: "已拒绝远程申请", fail: "拒绝失败" },
+            toast,
+          );
         }}
       />
-      {joins.length > 0 && (
-        <div className={styles.joinGlobal}>
-          <h4>🔔 有 {joins.length} 台设备想完成远程配对</h4>
-          {joins.map((j) => (
-            <div key={j.node_id} className={styles.joinItem}>
-              <div className={styles.joinFp}>{fingerprintOf(j.node_id)}</div>
-              <div className={`${styles.meta} ${styles.joinHint}`}>
-                核对指纹后再允许（与知识库同步配对无关）
-              </div>
-              <div className={styles.joinBtns}>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  disabled={rc.busy}
-                  onClick={() => {
-                    void rc.denyJoin(j.node_id).then((ok) => {
-                      if (ok) toast("已拒绝配对", "info");
-                    });
-                  }}
-                >
-                  拒绝
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={rc.busy}
-                  onClick={() => {
-                    void rc.approveJoin(j.node_id, DEFAULT_RC_DEVICE_NAME).then((ok) => {
-                      if (ok) toast("已允许远程配对", "success");
-                    });
-                  }}
-                >
-                  允许配对
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {/* Q2 方案 C：无人值守固定密码的**常驻**横幅。会话中被控横幅（RcControlBanner）
-          已经在说「谁在控」，这里不叠加；除此之外的所有时刻都要挂着——
-          一键全局关闭就在这条上，这是泄露密码后的止损按钮。 */}
+      <RcPairJoins
+        joins={joins}
+        busy={rc.busy}
+        onDenyJoin={rc.denyJoin}
+        onApproveJoin={rc.approveJoin}
+      />
+      {/* Q2 方案 C：无人值守固定密码的**常驻**横幅（止损按钮在条上）。 */}
       {unoPass && !inboundActive && (
-        <div className={styles.ctrlBanner} role="status">
-          <span className={styles.who}>
-            <span className={styles.live} />
-            无人值守模式中 · 固定密码接入已开启
-          </span>
-          <span className={styles.pillOn}>{unoPass.cap === "control" ? "可控" : "只看"}</span>
-          <span className={styles.sp} />
-          <span className={styles.meta}>
-            {unoPass.wan ? "跨网已允许（有限速防爆破）" : "仅限同一局域网"}
-          </span>
-          <button
-            type="button"
-            className={styles.dangerBtn}
-            disabled={rc.busy}
-            onClick={() => {
-              void rc.unoPassDisable().then((ok) => {
-                if (ok) toast("已关闭无人值守固定密码", "success");
-              });
-            }}
-          >
-            一键关闭
-          </button>
-        </div>
+        <RcUnoPassBanner unoPass={unoPass} busy={rc.busy} onDisable={rc.unoPassDisable} />
       )}
     </>
   );

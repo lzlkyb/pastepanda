@@ -48,7 +48,17 @@ pub struct Session {
     /// 已授权的能力（Active 后才有意义；Pending 时是申请值）。
     pub capability: Capability,
     pub phase: SessionPhase,
+    /// 墙钟起始时刻（epoch ms）。**只用于展示与历史**（时长记录）——
+    /// 一切超时判据看 [`Self::started_mono`]。
     pub started_ms: i64,
+    /// 🔴 C3（2026-09-23 审计）：单调钟起始时刻（`mono::mono_ms()` 口径）。
+    ///
+    /// 会话 TTL 与两侧心跳看门狗的时间锚。原先它们全锚 `started_ms`——墙钟一跳
+    /// （NTP 回拨、手动改表、睡眠唤醒）要么把活会话秒判过期，要么让该断的永不断。
+    /// `0` = 未填（反序列化残值 / 遗漏的构造点），判据遇 0 必须保守不触发。
+    /// 单调基座是进程私有的，`skip` 不发给前端。
+    #[serde(skip)]
+    pub started_mono: i64,
     /// 被控侧：是否本机用户已点头。
     pub granted: bool,
 }
@@ -183,14 +193,30 @@ pub fn must_show_control_banner(phase: SessionPhase) -> bool {
     phase == SessionPhase::InboundActive
 }
 
-/// 生成会话 id。不用 uuid 依赖：时间 + 随机 4 字节够用（进程内唯一即可）。
+/// 🔴 P1-6（2026-09-23 审计）：会话序号发生器。id 的唯一性靠它兜底，
+/// 不再依赖「时间的分辨率够细」这个假设（见 [`new_session_id`]）。
+static SESSION_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 生成会话 id。不用 uuid 依赖：时间 + 随机 4 字节 + 进程内单调序号。
+///
+/// 🔴 P1-6：为什么必须加序号。id 是**收口的凭据**——`force_end_if_session` /
+/// `session_id_is` 全按它认领会话（A2 那类「旧任务误杀新会话」的 bug 就是靠它挡的）。
+/// 旧形状 `rc-{now_ms}-{subsec_nanos}` 里两个因子都可能重复：
+/// - `now_ms` 在同一毫秒内建两场会话（快速断开重连：Err 分支收口 + 立刻重发申请）
+///   必然相同；
+/// - `subsec_nanos` 看着随机，但 Windows 上 `SystemTime` 的粒度是 100ns，且它走的是
+///   同一个 `GetSystemTimePreciseAsFileTime` 口径——同一毫秒内两次取值可以完全相等。
+///
+/// 两个都撞上的后果是**旧任务的收口命中新会话**：新画面被拆掉，还留下重复的历史。
+/// 序号是进程内单调的，同一次运行里永不重复；不引新依赖（原注释的约束照旧）。
 pub fn new_session_id(now_ms: i64) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
-    format!("rc-{}-{:08x}", now_ms, nanos)
+    let seq = SESSION_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("rc-{}-{:08x}-{:x}", now_ms, nanos, seq)
 }
 
 /// `last_seen` 多陈旧就不再算在线（毫秒）。
@@ -297,6 +323,16 @@ pub fn is_rc_online_for(
 
 /// 活跃会话最长持续（毫秒）。超时后推流循环自动结束，避免无人值守挂死。
 pub(super) const SESSION_TTL_MS: i64 = 2 * 60 * 60 * 1000;
+
+/// TTL 判据（C3，纯函数，假时钟纪律同 `link_stale_kick`）。
+///
+/// 两个时间都必须是 `mono::mono_ms()` 口径——混进墙钟值时差会立刻算错，
+/// 而单调钟下的超时计算不受系统时间跳变影响。
+/// `started_mono = 0`（未填/反序列化残值）一律判**不过期**：宁可漏判一场
+/// （还有心跳看门狗兜底），也不能因为哪个构造点漏填字段就把活会话秒杀。
+pub fn ttl_expired(started_mono: i64, now_mono: i64) -> bool {
+    started_mono != 0 && now_mono - started_mono > SESSION_TTL_MS
+}
 
 mod lifecycle;
 

@@ -42,6 +42,15 @@ describe("linkStateOf（链路活性：只认对端 pong 的新鲜度）", () =>
     expect(linkStateOf(T - HEARTBEAT_FAIL_MS * 2, T, true)).toBe("reconnecting");
   });
 
+  it("🔴 从未收到过 pong 的活死链：超过 sinceMs+上限也要判死，不能永远转圈", () => {
+    // U3 缺错误态守卫：半开连接一个 pong 都没见过时 lastPongMs 恒为 0，
+    // 旧实现只看 lastPongMs 会停在 connecting 直到 TTL（2h）。
+    expect(linkStateOf(0, T, false, T - HEARTBEAT_FAIL_MS)).toBe("failed");
+    expect(linkStateOf(0, T, false, T - (HEARTBEAT_FAIL_MS - 1))).toBe("connecting");
+    // 没有起点（0）时维持旧行为：不猜死
+    expect(linkStateOf(0, T, false, 0)).toBe("connecting");
+  });
+
   it("unstable 必须带「可能自愈」口径，failed 才给重连指引", () => {
     expect(linkStateHint("unstable")).toContain("恢复");
     expect(linkStateHint("connected")).toBe("");

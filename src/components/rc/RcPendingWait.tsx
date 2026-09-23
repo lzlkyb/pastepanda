@@ -68,7 +68,8 @@ export function RcPendingWait({
         </div>
       )}
       <div className={`${styles.meta} ${styles.waitMeta}`}>
-        对方需打开 PastePanda 并同意。对方未开「允许被远程」时会直接拒绝。
+        {/* U8：一句话说清「对面会发生什么」，别写成说明书 */}
+        对方电脑上会弹确认，同意后开始。对方未开「允许被远程」时会直接拒绝。
         · 已等待 {formatWaitSpan(waitingMs)}
         {remainingMs === null
           ? " · 2 分钟内未响应将自动取消"

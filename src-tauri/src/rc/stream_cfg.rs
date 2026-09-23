@@ -425,6 +425,15 @@ impl StreamCfg {
         self.last_activity_ms.store(now_ms, Ordering::Relaxed);
     }
 
+    /// 最近一次收到对端输入/心跳的时刻（epoch ms）；0 = 尚未收到。
+    ///
+    /// 🔴 P1-5：把**证据**给出去（`RcService::last_activity_ms`）。看门狗要判的是
+    /// 「超过 15s」，`should_pause` 那个 3.5s 的布尔撑不起第二个判据——
+    /// 让调用方自己再记一份时间就是两个数据源，迟早对不上。
+    pub(super) fn last_activity_ms(&self) -> i64 {
+        self.last_activity_ms.load(Ordering::Relaxed)
+    }
+
     /// 是否应暂停推流：会话开始后长时间无心跳/输入。
     pub(super) fn should_pause(&self, now_ms: i64) -> bool {
         let last = self.last_activity_ms.load(Ordering::Relaxed);

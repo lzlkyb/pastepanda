@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { logger } from "@/lib/logger";
 
 export type RcCursorShape =
   | "arrow"
@@ -71,13 +72,17 @@ export function useRcCursor(sessionId: string): RcCursorShape | null {
     void listen<{ shape: string }>("rc-cursor-changed", (e) => {
       const s = e.payload?.shape;
       if (typeof s === "string") setShape(s as RcCursorShape);
-    }).then((u) => {
-      if (!alive) {
-        u();
-        return;
-      }
-      unlisten = u;
-    });
+    })
+      .then((u) => {
+        if (!alive) {
+          u();
+          return;
+        }
+        unlisten = u;
+      })
+      // 审计修（对齐 useRcSessionNotices 的写法）：listen 的拒绝必须留痕，
+      // 不能变成 unhandled rejection 后静默丢掉整条光标同步链路。
+      .catch((e) => logger.warn("[RcCursor] rc-cursor-changed 监听注册失败，远端光标形状不会同步", e));
     return () => {
       alive = false;
       unlisten?.();

@@ -14,8 +14,15 @@ export function stripBold(s: string): string {
   return s.replace(/\*\*/g, "");
 }
 
-/** 「标题：说明」前缀加粗，提升扫读效率 */
+/** 「**标题**：明细」条目**只显示标题**（2026-09-23 用户拍板：弹窗是扫读视图，
+ *  长明细由底部「查看完整手册」与 GitHub Releases 页承接）。
+ *  判据硬：必须 **粗体开头 + 冒号** 才裁；不命中的条目保留全文（旧行为）——
+ *  历史 98 个版本的条目全是 `**标题**：` 格式，真有例外也不会被裁残。
+ *  注意两条数据路径（包内 generated / 运行时 parseChangelogSection）都过这里，
+ *  本函数是它们唯一的显示收口。 */
 function renderItemText(text: string) {
+  const t = /^\*\*(.+?)\*\*[：:]/.exec(text);
+  if (t) return stripBold(t[1]);
   const m = /^(.+?)(：| — )([\s\S]+)$/.exec(text);
   if (!m) return stripBold(text);
   return (

@@ -53,6 +53,7 @@ impl RcService {
             capability: cap,
             phase: SessionPhase::InboundActive,
             started_ms: now_ms(),
+            started_mono: crate::rc::mono::mono_ms(),
             granted: true,
         };
         inner.session = Some(s.clone());

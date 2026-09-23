@@ -12,7 +12,9 @@
  *   · 通道没在跑 → 不摆：`rc_request_session` 会回 `[channel_down]`；
  *   · 已有会话或待同意申请 → 不摆：会回 `[busy_local]`（`gate_outbound`）；
  *   · 没有远程配对设备 → 不摆：会回 `[not_paired]`。
- * 读取任一步失败都当作「没有」——弹窗是高频入口，宁可少一项也不能报错刷屏。
+ * 读取任一步失败**不再静默消失**（2026-09-23 审计修）：判据不满足是「确实没有项」，
+ * 而读状态失败是「出错了」——后者在菜单位置留一条**禁用**说明项，用户能分清
+ * 「这台机器没配过」与「刚才没读到」。
  */
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -20,6 +22,7 @@ import { listen } from "@tauri-apps/api/event";
 import { rcRequestSession, rcStatus, rcTargets, rcCancelRequest } from "@/lib/api/rc";
 import { lastRcTarget, rcDisplayName } from "@/lib/rcDevice";
 import { capabilityLabel, lastRequestCap } from "@/lib/rcRequest";
+import { logger } from "@/lib/logger";
 import { useRcStore } from "@/stores/rcStore";
 import { useToast, UNDO_WINDOW_MS } from "@/components/Toast";
 
@@ -30,10 +33,14 @@ export interface TrayRcShortcut {
   capLabel: string;
   /** 打开工作台并发起申请；返回 false = 发起失败（错误已进工作台错误面板）。 */
   connect: () => Promise<boolean>;
+  /** true = 状态读取失败的占位项：渲染为禁用，不可点击（见上方审计修）。 */
+  disabled?: boolean;
 }
 
 export function useTrayRcShortcut(): TrayRcShortcut | null {
   const [target, setTarget] = useState<{ nodeId: string; label: string } | null>(null);
+  /** 上一次读取是否失败——失败时给禁用占位而不是整项消失。 */
+  const [readFailed, setReadFailed] = useState(false);
 
   /**
    * 拉一次目标设备。🔴 不能只在挂载时拉一次（2026-09-23 修）：托盘弹窗走
@@ -47,21 +54,32 @@ export function useTrayRcShortcut(): TrayRcShortcut | null {
       // 三条「不摆死项」判据不再满足时**必须撤下**旧项：弹窗不销毁，
       // 不清的话上一轮的 target 会一直挂着（比如会话已在别处开始）。
       if (!st.running || st.session || (st.pending?.length ?? 0) > 0) {
-        if (!cancelled()) setTarget(null);
+        if (!cancelled()) {
+          setTarget(null);
+          setReadFailed(false);
+        }
         return;
       }
       const dev = lastRcTarget(await rcTargets());
       if (cancelled()) return;
       if (!dev) {
         setTarget(null);
+        setReadFailed(false);
         return;
       }
+      setReadFailed(false);
       setTarget({
         nodeId: dev.node_id,
         label: rcDisplayName(dev, "未命名设备"),
       });
     } catch (e) {
-      console.warn("[TrayRc] 读取远程状态失败，不显示快捷连接项:", e);
+      // 审计修：以前只 console.warn，快捷项在用户眼里「静默消失」。
+      // 留一条禁用占位（下一次弹窗读成功后自动撤下），warn 照留。
+      logger.warn("[TrayRc] 读取远程状态失败，快捷连接项降级为禁用占位", e);
+      if (!cancelled()) {
+        setTarget(null);
+        setReadFailed(true);
+      }
     }
   }, []);
 
@@ -73,10 +91,14 @@ export function useTrayRcShortcut(): TrayRcShortcut | null {
     let unlisten: (() => void) | null = null;
     void listen("tray-popup-init", () => {
       if (!cancelled) void fetchTarget(() => cancelled);
-    }).then((off) => {
-      if (cancelled) off();
-      else unlisten = off;
-    });
+    })
+      .then((off) => {
+        if (cancelled) off();
+        else unlisten = off;
+      })
+      // 审计修（对齐 useRcSessionNotices 的写法）：listen 的拒绝必须留痕，
+      // 不能变成 unhandled rejection 后静默丢掉整条刷新链路。
+      .catch((e) => logger.warn("[TrayRc] tray-popup-init 监听注册失败，设备名不会自动刷新", e));
     return () => {
       cancelled = true;
       unlisten?.();
@@ -125,6 +147,16 @@ export function useTrayRcShortcut(): TrayRcShortcut | null {
     return ok;
   }, [target, toast]);
 
-  if (!target) return null;
+  if (!target) {
+    // 只在「读取失败」时降级为禁用占位；三条判据不满足（会话中 / 无设备等）
+    // 依旧整项消失——那是「真的没有可连的」，摆个禁用项反而添堵。
+    if (!readFailed) return null;
+    return {
+      label: "远程设备暂不可用",
+      capLabel: "稍后重新打开托盘重试",
+      connect: async () => false,
+      disabled: true,
+    };
+  }
   return { label: target.label, capLabel: capabilityLabel(lastRequestCap()), connect };
 }

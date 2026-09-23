@@ -106,6 +106,8 @@ impl OutboundVideo {
         self.spawn_video_dgram_reader();
         // G3：音频流接收（被控端另开的单向流），与视频两条路并行
         self.spawn_audio_acceptor();
+        // 🔴 P1-5：半开链路看门狗（判据不在这个循环里，原因见该方法注释）
+        self.spawn_heartbeat_watchdog();
         // 断流的真实理由（Err 路径才有）；其它退出路径维持原来的「画面流中断」。
         let mut end_reason: Option<String> = None;
         loop {
@@ -175,6 +177,55 @@ impl OutboundVideo {
                     .begin_auto_reconnect(&self.peer, peer_name, cap);
             }
         }
+    }
+
+    /// 🔴 P1-5（2026-09-23 审计）：发起侧的半开链路看门狗（1 秒一拍，有界退出）。
+    ///
+    /// # 为什么不放在 `run` 的圈顶
+    ///
+    /// `read_incoming` 在半开连接上是**无限期阻塞**的：对端不再发东西，而 QUIC
+    /// 侧迟迟不报错（拔线 / 进程被杀 / 笔记本合盖）。圈顶的判据因此永远轮不到，
+    /// 界面就一直挂着「已连接 + 一帧静止画面」。把它包进 `timeout` 看着更省事，
+    /// 但不能那么写：`read_exact` 不是**取消安全**的，读到一半弃会让帧读碎，
+    /// 下一圈从半截字节开始解——把一个「失联」故障升级成「花屏 + 解帧失败」。
+    /// 所以判据挪进伴生任务（`session_id_is` 保住只按本场会话收口的纪律）。
+    ///
+    /// # 为什么自动重连在这里安排，而不是等 Err 分支
+    ///
+    /// `force_end_if_session` 把会话 take 掉之后，Err 分支醒来时
+    /// `session_brief_if` 必然拿到 None（按 id 认领会话槽），在那里等重连
+    /// 等于永远不等。所以 brief 必须在**收口之前**取、重连在收口之后立刻排。
+    /// Err 分支自己那份 begin 不受影响：自然断流（先 Err 后无看门狗）走它，
+    /// 看门狗路径里它是 no-op（ended 已是 None），两条路各只安排一次。
+    fn spawn_heartbeat_watchdog(&self) {
+        let svc = self.svc.clone();
+        let my_id = self.my_id.clone();
+        let conn = self.conn.clone();
+        let peer = self.peer.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
+                // 会话已被别的路径收口/换掉（用户结束、对端 End、TTL）→ 本任务交棒
+                if !svc.session_id_is(&my_id) {
+                    return;
+                }
+                if !svc.outbound_heartbeat_stale() {
+                    continue;
+                }
+                log::info!("[RC] 被控端失联（心跳超时），自动结束会话");
+                // Q6：收口前取走能力/设备名——force_end 之后会话就没了
+                let ended = svc.session_brief_if(&my_id);
+                svc.force_end_if_session(&my_id, "对端失联（心跳超时）")
+                    .await;
+                // 唤醒堵死的读流任务（理由码/文案对端不解析，只为解阻塞）
+                conn.close(3u32.into(), b"rc-heartbeat-timeout");
+                // 真失联才重连（与 TTL 到期相反——那个不该再敲门）
+                if let Some((cap, peer_name)) = ended {
+                    svc.begin_auto_reconnect(&peer, peer_name, cap);
+                }
+                return;
+            }
+        });
     }
 
     /// P2-1：视频数据报读取任务。P 帧走 QUIC datagram（不可靠 + XOR FEC），
@@ -358,7 +409,9 @@ impl OutboundVideo {
                 log::info!("[RC] 对端结束：{reason}");
                 // 理由带出去进会话历史（P2-10）。不设 end_reason（那是断流
                 // Err 的标记，is_some 会触发自动重连）——对端主动结束不重连。
-                self.peer_end_reason = Some(reason);
+                // 🔴 前缀「对端结束：」是归因：对方的原话「用户结束会话」与本机
+                // 主动结束一字不差，不加前缀前端无法拆分「我点的」与「对方点的」。
+                self.peer_end_reason = Some(format!("对端结束：{reason}"));
                 return false;
             }
             Ok(_) => {}

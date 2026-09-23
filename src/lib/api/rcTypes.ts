@@ -49,6 +49,16 @@ export interface RcUnoPassInfo {
   since_ms: number;
 }
 
+/** 🔴 P1-4（2026-09-23 审计）：一次非阻塞发起失败的**带归因**投影（后端同名结构）。
+ * 失败槽是全局单值而写它的路径有多条（手动发起 / 自动重连、多台设备），
+ * 旧裸文案会归因漂移；`peer`/`session_id` 供展示侧把错误挂回正确的设备。 */
+export interface RcOutboundError {
+  peer: string;
+  session_id: string;
+  /** 给用户看的文案（原 `Option<String>` 的内容）。 */
+  error: string;
+}
+
 export interface RcStatus {
   enabled: boolean;
   capability: RcCapability;
@@ -103,13 +113,21 @@ export interface RcStatus {
    */
   peer_dgram_input?: boolean;
   /**
-   * 最后一次收到对端 pong 的时间戳（ms）；0 = 还没收到过。
-   * 链路活性判据的唯一来源（见 `useRcLinkState`）——ping 的本地 invoke
-   * 成功与否不代表对端收到了。
+   * 🔴 C3（2026-09-23 审计）：最后一次收到对端 pong 的「距今毫秒数」；
+   * null / 缺省 = 本会话还没收到过任何 pong。
+   *
+   * 后端 pong 时间戳是**进程私有单调钟**（墙钟一跳就会把新鲜度判据算乱），
+   * 裸时刻跨进程比较无意义——唯一安全的投影是 age。前端收到后立刻用
+   * `performance.now()` 定锚外推（见 `useRcLinkState`），全程不碰墙钟。
+   * 链路活性判据的唯一来源——ping 的本地 invoke 成功与否不代表对端收到了。
    */
-  last_pong_ms?: number;
-  /** 非阻塞发起申请的后台失败原因 */
-  outbound_error?: string | null;
+  pong_age_ms?: number | null;
+  /**
+   * 非阻塞发起申请的后台失败原因。
+   * 🔴 P1-4：后端槽位是全局单值而写它的有多台设备——旧裸串会把 A 的失败挂在 B
+   * 脸上，现在带归因；给用户看的文案取 `.error`（见 `RcOutboundError`）。
+   */
+  outbound_error?: RcOutboundError | null;
   /**
    * Q6：发起端自动重连进度（免确认设备异常断流后）。null = 没有。
    * attempt/max 驱动「正在重连 N/M」；gave_up = 次数用尽，提示手动重连。

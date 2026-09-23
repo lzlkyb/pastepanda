@@ -59,18 +59,23 @@ import {
   rcUnoPassDisable,
   rcUnoPassSetWan,
 } from "@/lib/api/rc";
-import type { RcState } from "./rcStoreTypes";
+import type { RcReachability, RcState } from "./rcStoreTypes";
 import { clearTimer, ensureListener, scheduleNext } from "./rcStoreEngine";
 
 export const useRcStore = create<RcState>((set, get) => {
   // P1-11：请求代数——发起 ++seq，落地时非当前丢弃，避免慢响应覆盖新状态
   let refreshSeq = 0;
+  let targetsSeq = 0;
+  const probeSeq = new Map<string, number>();
   // P3-3：错误写入代数——成功路径只在「没有别的 run 中途写过错误」时才清
   let errWrite = 0;
 
   return {
   status: null,
   targets: [],
+  targetsLoaded: false,
+  targetsError: null,
+  reachability: {},
   identity: null,
   busy: false,
   busyCount: 0,
@@ -127,13 +132,16 @@ export const useRcStore = create<RcState>((set, get) => {
       // 非阻塞申请的后台失败：clone 保留在后端，用户 dismiss / 下次发起 / 结束时才清
       // B1 + P3-4：与用户刚清掉的是**同一串**、且还在短窗口内 → 不回显，
       // 窗口过后同串算真实新错误，重新弹。
+      // 🔴 P1-4：后端槽位改带归因结构（peer/session_id/error），store 的 error 仍存文案；
+      // 归因暂不参与展示（错误条是全局位），要挂回设备行时从这里取。
       const now = Date.now();
+      const outboundErr = s.outbound_error?.error ?? null;
       const ignoredClear =
-        s.outbound_error != null &&
-        s.outbound_error === get().lastClearedError &&
+        outboundErr != null &&
+        outboundErr === get().lastClearedError &&
         now - get().lastClearedAt < 2000;
-      if (s.outbound_error && !ignoredClear) {
-        set({ error: s.outbound_error });
+      if (outboundErr && !ignoredClear) {
+        set({ error: outboundErr });
       }
     } catch (e) {
       if (gen !== refreshSeq) return;
@@ -148,34 +156,52 @@ export const useRcStore = create<RcState>((set, get) => {
   setPathNotice: (p) => set({ pathNotice: p }),
   clearPathNotice: () => set({ pathNotice: null }),
   refreshTargets: async () => {
+    const gen = ++targetsSeq;
     try {
       const t = await rcTargets();
-      set({ targets: t });
-    } catch {
-      /* 列表失败不打断主状态 */
+      if (gen !== targetsSeq) return null;
+      set({ targets: t, targetsLoaded: true, targetsError: null });
+      return t;
+    } catch (e) {
+      if (gen !== targetsSeq) return null;
+      set({ targetsError: e instanceof Error ? e.message : String(e) });
+      return null;
     }
   },
   probeTargets: async (only?: string[]) => {
     const st = get();
-    // 通道没起探了也是 channel_down
-    if (!st.status?.running) {
-      await get().refreshTargets();
-      return;
-    }
-    // 🔴 只有调用方点名要探的才探（2026-09-21）。不再默认全量：
-    // 打开页面时**不应该**触发拨号，那既慢又会（配合旧的 touch 行为）制造假在线。
+    if (!st.status?.running) return;
     const wanted = new Set(only ?? []);
     const ids = st.targets
-      .filter((t) => wanted.has(t.node_id) && t.presence !== "live")
+      .filter((t) => wanted.has(t.node_id) && t.source === "rc")
       .map((t) => t.node_id);
-    if (ids.length > 0) {
-      try {
-        await rcProbeTargets(ids);
-      } catch {
-        /* 探活失败不打断列表；后面 refreshTargets 仍展示现状态 */
-      }
+    if (ids.length === 0) return;
+    const generations = new Map(ids.map((id) => {
+      const gen = (probeSeq.get(id) ?? 0) + 1;
+      probeSeq.set(id, gen);
+      return [id, gen] as const;
+    }));
+    const commit = (stateFor: (id: string) => RcReachability) => {
+      const current = ids.filter((id) => probeSeq.get(id) === generations.get(id));
+      if (current.length === 0) return;
+      set((prev) => ({
+        reachability: {
+          ...prev.reachability,
+          ...Object.fromEntries(current.map((id) => [id, stateFor(id)])),
+        },
+      }));
+    };
+    commit(() => ({ state: "checking" }));
+    try {
+      const result = await rcProbeTargets(ids);
+      const checkedAt = Date.now();
+      commit((id) => ({
+        state: result[id] === true ? "reachable" : result[id] === false ? "unreachable" : "error",
+        checkedAt,
+      }));
+    } catch {
+      commit(() => ({ state: "error", checkedAt: Date.now() }));
     }
-    await get().refreshTargets();
   },
   refreshIdentity: async () => {
     try {
