@@ -48,6 +48,8 @@ impl RcService {
             id: new_session_id(now_ms()),
             peer: peer.to_string(),
             peer_name,
+            // display_name 由 status() 投影时从配对表回填，构造处留空。
+            display_name: String::new(),
             capability: cap,
             phase: SessionPhase::InboundActive,
             started_ms: now_ms(),

@@ -12,6 +12,7 @@
 import { useEffect, useMemo } from "react";
 import { Lightbulb } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcLaunch } from "@/hooks/useRcLaunch";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
@@ -58,9 +59,10 @@ export function RcStage({
 
   const pendingName = useMemo(() => {
     if (!session) return "";
+    // 统一显示名（备注优先）；会话没带名字时退到 targets 里那行，再退指纹。
     return (
-      session.peer_name ||
-      rc.targets.find((t) => t.node_id === session.peer)?.name ||
+      rcDisplayName(session) ||
+      rcDisplayName(rc.targets.find((t) => t.node_id === session.peer) ?? {}) ||
       fingerprintOf(session.peer)
     );
   }, [session, rc.targets]);
@@ -111,7 +113,7 @@ export function RcStage({
               : () =>
                   void enableTrust(
                     session.peer,
-                    session.peer_name || fingerprintOf(session.peer),
+                    rcDisplayName(session, fingerprintOf(session.peer)),
                   )
           }
           quality={rc.status?.quality ?? "auto"}
@@ -132,7 +134,7 @@ export function RcStage({
           onEnd={() => void rc.end()}
           onReconnect={async () => {
             // P3-8：重连会掐断当前画面，先短确认（可撤销类操作不该静默一键断连）
-            const name = session.peer_name || fingerprintOf(session.peer);
+            const name = rcDisplayName(session, fingerprintOf(session.peer));
             const ok = await confirmDialog({
               title: "重新连接",
               message: `将断开与「${name}」的当前连接并重新发起。`,

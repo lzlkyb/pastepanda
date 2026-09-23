@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { lastMeasuredRtt } from "@/lib/rcHistory";
-import { normalizeRcPresence, osLabel, presenceHint, presenceMainLabel, relTime } from "@/lib/rcDevice";
+import { normalizeRcPresence, osLabel, presenceHint, presenceMainLabel, rcDisplayName, relTime } from "@/lib/rcDevice";
 import { pathKindLabel } from "@/lib/rcSessionStats";
 import { useRcDeviceActions } from "@/hooks/useRcDeviceActions";
 import type { RcDeviceUi } from "@/hooks/useRcDeviceUi";
@@ -36,7 +36,7 @@ import { RcRecentSessions } from "./RcRecentSessions";
 import styles from "./RemoteComputerA2.module.css";
 
 function displayName(target: RcTargetDevice): string {
-  return target.note?.trim() || target.name?.trim() || fingerprintOf(target.node_id);
+  return rcDisplayName(target, fingerprintOf(target.node_id));
 }
 
 export function RcA2DeviceDetail({

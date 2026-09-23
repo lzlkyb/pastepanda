@@ -10,6 +10,7 @@
  */
 import type { RcHistoryItem } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 
 export type RcHistoryDirFilter = "all" | "outbound" | "inbound";
 
@@ -18,9 +19,13 @@ export function historyPeerKey(h: RcHistoryItem): string {
   return h.peer;
 }
 
-/** 设备显示名：优先对端自报名，退到指纹前 8 位（同列表页口径）。 */
+/**
+ * 设备显示名：后端查询时已按配对表叠加统一显示名（备注优先）到
+ * `display_name`；缺失/空（旧版后端或没起备注）回落落库的自报名快照，
+ * 再退指纹前 8 位。🔴 走 `rcDisplayName`，别手写 `peer_name ||` 链。
+ */
 export function historyPeerLabel(h: RcHistoryItem): string {
-  return h.peer_name?.trim() || fingerprintOf(h.peer);
+  return rcDisplayName(h, fingerprintOf(h.peer));
 }
 
 export interface RcHistoryDevice {
@@ -42,7 +47,7 @@ export function summarizeHistoryDevices(list: readonly RcHistoryItem[]): RcHisto
   const map = new Map<string, { label: string; named: boolean; count: number; lastMs: number }>();
   for (const h of list) {
     if (!h.peer) continue;
-    const name = h.peer_name?.trim() ?? "";
+    const name = rcDisplayName(h);
     const seen = h.started_ms ?? 0;
     const cur = map.get(h.peer);
     if (!cur) {

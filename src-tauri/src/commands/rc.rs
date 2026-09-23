@@ -42,6 +42,21 @@ pub fn normalize_note(raw: &str) -> String {
     raw.trim().chars().take(NOTE_MAX_CHARS).collect()
 }
 
+/// 设备显示名的**唯一真源**：备注（起过才用）→ 对端自报名。
+///
+/// 🔴 前端曾有 6 份手写的 `note?.trim() || name || …` 与 8 处只认自报名的直显，
+///    用户改了备注后历史页 / 会话横幅 / 托盘仍显示旧设备名（2026-09-23）。
+///    收口方案是后端统一算好 `display_name` 随每份数据下发（方案 B），
+///    本函数就是那个「一处」——前端只剩无脑显示 + 旧载荷兜底。
+pub fn display_name_of(note: &str, name: &str) -> String {
+    let note = note.trim();
+    if note.is_empty() {
+        name.to_string()
+    } else {
+        note.to_string()
+    }
+}
+
 fn emit_changed(app: &AppHandle, svc: &RcService) {
     let _ = app.emit("rc-session-changed", svc.status());
 }
@@ -63,6 +78,9 @@ pub struct RcTargetDevice {
     /// 用户起的本地备注名（A1）。空串 = 没起过，前端回落显示 `name`。
     /// 仅同步配对的设备没有备注入口——它的行还没进 rc 表。
     pub note: String,
+    /// 统一显示名：`display_name_of(&note, &name)`（备注优先，见函数说明）。
+    /// 前端各显示点只读它，不再各自拼 `note || name`。
+    pub display_name: String,
     /// 方案 D「免确认直连」：这台设备发起远程时跳过人工同意。默认 false。
     pub trusted: bool,
     /// 对端**自报的系统**短标签（`Windows 11` / `macOS` / `Linux`）。
@@ -134,6 +152,7 @@ pub fn rc_targets(
         );
         out.push(RcTargetDevice {
             denied: deny.get(&d.node_id).copied().unwrap_or(false),
+            display_name: display_name_of(&d.note, &d.name),
             node_id: d.node_id,
             name: d.name,
             conn_state: if online {
@@ -167,7 +186,9 @@ pub fn rc_targets(
         );
         out.push(RcTargetDevice {
             denied: deny.get(&d.node_id).copied().unwrap_or(false),
-            node_id: d.node_id,
+            // 仅同步配对还没提升进 rc 表，没有备注入口 → display_name 恒等于自报名。
+            display_name: d.name.clone(),
+            node_id: d.node_id.clone(),
             name: d.name,
             conn_state: if online {
                 "online".into()
@@ -1299,11 +1320,56 @@ pub async fn rc_push_clipboard(svc: State<'_, Arc<RcService>>, text: String) -> 
 }
 
 /// 最近会话元数据（只记谁/方向/能力/时长/结果，不记画面）。
+///
+/// 历史里落库的 `peer_name` 是**会话当时的**对端自报名快照——用户后来改了备注，
+/// 历史页不该继续喊旧名字。这里在**查询时**按 node_id join 一次配对表，
+/// 把统一显示名叠成 `display_name`（备注优先；没配对记录/没起备注则回落快照）。
+/// 落库原文不动：记录留的是当时事实，显示层才做覆盖。
 #[tauri::command]
 pub fn rc_session_history(
     svc: State<'_, Arc<RcService>>,
+    store: State<'_, DataStore>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    Ok(svc.session_history())
+    let mut list = svc.session_history();
+    let notes: std::collections::HashMap<String, String> = store
+        .rc_device_list()?
+        .into_iter()
+        .map(|d| (d.node_id, d.note))
+        .collect();
+    overlay_history_display_names(&mut list, &notes);
+    Ok(list)
+}
+
+/// 把备注覆盖进历史条目的 `display_name` 键（纯函数，可单测）。
+///
+/// 只在**真有备注**时注入：纯空白备注（= 没起过）或 peer 没有配对记录的条目
+/// 一律不动，前端回落 `peer_name` 快照——不给载荷塞一个与回落值相同的冗余键。
+pub fn overlay_history_display_names(
+    list: &mut [serde_json::Value],
+    notes: &std::collections::HashMap<String, String>,
+) {
+    for entry in list.iter_mut() {
+        let Some(obj) = entry.as_object_mut() else {
+            continue;
+        };
+        let Some(peer) = obj.get("peer").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(note) = notes.get(peer) else {
+            continue;
+        };
+        if note.trim().is_empty() {
+            continue;
+        }
+        let peer_name = obj
+            .get("peer_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        obj.insert(
+            "display_name".to_string(),
+            serde_json::Value::String(display_name_of(note, peer_name)),
+        );
+    }
 }
 
 /// 清空全部会话历史（产品红线：日志可见可删除）。幂等：没有记录也返回 Ok。
@@ -1381,5 +1447,44 @@ mod tests {
     fn test_备注按字符计数不劈开代理对() {
         let s = normalize_note(&"🖥".repeat(80));
         assert_eq!(s, "🖥".repeat(60), "每个 emoji 算 1 个字符，且不被截成乱码");
+    }
+
+    /// 统一显示名：备注（trim 后非空）优先，否则回落自报名。
+    #[test]
+    fn test_显示名备注优先_空白回落自报名() {
+        assert_eq!(display_name_of("工作电脑", "DESKTOP-ABC"), "工作电脑");
+        assert_eq!(display_name_of("  客厅  ", "DESKTOP-ABC"), "客厅");
+        assert_eq!(display_name_of("", "DESKTOP-ABC"), "DESKTOP-ABC");
+        assert_eq!(display_name_of("   ", "DESKTOP-ABC"), "DESKTOP-ABC");
+        // 两边都空：返回空串，前端整段不渲染（「空白不编默认值」判据）。
+        assert_eq!(display_name_of("", ""), "");
+    }
+
+    /// 历史条目的备注覆盖：只动「peer 有备注」的条目，其余原样透传。
+    #[test]
+    fn test_历史条目叠加显示名() {
+        let mk = |peer: &str, name: &str| {
+            serde_json::json!({ "peer": peer, "peer_name": name, "dir": "outbound" })
+        };
+        let notes = std::collections::HashMap::from([
+            ("p1".to_string(), "工作电脑".to_string()),
+            ("p2".to_string(), "   ".to_string()), // 纯空白备注 = 没起过
+        ]);
+        let mut list = vec![mk("p1", "DESKTOP-ONE"), mk("p2", "DESKTOP-TWO"), mk("p3", "DESKTOP-THREE")];
+        overlay_history_display_names(&mut list, &notes);
+        assert_eq!(
+            list[0]["display_name"], "工作电脑",
+            "有备注 → 覆盖自报名快照"
+        );
+        assert!(
+            list[1].get("display_name").is_none(),
+            "纯空白备注不算起过 → 不注入，前端回落 peer_name"
+        );
+        assert!(
+            list[2].get("display_name").is_none(),
+            "没配对记录（如已忘记的设备）→ 不注入，前端回落 peer_name"
+        );
+        // 落库原文不动
+        assert_eq!(list[0]["peer_name"], "DESKTOP-ONE");
     }
 }

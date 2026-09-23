@@ -19,6 +19,7 @@ import { useRcHistory } from "@/hooks/useRcHistory";
 import { useRcLaunch } from "@/hooks/useRcLaunch";
 import { useRcWorkbenchClose } from "@/hooks/useRcWorkbenchClose";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import { rcDeviceRename } from "@/lib/api/rc";
 import { normalizeHistoryPeer, summarizeHistoryDevices } from "@/lib/rcHistory";
 import { readAutoStartChannel } from "@/lib/rcPrefs";
@@ -137,7 +138,7 @@ export function RcWorkbench() {
       ? "对方正在远程本机"
       : pending
         ? "等待对方同意接入"
-        : `正在远程控制 ${session.peer_name || fingerprintOf(session.peer)} · ${capabilityLabel(session.capability)}`;
+        : `正在远程控制 ${rcDisplayName(session, fingerprintOf(session.peer))} · ${capabilityLabel(session.capability)}`;
 
   const stage = (
     <RcStage

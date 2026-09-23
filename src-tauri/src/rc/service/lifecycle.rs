@@ -22,7 +22,7 @@ impl RcService {
         // 顺序侥幸是 link→inner，暂无 ABBA；但「最后一次使用点」会随下一次编辑移动
         // ——只要有人往字段里多取一个 inner 的东西，或把 link 调用挪到 clone 之前，
         // 就变成持 inner 取 link。用作用域把顺序写成**显式**的，不再靠推断。
-        let (session, pending, streaming) = {
+        let (mut session, mut pending, streaming) = {
             let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             (
                 inner.session.clone(),
@@ -37,6 +37,23 @@ impl RcService {
                     .is_some_and(|s| s.phase == SessionPhase::InboundActive),
             )
         };
+        // 统一显示名（方案 B，2026-09-23）：备注优先于自报名，**每次投影现查**
+        // 配对表——会话/申请挂起期间改备注也能立刻反映，不用等下一场会话。
+        // 查不到（设备已忘记 / 库读失败）按「没备注」处理，回填空串让前端
+        // 回落 `peer_name`，绝不挡状态本身。
+        let display_of = |peer: &str| -> Option<String> {
+            let Ok(Some(d)) = self.store.rc_device_get(peer) else {
+                return None;
+            };
+            let n = d.note.trim();
+            (!n.is_empty()).then(|| n.to_string())
+        };
+        if let Some(s) = session.as_mut() {
+            s.display_name = display_of(&s.peer).unwrap_or_default();
+        }
+        for k in pending.iter_mut() {
+            k.display_name = display_of(&k.peer).unwrap_or_default();
+        }
         let running = self
             .running
             .lock()
@@ -98,6 +115,7 @@ impl RcService {
                 |s| RcReconnectInfo {
                     peer: s.peer.clone(),
                     peer_name: s.peer_name.clone(),
+                    display_name: display_of(&s.peer).unwrap_or_default(),
                     capability: s.capability.as_str().to_string(),
                     attempt: s.attempt,
                     max: s.max,

@@ -21,13 +21,14 @@ import {
   deviceRowSubLabel,
   groupRcTargets,
   normalizeRcPresence,
+  rcDisplayName,
   relTime,
 } from "@/lib/rcDevice";
 import { pathKindLabel } from "@/lib/rcSessionStats";
 import styles from "./RemoteComputerA2.module.css";
 
 function targetName(target: RcTargetDevice): string {
-  return target.note?.trim() || target.name?.trim() || fingerprintOf(target.node_id);
+  return rcDisplayName(target, fingerprintOf(target.node_id));
 }
 
 export function RcA2DeviceList({

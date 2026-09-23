@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import type { RcSession } from "@/lib/api/rc";
 import { linkStateHint, linkStateLabel, type RcLinkState } from "@/lib/rcSessionStats";
 import { RcCloseButton } from "./RcWindowControls";
@@ -67,7 +68,7 @@ export function RcSessionTop({
     <div className={styles.viewTop} data-tauri-drag-region="deep">
       <span className={dotCls} />
       <span>
-        正在查看 <b>{session.peer_name || fingerprintOf(session.peer)}</b>
+        正在查看 <b>{rcDisplayName(session, fingerprintOf(session.peer))}</b>
       </span>
       <span className={canControl ? styles.pillOn : styles.pill}>
         {canControl ? "可控" : "只看"}

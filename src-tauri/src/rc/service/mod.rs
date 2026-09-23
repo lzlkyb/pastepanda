@@ -190,6 +190,8 @@ pub struct RcStatus {
 pub struct InboundKnock {
     pub peer: String,
     pub peer_name: String,
+    /// 对端**统一显示名**（备注优先）。构造处留空，`status()` 投影时回填。
+    pub display_name: String,
     pub capability: Capability,
     pub first_seen_ms: i64,
 }
@@ -352,6 +354,8 @@ pub struct AutoReconnect {
 pub struct RcReconnectInfo {
     pub peer: String,
     pub peer_name: String,
+    /// 对端**统一显示名**（备注优先）。`status()` 投影时回填。
+    pub display_name: String,
     /// 原会话的能力档（「重连失败」时前端「重新发起」按钮复用它）。
     pub capability: String,
     pub attempt: u32,

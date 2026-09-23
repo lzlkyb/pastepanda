@@ -155,6 +155,36 @@ export function normalizeRcNote(raw: string): string {
 }
 
 /**
+ * 设备**统一显示名**的取值口（方案 B 收口，2026-09-23）。
+ *
+ * 后端已在每份数据里算好 `display_name`（备注优先，`commands::rc::display_name_of`；
+ * 会话/申请/重连由 `status()` 投影时现查配对表回填），这里只做「读它 + 旧载荷兜底」：
+ * `display_name → note → name → fallback`。
+ *
+ * 🔴 所有显示设备名的地方都必须走本函数——再手写一份 `note || name`、或直接读
+ * `peer_name`，就是「改了备注、历史页/会话横幅/托盘还显示旧设备名」那批 bug 的复发
+ * （当初 6 处手写 + 8 处直显才收成这一个口）。
+ */
+export function rcDisplayName(
+  t: {
+    display_name?: string | null;
+    note?: string | null;
+    name?: string | null;
+    /** 历史/会话里「自报名」的字段名（RcHistoryItem / RcSession 快照）。 */
+    peer_name?: string | null;
+  },
+  fallback = "",
+): string {
+  return (
+    (t.display_name ?? "").trim() ||
+    (t.note ?? "").trim() ||
+    (t.name ?? "").trim() ||
+    (t.peer_name ?? "").trim() ||
+    fallback
+  );
+}
+
+/**
  * 设备系统标签（详情面「在线 · Windows 11 · 局域网可达」中间那一段）。
  *
  * 后端给的是对端**自报**的值（会话 `Accept` 帧带来的，本机推断不出来）。

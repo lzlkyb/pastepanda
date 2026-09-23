@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import { formatDuration } from "@/lib/rcSessionStats";
 import { scopeLabelLong } from "@/lib/rcScope";
 import { qualityLabel } from "@/lib/rcQuality";
@@ -94,7 +95,7 @@ export function RcControlBanner({
           <span className={styles.dotDanger} aria-hidden="true" />
           <span className={styles.whoLive} role="status" aria-live="polite">
             <span className={styles.who}>
-              正在被「{session.peer_name || fingerprintOf(session.peer)}」远程
+              正在被「{rcDisplayName(session, fingerprintOf(session.peer))}」远程
             </span>
             <span className={styles.pillDanger}>
               {session.capability === "control" ? "可控" : "只看"}
@@ -168,7 +169,7 @@ export function RcControlBanner({
                 const ok = await confirmDialog({
                   title: "结束远程会话",
                   message: `将断开与「${
-                    session.peer_name || fingerprintOf(session.peer)
+                    rcDisplayName(session, fingerprintOf(session.peer))
                   }」的连接。对方会立刻失去画面与控制。`,
                   confirmText: "结束会话",
                   variant: "danger",

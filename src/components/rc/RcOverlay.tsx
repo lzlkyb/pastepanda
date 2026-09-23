@@ -15,7 +15,7 @@ import { useRcAdhoc } from "@/hooks/useRcAdhoc";
 import { RcControlBanner } from "./RcControlBanner";
 import { RcJoinRequests } from "./RcJoinRequests";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { DEFAULT_RC_DEVICE_NAME } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源
+import { DEFAULT_RC_DEVICE_NAME, rcDisplayName } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源；显示名收口见 rcDisplayName
 import { rcSetAudioLocalMute, rcHostMuteSet, type RcCapability } from "@/lib/api/rc";
 import { confirmDialog } from "@/lib/confirm";
 import { summonMainWindow } from "@/lib/rcWindow";
@@ -79,7 +79,7 @@ export function RcOverlay() {
       if (!seenPending.current.has(p.peer)) {
         seenPending.current.add(p.peer);
         toast(
-          `「${p.peer_name || fingerprintOf(p.peer)}」申请远程本机（${
+          `「${rcDisplayName(p, fingerprintOf(p.peer))}」申请远程本机（${
             p.capability === "control" ? "可控" : "只看"
           }）`,
           "info",
@@ -151,7 +151,7 @@ export function RcOverlay() {
                 () =>
                   void enableTrust(
                     session.peer,
-                    session.peer_name || fingerprintOf(session.peer),
+                    rcDisplayName(session, fingerprintOf(session.peer)),
                   )
           }
           scopeNotice={rc.scopeNotice}
@@ -174,8 +174,8 @@ export function RcOverlay() {
           <span className={styles.who}>
             <span className={styles.live} />
             {session.phase === "outbound_pending"
-              ? `正在申请远程「${session.peer_name || fingerprintOf(session.peer)}」`
-              : `正在远程「${session.peer_name || fingerprintOf(session.peer)}」`}
+              ? `正在申请远程「${rcDisplayName(session, fingerprintOf(session.peer))}」`
+              : `正在远程「${rcDisplayName(session, fingerprintOf(session.peer))}」`}
           </span>
           <span className={styles.pillOn}>
             {session.capability === "control" ? "可控" : "只看"}
@@ -196,7 +196,7 @@ export function RcOverlay() {
             onClick={() => {
               void (async () => {
                 const isPending = session.phase === "outbound_pending";
-                const name = session.peer_name || fingerprintOf(session.peer);
+                const name = rcDisplayName(session, fingerprintOf(session.peer));
                 const ok = await confirmDialog({
                   title: isPending ? "取消远程申请" : "结束远程会话",
                   message: isPending
@@ -227,8 +227,8 @@ export function RcOverlay() {
           <span className={styles.who}>
             <span className={styles.live} />
             {reconnecting.gave_up
-              ? `「${reconnecting.peer_name || fingerprintOf(reconnecting.peer)}」自动重连失败`
-              : `「${reconnecting.peer_name || fingerprintOf(reconnecting.peer)}」连接中断，正在自动重连（${reconnecting.attempt}/${reconnecting.max}）`}
+              ? `「${rcDisplayName(reconnecting, fingerprintOf(reconnecting.peer))}」自动重连失败`
+              : `「${rcDisplayName(reconnecting, fingerprintOf(reconnecting.peer))}」连接中断，正在自动重连（${reconnecting.attempt}/${reconnecting.max}）`}
           </span>
           <span className={styles.sp} />
           <span className={styles.meta}>

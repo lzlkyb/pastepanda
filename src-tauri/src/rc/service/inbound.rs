@@ -194,6 +194,8 @@ impl RcService {
                     inner.pending.push(InboundKnock {
                         peer: peer.clone(),
                         peer_name: self.peer_name(&peer),
+                        // display_name 由 status() 投影时从配对表回填，构造处留空。
+                        display_name: String::new(),
                         capability: requested,
                         first_seen_ms: now_ms(),
                     });

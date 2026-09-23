@@ -38,6 +38,13 @@ pub struct Session {
     pub peer: String,
     /// 对端设备名（展示用；门禁不看它）。
     pub peer_name: String,
+    /// 对端**统一显示名**（`commands::rc::display_name_of`：备注优先于自报名）。
+    ///
+    /// 构造会话时留空——`RcService::status()` 每次投影时从配对表现查回填，
+    /// 这样会话中途改备注也能立刻反映，不用等下一场会话。
+    /// `serde(default)` 只为反序列化兼容旧载荷；本结构实际不落盘。
+    #[serde(default)]
+    pub display_name: String,
     /// 已授权的能力（Active 后才有意义；Pending 时是申请值）。
     pub capability: Capability,
     pub phase: SessionPhase,

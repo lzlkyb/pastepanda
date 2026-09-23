@@ -3,6 +3,7 @@
  * （B6）：只保留显式按钮点击，避免主窗口列表里按 Enter 正好撞上远程申请而直接被控。
  */
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import type { RcInboundKnock } from "@/lib/api/rc";
 import styles from "./RemoteComputer.module.css";
 
@@ -22,34 +23,37 @@ export function RcJoinRequests({
   return (
     <div className={styles.joinGlobal}>
       <h4>🔔 有 {pending.length} 台设备想远程这台电脑</h4>
-      {pending.map((r) => (
-        <div key={r.peer} className={styles.joinItem}>
-          <div className={`${styles.meta} ${styles.joinMeta}`}>对方指纹</div>
-          <div className={styles.joinFp}>{fingerprintOf(r.peer)}</div>
-          <p className={styles.joinNote}>
-            申请能力：<b>{r.capability === "control" ? "可控（含只看）" : "只看"}</b>
-            {r.peer_name ? ` · 设备名「${r.peer_name}」（可自称，以指纹为准）` : ""}
-          </p>
-          <div className={styles.joinBtns}>
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={busy}
-              onClick={() => onDeny(r.peer)}
-            >
-              拒绝
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={busy}
-              onClick={() => onApprove(r.peer)}
-            >
-              同意远程
-            </button>
+      {pending.map((r) => {
+        const name = rcDisplayName(r);
+        return (
+          <div key={r.peer} className={styles.joinItem}>
+            <div className={`${styles.meta} ${styles.joinMeta}`}>对方指纹</div>
+            <div className={styles.joinFp}>{fingerprintOf(r.peer)}</div>
+            <p className={styles.joinNote}>
+              申请能力：<b>{r.capability === "control" ? "可控（含只看）" : "只看"}</b>
+              {name ? ` · 设备名「${name}」（可自称，以指纹为准）` : ""}
+            </p>
+            <div className={styles.joinBtns}>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() => onDeny(r.peer)}
+              >
+                拒绝
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy}
+                onClick={() => onApprove(r.peer)}
+              >
+                同意远程
+              </button>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import { UNDO_WINDOW_MS } from "@/components/Toast";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
 import { capabilityLabel, lastRequestCap, rememberRequestCap } from "@/lib/rcRequest";
+import { rcDisplayName } from "@/lib/rcDevice";
 
 const LS_LAST = "rc_last_peer";
 
@@ -49,10 +50,10 @@ export function useRcLaunch(rc: UseRc, toast: ToastFn) {
     }
   }, []);
 
-  /** 显示名与设备行同口径：备注（起过才用）→ 对端自报名 → 指纹。 */
+  /** 显示名与设备行同口径：走 `rcDisplayName`（统一显示名收口，备注优先）。 */
   const nameOf = (id: string) => {
     const t = rc.targets.find((x) => x.node_id === id);
-    return t?.note?.trim() || t?.name || fingerprintOf(id);
+    return t ? rcDisplayName(t, fingerprintOf(id)) : fingerprintOf(id);
   };
 
   /**

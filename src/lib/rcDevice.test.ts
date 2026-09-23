@@ -8,6 +8,7 @@ import {
   normalizeRcNote,
   canReconnectTo,
   lastRcTarget,
+  rcDisplayName,
 } from "@/lib/rcDevice";
 
 describe("deviceAvatarStyle (D1/C10)", () => {
@@ -141,5 +142,43 @@ describe("lastRcTarget（B1：托盘「连接 <上次设备>」的目标）", ()
 
   it("空列表 → null（托盘那一项整块不出现）", () => {
     expect(lastRcTarget([])).toBeNull();
+  });
+});
+
+describe("rcDisplayName（方案 B：统一显示名的唯一取值口）", () => {
+  it("后端给了 display_name → 原样用（备注已由后端判定优先）", () => {
+    expect(
+      rcDisplayName({ display_name: "工作电脑", note: "", name: "DESKTOP-A" }),
+    ).toBe("工作电脑");
+  });
+
+  it("旧版后端没给 display_name → 回落 note，再回落 name", () => {
+    expect(rcDisplayName({ note: "客厅", name: "DESKTOP-A" })).toBe("客厅");
+    expect(rcDisplayName({ note: "", name: "DESKTOP-A" })).toBe("DESKTOP-A");
+  });
+
+  it("历史条目只有 peer_name（快照字段名）→ 同层回落", () => {
+    expect(rcDisplayName({ peer_name: "DESKTOP-A" })).toBe("DESKTOP-A");
+    expect(rcDisplayName({ display_name: "工作电脑", peer_name: "DESKTOP-A" })).toBe(
+      "工作电脑",
+    );
+  });
+
+  it("🔴 空白不算有名字：display_name/note 全空白时不能用「  」占位", () => {
+    expect(rcDisplayName({ display_name: "  ", note: "", name: "DESKTOP-A" })).toBe(
+      "DESKTOP-A",
+    );
+    expect(rcDisplayName({ note: "   ", name: "DESKTOP-A" })).toBe("DESKTOP-A");
+  });
+
+  it("全部为空 → 用 fallback；没给 fallback → 空串（调用方整段不渲染）", () => {
+    expect(rcDisplayName({}, "fp-1234")).toBe("fp-1234");
+    expect(rcDisplayName({ display_name: "", note: "", name: "" }, "fp")).toBe("fp");
+    expect(rcDisplayName({})).toBe("");
+  });
+
+  it("null / undefined 字段按缺失处理（旧载荷 / 快照字段可能缺）", () => {
+    expect(rcDisplayName({ display_name: null, note: undefined, name: "N" })).toBe("N");
+    expect(rcDisplayName({ display_name: null, note: undefined, name: null }, "fb")).toBe("fb");
   });
 });

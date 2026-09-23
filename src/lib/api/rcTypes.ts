@@ -12,6 +12,11 @@ export interface RcSession {
   id: string;
   peer: string;
   peer_name: string;
+  /**
+   * 对端统一显示名（备注优先，后端 status 投影时现查配对表回填）。
+   * 空串 / 缺失（旧版后端）= 前端回落 `peer_name`，再回落指纹。
+   */
+  display_name?: string;
   capability: RcCapability;
   phase: "idle" | "outbound_pending" | "outbound_active" | "inbound_pending" | "inbound_active";
   started_ms: number;
@@ -21,6 +26,8 @@ export interface RcSession {
 export interface RcInboundKnock {
   peer: string;
   peer_name: string;
+  /** 对端统一显示名（备注优先）。空串 / 缺失 = 回落 peer_name。 */
+  display_name?: string;
   capability: RcCapability;
   first_seen_ms: number;
 }
@@ -110,6 +117,8 @@ export interface RcStatus {
   reconnecting?: {
     peer: string;
     peer_name: string;
+    /** 对端统一显示名（备注优先）。空串 / 缺失 = 回落 peer_name。 */
+    display_name?: string;
     /** 原会话能力档（「重连失败」时手动重连复用） */
     capability: RcCapability;
     attempt: number;
@@ -165,6 +174,12 @@ export interface RcTargetDevice {
   last_path?: string;
   /** A1：本地备注名。空串 = 没起过，显示回落 `name`。仅同步配对设备恒空。 */
   note?: string;
+  /**
+   * 统一显示名（备注优先，后端 `display_name_of` 算好下发）。
+   * 前端各显示点只读它（用 `rcDisplayName`），不再各自拼 `note || name`。
+   * 缺失 = 旧版后端，`rcDisplayName` 会回落 `note`/`name`。
+   */
+  display_name?: string;
   /** 方案 D「免确认直连」：这台设备发起远程时跳过人工同意。默认 false。 */
   trusted?: boolean;
   /**

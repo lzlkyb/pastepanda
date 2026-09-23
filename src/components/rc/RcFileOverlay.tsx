@@ -18,6 +18,7 @@ import { useToast } from "@/components/Toast";
 import { useRc } from "@/hooks/useRc";
 import { useRcFile } from "@/hooks/useRcFile";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import { summonMainWindow } from "@/lib/rcWindow";
 import { RcFileAskLine } from "./RcFileAsk";
 import styles from "./RemoteComputer.module.css";
@@ -37,13 +38,15 @@ export function RcFileOverlay() {
     for (const a of asks) {
       if (seen.current.has(a.id)) continue;
       seen.current.add(a.id);
-      const who = a.peer_name || fingerprintOf(a.peer);
+      // 文件请求自身只带自报名快照；本地起过备注的设备按 targets 的统一显示名显示。
+      const target = rc.targets.find((t) => t.node_id === a.peer);
+      const who = rcDisplayName(target ?? {}, a.peer_name || fingerprintOf(a.peer));
       toast(a.kind === "push" ? `「${who}」请求给你发送文件` : `「${who}」请求你发送文件`, "info");
       void summonMainWindow();
     }
     const alive = new Set(asks.map((a) => a.id));
     for (const id of Array.from(seen.current)) if (!alive.has(id)) seen.current.delete(id);
-  }, [asks, toast]);
+  }, [asks, toast, rc.targets]);
 
   if (asks.length === 0) return null;
 

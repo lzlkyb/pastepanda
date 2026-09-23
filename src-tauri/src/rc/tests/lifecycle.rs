@@ -12,6 +12,7 @@ fn active_session(id: &str, phase: SessionPhase) -> Session {
         id: id.to_string(),
         peer: "peer-a".to_string(),
         peer_name: "设备A".to_string(),
+        display_name: String::new(),
         capability: Capability::Control,
         phase,
         started_ms: crate::rc::service::now_ms(),
@@ -95,6 +96,49 @@ fn session_expired_only_counts_active_phases() {
     // 无会话 ⇒ 不过期
     svc.inner.lock().unwrap_or_else(|p| p.into_inner()).session = None;
     assert!(!svc.session_expired());
+}
+
+/// 方案 B（2026-09-23）：`status()` 投影时从配对表现查备注回填
+/// `session.display_name`，改备注不用等下一场会话就能生效。
+#[test]
+fn status_投影时回填会话显示名_备注优先() {
+    let svc = RcService::new(store());
+    svc.store.rc_device_pair("peer-a", "DESKTOP-A").expect("配对");
+    svc.store.rc_device_note_set("peer-a", "工作电脑").expect("起备注");
+    set_session(&svc, active_session("s1", SessionPhase::OutboundActive));
+
+    let s = svc.status().session.expect("会话在");
+    assert_eq!(s.display_name, "工作电脑", "有备注 → 显示备注");
+    assert_eq!(s.peer_name, "设备A", "自报名快照原样保留，不清不覆");
+
+    // 清掉备注（写纯空白 = 清除）→ display_name 留空，前端回落自报名
+    svc.store.rc_device_note_set("peer-a", "   ").expect("清备注");
+    let s = svc.status().session.expect("会话在");
+    assert_eq!(s.display_name, "", "没备注 → 空串，绝不编默认值");
+}
+
+/// 待确认申请（InboundKnock）同样要在投影时回填显示名——
+/// 批准弹窗上的「谁在申请远程」不能继续喊改备注前的旧名字。
+#[test]
+fn status_投影时回填待确认申请的显示名() {
+    let svc = RcService::new(store());
+    svc.store.rc_device_pair("peer-a", "DESKTOP-A").expect("配对");
+    svc.store.rc_device_note_set("peer-a", "工作电脑").expect("起备注");
+    svc.inner
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .pending
+        .push(crate::rc::service::InboundKnock {
+            peer: "peer-a".into(),
+            peer_name: "DESKTOP-A".into(),
+            display_name: String::new(),
+            capability: crate::rc::protocol::Capability::View,
+            first_seen_ms: crate::rc::service::now_ms(),
+        });
+
+    let st = svc.status();
+    assert_eq!(st.pending.len(), 1, "前置：一条待确认申请");
+    assert_eq!(st.pending[0].display_name, "工作电脑");
 }
 
 /// 在线判定三条证据：presence live / 正在开会话 / last_seen 未过期。

@@ -12,7 +12,7 @@ import { rcListMonitors, rcEncodeCaps } from "@/lib/api/rc";
 import { useCallback, useEffect, useState } from "react";
 import type { UseRc } from "@/hooks/useRc";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { deviceAvatarStyle, presenceMainLabel, relTime } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
+import { deviceAvatarStyle, presenceMainLabel, rcDisplayName, relTime } from "@/lib/rcDevice"; // D1/C10：与 RcDeviceList 共用公共纯函数
 import { visibleQualities, qualityLabel } from "@/lib/rcQuality";
 import { scopeOptions } from "@/lib/rcScope";
 import { useToast } from "@/components/Toast";
@@ -196,9 +196,9 @@ export function RcAllowPanel({
               // 方案 D「免确认直连」：逐台开关，默认关。被禁止的设备先解除禁止
               // 才谈得上免确认（deny 优先级更高，按钮直接禁用把这件事说在明处）。
               const trusted = d.trusted ?? false;
-              // A4：设备名与工作台同一口径（备注优先、自报名兜底）。设置页只用 d.name
-              // 时，起过备注的设备在这两处会显示成两个名字。
-              const displayName = d.note?.trim() || d.name || "未命名设备";
+              // A4：设备名走统一显示名（备注优先、自报名兜底），与工作台同一口径。
+              // 设置页只用 d.name 时，起过备注的设备在这两处会显示成两个名字。
+              const displayName = rcDisplayName(d, "未命名设备");
               return (
                 <div key={d.node_id} className={shared.lanDeviceItem}>
                   <div className={shared.lanDeviceAvatar} style={deviceAvatarStyle(d.node_id)}>

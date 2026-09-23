@@ -260,6 +260,7 @@ fn 会话快照_三字段同源() {
         id: "id1".into(),
         peer: "peer-A".into(),
         peer_name: "甲".into(),
+        display_name: String::new(),
         capability: Capability::Control,
         phase: SessionPhase::InboundActive,
         started_ms: 1,

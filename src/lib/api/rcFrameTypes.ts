@@ -79,6 +79,12 @@ export type RcInputEvent =
 export interface RcHistoryItem {
   peer: string;
   peer_name: string;
+  /**
+   * 统一显示名（备注优先）。后端查询时按 node_id join 配对表叠加，
+   * 落库的 `peer_name` 快照原文不动。缺失 = 旧版后端或该设备没起备注
+   * ⇒ 前端回落 `peer_name`。
+   */
+  display_name?: string;
   capability: string;
   dir: "inbound" | "outbound";
   started_ms: number;

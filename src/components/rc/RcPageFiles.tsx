@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { Monitor } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import { RcFilePanel } from "./RcFilePanel";
 import type { UseRc } from "@/hooks/useRc";
 import styles from "./RemoteComputer.module.css";
@@ -67,7 +68,7 @@ export function RcPageFiles({
       {showTargetPicker && (
         <div className={styles.fileTargets} aria-label="选择目标设备">
           {targets.map((t) => {
-            const name = t.note?.trim() || t.name?.trim() || fingerprintOf(t.node_id);
+            const name = rcDisplayName(t, fingerprintOf(t.node_id));
             const on = t.node_id === active;
             return (
               <button
@@ -96,8 +97,8 @@ export function RcPageFiles({
       {cur && (
         <RcFilePanel
           peer={cur.node_id}
-          /* 备注名优先，与设备列表同一口径 */
-          peerName={cur.note?.trim() || cur.name?.trim() || fingerprintOf(cur.node_id)}
+          /* 统一显示名（备注优先），与设备列表同一口径 */
+          peerName={rcDisplayName(cur, fingerprintOf(cur.node_id))}
           showEmpty
         />
       )}

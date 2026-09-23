@@ -16,8 +16,9 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { rcRequestSession, rcStatus, rcTargets, rcCancelRequest } from "@/lib/api/rc";
-import { lastRcTarget } from "@/lib/rcDevice";
+import { lastRcTarget, rcDisplayName } from "@/lib/rcDevice";
 import { capabilityLabel, lastRequestCap } from "@/lib/rcRequest";
 import { useRcStore } from "@/stores/rcStore";
 import { useToast, UNDO_WINDOW_MS } from "@/components/Toast";
@@ -34,27 +35,53 @@ export interface TrayRcShortcut {
 export function useTrayRcShortcut(): TrayRcShortcut | null {
   const [target, setTarget] = useState<{ nodeId: string; label: string } | null>(null);
 
+  /**
+   * 拉一次目标设备。🔴 不能只在挂载时拉一次（2026-09-23 修）：托盘弹窗走
+   * `hide()` 不销毁，本 hook 只在应用启动时挂载一次——用户在工作台改了设备备注，
+   * 这里仍显示旧名。所以还要监听 `tray-popup-init`（Rust 每次 show 弹窗都会发，
+   * 见 tray_manager.rs），弹一次重拉一次。
+   */
+  const fetchTarget = useCallback(async (cancelled: () => boolean) => {
+    try {
+      const st = await rcStatus();
+      // 三条「不摆死项」判据不再满足时**必须撤下**旧项：弹窗不销毁，
+      // 不清的话上一轮的 target 会一直挂着（比如会话已在别处开始）。
+      if (!st.running || st.session || (st.pending?.length ?? 0) > 0) {
+        if (!cancelled()) setTarget(null);
+        return;
+      }
+      const dev = lastRcTarget(await rcTargets());
+      if (cancelled()) return;
+      if (!dev) {
+        setTarget(null);
+        return;
+      }
+      setTarget({
+        nodeId: dev.node_id,
+        label: rcDisplayName(dev, "未命名设备"),
+      });
+    } catch (e) {
+      console.warn("[TrayRc] 读取远程状态失败，不显示快捷连接项:", e);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      try {
-        const st = await rcStatus();
-        if (!st.running || st.session) return;
-        if ((st.pending?.length ?? 0) > 0) return;
-        const dev = lastRcTarget(await rcTargets());
-        if (cancelled || !dev) return;
-        setTarget({
-          nodeId: dev.node_id,
-          label: dev.note?.trim() || dev.name || "未命名设备",
-        });
-      } catch (e) {
-        console.warn("[TrayRc] 读取远程状态失败，不显示快捷连接项:", e);
-      }
-    })();
+    void fetchTarget(() => cancelled);
+    // 每次 Rust 侧 show 弹窗都会 emit tray-popup-init（TrayPopup.tsx 也在听它）——
+    // 借同一条事件把设备名刷成最新的（改备注后弹托盘立刻看到新名字）。
+    let unlisten: (() => void) | null = null;
+    void listen("tray-popup-init", () => {
+      if (!cancelled) void fetchTarget(() => cancelled);
+    }).then((off) => {
+      if (cancelled) off();
+      else unlisten = off;
+    });
     return () => {
       cancelled = true;
+      unlisten?.();
     };
-  }, []);
+  }, [fetchTarget]);
 
   const { toast } = useToast();
   const connect = useCallback(async () => {

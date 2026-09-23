@@ -13,6 +13,7 @@
  */
 import { useEffect, useState } from "react";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { rcDisplayName } from "@/lib/rcDevice";
 import { confirmDialog } from "@/lib/confirm";
 import { formatDuration } from "@/lib/rcSessionStats";
 import { scopeLabelLong } from "@/lib/rcScope";
@@ -58,7 +59,7 @@ export function RcInboundView({
   }, [session.id]);
 
   const canControl = session.capability === "control";
-  const name = session.peer_name || fingerprintOf(session.peer);
+  const name = rcDisplayName(session, fingerprintOf(session.peer));
 
   // G6：文件请求的**完整卡片**（工作台这一份）。主窗常驻横幅那份是一行版，
   // 两者渲染同一份状态；这里多摆指纹 + 文件名 + 大小，因为工作台是用户

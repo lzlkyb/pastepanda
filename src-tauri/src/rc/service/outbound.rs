@@ -49,6 +49,8 @@ impl RcService {
                 id: id.clone(),
                 peer: peer.to_string(),
                 peer_name: self.peer_name(peer),
+                // display_name 由 status() 投影时从配对表回填，构造处留空。
+                display_name: String::new(),
                 capability,
                 phase: SessionPhase::OutboundPending,
                 started_ms: now_ms(),
