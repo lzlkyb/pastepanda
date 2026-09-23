@@ -34,9 +34,8 @@
   padding-left: 14px;
   background: var(--card-bg);
   border-bottom: 1px solid var(--border-color);
-  box-shadow: var(--shadow-md);
-  /* 拖动区上按下鼠标不该选中文字（Tauri 的 drag.js 只在命中时 preventDefault，
-     命中判定之外的 mousedown 仍会走到这里，所以这条不能省） */
+  /* 不加投影：标题栏与下方页面之间不要凹凸感（A 方案稿此条无 box-shadow，
+     实现史的 shadow-md 让整条看起来浮在内容之上，2026-09-23 按用户反馈去掉） */
   user-select: none;
   z-index: 2;
 }
