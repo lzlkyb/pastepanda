@@ -1,0 +1,32 @@
+# FFmpeg 硬件编码「接入形态」探针（2026-09-24）。**独立工程，不进主仓库构建**。
+#
+# 为什么要它：路线 F（FFmpeg 只接编码段）已经回答了「能不能编出来」和「体积多少」，
+# 但**从没验证过「在 Rust 里真接进来是什么形态、够不够快」**。本轮要钉死三件事：
+#   1. 自建裁剪 DLL 怎么加载才不会「DLL 不在位就整个 app 起不来」
+#   2. AVFrame / AVPacket / AVCodecContext 的字段偏移抄对没有（写错 = UB，不报错只崩）
+#   3. push→pull 缓冲层的真实开销 + 首包延迟（软编 MFT 有 17 帧延迟的前车之鉴）
+#
+# 🔴 刻意**不引任何 FFmpeg crate，也不引 windows crate**：主工程将来也要手写这一层，
+#    不想把 ffmpeg-sys-next 的版本耦合带进产品。这里只用 `#[link(name="kernel32")]`
+#    声明三个 Win32 函数（kernel32 永远在位，不是「可选 DLL」）—— 于是探针里跑通的
+#    代码可以**零依赖**搬进主工程。
+# 🔴 刻意**不做静态导入**（import lib / raw-dylib）：那会让 avcodec-63.dll 进 PE 的
+#    Import Directory，文件缺失时 Windows loader 直接让**进程起不来** —— 与
+#    「口径 B 被否决」是同一个坑（见 docs/…-2026-09-24.md §3.8.8）。
+#    这里走 LoadLibraryEx + GetProcAddress，DLL 不在位只降级为「硬件编码不可用」。
+
+[package]
+name = "rc-ff-probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+
+# 与 pastePanda 的 [profile.release] 一致，否则量出来的数不可比。
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+panic = "abort"
+strip = "symbols"
