@@ -156,13 +156,14 @@ pub fn encode_rgba_ts(
         (rgb_bytes, tw, th)
     };
 
-    let mut buf = Vec::with_capacity(64 * 1024);
     let enc_quality = if refine_now { REFINE_QUALITY } else { state.quality };
-    // P0-2 延迟分段：JPEG 编码耗时单独记
+    // P0-2 延迟分段：JPEG 编码耗时单独记。
+    //
+    // 🔴 编码器是**系统 WIC**（`rc/wic_jpeg`），不再是 `image` crate 那个纯 Rust 实现：
+    // 同一张 2560x1440 图 196.78 → 20.9 ms/帧（2026-09-24 探针实测），而真机
+    // 「整圈 190ms/帧」几乎全是这一段。`image` 仍留给 PNG 路径与测试用。
     let enc_t0 = std::time::Instant::now();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, enc_quality)
-        .write_image(jpeg_src, out_w, out_h, ExtendedColorType::Rgb8)
-        .map_err(|e| format!("JPEG 编码失败：{e}"))?;
+    let buf = crate::rc::wic_jpeg::encode_jpeg(jpeg_src, out_w, out_h, enc_quality)?;
     let enc_ms = enc_t0.elapsed().as_millis().min(u16::MAX as u128) as u16;
     if buf.len() > MAX_JPEG_BYTES {
         return Err(format!("JPEG 帧过大（{} 字节）", buf.len()));

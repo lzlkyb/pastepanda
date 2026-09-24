@@ -24,9 +24,20 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",
+    # wic 探针（2026-09-24）：系统自带 WIC JPEG 编码器，对比「纯 Rust image crate」
+    # 与 libjpeg-turbo 的耗时差，判断 JPEG 兜底路径该不该换编码器实现。
+    "Win32_Graphics_Imaging",
+    # 质量参数要经 IPropertyBag2::Write 传 PROPBAG2 + VARIANT（VARENUM 在这个 feature）
+    "Win32_System_Variant",
 ] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 anyhow = "1"
+
+# WIC JPEG 编码器对照探针：
+#   cargo run --release --bin wic
+[[bin]]
+name = "wic"
+path = "src/wic.rs"
 
 # 与 pastePanda 的 [profile.release] 一致，否则量出来的数不可比。
 [profile.release]
