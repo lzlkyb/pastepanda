@@ -25,7 +25,7 @@ use windows::Win32::Graphics::Dxgi::{
     IDXGIAdapter, IDXGIOutput1, IDXGIOutputDuplication, IDXGIResource, DXGI_ERROR_ACCESS_LOST,
     DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTPUT_DESC,
 };
-use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::CoUninitialize;
 
 /// 单个输出的 duplicator + 复用的读回缓冲。
 struct OutputDup {
@@ -467,7 +467,10 @@ impl Drop for DxgiPool {
 fn open_outputs()
 -> Result<(ID3D11Device, ID3D11DeviceContext, Vec<OutputDup>, bool), String> {
     unsafe {
-        let com_owned = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
+        // 🔴 走 `ensure_mta_quiet` 而非 `.is_ok()`（2026-09-23）：被拒时（线程已是 STA）
+        // 公寓仍是 STA，D3D11 抓屏 + 硬编 MFT 都在上面跑必然出问题，而这条信息过去
+        // 被 `.is_ok()` 静默吞掉。返回语义与 `.is_ok()` 逐字等价（S_OK/S_FALSE 都算持有）。
+        let com_owned = super::mft_diag::ensure_mta_quiet("DxgiPool::open_outputs");
         let inner = (|| -> Result<(ID3D11Device, ID3D11DeviceContext, Vec<OutputDup>), String> {
             let levels = [D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0];
             let mut device: Option<ID3D11Device> = None;

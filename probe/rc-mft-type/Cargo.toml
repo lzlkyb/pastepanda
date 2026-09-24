@@ -15,6 +15,14 @@ windows = { version = "0.58", features = [
     "Win32_System_Com",
     "Win32_Media",
     "Win32_Media_MediaFoundation",
+    # `pick --preload`：把主进程特有的第三方 DLL 装进干净进程做因果对照
+    "Win32_System_LibraryLoader",
+    # `pick --gpu`（2026-09-23，B 方案）：给硬件 MFT 绑 D3D11 device manager
+    #（`MFT_MESSAGE_SET_D3D_MANAGER`）+ 用 GPU 纹理喂帧，验证 QSV 能否出包。
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
 ] }
 
 # 四个探针入口：
@@ -47,3 +55,9 @@ strip = "symbols"
 [[bin]]
 name = "pick"
 path = "src/pick.rs"
+
+#   cargo run --release --bin afterprobe            → T1 干净进程直接实例化（对照）
+#   cargo run --release --bin afterprobe -- --probe → T2 先能力探测再实例化（复刻主程序）
+[[bin]]
+name = "afterprobe"
+path = "src/afterprobe.rs"

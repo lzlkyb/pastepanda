@@ -230,11 +230,11 @@ pub fn encode_caps() -> GpuEncodeCaps {
 }
 
 unsafe fn probe_encode_caps() -> GpuEncodeCaps {
-    // MFTEnumEx 要求 COM 已初始化；探测进程内只跑一次，MTA 引用常驻即可
-    let _ = windows::Win32::System::Com::CoInitializeEx(
-        None,
-        windows::Win32::System::Com::COINIT_MULTITHREADED,
-    );
+    // MFTEnumEx 要求 COM 已初始化；探测进程内只跑一次，MTA 引用常驻即可。
+    // 🔴 走 `ensure_mta_quiet` 而不是丢返回值（2026-09-23）：若本线程已被初始化成
+    // STA，这次请求拿到 `RPC_E_CHANGED_MODE` 而公寓**仍是 STA**，下面 `ActivateObject`
+    // 激活 async 硬编 MFT 就会报 `E_UNEXPECTED` —— 原先 `let _ =` 让它完全隐形。
+    super::mft_diag::ensure_mta_quiet("编码能力探测");
     let h264_gpu = hardware_mft_d3d11_aware(&windows::Win32::Media::MediaFoundation::MFVideoFormat_H264);
     let hevc_hw =
         hardware_mft_d3d11_aware(&windows::Win32::Media::MediaFoundation::MFVideoFormat_HEVC);

@@ -14,7 +14,10 @@
 use windows::core::Interface;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D};
 use windows::Win32::Media::MediaFoundation::*;
-use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
+// `CoInitializeEx` / `COINIT_MULTITHREADED` 不再从这里透出：COM 初始化已收口到
+// `rc::mft_diag::ensure_mta_quiet`（被拒时必须留证据）。子模块经 `use super::*`
+// 也拿不到它们了，改走收口函数 —— 这正是防「第 N 处调用点又悄悄丢返回值」的手段。
+use windows::Win32::System::Com::CoUninitialize;
 
 use super::mft_pick::{
     adapter_luid_of, create_h264_mft, create_video_type, lock_buf, make_dxgi_sample, make_sample,

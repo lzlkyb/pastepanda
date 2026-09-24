@@ -42,6 +42,8 @@ pub mod encode_h264;
 #[cfg(target_os = "windows")]
 pub mod gpu;
 #[cfg(target_os = "windows")]
+pub mod mft_diag;
+#[cfg(target_os = "windows")]
 pub mod mft_pick;
 #[cfg(target_os = "windows")]
 pub mod vid_dgram;

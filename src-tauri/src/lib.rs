@@ -166,6 +166,13 @@ pub fn run() {
     ))
     .init();
 
+    // 🔴 硬编诊断（2026-09-23）：进程时间线上的第一个 NVENC 激活采样点。
+    // 「外部探针 ✓ / 本进程 ✗」已排除全部 MFT 侧因素（公寓实测 MTA、枚举 flags 与
+    // 探针逐字一致、时序/caps 无关），只剩进程内其它状态。把「能不能激活 NVENC」
+    // 当成进程的可观测量，沿启动时间线打点：坏在哪两点之间，凶手就在那一段初始化。
+    #[cfg(target_os = "windows")]
+    crate::rc::mft_diag::probe_nvenc_snapshot("P0 run 入口·logger 就绪");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // 文件关联：应用已运行时，系统双击 .md 文件会启动第二个实例，
@@ -197,6 +204,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             log::info!("[BOOT] 0 setup 进入");
+            // 🔴 硬编诊断 P1：Tauri 插件链已装、业务子系统尚未初始化。
+            #[cfg(target_os = "windows")]
+            crate::rc::mft_diag::probe_nvenc_snapshot("P1 BOOT0·插件就绪");
             // 窗口状态恢复 — 必须在 window.show() 之前注册，确保先恢复后显示。
             // 状态位为什么必须摘掉 DECORATIONS、以及「两排标题栏」的量化判据，
             // 见 `window_state_flags()` 的文档注释（别把那条摘除改回来）。
@@ -780,6 +790,20 @@ pub fn run() {
             // 显示窗口
             // U5：开机自启带 /silent 标志时静默驻留托盘，不弹窗抢焦点
             // （与设置面板"开机后自动在后台运行，托盘图标常驻"的承诺一致）
+            // 🔴 硬编诊断 P2/P3：setup 末尾与 setup 返回后 8s。
+            //   P2 —— 数据库 / SyncService / 托盘 / 快捷键都已就绪；
+            //   P3 —— webview（Chromium 自带 GPU 栈）与各异步子系统此时才真正就绪，
+            //         这正是 P2 到选型之间唯一还没被采样覆盖的一段。
+            // 若 P2 ✓ / P3 ✗ ⇒ 凶手在「setup 之后」；若 P1 ✓ / P2 ✗ ⇒ 在业务子系统里。
+            #[cfg(target_os = "windows")]
+            {
+                crate::rc::mft_diag::probe_nvenc_snapshot("P2 setup 末尾·显示窗口前");
+                std::thread::spawn(|| {
+                    std::thread::sleep(std::time::Duration::from_secs(8));
+                    crate::rc::mft_diag::probe_nvenc_snapshot("P3 setup 后 8s·webview 就绪");
+                });
+            }
+
             log::info!("[BOOT] 8 准备显示窗口");
             let silent_start = std::env::args().any(|a| a.eq_ignore_ascii_case("/silent"));
             if let Some(window) = app.get_webview_window("main") {

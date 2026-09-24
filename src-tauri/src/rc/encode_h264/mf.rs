@@ -91,7 +91,14 @@ impl MfH264Encoder {
         gpu: Option<(&ID3D11Device, &ID3D11DeviceContext)>,
     ) -> Result<Self, String> {
         unsafe {
-            let com_owned = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
+            // 🔴 这里就是真机「硬编全败」的第一现场（2026-09-23）：本函数由 async 的
+            // `try_hardware_path` 直接调用 ⇒ 跑在 tokio worker 线程上。若该线程已被
+            // 别处（`screenshot.rs` / `stack_hud_focus.rs` 的 UIA 走
+            // `COINIT_APARTMENTTHREADED`）初始化成 STA，`CoInitializeEx(MTA)` 会返回
+            // `RPC_E_CHANGED_MODE` —— 公寓**仍是 STA**，随后 `create_h264_mft`
+            // 激活 async 硬编 MFT 报 `E_UNEXPECTED (0x8000FFFF)`。
+            // 原先 `.is_ok()` 把这条信息完全吞掉了。
+            let com_owned = crate::rc::mft_diag::ensure_mta_quiet("MfH264Encoder::open");
             ensure_mf_startup()?;
 
             let w = (width & !1).max(64);

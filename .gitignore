@@ -56,3 +56,9 @@ src-tauri/_rust.txt
 design/promo/hyperframes/*
 !design/promo/hyperframes/package.json
 !design/promo/hyperframes/package-lock.json
+
+# 09-24：FFmpeg LGPL 对照台（probe/_av/）—— 182MB 解压产物与 zip 不入库。
+# 只保留两个脚本：enc_probe.sh（逐路实测出首包）/ nal_stats.py（判 IDR 是否自带 SPS/PPS）。
+# 同 design/promo 的教训：写 `/*` 而不是忽略整个目录。
+probe/_av/ffmpeg-master-latest-win64-lgpl-shared/*
+probe/_av/*.zip

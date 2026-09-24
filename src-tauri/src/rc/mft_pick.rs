@@ -37,6 +37,165 @@ const PROBE_W: u32 = 1920;
 const PROBE_H: u32 = 1080;
 const PROBE_FPS: u32 = 30;
 
+/// 单台候选试编的**墙钟上限**（毫秒）。超时即判该台不可用，转下一台。
+///
+/// # 阈值依据（2026-09-23 实测，本机 3 台候选 × 4 次真机会话的 `编码器选型` 报告）
+/// - 正常路径单台最坏 **580ms**（Intel QSV；四次采样 440/402/439/580）
+/// - NVIDIA 的 `ActivateObject` 失败 28–68ms（最快的一台）
+/// - [`probe_feed`] 内部的事件等待理论最坏 2700ms（两帧 ×「等 NeedInput
+///   1500ms + 等输出 600ms」）——外层必须**大于**它，否则会把「内层本来能
+///   处理完的慢路径」误标成超时（结论同为不可用，但日志会失去「失败原因」
+///   这一维度，排障时很值钱）
+///
+/// 取 3000ms ⇒ 正常路径有 5 倍余量，内层最坏之上再留 300ms 给实例化与类型协商。
+/// **只有真挂死才触发**（单次 COM 调用不返回，内层 deadline 检查不到）。
+const PROBE_TIMEOUT_MS: u64 = 3000;
+
+/// 一次选型的**总预算**（毫秒）。超了就不再试后续候选。
+///
+/// 单台兜底会按候选数线性放大（6 台 × 3s = 18s），而选型跑在 **tokio worker**
+/// 上、调用方在等。6000ms 够「2 台各挂满 3s」或「1 台挂满 + 其余正常走完」，
+/// 又不至于把一次选型拖到十几秒。
+const PICK_BUDGET_MS: u64 = 6000;
+
+/// 同步 MFT 单帧最多收多少个包（防「行为异常时永远返回有输出」的死循环）。
+///
+/// 低延迟模式下「一帧出一包」是常态，本值纯属保险——不是为了限制产量，
+/// 而是为了让死循环变成一次正常的失败返回（比超时弃置线程更干净的收场）。
+const MAX_DRAIN_PER_FRAME: usize = 64;
+
+/// 单台候选的试编结论。
+///
+/// 区分「失败」与「超时」不是为了好看：超时意味着**线程没回来**（工作线程已
+/// 弃置），失败意味着**线程回来了但报了错**。两者的下一步处置完全不同。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbeOutcome {
+    /// 试编出包 ⇒ 这台可用
+    Passed,
+    /// `ActivateObject` 失败（含原地重试）
+    ActivateFailed,
+    /// 实例化成功，但试编没出包
+    EncodeFailed,
+    /// 超过 [`PROBE_TIMEOUT_MS`] 仍未返回
+    TimedOut,
+}
+
+/// 让 `IMFActivate` 能交给试编线程。
+///
+/// `windows` crate 把 COM 接口统一标成 `!Send`，但这里跨线程传它是安全的：
+/// ① 传的是 MFT 的**激活器（类厂）**，不是 MFT 实例——实例在接收线程里创建、
+///    也在接收线程里使用，符合 MF「MFT 非线程安全、应单线程使用」的约定；
+/// ② 接收线程自己 `CoInitializeEx(MTA)`，与创建线程**同属 MTA**——MTA 内
+///    跨线程直接调用接口指针是 COM 允许的（同公寓无需 marshalling）；
+/// ③ 这里移交的是 `AddRef` 后的引用，引用计数是原子的。
+struct SendActivate(IMFActivate);
+unsafe impl Send for SendActivate {}
+
+impl SendActivate {
+    /// 在试编线程里执行「实例化 + 试编」。
+    ///
+    /// # Safety
+    /// 与 [`activate_and_probe`] 同一要求：调用线程必须先 `CoInitializeEx(MTA)`
+    /// （`activate_and_probe` 自己会做），且同一时刻只有一个线程在用这个激活器。
+    ///
+    /// 为什么做成**消耗 `self` 的方法**而不是自由函数：Rust 2021 的精确捕获
+    /// （disjoint closure captures）会让 `move || activate_and_probe(&job.0, ..)`
+    /// 只捕获字段 `job.0`（即裸 `IMFActivate`），从而**绕过**上面那句
+    /// `unsafe impl Send for SendActivate`，编译期直接报 `NonNull<c_void>` 不可 Send
+    /// （2026-09-23 实测踩到）。写成消耗 `self` 的方法，闭包就必须捕获整个
+    /// `SendActivate`，安全断言才真正生效。
+    unsafe fn probe(self, codec: VideoCodec) -> ProbeOutcome {
+        activate_and_probe(&self.0, codec)
+    }
+}
+
+/// 在独立线程里跑 `job`，最多等 `timeout`；超时/建线程失败/子线程 panic
+/// 一律返回 `None`（调用方据此判该台不可用）。
+///
+/// # 为什么必须另起线程
+///
+/// MF 硬编 MFT 在驱动异常时会**永久挂住**——不是返回错误，是单次
+/// `GetEvent` / `ProcessOutput` 永不返回（本机 Intel QSV 的典型形态就是
+/// 「首帧抛流变化后事件流再也不回包」）。试编跑在**调用线程**上，而调用链是
+/// `video_run → try_hardware_path`（async）→ `open_h264`（同步）→ 选型，
+/// 也就是**一个 tokio worker**：一台挂死就占死一个 worker，且此后每次
+/// 熔断冷却重试都再占一个。
+///
+/// Rust 的 `JoinHandle` 没有 join-timeout，所以用 channel + `recv_timeout`。
+/// 超时后工作线程**弃置不管**（detached）——它卡在驱动里，没有安全的回收手段，
+/// 只能等进程退出。一次选型最多泄漏与候选数相同的线程数，可接受。
+///
+/// 泛型化是为了**可单测**：真 MFT 在单测里造不出来，但「超时到底生不生效」
+/// 是本机制的全部价值，必须被验证过（见文件末的 `timeout_tests`）。
+fn run_with_timeout<T, F>(job: F, timeout: std::time::Duration, what: &str) -> Option<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    let spawned = std::thread::Builder::new()
+        .name("rc-mft-probe".into())
+        .spawn(move || {
+            // `send` 失败只表示主线程已超时离开，值被丢弃即可
+            let _ = tx.send(job());
+        });
+    if let Err(e) = spawned {
+        log::warn!("[RC] {what}：工作线程创建失败（{e}），判该台不可用");
+        return None;
+    }
+    match rx.recv_timeout(timeout) {
+        Ok(v) => Some(v),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            log::warn!(
+                "[RC] {what}：超过 {}ms 未返回（MFT 无响应），判该台不可用——工作线程已弃置",
+                timeout.as_millis()
+            );
+            None
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            log::warn!("[RC] {what}：工作线程异常退出（panic），判该台不可用");
+            None
+        }
+    }
+}
+
+/// 试编线程主体：`CoInitializeEx(MTA)` → 实例化（失败原地重试一次）→ 试编。
+///
+/// 整个「实例化 + 试编」都放在这条线程里（而不只是 `probe_encodable`）：
+/// MFT 从创建到使用都在同一条线程上，不必把 `IMFTransform` 跨线程传——
+/// 少一处需要论证线程安全性的地方。
+///
+/// # Safety
+/// `act` 必须是 `MFTEnumEx` 返回的有效激活器；同一时刻只能有一个线程在用它
+/// （本函数由 [`SendActivate::probe`] 在独占所有权下调用，天然满足）。
+/// 线程内自行完成 COM 初始化，调用方不必预初始化。
+unsafe fn activate_and_probe(act: &IMFActivate, codec: VideoCodec) -> ProbeOutcome {
+    // 新线程必然是未初始化 COM 的干净状态 ⇒ 这里应得 `S_OK`（被拒会留告警）
+    super::mft_diag::ensure_mta_quiet("MFT 试编线程");
+    let name = friendly_name_of(act).unwrap_or_else(|| "(无名)".into());
+    let t = match act.ActivateObject::<IMFTransform>() {
+        Ok(t) => t,
+        // 🔴 2026-09-23：真机上这台报 `0x8000FFFF`，而**同参数的外部探针 ✓**
+        // （`pick.exe --luid --probe-both`，同机同时段）。先原地重试一次，
+        // 把「瞬态」与「持久」分开——重试能救活就是真修复。
+        Err(e) => match act.ActivateObject::<IMFTransform>() {
+            Ok(t) => {
+                log::warn!("[RC] 编码器「{name}」首次实例化失败（{e}），原地重试成功");
+                t
+            }
+            Err(e2) => {
+                log::warn!("[RC] 编码器「{name}」ActivateObject 失败：{e}（重试亦失败：{e2}）");
+                return ProbeOutcome::ActivateFailed;
+            }
+        },
+    };
+    if probe_encodable(&t, codec) {
+        ProbeOutcome::Passed
+    } else {
+        ProbeOutcome::EncodeFailed
+    }
+}
+
 /// 提取 D3D11 设备所在 DXGI 适配器的 LUID（打包成 u64：High<<32 | Low）。
 /// 提不到（异常驱动）返回 None，调用方退回「枚举第一个」的旧行为。
 pub(super) fn adapter_luid_of(device: &ID3D11Device) -> Option<u64> {
@@ -128,32 +287,54 @@ pub(super) unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCo
         ..Default::default()
     };
     let mut tried = 0usize;
+    // `take(6)` 的上限顺带决定「预算耗尽时还剩几台没试」的算法
+    let take = order.len().min(6);
     for act in order.iter().take(6) {
+        // 总预算：单台兜底会按候选数线性放大，全挂时不能让调用方等十几秒
+        let used_ms = pick_t0.elapsed().as_millis() as u64;
+        if used_ms >= PICK_BUDGET_MS {
+            log::warn!(
+                "[RC] 选型总预算 {PICK_BUDGET_MS}ms 已耗尽（已用 {used_ms}ms），放弃剩余 {} 台候选",
+                take - tried
+            );
+            break;
+        }
         tried += 1;
         let name = friendly_name_of(act).unwrap_or_else(|| "(无名)".into());
         let probe_t0 = std::time::Instant::now();
-        // 🔴 探测与使用**必须是两个独立实例**：`probe_encodable` 会设类型、
-        // 开流、喂帧，若把探测用的实例直接交出去，`open_inner` 就在一个
-        // 「已跑过流的」transform 上重新协商类型——行为未定义。
-        // 多 ActivateObject 一次只是一次 COM 实例化，代价可忽略。
-        let probe_inst = match act.ActivateObject::<IMFTransform>() {
-            Ok(t) => t,
-            Err(e) => {
-                log::warn!("[RC] 编码器「{name}」ActivateObject 失败：{e}");
-                report
-                    .details
-                    .push((format!("{name}（实例化失败）"), false, probe_t0.elapsed().as_millis() as u64));
+        // 🔴 试编放在**独立线程 + 带超时**里（2026-09-23）。三条理由：
+        // ① 探测与使用**必须是两个独立实例**：`probe_encodable` 会设类型、开流、
+        //    喂帧，若把探测用的实例直接交出去，`open_inner` 就在一个「已跑过流的」
+        //    transform 上重新协商类型——行为未定义。多 ActivateObject 一次只是一次
+        //    COM 实例化，代价可忽略。
+        // ② MFT 在驱动异常时会**永久挂住**（单次调用不返回），而选型跑在 tokio
+        //    worker 上——一台挂死就占死一个 worker，此后每次熔断冷却重试再占一个。
+        // ③ 挂死时 `probe_encodable` 内部的 deadline 也救不了：它只在**两次调用
+        //    之间**检查，单次 `GetEvent` / `ProcessOutput` 卡住就永远走不到检查点。
+        // 机制与阈值依据见 `run_with_timeout` 与 `PROBE_TIMEOUT_MS` 的注释。
+        let job = SendActivate(act.clone());
+        let outcome = run_with_timeout(
+            // ⚠️ 必须写成 `job.probe(..)`（消耗 self 的方法）——写成
+            // `activate_and_probe(&job.0, ..)` 会被精确捕获绕过 `Send` 断言
+            move || unsafe { job.probe(codec) },
+            std::time::Duration::from_millis(PROBE_TIMEOUT_MS),
+            &format!("编码器「{name}」试编"),
+        )
+        .unwrap_or(ProbeOutcome::TimedOut);
+        let ms = probe_t0.elapsed().as_millis() as u64;
+        match outcome {
+            ProbeOutcome::Passed => report.details.push((name.clone(), true, ms)),
+            ProbeOutcome::TimedOut => {
+                // 超时告警已在 `run_with_timeout` 内按名打过，这里只记账
+                report.details.push((format!("{name}（超时）"), false, ms));
                 continue;
             }
-        };
-        if !probe_encodable(&probe_inst, codec) {
-            let ms = probe_t0.elapsed().as_millis() as u64;
-            log::warn!("[RC] 编码器「{name}」试编失败，尝试下一台");
-            report.details.push((name.clone(), false, ms));
-            continue;
+            ProbeOutcome::ActivateFailed | ProbeOutcome::EncodeFailed => {
+                log::warn!("[RC] 编码器「{name}」试编失败，尝试下一台");
+                report.details.push((name.clone(), false, ms));
+                continue;
+            }
         }
-        let ms = probe_t0.elapsed().as_millis() as u64;
-        report.details.push((name.clone(), true, ms));
         // 探测通过 → 另起一台干净的实例交给调用方
         match act.ActivateObject::<IMFTransform>() {
             Ok(clean) => {
@@ -180,6 +361,9 @@ pub(super) unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCo
     report.skipped = tried;
     report.pick_ms = pick_t0.elapsed().as_millis() as u64;
     log::warn!("{}", super::perf::render_pick(&report));
+    // 全败 ⇒ 取证：本线程公寓 + 原地重测（瞬态/持久）+ 干净线程对照（线程局部/进程全局）。
+    // 「探针 ✓ / 真机 ✗」这类差异靠猜是猜不出来的，只能把现场量出来。
+    super::mft_diag::dump_pick_failure(codec);
     Err(format!(
         "{} 的 {tried} 台硬编 MFT 全部试编失败",
         codec.as_str()
@@ -187,7 +371,10 @@ pub(super) unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCo
 }
 
 /// IMFActivate 的友好名（日志用）。
-unsafe fn friendly_name_of(act: &IMFActivate) -> Option<String> {
+///
+/// `pub(super)`：`mft_diag` 也要用它标注每台的结果，**别在那边再写一份**
+/// （同一份友好名两处实现，改其一就静默分叉）。
+pub(super) unsafe fn friendly_name_of(act: &IMFActivate) -> Option<String> {
     let mut buf = [0u16; 256];
     let mut len = 0u32;
     act.GetString(&MFT_FRIENDLY_NAME_Attribute, &mut buf, Some(&mut len))
@@ -297,7 +484,10 @@ unsafe fn probe_feed(
             if t.ProcessInput(0, &sample, 0).is_err() {
                 return Err(());
             }
-            while let Ok(true) = drain_probe(t) {
+            // 同步 MFT 直接收包。上限防「MFT 行为异常时永远返回有输出」的死循环：
+            // 外层 `run_with_timeout` 虽然也能兜住，但那时工作线程已被弃置（泄漏）；
+            // 这里给一个正常绝对够用的上限就避免了这次泄漏。
+            while got < MAX_DRAIN_PER_FRAME && matches!(drain_probe(t), Ok(true)) {
                 got += 1;
             }
         }
@@ -503,4 +693,94 @@ pub(super) unsafe fn lock_buf(buf: &IMFMediaBuffer) -> Result<Vec<u8>, String> {
     }
     buf.Unlock().map_err(mf_err)?;
     Ok(out)
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::{run_with_timeout, ProbeOutcome, MAX_DRAIN_PER_FRAME, PICK_BUDGET_MS, PROBE_TIMEOUT_MS};
+    use std::time::{Duration, Instant};
+
+    /// 守卫：超时必须生效，且必须**及时**返回。
+    ///
+    /// 这是本机制的全部价值所在，而真 MFT 在单测里造不出来（需要真显卡与驱动），
+    /// 所以只能把「超时语义」单独验证掉——它一旦失效，恢复成的是
+    /// 「一台 MFT 挂死 → 占死一个 tokio worker」，且在日志里看不出来。
+    #[test]
+    fn 慢任务必须被超时掐断() {
+        let t0 = Instant::now();
+        let r: Option<u32> = run_with_timeout(
+            || {
+                std::thread::sleep(Duration::from_millis(800));
+                7
+            },
+            Duration::from_millis(80),
+            "单测慢任务",
+        );
+        assert_eq!(r, None, "超过 timeout 的任务必须返回 None");
+        assert!(
+            t0.elapsed() < Duration::from_millis(600),
+            "超时必须立即返回，不能等任务自己跑完（实测 {:?}）",
+            t0.elapsed()
+        );
+    }
+
+    /// 守卫：正常完成必须拿到**真值**——安全网不能把正常路径一起砍掉。
+    #[test]
+    fn 快任务必须拿到结果() {
+        let r = run_with_timeout(
+            || ProbeOutcome::Passed,
+            Duration::from_millis(2000),
+            "单测快任务",
+        );
+        assert_eq!(r, Some(ProbeOutcome::Passed));
+    }
+
+    /// 守卫：子线程 panic 必须被当成「该台不可用」，而不是把调用方一起带崩。
+    /// MFT 的厂商 DLL 内部是有可能崩的，这条路径必须在设计里被明确覆盖。
+    #[test]
+    fn 线程panic必须判不可用() {
+        let r: Option<u32> = run_with_timeout(
+            || panic!("模拟厂商 MFT 内部崩溃"),
+            Duration::from_millis(2000),
+            "单测 panic",
+        );
+        assert_eq!(r, None, "子线程 panic 不得传播，应判该台不可用");
+    }
+
+    /// 守卫：三个阈值必须落在「正常路径之上、明显异常之下」。
+    ///
+    /// 实测锚点（2026-09-23，本机 3 台候选 × 4 次真机会话）：正常单台最坏 580ms。
+    /// 这些数字全是拍脑袋就能改坏的——写小了会误杀慢机器上的好编码器
+    /// （日志表现为「超时」，但功能其实正常），写大了等于没有保护。
+    ///
+    /// 用 `const { assert!(..) }` 求值：阈值被改坏时**编译就失败**，比跑到测试
+    /// 才发现更早、更难绕过。代价是 panic 消息只能是静态字面量（因此把实测
+    /// 锚点写进了消息本身）。
+    #[test]
+    fn 阈值必须覆盖实测的正常路径() {
+        // 实测锚点：本机 3 台候选 × 4 次真机会话，单台最坏 580ms（Intel QSV）
+        const PROBE_WORST_CASE_MS: u64 = 580;
+        const {
+            assert!(
+                PROBE_TIMEOUT_MS >= PROBE_WORST_CASE_MS * 2,
+                "单台超时相对实测最坏（580ms）至少要有 2 倍余量"
+            )
+        };
+        const { assert!(PROBE_TIMEOUT_MS <= 10_000, "单台超时超过 10s 就失去了保护意义") };
+        // 预算是「兜底 × 候选数」的收敛手段，必须明显小于 6 × 单台
+        const {
+            assert!(
+                PICK_BUDGET_MS < PROBE_TIMEOUT_MS * 6,
+                "总预算必须小于 6 台各自挂满的上限，否则它不起作用"
+            )
+        };
+        const {
+            assert!(
+                PICK_BUDGET_MS >= PROBE_TIMEOUT_MS,
+                "总预算小于单台超时会让第一台就被砍掉"
+            )
+        };
+        // 收包上限：一帧出一个包是常态，64 是保险值而不是产量限制
+        const { assert!(MAX_DRAIN_PER_FRAME >= 8, "收包上限过小会误判正常的多包帧") };
+    }
 }

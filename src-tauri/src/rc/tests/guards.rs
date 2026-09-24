@@ -536,3 +536,34 @@ fn os_label_非空且前缀正确() {
         "Windows 上应报 Windows 系列，实得 {label}"
     );
 }
+
+/// 守卫：COM 公寓初始化必须走 `mft_diag::ensure_mta_quiet` 收口（2026-09-23）。
+///
+/// 背景：真机被控推流恒走 JPEG 兜底，NVIDIA 硬编报
+/// `ActivateObject 失败 0x8000FFFF (E_UNEXPECTED)`，而**同机同参数的外部探针 ✓**。
+/// 首要嫌疑是跑选型的 tokio worker 被别处（UIA）初始化成了 STA —— 此时
+/// `CoInitializeEx(MTA)` 返回 `RPC_E_CHANGED_MODE`，公寓仍是 STA，代码却照常跑。
+///
+/// 这三处调用点过去分别用 `let _ = ...` 和 `.is_ok()` **丢弃返回值**，
+/// 让「请求 MTA 被拒」在日志里完全隐形。验收标准按 AGENTS.md §11.1：
+/// *第 4 个调用点被人新写出来时仍会走错 ⇒ 说明还没收口*。所以这里禁止
+/// 这三个文件再直接出现 `CoInitializeEx`，必须经收口函数。
+#[test]
+fn 守卫_COM公寓初始化必须收口() {
+    for (name, src) in [
+        ("rc/gpu.rs", include_str!("../gpu.rs")),
+        ("rc/dxgi.rs", include_str!("../dxgi.rs")),
+        ("rc/encode_h264/mf.rs", include_str!("../encode_h264/mf.rs")),
+    ] {
+        assert!(
+            src.contains("ensure_mta_quiet"),
+            "{name} 的 COM 初始化必须走 mft_diag::ensure_mta_quiet（被拒时需留证据）"
+        );
+        // 只匹配**真实调用形式**（`CoInitializeEx(None, …)`）——注释里提到函数名是
+        // 正常的，不该因此判红
+        assert!(
+            !src.contains("CoInitializeEx(None"),
+            "{name} 仍直接调用 CoInitializeEx —— 返回值会被再次静默丢弃，改走 ensure_mta_quiet"
+        );
+    }
+}
