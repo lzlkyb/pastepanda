@@ -122,7 +122,14 @@ impl OutboundVideo {
                 self.svc.force_end_if_session(&self.my_id, "会话超时").await;
                 break;
             }
-            match read_incoming(&mut self.recv).await {
+            // 🔴 链路活性第二证据位：**任何**成功到达的入站帧都刷新一次。收口在这一处
+            //（而不是散进下面各帧类型的分支）——以后新增帧类型自动覆盖，不会漏刷。
+            // 先绑定再匹配：`is_ok()` 与 `match` 分开写，原有分支结构不动。
+            let incoming = read_incoming(&mut self.recv).await;
+            if incoming.is_ok() {
+                self.svc.note_inbound();
+            }
+            match incoming {
                 Ok(Incoming::Control(bytes)) => {
                     if !self.handle_control(&bytes) {
                         break;

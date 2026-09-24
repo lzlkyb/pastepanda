@@ -60,6 +60,21 @@ pub fn link_stale_kick(started_ms: i64, last_evidence_ms: i64, now_ms: i64, time
     base > 0 && now_ms - base > timeout_ms
 }
 
+/// 发起侧看门狗的**活性证据**：三个来源取最大（任一成立即算活着）。
+///
+/// 抽成纯函数、而不是把三个 `.max()` 直接写在 `outbound_heartbeat_stale` 里，
+/// 是为了让守卫单测能**直接钉住生产判据**（「入站帧可以顶替缺失的 pong」）——
+/// 那正是 v7.2.5 回归里被误踢的场景——而不必构造整个 `RcService`。
+///
+/// - `attached_ms`：连接刚登记（会话建好、还没收到任何东西）的宽限期；
+/// - `last_pong_ms`：心跳往返 —— **依赖发起端前端 UI 每秒发 ping**；
+/// - `last_inbound_ms`：任何入站帧（画面 / 控制帧）—— **不依赖前端**。
+///
+/// 三者同为单调 ms 口径，`0` = 尚未有过。返回 `0` 表示「一次证据都没有」。
+pub fn heartbeat_evidence(attached_ms: i64, last_pong_ms: i64, last_inbound_ms: i64) -> i64 {
+    attached_ms.max(last_pong_ms).max(last_inbound_ms)
+}
+
 /// 会话收尾时交回的东西：这一程**走的是哪条路** + **网速摘要**。
 ///
 /// 两者都在 `detach` 时一次性取出——因为它们都只能从活连接读，
@@ -137,6 +152,17 @@ pub struct LinkState {
     /// 会让一场慢连接刚建立就被判失联。`attach` 发生在连接真通之后、
     /// 会话转 Active 之前，才是「这条链路开始活着」的时刻。
     attached_ms: AtomicI64,
+    /// 🔴 P1-5 后续（2026-09-23，v7.2.5 回归后补）：最后一次收到**任何**入站帧
+    /// （控制帧 / JPEG / H.264）的时刻（单调 ms）；0 = 本会话还没收到过。
+    ///
+    /// # 为什么看门狗不能只信 `last_pong_ms`
+    ///
+    /// pong 的前提是发起端**前端 UI 每秒发一条 ping**（`useRcLinkState` 的
+    /// interval，由会话视图挂载驱动）。会话窗口一旦不跑（前端异常、视图被换掉），
+    /// 被控端照样活着、画面照样在推，看门狗却会把它判成「对端失联」——
+    /// 这正是 `last_pong_ms` 单证据的漏洞。任何成功到达的入站帧都是「链路还活着」
+    /// 的硬证据，且**不依赖前端**，所以拿它与 pong 并列取最大。
+    last_inbound_ms: AtomicI64,
     /// 上一次上报给前端的路径档位。用于「换路了」通知去重
     /// （多实例并发轮询 `rc_status` 时，变化只该被消费一次）。
     reported: Mutex<PathKind>,
@@ -156,6 +182,7 @@ impl LinkState {
             conn: Mutex::new(None),
             last_pong_ms: Mutex::new(0),
             attached_ms: AtomicI64::new(0),
+            last_inbound_ms: AtomicI64::new(0),
             reported: Mutex::new(PathKind::None),
             rtt: Mutex::new(RttAcc {
                 min: 0,
@@ -168,11 +195,12 @@ impl LinkState {
 
     /// 会话建立时登记连接句柄（clone，不是拿走所有权）。
     ///
-    /// 顺带把 pong 时间戳清零：新会话不能继承上一个会话的「刚刚还有心跳」，
-    /// 否则断线重连后的头几秒会谎报已连接。
+    /// 顺带把 pong 与入站时刻清零：新会话不能继承上一个会话的「刚刚还有心跳」，
+    /// 否则断线重连后的头几秒会谎报已连接——**两个活性证据位都要清，漏一个等于没清**。
     pub fn attach(&self, conn: &Connection) {
         *self.conn.lock().unwrap_or_else(|p| p.into_inner()) = Some(conn.clone());
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = 0;
+        self.last_inbound_ms.store(0, Ordering::Relaxed);
         // 🔴 P1-5：连接真通的那一刻起表，看门狗拿它当「本会话最早的链路证据」
         self.attached_ms.store(super::mono::mono_ms(), Ordering::Relaxed);
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
@@ -190,6 +218,7 @@ impl LinkState {
         *self.conn.lock().unwrap_or_else(|p| p.into_inner()) = None;
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner()) = 0;
         self.attached_ms.store(0, Ordering::Relaxed);
+        self.last_inbound_ms.store(0, Ordering::Relaxed);
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
         *self.rtt.lock().unwrap_or_else(|p| p.into_inner()) = RttAcc::default();
         LinkEnd {
@@ -216,6 +245,25 @@ impl LinkState {
     ///   [`Self::pong_age_ms`]，裸值出网即失效。
     pub fn last_pong_ms(&self) -> i64 {
         *self.last_pong_ms.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// 🔴 P1-5 后续：「刚刚收到过对端的东西」——链路活性的**第二证据位**。
+    ///
+    /// 调用点**收口**在 `outbound::OutboundVideo::run` 一处（`read_incoming` 一成功
+    /// 就刷，不分帧类型）——以后新增入站帧类型自动覆盖，不会漏。别把它散进
+    /// 各帧类型的分支里（那正是「加了新类型忘了补」的经典入口）。
+    ///
+    /// 每帧都可能调，所以用原子而不是 Mutex；`Relaxed` 足够——这个值只参与
+    /// 「谁更新」的先后比较，不需要与别的字段构成 happens-before。
+    pub fn note_inbound(&self) {
+        self.last_inbound_ms
+            .store(super::mono::mono_ms(), Ordering::Relaxed);
+    }
+
+    /// 最后一次收到任何入站帧的时刻（单调 ms，见字段注释）；0 = 本会话还没收到过。
+    /// 与 [`Self::last_pong_ms`] 同基座，**只在进程内比较**，不出网。
+    pub fn last_inbound_ms(&self) -> i64 {
+        self.last_inbound_ms.load(Ordering::Relaxed)
     }
 
     /// C3：把最后一次 pong 换算成「距今多少毫秒」——**跨基座唯一安全的投影**。
@@ -324,6 +372,54 @@ mod tests {
             "新会话不能继承上一个会话的「刚刚还有心跳」"
         );
         assert_eq!(l.path_kind(), None);
+    }
+
+    /// 🔴 P1-5 后续（2026-09-23）：入站证据是**独立**的活性位——与 pong 各记各的，
+    /// 且会话边界必须清空（否则上一场的「刚刚收过东西」会给新会话续命，
+    /// 同 `last_pong_ms` 那个坑）。
+    #[test]
+    fn test_入站证据独立于pong_且不跨会话继承() {
+        let l = LinkState::new();
+        assert_eq!(l.last_inbound_ms(), 0, "还没有会话时不该有入站证据");
+        l.note_inbound();
+        assert!(l.last_inbound_ms() > 0, "收到入站帧后必须留下时间戳");
+        assert_eq!(
+            l.last_pong_ms(),
+            0,
+            "入站帧**不是** pong——不能冒充心跳去喂 RTT 采样"
+        );
+        let _ = l.detach();
+        assert_eq!(l.last_inbound_ms(), 0, "会话收尾必须清掉入站证据");
+    }
+
+    /// 🔴 直接复刻 v7.2.5 的误踢场景并钉住修复：pong 一条都没到（`RcFrame` 同 tag
+    /// 死变体吞包的时代），但画面/控制帧一直在到 —— 会话**必须**被判为活着。
+    ///
+    /// `heartbeat_evidence` 正是生产代码（`outbound_heartbeat_stale`）调用的那个
+    /// 函数，所以这里测的是**判据本身**，不是把逻辑复刻一遍。
+    #[test]
+    fn test_入站帧能顶替缺失的pong_不再误踢活会话() {
+        let started = 1_000_i64;
+        let now = started + 16_000; // 已越过 15s 阈值
+
+        // 半秒前刚收到一帧 ⇒ 证据新鲜 ⇒ 不踢（v7.2.5 在这里误踢了活会话）
+        let fresh = heartbeat_evidence(0, 0, now - 500);
+        assert!(
+            !link_stale_kick(started, fresh, now, LINK_STALE_KICK_MS),
+            "有入站帧就是活着的——这正是 v7.2.5 被误踢的场景"
+        );
+
+        // 对照组：三条证据全无 ⇒ 只能从 started 起算 ⇒ 才该收口（真失联）。
+        // 看门狗的本职（治半开链路）不能因为这次修复被丢掉。
+        let none = heartbeat_evidence(0, 0, 0);
+        assert!(
+            link_stale_kick(started, none, now, LINK_STALE_KICK_MS),
+            "一条证据都没有（真失联）才允许收口"
+        );
+
+        // 三源取最大：pong 陈旧但入站新鲜时取入站那个；不是"取最后写入的来源"
+        assert_eq!(heartbeat_evidence(5, 0, now - 100), now - 100);
+        assert_eq!(heartbeat_evidence(9, 7, 3), 9);
     }
 
     #[test]

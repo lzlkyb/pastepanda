@@ -115,9 +115,21 @@ pub enum RcFrame {
     End {
         reason: String,
     },
-    /// 心跳占位（R1 画面流前先保活）。
-    Ping,
-    Pong,
+    // 🔴 这里曾有 R1 时代的单元变体 `Ping` / `Pong`（注释写"心跳占位，画面流前先保活"），
+    //    2026-09-23 删除。它们是**死代码**（全库零生产者），却因为 `#[serde(tag = "t")]`
+    //    与真正的心跳 JSON `{"t":"pong","ts":…,"hts":…}` **tag 撞车**：serde 按 tag 命中
+    //    单元变体后返回 `Ok(Pong)`，`outbound::handle_control` 的 `Ok(_) => {}` 空分支
+    //    把它吃掉 —— RTT 处理整段永不执行，`link::last_pong_ms` 恒 0。
+    //
+    //    后果在 v7.2.5 才显形：该版新加的半开链路看门狗（`link::LINK_STALE_KICK_MS`）
+    //    拿 `last_pong_ms` 当唯一活性证据 ⇒ **本机控制对端的会话 15 秒必被误踢**
+    //    （用户现象：「连接已中断，重连几次一直断」）。
+    //
+    // ❗ 不要再把这两个变体加回来。心跳一律走 JSON 控制帧
+    //    （`input::InputEvent::Ping` ↔ `{"t":"pong"}`），`RcFrame` 只承载信令
+    //    （request / accept / deny / end）。删除后旧对端若发 `{"t":"ping"}`，
+    //    只是从「被 Ok(_) 静默忽略」变成「进 JSON 分支后被兜底忽略」，线上等价。
+    //    守卫见 tests::heartbeat_json_must_not_be_claimed_by_rc_frame。
 }
 
 impl RcFrame {
@@ -154,6 +166,37 @@ mod tests {
         assert!(Capability::View.allowed_by(Capability::Control));
         assert!(Capability::Control.allowed_by(Capability::Control));
         assert!(!Capability::Control.allowed_by(Capability::View));
+    }
+
+    /// 🔴 守卫（2026-09-23，v7.2.5 回归的根因）：**心跳等 JSON 控制帧必须走不到 `RcFrame`**。
+    ///
+    /// 被控端回的心跳是 JSON `{"t":"pong","ts":…,"hts":…}`，全靠
+    /// `outbound::handle_control` 里 `RcFrame::decode` **失败**（serde 报
+    /// unknown variant）才被分派给后面的 JSON 分支。一旦有人在 `RcFrame` 里加回
+    /// 一个 tag 为 `pong` 的变体，它就会被 `Ok(_) => {}` 静默吞掉 ⇒ `note_pong`
+    /// 永不执行 ⇒ `link::last_pong_ms` 恒 0 ⇒ 半开看门狗把**活着的**会话判成
+    /// 对端失联（15 秒必断）。
+    ///
+    /// 同族的 `vrect` / `vts` / `cursor` / `clip` / `caps` 一并钉住：它们的 tag
+    /// 都不在 `RcFrame` 里，必须全部落到 JSON 分支 —— 少一个就说明撞车又回来了。
+    #[test]
+    fn heartbeat_json_must_not_be_claimed_by_rc_frame() {
+        let cases: &[&[u8]] = &[
+            br#"{"t":"pong","ts":1790166313975,"hts":1790166313980}"#.as_slice(),
+            br#"{"t":"vrect","x":1,"y":2,"w":3,"h":4}"#.as_slice(),
+            br#"{"t":"vts","ts":1,"cap":2,"enc":3}"#.as_slice(),
+            br#"{"t":"cursor","s":"default"}"#.as_slice(),
+            br#"{"t":"clip","text":"x"}"#.as_slice(),
+            br#"{"t":"caps","fps120":true,"hz":144}"#.as_slice(),
+        ];
+        for raw in cases {
+            assert!(
+                RcFrame::decode(raw).is_err(),
+                "{} 被 RcFrame 认领了——它会被 handle_control 的 `Ok(_) => {{}}` \
+                 静默吞掉，链路活性判据随即失效（见本测试文档注释与 `RcFrame` 尾注）",
+                String::from_utf8_lossy(raw)
+            );
+        }
     }
 
     #[test]

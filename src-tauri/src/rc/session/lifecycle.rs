@@ -278,7 +278,21 @@ impl RcService {
     ///
     /// 锁序 link → inner，同上。
     pub fn outbound_heartbeat_stale(&self) -> bool {
-        let evidence = self.link.attached_ms().max(self.link.last_pong_ms());
+        // 活性证据取三个来源的**最大值**（任一成立即算活着）：
+        // - `attached_ms`：连接刚登记（会话建好但还没收到任何东西）的宽限期；
+        // - `last_pong_ms`：心跳往返——**依赖发起端前端 UI 每秒发 ping**；
+        // - `last_inbound_ms`：任何入站帧（画面/控制帧）——**不依赖前端**。
+        //
+        // 🔴 2026-09-23（v7.2.5 回归修复）：原先只有前两个。`last_pong_ms` 被
+        //    `RcFrame` 里同 tag 的死变体吞掉后恒为 0（详见 `protocol.rs` 尾注），
+        //    而 `attached_ms` 只在拨号时写一次——于是这场会话的"证据"在建立后
+        //    就静止了，15 秒后必然判失联。补第三个来源同时堵住了另一条同类路径：
+        //    ping 由前端发，UI 一旦停摆就会再次误踢真活着的会话。
+        let evidence = crate::rc::link::heartbeat_evidence(
+            self.link.attached_ms(),
+            self.link.last_pong_ms(),
+            self.link.last_inbound_ms(),
+        );
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
             Some(s) if s.phase == SessionPhase::OutboundActive => crate::rc::link::link_stale_kick(

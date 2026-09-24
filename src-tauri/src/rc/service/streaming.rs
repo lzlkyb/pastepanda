@@ -15,6 +15,15 @@ impl RcService {
     /// 🔴 `rtt_ms <= 0` **不算** pong：那是会话开始 / 结束时的清零复位
     ///   （`note_rtt(0)` 在两个收尾点被调用）。不区分的话，会话一建立
     ///   界面就报「已连接」，把真正的首包延迟掩盖掉。
+    /// 🔴 P1-5 后续：链路活性**第二证据位**——「刚刚收到过对端的任何东西」。
+    ///
+    /// 调用点收口在 `outbound::OutboundVideo::run` 一处（读流一成功就刷，不分帧类型）。
+    /// 为什么需要它、以及它修掉了什么，见 `link::LinkState::last_inbound_ms` 的字段
+    /// 注释与 `session::lifecycle::outbound_heartbeat_stale`。
+    pub fn note_inbound(&self) {
+        self.link.note_inbound();
+    }
+
     pub fn note_rtt(&self, rtt_ms: i64) {
         self.stream.note_rtt(rtt_ms);
         // ❗ `rtt_ms == 0` 是**清零复位**（`end_session` 与发起失败路径都调它），
