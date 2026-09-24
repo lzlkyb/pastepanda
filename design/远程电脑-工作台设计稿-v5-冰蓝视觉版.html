@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程电脑 · 工作台设计稿 v5（冰蓝视觉版）</title>
+<!-- status: draft 2026-09-23 待确认 —— 依据用户提供的冰蓝高保真 mockup 图还原 -->
+<style>
+/* ================= 文档壳 ================= */
+:root{
+  --doc-bg:#F2F7FE; --doc-line:#E0E9F5;
+  --ink:#12233C; --ink2:#41536B; --ink3:#6B7C93;
+  --blue:#0A6CFF; --blue2:#2E8BFF; --blue-deep:#0553C9;
+  --ok:#159A4A; --ok-bg:#E2F7E9;
+  --warn:#E8890C; --warn-dot:#F59E0B; --warn-res:#E0501E;
+  --purple:#7C5CF0; --purple-bg:#F0EBFE;
+  --panel-line:rgba(255,255,255,.95);
+  --inner:#F6FAFE; --inner-line:#E8F0FB;
+  --shadow-panel:0 12px 34px rgba(31,86,178,.10),0 2px 6px rgba(31,86,178,.05);
+  --shadow-btn:0 6px 16px rgba(10,108,255,.30);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(ellipse 900px 420px at 12% -8%, rgba(10,108,255,.08), transparent 55%),
+    linear-gradient(135deg,#F2F7FE 0%,#EAF2FC 50%,#E8F1FC 100%);
+  color:var(--ink);
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  padding:26px 18px 70px;
+}
+.doc{max-width:1260px;margin:0 auto}
+h1{font-size:21px;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+h1 .badge{font-size:11px;font-weight:600;color:#0553C9;background:linear-gradient(135deg,#E0EEFE,#CBE3FC);
+  border:1px solid #A9D2F7;border-radius:999px;padding:2px 9px}
+.sub{color:var(--ink3);font-size:12.5px;margin:7px 0 3px;max-width:1000px}
+h2{font-size:15px;margin:38px 0 10px;display:flex;align-items:center;gap:9px}
+h2::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,var(--blue2),var(--blue))}
+.note{font-size:12px;color:var(--ink3);margin:6px 0 10px;max-width:1000px}
+.note b{color:var(--ink2)}
+.note code{font:11.5px var(--mono);background:#fff;border:1px solid var(--doc-line);border-radius:4px;padding:0 4px;color:var(--ink2)}
+ul.notes{margin:0 0 8px 18px;font-size:12.5px;color:var(--ink2)}
+ul.notes li{margin:5px 0}
+ul.notes b{color:var(--ink)}
+svg{flex:0 0 auto}
+
+/* ================= 应用框架（冰蓝画布 + 浮动卡片） ================= */
+.app{
+  width:1200px;max-width:100%;height:790px;
+  display:flex;flex-direction:column;overflow:hidden;
+  border:1px solid rgba(255,255,255,.9);border-radius:16px;
+  background:
+    radial-gradient(ellipse 620px 300px at 78% 6%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(ellipse 520px 260px at 18% 88%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(ellipse 700px 340px at 96% 78%, rgba(122,177,255,.28), transparent 62%),
+    radial-gradient(ellipse 560px 300px at 4% 22%, rgba(140,190,255,.22), transparent 60%),
+    linear-gradient(150deg,#EAF3FE 0%,#DFEBFA 46%,#D8E7F9 100%);
+  box-shadow:0 30px 70px rgba(15,42,90,.16),0 4px 14px rgba(15,23,42,.06);
+  margin:14px 0 8px;
+}
+
+/* ── 标题栏：透明坐在冰蓝画布上（现行代码是 --card-bg 实底一条） ── */
+.titlebar{
+  flex:0 0 56px;display:flex;align-items:center;gap:12px;padding:0 10px 0 16px;
+}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand-mark{
+  width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(140deg,#3D93FF,#0A6CFF 60%,#0553C9);
+  box-shadow:0 4px 10px rgba(10,108,255,.35);
+}
+.brand-text{display:flex;flex-direction:column;line-height:1.25}
+.brand-line{display:flex;align-items:baseline;gap:7px}
+.brand-line b{font-size:14px;font-weight:700;color:var(--ink)}
+.brand-line i{font-style:normal;font-size:13px;font-weight:600;color:var(--ink2)}
+.brand-tag{font-size:11px;color:var(--ink3)}
+.channel-pill{
+  margin:0 auto;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+  min-height:32px;padding:0 16px;border-radius:999px;
+  background:rgba(255,255,255,.6);border:1px solid var(--panel-line);
+  -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  backdrop-filter:blur(16px) saturate(1.2);
+  box-shadow:0 3px 10px rgba(31,86,178,.08);
+  font-size:12.5px;font-weight:600;color:var(--ink2);
+}
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.dot.ok{background:#22C55E;box-shadow:0 0 0 3px rgba(34,197,94,.16)}
+.dot.warn{background:var(--warn-dot);box-shadow:0 0 0 3px rgba(245,158,11,.16)}
+.tb-right{display:flex;align-items:center;gap:8px}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 12px;
+  border-radius:999px;background:rgba(255,255,255,.62);border:1px solid var(--panel-line);
+  box-shadow:0 3px 10px rgba(31,86,178,.07);
+  font-size:12px;font-weight:600;color:var(--ink2);cursor:default;
+  white-space:nowrap; /* 中文可按字断行：不钉 nowrap 窄窗口下 chip 会被压成一字一行的竖条 */
+}
+button.chip{cursor:pointer;font:inherit;font-size:12px;font-weight:600;color:var(--ink2)}
+button.chip:hover{background:#fff}
+.chip .avatar{
+  width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(140deg,#59A4FF,#0A6CFF);color:#fff;
+}
+.icon-btn{
+  position:relative;width:34px;height:34px;border:0;border-radius:10px;background:transparent;
+  display:grid;place-items:center;color:var(--ink2);cursor:pointer;
+}
+.icon-btn:hover{background:rgba(255,255,255,.6)}
+.icon-btn .badge-dot{
+  position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;
+  background:#F0483E;border:1.5px solid #EAF3FE;
+}
+.winbtns{display:flex;align-items:stretch;margin-left:4px}
+.winbtns button{
+  width:42px;height:34px;border:0;background:transparent;color:var(--ink2);
+  display:grid;place-items:center;cursor:default;font:13px/1 inherit;
+}
+.winbtns button:hover{background:rgba(255,255,255,.65);color:var(--ink)}
+.winbtns button.close:hover{background:#E81123;color:#fff}
+
+/* ── 主体两列 ── */
+.body{flex:1;min-height:0;display:flex;gap:14px;padding:2px 14px 14px}
+.side{width:302px;min-width:302px;display:flex;flex-direction:column;gap:12px;min-height:0}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;min-height:0}
+
+.panel{
+  /* 毛玻璃：blur 只加在这 5 块静态大面板（侧栏/被连接/英雄/权限/会话）+ 工具导航 +
+     通道 pill——背景是静态云纹渐变，采样一次性成本（规则 8.4）。
+     🔴 chip / 设备卡 / 会话行 / 事实卡等**重复元素不加 blur**（规则 8.3：N 个元素 N 个层），
+     它们用半透明白叠在已模糊的面板上，视觉同样是玻璃感。 */
+  background:rgba(255,255,255,.55);
+  -webkit-backdrop-filter:blur(20px) saturate(1.25);
+  backdrop-filter:blur(20px) saturate(1.25);
+  border:1px solid var(--panel-line);border-radius:14px;
+  box-shadow:var(--shadow-panel);
+}
+
+/* ── 侧栏 · 设备面板 ── */
+.side-main{flex:1;min-height:0;display:flex;flex-direction:column;padding:14px 12px 10px}
+.side-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.side-head h2{font-size:15px;font-weight:700;flex:1;margin:0}
+.side-head h2::before{content:none}
+.btn-primary{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:32px;padding:0 14px;border:0;border-radius:9px;
+  background:linear-gradient(135deg,#3D93FF,#0A6CFF 70%);color:#fff;
+  font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
+  box-shadow:var(--shadow-btn);
+}
+.btn-primary:hover{background:linear-gradient(135deg,#2E86F5,#0660E6 70%)}
+.search{
+  display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;
+  background:rgba(255,255,255,.5);border:1px solid var(--inner-line);border-radius:9px;
+  color:var(--ink3);
+}
+.search input{border:0;outline:0;background:transparent;flex:1;min-width:0;font:inherit;font-size:12px;color:var(--ink)}
+.search input::placeholder{color:#9AA9BD}
+.meta{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:8px 2px 8px;font-size:11.5px;color:var(--ink3);
+}
+.linkbtn{
+  display:inline-flex;align-items:center;gap:5px;border:0;background:none;cursor:pointer;
+  color:var(--blue);font:inherit;font-size:11.5px;font-weight:600;
+}
+.linkbtn:hover{text-decoration:underline}
+.devlist{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 6px}
+/* 细滚动条：默认灰粗条在玻璃面板上非常出戏（2026-09-23 实机截图抓到） */
+.devlist,.sessions{scrollbar-width:thin;scrollbar-color:rgba(122,152,192,.38) transparent}
+.devlist::-webkit-scrollbar,.sessions::-webkit-scrollbar{width:6px}
+.devlist::-webkit-scrollbar-thumb,.sessions::-webkit-scrollbar-thumb{
+  background:rgba(122,152,192,.38);border-radius:3px;
+}
+.devlist::-webkit-scrollbar-track,.sessions::-webkit-scrollbar-track{background:transparent}
+
+/* 设备卡：三行文案 + 通栏分体按钮 */
+.dev{
+  border:1px solid var(--inner-line);border-radius:12px;background:rgba(255,255,255,.66);
+  padding:10px 10px 10px;box-shadow:0 3px 10px rgba(31,86,178,.06);
+}
+.dev.selected{
+  border-color:#7FB6FF;background:rgba(255,255,255,.92);
+  box-shadow:0 0 0 3px rgba(10,108,255,.12),0 8px 20px rgba(10,108,255,.14);
+}
+.dev-top{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}
+.thumb{position:relative;flex:0 0 auto;width:64px;height:52px;display:block}
+.thumb .screen{
+  position:absolute;inset:0 4px 10px 4px;border-radius:4px;
+  border:1.5px solid #17293F;overflow:hidden;
+}
+.thumb .stand{
+  position:absolute;left:50%;bottom:2px;transform:translateX(-50%);
+  width:16px;height:8px;background:linear-gradient(180deg,#C6D4E4,#9FB2C8);
+  clip-path:polygon(18% 0,82% 0,100% 100%,0 100%);
+}
+.thumb .stand::after{
+  content:"";position:absolute;left:-8px;bottom:-2px;width:32px;height:3px;border-radius:2px;
+  background:#9FB2C8;
+}
+.screen.bloom-blue{
+  background:
+    radial-gradient(circle at 58% 36%, rgba(255,255,255,.95) 0%, rgba(214,236,255,.55) 10%, transparent 26%),
+    radial-gradient(circle at 40% 62%, rgba(154,206,255,.95) 0%, transparent 44%),
+    radial-gradient(circle at 70% 68%, rgba(37,117,244,.95) 0%, transparent 50%),
+    linear-gradient(135deg,#9CC6FF 0%,#3B82F6 48%,#0B49C0 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.28);
+}
+.screen.bloom-warm{
+  background:
+    radial-gradient(circle at 58% 36%, rgba(255,255,255,.9) 0%, transparent 24%),
+    radial-gradient(circle at 38% 64%, rgba(255,176,97,.9) 0%, transparent 46%),
+    radial-gradient(circle at 72% 66%, rgba(64,132,255,.9) 0%, transparent 52%),
+    linear-gradient(135deg,#FFC48A 0%,#F08A3C 40%,#2E7BFF 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.28);
+}
+.dev-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
+.dev-name{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap}
+.dev-name button{border:0;background:none;color:#9AA9BD;cursor:pointer;display:grid;place-items:center;padding:2px;border-radius:6px}
+.dev-name button:hover{color:var(--blue);background:var(--inner)}
+.dev-status{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.dev-status.warn{color:var(--warn)}
+.dev-sub{font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 分体按钮（主 + ⌄），照现行 .connectGroup 形态 */
+.split{display:inline-flex;align-items:stretch;width:100%}
+.split .main-btn{
+  flex:1;min-height:34px;display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  border:0;border-radius:9px 0 0 9px;cursor:pointer;
+  background:linear-gradient(135deg,#3D93FF,#0A6CFF 70%);color:#fff;
+  font:inherit;font-size:12.5px;font-weight:600;box-shadow:var(--shadow-btn);
+}
+.split .caret-btn{
+  width:26px;border:0;border-radius:0 9px 9px 0;cursor:pointer;
+  background:linear-gradient(135deg,#3D93FF,#0A6CFF 70%);color:#fff;
+  border-left:1px solid rgba(255,255,255,.35);
+  display:grid;place-items:center;box-shadow:var(--shadow-btn);
+}
+.split:hover .main-btn,.split:hover .caret-btn{background:linear-gradient(135deg,#2E86F5,#0660E6 70%)}
+
+/* ── 侧栏 · 被连接面板 ── */
+.side-recv{padding:12px}
+.recv-head{display:flex;align-items:center;gap:8px}
+.recv-head strong{flex:1;font-size:13px;font-weight:700}
+.pill{
+  display:inline-flex;align-items:center;gap:5px;min-height:24px;padding:0 10px;
+  border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;
+}
+.pill.ok{color:var(--ok);background:var(--ok-bg);border:1px solid rgba(21,154,74,.25)}
+.side-recv small{display:block;margin:3px 0 10px;font-size:11px;color:var(--ink3)}
+.recv-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.recv-btns button,.recv-join{
+  min-height:32px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid var(--inner-line);border-radius:9px;background:rgba(255,255,255,.66);
+  color:var(--ink2);font:inherit;font-size:12px;font-weight:600;cursor:pointer;
+}
+.recv-btns button:hover,.recv-join:hover{background:rgba(255,255,255,.95);border-color:#BFD9F7;color:var(--ink)}
+.recv-join{width:100%}
+
+/* ── 侧栏 · 底部工具导航 ── */
+.toolnav{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:6px;
+  background:rgba(255,255,255,.55);border:1px solid var(--panel-line);border-radius:14px;
+  -webkit-backdrop-filter:blur(20px) saturate(1.25);
+  backdrop-filter:blur(20px) saturate(1.25);
+  box-shadow:var(--shadow-panel);
+}
+.toolnav button{
+  min-height:48px;border:0;border-radius:10px;background:transparent;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  color:var(--ink3);font:inherit;font-size:11.5px;font-weight:600;
+}
+.toolnav button:hover{background:rgba(255,255,255,.85);color:var(--ink2)}
+.toolnav button.active{color:var(--blue)}
+
+/* ── 主列 · 英雄卡 ──
+   可换行布局：窄窗口时动作组整体换到下一行右对齐，而不是把中间文案列压瘪
+   （上一版 hero 是死 flex 行，1000px 视口下 chip 被压成竖排并与按钮重叠）。 */
+.hero{
+  position:relative;flex:0 0 212px;display:flex;align-items:center;flex-wrap:wrap;
+  gap:14px 22px;padding:18px 24px;overflow:hidden;
+  background:
+    radial-gradient(ellipse 420px 200px at 88% -20%, rgba(122,177,255,.34), transparent 62%),
+    radial-gradient(ellipse 360px 190px at 66% 118%, rgba(140,190,255,.30), transparent 60%),
+    radial-gradient(ellipse 300px 160px at 12% 116%, rgba(255,255,255,.65), transparent 62%),
+    linear-gradient(120deg,rgba(255,255,255,.62),rgba(240,248,255,.5));
+}
+.slogan{
+  position:absolute;top:16px;right:26px;transform:rotate(-5deg);
+  font-family:"KaiTi","STKaiti","Segoe Script",cursive;font-size:15px;color:#4E8FE8;
+  letter-spacing:1px;
+}
+.slogan::after{
+  content:"";display:block;height:3px;margin-top:2px;border-radius:50%;
+  background:linear-gradient(90deg,transparent,#7FB6FF 30%,#4E8FE8 70%,transparent);
+  transform:rotate(-1deg);
+}
+.hero-device{position:relative;flex:0 0 200px;height:170px}
+.monitor{position:absolute;left:22px;top:6px;width:166px;height:118px;display:block}
+.monitor .screen{
+  position:absolute;inset:0;border-radius:8px;border:3px solid #101E30;overflow:hidden;
+  box-shadow:0 14px 30px rgba(20,60,140,.28);
+}
+.monitor .neck{
+  position:absolute;left:50%;top:112px;transform:translateX(-50%);
+  width:30px;height:26px;background:linear-gradient(180deg,#DCE7F3,#AFC2D8);
+  clip-path:polygon(22% 0,78% 0,100% 100%,0 100%);
+}
+.monitor .base{
+  position:absolute;left:50%;top:136px;transform:translateX(-50%);
+  width:74px;height:7px;border-radius:4px;background:linear-gradient(180deg,#C9D7E7,#9DB1C8);
+}
+.pedestal{
+  position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+  width:150px;height:34px;border-radius:50%;
+  background:radial-gradient(ellipse at 50% 32%, rgba(255,255,255,.95), rgba(214,232,252,.55) 58%, rgba(190,216,248,.25) 78%, transparent 82%);
+  box-shadow:0 10px 22px rgba(31,86,178,.14);
+}
+.hero-copy{flex:1 1 340px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.hero-copy h2{display:flex;align-items:center;gap:9px;font-size:24px;font-weight:800;color:var(--ink);margin:0}
+.hero-copy h2::before{content:none}
+.hero-copy h2 button{border:0;background:none;color:#9AA9BD;cursor:pointer;display:grid;place-items:center;padding:4px;border-radius:8px}
+.hero-copy h2 button:hover{color:var(--blue);background:rgba(255,255,255,.8)}
+.hero-status{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--warn)}
+.hero-status .help{
+  width:16px;height:16px;border:1px solid #C9D7E8;border-radius:50%;background:rgba(255,255,255,.7);
+  color:var(--ink3);font-size:10px;line-height:1;display:grid;place-items:center;cursor:pointer;
+}
+.hero-chips{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:2px}
+.hero-chips .chip{background:rgba(255,255,255,.7)}
+.hero-actions{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-left:auto}
+.hero-actions .split{width:auto}
+.hero-actions .split .main-btn{min-height:42px;padding:0 22px;font-size:13.5px;border-radius:10px 0 0 10px}
+.hero-actions .split .caret-btn{width:30px;border-radius:0 10px 10px 0}
+.btn-ghost{
+  min-height:42px;padding:0 18px;display:inline-flex;align-items:center;gap:8px;
+  border:1px solid var(--panel-line);border-radius:10px;background:rgba(255,255,255,.72);
+  color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;
+  box-shadow:0 4px 12px rgba(31,86,178,.08);white-space:nowrap;
+}
+.btn-ghost:hover{background:rgba(255,255,255,.98)}
+
+/* ── 主列 · 连接与权限 ── */
+.facts-panel{flex:0 0 auto;padding:14px 16px 16px}
+.panel-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.panel-head h3{flex:1;font-size:14px;font-weight:700;color:var(--ink)}
+.pill.soft{background:var(--ok-bg);border-color:rgba(21,154,74,.22);color:var(--ok)}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.fact{
+  position:relative;background:rgba(255,255,255,.66);border:1px solid var(--inner-line);
+  border-radius:12px;padding:14px 30px 12px 14px;cursor:pointer;
+  box-shadow:0 3px 10px rgba(31,86,178,.05);
+  display:flex;flex-direction:column;gap:6px;
+}
+.fact:hover{background:rgba(255,255,255,.96);border-color:#BFD9F7}
+.fact .fic{
+  width:34px;height:34px;border-radius:10px;display:grid;place-items:center;margin-bottom:2px;
+}
+.fic.link{color:var(--blue);background:#E4F0FF}
+.fic.ok{color:var(--ok);background:var(--ok-bg)}
+.fic.file{color:#F0732A;background:#FEF0E5}
+.fic.id{color:var(--purple);background:var(--purple-bg)}
+.fact dt{font-size:11.5px;color:var(--ink3)}
+.fact dd{font-size:14px;font-weight:700;color:var(--ink);margin:0}
+.fact dd.mono{font-family:var(--mono);font-size:13px;letter-spacing:.2px}
+.fact .fsub{font-size:11px;color:var(--ink3)}
+.fact .chev{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#A9B8CC}
+
+/* ── 主列 · 最近会话 ── */
+.sessions-panel{flex:1;min-height:0;display:flex;flex-direction:column;padding:14px 16px 12px}
+.sessions-panel .panel-head{margin-bottom:8px}
+.sessions{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.srow{
+  display:flex;align-items:center;gap:12px;min-height:46px;padding:0 12px;
+  background:rgba(255,255,255,.5);border:1px solid transparent;border-radius:10px;
+  font-size:12.5px;color:var(--ink2);
+}
+.srow:hover{background:rgba(255,255,255,.85);border-color:var(--inner-line)}
+.srow .sic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto}
+.sic.info{color:var(--blue);background:#E4F0FF}
+.sic.warn{color:#F0732A;background:#FEF0E5}
+.sic.ok{color:var(--ok);background:var(--ok-bg)}
+.srow .cap{font-weight:700;color:var(--ink);min-width:64px;white-space:nowrap}
+.srow .when{color:var(--ink3);min-width:84px;white-space:nowrap}
+.srow .vdiv{width:1px;height:16px;background:#DCE6F2}
+.srow .dur{display:inline-flex;align-items:center;gap:6px;color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.srow .res{margin-left:auto;font-weight:600;white-space:nowrap}
+.res.cancel{color:#8B99AD}
+.res.warn{color:var(--warn-res)}
+.res.ok{color:var(--ok)}
+.srow .more{
+  border:0;background:none;color:#A9B8CC;cursor:pointer;font-size:15px;line-height:1;
+  padding:4px 6px;border-radius:7px;letter-spacing:1px;
+}
+.srow .more:hover{background:var(--inner);color:var(--ink2)}
+</style>
+</head>
+<body>
+<div class="doc">
+  <h1>远程电脑 · 工作台设计稿 v5 <span class="badge">冰蓝视觉版</span></h1>
+  <p class="sub">
+    依据 2026-09-23 用户提供的高保真 mockup 图 1:1 还原：冰蓝云感画布 + 浮动白卡布局。
+    结构与文案对齐现行 A2 工作台组件（<b>RcA2TitleBar / RcA2Sidebar / RcA2DeviceList / RcA2DeviceDetail /
+    RcA2ConnectionFacts / RcRecentSessions</b>），与代码的差异逐条列在稿末「实施备注」。
+  </p>
+
+  <div class="app">
+    <!-- ══ 标题栏 ══ -->
+    <header class="titlebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <circle cx="6.6" cy="7" r="3.1" fill="#fff"/>
+            <circle cx="17.4" cy="7" r="3.1" fill="#fff"/>
+            <circle cx="12" cy="13.2" r="7.6" fill="#fff"/>
+            <ellipse cx="9.2" cy="12.6" rx="1.7" ry="2.2" fill="#0A6CFF" transform="rotate(-14 9.2 12.6)"/>
+            <ellipse cx="14.8" cy="12.6" rx="1.7" ry="2.2" fill="#0A6CFF" transform="rotate(14 14.8 12.6)"/>
+            <circle cx="12" cy="15.6" r="1.15" fill="#0A6CFF"/>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-line"><b>PastePanda</b><i>远程电脑</i></span>
+          <span class="brand-tag">连接更近 · 工作更自由</span>
+        </span>
+      </div>
+
+      <span class="channel-pill"><i class="dot ok"></i>远程通道已开启</span>
+
+      <div class="tb-right">
+        <span class="chip" title="最近实测延迟">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#159A4A" stroke-width="2.4" stroke-linecap="round">
+            <path d="M5 18v-4"/><path d="M10 18v-8"/><path d="M15 18V7"/><path d="M20 18V4"/>
+          </svg>
+          12ms
+        </span>
+        <button class="icon-btn" title="通知">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+          </svg>
+          <i class="badge-dot"></i>
+        </button>
+        <button class="chip" title="账号">
+          <span class="avatar">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>
+            </svg>
+          </span>
+          我的账号
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <span class="winbtns">
+          <button title="最小化"><svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M4 12h16"/></svg></button>
+          <button title="最大化"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="1.5"/></svg></button>
+          <button class="close" title="关闭"><svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+        </span>
+      </div>
+    </header>
+
+    <div class="body">
+      <!-- ══ 侧栏 ══ -->
+      <aside class="side">
+        <section class="panel side-main" aria-label="我的设备">
+          <div class="side-head">
+            <h2>我的设备</h2>
+            <button class="btn-primary">
+              <svg width="13" height="13" viewBox="0 0 24 24" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              添加设备
+            </button>
+          </div>
+          <label class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" placeholder="搜索设备名称或备注…">
+          </label>
+          <div class="meta">
+            <span>2 台设备 · 正在确认 2 台</span>
+            <button class="linkbtn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+              重新检查
+            </button>
+          </div>
+
+          <div class="devlist">
+            <div class="dev selected">
+              <div class="dev-top">
+                <span class="thumb"><span class="screen bloom-blue"></span><span class="stand"></span></span>
+                <span class="dev-copy">
+                  <span class="dev-name">李清泉
+                    <button title="重命名"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                  </span>
+                  <span class="dev-status warn"><i class="dot warn"></i>正在等待对方确认连接</span>
+                  <span class="dev-sub">Windows 11 · 家庭电脑</span>
+                </span>
+              </div>
+              <span class="split">
+                <button class="main-btn">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M6 4l14 8-14 8Z"/></svg>
+                  连接并控制
+                </button>
+                <button class="caret-btn" title="选择发起档位"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+              </span>
+            </div>
+
+            <div class="dev">
+              <div class="dev-top">
+                <span class="thumb"><span class="screen bloom-warm"></span><span class="stand"></span></span>
+                <span class="dev-copy">
+                  <span class="dev-name">旭辉机械革命
+                    <button title="重命名"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                  </span>
+                  <span class="dev-status warn"><i class="dot warn"></i>正在确认是否可连接…</span>
+                  <span class="dev-sub">Windows 11 · 办公电脑</span>
+                </span>
+              </div>
+              <span class="split">
+                <button class="main-btn">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M6 4l14 8-14 8Z"/></svg>
+                  连接并控制
+                </button>
+                <button class="caret-btn" title="选择发起档位"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel side-recv" aria-label="允许别人连接本机">
+          <div class="recv-head">
+            <strong>允许别人连接本机</strong>
+            <span class="pill ok">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              已允许
+            </span>
+          </div>
+          <small>已开启，可接收远程请求</small>
+          <div class="recv-btns">
+            <button>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.4 3-5 6.5-5s6.5 1.6 6.5 5"/><path d="M16 8h6M19 5v6"/></svg>
+              让别人帮我
+            </button>
+            <button>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 15l6-6"/><path d="M11 6l1.5-1.5a4 4 0 0 1 5.7 5.7L16.5 12"/><path d="M13 18l-1.5 1.5a4 4 0 0 1-5.7-5.7L7.5 12"/></svg>
+              帮助别人
+            </button>
+          </div>
+          <button class="recv-join">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M15 8l3 3M18 5l3 3"/></svg>
+            输入接入码
+          </button>
+        </section>
+
+        <nav class="toolnav" aria-label="远程电脑工具">
+          <button class="active">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+            <span>文件</span>
+          </button>
+          <button>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            <span>记录</span>
+          </button>
+          <button>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg>
+            <span>设置</span>
+          </button>
+        </nav>
+      </aside>
+
+      <!-- ══ 主列 ══ -->
+      <main class="main">
+        <section class="hero panel" aria-label="设备详情">
+          <span class="slogan">让距离，不再是距离</span>
+          <div class="hero-device" aria-hidden="true">
+            <span class="monitor"><span class="screen bloom-blue"></span><span class="neck"></span><span class="base"></span></span>
+            <span class="pedestal"></span>
+          </div>
+          <div class="hero-copy">
+            <h2>李清泉
+              <button title="重命名"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+            </h2>
+            <p class="hero-status"><i class="dot warn"></i>正在等待对方确认连接
+              <button class="help" title="对方确认后才会开始会话；等待期间可取消申请">?</button>
+            </p>
+            <div class="hero-chips">
+              <span class="pill ok"><i class="dot ok"></i>在线</span>
+              <span class="chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="#0A6CFF"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+                Windows 11
+              </span>
+              <span class="chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10Z"/></svg>
+                局域网直连
+              </span>
+              <span class="chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#159A4A" stroke-width="2.4" stroke-linecap="round"><path d="M5 18v-4"/><path d="M10 18v-8"/><path d="M15 18V7"/><path d="M20 18V4"/></svg>
+                12ms
+              </span>
+            </div>
+          </div>
+          <div class="hero-actions">
+            <span class="split">
+              <button class="main-btn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="#fff"><path d="M6 4l14 8-14 8Z"/></svg>
+                连接并控制
+              </button>
+              <button class="caret-btn" title="选择发起档位"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            </span>
+            <button class="btn-ghost">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              只看
+            </button>
+            <button class="btn-ghost">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.2 3.9A2 2 0 0 0 7.5 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v8"/><path d="m9 13 3-3 3 3"/></svg>
+              传文件
+            </button>
+          </div>
+        </section>
+
+        <section class="panel facts-panel" aria-label="连接与权限">
+          <div class="panel-head">
+            <h3>连接与权限</h3>
+            <span class="pill soft">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+              端到端加密保护
+            </span>
+            <span class="pill soft">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-4.5"/></svg>
+              安全校验已完成
+            </span>
+            <button class="chip">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0A6CFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg>
+              管理此设备
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+          <dl class="facts">
+            <div class="fact">
+              <span class="fic link"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 15l6-6"/><path d="M11 6l1.5-1.5a4 4 0 0 1 5.7 5.7L16.5 12"/><path d="M13 18l-1.5 1.5a4 4 0 0 1-5.7-5.7L7.5 12"/></svg></span>
+              <dt>上次连接</dt>
+              <dd>局域网直连</dd>
+              <span class="fsub">来自最近一次会话实测</span>
+              <span class="chev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+            </div>
+            <div class="fact">
+              <span class="fic ok"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+              <dt>连接确认</dt>
+              <dd>每次由对方确认</dd>
+              <span class="fsub">默认更安全</span>
+              <span class="chev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+            </div>
+            <div class="fact">
+              <span class="fic file"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg></span>
+              <dt>文件接收</dt>
+              <dd>每次询问</dd>
+              <span class="fsub">接受后才写入电脑</span>
+              <span class="chev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+            </div>
+            <div class="fact">
+              <span class="fic id"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+              <dt>设备身份</dt>
+              <dd class="mono">7736-e98f-803e-745d</dd>
+              <span class="fsub">已完成配对校验</span>
+              <span class="chev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel sessions-panel" aria-label="最近会话">
+          <div class="panel-head">
+            <h3>最近会话</h3>
+            <button class="linkbtn">查看全部
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+          <div class="sessions">
+            <div class="srow">
+              <span class="sic info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+              <span class="cap">远程控制</span><span class="when">今天 10:00</span>
+              <span class="vdiv"></span>
+              <span class="dur"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>00:13</span>
+              <span class="res cancel">用户取消申请</span>
+              <button class="more" title="更多操作">⋯</button>
+            </div>
+            <div class="srow">
+              <span class="sic info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+              <span class="cap">远程控制</span><span class="when">今天 09:59</span>
+              <span class="vdiv"></span>
+              <span class="dur"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>00:12</span>
+              <span class="res cancel">用户取消申请</span>
+              <button class="more" title="更多操作">⋯</button>
+            </div>
+            <div class="srow">
+              <span class="sic info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+              <span class="cap">远程控制</span><span class="when">今天 09:59</span>
+              <span class="vdiv"></span>
+              <span class="dur"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>00:11</span>
+              <span class="res cancel">用户取消申请</span>
+              <button class="more" title="更多操作">⋯</button>
+            </div>
+            <div class="srow">
+              <span class="sic warn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></svg></span>
+              <span class="cap">远程控制</span><span class="when">9/21 10:41</span>
+              <span class="vdiv"></span>
+              <span class="dur"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>04:14</span>
+              <span class="res warn">连接超时</span>
+              <button class="more" title="更多操作">⋯</button>
+            </div>
+            <div class="srow">
+              <span class="sic ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-4.5"/></svg></span>
+              <span class="cap">远程控制</span><span class="when">9/21 10:38</span>
+              <span class="vdiv"></span>
+              <span class="dur"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>02:23</span>
+              <span class="res ok">用户结束会话</span>
+              <button class="more" title="更多操作">⋯</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <h2>实施备注 · 与现行代码的差异对照</h2>
+  <p class="note">左列为稿中区块，右列为现行实现与差异性质。<b>「照搬」</b>= 文案/结构与代码一致可直接落地；<b>「新提案」</b>= 图里有、代码里没有，需拍板；<b>「改口径」</b>= 与代码单一数据源冲突，二选一。</p>
+  <ul class="notes">
+    <li><b>标题栏</b>（<code>RcA2TitleBar.tsx</code>）：品牌「PastePanda / 远程电脑」、中间「远程通道已开启」照搬。新提案：品牌下标语「连接更近 · 工作更自由」、右侧延迟 chip / 通知铃 / 账号入口——延迟可取 <code>lastMeasuredRtt()</code>，铃铛与账号目前<b>没有数据源与交互定义</b>，不做就删（L6：长得像能点就必须能点）。</li>
+    <li><b>侧栏设备列表</b>（<code>RcA2DeviceList.tsx</code>）：「我的设备 / 添加设备 / 重新检查 / N 台设备 · 正在确认 N 台 / 允许别人连接本机 / 已开启，可接收远程请求 / 已允许 / 让别人帮我 / 帮助别人 / 输入接入码 / 文件·记录·设置」全部照搬。改口径：搜索框 placeholder 代码为「搜索设备」，稿随图作「搜索设备名称或备注…」；设备行由「图标+两行+右置分体按钮」改为「缩略图+三行+通栏分体按钮」，行内新增重命名铅笔（现仅详情头有）；行按钮文案代码为「连接 · 可控」，稿随详情头统一为「连接并控制」。</li>
+    <li><b>设备状态文案</b>（<code>rcDeviceStatus()</code>，<code>lib/utils.ts</code>）：「正在确认是否可连接…」照搬（checking 档）。「正在等待对方确认连接」<b>代码没有</b>——发起申请的等待态现在只出现在会话面 <code>RcPendingWait</code>。若要在行/详情头常驻，须给 <code>rcDeviceStatus</code> 加 awaiting 分支并收口全部调用点（规则 11.1），不能逐处补 if。</li>
+    <li><b>详情英雄卡</b>（<code>RcA2DeviceDetail.tsx</code>）：「连接并控制 / 只看 / 传文件」三键、在线 pill 照搬。改口径：图把「局域网直连」（<code>pathKindLabel</code>）与「12ms」（<code>lastMeasuredRtt</code>）从「连接与权限」注解行上移为头排 chip——两处只能留一处真源展示，建议 chip 展示、注解行去掉重复半句。手写标语「让距离，不再是距离」为纯装饰新提案。</li>
+    <li><b>连接与权限</b>（<code>RcA2ConnectionFacts.tsx</code>）：四项 dt/dd/注解文案逐字照搬（上次连接·局域网直连·来自最近一次会话实测 / 连接确认·每次由对方确认·默认更安全 / 文件接收·每次询问·接受后才写入电脑 / 设备身份·指纹·已完成配对校验）。改布局：竖排 dl 改横排四卡。新提案：卡尾「›」与头部「端到端加密保护 / 安全校验已完成」两枚绿 chip——chevron 需定义点击后做什么（否则违反 L6），两枚 chip 需真实状态支撑（配对校验失败时不能仍写「已完成」，U3）。</li>
+    <li><b>最近会话</b>（<code>RcRecentSessions.tsx</code>）：时间「今天 10:00 / 9/21 10:41」（<code>formatWhen</code>）、时长「00:13」（<code>formatDuration</code>）、结果着色（<code>resultTone</code>：取消=灰、超时=橙红、结束=绿）照搬。改口径：能力标签代码为「可控 / 只看」（<code>historyCapabilityLabel</code>），图写作「远程控制」——与记录页共用单一真源，改则两视图一起改。新提案：行首结果语义图标块、行尾「⋯」菜单（菜单项未定义，先不落地）。</li>
+    <li><b>视觉层</b>：冰蓝云感画布 + 浮动白卡是<b>浅色主题视觉提案</b>，质感为<b>毛玻璃</b>（2026-09-23 按用户反馈补）：blur 只加在 5 块静态大面板 + 工具导航 + 通道 pill（背景是静态云纹，采样一次性）；chip / 设备卡 / 会话行 / 事实卡等重复元素只用半透明白、<b>不加 blur</b>（规则 8.3：N 个元素 N 个合成层）。现行 A2 禁写死颜色（<code>rcA2ThemeTokens.test.ts</code> 守卫），落地时全部映射为 theme.css 令牌，并为其余 5 套主题（含暗色）出对应取值；暗色主题下毛玻璃取值需单独调（半透明白要换半透明黑）。</li>
+    <li><b>窄窗口防塌</b>（2026-09-23 实机截图回归）：英雄区改可换行 flex——动作组在窄窗口整体换行右对齐，chip / pill / 状态行全部钉 <code>white-space:nowrap</code>（中文可按字断行，不钉会被压成一字一行竖条）；会话与设备列表换 6px 细滚动条。</li>
+    <li><b>尺寸档位</b>：稿中圆角 9/10/12/14 超出 U5 的 4/8/12 档，落地时就近收档（9→8、10/14→12）；字号 11/11.5/12/12.5/13/14/24 需收到 11/12/13/15/20 档（24→20）。</li>
+  </ul>
+</div>
+</body>
+</html>
