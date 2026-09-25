@@ -192,7 +192,14 @@ impl AacEncoder {
                 let Some(transform) = self.transform.as_ref() else {
                     return Err("AAC 编码器已释放".into());
                 };
-                match transform.ProcessOutput(0, &mut outs, &mut status) {
+                let res = transform.ProcessOutput(0, &mut outs, &mut status);
+                // 🔴 再审计 A6（2026-09-25）：windows-rs 把 pSample/pEvents 标成
+                // ManuallyDrop，成功与否都要手动 drop——不 drop 就每轮泄漏一个
+                // IMFSample + MediaBuffer 引用（约 43-46 帧/秒，数小时会话累积
+                // 数百 MB）。出错的轮次 MFT 不碰这两个字段，仍归我们所有。
+                std::mem::ManuallyDrop::drop(&mut outs[0].pSample);
+                std::mem::ManuallyDrop::drop(&mut outs[0].pEvents);
+                match res {
                     Ok(()) => {}
                     Err(e) if e.code() == MF_E_TRANSFORM_NEED_MORE_INPUT => break,
                     Err(e) => return Err(format!("ProcessOutput：{e}")),

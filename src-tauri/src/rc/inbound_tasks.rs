@@ -24,8 +24,13 @@
 //!    生效所需的几毫秒——顺序反了拖动就跟不上手。
 //!    （`boost_frame` 内部用 `notify_one` 而非 `notify_waiters`，理由见该函数。）
 //! 2. **`spawn_input_reader` 与 `spawn_datagram_reader` 必须有界退出**：
-//!    `read_frame` 自身无超时，连接悬着时任务会陪挂到 QUIC 空闲超时，
-//!    所以每轮都包一层 500ms `select!`。
+//!    `read_frame` / `read_datagram` 自身无超时，连接悬着时任务会陪挂到
+//!    QUIC 空闲超时。两者手段**不同**（再审计 A3，2026-09-25）：
+//!    数据报是原子消费，弃读不丢字节，数据报读取可安全用 500ms `select!`；
+//!    输入流的 `read_exact` **不是取消安全的**——select 弃读会把已消费的
+//!    半截帧一并丢掉，帧边界从此错位（End/输入帧被吞、或垃圾长度误收口）。
+//!    所以输入读取改用**伴生看门狗**：500ms 一拍查会话，结束时 close 连接
+//!    把堵在 `read_frame` 里的循环解出来（outbound.rs P1-5 同款）。
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -248,19 +253,31 @@ impl InboundVideo {
         let my_id = self.my_id.clone();
         let boost = self.input_boost.clone();
         let force_key = self.force_key.clone();
+        // 🔴 再审计 A3（2026-09-25）：有界退出从「select! 包住 read_frame」改成
+        // 伴生看门狗 + close 连接解阻塞。`read_exact` 不是取消安全的：sleep 胜出
+        // 的瞬间丢弃读到一半的 future，已消费的半截帧字节一并丢失，下一圈从半截
+        // 字节解起、整条控制流失去帧边界——曾表现为 End 帧被吞（结束按钮失效）
+        // 或垃圾长度触发「控制通道断开」误杀正常会话。outbound.rs P1-5 同因，
+        // 沿用它确立的看门狗模式。
+        let w_svc = svc.clone();
+        let w_peer = peer.clone();
+        let w_conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
             loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
-                    break;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if !w_svc.session_is(SessionPhase::InboundActive, &w_peer) {
+                    // 会话已收口/换场：close 连接，把堵在 read_frame 里的读循环解出来
+                    //（不 close 的话它会陪挂到 QUIC 空闲超时）
+                    w_conn.close(0u32.into(), b"rc-input-reader-exit");
+                    return;
                 }
-                // P0-1 B5：与数据报读取同款有界退出——read_frame 无超时，
-                // 连接悬着时这个任务会陪着挂到 QUIC 空闲超时。
-                let bytes = tokio::select! {
-                    r = read_frame(&mut recv) => match r {
-                        Ok(b) => b,
-                        Err(_) => break,
-                    },
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => continue,
+            }
+        });
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let bytes = match read_frame(&mut recv).await {
+                    Ok(b) => b,
+                    Err(_) => break,
                 };
                 // 发起端结束会话：End 帧与 InputEvent 同半流
                 if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {

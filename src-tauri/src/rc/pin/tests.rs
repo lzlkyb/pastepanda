@@ -191,8 +191,67 @@ fn 先收到对方确认时本端点确认当场落库() {
             peer_name: "笔记本".to_string()
         }
     );
-    assert_eq!(out, Outgoing::None, "落库了就不用再发 pin_ok");
+    // 🔴 再审计 A2（2026-09-25）：落库**也必须**发 pin_ok——B（先点侧）落库依赖
+    // 收到 A 的回包；这里吞包 B 就会干等 60s 超时且重配对被「已配对」挡死。
+    assert_eq!(
+        out,
+        Outgoing::Packet {
+            kind: WireKind::PinOk,
+            peer_id: "bb".to_string(),
+            pk: String::new(),
+        },
+        "落库也要把 pin_ok 发出去：对端落库依赖收到它"
+    );
     assert!(s.rc_device_get("bb").unwrap().is_some());
+}
+
+/// 🔴 再审计 A2（2026-09-25）守卫：双确认**错序**（B 先点、A 后点）两端都必须落库。
+/// 把 confirm 返回的包真正投递给对端走一遍——回归就是 B 永远等不到 A 的 pin_ok。
+#[test]
+fn 双确认错序时先点侧也能落库() {
+    let s_a = store();
+    let s_b = store();
+    let a = Pairs::new(s_a.clone());
+    let b = Pairs::new(s_b.clone());
+    let (_, out) = a.start("bb", "笔记本", T0).unwrap();
+    let Outgoing::Packet { pk: pk_a, .. } = out else {
+        panic!()
+    };
+    let (_, out_b) = b.on_req("aa", "台式机", &pk_a, T0).unwrap();
+    let Outgoing::Packet { pk: pk_b, .. } = out_b else {
+        panic!()
+    };
+    assert!(a.on_resp("bb", &pk_b, T0));
+
+    // B 先点确认 → 发出 B 的 pin_ok（真实链路里由 discovery 发送）
+    let (_res_b, out_b_ok) = b.confirm(T0 + 1);
+    let Outgoing::Packet { kind, .. } = &out_b_ok else {
+        panic!("先点侧要发 pin_ok")
+    };
+    assert_eq!(*kind, WireKind::PinOk);
+    // A 收到 B 的 pin_ok：A 还没点，不落库
+    let proof_b = pin_ok_proof_sender(&b, "bb", T0 + 2);
+    assert_eq!(a.on_ok(ok_in("bb", "aa", T0 + 2, &proof_b), T0 + 2), None);
+
+    // A 后点确认 → 当场落库 **并** 发出自己的 pin_ok
+    let (res_a, out_a_ok) = a.confirm(T0 + 3);
+    assert!(matches!(res_a, Confirmed::Committed { .. }));
+    let Outgoing::Packet { kind, .. } = &out_a_ok else {
+        panic!("后点侧落库也要发 pin_ok（吞包 = 先点侧永久卡等）")
+    };
+    assert_eq!(*kind, WireKind::PinOk);
+
+    // A 的 pin_ok 抵达 B → B 这才落库（走 on_ok 的 commit 路径）
+    let proof_a = pin_ok_proof_sender(&a, "aa", T0 + 4);
+    assert_eq!(
+        b.on_ok(ok_in("aa", "bb", T0 + 4, &proof_a), T0 + 4),
+        Some(Confirmed::Committed {
+            peer_id: "aa".to_string(),
+            peer_name: "台式机".to_string()
+        })
+    );
+    assert!(s_a.rc_device_get("bb").unwrap().is_some());
+    assert!(s_b.rc_device_get("aa").unwrap().is_some(), "先点侧也必须落库");
 }
 
 /// 超时的会话：确认落空、界面也不再显示。

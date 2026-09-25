@@ -42,6 +42,11 @@ export function useRcLocalInjectNotice(
   useEffect(() => {
     if (!enabled) return;
     let off: (() => void) | undefined;
+    // 🔴 再审计 B12（2026-09-25）：cleanup 可能先于 listen resolve 跑
+    //（StrictMode 双挂载 / 快速重挂）——那时 off 还没赋值，`off?.()` 会把
+    // 监听器永久漏掉（泄漏的监听器还持旧闭包继续弹 toast）。
+    // 同款守卫见 useRcCursor / useRcWorkbenchClose。
+    let disposed = false;
     void listen<string>("rc-inject-error", (e) => {
       const msg = e.payload;
       if (!msg || msg === lastLocalInject) return;
@@ -49,12 +54,16 @@ export function useRcLocalInjectNotice(
       notify(`本机未能注入输入：${msg}`, "error");
     })
       .then((f) => {
-        off = f;
+        if (disposed) f();
+        else off = f;
       })
       .catch(() => {
         /* 非 Tauri 环境：忽略（理由同发起端那条监听） */
       });
-    return () => off?.();
+    return () => {
+      disposed = true;
+      off?.();
+    };
   }, [notify, enabled]);
 }
 
@@ -71,8 +80,10 @@ export function useRcSessionNotices({
 }) {
   // 对端注入失败。同一个 msg 只报一次：后端可能在重试同一件事，
   // 不去重的话用户会被同一条 toast 刷屏。
+  // 🔴 再审计 B12：disposed 守卫（理由见上方 useRcLocalInjectNotice）。
   useEffect(() => {
     let off: (() => void) | undefined;
+    let disposed = false;
     let last = "";
     void listen<string>("rc-inject-error", (e) => {
       const msg = e.payload;
@@ -81,19 +92,24 @@ export function useRcSessionNotices({
       notify(`对方未能注入输入：${msg}`, "error");
     })
       .then((f) => {
-        off = f;
+        if (disposed) f();
+        else off = f;
       })
       .catch(() => {
         /* 非 Tauri 环境：忽略。listen 的拒绝必须留痕，不能让它变成
            unhandled rejection 后静默丢掉整条通知链路 */
       });
-    return () => off?.();
+    return () => {
+      disposed = true;
+      off?.();
+    };
   }, [notify]);
 
   // 推送剪贴板被拒/失败（D11）。去重纪律同 inject-error：后端可能对同一份
   // 内容反复重试（自动同步每 2s 一次），不去重会被同一条 toast 刷屏。
   useEffect(() => {
     let off: (() => void) | undefined;
+    let disposed = false;
     let last = "";
     void listen<string>("rc-clip-push-error", (e) => {
       const msg = e.payload;
@@ -102,12 +118,16 @@ export function useRcSessionNotices({
       notify(`推送剪贴板失败：${msg}`, "error");
     })
       .then((f) => {
-        off = f;
+        if (disposed) f();
+        else off = f;
       })
       .catch(() => {
         /* 非 Tauri 环境：忽略（理由同 inject-error） */
       });
-    return () => off?.();
+    return () => {
+      disposed = true;
+      off?.();
+    };
   }, [notify]);
 
   // 路径切换。用 `pathKindLabel` 兜底原始串：档位串是稳定值，

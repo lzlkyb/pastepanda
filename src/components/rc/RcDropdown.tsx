@@ -167,6 +167,9 @@ export function RcDropdown<T extends string>({
         createPortal(
           <div
             ref={popRef}
+            // 再审计 A9（2026-09-25）：portal 挂在 body，父级「点外收起」的
+            // contains 判定够不到这里——用这个标记让点外收起豁免菜单内点击
+            data-rc-portal-menu=""
             className={
               columns === 2 ? `${styles.menuPop} ${styles.menuPopTwo}` : styles.menuPop
             }

@@ -183,6 +183,13 @@ pub struct Pairs {
     store: DataStore,
     cur: Mutex<Option<Session>>,
     done: Mutex<Option<Done>>,
+    /// 🔴 再审计 A2（2026-09-25）：commit 分支的 pin_ok 在**会话已清**之后才由
+    /// discovery 发出，而证明要等发包那一刻才算（绑定发包 ts，见 make_extras）。
+    /// 落库那一刻把 `(peer_id, shared)` 暂存到这个一次性槽位，
+    /// [`Self::pin_ok_proof_for`] 在会话路由落空时消费它。没被消费（发包失败）
+    /// 就留到下一次配对 `start()` 清掉——旧 shared 算出的证明对新对端必然
+    /// 验不过，无安全影响。
+    just_committed: Mutex<Option<(String, Vec<u8>)>>,
 }
 
 impl Pairs {
@@ -191,6 +198,7 @@ impl Pairs {
             store,
             cur: Mutex::new(None),
             done: Mutex::new(None),
+            just_committed: Mutex::new(None),
         }
     }
 
@@ -211,6 +219,11 @@ impl Pairs {
         if peer_id.is_empty() {
             return Err("没选中要配对的设备".to_string());
         }
+        // 上一轮 commit 留下的一次性证明材料随新会话作废（见 just_committed 注释）
+        *self
+            .just_committed
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
         let s = Session {
             pair: PendingPair::start(
                 peer_id,
@@ -358,9 +371,20 @@ impl Pairs {
     /// 没 shared 时返回 `None`——那种会话本就不该发 `pin_ok`，调用方应报错。
     pub fn pin_ok_proof_for(&self, me_node_id: &str, ts: i64) -> Option<String> {
         let guard = self.cur.lock().unwrap_or_else(|p| p.into_inner());
-        let s = guard.as_ref()?;
-        let shared = s.pair.shared.as_ref()?;
-        Some(pin_ok_proof(shared, me_node_id, &s.pair.peer_id, ts))
+        if let Some(s) = guard.as_ref() {
+            if let Some(shared) = s.pair.shared.as_ref() {
+                return Some(pin_ok_proof(shared, me_node_id, &s.pair.peer_id, ts));
+            }
+        }
+        drop(guard);
+        // 🔴 再审计 A2：会话路由落空（commit 分支已清会话）→ 消费一次性暂存的
+        // 证明材料。这是 commit 场景下 pin_ok 能带出合法证明的唯一来源。
+        let mut stash = self
+            .just_committed
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let (peer_id, shared) = stash.take()?;
+        Some(pin_ok_proof(&shared, me_node_id, &peer_id, ts))
     }
 
     /// 本端点了「两边一样，确认」。返回 `Outgoing` 让调用方把 `pin_ok` 发出去。
@@ -383,8 +407,20 @@ impl Pairs {
         if commit_allowed(s.pair.confirmed, s.peer_ok, s.pin_ready(), false) {
             let name = s.pair.peer_name.clone();
             let initiator = s.initiator;
+            // 🔴 再审计 A2：证明材料一次性暂存——会话马上要清，而 pin_ok 的证明
+            // 要等 discovery 发包那一刻才算（绑定发包 ts）。没有这一步，commit
+            // 分支返回的包在 make_extras 里算不出证明，A2 的修复就白修。
+            if let Some(shared) = s.pair.shared.clone() {
+                *self.just_committed.lock().unwrap_or_else(|p| p.into_inner()) =
+                    Some((id.clone(), shared));
+            }
             *guard = None;
-            return (self.commit(&id, &name, initiator, now_ms), Outgoing::None);
+            // 对端落库依赖「收到我的 pin_ok」——我先点、他的 pin_ok 先到把我这侧
+            // 推进 commit 时，他那边还在等我的回包。曾返回 `Outgoing::None` 把刚
+            // 构造的包吞掉：对端干等 60s 超时，重试配对又被「已配对——忽略」挡死
+            // （只有我落了库）。他自己落库走的是 `on_ok` 收到我的 pin_ok 那条路，
+            // 与这里不重复。
+            return (self.commit(&id, &name, initiator, now_ms), out);
         }
         (Confirmed::Waiting { peer_id: id }, out)
     }

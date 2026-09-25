@@ -236,8 +236,11 @@ impl Drop for AudioWorker {
 }
 
 fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc::Sender<AudioOut>) {
-    let com = ComGuard::new();
-    let _ = com;
+    // 🔴 再审计 A5（2026-09-25）：这里曾是 `let com = …; let _ = com;`——`let _`
+    // 通配不持有值，语句结束 ComGuard 就 Drop，CoUninitialize 在线程启动瞬间被
+    // 调用，整条线程的 COM 调用实际跑在未初始化的套间上（眼下全靠进程内其它
+    // 线程的 MTA 侥幸撑着）。必须真绑定守到线程结束（对照同文件 spk_mute_get）。
+    let _com = ComGuard::new();
     let mut cap: Option<LoopbackCapture> = None;
     let mut enc: Option<AacEncoder> = None;
     // P2-6：本会话累计喂给编码器的**帧数**（立体声 interleaved 的一半）。

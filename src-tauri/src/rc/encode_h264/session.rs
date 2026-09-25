@@ -232,11 +232,15 @@ impl H264SessionEncoder {
         }
     }
 
-    /// RTT/丢包自适应：按百分比缩码率。变化 <15% 不动（避免 thrashing）。
+    /// RTT/丢包自适应：按百分比缩码率。变化 <15 个百分点不动（避免 thrashing）。
     /// 重开延迟到下一次编码（GPU 模式下重开需要 D3D 设备）。
     /// 无返回值——曾返回恒 false 的 bool，像「是否已生效」实则什么都没表达。
     pub fn apply_bitrate_scale(&mut self, scale_pct: u32) {
-        let scale = scale_pct.clamp(25, 100);
+        // 🔴 再审计 A8（2026-09-25）：曾是 clamp(25, 100)，把 >100% 的值全部砍回
+        // 100——用户在胶囊面板选 150%/200% 加码被静默丢弃（与当前值相等直接
+        // return）。上游 `stream_cfg::bitrate_scale()` 的契约域是 10–300
+        // （RTT/丢包 25–100 × 用户倍率 50–200），这里只做同域防御，不另立口径。
+        let scale = scale_pct.clamp(10, 300);
         if scale == self.scale_pct {
             return;
         }

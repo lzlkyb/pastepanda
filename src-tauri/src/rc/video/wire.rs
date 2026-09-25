@@ -198,6 +198,20 @@ pub async fn read_incoming(r: &mut iroh::endpoint::RecvStream) -> Result<Incomin
                 if n == 0 || n > MAX_H264_BYTES {
                     return Err("h264 长度不合法".into());
                 }
+                // 🔴 再审计 A1（2026-09-25）：写侧 `write_h264` 的数据段同样经
+                // `write_raw_stall`（自带 4 字节长度前缀）——这里必须先消费前缀并
+                // 与 meta.n 核对。曾直接裸读 n 字节：前缀被吃进负载头部、负载末
+                // 4 字节留在流里毒化下一帧 → 走流的 H.264（新旧互通 / 大关键帧
+                // 回退）之后必然「帧长度不合法」断流。
+                let mut dl = [0u8; 4];
+                tokio::time::timeout(std::time::Duration::from_secs(30), r.read_exact(&mut dl))
+                    .await
+                    .map_err(|_| "读 h264 前缀超时".to_string())?
+                    .map_err(|e| format!("读 h264 前缀失败：{e}"))?;
+                let dl = u32::from_be_bytes(dl) as usize;
+                if dl != n {
+                    return Err(format!("h264 数据段长度与元数据不符（{dl} ≠ {n}）"));
+                }
                 let mut data = vec![0u8; n];
                 tokio::time::timeout(std::time::Duration::from_secs(30), r.read_exact(&mut data))
                     .await

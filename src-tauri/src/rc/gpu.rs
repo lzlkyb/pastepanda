@@ -157,7 +157,7 @@ impl GpuNv12Converter {
     /// 下一次 convert 会覆盖内容——编码器当帧消费完即弃。
     pub fn convert(&mut self, bgra: &ID3D11Texture2D) -> Result<ID3D11Texture2D, String> {
         let view = self.input_view(bgra)?;
-        unsafe {
+        let res = unsafe {
             let stream = D3D11_VIDEO_PROCESSOR_STREAM {
                 Enable: true.into(),
                 OutputIndex: 0,
@@ -171,10 +171,18 @@ impl GpuNv12Converter {
                 pInputSurfaceRight: std::mem::ManuallyDrop::new(None),
                 ppFutureSurfacesRight: std::ptr::null_mut(),
             };
-            self.video_ctx
-                .VideoProcessorBlt(&self.processor, &self.out_view, 0, &[stream])
-                .map_err(|e| format!("VP 转换：{e}"))?;
-        }
+            let mut streams = [stream];
+            let r = self
+                .video_ctx
+                .VideoProcessorBlt(&self.processor, &self.out_view, 0, &streams);
+            // 🔴 再审计 A6（2026-09-25）：windows-rs 把 pInputSurface* 标成
+            // ManuallyDrop，不手动 drop 就每帧泄漏一次输入视图引用——缓存视图
+            // 的 clone 会把 refcount 无界推高（60fps 下每秒 +60，永不释放）。
+            std::mem::ManuallyDrop::drop(&mut streams[0].pInputSurface);
+            std::mem::ManuallyDrop::drop(&mut streams[0].pInputSurfaceRight);
+            r
+        };
+        res.map_err(|e| format!("VP 转换：{e}"))?;
         Ok(self.out_tex.clone())
     }
 

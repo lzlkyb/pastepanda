@@ -123,7 +123,13 @@ export function useRcCapsuleReveal({
   useEffect(() => {
     if (!moreOpen) return;
     const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setMoreOpen(false);
+      const t = e.target as Element | null;
+      // 再审计 A9（2026-09-25）：RcDropdown 的菜单 portal 在 document.body 上，
+      // 不在 rootRef 里——不豁免的话，点菜单项的 mousedown 被判「点在外面」，
+      // 面板连同菜单在 click 派发前被整体卸载，onPick 永远不执行
+      //（码率下拉曾是会话内唯一改档入口，整个坏死）。
+      if (t?.closest?.("[data-rc-portal-menu]")) return;
+      if (!rootRef.current?.contains(t as Node)) setMoreOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);

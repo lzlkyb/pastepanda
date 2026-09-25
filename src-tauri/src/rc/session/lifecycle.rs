@@ -38,32 +38,55 @@ impl RcService {
                 s.started_ms,
             )
         };
+        // 🔴 再审计 A4（2026-09-25）：take 之后收口要经历多个 await（End 帧写流
+        // 带 30s 停滞超时，死链上可挂满 30s）。这期间用户可能已对同一台或另一台
+        // 重新发起（LAN 免确认几百 ms 就能拨通），新会话的句柄与全局状态已由
+        // request_session 装好。曾无条件清句柄/全局状态：新会话显示「已连接」但
+        // 键鼠、鼠标数据报、心跳全哑，音频申请位被清＝整场无声。
+        // 下面每个破坏性清理前都复核「槽里是否已换新会话」——换场就只做旧会话
+        // 自己的收尾（历史、按键释放），不碰共享状态。（request_session 装
+        // outbound_send/conn 各自持锁，因此「持 outbound_send 锁写 End 再清」
+        // 本身串行安全；这里的复核挡的是句柄已被换下的情形——否则 End 会写进
+        // 新会话的流。）
+        let active_peer = || {
+            self.inner
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .session
+                .as_ref()
+                .map(|s| s.peer.clone())
+        };
+        let taken_over = active_peer().is_some();
         // 尽力通知对端：发起端走 outbound_send；被控端走 inbound_send
-        {
-            let mut guard = self.outbound_send.lock().await;
-            if let Some(send) = guard.as_mut() {
-                if let Ok(b) = (RcFrame::End {
-                    reason: reason.to_string(),
-                })
-                .encode()
-                {
-                    let _ = crate::sync::transport::write_frame(send, &b).await;
+        if !taken_over {
+            {
+                let mut guard = self.outbound_send.lock().await;
+                if let Some(send) = guard.as_mut() {
+                    if let Ok(b) = (RcFrame::End {
+                        reason: reason.to_string(),
+                    })
+                    .encode()
+                    {
+                        let _ = crate::sync::transport::write_frame(send, &b).await;
+                    }
                 }
+                *guard = None;
+                // P0-3：连接句柄一并清——留着会把下一场会话的鼠标数据报发进旧连接。
+                // ❗ 与上面的清在同一临界区：request_session 装新句柄要等这把锁，
+                //   不会夹在我们「清旧」与「装新」之间。
+                *self.outbound_conn.lock().await = None;
             }
-            *guard = None;
-        }
-        // P0-3：连接句柄一并清——留着会把下一场会话的鼠标数据报发进旧连接
-        *self.outbound_conn.lock().await = None;
-        {
-            let ib = self.inbound_send.lock().await.take();
-            if let Some(send) = ib {
-                let mut g = send.lock().await;
-                if let Ok(b) = (RcFrame::End {
-                    reason: reason.to_string(),
-                })
-                .encode()
-                {
-                    let _ = crate::sync::transport::write_frame(&mut g, &b).await;
+            {
+                let ib = self.inbound_send.lock().await.take();
+                if let Some(send) = ib {
+                    let mut g = send.lock().await;
+                    if let Ok(b) = (RcFrame::End {
+                        reason: reason.to_string(),
+                    })
+                    .encode()
+                    {
+                        let _ = crate::sync::transport::write_frame(&mut g, &b).await;
+                    }
                 }
             }
         }
@@ -76,18 +99,36 @@ impl RcService {
             let mut g = self.pressed.lock().unwrap_or_else(|p| p.into_inner());
             g.release_all()
         };
+        // 🔴 再审计 A4：到这里 await 已全部结束（之后无 yield 点，下面的复核
+        // 不会被任务切换跳过）。take 已把本场会话取出——槽里若还有会话，只能是
+        // 收口途中新建的，绝不能抹掉。
+        let taken_over = active_peer().is_some();
         {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            inner.session = None; // take 已清，这里兜底（快照块只 take 了 session）
-            inner.pending.clear();
-            // 双连接守卫的标记随会话一起收（service.rs 审计 P2-1）
-            inner.inbound_streaming = false;
+            // 曾无条件 `inner.session = None`（注释写「兜底」）——take 已清槽，
+            // 这里再置 None 只可能命中收口途中新建的会话，把它从槽里抹掉。
+            if inner.session.is_none() {
+                inner.pending.clear();
+                // 双连接守卫的标记随会话一起收（service.rs 审计 P2-1）
+                inner.inbound_streaming = false;
+            }
         }
         // 链路句柄随会话一起收掉。交回的档位写进日志——真机排查时这是
         // 「这一次到底走的是局域网、公网直连还是绕中继」的唯一记录。
         // ❗ 必须在上面那个块**之外**调：`link` 与 `inner` 是两把锁，
         //    若在持 inner 时加 link，会与 `status()` 的加锁顺序相反（ABBA 死锁）。
-        let end = self.link.detach();
+        // 🔴 再审计 A4：换场时 link 槽里已是新会话的句柄，detach 会把它偷走——
+        //    跳过 detach，历史里路径记 None。
+        let end = if !taken_over {
+            self.link.detach()
+        } else {
+            crate::rc::link::LinkEnd {
+                path: crate::sync::path_kind::PathKind::None,
+                rtt_min: 0,
+                rtt_avg: 0,
+                rtt_max: 0,
+            }
+        };
         if end.path != crate::sync::path_kind::PathKind::None {
             log::info!(
                 "[RC] 本次会话路径：{}（RTT 均 {}/峰值 {}ms）",
@@ -108,11 +149,16 @@ impl RcService {
         // 两个极端同源：`rc_device_touch(x, false)` 把「标离线」和「清 last_seen」
         // 耦合成一个动作。现在拆开——用 `rc_device_mark_offline`（只动 conn_state）。
         // 「上次在线：3 小时前」由 `last_seen` 保留，离线判定不再被它误导。
-        let _ = self.store.rc_device_mark_offline(&peer);
-        // B-5：把这次**实测**的路径落到设备行，下次打开面板就能看到
-        // 「上次走的是局域网直连」——而不是靠「有没有听到组播」去猜。
-        // 空串（一条路都没通）会被 `rc_device_note_path` 忽略，不会抹掉上一次的实测值。
-        let _ = self.store.rc_device_note_path(&peer, end.path.as_str());
+        // 🔴 再审计 A4：设备在线状态按 peer 复核——只有「新会话正是同一位 peer」
+        // 才不标离线（他还连着）；换了对端时旧 peer 照常标离线。
+        let same_peer_active = active_peer().as_deref() == Some(peer.as_str());
+        if !same_peer_active {
+            let _ = self.store.rc_device_mark_offline(&peer);
+            // B-5：把这次**实测**的路径落到设备行，下次打开面板就能看到
+            // 「上次走的是局域网直连」——而不是靠「有没有听到组播」去猜。
+            // 空串（一条路都没通）会被 `rc_device_note_path` 忽略，不会抹掉上一次的实测值。
+            let _ = self.store.rc_device_note_path(&peer, end.path.as_str());
+        }
         // C-4：历史里带上路径与网速摘要（旧记录没有这几个字段，前端按「没有」处理）。
         append_history(
             &self.store,
@@ -126,29 +172,34 @@ impl RcService {
                 end,
             },
         );
-        self.clear_frame();
-        // 出站帧队列一并清：旧会话攒下的 H.264 P 帧 / 脏块对新会话是毒数据
-        self.clear_outbox();
-        self.note_rtt(0);
-        // 自动档与会话同生命周期（2A）：不复位的话 `status()` 会继续报上一场
-        // 停留的「生效档」，而画面早就不推了——陈旧数据比没有数据更坏。
-        // ❗ 必须在这里（inner 锁已放出、link 已 detach 之后）调用，别挪进锁块。
-        self.reset_stream_after_session();
-        // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
-        // 避免下一个会话把它当成自己的结果返回。
-        self.invalidate_clipboard();
-        // 🔴 音频状态随会话收口（2026-09-20 审计 P1-1）：audio_reset 本就按
-        // 「会话收口」语义设计（清对端申请位 / 对端开关镜像 / 收流缓冲，
-        // 刻意不动 audio_local_mute），但此前只有发起端 request 成功与
-        // inbound video 失败兜底两处调用——被控端的 `audio_muted` /
-        // `spk_muted_by_peer` 会跨会话残留：上一场对端关过声音，下一场
-        // 换个对端申请音频也听不到，无报错无横幅。接线补在这里，与
-        // `reset_stream_after_session` 同层（inner 锁已放出）。
-        self.audio_reset();
-        // Q6：收口顺手清自动重连状态。异常断流路径的顺序是 force_end（清）→
-        // begin（重建），这里清掉不碍触发；它兜的是「用户主动结束」要清掉
-        // 残留的「重连中/重连失败」横幅——用户已经自己做了决定。
-        *self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        // 🔴 再审计 A4：以下全局状态复位都以「没换场」为前提——换场时新会话
+        // 已装好自己的流/音频/剪贴板状态，旧收口复位反而会弄坏它（音频申请位
+        // 被清＝新会话整场无声）。
+        if !taken_over {
+            self.clear_frame();
+            // 出站帧队列一并清：旧会话攒下的 H.264 P 帧 / 脏块对新会话是毒数据
+            self.clear_outbox();
+            self.note_rtt(0);
+            // 自动档与会话同生命周期（2A）：不复位的话 `status()` 会继续报上一场
+            // 停留的「生效档」，而画面早就不推了——陈旧数据比没有数据更坏。
+            // ❗ 必须在 inner 锁已放出、link 已 detach 之后调用，别挪进锁块。
+            self.reset_stream_after_session();
+            // C8(b)：作废仍在等待的剪贴板 pull，并清掉可能由迟到回包写入的文本，
+            // 避免下一个会话把它当成自己的结果返回。
+            self.invalidate_clipboard();
+            // 🔴 音频状态随会话收口（2026-09-20 审计 P1-1）：audio_reset 本就按
+            // 「会话收口」语义设计（清对端申请位 / 对端开关镜像 / 收流缓冲，
+            // 刻意不动 audio_local_mute），但此前只有发起端 request 成功与
+            // inbound video 失败兜底两处调用——被控端的 `audio_muted` /
+            // `spk_muted_by_peer` 会跨会话残留：上一场对端关过声音，下一场
+            // 换个对端申请音频也听不到，无报错无横幅。接线补在这里，与
+            // `reset_stream_after_session` 同层（inner 锁已放出）。
+            self.audio_reset();
+            // Q6：收口顺手清自动重连状态。异常断流路径的顺序是 force_end（清）→
+            // begin（重建），这里清掉不碍触发；它兜的是「用户主动结束」要清掉
+            // 残留的「重连中/重连失败」横幅——用户已经自己做了决定。
+            *self.auto_reconnect.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        }
         // 收口时清空注入错误（已被前端看到或已无意义）
         self.notify.take_inject_err();
         // 🔴 P1-3（2026-09-23 审计）：释放「被按住的输入」失败的兜底上报。

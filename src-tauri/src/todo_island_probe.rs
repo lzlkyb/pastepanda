@@ -269,12 +269,14 @@ pub(crate) fn run_probe_sequence(app: AppHandle) {
         //   G2 四角剖面：材质按窗口矩形铺，胶囊圆角外那块月牙露不露、露多少；
         //   G3 真实文字在「材质 + 低染色」上的实测对比度（中心行 p95−p5 亮度对）。
         // 方法沿用本文件头部的三条教训：组内基线、钳制抓屏、eval 结果要回读验证。
-        run_glass_probe(&app, &window, x, y, w, h, ix, iy);
+        run_glass_probe(&app, &window, (x, y, w, h), (ix, iy));
     });
 }
 
 /// 玻璃探针的 tint 配方。alpha 语义 = 材质染色的不透明度（叠在模糊后的桌面上）。
-const GLASS_RECIPES: [(&str, (u8, u8, u8, u8)); 3] = [
+/// （type 别名只为过 clippy::type_complexity，别拆散元组——三档配方按位对齐。）
+type GlassRecipe = (&'static str, (u8, u8, u8, u8));
+const GLASS_RECIPES: [GlassRecipe; 3] = [
     // 深磨砂：PILLAR 式深 tint，对应主题的深色档
     ("dark150", (20, 20, 24, 150)),
     // 白磨砂两档：液态玻璃的浅色档候选，浓度按「白文档上深字要 ≥4.5:1」反推后实测
@@ -288,15 +290,12 @@ const GLASS_CSS_TINT: &str = "rgba(128, 128, 128, 0.06)";
 /// 每次施加材质后给 DWM 重合成的稳定时间。
 const GLASS_SETTLE_MS: u64 = 700;
 
+/// 几何参数打包成元组（外矩形 + 内部取点）只为过 clippy::too_many_arguments。
 fn run_glass_probe(
     app: &AppHandle,
     window: &tauri::WebviewWindow,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    ix: i32,
-    iy: i32,
+    (x, y, w, h): (i32, i32, i32, i32),
+    (ix, iy): (i32, i32),
 ) {
     // ⓪ 生产材质现在常驻（create 时施加）——基线前必须先摘掉，否则「材质关」不成立。
     let _ = window.set_effects(None);

@@ -315,10 +315,16 @@ export function useRcFrames(
         // P0-1 A2：弱网抖动缓冲**整批只等一次**——放在逐帧循环里会被放大 N 倍
         const delay = jitter.current.next();
         if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+        // 🔴 再审计 A7（2026-09-25）：cleanup（换会话 / 窗口 hide）可能落在上面
+        // 的 await 里——已 close 的解码器会在下面的循环里被 `h264 ??=` 重建且
+        // 无人再 close。每个 await 之后都必须重新看 alive。
+        if (!alive) return;
         // 队列积压时丢掉过期帧：一批里只要有整帧，它之前的帧就都可以安全丢
         //（判据与「哪两种情况不能丢」见 lib/rcFramePlan）。这是「操作后画面几秒
         // 才变」的直接解药——积压的每一帧都在线性放大端到端延迟。
         for (const f of frames.slice(frameApplyStart(frames))) {
+          // 🔴 再审计 A7：批内任一 await 期间卸载，剩余帧一律放弃
+          if (!alive) return;
           if (f.codec !== "jpeg") {
             // P0-2：等关键帧期间拦下 delta 帧
             if (waitingKey && !f.key) {
@@ -356,6 +362,7 @@ export function useRcFrames(
           // 「链路慢」和「本机解不动」。须在 noteLatency 之前调：net 要减它。
           const decT0 = Date.now();
           await drawJpegFrame(f, canvas, ctx);
+          if (!alive) return;
           stats.current.noteDecode(Date.now() - decT0);
           noteBytes(f.data.length);
           noteLatency(f.at_ms, f.cap_ms, f.enc_ms);

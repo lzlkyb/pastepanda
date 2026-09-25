@@ -159,13 +159,16 @@ fn theme_is_dark(theme: &str) -> bool {
 /// ❗ 失败不许静默：CSS 染色已改为近透明（染色由材质接管），材质加不上而没人知道，
 /// 岛就「透明消失」了——必须通知前端挂 `data-material="off"` 走实色兜底（CSS 有对应块）。
 pub fn apply_theme_material(app: &AppHandle) {
-    let Some(store) = app.try_state::<DataStore>() else { return };
-    let theme = store
-        .get_config()
-        .ok()
-        .and_then(|c| c.get("theme").and_then(|t| t.as_str()).map(String::from))
-        .unwrap_or_default();
-    drop(store);
+    // 用块作用域而非显式 drop：State 守卫不实现 Drop，`drop(store)` 会被
+    // clippy::drop_non_drop 拦下；要的是「读完配置立刻放锁」，块退出即达成。
+    let theme = {
+        let Some(store) = app.try_state::<DataStore>() else { return };
+        store
+            .get_config()
+            .ok()
+            .and_then(|c| c.get("theme").and_then(|t| t.as_str()).map(String::from))
+            .unwrap_or_default()
+    };
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else { return };
     let (r, g, b, a) = if theme_is_dark(&theme) { MATERIAL_DARK } else { MATERIAL_LIGHT };
     let effects = tauri::window::EffectsBuilder::new()
