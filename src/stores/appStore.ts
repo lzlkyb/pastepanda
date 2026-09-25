@@ -93,6 +93,10 @@ export interface AppConfig {
   kb_sync_enabled: boolean;
   /** 远程协助：允许被已配对设备远程。**默认关**；关时不接受任何入站远程申请。 */
   rc_enabled: boolean;
+  /** 远程会话：剪贴板自动同步。**默认开**；用户在会话内关闭后记住选择（B 方案，
+   *  2026-09-25）。读取口径收口在 lib/rcPrefs 的 `rcClipAutoFromConfig`——别处
+   *  直接读这个键会漏掉旧配置缺键的默认分支。 */
+  rc_clip_auto: boolean;
   always_on_top: boolean;
   auto_startup: boolean;
   sequential_hotkey: string;
@@ -399,6 +403,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   lan_sync_enabled: false,
   kb_sync_enabled: false,
   rc_enabled: false,
+  rc_clip_auto: true,
   always_on_top: false,
   auto_startup: false,
   sequential_hotkey: "ctrl+alt+q",

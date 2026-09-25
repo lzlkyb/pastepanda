@@ -15,6 +15,8 @@
 import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
+import { rcClipAutoFromConfig } from "@/lib/rcClipAuto";
+import { useAppStore } from "@/stores/appStore";
 import type { RcSession } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcFrames } from "@/hooks/useRcFrames";
@@ -55,10 +57,33 @@ export function RcSessionView({
   captureScope: string;
 }) {
   const { toast } = useToast();
-  // 剪贴板自动同步默认开（2026-09-25 拍板）：可控会话开场即同步剪贴板变化，
-  // 场内可关、不持久化——下一场恢复默认开。两道既有防护不变：首轮 poll 只建
-  // 基线不发送；主窗失焦拒读。只看会话双重门控（hook no-op + 按钮不渲染）。
-  const [clipAuto, setClipAuto] = useState(true);
+  // 剪贴板自动同步（B 方案，2026-09-25 拍板）：**默认开 + 记住关闭**。初值从
+  // store 的 config 同步读（启动时 lib/api/init 已水合，会话挂载无时序问题；
+  // 旧配置缺键 → 默认开，口径收口在 rcClipAutoFromConfig）。只看会话双重门控
+  //（hook no-op + 按钮不渲染）；首轮 poll 只建基线不发送、失焦拒读防护不变。
+  const [clipAuto, setClipAuto] = useState(() =>
+    rcClipAutoFromConfig(useAppStore.getState().config),
+  );
+  // 切换即持久化：乐观写 store → 串行落盘（链内读最新快照，快速连点最后写
+  // 的必是最新状态）→ 失败回滚屏上与 store。对齐设置壳 updateAndSave——
+  // 不回滚的话「下次启动自己变回去」会被当成存不住的怪 bug。
+  const updateConfig = useAppStore((s) => s.updateConfig);
+  const clipSaveChainRef = useRef(Promise.resolve() as Promise<unknown>);
+  const toggleClipAuto = () => {
+    const next = !clipAuto;
+    setClipAuto(next);
+    updateConfig({ rc_clip_auto: next });
+    const task = clipSaveChainRef.current.then(async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("save_config", { config: useAppStore.getState().config });
+    });
+    clipSaveChainRef.current = task.catch(() => {});
+    void task.catch(() => {
+      updateConfig({ rc_clip_auto: !next });
+      setClipAuto(!next);
+      toast("剪贴板同步偏好保存失败，已还原", "error");
+    });
+  };
   // 全屏目标 = 会话壳（见 useRcDisplayMode 注释）；screenRef 仍是输入坐标的基准
   const wrapRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
@@ -212,7 +237,7 @@ export function RcSessionView({
           audioOn={audioOn}
           onToggleAudio={toggleAudio}
           clipAuto={clipAuto}
-          onToggleClipAuto={() => setClipAuto((v) => !v)}
+          onToggleClipAuto={toggleClipAuto}
           lastAutoAt={clip.lastAutoAt}
           autoFail={clip.autoFail}
           onStatus={(m, k) => toast(m, k)}
