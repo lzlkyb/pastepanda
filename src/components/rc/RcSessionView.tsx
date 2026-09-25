@@ -55,7 +55,10 @@ export function RcSessionView({
   captureScope: string;
 }) {
   const { toast } = useToast();
-  const [clipAuto, setClipAuto] = useState(false);
+  // 剪贴板自动同步默认开（2026-09-25 拍板）：可控会话开场即同步剪贴板变化，
+  // 场内可关、不持久化——下一场恢复默认开。两道既有防护不变：首轮 poll 只建
+  // 基线不发送；主窗失焦拒读。只看会话双重门控（hook no-op + 按钮不渲染）。
+  const [clipAuto, setClipAuto] = useState(true);
   // 全屏目标 = 会话壳（见 useRcDisplayMode 注释）；screenRef 仍是输入坐标的基准
   const wrapRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
