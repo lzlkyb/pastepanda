@@ -68,6 +68,14 @@ describe("RcSessionTop（浮条收编后：纯窗口壳）", () => {
     expect(container.firstElementChild?.getAttribute("data-tauri-drag-region")).toBe("false");
   });
 
+  it("🔴 全屏双组三键：hideWindowControls 隐藏顶条三键（hotbar 右上角已有同语义组）", () => {
+    render(<RcSessionTop {...base} fullscreen hideWindowControls />);
+
+    expect(screen.queryByRole("button", { name: "最小化" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "最大化" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "关闭" })).toBeNull();
+  });
+
   it("完整三键组：最小化 / 最大化 / 关闭，渲染不触发窗口操作", () => {
     render(<RcSessionTop {...base} />);
 

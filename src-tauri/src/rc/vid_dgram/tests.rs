@@ -239,6 +239,41 @@ fn 脏包_分片数超上界被拒() {
     assert_eq!(feed_all(&mut r, &dgrams(1, &data, true)).len(), 1);
 }
 
+/// 🔴 再审计 P3-4（2026-09-25）：分片槽必须**按需**存储——收到 1 片只存 1 片，
+/// 不得按声明的 `frag_count + groups` 预分配/放大。原先是 `Vec<Option<Vec<u8>>>`
+/// 预分配：34B 畸形头声明 frag_count=16384 即得 ~490KB 空槽，乘 MAP_MAX=96
+/// 放大到 ~47MB；一个只声明高位槽位的单片就能撑出全部空槽。
+#[test]
+fn 脏包_声明大帧_单片到达_存储不放大() {
+    // frag_count 取 MAX_FRAG_COUNT 满配、frame_len 恰好 ≤ frag_count*FRAG 且
+    // ≤ MAX_REASM_BYTES——三重判定（frame_len_ok）全过的最大畸形声明。
+    let fc = MAX_FRAG_COUNT;
+    let total = (fc + fc.div_ceil(GROUP as u16)) as usize;
+    let bad = build_dg(
+        7,
+        FLAG_PARITY,
+        (total - 1) as u16, // 合法奇偶槽位（自洽判定也过）
+        fc,
+        (fc as usize * FRAG) as u32,
+        &[0xEE; 100],
+    );
+    let mut r = VidReassembler::new();
+    assert!(r.feed(&bad).is_empty(), "孤片不完整，不得交付");
+    assert_eq!(
+        r.map.get(&7).map(|f| f.frags.len()),
+        Some(1),
+        "收到 1 片只应存 1 片，存储量不得随声明的 frag_count 放大"
+    );
+    // 交付语义不受影响：走流的关键帧锚定后，真正到齐的帧照常补交付
+    //（首片非关键帧 → await_first_key 拦交付，锚定只能来自可靠流，与既有
+    // `流关键帧锚定后补交付已缓冲帧` 测试同一条路径）
+    let data: Vec<u8> = (0..2500u32).map(|i| (i % 251) as u8).collect();
+    assert!(feed_all(&mut r, &dgrams(9, &data, false)).is_empty(), "锚定前 P 帧不交付");
+    let got = r.reset_after_stream_key(8);
+    assert_eq!(got.len(), 1, "锚定后缓冲完整的 seq9 应立即补交付");
+    assert!(r.map.get(&7).is_none(), "锚定保留应清掉滞留的脏帧");
+}
+
 /// 🔴 P0-1：`frame_len` 纯函数边界——0 / u32::MAX / 超过 frag_count*FRAG 全拒。
 #[test]
 fn frame_len_ok_三条边界全拒() {

@@ -118,29 +118,145 @@ pub enum AudioOut {
     Pkt { pts_ms: u64, data: Vec<u8> },
 }
 
-/// 有界音频队列容量（约 64 × AAC 帧 ≈ 1.3s @48k）。满了丢最旧语义由
-/// `try_push_audio` 的 try_send+计数近似：不堆积、不阻塞采集线程。
+/// 有界音频队列容量（约 64 × AAC 帧 ≈ 1.3s @48k）。
 pub const AUDIO_CHAN_CAP: usize = 64;
 
-/// 生产侧入口：有界 channel + `try_send`，满则丢包计数，**禁止无界堆积**。
+// ── 🔴 B6（2026-09-25 审计）：满丢最旧、保住最新的音频队列 ─────────────
+//
+// 旧实现是 `tokio::sync::mpsc` + `try_send`：队列满时**丢的是刚编码出来的
+// 最新包**，与「音频要新鲜」的设计注释正好相反；更糟的是 `AudioOut::Cfg`
+//（设备切换/编码器重开时的换格式信号）被丢会让对端拿旧格式解新码——变调。
+//
+// mpsc 的 Sender 没有弹出能力，发送侧无法实现「丢最旧」，所以换成这个
+// 小包装：`Mutex<VecDeque>` 存包 + `Notify` 唤醒消费端。
+// - `push`：满则 `pop_front` 挤掉最旧、`push_back` 保住最新；
+// - `recv`：先取后等（避免丢唤醒），取完且已关闭才返回 `None`——
+//   与 mpsc 的「关闭后先排干再 None」语义一致，消费方的
+//   `rx.recv()` 用法（inbound_tasks 的 select 循环）不需要变。
+//
+// 已知取舍：队列持续满载时，最旧的那条**可能是 Cfg**（重开 Cfg 排在队头）。
+// 那需要对端停滞 ≥1.3s 且恰好撞上设备切换，属于边角；对端消费端对
+// 「Pkt 无 Cfg」的兜底是丢包直到新 Cfg 到达（P2-7），不会写坏流。
+// ❗ 不引入无界堆积（P2-3 红线不变）：容量仍是 [`AUDIO_CHAN_CAP`]。
+struct AudioQueueInner {
+    q: std::sync::Mutex<std::collections::VecDeque<AudioOut>>,
+    /// 有新包 / 通道关闭时唤醒消费端。`notify_one` 无等待者时存一个许可，
+    /// 配合 recv 的「先取后等」不会丢唤醒。
+    notify: tokio::sync::Notify,
+    /// 任一半端销毁即置位：生产侧 push 返回 false（会话结束应退出），
+    /// 消费侧 recv 排干剩余后返回 None。
+    closed: AtomicBool,
+    /// 存活的发送端计数（含克隆）。归零 = 最后一个发送端已销毁。
+    tx_count: std::sync::atomic::AtomicUsize,
+}
+
+/// 发送半端（采集线程持有）。`Clone` 让 `AudioWorker` 与调用方各持一份，
+/// 全部销毁后消费端 `recv` 排干队列返回 `None`。
+#[derive(Clone)]
+pub struct AudioTx {
+    inner: Arc<AudioQueueInner>,
+}
+
+/// 接收半端（写流任务持有）。消费用法与 mpsc 的 Receiver 相同：`recv().await`。
+pub struct AudioQueueRx {
+    inner: Arc<AudioQueueInner>,
+}
+
+/// 建（发送半端, 接收半端）。容量 [`AUDIO_CHAN_CAP`]，满则丢最旧。
+pub fn audio_channel() -> (AudioTx, AudioQueueRx) {
+    let inner = Arc::new(AudioQueueInner {
+        q: std::sync::Mutex::new(std::collections::VecDeque::with_capacity(AUDIO_CHAN_CAP)),
+        notify: tokio::sync::Notify::new(),
+        closed: AtomicBool::new(false),
+        tx_count: std::sync::atomic::AtomicUsize::new(1),
+    });
+    (
+        AudioTx { inner: Arc::clone(&inner) },
+        AudioQueueRx { inner },
+    )
+}
+
+impl AudioTx {
+    /// 入队一条消息。满则挤掉最旧的（丢包计入 `dropped`），**不阻塞**采集线程。
+    /// 返回 `false` = 接收端已关闭（会话结束，采集线程应退出）。
+    fn push(&self, msg: AudioOut, dropped: &std::sync::atomic::AtomicU64) -> bool {
+        use std::sync::atomic::Ordering;
+        if self.inner.closed.load(Ordering::Acquire) {
+            return false;
+        }
+        {
+            let mut q = self.inner.q.lock().unwrap_or_else(|p| p.into_inner());
+            // 🔴 B6：满丢最旧保最新——挤掉的是队头（最旧），不是刚编码出的这条。
+            if q.len() >= AUDIO_CHAN_CAP && q.pop_front().is_some() {
+                let n = dropped.fetch_add(1, Ordering::Relaxed) + 1;
+                if n == 1 || n.is_multiple_of(50) {
+                    log::warn!("[RC] 音频队列已满，丢最旧包计数 {n}");
+                }
+            }
+            q.push_back(msg);
+        }
+        self.inner.notify.notify_one();
+        true
+    }
+}
+
+impl Drop for AudioTx {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        // 减到 0 = 这是最后一个发送端：宣告关闭并唤醒消费端
+        if self.inner.tx_count.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.inner.closed.store(true, Ordering::Release);
+            self.inner.notify.notify_one();
+        }
+    }
+}
+
+impl Drop for AudioQueueRx {
+    fn drop(&mut self) {
+        // 接收端先走：生产侧 push 立刻返回 false（与 mpsc 的 Closed 语义一致）
+        self.inner.closed.store(true, Ordering::Release);
+        self.inner.notify.notify_waiters();
+    }
+}
+
+impl AudioQueueRx {
+    /// 取一条消息；队列空时等待。所有发送端销毁后，先排干剩余消息再返回
+    /// `None`（与 mpsc Receiver 同语义，消费方的 select 循环零改动）。
+    pub async fn recv(&mut self) -> Option<AudioOut> {
+        use std::sync::atomic::Ordering;
+        loop {
+            // 先取后等：即使唤醒许可被合并，也只会多醒一次，不会漏包
+            if let Some(m) = self
+                .inner
+                .q
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .pop_front()
+            {
+                return Some(m);
+            }
+            if self.inner.closed.load(Ordering::Acquire) {
+                return None;
+            }
+            self.inner.notify.notified().await;
+        }
+    }
+
+    /// 当前积压数（测试与诊断用）。
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.inner.q.lock().unwrap_or_else(|p| p.into_inner()).len()
+    }
+}
+
+/// 生产侧入口：满则**丢最旧**保最新（B6），不堆积、不阻塞采集线程。
 /// 返回 `false` = 通道已关（会话结束，采集线程应退出）。
 pub fn try_push_audio(
-    tx: &tokio::sync::mpsc::Sender<AudioOut>,
+    tx: &AudioTx,
     msg: AudioOut,
     dropped: &std::sync::atomic::AtomicU64,
 ) -> bool {
-    use std::sync::atomic::Ordering;
-    match tx.try_send(msg) {
-        Ok(()) => true,
-        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-            let n = dropped.fetch_add(1, Ordering::Relaxed) + 1;
-            if n == 1 || n.is_multiple_of(50) {
-                log::warn!("[RC] 音频队列已满，丢包计数 {n}");
-            }
-            true
-        }
-        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
-    }
+    tx.push(msg, dropped)
 }
 
 /// 组音频流头部。

@@ -187,8 +187,20 @@ pub async fn read_incoming(r: &mut iroh::endpoint::RecvStream) -> Result<Incomin
                 let height = v.get("h").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
                 let n = v.get("n").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
                 let ts = v.get("ts").and_then(|x| x.as_i64()).unwrap_or(0);
-                let cap_ms = v.get("cap").and_then(|x| x.as_u64()).unwrap_or(0) as u16;
-                let enc_ms = v.get("enc").and_then(|x| x.as_u64()).unwrap_or(0) as u16;
+                // 🔴 再审计 P3-7（2026-09-25）：`as u16` 对超范围值是**回绕**不是
+                // 截断（65536 → 0、65537 → 1）——旧对端 / 脏 JSON 的耗时字段会把
+                // HUD 分段显示污染成假数据（0 还会被发起端当「无分段」隐藏）。
+                // 与 outbound.rs vts 分支同口径：min 到 u16::MAX。
+                let cap_ms = v
+                    .get("cap")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0)
+                    .min(u16::MAX as u64) as u16;
+                let enc_ms = v
+                    .get("enc")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0)
+                    .min(u16::MAX as u64) as u16;
                 let sq = v.get("sq").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
                 // Q3：编码标准随帧走（缺省 h264 = 旧对端）。前端按这个字段选解码器。
                 let codec = match v.get("c").and_then(|x| x.as_str()) {

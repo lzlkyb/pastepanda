@@ -74,8 +74,10 @@ export function RcClipboardBar({
     setPullPhase("loading");
     setPullMsg("等待对方剪贴板…");
     try {
-      // 后端约定（C5 起）：空串 = 对方真空白；失败/超时以 reject 报出，
-      // 不再是 null（null 曾被前端当失败，语义太脆）
+      // 🔴 后端契约（C5 并行批次，2026-09-25 注）：后端正在把「超时返回空」改为
+      // 返回 Err——落地后超时/作废都以 reject 报出（下方 catch 接住）。因此
+      // 下面这个 `t == null` 分支从「兜住失真契约」变成**纯防御**：仅防旧版
+      // 对端 / 未来契约回归。行为不动，别删。
       const t = await rcPullClipboard();
       if (t === "") {
         // 真空白 ≠ 拉取失败（U3.5）：不给重试
@@ -83,6 +85,7 @@ export function RcClipboardBar({
         setPullMsg("对方剪贴板是空的");
         onStatus("对方剪贴板是空的", "info");
       } else if (t == null) {
+        // 纯防御分支（见上）：契约改造后理论上不可达
         setPullPhase("err");
         setPullMsg("拉取对方剪贴板失败");
         onStatus("拉取对方剪贴板失败", "error");

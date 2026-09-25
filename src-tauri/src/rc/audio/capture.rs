@@ -209,23 +209,53 @@ pub type WantedFlag = Arc<AtomicBool>;
 
 pub struct AudioWorker {
     stop: Arc<AtomicBool>,
+    /// 🔴 再审计 P3-15（2026-09-25）：退出确认通道。线程从任何路径退出后
+    /// send 一次；`stop()` 只置标志，线程要等自旋粒度（250ms，设备失效路径
+    /// 500ms）才看得见，重建 worker 前必须先等它确认停泵（见 `stop_confirmed`），
+    /// 否则快速静音→恢复会出现新旧两个采集线程同时抓环回。
+    exited: tokio::sync::mpsc::UnboundedReceiver<()>,
 }
 
 impl AudioWorker {
-    pub fn start(wanted: WantedFlag, tx: tokio::sync::mpsc::Sender<AudioOut>) -> Self {
+    // 🔴 B6（2026-09-25 审计）：队列从 mpsc 换成 audio_channel() 的满丢最旧包装，
+    // 这里只跟着换类型——采集线程的调用方式（try_push_audio + 布尔退出判据）不变。
+    pub fn start(wanted: WantedFlag, tx: AudioTx) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
+        let (ack_tx, ack_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
         // ❗ 线程刻意 **detach**（不保 JoinHandle）：stop() 在 async 任务里被调，
         // join 会把运行时线程堵住最多 250ms（worker 的睡眠粒度）。线程靠标志位
-        // 自行退出，采集/编码资源在其自身的 Drop 里释放。
+        // 自行退出，采集/编码资源在其自身的 Drop 里释放。退出确认改走 ack 通道
+        //（P3-15）：等待方在 async 侧 await，不堵运行时线程。
         let _ = std::thread::Builder::new()
             .name("rc-audio".into())
-            .spawn(move || audio_thread(stop2, wanted, tx));
-        Self { stop }
+            .spawn(move || {
+                audio_thread(stop2, wanted, tx);
+                // 包住整个 audio_thread：函数内任何 return（循环条件 / 通道断开）
+                // 都会落到这里。panic 时 sender 随 unwind drop，recv 端读到
+                //「通道已关」同样立即返回——两条路都不挂等待方。
+                let _ = ack_tx.send(());
+            });
+        Self { stop, exited: ack_rx }
     }
 
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+    }
+
+    /// 🔴 P3-15（2026-09-25）：置 stop 并**异步**等待线程退出确认。
+    ///
+    /// 350ms 超时兜底：线程自旋粒度 250ms（设备失效路径 500ms，偶尔等不到——
+    /// 线程随后仍靠 stop 标志自行退出，确认是「尽力等」不是 join）。重建
+    /// worker 前必须先走这里：旧线程还握着 WASAPI 环回 + COM 套间时新线程
+    /// 就开泵，就是双采集的来源。调用点是 async 任务，await 不占线程。
+    pub async fn stop_confirmed(&mut self) {
+        self.stop();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_millis(350),
+            self.exited.recv(),
+        )
+        .await;
     }
 }
 
@@ -235,7 +265,7 @@ impl Drop for AudioWorker {
     }
 }
 
-fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: tokio::sync::mpsc::Sender<AudioOut>) {
+fn audio_thread(stop: Arc<AtomicBool>, wanted: WantedFlag, tx: AudioTx) {
     // 🔴 再审计 A5（2026-09-25）：这里曾是 `let com = …; let _ = com;`——`let _`
     // 通配不持有值，语句结束 ComGuard 就 Drop，CoUninitialize 在线程启动瞬间被
     // 调用，整条线程的 COM 调用实际跑在未初始化的套间上（眼下全靠进程内其它

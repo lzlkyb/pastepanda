@@ -116,4 +116,14 @@ describe("RcDropdown 底栏下拉", () => {
     fireEvent.mouseDown(document.body);
     expect(screen.queryByRole("listbox")).toBeNull();
   });
+
+  it("🔴 Esc 两级取消：展开时按 Esc 收起自己（第一级回上一步，不落到结束会话）", () => {
+    openMenu();
+    expect(screen.queryByRole("listbox")).not.toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    // 再按一次 Esc：面板已收、计数归零，事件不再被这里拦截（会话兜底可接管）
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
 });

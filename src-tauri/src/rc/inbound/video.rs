@@ -31,6 +31,22 @@ impl InboundVideo {
         // R6：主屏 / 指定单屏 / 虚拟屏都优先 DXGI + H.264；打不开回退 JPEG
         #[cfg(target_os = "windows")]
         let h264 = Self::open_h264(&svc, virt);
+        // 🔴 再审计 B2（2026-09-25）：初始打开失败也必须安排冷却重试。过去
+        // `enc_retry_after` 保持 None，`try_hardware_path` 的重试闸只认它，
+        // 于是「会话建立那一刻硬编没打开」（驱动未就绪 / 分辨率还在切换）
+        // 就整场 JPEG，没有任何自愈机会。口径与熔断退避一致：起步 5s、
+        // 每次重试翻倍（上限 60s），翻倍由重试点统一执行。
+        #[cfg(target_os = "windows")]
+        let enc_retry_backoff: u64 = 5;
+        #[cfg(target_os = "windows")]
+        let enc_retry_after = if h264.is_none() {
+            Some(
+                std::time::Instant::now()
+                    + std::time::Duration::from_secs(enc_retry_backoff),
+            )
+        } else {
+            None
+        };
         Some(Self {
             svc,
             peer: peer.to_string(),
@@ -44,9 +60,9 @@ impl InboundVideo {
             #[cfg(target_os = "windows")]
             enc_fail_streak: 0,
             #[cfg(target_os = "windows")]
-            enc_retry_after: None,
+            enc_retry_after,
             #[cfg(target_os = "windows")]
-            enc_retry_backoff: 5,
+            enc_retry_backoff,
             #[cfg(target_os = "windows")]
             gpu_disabled: false,
             #[cfg(target_os = "windows")]
@@ -202,14 +218,30 @@ impl InboundVideo {
             // 放在入口、而不是埋在「本帧编码失败」分支里：那个分支每帧都会进，
             // 且开编码器要几百 ms，在那里重开会把推流拖垮。
             if self.h264.is_none() {
-                if let Some(t) = self.enc_retry_after {
-                    if std::time::Instant::now() >= t {
-                        log::info!("[RC] 硬编熔断冷却期满，尝试重新启用");
-                        self.h264 = Self::open_h264(&self.svc, opts.virtual_screen);
-                        self.enc_fail_streak = 0;
-                        self.enc_retry_after = None;
-                        // 退避翻倍（上限 60s）：坏环境里别把 CPU 烧在反复重开上
-                        self.enc_retry_backoff = (self.enc_retry_backoff * 2).min(60);
+                // 配置强制 JPEG 时不重试：open_h264 必返回 None，重试只会
+                // 刷「冷却期满」日志。enc_retry_after 保持原值不动——用户
+                // 中途改回 H.264 时下一圈这里立刻生效。
+                if !opts.force_jpeg() {
+                    if let Some(t) = self.enc_retry_after {
+                        if std::time::Instant::now() >= t {
+                            log::info!("[RC] 硬编冷却期满，尝试重新启用");
+                            self.h264 = Self::open_h264(&self.svc, opts.virtual_screen);
+                            self.enc_fail_streak = 0;
+                            self.enc_retry_after = None;
+                            // 退避翻倍（上限 60s）：坏环境里别把 CPU 烧在反复重开上
+                            self.enc_retry_backoff = (self.enc_retry_backoff * 2).min(60);
+                            // 🔴 再审计 B2（2026-09-25）：重试**再失败**也必须安排
+                            // 下一次——过去这里把 enc_retry_after 留成 None，一次
+                            // 失败就整场不再重试（初始打开失败的场次更是从未重试过）。
+                            // 翻倍发生在本次重试时，所以下一次冷却用翻倍后的值：
+                            // 5s → 10s → 20s → 40s → 60s（上限），与熔断退避同口径。
+                            if self.h264.is_none() {
+                                self.enc_retry_after = Some(
+                                    std::time::Instant::now()
+                                        + std::time::Duration::from_secs(self.enc_retry_backoff),
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -260,7 +292,17 @@ impl InboundVideo {
                         self.gpu_disabled = true;
                     }
                     Err(e) => {
-                        log::debug!("[RC] GPU 抓帧失败，本帧走 CPU：{e}");
+                        // 🔴 再审计 B4（2026-09-25）：抓帧的瞬时错误也计入
+                        // gpu_fail_streak（口径见 note_gpu_grab_fail）——过去这里
+                        // 只写日志完全不计数，GPU 管线在抓帧层坏掉（AcquireNextFrame
+                        // / staging 创建失败 / 输出拓扑对不上）时每帧白试一遍再回落
+                        // CPU，整个会话都不会判死。
+                        let verdict = henc.note_gpu_grab_fail(e);
+                        if verdict.starts_with("[gpu_disabled]") {
+                            self.gpu_disabled = true;
+                        } else {
+                            log::debug!("[RC] GPU 抓帧失败，本帧走 CPU：{verdict}");
+                        }
                     }
                     Ok(None) => return Step::Sleep,
                     Ok(Some(g)) => {
@@ -305,7 +347,9 @@ impl InboundVideo {
                     // 采集时刻就在 grab 之后取：编码/发送耗时不算进「画面链路延迟」
                     let ts = crate::rc::service::now_ms();
                     let enc_t0 = std::time::Instant::now();
-                    let encoded = henc.encode_bgra(&bgra, w, h);
+                    // 🔴 再审计 P3-10：grab 现在返回池内缓冲的借用（不再转移所有权），
+                    // 编码完即归还，缓冲跨圈复用
+                    let encoded = henc.encode_bgra(bgra, w, h);
                     let enc_ms = enc_t0.elapsed().as_millis().min(u16::MAX as u128) as u16;
                     match encoded {
                         Ok(pkts) => {

@@ -120,6 +120,12 @@ export function RcFullscreenHotbar({
       className={`${styles.fsBar} ${hidden ? styles.viewToolsHidden : ""}`}
       aria-hidden={hidden}
       onMouseLeave={scheduleHide}
+      // 🔴 再审计（hotbar 盲开键盘捕获，2026-09-25）：非按钮区 mousedown 原先
+      // 冒泡到 fakeScreen 的 onMouseDown → focus → setKbOn(true)，点 hotbar
+      // 空白就盲开键盘捕获、输入打进远程机器。这里在根容器截停冒泡——按钮的
+      // onClick 是独立事件不受影响。已知限制：hotbar 显示期间没有「键盘已捕获」
+      // 指示（属新 UI，另行设计稿流程再补）。
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {FITS.map(([k, label]) => (
         <button

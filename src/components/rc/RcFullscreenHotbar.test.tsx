@@ -178,4 +178,21 @@ describe("RcFullscreenHotbar（方案 B：全屏顶边 hot zone）", () => {
     });
     expect(bar.className).not.toContain("viewToolsHidden");
   });
+
+  it("🔴 hotbar 非按钮区 mousedown 不冒泡到画面容器（不盲开键盘捕获）；按钮 click 照常", () => {
+    const onStageMouseDown = vi.fn();
+    const { container } = render(
+      <div onMouseDown={onStageMouseDown}>
+        <RcFullscreenHotbar {...base} />
+      </div>,
+    );
+    // container > 包裹层（扮演 fakeScreen） > fsBar
+    const bar = container.firstElementChild!.firstElementChild as HTMLElement;
+    fireEvent.mouseDown(bar);
+    expect(onStageMouseDown).not.toHaveBeenCalled();
+
+    // 截停只作用于 mousedown 冒泡：按钮的 click 是独立派发，功能不受影响
+    fireEvent.click(screen.getByRole("button", { name: "适应" }));
+    expect(base.onFit).toHaveBeenCalledWith("fit");
+  });
 });

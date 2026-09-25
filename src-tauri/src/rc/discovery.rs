@@ -303,6 +303,15 @@ impl Discovery {
             log::warn!("[RC] 告诉对方「我这侧确认了」失败：{}", e);
             return Err(format!("没能通知对方你已确认：{}", e));
         }
+        // 🔴 P3-1（2026-09-25 审计）：写库失败是**半状态**——本端确认过、
+        // pin_ok 仍已送达（对端侧多半配好了），唯独本机没落库。必须报成
+        // 可行动的 Err，不能把 Confirmed 原样透传让界面当「落空」处理。
+        if let Confirmed::StoreFailed { .. } = &res {
+            return Err(
+                "配对核对通过，但写入本机设备列表失败——对方侧可能已配好；请删除该设备后重新配对"
+                    .to_string(),
+            );
+        }
         if let Confirmed::Committed { .. } = &res {
             self.after_commit(&res);
         }

@@ -24,6 +24,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";
 import styles from "./RemoteComputer.module.css";
+import { isSessionEscape } from "@/lib/rcKeyGuard";
+import { registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
 import {
   linkStateLabel,
   pathKindHint,
@@ -103,6 +105,26 @@ export function RcHud({
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  // 🔴 再审计（Esc 两级取消，2026-09-25）：明细面板展开期间向 rcPanelFocus 登记，
+  // useRcInput 的 window 级 Esc 兜底据此让路，不直落「结束会话」确认；Esc 收起
+  // 自己（document 监听先于 window 兜底，stopPropagation 防穿透）。
+  // register/unregister 在 effect/cleanup 配对，StrictMode 双挂载也平衡。
+  useEffect(() => {
+    if (!open) return;
+    registerRcPanel();
+    const onEsc = (e: KeyboardEvent) => {
+      if (!isSessionEscape(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      unregisterRcPanel();
+      document.removeEventListener("keydown", onEsc);
+    };
   }, [open]);
 
   const grade = rttGrade(rttMs);

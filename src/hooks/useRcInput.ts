@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rcSendInput } from "@/lib/api/rc";
 import { isSessionEscape, shouldSwallowEscape } from "@/lib/rcKeyGuard";
+import { rcPanelOpenCount } from "@/lib/rcPanelFocus";
 import { keyToVk, shouldForwardToRemote } from "@/lib/rcKeyMap";
 // 几何换算收口在 lib/rcPointer（2026-09-22 拆出，本文件压回 400 行内）。
 // re-export 保持既有 import 路径（@/hooks/useRcInput）不变。
@@ -257,11 +258,17 @@ export function useRcInput({
       const button = e.button === 2 ? 2 : e.button === 1 ? 3 : 1;
       if (!pressedButtons.current.has(button)) return;
       pressedButtons.current.delete(button);
+      // 🔴 再审计（2026-09-25）：画外松开走这里兜底补发 UP，但本地光标的
+      // 按压态此前不复位（sendButton 的 down=true 已把它置真，画外的 up
+      // 到不了 canvas 的 React onMouseUp）——假光标永久显示按下形状。
+      setCursorPressed(false);
       releaseOne(button, e);
     };
     const onBlur = () => {
-      // 整窗失焦（Alt-Tab）：键盘 + 鼠标的按下态一起清
+      // 整窗失焦（Alt-Tab）：键盘 + 鼠标的按下态一起清。
+      // 🔴 cursorPressed 同理复位（releaseTracked 只清对端注入态）。
       releaseTracked();
+      setCursorPressed(false);
     };
     window.addEventListener("mouseup", onUp);
     window.addEventListener("blur", onBlur);
@@ -282,6 +289,11 @@ export function useRcInput({
       // 会话视图本身永远渲染在带 data-rc-root 的 backdrop 内，因此排除自身，
       // 只让「嵌套打开、不带该属性」的模态（如 RcPairDialog）优先拿到 Esc。
       if (document.querySelector(".dialog-backdrop:not([data-rc-root])")) return;
+      // 🔴 再审计（Esc 两级取消，2026-09-25）：画质/画面下拉、⋯ 面板、HUD 明细
+      // 展开时（rcPanelFocus 计数 >0），Esc 的第一级归面板自己（收起面板，计数
+      // 在面板 effect cleanup 里归零），这里直接让路——否则会直落「结束会话」
+      // 确认，违反规则 17.6。收完后再按 Esc 才走结束确认。
+      if (rcPanelOpenCount() > 0) return;
       if (pointerLocked) {
         e.preventDefault();
         e.stopPropagation();

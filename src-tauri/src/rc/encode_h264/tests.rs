@@ -117,6 +117,7 @@ fn 码率基准的帧率因子只乘一次() {
         hevc_fail_streak: 0,
         hevc_broken: false,
         nv12_buf: Vec::new(),
+        last_scale_change: None,
     };
     // 1080p120：8M × 2.6 = 20.8M——不是 ×2.6² 的 54M
     assert_eq!(enc.scaled_bitrate(), 20_800_000);
@@ -125,3 +126,6 @@ fn 码率基准的帧率因子只乘一次() {
     scaled.scale_pct = 40;
     assert_eq!(scaled.scaled_bitrate(), 8_320_000);
 }
+
+// 🔴 再审计 B5（2026-09-25）守卫单测：见 session.rs 底部的
+// `码率缩放变更的时间冷却`（判据函数是 session 模块私有，测试就近放）。

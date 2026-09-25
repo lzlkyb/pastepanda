@@ -104,6 +104,14 @@ pub fn rc_nearby_confirm(svc: State<'_, Arc<RcService>>) -> Result<RcPairResult,
             peer_id: String::new(),
             peer_name: String::new(),
         },
+        // 🔴 P3-1（2026-09-25 审计）：写库失败的半状态在 `discovery::confirm`
+        // 已映射成 Err（含「请删除该设备后重新配对」的可行动话术），正常到
+        // 不了这里；这条臂只为穷尽性编译通过兜底，按 gone 同款口径收场。
+        Confirmed::StoreFailed { peer_id, peer_name } => RcPairResult {
+            state: "gone".to_string(),
+            peer_id,
+            peer_name,
+        },
     })
 }
 

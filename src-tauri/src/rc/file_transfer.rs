@@ -336,9 +336,23 @@ fn is_name_conflict(e: &std::io::Error) -> bool {
 ///
 /// Windows 的 `std::fs::rename` 走 `MOVEFILE_REPLACE_EXISTING`，目标存在会被
 /// 静默替换。`hard_link` 在目标存在时失败；同目录 = 同卷，必可 hard_link。
+///
+/// 🔴 P3-16（2026-09-25 审计）：`hard_link` 成功后删 `.pppart` **失败**（最常见
+/// 是杀软 / 索引器短暂锁住文件）不得把整个任务打成 `Failed`——此时最终文件
+/// 已经完整落盘，报失败会引诱用户重试，而重试会在续传判据下落成 `(1)` 重复
+/// 文件。这里降级为 `log::warn` 并照常报成功。
+///
+/// 残余 `.pppart` 的无害性与清理时机：数据与最终文件**同一体**（hard_link），
+/// 不占双份内容只是多一个目录项；下一次同名传输的 `prepare_recv` 会按续传
+/// 判据处理它（长度超出声明即删），用户手动清理也无任何副作用。
 fn rename_no_overwrite(part: &Path, dest: &Path) -> std::io::Result<()> {
     std::fs::hard_link(part, dest)?;
-    std::fs::remove_file(part)?;
+    if let Err(e) = std::fs::remove_file(part) {
+        // 交付物已存在，失败只影响目录整洁，不影响正确性（P3-16）。
+        log::warn!(
+            "[RC] 交付完成但清理 .pppart 失败（可能被杀软短暂锁定，无害，下次同名传输会按续传判据处理）：{e}"
+        );
+    }
     Ok(())
 }
 
@@ -456,7 +470,10 @@ fn resume_hints(dir: &Path) -> Vec<ResumeHint> {
             offset: m.len(),
         });
     }
-    out
+    // 🔴 B7（2026-09-25 审计）：发送侧按**编码后总长**自检。逐条查名字长度
+    // 的旧口径放得过「长中文名 ×8」，接收侧按总长拒收 → 整次取回失败。
+    // 收口在 file_proto::clamp_resume_hints（hints 的唯一生产者就是这里）。
+    file_proto::clamp_resume_hints(out)
 }
 
 /// 默认接收目录：`<下载>/PastePanda 接收/`。

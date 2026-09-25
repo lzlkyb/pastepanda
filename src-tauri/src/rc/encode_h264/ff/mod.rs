@@ -192,7 +192,10 @@ impl FfEncoder {
                 //（qsvenc.c:570 select_rc_mode 由公共字段推导，无 rc_mode 私有选项）
                 c.rc_max_rate = bitrate as i64;
             }
-            c.gop_size = fp * 2; // 2 秒一个关键帧
+            // 🔴 再审计 P3-12（2026-09-25）：GOP = fps×1（1s），与 MF 侧
+            // `GoPSize=1s`（mf.rs）同口径。曾是 ×2（2s）：解码断链又没等到
+            // ForceKeyFrame 时要花 2s 等自然 GOP，弱网花屏时间翻倍。
+            c.gop_size = fp; // 1 秒一个关键帧
             c.max_b_frames = 0; // 低延迟：B 帧是延迟的主要来源
             c.thread_count = 1; // 远控单帧延迟优先，不要帧级并行
         }
@@ -201,7 +204,7 @@ impl FfEncoder {
         // FFmpeg 按它编译进去的偏移读回 —— 两条来源不同，能真正测出抄错没有。
         me.verify_layout(ff, &[
             ("b", bitrate as i64, "bit_rate"),
-            ("g", (fp * 2) as i64, "gop_size"),
+            ("g", fp as i64, "gop_size"),
             ("bf", 0, "max_b_frames"),
         ])?;
         let cid = unsafe { (*ctx).codec_id };
@@ -295,6 +298,13 @@ impl FfEncoder {
         if r < 0 {
             return Err(format!("av_frame_make_writable: {}", ff.err_str(r)));
         }
+        // 🔴 再审计 B3（2026-09-25）：副作用必须等 send 成功才生效——
+        // `frames_in` 自增与 IDR 请求消费过去都在 push 之前完成，第二次
+        // EAGAIN 静默丢帧时（见 `push`）pts 出现空洞、force_key 凭空蒸发。
+        // 现改为：帧号与 pict_type 仍按当前值写入（send 需要它们），但
+        // `frames_in` 只在 push 成功后自增；失败时把 IDR 请求退回，
+        // 下一帧重用同一 pts 重试。
+        let wanted_idr = self.force_next_idr.replace(false);
         unsafe {
             let f = &mut *self.frame;
             let (ls_y, ls_uv) = (f.linesize[0] as usize, f.linesize[1] as usize);
@@ -314,14 +324,24 @@ impl FfEncoder {
                 }
             }
             f.pts = self.frames_in as i64;
-            f.pict_type = if self.force_next_idr.replace(false) {
+            f.pict_type = if wanted_idr {
                 AV_PICTURE_TYPE_I
             } else {
                 0 // AV_PICTURE_TYPE_NONE：交给编码器
             };
         }
-        self.frames_in += 1;
-        self.push(ff)
+        match self.push(ff) {
+            Ok(packets) => {
+                self.frames_in += 1;
+                Ok(packets)
+            }
+            Err(e) => {
+                // 帧没进编码器（FFmpeg 语义：send 出错时帧不被消费）：
+                // pts 不前进（下一帧重用），IDR 请求退回等下次受理。
+                self.force_next_idr.set(wanted_idr);
+                Err(e)
+            }
+        }
     }
 
     /// send → EAGAIN 时 drain 后重试一次 → drain 出全部包。
@@ -331,7 +351,11 @@ impl FfEncoder {
             // 输入队列满：先掏空已产出包再重试（低延迟配置下罕见，但不处理会静默丢帧）
             let mut packets = self.drain(ff)?;
             r = unsafe { (ff.avcodec_send_frame)(self.ctx, self.frame) };
-            if r < 0 && r != AVERROR_EAGAIN {
+            // 🔴 再审计 B3（2026-09-25）：第二次仍 EAGAIN = 掏空后编码器**还是不收**，
+            // 这帧没进编码器。过去 `r != EAGAIN` 才报错、随后照常 return Ok——
+            // 帧丢了但调用方以为成功。任何负返回（含 EAGAIN）都必须报错，
+            // 让调用方按失败计数（熔断口径），而不是静默丢帧。
+            if r < 0 {
                 return Err(format!("avcodec_send_frame(重试): {}（{r}）", ff.err_str(r)));
             }
             packets.extend(self.drain(ff)?);

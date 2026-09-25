@@ -278,6 +278,49 @@ fn 续传提示越界被拒() {
     assert!(encode_head(&ok).is_ok());
 }
 
+/// 🔴 B7（2026-09-25 审计）守卫：发送侧必须按**编码后总长**裁 hints。
+///
+/// 旧口径只逐条查名字长度，长中文名 ×[`MAX_RESUME_HINTS`] 条的 head 编码后
+/// 远超 [`MAX_HEAD_JSON`]，接收侧按总长拒收——「发得出、收不进」，整次取回
+/// 失败。修复后发送侧自己裁到塞得下为止（hints 是便利品不是必需品）。
+#[test]
+fn 续传提示按编码后总长裁剪_长中文名极端用例_b7() {
+    // 每条名字 300 个汉字 ≈ 900 字节 UTF-8；8 条编码后 ≈7.4KB，远超 4096。
+    let hints: Vec<ResumeHint> = (0..MAX_RESUME_HINTS)
+        .map(|i| ResumeHint {
+            name: format!("{}第{}部分.mp4", "很长的中文视频文件名字".repeat(20), i),
+            offset: 123_456,
+        })
+        .collect();
+    let raw_len = serde_json::to_vec(&hints).unwrap().len();
+    assert!(raw_len > MAX_HEAD_JSON, "前置：用例本身必须超预算（{raw_len}）");
+
+    let kept = clamp_resume_hints(hints);
+    assert!(kept.len() < MAX_RESUME_HINTS, "超预算必须逐条丢弃，实际保留 {}", kept.len());
+    assert!(!kept.is_empty(), "单条提示必然塞得下（名字 ≤ 1024 字节），不许裁到空");
+    // 发出去的这条头，接收侧必须能原样收下——「发得出、收不进」不再成立
+    let bytes = encode_head(&FileHead::PullReq {
+        v: VERSION,
+        resume: kept.clone(),
+    })
+    .unwrap();
+    assert!(bytes.len() <= MAX_HEAD_JSON, "编码后 {} 字节仍超限", bytes.len());
+    assert_eq!(
+        decode_head(&bytes).unwrap(),
+        FileHead::PullReq { v: VERSION, resume: kept },
+        "接收侧解码必须成功"
+    );
+
+    // 正常长度的 8 条一条也不许丢（便利品不等于可以白丢）
+    let small: Vec<ResumeHint> = (0..MAX_RESUME_HINTS)
+        .map(|i| ResumeHint {
+            name: format!("素材{i}.mp4"),
+            offset: i as u64,
+        })
+        .collect();
+    assert_eq!(clamp_resume_hints(small.clone()), small);
+}
+
 #[test]
 fn 确认帧往返与缺字段() {
     let a = FileAck::Accept {

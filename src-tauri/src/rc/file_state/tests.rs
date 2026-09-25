@@ -214,6 +214,36 @@ fn 清空只清结束的() {
     assert!(!st.is_running(&live));
 }
 
+
+/// 🔴 P3-14（2026-09-25 审计）守卫：终态粘滞。
+///
+/// file_cancel 的 `is_running → task_finish(Canceled)` 两步与传输收口
+/// `task_finish(Done)` 竞态时，迟到的 Canceled 不得覆盖刚落下的 Done
+/// ——「明明传完了却显示已取消」正是旧实现的竞态形态。
+#[test]
+fn 终态粘滞_迟到终态不得覆盖先到的_p3_14() {
+    let st = FileState::new();
+    let id = st.task_start("p", "n", TaskDir::Recv, "a.bin", 100, 0, T0);
+    assert!(st.task_progress(&id, 100, T0 + 1));
+    // 传输收口先到：Done
+    assert!(st.task_finish(&id, TaskState::Done, None, T0 + 2));
+    // 用户此刻点了取消（is_running 恰在收口前查过）：必须是幂等无操作
+    assert!(
+        !st.task_finish(&id, TaskState::Canceled, None, T0 + 3),
+        "终态之后的 task_finish 必须被拒绝"
+    );
+    assert_eq!(
+        st.task_state(&id),
+        Some(TaskState::Done),
+        "Done 不得被迟到的 Canceled 覆盖（P3-14）"
+    );
+    // 迟到的失败也不得污染已完成的条目
+    assert!(!st.task_finish(&id, TaskState::Failed, Some("迟到".into()), T0 + 4));
+    let t = &st.tasks()[0];
+    assert_eq!(t.state, TaskState::Done);
+    assert!(t.err.is_none(), "成功终态不得被迟到失败带上的原因污染");
+}
+
 // ── 占位（P1-4 / P2-6）────────────────────────────────────────────
 
 #[test]

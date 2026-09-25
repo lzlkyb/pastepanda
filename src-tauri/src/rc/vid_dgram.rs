@@ -41,11 +41,13 @@ const REASM_TTL_MS: u64 = 400;
 /// 过期才判 corrupt。50ms ≈ 120fps 下 6 帧的重排窗口，只影响「判死」延迟。
 const HOLE_GRACE_MS: u64 = 50;
 /// 缓冲中的帧数上限（含不完整帧）：恶意/异常对端不能把内存撑爆。
-/// 96 帧 × ~13KB 分片 ≈ 1.2MB，远小于一个 GOP 的正常量。
+/// 🔴 再审计 P3-4（2026-09-25）：帧槽改为按需存储（见 [`FrameReasm::frags`]）
+/// 之后，每帧内存**正比于实际收到的分片数**，不再有「按声明 frag_count 预分配」
+/// 的放大面；MAP_MAX 仍兜住「帧数 × 每帧元数据 + 已收分片」的总量。
 const MAP_MAX: usize = 96;
-/// 单帧分片数上限。`frag_count` 取自**线上包**，不夹住的话一个 34B 的畸形数据报
-/// 声明 `frag_count = 65535` 就能让 `frags` 分配 81919 个槽（≈2MB），
-/// 再配合 `MAP_MAX = 96` 放大到近百 MB（见 `feed_inner` 的脏包防御）。
+/// 单帧分片数上限。`frag_count` 取自**线上包**。P3-4 后内存不再随它放大，
+/// 但仍要夹住：`total`（数据槽+奇偶槽）的算术、`try_recover` 的组定位、以及
+/// 完整性逐片扫描的工作量上界，都随 frag_count 线性走。
 /// 正常帧远低于此：8MB 单包上限 ÷ 1000B ≈ 8193，取 16384 留一倍余量。
 const MAX_FRAG_COUNT: u16 = 16_384;
 /// 重组时 `Vec::with_capacity(frame_len)` 的硬上限（P0-1）。
@@ -236,9 +238,22 @@ struct FrameReasm {
     enc_ms: u16,
     width: u32,
     height: u32,
-    /// frag_count 个数据槽 + n_groups 个奇偶槽。
-    frags: Vec<Option<Vec<u8>>>,
+    /// 🔴 再审计 P3-4（2026-09-25）：分片槽**按需存储**——键 = 槽位号（数据槽
+    /// `0..frag_count`，奇偶槽 `[frag_count, total)`），收到一片才存一片。
+    /// 原先是 `Vec<Option<Vec<u8>>>` 按声明 `frag_count + groups` 预分配：
+    /// 34B 畸形头声明 frag_count=16384 即得 ~490KB 空槽，乘 MAP_MAX=96 放大到
+    /// ~47MB。按需存储后内存正比于实际收到的分片数——攻击者必须真发字节
+    /// 才能撑大内存。完整性与交付语义不变（见 `data_complete` / `drain_ready`）。
+    frags: std::collections::HashMap<usize, Vec<u8>>,
     created: std::time::Instant,
+}
+
+impl FrameReasm {
+    /// 数据槽 `[0, frag_count)` 是否全部就位（奇偶槽不计入完整性——它只是
+    /// 恢复用的冗余，语义与旧 `frags[..frag_count].iter().all(is_some)` 等价）。
+    fn data_complete(&self, frag_count: usize) -> bool {
+        (0..frag_count).all(|i| self.frags.contains_key(&i))
+    }
 }
 
 /// 接收端重组器：严格按 seq 交付（P 帧链不容重排）。
@@ -394,8 +409,9 @@ impl VidReassembler {
             // 交付被拦——锚定关键帧到达后按序补交付。
         }
 
-        // 🔴 脏包防御 ①：分片数上界。`frag_count` 取自**线上包**，
-        // 不夹住就能用畸形包放大 `frags` 的分配量（见 `MAX_FRAG_COUNT` 的注释）。
+        // 🔴 脏包防御 ①：分片数上界。`frag_count` 取自**线上包**；P3-4 后分片槽
+        // 按需存储、内存不再随它放大，但仍夹住 `total` 算术 / `try_recover` 组定位
+        // / 完整性扫描的工作量上界（见 `MAX_FRAG_COUNT` 的注释）。
         if frag_count == 0 || frag_count > MAX_FRAG_COUNT {
             return None;
         }
@@ -426,19 +442,22 @@ impl VidReassembler {
             enc_ms,
             width,
             height,
-            frags: (0..total).map(|_| None).collect(),
+            // 🔴 再审计 P3-4：空表起步、到一片存一片——不在分配路径上按声明的
+            // frag_count 预留任何槽位（攻击面见 `FrameReasm::frags` 的注释）。
+            frags: std::collections::HashMap::new(),
             created: std::time::Instant::now(),
         });
         if reasm.frag_count != frag_count || reasm.frame_len != frame_len || reasm.codec != codec {
             return None; // 同 seq 但元数据矛盾：丢弃脏包
         }
-        if reasm.frags[slot].is_none() {
-            reasm.frags[slot] = Some(payload.to_vec());
-        }
+        // 🔴 再审计 P3-4：按需落位。`or_insert` 保住旧语义「先到先得」——同槽位
+        // 重复/重排到达的分片不覆盖已存内容；每个槽位的存储代价由该片的线上
+        // 字节（≥34B 头）支付，无放大。
+        reasm.frags.entry(slot).or_insert_with(|| payload.to_vec());
         // reasm 的 map 借用到此为止；完整性检查走独立查询
         let complete = |map: &std::collections::HashMap<u32, FrameReasm>| -> bool {
             map.get(&seq)
-                .map(|r| r.frags[..frag_count as usize].iter().all(|f| f.is_some()))
+                .map(|r| r.data_complete(frag_count as usize))
                 .unwrap_or(false)
         };
         // 奇偶片到 → 尝试恢复组内缺失
@@ -462,8 +481,9 @@ impl VidReassembler {
     fn drain_ready(&mut self) -> Vec<ReasmFrame> {
         let mut out = Vec::new();
         loop {
+            // 🔴 再审计 P3-4：完整性判据经 `data_complete`（按需存储后的等价形式）
             let ready = match self.map.get(&self.next_seq) {
-                Some(r) => r.frags[..r.frag_count as usize].iter().all(|f| f.is_some()),
+                Some(r) => r.data_complete(r.frag_count as usize),
                 None => false,
             };
             if !ready {
@@ -476,7 +496,7 @@ impl VidReassembler {
             // 各片真实长度之和的校验在下面，不符即报废。
             let mut data = Vec::with_capacity(reasm.frame_len as usize);
             for i in 0..reasm.frag_count as usize {
-                data.extend_from_slice(reasm.frags[i].as_deref().unwrap_or(&[]));
+                data.extend_from_slice(reasm.frags.get(&i).map_or(&[][..], |v| v.as_slice()));
             }
             if data.len() != reasm.frame_len as usize {
                 // M6：分片拼出的字节数与声明的帧长不符 = 脏帧。引用链从此不可信，
@@ -516,11 +536,12 @@ impl VidReassembler {
         };
         let start = g * GROUP;
         let end = (((start + GROUP) as u16).min(frag_count)) as usize;
-        let missing: Vec<usize> = (start..end).filter(|i| reasm.frags[*i].is_none()).collect();
+        // 🔴 再审计 P3-4：`contains_key` 取代旧的 `is_none()`（按需存储的等价形式）
+        let missing: Vec<usize> = (start..end).filter(|i| !reasm.frags.contains_key(i)).collect();
         if missing.len() != 1 {
             return;
         }
-        let Some(parity) = reasm.frags[parity_slot].clone() else {
+        let Some(parity) = reasm.frags.get(&parity_slot).cloned() else {
             return;
         };
         let mut rec = parity;
@@ -528,7 +549,7 @@ impl VidReassembler {
             if i == missing[0] {
                 continue;
             }
-            if let Some(f) = &reasm.frags[i] {
+            if let Some(f) = reasm.frags.get(&i) {
                 for (b, s) in rec.iter_mut().zip(f.iter()) {
                     *b ^= s;
                 }
@@ -540,7 +561,7 @@ impl VidReassembler {
             .saturating_sub(mi * FRAG)
             .min(FRAG);
         rec.truncate(flen);
-        reasm.frags[mi] = Some(rec);
+        reasm.frags.insert(mi, rec);
     }
 
     fn gc(&mut self) {

@@ -25,6 +25,13 @@ pub struct MfH264Encoder {
     bitrate: u32,
     frame_idx: u64,
     com_owned: bool,
+    /// 🔴 再审计 P3-11（2026-09-25）：`CoInitializeEx` 成功时所在的线程。
+    /// `CoUninitialize` 是**按线程配对**的——本对象在某 tokio worker 上初始化 COM，
+    /// Drop 却可能落在另一个 worker 上（tokio 任务会在 worker 间迁移），跨线程
+    /// `CoUninitialize` 会错减**别人**的 MTA 引用计数或对未初始化线程报错。
+    /// 线程不同就跳过释放：进程生命周期内少一次 MTA 引用释放是无害的
+    ///（MTA 生存到进程退出，不靠单次引用计数维持），错减却是实打实的破坏。
+    com_init_thread: Option<std::thread::ThreadId>,
     pending: Vec<H264Packet>,
     /// P1：D3D11 零拷贝模式（fps120 档）。Some = BGRA 纹理经 VideoProcessor
     /// 转成 NV12 纹理直接进编码器，全程不碰显存读回。
@@ -279,6 +286,7 @@ impl MfH264Encoder {
                 bitrate,
                 frame_idx: 0,
                 com_owned,
+                com_init_thread: com_owned.then(|| std::thread::current().id()),
                 pending: Vec::new(),
                 gpu: gpu_conv,
             })
@@ -376,6 +384,17 @@ impl MfH264Encoder {
                         std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
                     while !self.need_input {
                         self.pump_one(&events, Some(deadline))?;
+                        // 🔴 再审计 B1（2026-09-25）：等 NeedInput 期间 HaveOutput 可能
+                        // 先到。低延迟模式下 MFT 输入队列被上一帧占满时，**不收出就
+                        // 不再发 NeedInput**——过去这里只盯着 need_input，HaveOutput
+                        // 置位也不管，于是每帧干等 300ms 超时、直到 60 帧熔断。
+                        // 检测到就先用同一条 collect 路径收掉（包进 pending，随本帧
+                        // 一起返回，不丢），MFT 腾出输出队列后 NeedInput 才会来，
+                        // 单次慢帧后状态机得以自愈。
+                        if self.have_output {
+                            self.have_output = false;
+                            self.drain_once()?;
+                        }
                     }
                     self.need_input = false;
                     self.transform
@@ -522,8 +541,15 @@ impl MfH264Encoder {
         self.codec_api = None;
         self.gpu = None;
         if self.com_owned {
-            unsafe { CoUninitialize() };
+            // 🔴 再审计 P3-11（2026-09-25）：只在初始化 COM 的同一条线程上配对
+            // `CoUninitialize`。tokio 任务会在 worker 间迁移，Drop 落在别的
+            // worker 时跳过——少一次 MTA 释放无害（见 `com_init_thread` 注释），
+            // 跨线程释放会错减他人引用。
+            if self.com_init_thread == Some(std::thread::current().id()) {
+                unsafe { CoUninitialize() };
+            }
             self.com_owned = false;
+            self.com_init_thread = None;
         }
     }
 }

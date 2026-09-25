@@ -390,12 +390,17 @@ fn 守卫_入站剪贴板走spawn_blocking() {
 }
 
 /// 守卫：音频通道必须有界（P2-3），不得 unbounded。
+///
+/// 🔴 B6（2026-09-25 审计）改写：旧断言钉的「try_send 满则丢包」恰恰是缺陷
+/// 本体——满时丢的是**最新**包（Cfg 被丢还会让对端变调），与「音频要新鲜」
+/// 的设计注释相反。新断言钉的是修复后的不变量：队列来自 audio_channel() 的
+/// 满丢最旧包装（pop_front 挤最旧 / push_back 保最新），容量仍是常量。
 #[test]
 fn 守卫_音频通道有界() {
     let inbound_tasks = include_str!("../inbound_tasks.rs");
     assert!(
-        inbound_tasks.contains("mpsc::channel::<super::audio::AudioOut>"),
-        "音频队列必须是有界 channel"
+        inbound_tasks.contains("super::audio::audio_channel()"),
+        "音频队列必须来自 audio::audio_channel()（B6：有界 + 满丢最旧）"
     );
     assert!(
         !inbound_tasks.contains("unbounded_channel"),
@@ -403,8 +408,12 @@ fn 守卫_音频通道有界() {
     );
     let audio = include_str!("../audio.rs");
     assert!(
-        audio.contains("fn try_push_audio") && audio.contains("try_send"),
-        "生产侧必须 try_send 满则丢包，禁止无限 send"
+        audio.contains("fn try_push_audio") && audio.contains("pop_front"),
+        "生产侧必须满丢最旧（B6）：pop_front 挤掉最旧、push_back 保住最新"
+    );
+    assert!(
+        audio.contains("AUDIO_CHAN_CAP"),
+        "容量必须仍由常量 AUDIO_CHAN_CAP 决定，禁止无界堆积（P2-3）"
     );
 }
 

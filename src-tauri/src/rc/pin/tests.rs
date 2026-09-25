@@ -588,3 +588,20 @@ fn 没名字时用短指纹兜底() {
     assert_eq!(p.peer_name, "abababab");
     assert_eq!(p.peer_name.len(), 8);
 }
+
+/// 🔴 P3-1（2026-09-25 审计）守卫：写库失败**绝不**折叠成 `Gone`。
+///
+/// 那是个半状态：会话已清、本端 pin_ok 仍送达（对端侧多半已配好），
+/// 唯独本机没落库——按「落空」处理会诱导用户重配对。失败分支被拆进
+/// 纯函数 [`commit_outcome`]（内存态 DataStore 没有可靠的强制失败开关），
+/// 在这里钉死形状：Err 必须带出 (peer_id, peer_name) 供上层报可行动错误。
+#[test]
+fn 写库失败返回StoreFailed而不是Gone_p3_1() {
+    let out = commit_outcome(Err("磁盘写不动".into()), "aa", "台式机");
+    assert_eq!(out, Err(("aa".to_string(), "台式机".to_string())));
+    // 成功路径形状不变（真库走完整握手落库的用例见上方 Committed 各条）
+    assert_eq!(
+        commit_outcome(Ok(()), "aa", "台式机"),
+        Ok(("aa".to_string(), "台式机".to_string()))
+    );
+}

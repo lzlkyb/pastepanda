@@ -138,6 +138,30 @@ describe("useRcInput 指令状态与节流", () => {
     expect(mockedSend).toHaveBeenCalledWith({ kind: "key", vk: 0x57, down: false });
   });
 
+  it("🔴 画外松开（window mouseup）复位本地光标按压态并补发 UP", () => {
+    const { result } = renderInput();
+    act(() => result.current.sendButton({ clientX: 50, clientY: 50, button: 0 }, true));
+    expect(result.current.cursorPressed).toBe(true);
+    // 指针拖出画面才松开：canvas 的 onMouseUp 收不到，window 兜底接管
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mouseup", { button: 0 }));
+    });
+    expect(result.current.cursorPressed).toBe(false);
+    expect(mockedSend).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "mouse_button", button: 1, down: false }),
+    );
+  });
+
+  it("🔴 整窗失焦（blur）同样复位本地光标按压态", () => {
+    const { result } = renderInput();
+    act(() => result.current.sendButton({ clientX: 50, clientY: 50, button: 0 }, true));
+    expect(result.current.cursorPressed).toBe(true);
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(result.current.cursorPressed).toBe(false);
+  });
+
   it("滚轮 16ms 内合并为一条，delta 累加坐标取最新", async () => {
     vi.useFakeTimers();
     try {

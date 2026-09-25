@@ -298,6 +298,10 @@ unsafe fn hardware_mft_d3d11_aware(subtype: &windows::core::GUID) -> bool {
     }
     let slice = std::slice::from_raw_parts(acts, count as usize);
     let mut aware = false;
+    // 🔴 再审计 P3-13（2026-09-25）：每个 IMFActivate 的 ShutdownObject **恰好
+    // 一次**——过去激活成功者在第一循环内已 Shutdown，收尾又对全体（含已
+    // Shutdown 的与从未激活成功的）再调一次：对已 Shutdown 的对象重复释放，
+    // 对未激活的调用必失败。激活成功才需要 Shutdown，收尾循环整个删掉。
     for a in slice.iter().flatten() {
         if let Ok(t) = a.ActivateObject::<IMFTransform>() {
             if let Ok(attrs) = t.GetAttributes() {
@@ -314,9 +318,6 @@ unsafe fn hardware_mft_d3d11_aware(subtype: &windows::core::GUID) -> bool {
         if aware {
             break;
         }
-    }
-    for a in slice.iter().flatten() {
-        let _ = a.ShutdownObject();
     }
     windows::Win32::System::Com::CoTaskMemFree(Some(acts as _));
     aware

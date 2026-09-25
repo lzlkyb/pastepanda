@@ -242,13 +242,16 @@ impl OutboundVideo {
         #[cfg(target_os = "windows")]
         {
             let svc = self.svc.clone();
-            let peer = self.peer.clone();
+            // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id——LAN 快速
+            // 重连时新旧会话 peer 相同，旧任务组会因「peer 相同」误判自己仍存活；
+            // id 化后旧任务在下一拍（≤500ms）正确退出。spawn 前捕获本会话 id。
+            let my_id = self.my_id.clone();
             let conn = self.conn.clone();
             let reasm = self.reasm.clone();
             tauri::async_runtime::spawn(async move {
             let mut last_key_req: Option<std::time::Instant> = None;
             loop {
-                if !svc.session_is(super::protocol::SessionPhase::OutboundActive, &peer) {
+                if !svc.session_id_is(&my_id) {
                     break;
                 }
                 let dg = tokio::select! {
@@ -310,11 +313,14 @@ impl OutboundVideo {
         #[cfg(target_os = "windows")]
         {
             let svc = self.svc.clone();
-            let peer = self.peer.clone();
+            // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id（LAN 快速
+            // 重连时新旧会话 peer 相同，旧 acceptor 会误判自己仍存活、继续 accept
+            // 旧连接上的流；id 化后下一拍正确退出）。spawn 前捕获本会话 id。
+            let my_id = self.my_id.clone();
             let conn = self.conn.clone();
             tauri::async_runtime::spawn(async move {
                 loop {
-                    if !svc.session_is(super::protocol::SessionPhase::OutboundActive, &peer) {
+                    if !svc.session_id_is(&my_id) {
                         break;
                     }
                     let mut stream = tokio::select! {
@@ -351,6 +357,25 @@ impl OutboundVideo {
                     );
                     svc.audio_begin(cfg);
                     // ── 包循环 ──
+                    // 🔴 再审计 P3-5（2026-09-25）：包循环的 read_exact 是**裸读**，
+                    // 对端流静默（不关流也不发数据）时会陪挂到连接死亡。不能 select
+                    // 包住超时——read_exact 非取消安全，弃读会把半截包留在流里碎帧
+                    //（P1-5 / A3 同因）；沿用既定的伴生看门狗模式：500ms 拍查会话，
+                    // 会话没了 close 连接把裸读解出来。每条流配一个看门狗，包循环
+                    // 退出即 abort，不陪外层 accept 循环空转到会话结束。
+                    let w_svc = svc.clone();
+                    let w_id = my_id.clone();
+                    let w_conn = conn.clone();
+                    let closer = tauri::async_runtime::spawn(async move {
+                        loop {
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            if !w_svc.session_id_is(&w_id) {
+                                // 理由码对端不解析，只为解阻塞
+                                w_conn.close(0u32.into(), b"rc-audio-acceptor-exit");
+                                return;
+                            }
+                        }
+                    });
                     loop {
                         let mut lb = [0u8; 4];
                         if stream.read_exact(&mut lb).await.is_err() {
@@ -368,6 +393,8 @@ impl OutboundVideo {
                         let pts = u64::from_le_bytes(body[1..9].try_into().unwrap());
                         svc.audio_push(pts, body[9..].to_vec());
                     }
+                    // 包循环退出（流 EOF / 脏包 / 断链）：看门狗交棒
+                    closer.abort();
                 }
             });
         }
@@ -381,14 +408,17 @@ impl OutboundVideo {
     /// EMA 平滑后写入 svc；窗口没有新包就不更新。
     fn spawn_loss_sampler(&self) {
         let svc = self.svc.clone();
-        let peer = self.peer.clone();
+        // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id——LAN 快速
+        // 重连时旧采样器会因「peer 相同」继续把旧连接的丢包数喂进新会话的 HUD；
+        // id 化后下一拍正确退出。spawn 前捕获本会话 id。
+        let my_id = self.my_id.clone();
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
             let mut prev: Option<(u64, u64)> = None;
             let mut ema: u64 = 0;
             let mut has_ema = false;
             loop {
-                if !svc.session_is(super::protocol::SessionPhase::OutboundActive, &peer) {
+                if !svc.session_id_is(&my_id) {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;

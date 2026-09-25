@@ -19,11 +19,18 @@ export function RcSessionTop({
   session,
   linkState,
   fullscreen,
+  hideWindowControls = false,
 }: {
   session: RcSession;
   linkState: RcLinkState;
   /** 会话壳全屏中——顶条此时是画面顶边，禁用拖窗（拖拽区会牵动窗口）。 */
   fullscreen?: boolean;
+  /**
+   * 🔴 再审计（全屏双组三键，2026-09-25）：全屏态顶条与 RcFullscreenHotbar 的
+   * 窗口三键同屏两份——设计稿意图是全屏只用 hotbar 右上角三键（Windows 习惯位，
+   * 关闭键贴屏幕右上角）。只在全屏传 true 隐藏顶条三键，非全屏行为不变。
+   */
+  hideWindowControls?: boolean;
 }) {
   const dotCls =
     linkState === "connected"
@@ -45,10 +52,13 @@ export function RcSessionTop({
       </span>
       <span className={styles.sp} />
       {/* 方案 A/B（2026-09-24）：完整三键组，仍走 close()（不 destroy），
-          「有会话先问」的守卫不变。 */}
-      <div className={styles.winControlsFlush} data-tauri-drag-region="false">
-        <RcWindowControls />
-      </div>
+          「有会话先问」的守卫不变。全屏态隐藏（hotbar 右上角有同语义三键，
+          见 hideWindowControls 注释），避免同屏双组。 */}
+      {!hideWindowControls && (
+        <div className={styles.winControlsFlush} data-tauri-drag-region="false">
+          <RcWindowControls />
+        </div>
+      )}
     </div>
   );
 }

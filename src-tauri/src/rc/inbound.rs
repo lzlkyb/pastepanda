@@ -29,7 +29,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::input::{
-    assert_control_allowed, get_clipboard_text_async, inject, set_clipboard_text_async,
+    assert_control_allowed, converge_key_vk, get_clipboard_text_async, inject,
+    set_clipboard_text_async,
 };
 use super::input::{InputEvent, ScreenRegion};
 use super::encode_h264::VideoCodec;
@@ -179,6 +180,68 @@ async fn reply_clip_err(
         if let Err(e) = write_frame(&mut guard, &b).await {
             log::debug!("[RC] 剪贴板回执帧写入失败（连接可能已断）：{e}");
         }
+    }
+}
+
+/// 注入失败回执：`inject_err` 帧写给发起端 + 本机状态置位。
+///
+/// B9/P3-3（2026-09-25 审计）收口成一条路：入口校验拒绝（畸形 vk）与注入
+/// 执行失败共用同一份回帧写法，不再各写一遍（写法分叉就是漏回帧的开始）。
+async fn reply_inject_err(
+    send: &Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
+    error: String,
+) {
+    let msg = serde_json::json!({ "t": "inject_err", "error": error });
+    if let Ok(b) = serde_json::to_vec(&msg) {
+        let mut guard = send.lock().await;
+        // C6：连「通知对方注入失败」这条帧都写丢了的话，必须留痕。
+        if let Err(e) = write_frame(&mut guard, &b).await {
+            log::warn!("[RC] inject_err 回执写帧失败：{e}");
+        }
+    }
+}
+
+/// [`pressed_rollback`] 的判定输入：这次注入**若成功**，追踪动作是什么。
+///
+/// ❗ 字段语义要看清：`Down(bool)` 的 bool 是「本次按下是否**新建**了记录」
+///（`press_key`/`press_button` 的返回值），不是「键是否在按下态」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrackOutcome {
+    /// down 事件。bool = 本次按下是否新建了记录。
+    Down(bool),
+    /// up 事件：配对成功、记录已摘除（走到注入说明确实按着）。
+    Up,
+}
+
+/// 注入失败后对 pressed 集合的回滚动作（🔴 P3-3，2026-09-25 审计）。
+///
+/// pressed 的不变量是「集合里的每颗键/鼠标键都**真的**在本机处于按下态」，
+/// 会话收口 `release_all` 才能放心补发 up。注入失败会破坏这个不变量，按
+/// 三种情形精确回滚（纯判定，无环境可单测）：
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PressedRollback {
+    /// 首次按下且注入失败：**摘除**刚建的记录——键根本没按下去，
+    /// 留着它收口就会补发孤立 up（孤立的 WM_RBUTTONUP 会在远端凭空
+    /// 弹出上下文菜单）。
+    Remove,
+    /// 重复按下失败：记录**保留**——先前那次成功按下仍在生效，
+    /// 摘了反而让收口漏发 up，键真卡死。
+    Keep,
+    /// 抬起失败：记录**放回**——机器上键还处于按下态（up 没送成），
+    /// 放回后收口 `release_all` 会重试补发并如实上报失败（P1-3 的上报链）。
+    Restore,
+}
+
+fn pressed_rollback(outcome: TrackOutcome) -> PressedRollback {
+    match outcome {
+        TrackOutcome::Down(was_new) => {
+            if was_new {
+                PressedRollback::Remove
+            } else {
+                PressedRollback::Keep
+            }
+        }
+        TrackOutcome::Up => PressedRollback::Restore,
     }
 }
 
@@ -460,40 +523,100 @@ pub(super) async fn handle_inbound_input(
     // 误丢真实抬起的风险极低：鼠标的按下与抬起走同一路（数据报），真丢的是 DOWN，
     // 那时远端本来就没按下；万一乱序导致 DOWN 晚到，下一次点击会重发 DOWN
     // （重复按下照常注入）+ 配对的 UP，自愈。
-    match &ev {
+    // 🔴 B9（2026-09-25 审计）：Key 的 vk 先收敛再谈追踪/注入。线上 vk 是
+    // u32、`SendInput` 只要 u16——旧代码注入处 `as u16` 静默截断、追踪用
+    // 原值，两套口径下畸形 vk（>0xFFFF）会「按 A 松 A 卡键」（down 记
+    // 0x1_0041，up 来 0x41 查不到配对）。收口函数是
+    // `input::converge_key_vk`（收口补发那条旁路也过它）；收不下的在这里
+    // 丢弃并上报——不发注入、不进追踪。
+    if let InputEvent::Key { vk, .. } = &ev {
+        if converge_key_vk(*vk).is_none() {
+            let error = format!("无效的按键值 vk={vk}（超出 0..=65535），已丢弃");
+            log::warn!("[RC] 键鼠注入事件被拒（{peer}）：{error}");
+            reply_inject_err(send, error).await;
+            return;
+        }
+    }
+
+    // C2（2026-09-23 复审）：按下追踪**紧贴注入**、在所有早退门控之后。
+    // 原先记在守卫之前，「会话已切换」的丢弃路径会把按键留在 pressed 里——
+    // 这颗键本机根本没按下，却等着被 release_all 补发一个凭空的 up。
+    //
+    // 追踪按下/抬起：会话收口时由 end_session 调 release_all 补发 up，
+    // 避免对端断线后 Ctrl/Shift/鼠标键永久卡在按下态。只在会真正注入时记录。
+    //
+    // 🔴 顺带丢弃「未配对的抬起」（2026-09-22）：抬起态在 `pressed` 里查不到对应
+    // 按下，说明这颗键在本机从未按下过。继续注入它的代价是**远端凭空弹菜单**——
+    // Windows 对孤立的 WM_RBUTTONUP 会生成 WM_CONTEXTMENU（DefWindowProc 行为），
+    // 而发起端的 `releaseModifiers()` 曾经在每次焦点离开画面时盲发三个鼠标 up
+    // （前端已删，这里是第二道防线）。
+    //
+    // 误丢真实抬起的风险极低：鼠标的按下与抬起走同一路（数据报），真丢的是 DOWN，
+    // 那时远端本来就没按下；万一乱序导致 DOWN 晚到，下一次点击会重发 DOWN
+    // （重复按下照常注入）+ 配对的 UP，自愈。
+    //
+    // 🔴 P3-3（2026-09-25 审计）：追踪动作带回「这次是否新按下」（[`TrackOutcome`]），
+    // 注入失败时按下方的 [`pressed_rollback`] 精确回滚——盲目「失败就删记录」
+    // 会把先前成功那次重复按下的记录也抹掉，收口反而漏发 up。
+    let track: Option<TrackOutcome> = match &ev {
         InputEvent::Key { vk, down } => {
             let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
             if *down {
-                g.press_key(*vk);
-            } else if !g.release_key(*vk) {
-                log::debug!("[RC] 丢弃未配对的抬起（vk={vk}）");
-                return;
+                Some(TrackOutcome::Down(g.press_key(*vk)))
+            } else {
+                if !g.release_key(*vk) {
+                    log::debug!("[RC] 丢弃未配对的抬起（vk={vk}）");
+                    return;
+                }
+                Some(TrackOutcome::Up)
             }
         }
         InputEvent::MouseButton { button, down, .. } => {
             let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
             if *down {
-                g.press_button(*button);
-            } else if !g.release_button(*button) {
-                log::debug!("[RC] 丢弃未配对的抬起（button={button}）");
-                return;
+                Some(TrackOutcome::Down(g.press_button(*button)))
+            } else {
+                if !g.release_button(*button) {
+                    log::debug!("[RC] 丢弃未配对的抬起（button={button}）");
+                    return;
+                }
+                Some(TrackOutcome::Up)
             }
         }
-        _ => {}
-    }
+        _ => None,
+    };
 
     let r = inject(&ev, &region);
     if !r.ok {
-        log::warn!("[RC] 键鼠注入失败（{peer}）：{}", r.error);
-        // P1：UIPI 等失败要让发起端看见，不能只写日志
-        let msg = serde_json::json!({ "t": "inject_err", "error": r.error });
-        if let Ok(b) = serde_json::to_vec(&msg) {
-            let mut guard = send.lock().await;
-            // C6：连「通知对方注入失败」这条帧都写丢了的话，必须留痕。
-            if let Err(e) = write_frame(&mut guard, &b).await {
-                log::warn!("[RC] inject_err 回执写帧失败：{e}");
+        // 🔴 P3-3：回滚 pressed（[`pressed_rollback`] 的三种情形），保证
+        // 「集合里的键都真的按着」这条不变量，end_session 的 release_all
+        // 才不会对没按下去的键注入孤立 up（凭空弹上下文菜单）。只走
+        // pressed 的现有增删 API，不另开第二套记录口径。
+        if let Some(t) = track {
+            let action = pressed_rollback(t);
+            let mut g = svc.pressed.lock().unwrap_or_else(|p| p.into_inner());
+            match (&ev, action) {
+                (InputEvent::Key { vk, .. }, PressedRollback::Remove) => {
+                    g.release_key(*vk);
+                }
+                (InputEvent::Key { vk, .. }, PressedRollback::Restore) => {
+                    g.press_key(*vk);
+                }
+                (InputEvent::MouseButton { button, .. }, PressedRollback::Remove) => {
+                    g.release_button(*button);
+                }
+                (InputEvent::MouseButton { button, .. }, PressedRollback::Restore) => {
+                    g.press_button(*button);
+                }
+                // 其余组合：Keep（重复按下失败，先前成功按下的记录原样保留），
+                // 以及「事件类型与追踪结果不配对」——后者不可达（track 只对
+                // Key / MouseButton 置 Some），一并静默。
+                _ => {}
             }
         }
+        log::warn!("[RC] 键鼠注入失败（{peer}）：{}", r.error);
+        // P1：UIPI 等失败要让发起端看见，不能只写日志
+        reply_inject_err(send, r.error.clone()).await;
         svc.set_inject_err(r.error.clone());
     }
 }
@@ -501,3 +624,30 @@ pub(super) async fn handle_inbound_input(
 // impl InboundVideo 的推流方法平移到子模块（硬编路径 / 运行循环）。
 mod video;
 mod video_run;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 🔴 P3-3（2026-09-25 审计）守卫：注入失败时对 pressed 的回滚判定。
+    ///
+    /// 盲目「失败就删记录」有两种坏法：重复按下失败会把先前成功那次的记录
+    /// 也抹掉（收口漏发 up → 键真卡死）；抬起失败不把记录放回（机器上还按
+    /// 着，收口既不重试也不上报）。三种情形必须各归各位。
+    #[test]
+    fn 注入失败的pressed回滚判定_p3_3() {
+        // 首次按下失败：摘除——键没按下去，收口不许补发孤立 up
+        //（孤立的 WM_RBUTTONUP 会在远端凭空弹出上下文菜单）。
+        assert_eq!(
+            pressed_rollback(TrackOutcome::Down(true)),
+            PressedRollback::Remove
+        );
+        // 重复按下失败：保留——先前成功那次仍在生效
+        assert_eq!(
+            pressed_rollback(TrackOutcome::Down(false)),
+            PressedRollback::Keep
+        );
+        // 抬起失败：放回——收口 release_all 重试补发并如实上报
+        assert_eq!(pressed_rollback(TrackOutcome::Up), PressedRollback::Restore);
+    }
+}

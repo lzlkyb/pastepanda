@@ -41,6 +41,12 @@
 //! - 指数退避：连续失败 n 次后，下一次尝试要距上次失败 ≥ base·2^(n-1)
 //!   （1s 起步、60s 封顶）。锁定期满后计数**不清零**：下一错直接再锁，
 //!   攻击者无法用「等 10 分钟重置计数」把尝试速率拉回起步。
+//! - 🔴 B10（2026-09-25 审计）**全局新身份闸**：node_id 验真防的是「冒名」，
+//!   防不了「换密钥对换身份」——密钥对免费，每个新身份在 per-node 闸眼里
+//!   都是「首次尝试，不设防」。对策是加一层按**全局**口径的闸：滑动窗口内
+//!   「首次出现的新 node_id」超过 [`NEW_ID_LIMIT`] 个就触发冷却，对没见过的
+//!   新身份临时拒绝（[`NEW_ID_COOLDOWN_MS`]）；**已通过验密的身份完全不受
+//!   影响**（合法用户不被刷量连坐）。窗口排空即自愈，不会永久化。
 //! - 连续成功验密即清档。**清档点在验密通过之后、建会话之前**——「密码对但
 //!   本机忙」不算失败（他没在爆破），不该吃退避。
 //! - 键上限 [`PEERS_CAP`]：node_id 虽验真但密钥对免费，无上限的表就是内存
@@ -79,6 +85,26 @@ pub const LOCK_MS: i64 = 10 * 60 * 1000;
 
 /// 退避闸的对端键上限。
 const PEERS_CAP: usize = 4096;
+
+/// 🔴 B10（2026-09-25 审计）：全局新身份闸的滑动窗口。
+///
+/// 窗口计的是「5 分钟内**首次出现**的新 node_id」。正常使用——哪怕一口气
+/// 配十几台新机——到不了这个量级；到达了就只可能是批量换密钥对的刷量。
+pub const NEW_ID_WINDOW_MS: i64 = 5 * 60 * 1000;
+
+/// 🔴 B10：触发全局冷却的新身份阈值（窗口内首次出现的不同 node_id 数）。
+/// 克制值：宁可漏放一批，不把正常的新设备挡在门外。
+pub const NEW_ID_LIMIT: usize = 10;
+
+/// 🔴 B10：触发后对「没见过」的新身份的冷却时长。冷却到点而窗口未排空时
+/// 会由下一个新身份再次触发——刷量不停、冷却不散；攻击停止后窗口排空
+/// （≤ [`NEW_ID_WINDOW_MS`]）即自愈，不会永久化。
+pub const NEW_ID_COOLDOWN_MS: i64 = 60_000;
+
+/// 🔴 B10：已验证身份的登记上限（与 [`PEERS_CAP`] 同量级）。超限后不再登记：
+/// 该身份最多在活跃攻击期多吃一次冷却（60s），是体验代价不是安全洞，
+/// 换的是这层状态不随历史无限膨胀。
+const KNOWN_CAP: usize = 4096;
 
 /// 指数退避的位移上限：2^6 = 64s ≥ [`BACKOFF_MAX_MS`]，再往上就是白算。
 const BACKOFF_MAX_SHIFT: u32 = 6;
@@ -215,10 +241,23 @@ pub enum GateCheck {
     Wait(i64),
 }
 
+/// 🔴 B10：全局新身份闸的状态（纯内存，随进程生灭）。
+#[derive(Default)]
+struct NewIdTrack {
+    /// 窗口内「首次出现」的新身份：(node_id, 首次出现时刻)。
+    seen: std::collections::VecDeque<(String, i64)>,
+    /// 验密通过过的身份：不再受新身份冷却影响（合法用户不连坐）。
+    known: std::collections::HashSet<String>,
+    /// 冷却截止时刻（0 = 未触发）。
+    blocked_until_ms: i64,
+}
+
 /// 每对端防爆破闸（纯内存，随进程生灭）。
 #[derive(Default)]
 pub struct BruteGate {
     peers: Mutex<HashMap<String, PeerFail>>,
+    /// 🔴 B10：全局新身份闸（语义见模块注释与 [`NEW_ID_LIMIT`] 等常量）。
+    new_ids: Mutex<NewIdTrack>,
 }
 
 impl BruteGate {
@@ -242,6 +281,38 @@ impl BruteGate {
                 return GateCheck::Wait(delay - since);
             }
         }
+        GateCheck::Ok
+    }
+
+    /// 🔴 B10：全局新身份闸。在 per-node 的 [`Self::check`] **之前**调。
+    ///
+    /// 三种放行：① 验密通过过的身份（`record_success` 登记过）；② 窗口内
+    /// 已登记过的身份（不是「新」身份，它自己的 per-node 闸管它）；③ 未触发
+    /// 冷却时的正常新身份（登记后放行）。触发后对未见过的身份一律 `Wait`。
+    pub fn check_new_identity(&self, peer: &str, now: i64) -> GateCheck {
+        let mut t = self.new_ids.lock().unwrap_or_else(|p| p.into_inner());
+        // ① 验密通过过的身份完全不受这层闸影响——合法用户不连坐。
+        if t.known.contains(peer) {
+            return GateCheck::Ok;
+        }
+        // ② 冷却中：一切「没见过」的身份直接拒。到点后窗口若还没排空，
+        //    下一个新身份会再次触发（见 ④）——刷量不停、冷却不散。
+        if now < t.blocked_until_ms {
+            return GateCheck::Wait(t.blocked_until_ms - now);
+        }
+        // ③ 窗口内已登记过 = 不是新身份。
+        if t.seen.iter().any(|(id, _)| id == peer) {
+            return GateCheck::Ok;
+        }
+        // 裁掉窗口外的旧条目（同一处顺带防 VecDeque 无界堆积）。
+        t.seen.retain(|(_, ms)| now - *ms <= NEW_ID_WINDOW_MS);
+        // ④ 满阈值：触发冷却，本身份也拒——它就是压垮窗口的那根稻草。
+        if t.seen.len() >= NEW_ID_LIMIT {
+            t.blocked_until_ms = now.saturating_add(NEW_ID_COOLDOWN_MS);
+            return GateCheck::Wait(NEW_ID_COOLDOWN_MS);
+        }
+        // ⑤ 正常新身份：登记后放行。
+        t.seen.push_back((peer.to_string(), now));
         GateCheck::Ok
     }
 
@@ -279,11 +350,18 @@ impl BruteGate {
     }
 
     /// 密码验过了就清档（建会话成功与否与此无关——busy 不是爆破）。
+    ///
+    /// 🔴 B10：顺带把身份登记进 `known`——此后它不再吃新身份冷却，
+    /// 合法用户不会因攻击者刷量被连坐锁在门外（上限 [`KNOWN_CAP`]）。
     pub fn record_success(&self, peer: &str) {
         self.peers
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .remove(peer);
+        let mut t = self.new_ids.lock().unwrap_or_else(|p| p.into_inner());
+        if t.known.len() < KNOWN_CAP {
+            t.known.insert(peer.to_string());
+        }
     }
 }
 
@@ -520,5 +598,106 @@ mod tests {
                 "锁定条目必须原样保留"
             );
         }
+    }
+
+    /// 🔴 B10（2026-09-25 审计）守卫：换密钥对（新身份）轮换刷量必须被
+    /// 全局闸拦下——per-node 闸对每个新身份都是「首次尝试不设防」，
+    /// 攻击者正是靠这一点零成本绕过它。
+    #[test]
+    fn 闸_新身份轮换刷量触发全局冷却() {
+        let g = BruteGate::default();
+        // 10 个新身份：每个都放行（它们没失败过，per-node 闸是干净的）
+        for i in 0..NEW_ID_LIMIT {
+            let peer = format!("rot{i}");
+            assert_eq!(
+                g.check_new_identity(&peer, T0),
+                GateCheck::Ok,
+                "第 {i} 个新身份该放行"
+            );
+        }
+        // 第 11 个：触发全局冷却，即便它自己一次都没失败过
+        assert!(matches!(
+            g.check_new_identity("rot-new", T0 + 1),
+            GateCheck::Wait(_)
+        ));
+        // 冷却期内，任何未见身份都拒
+        assert!(matches!(
+            g.check_new_identity("another", T0 + 2),
+            GateCheck::Wait(_)
+        ));
+    }
+
+    /// 🔴 B10：已通过验密的身份不受全局冷却连坐——合法用户不能被
+    /// 攻击者的刷量锁在门外。
+    #[test]
+    fn 闸_已验证身份不受新身份冷却连坐() {
+        let g = BruteGate::default();
+        let legit = "legit-node";
+        assert_eq!(g.check_new_identity(legit, T0), GateCheck::Ok);
+        g.record_success(legit);
+        // 一批新身份把全局闸打热
+        for i in 0..NEW_ID_LIMIT {
+            g.check_new_identity(&format!("att{i}"), T0 + i as i64);
+        }
+        assert!(matches!(
+            g.check_new_identity("fresh", T0 + 100),
+            GateCheck::Wait(_)
+        ));
+        assert_eq!(
+            g.check_new_identity(legit, T0 + 100),
+            GateCheck::Ok,
+            "验密通过过的身份不该被连坐"
+        );
+    }
+
+    /// 🔴 B10：冷却到点但窗口未排空时，下一个新身份再次触发——
+    /// 攻击者不能「等 60 秒冷却过去又进来一批」。
+    #[test]
+    fn 闸_冷却到点而窗口未排空则再次触发() {
+        let g = BruteGate::default();
+        for i in 0..NEW_ID_LIMIT {
+            g.check_new_identity(&format!("wave{i}"), T0);
+        }
+        assert!(matches!(g.check_new_identity("a", T0), GateCheck::Wait(_)));
+        // 冷却 60s 刚过，滑动窗口（5 分钟）还没排空
+        let after = T0 + NEW_ID_COOLDOWN_MS + 1;
+        assert!(
+            matches!(g.check_new_identity("b", after), GateCheck::Wait(_)),
+            "窗口未排空前必须继续冷却"
+        );
+    }
+
+    /// 🔴 B10：窗口滑动——攻击停止后窗口排空即自愈，冷却不会永久化。
+    #[test]
+    fn 闸_窗口排空后新身份恢复放行() {
+        let g = BruteGate::default();
+        for i in 0..NEW_ID_LIMIT {
+            g.check_new_identity(&format!("flood{i}"), T0);
+        }
+        assert!(matches!(
+            g.check_new_identity("victim", T0 + 1000),
+            GateCheck::Wait(_)
+        ));
+        // 5 分钟后窗口排空（冷却 60s 也早已过点）：新身份重新放行
+        let later = T0 + NEW_ID_WINDOW_MS + 1000;
+        assert_eq!(g.check_new_identity("after-flood", later), GateCheck::Ok);
+    }
+
+    /// 🔴 B10：同一身份窗口内重复出现只登记一次——合法用户反复重连
+    /// 不会把窗口刷满；阈值只为「大量**不同**新身份」而设。
+    #[test]
+    fn 闸_同一身份重复出现不重复计数() {
+        let g = BruteGate::default();
+        for n in 0..NEW_ID_LIMIT + 5 {
+            assert_eq!(
+                g.check_new_identity("same-peer", T0 + n as i64 * 1000),
+                GateCheck::Ok
+            );
+        }
+        assert_eq!(
+            g.new_ids.lock().unwrap_or_else(|p| p.into_inner()).seen.len(),
+            1,
+            "重复出现的身份只占一个窗口名额"
+        );
     }
 }

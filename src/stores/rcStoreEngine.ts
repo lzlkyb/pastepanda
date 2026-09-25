@@ -18,6 +18,13 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 // rc-session-changed 事件监听只装一次（同样只限本 WebView）
 let unlisteners: Array<() => void> = [];
 let listenerStarting = false;
+// 🔴 再审计（2026-09-25）：ensureListener 半失败后的自动重试状态。
+// 原先 catch 全静默且重试只发生在 subscribers 0→1（acquire）时——主窗常驻时
+// subscribers 永不归零，一次启动期 IPC 失败 = 四路事件整段哑到重启。
+let listenerRetries = 0;
+let listenerRetryTimer: ReturnType<typeof setTimeout> | null = null;
+const LISTENER_RETRY_MS = 2000;
+const LISTENER_RETRY_MAX = 3;
 
 function isActive(s: RcState["status"]): boolean {
   if (!s) return false;
@@ -58,6 +65,22 @@ function scheduleNext(get: () => RcState) {
       .refresh()
       .finally(() => scheduleNext(get));
   }, period);
+}
+
+/**
+ * 🔴 再审计（2026-09-25）：半失败后安排一次 2s 后的自动重试。
+ * 重试前检查 subscribers>0（没人订阅装了也白装）且未成功（ensureListener 自查
+ * unlisteners）；最多重试 3 次防打转，成功后计数清零。同一时刻只排一个重试。
+ */
+function scheduleListenerRetry(get: () => RcState) {
+  if (listenerRetryTimer != null) return;
+  if (listenerRetries >= LISTENER_RETRY_MAX) return;
+  listenerRetries += 1;
+  listenerRetryTimer = setTimeout(() => {
+    listenerRetryTimer = null;
+    if (get().subscribers <= 0) return; // 订阅者已全走光，等下次 acquire 再装
+    void ensureListener(get);
+  }, LISTENER_RETRY_MS);
 }
 
 /**
@@ -110,7 +133,9 @@ async function ensureListener(get: () => RcState) {
       }),
     );
     unlisteners = collected;
-  } catch {
+    // 🔴 成功即清重试计数：之后若再失败，仍享完整的 3 次重试额度
+    listenerRetries = 0;
+  } catch (e) {
     // 半失败：把已经装上的全部卸掉，下次 ensureListener 可干净重试
     for (const off of collected) {
       try {
@@ -119,6 +144,11 @@ async function ensureListener(get: () => RcState) {
         /* 卸载失败不影响回滚 */
       }
     }
+    // 🔴 再审计（2026-09-25）：不再静默——留痕 + 安排 2s 后自动重试。
+    // 主窗常驻时 subscribers 不会归零重来，靠「下次 acquire」重试等于永不重试，
+    // 一次启动期 IPC 失败 = 四路事件（会话变化/画面范围/编码提示/换路）哑到重启。
+    console.warn("[rcStore] rc 事件监听安装失败，已回滚并将自动重试", e);
+    scheduleListenerRetry(get);
   } finally {
     listenerStarting = false;
   }

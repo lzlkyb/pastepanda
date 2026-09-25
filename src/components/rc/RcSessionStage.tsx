@@ -88,7 +88,15 @@ export function RcSessionStage({
 
   return (
     <div className={styles.viewShell}>
-      <RcSessionTop session={session} linkState={link.state} fullscreen={fullscreen} />
+      {/* 🔴 再审计（全屏双组三键，2026-09-25）：全屏态顶条三键隐藏——hotbar
+          右上角已有同语义三键，同屏两份会让人不知道点哪份（设计稿意图是
+          全屏只用 hotbar 的）。非全屏照旧渲染。 */}
+      <RcSessionTop
+        session={session}
+        linkState={link.state}
+        fullscreen={fullscreen}
+        hideWindowControls={fullscreen}
+      />
 
       <div
         ref={screenRef}

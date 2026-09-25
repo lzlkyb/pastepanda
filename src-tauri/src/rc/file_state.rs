@@ -366,6 +366,13 @@ impl FileState {
     }
 
     /// 落终态。返回 `true` = 该发事件（终态一律强制上报，不受节流限制）。
+    ///
+    /// 🔴 P3-14（2026-09-25 审计）：**终态粘滞**——已是终态（Done / Denied /
+    /// Failed / Canceled）就不再改写。`file_cancel` 的
+    /// `is_running → task_finish(Canceled)` 是两步操作，与传输任务自己的收口
+    /// `task_finish(Done)` 竞态时，旧实现会把刚完成的 Done 覆盖成 Canceled
+    /// ——「明明传完了却显示已取消」。先到的终态算数；迟到的终态是幂等
+    /// 无操作（返回 `false`，不发事件——先到的那个终态早已强制上报过）。
     pub(crate) fn task_finish(
         &self,
         id: &str,
@@ -377,6 +384,11 @@ impl FileState {
         let Some(t) = g.iter_mut().find(|t| t.id == id) else {
             return false;
         };
+        // 🔴 P3-14：与上方 task_progress 的「终态不被进度拉回」是同一条不变量的
+        // 另一半——终态之间同样不许互相改写。
+        if t.state.is_over() {
+            return false;
+        }
         t.state = state;
         if state == TaskState::Done {
             t.done = t.size;

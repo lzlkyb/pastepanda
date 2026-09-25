@@ -17,6 +17,8 @@
  * 由 CSS `.viewToolsHidden` 与组件里的 `tab` 值共同承担，这里只出状态。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isSessionEscape } from "@/lib/rcKeyGuard";
+import { registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
 
 /** B 稿顶边热区：距画面顶缘这么近时唤出。 */
 const REVEAL_BAND_PX = 12;
@@ -47,6 +49,12 @@ export function useRcCapsuleReveal({
   const hideTimer = useRef<number | null>(null);
   /** 首显 15s 计时是否还在跑（决定异常恢复后走剩余首显还是 2.5s 淡出）。 */
   const initialPendingRef = useRef(true);
+  /**
+   * 🔴 再审计 B11（2026-09-25）：首显的**截止时刻**（挂载时刻 + INITIAL_SHOW_MS）。
+   * 挂载时 linkLocked 初值 connecting=true 会让锁显 effect 清掉首显计时，此前没有
+   * 这个记录，解锁分支无从知道「还剩多久」，首显就永远不淡出了。
+   */
+  const initialDeadlineRef = useRef(0);
   const lockRef = useRef(false);
 
   const clearTimer = useCallback(() => {
@@ -63,8 +71,11 @@ export function useRcCapsuleReveal({
     hideTimer.current = window.setTimeout(() => setShown(false), AUTO_HIDE_MS);
   }, [clearTimer]);
 
-  // 首显：挂载即显示，15s 无交互后淡出
+  // 首显：挂载即显示，15s 无交互后淡出。
+  // 🔴 B11：同时记下截止时刻——锁显（connecting 等）会清掉这个计时，解锁后
+  // 要按剩余时长重排，没有它首显永远不淡出。
   useEffect(() => {
+    initialDeadlineRef.current = Date.now() + INITIAL_SHOW_MS;
     hideTimer.current = window.setTimeout(() => {
       initialPendingRef.current = false;
       setShown(false);
@@ -81,8 +92,26 @@ export function useRcCapsuleReveal({
       setShown(true);
       return;
     }
-    // 解锁瞬间：首显窗口还开着 → 交给剩余的首显计时；否则正常 2.5s 淡出
-    if (!initialPendingRef.current) scheduleHide();
+    // 🔴 再审计 B11（2026-09-25）：解锁瞬间首显窗口还开着时，原实现只调
+    // scheduleHide 的判据写反了场景——挂载即锁显（connecting=true）时
+    // initialPending 仍为 true，这里什么都不排，shown 恒 true。现在：
+    // 按首显截止时刻算剩余，>0 按剩余时长重排「到期淡出」，≤0 说明首显
+    // 窗口实际已过，走正常 2.5s 淡出。清旧排新，锁显期间不会被反复重排。
+    clearTimer();
+    if (initialPendingRef.current) {
+      const remain = initialDeadlineRef.current - Date.now();
+      if (remain > 0) {
+        hideTimer.current = window.setTimeout(() => {
+          initialPendingRef.current = false;
+          setShown(false);
+        }, remain);
+      } else {
+        scheduleHide();
+      }
+      return;
+    }
+    // 解锁瞬间：首显窗口已过（期间有过交互）→ 正常 2.5s 淡出
+    scheduleHide();
   }, [locked, clearTimer, scheduleHide]);
 
   // 唤出监听挂在画面容器上（不挂 window，P2-12）
@@ -118,6 +147,27 @@ export function useRcCapsuleReveal({
   const menuDelta = useCallback((o: boolean) => {
     setMenusOpen((c) => Math.max(0, c + (o ? 1 : -1)));
   }, []);
+
+  // 🔴 再审计（Esc 两级取消，2026-09-25）：⋯ 面板展开期间向 rcPanelFocus 登记，
+  // useRcInput 的 window 级 Esc 兜底据此让路，不再直落「结束会话」确认（规则
+  // 17.6：Esc 先回上一步）；同时补「Esc 收起自己」——监听挂 document（冒泡先于
+  // window 上的兜底），stopPropagation 防穿透。register/unregister 在 effect 与
+  // cleanup 里严格配对，StrictMode 双挂载也平衡。
+  useEffect(() => {
+    if (!moreOpen) return;
+    registerRcPanel();
+    const onEsc = (e: KeyboardEvent) => {
+      if (!isSessionEscape(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setMoreOpen(false);
+    };
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      unregisterRcPanel();
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [moreOpen]);
 
   // ⋯ 面板：点外面收（同 RcHud 口径）
   useEffect(() => {

@@ -132,6 +132,13 @@ pub enum Confirmed {
     Committed { peer_id: String, peer_name: String },
     /// 会话已过期（或被取消），这次确认落空。
     Gone,
+    /// 🔴 P3-1（2026-09-25 审计）：两端核对都过了，但**本机写入设备列表失败**。
+    ///
+    /// 旧实现把它折叠成 `Gone`（「落空」）——可实际是个**半状态**：会话已清、
+    /// 本端的 `pin_ok` 仍会送达（对端多半已配好），唯独本机没落库。界面按
+    /// 「落空」处理会让用户以为什么都没发生。单独成变体后，调用方据此报
+    /// 可行动的错误（见 `discovery::confirm` 的映射话术）。
+    StoreFailed { peer_id: String, peer_name: String },
 }
 
 /// 一轮进行中的配对。
@@ -527,28 +534,52 @@ impl Pairs {
     ///
     /// 写失败不清洗用户：错误往上报，会话已经结束了（再点确认没意义）。
     fn commit(&self, peer_id: &str, peer_name: &str, initiator: bool, now_ms: i64) -> Confirmed {
-        if let Err(e) = self.store.rc_device_pair(peer_id, peer_name) {
+        match commit_outcome(self.store.rc_device_pair(peer_id, peer_name), peer_id, peer_name) {
+            Ok((id, name)) => {
+                *self.done.lock().unwrap_or_else(|p| p.into_inner()) = Some(Done {
+                    peer_id: id,
+                    peer_name: name,
+                    initiator,
+                    at_ms: now_ms,
+                });
+                Confirmed::Committed {
+                    peer_id: peer_id.to_string(),
+                    peer_name: peer_name.to_string(),
+                }
+            }
+            Err((id, name)) => Confirmed::StoreFailed {
+                peer_id: id,
+                peer_name: name,
+            },
+        }
+    }
+}
+
+/// 🔴 P3-1（2026-09-25 审计）：把落库结果折叠成 [`Confirmed`] 的分支
+/// （纯函数，可无库单测）。拆出来是因为内存态 `DataStore` 没有可靠的
+/// 「强制失败」开关——失败分支的形状（**绝不能**再返回 `Gone` 冒充落空）
+/// 由单测在这里钉死。
+fn commit_outcome(
+    stored: Result<(), String>,
+    peer_id: &str,
+    peer_name: &str,
+) -> Result<(String, String), (String, String)> {
+    match stored {
+        Ok(()) => {
+            log::info!(
+                "[RC] 已与 {}（{}）完成局域网配对——两端数字核对一致",
+                short_id(peer_id),
+                peer_name
+            );
+            Ok((peer_id.to_string(), peer_name.to_string()))
+        }
+        Err(e) => {
             log::error!(
                 "[RC] 与 {} 的配对核对通过，但写入设备列表失败：{}",
                 short_id(peer_id),
                 e
             );
-            return Confirmed::Gone;
-        }
-        log::info!(
-            "[RC] 已与 {}（{}）完成局域网配对——两端数字核对一致",
-            short_id(peer_id),
-            peer_name
-        );
-        *self.done.lock().unwrap_or_else(|p| p.into_inner()) = Some(Done {
-            peer_id: peer_id.to_string(),
-            peer_name: peer_name.to_string(),
-            initiator,
-            at_ms: now_ms,
-        });
-        Confirmed::Committed {
-            peer_id: peer_id.to_string(),
-            peer_name: peer_name.to_string(),
+            Err((peer_id.to_string(), peer_name.to_string()))
         }
     }
 }

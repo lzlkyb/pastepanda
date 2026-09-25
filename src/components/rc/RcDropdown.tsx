@@ -32,6 +32,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+import { isSessionEscape } from "@/lib/rcKeyGuard";
+import { registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
 import styles from "./RemoteComputer.module.css";
 
 /** 菜单与按钮的间距（px），沿用旧 CSS `calc(100% + 6px)` 的值。 */
@@ -136,6 +138,27 @@ export function RcDropdown<T extends string>({
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
+  }, [open, commit]);
+
+  // 🔴 再审计（Esc 两级取消，2026-09-25）：展开期间向 rcPanelFocus 登记，
+  // useRcInput 的 window 级 Esc 兜底据此让路，不直落「结束会话」确认；同时补
+  // 「Esc 收起自己」——监听挂 document（冒泡先于 window 上的兜底），
+  // stopPropagation 防止 Esc 穿透到会话兜底。effect/cleanup 严格配对，
+  // StrictMode 双挂载下计数也平衡。
+  useEffect(() => {
+    if (!open) return;
+    registerRcPanel();
+    const onEsc = (e: KeyboardEvent) => {
+      if (!isSessionEscape(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      commit(false);
+    };
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      unregisterRcPanel();
+      document.removeEventListener("keydown", onEsc);
+    };
   }, [open, commit]);
 
   const current = options.find((o) => o.key === value);

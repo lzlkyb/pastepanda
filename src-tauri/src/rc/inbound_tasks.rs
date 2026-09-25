@@ -49,12 +49,16 @@ impl InboundVideo {
     pub(super) fn spawn_datagram_reader(&self) {
         let svc = self.svc.clone();
         let peer = self.peer.clone();
+        // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id——LAN 快速
+        // 重连时新旧会话 peer 相同，旧任务会因「peer 相同」误判自己仍存活；
+        // id 化后旧任务在下一拍（≤500ms）正确退出。spawn 前捕获本会话 id。
+        let my_id = self.my_id.clone();
         let send = self.send.clone();
         let boost = self.input_boost.clone();
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
             loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
+                if !svc.session_id_is(&my_id) {
                     break;
                 }
                 // P0-1 B5：`read_datagram` 没有超时语义——会话结束后若连接还活着
@@ -91,11 +95,16 @@ impl InboundVideo {
             return;
         }
         let svc = self.svc.clone();
-        let peer = self.peer.clone();
+        // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id（LAN 快速重连
+        // 时旧音频任务会因「peer 相同」误判存活、继续往旧连接写流；id 化后下一拍
+        // 正确退出）。spawn 前捕获本会话 id。
+        let my_id = self.my_id.clone();
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
-            let (tx, mut rx) =
-                tokio::sync::mpsc::channel::<super::audio::AudioOut>(super::audio::AUDIO_CHAN_CAP);
+            // 🔴 B6（2026-09-25 审计）：队列从裸 mpsc 换成 audio_channel() 的
+            // 「满丢最旧、保住最新」包装（丢最新包会丢 Cfg 导致解码变调）。
+            // 消费方式不变：仍 rx.recv() 排干后 None。
+            let (tx, mut rx) = super::audio::audio_channel();
             let mut worker: Option<super::audio::AudioWorker> = None;
             let wanted_flag = Arc::new(AtomicBool::new(false));
             let mut stream: Option<iroh::endpoint::SendStream> = None;
@@ -104,7 +113,7 @@ impl InboundVideo {
             // 判成「非音频流」整条丢弃。
             let mut stream_cfg: Option<super::audio::AudioCfg> = None;
             loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
+                if !svc.session_id_is(&my_id) {
                     break;
                 }
                 let wanted = svc.audio_wanted();
@@ -112,7 +121,14 @@ impl InboundVideo {
                 if !wanted {
                     // 停采集 + 关流；对端读到 EOF 回 accept 循环等新流
                     if let Some(w) = worker.as_mut() {
-                        w.stop();
+                        // 🔴 再审计 P3-15（2026-09-25）：重建前先**等旧 worker 确认
+                        // 退出**——原先 stop() 只置标志就立刻清引用，快速静音→恢复
+                        // 时旧线程还在 250ms 粒度的自旋里没看见 stop，新 AudioWorker
+                        // 已开泵，两个采集线程同时抓环回（双份音频、双份 COM 负载，
+                        // 对端还会先后收到两条流头）。stop_confirmed 异步等 ack，
+                        // 350ms 超时兜底（超时线程随后仍靠标志自行退出），不堵
+                        // 运行时线程、不改线程模型。
+                        w.stop_confirmed().await;
                     }
                     worker = None;
                     stream = None;
@@ -167,7 +183,21 @@ impl InboundVideo {
                         }
                         if let Some(s) = stream.as_mut() {
                             let pkt = super::audio::encode_packet(pts_ms, &data);
-                            if s.write_all(&pkt).await.is_err() {
+                            // 🔴 再审计 P3-6（2026-09-25）：写流必须带停滞超时——
+                            // 对端不读（发起端挂起 / 半开）时 QUIC 流控窗口填满，
+                            // 裸 write_all 会**永久阻塞**：这条任务从此既不写也不退
+                            //（对照 `video/wire.rs` 的 `write_raw_stall` 注释，同一
+                            // 成因，视频侧早已包超时）。超时按既有写失败路径处理：
+                            // stream = None，下一包重建新流（先补流头，P2-7）。
+                            // 中途弃写不碎帧——超时即弃**整条流**，包序列在新流
+                            // 从流头重新开始，对端按流边界重建解码器。
+                            if tokio::time::timeout(
+                                std::time::Duration::from_secs(30),
+                                s.write_all(&pkt),
+                            )
+                            .await
+                            .is_err()
+                            {
                                 stream = None;
                             }
                         }
@@ -184,14 +214,17 @@ impl InboundVideo {
     /// 丢包按窗口增量算（‰）并做指数平滑；窗口内没有新包就不更新（保留旧值）。
     pub(super) fn spawn_stats_sampler(&self) {
         let svc = self.svc.clone();
-        let peer = self.peer.clone();
+        // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id——LAN 快速
+        // 重连时旧采样器会因「peer 相同」继续把旧连接的 RTT/丢包喂进新会话的
+        // 码控；id 化后下一拍正确退出。spawn 前捕获本会话 id。
+        let my_id = self.my_id.clone();
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
             let mut prev: Option<(u64, u64)> = None;
             let mut ema_permille: u64 = 0;
             let mut has_ema = false;
             loop {
-                if !svc.session_is(SessionPhase::InboundActive, &peer) {
+                if !svc.session_id_is(&my_id) {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;

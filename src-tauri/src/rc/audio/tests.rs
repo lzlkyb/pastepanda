@@ -157,23 +157,74 @@ fn aac编码器_开得起来且出帧() {
     assert_eq!(&wire[13..], pkts[0].data.as_slice());
 }
 
-/// P2-3: bounded queue must drop-on-full and never block/accumulate unboundedly.
-#[test]
-fn 音频队列满则丢包计数不阻塞() {
+/// 🔴 B6（2026-09-25 审计）回归钉：队列满时**丢最旧、保住最新**。
+///
+/// 旧实现（mpsc try_send）满时丢的是刚编码出的最新包，与「音频要新鲜」
+/// 相反，还会丢掉 `Cfg` 导致对端变调。这里的断言顺序就是设计注释本身：
+/// 挤出去的是队头第 0 个，最后进来的第 CAP 个必须还在队尾。
+/// （旧断言「第三个被丢」钉的是缺陷行为，随 B6 一并改写。）
+#[tokio::test]
+async fn 音频队列满则丢最旧保最新_关闭仍被生产侧感知() {
     use std::sync::atomic::{AtomicU64, Ordering};
-    let (tx, rx) = tokio::sync::mpsc::channel::<AudioOut>(2);
+    let (tx, mut rx) = audio_channel();
     let dropped = AtomicU64::new(0);
     let pkt = |i| AudioOut::Pkt {
         pts_ms: i,
         data: vec![0u8; 4],
     };
-    assert!(try_push_audio(&tx, pkt(0), &dropped));
-    assert!(try_push_audio(&tx, pkt(1), &dropped));
-    // third is full -> drop + count, still "ok" for the producer
-    assert!(try_push_audio(&tx, pkt(2), &dropped));
-    assert_eq!(dropped.load(Ordering::Relaxed), 1);
-    // channel stays bounded at 2
-    assert_eq!(rx.len(), 2);
+    // 灌满：一个都不该丢
+    for i in 0..AUDIO_CHAN_CAP as u64 {
+        assert!(try_push_audio(&tx, pkt(i), &dropped));
+    }
+    assert_eq!(dropped.load(Ordering::Relaxed), 0);
+    assert_eq!(rx.len(), AUDIO_CHAN_CAP);
+    // 第 CAP+1 个进来：挤掉最旧的 0，最新这条必须还在
+    assert!(try_push_audio(&tx, pkt(AUDIO_CHAN_CAP as u64), &dropped));
+    assert_eq!(dropped.load(Ordering::Relaxed), 1, "被挤掉的最旧包要计数");
+    assert_eq!(rx.len(), AUDIO_CHAN_CAP, "容量恒定，不无界堆积（P2-3）");
+    // 消费顺序：先拿到 1（0 被丢了）——丢的必须是最旧的，不是最新的
+    let first = rx.recv().await.expect("队列非空");
+    let AudioOut::Pkt { pts_ms, .. } = first else {
+        panic!("应是 Pkt");
+    };
+    assert_eq!(pts_ms, 1, "丢的必须是最旧的 0，不是最新的 {}", AUDIO_CHAN_CAP);
+    // 关闭发送端再排干（❗ recv 只在通道关闭后才返回 None，边开着边排干会
+    // 等出一个永久挂起——第一次写这个循环时就挂住了测试进程）。
+    // 最后一条必须是最新包：它才是「要新鲜」的那条。
+    // 留一个克隆给最后的「接收端先走」断言用（AudioTx 不是 Copy）。
+    let tx2 = tx.clone();
+    drop(tx);
+    let mut last = pts_ms;
+    while let Some(AudioOut::Pkt { pts_ms: p, .. }) = rx.recv().await {
+        last = p;
+    }
+    assert_eq!(last, AUDIO_CHAN_CAP as u64, "最新的包必须活着");
+    // 接收端先走 → 生产侧要能立刻感知（会话结束的退出判据，原契约不变）
     drop(rx);
-    assert!(!try_push_audio(&tx, pkt(3), &dropped), "closed channel must signal stop");
+    assert!(
+        !try_push_audio(&tx2, pkt(9999), &dropped),
+        "closed channel must signal stop"
+    );
+}
+
+/// 发送端全部销毁后，消费端先排干剩余再收到 None（与 mpsc Receiver 同语义）。
+#[tokio::test]
+async fn 发送端全部丢弃后消费端排干才返回None() {
+    use std::sync::atomic::AtomicU64;
+    let (tx, mut rx) = audio_channel();
+    let dropped = AtomicU64::new(0);
+    assert!(try_push_audio(
+        &tx,
+        AudioOut::Pkt {
+            pts_ms: 7,
+            data: vec![1]
+        },
+        &dropped
+    ));
+    drop(tx);
+    match rx.recv().await {
+        Some(AudioOut::Pkt { pts_ms, .. }) => assert_eq!(pts_ms, 7, "剩余消息要先排干"),
+        other => panic!("排干前不该是 None：{other:?}"),
+    }
+    assert!(rx.recv().await.is_none(), "排干后才是 None");
 }

@@ -59,6 +59,31 @@ pub const TTL_DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// 「不限次」的内部表示。
 pub const UNLIMITED_USES: u32 = u32::MAX;
 
+/// 🔴 P3-2（2026-09-25 审计）：verify→consume 竞态的占位 TTL。
+///
+/// `verify` 不消费（「码对但本机正忙」不该烧掉一次机会），但**会占位**：
+/// 占位把「验过、正在建立会话」的窗口从原来的一次连接握手收紧到显式边界。
+/// 60 秒与确认条超时同量级——准入流程（建会话 + 落白名单）正常远快于它；
+/// 进程崩溃等异常残留也最多占位这么久，码自动回到可用状态。
+pub const PENDING_TTL_MS: i64 = 60_000;
+
+/// 验码的三种结局（🔴 P3-2：`verify` 从 `Option<UnoGrant>` 改成三态）。
+///
+/// 旧的两态表达不了「码对、但另一台设备正在凭它准入」——那个窗口正是
+/// 两台设备并发准入的后门，必须单独一态让调用方给出**不同**的拒绝话术。
+#[derive(Debug, Clone)]
+pub enum UnoVerify {
+    /// 验过并**占位成功**：授权交给调用方。占位在 [`UnoCodes::consume`]
+    ///（会话真建立）时清掉，在 [`UnoCodes::release`]（准入中途失败）时退掉，
+    /// 或 [`PENDING_TTL_MS`] 后自行过期。
+    Ok(UnoGrant),
+    /// 码本身有效，但另一台设备正在凭它准入（占位未消费未过期）。
+    /// 第二台必须拒——「verify 只判不消费」的窗口不允许并发准入。
+    InUse,
+    /// 没这个码 / 已过期 / 已用尽。
+    Invalid,
+}
+
 /// 完整接入串的前缀。解析（前端 `lib/rcUno.ts`）与这里保持同一格式。
 pub const FULL_PREFIX: &str = "PPU";
 
@@ -94,6 +119,8 @@ struct Entry {
     uses: u32,
     capability: Capability,
     also_trust: bool,
+    /// 🔴 P3-2：占位截止时刻（0 = 没有占位）。语义见 [`UnoVerify::Ok`]。
+    pending_until_ms: i64,
 }
 
 /// 内存待验表。挂在 `RcService` 上，随进程生灭——**没有落盘这回事**。
@@ -134,6 +161,7 @@ impl UnoCodes {
             uses: 0,
             capability,
             also_trust,
+            pending_until_ms: 0,
         };
         self.entries
             .lock()
@@ -145,25 +173,51 @@ impl UnoCodes {
 
     /// 验码。**只判不消费**——「用掉一次」发生在会话真的建立之后
     /// （[`Self::consume`]），否则「码被验证通过但被控端正忙」会白烧掉一次机会。
-    pub fn verify(&self, raw: &str, now_ms: i64) -> Option<UnoGrant> {
-        let norm = normalize(raw)?;
+    ///
+    /// 🔴 P3-2（2026-09-25 审计）：但**会原子占位**。旧的「只判不消费」留下
+    /// 一段窗口：verify 过的设备还在建会话/落白名单，同一码就能被另一台并发
+    /// verify 命中并准入——一次性码被洗成两台。现在命中即占位
+    ///（[`PENDING_TTL_MS`]），占位中的码对第二台 verify 返回
+    /// [`UnoVerify::InUse`]；`consume` 清占位、`release` 退占位、过期自愈。
+    pub fn verify(&self, raw: &str, now_ms: i64) -> UnoVerify {
+        let Some(norm) = normalize(raw) else {
+            return UnoVerify::Invalid;
+        };
         let hash = code_hash(&norm);
         let mut g = self.entries.lock().unwrap_or_else(|p| p.into_inner());
         g.retain(|e| e.expires_ms > now_ms && e.uses < e.max_uses);
-        g.iter()
-            .find(|e| ct_eq(&e.hash, &hash))
-            .map(|e| UnoGrant {
-                capability: e.capability,
-                also_trust: e.also_trust,
-                hash: e.hash,
-            })
+        let Some(e) = g.iter_mut().find(|e| ct_eq(&e.hash, &hash)) else {
+            return UnoVerify::Invalid;
+        };
+        if e.pending_until_ms > now_ms {
+            return UnoVerify::InUse;
+        }
+        e.pending_until_ms = now_ms.saturating_add(PENDING_TTL_MS);
+        UnoVerify::Ok(UnoGrant {
+            capability: e.capability,
+            also_trust: e.also_trust,
+            hash: e.hash,
+        })
     }
 
-    /// 消费一次。到量的码当场出表。
+    /// 🔴 P3-2：解除占位。准入在 verify 之后、consume 之前失败的路径
+    /// （本机忙 / 逐台禁止 / 落白名单失败）必须调它，否则「码对但本机忙」的
+    /// 合法重试会在占位期内被误伤成「正在使用中」。幂等：码已被消费掉时
+    /// 是无操作。
+    pub fn release(&self, hash: &[u8; 32]) {
+        let mut g = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(e) = g.iter_mut().find(|e| ct_eq(&e.hash, hash)) {
+            e.pending_until_ms = 0;
+        }
+    }
+
+    /// 消费一次。到量的码当场出表；仍在表里的（不限次档）顺带清占位（P3-2）——
+    /// 会话真建立了，下一个并发 verify 不该再被这台的占位挡着。
     pub fn consume(&self, hash: &[u8; 32]) {
         let mut g = self.entries.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(i) = g.iter().position(|e| ct_eq(&e.hash, hash)) {
             g[i].uses += 1;
+            g[i].pending_until_ms = 0;
             if g[i].uses >= g[i].max_uses {
                 g.remove(i);
             }
@@ -247,6 +301,14 @@ mod tests {
 
     const T0: i64 = 1_757_000_000_000;
 
+    /// P3-2 起 verify 返回三态枚举，测试里统一用它拆包。
+    fn verify_ok(u: &UnoCodes, code: &str, now: i64) -> UnoGrant {
+        match u.verify(code, now) {
+            UnoVerify::Ok(g) => g,
+            other => panic!("verify 应通过，实际 {other:?}"),
+        }
+    }
+
     #[test]
     fn 生成与验证闭环_格式为四四分组() {
         let u = UnoCodes::default();
@@ -259,7 +321,7 @@ mod tests {
             }
             assert!(ALPHABET.contains(&c.to_ascii_uppercase()), "字符 {c} 不在去歧义字符集里");
         }
-        let g = u.verify(&code, T0 + 1).expect("刚生成的码要能验证通过");
+        let g = verify_ok(&u, &code, T0 + 1);
         assert_eq!(g.capability, Capability::Control);
         assert!(!g.also_trust);
     }
@@ -269,43 +331,96 @@ mod tests {
         let u = UnoCodes::default();
         let code = u.generate(T0, TTL_SHORT_MS, false, Capability::View, false).unwrap();
         let bare: String = code.chars().filter(|c| *c != '-').collect();
-        // 小写 + 保留横杠
-        assert!(u.verify(&code.to_lowercase(), T0 + 1).is_some());
+        // P3-2：verify 会占位，每种写法验完退占位再验下一种（本测试只考察归一化，
+        // 不考察并发）。
+        let g = verify_ok(&u, &code.to_lowercase(), T0 + 1);
+        u.release(&g.hash);
         // 无横杠
-        assert!(u.verify(&bare, T0 + 1).is_some());
+        let g = verify_ok(&u, &bare, T0 + 1);
+        u.release(&g.hash);
         // 空格分组（电话里念码的常见记法）
-        assert!(u.verify(&format!("{} {}", &bare[..4], &bare[4..]), T0 + 1).is_some());
+        let g = verify_ok(&u, &format!("{} {}", &bare[..4], &bare[4..]), T0 + 1);
+        u.release(&g.hash);
         // O→0、I/L→1 只在码里真的有 0/1 时才能构造——这里只验证「不 panic 且结果稳定」
-        assert!(u.verify(&bare, T0 + 1).is_some());
+        let _ = verify_ok(&u, &bare, T0 + 1);
     }
 
     #[test]
     fn 错码_垃圾_长度不对都拒() {
         let u = UnoCodes::default();
         u.generate(T0, TTL_SHORT_MS, false, Capability::Control, false).unwrap();
-        assert!(u.verify("AAAAAAAA", T0 + 1).is_none(), "没这个码");
-        assert!(u.verify("带着垃圾字!@#", T0 + 1).is_none(), "非法字符整码拒绝");
-        assert!(u.verify("ABCD", T0 + 1).is_none(), "长度不对");
-        assert!(u.verify("", T0 + 1).is_none(), "空串");
+        assert!(matches!(u.verify("AAAAAAAA", T0 + 1), UnoVerify::Invalid), "没这个码");
+        assert!(
+            matches!(u.verify("带着垃圾字!@#", T0 + 1), UnoVerify::Invalid),
+            "非法字符整码拒绝"
+        );
+        assert!(matches!(u.verify("ABCD", T0 + 1), UnoVerify::Invalid), "长度不对");
+        assert!(matches!(u.verify("", T0 + 1), UnoVerify::Invalid), "空串");
     }
 
     #[test]
     fn 过期即作废() {
         let u = UnoCodes::default();
         let code = u.generate(T0, TTL_SHORT_MS, false, Capability::Control, false).unwrap();
-        assert!(u.verify(&code, T0 + TTL_SHORT_MS - 1).is_some(), "窗口内有效");
-        assert!(u.verify(&code, T0 + TTL_SHORT_MS).is_none(), "到点即废");
+        assert!(
+            matches!(u.verify(&code, T0 + TTL_SHORT_MS - 1), UnoVerify::Ok(_)),
+            "窗口内有效"
+        );
+        assert!(
+            matches!(u.verify(&code, T0 + TTL_SHORT_MS), UnoVerify::Invalid),
+            "到点即废"
+        );
         assert!(u.active(T0 + TTL_SHORT_MS).is_empty(), "过期的不进在效列表");
     }
 
+    /// 🔴 P3-2（2026-09-25 审计）改写：占位期内并发第二台必须被拒。
+    ///
+    /// 旧断言「没消费就能反复验」钉的正是缺陷本体——verify 与 consume 之间
+    /// 的窗口里，同一码可被另一台命中并准入，一次性码被洗成两台。
     #[test]
-    fn 一次码消费后即废_未消费时可以反复预验() {
+    fn 一次码消费后即废_并发第二台被占位拒绝_p3_2() {
         let u = UnoCodes::default();
         let code = u.generate(T0, TTL_SHORT_MS, false, Capability::Control, false).unwrap();
-        let g = u.verify(&code, T0 + 1).expect("预验通过");
-        assert!(u.verify(&code, T0 + 2).is_some(), "没消费就能反复验（等会话真建立）");
+        let g = verify_ok(&u, &code, T0 + 1);
+        // 占位期内第二台 verify：不是「有效」也不是「无效」，而是「正在使用中」
+        assert!(
+            matches!(u.verify(&code, T0 + 2), UnoVerify::InUse),
+            "并发第二台必须被拒（旧实现这里会放行 = 缺陷本体）"
+        );
         u.consume(&g.hash);
-        assert!(u.verify(&code, T0 + 3).is_none(), "消费一次即废");
+        assert!(
+            matches!(u.verify(&code, T0 + 3), UnoVerify::Invalid),
+            "消费一次即废"
+        );
+    }
+
+    /// 🔴 P3-2：占位 TTL 过期后码自动回到可用状态——准入流程异常残留
+    /// （崩溃、漏调 release）最多占位 60 秒，不会把码永久卡死。
+    #[test]
+    fn 占位过期码可再用_p3_2() {
+        let u = UnoCodes::default();
+        let code = u.generate(T0, TTL_SHORT_MS, false, Capability::Control, false).unwrap();
+        assert!(matches!(u.verify(&code, T0 + 1), UnoVerify::Ok(_)));
+        assert!(matches!(u.verify(&code, T0 + 2), UnoVerify::InUse));
+        assert!(
+            matches!(u.verify(&code, T0 + 1 + PENDING_TTL_MS), UnoVerify::Ok(_)),
+            "占位过期自愈，码可再用"
+        );
+    }
+
+    /// 🔴 P3-2：准入在 verify 之后失败的路径（本机忙等）必须 release 退占位，
+    /// 合法重试不该在占位期内被误伤成「正在使用中」。
+    #[test]
+    fn 准入失败退占位后立即可重验_p3_2() {
+        let u = UnoCodes::default();
+        let code = u.generate(T0, TTL_SHORT_MS, false, Capability::Control, false).unwrap();
+        let g = verify_ok(&u, &code, T0 + 1);
+        assert!(matches!(u.verify(&code, T0 + 2), UnoVerify::InUse));
+        u.release(&g.hash);
+        assert!(
+            matches!(u.verify(&code, T0 + 3), UnoVerify::Ok(_)),
+            "release 后立即可重验"
+        );
     }
 
     #[test]
@@ -313,10 +428,10 @@ mod tests {
         let u = UnoCodes::default();
         let code = u.generate(T0, TTL_DAY_MS, true, Capability::Control, false).unwrap();
         for i in 1..5 {
-            let g = u.verify(&code, T0 + i).expect("不限次档每次都能验");
+            let g = verify_ok(&u, &code, T0 + i);
             u.consume(&g.hash);
         }
-        assert!(u.verify(&code, T0 + 10).is_some());
+        assert!(matches!(u.verify(&code, T0 + 10), UnoVerify::Ok(_)));
         let list = u.active(T0 + 10);
         assert_eq!(list.len(), 1);
         assert!(list[0].unlimited);
@@ -330,7 +445,7 @@ mod tests {
         assert_eq!(u.active(T0).len(), 2);
         assert_eq!(u.revoke_all(), 2);
         assert!(u.active(T0).is_empty());
-        assert!(u.verify("AAAAAAAA", T0).is_none());
+        assert!(matches!(u.verify("AAAAAAAA", T0), UnoVerify::Invalid));
     }
 
     #[test]

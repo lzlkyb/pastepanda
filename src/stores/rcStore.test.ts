@@ -231,6 +231,19 @@ describe("rcStore run 错误归属（P3-3）", () => {
     expect(ok).toBe(true);
     expect(useRcStore.getState().error).toBeNull();
   });
+
+  it("🔴 错误互抹：refresh 回显 outbound_error 也算「写过错误」，同 run 的成功路径不得清掉", async () => {
+    // 修复前：refresh 写 error 不递增 errWrite，run 成功路径按「无人写过」清场
+    // → 并发窗口里刚浮出的错误被抹掉，下一轮轮询再回显（错误条闪断）。
+    const useRcStore = await loadStore();
+    rcStatus.mockResolvedValue(
+      emptyStatus({ outbound_error: { peer: "a", session_id: "s1", error: "backend boom" } }) as never,
+    );
+    // run 本体成功，但随后的 refresh 带回了 outbound_error
+    const ok = await useRcStore.getState().run(async () => {});
+    expect(ok).toBe(true);
+    expect(useRcStore.getState().error).toBe("backend boom");
+  });
 });
 
 describe("rcStore lastClearedError 短窗口（P3-4）", () => {

@@ -177,6 +177,58 @@ describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
     expect(zone(container)!.getAttribute("aria-hidden")).toBe("true");
   });
 
+  it("🔴 B11：挂载即锁显（connecting）时首显计时暂停，超时也不淡出；解锁后按剩余时长淡出", () => {
+    // 缺陷场景：linkLocked 初值 true（connecting）清掉 15s 首显计时，解锁分支
+    // 又什么都不排 → shown 恒 true，浮条整场不消失。
+    const { container, rerender } = render(
+      <RcSessionCapsule {...base({ link: { ...LINK, state: "connecting" } })} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("false");
+
+    // 锁显中只过了 5s：解锁后首显窗口还剩 10s
+    const { container: c2, rerender: rerender2 } = render(
+      <RcSessionCapsule {...base({ link: { ...LINK, state: "connecting" } })} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    rerender2(<RcSessionCapsule {...base({ link: { ...LINK, state: "connected" } })} />);
+    act(() => {
+      vi.advanceTimersByTime(9_999);
+    });
+    expect(zone(c2)!.getAttribute("aria-hidden")).toBe("false");
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(zone(c2)!.getAttribute("aria-hidden")).toBe("true");
+
+    // 锁显超过首显窗口才解锁：剩余 ≤0 → 走正常 2.5s 淡出（不会瞬隐）
+    rerender(<RcSessionCapsule {...base({ link: { ...LINK, state: "connected" } })} />);
+    act(() => {
+      vi.advanceTimersByTime(2_499);
+    });
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("false");
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("🔴 Esc 两级取消：⋯ 面板展开时按 Esc 收起面板（不落到结束会话确认）", () => {
+    const onRequestEnd = vi.fn();
+    const { container, getByRole } = render(<RcSessionCapsule {...base({ onRequestEnd })} />);
+    fireEvent.click(getByRole("button", { name: /更多/ }));
+    expect(container.querySelector(`.${styles.capMore}`)).not.toBeNull();
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(container.querySelector(`.${styles.capMore}`)).toBeNull();
+    expect(onRequestEnd).not.toHaveBeenCalled();
+  });
+
   it("隐藏态 P2-12：aria-hidden + 按钮 tabIndex=-1，不进 Tab 环", () => {
     const { container } = render(<RcSessionCapsule {...base()} />);
     act(() => {

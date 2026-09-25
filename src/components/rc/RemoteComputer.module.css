@@ -333,7 +333,14 @@
   left: 50%;
   top: 92px;
   transform: translateX(-50%);
-  z-index: 12;
+  /* 🔴 再审计 B14（2026-09-25）：z-index 12 → 4。层叠意图：fsHint 与 .capZone（5）
+     同为 .sessionWrap 子树、参与同一层叠上下文（.viewShell / .fakeScreen 均
+     position:relative 以下、不创建上下文，数值直接可比）——12 会盖过 .capZone
+     全子树（⋯ 面板 .capMore 的 40 被锁在 capZone 自己的层叠上下文里够不着），
+     面板展开时被本条压住，点面板误触「全屏/知道了」。降到 4 = 仍在画面元素
+     （画布 auto / .viewOnlyMark 1 / .stageNotice 2 / .fsBar 3）之上、capZone（5）
+     之下；无面板时「全屏/知道了」照常可点（pointer-events 在按钮上）。 */
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 10px;

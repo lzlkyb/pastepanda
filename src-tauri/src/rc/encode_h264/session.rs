@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// 🔴 再审计 B5（2026-09-25）：码率缩放变更的**时间冷却**。15 个百分点的
+/// 差值迟滞挡不住档位边界抖动（RTT 在 50%↔60%↔50% 来回跳时每次都跨过
+/// 阈值），而每次变更都是一次全链重开（几百 ms）。2s 内的第二次变更直接忽略。
+const SCALE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(2);
+/// 剧变豁免线：差值 ≥50 个百分点不设冷却——紧急降码率（拥塞突增/断网前兆）
+/// 必须立即生效，多等 2s 就是多 2s 的拥塞弃帧。
+const SCALE_JUMP_PCT: u32 = 50;
+
+/// [`apply_bitrate_scale`] 的纯判断半（无环境可单测，见项目规则 11.1）：
+/// 距上次变更不足冷却期时放行吗？`last=None`（从未变更过）恒放行；
+/// 剧变（`diff ≥ SCALE_JUMP_PCT`）恒放行；其余在冷却期内拦截。
+fn scale_change_allowed(last: Option<std::time::Instant>, now: std::time::Instant, diff: u32) -> bool {
+    match last {
+        None => true,
+        Some(t) => {
+            if diff >= SCALE_JUMP_PCT {
+                return true;
+            }
+            now.duration_since(t) >= SCALE_COOLDOWN
+        }
+    }
+}
+
 /// 会话包装：open 失败则标记不可用，调用方走 JPEG。
 ///
 /// P1：CPU（内存 NV12）与 GPU（D3D11 零拷贝）双模。码率变化不再立刻重开，
@@ -35,6 +58,10 @@ pub struct H264SessionEncoder {
     pub(in crate::rc) hevc_broken: bool,
     /// P2-8：CPU 路径 NV12 输出缓冲（跨帧复用，尺寸变化时 resize 自适应）。
     pub(in crate::rc) nv12_buf: Vec<u8>,
+    /// 🔴 再审计 B5（2026-09-25）：上次码率缩放变更生效的时刻（None = 本会话
+    /// 还没变过）。配合 [`SCALE_COOLDOWN`] 挡 RTT 档位边界抖动——判据见
+    /// [`scale_change_allowed`]，时间语义与拦截口径都收在那一个函数里。
+    pub(in crate::rc) last_scale_change: Option<std::time::Instant>,
 }
 
 // windows-rs COM 指针非 Send；本进程 MTA + 会话任务串行访问。
@@ -145,6 +172,7 @@ impl H264SessionEncoder {
                 hevc_fail_streak: 0,
                 hevc_broken: false,
                 nv12_buf: Vec::new(),
+                last_scale_change: None,
             }
         };
         match open_chain(codec, width, height, fps, initial) {
@@ -160,6 +188,7 @@ impl H264SessionEncoder {
                 hevc_fail_streak: 0,
                 hevc_broken: false,
                 nv12_buf: Vec::new(),
+                last_scale_change: None,
             },
             Err(e) => {
                 if codec == VideoCodec::Hevc {
@@ -180,6 +209,7 @@ impl H264SessionEncoder {
                             // 本会话已证实 HEVC 打不开：挡住后续 SetCodec(hevc) 反复重试
                             hevc_broken: true,
                             nv12_buf: Vec::new(),
+                            last_scale_change: None,
                         };
                     }
                 }
@@ -235,6 +265,11 @@ impl H264SessionEncoder {
     /// RTT/丢包自适应：按百分比缩码率。变化 <15 个百分点不动（避免 thrashing）。
     /// 重开延迟到下一次编码（GPU 模式下重开需要 D3D 设备）。
     /// 无返回值——曾返回恒 false 的 bool，像「是否已生效」实则什么都没表达。
+    ///
+    /// 🔴 再审计 B5（2026-09-25）：差值迟滞之外再加**时间冷却**——RTT 在档位
+    /// 边界抖动时（50%↔60%↔50%…）每次都跨过 15pp 判据，每次都是一次全链重开。
+    /// 距上次生效 <2s 的变更被忽略；差值 ≥50pp 的剧变不受冷却约束
+    /// （紧急降码率要能立即生效），两档阈值见 [`SCALE_COOLDOWN`] / [`SCALE_JUMP_PCT`]。
     pub fn apply_bitrate_scale(&mut self, scale_pct: u32) {
         // 🔴 再审计 A8（2026-09-25）：曾是 clamp(25, 100)，把 >100% 的值全部砍回
         // 100——用户在胶囊面板选 150%/200% 加码被静默丢弃（与当前值相等直接
@@ -247,8 +282,15 @@ impl H264SessionEncoder {
         if scale.abs_diff(self.scale_pct) < 15 && self.enc.is_some() {
             return;
         }
+        let diff = scale.abs_diff(self.scale_pct);
+        // 🔴 B5：冷却期拦截也吃掉本次变更（与 <15pp 迟滞同款口径——变更被
+        // 拒就整条拒，不排队），下一轮 RTT 上报会带着新值再来。
+        if !scale_change_allowed(self.last_scale_change, std::time::Instant::now(), diff) {
+            return;
+        }
         self.scale_pct = scale;
         self.reopen_needed = true;
+        self.last_scale_change = Some(std::time::Instant::now());
     }
 
     pub(in crate::rc) fn scaled_bitrate(&self) -> u32 {
@@ -266,6 +308,13 @@ impl H264SessionEncoder {
             self.base_bitrate = bitrate_for_width(ew);
         }
         if self.gpu_mode || self.reopen_needed || size_changed {
+            // 🔴 再审计 B4(b)（2026-09-25）已知取舍：GPU 帧编码失败后同帧回落到
+            // 这里时 `gpu_mode` 仍为 true ⇒ 必然全链重开成 CPU 编码器；下一帧
+            // GPU 恢复又走 open_gpu——一次瞬时 GPU 故障要花两次全链重开（各几百
+            // ms）。彻底消除需要同时持有 GPU/CPU 两个编码器实例（显存 + 内存
+            // 双份、状态翻倍、重开时序复杂化），超出本轮审计的「小改」范畴，
+            // 刻意不做。熔断把最坏情况兜住：encode_gpu 连续 3 次失败即返回
+            // [gpu_disabled]，会话内不再尝试 GPU，重开随之收敛为一次。
             match open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate()) {
                 Ok(e) => {
                     self.enc = Some(e);
@@ -299,6 +348,25 @@ impl H264SessionEncoder {
             }
         }
         e
+    }
+
+    /// 🔴 再审计 B4（2026-09-25）：GPU **抓帧**（`DxgiPool::grab_gpu`）的失败也
+    /// 计入同一条 `gpu_fail_streak`。过去只有「打开/编码」失败计数，抓帧失败
+    /// 完全不记——GPU 管线在抓帧这层坏掉（AcquireNextFrame / staging 创建失败 /
+    /// 输出拓扑对不上）时每帧白试一遍再回落 CPU，整个会话都不会判死。
+    /// 阈值与熔断口径一致（≥3 次 → `[gpu_disabled]`，调用方置 `gpu_disabled`）。
+    /// 返回值：未达阈值时原样透传错误；达阈值时改写为 `[gpu_disabled]` 前缀。
+    pub(in crate::rc) fn note_gpu_grab_fail(&mut self, e: String) -> String {
+        self.gpu_fail_streak += 1;
+        if self.gpu_fail_streak >= 3 {
+            log::warn!(
+                "[RC] GPU 抓帧连续 {} 次失败，本会话回落 CPU 管线：{e}",
+                self.gpu_fail_streak
+            );
+            "[gpu_disabled] GPU 零拷贝编码不可用".into()
+        } else {
+            e
+        }
     }
 
     /// P1：输入 BGRA **GPU 纹理**（零拷贝路径，fps120 档）。
@@ -363,5 +431,28 @@ impl H264SessionEncoder {
                 Err(e)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 🔴 再审计 B5（2026-09-25）守卫单测：码率缩放变更的时间冷却。
+    /// 钉住三档行为——冷却期内的小幅变更拦截、剧变（≥50pp）豁免、冷却期满放行。
+    #[test]
+    fn 码率缩放变更的时间冷却() {
+        let now = std::time::Instant::now();
+        // 从未变更过：恒放行
+        assert!(scale_change_allowed(None, now, 5));
+        // 冷却期内的小幅变更（15~49pp）：拦截
+        let just_changed = now - std::time::Duration::from_millis(500);
+        assert!(!scale_change_allowed(Some(just_changed), now, 20));
+        // 冷却期内的剧变（≥50pp）：豁免，紧急降码率立即生效
+        assert!(scale_change_allowed(Some(just_changed), now, 50));
+        assert!(scale_change_allowed(Some(just_changed), now, 200));
+        // 冷却期满（≥2s）：放行
+        let cooled = now - std::time::Duration::from_secs(2);
+        assert!(scale_change_allowed(Some(cooled), now, 20));
     }
 }

@@ -69,6 +69,15 @@ export const useRcStore = create<RcState>((set, get) => {
   const probeSeq = new Map<string, number>();
   // P3-3：错误写入代数——成功路径只在「没有别的 run 中途写过错误」时才清
   let errWrite = 0;
+  // 🔴 再审计（P3-3 修补，2026-09-25）：「写错误 + 递增 errWrite」的唯一出口。
+  // 原先 refresh 回显 outbound_error 时只 set 不递增，run 的成功路径按
+  // 「errWrite 没动 = 本 run 期间无人写过错误」清场——并发窗口里把刚被
+  // refresh 浮出的错误抹掉，下一轮轮询再回显，表现为错误条闪断。
+  // 凡是把文案写进 error 的路径（run 失败 / refresh 回显）都必须走这里。
+  const writeError = (msg: string) => {
+    errWrite += 1;
+    set({ error: msg });
+  };
 
   return {
   status: null,
@@ -141,7 +150,9 @@ export const useRcStore = create<RcState>((set, get) => {
         outboundErr === get().lastClearedError &&
         now - get().lastClearedAt < 2000;
       if (outboundErr && !ignoredClear) {
-        set({ error: outboundErr });
+        // 🔴 P3-3 修补：走 writeError（递增 errWrite），run 的成功路径才不会
+        // 把这条刚浮出的回显错误当「无人写过」清掉。
+        writeError(outboundErr);
       }
     } catch (e) {
       if (gen !== refreshSeq) return;
@@ -237,8 +248,8 @@ export const useRcStore = create<RcState>((set, get) => {
       if (errWrite === errWriteAtStart) set({ error: null });
       return true;
     } catch (e) {
-      errWrite += 1;
-      set({ error: e instanceof Error ? e.message : String(e) });
+      // 🔴 P3-3 修补：走唯一出口 writeError（与 refresh 回显同口径递增）
+      writeError(e instanceof Error ? e.message : String(e));
       return false;
     } finally {
       set((st) => {

@@ -143,6 +143,10 @@ export function RcOverlay() {
         `「${rcDisplayName(session, fingerprintOf(session.peer))}」正在远程本机（${capabilityLabel(session.capability)}）`,
         "info",
       );
+      // 🔴 再审计 B13（2026-09-25）：免确认设备直连不经过 pending 确认条（上面
+      // 那条路径有 summonMainWindow，这里原本没有）——主窗正 hide 时被控开始
+      // 零告知，这条 toast 谁也看不见。照 pending 同款拉起主窗，toast 才可见。
+      void summonMainWindow();
     }
     if (!inboundActive) lastInboundId.current = null;
   }, [inboundActive, session, toast]);

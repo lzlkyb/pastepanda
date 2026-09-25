@@ -47,11 +47,25 @@ impl RcService {
                 Gate::Disabled.deny_code().to_string(),
             );
         }
-        let Some(grant) = self.uno.verify(code, now_ms) else {
-            return UnoAdmit::Denied("接入码无效或已过期".into(), "uno_invalid".into());
+        let grant = match self.uno.verify(code, now_ms) {
+            // 🔴 P3-2（2026-09-25 审计）：verify 三态——「正在使用中」单独一档，
+            // 不许折叠进「无效」（对端会误以为码错了去要新码，实际等占位过期即可）。
+            uno::UnoVerify::Ok(g) => g,
+            uno::UnoVerify::InUse => {
+                return UnoAdmit::Denied(
+                    "接入码正在使用中：另一台设备正在凭此码接入".into(),
+                    "uno_in_use".into(),
+                );
+            }
+            uno::UnoVerify::Invalid => {
+                return UnoAdmit::Denied("接入码无效或已过期".into(), "uno_invalid".into());
+            }
         };
         // 逐台禁止优先于码：用户明确拉黑过的设备，一张新码不该替他翻案。
         if self.device_deny().get(peer).copied().unwrap_or(false) {
+            // 🔴 P3-2：verify 已占位，准入到此失败必须退占位，否则合法重试
+            // 会在占位期内被误伤成「正在使用中」。
+            self.uno.release(&grant.hash);
             return UnoAdmit::Denied(
                 Gate::DeviceDenied.deny_reason().to_string(),
                 Gate::DeviceDenied.deny_code().to_string(),
@@ -91,6 +105,8 @@ impl RcService {
                     // 不该携带本机路径/IO 细节（2026-09-19 审查）。
                     log::error!("[RC] {short} 接入码准入写设备列表失败，回滚会话：{e}");
                     self.rollback_inbound(peer);
+                    // 🔴 P3-2：准入半途失败，退占位让码回到可用状态。
+                    self.uno.release(&grant.hash);
                     return UnoAdmit::Denied(
                         "对方暂时无法处理该接入码".into(),
                         "uno_store_error".into(),
@@ -113,6 +129,9 @@ impl RcService {
                 UnoAdmit::Admitted
             }
             Err(e) => {
+                // 🔴 P3-2：建会话失败同样退占位——「码对但本机忙」不是消费，
+                // 也不该占着码让对端重试吃「正在使用中」。
+                self.uno.release(&grant.hash);
                 log::warn!("[RC] {short} 接入码有效但建立会话失败：{e}");
                 UnoAdmit::Denied(e, "busy".into())
             }
@@ -167,6 +186,22 @@ impl RcService {
                 "对方的固定密码只允许同一局域网内使用（跨网需对方显式打开）".into(),
                 "uno_pass_wan".into(),
             );
+        }
+        // 🔴 B10（2026-09-25 审计）：全局新身份闸先于 per-node 退避闸。
+        // per-node 的键是 node_id（TLS 验真），但密钥对免费——换一对密钥就是
+        // 新身份，per-node 对它永远「首次尝试不设防」。这里按「滑动窗口内
+        // 首次出现的新身份个数」识别轮换式刷量；已验密通过过的身份不受影响
+        // （record_success 登记，合法用户不连坐）。话术与 per-node 限速同款：
+        // 对端看到的是同一档「过于频繁」，错误码保持 uno_pass_throttled 不变。
+        match self.pass_gate.check_new_identity(peer, now_ms) {
+            unop::GateCheck::Wait(ms) => {
+                log::info!("[RC] {short} 密码接入被全局新身份闸冷却：还需等 {ms}ms");
+                return UnoAdmit::Denied(
+                    format!("尝试过于频繁，请约 {} 秒后再试", (ms + 999) / 1000),
+                    "uno_pass_throttled".into(),
+                );
+            }
+            unop::GateCheck::Ok => {}
         }
         // 先查闸，后验密。
         match self.pass_gate.check(peer, now_ms) {

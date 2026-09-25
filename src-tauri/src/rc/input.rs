@@ -289,6 +289,42 @@ fn map_abs(x: u16, y: u16, region: &ScreenRegion) -> (i32, i32) {
     )
 }
 
+/// 🔴 B8（2026-09-25 审计）：region 内归一化坐标 → 虚拟桌面像素 → 虚拟桌面
+/// 0..=65535 归一化。第一段与 [`map_abs`] 同一套公式，保证「预览的光标在哪、
+/// 点击就落在哪」；第二段是 `MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_VIRTUALDESK`
+/// 要求的口径——**不带 VIRTUALDESK 的 ABSOLUTE 按主屏归一化**，多屏 +
+/// 负坐标（左/上侧副屏）会被折进主屏范围，点错屏。
+/// `desk` 由调用方给 [`ScreenRegion::virtual_screen`]（SM_XVIRTUALSCREEN 等），
+/// 本函数保持纯函数、可离线单测。
+#[cfg(target_os = "windows")]
+fn abs_to_virtual_desk(x: u16, y: u16, region: &ScreenRegion, desk: &ScreenRegion) -> (i32, i32) {
+    let (px, py) = map_abs(x, y, region);
+    (
+        pixel_to_abs(px, desk.x, desk.w),
+        pixel_to_abs(py, desk.y, desk.h),
+    )
+}
+
+/// 像素 → 0..=65535（按 `origin + span` 的范围归一化）。
+/// 与 [`map_abs`] 的正向公式互为近似逆，边缘舍入误差 ≤1 像素，对点击无感。
+#[cfg(target_os = "windows")]
+fn pixel_to_abs(p: i32, origin: i32, span: i32) -> i32 {
+    if span <= 1 {
+        return 0;
+    }
+    let rel = (p - origin).clamp(0, span - 1);
+    ((rel as i64 * 65_535) / (span as i64 - 1)) as i32
+}
+
+/// 🔴 B9（2026-09-25 审计）：`InputEvent::Key` 的 vk 收敛——线上是 u32，
+/// `SendInput` 只要 u16。**所有**消费点（入站注入、按下追踪、会话收口补发）
+/// 都必须先过这里拿同一个值，禁止「注入处 `as u16` 截断、别处用原值」的分叉
+///（旧写法下畸形 vk >0xFFFF 会按 A 松 A 卡键：down 记 0x10041、up 来 0x41
+/// 查不到配对）。收不下的返回 `None`，调用方丢弃该事件并走 `inject_err` 上报。
+pub fn converge_key_vk(vk: u32) -> Option<u16> {
+    u16::try_from(vk).ok()
+}
+
 /// 是否 Windows 扩展键（扫描码带 0xE0 前缀的那批）。
 ///
 /// 这类键的 `dwFlags` 必须带 `KEYEVENTF_EXTENDEDKEY`，否则会被解释成小键盘数字键
@@ -346,9 +382,9 @@ pub fn inject(ev: &InputEvent, region: &ScreenRegion) -> InjectResult {
 fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-        KEYEVENTF_KEYUP, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
-        MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
-        MOUSEINPUT,
+        KEYEVENTF_KEYUP, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
+        MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+        MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEINPUT,
     };
     use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
 
@@ -361,15 +397,6 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
             Ok(())
         }
         InputEvent::MouseButton { x, y, button, down } => {
-            // 只有**按下**才重新定位：松开永远发生在当前光标处（OS 语义就是
-            // 抬起不挪鼠标）。否则收口补发的 UP（x=0,y=0）会把远端光标瞬移到
-            // 左上角；若恰有卡住的右键，右键菜单还会在那里凭空弹出。
-            if *down {
-                let (px, py) = map_abs(*x, *y, region);
-                unsafe {
-                    SetCursorPos(px, py).map_err(|e| format!("SetCursorPos 失败：{e:?}"))?;
-                }
-            }
             let flag = match (button, down) {
                 (1, true) => MOUSEEVENTF_LEFTDOWN,
                 (1, false) => MOUSEEVENTF_LEFTUP,
@@ -379,34 +406,53 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
                 (3, false) => MOUSEEVENTF_MIDDLEUP,
                 _ => return Err(format!("未知鼠标键 {button}")),
             };
-            let input = INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: INPUT_0 {
-                    mi: MOUSEINPUT {
-                        dx: 0,
-                        dy: 0,
-                        mouseData: 0,
-                        dwFlags: flag,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
-                },
+            // 🔴 B8（2026-09-25 审计）：定位与点击**合成同一次 SendInput**。
+            // 旧实现 SetCursorPos + 另发一次 SendInput，两步之间本机物理鼠标
+            // 一动，点击就落在被抢跑后的位置。现在按下事件自带
+            // ABSOLUTE|VIRTUALDESK 归一化坐标，一次注入完成「移过去 + 按下」。
+            // ❗ 只有**按下**才带坐标：松开永远发生在当前光标处（OS 语义就是
+            // 抬起不挪鼠标），否则收口补发的 UP（x=0,y=0）在 ABSOLUTE 语义下
+            // 会把远端光标瞬移到左上角；若恰有卡住的右键，右键菜单还会在
+            // 那里凭空弹出。
+            let mi = if *down {
+                let desk = ScreenRegion::virtual_screen();
+                let (ax, ay) = abs_to_virtual_desk(*x, *y, region, &desk);
+                MOUSEINPUT {
+                    dx: ax,
+                    dy: ay,
+                    mouseData: 0,
+                    dwFlags: flag | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+                    time: 0,
+                    dwExtraInfo: 0,
+                }
+            } else {
+                MOUSEINPUT {
+                    dx: 0,
+                    dy: 0,
+                    mouseData: 0,
+                    dwFlags: flag,
+                    time: 0,
+                    dwExtraInfo: 0,
+                }
             };
-            send_inputs(&[input])
+            send_inputs(&[INPUT {
+                r#type: INPUT_MOUSE,
+                Anonymous: INPUT_0 { mi },
+            }])
         }
         InputEvent::Wheel { x, y, delta } => {
-            let (px, py) = map_abs(*x, *y, region);
-            unsafe {
-                SetCursorPos(px, py).map_err(|e| format!("SetCursorPos 失败：{e:?}"))?;
-            }
+            // 🔴 B8：与 MouseButton 同理——定位与滚轮合成一次注入，
+            // 杜绝「定位了却滚在别处」的抢跑窗口。
+            let desk = ScreenRegion::virtual_screen();
+            let (ax, ay) = abs_to_virtual_desk(*x, *y, region, &desk);
             let input = INPUT {
                 r#type: INPUT_MOUSE,
                 Anonymous: INPUT_0 {
                     mi: MOUSEINPUT {
-                        dx: 0,
-                        dy: 0,
+                        dx: ax,
+                        dy: ay,
                         mouseData: *delta as u32,
-                        dwFlags: MOUSEEVENTF_WHEEL,
+                        dwFlags: MOUSEEVENTF_WHEEL | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
                         time: 0,
                         dwExtraInfo: 0,
                     },
@@ -415,7 +461,13 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
             send_inputs(&[input])
         }
         InputEvent::Key { vk, down } => {
-            let vk = *vk as u16;
+            // 🔴 B9（2026-09-25 审计）：vk 先收敛再注入。旧实现 `*vk as u16`
+            // 静默截断，与按下追踪的 u32 原值分叉（按 A 松 A 卡键的根源）。
+            // 入口（inbound.rs）已拦一道，这里再拦是纵深：收口补发等旁路
+            // 也走 inject，同样不得截断。
+            let Some(vk) = converge_key_vk(*vk) else {
+                return Err(format!("无效的按键值 vk={}（超出 0..=65535），已丢弃", vk));
+            };
             let mut flags = if *down {
                 Default::default()
             } else {
@@ -580,6 +632,54 @@ mod tests {
         // Enter(0x0D) 故意不在集合（主 Enter 与 NumpadEnter 同值）；A/Space 也不是
         for vk in [0x41u16, 0x0D, 0x20] {
             assert!(!is_extended_vk(vk), "vk {vk:#x} 不应为扩展键");
+        }
+    }
+
+    /// 🔴 B9（2026-09-25 审计）守卫：vk 收敛是唯一口径——0..=65535 收，
+    /// 超出一律拒。旧实现注入处 `as u16` 静默截断（0x1_0041 → 0x41），
+    /// 畸形 vk 会「按 A 松 A 卡键」。
+    #[test]
+    fn vk收敛_超0xFFFF必须拒_b9() {
+        assert_eq!(converge_key_vk(0), Some(0));
+        assert_eq!(converge_key_vk(0x41), Some(0x41));
+        assert_eq!(converge_key_vk(0xFFFF), Some(0xFFFF));
+        assert_eq!(
+            converge_key_vk(0x1_0000),
+            None,
+            "0x1_0000 截断成 0 正是缺陷本体，必须拒"
+        );
+        assert_eq!(converge_key_vk(0x1_0041), None, "0x1_0041 截断成 0x41（A）会卡键");
+        assert_eq!(converge_key_vk(u32::MAX), None);
+    }
+
+    /// 🔴 B8（2026-09-25 审计）守卫：归一化 → 虚拟桌面换算的边界与回代。
+    /// 区域 = 虚拟桌面时两端必须精确铺满 0..=65535；子区域（单屏）换算结果
+    /// 回代后必须落回目标像素（±1 像素舍入）——「预览在哪、点击就落在哪」。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn 鼠标绝对坐标换算_两端铺满且回代落点一致_b8() {
+        let desk = ScreenRegion::virtual_screen();
+        let (ax0, ay0) = abs_to_virtual_desk(0, 0, &desk, &desk);
+        let (ax1, ay1) = abs_to_virtual_desk(65535, 65535, &desk, &desk);
+        assert_eq!((ax0, ay0), (0, 0), "左上角必须精确为 0（负原点偏移要被剥掉）");
+        assert_eq!((ax1, ay1), (65535, 65535), "右下角必须精确为 65535");
+        // 单屏子区域：换算仍落在 0..=65535，回代像素与 map_abs 目标一致
+        let region = ScreenRegion {
+            x: desk.x,
+            y: desk.y,
+            w: (desk.w / 2).max(1),
+            h: (desk.h / 2).max(1),
+        };
+        for &(x, y) in &[(0u16, 0u16), (32768, 16384), (65535, 65535)] {
+            let (ax, ay) = abs_to_virtual_desk(x, y, &region, &desk);
+            assert!((0..=65535).contains(&ax) && (0..=65535).contains(&ay));
+            let px = desk.x + (ax as i64 * desk.w as i64 / 65535) as i32;
+            let py = desk.y + (ay as i64 * desk.h as i64 / 65535) as i32;
+            let (want_x, want_y) = map_abs(x, y, &region);
+            assert!(
+                (px - want_x).abs() <= 1 && (py - want_y).abs() <= 1,
+                "x={x},y={y}: 回代 ({px},{py}) 与目标 ({want_x},{want_y}) 偏差 >1px"
+            );
         }
     }
 

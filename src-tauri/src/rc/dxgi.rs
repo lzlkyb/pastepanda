@@ -27,6 +27,10 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::System::Com::CoUninitialize;
 
+/// `grab` 的成功返回：`(宽, 高, 池内借用的 BGRA 缓冲)`。
+/// （type 别名只为过 clippy::type_complexity，语义仍是三元组，调用方可直接解构。）
+pub type GrabbedFrame<'a> = (u32, u32, &'a [u8]);
+
 /// 单个输出的 duplicator + 复用的读回缓冲。
 struct OutputDup {
     dup: IDXGIOutputDuplication,
@@ -202,7 +206,19 @@ pub struct DxgiPool {
     /// 虚拟屏拼接画布（跨圈复用容量）。
     canvas: Vec<u8>,
     com_owned: bool,
+    /// 🔴 再审计 P3-11（2026-09-25）：`CoInitializeEx` 成功时所在的线程。
+    /// 抓屏任务在 tokio worker 间迁移，Drop/重建可能落在另一条线程——
+    /// `CoUninitialize` 按线程配对，线程不同就跳过（少一次 MTA 释放无害，
+    /// 错减他人引用是实打实的破坏；同 `encode_h264/mf.rs` 的 P3-11）。
+    com_init_thread: Option<std::thread::ThreadId>,
     disabled: bool,
+    /// 🔴 再审计 P3-9（2026-09-25）：非「访问丢失」类瞬时错误的连续失败计数。
+    /// 过去一次瞬时错误（如单次 CreateTexture2D 失败）就一票永久禁用整池，
+    /// 没有任何复位路径。现在：连续 ≥3 次才禁用；任何成功 grab（含 Ok(None)
+    /// 空转——AcquireNextFrame 正常返回即证明设备活着）清零计数。
+    /// 「访问丢失」类保持原有语义：先重建一次，重建失败才禁用（访问丢失
+    /// 意味着 duplicator 整体失效，重建是唯一出路，多试无益）。
+    transient_fail_streak: u32,
 }
 
 // MTA COM；async 要求 Send。会话任务串行访问。
@@ -223,7 +239,9 @@ impl DxgiPool {
             outs: Vec::new(),
             canvas: Vec::new(),
             com_owned: false,
+            com_init_thread: None,
             disabled: false,
+            transient_fail_streak: 0,
         }
     }
 
@@ -234,16 +252,20 @@ impl DxgiPool {
     /// 抓一帧。`monitor >= 0` 抓指定显示器；`virtual_screen` 抓整块虚拟屏；
     /// 否则抓主屏。`Ok(None)` = 屏幕没变化（本圈无帧）。
     ///
+    /// 返回的缓冲**借用自池内**（复用缓冲不随帧转移所有权），只保证到下一次
+    /// `grab` 调用前有效——借用检查器强制调用方在此之前用完。
+    ///
     /// 错误语义（调用方一律回退 JPEG，但**是否禁用整池**不同）：
     /// - `[no_output]` 前缀 = 拓扑对不上（比如指定显示器在本 GPU 适配器上不存在），
-    ///   换个范围还能用，不禁用；
-    /// - 其它错误 = DXGI/D3D 本身坏了，禁用整池；「访问丢失」先重建一次，
-    ///   重建失败才禁用。
+    ///   换个范围还能用，不禁用、不计数；
+    /// - 「访问丢失」= duplicator 整体失效，先重建一次，重建失败才禁用；
+    /// - 其它错误（D3D/DXGI 瞬时故障）：🔴 再审计 P3-9——连续 ≥3 次才禁用
+    ///   （[`Self::transient_fail_streak`]），任何成功抓取清零计数。
     pub fn grab(
         &mut self,
         virtual_screen: bool,
         monitor: i32,
-    ) -> Result<Option<(u32, u32, Vec<u8>)>, String> {
+    ) -> Result<Option<GrabbedFrame<'_>>, String> {
         if self.disabled {
             return Err("DXGI 已禁用".into());
         }
@@ -251,17 +273,29 @@ impl DxgiPool {
             match self.open() {
                 Ok(()) => {}
                 Err(e) => {
-                    self.disabled = true;
+                    // 🔴 再审计 P3-9：初始打开失败同按连续计数——设备管理器
+                    // 短暂不可用（驱动重置中）一票禁用等于整场放弃 DXGI。
+                    self.transient_fail_streak += 1;
+                    if self.transient_fail_streak >= 3 {
+                        self.disabled = true;
+                    }
                     return Err(e);
                 }
             }
         }
+        // 🔴 再审计 P3-10：grab_inner 先回「命中位置」描述符（不带借用），
+        // 本方法在拿到结果后先做熔断簿记（rebuild / 连续失败计数），最后才按
+        // 位置取出池内缓冲的借用。若让 Ok 直接携带借用，NLL 会把这笔借用的
+        // 区域拉长到整个函数体（返回值生命周期绑定 `&mut self` 的自由区），
+        // 上面的簿记 `&mut self` 全部冲突（经典的 get-or-insert 借用困境）。
         match self.grab_inner(virtual_screen, monitor) {
-            Ok(v) => Ok(v),
             Err(e) => {
                 if e.contains("访问丢失") {
                     match self.rebuild() {
-                        Ok(()) => Ok(None),
+                        Ok(()) => {
+                            self.transient_fail_streak = 0;
+                            Ok(None)
+                        }
                         Err(re) => {
                             self.disabled = true;
                             Err(format!("DXGI 重建失败：{re}"))
@@ -270,8 +304,24 @@ impl DxgiPool {
                 } else if e.starts_with("[no_output]") {
                     Err(e)
                 } else {
-                    self.disabled = true;
+                    self.transient_fail_streak += 1;
+                    if self.transient_fail_streak >= 3 {
+                        self.disabled = true;
+                    }
                     Err(e)
+                }
+            }
+            Ok(hit) => {
+                // 成功（含空转）清零：设备活着，之前的失败不算持续故障。
+                // 必须在取借用**之前**写——借用一旦诞生就覆盖到 return。
+                self.transient_fail_streak = 0;
+                match hit {
+                    GrabHit::None => Ok(None),
+                    GrabHit::Output(idx, w, h) => {
+                        let o = &self.outs[idx];
+                        Ok(Some((w, h, &o.buf[..])))
+                    }
+                    GrabHit::Canvas(w, h) => Ok(Some((w, h, &self.canvas[..]))),
                 }
             }
         }
@@ -340,6 +390,8 @@ impl DxgiPool {
         self.ctx = Some(ctx);
         self.outs = outs;
         self.com_owned = com_owned;
+        // 🔴 再审计 P3-11：记录初始化 COM 的线程，释放时据此配对（见字段注释）
+        self.com_init_thread = com_owned.then(|| std::thread::current().id());
         Ok(())
     }
 
@@ -357,16 +409,26 @@ impl DxgiPool {
         self.ctx = None;
         self.canvas.clear();
         if self.com_owned {
-            unsafe { CoUninitialize() };
+            // 🔴 再审计 P3-11（2026-09-25）：只在初始化 COM 的同一条线程上配对
+            // `CoUninitialize`。抓屏任务在 tokio worker 间迁移，重建/Drop 落在
+            // 别的 worker 时跳过——少一次 MTA 释放无害（MTA 生存到进程退出），
+            // 跨线程释放会错减他人引用（同 `encode_h264/mf.rs` 的 P3-11）。
+            if self.com_init_thread == Some(std::thread::current().id()) {
+                unsafe { CoUninitialize() };
+            }
             self.com_owned = false;
+            self.com_init_thread = None;
         }
     }
 
-    fn grab_inner(
-        &mut self,
-        virtual_screen: bool,
-        monitor: i32,
-    ) -> Result<Option<(u32, u32, Vec<u8>)>, String> {
+    /// 抓一帧的核心。返回「命中位置」描述符——🔴 再审计 P3-10：**不带借用**。
+    /// `grab()` 要在拿到结果后先做熔断簿记（rebuild / 连续失败计数），若 Ok
+    /// 直接携带池内缓冲的借用，NLL 会把这笔借用的区域拉长到整个 `grab`
+    /// 函数体（返回值生命周期绑定 `&mut self` 的自由区），簿记的所有
+    /// `&mut self` 操作全部冲突（经典的 get-or-insert 借用困境）。所以先回
+    /// 位置，由 `grab()` 在簿记结束后按位置取出借用——借用只在 return
+    /// 表达式里诞生，不再与其后的任何 `&mut self` 操作共存。
+    fn grab_inner(&mut self, virtual_screen: bool, monitor: i32) -> Result<GrabHit, String> {
         let device = self
             .device
             .as_ref()
@@ -390,14 +452,12 @@ impl DxgiPool {
                 .ok_or_else(|| {
                     format!("[no_output] 显示器 {monitor} 没有对应的 DXGI 输出（多 GPU？）")
                 })?;
-            let o = &mut self.outs[idx];
-            let fresh = o.acquire(device, ctx, 30)?;
+            let fresh = self.outs[idx].acquire(device, ctx, 30)?;
             if !fresh {
-                return Ok(None);
+                return Ok(GrabHit::None);
             }
-            let (w, h) = (o.width, o.height);
-            let buf = std::mem::take(&mut o.buf);
-            return Ok(Some((w, h, buf)));
+            let o = &self.outs[idx];
+            return Ok(GrabHit::Output(idx, o.width, o.height));
         }
 
         if !virtual_screen {
@@ -407,14 +467,12 @@ impl DxgiPool {
                 .iter()
                 .position(|o| o.left == 0 && o.top == 0)
                 .ok_or_else(|| "[no_output] 找不到主显示器输出".to_string())?;
-            let o = &mut self.outs[idx];
-            let fresh = o.acquire(device, ctx, 30)?;
+            let fresh = self.outs[idx].acquire(device, ctx, 30)?;
             if !fresh {
-                return Ok(None);
+                return Ok(GrabHit::None);
             }
-            let (w, h) = (o.width, o.height);
-            let buf = std::mem::take(&mut o.buf);
-            return Ok(Some((w, h, buf)));
+            let o = &self.outs[idx];
+            return Ok(GrabHit::Output(idx, o.width, o.height));
         }
 
         // 虚拟屏：全部输出拼接。画布尺寸与 GDI 路径同源（SM_*VIRTUALSCREEN），
@@ -451,11 +509,21 @@ impl DxgiPool {
             }
         }
         if !any_fresh {
-            return Ok(None);
+            return Ok(GrabHit::None);
         }
-        let buf = std::mem::take(&mut self.canvas);
-        Ok(Some((cw, ch, buf)))
+        Ok(GrabHit::Canvas(cw, ch))
     }
+}
+
+/// [`DxgiPool::grab_inner`] 的成功产物（P3-10）：命中位置的描述符，不含任何
+/// 指向池内缓冲的引用——缓冲的借用由 `grab()` 在簿记结束后按位置取出。
+enum GrabHit {
+    /// 屏幕没变化（本圈无帧）。
+    None,
+    /// 单输出命中：outs 下标 + (宽, 高)。
+    Output(usize, u32, u32),
+    /// 虚拟屏拼接画布已就绪：(宽, 高)。
+    Canvas(u32, u32),
 }
 
 impl Drop for DxgiPool {

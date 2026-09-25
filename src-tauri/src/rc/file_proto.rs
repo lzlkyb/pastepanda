@@ -171,6 +171,35 @@ pub fn is_magic(b: &[u8]) -> bool {
     b.starts_with(&MAGIC[..])
 }
 
+/// 🔴 B7（2026-09-25 审计）：把续传提示裁到**编码后总长** ≤ [`MAX_HEAD_JSON`]。
+///
+/// 旧口径只逐条查名字长度（[`MAX_NAME_BYTES`]），不查 head 的 JSON 总长；
+/// 而接收侧 `decode_head` 按**总长**拒收——于是「发得出、收不进」：长中文名
+/// ×[`MAX_RESUME_HINTS`] 条就能把头帧顶过 4096，整次取回直接失败。
+/// hints 是便利品不是必需品（对不上就从整传，见 [`ResumeHint`] 的语义），
+/// 所以超预算时**逐条从尾部丢弃**重编码，直到塞得下；一条提示也放不下
+/// 的情况在名字 ≤ [`MAX_NAME_BYTES`] 时不存在（单条 ≈1.1KB < 4096）。
+///
+/// 收口点：所有 PullReq 头的 hints 都来自本函数的调用方
+/// `file_transfer::resume_hints`——那是唯一的 hints 生产者。
+pub fn clamp_resume_hints(mut hints: Vec<ResumeHint>) -> Vec<ResumeHint> {
+    loop {
+        let head = FileHead::PullReq {
+            v: VERSION,
+            resume: hints.clone(),
+        };
+        match encode_head(&head) {
+            Ok(bytes) if bytes.len() <= MAX_HEAD_JSON => return hints,
+            // 编码失败 = 某条 hints 本身不过 validate（理论上来不到，
+            // 名字早过净化）；同样按「逐条丢」处理，hints 缺席不碍传输。
+            _ => {}
+        }
+        if hints.pop().is_none() {
+            return hints;
+        }
+    }
+}
+
 /// 编码一个头帧（校验失败会返回 `Err`，调用方据此本地拒，不必上网络）。
 pub fn encode_head(h: &FileHead) -> Result<Vec<u8>, Deny> {
     validate_head(h)?;
