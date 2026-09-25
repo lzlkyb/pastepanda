@@ -6,7 +6,7 @@
 //! 当前时间在**这一层**取，不在 store 里取：那样 store 那个函数永远只能在
 //! 「今天」被测，跨天、同日叠加这些分支就写不了用例。
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::data_store::{DailyAppend, DataStore, Note};
 
@@ -28,11 +28,35 @@ fn now_hm() -> String {
 /// **没写库**——后者不是错误，是需要前端说一句话的正常分支。
 #[tauri::command]
 pub fn note_append_daily(
+    app: AppHandle,
     store: State<DataStore>,
     text: String,
     source: Option<String>,
 ) -> Result<DailyAppend, String> {
-    store.note_append_daily(&today(), &now_hm(), source.as_deref(), &text)
+    let res = store.note_append_daily(&today(), &now_hm(), source.as_deref(), &text);
+    // 只有真写入了才需要刷新（Duplicate 没动库）；速记是待办进岛的主入口之一
+    if matches!(res, Ok(DailyAppend::Appended(_))) {
+        crate::todo_tasks::refresh_island(&app);
+    }
+    res
+}
+
+/// 灵动岛「记一条」：往今天速记的待办清单追加一行 `- [ ] 文字`（实施方案 §2.3）。
+///
+/// 与 [`note_append_daily`] 同族命令、放它旁边（同一套今日速记机制）；
+/// 差别只有写入形态与去重口径。真写入后由 `refresh_island` 把新状态推给岛。
+#[tauri::command]
+pub fn note_append_daily_task(
+    app: AppHandle,
+    store: State<DataStore>,
+    text: String,
+) -> Result<DailyAppend, String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let res = store.note_append_daily_task(&today, &text);
+    if matches!(res, Ok(DailyAppend::Appended(_))) {
+        crate::todo_tasks::refresh_island(&app);
+    }
+    res
 }
 
 /// 某月有速记的日期。`month` 形如 `2026-09`；日历打点用。

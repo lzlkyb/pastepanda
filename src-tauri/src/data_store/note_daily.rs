@@ -129,6 +129,90 @@ impl DataStore {
             .map_err(|e| e.to_string())
     }
 
+    /// 往 `date` 那条速记**追加一条待办**（`- [ ] 文字`）；当天还没有速记就建。
+    ///
+    /// 与 [`Self::note_append_daily`] 同族（实施方案 §2.3）：同一套 `daily_date`
+    /// 查找 / 首次创建 / `updated_ms` 逻辑，差别只在**写入形态**——不加
+    /// `## 时间戳` 小节（那会把一行一条的待办切成 N 个小节），直接落 GFM 任务行，
+    /// 灵动岛 扫得到、勾得掉（写回走 `note_update`）。
+    ///
+    /// 去重口径：同一天已有**同文字**的任务行（不管勾没勾）就不再记——
+    /// 「记一条」是手滑高发区，比速记正文更容易连按。
+    pub fn note_append_daily_task(&self, date: &str, text: &str) -> Result<DailyAppend, String> {
+        let body = text.trim();
+        if body.is_empty() {
+            // 与 note_append_daily 同一条红线：热键类操作看不见界面，静默失败
+            // 会让用户以为坏了然后反复按（规则 #15.3）。
+            return Err("内容为空，没有可记的东西".to_string());
+        }
+        let line = format!("- [ ] {}", body);
+
+        let conn = self.lock_conn();
+        let now = note_now();
+
+        let existing: Option<(String, String)> = conn
+            .query_row(
+                // 与 note_append_daily 同款：带 deleted_at——删掉今天的速记后再记，应新建而不是写进已删的
+                "SELECT id, content FROM notes WHERE daily_date = ?1 AND deleted_at IS NULL",
+                [date],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+
+        let id = match existing {
+            Some((id, old)) => {
+                for l in old.split('\n') {
+                    if l.trim() == line {
+                        return Ok(DailyAppend::Duplicate);
+                    }
+                }
+                // ❗ 围栏未闭合时，追加行会落进代码块——岛扫描会跳过它（todo_tasks
+                //    与 outline 同一份 fence 判定），任务**静默消失**。显式报错比丢强。
+                let mut fence: Option<(char, usize)> = None;
+                for l in old.split('\n') {
+                    if let Some((ch, n)) = crate::markdown::sections::fence_at(l) {
+                        match fence {
+                            None => fence = Some((ch, n)),
+                            Some((fc, fl)) if fc == ch && n >= fl => fence = None,
+                            _ => {}
+                        }
+                    }
+                }
+                if fence.is_some() {
+                    return Err(
+                        "速记里有未闭合的代码块，待办会落进代码里——先补上闭合的 ``` 再记".to_string(),
+                    );
+                }
+                let merged = format!("{}\n{}", old.trim_end(), line);
+                conn.execute(
+                    // M6-P2 同款：追加也要刷 updated_ms，否则同步里「没发生过」
+                    "UPDATE notes SET content = ?2, updated_at = ?3, \
+                     updated_ms = MAX(?4, updated_ms + 1) WHERE id = ?1",
+                    rusqlite::params![id, merged, now, self.hlc_now()],
+                )
+                .map_err(|e| e.to_string())?;
+                id
+            }
+            None => {
+                let id = uuid::Uuid::new_v4().to_string();
+                conn.execute(
+                    "INSERT INTO notes (id, history_id, title, content, created_at, updated_at,
+                                        source_agent, daily_date, updated_ms)
+                     VALUES (?1, NULL, ?2, ?3, ?4, ?4, '', ?2, ?5)",
+                    rusqlite::params![id, date, line, now, self.hlc_now()],
+                )
+                .map_err(|e| e.to_string())?;
+                id
+            }
+        };
+
+        Self::sync_note_indexes_on(&conn, &id);
+        let sql = format!("SELECT {} FROM notes WHERE id = ?1", NOTE_COLS);
+        conn.query_row(&sql, [&id], row_to_note)
+            .map(|n| DailyAppend::Appended(Box::new(n)))
+            .map_err(|e| e.to_string())
+    }
+
     /// `month` 形如 `2026-09`：返回该月**有速记的日期**（`YYYY-MM-DD`）。日历打点用。
     pub fn note_daily_dates(&self, month: &str) -> Result<Vec<String>, String> {
         let conn = self.lock_conn();

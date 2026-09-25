@@ -23,6 +23,8 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Direct3D",
+    # IDXGIOutput::GetDesc 被 cfg 门在 Gdi 上（0.58 生成器行为）
+    "Win32_Graphics_Gdi",
     "Win32_Graphics_Direct3D11",
     # wic 探针（2026-09-24）：系统自带 WIC JPEG 编码器，对比「纯 Rust image crate」
     # 与 libjpeg-turbo 的耗时差，判断 JPEG 兜底路径该不该换编码器实现。

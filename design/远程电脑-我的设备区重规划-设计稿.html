@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程电脑 · 「我的设备」区重规划（三变体）</title>
+<!-- status: 部分确认 2026-09-24 —— 用户拍板**变体 B**（显式分组）。A/C 仅存档对照；实施按 B 稿 + 下方「实施备注」。
+     流程产物：设计系统 documents/designs/我的设备区_design_system.md，PRD documents/prd/我的设备区.md -->
+<style>
+:root{
+  --doc-bg:#F2F7FE; --doc-line:#E0E9F5;
+  --ink:#12233C; --ink2:#41536B; --ink3:#6B7C93;
+  --blue:#0A6CFF; --blue2:#2E8BFF; --blue-deep:#0553C9;
+  --ok:#159A4A; --ok-bg:#E2F7E9;
+  --warn:#E8890C; --warn-dot:#F59E0B;
+  --err:#D64545; --err-bg:#FDEBEB;
+  --panel-line:rgba(255,255,255,.95);
+  --inner:#F6FAFE; --inner-line:#E8F0FB;
+  --shadow-panel:0 12px 34px rgba(31,86,178,.10),0 2px 6px rgba(31,86,178,.05);
+  --shadow-btn:0 6px 16px rgba(10,108,255,.30);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(ellipse 900px 420px at 12% -8%, rgba(10,108,255,.08), transparent 55%),
+    linear-gradient(135deg,#F2F7FE 0%,#EAF2FC 50%,#E8F1FC 100%);
+  color:var(--ink);
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  padding:26px 18px 70px;
+}
+.doc{max-width:1260px;margin:0 auto}
+h1{font-size:21px;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+h1 .badge{font-size:11px;font-weight:600;color:#0553C9;background:linear-gradient(135deg,#E0EEFE,#CBE3FC);
+  border:1px solid #A9D2F7;border-radius:999px;padding:2px 9px}
+.sub{color:var(--ink3);font-size:12.5px;margin:7px 0 3px;max-width:1000px}
+h2{font-size:15px;margin:36px 0 10px;display:flex;align-items:center;gap:9px}
+h2::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,var(--blue2),var(--blue))}
+.note{font-size:12px;color:var(--ink3);margin:6px 0 10px;max-width:1020px}
+.note b{color:var(--ink2)}
+.note code,td code,li code{font:11.5px var(--mono);background:#fff;border:1px solid var(--doc-line);border-radius:4px;padding:0 4px;color:var(--ink2)}
+ul.notes{margin:0 0 8px 18px;font-size:12.5px;color:var(--ink2)}
+ul.notes li{margin:5px 0}
+ul.notes b{color:var(--ink)}
+table{border-collapse:collapse;font-size:12.5px;margin:8px 0 14px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:var(--shadow-panel)}
+th,td{border:1px solid var(--doc-line);padding:7px 12px;text-align:left;vertical-align:top}
+th{background:var(--inner);font-weight:600;color:var(--ink2);white-space:nowrap}
+.rec{color:var(--ok);font-weight:700;white-space:nowrap}
+.risk{color:var(--err);font-weight:600;white-space:nowrap}
+
+/* ===== 变体展示台：三块 270px 侧栏面板并排 ===== */
+.stage{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0 6px}
+.frame{
+  flex:1 1 300px;min-width:300px;max-width:340px;padding:10px;border-radius:16px;
+  background:
+    radial-gradient(ellipse 420px 200px at 80% 4%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(ellipse 380px 220px at 6% 90%, rgba(140,190,255,.25), transparent 60%),
+    linear-gradient(150deg,#EAF3FE 0%,#DFEBFA 60%,#D8E7F9 100%);
+  border:1px solid rgba(255,255,255,.9);box-shadow:0 18px 44px rgba(15,42,90,.14);
+}
+.frame>.vt{font-size:12px;font-weight:700;color:var(--blue-deep);margin:2px 2px 8px;display:flex;align-items:center;gap:6px}
+.frame>.vt .tag{font-size:10px;font-weight:600;color:#0553C9;background:#DDEDFE;border:1px solid #BFD8F5;border-radius:999px;padding:0 7px;white-space:nowrap}
+.panel{
+  background:rgba(255,255,255,.55);
+  -webkit-backdrop-filter:blur(20px) saturate(1.25);
+  backdrop-filter:blur(20px) saturate(1.25);
+  border:1px solid var(--panel-line);border-radius:14px;
+  box-shadow:var(--shadow-panel);padding:12px 10px 8px;
+}
+.dev-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.dev-head b{font-size:13.5px;flex:1;white-space:nowrap}
+.iconbtn{width:26px;height:26px;border:1px solid var(--doc-line);border-radius:8px;background:#fff;color:var(--ink2);
+  cursor:pointer;font-size:12px;display:grid;place-items:center}
+.dev-meta{font-size:10.5px;color:var(--ink3);margin-bottom:8px;display:flex;align-items:center;white-space:nowrap}
+.dev-meta .recheck{margin-left:auto;border:0;background:transparent;font:inherit;font-size:10.5px;color:var(--blue);cursor:pointer;white-space:nowrap}
+
+/* 行基座（三变体共用行内元素规格，只差组织） */
+.dev{position:relative;display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.78);
+  border:1px solid transparent;border-radius:10px;margin-bottom:6px;padding:8px 9px}
+.dev:hover{background:#fff}
+.dev.sel{background:#fff;box-shadow:0 2px 8px rgba(31,86,178,.10)}
+.dev.sel::before{ /* UU 学：选中 = 左缘 3px 蓝竖条（替代 1px 描边；圆角同心：外 10 → 条 0/3 侧随形） */
+  content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:3px;border-radius:2px;
+  background:linear-gradient(180deg,var(--blue2),var(--blue));}
+.dev-av{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto;
+  background:linear-gradient(140deg,#59A4FF,#0A6CFF);color:#fff;font-size:12px;font-weight:700}
+.dev-copy{flex:1;min-width:0;line-height:1.3}
+.dev-copy strong{display:block;font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px}
+.dev-copy small{font-size:10px;color:var(--ink3);white-space:nowrap}
+.st-ok{color:var(--ok)} .st-warn{color:var(--warn)} .cap-mini{color:var(--ink2);font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:26px;padding:0 10px;
+  border:0;border-radius:8px;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn.rowbtn{background:#fff;border:1px solid #BFD8F5;color:var(--blue-deep)}
+.btn.rowbtn:hover{background:#EAF3FE}
+.caret{width:20px;height:26px;border:1px solid #BFD8F5;border-left:0;border-radius:0 8px 8px 0;background:#fff;color:var(--blue-deep);cursor:pointer;font-size:9px}
+.conn-grp{display:flex;align-items:stretch}
+.conn-grp .btn.rowbtn{border-radius:8px 0 0 8px}
+/* 离线灰：由显式 offline 字段驱动（≠ tone unknown） */
+.dev.off .dev-av{background:#C6D2E2}
+.dev.off strong{color:var(--ink3)}
+.dev.off small,.dev.off .cap-mini{color:#A5B3C6}
+.dev.off .btn.rowbtn,.dev.off .caret{color:#A5B3C6;border-color:var(--doc-line);background:#F7FAFD;cursor:default}
+/* 活会话徽标（规则 15.1：定位「哪台在连」） */
+.live{display:inline-flex;align-items:center;gap:4px;min-height:18px;padding:0 7px;border-radius:999px;
+  border:1px solid #BFD8F5;background:#fff;color:var(--blue-deep);font-size:9.5px;font-weight:700;white-space:nowrap}
+.live.being{border-color:#EFC97A;color:#8A5A00;background:#FFF6E3}
+.live .ld{width:5px;height:5px;border-radius:50%;background:currentColor}
+/* 分组标题（变体 B） */
+.grp{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;color:var(--ink3);
+  padding:6px 4px 4px;white-space:nowrap;cursor:default}
+.grp .gc{font-weight:400;color:#A5B3C6}
+.grp .fold{margin-left:auto;border:0;background:transparent;color:#A5B3C6;cursor:pointer;font-size:9px}
+/* 紧凑行（变体 C） */
+.dev.cpt{padding:3px 9px;margin-bottom:3px;min-height:30px;gap:7px}
+.dev.cpt .dev-av{width:20px;height:20px;border-radius:6px;font-size:10px}
+.dev.cpt .dot2{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.dev.cpt .dot2.on{background:#22C55E;box-shadow:0 0 0 2.5px rgba(34,197,94,.15)}
+.dev.cpt .dot2.off{background:#C2CEDD}
+.dev.cpt .dot2.warn{background:var(--warn-dot);box-shadow:0 0 0 2.5px rgba(245,158,11,.15)}
+.dev.cpt strong{font-size:11.5px;max-width:none}
+.dev.cpt .btn.rowbtn{min-height:22px;padding:0 8px;font-size:10.5px}
+.dev.cpt .caret{width:16px;height:22px;font-size:8px}
+.dev.cpt.off .dot2.off{background:#D5DEEA}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>远程电脑 · 「我的设备」区重规划（三变体） <span class="badge">draft · 待确认 · 2026-09-24</span></h1>
+<p class="sub">
+ui-designer 流程产物：设计系统提炼自网易 UU 远程截图 + A 稿（<code>documents/designs/我的设备区_design_system.md</code>），
+区域 PRD 见 <code>documents/prd/我的设备区.md</code>。三变体共用同一批设备数据与行内元素规格，
+<b>只差组织形态</b>。硬约束全变体生效：行内一步直达「连接」钮、状态文案走 <code>rcDeviceStatus</code> 单源、一屏一强调色（蓝=可连接性家族）。
+</p>
+
+<div class="stage">
+
+  <!-- ══ 变体 A ══ -->
+  <div class="frame">
+    <div class="vt">变体 A · 单列表在线优先 <span class="tag">改动最小</span></div>
+    <div class="panel">
+      <div class="dev-head"><b>我的设备</b><button class="iconbtn" title="连接新设备">＋</button></div>
+      <div class="dev-meta">5 台 · 3 台可连<button class="recheck">⟳ 重新检查</button></div>
+
+      <div class="dev sel">
+        <div class="dev-av">办</div>
+        <div class="dev-copy"><strong>办公室台式机</strong><small><span class="st-ok">● 局域网在线</span> · 以「<span class="cap-mini">可控</span>」连接</small></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#43C6A0,#159A4A)">李</div>
+        <div class="dev-copy"><strong>小李的电脑</strong><small><span class="st-ok">● 局域网在线</span></small><span class="live being"><span class="ld"></span>被控中</span></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#9C7BFF,#7C5CF0)">会</div>
+        <div class="dev-copy"><strong>会议室演示机</strong><small><span class="st-ok">● 局域网在线</span></small><span class="live"><span class="ld"></span>连接中…</span></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#F0A24B,#E8890C)">张</div>
+        <div class="dev-copy"><strong>张三的旧笔记本</strong><small><span class="st-warn">● 最近在线 · 未实测</span></small></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev off">
+        <div class="dev-av">家</div>
+        <div class="dev-copy"><strong>家里的笔记本</strong><small>● 暂时连不上 · 3 分钟前</small></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 变体 B ══ -->
+  <div class="frame">
+    <div class="vt">变体 B · 显式分组 <span class="tag" style="color:#0B6B33;background:#E2F7E9;border-color:#BFE5CB">✔ 已选定（2026-09-24）</span></div>
+    <div class="panel">
+      <div class="dev-head"><b>我的设备</b><button class="iconbtn" title="连接新设备">＋</button></div>
+      <div class="dev-meta">5 台 · 3 台可连<button class="recheck">⟳ 重新检查</button></div>
+
+      <div class="grp">在线 <span class="gc">· 3</span></div>
+      <div class="dev sel">
+        <div class="dev-av">办</div>
+        <div class="dev-copy"><strong>办公室台式机</strong><small><span class="st-ok">● 局域网在线</span> · 以「<span class="cap-mini">可控</span>」连接</small></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#43C6A0,#159A4A)">李</div>
+        <div class="dev-copy"><strong>小李的电脑</strong><small><span class="st-ok">● 局域网在线</span></small><span class="live being"><span class="ld"></span>被控中</span></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#9C7BFF,#7C5CF0)">会</div>
+        <div class="dev-copy"><strong>会议室演示机</strong><small><span class="st-ok">● 局域网在线</span></small><span class="live"><span class="ld"></span>连接中…</span></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+
+      <div class="grp">不在线 <span class="gc">· 2</span><button class="fold" title="收起这一组">⌄</button></div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#F0A24B,#E8890C)">张</div>
+        <div class="dev-copy"><strong>张三的旧笔记本</strong><small><span class="st-warn">● 最近在线 · 未实测</span> · 可尝试连接</small></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev off">
+        <div class="dev-av">家</div>
+        <div class="dev-copy"><strong>家里的笔记本</strong><small>● 暂时连不上 · 3 分钟前</small></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 变体 C ══ -->
+  <div class="frame">
+    <div class="vt">变体 C · 紧凑单行 <span class="tag" style="color:#8A2020;background:#FDEEEE;border-color:#F3C9C9">有 L1 风险</span></div>
+    <div class="panel">
+      <div class="dev-head"><b>我的设备</b><button class="iconbtn" title="连接新设备">＋</button></div>
+      <div class="dev-meta">5 台 · 3 台可连<button class="recheck">⟳ 重新检查</button></div>
+
+      <div class="dev cpt sel" title="局域网在线 · 以「可控」连接 · 刚刚检查">
+        <span class="dot2 on"></span><div class="dev-av">办</div>
+        <div class="dev-copy"><strong>办公室台式机</strong></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev cpt" title="局域网在线 · 小李正在远程控制本机">
+        <span class="dot2 on"></span><div class="dev-av" style="background:linear-gradient(140deg,#43C6A0,#159A4A)">李</div>
+        <div class="dev-copy"><strong>小李的电脑</strong></div><span class="live being"><span class="ld"></span>被控</span>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev cpt" title="局域网在线 · 正在建立会话">
+        <span class="dot2 on"></span><div class="dev-av" style="background:linear-gradient(140deg,#9C7BFF,#7C5CF0)">会</div>
+        <div class="dev-copy"><strong>会议室演示机</strong></div><span class="live"><span class="ld"></span>连接中</span>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev cpt" title="最近在线 · 未实测">
+        <span class="dot2 warn"></span><div class="dev-av" style="background:linear-gradient(140deg,#F0A24B,#E8890C)">张</div>
+        <div class="dev-copy"><strong>张三的旧笔记本</strong></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev cpt off" title="暂时连不上 · 3 分钟前检查">
+        <span class="dot2 off"></span><div class="dev-av">家</div>
+        <div class="dev-copy"><strong>家里的笔记本</strong></div>
+        <div class="conn-grp"><button class="btn rowbtn">连接</button><button class="caret">⌄</button></div>
+      </div>
+      <div style="font-size:10px;color:#A5B3C6;padding:2px 4px">状态只靠点色 + title 悬浮——违反「状态文案常驻」，列此仅供对照</div>
+    </div>
+  </div>
+
+</div>
+
+<h2>三态与徽标规格（全变体共用）</h2>
+<ul class="notes">
+  <li><b>选中态</b>：白底 + 左缘 3px 蓝竖条（渐变 <code>--blue2→--blue</code>，上下各内缩 8px 随圆角），替代 A 稿的 1px 描边——UU 学，玻璃底上对比强且不引入新边框。</li>
+  <li><b>活会话徽标</b>：行 meta 尾部小胶囊。<b>蓝「连接中…'</b> = 我发起的握手/会话建立中；<b>橙「被控中」</b> = 对方正在控制本机（与标题栏橙横幅同族色）。补上横幅进标题栏后「哪台在连」的定位缺口（规则 15.1）。数据源是 <code>rcStore</code> 的会话态，不新增探测。</li>
+  <li><b>离线灰</b>：🔴 只由<b>新增显式 <code>offline</code> 字段</b>驱动——设计系统提炼时发现 <code>rcDeviceStatus</code> 的 <code>unknown</code> tone 混着「暂时连不上（真离线）」「最近在线·未实测（只是没证据）」「需完成远程配对（结构性不可连）」三种语义，直接按 tone 灰会把「未实测」误判成「连不了」（L1 撒谎）。落地：<code>rcDeviceStatus</code> 返回值补 <code>offline: boolean</code> 收口 + 守卫单测（规则 11.1），「未实测」行不灰、钮不锁。</li>
+  <li><b>排序稳定性</b>：A 稿注释有硬约定「列表顺序不随探测结果跳动」。在线优先/分组的重排<b>只在列表级刷新时发生</b>（进页 / ⟳ 重新检查 / 设备增删），探测回调只改行内文字不改位置——否则鼠标追着行点会跳。</li>
+  <li><b>头部计数</b>：meta 从「5 台设备 · 状态自动更新」改「5 台 · 3 台可连」——黑话测试的 5 秒判据直接写进标题区。</li>
+</ul>
+
+<h2>对比与推荐</h2>
+<table>
+  <tr><th></th><th>扫读效率（哪几台能连）</th><th>设备数扩展（8~20 台）</th><th>实现成本</th><th>风险</th></tr>
+  <tr><td><b>A 单列表在线优先</b></td><td>好（在线聚在上半区）</td><td>中——在线/不在线交界处要逐行读</td><td>最低：排序 + 选中条 + 徽标</td><td>无新增语义</td></tr>
+  <tr><td class="rec">B 显式分组（推荐）</td><td class="rec">最好——组标题直接回答</td><td class="rec">好——「不在线」组可折叠，默认收起时列表只剩可连设备</td><td>A 之上加分组标题 + 折叠态（一个 boolean，展开态存 <code>useRcDeviceUi</code> 同款位置）</td><td>组名措辞：用「不在线」不用「离线」——「未实测」台进「不在线」组不算撒谎（它确实现在没在线证据），灰态仍只跟 <code>offline</code> 字段</td></tr>
+  <tr><td class="risk">C 紧凑单行</td><td>差——点色要教（绿=能连？黄=？）</td><td>最好（行高 30px 多放 50%）</td><td>中——行结构重排</td><td class="risk">违反 L1（状态字不常驻）+ L6（点色一词多义）；title 悬浮不算常驻。不推荐</td></tr>
+</table>
+<p class="note"><b>推荐 B</b>：黑话测试判据「新人 5 秒说出哪几台能连、哪台正在被用」——B 用组标题 + 徽标两个常驻元素直接命中；A 是 B 去掉组标题的退化版，若嫌分组重可先落 A 再升 B（行结构完全一致，不返工）。C 仅存档。</p>
+
+<h2>实施备注（选定后）</h2>
+<ul class="notes">
+  <li>改动集中在 <code>RcA2DeviceList.tsx</code>：删 <code>query</code>（A 稿已定）、行加 <code>offline</code> 类名与徽标节点、（B）分组渲染 <code>useMemo</code> 两桶 + 折叠 boolean。行数预算 ≤300（规则 7），超了就把徽标/分组标题抽 <code>RcDeviceRowBadges.tsx</code>。</li>
+  <li><code>rcDeviceStatus</code> 补 <code>offline</code> 字段属跨端契约变更面最小的纯函数改动，同文件补守卫单测：「tone=unknown 且 offline=false 的行不得灰、钮不得禁」。</li>
+  <li>徽标文案单源：连接中/被控中 两个词进 <code>rcRequest.ts</code> 或新 <code>rcLiveBadge()</code>，禁止在 JSX 里写字面量（规则 11）。</li>
+  <li>落地后跑 <code>npm run lint:ui</code>；竖条/徽标色全走语义 token（U6/V3），行无 backdrop-filter（8.3）。</li>
+</ul>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑 · 被控态 UI — B 顶条+抽屉 设计稿</title>
+<style>
+  :root {
+    --danger: #d64545;
+    --accent: #4f7cff;
+    --cyan: #06b6d4;
+    --green: #11813a;
+    --orange: #e0803a;
+    --text: #1c1f23;
+    --muted: #6b7280;
+    --border: #e3e6ea;
+    --card: #fff;
+    --bg: #f3f5f8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 13px; padding: 28px 40px 60px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 22px; }
+  h2 { font-size: 15px; margin: 30px 0 12px; padding-left: 9px; border-left: 3px solid var(--accent); }
+  .desknote { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px; margin-bottom: 8px;
+  }
+  .cols { display: flex; gap: 16px; flex-wrap: wrap; }
+  .cols > div { flex: 1; min-width: 340px; }
+
+  /* ═══════════ §1 现状诊断 ═══════════ */
+  .sim-desktop {
+    background: linear-gradient(135deg, #3a6ea5 0%, #6fa0c8 60%, #88b4d4 100%);
+    border-radius: 8px; padding: 14px; position: relative; min-height: 240px;
+  }
+  .sim-label { font-size: 10px; color: rgba(255,255,255,.85); margin-bottom: 8px; letter-spacing: .5px; }
+  .old-banner {
+    background: rgba(214,69,69,.12); border: 1px solid rgba(214,69,69,.35);
+    border-radius: 8px; padding: 10px 14px; font-size: 12.5px; background-color: #fdf3f3;
+  }
+  .old-banner .row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .old-banner .row2 { font-size: 11px; padding: 3px 8px; border-radius: 6px; display: inline-flex; gap: 6px; margin-top: 8px;
+    background: rgba(224,128,58,.16); color: #b06a26; border: 1px solid rgba(224,128,58,.45); align-items: center; }
+  .old-banner .row3 { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .old-card {
+    width: 320px; margin: 26px auto 0; background: #f6f7f9;
+    border: 1px solid rgba(214,69,69,.28); border-radius: 12px; padding: 16px 18px; font-size: 12.5px;
+  }
+  .old-card .t { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .old-card .lead { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 8px; }
+  .old-card .facts { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; display: grid; gap: 5px; }
+  .old-card .facts div { display: flex; justify-content: space-between; font-size: 11.5px; }
+  .old-card .facts dt { color: var(--muted); }
+  .flag { position: absolute; font-size: 10px; color: #fff; background: var(--danger); border-radius: 8px; padding: 1px 7px; }
+  .diag-list { font-size: 12.5px; line-height: 2; }
+  .diag-list b { color: var(--danger); }
+  .diag-list .fix { color: var(--green); font-weight: 600; }
+
+  /* ═══════════ 真实尺寸组件（对齐 RemoteComputer.module.css） ═══════════ */
+  .stage {
+    background: linear-gradient(135deg, #3a6ea5 0%, #6fa0c8 60%, #88b4d4 100%);
+    border-radius: 8px; padding: 14px 16px 22px; min-height: 150px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); display: inline-block; flex-shrink: 0; }
+  .dot-pulse { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(214,69,69,.4);} 50% { box-shadow: 0 0 0 4px rgba(214,69,69,0);} }
+  .pill { font-size: 11px; padding: 3px 10px; border-radius: 20px; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .pill-danger { background: rgba(214,69,69,.12); color: var(--danger); border: 1px solid rgba(214,69,69,.35); }
+  .pill-green { background: rgba(17,129,58,.12); color: var(--green); border: 1px solid rgba(17,129,58,.35); }
+  .timer { font-family: ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 12px; }
+
+  /* —— B 收纳胶囊条 —— */
+  .capsule {
+    display: flex; align-items: center; gap: 8px;
+    margin: 8px 12px 0; padding: 5px 8px 5px 14px;
+    background: rgba(214,69,69,.10); background-color: #fdf3f3;
+    border: 1px solid rgba(214,69,69,.35); border-radius: 8px;
+    font-size: 12.5px; cursor: pointer; user-select: none;
+  }
+  .capsule:hover { border-color: rgba(214,69,69,.6); }
+  .capsule .who { font-weight: 600; color: var(--danger); white-space: nowrap; }
+  .capsule .meta { color: var(--muted); font-size: 11px; }
+  .capsule .spacer { flex: 1; }
+  .ico-btn {
+    width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0; color: var(--text);
+  }
+  .ico-btn.danger { color: var(--danger); border-color: rgba(214,69,69,.4); }
+  .ico-btn.danger:hover { background: rgba(214,69,69,.1); }
+  .ico-btn svg { display: block; }
+  .badge-orange {
+    min-width: 14px; height: 14px; border-radius: 7px; background: var(--orange); color: #fff;
+    font-size: 9px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px;
+  }
+  .chev { transition: transform 150ms; color: var(--muted); }
+  .chev.open { transform: rotate(180deg); }
+
+  /* —— B 抽屉 —— */
+  .drawer {
+    margin: 6px 12px 0; width: 460px;
+    background: var(--card); border: 1px solid rgba(214,69,69,.35); border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .drawer .sec-t { font-size: 11px; color: var(--muted); letter-spacing: .5px; }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+  .facts .f { display: flex; flex-direction: column; gap: 1px; background: var(--bg); border-radius: 6px; padding: 6px 9px; }
+  .facts dt { font-size: 10.5px; color: var(--muted); }
+  .facts dd { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acts-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .mini-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .mini-btn.on { border-color: rgba(17,129,58,.45); background: rgba(17,129,58,.12); color: var(--green); font-weight: 600; }
+  .danger-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(214,69,69,.4);
+    background: #fff; color: var(--danger); cursor: pointer; font-weight: 600;
+  }
+  .danger-btn:hover { background: rgba(214,69,69,.08); }
+  .notice {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 8px; border-radius: 6px;
+    background: rgba(224,128,58,.16); color: #b06a26; border: 1px solid rgba(224,128,58,.45);
+  }
+  .notice .nx { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(224,128,58,.5); background: transparent; color: inherit; cursor: pointer; }
+  .file-ask {
+    display: flex; align-items: center; gap: 8px; font-size: 11.5px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px;
+  }
+  .file-ask .btn-pri {
+    font-size: 11px; padding: 3px 10px; border-radius: 6px; border: none; color: #fff; cursor: pointer;
+    background: linear-gradient(135deg, var(--accent), var(--cyan)); font-weight: 600;
+  }
+  .drawer-foot { font-size: 11px; color: var(--muted); }
+
+  /* —— B 连接瞬间 toast —— */
+  .toast {
+    display: flex; align-items: center; gap: 9px;
+    margin: 8px 12px 0; padding: 9px 14px; border-radius: 8px;
+    background: #fff; border: 1px solid rgba(214,69,69,.35);
+    box-shadow: 0 8px 24px rgba(0,0,0,.16); font-size: 12.5px;
+  }
+
+  /* ═══════════ 规则表 ═══════════ */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--bg); font-weight: 600; }
+  td .ok { color: var(--green); font-weight: 600; }
+  td .no { color: var(--danger); font-weight: 600; }
+
+  .diff-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.8; }
+  .diff-note b { color: var(--text); }
+  .kbd { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 被控态 UI — 方案 B「顶条 + 抽屉」</h1>
+<div class="sub">目标：消灭「横幅 / 中央卡片 / 主窗口」三层信息重复 → 收纳成一条极窄胶囊条，详情点击展开，中央归零 · 基于真实组件 RcControlBanner / RcInboundView · 2026-09-24</div>
+
+<h2>§1 现状诊断：同一份事实说了三遍</h2>
+<div class="cols">
+  <div class="panel">
+    <div class="sim-desktop">
+      <div class="sim-label">现状 · 被控端屏幕</div>
+      <div class="old-banner">
+        <div class="row1">
+          <span class="dot"></span><b style="color:var(--danger)">正在被「LAPTOP-LZL」远程</b>
+          <span class="pill pill-danger">可控</span>
+          <span class="timer">03:17</span>
+          <span style="margin-left:auto"></span>
+          <span class="mini-btn">不发送声音</span>
+          <span class="pill pill-green">已免确认</span>
+          <span class="danger-btn">立即结束</span>
+        </div>
+        <div class="row2">对方把画面范围改成了「整个虚拟屏（含副屏）」<span class="nx">知道了</span></div>
+        <div class="row3">对方可操作键鼠与剪贴板 · 你随时可结束</div>
+      </div>
+      <div class="old-card">
+        <div class="t"><span class="dot"></span>正在被「<b>LAPTOP-LZL</b>」远程控制 <span class="pill pill-danger">可控</span> <span class="pill pill-green">已免确认</span></div>
+        <div class="timer" style="margin-top:6px">已持续 03:17</div>
+        <div class="lead">对方可以操作你的键鼠与剪贴板。主窗口的常驻横幅一直显示着这条会话，随时可结束。</div>
+        <div class="facts">
+          <div><dt>对方指纹</dt><dd>2?52?…4054</dd></div>
+          <div><dt>画面范围</dt><dd>整个虚拟屏（含副屏）</dd></div>
+        </div>
+        <div style="text-align:right;margin-top:10px"><span class="danger-btn">立即结束</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="diag-list">
+      <b>① 三层同屏</b>：顶部横幅、中央卡片、主窗口入口——名字 / 可控 / 时长 / 免确认 / 结束按钮各出现 2~3 遍<br>
+      <b>② 中央卡片常驻不退场</b>：占屏幕中心（被控端正要用电脑干活），信息密度却是「一次性确认」级别<br>
+      <b>③ 横幅三段式过高</b>：身份行 + 提示条 + 能力说明 ≈ 90px，其中第 3 段「对方可操作键鼠…」是静态事实<br>
+      <b>④ 右上角竖排「关闭」tooltip 常驻</b>：窄容器把 tooltip 压竖排（与横幅竖排崩坏同根因），且不消失<br>
+      <span class="fix">行业共识</span>：AnyDesk = 屏幕边框色框（零文字）· RustDesk = 顶部细条可展开 · ToDesk = 顶部窄条。<b>常驻要极轻，详情要收纳，中央不放东西。</b>
+    </div>
+  </div>
+</div>
+
+<h2>§2 方案 B 总览：一层胶囊 + 一只抽屉 + 一次 toast</h2>
+<div class="panel">
+  <table>
+    <tr><th style="width:130px">信息</th><th>现状（3 处）</th><th>B 之后（1 处）</th></tr>
+    <tr><td>谁在控 / 可控 / 时长</td><td><span class="no">横幅 + 卡片 + 主窗口</span></td><td>胶囊条常驻（唯一）</td></tr>
+    <tr><td>指纹 / 范围 / 画质 / 免确认</td><td><span class="no">卡片事实表常驻</span></td><td>抽屉（点胶囊展开）</td></tr>
+    <tr><td>能力说明「对方可操作键鼠…」</td><td><span class="no">横幅第 3 段 + 卡片 lead</span></td><td>抽屉头部一行（删除两处重复）</td></tr>
+    <tr><td>变更提示 / 文件请求</td><td>横幅第 2 段 + 卡片各一份</td><td>抽屉顶部；<b>到达时胶囊亮橙点并自动展开一次</b>（规则 15）</td></tr>
+    <tr><td>连接瞬间的告知</td><td><span class="no">无（卡片常驻兼任）</span></td><td>toast 一次，5s 自动消失</td></tr>
+    <tr><td>中央区域</td><td><span class="no">大卡片常驻</span></td><td><span class="ok">归零</span>——被控端正常用电脑</td></tr>
+  </table>
+</div>
+
+<h2>§3 态 1 · 收纳胶囊条（默认态，唯一常驻 UI）</h2>
+<div class="panel">
+  <div class="stage">
+    <div class="capsule">
+      <span class="dot dot-pulse"></span>
+      <span class="who">正在被「LAPTOP-LZL」远程</span>
+      <span class="pill pill-danger">可控</span>
+      <span class="timer">03:17</span>
+      <span class="meta">点击查看详情</span>
+      <span class="spacer"></span>
+      <span class="badge-orange">1</span>
+      <button class="ico-btn danger" title="结束会话">
+        <svg width="11" height="11" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>
+      </button>
+      <svg class="chev" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+    </div>
+    <div style="color:rgba(255,255,255,.75);font-size:11px;margin:14px 14px 0">↑ 被控端桌面（示意）。胶囊条高度 ~34px（现状三段式 ~90px），贴主窗口顶，全屏被控时仍在最上层。</div>
+  </div>
+  <div class="diff-note">
+    <b>要点</b>：整条可点 = 展开抽屉；<b>结束键独立</b>（仍走 danger 确认对话框，不随整条点击误触发）；橙点徽标 = 抽屉里有待看项（变更提示 / 文件请求），数字 = 条数；<b>文件请求到达时自动展开抽屉</b>——不靠用户发现（规则 15）。
+  </div>
+</div>
+
+<h2>§4 态 2 · 展开抽屉（点胶囊 / 有新事项时自动）</h2>
+<div class="panel">
+  <div class="stage" style="min-height:330px">
+    <div class="capsule">
+      <span class="dot"></span>
+      <span class="who">正在被「LAPTOP-LZL」远程</span>
+      <span class="pill pill-danger">可控</span>
+      <span class="timer">03:17</span>
+      <span class="meta">点击查看详情</span>
+      <span class="spacer"></span>
+      <button class="ico-btn danger" title="结束会话">
+        <svg width="11" height="11" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>
+      </button>
+      <svg class="chev open" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+    </div>
+    <div class="drawer">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600">
+        <span class="dot"></span>会话详情
+        <span style="margin-left:auto"></span>
+        <span class="mini-btn on">不发送声音</span>
+      </div>
+      <div class="notice">对方可以操作你的键鼠与剪贴板 · 你随时可结束</div>
+      <div>
+        <div class="sec-t" style="margin-bottom:5px">我交出去了什么</div>
+        <dl class="facts">
+          <div class="f"><dt>对方指纹</dt><dd title="2f52 26a0 5aa0 4054">2f52 26a0 5aa0 4054</dd></div>
+          <div class="f"><dt>画面范围</dt><dd>整个虚拟屏（含副屏）</dd></div>
+          <div class="f"><dt>本机画质</dt><dd>超清（实际生效 超清）</dd></div>
+          <div class="f"><dt>免确认</dt><dd style="color:var(--green)">已开启（下次直接连入）</dd></div>
+        </dl>
+      </div>
+      <div>
+        <div class="sec-t" style="margin-bottom:5px">此刻需要注意</div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+          <span class="notice">对方把画面范围改成了「整个虚拟屏（含副屏）」<button class="nx">知道了</button></span>
+          <div class="file-ask">
+            <span>📄 对方请求接收 <b>report.docx</b>（1.2 MB）</span>
+            <span style="margin-left:auto"></span>
+            <button class="btn-pri">接受</button>
+            <button class="mini-btn">拒绝</button>
+          </div>
+        </div>
+      </div>
+      <div class="acts-row">
+        <button class="mini-btn" title="开启后这台设备连入不再弹确认；可在设备菜单里关回">开启免确认</button>
+        <span style="flex:1"></span>
+        <button class="danger-btn">立即结束</button>
+      </div>
+      <div class="drawer-foot">免确认是「不再逐次询问」，不是无人值守——胶囊条与会话照常，可随时结束。</div>
+    </div>
+  </div>
+  <div class="diff-note">
+    <b>结构</b>：详情 = RcInboundView 的核对事实（指纹/范围/画质/免确认）原样搬入，<b>组件级删除中央卡片</b>；操作行保留 U9 二段确认（行内展开，不弹模态）；宽度 460px（dialog 红线档位）；点击胶囊外部或 <span class="kbd">Esc</span> 收起。<b>「不发送声音」提为详情头右侧</b>——它是被控者最常用的一票否决开关，值得比 miniBtn 高一级。
+  </div>
+</div>
+
+<h2>§5 态 3 · 连接瞬间 toast（5s 自动消失）</h2>
+<div class="panel">
+  <div class="stage" style="min-height:110px">
+    <div class="capsule">
+      <span class="dot dot-pulse"></span>
+      <span class="who">正在被「LAPTOP-LZL」远程</span>
+      <span class="pill pill-danger">可控</span>
+      <span class="timer">00:03</span>
+      <span class="meta">点击查看详情</span>
+      <span class="spacer"></span>
+      <button class="ico-btn danger" title="结束会话">
+        <svg width="11" height="11" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>
+      </button>
+      <svg class="chev" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+    </div>
+    <div class="toast">
+      <span class="dot"></span>
+      <span><b>LAPTOP-LZL</b> 已接入并开始远程本机（可控）· 详情见顶部胶囊，随时可结束</span>
+      <span style="margin-left:auto;color:var(--muted);font-size:11px">5s 后自动消失</span>
+    </div>
+  </div>
+  <div class="diff-note">大卡片从「常驻」改为「连接瞬间的一次性告知」——这正是它该有的角色。toast 挂 live region 播报一次（无障碍），胶囊条承接后续所有状态。</div>
+</div>
+
+<h2>§6 交互规则（实施约束，全部可判定）</h2>
+<div class="panel">
+  <table>
+    <tr><th style="width:200px">规则</th><th>约定</th></tr>
+    <tr><td>常驻可见（规则 15）</td><td>胶囊条任何折叠态下都在；<b>文件请求 / 变更提示到达 → 橙点 + 自动展开抽屉一次</b>；用户手动收起后至少保留橙点徽标</td></tr>
+    <tr><td>展开 / 收起</td><td>点胶囊整条切换；<span class="kbd">Esc</span> / 点外部收起；结束键 <span class="kbd">stopPropagation</span> 不随整条触发</td></tr>
+    <tr><td>危险动作</td><td>「立即结束」保持现有 confirmDialog 守卫；「开启免确认」保持 U9 行内二段确认</td></tr>
+    <tr><td>窄窗（320px）</td><td>胶囊内 .who 独占压缩（overflow-wrap），pill/时长/图标 flex-shrink:0——沿用 09-22 崩坏修复的压缩模型</td></tr>
+    <tr><td>无障碍</td><td>胶囊 <span class="kbd">role=button aria-expanded</span>；live region 只包状态变化不包计时器（C5 现状保留）</td></tr>
+    <tr><td>删除物</td><td>RcInboundView 中央卡片删除（事实并入抽屉）；RcControlBanner 三段式结构废弃；工作台被控分支改为一行指引「会话详情见顶部胶囊」</td></tr>
+    <tr><td>顺手修</td><td>右上角竖排「关闭」tooltip 常驻：tooltip 容器加 min-width + white-space:nowrap（独立小修）</td></tr>
+  </table>
+</div>
+
+<h2>§7 改动点清单</h2>
+<div class="panel">
+  <table>
+    <tr><th>文件</th><th>改动</th><th>量级</th></tr>
+    <tr><td>RcControlBanner.tsx</td><td>三段式 → 胶囊 + 抽屉（信息原样搬迁，不新增逻辑）；自动展开状态机</td><td>~120 行重构</td></tr>
+    <tr><td>RcInboundView.tsx</td><td>删除；RcWorkbench 被控分支改一行指引</td><td>-200 行</td></tr>
+    <tr><td>RemoteComputer.module.css</td><td>删 .ib* 系列；新增 .capsule/.drawer 系列（复用现有变量与圆角档位）</td><td>±80 行</td></tr>
+    <tr><td>测试</td><td>RcControlBanner.test.tsx 重写（收纳/自动展开/结束守卫/橙点）；删 RcInboundView 相关断言</td><td>~8 用例</td></tr>
+  </table>
+  <div class="diff-note">总改动 ~250 行 · 桌面三处重复归一处 · 中央归零 · 文件请求常驻可见性不降级（自动展开保底）。</div>
+</div>
+
+</body>
+</html>

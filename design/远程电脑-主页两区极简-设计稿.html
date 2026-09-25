@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程电脑 · 主页两区极简设计稿（B 方案）</title>
+<!-- status: DISCARDED 2026-09-24 —— 用户否决："这个太极端了，一点也不像桌面端"（单列居中=网页化）。被《远程电脑-主页桌面双栏A-设计稿》取代；本稿中仍有效的结论（码常驻、就地输码、两区语义、三键归零）已并入 A 稿。 -->
+<style>
+/* ============ 文档壳：与 v5 工作台稿 / 码配对极简稿同一套 token ============ */
+:root{
+  --doc-bg:#F2F7FE; --doc-line:#E0E9F5;
+  --ink:#12233C; --ink2:#41536B; --ink3:#6B7C93;
+  --blue:#0A6CFF; --blue2:#2E8BFF; --blue-deep:#0553C9;
+  --ok:#159A4A; --ok-bg:#E2F7E9;
+  --warn:#E8890C; --warn-dot:#F59E0B;
+  --err:#D64545; --err-bg:#FDEBEB;
+  --purple:#7C5CF0; --purple-bg:#F0EBFE;
+  --panel-line:rgba(255,255,255,.95);
+  --inner:#F6FAFE; --inner-line:#E8F0FB;
+  --shadow-panel:0 12px 34px rgba(31,86,178,.10),0 2px 6px rgba(31,86,178,.05);
+  --shadow-btn:0 6px 16px rgba(10,108,255,.30);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(ellipse 900px 420px at 12% -8%, rgba(10,108,255,.08), transparent 55%),
+    linear-gradient(135deg,#F2F7FE 0%,#EAF2FC 50%,#E8F1FC 100%);
+  color:var(--ink);
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  padding:26px 18px 70px;
+}
+.doc{max-width:1260px;margin:0 auto}
+h1{font-size:21px;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+h1 .badge{font-size:11px;font-weight:600;color:#0553C9;background:linear-gradient(135deg,#E0EEFE,#CBE3FC);
+  border:1px solid #A9D2F7;border-radius:999px;padding:2px 9px}
+.sub{color:var(--ink3);font-size:12.5px;margin:7px 0 3px;max-width:1000px}
+h2{font-size:15px;margin:38px 0 10px;display:flex;align-items:center;gap:9px}
+h2::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,var(--blue2),var(--blue))}
+.note{font-size:12px;color:var(--ink3);margin:6px 0 10px;max-width:1000px}
+.note b{color:var(--ink2)}
+.note code,td code,li code{font:11.5px var(--mono);background:#fff;border:1px solid var(--doc-line);border-radius:4px;padding:0 4px;color:var(--ink2)}
+ul.notes{margin:0 0 8px 18px;font-size:12.5px;color:var(--ink2)}
+ul.notes li{margin:5px 0}
+ul.notes b{color:var(--ink)}
+table{border-collapse:collapse;font-size:12.5px;margin:8px 0 14px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:var(--shadow-panel)}
+th,td{border:1px solid var(--doc-line);padding:7px 12px;text-align:left;vertical-align:top}
+th{background:var(--inner);font-weight:600;color:var(--ink2);white-space:nowrap}
+.keep{color:var(--ok);font-weight:600;white-space:nowrap}
+.del{color:var(--err);font-weight:600;white-space:nowrap}
+.moved{color:var(--warn);font-weight:600;white-space:nowrap}
+.merged{color:var(--blue);font-weight:600;white-space:nowrap}
+
+/* ============ 应用画布 ============ */
+.app{
+  position:relative;width:1200px;max-width:100%;
+  display:flex;flex-direction:column;overflow:hidden;
+  border:1px solid rgba(255,255,255,.9);border-radius:16px;
+  background:
+    radial-gradient(ellipse 620px 300px at 78% 6%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(ellipse 520px 260px at 18% 88%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(ellipse 700px 340px at 96% 78%, rgba(122,177,255,.28), transparent 62%),
+    radial-gradient(ellipse 560px 300px at 4% 22%, rgba(140,190,255,.22), transparent 60%),
+    linear-gradient(150deg,#EAF3FE 0%,#DFEBFA 46%,#D8E7F9 100%);
+  box-shadow:0 30px 70px rgba(15,42,90,.16),0 4px 14px rgba(15,23,42,.06);
+  margin:14px 0 8px;min-height:640px;
+}
+/* ── 标题栏（比 v5 更瘦：38px，工具图标搬进来后它就是唯一导航） ── */
+.titlebar{flex:0 0 44px;display:flex;align-items:center;gap:10px;padding:0 8px 0 14px}
+.brand{display:flex;align-items:center;gap:8px;min-width:0}
+.brand-mark{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(140deg,#3D93FF,#0A6CFF 60%,#0553C9);box-shadow:0 3px 8px rgba(10,108,255,.35)}
+.brand b{font-size:13px;color:var(--ink)}
+.tb-mid{margin:0 auto;display:flex;align-items:center;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;min-height:28px;padding:0 13px;
+  border-radius:999px;background:rgba(255,255,255,.62);border:1px solid var(--panel-line);
+  font-size:11.5px;font-weight:600;color:var(--ink2);box-shadow:0 2px 8px rgba(31,86,178,.07)}
+.dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.dot.ok{background:#22C55E;box-shadow:0 0 0 3px rgba(34,197,94,.16)}
+.tb-right{display:flex;align-items:center;gap:2px}
+.tbtn{position:relative;min-width:34px;height:32px;padding:0 10px;border:0;border-radius:9px;background:transparent;
+  display:inline-flex;align-items:center;gap:6px;color:var(--ink2);cursor:pointer;font:inherit;font-size:12px;white-space:nowrap}
+.tbtn:hover{background:rgba(255,255,255,.65)}
+.tbtn.on{background:#fff;color:var(--blue-deep);box-shadow:0 2px 8px rgba(31,86,178,.10)}
+.tbtn .tb-ic{font-size:13px}
+.tbtn .tbadge{position:absolute;top:3px;right:4px;min-width:14px;height:14px;border-radius:999px;background:#F0483E;
+  color:#fff;font-size:9.5px;font-weight:700;display:grid;place-items:center;border:1.5px solid #EAF3FE;padding:0 3px}
+.winbtns{display:flex;margin-left:6px}
+.winbtns i{width:38px;height:30px;display:grid;place-items:center;color:var(--ink3);font-style:normal;font-size:12px}
+
+/* ── 主体：单列两区（侧栏整条退役） ── */
+.stage{flex:1;min-height:0;display:flex;flex-direction:column;gap:14px;padding:4px 22px 22px;max-width:860px;width:100%;margin:0 auto}
+.panel{
+  /* 毛玻璃只加这两块静态大面板（规则 8.3/8.4，与 v5 同一约定）；列表行不叠 blur */
+  background:rgba(255,255,255,.55);
+  -webkit-backdrop-filter:blur(20px) saturate(1.25);
+  backdrop-filter:blur(20px) saturate(1.25);
+  border:1px solid var(--panel-line);border-radius:14px;
+  box-shadow:var(--shadow-panel);padding:16px 18px;
+}
+.zone-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.zone-head h3{font-size:14px;font-weight:700;color:var(--ink);flex:1;white-space:nowrap}
+.zone-head .cnt{font-size:11.5px;color:var(--ink3);white-space:nowrap}
+.zone-head .recheck{border:0;background:transparent;font:inherit;font-size:11.5px;color:var(--blue);cursor:pointer;white-space:nowrap}
+
+/* 设备行：一行一个动作 */
+.dev{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;background:rgba(255,255,255,.75);
+  border:1px solid var(--inner-line);margin-top:8px}
+.dev:hover{background:#fff}
+.dev-av{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;
+  background:linear-gradient(140deg,#59A4FF,#0A6CFF);color:#fff;font-size:13px;font-weight:700}
+.dev-copy{flex:1;min-width:0;line-height:1.35}
+.dev-copy strong{display:block;font-size:13px;color:var(--ink);white-space:nowrap}
+.dev-copy small{font-size:11px;color:var(--ink3);white-space:nowrap}
+.dev-copy small .st-ok{color:var(--ok)}
+.dev-copy small .st-warn{color:var(--warn)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;padding:0 13px;
+  border:0;border-radius:9px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn.pri{background:linear-gradient(135deg,#3D93FF,#0A6CFF 70%);color:#fff;box-shadow:var(--shadow-btn)}
+.btn.ghost{background:#fff;border:1px solid var(--doc-line);color:var(--ink2)}
+.btn.sm{min-height:26px;padding:0 10px;font-size:11.5px}
+.caret{width:24px;height:30px;border:1px solid var(--doc-line);border-left:0;border-radius:0 9px 9px 0;
+  background:#fff;color:var(--ink3);cursor:pointer;font-size:10px}
+.conn-grp{display:flex;align-items:stretch}
+.conn-grp .btn.pri{border-radius:9px 0 0 9px}
+
+/* 就地连接输入行（RustDesk 的「地址栏就是主页」——收编码配对稿的「对方的码」） */
+.inline-join{display:flex;gap:8px;align-items:center;margin-top:14px}
+.inline-join .fake-input{flex:1;min-width:0;height:38px;display:flex;align-items:center;padding:0 13px;
+  border:1px dashed #B9CFEC;border-radius:10px;background:rgba(255,255,255,.7);color:#9AA9BD;font-size:12.5px}
+.inline-join .hint{font-size:11px;color:var(--ink3);white-space:nowrap}
+
+/* 这台电脑区 */
+.self-grid{display:flex;gap:16px;align-items:stretch;margin-top:8px;flex-wrap:wrap}
+.self-code{flex:1 1 320px;min-width:0}
+.code-big{font:600 24px/1.3 var(--mono);letter-spacing:.14em;color:var(--ink);background:#fff;
+  border:1px solid var(--doc-line);border-radius:10px;padding:10px 14px;text-align:center;white-space:nowrap}
+.code-full{margin-top:6px;font:11.5px/1.5 var(--mono);color:var(--ink3);background:#fff;border:1px dashed var(--doc-line);
+  border-radius:8px;padding:6px 10px;word-break:break-all}
+.self-right{flex:0 0 240px;display:flex;flex-direction:column;gap:8px;justify-content:center}
+.toggle-row{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:11px;background:rgba(255,255,255,.75);border:1px solid var(--inner-line)}
+.toggle-row .tt{flex:1;line-height:1.3}
+.toggle-row .tt strong{display:block;font-size:12px;color:var(--ink);white-space:nowrap}
+.toggle-row .tt small{font-size:10.5px;color:var(--ink3)}
+.sw{min-width:52px;height:26px;border-radius:999px;border:0;font:inherit;font-size:10.5px;font-weight:700;cursor:pointer;color:#fff;
+  background:linear-gradient(135deg,#2FBE63,#159A4A);white-space:nowrap;padding:0 10px}
+.sw.off{background:#C2CEDD;color:#fff}
+.self-actions{display:flex;gap:8px}
+.self-actions .btn{flex:1;min-height:34px}
+
+/* 会话中横幅（常驻可见 → 反馈常驻可见，规则 15.1） */
+.livebar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;margin:0;
+  background:linear-gradient(135deg,#FDEBC8,#FADFA8);border:1px solid #EFC97A;font-size:12.5px;color:#6B4A08;white-space:nowrap}
+.livebar b{color:#4A3204}
+.livebar .btn{margin-left:auto;background:#fff;color:#8A5A00;border:1px solid #EFC97A}
+
+/* 设备详情屏（事实卡与会话的家） */
+.detail-back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;font:inherit;font-size:12.5px;color:var(--blue);cursor:pointer;margin-bottom:6px}
+.detail-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.detail-head .dev-av{width:44px;height:44px;border-radius:12px;font-size:17px}
+.detail-head h3{font-size:16px;flex:1}
+.fact-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.fact{flex:1 1 140px;min-width:0;padding:10px 12px;border-radius:11px;background:rgba(255,255,255,.75);border:1px solid var(--inner-line)}
+.fact small{display:block;font-size:10.5px;color:var(--ink3);white-space:nowrap}
+.fact strong{font-size:13px;color:var(--ink);white-space:nowrap}
+.srow{display:flex;align-items:center;gap:10px;padding:8px 4px;border-top:1px solid var(--inner-line);font-size:12px;color:var(--ink2);white-space:nowrap}
+.srow .when{flex:0 0 92px;color:var(--ink3);font-size:11.5px}
+.srow .cap{flex:0 0 44px;font-weight:600}
+.srow .cap.ctl{color:var(--blue-deep)}
+.srow .res{margin-left:auto;font-weight:600}
+.srow .res.ok{color:var(--ok)} .srow .res.warn{color:var(--warn)} .srow .res.cancel{color:var(--ink3)}
+.srow .dur{flex:0 0 48px;color:var(--ink3);font-variant-numeric:tabular-nums}
+
+/* 前后对比 */
+.cmp{display:flex;gap:14px;align-items:stretch;margin:10px 0 6px;flex-wrap:wrap}
+.cmp-col{flex:1 1 340px;min-width:300px;border-radius:12px;padding:12px 14px}
+.cmp-col.before{background:#FDEEEE55;border:1px solid #F3C9C9}
+.cmp-col.after{background:#E5F6EC66;border:1px solid #BFE5CB}
+.cmp-col h4{font-size:12.5px;margin-bottom:8px}
+.cmp-flow{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.cmp-flow .n{background:#fff;border:1px solid var(--doc-line);border-radius:7px;padding:4px 9px}
+.cmp-flow .n .arrow-x{color:var(--err)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>远程电脑 · 主页两区极简设计稿（B 方案） <span class="badge" style="color:#8A2020;background:#FDEEEE;border-color:#F3C9C9">已废弃 · 被桌面双栏 A 稿取代</span></h1>
+<p class="sub">
+行业调研结论：Chrome 远程桌面 / RustDesk / AnyDesk / TeamViewer 的主页都只回答<b>两个问题</b>——
+「我要连谁」和「别人怎么连我」，常驻信息块 2~3 个；我们现行 A2 主屏有 <b>6 个语义区</b>在互相抢视线。
+本稿把主页收敛成<b>单列两区</b>：306px 侧栏整条退役，hero 大卡 / 4 张事实卡 / 最近会话全部下移。
+视觉沿用 v5 冰蓝玻璃（毛玻璃只加两块静态大面板，规则 8.3）。配套稿：<code>远程电脑-码配对极简-设计稿.html</code>（入口层），本稿是主页层。
+</p>
+
+<!-- ═══════════════ §0 诊断 ═══════════════ -->
+<h2>0. 六区 → 两区：每块内容的去向</h2>
+<div class="cmp">
+  <div class="cmp-col before">
+    <h4>现在（A2 主屏常驻 6 个语义区）</h4>
+    <div class="cmp-flow">
+      <div class="n"><span class="arrow-x">✕</span> 左侧栏 306px：标题 + 添加设备 + 搜索框 + meta + 设备卡（缩略图 + 分裂钮）+ 被连接开关 + 三键协助 + 底部工具导航</div>
+      <div class="n"><span class="arrow-x">✕</span> hero 大卡：显示器渲染 + slogan + 三个动作钮</div>
+      <div class="n"><span class="arrow-x">✕</span> 连接与权限 · 4 张事实卡</div>
+      <div class="n"><span class="arrow-x">✕</span> 最近会话 · 5 行</div>
+      <div class="n">→ 一屏 6 块，每块都在喊「先看我看我」</div>
+    </div>
+  </div>
+  <div class="cmp-col after">
+    <h4>改后（两区 + 一条瘦标题栏）</h4>
+    <div class="cmp-flow">
+      <div class="n"><b>区 1 「连接到设备」</b>：设备行列表（一行一动作）＋ 就地输入「对方的码」行——连老设备和新设备在同一区，不再弹对话框选模式</div>
+      <div class="n"><b>区 2 「这台电脑」</b>：我的码常驻自动生成 + 复制 +「允许别人连接本机」开关——码永远亮着，「让别人帮我」这个按钮因此消失</div>
+      <div class="n">文件 / 记录 / 设置 → 标题栏图标（唯一导航变更）</div>
+      <div class="n">事实卡 · 会话历史 → 点设备行进「设备详情」页（按设备看，比全局列表更有意义）</div>
+      <div class="n">搜索框 → 设备 ≤20 台时是摆设，删；多了再加回详情区顶部</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ §1 主页 ═══════════════ -->
+<h2>1. 主页 · 默认态（有设备）</h2>
+
+<div class="app">
+  <div class="titlebar">
+    <div class="brand"><div class="brand-mark">🐼</div><b>远程电脑</b></div>
+    <div class="tb-mid"><span class="pill"><span class="dot ok"></span>通道正常 · 中继已连</span><span class="pill">12 ms</span></div>
+    <div class="tb-right">
+      <button class="tbtn"><span class="tb-ic">📁</span>文件<span class="tbadge">2</span></button>
+      <button class="tbtn"><span class="tb-ic">🕘</span>记录</button>
+      <button class="tbtn"><span class="tb-ic">⚙</span>设置</button>
+      <div class="winbtns"><i>─</i><i>□</i><i>✕</i></div>
+    </div>
+  </div>
+  <div class="stage">
+
+    <div class="panel">
+      <div class="zone-head">
+        <h3>连接到设备</h3>
+        <span class="cnt">3 台设备 · 状态自动更新</span>
+        <button class="recheck">⟳ 重新检查</button>
+      </div>
+
+      <div class="dev">
+        <div class="dev-av">办</div>
+        <div class="dev-copy"><strong>办公室台式机</strong>
+          <small><span class="st-ok">● 局域网在线</span> · 刚刚可连接 · 免确认已开启</small></div>
+        <div class="conn-grp"><button class="btn pri">连接 · 可控</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#9C7BFF,#7C5CF0)">家</div>
+        <div class="dev-copy"><strong>家里的笔记本</strong>
+          <small><span class="st-warn">● 暂时连不上</span> · 3 分钟前检查</small></div>
+        <div class="conn-grp"><button class="btn pri">连接 · 只看</button><button class="caret">⌄</button></div>
+      </div>
+      <div class="dev">
+        <div class="dev-av" style="background:linear-gradient(140deg,#43C6A0,#159A4A)">李</div>
+        <div class="dev-copy"><strong>小李的电脑</strong>
+          <small><span class="st-ok">● 最近在线 · 未实测</span></small></div>
+        <div class="conn-grp"><button class="btn pri">连接 · 可控</button><button class="caret">⌄</button></div>
+      </div>
+
+      <div class="inline-join">
+        <div class="fake-input">粘贴对方的码，连接新设备…</div>
+        <button class="btn pri" style="height:38px">连接</button>
+        <span class="hint">局域网新设备会自己出现在上面</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="zone-head"><h3>这台电脑</h3><span class="cnt">PastePanda · 李清泉的办公机</span></div>
+      <div class="self-grid">
+        <div class="self-code">
+          <div class="code-big">7K2M-9QX4</div>
+          <div class="code-full">PP-7K2M9QX4-Kf3dP1x…（完整串 · 对方不在同一网络时发这个）</div>
+          <div class="self-actions" style="margin-top:8px">
+            <button class="btn ghost">⧉ 复制完整串</button>
+            <button class="btn ghost">无人值守设置 ›</button>
+          </div>
+        </div>
+        <div class="self-right">
+          <div class="toggle-row">
+            <div class="tt"><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></div>
+            <button class="sw">已允许</button>
+          </div>
+          <div class="toggle-row">
+            <div class="tt"><strong>每次连接先问我</strong><small>免确认仅对已授权设备生效</small></div>
+            <span class="pill" style="min-height:24px;padding:0 9px;font-size:10.5px">已开启</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<ul class="notes">
+  <li><b>侧栏三键协助的归宿</b>（衔接码配对极简稿）：「让别人帮我」= 区 2 的码<b>本来就常驻亮着</b>，按钮删除；「帮别人连一次 / 输入接入码」= 区 1 就地输入框自动识别码种（<code>detectCodeKind()</code>），按钮删除。极简稿的两键在本稿里进一步归零——两稿合并后主页上<b>没有任何一个"协助"按钮</b>，只剩两件事该做的地方。</li>
+  <li><b>设备行 = 现行 <code>RcA2DeviceList</code> 行去掉缩略图、状态文案照单源</b>：状态字全部来自 <code>rcDeviceStatus()</code>（局域网在线 / 刚刚可连接 / 暂时连不上 / 正在获取状态…），「免确认已开启」「已禁止连接本机」标签、每行「连接 · 档位」+ ⌄ 档位菜单（<code>capFor</code> 按设备记忆）<b>一字不改照搬</b>。点击行名区域仍进详情。</li>
+  <li><b>标题栏工具导航取代底部 <code>toolNav</code></b>：文件钮保留传输角标（<code>transferBadge</code>，离开文件页也常驻可见——规则 15.1）；<code>transferStrip</code> 摘要条改挂在区 1 顶部长驻。</li>
+  <li>搜索框删除的依据：设备上限场景 ≤20 台，行内 Ctrl+F 或浏览器查找即可；若日后设备数上来，在区 1 头部加一个 🔍 图标展开，不做常驻框。</li>
+</ul>
+
+<!-- ═══════════════ §2 状态切片 ═══════════════ -->
+<h2>2. 状态切片（U3 四件套逐态过）</h2>
+
+<div class="app" style="min-height:0">
+  <div class="stage" style="padding-top:18px">
+
+    <div class="livebar">
+      <span class="dot" style="background:#E81123;box-shadow:0 0 0 3px rgba(232,17,35,.18)"></span>
+      <b>小李的电脑</b> 正在远程本机（可控）· 已 04:12
+      <button class="btn sm">立即结束</button>
+    </div>
+
+    <div class="panel">
+      <div class="zone-head"><h3>连接到设备</h3><span class="cnt">0 台设备</span></div>
+      <div class="dev" style="background:transparent;border-style:dashed">
+        <div class="dev-copy" style="text-align:left;line-height:1.8">
+          <strong style="white-space:normal">还没有可连的设备</strong>
+          <small style="white-space:normal">把下面这串你的码发给对方，或把对方的码粘进来——连上之后设备就会记住，以后点一下就行。</small>
+        </div>
+        <button class="btn ghost sm">附近正在发现的设备会出现在这里 ⌄</button>
+      </div>
+      <div class="inline-join">
+        <div class="fake-input">粘贴对方的码，连接新设备…</div>
+        <button class="btn pri" style="height:38px">连接</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="zone-head"><h3>连接到设备</h3><span class="cnt">骨架：正在获取状态</span></div>
+      <div class="dev"><div class="dev-av" style="background:#DCE7F4">…</div><div class="dev-copy"><strong style="color:#D6E2F0">████████</strong><small style="color:#E2EBF6">██████</small></div></div>
+      <div class="dev"><div class="dev-av" style="background:#DCE7F4">…</div><div class="dev-copy"><strong style="color:#D6E2F0">████████</strong><small style="color:#E2EBF6">██████</small></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="zone-head"><h3>连接到设备</h3></div>
+      <div class="dev" style="background:var(--err-bg);border-color:#F3C9C9">
+        <div class="dev-copy"><strong style="color:var(--err)">设备列表暂时无法加载</strong>
+          <small style="white-space:normal">请重新检查设备列表。已有设备仍可尝试连接。</small></div>
+        <button class="btn ghost sm">重试</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<ul class="notes">
+  <li><b>被控横幅上提到主页顶部常驻</b>（现行只在侧栏/主窗某处）：「正在被…远程 + 立即结束」必须与触发它的那次授权同域常驻（规则 15.1）——两区布局里它是唯一凌驾于两区之上的元素，语义就是「现在这屏被看着」。</li>
+  <li><b>空态遵守 L3</b>：说出「会出现什么 / 怎么让它出现」——第一句给方向（互发码），第二句承诺后果（连上即记住）。骨架与错误态原文照搬现行 <code>skeletonBlock</code> / <code>deviceLoadError</code> 文案，catch 不许落到空态（U3.5）。</li>
+  <li>免确认过滤（<code>trustedOnly</code>）、非 rc 来源设备「需完成远程配对…」行内解释：这两块归入<b>设备详情</b>与设置的「设备管理」，主页不再出现过滤横条。</li>
+</ul>
+
+<!-- ═══════════════ §3 设备详情 ═══════════════ -->
+<h2>3. 设备详情：事实卡与会话的新家（点设备行进入）</h2>
+
+<div class="app" style="min-height:0">
+  <div class="stage" style="padding-top:18px">
+    <div class="panel">
+      <button class="detail-back">← 返回设备列表</button>
+      <div class="detail-head">
+        <div class="dev-av">办</div>
+        <div style="flex:1"><h3>办公室台式机</h3>
+          <div style="font-size:11.5px;color:var(--ink3)">指纹 <code style="font:11px var(--mono)">Kf3d·P1x9</code> · 免确认已开启 · 上次连接 今天 10:00</div>
+        </div>
+        <div class="conn-grp"><button class="btn pri" style="min-height:34px;padding:0 18px">连接 · 可控</button><button class="caret" style="height:34px">⌄</button></div>
+      </div>
+
+      <div class="fact-row">
+        <div class="fact"><small>系统</small><strong>Windows 11</strong></div>
+        <div class="fact"><small>连接路径</small><strong>局域网直连</strong></div>
+        <div class="fact"><small>延迟实测</small><strong>12 ms · 刚刚</strong></div>
+        <div class="fact"><small>授权档位</small><strong>可控 · 每次询问关</strong></div>
+      </div>
+
+      <div class="zone-head" style="margin-top:14px"><h3 style="font-size:13px">这台设备的最近会话</h3><button class="recheck">全部记录 ›</button></div>
+      <div class="srow"><span class="when">今天 10:00</span><span class="cap ctl">可控</span><span>协助改配置文件</span><span class="dur">00:13</span><span class="res ok">正常结束</span></div>
+      <div class="srow"><span class="when">9/21 10:41</span><span class="cap">只看</span><span>看安装进度</span><span class="dur">02:40</span><span class="res cancel">对方取消</span></div>
+      <div class="srow"><span class="when">9/20 15:02</span><span class="cap ctl">可控</span><span></span><span class="dur">00:00</span><span class="res warn">超时未确认</span></div>
+
+      <div class="btn-row" style="display:flex;gap:8px;justify-content:flex-start;margin-top:14px">
+        <button class="btn ghost sm">传文件 ›</button>
+        <button class="btn ghost sm">设备管理（禁止 / 免确认）›</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ul class="notes">
+  <li><b>「连接与权限」4 张事实卡原样搬家</b>：文案仍是 <code>RcA2ConnectionFacts</code> 单源（局域网直连/公网直连/绕中继、可控/只看、<code>osLabel</code>），只是从「全局常驻」变成「按设备呈现」——本来就是每台设备各一套的事实，摆全局反而要挑一台当代表，语义就错了。</li>
+  <li><b>最近会话从全局 5 行变按设备 3 行</b>：时间/时长/结果文案仍走 <code>formatWhen / formatDuration / resultTone / historyCapabilityLabel</code> 单源；全局流水账保留在标题栏「记录」页。</li>
+  <li>hero 大卡与 slogan（"让距离，不再是距离"）<b>整体退役</b>：装饰性显示器渲染在详情里以 44px 首字头像替代；品牌感由冰蓝画布和玻璃面板承担，不需要一整屏广告位。</li>
+</ul>
+
+<!-- ═══════════════ §4 实施备注 ═══════════════ -->
+<h2>4. 实施备注（对照真实代码 · 照搬 / 搬家 / 退役）</h2>
+<table>
+  <tr><th>稿中元素</th><th>类别</th><th>对应现状与迁移方式</th></tr>
+  <tr><td>主页壳改单列两区</td><td class="merged">新提案</td><td><code>RcWorkbench</code>（A2 布局）删 <code>RcA2Sidebar</code> 容器；两区为新组件 <code>RcZoneConnect.tsx</code> / <code>RcZoneSelf.tsx</code>，各 ≤300 行（规则 7）</td></tr>
+  <tr><td>设备行（状态/档位钮/⌄菜单/denied/trusted 标签）</td><td class="keep">照搬</td><td><code>RcA2DeviceList</code> 行内部原样搬入区 1，只删缩略图与选中高亮（选中语义由「进详情」取代）；<code>rcDeviceStatus / capabilityLabel / capFor</code> 单源不动；档位菜单 portal 到 body 的教训注释随行保留</td></tr>
+  <tr><td>区 2 「这台电脑」开关</td><td class="keep">照搬</td><td>「允许别人连接本机 · 已允许/已暂停」整行来自现行侧栏 <code>receiveRow</code>（含 busy/locked 禁用），原样搬家；「每次连接先问我」读设置项，跳转设置不就地改（避免与设置页双开关打架）</td></tr>
+  <tr><td>我的码常驻自动生成</td><td class="merged">新提案</td><td>数据源 <code>rcPair.createInvite</code>（与码配对稿 §1「你的码」同一组件 <code>RcConnectCodePane</code>，跨网完整串规则一致）；页面打开即出码、失败走 L4+重试，<b>不静默</b></td></tr>
+  <tr><td>就地输入行</td><td class="merged">新提案</td><td>= 码配对稿对话框右栏的常驻化（同 <code>detectCodeKind()</code>）；点「连接」后弹的确认/6 位核对屏直接复用极简稿 §2 的状态机 <code>useRcConnect</code>——<b>两稿共用一套，不重复实现</b></td></tr>
+  <tr><td>标题栏 文件/记录/设置</td><td class="moved">搬家</td><td>导航目标仍是现有 <code>RcA2Page</code> 三页（files/history/settings），入口从 <code>toolNav</code> 底部改标题栏；<code>page</code> 状态机不动</td></tr>
+  <tr><td>设备详情页</td><td class="merged">新提案</td><td>新组件 <code>RcDeviceDetail.tsx</code>：事实区复用 <code>RcA2ConnectionFacts</code>（改为按设备入参），会话区复用 <code>RcRecentSessions</code>（加 <code>peer</code> 过滤参数，<code>rcHistory</code> 已支持按设备筛）</td></tr>
+  <tr><td>被控横幅置顶</td><td class="moved">搬家</td><td>现行主窗「正在被…远程 / 立即结束」元素上提为 <code>.livebar</code>，凌驾两区；反馈时序按规则 15.1</td></tr>
+  <tr><td>hero 大卡 / slogan / 搜索框 / 侧栏三键 / 底部工具条 / <code>RcPairDone</code></td><td class="del">退役</td><td>hero=slogan 撤；搜索框删；三键归宿见 §1 注；「配对」一词已由码配对极简稿全删；组件文件随实施删除，不留死代码</td></tr>
+  <tr><td>性能过闸（规则 8）</td><td class="keep">约束</td><td>blur 面板 5 块 → 2 块（净减 3 个合成层）；删 hero 装饰动画与设备缩略图采样（每行一层的常驻成本没了）；被控横幅红点呼吸动画要过 8.1（不可见时暂停）——净收益为正</td></tr>
+</table>
+
+<!-- ═══════════════ §5 验收 ═══════════════ -->
+<h2>5. 验收：黑话测试（规则 19）</h2>
+<ul class="notes">
+  <li>拿 §1 主页给没用过的人看，要求不解释即答：「上面那排是别人的电脑，点绿色的钮就连」「下面这块是我的，别人要输这串才能连我」「虚线框是粘别人给我的码的地方」「右上角三个是文件、记录、设置」。</li>
+  <li>任何一块说不出口 = 该块回炉。特别盯「这台电脑」区：如果受访者以为"我的码"是"我要输的码"，就把标签从「这台电脑 · 你的码」改成「别人用这串码连我」——<b>以测试结果的文案为准，不以本稿预设为准</b>。</li>
+  <li>安全红线与码配对极简稿 §5 完全同源（6 位核对、每次确认、用完即忘、跨网完整串、出码端定档），本稿不重复列，实施时两稿一起过。</li>
+</ul>
+
+</div>
+</body>
+</html>

@@ -6,7 +6,7 @@
 //! 🔴 红线：无 AI。
 
 use crate::data_store::{DataStore, ExportReport, ImportReport};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 /// 把全部笔记导出到指定目录（可直接当 Obsidian vault 打开）。
 #[tauri::command]
@@ -16,8 +16,15 @@ pub fn note_export_dir(store: State<DataStore>, dir: String) -> Result<ExportRep
 
 /// 从指定目录导入。**合并语义：只新增与更新，永远不删库里的笔记。**
 #[tauri::command]
-pub fn note_import_dir(store: State<DataStore>, dir: String) -> Result<ImportReport, String> {
-    store.note_import_dir(&dir)
+pub fn note_import_dir(
+    app: AppHandle,
+    store: State<DataStore>,
+    dir: String,
+) -> Result<ImportReport, String> {
+    let report = store.note_import_dir(&dir)?;
+    // 整库导入可能一次带回几十篇带 `- [ ]` 的笔记
+    crate::todo_tasks::refresh_island(&app);
+    Ok(report)
 }
 
 /// 把一篇笔记拼成带 frontmatter 的 Markdown 全文（给「复制为 Markdown」用）。

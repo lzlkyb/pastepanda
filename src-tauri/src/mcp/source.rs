@@ -513,7 +513,9 @@ impl KbSource for AppKbSource {
         folder: Option<&str>,
         source: &str,
     ) -> Result<Note, String> {
-        self.with_store(|s| create_on(s, title, content, folder, source))?
+        let res: Result<Note, String> = self.with_store(|s| create_on(s, title, content, folder, source))?;
+        crate::todo_tasks::refresh_island(&self.app);
+        res
     }
 
     fn update(
@@ -523,27 +525,37 @@ impl KbSource for AppKbSource {
         content: Option<&str>,
         source: &str,
     ) -> Result<(Note, NoteUpdateReport), String> {
-        self.with_store(|s| update_on(s, id, title, content, source))?
+        let res: Result<(Note, NoteUpdateReport), String> =
+            self.with_store(|s| update_on(s, id, title, content, source))?;
+        // 模型改库也要让岛看到（外部 agent 写 `- [ ]` 是常态，实施方案 §6 风险 6 的源头）
+        crate::todo_tasks::refresh_island(&self.app);
+        res
     }
 
     fn append(&self, id: &str, text: &str, source: &str) -> Result<Note, String> {
-        self.with_store(|s| append_on(s, id, text, source))?
+        let res: Result<Note, String> = self.with_store(|s| append_on(s, id, text, source))?;
+        crate::todo_tasks::refresh_island(&self.app);
+        res
     }
 
     fn delete(&self, id: &str) -> Result<String, String> {
-        self.with_store(|s| {
+        let res: Result<String, String> = self.with_store(|s| {
             let title = note_title_on(s, id)?;
             s.note_delete(id)?;
             Ok(title)
-        })?
+        })?;
+        crate::todo_tasks::refresh_island(&self.app);
+        res
     }
 
     fn restore(&self, id: &str) -> Result<String, String> {
-        self.with_store(|s| {
+        let res: Result<String, String> = self.with_store(|s| {
             // 先恢复再读标题：已删的行被 `push_note_filters` 滤掉了，恢复前读不到。
             s.note_restore_deleted(id)?;
             note_title_on(s, id)
-        })?
+        })?;
+        crate::todo_tasks::refresh_island(&self.app);
+        res
     }
 
     fn move_to(&self, id: &str, folder: Option<&str>) -> Result<String, String> {
@@ -560,7 +572,10 @@ impl KbSource for AppKbSource {
         op: &ContentEdit,
         source: &str,
     ) -> Result<(Note, EditReport), String> {
-        self.with_store(|s| edit_on(s, id, op, source))?
+        let res: Result<(Note, EditReport), String> =
+            self.with_store(|s| edit_on(s, id, op, source))?;
+        crate::todo_tasks::refresh_island(&self.app);
+        res
     }
 
     fn write_switches(&self) -> WriteSwitches {

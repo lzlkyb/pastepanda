@@ -13,6 +13,7 @@
 mod api;
 mod dll;
 mod enc;
+mod hw;
 mod types;
 
 use api::Ff;
@@ -71,7 +72,7 @@ fn main() -> anyhow::Result<()> {
         dll_load_dir,
     )?;
     println!(
-        "  加载 + 解析 24 个符号耗时: {} µs",
+        "  加载 + 解析 32 个符号耗时: {} µs",
         t_load.elapsed().as_micros()
     );
 
@@ -84,6 +85,17 @@ fn main() -> anyhow::Result<()> {
         "  av_version_info: {}",
         unsafe { std::ffi::CStr::from_ptr((ff.av_version_info)()) }.to_string_lossy()
     );
+
+    // 批 3 hwaccel 实验（--hw）：D3D11 设备共享 + 纹理直喂 nvenc，与 CPU 路径互斥
+    if args.iter().any(|a| a == "--hw") {
+        let fps = arg_val(&args, "--fps").and_then(|s| s.parse().ok()).unwrap_or(30i32);
+        unsafe { (ff.av_log_set_level)(48) } // DEBUG：hwcontext 失败要看全上下文
+        let r = hw::run(&ff, w, h, fps, frames);
+        // 🔴 探针退出时 Drop（卸 avcodec/avutil + COM/nvenc session 清理交错）会段错误
+        //   （S6 数据全部打完后 exit=139）。探针不追求优雅关闭，直接硬退绕过 Drop。
+        let code = if r.is_ok() { 0 } else { 1 };
+        std::process::exit(code);
+    }
     println!(
         "  编码器名单    : {}",
         ALL_ENCODERS

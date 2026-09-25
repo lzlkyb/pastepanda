@@ -24,6 +24,7 @@ import { RcPairJoins } from "./RcPairJoins";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源；显示名收口见 rcDisplayName
 import { rcSetAudioLocalMute, rcHostMuteSet } from "@/lib/api/rc";
+import { capabilityLabel } from "@/lib/rcRequest";
 import { summonMainWindow } from "@/lib/rcWindow";
 
 export function RcOverlay() {
@@ -132,6 +133,20 @@ export function RcOverlay() {
     if (inboundActive) void refreshTargets();
   }, [inboundActive, peer, refreshTargets]);
 
+  // B 方案（2026-09-24）：工作台中央大卡片（RcInboundView）删除后，被控开始瞬间
+  // 的「主动告知」由这条 toast 承担一次——常驻提示交给胶囊横幅，不再占屏幕中心。
+  const lastInboundId = useRef<string | null>(null);
+  useEffect(() => {
+    if (inboundActive && session && lastInboundId.current !== session.id) {
+      lastInboundId.current = session.id;
+      toast(
+        `「${rcDisplayName(session, fingerprintOf(session.peer))}」正在远程本机（${capabilityLabel(session.capability)}）`,
+        "info",
+      );
+    }
+    if (!inboundActive) lastInboundId.current = null;
+  }, [inboundActive, session, toast]);
+
   if (
     !inboundActive &&
     !outboundLive &&
@@ -174,6 +189,9 @@ export function RcOverlay() {
           onToggleAudioLocalMute={toggleAudioLocalMute}
           spkMutedByPeer={spkByPeer}
           onRestoreSpk={restoreSpk}
+          quality={rc.status?.quality}
+          activeQuality={rc.status?.active_quality}
+          captureScope={rc.status?.capture_scope}
           onEnd={() => {
             void runRcAction(
               () => rc.end(),

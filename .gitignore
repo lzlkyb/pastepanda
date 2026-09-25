@@ -62,3 +62,6 @@ design/promo/hyperframes/*
 # 同 design/promo 的教训：写 `/*` 而不是忽略整个目录。
 probe/_av/ffmpeg-master-latest-win64-lgpl-shared/*
 probe/_av/*.zip
+
+# 根目录 target（误生成；Rust 构建目标在 src-tauri/target，已由 src-tauri/.gitignore 管理）
+target/

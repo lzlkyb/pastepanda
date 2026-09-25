@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑 · 控端态 UI — B 沉浸零常驻 设计稿</title>
+<style>
+  :root {
+    --danger: #d64545;
+    --accent: #4f7cff;
+    --cyan: #06b6d4;
+    --green: #11813a;
+    --orange: #e0803a;
+    --text: #1c1f23;
+    --muted: #6b7280;
+    --border: #e3e6ea;
+    --card: #fff;
+    --bg: #f3f5f8;
+    --cap-bg: rgba(13, 16, 22, .82);
+    --cap-line: rgba(255, 255, 255, .09);
+    --cap-text: #e8ecf2;
+    --cap-muted: #93a0b4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 13px; padding: 28px 40px 60px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 20px; line-height: 1.7; }
+  h2 { font-size: 15px; margin: 30px 0 4px; padding-left: 9px; border-left: 3px solid var(--cyan); }
+  h2 .tag { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 8px; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 10px; line-height: 1.8; }
+  .note b { color: var(--text); }
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 8px;
+  }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.cmp th, table.cmp td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; line-height: 1.6; }
+  table.cmp th { background: var(--bg); font-weight: 600; font-size: 12px; }
+  .b-good { color: var(--green); font-weight: 600; }
+  .b-bad { color: var(--danger); font-weight: 600; }
+
+  .win {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: var(--card); box-shadow: 0 4px 18px rgba(0,0,0,.07);
+    position: relative;
+  }
+  .topbar {
+    height: 33px; display: flex; align-items: center; gap: 10px;
+    padding: 0 0 0 12px; background: var(--card);
+    border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .topbar .who b { font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-on { background: var(--green); }
+  .topbar .sp { flex: 1; }
+  .wbtns { display: flex; align-self: stretch; }
+  .wbtn { width: 44px; display: flex; align-items: center; justify-content: center; color: var(--text); }
+  .wbtn:hover { background: rgba(0,0,0,.06); }
+  .wbtn.close:hover { background: var(--danger); color: #fff; }
+
+  .canvas {
+    position: relative; height: 400px; overflow: hidden;
+    background:
+      radial-gradient(ellipse 420px 200px at 78% 30%, rgba(79,124,255,.14), transparent 70%),
+      linear-gradient(135deg, #3a6ea5 0%, #6fa0c8 55%, #88b4d4 100%);
+  }
+  .fw { position: absolute; border-radius: 6px; background: rgba(255,255,255,.92); box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  .fw .fw-t { height: 22px; border-bottom: 1px solid rgba(0,0,0,.08); display: flex; align-items: center; padding: 0 10px; font-size: 10px; color: #6b7280; }
+  .fw .fw-b { padding: 8px 10px; display: flex; gap: 5px; }
+  .fw .ln { height: 6px; border-radius: 3px; background: rgba(0,0,0,.08); }
+
+  .flag { position: absolute; font-size: 10px; color: #fff; background: var(--danger); border-radius: 8px; padding: 1px 7px; z-index: 5; }
+
+  /* 顶边热区指示 */
+  .hotzone {
+    position: absolute; top: 0; left: 0; right: 0; height: 12px;
+    display: flex; justify-content: center; align-items: flex-start; z-index: 8;
+  }
+  .hotzone::after {
+    content: ""; width: 56px; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,.45); margin-top: 3px;
+  }
+  .hotzone-label {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: rgba(255,255,255,.75);
+    background: rgba(13,16,22,.55); border-radius: 8px; padding: 1px 8px; z-index: 8;
+  }
+
+  /* 浮条（与方案 A 同一组件，仅浮现策略不同） */
+  .sim-cap { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 10; }
+  .capsule {
+    display: flex; align-items: center; gap: 7px;
+    height: 34px; padding: 0 6px 0 13px;
+    background: var(--cap-bg);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--cap-line);
+    border-radius: 17px;
+    font-size: 12px; color: var(--cap-text);
+    box-shadow: 0 8px 26px rgba(0,0,0,.35);
+    white-space: nowrap;
+    animation: capIn 260ms cubic-bezier(.2,0,0,1);
+  }
+  @keyframes capIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .capsule .who { font-weight: 600; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  .pill { font-size: 10.5px; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; }
+  .pill-on { background: rgba(52,199,123,.16); color: #4ade80; border: 1px solid rgba(52,199,123,.35); }
+  .csep { width: 1px; height: 16px; background: rgba(255,255,255,.12); flex-shrink: 0; }
+  .cbtn {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 24px; padding: 0 8px; border-radius: 7px;
+    border: none; background: transparent; color: var(--cap-text);
+    font-size: 11.5px; cursor: pointer; flex-shrink: 0;
+  }
+  .cbtn:hover { background: rgba(255,255,255,.1); }
+  .cbtn .val { color: var(--cap-muted); }
+  .cbtn.danger { color: #f09595; }
+  .cbtn.danger:hover { background: rgba(214,69,69,.22); }
+  .cbtn svg { display: block; flex-shrink: 0; }
+
+  /* 首次连接引导 */
+  .onboard {
+    position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 16px 26px; border-radius: 12px;
+    background: var(--cap-bg); border: 1px solid var(--cap-line);
+    backdrop-filter: blur(14px); box-shadow: 0 10px 32px rgba(0,0,0,.35);
+    font-size: 12.5px; color: var(--cap-text); z-index: 9; text-align: center;
+  }
+  .onboard .mouse-anim {
+    width: 18px; height: 26px; border: 2px solid rgba(255,255,255,.65); border-radius: 9px; position: relative;
+  }
+  .onboard .mouse-anim::after {
+    content: ""; position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+    width: 3px; height: 5px; border-radius: 2px; background: #4ade80;
+    animation: wheel 1.4s ease-in-out infinite;
+  }
+  @keyframes wheel { 0%,100% { transform: translate(-50%, 0); opacity: 1; } 50% { transform: translate(-50%, 6px); opacity: .35; } }
+  .onboard .dim { color: var(--cap-muted); font-size: 11.5px; }
+  .onboard kbd {
+    font-family: inherit; font-size: 10.5px; padding: 1px 7px; border-radius: 5px;
+    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+  }
+
+  ol.rules { font-size: 12.5px; line-height: 2.1; padding-left: 20px; }
+  ol.rules b { color: var(--accent); }
+  ol.rules .dim { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>远程电脑 · 控端态 UI — 方案 B「沉浸零常驻」设计稿</h1>
+<div class="sub">
+  与方案 A 的<b>唯一差异在浮现策略</b>：浮条本体完全相同（画质/画面/视图/详情/⋯/结束），但 B 连「首显 2.5s」都不要——
+  <b>连接后画面 100% 干净</b>，鼠标移到画面顶边热区才滑出浮条；配套一次性引导动画解决可发现性。对标 Moonlight / Parsec 的零常驻哲学。
+</div>
+
+<h2>§1 常态 · 画面零浮层 <span class="tag">与 A 的常态对比：没有浮条、没有 HUD 按钮</span></h2>
+<div class="note">
+  顶栏只承担窗口壳（灯 + 名字 + 三键），且与 A 不同——<b>没有警示胶囊</b>：异常警示也进浮条身份段（异常时热区常显 + 浮条锁显）。
+  顶栏只剩一个可能的红点，画面本体零遮挡。
+</div>
+<div class="win">
+  <div class="topbar">
+    <span class="dot dot-on"></span>
+    <span class="who">正在查看 <b>办公室-台式机</b></span>
+    <span class="sp"></span>
+    <div class="wbtns">
+      <span class="wbtn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span>
+      <span class="wbtn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="9" width="16" height="11" rx="2"/><path d="M8 5h8" opacity=".5"/></svg></span>
+      <span class="wbtn close"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    </div>
+  </div>
+  <div class="canvas">
+    <div class="fw" style="left:9%; top:16%; width:38%; height:52%">
+      <div class="fw-t">报价单.xlsx — Excel</div>
+      <div class="fw-b"><span class="ln" style="flex:2"></span><span class="ln" style="flex:1"></span><span class="ln" style="flex:1.4"></span></div>
+      <div class="fw-b" style="padding-top:0"><span class="ln" style="flex:1"></span><span class="ln" style="flex:2.2"></span></div>
+    </div>
+    <div class="fw" style="left:52%; top:30%; width:34%; height:40%">
+      <div class="fw-t">微信</div>
+      <div class="fw-b"><span class="ln" style="flex:1"></span></div>
+      <div class="fw-b" style="padding-top:0"><span class="ln" style="flex:1.6"></span></div>
+    </div>
+    <span class="flag" style="top:52px; left:14px">B：画面上什么都没有</span>
+    <span class="flag" style="top:52px; right:14px; background:#0F6E56">顶边热区静止时不可见</span>
+  </div>
+</div>
+
+<h2>§2 首次连接引导 <span class="tag">一次性 · 解决零常驻的可发现性代价</span></h2>
+<div class="note">
+  连接成功后画布中央出现<b>一次</b>引导卡（session.id 去重），鼠标滚轮动画 + 两行文案，5s 自动淡出或鼠标靠近顶边立即消失。
+  键盘捕获提示（A 的"点击画面控制"）合并进这张卡——B 模式下没有底栏灰字，这是唯一的上手告知渠道。
+</div>
+<div class="win">
+  <div class="canvas" style="height:340px">
+    <div class="fw" style="left:9%; top:16%; width:38%; height:52%">
+      <div class="fw-t">报价单.xlsx — Excel</div>
+      <div class="fw-b"><span class="ln" style="flex:2"></span><span class="ln" style="flex:1"></span></div>
+    </div>
+    <div class="onboard">
+      <div class="mouse-anim"></div>
+      <div>鼠标移到<b>画面顶部</b>调出控制条</div>
+      <div class="dim">点击画面即可控制键盘鼠标 · <kbd>Esc</kbd> 释放</div>
+      <div class="dim" style="font-size:10.5px">此提示只出现一次</div>
+    </div>
+  </div>
+</div>
+
+<h2>§3 顶边热区唤出态 <span class="tag">鼠标进入顶边 12px → 浮条滑出（260ms）</span></h2>
+<div class="note">
+  热区静止时完全透明不可见（§1）；悬停时浮条从顶边滑入。离开浮条 + 热区 2.5s 淡出。
+  <b>浮条本体与方案 A 逐字节同一组件</b>（RcSessionCapsule），只是唤出参数不同。
+</div>
+<div class="win">
+  <div class="canvas" style="height:340px">
+    <div class="fw" style="left:9%; top:20%; width:38%; height:48%">
+      <div class="fw-t">报价单.xlsx — Excel</div>
+      <div class="fw-b"><span class="ln" style="flex:2"></span><span class="ln" style="flex:1"></span></div>
+    </div>
+    <div class="hotzone"><span class="hotzone-label">热区 12px · 悬停时浮条滑出</span></div>
+    <div class="sim-cap">
+      <div class="capsule">
+        <span class="dot dot-on" style="width:7px;height:7px;background:#4ade80"></span>
+        <span class="who">办公室-台式机</span>
+        <span class="pill pill-on">可控</span>
+        <span class="csep"></span>
+        <button class="cbtn">画质 <span class="val">高清</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="cbtn">画面 <span class="val">整屏</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="cbtn">适应</button><button class="cbtn">1:1</button><button class="cbtn">填充</button>
+        <button class="cbtn" title="全屏"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        <span class="csep"></span>
+        <button class="cbtn" title="连接详情"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></button>
+        <button class="cbtn" title="更多"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+        <button class="cbtn danger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note">⋯ 面板、警示态、只看态、全屏态与方案 A <b>完全一致</b>（见 A 稿 §3–§5），不再重复。差异只有下表四条。</div>
+
+<h2>§4 A / B 取舍对比</h2>
+<div class="panel">
+  <table class="cmp">
+    <tr><th style="width:110px">维度</th><th>A 单浮条</th><th>B 沉浸零常驻（本稿）</th></tr>
+    <tr><td>常态画面</td><td>浮条常显 2.5s 后隐，悬停唤出</td><td class="b-good">100% 干净，热区隐形</td></tr>
+    <tr><td>可发现性</td><td class="b-good">高——首显自解释，无引导依赖</td><td class="b-bad">依赖一次性引导卡；错过就只能靠探索或文档</td></tr>
+    <tr><td>警示可见性</td><td class="b-good">异常时浮条锁显，顶栏红点+浮条双保险</td><td>异常靠顶栏红点 + 热区常显诱导唤出（少一层保险）</td></tr>
+    <tr><td>新用户成本</td><td class="b-good">零</td><td class="b-bad">需引导卡；引导被关掉后无兜底</td></tr>
+    <tr><td>老手体验</td><td>好</td><td class="b-good">最好——长会话 / 全屏工作流零干扰</td></tr>
+    <tr><td>改动量</td><td>中</td><td>中（同一组件，差浮现参数 + 引导卡）</td></tr>
+    <tr><td>适合谁</td><td>新用户多、远程支持场景（我们的主场景）</td><td>高频老手、自用主力机</td></tr>
+  </table>
+</div>
+
+<h2>§5 交互规则与实施落点</h2>
+<div class="panel">
+  <ol class="rules">
+    <li><b>浮现</b>：仅顶边 12px 热区唤出（A 是 56px + 首显），260ms 滑入；离开 2.5s 淡出。参数与 A 共用一个组件的两套 preset。</li>
+    <li><b>锁显</b>：链路异常时热区改为<b>常显微光条</b>（3px 高亮线），浮条唤出后警示胶囊锁显——异常永远有两个可见信号。</li>
+    <li><b>引导卡</b>：每会话一次（session.id 去重）， dismissed 状态落本地偏好（与 fsHintDismissed 同机制 useRcSessionPrefs）；靠近顶边立即消失。</li>
+    <li><b>穿透/确认/回滚</b>：与 A 完全一致（pointer-events:none、confirmDialog、乐观更新回滚）。</li>
+    <li class="dim">实施落点：与 A 同一套 RcSessionCapsule.tsx + preset 参数；额外 + 引导卡组件（~60 行）+ useRcSessionPrefs 加一个 dismissed 键。RcViewTools / RcSessionBar / HUD 按钮 / recentRow 的删除清单同 A 稿 §7。</li>
+  </ol>
+</div>
+</body>
+</html>

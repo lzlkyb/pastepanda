@@ -24,7 +24,7 @@ function panel(container: HTMLElement) {
 }
 
 function trigger(container: HTMLElement) {
-  return container.querySelector<HTMLButtonElement>(`.${styles.hudBtn}`);
+  return container.querySelector<HTMLButtonElement>(`.${styles.capBtn}`);
 }
 
 describe("RcHud 连接详情入口", () => {
@@ -35,11 +35,12 @@ describe("RcHud 连接详情入口", () => {
     vi.useRealTimers();
   });
 
-  it("常驻只有一个入口按钮，没有面板（遥测不再铺在画面上）", () => {
+  it("常驻只有一枚 i 图标按钮，没有面板（遥测不再铺在画面上）", () => {
     const { container } = renderHud();
     const btn = trigger(container);
     expect(btn).not.toBeNull();
-    expect(btn!.textContent).toContain("连接详情");
+    // 2026-09-24 浮条收编：入口从「Info + 连接详情」文字按钮缩成纯图标（可达性靠 aria-label）
+    expect(btn!.getAttribute("aria-label")).toBe("连接详情");
     expect(panel(container)).toBeNull();
     // 常驻 DOM = wrapper + 按钮两个盒子。chip 格子（原来最多 10 格）已收编，
     // 这是「不常驻铺陈」的守卫：以后想再往画面常驻区塞信息，这条会挡住。

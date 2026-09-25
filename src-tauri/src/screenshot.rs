@@ -330,8 +330,14 @@ pub(crate) fn capture_primary_screen_rgba() -> Result<(i32, i32, Vec<u8>), Strin
 ///    拿已经 JPEG 过一遍的图测 PNG，体积会因为 JPEG 振铃引入的高频噪声而明显偏大，
 ///    结论会偏保守；
 /// ② 后续若把底图改成无损或改走 asset protocol，都只需要换编码那一段。
+///
+/// 抓指定矩形区域的 RGBA（物理像素，虚拟屏幕坐标）。
+///
+/// `pub(crate)`：待办灵动岛的探针要用它做「开/关 Acrylic」的 A/B 像素对比
+/// （见 `todo_island.rs::run_probe_sequence`）。跨模块复用它而不是另写一份 GDI 拷贝，
+/// 是因为这里已经踩过「提前返回漏清理 GDI 对象」的坑并修好了。
 #[cfg(target_os = "windows")]
-fn grab_rect_rgba(
+pub(crate) fn grab_rect_rgba(
     origin_x: i32,
     origin_y: i32,
     width: i32,
@@ -555,6 +561,10 @@ fn save_bytes_to_shots(app: &tauri::AppHandle, bytes: &[u8], ext: &str) -> Resul
 /// V6 启动提速：**截屏与窗口创建并行**——后台线程立即开始 BitBlt+JPEG 编码并缓存，
 /// 前端挂载/刷新后直接 take 取用，省掉"窗口加载完 → 再截屏"的串行等待。
 pub fn open_screenshot_window(app: &AppHandle) {
+    // ❗ 岛是 always-on-top 常驻窗，预截屏（下面的并行 BitBlt）会把它拍进去。
+    //    隐藏必须落在**任何截屏动作之前**；截图会话结束在 close_screenshot_window 恢复
+    //    （实施方案 §5 接线 #8）。
+    crate::todo_island::hide(app);
     // 先保存当前前台窗口句柄：截图完成后"复制图片"要粘贴/回填到原目标
     if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
         engine.save_foreground_hwnd();
@@ -1043,6 +1053,8 @@ pub fn close_screenshot_window(app: tauri::AppHandle) {
     // 它们最终都汇到这个命令，在这里收口才不会漏（规则 11.1）。
     purge_ocr_temp(&app);
     unregister_longshot_escape(&app); // 兜底：长截图中强关窗也要释放全局 Esc
+    // 截图会话结束 → 岛回归（有待办就回来；没有则此处 hide 是空操作）
+    crate::todo_tasks::refresh_island(&app);
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         // 截图窗口常驻开关（screenshot_window_persist，默认关）：
         //  开启 → 只隐藏不销毁，下次热键走 open_screenshot_window 复用分支秒开（微信同款），
@@ -1163,6 +1175,8 @@ pub async fn open_longshot_status(
     w: i32,
     h: i32,
 ) -> Result<bool, String> {
+    // 长截图期间实时抓屏，岛若在捕获区域顶边就会入镜——先藏，结束在 close_longshot_status 恢复
+    crate::todo_island::hide(&app);
     // 已存在就先关（上一轮异常退出残留）
     if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
         let _ = win.close();
@@ -1296,6 +1310,15 @@ pub fn close_longshot_status(app: tauri::AppHandle) {
     unregister_longshot_escape(&app);
     if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
         let _ = win.close();
+    }
+    // 截图窗还开着（长截图只是它的一个分支）→ 岛继续保持隐藏；
+    // 截图窗也没了 → 会话真的结束，岛回归
+    let shot_open = app
+        .get_webview_window(WINDOW_LABEL)
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+    if !shot_open {
+        crate::todo_tasks::refresh_island(&app);
     }
 }
 

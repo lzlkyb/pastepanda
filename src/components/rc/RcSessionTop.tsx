@@ -1,63 +1,30 @@
 /**
- * RcSessionTop — 会话顶栏：谁 / 能力 / 链路 / 旧版提示 / ⋯ / 结束。
+ * RcSessionTop — 会话顶栏：**纯窗口壳**（灯 / 名字 / 窗口三键）。
  *
  * 🔴 连接灯只由 `linkState` 驱动（对端 pong 的新鲜度），**不再看画面停滞**。
- * 案 A 瘦身：释放键盘 / 重连收进「⋯」——结束会话保持常驻（破坏性操作可达性）。
- * R3：可控且对端未声明 dgram_input 时显示「对方版本偏旧」。
+ * 橙 = 「等等就好」（不稳/重连中），红 = 「需要动手」（failed），两档刻意分开。
+ *
+ * 2026-09-24 控端态浮条收编：能力胶囊 / 链路与旧版警示 / 重连 / 结束会话 / 更多
+ * 全部搬进 RcSessionCapsule（画面顶部居中、会隐藏的深色胶囊）——顶栏从此不再
+ * 与浮条抢地盘，本条只剩窗口壳职责：链路状态灯 + 对方名字 + 拖拽区 + 三键。
  */
-import { useEffect, useRef, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import type { RcSession } from "@/lib/api/rc";
-import { linkStateHint, linkStateLabel, type RcLinkState } from "@/lib/rcSessionStats";
-import { RcCloseButton } from "./RcWindowControls";
+import type { RcLinkState } from "@/lib/rcSessionStats";
+import { RcWindowControls } from "./RcWindowControls";
 import styles from "./RemoteComputer.module.css";
 
 export function RcSessionTop({
   session,
-  canControl,
-  kbOn,
   linkState,
-  unansweredSec,
-  busy,
   fullscreen,
-  peerDgramInput,
-  onReleaseKb,
-  onReconnect,
-  onRequestEnd,
 }: {
   session: RcSession;
-  canControl: boolean;
-  kbOn: boolean;
   linkState: RcLinkState;
-  /** 操作后未响应秒数；0 = 不提示。 */
-  unansweredSec: number;
-  busy: boolean;
   /** 会话壳全屏中——顶条此时是画面顶边，禁用拖窗（拖拽区会牵动窗口）。 */
   fullscreen?: boolean;
-  /**
-   * R3：对端 caps 是否声明能读鼠标数据报。false = 旧版（7.2.1 及更早）
-   * 或尚未收到 caps——可控会话下提示升级对端；true = 不提示。
-   */
-  peerDgramInput?: boolean;
-  onReleaseKb: () => void;
-  onReconnect?: () => void;
-  onRequestEnd: () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const hasOverflow = (canControl && kbOn) || !!onReconnect;
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [menuOpen]);
-
   const dotCls =
     linkState === "connected"
       ? styles.live
@@ -76,104 +43,11 @@ export function RcSessionTop({
       <span>
         正在查看 <b>{rcDisplayName(session, fingerprintOf(session.peer))}</b>
       </span>
-      <span className={canControl ? styles.pillOn : styles.pill}>
-        {canControl ? "可控" : "只看"}
-      </span>
-      {/* R3：可控 + 对端未声明 dgram_input = 旧版被控端。常驻胶囊，与链路警示同级可见性。 */}
-      {canControl && peerDgramInput === false && (
-        <span
-          className={styles.pillWarn}
-          title="远程鼠标移动走数据报通道，官方 7.2.1 及更早的被控端收不到。请对方升级 PastePanda 到最新版后重新连接；按键/点击仍可尝试。"
-        >
-          对方版本偏旧
-        </span>
-      )}
-      {linkState === "failed" && (
-        <span className={styles.pillDanger} title={linkStateHint(linkState)}>
-          {linkStateLabel(linkState)}
-        </span>
-      )}
-      {/* 案 17.2：failed 时「重连」是唯一自救动作，贴着胶囊一步直达，
-          不要求先开「更多」菜单（菜单里的入口照旧，供非失败态使用）。 */}
-      {linkState === "failed" && onReconnect && (
-        <button
-          type="button"
-          className={styles.miniBtn}
-          disabled={busy}
-          title="断开当前连接并重新发起"
-          onClick={onReconnect}
-        >
-          重连
-        </button>
-      )}
-      {(linkState === "unstable" || linkState === "reconnecting") && (
-        <span className={styles.pillWarn} title={linkStateHint(linkState)}>
-          {linkStateLabel(linkState)}
-        </span>
-      )}
-      {unansweredSec > 0 && (
-        <span className={styles.pillWarn} title="操作已发往对方，但画面尚未变化">
-          操作后 {unansweredSec}s 无画面
-        </span>
-      )}
       <span className={styles.sp} />
-      {hasOverflow && (
-        <div className={styles.topMoreWrap} ref={menuRef}>
-          <button
-            type="button"
-            className={styles.miniBtn}
-            aria-expanded={menuOpen}
-            aria-haspopup="menu"
-            title="更多会话操作"
-            onClick={() => setMenuOpen((v) => !v)}
-          >
-            <MoreHorizontal size={14} aria-hidden />
-            <span className={styles.topMoreLabel}>更多</span>
-          </button>
-          {menuOpen && (
-            <div className={styles.topMoreMenu} role="menu">
-              {canControl && kbOn && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onReleaseKb();
-                  }}
-                >
-                  释放键盘
-                </button>
-              )}
-              {onReconnect && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={busy}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onReconnect();
-                  }}
-                >
-                  重连
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      <button
-        type="button"
-        className={styles.dangerBtn}
-        disabled={busy}
-        onClick={onRequestEnd}
-      >
-        结束会话
-      </button>
-      {/* 批7：窗口没有系统标题栏了，这里是**会话态唯一能关掉窗口的地方**——
-          少了它，用户只能去杀进程。只补关闭：最小化 / 最大化另有系统替代
-          （任务栏、双击本条、Win+方向键），不必再占顶条宽度。 */}
+      {/* 方案 A/B（2026-09-24）：完整三键组，仍走 close()（不 destroy），
+          「有会话先问」的守卫不变。 */}
       <div className={styles.winControlsFlush} data-tauri-drag-region="false">
-        <RcCloseButton />
+        <RcWindowControls />
       </div>
     </div>
   );

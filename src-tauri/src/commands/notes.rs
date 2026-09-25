@@ -9,7 +9,8 @@
 //! （规则 #16），届时应新建独立文件，不要往这里塞。
 
 use crate::data_store::{DataStore, Note, NoteGroupCount, NoteUpdateReport, NoteViewOpts};
-use tauri::State;
+use crate::todo_tasks::refresh_island;
+use tauri::{AppHandle, State};
 
 /// 单次拉取上限。前端传多少都不能越过它——列表虚拟滚动一屏几十条，
 /// 一次要上万条只可能是调用方写错了，静默照做会把整库读进内存。
@@ -30,12 +31,16 @@ fn clamp_limit(limit: Option<u32>) -> u32 {
 /// 猜测）。若哪天需要后端保证唯一，那是加 UNIQUE 约束的事，不是在命令里查一遍。
 #[tauri::command]
 pub fn note_create(
+    app: AppHandle,
     store: State<DataStore>,
     history_id: Option<String>,
     title: String,
     content: String,
 ) -> Result<Note, String> {
-    store.note_create(history_id.as_deref(), &title, &content)
+    let note = store.note_create(history_id.as_deref(), &title, &content)?;
+    // 正文可能带着 `- [ ]`，岛的「剩几条」要跟着动（refresh_island 失败只降级，不拖垮主流程）
+    refresh_island(&app);
+    Ok(note)
 }
 
 /// 改标题与正文。id 不存在会报错而非静默成功（规则 #15.3）。
@@ -45,18 +50,26 @@ pub fn note_create(
 /// 用户只是改了一个标题，却有几篇笔记被动了。
 #[tauri::command]
 pub fn note_update(
+    app: AppHandle,
     store: State<DataStore>,
     id: String,
     title: String,
     content: String,
 ) -> Result<NoteUpdateReport, String> {
-    store.note_update(&id, &title, &content)
+    let report = store.note_update(&id, &title, &content)?;
+    // 同上：改标题触发的 [[链接]] 重写（report.relinked）也在 store.note_update 里，
+    // 这里一个钩子把它们全覆盖。
+    refresh_island(&app);
+    Ok(report)
 }
 
 /// 删笔记。只删笔记，**不动来源卡片**（规划 §6 生命周期：两者互不牵连）。
 #[tauri::command]
-pub fn note_delete(store: State<DataStore>, id: String) -> Result<(), String> {
-    store.note_delete(&id)
+pub fn note_delete(app: AppHandle, store: State<DataStore>, id: String) -> Result<(), String> {
+    store.note_delete(&id)?;
+    // 软删也会让待办消失：活笔记集合变了
+    refresh_island(&app);
+    Ok(())
 }
 
 /// 切换置顶（B1）。返回切完之后的状态。
@@ -79,22 +92,33 @@ pub fn note_list_deleted(store: State<DataStore>, limit: u32) -> Result<Vec<Note
 
 /// 从回收站恢复。速记日期已被占时会报错（而非静默失败）。
 #[tauri::command]
-pub fn note_restore_deleted(store: State<DataStore>, id: String) -> Result<(), String> {
-    store.note_restore_deleted(&id)
+pub fn note_restore_deleted(
+    app: AppHandle,
+    store: State<DataStore>,
+    id: String,
+) -> Result<(), String> {
+    store.note_restore_deleted(&id)?;
+    // 恢复 = 那篇的待办重新回到「剩几条」里
+    refresh_island(&app);
+    Ok(())
 }
 
 /// 从回收站彻底销毁（连历史快照一起，**不可恢复**）。
 /// 前端必须先弹确认：这是笔记侧唯一一个真正不可逆的操作。
 #[tauri::command]
-pub fn note_purge(store: State<DataStore>, id: String) -> Result<(), String> {
-    store.note_purge(&id)
+pub fn note_purge(app: AppHandle, store: State<DataStore>, id: String) -> Result<(), String> {
+    store.note_purge(&id)?;
+    refresh_island(&app);
+    Ok(())
 }
 
 /// 清空回收站（R4）。返回销毁条数，供前端提示用。
 /// 同样不可恢复，前端必须先弹确认。
 #[tauri::command]
-pub fn note_purge_all(store: State<DataStore>) -> Result<usize, String> {
-    store.note_purge_all()
+pub fn note_purge_all(app: AppHandle, store: State<DataStore>) -> Result<usize, String> {
+    let n = store.note_purge_all()?;
+    refresh_island(&app);
+    Ok(n)
 }
 
 /// 按给定天数算「回收站会被销毁多少条」，**不删任何东西**。

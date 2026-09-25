@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>待办灵动岛 · 屏幕级定位 + 液态玻璃 设计稿（2026-09-24）</title>
+<style>
+/* ================================================================
+   待办灵动岛 · 改版稿（屏幕级悬浮 + 屏幕顶部居中 + 液态玻璃）
+   ---------------------------------------------------------------
+   三个来自真实代码/官方源码的事实，决定了本稿的写法：
+
+   ① 它是窗口，不是页面里的元素：独立 webview（todo-island），
+      transparent + 无边框 + 置顶 + 不抢焦点 —— 组合照抄 stack_hud.rs。
+   ② 窗口级毛玻璃只能走 Tauri 的 WindowEffects：
+      tauri 2.11.3 源码 set_effects 文档原话「Requires the window to be transparent」，
+      与 HUD 的 transparent(true) 正好互补。Windows 端支持 Acrylic / Blur / Mica / Tabbed。
+      ❗ CSS backdrop-filter 在透明窗口里无效（只作用于 webview 内部元素，穿不出窗口）。
+         本稿里用 backdrop-filter 只为演示「目标观感」——实现时它不是你该写的那行 CSS。
+   ③ 色值全取 src/styles/theme.css 的 ocean(浅) / midnight(深)；
+      尺寸与动效遵守 docs/PastePanda-UI规则.md 的 U2/U5：
+      时长只 150/200/300/400，曲线只 (0.2,0,0,1) 与 (0.05,0.7,0.1,1)，
+      圆角只 0/4/8/12（胶囊走 999px 几何值），字号只 11/12/13/15/20，间距只 4/8/12/16/24。
+   ================================================================ */
+
+:root{
+  --app-bg:linear-gradient(160deg,#2b3a55 0%,#3d4c66 38%,#54617a 100%);
+  --card-bg:#fff;
+  --card-border:#e0e4eb;
+  --text-primary:#0f172a;
+  --text-secondary:#495565;
+  --text-muted:#627083;
+  --border-color:#e0e4eb;
+  --accent:#0284c7;
+  --accent-border:rgba(2,132,199,0.35);
+  --accent-light:#e0f2fe;
+  --accent-strong:#0273ad;
+  --success:#15803d;
+  --warning:#c54a0a;
+  --danger:#d82525;
+  --seg-bg:#e8e8ed;
+  --seg-active-bg:#fff;
+  --input-bg:#f1f5f9;
+  --section-bg:#f0f4f8;
+
+  /* 玻璃三档的牌桌（数字全部来自实算，见「六 · 令牌」的对比度表）：
+     A 观感玻璃 tint .30 —— 最像液态玻璃，但文字对比度随背后内容剧烈波动
+        （亮青壁纸上主文字 10.39:1，深色应用背景上只剩 2.81:1）
+     B 稳读玻璃 tint .90 —— 透度只剩 10%，换来任意背景下所有文字都过 AA
+     D 深色档 tint .92 + 弱高光 —— 四背景全达标（主文字 10.26–13.07:1）
+        ⚠ 前提是「同时把镜面高光压到 .10」：只加厚染色（.92）而沿用浅色档的 .34 高光，
+        底色会被高光从中灰抬起来，白字从 18:1 掉到 6.2:1 —— 详见「六 · 令牌」的实算说明 */
+  --g1-bg:rgba(255,255,255,0.30);
+  --g1-ring:rgba(255,255,255,0.42);
+  --g1-text:#0f172a;
+  --g1-muted:rgba(15,23,42,0.72);
+  --g2-bg:rgba(255,255,255,0.90);
+  --g2-ring:rgba(255,255,255,0.9);
+  --g2-text:#0f172a;
+  --g2-muted:#4e5a6b;
+  /* 玻璃场景下 --warning 的替身：既有 --warning:#c54a0a 在纯白上只有 4.82:1，
+     底色一偏灰就掉到 3.6，本令牌实算在各档底色下都 ≥4.5 */
+  --glass-warn:#9a3708;
+  --island-shadow:0 12px 32px rgba(15,23,42,0.26),0 2px 6px rgba(15,23,42,0.14);
+
+  /* 桌面模拟（2560×1440 主屏的真实观感参考） */
+  --wall-1:#1e3a5f;
+  --wall-2:#2f5d7c;
+  --wall-3:#7aa5b8;
+}
+
+*{box-sizing:border-box}
+body{margin:0;padding:0 0 64px;background:#f2f5f9;color:#0f172a;
+  font:400 13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.doc{max-width:1200px;margin:0 auto;padding:0 24px}
+
+h1{font-size:20px;line-height:1.4;margin:32px 0 8px;font-weight:600}
+h2{font-size:15px;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid #d8dfe8;font-weight:600;color:#334155}
+h3{font-size:13px;margin:24px 0 8px;font-weight:600;color:#334155}
+.lead{font-size:13px;color:#3f4b5b;margin:0 0 8px}
+.meta{font-size:11px;color:#627083;margin:0 0 24px}
+.note{font-size:12px;color:#3f4b5b;background:#f8fafc;border-left:2px solid #cbd5e1;padding:8px 12px;margin:12px 0}
+.note.warn{background:#fff7ed;border-left-color:#c54a0a;color:#7c3505}
+.note.bad{background:#fef2f2;border-left-color:#d82525;color:#8a1c1c}
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;background:rgba(15,23,42,0.06);padding:1px 4px;border-radius:4px}
+b{font-weight:600}
+
+table{border-collapse:collapse;width:100%;font-size:12px;margin:12px 0}
+th,td{border:1px solid #dbe2ea;padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#f1f5f9;font-weight:600;color:#334155}
+td.num{font-family:"Cascadia Mono",Consolas,monospace;white-space:nowrap}
+
+/* ── 桌面模拟：主屏 2560×1440 按 0.4375 缩放的整屏示意 ───────── */
+.screen{position:relative;width:1120px;height:630px;border-radius:12px;overflow:hidden;
+  background:linear-gradient(135deg,var(--wall-1) 0%,var(--wall-2) 46%,var(--wall-3) 100%);
+  border:1px solid #cbd5e1}
+/* 一个非最大化的应用窗口：看得清岛是压在它的顶边上，而不是浮在一片纯色里 */
+.screen .scr-win{position:absolute;left:36px;right:36px;top:58px;bottom:44px;border-radius:6px;
+  background:rgba(255,255,255,0.92);box-shadow:0 10px 28px rgba(15,23,42,0.4);overflow:hidden}
+.screen .scr-win .tb{height:12px;border-radius:6px 6px 0 0;border-bottom:1px solid rgba(15,23,42,0.12);
+  background:rgba(241,245,249,0.92)}
+.screen .scr-win .bd{display:flex;height:calc(100% - 12px)}
+.screen .scr-win .sb{width:16%;background:rgba(226,232,240,0.85);border-right:1px solid rgba(15,23,42,0.08)}
+.screen .scr-win .mn{flex:1 1 auto;min-width:0;padding:10px;display:flex;flex-direction:column;gap:8px}
+.screen .scr-win .mn .bn{height:42px;border-radius:4px;background:linear-gradient(118deg,#0284c7,#4f46e5 52%,#db2777)}
+.screen .scr-win .mn i{display:block;height:8px;border-radius:3px;background:#e2e8f0}
+.screen .scr-win .mn i.s{width:62%}
+.screen .bar{position:absolute;left:0;right:0;bottom:0;height:18px;background:rgba(15,23,42,0.72)}
+.screen .hint{position:absolute;font-size:11px;color:rgba(255,255,255,0.9);
+  background:rgba(15,23,42,0.55);padding:2px 6px;border-radius:4px}
+.screen .cross{position:absolute;background:repeating-linear-gradient(90deg,rgba(255,255,255,0.5) 0 5px,transparent 5px 10px)}
+.screen .cross.h{height:1px;left:0;right:0;top:4.4px}
+.screen .cross.v{width:1px;top:0;bottom:0;left:50%}
+.mini{position:absolute;top:4.4px;left:50%;transform:translateX(-50%);
+  width:91px;height:14px;border-radius:999px;background:rgba(20,20,24,0.9);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.35)}
+
+/* ── 1:1 屏内裁切（真实像素）───────────────────────────────── */
+.clip{position:relative;width:1120px;height:620px;border-radius:12px;overflow:hidden;
+  background:linear-gradient(135deg,var(--wall-1) 0%,var(--wall-2) 46%,var(--wall-3) 100%);
+  border:1px solid #cbd5e1}
+.appwin{position:absolute;left:48px;top:132px;right:48px;bottom:48px;border-radius:8px;
+  background:rgba(255,255,255,0.94);border:1px solid rgba(255,255,255,0.6);overflow:hidden;
+  box-shadow:0 18px 48px rgba(15,23,42,0.28)}
+.appwin .tbar{height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  border-bottom:1px solid var(--border-color);background:rgba(241,245,249,0.9)}
+.appwin .tbar .t{font-size:12px;color:var(--text-secondary);flex:1}
+.appwin .tbar .w{width:12px;height:12px;border:1px solid var(--text-muted);border-radius:4px;opacity:.45}
+.appwin .cols{display:flex;height:calc(100% - 36px)}
+.appwin .side{width:180px;border-right:1px solid var(--border-color);padding:12px;display:flex;
+  flex-direction:column;gap:8px;background:rgba(248,250,252,0.9)}
+.appwin .side i{display:block;height:10px;border-radius:4px;background:#e2e8f0}
+.appwin .side i.s{width:64%}
+.appwin .main{flex:1 1 auto;min-width:0;padding:16px;display:flex;flex-direction:column;gap:12px}
+.appwin .main .head{height:14px;width:38%;border-radius:4px;background:#cbd5e1}
+.appwin .main i{display:block;height:10px;border-radius:4px;background:#e2e8f0}
+.appwin .main i.s{width:72%}
+.appwin .main .tag{display:inline-block;width:88px;height:22px;border-radius:8px;
+  background:var(--accent-light);border:1px solid var(--accent-border,rgba(2,132,199,0.35))}
+.appwin .main .hero{height:132px;border-radius:8px;
+  background:linear-gradient(118deg,#0284c7 0%,#4f46e5 52%,#db2777 100%)}
+.appwin .main .bars{display:flex;gap:8px;align-items:flex-end;height:52px}
+.appwin .main .bars i{flex:1 1 auto;height:auto;border-radius:4px 4px 0 0;
+  background:linear-gradient(180deg,#38bdf8,#0369a1)}
+.appwin .main .bars i:nth-child(2n){background:linear-gradient(180deg,#a78bfa,#5b21b6)}
+.appwin .main .bars i:nth-child(3n){background:linear-gradient(180deg,#fb923c,#c2410c)}
+.appwin .side .chip{height:20px;border-radius:8px;background:var(--accent-light);
+  border:1px solid var(--accent-border)}
+.appwin .side .chip.c2{background:#dcfce7;border-color:#86efac}
+.appwin .side .chip.c3{background:#fff7ed;border-color:#fed7aa}
+
+
+/* ── 岛本体（三档皮肤：A 观感 .30 / B 稳读 .90 / D 深色 .92 · 弱高光）── */
+.island{position:absolute;display:flex;align-items:center;
+  background:var(--g2-bg);
+  color:var(--g2-text);
+  box-shadow:inset 0 0 0 1px var(--g2-ring),inset 0 1px 0 rgba(255,255,255,0.9),var(--island-shadow);
+  overflow:hidden;user-select:none;
+  transition:width 300ms cubic-bezier(0.2,0,0,1),height 300ms cubic-bezier(0.2,0,0,1),
+             border-radius 300ms cubic-bezier(0.2,0,0,1),background 200ms cubic-bezier(0.2,0,0,1)}
+/* A 观感玻璃：稿内用 backdrop-filter 演示观感（网页里有效）；
+   实现时窗口级模糊走 WindowEffects::Acrylic，这行 CSS 在透明窗口里不生效 */
+.island.g1{
+  background:var(--g1-bg);
+  color:var(--g1-text);
+  -webkit-backdrop-filter:blur(28px) saturate(1.7);
+  backdrop-filter:blur(28px) saturate(1.7);
+  box-shadow:inset 0 0 0 1px var(--g1-ring),inset 0 1px 0 rgba(255,255,255,0.55),
+    inset 0 -1px 0 rgba(15,23,42,0.10),var(--island-shadow)}
+.island.g1 .muted{color:var(--g1-muted)}
+.island.g1 .tk2{stroke:rgba(15,23,42,0.18)}
+/* 深色档走同一套玻璃，只换染色与文字。0.92 是实算结论：0.42 那种薄黑盖在
+   浅色壁纸上会变成中灰，白字只有 1.77:1 —— 深色玻璃必须接近实心
+   （配 .10 弱高光才能四背景全达标，见「六 · 令牌」） */
+.island.dk{background:rgba(20,20,24,0.92);color:#f4f4f5;
+  -webkit-backdrop-filter:blur(28px) saturate(1.4);backdrop-filter:blur(28px) saturate(1.4);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18),inset 0 1px 0 rgba(255,255,255,0.22),
+    inset 0 -1px 0 rgba(0,0,0,0.3),var(--island-shadow)}
+.island.dk .muted{color:rgba(244,244,245,0.66)}
+.island.dk .tk2{stroke:rgba(255,255,255,0.2)}
+.island.dk .due{color:#fb923c}
+.island.dk .okmark{color:#4ade80}
+
+/* 镜面高光：左上光源的一道斜向亮带，玻璃感的来源之一。
+   实算出的峰值 alpha 是 0.298 —— 在浅色玻璃上无害（只让底更白，深字更好读），
+   但在深色玻璃上会把底色提到中灰，白字对比度从 18:1 掉到 6.2:1，所以深色档单独调弱 */
+.island::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(158deg,rgba(255,255,255,0.34) 0%,rgba(255,255,255,0.06) 34%,transparent 58%)}
+.island.dk::before{background:linear-gradient(158deg,rgba(255,255,255,0.10) 0%,rgba(255,255,255,0.03) 34%,transparent 58%)}
+
+/* 状态尺寸：收起 208×32 / 悬停 300×40 / 展开 420×240 / 输入 420×280
+   锚点 = 屏幕顶部居中：水平中线钉住，顶边距屏幕上沿 10px，高度只向下生长 */
+.island[data-st="pill"]{width:208px;height:32px;border-radius:999px;padding:0 12px;gap:8px}
+.island[data-st="peek"]{width:300px;height:40px;border-radius:999px;padding:0 12px;gap:8px}
+.island[data-st="list"]{width:420px;height:240px;border-radius:12px;flex-direction:column;align-items:stretch;gap:0}
+.island[data-st="compose"]{width:420px;height:280px;border-radius:12px;flex-direction:column;align-items:stretch;gap:0}
+.island[data-st="clear"]{width:208px;height:32px;border-radius:999px;padding:0 12px;gap:8px}
+/* 顶部锚定：水平居中 + 贴屏幕上沿 10px。展开时顶边不动、只往下长 ——
+   这是与「屏幕正中锚定」最大的体感差别：卡片永远从屏幕顶部长出来，不会盖住视线中心 */
+.island{left:50%;top:10px;transform:translateX(-50%)}
+
+.ring{flex:0 0 16px;width:16px;height:16px;display:block;position:relative;z-index:1}
+.ring circle.tk2{fill:none;stroke:rgba(15,23,42,0.18);stroke-width:2}
+.ring circle.arc{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;
+  transform:rotate(-90deg);transform-origin:8px 8px}
+.cnt{flex:0 0 auto;font-size:12px;font-variant-numeric:tabular-nums;position:relative;z-index:1}
+.muted{color:var(--g2-muted);position:relative;z-index:1}
+.sepdot{flex:0 0 auto;width:3px;height:3px;border-radius:999px;background:currentColor;opacity:.4;position:relative;z-index:1}
+.last{flex:1 1 auto;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;z-index:1}
+.due{flex:0 0 auto;font-size:11px;color:var(--glass-warn);font-variant-numeric:tabular-nums;position:relative;z-index:1}
+/* 完成勾统一走 inline SVG（不用字体字形 ✓）——字形会被按「文字」算 4.5:1 门槛，
+   而它实际是图形（3:1），--success:#15803d 只有 4.10–4.32，差一档判定会被误标 ❌ */
+.okmark{flex:0 0 auto;display:flex;align-items:center;color:var(--success);position:relative;z-index:1}
+.okmark svg{display:block}
+
+.hd{flex:0 0 40px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  border-bottom:1px solid rgba(15,23,42,0.08);position:relative;z-index:1}
+.island.dk .hd{border-bottom-color:rgba(255,255,255,0.12)}
+.hd .title{font-size:13px;font-weight:600;flex:0 0 auto}
+.seg{display:flex;gap:2px;background:rgba(15,23,42,0.07);border-radius:8px;padding:2px;margin-left:4px}
+.island.dk .seg,.island.g1 .seg{background:rgba(15,23,42,0.10)}
+.island.dk .seg{background:rgba(255,255,255,0.10)}
+.seg span{font-size:11px;padding:2px 8px;border-radius:4px;opacity:.66;white-space:nowrap;cursor:pointer}
+.seg span.on{background:#fff;opacity:1}
+.island.dk .seg span.on{background:rgba(255,255,255,0.22)}
+.hd .col{margin-left:auto;width:20px;height:20px;display:flex;align-items:center;justify-content:center;opacity:.7}
+.ls{flex:1 1 auto;padding:8px;display:flex;flex-direction:column;overflow:auto;position:relative;z-index:1}
+.row{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 4px;border-radius:8px;
+  cursor:pointer;transition:background 150ms cubic-bezier(0.2,0,0,1)}
+.row:hover{background:rgba(15,23,42,0.06)}
+.island.dk .row:hover{background:rgba(255,255,255,0.10)}
+.row .tick{flex:0 0 16px;width:16px;height:16px;border-radius:999px;border:1.5px solid rgba(15,23,42,0.28);
+  display:flex;align-items:center;justify-content:center;
+  transition:background 150ms cubic-bezier(0.05,0.7,0.1,1),border-color 150ms cubic-bezier(0.05,0.7,0.1,1)}
+.island.dk .row .tick{border-color:rgba(255,255,255,0.34)}
+.row .tick svg{opacity:0;transition:opacity 150ms cubic-bezier(0.2,0,0,1)}
+.row:hover .tick svg{opacity:0.38}
+.row .tx{flex:1 1 auto;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .src{flex:0 0 auto;font-size:11px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:var(--g2-muted)}
+.island.dk .row .src{color:rgba(244,244,245,0.66)}
+.row.done .tx{text-decoration:line-through;opacity:.5}
+.row.done .tick{background:var(--success);border-color:var(--success);color:#fff}
+.row.done .tick svg{opacity:1}
+.foot{flex:0 0 40px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  border-top:1px solid rgba(15,23,42,0.08);font-size:12px;color:var(--g2-muted);
+  position:relative;z-index:1;cursor:pointer}
+.island.dk .foot{border-top-color:rgba(255,255,255,0.12);color:rgba(244,244,245,0.66)}
+.cinput{flex:1 1 auto;height:28px;border-radius:8px;border:1px solid rgba(15,23,42,0.14);
+  background:rgba(255,255,255,0.5);color:inherit;font:400 12px/26px inherit;padding:0 8px;outline:none}
+.island.dk .cinput{background:rgba(255,255,255,0.10);border-color:rgba(255,255,255,0.18)}
+
+/* 尺寸标注 */
+.tag{display:inline-block;font-family:"Cascadia Mono",Consolas,monospace;font-size:11px;
+  background:#0f172a;color:#e2e8f0;padding:1px 6px;border-radius:4px}
+.tag.on{background:var(--accent)}
+.figcap{font-size:11px;color:#627083;margin:8px 0 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{border:1px solid #dbe2ea;border-radius:12px;background:#fff;overflow:hidden}
+.card .cap{padding:8px 12px;border-bottom:1px solid #dbe2ea;font-size:12px;display:flex;gap:8px;align-items:baseline}
+.card .cap .k{font-weight:600}
+.card .cap .v{margin-left:auto;font-family:"Cascadia Mono",Consolas,monospace;font-size:11px;color:#627083}
+.card .canvas{position:relative}
+.mini-clip{position:relative;height:150px;overflow:hidden;
+  background:linear-gradient(150deg,#0ea5e9 0%,#4f46e5 46%,#db2777 100%)}
+.mini-clip .appwin{left:16px;top:16px;right:16px;bottom:-160px}
+.mini-clip .island{transform:translateX(-50%) scale(1)}
+
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#495565;margin:8px 0 16px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:4px;margin-right:4px;vertical-align:-1px}
+.btn{font:400 12px/1 inherit;padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;cursor:pointer}
+.btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.pillrow{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.hint{font-size:12px;color:#627083;margin:8px 0 0}
+.layers{display:flex;gap:16px;align-items:flex-start}
+.layers .lcol{flex:0 0 340px}
+.lcol h4{font-size:12px;margin:0 0 8px;color:#334155;font-weight:600}
+.lcol .box{height:74px;border-radius:12px;position:relative;overflow:hidden;border:1px solid #dbe2ea;
+  background:linear-gradient(135deg,var(--wall-1) 0%,var(--wall-2) 46%,var(--wall-3) 100%)}
+.lcol .box .island{position:absolute}
+.lcol p{font-size:11px;color:#627083;margin:6px 0 0}
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <h1>待办灵动岛 · 屏幕顶部居中 + 液态玻璃</h1>
+  <p class="lead">它是<b>一个独立悬浮窗口</b>（label <code>todo-island</code>），浮在<b>整个屏幕</b>之上、位置在<b>屏幕顶部居中</b>（贴屏幕上沿 10px），
+  面料走<b>液态玻璃</b>：收起 208×32 的胶囊，点开时<b>顶边钉住、只往下长</b>成 420×240 的玻璃卡，勾完最后一条自行收起。</p>
+  <p class="meta">2026-09-24 第三版（按修正：屏幕级 / <b>顶部居中</b> / 毛玻璃）· 主屏 2560×1440 · 色值取自 <code>theme.css</code>（ocean / midnight）· 玻璃档位经逐色对比度实算 · 未实现</p>
+
+  <div class="note">
+    <b>三个先决事实（都来自真实源码，不是推断）：</b>
+    <br>① 它与 PastePanda 已有的<b>栈浮标</b>同族 —— 同一种窗口能力组合（透明 / 无边框 / 置顶 / 不抢焦点），落点见 <code>src-tauri/src/stack_hud.rs</code>。
+    <br>② 窗口级毛玻璃只能用 Tauri 的窗口效果：<code>tauri 2.11.3</code> 源码里 <code>set_effects</code> 的文档原话是
+    <b>Requires the window to be transparent</b> —— 与 HUD 本来就需要的透明窗口正好互补。Windows 端支持 Acrylic / Blur / Mica / Tabbed。
+    <br>③ <code>backdrop-filter</code> 在透明窗口里<b>无效</b>（只作用于 webview 内部元素，穿不出窗口）。本稿用它只为演示目标观感，实现时它不是你要写的那行 CSS。
+  </div>
+
+  <h2>一 · 定位：浮在整个屏幕之上，贴屏幕顶边居中</h2>
+  <p class="hint">下图是<b>整屏示意图</b>（主屏 2560×1440 按 0.4375 缩放成 1120×630，底部深色条 = 任务栏）。
+  岛画在同一缩放下，所以你看到的是它在屏幕里的<b>真实占比</b>，不是在页面里的占比。</p>
+
+  <div class="screen">
+    <div class="scr-win"><div class="tb"></div><div class="bd"><div class="sb"></div>
+      <div class="mn"><div class="bn"></div><i></i><i></i><i class="s"></i><i></i><i class="s"></i></div></div></div>
+    <div class="cross h"></div>
+    <div class="cross v"></div>
+    <div class="mini"></div>
+    <div class="bar"></div>
+    <div class="hint" style="left:50%;transform:translateX(-50%);top:30px">岛 · 收起点 91×14（= 真实 208×32 × 0.4375），顶边距 4.4（= 真实 10px）</div>
+    <div class="hint" style="left:12px;top:12px">左半屏 1280 px</div>
+    <div class="hint" style="right:12px;top:12px">右半屏 1280 px</div>
+    <div class="hint" style="left:12px;bottom:26px">工作区下沿（任务栏上方）</div>
+    <div class="hint" style="right:12px;bottom:26px">展开只往这个方向长</div>
+  </div>
+  <p class="figcap">锚点 = <b>屏幕水平中心 × 屏幕上沿 +10px</b>。展开时<b>顶边钉住不动，只向下生长</b>
+  （208×32 → 420×240：宽度左右各让出 106px，高度全部往下 208px）——
+  这是"顶部锚定"与"居中锚定"最大的体感差别：卡片永远从屏幕顶边长出来，不占视线中心。</p>
+
+  <div class="note warn">
+    <b>顶部锚定要认下的三个代价：</b>
+    <br>① <b>独占全屏时会看不见或被嫌</b>。always_on_top 能压住普通窗口，但独占全屏的游戏 / 播放器 /
+    演示模式会接管整屏 —— 那时岛要么被盖住，要么盖在视频上。栈浮标只在栈激活期间出现，从没碰过这个问题；
+    岛是常驻的，必须定义"全屏时怎么办"（倾向：检测到独占全屏就隐藏）。
+    <br>② <b>屏幕顶边是系统与应用的领地</b>。Windows 上那里常有应用自己的标题栏、浏览器标签栏、
+    或全屏工具栏；岛压上去会挡住"关闭 / 新建标签"这类高频按钮。所以收起态必须够窄够扁（208×32，只占屏宽 8%）。
+    <br>③ <b>多显示器必须选定主屏</b>。<code>set_position</code> 要显式算显示器坐标，
+    否则可能落到副屏顶部 —— 用户的眼在副屏时反而找不到它。
+  </div>
+
+  <h2>二 · 1:1 真实观感（含背后应用）</h2>
+  <p class="hint">下面这块是主屏的 <b>1:1 裁切</b>（不是缩放）：岛<b>贴屏幕上沿 10px、水平居中</b>、尺寸即真实像素。
+  背后是一个<b>没有最大化</b>的应用窗口 —— 屏幕顶部留出一条桌面壁纸带，所以岛的上半截压在壁纸上、下半截压在窗口上，
+  两种背景都能看透。如果你把应用最大化，背后就全是标题栏（纯色），玻璃也就没东西可以模糊了。</p>
+  <div class="clip">
+    <div class="appwin">
+      <div class="tbar"><span class="t">某个正在用的应用</span><span class="w"></span><span class="w"></span><span class="w"></span></div>
+      <div class="cols">
+        <div class="side"><i class="chip c1"></i><i></i><i class="chip c2"></i><i class="s"></i><i class="chip c3"></i></div>
+        <div class="main">
+          <div class="head"></div>
+          <div class="hero"></div><div class="bars"><i style="height:38%"></i><i style="height:74%"></i><i style="height:52%"></i><i style="height:88%"></i><i style="height:62%"></i><i style="height:44%"></i></div>
+          <i></i><i></i><i class="s"></i><i></i><i class="s"></i><i></i>
+        </div>
+      </div>
+    </div>
+    <div class="island g1" data-st="list">
+      <div class="hd">
+        <span class="title">4 项待办</span>
+        <span class="seg"><span class="on">进行中</span><span>已完成</span></span>
+        <span class="col"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"></path></svg></span>
+      </div>
+      <div class="ls">
+        <div class="row"><span class="tick"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"></path></svg></span><span class="tx">把登录页改完</span><span class="src">会议纪要</span></div>
+        <div class="row"><span class="tick"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"></path></svg></span><span class="tx">交材料</span><span class="src">今日速记</span></div>
+        <div class="row"><span class="tick"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"></path></svg></span><span class="tx">没人领文档这件事</span><span class="src">会议纪要</span></div>
+        <div class="row"><span class="tick"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"></path></svg></span><span class="tx">回邮件给张工</span><span class="src">今日速记</span></div>
+      </div>
+      <div class="foot">
+        <svg class="plus" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"></path></svg>
+        <span>记一条</span>
+      </div>
+    </div>
+  </div>
+  <p class="figcap">这里画的是 <b>A 观感玻璃</b>（tint 0.30）：背后应用的字与色块被真实模糊（稿内靠 <code>backdrop-filter</code> 演示），
+  玻璃上再叠一层左上光源的镜面亮带与内描边 —— 观感最好的一档，也是唯一保不住可读性的一档（下面有实算）。</p>
+
+  <h2>三 · 液态玻璃：三档，数字先算出来再选</h2>
+  <p class="hint">玻璃的价值与代价是同一件事：<b>底色越透，文字对比度越依赖背后内容</b>。桌面背景（壁纸 + 任意应用）是我们控制不了的，
+  所以先把数算出来再选档 —— 在纯黑底上实测镜面高光的逐像素 alpha（峰值 <b>0.298</b>、均值 0.041），
+  再按真实合成顺序（模糊背景 → tint 染色 → 镜面高光 → 文字）在 4 种候选背景上算 WCAG 对比度。完整数字见「六 · 令牌」。</p>
+  <div class="layers">
+    <div class="lcol">
+      <h4>A · 观感玻璃 <span style="font-weight:400;color:#627083">tint .30</span></h4>
+      <div class="box"><div class="island g1" data-st="peek">
+        <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"></circle><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.8" stroke-dashoffset="32.6"></circle></svg>
+        <span class="cnt">4</span><span class="sepdot"></span><span class="last">交材料</span><span class="due">今天 16:00</span>
+      </div></div>
+      <p>窗口级 <code>WindowEffects::Acrylic</code> 负责模糊，CSS 只管染色与高光。最"透"、最像液态玻璃（见第二节大图）。
+      <b>代价：</b>主文字在亮青壁纸上有 10.39:1，换到深色应用背景只剩 <b>2.81:1</b>。</p>
+    </div>
+    <div class="lcol">
+      <h4>B · 稳读玻璃 <span style="font-weight:400;color:#627083">tint .90</span></h4>
+      <div class="box"><div class="island" data-st="peek">
+        <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"></circle><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.8" stroke-dashoffset="32.6"></circle></svg>
+        <span class="cnt">4</span><span class="sepdot"></span><span class="last">交材料</span><span class="due">今天 16:00</span>
+      </div></div>
+      <p>同一套 Acrylic，只把染色从 .30 提到 .90。透度只剩 10%，换来<b>四种背景下主 / 次文字全部过 AA</b>
+      （主 14.59–17.85:1）。玻璃感靠镜面高光与描边撑住。</p>
+    </div>
+    <div class="lcol">
+      <h4>D · 深色档 <span style="font-weight:400;color:#627083">tint .92 + 弱高光</span></h4>
+      <div class="box">
+        <div class="island dk" data-st="peek">
+        <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"></circle><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.8" stroke-dashoffset="32.6"></circle></svg>
+        <span class="cnt">4</span><span class="sepdot"></span><span class="last">交材料</span><span class="due">今天 16:00</span>
+        </div>
+      </div>
+      <p>深染色 .92，<b>同时把镜面高光从 .34 压到 .10</b>。四种背景全部达标（主 10.26–13.07:1），
+      形态也最接近 Apple 灵动岛的原型（真机就是不透明的深色）。</p>
+    </div>
+  </div>
+
+  <div class="note bad">
+    <b>实算推翻了一个想当然的结论，又坐实了一个：</b>
+    <br>① <b>纯薄玻璃（tint .30）保不住 AA。</b>同一块玻璃，亮青壁纸上主文字 10.39:1、深色应用背景上只剩 2.81:1。
+    这不是配方没调好，而是「透出不可控的背景」与「文字必须达标」在物理上互斥 —— 桌面背景由用户决定，我们改不了。
+    <br>② <b>但 tint ≥ .90 之后，浅色深色都能达标</b> —— 前提是同时把镜面高光调弱。这是最反直觉的一条：
+    <b>高光才是深色玻璃的隐形杀手。</b>峰值 0.298 的白色高光带会把 <code>tint .92</code> 的深玻璃底色
+    从 rgb(39) 提到 rgb(100)，白字对比度从 18:1 掉到 <b>6.2:1</b>，边缘处只剩 2.8:1 ——
+    <b>只盯着"染色"这一个变量完全看不出这个问题</b>（我第一版就是只算染色，得出"深色玻璃在浅色背景下无解"的错误结论）。
+    把深色档高光压到 0.10 后，四种背景全部达标。
+    <br>③ <b>两个既有令牌在玻璃上是短板。</b><code>--warning:#c54a0a</code> 在纯白上只有 4.82:1、
+    底色一偏灰就掉到 3.62；<code>--success:#15803d</code> 在非纯白底色上 3.45–4.10
+    （当 ✓ 图形够 3:1，当文字不够）。浅色档已把到期文字换成 <code>--glass-warn:#9a3708</code>（各档 4.94–7.18:1）。
+    深色档用自己的橙 <code>#fb923c</code> 就够（4.98–6.35:1），不需要替身。
+  </div>
+
+  <div class="note warn">
+    <b>A 档还有一个必须先探针的风险（唯一一条我拿不准的）：</b>
+    系统级的 Acrylic 背景是按<b>窗口矩形</b>铺的，而我们是圆角胶囊 —— 胶囊四角之外可能出现方块玻璃。
+    两条候选修法，都要实测：① 用 <code>SetWindowRgn</code> 把窗口裁成胶囊/圆角（GDI 区域会影响 DWM 合成）；
+    ② 用 DWM 的 <code>DWMWA_WINDOW_CORNER_PREFERENCE</code> 圆角（只有一个固定半径，做不出胶囊）。
+    探针失败就整体退 B / D —— 形态优先于材质。
+  </div>
+
+  <h2>四 · 五个状态（1:1）</h2>
+  <div class="legend">
+    <span><i style="background:#0284c7"></i>环 = 完成进度</span>
+    <span><i style="background:#15803d"></i>完成勾（完成态 · SVG 图形）</span>
+    <span><i style="background:#9a3708"></i>今日到期（--glass-warn）</span>
+    <span><i style="background:#d82525"></i>任务栏 / 遮挡标注</span>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="cap"><span class="k">S0 · 无待办</span><span>岛不出现</span><span class="v">0 条 = 隐藏</span></div>
+      <div class="canvas"><div class="mini-clip">
+        <div class="hint" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#e2e8f0;background:rgba(15,23,42,0.6);padding:4px 8px;border-radius:4px">没有未完成 → 不占屏幕</div>
+      </div></div>
+    </div>
+    <div class="card">
+      <div class="cap"><span class="k">S1 · 收起</span><span>默认态</span><span class="v">208 × 32 · r999</span></div>
+      <div class="canvas"><div class="mini-clip">
+        <div class="island" data-st="pill">
+          <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"></circle><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.8" stroke-dashoffset="32.6"></circle></svg>
+          <span class="cnt">4</span><span class="sepdot"></span><span class="last">交材料</span>
+        </div>
+      </div></div>
+    </div>
+    <div class="card">
+      <div class="cap"><span class="k">S2 · 悬停</span><span>进入 150ms</span><span class="v">300 × 40 · r999</span></div>
+      <div class="canvas"><div class="mini-clip">
+        <div class="island" data-st="peek">
+          <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"></circle><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.8" stroke-dashoffset="32.6"></circle></svg>
+          <span class="cnt">4</span><span class="sepdot"></span><span class="last">交材料</span><span class="due">今天 16:00</span>
+        </div>
+      </div></div>
+    </div>
+    <div class="card">
+      <div class="cap"><span class="k">S5 · 全清</span><span>勾完最后一条</span><span class="v">208 × 32 · 1500ms</span></div>
+      <div class="canvas"><div class="mini-clip">
+        <div class="island" data-st="clear">
+          <span class="okmark"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"></path></svg></span><span class="last">今天没有待办了</span>
+        </div>
+      </div></div>
+    </div>
+  </div>
+  <p class="figcap">S3 展开 420×240 与 S4 输入 420×280 见第二节（同一套结构，输入态只多一行输入框）。
+  列表固定可见 4 行、超出滚动 —— 面板高度<b>不随条目数变化</b>，否则窗口尺寸会跟着数据抖。
+  <b>顶部锚定下所有尺寸变化都以顶边为基准</b>：宽度左右对称、高度只往下长，所以胶囊摊成卡片时视觉重心向下沉、不会往上顶到屏幕外。
+  <br>（这几张用 <b>B 稳读玻璃</b>画，是为了看清文字；三档材质的对比在第三节。背景用彩色渐变而不是纯色，
+  因为岛是贴顶的 —— 壁纸在屏幕顶部通常会露出来，纯色背景会看不出玻璃透不透。）</p>
+
+  <h2>五 · 可交互 Demo</h2>
+  <p class="hint">移上去 → 悬停；点一下 → 展开；点圆圈 → 划掉并滑出、环与数字跟着变；点「记一条」→ 输入态（回车记下）；
+  勾完最后一条 → 全清态，1.5 秒后自行收起 —— 这 1.5 秒内再点它一次，那次收起会被取消（<code>epoch</code> 作废机制）。
+  <b>下面默认用 A 观感玻璃画</b>（好看，也最能看出"透"），但它是三档里唯一保不住可读性的；点 D 档就是推荐形态。</p>
+  <div class="pillrow">
+    <button class="btn on" data-jump="pill">重置</button>
+    <button class="btn" data-jump="peek">悬停</button>
+    <button class="btn" data-jump="list">展开</button>
+    <button class="btn" data-jump="compose">输入</button>
+    <button class="btn" data-jump="clear">全清</button>
+    <button class="btn" data-glass="g1">A 观感 .30</button>
+    <button class="btn" data-glass="g2">B 稳读 .90</button>
+    <button class="btn" data-glass="dk">D 深色 .92</button>
+  </div>
+  <div class="clip" id="dems">
+    <div class="appwin">
+      <div class="tbar"><span class="t">某个正在用的应用</span><span class="w"></span><span class="w"></span><span class="w"></span></div>
+      <div class="cols">
+        <div class="side"><i class="chip c1"></i><i></i><i class="chip c2"></i><i class="s"></i><i class="chip c3"></i></div>
+        <div class="main"><div class="head"></div><div class="hero"></div><div class="bars"><i style="height:38%"></i><i style="height:74%"></i><i style="height:52%"></i><i style="height:88%"></i><i style="height:62%"></i><i style="height:44%"></i></div><i></i><i></i><i class="s"></i><i></i><i class="s"></i><i></i></div>
+      </div>
+    </div>
+    <div class="island g1" data-st="pill" id="live">
+      <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"></circle><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.8" stroke-dashoffset="32.6"></circle></svg>
+      <span class="cnt">4</span><span class="sepdot"></span><span class="last">交材料</span>
+    </div>
+  </div>
+
+  <h2>六 · 规格</h2>
+  <h3>尺寸与锚点</h3>
+  <table>
+    <tr><th>状态</th><th>窗口</th><th>圆角</th><th>锚点变化</th><th>内容</th></tr>
+    <tr><td>收起</td><td class="num">208 × 32</td><td class="num">999px</td><td class="num">顶边不动</td><td>环 16 + 剩余数 + 最近一条（省略）</td></tr>
+    <tr><td>悬停</td><td class="num">300 × 40</td><td class="num">999px</td><td class="num">左右各 +46</td><td>+ 到期时间（11px，今日转 <code>--glass-warn</code>）</td></tr>
+    <tr><td>展开</td><td class="num">420 × 240</td><td class="num">12px</td><td class="num">左右各 +106、向下 208</td><td>头 40 + 列表 4×36 + 底 40</td></tr>
+    <tr><td>输入</td><td class="num">420 × 280</td><td class="num">12px</td><td class="num">向下 248</td><td>底部 40 换成输入行</td></tr>
+    <tr><td>全清</td><td class="num">208 × 32</td><td class="num">999px</td><td class="num">收回顶边</td><td>勾（12px 图形）+ 一句话，1500ms 后收起</td></tr>
+  </table>
+  <p class="hint">尺寸账：展开 = 头 40 + 列表内边距 8×2 + 4 行×36 (=144) + 底 40 = 240。行高 36 与头/底 40 都落在间距尺度上，
+  面板高度与条目数解耦（永远 240）。宽 420 与产品既有对话框宽度档（380/400/420/460/520）同源。
+  <b>锚点写死为「屏幕水平中心 × 屏幕上沿 +10px」——展开时只改 <code>set_size</code>，
+  <code>set_position</code> 的 x 按新宽度重算、y 恒为 10，不需要按内容重算坐标。</b></p>
+
+  <h3>动效（U2 四档时长 + 两条曲线）</h3>
+  <table>
+    <tr><th>动作</th><th>时长</th><th>曲线</th><th>改的属性</th></tr>
+    <tr><td>收起 → 悬停</td><td class="num">150ms</td><td class="num">(0.2,0,0,1)</td><td class="num">width / height</td></tr>
+    <tr><td>悬停 → 展开</td><td class="num">300ms</td><td class="num">(0.2,0,0,1)</td><td class="num">width / height / radius</td></tr>
+    <tr><td>展开 → 收起</td><td class="num">200ms</td><td class="num">(0.2,0,0,1)</td><td class="num">width / height / radius</td></tr>
+    <tr><td>勾选圆圈</td><td class="num">150ms</td><td class="num">(0.05,0.7,0.1,1)</td><td class="num">background / border</td></tr>
+    <tr><td>条目滑出</td><td class="num">200ms</td><td class="num">(0.2,0,0,1)</td><td class="num">height / opacity</td></tr>
+    <tr><td>全清后收起</td><td class="num">1500ms 延时</td><td class="num">—</td><td class="num">必须可被 epoch 作废</td></tr>
+  </table>
+  <div class="note">
+    原生窗口没有动画：窗口尺寸由 Rust <code>set_size</code> + <code>set_position</code> 在状态切换时<b>一次到位</b>，
+    "长出来"的连续感只能由内容层伪造（先 <code>scale</code> 回旧比例再动画到 1）—— 栈浮标的跟随滑入就是这么做的。
+    <br>曲线两条都收在 U2 允许集内，所以这一版<b>做不出 Apple 那种回弹超调</b>。想要超调就得新增一条曲线，
+    那要先改 <code>docs/PastePanda-UI规则.md</code> 再改 <code>scripts/ui-rules/rules.mjs</code>。
+  </div>
+
+  <h3>令牌（浅色 ocean / 深色 midnight）</h3>
+  <table>
+    <tr><th>用途</th><th>令牌</th><th>A 观感玻璃</th><th>B 稳读玻璃</th><th>D 深色档</th></tr>
+    <tr><td>岛底色（染色）</td><td class="num">--g1-bg / --g2-bg</td><td class="num">rgba(255,255,255,.30)</td><td class="num">rgba(255,255,255,.90)</td><td class="num">rgba(20,20,24,.92)</td></tr>
+    <tr><td>内描边</td><td class="num">--g1-ring / --g2-ring</td><td class="num">rgba(255,255,255,.42)</td><td class="num">rgba(255,255,255,.9)</td><td class="num">rgba(255,255,255,.18)</td></tr>
+    <tr><td><b>镜面高光峰值</b></td><td class="num">::before</td><td class="num">0.34</td><td class="num">0.34</td><td class="num"><b>0.10</b></td></tr>
+    <tr><td>底暗边</td><td class="num">inset 0 -1px 0</td><td class="num">rgba(15,23,42,.10)</td><td class="num">—</td><td class="num">rgba(0,0,0,.30)</td></tr>
+    <tr><td>外阴影</td><td class="num">--island-shadow</td><td class="num">0 12px 32px rgba(15,23,42,.26)</td><td class="num">同</td><td class="num">同</td></tr>
+    <tr><td>窗口模糊</td><td class="num">WindowEffects</td><td class="num">Acrylic</td><td class="num">Acrylic</td><td class="num">Acrylic</td></tr>
+    <tr><td>进度环</td><td class="num">--accent</td><td class="num">#0284c7</td><td class="num">#0284c7</td><td class="num">#818cf8</td></tr>
+    <tr><td>今日到期</td><td class="num">浅色用 <b>--glass-warn</b> / 深色用 --warning</td><td class="num">#9a3708</td><td class="num">#9a3708</td><td class="num">#fb923c</td></tr>
+    <tr><td>完成</td><td class="num">--success</td><td class="num">#15803d</td><td class="num">#15803d</td><td class="num">#4ade80</td></tr>
+    <tr><td>主 / 次文字</td><td class="num">--g1-text / --g1-muted</td><td class="num">#0f172a / 同色 72%</td><td class="num">#0f172a / #4e5a6b</td><td class="num">#f4f4f5 / 同色 66%</td></tr>
+  </table>
+  <div class="note">
+    描边与亮片一律用 <code>inset</code> 阴影而不是 <code>border</code>：<code>box-sizing:border-box</code> 下
+    <code>border:1.5px</code> 吃掉 3px 布局空间，208×32 的胶囊里两行内容会被裁（栈浮标实测过这条）。
+  </div>
+
+  <h3>对比度实算（WCAG：文字 4.5:1 / 图形 3:1）</h3>
+  <p class="hint">方法：纯黑底上截取岛矩形内部真实像素，取 <code>::before</code> 镜面高光的逐像素 alpha
+  （实测峰值 <b>0.298</b>、均值 0.041）；再对 4 种候选背景，按「模糊背景 → tint → 高光 → 文字」的合成顺序
+  逐像素算对比度，取该背景下的<b>最差值</b>。背景取的是极值色（真实模糊结果是混合值，落在这些极值之间）。
+  深色档按其实际 CSS 的弱高光（0.10）单独算过。</p>
+  <table>
+    <tr><th>档 / 背景</th><th>主文字</th><th>次要文字</th><th>到期</th><th>完成</th><th>进度环</th></tr>
+    <tr><td class="num">A .30 · 纯白</td><td class="num">17.85 ✅</td><td class="num">5.02 ✅</td><td class="num">4.82 ✅</td><td class="num">5.02 ✅</td><td class="num">4.10 ✅</td></tr>
+    <tr><td class="num">A .30 · 壁纸亮青</td><td class="num">10.39 ✅</td><td class="num">4.05 ❌</td><td class="num">2.80 ❌</td><td class="num">2.92 ❌</td><td class="num">2.38 ❌</td></tr>
+    <tr><td class="num">A .30 · hero 品红</td><td class="num">5.81 ✅</td><td class="num">3.16 ❌</td><td class="num">1.57 ❌</td><td class="num">1.63 ❌</td><td class="num">1.33 ❌</td></tr>
+    <tr><td class="num">A .30 · 深色应用</td><td class="num"><b>2.81 ❌</b></td><td class="num">2.00 ❌</td><td class="num">1.00 ❌</td><td class="num">1.00 ❌</td><td class="num">1.00 ❌</td></tr>
+    <tr><td class="num">B .90 · 纯白</td><td class="num">17.85 ✅</td><td class="num">5.02 ✅</td><td class="num">7.18 ✅</td><td class="num">5.02 ✅</td><td class="num">4.10 ✅</td></tr>
+    <tr><td class="num">B .90 · 壁纸亮青</td><td class="num">16.53 ✅</td><td class="num">4.88 ✅</td><td class="num">6.65 ✅</td><td class="num">4.64 ✅</td><td class="num">3.79 ✅</td></tr>
+    <tr><td class="num">B .90 · hero 品红</td><td class="num">15.38 ✅</td><td class="num">4.76 ✅</td><td class="num">6.19 ✅</td><td class="num">4.32 ✅</td><td class="num">3.53 ✅</td></tr>
+    <tr><td class="num">B .90 · 深色应用</td><td class="num">14.59 ✅</td><td class="num">4.67 ✅</td><td class="num">5.87 ✅</td><td class="num">4.10 ✅</td><td class="num">3.35 ✅</td></tr>
+    <tr><td class="num">D .92 · 纯白</td><td class="num">10.26 ✅</td><td class="num">5.50 ✅</td><td class="num">4.98 ✅</td><td class="num">6.47 ✅</td><td class="num">3.78 ✅</td></tr>
+    <tr><td class="num">D .92 · 壁纸亮青</td><td class="num">11.29 ✅</td><td class="num">5.90 ✅</td><td class="num">5.48 ✅</td><td class="num">7.12 ✅</td><td class="num">4.16 ✅</td></tr>
+    <tr><td class="num">D .92 · hero 品红</td><td class="num">12.29 ✅</td><td class="num">6.28 ✅</td><td class="num">5.97 ✅</td><td class="num">7.75 ✅</td><td class="num">4.53 ✅</td></tr>
+    <tr><td class="num">D .92 · 深色应用</td><td class="num">13.07 ✅</td><td class="num">6.57 ✅</td><td class="num">6.35 ✅</td><td class="num">8.24 ✅</td><td class="num">4.82 ✅</td></tr>
+  </table>
+  <p class="hint">读法：<b>A 档只有"纯白背景"一行全绿</b> —— 它的可读性完全押在壁纸上了。
+  B 档与 D 档<b>全绿</b>。门槛要分组看：<b>文字 4.5:1</b>、<b>图形 3:1</b>。「完成」那一列是<b>图形</b>
+  （inline SVG 勾），写的是 <code>--success:#15803d</code>，实算 4.10–4.32，本来就在图形门槛之上。
+  这里曾被误标 ❌ —— 因为全清态那处把勾写成了<b>字体字形 <code>✓</code></b>（<code>.okmark</code>），
+  于是被按文字门槛去算：同一个语义在同一份稿里出现了两套实现（列表行 inline SVG / 全清态字形），
+  现已统一为 SVG，<b>门槛歧义消除</b>。另外 <code>--warning:#c54a0a</code> 在 B 档下只有 3.94–4.82
+  （表内未列），所以浅色档的到期文字必须走 <code>--glass-warn</code>。</p>
+
+  <h3>另一个轴：岛自己能不能被看见（岛 vs 背后内容）</h3>
+  <p class="hint">上面那张表量的是<b>岛内文字</b>读不读得清；岛还必须在<b>背后内容</b>上被认出来 ——
+  这是两个独立的轴，上一版稿只算了前一个。按同一套合成公式，把「背后内容」从纯黑代到纯白，
+  得到各档<b>岛体实际呈现的颜色</b>，再拿它跟背景算对比度：</p>
+  <table>
+    <tr><th>档</th><th>岛体颜色（背后 纯黑 → 纯白）</th><th>岛体 vs 白文档</th><th>岛体 vs 深色应用</th></tr>
+    <tr><td class="num">A .30 观感</td><td class="num">rgb(137,137,137) → rgb(255,255,255)</td><td class="num">1.00 ❌</td><td class="num">5.71 ✅</td></tr>
+    <tr><td class="num">B .90 稳读</td><td class="num">rgb(238,238,238) → rgb(255,255,255)</td><td class="num">1.00 ❌</td><td class="num">14.65 ✅</td></tr>
+    <tr><td class="num">D .92 深色</td><td class="num">rgb(42,42,45) → rgb(60,60,64)</td><td class="num"><b>10.92 ✅</b></td><td class="num">1.20 ❌</td></tr>
+  </table>
+  <p class="hint">三档<b>各自都能找到让自己消失的背景</b> —— 岛的底色是固定的、背后内容却是任意的，
+  所以不存在「任何背景都显眼」的档。真正的判据是<b>哪一侧更需要它显眼</b>：桌面内容以浅色为主
+  （白文档、浏览器、浅色应用、浅色壁纸），所以<b>浅色档的失效场景是高频的，深色档的失效场景是低频的</b>。</p>
+  <div class="note">
+    还有一处<b>不对称</b>：B 档的描边 <code>--g2-ring</code>（<code>rgba(255,255,255,.9)</code>）与岛体
+    <b>同为浅色</b>，压在白文档上两者<b>同时失效</b>，边界只剩投影在撑；D 档是<b>深体 + 浅描边</b>
+    （<code>rgba(255,255,255,.18)</code>），任何背景下至少有一个起作用。<br>
+    ⇒ 这是<b>推荐 D 的主因</b>：不是"更像苹果灵动岛"，而是<b>它在最常见的桌面内容上永远成形</b>。
+    浅色档（B）要选也可以，但要有预期：<b>白文档上岛会"化掉"，只剩一圈阴影</b>。
+  </div>
+
+  <h2>七 · 窗口能力组合（与栈浮标的同与不同）</h2>
+  <table>
+    <tr><th>能力</th><th>值</th><th>栈浮标</th><th>待办岛</th><th>缺了会怎样</th></tr>
+    <tr><td>decorations</td><td class="num">false</td><td>同</td><td>同</td><td>出现系统标题栏，胶囊变丑</td></tr>
+    <tr><td>always_on_top</td><td class="num">true</td><td>同</td><td>同</td><td>被前台应用盖住，等于没显示</td></tr>
+    <tr><td>skip_taskbar</td><td class="num">true</td><td>同</td><td>同</td><td>任务栏多个幽灵窗</td></tr>
+    <tr><td>shadow</td><td class="num">false</td><td>同</td><td>同</td><td>系统阴影跟圆角走，出现方形暗角</td></tr>
+    <tr><td>transparent</td><td class="num">true</td><td>同</td><td>同</td><td>圆角外是白方块；且<b>没有它就开不了毛玻璃</b></td></tr>
+    <tr><td>focused</td><td class="num">false</td><td>同</td><td>同</td><td>抢焦点后用户的下一次 Ctrl+V 会打进岛里</td></tr>
+    <tr><td>effects</td><td class="num">Acrylic</td><td>未用</td><td><b>新增</b></td><td>退 B / D 档，仍然可读，只是不透</td></tr>
+    <tr><td>鼠标穿透</td><td class="num">ignore_cursor_events</td><td><b>true</b>（纯展示）</td><td><b>false</b>（要能勾选）</td><td>本稿与栈浮标最大的分歧，见下</td></tr>
+    <tr><td>在场时机</td><td class="num">—</td><td>仅栈激活期间</td><td>有未完成待办期间</td><td>0 条即隐藏，不留空白玻璃</td></tr>
+    <tr><td>锚点</td><td class="num">—</td><td>贴光标的聚焦输入框</td><td>屏幕顶部居中（一期固定，二期可拖）</td><td>—</td></tr>
+  </table>
+
+  <div class="note warn">
+    <b>1 · 可点 vs 穿透，是真实取舍。</b>栈浮标的注释写得很直接：它做成只读，是因为"能点两下"不值得挡住用户对目标应用的点击。
+    岛必须能点（勾选、记一条），所以默认<b>收鼠标事件</b>；缓解办法是按光标动态开关穿透 ——
+    Rust 轮询 <code>GetCursorPos</code>，光标离岛外扩矩形还远时 <code>set_ignore_cursor_events(true)</code>，
+    进 8px 切回 false，出 12px 才切回 true（滞回防抖）。<b>这条没实测过</b>，验证失败就退回"只在展开时收鼠标事件"。
+  </div>
+  <div class="note warn">
+    <b>2 · 常驻可见会污染宿主判据。</b><code>paste_engine.rs</code> 的 <code>any_own_window_visible()</code> 判"任一自身窗口可见"，
+    加一个常在的岛会让它恒真，把"陈旧目标被续命"从偶发变必然。必须把 <code>todo-island</code> 加进 <code>TOOL_WINDOW_LABELS</code>（那里有守卫单测）。
+  </div>
+  <div class="note warn">
+    <b>3 · 截图与远程推流期间必须隐藏岛。</b>岛是顶层窗口，GDI 全屏拷贝与 DXGI Desktop Duplication 都会把它抓进去 ——
+    用户截图里会多一块岛，被控端推流会把本机待办推给对端。栈浮标只在栈激活时出现，与截图/推流不重叠，所以从没暴露过这个问题。
+  </div>
+
+  <h2>八 · 落地接线（漏一项就静默失败）</h2>
+  <table>
+    <tr><th>#</th><th>做什么</th><th>在哪</th><th>漏了会怎样</th></tr>
+    <tr><td>1</td><td>窗口生命周期 + 顶部居中定位（含选主屏）+ 防重入 + 状态快照缓存</td><td class="num">src-tauri/src/todo_island.rs</td><td>不做就没有岛</td></tr>
+    <tr><td>2</td><td>窗口效果：Acrylic + 失败回退 B / D 档</td><td class="num">EffectsBuilder::new().effect(Effect::Acrylic)</td><td>透明窗口没有玻璃，只剩染色。<b>符号名与「不需额外 Cargo feature」已查依赖源码核实</b>；<code>radius</code> 是 macOS Only ⇒ 圆角只能靠 DWM</td></tr>
+    <tr><td>3</td><td>独立入口</td><td class="num">todoisland.html + src/todoisland-main.tsx</td><td>无页面</td></tr>
+    <tr><td>4</td><td>登记进 rollup input</td><td class="num">vite.config.ts</td><td>dev 无异状，打包后白屏</td></tr>
+    <tr><td>5</td><td>窗口 label 进 capabilities 名单</td><td class="num">src-tauri/capabilities/default.json</td><td><code>listen()</code> 全部静默失败，岛冻结在首帧</td></tr>
+    <tr><td>6</td><td>唯一同步出口</td><td class="num">src/lib/todo/islandBridge.ts</td><td>两处各推一次就漂移成"显示 A、实际 B"</td></tr>
+    <tr><td>7</td><td>标签并入工具窗排除名单</td><td class="num">paste_engine.rs · TOOL_WINDOW_LABELS</td><td>陈旧粘贴目标被续命</td></tr>
+    <tr><td>8</td><td>截图 / 推流前隐藏岛</td><td class="num">screenshot.rs · rc 推流开始处</td><td>岛被截进图、推给对端</td></tr>
+    <tr><td>9</td><td>勾选写回走既有 note_update</td><td class="num">不许写裸 SQL</td><td>不同步、不留快照、不动 updated_ms</td></tr>
+  </table>
+  <p class="hint">独立窗拿不到主窗口的 zustand store；首帧还会丢事件（创建到 React 挂载有几百毫秒），
+  Rust 侧要存一份状态快照供挂载时主动拉取。这两个坑栈浮标都踩过，照它的做法即可。</p>
+
+  <h2>九 · 待验证（探针清单）与待拍板</h2>
+  <div class="note bad">
+    <b>探针清单</b>（按风险排序，全部是"没实测就不能写进代码注释"的那些）：
+    <br>① Acrylic 在无边框透明窗上是否生效、胶囊圆角是否被方角玻璃破坏 → 决定 A 档能不能用。
+    <br>② <code>set_ignore_cursor_events</code> 按光标轮询切换会不会闪、有无竞态 → 决定穿透方案。
+    <br>③ 常驻一个 WebView2 窗口的内存增量（本项目对常驻开销有硬要求，必须真测再决定"是否常驻"）。
+    <br>④ 全清态 1500ms 延时收起与"期间再次点亮"的竞态（epoch 机制，栈浮标已有可复用的实现与单测手法）。
+    <br>⑤ <b>顶部居中的坐标换算</b>：2560×1440 下按物理像素算 <code>x = (屏宽 − 窗宽)/2</code>、<code>y = 10</code>
+    是否与视觉吻合（DPI 缩放会让"物理像素"和"逻辑像素"分叉）；以及多显示器时落到哪块屏（必须显式选主屏）。
+    <br>⑥ <b>独占全屏时的行为</b>：检测手段（前台窗口是否覆盖整屏 / 有无 <code>WS_EX_TOPMOST</code> 全屏态）
+    与动作（隐藏 / 保持）都要定 —— 顶部位置让这个问题比居中时更突出。
+  </div>
+  <table>
+    <tr><th>#</th><th>事</th><th>选项</th><th>倾向</th></tr>
+    <tr><td>1</td><td>锚点</td><td>屏幕顶部居中 / 其他位置</td><td>按你说的：<b>屏幕顶部居中</b>（与顶边距 10px）</td></tr>
+    <tr><td>2</td><td>材质</td><td>A 观感 .30 / B 稳读 .90 / D 深色 .92</td><td><b>D</b> —— 岛内文字四种背景全达标，且<b>在浅色桌面上永远成形</b>（见第六节「另一个轴：岛自己能不能被看见」）。B 可作浅色备选，但要接受"白文档上岛体会化掉，只剩一圈阴影"；A 只在背景可控时用</td></tr>
+    <tr><td>3</td><td>「记一条」落在哪</td><td>今日速记那条笔记 / 系统托管的内置待办笔记</td><td><b>复用「今日速记」那条笔记</b>（但写入形态要专门做）。读源码取证：它已经是完整的<b>每日收件箱</b>机制 —— <code>daily_date</code> 字段 + 日历打点 + 日期归一化 + 同日去重 + 首次创建（<code>data_store/note_daily.rs</code>，带跨天单测），且<b>日历可见、可删除</b>天然满足红线③。⚠ 但现成的 <code>note_append_daily</code> 每次追加都会加 <code>## 时间戳</code> 小节标题（<code>format_entry</code>，note_daily.rs:40-43）—— <b>一条一行待办会被切成 N 个小节</b> ⇒ 需要一条<b>同族命令</b>复用同一套 <code>daily_date</code> 查找 / 新建 / 去重，只把写入形态换成"往 <code>- [ ]</code> 清单区追加"。「系统托管新笔记」成本更高（新概念 + 新 UI 入口 + 与速记平行的第二套日期机制）且无额外收益</td></tr>
+    <tr><td>4</td><td>位置固定还是可拖</td><td>固定顶部居中 / 可拖 + 记忆</td><td>先固定，二期加拖拽</td></tr>
+    <tr><td>5</td><td>要不要截止时间与优先级</td><td>只要 <code>- [ ]</code> / 加行内标记</td><td>一期<b>只做勾选、不做截止时间</b>。加截止时间要新增行内语法（与 <code>- [todo]</code> 100% 撞车，见立项规划）且本项目无通知插件；而「这条记在哪天」已由速记的 <code>daily_date</code> 免费提供 ⇒ <b>用笔记日期当隐式到期日</b>，一期就拿得到"今天该做什么"，零新语法。⚠ 稿里的「今天 16:00」是<b>演示态</b>，一期不做就得在稿上标成二期，否则实现时对不上</td></tr>
+    <tr><td>6</td><td>独占全屏应用时的行为</td><td>隐藏 / 保持置顶</td><td>隐藏（顶部位置下这个冲突比居中时更常遇到）</td></tr>
+  </table>
+
+</div>
+
+<script>
+/* 交互 Demo：与实现的分工不同 —— 稿里用 CSS transition 演形变；
+   实现里窗口尺寸由 Rust set_size/set_position 一次到位，形变感靠内容层伪造。 */
+(function () {
+  var live = document.getElementById("live");
+  var dems = document.getElementById("dems");
+  if (!live || !dems) return;
+
+  var TXT = ["把登录页改完", "交材料", "没人领文档这件事", "回邮件给张工"];
+  var SRC = ["会议纪要", "今日速记", "会议纪要", "今日速记"];
+  var DONE_SAMPLE = { t: "跑回归", s: "会议纪要" };
+  var done = [false, false, false, false];
+  var glass = "g1";
+  var state = "pill";
+  var filter = "进行中";
+  var openCount = function () { var n = 0, i; for (i = 0; i < done.length; i++) if (!done[i]) n++; return n; };
+  var CIRC = 40.8;
+  function ring() {
+    var total = done.length + 1;                 /* 样例里另有 1 条已完成 */
+    var doneN = total - openCount();
+    var off = (CIRC * (1 - doneN / total)).toFixed(1);
+    return '<svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"></circle>' +
+      '<circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="' + CIRC + '" stroke-dashoffset="' + off + '"></circle></svg>';
+  }
+  var TICK = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"></path></svg>';
+  /* 全清态的大号勾，与列表行的 TICK 同一套图形，只是 12px —— 见 .okmark 的注释 */
+  var OKTICK = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"></path></svg>';
+  var PLUS = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"></path></svg>';
+  var UP = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"></path></svg>';
+
+  function firstOpen() { var i; for (i = 0; i < TXT.length; i++) if (!done[i]) return TXT[i]; return ""; }
+
+  function rows() {
+    var out = "", i, n = 0;
+    if (filter === "进行中") {
+      for (i = 0; i < TXT.length; i++) {
+        if (done[i]) continue;
+        n++;
+        out += '<div class="row" data-i="' + i + '"><span class="tick">' + TICK + '</span>' +
+          '<span class="tx">' + TXT[i] + '</span><span class="src">' + SRC[i] + '</span></div>';
+      }
+    } else {
+      n++;
+      out += '<div class="row done"><span class="tick">' + TICK + '</span>' +
+        '<span class="tx">' + DONE_SAMPLE.t + '</span><span class="src">' + DONE_SAMPLE.s + '</span></div>';
+      for (i = 0; i < TXT.length; i++) {
+        if (!done[i]) continue;
+        n++;
+        out += '<div class="row done"><span class="tick">' + TICK + '</span>' +
+          '<span class="tx">' + TXT[i] + '</span><span class="src">' + SRC[i] + '</span></div>';
+      }
+    }
+    if (!n) out = '<div class="row"><span class="tx muted">这一档里没有条目</span></div>';
+    return out;
+  }
+
+  function head(title) {
+    var seg = ["进行中", "已完成"].map(function (k) {
+      return '<span class="' + (k === filter ? "on" : "") + '" data-f="' + k + '">' + k + '</span>';
+    }).join("");
+    return '<div class="hd"><span class="title">' + title + '</span><span class="seg">' + seg + '</span>' +
+      '<span class="col" data-act="collapse">' + UP + '</span></div>';
+  }
+
+  function render() {
+    live.className = "island " + glass;
+    live.setAttribute("data-st", state);
+    var n = openCount();
+    if (state === "pill" || state === "clear") {
+      live.innerHTML = state === "clear"
+        ? '<span class="okmark">' + OKTICK + '</span><span class="last">今天没有待办了</span>'
+        : ring() + '<span class="cnt">' + n + '</span><span class="sepdot"></span><span class="last">' + firstOpen() + '</span>';
+    } else if (state === "peek") {
+      live.innerHTML = ring() + '<span class="cnt">' + n + '</span><span class="sepdot"></span><span class="last">' +
+        firstOpen() + '</span><span class="due">今天 16:00</span>';
+    } else if (state === "list") {
+      live.innerHTML = head(n + " 项待办") + '<div class="ls">' + rows() + '</div>' +
+        '<div class="foot" data-act="compose">' + PLUS + '<span>记一条</span></div>';
+    } else if (state === "compose") {
+      live.innerHTML = head(n + " 项待办") + '<div class="ls">' + rows() + '</div>' +
+        '<div class="foot">' + PLUS + '<span class="cinput" contenteditable="true" id="cbox"></span>' +
+        '<span style="font-size:11px">回车记下</span></div>';
+    }
+  }
+
+  var epoch = 0, timer = 0;
+  function setState(s) { epoch++; state = s; render(); }
+  function scheduleHide() {
+    var at = epoch;
+    timer = window.setTimeout(function () { if (at !== epoch) return; state = "pill"; render(); }, 1500);
+  }
+  function focusBox() { var b = document.getElementById("cbox"); if (b) b.focus(); }
+
+  live.addEventListener("mouseenter", function () { if (state === "pill") setState("peek"); });
+  live.addEventListener("mouseleave", function () { if (state === "peek") { state = "pill"; render(); } });
+  live.addEventListener("click", function (e) {
+    var t = e.target;
+    if (t.closest("[data-act='collapse']")) { setState("pill"); return; }
+    if (t.closest("[data-act='compose']")) { setState("compose"); focusBox(); return; }
+    var f = t.closest("[data-f]");
+    if (f) { filter = f.getAttribute("data-f"); epoch++; render(); return; }
+    var row = t.closest(".row");
+    if (row && state !== "compose") {
+      var i = parseInt(row.getAttribute("data-i"), 10);
+      if (!isNaN(i) && !row.classList.contains("done")) {
+        row.classList.add("done");
+        window.setTimeout(function () {
+          done[i] = true; epoch++;
+          if (openCount() === 0) { state = "clear"; render(); scheduleHide(); } else render();
+        }, 200);
+        return;
+      }
+    }
+    if (state === "pill" || state === "peek") setState("list");
+  });
+  dems.addEventListener("click", function (e) {
+    if (e.target.closest("#live")) return;
+    if (state === "list" || state === "compose") setState("pill");
+  });
+  document.addEventListener("keydown", function (e) {
+    if (state !== "compose") return;
+    var b = document.getElementById("cbox");
+    if (!b) return;
+    if (e.key === "Escape") { setState("list"); return; }
+    if (e.key === "Enter" && b.textContent.trim()) {
+      TXT.push(b.textContent.trim()); SRC.push("今日速记"); done.push(false);
+      b.textContent = ""; epoch++; render(); focusBox();
+    }
+  });
+
+  var jumps = document.querySelectorAll("[data-jump]");
+  Array.prototype.forEach.call(jumps, function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(jumps, function (x) { x.classList.remove("on"); });
+      b.classList.add("on");
+      window.clearTimeout(timer);
+      var t = b.getAttribute("data-jump");
+      if (t === "clear") { done = [true, true, true, true]; state = "clear"; render(); scheduleHide(); return; }
+      if (t === "compose") { setState("compose"); focusBox(); return; }
+      setState(t);
+    });
+  });
+  var glassBtns = document.querySelectorAll("[data-glass]");
+  Array.prototype.forEach.call(glassBtns, function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(glassBtns, function (x) { x.classList.remove("on"); });
+      b.classList.add("on");
+      glass = b.getAttribute("data-glass");
+      render();
+    });
+  });
+
+  render();
+  window.__island = function (s) { window.clearTimeout(timer); setState(s || "pill"); };
+  window.__glass = function (g) { glass = g; render(); };
+})();
+</script>
+</body>
+</html>

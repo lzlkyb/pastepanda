@@ -275,7 +275,7 @@ button.chip:hover{background:#fff}
    可换行布局：窄窗口时动作组整体换到下一行右对齐，而不是把中间文案列压瘪
    （上一版 hero 是死 flex 行，1000px 视口下 chip 被压成竖排并与按钮重叠）。 */
 .hero{
-  position:relative;flex:0 0 212px;display:flex;align-items:center;flex-wrap:wrap;
+  position:relative;flex:0 0 auto;min-height:212px;display:flex;align-items:center;flex-wrap:wrap;
   gap:14px 22px;padding:18px 24px;overflow:hidden;
   background:
     radial-gradient(ellipse 420px 200px at 88% -20%, rgba(122,177,255,.34), transparent 62%),

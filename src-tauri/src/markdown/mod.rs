@@ -35,3 +35,4 @@ pub use edit::{apply, ContentEdit, EditReport, InsertAt};
 pub use links::{parse_links, WikiLink};
 pub use rank::{rank_sections, SectionHit};
 pub use sections::{locate, outline, slice, LocateError, Section, SectionRef};
+

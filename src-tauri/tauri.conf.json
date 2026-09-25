@@ -53,7 +53,8 @@
     "targets": "nsis",
     "createUpdaterArtifacts": true,
     "resources": {
-      "resources/ocr_models/*": "resources/ocr_models"
+      "resources/ocr_models/*": "resources/ocr_models",
+      "resources/ffmpeg/*": "resources/ffmpeg"
     },
     "icon": [
       "icons/32x32.png",

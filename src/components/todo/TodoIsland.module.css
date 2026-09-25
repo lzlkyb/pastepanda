@@ -1,0 +1,459 @@
+/* 待办灵动岛 · 五个舞台（pill 208×32 / peek 300×40 / list 420×240 / compose 420×280 / clear 208×32）
+   尺寸与 `src-tauri/src/todo_island_stage.rs::stage_size` 是同一份账，改一处必须同步另一处。
+
+   材质（2026-09-25 档 3a 定稿）= **窗口级 Acrylic 磨砂玻璃**（α.78，Rust 侧施加）
+   + 弱顶部高光 + 浅描边 + 外投影。此前「近黑实色、零玻璃」的定稿被液态玻璃立项修订
+   （探针实测标定见 design/待办灵动岛-液态玻璃-3a设计稿.html）；描边/投影/无 DWM 圆角不变。
+
+   ❗ 为什么不做玻璃 —— 四份对标一致：
+     · iPhone 灵动岛官方规范**明令不能改岛背景色**（它必须读起来像硬件缺口，只能改文字/素材/边框色）；
+     · macOS 各家 notch app 纯黑填充凹耳形状；
+     · 同栈同平台（Tauri 2 + React，Windows）的 PILLAR 用 `rgba(20,20,22,.94)` 实色，
+       它的 `tauri.conf.json` 里**没有 windowEffects 块**、`platform/windows.rs` 零 DWM 调用；
+     · 物理理由最硬：岛贴在屏幕**最顶部**，背后是壁纸顶边或标题栏，**可模糊的信息量最少**，
+       代价却是实打实吃掉对比度（设计稿第六节实算：高光 `.34` 把 tint `.92` 上的白字对比度
+       从 18:1 压到 6.2:1）—— 那一层是在给一个业界不存在的层找最优解。
+   ⇒ 原 `.root::before` 的 158° 镜面高光**已删**；描边 `.18→.12`、投影 `.34→.25` 对齐 PILLAR。
+
+   ❗ 刻意**没有** backdrop-filter —— 与栈浮标同一个理由（tauri issue #10064）：
+      窗口 `transparent(true)` 时 CSS 模糊只作用于 webview 内部元素、**穿不出窗口**。
+
+   ❗ 窗口几何与动画的分工（2026-09-25 档 3a 修订）：材质按窗口矩形铺，尺寸动画的
+      唯一来源在 Rust 侧逐帧驱动（`todo_island_set_stage` 内 16ms 步进插值）；
+      卡片**永远填满窗口**（inset:0），每帧与窗口同步——CSS 不再持有尺寸，
+      两个矩形之间不存在「差的一圈」，切舞台不会再露出玻璃板。
+
+   染色的值走 CSS 变量 `--island-tint`（定义在下面的 :global(html) 里），默认近透明
+   （0.05，材质接管染色）。❗ 变量化的用途之一仍是探针：测材质 A/B 时，
+   `window.eval` 把它临时归零，好让 on/off 的像素差确实来自系统而非 CSS。 */
+
+/* 窗口是 transparent(true)，globals.css 的 body{background:var(--app-bg)} 必须压掉，
+   否则圆角外那四个角是白底方块 */
+:global(html),
+:global(body),
+:global(#root) {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+/* 染色令牌。定义在 html 上而不是 .root 上，是为了让探针能从外部覆盖：
+   元素自身的声明优先于继承值，写在 .root 里的话 `eval` 改 html 上的变量覆盖不了它。
+
+   档 3a（2026-09-25）：岛体染色由**窗口级 Acrylic** 接管（Rust apply_theme_material
+   按 config.theme 施加，配方 dark200/white200 见 todo_island.rs），CSS 染色退到近透明
+   ——只留 5% 给舞台过渡时兜底，不让岛在材质重合成的瞬间闪出桌面色。
+   notice chip 三个值两种材质都不覆写——失败提示恒深底白字（同 toast 惯例）。 */
+:global(html) {
+  --island-tint: rgba(20, 20, 24, 0.05);
+  --island-tint-hover: rgba(255, 255, 255, 0.05);
+  --island-fg: #f4f4f5;
+  --island-fg-muted: rgba(244, 244, 245, 0.66);
+  /* 勾选完成绿：设计稿 D 档定值。 --success 是浅色主题 token（#15803d），深色岛底上只有 2.1:1 */
+  --island-ok: #4ade80;
+  --island-ok-on: #14532d;
+  --island-accent: #0284c7;
+  --island-line: rgba(255, 255, 255, 0.12);
+  --island-line-mid: rgba(255, 255, 255, 0.18);
+  --island-line-strong: rgba(255, 255, 255, 0.34);
+  --island-fill: rgba(255, 255, 255, 0.10);
+  --island-fill-soft: rgba(255, 255, 255, 0.06);
+  --island-fill-strong: rgba(255, 255, 255, 0.22);
+  --island-ring-track: rgba(255, 255, 255, 0.22);
+  --island-tick-line: rgba(255, 255, 255, 0.34);
+  --island-shadow: rgba(0, 0, 0, 0.25);
+  --island-notice-bg: rgba(0, 0, 0, 0.55);
+  --island-notice-line: rgba(255, 255, 255, 0.14);
+  --island-notice-fg: #f4f4f5;
+  /* 档 1 弱高光（叠加在玻璃上）：镜面反光是「液态感」的第二来源。
+     对比度背书见 design/待办灵动岛-玻璃感-档1设计稿.html §2（峰值 .07 全绿）。 */
+  --island-gloss: rgba(255, 255, 255, 0.07);
+  --island-rim: rgba(255, 255, 255, 0.09);
+}
+
+/* 浅色材质（方案 A「跟随应用主题」，design/待办灵动岛-主题亮暗适配-设计稿.html §2）：
+   入口 todoisland-main.tsx 把主题的 dark 标志写成 html[data-island-mode]，
+   这里只换值、结构不动。--island-ok 用 #15803d = 浅色主题 --success，岛与应用同源；
+   浅玻璃压亮壁纸靠「描边 + 收轻的外投影」保边——与截图窗浅色适配同一论证。 */
+:global(html[data-island-mode="light"]) {
+  --island-tint: rgba(255, 255, 255, 0.05);
+  --island-tint-hover: rgba(255, 255, 255, 0.45);
+  --island-fg: #18181b;
+  --island-fg-muted: rgba(24, 24, 27, 0.62);
+  --island-ok: #15803d;
+  --island-ok-on: #ffffff;
+  --island-accent: #0369a1;
+  --island-line: rgba(0, 0, 0, 0.10);
+  --island-line-mid: rgba(0, 0, 0, 0.16);
+  --island-line-strong: rgba(0, 0, 0, 0.34);
+  --island-fill: rgba(0, 0, 0, 0.06);
+  --island-fill-soft: rgba(0, 0, 0, 0.04);
+  --island-fill-strong: rgba(0, 0, 0, 0.12);
+  --island-ring-track: rgba(0, 0, 0, 0.14);
+  --island-tick-line: rgba(0, 0, 0, 0.30);
+  --island-shadow: rgba(0, 0, 0, 0.16);
+  /* 白高光在白玻璃上偏隐，压低档位——亮面靠顶缘亮线与描边的明暗差来读 */
+  --island-gloss: rgba(255, 255, 255, 0.55);
+  --island-rim: rgba(255, 255, 255, 0.85);
+}
+
+/* 实色兜底：材质施加失败时 Rust 会挂 html[data-material="off"]
+   （apply_theme_material 的 Err 分支）——染色回到定稿 D 档实色，岛不能「透明消失」。 */
+:global(html[data-material="off"]) {
+  --island-tint: rgba(20, 20, 24, 0.92);
+  --island-tint-hover: rgba(28, 28, 33, 0.96);
+}
+
+:global(html[data-material="off"][data-island-mode="light"]) {
+  --island-tint: rgba(255, 255, 255, 0.92);
+  --island-tint-hover: rgba(255, 255, 255, 0.97);
+}
+
+/* 曲线：U2 允许集内唯一的标准缓动（0.2,0,0,1）——现在也是 Rust 窗口动画的同一条曲线 */
+.root {
+  position: fixed;
+  inset: 0;
+  /* 卡片永远填满窗口：尺寸由 Rust 逐帧动画给出（见文件头「分工」），
+     这里不再持有 width/height——两个矩形差一圈就是用户看到的「白板」。 */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--island-tint);
+  /* 档 1 弱高光：background-image 叠层（不新增元素/合成层），固定 26px 渐变段
+     ——五个舞台高光高度一致，不会在 240px 展开卡上被拉成半屏光带。
+     hover 用 background-color 换色（❗不能用 background 简写，会清掉这层 image）。 */
+  background-image: linear-gradient(180deg, var(--island-gloss) 0, rgba(255, 255, 255, 0) 26px);
+  /* ❗ 描边用 **inset 阴影** 而不是 border：globals.css 有 `* { box-sizing: border-box }`，
+     `border: 1px` 会吃掉 2px 布局空间；inset 阴影不占布局空间，且同样跟随 border-radius。
+     第二层是顶缘亮线（rim，受光面）；外投影兜底：岛压在同色系内容上时保住边界。 */
+  box-shadow:
+    inset 0 0 0 1px var(--island-line),
+    inset 0 1px 0 var(--island-rim),
+    0 6px 18px var(--island-shadow);
+  color: var(--island-fg);
+  font-size: 12px;
+  user-select: none;
+  cursor: default;
+  /* 颜色三档给「主题翻面」用（200ms，U2 快档）：data-island-mode 切换时材质渐变，
+     不闪跳。宽高/圆角档见上。 */
+  transition:
+    border-radius 200ms cubic-bezier(0.2, 0, 0, 1),
+    background-color 200ms cubic-bezier(0.2, 0, 0, 1),
+    color 200ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 圆角与布局按舞台走：尺寸/时长都已在 Rust（stage_size / stage_duration_ms）。
+   展开态圆角从胶囊 999 落到卡片 12（200→300ms 的圆角过渡保留在 .root 基础块）。 */
+.root[data-st="list"],
+.root[data-st="compose"] {
+  border-radius: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  transition-duration: 300ms;
+}
+
+/* 鼠标在岛上（Rust 侧按光标轮询判定后 emit）：给一点反馈，
+   也用来肉眼确认「穿透切换」这条链路是通的。只在胶囊两态挂。 */
+.root[data-hover="1"] {
+  background-color: var(--island-tint-hover);
+}
+
+/* ===== 折叠态内容（pill / peek / clear） ===== */
+
+.ring {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* 进度环底圈 */
+.tk2 {
+  fill: none;
+  stroke: var(--island-ring-track);
+  stroke-width: 2;
+}
+
+/* 进度弧：从 12 点方向起画 */
+.arc {
+  fill: none;
+  stroke: var(--island-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 8px 8px;
+}
+
+.cnt {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sepdot {
+  flex: 0 0 auto;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.last {
+  flex: 1 1 auto;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 全清态的勾（12px 图形；与列表行同一份路径，见 TodoIslandList 的 TickSvg） */
+.okmark {
+  flex: 0 0 12px;
+  display: inline-flex;
+  color: var(--island-ok);
+}
+
+/* ===== 展开态：头 / 列表 / 底（设计稿 S3/S4，dk 变体） ===== */
+
+.hd {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--island-line);
+  position: relative;
+  z-index: 1;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.seg {
+  display: flex;
+  gap: 2px;
+  background: var(--island-fill);
+  border-radius: 8px;
+  padding: 2px;
+  margin-left: 4px;
+}
+
+.seg span {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  opacity: 0.66;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.seg span.on {
+  background: var(--island-fill-strong);
+  opacity: 1;
+}
+
+.col {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.col:hover {
+  opacity: 1;
+  background: var(--island-fill);
+}
+
+.ls {
+  flex: 1 1 auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 4px;
+  border-radius: 8px;
+}
+
+.row:hover {
+  background: var(--island-fill);
+}
+
+/* 勾选圈：视觉 16px，按钮本体 24×24（U7 点击目标下限） */
+.tick {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.tickDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--island-tick-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 150ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    border-color 150ms cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+
+/* 圈里的勾：未完成时几乎不可见（hover 漏一点），完成后实心 */
+.tickDot svg {
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.row:hover .tickDot svg {
+  opacity: 0.38;
+}
+
+.rowDone .tx {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.rowDone .tickDot {
+  background: var(--island-ok);
+  border-color: var(--island-ok);
+  color: var(--island-ok-on);
+}
+
+.rowDone .tickDot svg {
+  opacity: 1;
+}
+
+.tx {
+  flex: 1 1 auto;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.src {
+  flex: 0 0 auto;
+  font-size: 11px;
+  max-width: 112px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--island-fg-muted);
+}
+
+/* 空态（U3 / L3：说清会出现什么、怎么让它出现） */
+.empty {
+  margin: auto;
+  text-align: center;
+  font-size: 12px;
+  color: var(--island-fg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.empty p {
+  margin: 0;
+}
+
+.emptySub {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* 底栏：列表态是「记一条」按钮，输入态是输入行 */
+.foot {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid var(--island-line);
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  font-size: 12px;
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+  background: none;
+  width: 100%;
+  color: var(--island-fg-muted);
+}
+
+.foot:hover {
+  background: var(--island-fill-soft);
+}
+
+.cinput {
+  flex: 1 1 auto;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--island-line-mid);
+  background: var(--island-fill);
+  color: var(--island-fg);
+  font-size: 12px;
+  padding: 0 8px;
+  outline: none;
+}
+
+.cinput:focus {
+  border-color: var(--island-line-strong);
+}
+
+.footHint {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+/* 操作失败的提示 chip：绝对定位悬在列表底部，列表态与输入态都看得见
+   （规则 §15.1——反馈必须和触发在同一可见性域；勾选的触发在列表里） */
+.notice {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 48px;
+  z-index: 2;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--island-notice-bg);
+  border: 1px solid var(--island-notice-line);
+  font-size: 11px;
+  color: var(--island-notice-fg);
+  pointer-events: none;
+}

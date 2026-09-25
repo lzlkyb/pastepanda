@@ -1,11 +1,12 @@
 /**
- * RcHud — 会话画面左上角的「连接详情」入口（2026-09-21 A 方案稿对账后收编）。
+ * RcHud — 「连接详情」入口 + 明细面板（2026-09-21 A 方案稿对账后收编）。
  *
  * 稿的要求：遥测**不再常驻铺在画面上**。原先这里是一条最多 10 格的 chip 条
  * （编码 / 延迟 / 画面龄 / 四段 / 操作 / 丢包 / 码率 / 路径 / 画质·画面 / 链路），
  * 本项目有 4 个窗口、同一组件可能各挂一份，画面顶部长期被信息条占住。
- * 现在收成**一个按钮**：默认只占约 90×22px，点击开合明细面板，数据一格不少
- * （并补了稿里有、原来缺的「分辨率」）。
+ * 2026-09-24 控端态浮条收编后入口进一步缩成**一枚 i 图标**，住在
+ * RcSessionCapsule 的动作段里（深色玻璃语境）；点击在胶囊下方弹出明细面板，
+ * 数据一格不少。左上角的常驻小按钮随 viewTools / 底栏一起退场。
  *
  * 为什么去掉 hover 自动展开（原悬停 300ms 开）：入口从一条宽信息条缩成一个小按钮后，
  * 鼠标掠过画面左上角就弹面板的误触概率明显上升；稿里的同类入口也是点击式。
@@ -17,7 +18,8 @@
  * （RcSessionTop 的 pillDanger / pillWarn），这里不在按钮上重复播报。
  *
  * 穿透纪律：wrapper 与面板之外的区域照旧 pointer-events:none（远程点击不被挡），
- * 只有按钮与面板自己的盒子是交互面。
+ * 只有按钮与面板自己的盒子是交互面。面板展开期间浮条由父组件锁显（面板 DOM
+ * 在浮条 root 内，鼠标移进去不触发 onMouseLeave）。
  */
 import { useEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";
@@ -197,16 +199,16 @@ export function RcHud({
   }
 
   return (
-    <div className={styles.hudWrap} ref={wrapRef}>
+    <div className={styles.hudWrapCap} ref={wrapRef}>
       <button
         type="button"
-        className={styles.hudBtn}
+        className={styles.capBtn}
         title="连接详情：编码 / 分辨率 / 延迟 / 丢包 / 码率"
+        aria-label="连接详情"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <Info size={12} aria-hidden="true" />
-        连接详情
+        <Info size={13} aria-hidden="true" />
       </button>
       {open && (
         <div className={styles.hudPanel} aria-label="连接详情">

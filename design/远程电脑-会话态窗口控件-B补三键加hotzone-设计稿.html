@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 B · 补三键 + 全屏 hot zone 控制条 — 远程电脑会话态窗口控件</title>
+<style>
+  :root {
+    --accent: #4f7cff; --cyan: #06b6d4; --danger: #d64545; --orange: #e0803a; --green: #2f9e5f;
+    --card-bg: #fff; --page-bg: #f2f4f8; --border-color: #e3e6ea;
+    --text-primary: #1c1f23; --text-secondary: #5a6472; --text-muted: #6b7280;
+    --win-close-hover-bg: #e81123; --win-close-hover-fg: #fff;
+    --stage-dark: #0d0f12;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--page-bg); color: var(--text-primary); padding: 28px 32px 60px; font-size: 13px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--text-secondary); margin-bottom: 22px; line-height: 1.6; }
+  .sub b { color: var(--text-primary); }
+  h2 { font-size: 15px; margin: 30px 0 10px; display: flex; align-items: center; gap: 8px; }
+  h2 .tag { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+  .note { color: var(--text-secondary); font-size: 12px; line-height: 1.7; margin: 8px 0 14px; max-width: 900px; }
+  .note code, .callout code { background: rgba(79,124,255,.1); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+
+  .window { width: 1100px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border-color);
+    box-shadow: 0 12px 40px rgba(20,30,50,.14); background: var(--card-bg); margin-bottom: 8px; }
+
+  /* RcSessionTop .viewTop 真实样式（与 A 稿同源） */
+  .viewTop { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: var(--card-bg); border-bottom: 1px solid var(--border-color); font-size: 12px; }
+  .live { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .pill, .pillOn { font-size: 11px; padding: 3px 10px; border-radius: 20px; display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-muted); }
+  .pillOn { background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--green);
+    border-color: color-mix(in srgb, var(--green) 35%, var(--border-color)); }
+  .sp { flex: 1; }
+  .miniBtn { font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); cursor: pointer; }
+  .dangerBtn { font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-color));
+    background: var(--card-bg); color: var(--danger); }
+  .winControlsFlush { display: flex; align-self: stretch; margin: -8px -12px -8px 0; }
+  .winBtn { width: 46px; border: 0; background: transparent; display: grid; place-items: center;
+    color: var(--text-secondary); cursor: default; transition: background .12s, color .12s; }
+  .winBtn:hover { background: color-mix(in srgb, var(--text-primary) 11%, transparent); color: var(--text-primary); }
+  .winBtnClose:hover { background: var(--win-close-hover-bg); color: var(--win-close-hover-fg); }
+  .winBtn svg { width: 13px; height: 13px; }
+  .wrap { position: relative; width: 1100px; }
+  .diff-mark::after { content: "改动点"; position: absolute; top: -9px; right: 8px; font-size: 10px;
+    padding: 1px 6px; border-radius: 8px; background: var(--accent); color: #fff; z-index: 3; }
+
+  .stage { height: 400px; background: var(--stage-dark); position: relative; display: grid; place-items: center; }
+  .stage .fake-desktop { width: 86%; height: 82%; border-radius: 6px;
+    background: linear-gradient(135deg, #1b2430, #232f3e 55%, #1a2330); position: relative; overflow: hidden; }
+  .fake-desktop .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 8%; background: rgba(255,255,255,.06); }
+  .stage .hint { position: absolute; bottom: 10px; left: 14px; color: rgba(255,255,255,.35); font-size: 11px; }
+
+  /* RcViewTools 真实样式（A 同款，B 全屏态另有 hot zone 条） */
+  .viewTools { position: absolute; right: 10px; top: 10px; display: flex; gap: 4px; padding: 4px;
+    border-radius: 9px; background: rgba(9,17,28,.62); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,.1); z-index: 2; }
+  .viewTools button { font: inherit; font-size: 11px; padding: 4px 9px; border-radius: 6px; border: none;
+    background: transparent; color: #c8d0dc; cursor: pointer; }
+  .viewTools button:hover { background: rgba(255,255,255,.1); }
+  .viewTools .toolOn { background: rgba(107,147,255,.28) !important; color: #fff !important; }
+
+  /* ── ★ B 特有：全屏 hot zone 控制条 ──
+     顶边 hover 浮出（类 Parsec / VLC）：进顶边 8px 热区滑入，离开 2.5s 淡出。
+     深玻璃与 viewTools 同材质，但横贯画面上缘、分三段：窗口键 | 显示组 | 会话组 */
+  .hotbar { position: absolute; left: 0; right: 0; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+    background: linear-gradient(to bottom, rgba(7,12,20,.88), rgba(7,12,20,.55) 80%, transparent);
+    border-bottom: 1px solid rgba(255,255,255,.08); }
+  .hotbar .hotbtns { display: flex; }
+  .hotbar .winBtn { width: 40px; height: 30px; }
+  .hotbar .winBtn svg { width: 13px; height: 13px; }
+  .hotbar .hotbtns .winBtn { color: #c8d0dc; }
+  .hotbar .hotbtns .winBtn:hover { background: rgba(255,255,255,.12); color: #fff; }
+  .hotbar .hotbtns .winBtnClose:hover { background: var(--win-close-hover-bg) !important; color: #fff !important; }
+  .hotbar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.14); margin: 0 2px; }
+  .hotbar .toolbtn { font: inherit; font-size: 11px; padding: 4px 9px; border-radius: 6px; border: none;
+    background: transparent; color: #c8d0dc; cursor: pointer; }
+  .hotbar .toolbtn:hover { background: rgba(255,255,255,.12); color: #fff; }
+  .hotbar .toolOn { background: rgba(107,147,255,.28) !important; color: #fff !important; }
+  .hotbar .danger { color: #ff9a9a; }
+  .hotbar .danger:hover { background: rgba(214,69,69,.3) !important; color: #fff !important; }
+  .hotbar .title { font-size: 11px; color: rgba(255,255,255,.45); margin-left: 6px; }
+  .hotzone { position: absolute; left: 0; right: 0; top: 0; height: 8px; z-index: 6; }
+  .hotzone-tag { position: absolute; top: 54px; left: 50%; transform: translateX(-50%); font-size: 10px;
+    color: #9fc0ff; background: rgba(7,12,20,.75); border: 1px dashed rgba(79,124,255,.5);
+    padding: 2px 10px; border-radius: 6px; pointer-events: none; white-space: nowrap; z-index: 4; }
+  .callout { width: 1100px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 8px; font-size: 12px; line-height: 1.8; color: var(--text-secondary); }
+  .callout b { color: var(--text-primary); }
+
+  .fullscreen { width: 1100px; height: 500px; background: var(--stage-dark); border-radius: 10px; position: relative;
+    overflow: hidden; border: 1px solid #000; box-shadow: 0 12px 40px rgba(20,30,50,.14); margin-bottom: 8px; }
+  .fullscreen .fake-desktop { position: absolute; inset: 6% 8% 12%; border-radius: 6px;
+    background: linear-gradient(135deg, #1b2430, #232f3e 55%, #1a2330); }
+</style>
+</head>
+<body>
+
+<h1>方案 B · 补三键 + 全屏 hot zone 控制条</h1>
+<p class="sub">
+  在 A 的全部内容之上，<b>额外重做全屏态的控制体验</b>：顶边 hover 热区浮出横贯控制条（类 Parsec / VLC），
+  把窗口键 / 显示组 / 退出全屏 / 结束会话收进一条。A 的两处改动（顶条三键、浮条结束会话）本稿同样包含；
+  若选 B，浮条里的「结束会话」被 hot zone 条替代（避免两个入口）。
+</p>
+
+<h2>状态 1 · 非全屏会话态 <span class="tag">与方案 A 完全一致</span></h2>
+<div class="wrap diff-mark">
+<div class="window">
+  <div class="viewTop">
+    <span class="live"></span>
+    <span class="pillOn">● 连接中</span>
+    <span class="pill">HEVC · 14 Mbps</span>
+    <span class="sp"></span>
+    <button class="miniBtn">⋯ 更多</button>
+    <button class="dangerBtn">结束会话</button>
+    <div class="winControlsFlush">
+      <button class="winBtn" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <button class="winBtn" title="最大化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="6" width="12" height="12"/></svg></button>
+      <button class="winBtn winBtnClose" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+    </div>
+  </div>
+  <div class="stage">
+    <div class="fake-desktop"><div class="bar"></div></div>
+    <div class="viewTools">
+      <button class="toolOn">适应</button><button>1:1</button><button>填充</button>
+      <button>锁定指针</button><button>全屏</button>
+    </div>
+    <span class="hint">非全屏态与 A 稿逐像素相同：顶条三键（复用 RcWindowControls）+ RcViewTools 照旧</span>
+  </div>
+</div>
+</div>
+
+<h2>状态 2 · 全屏会话态 <span class="tag">★ B 特有：顶边 hot zone 控制条</span></h2>
+<p class="note">鼠标进入<b>顶边 8px 热区</b>（或悬停控制条本身）时滑入；离开 2.5s 后淡出——浮现节奏与 RcViewTools 现行参数
+（<code>REVEAL_BAND_PX=56</code> / <code>AUTO_HIDE_MS=2500</code>）对齐，但热区只在顶边（viewTools 是右上角，两者职责分开：hot zone 管窗口与全局动作，viewTools 管画面适配）。
+控制条三段：<b>窗口键组</b>（最小化/最大化·还原/关闭，40px 宽窄版，关闭键 hover 红底）｜<b>显示组</b>（适应/1:1/填充/指针锁/退出全屏）｜<b>会话组</b>（结束会话，danger）。</p>
+<div class="fullscreen">
+  <div class="fake-desktop"></div>
+  <div class="hotzone"></div>
+  <div class="hotzone-tag">▲ 顶边 8px 热区：hover 滑入 / 离开 2.5s 淡出</div>
+  <div class="hotbar">
+    <div class="hotbtns">
+      <button class="winBtn" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <button class="winBtn" title="向下还原"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8.5" y="4.5" width="11" height="11"/><path d="M4.5 8.5v7a4 4 0 0 0 4 4h7"/></svg></button>
+      <button class="winBtn winBtnClose" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+    </div>
+    <div class="sep"></div>
+    <button class="toolbtn toolOn">适应</button>
+    <button class="toolbtn">1:1</button>
+    <button class="toolbtn">填充</button>
+    <button class="toolbtn">解锁指针</button>
+    <button class="toolbtn">退出全屏</button>
+    <div class="sep"></div>
+    <button class="toolbtn danger">结束会话</button>
+    <span class="title">1920 × 1080 · HEVC · 14 Mbps · 32ms</span>
+  </div>
+  <span class="hint" style="color:rgba(255,255,255,.35); position:absolute; bottom:10px; left:14px; font-size:11px;">
+    全屏态：鼠标下移后控制条淡出，画面恢复全屏无遮挡</span>
+</div>
+<div class="callout">
+  <b>B 相对 A 的增量（~120 行，1 新组件 + CSS）：</b><br>
+  · 新组件 <code>RcFullscreenHotbar.tsx</code>：复用 <code>viewTools</code> 的浮现式状态机（mousemove 挂 stage / 淡出计时 / 隐藏态 pointer-events:none + visibility:hidden + tabIndex=-1 三重）。<br>
+  · 窗口键窄版（40px）+ 深玻璃材质（<code>rgba(7,12,20,.88)</code> 渐变，比 viewTools 的 .62 更实——横条下就是画面，需要更强的可读性）。<br>
+  · 「结束会话」「退出全屏」接与现状相同的回调（onRequestEnd / onToggleFullscreen），确认弹窗复用。<br>
+  · viewTools 在全屏态<b>不再渲染</b>（避免与 hotbar 双浮条）。
+</div>
+
+<h2>B 的风险与打点（相对 A 多出的）</h2>
+<div class="callout">
+  ① <b>指针锁边界</b>：锁定指针模式下鼠标被 Pointer Lock 捕获，<b>移不到顶边热区</b> → hotbar 唤不出。
+     对策（实施时定）：锁定态在 Esc 解锁提示旁加「解锁后可呼出控制条」提示；或锁定态改由 viewTools 保留退出全屏入口（A 的做法兜底）。<br>
+  ② <b>热区误触</b>：远程画面顶部 8px 属于「吃掉远程点击」的区域——viewTools 当年浮现式改造（2026-09-19 误触排查）正是为这个。
+     对策：热区仅在「非锁定指针」时激活；8px 极窄，误入成本天然低。<br>
+  ③ <b>与全屏 API 的层级</b>：hotbar 必须在 fakeScreen 子树内（Fullscreen API 只显示该子树）——实施时挂进 RcSessionStage 的 fakeScreen 容器，不是 body 级浮层。<br>
+  ④ <b>工作量</b>：A ≈ 40 行 2 文件；B ≈ 160 行 3 文件（+1 组件 + 测试）。B 含 A。
+</div>
+
+</body>
+</html>

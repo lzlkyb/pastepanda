@@ -29,12 +29,24 @@ use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Com::*;
 
+mod dup;
+mod mfenc;
+
 /// 采集尺寸：真机 `rc_capture_scope=virtual`（含副屏）是 2560 宽。
 /// 探针用 1920x1080 作代表值，并额外报一组 2560x1440 供换算。
 const FRAME_W: u32 = 1920;
 const FRAME_H: u32 = 1080;
 
 fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    // 子命令：--mfenc = MF QvS 旋钮矩阵；--dup = DXGI 采集计时
+    if args.iter().any(|a| a == "--mfenc") {
+        return mfenc::run(&args);
+    }
+    if args.iter().any(|a| a == "--dup") {
+        return dup::run(&args);
+    }
+
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         MFStartup(MF_VERSION, MFSTARTUP_FULL)?;

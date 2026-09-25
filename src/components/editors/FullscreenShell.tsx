@@ -20,7 +20,7 @@ import { Save, X, Maximize2, Minimize2 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { DEFAULT_THEME, THEMES, type ThemeKey } from "@/lib/theme";
+import { DEFAULT_THEME, isDarkTheme } from "@/lib/theme";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SkinScene } from "@/components/SkinScene";
 import { logger } from "@/lib/logger";
@@ -62,17 +62,15 @@ export function FullscreenShell({
   statusRight,
 }: FullscreenShellProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isDarkTheme, setIsDarkTheme] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const [showConfirmClose, setShowConfirmClose] = useState(false);
   // dirty 由调用方通过 prop 实时传入；直接用最新值即可（无需 ref 桥接）
   const isDirty = dirty;
 
-  // 主题判定：统一走 THEMES 查表（与 FullscreenInner 同口径），灭掉各类型硬编码 midnight||ocean-dark
+  // 主题判定：统一走 isDarkTheme（theme.ts 收口，与 FullscreenInner 同口径），灭掉各类型硬编码 midnight||ocean-dark
   useEffect(() => {
     const applyTheme = (theme: string) => {
-      const themeKey = (theme || DEFAULT_THEME) as ThemeKey;
-      const themeDef = THEMES.find((t) => t.key === themeKey);
-      setIsDarkTheme(themeDef ? themeDef.dark : false);
+      setDarkMode(isDarkTheme(theme || DEFAULT_THEME));
     };
     invoke<{ theme?: string }>("get_config")
       .then((cfg) => applyTheme(cfg.theme ?? DEFAULT_THEME))
@@ -137,7 +135,7 @@ export function FullscreenShell({
   }, [onSave, handleSave, guardedClose]);
 
   return (
-    <div className={styles.overlay} data-theme-mode={isDarkTheme ? "dark" : "light"}>
+    <div className={styles.overlay} data-theme-mode={darkMode ? "dark" : "light"}>
       <SkinScene />
       {/* Toolbar（deep 拖拽区：按住文件名/图标/空白处可移动窗口，按钮自动豁免） */}
       <div className={styles.toolbar} data-tauri-drag-region="deep">

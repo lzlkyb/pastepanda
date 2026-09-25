@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程电脑 · 码配对极简设计稿（一屏连接）</title>
+<!-- status: draft 2026-09-24 待确认 —— 依据 2026-09-23 行业调研结论 + 用户拍板「出设计稿」 -->
+<style>
+/* ============ 文档壳：与 v5 冰蓝稿同一套 token（照搬，不新造数值） ============ */
+:root{
+  --doc-bg:#F2F7FE; --doc-line:#E0E9F5;
+  --ink:#12233C; --ink2:#41536B; --ink3:#6B7C93;
+  --blue:#0A6CFF; --blue2:#2E8BFF; --blue-deep:#0553C9;
+  --ok:#159A4A; --ok-bg:#E2F7E9;
+  --warn:#E8890C; --warn-dot:#F59E0B;
+  --err:#D64545; --err-bg:#FDEBEB;
+  --purple:#7C5CF0; --purple-bg:#F0EBFE;
+  --panel-line:rgba(255,255,255,.95);
+  --inner:#F6FAFE; --inner-line:#E8F0FB;
+  --shadow-panel:0 12px 34px rgba(31,86,178,.10),0 2px 6px rgba(31,86,178,.05);
+  --shadow-btn:0 6px 16px rgba(10,108,255,.30);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(ellipse 900px 420px at 12% -8%, rgba(10,108,255,.08), transparent 55%),
+    linear-gradient(135deg,#F2F7FE 0%,#EAF2FC 50%,#E8F1FC 100%);
+  color:var(--ink);
+  font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  padding:26px 18px 70px;
+}
+.doc{max-width:1260px;margin:0 auto}
+h1{font-size:21px;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+h1 .badge{font-size:11px;font-weight:600;color:#0553C9;background:linear-gradient(135deg,#E0EEFE,#CBE3FC);
+  border:1px solid #A9D2F7;border-radius:999px;padding:2px 9px}
+.sub{color:var(--ink3);font-size:12.5px;margin:7px 0 3px;max-width:1000px}
+h2{font-size:15px;margin:38px 0 10px;display:flex;align-items:center;gap:9px}
+h2::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,var(--blue2),var(--blue))}
+h3{font-size:13px;margin:20px 0 6px;color:var(--ink2)}
+.note{font-size:12px;color:var(--ink3);margin:6px 0 10px;max-width:1000px}
+.note b{color:var(--ink2)}
+.note code,td code,li code{font:11.5px var(--mono);background:#fff;border:1px solid var(--doc-line);border-radius:4px;padding:0 4px;color:var(--ink2)}
+ul.notes{margin:0 0 8px 18px;font-size:12.5px;color:var(--ink2)}
+ul.notes li{margin:5px 0}
+ul.notes b{color:var(--ink)}
+table{border-collapse:collapse;font-size:12.5px;margin:8px 0 14px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:var(--shadow-panel)}
+th,td{border:1px solid var(--doc-line);padding:7px 12px;text-align:left;vertical-align:top}
+th{background:var(--inner);font-weight:600;color:var(--ink2);white-space:nowrap}
+td .old{color:var(--err);text-decoration:line-through}
+td .new{color:var(--ok);font-weight:600}
+.del{color:var(--err);font-weight:600}
+.keep{color:var(--ok);font-weight:600}
+.merged{color:var(--blue);font-weight:600}
+
+/* ============ 应用画布切片（与 v5 同一冰蓝底，弹窗浮在上面） ============ */
+.app{
+  position:relative;width:1200px;max-width:100%;
+  display:flex;flex-direction:column;overflow:hidden;
+  border:1px solid rgba(255,255,255,.9);border-radius:16px;
+  background:
+    radial-gradient(ellipse 620px 300px at 78% 6%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(ellipse 520px 260px at 18% 88%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(ellipse 700px 340px at 96% 78%, rgba(122,177,255,.28), transparent 62%),
+    radial-gradient(ellipse 560px 300px at 4% 22%, rgba(140,190,255,.22), transparent 60%),
+    linear-gradient(150deg,#EAF3FE 0%,#DFEBFA 46%,#D8E7F9 100%);
+  box-shadow:0 30px 70px rgba(15,42,90,.16),0 4px 14px rgba(15,23,42,.06);
+  margin:14px 0 8px;
+}
+.app.tall{min-height:640px}
+.app.short{min-height:520px}
+
+/* 侧栏切片：只画「改动发生的地方」，其余与 v5 一致 */
+.ctx-row{display:flex;gap:14px;padding:16px}
+.ctx-side{width:280px;min-width:280px;display:flex;flex-direction:column;gap:10px}
+.panel{
+  /* 毛玻璃只加在静态大面板（规则 8.3/8.4，与 v5 同一约定） */
+  background:rgba(255,255,255,.55);
+  -webkit-backdrop-filter:blur(20px) saturate(1.25);
+  backdrop-filter:blur(20px) saturate(1.25);
+  border:1px solid var(--panel-line);border-radius:14px;
+  box-shadow:var(--shadow-panel);
+}
+.side-pad{padding:12px}
+.side-h{font-size:12px;font-weight:700;color:var(--ink2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.side-h .tagNEW{font-size:10px;font-weight:600;color:var(--purple);background:var(--purple-bg);border-radius:999px;padding:1px 7px}
+.assist-btn{
+  display:flex;align-items:center;gap:9px;width:100%;min-height:38px;
+  padding:0 12px;margin:5px 0;border:1px solid var(--panel-line);border-radius:10px;
+  background:rgba(255,255,255,.72);cursor:pointer;font:inherit;font-size:12.5px;
+  font-weight:600;color:var(--ink2);white-space:nowrap;
+}
+.assist-btn:hover{background:#fff}
+.assist-btn .ico{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;flex:0 0 auto}
+.assist-btn .ico.get{background:linear-gradient(140deg,#59A4FF,#0A6CFF);color:#fff}
+.assist-btn .ico.give{background:linear-gradient(140deg,#9C7BFF,#7C5CF0);color:#fff}
+.assist-btn small{margin-left:auto;font-weight:400;color:var(--ink3);font-size:11px}
+.strike{opacity:.45;text-decoration:line-through}
+
+/* ============ 弹窗（真实尺寸：480px 宽，dialog-box 同款） ============ */
+.backdrop{
+  position:absolute;inset:0;display:grid;place-items:center;
+  background:rgba(18,35,60,.28);
+  -webkit-backdrop-filter:blur(2px);
+  backdrop-filter:blur(2px);
+}
+.dlg{
+  width:min(560px,94%);background:#fff;border-radius:14px;
+  box-shadow:0 24px 64px rgba(9,26,54,.34);
+  border:1px solid rgba(255,255,255,.9);overflow:hidden;
+}
+.dlg.narrow{width:min(480px,94%)}
+.dlg-head{display:flex;align-items:center;padding:14px 16px 0}
+.dlg-head b{font-size:14.5px;flex:1}
+.dlg-head .x{width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--ink3);display:grid;place-items:center;cursor:pointer;font-size:14px}
+.dlg-head .x:hover{background:var(--inner)}
+.dlg-body{padding:12px 16px 16px}
+.dlg-foot{padding:10px 16px 14px;font-size:11.5px;color:var(--ink3);border-top:1px solid var(--doc-line);margin-top:2px}
+
+/* 弹窗内小元件：半透明白底叠在白壳里不需要 blur（重复元素，规则 8.3） */
+.field{border:1px solid var(--doc-line);border-radius:10px;background:var(--inner);padding:10px 12px}
+.field-label{font-size:11.5px;font-weight:700;color:var(--ink2);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.code-big{
+  font:600 22px/1.35 var(--mono);letter-spacing:.12em;color:var(--ink);
+  background:#fff;border:1px solid var(--doc-line);border-radius:8px;
+  padding:8px 12px;text-align:center;white-space:nowrap;
+}
+.code-full{
+  margin-top:6px;font:11.5px/1.5 var(--mono);color:var(--ink3);
+  background:#fff;border:1px dashed var(--doc-line);border-radius:8px;
+  padding:6px 10px;word-break:break-all;
+}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:32px;padding:0 14px;border:0;border-radius:9px;
+  font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;
+}
+.btn.pri{background:linear-gradient(135deg,#3D93FF,#0A6CFF 70%);color:#fff;box-shadow:var(--shadow-btn)}
+.btn.pri:hover{background:linear-gradient(135deg,#2E86F5,#0660E6 70%)}
+.btn.ghost{background:#fff;border:1px solid var(--doc-line);color:var(--ink2)}
+.btn.ghost:hover{background:var(--inner)}
+.btn.sm{min-height:26px;padding:0 10px;font-size:11.5px}
+.btn-row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.hairline{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--ink3);font-size:11.5px}
+.hairline::before,.hairline::after{content:"";flex:1;height:1px;background:var(--doc-line)}
+
+/* 附近设备行（发现态） */
+.near-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:#fff;border:1px solid var(--doc-line);margin-bottom:6px}
+.near-av{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#fff;font-size:12.5px;font-weight:700;flex:0 0 auto;background:linear-gradient(140deg,#59A4FF,#0A6CFF)}
+.near-item .nm{font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap}
+.near-item .ms{font-size:11px;color:var(--ink3);white-space:nowrap}
+
+/* 6 位数字核对屏（沿用 Lan.module.css .lanPairPin 的 30px/9px 字距/700） */
+.pin-box{text-align:center;padding:8px 0 4px}
+.pin-num{font:700 30px/1.3 var(--mono);letter-spacing:9px;color:var(--ink);margin:10px 0 4px;text-indent:9px}
+
+/* 状态行 */
+.wait{display:flex;align-items:center;gap:10px;padding:12px;border-radius:10px;background:var(--inner);border:1px solid var(--doc-line);font-size:12.5px;color:var(--ink2)}
+.spinner{width:16px;height:16px;border-radius:50%;border:2px solid #C7DBF5;border-top-color:var(--blue);animation:spin .8s linear infinite;flex:0 0 auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ok-box{text-align:center;padding:14px 0 6px}
+.ok-box .m{font-size:30px;line-height:1}
+.ok-box .t{font-size:14.5px;font-weight:700;margin-top:8px}
+.ok-box .s{font-size:12px;color:var(--ink3);margin-top:4px}
+
+/* 更多方式折叠 */
+.more{border:1px solid var(--doc-line);border-radius:10px;background:#fff;overflow:hidden}
+.more summary{padding:9px 12px;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.more summary::after{content:"⌄";margin-left:auto;color:var(--ink3)}
+.more[open] summary::after{content:"⌃"}
+.more .inner{padding:0 12px 12px;font-size:12px;color:var(--ink2)}
+
+/* 前后对比示意 */
+.cmp{display:flex;gap:14px;align-items:stretch;margin:10px 0 6px;flex-wrap:wrap}
+.cmp-col{flex:1 1 340px;min-width:300px;border-radius:12px;padding:12px 14px}
+.cmp-col.before{background:#FDEEEE55;border:1px solid #F3C9C9}
+.cmp-col.after{background:#E5F6EC66;border:1px solid #BFE5CB}
+.cmp-col h4{font-size:12.5px;margin-bottom:8px}
+.cmp-flow{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.cmp-flow .n{background:#fff;border:1px solid var(--doc-line);border-radius:7px;padding:4px 9px;white-space:nowrap}
+.cmp-flow .arr{align-self:flex-start;color:var(--ink3);padding-left:10px;font-size:11px}
+.arrow-x{color:var(--err)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>远程电脑 · 码配对极简设计稿 <span class="badge">draft · 待确认 · 2026-09-24</span></h1>
+<p class="sub">
+配套 <code>远程电脑-工作台设计稿-v5-冰蓝视觉版.html</code>（同一视觉语言）。这份只管一件事：
+<b>把四个配对入口收成一个对话框，把「配对」这个词从用户面前删掉</b>——连上即记住，记住即设备。
+后端与凭证类型<b>零改动</b>（邀请码 / 一次性协助码 / 无人值守接入码仍是三套加密格式），收口全在前端入口与话术。
+</p>
+
+<!-- ═══════════════ §0 问题与方案 ═══════════════ -->
+<h2>0. 现状为什么乱 · 一图说清</h2>
+<div class="cmp">
+  <div class="cmp-col before">
+    <h4>现在：4 个入口 × 3 套术语 × 两段式</h4>
+    <div class="cmp-flow">
+      <div class="n"><span class="arrow-x">①</span> 添加设备 →「远程配对」：先选模式（局域网/邀请码），再 4 屏走完，<b>完成后还要再点一次连接</b></div>
+      <div class="n"><span class="arrow-x">②</span> 让别人帮我 → 出「协助码」</div>
+      <div class="n"><span class="arrow-x">③</span> 帮别人连一次 → 粘「协助码」</div>
+      <div class="n"><span class="arrow-x">④</span> 输入接入码 → 粘「无人值守接入码」（第三种码）</div>
+      <div class="n">用户要分清：远程配对 ≠ 同步配对、邀请码 ≠ 协助码 ≠ 接入码</div>
+    </div>
+  </div>
+  <div class="cmp-col after">
+    <h4>改后：1 个对话框 · 1 个词 · 一步到位</h4>
+    <div class="cmp-flow">
+      <div class="n"><b>「连接到远程电脑」</b>：左边亮<b>你的码</b>（给对方），右边一个输入框（粘对方的码）→ 点<b>连接</b></div>
+      <div class="n">局域网里发现对方 → 直接出现在对话框顶部，点一下就连（预览即默认，规则 18）</div>
+      <div class="n"><b>连接成功 = 设备已记住</b>，下次在列表里直接点，没有「配对完成」这一屏</div>
+      <div class="n">侧栏三键 → 两键：<b>获得帮助</b>（亮我的码）/ <b>去帮别人</b>（输对方的码）</div>
+      <div class="n">三种码在输入框里<b>自动识别</b>，用户不需要知道它们存在</div>
+    </div>
+  </div>
+</div>
+<table>
+  <tr><th>旧词（删）</th><th>新词（用）</th><th>说明</th></tr>
+  <tr><td><span class="old">配对 / 远程配对 / 发送配对请求</span></td><td><span class="new">连接</span></td><td>连接成功自动记忆设备。安全语义不变：对方那台<b>仍然要点头</b>才连得上</td></tr>
+  <tr><td><span class="old">邀请码 / 协助码 / 接入码</span></td><td><span class="new">你的码 / 对方的码</span></td><td>输入框自动按前缀识别种类（收口为 <code>lib/rcCode.ts</code> 的 <code>detectCodeKind()</code>，规则 11.1），识别后按各自话术给反馈</td></tr>
+  <tr><td><span class="old">已与「XX」配对</span></td><td><span class="new">已连接到「XX」· 已记住这台设备</span></td><td>成功屏并入连接流程，不再单独占一屏</td></tr>
+</table>
+
+<!-- ═══════════════ §1 主对话框 ═══════════════ -->
+<h2>1. 主屏：「连接到远程电脑」一屏对话框</h2>
+<p class="note">替代 <code>RcPairDialog</code> + <code>RcUnoDialog(join)</code> + <code>RcAdhocDialog</code> 的三个壳。默认态：局域网有发现 → 发现列表置顶；没有发现 → 输入区上浮为主。左右两栏在窄窗口下堆叠，<b>你的码</b>永远在上面（我的设备优先）。</p>
+
+<div class="app tall">
+  <div class="backdrop">
+    <div class="dlg">
+      <div class="dlg-head"><b>连接到远程电脑</b><button class="x">✕</button></div>
+      <div class="dlg-body">
+
+        <div class="near-item">
+          <div class="near-av">办</div>
+          <div>
+            <div class="nm">办公室台式机</div>
+            <div class="ms">同一局域网 · 刚刚发现</div>
+          </div>
+          <button class="btn pri sm" style="margin-left:auto">连接</button>
+        </div>
+        <div class="near-item">
+          <div class="near-av" style="background:linear-gradient(140deg,#9C7BFF,#7C5CF0)">家</div>
+          <div>
+            <div class="nm">家里的笔记本</div>
+            <div class="ms">同一局域网 · 3 秒前</div>
+          </div>
+          <button class="btn ghost sm" style="margin-left:auto">连接</button>
+        </div>
+
+        <div class="hairline">或 · 用码连接</div>
+
+        <div style="display:flex;gap:12px">
+          <div class="field" style="flex:1;min-width:0">
+            <div class="field-label">你的码 <span style="font-weight:400;color:var(--ink3)">（对方输这串就能连你）</span></div>
+            <div class="code-big">7K2M-9QX4</div>
+            <div class="code-full">PP-7K2M9QX4-Kf3d…（完整串，跨网络时用这个）</div>
+            <div class="btn-row" style="justify-content:flex-start;margin-top:8px">
+              <button class="btn ghost sm">复制完整串</button>
+            </div>
+          </div>
+          <div class="field" style="flex:1;min-width:0">
+            <div class="field-label">对方的码 <span style="font-weight:400;color:var(--ink3)">（粘贴或输入，自动识别）</span></div>
+            <textarea class="field" style="width:100%;height:64px;background:#fff;resize:none;font:12px/1.5 var(--mono);color:var(--ink)">粘贴在这里…</textarea>
+            <div class="btn-row" style="justify-content:flex-start;margin-top:8px">
+              <button class="btn pri">连接</button>
+              <span style="font-size:11px;color:var(--ink3);align-self:center">已自动读取剪贴板里的码 · <b style="color:var(--blue)">填入</b></span>
+            </div>
+          </div>
+        </div>
+
+        <details class="more" style="margin-top:12px">
+          <summary>更多连接方式</summary>
+          <div class="inner">
+            无人值守（固定密码 / 长期接入码）——给自己常开的机器用 ·
+            <b style="color:var(--blue)">设置 ›</b>
+          </div>
+        </details>
+
+      </div>
+      <div class="dlg-foot">
+        对方机器上会弹出确认，<b>他点头你才连得上</b>。局域网内的连接会自动加密，两台各核一次 6 位数字即防中间人。
+      </div>
+    </div>
+  </div>
+</div>
+
+<ul class="notes">
+  <li><b>「你的码」点开始终自动生成</b>（沿用 <code>RcAdhocDialog</code> 的「点开即出码」实测结论），不需要按任何钮。默认展示 8 位短码给电话念，下面灰字是完整串（跨网必须整串，沿用 <code>RcUnoDialog</code> 结论「裸码只在同网可用」）。</li>
+  <li>剪贴板预读 + <b>填入</b>提示照搬 <code>RcPairDialog</code> 现有行为（<code>looksLikeRcInvite()</code> ≥40 字符判定），只是文案不再叫「邀请码」。</li>
+  <li>发现列表就是 <code>RcNearbyList</code> 的行（名字 + 「刚刚听到/N 秒前」），脚注（名字可自报、以指纹为准、20 秒移除）挪到「更多」下或确认屏里，主屏不留长文。</li>
+</ul>
+
+<!-- ═══════════════ §2 连接进行时 ═══════════════ -->
+<h2>2. 点「连接」之后：三种进行中状态（同一屏内推进，不弹新窗）</h2>
+
+<div class="app short">
+  <div class="backdrop">
+    <div class="dlg narrow">
+      <div class="dlg-head"><b>连接到远程电脑</b><button class="x">✕</button></div>
+      <div class="dlg-body">
+
+        <h3 style="margin-top:0">状态 A · 等对方点头（最常用）</h3>
+        <div class="wait">
+          <div class="spinner"></div>
+          <div>已向「办公室台式机」发出请求，<b>等他在那台机器上点「同意」</b>。<br>
+          <span style="color:var(--ink3);font-size:11.5px">对方 60 秒内没响应会自动停下，可重试。</span></div>
+        </div>
+        <div class="btn-row"><button class="btn ghost">取消</button></div>
+
+        <h3>状态 B · 局域网自动加密信道：6 位数字核对（安全硬屏，原样保留）</h3>
+        <div class="pin-box">
+          <div style="font-size:12.5px;color:var(--ink2)">请核对<b>另一台设备</b>上的数字</div>
+          <div class="pin-num">482 017</div>
+          <div style="font-size:11.5px;color:var(--ink3)">两台各自确认一次（谁先都行）· 不一样就点取消——那说明有人在中间插足</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn ghost" style="outline:2px solid #C7DBF5">不一样，取消</button>
+          <button class="btn pri">两边一样，确认</button>
+        </div>
+
+        <h3>状态 C · 码不认识 / 是自己的码</h3>
+        <div class="wait" style="background:var(--err-bg);border-color:#F3C9C9;color:var(--err)">
+          <div>✕</div>
+          <div>这是你自己刚才亮出来的码——把它<b>发给对方</b>，让对方在你这边输入。</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<ul class="notes">
+  <li>🔴 <b>状态 B 是反中间人唯一靠人把关的环节，一条不动</b>：数字够大够疏（30px / 字距 9px / 700，沿用 <code>Lan.module.css .lanPairPin</code>）、<code>autoFocus</code> 落「取消」（回车是拒绝不是放行）、 negotiating 期间显示「正在建立加密信道…」。只把标题里「与 XX 配对」改成「与 XX 建立安全连接」。X25519 那句技术话术从主文案降为灰字（用户不需要知道算法名）。</li>
+  <li>状态 A 是被协助方<b>收到</b>请求时的对称屏在对方机器上长这样：「办公室的笔记本 想连接你这台机器，帮你操作。【同意】【拒绝】」——沿用现有确认语义，文案去掉「配对请求」。拒绝时顺带记一次的逻辑不变。</li>
+  <li>裸码（8 位、无 node_id）且本机附近列表里<b>听不到</b>对方 → 明确报「对方不在同一局域网，请让他把<b>完整串</b>发给你」，与 <code>RcUnoDialog join</code> 现有话术一致。</li>
+</ul>
+
+<!-- ═══════════════ §3 成功即进会话 ═══════════════ -->
+<h2>3. 成功：没有「配对完成」屏了——直接进会话，顺手告知「已记住」</h2>
+
+<div class="app short">
+  <div class="backdrop">
+    <div class="dlg narrow">
+      <div class="dlg-head"><b>连接到远程电脑</b><button class="x">✕</button></div>
+      <div class="dlg-body">
+        <div class="ok-box">
+          <div class="m">✅</div>
+          <div class="t">已连接到「办公室台式机」</div>
+          <div class="s">这台设备已记住 —— 以后在列表里点一下就能再连。<br>每次对方需要你时，仍会先请你点头。</div>
+        </div>
+        <div class="btn-row" style="justify-content:center">
+          <button class="btn ghost">关闭</button>
+          <button class="btn pri">打开远程画面</button>
+        </div>
+        <div style="margin-top:12px" class="hairline">如果这是「去帮别人」的一次性协助</div>
+        <div class="wait" style="font-size:12px">
+          <div style="color:var(--ok)">✓</div>
+          <div>已连上「小李的电脑」（只看模式）。<b>用完即忘</b>，这次结束后不会留在你的列表里。<br>
+          <span style="font-size:11.5px;color:var(--ink3)">会话里可随时点「升级为可控」，对方再点头一次。</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ul class="notes">
+  <li>发起方成功屏 = 现在 <code>RcPairDone</code> 的「立刻发起远程」<b>合并进连接流程本身</b>（既然两段式已被删掉，成功即会话，「关闭/打开画面」二选一给保守用户）。</li>
+  <li>「已记住 + 每次仍需要你点头」这句必须留——它替代的是旧完成屏「防止用户以为配对=永久放行」的职责（<code>RcPairDone</code> 注释原文）。被连接<b>方</b>没有这一屏（他已经在自己的机器上点了同意，直接进被控态 + 横幅，与现行一致）。</li>
+  <li>一次性协助（ad-hoc）走「用完即忘」的既有语义（<code>armAdhoc</code>/<code>markAdhocPeer</code>），成功文案明确区分：<b>记住的写「已记住」，临时的写「用完即忘」</b>，用户第一次连就懂两种模式差别。</li>
+</ul>
+
+<!-- ═══════════════ §4 侧栏 ═══════════════ -->
+<h2>4. 侧栏改造：三键 → 两键 + 一个主钮</h2>
+
+<div class="app" style="min-height:0">
+  <div class="ctx-row">
+    <div class="ctx-side panel side-pad">
+      <div class="side-h">现在（v5 稿原样，三键并列）</div>
+      <button class="assist-btn strike">让别人帮我</button>
+      <button class="assist-btn strike">帮别人连一次</button>
+      <button class="assist-btn strike">输入接入码</button>
+      <div style="font-size:11px;color:var(--ink3);margin-top:6px">＋ 顶部「添加设备」还藏着第四个入口（远程配对）</div>
+    </div>
+    <div class="ctx-side panel side-pad">
+      <div class="side-h">改后 <span class="tagNEW">新方案</span></div>
+      <button class="btn pri" style="width:100%;margin-bottom:8px">＋ 连接到远程电脑</button>
+      <button class="assist-btn"><span class="ico get">？</span>获得帮助<small>亮我的码</small></button>
+      <button class="assist-btn"><span class="ico give">→</span>去帮别人<small>输对方的码</small></button>
+      <div style="font-size:11px;color:var(--ink3);margin-top:6px">两键就是主对话框的「预置方向」：获得帮助 = 打开时目光聚焦<b>你的码</b>；去帮别人 = 聚焦<b>输入框</b>。同一个组件，不是两套流程。</div>
+    </div>
+    <div class="ctx-side" style="flex:1;min-width:0;justify-content:center">
+      <div style="font-size:12.5px;color:var(--ink2);line-height:1.9">
+        <b>为什么收得起：</b><br>
+        · 三键的差别只有「看码」vs「输码」——一屏对话框左右两栏天然覆盖；<br>
+        · 「输入接入码」（无人值守）频次低且面向长期机器 → 收进「更多连接方式」与设置页，主路不占位（规则 17.2 高频一步到位、低频进次级）；<br>
+        · 「添加设备」钮复用为唯一主入口，<code>RcPairDialog/RcUnoDialog/RcAdhocDialog</code> 三个壳合一个 <code>RcConnectDialog</code>。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ §5 黑话测试 & 红线 ═══════════════ -->
+<h2>5. 验收：黑话测试 + 安全红线清单</h2>
+<ul class="notes">
+  <li><b>黑话测试</b>（规则 19）：拿 §1 主屏给没用过的人看，要求他能不解释地说出——「左边这串是给别人输的」「右边框里粘别人给我的」「点绿色的『连接』就开始」「上面那两台是旁边办公室的电脑，点它直接连」。任何一块说不出口 = 不合格，回到 §1 改。</li>
+  <li>🔴 <b>不许动的安全语义</b>（极简只砍流程摩擦，不砍把关）：
+    ① 6 位数字逐位比对 + 两端各点一次 + 取消预选（<code>RcPairPin</code> 三条硬约束原文照搬）；
+    ② 被连接方每次确认（无人值守除外——那是他自己在设置里预先授过的权）；
+    ③ 一次性协助用完即忘，不入列表；
+    ④ 跨网必须完整串（裸码不携带 node_id，8 位码定位不了机器——<code>RcUnoDialog</code> 文件头结论）；
+    ⑤ 能力档在<b>出码端</b>定，发起端总申请最大档、由被控端压档回传（现行语义不变）。</li>
+  <li>⚠️ 名字不可信（自报）这条脚注从主屏挪进 PIN 核对屏——反正那里才是唯一靠人把关的地方，脚注放在它该在的环节。</li>
+</ul>
+
+<!-- ═══════════════ §6 实施备注 ═══════════════ -->
+<h2>6. 实施备注（对照真实代码 · 照搬 / 新提案 / 改口径）</h2>
+<table>
+  <tr><th>稿中元素</th><th>类别</th><th>对应现状</th></tr>
+  <tr><td>一屏双栏「你的码 | 对方的码」</td><td class="merged">新提案</td><td>新组件 <code>RcConnectDialog</code>（settings/ 下）；「你的码」数据源沿用 <code>rcPair.createInvite</code> 一次性协助码通道（点开即出码是 <code>RcAdhocDialog</code> 已验证行为）</td></tr>
+  <tr><td>码种类自动识别</td><td class="merged">新提案</td><td>收口 <code>lib/rcCode.ts · detectCodeKind()</code>：空→发现列表；<code>PPU-</code>→无人值守；≥40 字符 [A-Za-z0-9_-]（<code>looksLikeRcInvite</code>）→长期/一次性由后端回执定；8 位裸码→局域网短码。<b>必须配守卫单测</b>（规则 11.1）</td></tr>
+  <tr><td>发现列表行、6 位核对屏、等待确认、错误态文案</td><td class="keep">照搬</td><td><code>RcNearbyList</code> 行 / <code>RcPairPin</code>（含 <code>lanPairPin</code> 尺寸）/ <code>RcPairDialog</code> 等待语义 / <code>RcPairPastePane</code> 自码报错原文</td></tr>
+  <tr><td>「配对」一词全删、成功即记住</td><td style="color:var(--warn);font-weight:600">改口径</td><td>后端 <code>pair</code> 命令与授权表<b>不改</b>；前端把「配对成功→再连接」两段并一段（连接成功后端已落授权记录，现<em>在</em>就是这样，只是 UI 让用户白点一次）。<code>RcPairDone</code> 组件退役</td></tr>
+  <tr><td>侧栏两键 = 同一对话框的两个聚焦态</td><td class="merged">新提案</td><td><code>RcAdhocDialog</code> 退役；<code>RcUnoDialog</code> 只剩 generate/pass 两面（join 面并入主对话框），入口移设置页 +「更多连接方式」</td></tr>
+  <tr><td>剪贴板预读「填入」</td><td class="keep">照搬</td><td><code>RcPairDialog</code> 现有 pre-read，文案改「已自动读取剪贴板里的码」</td></tr>
+  <tr><td>组件体量</td><td class="keep">约束</td><td>对话框壳 ≤300 行（规则 7）：发现列表抽 <code>RcConnectNearby.tsx</code>、双栏抽 <code>RcConnectCodePane.tsx</code>，状态机留 <code>useRcConnect.ts</code></td></tr>
+</table>
+<p class="note"><b>窗口分工不受影响</b>：工具箱（有会话上下文）与设置页（无）继续按 <code>RcPairDialog</code> 现有的 <code>onStartRemote?</code> 可选参数方式区分「打开远程画面」钮是否渲染。</p>
+
+</div>
+</body>
+</html>

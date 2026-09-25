@@ -3,19 +3,19 @@
  *
  * 抽的原因：v4 布局给 RcWorkbench 加了导航态 + 顶栏 + 三页分派，原文件 296 行
  * 已贴红线（.tsx ≤ 300）。四态判据本身在 `lib/rcWorkbench`（纯函数），这里只做
- * 「按态渲染」；被控时补刷 trusted 的副作用也搬进来——它与 RcInboundView 同生共死。
+ * 「按态渲染」。2026-09-24 B 方案：被控视图降为轻量说明（RcInboundView 删除），
+ * 常驻信息面收进主窗胶囊横幅（RcControlBanner）。
  *
  * 2026-09-21（A 方案稿对账）：去掉空闲态的装饰层——欢迎插画 / 极光 / 扫光 /
  * 悬浮，等待态只留「一句话 + 小贴士」。那层装饰带 4 条常驻 infinite 动画，
  * 而本项目有 4 个窗口各挂一份 DOM（AGENTS 规则 8.1 / 8.2），稿债与性能账同源。
  */
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Lightbulb } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcLaunch } from "@/hooks/useRcLaunch";
-import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import { rcErrorRetryable } from "@/lib/rcDeny";
@@ -23,7 +23,6 @@ import { RcSessionView } from "./RcSessionView";
 import { RcPendingWait } from "./RcPendingWait";
 import { RcErrorPanel } from "./RcErrorPanel";
 import { RcEmptyGuide } from "./RcEmptyGuide";
-import { RcInboundView } from "./RcInboundView";
 import { workbenchMainMode } from "@/lib/rcWorkbench";
 import styles from "./RemoteComputer.module.css";
 
@@ -49,7 +48,6 @@ export function RcStage({
   onUnoJoin: () => void;
 }) {
   const { toast } = useToast();
-  const enableTrust = useRcTrustEnable(rc, toast);
 
   const session = rc.status?.session ?? null;
   const mode = workbenchMainMode(rc.status);
@@ -67,18 +65,17 @@ export function RcStage({
     );
   }, [session, rc.targets]);
 
-  // 被控视图要显示「这台设备是否已免确认」，而 trusted 在 rc_devices 行上、`rc_status`
-  // 不带它。工作台的 rcStore 是**另一个实例**（主窗 RcOverlay 那次 refresh 到不了这里），
-  // 所以被控开始时要自己补一次；拿不到按「未开」处理（点了只是重复置真，无害）。
-  const refreshTargets = rc.refreshTargets;
-  const inboundPeer = inbound ? session?.peer : null;
-  useEffect(() => {
-    if (inbound) void refreshTargets();
-  }, [inbound, inboundPeer, refreshTargets]);
-
-  const peerTarget = rc.targets.find((t) => t.node_id === session?.peer);
-  const peerTrusted = peerTarget?.trusted ?? false;
-  const peerDenied = peerTarget?.denied ?? false;
+  // B 方案（2026-09-24）：被控视图从「中央大卡片」降为轻量说明——常驻信息面
+  // 已收进主窗口顶部的胶囊横幅（RcControlBanner），工作台不再重复摆同一份事实。
+  // trusted 补刷副作用随 RcInboundView 一起退役（RcOverlay 那份仍在跑）。
+  const inboundName = useMemo(() => {
+    if (!session) return "";
+    return (
+      rcDisplayName(session) ||
+      rcDisplayName(rc.targets.find((t) => t.node_id === session.peer) ?? {}) ||
+      fingerprintOf(session.peer)
+    );
+  }, [session, rc.targets]);
 
   // B2：重试按钮只给「再点一次可能成功」的错误——判据收口在 lib/rcDeny.rcErrorRetryable
   // （RcWorkbench 设备页错误槽共用同一份，U3）。
@@ -100,32 +97,15 @@ export function RcStage({
         />
       )}
       {inbound && session ? (
-        <RcInboundView
-          session={session}
-          busy={rc.busy}
-          trusted={peerTrusted}
-          onTrust={
-            peerDenied
-              ? undefined
-              : () =>
-                  void enableTrust(
-                    session.peer,
-                    rcDisplayName(session, fingerprintOf(session.peer)),
-                  )
-          }
-          quality={rc.status?.quality ?? "auto"}
-          activeQuality={rc.status?.active_quality}
-          captureScope={rc.status?.capture_scope ?? "virtual"}
-          scopeNotice={rc.scopeNotice}
-          onDismissScopeNotice={rc.clearScopeNotice}
-          onEnd={() => {
-            void rc.end().then((ok) => {
-              if (ok) toast("已结束远程会话", "success");
-              // 失败要说话：被控端点「结束」没反应 = 用户眼里的「关不掉」
-              else toast("结束失败，请重试；对方画面可能仍在推送", "error");
-            });
-          }}
-        />
+        <div className={styles.wbHero}>
+          <div className={styles.heroTitle}>
+            正在被「{inboundName}」远程{session.capability === "control" ? "控制" : "查看"}
+          </div>
+          <div className={styles.heroLead}>
+            本机画面正在推送给对方。会话详情（指纹 / 画质 / 免确认）与结束入口在主窗口顶部的
+            被控横幅里，随时可停。
+          </div>
+        </div>
       ) : mode === "outbound" && session ? (
         <RcSessionView
           session={session}

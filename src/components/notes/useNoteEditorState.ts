@@ -14,12 +14,13 @@
  * 🔴 红线：无 AI。标题与正文只进本机 SQLite。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import { copyToClipboard } from "@/lib/utils";
-import { THEMES, DEFAULT_THEME } from "@/lib/theme";
-import { noteCreate, noteUpdate, noteSetFolder, noteMarkdown, fetchNoteHistoryIds } from "@/lib/api";
+import { isDarkTheme } from "@/lib/theme";
+import { noteCreate, noteUpdate, noteSetFolder, noteMarkdown, fetchNoteHistoryIds, noteGet } from "@/lib/api";
 
 /**
  * 换笔记时才拦的阈值：正文改动少于这么多字就**不拦**，直接丢。
@@ -98,7 +99,7 @@ export function useNoteEditorState({
   const [baseContent, setBaseContent] = useState(target.content);
 
   const isDark = useMemo(
-    () => THEMES.find((t) => t.key === (themeKey || DEFAULT_THEME))?.dark ?? false,
+    () => isDarkTheme(themeKey),
     [themeKey],
   );
 
@@ -235,6 +236,32 @@ export function useNoteEditorState({
     setBaseTitle(nextTitle);
     setBaseContent(nextContent);
   }, []);
+
+  /**
+   * 岛勾选冲突（实施方案 §6 风险 7）：灵动岛勾选走后端 `note_update`，
+   * 而编辑器里可能正开着同一篇。事件只在**这一篇**正被编辑时才反应：
+   * - 本地干净 → 库里的新内容同步进来（复用「恢复版本」的 `applyPersisted`）；
+   * - 本地有未保存改动 → **不能**静默覆盖编辑器（会丢用户敲的字），
+   *   提示用户自己决定先存还是先重载。静默是这两种里更坏的一个（规则 #15.3）。
+   */
+  useEffect(() => {
+    if (!target.noteId) return;
+    let alive = true;
+    const off = listen<{ noteId: string }>("todo-island-toggled", (e) => {
+      if (!alive || e.payload?.noteId !== target.noteId) return;
+      if (isDirty) {
+        toast("这篇笔记刚在灵动岛被勾选——本地还有未保存改动，直接保存会覆盖勾选", "warning", 6000);
+      } else {
+        void noteGet(target.noteId as string).then((n) => {
+          if (n && alive) applyPersisted(n.title, n.content);
+        });
+      }
+    });
+    return () => {
+      alive = false;
+      void off.then((f) => f());
+    };
+  }, [target.noteId, isDirty, applyPersisted, toast]);
 
   return {
     title,

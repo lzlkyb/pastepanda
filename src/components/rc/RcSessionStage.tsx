@@ -1,17 +1,18 @@
 /**
- * RcSessionStage — 会话画面区（viewShell）：顶条 + fakeScreen（视图工具 / 画布 /
- * 等待占位 / 只看水印 / 连接详情 / 全屏提示）。
+ * RcSessionStage — 会话画面区（viewShell）：纯壳顶条 + fakeScreen（画布 /
+ * 等待占位 / 只看水印 / 全屏提示）。
  *
  * 从 RcSessionView 拆出（2026-09-21，`.tsx ≤ 300` 红线）。边界刻意划在「只消费、
  * 不改编排」：`input` / `link` / `frames` 三个 hook 仍在 RcSessionView 里调用，
  * 这里整组接收它们的返回值，而不是把 30 个字段逐个摊成 props（那只是把解构搬个家）。
  *
- * v4 对稿（第三轮，B 窗）：根是 viewShell——深色画布块与下方「申请控制权行 + 会话
- * 底栏」分层，底栏是画布下方独立的亮玻璃条（稿 .sessionBar），不再贴在深色画布连成一片。
+ * 2026-09-24 控端态浮条收编：viewTools / 左上 HUD 按钮退场，非全屏的会话控制
+ * 全部交给 RcSessionView 挂的 RcSessionCapsule（会隐藏的顶部胶囊）；全屏态仍由
+ * 本组件内的 RcFullscreenHotbar 承担（Fullscreen API 只显示 fakeScreen 子树，
+ * 浮条必须挂在它内部才可见）。
  */
 import { Eye, Loader2 } from "lucide-react";
 import type { RcSession } from "@/lib/api/rc";
-import type { UseRc } from "@/hooks/useRc";
 import type { useRcFrames } from "@/hooks/useRcFrames";
 import { releaseModifiers } from "@/hooks/useRcInput";
 import type { useRcInput } from "@/hooks/useRcInput";
@@ -19,8 +20,7 @@ import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import type { RcCursorShape } from "@/hooks/useRcCursor";
 import type { FitMode } from "@/lib/rcSessionStats";
 import { qualityLabel } from "@/lib/rcQuality";
-import { RcHud } from "./RcHud";
-import { RcViewTools } from "./RcViewTools";
+import { RcFullscreenHotbar } from "./RcFullscreenHotbar";
 import { RcSessionTop } from "./RcSessionTop";
 import { RcScreenCanvas } from "./RcScreenCanvas";
 import { RcFsHint } from "./RcFsHint";
@@ -32,7 +32,6 @@ type RcFrames = ReturnType<typeof useRcFrames>;
 export function RcSessionStage({
   session,
   busy,
-  rc,
   input,
   link,
   frames,
@@ -44,7 +43,6 @@ export function RcSessionStage({
   fsHintDismissed,
   onDismissFsHint,
   qPick,
-  scopePick,
   screenRef,
   canvasRef,
   onReconnect,
@@ -52,7 +50,6 @@ export function RcSessionStage({
 }: {
   session: RcSession;
   busy: boolean;
-  rc: UseRc;
   input: RcInput;
   link: RcLinkSnapshot;
   frames: RcFrames;
@@ -63,10 +60,8 @@ export function RcSessionStage({
   onToggleFullscreen: () => void;
   fsHintDismissed: boolean;
   onDismissFsHint: () => void;
-  /** 会话内生效的画质档（HUD 显示与 fps120 采样密度都依赖它） */
+  /** 会话内生效的画质档（等待占位文案用它） */
   qPick: string;
-  /** 会话内生效的画面范围（HUD 显示） */
-  scopePick: string;
   screenRef: React.RefObject<HTMLDivElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   onReconnect?: () => void;
@@ -74,8 +69,6 @@ export function RcSessionStage({
   onRequestEnd: () => void;
 }) {
   const canControl = session.capability === "control";
-  /** 本机是否正作为**被控端**推流（决定 HUD 能不能拿到自动档的「生效档」）。 */
-  const inboundActive = session.phase === "inbound_active";
   const {
     visible,
     hasFrame,
@@ -84,13 +77,6 @@ export function RcSessionStage({
     fps,
     contentRef,
     size,
-    latencyMs,
-    bitrateKbps,
-    segCapMs,
-    segEncMs,
-    segNetMs,
-    segDecMs,
-    respMs,
   } = frames;
 
   const placeholderSub =
@@ -102,20 +88,7 @@ export function RcSessionStage({
 
   return (
     <div className={styles.viewShell}>
-      <RcSessionTop
-        session={session}
-        canControl={canControl}
-        kbOn={input.kbOn}
-        linkState={link.state}
-        unansweredSec={link.unansweredSec}
-        busy={busy}
-        fullscreen={fullscreen}
-        // R3：false = 对端 caps 未声明数据报鼠标（7.2.1 及更早）→ 顶栏提示升级
-        peerDgramInput={rc.status?.peer_dgram_input}
-        onReleaseKb={input.releaseKb}
-        onReconnect={onReconnect}
-        onRequestEnd={onRequestEnd}
-      />
+      <RcSessionTop session={session} linkState={link.state} fullscreen={fullscreen} />
 
       <div
         ref={screenRef}
@@ -145,15 +118,28 @@ export function RcSessionStage({
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
       >
-        <RcViewTools
-          fit={fit}
-          onFit={onFit}
-          pointerLocked={input.pointerLocked}
-          onTogglePointer={input.togglePointerLock}
-          canControl={canControl}
-          fullscreen={fullscreen}
-          onToggleFullscreen={onToggleFullscreen}
-        />
+        {/* 方案 B（2026-09-24）：全屏态用顶边 hotbar；非全屏的控制全部在
+            RcSessionCapsule（RcSessionView 挂，会隐藏的顶部胶囊）。两者互斥
+            ——Fullscreen API 只显示 fakeScreen 子树，hotbar 必须挂在它内部。 */}
+        {fullscreen && (
+          <RcFullscreenHotbar
+            fit={fit}
+            onFit={onFit}
+            pointerLocked={input.pointerLocked}
+            onTogglePointer={input.togglePointerLock}
+            canControl={canControl}
+            onToggleFullscreen={onToggleFullscreen}
+            onRequestEnd={onRequestEnd}
+            busy={busy}
+            info={
+              hasFrame
+                ? `${size.w}×${size.h} · ${
+                    codec === "h264" ? "H.264" : codec === "hevc" ? "HEVC" : "JPEG"
+                  } · ${fps}fps`
+                : ""
+            }
+          />
+        )}
         <RcScreenCanvas
           canvasRef={canvasRef}
           contentRef={contentRef}
@@ -210,33 +196,6 @@ export function RcSessionStage({
             只看模式 · 对端桌面实时画面
           </div>
         )}
-        {/* 🔴 自动档的落点只有**推流那台机器**知道。本组件当前只在出站会话渲染
-            （RcWorkbench 判 `outbound_active`），所以 activeQuality 实际总是空、
-            走 peerDriven 分支显示「自动 · 由对方决定」；inbound 那一支留着，
-            是为了将来复用时不撒谎（被控端才是拿得到生效档的一方）。 */}
-        <RcHud
-          codec={codec}
-          fps={fps}
-          rttMs={link.rttMs}
-          frameLatencyMs={latencyMs}
-          lossPermille={rc.status?.loss_permille}
-          bitrateKbps={bitrateKbps}
-          segCapMs={segCapMs}
-          segEncMs={segEncMs}
-          segNetMs={segNetMs}
-          segDecMs={segDecMs}
-          respMs={respMs}
-          quality={qPick}
-          activeQuality={inboundActive ? rc.status?.active_quality : undefined}
-          peerDriven={!inboundActive}
-          scope={scopePick}
-          linkState={link.state}
-          pathKind={rc.status?.path_kind ?? ""}
-          pointerLocked={input.pointerLocked}
-          /* 稿「连接详情」里的画面尺寸（2560×1440）。来自 useRcFrames 的 size，
-             首帧未到时为 0 → HUD 自动不出这一行。 */
-          frameSize={size}
-        />
         {/* 案 A：非全屏轻提示（判据 lib/rcFsHint；不挡画面中心操作） */}
         <RcFsHint
           canControl={canControl}

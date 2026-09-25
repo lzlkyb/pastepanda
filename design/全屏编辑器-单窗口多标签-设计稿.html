@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设计稿：全屏编辑器 · 单窗口多标签（多页签）</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   真值来源（规则 12，逐条对照源码，未凭记忆自创）：
+   - 主题令牌：src/styles/theme.css（ocean 浅 / midnight 深，含
+     --workbench-bg / --chrome-bg / --paper-bg / --status-bg / --status-border 五个工作台令牌）
+   - 外壳结构与文案：src/components/editors/FullscreenEditor.tsx
+   - 工具栏：fullscreen/EditorToolbar.tsx（图标/文案/⋯ 菜单条目逐条对齐）
+   - 状态栏：fullscreen/EditorStatusBar.tsx（四态保存徽章，判定顺序 失败>保存中>脏>已保存）
+   - 样式真值：FullscreenEditor.module.css（工具栏 48 / 格式栏 / 状态栏 28 / 分屏把手 6 / 文件名不收缩）
+   - 对话框：styles/dialog.css（w420 = 420px）+ components/ConfirmDialog.tsx
+   - 入口现状：commands/system.rs（label 固定 md-editor，窗口已存在则 emit 覆盖）
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── ocean 海洋（默认浅色）令牌真值 ── */
+:root, [data-theme="ocean"] {
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+    linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
+  --header-bg-start: rgba(255,255,255,.55);
+  --card-bg: #fff;
+  --text-primary: #0f172a;
+  --text-secondary: #495565;
+  --text-muted: #627083;
+  --border-color: #e0e4eb;
+  --accent: #0284c7;
+  --accent-light: #e0f2fe;
+  --accent-solid: #027cbb;
+  --accent-strong: #0273ad;
+  --text-on-accent: #fff;
+  --seg-bg: #e8e8ed;
+  --seg-active-bg: #fff;
+  --section-bg: #f0f4f8;
+  --hover: #e8ecf2;
+  --orange: #c54a0a; --orange-bg: #fff7ed; --orange-border: #fed7aa;
+  --danger: #dc2626; --red-bg: #fee2e2;
+  --success: #15803d; --success-bg: #dcfce7; --success-border: #86efac;
+  --warning: #c54a0a; --warning-bg: #fff7ed; --warning-border: #fed7aa;
+  --version-badge-gradient: linear-gradient(135deg, #0ea5e9, #0284c7);
+  --float-card-shadow: 0 12px 36px rgba(0,0,0,.10), 0 2px 8px rgba(0,0,0,.05);
+  --float-card-border: rgba(0,0,0,.06);
+  --float-card-bg: #ffffff;
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+/* ── midnight 午夜（默认深色）令牌真值 ── */
+[data-theme="midnight"] {
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #1c1832 0%, #0b0b13 55%, #07070c 100%);
+  --header-bg-start: transparent;
+  --card-bg: #18181b;
+  --text-primary: #e4e4e7;
+  --text-secondary: #afafb7;
+  --text-muted: #8d8d95;
+  --border-color: #27272a;
+  --accent: #818cf8;
+  --accent-light: #1e1b4b;
+  --accent-solid: #666fc4;
+  --accent-strong: #818cf8;
+  --text-on-accent: #fff;
+  --seg-bg: #27272a;
+  --seg-active-bg: #3f3f46;
+  --section-bg: #0f0f11;
+  --hover: #1f1f23;
+  --orange: #fb923c; --orange-bg: #431407; --orange-border: #9a3412;
+  --danger: #f87171; --red-bg: #450a0a;
+  --success: #4ade80; --success-bg: #14532d; --success-border: #166534;
+  --warning: #fb923c; --warning-bg: #431407; --warning-border: #9a3412;
+  --version-badge-gradient: linear-gradient(135deg, #818cf8, #6366f1);
+  --float-card-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 8px 28px rgba(0,0,0,.45);
+  --float-card-border: rgba(255,255,255,.08);
+  --float-card-bg: #1c1c20;
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 28px 24px 40px;
+  background: #f5f6f8;
+  color: #1a1d21;
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+  font-size: 13px; line-height: 1.65;
+}
+.doc { max-width: 1060px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+h2 { font-size: 15px; font-weight: 600; margin: 34px 0 10px; padding-top: 14px; border-top: 1px solid #e3e5ea; }
+h3 { font-size: 13.5px; font-weight: 600; margin: 20px 0 8px; color: #2b3038; }
+.sub { color: #5b636e; font-size: 12.5px; margin: 0 0 16px; }
+p { margin: 8px 0; }
+code { font-family: Consolas, "Cascadia Code", monospace; font-size: 12px; background: #eceef2; padding: 1px 5px; border-radius: 4px; color: #31353c; }
+b { font-weight: 600; }
+ul { margin: 8px 0; padding-left: 20px; }
+li { margin: 4px 0; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; font-size: 12.5px; }
+th, td { border: 1px solid #e3e5ea; padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: #f1f3f6; font-weight: 600; white-space: nowrap; }
+td.n { white-space: nowrap; font-family: Consolas, monospace; font-size: 12px; }
+.tag-y { color: #0b7a3b; font-weight: 600; }
+.tag-n { color: #b42318; font-weight: 600; }
+.note { background: #f7f8fa; border-left: 3px solid #c8ccd4; padding: 8px 12px; margin: 10px 0; font-size: 12.5px; color: #464c55; }
+.hint { color: #6b737e; font-size: 12px; }
+.big { font-size: 12px; color: #8a9099; margin: 6px 0 10px; }
+
+/* ── 展示台 ── */
+.stage { padding: 20px; border-radius: 12px; margin: 10px 0 6px; overflow: hidden; }
+.stage.ocean { background: #e9eef4; }
+.stage.midnight { background: #0d0d12; }
+.stage.plain { background: #eef0f3; }
+.row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.col { flex: 1; min-width: 0; }
+.cap { font-size: 12px; color: #5b636e; margin: 6px 0 0; }
+.stage.midnight + .cap { color: #5b636e; }
+
+/* ═══ 编辑器窗口（1:1 复刻外壳） ═══ */
+.win {
+  display: flex; flex-direction: column;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 18px 48px rgba(16,25,40,.22), 0 0 0 1px rgba(16,25,40,.06);
+}
+.win.small { width: 1000px; height: 640px; }
+.win.mini { width: 470px; height: 210px; }
+.win.wide { width: 100%; height: auto; }
+
+/* 工具栏 —— 真值：高 48px / padding 0 16px / gap 8px / z-index 30 / 下沿 1px */
+.tb {
+  display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--app-bg) 100%);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0; position: relative; z-index: 30;
+}
+.tbL { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.tbR { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.fileIcon {
+  width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+  background: var(--version-badge-gradient); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.fileName { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.unsavedDot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); flex-shrink: 0; margin-left: -4px; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+.filePath { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
+.tbBtn {
+  display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px;
+  border: none; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer;
+  background: transparent; color: var(--text-secondary); font-family: inherit;
+}
+.tbBtn.primary { background: var(--version-badge-gradient); color: #fff; }
+.tbBtnIcon {
+  width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 8px; background: transparent; color: var(--text-secondary);
+  cursor: pointer; flex-shrink: 0;
+}
+.tbBtnIcon.active { background: var(--accent-light); color: var(--accent-strong); }
+.tbSep { width: 1px; height: 20px; background: var(--border-color); margin: 0 2px; }
+.seg { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 8px; background: var(--seg-bg); }
+.segBtn {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px;
+  border: none; border-radius: 6px; background: transparent; cursor: pointer;
+  font-size: 12px; font-weight: 500; color: var(--text-secondary); font-family: inherit;
+}
+.segBtn.on { background: var(--seg-active-bg); color: var(--accent-strong); }
+.ic { flex-shrink: 0; }
+
+/* ═══ 标签条（本次新增） ═══ */
+.tabBar {
+  display: flex; align-items: stretch; height: 34px; flex-shrink: 0;
+  background: var(--chrome-bg); border-bottom: 1px solid var(--border-color);
+  position: relative; z-index: 30;
+}
+.tabStrip { display: flex; align-items: stretch; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabStrip::-webkit-scrollbar { display: none; }
+/* 渐隐遮罩必须相对「滚动视口」定位：它是 .tabStrip 的兄弟而非子元素 ——
+   作为子元素会随内容一起横向滚动，遮罩会跟着跑掉。 */
+.stripWrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.tab {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  min-width: 132px; max-width: 200px; height: 34px; padding: 0 8px 0 12px;
+  border-right: 1px solid var(--border-color); background: transparent;
+  color: var(--text-secondary); font-size: 12.5px; cursor: default; position: relative;
+}
+.tab .tabIcon { font-size: 11px; font-weight: 700; color: var(--text-muted); flex-shrink: 0; letter-spacing: -.3px; }
+.tab .tabName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.tab .tabDot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); flex-shrink: 0; }
+.tab .tabDot.err { background: var(--danger); }
+.tab .tabX {
+  width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); opacity: 0;
+}
+.tab.hot { background: var(--hover); }
+.tab.hot .tabX, .tab.active .tabX { opacity: 1; }
+.tab.active {
+  background: var(--paper-bg); color: var(--text-primary); font-weight: 500;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.tab.active .tabIcon { color: var(--accent-strong); }
+.tabAdd {
+  width: 32px; height: 34px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-left: 1px solid var(--border-color);
+  color: var(--text-secondary); cursor: pointer;
+}
+.tabNav {
+  width: 26px; height: 34px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--chrome-bg); border: none; border-left: 1px solid var(--border-color);
+  color: var(--text-secondary); cursor: pointer;
+}
+.fadeL, .fadeR { position: absolute; top: 0; bottom: 1px; width: 22px; pointer-events: none; z-index: 2; }
+.fadeL { left: 0; background: linear-gradient(90deg, var(--chrome-bg), transparent); }
+.fadeR { right: 0; background: linear-gradient(270deg, var(--chrome-bg), transparent); }
+
+/* 格式栏 —— 真值：padding 4px 16px / 下沿 1px / z-index 30 */
+.fmtBar {
+  display: flex; align-items: center; gap: 2px; padding: 4px 16px; flex-shrink: 0;
+  background: var(--header-bg-start); border-bottom: 1px solid var(--border-color);
+  position: relative; z-index: 30;
+}
+.fmtBtn {
+  height: 28px; min-width: 30px; padding: 0 6px; display: flex; align-items: center; justify-content: center;
+  gap: 4px; border: none; border-radius: 6px; background: transparent; color: var(--text-secondary);
+  font-size: 12px; font-family: inherit; cursor: pointer;
+}
+.fmtBrand { width: 1px; height: 18px; background: var(--border-color); margin: 0 4px; }
+
+/* 主区 */
+.main { flex: 1; display: flex; overflow: hidden; position: relative; z-index: 1; background: var(--workbench-bg); min-height: 0; }
+.outline {
+  width: 216px; flex-shrink: 0; background: var(--section-bg); border-right: 1px solid var(--border-color);
+  padding: 10px 0; overflow: hidden;
+}
+.olTitle { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .5px; padding: 0 14px 8px; text-transform: uppercase; }
+.olItem { font-size: 12.5px; color: var(--text-secondary); padding: 4px 14px; display: flex; align-items: center; position: relative; white-space: nowrap; overflow: hidden; }
+.olItem.lv2 { padding-left: 26px; font-size: 12px; }
+.olItem.lv3 { padding-left: 38px; font-size: 12px; color: var(--text-muted); }
+.olItem.on { background: var(--accent-light); color: var(--accent-strong); font-weight: 500; }
+.olItem.on::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent); }
+.splitWrap { flex: 1; display: flex; min-width: 0; }
+.pane { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.paneHead {
+  display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; flex-shrink: 0;
+  background: var(--section-bg); border-bottom: 1px solid var(--border-color);
+}
+.paneLabel { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+.paneSub { font-size: 11px; color: var(--text-muted); }
+.handle { width: 6px; flex-shrink: 0; background: transparent; cursor: col-resize; }
+.editorArea { flex: 1; overflow: hidden; background: var(--card-bg); display: flex; }
+.gutter {
+  width: 44px; flex-shrink: 0; padding: 10px 10px 0 0; text-align: right;
+  font-family: Consolas, "Cascadia Code", monospace; font-size: 11.5px; line-height: 22.3px; color: var(--text-muted);
+  background: var(--card-bg); user-select: none;
+}
+.codeText {
+  flex: 1; padding: 10px 16px 0 4px; font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 13.5px; line-height: 22.3px; color: var(--text-primary); white-space: pre; overflow: hidden;
+}
+.codeText .h1 { color: var(--accent-strong); font-weight: 700; }
+.codeText .h2 { color: var(--accent-strong); font-weight: 600; }
+.codeText .mk { color: var(--text-muted); }
+.codeText .str { color: #0b7a3b; }
+.codeText .cur { background: var(--accent-light); }
+.previewArea { flex: 1; padding: 14px 20px; overflow: hidden; background: var(--paper-bg); }
+.pvH1 { font-size: 20px; font-weight: 600; margin: 0 0 10px; color: var(--text-primary); }
+.pvH2 { font-size: 14.5px; font-weight: 600; margin: 14px 0 6px; color: var(--text-primary); }
+.pvP { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 8px; }
+.pvList { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 8px; padding-left: 18px; }
+.pvCode {
+  font-family: Consolas, monospace; font-size: 12px; background: var(--section-bg);
+  border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; color: var(--text-secondary); margin: 0 0 8px;
+}
+
+/* 状态栏 —— 真值：高 28px / padding 0 16px / 字号 11px / 上沿 1px 弱线 */
+.sb {
+  display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 16px;
+  background: var(--status-bg); color: var(--text-muted); font-size: 11px; flex-shrink: 0;
+  box-shadow: 0 -1px 0 var(--status-border); user-select: none;
+}
+.sbL, .sbR { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.sbR { flex-shrink: 0; }
+.sbItem { display: flex; align-items: center; gap: 4px; opacity: .8; white-space: nowrap; }
+.badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 500; white-space: nowrap;
+}
+.badge .bd { width: 5px; height: 5px; border-radius: 50%; }
+.badge.dirty { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+.badge.dirty .bd { background: var(--warning); }
+.badge.saved { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+.badge.saved .bd { background: var(--success); }
+.badge.failed { background: var(--red-bg); color: var(--danger); border: 1px solid var(--danger); }
+.badge.failed .bd { background: var(--danger); }
+
+/* ── 解剖区（1.8× 放大，尺寸数字以标注为准） ── */
+.anat { zoom: 1.8; width: 480px; padding: 10px 0; }
+.anatRow { display: flex; align-items: center; margin-bottom: 12px; }
+.anatTag { width: 74px; font-size: 11px; color: #6b737e; flex-shrink: 0; }
+.anatPrev { margin-left: 74px; font-size: 11px; color: #8a9099; }
+
+/* 标注徽标 */
+.badgeNo {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+  border-radius: 50%; background: #2b3038; color: #fff; font-size: 10.5px; font-weight: 600; flex-shrink: 0;
+}
+
+/* dialog 复刻（dialog.css w420） */
+.dlgWrap { position: relative; padding: 0; }
+.dlg {
+  width: 420px; border-radius: 16px; background: var(--float-card-bg);
+  border: 1px solid var(--float-card-border); box-shadow: var(--float-card-shadow);
+  overflow: hidden;
+}
+.dlgHead { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 20px; border-bottom: 1px solid var(--border-color); }
+.dlgTitle { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.dlgBody { padding: 14px 20px 6px; }
+.dlgMsg { font-size: 13px; color: var(--text-secondary); margin: 0 0 10px; }
+.dlgList { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+.dlgRow { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-color); font-size: 12.5px; }
+.dlgRow:last-child { border-bottom: none; }
+.dlgRow .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+.dlgRow .ic2 { font-size: 11px; font-weight: 700; color: var(--text-muted); flex-shrink: 0; }
+.dlgActs { display: flex; justify-content: flex-end; gap: 8px; padding: 0 20px 18px; }
+.btn { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); font-size: 12.5px; font-family: inherit; cursor: pointer; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--text-secondary); }
+.btn.primary { background: var(--accent-solid); border-color: transparent; color: #fff; }
+.btn.dangerGhost { border-color: var(--danger); background: transparent; color: var(--danger); }
+.focusRing { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>全屏编辑器 · 单窗口多标签（多页签）</h1>
+<p class="sub">路线：单窗口多标签 + 保活（方案 A）。类型范围：markdown / json / html / csv / code / diff / 流程图 / 图文混排共用同一条标签条。上限 12。并排多窗格不在本期。</p>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="i-save"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></g>
+  <g id="i-list"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></g>
+  <g id="i-dots"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></g>
+  <g id="i-minus"><path d="M5 12h14"/></g>
+  <g id="i-max"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g>
+  <g id="i-x"><path d="M18 6L6 18M6 6l12 12"/></g>
+  <g id="i-panelLeft"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></g>
+  <g id="i-cols"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></g>
+  <g id="i-eye"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></g>
+  <g id="i-plus"><path d="M12 5v14M5 12h14"/></g>
+  <g id="i-chevL"><path d="M15 18l-6-6 6-6"/></g>
+  <g id="i-chevR"><path d="M9 18l6-6-6-6"/></g>
+  <g id="i-search"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></g>
+  <g id="i-bold"><path d="M6 4h8a4 4 0 0 1 0 8H6zM6 12h9a4 4 0 0 1 0 8H6z"/></g>
+  <g id="i-alert"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></g>
+</defs></svg>
+
+<h2>一、定下来的六条决策</h2>
+<table>
+  <tr><th>#</th><th>决策</th><th>理由（含被否决的做法）</th></tr>
+  <tr><td class="n">1</td><td><b>标签条只在 ≥2 个标签时渲染</b>，高度 34px，位置在工具栏之下、格式栏之上</td><td>单文档时视觉与今天<b>完全一致</b>，回归面最小；放在工具栏之上会与「48px 常驻拖拽头」打架（拖拽区被切成两段）</td></tr>
+  <tr><td class="n">2</td><td>每个标签的视图<b>保留挂载</b>，非活动的 <code>display:none</code></td><td>与现有「仅预览模式不卸载编辑区」同一手法（<code>.editorPane</code> 已验证）；卸载则 undo 历史、光标、滚动位置全丢</td></tr>
+  <tr><td class="n">3</td><td>脏点<b>静态不 pulse</b>；自动保存失败另用红点</td><td>工具栏那颗脏点是唯一一颗，pulse 没问题；标签条是常驻区、最多 12 颗，<b>N 个常驻动画</b>违反规则 8.1。失败态换红点是为了让「切走之后存不进去」仍然可见（规则 15）</td></tr>
+  <tr><td class="n">4</td><td>命中已打开的文档 → <b>切过去，不重载</b>；即使该标签脏也不覆盖</td><td>重载会冲掉该标签未保存的编辑。这是现存缺陷（<code>system.rs</code> 已存在的窗口直接 emit 覆盖，无守卫）的顺手修复</td></tr>
+  <tr><td class="n">5</td><td>关闭分两级：关标签（单文档守卫）/ 关窗口（<b>聚合所有脏标签</b>后逐个处置）</td><td>N 个脏标签逐个弹窗会变成弹窗地狱；聚合清单让用户一次看清「到底有几个没存」</td></tr>
+  <tr><td class="n">6</td><td>非活动标签停掉 <code>fileWatch</code> 轮询 / scrollspy / 滚动同步</td><td>规则 8.2：隐藏不等于停。编辑器窗口本身是 4 窗口之一，不能在里面再叠 N 份常驻开销</td></tr>
+</table>
+
+<h2>二、整体布局（ocean 浅色主题，1000×640 实尺）</h2>
+<p>标签条是本次唯一的<b>新增横条</b>，把固定高度从 113px 抬到 147px。下面这张是装好标签条后的完整外壳，结构与文案逐条对照 <code>EditorToolbar.tsx</code> / <code>EditorStatusBar.tsx</code> / <code>FullscreenEditor.module.css</code>。</p>
+
+<div class="stage ocean">
+  <div class="win small" data-theme="ocean">
+    <div class="tb">
+      <div class="tbL">
+        <div class="fileIcon">M↓</div>
+        <span class="fileName">远程文件传输.md</span>
+        <div class="unsavedDot"></div>
+        <span class="filePath">— D:\AItool\winapp\pastePanda\docs</span>
+      </div>
+      <div class="tbR">
+        <button class="tbBtn primary"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-save"/></svg><span>保存</span></button>
+        <div class="tbSep"></div>
+        <div class="seg">
+          <button class="segBtn"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-panelLeft"/></svg><span>编辑</span></button>
+          <button class="segBtn on"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-cols"/></svg><span>分屏</span></button>
+          <button class="segBtn"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-eye"/></svg><span>预览</span></button>
+        </div>
+        <button class="tbBtnIcon active"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-list"/></svg></button>
+        <button class="tbBtnIcon"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-dots"/></svg></button>
+        <button class="tbBtnIcon"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-minus"/></svg></button>
+        <button class="tbBtnIcon"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-max"/></svg></button>
+        <button class="tbBtnIcon"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+
+    <div class="tabBar">
+      <div class="stripWrap">
+        <div class="tabStrip">
+          <div class="tab active"><span class="tabIcon">M↓</span><span class="tabName">远程文件传输.md</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+          <div class="tab hot"><span class="tabIcon">{ }</span><span class="tabName">mcp-tools.json</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+          <div class="tab"><span class="tabIcon">&lt;/&gt;</span><span class="tabName">release.yml</span><span class="tabDot err"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+          <div class="tab"><span class="tabIcon">CSV</span><span class="tabName">会话记录-0924.csv</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        </div>
+      </div>
+      <button class="tabAdd"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus"/></svg></button>
+    </div>
+
+    <div class="fmtBar">
+      <button class="fmtBtn"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><use href="#i-search"/></svg></button>
+      <div class="fmtBrand"></div>
+      <button class="fmtBtn"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><use href="#i-bold"/></svg></button>
+      <button class="fmtBtn"><span style="font-style:italic;font-weight:600">I</span></button>
+      <button class="fmtBtn"><span style="text-decoration:line-through">S</span></button>
+      <button class="fmtBtn"><span style="font-size:12px">H▾</span></button>
+      <button class="fmtBtn"><span style="font-size:12px">列表▾</span></button>
+      <button class="fmtBtn"><span style="font-size:12px">插入▾</span></button>
+      <button class="fmtBtn"><span style="font-size:12px">格式▾</span></button>
+    </div>
+
+    <div class="main">
+      <div class="outline">
+        <div class="olTitle">大纲</div>
+        <div class="olItem on">远程文件传输</div>
+        <div class="olItem lv2">目标与范围</div>
+        <div class="olItem lv2">会话生命周期</div>
+        <div class="olItem lv3">独立 ALPN</div>
+        <div class="olItem lv3">与 RC 解耦</div>
+        <div class="olItem lv2">落盘确认</div>
+        <div class="olItem lv2">未做</div>
+      </div>
+      <div class="splitWrap">
+        <div class="pane" style="flex:0 0 50%">
+          <div class="paneHead"><span class="paneLabel">Markdown 源文</span></div>
+          <div class="editorArea">
+            <div class="gutter">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17</div>
+            <div class="codeText"><span class="h1 mk"># </span><span class="h1">远程文件传输</span>
+<span class="mk"></span>
+<span class="mk">## </span><span class="h2">目标与范围</span>
+v1 <span class="str">只传文件</span>，目录树与递归传目录明确不做。
+会话走独立 ALPN <span class="str">pastepanda/rc-file/1</span>，
+<span class="cur">生命周期与 RC 会话解耦</span><span class="mk">。</span>
+<span class="mk"></span>
+<span class="mk">## </span><span class="h2">落盘确认</span>
+接收方在<span class="str">两处</span>都能看到确认条：
+<span class="mk">- </span>工作台完整卡片（指纹 + 文件名 + 大小）
+<span class="mk">- </span>主窗常驻横幅上的一行摘要
+<span class="mk"></span>
+<span class="mk">```</span>
+accept → 弹系统选择框 → 写盘
+timeout(60s) → 拒绝，两端都显示倒计时
+<span class="mk">```</span>
+<span class="mk"></span>
+<span class="mk">## </span><span class="h2">未做</span>
+v1 不传目录、不做断点续传。</div>
+          </div>
+        </div>
+        <div class="handle"></div>
+        <div class="pane" style="flex:1 1 0">
+          <div class="paneHead"><span class="paneLabel">排版预览</span><span class="paneSub">行号</span></div>
+          <div class="previewArea">
+            <div class="pvH1">远程文件传输</div>
+            <div class="pvH2">目标与范围</div>
+            <div class="pvP">v1 只传文件，目录树与递归传目录明确不做。会话走独立 ALPN <code>pastepanda/rc-file/1</code>，生命周期与 RC 会话解耦。</div>
+            <div class="pvH2">落盘确认</div>
+            <div class="pvP">接收方在两处都能看到确认条：</div>
+            <ul class="pvList"><li>工作台完整卡片（指纹 + 文件名 + 大小）</li><li>主窗常驻横幅上的一行摘要</li></ul>
+            <div class="pvCode">accept → 弹系统选择框 → 写盘<br>timeout(60s) → 拒绝，两端都显示倒计时</div>
+            <div class="pvH2">未做</div>
+            <div class="pvP">v1 不传目录、不做断点续传。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb">
+      <div class="sbL">
+        <span class="sbItem">17 行</span>
+        <span class="sbItem">328 字</span>
+        <span class="sbItem">约 2 分钟</span>
+        <span class="sbItem">行 9，列 14</span>
+      </div>
+      <div class="sbR">
+        <span class="badge dirty"><span class="bd"></span>未保存</span>
+        <span class="sbItem">Markdown</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="cap">活动标签 = 产品需求-远程文件传输.md（带脏点），第 2 个标签鼠标悬停中（底部淡底 + 右上 ✕ 显现），第 3 个标签自动保存失败（红点）。四个标签分别是 markdown / JSON / 代码 / CSV，验证类型混排。</p>
+
+<h3>高度账（实测值，非盒模型估算）</h3>
+<table>
+  <tr><th>区段</th><th>高度</th><th>说明</th></tr>
+  <tr><td>工具栏</td><td class="n" data-m="tb">48px</td><td>不变</td></tr>
+  <tr><td><b>标签条（新增）</b></td><td class="n" data-m="tabbar">34px</td><td>含 1px 下沿分隔线</td></tr>
+  <tr><td>格式栏</td><td class="n" data-m="fmt">37px</td><td>不变（4+28+4+1）</td></tr>
+  <tr><td>主区</td><td class="n" data-m="main">弹性</td><td>窗口 640px 时实测 493px</td></tr>
+  <tr><td>状态栏</td><td class="n" data-m="sb">28px</td><td>不变</td></tr>
+  <tr><td><b>固定高度合计</b></td><td class="n" data-m="fixed">113 → 147px</td><td>涨的是标签条那 34px；仅 ≥2 标签时发生</td></tr>
+</table>
+<p class="hint">上表与本节所有尺寸（48 / 34 / 37 / 493 / 28 / 147）均为 headless Chromium 实测 <code>getBoundingClientRect</code> 取值，非盒模型推算。窗口 1000×640 时主区实测 493px。</p>
+
+<h2>三、标签解剖</h2>
+<p>下面这块是 1.8× 放大示意（<code>zoom:1.8</code>），尺寸数字以标注为准。五种形态共用一个组件，差异只在类名与一个图标槽。</p>
+
+<div class="stage plain">
+  <div class="anat">
+    <div class="anatRow">
+      <span class="anatTag" style="color:#0f172a;font-weight:600">活动</span>
+      <div class="tab active" style="border-right:1px solid #e0e4eb"><span class="tabIcon">M↓</span><span class="tabName">产品需求-远程文件传输.md</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="anatRow">
+      <span class="anatTag">非活动</span>
+      <div class="tab"><span class="tabIcon">{ }</span><span class="tabName">mcp-tools.json</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="anatRow">
+      <span class="anatTag">悬停</span>
+      <div class="tab hot"><span class="tabIcon">{ }</span><span class="tabName">mcp-tools.json</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="anatRow">
+      <span class="anatTag">有未保存改动</span>
+      <div class="tab"><span class="tabIcon">&lt;/&gt;</span><span class="tabName">release.yml</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="anatRow">
+      <span class="anatTag">自动保存失败</span>
+      <div class="tab"><span class="tabIcon">&lt;/&gt;</span><span class="tabName">release.yml</span><span class="tabDot err"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="anatRow">
+      <span class="anatTag">极窄（132px 下限）</span>
+      <div class="tab" style="width:132px"><span class="tabIcon">M↓</span><span class="tabName">清单.md</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="anatRow">
+      <span class="anatTag">极长（200px 上限）</span>
+      <div class="tab" style="width:200px"><span class="tabIcon">M↓</span><span class="tabName">2026-09-24-远程文件传输-实施记录与遗留问题.md</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+    </div>
+  </div>
+</div>
+
+<table>
+  <tr><th>部件</th><th>规格</th><th>依据</th></tr>
+  <tr><td class="n">标签高 / 宽</td><td class="n" data-m="tab">34px / min 132px、max 200px</td><td>与标签条等高（撑满）。下限 132px 是渲染实测后从 96px 提上来的：96px 下文档名只剩约 30px，只能显示 2 个汉字（"需.."），失去「这是哪个文档」的辨识意义。132px 实测约显示 4 个汉字（"需求清单.md" 在此宽度下截成"需求清…"），再长的中文名必然省略号 —— 完整文件名由工具栏与 hover 的 <code>title</code> 兜底。上限 200px 约 11 个汉字</td></tr>
+  <tr><td class="n">内边距 / 间距</td><td class="n">padding 0 8px 0 12px；gap 6px</td><td>左内边距比右大 4px：左侧是图标起点、右侧是 ✕ 热区，视觉重心左移更稳</td></tr>
+  <tr><td class="n">类型图标</td><td class="n">11px 文字符号，活动时用 --accent-strong</td><td>沿用 <code>spec.icon</code>（"M↓" / "{ }" / "&lt;/&gt;"），不新造图标集</td></tr>
+  <tr><td class="n">文件名</td><td class="n">12.5px；活动 500 字重，非活动 400</td><td>比工具栏文件名（13px/600）轻一档，避免与标题抢权重</td></tr>
+  <tr><td class="n">脏点</td><td class="n">6px 圆点 / --orange，<b>不 pulse</b>；失败态 --danger</td><td>复用工具栏 <code>.unsavedDot</code> 的尺寸与色，但去掉动画（见决策 3）</td></tr>
+  <tr><td class="n">关闭钮</td><td class="n">16×16 / 圆角 4px / 12px 图标</td><td>活动标签常驻显示，非活动标签仅悬停显现（12 个 ✕ 同屏会喧宾夺主）</td></tr>
+  <tr><td class="n">活动标识</td><td class="n">上缘 2px --accent 指示条 + --paper-bg 实底</td><td>与编辑区同面（"这个标签就是这块内容"）；不单靠底色编码，色觉障碍友好</td></tr>
+  <tr><td class="n">分隔线</td><td class="n">每标签右沿 1px --border-color</td><td>细分割线是本项目既有语言；比卡片式圆角标签省横向空间</td></tr>
+</table>
+
+<div class="note">
+<b>为什么脏点和 ✕ 不做同位互换</b>（浏览器常见做法是 hover 时用 ✕ 顶掉脏点）：那样非活动标签一旦鼠标扫过，「这个文档改没改」的答案就消失了，而状态栏徽章只反映<b>活动</b>标签。脏点常驻在文件名之后（与工具栏同语义位置），✕ 独立在最右，两者不争位。
+</div>
+
+<h2>四、标签条的三种边界态</h2>
+
+<h3>1. 只有 1 个标签 → 不渲染标签条</h3>
+<div class="stage plain">
+  <div class="row">
+    <div class="col">
+      <div class="win mini" data-theme="ocean" style="height:auto">
+        <div class="tb" style="height:44px">
+          <div class="tbL"><div class="fileIcon">M↓</div><span class="fileName">需求.md</span><div class="unsavedDot"></div></div>
+          <div class="tbR">
+            <button class="tbBtn primary" style="height:28px;padding:0 10px"><span>保存</span></button>
+            <button class="tbBtnIcon" style="width:28px;height:28px"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-x"/></svg></button>
+          </div>
+        </div>
+        <div class="main" style="min-height:86px"><div class="editorArea" style="background:var(--card-bg)"><div class="codeText" style="font-size:12px"># 需求
+
+只有一份文档。</div></div></div>
+      </div>
+      <p class="cap">改动前 / 改动后一致 —— 单文档场景零视觉变化</p>
+    </div>
+    <div class="col">
+      <div class="win mini" data-theme="ocean" style="height:auto">
+        <div class="tb" style="height:44px">
+          <div class="tbL"><div class="fileIcon">M↓</div><span class="fileName">需求.md</span><div class="unsavedDot"></div></div>
+          <div class="tbR">
+            <button class="tbBtn primary" style="height:28px;padding:0 10px"><span>保存</span></button>
+            <button class="tbBtnIcon" style="width:28px;height:28px"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-x"/></svg></button>
+          </div>
+        </div>
+        <div class="main" style="min-height:86px"><div class="editorArea" style="background:var(--card-bg)"><div class="codeText" style="font-size:12px"># 第二个文档
+
+标签条这时才出现。</div></div></div>
+      </div>
+      <p class="cap">打开第二个文档 → 标签条出现（34px 从主区扣）</p>
+    </div>
+  </div>
+</div>
+
+<h3>2. 溢出：横向滚动 + 两端渐隐 + 滚动按钮</h3>
+<p>标签条不换行、不压缩标签宽度（<code>min-width:132px</code> 是硬下限，压缩会让文件名全部退化成省略号）。超出可用宽度时 <code>.tabStrip</code> 横向滚动，两端各有 22px 渐隐遮罩（贴在滚动视口上，不随内容滚动），右侧出现 ‹ › 按钮（高 34px、宽 26px）。</p>
+<div class="stage ocean">
+  <div class="win wide" data-theme="ocean">
+    <div class="tabBar">
+      <div class="stripWrap">
+        <div class="fadeL"></div>
+        <div class="tabStrip">
+        <div class="tab"><span class="tabIcon">M↓</span><span class="tabName">01-项目背景与目标.md</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        <div class="tab"><span class="tabIcon">M↓</span><span class="tabName">02-竞品分析.md</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        <div class="tab active"><span class="tabIcon">M↓</span><span class="tabName">03-技术方案选型.md</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        <div class="tab"><span class="tabIcon">{ }</span><span class="tabName">config.json</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        <div class="tab"><span class="tabIcon">&lt;/&gt;</span><span class="tabName">build.rs</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        <div class="tab"><span class="tabIcon">CSV</span><span class="tabName">导出-0924.csv</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        <div class="tab"><span class="tabIcon">M↓</span><span class="tabName">04-实施计划.md</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        <div class="tab"><span class="tabIcon">M↓</span><span class="tabName">05-风险登记.md</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+      </div>
+        <div class="fadeR"></div>
+      </div>
+      <button class="tabNav"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-chevL"/></svg></button>
+      <button class="tabNav"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-chevR"/></svg></button>
+      <button class="tabAdd"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus"/></svg></button>
+    </div>
+  </div>
+</div>
+<p class="cap">8 个标签在 960px 下已溢出：左端渐隐表示「前面还有」，右端渐隐 + › 提示可继续滚动（图为滚动中间态；已滚到某一端边界时该端渐隐不显示）。上限 12 个，第 13 个被拒时 toast 一句「最多同时打开 12 个文档」。</p>
+
+<h3>3. 右端固定「新建标签」入口</h3>
+<p>标签条最右是一个常驻 <code>+</code>（32×34，左边框 1px），行为与 <code>Ctrl+T</code> 同源。放常驻位而不是塞进 ⋯ 菜单：全部标签关掉就关窗了，「新建文档」必须有可见入口。</p>
+
+<h2>五、交互与快捷键</h2>
+<table>
+  <tr><th>操作</th><th>结果</th><th>备注</th></tr>
+  <tr><td class="n">点击标签</td><td>切到该文档（显隐切换，不重建 CodeMirror）</td><td>切回时 <code>requestMeasure()</code>（沿用仅预览模式的既有手法）</td></tr>
+  <tr><td class="n">Ctrl+W</td><td>关当前标签；若脏 → 三选一守卫</td><td>关掉最后一个标签 → 等同关窗（仍走关窗守卫）</td></tr>
+  <tr><td class="n">Ctrl+Tab / Ctrl+Shift+Tab</td><td>下一个 / 上一个标签</td><td>循环</td></tr>
+  <tr><td class="n">Ctrl+1 … Ctrl+9</td><td>跳到第 N 个标签</td><td>第 9 键在 &gt;9 标签时跳第 9 个（不扩到"最后一个"）</td></tr>
+  <tr><td class="n">Ctrl+T</td><td>新建空白标签</td><td>与右端 <code>+</code> 同源</td></tr>
+  <tr><td class="n">Ctrl+O</td><td>打开文件 → <b>新标签</b></td><td>行为变更：现在是替换当前内容</td></tr>
+  <tr><td class="n">鼠标中键点标签</td><td>关闭该标签</td><td>与浏览器一致；同样走守卫</td></tr>
+  <tr><td class="n">滚轮悬停标签条</td><td>横向滚动</td><td>不换行、不缩放</td></tr>
+  <tr><td class="n">Esc</td><td>专注态退出 → 再按走关闭守卫</td><td>不变（两级取消的既有语义）</td></tr>
+</table>
+<p class="hint">标签拖拽排序、拖出成新窗口、右键菜单（关闭其他 / 关闭右侧 / 在资源管理器中显示）—— 本期不做，见第八节。</p>
+
+<h3>关闭守卫：多脏标签的聚合清单</h3>
+<p>点窗口 ✕ / Esc / Alt+F4 时若存在脏标签，<b>先聚合再处置</b>：一个 420px 对话框（<code>dialog.css</code> 的 <code>w420</code>）列出全部未保存文档与各自状态，默认焦点仍在「返回编辑」。</p>
+<div class="stage ocean" style="padding:26px 20px">
+  <div class="row" style="justify-content:center">
+    <div class="dlg" data-theme="ocean">
+      <div class="dlgHead">
+        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="1.9" stroke-linecap="round"><use href="#i-alert"/></svg>
+        <span class="dlgTitle">有 3 个文档未保存</span>
+      </div>
+      <div class="dlgBody">
+        <p class="dlgMsg">关闭窗口会丢掉这些改动。要全部保存后关闭吗？</p>
+        <div class="dlgList">
+          <div class="dlgRow"><span class="ic2">M↓</span><span class="nm">产品需求-远程文件传输.md</span><span class="badge dirty"><span class="bd"></span>未保存</span></div>
+          <div class="dlgRow"><span class="ic2">&lt;/&gt;</span><span class="nm">release.yml</span><span class="badge failed"><span class="bd"></span>自动保存失败</span></div>
+          <div class="dlgRow"><span class="ic2">M↓</span><span class="nm">未命名.md</span><span class="badge dirty"><span class="bd"></span>未保存</span></div>
+        </div>
+        <p class="dlgMsg" style="font-size:12px;color:var(--text-muted);margin-bottom:14px">其中 release.yml 上次自动保存失败（只读或路径被占），保存可能仍会失败。</p>
+      </div>
+      <div class="dlgActs">
+        <button class="btn ghost focusRing">返回编辑</button>
+        <button class="btn dangerGhost">全部不保存</button>
+        <button class="btn primary">保存全部并关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="cap">按钮顺序沿用 <code>ConfirmDialog</code> 的三键语义：取消 / extra / 确认，危险项居中。失败态单独提示，避免"点了保存全部、以为存住了、其实没存进去"。</p>
+
+<h2>六、midnight 深色主题</h2>
+<p>标签条只消费令牌（<code>--chrome-bg</code> / <code>--paper-bg</code> / <code>--accent</code> / <code>--border-color</code>），六套主题零特判。下图为同一结构在 midnight 下的渲染。</p>
+<div class="stage midnight">
+  <div class="win wide" data-theme="midnight">
+    <div class="tabBar">
+      <div class="stripWrap">
+        <div class="tabStrip">
+          <div class="tab active"><span class="tabIcon">M↓</span><span class="tabName">远程文件传输.md</span><span class="tabDot"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+          <div class="tab hot"><span class="tabIcon">{ }</span><span class="tabName">mcp-tools.json</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+          <div class="tab"><span class="tabIcon">&lt;/&gt;</span><span class="tabName">release.yml</span><span class="tabDot err"></span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+          <div class="tab"><span class="tabIcon">CSV</span><span class="tabName">会话记录-0924.csv</span><span class="tabX"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#i-x"/></svg></span></div>
+        </div>
+      </div>
+      <button class="tabAdd"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus"/></svg></button>
+    </div>
+    <div class="fmtBar" style="background:var(--header-bg-start)">
+      <button class="fmtBtn"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><use href="#i-search"/></svg></button>
+      <div class="fmtBrand"></div>
+      <button class="fmtBtn"><span style="font-size:12px">插入▾</span></button>
+      <button class="fmtBtn"><span style="font-size:12px">格式▾</span></button>
+    </div>
+    <div class="main">
+      <div class="outline" style="width:180px;padding:8px 0">
+        <div class="olTitle">大纲</div>
+        <div class="olItem on">目标与范围</div>
+        <div class="olItem lv2">会话生命周期</div>
+      </div>
+      <div class="splitWrap">
+        <div class="pane" style="flex:1 1 0">
+          <div class="paneHead" style="background:transparent;border-bottom-color:rgba(255,255,255,.06)">
+            <span class="paneLabel" style="color:rgba(255,255,255,.4)">Markdown 源文</span>
+          </div>
+          <div class="editorArea" style="background:#1e1e2e">
+            <div class="gutter" style="background:#1e1e2e;color:rgba(255,255,255,.3)">1<br>2<br>3<br>4<br>5</div>
+            <div class="codeText" style="color:#e4e4e7"><span class="h1" style="color:#818cf8"># 远程文件传输</span>
+<span style="color:rgba(255,255,255,.45)">## 目标与范围</span>
+v1 <span style="color:#4ade80">只传文件</span>，目录树与递归不做。
+独立 ALPN <span style="color:#4ade80">pastepanda/rc-file/1</span>
+生命周期与 RC 会话解耦。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sb">
+      <div class="sbL"><span class="sbItem">5 行</span><span class="sbItem">行 3，列 8</span></div>
+      <div class="sbR"><span class="badge dirty"><span class="bd"></span>未保存</span><span class="sbItem">Markdown</span></div>
+    </div>
+  </div>
+</div>
+<p class="cap">深色下活动标签 = <code>--paper-bg</code>(#18181b) + 上缘 <code>--accent</code>(#818cf8)；非活动标签与标签条底同为 <code>--chrome-bg</code>，靠 1px 分隔线与悬停淡底区分。</p>
+
+<h2>七、实施清单</h2>
+<table>
+  <tr><th>文件</th><th>动作</th><th>要点</th></tr>
+  <tr><td class="n">lib/editorTabs.ts</td><td>新增</td><td>纯函数：去重键、active 归属、关闭后焦点落点、上限裁剪 — 带单测</td></tr>
+  <tr><td class="n">lib/openInEditor.ts</td><td>新增</td><td>把 11 处 <code>invoke("open_fullscreen_editor")</code> 收口（App.tsx ×5、editorBits / DocEditor / RichEditor / DiagramEditor / FileDetailDialog）</td></tr>
+  <tr><td class="n">fullscreen/TabBar.tsx + .module.css</td><td>新增</td><td>纯展示，形状照 <code>EditorToolbar</code>（宿主传状态、组件不持有）</td></tr>
+  <tr><td class="n">fullscreen/useEditorTabs.ts</td><td>新增</td><td>标签状态容器 + Rust 事件/<code>take_editor_init</code> 接入</td></tr>
+  <tr><td class="n">fullscreen/CloseAllDialog.tsx</td><td>新增</td><td>多脏标签聚合守卫（复刻 ConfirmDialog 三键 + 清单区）</td></tr>
+  <tr><td class="n">FullscreenEditor.tsx</td><td>改 + 拆</td><td>现 1063 行 → 外层改 TabHost；<code>FullscreenInner</code> 加 <code>active</code> / <code>onMeta</code> / 关闭请求句柄，并按 300 行红线拆分</td></tr>
+  <tr><td class="n">useFileWatch.ts / useOutlineSpy.ts</td><td>改</td><td>加 <code>active</code> 门控（沿用 <code>useWindowVisible</code> 的暂停手法）</td></tr>
+  <tr><td class="n">FullscreenEditor.module.css</td><td>改</td><td>加标签条样式；<code>.focusMode</code> 的隐藏列表加上 <code>.tabBar</code></td></tr>
+  <tr><td class="n">App.tsx（双击 .md）</td><td>改</td><td>多选文件时全部打开（现在只取 <code>paths[0]</code>）</td></tr>
+  <tr><td class="n">commands/system.rs</td><td>改（小）</td><td><code>PendingEditor</code> 单槽改队列，修「建窗未完成时又来一个请求，emit 打空」的竞态；加 <code>CloseRequested</code> 拦截让 Alt+F4 也走守卫</td></tr>
+</table>
+
+<h3>内存与开销（未实测，实施后回填）</h3>
+<p>保活的代价是每个标签各持一份 CodeMirror <code>EditorState</code>。上限 12 是当前的口径，<b>具体内存占用与切换耗时以实施后的实测为准</b>，不在稿子里预设结论（规则 8.5）。可确定的只有"非活动标签的轮询/监听必须停"这一条。</p>
+
+<h2>八、明确不做</h2>
+<ul>
+  <li><b>并排多窗格</b>（同一窗口左侧一个文档、右侧另一个）：现有 markdown 视图本身就是「大纲 + 编辑 + 预览」三栏，再分就是六栏，两套滚动同步与两套大纲 spy，改造量翻倍。留给 v2。</li>
+  <li><b>多独立窗口</b>：需要改 label 生成、capabilities 窗口白名单、<code>PendingEditor</code> 多槽、<code>set_editor_target</code> 单目标语义，且四个窗口变五个后多窗口乘法要重新审一遍。</li>
+  <li><b>标签拖拽排序 / 拖出成新窗口 / 右键菜单</b>：排序与菜单是纯增量体验，不影响"同时打开多个"这个主目标。</li>
+  <li><b>跨重启恢复上次打开的标签</b>：涉及持久化文档列表与路径失效处理，单独评估。</li>
+</ul>
+
+<h2>九、验收要点（交付前自测）</h2>
+<ul>
+  <li>单标签时标签条不渲染，DOM 里也没有占位（对比改动前截图，除标签条外像素级一致）。</li>
+  <li>打开第 2 个文档后，在标签 A 改动文字 → 切到 B → 切回 A：<b>Ctrl+Z 能回退</b>、光标与滚动位置保留（这条是保活方案的唯一硬判据）。</li>
+  <li>已在编辑器打开的文件再次从卡片点「全屏」：切到该标签，且其未保存内容<b>不被覆盖</b>。</li>
+  <li>标签 3 处于自动保存失败态时切走，红点仍在（规则 15：反馈不能随活动标签消失）。</li>
+  <li>非活动标签不再触发 <code>file_mtime_ms</code> 轮询（可断点或看日志计数）。</li>
+</ul>
+
+</div>
+</body>
+</html>

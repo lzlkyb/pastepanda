@@ -6,7 +6,7 @@
 //! 🔴 红线：无 AI。快照只进本机 SQLite。
 
 use crate::data_store::{DataStore, Note, NoteRevision, NoteRevisionMeta};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 /// 一篇笔记的历史列表，新在前。**不含当前版、不带全文**。
 #[tauri::command]
@@ -36,8 +36,11 @@ pub fn note_revision_pin(store: State<DataStore>, rev_id: i64, pinned: bool) -> 
 ///
 /// 内部会**先把当前版存成一份快照**，所以恢复可撤销。
 #[tauri::command]
-pub fn note_restore(store: State<DataStore>, rev_id: i64) -> Result<Note, String> {
+pub fn note_restore(app: AppHandle, store: State<DataStore>, rev_id: i64) -> Result<Note, String> {
     // 空串 = 人在界面上点的。这个命令只给界面用，
     // 模型走的是 MCP 的 `kb_revert`（它传 `agent:xxx`）。
-    store.note_restore(rev_id, "")
+    let note = store.note_restore(rev_id, "")?;
+    // 恢复会把整篇正文换成旧版本——里面的 `- [ ]` 集合变了，岛要跟着变
+    crate::todo_tasks::refresh_island(&app);
+    Ok(note)
 }

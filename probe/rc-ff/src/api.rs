@@ -7,7 +7,7 @@
 //! 在此目标上等价，用 `"C"` 与 FFmpeg 头文件里的声明形式对应。
 
 use crate::dll::Dll;
-use crate::types::{AVCodecContext, AVFrame, AVPacket};
+use crate::types::{AVBufferRef, AVCodecContext, AVFrame, AVPacket};
 use anyhow::{Context, Result};
 use std::ffi::{c_char, c_void, CStr};
 use std::path::Path;
@@ -25,6 +25,7 @@ type Fn1<A, R> = unsafe extern "C" fn(A) -> R;
 type Fn2<A, B, R> = unsafe extern "C" fn(A, B) -> R;
 type Fn3<A, B, C, R> = unsafe extern "C" fn(A, B, C) -> R;
 type Fn4<A, B, C, D, R> = unsafe extern "C" fn(A, B, C, D) -> R;
+type Fn5<A, B, C, D, E, R> = unsafe extern "C" fn(A, B, C, D, E) -> R;
 
 pub struct Ff {
     // 🔴 字段声明顺序 = Drop 顺序。avcodec **依赖** avutil，
@@ -48,6 +49,16 @@ pub struct Ff {
     pub av_opt_set_int: Fn4<*mut c_void, *const c_char, i64, i32, i32>,
     pub av_opt_get_int: Fn4<*mut c_void, *const c_char, i32, *mut i64, i32>,
     pub av_opt_set: Fn4<*mut c_void, *const c_char, *const c_char, i32, i32>,
+    // ── hwaccel（批 3 探针新增，全在 libavutil）─────────────────────
+    pub av_hwdevice_ctx_alloc: Fn1<i32, *mut AVBufferRef>,
+    pub av_hwdevice_ctx_init: Fn1<*mut AVBufferRef, i32>,
+    pub av_hwframe_ctx_alloc: Fn1<*mut AVBufferRef, *mut AVBufferRef>,
+    pub av_hwframe_ctx_init: Fn1<*mut AVBufferRef, i32>,
+    pub av_hwframe_get_buffer: Fn3<*mut AVBufferRef, *mut AVFrame, i32, i32>,
+    pub av_hwframe_transfer_data: Fn3<*mut AVFrame, *const AVFrame, i32, i32>,
+    pub av_buffer_ref: Fn1<*mut AVBufferRef, *mut AVBufferRef>,
+    pub av_buffer_create:
+        Fn5<*mut u8, usize, Option<unsafe extern "C" fn(*mut c_void, *mut u8)>, *mut c_void, i32, *mut AVBufferRef>,
 
     // ── libavcodec ───────────────────────────────────────────────
     pub avcodec_version: Fn0<u32>,
@@ -96,6 +107,14 @@ impl Ff {
             av_opt_set_int: s!(avutil_dll, av_opt_set_int),
             av_opt_get_int: s!(avutil_dll, av_opt_get_int),
             av_opt_set: s!(avutil_dll, av_opt_set),
+            av_hwdevice_ctx_alloc: s!(avutil_dll, av_hwdevice_ctx_alloc),
+            av_hwdevice_ctx_init: s!(avutil_dll, av_hwdevice_ctx_init),
+            av_hwframe_ctx_alloc: s!(avutil_dll, av_hwframe_ctx_alloc),
+            av_hwframe_ctx_init: s!(avutil_dll, av_hwframe_ctx_init),
+            av_hwframe_get_buffer: s!(avutil_dll, av_hwframe_get_buffer),
+            av_hwframe_transfer_data: s!(avutil_dll, av_hwframe_transfer_data),
+            av_buffer_ref: s!(avutil_dll, av_buffer_ref),
+            av_buffer_create: s!(avutil_dll, av_buffer_create),
 
             avcodec_version: s!(avcodec_dll, avcodec_version),
             avcodec_configuration: s!(avcodec_dll, avcodec_configuration),

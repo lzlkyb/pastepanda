@@ -20,6 +20,7 @@ mod note_folder;
 mod note_links;
 mod note_md;
 mod note_revision;
+mod note_todo;
 mod note_vault;
 mod pref_signals;
 mod profile;

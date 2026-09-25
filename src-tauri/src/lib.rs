@@ -56,6 +56,15 @@ pub mod secret_registry;
 pub mod similar;
 /// M6 多机同步。当前只有 P1 身份/配对层，无传输层、无界面。
 pub mod sync;
+mod todo_island;
+mod todo_island_hover;
+mod todo_island_probe;
+/// 岛的舞台尺寸与切换（收起/悬停/展开/输入/全清）。
+mod todo_island_stage;
+/// 独占全屏检测（岛在全屏应用前要藏起来，拍板 6）。
+mod todo_island_fullscreen;
+/// 待办扫描（灵动岛 B2）：活笔记正文的 GFM 复选框 → 岛状态。
+pub mod todo_tasks;
 mod tray_manager;
 mod win_foreground;
 
@@ -590,6 +599,13 @@ pub fn run() {
             // 恢复浮标拖拽保存的位置偏移（须在 DataStore manage 之后）
             stack_hud::init(&handle);
 
+            // 待办灵动岛的状态缓存：岛 webview 首次 mount 时拉取，避免首帧空白
+            app.manage(todo_island::IslandStateCache::default());
+            // 待办扫描缓存：键是 updated_ms，内容没变的笔记不再重扫正文
+            app.manage(todo_tasks::TodoScanCache::default());
+            // 探针阶段：只有带上 PP_TODO_ISLAND_PROBE=1 才显示岛（B1 才接真正的常驻逻辑）
+            todo_island::init(&handle);
+
             // 初始化图标缓存（用于来源应用真实图标）
             // 须在监听器启动之前 manage：事件驱动监听的捕获/处理线程依赖 IconCache
             let icon_cache_dir = app_dir.join("source-icons");
@@ -699,9 +715,29 @@ pub fn run() {
                 // 状态变化 → emit，前端 Overlay / 对话框立刻跟上（流断开自清也要能看见）
                 {
                     let handle_rc = handle.clone();
+                    // 岛只对「本机推流」的起止做反应（接线 #8）：推流开始藏、结束复。
+                    // 用过渡标记去抖——notify 在画质/光标等状态变化时也会触发，
+                    // 不能每次都 hide/refresh（岛会被闪没又闪回）。
+                    let island_rc_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let island_rc_flag = island_rc_flag.clone();
                     rc_svc.set_notify(std::sync::Arc::new(move || {
                         if let Some(svc) = rc::global() {
                             let _ = handle_rc.emit("rc-session-changed", svc.status());
+                            {
+                                let st = svc.status();
+                                let inbound = st
+                                    .session
+                                    .as_ref()
+                                    .is_some_and(|s| s.phase == rc::SessionPhase::InboundActive);
+                                let prev = island_rc_flag.load(std::sync::atomic::Ordering::SeqCst);
+                                if inbound && !prev {
+                                    island_rc_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                                    crate::todo_island::hide(&handle_rc);
+                                } else if !inbound && prev {
+                                    island_rc_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                                    crate::todo_tasks::refresh_island(&handle_rc);
+                                }
+                            }
                             if let Some(err) = svc.take_inject_err() {
                                 let _ = handle_rc.emit("rc-inject-error", err);
                             }
@@ -888,6 +924,16 @@ pub fn run() {
             stack_hud::stack_hud_hide,
             stack_hud::stack_hud_state,
             stack_hud::stack_hud_adjust,
+            // 待办灵动岛：屏幕顶部居中的无焦点小窗（P0 探针骨架）
+            todo_island::todo_island_show,
+            todo_island::todo_island_hide,
+            todo_island::todo_island_state,
+            todo_island::todo_island_update,
+            todo_tasks::todo_island_tasks,
+            todo_tasks::todo_island_toggle_task,
+            todo_island_stage::todo_island_set_stage,
+            commands::note_append_daily_task,
+            todo_island_probe::todo_island_probe,
             commands::stack_template_list,
             commands::stack_template_save,
             commands::stack_template_delete,

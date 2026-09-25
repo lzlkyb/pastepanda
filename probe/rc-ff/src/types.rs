@@ -80,7 +80,12 @@ pub struct AVCodecContext {
     pub rc_buffer_size: i32, // offset 448
     _pad452: [u8; 12],
     pub rc_max_rate: i64, // offset 464
-    _pad472: [u8; 184],
+    _pad472: [u8; 80],    // 472..552
+    /// hw 帧池引用（批 3 扩展：D3D11 输入路径）。与 hw_device_ctx 二选一，
+    /// 探针走 hw_frames_ctx（显式纹理池）。
+    pub hw_frames_ctx: *mut c_void, // offset 552（AVBufferRef*）
+    pub hw_device_ctx: *mut c_void, // offset 560（AVBufferRef*）
+    _pad568: [u8; 88],    // 568..656
     pub thread_count: i32, // offset 656
     _pad660: [u8; 28],
     pub profile: i32, // offset 688
@@ -102,7 +107,13 @@ pub struct AVFrame {
     pub pts: i64, // offset 136
     _pad144: [u8; 8],
     pub time_base: AVRational, // offset 152
-    _tail: [u8; 264],          // 160..424
+    _pad160: [u8; 24],         // 160..184（quality/opaque/repeat_pict/sample_rate）
+    /// `AVBufferRef *buf[8]`（批 3 扩展：外部纹理包装用）
+    pub buf: [*mut AVBufferRef; AV_NUM_DATA_POINTERS], // offset 184
+    _pad248: [u8; 80],         // 248..328
+    /// `hw_frames_ctx`（批 3 扩展：D3D11 硬件帧）
+    pub hw_frames_ctx: *mut AVBufferRef, // offset 328
+    _tail: [u8; 88],           // 336..424
 }
 
 /// 与 `libavcodec/packet.h` 的 `AVPacket` 同大小同布局（只暴露要读的字段）。
@@ -121,11 +132,75 @@ pub struct AVPacket {
     _tail: [u8; 44],            // 60..104
 }
 
+// ── hwaccel（批 3 扩展，偏移来源同上：offsetof_probe.c 2026-09-24 输出）────────
+
+/// `AVBufferRef`：引用计数句柄（device/frames ctx 都经它传递）。
+#[repr(C)]
+pub struct AVBufferRef {
+    _buffer: *mut c_void,   // offset 0（AVBuffer*，不动）
+    pub data: *mut c_void,  // offset 8（指向 AVHWDeviceContext / AVHWFramesContext）
+    _size: usize,           // offset 16
+}
+
+/// `AVHWDeviceContext`（40 B）。alloc 后手填 `AVD3D11VADeviceContext`，再 init。
+#[repr(C)]
+pub struct AVHWDeviceContext {
+    _av_class: *mut c_void,  // 0
+    pub type_: i32,          // 8
+    _pad12: [u8; 4],
+    /// 指向 `AVD3D11VADeviceContext`
+    pub hwctx: *mut c_void,  // 16
+    _pad24: [u8; 16],
+}
+
+/// `AVD3D11VADeviceContext`（64 B）。**共享主工程设备的手动入口**：
+/// `d3d11va_device_create` 只会自建设备，收外部指针只能走 alloc + 手填 + init。
+#[repr(C)]
+pub struct AVD3D11VADeviceContext {
+    pub device: *mut c_void,           // 0
+    pub device_context: *mut c_void,   // 8（立即上下文，可空）
+    _pad16: [u8; 16],
+    pub lock: *mut c_void,             // 32（回调，可空）
+    pub unlock: *mut c_void,           // 40
+    pub lock_ctx: *mut c_void,         // 48
+    pub bind_flags: u32,               // 56（frames 池纹理的 BindFlags 缺省来源）
+    pub misc_flags: u32,               // 60
+}
+
+/// `AVHWFramesContext`（80 B）。init 前要填：format/sw_format/width/height/initial_pool_size。
+#[repr(C)]
+pub struct AVHWFramesContext {
+    _av_class: *mut c_void,          // 0
+    pub device_ref: *mut AVBufferRef, // 8
+    pub device_ctx: *mut AVHWDeviceContext, // 16
+    /// 指向 `AVD3D11VAFramesContext`
+    pub hwctx: *mut c_void,          // 24
+    _pad32: [u8; 24],                // free/user_opaque/pool
+    pub initial_pool_size: i32,      // 56
+    pub format: i32,                 // 60（AV_PIX_FMT_D3D11）
+    pub sw_format: i32,              // 64（NV12 / BGRA）
+    pub width: i32,                  // 68
+    pub height: i32,                 // 72
+    _pad76: [u8; 4],
+}
+
+/// `AVD3D11VAFramesContext`（24 B）。`texture` 可在 init 前由调用方提供
+///（用户自带纹理路径；FFmpeg 只 GetDesc + 包装，不再自己建）。
+#[repr(C)]
+pub struct AVD3D11VAFramesContext {
+    pub texture: *mut c_void, // 0
+    pub bind_flags: u32,      // 8
+    pub misc_flags: u32,      // 12
+    _pad16: [u8; 8],
+}
+
 // ── 常量（来自 offsetof_probe 输出，必须逐一对上）──────────────────────────
 pub const AV_NUM_DATA_POINTERS: usize = 8;
 pub const AV_PIX_FMT_NV12: i32 = 23;
 pub const AV_PIX_FMT_BGRA: i32 = 28;
 pub const AV_PIX_FMT_YUV420P: i32 = 0;
+pub const AV_PIX_FMT_D3D11: i32 = 171;
+pub const AV_HWDEVICE_TYPE_D3D11VA: i32 = 7;
 pub const AVMEDIA_TYPE_VIDEO: i32 = 0;
 pub const AV_CODEC_ID_H264: i32 = 27;
 pub const AV_PKT_FLAG_KEY: i32 = 1;
@@ -153,6 +228,8 @@ const _: () = {
     assert!(offset_of!(AVCodecContext, gop_size) == 332);
     assert!(offset_of!(AVCodecContext, rc_buffer_size) == 448);
     assert!(offset_of!(AVCodecContext, rc_max_rate) == 464);
+    assert!(offset_of!(AVCodecContext, hw_frames_ctx) == 552);
+    assert!(offset_of!(AVCodecContext, hw_device_ctx) == 560);
     assert!(offset_of!(AVCodecContext, thread_count) == 656);
     assert!(offset_of!(AVCodecContext, profile) == 688);
     assert!(offset_of!(AVCodecContext, level) == 692);
@@ -166,6 +243,29 @@ const _: () = {
     assert!(offset_of!(AVFrame, format) == 116);
     assert!(offset_of!(AVFrame, pts) == 136);
     assert!(offset_of!(AVFrame, time_base) == 152);
+    assert!(offset_of!(AVFrame, buf) == 184);
+    assert!(offset_of!(AVFrame, hw_frames_ctx) == 328);
+
+    assert!(size_of::<AVHWDeviceContext>() == 40);
+    assert!(offset_of!(AVHWDeviceContext, type_) == 8);
+    assert!(offset_of!(AVHWDeviceContext, hwctx) == 16);
+    assert!(size_of::<AVD3D11VADeviceContext>() == 64);
+    assert!(offset_of!(AVD3D11VADeviceContext, device) == 0);
+    assert!(offset_of!(AVD3D11VADeviceContext, device_context) == 8);
+    assert!(offset_of!(AVD3D11VADeviceContext, lock) == 32);
+    assert!(offset_of!(AVD3D11VADeviceContext, bind_flags) == 56);
+    assert!(size_of::<AVHWFramesContext>() == 80);
+    assert!(offset_of!(AVHWFramesContext, device_ref) == 8);
+    assert!(offset_of!(AVHWFramesContext, device_ctx) == 16);
+    assert!(offset_of!(AVHWFramesContext, hwctx) == 24);
+    assert!(offset_of!(AVHWFramesContext, initial_pool_size) == 56);
+    assert!(offset_of!(AVHWFramesContext, format) == 60);
+    assert!(offset_of!(AVHWFramesContext, sw_format) == 64);
+    assert!(offset_of!(AVHWFramesContext, width) == 68);
+    assert!(offset_of!(AVHWFramesContext, height) == 72);
+    assert!(size_of::<AVD3D11VAFramesContext>() == 24);
+    assert!(size_of::<AVBufferRef>() == 24);
+    assert!(offset_of!(AVBufferRef, data) == 8);
 
     assert!(size_of::<AVPacket>() == 104);
     assert!(offset_of!(AVPacket, buf) == 0);

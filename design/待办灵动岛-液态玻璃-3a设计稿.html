@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 液态玻璃 3a 设计稿（探针实测版）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 900px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #c2410c; font-weight: 600; }
+
+  /* ===== 观感模拟：网页里 backdrop-filter 有效（旧稿同款手法），模拟窗口级 Acrylic ===== */
+  .scene {
+    position: relative; border-radius: 12px; overflow: hidden;
+    min-height: 190px; border: 1px solid #c9ccd4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    /* 模拟桌面内容：亮色文档区 + 深色终端区 各占一半 */
+    background:
+      linear-gradient(105deg, transparent 0 46%, rgba(0,0,0,.65) 50% 54%, transparent 58% 100%),
+      linear-gradient(90deg, #dfe6ee 0 50%, #23262e 50% 100%);
+  }
+  .scene::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.35) 0 26px, rgba(255,255,255,0) 26px 52px) left/50% 100% no-repeat,
+      repeating-linear-gradient(0deg, rgba(80,200,140,.25) 0 26px, rgba(0,0,0,0) 26px 52px) right/50% 100% no-repeat;
+  }
+  .scene .tag { position: absolute; top: 8px; left: 12px; font-size: 11px; color: #52525b; z-index: 3; }
+  .scene .tag2 { position: absolute; top: 8px; right: 12px; font-size: 11px; color: rgba(255,255,255,.6); z-index: 3; }
+  .pill {
+    position: relative; z-index: 2; height: 40px; padding: 0 15px; border-radius: 999px;
+    display: flex; align-items: center; gap: 8px; font-size: 12px; user-select: none;
+    box-shadow: inset 0 0 0 1px var(--ln), 0 6px 18px rgba(0,0,0,.25);
+    backdrop-filter: blur(22px) saturate(1.15);
+    -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  }
+  .pill .ring { width: 16px; height: 16px; }
+  .pill .dot { width: 3px; height: 3px; border-radius: 99px; background: currentColor; opacity: .4; }
+  .pill .txt { white-space: nowrap; }
+  /* 厚磨砂 α.78 */
+  .pill.thick-dark { background: rgba(20,20,24,.78); color: #f4f4f5; --ln: rgba(255,255,255,.14); }
+  .pill.thick-light { background: rgba(255,255,255,.78); color: #18181b; --ln: rgba(0,0,0,.10); }
+  /* 清透档 */
+  .pill.clear-dark { background: rgba(20,20,24,.59); color: #f4f4f5; --ln: rgba(255,255,255,.16); }
+  .pill.clear-light { background: rgba(255,255,255,.43); color: #18181b; --ln: rgba(0,0,0,.10); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 液态玻璃 3a（双主题磨砂）设计稿 —— 探针实测版</h1>
+  <p class="meta">
+    2026-09-25 · 决策：档 3 取变体 3a · 探针已跑两轮（`todo_island_probe.rs` 玻璃段，组内噪声 0）·
+    本稿全部数字要么是实测、要么是「实测标定后的线性外推（误差 ≤9%）」<br>
+    ✅ <b>2026-09-25 已拍板并落地：A 厚磨砂 α.78（dark200/white200）+ 叠加档 1 弱高光与顶缘亮线</b>。
+    实施：Rust `apply_theme_material`（create 时按 config.theme 定极性；听 theme-changed 重施加；失败挂
+    html[data-material="off"] 走 CSS 实色兜底）+ CSS tint 近透明。探针实拍 island.png 复核通过，
+    cargo 1762 / lint:ui 全绿。
+  </p>
+
+  <h2>0 · 探针结论（先给三句话）</h2>
+  <div class="note">
+    ① <b>材质真生效且行为可预测</b>：胶囊内部随配方精准变化——本机浅蓝桌面 (187,208,224) 上，
+    dark150 实测内部 (80,90,99)（线性理论 88.8，误差 9%）、white110 (207,220,227)（理论 216，误差 4%）、white150 (214,224,231)（理论 227）。<br>
+    ② <b>四角月牙实测存在</b>：材质按窗口矩形铺，胶囊圆角外露 ~5 逻辑px 的方角玻璃——同 tint 下月牙与岛体同色，只在「材质色 ≠ 背景色」时以<b>形状</b>可见（白玻璃压暗壁纸时最明显）。<br>
+    ③ <b>文字对比度由「玻璃极性 × 主题极性」决定</b>：实测深磨砂上深字（浅色主题）2.6:1 ❌、白磨砂上深字 12.9:1 ✓——物理与 §2.2 的轴完全一致：模糊救不了平均亮度。
+  </div>
+
+  <h2>1 · 标定与四背景外推（关键表：浓度到多少才全绿）</h2>
+  <p class="note">
+    模型：<code>玻璃输出 = α×tint + (1−α)×背景均值</code>（实测标定误差 ≤9%，下表用理论 α 计算）。
+    深色主题文字 <code>#f4f4f5</code> / 次要 <code>66% #f4f4f5</code>；浅色主题文字 <code>#18181b</code>。
+    ❗ 极性规则：深玻璃只配深色主题（浅字）、白玻璃只配浅色主题（深字）——主题适配层 <code>data-island-mode</code> 现成，正好绑定。
+  </p>
+  <table>
+    <tr><th>配方（tint α）</th><th>主题</th><th>白文档 (255)</th><th>浅壁纸 (~200)</th><th>中灰 (~120)</th><th>近黑 (0)</th><th>结论</th></tr>
+    <tr><td>white110（清透 .43）</td><td>浅色·深字</td><td class="ok">21:1</td><td class="ok">15:1</td><td class="ok">8.4:1</td><td class="bad">3.5:1</td><td>近黑壁纸上掉下线</td></tr>
+    <tr><td><b>white200（厚磨砂 .78）</b></td><td>浅色·深字</td><td class="ok">21:1</td><td class="ok">17:1</td><td class="ok">13:1</td><td class="ok">10.6:1</td><td class="ok">全绿 ✅</td></tr>
+    <tr><td>dark150（清透 .59）</td><td>深色·浅字</td><td class="bad">主 4.2 / 次 2.8</td><td>主 ~5.4</td><td>主 ~8</td><td class="ok">17:1</td><td>白文档上掉下线（次文字 2.8）</td></tr>
+    <tr><td><b>dark200（厚磨砂 .78）</b></td><td>深色·浅字</td><td class="ok">主 8.4 / 次 4.7</td><td class="ok">主 ~7.5</td><td class="ok">主 ~12</td><td class="ok">17:1</td><td class="ok">全绿 ✅</td></tr>
+  </table>
+  <p class="note">
+    <b>读法</b>：清透档（α .43–.59）在本机这类中亮桌面上实测非常好（8–13:1），但它有两个<b>必然出现</b>的失效场景：
+    浅色主题 + 近黑壁纸/终端（3.5:1）、深色主题 + 白文档（次要文字 2.8:1）。
+    要四背景全绿，浓度必须上到 <b>α ≈ 0.78</b>——透光 22%（现状实色 D 档透光 8%，仍是从「板」到「玻璃」的一步）。
+    这就是 §2.2 那条对立轴在真实材质上的再次显形：<b>透与读只能选偏向</b>。
+  </p>
+
+  <h2>2 · 观感模拟（网页 backdrop-filter 模拟窗口 Acrylic；左边亮文档 / 右边深终端）</h2>
+  <p class="note">上排 = 厚磨砂 α.78（推荐），下排 = 清透档。看两件事：玻璃质感是否值得、以及清透档在深色半边上的白玻璃 / 亮色半边上的深玻璃是不是已经开始「化」。</p>
+  <div class="grid2">
+    <div class="scene">
+      <span class="tag">亮文档侧</span><span class="tag2">深终端侧</span>
+      <div class="pill thick-dark"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg><span>3</span><span class="dot"></span><span class="txt">整理周报素材</span></div>
+      <div class="pill thick-light"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(0,0,0,.14)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg><span>3</span><span class="dot"></span><span class="txt">整理周报素材</span></div>
+    </div>
+    <div class="scene">
+      <span class="tag">亮文档侧</span><span class="tag2">深终端侧</span>
+      <div class="pill clear-dark"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg><span>3</span><span class="dot"></span><span class="txt">整理周报素材</span></div>
+      <div class="pill clear-light"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(0,0,0,.14)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg><span>3</span><span class="dot"></span><span class="txt">整理周报素材</span></div>
+    </div>
+  </div>
+
+  <h2>3 · 形状代价：四角月牙（实测 ~5 逻辑px，无法消除只能接受/掩盖）</h2>
+  <p class="note">
+    材质按窗口矩形铺（radius 参数 macOS Only），CSS 胶囊裁不到窗口层 ⇒ 圆角外的月牙是玻璃。
+    实测对角线剖面：月牙宽 <b>k=0..5 物理px（≈5 逻辑px）</b>，与岛体同色（同 tint）——
+    所以它只在「玻璃色 ≠ 背景色」时以形状轮廓可见：白玻璃压暗壁纸 = 四个亮方角；深玻璃压白文档 = 四个暗方角。
+    探针 PNG 人眼复核：本机桌面上两配方<b>都不扎眼</b>（月牙只有 5px 且带模糊质感）。
+    唯一干净的消除手段 SetWindowRgn 无抗锯齿（胶囊会有阶梯），不采用。<b>这条是接受项</b>。
+  </p>
+
+  <h2>4 · 其余边界（全部有据）</h2>
+  <div class="note">
+    ① <b>岛体 vs 纯黑壁纸</b>：dark200 岛体 rgb(16) 对纯黑只有 ~1.05:1——和 §2.2 里 B 档的「消失」问题同源；对策沿用 D 档结论：<b>描边 + 外投影恒在</b>，任何背景至少一样起作用。<br>
+    ② <b>hover 不动材质</b>：材质 tint 不能每次穿透翻转都走 Rust 调 set_effects（60ms 轮询 × 每次重合成）——hover 视觉保持 CSS 层（微调一层洗色），材质恒定。<br>
+    ③ <b>主题切换</b>：材质 tint 跟主题走 ⇒ Rust 侧要监听 theme-changed 重施加材质（create 时读 config 定极性；前端广播事件 Rust 用 Listener 接）。<br>
+    ④ <b>成本</b>：RSS 探针实测 +29 MB（含材质）；Acrylic 在背后内容变化时重采样——岛是静态小窗（260×47 物理），远小于全屏用法，可接受；若实测 CPU 异常再降 blur 半径。<br>
+    ⑤ <b>回退链</b>：任何一步不满意 → 摘 set_effects + 恢复 tint 变量 = 今天的线上形态（探针已验证这个复原路径）。
+  </div>
+
+  <h2>5 · 请拍板：浓度档位</h2>
+  <div class="note">
+    <b>A · 厚磨砂 α.78（推荐）</b>——四背景全绿（含次要文字），透光 22%，观感是「真磨砂玻璃板」；深浅两版跟主题走。<br>
+    <b>B · 清透 α.43–.59</b>——最接近 iOS 液态玻璃的透感，本机中亮桌面实测 8–13:1 很美；但接受两个失效场景（浅色主题+近黑背景 3.5:1、深色主题+白文档次要 2.8:1），其余背景可用。<br>
+    选 B 我会在实现里把「记一条」输入态等强阅读区局部加浓（面板内叠加一层实色）作部分补偿。
+  </div>
+
+  <h2>6 · 落地清单（拍板后执行）</h2>
+  <div class="note">
+    ① <code>todo_island.rs</code>：create 时读 config.theme 定极性，施加 Acrylic（dark200/white200 或所选档）；
+    Rust <code>Listener</code> 接 theme-changed 重施加；探针的复原路径即回退路径。<br>
+    ② <code>TodoIsland.module.css</code>：<code>--island-tint</code> 两主题各改为近透明（材质接管染色），描边/投影/文字/环不变；hover 走 CSS 洗色层。<br>
+    ③ 档 1 的弱高光可叠加在玻璃上（镜面反光是「液态感」的第二来源），确认档位时一并说要不要。<br>
+    ④ 验证：重跑玻璃探针（新浓度下复测四角与对比度）+ lint:ui + 全量测试。
+  </div>
+
+</div>
+</body>
+</html>

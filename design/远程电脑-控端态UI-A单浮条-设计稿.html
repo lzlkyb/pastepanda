@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑 · 控端态 UI — A 单浮条收编 设计稿</title>
+<style>
+  :root {
+    --danger: #d64545;
+    --accent: #4f7cff;
+    --cyan: #06b6d4;
+    --green: #11813a;
+    --orange: #e0803a;
+    --text: #1c1f23;
+    --muted: #6b7280;
+    --border: #e3e6ea;
+    --card: #fff;
+    --bg: #f3f5f8;
+    /* 浮条深色玻璃 */
+    --cap-bg: rgba(13, 16, 22, .82);
+    --cap-line: rgba(255, 255, 255, .09);
+    --cap-text: #e8ecf2;
+    --cap-muted: #93a0b4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 13px; padding: 28px 40px 60px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 20px; line-height: 1.7; }
+  h2 { font-size: 15px; margin: 30px 0 4px; padding-left: 9px; border-left: 3px solid var(--accent); }
+  h2 .tag { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 8px; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 10px; line-height: 1.8; }
+  .note b { color: var(--text); }
+  .note .keep { color: var(--green); font-weight: 600; }
+  .note .del { color: var(--danger); font-weight: 600; }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 8px;
+  }
+
+  /* ═══ 改动清单 ═══ */
+  table.changes { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.changes th, table.changes td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; line-height: 1.6; }
+  table.changes th { background: var(--bg); font-weight: 600; font-size: 12px; }
+  table.changes td.dim { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  .d-del { color: var(--danger); font-weight: 600; }
+  .d-new { color: var(--accent); font-weight: 600; }
+  .d-keep { color: var(--green); font-weight: 600; }
+
+  /* ═══════════ 窗口模拟（1:1 真实尺寸） ═══════════ */
+  .win {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: var(--card); box-shadow: 0 4px 18px rgba(0,0,0,.07);
+    position: relative;
+  }
+  /* 顶栏：瘦身后 ≈33px */
+  .topbar {
+    height: 33px; display: flex; align-items: center; gap: 10px;
+    padding: 0 0 0 12px; background: var(--card);
+    border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .topbar .who b { font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-on { background: var(--green); }
+  .dot-bad { background: var(--danger); }
+  .topbar .sp { flex: 1; }
+  .wbtns { display: flex; align-self: stretch; }
+  .wbtn { width: 44px; display: flex; align-items: center; justify-content: center; color: var(--text); }
+  .wbtn:hover { background: rgba(0,0,0,.06); }
+  .wbtn.close:hover { background: var(--danger); color: #fff; }
+
+  /* 画布 = 远程桌面 */
+  .canvas {
+    position: relative; height: 400px; overflow: hidden;
+    background:
+      radial-gradient(ellipse 420px 200px at 78% 30%, rgba(79,124,255,.14), transparent 70%),
+      linear-gradient(135deg, #3a6ea5 0%, #6fa0c8 55%, #88b4d4 100%);
+  }
+  /* 远程桌面上的假窗口，增加真实感 */
+  .fw { position: absolute; border-radius: 6px; background: rgba(255,255,255,.92); box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  .fw .fw-t { height: 22px; border-bottom: 1px solid rgba(0,0,0,.08); display: flex; align-items: center; padding: 0 10px; font-size: 10px; color: #6b7280; }
+  .fw .fw-b { padding: 8px 10px; display: flex; gap: 5px; }
+  .fw .ln { height: 6px; border-radius: 3px; background: rgba(0,0,0,.08); }
+
+  .sim-cap {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 10;
+  }
+  .flag { position: absolute; font-size: 10px; color: #fff; background: var(--danger); border-radius: 8px; padding: 1px 7px; z-index: 5; }
+
+  /* ═══════════ 单浮条（核心组件） ═══════════ */
+  .capsule {
+    display: flex; align-items: center; gap: 7px;
+    height: 34px; padding: 0 6px 0 13px;
+    background: var(--cap-bg);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--cap-line);
+    border-radius: 17px;
+    font-size: 12px; color: var(--cap-text);
+    box-shadow: 0 8px 26px rgba(0,0,0,.35);
+    white-space: nowrap;
+  }
+  .capsule .who { font-weight: 600; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  .pill {
+    font-size: 10.5px; padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pill-on { background: rgba(52,199,123,.16); color: #4ade80; border: 1px solid rgba(52,199,123,.35); }
+  .pill-view { background: rgba(147,160,180,.16); color: var(--cap-muted); border: 1px solid rgba(147,160,180,.3); }
+  .pill-warn { background: rgba(224,128,58,.18); color: #f5b06a; border: 1px solid rgba(224,128,58,.4); }
+  .pill-bad { background: rgba(214,69,69,.2); color: #f09595; border: 1px solid rgba(214,69,69,.45); }
+  .csep { width: 1px; height: 16px; background: rgba(255,255,255,.12); flex-shrink: 0; }
+  .cbtn {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 24px; padding: 0 8px; border-radius: 7px;
+    border: none; background: transparent; color: var(--cap-text);
+    font-size: 11.5px; cursor: pointer; flex-shrink: 0;
+  }
+  .cbtn:hover { background: rgba(255,255,255,.1); }
+  .cbtn.on { background: rgba(79,124,255,.28); color: #9db9ff; }
+  .cbtn .val { color: var(--cap-muted); }
+  .cbtn.danger { color: #f09595; }
+  .cbtn.danger:hover { background: rgba(214,69,69,.22); color: #ffb4b4; }
+  .cbtn svg { display: block; flex-shrink: 0; }
+  .capsule .kb {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; color: #4ade80; flex-shrink: 0;
+  }
+  .capsule .kb i { width: 5px; height: 5px; border-radius: 50%; background: #4ade80; display: inline-block; }
+
+  /* ⋯ 面板 */
+  .more-panel {
+    position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
+    width: 312px; border-radius: 12px; padding: 10px;
+    background: var(--cap-bg); backdrop-filter: blur(14px);
+    border: 1px solid var(--cap-line);
+    box-shadow: 0 14px 40px rgba(0,0,0,.4);
+    font-size: 12px; color: var(--cap-text); z-index: 11;
+  }
+  .mp-sec { font-size: 10px; letter-spacing: .8px; color: var(--cap-muted); margin: 8px 6px 5px; }
+  .mp-sec:first-child { margin-top: 0; }
+  .mp-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 7px;
+  }
+  .mp-row:hover { background: rgba(255,255,255,.07); }
+  .mp-row .lab { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .mp-row .lab svg { color: var(--cap-muted); flex-shrink: 0; }
+  .mp-row .cur { color: var(--cap-muted); font-size: 11px; }
+  .mp-row .chev { color: var(--cap-muted); }
+  .switch {
+    width: 30px; height: 16px; border-radius: 8px; background: rgba(255,255,255,.16);
+    position: relative; flex-shrink: 0; cursor: pointer;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+    border-radius: 50%; background: #fff; transition: left 150ms;
+  }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { left: 16px; }
+  .mp-danger { color: #f09595 !important; }
+  .mp-danger svg { color: #f09595 !important; }
+
+  /* 首次连接中央提示 */
+  .kb-hint {
+    position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border-radius: 10px;
+    background: var(--cap-bg); border: 1px solid var(--cap-line);
+    backdrop-filter: blur(14px); box-shadow: 0 8px 26px rgba(0,0,0,.3);
+    font-size: 12.5px; color: var(--cap-text); z-index: 9;
+    animation: hintFade 3.2s forwards;
+  }
+  @keyframes hintFade { 0%,72% { opacity: 1; } 100% { opacity: 0; } }
+  .kb-hint kbd {
+    font-family: inherit; font-size: 10.5px; padding: 1px 7px; border-radius: 5px;
+    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); color: var(--cap-text);
+  }
+
+  /* 只看态申请控制权 */
+  .req-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 24px; padding: 0 11px; border-radius: 7px; border: none;
+    background: linear-gradient(135deg, var(--accent), var(--cyan));
+    color: #fff; font-size: 11.5px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+  }
+
+  /* 全屏态：顶边热区 + 同一条浮条 */
+  .hotzone {
+    position: absolute; top: 0; left: 0; right: 0; height: 10px;
+    background: linear-gradient(to bottom, rgba(255,255,255,.14), transparent);
+    display: flex; justify-content: center;
+  }
+  .hotzone::after {
+    content: ""; width: 56px; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,.4); margin-top: 3px;
+  }
+  .fs-wrap { position: relative; height: 400px; overflow: hidden;
+    background:
+      radial-gradient(ellipse 420px 200px at 78% 30%, rgba(79,124,255,.14), transparent 70%),
+      linear-gradient(135deg, #3a6ea5 0%, #6fa0c8 55%, #88b4d4 100%);
+  }
+
+  /* 窄窗压缩演示 */
+  .narrow { width: 460px; }
+  .narrow .capsule .who, .narrow .capsule .csep.fit-sep,
+  .narrow .capsule .fitbtns { display: none; }
+
+  /* 规则标注列表 */
+  ol.rules { font-size: 12.5px; line-height: 2.1; padding-left: 20px; }
+  ol.rules b { color: var(--accent); }
+  ol.rules .dim { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>远程电脑 · 控端态 UI — 方案 A「单浮条收编」设计稿</h1>
+<div class="sub">
+  目标：画面四周只保留两个控制点——瘦身的窗口壳顶栏 + 一条会隐藏的浮条。<b>画质 / 画面 / 视图 / 详情 / 结束</b>全部收进浮条，
+  底栏（RcSessionBar 常驻玻璃条）删除，viewTools 与 HUD 按钮删除。全屏态复用 RcFullscreenHotbar 同构。
+  <br>业界对标：Chrome Remote Desktop 边缘 dock · RustDesk 顶部单条（collapse-toolbar）· Parsec 顶部胶囊。
+</div>
+
+<h2>§1 改动清单</h2>
+<div class="panel">
+  <table class="changes">
+    <tr><th style="width:150px">现状</th><th>处置</th><th style="width:220px">去向</th></tr>
+    <tr><td>顶栏：结束会话红按钮 + 更多菜单</td><td><span class="d-del">移除</span>（顶栏只承担窗口壳：灯 + 名字 + 警示 + 三键）</td><td>结束 → 浮条右端图标；更多 → 浮条 ⋯</td></tr>
+    <tr><td>底栏：画质/画面/下一屏/码率/声音/剪贴板/文件/状态字</td><td><span class="d-del">整条删除</span></td><td>画质/画面 → 浮条下拉；码率/声音/剪贴板/文件 → 浮条 ⋯ 面板；状态字 → 删除（键盘态上浮条）</td></tr>
+    <tr><td>viewTools（右上浮现 5 文字按钮）</td><td><span class="d-del">删除</span></td><td>适应/1:1/填充/全屏 → 浮条中段；锁定指针 → ⋯ 面板</td></tr>
+    <tr><td>HUD「连接详情」常驻按钮</td><td><span class="d-del">删除</span></td><td>→ 浮条右端 i 图标，面板改深色玻璃浮层</td></tr>
+    <tr><td>只看 recentRow（申请控制权）</td><td><span class="d-del">删除</span></td><td>→ 浮条内渐变主按钮（只看态出现）</td></tr>
+    <tr><td>"点画面可捕获键盘"底栏灰字</td><td><span class="d-new">升级</span></td><td>连接后画布中央一次性提示（3.2s 淡出）+ 键盘捕获态上浮条</td></tr>
+    <tr><td>全屏 RcFullscreenHotbar</td><td><span class="d-keep">保留</span>，浮条与它同构（同一条组件两种挂载位）</td><td>—</td></tr>
+  </table>
+</div>
+
+<h2>§2 常态 · 可控会话 <span class="tag">连接后首显 2.5s → 淡出；顶边 56px 热区或悬停唤出</span></h2>
+<div class="note">
+  浮条分段：<b>身份段</b>（灯 + 名字 + 可控胶囊 + 键盘态）→ <b>画质段</b>（画质▾ 画面▾）→ <b>视图段</b>（适应/1:1/填充/全屏）→ <b>动作段</b>（详情 i · ⋯ · 结束）。
+  画面本体零遮挡、零底栏。
+</div>
+<div class="win">
+  <div class="topbar">
+    <span class="dot dot-on"></span>
+    <span class="who">正在查看 <b>办公室-台式机</b></span>
+    <span class="sp"></span>
+    <div class="wbtns">
+      <span class="wbtn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span>
+      <span class="wbtn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="9" width="16" height="11" rx="2"/><path d="M8 5h8" opacity=".5"/></svg></span>
+      <span class="wbtn close"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    </div>
+  </div>
+  <div class="canvas">
+    <div class="fw" style="left:9%; top:16%; width:38%; height:52%">
+      <div class="fw-t">报价单.xlsx — Excel</div>
+      <div class="fw-b"><span class="ln" style="flex:2"></span><span class="ln" style="flex:1"></span><span class="ln" style="flex:1.4"></span></div>
+      <div class="fw-b" style="padding-top:0"><span class="ln" style="flex:1"></span><span class="ln" style="flex:2.2"></span></div>
+    </div>
+    <div class="fw" style="left:52%; top:30%; width:34%; height:40%">
+      <div class="fw-t">微信</div>
+      <div class="fw-b"><span class="ln" style="flex:1"></span></div>
+      <div class="fw-b" style="padding-top:0"><span class="ln" style="flex:1.6"></span></div>
+    </div>
+    <span class="flag" style="top:52px; left:14px">旧：底栏整条 + viewTools + HUD 全部删除</span>
+    <div class="sim-cap">
+      <div class="capsule">
+        <span class="dot dot-on" style="width:7px;height:7px"></span>
+        <span class="who">办公室-台式机</span>
+        <span class="pill pill-on">可控</span>
+        <span class="kb"><i></i>键盘已捕获</span>
+        <span class="csep"></span>
+        <button class="cbtn">画质 <span class="val">高清</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="cbtn">画面 <span class="val">整屏</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <span class="csep fit-sep"></span>
+        <span class="fitbtns" style="display:inline-flex;gap:2px">
+          <button class="cbtn on">适应</button>
+          <button class="cbtn">1:1</button>
+          <button class="cbtn">填充</button>
+        </span>
+        <button class="cbtn" title="全屏"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        <span class="csep"></span>
+        <button class="cbtn" title="连接详情"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></button>
+        <button class="cbtn" title="更多"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+        <button class="cbtn danger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+    <div class="kb-hint">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#93a0b4" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+      点击画面即可控制键盘鼠标 · <kbd>Esc</kbd> 释放
+    </div>
+  </div>
+</div>
+<div class="note">中央提示连接后只出现一次（session.id 去重），<b>3.2s 自动淡出</b>；键盘捕获态实时反映在浮条身份段（绿点胶囊），底栏灰字那条删除。</div>
+
+<h2>§3 ⋯ 面板展开 <span class="tag">低频项收纳：码率 / 声音 / 剪贴板 / 文件 / 指针 / 键盘 / 重连</span></h2>
+<div class="note">深色玻璃浮层，向下弹出；分组顺序 = 使用频率递减。码率当前值直接可见，点击展开选项（菜单向上弹，同现行 RcDropdown 逻辑）。</div>
+<div class="win">
+  <div class="canvas" style="height:320px">
+    <div class="fw" style="left:9%; top:16%; width:38%; height:52%">
+      <div class="fw-t">报价单.xlsx — Excel</div>
+      <div class="fw-b"><span class="ln" style="flex:2"></span><span class="ln" style="flex:1"></span></div>
+    </div>
+    <div class="sim-cap">
+      <div class="capsule">
+        <span class="dot dot-on" style="width:7px;height:7px"></span>
+        <span class="who">办公室-台式机</span>
+        <span class="pill pill-on">可控</span>
+        <span class="csep"></span>
+        <button class="cbtn">画质 <span class="val">高清</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="cbtn">画面 <span class="val">整屏</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="cbtn" title="全屏"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        <span class="csep"></span>
+        <button class="cbtn" title="连接详情"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></button>
+        <button class="cbtn on" title="更多"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+        <button class="cbtn danger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+    <div class="more-panel" style="position:absolute; top:64px">
+      <div class="mp-sec">传输与声音</div>
+      <div class="mp-row">
+        <span class="lab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>码率倍率</span>
+        <span class="cur">100% · 跟随链路</span>
+        <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>
+      </div>
+      <div class="mp-row">
+        <span class="lab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7"/></svg>对方声音</span>
+        <span class="switch on"></span>
+      </div>
+      <div class="mp-row">
+        <span class="lab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>剪贴板自动同步</span>
+        <span class="switch"></span>
+      </div>
+      <div class="mp-sec">文件</div>
+      <div class="mp-row">
+        <span class="lab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>发送文件到对方</span>
+        <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div class="mp-row">
+        <span class="lab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>从对方取文件</span>
+        <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div class="mp-sec">输入</div>
+      <div class="mp-row">
+        <span class="lab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M12 3v18" opacity=".4"/><circle cx="12" cy="12" r="9"/></svg>锁定系统指针</span>
+        <span class="switch"></span>
+      </div>
+      <div class="mp-row">
+        <span class="lab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M7 14h10"/></svg>释放键盘</span>
+        <span class="cur">Esc</span>
+      </div>
+      <div class="mp-sec">会话</div>
+      <div class="mp-row">
+        <span class="lab mp-danger"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3l-9 9"/></svg>重连</span>
+        <span class="cur">断开并重新发起</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>§4 警示态 <span class="tag">异常胶囊进浮条身份段，与重连一步直达</span></h2>
+<div class="note">链路警示从顶栏移入浮条——<b>异常时浮条锁显不淡出</b>（visible = shown || linkState ≠ connected）。「重连」贴着警示胶囊，失败态自救不需要开菜单。</div>
+<div class="win">
+  <div class="topbar">
+    <span class="dot dot-bad"></span>
+    <span class="who">正在查看 <b>办公室-台式机</b></span>
+    <span class="sp"></span>
+    <div class="wbtns">
+      <span class="wbtn close"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    </div>
+  </div>
+  <div class="canvas" style="height:150px">
+    <div class="sim-cap">
+      <div class="capsule">
+        <span class="dot dot-bad" style="width:7px;height:7px"></span>
+        <span class="who">办公室-台式机</span>
+        <span class="pill pill-bad">已断开</span>
+        <button class="cbtn" style="border:1px solid rgba(214,69,69,.5); color:#f09595">重连</button>
+        <span class="csep"></span>
+        <button class="cbtn danger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+    <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.85); font-size:12.5px">连接已断开，未能收到画面 · 可尝试重新连接</div>
+  </div>
+</div>
+<div class="note">
+  其他警示同位：<span class="pill pill-warn" style="position:static">链路不稳</span>
+  <span class="pill pill-warn" style="position:static">对方版本偏旧</span>
+  <span class="pill pill-warn" style="position:static">操作后 3s 无画面</span>
+  ——多个胶囊依次排进身份段，浮条 max-width 92% 自动加宽；顶栏从此只在异常时挂一个红/橙点，不再堆文字胶囊。
+</div>
+
+<h2>§5 只看态 + 全屏同构</h2>
+<div class="note">
+  只看：浮条身份段胶囊变灰「只看」，原 recentRow 删除，<b>申请控制权</b>成为浮条内渐变主按钮（重申式会话，确认弹窗不变）。
+  全屏：浮条挂载到顶边热区，与 RcFullscreenHotbar 合并成同一条——全屏后功能零丢失。
+</div>
+<div class="panel">
+  <div class="cols" style="display:flex; gap:16px">
+    <div style="flex:1; min-width:340px">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:6px">只看态浮条</div>
+      <div class="capsule" style="position:static; display:flex">
+        <span class="dot dot-on" style="width:7px;height:7px"></span>
+        <span class="who">办公室-台式机</span>
+        <span class="pill pill-view">只看</span>
+        <span class="csep"></span>
+        <button class="cbtn">画质 <span class="val">高清</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="cbtn" title="全屏"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        <span class="csep"></span>
+        <button class="req-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7 7 7-7"/></svg>申请控制权</button>
+        <button class="cbtn danger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px">画面下拉 / 视图三键在只看态隐藏（现行门禁不变），浮条更短。</div>
+    </div>
+    <div style="flex:1; min-width:340px">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:6px">全屏态：顶边热区（同 hotbar 现行交互）</div>
+      <div class="fs-wrap" style="height:120px">
+        <div class="hotzone"></div>
+        <div class="sim-cap" style="top:14px">
+          <div class="capsule">
+            <span class="dot dot-on" style="width:7px;height:7px"></span>
+            <span class="who">办公室-台式机</span>
+            <span class="pill pill-on">可控</span>
+            <span class="csep"></span>
+            <button class="cbtn">画质 <span class="val">高清</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+            <button class="cbtn">适应</button><button class="cbtn">1:1</button>
+            <button class="cbtn" title="退出全屏"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M8 21v-3a2 2 0 0 0-2-2H3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button>
+            <span class="csep"></span>
+            <button class="cbtn danger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px">窗口三键全屏时由系统 Esc / 热区退出承担；浮条本体与非全屏是同一组件。</div>
+    </div>
+  </div>
+</div>
+
+<h2>§6 窄窗压缩 <span class="tag">仿 RcControlDrawer 的 .who 压缩模型</span></h2>
+<div class="panel">
+  <div class="win narrow">
+    <div class="canvas" style="height:130px">
+      <div class="sim-cap">
+        <div class="capsule">
+          <span class="dot dot-on" style="width:7px;height:7px"></span>
+          <span class="pill pill-on">可控</span>
+          <span class="csep"></span>
+          <button class="cbtn">画质 <span class="val">高清</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+          <button class="cbtn">画面 <span class="val">整屏</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+          <span class="csep"></span>
+          <button class="cbtn danger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:8px">窄于 620px：名字省略（灯色保身份）、视图三键收进 ⋯；警示胶囊出现时浮条内部优先压缩 .val 当前值。绝不换行——现行底栏 72px 换行封顶的问题不再存在。</div>
+</div>
+
+<h2>§7 交互规则与实施落点</h2>
+<div class="panel">
+  <ol class="rules">
+    <li><b>浮现</b>：连接后首显 2.5s（可发现性）；此后顶边 56px 热区或悬停浮条唤出，离开 2.5s 淡出（复用 RcViewTools 现行机制与常量）。</li>
+    <li><b>锁显</b>：链路异常 / 操作无画面 / 文件传输进行中 → 浮条不淡出，警示胶囊就地呈现。</li>
+    <li><b>穿透</b>：浮条外画布区域 pointer-events:none 不变，远程点击零遮挡；淡出态 visibility:hidden + tabIndex=-1（P2-12 口径）。</li>
+    <li><b>失败回滚</b>：画质/画面/码率改档的乐观更新 + 失败回滚链路原样保留（RcSessionBar 的 remoteSend 逻辑搬入浮条组件）。</li>
+    <li><b>确认红线</b>：结束会话 / 申请控制权 / 重连一律 confirmDialog（U1 口径不变）。</li>
+    <li class="dim">实施落点：新建 RcSessionCapsule.tsx（浮条 + ⋯ 面板，预估 ~260 行）；RcViewTools 删除；RcHud 的按钮并入、面板逻辑保留；RcSessionBar 删除（remoteSend 搬走）；RcSessionTop 删结束/更多；RcFullscreenHotbar 改挂同一胶囊；RcSessionView 删 recentRow。CSS 新增 .capsule* 组、删 .sessionBar/.viewTools 组。</li>
+  </ol>
+</div>
+</body>
+</html>

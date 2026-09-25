@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 主题亮暗适配 设计稿</title>
+<style>
+  /* ========== 稿面外壳（非组件样式） ========== */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px;
+    font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  .meta code { background: #e9e9ec; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 860px; }
+  .note b { color: #27272a; }
+
+  /* 机制流程 */
+  .flow { background: #fff; border: 1px solid #dcdce0; border-radius: 12px; padding: 14px 18px; font-size: 12px; }
+  .flow ol { margin-left: 18px; }
+  .flow li { margin: 3px 0; }
+  .flow code { background: #eef4fb; color: #075985; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+
+  /* 舞台卡片：左半暗壁纸 / 右半亮壁纸，深色岛居左、浅色岛居右 */
+  .duo {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border-radius: 12px; overflow: hidden; margin: 10px 0 4px;
+    background: linear-gradient(90deg, #262b36 0 50%, #e6e8ee 50% 100%);
+    border: 1px solid #c9ccd4;
+  }
+  .duo > div { padding: 26px 20px; display: flex; align-items: center; justify-content: center; }
+  .cap { font-size: 11px; color: #71717a; margin: 0 0 26px; }
+  .cap b { color: #3f3f46; }
+
+  /* ============================================================
+     岛复刻 —— 与 src/components/todo/TodoIsland.module.css 同一套账。
+     差别只有一处：变量作用域。真实代码挂在 html[data-island-mode]，
+     稿里挂 .island-dark / .island-light 两个类，值是同一份。
+     ============================================================ */
+  .island { position: relative; flex: none; }
+
+  /* —— 染色令牌：深色块 = 现状值（原样保留）；浅色块 = 本稿新增 —— */
+  .island {
+    --island-tint: rgba(20, 20, 24, 0.92);
+    --island-tint-hover: rgba(28, 28, 33, 0.96);
+    --island-fg: #f4f4f5;
+    --island-fg-muted: rgba(244, 244, 245, 0.66);
+    --island-ok: #4ade80;
+    --island-ok-on: #14532d;
+    --island-accent: #0284c7;
+    --island-line: rgba(255, 255, 255, 0.12);
+    --island-line-mid: rgba(255, 255, 255, 0.18);
+    --island-line-strong: rgba(255, 255, 255, 0.34);
+    --island-fill: rgba(255, 255, 255, 0.10);
+    --island-fill-soft: rgba(255, 255, 255, 0.06);
+    --island-fill-strong: rgba(255, 255, 255, 0.22);
+    --island-ring-track: rgba(255, 255, 255, 0.22);
+    --island-tick-line: rgba(255, 255, 255, 0.34);
+    --island-shadow: rgba(0, 0, 0, 0.25);
+    /* notice chip 恒深色：两种材质都不覆写（角色同 toast，深底白字在浅玻璃上最稳） */
+    --island-notice-bg: rgba(0, 0, 0, 0.55);
+    --island-notice-line: rgba(255, 255, 255, 0.14);
+    --island-notice-fg: #f4f4f5;
+  }
+  .island-light {
+    --island-tint: rgba(255, 255, 255, 0.92);
+    --island-tint-hover: rgba(255, 255, 255, 0.97);
+    --island-fg: #18181b;
+    --island-fg-muted: rgba(24, 24, 27, 0.62);
+    --island-ok: #15803d;
+    --island-ok-on: #ffffff;
+    --island-accent: #0369a1;
+    --island-line: rgba(0, 0, 0, 0.10);
+    --island-line-mid: rgba(0, 0, 0, 0.16);
+    --island-line-strong: rgba(0, 0, 0, 0.34);
+    --island-fill: rgba(0, 0, 0, 0.06);
+    --island-fill-soft: rgba(0, 0, 0, 0.04);
+    --island-fill-strong: rgba(0, 0, 0, 0.12);
+    --island-ring-track: rgba(0, 0, 0, 0.14);
+    --island-tick-line: rgba(0, 0, 0, 0.30);
+    --island-shadow: rgba(0, 0, 0, 0.16);
+  }
+
+  /* —— .root（尺寸按舞台；圆角/过渡与真实 CSS 同份） —— */
+  .root {
+    display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    border-radius: 999px; overflow: hidden;
+    background: var(--island-tint);
+    box-shadow: inset 0 0 0 1px var(--island-line), 0 6px 18px var(--island-shadow);
+    color: var(--island-fg); font-size: 12px; user-select: none;
+  }
+  .root.st-list, .root.st-compose { border-radius: 12px; flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+  .root.st-peek { height: 40px; }
+
+  /* —— 折叠态内容 —— */
+  .ring { flex: 0 0 16px; width: 16px; height: 16px; display: block; }
+  .tk2 { fill: none; stroke: var(--island-ring-track); stroke-width: 2; }
+  .arc { fill: none; stroke: var(--island-accent); stroke-width: 2; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 8px 8px; }
+  .cnt { flex: 0 0 auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .sepdot { flex: 0 0 auto; width: 3px; height: 3px; border-radius: 999px; background: currentColor; opacity: 0.4; }
+  .last { flex: 1 1 auto; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .okmark { flex: 0 0 12px; display: inline-flex; color: var(--island-ok); }
+
+  /* —— 展开态：头 / 列表 / 底 —— */
+  .hd { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--island-line); }
+  .title { font-size: 13px; font-weight: 600; flex: 0 0 auto; }
+  .seg { display: flex; gap: 2px; background: var(--island-fill); border-radius: 8px; padding: 2px; margin-left: 4px; }
+  .seg span { font-size: 11px; padding: 2px 8px; border-radius: 4px; opacity: 0.66; white-space: nowrap; cursor: pointer; }
+  .seg span.on { background: var(--island-fill-strong); opacity: 1; }
+  .col { margin-left: auto; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; opacity: 0.7; background: none; border: 0; color: inherit; cursor: pointer; border-radius: 4px; padding: 0; }
+  .col:hover { opacity: 1; background: var(--island-fill); }
+  .ls { flex: 1 1 auto; padding: 8px; display: flex; flex-direction: column; overflow: auto; }
+  .row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px; border-radius: 8px; }
+  .row:hover { background: var(--island-fill); }
+  .tick { flex: 0 0 24px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; }
+  .tickDot { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid var(--island-tick-line); display: flex; align-items: center; justify-content: center; }
+  .rowDone .tx { text-decoration: line-through; opacity: 0.5; }
+  .rowDone .tickDot { background: var(--island-ok); border-color: var(--island-ok); color: var(--island-ok-on); }
+  .tx { flex: 1 1 auto; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .src { flex: 0 0 auto; font-size: 11px; max-width: 112px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--island-fg-muted); }
+  .empty { margin: auto; text-align: center; font-size: 12px; color: var(--island-fg-muted); display: flex; flex-direction: column; gap: 4px; }
+  .emptySub { font-size: 11px; opacity: 0.8; }
+  .foot { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--island-line); font-size: 12px; cursor: pointer; background: none; width: 100%; color: var(--island-fg-muted); }
+  .foot:hover { background: var(--island-fill-soft); }
+  .cinput { flex: 1 1 auto; height: 28px; border-radius: 8px; border: 1px solid var(--island-line-mid); background: var(--island-fill); color: var(--island-fg); font-size: 12px; padding: 0 8px; outline: none; }
+  .cinput:focus { border-color: var(--island-line-strong); }
+  .footHint { flex: 0 0 auto; font-size: 11px; }
+  .notice { position: absolute; left: 12px; right: 12px; bottom: 48px; padding: 6px 10px; border-radius: 8px; background: var(--island-notice-bg); border: 1px solid var(--island-notice-line); font-size: 11px; color: var(--island-notice-fg); }
+
+  /* ========== 稿内布局 ========== */
+  .duo .island { position: relative; z-index: 1; }
+  .duo > div:first-child .island { color-scheme: dark; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 主题亮暗适配（方案 A：跟随应用主题）</h1>
+  <p class="meta">
+    2026-09-25 · 关联：<code>docs/待办灵动岛-实施方案-2026-09-24.md</code>（材质 D 档 .92 深色 → 本稿修订为随主题翻面，<b>深色取值原样保留</b>）·
+    复刻自 <code>src/components/todo/TodoIsland.module.css</code>（2026-09-25 版）· 落地改动见 §4
+  </p>
+
+  <h2>0 · 结论与机制</h2>
+  <div class="flow">
+    <ol>
+      <li>岛入口 <code>todoisland-main.tsx</code> 接入兄弟窗口（截图窗/栈浮标等 5 处）已验证的同款三步：首帧兜底 → <code>get_config</code> 拉真值 → 监听 <code>theme-changed</code> 广播；</li>
+      <li>把主题的 <code>dark</code> 标志（6 套主题各带一枚）映射成岛窗口 <code>html</code> 上的 <code>data-island-mode="dark|light"</code>；</li>
+      <li>岛 CSS 现有深色值收进 <code>--island-*</code> 变量并原样保留为默认，新增 <code>[data-island-mode="light"]</code> 一块浅色取值。Rust 侧 <b>零改动</b>。</li>
+    </ol>
+  </div>
+
+  <h2>1 · 五个舞台 × 两套材质（左：暗壁纸上的现状深色 / 右：亮壁纸上的新增浅色）</h2>
+  <p class="note">每张卡左半是暗壁纸、右半是亮壁纸——同时验证材质翻面与<b>边界保持</b>（浅岛压亮壁纸、深岛压暗壁纸都靠「描边 + 外投影」保边，与截图窗浅色适配同一论证）。</p>
+
+  <!-- pill -->
+  <p class="cap"><b>pill 208×32</b> —— 收起态：进度环 + 剩余数 + 最近一条待办</p>
+  <div class="duo">
+    <div>
+      <div class="island island-dark root" style="width:208px;height:32px;">
+        <svg class="ring" viewBox="0 0 16 16" aria-hidden="true">
+          <circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/>
+        </svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+    </div>
+    <div>
+      <div class="island island-light root" style="width:208px;height:32px;">
+        <svg class="ring" viewBox="0 0 16 16" aria-hidden="true">
+          <circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/>
+        </svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- peek -->
+  <p class="cap"><b>peek 300×40</b> —— 悬停态（Rust 光标轮询广播 data-hover，材质加深/加实一档）</p>
+  <div class="duo">
+    <div>
+      <div class="island island-dark root st-peek" style="width:300px;height:40px;background:var(--island-tint-hover);">
+        <svg class="ring" viewBox="0 0 16 16" aria-hidden="true">
+          <circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/>
+        </svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+    </div>
+    <div>
+      <div class="island island-light root st-peek" style="width:300px;height:40px;background:var(--island-tint-hover);">
+        <svg class="ring" viewBox="0 0 16 16" aria-hidden="true">
+          <circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/>
+        </svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- list -->
+  <p class="cap"><b>list 420×240</b> —— 展开态：头（标题 + 分段切换 + 收起）+ 列表 + 底（记一条）</p>
+  <div class="duo">
+    <div>
+      <div class="island island-dark root st-list" style="width:420px;height:240px;">
+        <div class="hd">
+          <span class="title">3 项待办</span>
+          <span class="seg" role="tablist"><span class="on">进行中</span><span>已完成</span></span>
+          <button class="col" title="收起"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg></button>
+        </div>
+        <div class="ls" role="list">
+          <div class="row" role="listitem">
+            <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">预约周四体检</span><span class="src">今日速记</span>
+          </div>
+          <div class="row" role="listitem">
+            <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">整理周报素材</span><span class="src">工作记录</span>
+          </div>
+          <div class="row rowDone" role="listitem">
+            <button class="tick" title="标记为未完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">回复审稿意见</span><span class="src">投稿清单</span>
+          </div>
+        </div>
+        <button class="foot"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg><span>记一条</span></button>
+      </div>
+    </div>
+    <div>
+      <div class="island island-light root st-list" style="width:420px;height:240px;">
+        <div class="hd">
+          <span class="title">3 项待办</span>
+          <span class="seg" role="tablist"><span class="on">进行中</span><span>已完成</span></span>
+          <button class="col" title="收起"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg></button>
+        </div>
+        <div class="ls" role="list">
+          <div class="row" role="listitem">
+            <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">预约周四体检</span><span class="src">今日速记</span>
+          </div>
+          <div class="row" role="listitem">
+            <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">整理周报素材</span><span class="src">工作记录</span>
+          </div>
+          <div class="row rowDone" role="listitem">
+            <button class="tick" title="标记为未完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">回复审稿意见</span><span class="src">投稿清单</span>
+          </div>
+        </div>
+        <button class="foot"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg><span>记一条</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- compose -->
+  <p class="cap"><b>compose 420×280</b> —— 输入态：底栏换成输入行（Esc 两级取消：输入→列表→胶囊）</p>
+  <div class="duo">
+    <div>
+      <div class="island island-dark root st-compose" style="width:420px;height:280px;">
+        <div class="hd">
+          <span class="title">3 项待办</span>
+          <span class="seg" role="tablist"><span class="on">进行中</span><span>已完成</span></span>
+          <button class="col" title="收起"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg></button>
+        </div>
+        <div class="ls" role="list">
+          <div class="row" role="listitem">
+            <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">整理周报素材</span><span class="src">工作记录</span>
+          </div>
+          <div class="row rowDone" role="listitem">
+            <button class="tick" title="标记为未完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">回复审稿意见</span><span class="src">投稿清单</span>
+          </div>
+        </div>
+        <div class="foot"><input class="cinput" placeholder="要做什么？" /><span class="footHint">回车记下</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="island island-light root st-compose" style="width:420px;height:280px;">
+        <div class="hd">
+          <span class="title">3 项待办</span>
+          <span class="seg" role="tablist"><span class="on">进行中</span><span>已完成</span></span>
+          <button class="col" title="收起"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg></button>
+        </div>
+        <div class="ls" role="list">
+          <div class="row" role="listitem">
+            <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">整理周报素材</span><span class="src">工作记录</span>
+          </div>
+          <div class="row rowDone" role="listitem">
+            <button class="tick" title="标记为未完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+            <span class="tx">回复审稿意见</span><span class="src">投稿清单</span>
+          </div>
+        </div>
+        <div class="foot"><input class="cinput" placeholder="要做什么？" /><span class="footHint">回车记下</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- clear -->
+  <p class="cap"><b>clear 208×32</b> —— 全清态：绿勾 + 一句话（1500ms 后收起）；右下卡演示浅色下的失败提示 chip（恒深色）</p>
+  <div class="duo">
+    <div style="gap:16px;flex-direction:column;">
+      <div class="island island-dark root" style="width:208px;height:32px;">
+        <span class="okmark"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span>
+        <span class="last">今天没有待办了</span>
+      </div>
+      <div class="island island-dark root st-list" style="width:420px;height:240px;">
+        <div class="hd"><span class="title">3 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><button class="col" title="收起"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg></button></div>
+        <div class="ls"><div class="row"><button class="tick"><span class="tickDot"></span></button><span class="tx">预约周四体检</span><span class="src">今日速记</span></div></div>
+        <div class="notice" style="position:absolute;">这条待办刚被其它途径改过，已还原</div>
+        <button class="foot"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg><span>记一条</span></button>
+      </div>
+    </div>
+    <div style="gap:16px;flex-direction:column;">
+      <div class="island island-light root" style="width:208px;height:32px;">
+        <span class="okmark"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span>
+        <span class="last">今天没有待办了</span>
+      </div>
+      <div class="island island-light root st-list" style="width:420px;height:240px;">
+        <div class="hd"><span class="title">3 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><button class="col" title="收起"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg></button></div>
+        <div class="ls"><div class="row"><button class="tick"><span class="tickDot"></span></button><span class="tx">预约周四体检</span><span class="src">今日速记</span></div></div>
+        <div class="notice" style="position:absolute;">这条待办刚被其它途径改过，已还原</div>
+        <button class="foot"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg><span>记一条</span></button>
+      </div>
+    </div>
+  </div>
+
+  <h2>2 · 染色令牌表（深色 = 现状值原样收编；浅色 = 本稿新增）</h2>
+  <p class="note">落地后 14 处写死色值全部走变量，现有 4 处 <code>ui-rule-ok</code> 豁免随之删除（V3 达成：颜色来自变量）。变量挂在 <code>html[data-island-mode]</code> 上，与现状「挂在 html 供探针覆盖」的理由相同。</p>
+  <table style="border-collapse:collapse;font-size:12px;width:100%;">
+    <tr style="background:#ececf0;text-align:left;">
+      <th style="padding:6px 10px;border:1px solid #d4d4d8;">变量</th>
+      <th style="padding:6px 10px;border:1px solid #d4d4d8;">深色（现状）</th>
+      <th style="padding:6px 10px;border:1px solid #d4d4d8;">浅色（新增）</th>
+      <th style="padding:6px 10px;border:1px solid #d4d4d8;">用于（原写死处）</th>
+    </tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-tint</code></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(20,20,24,.92)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.92)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">岛体染色（已是变量）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-tint-hover</code></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(28,28,33,.96)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.97)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">悬停加深/加实（已是变量）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-fg</code></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#f4f4f5</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#18181b</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">前景文字（已是变量）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-fg-muted</code></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(244,244,245,.66)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(24,24,27,.62) ≈ 4.6:1</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">次要文字（已是变量）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-ok</code></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#4ade80</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#15803d（= 浅色主题 --success）</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">完成绿（已是变量）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-ok-on</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#14532d</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#ffffff</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">绿底上的勾（.rowDone 勾的描色）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-accent</code></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#0284c7</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">#0369a1</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">进度弧（已是变量）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-line</code></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.12)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.10)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">inset 描边、头/底 1px 分隔线</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-line-mid</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.18)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.16)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">输入框常态边</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-line-strong</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.34)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.34)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">输入框 focus 边</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-fill</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.10)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.06)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">分段器底、行/收起 hover 洗色、输入框底</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-fill-soft</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.06)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.04)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">底栏 hover 洗色</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-fill-strong</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.22)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.12)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">分段器选中片</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-ring-track</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.22)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.14)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">进度环底圈</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-tick-line</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(255,255,255,.34)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.30)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">未完成勾选圈边</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;"><code>--island-shadow</code> <b>新增</b></td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.25)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">rgba(0,0,0,.16)</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">外投影（浅色略收，仍保边）</td></tr>
+    <tr><td style="padding:5px 10px;border:1px solid #e4e4e7;">notice 三件</td><td style="padding:5px 10px;border:1px solid #e4e4e7;" colspan="2">两种材质<b>都不覆写</b>（恒深 chip，同 toast 惯例；深底白字在浅玻璃上最稳）</td><td style="padding:5px 10px;border:1px solid #e4e4e7;">失败提示 chip</td></tr>
+  </table>
+
+  <h2>3 · 已知代价与边界</h2>
+  <div class="flow">
+    <ol>
+      <li><b>首帧兜底</b>：CSS 默认值保持深色（= 现状），配置拉到后若是浅色主题会翻一次面——与截图窗同款代价，毫秒级，且岛窗口创建时常处于隐藏态，通常发生在可见之前；</li>
+      <li><b>岛只吃 dark 标志</b>：6 套主题映射为两种岛材质，不逐套换强调色（岛是单强调色玻璃，一期口径）；</li>
+      <li><b>「硬件缺口」隐喻让步</b>：iOS 明令岛恒黑，本决策选择与应用一致性优先（用户拍板）；深色取值一字未动，深海/午夜用户的观感零变化；</li>
+      <li><b>主题切换过渡</b>：.root 增加 200ms 的 background-color / color 过渡（U2 快档），翻面不闪跳；</li>
+      <li><b>探针不受影响</b>：变量仍挂 html 层，<code>PP_TODO_ISLAND_PROBE</code> 的 <code>window.eval</code> 覆盖路径不变。</li>
+    </ol>
+  </div>
+
+  <h2>4 · 落地改动清单（设计稿确认后执行）</h2>
+  <div class="flow">
+    <ol>
+      <li><code>src/lib/theme.ts</code>：新增 <code>isDarkTheme(key)</code> 纯函数——FullscreenShell / FullscreenEditor / useNoteEditorState 三处已有的 <code>THEMES.find(...)?.dark</code> 同款映射顺势收口（规则 11.1：第 4 个调用点出现正是收口时机）；</li>
+      <li><code>src/todoisland-main.tsx</code>：+10 行主题引导（兜底 → get_config → listen theme-changed → 写 data-island-mode）；</li>
+      <li><code>src/components/todo/TodoIsland.module.css</code>：14 处写死色值收进变量 + <code>[data-island-mode="light"]</code> 浅色块 + 删 4 处豁免 + .root 过渡补 200ms 颜色档；</li>
+      <li>验证：vitest（现有 8 条岛测试不涉色，应全绿）+ dev 里切 6 套主题看岛翻面 + <code>npm run lint:ui</code>。</li>
+    </ol>
+  </div>
+
+</div>
+</body>
+</html>

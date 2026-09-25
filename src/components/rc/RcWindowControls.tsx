@@ -20,8 +20,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { logger } from "@/lib/logger";
 import styles from "./RemoteComputerA2.module.css";
 
-/** 图标照稿子的 `<symbol>` 同形（viewBox 24 / stroke currentColor）。 */
-function Icon({ name }: { name: "min" | "max" | "restore" | "close" }) {
+/** 图标照稿子的 `<symbol>` 同形（viewBox 24 / stroke currentColor）。
+    导出供 RcFullscreenHotbar 复用（方案 B 的全屏 hotbar 里同一套窗口键图形）。 */
+export function WindowControlIcon({ name }: { name: "min" | "max" | "restore" | "close" }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -57,9 +58,9 @@ function runWin(fn: () => Promise<unknown>, what: string) {
 }
 
 /**
- * 关闭键。单独导出是因为**会话态整条顶栏只补这一枚**：那一态窗口没有标题栏，
- * 画面铺满，用户在顶条上最需要的就是「能把它关掉」；最小化 / 最大化另有系统
- * 替代（任务栏、双击顶条、Win+方向键），不必再占顶条宽度。
+ * 关闭键。批7 时是「会话态顶栏只补这一枚」；2026-09-24 方案 A 后顶条已换完整
+ * 三键组（RcSessionTop），它降级为 RcWindowControls 的内部件——独立导出仅为
+ * 测试与历史兼容。
  */
 export function RcCloseButton() {
   return (
@@ -70,18 +71,18 @@ export function RcCloseButton() {
       title="关闭"
       onClick={() => runWin(() => getCurrentWindow().close(), "关闭")}
     >
-      <Icon name="close" />
+      <WindowControlIcon name="close" />
     </button>
   );
 }
 
-export function RcWindowControls() {
+/** 最大化/还原状态同步（方案 B 从 RcWindowControls 抽出，供全屏 hotbar 复用）：
+    挂载时读一次 + 窗口尺寸变化时同步（最大化/还原、Aero Snap、手动拖边框都会触发）。
+    照 `FullscreenEditor` 的 onResized 先例：StrictMode 下 effect 跑两遍，而 unlisten
+    是 await 之后才赋值的，cleanup 先跑时它还是 undefined——所以用 disposed 兜住迟到的订阅。 */
+export function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);
 
-  // 挂载时读一次 + 窗口尺寸变化时同步（最大化/还原、Aero Snap、手动拖边框都会触发）。
-  // 照 `FullscreenEditor` 的 onResized 先例：StrictMode 下 effect 跑两遍，而 unlisten
-  // 是 await 之后才赋值的，cleanup 先跑时它还是 undefined——所以用 disposed 兜住迟到的订阅。
-  // 会话态只渲染 `RcCloseButton`（不走这个组件），故不必为它做条件化——hooks 也不能条件调用。
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -120,6 +121,12 @@ export function RcWindowControls() {
     };
   }, []);
 
+  return maximized;
+}
+
+export function RcWindowControls() {
+  const maximized = useMaximized();
+
   return (
     <div className={styles.winControls} data-tauri-drag-region="false" aria-label="窗口控制">
       <button
@@ -129,7 +136,7 @@ export function RcWindowControls() {
         title="最小化"
         onClick={() => runWin(() => getCurrentWindow().minimize(), "最小化")}
       >
-        <Icon name="min" />
+        <WindowControlIcon name="min" />
       </button>
       <button
         type="button"
@@ -140,7 +147,7 @@ export function RcWindowControls() {
           runWin(() => getCurrentWindow().toggleMaximize(), maximized ? "还原" : "最大化")
         }
       >
-        <Icon name={maximized ? "restore" : "max"} />
+        <WindowControlIcon name={maximized ? "restore" : "max"} />
       </button>
       <RcCloseButton />
     </div>

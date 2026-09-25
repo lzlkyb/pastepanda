@@ -8,7 +8,7 @@ use super::*;
 /// 统一记为「待重开」，下一次编码时（CPU/GPU 各自带上下文）执行——
 /// GPU 重开需要 D3D 设备，只有 encode_gpu 时刻才有。
 pub struct H264SessionEncoder {
-    pub(in crate::rc) enc: Option<MfH264Encoder>,
+    pub(in crate::rc) enc: Option<Backend>,
     /// Q3：目标流标准。变化触发重开；HEVC 连续打不开自动回落 H.264
     /// （HEVC 只是优化档，不能像 GPU 故障那样整个会话降 JPEG）。
     pub(in crate::rc) codec: VideoCodec,
@@ -38,8 +38,77 @@ pub struct H264SessionEncoder {
 }
 
 // windows-rs COM 指针非 Send；本进程 MTA + 会话任务串行访问。
+// FF 后端同理（FF 句柄常驻、编码器对象串行访问）。
 unsafe impl Send for H264SessionEncoder {}
 unsafe impl Send for MfH264Encoder {}
+
+/// 视频硬编后端。**回落链在 [`Self::open_chain`]**：
+/// H264 = MF → FF(nvenc→qsv→amf)；HEVC = MF → FF(hevc_nvenc→hevc_qsv→hevc_amf)。
+///
+/// 🔴 范围（方案 A+，批 1/2）：FF 只接 CPU NV12 路径 —— `gpu_mode` 恒 false，
+/// GPU 零拷贝仍是 MF 专属（hwaccel FFI 未探明，见 docs §7.2 批 3）。
+pub(in crate::rc) enum Backend {
+    Mf(MfH264Encoder),
+    Ff(FfEncoder),
+}
+
+impl Backend {
+    fn size(&self) -> (u32, u32) {
+        match self {
+            Backend::Mf(e) => e.size(),
+            Backend::Ff(e) => e.size(),
+        }
+    }
+
+    fn encode_nv12(&mut self, nv12: &[u8]) -> Result<Vec<H264Packet>, String> {
+        match self {
+            Backend::Mf(e) => e.encode_nv12(nv12),
+            Backend::Ff(e) => e.encode_nv12(nv12),
+        }
+    }
+
+    fn force_key(&self) -> bool {
+        match self {
+            Backend::Mf(e) => e.force_key(),
+            Backend::Ff(e) => e.force_key(),
+        }
+    }
+
+    /// GPU 纹理路径仅 MF 存在。当前实现下不可达：encode_gpu 每次先走
+    /// open_gpu（MF），成功则 backend 必为 Mf；连续失败 3 次已熔断返回。
+    /// 留一个防御性 Err 分支兜住「未来有人改重开逻辑忘了这条不变量」。
+    fn encode_texture(
+        &mut self,
+        bgra: &ID3D11Texture2D,
+        w: u32,
+        h: u32,
+    ) -> Result<Vec<H264Packet>, String> {
+        match self {
+            Backend::Mf(e) => e.encode_texture(bgra, w, h),
+            Backend::Ff(_) => Err("[ff] FF 后端无 GPU 零拷贝路径（不应可达）".into()),
+        }
+    }
+}
+
+/// 打开回落链。H264 与 HEVC 同构：MF 失败 → FF 三候选（批 2 起 HEVC 也有
+/// FF 兜底，DLL 已编入 hevc_nvenc/hevc_qsv/hevc_amf）。
+/// HEVC→H264 的会话级回落语义在调用方（`try_open_with_bitrate` / `on_open_fail`），
+/// 那里把目标标准改成 H264 后重走本函数。
+fn open_chain(
+    codec: VideoCodec,
+    width: u32,
+    height: u32,
+    fps: u32,
+    bitrate: u32,
+) -> Result<Backend, String> {
+    match MfH264Encoder::open(codec, width, height, fps, bitrate) {
+        Ok(e) => Ok(Backend::Mf(e)),
+        Err(mf_err) => match FfEncoder::open(codec, width, height, fps, bitrate) {
+            Ok(e) => Ok(Backend::Ff(e)),
+            Err(ff_err) => Err(format!("MF：{mf_err}；FF：{ff_err}")),
+        },
+    }
+}
 
 impl H264SessionEncoder {
     /// 按目标分辨率打开；基准码率由**宽度**决定（帧率因子在 scaled_bitrate 统一乘）。
@@ -78,9 +147,9 @@ impl H264SessionEncoder {
                 nv12_buf: Vec::new(),
             }
         };
-        match MfH264Encoder::open(codec, width, height, fps, initial) {
-            Ok(e) => Self {
-                enc: Some(e),
+        match open_chain(codec, width, height, fps, initial) {
+            Ok(enc) => Self {
+                enc: Some(enc),
                 codec,
                 scale_pct: 100,
                 base_bitrate,
@@ -94,12 +163,12 @@ impl H264SessionEncoder {
             },
             Err(e) => {
                 if codec == VideoCodec::Hevc {
-                    if let Ok(h264_enc) =
-                        MfH264Encoder::open(VideoCodec::H264, width, height, fps, initial)
-                    {
+                    // HEVC 目标回落 H.264 时走同一条 open_chain：MF H264 也不行
+                    // 还会试 FF（2026-09-19 P2 修复的延续，FF 是链上新增的下一级）。
+                    if let Ok(enc) = open_chain(VideoCodec::H264, width, height, fps, initial) {
                         log::warn!("[RC] HEVC 初始打开失败，按回落链改用 H.264：{e}");
                         return Self {
-                            enc: Some(h264_enc),
+                            enc: Some(enc),
                             codec: VideoCodec::H264,
                             scale_pct: 100,
                             base_bitrate,
@@ -146,7 +215,6 @@ impl H264SessionEncoder {
     pub fn force_key(&self) -> bool {
         self.enc.as_ref().is_some_and(|e| e.force_key())
     }
-
     pub fn scale_pct(&self) -> u32 {
         self.scale_pct
     }
@@ -194,7 +262,7 @@ impl H264SessionEncoder {
             self.base_bitrate = bitrate_for_width(ew);
         }
         if self.gpu_mode || self.reopen_needed || size_changed {
-            match MfH264Encoder::open(self.codec, ew, eh, self.fps, self.scaled_bitrate()) {
+            match open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate()) {
                 Ok(e) => {
                     self.enc = Some(e);
                     self.gpu_mode = false;
@@ -210,9 +278,11 @@ impl H264SessionEncoder {
         enc.encode_nv12(&self.nv12_buf)
     }
 
-    /// Q3：打开失败时的编码标准回退。HEVC 连续 2 次打不开 → 本会话回落
-    /// H.264（返回的 Err 让本帧走 JPEG 兜底，下一帧起按 H.264 重开），
-    /// 并置 `hevc_broken` 挡住后续 SetCodec(hevc) 反复重试。
+    /// Q3：打开失败时的编码标准回退（**仅 CPU 链**，GPU 路径 streak 已拆分）。
+    /// HEVC 连续 2 次打不开 → 本会话回落 H.264（返回的 Err 让本帧走 JPEG
+    /// 兜底，下一帧起按 H.264 重开），并置 `hevc_broken` 挡住后续
+    /// SetCodec(hevc) 反复重试。注意这里计的是**整链失败**——open_chain
+    /// 已把 MF 和 FF 都试过，两个都败才走到这。
     fn on_open_fail(&mut self, e: String) -> String {
         if self.codec == VideoCodec::Hevc {
             self.hevc_fail_streak += 1;
@@ -248,7 +318,9 @@ impl H264SessionEncoder {
             match MfH264Encoder::open_gpu(self.codec, device, ctx, ew, eh, self.fps, self.scaled_bitrate())
             {
                 Ok(e) => {
-                    self.enc = Some(e);
+                    // GPU 零拷贝仅 MF 有（FF 只接 CPU 路径）；从 FF 切回 MF 是升级，
+                    // 从 MF 切回 MF 是常规重开 —— 两种都合法。
+                    self.enc = Some(Backend::Mf(e));
                     self.gpu_mode = true;
                     self.reopen_needed = false;
                     self.gpu_fail_streak = 0;
@@ -260,9 +332,11 @@ impl H264SessionEncoder {
                         log::warn!("[RC] 零拷贝路径连续 3 次打不开，本会话回落 CPU 管线：{e}");
                         return Err("[gpu_disabled] GPU 零拷贝编码不可用".into());
                     }
-                    // GPU 没坏也可能只是这路 HEVC 不行：on_open_fail 记 HEVC 连败
-                    // 并在 ≥2 次后把目标标准切回 H.264（下一帧按 H.264 重开）。
-                    return Err(self.on_open_fail(e));
+                    // 🔴 streak 按后端拆分（批 2）：GPU(MF) 的 HEVC 失败**只记
+                    // gpu_fail_streak**，不再经 on_open_fail 判「HEVC 全局不可用」
+                    // —— GPU 路径没有 FF，这里的失败说明不了 CPU 链（MF→FF HEVC）
+                    // 也不行；熔断后调用方回落 CPU 管线，由那条链自己验证 HEVC。
+                    return Err(e);
                 }
             }
         }

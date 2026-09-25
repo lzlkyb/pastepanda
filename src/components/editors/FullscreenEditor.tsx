@@ -15,7 +15,7 @@
  */
 import { useRef, useState, useCallback, useEffect, useMemo, Suspense, lazy } from "react";
 import type { EditorView } from "@codemirror/view";
-import { THEMES, DEFAULT_THEME, type ThemeKey } from "@/lib/theme";
+import { isDarkTheme } from "@/lib/theme";
 // CM6 装配与全套编辑命令已抽到 useCodeMirrorEditor（规划 §8.1 1️⃣），
 // 笔记编辑器将复用同一个 hook。本文件只剩「窗口 + 文件 + 布局」。
 import { useCodeMirrorEditor } from "./useCodeMirrorEditor";
@@ -248,7 +248,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   // 预览行号开关（设置 markdown_preview_line_numbers，默认开启）
   const [previewLineNumbers, setPreviewLineNumbers] = useState(true);
   // 编辑器明暗：默认亮（与 DEFAULT_THEME ocean 一致），读到实际主题后再校正
-  const [isDarkTheme, setIsDarkTheme] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
 
   // Split pane
   const [splitRatio, setSplitRatio] = useState(50);
@@ -299,7 +299,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   const { editorRef, viewRef, bridge, jumpToLine, reconfigureLanguage } = useCodeMirrorEditor({
     initialText: initialContent,
     ready: !loading,
-    isDark: isDarkTheme,
+    isDark: darkMode,
     text,
     language: spec.language,
     dynamicLanguage: spec.dynamicLanguage,
@@ -608,9 +608,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       .then((cfg) => {
         setAutoSaveEnabled(cfg.md_auto_save !== false);
         setPreviewLineNumbers(cfg.markdown_preview_line_numbers !== false);
-        const themeKey = (cfg.theme || DEFAULT_THEME) as ThemeKey;
-        const themeDef = THEMES.find((t) => t.key === themeKey);
-        setIsDarkTheme(themeDef ? themeDef.dark : false);
+        setDarkMode(isDarkTheme(cfg.theme));
       })
       .catch(() => { /* 读取失败时保持默认（自动保存开、行号开、亮色编辑器） */ });
   }, []);
@@ -891,7 +889,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   return (
     <div
       className={`${styles.overlay} ${focusMode ? styles.focusMode : ""}`}
-      data-theme-mode={isDarkTheme ? "dark" : "light"}
+      data-theme-mode={darkMode ? "dark" : "light"}
     >
       {/* 皮肤场景层：fixed z-0，衬于工具栏/编辑区（z-1）之后，
           主题场景从透明 header（--header-bg-start: transparent）透出 */}

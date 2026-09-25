@@ -31,7 +31,7 @@ import { pathKindLabel } from "@/lib/rcSessionStats";
  *
  * `enabled` 是给主窗口（RcOverlay）准备的：同一个事件在发起端机器上也会
  * 到达（对端转发），若不分相位常驻监听，控制端用户会看到以「本机」为主语
- * 的提示——主语错了。被控视图（RcInboundView）天然只在被控时挂载，可省。
+ * 的提示——主语错了。调用方按 inbound_active 相位开监听即可。
  */
 let lastLocalInject = "";
 

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 玻璃感（档 1）设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 880px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+
+  /* ============ 岛复刻（与 TodoIsland.module.css 2026-09-25 版同账） ============ */
+  .island { position: relative; flex: none; }
+  .island {
+    --island-tint: rgba(20, 20, 24, 0.92);
+    --island-tint-hover: rgba(28, 28, 33, 0.96);
+    --island-fg: #f4f4f5;
+    --island-fg-muted: rgba(244, 244, 245, 0.66);
+    --island-ok: #4ade80;
+    --island-accent: #0284c7;
+    --island-line: rgba(255, 255, 255, 0.12);
+    --island-fill: rgba(255, 255, 255, 0.10);
+    --island-fill-strong: rgba(255, 255, 255, 0.22);
+    --island-ring-track: rgba(255, 255, 255, 0.22);
+    --island-tick-line: rgba(255, 255, 255, 0.34);
+    --island-shadow: rgba(0, 0, 0, 0.25);
+    /* 档 1 新增（现状=0：gloss/rim 不存在即完全回退到今天的实色） */
+    --island-gloss: rgba(255, 255, 255, 0);
+    --island-rim: rgba(255, 255, 255, 0);
+  }
+  .island.gloss {
+    --island-gloss: rgba(255, 255, 255, 0.07);
+    --island-rim: rgba(255, 255, 255, 0.09);
+  }
+  .island.light {
+    --island-tint: rgba(255, 255, 255, 0.92);
+    --island-tint-hover: rgba(255, 255, 255, 0.97);
+    --island-fg: #18181b;
+    --island-fg-muted: rgba(24, 24, 27, 0.62);
+    --island-ok: #15803d;
+    --island-accent: #0369a1;
+    --island-line: rgba(0, 0, 0, 0.10);
+    --island-fill: rgba(0, 0, 0, 0.06);
+    --island-fill-strong: rgba(0, 0, 0, 0.12);
+    --island-ring-track: rgba(0, 0, 0, 0.14);
+    --island-tick-line: rgba(0, 0, 0, 0.30);
+    --island-shadow: rgba(0, 0, 0, 0.16);
+  }
+  .island.light.gloss {
+    /* 浅色材质：白高光在白玻璃上偏隐，压低档位——亮面靠顶缘亮线与描边的明暗差来读 */
+    --island-gloss: rgba(255, 255, 255, 0.55);
+    --island-rim: rgba(255, 255, 255, 0.85);
+  }
+
+  .root {
+    display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    border-radius: 999px; overflow: hidden;
+    background-color: var(--island-tint);
+    /* 档 1 核心：高光作为 background-image 叠层，不新增元素、不新增合成层；
+       固定 26px 渐变段——五个舞台的高光「高度」一致，不随卡高被拉长 */
+    background-image: linear-gradient(180deg, var(--island-gloss) 0, rgba(255,255,255,0) 26px);
+    box-shadow:
+      inset 0 0 0 1px var(--island-line),
+      inset 0 1px 0 var(--island-rim),
+      0 6px 18px var(--island-shadow);
+    color: var(--island-fg); font-size: 12px; user-select: none;
+  }
+  .root.st-list { border-radius: 12px; flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+
+  .ring { flex: 0 0 16px; width: 16px; height: 16px; display: block; }
+  .tk2 { fill: none; stroke: var(--island-ring-track); stroke-width: 2; }
+  .arc { fill: none; stroke: var(--island-accent); stroke-width: 2; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 8px 8px; }
+  .cnt { flex: 0 0 auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .sepdot { flex: 0 0 auto; width: 3px; height: 3px; border-radius: 999px; background: currentColor; opacity: 0.4; }
+  .last { flex: 1 1 auto; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .hd { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--island-line); }
+  .title { font-size: 13px; font-weight: 600; flex: 0 0 auto; }
+  .seg { display: flex; gap: 2px; background: var(--island-fill); border-radius: 8px; padding: 2px; margin-left: 4px; }
+  .seg span { font-size: 11px; padding: 2px 8px; border-radius: 4px; opacity: 0.66; white-space: nowrap; }
+  .seg span.on { background: var(--island-fill-strong); opacity: 1; }
+  .col { margin-left: auto; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; opacity: 0.7; color: inherit; }
+  .ls { flex: 1 1 auto; padding: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px; border-radius: 8px; }
+  .tick { flex: 0 0 24px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: inherit; }
+  .tickDot { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid var(--island-tick-line); display: flex; align-items: center; justify-content: center; }
+  .rowDone .tickDot { background: var(--island-ok); border-color: var(--island-ok); color: #14532d; }
+  .island.light .rowDone .tickDot { color: #ffffff; }
+  .tx { flex: 1 1 auto; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .src { flex: 0 0 auto; font-size: 11px; max-width: 112px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--island-fg-muted); }
+  .foot { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--island-line); font-size: 12px; color: var(--island-fg-muted); }
+
+  /* ============ 稿面布局 ============ */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cell {
+    border-radius: 12px; padding: 30px 18px; min-height: 150px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    border: 1px solid #c9ccd4;
+  }
+  .cell.dark { background: linear-gradient(160deg, #2b3040 0%, #1d212c 100%); }
+  .cell.bright { background: linear-gradient(160deg, #e9ebf1 0%, #d5d9e2 100%); }
+  .tag { font-size: 11px; color: rgba(255,255,255,.75); }
+  .cell.bright .tag { color: #52525b; }
+  .tag b { font-weight: 700; }
+
+  table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; }
+  tr:nth-child(odd) td { background: #fafafa; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 玻璃感（档 1）设计稿</h1>
+  <p class="meta">
+    2026-09-25 · 决策：三档方案取档 1（保留 D `.92` 实色 + 极弱顶部高光 + 顶缘亮线，纯 CSS 零新依赖）·
+    复刻自 <code>src/components/todo/TodoIsland.module.css</code> · 关联 <code>design/待办灵动岛-主题亮暗适配-设计稿.html</code>
+  </p>
+
+  <h2>0 · 做法（两处改动，全在 .root 上，不新增任何元素）</h2>
+  <p class="note">
+    ① <b>顶部高光</b>：作为 <code>background-image</code> 渐变叠在 <code>--island-tint</code> 之上（<code>background-color</code> 保持变量引用，
+    hover 换色逻辑不变）；渐变段固定 <b>26px</b>——五个舞台高光高度一致，不会在 240px 的展开卡上被拉成半屏光带。<br>
+    ② <b>顶缘亮线</b>：inset 阴影再加一层 <code>inset 0 1px 0 --island-rim</code>（inset 跟随 border-radius，胶囊与 12px 卡片都生效），
+    与既有 1px 描边形成「上亮下暗」的受光关系。<br>
+    两个值都是岛变量（深浅各一档），<b>置 0 即完全回退到今天的实色</b>——风险锁死在两个 token 上。
+  </p>
+
+  <h2>1 · 现状 vs 玻璃感（左列 = 今天线上效果，右列 = 档 1）</h2>
+  <p class="note">每格上 pill 下 list；上排深色壁纸、下排亮色壁纸。高光峰值 <code>.07</code>（深）/ <code>.55</code>（浅，白玻璃上白高光偏隐，主要靠顶缘亮线与描边的明暗差）——第一眼不喧宾夺主就对了，档 1 的目标是「受光的面」，不是「透」。</p>
+
+  <div class="grid">
+    <!-- 深色材质 -->
+    <div class="cell dark">
+      <span class="tag"><b>深色材质 · 现状</b>（gloss/rim = 0）</span>
+      <div class="island root" style="width:208px;height:32px;">
+        <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/></svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+      <div class="island root st-list" style="width:420px;height:200px;">
+        <div class="hd"><span class="title">3 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><span class="col">⌃</span></div>
+        <div class="ls">
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">预约周四体检</span><span class="src">今日速记</span></div>
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">整理周报素材</span><span class="src">工作记录</span></div>
+          <div class="row rowDone"><span class="tick"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></span><span class="tx">回复审稿意见</span><span class="src">投稿清单</span></div>
+        </div>
+        <div class="foot">＋ 记一条</div>
+      </div>
+    </div>
+    <div class="cell dark">
+      <span class="tag"><b>深色材质 · 玻璃感（档 1）</b> gloss .07 / rim .09</span>
+      <div class="island gloss root" style="width:208px;height:32px;">
+        <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/></svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+      <div class="island gloss root st-list" style="width:420px;height:200px;">
+        <div class="hd"><span class="title">3 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><span class="col">⌃</span></div>
+        <div class="ls">
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">预约周四体检</span><span class="src">今日速记</span></div>
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">整理周报素材</span><span class="src">工作记录</span></div>
+          <div class="row rowDone"><span class="tick"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></span><span class="tx">回复审稿意见</span><span class="src">投稿清单</span></div>
+        </div>
+        <div class="foot">＋ 记一条</div>
+      </div>
+    </div>
+    <!-- 浅色材质 -->
+    <div class="cell bright">
+      <span class="tag"><b>浅色材质 · 现状</b>（gloss/rim = 0）</span>
+      <div class="island light root" style="width:208px;height:32px;">
+        <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/></svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+      <div class="island light root st-list" style="width:420px;height:200px;">
+        <div class="hd"><span class="title">3 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><span class="col">⌃</span></div>
+        <div class="ls">
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">预约周四体检</span><span class="src">今日速记</span></div>
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">整理周报素材</span><span class="src">工作记录</span></div>
+          <div class="row rowDone"><span class="tick"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></span><span class="tx">回复审稿意见</span><span class="src">投稿清单</span></div>
+        </div>
+        <div class="foot">＋ 记一条</div>
+      </div>
+    </div>
+    <div class="cell bright">
+      <span class="tag"><b>浅色材质 · 玻璃感（档 1）</b> gloss .55 / rim .85</span>
+      <div class="island light gloss root" style="width:208px;height:32px;">
+        <svg class="ring" viewBox="0 0 16 16"><circle class="tk2" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5" stroke-dasharray="40.84" stroke-dashoffset="15.5"/></svg>
+        <span class="cnt">3</span><span class="sepdot"></span><span class="last">整理周报素材</span>
+      </div>
+      <div class="island light gloss root st-list" style="width:420px;height:200px;">
+        <div class="hd"><span class="title">3 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><span class="col">⌃</span></div>
+        <div class="ls">
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">预约周四体检</span><span class="src">今日速记</span></div>
+          <div class="row"><span class="tick"><span class="tickDot"></span></span><span class="tx">整理周报素材</span><span class="src">工作记录</span></div>
+          <div class="row rowDone"><span class="tick"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></span><span class="tx">回复审稿意见</span><span class="src">投稿清单</span></div>
+        </div>
+        <div class="foot">＋ 记一条</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>2 · 对比度重算（承诺的量化验收；峰值 .07 落在顶缘，正文行按渐变衰减取 y=8px 处 .048）</h2>
+  <table>
+    <tr><th>轴</th><th>量</th><th>现状</th><th>档 1（最差点）</th><th>门槛</th></tr>
+    <tr><td rowspan="2">① 岛内文字（深色材质，背景最差取白）</td><td>主文字 #f4f4f5 @ 高光区</td><td>18.0:1</td><td><b>11.7:1</b>（bg 39→49）</td><td class="ok">≥ 4.5 ✅</td></tr>
+    <tr><td>次要文字 muted @ 高光区</td><td>7.9:1</td><td><b>6.1:1</b></td><td class="ok">≥ 4.5 ✅</td></tr>
+    <tr><td rowspan="2">② 岛体 vs 背景</td><td>岛体（黑桌面侧）vs 白文档</td><td>10.92:1</td><td><b>≈10.4:1</b>（均值高光 ≈.02，仅抬 4~5 级）</td><td class="ok">≥ 3 ✅</td></tr>
+    <tr><td>浅色材质：白高光对深字的影响</td><td>—</td><td>高光把底抬得更白，深字对比<b>只增不减</b></td><td class="ok">✅</td></tr>
+  </table>
+  <p class="note">计算口径沿用实施方案 §2.2（「染色叠高光再合文字」同一套公式）。结论：<b>峰值 .07 在最差点上仍全绿</b>，且比 §2.2 记录的「.10 弱高光即可四背景全绿」还留了一半余量。</p>
+
+  <h2>3 · 性能与边界自查（规则 8 清单）</h2>
+  <p class="note">
+    ① <b>不新增合成层</b>：高光走 <code>background-image</code> 叠层 + inset 阴影，没有新元素、没有 backdrop-filter（8.3/8.4 不适用）；
+    静态渐变不参与动画，随 .root 纹理缓存。<br>
+    ② <b>探针不破坏</b>：探针把 <code>--island-tint</code> 压到 .06 测窗口材质时，gloss 层是常量白 .07——on/off 两组同受它影响，像素差仍来自系统层，判据不变（探针注释会补一句说明）。<br>
+    ③ <b>回退</b>：两个 token 置 0 = 今天的线上效果，随时可撤。<br>
+    ④ <b>与「无高光」定稿的关系</b>：§4.4 删的是 <b>.34 镜面高光</b>（18:1→6.2:1 的元凶）；档 1 的 .07 有实算背书，属于「弱高光」档——§2.2 自己的结论就是「深色档和<b>弱高光</b>必须成对出现」，本稿即该结论的落地。
+  </p>
+
+  <h2>4 · 落地清单（确认后执行，仅 CSS 一个文件）</h2>
+  <p class="note">
+    <code>TodoIsland.module.css</code>：① <code>:global(html)</code> 深色块加 <code>--island-gloss: rgba(255,255,255,.07)</code> / <code>--island-rim: rgba(255,255,255,.09)</code>；
+    ② 浅色块对应 <code>.55</code> / <code>.85</code>；③ <code>.root</code> 的 <code>background-color</code> 保留、新增 <code>background-image</code> 渐变与第三层 inset 亮线；
+    ④ 探针注释补一句。验证：lint:ui + dev 看两主题 + 现有 2901 测试不涉色应全绿。
+  </p>
+
+</div>
+</body>
+</html>

@@ -235,14 +235,15 @@ impl PasteEngine {
     ///
     /// - `longshot-status`：长截图状态条（创建后常驻到长截图结束）
     /// - `stack-hud`：剪贴板栈浮标（随栈模式常驻）
+    /// - `todo-island`：待办灵动岛（**开机常驻**，比前两者更彻底 —— 它没有"结束"这个状态）
     ///
     /// 刻意**不**排除 `quick-paste` / `tray-popup`：那两者是用户主动唤出的选择界面，
     /// 用户此刻确实在浏览 PastePanda，它们代表的手动保存值是正确的目标。
     ///
-    /// `pub(crate)` 而非私有：`stack_hud.rs` 的单测会断言 `WINDOW_LABEL` 在这张表里，
-    /// 防止将来改标签时两处漂移（漂移的后果是「陈旧目标续命」从偶发变必然）。
+    /// `pub(crate)` 而非私有：`stack_hud.rs` / `todo_island.rs` 的单测会断言各自的
+    /// `WINDOW_LABEL` 在这张表里，防止将来改标签时两处漂移（漂移的后果是「陈旧目标续命」从偶发变必然）。
     pub(crate) const TOOL_WINDOW_LABELS: &'static [&'static str] =
-        &["longshot-status", "stack-hud"];
+        &["longshot-status", "stack-hud", "todo-island"];
 
     /// 本应用是否有**用户可见的操作界面**处于打开状态
     /// （主窗口 / 快捷粘贴面板 / 托盘弹窗 / 编辑器）。

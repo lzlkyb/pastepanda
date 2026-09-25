@@ -215,17 +215,8 @@
   flex-shrink: 0;
 }
 
-.pillWarn {
-  font: inherit;
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 40%, var(--border-color, #e3e6ea));
-  background: color-mix(in srgb, var(--orange, #e0803a) 12%, transparent);
-  color: var(--orange, #e0803a);
-  display: inline-flex;
-  align-items: center;
-}
+/* ⚠️ .pillWarn 已删（2026-09-24 浮条收编）：警示胶囊搬进浮条（.capPillWarn），
+   顶栏不再有橙色警示位。 */
 
 .fitBox {
   width: 100%;
@@ -326,72 +317,21 @@
 /* ⚠️ `.viewShell .meta` / `.kbdHint` 已删：会话条与「申请控制权」行（recentRow）
    搬出 viewShell 后（v4 B 窗对稿），viewShell 内不再有 .meta / .kbdHint，
    这两条后代选择器永远不匹配（同上方已删的 .viewShell .qBar）。 */
-/* 深底上的胶囊与按钮：不透明 --card-bg 会在深底上又变成小白块 */
-.viewShell .pill,
-.viewShell .pillOn,
-.viewShell .miniBtn,
-.viewShell .dangerBtn {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
-  color: #e6ecf5;
-}
-.viewShell .pillOn {
-  background: color-mix(in srgb, var(--accent, #4f7cff) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent, #4f7cff) 45%, transparent);
-  color: #a8c0ff;
-}
-.viewShell .dangerBtn {
-  color: #ff9d9d;
-  border-color: rgba(255, 120, 120, 0.38);
-}
+/* ⚠️ `.viewShell .pill` / `.viewShell .pillOn` / `.viewShell .miniBtn` /
+   `.viewShell .dangerBtn` 深底覆盖组已删（2026-09-24 浮条收编）：viewShell 内
+   不再有胶囊/浅色按钮（顶栏只剩窗口壳、控制全在 viewShell 之外的浮条），
+   这四条后代选择器永远不匹配。浮条自己的深玻璃配色见下方 `.cap*` 组。 */
 
-/* 案 A：顶栏「更多」溢出菜单（释放键盘 / 重连）。深色 viewShell 语境。 */
-.topMoreWrap {
-  position: relative;
-  display: inline-flex;
-}
-.topMoreLabel {
-  margin-left: 2px;
-}
-.topMoreMenu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
-  min-width: 120px;
-  padding: 4px;
-  border-radius: 8px;
-  background: rgba(20, 26, 36, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.topMoreMenu button {
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: #e6ecf5;
-  cursor: pointer;
-}
-.topMoreMenu button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-}
-.topMoreMenu button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* ⚠️ 案 A 顶栏「更多」溢出菜单（.topMoreWrap/.topMoreLabel/.topMoreMenu）已删
+   （2026-09-24 浮条收编）：释放键盘/重连进了浮条 ⋯ 面板，顶栏不再有菜单。 */
 
-/* 案 A：非全屏「画面偏小」轻提示条（挂在 .fakeScreen 内，与 RcHud 同级） */
+/* 案 A：非全屏「画面偏小」轻提示条（挂在 .fakeScreen 内）。
+   2026-09-24：top 42 → 92px——浮条（.capZone，画面顶部居中）占了原来的位置，
+   提示条下移一层避让，两者不再叠。 */
 .fsHint {
   position: absolute;
   left: 50%;
-  top: 42px;
+  top: 92px;
   transform: translateX(-50%);
   z-index: 12;
   display: flex;
@@ -492,49 +432,19 @@
    盒子。wrapper 用 pointer-events:none 而后代用 auto 的组合成立。
    🔴 常驻死区从「最多 10 格的信息条」缩到一个小按钮——画面顶部让给远程点击的
    面积比原来大一个数量级（稿的要求：遥测不常驻铺在画面上）。 */
-.hudWrap {
-  /* v4 稿 B 窗：挂画布**顶部**左侧（原先在底部）。max-width 减去右侧
-     viewTools 的占地，顶部同行两者永不重叠。 */
-  position: absolute;
-  top: 10px;
-  left: 10px;
+/* ⚠️ .hudWrap / .hudBtn（左上「连接详情」常驻小按钮）已删（2026-09-24 浮条收编）：
+   入口缩成浮条动作段的一枚 i 图标（.capBtn + .hudWrapCap），明细面板
+   （.hudPanel 及以下）原样保留、挂在胶囊下方。 */
+
+/* 浮条语境的「连接详情」wrapper：右对齐挂胶囊下缘（面板右缘对齐 i 按钮） */
+.hudWrapCap {
+  align-self: stretch;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  max-width: calc(100% - 150px);
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 100%;
   pointer-events: none;
-}
-
-/* 唯一常驻的交互面：点击开合明细面板。视觉沿用手写玻璃 chip 的观感，
-   但只占一个按钮的宽度。 */
-.hudBtn {
-  pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  min-height: 24px;
-  font: inherit;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: #c8d0dc;
-  background: rgba(9, 17, 28, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 7px;
-  backdrop-filter: blur(10px);
-  cursor: pointer;
-}
-.hudBtn:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.22);
-}
-.hudBtn[aria-expanded="true"] {
-  color: #fff;
-  background: rgba(9, 17, 28, 0.86);
-}
-.hudBtn svg {
-  flex-shrink: 0;
 }
 
 /* 点「连接详情」按钮浮出的明细面板。同一穿透纪律只管 wrapper——面板
@@ -720,44 +630,6 @@
 /* —— 被控视角（RcInboundView）：主区在被别人远程时的信息面 ——
    与主窗那条单行横幅（.ctrlBanner）分工不同：这里是工作台里的完整版，
    要放得下指纹 / 范围 / 画质 / 免确认这些**核对信息**。 */
-.ibShell {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
-}
-.ibCard {
-  width: 100%;
-  max-width: 620px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 20px 22px;
-  border: 1px solid color-mix(in srgb, var(--danger, #d64545) 28%, var(--border-color, #e3e6ea));
-  border-radius: 12px;
-  background: var(--card-bg, #f6f7f9);
-  /* 质感升级 3.4：被控确认卡入场滑入一次（同 .viewTop） */
-  animation: rcSlideDown var(--motion-slow) cubic-bezier(0.2, 0, 0, 1);
-}
-.ibHead {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 13.5px;
-}
-.ibTitle {
-  font-weight: 600;
-}
-.ibTimerRow {
-  margin-top: -4px;
-}
-.ibLead {
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--text-muted, #6b7280);
-}
 .ibFacts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -783,12 +655,6 @@
   min-width: 0;
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-.ibActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
 }
 /* 侧栏的精简提示块（空设备态 / 一次性协助）：两个消费方现在都在玻璃卡**内部**，
    原来的虚线盒子成了卡中卡——退成透明容器，只留纵向节奏。 */
@@ -1127,27 +993,9 @@
   color: #9db8ff !important;
 }
 
-.viewTools {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 9px;
-  background: rgba(9, 17, 28, 0.62);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 2;
-  /* 浮现式（Chrome RDP 连接条 / Moonlight 同款）：靠近上缘滑入、无交互淡出。
-     隐藏态必须 pointer-events:none——隐形时也不能占着画面右上吃点击。
-     visibility 延迟到淡出结束后再切（否则淡出过程被瞬间隐藏掐掉）。 */
-  transition:
-    opacity 200ms cubic-bezier(0.2, 0, 0, 1),
-    transform 200ms cubic-bezier(0.2, 0, 0, 1),
-    visibility 0s linear 0s;
-}
-
+/* ⚠️ .viewTools / .viewTools button（右上浮现工具条）已删（2026-09-24 浮条收编）：
+   适应/1:1/填充/全屏/锁定指针全部搬进 RcSessionCapsule。同族的 .viewToolsHidden
+   （隐藏态三重纪律）与 .toolOn（选中态）仍被 .fsBar / .capZone 复用，保留。 */
 .viewToolsHidden {
   opacity: 0;
   transform: translateY(-6px);
@@ -1160,24 +1008,119 @@
     visibility 0s linear 200ms;
 }
 
-.viewTools button {
+.toolOn {
+  background: rgba(107, 147, 255, 0.28) !important;
+  /* ui-rule-ok: 深底选中态提亮到纯白（不随主题），同 .fsDanger:hover 先例 */
+  color: #fff !important;
+}
+
+/* —— 方案 B（2026-09-24）：全屏会话态顶边 hot zone 控制条（RcFullscreenHotbar）——
+   Fullscreen API 只显示 fakeScreen 子树，本条必须挂在它**内部**才可见。
+   浮现状态机与 viewTools 同构（顶边热区滑入 / 悬停保持 / 2.5s 淡出），但：
+   ① 热区只有 8px（少吃远程点击——viewTools 当年误触排查的教训）；
+   ② 指针锁定时不唤出（锁住的指针没有真实光标）；
+   ③ 隐藏态复用 .viewToolsHidden（pointer-events:none + visibility + tabIndex 三重）。
+   深玻璃比 viewTools 更实——横条正压在画面上缘，需要更强可读性。按钮用固定
+   浅色（#c8d0dc）：本条不随主题翻面，light 主题下 var(--text-*) 会糊进深玻璃。 */
+.fsBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px;
+  background: linear-gradient(
+    to bottom,
+    rgba(7, 12, 20, 0.88),
+    rgba(7, 12, 20, 0.55) 80%,
+    transparent
+  );
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 3;
+  transition:
+    opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 0s;
+}
+
+.fsBar button {
   font: inherit;
   font-size: 11px;
   padding: 4px 9px;
-  border-radius: 6px;
+  border-radius: 4px; /* ui-rule-ok: 归档 4px（邻居 viewTools 的 6px 是改前存量） */
   border: none;
   background: transparent;
+  /* ui-rule-ok: 深玻璃压在画面上、刻意不随主题翻面（light 下 var(--text-*) 会糊进深底）；同 viewTools 先例 */
   color: #c8d0dc;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
-.viewTools button:hover {
-  background: rgba(255, 255, 255, 0.1);
+.fsBar button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff; /* ui-rule-ok: 深底 hover 提亮到纯白，同 .toolOn 先例（不随主题） */
 }
 
-.toolOn {
-  background: rgba(107, 147, 255, 0.28) !important;
-  color: #fff !important;
+.fsBar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 破坏性操作在深底上提亮一档（--danger 是浅底语义，直接用会太暗） */
+.fsDanger {
+  color: #ff9a9a !important; /* ui-rule-ok: --danger 是浅底语义，深底上直接用太暗——提亮一档 */
+}
+
+.fsDanger:hover {
+  background: rgba(214, 69, 69, 0.3) !important;
+  color: #fff !important; /* ui-rule-ok: 深底 hover 提亮到纯白（不随主题） */
+}
+
+.fsSep {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.fsInfo {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-left: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 窗口三键：最右（Windows 习惯位，用户指定），40×30 窄版。
+   选择器带 .fsBar 前缀压过上面的 `.fsBar button`（cursor / padding 不打架）。 */
+.fsWin {
+  display: flex;
+  margin-left: auto;
+}
+
+.fsBar .fsWinBtn {
+  width: 40px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: default;
+  transition: background 150ms, color 150ms;
+}
+
+.fsBar .fsWinBtn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* 关闭键 hover 红底白字：Windows 原生配色（系统级语义变量，不随主题变） */
+.fsBar .fsWinBtnClose:hover {
+  background: var(--win-close-hover-bg) !important;
+  color: var(--win-close-hover-fg) !important;
 }
 
 /* —— 方案 B：会话底栏（唯一一条）——
@@ -1188,62 +1131,368 @@
 .sessionWrap {
   flex: 1;
   min-height: 0;
+  /* 控端浮条（RcSessionCapsule）的定位基准：absolute 挂在画面顶部 */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.sessionBar {
-  flex: 0 0 auto;
-  /* 案 A：会话中默认密一档（46→36）；换行高度封顶，优先把竖向空间留给画面 */
-  min-height: 36px;
-  max-height: 72px;
-  overflow-y: auto;
+/* —— 2026-09-24 控端态浮条收编：RcSessionCapsule ——
+   画面顶部居中的**唯一**会话控制条（深色玻璃，会隐藏）。原底栏 .sessionBar
+   （9 控件、超宽换行 72px）/ .barSep / .barStatus / .recentRow 已删；
+   顶栏警示/结束/更多、左上 HUD 按钮、右上 viewTools 一并收编进本条。
+
+   深玻璃配色不随主题翻面（light 下 var(--text-*) 会糊进深底）——沿用
+   .viewTools / .fsBar 的既有先例；阴影用浮层 token。
+
+   浮现策略（B 变体，用户指定）：连接成功首显 15s → 隐藏；顶边 12px 热区或
+   悬停唤出，离开 2.5s 淡出；链路异常 / 菜单展开期间锁显。状态机在
+   RcSessionCapsule.tsx，这里只管外观。 */
+.capZone {
+  /* 顶栏（.viewTop ≈34px）正下方；胶囊再让 12px。链路异常的微光条贴 canvas 顶缘 */
+  position: absolute;
+  top: 34px;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  /* 同 viewTools：靠近上缘滑入、无交互淡出；visibility 延迟到淡出结束再切 */
+  transition:
+    opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 0s;
+}
+/* 隐藏态复用 .viewToolsHidden（pointer-events:none + visibility:hidden + Tab 纪律） */
+
+/* 链路异常时常显的微光条（B 稿 §5：异常永远有两个可见信号——灯 + 光条 + 锁显浮条） */
+.capAlarm {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(to right, transparent, rgba(214, 69, 69, 0.55), transparent);
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.capAlarmOn {
+  opacity: 1;
+}
+
+.capCapsule {
+  pointer-events: auto;
+  margin-top: 12px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 4px 8px;
-  background: var(--rc-glass);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--rc-glass-line);
-  border-radius: 14px;
-  box-shadow: var(--rc-shadow);
-  font-size: 11px;
-  color: var(--text-secondary, #495565);
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  /* ui-rule-ok: 深玻璃压在画面上、刻意不随主题翻面（同 .viewTools/.fsBar 先例） */
+  background: rgba(13, 16, 22, 0.82);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  /* 胶囊是几何需要：999px 走 U5 的几何放行档 */
+  border-radius: 999px;
+  font-size: 12px;
+  color: rgba(232, 236, 242, 0.95);
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
+  white-space: nowrap;
+  max-width: calc(100% - 24px);
 }
-.barSep {
+
+.capWho {
+  font-weight: 600;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.capPillOn,
+.capPillView,
+.capPillWarn,
+.capPillBad {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+}
+.capPillOn {
+  /* ui-rule-ok: 深玻璃上的绿态胶囊，不随主题翻面（同上先例） */
+  background: rgba(52, 199, 123, 0.16);
+  /* ui-rule-ok: 深玻璃绿态文字不随主题翻面（--success 是浅底语义，深底太暗） */
+  color: #4ade80;
+  border-color: rgba(52, 199, 123, 0.35);
+}
+.capPillView {
+  background: rgba(147, 160, 180, 0.16);
+  color: rgba(147, 160, 180, 0.95);
+  border-color: rgba(147, 160, 180, 0.3);
+}
+.capPillWarn {
+  /* ui-rule-ok: 深玻璃上的琥珀警示，不随主题翻面（--warning 是浅底语义，深底太暗） */
+  background: rgba(224, 128, 58, 0.18);
+  /* ui-rule-ok: 深玻璃琥珀警示不随主题翻面（--warning 浅底语义，深底太暗） */
+  color: #f5b06a;
+  border-color: rgba(224, 128, 58, 0.4);
+}
+.capPillBad {
+  /* ui-rule-ok: 深玻璃上的红警示，同上先例 */
+  background: rgba(214, 69, 69, 0.2);
+  /* ui-rule-ok: 深玻璃红警示不随主题翻面（--danger 浅底语义，深底太暗） */
+  color: #f09595;
+  border-color: rgba(214, 69, 69, 0.45);
+}
+
+/* 键盘捕获态（原底栏灰字「点画面可捕获键盘」升级上浮条） */
+.capKb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #4ade80; /* ui-rule-ok: 深玻璃绿态文字，同 .capPillOn 先例 */
+  flex-shrink: 0;
+}
+.capKb i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4ade80; /* ui-rule-ok: 同上 */
+  display: inline-block;
+}
+.capKbOff {
+  font-size: 11px;
+  color: rgba(147, 160, 180, 0.85);
+  flex-shrink: 0;
+}
+
+.capSep {
   width: 1px;
   height: 16px;
-  background: var(--border-color, #e3e6ea);
-  margin: 0 2px;
+  background: rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
 }
-.barStatus {
+
+/* 浮条内的通用小按钮（文字/图标混排；菜单按钮由 .capCapsule .menuBtn 翻色） */
+.capBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  /* ui-rule-ok: 深玻璃文字不随主题翻面（同上先例） */
+  color: rgba(232, 236, 242, 0.9);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+.capBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff; /* ui-rule-ok: 深底 hover 提亮到纯白，同 .toolOn 先例 */
+}
+.capBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.capBtnOn {
+  /* ui-rule-ok: 深玻璃选中态，同 .toolOn 先例 */
+  background: rgba(107, 147, 255, 0.28) !important;
+  /* ui-rule-ok: 深玻璃选中态提亮到纯白（不随主题），同 .toolOn 先例 */
+  color: #fff !important;
+}
+.capBtnDanger {
+  color: #f09595; /* ui-rule-ok: --danger 是浅底语义，深底提亮一档，同 .fsDanger 先例 */
+}
+.capBtnDanger:hover:not(:disabled) {
+  background: rgba(214, 69, 69, 0.22);
+  color: #fff; /* ui-rule-ok: 同 .fsDanger:hover 先例 */
+}
+
+/* 视图三键组（窄窗整组隐藏，见下方媒体查询） */
+.capFit {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* 只看态「申请控制权」：浮条内渐变主按钮（原 recentRow 升级，confirmDialog 不变） */
+.capReq {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  /* ui-rule-ok: accent 实底上的白字（同 .fsHintBtn 先例），不随主题 */
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+.capReq:hover:not(:disabled) {
+  /* ui-rule-ok: hover 只提亮一档，混白不随主题（同 .fsHintBtn 渐变提亮先例） */
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+}
+.capReq:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 浮条里的下拉按钮翻色（RcDropdown 的 .menuBtn 是浅底语义） */
+.capCapsule .menuBtn {
+  color: rgba(232, 236, 242, 0.9);
+}
+.capCapsule .menuBtn:hover:not(:disabled) {
+  border-color: transparent;
+  /* ui-rule-ok: 深玻璃 hover 提亮到纯白（不随主题），同 .toolOn 先例 */
+  color: #fff;
+}
+.capCapsule .menuCur {
+  color: #fff; /* ui-rule-ok: 深玻璃上当前值提亮，同 .capBtn:hover 先例 */
+}
+
+/* —— ⋯ 面板（RcCapsuleMore）：低频项二级收纳 —— */
+.capMore {
+  pointer-events: auto;
+  margin-top: 8px;
+  width: 320px;
+  max-width: calc(100% - 24px);
+  padding: 12px;
+  border-radius: 12px;
+  /* ui-rule-ok: 深玻璃面板不随主题翻面（同上先例） */
+  background: rgba(13, 16, 22, 0.92);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
+  font-size: 12px;
+  color: rgba(232, 236, 242, 0.95);
+}
+.capMoreSec {
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted, #6b7280);
+  letter-spacing: 0.8px;
+  color: rgba(147, 160, 180, 0.9);
+  margin: 12px 4px 8px;
 }
+.capMoreSec:first-child {
+  margin-top: 0;
+}
+.capMoreBtns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.capMoreRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.capMoreRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(232, 236, 242, 0.9);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.capMoreRow:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+.capMoreRow:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.capMoreRow svg {
+  color: rgba(147, 160, 180, 0.9);
+  flex-shrink: 0;
+}
+.capMoreLab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.capMoreCur {
+  color: rgba(147, 160, 180, 0.9);
+  font-size: 11px;
+}
+.capMoreDanger {
+  color: #f09595; /* ui-rule-ok: 深底危险色提亮一档，同 .capBtnDanger 先例 */
+}
+.capMoreDanger svg {
+  color: #f09595; /* ui-rule-ok: 同上 */
+}
+
+/* 深面板里的浅底控件翻色（RcAudioBar/RcClipboardBar/RcFileBar/RcDropdown 零改动）。
+   同已删的 `.viewShell .miniBtn` 先例：后代选择器只作用于本面板语境。 */
+.capMore .menuBtn,
+.capMore .miniBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(232, 236, 242, 0.9);
+}
+.capMore .miniBtn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.24);
+  /* ui-rule-ok: 深面板 hover 提亮到纯白（不随主题），同 .toolOn 先例 */
+  color: #fff;
+}
+.capMore .miniBtnPri {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: #cfe0ff; /* ui-rule-ok: 深底 accent 主按钮文字提亮（同 .viewShell .pillOn 先例基调） */
+}
+.capMore .menuBtnOn {
+  /* ui-rule-ok: 深面板上「已生效」开关态，琥珀提亮（同 .capPillWarn 先例） */
+  color: #f5b06a;
+  background: rgba(224, 128, 58, 0.18);
+}
+.capMore .audioPeerOff {
+  color: rgba(147, 160, 180, 0.9);
+  background: rgba(147, 160, 180, 0.14);
+}
+
+/* 窄窗：名字与键盘提示让位（灯色保身份；视图三键保留——宽度小）。
+   绝不换行——旧底栏 72px 换行封顶的问题从此不存在。 */
+@media (max-width: 680px) {
+  .capWho,
+  .capKb,
+  .capKbOff {
+    display: none;
+  }
+}
+
+/* —— 2026-09-24 之前的会话底栏（.sessionBar/.barSep/.barStatus/.segGroup/.segSep）
+   与只看申请行（.recentRow）已随 RcSessionBar/RcSessionView 改版删除 —— */
+
 
 /* 画质 / 画面下拉：菜单**向上**弹（底栏贴着窗口下沿，向下弹会被裁掉） */
 .menuWrap {
   position: relative;
   display: inline-flex;
 }
-/* v5 分段组合控件（设计稿 B 窗）：画质/画面两格下拉同住一个容器，
-   menuBtn 自身退成透明格——外框由 .segGroup 提供 */
-.segGroup {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  border-radius: 9px;
-  border: 1px solid var(--border-color, #e3e6ea);
-  background: color-mix(in srgb, var(--text-primary, #1c1e21) 5%, transparent);
-  padding: 0 2px;
-}
-.segSep {
-  width: 1px;
-  height: 16px;
-  background: var(--border-color, #e3e6ea);
-}
+/* ⚠️ .segGroup / .segSep（v5 分段组合控件外框）已删（2026-09-24 浮条收编）：
+   画质/画面下拉在浮条里各自独立（.capSep 分隔），不再共用一个外框容器。 */
 .menuBtn {
   font: inherit;
   font-size: 11px;
@@ -1414,12 +1663,8 @@
   color: var(--accent, #4f7cff);
 }
 
-.recentRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-}
+/* ⚠️ .recentRow 已删（2026-09-24 浮条收编）：只看态「申请控制权」升级为浮条内
+   渐变主按钮（.capReq），confirmDialog 口径不变。 */
 
 .tagRc{
   font-size: 10px;
@@ -1737,16 +1982,17 @@
 
 @media (prefers-reduced-motion: reduce) {
   /* 真正带动画的只有 .spin；同列的 .dotOn 已随 v4 顶栏删除。
-     质感升级（2026-09-23）新增：顶条 / 被控确认卡的入场滑入，reduce 下关闭。 */
+     质感升级（2026-09-23）新增：顶条 / 被控确认卡的入场滑入，reduce 下关闭。
+     2026-09-24：.ibCard 随 RcInboundView 删除，换成抽屉 .ctrlDrawer。 */
   .spin,
   .viewTop,
-  .ibCard {
+  .ctrlDrawer {
     animation: none !important;
   }
 }
 
 /* 质感升级 3.4：一次性入场滑入（translateY -10px → 0 + fade）。
-   只被 .viewTop / .ibCard 消费；CSS Modules 会 hash 隔离，不污染全局。 */
+   只被 .viewTop / .ctrlDrawer 消费；CSS Modules 会 hash 隔离，不污染全局。 */
 @keyframes rcSlideDown {
   from {
     opacity: 0;
@@ -2485,4 +2731,145 @@
   display: inline-flex;
   gap: 8px;
   margin-top: 2px;
+}
+
+/* ============================================================
+   方案 B（2026-09-24）：被控提示「胶囊 + 抽屉」。
+   前身三段式横幅 + 工作台中央大卡片三层重复（RcInboundView 已删）。
+   业界共识（AnyDesk/RustDesk/ToDesk）：常驻极轻、详情收纳、中央不放东西。
+   压缩模型沿用 09-22 结论：压缩量只由 .who 承担（min-width:0 + 折行），
+   其余原子元素 flex-shrink:0 永不变形——窄窗崩坏的直接解药。
+   ============================================================ */
+
+/* 胶囊容器：抽屉的定位锚。z-index 盖过 DOM 靠后的兄弟块（红线条目 11 的教训）。 */
+.ctrlPillWrap {
+  position: relative;
+  margin: 8px 12px 0;
+  z-index: 30;
+}
+
+/* 胶囊条（唯一常驻 UI，~34px）：红染浅底 + 全圆角。 */
+.ctrlPill {
+  display: flex;
+  align-items: center;
+  column-gap: 4px;
+  padding: 4px 8px 4px 12px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-color));
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+/* 主体（整条可点展开/收起抽屉）。 */
+.ctrlPillMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.ctrlPillMain .who {
+  font-weight: 600;
+  color: var(--danger);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* live region（名字 + pill 同组，计时器在外面——C5）：样式从 .ctrlWho 作用域迁来 */
+.ctrlPillMain .whoLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ctrlPillMain .dotDanger,
+.ctrlPillMain .pillDanger,
+.ctrlPillMain .timer {
+  flex-shrink: 0;
+}
+
+/* 橙点徽标：有需要处理的提示（范围/画质变更、文件请求、扬声器被静音）。 */
+.ctrlBadge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--warning);
+}
+
+/* 结束图标 + 箭头（箭头纯视觉：展开状态由主体按钮 aria-expanded 表达）。 */
+.ctrlPillEnd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ctrlPillEnd:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+.ctrlPillEnd:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ctrlPillChev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 26px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.chevUp {
+  transform: rotate(180deg);
+  transition: transform 150ms;
+}
+
+/* 抽屉：挂在胶囊正下方，460px（dialog 红线档位）；窄窗收满宽。 */
+.ctrlDrawer {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(460px, calc(100vw - 24px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--card-bg);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border-color));
+  border-radius: 12px;
+  box-shadow: var(--float-card-shadow);
+  z-index: 40;
+  font-size: 12px;
+  /* 入场滑入一次（同 .viewTop 先例） */
+  animation: rcSlideDown var(--motion-slow) cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 抽屉操作行：音频 / 免确认 / 立即结束。 */
+.ctrlDrawerActs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  row-gap: 8px;
+}
+.ctrlDrawerActs .dangerBtn {
+  margin-left: auto;
 }

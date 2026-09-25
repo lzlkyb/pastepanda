@@ -179,11 +179,13 @@ pub struct H264Packet {
     pub height: u32,
 }
 
+mod ff;
 mod mf;
 mod session;
 
 pub use mf::*;
 pub use session::*;
+pub(in crate::rc) use ff::FfEncoder;
 // to_annex_b 由 mf 模块实现；给测试与会话编码器一个父模块绑定。
 pub(in crate::rc) use mf::mf_err;
 #[cfg(test)]

@@ -348,10 +348,11 @@ fn atx_heading(line: &str) -> Option<(u8, String)> {
 
 /// 围栏行（```` ``` ```` 或 `~~~`）。返（符号, 长度）。
 ///
-/// `pub(super)`：[`super::annotate`] 扫约定行时也要跳过代码块（规则 #11）。
-/// 各写一套的后果是「大纲跟类别扫到的围栏不一致」，
+/// `pub(crate)`：本文件内 outline / slice 用；`annotate` 扫约定行、
+/// `todo_tasks` 扫待办也都要跳过代码块（规则 #11）——围栏判定必须全仓同一份，
+/// 各写一套的后果是「大纲跟别的扫描对围栏的认定不一致」，
 /// 而那只在某些嵌套围栏的笔记上才表现出来。
-pub(super) fn fence_at(line: &str) -> Option<(char, usize)> {
+pub(crate) fn fence_at(line: &str) -> Option<(char, usize)> {
     let t = line.trim_end();
     if indent_of(t) > 3 {
         return None;

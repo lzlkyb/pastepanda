@@ -1,11 +1,14 @@
 /**
- * RcSessionView — 会话壳。只做编排：调用 hooks、组合画面区与会话底栏。
+ * RcSessionView — 会话壳。只做编排：调用 hooks、组合画面区与控端浮条。
  *
  * 拆分史（`.tsx ≤ 300` 红线）：
  * - 2026-09-18：抽出 RcScreenCanvas；
  * - 2026-09-21：抽出 useRcSessionPrefs / useRcSessionAudio / useRcDisplayMode 与
  *   RcSessionStage（原 394 行）。画面区块的 props 一律**整组**接收 hook 返回值
  *   （`input` / `link` / `frames`），不再逐个摊平——摊平只是把解构搬个家。
+ * - 2026-09-24 控端态浮条收编：RcSessionBar（底栏）、recentRow（申请控制权行）
+ *   退场，非全屏的会话控制收进 RcSessionCapsule 一条会隐藏的胶囊；画质/画面/码率
+ *   的乐观更新+失败回滚抽成 useRcRemoteSend。
  *
  * 确认一律用 ConfirmDialog（非 window.confirm，见 lib/confirm）。
  */
@@ -23,8 +26,10 @@ import { useRcClipboardAuto } from "@/hooks/useRcClipboardAuto";
 import { useRcSessionPrefs } from "@/hooks/useRcSessionPrefs";
 import { useRcSessionAudio } from "@/hooks/useRcSessionAudio";
 import { useRcDisplayMode } from "@/hooks/useRcDisplayMode";
+import { useRcRemoteSend } from "@/hooks/useRcRemoteSend";
 import { RcSessionStage } from "./RcSessionStage";
-import { RcSessionBar } from "./RcSessionBar";
+import { RcSessionCapsule } from "./RcSessionCapsule";
+import { RcHud } from "./RcHud";
 import styles from "./RemoteComputer.module.css";
 
 export function RcSessionView({
@@ -152,12 +157,23 @@ export function RcSessionView({
     notify,
   });
 
+  // 会话内可调项的远程链路：乐观更新 + 失败回滚（原 RcSessionBar 口径整体搬迁）
+  const send = useRcRemoteSend({
+    rc,
+    quality: prefs.qPick,
+    captureScope: prefs.scopePick,
+    bitrate: prefs.bitratePick,
+    onPickQuality: prefs.setQPick,
+    onPickScope: prefs.setScopePick,
+    onPickBitrate: prefs.setBitratePick,
+    onStatus: (m, k) => toast(m, k),
+  });
+
   return (
     <div className={styles.sessionWrap} ref={wrapRef}>
       <RcSessionStage
         session={session}
         busy={busy}
-        rc={rc}
         input={input}
         link={link}
         frames={frames}
@@ -169,51 +185,70 @@ export function RcSessionView({
         fsHintDismissed={display.fsHintDismissed}
         onDismissFsHint={display.dismissFsHint}
         qPick={prefs.qPick}
-        scopePick={prefs.scopePick}
         screenRef={screenRef}
         canvasRef={canvasRef}
         onReconnect={onReconnect}
         onRequestEnd={() => void requestEnd()}
       />
 
-      {!canControl && onRequestControl && (
-        <div className={styles.recentRow}>
-          <button
-            type="button"
-            className={styles.miniBtnPri}
-            disabled={busy}
-            title="结束本次「只看」会话，重新以「可控」发起（对方需再次确认）"
-            onClick={() => void requestControl()}
-          >
-            申请控制权
-          </button>
-          <span className={styles.meta}>重新申请期间画面会断开，对方确认后恢复</span>
-        </div>
+      {/* 控端浮条（方案 B 变体）：非全屏唯一会话控制条——连接成功首显 15s 后隐藏，
+          顶边 12px 热区唤出；全屏态由 RcFullscreenHotbar 承担（互斥不双浮层）。
+          放在 Stage 之后：同为 sessionWrap 子元素，后写的兄弟盖在画面上。 */}
+      {!display.fullscreen && (
+        <RcSessionCapsule
+          session={session}
+          rc={rc}
+          busy={busy}
+          canControl={canControl}
+          link={link}
+          input={input}
+          send={send}
+          quality={prefs.qPick}
+          scopePick={prefs.scopePick}
+          bitrate={prefs.bitratePick}
+          audioOn={audioOn}
+          onToggleAudio={toggleAudio}
+          clipAuto={clipAuto}
+          onToggleClipAuto={() => setClipAuto((v) => !v)}
+          lastAutoAt={clip.lastAutoAt}
+          autoFail={clip.autoFail}
+          onStatus={(m, k) => toast(m, k)}
+          fit={display.fit}
+          onFit={display.setFit}
+          onToggleFullscreen={display.toggleFullscreen}
+          onRequestEnd={() => void requestEnd()}
+          onReconnect={onReconnect}
+          onRequestControl={onRequestControl ? () => void requestControl() : undefined}
+          stageRef={screenRef}
+          detail={
+            <RcHud
+              codec={frames.codec}
+              fps={frames.fps}
+              rttMs={link.rttMs}
+              frameLatencyMs={frames.latencyMs}
+              lossPermille={rc.status?.loss_permille}
+              bitrateKbps={frames.bitrateKbps}
+              segCapMs={frames.segCapMs}
+              segEncMs={frames.segEncMs}
+              segNetMs={frames.segNetMs}
+              segDecMs={frames.segDecMs}
+              respMs={frames.respMs}
+              quality={prefs.qPick}
+              /* 🔴 自动档的落点只有**推流那台机器**知道。这里只在本机作为被控端
+                  推流（inbound_active）时拿得到生效档；出站会话显示「由对方决定」。 */
+              activeQuality={
+                session.phase === "inbound_active" ? rc.status?.active_quality : undefined
+              }
+              peerDriven={session.phase !== "inbound_active"}
+              scope={prefs.scopePick}
+              linkState={link.state}
+              pathKind={rc.status?.path_kind ?? ""}
+              pointerLocked={input.pointerLocked}
+              frameSize={frames.size}
+            />
+          }
+        />
       )}
-      {/* 会话内控制收进**一条**（方案 B）：原先是 qBar(remote) + ctrlBar + statusBar 三条
-          各自带边框的横条，画质/画面还在侧栏有一组同名的。 */}
-      <RcSessionBar
-        rc={rc}
-        canControl={canControl}
-        quality={prefs.qPick}
-        captureScope={prefs.scopePick}
-        bitrate={prefs.bitratePick}
-        onPickQuality={(k) => prefs.setQPick(k)}
-        onPickScope={(s) => prefs.setScopePick(s)}
-        onPickBitrate={(p) => prefs.setBitratePick(p)}
-        audioOn={audioOn}
-        onToggleAudio={toggleAudio}
-        clipAuto={clipAuto}
-        onToggleClipAuto={() => setClipAuto((v) => !v)}
-        lastAutoAt={clip.lastAutoAt}
-        autoFail={clip.autoFail}
-        onStatus={(m, k) => toast(m, k)}
-        kbOn={input.kbOn}
-        pointerLocked={input.pointerLocked}
-        fit={display.fit}
-        sizeW={frames.size.w}
-        frameIdleSec={link.frameIdleSec}
-      />
     </div>
   );
 }

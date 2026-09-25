@@ -32,6 +32,18 @@ export function normalizeTheme(value: unknown): ThemeKey {
   return THEMES.some((t) => t.key === value) ? (value as ThemeKey) : DEFAULT_THEME;
 }
 
+/**
+ * 主题是否为暗色（内部先归一，未知值落 DEFAULT_THEME 的档）。
+ *
+ * 服务于「不跟 `[data-theme]` 全套变量、只要亮暗二档」的宿主：灵动岛
+ * （html[data-island-mode] 两套材质）、全屏编辑器外壳、笔记第三栏编辑区。
+ * 收口记录：FullscreenShell / FullscreenEditor / useNoteEditorState 原各有一份
+ * `THEMES.find(...)?.dark ?? false`，第 4 个调用点（灵动岛）出现时收到这里（规则 11.1）。
+ */
+export function isDarkTheme(value: unknown): boolean {
+  return THEMES.find((t) => t.key === normalizeTheme(value))?.dark ?? false;
+}
+
 /** 清除主题过渡的定时器（模块级：快速连切时只保留最后一次） */
 let transitionTimer: ReturnType<typeof setTimeout> | null = null;
 

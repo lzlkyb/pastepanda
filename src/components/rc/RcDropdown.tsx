@@ -61,6 +61,7 @@ export function RcDropdown<T extends string>({
   columns = 1,
   disabled,
   onPick,
+  onOpenChange,
 }: {
   /** 前缀名（画质 / 画面），当前值写在它右边。 */
   label: string;
@@ -70,12 +71,27 @@ export function RcDropdown<T extends string>({
   columns?: 1 | 2;
   disabled?: boolean;
   onPick: (k: T) => void;
+  /**
+   * 开合外报（2026-09-24 浮条收编）。菜单是 portal（fixed 挂 body），鼠标移进
+   * 菜单不再经过宿主的画面热区/浮条矩形——宿主（RcSessionCapsule）需要用它
+   * 在菜单展开期间锁住浮条显示，否则 2.5s 无交互淡出会把开着的菜单晾成孤儿。
+   */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<Pos | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+
+  /** setOpen 的唯一出口：状态与外报同源，避免两条路径漂移。 */
+  const commit = useCallback(
+    (v: boolean) => {
+      setOpen(v);
+      onOpenChange?.(v);
+    },
+    [onOpenChange],
+  );
 
   /**
    * 按按钮当前位置算 fixed 坐标。`clamp` = 菜单已挂载、宽度已知时把右缘收回窗口内
@@ -116,11 +132,11 @@ export function RcDropdown<T extends string>({
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
       if (wrapRef.current?.contains(t) || popRef.current?.contains(t)) return;
-      setOpen(false);
+      commit(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  }, [open, commit]);
 
   const current = options.find((o) => o.key === value);
 
@@ -135,12 +151,12 @@ export function RcDropdown<T extends string>({
         disabled={disabled}
         onClick={() => {
           if (open) {
-            setOpen(false);
+            commit(false);
             return;
           }
           // 先定位再开：否则首帧会用上一次关闭时的旧坐标闪一下
           place(false);
-          setOpen(true);
+          commit(true);
         }}
       >
         {label} <b className={styles.menuCur}>{current?.label ?? value}</b>
@@ -172,7 +188,7 @@ export function RcDropdown<T extends string>({
                   title={o.tip}
                   className={cls}
                   onClick={() => {
-                    setOpen(false);
+                    commit(false);
                     onPick(o.key);
                   }}
                 >
