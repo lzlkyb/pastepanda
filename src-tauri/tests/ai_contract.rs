@@ -87,7 +87,7 @@ async fn c4b_thinking_retry_fails_then_errors() {
 /// 截断:finish_reason=length → truncated=true。
 #[tokio::test]
 async fn c6_truncated_flag() {
-    let (srv, base) = MockServer::start(MockMode::Truncated("半截答案".to_string()));
+    let (_srv, base) = MockServer::start(MockMode::Truncated("半截答案".to_string()));
     let cfg = mock_config(&base);
     let out = chat(&cfg, "sk-mock", None, "hi", Some(100), None).await.expect("截断仍是成功响应");
     assert!(out.truncated, "length finish_reason 必须标记截断");

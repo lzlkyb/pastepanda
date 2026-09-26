@@ -1,5 +1,8 @@
 //! `pin.rs` 的单元测试（原样平移）。
 
+// 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
+#![allow(non_snake_case)]
+
 use super::*;
 
 fn store() -> DataStore {

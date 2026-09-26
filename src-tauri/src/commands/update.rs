@@ -492,6 +492,9 @@ pub fn start_update(app: tauri::AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    // 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
+    #![allow(non_snake_case)]
+
     use super::*;
 
     #[test]

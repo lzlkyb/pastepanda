@@ -4,6 +4,9 @@
 //! 本模块要钉的正是那些“接线处”：中间件到底挂上了没、鉴权会不会被绕、
 //! 状态码对不对——它们全部只存在于请求真的跑一遍的时候。参照 cc-bridge 的做法。
 
+// 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
+#![allow(non_snake_case)]
+
 use serde_json::{json, Value};
 
 const TOKEN: &str = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

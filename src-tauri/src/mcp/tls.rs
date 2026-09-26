@@ -360,6 +360,9 @@ pub fn tls_config(m: &TlsMaterial) -> Result<axum_server::tls_rustls::RustlsConf
 
 #[cfg(test)]
 mod tests {
+    // 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
+    #![allow(non_snake_case)]
+
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {

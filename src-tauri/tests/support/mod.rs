@@ -6,6 +6,11 @@
 //! 支持脚本化响应:正常 / 流式分块 / 推理模型(思考占满)/ 截断 / 错误状态码 / 挂起(超时)。
 //! 同时记录每次请求的 body,供断言(缓存命中=请求次数不增、max_tokens 放宽等)。
 
+// 本模块被每个集成测试 crate 各自编译一份,某个 crate 用不到的 API
+// (如 set_mode / port / last_max_tokens)在它眼里就是 dead_code ——
+// 属共享测试夹具的正常现象,不是遗漏接线。
+#![allow(dead_code)]
+
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -75,7 +80,7 @@ impl MockServer {
                     }
                     // ThinkingThenOk:按调用次序翻页,第一个返回 ThinkingOnly,其余走正常
                     let m = {
-                        let mut m = mode.lock().unwrap().clone();
+                        let m = mode.lock().unwrap().clone();
                         if let MockMode::ThinkingThenOk = m {
                             if call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
                                 MockMode::ThinkingOnly

@@ -591,6 +591,9 @@ pub fn assert_control_allowed(capability: crate::rc::protocol::Capability) -> Re
 
 #[cfg(test)]
 mod tests {
+    // 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
+    #![allow(non_snake_case)]
+
     use super::*;
     use crate::rc::protocol::Capability;
 

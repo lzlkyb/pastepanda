@@ -1,5 +1,8 @@
 //! `video.rs` 的单元测试（原样平移）。
 
+// 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
+#![allow(non_snake_case)]
+
 use super::*;
 
 fn solid(w: u32, h: u32, r: u8, g: u8, b: u8) -> Vec<u8> {
