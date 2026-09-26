@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑 · 会话窗壳 — 方案A 自适应窗口 + 可靠三键 设计稿</title>
+<!-- status: draft 待确认（2026-09-25，用户已拍板走方案 A，本稿确认视觉与交互细则后落码） -->
+<!-- status: implemented 2026-09-25（拖拽定稿 = md 全屏编辑器同款 deep 拖拽区；三键/自适应走 Rust 命令） -->
+<style>
+  :root {
+    --danger: #d64545;
+    --accent: #4f7cff;
+    --cyan: #06b6d4;
+    --green: #11813a;
+    --orange: #e0803a;
+    --text: #1c1f23;
+    --muted: #6b7280;
+    --border: #e3e6ea;
+    --card: #fff;
+    --bg: #f3f5f8;
+    /* 会话深色区（与 .fakeScreen 同源） */
+    --stage-1: #1a2332;
+    --stage-2: #0f141c;
+    --letterbox: #0b0d10;
+    /* 胶囊深玻璃（与 .capCapsule 同源） */
+    --cap-bg: rgba(13, 16, 22, .82);
+    --cap-line: rgba(255, 255, 255, .09);
+    --cap-text: #e8ecf2;
+    --cap-muted: #93a0b4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 13px; padding: 28px 40px 60px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 20px; line-height: 1.7; }
+  h2 { font-size: 15px; margin: 34px 0 4px; padding-left: 9px; border-left: 3px solid var(--cyan); }
+  h2 .tag { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 8px; }
+  h3 { font-size: 13px; margin: 18px 0 6px; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 10px; line-height: 1.8; }
+  .note b { color: var(--text); }
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 8px;
+  }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.cmp th, table.cmp td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; line-height: 1.6; }
+  table.cmp th { background: var(--bg); font-weight: 600; font-size: 12px; }
+  .b-good { color: var(--green); font-weight: 600; }
+  .b-bad { color: var(--danger); font-weight: 600; }
+  .flag { display: inline-block; font-size: 10.5px; color: #fff; background: var(--danger); border-radius: 8px; padding: 1px 8px; }
+  .flag.ok { background: var(--green); }
+  .flag.info { background: var(--accent); }
+
+  /* ── 窗口模型（演示用） ── */
+  .win {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: var(--card); box-shadow: 0 4px 18px rgba(0,0,0,.07);
+    position: relative;
+  }
+  /* 会话顶栏：与现款 .viewTop 同构（33px：8+17+8 + 1px 分隔线） */
+  .vtop {
+    height: 34px; display: flex; align-items: center; gap: 10px;
+    padding: 0 0 0 12px; background: #262a31;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    font-size: 12px; color: #dfe4ec; user-select: none;
+  }
+  .vtop .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .vtop .sp { flex: 1; }
+  .vtop .drag-hint {
+    font-size: 10.5px; color: #8b94a3; border: 1px dashed rgba(255,255,255,.22);
+    border-radius: 6px; padding: 1px 8px; margin-right: 8px;
+  }
+  .wbtns { display: flex; align-self: stretch; height: 33px; }
+  .wbtn {
+    width: 46px; display: flex; align-items: center; justify-content: center;
+    color: #b9c1cd; cursor: default;
+  }
+  .wbtn:hover { background: rgba(255,255,255,.12); color: #fff; }
+  .wbtn.close:hover { background: var(--danger); color: #fff; }
+  .wbtn svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.5; fill: none; }
+
+  /* 画面区：远端桌面示意（16:9） */
+  .stage {
+    position: relative; overflow: hidden;
+    background: var(--letterbox);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .video {
+    position: relative; width: 100%; height: 100%;
+    background:
+      radial-gradient(ellipse 60% 50% at 76% 24%, rgba(255,214,150,.55), transparent 70%),
+      radial-gradient(ellipse 50% 40% at 20% 80%, rgba(255,150,90,.4), transparent 70%),
+      linear-gradient(160deg, #35608f 0%, #7ba3c9 52%, #e8a06a 100%);
+  }
+  .video .taskbar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 7%;
+    background: rgba(24,28,36,.88); display: flex; align-items: center; gap: 6px; padding: 0 10px;
+  }
+  .video .taskbar i { width: 10px; height: 10px; border-radius: 3px; background: rgba(255,255,255,.28); }
+  .video .ico { position: absolute; width: 26px; height: 26px; border-radius: 6px; background: rgba(255,255,255,.85); box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+  .lb-bar { position: absolute; left: 0; right: 0; background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.045) 0 8px, transparent 8px 16px), var(--letterbox);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10.5px; color: #55606f; }
+
+  /* 控端胶囊（与 .capCapsule 同构：顶栏下 12px 悬浮） */
+  .capsule {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    height: 34px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 12px; background: var(--cap-bg);
+    backdrop-filter: blur(14px); border: 1px solid var(--cap-line);
+    border-radius: 999px; font-size: 12px; color: var(--cap-text);
+    box-shadow: 0 8px 28px rgba(0,0,0,.35); white-space: nowrap; z-index: 6;
+  }
+  .capsule .dot { width: 8px; height: 8px; border-radius: 50%; background: #2f9e5f; }
+  .capsule .pill { font-size: 10.5px; border-radius: 7px; padding: 1px 7px; background: rgba(47,158,95,.18); color: #7fd7a2; }
+  .capsule .sep { width: 1px; height: 14px; background: rgba(255,255,255,.12); }
+  .capsule .cb { color: var(--cap-muted); font-size: 11.5px; }
+  .capsule .cb.on { color: var(--cap-text); background: rgba(255,255,255,.12); border-radius: 7px; padding: 1px 7px; }
+
+  /* 标注 */
+  .anno {
+    position: absolute; font-size: 10.5px; line-height: 1.5; z-index: 8;
+    background: rgba(13,16,22,.78); color: #ffd9d9; border: 1px solid rgba(214,69,69,.5);
+    border-radius: 8px; padding: 4px 9px; max-width: 220px;
+  }
+  .anno.ok { color: #d3f3de; border-color: rgba(47,158,95,.55); }
+  .anno.info { color: #dbe7ff; border-color: rgba(79,124,255,.55); }
+
+  /* 尺寸示意 */
+  .sizer { display: flex; gap: 0; align-items: stretch; }
+  .sizer .bar-part { background: #262a31; color: #dfe4ec; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .sizer .vid-part {
+    background:
+      radial-gradient(ellipse 60% 50% at 76% 24%, rgba(255,214,150,.5), transparent 70%),
+      linear-gradient(160deg, #35608f 0%, #7ba3c9 52%, #e8a06a 100%);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; color: #10304f; font-weight: 600;
+  }
+  .dim-arrow { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
+  .dim-arrow .line { flex: 1; height: 1px; background: var(--muted); position: relative; }
+  .dim-arrow .line::before, .dim-arrow .line::after { content: ""; position: absolute; top: -3px; width: 7px; height: 7px; border-left: 1px solid var(--muted); border-bottom: 1px solid var(--muted); }
+  .dim-arrow .line::before { left: 0; transform: rotate(45deg); }
+  .dim-arrow .line::after { right: 0; transform: rotate(-135deg); }
+
+  .toast-demo {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(13,16,22,.92); color: #ffd9d9; border: 1px solid rgba(214,69,69,.45);
+    border-radius: 10px; padding: 8px 14px; font-size: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.35);
+  }
+  code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 会话窗壳 — 方案 A：自适应窗口 + 可靠三键 + JS 拖拽</h1>
+<div class="sub">
+  2026-09-25 · 承接「会话态窗口控件-A补三键」稿（批7）之后的真机反馈重做。<br>
+  <b>已拍板：</b>窗口按对方画面长宽比自适应 + 拖拽/三键换成本项目已验证的可靠通道（md 全屏编辑器 / StackHud 先例）。<br>
+  <b>本稿确认：</b>① 自适应的触发时机与边界 ② 会话顶栏（拖拽 + 三键）的视觉与交互 ③ 失败反馈。确认后落码。
+</div>
+
+<h2>一、问题复盘（现状稿）<span class="tag">用户标注的三个问题 + 排查中发现的第四个</span></h2>
+<div class="note">
+  窗口 1200×780（比例 1.54），对方桌面 16:9（1.78）。「适应」模式几何上必出上下黑边；
+  顶上那条「黑带」= 34px 会话顶栏 + 画面上方 letterbox。
+  <b>排查中额外发现：</b>黑边区域不是死的——点击会被 clamp 注入到对方桌面（RcScreenCanvas 的「边缘可点」设计），
+  它长得像窗口框，行为却是远端输入，拖窗口时抓这里 = 给对方点一下。
+</div>
+<div class="win" style="width: 720px;">
+  <div class="vtop">
+    <span class="dot"></span>
+    <span>正在查看 <b>DESKTOP-HHOLIC2</b></span>
+    <span class="sp"></span>
+    <div class="wbtns">
+      <div class="wbtn"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></div>
+      <div class="wbtn"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg></div>
+      <div class="wbtn close"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></div>
+    </div>
+  </div>
+  <div class="stage" style="height: 430px;">
+    <div class="lb-bar" style="top:0; height: 38px;">letterbox（可点 = 注入对方桌面）</div>
+    <div class="video" style="height: 354px;">
+      <span class="ico" style="left:3%; top:8%;"></span>
+      <span class="ico" style="left:9%; top:22%;"></span>
+      <span class="ico" style="left:16%; top:10%;"></span>
+      <div class="taskbar"><i></i><i></i><i></i></div>
+    </div>
+    <div class="lb-bar" style="bottom:0; height: 38px;">letterbox（可点 = 注入对方桌面）</div>
+    <div class="capsule">
+      <span class="dot"></span><span>DESKTOP-HHOLIC2</span><span class="pill">可控</span>
+      <span class="sep"></span><span class="cb">画质 自动</span><span class="cb on">适应</span><span class="cb">1:1</span><span class="cb">填充</span>
+    </div>
+    <div class="anno" style="top: 42px; left: 14px;">① 上下黑边 ≈35px×2<br>窗口比例 ≠ 对方屏幕比例，适应模式的几何必然</div>
+    <div class="anno" style="top: 150px; right: 14px;">② 黑边长得像窗口框，<br>点下去却注入到对方桌面</div>
+    <div class="anno" style="bottom: 52px; left: 14px;">③ 按住顶栏拖不动 / 三键点了没反应<br>（drag-region 与 window API 均无失败提示，静默）</div>
+  </div>
+</div>
+
+<h2>二、方案总览<span class="tag">三处改动 ↔ 三个症状 + 一个隐患</span></h2>
+<div class="panel">
+  <table class="cmp">
+    <tr><th style="width:190px;">改动</th><th>做法</th><th style="width:300px;">解决</th></tr>
+    <tr>
+      <td><b>① 窗口自适应对方画面比例</b></td>
+      <td>会话内按「对方画面宽高比」重算窗口尺寸：内容区（窗口高 − 34px 顶栏）精确对齐 16:9，走新 Rust 命令一次性 set_size</td>
+      <td><span class="b-good">黑边归零</span>（适应模式满窗）；黑边注入误点连带消失</td>
+    </tr>
+    <tr>
+      <td><b>② 拖拽与 md 全屏编辑器同款</b></td>
+      <td>会话顶栏保持 <code>data-tauri-drag-region="deep"</code>（FullscreenShell 工具栏同款机制：整条子树可拖、按钮自动豁免、双击最大化由注入脚本内置）。用户复核：「拖不动」是拖拽位置习惯问题（抓了胶囊/画面），不是机制失效——<b>不改机制</b></td>
+      <td><span class="b-good">拖得动</span>，行为与 md 全屏编辑器逐字一致</td>
+    </tr>
+    <tr>
+      <td><b>③ 三键走 Rust 命令</b></td>
+      <td>新增 <code>rc_window_minimize / rc_window_toggle_maximize / rc_window_close</code>（照 <code>close_editor_window</code> 先例，自定义命令不经 per-window ACL）；失败弹 toast，不再静默</td>
+      <td><span class="b-good">点了必有效</span>，彻底消灭「权限被拒 → 毫无反应」这类故障（项目 2026-09-18 有前科）；关闭守卫链（有会话先问）原样保留</td>
+    </tr>
+  </table>
+</div>
+
+<h2>三、效果稿：自适应后<span class="tag">同尺寸窗口，画面满窗、零黑边</span></h2>
+<div class="win" style="width: 720px;">
+  <div class="vtop">
+    <span class="dot"></span>
+    <span>正在查看 <b>DESKTOP-HHOLIC2</b></span>
+    <span class="drag-hint">整条按住可拖动 · 双击最大化</span>
+    <span class="sp"></span>
+    <div class="wbtns">
+      <div class="wbtn" title="最小化"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></div>
+      <div class="wbtn" title="最大化"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg></div>
+      <div class="wbtn close" title="关闭"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></div>
+    </div>
+  </div>
+  <div class="stage" style="height: 404px;">
+    <div class="video">
+      <span class="ico" style="left:3%; top:8%;"></span>
+      <span class="ico" style="left:9%; top:22%;"></span>
+      <span class="ico" style="left:16%; top:10%;"></span>
+      <span class="ico" style="left:5%; top:40%;"></span>
+      <div class="taskbar"><i></i><i></i><i></i></div>
+    </div>
+    <div class="capsule">
+      <span class="dot"></span><span>DESKTOP-HHOLIC2</span><span class="pill">可控</span>
+      <span class="sep"></span><span class="cb">画质 自动</span><span class="cb">画面 整屏</span><span class="sep"></span>
+      <span class="cb on">适应</span><span class="cb">1:1</span><span class="cb">填充</span>
+    </div>
+    <div class="anno ok" style="top: 58px; left: 14px;">✔ 画面满窗：内容区比例 = 对方屏幕比例</div>
+    <div class="anno ok" style="bottom: 14px; right: 14px;">✔ 顶栏仍是实体 chrome：拖拽 / 三键常驻可见（鼠标全流程可达）</div>
+  </div>
+</div>
+<div class="note">
+  胶囊浮条位置与现状一致（顶栏下 12px 悬浮、15s 后隐藏、顶边热区唤出），本稿不改它的状态机。<br>
+  「拖拽提示」小字仅设计稿示意：<b>实现里不加这个常驻提示</b>，顶栏可拖是 Windows 常识位；新手引导走既有的 fsHint 轻提示体系。
+</div>
+
+<h3>尺寸怎么算（内容区对齐，不是窗口对齐）</h3>
+<div class="panel">
+  <div style="display:flex; gap:28px; align-items:center; flex-wrap:wrap;">
+    <div>
+      <div class="sizer" style="width: 340px;">
+        <div style="flex:1;">
+          <div class="bar-part" style="height: 26px;">顶栏 34px（逻辑像素）</div>
+          <div class="vid-part" style="height: 152px;">k × 对方画面高</div>
+        </div>
+      </div>
+      <div class="dim-arrow" style="width: 340px; margin-top: 6px;"><span>窗口宽 = k × 对方画面宽</span><span class="line"></span></div>
+    </div>
+    <div style="flex:1; min-width: 260px; font-size: 12.5px; line-height: 2;">
+      <b>公式：</b>k = min( 工作区宽×94% ÷ 对方宽, (工作区高×90% − 34) ÷ 对方高 )，且内容区不小于 960×606（窗口 960×640 现款下限）<br>
+      <b>DPI：</b>全程逻辑像素（Tauri LogicalSize），混合 DPI 不漂移<br>
+      <b>居中：</b>调整后在<b>当前所在显示器</b>工作区内居中（不自作主张跨屏）
+    </div>
+  </div>
+</div>
+
+<h2>四、触发时机与边界规则<span class="tag">只在一触发点调一次，绝不跟手打架</span></h2>
+<div class="panel">
+  <table class="cmp">
+    <tr><th style="width:220px;">时机 / 状态</th><th>行为</th></tr>
+    <tr><td><b>会话首帧到达</b></td><td>按对方画面实际尺寸调窗（只此一次）。等待期（无首帧）不动窗口，placeholder 居中</td></tr>
+    <tr><td><b>「下一屏」切换生效 / 画面范围（整屏·主屏·单屏）变更生效</b></td><td>对方画面比例变了 → 重算一次</td></tr>
+    <tr><td><b>窗口处于最大化</b></td><td><span class="b-bad">跳过</span>，不打断用户的最大化意图；画面区照旧 contain（letterbox 回来是合理代价）</td></tr>
+    <tr><td><b>用户手动拉了窗口大小</b></td><td><span class="b-bad">绝不自动回弹</span>；比例失配后恢复 contain 黑边，直到下一个触发点（切屏/改范围）才重算</td></tr>
+    <tr><td><b>远端改了屏幕分辨率</b></td><td>本批<span class="b-bad">不</span>自动跟随（避免窗口自己动来动去）；HUD 已显示实际分辨率，后续有需要再立项</td></tr>
+    <tr><td><b>全屏态（RcFullscreenHotbar）</b></td><td>不参与——hotbar 的三键另走同一套 Rust 命令，视觉不动</td></tr>
+    <tr><td><b>计算失败 / 调用失败</b></td><td>保持原窗口不动 + toast 一条（U3.5：不静默）</td></tr>
+  </table>
+</div>
+
+<h2>五、会话顶栏交互细则<span class="tag">唯一窗口壳，33px 现款高度不变</span></h2>
+<div class="panel" style="display:flex; gap:24px; flex-wrap:wrap;">
+  <div style="flex:1; min-width:300px;">
+    <div class="win" style="width: 100%;">
+      <div class="vtop" style="height: 40px; font-size: 12.5px;">
+        <span class="dot"></span><span>正在查看 <b>DESKTOP-HHOLIC2</b></span>
+        <span class="sp"></span>
+        <div class="wbtns" style="height:39px;">
+          <div class="wbtn" style="width:56px;"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></div>
+          <div class="wbtn" style="width:56px;"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg></div>
+          <div class="wbtn close" style="width:56px; background: var(--danger); color:#fff;"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:8px;">放大示意：三键 hover 浅色 / 关闭 hover 红底白字（现款规则不变，46px 满高）</div>
+  </div>
+  <div style="flex:1.2; min-width:320px; font-size: 12.5px; line-height: 2;">
+    <b>拖拽命中规则（注入脚本内置，与 md 编辑器同款）：</b><br>
+    · 顶栏空白 / 状态灯 / 标题文字 → 按住即拖（deep 区整条可拖）<br>
+    · 命中三键按钮 → 正常点击，不触发拖拽（可点击元素自动豁免）<br>
+    · 双击顶栏空白 → 最大化 / 还原（注入脚本内置 internal_toggle_maximize）<br>
+    · 全屏态顶栏 drag-region="false"：禁拖、禁双击最大化（顶条是画面顶边）<br><br>
+    <b>不改的：</b><br>
+    · 顶栏高度 33px、灯/名称/指纹文案、胶囊浮条全部维持现款<br>
+    · 常态工作台标题栏（RcA2TitleBar）的 drag-region <b>不动</b>——用户没反馈它坏，不搞大扫除<br>
+    · 黑边 clamp 注入行为保留（自适应后黑边只在手动改窗口比例时出现）
+  </div>
+</div>
+
+<h2>六、失败反馈<span class="tag">U3.5：catch 不许落到空态；U1：即时反馈</span></h2>
+<div class="panel">
+  <div class="toast-demo">✕ 窗口操作失败：权限被拒绝（可重启应用重试）</div>
+  <div class="note" style="margin-top:10px;">
+    三键 / 自适应任一步失败，右下角 toast 一条（error 档，沿用现有 Toast 体系）；
+    窗口状态保持失败前不变。不再出现「点了没反应且毫无痕迹」。
+  </div>
+</div>
+
+<h2>七、实现落点<span class="tag">确认后按此清单落码</span></h2>
+<div class="panel">
+  <table class="cmp">
+    <tr><th style="width:320px;">文件</th><th>改动</th></tr>
+    <tr><td><code>src-tauri/src/commands/rc.rs</code></td><td>新增 4 个命令：<code>rc_window_minimize</code> / <code>rc_window_toggle_maximize</code> / <code>rc_window_close</code>（取 current WebviewWindow 操作）/ <code>rc_fit_window_to_video</code>（参数 = 对方画面逻辑宽高；查当前显示器工作区算 k，LogicalSize+居中，最大化时跳过并返回 skipped）</td></tr>
+    <tr><td><code>src-tauri/src/lib.rs</code></td><td>注册 4 个命令</td></tr>
+    <tr><td><code>src/components/rc/RcSessionTop.tsx</code></td><td>拖拽区定稿保持 <code>deep</code>（与 md 编辑器同款，不改机制）；三键换命令调用</td></tr>
+    <tr><td><code>src/components/rc/RcWindowControls.tsx</code></td><td>三键 onClick 改 <code>invoke("rc_window_*")</code>，catch → toast「窗口操作失败」；导出给 hotbar 复用的部分同步换</td></tr>
+    <tr><td><code>src/hooks/useRcWindowFit.ts</code>（新）</td><td>输入 sessionId / frames.size / scopePick；首帧与比例变化时 invoke <code>rc_fit_window_to_video</code>；失败 toast； StrictMode 安全</td></tr>
+    <tr><td><code>docs/远程电脑-双机手测清单-2026-09-16.md</code></td><td>补手测项：自适应触发三时机 / 最大化跳过 / 手动 resize 不回弹 / 拖拽 / 三键 / 混合 DPI</td></tr>
+  </table>
+  <div class="note" style="margin-top:10px;">
+    <b>能力权限：</b>4 个均为自定义命令，不经 per-window ACL，capabilities 不需要动（这正是换通道的意义）。<br>
+    <b>不做：</b>远端分辨率变化自动跟随；胶囊状态机改动；常态标题栏改造；黑边 clamp 行为变更。
+  </div>
+</div>
+
+</body>
+</html>

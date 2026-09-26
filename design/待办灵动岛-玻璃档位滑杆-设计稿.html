@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>待办灵动岛 · 玻璃档位改滑杆自定义 · 设计稿</title>
+<style>
+  :root{
+    --card-bg:#fff; --text-primary:#0f172a; --text-secondary:#334155; --text-muted:#627083;
+    --border-color:#e0e4eb; --accent:#0284c7;
+    --ic-editor:linear-gradient(135deg,#a5b4fc 0%,#6366f1 45%,#4f46e5 100%);
+    /* 与设置页同源的滑杆外观（现值抄自 CardList.module.css:1824 .imageExportSlider） */
+    --slider-w:150px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 32px 80px;background:#f1f5f9;color:var(--text-primary);
+       font:13px/1.6 "SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,sans-serif}
+  h1{font-size:20px;margin:0 0 6px}
+  h2{font-size:16px;margin:34px 0 6px;padding-top:18px;border-top:1px solid #cbd5e1}
+  h3{font-size:13px;margin:16px 0 6px;color:var(--text-secondary)}
+  p{margin:6px 0;color:var(--text-secondary);max-width:980px}
+  code{background:#e2e8f0;padding:1px 5px;border-radius:4px;font-size:12px}
+  pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;font-size:12px;overflow:auto;max-width:980px}
+  table{border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{border:1px solid var(--border-color);padding:6px 10px;text-align:left}
+  th{background:#f8fafc;font-weight:600}
+  .note{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:12px;color:#78350f;max-width:980px}
+  .live{background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:10px 12px;font-size:12px;color:#155e75;max-width:980px}
+
+  /* ===== 设置页行骨架复刻（Settings.module.css .sRow / .sRowIcon）===== */
+  .sRow{display:flex;align-items:center;gap:12px;padding:12px;background:var(--card-bg);
+        border:1px solid var(--border-color);border-radius:10px;margin:10px 0;max-width:980px}
+  .tile{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+        background:var(--ic-editor);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 3px rgba(15,23,42,.10)}
+  .glyph{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 1px 2px rgba(15,23,42,.14);
+         display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .rowBody{flex:1;min-width:0}
+  .rowLabel{font-size:13px;font-weight:600}
+  .rowDesc{font-size:11.5px;color:var(--text-muted)}
+
+  /* ===== 预览：彩色「假桌面」+ 真胶囊（与 Island.module.css 的 .chipStage 同源）===== */
+  .stage{position:relative;height:38px;border-radius:8px;overflow:hidden;display:flex;align-items:center;padding:0 8px;
+         background:linear-gradient(118deg,#f472b6 0%,#fb923c 26%,#fbbf24 48%,#34d399 72%,#38bdf8 100%);flex-shrink:0}
+  .stage.wide{width:100%;height:56px}
+  .stage::after{content:"";position:absolute;inset:0;
+         background:repeating-linear-gradient(90deg,rgba(255,255,255,.22) 0 10px,transparent 10px 22px)}
+  .pill{position:relative;flex:1;height:22px;border-radius:999px;display:flex;align-items:center;padding:0 8px;
+        font-size:11px;color:#f4f4f5}
+  .pill::before{content:"";position:absolute;inset:0;border-radius:999px;
+        background:linear-gradient(156deg,rgba(255,255,255,var(--glossA)) 0,transparent 53%)}
+  .pill::after{content:"";position:absolute;inset:0;border-radius:999px;box-shadow:inset 0 0 0 1px rgba(255,255,255,var(--rimA))}
+
+  /* ===== 滑杆（原生 range + accent-color，与项目现款同源）===== */
+  .slider{width:var(--slider-w);height:4px;cursor:pointer;accent-color:var(--accent);flex-shrink:0}
+  .readout{font-size:12px;font-weight:600;color:var(--accent);width:38px;text-align:right;font-variant-numeric:tabular-nums}
+  .ends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-muted);width:var(--slider-w)}
+  .stack{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0}
+
+  .wrap2{max-width:980px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin:10px 0}
+  .rowHead{display:flex;align-items:center;gap:12px}
+  .under{margin-top:10px;display:flex;gap:12px;align-items:flex-end}
+</style>
+</head>
+<body>
+
+<h1>玻璃档位：四张 chip → 一根滑杆（方案 A）</h1>
+<p>2026-09-26。目标：岛体遮盖度可自定义连续调节，只设下限不设档位。<b>本页的滑杆是真能拖的</b>，公式与将要写进代码的完全一致 —— 拖到底看高光收没收、描边还在不在，就是在验 CSS。</p>
+
+<div class="live">拖动任意一根滑杆，三处预览与 §3 的数值表会同步。浅色主题的岛只换 <code>--island-tint</code>，高光/描边档位维持现款（浅色玻璃的 gloss 是 .55 一档，不参与派生）。</div>
+
+<h2>§1 两种布局</h2>
+
+<h3>布局 1 · 行内紧凑（推荐）</h3>
+<div class="sRow">
+  <div class="tile"><div class="glyph">🧊</div></div>
+  <div class="rowBody">
+    <div class="rowLabel">玻璃透度</div>
+    <div class="rowDesc">数值越大越实、文字越清楚；越小越像玻璃，但依赖桌面背景</div>
+  </div>
+  <div class="stage" style="width:118px"><div class="pill js-pill">今天 3 件</div></div>
+  <div class="stack">
+    <input class="slider js-slider" type="range" min="20" max="100" step="1" value="95" />
+    <div class="ends"><span>透</span><span>实</span></div>
+  </div>
+  <div class="readout js-readout">78%</div>
+</div>
+<p>与「提醒横幅停留」那行同构（标题+控件一行），行高不变，右侧多摆 118px 预览。整块仍在 <code>todo_island_enabled</code> 的条件渲染里。</p>
+
+<h3>布局 2 · 预览条拉满</h3>
+<div class="wrap2">
+  <div class="rowHead">
+    <div class="tile"><div class="glyph">🧊</div></div>
+    <div class="rowBody"><div class="rowLabel">玻璃透度</div><div class="rowDesc">同上</div></div>
+    <div class="readout js-readout">78%</div>
+  </div>
+  <div class="under">
+    <div class="stage wide"><div class="pill js-pill">今天 3 件 · 点横幅展开列表</div></div>
+  </div>
+  <div class="under">
+    <div class="stack" style="flex:1;align-items:stretch">
+      <input class="slider js-slider" style="width:100%" type="range" min="20" max="100" step="1" value="95" />
+      <div class="ends" style="width:100%"><span>透 · 更像玻璃</span><span>实 · 任何背景都清楚</span></div>
+    </div>
+  </div>
+</div>
+<p>所见即所得面积最大，但这一行会比其它设置行高出一倍，且滑杆与预览分离在两行 —— 与 <code>Settings.module.css</code> 的行节奏不齐。<b>建议布局 1。</b></p>
+
+<h2>§2 数值语义</h2>
+<table>
+  <tr><th>项</th><th>定值</th><th>说明</th></tr>
+  <tr><td>字段</td><td><code>todo_island_glass: number</code></td><td>沿用旧字段名但语义换成 20–95 的整数。<b>旧值是字符串</b>（<code>"frost"</code>），消费侧 <code>Number.isFinite</code> 判一下就走迁移，不会把 <code>"frost"</code> 塞进 calc</td></tr>
+  <tr><td>下限</td><td><b>20</b></td><td>现款最透档是 30；再低浅色桌面上文字开始虚。滑杆 <code>min=20</code> 之外，岛前端消费时<b>再夹一次</b>（老配置/手改 config 可能越界）</td></tr>
+  <tr><td>上限</td><td>95</td><td>100 = 纯黑块，滑杆失去意义</td></tr>
+  <tr><td>默认</td><td>78</td><td>= 现款厚磨砂⭐。三处同账：appStore <code>DEFAULT_CONFIG</code> / 岛前端 clamp 的兜底 / 设置页读数</td></tr>
+  <tr><td>旧值映射</td><td>clear→30 · frost→78 · steady→90 · dark→92</td><td>一次性迁移写在 <code>updateConfig</code>（照 <code>hover_preview_enabled→hover_mode</code> 的先例 <code>appStore.ts:1094</code>），迁完删旧键</td></tr>
+  <tr><td>档位名</td><td>删</td><td>「清透 · 观感 / 厚磨砂 / 稳读 / 深色」四个名字和那颗 ⭐ 一起退役，换成端点的「透 / 实」二字</td></tr>
+</table>
+
+<h2>§3 「深色」档不再需要特例：高光与描边由数值派生</h2>
+<p>现款 <code>dark</code> 档相对 <code>steady</code> 多改了两样（<code>TodoIsland.module.css:124-128</code>）：gloss .07→.02、rim .09→.07。把它做成线性派生，滑到 92 就自动等于原 dark 档，不需要开关：</p>
+<pre>/* 唯一由设置驱动的数（挂在 html，探针可从外部覆写 --island-tint，机制不变）*/
+--island-glass: 78;
+
+/* 深色材质：tint 直接吃数值 */
+--island-tint:  rgb(20 20 24 / calc(var(--island-glass) * 1%));
+/* gloss/rim 过 78→.07/.09、92→.02/.07 两点定线，两端 clamp 在现款取值域内 */
+--island-gloss: rgb(255 255 255 / clamp(0.02, calc(0.348 - var(--island-glass) * 0.00357), 0.07));
+--island-rim:   rgb(255 255 255 / clamp(0.05, calc(0.2015 - var(--island-glass) * 0.00143), 0.09));
+
+/* 浅色主题只覆写 tint 的基色，gloss/rim 维持现款定值（.55/.85，浅玻璃上另有一套论证） */
+html[data-island-mode="light"] { --island-tint: rgb(255 255 255 / calc(var(--island-glass) * 1%)); }</pre>
+<table id="tbl">
+  <tr><th>v</th><th>tint α</th><th>gloss α</th><th>rim α</th><th>对应现款</th></tr>
+</table>
+<p>20–78 段 gloss/rim 被 clamp 顶住 = 恒为现款厚磨砂的取值，只有 tint 在变；78 以上才开始收高光。这与「越实越哑光」的直觉一致，也不会让最透档的高光过曝。</p>
+
+<h2>§4 数据流：拖动不落盘</h2>
+<pre>拖动中（每帧）
+  设置页 range.onChange
+    ├─ 本地 state → 预览胶囊 + 读数（同窗口，即时）
+    └─ emit("todo-island-glass-preview", v)   ← 新事件，只带数值
+         岛前端 listen → html.style.setProperty("--island-glass", v)
+         Rust 不听这个事件 ⇒ 不触发 show()/hide() 门控、不读盘
+
+松手（onChange 走 onPointerUp / onKeyUp）
+  updateAndSave({ todo_island_glass: v })  → save_config（一次）
+  emit("todo-island-config-changed")       → Rust 门控 + 岛前端重读配置（现有通路，不动）</pre>
+<div class="note"><b>为什么不能边拖边存：</b><code>save_config</code> 每次调用都会 <code>backup_config()</code> 把<b>全量配置明文</b>写一份到 <code>config_backups/</code> 并轮转保留 10 份（<code>src-tauri/src/data_store/config.rs:446</code>）。一次拖动几十帧 = 几十次全量明文落盘。<br/>
+<b>已知代价：</b>拖动中途切走窗口或崩溃，岛上的预览值不落盘，下次启动回到旧值。这是「不写盘」的必然结果。</div>
+
+<h2>§5 改动站点清单</h2>
+<table>
+  <tr><th>文件</th><th>动作</th></tr>
+  <tr><td><code>TodoIsland.module.css:37-128</code></td><td>基座块加 <code>--island-glass</code>，tint/gloss/rim 改 calc；<b>删</b> <code>data-glass</code> 四块（clear/steady/dark 及其浅色配对）</td></tr>
+  <tr><td><code>todoisland-main.tsx:34-59</code></td><td><code>applyIslandGlass</code> 从「枚举→data-glass」换成「夹取 20–95→写 CSS 变量」；<code>GLASS_KEYS</code> 删；新增 <code>todo-island-glass-preview</code> 监听</td></tr>
+  <tr><td><code>appStore.ts:141,448</code></td><td>类型换 number、默认 78；<code>updateConfig</code> 加旧字符串→数值的一次性映射</td></tr>
+  <tr><td><code>IslandSection.tsx:16-24,62-89</code></td><td><code>GLASS_TIERS</code> 删，换成滑杆行；文件头「五档/四档」注释同步</td></tr>
+  <tr><td><code>Island.module.css:19-136</code></td><td><code>.chip/.chipSel/.chipName/.chipSub</code> 删；<code>.chipStage/.chipPill/.mini*</code> 留一处给预览卡；新增滑杆与端点标签样式</td></tr>
+  <tr><td><code>todo_island.rs:171,556</code></td><td>注释里「四档 data-glass」改成「数值 <code>--island-glass</code>，Rust 不消费」</td></tr>
+</table>
+<p>守卫测试：现无断言四档的用例（<code>TodoIsland.test.tsx</code> 不碰档位），改完补一条「越界值必须被夹进 20–95」的纯函数单测（映射与夹取都抽成无环境依赖的函数，规则 11.1）。</p>
+
+<h2>§6 待你确认</h2>
+<table>
+  <tr><th>#</th><th>问题</th><th>我的默认</th></tr>
+  <tr><td>1</td><td>下限 20 还是 25</td><td><b>20</b>（拖到最左端看 §3 表最后一行，觉得字虚就回 25）</td></tr>
+  <tr><td>2</td><td>端点标签文案</td><td>「透 / 实」二字（布局 1）；长文案留给布局 2</td></tr>
+  <tr><td>3</td><td>行标题叫什么</td><td>「玻璃透度」（原「液态玻璃档位」在只有一根杆之后就不成立了）</td></tr>
+</table>
+
+<h2>§7 落地记录（2026-09-26，按拍板：布局 2 / 下限 20 / 长文案 / 「玻璃透度」）</h2>
+<p>六个站点全按 §5 清单一遍过，另加 <code>src/lib/todo/glass.ts</code>（<code>normalizeGlass</code> 收口：区间夹取 + 旧四档字符串折算）与守卫单测 <code>glass.test.ts</code>（5 例：夹取、四档映射、非法值落默认、默认值在区间内）。<code>npx tsc --noEmit</code> 干净，<code>npm run lint:ui</code> block 0，相关 vitest 56 例全绿。</p>
+<p>两处与 §4 设计稿的<b>有意偏差</b>：</p>
+<ul>
+  <li>预览胶囊的文字色<b>不随数值翻面</b>（设计稿 <code>paint()</code> 在 v&lt;45 换深色字）。真实岛面只有主题决定的 <code>--island-fg</code> 一档，预览若跟着翻，等于演示一个岛上并不存在的行为——低遮盖度 + 亮桌面下文字偏虚，与原 clear 档 2.81:1 是同一个已记录的已知代价。</li>
+  <li>端点标签字号从设计稿的 10.5px 归到 11px（U5font 五档），预览条内边距 10px → 8px、胶囊 5px → 4px（U5space）。</li>
+</ul>
+<p><b>能力回退（需用户确认是否补）</b>：原 dark 档「恒深色、不跟主题极性」随四档一起删掉了——浅色主题下现在拿不到深色岛，只能把滑杆推到 92 附近近似。要保留得另加一个「强制深色岛」开关，不在这次范围。</p>
+<p><b>同日追加拍板</b>：上限放宽到 <b>100</b>（= 完全不透，路线一的终点），默认值从 78 提到 <b>95</b>（近不透，任何桌面下文字都清楚）。<code>GLASS_MAX/GLASS_DEFAULT</code>、<code>DEFAULT_CONFIG</code>、CSS 基座 <code>--island-glass</code> 三处同账已同步；100 处 gloss 触底 .02、rim .0585，仍是深色玻璃观感，派生式不需要改。</p>
+
+<script>
+const clamp=(lo,x,hi)=>Math.min(hi,Math.max(lo,x));
+const glossA=(v)=>clamp(0.02,0.348-v*0.00357,0.07);
+const rimA=(v)=>clamp(0.05,0.2015-v*0.00143,0.09);
+const tiers={30:"clear（现款最透）",78:"frost（默认 / 推荐）",90:"steady",92:"dark",20:"新下限",95:"新上限"};
+function paint(v){
+  document.querySelectorAll(".js-slider").forEach(s=>{ if(+s.value!==v) s.value=v; });
+  document.querySelectorAll(".js-readout").forEach(r=>r.textContent=v+"%");
+  document.querySelectorAll(".js-pill").forEach(p=>{
+    p.style.background="rgb(20 20 24 / "+(v/100)+")";
+    p.style.setProperty("--glossA",glossA(v).toFixed(3));
+    p.style.setProperty("--rimA",rimA(v).toFixed(3));
+    p.style.color = v>=45 ? "#f4f4f5" : "rgba(9,10,14,.85)";
+  });
+}
+document.querySelectorAll(".js-slider").forEach(s=>{
+  s.addEventListener("input",()=>paint(+s.value));
+});
+const tb=document.getElementById("tbl");
+[...new Set([78,92,90,30,25,20,95])].sort((a,b)=>b-a).forEach(v=>{
+  const tr=document.createElement("tr");
+  tr.innerHTML="<td>"+v+"</td><td>"+(v/100).toFixed(2)+"</td><td>"+glossA(v).toFixed(3)+"</td><td>"+rimA(v).toFixed(3)+"</td><td>"+(tiers[v]||"—")+"</td>";
+  tb.appendChild(tr);
+});
+paint(95);
+</script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 候选 6「顶部略方于底部」设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 900px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #c2410c; font-weight: 600; }
+
+  /* ===== 观感模拟：backdrop-filter 模拟窗口级 Acrylic（3a 稿同款手法） ===== */
+  .scene {
+    position: relative; border-radius: 12px; overflow: hidden;
+    min-height: 300px; border: 1px solid #c9ccd4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background:
+      linear-gradient(105deg, transparent 0 46%, rgba(0,0,0,.65) 50% 54%, transparent 58% 100%),
+      linear-gradient(90deg, #dfe6ee 0 50%, #23262e 50% 100%);
+  }
+  .scene::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.35) 0 26px, rgba(255,255,255,0) 26px 52px) left/50% 100% no-repeat,
+      repeating-linear-gradient(0deg, rgba(80,200,140,.25) 0 26px, rgba(0,0,0,0) 26px 52px) right/50% 100% no-repeat;
+  }
+  .scene .tag { position: absolute; top: 8px; left: 12px; font-size: 11px; color: #52525b; z-index: 3; }
+  .scene .tag2 { position: absolute; top: 8px; right: 12px; font-size: 11px; color: rgba(255,255,255,.6); z-index: 3; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* 展开卡（结构对齐 TodoIsland.module.css：hd 40 / ls / foot 40） */
+  .card {
+    position: relative; z-index: 2; width: 420px; height: 240px;
+    display: flex; flex-direction: column; font-size: 12px; user-select: none; overflow: hidden;
+    backdrop-filter: blur(22px) saturate(1.15);
+    -webkit-backdrop-filter: blur(22px) saturate(1.15);
+    box-shadow: inset 0 0 0 1px var(--ln), inset 0 1px 0 var(--rim), 0 6px 18px rgba(0,0,0,.25);
+  }
+  /* ★ 候选 6：顶部略方于底部 —— 唯一改动点 */
+  .card.asym { border-radius: 8px 8px 12px 12px; }
+  .card.sym  { border-radius: 12px; }
+  .card.dark  { background: rgba(20,20,24,.78); color: #f4f4f5; --ln: rgba(255,255,255,.09); --rim: rgba(255,255,255,.18); --fill: rgba(255,255,255,.07); --fill-strong: rgba(255,255,255,.14); --muted: rgba(244,244,245,.55); --line: rgba(255,255,255,.09); background-image: linear-gradient(180deg, rgba(255,255,255,.07) 0, rgba(255,255,255,0) 26px); }
+  .card.light { background: rgba(255,255,255,.78); color: #18181b; --ln: rgba(0,0,0,.08); --rim: rgba(255,255,255,.55); --fill: rgba(0,0,0,.05); --fill-strong: rgba(0,0,0,.10); --muted: rgba(24,24,27,.55); --line: rgba(0,0,0,.08); background-image: linear-gradient(180deg, rgba(255,255,255,.55) 0, rgba(255,255,255,0) 26px); }
+  .hd { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .hd .title { font-size: 13px; font-weight: 600; }
+  .seg { display: flex; gap: 2px; background: var(--fill); border-radius: 8px; padding: 2px; margin-left: 4px; }
+  .seg span { font-size: 11px; padding: 2px 8px; border-radius: 4px; opacity: .66; cursor: pointer; }
+  .seg span.on { background: var(--fill-strong); opacity: 1; }
+  .hd .col { margin-left: auto; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; color: var(--muted); }
+  .hd .col:hover { background: var(--fill); }
+  .ls { flex: 1 1 auto; padding: 8px; display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px; border-radius: 8px; }
+  .row:hover { background: var(--fill); }
+  .tickDot { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid var(--muted); flex: 0 0 16px; }
+  .row.done .tickDot { background: #15803d; border-color: #15803d; position: relative; }
+  .row.done .tickDot::after { content: ""; position: absolute; left: 4px; top: 4px; width: 5px; height: 3px; border-left: 1.6px solid #fff; border-bottom: 1.6px solid #fff; transform: rotate(-45deg); }
+  .row .tx { flex: 1 1 auto; font-size: 13px; }
+  .row.done .tx { text-decoration: line-through; opacity: .5; }
+  .row .src { font-size: 11px; color: var(--muted); max-width: 112px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foot { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--line); color: var(--muted); }
+  .plus { width: 16px; height: 16px; display: inline-block; }
+
+  /* ===== 顶角放大镜（4×） ===== */
+  .zoomrow { display: flex; gap: 18px; align-items: flex-start; margin-bottom: 10px; }
+  .zoom {
+    width: 200px; height: 130px; position: relative; overflow: hidden;
+    border: 1px solid #d4d4d8; background: #fbfbfd;
+  }
+  /* 把 4× 的顶角画出来：外层圆角矩形 = 卡片本体（深色），左上角露出白底 */
+  .zoom .shape {
+    position: absolute; left: 12px; top: 12px; width: 400px; height: 260px;
+    background: rgba(20,20,24,.92); color: #f4f4f5;
+    box-shadow: inset 0 0 0 1.6px rgba(255,255,255,.14), inset 0 1.6px 0 rgba(255,255,255,.2);
+    display: flex; align-items: center; justify-content: center; font-size: 10px; color: rgba(244,244,245,.4);
+  }
+  .zoom.now  .shape { border-radius: 48px; }
+  .zoom.new  .shape { border-radius: 32px 48px 48px 48px; }
+  .zoom .cap { position: absolute; left: 8px; bottom: 4px; font-size: 11px; color: #52525b; }
+  .zoom .r { position: absolute; font-size: 11px; font-weight: 600; color: #18181b; background: #fff; border: 1px solid #d4d4d8; border-radius: 4px; padding: 0 4px; z-index: 2; }
+  .zoom .r1 { left: 130px; top: 14px; }
+  .zoom .r2 { right: 8px; bottom: 26px; }
+
+  code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  pre { background: #27272a; color: #e4e4e7; font-size: 11.5px; line-height: 1.55; padding: 12px 14px; border-radius: 8px; overflow: auto; margin-bottom: 12px; }
+  pre .c { color: #a1a1aa; }
+  pre .k { color: #7dd3fc; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>待办灵动岛 · 候选 6「顶部略方于底部」设计稿</h1>
+  <div class="meta">2026-09-25 · 对应实施方案 §4.4 候选 6 / §9.4 遗留表 · 前置：液态玻璃 3a（窗口级 Acrylic α.78 + SetWindowRgn 裁剪）已落地</div>
+
+  <h2>一 · 结论：顶 8px / 底 12px，只作用于展开两态</h2>
+  <div class="note">
+    <b>取值 8/12：</b>两个都在 U5 圆角 token 集（4/8/12）内，不新增档位。展开卡的<b>底角保持 12</b>
+    （与现状一致），<b>顶角收到 8</b> ——「略方」幅度 4px，放大才可辨、正常距离下只是感觉更「立」。
+    视觉逻辑：顶缘有 rim 亮线（受光面），方一点更像从屏幕顶边「长出来」；底部是落影收尾，圆一点更柔。
+  </div>
+  <table>
+    <tr><th>舞台</th><th>现圆角</th><th>候选 6 后</th><th>为什么</th></tr>
+    <tr><td>list / compose（展开两态）</td><td>12 / 12</td><td><b class="ok">顶 8 · 底 12</b></td><td>本候选的作用面；非对称圆角只在「卡片」上有意义</td></tr>
+    <tr><td>pill / peek / clear（折叠三态）</td><td>999 胶囊</td><td>不变</td><td>胶囊半径 = 高度一半（正圆收口），没有「顶底之分」；动它会破形</td></tr>
+    <tr><td>亮 / 暗主题</td><td colspan="2">同一组 8/12</td><td>纯几何，与材质极性无关</td></tr>
+  </table>
+
+  <h2>二 · 1:1 观感（左：现状 12/12 · 右：候选 6 顶 8 底 12）</h2>
+  <div class="note">结构对齐真实代码（<code>hd</code> 40px 头 + <code>ls</code> 列表 + <code>foot</code> 40px 底），磨砂模拟窗口级 Acrylic α.78。正常观看距离下两块差异很细微——这正是「略方」的本意；差异集中在两处<b>顶角</b>。</div>
+  <div class="grid2">
+    <div class="scene">
+      <span class="tag">亮色文档 | 深色终端</span><span class="tag2">现状 · 12/12</span>
+      <div class="card sym dark">
+        <div class="hd"><span class="title">2 项待办</span>
+          <span class="seg"><span class="on">进行中</span><span>已完成</span></span>
+          <span class="col">︿</span></div>
+        <div class="ls">
+          <div class="row"><span class="tickDot"></span><span class="tx">回邮件给设计部</span><span class="src">今天速记</span></div>
+          <div class="row"><span class="tickDot"></span><span class="tx">整理会议纪要</span><span class="src">周会记录</span></div>
+          <div class="row done"><span class="tickDot"></span><span class="tx">发版本公告</span><span class="src">今天速记</span></div>
+        </div>
+        <div class="foot"><svg class="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg><span>记一条</span></div>
+      </div>
+    </div>
+    <div class="scene">
+      <span class="tag">亮色文档 | 深色终端</span><span class="tag2">候选 6 · 顶8/底12</span>
+      <div class="card asym dark">
+        <div class="hd"><span class="title">2 项待办</span>
+          <span class="seg"><span class="on">进行中</span><span>已完成</span></span>
+          <span class="col">︿</span></div>
+        <div class="ls">
+          <div class="row"><span class="tickDot"></span><span class="tx">回邮件给设计部</span><span class="src">今天速记</span></div>
+          <div class="row"><span class="tickDot"></span><span class="tx">整理会议纪要</span><span class="src">周会记录</span></div>
+          <div class="row done"><span class="tickDot"></span><span class="tx">发版本公告</span><span class="src">今天速记</span></div>
+        </div>
+        <div class="foot"><svg class="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg><span>记一条</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="grid2" style="margin-top:14px">
+    <div class="scene">
+      <span class="tag">浅色主题（用户当前）</span><span class="tag2">候选 6 · 顶8/底12</span>
+      <div class="card asym light">
+        <div class="hd"><span class="title">2 项待办</span>
+          <span class="seg"><span class="on">进行中</span><span>已完成</span></span>
+          <span class="col">︿</span></div>
+        <div class="ls">
+          <div class="row"><span class="tickDot"></span><span class="tx">回邮件给设计部</span><span class="src">今天速记</span></div>
+          <div class="row"><span class="tickDot"></span><span class="tx">整理会议纪要</span><span class="src">周会记录</span></div>
+        </div>
+        <div class="foot"><svg class="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg><span>记一条</span></div>
+      </div>
+    </div>
+    <div class="scene">
+      <span class="tag">compose 输入态同待遇</span><span class="tag2">候选 6 · 顶8/底12</span>
+      <div class="card asym dark" style="height:280px">
+        <div class="hd"><span class="title">2 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><span class="col">︿</span></div>
+        <div class="ls"><div class="row"><span class="tickDot"></span><span class="tx">回邮件给设计部</span><span class="src">今天速记</span></div></div>
+        <div class="foot"><span style="flex:1 1 auto;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--fill);display:flex;align-items:center;padding:0 8px;color:var(--muted)">要做什么？</span><span style="font-size:11px">回车记下</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>三 · 顶角放大镜（4×：为什么是 8 不是 6 或 10）</h2>
+  <div class="zoomrow">
+    <div class="zoom now"><div class="shape">…卡片本体…</div><span class="r r1">顶 12</span><span class="r r2">底 12</span><span class="cap">现状：四角同 12</span></div>
+    <div class="zoom new"><div class="shape">…卡片本体…</div><span class="r r1">顶 8</span><span class="r r2">底 12</span><span class="cap">候选 6：顶略方于底</span></div>
+  </div>
+  <table>
+    <tr><th>候选</th><th>判读</th></tr>
+    <tr><td>顶 6 / 底 12</td><td><span class="bad">方感过强</span>——差 6px 时顶角明显「缺了一块」，且与底部差距大到第一眼像 bug，不像设计</td></tr>
+    <tr><td><b>顶 8 / 底 12</b></td><td><span class="ok">✅ 采用</span>——差 4px：单独看顶角只觉得「利落」，与底角并排才读得出层次；8 与 12 都是 U5 token，不新增档位</td></tr>
+    <tr><td>顶 10 / 底 12</td><td>差 2px 不可辨——做了等于没做</td></tr>
+  </table>
+  <div class="note">V4 同心自查：头部 <code>seg</code>（8px）与顶角不在同一角点（seg 在 40px 头条内部、距顶 12px+），不构成嵌套同心；列表行 8px、输入框 8px 与顶角同值属「同值复用」而非嵌套，合规。</div>
+
+  <h2>四 · 落地账（❗ rgn 必须跟着改，否则顶角月牙复发）</h2>
+  <div class="note">
+    现在的窗口形状由 <code>SetWindowRgn</code> 裁剪（追月牙时加的），而 <code>CreateRoundRectRgn</code> 只支持<b>统一</b>圆角。
+    若只改 CSS（顶 8）而 rgn 仍是 12：顶角在 8–12px 弧之间的窗口级材质会裸露出来——3a 之前那个「材质月牙」在顶角复发。
+    所以 rgn 要拼一个非对称形状：<b>整卡 r=12 ∪ 顶部圆角条 r=8</b>（<code>CombineRgn(RGN_OR)</code>），
+    条高取 12×scale 即可（中部由整卡全覆盖，条的底边圆角被盖住）。
+  </div>
+  <pre>
+<span class="c">// CSS —— TodoIsland.module.css（展开两态一行改掉）</span>
+.root[data-st="list"], .root[data-st="compose"] {
+  <span class="k">border-radius: 8px 8px 12px 12px;</span>  <span class="c">// 原 12px</span>
+}
+<span class="c">// 过渡不用动：border-radius 四角独立插值，999 → 非对称照常过渡</span>
+
+<span class="c">// Rust —— todo_island_stage.rs::apply_stage_region（展开两态分支）</span>
+<span class="c">// 原：CreateRoundRectRgn(0,0,w+1,h+1, r12, r12)</span>
+<span class="c">// 新：r12 整卡  OR  CreateRoundRectRgn(0,0,w+1, 12*scale, r8, r8)</span>
+<span class="c">//     全部经 CombineRgn(RGN_OR) 合并后 SetWindowRgn —— 一次 set，无逐帧成本</span></pre>
+  <div class="note">
+    <b>动画中间帧：</b>舞台动画起止各 set 一次 rgn（现状），动画中窗口矩形逐帧变、rgn 不逐帧跟随——
+    顶角 4px 差异在 200/300ms 动画里不可辨，<b>不为中间帧做非对称</b>（照旧走
+    <code>apply_stage_region</code>，组合形状收口在这一个函数里，起始帧/终帧/on_page_load 三个调用点自动继承）。
+  </div>
+
+  <h2>五 · 影响面与不做的</h2>
+  <table>
+    <tr><th>项</th><th>说明</th></tr>
+    <tr><td>CSS 改动</td><td>1 行（<code>.root[data-st]</code> 展开块）；折叠三态、列表行、seg、输入框圆角全部不动</td></tr>
+    <tr><td>Rust 改动</td><td>仅 <code>apply_stage_region</code> 展开两态分支（+CombineRgn 导入）；折叠三态的胶囊 rgn 原样</td></tr>
+    <tr><td>探针</td><td><code>PP_TODO_ISLAND_PROBE=1</code> 形态回归照跑；本轮加一张展开态抓图核对顶角无材质裸露</td></tr>
+    <tr><td>测试</td><td>现有舞台尺寸/交互测试不受影响（rgn 是纯 Win32 侧，无新可测纯函数——形状正确性靠探针抓图判定）</td></tr>
+    <tr><td>明不做</td><td>折叠三态非对称（破形）；中间帧逐帧非对称 rgn（不可辨 + 逐帧 set rgn 是新成本）；顶部方于底部只此一档，不做配置项</td></tr>
+  </table>
+</div>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>待办灵动岛 · 实体材质精修 · 设计稿（路线一）</title>
+<style>
+/* 本稿所有数值来源（规则 12 要求）：
+   src/components/todo/TodoIsland.module.css  → 令牌与五段 box-shadow、圆角、gloss/rim/glow
+   src-tauri/src/todo_island.rs              → decorations/shadow(false)/transparent/focused(false)
+   src-tauri/src/todo_island_stage.rs        → stage_size / 逐行像素中心 region
+   docs/待办灵动岛-实施方案-2026-09-24.md §2.2/§4.4/§10 → 三档对比度实算与「不做玻璃」的四份对标
+   2026-09-26 三大生态对标：boring.notch / NotchDrop / electron-dynamic-island 源码常数 */
+:root{
+  --ink:#e9e9ef; --ink-dim:#9a9aa8; --line:rgba(255,255,255,.09);
+  --card:#15151a; --accent:#38bdf8; --warn:#fca5a5; --ok:#4ade80;
+  /* 现行基座，与 CSS 同源 */
+  --tint-now:rgba(20,20,24,.78);
+  --tint-a:rgba(20,20,24,.92);
+  --tint-b:rgba(17,17,20,.97);
+  --tint-c:#000;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:32px 40px 80px;background:#0d0d11;color:var(--ink);
+  font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+h1{font-size:24px;margin:0 0 6px}
+h2{font-size:17px;margin:44px 0 12px;padding-left:10px;border-left:3px solid var(--accent)}
+h3{font-size:14px;margin:24px 0 8px;color:var(--ink)}
+p{margin:8px 0;color:var(--ink-dim)}
+b{color:var(--ink)}
+code{font-family:Consolas,monospace;font-size:12.5px;color:#c7e8ff;background:rgba(56,189,248,.08);padding:1px 5px;border-radius:4px}
+.src{font-size:12px;color:#6f6f80;font-family:Consolas,monospace}
+.sec{max-width:1120px}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}
+th{color:var(--ink);font-weight:600;background:rgba(255,255,255,.03)}
+td.dim{color:var(--ink-dim)}
+.verdict{background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.25);border-radius:10px;padding:14px 18px;margin:18px 0}
+.verdict b{color:var(--accent)}
+.risk{background:rgba(252,165,165,.07);border:1px solid rgba(252,165,165,.28);border-radius:10px;padding:14px 18px;margin:18px 0}
+.risk b{color:var(--warn)}
+
+/* ───── 岛：真实材质复刻 ───── */
+.stage{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin:16px 0 6px}
+.bg{padding:22px 16px 40px;border-radius:12px;position:relative;width:280px}
+.bg span{position:absolute;left:12px;bottom:10px;font-size:11px;color:#7b7b8c}
+.bg-white{background:#f2f2f4}
+.bg-gray{background:linear-gradient(120deg,#8b93a1,#5d6672)}
+.bg-dark{background:#16181d}
+.bg-wall{background:linear-gradient(115deg,#0e7490 0%,#1e3a8a 45%,#7c3aed 100%)}
+/* 身后压一个「别的窗口」，用来验实体化之后还会不会露馅 */
+.bg-win{background:#dfe3ea}
+.win{background:#fff;border-radius:8px 8px 0 0;box-shadow:0 1px 3px rgba(0,0,0,.2);
+  height:56px;margin:-22px 22px 8px;padding:6px 10px;font-size:10px;color:#5a6270}
+.win i{display:block;height:5px;background:#e6e9ef;border-radius:3px;margin-top:7px;width:78%}
+
+.island{height:32px;width:208px;margin:0 auto;position:relative;
+  border-radius:999px;overflow:hidden;color:#f4f4f5;font-size:12px;line-height:32px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),
+             inset 0 1px 0 var(--rim,rgba(255,255,255,.09)),
+             inset 0 -1px 0 rgba(7,17,28,.3),
+             0 3px 8px rgba(13,22,44,.22),
+             0 13px 32px rgba(13,22,44,.24)}
+.island em{position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(156deg,var(--gloss,rgba(255,255,255,.07)) 0,transparent 53%);
+  font-style:normal;pointer-events:none}
+.island s{display:block;padding:0 12px;text-decoration:none;white-space:nowrap;overflow:hidden}
+.now{background:var(--tint-now)}
+.pa{background:var(--tint-a)}
+.pb{background:var(--tint-b)}
+.pc{background:var(--tint-c)}
+.pb,.pc{--gloss:rgba(255,255,255,.02);--rim:rgba(255,255,255,.14)}
+.pc{--rim:rgba(255,255,255,.18);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),
+     inset 0 1px 0 rgba(255,255,255,.2),0 0 0 1px rgba(0,0,0,.55),0 13px 32px rgba(0,0,0,.5)}
+
+/* 展开卡复刻（list 舞台 420×240，本稿等比放到 360 宽） */
+.card{width:360px;height:210px;border-radius:12px;padding:14px 16px;font-size:12px;color:#f4f4f5;
+  background:var(--tint-now);overflow:hidden;position:relative;margin:0 auto;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),inset 0 1px 0 rgba(255,255,255,.09),
+             inset 0 -1px 0 rgba(7,17,28,.3),0 3px 8px rgba(13,22,44,.22),0 13px 32px rgba(13,22,44,.24)}
+.card.pb{background:var(--tint-b)}
+.card b{display:block;font-size:12.5px;margin-bottom:2px}
+.row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;
+  background:rgba(255,255,255,.10);margin-bottom:6px}
+.dot{width:13px;height:13px;border-radius:999px;border:1.5px solid rgba(255,255,255,.22);flex:0 0 auto}
+.row .txt{flex:1}
+.row .txt u{display:block;text-decoration:none;font-size:10.5px;color:rgba(244,244,245,.66)}
+.pill{font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(2,132,199,.35);color:#8ecbff}
+.pill.due{background:rgba(180,40,40,.28);color:#fca5a5}
+.chip{display:inline-block;font-size:10px;padding:2px 7px;border-radius:6px;
+  background:rgba(255,255,255,.16);color:rgba(244,244,245,.8)}
+.tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;
+  border:1px solid var(--line);color:var(--ink-dim);margin:0 6px 6px 0;cursor:pointer}
+.tag.on{border-color:var(--accent);color:var(--accent);background:rgba(56,189,248,.1)}
+
+/* 边缘 AA 对比：硬裁 vs 外扩 1px 留过渡带 */
+.zoom{display:flex;gap:32px;flex-wrap:wrap;margin:12px 0}
+.zoom figure{margin:0}
+.zoom figcaption{font-size:11.5px;color:var(--ink-dim);margin-top:6px}
+.cap{width:150px;height:75px;background:#101014;position:relative;border-radius:0}
+.cap i{position:absolute;left:8px;top:8px;right:8px;bottom:8px;background:#f4f4f5;border-radius:999px}
+.hard i{clip-path:polygon(0 0,100% 0,100% 100%,0 100%);
+  -webkit-mask:radial-gradient(circle at 50% 50%,#000 60%,#000 60%,transparent 60.6%)}
+.hard i{mask:none;border-radius:34px 34px 34px 34px/34px}
+/* 复刻锯齿：用 conic 阶梯近似（本稿只为说明，实机差异是 1px 级的 8 段台阶） */
+.hard i{box-shadow:none;filter:url(#none)}
+.hard .steps{position:absolute;inset:8px;border-radius:999px;background:#f4f4f5}
+.hard .steps::before,.hard .steps::after{content:"";position:absolute;width:15px;height:15px;
+  background:radial-gradient(circle,#f4f4f5 42%,rgba(244,244,245,.55) 43%,rgba(244,244,245,.3) 50%,#101014 51%)}
+.hard .steps::before{left:0;top:0}
+.hard .steps::after{right:0;bottom:0}
+</style>
+</head>
+<body>
+<div class="sec">
+<h1>待办灵动岛 · 实体材质精修（路线一）</h1>
+<p class="src">2026-09-26 · 前提：Windows 上「胶囊形状」与「真系统毛玻璃」互斥已定论（红色探针 + 官方文档 + 三大生态对标一致）。本稿不再谈玻璃，只谈<b>把不透的材质做到业界常数值</b>。</p>
+
+<div class="verdict">
+<b>对标结论（本稿依据）</b>
+<ul style="margin:6px 0 0;padding-left:20px">
+<li>可查证的开源岛应用 <b>2/2 纯黑实体、零桌面模糊</b>：boring.notch 岛体 <code>.foregroundColor(.black)</code>（<code>NSVisualEffectView</code> 只出现在设置面板）；NotchDrop 全仓零 <code>NSVisualEffectView</code>，<code>.foregroundStyle(.black)</code> + <code>.mask(notchShape)</code>。</li>
+<li>Electron 岛类一律 <code>frame:false + transparent:true + hasShadow:false</code> + CSS 画胶囊，全部放弃 vibrancy。</li>
+<li>它们共同的常数是：<b>恒深外观</b>（boring.notch 强制 <code>.darkAqua</code>）、<b>岛体 α≈1</b>、<b>无系统阴影</b>、<b>顶边贴屏幕缘、圆角只在下部</b>。</li>
+</ul>
+</div>
+
+<h2>§1 五项精修 · 现值 → 建议值（现值全部抄自源码）</h2>
+<table>
+<tr><th style="width:34px">#</th><th>项</th><th>现值（源码）</th><th>建议</th><th>出处 / 代价</th></tr>
+<tr><td>A</td><td><b>岛体实体化</b></td><td>基座 <code>--island-tint: rgba(20,20,24,.78)</code>（档 3a「厚磨砂」定档）</td><td>默认推到 <code>rgba(17,17,20,.97)</code>；<code>.92</code> 作次档保留</td><td>两家岛 app 是 α=1。<b>唯一比它们多的考量</b>：我们的岛是软件元素、不是硬件缺口，纯黑会在浅桌面上读成「死块」，所以停在 .97 而非 #000 —— 稿内甲/乙/丙三版并排给你判。</td></tr>
+<tr><td>B</td><td><b>恒深、不跟浅色主题</b></td><td><code>[data-island-mode="light"]</code> 整套白材质：<code>rgba(255,255,255,.78)</code> + <code>fg #18181b</code></td><td>岛体恒深（浅色模式下也是黑岛），删掉浅色材质整套覆写</td><td>boring.notch 强制 <code>darkAqua</code>。<b>翻案项</b>：推翻 <code>待办灵动岛-主题亮暗适配-设计稿.html</code> 的方案 A「跟随应用主题」。收益是白壁纸上不再靠描边勉强保形，代价是「岛跟应用不同调」。不拍板就不动。</td></tr>
+<tr><td>C</td><td><b>边缘抗锯齿</b></td><td>region 走「<b>逐行像素中心</b>」：像素中心落在 CSS 圆内才进 region（<code>todo_island_stage.rs::build_stadium_region</code>）</td><td>region 外扩<b>约 1px</b>，把 CSS 弧的半透明过渡带留在 region 内</td><td>现在的规则会把 AA 过渡带整像素裁掉 ⇒ 帽边是阶梯。外扩后过渡带与桌面正常混合，帽边变滑。<b>代价极小</b>：命中区只多出一圈 1px 环（不是四角各 110px² 的死区）。这一项跟材质无关，属独立技术账。</td></tr>
+<tr><td>D</td><td><b>受光层随实体化重算</b></td><td><code>--island-gloss:.07</code> / <code>--island-rim:.09</code> / <code>--island-line:.12</code> / 两层外投影 <code>.22 / .24</code></td><td>实体档 <code>gloss→.02</code>（与现有 <code>dark</code> 档同值）、<code>rim→.14</code>、外描边 <code>.12→.16</code></td><td>不透之后，形状<b>只能</b>靠描边与亮线读出来，所以高光是负资产（我们自己的实测：深色可读性的杀手是镜面高光，不是染色），而描边要加重。投影两层保持不变（<code>shadow(false)</code> 靠自绘已是业界同款）。</td></tr>
+<tr><td>E</td><td><b>形状语言（顶部比方）</b></td><td>展开态四角统一 <code>border-radius:12px</code>（候选 6 的顶 8/底 12 已按设计稿收回）</td><td>改回顶 <code>8</code>/底 <code>12</code></td><td>iOS 与各家 macOS 实现都让形状「顶部更方」，因为它从屏幕边缘长出来（实施文档 §④ 已记过一次）。<b>二次翻案</b>，且 region 要同步拼非对称形状（历史上顶角月牙就是这么来的）⇒ 默认<b>不做</b>。</td></tr>
+</table>
+
+<h2>§2 A 项实机对比：同一条胶囊，四种桌面背景 × 四种材质</h2>
+<p>每格上方是岛（pill 舞台 208×32 等比复刻），背景分别是：浅壁纸 / 中灰 / 深桌面 / 彩色渐变。第四行故意在岛身后压一个<b>别的窗口标题栏</b>——实体化到底会不会因此露馅，看这一行。</p>
+
+<div class="stage">
+  <div class="bg bg-white"><span>浅壁纸 rgb(242)</span>
+    <div class="island now"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pa" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pb" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pc" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+  </div>
+  <div class="bg bg-gray"><span>中灰</span>
+    <div class="island now"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pa" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pb" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pc" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+  </div>
+  <div class="bg bg-dark"><span>深桌面 rgb(22)</span>
+    <div class="island now"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pa" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pb" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pc" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+  </div>
+  <div class="bg bg-wall"><span>彩色壁纸</span>
+    <div class="island now"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pa" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pb" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pc" style="margin-top:18px"><em></em><s>整理桌面 · 3 条</s></div>
+  </div>
+</div>
+<p class="src">自上而下：现款 .78 / 甲 .92（= 现有 dark 档值）/ 乙 .97 + 受光重算 / 丙 #000 纯黑 + 加白描边（业界同款）。乙与丙的差别在浅桌面上丙更像「硬件缺口」，但在彩色桌面上丙会把描边读成唯一形状线索。</p>
+
+<div class="stage">
+  <div class="bg bg-win" style="width:340px"><span>身后压着别的窗口（标题栏 + 内容）</span>
+    <div class="win">▣ 某浏览器 — 标签栏 标题 标题 标题&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— □ ✕<i></i></div>
+    <div class="island now"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pb" style="margin-top:16px"><em></em><s>整理桌面 · 3 条</s></div>
+    <div class="island pc" style="margin-top:16px"><em></em><s>整理桌面 · 3 条</s></div>
+  </div>
+  <div class="bg bg-dark" style="width:340px"><span>展开卡 list 舞台（现款材质）</span>
+    <div class="card"><b>今日待办</b><span class="chip">3 条</span>
+      <div class="row" style="margin-top:10px"><i class="dot"></i><span class="txt">整理桌面<u>文件 · 剩 2 项</u></span><span class="pill">今天</span></div>
+      <div class="row"><i class="dot"></i><span class="txt">回消息<u>未设时间</u></span><span class="pill due">逾期</span></div>
+      <div class="row"><i class="dot"></i><span class="txt">提交周报<u>18:00 截止</u></span></div>
+    </div>
+  </div>
+</div>
+
+<h2>§3 C 项：帽边为什么是阶梯，外扩 1px 后长什么样</h2>
+<div class="zoom">
+  <figure><div class="cap hard"><div class="steps"></div></div>
+    <figcaption>现行「逐行像素中心」：覆盖率 &lt;50% 的过渡像素整块裁掉<br>⇒ 帽边 1px 台阶，深色桌面上看得见</figcaption></figure>
+  <figure><div class="cap" style="background:#101014"><i></i></div>
+    <figcaption>region 外扩约 1px：过渡像素保留，与桌面按 alpha 混合<br>⇒ 帽边连续；命中区只多 1px 环</figcaption></figure>
+</div>
+<div class="risk">
+<b>C 项必须先实测再改判据</b>
+<p style="margin:6px 0 0">本仓库对 GDI region 已经交过四次学费（§10.5 探针把 rgn 摘成矩形、§10.6 扫描线「左含右排」、底行整行被裁、条高理论被实测推翻）。所以「外扩 1px」的落地顺序必须是：<b>① 探针实拍判据先定（深色背景 + 放大裁切，不用 <code>PtInRegion</code> 读数，那个有 ±10px 误差）→ ② 改 <code>fill_row_polygon</code> 的取整 → ③ 更新 <code>test_stadium_region_hugs_css_cap</code> 的 ±1px 判据为 ±1.5px</b>。任何一步跳过都会把月牙问题换个形态再犯一次。</p>
+</div>
+
+<h2>§4 三套配方</h2>
+<table>
+<tr><th style="width:78px">配方</th><th>含项</th><th>优点</th><th>代价 / 风险</th></tr>
+<tr><td><b>甲 · 保守</b></td><td>A(.92) + D + C</td><td>不动任何已拍板的东西（浅色主题、四档、形状全保留）；.92 就是现有 <code>dark</code> 档的值，等于<b>只把默认档从 frost 换成 dark</b> + 修边缘</td><td>变化最克制，可能「看不出做了事」</td></tr>
+<tr><td><b>乙 · 推荐</b></td><td>A(.97) + D + C，浅色主题下仍给深岛（B）</td><td>与两家业界常数对齐；<b>对比度只会变好</b>（.97 压白壁纸背景亮度≈ rgb(27)，比现在实算的最坏 rgb(72) 更深，现有 <code>--island-due</code> 全套取值全部富余）；浅壁纸上不再靠描边勉强保形</td><td>翻案「跟随应用主题」，设置页要删一个开关或改成「岛恒深」；<code>[data-island-mode="light"]</code> 整套覆写作废</td></tr>
+<tr><td><b>丙 · 全套</b></td><td>乙 + E(顶 8 底 12) + 岛体纯黑 #000</td><td>最接近 boring.notch/NotchDrop 的观感，「像硬件一部分」的错觉最强</td><td>二次翻案候选 6；region 要重拼非对称形状（历史月牙高发区）；纯黑在我们的浮窗语境下有可能读成黑块</td></tr>
+</table>
+<p class="src">四档设置（<code>data-glass</code>：clear .30 / frost .78 / steady .90 / dark .92）在三套配方里都<b>全部保留</b>——想透的人仍可自选 clear；改的只是默认档与受光层随档位的重算。</p>
+
+<h2>§5 拍板点</h2>
+<table>
+<tr><th style="width:34px">?</th><th>问题</th><th>选项</th></tr>
+<tr><td>1</td><td>选哪套配方</td><td>甲 / <b>乙（本稿建议）</b> / 丙</td></tr>
+<tr><td>2</td><td>浅色模式下岛体跟不跟主题</td><td>恒深（乙）/ 保持跟随白材质（甲）</td></tr>
+<tr><td>3</td><td>默认档从 <code>frost</code> 挪走后，<code>frost .78</code> 还留在四档里吗</td><td>留着当「想要透光」的选项（本稿默认）/ 并入 steady</td></tr>
+<tr><td>4</td><td>C 项（边缘外扩 1px）要不要和这次一起做</td><td>一起做（材质与边缘是同一个观感账）/ 单独一轮</td></tr>
+</table>
+<p class="src">落地顺序（选定后）：改令牌与注释 → <code>npm run lint:ui</code>（V3 颜色只能来自变量：新增档值一律写进 <code>:global(html)</code> 的令牌块，不落基类）→ 探针实拍（深色背景，<code>PP_TODO_ISLAND_PROBE=1</code>）→ 四档 × 亮暗 × 4 背景截图复核 → 才谈是否打 tag。</p>
+</div>
+</body>
+</html>

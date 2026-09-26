@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>待办灵动岛 · B 方案材质与形变对照</title>
+  <style>
+    :root { font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; color: #17202d; background: #edf0f3; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 30px 24px 48px; }
+    main { max-width: 1350px; margin: auto; }
+    h1 { margin: 0 0 8px; font-size: 24px; letter-spacing: -.03em; }
+    .lede { margin: 0 0 18px; max-width: 880px; line-height: 1.7; color: #566170; font-size: 13px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; margin: 0 0 20px; }
+    .control { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .control > span { margin-right: 5px; font-size: 12px; font-weight: 600; color: #586474; }
+    .control button { border: 1px solid #cdd5df; background: #fff; color: #334155; border-radius: 8px; padding: 7px 11px; cursor: pointer; font: inherit; font-size: 12px; }
+    .control button[aria-pressed="true"] { background: #253755; color: #fff; border-color: #253755; }
+    .control button:focus-visible, .island button:focus-visible, .island input:focus-visible { outline: 2px solid #609af6; outline-offset: 2px; }
+    .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .panel { min-width: 0; }
+    .panelHead { display: flex; align-items: baseline; gap: 12px; margin: 0 2px 8px; }
+    .panelHead h2 { font-size: 15px; margin: 0; }
+    .panelHead span { font-size: 12px; color: #657386; }
+    .desktop { position: relative; height: 390px; border-radius: 12px; overflow: hidden; isolation: isolate; box-shadow: 0 9px 24px #26344a1f; background: linear-gradient(135deg, #246ea4 0%, #7359ae 52%, #de9f93 100%); }
+    .desktop.white { background: #f2f3f5; }
+    .desktop.dark { background: #1a202e; }
+    .wallpaper { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 78% 20%, #f4baad91, transparent 35%), radial-gradient(circle at 10% 80%, #4dc4d886, transparent 39%); }
+    .white .wallpaper, .dark .wallpaper { display: none; }
+    .fakeApp { position: absolute; top: 43px; left: 25px; right: 25px; bottom: -30px; border-radius: 11px 11px 0 0; overflow: hidden; background: #f9fafb; box-shadow: 0 18px 40px #10172650; }
+    .dark .fakeApp { background: #242a37; color: #e4e9f3; }
+    .fakeBar { height: 35px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid #ccd2da; background: #f2f3f5; }
+    .dark .fakeBar { background: #30394b; border-bottom-color: #4c5668; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #bdc5d0; }
+    .fakeTitle { margin-left: 15px; font-size: 10px; color: #697789; }
+    .dark .fakeTitle { color: #a5afbf; }
+    .fakeBody { display: grid; grid-template-columns: 100px 1fr; height: 100%; }
+    .fakeSide { background: #e8edf3; padding: 24px 12px; }
+    .dark .fakeSide { background: #202635; }
+    .fakeSide i, .fakeText i { display: block; height: 7px; border-radius: 5px; margin: 0 0 14px; background: #c8d2de; }
+    .dark .fakeSide i, .dark .fakeText i { background: #4a5364; }
+    .fakeSide i:nth-child(2) { width: 67%; }.fakeSide i:nth-child(3) { width: 80%; }
+    .fakeText { padding: 25px 25px; }
+    .fakeText strong { display: block; margin-bottom: 23px; font-size: 19px; font-weight: 600; }
+    .fakeText i { width: 87%; height: 8px; margin-bottom: 18px; }
+    .fakeText i:nth-child(2n) { width: 64%; }
+    .fakeText i:nth-child(4n) { width: 74%; }
+    .island { position: absolute; top: 10px; left: 50%; width: 208px; height: 32px; transform: translateX(-50%); overflow: hidden; border-radius: 999px; color: #f4f4f5; user-select: none; z-index: 2; }
+    .island[data-stage="list"], .island[data-stage="compose"] { border-radius: 12px; }
+    .island.current[data-stage="list"], .island.current[data-stage="compose"] { border-radius: 8px 8px 12px 12px; }
+    .island.current { background: rgba(20,20,24,.78); background-image: linear-gradient(180deg, rgba(255,255,255,.07), transparent 26px); box-shadow: inset 0 0 0 1px #ffffff1f, inset 0 1px 0 #ffffff17, 0 6px 18px #0004; }
+    .island.target { background: rgba(28,31,39,.59); backdrop-filter: blur(24px) saturate(1.55); -webkit-backdrop-filter: blur(24px) saturate(1.55); box-shadow: inset 0 0 0 1px #ffffff3b, inset 0 1px 0 #ffffff99, inset 0 -1px 0 #07111c4d, 0 3px 8px #0d162c38, 0 13px 32px #0d162c3d; }
+    .island.target::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 1; background: linear-gradient(156deg, #ffffff32 0%, #ffffff0e 30%, transparent 53%); }
+    .island.target::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 1; opacity: 0; background: radial-gradient(circle at 45% -15%, #ffffff4a, transparent 58%); transition: opacity 150ms cubic-bezier(.2,0,0,1); }
+    .island.target:hover::after { opacity: .55; }
+    .light .island { color: #171b23; }
+    .light .island.current { background-color: rgba(255,255,255,.78); box-shadow: inset 0 0 0 1px #ffffff99, inset 0 1px 0 #fff9, 0 6px 18px #18233829; }
+    .light .island.target { background: rgba(250,252,255,.64); box-shadow: inset 0 0 0 1px #ffffffc9, inset 0 1px 0 #fff, inset 0 -1px 0 #43566b29, 0 3px 8px #1b2d4e26, 0 13px 32px #1b2d4e30; }
+    .light .island.target::before { background: linear-gradient(156deg, #ffffff91 0%, #ffffff1f 31%, transparent 54%); }
+    .islandContent { position: relative; width: 100%; height: 100%; z-index: 2; }
+    .collapsed, .expanded { position: absolute; inset: 0; }
+    .collapsed { display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 12px; white-space: nowrap; cursor: pointer; }
+    .collapsed .label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .collapsed .count { font-variant-numeric: tabular-nums; }
+    .collapsed .sep { width: 3px; height: 3px; flex: none; border-radius: 50%; background: currentColor; opacity: .45; }
+    .collapsed .due { font-size: 11px; color: #a9dcff; }
+    .light .collapsed .due { color: #075985; }
+    .ring { width: 16px; height: 16px; flex: none; }
+    .ring .track { fill: none; stroke: currentColor; stroke-width: 2; opacity: .2; }
+    .ring .arc { fill: none; stroke: #8ea7ff; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 40.84; stroke-dashoffset: 16.3; transform: rotate(-90deg); transform-origin: 8px 8px; }
+    .light .ring .arc { stroke: #0284c7; }
+    .expanded { display: flex; flex-direction: column; font-size: 12px; }
+    .expanded header { height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; box-shadow: inset 0 -1px #ffffff26; }
+    .light .expanded header { box-shadow: inset 0 -1px #142b4924; }
+    .expanded header strong { font-size: 13px; white-space: nowrap; }
+    .tabs { display: flex; align-items: center; gap: 3px; margin-left: 4px; padding: 2px; border-radius: 8px; background: #ffffff18; }
+    .light .tabs { background: #132b4717; }
+    .tabs span { padding: 2px 7px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
+    .tabs span:first-child { background: #ffffff36; }.light .tabs span:first-child { background: #fff; }
+    .collapseBtn { margin-left: auto; background: transparent; border: 0; color: inherit; min-width: 42px; height: 26px; cursor: pointer; font: inherit; font-size: 11px; }
+    .rows { flex: 1; min-height: 0; padding: 8px 12px; }
+    .row { display: flex; align-items: center; gap: 8px; min-height: 36px; white-space: nowrap; }
+    .tick { width: 24px; height: 24px; border: 0; background: none; color: inherit; display: grid; place-items: center; padding: 0; cursor: pointer; }
+    .tick span { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid currentColor; opacity: .58; }
+    .row .text { overflow: hidden; text-overflow: ellipsis; flex: 1; font-size: 13px; }
+    .source { font-size: 11px; opacity: .65; }.dueChip { font-size: 11px; color: #a9dcff; }.light .dueChip { color: #075985; }
+    .footer { height: 40px; flex: none; display: flex; align-items: center; gap: 8px; width: 100%; padding: 0 12px; border: 0; border-top: 1px solid #ffffff26; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .light .footer { border-top-color: #142b4924; }.footer input { flex: 1; min-width: 0; height: 27px; border: 1px solid #ffffff54; border-radius: 8px; padding: 0 8px; color: inherit; background: #ffffff1a; font: inherit; }
+    .light .footer input { border-color: #142b4936; background: #ffffff75; }
+    .island.current .collapsed, .island.current .expanded { transition: opacity 150ms cubic-bezier(.2,0,0,1); }
+    .island.target .collapsed, .island.target .expanded { transition: opacity 150ms cubic-bezier(.2,0,0,1), transform 200ms cubic-bezier(.05,.7,.1,1); }
+    .island .expanded { opacity: 0; pointer-events: none; }
+    .island[data-content="expanded"] .expanded { opacity: 1; pointer-events: auto; transform: translateY(0); }
+    .island[data-content="expanded"] .collapsed { opacity: 0; pointer-events: none; }
+    .island.target .expanded { transform: translateY(7px); }
+    .island.target .collapsed { transform: translateY(0); }
+    .island.target[data-content="expanded"] .collapsed { transform: translateY(-5px); }
+    .note { margin-top: 18px; padding: 14px 16px; border-radius: 10px; background: #fff; color: #4e5b6b; font-size: 12px; line-height: 1.75; }
+    .note b { color: #253146; }
+    @media (max-width: 1050px) { .pair { grid-template-columns: 1fr; } .desktop { height: 350px; } }
+    @media (prefers-reduced-motion: reduce) { .island *, .island::before, .island::after { transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>待办灵动岛 · B 方案对照预览</h1>
+  <p class="lede">沿用现有 208×32 → 300×40 → 420×240 → 420×280 五舞台和真实待办文案。左侧按当前 CSS 参数模拟，右侧演示单层玻璃、受光边缘及“形体先响应、内容随后出现”。请切换背景和状态，重点看亮暗桌面的轮廓、四角与展开节奏。</p>
+  <div class="toolbar">
+    <div class="control" id="backgroundControl"><span>桌面</span><button data-value="rich" aria-pressed="true">彩色壁纸</button><button data-value="white" aria-pressed="false">亮色文档</button><button data-value="dark" aria-pressed="false">深色应用</button></div>
+    <div class="control" id="themeControl"><span>岛主题</span><button data-value="dark" aria-pressed="true">深色</button><button data-value="light" aria-pressed="false">浅色</button></div>
+    <div class="control" id="stageControl"><span>状态</span><button data-value="pill" aria-pressed="true">收起</button><button data-value="peek" aria-pressed="false">悬停</button><button data-value="list" aria-pressed="false">展开</button><button data-value="compose" aria-pressed="false">输入</button><button data-value="clear" aria-pressed="false">全清</button></div>
+  </div>
+  <div class="pair">
+    <section class="panel"><div class="panelHead"><h2>当前参数模拟</h2><span>CSS 半透明面 · 顶部弱高光 · 内容即刻切换</span></div><div class="desktop" id="desktopCurrent"><div class="wallpaper"></div><div class="fakeApp"><div class="fakeBar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="fakeTitle">PastePanda · 工作笔记</span></div><div class="fakeBody"><div class="fakeSide"><i></i><i></i><i></i></div><div class="fakeText"><strong>今天的工作</strong><i></i><i></i><i></i><i></i><i></i></div></div></div><div class="island current" id="currentIsland"></div></div></section>
+    <section class="panel"><div class="panelHead"><h2>B 方案目标观感</h2><span>单层材质 · 斜向受光 · 形体与内容分拍</span></div><div class="desktop" id="desktopTarget"><div class="wallpaper"></div><div class="fakeApp"><div class="fakeBar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="fakeTitle">PastePanda · 工作笔记</span></div><div class="fakeBody"><div class="fakeSide"><i></i><i></i><i></i></div><div class="fakeText"><strong>今天的工作</strong><i></i><i></i><i></i><i></i><i></i></div></div></div><div class="island target" id="targetIsland"></div></div></section>
+  </div>
+  <p class="note"><b>预览边界：</b>右侧背景模糊使用网页里的 <code>backdrop-filter</code> 模拟，尚不代表 Tauri 窗口已具备原生玻璃。材质浓度是设计试值，最终以 Windows 圆角与桌面采样探针、亮暗背景对比度结果确定。动效只在切换状态时运行；“减少动态效果”时改为直接切换。当前工作树已有未提交改动，此稿不修改应用代码。</p>
+</main>
+<script>
+  const islands = [document.getElementById('currentIsland'), document.getElementById('targetIsland')];
+  const desktops = [document.getElementById('desktopCurrent'), document.getElementById('desktopTarget')];
+  const sizes = { pill:[208,32], peek:[300,40], list:[420,240], compose:[420,280], clear:[208,32] };
+  const ui = { stage:'pill', background:'rich', theme:'dark' };
+  const ring = '<svg class="ring" viewBox="0 0 16 16" aria-hidden="true"><circle class="track" cx="8" cy="8" r="6.5"/><circle class="arc" cx="8" cy="8" r="6.5"/></svg>';
+  const rows = [
+    ['把登录页改完','会议纪要','今天 16:00'],
+    ['交材料','今日速记',''],
+    ['没人领文档这件事','会议纪要',''],
+    ['回邮件给张工','今日速记','']
+  ];
+  const motion = new Map();
+  function content(forCurrent) {
+    const clear = ui.stage === 'clear';
+    const due = ui.stage === 'peek' && !forCurrent ? '<span class="due">今天 16:00</span>' : '';
+    return `<div class="islandContent"><div class="collapsed" data-action="open">${clear ? '<span aria-hidden="true">✓</span>' : ring + '<span class="count">4</span><span class="sep"></span>'}<span class="label">${clear ? '今天没有待办了' : '把登录页改完'}</span>${due}</div><div class="expanded"><header><strong>4 项待办</strong><span class="tabs"><span>进行中</span><span>已完成</span></span><button class="collapseBtn" data-action="close">⌃ 收起</button></header><div class="rows">${rows.map(([task,source,dueText]) => `<div class="row"><button class="tick" title="完成" aria-label="完成 ${task}"><span></span></button><span class="text">${task}</span>${dueText ? `<span class="dueChip">${dueText}</span>` : ''}<span class="source">${source}</span></div>`).join('')}</div>${ui.stage === 'compose' ? '<div class="footer"><span>＋</span><input placeholder="要做什么？" aria-label="记一条待办"><span>回车记下</span></div>' : '<button class="footer" data-action="compose"><span>＋</span><span>记一条</span></button>'}</div></div>`;
+  }
+  function springTo(el, width, height, preserveVelocity) {
+    const old = motion.get(el);
+    if (old) cancelAnimationFrame(old.frame);
+    const state = old || { w:208, h:32, vw:0, vh:0, last:0, frame:0 };
+    if (!preserveVelocity) { state.vw=0; state.vh=0; }
+    state.last = performance.now();
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { state.w=width; state.h=height; state.vw=0; state.vh=0; el.style.width=width+'px'; el.style.height=height+'px'; motion.set(el,state); return; }
+    function tick(now) {
+      let dt = Math.min((now-state.last)/1000, .032); state.last=now;
+      for (let i=0;i<3;i++) {
+        const step=dt/3;
+        state.vw += (130*(width-state.w)-16*state.vw)*step;
+        state.vh += (130*(height-state.h)-16*state.vh)*step;
+        state.w += state.vw*step; state.h += state.vh*step;
+      }
+      el.style.width=state.w+'px'; el.style.height=state.h+'px';
+      if (Math.abs(width-state.w)<.15 && Math.abs(height-state.h)<.15 && Math.abs(state.vw)<.6 && Math.abs(state.vh)<.6) {
+        state.w=width; state.h=height; state.vw=0; state.vh=0;
+        el.style.width=width+'px'; el.style.height=height+'px'; return;
+      }
+      state.frame=requestAnimationFrame(tick);
+    }
+    state.frame=requestAnimationFrame(tick); motion.set(el,state);
+  }
+  let contentTimer=0;
+  function draw() {
+    const [w,h]=sizes[ui.stage];
+    desktops.forEach(el => { el.className='desktop '+(ui.background==='rich'?'':ui.background)+' '+ui.theme; });
+    islands.forEach((el,index) => {
+      el.dataset.stage=ui.stage;
+      el.innerHTML=content(index===0);
+      springTo(el,w,h,index===1);
+      if (index===0) el.dataset.content=(ui.stage==='list'||ui.stage==='compose')?'expanded':'collapsed';
+    });
+    const target=islands[1];
+    clearTimeout(contentTimer);
+    const expanded=ui.stage==='list'||ui.stage==='compose';
+    if (!expanded) target.dataset.content='collapsed';
+    else contentTimer=setTimeout(()=>{ target.dataset.content='expanded'; }, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 115);
+    [['backgroundControl',ui.background],['themeControl',ui.theme],['stageControl',ui.stage]].forEach(([id,value]) => {
+      document.querySelectorAll('#'+id+' button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.value===value)));
+    });
+  }
+  ['background','theme','stage'].forEach(key => {
+    document.getElementById(key+'Control').addEventListener('click',event=>{
+      const button=event.target.closest('button[data-value]'); if (!button) return;
+      ui[key]=button.dataset.value; draw();
+    });
+  });
+  islands.forEach(el => el.addEventListener('click', event => {
+    const action=event.target.closest('[data-action]')?.dataset.action;
+    if (action==='open') ui.stage='list';
+    if (action==='close') ui.stage='pill';
+    if (action==='compose') ui.stage='compose';
+    if (action) draw();
+  }));
+  draw();
+</script>
+</body>
+</html>

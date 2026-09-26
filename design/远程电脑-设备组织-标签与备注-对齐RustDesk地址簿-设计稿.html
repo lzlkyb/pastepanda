@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 设备组织（标签/备注）对齐 RustDesk 地址簿 · 设计稿</title>
+<style>
+  :root {
+    --card-bg:#fff; --text-primary:#1c1f23; --text-secondary:#5f6b76; --text-muted:#8a949e;
+    --accent:#3b6ff6; --accent-light:#e8efff; --success:#1ea662; --success-bg:#e3f5ec;
+    --danger:#c2413a; --danger-bg:#fdecec; --warning:#d97706; --hover:#f2f4f6;
+    --border-color:#e3e6ea; --section-bg:#f6f7f8; --shadow-sm:0 1px 2px rgba(16,24,40,.06);
+    --t-red:#e5484d; --t-amber:#f5a623; --t-green:#30a46c; --t-cyan:#3e9fb8; --t-blue:#3b6ff6; --t-violet:#8e4ec6;
+  }
+  *{box-sizing:border-box} body{margin:0;padding:24px;background:#eef1f4;color:var(--text-primary);font:13px/1.5 "SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,sans-serif}
+  h1{font-size:18px;margin:0 0 4px}.sub{color:var(--text-secondary);font-size:12px;margin-bottom:20px;max-width:900px}
+  .grid{display:grid;grid-template-columns:340px 1fr 320px;gap:20px;align-items:start;max-width:1220px}
+  .col h2{font-size:13px;margin:0 0 2px}.col .note{font-size:12px;color:var(--text-muted);margin-bottom:10px}
+  .panel{background:var(--section-bg);border:1px solid var(--border-color);border-radius:12px;padding:12px}
+
+  /* —— 侧栏（真实结构复用设备行对齐稿）—— */
+  .titleRow{display:flex;align-items:center;gap:8px;margin-bottom:8px}.titleRow h3{flex:1;margin:0;font-size:15px;font-weight:600}
+  .ghostBtn{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:0 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--card-bg);font:inherit;font-size:12px}
+  .iconBtn{width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:6px;background:var(--accent-light);color:var(--accent)}
+  .group{display:flex;align-items:center;gap:6px;padding:6px 4px 4px 2px;color:var(--text-muted);font-size:11px;font-weight:700}
+  .item{position:relative;min-height:48px;margin-bottom:4px;padding:4px;background:var(--card-bg);border:1px solid transparent;border-radius:8px;box-shadow:var(--shadow-sm)}
+  .row{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:9px;padding:4px}
+  .ava{position:relative;width:34px;height:34px;display:grid;place-items:center;border-radius:8px;background:var(--hover);color:var(--text-secondary)}
+  .ava::after{content:"";position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;border:2px solid var(--card-bg);border-radius:50%;background:var(--success)}
+  .name{font-size:13px;font-weight:600}.st{display:block;margin-top:1px;color:var(--text-muted);font-size:12px}
+  /* RustDesk TagPainter 对应物：右上角色点堆，不占文字位 */
+  .tagDots{position:absolute;top:2px;right:4px;display:inline-flex;gap:2px}
+  .tagDots i{width:6px;height:6px;border-radius:50%}
+  /* 标签筛选行：只有存在带标签设备时出现 */
+  .filterRow{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 8px}
+  .fchip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);cursor:pointer}
+  .fchip i{width:6px;height:6px;border-radius:50%}
+  .fchip.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+
+  /* —— 右列：详情 hero 的标签编辑 —— */
+  .heroBox{background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;padding:16px}
+  .heroHead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .heroHead .ava{width:40px;height:40px}
+  .heroHead b{font-size:15px}
+  .facts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .fact{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--hover);color:var(--text-secondary)}
+  .editor{border:1px dashed var(--border-color);border-radius:8px;padding:10px;margin-top:10px}
+  .editor .lb{font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px}
+  .swatches{display:flex;gap:6px;margin:6px 0}
+  .sw{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer}
+  .sw.on{border-color:var(--text-primary)}
+  .tagList{display:flex;gap:6px;flex-wrap:wrap}
+  .tagItem{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 8px;border-radius:999px;background:var(--hover)}
+  .tagItem i{width:7px;height:7px;border-radius:50%}
+  .noteInput{width:100%;padding:6px 8px;font:inherit;font-size:12px;border:1px solid var(--border-color);border-radius:8px}
+  .legend{max-width:1220px;margin-top:20px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;padding:14px 16px;font-size:12px;color:var(--text-secondary)}
+  .legend b{color:var(--text-primary)}.legend li{margin:4px 0}
+  .todo{color:var(--warning)}
+</style>
+</head>
+<body>
+<h1>设备组织：标签（彩色圆点）+ 备注 —— 对齐 RustDesk 地址簿</h1>
+<div class="sub">对标依据：RustDesk <code>peer_card.dart</code>——标签不放文字，取前若干颜色画成角上小圆点堆（TagPainter），悬停 Tooltip 显示「Tags: a, b, c」；备注同行截断 + Tooltip。搜索/筛选分离：放大镜管名字，标签片管分类。</div>
+
+<div class="grid">
+  <div class="col panel">
+    <h2>侧栏 · 带标签的设备行</h2>
+    <div class="note">色点堆挂卡片右上角；行上依旧只有 状态一句话（上一稿不动）。</div>
+    <div class="titleRow"><h3>我的设备</h3><span class="iconBtn">🔍</span><span class="ghostBtn">＋ 添加设备</span></div>
+    <div class="filterRow">
+      <span class="fchip on"><i style="background:var(--t-blue)"></i>家用</span>
+      <span class="fchip"><i style="background:var(--t-green)"></i>公司</span>
+      <span class="fchip"><i style="background:var(--t-amber)"></i>装机</span>
+    </div>
+    <div class="group">在线 <span>2</span></div>
+    <div class="item">
+      <span class="tagDots"><i style="background:var(--t-blue)"></i><i style="background:var(--t-green)"></i></span>
+      <div class="row"><span class="ava">🖥</span>
+        <span><span class="name">办公室工作站</span><span class="st" title="备注：双 4K，走中继较卡 · 标签：家用、公司 · 将以「可控」连接">刚刚可连接</span></span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="tagDots"><i style="background:var(--t-green)"></i></span>
+      <div class="row"><span class="ava">🖥</span>
+        <span><span class="name">公司笔记本</span><span class="st">最近在线 · 未实测</span></span>
+      </div>
+    </div>
+    <div class="group">不在线 <span>1</span></div>
+    <div class="item">
+      <div class="row"><span class="ava" style="background:var(--hover)">🖥</span>
+        <span><span class="name">旧台式机</span><span class="st">暂时连不上</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="col heroBox">
+    <h2>详情面 · 「管理此设备」里的标签与备注编辑</h2>
+    <div class="note">复用现有管理面板的位置；颜色只从 6 色语义调色板取（不许自定义 hex，保 U6/主题适配）。</div>
+    <div class="heroHead"><span class="ava">🖥</span><b>办公室工作站</b>
+      <span class="tagList"><span class="tagItem"><i style="background:var(--t-blue)"></i>家用</span><span class="tagItem"><i style="background:var(--t-green)"></i>公司</span></span>
+    </div>
+    <div class="facts"><span class="fact">局域网直连</span><span class="fact">上次 3 天前</span><span class="fact">免确认已开启</span></div>
+    <div class="editor">
+      <div class="lb">编辑标签</div>
+      <input class="noteInput" placeholder="输入标签名，回车创建（最多 6 个，超出不显示）" />
+      <div class="swatches">
+        <span class="sw" style="background:var(--t-red)"></span><span class="sw" style="background:var(--t-amber)"></span>
+        <span class="sw" style="background:var(--t-green)"></span><span class="sw" style="background:var(--t-cyan)"></span>
+        <span class="sw on" style="background:var(--t-blue)"></span><span class="sw" style="background:var(--t-violet)"></span>
+      </div>
+      <div class="lb" style="margin-top:10px">备注（仅自己可见，悬停/详情显示）</div>
+      <input class="noteInput" value="双 4K，走中继较卡" />
+    </div>
+  </div>
+
+  <div class="col">
+    <h2 class="panel" style="padding:12px">筛选行为</h2>
+    <div class="panel" style="margin-top:8px">
+      <div class="note" style="margin-bottom:6px">点「家用」= 只显示含该标签的行；组名与计数跟着变；再点取消。</div>
+      <div class="group">在线 <span>1</span></div>
+      <div class="item"><span class="tagDots"><i style="background:var(--t-blue)"></i></span>
+        <div class="row"><span class="ava">🖥</span><span><span class="name">办公室工作站</span><span class="st">刚刚可连接</span></span></div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);padding:6px 4px">没有匹配的设备时沿用「没有匹配…」空态（与搜索同一口径）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <b>落地要点（确认后实现）</b>
+  <ul>
+    <li>数据：标签/备注是<b>本机私产</b>——存 rcStore 设备记录（backend 加 tags/note 字段，随 targets 持久化），<span class="todo">需要一条 Rust 命令改动</span>。</li>
+    <li>不变式：设备行「每行最多两段文字」不动，标签只走<b>色点</b>；Tooltip 汇总 备注+标签+档位（沿用上一稿的 tip 拼接函数）。</li>
+    <li>与行业差异：不做 RustDesk 的共享地址簿/设备级密码（需要服务器体系），只做本地组织——量级匹配（个人 ~20 台）。</li>
+    <li>成本：中。UI 三个触点（行、hero 编辑、筛选片）+ 后端两个字段 + 守卫测试（6 色板必须是主题令牌衍生，走 lint:ui V3）。</li>
+  </ul>
+</div>
+</body>
+</html>

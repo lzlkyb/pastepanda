@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>待办灵动岛 · 设置页配色一致 · 设计稿</title>
+<style>
+  /* 令牌取自 src/styles/theme.css（ocean 亮色档），与真实设置页同源 */
+  :root{
+    --card-bg:#fff; --text-primary:#0f172a; --text-secondary:#334155; --text-muted:#627083;
+    --border-color:#e0e4eb; --accent:#0284c7; --hover:#e8ecf2;
+    --ic-brand:linear-gradient(135deg,#93c5fd 0%,#3b82f6 45%,#6366f1 100%);
+    --ic-editor:linear-gradient(135deg,#a5b4fc 0%,#6366f1 45%,#4f46e5 100%);
+    --ic-privacy:linear-gradient(135deg,#fb7185 0%,#f43f5e 45%,#e11d48 100%);
+    --ic-save:linear-gradient(135deg,#34d399 0%,#10b981 45%,#059669 100%);
+    --ic-sync:linear-gradient(135deg,#22d3ee 0%,#06b6d4 45%,#0891b2 100%);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 32px 60px;background:#f1f5f9;color:var(--text-primary);
+       font:13px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  h1{font-size:20px;margin:0 0 6px}
+  h2{font-size:16px;margin:34px 0 4px;padding-top:18px;border-top:1px solid #cbd5e1}
+  h3{font-size:13px;margin:18px 0 6px;color:var(--text-secondary)}
+  p{margin:6px 0;color:var(--text-secondary);max-width:960px}
+  code{background:#e2e8f0;padding:1px 5px;border-radius:4px;font-size:12px}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:2px}
+  .tagNow{background:#fee2e2;color:#991b1b}
+  .tagRec{background:#dcfce7;color:#166534}
+  .tagAlt{background:#e0e7ff;color:#3730a3}
+  .panel{background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;
+         padding:14px;margin:10px 0;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+
+  /* ===== 侧栏复刻（Settings.module.css .settingsNavItem / .settingsNavIcon）===== */
+  .nav{width:190px;flex-shrink:0;border:1px solid var(--border-color);border-radius:10px;overflow:hidden;background:var(--card-bg)}
+  .navItem{display:flex;align-items:center;gap:8px;padding:9px 14px;font-size:12.5px;color:var(--text-primary);border-left:3px solid transparent}
+  .navItem.on{background:rgba(2,132,199,.10);color:var(--accent);font-weight:600;border-left-color:var(--accent)}
+  .navIcon{font-size:14px;flex-shrink:0;width:16px;text-align:center}
+
+  /* ===== 分区行复刻（.sRow / .sRowIcon / .sRowIconGlyph）===== */
+  .rows{flex:1;min-width:520px}
+  .sSection{font-size:13px;font-weight:600;color:var(--text-muted);padding:10px 12px;background:#f8fafc;border-radius:8px;margin-bottom:8px}
+  .sRow{display:flex;align-items:center;gap:12px;padding:12px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;margin-bottom:8px}
+  .tile{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 3px rgba(15,23,42,.10)}
+  .glyph{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 1px 2px rgba(15,23,42,.14);
+         display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;flex-shrink:0}
+  .tBrand{background:var(--ic-brand)} .tEditor{background:var(--ic-editor)} .tPrivacy{background:var(--ic-privacy)}
+  .tSave{background:var(--ic-save)} .tSync{background:var(--ic-sync)}
+  .rowBody{flex:1;min-width:0}
+  .rowLabel{font-size:13px;font-weight:600}
+  .rowDesc{font-size:11.5px;color:var(--text-muted)}
+
+  /* ===== 档位 chip（Island.module.css .chip / .chipMini）===== */
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{width:118px;padding:7px;text-align:center;background:var(--card-bg);border:1px solid var(--border-color);
+        border-radius:8px;transition:border-color .15s}
+  .chipSel{border:2px solid var(--accent);padding:6px;box-shadow:0 0 0 3px rgba(2,132,199,.12)}
+  .chipMini{height:22px;margin-bottom:8px;border-radius:999px;display:flex;align-items:center;padding:0 8px;font-size:11px}
+  .chipName{font-size:12px;font-weight:600}
+  .chipSub{font-size:11px;color:var(--text-muted)}
+
+  /* 现款：白卡上直接摆四颗不同 α 的黑胶囊 */
+  .mClear{background:rgba(20,20,24,.30)} .mFrost{background:rgba(20,20,24,.78)}
+  .mSteady{background:rgba(20,20,24,.90)} .mDark{background:rgba(17,17,20,.92)}
+
+  /* 甲：彩色底衬 + 真胶囊浮在上面 */
+  .stage{height:38px;margin:-1px -1px 8px;border-radius:7px;overflow:hidden;position:relative;
+         background:linear-gradient(118deg,#f472b6 0%,#fb923c 26%,#fbbf24 48%,#34d399 72%,#38bdf8 100%)}
+  .stage::after{content:"";position:absolute;inset:0;
+         background:repeating-linear-gradient(90deg,rgba(255,255,255,.22) 0 10px,transparent 10px 22px)}
+  .stagePill{position:absolute;left:9px;right:9px;top:8px;height:22px;border-radius:999px;
+             display:flex;align-items:center;padding:0 8px;font-size:11px;color:#fff;
+             box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+  .chipA{padding-top:1px}
+
+  /* 乙：色相编码胶囊 */
+  .hClear{background:rgba(56,189,248,.55)} .hFrost{background:linear-gradient(135deg,#a5b4fc,#6366f1)}
+  .hSteady{background:linear-gradient(135deg,#c4b5fd,#7c3aed)} .hDark{background:linear-gradient(135deg,#64748b,#334155)}
+
+  .note{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:12px;color:#78350f;max-width:960px}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:960px}
+  .cell{background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:12px}
+  .cap{font-size:11px;color:var(--text-muted);margin-top:6px}
+  table{border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{border:1px solid var(--border-color);padding:6px 10px;text-align:left}
+  th{background:#f8fafc;font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>设置页「灵动岛」配色一致 · 设计稿</h1>
+<p>2026-09-26。用户实拍指出两处黑白异类：<b>①左菜单「灵动岛」图标是黑白的</b>，其余十项都是彩色 emoji；<b>②「液态玻璃档位」四张预览卡是黑底</b>，与设置页整体彩色语言不搭。本稿只谈视觉，不改交互。</p>
+
+<div class="note">
+  <b>请先用浏览器打开本文件看真值。</b>WebView2 = Chromium，与本机 Edge 同一套字体回退，所以这份稿子里哪个图标是黑的、哪个是彩的，和 App 里看到的一致 —— 这一点不用猜，眼睛扫一遍 §1 的对照表就能定。
+</div>
+
+<h2>§1 根因：不是配色选错了，是字形没拿到彩色版</h2>
+<p>侧栏图标是<b>裸 emoji 字符</b>（<code>sections/meta.ts</code> 的 <code>icon:</code>），CSS 只给了 <code>font-size:14px</code>，没有任何着色。Windows 的 Segoe UI Emoji 对<b>没有 U+FE0F（emoji presentation selector）的码位</b>会走「文本呈现」——渲染成单色字形，跟旁边带 VS16 的 <code>⚙️ ️ 🖥️</code> 一比就成黑白。</p>
+<table>
+  <tr><th>码位</th><th>写法</th><th>本机实际</th><th>修法</th></tr>
+  <tr><td>U+1F3DD</td><td><code>🏝</code>（现状，无 VS16）</td><td><span class="navIcon">🏝</span> 单色</td><td>补 <code>🏝️</code> → <span class="navIcon">🏝️</span></td></tr>
+  <tr><td>U+2195</td><td><code>↕</code>（现状）</td><td><span class="navIcon">↕</span> 单色</td><td>补 VS16 <b>其实有效</b>（实测 chroma 239，本稿此处判断错了），但箭头彩色版语义仍不如日历清楚 → 换 <code>🗓️</code></td></tr>
+  <tr><td>U+23F1</td><td><code>⏱</code>（现状）</td><td><span class="navIcon">⏱</span> 单色</td><td>补 <code>⏱️</code> → <span class="navIcon">⏱️</span>（同坑，顺手一起修）</td></tr>
+</table>
+<p>同类待扫的存量：<code>✂  📄  👁  🪟  🔁 📌  📝  🧩 </code> —— 本次只动「灵动岛」分区，其余要不要一起扫由你定（一次 <code>grep</code> 就能列全）。</p>
+
+<h2>§2 侧栏图标：三个候选</h2>
+<div class="grid">
+  <div class="cell">
+    <div class="cap">A · 原字形补 VS16（最小改动）</div>
+    <div class="nav" style="width:auto">
+      <div class="navItem"><span class="navIcon">📊</span>数据统计</div>
+      <div class="navItem on"><span class="navIcon">🏝️</span>灵动岛</div>
+      <div class="navItem"><span class="navIcon">🌐</span>剪贴板同步</div>
+    </div>
+    <div class="cap">改一个字符。语义仍是「岛」，与分区名逐字对得上。风险：Segoe 的彩色岛是三座小沙丘，缩到 14px 辨识度一般。</div>
+  </div>
+  <div class="cell">
+    <div class="cap">B · 换成辨识度更高的彩色 emoji <span class="tag tagRec">推荐</span></div>
+    <div class="nav" style="width:auto">
+      <div class="navItem"><span class="navIcon">📊</span>数据统计</div>
+      <div class="navItem on"><span class="navIcon">🏖️</span>灵动岛</div>
+      <div class="navItem"><span class="navIcon">🌐</span>剪贴板同步</div>
+    </div>
+    <div class="cap">候选四个，都在下面 §2b 摆了一排，请挑一个。都是彩色、都跟「岛/顶部/胶囊」不冲突。</div>
+  </div>
+</div>
+<h3>§2b 候选并排（14px 实际尺寸）</h3>
+<div class="panel" style="gap:22px;font-size:14px">
+  <span>🏝 现款</span><span>🏝️ 补 VS16</span><span>🏖️ 海滩</span><span>🧊 冰块</span><span>🫧 气泡</span><span>🌅 日出</span><span>🛰️ 卫星</span>
+</div>
+<p>C 方案（改用 lucide 线性图标）<span class="tag tagAlt">不推荐</span>：左菜单十一项全是 emoji，单换一项成线条图标是<b>另一种不一致</b>，而且 lucide 靠 <code>currentColor</code> 着色，选中态会变蓝、未选中态是灰 —— 依然没有彩色。</p>
+
+<h2>§3 分区行图标</h2>
+<div class="rows">
+  <div class="sRow">
+    <div class="tile tBrand"><div class="glyph">🏝️</div></div>
+    <div class="rowBody"><div class="rowLabel">启用灵动岛</div><div class="rowDesc">图标跟随 §2 的选定结果</div></div>
+  </div>
+  <div class="sRow">
+    <div class="tile tSync"><div class="glyph">🗓️</div></div>
+    <div class="rowBody"><div class="rowLabel">到期优先排序（候选 1：🗓️ 日历）</div><div class="rowDesc">「到期」这个语义最贴，彩色</div></div>
+  </div>
+  <div class="sRow">
+    <div class="tile tSync"><div class="glyph">⏰</div></div>
+    <div class="rowBody"><div class="rowLabel">到期优先排序（候选 2：⏰ 闹钟）</div><div class="rowDesc">偏「提醒」，与上一行 🔔 到点提醒语义撞车</div></div>
+  </div>
+  <div class="sRow">
+    <div class="tile tSync"><div class="glyph">🔀</div></div>
+    <div class="rowBody"><div class="rowLabel">到期优先排序（候选 3：🔀 交叉箭头）</div><div class="rowDesc">保住「排序」原意，彩色，但不体现「到期」</div></div>
+  </div>
+</div>
+
+<h2>§4 玻璃档位预览：三方案</h2>
+<p>现款四张卡是「白卡 + 四颗不同透明度的黑胶囊」，设计意图是<b>如实复刻岛面材质</b>（<code>Island.module.css</code> 的 <code>.mini*</code> 与 <code>TodoIsland.module.css</code> 的四档 tint 同源同值）。黑白正是这份诚实的副产品 —— 岛本来就是近黑的。</p>
+
+<h3>甲 · 彩色底衬 + 真胶囊浮在上面 <span class="tag tagRec">推荐</span></h3>
+<div class="panel">
+  <div class="chips">
+    <div class="chip chipA"><div class="stage"><div class="stagePill mClear">今天 3 件</div></div><div class="chipName">清透 · 观感</div><div class="chipSub">最像液态玻璃 · 深背景字虚</div></div>
+    <div class="chip chipA chipSel"><div class="stage"><div class="stagePill mFrost">今天 3 件</div></div><div class="chipName">厚磨砂 ⭐</div><div class="chipSub">推荐 · 任何背景都清楚</div></div>
+    <div class="chip chipA"><div class="stage"><div class="stagePill mSteady">今天 3 件</div></div><div class="chipName">稳读</div><div class="chipSub">透光 10% · 远看也清晰</div></div>
+    <div class="chip chipA"><div class="stage"><div class="stagePill mDark">今天 3 件</div></div><div class="chipName">深色</div><div class="chipSub">恒深色 · 最像 Apple 原型</div></div>
+  </div>
+</div>
+<p>四颗胶囊<b>底色一个字都不改</b>（还是那四个 rgba），只是在它们背后铺一条彩色渐变当「桌面」。于是：卡片变彩色的同时，四档的<b>差别第一次真的看得出来</b> —— 现款摆在白卡上，<code>.30</code> 和 <code>.78</code> 的差别被白底吃掉大半，这本身就是原设计的表达缺陷。代价：每张卡多一层渐变背景（静态，无动画，不进常驻开销）。</p>
+
+<h3>乙 · 色相编码胶囊</h3>
+<div class="panel">
+  <div class="chips">
+    <div class="chip"><div class="chipMini hClear">今天 3 件</div><div class="chipName">清透 · 观感</div><div class="chipSub">最像液态玻璃 · 深背景字虚</div></div>
+    <div class="chip chipSel"><div class="chipMini hFrost">今天 3 件</div><div class="chipName">厚磨砂 ⭐</div><div class="chipSub">推荐 · 任何背景都清楚</div></div>
+    <div class="chip"><div class="chipMini hSteady">今天 3 件</div><div class="chipName">稳读</div><div class="chipSub">透光 10% · 远看也清晰</div></div>
+    <div class="chip"><div class="chipMini hDark">今天 3 件</div><div class="chipName">深色</div><div class="chipSub">恒深色 · 最像 Apple 原型</div></div>
+  </div>
+</div>
+<p>最彩色、改动最小（只换 <code>.mini*</code> 四个底色）。但<b>预览成了假的</b>：岛面没有青/靛/紫，用户按这张图选完档，看到的仍是一颗黑胶囊 —— 违反 UI 规则 V7「设计示意色必须真实」，也和规则 12 的初衷相反。<b>不建议</b>，除非同时把档位名改成与颜色无关的说法。</p>
+
+<h3>丙 · 整行删掉</h3>
+<p>路线一（实体材质精修）已经拍板：<b>Windows 上胶囊形状与真系统玻璃互斥</b>，四档的差别只是「岛体透多少」。若按前一轮「背景半透去掉」的口径把岛做成不透，四档就<b>没有任何可感知区别</b>，留着是一列装饰开关 —— 那才是真正的不一致。删的话连带清 7 处站点（岛 CSS 四档覆写块 / <code>todoisland-main.tsx</code> 的 <code>applyIslandGlass</code> 与两处 invoke / <code>appStore.ts:142,449</code> / <code>IslandSection.tsx:16,19-24,62-86</code> / <code>Island.module.css:105,108-118</code> / <code>todo_island.rs</code> 注释）。</p>
+
+<h2>§5 落地记录（2026-09-26，按推荐全选：B / 🗓️ / 甲 / 全库扫）</h2>
+<p>用 App 真实字体栈（<code>globals.css:24</code> 里没有 Segoe UI Emoji）在浏览器 canvas 上逐字测 chroma，结果与 §1 的推测有一处不符：<b><code>↕</code> 补 VS16 其实能拿到彩色版</b>（chroma 239），只是仍换成语义更贴的 <code>🗓️</code>。真正补不出彩色的只有两个码位：<code>🫧</code> 与 <code>🛟</code>（chroma 恒 0，Segoe 无彩色字形），前者落选、后者（「保护常用内容」行）换成 <code>💎</code>。</p>
+<p>一并补了 VS16 的存量（左列 → 右列）：<code>🏝</code>→<code>🏖️</code>（侧栏 + 分区行）、<code>ℹ</code>→<code>ℹ️</code>（关于）、<code>✂</code>→<code>✂️</code>、<code>🛡</code>→<code>🛡️</code>、<code>⏱</code>→<code>⏱️</code>（两处）、<code>👁</code>→<code>👁️</code>；<code>🩷</code>→<code>💖</code>（樱花主题下的 MCP，原字形无彩色版）。规则写进 <code>sections/meta.ts</code> 头部注释。</p>
+
+<h2>§6 拍板点（已按推荐拍定，见 §5）</h2>
+<table>
+  <tr><th>#</th><th>选项</th><th>建议</th></tr>
+  <tr><td>1</td><td>侧栏图标：A 补 VS16 / B 换字形（§2b 里挑一个）</td><td>B，<code>🏖️</code>；A 的三座沙丘在 14px 太糊</td></tr>
+  <tr><td>2</td><td>「到期优先排序」行图标：🗓️ / ⏰ / 🔀</td><td>🗓️</td></tr>
+  <tr><td>3</td><td>档位预览：甲 彩色底衬 / 乙 色相胶囊 / 丙 删整行</td><td>若岛仍保留半透 → 甲；若已定死不透 → 丙</td></tr>
+  <tr><td>4</td><td>要不要顺手扫全库其它缺 VS16 的图标（⏱  🛡  …）</td><td>建议扫，一次改完，不然下次又冒出黑白行</td></tr>
+</table>
+
+</body>
+</html>

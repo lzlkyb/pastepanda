@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑 · 会话中质量读数与趋势图 · 对齐 AnyDesk / TeamViewer · 设计稿</title>
+<style>
+  /* 本稿只为演示，令牌值抄自 src/index.css :root 与 RemoteComputer.module.css 真实类 */
+  :root {
+    --bg: #0f1117; --panel: #171a23; --panel-2: #1d212d;
+    --line: rgba(255,255,255,.08); --text: #e6e8f0; --muted: #9aa1b5;
+    --accent: #6c7bff; --cyan: #35d0ff;
+    --success: #34c77b; --success-bg: rgba(52,199,123,.14);
+    --warn: #e8a33d; --warn-bg: rgba(232,163,61,.16);
+    --danger: #f0564f; --danger-bg: rgba(240,86,79,.16);
+    --ok: #34c77b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; padding: 32px 40px 80px; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  h2 { font-size: 15px; margin: 36px 0 12px; color: var(--cyan); }
+  .lead { color: var(--muted); max-width: 860px; }
+  .demo { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 14px 0; }
+  .caption { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  ol, ul { padding-left: 22px; } li { margin: 4px 0; }
+  .tag { display: inline-block; font-size: 12px; border-radius: 4px; padding: 1px 8px; margin-right: 6px; }
+  .tag.before { background: var(--panel-2); color: var(--muted); }
+  .tag.after { background: var(--success-bg); color: var(--success); }
+
+  /* ====== 真实胶囊结构复刻（RcSessionCapsule：深色玻璃条 + 动作段） ====== */
+  .capsule {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(23,26,35,.86); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 12px; padding: 5px 8px;
+  }
+  .capName { font-weight: 600; padding: 0 4px; }
+  .capSep { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
+  .capBtn {
+    width: 26px; height: 26px; border-radius: 8px; border: 1px solid transparent;
+    background: transparent; color: var(--muted); display: inline-grid; place-items: center; cursor: pointer; font-size: 13px;
+  }
+  /* 新增：常驻质量读数（对齐 AnyDesk 顶栏常驻 fps/延迟） */
+  .qualityChip {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 26px; padding: 0 9px; border-radius: 8px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text);
+    cursor: default;
+  }
+  .qualityChip .qDot { width: 6px; height: 6px; border-radius: 50%; }
+  .qualityChip.ok .qDot { background: var(--success); }
+  .qualityChip.warn .qDot { background: var(--warn); }
+  .qualityChip.bad .qDot { background: var(--danger); }
+  .qualityChip.warn { border-color: rgba(232,163,61,.35); }
+  .sparkWrap { width: 100%; }
+
+  /* ====== RcHud 面板（真实类：hudPanel / hudRow / hudRowLabel / hudRowVal / hudRowHint） ====== */
+  .hudPanel {
+    width: 320px; background: rgba(23,26,35,.95); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 12px;
+  }
+  .hudPanelHead { font-weight: 600; padding: 2px 0 8px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+  .hudRow { display: grid; grid-template-columns: 44px 1fr; gap: 8px; padding: 3px 0; align-items: baseline; }
+  .hudRowLabel { color: var(--muted); }
+  .hudRowVal { font-variant-numeric: tabular-nums; }
+  .hudOk { color: var(--success); } .hudWarn { color: var(--warn); } .hudBad { color: var(--danger); }
+  .hudRowHint { grid-column: 2; color: var(--muted); font-size: 11px; }
+  .trendCard { margin: 8px 0 4px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel-2); }
+  .trendHead { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  svg text { font-size: 10px; fill: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>会话中面板对齐：常驻质量读数 + 延迟趋势图</h1>
+<p class="lead">对标 AnyDesk（顶栏常驻 fps/延迟读数）与 TeamViewer（「查看」菜单只切档、<b>无任何实时图</b>）。
+盘点结论：我们的遥测数据<b>全齐但藏在 i 图标后</b>，切屏（monitor:N）已落地——真缺口只有两个：
+① 胶囊上一个<b>常驻质量读数</b>；② RcHud 面板里一条<b>延迟趋势线</b>（这项是超出对齐，业界没有）。</p>
+
+<h2>一、现状 vs 目标（会话胶囊）</h2>
+<div class="demo">
+  <span class="tag before">现状</span><br><br>
+  <div class="capsule">
+    <span class="capName">工作电脑</span>
+    <span class="capSep"></span>
+    <button class="capBtn" title="画面">🖥</button>
+    <button class="capBtn" title="文件">📁</button>
+    <button class="capBtn" title="键盘">⌨</button>
+    <button class="capBtn" title="结束">✕</button>
+    <span class="capSep"></span>
+    <button class="capBtn" title="连接详情">ⓘ</button>
+  </div>
+  <div class="caption">链路好坏只能靠「点开 ⓘ → 扫一遍面板」，或等 <code>RcSessionTop</code> 的红/橙灯。日常无感。</div>
+
+  <br><span class="tag after">目标</span><br><br>
+  <div class="capsule">
+    <span class="capName">工作电脑</span>
+    <span class="qualityChip ok"><span class="qDot"></span>28ms · 60fps</span>
+    <span class="capSep"></span>
+    <button class="capBtn" title="画面">🖥</button>
+    <button class="capBtn" title="文件">📁</button>
+    <button class="capBtn" title="键盘">⌨</button>
+    <button class="capBtn" title="结束">✕</button>
+    <span class="capSep"></span>
+    <button class="capBtn" title="连接详情">ⓘ</button>
+  </div>
+  <div class="caption">
+    读数 = <code>rttMs</code>（EMA 往返）+ <code>fps</code>，数据源与 ⓘ 面板完全同一份（<code>rcSessionStats</code>），零新增采样。<br>
+    劣化态：变橙 <code>112ms · 24fps</code>；失败态由顶条红灯负责，此处不重复播报（诚实性分格口径不变）。<br>
+    hover 出 title：「往返延迟 · 画面帧率，点击展开连接详情」；<b>点击即打开 ⓘ 同一面板</b>（读数本身是 ⓘ 的替身入口，不另造面板）。
+  </div>
+
+  <br><span class="tag after" style="background:var(--warn-bg);color:var(--warn)">劣化态</span><br><br>
+  <div class="capsule">
+    <span class="capName">工作电脑</span>
+    <span class="qualityChip warn"><span class="qDot"></span>112ms · 24fps</span>
+    <span class="capSep"></span>
+    <button class="capBtn">🖥</button><button class="capBtn">📁</button><button class="capBtn">⌨</button><button class="capBtn">✕</button>
+    <span class="capSep"></span><button class="capBtn">ⓘ</button>
+  </div>
+  <div class="caption">阈值沿用 <code>rttGrade()</code> 现成分档（poor → 橙），不新设判定。</div>
+</div>
+
+<h2>二、RcHud 面板新增「近 60 秒趋势」卡（点开 ⓘ 后才出现）</h2>
+<div class="demo">
+  <div class="cols">
+    <div>
+      <div class="hudPanel">
+        <div class="hudPanelHead">连接详情</div>
+        <div class="trendCard sparkWrap">
+          <div class="trendHead"><span>往返延迟 · 近 60s</span><span>min 21 / 当前 28 / max 112 ms</span></div>
+          <svg viewBox="0 0 280 56" width="100%" height="56">
+            <polyline fill="none" stroke="var(--cyan)" stroke-width="1.5"
+              points="0,42 14,40 28,41 42,39 56,40 70,38 84,30 98,22 112,14 126,18 140,26 154,34 168,40 182,41 196,40 210,39 224,40 238,41 252,42 266,41 280,40"/>
+            <line x1="0" y1="52" x2="280" y2="52" stroke="var(--line)"/>
+            <text x="0" y="10">112</text><text x="0" y="52">21</text>
+          </svg>
+          <div class="trendHead" style="margin:2px 0 0"><span>尖峰 = 9s 前一次弱网，已恢复</span></div>
+        </div>
+        <div class="hudRow"><span class="hudRowLabel">编码</span><span class="hudRowVal">H.264 · 60fps</span></div>
+        <div class="hudRow"><span class="hudRowLabel">往返</span><span class="hudRowVal hudOk">~28ms · 流畅</span></div>
+        <div class="hudRow"><span class="hudRowLabel">链路</span><span class="hudRowVal hudOk">正常</span></div>
+        <div class="hudRow"><span class="hudRowLabel">路径</span><span class="hudRowVal">局域网直连</span></div>
+      </div>
+      <div class="caption">趋势卡插在面板头部与既有行之间；既有行一行不动。</div>
+    </div>
+    <div>
+      <b>为什么只做一条线，不做四段堆叠图：</b>
+      <ul>
+        <li>业界零先例（TeamViewer / RustDesk / AnyDesk 均无常驻图）——做「一条最小的线」克制对齐，不炫技。</li>
+        <li>数据源现成：<code>useRcSession</code> 每次 pong 已产生 rtt 样本，前端 ring buffer 存最近 60 个点即可，<b>零后端改动</b>。</li>
+        <li>四段拆解（采集/编码/网络/解码）仍留在原「分段」行里——那是排障视角，趋势是体感视角，不混。</li>
+      </ul>
+      <b>渲染纪律（规则 8）：</b>
+      <ul>
+        <li>SVG polyline，仅面板 <code>open</code> 时挂载并采样；关闭即停——不常驻、不 requestAnimationFrame，面板打开期间 1s 一次 setState（<code>setInterval</code> 随 unmount 清理）。</li>
+        <li>4 窗口乘法不适用：本组件只在会话窗出现。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>三、对标依据</h2>
+<div class="demo">
+  <table style="border-collapse:collapse;width:100%">
+    <tr><th style="text-align:left;padding:6px;border-bottom:1px solid var(--line)">产品</th><th style="text-align:left;padding:6px;border-bottom:1px solid var(--line)">常驻读数</th><th style="text-align:left;padding:6px;border-bottom:1px solid var(--line)">趋势图</th></tr>
+    <tr><td style="padding:6px">AnyDesk</td><td style="padding:6px">顶栏常驻 fps + 延迟</td><td style="padding:6px">无</td></tr>
+    <tr><td style="padding:6px">TeamViewer</td><td style="padding:6px">「查看」菜单内切速度/质量档，无读数</td><td style="padding:6px">无</td></tr>
+    <tr><td style="padding:6px">RustDesk</td><td style="padding:6px"> toolbar 弹层内显示延迟/帧率（点开才见）</td><td style="padding:6px">无</td></tr>
+    <tr><td style="padding:6px"><b>我们（本稿）</b></td><td style="padding:6px">胶囊常驻读数 ← 对齐 AnyDesk，优于 RustDesk</td><td style="padding:6px">面板内 60s 趋势线 → <b>超出业界</b>，故限制在点开可见</td></tr>
+  </table>
+</div>
+
+<h2>四、落地要点</h2>
+<div class="demo"><ol>
+  <li><b>纯前端两文件</b>：<code>RcSessionCapsule.tsx</code> 名字段后插 <code>qualityChip</code>（现成 props 已透传 rtt/fps 到会话视图层）；<code>RcHud.tsx</code> 面板头部插趋势卡 + 一个新 hook <code>lib/rcRttTrend.ts</code>（ring buffer + grade 复用 <code>rttGrade</code>，符合规则 11 收口）。</li>
+  <li><b>组件规模</b>：RcHud 现为 ~230 行，加卡后仍 &lt;300；采样逻辑独立成 hook 不塞组件。</li>
+  <li><b>样式令牌</b>：芯片色只用现有语义变量（success/warn/danger），单色点 + tabular-nums，符合 U6。</li>
+  <li><b>不做的</b>：缩放档位（原始/缩放/最适合，TeamViewer 有）——我们画面自适应已覆盖主诉求，列为候补不做；四段堆叠面积图。</li>
+  <li><b>验证</b>：RcHud.test 补「无样本时趋势卡不出现」；胶囊测试补「rtt=0 时 chip 不渲染，&gt;0 渲染且带 grade 色」。</li>
+</ol></div>
+
+<p class="caption" style="max-width:860px">稿内结构/类名核对自：RcSessionCapsule.tsx（胶囊与 capBtn）、RcHud.tsx（hudPanel/hudRow 系列）、rcSessionStats.ts（rttGrade 分档）、RemoteComputer.module.css（深色玻璃口径）。确认后按此实施。</p>
+
+</body>
+</html>

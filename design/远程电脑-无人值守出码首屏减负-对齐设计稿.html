@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑 · 无人值守出码首屏减负 · 对齐 Chrome Remote Desktop · 设计稿</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --panel-2: #1d212d;
+    --line: rgba(255,255,255,.08); --text: #e6e8f0; --muted: #9aa1b5;
+    --accent: #6c7bff; --cyan: #35d0ff;
+    --success: #34c77b; --success-bg: rgba(52,199,123,.14);
+    --warn: #e8a33d; --warn-bg: rgba(232,163,61,.16);
+    --danger: #f0564f; --danger-bg: rgba(240,86,79,.16);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; padding: 32px 40px 80px; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  h2 { font-size: 15px; margin: 36px 0 12px; color: var(--cyan); }
+  .lead { color: var(--muted); max-width: 860px; }
+  .demo { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 14px 0; }
+  .caption { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  ol, ul { padding-left: 22px; } li { margin: 4px 0; }
+  .tag { display: inline-block; font-size: 12px; border-radius: 4px; padding: 1px 8px; margin-bottom: 12px; }
+  .tag.before { background: var(--panel-2); color: var(--muted); }
+  .tag.after { background: var(--success-bg); color: var(--success); }
+
+  /* ====== 弹层壳（真实：dialog-box 480px + RcUnoDialog 页签） ====== */
+  .dlg { width: 400px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; }
+  .dlgHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .dlgHead b { font-size: 15px; }
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin: 8px 0 12px; }
+  .tab { padding: 5px 10px; font-size: 12px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tab.on { color: var(--text); border-color: var(--cyan); }
+  .credTag { display: inline-block; font-size: 11px; border-radius: 4px; padding: 1px 8px; background: var(--accent); color: #fff; margin-bottom: 8px; }
+  .foot { color: var(--muted); font-size: 12px; margin: 8px 0; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 5px 2px; font-size: 13px; }
+  .row input { accent-color: var(--accent); }
+  .noteWarn { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 6px 10px; font-size: 12px; margin: 8px 0; }
+  .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .btn { border-radius: 8px; padding: 5px 14px; font-size: 13px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer; }
+  .btnPri { border: none; background: linear-gradient(135deg, var(--accent), var(--cyan)); color: #fff; font-weight: 600; }
+  .btnBig { padding: 9px 20px; font-size: 15px; border-radius: 12px; width: 100%; justify-content: center; display: flex; align-items: center; }
+
+  details.adv { border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; background: var(--panel-2); }
+  details.adv summary { padding: 7px 12px; font-size: 12px; color: var(--muted); cursor: pointer; list-style: none; }
+  details.adv summary::before { content: "▸ "; }
+  details.adv[open] summary::before { content: "▾ "; }
+  details.adv .advBody { padding: 2px 12px 10px; border-top: 1px solid var(--line); }
+  .hint { font-size: 11px; color: var(--muted); margin-left: 24px; }
+
+  /* 生成后（不变的那屏，仅示意） */
+  .codeBox { text-align: center; font-size: 26px; letter-spacing: 3px; font-variant-numeric: tabular-nums;
+    background: var(--panel-2); border: 1px dashed var(--cyan); border-radius: 12px; padding: 14px; margin: 10px 0; }
+</style>
+</head>
+
+<body>
+<h1>无人值守出码首屏减负：一键默认 + 高级折叠</h1>
+<p class="lead">对标 Chrome Remote Desktop 的无人值守设置（一台设备一个 PIN，零选项）与 AnyDesk「Accept unattended access」一键语义。
+现状问题：生成前要先做 <b>5 个决定</b>（时效 2 选 1 + 能力 2 选 1 + 免确认勾选），而 90% 的使用场景就是「帮人修一次电脑」——
+默认值已按此设定（15 分钟 · 限 1 次 · 可控），但界面强迫用户逐行扫过才能点按钮。</p>
+
+<h2>一、现状 vs 目标</h2>
+<div class="demo">
+  <div class="cols">
+    <div>
+      <span class="tag before">现状 · 生成前 5 个决策全平铺</span>
+      <div class="dlg">
+        <div class="dlgHead"><b>无人值守</b><span style="color:var(--muted)">✕</span></div>
+        <div class="tabs"><span class="tab on">生成无人值守码</span><span class="tab">有码，直接连</span></div>
+        <span class="credTag">无人值守码</span>
+        <div class="foot">对方不在电脑前也能连：码<b>会过期、可撤销</b>，接入全程有横幅、有记录。</div>
+        <label class="row"><input type="radio" checked>15 分钟 · 限 1 次（默认，帮人修电脑）</label>
+        <label class="row"><input type="radio">24 小时 · 不限次（装机 / 挂机，可随时撤销）</label>
+        <div class="foot">接入后对方可以：</div>
+        <label class="row"><input type="radio" checked>可控（能操作键鼠）</label>
+        <label class="row"><input type="radio">只看画面</label>
+        <label class="row"><input type="checkbox">接入后给这台设备开免确认（下次不用再给码；可随时关）</label>
+        <div class="acts"><button class="btn">返回</button><button class="btn btnPri">生成接入码</button></div>
+      </div>
+      <div class="caption">每一行都要读、都要想；「可控 vs 只看」两行其实默认即答案。</div>
+    </div>
+    <div>
+      <span class="tag after">目标 · 一眼一个按钮</span>
+      <div class="dlg">
+        <div class="dlgHead"><b>无人值守</b><span style="color:var(--muted)">✕</span></div>
+        <div class="tabs"><span class="tab on">生成无人值守码</span><span class="tab">有码，直接连</span></div>
+        <span class="credTag">无人值守码</span>
+        <div class="foot">对方不在电脑前也能连：码<b>会过期、可撤销</b>，接入全程有横幅、有记录。</div>
+        <div class="foot" style="color:var(--text)">将生成：<b>15 分钟 · 用 1 次 · 可控</b>的接入码。</div>
+        <button class="btn btnPri btnBig">生成接入码</button>
+        <details class="adv">
+          <summary>高级：改时效 / 只看画面 / 免确认</summary>
+          <div class="advBody">
+            <label class="row"><input type="radio">15 分钟 · 限 1 次</label>
+            <label class="row"><input type="radio" checked>24 小时 · 不限次（装机 / 挂机）</label>
+            <label class="row"><input type="radio">只看画面（对方不能动键鼠）</label>
+            <label class="row"><input type="checkbox">接入后给这台设备开免确认</label>
+          </div>
+        </details>
+        <div class="acts"><button class="btn">返回</button></div>
+      </div>
+      <div class="caption">默认一句话（加粗、可读、不可点——它就是按钮将要做的承诺）；大按钮一步出码；其余收进折叠区。生成后那屏<b>不改</b>。</div>
+    </div>
+  </div>
+</div>
+
+<h2>二、为什么这样切</h2>
+<div class="demo"><ol>
+  <li><b>「预览默认值」而非「隐藏默认值」</b>：Chrome RD 是零选项（PIN 制），但我们安全语义更多（时效/能力/免确认），全藏会误导——所以把默认值<b>升格成一句加粗承诺</b>放在按钮正上方，规则 17「高频路径一步到位」+ 规则 9「边界透明」的折中。业界完全零选项不适用于「可撤销时效码」这种模型。</li>
+  <li><b>高级区保留全部既有 radio/checkbox</b>：不是砍功能，是换可见性层级。装机/挂机（24h）、代看（只看）、常用搭档（免确认）各归其位。</li>
+  <li><b>未开「允许被远程」的 <code>noteWarn</code> 条位置不变</b>（规则 15：反馈与触发同域），仍在承诺句下方、按钮上方。</li>
+</ol></div>
+
+<h2>三、落地要点</h2>
+<div class="demo"><ol>
+  <li><b>单文件改动</b>：<code>RcUnoGeneratePane.tsx</code>（147 行 → 约 170 行，仍 &lt;300）。state 与 <code>generate()</code> 零改动——只是渲染分层：未折叠时按默认值生成，radio 组原样搬进 <code>&lt;details&gt;</code>。</li>
+  <li><b>样式</b>：新增 <code>.unoDefaultLine</code>（加粗承诺行）与 <code>.unoAdv</code>（details 壳，<code>background: var(--panel-2)</code> 级别、圆角 8、无 backdrop-filter——规则 8.3），大按钮复用 <code>.miniBtnPri</code> 扩一个 <code>.unoBtnBig</code>（padding 9px 20px）。</li>
+  <li><b>键盘可达</b>：<code>&lt;details&gt;</code> 原生可聚焦可展开，不写 JS 开关；符合规则 17「鼠标全流程可达、键盘是加速器」。</li>
+  <li><b>文案审读</b>（改前过 UI 规则 L1–L6）：承诺句「将生成：15 分钟 · 用 1 次 · 可控的接入码。」——句号结尾、无黑话；summary「高级：改时效 / 只看画面 / 免确认」列出内容物而非「更多选项」。</li>
+  <li><b>验证</b>：RcUnoDialog 既有测试改 2 条断言（默认首屏不出现「24 小时」文本 → 改为在 details 内 query）；新增「不展开直接生成 ⇒ payload 为默认三值」。</li>
+</ol></div>
+
+<p class="caption" style="max-width:860px">稿内结构/类名核对自：RcUnoDialog.tsx（页签壳）、RcUnoGeneratePane.tsx（radio/checkbox 原文案、unoRow/unoActs/foot/noteWarn 真实类名）。确认后按此实施。</p>
+</body>
+</html>

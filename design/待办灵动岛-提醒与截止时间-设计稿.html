@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 提醒与截止时间 设计稿（甲案：岛即提醒）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 900px; }
+  .note b { color: #27272a; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  pre { background: #27272a; color: #e4e4e7; font-size: 11.5px; line-height: 1.55; padding: 12px 14px; border-radius: 8px; overflow: auto; margin-bottom: 12px; }
+  pre .c { color: #a1a1aa; }
+
+  /* ===== 观感模拟（3a 稿同款手法） ===== */
+  .scene {
+    position: relative; border-radius: 12px; overflow: hidden;
+    min-height: 190px; border: 1px solid #c9ccd4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background:
+      linear-gradient(105deg, transparent 0 46%, rgba(0,0,0,.65) 50% 54%, transparent 58% 100%),
+      linear-gradient(90deg, #dfe6ee 0 50%, #23262e 50% 100%);
+  }
+  .scene::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.35) 0 26px, rgba(255,255,255,0) 26px 52px) left/50% 100% no-repeat,
+      repeating-linear-gradient(0deg, rgba(80,200,140,.25) 0 26px, rgba(0,0,0,0) 26px 52px) right/50% 100% no-repeat;
+  }
+  .scene .tag { position: absolute; top: 8px; left: 12px; font-size: 11px; color: #52525b; z-index: 3; }
+  .scene .tag2 { position: absolute; top: 8px; right: 12px; font-size: 11px; color: rgba(255,255,255,.6); z-index: 3; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* 胶囊（对齐真实 CSS：inset:0 填窗、999 胶囊、rim/gloss、Acrylic α.78） */
+  .pill {
+    position: relative; z-index: 2; height: 40px; min-width: 260px; padding: 0 15px; border-radius: 999px;
+    display: flex; align-items: center; gap: 8px; font-size: 12px; user-select: none;
+    box-shadow: inset 0 0 0 1px var(--ln), inset 0 1px 0 var(--rim), 0 6px 18px rgba(0,0,0,.25);
+    backdrop-filter: blur(22px) saturate(1.15); -webkit-backdrop-filter: blur(22px) saturate(1.15);
+    background-image: linear-gradient(180deg, var(--gl) 0, rgba(255,255,255,0) 26px);
+  }
+  .pill.dark  { background-color: rgba(20,20,24,.78); color: #f4f4f5; --ln: rgba(255,255,255,.09); --rim: rgba(255,255,255,.18); --gl: rgba(255,255,255,.07); --muted: rgba(244,244,245,.55); --due: #f87171; --acc: #7cc4ff; }
+  .pill.light { background-color: rgba(255,255,255,.78); color: #18181b; --ln: rgba(0,0,0,.08); --rim: rgba(255,255,255,.55); --gl: rgba(255,255,255,.55); --muted: rgba(24,24,27,.55); --due: #dc2626; --acc: #0369a1; }
+  .ring { width: 16px; height: 16px; flex: 0 0 16px; }
+  .dot { width: 3px; height: 3px; border-radius: 99px; background: currentColor; opacity: .4; }
+  .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bell { width: 14px; height: 14px; flex: 0 0 14px; color: var(--due); }
+  /* 提醒态：铃 + 红「到点了」 + 任务文字；数字环退位（信息让位给事件） */
+  .pill.remind { border-color: transparent; }
+
+  /* 展开卡（对齐真实 CSS 结构） */
+  .card {
+    position: relative; z-index: 2; width: 420px; height: 240px;
+    display: flex; flex-direction: column; font-size: 12px; user-select: none; overflow: hidden;
+    border-radius: 8px 8px 12px 12px;
+    backdrop-filter: blur(22px) saturate(1.15); -webkit-backdrop-filter: blur(22px) saturate(1.15);
+    box-shadow: inset 0 0 0 1px var(--ln), inset 0 1px 0 var(--rim), 0 6px 18px rgba(0,0,0,.25);
+    background-image: linear-gradient(180deg, var(--gl) 0, rgba(255,255,255,0) 26px);
+  }
+  .card.dark  { background-color: rgba(20,20,24,.78); color: #f4f4f5; --ln: rgba(255,255,255,.09); --rim: rgba(255,255,255,.18); --gl: rgba(255,255,255,.07); --fill: rgba(255,255,255,.07); --fill-strong: rgba(255,255,255,.14); --muted: rgba(244,244,245,.55); --line: rgba(255,255,255,.09); --due: #f87171; }
+  .card.light { background-color: rgba(255,255,255,.78); color: #18181b; --ln: rgba(0,0,0,.08); --rim: rgba(255,255,255,.55); --gl: rgba(255,255,255,.55); --fill: rgba(0,0,0,.05); --fill-strong: rgba(0,0,0,.10); --muted: rgba(24,24,27,.55); --line: rgba(0,0,0,.08); --due: #dc2626; }
+  .hd { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .hd .title { font-size: 13px; font-weight: 600; }
+  .seg { display: flex; gap: 2px; background: var(--fill); border-radius: 8px; padding: 2px; margin-left: 4px; }
+  .seg span { font-size: 11px; padding: 2px 8px; border-radius: 4px; opacity: .66; }
+  .seg span.on { background: var(--fill-strong); opacity: 1; }
+  .hd .col { margin-left: auto; color: var(--muted); }
+  .ls { flex: 1 1 auto; padding: 8px; display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px; border-radius: 8px; }
+  .tickDot { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid var(--muted); flex: 0 0 16px; }
+  .duechip { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .duechip.over { color: var(--due); font-weight: 600; }
+  .duechip.today { color: var(--acc); }
+  .row .src { font-size: 11px; color: var(--muted); max-width: 88px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foot { flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--line); color: var(--muted); }
+  .foot .ph { flex: 1 1 auto; height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--fill); display: flex; align-items: center; padding: 0 8px; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>待办灵动岛 · 提醒与截止时间 设计稿</h1>
+  <div class="meta">2026-09-25 · 二期第一项 · 已拍板：甲案「岛即提醒」（零新依赖）+ 到期优先排序 · 解析为本地正则（红线 16.4：不联网不花钱，不受 AI 开关约束）</div>
+
+  <h2>一 · 定案总表</h2>
+  <table>
+    <tr><th>项</th><th>定案</th></tr>
+    <tr><td>语法</td><td>任务文字尾部 <code>@时间</code>：<code>@今天 16:00</code> / <code>@明天 9:00</code> / <code>@后天</code> / <code>@9/26 16:00</code> / <code>@2026-09-26 18:00</code>；<b>不写时间 = 全天</b>（只展示「今天到期」，不弹提醒）。岛内展示时剥掉尾巴，笔记正文原样保留</td></tr>
+    <tr><td>提醒通道</td><td><b>甲案</b>：到点 Rust 点亮岛，胶囊切「提醒态」（铃 + 红「到点了」+ 任务文字）；<b>不加通知插件</b></td></tr>
+    <tr><td>提醒时长</td><td>横幅保持 30s 自动回落普通胶囊；期间点击（或勾掉这条）立即结束；同刻只报最紧的一条</td></tr>
+    <tr><td>错过不补</td><td>应用启动时**已过期**的不再弹提醒（避免开机被昨晚的到期轰炸）；只有「应用运行中跨过到期点」才报</td></tr>
+    <tr><td>排序（拍板变更）</td><td>未完成：有截止时间的按到期升序排最前 → 无时间的维持「今天速记 → updated_ms 降序」排后。已完成不变</td></tr>
+    <tr><td>全屏 / 隐藏</td><td>复用现有门：全屏中到点 → 复活轮询在退出后补点亮；不再单独处理</td></tr>
+    <tr><td>明不做（本期）</td><td>重复任务 / 提前量（如提前 5 分钟）/ 系统 toast / AI 自然语言解析（如「每周三」）/ 独立提醒列表</td></tr>
+  </table>
+
+  <h2>二 · 胶囊提醒态（1:1，dark / light）</h2>
+  <div class="note">铃形图标 + 红色「到点了」+ 任务文字（剥掉时间尾巴的展示文案）。<b>数字环退位</b>：提醒是事件，让位——点它仍进列表。材质、形状（候选 6 非对称圆角不影响胶囊）、hover 反馈全部不动；区别只在内容与一个红色元素。</div>
+  <div class="grid2">
+    <div class="scene">
+      <span class="tag">深色岛（ocean-dark / midnight）</span><span class="tag2">提醒态</span>
+      <div class="pill dark">
+        <svg class="bell" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5a3.5 3.5 0 0 0-3.5 3.5c0 3-1.5 4-1.5 4h10s-1.5-1-1.5-4A3.5 3.5 0 0 0 8 2.5z"/><path d="M6.8 12.5a1.3 1.3 0 0 0 2.4 0"/></svg>
+        <span style="color:var(--due);font-weight:600;flex:0 0 auto">到点了</span>
+        <span class="dot"></span>
+        <span class="txt">交报告</span>
+      </div>
+    </div>
+    <div class="scene">
+      <span class="tag">浅色岛（用户当前）</span><span class="tag2">提醒态</span>
+      <div class="pill light">
+        <svg class="bell" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5a3.5 3.5 0 0 0-3.5 3.5c0 3-1.5 4-1.5 4h10s-1.5-1-1.5-4A3.5 3.5 0 0 0 8 2.5z"/><path d="M6.8 12.5a1.3 1.3 0 0 0 2.4 0"/></svg>
+        <span style="color:var(--due);font-weight:600;flex:0 0 auto">到点了</span>
+        <span class="dot"></span>
+        <span class="txt">交报告</span>
+      </div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:12px">普通胶囊（对照，不变）：</div>
+  <div class="grid2">
+    <div class="scene">
+      <span class="tag">深色岛</span><span class="tag2">普通胶囊 · 不变</span>
+      <div class="pill dark">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-linecap="round" stroke-dasharray="28 41" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理会议纪要</span>
+      </div>
+    </div>
+    <div class="scene">
+      <span class="tag">浅色岛</span><span class="tag2">普通胶囊 · 不变</span>
+      <div class="pill light">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(0,0,0,.15)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-dasharray="28 41" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理会议纪要</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>三 · 展开列表：到期 chip（1:1，dark）</h2>
+  <div class="note">行右侧新增时间 chip，来源标题（src）继续显示、宽度让 24px。chip 三态：<b>未来</b>（灰）/<b>今天</b>（蓝，今天的待办最值得盯）/<b>已过期</b>（红 + 加粗）。排序生效后最紧的排最上。全天任务 chip 只有日期没有时间。</div>
+  <div class="scene">
+    <span class="tag">到期优先排序 + chip 三态</span><span class="tag2">深色主题</span>
+    <div class="card dark">
+      <div class="hd"><span class="title">4 项待办</span><span class="seg"><span class="on">进行中</span><span>已完成</span></span><span class="col">︿</span></div>
+      <div class="ls">
+        <div class="row"><span class="tickDot"></span><span class="txt" style="flex:1">交报告</span><span class="duechip over">已过期 · 昨天</span><span class="src">周会记录</span></div>
+        <div class="row"><span class="tickDot"></span><span class="txt" style="flex:1">回邮件给设计部</span><span class="duechip today">今天 16:00</span><span class="src">今天速记</span></div>
+        <div class="row"><span class="tickDot"></span><span class="txt" style="flex:1">买打印机墨盒</span><span class="duechip today">今天到期</span><span class="src">今天速记</span></div>
+        <div class="row"><span class="tickDot"></span><span class="txt" style="flex:1">整理会议纪要</span><span class="duechip">9/28 9:00</span><span class="src">周会记录</span></div>
+      </div>
+      <div class="foot"><span class="ph" style="color:var(--muted)">要做什么？加 @明天 18:00 可到点提醒</span><span style="font-size:11px">回车记下</span></div>
+    </div>
+  </div>
+
+  <h2>四 · 语法教学（L4：在第一次出现的地方解释）</h2>
+  <table>
+    <tr><th>位置</th><th>文案</th><th>教学点</th></tr>
+    <tr><td>「记一条」输入框 placeholder</td><td><code>要做什么？加 @明天 18:00 可到点提醒</code></td><td>首次输入就见语法（上面的卡片已演示）</td></tr>
+    <tr><td>列表空态副文案</td><td>点下方「记一条」加一条，或在笔记里写 - [ ] 待办内容；<b>时间写尾部，如 <code>@今天 18:00</code></b></td><td>空态答「怎么让它出现」时顺带答「怎么让它提醒」</td></tr>
+    <tr><td>笔记正文</td><td>原样保留 <code>- [ ] 交报告 @今天 16:00</code></td><td>不偷改正文——语法在岛内是展示层约定，笔记里人也能读懂</td></tr>
+  </table>
+
+  <h2>五 · 时序与落地账</h2>
+  <pre>
+<span class="c">// 到点时刻（全部复用现有机制，无新窗口/无新探针）</span>
+提醒线程（15s 步进，Rust 常驻）
+  ├─ 首轮：把「启动时已过期」的全部静默记账（错过不补，防开机轰炸）
+  ├─ 扫 IslandStateCache：due_ms ≤ 现在 且 未记账 的最紧一条
+  │    └─ REMIND_ACTIVE 记账 → push_state（注入 dueAlert）+ show()（自带全屏门）
+  ├─ 30s 后：清账 → push_state（干净状态，横幅消失，岛回普通胶囊）
+  └─ 勾掉该条 → 任何写路径的 refresh_island 都会推出干净状态（横幅即时结束）
+
+<span class="c">// 注入收口（规则 #11.1）：</span>
+push_state = 唯一推送出口；REMIND_ACTIVE 还在账上时，push 前把 dueAlert
+重新注入 —— 横幅不会被中途的笔记写入「顺手」顶掉。
+
+<span class="c">// 剥尾巴收口（规则 #11.1）：</span>
+split_due(text) → (展示文字, Option&lt;Due&gt;) 纯函数；
+parse_tasks / apply_toggle 文字比对 / 岛展示 全走它 —— 第 7 个调用点也不会走错。</pre>
+  <table>
+    <tr><th>层</th><th>文件</th><th>改动</th></tr>
+    <tr><td rowspan="2">Rust</td><td><code>todo_tasks.rs</code></td><td><code>split_due</code> 纯解析 + <code>ParsedTask/IslandTask</code> 加 due 字段 + 排序改到期优先 + <code>apply_toggle</code> 比对改剥尾后文字</td></tr>
+    <tr><td><code>todo_island.rs</code></td><td><code>IslandState.dueAlert</code> + <code>REMIND_ACTIVE</code> 账本 + push_state 注入 + 提醒线程（init 里 spawn）</td></tr>
+    <tr><td rowspan="2">前端</td><td><code>TodoIsland.tsx</code> / CSS</td><td>提醒态胶囊（铃 + 到点了 + 文字）；<code>--island-due</code> 令牌两主题两材质兜底</td></tr>
+    <tr><td><code>TodoIslandList.tsx</code> / types.ts</td><td>行内到期 chip 三态；placeholder / 空态文案；types 加 dueMs/dueLabel/dueAlert</td></tr>
+  </table>
+  <table>
+    <tr><th>测试</th><th>内容</th></tr>
+    <tr><td>Rust 单测</td><td>split_due 全格式 + 拒认（中间的 @ 不是尾巴 / 无效日期）；排序到期优先；apply_toggle 带尾巴往返；提醒挑选纯函数（最紧一条 / 已记账不重复）</td></tr>
+    <tr><td>前端测试</td><td>dueAlert 渲染提醒态胶囊；chip 三态 class</td></tr>
+  </table>
+</div>
+</body>
+</html>

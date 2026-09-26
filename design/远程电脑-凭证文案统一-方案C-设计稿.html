@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>远程电脑-凭证文案统一-方案C-设计稿</title>
+<style>
+  /* 令牌对齐 src/theme.css 语义色（设计稿内用近似值，落地一律走 var()） */
+  :root {
+    --app-bg: #f4f6f8; --card-bg: #ffffff; --border-color: #e3e6ea;
+    --text-primary: #1c1f23; --text-secondary: #5f6b76; --text-muted: #8b95a1;
+    --accent: #2f6fed; --accent-light: #e8f0fe; --accent-solid: #2f6fed;
+    --success: #159a4a; --success-bg: #e6f6ec;
+    --warning: #b7791f; --warning-bg: #fdf3e0;
+    --text-on-accent: #fff; --shadow-md: 0 8px 28px rgba(15, 23, 42, .16);
+    --radius-md: 8px; --radius-lg: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #e9edf1; color: var(--text-primary);
+    font: 13px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--text-secondary); margin-bottom: 20px; max-width: 760px; }
+  h2 { font-size: 15px; margin: 28px 0 4px; }
+  .where { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+
+  /* 弹层近似：真实组件是 dialog-backdrop > dialog-box(480px) + dialog-header */
+  .dlg { width: 480px; max-width: 94vw; background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-md); overflow: hidden; }
+  .dlg-head { display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
+  .dlg-head b { font-size: 14px; }
+  .x { color: var(--text-muted); }
+  .dlg-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .foot { color: var(--text-secondary); font-size: 12px; }
+  .note-warn { background: var(--warning-bg); border-radius: var(--radius-md); padding: 10px 12px; font-size: 12px; }
+  textarea, input.txt { width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    padding: 8px; font: 12px/1.5 ui-monospace, Consolas, monospace; background: var(--app-bg); color: var(--text-primary); }
+  .btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .mini { border: 1px solid var(--border-color); background: var(--card-bg); border-radius: 6px;
+    padding: 5px 12px; font-size: 12px; color: var(--text-primary); }
+  .mini-pri { border: 0; background: var(--accent-solid); color: var(--text-on-accent);
+    border-radius: 6px; padding: 5px 12px; font-size: 12px; }
+  .radio-row { display: flex; gap: 16px; font-size: 12px; align-items: center; }
+  .radio { width: 12px; height: 12px; border: 1.5px solid var(--text-muted); border-radius: 50%; display: inline-block;
+    vertical-align: -2px; margin-right: 5px; }
+  .radio.on { border-color: var(--accent); border-width: 4px; }
+
+  /* ★ 本轮新增的唯一视觉件：凭证徽章 .credTag（三档语义色，名字自带寿命） */
+  .cred-tag { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
+    padding: 1px 8px 1px 6px; font-size: 11px; font-weight: 600; line-height: 18px; }
+  .cred-tag i { width: 6px; height: 6px; border-radius: 50%; }
+  .cred-tag[data-tone="pair"]  { color: var(--accent);  background: var(--accent-light); }
+  .cred-tag[data-tone="pair"] i  { background: var(--accent); }
+  .cred-tag[data-tone="help"]  { color: var(--success); background: var(--success-bg); }
+  .cred-tag[data-tone="help"] i  { background: var(--success); }
+  .cred-tag[data-tone="uno"]   { color: var(--warning); background: var(--warning-bg); }
+  .cred-tag[data-tone="uno"] i   { background: var(--warning); }
+
+  /* 图例表 */
+  table { border-collapse: collapse; font-size: 12px; background: var(--card-bg); }
+  th, td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; }
+  th { background: var(--app-bg); font-weight: 600; }
+  del { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<h1>凭证文案统一 · 方案 C（纯文案 + 色标，不改任何流程）</h1>
+<p class="lede">
+  四种凭证在界面上只改两件事：① 名字自带「寿命 + 使用前提」；② 出码/粘码屏挂一枚语义色徽章，
+  让人不用读说明也知道手里拿的是哪种码。生成逻辑、入口、按钮步数全部不动。
+  唯一的徽章色块是新增视觉件，其余全是对现有行内文案的替换。
+</p>
+
+<h2>命名与色标总表</h2>
+<div class="where">落地位置：徽章组件新增于 RemoteComputer.module.css（.credTag，data-tone 三档），各屏复用</div>
+<table>
+  <tr><th>凭证</th><th>旧叫法（源码原文）</th><th>新叫法</th><th>徽章</th><th>副注（跟在徽章后的一句）</th></tr>
+  <tr><td>长期配对</td><td><del>邀请码 / 远程邀请码</del></td><td>长期配对码</td>
+      <td><span class="cred-tag" data-tone="pair"><i></i>长期配对码</span></td>
+      <td>配对一次，以后随时直接连</td></tr>
+  <tr><td>一次性协助</td><td><del>一次性协助码 / 协助码</del></td><td>一次性帮助码</td>
+      <td><span class="cred-tag" data-tone="help"><i></i>一次性帮助码</span></td>
+      <td>双方都要在场，用完自动忘掉</td></tr>
+  <tr><td>无人值守码</td><td><del>无人值守接入码 / <b>一次性接入码</b>（与协助码撞车，元凶）</del></td><td>无人值守码</td>
+      <td><span class="cred-tag" data-tone="uno"><i></i>无人值守码</span></td>
+      <td>对面没人也能连 · 15 分钟或 24 小时</td></tr>
+  <tr><td>固定密码</td><td><del>固定密码（长期挂机的机器）</del></td><td>固定密码</td>
+      <td><span class="cred-tag" data-tone="uno"><i></i>长期值守</span></td>
+      <td>知道密码就能连，请确保密码够强</td></tr>
+</table>
+
+<h2>屏 1 · 远程配对 → 生成码</h2>
+<div class="where">RcPairCreatePane：noteWarn 首句 + 输入框 aria-label + 复制按钮 + toast</div>
+<div class="dlg">
+  <div class="dlg-head"><b>远程配对</b><span class="x">✕</span></div>
+  <div class="dlg-body">
+    <div class="foot">本机指纹（对方核对用） <b>7F2K·Q9XM</b></div>
+    <div><span class="cred-tag" data-tone="pair"><i></i>长期配对码</span>
+      <span class="foot" style="margin-left:6px">配对一次，以后随时直接连</span></div>
+    <div class="note-warn">
+      配对码已生成，发给对方粘贴后，对方那台会弹出确认（带你的指纹）。剩余 <b>23 分 41 秒</b>
+      <textarea rows="2">PPR-9fJ2…（65 位长串）</textarea>
+      <div class="btns" style="margin-top:6px; justify-content:flex-start"><span class="mini">复制配对码</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>屏 2 · 帮助 → 让别人帮我</h2>
+<div class="where">RcAdhocCodePane + RcAdhocDialog 页签名（「让别人帮我」保留不改，它已经是场景词）</div>
+<div class="dlg">
+  <div class="dlg-head"><b>帮助</b><span class="x">✕</span></div>
+  <div class="dlg-body">
+    <div class="foot" style="border-bottom:2px solid var(--accent); display:inline-block; width:fit-content; padding-bottom:4px; color:var(--accent); font-weight:600">让别人帮我</div>
+    <div><span class="cred-tag" data-tone="help"><i></i>一次性帮助码</span>
+      <span class="foot" style="margin-left:6px">双方都要在场，用完自动忘掉</span></div>
+    <div class="note-warn">
+      把这个码给对方。他在自己机器的「帮别人连一次」里粘贴即可，<b>只对这一次有效</b>——结束后不会留在你们的设备列表里。剩余 <b>约 5 分钟</b>
+      <textarea rows="2">PPA-1aB2…</textarea>
+      <div class="btns" style="margin-top:6px; justify-content:flex-start"><span class="mini">复制并发送给对方</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>屏 3 · 无人值守 → 出码（被控端）</h2>
+<div class="where">RcUnoDialog GeneratePane：标题、首段说明、码框 aria-label；「撤销并关闭」等按钮不动</div>
+<div class="dlg">
+  <div class="dlg-head"><b>无人值守码</b><span class="x">✕</span></div>
+  <div class="dlg-body">
+    <div><span class="cred-tag" data-tone="uno"><i></i>无人值守码</span>
+      <span class="foot" style="margin-left:6px">对面没人也能连 · 用完记得撤销</span></div>
+    <div class="foot">对方不在电脑前也能帮你连：生成一个<b>限时接入码</b>，对方粘贴后自动配对并连入。码不落盘，关机即全作废。</div>
+    <div class="radio-row"><span class="radio on"></span>15 分钟 · 限 1 次（默认，帮人修电脑）</div>
+    <div class="radio-row"><span class="radio"></span>24 小时 · 不限次（装机 / 挂机，可随时撤销）</div>
+    <div class="foot">把这个码念给对方（或原样发给对方）：</div>
+    <div style="font: 26px ui-monospace; letter-spacing:2px; text-align:center; border:1px solid var(--border-color); border-radius:10px; padding:12px; background:var(--app-bg)">7K2M-9PQX</div>
+    <div class="foot">对方跨网连接时需要<b>完整码</b>（含设备号，8 位码定位不了机器）：</div>
+    <div class="btns"><span class="mini">复制完整码</span><span class="mini-pri">撤销并关闭</span></div>
+  </div>
+</div>
+
+<h2>屏 4 · 无人值守 → 粘贴直连（发起端）<span style="color:var(--danger)"> ★ 撞车修复处</span></h2>
+<div class="where">RcUnoDialog JoinPane：radio 原文「一次性接入码」→「无人值守码」，「固定密码（长期挂机的机器）」→「固定密码」+ 副注</div>
+<div class="dlg">
+  <div class="dlg-head"><b>有码？直接连</b><span class="x">✕</span></div>
+  <div class="dlg-body">
+    <div class="radio-row" style="flex-direction:column; gap:10px; align-items:flex-start">
+      <div>
+        <span class="radio on"></span><b>无人值守码</b>
+        <span class="cred-tag" data-tone="uno" style="margin-left:6px"><i></i>对面没人</span>
+        <div class="foot" style="margin-left:22px">15 分钟 / 24 小时有效的接入码，对方提前发给你</div>
+      </div>
+      <div>
+        <span class="radio"></span><b>固定密码</b>
+        <span class="cred-tag" data-tone="uno" style="margin-left:6px"><i></i>长期值守</span>
+        <div class="foot" style="margin-left:22px">用于长期挂机的机器（自家服务器 / 出租机）</div>
+      </div>
+    </div>
+    <div class="foot">和「帮别人连一次」的区别：那边收的是<b>一次性帮助码</b>，连的时候对方在场点确认；这里的码是对方不在场时预先给你的。</div>
+    <textarea rows="2" placeholder="粘贴无人值守码（7K2M-9PQX）或完整码（PPU-开头）"></textarea>
+    <div class="btns"><span class="mini">返回</span><span class="mini-pri">连接</span></div>
+  </div>
+</div>
+
+<h2>屏 5 · 收码侧的三处入口，各挂一枚「该收哪种码」提示</h2>
+<div class="where">配对向导粘贴屏（RcPairPastePane placeholder）、帮助页签「帮别人连一次」、侧栏「无人值守 ›」——只改占位与说明文案</div>
+<div class="grid">
+  <div class="dlg" style="width:360px">
+    <div class="dlg-head"><b>远程配对 · 粘贴配对码</b></div>
+    <div class="dlg-body">
+      <span class="cred-tag" data-tone="pair"><i></i>长期配对码</span>
+      <textarea rows="2" placeholder="粘贴对方发来的长期配对码"></textarea>
+    </div>
+  </div>
+  <div class="dlg" style="width:360px">
+    <div class="dlg-head"><b>帮助 · 帮别人连一次</b></div>
+    <div class="dlg-body">
+      <span class="cred-tag" data-tone="help"><i></i>一次性帮助码</span>
+      <textarea rows="2" placeholder="粘贴对方发来的帮助码（对方会当场确认）"></textarea>
+    </div>
+  </div>
+</div>
+
+<p class="lede" style="margin-top:24px">
+  <b>不做的事</b>：不改任何生成/校验/入口逻辑（方案 A/B 不做）；「邀请码」→「配对码」是纯改名，
+  后端仍叫 invite 不影响任何接口；徽章是只读装饰，不进任何判定分支。<br/>
+  <b>落地波及面</b>：RcPairCreatePane / RcPairPastePane / RcPairModeSelect（剪贴板提示句）/
+  RcAdhocCodePane / RcAdhocDialog（底部一行）/ RcUnoDialog（三个 Pane 的标题与 radio）/
+  RemoteComputer.module.css（新增 .credTag 三档）+ 断言原文案的测试同步。预计 7 个 tsx + 1 个 css，全部单行级改动。
+</p>
+</body>
+</html>

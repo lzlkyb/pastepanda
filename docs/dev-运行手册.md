@@ -55,3 +55,29 @@ MSYS_NO_PATHCONV=1 schtasks /delete /tn "PastePandaDev" /f
 | `could not determine executable to run` | 用了裸 `npx tauri dev`，拉到了 registry 上的废弃包 `tauri@0.15.0` | 用 `npm run tauri dev` |
 | `Port 1420 is already in use` | 上次的 Vite 子进程没杀干净 | 见本文第 3 节 |
 | 日志里 `tauri_plugin_updater ... update endpoint did not respond` | dev 下连不上更新服务器 | 无害，忽略 |
+| 卡在 `Building [===>] 910/912` 反复重启、窗口迟迟不出来 | **有别的进程在写 `src-tauri/` 源码**，watcher 每次都在编译收尾时打断重来 | 见 §5 |
+
+## 5. 窗口迟迟不出来：watcher 被打断式重启
+
+`tauri dev` 的 file watcher **不等当前编译结束** —— 只要检测到 `src-tauri/` 下的文件变化，
+立刻杀掉正在跑的编译重新开始。所以只要源码被持续写入，就永远编不完、窗口永远起不来。
+
+**判据**（日志里成对出现且**反复多次**，每次都停在同一个进度点）：
+
+```
+Info File src-tauri\src\... changed. Rebuilding application...
+Running DevCommand (`cargo run --no-default-features --color always --`)
+```
+
+**定位手法** —— `mtime` 是唯一可靠证据，别靠猜（也可能是你另一个会话 / 编辑器自动保存）：
+
+```bash
+find src-tauri/src -type f -newermt "21:10" -printf "%TH:%TM:%TS  %p\n" | sort
+```
+
+2026-09-26 实测：启动后 `data_store/rc_device.rs`（21:11:58 → 21:12:16）、
+`data_store/mod.rs`（21:11:22）、`commands/rc.rs`、`lib.rs` 被连续写入，
+启动从 21:10:45 一直拖到 21:14:19 才完成。
+
+**处理**：等写入停下来即可，watcher 会自动收敛出一次完整编译；**别盲目重启**（只会回到同一个循环）。
+要立刻用，就让写入方先停手（关掉那个编辑中的文件 / 暂停并行会话）。

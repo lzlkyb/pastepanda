@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>设置 · 灵动岛分区 + 液态玻璃四档 设计稿（方案 B 已拍板）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 940px; }
+  .note b { color: #27272a; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #b91c1c; font-weight: 600; }
+  code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+
+  /* ===== 岛的观感模拟（对齐真实 CSS：窗口级 Acrylic = blur + tint，CSS 管高光描边） ===== */
+  .scene {
+    position: relative; border-radius: 12px; overflow: hidden;
+    min-height: 150px; border: 1px solid #c9ccd4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.5) 0 26px, rgba(247,250,252,0) 26px 52px),
+      linear-gradient(90deg, #eef2f7 0 50%, #1b1e26 50% 100%);
+  }
+  .scene.wall {
+    background:
+      radial-gradient(120% 140% at 12% 8%, #38bdf8 0%, rgba(56,189,248,0) 52%),
+      radial-gradient(130% 150% at 88% 90%, #a78bfa 0%, rgba(167,139,250,0) 55%),
+      linear-gradient(120deg, #0ea5e9 0%, #6366f1 48%, #d946ef 100%);
+  }
+  .scene .tag { position: absolute; top: 8px; left: 12px; font-size: 11px; color: #52525b; z-index: 3; }
+  .scene .tag2 { position: absolute; top: 8px; right: 12px; font-size: 11px; color: rgba(255,255,255,.65); z-index: 3; }
+
+  .pill {
+    position: relative; z-index: 2; height: 40px; min-width: 264px; padding: 0 15px; border-radius: 999px;
+    display: flex; align-items: center; gap: 8px; font-size: 12px; user-select: none;
+    box-shadow: inset 0 0 0 1px var(--ln), inset 0 1px 0 var(--rim), 0 6px 18px rgba(0,0,0,.25);
+    backdrop-filter: blur(22px) saturate(1.15); -webkit-backdrop-filter: blur(22px) saturate(1.15);
+    background-image: linear-gradient(180deg, var(--gl) 0, rgba(255,255,255,0) 26px);
+  }
+  /* tint = 窗口级 Acrylic 的染色 α（Rust MATERIAL_* 常量），四档只动这一组数 */
+  .pill.clear-light { background-color: rgba(255,255,255,.30); color: #18181b; --ln: rgba(0,0,0,.10); --rim: rgba(255,255,255,.65); --gl: rgba(255,255,255,.55); --muted: rgba(24,24,27,.62); --acc:#0369a1; }
+  .pill.clear-dark  { background-color: rgba(20,20,24,.30);  color: #f4f4f5; --ln: rgba(255,255,255,.22); --rim: rgba(255,255,255,.38); --gl: rgba(255,255,255,.14); --muted: rgba(244,244,245,.62); --acc:#7cc4ff; }
+  .pill.frost-light { background-color: rgba(255,255,255,.78); color: #18181b; --ln: rgba(0,0,0,.08); --rim: rgba(255,255,255,.55); --gl: rgba(255,255,255,.55); --muted: rgba(24,24,27,.55); --acc:#0369a1; }
+  .pill.frost-dark  { background-color: rgba(20,20,24,.78);  color: #f4f4f5; --ln: rgba(255,255,255,.09); --rim: rgba(255,255,255,.18); --gl: rgba(255,255,255,.07); --muted: rgba(244,244,245,.55); --acc:#7cc4ff; }
+  .pill.steady-light{ background-color: rgba(255,255,255,.90); color: #18181b; --ln: rgba(0,0,0,.08); --rim: rgba(255,255,255,.60); --gl: rgba(255,255,255,.55); --muted: rgba(24,24,27,.55); --acc:#0369a1; }
+  .pill.steady-dark { background-color: rgba(20,20,24,.90);  color: #f4f4f5; --ln: rgba(255,255,255,.08); --rim: rgba(255,255,255,.14); --gl: rgba(255,255,255,.05); --muted: rgba(244,244,245,.55); --acc:#7cc4ff; }
+  .pill.deep        { background-color: rgba(17,17,20,.92);  color: #f4f4f5; --ln: rgba(255,255,255,.08); --rim: rgba(255,255,255,.07); --gl: rgba(255,255,255,.02); --muted: rgba(244,244,245,.55); --acc:#7cc4ff; }
+  .ring { width: 16px; height: 16px; flex: 0 0 16px; }
+  .dot { width: 3px; height: 3px; border-radius: 99px; background: currentColor; opacity: .4; }
+  .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .muted { color: var(--muted); }
+  .acc { color: var(--acc); }
+
+  .tiergrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .tier h4 { font-size: 12.5px; margin-bottom: 6px; }
+  .tier h4 span { font-weight: 400; color: #71717a; }
+
+  /* ===== 设置页 1:1（对齐 Settings.module.css 真实样式） ===== */
+  .app {
+    width: 560px; background: #f1f5f9; border: 1px solid #dfe3ea; border-radius: 12px; padding: 18px;
+    box-shadow: 0 10px 30px rgba(15,23,42,.10);
+  }
+  .sSection {
+    padding: 10px 16px; font-size: 11px; font-weight: 700; color: #64748b;
+    letter-spacing: .5px; background: #eef2f6; border: 1px solid #e2e8f0; border-radius: 12px 12px 0 0;
+    box-shadow: 0 1px 0 rgba(15,23,42,.04);
+  }
+  .sRow {
+    display: flex; align-items: center; padding: 12px 16px; gap: 12px;
+    background: #fff; border: 1px solid #e2e8f0; border-top: none; border-bottom: none;
+  }
+  .sRow.last { border-bottom: 1px solid #e2e8f0; border-radius: 0 0 12px 12px; }
+  .sRow:hover { background: #f8fafc; }
+  .tile {
+    width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; font-size: 16px; color: #fff;
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  }
+  .tile.hue-green  { background: linear-gradient(135deg, #10b981, #059669); }
+  .tile.hue-amber  { background: linear-gradient(135deg, #f59e0b, #d97706); }
+  .tile.hue-violet { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+  .body { flex: 1; min-width: 0; }
+  .label { font-size: 13px; font-weight: 600; color: #0f172a; }
+  .desc { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  .toggle {
+    flex: 0 0 44px; height: 24px; border-radius: 99px; position: relative; border: none; cursor: pointer;
+    background: #cbd5e1;
+  }
+  .toggle.on { background: #16a34a; }
+  .thumb {
+    position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 99px;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform 150ms ease;
+  }
+  .toggle.on .thumb { transform: translateX(20px); }
+  .tlabel { position: absolute; top: 0; line-height: 24px; font-size: 10px; font-weight: 700; color: #fff; }
+  .toggle.on .tlabel { right: 7px; }
+  .toggle:not(.on) .tlabel { left: 8px; color: #64748b; }
+
+  /* 档位选择（仿主题配色的预览 chip 流） */
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    width: 118px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px; cursor: pointer;
+    background: #fff; text-align: center;
+  }
+  .chip.sel { border: 2px solid #0284c7; padding: 7px; box-shadow: 0 0 0 3px rgba(2,132,199,.12); }
+  .chip .mini {
+    height: 22px; border-radius: 99px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 9px;
+    backdrop-filter: blur(6px);
+  }
+  .chip .name { font-size: 12px; font-weight: 600; color: #0f172a; }
+  .chip .sub { font-size: 10px; color: #94a3b8; }
+
+  /* 时长分段选择 */
+  .seg { display: flex; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; flex: 0 0 auto; }
+  .seg button {
+    border: none; background: #fff; padding: 5px 12px; font-size: 11px; color: #475569; cursor: pointer;
+    border-left: 1px solid #e2e8f0;
+  }
+  .seg button:first-child { border-left: none; }
+  .seg button.sel { background: #e0f2fe; color: #0369a1; font-weight: 700; }
+  .rowChild { padding: 0 16px 12px 62px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-bottom: none; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>设置 · 灵动岛分区 + 液态玻璃四档 设计稿</h1>
+  <div class="meta">2026-09-25 · 方案 B 已拍板（交互稿三档照收 + 现款厚磨砂保留为默认，共四档）· 提醒显示时长做成可调 · 版本号不动</div>
+
+  <h2>一 · 一句话背景</h2>
+  <p class="note">
+    窗口技术没有错：现实现就是交互稿 A 档写的「窗口级 Acrylic 负责模糊 + CSS 管高光描边」。
+    观感差异来自 <b>染色浓度</b>：稿子默认展示 A 观感玻璃（tint .30，最好看），上线时按 3a 实测换成厚磨砂（tint .78，
+    四背景文字对比全过 AA）——<b>「透」和「清楚」在不可控的桌面背景前物理互斥，所以给用户自己选</b>。
+    四档只动一组数（岛面 CSS 的 tint α 与高光强度），形状、动画、布局全都不变。<b>实现路线已按红色探针定稿修正：窗口级 Acrylic 被推翻（DWM 材质层不服从 SetWindowRgn，胶囊四角方块玻璃是那条路线的固有产物），玻璃改由 CSS 半透明面承载（PILLAR 同构），四角方块根除。</b>
+  </p>
+
+  <h2>二 · 液态玻璃四档：同一背景下对比</h2>
+  <p class="note">场景 = 左半亮色文档 / 右半深色终端（每档深浅跟 app 主题，稿里同屏画两版）；对比度数字来自交互稿实算与 3a 探针。</p>
+  <div class="tiergrid">
+    <div class="tier">
+      <h4>① 清透 · 观感 <span>tint .30</span></h4>
+      <div class="scene">
+        <span class="tag">亮背景 10.39:1</span><span class="tag2">深背景 2.81:1 ✗</span>
+        <div class="pill clear-light"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(2,132,199,.25)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+        <div class="pill clear-dark"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(124,196,255,.3)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+      </div>
+      <p class="note">最像液态玻璃，透出 70% 背景。<b class="bad">代价：深色应用上主文字只有 2.81:1，必然翻车</b>——设置描述里明写。</p>
+    </div>
+    <div class="tier">
+      <h4>② 厚磨砂 · 默认 <span>tint .78（现款 3a）</span></h4>
+      <div class="scene">
+        <span class="tag">四背景全绿</span><span class="tag2">透光 22%</span>
+        <div class="pill frost-light"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(2,132,199,.25)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+        <div class="pill frost-dark"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(124,196,255,.3)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+      </div>
+      <p class="note">「真磨砂玻璃板」。任何背景主/次文字全过 AA；升级用户<b>默认不变样</b>。</p>
+    </div>
+    <div class="tier">
+      <h4>③ 稳读 <span>tint .90（交互稿 B 档）</span></h4>
+      <div class="scene">
+        <span class="tag">主 14.59–17.85:1</span><span class="tag2">透光 10%</span>
+        <div class="pill steady-light"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(2,132,199,.25)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+        <div class="pill steady-dark"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(124,196,255,.3)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+      </div>
+      <p class="note">远距离 / 低视力也稳。玻璃感靠高光和描边撑。</p>
+    </div>
+    <div class="tier">
+      <h4>④ 深色 <span>tint .92 + 弱高光（交互稿 D 档）</span></h4>
+      <div class="scene">
+        <span class="tag">主 10.26–13.07:1</span><span class="tag2">不跟主题 · 恒深色</span>
+        <div class="pill deep"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(124,196,255,.3)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+        <div class="pill deep"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(124,196,255,.3)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+      </div>
+      <p class="note">最接近 Apple 灵动岛原型（真机就是不透明深色）。高光压到 .10（高光是深色玻璃的隐形杀手）。</p>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:10px">彩壁纸场景（清透档的「理想展示环境」vs 厚磨砂）：</p>
+  <div class="tiergrid">
+    <div class="tier">
+      <div class="scene wall">
+        <span class="tag" style="color:rgba(255,255,255,.85)">清透 .30 · 彩壁纸上最好看，字也最虚</span>
+        <div class="pill clear-dark"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(124,196,255,.3)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+      </div>
+    </div>
+    <div class="tier">
+      <div class="scene wall">
+        <span class="tag" style="color:rgba(255,255,255,.85)">厚磨砂 .78 · 同壁纸，字稳</span>
+        <div class="pill frost-dark"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(124,196,255,.3)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#7cc4ff" stroke-width="2" stroke-dasharray="40.8" stroke-dashoffset="32.6" stroke-linecap="round"/></svg><b>4</b><span class="dot"></span><span class="txt">交材料</span><span class="muted">今天 16:00</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>三 · 设置页「灵动岛」分区（1:1，通用页签）</h2>
+  <p class="note">对齐真实 <code>Settings.module.css</code>：sSection 卡头 + sRow 行 + ToggleRow 开关；档位选择仿「主题配色」的预览 chip 流；提醒时长在提醒关闭时整行禁用（灰置）。</p>
+  <div class="app">
+    <div class="sSection">灵动岛</div>
+    <div class="sRow">
+      <div class="tile">🏝</div>
+      <div class="body">
+        <div class="label">启用灵动岛 <span style="font-size:10px;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:99px;padding:1px 6px;">⭐推荐</span></div>
+        <div class="desc">屏幕顶部常驻待办胶囊，随时看今天还剩几件</div>
+      </div>
+      <button class="toggle on"><span class="thumb"></span><span class="tlabel">开</span></button>
+    </div>
+    <div class="sRow" style="flex-direction:column;align-items:stretch;gap:0;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="tile hue-violet">🧊</div>
+        <div class="body">
+          <div class="label">液态玻璃档位</div>
+          <div class="desc">透得多 = 更像液态玻璃，但文字清楚度依赖桌面背景</div>
+        </div>
+      </div>
+      <div class="chips">
+        <div class="chip">
+          <div class="mini clear-dark" style="background-color:rgba(20,20,24,.30);color:#f4f4f5;box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);"> Island </div>
+          <div class="name">清透 · 观感</div><div class="sub">最像液态玻璃 · 深背景字虚</div>
+        </div>
+        <div class="chip sel">
+          <div class="mini frost-dark" style="background-color:rgba(20,20,24,.78);color:#f4f4f5;box-shadow:inset 0 0 0 1px rgba(255,255,255,.09);"> Island </div>
+          <div class="name">厚磨砂 ⭐推荐</div><div class="sub">现款 · 任何背景都清楚</div>
+        </div>
+        <div class="chip">
+          <div class="mini steady-dark" style="background-color:rgba(20,20,24,.90);color:#f4f4f5;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);"> Island </div>
+          <div class="name">稳读</div><div class="sub">透光 10% · 远看也清晰</div>
+        </div>
+        <div class="chip">
+          <div class="mini deep" style="background-color:rgba(17,17,20,.92);color:#f4f4f5;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);"> Island </div>
+          <div class="name">深色</div><div class="sub">恒深色 · 最像 Apple 原型</div>
+        </div>
+      </div>
+    </div>
+    <div class="sRow">
+      <div class="tile hue-amber">🔔</div>
+      <div class="body">
+        <div class="label">到点提醒</div>
+        <div class="desc">任务到了设定时间，岛弹出「到点了」横幅（不加系统通知）</div>
+      </div>
+      <button class="toggle on"><span class="thumb"></span><span class="tlabel">开</span></button>
+    </div>
+    <div class="sRow">
+      <div class="tile hue-amber" style="opacity:.45">⏱</div>
+      <div class="body">
+        <div class="label">提醒横幅停留 <span style="font-size:10px;color:#94a3b8">（关闭提醒时灰置）</span></div>
+        <div class="desc">横幅显示多久后自动收回；期间点击任务可直接勾完成</div>
+      </div>
+      <div class="seg">
+        <button>10秒</button><button class="sel">30秒</button><button>60秒</button><button>2分钟</button>
+      </div>
+    </div>
+    <div class="sRow last">
+      <div class="tile hue-green">↕</div>
+      <div class="body">
+        <div class="label">到期优先排序</div>
+        <div class="desc">有截止时间的任务排前面；关闭后按创建顺序显示</div>
+      </div>
+      <button class="toggle on"><span class="thumb"></span><span class="tlabel">开</span></button>
+    </div>
+  </div>
+
+  <h2>四 · 落地清单（确认后实施）</h2>
+  <table>
+    <tr><th>设置项</th><th>config 键</th><th>默认</th><th>生效路径（收口一处）</th></tr>
+    <tr><td>启用灵动岛</td><td><code>todo_island_enabled</code></td><td>true</td><td>配置变更监听：开→init 创建+显示（含提醒轮询）；关→hide + 提醒轮询静默；启动时关=不创建</td></tr>
+    <tr><td>液态玻璃档位</td><td><code>todo_island_glass</code> = clear/frost/steady/dark</td><td>frost</td><td>重施 <code>apply_theme_material</code>（四组 tint α 常量）+ 通知前端换高光描边变量；dark 档跳过主题极性判断</td></tr>
+    <tr><td>到点提醒</td><td><code>todo_island_remind</code></td><td>true</td><td><code>remind_select</code> 入口判空即跳过（横幅不弹，截止标签不受影响）</td></tr>
+    <tr><td>提醒横幅停留</td><td><code>todo_island_remind_ms</code> ∈ {10s,30s,60s,120s}</td><td>30s</td><td>替换 <code>REMIND_SHOW_MS</code> 常量的唯一读取点</td></tr>
+    <tr><td>到期优先排序</td><td><code>todo_island_due_sort</code></td><td>true</td><td><code>compute_island_state</code> 排序分支一处</td></tr>
+  </table>
+  <p class="note">
+    改动面：<code>settings/sections/IslandSection.tsx</code>（新分区，挂通用页签）+ <code>todo_island.rs</code>（材质四档 + 配置门控）
+    + <code>todo_tasks.rs</code>（排序/提醒两处分支）+ 岛前端材质变量。UI 变更动效沿用现有 150/200ms 两档；不新增 AI 路径（红线 16 不涉及）；
+    版本号不动。规则 19 自查 + <code>npm run lint:ui</code> 在实施后跑。
+  </p>
+</div>
+</body>
+</html>

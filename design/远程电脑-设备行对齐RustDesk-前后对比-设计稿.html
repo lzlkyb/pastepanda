@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>远程电脑 · 设备行对齐 RustDesk 前后对比 · 设计稿</title>
+<style>
+  :root {
+    --card-bg: #fff; --text-primary: #1c1f23; --text-secondary: #5f6b76; --text-muted: #8a949e;
+    --accent: #3b6ff6; --accent-light: #e8efff; --success: #1ea662; --warning: #d97706;
+    --danger-bg: #fdecec; --hover: #f2f4f6; --border-color: #e3e6ea; --shadow-sm: 0 1px 2px rgba(16,24,40,.06);
+    --shadow-md: 0 4px 10px rgba(16,24,40,.10); --section-bg: #f6f7f8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #eef1f4; color: var(--text-primary);
+    font: 13px/1.5 "SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--text-secondary); font-size: 12px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1180px; }
+  .panel { background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; }
+  .panel h2 { font-size: 13px; margin: 0 0 2px; }
+  .panel .note { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+
+  /* 侧栏头部（真实结构：sidebarHead > sidebarTitleRow + deviceListMeta） */
+  .sideHead { padding: 12px 12px 8px; }
+  .titleRow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .titleRow h3 { flex: 1; margin: 0; font-size: 15px; font-weight: 600; }
+  .ghostBtn { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 10px;
+    border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); font: inherit; font-size: 12px; }
+  .iconBtn { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 6px;
+    background: transparent; cursor: pointer; color: var(--text-secondary); }
+  .iconBtn.on { background: var(--accent-light); color: var(--accent); }
+  .searchRow { margin: -2px 0 6px; }
+  .searchRow input { width: 100%; padding: 6px 8px; font: inherit; font-size: 12px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--card-bg); }
+  .listMeta { display: flex; justify-content: space-between; padding: 8px 4px 0; color: var(--text-secondary); font-size: 12px; }
+  .group { display: flex; align-items: center; gap: 6px; padding: 6px 4px 4px 2px; color: var(--text-muted); font-size: 11px; font-weight: 700; }
+
+  /* 设备卡片（真实尺寸：min-height 48px、图标 34px、圆点 10px、名字 13px、副行 12px） */
+  .item { min-height: 48px; display: grid; grid-template-columns: minmax(0,1fr); margin-bottom: 4px; padding: 4px;
+    background: var(--card-bg); border: 1px solid transparent; border-radius: 8px; box-shadow: var(--shadow-sm); }
+  .row { min-width: 0; min-height: 48px; display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 9px; padding: 4px; }
+  .ava { position: relative; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px;
+    background: var(--hover); color: var(--text-secondary); }
+  .ava::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px;
+    border: 2px solid var(--card-bg); border-radius: 50%; background: var(--text-muted); }
+  .ava.ok::after { background: var(--success); }
+  .ava.warn::after { background: var(--warning); }
+  .copy { min-width: 0; }
+  .copy .n, .copy .s { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .copy .n { font-size: 13px; font-weight: 600; }
+  .copy .s { margin-top: 1px; color: var(--text-muted); font-size: 12px; }
+  .copy .s.ok { color: var(--success); } .copy .s.warn { color: var(--warning); }
+  .chips { display: inline-flex; gap: 4px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-secondary);
+    background: var(--hover); border-radius: 999px; padding: 1px 7px; }
+  .badge { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: var(--danger-bg); }
+  .badge.deny { color: #c2413a; background: var(--danger-bg); }
+  .badge.trust { color: var(--success); background: #e3f5ec; }
+  svg { display: block; }
+  .before .row { grid-template-columns: 34px minmax(0,1fr); }
+  .longtext { color: var(--text-secondary); }
+  .tip { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+  .legend { max-width: 1180px; margin-top: 20px; background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 14px 16px; font-size: 12px; color: var(--text-secondary); }
+  .legend b { color: var(--text-primary); }
+  .legend li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>设备行对齐 RustDesk：状态点为主、文字一段封顶、属性图标化、搜索常驻</h1>
+<div class="sub">依据 2026-09-26 调研：peer_card.dart（圆点+别名+Tooltip）、peer_tab_page.dart（放大镜点开才展开输入框）。行尺寸/配色全部取自 RemoteComputerA2.module.css 真实值。</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>改造前</h2>
+    <div class="note">一行叠 4~5 段文字；「局域网在线」与组名「在线」重复；检查时间戳占位；无搜索。</div>
+    <div class="before">
+      <div class="sideHead">
+        <div class="titleRow"><h3>我的设备</h3><span class="ghostBtn">＋ 添加设备</span></div>
+        <div class="group">在线 <span>2</span></div>
+        <div class="item"><div class="row">
+          <span class="ava ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <span class="copy"><span class="n">办公室工作站</span><span class="s ok">局域网在线 · 3 分钟前检查 · 免确认已开启 · 以「可控」连接</span></span>
+        </div></div>
+        <div class="item"><div class="row">
+          <span class="ava ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <span class="copy"><span class="n">家里台式</span><span class="s">已禁止连接本机 · 刚刚可连接 · 以「只看画面」连接</span></span>
+        </div></div>
+        <div class="group">不在线 <span>2</span></div>
+        <div class="item"><div class="row">
+          <span class="ava"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <span class="copy"><span class="n">公司笔记本</span><span class="s">最近在线 · 未实测 · 12 分钟前检查 · 以「可控」连接</span></span>
+        </div></div>
+        <div class="item"><div class="row">
+          <span class="ava"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <span class="copy"><span class="n">SyncPad-2</span><span class="s">需完成远程配对（仅同步的配对还不能远程控制本机）</span></span>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>改造后</h2>
+    <div class="note">状态一句话（组名覆盖不了的差异才说）；免确认=钥匙图标、已禁止=盾牌图标（悬停出全称）；档位/时间进悬停；头部常驻放大镜。</div>
+    <div class="sideHead">
+      <div class="titleRow">
+        <h3>我的设备</h3>
+        <span class="iconBtn on" title="搜索"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+        <span class="ghostBtn">＋ 添加设备</span>
+      </div>
+      <div class="searchRow"><input placeholder="按名称筛选设备，Esc 收起" /></div>
+      <div class="group">在线 <span>2</span></div>
+      <div class="item"><div class="row">
+        <span class="ava ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <span class="copy"><span class="n">办公室工作站 <span class="badge trust" title="免确认已开启"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg></span></span>
+        <span class="s ok" title="刚刚拨通过一次（3 分钟前检查）· 将以「可控」连接">刚刚可连接</span></span>
+      </div></div>
+      <div class="item"><div class="row">
+        <span class="ava ok" title="将以「只看画面」连接"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <span class="copy"><span class="n">家里台式 <span class="badge deny" title="这台设备已被禁止连接本机"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5z"/><path d="M4.5 11.5 19 4"/></svg></span></span>
+        <span class="s ok">刚刚可连接</span></span>
+      </div></div>
+      <div class="group">不在线 <span>2</span></div>
+      <div class="item"><div class="row">
+        <span class="ava" title="将以「可控」连接 · 12 分钟前检查"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <span class="copy"><span class="n">公司笔记本</span><span class="s">最近在线 · 未实测</span></span>
+      </div></div>
+      <div class="item"><div class="row">
+        <span class="ava" title="仅同步的配对还不能远程控制本机，完成远程配对后即可"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <span class="copy"><span class="n">SyncPad-2</span><span class="s">待完成远程配对</span></span>
+      </div></div>
+    </div>
+    <div class="tip">悬停位置示意：徽章 / 头像 / 状态短语上挂 title，全称与档位、检查时间都在里面。</div>
+  </div>
+</div>
+
+<div class="legend">
+  <b>与行业的对应关系</b>
+  <ul>
+    <li>状态点为主、文字进 Tooltip —— RustDesk peer_card.dart：圆点只有绿/橙红，Online/Offline 只在悬停。</li>
+    <li>属性图标化：免确认=绿钥匙徽章（RustDesk 在 OS 图标叠 6px <code>Icons.key</code>）；已禁止=红盾牌（本项目既有 ShieldAlert 语义，改图不改义）。</li>
+    <li>「局域网在线」在在线组里与组名重复 → 撤下；保留组名覆盖不了的差异：<b>刚刚可连接 / 最近在线·未实测 / 暂时连不上 / 正在确认</b>（各词义不同，L4 就地说明不动）。</li>
+    <li>搜索常驻放大镜、点开才出输入框 —— RustDesk peer_tab_page.dart（放大镜→140px drawer），无「设备多了才出现」阈值。</li>
+    <li>档位「以可控/只看连接」检查时间戳 → 移入悬停；hero 大钮上仍写清连的是哪档（唯一常驻预告位改在详情面）。</li>
+    <li>不做：双击即连（已拍板「点行=选中、连接走 hero」，比行业更保守）。</li>
+  </ul>
+</div>
+</body>
+</html>
