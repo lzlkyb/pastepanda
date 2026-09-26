@@ -122,7 +122,7 @@ export function GeneralSection({
           ))}
         </div>
       </div>
-      <ToggleRow icon="✂" hue="save" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })}
+      <ToggleRow icon="✂️" hue="save" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })}
         tooltip="粘贴代码时尤其有用，避免多余缩进"
         detailTitle="自动去除空白"
         detail={<>
@@ -131,7 +131,7 @@ export function GeneralSection({
           <p>💡 开启后粘贴更干净，无需手动删空格</p>
         </>}
       />
-      <ToggleRow icon="🛡" hue="privacy" label="敏感内容防护" desc="不记录匹配密钥/凭证模式的内容" value={config.skip_sensitive} onChange={(v) => updateAndSave({ skip_sensitive: v })}
+      <ToggleRow icon="🛡️" hue="privacy" label="敏感内容防护" desc="不记录匹配密钥/凭证模式的内容" value={config.skip_sensitive} onChange={(v) => updateAndSave({ skip_sensitive: v })}
         tooltip="开启后，复制密码、Token、密钥等敏感内容时不会记录到历史，也不会通过局域网同步"
         detailTitle="敏感内容防护"
         detail={<>

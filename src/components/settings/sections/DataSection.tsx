@@ -69,7 +69,7 @@ export function DataSection({
       </div>
       {/* v6.1 自我净化开关：保护常用内容不过期。关掉即退回"超期必清"旧行为 */}
       <ToggleRow
-        icon="🛟"
+        icon="💎"
         hue="save"
         label="保护常用内容"
         desc="打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理"

@@ -20,7 +20,7 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
   const { toast } = useToast();
   return (
     <>
-      <ToggleRow icon="⏱" hue="editor" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
+      <ToggleRow icon="⏱️" hue="editor" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
         tooltip="在剪贴板列表左侧显示时间轴，可快速跳转到不同时间段的记录"
         detailTitle="时间线"
         detail={<>
@@ -43,7 +43,7 @@ export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, 
       <ToggleRow icon="🔁" hue="paste" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
         tooltip="适合重复粘贴同一组内容时使用"
       />
-      <ToggleRow icon="👁" hue="system" label="失焦自动隐藏" desc="窗口失去焦点时隐藏到托盘" value={config.hide_on_focus_out} onChange={(v) => updateAndSave({ hide_on_focus_out: v })}
+      <ToggleRow icon="👁️" hue="system" label="失焦自动隐藏" desc="窗口失去焦点时隐藏到托盘" value={config.hide_on_focus_out} onChange={(v) => updateAndSave({ hide_on_focus_out: v })}
         recommend
         tooltip="点击其他窗口时自动隐藏，保持桌面整洁"
         detailTitle="失焦自动隐藏"
