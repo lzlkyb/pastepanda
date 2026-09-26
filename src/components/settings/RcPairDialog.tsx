@@ -10,17 +10,23 @@
  *
  * | 屏 | 文件 |
  * |---|---|
- * | 入口屏（附近设备 + 邀请码两条路） | `RcPairModeSelect` + `RcNearbyList` |
- * | 生成邀请码 | `RcPairCreatePane`（原有） |
- * | 粘贴邀请码 | `RcPairPastePane`（拆出） |
+ * | 入口屏（附近设备主路 + 折叠「高级」两条码路） | `RcPairModeSelect` + `RcNearbyList` |
+ * | 生成配对码 | `RcPairCreatePane`（原有） |
+ * | 粘贴配对码（含剪贴板「填入」询问） | `RcPairPastePane`（拆出） |
  * | 6 位数字核对 | `RcPairPin`（拆出） |
- * | 完成 | `RcPairDone`（拆出） |
  *
  * 局域网那一侧的状态与轮询在 `hooks/useRcNearbyPair`。
  *
- * # 显示优先级：局域网配对**压过**邀请码那两屏
+ * # 2026-09-26 乙方案瘦身
  *
- * 对方在局域网里主动发起时，用户可能正停在「生成邀请码」那一屏。
+ * 主路只剩「附近设备」；邀请码两条路折进「高级」（留一版观察）；
+ * 剪贴板检测到码的询问从首屏挪进粘贴屏——已经决定粘码的人才是帮忙，
+ * 一开屏就拦是打扰（跨网第一次连接的正路已改走「帮助」流程）。
+ * **完成屏（RcPairDone）删除**：成功那一刻直接关窗 + toast + 选中新设备。
+ *
+ * # 显示优先级：局域网配对**压过**两条码路那两屏
+ *
+ * 对方在局域网里主动发起时，用户可能正停在「生成配对码」那一屏。
  * 6 位数字是**安全相关的提示**，不能让它在别的屏后面等着——所以只要有一轮
  * 配对在进行，就盖住上面。取消后回到原来那一屏（`mode` 没被清掉）。
  *
@@ -30,76 +36,47 @@
  * 方案 C 之后发起侧不再有勾选框——那两个确认点原本要用户各做一次，而发起侧
  * 那次**防不住中间人**（论证见 `sync/invite.rs` 模块头）。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
-import { readClipboardText } from "@/lib/api";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useRcNearbyPair } from "@/hooks/useRcNearbyPair";
+import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
 import { RcPairModeSelect } from "./RcPairModeSelect";
 import { RcPairCreatePane } from "./RcPairCreatePane";
 import { RcPairPastePane } from "./RcPairPastePane";
 import { RcPairPin } from "./RcPairPin";
-import { RcPairDone } from "./RcPairDone";
 import styles from "../rc/RemoteComputer.module.css";
-
-export function looksLikeRcInvite(t: string): boolean {
-  const s = t.trim();
-  return s.length >= 40 && /^[A-Za-z0-9_-]+$/.test(s);
-}
 
 export function RcPairDialog({
   rc,
   toast,
   onClose,
-  onStartRemote,
+  onPairAccepted,
 }: {
   rc: UseRc;
   toast: ToastFn;
   onClose: () => void;
   /**
-   * 「立刻发起远程」的出口（结论见设计稿 §8 #5）。**只有能发起会话的地方才传**
-   * ——工具箱传得进来，设置页里的配对入口没有会话上下文，那边就不显示这个按钮。
+   * 局域网配对成功那一刻的通知（乙方案 §6：完成屏已删——「配对成功的设备
+   * 会自动出现在列表里」不该再多一次点击）。工作台拿它选中新设备；
+   * 设置页不传，那边只 toast。
    */
-  onStartRemote?: (peerId: string) => void;
+  onPairAccepted?: (peerId: string) => void;
 }) {
   const anim = useDialogAnim();
   const near = useRcNearbyPair();
   const [mode, setMode] = useState<"create" | "paste" | null>(null);
-  const [clipInvite, setClipInvite] = useState<string | null>(null);
-  const [fillCode, setFillCode] = useState("");
   const [name, setName] = useState(rc.identity?.device_name ?? "");
   const [created, setCreated] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
 
-  // 剪贴板里可能已经躺着一份邀请码：预读一次，只提示不自动填。
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const t = (await readClipboardText()).trim();
-        if (alive && looksLikeRcInvite(t)) {
-          const inv = await rc.previewInvite(t).catch(() => null);
-          if (alive && inv && inv.node_id !== rc.identity?.node_id) {
-            setClipInvite(t);
-          }
-        }
-      } catch {
-        /* 预读失败静默 */
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 邀请码倒计时（只在生成了码之后跑）。
+  // 配对码倒计时（只在生成了码之后跑）。
   useEffect(() => {
     if (!created || !expiresAt) return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -115,9 +92,9 @@ export function RcPairDialog({
       setNow(Date.now());
       try {
         await navigator.clipboard.writeText(r.code);
-        toast("邀请码已复制，请发给对方", "success");
+        toast("配对码已复制，请发给对方", "success");
       } catch {
-        toast("邀请码已生成，请手动复制", "info");
+        toast("配对码已生成，请手动复制", "info");
       }
     } catch (e) {
       toast(String(e), "error");
@@ -138,10 +115,24 @@ export function RcPairDialog({
     }
   };
 
-  const handleStartRemote = (peerId: string) => {
-    onStartRemote?.(peerId);
+  /**
+   * 乙方案 §6：**完成屏删了**——成功那一刻关窗、toast、把新设备选出来。
+   * `near.done` 由 `useRcNearbyPair` 按 `at_ms` 去重、一次会话只给一次，
+   * 这个 ref 只是挂载内的第二道保险（effects 双跑时不弹两条 toast）。
+   */
+  const doneHandled = useRef(false);
+  useEffect(() => {
+    const d = near.done;
+    if (!d || doneHandled.current) return;
+    doneHandled.current = true;
+    const name = d.peer_name.trim() || fingerprintOf(d.peer_id);
+    toast(`已与「${name}」配对，设备已进列表${d.initiator ? "，点「连接」即可发起" : ""}`, "success");
+    void rc.refreshTargets();
+    onPairAccepted?.(d.peer_id);
     onClose();
-  };
+    // 只跟 near.done 走：rc/toast/onClose 都是稳定引用，进依赖会让副作用被无关渲染重触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [near.done]);
 
   return (
     <motion.div
@@ -164,13 +155,7 @@ export function RcPairDialog({
             </button>
           </div>
           <div className={styles.body}>
-            {near.done ? (
-              <RcPairDone
-                done={near.done}
-                onClose={onClose}
-                onStartRemote={onStartRemote ? handleStartRemote : undefined}
-              />
-            ) : near.pair ? (
+            {near.pair ? (
               <RcPairPin
                 prompt={near.pair}
                 busy={near.busy}
@@ -196,7 +181,6 @@ export function RcPairDialog({
                 previewInvite={rc.previewInvite}
                 pair={rc.pair}
                 selfNodeId={rc.identity?.node_id}
-                initialCode={fillCode}
                 toast={toast}
                 onBack={() => setMode(null)}
                 onPaired={(n) => {
@@ -208,17 +192,11 @@ export function RcPairDialog({
               <RcPairModeSelect
                 neighbors={near.neighbors}
                 busy={near.busy}
-                clipInvite={clipInvite}
                 onPair={(n) =>
                   void near
                     .startPair(n.node_id)
                     .catch((e) => toast(stringify(e, "发起配对失败"), "error"))
                 }
-                onFill={(clip) => {
-                  setFillCode(clip);
-                  setMode("paste");
-                }}
-                onIgnore={() => setClipInvite(null)}
                 onCreate={() => setMode("create")}
                 onPaste={() => setMode("paste")}
               />

@@ -7,6 +7,16 @@
 use super::DataStore;
 use serde::{Deserialize, Serialize};
 
+/// 设备标签（2026-09-26 对齐稿①，RustDesk TagPainter 的本地对应物）。
+/// `color` 是**色板键**（red/amber/green/cyan/blue/violet），不是任意 hex——
+/// 颜色只能来自主题令牌是 V3 的硬要求，取值收口在前端 `lib/rcDeviceTags`，
+/// 存储侧原样进 JSON 文本列，不做翻译。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DeviceTag {
+    pub name: String,
+    pub color: String,
+}
+
 /// 一台已授权「可远程本机」的设备。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RcDevice {
@@ -66,11 +76,49 @@ pub struct RcDevice {
     /// 同理它也不随任何配对信令同步（那些路径有多个承载点，见数据迁移处的说明）。
     #[serde(default)]
     pub os: String,
+    /// 彩色标签（设备组织）。本机私产，不随任何信令同步；
+    /// 上限/去重/色板白名单在写入前 `normalize_tags` 收口。
+    #[serde(default)]
+    pub tags: Vec<DeviceTag>,
+    /// **描述性备注**长文本（「双 4K，走中继较卡」）。与 `note`（改名别名）
+    /// 刻意分开：note 会进 display_name 顶替设备名，remark 只出现在悬停/详情。
+    #[serde(default)]
+    pub remark: String,
 }
 
-const COLS: &str = "node_id, name, note, paired_at, conn_state, last_seen, last_path, trusted, auto_accept, os";
+const COLS: &str =
+    "node_id, name, note, paired_at, conn_state, last_seen, last_path, trusted, auto_accept, os, tags, remark";
+
+/// 标签写入前的清洗（与前端 `lib/rcDeviceTags` 同口径，双保险）：
+/// 名字 trim、空的丢、超 12 字截断、按名字去重、最多 6 个；色板外的键回落 blue。
+pub fn normalize_tags(tags: Vec<DeviceTag>) -> Vec<DeviceTag> {
+    const COLORS: [&str; 6] = ["red", "amber", "green", "cyan", "blue", "violet"];
+    let mut out: Vec<DeviceTag> = Vec::new();
+    for t in tags {
+        let name: String = t.name.trim().chars().take(12).collect();
+        if name.is_empty() || out.iter().any(|x| x.name == name) {
+            continue;
+        }
+        let color = if COLORS.contains(&t.color.as_str()) {
+            t.color
+        } else {
+            "blue".into()
+        };
+        out.push(DeviceTag { name, color });
+        if out.len() >= 6 {
+            break;
+        }
+    }
+    out
+}
 
 fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
+    let tags_raw: String = r.get(10)?;
+    let tags: Vec<DeviceTag> =
+        serde_json::from_str(&tags_raw).unwrap_or_else(|e| {
+            log::warn!("[DataStore] rc_devices.tags 解析失败，按空处理: {e}");
+            Vec::new()
+        });
     Ok(RcDevice {
         node_id: r.get(0)?,
         name: r.get(1)?,
@@ -82,6 +130,8 @@ fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
         trusted: r.get::<_, i64>(7)? != 0,
         auto_accept: r.get::<_, i64>(8)? != 0,
         os: r.get(9)?,
+        tags,
+        remark: r.get(11)?,
     })
 }
 
@@ -265,6 +315,44 @@ impl DataStore {
             .map_err(|e| e.to_string())?;
         if changed == 0 {
             return Err("这台设备不在远程配对列表里（可能只做了同步配对，或已被忘记），备注未保存".into());
+        }
+        Ok(())
+    }
+
+    /// 设备彩色标签（2026-09-26 对齐稿①）。调用方传什么都先进 `normalize_tags`
+    /// 清洗再落库——上限/去重/色板白名单不许绕过。空数组 = 清空。
+    ///
+    /// 🔴 影响 0 行必须报错（照 `note_set` 判据）：这是用户点按钮保存的组织信息，
+    ///    静默 `Ok` 会骗出「已保存」的假确认。
+    pub fn rc_device_tags_set(&self, node_id: &str, tags: Vec<DeviceTag>) -> Result<(), String> {
+        let json = serde_json::to_string(&normalize_tags(tags)).map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
+        let changed = conn
+            .execute(
+                "UPDATE rc_devices SET tags = ?2 WHERE node_id = ?1",
+                rusqlite::params![node_id, json],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("这台设备不在远程配对列表里（可能只做了同步配对，或已被忘记），标签未保存".into());
+        }
+        Ok(())
+    }
+
+    /// 描述性备注长文本。空串 = 清除。上限 200 字（超出截断而非报错，照 `normalize_note` 判据）。
+    /// 🔴 影响 0 行必须报错，同 `tags_set`。
+    pub fn rc_device_remark_set(&self, node_id: &str, remark: &str) -> Result<(), String> {
+        let trimmed = remark.trim();
+        let clipped: String = trimmed.chars().take(200).collect();
+        let conn = self.lock_conn();
+        let changed = conn
+            .execute(
+                "UPDATE rc_devices SET remark = ?2 WHERE node_id = ?1",
+                rusqlite::params![node_id, clipped],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("这台设备不在远程配对列表里（可能只做了同步配对，或已被忘记），描述未保存".into());
         }
         Ok(())
     }
@@ -517,5 +605,71 @@ mod tests {
             s.rc_device_note_os("peer-only-sync", "Windows 11").is_ok(),
             "后台顺手写的字段，设备尚未落库属正常竞态，不该污染会话流程"
         );
+    }
+
+    fn tag(name: &str, color: &str) -> DeviceTag {
+        DeviceTag { name: name.into(), color: color.into() }
+    }
+
+    /// 标签：默认空、写入往返、可清空；列表查询必须带上（COLS 漏列是最难查的静默失效）。
+    #[test]
+    fn tags_roundtrip_and_list_carries() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        assert!(s.rc_device_get("peer-a").unwrap().unwrap().tags.is_empty());
+        s.rc_device_tags_set("peer-a", vec![tag("家用", "blue"), tag("装机", "amber")]).unwrap();
+        let d = s.rc_device_get("peer-a").unwrap().unwrap();
+        assert_eq!(d.tags, vec![tag("家用", "blue"), tag("装机", "amber")]);
+        let list = s.rc_device_list().unwrap();
+        assert_eq!(list[0].tags.len(), 2, "列表查询的 COLS 必须带上 tags");
+        s.rc_device_tags_set("peer-a", vec![]).unwrap();
+        assert!(s.rc_device_get("peer-a").unwrap().unwrap().tags.is_empty());
+    }
+
+    /// 清洗不许绕过：空名丢、重名去重、超 6 截断、色板外回落 blue、超长名截断。
+    #[test]
+    fn tags_写入前清洗() {
+        let s = store();
+        s.rc_device_pair("peer-a", "A").unwrap();
+        let many: Vec<DeviceTag> = (0..9)
+            .map(|i| tag(&format!("标签{i}"), "magenta"))
+            .chain(std::iter::once(tag("  ", "red")))
+            .chain(std::iter::once(tag("标签0", "green")))
+            .collect();
+        s.rc_device_tags_set("peer-a", many).unwrap();
+        let d = s.rc_device_get("peer-a").unwrap().unwrap();
+        assert_eq!(d.tags.len(), 6, "上限 6 个");
+        assert!(d.tags.iter().all(|t| t.color == "blue"), "色板外必须回落 blue");
+        assert_eq!(d.tags.iter().filter(|t| t.name == "标签0").count(), 1, "重名去重");
+        s.rc_device_tags_set("peer-a", vec![tag(&"超".to_string().repeat(30), "red")]).unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().tags[0].name.chars().count(), 12);
+    }
+
+    #[test]
+    fn tags_对不在表里的设备报错而不是静默成功() {
+        let s = store();
+        let err = s
+            .rc_device_tags_set("peer-only-sync", vec![tag("家用", "blue")])
+            .expect_err("不在 rc 表里就必须显形");
+        assert!(err.contains("不在远程配对列表"), "报错要说清原因：{err}");
+    }
+
+    /// 描述备注：默认空、trim、200 字截断（超出截断而非报错，照 normalize_note 判据）、
+    /// 与 note（改名别名）互不串扰。
+    #[test]
+    fn remark_roundtrips_and_clips_and_independent_of_note() {
+        let s = store();
+        s.rc_device_pair("peer-a", "DESKTOP-A").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().remark, "");
+        s.rc_device_remark_set("peer-a", "  双 4K，走中继较卡  ").unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().remark, "双 4K，走中继较卡");
+        s.rc_device_remark_set("peer-a", &"长".repeat(300)).unwrap();
+        assert_eq!(s.rc_device_get("peer-a").unwrap().unwrap().remark.chars().count(), 200);
+        s.rc_device_remark_set("peer-a", "").unwrap();
+        let d = s.rc_device_get("peer-a").unwrap().unwrap();
+        assert_eq!(d.remark, "");
+        assert_eq!(d.name, "DESKTOP-A", "写 remark 不该碰 name");
+        assert_eq!(d.note, "", "写 remark 不该碰改名别名 note");
+        assert!(s.rc_device_remark_set("peer-only-sync", "x").is_err(), "影响 0 行必须报错");
     }
 }

@@ -12,7 +12,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { useRc } from "@/hooks/useRc";
 import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
-import { useRcAdhoc } from "@/hooks/useRcAdhoc";
 import { useRcLocalInjectNotice } from "@/hooks/useRcSessionNotices";
 import { runRcAction } from "@/lib/rcFeedback";
 import { RcControlBanner } from "./RcControlBanner";
@@ -33,12 +32,6 @@ export function RcOverlay() {
   const rc = useRc(true);
   /** D2：放权动作（含二次确认）——见 useRcTrustEnable 顶部说明。 */
   const enableTrust = useRcTrustEnable(rc, toast);
-  /**
-   * 一次性协助的「用后即忘」结账点。挂在主窗口的常驻层（本组件即使 `return null`
-   * 也仍然挂载，所以任何时候都在跑）——出码那个对话框在会话开始前就关了，
-   * 结账必须落在常驻窗口上，否则「用完即忘」只是一句承诺。
-   */
-  useRcAdhoc(rc);
   const seenPending = useRef(new Set<string>());
 
   /**

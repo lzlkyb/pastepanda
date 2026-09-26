@@ -1,29 +1,27 @@
 /**
- * RcFullscreenHotbar 守卫单测（方案 B，2026-09-24）。
+ * RcFullscreenHotbar 守卫单测（方案 B，2026-09-24；方案A 2026-09-25 改命令出口）。
  *
  * 全屏态唯一控制入口：浮现逻辑看不见但致命——热区唤不出 / 指针锁定时假唤出 /
  * 关闭绕过确认，三条都只有断言挡得住。
  *
- * `@tauri-apps/api/window` 整模块覆盖（spy），理由同 `RcWindowControls.test.tsx`。
+ * 方案A 后三键走 lib/rcWindowOps 的 Rust 命令（不经 per-window ACL），`invoke`
+ * 打桩；`@tauri-apps/api/window` 仍给 useMaximized 一组 spy。vitest 环境没有
+ * `__TAURI_INTERNALS__`，用例里补上再清掉（rcWindowOps 会判「非 Tauri」短路）。
  */
 import { fireEvent, render, screen, act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
-  close: vi.fn(),
-  destroy: vi.fn(),
-  minimize: vi.fn(),
-  toggleMaximize: vi.fn(),
+  invoke: vi.fn(),
+  isMaximized: vi.fn(),
+  onResized: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
-    close: h.close,
-    destroy: h.destroy,
-    minimize: h.minimize,
-    toggleMaximize: h.toggleMaximize,
-    isMaximized: () => Promise.resolve(false),
-    onResized: () => Promise.resolve(() => {}),
+    isMaximized: h.isMaximized,
+    onResized: h.onResized,
   }),
 }));
 
@@ -42,13 +40,14 @@ const base = {
 };
 
 beforeEach(() => {
-  h.close.mockReset().mockResolvedValue(undefined);
-  h.destroy.mockReset().mockResolvedValue(undefined);
-  h.minimize.mockReset().mockResolvedValue(undefined);
-  h.toggleMaximize.mockReset().mockResolvedValue(undefined);
+  h.invoke.mockReset().mockResolvedValue(undefined);
+  h.isMaximized.mockReset().mockResolvedValue(false);
+  h.onResized.mockReset().mockResolvedValue(() => {});
+  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
 });
 
 afterEach(() => {
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   vi.useRealTimers();
 });
 
@@ -98,23 +97,24 @@ describe("RcFullscreenHotbar（方案 B：全屏顶边 hot zone）", () => {
     ).toBe(true);
   });
 
-  it("关闭走 close()，不绕过「有会话先问」的守卫（红线）", () => {
+  it("🔴 关闭走 rc_window_close（close 语义，交给关闭守卫），只打三键命令集", () => {
     render(<RcFullscreenHotbar {...base} />);
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    expect(h.close).toHaveBeenCalledTimes(1);
-    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenNthCalledWith(1, "rc_window_close");
+    const allCmds = h.invoke.mock.calls.map((c) => c[0]);
+    expect(allCmds.every((c) => typeof c === "string" && c.startsWith("rc_window_"))).toBe(true);
   });
 
-  it("最小化走 minimize()；最大化走 toggleMaximize()", () => {
+  it("最小化 / 最大化分别打到对应的 Rust 命令", () => {
     render(<RcFullscreenHotbar {...base} />);
 
     fireEvent.click(screen.getByRole("button", { name: "最小化" }));
     fireEvent.click(screen.getByRole("button", { name: "最大化" }));
 
-    expect(h.minimize).toHaveBeenCalledTimes(1);
-    expect(h.toggleMaximize).toHaveBeenCalledTimes(1);
+    expect(h.invoke).toHaveBeenCalledWith("rc_window_minimize");
+    expect(h.invoke).toHaveBeenCalledWith("rc_window_toggle_maximize");
   });
 
   it("无交互 2.5s 后淡出：隐藏态 visibility:hidden 且按钮移出 Tab 环", () => {

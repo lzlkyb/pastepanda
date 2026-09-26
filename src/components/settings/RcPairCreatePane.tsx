@@ -1,5 +1,6 @@
 import { formatDuration } from "@/lib/rcSessionStats";
 import type { ToastFn } from "@/components/Toast";
+import { RcCredTag } from "./RcCredTag";
 import { FpBox } from "./RcPairFpBox";
 import styles from "../rc/RemoteComputer.module.css";
 
@@ -20,6 +21,7 @@ export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy,
   const remain = expiresAt > 0 ? Math.max(0, expiresAt - now) : 0;
   return (
     <>
+      <RcCredTag tone="pair" label="长期配对码" note="配对一次，以后随时直接连" />
       <div className={styles.pairPane}>
         <FpBox label="本机指纹（对方核对用）" fp={myFp} name={name || selfName || ""} />
         <div className={styles.fpBox}>
@@ -43,7 +45,7 @@ export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy,
           {created && (
             <div className={styles.noteWarn} style={{ marginTop: 10, flexDirection: "column", alignItems: "stretch" }}>
               <div>
-                邀请码已生成，对方粘贴并核对指纹后会出现待确认。
+                配对码已生成，发给对方粘贴后，对方那台会弹出确认（带你的指纹）。
                 {remain > 0 && (
                   <>
                     {" "}
@@ -56,7 +58,7 @@ export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy,
                 className={styles.inviteCode}
                 value={created}
                 onFocus={(e) => e.currentTarget.select()}
-                aria-label="邀请码"
+                aria-label="长期配对码"
               />
               <button
                 type="button"
@@ -65,13 +67,13 @@ export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy,
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(created);
-                    toast("邀请码已复制", "success");
+                    toast("配对码已复制", "success");
                   } catch {
                     toast("复制失败，请手动选中上方文本复制", "error");
                   }
                 }}
               >
-                复制邀请码
+                复制配对码
               </button>
             </div>
           )}

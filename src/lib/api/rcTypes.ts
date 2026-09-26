@@ -175,6 +175,13 @@ export interface RcPathChanged {
 
 export type RcPresence = "live" | "recent" | "seen" | "never";
 
+/** 设备彩色标签（对齐 RustDesk TagPainter：行上只画色点，文字进悬停）。 */
+export interface RcDeviceTag {
+  name: string;
+  /** 色板键（red/amber/green/cyan/blue/violet），不是 hex——颜色必须来自令牌（V3）。 */
+  color: string;
+}
+
 export interface RcTargetDevice {
   node_id: string;
   name: string;
@@ -213,6 +220,13 @@ export interface RcTargetDevice {
    * 采不到。此时**不渲染这一格**，不编默认值。仅同步配对设备恒为空。
    */
   os?: string;
+  /**
+   * 彩色标签（设备组织，2026-09-26 对齐稿①）。本机私产，不随信令同步。
+   * 缺失/空数组 = 没打过标签；仅同步配对设备恒为空。取值口径见 `lib/rcDeviceTags`。
+   */
+  tags?: RcDeviceTag[];
+  /** 描述性备注长文本（悬停/详情显示）。与 `note`（改名别名）分开：别名顶替显示名，这条只做补充。 */
+  remark?: string;
 }
 
 export interface RcSyncOffer {

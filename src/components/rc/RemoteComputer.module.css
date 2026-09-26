@@ -7,7 +7,7 @@
    主题 token（--card-bg/--border-color/--accent）带兜底，双主题不破。 */
 :root {
   --rc-glass: color-mix(in srgb, var(--card-bg, #f6f7f9) 82%, transparent);
-  --rc-glass-line: color-mix(in srgb, var(--border-color, #e3e6ea) 60%, transparent);
+  --rc-glass-line: color-mix(in srgb, var(--border-color) 60%, transparent);
   --rc-shadow: 0 10px 30px color-mix(in srgb, var(--accent, #4f7cff) 9%, transparent),
     0 1px 3px color-mix(in srgb, var(--accent, #4f7cff) 5%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.55);
@@ -49,7 +49,7 @@
   border-radius: 10px;
   padding: 28px 16px;
   text-align: center;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   font-size: 12.5px;
   line-height: 1.7;
   background: var(--card-bg, #f6f7f9);
@@ -97,7 +97,7 @@
 
 .meta {
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 
 .miniBtn,
@@ -161,7 +161,10 @@
   /* v4 稿 fakeScreen：16 圆角 */
   border-radius: 16px;
   overflow: hidden;
-  background: #0d0f12;
+  /* letterbox 跟主题走（用户拍板 2026-09-25）：原来是写死深色（#0d0f12），
+     浅色主题下整圈黑框非常突兀。--app-bg 是各主题自己的「窗口纸面」，
+     深色主题近黑、浅色主题浅纸，五个主题都自动正确。 */
+  background: var(--app-bg);
 }
 
 .viewTop {
@@ -238,7 +241,7 @@
    .fakeScreen，顶栏/底栏被挡在屏幕外，全屏后连「结束会话」都找不到。
    2026-09-23 一并把 :fullscreen 规则搬到 .sessionWrap 块。 */
 .sessionWrap:fullscreen {
-  background: #0b0d10; /* ui-rule-ok: 与旧 .fakeScreen:fullscreen 逐字同值，仅全屏壳内可见的 letterbox 深底 */
+  background: var(--app-bg); /* letterbox 跟主题走（同 .viewShell），不再写死深底 */
   padding: 0;
   gap: 0;
 }
@@ -256,7 +259,7 @@
   flex: 1;
   height: auto;
   min-height: 0;
-  background: #0b0d10; /* ui-rule-ok: 与上块同值——全屏 letterbox 深底沿用旧 .fakeScreen:fullscreen，不改观感 */
+  background: var(--app-bg); /* letterbox 跟主题走（同上块） */
 }
 
 /* D6：移除空规则（规则体只有注释、无任何声明，属于死代码）。
@@ -271,9 +274,12 @@
   height: min(62vh, 560px);
   min-height: 280px;
   position: relative;
-  background: linear-gradient(180deg, #1a2332 0%, #0f141c 100%);
-  /* v4 稿：深色画布的内高光 */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  /* letterbox 跟主题走（用户拍板 2026-09-25）：适应/填充模式的上下留白显示的是
+     这里与 .screenCanvas 的底色，原来写死深色渐变，浅色主题下是突兀的黑框。
+     --app-bg 是主题自己的窗口纸面，深色近黑、浅色浅纸。 */
+  background: var(--app-bg);
+  /* v4 稿：画布内高光（原来是深底专用白高光，改与纸面同源，两种主题都隐约可见） */
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--card-bg) 55%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -282,7 +288,7 @@
 
 .screenCanvas {
   display: block;
-  background: #0d0f12;
+  background: var(--app-bg);
   /* 非 1:1 时由内联 style 控制 object-fit；1:1 用真实像素尺寸 + panBox 滚动 */
 }
 
@@ -300,16 +306,17 @@
 }
 
 /* 说明行：稿式 tagHint——独立成行，不再跟在 pill 后面假装是个 tag */
-/* —— D9：消除「深-浅-深-浅」三明治 ——
-   .viewShell 是深色底（#0d0f12），但内部顶栏 .viewTop 与质量条 .qBar 用不透明的
-   --card-bg 浅色，等于在黑底里夹两条白带。这里把「会话视图内」的浮层统一改成
-   半透明浅色叠层 + 浅色文字。
+/* —— D9（letterbox 已随主题，2026-09-25 修订）——
+   原来 .viewShell 是写死深色底，内部顶栏 .viewTop 用不透明 --card-bg 会在黑底里
+   夹白带，所以整块是「半透明白叠层 + 浅色文字」的深底专用配方。现在 letterbox
+   跟主题走，覆盖层与文字一并改 token：半透明 card-bg 叠层在深浅主题下都只是
+   一层隐约的纸面凸起，文字用 text-secondary 两主题各自动正确。
    注意：这些类名在设置页/设备列表里也有复用，所以必须用 .viewShell 后代选择器限定，
-   不能直接改基类，否则会把别处的浅色 UI 一起弄黑。 */
+   不能直接改基类。 */
 .viewShell .viewTop {
-  background: rgba(255, 255, 255, 0.06);
-  border-bottom-color: rgba(255, 255, 255, 0.08);
-  color: #c8d0dc;
+  background: color-mix(in srgb, var(--card-bg) 55%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--border-color) 60%, transparent);
+  color: var(--text-secondary);
 }
 /* ⚠️ `.viewShell .qBar` 已删：方案 B 后 qBar 只出现在侧栏（本机配置），不再进会话
    视图，这条后代选择器永远不匹配。 */
@@ -402,7 +409,7 @@
   flex-shrink: 0;
 }
 .fsHintGhost:hover {
-  color: #c8d0dc;
+  color: var(--text-secondary);
 }
 
 /* 键盘捕获态：一圈强调色描边，一眼能看出按键会发给谁（叠加画布内高光） */
@@ -416,7 +423,7 @@
   position: absolute;
   inset: 0;
   text-align: center;
-  color: #7a8699;
+  color: var(--text-muted);
   font-size: 12px;
   line-height: 1.7;
   display: flex;
@@ -504,6 +511,35 @@
   color: rgba(200, 208, 220, 0.38);
 }
 
+/* 60s 往返趋势卡（2026-09-26 对齐稿）：面板头部与行列表之间的一小格。
+   只在面板 open 时挂载（RcHudTrend），关闭即卸载——无定时器无 rAF。 */
+.hudTrend {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px 8px 4px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.hudTrendHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  /* ui-rule-ok: 与同面板 .hudRow 10px 微排版一致，单独提到 11px 会打破面板内比例 */
+  font-size: 10px;
+  color: rgba(200, 208, 220, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.hudTrendSvg {
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin-top: 2px;
+}
+.hudTrendLine {
+  fill: none;
+  stroke: #35d0ff; /* ui-rule-ok: 深底面板上的青色趋势线，同 .capAlarmOn 深玻璃提亮先例 */
+  stroke-width: 1.5;
+}
+
 /* 只看水印（v4 B 窗）：透明度呼吸 2.6s——「对面是活的」的最低成本表达。
    绝对定位盖在画布上，pointer-events:none 不拦截画布任何交互；
    只在只看 + 已有画面时渲染（等待态中央是 placeholder，可控态无水印）。 */
@@ -516,7 +552,7 @@
   justify-content: center;
   gap: 8px;
   pointer-events: none;
-  color: #7a8699;
+  color: var(--text-muted);
   font-size: 12px;
   letter-spacing: 2px;
   animation: rcWmBreathe 2.6s ease-in-out infinite;
@@ -554,7 +590,7 @@
    `npm run lint:css` 是本仓库该类问题的唯一门禁，改完 CSS 要跑。 */
 .foot {
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.7;
 }
 
@@ -654,7 +690,7 @@
   line-height: 1.6;
 }
 .ibFact dt {
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 .ibFact dd {
@@ -926,7 +962,7 @@
 .joinGlobal p {
   margin: 0 0 10px;
   font-size: 12px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.65;
 }
 
@@ -960,7 +996,7 @@
   border-radius: 20px;
   border: 1px solid var(--border-color, #e3e6ea);
   background: var(--card-bg, #f6f7f9);
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1258,6 +1294,44 @@
   border-color: rgba(214, 69, 69, 0.45);
 }
 
+/* 常驻质量读数芯片（2026-09-26 对齐稿，AnyDesk 顶栏同款语义）：
+   底色比警示胶囊安静一档（它是常态读数，不是状态播报），三档色点分 good/fair/poor。 */
+.qualityChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: rgba(220, 227, 238, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.qualityDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.qualityChipOk .qualityDot {
+  background: #4ade80; /* ui-rule-ok: 深玻璃绿态点，同 .capPillOn 先例 */
+}
+.qualityChipWarn .qualityDot {
+  background: #f5b06a; /* ui-rule-ok: 深玻璃琥珀点，同 .capPillWarn 先例 */
+}
+.qualityChipBad .qualityDot {
+  background: #f09595; /* ui-rule-ok: 深玻璃红点，同 .capPillBad 先例 */
+}
+.qualityChipWarn {
+  border-color: rgba(224, 128, 58, 0.4);
+}
+.qualityChipBad {
+  border-color: rgba(214, 69, 69, 0.45);
+}
+
 /* 键盘捕获态（原底栏灰字「点画面可捕获键盘」升级上浮条） */
 .capKb {
   display: inline-flex;
@@ -1542,8 +1616,8 @@
   border-radius: 7px;
   font-size: 11px;
   white-space: nowrap;
-  color: var(--text-muted, #6b7280);
-  background: color-mix(in srgb, var(--text-muted, #6b7280) 10%, transparent);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
 }
 .menuCur {
   font-weight: 600;
@@ -1713,7 +1787,7 @@
 }
 .guideLead {
   font-size: 12px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.65;
 }
 .steps {
@@ -1769,7 +1843,7 @@
 }
 .stepD {
   font-size: 12px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.6;
 }
 
@@ -1787,7 +1861,7 @@
 }
 .fpLabel {
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 .fpVal {
@@ -1847,7 +1921,7 @@
 }
 .histTime {
   font-size: 10px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 /* D11：历史区原先 6 处内联 style 收口到这里 */
 .histList {
@@ -1861,12 +1935,12 @@
 }
 .histNameMeta {
   font-weight: 400;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   margin-left: 8px;
 }
 .histNote {
   font-size: 12px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .histNoteErr {
   font-size: 12px;
@@ -2040,7 +2114,7 @@
 .pageNote {
   font-size: 12px;
   line-height: 1.7;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .searchRow {
   display: flex;
@@ -2115,7 +2189,7 @@
   display: flex;
   justify-content: center;
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .setRow {
   display: flex;
@@ -2140,7 +2214,7 @@
 }
 .setRowHint {
   font-size: 11.5px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.6;
 }
 
@@ -2252,7 +2326,7 @@
   gap: 10px;
   padding: 0 13px;
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 
 
@@ -2321,7 +2395,7 @@
   flex: 0 0 118px;
   font-variant-numeric: tabular-nums;
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .phRes {
   flex: 0 0 110px;
@@ -2406,7 +2480,7 @@
 }
 .fileAskLead {
   font-size: 11.5px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.6;
 }
 /* 文件名可能含空格/中文/长串，必须是可断行等宽体——净化后的名字要能逐字符核对 */
@@ -2422,7 +2496,7 @@
 }
 .fileAskCd {
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 /* U3：一行版确认条里的「文件名（大小）」——超长截断，悬停看全名 */
@@ -2442,7 +2516,7 @@
 }
 .fileAskNote {
   font-size: 10.5px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 /* 决策 10：确认条上的「以后自动接收此设备的文件」。
    勾选本身用系统控件（不重画），只需要把两行文字排好：主文案 + 一行更小的落点说明
@@ -2468,7 +2542,7 @@
 .fileAskAutoHint {
   margin: 2px 0 0 20px;
   font-size: 10.5px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 /* 确认条：常驻横幅一行版 */
 .fileAskLine {
@@ -2501,7 +2575,7 @@
 }
 .fileEmpty {
   font-size: 12px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.75;
   padding: 12px 14px;
   border: 1px dashed var(--border-color, #e3e6ea);
@@ -2565,7 +2639,7 @@
 .fileState {
   flex: 0 0 auto;
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -2580,7 +2654,7 @@
   border: 1px solid var(--border-color, #e3e6ea);
   border-radius: 6px;
   background: transparent;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
@@ -2601,7 +2675,7 @@
   border: 1px solid var(--border-color, #e3e6ea);
   border-radius: 6px;
   background: transparent;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
@@ -2614,7 +2688,7 @@
   position: relative;
   height: 4px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text-muted, #6b7280) 18%, transparent);
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
   overflow: hidden;
 }
 .fileBarFill {
@@ -2632,7 +2706,7 @@
 }
 .fileHint {
   font-size: 10.5px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 
 /* ── 独立「文件传输」页 ── */
@@ -2677,7 +2751,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text-muted, #6b7280);
+  background: var(--text-muted);
 }
 /* 「在线」是四档可达性里唯一确定的一档——只有它上绿色 */
 .ftDotLive {
@@ -2689,7 +2763,7 @@
 }
 .filePageNote {
   font-size: 11px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   line-height: 1.75;
 }
 
@@ -2879,4 +2953,236 @@
 }
 .ctrlDrawerActs .dangerBtn {
   margin-left: auto;
+}
+
+/* ── 「帮助一屏」（RcAdhocDialog mode=help，方案 A 2026-09-26）──
+   页签只在合并入口出现；单意图入口（设置页）仍是标题直达，没有这一条。 */
+.adhocTabs {
+  display: flex;
+  gap: 4px;
+  /* 16px = .body 的水平内边距（12px 16px 16px）：页签文字必须与下面的内容左对齐，此前写 18px 实际右移了 2px */
+  padding: 0 16px;
+  /* ui-rule-ok: 页签栏与内容区之间唯一的线；下面紧接的 .body 与它同底色，V1 的②背景色在这一层做不出来 */
+  border-bottom: 1px solid var(--border-color);
+}
+.adhocTabs button {
+  border: 0;
+  background: transparent;
+  padding: 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  /* ui-rule-ok: 选中态下划线（透明占位，选中换 --accent）——只有用 border 才能与页签栏的 1px 底线重合 */
+  border-bottom: 2px solid transparent;
+  /* ui-rule-ok: 把 2px 下划线拉回去与页签栏的 1px 底线重合，否则两条线错开、露出双层 */
+  margin-bottom: -1px;
+}
+.adhocTabs button:hover {
+  color: var(--text-primary);
+}
+/* 选中态：比 `.adhocTabs button` 多一级类，靠特异性压过默认态，不用 !important */
+.adhocTabs .adhocTabOn {
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* ── 凭证徽章 .credTag（方案 C 2026-09-26）──
+   四种凭证只此一枚色标：名字自带寿命，颜色负责「不用读说明也知道拿的是哪种码」。
+   纯装饰，不进任何判定分支；三档语义色对应「长期配对 / 一次性帮助 / 无人值守」。 */
+.credRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.credTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  /* ui-rule-ok: 垂直 1px 是配 line-height:18px 的光学补偿；左 6 右 8 —— 左边是 6px 的圆点，它到边缘的留白要比文字侧小 2px 才视觉等距 */
+  padding: 1px 8px 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  width: fit-content;
+}
+.credTag i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.credTag[data-tone="pair"] {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.credTag[data-tone="pair"] i {
+  background: var(--accent);
+}
+.credTag[data-tone="help"] {
+  color: var(--success);
+  background: var(--success-bg);
+}
+.credTag[data-tone="help"] i {
+  background: var(--success);
+}
+.credTag[data-tone="uno"] {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+.credTag[data-tone="uno"] i {
+  background: var(--warning);
+}
+
+/* ── 无人值守弹层骨架（方案 B / C，2026-09-26）─────────────────────
+   RcUnoGeneratePane / RcUnoJoinPane / RcUnoPassPane 与 RcPairPastePane 共用。
+   这三个 pane 此前把骨架整个写成行内 style（U8）：行内拿不到 :focus-visible、
+   拿不到 prefers-reduced-motion、也压不住主题，等于把 U7 / U2 / U6 一起放开。
+   下面每个类的值都与原行内值逐条对齐，视觉零变化。 */
+.unoStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0 8px;
+}
+
+/* 单选 / 勾选行：控件与文案同一基线 */
+.unoRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+/* 顶对齐的单选行（文案会折行时用，圆点跟着首行走） */
+.unoRowTop {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.unoRowTop input {
+  margin-top: 4px;
+}
+
+/* `.foot` 的两个变体：块级排版 / 与下方控件留一格 */
+.unoBlockSpan {
+  display: block;
+}
+.unoFootGap {
+  margin-bottom: 8px;
+}
+
+/* 弹层底部的动作行：右对齐、与上方内容留一格 */
+.unoActs {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* 无人值守首屏减负（2026-09-26 对齐稿）：默认值承诺句 + 全宽大按钮 + 高级折叠区 */
+.unoDefaultLine {
+  margin: 12px 0 8px;
+  color: var(--text-primary);
+}
+.unoBtnBig {
+  width: 100%;
+  justify-content: center;
+  padding: 8px 20px;
+  border-radius: 12px;
+}
+.unoAdv {
+  margin-top: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+.unoAdv summary {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.unoAdv[open] summary {
+  border-bottom: 1px solid var(--border-color);
+}
+.unoAdv label {
+  padding: 2px 12px;
+}
+
+.unoTextarea,
+.unoInput,
+.unoMonoInput,
+.unoCodeBox {
+  /* ui-rule-ok: 输入/展示框的轮廓。四处底色都是 --card-bg，与对话框底同层，V1 的②背景色在此做不出边界 */
+  border: 1px solid var(--border-color);
+}
+
+.unoTextarea,
+.unoInput,
+.unoMonoInput {
+  width: 100%;
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.unoTextarea {
+  padding: 8px;
+  min-height: 56px;
+  font-size: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  resize: vertical;
+}
+
+.unoInput {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.unoMonoInput {
+  margin-top: 8px;
+  padding: 8px;
+  font-size: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+/* `.unoInput` 的上下留白变体（固定密码那一页两个输入框都带） */
+.unoInputSpaced {
+  margin: 8px 0;
+}
+
+/* 等宽只读串（完整接入串 / 设备号）：长串必须能断行，否则撑破弹层 */
+.unoMonoBlock {
+  word-break: break-all;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+.unoMonoBlockSpaced {
+  margin-top: 4px;
+}
+
+/* 大号展示码：一次性码要能照着念 */
+.unoCodeBox {
+  padding: 12px 0;
+  border-radius: 12px;
+  background: var(--card-bg);
+  /* ui-rule-ok: 展示码要电话念读，五档里 20px 在 480px 弹层里不够大 */
+  font-size: 26px;
+  font-family: ui-monospace, Consolas, monospace;
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+/* 剪贴板「检测到一份码，要填入吗」：`.noteWarn` 的纵向变体 + 它下面的按钮行 */
+.clipAskCol {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.clipAskActs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }

@@ -1459,7 +1459,9 @@ impl DataStore {
                  last_path  TEXT NOT NULL DEFAULT '',
                  trusted    INTEGER NOT NULL DEFAULT 0,
                  auto_accept INTEGER NOT NULL DEFAULT 0,
-                 os         TEXT NOT NULL DEFAULT ''
+                 os         TEXT NOT NULL DEFAULT '',
+                 tags       TEXT NOT NULL DEFAULT '[]',
+                 remark     TEXT NOT NULL DEFAULT ''
              );",
         ) {
             log::error!("[DataStore] 建 rc_devices 表失败: {}", e);
@@ -1592,6 +1594,42 @@ impl DataStore {
                 } else {
                     log::error!("[DataStore] 添加 rc_devices.os 列失败: {}", e);
                     return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：rc_devices.tags / rc_devices.remark —— 设备组织（2026-09-26 对齐稿①）。
+        // tags：JSON 数组字符串（`[{"name":"家用","color":"blue"}…]`），上限与色板在前端
+        //        收口（lib/rcDeviceTags），存储侧只做透传读回。
+        // remark：**描述性备注**长文本，与 `note`（改名别名，进 display_name）刻意分开——
+        //        备注写一句「双 4K，走中继较卡」不该变成设备显示名。
+        // 两列都是**本机私产**：不发信令、不随任何配对/同步路径同步。
+        for (col, ddl) in [
+            (
+                "tags",
+                "ALTER TABLE rc_devices ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';",
+            ),
+            (
+                "remark",
+                "ALTER TABLE rc_devices ADD COLUMN remark TEXT NOT NULL DEFAULT '';",
+            ),
+        ] {
+            let has: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('rc_devices') WHERE name = ?1",
+                    [col],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has {
+                if let Err(e) = conn.execute_batch(ddl) {
+                    if is_duplicate_column_error(&e) {
+                        log::warn!("[DataStore] rc_devices.{} 列已存在，忽略: {}", col, e);
+                    } else {
+                        log::error!("[DataStore] 添加 rc_devices.{} 列失败: {}", col, e);
+                        return Err(e);
+                    }
                 }
             }
         }

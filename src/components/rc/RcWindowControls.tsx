@@ -6,18 +6,22 @@
  * （Windows 原生窗口按钮不是手形）、关闭键 hover 红底白字。稿子的 hover 灰是
  * 写死的 `#e7ebf1`，这里换成与主题混色——工作台跟随主题，暗色下写死浅灰会发白。
  *
- * 🔴 **关闭走 `close()`，不是 `destroy()`**：`useRcWorkbenchClose` 拦的是
- *    `onCloseRequested`（有会话时先弹确认，选「结束会话并关闭」才 end + destroy）。
- *    这里直接 destroy 会绕过那道守卫，现象是「点了关闭，会话还在跑、窗口却没了」
- *    ——正是它要防的。权限见 `src-tauri/capabilities/rc-workbench.json`。
+ * 🔴 **方案A（2026-09-25）三键改走 Rust 命令**（lib/rcWindowOps 收口）：per-window
+ *    ACL 是「点了没反应」这类静默故障的来源（2026-09-18 前科 + 2026-09-25 用户
+ *    复报），自定义命令不经 per-window ACL，失败弹 toast。命令仍是 `close` 语义
+ *    （与 JS close() 同一条运行时路径，触发 CloseRequested）——**绝不 destroy()**：
+ *    `useRcWorkbenchClose` 拦的是 onCloseRequested（有会话先问），destroy 会绕过
+ *    那道守卫，现象是「点了关闭，会话还在跑、窗口却没了」。
  *
- * 拖拽不归它管：宿主条挂了 `data-tauri-drag-region="deep"`，而「可点击元素不带该
- * 属性时自动阻断拖动」是 Tauri 注入脚本的规则，按钮天然豁免；容器上再补一个
- * `="false"`，免得按钮之间的缝隙被当成拖动区（稿子的按钮是紧挨的，本不该有缝）。
+ * 拖拽不归它管：宿主条挂了 `data-tauri-drag-region="deep"`（RcA2TitleBar 语境），
+ * 而「可点击元素不带该属性时自动阻断拖动」是 Tauri 注入脚本的规则，按钮天然豁免；
+ * 容器上再补一个 `="false"`，免得按钮之间的缝隙被当成拖动区（会话态顶栏的语境
+ * 见 RcSessionTop——那边 2026-09-25 起已整体改 JS 拖拽，不再依赖注入脚本）。
  */
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { logger } from "@/lib/logger";
+import { useToast } from "@/components/Toast";
+import { rcWindowClose, rcWindowMinimize, rcWindowToggleMaximize } from "@/lib/rcWindowOps";
 import styles from "./RemoteComputerA2.module.css";
 
 /** 图标照稿子的 `<symbol>` 同形（viewBox 24 / stroke currentColor）。
@@ -46,15 +50,10 @@ export function WindowControlIcon({ name }: { name: "min" | "max" | "restore" | 
   );
 }
 
-function runWin(fn: () => Promise<unknown>, what: string) {
-  try {
-    void fn().catch((e) => logger.warn(`窗口${what}失败`, e));
-  } catch (e) {
-    // `getCurrentWindow()` 读的是 `window.__TAURI_INTERNALS__`，非 Tauri 环境
-    // （浏览器里直开 rc.html 看版式）**会同步抛**——那一刻还没拿到 Promise，
-    // 上面那个 `.catch` 接不住。不兜住的话，一次点击就能把整页推给 ErrorBoundary。
-    logger.warn(`窗口${what}失败`, e);
-  }
+/** 三键共用：命令失败 → toast（useToast 有默认空实现，无 Provider 也不炸）。 */
+function useWindowOpNotify() {
+  const { toast } = useToast();
+  return (msg: string, kind: "error") => toast(msg, kind);
 }
 
 /**
@@ -63,13 +62,14 @@ function runWin(fn: () => Promise<unknown>, what: string) {
  * 测试与历史兼容。
  */
 export function RcCloseButton() {
+  const notify = useWindowOpNotify();
   return (
     <button
       type="button"
       className={`${styles.winBtn} ${styles.winBtnClose}`}
       aria-label="关闭"
       title="关闭"
-      onClick={() => runWin(() => getCurrentWindow().close(), "关闭")}
+      onClick={() => void rcWindowClose(notify)}
     >
       <WindowControlIcon name="close" />
     </button>
@@ -126,6 +126,7 @@ export function useMaximized(): boolean {
 
 export function RcWindowControls() {
   const maximized = useMaximized();
+  const notify = useWindowOpNotify();
 
   return (
     <div className={styles.winControls} data-tauri-drag-region="false" aria-label="窗口控制">
@@ -134,7 +135,7 @@ export function RcWindowControls() {
         className={styles.winBtn}
         aria-label="最小化"
         title="最小化"
-        onClick={() => runWin(() => getCurrentWindow().minimize(), "最小化")}
+        onClick={() => void rcWindowMinimize(notify)}
       >
         <WindowControlIcon name="min" />
       </button>
@@ -143,9 +144,7 @@ export function RcWindowControls() {
         className={styles.winBtn}
         aria-label={maximized ? "向下还原" : "最大化"}
         title={maximized ? "向下还原" : "最大化"}
-        onClick={() =>
-          runWin(() => getCurrentWindow().toggleMaximize(), maximized ? "还原" : "最大化")
-        }
+        onClick={() => void rcWindowToggleMaximize(notify)}
       >
         <WindowControlIcon name={maximized ? "restore" : "max"} />
       </button>

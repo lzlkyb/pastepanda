@@ -17,9 +17,9 @@
  * 样式在 RemoteComputer.module.css `.fsBar*`；浮现状态机与 RcViewTools 同构。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { logger } from "@/lib/logger";
+import { useToast } from "@/components/Toast";
 import type { FitMode } from "@/lib/rcSessionStats";
+import { rcWindowClose, rcWindowMinimize, rcWindowToggleMaximize } from "@/lib/rcWindowOps";
 import { WindowControlIcon, useMaximized } from "./RcWindowControls";
 import styles from "./RemoteComputer.module.css";
 
@@ -32,15 +32,6 @@ const FITS: Array<[FitMode, string]> = [
 const REVEAL_BAND_PX = 8;
 /** 无交互这么久后淡出。 */
 const AUTO_HIDE_MS = 2500;
-
-/** 同 RcWindowControls.runWin：非 Tauri 环境（浏览器看版式 / vitest）同步抛，得兜。 */
-function runWin(fn: () => Promise<unknown>, what: string) {
-  try {
-    void fn().catch((e) => logger.warn(`窗口${what}失败`, e));
-  } catch (e) {
-    logger.warn(`窗口${what}失败`, e);
-  }
-}
 
 export function RcFullscreenHotbar({
   fit,
@@ -70,6 +61,9 @@ export function RcFullscreenHotbar({
   const [shown, setShown] = useState(true);
   const hideTimer = useRef<number | null>(null);
   const maximized = useMaximized();
+  // 方案A（2026-09-25）：三键失败要可见——toast 经 useToast（默认空实现，无 Provider 也不炸）
+  const { toast } = useToast();
+  const notify = useCallback((m: string, kind: "error") => toast(m, kind), [toast]);
 
   const scheduleHide = useCallback(() => {
     if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
@@ -170,7 +164,8 @@ export function RcFullscreenHotbar({
       {info && <span className={styles.fsInfo}>{info}</span>}
       {/* 窗口三键：margin-left:auto 推到最右（Windows 习惯位）。语义与
           RcWindowControls 完全一致（minimize / toggleMaximize / close），
-          仅样式是本条的深色窄版——关闭仍走 close()，不绕会话确认。 */}
+          仅样式是本条的深色窄版——关闭仍走 close 语义命令，不绕会话确认。
+          方案A（2026-09-25）：三键统一走 lib/rcWindowOps 的 Rust 命令出口。 */}
       <div className={styles.fsWin} data-tauri-drag-region="false">
         <button
           type="button"
@@ -178,7 +173,7 @@ export function RcFullscreenHotbar({
           className={styles.fsWinBtn}
           aria-label="最小化"
           title="最小化"
-          onClick={() => runWin(() => getCurrentWindow().minimize(), "最小化")}
+          onClick={() => void rcWindowMinimize(notify)}
         >
           <WindowControlIcon name="min" />
         </button>
@@ -188,9 +183,7 @@ export function RcFullscreenHotbar({
           className={styles.fsWinBtn}
           aria-label={maximized ? "向下还原" : "最大化"}
           title={maximized ? "向下还原" : "最大化"}
-          onClick={() =>
-            runWin(() => getCurrentWindow().toggleMaximize(), maximized ? "还原" : "最大化")
-          }
+          onClick={() => void rcWindowToggleMaximize(notify)}
         >
           <WindowControlIcon name={maximized ? "restore" : "max"} />
         </button>
@@ -200,7 +193,7 @@ export function RcFullscreenHotbar({
           className={`${styles.fsWinBtn} ${styles.fsWinBtnClose}`}
           aria-label="关闭"
           title="关闭"
-          onClick={() => runWin(() => getCurrentWindow().close(), "关闭")}
+          onClick={() => void rcWindowClose(notify)}
         >
           <WindowControlIcon name="close" />
         </button>

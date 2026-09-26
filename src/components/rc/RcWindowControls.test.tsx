@@ -1,33 +1,30 @@
 /**
- * RcWindowControls 守卫单测（批7，2026-09-22）。
+ * RcWindowControls 守卫单测（批7，2026-09-22；方案A 2026-09-25 改命令出口）。
  *
  * 这一段的价值几乎全在最后一条：窗口按钮谁都会写，但「关闭」这一步**必须**走
- * `close()` 而不是 `destroy()`——`useRcWorkbenchClose` 拦的是 `onCloseRequested`，
- * `destroy()` 直接拆窗口、绕过那道「有会话先问」的守卫，现象是「窗口没了、会话还在
- * 对面跑」。这个差别在界面上看不出来（都关掉了），只有断言挡得住。
+ * `close` 语义（rc_window_close，与 JS close() 同一条运行时路径，触发
+ * CloseRequested）而不是 destroy——`useRcWorkbenchClose` 拦的是 onCloseRequested，
+ * destroy 直接拆窗口、绕过那道「有会话先问」的守卫，现象是「窗口没了、会话还在
+ * 对面跑」。这个差别在界面上看不出来，只有断言挡得住。
  *
- * `@tauri-apps/api/window` 整模块覆盖（先例：`src/__tests__/rcWorkbenchClose.test.tsx`）：
- * 共享 mock 只保证「不炸」，这里要断言调用行为，所以自己给一组 spy。
+ * `@tauri-apps/api/core` 的 invoke 打桩（方案A 后三键全走 Rust 命令，见
+ * lib/rcWindowOps）；`@tauri-apps/api/window` 仍要给 useMaximized 的
+ * isMaximized/onResized 一组 spy。vitest 环境没有 `__TAURI_INTERNALS__`，
+ * rcWindowOps 会判「非 Tauri」短路——用例里补上再清掉。
  */
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
-  minimize: vi.fn(),
-  toggleMaximize: vi.fn(),
+  invoke: vi.fn(),
   isMaximized: vi.fn(),
-  close: vi.fn(),
-  destroy: vi.fn(),
   onResized: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
-    minimize: h.minimize,
-    toggleMaximize: h.toggleMaximize,
     isMaximized: h.isMaximized,
-    close: h.close,
-    destroy: h.destroy,
     onResized: h.onResized,
   }),
 }));
@@ -35,12 +32,14 @@ vi.mock("@tauri-apps/api/window", () => ({
 import { RcCloseButton, RcWindowControls } from "./RcWindowControls";
 
 beforeEach(() => {
-  h.minimize.mockReset().mockResolvedValue(undefined);
-  h.toggleMaximize.mockReset().mockResolvedValue(undefined);
+  h.invoke.mockReset().mockResolvedValue(undefined);
   h.isMaximized.mockReset().mockResolvedValue(false);
-  h.close.mockReset().mockResolvedValue(undefined);
-  h.destroy.mockReset().mockResolvedValue(undefined);
   h.onResized.mockReset().mockResolvedValue(() => {});
+  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+});
+
+afterEach(() => {
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
 });
 
 describe("RcWindowControls", () => {
@@ -52,25 +51,25 @@ describe("RcWindowControls", () => {
     expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
   });
 
-  it("最小化 / 最大化分别打到对应的窗口 API", () => {
+  it("最小化 / 最大化分别打到对应的 Rust 命令", () => {
     render(<RcWindowControls />);
 
     fireEvent.click(screen.getByRole("button", { name: "最小化" }));
-    expect(h.minimize).toHaveBeenCalledTimes(1);
-    expect(h.toggleMaximize).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenNthCalledWith(1, "rc_window_minimize");
 
     fireEvent.click(screen.getByRole("button", { name: "最大化" }));
-    expect(h.toggleMaximize).toHaveBeenCalledTimes(1);
+    expect(h.invoke).toHaveBeenNthCalledWith(2, "rc_window_toggle_maximize");
   });
 
-  it("🔴 关闭走 close()（交给关闭守卫），绝不调 destroy()", () => {
+  it("🔴 关闭走 rc_window_close（交给关闭守卫），绝不出现 destroy", () => {
     render(<RcWindowControls />);
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    expect(h.close).toHaveBeenCalledTimes(1);
-    // destroy() 会绕过 onCloseRequested，「有会话先问」那道守卫就形同虚设
-    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenNthCalledWith(1, "rc_window_close");
+    // 这组按钮只许打三键命令集——任何别的窗口操作（如 destroy 绕守卫）都是回归
+    const allCmds = h.invoke.mock.calls.map((c) => c[0]);
+    expect(allCmds.every((c) => typeof c === "string" && c.startsWith("rc_window_"))).toBe(true);
   });
 
   it("已最大化时那格变成「向下还原」（图标与无障碍名一起换）", async () => {
@@ -81,11 +80,10 @@ describe("RcWindowControls", () => {
     expect(screen.queryByRole("button", { name: "最大化" })).toBeNull();
   });
 
-  it("RcCloseButton 单独用（会话态顶条只补这一枚）也是同一个关闭语义", () => {
+  it("RcCloseButton 单独用也是同一个关闭语义", () => {
     render(<RcCloseButton />);
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    expect(h.close).toHaveBeenCalledTimes(1);
-    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenCalledWith("rc_window_close");
   });
 });

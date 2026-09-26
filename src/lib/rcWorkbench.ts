@@ -17,8 +17,8 @@ import type { RcSession, RcStatus } from "@/lib/api/rc";
 export type WbMainMode = "inbound" | "outbound" | "pending" | "idle";
 
 /**
- * 会话 → 模式。**阶段枚举只在这一个地方出现**——`rcAdhoc` 也要按同一个口径判
- * 「进会话 / 回到空闲」，两处各写一遍 phase 比较迟早会漏掉一个分支
+ * 会话 → 模式。**阶段枚举只在这一个地方出现**——凡是按「进会话 / 回到空闲」
+ * 判分支的地方都从这里拿，两处各写一遍 phase 比较迟早会漏掉一个分支
  * （本文件顶部的说明就是这么来的）。
  */
 export function sessionMode(session: RcSession | null | undefined): WbMainMode {

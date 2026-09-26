@@ -15,6 +15,7 @@
  * 不在本文件里跑计时器（一屏一个 interval，关掉就漏）。
  */
 import type { ToastFn } from "@/components/Toast";
+import { RcCredTag } from "./RcCredTag";
 import styles from "../rc/RemoteComputer.module.css";
 
 /** 码的寿命读法用**分钟**：这是给人看的「还能用多久」，不是倒计时的秒表。 */
@@ -35,7 +36,7 @@ export function RcAdhocCodePane({
   onGenerate,
   onBack,
 }: {
-  /** 已生成的协助码；null = 还没生成或生成失败。 */
+  /** 已生成的帮助码；null = 还没生成或生成失败。 */
   code: string | null;
   expiresAt: number;
   now: number;
@@ -48,12 +49,13 @@ export function RcAdhocCodePane({
 }) {
   return (
     <>
+      <RcCredTag tone="help" label="一次性帮助码" note="双方都要在场" />
       {code ? (
         <>
           <div className={styles.noteWarn} style={{ flexDirection: "column", alignItems: "stretch" }}>
             <div>
-              把这个码给对方。他在自己机器的「帮别人连一次」里粘贴即可，<b>只对这一次有效</b>
-              —— 结束后不会留在你们的设备列表里。
+              把这个码给对方。他粘贴即可连过来，<b>当场要你点确认</b>
+              —— 这次之后他会<b>默认留在你的设备列表里</b>，不想留随时在列表删。
               {expiresAt > 0 && (
                 <>
                   {" "}
@@ -67,7 +69,7 @@ export function RcAdhocCodePane({
               style={{ fontSize: 14, letterSpacing: "0.06em", marginTop: 8 }}
               value={code}
               onFocus={(e) => e.currentTarget.select()}
-              aria-label="一次性协助码"
+              aria-label="一次性帮助码"
             />
             <button
               type="button"
@@ -76,7 +78,7 @@ export function RcAdhocCodePane({
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(code);
-                  toast("协助码已复制，发给帮你的人", "success");
+                  toast("帮助码已复制，发给帮你的人", "success");
                 } catch {
                   toast("复制失败，请手动选中上方文本复制", "error");
                 }
@@ -92,7 +94,7 @@ export function RcAdhocCodePane({
       ) : (
         <>
           <div className={styles.foot}>
-            生成一串只对这一次有效的协助码，发给帮你的人；他连过来时你仍会收到确认。
+            生成一串只对这一次有效的帮助码，发给帮你的人；他连过来时你仍会收到确认。
           </div>
           {error && <div className={styles.noteBad}>{error}</div>}
           <button
@@ -101,7 +103,7 @@ export function RcAdhocCodePane({
             disabled={busy}
             onClick={() => void onGenerate()}
           >
-            {busy ? "生成中…" : "生成协助码"}
+            {busy ? "生成中…" : "生成帮助码"}
           </button>
         </>
       )}

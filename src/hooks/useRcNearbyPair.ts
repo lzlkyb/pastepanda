@@ -18,8 +18,9 @@
  *
  * 后端 `rc_nearby_status` 里那个 `done`（🔴 P1-7 起）**60 秒窗口内多重可读**——
  * 主窗口与工作台两个轮询者都看得见，谁先读到不影响另一个。界面仍要自留一份：
- * 轮询拿回的是「后端投影」，完成屏要一直挂到本对话框关闭；窗口内每 2 秒都会
- * 拿回同一条，按 `at_ms` 去重防止无谓重渲染（去重归界面，后端不归）。
+ * 乙方案（2026-09-26）后完成屏已删，`done` 的唯一消费点是 `RcPairDialog` 的
+ * 「关窗 + toast + 选中新设备」一次性副作用——正因如此**去重必须可靠**，
+ * 重开对话框重播那条 toast 会变成噪音。按 `at_ms` 去重（去重归界面，后端不归）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";

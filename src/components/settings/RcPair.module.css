@@ -27,6 +27,35 @@
   margin: 2px 0;
 }
 
+/* 跨网指引（乙方案 2026-09-26）：向导主路只剩局域网，这句负责把跨网的人
+   指去「帮助」那条正路，而不是逼他展开高级。 */
+.hintMuted {
+  color: var(--text-muted);
+}
+
+/* 折叠「高级」：邀请码两条路留一版的容器（乙方案 §2）。 */
+.adv {
+  /* ui-rule-ok: 折叠区与上方向导之间的虚线分隔——紧接的 summary 是「另一组内容」的入口，只靠间距分不出这层分界 */
+  border-top: 1px dashed var(--border-color);
+  padding-top: 8px;
+}
+.adv summary {
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.advBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+/* 折叠内的两条路按钮：整行宽、左对齐——它们是并列的备选动作，不像主按钮那样需要居中。 */
+.advBtn {
+  width: 100%;
+  text-align: left;
+}
+
 /* 未配对邻居的头像：**方圆角**。
  *
  * 🔴 形态即语义：已配对设备（`rc/RemoteComputer.module.css` 的 `.av`）是圆形，
@@ -45,35 +74,4 @@
   background: color-mix(in srgb, var(--accent) 16%, var(--card-bg, #fff));
   color: var(--accent);
   border: 1px solid var(--accent-border);
-}
-
-/* ===== 完成屏 ===== */
-.okBox {
-  text-align: center;
-  padding: 14px 0 4px;
-}
-
-.okMark {
-  font-size: 26px;
-  line-height: 1.2;
-}
-
-.okTitle {
-  font-weight: 700;
-  margin-top: 6px;
-  font-size: 13px;
-}
-
-.okSub {
-  color: var(--text-muted, #6b7280);
-  font-size: 11.5px;
-  margin-top: 5px;
-  line-height: 1.6;
-}
-
-.btnRowCenter {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 12px;
 }

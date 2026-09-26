@@ -71,6 +71,28 @@ describe("远程电脑 A2 真实主题守卫", () => {
     expect(css).toContain("var(--rc-head-bg)");
   });
 
+  /* hero 插画六件套（屏体/边框/颈/座/光晕台/标语笔触）与 --rc-head-bg 同一纪律：
+     漏一套主题 = 该主题下插画缺层，tsc/vitest 全看不出来，只有这条守卫能拦。 */
+  it("hero 插画令牌六套主题齐全、表达式一致且从令牌派生", () => {
+    for (const token of [
+      "--rc-hero-screen",
+      "--rc-hero-bezel",
+      "--rc-hero-neck",
+      "--rc-hero-base",
+      "--rc-hero-pedestal",
+      "--rc-slogan-line",
+    ]) {
+      const values = [...theme.matchAll(new RegExp(`^\\s*${token}:\\s*(.+);`, "gm"))].map((m) => m[1].trim());
+      expect(values, `${token} 应有 6 处（六套主题各一）`).toHaveLength(6);
+      for (const value of values) {
+        expect(value, `${token} 不应写死颜色：${value}`).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+        expect(value, `${token} 应从现有令牌派生：${value}`).toMatch(/var\(--/);
+      }
+      expect(new Set(values).size, `${token} 在六套主题里的表达式应完全相同`).toBe(1);
+      expect(css, `A2 应消费 ${token}`).toContain(`var(${token})`);
+    }
+  });
+
   it("独立工作台从真实配置读取主题，并实时跟随主窗口", () => {
     expect(entry).toContain('invoke<{ theme?: string }>("get_config")');
     expect(entry).toContain('"theme-changed"');

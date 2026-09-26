@@ -24,11 +24,13 @@ import { RcPairDialog } from "./RcPairDialog";
 import { RcAdhocDialog } from "./RcAdhocDialog";
 import { RcUnoDialog } from "./RcUnoDialog";
 
-/** `null` = 没有弹层。六种意图各占一个值，调用方不用再维护第二个布尔量。 */
+/** `null` = 没有弹层。七种意图各占一个值，调用方不用再维护第二个布尔量。
+    `help` = 方案 A 的「帮助一屏」：一个弹层里用页签收齐 helpMe / helpOther。 */
 export type RcPairLayerMode =
   | "pair"
   | "helpMe"
   | "helpOther"
+  | "help"
   | "unoGenerate"
   | "unoJoin"
   | "unoPass"
@@ -40,6 +42,7 @@ export function RcPairLayer({
   mode,
   onClose,
   onStartRemote,
+  onPairAccepted,
 }: {
   rc: UseRc;
   toast: ToastFn;
@@ -50,10 +53,19 @@ export function RcPairLayer({
    * 没有会话上下文，那时一次性协助退回 `rc.request` 直发「只看」。
    */
   onStartRemote?: (peerId: string) => void;
+  /** 局域网配对成功那一刻选中新设备（工作台有设备页选中态才传）。 */
+  onPairAccepted?: (peerId: string) => void;
 }) {
   if (!mode) return null;
   if (mode === "pair") {
-    return <RcPairDialog rc={rc} toast={toast} onClose={onClose} onStartRemote={onStartRemote} />;
+    return (
+      <RcPairDialog
+        rc={rc}
+        toast={toast}
+        onClose={onClose}
+        onPairAccepted={onPairAccepted}
+      />
+    );
   }
   if (mode === "unoGenerate" || mode === "unoJoin" || mode === "unoPass") {
     const side = mode === "unoGenerate" ? "generate" : mode === "unoJoin" ? "join" : "pass";

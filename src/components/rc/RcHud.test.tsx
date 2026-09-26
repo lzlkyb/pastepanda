@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render } from "@testing-library/react";
+import { resetRttTrend } from "@/lib/rcRttTrend";
 import { RcHud } from "./RcHud";
 import styles from "./RemoteComputer.module.css";
 
@@ -30,6 +31,8 @@ function trigger(container: HTMLElement) {
 describe("RcHud 连接详情入口", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // 趋势环形缓冲是模块级单例，逐用例清零避免互相喂样本
+    resetRttTrend();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -85,9 +88,15 @@ describe("RcHud 连接详情入口", () => {
     for (const label of ["编码", "画质", "画面", "链路"]) {
       expect(text).toContain(label);
     }
-    for (const label of ["分辨率", "往返", "画面龄", "分段", "操作", "丢包", "码率", "路径"]) {
+    for (const label of ["分辨率", "往返", "画面龄", "分段", "操作", "丢包", "码率", "路径", "近 60"]) {
       expect(text).not.toContain(label);
     }
+  });
+
+  it("有 rtt 样本时面板头部出 60s 趋势卡（对齐稿：趋势是体感视角）", () => {
+    const { container } = renderHud();
+    fireEvent.click(trigger(container)!);
+    expect(panel(container)!.textContent).toContain("往返延迟 · 近 60s");
   });
 
   it("有画面尺寸时补出「分辨率」行（稿里有、原来缺的那条）", () => {

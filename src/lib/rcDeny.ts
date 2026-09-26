@@ -39,12 +39,12 @@ const BY_CODE: Record<string, Omit<RcErrorInfo, "reason">> = {
   //   按钮名照真实 UI 写（`RcPairCreatePane` 的「生成并复制」），别写成不存在的「重新生成」。
   invite_door_closed: {
     title: "对方的邀请窗口已过期",
-    hint: "邀请码只在生成后 30 分钟内有效。请让对方重新走一次「生成并复制」，再把新的码发你。",
+    hint: "长期配对码只在生成后 30 分钟内有效。请让对方重新走一次「生成并复制」，再把新的码发你。",
     kind: "not_paired",
   },
   pair_denied: {
     title: "对方拒绝过这次配对",
-    hint: "对方此前点了拒绝，30 分钟内不会再弹确认。请让对方重新生成一份邀请码再试。",
+    hint: "对方此前点了拒绝，30 分钟内不会再弹确认。请让对方重新生成一份配对码再试。",
     kind: "not_paired",
   },
   await_pair_confirm: {

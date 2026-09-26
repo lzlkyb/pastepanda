@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   RcCapability,
+  RcDeviceTag,
   RcIdentity,
   RcInvite,
   RcInviteCreated,
@@ -74,6 +75,16 @@ export function rcForget(nodeId: string): Promise<void> {
 /** A1：设置设备的本地备注名。空串 = 清除（显示回落对端自报名）。 */
 export function rcDeviceRename(nodeId: string, note: string): Promise<void> {
   return invoke("rc_device_rename", { nodeId, note });
+}
+
+/** 设备彩色标签（2026-09-26 对齐稿①）。整组覆盖式保存；空数组 = 清空。 */
+export function rcDeviceTagsSet(nodeId: string, tags: RcDeviceTag[]): Promise<void> {
+  return invoke("rc_device_tags_set", { nodeId, tags });
+}
+
+/** 设备描述性备注（长文本）。空串 = 清除；与改名别名互不串扰。 */
+export function rcDeviceRemarkSet(nodeId: string, remark: string): Promise<void> {
+  return invoke("rc_device_remark_set", { nodeId, remark });
 }
 
 export function rcJoinApprove(nodeId: string, name: string): Promise<void> {

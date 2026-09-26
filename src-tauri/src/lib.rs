@@ -1044,6 +1044,8 @@ pub fn run() {
             commands::rc_pair,
             commands::rc_forget,
             commands::rc_device_rename,
+            commands::rc_device_tags_set,
+            commands::rc_device_remark_set,
             commands::rc_join_approve,
             commands::rc_join_deny,
             commands::rc_set_enabled,

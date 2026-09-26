@@ -15,7 +15,6 @@ import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import type { RcSession, RcQuality, RcCaptureScope } from "@/lib/api/rc";
 import type { FitMode } from "@/lib/rcSessionStats";
-import { linkStateHint, linkStateLabel } from "@/lib/rcSessionStats";
 import type { UseRc } from "@/hooks/useRc";
 import type { useRcInput } from "@/hooks/useRcInput";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
@@ -23,6 +22,8 @@ import type { useRcRemoteSend } from "@/hooks/useRcRemoteSend";
 import { useRcCapsuleReveal } from "@/hooks/useRcCapsuleReveal";
 import { RcDropdown } from "./RcDropdown";
 import { RcCapsuleMore } from "./RcCapsuleMore";
+import { RcCapsuleAlerts } from "./RcCapsuleAlerts";
+import { RcQualityChip } from "./RcQualityChip";
 import styles from "./RemoteComputer.module.css";
 
 type RcInput = ReturnType<typeof useRcInput>;
@@ -50,6 +51,8 @@ export function RcSessionCapsule({
   quality,
   scopePick,
   bitrate,
+  rttMs = 0,
+  fps = 0,
   audioOn,
   onToggleAudio,
   clipAuto,
@@ -77,6 +80,9 @@ export function RcSessionCapsule({
   quality: string;
   scopePick: string;
   bitrate: number;
+  /** 常驻质量读数芯片的数据（与 detail/RcHud 同一份：pong EMA 与帧率）；缺省 = 无样本不显示。 */
+  rttMs?: number;
+  fps?: number;
   audioOn: boolean;
   onToggleAudio: () => void;
   clipAuto: boolean;
@@ -130,6 +136,9 @@ export function RcSessionCapsule({
       <div className={styles.capCapsule}>
         <span className={dotCls} />
         <span className={styles.capWho}>{rcDisplayName(session, fingerprintOf(session.peer))}</span>
+        {/* 2026-09-26 对齐稿：常驻质量读数贴着身份段（AnyDesk 顶栏同款位）；
+            无样本整枚不渲染，链路死活仍归 capAlarm/顶条红灯。 */}
+        <RcQualityChip rttMs={rttMs} fps={fps} tab={tab} />
         <span className={canControl ? styles.capPillOn : styles.capPillView}>
           {canControl ? "可控" : "只看"}
         </span>
@@ -151,34 +160,7 @@ export function RcSessionCapsule({
             对方版本偏旧
           </span>
         )}
-        {link.state === "failed" && (
-          <span className={styles.capPillBad} title={linkStateHint(link.state)}>
-            {linkStateLabel(link.state)}
-          </span>
-        )}
-        {(link.state === "unstable" || link.state === "reconnecting") && (
-          <span className={styles.capPillWarn} title={linkStateHint(link.state)}>
-            {linkStateLabel(link.state)}
-          </span>
-        )}
-        {link.unansweredSec > 0 && (
-          <span className={styles.capPillWarn} title="操作已发往对方，但画面尚未变化">
-            操作后 {link.unansweredSec}s 无画面
-          </span>
-        )}
-        {/* 案 17.2：failed 时「重连」贴着警示胶囊一步直达（⋯ 面板里的入口照旧） */}
-        {link.state === "failed" && onReconnect && (
-          <button
-            type="button"
-            tabIndex={tab}
-            className={styles.capBtn}
-            disabled={busy}
-            title="断开当前连接并重新发起"
-            onClick={onReconnect}
-          >
-            重连
-          </button>
-        )}
+        <RcCapsuleAlerts link={link} tab={tab} busy={busy} onReconnect={onReconnect} />
 
         <span className={styles.capSep} aria-hidden="true" />
         {/* D-2：只看仍可调画质/编码（流控）；画面范围要求可控（改主机采集范围） */}

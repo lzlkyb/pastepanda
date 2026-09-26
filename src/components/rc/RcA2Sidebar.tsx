@@ -1,23 +1,26 @@
 /**
- * RcA2Sidebar — A2 工作台的常驻设备栏（306px）。
+ * RcA2Sidebar — A2 工作台的常驻侧栏（方案 A 重做，2026-09-26）。
  *
- * 上半部随页切换（批5）：
- *  - 设备/文件/设置页 → `RcA2DeviceList`（标题行 + 搜索 + 常驻状态列表）
- *  - 记录页 → `RcA2HistoryFilter`（按设备筛选）。稿的 history 屏就是这一形态，
- *    而设备列表在记录页点一下会跳回设备页，等于给了一个「不该按的按钮」。
- * 底部三类入口常驻：被连接开关、一次性协助、工具导航。
+ * 三段结构（对齐拼装稿左栏）：
+ *  - 上半部随页切换：设备/文件/设置页 → `RcA2DeviceList`（在线/不在线分组，
+ *    行内零按钮）；记录页 → `RcA2HistoryFilter`。
+ *  - 「这台电脑」卡（`RcA2SelfCard`）：常驻设备号短指纹码格 + 复制 + 完整串
+ *    一键出码 + 允许被连接开关（高频操作留在侧栏，设置页同款仍在）。
+ *  - 底部：单个「帮助」钮（亮码/输码收进一个弹层）+ 工具横排（文件/记录/设置）。
  *
- * 「允许别人连接本机」开关留在侧栏而稿只把它放在设置页：这是高频操作，留在
- * 侧栏一抬手就能切（设置页同款仍在）。此偏离已写进设计稿实施备注。
+ * 连接动作从侧栏下架：行内零按钮后，发起只走详情面 hero 大钮（方案 3 拍板）。
  */
-import { FileUp, HandHelping, History, KeyRound, Settings, Users } from "lucide-react";
-import type { RcCapability, RcTargetDevice } from "@/lib/api/rc";
+import { FileUp, History, Settings, Users } from "lucide-react";
+import type { RcTargetDevice } from "@/lib/api/rc";
 import type { RcHistoryDevice } from "@/lib/rcHistory";
 import type { RcTransferStrip } from "@/hooks/useRcTransferNotice";
+import type { UseRc } from "@/hooks/useRc";
+import type { ToastFn } from "@/components/Toast";
 import type { RcA2Page } from "@/lib/rcWorkbenchA2";
 import type { RcReachability } from "@/stores/rcStoreTypes";
 import { RcA2DeviceList } from "./RcA2DeviceList";
 import { RcA2HistoryFilter } from "./RcA2HistoryFilter";
+import { RcA2SelfCard } from "./RcA2SelfCard";
 import styles from "./RemoteComputerA2.module.css";
 
 const TOOLS: { page: Exclude<RcA2Page, "devices">; label: string; icon: typeof FileUp }[] = [
@@ -40,21 +43,20 @@ export function RcA2Sidebar({
   selectedId,
   busy,
   locked,
-  lockedLabel,
   reachability,
   channelUp,
   targetsLoaded,
   targetsError,
   onSelect,
-  onConnect,
   onRefresh,
   onPair,
   onNavigate,
   selfEnabled,
   onToggleSelf,
-  onHelpMe,
-  onHelpOther,
-  onUnoJoin,
+  onUnoGenerate,
+  onHelp,
+  rc,
+  toast,
   historyFilter,
   capFor,
   transferBadge = 0,
@@ -67,24 +69,26 @@ export function RcA2Sidebar({
   selectedId: string | null;
   busy: boolean;
   locked: boolean;
-  lockedLabel: string;
   reachability?: Record<string, RcReachability>;
   channelUp?: boolean | null;
   targetsLoaded?: boolean;
   targetsError?: string | null;
   onSelect: (id: string) => void;
-  onConnect: (id: string, capability: RcCapability) => void;
   onRefresh?: () => void;
   onPair: () => void;
   onNavigate: (page: RcA2Page) => void;
   selfEnabled?: boolean;
   onToggleSelf?: (enabled: boolean) => void;
-  onHelpMe?: () => void;
-  onHelpOther?: () => void;
-  onUnoJoin?: () => void;
+  /** 「无人值守 ›」：出本机无人值守码（RcUnoDialog generate）。 */
+  onUnoGenerate?: () => void;
+  /** 「帮助」：一个弹层收齐「让别人帮我 / 帮别人连一次」（方案 A 收口）。 */
+  onHelp?: () => void;
+  /** 「这台电脑」卡要用：本机身份 + 完整串生成 + toast。 */
+  rc?: UseRc;
+  toast?: ToastFn;
   historyFilter?: RcA2HistoryFilterState;
-  /** U1：主「连接」按钮沿用的默认档。 */
-  capFor?: (id: string) => RcCapability;
+  /** 行 meta 预告「以哪档连接」——行钮删除后这是档位唯一的常驻预告位。 */
+  capFor?: (id: string) => import("@/lib/api/rc").RcCapability;
   /** U2：「文件」导航角标 = 进行中传输任务数。 */
   transferBadge?: number;
   /** U2：侧栏顶部传输摘要条（仅离开文件页时由调用方给出）。 */
@@ -114,15 +118,11 @@ export function RcA2Sidebar({
           page={page}
           targets={targets}
           selectedId={selectedId}
-          busy={busy}
-          locked={locked}
-          lockedLabel={lockedLabel}
           reachability={reachability}
           channelUp={channelUp}
           targetsLoaded={targetsLoaded}
           targetsError={targetsError}
           onSelect={onSelect}
-          onConnect={onConnect}
           onRefresh={onRefresh}
           onPair={onPair}
           onNavigate={onNavigate}
@@ -132,68 +132,47 @@ export function RcA2Sidebar({
         />
       )}
 
-      {onToggleSelf && (
-        <div className={styles.receiveRow}>
-          <span>
-            <strong>允许别人连接本机</strong>
-            <small>{selfEnabled ? "已开启，可接收远程请求" : "已暂停接收远程请求"}</small>
-          </span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={selfEnabled}
-            disabled={busy || locked}
-            className={selfEnabled ? styles.receiveOn : styles.receiveOff}
-            onClick={() => onToggleSelf(!selfEnabled)}
-          >
-            {selfEnabled ? "已允许" : "已暂停"}
-          </button>
-        </div>
+      {onToggleSelf && rc && (
+        <RcA2SelfCard
+          rc={rc}
+          toast={toast ?? (() => undefined)}
+          busy={busy}
+          locked={locked}
+          enabled={Boolean(selfEnabled)}
+          onToggleSelf={onToggleSelf}
+          onUnoGenerate={onUnoGenerate ?? (() => undefined)}
+        />
       )}
 
-      {(onHelpMe || onHelpOther || onUnoJoin) && (
-        <div className={styles.assistActions} aria-label="一次性协助">
-          {onHelpMe && (
-            <button type="button" onClick={onHelpMe}>
-              <Users size={14} aria-hidden="true" />
-              让别人帮我
-            </button>
-          )}
-          {onHelpOther && (
-            <button type="button" onClick={onHelpOther}>
-              <HandHelping size={14} aria-hidden="true" />
-              帮助别人
-            </button>
-          )}
-          {onUnoJoin && (
-            <button type="button" className={styles.assistJoin} onClick={onUnoJoin}>
-              <KeyRound size={14} aria-hidden="true" />
-              输入接入码
-            </button>
-          )}
-        </div>
-      )}
-
-      <nav className={styles.toolNav} aria-label="远程电脑工具">
-        {TOOLS.map(({ page: toolPage, label, icon: Icon }) => (
-          <button
-            key={toolPage}
-            type="button"
-            className={page === toolPage ? styles.toolActive : undefined}
-            aria-current={page === toolPage ? "page" : undefined}
-            onClick={() => onNavigate(toolPage)}
-          >
-            {/* U2：文件页有进行中传输时，角标常驻可见（离开页面也能看见在传） */}
-            {toolPage === "files" && transferBadge > 0 && (
-              <span className={styles.toolBadge} aria-label={`${transferBadge} 个传输进行中`}>
-                {transferBadge}
-              </span>
-            )}
-            <Icon size={16} aria-hidden="true" />
-            <span>{label}</span>
+      <div className={styles.sideFoot}>
+        {onHelp && (
+          <button type="button" className={styles.helpBtn} onClick={onHelp}>
+            <Users size={14} aria-hidden="true" />
+            帮助
+            <small>让别人帮我 / 帮别人连一次</small>
           </button>
-        ))}
-      </nav>
+        )}
+        <nav className={styles.toolRow} aria-label="远程电脑工具">
+          {TOOLS.map(({ page: toolPage, label, icon: Icon }) => (
+            <button
+              key={toolPage}
+              type="button"
+              className={page === toolPage ? styles.toolActive : undefined}
+              aria-current={page === toolPage ? "page" : undefined}
+              onClick={() => onNavigate(toolPage)}
+            >
+              {/* U2：文件页有进行中传输时，角标常驻可见（离开页面也能看见在传） */}
+              {toolPage === "files" && transferBadge > 0 && (
+                <span className={styles.toolBadge} aria-label={`${transferBadge} 个传输进行中`}>
+                  {transferBadge}
+                </span>
+              )}
+              <Icon size={14} aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
     </aside>
   );
 }

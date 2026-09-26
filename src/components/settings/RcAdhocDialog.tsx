@@ -32,7 +32,6 @@ import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { DEFAULT_REQUEST_CAP, rememberRequestCap } from "@/lib/rcRequest";
-import { armAdhoc, markAdhocPeer } from "@/lib/rcAdhoc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
@@ -40,7 +39,10 @@ import { RcAdhocCodePane } from "./RcAdhocCodePane";
 import { RcPairPastePane } from "./RcPairPastePane";
 import styles from "../rc/RemoteComputer.module.css";
 
-export type AdhocMode = "helpMe" | "helpOther";
+export type AdhocMode = "helpMe" | "helpOther" | "help";
+
+/** 「help」= 方案 A 的「帮助一屏」：一个壳里用页签收齐下面两种意图。 */
+type HelpTab = Exclude<AdhocMode, "help">;
 
 export function RcAdhocDialog({
   rc,
@@ -60,6 +62,7 @@ export function RcAdhocDialog({
   onStartRemote?: (peerId: string) => void;
 }) {
   const anim = useDialogAnim();
+  const [tab, setTab] = useState<HelpTab>("helpMe");
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -74,17 +77,11 @@ export function RcAdhocDialog({
       setCode(r.code);
       setExpiresAt(r.expires_at);
       setNow(Date.now());
-      // 🔴 出码即武装：这一次协助用完要忘掉对方。**必须在生成成功之后**才武装
-      // ——生成失败还武装的话，用户几小时后随手帮别人一次会被误判成一次性。
-      // 同时把「此刻已配对的设备」作为 baseline 交出去：开了这个框又关掉、
-      // 结果自己那台长期设备连过来时，不能被当成一次性协助删掉（见 lib/rcAdhoc）。
-      // 直接写盘：结账在常驻窗口的 `useRcAdhoc` 里做，对话框关掉不影响它。
-      armAdhoc(Date.now(), rc.targets.map((t) => t.node_id));
       try {
         await navigator.clipboard.writeText(r.code);
-        toast("协助码已复制，发给帮你的人", "success");
+        toast("帮助码已复制，发给帮你的人", "success");
       } catch {
-        toast("协助码已生成，请手动复制", "info");
+        toast("帮助码已生成，请手动复制", "info");
       }
     } catch (e) {
       setErr(typeof e === "string" ? e : e instanceof Error ? e.message : "生成失败");
@@ -93,11 +90,14 @@ export function RcAdhocDialog({
     }
   };
 
-  // 点开即出码（「1 步」就是这一步被省掉的）。只在被协助方那一侧跑。
+  // 实际渲染的是哪一屏：独立入口看 `mode`，「帮助一屏」看当前页签。
+  const pane: HelpTab = mode === "help" ? tab : mode;
+
+  // 点开即出码（「1 步」就是这一步被省掉的）。只在被协助方那一屏跑。
   useEffect(() => {
-    if (mode === "helpMe") void generate();
+    if (pane === "helpMe" && !code) void generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pane]);
 
   // 码的剩余时间：只在有码之后跑计时器，关掉即清。
   useEffect(() => {
@@ -106,9 +106,8 @@ export function RcAdhocDialog({
     return () => window.clearInterval(t);
   }, [code, expiresAt]);
 
-  /** 协助方：配对成功后的唯一收尾——点名遗忘 + 直接发起，跳过完成屏。 */
+  /** 协助方：配对成功后的唯一收尾——直接发起，跳过完成屏。 */
   const handleAdhocPaired = (peerId: string, peerName: string) => {
-    markAdhocPeer(peerId);
     rememberRequestCap(DEFAULT_REQUEST_CAP);
     const name = peerName.trim() || fingerprintOf(peerId);
     if (onStartRemote) {
@@ -133,13 +132,31 @@ export function RcAdhocDialog({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="dialog-header">
-            <h2 className="dialog-title">{mode === "helpMe" ? "让别人帮我" : "帮别人连一次"}</h2>
+            <h2 className="dialog-title">
+              {mode === "help" ? "帮助" : mode === "helpMe" ? "让别人帮我" : "帮别人连一次"}
+            </h2>
             <button className="dialog-close" onClick={onClose} aria-label="关闭">
               <X size={15} />
             </button>
           </div>
+          {mode === "help" && (
+            <div className={styles.adhocTabs} role="tablist" aria-label="协助方式">
+              {(["helpMe", "helpOther"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="tab"
+                  aria-selected={pane === t}
+                  className={pane === t ? styles.adhocTabOn : undefined}
+                  onClick={() => setTab(t)}
+                >
+                  {t === "helpMe" ? "让别人帮我" : "帮别人连一次"}
+                </button>
+              ))}
+            </div>
+          )}
           <div className={styles.body}>
-            {mode === "helpMe" ? (
+            {pane === "helpMe" ? (
               <RcAdhocCodePane
                 code={code}
                 expiresAt={expiresAt}
@@ -162,6 +179,11 @@ export function RcAdhocDialog({
                 onAdhocPaired={handleAdhocPaired}
               />
             )}
+            {/* 乙方案 §2 回程互链：停在「帮助」的人里有一部分其实只是要连回老设备——
+                去程（向导 → 帮助）已有提示，这里补反向的出口指路。 */}
+            <div className={styles.foot}>
+              要连回已配对的设备？关掉本窗，在左侧「我的设备」里直接选它。
+            </div>
           </div>
         </motion.div>
       </FocusTrap>

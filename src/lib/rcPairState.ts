@@ -27,3 +27,14 @@ export interface PairSubmitState {
 export function canSubmitPair(s: PairSubmitState): boolean {
   return s.code.trim().length > 0 && s.previewFp !== null && !s.busy;
 }
+
+/**
+ * 剪贴板内容的**粗筛**：长得像一份配对码才去调后端解析。
+ *
+ * 乙方案（2026-09-26）后唯一的调用点在 `RcPairPastePane`——进到粘贴屏才问，
+ * 不再一开向导就拦。它只是省一次 IPC 的启发式，真判据仍是 `rc_preview_invite`。
+ */
+export function looksLikeRcInvite(t: string): boolean {
+  const s = t.trim();
+  return s.length >= 40 && /^[A-Za-z0-9_-]+$/.test(s);
+}

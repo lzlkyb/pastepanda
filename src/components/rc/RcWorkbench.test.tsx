@@ -68,7 +68,6 @@ vi.mock("@/hooks/useRcLaunch", () => ({
     forgetDevice: vi.fn(),
   }),
 }));
-vi.mock("@/hooks/useRcAdhoc", () => ({ useRcAdhoc: () => {} }));
 vi.mock("@/hooks/useRcWorkbenchClose", () => ({ useRcWorkbenchClose: () => {} }));
 
 /** 会话历史 mock：两条都属同一台设备，用来验证侧栏计数与列表出自同一份数据。 */

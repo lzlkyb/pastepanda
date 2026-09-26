@@ -89,6 +89,11 @@ pub struct RcTargetDevice {
     /// 或对端是旧版 / 采不到——前端据空串**不渲染这一格**，不编默认值。
     /// 仅同步配对的设备恒为空串（它从没跑过 rc 会话）。
     pub os: String,
+    /// 彩色标签（设备组织，2026-09-26 对齐稿①）。本机私产；仅同步配对恒为空数组。
+    pub tags: Vec<crate::data_store::rc_device::DeviceTag>,
+    /// 描述性备注长文本（悬停/详情显示）。与 `note`（改名别名）分开：
+    /// note 进 display_name 顶替设备名，remark 只做补充说明。空串 = 没写过。
+    pub remark: String,
 }
 
 #[derive(Serialize)]
@@ -167,6 +172,8 @@ pub fn rc_targets(
             note: d.note,
             trusted: d.trusted,
             os: d.os,
+            tags: d.tags,
+            remark: d.remark,
         });
     }
     for d in store.device_list()? {
@@ -207,6 +214,9 @@ pub fn rc_targets(
             trusted: false,
             // 同理：它从没跑过 rc 会话，没有 Accept 帧可读系统，恒空串。
             os: String::new(),
+            // 标签/描述备注同属 rc 表的组织信息，仅同步配对没有落点，恒空。
+            tags: Vec::new(),
+            remark: String::new(),
         });
     }
     // C1：最近用过的在前。live 的 last_seen 本来就最新，纯 last_seen 排序
@@ -422,6 +432,27 @@ pub async fn rc_device_rename(
     note: String,
 ) -> Result<(), String> {
     store.rc_device_note_set(&node_id, &normalize_note(&note))
+}
+
+/// 设备彩色标签（2026-09-26 对齐稿①）。纯本地组织信息，不发信令。
+/// 清洗（上限 6 / 去重 / 色板白名单）收口在 `normalize_tags`，命令层不重复判。
+#[tauri::command]
+pub async fn rc_device_tags_set(
+    store: State<'_, DataStore>,
+    node_id: String,
+    tags: Vec<crate::data_store::rc_device::DeviceTag>,
+) -> Result<(), String> {
+    store.rc_device_tags_set(&node_id, tags)
+}
+
+/// 设备描述性备注（长文本，悬停/详情显示）。空串 = 清除。与改名别名互不串扰。
+#[tauri::command]
+pub async fn rc_device_remark_set(
+    store: State<'_, DataStore>,
+    node_id: String,
+    remark: String,
+) -> Result<(), String> {
+    store.rc_device_remark_set(&node_id, &remark)
 }
 
 #[tauri::command]
@@ -1397,6 +1428,94 @@ pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn rc_push_clipboard(svc: State<'_, Arc<RcService>>, text: String) -> Result<(), String> {
     svc.push_clipboard(&text).await
+}
+
+// —— 会话窗壳三键 + 自适应窗口（方案A，2026-09-25） ——
+//
+// 为什么是自定义命令而不是前端 window API：per-window ACL 是本窗一整类
+// 静默故障的来源（2026-09-18「点 X 毫无反应」前科，见 useRcWorkbenchClose
+// 文件头 🔴；用户 2026-09-25 再报「最小化/拖动没反应」）。自定义命令不经
+// per-window ACL，失败以 String 返回、前端弹 toast，不再无声。
+// close() 与 JS window.close() 走同一条运行时路径：仍会触发 CloseRequested，
+// 「有会话先确认」的守卫链（useRcWorkbenchClose）原样生效。
+
+/// 会话态纵向 chrome（逻辑像素）：viewShell 上下边框各 1 + viewTop 33 内容
+/// + 1 分隔线。`rc_fit_window_to_video` 用来把窗口高拆成「顶栏 + 内容区」。
+const SESSION_CHROME_H: f64 = 36.0;
+/// 会话态横向 chrome：viewShell 左右边框各 1。
+const SESSION_CHROME_W: f64 = 2.0;
+
+#[tauri::command]
+pub fn rc_window_minimize(window: tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .minimize()
+        .map_err(|e| format!("最小化窗口被拒绝：{e}"))
+}
+
+#[tauri::command]
+pub fn rc_window_toggle_maximize(window: tauri::WebviewWindow) -> Result<(), String> {
+    // Rust 端没有 JS 那样的 toggle_maximize，按状态二选一（同 JS 实现口径）
+    let maximized = window
+        .is_maximized()
+        .map_err(|e| format!("读取窗口状态失败：{e}"))?;
+    let r = if maximized {
+        window.unmaximize()
+    } else {
+        window.maximize()
+    };
+    r.map_err(|e| format!("最大化/还原被拒绝：{e}"))
+}
+
+#[tauri::command]
+pub fn rc_window_close(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.close().map_err(|e| format!("关闭窗口被拒绝：{e}"))
+}
+
+/// 把 rc-workbench 窗口调成与对方画面同比例（方案A：适应模式零黑边）。
+///
+/// 设计稿：design/远程电脑-会话窗壳A方案-自适应窗口与可靠三键-设计稿.html §3/§4。
+/// 尺寸算的是**内容区**对齐画面比例：窗口 = 内容区（k×画面） + 36px 顶栏 chrome。
+/// k 在「当前显示器工作区 94%×90%」（md-editor 先例，呼吸边兼吸收任务栏误差）
+/// 内取最大；DPI 全程逻辑像素。返回 Ok(false) = 最大化中，跳过（不打断用户意图）。
+#[tauri::command]
+pub fn rc_fit_window_to_video(
+    window: tauri::WebviewWindow,
+    video_w: f64,
+    video_h: f64,
+) -> Result<bool, String> {
+    if !(video_w > 0.0 && video_h > 0.0) {
+        return Err(format!("画面尺寸无效（{video_w}×{video_h}）"));
+    }
+    if window
+        .is_maximized()
+        .map_err(|e| format!("读取窗口状态失败：{e}"))?
+    {
+        return Ok(false);
+    }
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| format!("取显示器失败：{e}"))?
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .ok_or("取不到显示器信息，无法自适应窗口")?;
+    let scale = monitor.scale_factor();
+    let wa = monitor.work_area();
+    let wa_w = wa.size.width as f64 / scale;
+    let wa_h = wa.size.height as f64 / scale;
+    let k = ((wa_w * 0.94) / video_w).min((wa_h * 0.90 - SESSION_CHROME_H) / video_h);
+    if k <= 0.0 {
+        return Err("屏幕可用区域放不下对方画面".into());
+    }
+    let win_w = k * video_w + SESSION_CHROME_W;
+    let win_h = k * video_h + SESSION_CHROME_H;
+    let x = wa.position.x as f64 / scale + (wa_w - win_w) / 2.0;
+    let y = wa.position.y as f64 / scale + (wa_h - win_h) / 2.0;
+    window
+        .set_size(tauri::LogicalSize::new(win_w, win_h))
+        .map_err(|e| format!("调整窗口尺寸失败：{e}"))?;
+    window
+        .set_position(tauri::LogicalPosition::new(x, y))
+        .map_err(|e| format!("调整窗口位置失败：{e}"))?;
+    Ok(true)
 }
 
 /// 最近会话元数据（只记谁/方向/能力/时长/结果，不记画面）。

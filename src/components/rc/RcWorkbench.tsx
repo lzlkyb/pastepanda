@@ -13,7 +13,6 @@ import { emitTo } from "@tauri-apps/api/event";
 import { useToast } from "@/components/Toast";
 import { RcPairLayer, type RcPairLayerMode } from "@/components/settings/RcPairLayer";
 import { useRc } from "@/hooks/useRc";
-import { useRcAdhoc } from "@/hooks/useRcAdhoc";
 import { useRcAutoCheck } from "@/hooks/useRcAutoCheck";
 import { useRcDeviceUi } from "@/hooks/useRcDeviceUi";
 import { useRcHistory } from "@/hooks/useRcHistory";
@@ -23,7 +22,7 @@ import { useRcTransferNotice } from "@/hooks/useRcTransferNotice";
 import { useRcWorkbenchClose } from "@/hooks/useRcWorkbenchClose";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
-import { rcDeviceRename } from "@/lib/api/rc";
+import { rcDeviceRename, rcDeviceRemarkSet, rcDeviceTagsSet } from "@/lib/api/rc";
 import { normalizeHistoryPeer, summarizeHistoryDevices } from "@/lib/rcHistory";
 import { readAutoStartChannel } from "@/lib/rcPrefs";
 import { capabilityLabel } from "@/lib/rcRequest";
@@ -100,7 +99,6 @@ export function RcWorkbench() {
   }, [autoStartDone, channelUp]);
 
   useRcWorkbenchClose(hasLiveSession, rc.end);
-  useRcAdhoc(rc);
 
   const openMainWindowSettings = () => {
     void emitTo("main", "pp:open-settings-rc").catch(() => {
@@ -115,6 +113,13 @@ export function RcWorkbench() {
   const openFiles = (id: string) => {
     setSelectedPeer(id);
     setPage("files");
+  };
+  /* 改名/标签/备注三种保存同构（规则 11.1 收口）：命令→刷新→回布尔，报错走 toast。 */
+  const saveDeviceField = async (run: () => Promise<unknown>): Promise<boolean> => {
+    try {
+      await run(); await rc.refreshTargets();
+      return true;
+    } catch (error) { toast(String(error), "error"); return false; }
   };
 
   const inbound = mode === "inbound";
@@ -176,6 +181,7 @@ export function RcWorkbench() {
         channelUp={rc.status ? channelUp : null}
         busy={rc.busy}
         locked={hasLiveSession}
+        lockedLabel={lockedLabel}
         historyList={history.list}
         ui={deviceUi}
         onConnect={(id, capability) => void doRequest(id, capability)}
@@ -185,17 +191,11 @@ export function RcWorkbench() {
         onSetTrust={(id, trusted) => rc.setDeviceTrust(id, trusted)}
         onSetAutoAccept={(id, enabled) => rc.setDeviceAutoAccept(id, enabled)}
         onForget={forgetDevice}
-        onRename={async (id, note) => {
-          try {
-            await rcDeviceRename(id, note);
-            await rc.refreshTargets();
-            return true;
-          } catch (error) {
-            toast(String(error), "error");
-            return false;
-          }
-        }}
+        onRename={(id, note) => saveDeviceField(() => rcDeviceRename(id, note))}
+        onSetTags={(id, tags) => saveDeviceField(() => rcDeviceTagsSet(id, tags))}
+        onSetRemark={(id, remark) => saveDeviceField(() => rcDeviceRemarkSet(id, remark))}
         onViewHistory={() => setPage("history")}
+        capFor={capOf}
         toast={toast}
       />
     );
@@ -225,21 +225,20 @@ export function RcWorkbench() {
             selectedId={selectedId}
             busy={rc.busy}
             locked={hasLiveSession}
-            lockedLabel={lockedLabel}
             reachability={rc.reachability}
             channelUp={rc.status ? channelUp : null}
             targetsLoaded={rc.targetsLoaded}
             targetsError={rc.targetsError}
             onSelect={setSelectedPeer}
-            onConnect={(id, capability) => void doRequest(id, capability)}
             onRefresh={refreshDeviceChecks}
             onPair={() => setOverlay("pair")}
             onNavigate={setPage}
+            rc={rc}
+            toast={toast}
             selfEnabled={rc.status?.enabled ?? false}
             onToggleSelf={(enabled) => void rc.setEnabled(enabled)}
-            onHelpMe={() => setOverlay("helpMe")}
-            onHelpOther={() => setOverlay("helpOther")}
-            onUnoJoin={() => setOverlay("unoJoin")}
+            onUnoGenerate={() => setOverlay("unoGenerate")}
+            onHelp={() => setOverlay("help")}
             historyFilter={{
               devices: historyDevices,
               total: history.list.length,
@@ -293,6 +292,7 @@ export function RcWorkbench() {
         mode={overlay}
         onClose={() => setOverlay(null)}
         onStartRemote={(peerId) => void doRequest(peerId, capOf(peerId))}
+        onPairAccepted={(peerId) => setSelectedPeer(peerId)}
       />
     </div>
   );

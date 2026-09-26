@@ -282,6 +282,17 @@
      值全部引用主题自身令牌，运行时惰性求值 → 6 主题自适应（--diagram-* 先例）。
      深色主题的 border/section 自身变暗，无需逐主题重写。 */
   --rc-shimmer-bg: linear-gradient(90deg, var(--border-color) 25%, var(--section-bg) 50%, var(--border-color) 75%);
+
+/* ===== 设备标签色板（2026-09-26 对齐稿①·RustDesk TagPainter 的本地对应物） =====
+   分类色不是语义色也不是主题色：6 档固定、6 主题共用一套中间调
+   （6px 色点在深浅底都可辨）。键名与前端 lib/rcDeviceTags 的 TAG_COLOR_KEYS 一一对应，
+   存储与组件只传键、不传 hex（V3）。 */
+  --rc-tag-red: #e5484d;
+  --rc-tag-amber: #f5a623;
+  --rc-tag-green: #30a46c;
+  --rc-tag-cyan: #3e9fb8;
+  --rc-tag-blue: #3b6ff6;
+  --rc-tag-violet: #8e4ec6;
 }
 
 /* ===== 主题变量 ===== */
@@ -343,10 +354,17 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
-  /* 远程电脑工作台 · 设备详情头那一横条的底：8% 的 accent 往右下淡出，
-     叠在本主题的卡片色上。表达式只依赖 --accent / --card-bg，6 套主题共用同一份
-     （守卫见 src/__tests__/rcA2ThemeTokens.test.ts）。 */
-  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
+  /* 远程电脑工作台 · hero 横幅底（拼装稿 2026-09-26 全量对齐）：三团 accent
+     光晕 + 云白 + 斜向淡蓝，全部从 --accent / --card-bg 派生，6 套主题共用同一份
+     表达式（守卫见 src/__tests__/rcA2ThemeTokens.test.ts）。 */
+  --rc-head-bg: radial-gradient(ellipse 420px 200px at 88% -20%, color-mix(in srgb, var(--accent) 34%, transparent) 0%, transparent 62%), radial-gradient(ellipse 360px 190px at 66% 118%, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 60%), radial-gradient(ellipse 300px 160px at 12% 116%, color-mix(in srgb, var(--card-bg) 65%, transparent) 0%, transparent 62%), linear-gradient(120deg, color-mix(in srgb, var(--card-bg) 62%, transparent) 0%, color-mix(in srgb, var(--accent) 6%, var(--card-bg)) 100%);
+  /* hero 显示器插画：屏体/边框/颈/座/光晕台 + 标语下划线，同上一条一样只吃令牌 */
+  --rc-hero-screen: radial-gradient(circle at 58% 36%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, var(--card-bg)) 10%, transparent 26%), radial-gradient(circle at 40% 62%, color-mix(in srgb, var(--accent) 60%, var(--card-bg)) 0%, transparent 44%), radial-gradient(circle at 70% 68%, color-mix(in srgb, var(--accent) 92%, transparent) 0%, transparent 50%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%, var(--accent) 48%, color-mix(in srgb, var(--accent) 72%, var(--text-primary)) 100%);
+  --rc-hero-bezel: color-mix(in srgb, var(--text-primary) 82%, var(--accent));
+  --rc-hero-neck: linear-gradient(180deg, color-mix(in srgb, var(--accent) 15%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%);
+  --rc-hero-base: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 100%);
+  --rc-hero-pedestal: radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 16%, var(--card-bg)) 58%, color-mix(in srgb, var(--accent) 25%, transparent) 78%, transparent 82%);
+  --rc-slogan-line: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 50%, transparent) 30%, var(--accent) 70%, transparent 100%);
   --toggle-off-bg: #e2e8f0;
   /* 品牌 AI 上标（顶栏标识）：蓝 → 紫渐变的两个端点。
      **品牌色恒定，不跟主题变色**——它标的是产品身份，不是当前状态；
@@ -506,7 +524,13 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
-  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
+  --rc-head-bg: radial-gradient(ellipse 420px 200px at 88% -20%, color-mix(in srgb, var(--accent) 34%, transparent) 0%, transparent 62%), radial-gradient(ellipse 360px 190px at 66% 118%, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 60%), radial-gradient(ellipse 300px 160px at 12% 116%, color-mix(in srgb, var(--card-bg) 65%, transparent) 0%, transparent 62%), linear-gradient(120deg, color-mix(in srgb, var(--card-bg) 62%, transparent) 0%, color-mix(in srgb, var(--accent) 6%, var(--card-bg)) 100%);
+  --rc-hero-screen: radial-gradient(circle at 58% 36%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, var(--card-bg)) 10%, transparent 26%), radial-gradient(circle at 40% 62%, color-mix(in srgb, var(--accent) 60%, var(--card-bg)) 0%, transparent 44%), radial-gradient(circle at 70% 68%, color-mix(in srgb, var(--accent) 92%, transparent) 0%, transparent 50%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%, var(--accent) 48%, color-mix(in srgb, var(--accent) 72%, var(--text-primary)) 100%);
+  --rc-hero-bezel: color-mix(in srgb, var(--text-primary) 82%, var(--accent));
+  --rc-hero-neck: linear-gradient(180deg, color-mix(in srgb, var(--accent) 15%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%);
+  --rc-hero-base: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 100%);
+  --rc-hero-pedestal: radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 16%, var(--card-bg)) 58%, color-mix(in srgb, var(--accent) 25%, transparent) 78%, transparent 82%);
+  --rc-slogan-line: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 50%, transparent) 30%, var(--accent) 70%, transparent 100%);
   --toggle-off-bg: #3f3f46;
   /* 品牌 AI 上标：深色档（浅色档的值定义在 :root，深色主题在这里整体覆盖）。
      midnight 底极暗（#1C1832），这对值有 12:1 以上，宽裕。 */
@@ -624,7 +648,13 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
-  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
+  --rc-head-bg: radial-gradient(ellipse 420px 200px at 88% -20%, color-mix(in srgb, var(--accent) 34%, transparent) 0%, transparent 62%), radial-gradient(ellipse 360px 190px at 66% 118%, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 60%), radial-gradient(ellipse 300px 160px at 12% 116%, color-mix(in srgb, var(--card-bg) 65%, transparent) 0%, transparent 62%), linear-gradient(120deg, color-mix(in srgb, var(--card-bg) 62%, transparent) 0%, color-mix(in srgb, var(--accent) 6%, var(--card-bg)) 100%);
+  --rc-hero-screen: radial-gradient(circle at 58% 36%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, var(--card-bg)) 10%, transparent 26%), radial-gradient(circle at 40% 62%, color-mix(in srgb, var(--accent) 60%, var(--card-bg)) 0%, transparent 44%), radial-gradient(circle at 70% 68%, color-mix(in srgb, var(--accent) 92%, transparent) 0%, transparent 50%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%, var(--accent) 48%, color-mix(in srgb, var(--accent) 72%, var(--text-primary)) 100%);
+  --rc-hero-bezel: color-mix(in srgb, var(--text-primary) 82%, var(--accent));
+  --rc-hero-neck: linear-gradient(180deg, color-mix(in srgb, var(--accent) 15%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%);
+  --rc-hero-base: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 100%);
+  --rc-hero-pedestal: radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 16%, var(--card-bg)) 58%, color-mix(in srgb, var(--accent) 25%, transparent) 78%, transparent 82%);
+  --rc-slogan-line: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 50%, transparent) 30%, var(--accent) 70%, transparent 100%);
   --toggle-off-bg: #d1d9d3;
   --toggle-off-label: #4a5750;
   --toggle-on-label: #fff;
@@ -733,7 +763,13 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
-  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
+  --rc-head-bg: radial-gradient(ellipse 420px 200px at 88% -20%, color-mix(in srgb, var(--accent) 34%, transparent) 0%, transparent 62%), radial-gradient(ellipse 360px 190px at 66% 118%, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 60%), radial-gradient(ellipse 300px 160px at 12% 116%, color-mix(in srgb, var(--card-bg) 65%, transparent) 0%, transparent 62%), linear-gradient(120deg, color-mix(in srgb, var(--card-bg) 62%, transparent) 0%, color-mix(in srgb, var(--accent) 6%, var(--card-bg)) 100%);
+  --rc-hero-screen: radial-gradient(circle at 58% 36%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, var(--card-bg)) 10%, transparent 26%), radial-gradient(circle at 40% 62%, color-mix(in srgb, var(--accent) 60%, var(--card-bg)) 0%, transparent 44%), radial-gradient(circle at 70% 68%, color-mix(in srgb, var(--accent) 92%, transparent) 0%, transparent 50%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%, var(--accent) 48%, color-mix(in srgb, var(--accent) 72%, var(--text-primary)) 100%);
+  --rc-hero-bezel: color-mix(in srgb, var(--text-primary) 82%, var(--accent));
+  --rc-hero-neck: linear-gradient(180deg, color-mix(in srgb, var(--accent) 15%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%);
+  --rc-hero-base: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 100%);
+  --rc-hero-pedestal: radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 16%, var(--card-bg)) 58%, color-mix(in srgb, var(--accent) 25%, transparent) 78%, transparent 82%);
+  --rc-slogan-line: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 50%, transparent) 30%, var(--accent) 70%, transparent 100%);
   --toggle-off-bg: #f3d5e2;
   --toggle-off-label: #6e4557;
   --toggle-on-label: #fff;
@@ -842,7 +878,13 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
-  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
+  --rc-head-bg: radial-gradient(ellipse 420px 200px at 88% -20%, color-mix(in srgb, var(--accent) 34%, transparent) 0%, transparent 62%), radial-gradient(ellipse 360px 190px at 66% 118%, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 60%), radial-gradient(ellipse 300px 160px at 12% 116%, color-mix(in srgb, var(--card-bg) 65%, transparent) 0%, transparent 62%), linear-gradient(120deg, color-mix(in srgb, var(--card-bg) 62%, transparent) 0%, color-mix(in srgb, var(--accent) 6%, var(--card-bg)) 100%);
+  --rc-hero-screen: radial-gradient(circle at 58% 36%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, var(--card-bg)) 10%, transparent 26%), radial-gradient(circle at 40% 62%, color-mix(in srgb, var(--accent) 60%, var(--card-bg)) 0%, transparent 44%), radial-gradient(circle at 70% 68%, color-mix(in srgb, var(--accent) 92%, transparent) 0%, transparent 50%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%, var(--accent) 48%, color-mix(in srgb, var(--accent) 72%, var(--text-primary)) 100%);
+  --rc-hero-bezel: color-mix(in srgb, var(--text-primary) 82%, var(--accent));
+  --rc-hero-neck: linear-gradient(180deg, color-mix(in srgb, var(--accent) 15%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%);
+  --rc-hero-base: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 100%);
+  --rc-hero-pedestal: radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 16%, var(--card-bg)) 58%, color-mix(in srgb, var(--accent) 25%, transparent) 78%, transparent 82%);
+  --rc-slogan-line: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 50%, transparent) 30%, var(--accent) 70%, transparent 100%);
   --toggle-off-bg: #efdcc6;
   --toggle-off-label: #6b5638;
   --toggle-on-label: #fff;
@@ -953,7 +995,13 @@
   --paper-bg: var(--card-bg);
   --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
   --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
-  --rc-head-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 62%), var(--card-bg);
+  --rc-head-bg: radial-gradient(ellipse 420px 200px at 88% -20%, color-mix(in srgb, var(--accent) 34%, transparent) 0%, transparent 62%), radial-gradient(ellipse 360px 190px at 66% 118%, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 60%), radial-gradient(ellipse 300px 160px at 12% 116%, color-mix(in srgb, var(--card-bg) 65%, transparent) 0%, transparent 62%), linear-gradient(120deg, color-mix(in srgb, var(--card-bg) 62%, transparent) 0%, color-mix(in srgb, var(--accent) 6%, var(--card-bg)) 100%);
+  --rc-hero-screen: radial-gradient(circle at 58% 36%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, var(--card-bg)) 10%, transparent 26%), radial-gradient(circle at 40% 62%, color-mix(in srgb, var(--accent) 60%, var(--card-bg)) 0%, transparent 44%), radial-gradient(circle at 70% 68%, color-mix(in srgb, var(--accent) 92%, transparent) 0%, transparent 50%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%, var(--accent) 48%, color-mix(in srgb, var(--accent) 72%, var(--text-primary)) 100%);
+  --rc-hero-bezel: color-mix(in srgb, var(--text-primary) 82%, var(--accent));
+  --rc-hero-neck: linear-gradient(180deg, color-mix(in srgb, var(--accent) 15%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%);
+  --rc-hero-base: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 100%);
+  --rc-hero-pedestal: radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 16%, var(--card-bg)) 58%, color-mix(in srgb, var(--accent) 25%, transparent) 78%, transparent 82%);
+  --rc-slogan-line: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 50%, transparent) 30%, var(--accent) 70%, transparent 100%);
   --toggle-off-bg: #1e3d60;
   /* 品牌 AI 上标：深色档。**本主题是两档里最紧的一个**——app-bg 顶部是
      #1E5A82，比 midnight 亮得多，浅色档那对压上去只有 2.6:1，必须整体提亮。

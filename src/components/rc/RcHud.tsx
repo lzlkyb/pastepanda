@@ -26,6 +26,9 @@ import { Info } from "lucide-react";
 import styles from "./RemoteComputer.module.css";
 import { isSessionEscape } from "@/lib/rcKeyGuard";
 import { registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
+import { pushRttSample } from "@/lib/rcRttTrend";
+import { registerRcDetailToggle } from "@/lib/rcDetailPanel";
+import { RcHudTrend } from "./RcHudTrend";
 import {
   linkStateLabel,
   pathKindHint,
@@ -96,6 +99,13 @@ export function RcHud({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // pong EMA 每变一次记一个点（面板关着也记，点开即有整窗历史）；
+  // 顺带向 rcDetailPanel 登记开合——浮条身份段的质量读数芯片点击即开本面板。
+  useEffect(() => {
+    pushRttSample(rttMs);
+  }, [rttMs]);
+  useEffect(() => registerRcDetailToggle(() => setOpen((v) => !v)), []);
 
   // 打开时点外面（画面/工具栏/窗外）就收——与 RcDropdown 同一交互口径
   useEffect(() => {
@@ -235,6 +245,7 @@ export function RcHud({
       {open && (
         <div className={styles.hudPanel} aria-label="连接详情">
           <div className={styles.hudPanelHead}>连接详情</div>
+          <RcHudTrend rttMs={rttMs} />
           {rows.map((r) => (
             <div key={r.label} className={styles.hudRow}>
               <span className={styles.hudRowLabel}>{r.label}</span>

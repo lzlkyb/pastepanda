@@ -10,29 +10,20 @@
  * P3-7 / 规则 15.2：改名草稿与管理展开态在**工作台层**（`useRcDeviceUi`），
  * 不放在本组件——切页卸载详情会把未保存的草稿一并丢掉。
  */
+import { ChevronDown, ChevronUp, Monitor, SlidersHorizontal } from "lucide-react";
 import type { RcCapability, RcHistoryItem, RcTargetDevice } from "@/lib/api/rc";
 import type { ToastFn } from "@/components/Toast";
 import type { RcReachability } from "@/stores/rcStoreTypes";
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Eye,
-  FileUp,
-  Monitor,
-  Pencil,
-  Play,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { lastMeasuredRtt } from "@/lib/rcHistory";
 import { osLabel, rcDisplayName } from "@/lib/rcDevice";
-import { rcCheckTime, rcDeviceStatus } from "@/lib/utils";
+import { rcDeviceStatus } from "@/lib/utils";
 import { pathKindLabel } from "@/lib/rcSessionStats";
 import { useRcDeviceActions } from "@/hooks/useRcDeviceActions";
 import type { RcDeviceUi } from "@/hooks/useRcDeviceUi";
 import { RcA2ConnectionFacts } from "./RcA2ConnectionFacts";
+import { RcA2DeviceHero } from "./RcA2DeviceHero";
+import { RcA2DeviceOrgEditor } from "./RcA2DeviceOrgEditor";
 import { RcDeviceManageActions } from "./RcDeviceManageActions";
 import { RcRecentSessions } from "./RcRecentSessions";
 import styles from "./RemoteComputerA2.module.css";
@@ -47,6 +38,7 @@ export function RcA2DeviceDetail({
   channelUp = true,
   busy,
   locked,
+  lockedLabel,
   historyList,
   ui,
   onConnect,
@@ -57,7 +49,10 @@ export function RcA2DeviceDetail({
   onSetAutoAccept,
   onForget,
   onRename,
+  onSetTags,
+  onSetRemark,
   onViewHistory,
+  capFor,
   toast,
 }: {
   target: RcTargetDevice | null;
@@ -65,6 +60,8 @@ export function RcA2DeviceDetail({
   channelUp?: boolean | null;
   busy: boolean;
   locked: boolean;
+  /** locked 时的原因文案（hero 大钮 title 用，工作台按会话态给）。 */
+  lockedLabel?: string;
   /** 工作台级的会话历史快照（与侧栏筛选、记录页同源）。 */
   historyList: RcHistoryItem[];
   /** 改名/管理展开态（上提，见 useRcDeviceUi）。 */
@@ -77,8 +74,13 @@ export function RcA2DeviceDetail({
   onSetAutoAccept: (id: string, autoAccept: boolean) => Promise<boolean>;
   onForget: (id: string) => Promise<boolean>;
   onRename: (id: string, note: string) => Promise<boolean>;
+  /** 对齐稿①：标签整组覆盖保存 / 描述备注（仅 rc 表设备有落点，同步配对不摆编辑器）。 */
+  onSetTags: (id: string, tags: import("@/lib/api/rc").RcDeviceTag[]) => Promise<boolean>;
+  onSetRemark: (id: string, remark: string) => Promise<boolean>;
   /** 「查看全部」跳到记录页。 */
   onViewHistory: () => void;
+  /** hero 大钮的发起档（按设备记忆优先，与侧栏行 meta 同源）。 */
+  capFor?: (id: string) => RcCapability;
   toast: ToastFn;
 }) {
   const {
@@ -132,6 +134,7 @@ export function RcA2DeviceDetail({
      能拿到的只有历史里的会话实测 RTT。所以文案是「最近实测」，采不到样本就整段
      不显示（同历史页对 rtt 的处理：宁可少一格也不编一个数）。 */
   const measuredRtt = lastMeasuredRtt(historyList, target.node_id);
+  const heroCap = capFor ? capFor(target.node_id) : "control";
   const saveName = async () => {
     setSavingName(true);
     try {
@@ -145,94 +148,36 @@ export function RcA2DeviceDetail({
 
   return (
     <section className={styles.detail} aria-label={`${name}设备详情`}>
-      <header className={styles.detailHead}>
-        <span className={styles.detailDeviceIcon} aria-hidden="true">
-          <Monitor size={28} />
-        </span>
-        <div className={styles.detailName}>
-          {editingName ? (
-            <div className={styles.renameForm}>
-              <input
-                value={draftName}
-                aria-label="设备备注名"
-                autoFocus
-                onChange={(event) => setDraftName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void saveName();
-                  if (event.key === "Escape") setEditingName(false);
-                }}
-              />
-              <button type="button" aria-label="保存名称" disabled={savingName} onClick={() => void saveName()}>
-                <Check size={14} aria-hidden="true" />
-              </button>
-              <button type="button" aria-label="取消改名" onClick={() => setEditingName(false)}>
-                <X size={14} aria-hidden="true" />
-              </button>
-            </div>
-          ) : target.source === "rc" ? (
-            <div className={styles.detailTitleRow}>
-              <h2>{name}</h2>
-              {/* U8 后状态行文案是「局域网在线」，pill 判据改按 presence 判，
-                  别绑字符串（文案再改这里就静默失效） */}
-              {target.presence === "live" && (
-                <span className={styles.detailPill}>
-                  <Check size={12} aria-hidden="true" />
-                  在线
-                </span>
-              )}
-              <button
-                type="button"
-                aria-label="重命名设备"
-                onClick={() => {
-                  setDraftName(target.note?.trim() || target.name?.trim() || "");
-                  setEditingName(true);
-                }}
-              >
-                <Pencil size={14} aria-hidden="true" />
-                重命名
-              </button>
-            </div>
-          ) : (
-            <h2>{name}</h2>
-          )}
-          <p>
-            <span className={styles.onlineText} data-tone={status.tone}>
-              {status.label}
-            </span>
-            {deviceOs && <span> · {deviceOs}</span>}
-            {status.checkedAt && <span> · {rcCheckTime(status.checkedAt)} 检查</span>}
-          </p>
-        </div>
-        <div className={styles.detailActions}>
-          <button
-            type="button"
-            className={styles.primaryButton}
-            disabled={busy || cannotConnect}
-            onClick={() => onConnect(target.node_id, "control")}
-          >
-            <Play size={14} aria-hidden="true" />
-            连接并控制
-          </button>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            disabled={busy || cannotConnect}
-            onClick={() => onConnect(target.node_id, "view")}
-          >
-            <Eye size={14} aria-hidden="true" />
-            只看
-          </button>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            disabled={busy || target.source !== "rc"}
-            onClick={() => onSendFiles(target.node_id)}
-          >
-            <FileUp size={14} aria-hidden="true" />
-            传文件
-          </button>
-        </div>
-      </header>
+      <RcA2DeviceHero
+        target={target}
+        name={name}
+        status={status}
+        deviceOs={deviceOs}
+        connection={connection}
+        measuredRtt={measuredRtt}
+        heroCap={heroCap}
+        busy={busy}
+        cannotConnect={cannotConnect}
+        disabledReason={
+          target.source !== "rc"
+            ? "请先完成远程配对"
+            : locked
+              ? (lockedLabel || "远程会话进行中")
+              : ""
+        }
+        editingName={editingName}
+        draftName={draftName}
+        savingName={savingName}
+        onDraftName={setDraftName}
+        onEditStart={() => {
+          setDraftName(target.note?.trim() || target.name?.trim() || "");
+          setEditingName(true);
+        }}
+        onEditCancel={() => setEditingName(false)}
+        onSaveName={() => void saveName()}
+        onConnect={onConnect}
+        onSendFiles={onSendFiles}
+      />
 
       <div className={styles.detailBody}>
         {target.denied && (
@@ -273,6 +218,16 @@ export function RcA2DeviceDetail({
               actions={actions}
               onPair={onPair}
             />
+            {target.source === "rc" && (
+              <RcA2DeviceOrgEditor
+                key={target.node_id}
+                target={target}
+                busy={busy}
+                onSetTags={onSetTags}
+                onSetRemark={onSetRemark}
+                toast={toast}
+              />
+            )}
           </div>
         )}
         <RcA2ConnectionFacts

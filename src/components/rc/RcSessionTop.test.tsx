@@ -1,32 +1,28 @@
 /**
- * RcSessionTop 守卫单测（2026-09-24 浮条收编后重写）。
+ * RcSessionTop 守卫单测（2026-09-24 浮条收编后重写；2026-09-25 定稿）。
  *
  * 顶栏已瘦身为**纯窗口壳**（灯 / 名字 / 三键）：会话操作（警示 / 结束 / 更多 /
- * 重连）全部搬进 RcSessionCapsule。这里守住两件事：
- * - 窗口壳职责一个不少（拖拽区 + 三键，`decorations(false)` 后没有系统标题栏）；
+ * 重连）全部搬进 RcSessionCapsule。这里守住三件事：
+ * - 拖拽区与 md 全屏编辑器同款：`deep`（整条子树可拖、双击最大化由注入脚本
+ *   内置、按钮自动豁免）；全屏态禁拖（="false"）；
+ * - 三键逐字打到 Rust 命令出口（lib/rcWindowOps，不经 per-window ACL）；
  * - 瘦身不再回弹——结束会话/警示胶囊出现在顶栏即为回归（会与浮条双中心）。
- *
- * `@tauri-apps/api/window` 整模块覆盖（spy），理由同 `RcWindowControls.test.tsx`。
  */
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RcSession } from "@/lib/api/rc";
 
 const h = vi.hoisted(() => ({
-  close: vi.fn(),
-  destroy: vi.fn(),
-  minimize: vi.fn(),
-  toggleMaximize: vi.fn(),
+  invoke: vi.fn(),
+  isMaximized: vi.fn(),
+  onResized: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
-    close: h.close,
-    destroy: h.destroy,
-    minimize: h.minimize,
-    toggleMaximize: h.toggleMaximize,
-    isMaximized: () => Promise.resolve(false),
-    onResized: () => Promise.resolve(() => {}),
+    isMaximized: h.isMaximized,
+    onResized: h.onResized,
   }),
 }));
 
@@ -49,14 +45,18 @@ const base = {
 };
 
 beforeEach(() => {
-  h.close.mockReset().mockResolvedValue(undefined);
-  h.destroy.mockReset().mockResolvedValue(undefined);
-  h.minimize.mockReset().mockResolvedValue(undefined);
-  h.toggleMaximize.mockReset().mockResolvedValue(undefined);
+  h.invoke.mockReset().mockResolvedValue(undefined);
+  h.isMaximized.mockReset().mockResolvedValue(false);
+  h.onResized.mockReset().mockResolvedValue(() => {});
+  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
 });
 
-describe("RcSessionTop（浮条收编后：纯窗口壳）", () => {
-  it("顶条挂 deep 拖拽区——会话态没有标题栏，能拖的只剩这一条", () => {
+afterEach(() => {
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+});
+
+describe("RcSessionTop（md 全屏编辑器同款拖拽区 + 命令三键）", () => {
+  it("🔴 顶条挂 deep 拖拽区——与 md 全屏编辑器同款（子树可拖/双击最大化/按钮豁免）", () => {
     const { container } = render(<RcSessionTop {...base} />);
 
     expect(container.firstElementChild?.getAttribute("data-tauri-drag-region")).toBe("deep");
@@ -76,24 +76,14 @@ describe("RcSessionTop（浮条收编后：纯窗口壳）", () => {
     expect(screen.queryByRole("button", { name: "关闭" })).toBeNull();
   });
 
-  it("完整三键组：最小化 / 最大化 / 关闭，渲染不触发窗口操作", () => {
-    render(<RcSessionTop {...base} />);
-
-    expect(screen.getByRole("button", { name: "最小化" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "最大化" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
-    expect(h.minimize).not.toHaveBeenCalled();
-  });
-
-  it("最小化走 minimize()；关闭走 close() 不 destroy（「有会话先问」守卫不变）", () => {
+  it("完整三键组：最小化 / 最大化 / 关闭，逐字打到 Rust 命令", () => {
     render(<RcSessionTop {...base} />);
 
     fireEvent.click(screen.getByRole("button", { name: "最小化" }));
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    expect(h.minimize).toHaveBeenCalledTimes(1);
-    expect(h.close).toHaveBeenCalledTimes(1);
-    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenCalledWith("rc_window_minimize");
+    expect(h.invoke).toHaveBeenCalledWith("rc_window_close");
   });
 
   it("名字仍在顶栏（身份的常驻位）；连接灯由 linkState 驱动分三档", () => {

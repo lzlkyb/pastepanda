@@ -29,6 +29,7 @@ import { useRcSessionPrefs } from "@/hooks/useRcSessionPrefs";
 import { useRcSessionAudio } from "@/hooks/useRcSessionAudio";
 import { useRcDisplayMode } from "@/hooks/useRcDisplayMode";
 import { useRcRemoteSend } from "@/hooks/useRcRemoteSend";
+import { useRcWindowFit } from "@/hooks/useRcWindowFit";
 import { RcSessionStage } from "./RcSessionStage";
 import { RcSessionCapsule } from "./RcSessionCapsule";
 import { RcHud } from "./RcHud";
@@ -114,6 +115,16 @@ export function RcSessionView({
   // P1-6：远端光标形状（非箭头形状换用本地系统光标渲染）
   const cursorShape = useRcCursor(session.id);
 
+  // 方案A（2026-09-25）：会话窗按对方画面比例自适应（首帧 / 切屏·改范围时
+  // 各调一次，同比例不重调；全屏态不参与）。失败 toast，不静默。
+  const fitNotify = useCallback((m: string, k: "error") => toast(m, k), [toast]);
+  useRcWindowFit({
+    sessionId: session.id,
+    size: frames.size,
+    active: !display.fullscreen,
+    notify: fitNotify,
+  });
+
   // C-UI3：自动同步剪贴板失败要说人话，禁止静默 catch。
   const onAutoFailToast = useCallback(
     (e: string) => toast(`自动同步剪贴板失败：${e}`, "error"),
@@ -137,17 +148,14 @@ export function RcSessionView({
     if (ok) onEnd();
   }, [onEnd]);
 
-  // B-1：会话内申请升级为可控。这条操作会断开当前画面，必须先确认。
+  // B-1：会话内申请升级为可控。乙方案 §6（2026-09-26）删掉了这道确认——
+  // 双保险已经够重（会话断开会立刻可见，且对方那头还要再确认一次），
+  // 一键直发 + 预告 toast 就够；真正的反馈由发起链路自己的 toast 承担。
   const requestControl = useCallback(async () => {
     if (!onRequestControl) return;
-    const ok = await confirmDialog({
-      title: "申请控制权",
-      message:
-        "将结束本次「只看」会话，并向对方重新申请「可控」。\n对方需要再次确认；同意后新会话可控制。",
-      confirmText: "申请控制权",
-    });
-    if (ok) onRequestControl();
-  }, [onRequestControl]);
+    toast("正在重新申请可控，等对方确认…", "info");
+    onRequestControl();
+  }, [onRequestControl, toast]);
 
   const input = useRcInput({
     canControl,
@@ -234,6 +242,8 @@ export function RcSessionView({
           quality={prefs.qPick}
           scopePick={prefs.scopePick}
           bitrate={prefs.bitratePick}
+          rttMs={link.rttMs}
+          fps={frames.fps}
           audioOn={audioOn}
           onToggleAudio={toggleAudio}
           clipAuto={clipAuto}

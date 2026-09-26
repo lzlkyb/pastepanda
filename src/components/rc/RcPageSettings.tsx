@@ -212,7 +212,7 @@ export function RcPageSettings({
         </h3>
         <div className={styles.setRow}>
           <div className={styles.setRowInfo}>
-            <div className={styles.setRowTitle}>临时接入码</div>
+            <div className={styles.setRowTitle}>无人值守码</div>
             <div className={styles.setRowHint}>
               对方不在电脑前也能连进来：生成 15 分钟单次码或 24 小时码，可指定只看或可控
             </div>
@@ -223,7 +223,7 @@ export function RcPageSettings({
             disabled={rc.busy}
             onClick={() => onOpenUno("unoGenerate")}
           >
-            生成接入码
+            生成无人值守码
           </button>
         </div>
         <div className={styles.setRow}>

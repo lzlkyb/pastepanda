@@ -72,7 +72,7 @@ export function RcNearbyList({ neighbors, busy, onPair }: {
           <li>另一台电脑安装并打开 <b>PastePanda</b></li>
           <li>确保在同一 Wi-Fi / 局域网</li>
           <li>两边都打开 <b>远程电脑</b></li>
-          <li>对方的 PastePanda 是<b>最新版</b>（旧版只能走邀请码）</li>
+          <li>对方的 PastePanda 是<b>最新版</b>（旧版只能走配对码）</li>
         </ol>
       </div>
     );

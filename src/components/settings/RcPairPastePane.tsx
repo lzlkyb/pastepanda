@@ -21,11 +21,13 @@
  * 粘自己的码在这里就当场拦住，不让用户走完流程才失败。
  */
 import { useEffect, useState } from "react";
+import { readClipboardText } from "@/lib/api";
 import type { RcInvite } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { canSubmitPair } from "@/lib/rcPairState";
+import { canSubmitPair, looksLikeRcInvite } from "@/lib/rcPairState";
 import type { ToastFn } from "@/components/Toast";
 import { FpBox } from "./RcPairFpBox";
+import { RcCredTag } from "./RcCredTag";
 import styles from "../rc/RemoteComputer.module.css";
 
 export function RcPairPastePane({
@@ -54,19 +56,21 @@ export function RcPairPastePane({
    * 文案改成「连接」——「配对」这个词在一次性场景里是多余的中间概念。
    */
   adhoc?: boolean;
-  /** 一次性协助专用收尾：带 `peer_id`（调用方要拿它点名遗忘）。 */
+  /** 一次性协助专用收尾：带 `peer_id`（调用方要拿它直接发起）。 */
   onAdhocPaired?: (peerId: string, peerName: string) => void;
 }) {
   const [code, setCode] = useState(initialCode ?? "");
   const [fp, setFp] = useState<string | null>(null);
   /**
    * 对方 node_id。原先只留了格式化后的指纹（`fp`），而一次性协助的收尾要用
-   * 原始 id 去 `rc_forget` —— 指纹是给人念的，反解不回来。
+   * 原始 id 直接发起 —— 指纹是给人念的，反解不回来。
    */
   const [peerId, setPeerId] = useState<string | null>(null);
   const [peerName, setPeerName] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  /** 剪贴板里探到的一份别人的码（乙方案：询问从向导首屏挪到这里）。 */
+  const [clipCode, setClipCode] = useState<string | null>(null);
 
   /**
    * 解析邀请码 → 出指纹。
@@ -82,7 +86,7 @@ export function RcPairPastePane({
       const inv = await previewInvite(c);
       // 粘自己的码当场拦，不让用户走完「核对指纹 → 完成」才失败。
       if (inv.node_id === selfNodeId) {
-        setErr("这是本机自己的邀请码。请把它粘到另一台设备上，和自己配对是没有用的。");
+        setErr("这是本机自己的配对码。请把它粘到另一台设备上，和自己配对是没有用的。");
         setFp(null);
         setPeerId(null);
         return;
@@ -92,7 +96,7 @@ export function RcPairPastePane({
       setPeerName(inv.name || "");
       setErr("");
     } catch (e) {
-      setErr(typeof e === "string" ? e : e instanceof Error ? e.message : "邀请码无效");
+      setErr(typeof e === "string" ? e : e instanceof Error ? e.message : "配对码无效");
       setFp(null);
       setPeerId(null);
     } finally {
@@ -100,10 +104,34 @@ export function RcPairPastePane({
     }
   };
 
-  // 剪贴板「填入」进来的码：挂载就解析，用户不用再点一次「解析邀请码」。
+  // 剪贴板「填入」进来的码：挂载就解析，用户不用再点一次「解析配对码」。
   useEffect(() => {
     if (initialCode?.trim()) void preview(initialCode);
     // 只在挂载时跑一次：之后换码由 onBlur / 按钮驱动。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * 乙方案（2026-09-26）：剪贴板询问从向导首屏挪到这儿——用户已经决定粘码，
+   * 「检测到一份配对码，要填入吗」才是帮忙而不是拦截。探到就顺手解析（拿到
+   * 指纹才提示），自己的码不提示（生成后自动复制过一份在剪贴板里，几乎必然撞）。
+   */
+  useEffect(() => {
+    if (initialCode?.trim()) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const t = (await readClipboardText()).trim();
+        if (!alive || !looksLikeRcInvite(t)) return;
+        const inv = await previewInvite(t).catch(() => null);
+        if (alive && inv && inv.node_id !== selfNodeId) setClipCode(t);
+      } catch {
+        /* 预读失败静默：这不是必经路径 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -113,9 +141,9 @@ export function RcPairPastePane({
       const ok = await pair(code.trim());
       if (!ok) return;
       /**
-       * 一次性协助的收尾交给调用方：他要「点名遗忘 + 直接发起」两件事，
-       * 而这两件都需要 `peer_id`。走不进 `onAdhocPaired`（没解析出 id）时
-       * 退回长期那条收尾，至少不会让用户点完按钮什么都没发生。
+       * 一次性协助的收尾交给调用方：他要「直接发起」，而这需要 `peer_id`。
+       * 走不进 `onAdhocPaired`（没解析出 id）时退回长期那条收尾，
+       * 至少不会让用户点完按钮什么都没发生。
        */
       if (adhoc && onAdhocPaired && peerId) onAdhocPaired(peerId, peerName);
       else onPaired?.(peerName);
@@ -129,6 +157,32 @@ export function RcPairPastePane({
   const primaryLabel = adhoc ? "连接" : "发送配对请求";
   return (
     <>
+      {adhoc ? (
+        <RcCredTag tone="help" label="一次性帮助码" note="对方当场确认" />
+      ) : (
+        <RcCredTag tone="pair" label="长期配对码" note="配对一次，以后随时直接连" />
+      )}
+      {clipCode && !code.trim() && (
+        <div className={`${styles.noteWarn} ${styles.clipAskCol}`}>
+          <div>检测到剪贴板里可能有一份{adhoc ? "帮助" : "配对"}码，要填入吗？</div>
+          <div className={styles.clipAskActs}>
+            <button
+              type="button"
+              className={styles.miniBtnPri}
+              onClick={() => {
+                setCode(clipCode);
+                setClipCode(null);
+                void preview(clipCode);
+              }}
+            >
+              填入
+            </button>
+            <button type="button" className={styles.miniBtn} onClick={() => setClipCode(null)}>
+              忽略
+            </button>
+          </div>
+        </div>
+      )}
       <textarea
         style={{
           width: "100%",
@@ -142,7 +196,7 @@ export function RcPairPastePane({
           background: "var(--card-bg, #fff)",
           color: "var(--text-primary, #1c1f23)",
         }}
-        placeholder="粘贴对方发来的远程邀请码"
+        placeholder={adhoc ? "粘贴对方发来的帮助码（对方会当场确认）" : "粘贴对方发来的长期配对码"}
         value={code}
         onChange={(e) => {
           setCode(e.target.value);
@@ -161,7 +215,7 @@ export function RcPairPastePane({
           style={{ alignSelf: "flex-start" }}
           onClick={() => void preview(code)}
         >
-          解析邀请码
+          解析配对码
         </button>
       )}
       {err && <div className={styles.noteBad}>{err}</div>}
