@@ -22,11 +22,11 @@
 //! | MCP 外部写入 | `mcp/source.rs` `AppKbSource` 的 create / update / append / delete / restore / edit_content |
 //! | 同步引擎 | **无钩子**（`sync/engine.rs` 拿不到 AppHandle）——由岛 `EVENT_SHOWN` 重拉兜底：它走 `note_update`/`note_create` 落库且必然带新 `updated_ms`，扫描缓存的键一变就重扫，岛下次显示必是新数据 |
 //!
-//! ## 排序口径（「今天该做什么」）
+//! ## 排序口径（「今天该做什么」，2026-09-25 起到期优先）
 //!
-//! 1. 今天速记（`daily_date == 今天`）里的待办排最前——立项 §2.5 拍板的
-//!    「隐式到期日」：速记记在哪天，哪天就是它的到期日；
-//! 2. 其余按笔记 `updated_ms` 降序（最近动过的优先）。
+//! 1. **有截止时间的排最前**，按到期时刻升序——「最紧的顶上去」（二期提醒拍板）；
+//! 2. 没截止时间的维持原口径：今天速记（`daily_date == 今天`）排先——立项 §2.5
+//!    拍板的「隐式到期日」；其余按笔记 `updated_ms` 降序（最近动过的优先）。
 //!
 //! `total` / `done` 是**全库**口径（进度环画的是整体完成度）；
 //! `tasks` 只装未完成的、按上面排序、截到 [`MAX_LIST_TASKS`] 条。
@@ -53,9 +53,19 @@ pub struct IslandTask {
     pub note_title: String,
     /// 正文中的行号，**0 起**（与 `annotate::Observation::line` 同一口径）
     pub line: usize,
-    /// 任务文字（`- [ ] ` 之后的部分，已 trim）
+    /// 任务文字（`- [ ] ` 之后的部分，**已剥掉 `@时间` 尾巴**——尾巴另行解析）
     pub text: String,
     pub done: bool,
+    /// 截止时刻（本地时区 Unix 毫秒）。None = 没写截止时间。
+    /// `serde(default)`：旧快照/旧前端没有这些字段，反序列化不能因此挂。
+    #[serde(default)]
+    pub due_ms: Option<i64>,
+    /// false = 全天（没写 HH:mm）：只展示「今天到期」，**不弹提醒**
+    #[serde(default)]
+    pub due_has_time: bool,
+    /// 展示用的时间文案（「今天 16:00」「9/28 9:00」）。None = 无截止时间
+    #[serde(default)]
+    pub due_label: Option<String>,
 }
 
 /// 展开列表的任务数上限。列表超高就滚（面板高度固定 240，设计稿 §5），
@@ -69,8 +79,209 @@ const MAX_LIST_TASKS: usize = 50;
 pub struct ParsedTask {
     /// 0 起行号（对 `content.split('\n')` 的下标）
     pub line: usize,
+    /// 原始任务文字（含 `@时间` 尾巴——尾巴要原样回写在笔记正文里）
     pub text: String,
     pub done: bool,
+    /// 剥掉尾巴后的展示文字（与 `text` 一起来自 [`due_tail`]，不重复解析）
+    pub display: String,
+    /// 尾巴里的时间（尚未结合「今天」换算成绝对时刻）
+    pub due_raw: Option<DueRaw>,
+}
+
+// ===== 截止时间（二期提醒，甲案：岛即提醒） =====
+
+use chrono::{Datelike, Timelike, TimeZone};
+
+/// 解析后的截止时刻。`at_ms` 由 [`resolve_due`] 结合解析当天的「今天」算出
+/// （关键字「明天」钉死成绝对日期，缓存隔天不漂移）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DueSpec {
+    pub at_ms: i64,
+    /// false = 全天（没写 HH:mm）：只展示不提醒
+    pub has_time: bool,
+}
+
+/// 尾巴里的时间原始形态（不含「今天」语境，纯解析产物）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DueRaw {
+    /// 关键字相对天数（今天 0 / 明天 1 / 后天 2）；数字日期为 None
+    pub rel_day: Option<i64>,
+    pub year: Option<i32>,
+    pub month: u32,
+    pub day: u32,
+    pub has_time: bool,
+    pub hour: u32,
+    pub minute: u32,
+}
+
+/// 把任务文字**尾部**的 `@时间` 剥出来（规则 #11.1 收口：展示文字的唯一定义）。
+///
+/// 恒返回 `(展示文字, Option<DueRaw>)`：没有合法尾巴时展示文字 = 原文。
+/// **只认尾巴**：`@` 必须是「空白后」的独立段且延伸到行尾（1–2 个词）。
+/// `交报告 @今天 16:00` → (`交报告`, Some)；`邮箱@example.com`、
+/// `@今天 开完再说`（@后还有别的词）、`@13/45`（非法日期）一律原样返回 None。
+/// 展示文字剥尾后不许为空（`@今天` 孤立成文 = 不是尾巴）。
+/// 笔记正文**不回改**——语法在岛内是展示层约定，笔记里人也能读懂。
+pub fn due_tail(text: &str) -> (String, Option<DueRaw>) {
+    let none = || (text.to_string(), None);
+    let t = text.trim_end();
+    let Some(at) = t.rfind('@') else { return none() };
+    // `@` 必须由空白引出（`邮箱@example.com` 的 @ 在词中，不算）
+    if at == 0 || !t[..at].ends_with(char::is_whitespace) {
+        return none();
+    }
+    let tail = &t[at + 1..];
+    let mut words = tail.split_whitespace();
+    let Some(date_w) = words.next() else { return none() };
+    let time_w = words.next();
+    if words.next().is_some() {
+        return none(); // @后面还有第三段——那是正文，不是尾巴
+    }
+    let Some(mut raw) = parse_due_date(date_w) else { return none() };
+    if let Some(w) = time_w {
+        match parse_due_time(w) {
+            Some((h, m)) => {
+                raw.has_time = true;
+                raw.hour = h;
+                raw.minute = m;
+            }
+            // 时间**未遂**（`16：00` 已在上面兼容；`25:00`/`下午3点` 这类带数字的）
+            // 降级成**全天日期**而不是整条作废——「连日期一起丢」会让用户以为
+            // 提醒设好了实际什么都没有（审计 P3#20）。
+            // 纯文字词（`下午再说`）不是时间未遂，是正文——整条尾巴按无效处理，
+            // 与历史行为一致，不许把用户的话吞进日期里。
+            None if w.chars().any(|c| c.is_ascii_digit()) => {}
+            None => return none(),
+        }
+    }
+    let display = t[..at].trim_end().to_string();
+    if display.is_empty() {
+        return none();
+    }
+    (display, Some(raw))
+}
+
+/// 日期词：`今天`/`明天`/`后天`、`9/26`、`09-26`、`2026-09-26`（`/` 同）。
+fn parse_due_date(w: &str) -> Option<DueRaw> {
+    let base = |rel: i64| {
+        Some(DueRaw {
+            rel_day: Some(rel),
+            year: None,
+            month: 0,
+            day: 0,
+            has_time: false,
+            hour: 0,
+            minute: 0,
+        })
+    };
+    match w {
+        "今天" => return base(0),
+        "明天" => return base(1),
+        "后天" => return base(2),
+        _ => {}
+    }
+    let (y, rest) = match w.split_once(['-', '/']) {
+        Some((a, b)) if a.len() == 4 => (a.parse::<i32>().ok(), b),
+        Some(_) => (None, w), // 两位/一位开头：整段重新按 M-D 切
+        _ => return None,
+    };
+    let (m, d) = match rest.split_once(['-', '/']) {
+        Some((a, b)) => (a, b),
+        None => return None,
+    };
+    let (month, day) = (m.parse::<u32>().ok()?, d.parse::<u32>().ok()?);
+    if month == 0 || month > 12 || day == 0 || day > 31 {
+        return None;
+    }
+    // 无年的 2/29 交给 from_ymd_opt 校验（平年拒认，宁可不提醒不误提醒）
+    if let Some(y) = y {
+        chrono::NaiveDate::from_ymd_opt(y, month, day)?;
+    }
+    Some(DueRaw {
+        rel_day: None,
+        year: y,
+        month,
+        day,
+        has_time: false,
+        hour: 0,
+        minute: 0,
+    })
+}
+
+/// 时间词：`H:mm` / `HH:mm`（16:00 / 9:30）。全角冒号 `16：00` 同样认——
+/// 中文输入法打出来的尾巴不该因为冒号形状整条作废（审计 P3#20）。
+fn parse_due_time(w: &str) -> Option<(u32, u32)> {
+    let w = w.replace('：', ":");
+    let (h, m) = w.split_once(':')?;
+    if h.is_empty() || h.len() > 2 || m.len() != 2 {
+        return None;
+    }
+    let (hour, minute) = (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?);
+    (hour <= 23 && minute <= 59).then_some((hour, minute))
+}
+
+/// 结合「今天」把尾巴换算成绝对时刻。
+///
+/// 无年份数字日期早于今天 → 顺延到明年（`@1/1` 在 9 月写，指明年的 1/1）；
+/// 平年 2/29 在 parse_due_date 已拒认。本地时区；DST 歧义时刻取最早解。
+pub fn resolve_due(raw: &DueRaw, now: chrono::DateTime<chrono::Local>) -> Option<DueSpec> {
+    let today = now.date_naive();
+    let date = match raw.rel_day {
+        Some(rel) => today + chrono::Duration::days(rel),
+        None => {
+            let y = raw.year.unwrap_or_else(|| {
+                let this_year = today.year();
+                let this = chrono::NaiveDate::from_ymd_opt(this_year, raw.month, raw.day);
+                match this {
+                    Some(d) if d >= today => this_year,
+                    _ => this_year + 1,
+                }
+            });
+            chrono::NaiveDate::from_ymd_opt(y, raw.month, raw.day)?
+        }
+    };
+    let time = if raw.has_time {
+        chrono::NaiveTime::from_hms_opt(raw.hour, raw.minute, 0)?
+    } else {
+        // 全天 = 当天 23:59:59：过完这一天才算过期，排序里排在当天有时间任务之后
+        chrono::NaiveTime::from_hms_opt(23, 59, 59)?
+    };
+    use chrono::TimeZone;
+    let ndt = chrono::NaiveDateTime::new(date, time);
+    match chrono::Local.from_local_datetime(&ndt) {
+        chrono::LocalResult::Single(v) | chrono::LocalResult::Ambiguous(v, _) => {
+            Some(DueSpec { at_ms: v.timestamp_millis(), has_time: raw.has_time })
+        }
+        chrono::LocalResult::None => None,
+    }
+}
+
+/// 截止时刻的展示文案。label 只依赖绝对日期与今天的关系，**每次刷新现算**
+/// ——「今天」不会隔夜变成假话。
+pub fn due_label(at_ms: i64, has_time: bool, now: chrono::DateTime<chrono::Local>) -> String {
+    let date = chrono::Local.timestamp_millis_opt(at_ms).unwrap().date_naive();
+    let today = now.date_naive();
+    let time = || {
+        let t = chrono::Local.timestamp_millis_opt(at_ms).unwrap().time();
+        format!("{}:{:02}", t.hour(), t.minute())
+    };
+    match date {
+        d if d == today => {
+            if has_time { format!("今天 {}", time()) } else { "今天到期".to_string() }
+        }
+        d if d == today + chrono::Duration::days(1) => {
+            if has_time { format!("明天 {}", time()) } else { "明天到期".to_string() }
+        }
+        d if d == today - chrono::Duration::days(1) => {
+            if has_time { format!("昨天 {}", time()) } else { "昨天到期".to_string() }
+        }
+        d if d.year() == today.year() => {
+            if has_time { format!("{}/{} {}", d.month(), d.day(), time()) } else { format!("{}/{} 到期", d.month(), d.day()) }
+        }
+        d => {
+            if has_time { format!("{}.{}/{} {}", d.year(), d.month(), d.day(), time()) } else { format!("{}.{}/{} 到期", d.year(), d.month(), d.day()) }
+        }
+    }
 }
 
 /// 扫一篇正文里的所有 GFM 任务复选框。
@@ -93,7 +304,8 @@ pub fn parse_tasks(content: &str) -> Vec<ParsedTask> {
             continue;
         }
         if let Some((text, done)) = task_at(line) {
-            out.push(ParsedTask { line: i, text, done });
+            let (display, due_raw) = due_tail(&text);
+            out.push(ParsedTask { line: i, text, done, display, due_raw });
         }
     }
     out
@@ -112,10 +324,14 @@ fn task_at(line: &str) -> Option<(String, bool)> {
     if line.len() - trimmed.len() > 3 {
         return None; // 缩进代码块（GFM：4 空格起）
     }
-    let rest = trimmed
-        .strip_prefix(['-', '*', '+'])?
-        .strip_prefix(' ')?
-        .strip_prefix('[')?;
+    // 前缀两种（GFM 任务复选框允许挂在两类列表项上）：
+    //   无序 `- `/`* `/`+ `；有序 `1. ` / `12) `（数字 1–9 位）。
+    // 有序不认的话，用户用编号清单写的待办在岛上完全不可见（审计 P3#19）。
+    let rest = match trimmed.strip_prefix(['-', '*', '+']) {
+        Some(r) => r.strip_prefix(' ')?,
+        None => strip_ordered_marker(trimmed)?,
+    };
+    let rest = rest.strip_prefix('[')?;
     let (mark, after) = rest.split_once(']')?;
     let done = match mark {
         " " => false,
@@ -131,16 +347,35 @@ fn task_at(line: &str) -> Option<(String, bool)> {
     Some((text.to_string(), done))
 }
 
+/// 有序编号前缀：数字（1–9 位）+ `.` 或 `)` + 空格。`3.14 是圆周率`、
+/// `2026-09-26 …` 这类以数字开头但不是列表项的行，切完数字后接不上
+/// `.`/`)`+空格，自然落空。
+fn strip_ordered_marker(s: &str) -> Option<&str> {
+    let digits = s.len() - s.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if digits == 0 || digits > 9 {
+        return None;
+    }
+    s[digits..].strip_prefix(['.', ')'])?.strip_prefix(' ')
+}
+
 /// 翻转一行任务复选框的勾选态，**只动方括号里那一个字符**。
 ///
 /// 缩进、bullet 字符、`[X]` 的原样性全保留——用户写的是 `- [X]`，回写就还是
 /// `- [X]` 换成 `- [ ]`，不许悄悄改写别人的排版。
 /// 返回 `None` = 这行不是任务行（调用方应视为行号漂移）。
 pub fn flip_task_line(raw: &str) -> Option<String> {
-    // 先验形状：bullet 后必须恰好一个空格接 `[`，mark 恒在 lead+3
+    // 先验形状（bullet 与编号两种前缀都在 task_at 里认）
     task_at(raw)?;
     let lead = raw.len() - raw.trim_start().len();
-    let mark_idx = lead + 3; // bullet(1) + space(1) + '['(1)，全是 ASCII，必是字符边界
+    // mark = 行首后第一个 `]` 里那一个字符——按形状找，不按固定偏移数：
+    // 编号前缀（`1. ` / `12) `）长度不定，`lead+3` 的老算法对它会翻错位置。
+    let close = raw[lead..].find(']')? + lead;
+    let mark_idx = close.checked_sub(1)?;
+    // 保险丝：mark 前一个字符必须是 `[`（防 `]` 之前混进奇怪内容）；编号 9 位
+    // + `. ` + `[` + mark + `]` 最长 13，超了绝不是任务行。
+    if close - lead > 14 || !raw[..mark_idx].ends_with('[') {
+        return None;
+    }
     let new_mark = match raw[mark_idx..].chars().next()? {
         ' ' => 'x',
         'x' | 'X' => ' ',
@@ -172,8 +407,10 @@ pub enum ToggleError {
 /// 任何一种都**报错刷新**，绝不静默去改别的行（规则 #15.3）。
 pub fn apply_toggle(content: &str, line: usize, expected_text: &str) -> Result<String, ToggleError> {
     let raw = content.split('\n').nth(line).ok_or(ToggleError::OutOfRange)?;
-    let (text, _) = task_at(raw).ok_or(ToggleError::NotTask)?;
-    if text != expected_text.trim() {
+    let (raw_text, _) = task_at(raw).ok_or(ToggleError::NotTask)?;
+    // expected_text 是岛里展示的文字（已剥 `@时间` 尾巴，见 due_tail）——比对走同一份剥尾
+    let (display, _) = due_tail(&raw_text);
+    if display != expected_text.trim() {
         return Err(ToggleError::TextDrift);
     }
     let flipped = flip_task_line(raw).ok_or(ToggleError::NotTask)?;
@@ -209,31 +446,52 @@ struct ScanNote {
     tasks: Vec<ParsedTask>,
 }
 
+/// 相对关键字（今天/明天/后天）到期点的**钉死缓存**（`manage` 进 Tauri 状态）。
+///
+/// 「@今天 16:00」第一次扫到时按当天解析并记进这里，之后隔夜/隔天重扫都用钉住的
+/// 绝对时刻——否则每次刷新都用当天重解，「今天」每天漂移成新的到期点，提醒键
+/// （含 due_ms）跟着换，同一条没勾的任务**每天重响一次**（审计 P2#3，与实施方案
+/// §11.4「钉死成绝对日期」相反）。
+///
+/// 键 = `note_id:line:{due_raw原文}`——用户改了时间文字（今天→明天）就是新键，
+/// 按当天重新钉，改期意图不受影响。任务消失的当轮 prune。
+#[derive(Default)]
+pub struct DuePinCache(Mutex<HashMap<String, DueSpec>>);
+
 /// 全量算一份岛状态。**只读**（缓存是内部的加速结构，不对外可见）。
 pub fn compute_island_state(
     store: &DataStore,
     cache: &TodoScanCache,
+    pins: &DuePinCache,
 ) -> Result<IslandState, String> {
     let index = store.note_active_task_index()?;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-    let mut map = cache.0.lock().map_err(|_| "扫描缓存锁中毒")?;
-    let alive: HashSet<&str> = index.iter().map(|(id, ..)| id.as_str()).collect();
-    // 删掉的笔记（软删 / 彻底删）从缓存里清出去，别让它越积越大
-    map.retain(|id, _| alive.contains(id.as_str()));
+    // 🔴 缓存锁只罩内存操作（retain + 快照 + 回填），**绝不跨 SQLite IO**——
+    //    compute 在每次笔记写路径里被同步调（refresh_island），持锁跨 IO 会把
+    //    首扫期间的所有写命令卡到扫描放锁（审计 P2#7）。代价是并发的两次 compute
+    //    可能重复解析同一篇（幂等，无害）。
+    let snapshot: HashMap<String, CachedNote> = {
+        let mut map = cache.0.lock().map_err(|_| "扫描缓存锁中毒")?;
+        let alive: HashSet<&str> = index.iter().map(|(id, ..)| id.as_str()).collect();
+        // 删掉的笔记（软删 / 彻底删）从缓存里清出去，别让它越积越大
+        map.retain(|id, _| alive.contains(id.as_str()));
+        std::mem::take(&mut *map)
+    };
 
     let mut notes: Vec<ScanNote> = Vec::with_capacity(index.len());
+    let mut fresh: Vec<(String, CachedNote)> = Vec::new();
     for (id, title, ms, daily) in &index {
-        let tasks = match map.get(id) {
+        let tasks = match snapshot.get(id) {
             // 标题一起比：改标题也会 bump updated_ms，但别赌——比一个字符串很便宜
             Some(c) if c.updated_ms == *ms && c.title == *title => c.tasks.clone(),
             _ => {
                 let content = store.note_content_raw(id)?.unwrap_or_default();
                 let parsed = parse_tasks(&content);
-                map.insert(
+                fresh.push((
                     id.clone(),
                     CachedNote { updated_ms: *ms, title: title.clone(), tasks: parsed.clone() },
-                );
+                ));
                 parsed
             }
         };
@@ -245,8 +503,13 @@ pub fn compute_island_state(
             tasks,
         });
     }
-    // 汇总不碰缓存，先放锁
-    drop(map);
+    // 回填缓存（纯内存，短临界区）
+    {
+        let mut map = cache.0.lock().map_err(|_| "扫描缓存锁中毒")?;
+        for (id, c) in fresh {
+            map.insert(id, c);
+        }
+    }
 
     // 稳定排序：同 ms 的保持索引顺序（rowid），结果可复现
     notes.sort_by(|a, b| b.today_daily.cmp(&a.today_daily).then(b.updated_ms.cmp(&a.updated_ms)));
@@ -254,32 +517,85 @@ pub fn compute_island_state(
     let (mut total, mut done) = (0u32, 0u32);
     let mut pending: Vec<IslandTask> = Vec::new();
     let mut finished: Vec<IslandTask> = Vec::new();
+    // 截止时刻与展示文案在**每次刷新现算**（label 依赖「今天」，缓存会隔夜说假话）
+    let now = chrono::Local::now();
+    // 钉死账整轮只拿一次锁（纯内存操作）；本轮用到的键记下来，收账时 prune
+    let mut pin_map = pins.0.lock().map_err(|_| "到期钉死缓存锁中毒")?;
+    let mut used_pins: HashSet<String> = HashSet::new();
     for n in &notes {
         for t in &n.tasks {
             total += 1;
+            let due: Option<DueSpec> = match &t.due_raw {
+                None => None,
+                // 数字日期本来就是绝对的，无需钉
+                Some(raw) if raw.rel_day.is_none() => resolve_due(raw, now),
+                Some(raw) => {
+                    let key = format!("{}:{}:{:?}", n.id, t.line, raw);
+                    used_pins.insert(key.clone());
+                    match pin_map.get(&key) {
+                        Some(pinned) => Some(pinned.clone()),
+                        None => {
+                            let spec = resolve_due(raw, now);
+                            if let Some(s) = &spec {
+                                pin_map.insert(key, s.clone());
+                            }
+                            spec
+                        }
+                    }
+                }
+            };
             let item = IslandTask {
                 note_id: n.id.clone(),
                 note_title: n.title.clone(),
                 line: t.line,
-                text: t.text.clone(),
+                text: t.display.clone(),
                 done: t.done,
+                due_ms: due.as_ref().map(|d| d.at_ms),
+                due_has_time: due.as_ref().is_some_and(|d| d.has_time),
+                due_label: due.as_ref().map(|d| due_label(d.at_ms, d.has_time, now)),
             };
             if t.done {
                 done += 1;
                 if finished.len() < MAX_LIST_TASKS {
                     finished.push(item);
                 }
-            } else if pending.len() < MAX_LIST_TASKS {
+            } else {
+                // ❗ pending 先**不截断**——截断必须发生在排序之后（见下）
                 pending.push(item);
             }
         }
     }
+    // 钉死账 prune：本轮没出现的键（任务删了/改了时间文字）清出去
+    pin_map.retain(|k, _| used_pins.contains(k));
+    drop(pin_map);
+
+    // 排序：默认「到期优先」（拍板 2026-09-25）——有截止时间的按时刻升序排最前；
+    // 没时间的维持原口径（今天速记 → updated_ms 降序）。稳定排序，结果可复现。
+    // `todo_island_due_sort=false`（设置页可关）= 回到创建顺序，让排序这种主观偏好有出口。
+    let due_sort = store
+        .get_config()
+        .map(|c| c.get("todo_island_due_sort").and_then(|v| v.as_bool()).unwrap_or(true))
+        .unwrap_or(true);
+    if due_sort {
+        pending.sort_by(|a, b| match (a.due_ms, b.due_ms) {
+            (Some(x), Some(y)) => x.cmp(&y),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+    }
+    // 🔴 截断在排序**之后**：>50 条时被截掉的才是最不紧的那批。原来截在排序前，
+    //    排第 51 位的「@今天 18:00」既不显示也不提醒（审计 P1#2）。
+    //    （due_sort 关闭 + >50 条 = 按创建顺序保前 50，提醒只覆盖展示列表——
+    //    设置项文案承诺的就是「按创建顺序显示」，这是该口径下的已知边界。）
+    pending.truncate(MAX_LIST_TASKS);
     let hint = pending
         .first()
         .map(|t| t.text.clone())
         .unwrap_or_else(|| if total > 0 { "全部完成".to_string() } else { String::new() });
 
-    Ok(IslandState { total, done, hint, tasks: pending, done_tasks: finished })
+    // due_alert 不在这里填——注入收口在 todo_island::push_state / inject_remind
+    Ok(IslandState { total, done, hint, tasks: pending, done_tasks: finished, due_alert: None })
 }
 
 // ===== 推送与命令 =====
@@ -292,7 +608,8 @@ pub fn compute_island_state(
 pub fn refresh_island(app: &AppHandle) -> Option<IslandState> {
     let store = app.try_state::<DataStore>()?;
     let scan = app.try_state::<TodoScanCache>()?;
-    match compute_island_state(&store, &scan) {
+    let pins = app.try_state::<DuePinCache>()?;
+    match compute_island_state(&store, &scan, &pins) {
         Ok(state) => {
             crate::todo_island::push_state(app, state.clone());
             apply_resident_visibility(app, &state);
@@ -315,9 +632,17 @@ fn apply_resident_visibility(app: &AppHandle, state: &IslandState) {
     let pending = state.total.saturating_sub(state.done);
     if pending > 0 {
         crate::todo_island::show(app);
-    } else {
+    } else if matches!(
+        crate::todo_island_stage::current_stage(),
+        crate::todo_island_stage::IslandStage::Pill
+            | crate::todo_island_stage::IslandStage::Peek
+            | crate::todo_island_stage::IslandStage::Clear
+    ) {
         crate::todo_island::hide_after(app, 1500);
     }
+    // 展开态（list/compose）且剩 0 条：**不抢**——用户正在操作（审计：勾完最后
+    // 一条列表被强制收走）。收起那一刻前端会按「剩 0 条」发延迟隐藏；鼠标离开
+    // 6s 的闲置自收（前端）也会兜底收掉，不存在「空岛永久挂着」。
 }
 
 /// 拉一份**现算**的岛状态。岛 mount / 每次显示时调。
@@ -329,8 +654,13 @@ pub fn todo_island_tasks(
     app: AppHandle,
     store: State<'_, DataStore>,
     scan: State<'_, TodoScanCache>,
+    pins: State<'_, DuePinCache>,
 ) -> Result<IslandState, String> {
-    let state = compute_island_state(&store, &scan)?;
+    let mut state = compute_island_state(&store, &scan, &pins)?;
+    // 岛显示时的拉快照路径同样要带横幅（注入收口在 todo_island::inject_remind）
+    if let Some(ledger) = app.try_state::<crate::todo_island::RemindLedger>() {
+        crate::todo_island::inject_remind(&ledger, &mut state);
+    }
     if let Some(cache) = app.try_state::<crate::todo_island::IslandStateCache>() {
         if let Ok(mut guard) = cache.0.lock() {
             *guard = Some(state.clone());
@@ -345,6 +675,11 @@ pub fn todo_island_tasks(
 /// 行号漂移（`ToggleError`）在这里落成错误字符串返回，岛端据此整体刷新——
 /// 不静默改别的行。成功后顺手把主窗口通知出去：若该笔记正在编辑器里开着且
 /// 有未保存改动，用户需要知道库里的内容刚刚变了（实施方案 §6 风险 7）。
+/// 勾选回写**串行锁**：读-改-写三步必须原子。岛端快速连点两条会并发读同一份
+/// 正文、后写的整文覆盖先写的（丢勾选，审计 P2#6）。勾选是低频操作，全局串行
+/// 没有争用之虞；锁中毒按恢复处理（它只管串行化，不保护不变量）。
+static TOGGLE_WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[tauri::command]
 pub fn todo_island_toggle_task(
     app: AppHandle,
@@ -353,6 +688,7 @@ pub fn todo_island_toggle_task(
     line: usize,
     expected_text: String,
 ) -> Result<IslandState, String> {
+    let _serial = TOGGLE_WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let note = store
         .note_get(&note_id)?
         .ok_or_else(|| "笔记不存在，可能已被删除".to_string())?;
@@ -380,9 +716,36 @@ mod tests {
     fn test_parse_basic_gfm_forms() {
         let ts = parse_tasks("- [ ] 买牛奶\n- [x] 已办\n- [X] 大写也算\n* [ ] 星号列表\n+ [ ] 加号列表");
         assert_eq!(ts.len(), 5);
-        assert_eq!(ts[0], ParsedTask { line: 0, text: "买牛奶".into(), done: false });
-        assert_eq!(ts[1], ParsedTask { line: 1, text: "已办".into(), done: true });
-        assert_eq!(ts[2], ParsedTask { line: 2, text: "大写也算".into(), done: true });
+        assert_eq!(
+            ts[0],
+            ParsedTask {
+                line: 0,
+                text: "买牛奶".into(),
+                done: false,
+                display: "买牛奶".into(),
+                due_raw: None
+            }
+        );
+        assert_eq!(
+            ts[1],
+            ParsedTask {
+                line: 1,
+                text: "已办".into(),
+                done: true,
+                display: "已办".into(),
+                due_raw: None
+            }
+        );
+        assert_eq!(
+            ts[2],
+            ParsedTask {
+                line: 2,
+                text: "大写也算".into(),
+                done: true,
+                display: "大写也算".into(),
+                due_raw: None
+            }
+        );
         assert_eq!(ts[3].text, "星号列表");
         assert_eq!(ts[4].text, "加号列表");
     }
@@ -490,7 +853,7 @@ mod tests {
         // 今天的速记：1 未完成 —— 应排最前
         store.note_append_daily(&today, "08:00", None, "- [ ] 速记一").unwrap();
 
-        let st = compute_island_state(&store, &cache).unwrap();
+        let st = compute_island_state(&store, &cache, &DuePinCache::default()).unwrap();
         assert_eq!(st.total, 4, "total 是全库口径（含已完成）");
         assert_eq!(st.done, 1);
         assert_eq!(st.tasks.len(), 3);
@@ -501,7 +864,7 @@ mod tests {
         let note = store.note_get(&st.tasks[1].note_id).unwrap().unwrap();
         let next = apply_toggle(&note.content, 0, "普通一").unwrap();
         store.note_update(&note.id, &note.title, &next).unwrap();
-        let st2 = compute_island_state(&store, &cache).unwrap();
+        let st2 = compute_island_state(&store, &cache, &DuePinCache::default()).unwrap();
         assert_eq!(st2.total, 4);
         assert_eq!(st2.done, 2, "勾选后 done 必须 +1");
         assert_eq!(st2.tasks.len(), 2);
@@ -514,13 +877,13 @@ mod tests {
         let keep = store.note_create(None, "留", "- [ ] 留下的").unwrap();
         let gone = store.note_create(None, "删", "- [ ] 删掉的").unwrap();
         store.note_delete(&gone.id).unwrap();
-        let st = compute_island_state(&store, &cache).unwrap();
+        let st = compute_island_state(&store, &cache, &DuePinCache::default()).unwrap();
         assert_eq!(st.total, 1);
         assert_eq!(st.tasks[0].note_id, keep.id);
 
         // 软删恢复后回来
         store.note_restore_deleted(&gone.id).unwrap();
-        let st2 = compute_island_state(&store, &cache).unwrap();
+        let st2 = compute_island_state(&store, &cache, &DuePinCache::default()).unwrap();
         assert_eq!(st2.total, 2, "恢复后必须重新出现");
     }
 
@@ -533,8 +896,214 @@ mod tests {
             body.push_str(&format!("- [ ] 任务{i}\n"));
         }
         store.note_create(None, "长单", &body).unwrap();
-        let st = compute_island_state(&store, &cache).unwrap();
+        let st = compute_island_state(&store, &cache, &DuePinCache::default()).unwrap();
         assert_eq!(st.total as usize, MAX_LIST_TASKS + 10, "计数不给截断");
         assert_eq!(st.tasks.len(), MAX_LIST_TASKS, "列表给截断（payload 上限）");
+    }
+
+    // ----- 截止时间（due_tail / resolve_due / due_label / 排序） -----
+
+    /// 固定「今天」做解析，测出的是纯逻辑而非时钟
+    fn today() -> chrono::DateTime<chrono::Local> {
+        chrono::Local.with_ymd_and_hms(2026, 9, 25, 10, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn test_due_tail_all_formats() {
+        let (d, r) = due_tail("交报告 @今天 16:00");
+        assert_eq!(d, "交报告");
+        let r = r.unwrap();
+        assert!(r.has_time);
+        assert_eq!(resolve_due(&r, today()).unwrap().at_ms,
+            chrono::Local.with_ymd_and_hms(2026, 9, 25, 16, 0, 0).unwrap().timestamp_millis());
+
+        // 明天 / 后天 / 无时间（全天）
+        assert_eq!(due_tail("买牛奶 @明天").1.unwrap().rel_day, Some(1));
+        let (d, r) = due_tail("扫 @后天 9:30");
+        assert_eq!(d, "扫");
+        let spec = resolve_due(&r.unwrap(), today()).unwrap();
+        assert_eq!(spec.at_ms,
+            chrono::Local.with_ymd_and_hms(2026, 9, 27, 9, 30, 0).unwrap().timestamp_millis());
+
+        // 数字日期：M/D、MM-DD、带年；无年早于今天顺延明年
+        assert_eq!(due_tail("x @9/28 9:00").1.unwrap().month, 9);
+        assert_eq!(due_tail("x @09-28").1.unwrap().day, 28);
+        assert_eq!(due_tail("x @2026-09-26 18:00").1.unwrap().year, Some(2026));
+        let next_year = due_tail("x @1/1").1.unwrap();
+        assert_eq!(resolve_due(&next_year, today()).unwrap().at_ms,
+            chrono::Local.with_ymd_and_hms(2027, 1, 1, 23, 59, 59).unwrap().timestamp_millis(),
+            "无年日期早于今天 → 顺延明年；全天 = 23:59:59");
+    }
+
+    #[test]
+    fn test_due_tail_rejects() {
+        for s in [
+            "邮箱@example.com 记一下", // @ 在词中
+            "@今天 开完再说",          // @在开头（展示文字为空）
+            "交报告 @今天 下午再说",    // @后三个词
+            "交报告 @13/45",           // 非法日期
+            "交报告 @25:00",           // 非法时间
+            "交报告 @今天25:00",       // 时间贴着日期没有空格 → 日期词整体非法
+            "交报告",                  // 没有尾巴
+        ] {
+            let (d, r) = due_tail(s);
+            assert!(r.is_none(), "{s} 不该认出尾巴");
+            assert_eq!(d, s, "{s} 原文必须原样保留");
+        }
+    }
+
+    #[test]
+    fn test_due_label_forms() {
+        let today5 = chrono::Local.with_ymd_and_hms(2026, 9, 25, 16, 0, 0).unwrap().timestamp_millis();
+        assert_eq!(due_label(today5, true, today()), "今天 16:00");
+        let tomorrow = chrono::Local.with_ymd_and_hms(2026, 9, 26, 23, 59, 59).unwrap().timestamp_millis();
+        assert_eq!(due_label(tomorrow, false, today()), "明天到期");
+        let eoy = chrono::Local.with_ymd_and_hms(2026, 12, 1, 9, 5, 0).unwrap().timestamp_millis();
+        assert_eq!(due_label(eoy, true, today()), "12/1 9:05");
+        let next_year = chrono::Local.with_ymd_and_hms(2027, 1, 2, 8, 0, 0).unwrap().timestamp_millis();
+        assert_eq!(due_label(next_year, true, today()), "2027.1/2 8:00");
+    }
+
+    #[test]
+    fn test_pending_sort_due_first() {
+        let store = DataStore::new(":memory:").expect("内存库");
+        let cache = TodoScanCache::default();
+        // 建库顺序：先建无时间的（updated_ms 更早），再建有时间的——到期优先必须盖过 updated_ms
+        store.note_create(None, "普通", "- [ ] 无时间甲\n- [ ] 无时间乙").unwrap();
+        store
+            .note_create(None, "限时", "- [ ] 后天的事 @后天 9:00\n- [ ] 明天的事 @明天 8:00")
+            .unwrap();
+        let st = compute_island_state(&store, &cache, &DuePinCache::default()).unwrap();
+        let texts: Vec<&str> = st.tasks.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(texts, vec!["明天的事", "后天的事", "无时间甲", "无时间乙"]);
+        assert_eq!(st.tasks[0].due_label.as_deref(), Some("明天 8:00"));
+        assert!(st.tasks[2].due_ms.is_none());
+    }
+
+    #[test]
+    fn test_toggle_with_due_tail_roundtrip() {
+        // 带尾巴的任务：岛里展示「交报告」，勾选比对走剥尾文字，正文尾巴原样保留
+        let content = "- [ ] 交报告 @今天 16:00";
+        let ts = parse_tasks(content);
+        assert_eq!(ts[0].display, "交报告");
+        let flipped = apply_toggle(content, 0, "交报告").unwrap();
+        assert_eq!(flipped, "- [x] 交报告 @今天 16:00", "尾巴不许被改写");
+        // 勾掉后（[x]），tail 解析照常
+        let back = apply_toggle(&flipped, 0, "交报告").unwrap();
+        assert_eq!(back, content, "往返还原");
+    }
+
+    // ----- 2026-09-25 审计修复的守卫 -----
+
+    /// 🔴 P1#2 守卫：截断必须发生在到期排序**之后**——未完成 >50 条时，
+    /// 带截止时间的任务哪怕写在最后也必须进列表、能被提醒挑选到。
+    #[test]
+    fn test_compute_truncates_after_due_sort() {
+        let store = DataStore::new(":memory:").expect("内存库");
+        let cache = TodoScanCache::default();
+        let pins = DuePinCache::default();
+        let mut body = String::new();
+        for i in 0..(MAX_LIST_TASKS - 5) {
+            body.push_str(&format!("- [ ] 无期任务{i}\n"));
+        }
+        // 15 条带截止时间的排在正文最末（创建顺序里最靠后）
+        for i in 0..15 {
+            body.push_str(&format!("- [ ] 紧急任务{i} @明天 18:00\n"));
+        }
+        store.note_create(None, "长单", &body).unwrap();
+        let st = compute_island_state(&store, &cache, &pins).unwrap();
+        assert_eq!(st.tasks.len(), MAX_LIST_TASKS);
+        let kept_due = st
+            .tasks
+            .iter()
+            .filter(|t| t.text.starts_with("紧急任务"))
+            .count();
+        assert_eq!(kept_due, 15, "15 条到期任务必须全部进前 50（截断在排序后）");
+        assert!(
+            st.tasks.iter().take(15).all(|t| t.text.starts_with("紧急任务")),
+            "到期优先：紧急任务必须占据列表最前"
+        );
+    }
+
+    /// 🔴 P2#3 守卫：相对关键字（@明天）的到期点**钉死**在缓存里——重扫不得
+    /// 按当天重新解析（否则每天漂移成新到期点、提醒键跟着换、每天重响）。
+    #[test]
+    fn test_pin_cache_stabilizes_relative_due() {
+        let store = DataStore::new(":memory:").expect("内存库");
+        let cache = TodoScanCache::default();
+        let pins = DuePinCache::default();
+        store.note_create(None, "记", "- [ ] 交报告 @明天 18:00").unwrap();
+
+        let st = compute_island_state(&store, &cache, &pins).unwrap();
+        let due1 = st.tasks[0].due_ms.expect("相对关键字要有到期点");
+
+        // 模拟「隔天重扫」：把钉死账改成哨兵值，再扫一次——若实现还在用当天
+        // 重解，due_ms 会变回新解的值而不是哨兵
+        const SENTINEL: i64 = 1_234_567_890_000;
+        {
+            let mut map = pins.0.lock().unwrap();
+            for (_, v) in map.iter_mut() {
+                *v = DueSpec { at_ms: SENTINEL, has_time: true };
+            }
+        }
+        let st2 = compute_island_state(&store, &cache, &pins).unwrap();
+        assert_eq!(
+            st2.tasks[0].due_ms,
+            Some(SENTINEL),
+            "重扫必须用钉死的到期点，不得按当天重解"
+        );
+        assert_ne!(due1, SENTINEL, "哨兵必须与首扫值不同，否则测了个寂寞");
+    }
+
+    /// 钉死账的 prune：任务删了，对应的键不能留着（防长期挂机内存缓涨）。
+    #[test]
+    fn test_pin_cache_prunes_gone_tasks() {
+        let store = DataStore::new(":memory:").expect("内存库");
+        let cache = TodoScanCache::default();
+        let pins = DuePinCache::default();
+        let note = store.note_create(None, "记", "- [ ] 交报告 @明天 18:00").unwrap();
+        compute_island_state(&store, &cache, &pins).unwrap();
+        assert!(!pins.0.lock().unwrap().is_empty(), "首扫后应有钉死记录");
+
+        store.note_delete(&note.id).unwrap();
+        compute_island_state(&store, &cache, &pins).unwrap();
+        assert!(pins.0.lock().unwrap().is_empty(), "任务没了，钉死账必须清出去");
+    }
+
+    /// P3#20 守卫：全角冒号时间可用；「时间未遂」（带数字的非法时间）降级成
+    /// 全天日期；纯文字词（下午再说）是正文，整条尾巴照旧作废。
+    #[test]
+    fn test_due_tail_fullwidth_colon_and_degrade() {
+        let (_, r) = due_tail("交报告 @今天 16：00");
+        let r = r.expect("全角冒号必须能解析");
+        assert!(r.has_time);
+        assert_eq!((r.hour, r.minute), (16, 0));
+
+        // 时间未遂：日期保留、降级全天（不再整条作废让提醒悄悄消失）
+        let (d, r) = due_tail("交报告 @今天 下午3点");
+        assert_eq!(d, "交报告");
+        let r = r.expect("日期部分必须保留");
+        assert!(!r.has_time, "时间未遂降级成全天");
+
+        // 纯文字词是正文：整条尾巴无效，原文保留
+        let (d, r) = due_tail("交报告 @今天 下午再说");
+        assert!(r.is_none(), "纯文字词不是时间");
+        assert_eq!(d, "交报告 @今天 下午再说");
+    }
+
+    /// P3#19 守卫：GFM 有序列表上的任务复选框要认、要能勾（岛看得见才谈得上提醒）。
+    #[test]
+    fn test_ordered_list_tasks_recognized_and_flippable() {
+        assert_eq!(task_at("1. [ ] 甲").unwrap(), ("甲".to_string(), false));
+        assert_eq!(task_at("12) [x] 乙").unwrap(), ("乙".to_string(), true));
+        // 数字开头但不是列表项的行不许误认
+        assert!(task_at("3.14 圆周率").is_none());
+        assert!(task_at("2026-09-26 截止").is_none());
+        assert!(task_at("1.[ ] 连写不是任务").is_none());
+        assert!(task_at("1. [todo] 类别行").is_none());
+        // 勾选回写走同一条路
+        let content = "前言\n1. [ ] 甲\n后记";
+        assert_eq!(apply_toggle(content, 1, "甲").unwrap(), "前言\n1. [x] 甲\n后记");
+        assert_eq!(flip_task_line("12) [X] 乙").as_deref(), Some("12) [ ] 乙"));
     }
 }

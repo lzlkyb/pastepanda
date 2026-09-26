@@ -9,11 +9,17 @@ import type { SettingsTabName } from "@/lib/openSettings";
  * ❗ label 必须与分区标题（<div className={styles.sSection}>）的文字**逐字一致**：
  * 搜索的 D4 （分区名命中则整节展开）靠的就是那段文字，两边对不上会让「搜分区名」行为不一致。
  * scroll-spy 同样靠标题文字反查菜单项。
+ *
+ * 🔴 **icon 一律写带 U+FE0F 的 emoji 形式**（`🏖️` 而不是 `🏝`）：全局字体栈
+ * （globals.css）里没有 Segoe UI Emoji，Windows 对缺 VS16 的码位走「文本呈现」= 单色字形，
+ * 于是彩色图标变黑白（实测：`🏝`/`🗓`/`⏱`/`✂`/`🛡`/`👁`/`ℹ` 裸码位 chroma 0，补 VS16 后 200+）。
+ * 少数码位（`🫧` `🛟`）连彩色版都没有，只能换字形。
  */
 export const SETTINGS_SECTIONS = [
   { key: "stats",      label: "数据统计",     icon: "📊" },
   { key: "appearance", label: "外观",         icon: "🎨" },
   { key: "general",    label: "通用",         icon: "⚙️" },
+  { key: "island",     label: "灵动岛",       icon: "🏖️" },
   { key: "lan",        label: "剪贴板同步",   icon: "🌐" },
   { key: "kb",         label: "知识库同步",   icon: "📚" },
   { key: "rc",         label: "远程电脑",     icon: "🖥️" },
@@ -36,9 +42,9 @@ export const SETTINGS_PAGES = [
   { key: "ai",    label: "AI",   icon: "✨", blossom: "🌸" },
   // 摆在 AI 后面：两者都是「跟 AI 有关」，但 AI 页管模型/密钥，
   // 本页管的是「让外部 AI 工具读写我的笔记」，方向相反。
-  { key: "mcp",   label: "MCP",  icon: "🧩", blossom: "🩷" },
+  { key: "mcp",   label: "MCP",  icon: "🧩", blossom: "💖" },
   { key: "help",  label: "帮助", icon: "📖", blossom: "💌" },
-  { key: "about", label: "关于", icon: "ℹ",  blossom: "💗" },
+  { key: "about", label: "关于", icon: "ℹ️",  blossom: "💗" },
 ] as const;
 
 export type SettingsPageKey = typeof SETTINGS_PAGES[number]["key"];

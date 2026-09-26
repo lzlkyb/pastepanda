@@ -4,6 +4,7 @@ import { useSettingsData } from "@/hooks/useSettingsData";
 import { StatsSection } from "./sections/StatsSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
 import { GeneralSection } from "./sections/GeneralSection";
+import { IslandSection } from "./sections/IslandSection";
 import { LanSyncSection } from "./sections/LanSyncSection";
 import { KbSyncSection } from "./sections/KbSyncSection";
 import { RcSection } from "./sections/RcSection";
@@ -85,6 +86,7 @@ export function GeneralTab({
           trashDays={trashDays} handlePickTrashDays={handlePickTrashDays}
           mdAssoc={mdAssoc} mdAssocBusy={mdAssocBusy} handleMdAssocToggle={handleMdAssocToggle}
         />
+        <IslandSection config={config} updateAndSave={updateAndSave} />
         <LanSyncSection config={config} updateAndSave={updateAndSave} />
         <KbSyncSection config={config} updateAndSave={updateAndSave} />
         <RcSection config={config} updateAndSave={updateAndSave} />

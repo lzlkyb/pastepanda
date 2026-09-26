@@ -5,6 +5,7 @@ import type { OcrSelectMode } from "@/lib/screenshot/types";
 import { reorderAction } from "@/lib/quickOrder";
 import { splitTableToRows, isTableSplitCandidate } from "@/lib/tableSplit";
 import { normalizeTheme } from "@/lib/theme";
+import { normalizeGlass } from "@/lib/todo/glass";
 import { parseEventRange, isEventRange } from "@/lib/eventLabel";
 
 // ===== 数据类型 =====
@@ -135,6 +136,16 @@ export interface AppConfig {
   table_split_enabled: boolean; // 表格拆分入栈（方案 A/B）总开关，默认开
   table_split_format: "raw" | "field-value"; // 拆行后每条的文本格式：raw=原始行，field-value=字段: 值
   table_split_include_header: boolean; // 拆行时是否保留表头行，默认排除
+  /** 灵动岛（设置页「灵动岛」分区，2026-09-25）。缺省值必须与 Rust `island_config`、
+   *  岛前端（todoisland-main.tsx）一致：**关** / 遮盖度 95 / 提醒开 / 30s / 到期优先。
+   *  `todo_island_glass` = 岛体遮盖度 20–100（2026-09-26 由四档枚举改成连续滑杆；
+   *  老用户后端存的仍是档位字符串，进 `updateConfig` 时被 normalizeGlass 折算一次）。
+   *  glass 由岛前端消费（CSS 变量 `--island-glass`），其余由 Rust `todo_island::island_config` 消费。 */
+  todo_island_enabled: boolean;
+  todo_island_glass: number;
+  todo_island_remind: boolean;
+  todo_island_remind_ms: number;
+  todo_island_due_sort: boolean;
 }
 
 // ===== 应用模式（三模式框架，D15）=====
@@ -437,6 +448,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   table_split_enabled: true,
   table_split_format: "raw",
   table_split_include_header: false,
+  todo_island_enabled: false,
+  todo_island_glass: 95,
+  todo_island_remind: true,
+  todo_island_remind_ms: 30_000,
+  todo_island_due_sort: true,
 };
 
 // ===== 搜索模式辅助 =====
@@ -1089,6 +1105,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     // applyTheme 写出 data-theme="light" 匹配不到任何主题块，设置页色板也一个都不高亮。
     if ("theme" in clean) {
       clean.theme = normalizeTheme(clean.theme);
+    }
+    // 兼容旧配置：玻璃档位曾是 "clear"|"frost"|"steady"|"dark" 四档字符串。
+    // 加载与保存都走这里，所以老用户后端存的字符串会被就地折算成 20–100 的遮盖度，
+    // 下次 save_config 落盘即完成迁移（消费方仍各自 normalizeGlass 兜底）。
+    if ("todo_island_glass" in clean) {
+      clean.todo_island_glass = normalizeGlass(clean.todo_island_glass);
     }
     // 修复 Low（Zustand 反模式）：副作用（动态 import + 事件派发）移出 set updater，
     // updater 保持纯函数；先读旧工作区，set 之后再触发缓存失效

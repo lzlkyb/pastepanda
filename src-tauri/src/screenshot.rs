@@ -563,8 +563,9 @@ fn save_bytes_to_shots(app: &tauri::AppHandle, bytes: &[u8], ext: &str) -> Resul
 pub fn open_screenshot_window(app: &AppHandle) {
     // ❗ 岛是 always-on-top 常驻窗，预截屏（下面的并行 BitBlt）会把它拍进去。
     //    隐藏必须落在**任何截屏动作之前**；截图会话结束在 close_screenshot_window 恢复
-    //    （实施方案 §5 接线 #8）。
-    crate::todo_island::hide(app);
+    //    （实施方案 §5 接线 #8）。用隐私门控而非一次性 hide：截屏期间若有笔记写入，
+    //    岛会在 show() 门内被拦住，不会中途弹回画面里。
+    crate::todo_island::set_privacy_gate(app, true);
     // 先保存当前前台窗口句柄：截图完成后"复制图片"要粘贴/回填到原目标
     if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
         engine.save_foreground_hwnd();
@@ -1053,7 +1054,9 @@ pub fn close_screenshot_window(app: tauri::AppHandle) {
     // 它们最终都汇到这个命令，在这里收口才不会漏（规则 11.1）。
     purge_ocr_temp(&app);
     unregister_longshot_escape(&app); // 兜底：长截图中强关窗也要释放全局 Esc
-    // 截图会话结束 → 岛回归（有待办就回来；没有则此处 hide 是空操作）
+    // 截图会话结束 → 先解除隐私门控再 refresh（refresh 里 show 门内才放行），
+    // 岛回归（有待办就回来；没有则此处 hide 是空操作）
+    crate::todo_island::set_privacy_gate(&app, false);
     crate::todo_tasks::refresh_island(&app);
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         // 截图窗口常驻开关（screenshot_window_persist，默认关）：
@@ -1175,8 +1178,9 @@ pub async fn open_longshot_status(
     w: i32,
     h: i32,
 ) -> Result<bool, String> {
-    // 长截图期间实时抓屏，岛若在捕获区域顶边就会入镜——先藏，结束在 close_longshot_status 恢复
-    crate::todo_island::hide(&app);
+    // 长截图期间实时抓屏，岛若在捕获区域顶边就会入镜——先藏，结束在 close_longshot_status 恢复。
+    // 用隐私门控而非一次性 hide：长截图中笔记写入不会把岛中途拉回画面。
+    crate::todo_island::set_privacy_gate(&app, true);
     // 已存在就先关（上一轮异常退出残留）
     if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
         let _ = win.close();
@@ -1311,14 +1315,16 @@ pub fn close_longshot_status(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
         let _ = win.close();
     }
-    // 截图窗还开着（长截图只是它的一个分支）→ 岛继续保持隐藏；
-    // 截图窗也没了 → 会话真的结束，岛回归
+    // 截图窗还开着（长截图只是它的一个分支）→ 门控保持开（岛继续隐藏，由
+    // close_screenshot_window 统一解除）；
+    // 截图窗也没了 → 会话真的结束，解除门控恢复岛（set_privacy_gate(false)
+    // 内部会 refresh_island，不用再补一次）
     let shot_open = app
         .get_webview_window(WINDOW_LABEL)
         .map(|w| w.is_visible().unwrap_or(false))
         .unwrap_or(false);
     if !shot_open {
-        crate::todo_tasks::refresh_island(&app);
+        crate::todo_island::set_privacy_gate(&app, false);
     }
 }
 

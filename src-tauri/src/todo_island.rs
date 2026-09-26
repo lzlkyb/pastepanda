@@ -85,20 +85,37 @@ pub const EVENT_SHOWN: &str = "todo-island-shown";
 pub const EVENT_HOVER: &str = "todo-island-hover";
 /// 「岛状态有更新」事件（Rust → 岛 webview，载荷是 [`IslandState`]）。
 pub const EVENT_UPDATE: &str = "todo-island-update";
+/// 「舞台已被 Rust 复位」（hide 时广播）：前端据此把 React 舞台同步回胶囊——
+/// 否则展开态收岛后再点亮，窗口按旧舞台尺寸出现（审计 P3#22）。
+pub const EVENT_STAGE_RESET: &str = "todo-island-stage-reset";
+
+/// 隐私门控：被控会话（对方正在看本机画面）/ 截屏期间，岛绝不允许出现。
+///
+/// 为什么是门控而不是「开始时 hide 一次」：会话期间任何笔记写路径都会走
+/// `refresh_island → apply_resident_visibility → show`，没有门的话岛会在对方
+/// 画面里再次弹出来（审计 P2#4，隐私钩子被绕过）。show() 是四条路的收口，
+/// 门拦在它入口处，第七个调用点出现时也不会漏。
+static PRIVACY_GATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn privacy_on() -> bool {
+    PRIVACY_GATE.load(Ordering::SeqCst)
+}
 
 /// 探针开关的环境变量名。
 ///
 /// ❗ 探针阶段**不把岛做成开机常驻**：那是对用户日常使用的行为变更，属 B1 的账。
 /// 带上 `PP_TODO_ISLAND_PROBE=1` 才显示，生产默认不出现。
-const PROBE_ENV: &str = "PP_TODO_ISLAND_PROBE";
+pub(crate) const PROBE_ENV: &str = "PP_TODO_ISLAND_PROBE";
 
 static CREATING: AtomicBool = AtomicBool::new(false);
-/// 页面是否已经加载完（`on_page_load` 打出 `Finished` 后置真）。
+/// 「首帧点亮序列是否已执行」。三条信号（前端首帧回报 / `on_page_load` / 兜底保险丝）
+/// 谁先到谁执行，`swap` 守卫保证只跑一次——重复 `show()`/`start_poll()` 本身无害，
+/// 但全屏门的「推迟」分支只能进一次，否则 WANT_VISIBLE 语义被搅乱。
 ///
-/// ❗ **不能用 `window.is_visible()` 当这个判据** —— 实测（2026-09-24）`build()` 返回时
+/// ❗ 守卫判据**不能用 `window.is_visible()`** —— 实测（2026-09-24）`build()` 返回时
 /// `is_visible()` 已经是 `true`：builder 上的 `.visible(false)` **在透明窗口上没有兜住**。
 /// 拿可见性做守卫，兜底分支会**永不执行**（本文件第一版就是这么写的）。
-static PAGE_LOADED: AtomicBool = AtomicBool::new(false);
+static SHOW_DONE: AtomicBool = AtomicBool::new(false);
 /// 「要求显示」代次，用于作废挂起的延迟隐藏。
 static EPOCH: AtomicU64 = AtomicU64::new(0);
 /// 「岛想显示但被独占全屏拦下」。全屏一结束由复活轮询补 show（拍板 6 的另一半）。
@@ -113,7 +130,7 @@ static REVIVE_GEN: AtomicU64 = AtomicU64::new(0);
 ///
 /// B2 起由 `todo_tasks::compute_island_state` 现算（扫活笔记正文的 GFM 复选框），
 /// 不再有人工填的假状态。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IslandState {
     /// 待办总数（全库口径，含已完成）
@@ -130,57 +147,65 @@ pub struct IslandState {
     /// 已完成任务列表（同一排序与上限）。「已完成」标签页用。
     #[serde(default)]
     pub done_tasks: Vec<crate::todo_tasks::IslandTask>,
+    /// 到点提醒的那条（提醒态胶囊显示它）。None = 当前没有提醒。
+    ///
+    /// 只由 `push_state` 按 [`RemindLedger`] 注入——任何自己拼 `IslandState` 的地方
+    /// 都**不该**手填这个字段（规则 #11.1：注入收口在唯一推送出口）。
+    #[serde(default)]
+    pub due_alert: Option<crate::todo_tasks::IslandTask>,
 }
 
 /// 岛最近一次状态快照（`manage` 进 Tauri 状态）。
 #[derive(Default)]
 pub struct IslandStateCache(pub std::sync::Mutex<Option<IslandState>>);
 
-// ===== 材质（2026-09-25 档 3a「厚磨砂」定稿，design/待办灵动岛-液态玻璃-3a设计稿.html）=====
+// ===== 材质与配置（2026-09-25 红色探针定稿：玻璃走 CSS，不走窗口级材质）=====
 //
 // 🔴 历史备注：本文件头部曾长期写着「材质：什么都不加」——那是 09-24 实测「窗口级玻璃
-//    与 CSS 胶囊形状不可兼得」后的结论。后来定位了真凶（DWM 圆角，见下），玻璃的
-//    障碍解除；液态玻璃立项后用探针实测标定了浓度（四背景全绿的最低 α≈0.78），
-//    于本日起用窗口级 Acrylic。「不申请 DWM 圆角」这条**不变**——它是玻璃能透明的前提。
+//    与 CSS 胶囊形状不可兼得」后的结论。后来 3a 立项用窗口级 Acrylic 承载玻璃
+//    （design/待办灵动岛-液态玻璃-3a设计稿.html），**2026-09-25 红色探针把它推翻了**：
+//    把 tint 改成纯红 α255 后，在 stadium rgn **外**的角点 (3,3) 抓到 rgb(228,10,10)——
+//    **DWM 材质层不服从 SetWindowRgn**，胶囊四角的「方块玻璃」是该路线的固有产物，
+//    调形状永远调不掉。社区同证：tauri#9287、dev.to「Acrylic 配不了圆角」；
+//    对标 PILLAR 的 platform/windows.rs 零 DWM 调用、岛面 = CSS rgba(.94)。
+//    ⇒ 定稿：窗口回到**纯全透明**，玻璃 = CSS 半透明面（一个「遮盖度」数驱动，
+//    配方见 TodoIsland.module.css 的材质令牌块）。「不申请 DWM 圆角」不变。
 
-/// 材质 tint（RGBA，α = 染色不透明度）。α.78 是四背景全绿的最低浓度（探针标定外推，
-/// 见设计稿 §1：清透档在「浅色主题+近黑背景」「深色主题+白文档」两个必然场景掉线）。
-const MATERIAL_DARK: (u8, u8, u8, u8) = (20, 20, 24, 200);
-const MATERIAL_LIGHT: (u8, u8, u8, u8) = (255, 255, 255, 200);
-
-/// 前端 `theme.ts` 六套主题的暗色 key 在 Rust 侧的镜像。❗ 新增主题时必须同步这里
-/// （Rust 读不到 TS 的 dark 标志；未知 key 落浅色 = DEFAULT ocean 的档）。
-fn theme_is_dark(theme: &str) -> bool {
-    matches!(theme, "ocean-dark" | "midnight")
+/// 岛的配置切片（读 DataStore，键由设置页「灵动岛」分区写）。
+///
+/// 缺省 = 总开关**关**（新用户须自己在设置页「灵动岛」分区打开）/ 提醒开 / 横幅 30s。
+/// 玻璃透度（`todo_island_glass`，遮盖度 20–100）由
+/// **前端**读（材质在 CSS，见 todoisland-main.tsx），Rust 不消费它。
+pub(crate) struct IslandConfig {
+    pub enabled: bool,
+    pub remind: bool,
+    pub remind_ms: i64,
 }
 
-/// 按 config.theme 给岛施加对应极性的窗口级 Acrylic。
-///
-/// ❗ 失败不许静默：CSS 染色已改为近透明（染色由材质接管），材质加不上而没人知道，
-/// 岛就「透明消失」了——必须通知前端挂 `data-material="off"` 走实色兜底（CSS 有对应块）。
-pub fn apply_theme_material(app: &AppHandle) {
-    // 用块作用域而非显式 drop：State 守卫不实现 Drop，`drop(store)` 会被
-    // clippy::drop_non_drop 拦下；要的是「读完配置立刻放锁」，块退出即达成。
-    let theme = {
-        let Some(store) = app.try_state::<DataStore>() else { return };
-        store
-            .get_config()
-            .ok()
-            .and_then(|c| c.get("theme").and_then(|t| t.as_str()).map(String::from))
-            .unwrap_or_default()
-    };
-    let Some(window) = app.get_webview_window(WINDOW_LABEL) else { return };
-    let (r, g, b, a) = if theme_is_dark(&theme) { MATERIAL_DARK } else { MATERIAL_LIGHT };
-    let effects = tauri::window::EffectsBuilder::new()
-        .effect(tauri::window::Effect::Acrylic)
-        .color(tauri::utils::config::Color(r, g, b, a))
-        .build();
-    if let Err(e) = window.set_effects(Some(effects)) {
-        log::warn!("[TodoIsland] 施加 Acrylic 失败（{e}），前端走实色兜底");
-        let _ = window.eval("document.documentElement.dataset.material='off';");
-    } else {
-        let _ = window.eval("delete document.documentElement.dataset.material;");
+/// 读岛配置。❗ 缺省值必须与 `appStore.ts` 的 `DEFAULT_CONFIG` / `IslandSection.tsx` 一致。
+pub(crate) fn island_config(app: &AppHandle) -> IslandConfig {
+    let mut c = IslandConfig { enabled: false, remind: true, remind_ms: 30_000 };
+    let Some(store) = app.try_state::<DataStore>() else { return c };
+    let Ok(cfg) = store.get_config() else { return c };
+    if let Some(v) = cfg.get("todo_island_enabled").and_then(|v| v.as_bool()) {
+        c.enabled = v;
     }
+    if let Some(v) = cfg.get("todo_island_remind").and_then(|v| v.as_bool()) {
+        c.remind = v;
+    }
+    if let Some(ms) = cfg
+        .get("todo_island_remind_ms")
+        .and_then(|v| v.as_i64())
+        .filter(|ms| (5_000..=300_000).contains(ms))
+    {
+        c.remind_ms = ms;
+    }
+    c
+}
+
+/// 探针模式绕过一切用户门控（开发诊断不陪绑配置）。
+fn probe_on() -> bool {
+    std::env::var(PROBE_ENV).ok().as_deref() == Some("1")
 }
 
 // ===== 定位 =====
@@ -231,17 +256,31 @@ pub(crate) fn primary_monitor_rect(app: &AppHandle) -> Option<(f64, f64, f64, f6
 /// `refresh_island` 的结果决定——有待办就出现在顶边，全清 1.5s 后收起。
 /// 探针开关只保留探针职责（强制显示 + 自动跑探针序列），不再是「唯一的显示入口」。
 pub fn init(app: &AppHandle) {
-    // 主题切换 → 材质极性跟着翻（设置页前端广播 theme-changed；Rust 用 Listener 接）。
-    // 岛隐藏时窗口仍存活，监听照常到达——下次显示即新材质。
-    app.listen("theme-changed", {
+    // 配置变更 → 开关即时生效（设置页前端保存后广播 todo-island-config-changed）。
+    // 开 = show()（窗口不存在会现建，show 内部有 enabled 门控）；关 = hide。
+    // 玻璃档位/提醒时长不用 Rust 搬运：tick 每轮现读配置，材质由岛前端自己读。
+    app.listen("todo-island-config-changed", {
         let app = app.clone();
-        move |_| apply_theme_material(&app)
+        move |_| {
+            if island_config(&app).enabled {
+                show(&app);
+            } else {
+                hide(&app);
+                log::info!("[TodoIsland] 已按配置关闭（隐藏，窗口保留待重开）");
+            }
+        }
     });
+    // 提醒轮询（二期「甲案：岛即提醒」）：到点点亮岛 + 横幅，见 `remind_tick`。
+    // ❗ 常驻不因「提醒关」而停——每轮 tick 自己读配置（关 = 只做收账），开关来回翻不用重启线程。
+    {
+        let app = app.clone();
+        std::thread::spawn(move || remind_loop(app));
+    }
     let app = app.clone();
     std::thread::spawn(move || {
         // 扫描在独立线程：setup 阶段不值得为它阻塞窗口起来
         let state = crate::todo_tasks::refresh_island(&app);
-        if std::env::var(PROBE_ENV).ok().as_deref() == Some("1") {
+        if probe_on() {
             log::info!("[TodoIsland] 探针模式开启（{PROBE_ENV}=1），强制显示岛");
             if state.is_none() {
                 log::warn!("[TodoIsland] 启动扫描失败（store 未就绪或库异常），岛将以空态显示");
@@ -249,7 +288,11 @@ pub fn init(app: &AppHandle) {
             show(&app);
             // 探针模式顺带自动跑一遍探针序列（A/B 抓屏 + 命中测试 + 内存），结论进日志
             crate::todo_island_probe::run_probe_sequence(app.clone());
+        } else if !island_config(&app).enabled {
+            log::info!("[TodoIsland] 配置为关闭，启动不显示岛");
         }
+        // enabled 时这里什么都不做：常驻语义（2026-09-24 用户拍板）由 refresh_island
+        // 的推送决定显隐（有待办才出现）；show() 内部的 enabled 门控继续兜底。
     });
 }
 
@@ -280,6 +323,16 @@ pub(crate) use crate::todo_island_hover::is_hovering;
 /// 截图与推流抓走。点亮意图（`mark_shown`）**先落账**——哪怕显示本身被推迟，
 /// 挂起的「全清 1.5s 收起」也必须被作废；推迟的显示由复活轮询在全屏结束后补上。
 pub fn show(app: &AppHandle) {
+    // 用户总开关（探针绕过）。收口在这里而非每个调用点：refresh/提醒/命令/配置变更
+    // 四条路都汇到 show，第七个调用点出现时也不会漏门。
+    if !probe_on() && !island_config(app).enabled {
+        return;
+    }
+    // 隐私门控（被控会话/截屏中）：岛绝不在对方画面里出现。放在 mark_shown 之前——
+    // 会话中的「点亮意图」本身就不该成立（生效路径见 PRIVACY_GATE 注释）。
+    if privacy_on() {
+        return;
+    }
     mark_shown();
     if crate::todo_island_fullscreen::foreground_is_exclusive_fullscreen() {
         WANT_VISIBLE.store(true, Ordering::SeqCst);
@@ -306,10 +359,23 @@ pub fn show(app: &AppHandle) {
 fn recenter(app: &AppHandle, window: &WebviewWindow) {
     let (w, _) = crate::todo_island_stage::stage_size(crate::todo_island_stage::current_stage());
     let _ = window.set_position(crate::todo_island_stage::calc_top_center_for(app, w));
+    // 已可见路径同样重放 rgn：写路径的 show 都汇聚到这里，方角玻璃最多活到下次写
+    crate::todo_island_stage::reapply_stage_region(app);
 }
 
 /// 隐藏岛。
 pub fn hide(app: &AppHandle) {
+    hide_inner(app, true);
+}
+
+/// 门控专用的收岛：**保留状态缓存**——隐藏期间 remind_tick 靠它继续挑任务记账，
+/// 到点的提醒先挂账、门一关随 refresh 补显，不丢也不会在会话结束时轰炸
+/// （审计 P3「隐藏期间提醒丢失」）。缓存清掉的话 tick 直接空转，提醒全灭。
+pub(crate) fn hide_keep_state(app: &AppHandle) {
+    hide_inner(app, false);
+}
+
+fn hide_inner(app: &AppHandle, clear_cache: bool) {
     // 隐藏即收回「想显示」的意图，旧复活轮询靠代次自行退出
     WANT_VISIBLE.store(false, Ordering::SeqCst);
     REVIVE_GEN.fetch_add(1, Ordering::SeqCst);
@@ -317,16 +383,40 @@ pub fn hide(app: &AppHandle) {
     // 「进来过」的身份启动，第一轮就按 12px 的离开外扩判定（详见 todo_island_hover.rs）。
     crate::todo_island_hover::stop_poll();
     crate::todo_island_hover::reset_hovering();
-    if let Some(cache) = app.try_state::<IslandStateCache>() {
-        if let Ok(mut guard) = cache.0.lock() {
-            *guard = None;
+    if clear_cache {
+        if let Some(cache) = app.try_state::<IslandStateCache>() {
+            if let Ok(mut guard) = cache.0.lock() {
+                *guard = None;
+            }
         }
     }
+    // 🔴 舞台复位（审计 P3#22）：展开态收岛后 CURRENT_STAGE 若停在 List，
+    //    下次点亮窗口会按 420 宽展开尺寸突然出现。复位成胶囊并广播，
+    //    前端把 React 舞台同步回去。
+    crate::todo_island_stage::set_current_stage(crate::todo_island_stage::IslandStage::Pill);
+    let _ = app.emit_to(WINDOW_LABEL, EVENT_STAGE_RESET, ());
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
             log::info!("[TodoIsland] 已隐藏");
         }
+    }
+}
+
+/// 隐私门控开关（收口点：被控会话 / 截屏期的所有 show 都在 show() 入口拦下）。
+///
+/// 开 = 立即收岛但保留状态缓存（`hide_keep_state`）；关 = refresh 恢复常驻可见性。
+/// 重复同向调用是空操作（截图/长截图/会话可能层层叠加）。
+pub fn set_privacy_gate(app: &AppHandle, on: bool) {
+    if PRIVACY_GATE.swap(on, Ordering::SeqCst) == on {
+        return;
+    }
+    if on {
+        log::info!("[TodoIsland] 隐私门控开启：岛收起，会话/截屏结束后自动恢复");
+        hide_keep_state(app);
+    } else {
+        log::info!("[TodoIsland] 隐私门控解除");
+        crate::todo_tasks::refresh_island(app);
     }
 }
 
@@ -388,8 +478,48 @@ fn reveal(app: &AppHandle, window: &WebviewWindow) {
     recenter(app, window);
     let _ = app.emit_to(WINDOW_LABEL, EVENT_SHOWN, ());
     let _ = window.show();
+    // rgn 自愈（2026-09-25 月牙复发）：on_page_load 常不触发、动画终帧可被作废，
+    // show 是唯一每次都会走的入口——重放一次形状裁剪兜底。
+    crate::todo_island_stage::reapply_stage_region(app);
     crate::todo_island_hover::start_poll(app);
     log::info!("[TodoIsland] 已显示（复用缓存窗口）");
+}
+
+/// 首帧点亮序列：通知前端 → 初始 rgn → 全屏门 → show → 穿透轮询。
+///
+/// 三条触发信号谁先到谁执行（`SHOW_DONE` 保证只跑一次）：
+/// ① 前端首帧提交后 invoke `todo_island_page_ready`（**常规路径**）；
+/// ② `on_page_load(Finished)`（webview 加载完成）；
+/// ③ 6s 兜底保险丝（页面彻底挂了也得让岛出来）。
+///
+/// ❗ 为什么信号①是必需的（2026-09-25 用户实拍）：旧版只有②③，而③只等 2.5s——
+/// dev 冷加载实测 ~5.5s，保险丝**抢先**把一个**什么都没画的透明窗** show 出来，
+/// 后面的浏览器窗（标签栏、_ □ ✕ 标题钮）整个透到「岛上」。信号①在 React
+/// 提交首帧后才到，从机制上保证「show 出来时内容已经画完」。
+fn first_show(app: &AppHandle, window: &WebviewWindow, reason: &str) {
+    if SHOW_DONE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let _ = app.emit_to(WINDOW_LABEL, EVENT_SHOWN, ());
+    // 初始舞台（胶囊）的形状裁剪：此时尺寸已落定，读实测值与 CSS（填满窗口）对齐。
+    if let Ok(s) = window.outer_size() {
+        crate::todo_island_stage::apply_stage_region(
+            window,
+            crate::todo_island_stage::IslandStage::Pill,
+            (s.width as i32, s.height as i32),
+        );
+    }
+    // 首帧显示同样要过全屏门：启动瞬间恰在全屏应用里，岛不该顶出来
+    if crate::todo_island_fullscreen::foreground_is_exclusive_fullscreen() {
+        let _ = window.hide();
+        WANT_VISIBLE.store(true, Ordering::SeqCst);
+        start_revive_poll(app);
+        log::info!("[TodoIsland] {reason}，但全屏中——显示推迟");
+        return;
+    }
+    let _ = window.show();
+    crate::todo_island_hover::start_poll(app);
+    log::info!("[TodoIsland] {reason}，岛已显示");
 }
 
 /// 首次创建岛窗口。仿 `stack_hud.rs::create` 的结构：独立线程 + 防重入 + 双重检查。
@@ -421,9 +551,10 @@ fn create(app: &AppHandle) {
 
         let pos = crate::todo_island_stage::calc_top_center_for(app, ISLAND_W);
 
-        // 档 3a（2026-09-25）：窗口级 Acrylic 在这里施加（`apply_theme_material`，
-        // 配方与失败兜底见函数注释）。曾经「三种候选全部排除、什么都不加」的结论
-        // 已被液态玻璃立项修订——但「**不申请 DWM 圆角**」这条不变，它是玻璃透明的前提。
+        // 材质说明（2026-09-25 红色探针定稿）：这里**刻意没有任何窗口级 effects**——
+        // DWM Acrylic 层不服从 SetWindowRgn（探针实锤见本文件「材质与配置」节），
+        // 玻璃由岛前端的 CSS 半透明面承载（遮盖度 `--island-glass`）。
+        // 「**不申请 DWM 圆角**」这条不变，它是窗口真透明的前提。
         let wb = WebviewWindowBuilder::new(
             app,
             WINDOW_LABEL,
@@ -454,21 +585,7 @@ fn create(app: &AppHandle) {
         // **别把「等一等就好了」误读成「effects 是必需的」** —— 那是两个机制，后者已被 §4.5 排除。
         .on_page_load(|window, payload| {
             if payload.event() == PageLoadEvent::Finished {
-                // 先置真再 show：兜底线程以它为准（不能用 `is_visible()`，见 `PAGE_LOADED` 的注释）。
-                PAGE_LOADED.store(true, Ordering::SeqCst);
-                let app = window.app_handle();
-                let _ = app.emit_to(WINDOW_LABEL, EVENT_SHOWN, ());
-                // 首帧显示同样要过全屏门：启动瞬间恰在全屏应用里，岛不该顶出来
-                if crate::todo_island_fullscreen::foreground_is_exclusive_fullscreen() {
-                    let _ = window.hide();
-                    WANT_VISIBLE.store(true, Ordering::SeqCst);
-                    start_revive_poll(app);
-                    log::info!("[TodoIsland] 页面加载完成，但全屏中——显示推迟");
-                    return;
-                }
-                let _ = window.show();
-                crate::todo_island_hover::start_poll(app);
-                log::info!("[TodoIsland] 页面加载完成，岛已显示");
+                first_show(window.app_handle(), &window, "页面加载事件");
             }
         });
 
@@ -476,15 +593,10 @@ fn create(app: &AppHandle) {
             Ok(window) => {
                 let _ = window.set_position(pos);
 
-                // 档 3a：按主题极性施加窗口级 Acrylic（浓度配方与失败兜底见
-                // `apply_theme_material`）；CSS 侧染色已改为近透明，由材质接管。
-                apply_theme_material(app);
                 // 初始舞台（胶囊）的形状裁剪：消除圆角外的方角玻璃（月牙）。
-                crate::todo_island_stage::apply_stage_region(
-                    app,
-                    &window,
-                    crate::todo_island_stage::IslandStage::Pill,
-                );
+                // ❗ 不能在 build 后立刻做——outer_size 那时**还没落定**（实测返回 (0,0)），
+                //   rgn 会被裁成 1×1、整个岛消失（02:03 那轮实测翻过车）。挪到 on_page_load，
+                //   页面加载完时尺寸早已落定，读实测值与 CSS（填满窗口）精确对齐。
 
                 // ❗ **立刻显式隐藏**，不能只靠 builder 上的 `.visible(false)`。
                 //
@@ -527,25 +639,25 @@ fn create(app: &AppHandle) {
 
                 crate::todo_island_probe::report_rss_delta();
 
-                // 显示动作在 `on_page_load` 里（理由见 builder 上那段注释）。
-                // 兜底：万一下一帧页面加载事件没触发（加载失败等），2.5s 后强制显示 ——
-                // 「岛一直不出现」比「岛早出现 1 秒」严重得多。
+                // 显示动作在 first_show 里（三条信号，见其注释）。
+                // 兜底保险丝：6s 内三条信号一个都没来（页面加载失败 / React 崩了）才强制点亮——
+                // 「岛一直不出现」确实比「晚出现」严重，但❗不能把保险丝调短来抢跑：
+                // 2.5s 时代实测（2026-09-25）dev 冷加载要 ~5.5s，保险丝抢先 show 出一块
+                // 什么都没画的透明窗，后面的浏览器窗整个透到「岛上」（用户实拍他窗标题栏）。
                 let app_fallback = app.clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(2500));
-                    // ❗ 判据是 `PAGE_LOADED`，**不是 `w.is_visible()`** —— 后者从 `build()`
+                    std::thread::sleep(std::time::Duration::from_millis(6000));
+                    // ❗ 判据是 `SHOW_DONE`，**不是 `w.is_visible()`** —— 后者从 `build()`
                     // 起就是 `true`，拿它做守卫会让这个兜底**永不执行**：保险丝自己是断的，
                     // 比没装保险丝更糟（它给人一种「已经保过底了」的错觉）。
-                    if PAGE_LOADED.load(Ordering::SeqCst) {
+                    if SHOW_DONE.load(Ordering::SeqCst) {
                         return;
                     }
                     let Some(w) = app_fallback.get_webview_window(WINDOW_LABEL) else {
                         return;
                     };
-                    log::warn!("[TodoIsland] 页面加载事件未触发，兜底显示");
-                    let _ = app_fallback.emit_to(WINDOW_LABEL, EVENT_SHOWN, ());
-                    let _ = w.show();
-                    crate::todo_island_hover::start_poll(&app_fallback);
+                    log::warn!("[TodoIsland] 6s 内无「页面已画完」信号，兜底显示");
+                    first_show(&app_fallback, &w, "兜底保险丝");
                 });
                 log::info!("[TodoIsland] 岛窗口已创建，等页面加载完成后显示");
             }
@@ -580,15 +692,229 @@ pub fn todo_island_state(cache: tauri::State<'_, IslandStateCache>) -> Option<Is
     cache.0.lock().ok().and_then(|g| g.clone())
 }
 
-/// 推一份状态进岛：更新快照缓存 + 广播给岛窗口。
+/// 前端首帧提交后的「我画完了」回报 —— 岛点亮的**常规信号①**（机制见 `first_show`）。
 ///
+/// ❗ 岛前端在两帧 RAF 后调用；后端不校验调用次数，守卫在 `SHOW_DONE`。
+#[tauri::command]
+pub fn todo_island_page_ready(app: AppHandle) {
+    let Some(w) = app.get_webview_window(WINDOW_LABEL) else {
+        return;
+    };
+    first_show(&app, &w, "前端首帧回报");
+}
+
+// ===== 提醒（二期甲案：岛即提醒；时序与落地账见设计稿「提醒与截止时间」§5） =====
+
+/// 轮询步进。15s 粒度 + 90s 窗口 = 错过一次还有 5 次机会，且纯内存读取。
+const REMIND_POLL_MS: u64 = 15_000;
+/// 超过这个「迟到量」不再弹（应用休眠恢复/启动时，几分钟前到期的任务静默记账）。
+const REMIND_GRACE_MS: i64 = 90_000;
+
+/// 提醒账本（`manage` 进 Tauri 状态）。
+///
+/// - `fired`：已提醒过的任务键（`noteId:line:dueMs`）——一条任务一个到期点只报一次，
+///   应用重启后「启动时已过期」的也走这里静默记账（错过不补，防开机轰炸）；
+/// - `active`：当前横幅。`push_state` 注入 `dueAlert` 的唯一依据。
+#[derive(Default)]
+pub struct RemindLedger(std::sync::Mutex<RemindInner>);
+
+#[derive(Default)]
+struct RemindInner {
+    fired: std::collections::HashSet<String>,
+    active: Option<(String, i64)>,
+}
+
+/// 提醒键：同一篇同一行同一到期点才视为「同一条」——行号漂移/改时间都算新的一条。
+fn remind_key(t: &crate::todo_tasks::IslandTask) -> String {
+    format!("{}:{}:{}", t.note_id, t.line, t.due_ms.unwrap_or(0))
+}
+
+/// push 前按账本注入 `dueAlert`（收口点：这是唯一注入处）。
+///
+/// 横幅挂着时，任何写路径的 refresh 推送都会重新注入——横幅不会被
+/// 中途的笔记写入「顺手」顶掉；任务被勾掉（不在 pending 里）自然消失。
+pub(crate) fn inject_remind(ledger: &RemindLedger, state: &mut IslandState) {
+    let Ok(mut inner) = ledger.0.lock() else { return };
+    let Some((key, _)) = &inner.active else { return };
+    if let Some(t) = state.tasks.iter().find(|t| &remind_key(t) == key) {
+        state.due_alert = Some(t.clone());
+    } else {
+        // 被提醒的那条没了（勾掉/删除/改时间）——横幅即时结束
+        inner.active = None;
+    }
+}
+
+/// 提醒主循环（init 里 spawn，应用生命周期常驻）。
+///
+/// ❗ 15s 一次、纯内存读取（快照 + 账本），无网络无 IO——规则 #8.1 的
+/// 「不可见即停」不适用于它：岛隐藏时**正是**它要点亮岛的时候，这是功能本体。
+fn remind_loop(app: AppHandle) {
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(REMIND_POLL_MS));
+        remind_tick(&app);
+    }
+}
+
+/// 上一轮 tick 的时刻（时钟回拨检测用；0 = 首轮）。
+static LAST_TICK_MS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// 本轮判定时刻。系统时间被回拨（手动改时间 / NTP 校时）时 `now < 上一轮`：
+/// 用回拨**前**的时刻做本轮判定——跨回拨窗口到期的任务仍按 grace 正常点火，
+/// 不会因回拨漏报、回正后又因迟到被静默（审计 P3#23）。
+fn tick_judge_ms(last_tick_ms: i64, now_ms: i64) -> i64 {
+    if last_tick_ms > 0 && now_ms < last_tick_ms - 5_000 {
+        last_tick_ms
+    } else {
+        now_ms
+    }
+}
+
+/// 一轮提醒检查。逻辑全部可从 [`remind_select`]（纯函数）推演，这里只做 IO。
+fn remind_tick(app: &AppHandle) {
+    let Some(cache) = app.try_state::<IslandStateCache>() else { return };
+    let Some(ledger) = app.try_state::<RemindLedger>() else { return };
+    let now_ms = chrono::Local::now().timestamp_millis();
+    let last_tick = LAST_TICK_MS.swap(now_ms, Ordering::SeqCst);
+    let judge_ms = tick_judge_ms(last_tick, now_ms);
+    let snapshot = match cache.0.lock() {
+        Ok(g) => g.clone(),
+        Err(_) => return,
+    };
+    let mut state = match snapshot {
+        Some(s) => s,
+        None => return,
+    };
+
+    let Ok(mut inner) = ledger.0.lock() else { return };
+    // ① 横幅到点收摊：推出干净状态（走 refresh 重扫，顺带把可见性口径也对齐）
+    // ❗ 配置在 tick 里现读（每 15s 一次纯内存读）：提醒开关/时长改动即时生效，
+    //   不用给线程加重启协议。提醒关 = 不再新点火 + 把挂着的横幅也收掉。
+    let ic = island_config(app);
+    if let Some((_, fired_at)) = inner.active {
+        if !ic.remind || judge_ms - fired_at >= ic.remind_ms {
+            inner.active = None;
+            drop(inner);
+            crate::todo_tasks::refresh_island(app);
+            return;
+        }
+        return; // 横幅展示中，不到点不动作（注入由 push_state 负责）
+    }
+
+    // ② 可见自愈（审计 P2#5 + P3#21）：岛可见时每 15s 重扫一遍。同步引擎直写
+    //    路径没有钩子，岛常驻期间只有这条让它看到同步进来的新待办；顺带把
+    //    due_label 隔夜翻新（「今天 16:00」不会过夜挂成假话）。缓存热，未变化时
+    //    push_state 的事件闸让它近乎零成本。
+    // ❗ 先放账本锁再 refresh：refresh → push_state → inject_remind 要拿同一把锁，
+    //   持着不放就是自死锁。刷新后拿回锁，继续用新状态做挑选。
+    let visible = app
+        .get_webview_window(WINDOW_LABEL)
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+    if visible {
+        drop(inner);
+        if let Some(fresh) = crate::todo_tasks::refresh_island(app) {
+            state = fresh;
+        }
+        inner = match ledger.0.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+    }
+
+    if !ic.remind {
+        // 提醒关 = 不再点火（可见自愈已经跑过）。过期的「该记的账」也不补：
+        // re-open 后 grace 规则（REMIND_GRACE_MS）本来就会把迟到的到期点静默
+        // 记账，不会轰炸。
+        return;
+    }
+
+    // ③ 挑最紧的一条（纯函数见 remind_select；隐私门控/全屏门都在 show() 里拦）
+    let Some(pick) = remind_select(&state, judge_ms, &inner.fired) else { return };
+    match pick {
+        RemindPick::Silent(key) => {
+            inner.fired.insert(key);
+        }
+        RemindPick::Fire(task) => {
+            let key = remind_key(&task);
+            inner.fired.insert(key.clone());
+            inner.active = Some((key, judge_ms));
+            drop(inner);
+            inject_remind(&ledger, &mut state);
+            show(app); // 隐私门控 / 全屏门 / 复活轮询是 show() 自带的，这里不重复处理
+            push_state(app, state);
+        }
+    }
+}
+
+/// [`remind_tick`] ② 的纯函数：该静默记账哪条、该点亮哪条。
+///
+/// - 启动时已过期（迟到超过 [`REMIND_GRACE_MS`]）→ 静默记账，不吵；
+/// - 运行中刚跨过到期点（grace 内）→ 点火最紧的一条。
+#[derive(Debug)]
+enum RemindPick {
+    Silent(String),
+    Fire(crate::todo_tasks::IslandTask),
+}
+
+fn remind_select(
+    state: &IslandState,
+    now_ms: i64,
+    fired: &std::collections::HashSet<String>,
+) -> Option<RemindPick> {
+    // 🔴 不依赖排序（审计 P1#1）：列表顺序由设置项 `todo_island_due_sort` 决定，
+    //    用户关掉「到期优先」后是创建顺序——靠 `due > now 就 break` 提前收的话，
+    //    前面任何一个未来任务都会让排在它后面的过期任务整批静默失效。
+    //    全量扫完（≤50 条，纯内存），过期里挑最紧的一条。
+    let mut oldest_silent: Option<(String, i64)> = None;
+    for t in &state.tasks {
+        if t.done {
+            continue;
+        }
+        let Some(due) = t.due_ms else { continue };
+        // 全天任务不弹提醒（has_time=false 只做列表展示）
+        if !t.due_has_time {
+            continue;
+        }
+        let key = remind_key(t);
+        if fired.contains(&key) {
+            continue;
+        }
+        if due > now_ms {
+            continue;
+        }
+        if now_ms - due > REMIND_GRACE_MS {
+            // 静默记账挑「最早过期」的那条——列表无序时第一个遇到的未必最早
+            if oldest_silent.as_ref().is_none_or(|(_, d)| due < *d) {
+                oldest_silent = Some((key, due));
+            }
+        } else {
+            return Some(RemindPick::Fire(t.clone()));
+        }
+    }
+    oldest_silent.map(|(k, _)| RemindPick::Silent(k))
+}
+
 /// 这是岛状态的**唯一**推送出口（`todo_tasks::refresh_island` 调它）——
 /// 任何别的代码想更新岛状态都该走它，两处各推一次就会漂成「显示 A、实际 B」。
-pub fn push_state(app: &AppHandle, state: IslandState) {
+pub fn push_state(app: &AppHandle, mut state: IslandState) {
+    // 提醒注入收口：账本上还挂着横幅就重新注入（先清掉上游可能带的原值，
+    // 以账本为准——IslandState 在别处构建时 due_alert 恒应为 None）
+    state.due_alert = None;
+    if let Some(ledger) = app.try_state::<RemindLedger>() {
+        inject_remind(&ledger, &mut state);
+    }
     if let Some(cache) = app.try_state::<IslandStateCache>() {
-        if let Ok(mut guard) = cache.0.lock() {
-            *guard = Some(state.clone());
+        let mut guard = match cache.0.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        // 🔴 无变化不重推（事件闸）：remind_tick 每 15s 的可见自愈重扫走这里，
+        //    未变化时若仍全量 emit，编辑器连续自动保存 + 常驻岛 = 事件/重绘风暴
+        //    （审计 P3#16）。注入过 due_alert 的状态与缓存必然不同，横幅不受影响。
+        if guard.as_ref() == Some(&state) {
+            return;
         }
+        *guard = Some(state.clone());
     }
     let _ = app.emit_to(WINDOW_LABEL, EVENT_UPDATE, state);
 }
@@ -647,4 +973,108 @@ mod tests {
     //      · `test_hover_poll_gen_bump_invalidates_old_poll`
     //      · `const _: () = assert!(HOVER_IN_PAD < HOVER_OUT_PAD);`（编译期断言）
     //    它们测的对象在那个文件里，留在这里只能测到局部变量，等于自证。
+
+    // ----- 提醒挑选（remind_select 纯函数；时序见设计稿「提醒与截止时间」§5） -----
+
+    fn task(id: &str, line: usize, due_ms: Option<i64>, has_time: bool) -> crate::todo_tasks::IslandTask {
+        crate::todo_tasks::IslandTask {
+            note_id: id.into(),
+            note_title: "笔记".into(),
+            line,
+            text: format!("{id}{line}"),
+            done: false,
+            due_ms,
+            due_has_time: has_time,
+            due_label: None,
+        }
+    }
+
+    fn state(tasks: Vec<crate::todo_tasks::IslandTask>) -> IslandState {
+        IslandState {
+            total: tasks.len() as u32,
+            done: 0,
+            hint: String::new(),
+            tasks,
+            done_tasks: vec![],
+            due_alert: None,
+        }
+    }
+
+    #[test]
+    fn test_remind_select_fires_fresh_overdue_only() {
+        let now = 1_000_000;
+        // 两条过期：grace 内的（刚跨过）排前（due 升序），更老的静默
+        let st = state(vec![
+            task("a", 0, Some(now - 10_000), true),   // 刚过期 10s → 点火
+            task("b", 1, Some(now - 500_000), true),  // 迟到 8 分钟 → 静默
+        ]);
+        let mut fired = std::collections::HashSet::new();
+        match remind_select(&st, now, &fired) {
+            Some(RemindPick::Fire(t)) => assert_eq!(t.note_id, "a"),
+            other => panic!("应点火最紧一条，实际 {other:?}"),
+        }
+        // 记账后：a 不再报；b 静默入账
+        fired.insert(format!("a:0:{}", now - 10_000));
+        match remind_select(&st, now, &fired) {
+            Some(RemindPick::Silent(k)) => assert_eq!(k, format!("b:1:{}", now - 500_000)),
+            other => panic!("第二条该静默，实际 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_remind_select_skips_all_day_and_future() {
+        let now = 1_000_000;
+        // 全天任务（has_time=false）永不点火；未来的不点火（排序下 break 提前收）
+        let st = state(vec![
+            task("c", 0, Some(now - 1_000), false),
+            task("d", 1, Some(now + 60_000), true),
+        ]);
+        assert!(remind_select(&st, now, &std::collections::HashSet::new()).is_none());
+    }
+
+    /// 🔴 P1#1 守卫：挑选**不得依赖列表有序**。用户关掉「到期优先排序」后列表
+    /// 是创建顺序——未来任务排在前、过期任务排在后时，`due > now 就 break` 的
+    /// 老实现会让后面所有过期任务整批静默失效。
+    #[test]
+    fn test_remind_select_works_without_due_sort() {
+        let now = 1_000_000;
+        // 创建顺序：先写的还没到期，后写的已经过期（与到期序相反）
+        let st = state(vec![
+            task("future", 0, Some(now + 600_000), true),
+            task("overdue", 1, Some(now - 10_000), true),
+        ]);
+        match remind_select(&st, now, &std::collections::HashSet::new()) {
+            Some(RemindPick::Fire(t)) => assert_eq!(t.note_id, "overdue", "跨过未来任务也要点到过期的"),
+            other => panic!("关排序后过期任务必须照常点火，实际 {other:?}"),
+        }
+    }
+
+    /// 静默记账挑「最早过期」的那条——列表无序时第一个遇到的未必最早。
+    #[test]
+    fn test_remind_select_picks_oldest_for_silent_even_unsorted() {
+        let now = 1_000_000;
+        // 创建顺序：晚过期的在前，早过期的在后（无序）
+        let st = state(vec![
+            task("late", 0, Some(now - 500_000), true),
+            task("older", 1, Some(now - 800_000), true),
+        ]);
+        match remind_select(&st, now, &std::collections::HashSet::new()) {
+            Some(RemindPick::Silent(k)) => assert_eq!(k, format!("older:1:{}", now - 800_000)),
+            other => panic!("该静默记账最早过期那条，实际 {other:?}"),
+        }
+    }
+
+    /// P3#23 守卫：系统时间被回拨时，本轮用回拨前的时刻判定——跨回拨窗口
+    /// 到期的任务不会因「回拨期间没到点」漏报、回正后又因迟到被静默。
+    #[test]
+    fn test_tick_judge_ms_on_clock_rollback() {
+        // 正常前进：用 now
+        assert_eq!(tick_judge_ms(1_000_000, 1_010_000), 1_010_000);
+        // 首轮（last=0）：用 now
+        assert_eq!(tick_judge_ms(0, 1_000_000), 1_000_000);
+        // 微小抖动（<5s，NTP 常见）：不算回拨
+        assert_eq!(tick_judge_ms(1_000_000, 998_000), 998_000);
+        // 明显回拨：用回拨前的时刻
+        assert_eq!(tick_judge_ms(1_000_000, 800_000), 1_000_000);
+    }
 }

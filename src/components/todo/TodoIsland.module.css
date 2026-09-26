@@ -1,21 +1,13 @@
 /* 待办灵动岛 · 五个舞台（pill 208×32 / peek 300×40 / list 420×240 / compose 420×280 / clear 208×32）
    尺寸与 `src-tauri/src/todo_island_stage.rs::stage_size` 是同一份账，改一处必须同步另一处。
 
-   材质（2026-09-25 档 3a 定稿）= **窗口级 Acrylic 磨砂玻璃**（α.78，Rust 侧施加）
-   + 弱顶部高光 + 浅描边 + 外投影。此前「近黑实色、零玻璃」的定稿被液态玻璃立项修订
-   （探针实测标定见 design/待办灵动岛-液态玻璃-3a设计稿.html）；描边/投影/无 DWM 圆角不变。
+   材质（2026-09-25 红色探针定稿）= **CSS 半透明面**（--island-tint，遮盖度由 --island-glass 算出）
+   + 斜向弱高光 + 受光三件套（外描边 / 顶缘亮线 / 内侧暗边）+ 两层外投影。窗口级 Acrylic 路线被红色探针推翻：把 tint 改纯红后
+   rgn 外角点抓到 rgb(228,10,10)——**DWM 材质层不服从 SetWindowRgn**，胶囊四角方块玻璃
+   是那条路线的固有产物（结论存档见 todo_island.rs「材质与配置」节与实施文档 §10.6+）。
+   现在与 PILLAR 同构：全透明窗 + CSS 画岛面；描边/投影/无 DWM 圆角不变。
 
-   ❗ 为什么不做玻璃 —— 四份对标一致：
-     · iPhone 灵动岛官方规范**明令不能改岛背景色**（它必须读起来像硬件缺口，只能改文字/素材/边框色）；
-     · macOS 各家 notch app 纯黑填充凹耳形状；
-     · 同栈同平台（Tauri 2 + React，Windows）的 PILLAR 用 `rgba(20,20,22,.94)` 实色，
-       它的 `tauri.conf.json` 里**没有 windowEffects 块**、`platform/windows.rs` 零 DWM 调用；
-     · 物理理由最硬：岛贴在屏幕**最顶部**，背后是壁纸顶边或标题栏，**可模糊的信息量最少**，
-       代价却是实打实吃掉对比度（设计稿第六节实算：高光 `.34` 把 tint `.92` 上的白字对比度
-       从 18:1 压到 6.2:1）—— 那一层是在给一个业界不存在的层找最优解。
-   ⇒ 原 `.root::before` 的 158° 镜面高光**已删**；描边 `.18→.12`、投影 `.34→.25` 对齐 PILLAR。
-
-   ❗ 刻意**没有** backdrop-filter —— 与栈浮标同一个理由（tauri issue #10064）：
+   ❗ 为什么不 backdrop-filter —— 与栈浮标同一个理由（tauri issue #10064）：
       窗口 `transparent(true)` 时 CSS 模糊只作用于 webview 内部元素、**穿不出窗口**。
 
    ❗ 窗口几何与动画的分工（2026-09-25 档 3a 修订）：材质按窗口矩形铺，尺寸动画的
@@ -23,9 +15,10 @@
       卡片**永远填满窗口**（inset:0），每帧与窗口同步——CSS 不再持有尺寸，
       两个矩形之间不存在「差的一圈」，切舞台不会再露出玻璃板。
 
-   染色的值走 CSS 变量 `--island-tint`（定义在下面的 :global(html) 里），默认近透明
-   （0.05，材质接管染色）。❗ 变量化的用途之一仍是探针：测材质 A/B 时，
-   `window.eval` 把它临时归零，好让 on/off 的像素差确实来自系统而非 CSS。 */
+   染色的值走 CSS 变量 `--island-tint`（定义在下面的 :global(html) 里），它由 `--island-glass`
+   （遮盖度 20–100，设置页滑杆驱动、岛前端写进 html inline）算出。❗ 变量化的用途之一仍是探针：
+   测材质 A/B 时，`window.eval` 直接覆写 `--island-tint` 把它临时归零，
+   好让 on/off 的像素差确实来自系统而非 CSS（inline 覆写优先，实测仍生效）。 */
 
 /* 窗口是 transparent(true)，globals.css 的 body{background:var(--app-bg)} 必须压掉，
    否则圆角外那四个角是白底方块 */
@@ -39,13 +32,15 @@
 /* 染色令牌。定义在 html 上而不是 .root 上，是为了让探针能从外部覆盖：
    元素自身的声明优先于继承值，写在 .root 里的话 `eval` 改 html 上的变量覆盖不了它。
 
-   档 3a（2026-09-25）：岛体染色由**窗口级 Acrylic** 接管（Rust apply_theme_material
-   按 config.theme 施加，配方 dark200/white200 见 todo_island.rs），CSS 染色退到近透明
-   ——只留 5% 给舞台过渡时兜底，不让岛在材质重合成的瞬间闪出桌面色。
-   notice chip 三个值两种材质都不覆写——失败提示恒深底白字（同 toast 惯例）。 */
+   `--island-glass` = 岛体遮盖度 20–100，**唯一由设置页滑杆驱动的数**（岛前端写 inline 覆写这里的初值）。
+   tint 直接吃它；gloss/rim 由它线性派生——过 (78, .07/.09) 与 (92, .02/.07) 两点定线、
+   两端 clamp 在原四档的取值域内（100 处 gloss 触底 .02、rim .0585，仍是深色玻璃的观感），
+   所以滑到 92 就等于原「深色」档，不需要档位开关。
+   深色模式值在 :global(html)（默认），浅色在 data-island-mode 块。
+   notice chip 三个值各档都不覆写——失败提示恒深底白字（同 toast 惯例）。 */
 :global(html) {
-  --island-tint: rgba(20, 20, 24, 0.05);
-  --island-tint-hover: rgba(255, 255, 255, 0.05);
+  --island-glass: 95;
+  --island-tint: rgb(20 20 24 / calc(var(--island-glass) * 1%));
   --island-fg: #f4f4f5;
   --island-fg-muted: rgba(244, 244, 245, 0.66);
   /* 勾选完成绿：设计稿 D 档定值。 --success 是浅色主题 token（#15803d），深色岛底上只有 2.1:1 */
@@ -60,14 +55,24 @@
   --island-fill-strong: rgba(255, 255, 255, 0.22);
   --island-ring-track: rgba(255, 255, 255, 0.22);
   --island-tick-line: rgba(255, 255, 255, 0.34);
-  --island-shadow: rgba(0, 0, 0, 0.25);
+  /* B 方案受光面：内侧暗边（亮线的背阴侧）+ 两层外投影（V2：一档两层，近层贴桌面、远层浮起） */
+  --island-rim-inner: rgba(7, 17, 28, 0.3);
+  --island-shadow-near: rgba(13, 22, 44, 0.22);
+  --island-shadow-far: rgba(13, 22, 44, 0.24);
   --island-notice-bg: rgba(0, 0, 0, 0.55);
   --island-notice-line: rgba(255, 255, 255, 0.14);
   --island-notice-fg: #f4f4f5;
+  /* 提醒/到期（二期提醒）。取色按 3a 探针的线性混色模型（α.78）推最坏背景：
+     深玻璃压白壁纸 ≈ rgb(72) → 文字需 L≥0.50：#fca5a5(L.504)/#8ecbff(L.556) 达标 4.5:1 */
+  --island-due: #fca5a5;
+  --island-due-today: #8ecbff;
   /* 档 1 弱高光（叠加在玻璃上）：镜面反光是「液态感」的第二来源。
-     对比度背书见 design/待办灵动岛-玻璃感-档1设计稿.html §2（峰值 .07 全绿）。 */
-  --island-gloss: rgba(255, 255, 255, 0.07);
-  --island-rim: rgba(255, 255, 255, 0.09);
+     对比度背书见 design/待办灵动岛-玻璃感-档1设计稿.html §2（峰值 .07 全绿）。
+     ui-rule-ok: 这两个是材质令牌本身的定义（不是引用点），且 α 必须由 --island-glass 现算 */
+  --island-gloss: rgb(255 255 255 / clamp(0.02, calc(0.348 - var(--island-glass) * 0.00357), 0.07)); /* ui-rule-ok: 材质令牌定义 */
+  /* hover 受光：只在悬停时点亮的一层径向高光（::after 的背景） */
+  --island-glow: rgba(255, 255, 255, 0.24);
+  --island-rim: rgb(255 255 255 / clamp(0.05, calc(0.2015 - var(--island-glass) * 0.00143), 0.09)); /* ui-rule-ok: 材质令牌定义 */
 }
 
 /* 浅色材质（方案 A「跟随应用主题」，design/待办灵动岛-主题亮暗适配-设计稿.html §2）：
@@ -75,8 +80,7 @@
    这里只换值、结构不动。--island-ok 用 #15803d = 浅色主题 --success，岛与应用同源；
    浅玻璃压亮壁纸靠「描边 + 收轻的外投影」保边——与截图窗浅色适配同一论证。 */
 :global(html[data-island-mode="light"]) {
-  --island-tint: rgba(255, 255, 255, 0.05);
-  --island-tint-hover: rgba(255, 255, 255, 0.45);
+  --island-tint: rgb(255 255 255 / calc(var(--island-glass) * 1%)); /* ui-rule-ok: 材质令牌定义（浅色基座是白玻璃，只换基色不换公式） */
   --island-fg: #18181b;
   --island-fg-muted: rgba(24, 24, 27, 0.62);
   --island-ok: #15803d;
@@ -90,54 +94,54 @@
   --island-fill-strong: rgba(0, 0, 0, 0.12);
   --island-ring-track: rgba(0, 0, 0, 0.14);
   --island-tick-line: rgba(0, 0, 0, 0.30);
-  --island-shadow: rgba(0, 0, 0, 0.16);
+  --island-rim-inner: rgba(67, 86, 107, 0.16);
+  --island-shadow-near: rgba(27, 45, 78, 0.15);
+  --island-shadow-far: rgba(27, 45, 78, 0.19);
   /* 白高光在白玻璃上偏隐，压低档位——亮面靠顶缘亮线与描边的明暗差来读 */
   --island-gloss: rgba(255, 255, 255, 0.55);
+  --island-glow: rgba(255, 255, 255, 0.5);
   --island-rim: rgba(255, 255, 255, 0.85);
+  /* 提醒/到期（二期提醒）。浅玻璃压暗壁纸 ≈ rgb(203) → 文字需 L≤0.094：
+     #991b1b(L.077)/#075985(L.090) 达标 4.5:1（#dc2626/#0369a1 都差一口气） */
+  --island-due: #991b1b;
+  --island-due-today: #075985;
 }
 
-/* 实色兜底：材质施加失败时 Rust 会挂 html[data-material="off"]
-   （apply_theme_material 的 Err 分支）——染色回到定稿 D 档实色，岛不能「透明消失」。 */
-:global(html[data-material="off"]) {
-  --island-tint: rgba(20, 20, 24, 0.92);
-  --island-tint-hover: rgba(28, 28, 33, 0.96);
-}
-
-:global(html[data-material="off"][data-island-mode="light"]) {
-  --island-tint: rgba(255, 255, 255, 0.92);
-  --island-tint-hover: rgba(255, 255, 255, 0.97);
-}
+/* ── 原「玻璃四档」块已于 2026-09-26 删除：档位换成设置页的连续滑杆，
+   材质值统一由上面的 --island-glass 派生（clear/frost/steady/dark = 30/78/90/92 四个取样点）。
+   对比度背书不变：交互稿实算（30 档深背景 2.81:1 是已知代价）+ 3a 探针（78 档四背景全绿）。 */
 
 /* 曲线：U2 允许集内唯一的标准缓动（0.2,0,0,1）——现在也是 Rust 窗口动画的同一条曲线 */
+/* 单层材质承载面（B 方案）：整张岛只有这一层玻璃，列表行 / 分段控件 / 按钮
+   只用轻量洗色与边缘反馈，**不再叠第二层 backdrop-filter**——每个重复元素都是
+   一个合成层（规则 §8.3），而这个岛同时挂着 4 个窗口。 */
 .root {
   position: fixed;
   inset: 0;
-  /* 卡片永远填满窗口：尺寸由 Rust 逐帧动画给出（见文件头「分工」），
-     这里不再持有 width/height——两个矩形差一圈就是用户看到的「白板」。 */
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  /* 尺寸由 Rust 逐帧动画给出（见文件头「分工」），这里不持有 width/height：
+     两个矩形差一圈就是用户看到的「白板」。布局交给两层内容层。 */
   border-radius: 999px;
   overflow: hidden;
-  background: var(--island-tint);
-  /* 档 1 弱高光：background-image 叠层（不新增元素/合成层），固定 26px 渐变段
-     ——五个舞台高光高度一致，不会在 240px 展开卡上被拉成半屏光带。
-     hover 用 background-color 换色（❗不能用 background 简写，会清掉这层 image）。 */
-  background-image: linear-gradient(180deg, var(--island-gloss) 0, rgba(255, 255, 255, 0) 26px);
+  background-color: var(--island-tint);
+  /* 斜向弱高光（156° = 设计稿 B 方案的受光方向）：53% 处收尽，所以展开卡长高时
+     不会把高光拉成半屏光带——五个舞台的受光段观感一致。
+     ❗ 用 background-color 换色时不能动这层 image（background 简写会把它清掉）。 */
+  background-image: linear-gradient(156deg, var(--island-gloss) 0, transparent 53%);
   /* ❗ 描边用 **inset 阴影** 而不是 border：globals.css 有 `* { box-sizing: border-box }`，
      `border: 1px` 会吃掉 2px 布局空间；inset 阴影不占布局空间，且同样跟随 border-radius。
-     第二层是顶缘亮线（rim，受光面）；外投影兜底：岛压在同色系内容上时保住边界。 */
+     受光面三件套（外描边 / 顶缘亮线 / 内侧暗边）+ 两层外投影（近层贴桌面、远层浮起）。 */
   box-shadow:
     inset 0 0 0 1px var(--island-line),
     inset 0 1px 0 var(--island-rim),
-    0 6px 18px var(--island-shadow);
+    inset 0 -1px 0 var(--island-rim-inner),
+    0 3px 8px var(--island-shadow-near),
+    0 13px 32px var(--island-shadow-far);
   color: var(--island-fg);
   font-size: 12px;
   user-select: none;
   cursor: default;
-  /* 颜色三档给「主题翻面」用（200ms，U2 快档）：data-island-mode 切换时材质渐变，
-     不闪跳。宽高/圆角档见上。 */
+  /* 颜色/投影两档给「主题翻面」用（200ms，U2 快档）：data-island-mode 切换时材质渐变，
+     不闪跳。 */
   transition:
     border-radius 200ms cubic-bezier(0.2, 0, 0, 1),
     background-color 200ms cubic-bezier(0.2, 0, 0, 1),
@@ -145,24 +149,100 @@
     box-shadow 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* hover 受光：只点亮受光边缘（设计稿 B 方案），**不换底色、不常驻**。
+   ::after 是岛上唯一的额外绘制层，且只有 data-hover（= Rust 判定鼠标在岛上）
+   期间才有非零 opacity——收起/隐藏态不产生额外合成开销。 */
+.root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+  background: radial-gradient(circle at 45% -15%, var(--island-glow), transparent 58%);
+  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.root[data-hover="1"]::after {
+  opacity: 1;
+}
+
 /* 圆角与布局按舞台走：尺寸/时长都已在 Rust（stage_size / stage_duration_ms）。
-   展开态圆角从胶囊 999 落到卡片 12（200→300ms 的圆角过渡保留在 .root 基础块）。 */
+   展开态圆角从胶囊 999 落到卡片（200→300ms 的圆角过渡保留在 .root 基础块）。
+   候选 6：顶 8 底 12 非对称——顶缘有 rim 亮线（受光面）方一点更「立」，
+   底部落影收尾圆一点更柔；8/12 都在 U5 token 集内。
+   ❗ 顶角不是纯 CSS：窗口形状被 SetWindowRgn 裁剪（见 todo_island_stage.rs），
+   rgn 必须拼同样的非对称形状，否则 8–12px 弧之间的窗口材质裸露（顶角月牙复发）。 */
+/* 布局（flex 方向/内距）归 .expandedLayer，这里只管圆角——B 方案设计稿「目标观感」栏：
+   展开卡四角统一 12px（原候选 6 的顶 8 / 底 12 非对称已按设计稿收回）。
+   ❗ 顶角不是纯 CSS：窗口形状被 SetWindowRgn 裁剪（见 todo_island_stage.rs），
+   rgn 必须拼同样的形状，否则弧外的窗口材质裸露（顶角月牙复发）。 */
 .root[data-st="list"],
 .root[data-st="compose"] {
   border-radius: 12px;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  padding: 0;
   transition-duration: 300ms;
 }
 
-/* 鼠标在岛上（Rust 侧按光标轮询判定后 emit）：给一点反馈，
-   也用来肉眼确认「穿透切换」这条链路是通的。只在胶囊两态挂。 */
-.root[data-hover="1"] {
-  background-color: var(--island-tint-hover);
+
+/* ===== 内容层（B 方案：形体先响应、内容随后出现）=====
+   两层都绝对定位铺满窗口，交接只靠 opacity + 位移：折叠层向上让位、列表层
+   自下 7px 就位。节拍在 `useIslandContentPhase`（列表延后 ~115ms 才显形），
+   这里只负责「怎么动」。hidden 态一律 pointer-events:none + visibility——
+   看不见的东西不许能点，也不进读屏树（L6）。 */
+.collapsedLayer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    visibility 0s linear 0s;
 }
 
+.collapsedLayer:not([data-on]) {
+  opacity: 0;
+  transform: translateY(-5px);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    visibility 0s linear 200ms;
+}
+
+.expandedLayer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(7px);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    visibility 0s linear 150ms;
+}
+
+.expandedLayer[data-on="1"] {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    visibility 0s linear 0s;
+}
 /* ===== 折叠态内容（pill / peek / clear） ===== */
 
 .ring {
@@ -204,6 +284,19 @@
   opacity: 0.4;
 }
 
+/* ===== 提醒态（二期甲案：到点点亮岛；设计稿「提醒与截止时间」§2） ===== */
+
+.bell {
+  flex: 0 0 14px;
+  color: var(--island-due);
+}
+
+.remindWord {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--island-due);
+}
+
 .last {
   flex: 1 1 auto;
   font-size: 12px;
@@ -212,6 +305,32 @@
   text-overflow: ellipsis;
 }
 
+/* peek 才有的真实到期时间：值来自 `IslandTask.dueLabel`，没有就不渲染——
+   宁可少说一句，也不编一个演示时间替用户编日程（B 方案硬要求）。 */
+.peekDue,
+.peekDueOver {
+  flex: 0 0 auto;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--island-fg-muted);
+}
+
+.peekDueOver {
+  color: var(--island-due);
+}
+
+/* 折叠态的失败提示：就地替换「下一句」那一格。pill 只有 32px 高且
+   overflow:hidden，浮层会被裁掉——所以错误也只能占这一格（规则 §15.3：
+   失败不许静默，也不许掉进另一个可见性域）。 */
+.noticeInline {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--island-due);
+}
 /* 全清态的勾（12px 图形；与列表行同一份路径，见 TodoIslandList 的 TickSvg） */
 .okmark {
   flex: 0 0 12px;
@@ -261,20 +380,24 @@
   opacity: 1;
 }
 
+/* 收起按钮：图标 + **常驻文字标签**（L2：只在 title 里算违规）。
+   设计稿 B 方案 collapseBtn 就是带文字的按钮（min-width 42px / font 11px）。 */
 .col {
   margin-left: auto;
-  width: 24px;
-  height: 24px;
+  min-width: 42px;
+  height: 26px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
   opacity: 0.7;
   background: none;
   border: 0;
   color: inherit;
   cursor: pointer;
   border-radius: 4px;
-  padding: 0;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .col:hover {
@@ -303,6 +426,18 @@
 
 .row:hover {
   background: var(--island-fill);
+}
+/* 勾选退场：圈已经变绿（.rowDone），整行再淡出让位——两个反馈分开，
+   用户看得出刚勾的是哪一条。200ms 后由 TodoIslandList 把这一行摘掉。 */
+.rowLeave {
+  opacity: 0;
+  transform: translateY(-2px);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 150ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    visibility 0s linear 150ms;
 }
 
 /* 勾选圈：视觉 16px，按钮本体 24×24（U7 点击目标下限） */
@@ -374,6 +509,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--island-fg-muted);
+}
+
+/* 到期 chip（二期提醒）：三态——未来灰 / 今天蓝 / 过期红加粗。
+   已完成的行不再说过期（勾掉了就不欠了）。 */
+.duechip,
+.duechipToday,
+.duechipOver {
+  flex: 0 0 auto;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--island-fg-muted);
+}
+
+.duechipToday {
+  color: var(--island-due-today);
+}
+
+.duechipOver {
+  color: var(--island-due);
+  font-weight: 600;
 }
 
 /* 空态（U3 / L3：说清会出现什么、怎么让它出现） */
