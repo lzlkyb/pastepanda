@@ -14,19 +14,20 @@ import { useToast } from "@/components/Toast";
 import { RichContentEditor } from "@/components/editors/RichEditor";
 import { richToPlainText } from "@/lib/richContent";
 import { logger } from "@/lib/logger";
-import { FullscreenShell } from "../FullscreenShell";
+import { FullscreenShell, type DocumentViewSlots } from "../FullscreenShell";
 import richStyles from "../RichEditor.module.css";
 
 export function RichFullscreen({
   sourceId,
   initContent,
   onClose,
+  ...slots
 }: {
   /** 来源卡片 id（为空时不可保存——图文内容没有“存为文件”这条路） */
   sourceId: string | null;
   initContent: string | null;
   onClose: () => void;
-}) {
+} & DocumentViewSlots) {
   const { toast } = useToast();
   const originalHtml = initContent || "";
   const [html, setHtml] = useState(originalHtml);
@@ -64,6 +65,7 @@ export function RichFullscreen({
       dirty={isDirty}
       onSave={handleSave}
       onClose={onClose}
+      {...slots}
     >
       <div className={richStyles.fullscreenWrap}>
         <RichContentEditor initialHtml={originalHtml} onChange={setHtml} />

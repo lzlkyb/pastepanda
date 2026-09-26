@@ -17,7 +17,7 @@ import { useDiff } from "@/hooks/useDiff";
 import { DiffPane } from "@/components/DiffPane";
 import { DiffAiMenu } from "@/components/DiffAiMenu";
 import { useDiffAi, type DiffSide, DIFF_AI_ACTIONS } from "@/hooks/useDiffAi";
-import { FullscreenShell } from "./FullscreenShell";
+import { FullscreenShell, type DocumentViewSlots } from "./FullscreenShell";
 import styles from "./FullscreenEditor.module.css";
 import diffStyles from "../DiffDialog.module.css";
 
@@ -28,13 +28,14 @@ export function DiffEditorFullscreen({
   sourceId: _sourceId,
   initContent,
   onClose,
+  ...slots
 }: {
   /** 来源卡片 id（当前对比为自由文本，恒为 null；保留签名以对齐其它全屏类型） */
   sourceId: string | null;
   /** 跨窗口传入的内容：PPDIFF::JSON{left,right} 或裸文本（当左栏） */
   initContent: string | null;
   onClose: () => void;
-}) {
+} & DocumentViewSlots) {
   const { toast } = useToast();
 
   // 解析跨窗口 content：PPDIFF:: 前缀 → 双栏；否则整体当左栏。
@@ -115,7 +116,10 @@ export function DiffEditorFullscreen({
   }, [blockCount, left]);
 
   // 键盘：F7·Alt+↓↑ 跳转差异（与 DiffDialog 同口径；Esc 关闭由 FullscreenShell 统一处理）
+  // active 门控：非活动标签不该响应（同一窗口里其它标签也能收到这个 window 事件）
+  const isActive = slots.active !== false;
   useEffect(() => {
+    if (!isActive) return;
     const onKey = (e: KeyboardEvent) => {
       if (viewMode !== "preview") return;
       if (e.key === "F7" || (e.key === "ArrowDown" && e.altKey)) { e.preventDefault(); jumpTo(currentBlock + 1); }
@@ -123,7 +127,7 @@ export function DiffEditorFullscreen({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [jumpTo, currentBlock, viewMode]);
+  }, [jumpTo, currentBlock, viewMode, isActive]);
 
   const handleCopy = useCallback(async (text: string, label: string) => {
     try {
@@ -155,6 +159,7 @@ export function DiffEditorFullscreen({
       title="文本对比"
       dirty={dirty}
       onClose={onClose}
+      {...slots}
       leftExtra={
         <>
           <div className={diffStyles.modeToggle}>

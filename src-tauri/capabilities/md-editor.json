@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "md-editor-close",
+  "description": "全屏 Markdown 编辑器窗口独有的窗口权限。关闭守卫（useEditorCloseGuard）注册了 onCloseRequested，而 @tauri-apps/api 的 onCloseRequested 在「未 preventDefault」时由它自己 `await this.destroy()` 收尾 —— destroy 打的是 plugin:window|destroy，需要 core:window:allow-destroy；default.json 只给了 allow-close，于是窗口永远销毁不掉，只剩一片空白（2026-09-26 实测：点 ✕ 后窗口仍在，1823x983 仍 visible=True，页面停在退场动画的 opacity:0）。与 rc-workbench.json 同因同修（那扇窗 2026-09-18 已修）。",
+  "windows": ["md-editor"],
+  "permissions": [
+    "core:window:allow-destroy"
+  ]
+}

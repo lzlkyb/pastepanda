@@ -16,6 +16,7 @@ import type { EditorProps } from "@/lib/editorRegistry";
 import { sanitizeDocHtml, htmlToMarkdown } from "@/lib/docPipeline";
 import { copyRichOnly, pasteRichGuarded, copyOnly, pasteTextGuarded } from "@/lib/api";
 import { relativeTime, fmtCount } from "@/lib/utils";
+import { openInEditor } from "@/lib/openInEditor";
 import styles from "./DocEditor.module.css";
 
 type Tab = "render" | "plain" | "md";
@@ -148,15 +149,9 @@ export function DocEditor({ item, registerActions }: EditorProps) {
           type="button"
           className={styles.fullscreenBtn}
           title="全屏"
-          onClick={async () => {
-            try {
-              const { invoke } = await import("@tauri-apps/api/core");
-              await invoke("open_fullscreen_editor", {
-                sourceId: item.id, content: htmlRef.current,
-                contentType: item.type, language: null,
-              });
-            } catch { /* 全屏失败不报错，弹窗内继续用 */
-            }
+          onClick={() => {
+            // 全屏失败不报错，弹窗内继续用
+            openInEditor({ sourceId: item.id, content: htmlRef.current, contentType: item.type }).catch(() => {});
           }}
         >
           ⤢ 全屏

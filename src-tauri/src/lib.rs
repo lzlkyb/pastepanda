@@ -117,7 +117,35 @@ pub struct EditorInitData {
     pub language: Option<String>,
 }
 
-pub struct PendingEditor(pub std::sync::Mutex<Option<EditorInitData>>);
+/// 编辑器窗口的生命期状态。
+///
+/// ❗ 区分「窗口还没建好」与「窗口内前端已就绪」是**队列能否正确投递**的前提：
+///
+/// - `Idle` → 建窗，把文档放进队列
+/// - `Booting` → 窗口在建 / 前端没挂载完，**只入队不 emit**；此刻 emit 会打在前端还没注册监听器的空档里，静默丢失
+/// - `Ready` → 直接 emit `md-editor-load`，前端按去重键决定新开还是切过去
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum EditorWinStatus {
+    #[default]
+    Idle,
+    Booting,
+    Ready,
+}
+
+/// 编辑器窗口的共享状态。
+#[derive(Default)]
+pub struct EditorWindow {
+    pub status: EditorWinStatus,
+    /// 尚未被前端取走的待打开文档。
+    ///
+    /// ❗ 队列化是必需的，不是优化：双击多选 N 个 `.md` 会**连续**发 N 次请求，
+    /// 后 N-1 次都落在「建窗中」这一档。旧实现是单槽 `Option` —— 后一个覆盖前一个，
+    /// 而且每次都会再走一遍建窗分支（`get_webview_window` 此刻还没返回），
+    /// 同名 label 建窗失败，最后只剩一个文件打不开。
+    pub queue: Vec<EditorInitData>,
+}
+
+pub struct PendingEditor(pub std::sync::Mutex<EditorWindow>);
 
 /// window-state 插件该持久化哪些窗口属性。
 ///
@@ -274,7 +302,7 @@ pub fn run() {
             )));
 
             // 全屏 Markdown 编辑器独立窗口的待取初始数据（初始为空）
-            app.manage(PendingEditor(std::sync::Mutex::new(None)));
+            app.manage(PendingEditor(std::sync::Mutex::new(EditorWindow::default())));
 
             // 截图标注窗口的待编辑图片路径（贴图双击重编辑用，初始为空）
             app.manage(screenshot::PendingShotEdit(std::sync::Mutex::new(None)));
@@ -601,6 +629,10 @@ pub fn run() {
 
             // 待办灵动岛的状态缓存：岛 webview 首次 mount 时拉取，避免首帧空白
             app.manage(todo_island::IslandStateCache::default());
+            // 待办提醒账本（二期甲案：到点点亮岛 + 横幅）
+            app.manage(todo_island::RemindLedger::default());
+            // 相对关键字到期点的钉死缓存（「@今天」隔夜不漂移、不每天重响）
+            app.manage(todo_tasks::DuePinCache::default());
             // 待办扫描缓存：键是 updated_ms，内容没变的笔记不再重扫正文
             app.manage(todo_tasks::TodoScanCache::default());
             // 探针阶段：只有带上 PP_TODO_ISLAND_PROBE=1 才显示岛（B1 才接真正的常驻逻辑）
@@ -732,10 +764,12 @@ pub fn run() {
                                 let prev = island_rc_flag.load(std::sync::atomic::Ordering::SeqCst);
                                 if inbound && !prev {
                                     island_rc_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-                                    crate::todo_island::hide(&handle_rc);
+                                    // 隐私门控（不只 hide 一次）：会话期间笔记写路径会把岛
+                                    // 重新拉起，门拦在 show() 入口才拦得住（审计 P2#4）
+                                    crate::todo_island::set_privacy_gate(&handle_rc, true);
                                 } else if !inbound && prev {
                                     island_rc_flag.store(false, std::sync::atomic::Ordering::SeqCst);
-                                    crate::todo_tasks::refresh_island(&handle_rc);
+                                    crate::todo_island::set_privacy_gate(&handle_rc, false);
                                 }
                             }
                             if let Some(err) = svc.take_inject_err() {
@@ -928,6 +962,7 @@ pub fn run() {
             todo_island::todo_island_show,
             todo_island::todo_island_hide,
             todo_island::todo_island_state,
+            todo_island::todo_island_page_ready,
             todo_island::todo_island_update,
             todo_tasks::todo_island_tasks,
             todo_tasks::todo_island_toggle_task,
@@ -1045,6 +1080,10 @@ pub fn run() {
             commands::rc_send_input,
             commands::rc_open_workbench,
             commands::rc_push_clipboard,
+            commands::rc_window_minimize,
+            commands::rc_window_toggle_maximize,
+            commands::rc_window_close,
+            commands::rc_fit_window_to_video,
             commands::rc_set_quality,
             commands::rc_set_bitrate_pct,
             commands::rc_encode_caps,
@@ -1230,6 +1269,7 @@ pub fn run() {
             commands::file_mtime_ms,
             commands::open_fullscreen_editor,
             commands::take_editor_init,
+            commands::mark_editor_ready,
             commands::close_editor_window,
             commands::insert_markdown_history,
             commands::insert_diagram_history,

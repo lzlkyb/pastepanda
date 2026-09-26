@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全屏编辑器 · 页签切换动画 · 设计稿</title>
+<style>
+  /* 与项目 globals.css 同源：真实应用有这条全局重置，漏了它每条栏都会比真实高 1px
+     （height 不含 border-bottom）—— 实测 49/35/37/29 vs 真实的 48/34/36/28 */
+  *, *::before, *::after { box-sizing: border-box; }
+
+  /* ── 稿子外壳（与项目既有设计稿同一套排版语言） ── */
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --line: #e3e6ea; --text: #1c1f23; --dim: #6b7280;
+    --accent: #4f7cff; --topbar: #eef1f5; --code: #f3f4f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-skin="light"]) {
+      --bg: #16181c; --panel: #1e2126; --line: #2c3037; --text: #e6e8ea; --dim: #9aa3ad;
+      --accent: #6b93ff; --topbar: #212429; --code: #24272c;
+    }
+  }
+  :root[data-skin="dark"] {
+    --bg: #16181c; --panel: #1e2126; --line: #2c3037; --text: #e6e8ea; --dim: #9aa3ad;
+    --accent: #6b93ff; --topbar: #212429; --code: #24272c;
+  }
+  body {
+    background: var(--bg); color: var(--text); margin: 0; padding: 28px 20px 72px;
+    font: 14px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 14px; margin: 20px 0 6px; }
+  .sub { color: var(--dim); margin: 0 0 22px; font-size: 13px; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .note { border-left: 3px solid var(--accent); padding: 8px 12px; margin: 12px 0; background: var(--panel); border-radius: 0 6px 6px 0; font-size: 13px; }
+  .warn { border-left-color: #e0803a; }
+  .ok { border-left-color: #2f9e6e; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--code); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  .scroll table { min-width: 640px; }
+  .mono { font-family: ui-monospace, Consolas, "Cascadia Code", monospace; font-size: 12px; white-space: pre; }
+
+  /* ============ 演示区 ============ */
+  .demo {
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: var(--panel); margin: 14px 0 6px;
+  }
+  .demoTop {
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 10px;
+    background: var(--topbar); border-bottom: 1px solid var(--line); font-size: 12.5px;
+  }
+  .demoTop .lab { color: var(--dim); margin-right: 2px; }
+  .demoTop button {
+    font: inherit; font-size: 12.5px; padding: 4px 11px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  .demoTop button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .demoTop .spacer { flex: 1; }
+  .demoStage { padding: 18px; background: var(--code); }
+
+  /* ── 模拟编辑器窗口：几何取真实值 toolbar 48 / tabbar 34 / formatbar 36 / statusbar 28 ── */
+  .win {
+    width: 100%; max-width: 900px; margin: 0 auto; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--w-line); box-shadow: 0 10px 30px rgba(15, 23, 42, .18);
+    display: flex; flex-direction: column; font-size: 12px;
+  }
+  .win[data-mode="light"] {
+    --w-chrome: #fff; --w-paper: #fff; --w-line: #e0e4eb;
+    --w-text: #0f172a; --w-text2: #495565; --w-muted: #627083;
+    --w-accent: #0284c7; --w-hover: #e8ecf2; --w-status: #f0f4f8;
+    --w-warn: #c54a0a; --w-warnBg: #fff7ed; --w-warnBd: #fed7aa;
+    --w-ed: #fff; --w-edText: #24292f; --w-pv: #fff;
+    --w-app: radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+             radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+             linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
+  }
+  .win[data-mode="dark"] {
+    --w-chrome: #18181b; --w-paper: #18181b; --w-line: #27272a;
+    --w-text: #e4e4e7; --w-text2: #afafb7; --w-muted: #8d8d95;
+    --w-accent: #818cf8; --w-hover: #1f1f23; --w-status: #111113;
+    --w-warn: #fb923c; --w-warnBg: #431407; --w-warnBd: #9a3412;
+    --w-ed: #1e1e2e; --w-edText: #cdd6f4; --w-pv: #18181b;
+    --w-app: radial-gradient(130% 110% at 50% -10%, #1c1832 0%, #0b0b13 55%, #07070c 100%);
+  }
+
+  .tb { height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+        background: var(--w-paper); border-bottom: 1px solid var(--w-line); color: var(--w-text); }
+  .ficon { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+           background: linear-gradient(135deg, var(--w-accent), #6d28d9); color: #fff; font-size: 11px; font-weight: 700; flex: none; }
+  .fname { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .fpath { font-size: 11px; color: var(--w-muted); }
+  .tbtn { height: 26px; padding: 0 10px; border-radius: 8px; border: none; font: inherit; font-size: 11.5px;
+          background: transparent; color: var(--w-text2); display: inline-flex; align-items: center; }
+  .tbtn.primary { background: linear-gradient(135deg, var(--w-accent), #6d28d9); color: #fff; font-weight: 600; }
+  .tsep { width: 1px; height: 18px; background: var(--w-line); margin: 0 4px; }
+
+  .tabbar { height: 34px; flex: none; display: flex; align-items: stretch; background: var(--w-chrome);
+            border-bottom: 1px solid var(--w-line); color: var(--w-text2); }
+  .tstrip { display: flex; align-items: stretch; flex: 1; min-width: 0; overflow: hidden; }
+  .tab { display: flex; align-items: center; gap: 8px; min-width: 132px; max-width: 200px; height: 34px;
+         padding: 0 8px 0 12px; border-right: 1px solid var(--w-line); cursor: default; position: relative;
+         transition: background 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1); }
+  .tab:not(.active):hover { background: var(--w-hover); }
+  .tab.active { background: var(--w-paper); color: var(--w-text); font-weight: 500;
+                box-shadow: inset 0 2px 0 var(--w-accent); }
+  .tab .ico { font-size: 11px; font-weight: 700; color: var(--w-muted); flex: none; }
+  .tab.active .ico { color: var(--w-accent); }
+  .tab .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; font-size: 13px; }
+  .addbtn { width: 32px; flex: none; display: flex; align-items: center; justify-content: center;
+            border-left: 1px solid var(--w-line); color: var(--w-text2); font-size: 15px; }
+
+  .fmtbar { height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 14px;
+            background: var(--w-paper); border-bottom: 1px solid var(--w-line); color: var(--w-text2); }
+  .fmtbtn { height: 28px; padding: 0 9px; border-radius: 4px; display: flex; align-items: center; gap: 3px; font-size: 11.5px; }
+  /* 状态栏「未保存」徽章：结构照 EditorStatusBar.tsx —— 5px 圆点（span）+ 文字，
+     配色取真实 --warning / --warning-bg / --warning-border */
+  .saveBadge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border-radius: 999px;
+               font-size: 10.5px; font-weight: 600;
+               color: var(--w-warn); background: var(--w-warnBg); border: 1px solid var(--w-warnBd); }
+  .saveDot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+
+  /* 内容区：背景 = --app-bg（真实 .overlay 的背景），
+     所以「淡入时露不露底色」在这里能被真实看到 */
+  .content { position: relative; height: 296px; overflow: hidden; background: var(--w-app); }
+  .sbar { height: 28px; flex: none; display: flex; align-items: center; justify-content: space-between;
+          padding: 0 14px; background: var(--w-status); color: var(--w-muted); font-size: 11px;
+          border-top: 1px solid var(--w-line); }
+
+  /* 一份文档 = 编辑面板 + 预览面板 */
+  .doc { position: absolute; inset: 0; display: flex; }
+  .pe { flex: 0 0 50%; background: var(--w-ed); color: var(--w-edText); overflow: hidden;
+        display: flex; flex-direction: column; }
+  .pv { flex: 1 1 0; background: var(--w-pv); color: var(--w-text); overflow: hidden;
+        display: flex; flex-direction: column; }
+  .ph { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+        padding: 5px 14px; flex: none; }
+  /* 面板内的透明内容层 —— 对应真实的 .editorBody / .previewBody。
+     载底色的 .pe / .pv 是不动的；方案 D 只动这一层，所以底色不会透出来。 */
+  .paneBody { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .pe .ph { color: rgba(255,255,255,.4); background: rgba(255,255,255,.03); border-bottom: 1px solid rgba(255,255,255,.06); }
+  .win[data-mode="light"] .pe .ph { color: var(--w-muted); background: #fafbfc; border-bottom-color: var(--w-line); }
+  .pv .ph { color: var(--w-muted); background: #fafbfc; border-bottom: 1px solid var(--w-line); }
+  .win[data-mode="dark"] .pv .ph { background: #1f1f23; }
+  .code { flex: 1 1 0; min-height: 0; overflow: hidden; padding: 10px 14px;
+          font-family: ui-monospace, Consolas, "Cascadia Code", monospace;
+          font-size: 11.5px; line-height: 1.75; white-space: pre; }
+  .md { flex: 1 1 0; min-height: 0; overflow: hidden; padding: 12px 18px; font-size: 12px; line-height: 1.75; }
+  .md h4 { margin: 0 0 6px; font-size: 15px; }
+  .md h5 { margin: 12px 0 4px; font-size: 13px; }
+  .md p { margin: 0 0 8px; color: var(--w-text2); }
+  .md table { margin: 6px 0; font-size: 11.5px; }
+  .md td, .md th { border-color: var(--w-line); padding: 3px 7px; }
+  .md th { background: transparent; color: var(--w-text2); }
+  .md li { color: var(--w-text2); }
+  .md code { background: var(--w-hover); color: var(--w-text); padding: 0 4px; border-radius: 4px; font-size: 11px; }
+  .k { color: #c678dd; } .s { color: #98c379; } .c { color: #5c6370; }
+  .win[data-mode="light"] .k { color: #a626a4; } .win[data-mode="light"] .s { color: #50a14f; }
+  .win[data-mode="light"] .c { color: #a0a1a7; }
+
+  /* ────────── 三个方案要落地的动画本体（真实时长、真实缓动） ────────── */
+  @keyframes tabInA { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes tabInB { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes tabCoverIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes tabInD { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .doc.enterA { animation: tabInA 200ms cubic-bezier(0.2, 0, 0, 1) both; }
+  .doc.enterB { animation: tabInB 150ms cubic-bezier(0.2, 0, 0, 1) both; }
+  .doc.coverIn { z-index: 2; animation: tabCoverIn 150ms cubic-bezier(0.2, 0, 0, 1) both; }
+  /* D：动的是「透明的」内容层，.pe/.pv 的不透明底色不参与；位移被面板 overflow 裁掉 */
+  .doc.enterD .paneBody { animation: tabInD 150ms cubic-bezier(0.2, 0, 0, 1) both; }
+  @media (prefers-reduced-motion: reduce) {
+    .doc.enterA, .doc.enterB, .doc.coverIn, .doc.enterD .paneBody { animation-duration: 0.01ms; }
+  }
+
+  .hint { font-size: 12.5px; color: var(--dim); margin: 6px 0 0; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+           background: var(--code); border: 1px solid var(--line); }
+  .badge.rec { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--accent); }
+  .badge.bad { background: color-mix(in srgb, #c54a0a 14%, transparent); border-color: #e9a97e; color: #a3460a; }
+  .badge.good { background: color-mix(in srgb, #11813a 14%, transparent); border-color: #93c7a4; color: #0d6630; }
+  :root[data-skin="dark"] .badge.bad, :root[data-skin="dark"] .badge.good { color: inherit; }
+  .hot { border-bottom: 2px solid var(--accent); }
+  .pass { color: #2f9e6e; font-weight: 600; }
+  .md .cb { width: 11px; height: 11px; vertical-align: -1px; margin-right: 5px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="cb-box"><rect x="0.7" y="0.7" width="10.6" height="10.6" rx="2.2"/></g>
+  <g id="cb-tick" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 6.1l1.9 1.9 3.7-4.1"/></g>
+</defs></svg>
+<div class="wrap">
+
+<h1>全屏编辑器 · 页签切换动画</h1>
+<p class="sub">PastePanda · 设计稿 · 2026-09-26 · 范围 = 多页签保活态下「切换活动页签」的内容区动效</p>
+
+<div class="note warn">
+  <strong>先看演示，再回头看表。</strong>下面窗口的几何取真实值（工具栏 48 / 页签栏 34 / 格式栏 36 / 状态栏 28px），
+  内容区背景用的是真实 <code>--app-bg</code>（多数主题是渐变）——<strong>「切换时露不露底色」这件事只有摆出来才看得清</strong>，
+  全是这一稿要判的关键。时长与缓动也是真的，不是示意。
+</div>
+
+<h2>1 · 点着看</h2>
+
+<div class="demo">
+  <div class="demoTop">
+    <span class="lab">动画方案</span>
+    <button data-v="off" class="on">关（现状·硬切）</button>
+    <button data-v="A">A 复用 paneIn</button>
+    <button data-v="B">B 页签专属</button>
+    <button data-v="C">C 盖淡</button>
+    <button data-v="D">D 内容浮现</button>
+    <span class="spacer"></span>
+    <span class="lab">皮肤</span>
+    <button data-mode="light" class="on">浅</button>
+    <button data-mode="dark">深</button>
+    <button id="replay">重播</button>
+  </div>
+  <div class="demoStage">
+    <div class="win" id="win" data-mode="light">
+      <div class="tb">
+        <div class="ficon" id="ficon">M↓</div>
+        <span class="fname" id="fname">README.md</span>
+        <span class="fpath" id="fpath">D:\notes\README.md</span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="tbtn primary">保存</span>
+        <span class="tsep"></span>
+        <span class="tbtn">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 8h10"/></svg>
+        </span>
+        <span class="tbtn">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6.5 13 3M13 3h-3.2M13 3v3.2M6.5 9.5 3 13M3 13h3.2M3 13v-3.2"/></svg>
+        </span>
+        <span class="tbtn">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </span>
+      </div>
+      <div class="tabbar">
+        <div class="tstrip" id="tstrip"></div>
+        <div class="addbtn">+</div>
+      </div>
+      <div class="fmtbar">
+        <span class="fmtbtn txt"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>查找</span>
+        <span class="tsep"></span>
+        <span class="fmtbtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 0 1 0 8H6z"/><path d="M6 12h9a4 4 0 0 1 0 8H6z"/></svg></span>
+        <span class="fmtbtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg></span>
+        <span class="fmtbtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" y1="12" x2="20" y2="12"/></svg></span>
+        <span class="fmtbtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
+        <span class="tsep"></span>
+        <span class="fmtbtn menu">标题<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        <span class="fmtbtn menu">列表<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        <span class="fmtbtn menu">引用与代码块<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        <span class="fmtbtn menu">插入<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+      </div>
+      <div class="content" id="content"></div>
+      <div class="sbar">
+        <span>128 行 · 1,043 字 · 约 4 分钟</span>
+        <span class="saveBadge"><span class="saveDot"></span>未保存</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="hint" id="hint">当前：硬切。点上面的页签切换，或在工具栏切换方案后重新点页签。</p>
+
+<div class="note">
+  <strong>演示里请特别看两件事：</strong>
+  ① 切过去的一瞬间，内容区有没有「先发白一下再出现」（那就是底色 <code>--app-bg</code> 透出来了）——
+  <strong>挨个点 A / B / D 对比，差别就在这里</strong>；
+  ② 页签栏 / 工具栏 / 状态栏有没有跟着一起动（应该不动）。
+</div>
+
+<h2>2 · 四个方案</h2>
+
+<div class="scroll">
+<table>
+<tr>
+  <th style="width:110px">方案</th>
+  <th>做什么</th>
+  <th style="width:104px">露 --app-bg</th>
+  <th style="width:88px">成本</th>
+  <th>副作用 / 观感</th>
+</tr>
+<tr>
+  <td><strong>A · 复用 paneIn</strong><br><span class="badge">零新增 CSS</span></td>
+  <td>把 <code>paneEnter</code>（视图模式切换那个一次性标记）的触发条件
+      从「<code>viewMode</code> 变化」扩为「<code>viewMode</code> 变化 <strong>或</strong> 本页签被激活」。
+      动效本体就是现成的 <code>paneIn</code>：<strong>200ms / opacity 0→1 / translateY 6px→0</strong>，
+      挂在<strong>整块面板</strong>上</td>
+  <td><span class="badge bad">会 · 明显</span><br>面板半透明期间渐变透出</td>
+  <td>最低<br>1 行判据</td>
+  <td>与「视图模式切换」同款，语言统一；<br>
+      代价是两个动作看起来一样，且 <strong>200ms / 6px 对高频操作偏慢</strong></td>
+</tr>
+<tr>
+  <td><strong>B · 页签专属</strong></td>
+  <td>同上，但另立 <code>tabInB</code>：<strong>150ms / opacity 0→1 / translateY 4px→0</strong>，
+      同样挂在<strong>整块面板</strong>上</td>
+  <td><span class="badge bad">会 · 较轻</span><br>25ms 处最明显</td>
+  <td>低<br>+1 段 keyframes</td>
+  <td>比 A 快，但<strong>本质与 A 同类</strong>——都是整块面板淡入，
+      只是幅度小一点，闪没消失</td>
+</tr>
+<tr>
+  <td><strong>C · 盖淡</strong></td>
+  <td><strong>旧内容原地不动</strong>，新内容从上层抬一级 <code>z-index</code>、150ms 淡入盖上去；
+      旧内容等动画结束才移除</td>
+  <td><span class="badge good">不会</span><br>始终有不透明层垫底</td>
+  <td>中<br>延迟移除 +<br>层级抬升 + 定时器</td>
+  <td>动画中约 <strong>70ms 两屏文字重叠</strong>（轻影）；
+      且这 150ms 内旧层仍挂在 DOM 上，<strong>两份文档同时存在</strong></td>
+</tr>
+<tr>
+  <td><strong>D · 内容浮现</strong><br><span class="badge rec">推荐</span></td>
+  <td>同样是 <strong>150ms / opacity 0→1 / translateY 4px→0</strong>，
+      但<span class="hot">不挂在面板上</span>，挂在面板里<strong>透明的内容层</strong>上——
+      真实 DOM 里就是 <code>.editorBody</code> / <code>.previewBody</code>。
+      载底色的 <code>.editorPane</code> / <code>.previewPane</code> 恒定不动</td>
+  <td><span class="badge good">不会</span><br>面板底色即垫底</td>
+  <td>低<br>+1 段 keyframes<br>+1 个类</td>
+  <td>位移 4px 被面板 <code>overflow</code> 裁掉，不留缝；
+      面板标题（「Markdown 源文」/「预览」）也保持恒定。
+      <strong>与 B 同参、同成本，只是换了挂点</strong></td>
+</tr>
+</table>
+</div>
+
+<div class="note ok">
+  <strong>为什么推荐 D：</strong>页签切换是唯一会被连点的高频动作，动效必须短到「不挡手」——
+  150ms / 4px 刚好够让人感到「换了一份内容」，又不至于被读成「过场动画」。这一条 A / B / D 都能满足。
+  <br><br>
+  <strong>真正把它们分开的是「底色透不透」。</strong>我把三个方案各冻在动画 20ms 处截了图（同页面、同参数，
+  只换方案的冻帧对比）：<strong>A / B 因为动画挂在整块面板上，面板半透明期间内容区会整体发白</strong>——
+  这正是你上次反馈的「闪」的另一种形态，只是从「重播入场」换成了「底色透出」。
+  D 把同一段动画降到面板里那层<strong>透明内容层</strong>上，载底色的面板恒定不动，于是<strong>既不透色、也不重叠</strong>，
+  而且与 B 同参数、同档成本，只差一个挂点。
+  <br><br>
+  C 同样不透色，但换来约 70ms 的两屏文字重叠，且这 150ms 内两份文档同时挂在 DOM 上。综合下来 D 最省。
+</div>
+
+<h2>3 · 精确参数</h2>
+
+<h3>D（推荐）</h3>
+<div class="scroll"><div class="mono">点击页签
+  │
+  └─ 0ms ─────────────── 150ms   面板内的内容层淡入上浮
+                                 opacity 0 → 1
+                                 transform translateY(4px) → none
+                                 cubic-bezier(0.2, 0, 0, 1)   ← M3 常规（减速）
+
+挂点：.editorBody / .previewBody（透明层）
+不动：.editorPane / .previewPane 的底色、.paneHeader、页签栏 / 工具栏 / 状态栏
+⇒ 淡入期间底下始终是不透明的面板底色，不会透出 --app-bg</div></div>
+
+<h3>挂点差在哪（同参数，只换挂点）</h3>
+<div class="scroll">
+<table>
+<tr><th style="width:150px">动画写在</th><th>20ms 处内容区实际是什么</th><th style="width:110px">判定</th></tr>
+<tr>
+  <td>A / B：<code>.editorPane</code><br>（整块面板）</td>
+  <td>面板整体 <code>opacity ≈ .35</code> ⇒ 底下 <code>--app-bg</code> 的渐变透上来，
+      内容区连成一片惨白，文字发灰</td>
+  <td><span class="badge bad">露底色</span></td>
+</tr>
+<tr>
+  <td>D：<code>.editorBody</code><br>（面板内的透明层）</td>
+  <td>面板底色（深色主题 <code>#1e1e2e</code>，浅色主题走卡片底色）满幅不变，
+      只有正文从淡到实、上浮 4px</td>
+  <td><span class="badge good">不露</span></td>
+</tr>
+</table>
+</div>
+
+<h3>C（盖淡）</h3>
+<div class="scroll"><div class="mono">点击页签
+  │
+  ├─ 0ms ─────────────── 150ms   新文档（盖在上层）淡入
+  │                              opacity 0 → 1；无位移
+  │
+  └─ 150ms                       旧文档移除
+                                 全程有不透明层垫底 ⇒ 不透 --app-bg
+                                 代价：约 70ms 两屏文字重叠</div></div>
+
+<h2>4 · 实现形状</h2>
+
+<div class="scroll">
+<table>
+<tr><th style="width:210px">件</th><th>改什么</th></tr>
+<tr>
+  <td><code>fullscreen/useDocumentView.ts</code></td>
+  <td>一次性标记的触发条件从「<code>viewMode</code> 变化」扩为「<code>viewMode</code> 变化 <strong>或</strong>
+      <code>active</code> false→true」（用 <code>prevActiveRef</code> 判边沿，避免首帧 <code>active=true</code> 也播一次）；<br>
+      驱动 effect 由 <code>useEffect</code> 改 <code>useLayoutEffect</code>——见 §5 第 ③ 条</td>
+</tr>
+<tr>
+  <td><code>FullscreenEditor.module.css</code></td>
+  <td>新增 <code>@keyframes tabInA</code> / <code>tabInB</code>（两段内容逐字节相同，只为能重启）+
+      <code>.tabEnterA</code> / <code>.tabEnterB</code>；<br>
+      <span class="hot">D 的写法和现有 <code>paneIn</code> 不共用一套选择器</span> ——
+      <code>paneIn</code> 打在 <code>.editorPane</code> / <code>.previewPane</code> 上，
+      D 要打在 <code>.editorBody</code> / <code>.previewBody</code> 上；<br>
+      各配一条 <code>:global(.no-anim) … { animation: none }</code></td>
+</tr>
+<tr>
+  <td><code>fullscreen/DocumentChrome.tsx</code></td>
+  <td>把标记从「布尔 <code>paneEnter</code>」换成「自增 tick」，class 在两段 keyframe 间交替 —— 见 §5 第 ② 条</td>
+</tr>
+<tr>
+  <td colspan="2" style="background:var(--code)">
+    <strong>覆盖面（必须说清）：</strong>这条链只走到 <strong>CodeMirror 家族</strong>（md / txt / code / json / csv / log / html / sql…）。
+    rich（Tiptap，<code>RichFullscreen</code> 的 <code>.fullscreenWrap</code>）、diagram（React Flow 画布）、
+    diff（<code>.main</code> 双栏）三类<strong>没有 <code>.editorBody</code> 这一层</strong>，不在这条链上 ——
+    <strong>要不要各自接一根，是这一稿要你拍的一个点。</strong>
+    另：D 的挂点要求「面板底色不透明」，这三类里若哪一类的底色原本就透（例如画布类），
+    需要先给它垫一层不透明底色，否则 D 会退化成 A / B。
+  </td>
+</tr>
+</table>
+</div>
+
+<h2>5 · 四个顺带要定的</h2>
+
+<div class="scroll">
+<table>
+<tr><th style="width:36px">#</th><th>事</th><th>结论 / 做法</th></tr>
+<tr>
+  <td>①</td>
+  <td>新建页签后立刻显示，要不要播？</td>
+  <td><strong>不播。</strong>仅认 false→true 这条边沿。开机/新开就看到自己淡入，像加载慢。</td>
+</tr>
+<tr>
+  <td>②</td>
+  <td>240ms 内连切两次</td>
+  <td>现在的 <code>paneEnter</code> 是<strong>布尔</strong>：第二次 <code>setPaneEnter(true)</code>
+      时它已经是 <code>true</code>，React 不重渲染 ⇒ <strong>动画不会重播</strong>。<br>
+      做法：换成自增 tick，class 在 <code>tabEnterA</code> / <code>tabEnterB</code> 之间交替
+      （两段 keyframes 内容完全相同）。纯 CSS 方案，<code>no-anim</code> 与
+      <code>prefers-reduced-motion</code> 的既有兜底继续免费生效。</td>
+</tr>
+<tr>
+  <td>③</td>
+  <td>首帧时序</td>
+  <td><code>useEffect</code> 在 <strong>paint 之后</strong>才跑 ⇒ 会先画出「最终态」一帧，
+      下一帧才从 <code>opacity:0</code> 重播，用户看到的是<strong>闪一下再淡入</strong>。
+      必须改 <code>useLayoutEffect</code>（paint 前），动画与「显示」同帧成立。<br>
+      <span class="badge">这是现值里就有的隐患</span> 现在 <code>paneEnter</code> 用的正是 <code>useEffect</code>，
+      视图模式切换时同样有这个一帧闪。</td>
+</tr>
+<tr>
+  <td>④</td>
+  <td>跨类型切换时<br>格式栏行高跳</td>
+  <td>markdown / csv 有格式栏（36px），code / json 没有 ⇒ md ⇄ json 互切时内容区会
+      <strong>整体跳 36px</strong>。这是内容动画<strong>盖不住</strong>的另一种「跳」，属于本次范围外。
+      要么本次不动（记进已知问题），要么给格式栏固定占位 —— 见下方选择题。</td>
+</tr>
+</table>
+</div>
+
+<h2>6 · 合规</h2>
+
+<div class="scroll">
+<table>
+<tr><th style="width:200px">项</th><th>判定</th></tr>
+<tr><td>U2 时长</td><td>150ms / 200ms 均在 <code>[150,200,300,400]</code> 四档内 <span class="pass">通过</span></td></tr>
+<tr><td>U2ease 缓动</td><td>取 M3 常规 <code>cubic-bezier(0.2, 0, 0, 1)</code>，在两条许可曲线内 <span class="pass">通过</span></td></tr>
+<tr><td>「窗口动画」开关</td><td>沿既有惯例补 <code>:global(.no-anim) .tabEnterX { animation: none }</code> <span class="pass">通过</span></td></tr>
+<tr><td>系统「减少动态效果」</td><td>由 <code>globals.css</code> 的全局兜底处理（<code>animation-duration: 0.01ms !important</code>），
+    不需逐文件补 <code>@media</code> <span class="pass">通过</span></td></tr>
+<tr><td>U2「位移动效是否承载信息」</td><td>不承载——纯装饰，切换结果本身已由页签高亮与工具栏文件名表达，无需静态替代 <span class="pass">通过</span></td></tr>
+</table>
+</div>
+
+<div class="note">
+  <strong>三个要你拍的点：</strong>
+  ① 选 A / B / C / D 哪一个（推荐 <strong>D</strong>：与 B 同参数同成本，但不会透出 --app-bg）；
+  ② rich / diagram / diff 这三类要不要一起接（默认不接，只保 CodeMirror 家族）；
+  ③ §5 第 ④ 条的格式栏跳（36px）本次是否顺带处理。
+</div>
+
+</div>
+
+<script>
+  const DOCS = [
+    {
+      name: "README.md", path: "D:\\notes\\README.md", icon: "M↓",
+      code: "# 项目说明\n\n> 一个把剪贴板变成工作台的工具\n\n## 快速开始\n\n1. 安装\n2. 打开托盘\n3. 按 Ctrl+Shift+V\n\n<!-- 备注：这一段是示例 -->\nconst ready = true;\n",
+      preview: `
+        <h4>项目说明</h4>
+        <p>一个把剪贴板变成工作台的工具</p>
+        <h5>快速开始</h5>
+        <ul><li>安装</li><li>打开托盘</li><li>按 <code>Ctrl+Shift+V</code></li></ul>
+        <p style="color:var(--w-muted);font-size:11px">备注：这一段是示例</p>`
+    },
+    {
+      name: "发布清单.md", path: "D:\\notes\\发布清单.md", icon: "M↓",
+      code: "## 发布前\n\n- [x] 版本号已 bump\n- [x] CHANGELOG 已写\n- [ ] 截图已更新\n- [ ] 双源镜像已同步\n\n### 预算\n| 项 | 上限 |\n| --- | --- |\n| exe | 14MB |\n| installer | 3.4MB |\n",
+      preview: `
+        <h4>发布前</h4>
+        <p><svg class="cb" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><use href="#cb-box"/><use href="#cb-tick"/></svg>版本号已 bump<br><svg class="cb" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><use href="#cb-box"/><use href="#cb-tick"/></svg>CHANGELOG 已写<br><svg class="cb" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><use href="#cb-box"/></svg>截图已更新<br><svg class="cb" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><use href="#cb-box"/></svg>双源镜像已同步</p>
+        <h5>预算</h5>
+        <table><tr><th>项</th><th>上限</th></tr><tr><td>exe</td><td>14MB</td></tr><tr><td>installer</td><td>3.4MB</td></tr></table>`
+    },
+    {
+      name: "接口.md", path: "D:\\notes\\接口.md", icon: "M↓",
+      code: "## 接口约定\n\n所有请求带 `X-Token`。\n\n## 错误码\n\n- 401 未授权\n- 429 限流\n- 500 服务端\n",
+      preview: `
+        <h4>接口约定</h4>
+        <p>所有请求带 <code>X-Token</code>。</p>
+        <h5>错误码</h5>
+        <ul><li><strong>401</strong> 未授权</li><li><strong>429</strong> 限流</li><li><strong>500</strong> 服务端</li></ul>`
+    },
+  ];
+
+  const VARIANTS = {
+    off: { label: "关（现状·硬切）", dur: 0, cls: "" },
+    A: { label: "A 复用 paneIn", dur: 200, cls: "enterA" },
+    B: { label: "B 页签专属", dur: 150, cls: "enterB" },
+    C: { label: "C 盖淡", dur: 150, cls: "coverIn" },
+    D: { label: "D 内容浮现", dur: 150, cls: "enterD" },
+  };
+
+  const win = document.getElementById("win");
+  const tstrip = document.getElementById("tstrip");
+  const content = document.getElementById("content");
+  const hint = document.getElementById("hint");
+  const fname = document.getElementById("fname");
+  const fpath = document.getElementById("fpath");
+  const ficon = document.getElementById("ficon");
+
+  let variant = "off";
+  let current = 0;      // 当前显示的文档
+  let lastFrom = 0;     // 上一次是从哪份切过来的（供「重播」）
+  let coverTimer = null;
+
+  function docHTML(i) {
+    const d = DOCS[i];
+    return `<div class="pe"><div class="ph">Markdown 源文</div><div class="paneBody"><div class="code">${
+      d.code.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    }</div></div></div>
+    <div class="pv"><div class="ph">预览</div><div class="paneBody"><div class="md">${d.preview}</div></div></div>`;
+  }
+
+  function makeDoc(i, cls) {
+    const el = document.createElement("div");
+    el.className = "doc" + (cls ? " " + cls : "");
+    el.innerHTML = docHTML(i);
+    return el;
+  }
+
+  function paintTabs() {
+    tstrip.replaceChildren(...DOCS.map((d, i) => {
+      const el = document.createElement("div");
+      el.className = "tab" + (i === current ? " active" : "");
+      el.innerHTML = `<span class="ico">${d.icon}</span><span class="nm">${d.name}</span>`;
+      el.addEventListener("click", () => go(i));
+      return el;
+    }));
+  }
+
+  function paintChrome() {
+    const d = DOCS[current];
+    fname.textContent = d.name;
+    fpath.textContent = d.path;
+    ficon.textContent = d.icon;
+  }
+
+  const NOTES = {
+    off: "硬切，无动画。",
+    A: "整块面板淡入上浮：200ms / 6px。面板半透明期间 --app-bg 会透出来（见下一条提示）。",
+    B: "整块面板淡入上浮：150ms / 4px。比 A 快，但同样会透出 --app-bg。",
+    C: "旧内容留在下层不动，新内容盖上去淡入；不露 --app-bg，代价是约 70ms 两屏文字重叠。",
+    D: "只动面板内的透明内容层：底色面板恒定不动，所以既不透 --app-bg，也不重叠。",
+  };
+
+  function resetHint() {
+    const v = VARIANTS[variant];
+    hint.textContent = v.dur
+      ? `当前：${v.label} —— ${NOTES[variant]}`
+      : `当前：${NOTES.off} 点上面的页签切换，或在工具栏切换方案后重新点页签。`;
+  }
+
+  // 切到第 i 份。fromOverride 供「重播」用
+  function go(i, fromOverride) {
+    const from = fromOverride !== undefined ? fromOverride : current;
+    if (i === current && fromOverride === undefined) return;
+
+    const v = VARIANTS[variant];
+    lastFrom = from;
+    current = i;
+    paintTabs();
+    paintChrome();
+
+    // 上一轮盖淡可能还留着定时器；连点时要让它先作废，否则它会误删这一轮的新层
+    if (coverTimer) { clearTimeout(coverTimer); coverTimer = null; }
+
+    if (!v.dur) {                       // 硬切
+      content.replaceChildren(makeDoc(i, ""));
+      return;
+    }
+
+    if (v.cls === "coverIn") {
+      // 盖淡：旧内容留在原处（下层），新内容叠上去 z-index:2 淡入
+      content.querySelectorAll(".doc.coverIn").forEach((el) => el.remove());
+      const el = makeDoc(i, "coverIn");
+      content.appendChild(el);
+      coverTimer = window.setTimeout(() => {
+        coverTimer = null;
+        content.querySelectorAll(".doc").forEach((x) => { if (x !== el) x.remove(); });
+      }, v.dur);
+      return;
+    }
+
+    // 淡入上浮：旧内容即时让位
+    content.replaceChildren(makeDoc(i, v.cls));
+  }
+
+  function setVariant(key) {
+    variant = key;
+    for (const b of document.querySelectorAll("[data-v]")) b.classList.toggle("on", b.dataset.v === key);
+    if (coverTimer) { clearTimeout(coverTimer); coverTimer = null; }
+    content.replaceChildren(makeDoc(current, ""));   // 先摆成静态，切方案本身不播
+    resetHint();
+  }
+
+  for (const b of document.querySelectorAll("[data-v]")) {
+    b.addEventListener("click", () => setVariant(b.dataset.v));
+  }
+  for (const b of document.querySelectorAll("[data-mode]")) {
+    b.addEventListener("click", () => {
+      win.dataset.mode = b.dataset.mode;
+      for (const x of document.querySelectorAll("[data-mode]")) x.classList.toggle("on", x === b);
+    });
+  }
+  document.getElementById("replay").addEventListener("click", () => {
+    // 重播 = 先把「从哪来」那份摆回去（盖淡需要它在下层），再按当前方案切一次
+    const target = current;
+    const from = lastFrom;
+    if (target === from) return;
+    if (coverTimer) { clearTimeout(coverTimer); coverTimer = null; }
+    current = from;
+    content.replaceChildren(makeDoc(from, ""));
+    paintTabs();
+    paintChrome();
+    go(target);
+  });
+
+  paintTabs();
+  paintChrome();
+  content.replaceChildren(makeDoc(0, ""));
+  resetHint();
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 import { Type, Scissors, Quote, AlignLeft, CaseSensitive, Undo2, Redo2, ChevronDown, ChevronUp, Code2, Maximize2 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { openInEditor } from "@/lib/openInEditor";
 import { stripHtml } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
 
@@ -52,7 +52,7 @@ export function FullscreenLaunchButton({ itemId, text, contentType, language }: 
       className="md-mode-btn"
       style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px" }}
       onClick={() => {
-        invoke("open_fullscreen_editor", { sourceId: itemId, content: text, contentType, language: language ?? null }).catch((e) => {
+        openInEditor({ sourceId: itemId, content: text, contentType, language }).catch((e) => {
           console.error("[全屏编辑] open_fullscreen_editor 失败:", e);
           toast("打开全屏失败: " + String(e), "error");
         });

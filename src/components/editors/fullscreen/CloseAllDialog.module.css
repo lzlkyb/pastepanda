@@ -1,0 +1,83 @@
+/**
+ * 多标签关闭守卫（聚合清单）样式。
+ *
+ * 外框/按钮沿用全局 dialog 类（dialog-backdrop / dialog-box w400 / dialog-header /
+ * dialog-body / dialog-footer / btn-*），这里只放本对话框独有的部分。
+ *
+ * 为什么不用内联 style：内联拿不到伪类、媒体查询与主题覆盖，是 U2/U6/U7 集体失效的根因
+ * （lint:ui 的 U8）。顺便也是 U5（字号/圆角/间距档位）能被机器检查的前提。
+ */
+
+/* 标题行：警示图标 + 标题 */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.headIcon {
+  color: var(--warning);
+}
+
+/* 引导句 */
+.lead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* 未保存文档清单。max-height 168px ≈ 4 行，超出内部滚动 ——
+   一次关 12 个标签也不会把对话框撑出屏幕。 */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.itemName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemTag {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.itemTagErr {
+  color: var(--danger);
+}
+
+/* 存在「自动保存失败」时的汇总提醒 */
+.failNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--danger);
+}
+
+.footerActions {
+  display: flex;
+  gap: 8px;
+}

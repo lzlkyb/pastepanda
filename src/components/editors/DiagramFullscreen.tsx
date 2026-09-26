@@ -17,18 +17,19 @@ import { DiagramCanvas, type DiagramCanvasHandle } from "./DiagramCanvas";
 import { DiagramAiPanel } from "./diagram/DiagramAiPanel";
 import { useDiagramExport } from "./diagram/useDiagramExport";
 import { ExportMenu } from "./diagram/ExportMenu";
-import { FullscreenShell } from "./FullscreenShell";
+import { FullscreenShell, type DocumentViewSlots } from "./FullscreenShell";
 import editorStyles from "./DiagramEditor.module.css";
 
 export function DiagramFullscreen({
   sourceId,
   initContent,
   onClose,
+  ...slots
 }: {
   sourceId: string | null;
   initContent: string | null;
   onClose: () => void;
-}) {
+} & DocumentViewSlots) {
   const { toast } = useToast();
   const canvasRef = useRef<DiagramCanvasHandle>(null);
   const originalDoc = useRef(parseDiagram(initContent)).current;
@@ -104,6 +105,7 @@ export function DiagramFullscreen({
       dirty={isDirty}
       onSave={handleSave}
       onClose={onClose}
+      {...slots}
       leftExtra={
         <>
           <span

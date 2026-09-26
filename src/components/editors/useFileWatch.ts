@@ -36,7 +36,13 @@ export interface FileWatch {
   checkNow: () => Promise<boolean>;
 }
 
-export function useFileWatch(filePath: string | null): FileWatch {
+/**
+ * @param filePath 被监听的文件（null = 剪贴板内容模式，恒空转）
+ * @param active   该文档是否为当前活动标签。多标签下每个标签都活着，
+ *                 切走的那些必须停掉轮询（规则 8.2）——否则 12 个标签
+ *                 每 2 秒各 stat 一次。切回来自动恢复（effect 重挂）。
+ */
+export function useFileWatch(filePath: string | null, active = true): FileWatch {
   /**
    * 我们认为磁盘上是哪一版。0 = 未知。
    *
@@ -80,7 +86,9 @@ export function useFileWatch(filePath: string | null): FileWatch {
       setExternalChanged(false);
       return;
     }
-    if (!winVisible) return;
+    // 窗口隐藏（辅助窗口 hide()）或本标签不在前台 → 暂停轮询：
+    // WebView 与 DOM 仍存活，空转会烧 CPU（claude.md 规则 8）
+    if (!winVisible || !active) return;
     let stopped = false;
     const id = window.setInterval(() => {
       void (async () => {
@@ -92,7 +100,7 @@ export function useFileWatch(filePath: string | null): FileWatch {
       stopped = true;
       window.clearInterval(id);
     };
-  }, [filePath, checkNow, winVisible]);
+  }, [filePath, checkNow, winVisible, active]);
 
   return { externalChanged, markSynced, checkNow };
 }

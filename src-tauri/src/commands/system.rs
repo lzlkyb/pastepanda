@@ -873,11 +873,18 @@ pub fn take_pending_file_open(
     Ok(guard.take().unwrap_or_default())
 }
 
-/// 打开全屏编辑器（独立 OS 全屏窗口，通用外壳：markdown/json/html/text/csv）。
-/// - 编辑器窗口已存在：emit `md-editor-load` 事件推送新数据并聚焦（支持连续打开不同内容）。
-/// - 不存在：把初始数据存入 PendingEditor，再创建 decorations(false) 的 editor.html 窗口，
-///   窗口内前端挂载后调用 take_editor_init 取走数据。
-/// content_type 决定前端查表选择的语言模式/视图形态；缺省回退 markdown。
+/// 打开全屏编辑器（独立 OS 全屏窗口，多标签：一个窗口里可同时挂多个文档）。
+///
+/// 三条路径由 `PendingEditor` 的状态机决定（见 lib.rs 的 `EditorWinStatus`）：
+/// - 无窗口 → 记录文档 + 建窗（前端挂载后 `take_editor_init` 批量取走）
+/// - 建窗中 → **只入队**，不 emit（此刻 emit 会打在前端还没注册监听器的空档里，静默丢失）
+/// - 已就绪 → emit `md-editor-load`，前端标签层按去重键决定「新开」还是「切过去」
+///
+/// content_type 决定前端查表选择的语言模式/视图形态，也决定窗口标题；缺省回退 markdown。
+///
+/// ❗ 队列化不是锦上添花：双击多选 N 个 `.md` 会连续发 N 次本命令，后 N-1 次都落在
+/// 「建窗中」这一档。旧实现用单槽 `Option` 会被后一个覆盖，而且 `get_webview_window`
+/// 此刻还没返回、每次都会再走一遍建窗分支 —— 同名 label 建窗失败，最后只剩一个文件。
 #[tauri::command]
 pub async fn open_fullscreen_editor(
     app: tauri::AppHandle,
@@ -907,42 +914,107 @@ pub async fn open_fullscreen_editor(
     }
     // 修复白屏（about:blank）：同步 command 里建 WebviewWindow 会死锁（tauri#13963），
     // 改为 async command 使其运行在主线程事件循环上。State 经 app.state() 获取。
+    let win_exists = app.get_webview_window("md-editor").is_some();
     let pending = app.state::<crate::PendingEditor>();
-    let payload = serde_json::json!({
-        "sourceId": source_id,
-        "content": content,
-        "filePath": file_path,
-        "contentType": content_type,
-        "language": language,
-    });
+    let init_args = (&source_id, &content, &file_path, &content_type, &language);
+    let mut need_build = false;
+    {
+        let mut guard = pending.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
+        // 兜底复位：窗口被外部销毁（任务栏关闭 / 崩溃）后状态可能仍停在 Ready，
+        // 不复位就会「以为窗口还在」而只 emit —— 那个事件没有任何接收方。
+        if !win_exists {
+            guard.status = crate::EditorWinStatus::Idle;
+            guard.queue.clear();
+        }
+        match guard.status {
+            // 已就绪 → 落到下面的 emit 分支
+            crate::EditorWinStatus::Ready => {}
+            // 建窗中 / 前端还没挂载完 → 只入队（前端 mark_editor_ready 时会取走）
+            crate::EditorWinStatus::Booting => {
+                guard.queue.push(editor_init_from(init_args));
+                let focus_target = app.get_webview_window("md-editor");
+                drop(guard);
+                // 窗口可能已经建出来但前端还没挂载完：顺手拉到前面，别让用户觉得没反应
+                if let Some(w) = focus_target {
+                    crate::present_window(&w);
+                }
+                return Ok(());
+            }
+            // 无窗口 → 入队 + 建窗
+            crate::EditorWinStatus::Idle => {
+                guard.queue.push(editor_init_from(init_args));
+                guard.status = crate::EditorWinStatus::Booting;
+                need_build = true;
+            }
+        }
+    }
 
-    // 窗口已存在 → 定向推送 + 聚焦
-    if let Some(window) = app.get_webview_window("md-editor") {
-        window
-            .emit("md-editor-load", payload)
-            .map_err(|e| format!("推送编辑器数据失败: {}", e))?;
-        // ❗ `present_window` 而不是裸 `show()`：md 编辑器窗口若正最小化着，
-        //   再从外部双击一个 md，`show()` 拉不回它——看着就是“点了没用”。
-        crate::present_window(&window);
+    if need_build {
+        build_editor_window(&app, content_type.as_deref())?;
         return Ok(());
     }
 
-    // 窗口不存在 → 存初始数据 + 建窗
-    {
-        let mut guard = pending.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
-        *guard = Some(crate::EditorInitData {
-            source_id,
-            content,
-            file_path,
-            content_type: content_type.clone(),
-            language,
-        });
-    }
+    // 已就绪 → 定向推送 + 聚焦
+    let window = app
+        .get_webview_window("md-editor")
+        .ok_or_else(|| "编辑器窗口不存在".to_string())?;
+    window
+        .emit(
+            "md-editor-load",
+            serde_json::json!({
+                "sourceId": source_id,
+                "content": content,
+                "filePath": file_path,
+                "contentType": content_type,
+                "language": language,
+            }),
+        )
+        .map_err(|e| format!("推送编辑器数据失败: {}", e))?;
+    // ❗ `present_window` 而不是裸 `show()`：md 编辑器窗口若正最小化着，
+    //   再从外部双击一个 md，`show()` 拉不回它——看着就是“点了没用”。
+    crate::present_window(&window);
+    Ok(())
+}
 
+/// 编辑器打开的原始入参：五元组，全部按引用。
+///
+/// 抽别名有两个原因：① `clippy::type_complexity` 不接受裸写的 5 元组；
+/// ② 这个「全靠位置对应」的临时聚合本来就该有个可读的名字。
+/// 字段顺序与 `EditorInitData` 一致：(source_id, content, file_path, content_type, language)。
+type EditorInitArgs<'a> = (
+    &'a Option<String>,
+    &'a Option<String>,
+    &'a Option<String>,
+    &'a Option<String>,
+    &'a Option<String>,
+);
+
+/// 由命令参数构造待打开文档。
+///
+/// 用「引用入参 + clone」而不是 move 参数：同一份参数在状态机的**多个分支**里都要用
+/// （入队 or emit），move 会让后面的分支编译不过。
+fn editor_init_from(
+    (source_id, content, file_path, content_type, language): EditorInitArgs<'_>,
+) -> crate::EditorInitData {
+    crate::EditorInitData {
+        source_id: source_id.clone(),
+        content: content.clone(),
+        file_path: file_path.clone(),
+        content_type: content_type.clone(),
+        language: language.clone(),
+    }
+}
+
+/// 建编辑器窗口（无边框 + Win11 圆角 + 近全屏留边），建好后显示。
+///
+/// 抽成独立函数的理由：它是一段「不该被状态机逻辑夹在中间」的纯建窗过程
+/// （标题计算 / 尺寸 / DWM 圆角），混在一起会让上面那三步状态机读不出来。
+fn build_editor_window(app: &tauri::AppHandle, content_type: Option<&str>) -> Result<(), String> {
+    use tauri::Manager;
     use tauri::webview::WebviewWindowBuilder;
 
     // 窗口标题随内容类型变化（窗口 label 保持 md-editor，避免改动 capabilities）
-    let title = match content_type.as_deref() {
+    let title = match content_type {
         Some("json") => "PastePanda JSON 编辑器",
         Some("html") => "PastePanda HTML 编辑器",
         Some("text") => "PastePanda 文本编辑器",
@@ -954,7 +1026,7 @@ pub async fn open_fullscreen_editor(
     };
 
     let mut builder = WebviewWindowBuilder::new(
-        &app,
+        app,
         "md-editor",
         tauri::WebviewUrl::App("editor.html".into()),
     )
@@ -1016,26 +1088,57 @@ pub async fn open_fullscreen_editor(
     Ok(())
 }
 
-/// 读取全屏编辑器的初始数据（幂等，不清空）。编辑器窗口挂载后调用。
+/// 读取全屏编辑器的初始数据（**幂等，不清空**）。编辑器窗口挂载后调用。
+///
+/// 返回**整个队列**：建窗期间可能已累积多个待打开文档（双击多选的场景）。
 ///
 /// 用 clone 而非 take：dev 模式下 React StrictMode 会双重挂载，挂载 effect 执行两次。
-/// 若用 take，第一次（被丢弃的）调用会消费掉数据，第二次（保留的）调用拿到 null，
-/// 编辑器内容为空。clone 保证两次调用拿到相同数据。PendingEditor 总是在
-/// open_fullscreen_editor 建窗前被覆盖，不会误用过期数据。
+/// 若用 take，第一次（被丢弃的）调用会消费掉数据，第二次（保留的）拿到空数组，
+/// 一个标签都建不出来。前端按去重键 merge，因此重复拿到同一份数据是无副作用的。
 #[tauri::command]
 pub fn take_editor_init(
     pending: State<crate::PendingEditor>,
-) -> Result<Option<crate::EditorInitData>, String> {
+) -> Result<Vec<crate::EditorInitData>, String> {
     let guard = pending.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
-    Ok(guard.clone())
+    Ok(guard.queue.clone())
+}
+
+/// 前端标签层初始化完成 → 把窗口状态翻到 `Ready`，并返回这期间新累积的文档。
+///
+/// ❗「置 Ready」与「取走队列」必须是一个原子操作。分成两步（先 take 再置位）的话，
+/// 两步之间到达的请求会走 `Booting` 分支入队，而前端已经不会再调 take 了 ——
+/// 那些文档永远不出现，也没有任何报错。
+#[tauri::command]
+pub fn mark_editor_ready(
+    pending: State<crate::PendingEditor>,
+) -> Result<Vec<crate::EditorInitData>, String> {
+    let mut guard = pending.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
+    guard.status = crate::EditorWinStatus::Ready;
+    Ok(std::mem::take(&mut guard.queue))
 }
 
 /// 关闭全屏编辑器窗口。
 ///
 /// 前端 ✕/Esc 触发关闭时先播放退场动画（约 190ms），动画结束后调用本命令真正关窗，
 /// 避免直接 window.close() 导致窗口瞬间消失。window 参数由 Tauri 注入为调用方窗口。
+///
+/// 关窗前把状态复位到 `Idle` 并清空队列：不复位的话下次打开会以为「窗口还活着」
+/// 而只 emit 事件，那个事件没有任何接收方 —— 用户看到的是「点了没反应」。
 #[tauri::command]
-pub fn close_editor_window(window: tauri::WebviewWindow) -> Result<(), String> {
+pub fn close_editor_window(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(pending) = app.try_state::<crate::PendingEditor>() {
+        match pending.0.lock() {
+            Ok(mut guard) => {
+                guard.status = crate::EditorWinStatus::Idle;
+                guard.queue.clear();
+            }
+            Err(e) => log::warn!("[编辑器] 关窗时复位状态失败: {e}"),
+        }
+    }
     window
         .close()
         .map_err(|e| format!("关闭编辑器窗口失败: {}", e))

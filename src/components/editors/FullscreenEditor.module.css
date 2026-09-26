@@ -7,8 +7,6 @@
   display: flex;
   flex-direction: column;
   background: var(--app-bg, #F8F9FB);
-  /* 入场动画（方案 B 玻璃浮升）：整体缩放浮起 + 轻过冲，纯 CSS 零依赖 */
-  animation: overlay-enter 0.36s cubic-bezier(0.34, 1.4, 0.4, 1) both;
 }
 
 @keyframes overlay-enter {
@@ -22,13 +20,22 @@
   }
 }
 
-/* 退场包裹层：FullscreenEditor 外层 div，关闭时播放下沉淡出，
-   动画结束后前端调用 close_editor_window 真正关窗。
+/* 窗口根层：FullscreenEditor 的最外层 div。
+   - 入场动画（方案 B 玻璃浮升）：整体缩放浮起 + 轻过冲，纯 CSS 零依赖
+   - 关闭时由 .windowExit 播下沉淡出，动画结束后前端调 close_editor_window 真正关窗
+
+   ❗ 入场动画必须挂在这一层（窗口根），**不能**挂到文档视图的 .overlay 上：
+   多标签保活下非活动标签是 display:none，而 CSS 动画在 display 恢复时会**重播**
+   —— 挂 .overlay 就等于「每次切标签都把整个编辑区重新缩放淡入一遍」，
+   用户观感是「切个页签像重新加载了一次」。窗口级入场只该在窗口出现时播一次。
+
    注意必须 position:fixed 占满视口——transform 一旦生效，
    内部 position:fixed 的 .overlay 会以本层为包含块，尺寸不能塌缩 */
 .windowRoot {
   position: fixed;
   inset: 0;
+  /* ui-rule-ok: 窗口级「一次性」入场动效（整窗浮入一次，且不在任何节奏体系里）；0.36s 与过冲曲线是配套调过的一组值 —— 要「轻过冲」必须用超出 M3 两条曲线控制点范围的 cubic-bezier(>1) */
+  animation: overlay-enter 0.36s cubic-bezier(0.34, 1.4, 0.4, 1) both;
 }
 
 .windowExit {
@@ -47,7 +54,7 @@
 }
 
 /* 「窗口动画」设置关闭：入场即时显示（退场由 JS 跳过快照直接关窗） */
-:global(.no-anim) .overlay {
+:global(.no-anim) .windowRoot {
   animation: none;
 }
 
@@ -655,8 +662,6 @@
   background: #1e1e2e;
   min-width: 200px;
   overflow: hidden;
-  /* #15 视图模式切换动画：从 display:none 恢复显示时 CSS 动画自动重播 */
-  animation: paneIn 0.24s ease;
 }
 
 .paneHeader {
@@ -745,17 +750,41 @@
   background: var(--card-bg, #fff);
   min-width: 200px;
   overflow: hidden;
-  /* #15 视图模式切换动画：面板每次挂载（切入分屏/纯预览）时淡入上浮 */
-  animation: paneIn 0.24s ease;
 }
 
-/* #15 面板切换动画 — 「窗口动画」关闭（no-anim）时即时切换 */
-@keyframes paneIn {
-  from { opacity: 0; transform: translateY(6px); }
+/* #15 内容层入场动画（视图模式切换 + 页签切换共用同一条动效）。
+
+   ❗ 挂点必须是**面板内的透明内容层**（.editorBody / .previewBody），
+   不能是 .editorPane / .previewPane —— 后两者是**不透明载体**
+   （background: #1e1e2e / var(--card-bg)），一旦把面板整体淡到半透明，
+   底下的 --app-bg 渐变就会透上来。真实渲染实测：整片发白，正是
+   「切页签闪」的另一种形态。挂在透明内容层上，透出来的仍是同一个面板底色。
+   依据：design/全屏编辑器-页签切换动画-设计稿.html（D 方案）。
+
+   ❗ 不能把 animation 直接写死在元素上：多标签保活下非活动标签是 display:none，
+   **CSS 动画在 display 恢复时会重播** —— 每次切回来都重播一次。改由
+   useDocumentView 的踢号（paneKick）驱动，且**播完就摘掉标记**：
+   非活动期间标记必然为空，恢复显示时无动画可重播。
+
+   ❗ 两段逐字节相同的 keyframes 是为**连点重播**：animation-name 不变时，
+   重新挂同一个类不会重启动画，靠踢号奇偶交替 A/B 强制名字变化。 */
+@keyframes contentInA {
+  from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }
 }
-:global(.no-anim) .editorPane,
-:global(.no-anim) .previewPane {
+@keyframes contentInB {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.contentEnterA {
+  animation: contentInA 150ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.contentEnterB {
+  animation: contentInB 150ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+/* 「窗口动画」关闭（no-anim）时即时切换 */
+:global(.no-anim) .contentEnterA,
+:global(.no-anim) .contentEnterB {
   animation: none;
 }
 
@@ -2043,4 +2072,11 @@
 
 .saveBadgeAsBtn:hover {
   filter: brightness(1.06);
+}
+
+/* ─── 多标签保活：非活动标签的容器隐藏 ───
+   不卸载子树（保住 CodeMirror 撤销历史/滚动位置），只让整棵子树不生成盒子。
+   display:none 与定位方式无关，所以内部 position:fixed 的 .overlay 也会被一并藏住。 */
+.tabPaneHidden {
+  display: none;
 }

@@ -12,6 +12,7 @@ import { useToast } from "@/components/Toast";
 import { useDialogStore } from "@/stores/dialogStore";
 import { getAiAvailability } from "@/lib/aiAvailability";
 import { errText } from "@/lib/utils";
+import { openInEditor } from "@/lib/openInEditor";
 import { generateDiagramFromPrompt } from "@/lib/diagram/aiGenerate";
 import {
   parseDiagram,
@@ -79,12 +80,8 @@ export function DiagramEditor({ item, registerActions }: { item: import("@/store
     const content = doc ? serializeDiagram(doc) : item.content || "";
     // 关闭内嵌弹窗，避免与全屏窗口双开同一记录
     closeEditor(item.id);
-    invoke("open_fullscreen_editor", {
-      sourceId: item.id,
-      content,
-      contentType: "diagram",
-      language: null,
-    }).catch((e) => toast("打开全屏失败：" + String(e), "error"));
+    openInEditor({ sourceId: item.id, content, contentType: "diagram" })
+      .catch((e) => toast("打开全屏失败：" + String(e), "error"));
   }, [item.id, item.content, closeEditor, toast]);
 
   const runAi = useCallback(async () => {

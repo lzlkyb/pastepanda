@@ -42,6 +42,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConfirmDialogHost } from "@/components/ConfirmDialogHost";
 import { PromptDialogHost } from "@/components/PromptDialogHost";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { openInEditor } from "@/lib/openInEditor";
 import { DiffDialog } from "@/components/DiffDialog";
 import { ToolboxView } from "@/components/ToolboxView";
 import { KnowledgeView } from "@/components/KnowledgeView";
@@ -104,7 +105,7 @@ function App() {
     const content = JSON.stringify({ version: 1, nodes: [], edges: [] });
     invoke<string>("insert_diagram_history", { content, text: diagramTitle(parseDiagram(content)), workspace: ws })
       .then((id) => {
-        invoke("open_fullscreen_editor", { sourceId: id, content, contentType: "diagram", language: null }).catch(() => {});
+        void openInEditor({ sourceId: id, content, contentType: "diagram" });
       })
       .catch((e) => {
         logger.error("新建流程图失败", e);
@@ -224,9 +225,7 @@ function App() {
       void import("@/lib/diagram/types").then(({ parseMermaid, serializeDiagram }) => {
         const content = serializeDiagram(parseMermaid(source));
         invoke<string>("insert_diagram_history", { content, text: diagramTitle(parseDiagram(content)), workspace: ws })
-          .then((id) =>
-            invoke("open_fullscreen_editor", { sourceId: id, content, contentType: "diagram", language: null }),
-          )
+          .then((id) => openInEditor({ sourceId: id, content, contentType: "diagram" }))
           .catch((err) => {
             logger.error("mermaid 编辑失败", err);
             toast("打开流程图编辑失败：" + String(err), "error");
@@ -326,24 +325,14 @@ function App() {
   // 全屏文本对比（方案 C 全屏深编入口）：读剪贴板预填左侧，独立大窗打开
   const openFreeDiffFullscreen = useCallback(async () => {
     const left = await readClipboardText();
-    void invoke("open_fullscreen_editor", {
-      sourceId: null,
-      content: left,
-      contentType: "diff",
-      language: null,
-    }).catch(() => {});
+    openInEditor({ content: left, contentType: "diff" }).catch(() => {});
   }, []);
 
   // 模态「全屏深编」：把当前左/右两侧文本经 PPDIFF:: JSON 编码跨窗口传入，
   // 新窗口创建成功后关闭模态（失败则保留模态）。
   const openFullscreenDiff = useCallback((left: string, right: string) => {
     const content = `PPDIFF::${JSON.stringify({ left, right })}`;
-    void invoke("open_fullscreen_editor", {
-      sourceId: null,
-      content,
-      contentType: "diff",
-      language: null,
-    })
+    openInEditor({ content, contentType: "diff" })
       .then(() => setFreeDiff((f) => ({ ...f, open: false })))
       .catch(() => {});
   }, []);
@@ -876,7 +865,11 @@ function App() {
   useEffect(() => {
     const openMd = (paths: string[]) => {
       if (paths.length === 0) return;
-      void invoke("open_fullscreen_editor", { filePath: paths[0], contentType: "markdown" }).catch(() => {});
+      // 双击多选：**全部**开成标签。改前只开 paths[0]，其余静默丢弃——
+      // 用户框选 5 个 md 双击，只出来 1 个，另外 4 个没有任何提示。
+      for (const p of paths) {
+        openInEditor({ filePath: p, contentType: "markdown" }).catch(() => {});
+      }
     };
     // 应用已在运行：第二个实例的参数经 single-instance 插件 emit 过来
     const unlisten = listen<string[]>("file-open-event", (e) => openMd(e.payload));

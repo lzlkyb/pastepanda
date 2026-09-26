@@ -24,6 +24,7 @@ import {
   countImages,
 } from "@/lib/richContent";
 import { logger } from "@/lib/logger";
+import { openInEditor } from "@/lib/openInEditor";
 import styles from "./RichEditor.module.css";
 
 /**
@@ -324,19 +325,15 @@ export function RichEditor({ item, registerActions }: EditorProps) {
           type="button"
           className={styles.fullscreenBtn}
           title="全屏编辑"
-          onClick={async () => {
-            try {
-              const { invoke } = await import("@tauri-apps/api/core");
-              await invoke("open_fullscreen_editor", {
-                sourceId: item.id,
-                content: htmlRef.current,
-                contentType: "rich",
-                language: null,
-              });
-            } catch (e) {
+          onClick={() => {
+            openInEditor({
+              sourceId: item.id,
+              content: htmlRef.current,
+              contentType: "rich",
+            }).catch((e) => {
               logger.error("[全屏编辑] 打开失败", e);
               toast("打开全屏失败: " + String(e), "error");
-            }
+            });
           }}
         >
           ⤢ 全屏
