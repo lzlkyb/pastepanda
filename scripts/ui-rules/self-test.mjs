@@ -56,7 +56,22 @@ const cssBadRules = new Set(cssBad.findings.map((f) => f.rule));
 expectSet(
   "violations.css",
   cssBadRules,
-  new Set(["U2", "U2ease", "U2token", "U5radius", "U5font", "U5space", "U6", "V2", "V3rgb", "V3", "V6"]),
+  new Set([
+    "U2",
+    "U2ease",
+    "U2spring",
+    "U2token",
+    "U5radius",
+    "U5font",
+    "U5space",
+    "U6",
+    "V2",
+    "V3rgb",
+    "V3",
+    "V6",
+    "V8leftbar",
+    "V8font",
+  ]),
 );
 
 // 豁免：带理由的那一条必须被压住（U5radius 全文件只应剩 1 处 = .k-u5-a）
@@ -67,11 +82,15 @@ if (radiusHits.length !== 1) {
   notes.push("豁免生效：带理由的 ui-rule-ok 压住了 .k-allow");
 }
 
-// 计数型：V1 边框
-if (cssBad.stats.border !== 1) {
-  failures.push(`V1 计数错误：应为 1 处，实际 ${cssBad.stats.border} 处`);
+// 计数型：V1 边框。夹具里有 3 条会命中的 border——
+//   .k-v1（border-top）/ .k-v1-allow（border-top，带理由豁免）/ .k-v8-leftbar（border-left）；
+//   .k-v8-leftbar-split 写的是 border-left-width/color，V1 的属性名正则不收。
+// 所以期望 2 处 = 「计数真的在数」+「计数认 ui-rule-ok」（后者 2026-09-26 之前是坏的：
+// 直接 ++，写了理由也照样计数，与文档「说不出理由 → 违反」的判定句对不上）。
+if (cssBad.stats.border !== 2) {
+  failures.push(`V1 计数错误：应为 2 处（3 条 border 减 1 条豁免），实际 ${cssBad.stats.border} 处`);
 } else {
-  notes.push("V1 边框计数生效");
+  notes.push("V1 边框计数生效（3 条中豁免 1 条 → 计 2 处，且豁免确实压住了计数）");
 }
 
 const cssOkText = read("clean.css");

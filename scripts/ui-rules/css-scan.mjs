@@ -15,6 +15,9 @@ import {
   COLOR_NAME_VARS,
   GRAY_TEXT_TOKENS,
   COLORED_BG_PREFIXES,
+  FONT_BLACKLIST,
+  LEFT_BAR_MIN_PX,
+  LEFT_BAR_SEMANTIC,
 } from "./rules.mjs";
 
 const num = (n) => Number(n);
@@ -26,6 +29,26 @@ function pxValues(value) {
   let m;
   while ((m = re.exec(value)) !== null) out.push({ v: num(m[1]), raw: m[0] });
   return out;
+}
+
+/**
+ * V8.1 用：解析 `border-radius` 的各个角数值（px），保留裸 `0`。
+ *
+ * 🔴 不能直接复用 pxValues：`0 8px 8px 0` 里的两个裸 `0` 没有 px 单位，
+ * pxValues 只会返回 `[8, 8]` —— 于是判定会以为「四角皆非 0」，
+ * 把「左直角」这条**最重要的豁免**判反，正确的引用块写法会被报成 AI 味。
+ * 这个 bug 正是 self-test 的 clean.css 抓出来的（2026-09-25）。
+ *
+ * @returns {number[]|null} null = 含百分比/var()/calc() 等判不了的形式，调用方应放行
+ */
+function cornerRadii(value) {
+  const out = [];
+  for (const tok of String(value).trim().split(/[\s/]+/).filter(Boolean)) {
+    const m = /^(-?\d*\.?\d+)(px)?$/.exec(tok);
+    if (!m) return null;
+    out.push(num(m[1]));
+  }
+  return out.length ? out : null;
 }
 
 /** 提取值里所有时间量（毫秒归一到 ms）。注意 `0s` 不算动效 */
@@ -173,6 +196,9 @@ export function scanCss(text, inScopeLine, hasAllow) {
       push("U2ease", decl, `${decl.prop}: ${m[0]}`);
     }
     if (/\bsteps\(/.test(value)) push("U2ease", decl, `${decl.prop}: ${value}`);
+    // 4) 弹簧（U2 2026-09-25 修订）：CSS 侧弹簧只许走 --ease-spring 令牌；
+    //    裸写 linear(...) 采样 = 自定义弹簧曲线，曲线数失控的口子。
+    if (/(^|[^-\w])linear\(/.test(value)) push("U2spring", decl, `${decl.prop}: ${value}`);
   };
 
   root.walkDecls((decl) => {
@@ -221,6 +247,13 @@ export function scanCss(text, inScopeLine, hasAllow) {
       push("V2", decl, `${prop}: ${value}`);
     }
 
+    // ── V8.2 字体黑名单 ──────────────────────────────────────
+    // 生成式设计缺约束时的默认字体（Inter/Roboto/Arial/Fraunces）。
+    // 本项目走系统字体栈，实测 0 处；本条是防回归的预防性判据。
+    if (prop === "font-family" && FONT_BLACKLIST.test(value)) {
+      push("V8font", decl, `${prop}: ${value}`);
+    }
+
     // ── V3 硬编码颜色 ────────────────────────────────────────
     if (hasHex(value)) {
       push("V3", decl, `${prop}: ${value}`);
@@ -234,8 +267,15 @@ export function scanCss(text, inScopeLine, hasAllow) {
     }
 
     // ── V1 边框（计数型，不逐行报） ──────────────────────────
+    //
+    // 🔴 与 U5space 同口径：计数必须跟着 `ui-rule-ok` 豁免走（理由见上面 U5space 那段）。
+    //    V1 此前直接 `stats.border++`，于是**写了理由也照样计数** —— 而文档的判定句是
+    //    「说不出理由 → 违反」，等于把「边框是最后一手」读成了「一律不许加边框」。
+    //    实测 2026-09-26：本次改动的 13 处里全是按钮 / 输入框 / 分段控件 / 侧栏分割线，
+    //    没有一条是「用间距或背景色就能替代」的，它们全说得出理由。
     if (/^border(-(top|bottom|left|right|inline|block|start|end))?$/.test(prop) && /\bsolid\b|\b\d+px\b/.test(value)) {
-      if (inScopeLine(decl.source?.start?.line ?? 0)) stats.border++;
+      const line = decl.source?.start?.line ?? 0;
+      if (inScopeLine(line) && !hasAllow(line)) stats.border++;
     }
   });
 
@@ -254,6 +294,45 @@ export function scanCss(text, inScopeLine, hasAllow) {
       rule: "V6",
       line: fgLine,
       snippet: `${rule.selector} { background: ${bg.value}; color: ${fg.value} }`,
+    });
+  });
+
+  // ── V8.1 四角圆角 + 左侧色条（同 V6，需要兄弟声明，所以在 rule 层做） ──
+  //
+  // 🔴 判据必须贴着 baoyu 原文「containers with **rounded corners** and left-border
+  // accent color」。三个放行条件各自防一类误报：
+  //   ① 选择器是引用块/警示条 → 语义性用法（LEFT_BAR_SEMANTIC 逐条给了理由）
+  //   ② 圆角里有 0（`0 8px 8px 0`）→ 左侧直角，这恰恰是色条的正确写法
+  //   ③ 色条宽度 < 2px 或颜色是中性灰 → 那是普通的 1px 分隔线，V1 管它
+  root.walkRules((rule) => {
+    if (LEFT_BAR_SEMANTIC.some(([re]) => re.test(rule.selector))) return;
+    const decls = (rule.nodes || []).filter((n) => n.type === "decl");
+
+    // ① 四角皆非 0
+    const radius = decls.find((d) => d.prop.toLowerCase() === "border-radius");
+    if (!radius) return;
+    const radii = cornerRadii(radius.value);
+    if (!radii || radii.some((v) => v === 0)) return;
+
+    // ② 左侧色条：≥2px 且彩色
+    const blDecls = decls.filter((d) =>
+      /^border-left(-(width|color|style))?$/.test(d.prop.toLowerCase()),
+    );
+    if (!blDecls.length) return;
+    const widths = blDecls.flatMap((d) => pxValues(String(d.value)).map((p) => p.v));
+    if (!widths.some((v) => v >= LEFT_BAR_MIN_PX)) return;
+    if (!blDecls.some((d) => isColoredBg(String(d.value)))) return;
+
+    const line = blDecls[0].source?.start?.line ?? 0;
+    const radiusLine = radius.source?.start?.line ?? 0;
+    if (!inScopeLine(line) && !inScopeLine(radiusLine)) return;
+    if (hasAllow(line) || hasAllow(radiusLine)) return;
+    findings.push({
+      rule: "V8leftbar",
+      line,
+      snippet: `${rule.selector} { border-radius: ${radius.value}; ${blDecls
+        .map((d) => `${d.prop}: ${d.value}`)
+        .join("; ")} }`,
     });
   });
 

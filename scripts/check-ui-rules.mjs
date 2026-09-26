@@ -186,7 +186,12 @@ const blockCount = [...grouped.entries()].reduce(
 );
 
 if (!grouped.size && !QUIET) {
-  console.log("  ✅ 改动行没碰到 U2/U5/U6/V2/V3/V6/U8/U3.5/L2/L3 的判定线");
+  // 🔴 从 RULES 现算，不写死一份清单——手写的那份在加了 U2spring / V8 之后就成了谎话，
+  //    而「报告说查过了、其实没这条判据」正是这个工具最该防的故障。
+  const ids = Object.entries(RULES)
+    .filter(([, r]) => r.tier !== "info")
+    .map(([id]) => id);
+  console.log(`  ✅ 改动行没碰到 ${ids.join("/")} 的判定线`);
 }
 
 const byId = [...grouped.entries()].sort((a, b) => {

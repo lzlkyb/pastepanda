@@ -73,6 +73,41 @@ export const COLORED_BG_PREFIXES = [
 ];
 
 /**
+ * V8.2 · 字体黑名单。
+ *
+ * 来源：baoyu-design「overused font families (Inter, Roboto, Arial, Fraunces)」——
+ * 这四个是生成式设计在缺约束时的默认字体，也就是「生成味」的探针之一。
+ *
+ * 2026-09-25 实测全库 **0 处**。本项目走系统字体栈（`inherit` + `SF Mono`/`Consolas`），
+ * 这是桌面对齐原生观感的前提，所以本条是**防回归的预防性判据**，成本为零。
+ * ⚠️ `\b` 保证了 `font-family: inherit` 不会被 `Inter` 误匹配（实测无假警报）。
+ */
+export const FONT_BLACKLIST = /\b(Inter|Roboto|Arial|Fraunces)\b/i;
+
+/**
+ * V8.1 · 左侧色条的最小宽度（px）。
+ * 1px 是普通分隔线（V1 管的那类），≥2px 才是 baoyu 点名的「accent bar」。
+ */
+export const LEFT_BAR_MIN_PX = 2;
+
+/**
+ * V8.1 的语义豁免：这些选择器上的「圆角 + 左侧色条」是约定俗成的表达，不是装饰。
+ * 逐条给理由——说不清理由的不该在这里（同 RAW_COLOR_FILES 的纪律）。
+ *
+ * 🔴 判据必须贴着 baoyu 原文「containers with **rounded corners** and left-border
+ * accent color」：左侧一旦是直角（`border-radius: 0 8px 8px 0`），色条就从
+ * 「AI 味装饰」变成「引用/警示的正确写法」——那一类由下面的「左直角」条件放行，
+ * 不靠这张表。
+ */
+export const LEFT_BAR_SEMANTIC = [
+  [/blockquote/i, "Markdown 引用块的通用表达（GitHub 与各渲染器一致）"],
+  [
+    /\b(note|warn|warning|alert|callout|tip|danger)/i,
+    "警示/提示条：左侧色条是这类组件的行业惯例",
+  ],
+];
+
+/**
  * 豁免注释。写法必须带理由，理由太短不算数——
  * 文档的判定句是「说不出理由 → 违反」，所以「说不出理由」这件事本身必须被机器拦下，
  * 否则一条 `/* ui-rule-ok *​/` 就能把整个文件洗白。
@@ -114,6 +149,12 @@ export const RULES = {
     title: "缓动曲线不在两条里",
     why: "曲线只两条：常规 cubic-bezier(0.2,0,0,1)、进入视野（减速）cubic-bezier(0.05,0.7,0.1,1)。",
     fix: "换成两条之一；无把握就用常规那条。",
+  },
+  U2spring: {
+    tier: "warn",
+    title: "CSS 裸写 linear() 弹簧曲线（2026-09-25 U2 修订新增）",
+    why: "弹簧只许一组定参（k=130/c=16，文档 U2 §弹簧）——CSS 侧必须经单一令牌 --ease-spring，裸写 linear(...) 的自定义弹簧会让曲线数失控。",
+    fix: "用 var(--ease-spring)（首次需要时在 globals.css 按文档参数定义），且只用在位移/尺寸属性上——opacity/color 禁弹簧。",
   },
   U2token: {
     tier: "warn",
@@ -169,6 +210,24 @@ export const RULES = {
     why: "在彩色背景上把文字调灰，结果是「脏」而不是「次要」——业余感最常见的单一来源。",
     fix: "取同一色相、降饱和或改亮度（如 var(--accent-strong) 而不是 var(--text-muted)）。",
   },
+  V8leftbar: {
+    tier: "warn",
+    title: "四角圆角 + 左侧色条（生成味特征）",
+    why:
+      "「圆角容器 + 左边一条彩线」是生成式设计在无约束时的默认产出，是这个味道最好认的探针。" +
+      "2026-09-25 全库基线：8 处全部是引用块/警示条（已豁免），真反模式 0 处——本条拦的是以后新加的。",
+    fix:
+      "要么四角改直角（色条贴直边，如 border-radius: 0 8px 8px 0），要么去掉左侧色条（回到 V1 的 ①间距 → ②背景色）；" +
+      "语义上确实是引用块/警示条，就让选择器体现出来（blockquote / note / warn / alert…）。",
+  },
+  V8font: {
+    tier: "block",
+    title: "字体黑名单（Inter / Roboto / Arial / Fraunces）",
+    why:
+      "这四个是生成式设计的默认字体。本项目走系统字体栈（inherit + SF Mono/Consolas），" +
+      "这是桌面对齐原生观感的前提；换 Web 字体在中文环境下只能回落到系统字，平白多一层不一致。2026-09-25 实测全库 0 处。",
+    fix: "删掉这一项让字重继承（font-family: inherit）；等宽场景写成 SF Mono / Consolas 那一组。",
+  },
   U8: {
     tier: "warn",
     title: "内联 style={{}}",
@@ -209,7 +268,7 @@ export const RULES = {
 };
 
 /**
- * 机器判不了的，交给这 13 条人工过（都是文档 §9 自查清单里剩下的）。
+ * 机器判不了的，交给这 14 条人工过（都是文档 §9 自查清单里剩下的）。
  * 校验器每次跑完都把它们打出来——「查得到的机器查，查不到的别忘了」。
  */
 export const MANUAL_CHECKLIST = [
@@ -225,5 +284,6 @@ export const MANUAL_CHECKLIST = [
   ["L6", "能点的看得出能点、点不动的没长得像能点吗？"],
   ["V4", "嵌套容器内圆角 = 外圆角 − padding 吗？（结果 ≤ 0 就用直角）"],
   ["V5", "🔴 去色测试：截图转灰度后层级还看得出来吗？"],
+  ["V7", "🔴 删元素测试：这块里有没有「删掉后信息量不变」的元素（假数字 / 无目标链接）？"],
   ["—", "🔴 黑话测试：把截图给没用过的人，他能不能逐块说出「这是干吗的」？"],
 ];

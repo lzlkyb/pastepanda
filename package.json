@@ -22,6 +22,7 @@
     "lint:ui": "node scripts/check-ui-rules.mjs",
     "lint:ui:all": "node scripts/check-ui-rules.mjs --all",
     "lint:ui:selftest": "node scripts/ui-rules/self-test.mjs",
+    "lint:ui:dump": "node scripts/ui-rules/dump-counters.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
     "prepare": "husky"

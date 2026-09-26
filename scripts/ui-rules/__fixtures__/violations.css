@@ -18,6 +18,11 @@
   transition: color 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* U2spring · 裸写 linear() 弹簧采样（必须走 --ease-spring 令牌） */
+.k-u2-spring {
+  transition: transform 300ms linear(0, 1.045 55%, 0.998 80%, 1);
+}
+
 /* U2token · token 值本身偏离（token 是扩散源） */
 .k-u2-d {
   --dur-fast: 100ms;
@@ -63,6 +68,30 @@
 /* V1（计数型）+ V3 */
 .k-v1 {
   border-top: 1px solid #dddddd;
+}
+
+/* V1 计数同样要认豁免：这条带了理由，不该计入 stats.border
+   （「说不出理由 → 违反」的出口） */
+.k-v1-allow {
+  border-top: 1px solid var(--border-color); /* ui-rule-ok: 夹具用——钉住 V1 计数认豁免 */
+}
+
+/* V8.1 · 四角圆角 + 左侧色条（生成味特征） */
+.k-v8-leftbar {
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+}
+
+/* V8.1 · width/color 拆开写的也要认出来 */
+.k-v8-leftbar-split {
+  border-radius: 12px;
+  border-left-width: 4px;
+  border-left-color: var(--warning);
+}
+
+/* V8.2 · 字体黑名单 */
+.k-v8-font {
+  font-family: "Inter", sans-serif;
 }
 
 /* 豁免写法：带理由 → 不该报 */

@@ -46,7 +46,49 @@
   color: var(--text-muted);
 }
 
+/* 弹簧经令牌走（合规路径），且 linear-gradient 不是弹簧（误报防线） */
+.ok-u2-spring {
+  transition: transform 300ms var(--ease-spring);
+  background: linear-gradient(180deg, var(--card-bg), transparent);
+}
+
 /* 环境动画（≥1s）不参与 U2，这是文档明确写了的豁免 */
 .ok-env-anim {
   animation: drift 3.4s ease-in-out infinite;
+}
+
+/* 🔴 V8.1 的四条误报防线——判据贴着 baoyu 原文（「*四角*圆角 + 左色条」），
+   下面每一条都差一个条件，必须全部放行： */
+
+/* ① 左直角：色条的正确写法，不是「圆角容器 + 色条」 */
+.ok-v8-bar-straight {
+  border-radius: 0 8px 8px 0;
+  border-left: 3px solid var(--accent);
+}
+
+/* ② 1px 中性分隔线：那是 V1 管的普通边框，不是色条 */
+.ok-v8-hairline {
+  border-radius: 8px;
+  border-left: 1px solid var(--border-color);
+}
+
+/* ③ 引用块：Markdown 通用表达，语义性用法 */
+.ok-v8-markdown blockquote {
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+}
+
+/* ④ 警示条：左侧色条是这类组件的行业惯例 */
+.ok-v8-note {
+  border-radius: 8px;
+  border-left: 3px solid var(--warning);
+}
+
+/* V8.2 · 系统字体栈（合规路径，注意 inherit 不能被 Inter 误匹配） */
+.ok-v8-font {
+  font-family: inherit;
+}
+
+.ok-v8-font-mono {
+  font-family: "SF Mono", Consolas, monospace;
 }
