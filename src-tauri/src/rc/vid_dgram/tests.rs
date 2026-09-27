@@ -3,7 +3,7 @@
 use super::*;
 
 fn dgrams(seq: u32, data: &[u8], key: bool) -> Vec<Vec<u8>> {
-    frame_dgrams(seq, data, key, 1_758_000_000_000, 3, 5, 1920, 1080, false)
+    frame_dgrams(seq, data, key, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264)
 }
 
 /// 喂一批片，返回期间交付的全部帧。
@@ -352,4 +352,111 @@ fn take_seq_回绕跳过0() {
     let mut s = VidDgramSender { next_seq: u32::MAX };
     assert_eq!(s.take_seq(), u32::MAX);
     assert_eq!(s.take_seq(), 1, "回绕跳过 0，落到 1");
+}
+
+// ── P3.1 RS FEC ──
+
+fn dgrams_rs(seq: u32, data: &[u8], key: bool, m: usize) -> Vec<Vec<u8>> {
+    frame_dgrams_rs(seq, data, key, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264, m)
+}
+
+#[test]
+fn rs_无丢失重组往返() {
+    let data: Vec<u8> = (0..20_000u32).map(|i| i as u8).collect();
+    let dgs = dgrams_rs(1, &data, true, 2);
+    let mut r = VidReassembler::new();
+    let got = feed_all(&mut r, &dgs);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].data, data, "RS 无丢失应逐字节一致");
+}
+
+#[test]
+fn rs_组内丢片自动恢复() {
+    // 40KB 帧 → 40 数据片 → 3 组（16+16+8），m=2 共 6 校验片。
+    // 每组丢 1 片（丢 3 片数据 + 1 片校验，校验丢了不影响数据完整性）
+    let data: Vec<u8> = (0..40_000u32).map(|i| (i * 7) as u8).collect();
+    let dgs = dgrams_rs(1, &data, true, 2);
+    assert_eq!(dgs.len(), 40 + 6, "数据片 40 + 校验片 6");
+    let drop = |dg: &[Vec<u8>], idxs: &[usize]| -> Vec<Vec<u8>> {
+        dg.iter()
+            .enumerate()
+            .filter(|(i, _)| !idxs.contains(i))
+            .map(|(_, d)| d.clone())
+            .collect()
+    };
+    let survived = drop(&dgs, &[3, 20, 41]);
+    let mut r = VidReassembler::new();
+    let got = feed_all(&mut r, &survived);
+    assert_eq!(got.len(), 1, "每组丢 1 片都应可恢复");
+    assert_eq!(got[0].data, data, "恢复后逐字节一致");
+}
+
+#[test]
+fn rs_丢超m片整帧报废_corrupt等关键帧() {
+    let data: Vec<u8> = (0..20_000u32).map(|i| i as u8).collect();
+    let mut r = VidReassembler::new();
+    // 先交付一个关键帧建立基准
+    assert_eq!(feed_all(&mut r, &dgrams_rs(0, &data, true, 1)).len(), 1);
+    // P 帧（seq 1，m=1）一组丢 2 片 > 1 → 注定不完整
+    let p1 = dgrams_rs(1, &data, false, 1);
+    let survived: Vec<Vec<u8>> = p1
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 2 && *i != 5)
+        .map(|(_, d)| d.clone())
+        .collect();
+    let mut any = false;
+    for dg in &survived {
+        any |= !r.feed(dg).is_empty();
+    }
+    assert!(!any, "超冗余丢失不得产出任何帧");
+    // 其后 P 帧（seq 2）出洞进宽限，同样不得交付（花屏防线）
+    for dg in &dgrams_rs(2, &data, false, 1) {
+        assert!(r.feed(dg).is_empty(), "引用链断掉后的 P 帧必须被拦截");
+    }
+    // 关键帧（seq 3）到达：重新起链，滞留帧按序补交付
+    let mut got = feed_all(&mut r, &dgrams_rs(3, &data, true, 1));
+    assert!(!got.is_empty() && got[0].key, "关键帧必须能重新起链");
+    // 其后 P 帧正常交付
+    got = feed_all(&mut r, &dgrams_rs(4, &data, false, 1));
+    assert_eq!(got.len(), 1);
+}
+
+#[test]
+fn rs_m随帧自描述_两帧不同m互不污染() {
+    let d1: Vec<u8> = (0..20_000u32).map(|i| i as u8).collect();
+    let d2: Vec<u8> = (0..9_000u32).map(|i| (i * 3) as u8).collect();
+    let f1 = dgrams_rs(1, &d1, true, 1); // m=1
+    let f2 = dgrams_rs(2, &d2, false, 4); // m=4
+    let mut r = VidReassembler::new();
+    // 交错投喂：f1 的部分、f2 的部分、f1 剩余、f2 剩余
+    let mut got = Vec::new();
+    for dg in f1.iter().take(10) {
+        got.extend(r.feed(dg));
+    }
+    for dg in f2.iter().step_by(2) {
+        got.extend(r.feed(dg));
+    }
+    for dg in f1.iter().skip(10) {
+        got.extend(r.feed(dg));
+    }
+    for (i, dg) in f2.iter().enumerate() {
+        if i % 2 == 1 {
+            got.extend(r.feed(dg));
+        }
+    }
+    assert_eq!(got.len(), 2, "两帧不同 m 都应完整交付");
+    assert_eq!(got[0].data, d1);
+    assert_eq!(got[1].data, d2);
+}
+
+#[test]
+fn 旧格式xor路径不受影响() {
+    // 回归钉：RS 引入后，旧 XOR 格式（对端不支持 RS 时仍会发）必须原样工作
+    let data: Vec<u8> = (0..5_000u32).map(|i| i as u8).collect();
+    let dgs = dgrams(1, &data, true);
+    let mut r = VidReassembler::new();
+    let got = feed_all(&mut r, &dgs);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].data, data);
 }

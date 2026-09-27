@@ -60,6 +60,9 @@ impl Capability {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum RcFrame {
+    /// 只查询双方是否都已粘贴对方的配对码；不创建远程会话。
+    PairCheck,
+    PairStatus { paired: bool },
     /// 发起端申请会话。
     Request {
         capability: Capability,
@@ -82,6 +85,11 @@ pub enum RcFrame {
         ///（画面退化成每秒一张关键帧的幻灯片），所以被控端按可靠流发 P 帧。
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vid_dgram: Option<bool>,
+        /// P3.1：发起端能解 **RS FEC** 视频数据报（vid_dgram 置位才有意义）。
+        /// `None`/false = 旧版发起端——被控端照走 XOR 老格式（RS 帧的
+        /// frag_count 字段语义变了，旧重组器解不了）。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fec_rs: Option<bool>,
         /// G3：发起端申请系统声音（音频流）。`None`/false = 旧版发起端或用户
         /// 关了声音——被控端不开音频采集。与 `vid_dgram` 同款兼容三件套。
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,11 +209,17 @@ mod tests {
 
     #[test]
     fn frame_roundtrip() {
+        assert_eq!(RcFrame::decode(&RcFrame::PairCheck.encode().unwrap()).unwrap(), RcFrame::PairCheck);
+        assert_eq!(
+            RcFrame::decode(&RcFrame::PairStatus { paired: true }.encode().unwrap()).unwrap(),
+            RcFrame::PairStatus { paired: true }
+        );
         let f = RcFrame::Request {
             capability: Capability::Control,
             uno_code: None,
             uno_pass: None,
             vid_dgram: Some(true),
+            fec_rs: Some(true),
             audio: None,
         };
         let b = f.encode().unwrap();
@@ -216,6 +230,7 @@ mod tests {
             uno_code: None,
             uno_pass: None,
             vid_dgram: None,
+            fec_rs: None,
             audio: None,
         };
         let s = String::from_utf8(minimal.encode().unwrap()).unwrap();
@@ -231,6 +246,7 @@ mod tests {
             uno_code: None,
             uno_pass: Some("s3cret-密码".into()),
             vid_dgram: None,
+            fec_rs: None,
             audio: None,
         };
         let b = f.encode().unwrap();
@@ -243,6 +259,7 @@ mod tests {
             uno_code: Some("AB2C-3DEF".into()),
             uno_pass: None,
             vid_dgram: None,
+            fec_rs: None,
             audio: None,
         };
         let s2 = String::from_utf8(f2.encode().unwrap()).unwrap();
@@ -257,6 +274,7 @@ mod tests {
             uno_code: Some("AB2C-3DEF".into()),
             uno_pass: None,
             vid_dgram: None,
+            fec_rs: None,
             audio: None,
         };
         let b = f.encode().unwrap();
@@ -264,11 +282,12 @@ mod tests {
         // 旧版对端发来的 Request 没有 uno_code/uno_pass 字段，也要能解（default 补 None）
         let old = r#"{"t":"request","capability":"control"}"#.as_bytes();
         match RcFrame::decode(old).unwrap() {
-            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram, audio } => {
+            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram, fec_rs, audio } => {
                 assert_eq!(capability, Capability::Control);
                 assert_eq!(uno_code, None, "旧对端没有这个字段，反序列化补 None");
                 assert_eq!(uno_pass, None, "固定密码位同理（方案 C）");
                 assert_eq!(vid_dgram, None, "能力位同理");
+                assert_eq!(fec_rs, None, "RS FEC 能力位同理（P3.1）");
                 assert_eq!(audio, None, "音频申请位同理（G3）");
             }
             other => panic!("unexpected {other:?}"),

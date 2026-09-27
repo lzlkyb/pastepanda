@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 记一条时间补全与预览 设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 940px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; vertical-align: top; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .warn { color: #b45309; font-weight: 600; }
+
+  /* ===== compose 区 1:1 复刻（TodoIslandList 的 hd/ls/foot + TodoIsland.module.css 材质） ===== */
+  .stage-wrap { display: flex; gap: 20px; flex-wrap: wrap; }
+  .island {
+    width: 420px; height: 280px; border-radius: 12px; overflow: hidden; position: relative;
+    display: flex; flex-direction: column; font-size: 13px; user-select: none; color: #f4f4f5;
+    background: linear-gradient(156deg, rgba(255,255,255,.02) 0, transparent 53%), rgba(20,20,24,.95);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.12), inset 0 1px 0 rgba(255,255,255,.066),
+      inset 0 -1px 0 rgba(7,17,28,.3), 0 3px 8px rgba(13,22,44,.22), 0 13px 32px rgba(13,22,44,.24);
+  }
+  .island .hd {
+    flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    border-bottom: 1px solid rgba(255,255,255,.12);
+  }
+  .island .title { font-size: 13px; font-weight: 600; }
+  .island .col { margin-left: auto; opacity: .7; font-size: 11px; display: flex; gap: 4px; align-items: center; }
+  .island .ls { flex: 1 1 auto; padding: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .island .row { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 4px; border-radius: 8px; }
+  .island .row:hover { background: rgba(255,255,255,.10); }
+  .island .tick { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.34); flex: 0 0 16px; }
+  .island .tx { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .island .chip { font-size: 11px; color: rgba(244,244,245,.66); flex: 0 0 auto; }
+  .island .foot {
+    flex: 0 0 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    border-top: 1px solid rgba(255,255,255,.12); font-size: 12px;
+  }
+  .island .cinput {
+    flex: 1; height: 28px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.10); color: #f4f4f5; font-size: 12px; padding: 0 8px; outline: none;
+  }
+  .island .cinput:focus { border-color: rgba(255,255,255,.34); }
+  .island .footHint { font-size: 11px; color: rgba(244,244,245,.66); flex: 0 0 auto; }
+  .island .prow {
+    flex: 0 0 24px; display: flex; align-items: center; gap: 6px; padding: 0 12px;
+    border-top: 1px solid rgba(255,255,255,.08); font-size: 11px;
+  }
+  .island .prow .mark { font-weight: 700; }
+  .island .prow.good .mark { color: #4ade80; }
+  .island .prow.bad .mark { color: #fca5a5; }
+  .island .prow .pbtn {
+    margin-left: auto; font-size: 10px; padding: 1px 8px; border-radius: 5px; cursor: pointer;
+    background: rgba(255,255,255,.10); color: rgba(244,244,245,.8); border: 0;
+  }
+  /* 补全面板：absolute 浮在输入行上方，不占布局 */
+  .island .panel {
+    position: absolute; left: 8px; right: 8px; bottom: 68px; z-index: 3;
+    background: rgba(20,20,24,.98); border: 1px solid rgba(255,255,255,.18); border-radius: 10px;
+    padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .island .panel .ptitle { font-size: 10px; color: rgba(244,244,245,.5); margin-bottom: 6px; }
+  .island .panel .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .island .panel .c {
+    font-size: 11px; padding: 4px 10px; border-radius: 7px; cursor: pointer;
+    background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.14);
+  }
+  .island .panel .c:hover { background: rgba(255,255,255,.22); }
+  .island .panel .c.time { color: #8ecbff; }
+  .demo-tag { font-size: 11px; color: #52525b; margin: 0 0 6px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 记一条时间补全与预览 设计稿</h1>
+  <p class="meta">
+    2026-09-27 · 拍板：方案 A+B（输入即提示 + 解析预览 + <code>@</code> 补全面板），方案 C（自然语言解析）二期单独立项 ·
+    基于真实组件 <code>TodoIslandList.tsx</code>（compose 输入行）/ <code>todo_tasks.rs</code>（due_tail / parse_due_date /
+    parse_due_time / resolve_due）<br>
+    解决三个问题：① 语法零提示（只有 placeholder 一句话）② 写错零反馈（<code>@下午3点</code> 静默存成正文）
+    ③ 记不住格式。<b>不改任何解析语法</b>——只把已有能力「看得见、点得出、写得对」。
+  </p>
+
+  <h2>0 · 现状语法账（解析器已支持，本稿零语法改动）</h2>
+  <div class="note">
+    任务文字<b>尾部</b> <code>@日期 时间</code>：日期 = <code>今天 / 明天 / 后天 / 9/26 / 09-26 / 2026-09-26</code>，
+    时间可选 = <code>16:00</code>（全角冒号 <code>16：00</code> 也认）；<code>@</code> 必须由空白引出且延伸到行尾（1–2 个词）——
+    <code>邮箱@example.com</code> 不算尾巴。带时间 = 到点提醒；只写日期 = 全天（当天 23:59:59，<b>不提醒</b>，只排序）。
+    ❗ 预览的措辞必须如实区分这两者（「到点提醒」vs「全天 · 不提醒」），不许把全天说成会响。
+  </div>
+
+  <h2>1 · 可玩演示（在输入框里打字试试）</h2>
+  <div class="grid2">
+    <div>
+      <p class="demo-tag">试：<code>交报告 @</code> → 面板弹出 → 点「明天」→ 点「14:00」→ 预览实时更新；或直接打 <code>@下午3点</code> 看失败态</p>
+      <div class="island">
+        <div class="hd"><span class="title">3 项待办</span><span class="col">收起</span></div>
+        <div class="ls">
+          <div class="row"><span class="tick"></span><span class="tx">回邮件给张工</span><span class="chip">今天 16:00</span></div>
+          <div class="row"><span class="tick"></span><span class="tx">整理周报素材</span></div>
+          <div class="row"><span class="tick"></span><span class="tx">预约体检</span></div>
+        </div>
+        <div class="foot">
+          <input class="cinput" id="in" placeholder="要做什么？" aria-label="记一条待办" />
+          <span class="footHint">回车记下</span>
+        </div>
+        <div class="prow" id="prow" style="display:none">
+          <span class="mark" id="pmark">✓</span><span id="ptext"></span>
+          <button class="pbtn" id="pexample">插入示例</button>
+        </div>
+        <div class="panel" id="panel" style="display:none">
+          <div class="ptitle">加到什么时候？（点选插入，Esc 关闭）</div>
+          <div class="chips">
+            <span class="c" data-t="今天">今天</span>
+            <span class="c" data-t="明天">明天</span>
+            <span class="c" data-t="后天">后天</span>
+            <span class="c time" data-t="9:00">9:00</span>
+            <span class="c time" data-t="14:00">14:00</span>
+            <span class="c time" data-t="18:00">18:00</span>
+          </div>
+        </div>
+      </div>
+      <p class="demo-tag" style="margin-top:8px">补全面板浮在输入行上方（absolute，<b>不占布局</b>——列表区高度不变）；预览条占输入行下方 24px，列表区收缩一行。</p>
+    </div>
+    <div>
+      <p class="demo-tag">三态预览样张（静态）</p>
+      <div class="island" style="height:auto">
+        <div class="prow good" style="border-top:0"><span class="mark">✓</span><span>明天 14:00 到点提醒</span><button class="pbtn">删除 @尾巴</button></div>
+        <div class="prow good"><span class="mark">✓</span><span>9/26 全天 · 不提醒（只排序）</span></div>
+        <div class="prow bad"><span class="mark">⚠</span><span>@后面的时间没看懂 —— 支持 今天 / 明天 / 后天 / 9/26，可选 16:00</span><button class="pbtn">看示例</button></div>
+        <div class="prow" style="border-top:1px solid rgba(255,255,255,.08)"><span class="mark" style="color:rgba(244,244,245,.5)">·</span><span style="color:rgba(244,244,245,.66)">没有 @：不显示预览条，输入行独占（现状）</span></div>
+      </div>
+      <p class="demo-tag" style="margin-top:8px">
+        <b>「删除 @尾巴」</b>：解析失败态的一键纠错——点一下把尾巴从输入里摘掉，任务文字保留
+        （误触成本规则 17.5：错了必须一键可回）。「看示例」= 插入 <code>@今天 18:00</code> 让用户改。
+      </p>
+    </div>
+  </div>
+
+  <h2>2 · 空间账（420×280 内寸土寸金）</h2>
+  <table>
+    <tr><th>元素</th><th>占位</th><th>说明</th></tr>
+    <tr><td>头 hd</td><td>40px 不变</td><td>—</td></tr>
+    <tr><td>列表 ls</td><td class="ok">flex 收缩</td><td>预览条出现时少 24px（≈大半行）；列表本就滚动，可接受</td></tr>
+    <tr><td>输入行 foot</td><td>40px 不变</td><td>placeholder 瘦身为「要做什么？」——语法教学移交预览条与面板（一处权威，不三处重复）</td></tr>
+    <tr><td>预览条 prow</td><td>24px，<b>仅输入含 @ 时出现</b>（拍板推荐）</td><td>出现/消失随输入即时切换；无 @ 时输入行独占，零打扰</td></tr>
+    <tr><td>补全面板 panel</td><td class="ok">absolute 浮层，不占布局</td><td>浮在输入行上方（盖住列表底部一截）；z-index 2 与 notice chip 同层不叠加（面板开时不显示 notice，互斥）</td></tr>
+  </table>
+
+  <h2>3 · 节拍与状态机</h2>
+  <table>
+    <tr><th>触发</th><th>行为</th><th>退出</th></tr>
+    <tr><td>输入出现 <code>@</code>（空白后独立段）</td><td>补全面板弹出 + 预览条出现（实时解析）</td><td>点 chip / Esc / 删掉 @ / 失焦</td></tr>
+    <tr><td>点日期 chip（今天/明天/后天）</td><td>替换尾部为 <code>@今天 </code>（光标落在尾端等时间词）</td><td>面板保持（还可能继续点时间 chip）</td></tr>
+    <tr><td>点时间 chip（9:00/14:00/18:00）</td><td>尾部无日期 → 先补 <code>@今天</code> 再接时间：<code>@今天 14:00</code></td><td>完成即收面板</td></tr>
+    <tr><td>每击键（含 @）</td><td>invoke <code>todo_island_parse_due</code>（本地解析，微秒级，无需节流）→ 预览三态</td><td>—</td></tr>
+    <tr><td>Esc</td><td class="warn">面板开着 → 先关面板；再按 → 既有两级取消（compose→list→pill）</td><td>—</td></tr>
+  </table>
+  <div class="note">
+    ❗ Esc 变三级（面板 → 列表 → 胶囊）：面板是输入框内的临时层，先关它符合「最近优先」直觉，且面板 Esc
+    不产生任何副作用（没改输入）。落地时 TodoIslandList 的 onKeyDown 在 Enter 分支前插 Esc 分支即可。
+  </div>
+
+  <h2>4 · Rust 侧：一条预览命令，零解析复制</h2>
+  <div class="note">
+    新增 <code>todo_island_parse_due(text) → { ok, label, has_time } | null</code>：内部<b>直接调用</b>
+    <code>due_tail → parse_due_date / parse_due_time → resolve_due → due_label</code> 现有函数链（规则 #11.1：
+    展示文字的唯一定义就是那条链，预览绝不允许第二份解析——不然预览说 ✓ 实际存进去是正文，比没有预览更糟）。
+    本地纯解析，不联网不花钱，不涉 AI 开关（规则 16）。<code>todo_island_parse_due</code> 注册进 lib.rs 命令表。
+  </div>
+
+  <h2>5 · 无障碍与边界</h2>
+  <table>
+    <tr><th>项</th><th>处理</th></tr>
+    <tr><td>预览条读屏</td><td class="ok"><code>role="status"</code>（aria-live polite）：解析结果变化自动播报，不抢焦点</td></tr>
+    <tr><td>面板 chips 键盘</td><td class="ok">chips 是真 button，Tab 可达；面板开时 Esc 归面板（§3）；不塞箭键导航（6 项点选为主，避免 roving 复杂度）</td></tr>
+    <tr><td>失败态不给假信心</td><td class="ok">⚠ 态明确「没看懂」+ 支持范围一句话 + 一键纠错；绝不静默把尾巴当正文存（这正是本稿要消灭的事）</td></tr>
+    <tr><td>回车记下时预览为 ⚠</td><td class="warn">拦一道：⚠ 态回车 → 预览条 shake 一次 + 输入框聚焦（不阻塞、不强改），用户明确再按才放行？<b>否——推荐不拦</b>：用户有权故意留正文里的 @；预览职责到「如实告知」为止（拍板项③）</td></tr>
+    <tr><td>多屏 / 主题</td><td class="ok">预览条与面板材质走既有 --island-* 令牌，浅色主题 data-island-mode 自动跟随</td></tr>
+  </table>
+
+  <h2>6 · 落地清单（拍板后执行）</h2>
+  <div class="note">
+    ① Rust：<code>todo_tasks.rs</code> 加 <code>preview_due(text) → Option&lt;DuePreview&gt;</code>（薄封装，链内复用）+
+    命令 <code>todo_island_parse_due</code> 注册（lib.rs）。<br>
+    ② <code>islandBridge.ts</code>：<code>parseDuePreview(text)</code> 封装。<br>
+    ③ <code>TodoIslandList.tsx</code>：compose 分支加预览条（role=status）+ 补全面板 + Esc 分支；chips 插入逻辑
+    （日期 chip 替尾、时间 chip 补日期再接）；placeholder 瘦身。<br>
+    ④ <code>TodoIsland.module.css</code>：<code>.prow/.panel/.c/.liveDue 同族样式</code>（材质令牌，U5 半径取 8/10）；
+    面板入场 150ms 淡入+4px 上移（U2 档内）。<br>
+    ⑤ 守卫单测：preview_due 四态（成功带时间 / 成功全天 / 失败 / 邮箱不误判）；chips 插入的尾部替换；
+    Esc 三级。<br>
+    ⑥ <code>npm run lint:ui</code> + 全量测试。
+  </div>
+
+  <h2>7 · 请拍板（三项）</h2>
+  <div class="note">
+    ① <b>预览条出现时机</b>：<b>仅输入含 @ 时（推荐）</b>——零打扰；备选常驻一行提示（发现性更好但永久吃 24px）。<br>
+    ② <b>面板 chips 集合</b>：<b>今天/明天/后天 + 9:00/14:00/18:00 六个（推荐）</b>——覆盖 90% 场景；
+    自由日期仍手打（M-D 语法在预览条里教）。备选加日历（重了，二期）。<br>
+    ③ <b>⚠ 态回车是否拦截</b>：<b>不拦（推荐）</b>——预览职责到「如实告知」为止；拦截是把「提示」升级成「门禁」，
+    与规则 17 的「鼠标全流程可达、不挡路」相悖。备选拦截 + 二次回车放行。
+  </div>
+
+</div>
+<script>
+  (function () {
+    var input = document.getElementById("in");
+    var prow = document.getElementById("prow");
+    var pmark = document.getElementById("pmark");
+    var ptext = document.getElementById("ptext");
+    var panel = document.getElementById("panel");
+
+    // 演示用简化解析（真实实现走 Rust 预览命令，同一解析链，见 §4）
+    function preview(text) {
+      var m = text.match(/(^|\s)@(\S+)(\s+(\S+))?$/);
+      if (!m) return null;
+      var date = m[2], time = m[4] || "";
+      var okDates = ["今天", "明天", "后天"];
+      if (okDates.indexOf(date) < 0 && !/^\d{1,4}[-/]\d{1,2}(-\d{1,2})?$/.test(date)) {
+        if (/^[\w.-]+@/.test(date) || text.indexOf("@") === text.lastIndexOf("@") && /@[\w.-]+$/.test(text.trim()) && text.trim().split(/\s/).length === 1) return null;
+        return { ok: false, label: "@后面的时间没看懂 —— 支持 今天 / 明天 / 后天 / 9/26，可选 16:00" };
+      }
+      var timeOk = time === "" || /^\d{1,2}[:：]\d{2}$/.test(time);
+      if (!timeOk) return { ok: false, label: "@后面的时间没看懂 —— 支持 今天 / 明天 / 后天 / 9/26，可选 16:00" };
+      var hm = time ? time.replace("：", ":").split(":") : null;
+      if (hm && (+hm[0] > 23 || +hm[1] > 59)) return { ok: false, label: "@后面的时间没看懂 —— 支持 今天 / 明天 / 后天 / 9/26，可选 16:00" };
+      return {
+        ok: true,
+        label: time
+          ? date + " " + (hm[0].length === 1 ? "0" + hm[0] : hm[0]) + ":" + hm[1] + " 到点提醒"
+          : date + " 全天 · 不提醒（只排序）",
+      };
+    }
+    function render() {
+      var r = preview(input.value);
+      if (!r) { prow.style.display = "none"; panel.style.display = /(^|\s)@$/.test(input.value) ? "flex" : "none"; return; }
+      prow.style.display = "flex";
+      prow.className = "prow " + (r.ok ? "good" : "bad");
+      pmark.textContent = r.ok ? "✓" : "⚠";
+      ptext.textContent = r.label;
+      panel.style.display = /(^|\s)@$/.test(input.value) ? "flex" : "none";
+    }
+    input.addEventListener("input", render);
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") panel.style.display = "none";
+    });
+    document.querySelectorAll(".panel .c").forEach(function (c) {
+      c.addEventListener("click", function () {
+        var t = c.getAttribute("data-t");
+        var v = input.value;
+        // 尾部替换：把最后一个 @ 之后的内容换掉（日期 chip 后保留空格等时间词）
+        var at = v.lastIndexOf("@");
+        var isTime = /^\d/.test(t);
+        var datePart = v.slice(at).match(/@\S+/);
+        var base = datePart ? v.slice(0, at + datePart[0].length) : v.slice(at) + "@";
+        var date = isTime ? (datePart ? datePart[0] : "@今天") : "@" + t;
+        input.value = isTime ? date + " " + t : base.replace(/@\S+/, "@" + t) + " ";
+        input.focus();
+        render();
+      });
+    });
+    document.getElementById("pexample").addEventListener("click", function () {
+      var at = input.value.lastIndexOf("@");
+      input.value = input.value.slice(0, at) + "@今天 18:00";
+      input.focus();
+      render();
+    });
+  })();
+</script>
+</body>
+</html>

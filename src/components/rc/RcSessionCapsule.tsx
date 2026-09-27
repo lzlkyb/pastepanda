@@ -9,7 +9,7 @@
  * ⚠️「版本偏旧」提示不锁显（整场常驻的条件锁了浮条就永远藏不回去）。
  * 挂载：RcSessionView（非全屏才挂；全屏态由 RcFullscreenHotbar 承担，互斥）。
  */
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Maximize2, MoreHorizontal, X } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
@@ -20,6 +20,7 @@ import type { useRcInput } from "@/hooks/useRcInput";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import type { useRcRemoteSend } from "@/hooks/useRcRemoteSend";
 import { useRcCapsuleReveal } from "@/hooks/useRcCapsuleReveal";
+import { onRcDetailOpen } from "@/lib/rcDetailPanel";
 import { RcDropdown } from "./RcDropdown";
 import { RcCapsuleMore } from "./RcCapsuleMore";
 import { RcCapsuleAlerts } from "./RcCapsuleAlerts";
@@ -104,13 +105,26 @@ export function RcSessionCapsule({
   detail: React.ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const capRef = useRef<HTMLDivElement>(null);
   const peerDgramInput = rc.status?.peer_dgram_input;
+  // ⓘ 连接详情面板开合经 rcDetailPanel 桥从 RcHud 回流（open 在 RcHud 内部），
+  // 参与锁显口径——开着就别淡出（2026-09-27 审查补，与下拉/⋯面板一致）。
+  const [detailOpen, setDetailOpen] = useState(false);
+  useEffect(() => onRcDetailOpen(setDetailOpen), []);
   const { shown, moreOpen, setMoreOpen, menuDelta, scheduleHide } = useRcCapsuleReveal({
     rootRef,
+    capRef,
     stageRef,
     pointerLocked: input.pointerLocked,
-    linkLocked: link.state !== "connected" || link.unansweredSec > 0,
+    // 2026-09-27 审查修正：unansweredSec 不再参与锁显——静止画面上无害点击
+    // 本就无新帧（被控端刻意不推帧），会把浮条锁在画面上几分钟不消失。
+    // 琥珀警示胶囊仍在，锁显只跟链路死活走。
+    linkLocked: link.state !== "connected",
+    detailOpen,
   });
+  /** 链路死/未连通时改档控件整体禁用：send_input 是乐观写流，链路半死时
+      写本地缓冲即返回 Ok——值跳了画面永远没反应且无报错（点了没反应的根源）。 */
+  const sendAvailable = link.state === "connected";
 
   const hidden = !shown;
   const tab = hidden ? -1 : undefined;
@@ -133,7 +147,7 @@ export function RcSessionCapsule({
         className={`${styles.capAlarm} ${link.state !== "connected" ? styles.capAlarmOn : ""}`}
         aria-hidden="true"
       />
-      <div className={styles.capCapsule}>
+      <div ref={capRef} className={styles.capCapsule}>
         <span className={dotCls} />
         <span className={styles.capWho}>{rcDisplayName(session, fingerprintOf(session.peer))}</span>
         {/* 2026-09-26 对齐稿：常驻质量读数贴着身份段（AnyDesk 顶栏同款位）；
@@ -169,7 +183,10 @@ export function RcSessionCapsule({
           value={quality as RcQuality}
           options={send.qualities}
           columns={2}
-          disabled={rc.busy}
+          disabled={rc.busy || !sendAvailable}
+          disabledTitle={
+            sendAvailable ? undefined : "链路未连通，暂不能改画质；连通后可再调"
+          }
           onPick={send.pickQuality}
           onOpenChange={menuDelta}
         />
@@ -180,7 +197,10 @@ export function RcSessionCapsule({
               label="画面"
               value={scopePick as RcCaptureScope}
               options={send.scopes}
-              disabled={rc.busy || !canControl}
+              disabled={rc.busy || !canControl || !sendAvailable}
+              disabledTitle={
+                sendAvailable ? undefined : "链路未连通，暂不能改画面范围；连通后可再调"
+              }
               onPick={send.pickScope}
               onOpenChange={menuDelta}
             />
@@ -190,8 +210,12 @@ export function RcSessionCapsule({
                 type="button"
                 tabIndex={tab}
                 className={styles.capBtn}
-                disabled={rc.busy}
-                title="切换到对方的下一块显示器（循环）"
+                disabled={rc.busy || !sendAvailable}
+                title={
+                  sendAvailable
+                    ? "切换到对方的下一块显示器（循环）"
+                    : "链路未连通，暂不能切屏"
+                }
                 onClick={send.cycleScreen}
               >
                 下一屏
@@ -200,13 +224,21 @@ export function RcSessionCapsule({
           </>
         )}
         <span className={styles.capSep} aria-hidden="true" />
+        {/* 🔴 三键**必须**挂 .capBtn（2026-09-27 P1-1）：
+            未选中档曾经写成 `undefined` ⇒ 一条规则都不匹配，而全库没有
+            button 重置（globals.css 只有 `*{margin:0;padding:0}`）⇒ 三键退回
+            浏览器原生外观（2px outset / 圆角 0 / 浅灰底 / Arial 13.33px），
+            与同排的全屏 / 详情 / ⋯ 键完全不是一族。
+            tsc / eslint / lint:ui / lint:css 四个工具对此全是绿的
+            （className 有值、CSS 类存在，只是没接上），
+            只有渲染断言能拦住 —— 见 RcSessionCapsule.test.tsx 的「FIT 三键」用例。 */}
         <span className={styles.capFit}>
           {FITS.map(([k, label]) => (
             <button
               key={k}
               type="button"
               tabIndex={tab}
-              className={fit === k ? styles.capBtnOn : undefined}
+              className={fit === k ? `${styles.capBtn} ${styles.capBtnOn}` : styles.capBtn}
               title={FIT_TIPS[k]}
               onClick={() => onFit(k)}
             >
@@ -218,7 +250,7 @@ export function RcSessionCapsule({
           type="button"
           tabIndex={tab}
           className={styles.capBtn}
-          title="全屏显示远程画面"
+          title="全屏显示远程画面（F11）"
           onClick={onToggleFullscreen}
         >
           <Maximize2 size={13} aria-hidden="true" />
@@ -245,7 +277,10 @@ export function RcSessionCapsule({
         <button
           type="button"
           tabIndex={tab}
-          className={styles.capBtnDanger}
+          /* 🔴 2026-09-27 审查：原先只有 capBtnDanger（只定义颜色）——缺 .capBtn
+             基底，一直在渲染浏览器原生按钮（白底黑 X）。同排三键 P1-1 修过，
+             这颗漏网。 */
+          className={`${styles.capBtn} ${styles.capBtnDanger}`}
           disabled={busy}
           title="结束会话"
           aria-label="结束会话"

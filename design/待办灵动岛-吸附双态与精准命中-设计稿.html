@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 吸附双态与精准命中 设计稿（方案 A+B）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 940px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; vertical-align: top; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #c2410c; font-weight: 600; }
+  .warn { color: #b45309; font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+  /* ===== 场景模拟：网页里 backdrop-filter 有效（3a 旧稿同款手法）=====
+     真实岛是「全透明窗 + CSS 实色 tint(95%)」，这里为观感演示用 backdrop 模拟，
+     材质参数照抄 TodoIsland.module.css 的 --island-* 令牌。 */
+  .scene {
+    position: relative; border-radius: 12px; overflow: hidden;
+    min-height: 200px; border: 1px solid #c9ccd4;
+    background:
+      linear-gradient(90deg, #dfe6ee 0 50%, #23262e 50% 100%);
+  }
+  /* 模拟「下方窗口」：一个浏览器窗口卡在岛正下方，带可点的关闭钮 */
+  .fake-win {
+    position: absolute; left: 18%; right: 18%; top: 26px; bottom: 18px;
+    background: #fbfbfd; border-radius: 8px 8px 4px 4px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  }
+  .fake-win .bar {
+    height: 26px; display: flex; align-items: center; gap: 6px;
+    padding: 0 8px; background: #eceef2; border-radius: 8px 8px 0 0;
+  }
+  .fake-win .bar .tab {
+    flex: 0 0 40%; height: 16px; border-radius: 4px 4px 0 0; background: #fff;
+    font-size: 10px; color: #71717a; display: flex; align-items: center; padding: 0 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.12);
+  }
+  .fake-win .x {
+    margin-left: auto; width: 16px; height: 16px; border-radius: 4px; background: #e0e2e8;
+    display: flex; align-items: center; justify-content: center; font-size: 10px; color: #52525b;
+  }
+  .fake-win .body { padding: 10px 12px; }
+  .fake-win .ln { height: 8px; border-radius: 4px; background: #e4e6ec; margin-bottom: 6px; }
+  .scene .tag { position: absolute; top: 6px; left: 10px; font-size: 11px; color: #52525b; z-index: 5; }
+
+  /* 岛本体：材质/描边/投影数值 = TodoIsland.module.css 同一份账（glass 95 档） */
+  .island {
+    position: absolute; z-index: 4; left: 50%; transform: translateX(-50%);
+    height: 32px; padding: 0 14px; border-radius: 999px;
+    display: flex; align-items: center; gap: 8px; font-size: 12px; user-select: none;
+    color: #f4f4f5;
+    background:
+      linear-gradient(156deg, rgba(255,255,255,.02) 0, transparent 53%),
+      rgba(20,20,24,.92);
+    backdrop-filter: blur(22px) saturate(1.15);
+    -webkit-backdrop-filter: blur(22px) saturate(1.15);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.12),
+      inset 0 1px 0 rgba(255,255,255,.066),
+      inset 0 -1px 0 rgba(7,17,28,.3),
+      0 3px 8px rgba(13,22,44,.22),
+      0 13px 32px rgba(13,22,44,.24);
+    transition: box-shadow 200ms cubic-bezier(.2,0,0,1), width 240ms cubic-bezier(.2,0,0,1), height 240ms cubic-bezier(.2,0,0,1);
+  }
+  .island::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none; opacity: 0; z-index: 0;
+    background: radial-gradient(circle at 45% -15%, rgba(255,255,255,.24), transparent 58%);
+    transition: opacity 150ms cubic-bezier(.2,0,0,1);
+  }
+  .island .ring { width: 16px; height: 16px; flex: 0 0 16px; }
+  .island .dot { width: 3px; height: 3px; border-radius: 99px; background: currentColor; opacity: .4; }
+  .island .txt { white-space: nowrap; }
+  .island .due { font-size: 11px; color: rgba(244,244,245,.66); white-space: nowrap; }
+
+  /* —— B 方案三态 —— */
+  /* 停靠态：贴顶零间隙 + 投影收敛 + 顶缘亮线消隐（「嵌」在顶边） */
+  .island.docked {
+    top: 0; width: 208px;
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.12),
+      inset 0 -1px 0 rgba(7,17,28,.3),
+      0 2px 5px rgba(13,22,44,.13),
+      0 6px 16px rgba(13,22,44,.14);
+  }
+  /* 意图态：停留 150ms 后 glow 提前点亮（此刻窗口仍穿透，拦截尚未发生） */
+  .island.intent { top: 0; width: 208px; }
+  .island.intent::after { opacity: 1; }
+  /* 预览态 peek：300×40 满投影 + glow，「浮起」 */
+  .island.peek { top: 12px; width: 300px; height: 40px; }
+  .island.peek::after { opacity: 1; }
+
+  /* ===== 交互演示区 ===== */
+  .demo {
+    position: relative; height: 240px; border: 1px solid #c9ccd4; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(180deg, #cfd9e4 0 64px, #eef1f5 64px 100%);
+  }
+  .demo .island { transition: width 240ms cubic-bezier(.2,0,0,1), height 240ms cubic-bezier(.2,0,0,1), box-shadow 200ms; cursor: default; }
+  .demo .hint { position: absolute; bottom: 10px; left: 14px; font-size: 11px; color: #71717a; }
+  .demo .state { position: absolute; bottom: 10px; right: 14px; font-size: 11px; color: #15803d; font-weight: 600; }
+  .demo .under {
+    position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
+    width: 340px; background: #fff; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.18);
+    padding: 10px 12px;
+  }
+  .demo .under .row { display: flex; align-items: center; gap: 8px; }
+  .demo .under .fakebtn {
+    margin-left: auto; width: 22px; height: 22px; border-radius: 5px; border: 1px solid #d4d4d8;
+    background: #f4f4f5; cursor: pointer; font-size: 12px; color: #3f3f46; line-height: 1;
+  }
+  .demo .under .fakebtn:active { background: #e4e4e7; }
+  .demo .under p { font-size: 11px; color: #71717a; margin-top: 6px; }
+  .demo .counter { font-size: 11px; color: #15803d; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 吸附双态与精准命中 设计稿（方案 A+B 合并）</h1>
+  <p class="meta">
+    2026-09-26 · 决策：方案 A（精准命中 + 意图延时 + 贴顶）与方案 B（停靠/意图/预览双态视觉）合并实施 ·
+    基于真实组件 <code>TodoIsland.tsx</code> / <code>TodoIsland.module.css</code> / <code>todo_island_hover.rs</code> /
+    <code>todo_island_stage.rs</code> · 业界对标：iOS 灵动岛、NotchNook、Boring Notch、Notchy<br>
+    解决两个用户抱怨：① 岛附近无法点击下层窗口（干扰操作）② 岛与顶部之间悬空 10px、没有「吸附」感，且吸附态与悬停态看起来一样。
+  </p>
+
+  <h2>0 · 问题归因（三句话，全部有码可查）</h2>
+  <div class="note">
+    ① <b>拦截范围比看得见的岛大一圈</b>：hover 判定按「窗口矩形外扩 8px 进 / 12px 出」
+    （<code>todo_island_hover.rs:38-42,111</code>），且按矩形算——胶囊圆角外的死角、peek/list 展开态的窗口空白区都算命中。
+    光标离岛还有 8px 时窗口就开始拦截点击。<br>
+    ② <b>路过即触发</b>：光标扫过顶部、本意去点下层窗口，路径穿过岛附近就立即收事件并展开 peek（300×40），恰好盖住标签栏区域。<br>
+    ③ <b>悬空 10px</b>：<code>TOP_MARGIN=10</code>（<code>todo_island.rs:75</code>）是写死的常量；展开时顶边钉死、只向下生长（这部分保留）。
+  </div>
+
+  <h2>1 · 业界三共识（调研提炼）</h2>
+  <div class="note">
+    ① <b>命中区域 = 可见形状</b>，不是外扩矩形——macOS 刘海系应用（NotchNook 等）用 <code>ignoresMouseEvents</code> 动态穿透，
+    命中只留在刘海可见形内（notchbay.com 的 NSWindow 技术要点）。<br>
+    ② <b>hover 必须带意图</b>——顶部悬停激活与「鼠标去顶部必经之路」天然冲突，是这类应用投诉最集中的点（koffret.com）；
+    NotchNook 的解法是 hover 激活延时 + 可切点击激活 + 可缩小 hover 区；社区最常见的自救是干脆关 hover。
+    我们不砍 hover，而是把它拆成「拦截（必要，最小化）」和「展开（需停留 150ms）」两件事。<br>
+    ③ <b>吸附感 = 零间隙贴边 + 实体材质</b>——iOS 岛永远贴死安全区边缘、无悬浮缝；不是靠阴影「浮」着。
+  </div>
+
+  <h2>2 · 机制设计（方案 A）：命中几何</h2>
+  <p class="note">
+    核心一句话：<b>拦截范围收缩到「看得见的岛」本身</b>——判定从「窗口矩形 ± 8/12px」改为「可见形状 ± 2/6px」，
+    展开触发加 150ms 停留判定。拦截与展开拆开：<b>拦截立即可保证点击可达，展开必须停留才发生</b>。
+  </p>
+  <div class="grid2">
+    <div>
+      <p class="note" style="margin-bottom:6px"><b class="bad">旧</b>：窗口矩形 + 8/12px 外扩（红色 = 会吃点击的区域）</p>
+      <svg viewBox="0 0 300 150" width="100%">
+        <defs>
+          <pattern id="hz" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#dc2626" stroke-width="1.4" opacity=".5"/>
+          </pattern>
+        </defs>
+        <!-- 旧捕获矩形: pill 150x24 居中, 外扩8 → 166x40 -->
+        <rect x="67" y="47" width="166" height="40" fill="url(#hz)" stroke="#dc2626" stroke-dasharray="4 3" stroke-width="1.2" rx="3"/>
+        <!-- 窗口矩形外扩12 -->
+        <rect x="63" y="43" width="174" height="48" fill="none" stroke="#fca5a5" stroke-dasharray="2 3" stroke-width="1"/>
+        <!-- 可见胶囊 -->
+        <rect x="75" y="55" width="150" height="24" rx="12" fill="#27272a"/>
+        <text x="150" y="71" text-anchor="middle" fill="#f4f4f5" font-size="9">可见岛 208×32（按 0.72 缩）</text>
+        <!-- 角落死角标注 -->
+        <circle cx="72" cy="52" r="2.4" fill="#dc2626"/>
+        <text x="79" y="26" font-size="9" fill="#b91c1c">圆角死角 + 8–12px 环带都拦点击</text>
+        <text x="150" y="128" text-anchor="middle" font-size="10" fill="#71717a">下层窗口按钮点不到的区域 ≫ 视觉岛</text>
+      </svg>
+    </div>
+    <div>
+      <p class="note" style="margin-bottom:6px"><b class="ok">新</b>：可见形状 + 2px 进 / 6px 出（蓝线 = 拦截边界）</p>
+      <svg viewBox="0 0 300 150" width="100%">
+        <!-- 释放界 shape+6 -->
+        <rect x="72" y="52" width="156" height="30" rx="15" fill="none" stroke="#93c5fd" stroke-dasharray="3 3" stroke-width="1"/>
+        <!-- 拦截界 shape+2 -->
+        <rect x="74" y="54" width="152" height="26" rx="13" fill="none" stroke="#2563eb" stroke-width="1.4"/>
+        <!-- 可见胶囊 -->
+        <rect x="75" y="55" width="150" height="24" rx="12" fill="#27272a"/>
+        <text x="150" y="71" text-anchor="middle" fill="#f4f4f5" font-size="9">可见岛</text>
+        <text x="150" y="26" font-size="9" fill="#1d4ed8">拦截边界贴着形状走，死角不再拦</text>
+        <text x="150" y="128" text-anchor="middle" font-size="10" fill="#71717a">岛外 6px 之外全程穿透，掠过零拦截</text>
+      </svg>
+    </div>
+  </div>
+  <p class="note">
+    形状判定是纯几何（不读像素、不加线程）：胶囊 = 左右半圆 + 中段矩形；list/compose = 12px 圆角矩形。
+    在现有 60ms 轮询 <code>step_hover</code> 里替换判定式即可。展开（peek）触发新增<b>停留计数</b>：
+    形内连续命中 ≥3 拍（150ms）才切舞台——光标掠过岛面也只是被拦 1–2 拍（60–120ms，这是「岛本身的面积」，本来就该拦），不会展开挡住下层。
+  </p>
+  <table>
+    <tr><th>参数</th><th>现值</th><th>新值</th><th>理由</th></tr>
+    <tr><td>命中判定</td><td class="bad">窗口矩形</td><td class="ok">可见形状（胶囊/圆角矩形几何式）</td><td>死角与空白区不再拦点击</td></tr>
+    <tr><td>进/出滞回带</td><td class="bad">进 8px / 出 12px</td><td class="ok">进 2px / 出 6px</td><td>拦截边界贴形状；滞回仍防 60ms 轮询抖动</td></tr>
+    <tr><td>拦截时机</td><td>形（矩形）内立即</td><td class="ok">形状内立即</td><td>保证「停在岛上就能点」零失败；见 §6 拍板项②</td></tr>
+    <tr><td>peek 展开时机</td><td class="bad">命中立即展开</td><td class="ok">形内连续停留 150ms 才展开</td><td>路过不展开 = 路过不遮挡（业界共识②）</td></tr>
+    <tr><td>TOP_MARGIN</td><td class="bad">10px</td><td class="ok">0（备选 4px）</td><td>吸附感来源；见 §6 拍板项①</td></tr>
+    <tr><td>轮询</td><td>60ms 单线程</td><td>不变（复用，加计数）</td><td>不加线程不加常驻循环（规则 8）</td></tr>
+  </table>
+
+  <h2>3 · 状态机（五态，拦截与展开分离）</h2>
+  <table>
+    <tr><th>状态</th><th>触发 →</th><th>窗口穿透？</th><th>拦截？</th><th>视觉</th><th>退出</th></tr>
+    <tr><td><b>停靠 docked</b></td><td>默认（stage=pill, y=0）</td><td>是</td><td>否（形状外）/ 仅形内</td><td>投影收敛 + 顶缘亮线消隐（§4）</td><td>光标入形状 → 意图</td></tr>
+    <tr><td><b>意图 intent</b></td><td>形内停留 ≥150ms，<b>此刻仍未拦截</b></td><td>是</td><td>仅形内</td><td>glow 点亮：「它注意到我了」（规则 17.3 有反馈不靠猜）</td><td>再停一拍 → peek；光标离开 → 停靠</td></tr>
+    <tr><td><b>预览 peek</b></td><td>意图后再停 ≥1 拍（合计 ~210ms）</td><td>否</td><td>是（300×40）</td><td>300×40 满投影浮起 + glow，露出下一条真实到期时间</td><td>离开形状 → 停靠；点击 → list</td></tr>
+    <tr><td><b>列表 list / 输入 compose</b></td><td>点击胶囊</td><td>否</td><td>是（420×240/280）</td><td>不变（现有稿已定稿）</td><td>Esc / 离开 6s 自收 / 收起按钮</td></tr>
+  </table>
+  <p class="note">
+    时序账（60ms 一拍）：进入形状第 1 拍即拦截（可点）；第 3 拍（180ms）播意图 glow；第 4 拍（240ms）切 peek。
+    手感 = 「扫过没感觉，停一下才开门」。意图态在拦截之前给出视觉预告，所以「突然被拦」永远有 150ms 的预告期。
+    前端新增 <code>todo-island-intent</code> 事件（Rust 第 3 拍 emit），<code>data-intent</code> 驱动 glow，与现有 <code>data-hover</code> 并列。
+  </p>
+
+  <h2>4 · 双态视觉（方案 B）：停靠 ≠ 悬停</h2>
+  <p class="note">
+    三块场景图 = 同一个岛在停靠 / 意图 / 预览三态下的样子（材质数值照抄现行 CSS，仅投影与高光按状态分档；
+    <b>文字与进度环对比度三态不动</b>——变暗只落在装饰层，U7 无忧）。看两件事：
+    停靠态是否「嵌」在顶边、预览态是否明确「浮起」。
+  </p>
+  <div class="grid3">
+    <div class="scene">
+      <span class="tag">停靠 docked · 默认</span>
+      <div class="island docked" style="top:0">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+      </div>
+      <div class="fake-win">
+        <div class="bar"><span class="tab">周报.docx</span><span class="x">✕</span></div>
+        <div class="body"><div class="ln" style="width:80%"></div><div class="ln" style="width:62%"></div><div class="ln" style="width:71%"></div></div>
+      </div>
+    </div>
+    <div class="scene">
+      <span class="tag">意图 intent · 停 150ms</span>
+      <div class="island intent" style="top:0">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+      </div>
+      <div class="fake-win">
+        <div class="bar"><span class="tab">周报.docx</span><span class="x">✕</span></div>
+        <div class="body"><div class="ln" style="width:80%"></div><div class="ln" style="width:62%"></div><div class="ln" style="width:71%"></div></div>
+      </div>
+    </div>
+    <div class="scene">
+      <span class="tag">预览 peek · 停 ~240ms</span>
+      <div class="island peek" style="top:12px">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span><span class="due">· 14:00 前</span>
+      </div>
+      <div class="fake-win">
+        <div class="bar"><span class="tab">周报.docx</span><span class="x">✕</span></div>
+        <div class="body"><div class="ln" style="width:80%"></div><div class="ln" style="width:62%"></div><div class="ln" style="width:71%"></div></div>
+      </div>
+    </div>
+  </div>
+  <table>
+    <tr><th>属性</th><th>停靠 docked</th><th>意图 intent</th><th>预览 peek 及之后</th></tr>
+    <tr><td>位置 / 尺寸</td><td>y=0，208×32</td><td>不动（窗口不动画，纯 CSS）</td><td>y=0 顶边钉死向下生长 300×40（现有 Rust 弹簧不变）</td></tr>
+    <tr><td>外投影</td><td class="ok">收敛：0 2px 5px / 0 6px 16px，α×0.6</td><td>同停靠</td><td class="ok">满档：0 3px 8px / 0 13px 32px（现行值）</td></tr>
+    <tr><td>顶缘亮线 <code>inset 0 1px 0</code></td><td class="ok">消隐（贴边后「上缘受光」不成立，改由屏幕边自己给）</td><td>消隐</td><td>恢复（浮起后重新受光）</td></tr>
+    <tr><td>glow <code>::after</code></td><td>opacity 0</td><td class="ok">opacity 1（径向高光渐显 150ms）</td><td>opacity 1</td></tr>
+    <tr><td>文字 / 环 / 描边</td><td colspan="3" style="text-align:center">三态恒定（tint 95%、--island-fg、--island-line 不动）——对比度账不变</td></tr>
+  </table>
+  <p class="note">
+    <b>为什么不动尺寸和透明度</b>：窗口尺寸由 Rust 逐帧驱动、CSS 不持有（module.css 文件头「分工」），停靠态再开一个小舞台等于新增一份
+    Rust/CSS/rgn 三处同步的账，收益低；透明度降低会让 tint 95 的对比度结论作废。所以「更实」的表达落在投影与亮线这两个纯装饰层——
+    停靠态投影贴边收敛后，视觉重心自然「挂」在屏幕顶边上，与预览态的满投影浮起形成明确对比。
+  </p>
+
+  <h2>5 · 交互演示（把鼠标放上去试）</h2>
+  <p class="note">
+    直接停在胶囊上：~180ms 出现意图 glow，~240ms 展开 peek；快速扫过则几乎无感。
+    下面的假窗口可以真的点：演示「光标在岛附近移动时，下面的按钮随时可点」（真实实现里拦截只发生在形状内）。
+  </p>
+  <div class="demo" id="demo">
+    <div class="island docked" id="demoIsland">
+      <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+      <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+    </div>
+    <div class="under">
+      <div class="row"><span style="font-size:12px;color:#3f3f46">这是「下面的窗口」</span><button class="fakebtn" id="fakeClose">✕</button></div>
+      <p>岛附近随便移动鼠标，这个 ✕ 一直能点（点了会计数）—— 已点 <span class="counter" id="clickCount">0</span> 次</p>
+    </div>
+    <span class="hint">鼠标停在岛上演示 intent → peek；快速扫过应几乎无感</span>
+    <span class="state" id="stateLabel">docked</span>
+  </div>
+
+  <h2>6 · 请拍板（三个小项）</h2>
+  <div class="note">
+    ① <b>TOP_MARGIN</b>：<b>0（推荐）</b>——岛顶与屏幕顶零间隙，吸附感最完整；胶囊上圆角与屏幕边之间的两个小三角空隙由壁纸透出，
+    是「贴上去」的自然观感（同 iOS 岛圆角与屏幕边的处理）。备选 4px：给 Windows 任务栏自动隐藏/贴边布局留一线余量，但吸附感打折。<br>
+    ② <b>拦截时机</b>：<b>形状内立即拦截（推荐）</b>——保证「停在岛上点一下」零失败；备选「拦截也等 150ms」更激进，
+    但快速直扑岛点击会把第一击穿到下层窗口（丢点击是比误展开更贵的失败），不推荐。<br>
+    ③ <b>停靠态是否做「顶平方角」半胶囊形变</b>（顶部两角 r=0、像从屏幕里长出来）：<b>默认不做（推荐）</b>——
+    需要改 SetWindowRgn 拼新形状 + Rust 舞台加新分支，为纯装饰收益背三处同步的账不划算；想要可以二期单独出一稿。
+  </div>
+
+  <h2>7 · 落地清单（拍板后执行）</h2>
+  <div class="note">
+    ① <code>todo_island_hover.rs</code>：新增纯函数形状命中判定（胶囊/圆角矩形，无环境依赖，可单测——规则 11.1 的守卫单测钉住「死角不命中」不变量）；
+    <code>step_hover</code> 换判定式 + 新滞回（2/6px）+ 停留计数（150ms / 3 拍）+ 第 3 拍 emit <code>todo-island-intent</code>。<br>
+    ② <code>todo_island.rs</code>：<code>TOP_MARGIN</code> 按拍板值改；<code>calc_top_center_for</code> 相应归零（公式不变）。<br>
+    ③ <code>TodoIsland.module.css</code>：停靠态投影收敛 + 顶缘亮线消隐（<code>data-st="pill"</code> 且非 intent/peek 时生效）；
+    <code>::after</code> glow 由 <code>data-hover</code> 扩为 <code>data-hover, data-intent</code> 双触发。<br>
+    ④ <code>TodoIsland.tsx</code>：listen <code>todo-island-intent</code> 写 <code>data-intent</code>；peek 展开 Handoff 不变（仍由 hover 事件驱动，Rust 端已延时）。<br>
+    ⑤ 验证：重跑 <code>todo_island_probe</code> 命中段（死角点 + 边缘点各取样）；<code>npm run lint:ui</code>；全量测试。<br>
+    ⑥ 回退：三处改动彼此独立——命中几何、TOP_MARGIN、双态视觉可单独回退，互不牵连。
+  </div>
+
+</div>
+<script>
+  (function () {
+    var island = document.getElementById("demoIsland");
+    var label = document.getElementById("stateLabel");
+    var t1, t2;
+    function set(s, cls) {
+      label.textContent = s;
+      island.className = "island " + cls;
+    }
+    island.addEventListener("mouseenter", function () {
+      t1 = setTimeout(function () { set("intent (glow 亮，仍穿透)", "intent"); }, 180);
+      t2 = setTimeout(function () { set("peek (已拦截)", "peek"); }, 260);
+    });
+    island.addEventListener("mouseleave", function () {
+      clearTimeout(t1); clearTimeout(t2);
+      set("docked", "docked");
+    });
+    var n = 0;
+    document.getElementById("fakeClose").addEventListener("click", function () {
+      document.getElementById("clickCount").textContent = ++n;
+    });
+  })();
+</script>
+</body>
+</html>

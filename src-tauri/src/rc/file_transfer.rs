@@ -494,6 +494,33 @@ pub fn default_receive_dir() -> Result<PathBuf, String> {
     Ok(base.join("PastePanda 接收"))
 }
 
+/// 生效的接收目录 = 用户在设置里配置的覆盖目录，未配置回落 [`default_receive_dir`]。
+///
+/// 🔴 2026-09-27（用户拍板：push 接受不再每次弹目录选择框）：所有「文件落到哪」
+/// 的取值口（`rc_file_default_dir` 命令、`auto_accept_dir`）都必须走这里——
+/// 若有第 3 处直接调 `default_receive_dir`，「这次落哪儿」和「设置说落哪儿」
+/// 就会分叉。写入口只有 `commands::rc_file::rc_file_receive_dir_set`。
+pub fn effective_receive_dir(config: &serde_json::Value) -> Result<PathBuf, String> {
+    let override_dir = config
+        .get("rc_file_receive_dir")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match override_dir {
+        Some(d) => {
+            let p = std::path::PathBuf::from(d);
+            // 目录可能被用户在资源管理器里删掉：落盘前补建，失败才回落默认
+            if std::fs::create_dir_all(&p).is_ok() {
+                Ok(p)
+            } else {
+                log::warn!("[RC] 配置的接收目录不可用（{d}），回落默认接收目录");
+                default_receive_dir()
+            }
+        }
+        None => default_receive_dir(),
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn known_downloads_dir() -> Option<PathBuf> {
     use windows::Win32::System::Com::CoTaskMemFree;

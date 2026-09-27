@@ -149,8 +149,8 @@ impl RcService {
     }
 
     /// 被控端：QUIC stats 采样（推流任务）喂本端链路状况 → 码控（P0-4）。
-    pub(in crate::rc) fn note_stream_health(&self, rtt_ms: i64, loss_permille: i64) {
-        self.stream.note_stream_health(rtt_ms, loss_permille);
+    pub(in crate::rc) fn note_stream_health(&self, rtt_ms: i64, loss_permille: i64, bw_kbps: i64) {
+        self.stream.note_stream_health(rtt_ms, loss_permille, bw_kbps);
     }
 
     /// 发起端：pong 带回的时钟偏差样本（P0-1 A3）。
@@ -169,6 +169,7 @@ impl RcService {
         fps120: bool,
         refresh_hz: u32,
         hevc: bool,
+        av1: bool,
         monitors: Vec<crate::screenshot::MonitorInfo>,
         dgram_input: bool,
     ) {
@@ -178,6 +179,8 @@ impl RcService {
             .store(refresh_hz.min(1000), std::sync::atomic::Ordering::Relaxed);
         self.peer_hevc
             .store(hevc, std::sync::atomic::Ordering::Relaxed);
+        self.peer_av1
+            .store(av1, std::sync::atomic::Ordering::Relaxed);
         self.peer_dgram_input
             .store(dgram_input, std::sync::atomic::Ordering::Relaxed);
         *self.peer_monitors.lock().unwrap_or_else(|p| p.into_inner()) = monitors;
@@ -191,6 +194,12 @@ impl RcService {
     pub fn peer_hevc(&self) -> bool {
         self.peer_hevc.load(std::sync::atomic::Ordering::Relaxed)
     }
+
+    /// P2.3：发起端视角——被控端 caps 声明的 AV1 硬编可用性。
+    pub fn peer_av1(&self) -> bool {
+        self.peer_av1.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
 
     /// 发起端视角：被控端 caps 是否声明可读鼠标数据报（R3）。false = 旧版。
     pub fn peer_dgram_input(&self) -> bool {
@@ -206,6 +215,12 @@ impl RcService {
     pub(in crate::rc) fn note_remote_loss(&self, permille: u32) {
         self.remote_loss_permille
             .store(permille.min(1000), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// P3.1：本端 QUIC 实测丢包率（‰）。视频发送方据此逐帧选 RS 冗余 m。
+    /// 未采样（会话刚开始）返回 0 → m=1，最省带宽；采样到来后自动跟随。
+    pub(in crate::rc) fn loss_permille(&self) -> i64 {
+        self.stream.loss_permille()
     }
 
     pub fn bitrate_scale(&self) -> u32 {

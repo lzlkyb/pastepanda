@@ -126,14 +126,27 @@ describe("TodoIsland 舞台机", () => {
     // 列表不许被抽走：留在 list，给空态
     expect(rootEl(container).getAttribute("data-st")).toBe("list");
     expect(container.textContent).toContain("没有进行中的待办");
-    expect(h.invoke).not.toHaveBeenCalledWith("todo_island_hide", { delayMs: 1500 });
+    expect(h.invoke).not.toHaveBeenCalledWith("todo_island_hide", { delayMs: 2500 });
     // 用户自己收起 → 此时才按「剩 0 条」走全清 + 延迟隐藏
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
     expect(rootEl(container).getAttribute("data-st")).toBe("clear");
     expect(container.textContent).toContain("今天没有待办了");
     await waitFor(() =>
-      expect(h.invoke).toHaveBeenCalledWith("todo_island_hide", { delayMs: 1500 }),
+      expect(h.invoke).toHaveBeenCalledWith("todo_island_hide", { delayMs: 2500 }),
     );
+  });
+
+  it("🔴 tab 挂岛层：收起再展开仍在原视图，不被重置回「进行中」（critique P2-3，规则 §15.2）", async () => {
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    fireEvent.click(rootEl(container)); // → list
+    fireEvent.click(screen.getByText("已完成"));
+    expect(screen.getByText("已办的事")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起" })); // 收起（列表卸载）
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    fireEvent.click(rootEl(container)); // 再展开
+    // 还在「已完成」：已办的事直接可见，没有被甩回「进行中」
+    expect(screen.getByText("已办的事")).toBeTruthy();
   });
 
   it("🔴 展开态点外闲置 6s 自动收起（岛窗外点击穿透，没有点外收起就只能手动关）", async () => {
@@ -202,10 +215,53 @@ describe("TodoIsland 舞台机", () => {
     expect(rootEl(container).getAttribute("data-st")).toBe("list");
   });
 
+  it("记一条 快捷条：点选挂时间、提交拼 @ 尾巴、与 @ 尾巴收口（快捷条设计稿）", async () => {
+    const added: Array<[string, { text: string }]> = [];
+    h.invoke.mockImplementation((cmd: string, args?: { text: string }) => {
+      if (cmd === "todo_island_tasks") return Promise.resolve(STATE);
+      if (cmd === "note_append_daily_task") {
+        added.push([cmd, args as { text: string }]);
+        return Promise.resolve(null);
+      }
+      if (cmd === "todo_island_parse_due")
+        return Promise.resolve({ ok: true, label: "明天 14:00", hasTime: true });
+      return Promise.resolve(null);
+    });
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    fireEvent.click(rootEl(container)); // → list
+    fireEvent.click(screen.getByText("记一条")); // → compose
+    const input = screen.getByLabelText("记一条待办") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "交报告" } });
+    // 快捷条常驻（主路径「点，不用打」）
+    expect(container.querySelector("[class*='qbar']")).not.toBeNull();
+    // 点「明天」+「14:00」→ 输入行尾小片出现，输入文本一个字符都不被插入
+    fireEvent.click(screen.getByRole("button", { name: "明天" }));
+    fireEvent.click(screen.getByRole("button", { name: "14:00" }));
+    expect(input.value).toBe("交报告");
+    expect(container.querySelector("[class*='duetag']")?.textContent).toContain("明天 14:00");
+    // 预览条不出现（时间来源已收口到快捷条，文本无 @ 尾巴）
+    expect(container.querySelector("[class*='prow']")).toBeNull();
+    // 回车 → 提交的是拼好 @ 尾巴的文本，走同一条 Rust due_tail 解析链
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(added).toEqual([["note_append_daily_task", { text: "交报告 @明天 14:00" }]]));
+    // 创建后快捷条自动复位（连续记多条不串味）
+    expect(container.querySelector("[class*='duetag']")).toBeNull();
+    // 没选日期直接点时刻 → 默认挂今天（一步到位）
+    fireEvent.click(screen.getByRole("button", { name: "18:00" }));
+    expect(container.querySelector("[class*='duetag']")?.textContent).toContain("今天 18:00");
+    fireEvent.change(input, { target: { value: "买牛奶 @" } }); // 打 @ → 快捷条选择清空（收口不变量）
+    expect(container.querySelector("[class*='duetag']")).toBeNull();
+    // 面板已退役：Esc 直接走两级取消（compose → list）
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(rootEl(container).getAttribute("data-st")).toBe("list");
+  });
+
   it("peek 显示下一条的**真实**到期时间（B 方案：不编演示时间）", async () => {
+    // dueMs 取 2h 外：递减视野是 <1h（活性设计稿 §1），卡 1h 边界会被走字接管、测不到静态文案
     const withDue: IslandState = {
       ...STATE,
-      tasks: [{ ...STATE.tasks[0], dueMs: Date.now() + 3_600_000, dueLabel: "今天 16:00" }],
+      tasks: [{ ...STATE.tasks[0], dueMs: Date.now() + 7_200_000, dueLabel: "今天 16:00" }],
     };
     h.invoke.mockImplementation((cmd: string) =>
       cmd === "todo_island_tasks" ? Promise.resolve(withDue) : Promise.resolve(null),
@@ -235,6 +291,28 @@ describe("TodoIsland 舞台机", () => {
     expect(container.textContent).toContain("交材料");
   });
 
+  it("意图态接线（吸附双态设计稿 §3）：intent=true 只点亮 glow、不切舞台；离开熄灭；展开态不点亮", async () => {
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    // 停留 3 拍：intent 事件先于 hover 事件到——glow 预告点亮，舞台**仍**是胶囊
+    await act(async () => {
+      h.handlers.get("todo-island-intent")?.({ payload: true });
+    });
+    expect(rootEl(container).getAttribute("data-intent")).toBe("1");
+    expect(rootEl(container).getAttribute("data-st")).toBe("pill");
+    // 光标离开：Rust 补发 false，glow 熄灭
+    await act(async () => {
+      h.handlers.get("todo-island-intent")?.({ payload: false });
+    });
+    expect(rootEl(container).getAttribute("data-intent")).toBeNull();
+    // 展开态不点亮：光标本来就在岛上，glow 由 data-hover 负责，intent 不掺和
+    fireEvent.click(rootEl(container)); // → list
+    await act(async () => {
+      h.handlers.get("todo-island-intent")?.({ payload: true });
+    });
+    expect(rootEl(container).getAttribute("data-intent")).toBeNull();
+  });
+
   it("提醒态只显示到点那一条的文字，不与下一条待办拼接", async () => {
     const alertTask = STATE.tasks[1]; // 「回邮件给张工」
     h.invoke.mockImplementation((cmd: string) =>
@@ -258,7 +336,32 @@ describe("TodoIsland 舞台机", () => {
     expect(btn.textContent).toContain("收起");
     expect(btn.getAttribute("title")).toContain("Esc");
   });
-  it("勾选：圈先翻面，行 200ms 内退场（另一条不动）", async () => {
+  it("🔴 整行可点 = 勾选（B 方案）：点行文字触发一次 toggle，点勾圈不双重触发，点来源名不触发", async () => {
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    fireEvent.click(rootEl(container)); // → list
+    h.invoke.mockClear(); // 清掉 mount 拉快照与切舞台的调用，只看勾选行为
+    // hint 与行文字都叫「交材料」：只点列表行那个（.tx）
+    const rowText = screen
+      .getAllByText("交材料")
+      .find((el) => el.className.includes("tx")) as HTMLElement;
+    fireEvent.click(rowText); // 点行文字
+    await waitFor(() => expect(h.invoke).toHaveBeenCalledTimes(1));
+    expect(h.invoke).toHaveBeenCalledWith("todo_island_toggle_task", {
+      noteId: "n1",
+      line: 3,
+      expectedText: "交材料",
+    });
+    h.invoke.mockClear();
+    // 点来源笔记名：不参与整行勾选（预留给「打开笔记」）
+    fireEvent.click(screen.getByText("今日速记"));
+    expect(h.invoke).not.toHaveBeenCalled();
+    // 点勾圈本体：只发一次（stopPropagation 拦住行上的第二次）
+    fireEvent.click(screen.getAllByTitle("完成")[0]);
+    await waitFor(() => expect(h.invoke).toHaveBeenCalledTimes(1));
+  });
+
+  it("勾选进入 6s 完成态驻留：行留原位 + 撤销 chip，到点才退场（另一条不动）", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
     await act(async () => {
@@ -269,25 +372,134 @@ describe("TodoIsland 舞台机", () => {
     await act(async () => {
       vi.advanceTimersByTime(120);
     });
+    // 光标在岛上（刚点完勾）：hover=true 挂起闲置自收，测试只聚焦驻留逻辑
+    await act(async () => {
+      h.handlers.get("todo-island-hover")?.({ payload: true });
+    });
     expect(screen.getByText("交材料")).toBeTruthy();
     fireEvent.click(screen.getAllByTitle("完成")[0]);
-    // 第一拍：圈已经翻面（按钮文案变成「标记为未完成」）
+    // 第一拍：圈已经翻面（按钮文案变成「标记为未完成」），行还在原位
     expect(screen.getAllByTitle("标记为未完成")).toHaveLength(1);
-    // 行还在位——得让用户看清刚勾的是哪一条
     expect(screen.getByText("交材料")).toBeTruthy();
+    // 行尾出现「撤销」chip；写回在点击瞬间已发出（驻留只是视觉窗口）
+    expect(screen.getByText("撤销")).toBeTruthy();
     await act(async () => {
-      vi.advanceTimersByTime(199);
+      await Promise.resolve();
+    });
+    expect(h.invoke).toHaveBeenCalledWith("todo_island_toggle_task", {
+      noteId: "n1",
+      line: 3,
+      expectedText: "交材料",
+    });
+    // 服务器确认归档（真实流程推送很快到）：行改由驻留快照续命
+    await act(async () => {
+      h.handlers.get("todo-island-update")?.({
+        payload: {
+          ...STATE,
+          done: 2,
+          hint: "回邮件给张工",
+          tasks: [STATE.tasks[1]],
+          doneTasks: [STATE.tasks[0]],
+        },
+      });
+    });
+    // 6s 驻留到点 → 退场动画 200ms 内仍渲染，放完才摘；另一条没被牵连
+    await act(async () => {
+      vi.advanceTimersByTime(6_000);
     });
     expect(screen.getByText("交材料")).toBeTruthy();
     await act(async () => {
-      vi.advanceTimersByTime(1);
+      vi.advanceTimersByTime(200);
     });
-    // 第二拍：行退场，另一条没被牵连
     expect(screen.queryByText("交材料")).toBeNull();
     expect(screen.getByText("回邮件给张工")).toBeTruthy();
   });
 
-  it("勾选失败：退场中的行回到原位，圈也还原", async () => {
+  it("驻留中点「撤销」：再发一次 toggle 回未完成，倒计时作废（6s 后行还在）", async () => {
+    vi.useFakeTimers();
+    const { container } = render(<TodoIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(rootEl(container));
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+    });
+    // 光标在岛上（刚点完勾）：hover=true 挂起闲置自收
+    await act(async () => {
+      h.handlers.get("todo-island-hover")?.({ payload: true });
+    });
+    fireEvent.click(screen.getAllByTitle("完成")[0]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    h.invoke.mockClear();
+    fireEvent.click(screen.getByText("撤销"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.invoke).toHaveBeenCalledWith("todo_island_toggle_task", {
+      noteId: "n1",
+      line: 3,
+      expectedText: "交材料",
+    });
+    // 行回未完成态，chip 与倒计时随之消失
+    expect(screen.getByText("交材料")).toBeTruthy();
+    expect(screen.getAllByTitle("完成")).toHaveLength(2);
+    expect(screen.queryByText("撤销")).toBeNull();
+    // 倒计时已作废：远超 6s 行也不退场
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText("交材料")).toBeTruthy();
+  });
+
+  it("悬停驻留行暂停倒计时，移开恢复（设计稿 S2）", async () => {
+    vi.useFakeTimers();
+    const { container } = render(<TodoIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(rootEl(container));
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+    });
+    // 光标在岛上（刚点完勾）：hover=true 挂起闲置自收
+    await act(async () => {
+      h.handlers.get("todo-island-hover")?.({ payload: true });
+    });
+    fireEvent.click(screen.getAllByTitle("完成")[0]);
+    const rowEl = screen.getByText("交材料").closest("[role='listitem']") as HTMLElement;
+    // 服务器确认归档（真实流程）：行改由驻留快照续命
+    await act(async () => {
+      h.handlers.get("todo-island-update")?.({
+        payload: {
+          ...STATE,
+          done: 2,
+          hint: "回邮件给张工",
+          tasks: [STATE.tasks[1]],
+          doneTasks: [STATE.tasks[0]],
+        },
+      });
+    });
+    // 悬停该行 → 计时挂起：远超 6s 也不退场
+    fireEvent.mouseEnter(rowEl);
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText("交材料")).toBeTruthy();
+    // 移开 → 从剩余时间恢复：6s 后退场动画放完，行摘除
+    fireEvent.mouseLeave(rowEl);
+    await act(async () => {
+      vi.advanceTimersByTime(6_000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.queryByText("交材料")).toBeNull();
+  });
+
+  it("勾选失败：驻留中的行回到原位，圈也还原，chip 消失", async () => {
     vi.useFakeTimers();
     let rejectToggle!: (reason: Error) => void;
     h.invoke.mockImplementation((cmd: string) => {
@@ -307,14 +519,16 @@ describe("TodoIsland 舞台机", () => {
     await act(async () => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.queryByText("交材料")).toBeNull(); // 已退场
+    expect(screen.getByText("交材料")).toBeTruthy(); // 驻留中（不再 200ms 就退场）
     await act(async () => rejectToggle(new Error("stale task")));
-    // 写回失败：乐观翻面作废，行回到列表原位
+    // 写回失败：乐观翻面作废，行回到列表原位的未完成态，chip 随驻留取消消失
     expect(screen.getByText("交材料")).toBeTruthy();
     expect(screen.getAllByTitle("完成")).toHaveLength(2);
+    expect(screen.queryByText("撤销")).toBeNull();
     expect(screen.getByRole("alert").textContent).toContain("已还原");
   });
-  it("勾选后服务器确认：行进「已完成」，不被退场标记吞掉", async () => {
+
+  it("勾选后服务器确认：行仍驻留原位（不因推送跳没），6s 后才进「已完成」", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
     await act(async () => {
@@ -323,6 +537,10 @@ describe("TodoIsland 舞台机", () => {
     fireEvent.click(rootEl(container)); // → list
     await act(async () => {
       vi.advanceTimersByTime(120);
+    });
+    // 光标在岛上（刚点完勾）：hover=true 挂起闲置自收
+    await act(async () => {
+      h.handlers.get("todo-island-hover")?.({ payload: true });
     });
     fireEvent.click(screen.getAllByTitle("完成")[0]);
     // 服务器确认：这条离开「进行中」、进「已完成」
@@ -340,10 +558,62 @@ describe("TodoIsland 舞台机", () => {
     await act(async () => {
       vi.advanceTimersByTime(300);
     });
+    // 推送到了也不许跳没：驻留快照续命渲染
+    expect(screen.getByText("交材料")).toBeTruthy();
+    await act(async () => {
+      vi.advanceTimersByTime(6_000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.queryByText("交材料")).toBeNull();
     fireEvent.click(screen.getByText("已完成"));
     expect(screen.getByText("交材料")).toBeTruthy();
-  });});
+  });
+
+  it("🔴 root 键盘可达（P1-1）：tabIndex + Enter/Space 展开，Esc 收回不变", async () => {
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const root = rootEl(container);
+    expect(root.getAttribute("tabindex")).toBe("0");
+    fireEvent.keyDown(root, { key: "Enter" });
+    expect(root.getAttribute("data-st")).toBe("list");
+    fireEvent.keyDown(root, { key: "Escape" });
+    expect(root.getAttribute("data-st")).toBe("pill");
+  });
+
+  it("🔴 全局热键（P1-1）：收起态触发 → 唤岛直进 compose 并请求焦点；再按 → 收回胶囊", async () => {
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    await act(async () => {
+      h.handlers.get("todo-island-hotkey")?.({ payload: null });
+    });
+    expect(rootEl(container).getAttribute("data-st")).toBe("compose");
+    expect(h.invoke).toHaveBeenCalledWith("todo_island_focus");
+    // 开关键：展开态再按 = 收回胶囊，不抢焦点
+    h.invoke.mockClear();
+    await act(async () => {
+      h.handlers.get("todo-island-hotkey")?.({ payload: null });
+    });
+    expect(rootEl(container).getAttribute("data-st")).toBe("pill");
+    expect(h.invoke).not.toHaveBeenCalledWith("todo_island_focus");
+  });
+
+  it("🔴 seg 是真 tab 按钮（P1-1）：←/→ 切换视图且焦点跟到新选中的 tab", async () => {
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    fireEvent.click(rootEl(container)); // → list
+    fireEvent.click(screen.getByText("已完成"));
+    expect(screen.getByRole("tab", { name: "已完成" }).getAttribute("aria-selected")).toBe("true");
+    const tablist = screen.getByRole("tablist", { name: "待办视图" });
+    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: "进行中" }).getAttribute("aria-selected")).toBe("true");
+    // roving tabindex：焦点移到新选中的 tab（读屏与键盘用户跟得上）
+    expect(document.activeElement?.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "进行中" }).getAttribute("tabindex")).toBe("0");
+    expect(screen.getByRole("tab", { name: "已完成" }).getAttribute("tabindex")).toBe("-1");
+  });
+});
 
 describe("TodoIslandList 写回", () => {
   it("勾选失败恰逢收起时仍在胶囊显示回滚提示", async () => {
@@ -362,7 +632,7 @@ describe("TodoIslandList 写回", () => {
     expect(rootEl(container).getAttribute("data-st")).toBe("pill");
     expect(screen.getByRole("alert").textContent).toContain("已还原");
   });
-  it("勾选后服务器确认：行进「已完成」，不被退场标记吞掉", async () => {
+  it("勾选后服务器确认（收起重开路径）：驻留结束才进「已完成」，不被旧标记吞掉", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
     await act(async () => {
@@ -371,6 +641,10 @@ describe("TodoIslandList 写回", () => {
     fireEvent.click(rootEl(container)); // → list
     await act(async () => {
       vi.advanceTimersByTime(120);
+    });
+    // 光标在岛上（刚点完勾）：hover=true 挂起闲置自收
+    await act(async () => {
+      h.handlers.get("todo-island-hover")?.({ payload: true });
     });
     fireEvent.click(screen.getAllByTitle("完成")[0]);
     // 服务器确认：这条离开「进行中」、进「已完成」
@@ -387,6 +661,14 @@ describe("TodoIslandList 写回", () => {
     });
     await act(async () => {
       vi.advanceTimersByTime(300);
+    });
+    // 驻留期（6s 内）：快照续命，「进行中」里仍看得见
+    expect(screen.getByText("交材料")).toBeTruthy();
+    await act(async () => {
+      vi.advanceTimersByTime(6_000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
     });
     expect(screen.queryByText("交材料")).toBeNull();
     fireEvent.click(screen.getByText("已完成"));

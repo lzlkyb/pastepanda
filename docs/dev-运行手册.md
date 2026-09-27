@@ -1,10 +1,34 @@
-# Tauri dev 运行手册（低频排障）
+# Tauri dev 运行手册
 
-> 本文收纳从 `AGENTS.md` 规则 6 搬出的**低频**运维细节：后台常驻 dev、端口占用重启、AI 会话内长驻 dev。
-> 2026-09-26 搬出，目的是削减 AGENTS.md 的每轮上下文开销；内容未删改。
-> 日常启动 dev 只需要 AGENTS.md 规则 6 里的命令，没必要读本文。
+> `AGENTS.md` 规则 6 的启动命令及低频排障。只在启动或诊断 dev 时读取。
 
 ---
+
+## 0. 日常启动
+
+在项目根目录 `D:\AItool\winapp\pastePanda` 执行。ocr-rs（vendored PP-OCR 引擎）的 bindgen 阶段需要 `libclang.dll`，项目自带于 `src-tauri/.libclang/`。项目约定不持久化 `.cargo/config`，每个新终端进行 Rust 编译前都要设置 `LIBCLANG_PATH`。
+
+- **Git Bash**：用 `pwd -W` 取得 Windows 路径；裸 `pwd` 得到的 MSYS 路径无法供 bindgen 使用。
+
+  ```bash
+  export LIBCLANG_PATH="$(pwd -W)/src-tauri/.libclang" && npm run tauri dev
+  ```
+
+- **PowerShell**：
+
+  ```powershell
+  $env:LIBCLANG_PATH = "$(Get-Location)/src-tauri/.libclang"; npm run tauri dev
+  ```
+
+- **cmd.exe**：`set` 不加引号；跨盘切目录用 `cd /d`。
+
+  ```cmd
+  set LIBCLANG_PATH=D:\AItool\winapp\pastePanda\src-tauri\.libclang
+  cd /d "D:\AItool\winapp\pastePanda"
+  npm run tauri dev
+  ```
+
+用 `npm run tauri dev`，不要裸用 `npx tauri dev`：前者会运行 `prebuild` 并使用本地 Tauri CLI；后者可能拉到 registry 上的废弃 `tauri@0.15.0`，报 `could not determine executable to run`。启动失败时先检查当前目录和 `LIBCLANG_PATH`。可用 `setx LIBCLANG_PATH "D:\AItool\winapp\pastePanda\src-tauri\.libclang"` 写入用户环境变量，重开终端后生效。首次编译约 1 分钟（727 个 crate），之后 Vite HMR 热更新。启动时 `tauri_plugin_updater ... update endpoint did not respond` 是无害日志。
 
 ## 1. 后台运行（不阻塞主终端）
 

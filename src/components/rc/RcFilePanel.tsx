@@ -269,7 +269,8 @@ function FileRow({
           aria-valuemin={0}
           aria-valuemax={100}
         >
-          <span className={styles.fileBarFill} style={{ width: `${pct}%` }} />
+          {/* ui-rule-ok: 缩放比是运行时进度值，只能内联（U8 例外档） */}
+          <span className={styles.fileBarFill} style={{ transform: `scaleX(${pct / 100})` }} />
         </div>
       )}
       {hint && <div className={styles.fileHint}>{hint}</div>}

@@ -97,6 +97,7 @@ impl RcService {
             clock_skew_ms: self.clock_skew_ms(),
             peer_fps120: self.peer_fps120(),
             peer_hevc: self.peer_hevc(),
+            peer_av1: self.peer_av1(),
             peer_dgram_input: self.peer_dgram_input(),
             peer_refresh_hz: self.peer_refresh_hz(),
             peer_monitors: self
@@ -401,6 +402,34 @@ impl RcService {
 
     pub fn pending_joins(&self) -> Vec<join::RcJoinRequest> {
         self.joins.list(now_ms())
+    }
+
+    pub fn arm_exchange(&self, node_id: &str, name: &str, expires_at: i64) -> Result<(), String> {
+        self.joins.arm_exchange(node_id, name, expires_at)
+    }
+
+    pub fn exchange_intent(&self, node_id: &str, at_ms: i64) -> Option<join::RcExchangeIntent> {
+        self.joins.exchange_for(node_id, at_ms)
+    }
+
+    /// PairCheck 的对端身份由 iroh 连接认证；只有本机也粘贴了该身份的码才落库。
+    pub fn confirm_exchange(&self, peer: &str) -> Result<bool, String> {
+        if self.is_rc_paired(peer) {
+            return Ok(true);
+        }
+        if !self.enabled() || !join::door_open(&self.store, now_ms()) {
+            return Ok(false);
+        }
+        let Some(intent) = self.joins.exchange_for(peer, now_ms()) else {
+            return Ok(false);
+        };
+        self.store.rc_device_pair(peer, &intent.name)?;
+        self.joins.clear_exchange(peer);
+        if let Err(e) = join::close_door(&self.store) {
+            log::warn!("[RC] 交换配对后关闭邀请窗口失败：{e}");
+        }
+        self.emit_pair_changed();
+        Ok(true)
     }
 
     pub fn approve_join(&self, node_id: &str, name: &str) -> Result<(), String> {

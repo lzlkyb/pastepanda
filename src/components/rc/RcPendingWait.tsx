@@ -63,8 +63,13 @@ export function RcPendingWait({
           aria-valuemax={100}
           aria-valuenow={pct}
         >
-          {/* 视觉最小 2%：刚发出申请时进度条要看得见（aria-valuenow 仍是真实值） */}
-          <span className={styles.waitFill} style={{ width: `${Math.max(2, pct)}%` }} />
+          {/* 视觉最小 2%：刚发出申请时进度条要看得见（aria-valuenow 仍是真实值）。
+              填充走 scaleX（合成层动画），宽度恒 100% —— 2% 最小值在缩放比里保留。 */}
+          {/* ui-rule-ok: 缩放比是运行时进度值，只能内联（U8 例外档） */}
+          <span
+            className={styles.waitFill}
+            style={{ transform: `scaleX(${Math.max(2, pct) / 100})` }}
+          />
         </div>
       )}
       <div className={`${styles.meta} ${styles.waitMeta}`}>

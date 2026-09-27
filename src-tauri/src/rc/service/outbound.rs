@@ -7,6 +7,34 @@
 use super::*;
 
 impl RcService {
+    /// 查询对端是否也粘贴了本机码。查询本身不申请屏幕或键鼠权限。
+    pub async fn pair_check(&self, peer: &str) -> Result<bool, String> {
+        use crate::sync::transport::{read_frame, write_frame};
+        let Some((ep, presence)) = self.transport_ready() else {
+            return Err("远程通道未启动".into());
+        };
+        let id = iroh::EndpointId::from_str(peer).map_err(|e| format!("设备号无效：{e}"))?;
+        let mut addr = EndpointAddr::new(id);
+        for sock in presence.addrs_of(peer, now_ms()) {
+            addr = addr.with_ip_addr(sock);
+        }
+        let conn = tokio::time::timeout(std::time::Duration::from_secs(8), ep.connect(addr, ALPN))
+            .await.map_err(|_| "等待对方上线超时".to_string())?
+            .map_err(|e| format!("暂时连不上对方：{e}"))?;
+        let (mut send, mut recv) = conn.open_bi().await.map_err(|e| format!("开流失败：{e}"))?;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(8), async {
+            write_frame(&mut send, &RcFrame::PairCheck.encode()?).await?;
+            let raw = read_frame(&mut recv).await?;
+            match RcFrame::decode(&raw)? {
+                RcFrame::PairStatus { paired } => Ok(paired),
+                RcFrame::Deny { reason, .. } => Err(format!("[pair_failed] {reason}")),
+                _ => Err("对方未响应配对确认".into()),
+            }
+        }).await.map_err(|_| "等待对方确认超时".to_string())?;
+        conn.close(0u32.into(), b"pair-check");
+        result
+    }
+
     /// 非阻塞发起远程：立刻落 OutboundPending 并返回，dial 在后台跑。
     /// 前端可立即展示等待 UI 并取消；结果经 `rc-session-changed` / `outbound_error` 回传。
     pub async fn request_session(
@@ -336,6 +364,8 @@ impl RcService {
             uno_pass,
             // 本端支持视频数据报；旧对端 serde 忽略未知字段，照常受理
             vid_dgram: Some(true),
+            // P3.1：本端能解 RS FEC——旧对端 serde 忽略未知字段照常受理
+            fec_rs: Some(true),
             // G3：本端支持音频。会话中由 AudioOn 开关；被控端无渲染设备时自动无声
             audio: Some(true),
         };

@@ -15,7 +15,7 @@
 //! - `ctx->delay` 自报不可信，判延迟一律用真实出包
 
 use self::ffi::{
-    dll_dir, AVMEDIA_TYPE_VIDEO, AVERROR_EAGAIN, AVERROR_EOF, AV_CODEC_ID_H264, AV_CODEC_ID_HEVC,
+    dll_dir, AVMEDIA_TYPE_VIDEO, AVERROR_EAGAIN, AVERROR_EOF, AV_CODEC_ID_AV1, AV_CODEC_ID_H264, AV_CODEC_ID_HEVC,
     AV_PICTURE_TYPE_I, AV_PIX_FMT_NV12, AV_PKT_FLAG_KEY, AVCodecContext, AVFrame, AVPacket,
     AVRational, Ff,
 };
@@ -64,7 +64,11 @@ type Candidate = (&'static str, PrivOpts, bool);
 const H264_CANDIDATES: [Candidate; 3] = [
     (
         "h264_nvenc",
-        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1")],
+        // P2.2 intra-refresh（2026-09-27）：滚动 I 宏块带代替整帧 IDR，拖动时
+        // 码率曲线变平（IDR 尖峰正是拥塞塌窗的引信）。不支持的 DLL/驱动由
+        // av_opt_set 的非致命路径忽略；与 ForceKeyFrame 并存（损坏恢复仍可
+        // 强制整帧 IDR）。
+        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1"), ("intra-refresh", "1")],
         false,
     ),
     ("h264_qsv", &[("preset", "veryfast"), ("look_ahead", "0"), ("async_depth", "1")], true),
@@ -76,17 +80,46 @@ const H264_CANDIDATES: [Candidate; 3] = [
 const HEVC_CANDIDATES: [Candidate; 3] = [
     (
         "hevc_nvenc",
-        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1")],
+        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1"), ("intra-refresh", "1")],
         false,
     ),
     ("hevc_qsv", &[("preset", "veryfast"), ("look_ahead", "0"), ("async_depth", "1")], true),
     ("hevc_amf", &[("usage", "lowlatency"), ("quality", "speed"), ("rc", "cbr")], false),
 ];
 
+/// P2.3：AV1 硬编候选（nvenc Turing+ / qsv / amf）。MF 无 AV1，AV1 只走 FF。
+const AV1_CANDIDATES: [Candidate; 3] = [
+    (
+        "av1_nvenc",
+        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0")],
+        false,
+    ),
+    ("av1_qsv", &[("preset", "veryfast"), ("async_depth", "1")], true),
+    ("av1_amf", &[("usage", "lowlatency"), ("quality", "speed")], false),
+];
+
+/// P2.3：AV1 硬编可用性（DLL 是否编入了 av1_nvenc/qsv/amf 之一）。进程内缓存。
+/// 探测便宜：只查 find_encoder_by_name，不实例化编码器。
+pub fn av1_hw_available() -> bool {
+    static AV1: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AV1.get_or_init(|| {
+        let Ok(ff) = ff() else {
+            return false;
+        };
+        AV1_CANDIDATES.iter().any(|(name, _, _)| {
+            let Ok(cname) = std::ffi::CString::new(*name) else {
+                return false;
+            };
+            !(unsafe { (ff.avcodec_find_encoder_by_name)(cname.as_ptr()) }).is_null()
+        })
+    })
+}
+
 fn candidates(codec: VideoCodec) -> &'static [Candidate] {
     match codec {
         VideoCodec::H264 => &H264_CANDIDATES,
         VideoCodec::Hevc => &HEVC_CANDIDATES,
+        VideoCodec::Av1 => &AV1_CANDIDATES,
     }
 }
 
@@ -95,6 +128,7 @@ fn codec_id_of(codec: VideoCodec) -> i32 {
     match codec {
         VideoCodec::H264 => AV_CODEC_ID_H264,
         VideoCodec::Hevc => AV_CODEC_ID_HEVC,
+        VideoCodec::Av1 => AV_CODEC_ID_AV1,
     }
 }
 

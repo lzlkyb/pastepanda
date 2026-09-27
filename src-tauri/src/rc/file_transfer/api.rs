@@ -118,9 +118,8 @@ impl RcService {
     ///    `gate_inbound` 仍先跑：被禁用 / 未配对的设备照样进不来。这条别混。
     /// 🔴 **只对推送方向生效**（对方发给我）。取回方向是「我挑文件发给对方」，
     ///    没有可自动的东西——所以这里不需要区分方向参数。
-    /// 🔴 落点固定在**系统下载目录**（`default_receive_dir`）。「记住接收目录」
-    ///    是设计稿 P1 项，所以这里不加第二列、也不猜目录。
-    /// 🔴 解析下载目录失败时**回落到人工确认**，不是静默失败也不是硬失败：
+    ///    🔴 2026-09-27：落点改走 `effective_receive_dir`（用户设置可覆盖默认）。
+    /// 🔴 解析目录失败时**回落到人工确认**，不是静默失败也不是硬失败：
     ///    自动接收是便利，便利出问题就该退回安全的那条路。
     pub(in crate::rc) fn auto_accept_dir(&self, peer: &str) -> Option<PathBuf> {
         // 判据收口在 `service.rs::device_auto_accept`（与 `device_trusted` 同口径），
@@ -128,10 +127,17 @@ impl RcService {
         if !self.device_auto_accept(peer) {
             return None;
         }
-        match default_receive_dir() {
+        let cfg = match self.store.get_config() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("[RC] 该设备已允许自动接收，但配置读取失败，回落人工确认：{e}");
+                return None;
+            }
+        };
+        match crate::rc::file_transfer::effective_receive_dir(&cfg) {
             Ok(d) => Some(d),
             Err(e) => {
-                log::warn!("[RC] 该设备已允许自动接收，但下载目录解析失败，回落人工确认：{e}");
+                log::warn!("[RC] 该设备已允许自动接收，但接收目录解析失败，回落人工确认：{e}");
                 None
             }
         }

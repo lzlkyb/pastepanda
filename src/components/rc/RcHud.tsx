@@ -27,7 +27,7 @@ import styles from "./RemoteComputer.module.css";
 import { isSessionEscape } from "@/lib/rcKeyGuard";
 import { registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
 import { pushRttSample } from "@/lib/rcRttTrend";
-import { registerRcDetailToggle } from "@/lib/rcDetailPanel";
+import { registerRcDetailToggle, setRcDetailOpen } from "@/lib/rcDetailPanel";
 import { RcHudTrend } from "./RcHudTrend";
 import {
   linkStateLabel,
@@ -106,6 +106,11 @@ export function RcHud({
     pushRttSample(rttMs);
   }, [rttMs]);
   useEffect(() => registerRcDetailToggle(() => setOpen((v) => !v)), []);
+  // 开合外报：浮条宿主据此锁显（ⓘ 面板开着就不淡出，与下拉/⋯面板同口径）
+  useEffect(() => {
+    setRcDetailOpen(open);
+    return () => setRcDetailOpen(false);
+  }, [open]);
 
   // 打开时点外面（画面/工具栏/窗外）就收——与 RcDropdown 同一交互口径
   useEffect(() => {
@@ -231,7 +236,11 @@ export function RcHud({
   }
 
   return (
-    <div className={styles.hudWrapCap} ref={wrapRef}>
+    /* hudScope（display:contents）：不生成盒子，按钮留在胶囊行内、面板绝对定位
+       挂胶囊下缘（2026-09-27 审查修正——原先按钮和面板一起包在绝对定位的
+       hudWrapCap 里，ⓘ 被拽出胶囊行、悬在面板上方）。wrapRef 同时圈住按钮与
+       面板，「点外面收」的 contains 判据才两头都对。 */
+    <div ref={wrapRef} className={styles.hudScope}>
       <button
         type="button"
         className={styles.capBtn}
@@ -243,16 +252,20 @@ export function RcHud({
         <Info size={13} aria-hidden="true" />
       </button>
       {open && (
-        <div className={styles.hudPanel} aria-label="连接详情">
-          <div className={styles.hudPanelHead}>连接详情</div>
-          <RcHudTrend rttMs={rttMs} />
-          {rows.map((r) => (
-            <div key={r.label} className={styles.hudRow}>
-              <span className={styles.hudRowLabel}>{r.label}</span>
-              <span className={`${styles.hudRowVal} ${r.cls ?? ""}`.trimEnd()}>{r.value}</span>
-              {r.hint && <span className={styles.hudRowHint}>{r.hint}</span>}
-            </div>
-          ))}
+        /* role="region"（2026-09-27 P1-3）：面板是可命名的地标，而 div 的隐式
+           role=generic 不允许命名 —— 原来的 aria-label 会被读屏丢弃。 */
+        <div className={styles.hudWrapCap}>
+          <div className={styles.hudPanel} role="region" aria-label="连接详情">
+            <div className={styles.hudPanelHead}>连接详情</div>
+            <RcHudTrend rttMs={rttMs} />
+            {rows.map((r) => (
+              <div key={r.label} className={styles.hudRow}>
+                <span className={styles.hudRowLabel}>{r.label}</span>
+                <span className={`${styles.hudRowVal} ${r.cls ?? ""}`.trimEnd()}>{r.value}</span>
+                {r.hint && <span className={styles.hudRowHint}>{r.hint}</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

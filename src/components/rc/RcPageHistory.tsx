@@ -59,13 +59,20 @@ export function RcPageHistory({
   );
 }
 
-/** 「清空记录」：ConfirmDialog → rc_history_clear → 通知调用方重拉列表。 */
+/** 「清空记录」：ConfirmDialog → rc_history_clear → 通知调用方重拉列表。
+ *  记录页与设置页共用的唯一实现（2026-09-27 审计次要观察收口，规则 11.1：
+ *  确认文案/失败 toast 原先两处各写一份，必然漂移）。 */
 export function RcHistoryClearButton({
   rc,
   onCleared,
+  label = "清空记录",
+  withIcon = true,
 }: {
   rc: UseRc;
   onCleared: () => void;
+  /** 设置页行内空间窄，用短标签。 */
+  label?: string;
+  withIcon?: boolean;
 }) {
   const { toast } = useToast();
   const clear = async () => {
@@ -87,8 +94,8 @@ export function RcHistoryClearButton({
       disabled={rc.busy}
       onClick={() => void clear()}
     >
-      <Trash2 size={12} aria-hidden="true" />
-      清空记录
+      {withIcon && <Trash2 size={12} aria-hidden="true" />}
+      {label}
     </button>
   );
 }

@@ -17,11 +17,13 @@
  * 的 generate / pass 两种 side）早已齐全，缺的只是本页入口。
  */
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { rcSessionHistory, type RcCapability } from "@/lib/api/rc";
-import { confirmDialog } from "@/lib/confirm";
+import { rcFileDefaultDir, rcFileReceiveDirSet } from "@/lib/api/rcFile";
 import { readAutoStartChannel, writeAutoStartChannel } from "@/lib/rcPrefs";
 import type { UseRc } from "@/hooks/useRc";
 import type { useToast } from "@/components/Toast";
+import { RcHistoryClearButton } from "./RcPageHistory";
 import settings from "@/components/Settings.module.css";
 import styles from "./RemoteComputer.module.css";
 
@@ -88,6 +90,37 @@ export function RcPageSettings({
   /** 自动开通道是本窗口偏好：内存态即时反馈 + localStorage 持久。 */
   const [autoChannel, setAutoChannel] = useState(() => readAutoStartChannel());
 
+  // 2026-09-27：文件接收目录（push 接受不再弹选框，这里成为唯一调整入口）
+  const [receiveDir, setReceiveDir] = useState("");
+  useEffect(() => {
+    void rcFileDefaultDir()
+      .then(setReceiveDir)
+      .catch(() => setReceiveDir(""));
+  }, []);
+  const changeReceiveDir = async () => {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const dir = await open({
+      directory: true,
+      multiple: false,
+      title: "选择文件接收目录",
+      defaultPath: receiveDir || undefined,
+    });
+    if (typeof dir !== "string") return;
+    try {
+      setReceiveDir(await rcFileReceiveDirSet(dir));
+      toast("文件接收目录已更新", "success");
+    } catch (e) {
+      toast(String(e), "error");
+    }
+  };
+  const openReceiveDir = async () => {
+    try {
+      await invoke("open_file_location", { path: receiveDir });
+    } catch (e) {
+      toast(typeof e === "string" && e ? e : "无法打开该目录", "error");
+    }
+  };
+
   useEffect(() => {
     let alive = true;
     void rcSessionHistory()
@@ -102,19 +135,8 @@ export function RcPageSettings({
     };
   }, []);
 
-  const clearHistory = async () => {
-    const ok = await confirmDialog({
-      title: "清空会话记录",
-      message: "将删除本机全部会话历史（只含元数据），清空后不可恢复。",
-      confirmText: "清空",
-      variant: "danger",
-    });
-    if (!ok) return;
-    const done = await rc.clearHistory();
-    if (done) setHistoryCount(0);
-    toast(done ? "会话记录已清空" : "清空失败，请重试", done ? "success" : "error");
-  };
-
+  // 清空记录的唯一实现在 RcHistoryClearButton（RcPageHistory 导出）——本页只传
+  // 清空后的计数归零回调（2026-09-27 审计收口：确认文案/失败 toast 原先两处各写一份）。
   return (
     <div className={styles.pageWrap} role="region" aria-label="设置">
       <section className={styles.setCard}>
@@ -159,6 +181,33 @@ export function RcPageSettings({
           >
             <span className={settings.sToggleThumb} />
             <span className={settings.sToggleLabel}>{autoChannel ? "开" : "关"}</span>
+          </button>
+        </div>
+        <div className={styles.setRow}>
+          <div className={styles.setRowInfo}>
+            <div className={styles.setRowTitle}>文件接收目录</div>
+            <div className={styles.setRowHint}>
+              对方发来的文件默认存到这里，不再每次询问
+            </div>
+          </div>
+          <span className={`${styles.setRowTitle} ${styles.setRowPath}`} title={receiveDir}>
+            {receiveDir || "读取中…"}
+          </span>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            onClick={() => void changeReceiveDir()}
+          >
+            更改
+          </button>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            disabled={!receiveDir}
+            title="在资源管理器中打开该目录"
+            onClick={() => void openReceiveDir()}
+          >
+            打开
           </button>
         </div>
       </section>
@@ -270,14 +319,12 @@ export function RcPageSettings({
             <div className={styles.setRowTitle}>清空会话记录</div>
             <div className={styles.setRowHint}>清空后不可恢复（产品红线：日志可见可删除）</div>
           </div>
-          <button
-            type="button"
-            className={styles.miniBtn}
-            disabled={rc.busy}
-            onClick={() => void clearHistory()}
-          >
-            清空
-          </button>
+          <RcHistoryClearButton
+            rc={rc}
+            onCleared={() => setHistoryCount(0)}
+            label="清空"
+            withIcon={false}
+          />
         </div>
       </section>
 

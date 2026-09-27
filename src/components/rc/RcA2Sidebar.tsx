@@ -4,8 +4,8 @@
  * 三段结构（对齐拼装稿左栏）：
  *  - 上半部随页切换：设备/文件/设置页 → `RcA2DeviceList`（在线/不在线分组，
  *    行内零按钮）；记录页 → `RcA2HistoryFilter`。
- *  - 「这台电脑」卡（`RcA2SelfCard`）：常驻设备号短指纹码格 + 复制 + 完整串
- *    一键出码 + 允许被连接开关（高频操作留在侧栏，设置页同款仍在）。
+ *  - 「这台电脑」卡（`RcA2SelfCard`）：首页生成并复制配对码、粘贴对方码；
+ *    设备号与无人值守入口收在「更多方式」。
  *  - 底部：单个「帮助」钮（亮码/输码收进一个弹层）+ 工具横排（文件/记录/设置）。
  *
  * 连接动作从侧栏下架：行内零按钮后，发起只走详情面 hero 大钮（方案 3 拍板）。
@@ -83,7 +83,7 @@ export function RcA2Sidebar({
   onUnoGenerate?: () => void;
   /** 「帮助」：一个弹层收齐「让别人帮我 / 帮别人连一次」（方案 A 收口）。 */
   onHelp?: () => void;
-  /** 「这台电脑」卡要用：本机身份 + 完整串生成 + toast。 */
+  /** 「这台电脑」卡要用：本机身份、配对码与 toast。 */
   rc?: UseRc;
   toast?: ToastFn;
   historyFilter?: RcA2HistoryFilterState;
@@ -124,7 +124,6 @@ export function RcA2Sidebar({
           targetsError={targetsError}
           onSelect={onSelect}
           onRefresh={onRefresh}
-          onPair={onPair}
           onNavigate={onNavigate}
           capFor={capFor}
           trustedOnly={trustedOnly}
@@ -141,6 +140,7 @@ export function RcA2Sidebar({
           enabled={Boolean(selfEnabled)}
           onToggleSelf={onToggleSelf}
           onUnoGenerate={onUnoGenerate ?? (() => undefined)}
+          onPair={onPair}
         />
       )}
 
@@ -162,10 +162,18 @@ export function RcA2Sidebar({
               onClick={() => onNavigate(toolPage)}
             >
               {/* U2：文件页有进行中传输时，角标常驻可见（离开页面也能看见在传） */}
+              {/* 角标数字给读屏另配一份文字（2026-09-27 P1-3）：span 的隐式
+                  role=generic 不允许命名，原来挂在角标上的 aria-label 被丢弃 ⇒
+                  读屏只听到一个裸数字。这里不做 role="status"：它是常驻数量、
+                  不是活区播报，数字每变一次都播报会吵；sr-only 文本随按钮名称
+                  播报，只在该按钮获得焦点时响一次。视觉一字未动。 */}
               {toolPage === "files" && transferBadge > 0 && (
-                <span className={styles.toolBadge} aria-label={`${transferBadge} 个传输进行中`}>
-                  {transferBadge}
-                </span>
+                <>
+                  <span className={styles.toolBadge} aria-hidden="true">
+                    {transferBadge}
+                  </span>
+                  <span className="sr-only">{transferBadge} 个传输进行中</span>
+                </>
               )}
               <Icon size={14} aria-hidden="true" />
               <span>{label}</span>

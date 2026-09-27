@@ -67,7 +67,7 @@ function GlassRow({ stored, updateAndSave }: {
         <SettingTile hue="editor">🧊</SettingTile>
         <div className={shared.sRowBody}>
           <div className={shared.sRowLabel}>玻璃透度</div>
-          <div className={shared.sRowDesc}>数值越大越实、文字越清楚；越小越像玻璃，但文字清楚度依赖桌面背景</div>
+          <div className={shared.sRowDesc}>数值越大越实、文字越清楚；下限已保证最透一档在任何桌面背景下正文都看得清</div>
         </div>
         <div className={styles.glassReadout}>{shown}%</div>
       </div>

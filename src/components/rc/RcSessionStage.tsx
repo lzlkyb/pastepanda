@@ -12,6 +12,7 @@
  * 浮条必须挂在它内部才可见）。
  */
 import { Eye, Loader2 } from "lucide-react";
+import { useEffect } from "react";
 import type { RcSession } from "@/lib/api/rc";
 import type { useRcFrames } from "@/hooks/useRcFrames";
 import { releaseModifiers } from "@/hooks/useRcInput";
@@ -20,6 +21,7 @@ import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import type { RcCursorShape } from "@/hooks/useRcCursor";
 import type { FitMode } from "@/lib/rcSessionStats";
 import { qualityLabel } from "@/lib/rcQuality";
+import { rcPanelOpenCount } from "@/lib/rcPanelFocus";
 import { RcFullscreenHotbar } from "./RcFullscreenHotbar";
 import { RcSessionTop } from "./RcSessionTop";
 import { RcScreenCanvas } from "./RcScreenCanvas";
@@ -86,6 +88,22 @@ export function RcSessionStage({
   const onKeyDown = (e: React.KeyboardEvent) => input.onKeyDown(e);
   const onKeyUp = (e: React.KeyboardEvent) => input.onKeyUp(e);
 
+  // 审计 P1-2（2026-09-27）：F11 切换全屏——Windows/浏览器同款惯例，给会话一条
+  // 键盘加速路径（鼠标主路仍是胶囊/浮条按钮）。捕获键盘或锁指针时 F11 属远端
+  // 交互，不生效；有模态时让路。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F11" || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (input.kbOn || input.pointerLocked) return;
+      // 下拉/⋯/ⓘ 面板展开时让路（17.6：先收面板再谈退出，口径与 Esc 一致）
+      if (rcPanelOpenCount() > 0 || document.querySelector(".dialog-backdrop")) return;
+      e.preventDefault();
+      onToggleFullscreen();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [input.kbOn, input.pointerLocked, onToggleFullscreen]);
+
   return (
     <div className={styles.viewShell}>
       {/* 🔴 再审计（全屏双组三键，2026-09-25）：全屏态顶条三键隐藏——hotbar
@@ -136,17 +154,33 @@ export function RcSessionStage({
             pointerLocked={input.pointerLocked}
             onTogglePointer={input.togglePointerLock}
             canControl={canControl}
+            kbOn={input.kbOn}
             onToggleFullscreen={onToggleFullscreen}
             onRequestEnd={onRequestEnd}
             busy={busy}
             info={
               hasFrame
                 ? `${size.w}×${size.h} · ${
-                    codec === "h264" ? "H.264" : codec === "hevc" ? "HEVC" : "JPEG"
-                  } · ${fps}fps`
-                : ""
+                    codec === "h264"
+                      ? "H.264"
+                      : codec === "hevc"
+                        ? "HEVC"
+                        : codec === "av1"
+                          ? "AV1"
+                          : "JPEG"
+                  } · ${fps}fps · F10 唤出/收起`
+                : "F10 唤出/收起本条"
             }
           />
+        )}
+        {/* 审计 P1-2（2026-09-27）：全屏态键盘捕获常驻徽标——全屏与胶囊互斥后
+            键盘态原本零指示（输入正打进对方机器而屏幕上没有任何说明）。
+            底部居中不与顶边 hotbar 抢位；pointer-events:none 不挡画面点击。 */}
+        {fullscreen && canControl && input.kbOn && (
+          <div className={styles.fsKbBadge} role="status">
+            <i aria-hidden="true" />
+            键盘已捕获 · Esc 释放
+          </div>
         )}
         <RcScreenCanvas
           canvasRef={canvasRef}

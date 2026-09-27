@@ -63,7 +63,14 @@ export function parseFrameBatch(buf: ArrayBuffer): RcBinFrame[] {
     const data = new Uint8Array(buf, off, len);
     off += len;
     out.push({
-      codec: codecByte === 2 ? "hevc" : codecByte === 1 ? "h264" : "jpeg",
+      codec:
+        codecByte === 3
+          ? "av1"
+          : codecByte === 2
+            ? "hevc"
+            : codecByte === 1
+              ? "h264"
+              : "jpeg",
       key,
       full,
       at_ms: atMs,

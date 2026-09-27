@@ -331,7 +331,11 @@ describe("askPrompt", () => {
   it("push 与 pull 的按钮含义不同，绝不共用文案", () => {
     const push = askPrompt(ask({ kind: "push" }));
     const pull = askPrompt(ask({ kind: "pull", name: "", size: 0 }));
-    expect(push.accept).toBe("选择保存位置");
+    // 2026-09-27：push 主路径直接落接收目录（不再弹选框），按钮就是「接受」；
+    // 「选择保存位置」降为次级「其他位置」小钮。pull 的「去选择文件」不变——
+    // 那一步仍是主路径。两句话必须继续不同（见 RcFileAsk 文件头纪律 1）。
+    expect(push.accept).toBe("接受");
+    expect(push.lead).toContain("文件接收目录");
     expect(pull.accept).toBe("去选择文件");
     expect(push.lead).toContain("未查看你的屏幕");
     expect(pull.lead).toContain("未查看你的屏幕");

@@ -84,6 +84,8 @@ pub(super) struct InboundVideo {
     /// 它没有视频数据报读取任务，P 帧必须继续走可靠流，否则画面退化成
     /// 每秒一张关键帧的幻灯片。
     pub(super) peer_dgram: bool,
+    /// P3.1：对端能解 RS FEC（Request 帧能力位）。false = 走 XOR 老格式。
+    pub(super) peer_fec_rs: bool,
     /// 输入提帧信号：键鼠事件到达时 `boost_frame`（notify_one，存许可），
     /// 推流循环提前醒。**别改回 notify_waiters**，理由见 `boost_frame`。
     pub(super) input_boost: Arc<tokio::sync::Notify>,

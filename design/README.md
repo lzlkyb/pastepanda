@@ -1,6 +1,6 @@
 # 设计稿索引（design/）
 
-> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-09-26）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
+> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-09-27）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
 
 ## 这份目录是什么
 
@@ -46,9 +46,9 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `logo-options/` | 13 | 9.2 MB | Logo 备选方案（有 index.html 汇总页） |
 | `icon-options/` | 5 | 4.3 MB | 应用图标备选方案 |
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
-| `*.html`（根目录） | 247 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 255 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（247 份，按主题分组）
+## 设计稿清单（255 份，按主题分组）
 
 ### 视觉与品牌（17）
 
@@ -82,10 +82,10 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 |---|---|---|
 | [`PastePanda-流程图-第三批-分组与缩放`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E7%AC%AC%E4%B8%89%E6%89%B9-%E5%88%86%E7%BB%84%E4%B8%8E%E7%BC%A9%E6%94%BE.html) | 2026-08-14 近期 | 22 KB |
 | [`PastePanda-流程图-交互升级-第二批`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E4%BA%A4%E4%BA%92%E5%8D%87%E7%BA%A7-%E7%AC%AC%E4%BA%8C%E6%89%B9.html) | 2026-08-14 近期 | 31 KB |
-| [`PastePanda-流程图-空态引导-设计稿`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E7%A9%BA%E6%80%81%E5%BC%95%E5%AF%BC-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-13 近期 | 8 KB |
-| [`PastePanda-流程图-内嵌编辑版-重设计`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E5%86%85%E5%B5%8C%E7%BC%96%E8%BE%91%E7%89%88-%E9%87%8D%E8%AE%BE%E8%AE%A1.html) | 2026-08-13 近期 | 26 KB |
-| [`PastePanda-流程图-全屏编辑版-重设计`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E5%85%A8%E5%B1%8F%E7%BC%96%E8%BE%91%E7%89%88-%E9%87%8D%E8%AE%BE%E8%AE%A1.html) | 2026-08-13 近期 | 36 KB |
-| [`PastePanda-流程图-UI精修-方案乙`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-UI%E7%B2%BE%E4%BF%AE-%E6%96%B9%E6%A1%88%E4%B9%99.html) | 2026-08-13 近期 | 42 KB |
+| [`PastePanda-流程图-空态引导-设计稿`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E7%A9%BA%E6%80%81%E5%BC%95%E5%AF%BC-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-13 | 8 KB |
+| [`PastePanda-流程图-内嵌编辑版-重设计`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E5%86%85%E5%B5%8C%E7%BC%96%E8%BE%91%E7%89%88-%E9%87%8D%E8%AE%BE%E8%AE%A1.html) | 2026-08-13 | 26 KB |
+| [`PastePanda-流程图-全屏编辑版-重设计`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E5%85%A8%E5%B1%8F%E7%BC%96%E8%BE%91%E7%89%88-%E9%87%8D%E8%AE%BE%E8%AE%A1.html) | 2026-08-13 | 36 KB |
+| [`PastePanda-流程图-UI精修-方案乙`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-UI%E7%B2%BE%E4%BF%AE-%E6%96%B9%E6%A1%88%E4%B9%99.html) | 2026-08-13 | 42 KB |
 
 ### 截图与标注（35）
 
@@ -213,8 +213,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`设置-灵动岛分区-玻璃四档-设计稿`](./%E8%AE%BE%E7%BD%AE-%E7%81%B5%E5%8A%A8%E5%B2%9B%E5%88%86%E5%8C%BA-%E7%8E%BB%E7%92%83%E5%9B%9B%E6%A1%A3-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 21 KB |
-| [`待办灵动岛-设置页配色一致-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E8%AE%BE%E7%BD%AE%E9%A1%B5%E9%85%8D%E8%89%B2%E4%B8%80%E8%87%B4-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 16 KB |
+| [`设置-灵动岛分区-玻璃四档-设计稿`](./%E8%AE%BE%E7%BD%AE-%E7%81%B5%E5%8A%A8%E5%B2%9B%E5%88%86%E5%8C%BA-%E7%8E%BB%E7%92%83%E5%9B%9B%E6%A1%A3-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 21 KB |
+| [`待办灵动岛-设置页配色一致-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E8%AE%BE%E7%BD%AE%E9%A1%B5%E9%85%8D%E8%89%B2%E4%B8%80%E8%87%B4-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 16 KB |
 | [`远程电脑-设置去摆设与美化-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E7%BD%AE%E5%8E%BB%E6%91%86%E8%AE%BE%E4%B8%8E%E7%BE%8E%E5%8C%96-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-19 近期 | 53 KB |
 | [`远程电脑-开关可发现与画质自适应-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%BC%80%E5%85%B3%E5%8F%AF%E5%8F%91%E7%8E%B0%E4%B8%8E%E7%94%BB%E8%B4%A8%E8%87%AA%E9%80%82%E5%BA%94-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-19 近期 | 30 KB |
 | [`设置页-风格对齐优化对照稿`](./%E8%AE%BE%E7%BD%AE%E9%A1%B5-%E9%A3%8E%E6%A0%BC%E5%AF%B9%E9%BD%90%E4%BC%98%E5%8C%96%E5%AF%B9%E7%85%A7%E7%A8%BF.html) | 2026-09-14 近期 | 20 KB |
@@ -240,7 +240,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`PastePanda-表格拆分进粘贴栈-设计稿`](./PastePanda-%E8%A1%A8%E6%A0%BC%E6%8B%86%E5%88%86%E8%BF%9B%E7%B2%98%E8%B4%B4%E6%A0%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-14 近期 | 20 KB |
 | [`PastePanda-粘贴栈-chip内容预览-设计稿`](./PastePanda-%E7%B2%98%E8%B4%B4%E6%A0%88-chip%E5%86%85%E5%AE%B9%E9%A2%84%E8%A7%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-14 近期 | 11 KB |
 | [`PastePanda-栈模式UI优化升级-设计稿`](./PastePanda-%E6%A0%88%E6%A8%A1%E5%BC%8FUI%E4%BC%98%E5%8C%96%E5%8D%87%E7%BA%A7-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-14 近期 | 15 KB |
-| [`PastePanda-粘贴栈衍生-P1-设计稿`](./PastePanda-%E7%B2%98%E8%B4%B4%E6%A0%88%E8%A1%8D%E7%94%9F-P1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-13 近期 | 38 KB |
+| [`PastePanda-粘贴栈衍生-P1-设计稿`](./PastePanda-%E7%B2%98%E8%B4%B4%E6%A0%88%E8%A1%8D%E7%94%9F-P1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-13 | 38 KB |
 | [`粘性功能-v6.8-设计稿`](./%E7%B2%98%E6%80%A7%E5%8A%9F%E8%83%BD-v6.8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-12 | 28 KB |
 | [`签到送Token-v6.9-设计稿`](./%E7%AD%BE%E5%88%B0%E9%80%81Token-v6.9-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-12 | 37 KB |
 
@@ -270,21 +270,23 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`doc-editor-preview`](./doc-editor-preview.html) | 2026-08-07 | 8 KB |
 | [`rich-content-card-editor`](./rich-content-card-editor.html) | 2026-08-06 | 8 KB |
 
-### 同步与更新（56）
+### 同步与更新（58）
 
 *设备同步/配对/冲突，以及自动更新、发版说明弹框、版本徽标。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`远程电脑-设备行对齐RustDesk-前后对比-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E5%A4%87%E8%A1%8C%E5%AF%B9%E9%BD%90RustDesk-%E5%89%8D%E5%90%8E%E5%AF%B9%E6%AF%94-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 12 KB |
-| [`远程电脑-设备组织-标签与备注-对齐RustDesk地址簿-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E5%A4%87%E7%BB%84%E7%BB%87-%E6%A0%87%E7%AD%BE%E4%B8%8E%E5%A4%87%E6%B3%A8-%E5%AF%B9%E9%BD%90RustDesk%E5%9C%B0%E5%9D%80%E7%B0%BF-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 10 KB |
-| [`远程电脑-无人值守出码首屏减负-对齐设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%97%A0%E4%BA%BA%E5%80%BC%E5%AE%88%E5%87%BA%E7%A0%81%E9%A6%96%E5%B1%8F%E5%87%8F%E8%B4%9F-%E5%AF%B9%E9%BD%90%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 10 KB |
-| [`远程电脑-拼装稿-配色对照-宝蓝vs-ocean青蓝-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%8B%BC%E8%A3%85%E7%A8%BF-%E9%85%8D%E8%89%B2%E5%AF%B9%E7%85%A7-%E5%AE%9D%E8%93%9Dvs-ocean%E9%9D%92%E8%93%9D-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 53 KB |
-| [`远程电脑-拼装稿-左A侧栏右v5主列-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%8B%BC%E8%A3%85%E7%A8%BF-%E5%B7%A6A%E4%BE%A7%E6%A0%8F%E5%8F%B3v5%E4%B8%BB%E5%88%97-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 42 KB |
-| [`远程电脑-凭证文案统一-方案C-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%87%AD%E8%AF%81%E6%96%87%E6%A1%88%E7%BB%9F%E4%B8%80-%E6%96%B9%E6%A1%88C-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 12 KB |
-| [`远程电脑-入口收敛乙方案-默认保留配对-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%85%A5%E5%8F%A3%E6%94%B6%E6%95%9B%E4%B9%99%E6%96%B9%E6%A1%88-%E9%BB%98%E8%AE%A4%E4%BF%9D%E7%95%99%E9%85%8D%E5%AF%B9-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 16 KB |
-| [`远程电脑-会话质量读数与趋势图-对齐设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BC%9A%E8%AF%9D%E8%B4%A8%E9%87%8F%E8%AF%BB%E6%95%B0%E4%B8%8E%E8%B6%8B%E5%8A%BF%E5%9B%BE-%E5%AF%B9%E9%BD%90%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 12 KB |
-| [`远程电脑-会话窗壳A方案-自适应窗口与可靠三键-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BC%9A%E8%AF%9D%E7%AA%97%E5%A3%B3A%E6%96%B9%E6%A1%88-%E8%87%AA%E9%80%82%E5%BA%94%E7%AA%97%E5%8F%A3%E4%B8%8E%E5%8F%AF%E9%9D%A0%E4%B8%89%E9%94%AE-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 21 KB |
+| [`远程电脑-亮暗主题对比-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BA%AE%E6%9A%97%E4%B8%BB%E9%A2%98%E5%AF%B9%E6%AF%94-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 24 KB |
+| [`远程电脑-P1修法-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-P1%E4%BF%AE%E6%B3%95-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 66 KB |
+| [`远程电脑-设备行对齐RustDesk-前后对比-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E5%A4%87%E8%A1%8C%E5%AF%B9%E9%BD%90RustDesk-%E5%89%8D%E5%90%8E%E5%AF%B9%E6%AF%94-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 12 KB |
+| [`远程电脑-设备组织-标签与备注-对齐RustDesk地址簿-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E5%A4%87%E7%BB%84%E7%BB%87-%E6%A0%87%E7%AD%BE%E4%B8%8E%E5%A4%87%E6%B3%A8-%E5%AF%B9%E9%BD%90RustDesk%E5%9C%B0%E5%9D%80%E7%B0%BF-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 10 KB |
+| [`远程电脑-无人值守出码首屏减负-对齐设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%97%A0%E4%BA%BA%E5%80%BC%E5%AE%88%E5%87%BA%E7%A0%81%E9%A6%96%E5%B1%8F%E5%87%8F%E8%B4%9F-%E5%AF%B9%E9%BD%90%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 10 KB |
+| [`远程电脑-拼装稿-配色对照-宝蓝vs-ocean青蓝-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%8B%BC%E8%A3%85%E7%A8%BF-%E9%85%8D%E8%89%B2%E5%AF%B9%E7%85%A7-%E5%AE%9D%E8%93%9Dvs-ocean%E9%9D%92%E8%93%9D-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 53 KB |
+| [`远程电脑-拼装稿-左A侧栏右v5主列-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%8B%BC%E8%A3%85%E7%A8%BF-%E5%B7%A6A%E4%BE%A7%E6%A0%8F%E5%8F%B3v5%E4%B8%BB%E5%88%97-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 42 KB |
+| [`远程电脑-凭证文案统一-方案C-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%87%AD%E8%AF%81%E6%96%87%E6%A1%88%E7%BB%9F%E4%B8%80-%E6%96%B9%E6%A1%88C-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 12 KB |
+| [`远程电脑-入口收敛乙方案-默认保留配对-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E5%85%A5%E5%8F%A3%E6%94%B6%E6%95%9B%E4%B9%99%E6%96%B9%E6%A1%88-%E9%BB%98%E8%AE%A4%E4%BF%9D%E7%95%99%E9%85%8D%E5%AF%B9-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 16 KB |
+| [`远程电脑-会话质量读数与趋势图-对齐设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BC%9A%E8%AF%9D%E8%B4%A8%E9%87%8F%E8%AF%BB%E6%95%B0%E4%B8%8E%E8%B6%8B%E5%8A%BF%E5%9B%BE-%E5%AF%B9%E9%BD%90%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 12 KB |
+| [`远程电脑-会话窗壳A方案-自适应窗口与可靠三键-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E4%BC%9A%E8%AF%9D%E7%AA%97%E5%A3%B3A%E6%96%B9%E6%A1%88-%E8%87%AA%E9%80%82%E5%BA%94%E7%AA%97%E5%8F%A3%E4%B8%8E%E5%8F%AF%E9%9D%A0%E4%B8%89%E9%94%AE-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 近期 | 21 KB |
 | [`远程电脑-设备中心与配对-效果图`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%AE%BE%E5%A4%87%E4%B8%AD%E5%BF%83%E4%B8%8E%E9%85%8D%E5%AF%B9-%E6%95%88%E6%9E%9C%E5%9B%BE.html) | 2026-09-25 近期 | 33 KB |
 | [`远程电脑-被控态UI-B顶条加抽屉-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%A2%AB%E6%8E%A7%E6%80%81UI-B%E9%A1%B6%E6%9D%A1%E5%8A%A0%E6%8A%BD%E5%B1%89-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 近期 | 21 KB |
 | [`远程电脑-码配对极简-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E7%A0%81%E9%85%8D%E5%AF%B9%E6%9E%81%E7%AE%80-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 近期 | 28 KB |
@@ -359,23 +361,29 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`ui-1to1-restoration-draft`](./ui-1to1-restoration-draft.html) | 2026-08-06 | 92 KB |
 | [`search-box-unify`](./search-box-unify.html) | 2026-08-06 | 16 KB |
 
-### 未分类（8）
+### 未分类（14）
 
 *文件名没命中任何规则。给个更贴主题的文件名，或去脚本 `RULES` 里补一条。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`待办灵动岛-玻璃档位滑杆-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E7%8E%BB%E7%92%83%E6%A1%A3%E4%BD%8D%E6%BB%91%E6%9D%86-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 15 KB |
-| [`待办灵动岛-提醒与截止时间-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E6%8F%90%E9%86%92%E4%B8%8E%E6%88%AA%E6%AD%A2%E6%97%B6%E9%97%B4-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 16 KB |
-| [`待办灵动岛-实体材质精修-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%AE%9E%E4%BD%93%E6%9D%90%E8%B4%A8%E7%B2%BE%E4%BF%AE-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 18 KB |
-| [`待办灵动岛-候选6-非对称圆角-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%80%99%E9%80%896-%E9%9D%9E%E5%AF%B9%E7%A7%B0%E5%9C%86%E8%A7%92-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 16 KB |
-| [`待办灵动岛-B方案-材质与形变对照-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-B%E6%96%B9%E6%A1%88-%E6%9D%90%E8%B4%A8%E4%B8%8E%E5%BD%A2%E5%8F%98%E5%AF%B9%E7%85%A7-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 17 KB |
+| [`待办灵动岛-记一条时间补全与预览-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E8%AE%B0%E4%B8%80%E6%9D%A1%E6%97%B6%E9%97%B4%E8%A1%A5%E5%85%A8%E4%B8%8E%E9%A2%84%E8%A7%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 18 KB |
+| [`待办灵动岛-记一条加时间快捷条-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E8%AE%B0%E4%B8%80%E6%9D%A1%E5%8A%A0%E6%97%B6%E9%97%B4%E5%BF%AB%E6%8D%B7%E6%9D%A1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 11 KB |
+| [`待办灵动岛-吸附双态与精准命中-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%90%B8%E9%99%84%E5%8F%8C%E6%80%81%E4%B8%8E%E7%B2%BE%E5%87%86%E5%91%BD%E4%B8%AD-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 24 KB |
+| [`待办灵动岛-勾选撤销驻留与键盘路径-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%8B%BE%E9%80%89%E6%92%A4%E9%94%80%E9%A9%BB%E7%95%99%E4%B8%8E%E9%94%AE%E7%9B%98%E8%B7%AF%E5%BE%84-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 23 KB |
+| [`待办灵动岛-内容活性三动效-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%86%85%E5%AE%B9%E6%B4%BB%E6%80%A7%E4%B8%89%E5%8A%A8%E6%95%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 18 KB |
+| [`待办灵动岛-停靠态顶平方角形变-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%81%9C%E9%9D%A0%E6%80%81%E9%A1%B6%E5%B9%B3%E6%96%B9%E8%A7%92%E5%BD%A2%E5%8F%98-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 26 KB |
+| [`待办灵动岛-玻璃档位滑杆-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E7%8E%BB%E7%92%83%E6%A1%A3%E4%BD%8D%E6%BB%91%E6%9D%86-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 | 15 KB |
+| [`待办灵动岛-提醒与截止时间-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E6%8F%90%E9%86%92%E4%B8%8E%E6%88%AA%E6%AD%A2%E6%97%B6%E9%97%B4-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 | 16 KB |
+| [`待办灵动岛-实体材质精修-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%AE%9E%E4%BD%93%E6%9D%90%E8%B4%A8%E7%B2%BE%E4%BF%AE-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 | 18 KB |
+| [`待办灵动岛-候选6-非对称圆角-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E5%80%99%E9%80%896-%E9%9D%9E%E5%AF%B9%E7%A7%B0%E5%9C%86%E8%A7%92-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 | 16 KB |
+| [`待办灵动岛-B方案-材质与形变对照-设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-B%E6%96%B9%E6%A1%88-%E6%9D%90%E8%B4%A8%E4%B8%8E%E5%BD%A2%E5%8F%98%E5%AF%B9%E7%85%A7-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-26 | 17 KB |
 | [`待办灵动岛-玻璃感-档1设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E7%8E%BB%E7%92%83%E6%84%9F-%E6%A1%A31%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 | 17 KB |
 | [`待办灵动岛-液态玻璃-3a设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E6%B6%B2%E6%80%81%E7%8E%BB%E7%92%83-3a%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 | 13 KB |
 | [`md-outline-jump-microanim-方案2`](./md-outline-jump-microanim-%E6%96%B9%E6%A1%882.html) | 2026-09-20 | 11 KB |
 
-> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 16 份。
+> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 8 份。
 
 ---
 
-_共 247 份设计稿。重新生成：`npm run gen:design-index`_
+_共 255 份设计稿。重新生成：`npm run gen:design-index`_

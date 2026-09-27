@@ -122,22 +122,48 @@ pub struct DueRaw {
 /// `@今天 开完再说`（@后还有别的词）、`@13/45`（非法日期）一律原样返回 None。
 /// 展示文字剥尾后不许为空（`@今天` 孤立成文 = 不是尾巴）。
 /// 笔记正文**不回改**——语法在岛内是展示层约定，笔记里人也能读懂。
+///
+/// ❗ 解析体收口在 [`parse_due_tail`]（三态），本函数是薄包装——
+///   「记一条」预览（`preview_due`）靠那个三态区分「没有尾巴」与「尾巴写错」。
 pub fn due_tail(text: &str) -> (String, Option<DueRaw>) {
-    let none = || (text.to_string(), None);
+    match parse_due_tail(text) {
+        DueTailParse::Parsed(display, raw) => (display, Some(raw)),
+        _ => (text.to_string(), None),
+    }
+}
+
+/// [`due_tail`] 解析体的三态。`Invalid` 是预览的 ⚠ 态来源——旧版把「没有尾巴」和
+/// 「尾巴写错」都吞成 None，用户写错 `@下午3点` 只能静默存成正文（时间补全设计稿要消灭的事）。
+pub(crate) enum DueTailParse {
+    /// 没有 @ 尾巴形状：无 @ / 词中 @（邮箱）/ @后三段 / 剥尾后文字为空
+    NoTail,
+    /// 有尾巴形状但解析失败：`@13/45`、纯文字词
+    Invalid,
+    /// 解析成功（时间未遂按全天降级，历史口径不变——审计 P3#20）
+    Parsed(String, DueRaw),
+}
+
+pub(crate) fn parse_due_tail(text: &str) -> DueTailParse {
     let t = text.trim_end();
-    let Some(at) = t.rfind('@') else { return none() };
+    let Some(at) = t.rfind('@') else {
+        return DueTailParse::NoTail;
+    };
     // `@` 必须由空白引出（`邮箱@example.com` 的 @ 在词中，不算）
     if at == 0 || !t[..at].ends_with(char::is_whitespace) {
-        return none();
+        return DueTailParse::NoTail;
     }
     let tail = &t[at + 1..];
     let mut words = tail.split_whitespace();
-    let Some(date_w) = words.next() else { return none() };
+    let Some(date_w) = words.next() else {
+        return DueTailParse::NoTail;
+    };
     let time_w = words.next();
     if words.next().is_some() {
-        return none(); // @后面还有第三段——那是正文，不是尾巴
+        return DueTailParse::NoTail; // @后面还有第三段——那是正文，不是尾巴
     }
-    let Some(mut raw) = parse_due_date(date_w) else { return none() };
+    let Some(mut raw) = parse_due_date(date_w) else {
+        return DueTailParse::Invalid;
+    };
     if let Some(w) = time_w {
         match parse_due_time(w) {
             Some((h, m)) => {
@@ -151,14 +177,14 @@ pub fn due_tail(text: &str) -> (String, Option<DueRaw>) {
             // 纯文字词（`下午再说`）不是时间未遂，是正文——整条尾巴按无效处理，
             // 与历史行为一致，不许把用户的话吞进日期里。
             None if w.chars().any(|c| c.is_ascii_digit()) => {}
-            None => return none(),
+            None => return DueTailParse::Invalid,
         }
     }
     let display = t[..at].trim_end().to_string();
     if display.is_empty() {
-        return none();
+        return DueTailParse::NoTail;
     }
-    (display, Some(raw))
+    DueTailParse::Parsed(display, raw)
 }
 
 /// 日期词：`今天`/`明天`/`后天`、`9/26`、`09-26`、`2026-09-26`（`/` 同）。
@@ -282,6 +308,52 @@ pub fn due_label(at_ms: i64, has_time: bool, now: chrono::DateTime<chrono::Local
             if has_time { format!("{}.{}/{} {}", d.year(), d.month(), d.day(), time()) } else { format!("{}.{}/{} 到期", d.year(), d.month(), d.day()) }
         }
     }
+}
+
+/// 「记一条」输入的 @时间 预览（记一条时间补全设计稿 §4）。
+///
+/// 🔗 **直接复用**既有解析链 `parse_due_tail → resolve_due → due_label`——预览绝不允许
+/// 第二份解析（预览说 ✓ 实际存成正文，比没有预览更糟）。三态映射：
+/// - `None`：没有 @ 尾巴（邮箱等词中 @ 已滤）——前端不显示预览条；
+/// - `Some(ok=false)`：有尾巴但解析失败——前端显示 ⚠ 与一键纠错；
+/// - `Some(ok=true)`：成功，`label` 与列表 chip 同源（`due_label`）；`has_time=false`
+///   是全天任务（不提醒），措辞由前端如实区分。
+/// 本地纯解析，不联网不花钱，不涉 AI 开关（规则 16）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuePreview {
+    pub ok: bool,
+    pub label: String,
+    pub has_time: bool,
+}
+
+pub fn preview_due(text: &str, now: chrono::DateTime<chrono::Local>) -> Option<DuePreview> {
+    match parse_due_tail(text) {
+        DueTailParse::NoTail => None,
+        DueTailParse::Invalid => Some(DuePreview {
+            ok: false,
+            label: String::new(),
+            has_time: false,
+        }),
+        DueTailParse::Parsed(_, raw) => match resolve_due(&raw, now) {
+            Some(spec) => Some(DuePreview {
+                ok: true,
+                label: due_label(spec.at_ms, spec.has_time, now),
+                has_time: spec.has_time,
+            }),
+            None => Some(DuePreview {
+                ok: false,
+                label: String::new(),
+                has_time: false,
+            }),
+        },
+    }
+}
+
+/// 「记一条」输入的 @时间 预览命令（岛前端每击键调，本地解析微秒级）。
+#[tauri::command]
+pub fn todo_island_parse_due(text: String) -> Option<DuePreview> {
+    preview_due(&text, chrono::Local::now())
 }
 
 /// 扫一篇正文里的所有 GFM 任务复选框。
@@ -902,6 +974,31 @@ mod tests {
     }
 
     // ----- 截止时间（due_tail / resolve_due / due_label / 排序） -----
+
+    // ----- 记一条 @时间 预览（preview_due 三态映射；时间补全设计稿 §4/§6⑤） -----
+
+    #[test]
+    fn test_preview_due_states() {
+        let now = chrono::Local::now();
+        // 成功带时间：label 与列表 chip 同源（due_label，单一定义）
+        let p = preview_due("交报告 @今天 16:00", now).unwrap();
+        assert!(p.ok && p.has_time);
+        assert_eq!(p.label, "今天 16:00");
+        // 成功全天：has_time=false（前端措辞「不提醒」，不许说成会响）
+        let p = preview_due("买牛奶 @明天", now).unwrap();
+        assert!(p.ok && !p.has_time);
+        // 尾巴写错 → ⚠ 态：与「没有尾巴」可区分——这是 preview_due 存在的理由
+        assert!(!preview_due("交报告 @13/45", now).unwrap().ok);
+        assert!(!preview_due("交报告 @下午3点", now).unwrap().ok);
+        // 没有尾巴 / 词中 @（邮箱）：None，前端不显示预览条
+        assert!(preview_due("交报告", now).is_none());
+        assert!(preview_due("发到 a@example.com 就行", now).is_none());
+        // 时间未遂降级（历史口径 P3#20）：@今天 25:00 → 全天而非 ⚠
+        let p = preview_due("交报告 @今天 25:00", now).unwrap();
+        assert!(p.ok && !p.has_time);
+        // 两词尾巴但第二词不是时间（@今天 开完再说）→ ⚠ 态：用户以为设了提醒，必须如实告知
+        assert!(!preview_due("交报告 @今天 开完再说", now).unwrap().ok);
+    }
 
     /// 固定「今天」做解析，测出的是纯逻辑而非时钟
     fn today() -> chrono::DateTime<chrono::Local> {

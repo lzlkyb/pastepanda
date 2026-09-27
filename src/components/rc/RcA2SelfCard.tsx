@@ -1,17 +1,10 @@
-/**
- * RcA2SelfCard — 侧栏底部「这台电脑」卡（2026-09-26 对齐拼装稿⑦）。
- *
- * 稿里的码格是常驻明文接入码，但真实后端的接入码**不落盘、只在生成那一刻
- * 可见**（Q2 方案 B 的安全红线），所以码格放的是常驻且安全的**本机设备号短
- * 指纹**（fingerprintOf 前 4 组）：「复制」拷完整设备号（跨网配对要用），
- * 「完整串」一键生成默认档（15 分钟 · 用 1 次 · 可控）并把
- * `PPU-码-设备号` 送进剪贴板；要改档位仍走「无人值守 ›」对话框。
- */
+/** 侧栏底部「这台电脑」卡：高频的互换码配对直接在卡内完成。 */
 import { useState } from "react";
 import { Copy } from "lucide-react";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
 import { fingerprintOf } from "@/lib/fingerprint";
+import { RcA2PairExchange } from "./RcA2PairExchange";
 import styles from "./RemoteComputerA2.module.css";
 
 const FULL_TTL_SECS = 15 * 60;
@@ -33,6 +26,7 @@ export function RcA2SelfCard({
   enabled,
   onToggleSelf,
   onUnoGenerate,
+  onPair,
 }: {
   rc: UseRc;
   toast: ToastFn;
@@ -41,6 +35,7 @@ export function RcA2SelfCard({
   enabled: boolean;
   onToggleSelf: (enabled: boolean) => void;
   onUnoGenerate: () => void;
+  onPair: () => void;
 }) {
   const [copyingFull, setCopyingFull] = useState(false);
   const nodeId = rc.identity?.node_id ?? "";
@@ -55,7 +50,13 @@ export function RcA2SelfCard({
         capability: "control",
         alsoTrust: false,
       });
-      await copyText(r.full, "已复制完整接入串（15 分钟 · 用 1 次）", toast);
+      // 审计 2026-09-27：toast 补后果复述——「谁拿到谁能连」这件事比 TTL 本身
+      // 更该在生成那一刻说清楚（一键即生成无确认步，后果必须在反馈里可见）。
+      await copyText(
+        r.full,
+        "已复制完整接入串 · 谁拿到谁可连本机 15 分钟（用 1 次）",
+        toast,
+      );
     } catch (error) {
       toast(String(error), "error");
     } finally {
@@ -65,39 +66,8 @@ export function RcA2SelfCard({
 
   return (
     <div className={styles.selfCard}>
-      <div className={styles.selfHead}>
-        <strong>这台电脑</strong>
-        <button
-          type="button"
-          className={styles.selfCopy}
-          disabled={!nodeId}
-          title="复制完整设备号（跨网配对 / 固定密码要用）"
-          onClick={() => void copyText(nodeId, "已复制本机设备号", toast)}
-        >
-          <Copy size={11} aria-hidden="true" />
-          复制
-        </button>
-      </div>
-      <div
-        className={styles.selfCode}
-        title={nodeId ? "本机设备号短指纹 · 完整号请点右上「复制」" : "本机身份读取中"}
-      >
-        {shortId || "读取中…"}
-      </div>
-      <div className={styles.selfActions}>
-        <button
-          type="button"
-          className={styles.selfGhost}
-          disabled={busy || copyingFull || !nodeId}
-          title="生成「15 分钟 · 用 1 次 · 可控」接入码，并把完整接入串复制到剪贴板"
-          onClick={() => void copyFullString()}
-        >
-          {copyingFull ? "生成中…" : "完整串"}
-        </button>
-        <button type="button" className={styles.selfGhost} onClick={onUnoGenerate}>
-          无人值守 ›
-        </button>
-      </div>
+      <div className={styles.selfHead}><strong>这台电脑</strong></div>
+      <RcA2PairExchange rc={rc} enabled={enabled} toast={toast} />
       <div className={styles.selfToggleRow}>
         <span className={styles.selfToggleCopy}>
           <strong>允许别人连接本机</strong>
@@ -114,6 +84,18 @@ export function RcA2SelfCard({
           {enabled ? "已允许" : "已暂停"}
         </button>
       </div>
+      <details className={styles.selfMore}>
+        <summary>更多方式与设备号</summary>
+        <div className={styles.selfCode} title="本机设备号短指纹">{shortId || "读取中…"}</div>
+        <div className={styles.selfActions}>
+          <button type="button" className={styles.selfGhost} disabled={!nodeId} onClick={() => void copyText(nodeId, "已复制本机设备号", toast)}><Copy size={11} aria-hidden="true" /> 复制设备号</button>
+          <button type="button" className={styles.selfGhost} onClick={onPair}>其他配对方式</button>
+        </div>
+        <div className={styles.selfActions}>
+          <button type="button" className={styles.selfGhost} disabled={busy || copyingFull || !nodeId} onClick={() => void copyFullString()}>{copyingFull ? "生成中…" : "完整接入串"}</button>
+          <button type="button" className={styles.selfGhost} onClick={onUnoGenerate}>无人值守 ›</button>
+        </div>
+      </details>
     </div>
   );
 }

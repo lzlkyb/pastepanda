@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 记一条「加时间快捷条」设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 900px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; vertical-align: top; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+
+  /* ===== 岛 compose 态模拟（基线取自 TodoIsland.module.css 真实令牌）===== */
+  .scene { border-radius: 12px; border: 1px solid #c9ccd4; padding: 18px 0 0; display: flex; justify-content: center; }
+  .island {
+    width: 420px; border-radius: 14px 14px 0 0; overflow: hidden;
+    background: rgba(24,24,29,.86); color: #f4f4f5;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 12px 32px rgba(0,0,0,.28);
+    --line: rgba(255,255,255,.09); --line-mid: rgba(255,255,255,.16);
+    --fill: rgba(255,255,255,.07); --fill-strong: rgba(255,255,255,.13);
+    --muted: rgba(244,244,245,.62); --due-today: #38bdf8; --ok: #4ade80;
+  }
+  .ihead { display: flex; align-items: center; gap: 8px; padding: 9px 14px 7px; font-size: 12px; color: var(--muted); }
+  .ihead .title { color: #f4f4f5; font-weight: 600; }
+  .itodo { display: flex; align-items: center; gap: 8px; padding: 5px 14px; font-size: 12px; color: var(--muted); }
+  .itodo .cb { width: 13px; height: 13px; border-radius: 4px; border: 1.5px solid var(--line-mid); }
+  .ifoot { display: flex; align-items: center; gap: 8px; height: 40px; margin-top: 4px; padding: 0 12px; border-top: 1px solid var(--line); }
+  .ifoot .inp { flex: 1; font-size: 12px; color: #f4f4f5; }
+  .ifoot .inp.ph { color: rgba(244,244,245,.38); }
+  .ifoot .hint { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  /* ★ 新增：常驻快捷条 */
+  .qbar { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-top: 1px solid var(--line); }
+  .qbar .qlab { font-size: 10px; color: var(--muted); margin-right: 1px; }
+  .qchip {
+    font-size: 11px; padding: 2px 9px; border-radius: 7px; cursor: pointer; user-select: none;
+    background: var(--fill); border: 1px solid var(--line); color: #f4f4f5; white-space: nowrap;
+  }
+  .qchip:hover { background: var(--fill-strong); }
+  .qchip.on { background: rgba(56,189,248,.16); border-color: rgba(56,189,248,.55); color: var(--due-today); font-weight: 600; }
+  .qsep { width: 1px; height: 14px; background: var(--line-mid); margin: 0 3px; }
+  .qclear { font-size: 11px; color: var(--muted); padding: 2px 6px; border-radius: 6px; cursor: pointer; visibility: hidden; }
+  .qbar.has-sel .qclear { visibility: visible; }
+  .qbar.has-sel .qclear:hover { color: #f4f4f5; background: var(--fill); }
+  /* 已选时间小片（输入行尾） */
+  .duetag {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px;
+    border-radius: 6px; background: rgba(56,189,248,.14); border: 1px solid rgba(56,189,248,.45);
+    color: var(--due-today); white-space: nowrap;
+  }
+  .duetag .x { cursor: pointer; opacity: .7; }
+  .duetag .x:hover { opacity: 1; }
+  .cap { text-align: center; font-size: 11px; color: #71717a; padding: 8px 0 2px; }
+  .cap b { color: #27272a; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 记一条「加时间快捷条」设计稿</h1>
+  <p class="meta">
+    2026-09-27 · 背景：@ 补全面板已落地但用户反馈「不太好用、交互不友好」——根因是 <b>语法成了必经之路</b>：
+    得先知道打 @、打对了才出面板、打错还得处理 ⚠。<br>
+    ✅ 拍板：<b>方案一 · 常驻时间快捷条</b>——点，不用打；@ 语法降级为进阶用法（保留兼容，不再是主路径）。
+  </p>
+
+  <h2>1 · 三个状态实拍（compose 态底栏，基线 = 现有 foot 40px + 预览条 24px 结构）</h2>
+  <div class="grid3">
+    <div class="scene"><div class="island">
+      <div class="ihead"><span class="title">待办</span><span>· 3 条</span></div>
+      <div class="itodo"><span class="cb"></span><span>整理周报素材</span></div>
+      <div class="itodo"><span class="cb"></span><span>回复邮件</span></div>
+      <div class="ifoot"><span class="inp ph">要做什么？</span><span class="hint">回车记下</span></div>
+      <div class="qbar">
+        <span class="qlab">时间</span>
+        <span class="qchip">今天</span><span class="qchip">明天</span><span class="qchip">后天</span>
+        <span class="qsep"></span>
+        <span class="qchip">9:00</span><span class="qchip">14:00</span><span class="qchip">18:00</span>
+        <span class="qclear">清除</span>
+      </div>
+    </div></div>
+    <div class="cap" style="grid-column:1/-1; order:-1"><b>状态 A · 默认</b>：快捷条常驻在输入行下，未选任何时间，回车 = 不带时间的待办（同今天）</div>
+
+    <div class="scene"><div class="island">
+      <div class="ihead"><span class="title">待办</span><span>· 3 条</span></div>
+      <div class="itodo"><span class="cb"></span><span>整理周报素材</span></div>
+      <div class="itodo"><span class="cb"></span><span>回复邮件</span></div>
+      <div class="ifoot"><span class="inp">明天<b style="color:#7dd3fc"> 14:00</b> 交周报&nbsp;▏</span><span class="duetag">明天 14:00 <span class="x">✕</span></span><span class="hint">回车记下</span></div>
+      <div class="qbar has-sel">
+        <span class="qlab">时间</span>
+        <span class="qchip">今天</span><span class="qchip on">明天</span><span class="qchip">后天</span>
+        <span class="qsep"></span>
+        <span class="qchip">9:00</span><span class="qchip on">14:00</span><span class="qchip">18:00</span>
+        <span class="qclear">清除</span>
+      </div>
+    </div></div>
+    <div class="cap" style="grid-column:1/-1; order:-1"><b>状态 B · 已选「明天 14:00」</b>：chip 高亮 + 输入行尾出现可移除的时间小片（✕ 摘除），不往文本里插任何字符</div>
+
+    <div class="scene"><div class="island">
+      <div class="ihead"><span class="title">待办</span><span>· 3 条</span></div>
+      <div class="itodo"><span class="cb"></span><span>整理周报素材</span></div>
+      <div class="itodo"><span class="cb"></span><span>回复邮件</span></div>
+      <div class="ifoot"><span class="inp">买牛奶&nbsp;▏</span><span class="duetag">今天 18:00 <span class="x">✕</span></span><span class="hint">回车记下</span></div>
+      <div class="qbar has-sel">
+        <span class="qlab">时间</span>
+        <span class="qchip on">今天</span><span class="qchip">明天</span><span class="qchip">后天</span>
+        <span class="qsep"></span>
+        <span class="qchip">9:00</span><span class="qchip">14:00</span><span class="qchip on">18:00</span>
+        <span class="qclear">清除</span>
+      </div>
+    </div></div>
+    <div class="cap" style="grid-column:1/-1; order:-1"><b>状态 C · 一步到位</b>：没选日期直接点「18:00」→ 默认挂今天（高频场景 1 次点击完成）</div>
+  </div>
+
+  <h2>2 · 交互规则（交互范式 §17/§18 对照）</h2>
+  <table>
+    <tr><th>操作</th><th>行为</th><th>范式依据</th></tr>
+    <tr><td>点日期 chip</td><td>选中该日；<b>不自动选时刻</b> = 全天（不提醒）；再点一次取消</td><td>误触低成本（17.5）</td></tr>
+    <tr><td>点时刻 chip（未选日期）</td><td>默认挂「今天 + 该时刻」——今天是最常见答案</td><td>高频路径一步到位（17.2）</td></tr>
+    <tr><td>点时刻 chip（已选日期）</td><td>日期 + 时刻同时生效，输入行尾出现时间小片</td><td>有反馈不靠猜（17.3）</td></tr>
+    <tr><td>点时间小片 ✕ / 「清除」</td><td>移除已选时间，chip 熄灭；文本不动</td><td>两级取消（17.6）</td></tr>
+    <tr><td>回车</td><td>创建待办；快捷条已选时间随任务挂上，<b>创建后快捷条自动复位</b>（连续记多条不串味）</td><td>边界状态（9）</td></tr>
+    <tr><td>Esc</td><td>两级取消不变（compose→list）；快捷条无面板可关，不新增层级</td><td>不新增复杂度</td></tr>
+  </table>
+
+  <h2>3 · 与 @ 语法的收口关系（规则 11.1：时间来源收口为一处）</h2>
+  <div class="note">
+    ① <b>主路径是快捷条</b>：选中的时间存在组件状态里（不往文本插 <code>@今天 14:00</code> 字符），回车时随任务提交。<br>
+    ② <b>@ 语法保留兼容</b>：文本里打了 <code>@今天 14:00</code> 照样解析、预览条照样如实显示（含 ⚠ 态）——会打的人不受影响。<br>
+    ③ <b>两源冲突收口</b>：快捷条选中的那一刻，自动摘掉文本里的 @ 尾巴（时间只认一个来源）；反向（打 @ 时）若快捷条已选，自动清掉快捷条选择。守卫单测钉住「文本 @ 尾巴与快捷条选择不同时存在」这条不变量。<br>
+    ④ <b>旧 @ 补全面板退役</b>：不再弹面板（快捷条已常驻），面板相关 CSS/逻辑删除；预览条职责不变。
+  </div>
+
+  <h2>3.5 · 时刻 chip 自适应（✅ 已拍板：加）</h2>
+  <div class="note">
+    固定档位满足不了所有人——但快捷条是快档（覆盖高频 80%），精确需求走 @ 语法（<code>@9/26 16:00</code> 任意日期时刻，预览条确认）。
+    在这个前提下加一层<b>零配置的学习</b>让快捷条「越用越准」：<br>
+    ① <b>只学时刻、不学日期</b>：日期天然只有三个相对日；跨出「今天/明天/后天」的需求本来就是 @ 的领地。<br>
+    ② <b>算法</b>：本地 localStorage 记 <code>时刻 → 使用次数</code> 计数表（纯前端、无网络）；时刻 chip 显示 = 按次数取 top 3，空表/并列时回落默认 9:00 / 14:00 / 18:00。<br>
+    ③ <b>刷新时机防漂移</b>（规则 17 误触）：本次 compose 会话内 chip 组<b>不中途更换</b>——选择计入计数，但 chip 面目在下次打开 compose 时才刷新，点击目标不漂移。<br>
+    ④ <b>收口与守卫</b>：读写收口在 <code>lib/todo/islandBridge.ts</code> 纯函数（top3 计算 + 回落），配守卫单测；组件不自带第二份计数逻辑。<br>
+    ⑤ <b>重置</b>：计数表可随时清（清 localStorage 即回落默认），不做设置项。
+  </div>
+
+  <h2>4 · 布局与性能账</h2>
+  <table>
+    <tr><th>项</th><th>账</th></tr>
+    <tr><td>compose 高度</td><td><b>280 不变</b>：快捷条 30px 常驻占掉的是原 @ 面板浮层的空间；列表区相应收 30px（compose 态列表本就是压缩展示）</td></tr>
+    <tr><td>动效</td><td>零新增常驻动画：chip 高亮是纯样式切换；时间小片随输入行出现（复用 prow 同级布局，无 keyframes）</td></tr>
+    <tr><td>渲染开销</td><td>7 个 chip 按钮 = 静态 DOM，比旧 @ 面板（条件渲染挂载）更稳定——不再随击键挂载/卸载子树（规则 15.2）</td></tr>
+    <tr><td>浅色主题</td><td>chip 高亮色用既有 <code>--island-due-today</code> 语义令牌，data-island-mode 自动跟随，不新增色值</td></tr>
+  </table>
+
+  <h2>5 · 请拍板</h2>
+  <div class="note">
+    ① <b>点日期不自动带时刻</b> = 全天待办（推荐，语义干净）；或点日期自动预选最近整点时刻、想改再点。<br>
+    ② <b>「清除」按钮常驻右端但未选时隐藏</b>（推荐，状态 A 里 visibility:hidden 占位不跳版）；或干脆不设清除、点已选 chip 取消 + 小片 ✕ 两条撤销路就够。<br>
+    ③ <b>@ 补全面板退役</b>（推荐）；或保留面板但快捷条也常驻（冗余，不推荐）。<br>
+    ④ 时刻 chip 自适应——<b>✅ 已拍板：加</b>（§3.5）。
+  </div>
+
+</div>
+</body>
+</html>

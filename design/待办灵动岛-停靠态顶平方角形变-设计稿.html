@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 停靠态顶平方角形变 设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 940px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; vertical-align: top; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #c2410c; font-weight: 600; }
+  .warn { color: #b45309; font-weight: 600; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* ===== 场景模拟（吸附双态稿同款手法：backdrop 模拟、材质数值照抄现行 CSS） ===== */
+  .scene {
+    position: relative; border-radius: 12px; overflow: hidden;
+    min-height: 190px; border: 1px solid #c9ccd4;
+    background: linear-gradient(90deg, #dfe6ee 0 50%, #23262e 50% 100%);
+  }
+  .scene .tag { position: absolute; top: 6px; left: 10px; font-size: 11px; color: #52525b; z-index: 5; }
+  .scene .tag2 { position: absolute; bottom: 6px; right: 10px; font-size: 11px; color: #71717a; z-index: 5; }
+  .island {
+    position: absolute; z-index: 4; left: 50%; transform: translateX(-50%);
+    height: 32px; padding: 0 14px; border-radius: 999px;
+    display: flex; align-items: center; gap: 8px; font-size: 12px; user-select: none;
+    color: #f4f4f5;
+    background:
+      linear-gradient(156deg, rgba(255,255,255,.02) 0, transparent 53%),
+      rgba(20,20,24,.92);
+    backdrop-filter: blur(22px) saturate(1.15);
+    -webkit-backdrop-filter: blur(22px) saturate(1.15);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.12),
+      inset 0 -1px 0 rgba(7,17,28,.3),
+      0 2px 5px rgba(13,22,44,.13),
+      0 6px 16px rgba(13,22,44,.14);
+  }
+  .island .ring { width: 16px; height: 16px; flex: 0 0 16px; }
+  .island .dot { width: 3px; height: 3px; border-radius: 99px; background: currentColor; opacity: .4; }
+  .island .txt { white-space: nowrap; }
+  /* 本稿主角：停靠态顶平方角（上半矩形贴死屏幕顶，下半半圆帽挂下来）。
+     ❗ 必须写固定 px（= 高度一半），不能写 0 0 999px 999px：一侧相邻两角半径和超边长时
+     全体乘 f = min(Li/Si)，上角为 0 时 f = h/999 ⇒ 下角半径缩放后恒等于 h（圆心落在 (h,0)、
+     两侧自 y=0 就内收，是「拱门」形），与 rgn 的 HalfCapsule 错配 ⇒ 窗口内留一圈无材质的缺口。
+     Pill/Clear 恒 208×32（stage_size）⇒ r = 16px。 */
+  .island.sq { border-radius: 0 0 16px 16px; }
+  /* peek（对照）：满胶囊浮起，不变 */
+  .island.peek {
+    top: 0; width: 300px; height: 40px; border-radius: 999px;
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.12),
+      inset 0 1px 0 rgba(255,255,255,.066),
+      inset 0 -1px 0 rgba(7,17,28,.3),
+      0 3px 8px rgba(13,22,44,.22),
+      0 13px 32px rgba(13,22,44,.24);
+  }
+  .island.peek::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    background: radial-gradient(circle at 45% -15%, rgba(255,255,255,.24), transparent 58%);
+  }
+
+  /* 放大 3× 的左上角细节：看两个壁纸三角 vs 贴死 */
+  .zoomstrip { display: flex; gap: 14px; }
+  .zoom {
+    position: relative; flex: 1; height: 150px; border: 1px solid #c9ccd4; border-radius: 8px;
+    overflow: hidden; background: repeating-linear-gradient(45deg, #d8e0e9 0 14px, #cfd9e4 14px 28px);
+  }
+  .zoom .isl {
+    position: absolute; top: 0; left: 40px; width: 260px; height: 96px;
+    background: rgba(20,20,24,.92);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.12), 0 6px 15px rgba(13,22,44,.2);
+  }
+  .zoom .isl.cap { border-radius: 999px; }
+  /* 放大 3× 的样本：h=96 ⇒ r = h/2 = 48px（同 .island.sq 的缩放规则，别写 999px） */
+  .zoom .isl.sq { border-radius: 0 0 48px 48px; }
+  .zoom .mark { position: absolute; font-size: 10px; color: #b91c1c; font-weight: 600; }
+  .zoom .mark.g { color: #15803d; }
+  .zoom .cap {
+    position: absolute; width: 96px; height: 96px; border: 2px dashed #dc2626; border-radius: 999px;
+    left: 40px; top: 0;
+  }
+
+  /* ===== 可玩演示 ===== */
+  .demo {
+    position: relative; height: 220px; border: 1px solid #c9ccd4; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(180deg, #cfd9e4 0 64px, #eef1f5 64px 100%);
+  }
+  .demo .island {
+    transition: width 240ms cubic-bezier(.2,0,0,1), height 240ms cubic-bezier(.2,0,0,1),
+      border-radius 240ms cubic-bezier(.2,0,0,1), box-shadow 200ms;
+  }
+  .demo .island::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    opacity: 0; background: radial-gradient(circle at 45% -15%, rgba(255,255,255,.24), transparent 58%);
+    transition: opacity 150ms cubic-bezier(.2,0,0,1);
+  }
+  .demo .island.intent::after { opacity: 1; }
+  .demo .hint { position: absolute; bottom: 10px; left: 14px; font-size: 11px; color: #71717a; }
+  .demo .state { position: absolute; bottom: 10px; right: 14px; font-size: 11px; color: #15803d; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 停靠态顶平方角形变 设计稿</h1>
+  <p class="meta">
+    2026-09-26 · 承接「吸附双态与精准命中」设计稿 §6 拍板项③（当时默认不做，本稿单独评估） ·
+    基于真实组件 <code>TodoIsland.module.css</code> / <code>todo_island_stage.rs</code>（build_top_rounded_region /
+    apply_stage_region）/ <code>todo_island_hover.rs</code>（shape_hit）<br>
+    一句话：停靠态把胶囊上圆角<b>压平贴死屏幕顶边</b>（上缘矩形、下缘半圆帽），像从屏幕里长出来；
+    悬停 peek 起恢复满胶囊。上下文：TOP_MARGIN 已拍板 0、拦截/展开已分离，本稿只动「形」。<br>
+    <b>2026-09-27 修订</b>：① 修正 CSS 圆角写法（原 <code>0 0 999px 999px</code> 实测渲染成 r=32 的「拱门」形，
+    改为 <code>0 0 16px 16px</code> = r=h/2）；② §3②/§3③ 补齐实现描述（两处 match + shape_hit 参数化口径）；
+    ③ 修 §4 容器闭合标签（<code>&lt;/p&gt;</code>→<code>&lt;/div&gt;</code>，此前 .demo 被嵌进 .note 故宽 940 而非 1180）；
+    ④ 清 7 处 Markdown 加粗泄漏；⑤ §2 缝宽标注量取行。<br>
+    <b>2026-09-27 二修（Impeccable critique 30/36 回填）</b>：⑥ §0 补 reapply_stage_region「免费正确」；
+    ⑦ 新增 §1.5 浅色主题对照；⑧ §5 上角行改述为「有意行为变化」+ 补 reduced-motion 行；
+    ⑨ §6 立项口径调为「消灭缝优先、形变语义为附带」+ 3 人快测条件；⑩ §7 补可判定验收线 / 终帧切兜底位置 /
+    GDI 兜底改退 stadium / aria 一行 / 多 DPI 顶缘验证；⑪ §8② 改为「起始即切 + 预写兜底 + 翻车判据」；
+    ⑫ 演示定时 260→240 对齐口径、§2 缝宽 10.6→10.4（y=1 精确值 10.43）。
+  </p>
+
+  <h2>0 · 先说成本重估（比上一稿评估的便宜）</h2>
+  <div class="note">
+    上一稿 §6③ 写的代价是「需要改 SetWindowRgn 拼新形状 + Rust 舞台加新分支」。读完 stage.rs 后修正：
+    rgn 拼装函数 <code>build_top_rounded_region(dst, w, h, r_card, r_top)</code> <b>本来就支持顶/底两个半径</b>
+    （list/compose 的四角统一 12 就是走它），顶平方角 = <code>r_top=0、r_card=高/2</code>，<b>拼装代码零新增</b>。
+    真实的改动点收口为三处同步账（本稿 §2–§3）+ 一条真实风险（§2 过渡期 rgn 与 CSS 的错拍），总体是
+    <b>小批量、可独立回退</b>的一档改动。另有一条「免费正确」：hide/show 后的自愈重放
+    <code>reapply_stage_region</code> 按 <code>current_stage()</code> 现算形状——形变落地后它自动按
+    HalfCapsule 重裁，零代码改动，也堵住「重放会不会裁回旧形状」的疑问。
+  </div>
+
+  <h2>1 · 视觉对照（左＝现行停靠态，中＝本稿形变，右＝peek 对照不变）</h2>
+  <div class="grid3">
+    <div class="scene">
+      <span class="tag">现行 · 满胶囊停靠</span>
+      <div class="island" style="top:0">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+      </div>
+      <span class="tag2">上圆角与屏幕边之间有两条壁纸缝</span>
+    </div>
+    <div class="scene" style="border-color:#15803d">
+      <span class="tag" style="color:#15803d;font-weight:600">本稿 · 顶平方角停靠</span>
+      <div class="island sq" style="top:0">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+      </div>
+      <span class="tag2">上缘与屏幕顶零间隙满贴，像长出来的</span>
+    </div>
+    <div class="scene">
+      <span class="tag">peek · 满胶囊（不变）</span>
+      <div class="island peek" style="top:0">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span><span style="font-size:11px;color:rgba(244,244,245,.66)">· 14:00 前</span>
+      </div>
+      <span class="tag2">「浮起」态保持圆，与停靠的「方」形成对比</span>
+    </div>
+  </div>
+
+  <h2>1.5 · 浅色主题对照（critique 指出的缺失主场景）</h2>
+  <div class="grid2">
+    <div class="scene" style="background:linear-gradient(90deg,#e8edf3 0 50%,#f6ede3 50% 100%)">
+      <span class="tag">浅色 · 现行满胶囊停靠</span>
+      <div class="island" style="top:0;background:linear-gradient(156deg,rgba(255,255,255,.55) 0,transparent 53%),rgba(255,255,255,.92);color:#18181b;box-shadow:inset 0 0 0 1px rgba(0,0,0,.10),inset 0 -1px 0 rgba(67,86,107,.16),0 2px 5px rgba(27,45,78,.09),0 6px 16px rgba(27,45,78,.11)">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(0,0,0,.14)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+      </div>
+      <span class="tag2">白玻璃上圆角的缝在亮壁纸上以「形状」可见</span>
+    </div>
+    <div class="scene" style="background:linear-gradient(90deg,#e8edf3 0 50%,#f6ede3 50% 100%);border-color:#15803d">
+      <span class="tag" style="color:#15803d;font-weight:600">浅色 · 顶平方角停靠</span>
+      <div class="island sq" style="top:0;background:linear-gradient(156deg,rgba(255,255,255,.55) 0,transparent 53%),rgba(255,255,255,.92);color:#18181b;box-shadow:inset 0 0 0 1px rgba(0,0,0,.10),inset 0 -1px 0 rgba(67,86,107,.16),0 2px 5px rgba(27,45,78,.09),0 6px 16px rgba(27,45,78,.11)">
+        <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(0,0,0,.14)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+        <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+      </div>
+      <span class="tag2">白玻璃压亮壁纸正是缝最显眼的场景，消灭缝收益最大</span>
+    </div>
+  </div>
+
+  <h2>2 · 角部放大 3×：这条缝就是本稿要消灭的东西</h2>
+  <div class="zoomstrip">
+    <div class="zoom">
+      <div class="isl cap"></div>
+      <span class="mark" style="top:34px;left:6px">壁纸缝<br>（上圆角外）</span>
+      <span class="mark" style="top:118px;left:150px">现行：距顶 4px 处缩进 ≈5.4 逻辑px，缝里透出壁纸</span>
+    </div>
+    <div class="zoom">
+      <div class="isl sq"></div>
+      <span class="mark g" style="top:118px;left:130px">本稿：上缘满贴屏幕边，缝消失；下缘半圆帽收尾</span>
+    </div>
+    <div class="zoom">
+      <div class="isl cap"></div>
+      <div class="cap" style="left:6px"></div>
+      <span class="mark" style="top:118px;left:120px">几何账：上圆角 = 高度一半的半圆帽，顶部两侧各让出 r−√(r²−(r−y)²) 的缝</span>
+    </div>
+  </div>
+  <p class="note">
+    32px 高的胶囊上圆角 r=16，顶部两条缝在距顶 4px 处各宽 ≈5.4 逻辑px（y=1 处 10.4px、y=8 处 2.1px，随行递减到 0；口径：缝宽 = 16 − √(16²−(16−y)²)，y=1 精确值 10.43）——单看很小，但它们正好位于「吸附感」最敏感的
+    顶边接触线上：缝在，岛读作「贴在墙上的胶囊」；缝没，岛读作「从墙里长出来的」。
+    iOS 灵动岛 / 刘海系应用全都是「方顶 + 下缘圆」或「完全嵌入」，没有悬浮留缝的先例（吸附设计稿 §1 共识③）。
+  </p>
+
+  <h2>3 · 形状账（三处同步，一份清单钉死）</h2>
+  <table>
+    <tr><th>处</th><th>现行</th><th>本稿</th><th>改动</th></tr>
+    <tr><td>① CSS 圆角<br><code>TodoIsland.module.css</code></td><td>.root 恒 999px</td><td class="ok">停靠态（pill/clear 且非 hover）<code>border-radius: 0 0 16px 16px</code>（= r=h/2；<b>不可写 999px</b>——上角为 0 时那个值会被 CSS 缩放规则拉成 r=h，实测成「拱门」形）；peek/list/compose 不变</td><td>新增一个选择器块；200ms 圆角过渡 .root 已有，无需新增</td></tr>
+    <tr><td>② 窗口 rgn<br><code>stage.rs::apply_stage_region</code></td><td>Pill/Clear/Peek → stadium</td><td class="ok">Pill/Clear → <code>build_top_rounded_region(r_card=高/2, r_top=0)</code>；Peek → stadium（不变）；list/compose 不变</td><td><b>拼装函数零新增</b>；但要动<b>两处 match</b>——<code>radius</code>（GDI 兜底参数）与 <code>hrgn</code> 分支现在都把 <code>Pill|Clear|Peek</code> 并在一起，需拆出 Peek 单走 stadium。GDI 兜底 <code>CreateRoundRectRgn</code> 只有统一半径，HalfCapsule 的退化形态指定为<b>退 stadium（radius=floor(h/2)，参数来源不变）</b>——统一半径的胶囊比 12px 整卡在轮廓上更接近目标形状，且兜底路径零改动。逐行像素中心判据现成（月牙守卫测试直接复用口径）</td></tr>
+    <tr><td>③ 命中形状<br><code>hover.rs::shape_hit</code></td><td>Stadium / Rounded 二值</td><td class="ok">新增 <code>HalfCapsule</code>（上缘平、下缘 r=h/2 半圆帽）变体，把 <code>shape_hit</code> 的参数化从「统一半径」扩成「<b>上下角半径可不同</b>」：等距外扩后仍是同族凸形 ⇒ 上角半径 <code>pad</code>、下角半径 <code>h/2+pad</code>，直接套现成的圆角矩形含点判定</td><td>纯函数小改 + 守卫单测（上缘外 1px 命中、上角 45° 径向带内/带外、下弧与 stadium 同口径）。<b>不可</b>写成「上缘 y∈[−pad, r) 也算核心带」——那等价于上角按直角算，比正确值多拦 ≈pad(1−1/√2)≈0.6px，破坏「命中边界 = 可见形状 + pad」不变量</td></tr>
+  </table>
+  <p class="note">
+    🔴 同步规则与既有口径一致：改形状必须三处一起动（module.css 文件头、stage.rs rgn 注释都有这条账）。
+    漏掉③的失败方式很隐蔽：视觉是方的、命中还是胶囊——上缘两角的光标点了没反应（401 式静默错位）。
+    漏掉②的失败方式：CSS 方角但窗口 rgn 还是胶囊 → 上缘两角被裁成透明方角缺口。
+  </p>
+
+  <h2>4 · 过渡：形变怎么动（含一条要实测的风险）</h2>
+  <div class="note">
+    <b>期望动线</b>：停靠（方顶）→ 停 240ms → peek（圆顶）——宽度 208→300、高度 32→40、顶角 0→半圆，
+    三个属性在窗口弹簧 + CSS 圆角过渡里同时发生，「方角冒出圆头」是这条动线的卖点。<b>试玩下方演示</b>感受手感。<br><br>
+    <b class="warn">真实风险（网页模拟测不出来）</b>：窗口 rgn <b>不逐帧插值</b>，只在动画起始 / 终帧两次切换
+    （stage.rs 现有口径）。胀出方向 rgn 比窗口大 = 不裁、无副作用 ✅；收回落向时 rgn 立即按目标形状裁
+    → CSS 卡片还在 200ms 圆角过渡的中途，<b>rgn 永远赢</b>（窗口裁剪是最外层），视觉上形状立即切方、
+    内容圆角随后跟上——预判是「可接受的小错拍」，但必须真机验证两方向都不露材质月牙
+    （rgn 与 CSS 半径错拍的月牙机制，stage.rs 有过两轮实拍教训）。若露，兜底是收回落向的 rgn 延到终帧再切
+    （具体位置已标注在 §7①）。<br><br>
+    <b>演示与真实链路的差异（诚实声明）</b>：演示的 mouseleave 立即回落；真实链路是 60ms 轮询采样 +
+    6px 离开外扩 + 200ms 过渡，回落比演示「钝」一拍。方向上演示偏乐观，量级无害——手感以真机为准。
+  </div>
+  <div class="demo" id="demo">
+    <div class="island sq" id="demoIsland" style="top:0;width:208px">
+      <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+      <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+    </div>
+    <span class="hint">鼠标停在岛上：~180ms 意图 glow → ~240ms 方顶冒圆头切 peek；移出回落方顶</span>
+    <span class="state" id="stateLabel">docked（方顶）</span>
+  </div>
+
+  <h2>5 · 边界清单（每条有归属）</h2>
+  <table>
+    <tr><th>场景</th><th>处理</th></tr>
+    <tr><td>全清 clear 态（同停靠）</td><td class="ok">同样方顶（同一选择器/同一 rgn 分支）；勾 + 「今天没有待办了」照旧</td></tr>
+    <tr><td>提醒态（铃 + 到点了）</td><td class="ok">同样方顶——提醒更需要「长在上面」的醒目感，不另开形状</td></tr>
+    <tr><td>浅色主题</td><td class="ok">只动圆角不动材质令牌；白玻璃方顶压亮壁纸靠描边 + 投影保边（既有结论）</td></tr>
+    <tr><td>命中上缘（y≈0 一线）</td><td class="warn">HalfCapsule 上缘平直：上缘外 pad 带内命中。<b>行为变化：顶部两上角由「穿透死角」变「拦截」</b>——stadium 时代这两块（各约 55px²）穿透到下层（标签栏高度），方顶后 208px 整条拦截。语义自洽（可见即命中）但改变已养成的点击习惯，<b>有意行为变化，随形变生效</b>，特此留账（原「与死角不拦不变量一致」的表述作废：上角现在没有死角）</td></tr>
+    <tr><td>减少动态效果</td><td class="warn">CSS 圆角 200ms 过渡现行<b>未</b>被 reduced-motion 门控（与 list 态 300ms 现状一致，非本稿引入）。但本稿把形变变成主角：系统开启减少动效时，建议形变走「快切」（圆角过渡压缩到 ≤80ms 或直接禁用），与窗口侧 ease_progress 回退路径同拍——已入 §7③</td></tr>
+    <tr><td>多屏 / DPI</td><td class="ok">rgn 的 r_card=高/2 按物理尺寸现算（stadium 同款），无新账</td></tr>
+    <tr><td>列表/输入态</td><td class="ok">完全不变（12px 卡，与方顶无关）</td></tr>
+    <tr><td>回退</td><td class="ok">三处改动可单独摘除：CSS 选择器块 / match 分支 / shape_hit 变体，互不牵连</td></tr>
+  </table>
+
+  <h2>6 · 得失与推荐</h2>
+  <div class="note">
+    <b>得</b>：顶边接触线零缝隙，「长在屏幕上」的吸附感补完最后一块（TOP_MARGIN=0 解决了纵向间隙，
+    本稿解决横向圆角缝）；停靠「方」↔ 浮起「圆」的形变对比让两态区分更明确。<br>
+    <b>立项口径（critique 后调整）</b>：<b>消灭缝优先、形变语义为附带表达</b>。理由：「方=吸附 / 圆=浮起」
+    的二分在展开态就不成立（list/compose 顶边同样贴死 y=0 却是四角全圆的卡），把立项押在语义叙事上
+    等于背一笔未验证的账；而「消灭缝」是纯视觉收益、无需验证即成立。语义若要做实，条件是 3 人快测
+    （方顶岛截图混入其他顶部 UI 截图，问「这是什么」）——列为可选条件，不作为前置。<br>
+    <b>失</b>：三处同步账（有守卫测试兜底）；收回落向的 rgn/CSS 错拍需真机验证（有兜底方案 + 判据，见 §7①④）；
+    与既有「候 6 非对称圆角已收回」的决策表面相似——注意那条收回的是<b>展开卡</b>的顶 8 底 12（观感理由），
+    本稿是<b>停靠胶囊</b>的 0 / 半圆（消灭缝），不构成推翻。<br>
+    <b>推荐</b>：值得做，按 §7 顺序一小批落地（rgn → shape_hit + 单测 → CSS → 真机验证错拍），
+    与吸附双态已落地部分合并验证。
+  </div>
+
+  <h2>7 · 落地清单（拍板后执行）</h2>
+  <div class="note">
+    ① <code>stage.rs::apply_stage_region</code>：Pill/Clear 分支改走 <code>build_top_rounded_region(r_card=h/2, r_top=0)</code>（Peek 不动，两处 match 拆分）；
+    GDI 兜底退 stadium（floor(h/2)，参数来源不变）；新增 rgn 守卫测试（复用 <code>test_stadium_region_hugs_css_cap</code> 口径：上缘满行、下弧贴 CSS 圆）。<br>
+    ❶ <b>终帧切兜底的位置（预写，不等翻车才找）</b>：收回落向若真机见月牙，把 <code>animate_window</code> 里
+    <code>growing == false</code> 情况下「动画起始处的 <code>apply_stage_region</code> 调用」跳过、只保留
+    <code>std::thread::sleep(120ms)</code> 后终帧那次按实测尺寸的精裁——改动范围 = 一个 if 分支，无新账。<br>
+    ② <code>hover.rs</code>：<code>IslandShape::HalfCapsule</code> 变体 + shape_hit 参数化扩成上下角半径可不同
+    （上角 pad、下角 h/2+pad）；单测：上缘外 1px 命中、上角 45° 径向带内/带外、下弧与 stadium 同口径。<br>
+    ③ <code>TodoIsland.module.css</code>：停靠态圆角块 <code>border-radius: 0 0 16px 16px</code>
+    （❗ 不能写 999px：上角为 0 时那个值会被 CSS 缩放规则拉成 r=h，与 rgn 错配；Pill/Clear 恒 208×32）；
+    选择器与停靠态投影块同口径（pill/clear 且非 data-hover）；
+    <b>reduced-motion 门控</b>：系统减少动效开启时圆角过渡压缩到 ≤80ms；
+    <b>aria 一行</b>：collapsedLayer 的 <code>aria-label</code> 扩为含状态（如「待办列表，已吸附在屏幕顶部」）——形状是纯视觉通道，语义层一行兜底（键盘可达性是基线既有缺口，单独立项不混入本批）。<br>
+    ④ 真机验证（dev），<b>含 critique 补的可判定验收线</b>：<br>
+    ・<b>验收线 A</b>：peek→pill 收回落向，前 3 帧（≤50ms）内无可见形状撕裂 / 月牙（rgn 起始即切 vs CSS 200ms 追赶的错拍窗口）；<br>
+    ・<b>验收线 B</b>：peek↔pill 快速往复 5 次（鼠标在进/出带间晃动）无轮廓方↔圆闪烁感（两态同形的现行版本闪的是尺寸，本稿闪的是形状，显著性高一档）；<br>
+    ・掠过顶部边缘（y≈0）穿透无拦截；上角由穿透变拦截的行为变化实际点一遍确认无碍；<br>
+    ・提醒态 / 全清态各看一眼；浅色主题亮壁纸看一眼；100% / 125% / 150% 三档缩放下顶缘与屏幕边无缝（方顶对 y±1px 定位误差比 stadium 敏感，直边一旦离边就是通长缝）。<br>
+    ⑤ <code>npm run lint:ui</code> + 全量测试；设计稿状态标注回填。
+  </div>
+
+  <h2>8 · 请拍板（两项）</h2>
+  <div class="note">
+    ① <b>peek 态形状</b>：<b>满胶囊（推荐）</b>——「浮起 = 圆、停靠 = 方」的对比是本稿的表达核心；
+    备选 peek 也方顶（连续性更强但两态区分变弱，且 peek 300×40 方顶会盖住更多标签栏，观感发闷）。<br>
+    ② <b>收回落向的 rgn 时机</b>：<b>起始即切 + 预写好的终帧切兜底 + 明确翻车判据（推荐，critique 修订口径）</b>
+    ——与现有「缩小时目标形状立刻出现」口径一致；判据 = §7④ 验收线 A/B，兜底改动位置已预写在 §7①❶，
+    翻车时是一行挪位，不是一次返工。
+  </div>
+
+</div>
+<script>
+  (function () {
+    var island = document.getElementById("demoIsland");
+    var label = document.getElementById("stateLabel");
+    var t1, t2;
+    function set(s, cls) {
+      label.textContent = s;
+      island.className = "island " + cls;
+      island.style.borderRadius = cls === "sq" ? "0 0 16px 16px" : "";
+    }
+    island.addEventListener("mouseenter", function () {
+      t1 = setTimeout(function () { set("intent（glow 亮，仍穿透，仍方顶）", "sq intent"); }, 180);
+      t2 = setTimeout(function () {
+        set("peek（方顶冒圆头 → 满胶囊）", "peek");
+      }, 240);
+    });
+    island.addEventListener("mouseleave", function () {
+      clearTimeout(t1); clearTimeout(t2);
+      set("docked（方顶）", "sq");
+    });
+  })();
+</script>
+</body>
+</html>

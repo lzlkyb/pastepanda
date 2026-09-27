@@ -11,6 +11,10 @@
  * 「引导放哪」和「有没有空间」正好反了。现在完整版（含三步）**只由主区渲染**
  * （见 RcWorkbench）；侧栏改用 `emptyHint` 那一行提示，不再复用本组件
  * ——复用会让同一个标题与同一个配对按钮在屏幕上各出现两次。
+ *
+ * 2026-09-27（审计 P2 空态收敛）：主路只留「远程配对设备」，三条一次性入口
+ * 收进 `<details>` 折叠区——首屏可见决策 5 → 2；第一步 76 字里的跨网/知识库
+ * 注意事项随入口一起下移到折叠区脚注。
  */
 import { Monitor } from "lucide-react";
 import styles from "./RemoteComputer.module.css";
@@ -18,7 +22,7 @@ import styles from "./RemoteComputer.module.css";
 const STEPS = [
   {
     t: "双方配对",
-    d: "同一网络：打开配对后在「附近的设备」点对方，两边核对同一个 6 位数字。跨网才用长期配对码。知识库同步配对不会自动获得远程/文件权限。",
+    d: "同一网络：打开配对后在「附近的设备」点对方，两边核对同一个 6 位数字。",
   },
   { t: "发起申请", d: "选「只看」或「可控」，对方会看到确认条与你的指纹。同意一次后该设备会记入远程列表。" },
   { t: "对方同意", d: "被控端常驻横幅可随时结束；默认关闭，每次都要点头（或逐台开免确认）。" },
@@ -78,44 +82,49 @@ export function RcEmptyGuide({
           </div>
         ))}
       </div>
-      {/* 方案甲：上面那三步讲的是**长期**配对。只想帮一次的人不该先读完三步
-          ——两条一次性入口排在三步之后、长期按钮之前，并各自说清代价。 */}
-      <div className={styles.emptyActions}>
-        <button
-          type="button"
-          className={styles.miniBtn}
-          title="生成一次性帮助码发给对方；他连过来时你要当场点确认"
-          onClick={onHelpMe}
-        >
-          让别人帮我
-        </button>
-        <button
-          type="button"
-          className={styles.miniBtn}
-          title="粘贴对方发来的一次性帮助码直接连；对方当场确认"
-          onClick={onHelpOther}
-        >
-          帮别人连一次
-        </button>
-        <button
-          type="button"
-          className={styles.miniBtn}
-          title="无人值守码：对方不在电脑前时预先给你的，会过期、可撤销"
-          onClick={onUnoJoin}
-        >
-          有码，直接连
-        </button>
-      </div>
-      {/* 对齐 Chrome 远程桌面式承诺密度（一行讲完，细节进各钮悬停）；
-          「默认留在列表」是乙方案的预期管理，必须常驻可见，不能进 tooltip。 */}
-      <div className={styles.foot}>
-        前两个<b>不用配对</b>、双方在场；用完默认留在设备列表，随时可删。
-      </div>
+      {/* 审计 P2（2026-09-27）空态收敛：主路只留「远程配对设备」一颗决策，
+          三条一次性入口降一档收进折叠区——第一屏的可见决策从 5 个降到 2 个
+          （配对 / 展开更多），各入口的代价说明仍在悬停 title 里。 */}
       <div className={styles.emptyActions}>
         <button type="button" className={styles.miniBtnPri} onClick={onPair}>
           远程配对设备
         </button>
       </div>
+      <details className={styles.emptyMore}>
+        <summary>不在同一网络？还有不用配对的连法</summary>
+        <div className={styles.emptyActions}>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            title="生成一次性帮助码发给对方；他连过来时你要当场点确认"
+            onClick={onHelpMe}
+          >
+            让别人帮我
+          </button>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            title="粘贴对方发来的一次性帮助码直接连；对方当场确认"
+            onClick={onHelpOther}
+          >
+            帮别人连一次
+          </button>
+          <button
+            type="button"
+            className={styles.miniBtn}
+            title="无人值守码：对方不在电脑前时预先给你的，会过期、可撤销"
+            onClick={onUnoJoin}
+          >
+            有码，直接连
+          </button>
+        </div>
+        {/* 对齐 Chrome 远程桌面式承诺密度（一行讲完，细节进各钮悬停）；
+            「默认留在列表」是乙方案的预期管理，必须常驻可见，不能进 tooltip。 */}
+        <div className={styles.foot}>
+          前两个<b>不用配对</b>、双方在场；用完默认留在设备列表，随时可删。跨网才用长期配对码；
+          知识库同步配对不会自动获得远程/文件权限。
+        </div>
+      </details>
     </div>
   );
 }

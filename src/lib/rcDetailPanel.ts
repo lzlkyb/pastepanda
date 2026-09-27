@@ -18,3 +18,20 @@ export function registerRcDetailToggle(fn: () => void): () => void {
 export function toggleRcDetail(): void {
   toggleFn?.();
 }
+
+/* 开合通知（2026-09-27 审查补）：浮条宿主需要知道 ⓘ 面板开着没有——
+   与下拉/⋯面板同口径锁显，否则面板随 2.5s 淡出一起被带走。 */
+let openListener: ((open: boolean) => void) | null = null;
+
+/** RcHud 在 open 变化时调用（effect 内，卸载时调 false）。 */
+export function setRcDetailOpen(open: boolean): void {
+  openListener?.(open);
+}
+
+/** 浮条宿主订阅开合。同一时刻只有一个浮条宿主，后登记者赢（与 toggle 同口径）。 */
+export function onRcDetailOpen(cb: (open: boolean) => void): () => void {
+  openListener = cb;
+  return () => {
+    if (openListener === cb) openListener = null;
+  };
+}

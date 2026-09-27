@@ -129,7 +129,16 @@ export function RcWindowControls() {
   const notify = useWindowOpNotify();
 
   return (
-    <div className={styles.winControls} data-tauri-drag-region="false" aria-label="窗口控制">
+    /* role="group" 不是装饰（2026-09-27 P1-3）：div 的隐式 role 是 generic，
+       ARIA 规定 generic **不允许被命名** ⇒ 这个 aria-label 会被浏览器与读屏
+       直接丢弃。属性在、名字不在：读屏只播报三颗孤立按钮，看不出它们是一组
+       窗口控制。加 role="group" 才让容器可命名。 */
+    <div
+      className={styles.winControls}
+      data-tauri-drag-region="false"
+      role="group"
+      aria-label="窗口控制"
+    >
       <button
         type="button"
         className={styles.winBtn}

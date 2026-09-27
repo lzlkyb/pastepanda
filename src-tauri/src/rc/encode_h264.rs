@@ -33,6 +33,8 @@ pub const H264_PROFILE_HIGH: u32 = 100;
 pub enum VideoCodec {
     H264,
     Hevc,
+    /// P2.3：AV1（FF 硬编专属；MF 无 AV1，open_chain 在 MF 前就拒绝）。
+    Av1,
 }
 
 impl VideoCodec {
@@ -41,6 +43,9 @@ impl VideoCodec {
         match self {
             Self::H264 => &MFVideoFormat_H264,
             Self::Hevc => &MFVideoFormat_HEVC,
+            // AV1 无 MF 实现——open_chain 在 MF 前就拒绝 Av1，此分支不可达；
+            // 取值只为 match 完整性。
+            Self::Av1 => &MFVideoFormat_H264,
         }
     }
 
@@ -48,6 +53,7 @@ impl VideoCodec {
         match self {
             Self::H264 => "h264",
             Self::Hevc => "hevc",
+            Self::Av1 => "av1",
         }
     }
 
@@ -55,6 +61,7 @@ impl VideoCodec {
         match s {
             "h264" => Some(Self::H264),
             "hevc" => Some(Self::Hevc),
+            "av1" => Some(Self::Av1),
             _ => None,
         }
     }
@@ -180,6 +187,8 @@ pub struct H264Packet {
 }
 
 mod ff;
+/// P2.3：AV1 硬编可用性（FF 候选链探测，caps 上报用）。
+pub use ff::av1_hw_available;
 mod mf;
 mod session;
 

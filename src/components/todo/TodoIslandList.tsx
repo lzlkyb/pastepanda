@@ -4,12 +4,12 @@
  * 结构与设计稿 S3（420×240 列表）/ S4（420×280 输入）一致；只从 `TodoIsland`
  * 的舞台机器里拆出来（规则 #7：单文件 300 行红线）。
  *
- * ## 写回与乐观更新（B3）
- *
- * 点勾圈 → 本地把这一行翻面（乐观），同时 `toggleTask` 走 Rust 的
- * `note_update` 写库；成功后 Rust 广播新状态，与本地翻面**一致时丢弃**乐观标记。
- * 失败（行号漂移 / 笔记没了）→ 丢弃乐观标记；Rust 在失败路径也会把库里的
- * 真实现状推过来（`todo_island_toggle_task` 的自愈分支），UI 随之回到真实。
+ * ## 交互（2026-09-27 critique 落地）
+ * - **整行可点 = 勾/取消勾**（B 方案）：命中面从 24×24 勾圈扩到全行；来源笔记名
+ *   `.src` 拦冒泡不参与——预留给「打开笔记」。写回状态机（乐观翻面 / 6s 完成态
+ *   驻留 / 撤销 chip / 退场）在 `useIslandTaskOps`，这里只管渲染与转发。
+ * - **tab 是真按钮**（P1-1）：`role="tab"` + roving tabindex，←/→ 可切换；
+ *   焦点环见 module.css 的 :focus-visible 组。
  *
  * ## 失败提示为什么不在本组件里（规则 §15.1 / §15.3）
  *
@@ -18,17 +18,11 @@
  * `onNotice` 上报，展示位置由父级按当前舞台决定（列表态浮在列表底部，
  * 折叠态占住胶囊那一格文字）。
  */
-import { useEffect, useRef, useState } from "react";
-import { addTask, toggleTask } from "@/lib/todo/islandBridge";
+import { addTask } from "@/lib/todo/islandBridge";
 import type { IslandState, IslandTask } from "@/lib/todo/types";
+import { useIslandTaskOps, taskKey } from "./useIslandTaskOps";
+import { TodoIslandCompose } from "./TodoIslandCompose";
 import styles from "./TodoIsland.module.css";
-
-/** 乐观翻面标记的键：一篇笔记同一行只会有一条任务 */
-const taskKey = (t: IslandTask) => `${t.noteId}:${t.line}`;
-
-/** 勾选后行退场的时长：圈先变色（≤150ms 有反馈），行再走（≤200ms 离场）。
- *  与 CSS `.rowLeave` 的 150ms 过渡配一套——改这里必须同步那边。 */
-const LEAVE_AFTER_MS = 200;
 
 /** 勾选图标的路径——列表行与全清态同一份（设计稿修正 #2：同一语义不许两套实现） */
 function TickSvg() {
@@ -41,6 +35,9 @@ function TickSvg() {
 
 interface Props {
   state: IslandState;
+  /** 视图 tab 挂岛层（受控）：岛收起会卸载本组件，tab 挂这里收起一次就被重置（规则 §15.2） */
+  tab: "open" | "done";
+  onTab: (t: "open" | "done") => void;
   /** true = 输入态（compose，420×280）：底栏换成输入行 */
   compose: boolean;
   /** 输入草稿挂岛层（受控）：自动收起要判断「有没打完的字」，收起不销毁草稿 */
@@ -54,6 +51,8 @@ interface Props {
 
 export function TodoIslandList({
   state,
+  tab,
+  onTab,
   compose,
   composeText,
   onComposeText,
@@ -61,96 +60,12 @@ export function TodoIslandList({
   onComposeOpen,
   onNotice,
 }: Props) {
-  const [tab, setTab] = useState<"open" | "done">("open");
-  const [flips, setFlips] = useState<Map<string, boolean>>(new Map());
-  /** 已翻成完成、正在退场的行：等退场动画放完才从 DOM 摘掉 */
-  const [leaving, setLeaving] = useState<Set<string>>(() => new Set());
-  const leaveTimers = useRef<Map<string, number>>(new Map());
+  const { rows, onTick, isDwelling, isPaused, isLeaving, pauseDwell, resumeDwell } =
+    useIslandTaskOps(state, tab, onNotice);
 
-  const applyFlip = (t: IslandTask): IslandTask =>
-    flips.get(taskKey(t)) === undefined ? t : { ...t, done: flips.get(taskKey(t)) as boolean };
-
-  // 退场中的行不占位：圈先变色、行再走，两个反馈分开，用户看得出刚勾的是哪一条。
-  // ❗ 只对「进行中」生效：同一批 key 也可能刚从「已完成」里被取消勾选，
-  //    那边是要正常显示的行；误过滤会把用户刚改完的行变没了。
-  const rows = (tab === "open" ? state.tasks : state.doneTasks)
-    .map(applyFlip)
-    .filter((t) => tab !== "open" || !leaving.has(taskKey(t)));
-
-  /** 取消某行的退场（撤销勾选 / 写回失败都要用）：计时器和状态一起清 */
-  const cancelLeave = (key: string) => {
-    const timer = leaveTimers.current.get(key);
-    if (timer !== undefined) {
-      window.clearTimeout(timer);
-      leaveTimers.current.delete(key);
-    }
-    setLeaving((prev) => {
-      if (!prev.has(key)) return prev;
-      const n = new Set(prev);
-      n.delete(key);
-      return n;
-    });
-  };
-
-  // 服务器状态已体现翻面（或那条任务消失了）→ 乐观标记完成使命，丢掉
-  useEffect(() => {
-    setFlips((prev) => {
-      const all = [...state.tasks, ...state.doneTasks];
-      const next = new Map(prev);
-      for (const [k, v] of prev) {
-        const t = all.find((x) => taskKey(x) === k);
-        if (!t || t.done === v) next.delete(k);
-      }
-      return next.size === prev.size ? prev : next;
-    });
-    // 退场标记跟着服务器现状收敛：这条已经不在「进行中」里（已归档 / 被删 /
-    // 被外部改回去）就不该再挂着——否则它哪天回来会被静默藏掉。
-    setLeaving((prev) => {
-      if (prev.size === 0) return prev;
-      const live = new Set(state.tasks.map(taskKey));
-      const next = new Set([...prev].filter((k) => live.has(k)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [state]);
-
-  // 岛收起时本组件会被卸载，没跑的退场计时器不能留着
-  useEffect(
-    () => () => {
-      leaveTimers.current.forEach((id) => window.clearTimeout(id));
-      leaveTimers.current.clear();
-    },
-    [],
-  );
-
-  const onTick = (t: IslandTask) => {
-    const target = !t.done;
-    const key = taskKey(t);
-    setFlips((prev) => new Map(prev).set(key, target));
-    if (!target) {
-      // 取消完成：行哪儿也不去
-      cancelLeave(key);
-    } else {
-      const timer = window.setTimeout(() => {
-        leaveTimers.current.delete(key);
-        setLeaving((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
-      }, LEAVE_AFTER_MS);
-      leaveTimers.current.set(key, timer);
-    }
-    toggleTask(t).catch(() => {
-      // 失败：翻面作废 + 退场取消，行回到列表原位的未完成态
-      cancelLeave(key);
-      setFlips((prev) => {
-        const n = new Map(prev);
-        n.delete(key);
-        return n;
-      });
-      // Rust 失败路径会推送库里的真实现状（自愈）；这里只负责把「没勾上」说出口
-      onNotice("这条待办刚被其它途径改过，已还原");
-    });
-  };
-
-  const onAdd = () => {
-    const body = composeText.trim();
+  /** 「记一条」：Compose 已把快捷条选择拼成 @ 尾巴，这里只管提交（快捷条设计稿 §3） */
+  const onAdd = (text: string) => {
+    const body = text.trim();
     if (!body) return;
     addTask(body)
       .then(() => {
@@ -177,23 +92,41 @@ export function TodoIslandList({
     <>
       <div className={styles.hd}>
         <span className={styles.title}>{pendingCount} 项待办</span>
-        <span className={styles.seg} role="tablist" aria-label="待办视图">
-          <span
+        <span
+          className={styles.seg}
+          role="tablist"
+          aria-label="待办视图"
+          onKeyDown={(e) => {
+            // roving tabindex（P1-1）：←/→ 在两个 tab 间切换，焦点跟过去。
+            // ❗ 焦点目标按位置取，不等 React 重渲染——此刻 aria-selected 还是旧值。
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            e.preventDefault();
+            const next = tab === "open" ? "done" : "open";
+            onTab(next);
+            const tabs = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>("[role='tab']");
+            (next === "open" ? tabs[0] : tabs[1])?.focus();
+          }}
+        >
+          <button
+            type="button"
             role="tab"
             aria-selected={tab === "open"}
+            tabIndex={tab === "open" ? 0 : -1}
             className={tab === "open" ? styles.on : undefined}
-            onClick={() => setTab("open")}
+            onClick={() => onTab("open")}
           >
             进行中
-          </span>
-          <span
+          </button>
+          <button
+            type="button"
             role="tab"
             aria-selected={tab === "done"}
+            tabIndex={tab === "done" ? 0 : -1}
             className={tab === "done" ? styles.on : undefined}
-            onClick={() => setTab("done")}
+            onClick={() => onTab("done")}
           >
             已完成
-          </span>
+          </button>
         </span>
         <button className={styles.col} title="收起（Esc）" aria-label="收起" onClick={onCollapse}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
@@ -221,18 +154,27 @@ export function TodoIslandList({
           </div>
         ) : (
           rows.map((t) => {
+            const key = taskKey(t);
             const chip = dueChip(t);
+            const dwelling = isDwelling(key) && t.done;
             return (
               <div
-                key={taskKey(t)}
-                className={`${styles.row} ${t.done ? styles.rowDone : ""} ${leaving.has(taskKey(t)) ? styles.rowLeave : ""}`}
+                key={key}
+                className={`${styles.row} ${t.done ? styles.rowDone : ""} ${dwelling ? styles.rowDwell : ""} ${isPaused(key) ? styles.rowDwellPaused : ""} ${isLeaving(key) ? styles.rowLeave : ""}`}
                 role="listitem"
+                onClick={() => onTick(t)}
+                onMouseEnter={() => pauseDwell(key)}
+                onMouseLeave={() => resumeDwell(key)}
               >
                 <button
                   className={styles.tick}
                   title={t.done ? "标记为未完成" : "完成"}
                   aria-label={t.done ? "标记为未完成" : "完成"}
-                  onClick={() => onTick(t)}
+                  onClick={(e) => {
+                    // 勾圈在行内：不拦冒泡会把同一次点击交给行再 toggle 一遍（翻回去）
+                    e.stopPropagation();
+                    onTick(t);
+                  }}
                 >
                   <span className={styles.tickDot}>
                     <TickSvg />
@@ -240,7 +182,29 @@ export function TodoIslandList({
                 </button>
                 <span className={styles.tx}>{t.text}</span>
                 {chip ? <span className={chip.cls}>{chip.text}</span> : null}
-                <span className={styles.src}>{t.noteTitle}</span>
+                {dwelling ? (
+                  <button
+                    type="button"
+                    className={styles.undoChip}
+                    onClick={(e) => {
+                      // chip 自己拦冒泡：点撤销不许再触发整行勾选
+                      e.stopPropagation();
+                      onTick(t);
+                    }}
+                  >
+                    撤销
+                  </button>
+                ) : null}
+                <span
+                  className={styles.src}
+                  onClick={(e) => {
+                    // 来源笔记名不参与整行勾选：这里预留给「打开笔记」
+                    e.stopPropagation();
+                  }}
+                >
+                  {t.noteTitle}
+                </span>
+                {dwelling ? <span className={styles.dwellBar} aria-hidden="true" /> : null}
               </div>
             );
           })
@@ -248,20 +212,7 @@ export function TodoIslandList({
       </div>
 
       {compose ? (
-        <div className={styles.foot}>
-          <input
-            className={styles.cinput}
-            value={composeText}
-            placeholder="要做什么？加 @明天 18:00 可到点提醒"
-            aria-label="记一条待办"
-            autoFocus
-            onChange={(e) => onComposeText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onAdd();
-            }}
-          />
-          <span className={styles.footHint}>回车记下</span>
-        </div>
+        <TodoIslandCompose composeText={composeText} onComposeText={onComposeText} onAdd={onAdd} />
       ) : (
         <button className={styles.foot} onClick={onComposeOpen}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">

@@ -154,6 +154,8 @@ pub struct RcStatus {
     pub peer_fps120: bool,
     /// 发起端视角：被控端是否支持 HEVC 硬编（Q3 caps）。
     pub peer_hevc: bool,
+    /// 发起端视角：被控端 caps 声明的 AV1 硬编可用性（P2.3 caps）。
+    pub peer_av1: bool,
     /// 发起端视角：被控端主屏刷新率（Hz）。0 = 未上报。
     pub peer_refresh_hz: u32,
     /// 发起端视角：被控端在线显示器列表（Q7 caps）。空 = 未上报（旧版本对端）。
@@ -254,6 +256,7 @@ pub struct RcService {
     peer_monitors: Mutex<Vec<crate::screenshot::MonitorInfo>>,
     /// 发起端：被控端是否支持 HEVC 硬编（Q3 caps）。false = 不可用/未上报。
     peer_hevc: std::sync::atomic::AtomicBool,
+    peer_av1: std::sync::atomic::AtomicBool,
     /// 发起端：被控端 caps 是否声明 `dgram_input`（R3）。false = 旧版/未上报。
     peer_dgram_input: std::sync::atomic::AtomicBool,
     /// 剪贴板同步的状态与「跨会话串扰」不变量（见 `clipboard.rs`）。
@@ -514,6 +517,7 @@ impl RcService {
             peer_refresh_hz: std::sync::atomic::AtomicU32::new(0),
             peer_monitors: Mutex::new(Vec::new()),
             peer_hevc: std::sync::atomic::AtomicBool::new(false),
+            peer_av1: std::sync::atomic::AtomicBool::new(false),
             peer_dgram_input: std::sync::atomic::AtomicBool::new(false),
             clip: ClipboardState::new(),
             file: super::file_state::FileState::new(),

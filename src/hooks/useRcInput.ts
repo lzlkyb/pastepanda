@@ -306,6 +306,10 @@ export function useRcInput({
         releaseKb();
         return;
       }
+      // 2026-09-27 审查修正：全屏时这一级 Esc 归「退出全屏」（UA 行为，拦不住
+      // 也不该拦），不再同时弹「结束会话」确认——否则想退全屏却被结束确认糊脸。
+      // 键盘层进全屏的取消序变成：Esc 释放键盘 → Esc 退全屏 → Esc 结束确认。
+      if (document.fullscreenElement) return;
       e.preventDefault();
       e.stopPropagation();
       onConfirmEnd();

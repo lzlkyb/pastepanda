@@ -53,8 +53,16 @@ export const FRAME_IDLE_MS = 2500;
  */
 export const ACTION_UNANSWERED_MS = 1500;
 
-/** 心跳新鲜度：pong 超过这么久没回来算「陈旧」（ping 每秒一发）。 */
-export const HEARTBEAT_STALE_MS = 3500;
+/** 心跳新鲜度：pong 超过这么久没回来算「陈旧」（ping 每秒一发）。
+ *
+ * 🔴 2026-09-27 修订（内网误报「连接不稳」）：3500 → 6000。pong 新鲜度不是
+ * 事件驱动，而是 `rc_status` 轮询（会话中 2s 一拍）锚定的——锚定瞬间 pong
+ * 真实年龄 0~1s（ping 每秒一发），两次轮询之间外推，感知陈旧度最坏
+ * ≈ 2s(轮询) + 1s(ping) + 0.5s(刻度) ≈ 3.5s，正好压着旧阈值，任何一拍
+ * 延迟（编码突发 / JPEG 大帧占发送锁——pong 与视频元数据共用一条发送流，
+ * 存在队头阻塞）都会误判。6s = 2s 轮询 + 1s ping + 抖动余量，内网正常
+ * 波动不再触发；真断链仍由 FAIL（12s，早于后端 15s 踢人线）兜住。 */
+export const HEARTBEAT_STALE_MS = 6000;
 /** 陈旧到这个程度仍未恢复 = 判定链路断了，不再是「可能自愈」。 */
 export const HEARTBEAT_FAIL_MS = 12000;
 

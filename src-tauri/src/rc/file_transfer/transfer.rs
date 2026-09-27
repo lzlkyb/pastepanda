@@ -237,6 +237,11 @@ impl RcService {
 
         let (outcome, got) = recv_bytes(&self, &mut recv, &plan, size, &task_id).await;
         let (state, err) = outcome.finish(got, size);
+        // 🔴 2026-09-27：noq 的 ReadError::ConnectionLost Display 写死成
+        // 「connection lost」，不带对端关闭理由（service::explain 的注释）——
+        // 会话侧早就拼了，文件传输这条路径漏着，用户只能看到笼统的
+        // 「读流出错：connection lost」。收尾时把连接关闭理由拼进去。
+        let err = err.map(|e| crate::rc::service::explain(&conn, e));
         self.finish_file(&task_id, state, err, size);
         conn.close(0u32.into(), b"done");
         Ok(())

@@ -31,6 +31,7 @@ import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { DEFAULT_REQUEST_CAP, rememberRequestCap } from "@/lib/rcRequest";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
@@ -62,6 +63,11 @@ export function RcAdhocDialog({
   onStartRemote?: (peerId: string) => void;
 }) {
   const anim = useDialogAnim();
+  // 🔴 Esc 必须由弹层自己接（2026-09-27 P1-2）：本层挂在 RcPairLayer 下，宿主
+  // 可能是设置页（RcSection.tsx:304）——不接的话 Esc 落到全局链的
+  // `close_dialog: "settings"`，整页设置跟着关，刚记下的「这次只看」也没了。
+  // 详见 hooks/useDialogEscape.ts 头注释。
+  useDialogEscape(onClose);
   const [tab, setTab] = useState<HelpTab>("helpMe");
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState(0);

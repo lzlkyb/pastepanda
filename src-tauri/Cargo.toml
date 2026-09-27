@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "7.2.6"
+version = "7.2.7"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -83,6 +83,10 @@ hostname = "0.4"
 pinyin = "0.5"
 log = "0.4"
 env_logger = "0.11"
+# logging.rs 直接复用 env_filter（env_logger 0.11 的过滤实现，本身不再转出）
+env_filter = "2"
+# BBR3 拥塞控制（rc/net.rs 传输配置用）；版本必须与 iroh 内用的 noq-proto 一致
+noq-proto = "1.2.0"
 thiserror = "2"
 regex = "1"
 url = "2"
@@ -217,7 +221,13 @@ codegen-units = 1
 lto = "fat"
 opt-level = "z"
 strip = "symbols"
-panic = "abort"
+# panic 策略用 unwind 而不是脚手架默认的 abort（2026-09-27 崩溃复盘）：
+# abort 下任何一处 panic——包括依赖库里的——都会把整个进程打死（WER 表现为
+# BEX64 / 0xC0000409 / FAST_FAIL_FATAL_APP_EXIT，见被控端 7.2.6 崩溃报告），
+# 与「会话里一个任务挂了不该拖死常驻进程」的产品形态矛盾。unwind 后 panic
+# 只终结所在任务/线程，进程存活；panic 位置照常进 panic.log（lib.rs 的
+# hook）。注意 unwind 不覆盖 extern "system" 回调里的 panic（那仍会 abort）。
+panic = "unwind"
 
 # 离线 OCR 构建：把 ocr-rs 重定向到仓库内 vendoring 副本，
 # 其 build 脚本会直接读取 vendor/ocr-rs/3rd_party/prebuilt/ 下的预编译 MNN，

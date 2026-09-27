@@ -113,6 +113,7 @@ export interface AppConfig {
   quick_paste_hotkey: string; // 快捷粘贴面板快捷键（类 Win+V）
   screenshot_hotkey: string; // 截图标注快捷键（v6.18 截图功能）
   daily_note_hotkey: string; // 今日速记：把剪贴板当前内容追加到今天那条（B2 #3 / D11）
+  todo_island_hotkey: string; // 待办灵动岛唤起：收起态直进输入态（critique P1-1）
   // 转笔记模板（B2 #8）。**空 = 不套模板**（向后兼容：加这个功能不能改变旧用户的结果）
   note_template: string;
   // 按 content_type 的模板覆盖，JSON 字符串如 `{"code":"..."}`。
@@ -138,7 +139,8 @@ export interface AppConfig {
   table_split_include_header: boolean; // 拆行时是否保留表头行，默认排除
   /** 灵动岛（设置页「灵动岛」分区，2026-09-25）。缺省值必须与 Rust `island_config`、
    *  岛前端（todoisland-main.tsx）一致：**关** / 遮盖度 95 / 提醒开 / 30s / 到期优先。
-   *  `todo_island_glass` = 岛体遮盖度 20–100（2026-09-26 由四档枚举改成连续滑杆；
+   *  `todo_island_glass` = 岛体遮盖度 66–100（2026-09-26 由四档枚举改成连续滑杆；
+   *  2026-09-27 下限 20→66 = 对比度地板，口径收口在 lib/todo/glass.ts；
    *  老用户后端存的仍是档位字符串，进 `updateConfig` 时被 normalizeGlass 折算一次）。
    *  glass 由岛前端消费（CSS 变量 `--island-glass`），其余由 Rust `todo_island::island_config` 消费。 */
   todo_island_enabled: boolean;
@@ -430,6 +432,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   quick_paste_hotkey: "alt+v",
   screenshot_hotkey: "ctrl+q", // 2 键默认（Ctrl+Q）：左手顺按；QQ Ctrl+Alt+A / 微信 Alt+A 都是大占用源
   daily_note_hotkey: "ctrl+alt+d", // D=Daily；与上面六个以及 Ctrl+Alt+1..9（索引粘贴）都不冲突
+  todo_island_hotkey: "alt+t", // T=Todo；与上面七个以及 Ctrl+Alt+1..9 都不冲突
   note_template: "", // 空 = 不套模板（不能默认给一份，否则升级后所有人的转笔记结果都变了）
   note_template_overrides: "",
   auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口

@@ -43,6 +43,7 @@ import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
 import { GeneratePane } from "./RcUnoGeneratePane";
@@ -65,6 +66,11 @@ export function RcUnoDialog({
   onClose: () => void;
 }) {
   const anim = useDialogAnim();
+  // 🔴 Esc 必须由弹层自己接（2026-09-27 P1-2）：本层同样挂在 RcPairLayer 下，
+  // 宿主可能是设置页（RcSection.tsx:304）。不接的话 Esc 走全局链 →
+  // `close_dialog: "settings"` → 整页设置连同刚生成的接入码一起没。
+  // 详见 hooks/useDialogEscape.ts 头注释。
+  useDialogEscape(onClose);
   // 乙方案 §5 流程③：出码/收码是同一凭证的两面，收进一个弹层的两个标签——
   // 「凭证是设备属性，不是入口」。`side` 只决定初始那一页。
   const [tab, setTab] = useState<UnoSide>(side === "pass" ? "pass" : side);

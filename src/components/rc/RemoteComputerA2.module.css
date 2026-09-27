@@ -929,6 +929,8 @@
   flex: 0 0 auto;
   margin: 0 8px 8px;
   padding: 8px 12px;
+  max-height: 56vh;
+  overflow-y: auto;
   /* ui-rule-ok: 与 .sideFoot 是同一条侧栏分割线，两条必须同深浅；换背景色会让其中一条看起来更浅 */
   border-top: 1px solid var(--status-border);
 }
@@ -986,6 +988,51 @@
   text-align: center;
   white-space: nowrap;
 }
+
+.pairExchange { display: grid; gap: 6px; }
+.pairLabel { color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.pairCode,
+.pairPaste textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  resize: vertical;
+  padding: 7px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font: 11px/1.4 Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.pairCode { max-height: 68px; }
+.pairPrimary,
+.pairSecondary {
+  min-height: 30px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pairPrimary { border: 1px solid var(--accent-solid); background: var(--accent-solid); color: var(--text-on-accent); }
+.pairSecondary { border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); }
+.pairPrimary:disabled { opacity: 0.55; cursor: default; }
+.pairPrimary:hover:not(:disabled) { filter: brightness(1.08); }
+.pairSecondary:hover { background: var(--hover); }
+.pairHint { color: var(--text-muted); font-size: 11px; line-height: 1.35; }
+.pairPaste { display: grid; gap: 6px; }
+.pairPasteActions { display: flex; gap: 6px; }
+.pairPasteActions button { flex: 1; }
+.pairNotice,
+.pairNoticeSuccess,
+.pairNoticeError { padding: 6px 8px; border-radius: 8px; font-size: 11px; line-height: 1.35; }
+.pairNotice { color: var(--text-secondary); background: var(--card-bg); }
+.pairNoticeSuccess { color: var(--success); background: var(--success-bg); }
+.pairNoticeError { color: var(--danger); background: var(--danger-bg); }
+.selfMore { margin-top: 8px; color: var(--text-secondary); font-size: 11px; }
+.selfMore summary { cursor: pointer; }
+.selfMore .selfCode { margin-top: 8px; font-size: 12px; }
 
 .selfActions {
   display: flex;
@@ -1369,6 +1416,14 @@
   font-size: 11px;
   line-height: 1;
   cursor: help;
+}
+
+/* ？ 点击展开的就地解释（2026-09-27 审计 P2：按钮不能只悬停有反应）。 */
+.heroHelpHint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
 }
 
 /* 在线 pill 与详情状态行共用同一份当前可连接状态（稿 .pill.ok：绿字浅底 + 同色描边）。 */

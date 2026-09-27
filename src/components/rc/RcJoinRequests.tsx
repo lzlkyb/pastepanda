@@ -2,6 +2,7 @@
  * RcJoinRequests — 入站申请确认条。同意远程是**最高危**操作，不设任何全局快捷键
  * （B6）：只保留显式按钮点击，避免主窗口列表里按 Enter 正好撞上远程申请而直接被控。
  */
+import { Bell } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import type { RcInboundKnock } from "@/lib/api/rc";
@@ -22,7 +23,11 @@ export function RcJoinRequests({
 
   return (
     <div className={styles.joinGlobal}>
-      <h4>🔔 有 {pending.length} 台设备想远程这台电脑</h4>
+      {/* 审计 P2（2026-09-27）：emoji 会被 SR 念出且跨平台渲染不可控
+          （RcEmptyGuide:61 同款结论），图标一律 lucide + aria-hidden。 */}
+      <h4>
+        <Bell size={14} aria-hidden="true" /> 有 {pending.length} 台设备想远程这台电脑
+      </h4>
       {pending.map((r) => {
         const name = rcDisplayName(r);
         return (

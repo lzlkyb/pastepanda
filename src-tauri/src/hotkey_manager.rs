@@ -22,6 +22,9 @@ pub struct HotkeyConfig {
     pub screenshot: String,
     /// 今日速记（B2 #3 / D11）：把剪贴板当前内容追加到今天那条。
     pub daily_note: String,
+    /// 待办灵动岛唤起（critique P1-1）：唤岛直进输入态。默认 Alt+T（Todo 的 T；
+    /// 上面已占 Ctrl+Alt+V/Q/K/P/D、Alt+V、Ctrl+Q，Alt+T 无冲突）。
+    pub todo_island: String,
 }
 
 impl Default for HotkeyConfig {
@@ -42,6 +45,8 @@ impl Default for HotkeyConfig {
             // 今日速记（D=Daily）。上面已占 Ctrl+Alt+V/Q/K/P、Alt+V、Ctrl+Q，
             // 且 Ctrl+Alt+1..9 被索引粘贴占着，D 不冲突。
             daily_note: "Ctrl+Alt+D".to_string(),
+            // 待办岛唤起（T=Todo）。与上面全部已有热键不冲突。
+            todo_island: "Alt+T".to_string(),
         }
     }
 }
@@ -343,6 +348,32 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }
     } else {
         errors.push(format!("无效的截图热键: {}", config.screenshot));
+    }
+
+    // 待办灵动岛唤起（critique P1-1）。留空 = 禁用。
+    //
+    // 这里**只 show + emit**：切舞台/抢焦点的决策在岛前端（TodoIsland 监听
+    // 「todo-island-hotkey」）——收起态唤岛直进输入态并补焦点，展开态只收回胶囊
+    // 不抢焦点。岛窗平时刻意不抢焦点（todo_island.rs），热键召唤是唯一的例外路径。
+    if config.todo_island.trim().is_empty() {
+        log::info!("[HotkeyManager] 待办岛热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.todo_island) {
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                log::info!("[HotkeyManager] 待办岛热键触发");
+                crate::todo_island::show(app);
+                let _ = app.emit("todo-island-hotkey", ());
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册待办岛热键: {}", config.todo_island),
+            Err(e) => {
+                let msg = format!("待办岛热键 '{}' 注册失败: {}", config.todo_island, e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的待办岛热键: {}", config.todo_island));
     }
 
     if errors.is_empty() {

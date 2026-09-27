@@ -103,6 +103,13 @@ pub struct RcInviteCreated {
 }
 
 #[derive(Serialize)]
+pub struct RcExchangeStarted {
+    pub node_id: String,
+    pub name: String,
+    pub expires_at: i64,
+}
+
+#[derive(Serialize)]
 pub struct RcIdentity {
     pub node_id: String,
     pub fingerprint: String,
@@ -381,6 +388,52 @@ pub async fn rc_invite_create(
 pub fn rc_invite_preview(code: String) -> Result<Invite, String> {
     let now = chrono::Utc::now().timestamp_millis();
     invite::decode(&code, now, invite::RC_TTL_SECS)
+}
+
+/// 首页互换码：记录本机选择的对端，尚不建立信任。
+#[tauri::command]
+pub async fn rc_exchange_begin(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    code: String,
+) -> Result<RcExchangeStarted, String> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let inv = invite::decode(&code, now, invite::RC_TTL_SECS)?;
+    let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
+    if inv.node_id == me.node_id() {
+        return Err("不能粘贴本机自己的配对码".into());
+    }
+    if !svc.enabled() || !join::door_open(&store, now) {
+        return Err("请先开启本机接收并生成自己的配对码".into());
+    }
+    let name = if inv.name.trim().is_empty() { "新设备" } else { inv.name.trim() };
+    let expires_at = join::door_until(&store);
+    svc.arm_exchange(&inv.node_id, name, expires_at)?;
+    Ok(RcExchangeStarted { node_id: inv.node_id, name: name.to_string(), expires_at })
+}
+
+#[tauri::command]
+pub async fn rc_exchange_check(
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    node_id: String,
+) -> Result<&'static str, String> {
+    if store.rc_device_get(&node_id)?.is_some() {
+        return Ok("paired");
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    if !join::door_open(&store, now) || svc.exchange_intent(&node_id, now).is_none() {
+        return Err("本次配对窗口已结束，请重新交换配对码".into());
+    }
+    match svc.pair_check(&node_id).await {
+        Ok(true) => {
+            svc.confirm_exchange(&node_id)?;
+            Ok("paired")
+        }
+        Err(e) if e.starts_with("[pair_failed]") => Err(e),
+        _ => Ok("waiting"),
+    }
 }
 
 /// 粘贴对方邀请码 → 写入 rc_devices（远程配对，不写同步 devices）。
@@ -963,6 +1016,7 @@ pub fn rc_latest_frame(svc: State<'_, Arc<RcService>>) -> Result<Option<RcFrameP
             FrameCodec::Jpeg => "jpeg".into(),
             FrameCodec::H264 => "h264".into(),
             FrameCodec::Hevc => "hevc".into(),
+            FrameCodec::Av1 => "av1".into(),
         },
         key: f.key,
     }))

@@ -23,18 +23,25 @@ export function RcCapsuleAlerts({
 }) {
   return (
     <>
+      {/* 审计 Sam 红旗（2026-09-27）：警示胶囊原先 span+title，键盘/读屏用户
+          看得到红字却拿不到 title 里的完整 hint。tabIndex 跟随浮条显隐锁
+          （tab：显示时 0 / 隐藏时 -1），focus-visible 描边见 CSS。 */}
       {link.state === "failed" && (
-        <span className={styles.capPillBad} title={linkStateHint(link.state)}>
+        <span className={styles.capPillBad} title={linkStateHint(link.state)} tabIndex={tab ?? 0}>
           {linkStateLabel(link.state)}
         </span>
       )}
       {(link.state === "unstable" || link.state === "reconnecting") && (
-        <span className={styles.capPillWarn} title={linkStateHint(link.state)}>
+        <span className={styles.capPillWarn} title={linkStateHint(link.state)} tabIndex={tab ?? 0}>
           {linkStateLabel(link.state)}
         </span>
       )}
       {link.unansweredSec > 0 && (
-        <span className={styles.capPillWarn} title="操作已发往对方，但画面尚未变化">
+        <span
+          className={styles.capPillWarn}
+          title="操作已发往对方，但画面尚未变化"
+          tabIndex={tab ?? 0}
+        >
           操作后 {link.unansweredSec}s 无画面
         </span>
       )}

@@ -9,7 +9,7 @@
 
 export type H264Sink = (frame: VideoFrame) => void;
 /** 硬编流标准（与后端 FrameCodec / 帧元数据 `c` 字段同口径）。 */
-export type HwCodec = "h264" | "hevc";
+export type HwCodec = "h264" | "hevc" | "av1";
 
 /** 与后端 `h264_level_for` 同口径：High profile(0x64) + level。 */
 export function webcodecsCodecFor(w: number, h: number, fps = 0): string {
@@ -68,6 +68,31 @@ export function webcodecsHevcFor(w: number, h: number, fps = 0): string {
   return `hev1.1.6.L${levelIdc}.B0`;
 }
 
+/**
+ * P2.3：AV1 解码串。`av01.<profile>.<level><tier>.<bitdepth>`：
+ * profile 0 = Main 4:2:0 8bit；tier M = Main；level 按 AV1 MaxLumaSr 表取
+ * 最小覆盖档（4.0=8.3M / 4.1=17.6M / 4.2=24.3M / 5.0=49.8M / 5.1=106.4M / 5.2=213.4M
+ * samples/s）；bitdepth 08。不带 description = low-overhead OBU 流（与后端
+ * nvenc 输出一致）。
+ */
+export function webcodecsAv1For(w: number, h: number, fps = 0): string {
+  const f = fps === 0 ? 60 : Math.max(1, fps);
+  const lumaSr = Math.max(1, w) * Math.max(1, h) * f;
+  const levelIdx =
+    lumaSr > 213_389_312
+      ? 16 // 6.0
+      : lumaSr > 106_420_080
+        ? 14 // 5.2
+        : lumaSr > 49_766_400
+          ? 13 // 5.1
+          : lumaSr > 24_322_048
+            ? 10 // 4.2
+            : lumaSr > 17_567_232
+              ? 9 // 4.1
+              : 8; // 4.0
+  return `av01.0.0${levelIdx}M.08`;
+}
+
 export class H264Decoder {
   private dec: VideoDecoder | null = null;
   private ok = false;
@@ -79,9 +104,37 @@ export class H264Decoder {
     return this.ok;
   }
 
+  /**
+   * 解码器内部排队深度（EncodedVideoChunk 已提交未产出）。
+   * drop-to-latest 判据用：积压 = 后续每一帧的显示都线性变旧。
+   */
+  get queueSize() {
+    return this.dec?.decodeQueueSize ?? 0;
+  }
+
+  /**
+   * 丢弃队列里所有未解码的 chunk（P1.2 drop-to-latest）。
+   * VideoDecoder.reset() 回到「已配置」空队列状态，不需要重新 configure；
+   * 调用方必须随后进入 waitingKey（P 帧引用链已断，delta 帧全部拦下）并
+   * 向被控端要关键帧——H.264 不能中间丢帧，flush+等关键帧是唯一的
+   * 「丢过期」方式（Moonlight 同款思路，代价是 ≤1 个 GOP 的冻结）。
+   */
+  dropPending() {
+    try {
+      this.dec?.reset();
+    } catch (e) {
+      this.onError(e);
+    }
+  }
+
   ensureConfigured(w: number, h: number, fps = 0, std: HwCodec = "h264") {
     if (typeof VideoDecoder === "undefined") return;
-    const codec = std === "hevc" ? webcodecsHevcFor(w, h, fps) : webcodecsCodecFor(w, h, fps);
+    const codec =
+      std === "hevc"
+        ? webcodecsHevcFor(w, h, fps)
+        : std === "av1"
+          ? webcodecsAv1For(w, h, fps)
+          : webcodecsCodecFor(w, h, fps);
     // 同一 codec 串且已就绪则不重配；标准或分辨率跨档（level 变）要重开
     if (this.dec && this.ok && this.configured.codec === codec && this.configured.std === std)
       return;

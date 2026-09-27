@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 勾选撤销驻留与键盘路径 设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  h3 { font-size: 13px; font-weight: 700; margin: 18px 0 6px; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 960px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; vertical-align: top; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #c2410c; font-weight: 600; }
+  .warn { color: #b45309; font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* ===== 场景底板：左浅右深分屏（吸附双态稿同款手法） ===== */
+  .scene {
+    position: relative; border-radius: 12px; overflow: hidden;
+    min-height: 240px; border: 1px solid #c9ccd4;
+    background: linear-gradient(90deg, #dfe6ee 0 50%, #23262e 50% 100%);
+  }
+  .scene .tag { position: absolute; top: 6px; left: 10px; font-size: 11px; color: #52525b; z-index: 5; }
+
+  /* ===== 岛体材质：参数照抄 TodoIsland.module.css（--island-* 令牌）===== */
+  .island {
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+    width: 420px; border-radius: 12px; overflow: hidden;
+    background-color: rgb(20 20 24 / 95%);
+    background-image: linear-gradient(156deg, rgb(255 255 255 / 0.02) 0, transparent 53%);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.12),
+      inset 0 1px 0 rgba(255,255,255,.09),
+      inset 0 -1px 0 rgba(7,17,28,.3),
+      0 3px 8px rgba(13,22,44,.22), 0 13px 32px rgba(13,22,44,.24);
+    color: #f4f4f5; font-size: 12px; user-select: none;
+  }
+  .hd {
+    flex: 0 0 40px; height: 40px; display: flex; align-items: center; gap: 8px;
+    padding: 0 12px; border-bottom: 1px solid rgba(255,255,255,.12);
+  }
+  .title { font-size: 13px; font-weight: 600; }
+  .seg { display: flex; gap: 2px; background: rgba(255,255,255,.10); border-radius: 8px; padding: 2px; margin-left: 4px; }
+  .seg span { font-size: 11px; padding: 2px 8px; border-radius: 4px; opacity: .66; cursor: pointer; }
+  .seg span.on { background: rgba(255,255,255,.22); opacity: 1; }
+  .col { margin-left: auto; min-width: 42px; height: 26px; display: flex; align-items: center; gap: 4px;
+    padding: 0 8px; opacity: .7; color: inherit; cursor: pointer; border: 0; background: none;
+    border-radius: 4px; font-size: 11px; font-family: inherit; }
+  .col:hover { opacity: 1; background: rgba(255,255,255,.10); }
+  .ls { padding: 8px; display: flex; flex-direction: column; gap: 2px; min-height: 150px; }
+  .row {
+    display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px;
+    border-radius: 8px; position: relative;
+  }
+  .row:hover { background: rgba(255,255,255,.10); }
+  .tick { flex: 0 0 24px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    background: none; border: 0; padding: 0; cursor: pointer; color: inherit; }
+  .tickDot { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.34);
+    display: flex; align-items: center; justify-content: center; }
+  .tickDot svg { opacity: 0; }
+  .row:hover .tickDot svg { opacity: .38; }
+  .tx { flex: 1 1 auto; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .src { flex: 0 0 auto; font-size: 11px; max-width: 112px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; color: rgba(244,244,245,.66); }
+  .rowDone .tickDot { background: #4ade80; border-color: #4ade80; color: #14532d; }
+  .rowDone .tickDot svg { opacity: 1; }
+  .rowDone .tx { text-decoration: line-through; opacity: .5; }
+
+  /* ===== 拟改新增：完成态驻留（6s）+ 撤销 chip + 倒计时条 ===== */
+  .row.dwell { background: rgba(74, 222, 128, 0.08); }
+  .undoChip {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; line-height: 1; padding: 4px 9px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.10);
+    color: #f4f4f5; cursor: pointer; font-family: inherit;
+    animation: chipIn 150ms cubic-bezier(.2,0,0,1);
+  }
+  .undoChip:hover { background: rgba(255,255,255,.22); }
+  @keyframes chipIn { from { opacity: 0; transform: translateX(4px); } }
+  .dwellBar {
+    position: absolute; left: 8px; right: 8px; bottom: 1px; height: 2px; border-radius: 2px;
+    background: #4ade80; transform-origin: left; opacity: .55;
+  }
+  .row.dwell.paused .dwellBar { opacity: .9; }
+  .dwellHint { font-size: 11px; color: rgba(244,244,245,.66); text-align: center; padding: 6px 0 2px; }
+  .gone { animation: rowGone 200ms cubic-bezier(.2,0,0,1) forwards; }
+  @keyframes rowGone { to { opacity: 0; transform: translateY(-2px); visibility: hidden; } }
+  .back { animation: rowBack 150ms cubic-bezier(.2,0,0,1); }
+  @keyframes rowBack { from { opacity: .4; } }
+
+  /* ===== 键盘演示 ===== */
+  .kbd {
+    display: inline-block; min-width: 20px; text-align: center; padding: 1px 6px;
+    border: 1px solid #b9bcc6; border-bottom-width: 2px; border-radius: 5px;
+    background: #fff; font-size: 11px; font-family: Consolas, monospace; color: #27272a;
+  }
+  .island.kbdDemo .root:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+  .root { cursor: default; }
+  .root:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; border-radius: 999px; }
+  .seg button { font-size: 11px; padding: 2px 8px; border-radius: 4px; opacity: .66; cursor: pointer;
+    border: 0; background: none; color: inherit; font-family: inherit; }
+  .seg button.on { background: rgba(255,255,255,.22); opacity: 1; }
+  .seg button:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+  .demoPill {
+    position: absolute; left: 50%; top: 24px; transform: translateX(-50%);
+    width: 208px; height: 32px; border-radius: 999px;
+    background-color: rgb(20 20 24 / 95%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), 0 2px 5px rgba(13,22,44,.13), 0 6px 16px rgba(13,22,44,.14);
+    color: #f4f4f5; display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 12px;
+  }
+  .demoPill .cnt { font-variant-numeric: tabular-nums; }
+  .sepdot { width: 3px; height: 3px; border-radius: 999px; background: currentColor; opacity: .4; }
+  .last { flex: 1 1 auto; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(244,244,245,.66); }
+  .callout {
+    position: absolute; font-size: 11px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe;
+    border-radius: 6px; padding: 3px 8px; z-index: 6; max-width: 200px;
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>待办灵动岛 · 勾选撤销驻留与键盘路径 设计稿</h1>
+  <div class="meta">2026-09-27 · critique（31/40）P1×2 的实施方案 · 对应源码 <code>TodoIslandList.tsx</code> / <code>TodoIsland.tsx</code> / <code>todo_island_hover.rs</code> / <code>hotkey_manager.rs</code> · 基线：吸附双态与精准命中稿</div>
+
+  <div class="note"><b>本稿只改两件事，其余一切保持现状：</b>① 勾选后行不再 200ms 消失，改为 <b>完成态驻留 6s + 行尾「撤销」chip</b>（P1-2，连带 P3 情绪峰值）；② 补齐键盘路径：<b>全局热键 Alt+T 唤岛直进输入、岛体可 Tab 聚焦、tab 换真按钮</b>（P1-1）。视觉语言零改动——所有新元素都由现有 <code>--island-*</code> 令牌拼出。</div>
+
+  <h2>S1 · 勾选的时间线：现状 vs 拟改</h2>
+  <table>
+    <tr><th>时刻</th><th>现状</th><th>拟改</th></tr>
+    <tr><td>0ms</td><td>勾圈翻绿（≤150ms 有反馈）</td><td class="ok">不变</td></tr>
+    <tr><td>200ms</td><td class="bad">行淡出消失（反悔 = 切「已完成」tab → 翻找 → 重勾）</td><td class="ok">行<b>留在原位</b>：完成态样式 + 行尾「撤销」chip + 2px 绿色倒计时条开始收缩</td></tr>
+    <tr><td>200ms–6s</td><td>—</td><td class="ok">悬停该行 = <b>暂停倒计时</b>（条停住提亮），移开恢复；点 chip 或重勾 = 行回原位未完成态</td></tr>
+    <tr><td>6s</td><td>—</td><td class="ok">倒计时走完 → 行按现有 <code>.rowLeave</code> 动画退场归档（写回早已发生，此步纯视觉）</td></tr>
+  </table>
+  <div class="note">写回时机<b>不变</b>：点勾那一刻就调 <code>toggleTask</code>（乐观翻面照旧）。「撤销」= 再发一次 toggle（回未完成），失败路径沿用现有 notice「这条待办刚被其它途径改过，已还原」。闲置自收（6s）若在驻留期间触发，直接收起不等待——写回已落库，只是视觉提前结束。<br><br><b>2026-09-27 追加（用户定稿 B 方案）</b>：<b>整行可点 = 勾/取消勾</b>——命中面从 24×24 勾圈扩到全行（36px 高），滚列表蹭到的误触由上面的 6s 驻留 + 撤销 chip 兜底（两个改动互为前提）；来源笔记名 <code>.src</code> 拦冒泡不参与勾选，预留给「打开笔记」。已落地并带守卫单测（点行一次 toggle / 勾圈不双触发 / 来源名不触发）。</div>
+
+  <h2>S2 · 完成态驻留：可交互演示（点任意一行的任意位置勾选，悬停行会暂停倒计时）</h2>
+  <div class="scene">
+    <span class="tag">list 420×240 · 深色主题</span>
+    <div class="island" style="top: 26px;">
+      <div class="hd">
+        <span class="title">3 项待办</span>
+        <span class="seg"><span class="on">进行中</span><span>已完成</span></span>
+        <button class="col"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg><span>收起</span></button>
+      </div>
+      <div class="ls">
+        <div class="row" id="r1">
+          <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+          <span class="tx">交材料</span><span class="src">今日速记</span>
+        </div>
+        <div class="row">
+          <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+          <span class="tx">回邮件给张工</span><span class="src">会议纪要</span>
+        </div>
+        <div class="row">
+          <button class="tick" title="完成"><span class="tickDot"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg></span></button>
+          <span class="tx">给绿萝浇水</span><span class="src">今日速记</span>
+        </div>
+      </div>
+    </div>
+    <div class="callout" style="right: 12px; bottom: 10px;">演示 JS 只为预览手感；真实实现沿用 <code>leaving</code> 状态机，只是 200ms 计时换成 6000ms + 可取消</div>
+  </div>
+
+  <h3>驻留行的三个状态（自左向右）</h3>
+  <div class="grid2">
+    <table>
+      <tr><th>状态</th><th>触发</th><th>视觉</th></tr>
+      <tr><td><b>驻留中</b></td><td>勾选后即刻</td><td>完成态样式不变 + 「撤销」chip 弹入（150ms）+ 绿色倒计时条从满条 6s 收缩</td></tr>
+      <tr><td><b>已暂停</b></td><td>鼠标悬停该行</td><td>倒计时条停住并提亮（opacity .55→.9）；chip 提亮。移开恢复收缩</td></tr>
+      <tr><td><b>撤销</b></td><td>点 chip / 再点勾圈</td><td>行回未完成态（back 150ms），chip 与倒计时条移除，重新发 toggle</td></tr>
+    </table>
+    <table>
+      <tr><th>边界</th><th>处理</th></tr>
+      <tr><td>写回失败</td><td>现有路径：乐观翻面作废、notice「已还原」，驻留态一并取消（行回原位）</td></tr>
+      <tr><td>驻留期间岛收起</td><td>直接收起，不等 6s（写回已落库，纯视觉提前结束）</td></tr>
+      <tr><td>驻留期间该行被外部改掉</td><td>现有「服务器现状收敛」逻辑照走：行从列表消失，chip 随之不存在</td></tr>
+      <tr><td>chip 挤占行宽</td><td>chip 挂在行尾（原退场前空出的位置）；<code>.tx</code> 已有 ellipsis，不新增布局规则</td></tr>
+    </table>
+  </div>
+
+  <h2>S3 · 键盘路径：键位表</h2>
+  <table>
+    <tr><th>键位</th><th>作用</th><th>实现落点</th></tr>
+    <tr><td><span class="kbd">Alt</span> + <span class="kbd">T</span></td><td><b>全局热键</b>：任何应用下唤岛并直进输入态（焦点落输入框）；岛已展开时等效「回到输入态」。再按 = 收回胶囊（开关键）</td><td>Rust <code>hotkey_manager.rs</code> 注册（插件已在）；热键 → <code>todo_island_show</code> + 广播新事件 <code>todo-island-hotkey</code>，岛前端收到达成 compose</td></tr>
+    <tr><td><span class="kbd">Enter</span> / <span class="kbd">Space</span></td><td>岛体（胶囊态）被 Tab 聚焦后展开列表</td><td>root 补 <code>tabIndex={0}</code> + keydown 分支（现 <code>role="button"</code> 名实相符）</td></tr>
+    <tr><td><span class="kbd">Esc</span></td><td class="ok">不变</td><td>现有两级取消（compose→list→pill）</td></tr>
+    <tr><td><span class="kbd">←</span> / <span class="kbd">→</span></td><td>在「进行中 / 已完成」两个真按钮 tab 间切换</td><td><code>.seg</code> 的 span 换 <code>&lt;button role="tab"&gt;</code>，roving tabindex</td></tr>
+    <tr><td><span class="kbd">Tab</span></td><td>列表内焦点序：收起 → tab → 各行勾圈 → 撤销 chip → 记一条</td><td>行内元素本就是按钮；只补 <code>:focus-visible</code> 样式（见 S5）</td></tr>
+  </table>
+
+  <h2>S4 · 焦点与热键观感（下面的胶囊可以真按 Tab / Enter 试）</h2>
+  <div class="scene" style="min-height: 140px;">
+    <span class="tag">pill 208×32 · 点进去按 Tab，焦点环出现后按 Enter 展开</span>
+    <div class="demoPill" id="demoRoot" tabindex="0" role="button" aria-label="展开待办列表">
+      <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.8" stroke-dashoffset="30.6" transform="rotate(-90 8 8)"/></svg>
+      <span class="cnt">2</span><span class="sepdot"></span><span class="last">交材料</span>
+    </div>
+    <div class="callout" style="right: 12px; top: 10px;">焦点环 = <code>outline: 2px #38bdf8</code>，仅 :focus-visible（键盘）出现，鼠标点击不出现</div>
+  </div>
+  <div class="note">热键的<b>反馈</b>：Alt+T 唤起的岛直接落在 compose 态（420×280，光标已在输入框），底部 hint「回车记下」不变——用户按完热键即可打字，零点击。热键冲突时（其它应用已占 Alt+T）注册失败只记日志并在设置页该行标注「已被占用」。</div>
+
+  <h2>S5 · 焦点可见性规范（全岛统一）</h2>
+  <table>
+    <tr><th>元素</th><th>:focus-visible 样式</th></tr>
+    <tr><td>岛体 root（胶囊态）</td><td><code>outline: 2px solid var(--island-accent-focus)</code> + <code>outline-offset: 2px</code>；圆角跟随胶囊</td></tr>
+    <tr><td>tab 按钮 / 收起 / 记一条 / 勾圈 / 撤销 chip</td><td>同上但 <code>outline-offset: 1px</code>（小元素不留大空隙）</td></tr>
+    <tr><td>输入框 .cinput</td><td>保留现有 border 变化，再叠同款 outline（现在是 <code>outline: none</code>，SC 2.4.7 不达标处）</td></tr>
+  </table>
+  <div class="note">新增令牌 <code>--island-accent-focus: #38bdf8</code>（深色）/ <code>#0369a1</code>（浅色）——比现有 <code>--island-accent</code> 提亮一档，保证焦点环在深玻璃上也醒目；随手补 <code>prefers-reduced-motion</code> 不受影响（focus 环无动画）。</div>
+
+  <h2>S6 · 实施影响面与不改动清单（2026-09-27 已全部落地 ✓）</h2>
+  <div class="note">落地拆分：<code>useIslandTaskOps.ts</code>（写回状态机：乐观翻面 + 6s 驻留 + 撤销 + 悬停暂停 + 快照续命）、<code>useIslandSignals.ts</code>（hover/intent 信号 + 失败提示钩子）；验证：前端 31 条岛测试 + 全仓 3036 条、Rust 1818 条全绿，tsc / cargo check / lint:ui（block 级 0）通过。设置页新增「待办岛唤起」热键行（默认 Alt+T，可换键，全部热键行互相感知占用）。</div>
+  <div class="grid2">
+    <table>
+      <tr><th>文件</th><th>改动</th></tr>
+      <tr><td><code>TodoIslandList.tsx</code></td><td><code>LEAVE_AFTER_MS</code> 200→6000 拆成两段（200ms 完成态 + 5.8s 驻留）或直接 6000 + chip；撤销 chip JSX；行 hover 暂停（清/挂计时器）。<b>已先行落地</b>：整行可点勾选（<code>.row</code> onClick + 勾圈 stopPropagation 防双触发 + <code>.src</code> 拦冒泡排除），cursor:pointer</td></tr>
+      <tr><td><code>TodoIsland.tsx</code></td><td>root <code>tabIndex</code> + Enter/Space；监听 <code>todo-island-hotkey</code>；Esc 在 compose 时若光标在输入框先归光标语义（不变）</td></tr>
+      <tr><td><code>TodoIsland.module.css</code></td><td><code>.undoChip</code> / <code>.dwellBar</code> / <code>:focus-visible</code> 三组；新增 <code>--island-accent-focus</code>（深浅两块）</td></tr>
+      <tr><td><code>todoisland-main.tsx</code></td><td>监听热键事件（入口层接，转发或直接 listen）</td></tr>
+      <tr><td>Rust <code>hotkey_manager.rs</code></td><td>注册 Alt+T（沿用现有注册/换键框架），show + emit <code>todo-island-hotkey</code></td></tr>
+      <tr><td>设置页「灵动岛」分区</td><td>加一行「唤岛热键」显示/换键 + 占用提示</td></tr>
+      <tr><td>测试</td><td>守卫单测：驻留 6s 内撤销回原位；倒计时结束归档；热键事件→compose；root Enter 展开；tab 键盘可达</td></tr>
+    </table>
+    <table>
+      <tr><th class="ok">明确不改</th><th>理由</th></tr>
+      <tr><td>材质 / 舞台尺寸 / 五舞台机</td><td>本稿只加状态与键盘，不动形体</td></tr>
+      <tr><td>鼠标路径（悬停→点击）</td><td>键盘是加速器（规则 17：鼠标全流程可达优先）</td></tr>
+      <tr><td>写回时机与失败自愈</td><td>B3 乐观更新机制已验证，不碰</td></tr>
+      <tr><td>闲置自收 6s / compose 草稿保护</td><td>现有审计修复，不碰</td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+  // ===== S2 演示：整行可点勾选（与真实实现同口径）→ 驻留 6s + 撤销 chip + 倒计时条；悬停暂停 =====
+  (function () {
+    const DWELL_MS = 6000;
+    const rows = document.querySelectorAll(".ls .row");
+
+    function svgOK() {
+      return '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg>';
+    }
+
+    rows.forEach((row) => {
+      const tick = row.querySelector(".tick");
+      let state = "idle"; // idle | dwell | paused
+      let start = 0, remain = DWELL_MS, raf = 0, bar = null, chip = null;
+
+      function clearUI() {
+        cancelAnimationFrame(raf);
+        if (chip) { chip.remove(); chip = null; }
+        if (bar) { bar.remove(); bar = null; }
+        row.classList.remove("dwell", "paused", "gone");
+        state = "idle";
+        tick.title = "完成";
+      }
+      function frame(ts) {
+        if (!start) start = ts;
+        const left = Math.max(0, remain - (ts - start));
+        if (bar) bar.style.transform = "scaleX(" + (left / DWELL_MS) + ")";
+        if (left <= 0) {
+          row.classList.add("gone");
+          setTimeout(() => { row.style.display = "none"; }, 220);
+          clearUI();
+          return;
+        }
+        raf = requestAnimationFrame(frame);
+      }
+      function dwell() {
+        row.classList.add("dwell", "back");
+        tick.title = "标记为未完成";
+        chip = document.createElement("button");
+        chip.className = "undoChip"; chip.textContent = "撤销";
+        // chip 自己拦冒泡（与真实实现同款）：点撤销不许再触发整行勾选
+        chip.onclick = (e) => { e.stopPropagation(); clearUI(); row.classList.remove("back"); };
+        row.appendChild(chip);
+        bar = document.createElement("span"); bar.className = "dwellBar";
+        row.appendChild(bar);
+        start = 0; remain = DWELL_MS;
+        raf = requestAnimationFrame(frame);
+        state = "dwell";
+      }
+      function toggle() {
+        if (state === "idle") dwell();
+        else { clearUI(); row.style.display = ""; row.classList.remove("gone"); }
+      }
+      // 整行可点（B 方案）：勾圈 stopPropagation，避免交给行再翻一遍
+      tick.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });
+      row.addEventListener("click", toggle);
+      row.addEventListener("mouseenter", () => {
+        if (state !== "dwell") return;
+        const now = performance.now();
+        cancelAnimationFrame(raf);
+        remain = Math.max(0, remain - (now - start)); start = 0;
+        row.classList.add("paused"); state = "paused";
+      });
+      row.addEventListener("mouseleave", () => {
+        if (state !== "paused") return;
+        row.classList.remove("paused");
+        start = 0; raf = requestAnimationFrame(frame); state = "dwell";
+      });
+    });
+  })();
+
+  // ===== S4 演示：Tab 聚焦 → Enter/Space 展开（演示里只放大示意） =====
+  (function () {
+    const root = document.getElementById("demoRoot");
+    root.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        root.style.width = root.style.width === "420px" ? "208px" : "420px";
+        root.style.height = root.style.height === "120px" ? "32px" : "120px";
+        root.style.borderRadius = root.style.height === "120px" ? "12px" : "999px";
+        root.style.transition = "all 200ms cubic-bezier(.2,0,0,1)";
+        root.querySelector(".last").textContent = root.style.height === "120px" ? "（真实实现会切到 list 舞台并加载列表）" : "交材料";
+      }
+    });
+  })();
+</script>
+</body>
+</html>

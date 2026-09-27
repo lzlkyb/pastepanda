@@ -11,6 +11,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { RcSession } from "@/lib/api/rc";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import type { UseRc } from "@/hooks/useRc";
@@ -156,15 +158,18 @@ describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
     expect(zone(container)!.getAttribute("aria-hidden")).toBe("false");
   });
 
-  it("操作后无画面（unansweredSec>0）锁显并出警示胶囊", () => {
+  it("操作后无画面（unansweredSec>0）出警示胶囊但不再锁显（2026-09-27 审查修订）", () => {
+    // 旧判据 unanswered 参与锁显在静止画面上是病态的：被控端对静止画面刻意
+    // 不推帧，无害点击本就无新帧 ⇒ 浮条锁几分钟不消失。现在锁显只跟链路
+    // 死活走，琥珀胶囊仍出（有提示），浮条到点正常淡出。
     const { container } = render(
       <RcSessionCapsule {...base({ link: { ...LINK, unansweredSec: 3 } })} />,
     );
     expect(container.textContent).toContain("操作后 3s 无画面");
     act(() => {
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(15_000);
     });
-    expect(zone(container)!.getAttribute("aria-hidden")).toBe("false");
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("旧版对端「版本偏旧」只随浮条呈现，不锁显——整场常驻的条件不能把浮条钉死", () => {
@@ -259,6 +264,63 @@ describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
     expect(getByRole("button", { name: "适应" })).toBeTruthy();
   });
 
+  /**
+   * 🔴 P1-1（2026-09-27 审计）：三键曾经一条规则都不匹配。
+   *
+   * 原写法 `className={fit === k ? styles.capBtnOn : undefined}` —— 未选中档是
+   * `undefined`，而全库**没有** button 重置（globals.css 只有 `*{margin:0;padding:0}`），
+   * 于是「适应 / 1:1 / 填充」退回浏览器原生按钮：实测 2px outset 黑框 / 圆角 0 /
+   * `rgb(240,240,240)` 浅灰底 / Arial 13.3333px / 高 21px，而紧挨着的全屏键是
+   * border 0 / 圆角 8 / 透明底 / 12px / 高 24px。
+   *
+   * 之所以必须用**渲染出来的 className** 断言：这条缺陷对 tsc / eslint / lint:ui /
+   * lint:css **全部不可见**（className 有值、`.capBtnOn` 这个类也确实存在，
+   * 只是没接上）。把 `styles.capBtn` 从 JSX 里删掉，只有这条用例会红。
+   */
+  it("🔴 P1-1：适应/1:1/填充三键都落在 .capBtn 上，当前档再多一层 .capBtnOn", () => {
+    const { getByRole, rerender } = render(<RcSessionCapsule {...base({ fit: "fit" })} />);
+    const has = (label: string, cls: string) =>
+      getByRole("button", { name: label }).classList.contains(cls);
+
+    for (const label of ["适应", "1:1", "填充"]) {
+      expect(has(label, styles.capBtn)).toBe(true);
+    }
+    // 当前档：叠 .capBtnOn；另外两档**不得**叠（否则三键都是蓝底，选中态失效）
+    expect(has("适应", styles.capBtnOn)).toBe(true);
+    expect(has("1:1", styles.capBtnOn)).toBe(false);
+    expect(has("填充", styles.capBtnOn)).toBe(false);
+
+    // 换一档后蓝底跟着走（不是写死在某一颗上）
+    rerender(<RcSessionCapsule {...base({ fit: "actual" })} />);
+    expect(has("1:1", styles.capBtnOn)).toBe(true);
+    expect(has("适应", styles.capBtnOn)).toBe(false);
+  });
+
+  it("🔴 P1-1：三键与同排的全屏键同族（同一个 .capBtn 类，不再退回原生外观）", () => {
+    const { getByRole, container } = render(<RcSessionCapsule {...base({ fit: "fill" })} />);
+    const fullscreen = getByRole("button", { name: "全屏显示远程画面（F11）" });
+    expect(fullscreen.classList.contains(styles.capBtn)).toBe(true);
+
+    // 「同族」的操作化定义：三键的类名 = 全屏键的类名（未选中档），
+    // 当前档只允许多出 .capBtnOn 一个 —— 多出别的说明又走回了补丁式写法。
+    const fullCls = fullscreen.className.split(/\s+/).sort();
+    for (const label of ["适应", "1:1", "填充"]) {
+      const got = getByRole("button", { name: label })
+        .className.split(/\s+/)
+        .filter((c) => c !== styles.capBtnOn)
+        .sort();
+      expect(got).toEqual(fullCls);
+    }
+    expect(container.querySelector(`.${styles.capFit}`)).not.toBeNull();
+  });
+
+  it("🔴 2026-09-27：结束会话键必须挂在 .capBtn 基底上（曾只有 capBtnDanger ⇒ 原生白底按钮）", () => {
+    const { getByRole } = render(<RcSessionCapsule {...base()} />);
+    const end = getByRole("button", { name: "结束会话" });
+    expect(end.classList.contains(styles.capBtn)).toBe(true);
+    expect(end.classList.contains(styles.capBtnDanger)).toBe(true);
+  });
+
   it("⋯ 面板开合：点击展开（码率/声音/重连收纳位），点外面收", () => {
     const { container, getByRole } = render(<RcSessionCapsule {...base()} />);
     expect(container.querySelector(`.${styles.capMore}`)).toBeNull();
@@ -276,5 +338,55 @@ describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
       document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     });
     expect(container.querySelector(`.${styles.capMore}`)).toBeNull();
+  });
+});
+
+/**
+ * 🔴 P1-1 的样式表侧：选中档在**悬停**时也必须保住底色。
+ *
+ * `.capBtn:hover:not(:disabled)` 的特异性是 (0,3,0)，高过 `.capBtnOn` 的 (0,1,0)。
+ * 修前靠 `.capBtnOn` 的两条 `!important` 硬压（行为对、但写法和「禁 !important」
+ * 的收口方向相反）；修法把 hover 规则改成 `:not(:disabled):not(.capBtnOn)`。
+ *
+ * 这里**不钉某一种写法**，只钉不变量：两种手法至少有一个在场。
+ * 两个都被拿掉时，鼠标一停在当前档上蓝底就被灰白 hover 底盖掉 ——
+ * 选中态在指针下消失。这条断言在那一刻变红。
+ */
+describe("RcSessionCapsule 样式表（P1-1）", () => {
+  const CSS = readFileSync(
+    join(process.cwd(), "src", "components", "rc", "RemoteComputer.module.css"),
+    "utf8",
+  );
+
+  function block(selector: string): string {
+    const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = CSS.match(new RegExp(`(?:^|\\n)${esc}\\s*\\{([^}]*)\\}`));
+    if (!m) throw new Error(`找不到规则块 ${selector}`);
+    return m[1];
+  }
+
+  it("选中档在悬停时不会被 hover 规则盖掉（排除写法或 !important 至少有一个）", () => {
+    // hover 规则的选择器本身可能被改写（修法是往 :not() 链上追加），
+    // 所以连选择器带声明一起取出来，别只找固定的那一串。
+    const hoverRule = CSS.match(/(?:^|\n)(\.capBtn:hover[^{]*)\{([^}]*)\}/);
+    expect(hoverRule, "找不到 .capBtn:hover 规则").not.toBeNull();
+    const [, hoverSel, hoverBody] = hoverRule!;
+    const on = block(".capBtnOn");
+    const excluded = hoverSel.includes(":not(.capBtnOn)");
+    const forced = on.includes("!important");
+    expect(
+      excluded || forced,
+      `hover 规则（${hoverSel.trim()}）既不排除 .capBtnOn，.capBtnOn 也没有 !important`
+        + " —— 鼠标停在当前档上蓝底就被灰白 hover 底盖掉，选中态消失",
+    ).toBe(true);
+    // 顺带确认 hover 规则确实会改底色（不然这条断言是空转的）
+    expect(hoverBody).toMatch(/background:/);
+  });
+
+  it("三键靠的是 .capBtn 一族，样式表里不存在专给 .capFit 里裸 button 的补丁规则", () => {
+    // 修前的正确解法是「给三键挂 .capBtn」，不是再写一条 `.capFit button`。
+    // 后者会让三键与同排按钮继续分家（字号/高度/圆角各走一套）。
+    expect(CSS).not.toMatch(/\.capFit\s+button/);
+    expect(CSS).not.toMatch(/\.capFit\s*>\s*button/);
   });
 });

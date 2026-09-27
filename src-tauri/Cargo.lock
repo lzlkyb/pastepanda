@@ -2082,6 +2082,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fastbloom"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef975e30683b2d965054bb0a836f8973857c4ebf6acf274fe46617cd285060d8"
+dependencies = [
+ "foldhash 0.2.0",
+ "libm",
+ "portable-atomic",
+ "siphasher",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4530,6 +4542,7 @@ dependencies = [
  "bytes",
  "derive_more 2.1.1",
  "enum-assoc",
+ "fastbloom",
  "getrandom 0.4.3",
  "identity-hash",
  "lru-slab",
@@ -5149,7 +5162,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pastepanda"
-version = "7.2.5"
+version = "7.2.7"
 dependencies = [
  "arboard",
  "argon2",
@@ -5160,6 +5173,7 @@ dependencies = [
  "chrono",
  "csv",
  "encoding_rs",
+ "env_filter",
  "env_logger 0.11.11",
  "futures-util",
  "hostname",
@@ -5168,6 +5182,7 @@ dependencies = [
  "log",
  "md-5",
  "netdev 0.46.2",
+ "noq-proto",
  "ocr-rs",
  "pinyin",
  "rcgen",

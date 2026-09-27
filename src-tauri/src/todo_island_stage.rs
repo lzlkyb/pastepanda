@@ -372,15 +372,18 @@ pub fn apply_stage_region(window: &tauri::WebviewWindow, stage: IslandStage, phy
         let Ok(raw) = window.hwnd() else { return };
         let hwnd = windows::Win32::Foundation::HWND(raw.0 as isize as *mut core::ffi::c_void);
         let Ok(scale) = window.scale_factor() else { return };
-        // 收起三态 = 胶囊（CSS 999px 圆角 = **高度一半**的半圆帽）；展开两态 = B 方案
-        // 设计稿目标观感的**四角统一 12px** 圆角卡（与 TodoIsland.module.css 的 border-radius 对齐）。
+        // 收起两态（pill/clear）= **半胶囊**（吸附形变设计稿 §3②）：上缘压平贴死屏幕顶
+        // （r_top=0），下缘 = 高度一半的半圆帽（r_card=floor(h/2)，floor 让 GDI 弧落在 CSS 弧
+        // 内侧的既有口径）。peek 仍是满胶囊；展开两态 = 四角统一 12px 圆角卡。
         // ❗ 两类形状都走**逐行像素中心**多边形 region（build_stadium_region /
         //   build_top_rounded_region）。历史教训（2026-09-25 用户两轮实拍）：
         //   CreateRoundRectRgn 只有统一半径、且弧形与 CSS 正圆对不上（胶囊 r=round(23.5)=24
         //   vs CSS 23.5，两帽整圈裸材质月牙；展开态 GDI 角「方」偏差 2–5px）——
         //   任何「拿 GDI 形状去贴 CSS」的路线都已被实测否决，勿回改。
-        // radius 仅是 GDI 兜底路径（多边形拼装失败时）的参数；胶囊取 floor（23<23.5），
+        // radius 仅是 GDI 兜底路径（多边形拼装失败时）的参数；收起三态取 floor（23<23.5），
         // GDI 弧才落在 CSS 弧**内侧**——外扩哪怕 0.5px 就是一片月牙。
+        //   ❗ 兜底形态对半胶囊也退**统一半径 floor(h/2) 的胶囊**（比 12px 整卡在轮廓上
+        //     更接近目标形状，且参数来源与 stadium 完全一致，兜底路径零改动）。
         let radius = match stage {
             IslandStage::Pill | IslandStage::Clear | IslandStage::Peek => {
                 (phys.1 as f64 / 2.0).floor() as i32
@@ -393,7 +396,7 @@ pub fn apply_stage_region(window: &tauri::WebviewWindow, stage: IslandStage, phy
             return;
         }
         let hrgn = match stage {
-            IslandStage::Pill | IslandStage::Clear | IslandStage::Peek => {
+            IslandStage::Peek => {
                 // ❗ 传实测 w/h 本身（**不 +1**）：+1 是 CreateRoundRectRgn 的半开区间口径，
                 //   逐行像素判据按像素下标 0..w-1 算，多 1 会把最右/最下行多裁出一列
                 let merged = unsafe { CreateRectRgn(0, 0, 0, 0) };
@@ -404,6 +407,19 @@ pub fn apply_stage_region(window: &tauri::WebviewWindow, stage: IslandStage, phy
                 } else {
                     let _ = unsafe { DeleteObject(merged) };
                     hrgn // 拼装失败退回 GDI 胶囊：可能有 ≤1px 材质细缝，好过整窗不裁
+                }
+            }
+            // 吸附形变（设计稿 §3②）：停靠两态上缘压平（r_top=0）、下缘半圆帽——
+            // 拼装走 build_top_rounded_region 的双半径能力，**零新增拼装代码**。
+            IslandStage::Pill | IslandStage::Clear => {
+                let merged = unsafe { CreateRectRgn(0, 0, 0, 0) };
+                let ok = unsafe { build_top_rounded_region(merged, phys.0, phys.1, radius, 0) };
+                if ok {
+                    let _ = unsafe { DeleteObject(hrgn) };
+                    merged
+                } else {
+                    let _ = unsafe { DeleteObject(merged) };
+                    hrgn // 兜底 = 统一半径胶囊（floor(h/2)），轮廓最接近半胶囊
                 }
             }
             IslandStage::List | IslandStage::Compose => {
@@ -751,6 +767,49 @@ mod tests {
             assert!(unsafe { PtInRegion(dst, x, h - 1) }.as_bool(), "底行 ({x},{}) 缺口", h - 1);
         }
         // rgnbox 必须正好是整窗（(0,0)-(w,h)，右/下为排外口径）
+        let mut rb = windows::Win32::Foundation::RECT::default();
+        unsafe { windows::Win32::Graphics::Gdi::GetRgnBox(dst, &mut rb) };
+        assert_eq!((rb.left, rb.top, rb.right, rb.bottom), (0, 0, w, h), "rgnbox 不是整窗");
+        let _ = unsafe { DeleteObject(dst) };
+    }
+
+    /// 半胶囊 region（吸附形变设计稿 §3②）：上缘**满宽压平**（r_top=0）、下弧贴住 CSS 半圆帽。
+    /// 判据与 stadium 同款（像素中心、偏差单侧 ≤1px）；顶行满宽是「方顶」的关键判据——
+    /// rgn 若仍按胶囊裁，顶缘两角会透出壁纸缝，CSS 方角与 rgn 错配。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_half_capsule_region_square_top_round_bottom() {
+        use windows::Win32::Graphics::Gdi::{CreateRectRgn, PtInRegion, DeleteObject};
+        let (w, h) = (260, 47); // pill 终帧物理尺寸（scale 1.25）
+        let r_card = h / 2; // 23（floor，与 stadium 兜底同口径）
+        let dst = unsafe { CreateRectRgn(0, 0, 0, 0) };
+        assert!(unsafe { build_top_rounded_region(dst, w, h, r_card, 0) });
+        // 直边区（y ∈ [1, h−r_card)）：左右缘满宽——上缘压平、两侧从顶直落
+        for y in 1..(h - r_card) {
+            assert!(unsafe { PtInRegion(dst, 0, y) }.as_bool(), "y={y} 左缘缺口（顶未压平）");
+            assert!(unsafe { PtInRegion(dst, w - 1, y) }.as_bool(), "y={y} 右缘缺口");
+        }
+        // 底弧：与 CSS 半圆帽（圆心 (r_card, h−r_card)）贴合，偏差单侧 ≤1px
+        for y in (h - r_card)..h - 1 {
+            let mut first = -1;
+            for x in 0..(r_card * 2) {
+                if unsafe { PtInRegion(dst, x, y) }.as_bool() {
+                    first = x;
+                    break;
+                }
+            }
+            assert!(first >= 0, "y={y} 底角整行被裁——背景咬边");
+            let yc = y as f64 + 0.5;
+            let dy = yc - (h as f64 - r_card as f64);
+            let xl = r_card as f64 - (r_card as f64 * r_card as f64 - dy * dy).max(0.0).sqrt();
+            let bound = xl - 0.5;
+            let diff = first as f64 - bound;
+            assert!(
+                diff >= -0.01 && diff <= 1.01,
+                "y={y} 底弧左界 {first} 偏离 CSS 判据 {bound:.2} 超限"
+            );
+        }
+        // rgnbox 整窗（下边界排外守卫同款）
         let mut rb = windows::Win32::Foundation::RECT::default();
         unsafe { windows::Win32::Graphics::Gdi::GetRgnBox(dst, &mut rb) };
         assert_eq!((rb.left, rb.top, rb.right, rb.bottom), (0, 0, w, h), "rgnbox 不是整窗");

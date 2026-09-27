@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>待办灵动岛 · 内容活性三动效 设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #27272a; padding: 32px 40px 64px; font-size: 13px; line-height: 1.6;
+  }
+  .sheet { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #71717a; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 6px; padding-top: 18px; border-top: 1px solid #dcdce0; }
+  .note { font-size: 12px; color: #52525b; margin-bottom: 14px; max-width: 940px; }
+  .note b { color: #27272a; }
+  .note code { background: #e9e9ec; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; margin-bottom: 10px; }
+  th, td { padding: 6px 10px; border: 1px solid #d4d4d8; text-align: left; vertical-align: top; }
+  th { background: #ececf0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #c2410c; font-weight: 600; }
+  .warn { color: #b45309; font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* ===== 演示舞台（形变稿同款手法）===== */
+  .demo {
+    position: relative; border: 1px solid #c9ccd4; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(180deg, #cfd9e4 0 70px, #eef1f5 70px 100%);
+  }
+  .island {
+    position: relative; margin: 16px auto 0; width: 300px; height: 40px; border-radius: 999px;
+    display: flex; align-items: center; gap: 8px; padding: 0 16px; font-size: 12px; user-select: none;
+    color: #f4f4f5;
+    background:
+      linear-gradient(156deg, rgba(255,255,255,.02) 0, transparent 53%),
+      rgba(20,20,24,.92);
+    backdrop-filter: blur(22px) saturate(1.15);
+    -webkit-backdrop-filter: blur(22px) saturate(1.15);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.12),
+      inset 0 1px 0 rgba(255,255,255,.066),
+      inset 0 -1px 0 rgba(7,17,28,.3),
+      0 3px 8px rgba(13,22,44,.22),
+      0 13px 32px rgba(13,22,44,.24);
+    transform-origin: 50% 0; /* 顶部吸附：脉冲从顶边锚点缩放，底缘弹 */
+  }
+  .island .ring { width: 16px; height: 16px; flex: 0 0 16px; }
+  .island .dot { width: 3px; height: 3px; border-radius: 99px; background: currentColor; opacity: .4; }
+  .island .muted { color: rgba(244,244,245,.66); font-size: 11px; }
+  .island .live { font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: .3px; }
+  .island .live.over { color: #fca5a5; }
+  .island .bell { width: 14px; height: 14px; color: #fca5a5; display: inline-block; }
+  .island .okmark { color: #4ade80; display: inline-flex; }
+
+  /* —— 动效一：无 CSS，纯 JS 每秒走字（tabular-nums 防跳动）—— */
+
+  /* —— 动效二：事件脉冲（一次性，animationend 摘除）—— */
+  .pulse { animation: jelly 450ms cubic-bezier(.2,0,0,1); }
+  @keyframes jelly {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.045); }
+    70% { transform: scale(.995); }
+    100% { transform: scale(1); }
+  }
+  .shake { animation: bellshake 600ms cubic-bezier(.2,0,0,1); }
+  @keyframes bellshake {
+    0%, 100% { transform: rotate(0); }
+    15% { transform: rotate(13deg); }
+    35% { transform: rotate(-11deg); }
+    55% { transform: rotate(8deg); }
+    75% { transform: rotate(-5deg); }
+  }
+  .draw path { stroke-dasharray: 20; stroke-dashoffset: 0; }
+  .draw.go path { animation: draw 350ms cubic-bezier(.2,0,0,1) both; }
+  @keyframes draw { from { stroke-dashoffset: 20; } to { stroke-dashoffset: 0; } }
+
+  /* —— 动效三：glow 跟随光标（CSS 变量 + pointermove）—— */
+  .glow-follow { position: relative; overflow: hidden; }
+  .glow-follow::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(120px circle at var(--glow-x, 45%) -40%, rgba(255,255,255,.24), transparent 70%);
+    opacity: 1;
+  }
+
+  .replay {
+    position: absolute; top: 10px; right: 12px; z-index: 3;
+    font-size: 11px; padding: 3px 10px; border-radius: 6px; border: 1px solid #c9ccd4;
+    background: #fff; color: #3f3f46; cursor: pointer;
+  }
+  .replay:active { background: #ececf0; }
+  .dlabel { position: absolute; top: 10px; left: 12px; font-size: 11px; color: #52525b; }
+  .dhint { margin: 10px 14px 12px; font-size: 11px; color: #71717a; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>待办灵动岛 · 内容活性三动效 设计稿</h1>
+  <p class="meta">
+    2026-09-27 · 承接「够不够灵动」讨论的结论：<b>形体灵动已到位（弹簧/形变/分拍），内容灵动未开始</b>——
+    胶囊 95% 的时间纹丝不动。本稿做三件事：① peek 实时递减（内容在走）② 事件入场脉冲（世界敲门有回音）
+    ③ glow 跟随光标（受光面液态化）·
+    基于真实组件 <code>TodoIsland.tsx</code>（tab/热键版）/ <code>TodoIsland.module.css</code> / <code>useIslandSignals.ts</code><br>
+    🔴 总红线（规则 8）：三者全部<b>事件驱动、放完即停</b>——没有常驻动画、没有循环 rAF、不加 backdrop-filter。
+    灵动 ≠ 动得多，岛的第一美德仍是不抢注意力（吸附双态稿 §0 的初始抱怨）。
+  </p>
+
+  <h2>0 · 三动效一览（节拍与成本）</h2>
+  <table>
+    <tr><th>#</th><th>动效</th><th>触发</th><th>时长/频率</th><th>常驻成本</th></tr>
+    <tr><td>①</td><td><b>实时递减</b>：peek 态临近到期（&lt;1h）显示 mm:ss 走字</td><td>stage=peek 且 tasks[0].dueMs−now &lt; 1h 且未完成</td><td>1s 一次 setState（仅 peek 激活期挂表）</td><td class="ok">≈0：离开 peek 即清表；无临近任务不挂表</td></tr>
+    <tr><td>②</td><td><b>事件脉冲</b>：果冻 scale 1→1.045→1；提醒加铃 shake；全清加勾描画</td><td>新待办到达 / dueAlert None→Some / 全清进入</td><td>450 / 600 / 350ms，一次性</td><td class="ok">≈0：animationend 摘 class，平时无合成层</td></tr>
+    <tr><td>③</td><td><b>glow 跟随光标</b>：径向高光圆心随入射点横移</td><td>data-hover / data-intent 期间</td><td>pointermove → setProperty（不触发 layout）</td><td class="ok">低：仅拦截期监听；穿透期零开销</td></tr>
+  </table>
+
+  <h2>1 · 动效一：peek 实时递减——最便宜的一针「活」</h2>
+  <div class="demo" style="padding-bottom:2px">
+    <span class="dlabel">演示：倒计时每秒走字；跨过 0 线翻红（演示用 5s 压缩时长）</span>
+    <button class="replay" id="cdReplay">重播</button>
+    <div class="island">
+      <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+      <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span>
+      <span class="dot"></span>
+      <span class="live" id="cdText">14:32</span>
+    </div>
+    <p class="dhint">真实口径：dueMs − now &lt; 1h 才走字（mm:ss）；&gt;1h 保持既有静态文案「今天 16:00」；跨过 0 → 翻红（--island-due）+ 一次脉冲。无 dueMs 不显示（既有口径：宁可少说，不编时间）。</p>
+  </div>
+  <div class="note">
+    <b>实现点</b>：<code>nextDueLabel</code>（TodoIsland.tsx:178）从静态 <code>dueLabel</code> 改为「临近时由 dueMs 现算」——
+    新增 <code>useLiveDue(dueMs, active)</code>：<code>active = stage==="peek" && 临近</code> 时挂 1s interval，
+    返回 mm:ss；<code>active=false</code> 即清。跨 0 的判定在 interval 内（残值 ≤0 → 置 over + 触发一次脉冲回调）。<br>
+    <b>为什么安全</b>：interval 只在 peek 可见 + 有临近任务时存在（不可见即停，规则 8.1）；每秒重渲染的只有
+    一个 span（tabular-nums 定宽数字，走字不抖版式）。list/compose 不走字——列表里的到期 chip 是「日期语义」，
+    秒级跳动是噪音。
+  </div>
+
+  <h2>2 · 动效二：事件入场脉冲——世界敲门，岛有回音</h2>
+  <div class="grid2">
+    <div class="demo" style="padding-bottom:2px">
+      <span class="dlabel">新待办到达 / 提醒到点：果冻脉冲（顶边锚点，底缘弹）</span>
+      <button class="replay" id="pulseReplay">重播</button>
+      <div class="island" id="pulseIsland" style="margin-top:28px">
+        <svg class="bell" id="bellSvg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2.5a3.5 3.5 0 0 0-3.5 3.5c0 3-1.5 4-1.5 4h10s-1.5-1-1.5-4A3.5 3.5 0 0 0 8 2.5z"/><path d="M6.8 12.5a1.3 1.3 0 0 0 2.4 0"/></svg>
+        <span style="font-weight:600;color:#fca5a5">到点了</span>
+        <span class="dot"></span><span>回邮件给张工</span>
+      </div>
+      <p class="dhint">提醒态：脉冲 + 铃 shake（±13° 三摆 600ms）。新待办到达：只脉冲、不 shake。</p>
+    </div>
+    <div class="demo" style="padding-bottom:2px">
+      <span class="dlabel">全清：勾 stroke 描画（350ms）</span>
+      <button class="replay" id="drawReplay">重播</button>
+      <div class="island" style="margin-top:28px">
+        <svg class="okmark draw" id="drawSvg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M3 8.5l3.4 3.4L13 5"/></svg>
+        <span class="muted">今天没有待办了</span>
+      </div>
+      <p class="dhint">描画即「刚刚完成」的余韵；1.5s 延迟隐藏照旧，描画不延迟隐藏节奏。</p>
+    </div>
+  </div>
+  <div class="note">
+    <b>触发判定（防误触发是本节的账）</b>：
+    ① 新待办 = <code>state.tasks.length</code> 比 ref 里的上次值<b>大</b>且岛已挂载超过 1s——首次挂载 /
+    同步恢复批量灌入（+N 条）不算事件，只算状态（否则每次开应用全屏待办集体跳舞）；
+    ② 提醒 = <code>dueAlert</code> 从 None → Some（Rust 账本点火的那一刻），横幅 30s 清账收回不打扰；
+    ③ 全清 = 进入 clear 态那一刻（collapseToPill 口径不变）。<br>
+    <b>实现点</b>：一次性 class（<code>.pulse</code> / <code>.shake</code> / <code>.draw.go</code>）+
+    <code>animationend</code> 摘除；三态互斥时取优先级最高的一个触发（提醒 &gt; 新待办 &gt; 全清）。<br>
+    <b>reduced-motion</b>：三者全部跳过（<code>usePrefersReducedMotion</code> 现成）——信息不变，只去掉运动。
+  </div>
+
+  <h2>3 · 动效三：glow 跟随光标——受光面液态化</h2>
+  <div class="demo" style="padding-bottom:2px">
+    <span class="dlabel">把鼠标在岛上左右移动：高光圆心跟随入射点</span>
+    <div class="island glow-follow" id="glowIsland" style="margin-top:28px">
+      <svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-dasharray="40.84" stroke-dashoffset="15.5" transform="rotate(-90 8 8)"/></svg>
+      <span>3</span><span class="dot"></span><span class="txt">整理周报素材</span><span class="muted">· 14:32</span>
+    </div>
+    <p class="dhint">CSS：<code>radial-gradient(120px circle at var(--glow-x) -40%, …)</code>；JS 只 setProperty 一个变量。</p>
+  </div>
+  <div class="note">
+    <b>取光标位置不新增 Rust 通道</b>：拦截生效后（<code>set_ignore_cursor_events(false)</code>）岛 webview 能收到
+    pointer events——前端 <code>pointermove</code> 直接算 <code>--glow-x = offsetX/width×100%</code>，
+    <b>拒绝</b>「Rust 每 60ms emit 光标坐标」的方案（跨进程事件风暴，收益为零）。<br>
+    <b>监听范围</b>：仅 <code>data-hover</code> / <code>data-intent</code> 为真时挂（Rust 收事件才收得到 move，
+    天然对齐）；穿透期零监听零开销。<code>setProperty</code> 改 CSS 变量只触发重绘、不触发 layout，
+    pointermove 高频下安全；intent 点亮的第一帧用进入点初始化（高光从入射处泛起，不是从中间跳出来）。<br>
+    <b>reduced-motion</b>：不跟随，恒 45% 中位（现状观感）。
+  </div>
+
+  <h2>4 · 节拍表（与既有弹簧/分拍同一条时间语言）</h2>
+  <table>
+    <tr><th>环节</th><th>时长</th><th>曲线</th><th>备注</th></tr>
+    <tr><td>递减走字</td><td>1s/拍</td><td>—（数字替换，无过渡）</td><td>tabular-nums 防抖；跨 0 → 红 + 一次 450ms 脉冲</td></tr>
+    <tr><td>果冻脉冲</td><td>450ms</td><td>cubic-bezier(.2,0,0,1) 三段关键帧</td><td>transform-origin 50% 0（顶边吸附，底缘弹）——与「长在屏幕上」语义一致</td></tr>
+    <tr><td>铃 shake</td><td>600ms</td><td>±13° 衰减三摆</td><td>仅提醒点火那一次，横幅期不循环</td></tr>
+    <tr><td>勾描画</td><td>350ms</td><td>stroke-dashoffset 20→0</td><td>与 U2 档位族一致（150/200/300/400 内取 350? ❗ 见拍板项②）</td></tr>
+    <tr><td>glow 跟随</td><td>0ms（即时）</td><td>—</td><td>变量直改；如需柔和可加 100ms 的 background-position 过渡（拍板项③）</td></tr>
+  </table>
+
+  <h2>5 · 性能账（规则 8 自查，逐条对线）</h2>
+  <table>
+    <tr><th>红线</th><th>本稿</th></tr>
+    <tr><td>常驻动画 / 递归 rAF</td><td class="ok">零新增。三个动效都是事件期一次性（animationend 摘除 / interval 按需挂清）</td></tr>
+    <tr><td>隐藏窗口开销</td><td class="ok">岛隐藏时 interval 不存在（active=false 先于 hide 清表）；动画 class 已摘</td></tr>
+    <tr><td>最坏元素数量</td><td class="ok">动画作用在 .root / 两个 svg / 一个 span 上，无重复元素叠加（列表行不加动画）</td></tr>
+    <tr><td>重复元素上的模糊/玻璃</td><td class="ok">不加 backdrop-filter，不动材质令牌</td></tr>
+    <tr><td>「开销极小」宣称</td><td class="ok">实现后以任务管理器 + 既有探针（todo_island_probe RSS 段）实测回报，不预先宣称</td></tr>
+  </table>
+
+  <h2>6 · 落地清单（拍板后执行）</h2>
+  <div class="note">
+    ① <code>useIslandSignals.ts</code> 新增 <code>useLiveDue(dueMs, active)</code>（纯时序，可单测）；
+    <code>TodoIsland.tsx</code> 的 <code>nextDueLabel</code> 改为临近时现算 + over 翻红类。<br>
+    ② <code>TodoIsland.tsx</code> 事件判定：tasks.length 增量 ref + dueAlert None→Some + clear 进入；
+    触发 <code>.pulse/.shake/.draw.go</code>（animationend 摘除，优先级互斥）；reducedMotion 短路。<br>
+    ③ <code>TodoIsland.module.css</code>：<code>@keyframes jelly/bellshake/draw</code> 三段；
+    <code>.root::after</code> 的圆心改为 <code>var(--glow-x, 45%)</code>；ts 侧 pointermove → setProperty
+    （hover/intent 期间挂）。<br>
+    ④ 守卫单测：useLiveDue 临近/过期/清表三态；事件判定「批量灌入不触发」；描画 class 摘除。<br>
+    ⑤ <code>npm run lint:ui</code>（新 keyframes 时长对齐四档）+ 全量测试 + 探针 RSS 实测回报。
+  </div>
+
+  <h2>7 · 请拍板（三项）</h2>
+  <div class="note">
+    ① <b>递减文案口径</b>：<b>裸 mm:ss（推荐）</b>——胶囊 32px 高，前缀「xx 后到期」挤占任务文字（提醒态的教训）；
+    蓝色数字 + 已有「今天 16:00」的语境足够。备选带前缀（信息完整但 peek 300px 装不下两句）。<br>
+    ② <b>描画时长</b>：<b>350ms（推荐）</b>——勾的完整弧长配 300ms 略赶、400ms 略拖；350 不在 U2 四档内，
+    按既有口径在行内挂 <code>ui-rule-ok</code>（一次性庆祝动画，不进节奏库）。要严格守四档就取 300ms。<br>
+    ③ <b>glow 是否加 100ms 过渡</b>：<b>不加（推荐）</b>——直改变量已经因为 pointermove 本身的连续性而平滑，
+    加过渡反而出现「高光追赶光标」的拖影感；真机若觉得跳再补。
+  </div>
+
+</div>
+<script>
+  (function () {
+    // 动效一：递减演示（压缩为 5s 跨零线）
+    var cd = document.getElementById("cdText");
+    var cdTimer = null;
+    function startCd() {
+      clearInterval(cdTimer);
+      var left = 14 * 60 + 32; // 演示从 14:32 走
+      cd.classList.remove("over");
+      function render() {
+        var m = Math.floor(left / 60), s = left % 60;
+        cd.textContent = (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+        if (left <= 0) { cd.textContent = "00:00"; cd.classList.add("over"); clearInterval(cdTimer); return; }
+        left--;
+      }
+      render();
+      cdTimer = setInterval(render, 300); // 演示加速：真实为 1000ms
+    }
+    document.getElementById("cdReplay").addEventListener("click", startCd);
+    startCd();
+
+    // 动效二：脉冲 + 铃 shake
+    var pulse = document.getElementById("pulseIsland");
+    var bell = document.getElementById("bellSvg");
+    function firePulse() {
+      pulse.classList.remove("pulse"); bell.classList.remove("shake");
+      void pulse.offsetWidth; // 重排重置动画
+      pulse.classList.add("pulse"); bell.classList.add("shake");
+    }
+    pulse.addEventListener("animationend", function () { pulse.classList.remove("pulse"); });
+    bell.addEventListener("animationend", function () { bell.classList.remove("shake"); });
+    document.getElementById("pulseReplay").addEventListener("click", firePulse);
+    setTimeout(firePulse, 600);
+
+    // 动效二：勾描画
+    var draw = document.getElementById("drawSvg");
+    draw.addEventListener("animationend", function () { draw.classList.remove("go"); });
+    document.getElementById("drawReplay").addEventListener("click", function () {
+      draw.classList.remove("go"); void draw.getBoundingClientRect(); draw.classList.add("go");
+    });
+    setTimeout(function () { draw.classList.add("go"); }, 600);
+
+    // 动效三：glow 跟随
+    var glow = document.getElementById("glowIsland");
+    glow.addEventListener("pointermove", function (e) {
+      var r = glow.getBoundingClientRect();
+      glow.style.setProperty("--glow-x", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
+    });
+    glow.addEventListener("pointerleave", function () {
+      glow.style.setProperty("--glow-x", "45%");
+    });
+  })();
+</script>
+</body>
+</html>

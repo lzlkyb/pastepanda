@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   RcCapability,
   RcDeviceTag,
+  RcExchangeStarted,
   RcIdentity,
   RcInvite,
   RcInviteCreated,
@@ -58,6 +59,14 @@ export function kbSyncDenyFromRc(nodeId: string): Promise<void> {
 
 export function rcInviteCreate(name: string): Promise<RcInviteCreated> {
   return invoke<RcInviteCreated>("rc_invite_create", { name });
+}
+
+export function rcExchangeBegin(code: string): Promise<RcExchangeStarted> {
+  return invoke<RcExchangeStarted>("rc_exchange_begin", { code });
+}
+
+export function rcExchangeCheck(nodeId: string): Promise<"waiting" | "paired"> {
+  return invoke<"waiting" | "paired">("rc_exchange_check", { nodeId });
 }
 
 export function rcInvitePreview(code: string): Promise<RcInvite> {

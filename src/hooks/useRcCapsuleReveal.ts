@@ -29,17 +29,27 @@ export const INITIAL_SHOW_MS = 15000;
 
 export function useRcCapsuleReveal({
   rootRef,
+  capRef,
   stageRef,
   pointerLocked,
   linkLocked,
+  detailOpen = false,
 }: {
-  /** 浮条根（.capZone）——「悬停胶囊保持显示」的命中矩形。 */
+  /** 浮条根（.capZone）——⋯ 面板「点外收起」的 contains 边界。 */
   rootRef: React.RefObject<HTMLDivElement | null>;
+  /** 胶囊本体（.capCapsule）——「悬停胶囊保持显示」的命中矩形。
+   *  2026-09-27 审查修正：capZone 是全宽容器（left/right:0），原来拿它当悬停
+   *  命中矩形 ⇒ 热区是整窗宽的顶部横带——鼠标停在横带内任意处浮条弹出且
+   *  永不计时隐藏。改用胶囊自身矩形，热区贴住可见胶囊。 */
+  capRef: React.RefObject<HTMLDivElement | null>;
   /** 画面容器（fakeScreen）——mousemove 挂它不挂 window（P2-12）。 */
   stageRef: React.RefObject<HTMLDivElement | null>;
   pointerLocked: boolean;
-  /** 链路维度的锁显：linkState ≠ connected 或操作后无画面。 */
+  /** 链路维度的锁显：linkState ≠ connected。 */
   linkLocked: boolean;
+  /** ⓘ 连接详情面板展开中——与下拉/⋯面板同口径锁显（2026-09-27 审查补），
+   *  否则面板随浮条 2.5s 淡出一起被带走。 */
+  detailOpen?: boolean;
 }) {
   const [shown, setShown] = useState(true);
   /** 展开中的下拉数（画质/画面/码率，经 RcDropdown.onOpenChange 汇报）。 */
@@ -68,8 +78,13 @@ export function useRcCapsuleReveal({
     if (lockRef.current) return;
     clearTimer();
     initialPendingRef.current = false;
-    hideTimer.current = window.setTimeout(() => setShown(false), AUTO_HIDE_MS);
-  }, [clearTimer]);
+    // 2026-09-27 审查修正：到点时若指针仍悬停在胶囊上就不隐藏——「悬停保持」
+    // 原先完全靠 mousemove 驱动，光标静止在胶囊上时（无 mousemove）浮条会
+    // 从光标正下方淡出，正是「要点的时候它消失」的来源。
+    hideTimer.current = window.setTimeout(() => {
+      if (!capRef.current?.matches(":hover")) setShown(false);
+    }, AUTO_HIDE_MS);
+  }, [capRef, clearTimer]);
 
   // 首显：挂载即显示，15s 无交互后淡出。
   // 🔴 B11：同时记下截止时刻——锁显（connecting 等）会清掉这个计时，解锁后
@@ -78,12 +93,12 @@ export function useRcCapsuleReveal({
     initialDeadlineRef.current = Date.now() + INITIAL_SHOW_MS;
     hideTimer.current = window.setTimeout(() => {
       initialPendingRef.current = false;
-      setShown(false);
+      if (!capRef.current?.matches(":hover")) setShown(false);
     }, INITIAL_SHOW_MS);
     return clearTimer;
-  }, [clearTimer]);
+  }, [capRef, clearTimer]);
 
-  const locked = linkLocked || moreOpen || menusOpen > 0;
+  const locked = linkLocked || moreOpen || menusOpen > 0 || detailOpen;
 
   useEffect(() => {
     lockRef.current = locked;
@@ -103,7 +118,7 @@ export function useRcCapsuleReveal({
       if (remain > 0) {
         hideTimer.current = window.setTimeout(() => {
           initialPendingRef.current = false;
-          setShown(false);
+          if (!capRef.current?.matches(":hover")) setShown(false);
         }, remain);
       } else {
         scheduleHide();
@@ -112,7 +127,7 @@ export function useRcCapsuleReveal({
     }
     // 解锁瞬间：首显窗口已过（期间有过交互）→ 正常 2.5s 淡出
     scheduleHide();
-  }, [locked, clearTimer, scheduleHide]);
+  }, [locked, clearTimer, scheduleHide, capRef]);
 
   // 唤出监听挂在画面容器上（不挂 window，P2-12）
   useEffect(() => {
@@ -120,7 +135,7 @@ export function useRcCapsuleReveal({
     if (!stage) return;
     const onMove = (e: MouseEvent) => {
       if (pointerLocked) return; // 锁定指针时假光标唤不出（见文件头 🔴）
-      const r = rootRef.current?.getBoundingClientRect();
+      const r = capRef.current?.getBoundingClientRect();
       const s = stage.getBoundingClientRect();
       const inStage =
         e.clientX >= s.left && e.clientX <= s.right && e.clientY >= s.top && e.clientY <= s.bottom;
@@ -142,7 +157,7 @@ export function useRcCapsuleReveal({
     };
     stage.addEventListener("mousemove", onMove);
     return () => stage.removeEventListener("mousemove", onMove);
-  }, [rootRef, stageRef, pointerLocked, clearTimer, scheduleHide]);
+  }, [capRef, stageRef, pointerLocked, clearTimer, scheduleHide]);
 
   const menuDelta = useCallback((o: boolean) => {
     setMenusOpen((c) => Math.max(0, c + (o ? 1 : -1)));

@@ -128,7 +128,7 @@ fn loss_码率缩放分档() {
     // RTT 满速但丢包高 → 取更差的那条
     let s = c();
     s.set_peer_rtt(10);
-    s.note_stream_health(10, 60);
+    s.note_stream_health(10, 60, 0);
     assert_eq!(s.bitrate_scale(), 40);
     // 只有 RTT 时不受 loss 影响（未采样 = 0 = 满速）
     let s2 = c();
@@ -160,7 +160,7 @@ fn 码率倍率与自动缩放相乘_越界被拒() {
     assert_eq!(s.bitrate_scale(), 80);
     // 局域网满速 × 50% = 省带宽一半
     s.set_peer_rtt(10);
-    s.note_stream_health(10, -1);
+    s.note_stream_health(10, -1, 0);
     s.set_user_bitrate_pct(50).expect("合法");
     assert_eq!(s.bitrate_scale(), 50);
     // 越界拒绝且不改状态
@@ -275,4 +275,104 @@ fn 会话收尾复位自动档() {
         "balanced",
         "档位回到初态（AutoTier::off），不留上一场的痕迹"
     );
+}
+
+// ── 时钟偏差校准（2026-09-27 重做：NTP 式 min-RTT 过滤）──
+
+/// 回归钉：旧实现 `rtt > 300ms 一律丢弃` ⇒ 持续 ~560ms 的内网全程收不到
+/// 任何样本，「画面龄」被两机时钟差（隔离内网可漂到秒级）污染。
+/// 重做后高 RTT 样本照样立锚。
+#[test]
+fn skew_高rtt样本也参与校准() {
+    let s = c();
+    s.note_clock_skew(1_900, 560);
+    assert_eq!(s.clock_skew_ms(), 1_900, "首个可信样本直接立锚");
+}
+
+#[test]
+fn skew_只信接近历史最快的往返() {
+    let s = c();
+    s.note_clock_skew(10, 40); // 历史最快 40ms，立锚
+    // 突刺样本：rtt 990 远超 min+100，纯排队产物，必须整条拒
+    s.note_clock_skew(910, 990);
+    assert_eq!(s.clock_skew_ms(), 10);
+    s.note_clock_skew(14, 200); // 200 > 40+100 → 拒
+    assert_eq!(s.clock_skew_ms(), 10);
+    s.note_clock_skew(14, 100); // 100 ≤ 140 → 收，EMA (10*7+14*3)/10
+    assert_eq!(s.clock_skew_ms(), 11);
+}
+
+/// 初始锚可能歪（首样本误差 ±rtt/2），隔离内网时钟也会漂：连续拒绝到
+/// 上限必须丢锚重来，否则坏锚永远无法被修正。
+#[test]
+fn skew_坏锚在连续离群后重锚() {
+    let s = c();
+    s.note_clock_skew(2_000, 50); // 坏锚
+    for _ in 0..20 {
+        s.note_clock_skew(40, 50); // 与锚差 >150，连续离群
+    }
+    assert_eq!(s.clock_skew_ms(), 0, "20 连拒后坏锚应被丢弃");
+    s.note_clock_skew(40, 50);
+    assert_eq!(s.clock_skew_ms(), 40, "重锚后新样本立锚");
+}
+
+// ── NetHint 档位滞回（2026-09-27）──
+
+#[test]
+fn rtt_hint_稳态不发提示() {
+    // 内网稳态 6~17ms：永远停在档位 0，一个 NetHint 都不该发
+    for ema in [6i64, 9, 14, 17, 50, 99] {
+        assert_eq!(rtt_hint_tier(0, ema), (0, false), "ema {ema} 不该跨档");
+    }
+}
+
+#[test]
+fn rtt_hint_尖刺不跨档_持续才跨() {
+    // 单个 1200ms 尖刺会把 EMA 抬一拍，但抬不到 140 就回落 → 不跨档
+    assert_eq!(rtt_hint_tier(0, 130), (0, false));
+    // 持续劣化到 140+ 才升档
+    assert_eq!(rtt_hint_tier(0, 150), (1, true));
+}
+
+#[test]
+fn rtt_hint_边界滞回() {
+    // 档位 1 内来回走动：不跨档
+    assert_eq!(rtt_hint_tier(1, 100), (1, false));
+    assert_eq!(rtt_hint_tier(1, 200), (1, false));
+    // 升到档位 2 需要 ≥280（不是 200）；降回档位 0 需要 <80（不是 100）
+    assert_eq!(rtt_hint_tier(1, 270), (1, false));
+    assert_eq!(rtt_hint_tier(1, 290), (2, true));
+    assert_eq!(rtt_hint_tier(1, 85), (1, false));
+    assert_eq!(rtt_hint_tier(1, 75), (0, true));
+    // 档位 2 退回需要 <160（不是 200）
+    assert_eq!(rtt_hint_tier(2, 180), (2, false));
+    assert_eq!(rtt_hint_tier(2, 150), (1, true));
+}
+
+// ── P3.2 带宽估计 → 码率缩放 ──
+
+#[test]
+fn bw_码率缩放分档() {
+    assert_eq!(bitrate_scale_for_bw(0), 100, "未采样不约束");
+    assert_eq!(bitrate_scale_for_bw(1_000), 25);
+    assert_eq!(bitrate_scale_for_bw(4_000), 50);
+    assert_eq!(bitrate_scale_for_bw(10_000), 75);
+    assert_eq!(bitrate_scale_for_bw(50_000), 100);
+    assert_eq!(bitrate_scale_for_bw(-5), 100, "负值按未采样处理");
+}
+
+#[test]
+fn bw_采样后参与三信号取min() {
+    let s = c();
+    s.note_stream_health(10, 0, 1_000); // RTT 好、丢包 0、带宽估计只有 1Mbps
+    assert_eq!(
+        s.bitrate_scale(),
+        25,
+        "带宽窄必须压住码率，RTT/丢包再健康也不放行"
+    );
+    // 恢复带宽 → 回满速（EMA 上升需要几拍）
+    for _ in 0..12 {
+        s.note_stream_health(10, 0, 50_000);
+    }
+    assert_eq!(s.bitrate_scale(), 100);
 }

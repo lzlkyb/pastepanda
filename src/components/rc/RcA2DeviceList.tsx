@@ -7,9 +7,10 @@
  *  - 属性图标化：免确认 = 绿钥匙盾（对应 RustDesk 的 Icons.key 叠角）、已禁止 = 红盾，
  *    全称进 title；档位预告与检查时间也进 title（hero 分体大钮上仍是常驻预告位）。
  *  - 搜索 = 常驻放大镜点开才出输入框（peer_tab_page.dart 同款，无设备数阈值）。
+ *  - 新设备的高频配对入口在「这台电脑」卡，不重复放在列表标题。
  */
-import { useMemo, useState } from "react";
-import { ChevronRight, Monitor, Plus, RotateCw, Search, ShieldAlert, ShieldCheck, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Monitor, RotateCw, Search, ShieldAlert, ShieldCheck, X } from "lucide-react";
 import type { RcTargetDevice } from "@/lib/api/rc";
 import type { RcA2Page } from "@/lib/rcWorkbenchA2";
 import type { RcReachability } from "@/stores/rcStoreTypes";
@@ -40,7 +41,7 @@ type RowView = {
 
 export function RcA2DeviceList({
   page, targets, selectedId, reachability = {}, channelUp = true,
-  targetsLoaded = true, targetsError = null, onSelect, onRefresh, onPair, onNavigate,
+  targetsLoaded = true, targetsError = null, onSelect, onRefresh, onNavigate,
   capFor, trustedOnly = false, onExitTrustedFilter,
 }: {
   page: RcA2Page;
@@ -52,7 +53,6 @@ export function RcA2DeviceList({
   targetsError?: string | null;
   onSelect: (id: string) => void;
   onRefresh?: () => void;
-  onPair: () => void;
   onNavigate: (page: RcA2Page) => void;
   /** 发起档取值口（useRcLaunch.capOf）：行 meta 预告「以哪档连接」——行钮删除后这是档位唯一的常驻预告位。 */
   capFor?: (id: string) => import("@/lib/api/rc").RcCapability;
@@ -65,6 +65,23 @@ export function RcA2DeviceList({
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 审计 P1-2（2026-09-27）：`/` 聚焦设备搜索——放大镜点开仍是鼠标主路（规则
+  // 17.1 键盘做加速器）。焦点已在输入控件里时 `/` 是普通字符，不劫持；有模态时让路。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.altKey || e.metaKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (document.querySelector(".dialog-backdrop")) return;
+      e.preventDefault();
+      setSearchOpen(true);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // 标签筛选（对齐稿①）：多选、任一命中（OR）；只有存在带标签设备时 chip 行才出现
   const [tagFilter, setTagFilter] = useState<string[]>([]);
 
@@ -196,6 +213,7 @@ export function RcA2DeviceList({
             className={searchOpen ? styles.searchToggleOn : styles.searchToggle}
             aria-label="搜索设备"
             aria-expanded={searchOpen}
+            title="搜索设备（快捷键 /）"
             onClick={() => {
               if (searchOpen) setQuery("");
               setSearchOpen(!searchOpen);
@@ -203,14 +221,12 @@ export function RcA2DeviceList({
           >
             {searchOpen ? <X size={14} aria-hidden="true" /> : <Search size={14} aria-hidden="true" />}
           </button>
-          <button type="button" className={styles.secondaryButton} onClick={onPair}>
-            <Plus size={14} aria-hidden="true" />添加设备
-          </button>
         </div>
         <RcA2TagFilterRow targets={targets} selected={tagFilter} onChange={setTagFilter} />
         {searchOpen && (
           <div className={styles.searchRow}>
             <input
+              ref={searchInputRef}
               autoFocus
               type="search"
               placeholder="按名称筛选设备"

@@ -47,6 +47,8 @@
   --island-ok: #4ade80;
   --island-ok-on: #14532d;
   --island-accent: #0284c7;
+  /* 键盘焦点环（critique P1-1）：比 --island-accent 提亮一档，深玻璃上也醒目 */
+  --island-accent-focus: #38bdf8;
   --island-line: rgba(255, 255, 255, 0.12);
   --island-line-mid: rgba(255, 255, 255, 0.18);
   --island-line-strong: rgba(255, 255, 255, 0.34);
@@ -59,6 +61,11 @@
   --island-rim-inner: rgba(7, 17, 28, 0.3);
   --island-shadow-near: rgba(13, 22, 44, 0.22);
   --island-shadow-far: rgba(13, 22, 44, 0.24);
+  /* 停靠态收敛投影（吸附双态设计稿 §4）：满档 ×0.6——视觉重心「嵌」在屏幕顶边。
+     只作用于 pill/clear 且非 intent/hover 时；peek/list/compose 走上面满档两值（浮起） */
+  /* ui-rule-ok: 停靠态投影令牌定义（吸附设计稿 §4，α = 满档 × 0.6） */
+  --island-shadow-dock-near: rgba(13, 22, 44, 0.13);
+  --island-shadow-dock-far: rgba(13, 22, 44, 0.14);
   --island-notice-bg: rgba(0, 0, 0, 0.55);
   --island-notice-line: rgba(255, 255, 255, 0.14);
   --island-notice-fg: #f4f4f5;
@@ -66,6 +73,8 @@
      深玻璃压白壁纸 ≈ rgb(72) → 文字需 L≥0.50：#fca5a5(L.504)/#8ecbff(L.556) 达标 4.5:1 */
   --island-due: #fca5a5;
   --island-due-today: #8ecbff;
+  /* 快捷条 chip 选中底色（快捷条设计稿 §1）：由各自主题的 due-today 现算 α */
+  --island-due-today-bg: rgba(142, 203, 255, 0.14); /* ui-rule-ok: 令牌定义，用法点只引用变量 */
   /* 档 1 弱高光（叠加在玻璃上）：镜面反光是「液态感」的第二来源。
      对比度背书见 design/待办灵动岛-玻璃感-档1设计稿.html §2（峰值 .07 全绿）。
      ui-rule-ok: 这两个是材质令牌本身的定义（不是引用点），且 α 必须由 --island-glass 现算 */
@@ -86,6 +95,7 @@
   --island-ok: #15803d;
   --island-ok-on: #ffffff;
   --island-accent: #0369a1;
+  --island-accent-focus: #0369a1;
   --island-line: rgba(0, 0, 0, 0.10);
   --island-line-mid: rgba(0, 0, 0, 0.16);
   --island-line-strong: rgba(0, 0, 0, 0.34);
@@ -97,6 +107,10 @@
   --island-rim-inner: rgba(67, 86, 107, 0.16);
   --island-shadow-near: rgba(27, 45, 78, 0.15);
   --island-shadow-far: rgba(27, 45, 78, 0.19);
+  /* 停靠态收敛投影（同深色块：满档 ×0.6） */
+  /* ui-rule-ok: 停靠态投影令牌定义（吸附设计稿 §4，α = 满档 × 0.6） */
+  --island-shadow-dock-near: rgba(27, 45, 78, 0.09);
+  --island-shadow-dock-far: rgba(27, 45, 78, 0.11);
   /* 白高光在白玻璃上偏隐，压低档位——亮面靠顶缘亮线与描边的明暗差来读 */
   --island-gloss: rgba(255, 255, 255, 0.55);
   --island-glow: rgba(255, 255, 255, 0.5);
@@ -105,11 +119,13 @@
      #991b1b(L.077)/#075985(L.090) 达标 4.5:1（#dc2626/#0369a1 都差一口气） */
   --island-due: #991b1b;
   --island-due-today: #075985;
+  --island-due-today-bg: rgba(7, 89, 133, 0.12); /* ui-rule-ok: 令牌定义，用法点只引用变量 */
 }
 
 /* ── 原「玻璃四档」块已于 2026-09-26 删除：档位换成设置页的连续滑杆，
    材质值统一由上面的 --island-glass 派生（clear/frost/steady/dark = 30/78/90/92 四个取样点）。
-   对比度背书不变：交互稿实算（30 档深背景 2.81:1 是已知代价）+ 3a 探针（78 档四背景全绿）。 */
+   2026-09-27 critique P2-4：滑杆下限从 20 钳到 66（对比度地板，推演见 lib/todo/glass.ts）——
+   「30 档深背景 2.81:1 是已知代价」的旧口径作废，可取值域内正文最坏背景 ≥4.5:1。 */
 
 /* 曲线：U2 允许集内唯一的标准缓动（0.2,0,0,1）——现在也是 Rust 窗口动画的同一条曲线 */
 /* 单层材质承载面（B 方案）：整张岛只有这一层玻璃，列表行 / 分段控件 / 按钮
@@ -160,12 +176,278 @@
   pointer-events: none;
   opacity: 0;
   z-index: 0;
-  background: radial-gradient(circle at 45% -15%, var(--island-glow), transparent 58%);
+  /* glow 受光层（动效三）：圆心 x 走 --glow-x（拦截期 pointermove 直写，0–100%）；
+     默认 45% = 现状观感。变量直改只重绘不 layout。 */
+  background: radial-gradient(circle at var(--glow-x, 45%) -15%, var(--island-glow), transparent 58%);
   transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-.root[data-hover="1"]::after {
+.root[data-hover="1"]::after,
+.root[data-intent="1"]::after {
   opacity: 1;
+}
+
+/* ===== 内容活性三动效（活性设计稿 §2–§3）：全部一次性，animationend 摘 data-* =====
+   🔴 事件驱动、放完即停：平时无 class 无动画零合成开销；减动效由 Hook 层短路（不挂 class）。
+   脉冲是「压扁式」而非放大式——窗口尺寸归 Rust（module.css 头部「分工」），.root 填满窗口，
+   横向 scale >1 会被 OS 窗口钳掉圆帽两端；所以顶边锚点、纵向压扁回弹（origin 50% 0 =
+   「长在屏幕上」，底缘弹）。 */
+.root[data-pulse="1"] {
+  transform-origin: 50% 0;
+  animation: jelly 450ms cubic-bezier(0.2, 0, 0, 1); /* ui-rule-ok: 一次性事件动画不进节奏库（活性设计稿拍板②） */
+}
+
+@keyframes jelly {
+  0% {
+    transform: scale(1, 1);
+  }
+  30% {
+    transform: scale(0.99, 0.92);
+  }
+  65% {
+    transform: scale(1, 1.015);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+.bell[data-shake="1"] {
+  transform-origin: 50% 50%;
+  animation: bellshake 600ms cubic-bezier(0.2, 0, 0, 1); /* ui-rule-ok: 一次性事件动画不进节奏库（活性设计稿拍板②） */
+}
+
+@keyframes bellshake {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  15% {
+    transform: rotate(13deg);
+  }
+  35% {
+    transform: rotate(-11deg);
+  }
+  55% {
+    transform: rotate(8deg);
+  }
+  75% {
+    transform: rotate(-5deg);
+  }
+}
+
+.okmark[data-draw="1"] path {
+  /* dasharray 20 > 勾路径长（≈13）：offset 20 全隐、0 全显，一段 stroke 描画 */
+  stroke-dasharray: 20;
+  animation: draw 350ms cubic-bezier(0.2, 0, 0, 1) both; /* ui-rule-ok: 一次性庆祝动画（活性设计稿拍板②，350 精选） */
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 递减走字（动效一）：定宽数字防每秒跳动版式；颜色取「今天到期」语义令牌 */
+.liveDue {
+  flex: 0 0 auto;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--island-due-today);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ===== 记一条 @时间 预览条（时间补全设计稿 §2，快捷条落地后面板已退役）=====
+   预览条只在文本挂着 @ 尾巴时出现，占 24px（出现时列表 flex 收缩）；
+   材质全部走既有 --island-* 令牌，浅色主题 data-island-mode 自动跟随。 */
+.prow {
+  flex: 0 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-top: 1px solid var(--island-line);
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.prowMark {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.prowGood .prowMark {
+  color: var(--island-ok);
+}
+
+.prowBad .prowMark {
+  color: var(--island-due);
+}
+
+.pbtn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 0;
+  cursor: pointer;
+  background: var(--island-fill);
+  color: var(--island-fg-muted);
+}
+
+.pbtn:hover {
+  background: var(--island-fill-strong);
+  color: var(--island-fg);
+}
+
+/* ===== 记一条 · 常驻时间快捷条（快捷条设计稿 §1–§3.5）=====
+   主路径「点，不用打」：qbar 布局常驻占 30px（占掉旧 @ 面板浮层的位置，
+   compose 280 不变、列表区收 30px）；chip 选中是纯样式切换，零新增动画；
+   7 个 chip 是静态 DOM，比旧面板的条件渲染挂载更稳定（规则 15.2）。 */
+.qbar {
+  flex: 0 0 30px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border-top: 1px solid var(--island-line);
+  overflow: hidden;
+}
+
+.qlab {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--island-fg-muted);
+}
+
+.qchip {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 2px 8px; /* ui-rule-ok: chip 微内距——30px 行高内的密集控件，8px 横距撑不住「9:00」两词 */
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--island-fill);
+  border: 1px solid var(--island-line);
+  color: var(--island-fg);
+  white-space: nowrap;
+}
+
+.qchip:hover {
+  background: var(--island-fill-strong);
+}
+
+/* 选中态：文字/描边用「今天到期」蓝——与列表里今天档 due chip 同一语义色 */
+.qchipOn {
+  background: var(--island-due-today-bg);
+  border-color: var(--island-due-today);
+  color: var(--island-due-today);
+  font-weight: 600;
+}
+
+.qchipTime {
+  color: var(--island-due-today);
+}
+
+.qsep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 14px;
+  background: var(--island-line-mid);
+  margin: 0 4px;
+}
+
+/* 「清除」未选时 visibility:hidden 占位不跳版（快捷条设计稿拍板②）；
+   两级取消的另一条路是点已选 chip / 小片 ✕ */
+.qclear {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 2px 8px; /* ui-rule-ok: 同 qchip 微内距口径 */
+  border-radius: 8px;
+  border: 0;
+  cursor: pointer;
+  background: none;
+  color: var(--island-fg-muted);
+  visibility: hidden;
+}
+
+.qbarOn .qclear {
+  visibility: visible;
+}
+
+.qclear:hover {
+  background: var(--island-fill);
+  color: var(--island-fg);
+}
+
+/* 已选时间小片（输入行尾）：不往文本插字符的「看见了」凭证，✕ 一点即摘 */
+.duetag {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 1px 8px; /* ui-rule-ok: 输入行尾小片贴 28px 输入框高，1px 纵距对齐行盒 */
+  border-radius: 8px;
+  background: var(--island-due-today-bg);
+  border: 1px solid var(--island-due-today);
+  color: var(--island-due-today);
+  white-space: nowrap;
+}
+
+.duetagX {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.duetagX:hover {
+  opacity: 1;
+}
+
+/* ===== 停靠态（吸附双态设计稿 §4 + 形变设计稿 §3①）：方顶 + 投影收敛 + 顶缘亮线消隐 =====
+   「嵌」在屏幕顶边的视觉：TOP_MARGIN=0 后顶缘贴死屏幕边，「上缘受光」不成立
+   （亮线由屏幕边自己给），外投影收敛到满档 ×0.6 让重心贴边；
+   上圆角压平（0 0 16px 16px）——上缘与屏幕顶零缝隙，像从屏幕里长出来。
+   ❗ 圆角写死 16px（= 高度一半）**不能写 999px**：CSS 圆角缩放规则下，上角为 0 时
+   999 会被 f=h/999 的因子拉成 r=h 的「拱门」形，与 rgn 的 HalfCapsule 错配
+   （Pill/Clear 恒 208×32，16px 即精确半圆帽；形变设计稿 §3①）。
+   ❗ 三处同步账：本块圆角 ↔ stage.rs rgn 的 build_top_rounded_region(r_top=0)
+   ↔ hover.rs shape_hit 的 HalfCapsule，改一处必须同步另两处。
+   peek/list/compose 不命中本选择器 → 满胶囊/卡片圆角（浮起）。
+   意图态（data-intent）**不排除**：它只点亮 glow，投影/亮线/方顶保持停靠档。
+   文字 / 环 / 描边 / tint 三态恒定：3a 探针的对比度结论不变，变暗只落在装饰层。
+   box-shadow 过渡已由 .root 基础块声明（200ms），切态不闪跳。 */
+.root[data-st="pill"]:not([data-hover="1"]),
+.root[data-st="clear"]:not([data-hover="1"]) {
+  /* 半胶囊下角半径 = 高度一半（32/2），与 stage.rs rgn 的 HalfCapsule、hover.rs shape_hit
+     是同一份几何账（设计稿 §3 三处同步）；写 12 会与 rgn 错配露月牙 */
+  border-radius: 0 0 16px 16px; /* ui-rule-ok: 半径=高度一半，rgn 同一份几何账（设计稿 §3①） */
+  box-shadow:
+    inset 0 0 0 1px var(--island-line),
+    inset 0 -1px 0 var(--island-rim-inner),
+    0 2px 5px var(--island-shadow-dock-near),
+    0 6px 16px var(--island-shadow-dock-far);
+}
+
+/* 系统「减少动态效果」：形变成为主角后圆角过渡不能照常 200ms（形变设计稿 §7③），
+   压到 80ms 内接近快切。只压 .root 基础档——list/compose 的 300ms 由更高特异性的
+   舞台选择器持有，保持现状（非本稿引入，不混账）。 */
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    /* 80ms 不入四档是刻意的：reduced-motion 回退要求「接近快切」（设计稿 §7③），
+       150ms 在减动效语境下仍是一次可见动画；且仅在系统开关开启时生效，不进常规节奏库 */
+    transition-duration: 80ms; /* ui-rule-ok: reduced-motion 快切档，仅系统开关开启时生效（§7③） */
+  }
 }
 
 /* 圆角与布局按舞台走：尺寸/时长都已在 Rust（stage_size / stage_duration_ms）。
@@ -331,11 +613,19 @@
   text-overflow: ellipsis;
   color: var(--island-due);
 }
-/* 全清态的勾（12px 图形；与列表行同一份路径，见 TodoIslandList 的 TickSvg） */
+/* 全清态的勾（critique 2026-09-27 P3 提权：12→16px 图形，16 在 U5 token 集内；
+   与列表行同一份路径，见 TodoIslandList 的 TickSvg） */
 .okmark {
-  flex: 0 0 12px;
+  flex: 0 0 16px;
   display: inline-flex;
   color: var(--island-ok);
+}
+
+/* 全清态文案提权（critique 2026-09-27 P3）：峰值时刻不再用 muted 灰——
+   全亮正文色 + 半档加重，与 16px 绿勾一起撑住「今天没有待办了」的存在感 */
+.lastBright {
+  color: var(--island-fg);
+  font-weight: 500;
 }
 
 /* ===== 展开态：头 / 列表 / 底（设计稿 S3/S4，dk 变体） ===== */
@@ -366,16 +656,20 @@
   margin-left: 4px;
 }
 
-.seg span {
+.seg button {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 4px;
   opacity: 0.66;
   white-space: nowrap;
   cursor: pointer;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
 }
 
-.seg span.on {
+.seg button.on {
   background: var(--island-fill-strong);
   opacity: 1;
 }
@@ -422,6 +716,10 @@
   min-height: 36px;
   padding: 0 4px;
   border-radius: 8px;
+  /* 整行可点 = 勾/取消勾（2026-09-27 用户定稿 B 方案）：命中面从 24×24 勾圈扩到全行；
+     误触由勾选后的完成态驻留 + 撤销（critique P1-2，设计稿已定）兜底。
+     来源笔记名 .src 自己拦冒泡，预留给「打开笔记」。 */
+  cursor: pointer;
 }
 
 .row:hover {
@@ -587,10 +885,6 @@
   outline: none;
 }
 
-.cinput:focus {
-  border-color: var(--island-line-strong);
-}
-
 .footHint {
   flex: 0 0 auto;
   font-size: 11px;
@@ -611,4 +905,99 @@
   font-size: 11px;
   color: var(--island-notice-fg);
   pointer-events: none;
+}
+
+/* ===== 键盘焦点环（critique P1-1，SC 2.4.7：整个 module 原先无一处 :focus-visible）=====
+   只对键盘焦点出现（:focus-visible），鼠标点击不画环；颜色取 --island-accent-focus。
+   root 是胶囊/卡片形，outline 跟随 border-radius（Chromium 94+）。 */
+.root:focus-visible {
+  outline: 2px solid var(--island-accent-focus);
+  outline-offset: 2px;
+}
+
+.col:focus-visible,
+.foot:focus-visible,
+.tick:focus-visible,
+.undoChip:focus-visible,
+.seg button:focus-visible {
+  outline: 2px solid var(--island-accent-focus);
+  outline-offset: 1px;
+}
+
+.cinput:focus {
+  border-color: var(--island-line-strong);
+}
+
+/* 输入框原先 outline:none + 仅边框变化，键盘焦点不达标——补上同款环 */
+.cinput:focus-visible {
+  outline: 2px solid var(--island-accent-focus);
+  outline-offset: 0;
+}
+
+/* ===== 完成态驻留（critique P1-2，设计稿《勾选撤销驻留与键盘路径》S2）=====
+   勾选后行留原位 6s：淡绿洗色 + 行尾「撤销」chip + 底部 2px 倒计时条。
+   悬停该行 = 暂停（条停住提亮，JS 计时同步挂起，见 useIslandTaskOps）。 */
+.rowDwell {
+  background: color-mix(in srgb, var(--island-ok) 8%, transparent);
+}
+
+.rowDwellPaused .dwellBar {
+  animation-play-state: paused;
+  opacity: 0.9;
+}
+
+.undoChip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--island-line-mid);
+  background: var(--island-fill);
+  color: var(--island-fg);
+  cursor: pointer;
+  font-family: inherit;
+  animation: undoChipIn 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.undoChip:hover {
+  background: var(--island-fill-strong);
+}
+
+@keyframes undoChipIn {
+  from {
+    opacity: 0;
+    transform: translateX(4px);
+  }
+}
+
+.dwellBar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 1px;
+  height: 2px;
+  border-radius: 2px; /* ui-rule-ok: 2px 高的驻留进度线做全圆角，值=高度（胶囊语义） */
+  background: var(--island-ok);
+  opacity: 0.55;
+  transform-origin: left;
+  animation: dwellShrink 6000ms linear forwards;
+}
+
+@keyframes dwellShrink {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* 倒计时条是纯视觉（真计时在 JS），减少动效下静止满条即可 */
+@media (prefers-reduced-motion: reduce) {
+  .dwellBar {
+    animation: none;
+  }
 }

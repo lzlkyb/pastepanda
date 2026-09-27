@@ -29,6 +29,16 @@ pub(super) fn push_h264_frame(
         cap_ms,
         enc_ms,
     };
+    // 探针（2026-09-27）：控制端唯一的帧龄观测点——可靠流与数据报两路都过这里。
+    // skew 用当前校准值；旧对端没带 ts 时 at_ms 是收包时刻，age≈0 属预期噪声。
+    crate::rc::probe_out::note_frame(
+        frame.at_ms,
+        cap_ms,
+        enc_ms,
+        width,
+        height,
+        svc.clock_skew_ms(),
+    );
     svc.set_frame(frame.clone());
     svc.push_outbox(frame);
 }

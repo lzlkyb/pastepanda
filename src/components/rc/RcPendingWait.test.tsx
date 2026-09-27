@@ -34,7 +34,9 @@ describe("RcPendingWait 倒计时与进度（批3）", () => {
     const bar = container.querySelector(`.${styles.waitTrack}`);
     expect(bar!.getAttribute("aria-valuenow")).toBe("10");
     const fill = container.querySelector<HTMLElement>(`.${styles.waitFill}`);
-    expect(fill!.style.width).toBe("10%");
+    // 2026-09-27 起填充走 scaleX 合成层动画（性能实现准则），宽度恒 100%：
+    // 进度语义由缩放比表达，2% 视觉最小值同款保留在缩放比里。
+    expect(fill!.style.transform).toBe("scaleX(0.1)");
   });
 
   it("到点后说「正在收尾」，不出现「0 秒后自动取消」", () => {

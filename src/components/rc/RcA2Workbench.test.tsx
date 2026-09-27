@@ -7,6 +7,7 @@ import { useRcDeviceUi } from "@/hooks/useRcDeviceUi";
 import { RcA2Sidebar } from "./RcA2Sidebar";
 import { RcA2DeviceDetail } from "./RcA2DeviceDetail";
 import { RcPageFiles } from "./RcPageFiles";
+import styles from "./RemoteComputerA2.module.css";
 
 const confirmDialog = vi.hoisted(() => vi.fn(async () => true));
 vi.mock("@/lib/confirm", () => ({ confirmDialog }));
@@ -61,18 +62,31 @@ describe("RcA2Sidebar", () => {
     expect(screen.queryByRole("button", { name: "连接工作电脑" })).toBeNull();
   });
 
-  it("没有设备时直接给添加设备入口，底部工具均有常驻文字", () => {
-    const onPair = vi.fn();
+  it("没有设备时保留首页配对入口，底部工具均有常驻文字", () => {
     const onNavigate = vi.fn();
-    renderSidebar({ targets: [], onPair, onNavigate });
+    renderSidebar({ targets: [], rc: selfRc(), selfEnabled: true, onToggleSelf: vi.fn(), onNavigate });
 
-    fireEvent.click(screen.getByRole("button", { name: "添加设备" }));
-    expect(onPair).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "生成并复制配对码" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "添加设备" })).toBeNull();
     for (const label of ["文件", "记录", "设置"]) {
       expect(screen.getByRole("button", { name: label })).toBeTruthy();
     }
     fireEvent.click(screen.getByRole("button", { name: "文件" }));
     expect(onNavigate).toHaveBeenCalledWith("files");
+  });
+
+  it("🔴 P1-3：文件页传输角标不是「一个裸数字」", () => {
+    renderSidebar({ page: "files", targets: [TARGET], transferBadge: 3 });
+    const filesBtn = screen.getByRole("button", { name: /文件/ });
+    const badge = filesBtn.querySelector(`.${styles.toolBadge}`)!;
+    // ⚠️ 这里断言的是**修复形态**而不是无障碍名称：testing-library 背后的
+    //    dom-accessibility-api 没实现「generic 不允许命名」，把 aria-label 挂回
+    //    span 上它照样算得出名字 ⇒ 名称断言在这处会**假绿**（实测过）。
+    //    浏览器是真的丢弃的，所以钉「视觉元素 aria-hidden + 同级 sr-only 文本」。
+    expect(badge.textContent).toBe("3");
+    expect(badge.getAttribute("aria-hidden")).toBe("true");
+    expect(badge.hasAttribute("aria-label")).toBe(false);
+    expect(filesBtn.querySelector(".sr-only")?.textContent).toBe("3 个传输进行中");
   });
 
   it("文件页切换设备时留在文件页，避免重复的目标选择器", () => {
@@ -99,6 +113,7 @@ describe("RcA2Sidebar", () => {
     });
 
     fireEvent.click(screen.getByRole("switch", { name: "已暂停" }));
+    fireEvent.click(screen.getByText("更多方式与设备号"));
     fireEvent.click(screen.getByRole("button", { name: /无人值守/ }));
     fireEvent.click(screen.getByRole("button", { name: /帮助/ }));
     expect(onToggleSelf).toHaveBeenCalledWith(true);
@@ -113,7 +128,8 @@ describe("RcA2Sidebar", () => {
     renderSidebar({ targets: [], rc: selfRc(), toast, selfEnabled: false, onToggleSelf: vi.fn() });
 
     expect(screen.getByText("abcd-efgh-ij01-2345")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    fireEvent.click(screen.getByText("更多方式与设备号"));
+    fireEvent.click(screen.getByRole("button", { name: "复制设备号" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(NODE_ID));
     expect(toast).toHaveBeenCalledWith("已复制本机设备号", "success");
   });
@@ -127,24 +143,29 @@ describe("RcA2Sidebar", () => {
       targets: [], rc: selfRc(unoGenerate), toast, selfEnabled: false, onToggleSelf: vi.fn(),
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "完整串" }));
+    fireEvent.click(screen.getByText("更多方式与设备号"));
+    fireEvent.click(screen.getByRole("button", { name: "完整接入串" }));
     await waitFor(() => expect(unoGenerate).toHaveBeenCalledWith({
       ttlSecs: 15 * 60, unlimited: false, capability: "control", alsoTrust: false,
     }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("PPU-AB12-CD34-x"));
-    expect(toast).toHaveBeenCalledWith("已复制完整接入串（15 分钟 · 用 1 次）", "success");
+    expect(toast).toHaveBeenCalledWith(
+      "已复制完整接入串 · 谁拿到谁可连本机 15 分钟（用 1 次）",
+      "success",
+    );
   });
 
-  it("本机身份还没读到：码格给读取中，复制/完整串禁用", () => {
+  it("本机身份还没读到：配对码生成和设备号复制均禁用", () => {
     renderSidebar({
       targets: [],
       rc: { identity: null } as unknown as UseRc,
       selfEnabled: false,
       onToggleSelf: vi.fn(),
     });
+    fireEvent.click(screen.getByText("更多方式与设备号"));
     expect(screen.getByText("读取中…")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "复制" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "完整串" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "生成并复制配对码" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "复制设备号" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("状态更新时设备保留原顺序，不因分组跳行", () => {

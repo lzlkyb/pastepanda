@@ -254,7 +254,19 @@ impl InboundVideo {
                     .rtt(iroh::endpoint::PathId::ZERO)
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0);
-                svc.note_stream_health(rtt, sample);
+                // P3.2：带宽估计 = 拥塞窗口×8 / rtt（BBR 下 window/rtt 即其
+                // 带宽估计；Cubic 下是当前允许的发送速率上限）。取主路径
+                // （PathId::ZERO）——RC 会话只有一条。
+                let bw = conn
+                    .rtt(iroh::endpoint::PathId::ZERO)
+                    .zip(conn.congestion_state(iroh::endpoint::PathId::ZERO))
+                    .and_then(|(rtt_d, cc)| {
+                        let rtt_ms = rtt_d.as_millis().max(1) as u64;
+                        cc.window().checked_mul(8)?.checked_div(rtt_ms)
+                    })
+                    .map(|v| v.min(i64::MAX as u64) as i64)
+                    .unwrap_or(0);
+                svc.note_stream_health(rtt, sample, bw);
             }
         });
     }
@@ -424,12 +436,15 @@ pub(super) async fn send_caps_frame(
     let monitors: Vec<crate::screenshot::MonitorInfo> = Vec::new();
     // R3：声明本机能读「鼠标移动数据报」。旧版对端没有这个字段 → 发起端
     // 解析为 false，会话 UI 提示升级；**不改传输路径**（见 §9 方案 R3）。
+    // P2.3：AV1 硬编可用性（FF 候选链探测）。旧版对端忽略。
+    let av1 = crate::rc::encode_h264::av1_hw_available();
     let msg = serde_json::json!({
         "t": "caps",
         "fps120": fps120,
         "fps_high": fps_high,
         "hz": hz,
         "hevc": hevc,
+        "av1": av1,
         "monitors": monitors,
         "dgram_input": true,
     });

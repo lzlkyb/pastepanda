@@ -138,6 +138,7 @@ pub(in crate::rc) async fn spawn_inbound_video(
     recv: iroh::endpoint::RecvStream,
     conn: iroh::endpoint::Connection,
     peer_dgram: bool,
+    peer_fec_rs: bool,
     peer_audio: bool,
 ) {
     let Some(svc) = global() else {
@@ -146,7 +147,7 @@ pub(in crate::rc) async fn spawn_inbound_video(
     // G3：对端申请了系统声音 → 音频 worker 由 InboundVideo::run 启动
     svc.audio_set_peer_wants(peer_audio);
     let Some(video) =
-        crate::rc::inbound::InboundVideo::try_new(svc.clone(), peer, send, conn, peer_dgram)
+        crate::rc::inbound::InboundVideo::try_new(svc.clone(), peer, send, conn, peer_dgram, peer_fec_rs)
     else {
         svc.audio_reset();
         log::warn!("[RC] 被控推流启动前会话已结束，放弃推流");

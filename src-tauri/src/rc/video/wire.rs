@@ -48,8 +48,8 @@ pub async fn write_dirty_meta(
 /// P0-2：cap/enc = 采集/编码耗时（ms），发起端 HUD 分段显示。
 /// P2-1：sq = 帧序号（与数据报通道共用一把尺子）——走流的关键帧到达时，
 /// 接收端按它重置数据报重组器，两条路才能无缝衔接。
-/// Q3：hevc = true 时元数据带 `"c":"hevc"`——**逐帧**标注编码标准，前端据此
-/// 选解码器；旧对端忽略未知字段（也解不了 HEVC，会走它自己的兜底）。
+/// Q3：元数据带 `"c":"<标准>"`（h264/hevc/av1）——**逐帧**标注编码标准，前端据此
+/// 选解码器；旧对端忽略未知字段（也解不了新标准，会走它自己的兜底）。
 #[allow(clippy::too_many_arguments)]
 pub async fn write_h264(
     s: &mut iroh::endpoint::SendStream,
@@ -61,7 +61,8 @@ pub async fn write_h264(
     cap_ms: u16,
     enc_ms: u16,
     sq: u32,
-    hevc: bool,
+    // P2.3：编码标准标签（"h264" / "hevc" / "av1"），进元数据 `c` 字段。
+    codec_label: &str,
 ) -> Result<(), String> {
     if data.is_empty() {
         return Err("空 H.264 包".into());
@@ -77,8 +78,8 @@ pub async fn write_h264(
         "enc": enc_ms,
         "sq": sq,
     });
-    if hevc {
-        meta["c"] = serde_json::Value::String("hevc".into());
+    if codec_label != "h264" {
+        meta["c"] = serde_json::Value::String(codec_label.into());
     }
     let b = serde_json::to_vec(&meta).map_err(|e| e.to_string())?;
     // 4K 关键帧可达数 MB，写停滞超时放宽到 60s（R5.B）
@@ -205,6 +206,7 @@ pub async fn read_incoming(r: &mut iroh::endpoint::RecvStream) -> Result<Incomin
                 // Q3：编码标准随帧走（缺省 h264 = 旧对端）。前端按这个字段选解码器。
                 let codec = match v.get("c").and_then(|x| x.as_str()) {
                     Some("hevc") => FrameCodec::Hevc,
+                    Some("av1") => FrameCodec::Av1,
                     _ => FrameCodec::H264,
                 };
                 if n == 0 || n > MAX_H264_BYTES {

@@ -36,8 +36,11 @@ pub(super) struct OutboundVideo {
     /// 画布逻辑尺寸：整帧时从 JPEG 解出，脏块沿用。
     canvas_w: u32,
     canvas_h: u32,
-    /// 最近一次告知对端的 RTT；变化明显才再发 NetHint。
-    last_hint_rtt: i64,
+    /// RTT EMA（-1 = 尚无样本）与 NetHint 档位（滞回判定见
+    /// `stream_cfg::rtt_hint_tier`）。瞬时 RTT 尖刺不进 NetHint——否则
+    /// 被控端码率缩放抖动会反复重开编码器（~1s/次），帧率被钉死。
+    rtt_ema_ms: i64,
+    rtt_hint_tier: u8,
     /// 对端主动 End 帧带的理由（P2-10）：原先 End 只 return false，理由被丢，
     /// 会话历史里记成「画面流中断」。注意它与 `end_reason`（断流 Err）分工：
     /// 对端主动结束**不**触发自动重连，断流才触发。
@@ -77,7 +80,8 @@ impl OutboundVideo {
             pending_enc_ms: 0,
             canvas_w: 0,
             canvas_h: 0,
-            last_hint_rtt: -1,
+            rtt_ema_ms: -1,
+            rtt_hint_tier: 0,
             peer_end_reason: None,
             #[cfg(target_os = "windows")]
             reasm: std::sync::Arc::new(std::sync::Mutex::new(
@@ -275,6 +279,7 @@ impl OutboundVideo {
                     .unwrap_or(true);
                 if damaged && due {
                     last_key_req = Some(std::time::Instant::now());
+                    super::probe_out::bump_damaged();
                     let svc = svc.clone();
                     tauri::async_runtime::spawn(async move {
                         let _ = svc
@@ -502,21 +507,37 @@ impl OutboundVideo {
                                     if hts > 0 && rtt > 0 {
                                         let skew = hts - (t1 - rtt / 2);
                                         self.svc.note_clock_skew(skew, rtt);
+                                        // 探针：记录本窗原始样本（未 EMA），供日志对读
+                                        super::probe_out::note_pong(rtt, skew);
                                     }
                                 }
-                                // R5.B2：RTT 明显变化时告知被控端缩/放码率（±40ms 或跨 100ms 档）
-                                let prev = self.last_hint_rtt;
-                                let need = prev < 0
-                                    || rtt.abs_diff(prev) >= 40
-                                    || (prev < 100) != (rtt < 100)
-                                    || (prev < 200) != (rtt < 200);
-                                if need {
-                                    self.last_hint_rtt = rtt;
+                                // R5.B2 重做（2026-09-27）：NetHint 只认 **RTT EMA 的
+                                // 档位变化**（滞回判据收口在 `stream_cfg::rtt_hint_tier`）。
+                                // 旧判据「瞬时值 ±40ms 或跨 100/200 就发」在拖动时
+                                // 被控端 CPU 紧张造成的 RTT 尖刺（内网实测 6~17ms
+                                // 基线、尖刺 300~1200ms）反复击穿，被控端码率缩放
+                                // 25%↔40%↔60% 抖动 → 每次过迟滞都全链重开编码器
+                                // （~1s/次），帧率被钉死在个位数。EMA α=1/8（约 8 个
+                                // 样本收敛，1s 一拍 ≈ 8s 窗口）。
+                                self.rtt_ema_ms = if self.rtt_ema_ms < 0 {
+                                    rtt
+                                } else {
+                                    (self.rtt_ema_ms * 7 + rtt) / 8
+                                };
+                                let (tier, changed) =
+                                    super::stream_cfg::rtt_hint_tier(self.rtt_hint_tier, self.rtt_ema_ms);
+                                if changed {
+                                    self.rtt_hint_tier = tier;
+                                    log::info!(
+                                        "[RC] RTT EMA {}ms → NetHint 档位 {tier}，告知对端调整码率",
+                                        self.rtt_ema_ms
+                                    );
                                     let svc = self.svc.clone();
+                                    let ema = self.rtt_ema_ms;
                                     tauri::async_runtime::spawn(async move {
                                         let _ = svc
                                             .send_input(&super::input::InputEvent::NetHint {
-                                                rtt_ms: rtt,
+                                                rtt_ms: ema,
                                             })
                                             .await;
                                     });
@@ -547,15 +568,23 @@ impl OutboundVideo {
                                 .min(1000) as u32;
                             // Q3：对端 HEVC 硬编可用性（旧版本对端没有这个字段 → false）
                             let hevc = v.get("hevc").and_then(|x| x.as_bool()).unwrap_or(false);
+                            // P2.3：对端 AV1 硬编可用性（旧版本对端 → false）
+                            let av1 = v.get("av1").and_then(|x| x.as_bool()).unwrap_or(false);
                             // Q7：对端在线显示器列表（旧版本对端没有这个字段 → 空表）
-                            let monitors = v
+                            let monitors: Vec<crate::screenshot::MonitorInfo> = v
                                 .get("monitors")
                                 .and_then(|x| serde_json::from_value(x.clone()).ok())
                                 .unwrap_or_default();
                             // R3：旧版对端（官方 7.2.1 及更早）没有这个字段 → false
                             let dgram_input =
                                 v.get("dgram_input").and_then(|x| x.as_bool()).unwrap_or(false);
-                            self.svc.note_peer_caps(fps120, hz, hevc, monitors, dgram_input);
+                            // 探针（2026-09-27）：能力上报落日志——被控端硬编可用性
+                            // 分诊的第一手证据（caps 一次会话至多几条，量可忽略）。
+                            log::info!(
+                                "[RC] 对端 caps：fps120={fps120} hz={hz} hevc硬编={hevc} dgram_input={dgram_input} 显示器 {} 台",
+                                monitors.len()
+                            );
+                            self.svc.note_peer_caps(fps120, hz, hevc, av1, monitors, dgram_input);
                         }
                         Some("inject_err") => {
                             if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
@@ -604,6 +633,9 @@ impl OutboundVideo {
             }
         }
         let (w, h) = (self.canvas_w, self.canvas_h);
+        // 探针（2026-09-27）：JPEG 兜底帧也计数——「H.264 一帧没有 + JPEG 有帧」
+        // 即分诊结论：对端硬编没走起来。
+        super::probe_out::note_jpeg(ts, cap_ms, enc_ms, w, h, self.svc.clock_skew_ms());
         let frame = super::video::VideoFrame {
             width: w,
             height: h,

@@ -21,6 +21,14 @@ pub struct RcJoinRequest {
     pub tries: u32,
 }
 
+/// 双方交换配对码时，本机已明确粘贴的那一台。只存在本进程内；重启后需重新交换。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RcExchangeIntent {
+    pub node_id: String,
+    pub name: String,
+    pub expires_at: i64,
+}
+
 const KNOCK_TTL_MS: i64 = 10 * 60 * 1000;
 /// 拒绝配对后的冷却：到点自动允许再敲门，避免一次误拒永久锁死。
 const DENY_TTL_MS: i64 = 30 * 60 * 1000;
@@ -30,11 +38,39 @@ pub struct RcJoins {
     pending: Mutex<HashMap<String, RcJoinRequest>>,
     /// node_id → 拒绝生效到什么时候（epoch ms）。
     denied: Mutex<HashMap<String, i64>>,
+    exchange: Mutex<Option<RcExchangeIntent>>,
 }
 
 impl RcJoins {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    pub fn arm_exchange(&self, node_id: &str, name: &str, expires_at: i64) -> Result<(), String> {
+        let mut g = self.exchange.lock().map_err(|_| "配对状态暂时不可用")?;
+        *g = Some(RcExchangeIntent {
+            node_id: node_id.to_string(),
+            name: name.to_string(),
+            expires_at,
+        });
+        Ok(())
+    }
+
+    pub fn exchange_for(&self, node_id: &str, now_ms: i64) -> Option<RcExchangeIntent> {
+        self.exchange
+            .lock()
+            .ok()?
+            .as_ref()
+            .filter(|intent| intent.node_id == node_id && now_ms < intent.expires_at)
+            .cloned()
+    }
+
+    pub fn clear_exchange(&self, node_id: &str) {
+        if let Ok(mut g) = self.exchange.lock() {
+            if g.as_ref().is_some_and(|intent| intent.node_id == node_id) {
+                *g = None;
+            }
+        }
     }
 
     /// 这台设备是否还在「拒绝冷却期」内。
@@ -102,6 +138,9 @@ impl RcJoins {
         if let Ok(mut m) = self.pending.lock() {
             m.clear();
         }
+        if let Ok(mut g) = self.exchange.lock() {
+            *g = None;
+        }
     }
 }
 
@@ -130,6 +169,17 @@ mod tests {
         assert_eq!(list[0].tries, 2);
         assert!(j.take("a"));
         assert!(j.list(now + 1).is_empty());
+    }
+
+    #[test]
+    fn exchange_only_matches_the_pasted_peer_within_the_invite_window() {
+        let j = RcJoins::new();
+        j.arm_exchange("a", "甲", 10_000).unwrap();
+        assert!(j.exchange_for("b", 9_000).is_none());
+        assert_eq!(j.exchange_for("a", 9_000).unwrap().name, "甲");
+        assert!(j.exchange_for("a", 10_000).is_none());
+        j.clear_exchange("a");
+        assert!(j.exchange_for("a", 9_000).is_none());
     }
 }
 
@@ -203,7 +253,7 @@ pub fn deny_unpaired(
 }
 
 /// 邀请门当前开到什么时候（epoch ms）。没开过或已关返回 0。
-fn door_until(store: &DataStore) -> i64 {
+pub fn door_until(store: &DataStore) -> i64 {
     store
         .get_config()
         .ok()

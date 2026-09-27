@@ -266,8 +266,8 @@ export function askPrompt(ask: RcFileAsk): AskPrompt {
   if (ask.kind === "push") {
     return {
       title: `${who} 想给你发送文件`,
-      lead: `对方请求传文件（未查看你的屏幕）。接受后选择保存位置，文件为「${ask.name}」（${formatBytes(ask.size)}）。`,
-      accept: "选择保存位置",
+      lead: `对方请求传文件（未查看你的屏幕）。接受即保存到文件接收目录（设置里可改），文件为「${ask.name}」（${formatBytes(ask.size)}）。`,
+      accept: "接受",
       deny: "拒绝",
     };
   }

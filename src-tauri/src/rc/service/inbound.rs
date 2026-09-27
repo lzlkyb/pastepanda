@@ -28,22 +28,37 @@ impl RcService {
             log::warn!("[RC] {short} 读申请帧失败，连接已断");
             return;
         };
+        if matches!(RcFrame::decode(&bytes), Ok(RcFrame::PairCheck)) {
+            // 查询帧没有屏幕/键鼠权限。只把“双方是否都粘贴过”回给这条 iroh
+            // 连接所认证的设备身份，不接受帧体里自报的 node_id。
+            let response = match self.confirm_exchange(&peer) {
+                Ok(paired) => RcFrame::PairStatus { paired },
+                Err(reason) => RcFrame::Deny { reason, code: Some("pair_check_failed".into()) },
+            };
+            if let Ok(raw) = response.encode() {
+                let _ = write_frame(&mut send, &raw).await;
+            }
+            return;
+        }
         // 对端把 Request 送到了 = 它在线。刷 last_seen，跨网时设备列表才亮得起来。
         let _ = self.store.rc_device_touch(&peer, true);
-        let (requested, uno_code, uno_pass, peer_dgram, peer_audio) = match RcFrame::decode(&bytes) {
-            Ok(RcFrame::Request {
-                capability,
-                uno_code,
-                uno_pass,
-                vid_dgram,
-                audio,
-            }) => (
-                capability,
-                uno_code,
-                uno_pass,
-                vid_dgram == Some(true),
-                audio == Some(true),
-            ),
+        let (requested, uno_code, uno_pass, peer_dgram, peer_fec_rs, peer_audio) =
+            match RcFrame::decode(&bytes) {
+                Ok(RcFrame::Request {
+                    capability,
+                    uno_code,
+                    uno_pass,
+                    vid_dgram,
+                    fec_rs,
+                    audio,
+                }) => (
+                    capability,
+                    uno_code,
+                    uno_pass,
+                    vid_dgram == Some(true),
+                    fec_rs == Some(true),
+                    audio == Some(true),
+                ),
             Ok(_) => {
                 deny_and_close(&link_conn, &mut send, "期望 Request 帧", "not_request").await;
                 return;
@@ -260,7 +275,7 @@ impl RcService {
                     self.link.attach(&link_conn);
                     // R1：推 JPEG 画面直到会话结束（conn 一并交给推流任务：
                     // 鼠标数据报读取 + stats 采样都挂在它身上）
-                    super::inbound_accept::spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_audio).await;
+                    super::inbound_accept::spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_fec_rs, peer_audio).await;
                     return;
                 }
                 Some(Err("already_streaming")) => {

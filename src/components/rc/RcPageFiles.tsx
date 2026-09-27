@@ -66,7 +66,9 @@ export function RcPageFiles({
   return (
     <div className={styles.filePage}>
       {showTargetPicker && (
-        <div className={styles.fileTargets} aria-label="选择目标设备">
+        /* role="group"（2026-09-27 P1-3）：div 隐式 role=generic，ARIA 不允许
+           generic 被命名 ⇒ 这个 aria-label 会被读屏丢弃，按钮组没有组名。 */
+        <div className={styles.fileTargets} role="group" aria-label="选择目标设备">
           {targets.map((t) => {
             const name = rcDisplayName(t, fingerprintOf(t.node_id));
             const on = t.node_id === active;
@@ -83,11 +85,17 @@ export function RcPageFiles({
               >
                 <Monitor size={13} aria-hidden="true" />
                 <span className={styles.fileTargetName}>{name}</span>
+                {/* 圆点只是「在线」的视觉编码（颜色），给读屏一份文字
+                    （2026-09-27 P1-3，与 RcA2Sidebar 传输角标同一处伤）：
+                    span 的隐式 role=generic 不允许命名，原来的 aria-label 被丢弃 ⇒
+                    读屏只听到设备名，听不出在线与否。视觉一字未动。 */}
                 <span
                   className={`${styles.fileTargetDot} ${t.presence === "live" ? styles.ftDotLive : ""}`}
-                  aria-label={t.presence === "live" ? "在线" : "未确认在线"}
+                  aria-hidden="true"
                 />
-                {t.denied && <span className={styles.fileTargetDeny}>已禁止本机</span>}
+                <span className="sr-only">
+                  {t.presence === "live" ? "在线" : "未确认在线"}
+                </span>
               </button>
             );
           })}

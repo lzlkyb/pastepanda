@@ -96,10 +96,106 @@ export function requestShow(): void {
   invoke("todo_island_show").catch((e) => logger.warn("[islandBridge] 点亮岛失败", e));
 }
 
-/** 请求 1500ms 后隐藏（全清态收起用；期间被点亮会由 Rust 代次作废）。 */
+/** 热键召唤路径补焦点（critique P1-1）：岛窗平时刻意不抢焦点（todo_island.rs），
+ *  只有用户按热键显式召唤直进输入态时才把焦点给岛——落地即可打字。 */
+export function requestIslandFocus(): void {
+  invoke("todo_island_focus").catch((e) => logger.warn("[islandBridge] 岛窗聚焦失败", e));
+}
+
+/** 请求 2500ms 后隐藏（全清态收起用；期间被点亮会由 Rust 代次作废）。
+ *  2500 = critique 2026-09-27 P3：全清是待办工具的情绪峰值，1500ms 用户还没看清就没了。 */
 export function requestDelayedHide(): void {
-  invoke("todo_island_hide", { delayMs: 1500 }).catch((e) =>
+  invoke("todo_island_hide", { delayMs: 2500 }).catch((e) =>
     logger.warn("[islandBridge] 延迟隐藏失败", e),
   );
+}
+
+/** 「记一条」@时间 预览结果（Rust `todo_island_parse_due` 的载荷，同一份解析链）。
+ *  ok=false = 有尾巴但没看懂（⚠ 态）；null 载荷 = 没有 @ 尾巴。 */
+export interface DuePreview {
+  ok: boolean;
+  label: string;
+  hasTime: boolean;
+}
+
+/** @时间 预览：本地解析命令（微秒级），解析真值**永远**以 Rust 为准——
+ *  前端的 hasAtTail 只管「要不要显示预览条」，绝不做第二份语法判断。 */
+export function parseDuePreview(text: string): Promise<DuePreview | null> {
+  return invoke<DuePreview | null>("todo_island_parse_due", { text });
+}
+
+/** 输入尾部是否挂着 @尾巴形状（与 Rust due_tail 的形状规则同口径：空白后 @、
+ *  行尾 1–2 词、剥尾后文字非空）。仅用于预览条显隐 / 是否 invoke。 */
+export function hasAtTail(text: string): boolean {
+  const t = text.trimEnd();
+  const at = t.lastIndexOf("@");
+  if (at <= 0 || !/\s/.test(t[at - 1])) return false;
+  const words = t.slice(at + 1).trim().split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= 2 && t.slice(0, at).trimEnd().length > 0;
+}
+
+/** 摘掉文本末尾的 @ 尾巴（⚠ 态「删 @尾巴」按钮 / 快捷条带选择提交前共用同一份）。
+ *  形状守卫与 Rust due_tail 同口径：@ 前须有空白——邮箱里的 @ 不是尾巴，不许误摘。 */
+export function stripAtTail(text: string): string {
+  const t = text.trimEnd();
+  const at = t.lastIndexOf("@");
+  if (at <= 0 || !/\s/.test(t[at - 1])) return text;
+  return t.slice(0, at).trimEnd();
+}
+
+/** 打 @ 的**任意进行中形态**（含裸 @）——快捷条选择的清除触发（快捷条设计稿 §3 ③）。
+ *  与 hasAtTail 的区别：它在 @ 后还没词时也为真——用户一打 @ 就得清快捷条，
+ *  不能等尾巴成形；与 Rust due_tail 同口径：@ 前须有空白。 */
+export function atTailStarted(text: string): boolean {
+  return /\s@/.test(text);
+}
+
+/** ===== 记一条 · 常驻时间快捷条（快捷条设计稿 §3.5）=====
+ *  时间来源收口：快捷条选中项在**提交时**拼回 `@日期 [时刻]` 尾巴，走的仍是
+ *  Rust `due_tail` 同一条解析链——前端不做第二份时间计算（规则 11.1）。 */
+
+/** 三个相对日是快捷条的固定日期档；跨出它的需求是 @ 语法的领地（精确档） */
+export const QUICK_DATES = ["今天", "明天", "后天"] as const;
+
+/** 时刻 chip 的默认三项（自适应回落值） */
+export const DEFAULT_QUICK_TIMES = ["9:00", "14:00", "18:00"] as const;
+
+const QUICK_TIMES_KEY = "pp.island.quickTimes";
+
+/** top3 纯函数（守卫单测钉住）：按使用次数取前 3，不足 3 个用默认项补齐——
+ *  默认项永远在候选里，新用户看到的就是 9:00 / 14:00 / 18:00。 */
+export function topQuickTimes(counts: Record<string, number>): string[] {
+  const ranked = Object.entries(counts)
+    .filter(([, c]) => typeof c === "number" && c > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([t]) => t);
+  for (const d of DEFAULT_QUICK_TIMES) {
+    if (ranked.length >= 3) break;
+    if (!ranked.includes(d)) ranked.push(d);
+  }
+  return ranked.slice(0, 3);
+}
+
+/** 本 compose 会话的时刻档：读一次、会话内不换目标（设计稿 §3.5 ③ 防点击漂移）。 */
+export function loadQuickTimes(): string[] {
+  try {
+    const raw = localStorage.getItem(QUICK_TIMES_KEY);
+    if (!raw) return [...DEFAULT_QUICK_TIMES];
+    const counts = JSON.parse(raw) as unknown;
+    return topQuickTimes(counts && typeof counts === "object" ? (counts as Record<string, number>) : {});
+  } catch {
+    return [...DEFAULT_QUICK_TIMES];
+  }
+}
+
+/** 创建带时刻的待办时计一次数（纯本地，无网络）；存储不可用就静默退回固定三项。 */
+export function recordQuickTime(t: string): void {
+  try {
+    const counts = JSON.parse(localStorage.getItem(QUICK_TIMES_KEY) ?? "{}") as Record<string, number>;
+    counts[t] = (typeof counts[t] === "number" ? counts[t] : 0) + 1;
+    localStorage.setItem(QUICK_TIMES_KEY, JSON.stringify(counts));
+  } catch {
+    /* 不挡记事 */
+  }
 }
 

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>远程电脑 · “这台电脑”卡片配对方案</title>
+  <!-- 只改 RcA2SelfCard 所在的侧栏局部；A 为推荐方案。示意码不是实际凭证。 -->
+  <style>
+    :root {
+      --page:#e9f0f7; --sidebar:#f0f4f8; --card:#fff; --ink:#12233c;
+      --secondary:#455a72; --muted:#52677d; --line:#dce5ef;
+      --accent:#0878bd; --accent-soft:#e9f4fb; --success:#087d40;
+      --success-soft:#dff6e9; --danger:#b73439; --danger-soft:#fcebed;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--page); color:var(--ink); font:13px/1.5 "Segoe UI","Microsoft YaHei",sans-serif; }
+    button,textarea { font:inherit; }
+    button { cursor:pointer; }
+    button:focus-visible,textarea:focus-visible,summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .doc { max-width:1080px; margin:auto; padding:24px; }
+    h1 { margin:0 0 5px; font-size:20px; }
+    .intro { color:var(--secondary); margin:0 0 20px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+    .variant h2 { margin:0 0 3px; font-size:15px; }
+    .variant>p { color:var(--secondary); margin:0 0 12px; min-height:38px; }
+    .frame { width:100%; max-width:400px; height:690px; background:var(--sidebar); border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 28px rgba(31,67,103,.13); }
+    .top { padding:16px 14px 10px; }
+    .list-head { display:flex; align-items:center; justify-content:space-between; }
+    .list-head strong { font-size:15px; }
+    .tool button,.help { background:var(--card); border:1px solid var(--line); border-radius:8px; color:var(--ink); }
+    .meta { color:var(--muted); font-size:12px; margin:16px 0 14px; }
+    .device { background:var(--card); border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+    .device b { display:block; }
+    .device small { color:var(--success); }
+    .device.off small { color:var(--muted); }
+    .spacer { flex:1; min-height:8px; }
+    .self { padding:12px 16px 10px; border-top:1px solid var(--line); }
+    .self-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+    .self-head strong { font-size:13px; }
+    .pair-label { font-weight:650; margin-bottom:6px; }
+    .pair-code { height:38px; border:1px solid var(--line); border-radius:8px; background:var(--card); display:flex; align-items:center; justify-content:center; color:var(--muted); font:12px Consolas,monospace; margin-bottom:8px; }
+    .pair-code.ready { color:var(--ink); font-weight:600; }
+    .row { display:flex; gap:8px; }
+    .row button { flex:1; min-height:34px; border-radius:8px; padding:6px 8px; font-weight:650; }
+    .primary { background:var(--accent); color:#fff; border:1px solid var(--accent); }
+    .secondary { background:var(--card); color:var(--ink); border:1px solid var(--line); }
+    .hint { color:var(--muted); font-size:11px; margin:6px 0 10px; }
+    .paste { padding:10px 0 4px; }
+    .paste label { display:block; font-weight:650; margin-bottom:6px; }
+    .paste textarea { width:100%; height:58px; border:1px solid var(--line); border-radius:8px; background:var(--card); padding:7px 9px; resize:vertical; font-size:11px; }
+    .paste .row { margin-top:6px; }
+    .paste button { min-height:30px; }
+    .feedback { padding:8px 10px; margin:8px 0; border-radius:8px; color:var(--secondary); background:var(--accent-soft); font-size:11px; }
+    .feedback.success { background:var(--success-soft); color:var(--success); }
+    .feedback.error { background:var(--danger-soft); color:var(--danger); }
+    .switch { margin-top:10px; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .switch span { min-width:0; }
+    .switch strong,.switch small { display:block; }
+    .switch strong { font-size:12px; }
+    .switch small { color:var(--muted); font-size:11px; }
+    .switch button { border:1px solid #a8ddbe; border-radius:8px; background:var(--success-soft); color:var(--success); min-height:28px; padding:2px 8px; white-space:nowrap; }
+    details { color:var(--secondary); font-size:11px; margin-top:10px; }
+    summary { cursor:pointer; }
+    .more-actions { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+    .more-actions button { flex:1; min-height:30px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--secondary); }
+    .bottom { padding:8px; border-top:1px solid var(--line); }
+    .help { display:block; width:100%; min-height:32px; text-align:left; padding:5px 12px; }
+    .help small { float:right; color:var(--muted); }
+    .tool { display:flex; gap:8px; margin-top:8px; }
+    .tool button { flex:1; min-height:30px; }
+    .note { margin-top:20px; color:var(--secondary); }
+    .note strong { color:var(--ink); }
+    @media(max-width:780px) { .grid { grid-template-columns:1fr; } .variant>p { min-height:0; } .doc { padding:16px; } }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <h1>只改红框里的“这台电脑”卡片</h1>
+    <p class="intro">与现有截图同样的侧栏位置和宽度。收掉顶部重复的“添加设备”，设备列表、右侧详情、底部帮助和工具保持原结构；示例码仅展示布局。</p>
+    <div class="grid">
+      <section class="variant">
+        <h2>方案 A · 复制常驻，粘贴时展开（推荐）</h2>
+        <p>日常卡片保持紧凑；点“粘贴对方的码”后，输入框就在原卡片内展开。</p>
+        <div class="frame">
+          <div class="top"><div class="list-head"><strong>我的设备</strong></div><p class="meta">2 台设备 · 状态自动更新</p><div class="device"><b>机械革命</b><small>● 刚刚可连接</small></div><div class="device off"><b>李清泉</b><small>● 暂时连不上</small></div></div>
+          <div class="spacer"></div>
+          <div class="self">
+            <div class="self-head"><strong>这台电脑</strong></div>
+            <div class="pair-label">我的配对码</div>
+            <div id="code-a" class="pair-code">点击下方生成并复制</div>
+            <div class="row"><button id="copy-a" type="button" class="primary">生成并复制配对码</button></div>
+            <p class="hint">发给对方；本次邀请窗口开放 30 分钟。</p>
+            <div class="row"><button id="open-a" type="button" class="secondary" aria-expanded="false">粘贴对方的配对码</button></div>
+            <p class="hint">两边都粘贴对方的码，才算完成配对。</p>
+            <div id="paste-a" class="paste" hidden><label for="peer-a">对方发来的码</label><textarea id="peer-a" placeholder="在这里粘贴对方的配对码"></textarea><div class="row"><button id="submit-a" type="button" class="primary">确认交换</button></div></div>
+            <div id="feedback-a" class="feedback" hidden></div>
+            <div class="switch"><span><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></span><button type="button">已允许</button></div>
+            <details><summary>更多方式与设备号</summary><div class="more-actions"><button type="button">查找附近设备</button><button type="button">复制设备号</button><button type="button">无人值守 ›</button></div></details>
+          </div>
+          <div class="bottom"><button class="help" type="button">帮助 <small>让别人帮我 / 帮别人连一次</small></button><div class="tool"><button type="button">文件</button><button type="button">记录</button><button type="button">设置</button></div></div>
+        </div>
+      </section>
+      <section class="variant">
+        <h2>方案 B · 复制和输入都常驻</h2>
+        <p>双方操作始终可见；卡片更高，设备列表在矮窗口里会变窄。</p>
+        <div class="frame">
+          <div class="top"><div class="list-head"><strong>我的设备</strong></div><p class="meta">2 台设备 · 状态自动更新</p><div class="device"><b>机械革命</b><small>● 刚刚可连接</small></div><div class="device off"><b>李清泉</b><small>● 暂时连不上</small></div></div>
+          <div class="spacer"></div>
+          <div class="self">
+            <div class="self-head"><strong>这台电脑</strong></div>
+            <div class="pair-label">我的配对码</div>
+            <div class="pair-code ready">PP1-…-9X3K（示意）</div>
+            <div class="row"><button type="button" class="primary">复制我的配对码</button></div>
+            <p class="hint">发给对方；本次邀请窗口开放 30 分钟。</p>
+            <div class="paste"><label for="peer-b">对方的配对码</label><textarea id="peer-b" placeholder="粘贴对方发来的码"></textarea><div class="row"><button type="button" class="secondary">确认交换</button></div></div>
+            <p class="hint">两边都粘贴对方的码，才算完成配对。</p>
+            <div class="switch"><span><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></span><button type="button">已允许</button></div>
+            <details><summary>更多方式与设备号</summary><div class="more-actions"><button type="button">查找附近设备</button><button type="button">复制设备号</button><button type="button">无人值守 ›</button></div></details>
+          </div>
+          <div class="bottom"><button class="help" type="button">帮助 <small>让别人帮我 / 帮别人连一次</small></button><div class="tool"><button type="button">文件</button><button type="button">记录</button><button type="button">设置</button></div></div>
+        </div>
+      </section>
+    </div>
+    <p class="note"><strong>实现边界：</strong>现在卡片上的“复制”是设备号，“完整串”是无人值守接入串，不能直接改名为配对码。正式实现需接入现有的长期邀请码生成，并为“双方都粘贴才完成”增加双向握手。码本身没有时间戳，因此界面应准确说“本次邀请窗口 30 分钟”，不称码永久失效。</p>
+  </div>
+  <script>
+    const open=document.getElementById('open-a');
+    const paste=document.getElementById('paste-a');
+    const feedback=document.getElementById('feedback-a');
+    open.addEventListener('click',()=>{const next=paste.hidden;paste.hidden=!next;open.setAttribute('aria-expanded',String(next));open.textContent=next?'收起输入框':'粘贴对方的配对码';});
+    document.getElementById('copy-a').addEventListener('click',async()=>{document.getElementById('code-a').textContent='PP1-…-9X3K（示意）';document.getElementById('code-a').classList.add('ready');feedback.hidden=false;feedback.className='feedback success';feedback.textContent='示意：已生成并复制，请把真实码发给对方。';});
+    document.getElementById('submit-a').addEventListener('click',()=>{const hasCode=document.getElementById('peer-a').value.trim().length>0;feedback.hidden=false;feedback.className=hasCode?'feedback':'feedback error';feedback.textContent=hasCode?'示意：已收到对方的码，等待对方也粘贴你的码。':'请先粘贴对方的配对码。';});
+  </script>
+</body>
+</html>

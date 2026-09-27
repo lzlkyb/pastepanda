@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::data_store::DataStore;
 use crate::rc::file_state::FileSnapshot;
 use crate::rc::service::RcService;
 
@@ -70,12 +71,46 @@ pub fn rc_file_snapshot(svc: State<'_, Arc<RcService>>) -> FileSnapshot {
     svc.file_snapshot()
 }
 
-/// 默认接收目录（`<下载>/PastePanda 接收/`）。
+/// 接收目录（用户在设置里配置的覆盖目录；未配置 = `<下载>/PastePanda 接收/`）。
 ///
 /// 由 Rust 给而不是前端拼：中文系统的下载目录叫「下载」，且可能被用户
 /// 重定向到别的盘——只有 `SHGetKnownFolderPath` 知道真实位置。
+/// 2026-09-27：push 接受不再每次弹目录选择框（用户拍板：默认落 + 设置可改），
+/// 本命令成为「落点」的唯一取值口；`rc_file_receive_dir_set` 是唯一写入口。
 #[tauri::command]
-pub fn rc_file_default_dir() -> Result<String, String> {
-    crate::rc::file_transfer::default_receive_dir()
+pub fn rc_file_default_dir(store: State<'_, DataStore>) -> Result<String, String> {
+    let config = store.get_config()?;
+    crate::rc::file_transfer::effective_receive_dir(&config)
         .map(|p| p.to_string_lossy().to_string())
+}
+
+/// 设置文件接收目录（空串 = 恢复默认 `<下载>/PastePanda 接收/`）。
+///
+/// 保存前就创建目录：设置那一刻就暴露「盘符不存在」这类问题，
+/// 别等第一场传输落盘才炸。
+#[tauri::command]
+pub fn rc_file_receive_dir_set(store: State<'_, DataStore>, dir: String) -> Result<String, String> {
+    let trimmed = dir.trim().to_string();
+    let effective = if trimmed.is_empty() {
+        crate::rc::file_transfer::default_receive_dir()?
+    } else {
+        let p = std::path::PathBuf::from(&trimmed);
+        if !p.is_absolute() {
+            return Err("接收目录必须是绝对路径".into());
+        }
+        std::fs::create_dir_all(&p).map_err(|e| format!("创建目录失败：{e}"))?;
+        p
+    };
+    let mut config = store.get_config()?;
+    let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
+    obj.insert(
+        "rc_file_receive_dir".to_string(),
+        serde_json::Value::String(if trimmed.is_empty() {
+            String::new()
+        } else {
+            effective.to_string_lossy().to_string()
+        }),
+    );
+    store.save_config(&config)?;
+    Ok(effective.to_string_lossy().to_string())
 }

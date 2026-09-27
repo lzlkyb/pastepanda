@@ -33,6 +33,7 @@ const base = {
   pointerLocked: false,
   onTogglePointer: vi.fn(),
   canControl: true,
+  kbOn: false,
   onToggleFullscreen: vi.fn(),
   onRequestEnd: vi.fn(),
   busy: false,
@@ -194,5 +195,36 @@ describe("RcFullscreenHotbar（方案 B：全屏顶边 hot zone）", () => {
     // 截停只作用于 mousedown 冒泡：按钮的 click 是独立派发，功能不受影响
     fireEvent.click(screen.getByRole("button", { name: "适应" }));
     expect(base.onFit).toHaveBeenCalledWith("fit");
+  });
+
+  it("F10 键盘唤出/收起；键盘捕获（kbOn）时不生效（远端按键）", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(<RcFullscreenHotbar {...base} />);
+    const bar = () => container.firstElementChild as HTMLElement;
+
+    act(() => {
+      vi.advanceTimersByTime(2500); // 先自动淡出
+    });
+    expect(bar().className).toContain("viewToolsHidden");
+
+    // F10 唤出
+    act(() => {
+      fireEvent.keyDown(window, { key: "F10" });
+    });
+    expect(bar().className).not.toContain("viewToolsHidden");
+
+    // kbOn=true：F10 是远端按键，热键不生效——已显示的条不被收起
+    rerender(<RcFullscreenHotbar {...base} kbOn />);
+    act(() => {
+      fireEvent.keyDown(window, { key: "F10" });
+    });
+    expect(bar().className).not.toContain("viewToolsHidden");
+
+    // 再按收起（kbOn=false）
+    rerender(<RcFullscreenHotbar {...base} />);
+    act(() => {
+      fireEvent.keyDown(window, { key: "F10" });
+    });
+    expect(bar().className).toContain("viewToolsHidden");
   });
 });

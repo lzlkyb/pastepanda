@@ -58,7 +58,7 @@ export function useRcFrames(
   const visible = useWindowVisible();
   const [hasFrame, setHasFrame] = useState(false);
   const [statusText, setStatusText] = useState("等待对方画面…");
-  const [codec, setCodec] = useState<"jpeg" | "h264" | "hevc">("jpeg");
+  const [codec, setCodec] = useState<"jpeg" | "h264" | "hevc" | "av1">("jpeg");
   const [fps, setFps] = useState(0);
   /** P2-10：画面链路延迟（采集→上屏，EMA）。0 = 尚无样本。 */
   const [latencyMs, setLatencyMs] = useState(0);
@@ -131,7 +131,7 @@ export function useRcFrames(
     // 误降级成 JPEG。
     let waitingSinceMs = 0;
     // 当前流的标准（看门狗用）：HEVC 等不到关键帧先退 H.264，H.264 才砸 JPEG
-    let curStd: "h264" | "hevc" = "h264";
+    let curStd: "h264" | "hevc" | "av1" = "h264";
     const forceJpeg = () => {
       h264Miss = 0;
       waitingKey = false;
@@ -227,7 +227,7 @@ export function useRcFrames(
 
     const handleH264Frame = (f: RcBinFrame) => {
       setCodec(f.codec);
-      const std: HwCodec = f.codec === "hevc" ? "hevc" : "h264";
+      const std: HwCodec = f.codec === "hevc" ? "hevc" : f.codec === "av1" ? "av1" : "h264";
       curStd = std;
       h264 ??= new H264Decoder(
         (vf) => {
@@ -259,7 +259,7 @@ export function useRcFrames(
           // Q3：HEVC 解码连续失败先退 H.264（生态稳），H.264 再失败才 JPEG。
           // P1-8：必须看**当前** curStd——解码器创建时的 isHevc 快照在中途换码后是错的
           //（先 HEVC 后 H.264 会误 forceH264，反之会跳过 H.264 直接砸 JPEG）。
-          if (h264Miss >= 3) (curStd === "hevc" ? forceH264 : forceJpeg)();
+          if (h264Miss >= 3) (curStd === "h264" ? forceJpeg : forceH264)();
         },
       );
       h264.ensureConfigured(
@@ -277,7 +277,7 @@ export function useRcFrames(
         return;
       }
       h264Miss += 1;
-      if (h264Miss >= 3) (curStd === "hevc" ? forceH264 : forceJpeg)();
+      if (h264Miss >= 3) (curStd === "h264" ? forceJpeg : forceH264)();
     };
 
     // 等待下一轮：新帧事件（立即）或兜底轮询（空闲时指数退避，最低 16ms）。
@@ -333,7 +333,7 @@ export function useRcFrames(
               // HEVC 先退 H.264 再说，H.264 才砸 JPEG（与即时失败路径同序，
               // 2026-09-19 审查：曾一律 forceJpeg 跳过 H.264 这一级）
               if (Date.now() - waitingSinceMs > 3000) {
-                if (curStd === "hevc") forceH264();
+                if (curStd === "h264") forceJpeg();
                 else forceJpeg();
               }
               continue;
@@ -341,6 +341,20 @@ export function useRcFrames(
             if (f.key) {
               waitingKey = false;
               waitingSinceMs = 0;
+            }
+            // P1.2 drop-to-latest：解码队列积压 ≥6 帧（60fps 下 ≥100ms）说明
+            // 解码/渲染追不上到达速率，队列里每一帧显示出来都是旧的——
+            // 丢光积压、直接要关键帧重新起链（P 帧不能中间丢，flush+等
+            // 关键帧是唯一正确的丢弃方式）。积压排空的代价 ≤1 个 GOP，
+            // 换来画面永远「追最新」而不是「越拖越旧」。
+            if (h264 && h264.queueSize >= 6) {
+              h264.dropPending();
+              if (!waitingKey) {
+                waitingKey = true;
+                waitingSinceMs = Date.now();
+                void rcSendInput({ kind: "request_key" }).catch(() => {});
+              }
+              continue;
             }
             const decT0 = Date.now();
             handleH264Frame(f);

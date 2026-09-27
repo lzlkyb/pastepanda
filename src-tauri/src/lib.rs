@@ -37,6 +37,7 @@ mod icon_extractor;
 mod lan_pair;
 mod lan_sync;
 mod lang_arbiter;
+mod logging;
 pub mod markdown;
 mod mask;
 pub mod mcp;
@@ -198,10 +199,52 @@ pub fn run() {
     //   pastepanda_lib::sync::service（同步失败原因）是真信号，保持 info。
     //   env_logger 的过滤按模块路径前缀匹配，所以 iroh::socket=off 一并覆盖 transports
     //   与 remote_map 两个子模块。需要调试 iroh 时 RUST_LOG=iroh=debug 即可全部恢复。
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
+    //   🔴 2026-09-27 改为双写（logging.rs）：安装版没有控制台，stderr 全蒸发，
+    //   被控端的 [RC-PERF] 分段汇总与编码后端选定行拿不到，性能问题只能靠猜。
+    //   同样的过滤口径下追加写 %APPDATA%\com.pastepanda.app\rc.log（5MB 滚动）。
+    logging::FileTeeLogger::init(
         "info,iroh::socket=off,tracing::span=off,iroh::net_report=warn,iroh_relay=warn",
-    ))
-    .init();
+    );
+
+    // 🔴 崩溃取证（2026-09-27）：安装版没有控制台，Rust panic 的输出发到虚无——
+    // 被控端在「控端异常退出」的收口路径上崩过却查无对证（收口链路本身已审计
+    // 无裸 panic，嫌疑在音频/DXGI/编码器的资源释放层）。这个 hook 把每次 panic
+    // 追加进 %APPDATA%\com.pastepanda.app\panic.log（时间戳 / 消息 / 位置 / 线程
+    // / 回溯），dev 与安装版都生效。注意：只兜 Rust panic；堆损坏 / abort /
+    // GPU 驱动级崩溃仍要靠 Windows 事件查看器的故障模块名。
+    std::panic::set_hook(Box::new(|info| {
+        use std::io::Write;
+        let dir = match std::env::var("APPDATA") {
+            Ok(d) => std::path::PathBuf::from(d).join("com.pastepanda.app"),
+            Err(_) => return,
+        };
+        let _ = std::fs::create_dir_all(&dir);
+        let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("panic.log"))
+        else {
+            return;
+        };
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<非字符串 payload>".into());
+        let _ = writeln!(
+            f,
+            "===== {} =====\nthread:  {}\npayload: {msg}\nlocation: {}\nbacktrace:\n{}\n",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+            std::thread::current().name().unwrap_or("<unnamed>"),
+            info.location()
+                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                .unwrap_or_else(|| "<unknown>".into()),
+            std::backtrace::Backtrace::force_capture(),
+        );
+        // dev 控制台同步可见
+        log::error!("[PANIC] {msg} @ {}", info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default());
+    }));
 
     // 🔴 硬编诊断（2026-09-23）：进程时间线上的第一个 NVENC 激活采样点。
     // 「外部探针 ✓ / 本进程 ✗」已排除全部 MFT 侧因素（公寓实测 MTA、枚举 flags 与
@@ -591,6 +634,12 @@ pub fn run() {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Ctrl+Alt+D")
                     .to_string(),
+                // 待办岛唤起（critique P1-1）
+                todo_island: saved_config
+                    .get("todo_island_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Alt+T")
+                    .to_string(),
             };
 
             app.manage(store);
@@ -960,11 +1009,13 @@ pub fn run() {
             stack_hud::stack_hud_adjust,
             // 待办灵动岛：屏幕顶部居中的无焦点小窗（P0 探针骨架）
             todo_island::todo_island_show,
+            todo_island::todo_island_focus,
             todo_island::todo_island_hide,
             todo_island::todo_island_state,
             todo_island::todo_island_page_ready,
             todo_island::todo_island_update,
             todo_tasks::todo_island_tasks,
+            todo_tasks::todo_island_parse_due,
             todo_tasks::todo_island_toggle_task,
             todo_island_stage::todo_island_set_stage,
             commands::note_append_daily_task,
@@ -1040,6 +1091,8 @@ pub fn run() {
             commands::kb_sync_allow_from_rc,
             commands::kb_sync_deny_from_rc,
             commands::rc_invite_create,
+            commands::rc_exchange_begin,
+            commands::rc_exchange_check,
             commands::rc_invite_preview,
             commands::rc_pair,
             commands::rc_forget,
@@ -1075,6 +1128,7 @@ pub fn run() {
             commands::rc_file_clear_finished,
             commands::rc_file_snapshot,
             commands::rc_file_default_dir,
+            commands::rc_file_receive_dir_set,
             commands::rc_drain_audio,
             commands::rc_audio_toggle,
             commands::rc_set_audio_local_mute,

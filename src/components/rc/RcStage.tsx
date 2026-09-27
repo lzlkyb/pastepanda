@@ -14,6 +14,7 @@ import { useMemo } from "react";
 import { Lightbulb } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
+import { formatDuration } from "@/lib/rcSessionStats";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcLaunch } from "@/hooks/useRcLaunch";
 import { useToast } from "@/components/Toast";
@@ -23,6 +24,8 @@ import { RcSessionView } from "./RcSessionView";
 import { RcPendingWait } from "./RcPendingWait";
 import { RcErrorPanel } from "./RcErrorPanel";
 import { RcEmptyGuide } from "./RcEmptyGuide";
+import { RcControlBanner } from "./RcControlBanner";
+import { useRcInboundControls } from "@/hooks/useRcInboundControls";
 import { workbenchMainMode } from "@/lib/rcWorkbench";
 import styles from "./RemoteComputer.module.css";
 
@@ -55,6 +58,11 @@ export function RcStage({
   const rcEnabledSelf = rc.status?.enabled ?? false;
   const hasTargets = rc.targets.length > 0;
 
+  // P1-1（2026-09-27 审计）：被控的止血动作收口在 useRcInboundControls，工作台
+  // inbound 视图与主窗 RcOverlay 挂同一份 RcControlBanner——被控者停在任何窗口
+  // 都能直接结束会话，不再指路另一扇窗（规则 15.1：触发与反馈同可见性域）。
+  const inboundControls = useRcInboundControls(rc);
+
   const pendingName = useMemo(() => {
     if (!session) return "";
     // 统一显示名（备注优先）；会话没带名字时退到 targets 里那行，再退指纹。
@@ -64,6 +72,11 @@ export function RcStage({
       fingerprintOf(session.peer)
     );
   }, [session, rc.targets]);
+
+  // 2026-09-27 方案 A：会话态画面满幅贴边——wbMain 的 12px 纸面内边距在
+  // 会话态收掉（否则四周露一圈白边，画面没有真正接管窗口）。空闲/等待/
+  // 被控态仍是「页」，纸面边距保留。
+  const inSession = mode === "outbound" && Boolean(session);
 
   // B 方案（2026-09-24）：被控视图从「中央大卡片」降为轻量说明——常驻信息面
   // 已收进主窗口顶部的胶囊横幅（RcControlBanner），工作台不再重复摆同一份事实。
@@ -82,7 +95,10 @@ export function RcStage({
   const retryable = rc.error != null && rcErrorRetryable(rc.error);
 
   return (
-    <main className={styles.wbMain}>
+    <main
+      className={`${styles.wbMain} ${inSession ? styles.wbMainFlush : ""}`}
+      data-rc-session-main={inSession || undefined}
+    >
       {rc.error && (
         <RcErrorPanel
           error={rc.error}
@@ -98,12 +114,44 @@ export function RcStage({
       )}
       {inbound && session ? (
         <div className={styles.wbHero}>
+          {(() => {
+            // 与主窗 RcOverlay 同判据：deny 优先级高于免确认（后端如此），禁了就不摆入口
+            const peerTarget = rc.targets.find((t) => t.node_id === session.peer);
+            const peerDenied = peerTarget?.denied ?? false;
+            return (
+              <RcControlBanner
+                session={session}
+                busy={rc.busy}
+                trusted={peerTarget?.trusted ?? false}
+                onTrust={
+                  peerDenied
+                    ? undefined
+                    : () =>
+                        void inboundControls.enableTrust(
+                          session.peer,
+                          rcDisplayName(session, fingerprintOf(session.peer)),
+                        )
+                }
+                scopeNotice={rc.scopeNotice}
+                onDismissScopeNotice={rc.clearScopeNotice}
+                streamNotice={rc.streamNotice}
+                onDismissStreamNotice={rc.clearStreamNotice}
+                audioLocalMute={inboundControls.audioLocalMute}
+                onToggleAudioLocalMute={inboundControls.toggleAudioLocalMute}
+                spkMutedByPeer={inboundControls.spkMutedByPeer}
+                onRestoreSpk={inboundControls.restoreSpk}
+                quality={rc.status?.quality}
+                activeQuality={rc.status?.active_quality}
+                captureScope={rc.status?.capture_scope}
+                onEnd={inboundControls.endSession}
+              />
+            );
+          })()}
           <div className={styles.heroTitle}>
             正在被「{inboundName}」远程{session.capability === "control" ? "控制" : "查看"}
           </div>
           <div className={styles.heroLead}>
-            本机画面正在推送给对方。会话详情（指纹 / 画质 / 免确认）与结束入口在主窗口顶部的
-            被控横幅里，随时可停。
+            本机画面正在推送给对方。指纹 / 画质 / 免确认等详情可展开上方胶囊查看，随时可立即结束。
           </div>
         </div>
       ) : mode === "outbound" && session ? (
@@ -111,9 +159,13 @@ export function RcStage({
           session={session}
           busy={rc.busy}
           onEnd={() => {
+            // 终值收束（审计 2026-09-27）：结束成功给一次轻量收尾——「事情办完了」
+            // 的松弛点 + 元数据去向；时长在 end 前取（end 成功后 session 会被收口）。
+            const dur = formatDuration(Date.now() - session.started_ms);
             void rc.end().then((ok) => {
               // 失败必须说出来：静默失败时用户以为已断开，对方却还挂着
               if (!ok) toast("结束会话失败，请重试", "error");
+              else toast(`已结束远程会话 · 本次 ${dur} · 已记入记录`, "success");
             });
           }}
           onReconnect={async () => {

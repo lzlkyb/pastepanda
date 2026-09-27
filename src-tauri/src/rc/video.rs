@@ -238,6 +238,10 @@ pub enum FrameCodec {
     /// Q3：HEVC Annex-B（Main profile）。与 H264 同一条「元数据 + 裸流」通道，
     /// 仅编码标准不同。
     Hevc,
+    /// P2.3：AV1（FF nvenc/qsv/amf 专属，无 MF 实现）。低码率下画质最好；
+    /// 解码端 WebCodecs（dav1d）广覆盖，但老机器软解吃 CPU——能力协商后
+    /// 才允许选择。
+    Av1,
 }
 
 impl FrameCodec {
@@ -247,6 +251,7 @@ impl FrameCodec {
             Self::Jpeg => 0,
             Self::H264 => 1,
             Self::Hevc => 2,
+            Self::Av1 => 3,
         }
     }
 
@@ -255,6 +260,7 @@ impl FrameCodec {
             0 => Some(Self::Jpeg),
             1 => Some(Self::H264),
             2 => Some(Self::Hevc),
+            3 => Some(Self::Av1),
             _ => None,
         }
     }

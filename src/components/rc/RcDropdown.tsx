@@ -62,6 +62,7 @@ export function RcDropdown<T extends string>({
   options,
   columns = 1,
   disabled,
+  disabledTitle,
   onPick,
   onOpenChange,
 }: {
@@ -72,6 +73,8 @@ export function RcDropdown<T extends string>({
   /** 菜单列数。label 短（2–3 字）且项多时用 2；label 长或项少时用 1。 */
   columns?: 1 | 2;
   disabled?: boolean;
+  /** 禁用时的悬停说明（如「链路未连通，暂不能改档」）——禁用不许是哑巴（L1）。 */
+  disabledTitle?: string;
   onPick: (k: T) => void;
   /**
    * 开合外报（2026-09-24 浮条收编）。菜单是 portal（fixed 挂 body），鼠标移进
@@ -171,6 +174,7 @@ export function RcDropdown<T extends string>({
         className={styles.menuBtn}
         aria-haspopup="listbox"
         aria-expanded={open}
+        title={disabled ? disabledTitle : undefined}
         disabled={disabled}
         onClick={() => {
           if (open) {

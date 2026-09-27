@@ -1,6 +1,43 @@
 //! InboundVideo 构造与硬编（H.264）路径：try_new / open_h264 / try_hardware_path / send_h264_pkts。
 
 use super::*;
+
+/// 编码标准决策（纯函数，规则 11.1：判据两处调用必收口）。
+/// 档位自带 HEVC 偏好（uhd60）优先于显式 SetCodec；AV1 只在显式选择时启用。
+pub(in crate::rc) fn want_stream_codec(
+    profile_hevc: bool,
+    codec: &crate::rc::stream_cfg::StreamCodec,
+) -> VideoCodec {
+    use crate::rc::stream_cfg::StreamCodec;
+    if profile_hevc {
+        return VideoCodec::Hevc;
+    }
+    match codec {
+        StreamCodec::Hevc => VideoCodec::Hevc,
+        StreamCodec::Av1 => VideoCodec::Av1,
+        _ => VideoCodec::H264,
+    }
+}
+
+#[cfg(test)]
+mod want_codec_tests {
+    use super::want_stream_codec;
+    use crate::rc::encode_h264::VideoCodec;
+    use crate::rc::stream_cfg::StreamCodec;
+
+    #[test]
+    fn 编码标准决策_档位偏好优先_显式次之() {
+        assert_eq!(want_stream_codec(true, &StreamCodec::Av1), VideoCodec::Hevc);
+        assert_eq!(want_stream_codec(false, &StreamCodec::Hevc), VideoCodec::Hevc);
+        assert_eq!(want_stream_codec(false, &StreamCodec::Av1), VideoCodec::Av1);
+        assert_eq!(want_stream_codec(false, &StreamCodec::Auto), VideoCodec::H264);
+        assert_eq!(
+            want_stream_codec(false, &StreamCodec::ForceJpeg),
+            VideoCodec::H264,
+            "JPEG 由 force_jpeg 门控另走，这里恒 H264"
+        );
+    }
+}
 // 推流节拍判据收口在 `rc::pace`（inbound.rs 的主题是会话结构与生命周期）。
 use crate::rc::pace::{auto_key_due, want_fps_for, AUTO_KEY_MIN_GAP_MS};
 
@@ -12,6 +49,7 @@ impl InboundVideo {
         send: iroh::endpoint::SendStream,
         conn: iroh::endpoint::Connection,
         peer_dgram: bool,
+        peer_fec_rs: bool,
     ) -> Option<Self> {
         let my_id = {
             let inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -68,6 +106,7 @@ impl InboundVideo {
             #[cfg(target_os = "windows")]
             dgram: crate::rc::vid_dgram::VidDgramSender::new(),
             peer_dgram,
+            peer_fec_rs,
             conn,
             input_boost: Arc::new(tokio::sync::Notify::new()),
             last_frame_at: tokio::time::Instant::now(),
@@ -103,13 +142,7 @@ impl InboundVideo {
         if opts.force_jpeg() {
             return None;
         }
-        let codec = if opts.profile.hevc
-            || matches!(opts.codec, crate::rc::stream_cfg::StreamCodec::Hevc)
-        {
-            VideoCodec::Hevc
-        } else {
-            VideoCodec::H264
-        };
+        let codec = want_stream_codec(opts.profile.hevc, &opts.codec);
         let (pw, ph) = if virt {
             let (sx, sy, sw, sh) = virtual_screen_size();
             let _ = (sx, sy);
@@ -251,16 +284,12 @@ impl InboundVideo {
             if !henc.available() || opts.force_jpeg() {
                 return Step::FallThrough;
             }
-            // Q3/Q4：编码标准跟会话参数走——显式 SetCodec（hevc/h264）或档位
+            // Q3/Q4：编码标准跟会话参数走——显式 SetCodec（hevc/av1/h264）或档位
             // 自带 HEVC 偏好（uhd60）都会触发编码器按需重开；HEVC 连续打不开
             // 时 SessionEncoder 自己回落 H.264。
-            let want_hevc = opts.profile.hevc
-                || matches!(opts.codec, crate::rc::stream_cfg::StreamCodec::Hevc);
-            henc.set_codec(if want_hevc {
-                VideoCodec::Hevc
-            } else {
-                VideoCodec::H264
-            });
+            // 判据收口在 [`want_stream_codec`]（两处调用点：open_h264 / 每圈同步）。
+            let codec = want_stream_codec(opts.profile.hevc, &opts.codec);
+            henc.set_codec(codec);
             // R5.B2：按对端 RTT 缩码率（重开延迟到下一次编码时执行）
             let scale = self.svc.bitrate_scale();
             henc.apply_bitrate_scale(scale);
@@ -440,11 +469,18 @@ impl InboundVideo {
             enc_ms as u64,
             None, // 结尾补上真实发送耗时
         );
-        // Q3：编码标准取自编码器本体（HEVC 打不开自动回落 H.264 时，同帧起即换）
-        let hevc = self
+        // Q3：编码标准取自编码器本体（回落时同帧起即换）。
+        let codec = self
             .h264
             .as_ref()
-            .is_some_and(|e| e.codec() == VideoCodec::Hevc);
+            .map(|e| e.codec())
+            .unwrap_or(VideoCodec::H264);
+        // VideoCodec（编码端）→ FrameCodec（线上帧标注）换算。
+        let frame_codec = match codec {
+            VideoCodec::Hevc => crate::rc::video::FrameCodec::Hevc,
+            VideoCodec::Av1 => crate::rc::video::FrameCodec::Av1,
+            VideoCodec::H264 => crate::rc::video::FrameCodec::H264,
+        };
         // Q8 文本清晰：H264/HEVC 是 CBR 码控，静止画面的 P 帧几乎全是跳块，
         // 滚动文档落下的糊字不会被后续 P 帧修好（JPEG 路径有 300ms q95 精修，
         // 这条路径此前没有任何回补）。静止 >REFINE_AFTER_MS 时强制一个 IDR：
@@ -503,7 +539,7 @@ impl InboundVideo {
             // 对端是旧版发起端时**一律**走可靠流（能力位缺省 = 它读不了视频
             // 数据报，见 `peer_dgram` 字段注释）。
             if !self.peer_dgram {
-                if !self.send_pkt_via_stream(&p, sq, ts, cap_ms, enc_ms, hevc).await {
+                if !self.send_pkt_via_stream(&p, sq, ts, cap_ms, enc_ms, codec.as_str()).await {
                     return Step::End;
                 }
                 continue;
@@ -519,9 +555,15 @@ impl InboundVideo {
             //    收到 FLAG_KEY 会重锚 `next_seq`、清 `corrupt` 与 `hole_since`，
             //    单测 `组内丢两片整帧报废_corrupt等关键帧` 钉着「关键帧必须能
             //    重新起链」），只是一直没有发送方这么用。
-            match self.dgram.send_frame(
-                &self.conn, sq, &p.data, p.key, ts, cap_ms, enc_ms, p.width, p.height, hevc,
-            ) {
+            let loss = self.svc.loss_permille();
+            match self
+                .dgram
+                .send_frame(
+                    &self.conn, sq, &p.data, p.key, ts, cap_ms, enc_ms, p.width, p.height,
+                    frame_codec, self.peer_fec_rs, loss,
+                )
+                .await
+            {
                 Ok(()) => {}
                 Err(crate::rc::vid_dgram::SendErr::Busy) if p.key => {
                     // 关键帧**不能弃**：丢了要等下一个 GOP（1s）才有锚，这期间
@@ -529,7 +571,7 @@ impl InboundVideo {
                     // `datagram_send_buffer_size`，默认 1MiB）就回退可靠流——
                     // 慢一点，但一定到得了。
                     log::debug!("[RC] 关键帧装不进数据报缓冲，回退可靠流 #{sq}");
-                    if !self.send_pkt_via_stream(&p, sq, ts, cap_ms, enc_ms, hevc).await {
+                    if !self.send_pkt_via_stream(&p, sq, ts, cap_ms, enc_ms, codec.as_str()).await {
                         return Step::End;
                     }
                 }
@@ -601,12 +643,22 @@ impl InboundVideo {
         ts: i64,
         cap_ms: u16,
         enc_ms: u16,
-        hevc: bool,
+        codec_label: &str,
     ) -> bool {
         let mut guard = self.send.lock().await;
         if crate::rc::video::write_h264(
-            &mut guard, &p.data, p.key, p.width, p.height, ts, cap_ms, enc_ms, sq, hevc,
+            &mut guard,
+            &p.data,
+            p.key,
+            p.width,
+            p.height,
+            ts,
+            cap_ms,
+            enc_ms,
+            sq,
+            codec_label,
         )
+        
         .await
         .is_err()
         {

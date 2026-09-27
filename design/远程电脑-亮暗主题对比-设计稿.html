@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>远程电脑 · 亮暗主题对比 — 设计稿（2026-09-27）</title>
+<!--
+  设计稿：rc 区亮暗主题对比（用户确认方向：跟随主题，无品牌断裂）。
+  同一套结构标记渲染两遍，只换 theme.css 真实令牌（ocean 亮 / midnight 暗），
+  展示「工作台面跟随主题、会话浮层恒深玻璃」的现状与效果。
+  结构基线 = RcWorkbench / RcA2Sidebar / RcA2DeviceHero / RcSessionCapsule /
+  RcControlBanner 真实源码；色值仅为令牌镜像预览，落地全走 var()。
+-->
+<style>
+  /* ══ theme.css 令牌镜像：亮 = ocean，暗 = midnight ══ */
+  .t-light {
+    --app-bg:
+      radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+      radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+      linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
+    --card-bg: #fff; --card-border: #e0e4eb; --border-color: #e0e4eb;
+    --text-primary: #0f172a; --text-secondary: #495565; --text-muted: #627083;
+    --accent: #0284c7; --accent-solid: #027cbb; --text-on-accent: #fff;
+    --success: #16a34a; --danger: #d64545; --section-bg: #f0f4f8;
+    --hover: rgba(2,132,199,.08); --sel-bg: rgba(2,132,199,.12); --sel-bd: rgba(2,132,199,.38);
+    --chip-bg: rgba(15,23,42,.04); --panel-bg: rgba(255,255,255,.85);
+    /* --rc-head-bg 派生式（accent 光晕 + 云白） */
+    --head-bg:
+      radial-gradient(ellipse 300px 130px at 88% -20%, rgba(2,132,199,.30) 0%, transparent 62%),
+      radial-gradient(ellipse 240px 120px at 66% 120%, rgba(2,132,199,.24) 0%, transparent 60%),
+      linear-gradient(120deg, rgba(255,255,255,.72) 0%, rgba(224,242,254,.65) 100%);
+    --hero-screen: linear-gradient(135deg, #38bdf8 0%, #0284c7 48%, #075985 100%);
+    --bezel: #1e293b; --win-shadow: 0 10px 26px rgba(2,132,199,.28);
+  }
+  .t-dark {
+    --app-bg: radial-gradient(100% 80% at 50% -10%, #1c1832 0%, #0b0b13 55%, #07070c 100%);
+    --card-bg: #18181b; --card-border: #27272a; --border-color: #27272a;
+    --text-primary: #e4e4e7; --text-secondary: #afafb7; --text-muted: #8d8d95;
+    --accent: #818cf8; --accent-solid: #666fc4; --text-on-accent: #fff;
+    --success: #4ade80; --danger: #d64545; --section-bg: #0f0f11;
+    --hover: rgba(129,140,248,.08); --sel-bg: rgba(129,140,248,.14); --sel-bd: rgba(129,140,248,.35);
+    --chip-bg: rgba(15,15,17,.5); --panel-bg: rgba(24,24,27,.85);
+    --head-bg:
+      radial-gradient(ellipse 300px 130px at 88% -20%, rgba(129,140,248,.34) 0%, transparent 62%),
+      radial-gradient(ellipse 240px 120px at 66% 120%, rgba(129,140,248,.30) 0%, transparent 60%),
+      linear-gradient(120deg, rgba(24,24,27,.72) 0%, rgba(43,43,72,.55) 100%);
+    --hero-screen: linear-gradient(135deg, #6366f1 0%, #818cf8 48%, #4f46e5 100%);
+    --bezel: #2a2a33; --win-shadow: 0 10px 26px rgba(99,102,241,.35);
+  }
+  /* 恒深玻璃（两主题同值，RemoteComputer.module.css 现值） */
+  :root { --cap-glass: rgba(13,16,22,.82); }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+         background: #0a0a12; color: #d5d7e0; padding: 30px 22px 70px; font-size: 14px; line-height: 1.7; }
+  h1 { font-size: 21px; color: #eef0f6; margin-bottom: 4px; }
+  .sub { color: #8d8d95; margin-bottom: 26px; }
+  h2 { font-size: 15.5px; margin: 40px 0 10px; color: #eef0f6; }
+  .note { color: #8d8d95; max-width: 1080px; margin-bottom: 14px; }
+  .cmp { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 1 1 500px; max-width: 640px; min-width: 380px; }
+  .colT { font-size: 12.5px; font-weight: 600; margin-bottom: 8px; }
+  .colT.light { color: #7dd3fc; } .colT.dark { color: #a5b4fc; }
+  .cap { font-size: 11.5px; color: #8d8d95; margin-top: 8px; }
+  .frame { border-radius: 12px; overflow: hidden; border: 1px solid #2c2c33; box-shadow: 0 16px 44px rgba(0,0,0,.5); }
+
+  /* ══ 工作台主页（双栏） ══ */
+  .wb { height: 470px; display: flex; flex-direction: column; background: var(--app-bg);
+        color: var(--text-primary); font-size: 12px; }
+  .titlebar { height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px;
+              background: color-mix(in srgb, var(--card-bg) 72%, transparent);
+              border-bottom: 1px solid var(--card-border); font-size: 11.5px; flex-shrink: 0; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+  .titlebar .st { color: var(--text-secondary); }
+  .titlebar .win { margin-left: auto; display: flex; gap: 13px; color: var(--text-muted); font-size: 10.5px; }
+  .body2 { display: flex; flex: 1; min-height: 0; }
+  .side { width: 196px; flex-shrink: 0; border-right: 1px solid var(--card-border);
+          padding: 10px 9px; display: flex; flex-direction: column; gap: 7px;
+          background: color-mix(in srgb, var(--section-bg) 55%, transparent); }
+  .sideTitle { display: flex; align-items: center; font-size: 12px; font-weight: 600; }
+  .sideTitle .acts { margin-left: auto; display: flex; gap: 5px; }
+  .icoBtn { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--card-border);
+            display: grid; place-items: center; color: var(--text-secondary); font-size: 10.5px; }
+  .grp { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--text-muted); }
+  .grp .n { margin-left: auto; }
+  .dev { border-radius: 8px; padding: 6px 7px; display: flex; gap: 7px; align-items: center;
+         border: 1px solid transparent; }
+  .dev.sel { background: var(--sel-bg); border-color: var(--sel-bd); }
+  .devIco { width: 27px; height: 27px; border-radius: 7px; display: grid; place-items: center;
+            color: var(--accent); font-size: 12px; position: relative; flex-shrink: 0;
+            background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .devIco::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 7px; height: 7px;
+                   border-radius: 50%; background: var(--success); border: 2px solid var(--card-bg); }
+  .devIco.off::after { background: color-mix(in srgb, var(--text-muted) 70%, transparent); }
+  .dev .nm { font-size: 11.5px; font-weight: 600; }
+  .dev .mt { font-size: 9.5px; color: var(--text-muted); }
+  .selfCard { margin-top: auto; border: 1px solid var(--card-border); border-radius: 9px;
+              padding: 7px 9px; background: var(--panel-bg); font-size: 10px; }
+  .selfCard .row { display: flex; align-items: center; color: var(--text-secondary); }
+  .selfCard .row b { font-size: 11px; color: var(--text-primary); }
+  .selfCard .row .cp { margin-left: auto; color: var(--accent); }
+  .selfCard .code { font-size: 13.5px; letter-spacing: 2.5px; margin: 2px 0;
+                    font-variant-numeric: tabular-nums; }
+  .selfCard .hint { color: var(--text-muted); font-size: 9.5px; }
+  .helpBtn { margin-top: 6px; border: 1px dashed var(--card-border); border-radius: 7px;
+             padding: 4px 7px; font-size: 10px; color: var(--text-secondary); text-align: center; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .hero { margin: 12px 14px 0; border-radius: 13px; border: 1px solid var(--card-border);
+          padding: 14px 16px 13px; position: relative; overflow: hidden; background: var(--head-bg); }
+  .slogan { position: absolute; top: 11px; right: 14px; font-size: 10px; color: var(--text-muted);
+            border-bottom: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); padding-bottom: 2px; }
+  .monitor { width: 66px; height: 44px; border-radius: 6px; margin-bottom: 9px;
+             background: var(--hero-screen); border: 2px solid var(--bezel); box-shadow: var(--win-shadow); }
+  .hero .nm { font-size: 17px; font-weight: 700; }
+  .hero .nm .pen { font-size: 10px; color: var(--text-muted); margin-left: 7px; }
+  .hero .stat { font-size: 11px; color: var(--text-secondary); margin: 2px 0 8px;
+                display: flex; align-items: center; gap: 5px; }
+  .hero .stat .q { width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--card-border);
+                   display: inline-grid; place-items: center; font-size: 8.5px; color: var(--text-muted); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 11px; }
+  .chip { font-size: 10px; color: var(--text-secondary); border: 1px solid var(--card-border);
+          border-radius: 999px; padding: 1.5px 8px; background: var(--chip-bg); }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .bigBtn { display: flex; align-items: stretch; border-radius: 9px; overflow: hidden; box-shadow: var(--win-shadow); }
+  .bigBtn .m { background: var(--accent-solid); color: var(--text-on-accent); font-weight: 700;
+               font-size: 12px; padding: 8px 18px; }
+  .bigBtn .c { background: color-mix(in srgb, var(--accent-solid) 82%, #000);
+               color: var(--text-on-accent); padding: 8px 10px; display: grid; place-items: center; font-size: 9px; }
+  .secBtn { border: 1px solid var(--card-border); border-radius: 9px; padding: 8px 13px;
+            font-size: 11.5px; color: var(--text-secondary); background: var(--panel-bg); }
+  .facts { margin: 10px 14px 0; border: 1px solid var(--card-border); border-radius: 11px;
+           background: var(--panel-bg); padding: 10px 13px; font-size: 10.5px;
+           color: var(--text-secondary); display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+  .facts .k { color: var(--text-muted); margin-right: 4px; }
+  .facts .v { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .facts .man { margin-left: auto; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+                border-radius: 6px; padding: 1.5px 9px; font-size: 10px; }
+
+  /* ══ 会话态 ══ */
+  .sess { height: 300px; position: relative; overflow: hidden; }
+  .screen { position: absolute; inset: 0; display: grid; place-items: center; }
+  .screen.light { background:
+      radial-gradient(ellipse 400px 220px at 22% 28%, #dbe7f2 0%, transparent 60%),
+      linear-gradient(135deg, #cdd9e6 0%, #b7c6d6 55%, #c4d2e0 100%); color: #5b6b7e; font-size: 11px; }
+  .screen.dark { background:
+      radial-gradient(ellipse 400px 220px at 22% 28%, #17202e 0%, transparent 60%),
+      linear-gradient(135deg, #101720 0%, #0a0e15 60%, #0d1420 100%); color: #3b4656; font-size: 11px; }
+  .capsule { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+             display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 999px;
+             background: var(--cap-glass); backdrop-filter: blur(14px);
+             border: 1px solid rgba(255,255,255,.09); font-size: 11px; color: #e8edf4;
+             box-shadow: 0 10px 30px rgba(0,0,0,.5); white-space: nowrap; }
+  .capsule .ld { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; }
+  .capsule .pill { border: 1px solid rgba(74,222,128,.4); color: #4ade80; border-radius: 999px;
+                   font-size: 9.5px; padding: 0 6px; }
+  .capsule .sep { width: 1px; height: 12px; background: rgba(255,255,255,.14); }
+  .capsule .bt { color: #c8d0dc; font-size: 10.5px; padding: 1px 5px; border-radius: 5px; }
+  .capsule .bt.on { background: rgba(129,140,248,.28); color: #fff; }
+  .capsule .end { color: #ff8f8f; border: 1px solid rgba(214,69,69,.4); border-radius: 6px; padding: 1.5px 5px; }
+  .stageNote { position: absolute; left: 12px; top: 40px; font-size: 10px; color: #64748b; }
+
+  /* ══ 被控态 ══ */
+  .inb { height: 210px; position: relative; background: var(--app-bg); color: var(--text-primary); }
+  .inbPill { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+             display: flex; align-items: center; gap: 7px; padding: 4px 7px 4px 11px; border-radius: 999px;
+             background: color-mix(in srgb, var(--danger) 12%, var(--card-bg));
+             border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-color)); font-size: 11px; }
+  .inbPill .rd { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+  .inbPill .who { color: var(--danger); font-weight: 600; }
+  .inbPill .pl { border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+                 color: var(--danger); border-radius: 999px; font-size: 9.5px; padding: 0 6px; }
+  .inbPill .tm { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .inbPill .x { background: var(--danger); color: #fff; border-radius: 999px; width: 18px; height: 18px;
+                display: grid; place-items: center; font-size: 10px; }
+  .inbHero { position: absolute; top: 58px; left: 0; right: 0; text-align: center; }
+  .inbHero .t { font-size: 14px; font-weight: 600; }
+  .inbHero .d { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+  .inbHero .facts2 { margin: 10px auto 0; width: 78%; border: 1px solid var(--card-border); border-radius: 10px;
+                     background: var(--panel-bg); padding: 8px 12px; font-size: 10.5px;
+                     color: var(--text-secondary); display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .inbHero .facts2 b { color: var(--text-primary); }
+  .inbHero .endRow { margin-top: 8px; }
+  .inbHero .endB { display: inline-block; background: var(--danger); color: #fff; border-radius: 7px;
+                   padding: 3px 14px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 亮暗主题对比</h1>
+<div class="sub">2026-09-27 · 同一套结构标记渲染两遍，只换 theme.css 令牌（左：ocean 亮 · 右：midnight 暗）——展示 rc 跟随主题的现状效果</div>
+
+<h2>① 工作台主页双栏</h2>
+<p class="note">侧栏 / hero 横幅 / 事实表全部落在主题令牌上：<code>--rc-head-bg</code> 的 accent 光晕在 ocean 下是青蓝辉光、midnight 下是 indigo 辉光；hero 显示器插画同理。结构、图标、文案完全一致。</p>
+<div class="cmp">
+  <div class="col">
+    <div class="colT light">○ ocean（亮 · 默认）</div>
+    <div class="frame"><div class="wb t-light">
+      <div class="titlebar"><span class="dot"></span><span class="st">远程通道已开启</span>
+        <span class="win"><span>—</span><span>▢</span><span>✕</span></span></div>
+      <div class="body2">
+        <div class="side">
+          <div class="sideTitle">我的设备
+            <span class="acts"><span class="icoBtn">⌕</span><span class="icoBtn">＋</span></span></div>
+          <div class="grp">在线 <span class="n">2</span></div>
+          <div class="dev sel"><span class="devIco">▣</span><span><span class="nm">客厅电脑</span><br><span class="mt">将以「可控」连接</span></span></div>
+          <div class="dev"><span class="devIco">▣</span><span><span class="nm">书房主机</span><br><span class="mt">免确认已开启</span></span></div>
+          <div class="grp">不在线 <span class="n">1</span></div>
+          <div class="dev"><span class="devIco off">▣</span><span><span class="nm">宿舍笔记本</span><br><span class="mt">最近在线 · 未实测</span></span></div>
+          <div class="selfCard">
+            <div class="row"><b>这台电脑</b><span class="cp">复制</span></div>
+            <div class="code">A7 F2 · 9C</div>
+            <div class="hint">对方用这个号码找到这台电脑</div>
+            <div class="helpBtn">帮助：让别人帮我 / 帮别人连一次</div>
+          </div>
+        </div>
+        <div class="main">
+          <div class="hero">
+            <span class="slogan">让距离，不再是距离</span>
+            <div class="monitor"></div>
+            <div class="nm">客厅电脑 <span class="pen">✎</span></div>
+            <div class="stat"><span class="dot"></span> 局域网在线 · 2 分钟前检查 <span class="q">?</span></div>
+            <div class="chips">
+              <span class="chip">▣ 在线</span><span class="chip">Windows 11 · 23H2</span>
+              <span class="chip">局域网直连</span><span class="chip">最近实测 ~12 ms</span>
+            </div>
+            <div class="actions">
+              <span class="bigBtn"><span class="m">▶ 连接并控制</span><span class="c">⌄</span></span>
+              <span class="secBtn">只看</span><span class="secBtn">传文件</span>
+            </div>
+          </div>
+          <div class="facts">
+            <span><span class="k">指纹</span><span class="v">A7F2 9C41 …</span></span>
+            <span><span class="k">最近会话</span><span class="v">昨天 21:40</span></span>
+            <span class="man">管理此设备</span>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <div class="cap">亮主题：青蓝 accent 的浅色仪表台——与主窗口亮皮肤完全同族。</div>
+  </div>
+
+  <div class="col">
+    <div class="colT dark">● midnight（暗）</div>
+    <div class="frame"><div class="wb t-dark">
+      <div class="titlebar"><span class="dot"></span><span class="st">远程通道已开启</span>
+        <span class="win"><span>—</span><span>▢</span><span>✕</span></span></div>
+      <div class="body2">
+        <div class="side">
+          <div class="sideTitle">我的设备
+            <span class="acts"><span class="icoBtn">⌕</span><span class="icoBtn">＋</span></span></div>
+          <div class="grp">在线 <span class="n">2</span></div>
+          <div class="dev sel"><span class="devIco">▣</span><span><span class="nm">客厅电脑</span><br><span class="mt">将以「可控」连接</span></span></div>
+          <div class="dev"><span class="devIco">▣</span><span><span class="nm">书房主机</span><br><span class="mt">免确认已开启</span></span></div>
+          <div class="grp">不在线 <span class="n">1</span></div>
+          <div class="dev"><span class="devIco off">▣</span><span><span class="nm">宿舍笔记本</span><br><span class="mt">最近在线 · 未实测</span></span></div>
+          <div class="selfCard">
+            <div class="row"><b>这台电脑</b><span class="cp">复制</span></div>
+            <div class="code">A7 F2 · 9C</div>
+            <div class="hint">对方用这个号码找到这台电脑</div>
+            <div class="helpBtn">帮助：让别人帮我 / 帮别人连一次</div>
+          </div>
+        </div>
+        <div class="main">
+          <div class="hero">
+            <span class="slogan">让距离，不再是距离</span>
+            <div class="monitor"></div>
+            <div class="nm">客厅电脑 <span class="pen">✎</span></div>
+            <div class="stat"><span class="dot"></span> 局域网在线 · 2 分钟前检查 <span class="q">?</span></div>
+            <div class="chips">
+              <span class="chip">▣ 在线</span><span class="chip">Windows 11 · 23H2</span>
+              <span class="chip">局域网直连</span><span class="chip">最近实测 ~12 ms</span>
+            </div>
+            <div class="actions">
+              <span class="bigBtn"><span class="m">▶ 连接并控制</span><span class="c">⌄</span></span>
+              <span class="secBtn">只看</span><span class="secBtn">传文件</span>
+            </div>
+          </div>
+          <div class="facts">
+            <span><span class="k">指纹</span><span class="v">A7F2 9C41 …</span></span>
+            <span><span class="k">最近会话</span><span class="v">昨天 21:40</span></span>
+            <span class="man">管理此设备</span>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <div class="cap">暗主题：同一份 CSS 自动落成深玻璃 + indigo 辉光——与主窗口暗皮肤完全同族。</div>
+  </div>
+</div>
+
+<h2>② 会话态：浮层恒深玻璃（两主题同值）</h2>
+<p class="note">胶囊压在<b>不可控的远端画面</b>上——可能是白纸也可能是黑终端，所以浮层固定深玻璃、不随主题翻面。差别只在画面之外的窗口底色与浮层描边观感；这正是「亮处是控制台，暗处是对端屏幕」策略里该保留的一半。</p>
+<div class="cmp">
+  <div class="col">
+    <div class="colT light">○ ocean（亮）下的会话</div>
+    <div class="frame"><div class="sess t-light">
+      <div class="screen light">（对端桌面：白底文档场景）</div>
+      <div class="capsule">
+        <span class="ld"></span><span>客厅电脑</span><span class="pill">可控</span>
+        <span class="sep"></span>
+        <span class="bt">画质 ▾</span><span class="bt">画面 ▾</span>
+        <span class="sep"></span>
+        <span class="bt on">适应</span><span class="bt">1:1</span><span class="bt">填充</span>
+        <span class="bt">⛶（F11）</span>
+        <span class="sep"></span>
+        <span class="bt">ⓘ</span><span class="bt">⋯</span><span class="end">✕</span>
+      </div>
+      <div class="stageNote">← 白底远端文档上，深玻璃胶囊依然清晰可读</div>
+    </div></div>
+    <div class="cap">亮主题：远端画面偏亮，深玻璃胶囊对比最强。</div>
+  </div>
+  <div class="col">
+    <div class="colT dark">● midnight（暗）下的会话</div>
+    <div class="frame"><div class="sess t-dark">
+      <div class="screen dark">（对端桌面：暗色终端场景）</div>
+      <div class="capsule">
+        <span class="ld"></span><span>客厅电脑</span><span class="pill">可控</span>
+        <span class="sep"></span>
+        <span class="bt">画质 ▾</span><span class="bt">画面 ▾</span>
+        <span class="sep"></span>
+        <span class="bt on">适应</span><span class="bt">1:1</span><span class="bt">填充</span>
+        <span class="bt">⛶（F11）</span>
+        <span class="sep"></span>
+        <span class="bt">ⓘ</span><span class="bt">⋯</span><span class="end">✕</span>
+      </div>
+      <div class="stageNote">← 暗底远端终端上，靠描边与投影和画面分层</div>
+    </div></div>
+    <div class="cap">暗主题：画面与浮层同暗，rgba 深玻璃 + 1px 高光描边 + 投影保证分层。</div>
+  </div>
+</div>
+
+<h2>③ 被控态：胶囊横幅跟随主题</h2>
+<p class="note">被控胶囊走主题令牌（danger 红染底 + 卡片底色）：亮主题下是白卡染红、暗主题下是暗卡染红；「立即结束」在两个主题下都是同一颗 danger 实心钮。</p>
+<div class="cmp">
+  <div class="col">
+    <div class="colT light">○ ocean（亮）被控中</div>
+    <div class="frame"><div class="inb t-light">
+      <div class="inbPill">
+        <span class="rd"></span><span class="who">正在被「书房主机」远程</span>
+        <span class="pl">可控</span><span class="tm">12:34</span><span class="x">✕</span>
+      </div>
+      <div class="inbHero">
+        <div class="t">正在被「书房主机」远程控制</div>
+        <div class="d">本机画面正在推送给对方。详情可展开上方胶囊查看，随时可立即结束。</div>
+        <div class="facts2">
+          <span>对方指纹 <b>A7F2 9C41 …</b></span>
+          <span>画质 <b>高清</b></span>
+          <span>免确认 <b>未开启</b></span>
+        </div>
+        <div class="endRow"><span class="endB">立即结束</span></div>
+      </div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="colT dark">● midnight（暗）被控中</div>
+    <div class="frame"><div class="inb t-dark">
+      <div class="inbPill">
+        <span class="rd"></span><span class="who">正在被「书房主机」远程</span>
+        <span class="pl">可控</span><span class="tm">12:34</span><span class="x">✕</span>
+      </div>
+      <div class="inbHero">
+        <div class="t">正在被「书房主机」远程控制</div>
+        <div class="d">本机画面正在推送给对方。详情可展开上方胶囊查看，随时可立即结束。</div>
+        <div class="facts2">
+          <span>对方指纹 <b>A7F2 9C41 …</b></span>
+          <span>画质 <b>高清</b></span>
+          <span>免确认 <b>未开启</b></span>
+        </div>
+        <div class="endRow"><span class="endB">立即结束</span></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<p class="note" style="margin-top:20px;">※ 色值均为 theme.css ocean / midnight 令牌的镜像预览，实施零改动（A2 样式表本就全走 var()）；本稿用于确认「跟随主题」的观感是否 OK。forest / blossom / dawn / ocean-dark 四套主题走同一套派生式，效果介于这两档之间。</p>
+
+</body>
+</html>

@@ -227,6 +227,9 @@ impl RcService {
         self.emit_file_state();
         let (outcome, got) = recv_bytes(self, &mut recv, &plan, size, &task_id).await;
         let (state, err) = outcome.finish(got, size);
+        // 🔴 2026-09-27：同 transfer.rs——收尾报错拼上连接关闭理由（noq 的
+        // ConnectionLost Display 不带内层原因，见 service::explain 注释）。
+        let err = err.map(|e| crate::rc::service::explain(conn, e));
         if state == TaskState::Done {
             log::info!("[RC] {short} 已接收 {}（{} 字节）", plan.final_name, size);
         } else {

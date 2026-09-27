@@ -68,11 +68,15 @@ pub const WINDOW_LABEL: &str = "todo-island";
 pub const ISLAND_W: f64 = 208.0;
 pub const ISLAND_H: f64 = 32.0;
 
-/// 贴屏幕上沿的距离。顶部锚定的定义：**屏幕水平中心 × 屏幕上沿 + 此值**。
+/// 岛顶与屏幕上沿的距离（吸附双态设计稿拍板 **0**）。顶部锚定的定义：**屏幕水平中心 × 屏幕上沿 + 此值**。
+///
+/// ❗ 吸附双态设计稿（2026-09-26）拍板为 **0**：岛顶与屏幕顶零间隙——吸附感的来源就是
+/// 「长在上面」而不是「浮在离顶 10px 处」；胶囊上圆角与屏幕边之间的两个小三角空隙由
+/// 壁纸透出，是「贴上去」的自然观感（同 iOS 岛圆角与屏幕边的处理）。
 ///
 /// ❗ 展开时顶边钉住不动、只向下生长 —— 即 `set_position` 的 y 恒为它，
 /// 只有 x 按新宽度重算（`x = 屏宽/2 - 新宽/2`）。这条是设计稿第六节写定的口径。
-pub const TOP_MARGIN: f64 = 10.0;
+pub const TOP_MARGIN: f64 = 0.0;
 
 // ❗ 光标穿透轮询那一整套（滞回常量、`HOVERING` / `POLL_GEN`、`start_poll` / `stop_poll`、
 //    `cursor_pos`、对应单测）已切到 `todo_island_hover.rs`：本文件到 590 行、红线 600，
@@ -82,7 +86,14 @@ pub const TOP_MARGIN: f64 = 10.0;
 /// 「窗口已显示」事件（Rust → 岛 webview）。
 pub const EVENT_SHOWN: &str = "todo-island-shown";
 /// 「鼠标是否在岛上」事件。前端据此切 hover 视觉；也用于探针观察轮询是否在跑。
+///
+/// ❗ 2026-09-26 起语义收窄（吸附双态设计稿 §3）：**拦截**仍在光标进形状时立即发生，
+/// 但这个事件在收起两态要等形内**连续停留 4 拍**（≈240ms）才发 true——它现在代表
+/// 「停留达标，可以切 peek」，掠过不再触发。列表/输入两态仍立即发（闲置自收计时器靠它）。
 pub const EVENT_HOVER: &str = "todo-island-hover";
+/// 「意图」事件：收起两态在形内连续停留 3 拍（≈180ms）时发 true、离开补发 false。
+/// 前端据此点亮意图 glow——此刻窗口**仍穿透**，是「它注意到我了」的预告，不是拦截。
+pub const EVENT_INTENT: &str = "todo-island-intent";
 /// 「岛状态有更新」事件（Rust → 岛 webview，载荷是 [`IslandState`]）。
 pub const EVENT_UPDATE: &str = "todo-island-update";
 /// 「舞台已被 Rust 复位」（hide 时广播）：前端据此把 React 舞台同步回胶囊——
@@ -212,8 +223,8 @@ fn probe_on() -> bool {
 
 /// 主显示器矩形与缩放：`(x, y, w, h, scale)`，位置与尺寸都是**物理像素**。
 ///
-/// ❗ **显式取主屏**而不是「当前窗口所在屏」：多显示器时 y=10 的口径必须先确定是**哪块屏**的顶边，
-/// 否则同一份代码在双屏机器上会把岛贴到副屏上沿。
+/// ❗ **显式取主屏**而不是「当前窗口所在屏」：多显示器时岛贴主屏顶边（y = `TOP_MARGIN`）的
+/// 口径必须先确定是**哪块屏**的顶边，否则同一份代码在双屏机器上会把岛贴到副屏上沿。
 /// 兜底值不是硬编码分辨率，而是「取不到就用 (0,0) + 让窗口系统自己收」—— 见 `calc_top_center`。
 ///
 /// `scale` 一并带出来：调用方要拿它把物理尺寸折成逻辑尺寸（见 `calc_top_center` 的单位教训）。
@@ -380,7 +391,7 @@ fn hide_inner(app: &AppHandle, clear_cache: bool) {
     WANT_VISIBLE.store(false, Ordering::SeqCst);
     REVIVE_GEN.fetch_add(1, Ordering::SeqCst);
     // 停轮询与复位悬停状态必须成对：只停线程不复位，下次显示时 `HOVERING` 会以
-    // 「进来过」的身份启动，第一轮就按 12px 的离开外扩判定（详见 todo_island_hover.rs）。
+    // 「进来过」的身份启动，第一轮就按离开外扩判定（详见 todo_island_hover.rs）。
     crate::todo_island_hover::stop_poll();
     crate::todo_island_hover::reset_hovering();
     if clear_cache {
@@ -675,6 +686,19 @@ fn create(app: &AppHandle) {
 #[tauri::command]
 pub fn todo_island_show(app: AppHandle) {
     show(&app);
+}
+
+/// 岛窗补焦点（critique P1-1，热键召唤路径专用）。
+///
+/// ❗ 岛平时**刻意不抢焦点**（见文件头窗口配置与 show 的注释：抢了焦点，用户在
+/// 别处打的字会落进岛）。唯一的例外是用户按热键显式召唤直进输入态——那时焦点
+/// 必须在岛上，落地即可打字。前端 `islandBridge::requestIslandFocus` 只在
+/// 热键监听里调用。
+#[tauri::command]
+pub fn todo_island_focus(app: AppHandle) {
+    if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = w.set_focus();
+    }
 }
 
 /// 隐藏岛；`delay_ms > 0` 时延迟隐藏

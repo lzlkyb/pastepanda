@@ -41,6 +41,7 @@ import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { useRcNearbyPair } from "@/hooks/useRcNearbyPair";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
@@ -68,6 +69,12 @@ export function RcPairDialog({
   onPairAccepted?: (peerId: string) => void;
 }) {
   const anim = useDialogAnim();
+  // 🔴 Esc 必须由弹层自己接（2026-09-27 P1-2）。RcPairLayer 挂在设置页里
+  // （RcSection.tsx:304），App 那条全局 Esc 链**不认识**这个弹窗，按 Esc 会
+  // 一路落到 `close_dialog: "settings"` —— 整个设置页被关掉，正在核对的
+  // 6 位 PIN / 刚生成的配对码一起丢（与 useDialogEscape 头注释里 2026-09-06
+  // 那次事故同型）。捕获期 + stopPropagation 抢在全局链之前截断。
+  useDialogEscape(onClose);
   const near = useRcNearbyPair();
   const [mode, setMode] = useState<"create" | "paste" | null>(null);
   const [name, setName] = useState(rc.identity?.device_name ?? "");

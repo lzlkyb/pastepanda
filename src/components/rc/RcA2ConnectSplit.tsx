@@ -52,7 +52,9 @@ export function RcA2ConnectSplit({
           onClick={() => onConnect(targetId, cap)}
         >
           <Play size={14} aria-hidden="true" />
-          {denied ? "已禁止" : cap === "control" ? "连接并控制" : "连接并只看"}
+          {/* 审计 2026-09-27：denied 原文案「已禁止」听着像禁用态，点了却会发起
+              连接——改正向表述，进/出的不对称留给 title 细说（L 组说人话）。 */}
+          {denied ? "仍可连接" : cap === "control" ? "连接并控制" : "连接并只看"}
         </button>
         <button
           type="button"

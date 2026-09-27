@@ -4,7 +4,7 @@
  * ## 五个舞台（与 `todo_island_stage.rs::stage_size` 是同一份账）
  *
  * pill 208×32 → peek 300×40（悬停）→ list 420×240（点击）→ compose 420×280（记一条）；
- * 全清 clear 208×32 → 1500ms 后收起（epoch 可作废）。
+ * 全清 clear 208×32 → 2500ms 后收起（epoch 可作废）。
  *
  * ## 窗口几何与动画的分工（2026-09-25 档 3a 修订）
  *
@@ -34,10 +34,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useIslandState, requestShow, requestDelayedHide, setStage } from "@/lib/todo/islandBridge";
+import { useIslandState, requestShow, requestDelayedHide, requestIslandFocus, setStage } from "@/lib/todo/islandBridge";
 import type { IslandState, IslandStage } from "@/lib/todo/types";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { useIslandContentPhase } from "./useIslandContentPhase";
+import { useHoverVisual, useIntentVisual, useFlashNotice } from "./useIslandSignals";
+import { useIslandVitality } from "./useIslandVitality";
 import { TodoIslandList } from "./TodoIslandList";
 import styles from "./TodoIsland.module.css";
 
@@ -45,22 +47,11 @@ import styles from "./TodoIsland.module.css";
 const RING_CIRC = 2 * Math.PI * 6.5;
 /** 展开态鼠标离开多久后自动收起。读列表需要时间，给足；比胶囊 2.5s 宽一倍多。 */
 const AUTO_COLLAPSE_MS = 6000;
-/** 失败提示的自退场时长：够读完一句话，又不常驻挡列表 */
-const NOTICE_MS = 3200;
-
-/** hover 视觉：由 Rust 的光标轮询广播（60ms 滞回判定），**不是 CSS :hover**——窗口默认穿透。 */
-function useHoverVisual(): boolean {
-  const [hover, setHover] = useState(false);
-  useEffect(() => {
-    const off = listen<boolean>("todo-island-hover", (e) => setHover(e.payload));
-    return () => void off.then((f) => f());
-  }, []);
-  return hover;
-}
 
 export function TodoIsland() {
   const state: IslandState = useIslandState();
   const hover = useHoverVisual();
+  const intent = useIntentVisual();
   const [stage, setStageState] = useState<IslandStage>("pill");
   // goStage 会在事件回调里被读：ref 保证拿到的是最新值，不把 stage 挂进依赖链
   const stageRef = useRef<IslandStage>("pill");
@@ -71,20 +62,12 @@ export function TodoIsland() {
   const [composeText, setComposeText] = useState("");
   const composeTextRef = useRef("");
   composeTextRef.current = composeText;
-  // 失败提示提在**岛层**：勾选/输入的失败可能发生在列表正要收起的那一刻，
-  // 提示必须留在触发它的那个可见域里（规则 §15.1 / §15.3），不能随列表一起被卸载。
-  const [notice, setNotice] = useState<string | null>(null);
-  const noticeTimer = useRef<number | undefined>(undefined);
-  const flashNotice = useCallback((msg: string | null) => {
-    window.clearTimeout(noticeTimer.current);
-    if (!msg) {
-      setNotice(null);
-      return;
-    }
-    setNotice(msg);
-    noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
-  }, []);
-  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
+  // 列表视图 tab 也挂在岛层（critique 2026-09-27 P2-3，规则 §15.2 同源）：列表组件
+  // 收起即卸载，tab 挂在那层会被重置回「进行中」——在「已完成」核对到一半被
+  // 闲置收起，再展开必须还在「已完成」。
+  // 失败提示提在**岛层**（钩子在 useIslandSignals）：勾选/输入的失败可能发生在
+  // 列表正要收起的那一刻，提示不能随列表一起被卸载（规则 §15.1 / §15.3）。
+  const [notice, flashNotice] = useFlashNotice();
 
   // 内容层交接节拍（右）与系统「减少动态效果」（左）分开喂：Hook 只管时序，
   // 不自己探环境，无环境也能被单测。
@@ -112,7 +95,8 @@ export function TodoIsland() {
     }
   }, [goStage]);
 
-  // 悬停 ↔ 收起：Rust 轮询的滞回判定驱动，只在胶囊两态间横跳，不打扰展开态
+  // 悬停 ↔ 收起：Rust 轮询驱动。收起两态的 hover=true 已含 150ms 级停留延时
+  // （Rust 端按拍数发放，见 useHoverVisual），这里语义不变：true 即「停留达标，切 peek」。
   useEffect(() => {
     if (hover && stageRef.current === "pill") goStage("peek");
     else if (!hover && stageRef.current === "peek") collapseToPill();
@@ -147,6 +131,23 @@ export function TodoIsland() {
     return () => void off.then((f) => f());
   }, [goStage]);
 
+  // 全局热键（critique P1-1，Alt+T 默认，设置页「待办岛唤起」可换）：
+  // 收起两态 → 唤岛直进输入态（岛窗补焦点，落地即可打字）；展开两态 → 收回胶囊
+  //（开关键）。焦点只在召唤路径抢——岛平时刻意不抢焦点（todo_island.rs），
+  // 热键是用户显式召唤，是唯一的例外路径。
+  useEffect(() => {
+    const off = listen("todo-island-hotkey", () => {
+      if (stageRef.current === "list" || stageRef.current === "compose") {
+        collapseToPill();
+        return;
+      }
+      requestShow();
+      goStage("compose");
+      requestIslandFocus();
+    });
+    return () => void off.then((f) => f());
+  }, [goStage, collapseToPill]);
+
   // 两级取消（规则 17.6）：Esc 先从输入态回列表、再收回胶囊；到胶囊为止
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -159,6 +160,7 @@ export function TodoIsland() {
     return () => window.removeEventListener("keydown", onKey);
   }, [goStage, collapseToPill]);
 
+  const [tab, setTab] = useState<"open" | "done">("open");
   const remain = Math.max(0, state.total - state.done);
   const progress = state.total > 0 ? Math.min(1, Math.max(0, state.done / state.total)) : 0;
 
@@ -175,16 +177,15 @@ export function TodoIsland() {
   // 宁可少说一句，也不编一个演示时间替用户编日程。
   const nextDue = !reminding && stage === "peek" ? state.tasks[0] : undefined;
   const nextDueLabel = nextDue?.dueLabel ?? "";
-  const nextDueOver =
-    nextDue !== undefined &&
-    !nextDue.done &&
-    typeof nextDue.dueMs === "number" &&
-    nextDue.dueMs < Date.now();
+  const nextDueOver = nextDue !== undefined && !nextDue.done && typeof nextDue.dueMs === "number" && nextDue.dueMs < Date.now();
+
+  // 内容活性三动效（活性设计稿 §1–§3）：递减走字 / 事件脉冲 / glow 跟随——逻辑全在 Hook（本文件 300 行红线）
+  const vital = useIslandVitality({ state, stage, reducedMotion, hover, intent });
 
   // 折叠态的统一内容：环 + 剩余数 + 一句话（clear 态把环换成勾；提醒态整段换掉）
   const collapsed = reminding ? (
     <>
-      <svg className={styles.bell} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg className={styles.bell} data-shake={vital.shaking ? "1" : undefined} onAnimationEnd={vital.endShake} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M8 2.5a3.5 3.5 0 0 0-3.5 3.5c0 3-1.5 4-1.5 4h10s-1.5-1-1.5-4A3.5 3.5 0 0 0 8 2.5z" />
         <path d="M6.8 12.5a1.3 1.3 0 0 0 2.4 0" />
       </svg>
@@ -192,8 +193,8 @@ export function TodoIsland() {
       <span className={styles.sepdot} />
     </>
   ) : stage === "clear" ? (
-      <span className={styles.okmark} aria-hidden="true">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+      <span className={styles.okmark} data-draw={vital.drawing ? "1" : undefined} onAnimationEnd={vital.endDraw} aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
           <path d="M3 8.5l3.4 3.4L13 5" />
         </svg>
       </span>
@@ -220,25 +221,50 @@ export function TodoIsland() {
   return (
     <div
       className={styles.root}
+      data-pulse={vital.pulsing ? "1" : undefined}
+      onPointerMove={vital.onGlowMove} onAnimationEnd={vital.endPulse}
       data-st={stage}
       data-hover={hover && (stage === "pill" || stage === "peek") ? "1" : undefined}
+      // 意图 glow 只在收起两态点亮：展开态光标本来就在岛上，glow 已由 data-hover 负责
+      data-intent={intent && collapsedStage ? "1" : undefined}
       onClick={collapsedStage ? () => goStage("list") : undefined}
       role={collapsedStage ? "button" : undefined}
-      aria-label={collapsedStage ? "展开待办列表" : undefined}
+      // 状态进语义层（形变设计稿 §7③）：「方顶=吸附」是纯视觉通道，读屏用户从形状收不到
+      // 两态信息——标签里说破。
+      aria-label={collapsedStage ? "待办，已吸附在屏幕顶部，点击展开列表" : undefined}
+      // 键盘可达（P1-1）：role="button" 名实相符——Tab 聚焦后 Enter/Space 展开
+      tabIndex={collapsedStage ? 0 : -1}
+      onKeyDown={
+        collapsedStage
+          ? (e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              goStage("list");
+            }
+          : undefined
+      }
     >
       {phase.collapsed.mounted ? (
         <div className={styles.collapsedLayer} data-on={phase.collapsed.visible ? "1" : undefined}>
           {collapsed}
-          {nextDueLabel ? (
+          {(vital.liveDue ?? nextDueLabel) ? (
             <>
               <span className={styles.sepdot} />
-              <span className={nextDueOver ? styles.peekDueOver : styles.peekDue}>{nextDueLabel}</span>
+              <span className={vital.liveDue ? styles.liveDue : nextDueOver ? styles.peekDueOver : styles.peekDue}>
+                {vital.liveDue ?? nextDueLabel}
+              </span>
             </>
           ) : null}
           {/* 这一格在三者之间轮换：失败提示（就地替换提示文字）/ 提醒的那条 / 下一条待办。
               pill 只有 32px 高且 overflow:hidden，浮层会被裁掉，所以错误也只能占这一格。 */}
           <span
-            className={notice ? styles.noticeInline : styles.last}
+            className={
+              notice
+                ? styles.noticeInline
+                : stage === "clear"
+                  ? `${styles.last} ${styles.lastBright}`
+                  : styles.last
+            }
             role={notice ? "alert" : undefined}
           >
             {notice ?? (reminding ? alert?.text : collapsedHint)}
@@ -250,6 +276,8 @@ export function TodoIsland() {
         <div className={styles.expandedLayer} data-on={phase.expanded.visible ? "1" : undefined}>
           <TodoIslandList
             state={state}
+            tab={tab}
+            onTab={setTab}
             compose={stage === "compose"}
             composeText={composeText}
             onComposeText={(s) => setComposeText(s)}

@@ -122,10 +122,16 @@ export function rcFileSnapshot(): Promise<RcFileSnapshot> {
 }
 
 /**
- * 默认接收目录（`<下载>/PastePanda 接收/`）。
+ * 接收目录（设置里配置的覆盖目录；未配置 = `<下载>/PastePanda 接收/`）。
  *
  * 由 Rust 给而不是前端拼：中文系统的下载目录叫「下载」，还可能被重定向到别的盘。
+ * 2026-09-27：push 接受不再弹目录选择框，本命令是「落点」的唯一取值口。
  */
 export function rcFileDefaultDir(): Promise<string> {
   return invoke<string>("rc_file_default_dir");
+}
+
+/** 设置文件接收目录（空串 = 恢复默认）。返回生效目录（已建目录、已落配置）。 */
+export function rcFileReceiveDirSet(dir: string): Promise<string> {
+  return invoke<string>("rc_file_receive_dir_set", { dir });
 }

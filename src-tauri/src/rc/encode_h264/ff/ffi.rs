@@ -198,6 +198,8 @@ pub const AVMEDIA_TYPE_VIDEO: i32 = 0;
 pub const AV_CODEC_ID_H264: i32 = 27;
 /// `AV_CODEC_ID_HEVC`（枚举实际值 172，非 H264+1；2026-09-24 用真头文件编译探针取得）。
 pub const AV_CODEC_ID_HEVC: i32 = 172;
+/// `AV_CODEC_ID_AV1`（P2.3；ffmpeg n5+ 枚举值 26）。
+pub const AV_CODEC_ID_AV1: i32 = 26;
 pub const AV_PICTURE_TYPE_I: i32 = 1;
 pub const AV_PKT_FLAG_KEY: i32 = 1;
 /// `AVERROR(EAGAIN)`：输出还没准备好 / 输入暂不接收。**不是错误**，是流程信号。

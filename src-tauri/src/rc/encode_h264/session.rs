@@ -128,6 +128,10 @@ fn open_chain(
     fps: u32,
     bitrate: u32,
 ) -> Result<Backend, String> {
+    // P2.3：MF 无 AV1——直接走 FF 候选链（av1_nvenc/qsv/amf）。
+    if codec == VideoCodec::Av1 {
+        return FfEncoder::open(codec, width, height, fps, bitrate).map(Backend::Ff);
+    }
     match MfH264Encoder::open(codec, width, height, fps, bitrate) {
         Ok(e) => Ok(Backend::Mf(e)),
         Err(mf_err) => match FfEncoder::open(codec, width, height, fps, bitrate) {
@@ -315,6 +319,7 @@ impl H264SessionEncoder {
             // 双份、状态翻倍、重开时序复杂化），超出本轮审计的「小改」范畴，
             // 刻意不做。熔断把最坏情况兜住：encode_gpu 连续 3 次失败即返回
             // [gpu_disabled]，会话内不再尝试 GPU，重开随之收敛为一次。
+            crate::rc::perf::bump(&crate::rc::perf::counters::ENC_REOPEN);
             match open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate()) {
                 Ok(e) => {
                     self.enc = Some(e);
@@ -337,6 +342,14 @@ impl H264SessionEncoder {
     /// SetCodec(hevc) 反复重试。注意这里计的是**整链失败**——open_chain
     /// 已把 MF 和 FF 都试过，两个都败才走到这。
     fn on_open_fail(&mut self, e: String) -> String {
+        if self.codec == VideoCodec::Av1 {
+            // P2.3：AV1 打不开（无 nvenc/qsv/amf）立即回落 H.264，不重试——
+            // 能力是静态的，反复重开只烧 CPU。
+            log::warn!("[RC] AV1 硬编打不开，本会话回落 H.264：{e}");
+            self.codec = VideoCodec::H264;
+            self.reopen_needed = true;
+            return e;
+        }
         if self.codec == VideoCodec::Hevc {
             self.hevc_fail_streak += 1;
             if self.hevc_fail_streak >= 2 {
@@ -387,6 +400,7 @@ impl H264SessionEncoder {
             self.base_bitrate = bitrate_for_width(ew);
         }
         if !self.gpu_mode || self.reopen_needed || size_changed {
+            crate::rc::perf::bump(&crate::rc::perf::counters::ENC_REOPEN);
             match MfH264Encoder::open_gpu(self.codec, device, ctx, ew, eh, self.fps, self.scaled_bitrate())
             {
                 Ok(e) => {

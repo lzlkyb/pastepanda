@@ -99,6 +99,8 @@ export interface RcStatus {
   peer_fps120?: boolean;
   /** 发起端视角：被控端是否支持 HEVC 硬编（Q3 caps）。4K60 档门控用。 */
   peer_hevc?: boolean;
+  /** P2.3：发起端视角——被控端 caps 声明的 AV1 硬编可用性。 */
+  peer_av1?: boolean;
   /** 发起端视角：被控端主屏刷新率（Hz）。0 = 未上报。 */
   peer_refresh_hz?: number;
   /**
@@ -243,7 +245,13 @@ export interface RcIdentity {
 }
 
 export interface RcInviteCreated {
-  code: string;
+    code: string;
+    expires_at: number;
+}
+
+export interface RcExchangeStarted {
+  node_id: string;
+  name: string;
   expires_at: number;
 }
 

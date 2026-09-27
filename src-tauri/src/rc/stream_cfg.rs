@@ -24,6 +24,8 @@ pub(super) enum StreamCodec {
     Auto,
     ForceJpeg,
     Hevc,
+    /// P2.3：AV1（对端 caps 报 av1_hw 才会被 UI 放出；编码端打不开会话内回落）。
+    Av1,
 }
 
 /// 会话中可被发起端改的推流参数。
@@ -72,12 +74,20 @@ pub(super) struct StreamCfg {
     path_rtt_ms: AtomicI64,
     /// 被控端本端丢包率（‰，指数平滑）。0 = 尚未采样（未采样不缩码率）。
     path_loss_permille: AtomicI64,
+    /// P3.2：QUIC 拥塞窗口推算的链路带宽估计（kbps，EMA）。0 = 尚未采样。
+    /// 采样自**发视频的同一连接**的 PathStats.cwnd / rtt——BBR 下 cwnd/rtt
+    /// 就是它的带宽估计，比 RTT 代理指标诚实得多。
+    path_bw_kbps: AtomicI64,
     /// 发起端设置的「码率倍率」（Q5，50–200，100 = 跟随链路）。
     /// 与 RTT/丢包自动缩放相乘：用户调的是天花板，弱网保护仍然有效。
     user_bitrate_pct: AtomicI64,
     /// 时钟偏差（被控端时钟 − 发起端时钟，ms，EMA）。发起端由 pong 回包里的
     /// `hts` 估算；「画面延迟」= 本地时刻 − (帧采集时刻 − 偏差)。0 = 未校准。
     clock_skew_ms: AtomicI64,
+    /// skew 样本过滤用的历史最小 RTT（0 = 尚无样本）。见 [`StreamCfg::note_clock_skew`]。
+    skew_min_rtt_ms: AtomicI64,
+    /// skew 离群剔除的连续拒绝数（重锚判据，见 [`StreamCfg::note_clock_skew`]）。
+    skew_rej_streak: AtomicI64,
     /// 「自动」档状态（2A）：enabled 时推流循环每帧喂字节数，由 [`StreamCfg::auto_note_frame`]
     /// 决定是否换档（换档 = 直接改 `opts.profile`，推流循环下一圈自己比对套用）。
     auto: Mutex<AutoTier>,
@@ -91,6 +101,60 @@ pub fn bitrate_scale_for_rtt(rtt_ms: i64) -> u32 {
         100..=199 => 60,
         200..=399 => 40,
         _ => 25,
+    }
+}
+
+/// NetHint 档位判定（2026-09-27 重做，纯函数，守卫测试见 tests.rs）。
+///
+/// 返回 `(新档位, 是否应发 NetHint)`。档位 0/1/2 粗分链路质量
+/// （≈ RTT <100 / <200 / ≥200），**只在档位变化时才发 NetHint**。
+///
+/// 🔴 为什么不能拿瞬时 RTT 直接判定（旧实现「±40ms 或跨 100/200 就发」）：
+/// 拖动窗口时被控端 CPU 紧张，pong 处理被排队，RTT 出现 300~1200ms 的
+/// **瞬时尖刺**（内网空闲实测 6~17ms）——旧判据几乎每个尖刺都发一次
+/// NetHint，被控端码率缩放就在 25%/40%/60% 之间来回跳，每过一次 15pp
+/// 迟滞就全链重开一次编码器（~1s 停顿，实测把「编码均值」抬到 218ms、
+/// 帧率钉死在 7fps）。EMA 平滑归调用方；本函数只做**档位滞回**：
+/// 升档需越过边界 +40%，降档需低于边界 −20%，边界附近不抖。
+pub(crate) fn rtt_hint_tier(prev: u8, ema_ms: i64) -> (u8, bool) {
+    let next = match prev {
+        0 => {
+            if ema_ms >= 140 {
+                1
+            } else {
+                0
+            }
+        }
+        1 => {
+            if ema_ms >= 280 {
+                2
+            } else if ema_ms < 80 {
+                0
+            } else {
+                1
+            }
+        }
+        _ => {
+            if ema_ms < 160 {
+                1
+            } else {
+                2
+            }
+        }
+    };
+    (next, next != prev)
+}
+
+/// P3.2：带宽估计（kbps）→ 码率缩放百分比。与 RTT/丢包缩取 min——
+/// 三条弱网信号（延迟高 / 丢包多 / 带宽窄）谁更糟听谁的。0 = 未采样不约束。
+/// 分档参考：1080p 基准码率 ~4Mbps，估计值低于它的 1.5 倍就该缩。
+pub fn bitrate_scale_for_bw(kbps: i64) -> u32 {
+    match kbps.max(0) {
+        0 => 100,
+        0..=2_499 => 25,
+        2_500..=5_999 => 50,
+        6_000..=14_999 => 75,
+        _ => 100,
     }
 }
 
@@ -119,8 +183,11 @@ impl StreamCfg {
             peer_rtt_ms: AtomicI64::new(0),
             path_rtt_ms: AtomicI64::new(0),
             path_loss_permille: AtomicI64::new(0),
+            path_bw_kbps: AtomicI64::new(0),
             user_bitrate_pct: AtomicI64::new(100),
             clock_skew_ms: AtomicI64::new(0),
+            skew_min_rtt_ms: AtomicI64::new(0),
+            skew_rej_streak: AtomicI64::new(0),
             auto: Mutex::new(AutoTier::off()),
         }
     }
@@ -148,8 +215,11 @@ impl StreamCfg {
         } else {
             self.path_rtt_ms.load(Ordering::Relaxed)
         };
-        let loss = self.path_loss_permille.load(Ordering::Relaxed).max(0) as u64;
-        let auto = bitrate_scale_for_rtt(rtt).min(bitrate_scale_for_loss(loss));
+        let loss = self.loss_permille_u64();
+        let bw = self.path_bw_kbps.load(Ordering::Relaxed);
+        let auto = bitrate_scale_for_rtt(rtt)
+            .min(bitrate_scale_for_loss(loss))
+            .min(bitrate_scale_for_bw(bw));
         // Q5：用户倍率与之**相乘**（50–200，100 = 不干预）。乘法而非 min：
         // 弱网把 auto 砍到 40% 时，用户 200% 得到 80%——仍受保护但确实变清晰；
         // 若取 min，200% 在弱网下毫无意义。clamp 防退化（两端乘积域 12.5–200）。
@@ -170,7 +240,7 @@ impl StreamCfg {
 
     /// 被控端：QUIC stats 采样器（推流任务）每 500ms 喂一次本端链路状况。
     /// `loss_permille < 0` = 本窗口没有发包，不更新丢包（保留旧值）。
-    pub(super) fn note_stream_health(&self, rtt_ms: i64, loss_permille: i64) {
+    pub(super) fn note_stream_health(&self, rtt_ms: i64, loss_permille: i64, bw_kbps: i64) {
         if rtt_ms > 0 {
             self.path_rtt_ms.store(rtt_ms, Ordering::Relaxed);
         }
@@ -178,10 +248,25 @@ impl StreamCfg {
             self.path_loss_permille
                 .store(loss_permille.min(1000), Ordering::Relaxed);
         }
+        if bw_kbps > 0 {
+            // EMA（α=3/10）：单拍抖动别直接打到码控上
+            let prev = self.path_bw_kbps.load(Ordering::Relaxed);
+            let next = if prev == 0 {
+                bw_kbps
+            } else {
+                (prev * 7 + bw_kbps * 3) / 10
+            };
+            self.path_bw_kbps.store(next, Ordering::Relaxed);
+        }
     }
 
     /// 自动档判定用的当前丢包率（‰）。
-    fn loss_permille(&self) -> u64 {
+    pub(super) fn loss_permille(&self) -> i64 {
+        self.path_loss_permille.load(Ordering::Relaxed).max(0)
+    }
+
+    /// 内部：丢包率（‰，无符号视图，码率缩放用）。
+    fn loss_permille_u64(&self) -> u64 {
         self.path_loss_permille.load(Ordering::Relaxed).max(0) as u64
     }
 
@@ -191,17 +276,48 @@ impl StreamCfg {
     /// 往返 rtt 已知 ⇒ 偏差样本 = `hts − (t1 − rtt/2)`（网络对称假设）。
     /// 单样本带 ±rtt/2 抖动，做 EMA 并剔除离群（网络突刺/排队会让样本瞬间飞）；
     /// 换台对端偏差完全不同，所以会话建立时清零。
+    ///
+    /// 🔴 2026-09-27 重做（内网高 RTT 下「画面延迟」全是假象）：旧门槛
+    ///   `rtt > 300ms 一律不收`在持续高 RTT 的内网里**一个样本都收不进**
+    /// （实测往返 ~560ms ⇒ 全程未校准），而隔离内网没有 NTP，两机时钟差
+    /// 可以漂到秒级——HUD 的「画面龄 2113ms / 网络段 1885ms」主要是这个
+    /// 未校准的时钟差，不是真延迟。改为 **NTP 式 min-RTT 过滤**：
+    /// ① 只信「接近历史最快」的往返样本（排队只往样本里加正偏置，历史
+    ///   最小 RTT 最接近纯传播时间）；
+    /// ② 已建立 EMA 后剔除离群（连续拒绝过多则重锚——初始锚可能歪，
+    ///   隔离内网的时钟也在漂）。
     pub(super) fn note_clock_skew(&self, sample_ms: i64, rtt_ms: i64) {
-        // rtt 本身不稳时样本噪声大：>300ms 的往返先不信（弱网下宁可不校准）
-        if rtt_ms <= 0 || rtt_ms > 300 {
+        if rtt_ms <= 0 {
+            return;
+        }
+        const RTT_WINDOW_MS: i64 = 100;
+        const REJECT_MS: u64 = 150;
+        const REANCHOR_AFTER: i64 = 20;
+        let prev_min = self.skew_min_rtt_ms.load(Ordering::Relaxed);
+        if prev_min == 0 || rtt_ms < prev_min {
+            self.skew_min_rtt_ms.store(rtt_ms, Ordering::Relaxed);
+        }
+        let min = self.skew_min_rtt_ms.load(Ordering::Relaxed);
+        if rtt_ms > min + RTT_WINDOW_MS {
             return;
         }
         let prev = self.clock_skew_ms.load(Ordering::Relaxed);
-        // 离群剔除：EMA 已建立时，偏离超过 100ms 的样本多半是排队/重排，丢掉
-        if prev != 0 && sample_ms.abs_diff(prev) > 100 {
+        if prev != 0 && sample_ms.abs_diff(prev) > REJECT_MS {
+            // 离群。连续拒绝过多说明锚点本身不可信（首锚误差大 / 时钟漂移），
+            // 丢锚重来——否则坏锚永远无法被修正。
+            let streak = self.skew_rej_streak.fetch_add(1, Ordering::Relaxed) + 1;
+            if streak >= REANCHOR_AFTER {
+                self.clock_skew_ms.store(0, Ordering::Relaxed);
+                self.skew_rej_streak.store(0, Ordering::Relaxed);
+            }
             return;
         }
-        let next = if prev == 0 { sample_ms } else { (prev * 7 + sample_ms * 3) / 10 };
+        self.skew_rej_streak.store(0, Ordering::Relaxed);
+        let next = if prev == 0 {
+            sample_ms
+        } else {
+            (prev * 7 + sample_ms * 3) / 10
+        };
         self.clock_skew_ms.store(next, Ordering::Relaxed);
     }
 
@@ -238,7 +354,11 @@ impl StreamCfg {
         // 新会话第一拍采样到来之前不该拿旧值缩码率、判链路好坏。
         self.path_rtt_ms.store(0, Ordering::Relaxed);
         self.path_loss_permille.store(0, Ordering::Relaxed);
+        self.path_bw_kbps.store(0, Ordering::Relaxed);
         self.clock_skew_ms.store(0, Ordering::Relaxed);
+        // skew 过滤状态与会话同生命周期：换台对端 min-RTT 完全不同。
+        self.skew_min_rtt_ms.store(0, Ordering::Relaxed);
+        self.skew_rej_streak.store(0, Ordering::Relaxed);
         let mut a = self.auto.lock().unwrap_or_else(|p| p.into_inner());
         a.enabled = auto;
         a.has_gpu = h264_gpu;
@@ -319,7 +439,7 @@ impl StreamCfg {
             down_bytes,
             rtt_ms: rtt,
             avg_bytes: avg,
-            loss_permille: self.loss_permille(),
+            loss_permille: self.loss_permille().max(0) as u64,
             high_since: a.high_since,
             low_since: a.low_since,
             last_change_ms: a.last_change_ms,
@@ -483,6 +603,7 @@ pub(super) fn codec_from_cfg(cfg: &serde_json::Value) -> StreamCodec {
     {
         "jpeg" => StreamCodec::ForceJpeg,
         "hevc" => StreamCodec::Hevc,
+        "av1" => StreamCodec::Av1,
         _ => StreamCodec::Auto,
     }
 }

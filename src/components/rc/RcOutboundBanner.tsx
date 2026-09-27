@@ -9,6 +9,7 @@ import { runRcAction } from "@/lib/rcFeedback";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import { confirmDialog } from "@/lib/confirm";
+import { formatDuration } from "@/lib/rcSessionStats";
 import type { RcSession } from "@/lib/api/rc";
 import styles from "./RemoteComputer.module.css";
 
@@ -40,11 +41,14 @@ export function RcOutboundBanner({
         variant: "danger",
       });
       if (!ok) return;
+      // 终值收束（审计 2026-09-27）：结束成功的 toast 带上本次时长（end 前取，
+      // 成功后 session 会被收口）；取消申请无「本次时长」可说，维持原文案。
+      const dur = formatDuration(Date.now() - session.started_ms);
       await runRcAction(
         isPending ? onCancel : onEnd,
         isPending
           ? { ok: "已取消远程申请", fail: "取消申请失败" }
-          : { ok: "已结束远程会话", fail: "结束会话失败" },
+          : { ok: `已结束远程会话 · 本次 ${dur} · 已记入记录`, fail: "结束会话失败" },
         toast,
       );
     })();

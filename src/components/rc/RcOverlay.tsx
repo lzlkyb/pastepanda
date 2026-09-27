@@ -8,10 +8,10 @@
  * `RcOutboundBanner` / `RcReconnectBanner` / `RcUnoPassBanner` / `RcPairJoins`，
  * 所有动作经 `runRcAction` 收口——失败也有 toast（规则 15.3，主窗没有错误面板）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useToast } from "@/components/Toast";
 import { useRc } from "@/hooks/useRc";
-import { useRcTrustEnable } from "@/hooks/useRcTrustEnable";
+import { useRcInboundControls } from "@/hooks/useRcInboundControls";
 import { useRcLocalInjectNotice } from "@/hooks/useRcSessionNotices";
 import { runRcAction } from "@/lib/rcFeedback";
 import { RcControlBanner } from "./RcControlBanner";
@@ -22,7 +22,6 @@ import { RcUnoPassBanner } from "./RcUnoPassBanner";
 import { RcPairJoins } from "./RcPairJoins";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源；显示名收口见 rcDisplayName
-import { rcSetAudioLocalMute, rcHostMuteSet } from "@/lib/api/rc";
 import { capabilityLabel } from "@/lib/rcRequest";
 import { summonMainWindow } from "@/lib/rcWindow";
 
@@ -30,8 +29,16 @@ export function RcOverlay() {
   const { toast } = useToast();
   // 始终轮询：配对敲门可能在未开「允许被远程」时到达；轮询本身受窗口可见性门控
   const rc = useRc(true);
-  /** D2：放权动作（含二次确认）——见 useRcTrustEnable 顶部说明。 */
-  const enableTrust = useRcTrustEnable(rc, toast);
+  // G3/G3-C/D2/结束：被控止血动作收口在 useRcInboundControls（工作台 inbound
+  // 视图挂同一份 RcControlBanner，动作逻辑不得两处各写各的——规则 11.1）。
+  const {
+    audioLocalMute,
+    toggleAudioLocalMute,
+    spkMutedByPeer,
+    restoreSpk,
+    enableTrust,
+    endSession,
+  } = useRcInboundControls(rc);
   const seenPending = useRef(new Set<string>());
 
   /**
@@ -54,43 +61,6 @@ export function RcOverlay() {
   // 只在 inbound_active 时监听：同一事件在发起端机器上装的是「对端转发」语义，
   // 常驻监听会给控制端用户弹出一条主语错误（「本机」）的提示。
   useRcLocalInjectNotice(toast, inboundActive);
-
-  /**
-   * G3：被控者本机静音。status 在会话中是 2s 一拍（IDLE/ACTIVE 周期），纯 status
-   * 驱动会让按钮点下去两秒才动——所以本地先落乐观值，status 到达后再校正。
-   * 后端已生效，校正值与乐观值一致，不会闪。
-   */
-  const [audioLocalMute, setAudioLocalMute] = useState(false);
-  useEffect(() => {
-    setAudioLocalMute(rc.status?.audio_local_mute ?? false);
-  }, [rc.status?.audio_local_mute]);
-  const toggleAudioLocalMute = useCallback(() => {
-    const next = !audioLocalMute;
-    setAudioLocalMute(next);
-    // 失败（例如后端拒绝）必须回滚，否则按钮停在一个假状态上。
-    // B3：函数式更新 + 先比对——连点两下时先发的失败回滚不得覆盖后一次的乐观值。
-    void rcSetAudioLocalMute(next).catch(() =>
-      setAudioLocalMute((cur) => (cur === next ? !next : cur)),
-    );
-  }, [audioLocalMute]);
-
-  /**
-   * G3-C：对端远程静音了本机扬声器。同款乐观 + 校正——点「恢复外放」后提示
-   * 要立刻收，两秒后才变会让人觉得没点上；失败再把它摆回来。
-   */
-  const [spkByPeer, setSpkByPeer] = useState(false);
-  useEffect(() => {
-    setSpkByPeer(rc.status?.spk_muted_by_peer ?? false);
-  }, [rc.status?.spk_muted_by_peer]);
-  const restoreSpk = useCallback(() => {
-    setSpkByPeer(false);
-    void rcHostMuteSet(false)
-      .then(() => toast("已恢复本机扬声器外放", "success"))
-      .catch((e) => {
-        setSpkByPeer(true);
-        toast(`恢复失败：${e}`, "error");
-      });
-  }, [toast]);
 
   // 窗口可能 hide：有新申请时 toast + 拉起窗口，避免 120s 超时前用户毫无感知
   useEffect(() => {
@@ -184,18 +154,12 @@ export function RcOverlay() {
           onDismissStreamNotice={rc.clearStreamNotice}
           audioLocalMute={audioLocalMute}
           onToggleAudioLocalMute={toggleAudioLocalMute}
-          spkMutedByPeer={spkByPeer}
+          spkMutedByPeer={spkMutedByPeer}
           onRestoreSpk={restoreSpk}
           quality={rc.status?.quality}
           activeQuality={rc.status?.active_quality}
           captureScope={rc.status?.capture_scope}
-          onEnd={() => {
-            void runRcAction(
-              () => rc.end(),
-              { ok: "已结束远程会话", fail: "结束会话失败" },
-              toast,
-            );
-          }}
+          onEnd={endSession}
         />
       )}
       {outboundLive && session && (

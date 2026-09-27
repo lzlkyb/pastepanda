@@ -49,10 +49,14 @@ function renderCard(a: RcFileAsk, onRespond = vi.fn(async () => true)) {
 
 afterEach(() => {
   cleanup();
-  mocks.open.mockClear();
-  mocks.defaultDir.mockClear();
-  mocks.setAuto.mockClear();
+  // mockReset（而非 mockClear）：实现也要清——上一个用例的 mockRejectedValue
+  // 会泄漏到下一个，receiveDir 拿到 null 就走弹框退路，断言全错位。
+  mocks.open.mockReset();
+  mocks.defaultDir.mockReset();
+  mocks.setAuto.mockReset();
   mocks.open.mockImplementation(async (): Promise<string | null> => "D:/picked-by-user");
+  mocks.defaultDir.mockImplementation(async () => "D:/Downloads/PastePanda 接收");
+  mocks.setAuto.mockImplementation(async () => undefined);
 });
 
 describe("勾选框的可见性", () => {
@@ -72,41 +76,45 @@ describe("勾选框的可见性", () => {
 });
 
 describe("接受路径", () => {
-  it("不勾选 = 老行为：弹系统选择框，用用户选的目录回应，**不写**设备记忆", async () => {
+  // 🔴 2026-09-27 重做（用户拍板）：push 主路径「接受」直接落接收目录，
+  // 不再弹系统选择框；「其他位置」降为次级小钮。
+  it("接受 = 直接落接收目录回应，不弹选择框，不勾选就不写设备记忆", async () => {
     const onRespond = renderCard(ask());
-    await act(async () => {
-      fireEvent.click(screen.getByText("选择保存位置"));
-    });
-    expect(mocks.open).toHaveBeenCalledTimes(1);
-    expect(onRespond).toHaveBeenCalledWith("a1", "D:/picked-by-user");
-    expect(mocks.setAuto).not.toHaveBeenCalled();
-    // 选择框的**初始位置**仍取自默认目录（这是老行为，别被新分支带坏）：
-    // 注意它此时只是「建议起点」，用户没选就不作数。
-    expect(mocks.open).toHaveBeenCalledWith(
-      expect.objectContaining({ directory: true, defaultPath: "D:/Downloads/PastePanda 接收" }),
-    );
-    // 没勾 → 不该去写设备记忆
-    expect(mocks.setAuto).not.toHaveBeenCalled();
-  });
-
-  it("勾选后按钮变成「接受」：直接用默认目录回应，并写入设备记忆", async () => {
-    const onRespond = renderCard(ask());
-    fireEvent.click(screen.getByLabelText(AUTO_LABEL));
-    // 勾上之后不该再写「选择保存位置」——那是在骗人（不会弹框）
-    expect(screen.queryByText("选择保存位置")).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByText("接受"));
     });
     expect(mocks.open).not.toHaveBeenCalled();
-    expect(mocks.defaultDir).toHaveBeenCalledTimes(1);
+    expect(onRespond).toHaveBeenCalledWith("a1", "D:/Downloads/PastePanda 接收");
+    expect(mocks.setAuto).not.toHaveBeenCalled();
+  });
+
+  it("勾选后接受：落同一个接收目录，并写入设备记忆", async () => {
+    const onRespond = renderCard(ask());
+    fireEvent.click(screen.getByLabelText(AUTO_LABEL));
+    await act(async () => {
+      fireEvent.click(screen.getByText("接受"));
+    });
+    expect(mocks.open).not.toHaveBeenCalled();
     expect(onRespond).toHaveBeenCalledWith("a1", "D:/Downloads/PastePanda 接收");
     expect(mocks.setAuto).toHaveBeenCalledWith("peerA", true);
   });
 
-  it("拿不到默认目录时退回让用户挑，而不是「点了接受什么也没发生」", async () => {
-    mocks.defaultDir.mockRejectedValueOnce(new Error("没有下载目录"));
+  it("「其他位置」= 弹系统选择框，用用户选的目录回应（这次的落点由用户定）", async () => {
     const onRespond = renderCard(ask());
-    fireEvent.click(screen.getByLabelText(AUTO_LABEL));
+    await act(async () => {
+      fireEvent.click(screen.getByText("其他位置"));
+    });
+    expect(mocks.open).toHaveBeenCalledTimes(1);
+    // 选择框的初始位置仍取自接收目录——只是「建议起点」，用户没选就不作数
+    expect(mocks.open).toHaveBeenCalledWith(
+      expect.objectContaining({ directory: true, defaultPath: "D:/Downloads/PastePanda 接收" }),
+    );
+    expect(onRespond).toHaveBeenCalledWith("a1", "D:/picked-by-user");
+  });
+
+  it("拿不到接收目录时退回弹框让用户挑，而不是「点了接受什么也没发生」", async () => {
+    mocks.defaultDir.mockRejectedValue(new Error("没有下载目录"));
+    const onRespond = renderCard(ask());
     await act(async () => {
       fireEvent.click(screen.getByText("接受"));
     });
@@ -126,11 +134,11 @@ describe("接受路径", () => {
     expect(screen.getByText(/「自动接收」没存上/)).toBeTruthy();
   });
 
-  it("取消系统选择框 = 不回应（让请求走 60s 超时，不替用户回一个他没选过的路径）", async () => {
+  it("取消系统选择框（其他位置）= 不回应（让请求走 60s 超时，不替用户回一个他没选过的路径）", async () => {
     mocks.open.mockImplementationOnce(async () => null);
     const onRespond = renderCard(ask());
     await act(async () => {
-      fireEvent.click(screen.getByText("选择保存位置"));
+      fireEvent.click(screen.getByText("其他位置"));
     });
     expect(onRespond).not.toHaveBeenCalled();
     expect(mocks.setAuto).not.toHaveBeenCalled();

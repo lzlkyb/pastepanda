@@ -8,6 +8,7 @@
  * 菜单里回到常驻，菜单仍保留选档）。
  * 改名草稿态仍在工作台层（`useRcDeviceUi`，规则 15.2），本组件只渲染与转发。
  */
+import { useState } from "react";
 import { Activity, Check, Eye, FileUp, Monitor, Pencil, Shield, X } from "lucide-react";
 import type { RcCapability, RcTargetDevice } from "@/lib/api/rc";
 import { rcCheckTime, rcDeviceStatus } from "@/lib/utils";
@@ -55,6 +56,12 @@ export function RcA2DeviceHero({
   onConnect: (id: string, capability: RcCapability) => void;
   onSendFiles: (id: string) => void;
 }) {
+  // 审计 P2（2026-09-27）：这颗 ？ 原先只有 title 没有 onClick——button 语义许诺了
+  // 交互却不兑现（键盘 Tab 到它按 Enter 毫无反馈）。现在点击就地展开同一段解释，
+  // 悬停（title）与点击（aria-expanded 提示）两条路都能拿到答案。
+  const [showStatusHint, setShowStatusHint] = useState(false);
+  const statusHint =
+    "状态来自本机最近一次连接检查，点侧栏「重新检查」可立即刷新。";
   return (
     <header className={styles.detailHead}>
       <span className={styles.heroSlogan} aria-hidden="true">
@@ -108,11 +115,18 @@ export function RcA2DeviceHero({
             type="button"
             className={styles.heroHelp}
             aria-label="这个状态是什么意思"
-            title="状态来自本机最近一次连接检查，点侧栏「重新检查」可立即刷新"
+            aria-expanded={showStatusHint}
+            title={statusHint}
+            onClick={() => setShowStatusHint((v) => !v)}
           >
             ?
           </button>
         </p>
+        {showStatusHint && (
+          <p className={styles.heroHelpHint} role="note">
+            {statusHint}
+          </p>
+        )}
         {/* hero 胶囊行（稿 `.hero-chips`）：OS 与 RTT 都是「采不到就整段不出」，不编占位。 */}
         <div className={styles.heroChips}>
           {/* U8 后状态行文案是「局域网在线」，pill 判据按 presence 判，

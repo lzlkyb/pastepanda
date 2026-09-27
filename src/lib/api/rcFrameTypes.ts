@@ -19,13 +19,13 @@ export interface RcFramePayload {
   width: number;
   height: number;
   rect: RcFrameRect | null;
-  codec: "jpeg" | "h264" | "hevc";
+  codec: "jpeg" | "h264" | "hevc" | "av1";
   key: boolean;
 }
 
 /** 旧 JSON 轮询路径的帧已废弃，新路径：批量原始二进制（无 base64 / JSON 开销）。 */
 export interface RcBinFrame {
-  codec: "jpeg" | "h264" | "hevc";
+  codec: "jpeg" | "h264" | "hevc" | "av1";
   key: boolean;
   full: boolean;
   at_ms: number;
@@ -120,6 +120,8 @@ export type RcCaptureScope = "virtual" | "primary" | `monitor:${number}`;
 export interface RcEncodeCaps {
   h264_gpu: boolean;
   hevc_hw: boolean;
+  /** P2.3：对端 AV1 硬编可用（旧对端没有这个字段 → false）。 */
+  av1_hw: boolean;
   refresh_hz: number;
   monitors: number;
 }

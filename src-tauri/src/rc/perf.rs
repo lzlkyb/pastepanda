@@ -404,16 +404,20 @@ pub mod counters {
     /// `log::debug!`，而 debug 在默认过滤下看不到 ⇒ 「拖动窗口时画面偶尔
     /// 跳一下」这类现场在 `[RC-PERF]` 汇总里是隐形的，只能靠猜。
     pub static DGRAM_DROP: AtomicU64 = AtomicU64::new(0);
+    /// 编码器全链重开次数（码率缩放 / fps / 标准变化触发）。重开一次几百 ms
+    /// 且计入该帧 enc_ms——「编码慢」与「重开频繁」是两种病，汇总行必须能拆开。
+    pub static ENC_REOPEN: AtomicU64 = AtomicU64::new(0);
 
     /// 一次性读出全部计数（供日志行）。
     pub fn snapshot() -> String {
         format!(
-            "熔断 {} 流变化 {} JPEG兜底 {} 抓屏失败 {} 数据报丢弃 {}",
+            "熔断 {} 流变化 {} JPEG兜底 {} 抓屏失败 {} 数据报丢弃 {} 编码重开 {}",
             ENC_FUSE.load(Ordering::Relaxed),
             STREAM_CHANGE.load(Ordering::Relaxed),
             JPEG_FALLBACK.load(Ordering::Relaxed),
             CAPTURE_FAIL.load(Ordering::Relaxed),
             DGRAM_DROP.load(Ordering::Relaxed),
+            ENC_REOPEN.load(Ordering::Relaxed),
         )
     }
 }

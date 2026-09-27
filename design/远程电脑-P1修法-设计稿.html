@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>远程电脑 · P1 修法设计稿</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   甲 · 稿纸层（设计稿自身的排版，不属于产品样式）
+   ══════════════════════════════════════════════════════════════════════ */
+:root{
+  /* 暗色主题令牌（复刻 src/styles/theme.css:500-598，供下方逐字复制的产品规则取用） */
+  --text-primary:#e4e4e7; --text-secondary:#afafb7; --border-color:#27272a;
+  --accent:#818cf8; --accent-solid:#666fc4; --text-on-accent:#fff;
+  --green:#4ade80; --orange:#fb923c; --danger:#f87171;
+  --glass-popover-shadow:0 12px 40px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.25);
+  --float-card-shadow:0 0 0 1px rgba(255,255,255,.08), 0 8px 28px rgba(0,0,0,.45);
+  /* 稿纸 */
+  --paper:#090c11; --card:#10141c; --card2:#0c1016; --line:rgba(255,255,255,.09);
+  --ink:#dfe4ec; --ink2:#98a2b3; --ink3:#697180; --accent-ink:#8ba4ff;
+  --ok:#4ade80; --bad:#f87171; --warn:#f5b06a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:"SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:13px;line-height:1.62;background:var(--paper);color:var(--ink);
+  padding:30px 26px 72px;-webkit-font-smoothing:antialiased;
+}
+.page{max-width:1180px;margin:0 auto}
+
+/* —— 页头 —— */
+.docHead{border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:8px}
+.docHead .kicker{font-size:11px;letter-spacing:.14em;color:var(--accent-ink);text-transform:uppercase}
+.docHead h1{font-size:23px;font-weight:650;letter-spacing:-.2px;margin:6px 0 8px}
+.docHead .meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--ink3)}
+.docHead .meta b{color:var(--ink2);font-weight:500}
+.docHead .lead{margin-top:12px;font-size:13px;color:var(--ink2);max-width:900px}
+.docHead .lead em{color:var(--accent-ink);font-style:normal}
+
+/* —— 分区 —— */
+section{margin-top:38px}
+.secHead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.secHead .no{font-size:11px;font-weight:700;color:#0b0e14;background:var(--accent-ink);
+  border-radius:5px;padding:1px 7px;letter-spacing:.04em}
+.secHead h2{font-size:17px;font-weight:640;letter-spacing:-.1px}
+.secHead .src{font-size:11.5px;color:var(--ink3);font-family:"Cascadia Mono",Consolas,monospace}
+.secHint{font-size:12.5px;color:var(--ink3);margin-bottom:16px}
+
+/* —— 通用卡片 / 网格 —— */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:960px){.grid2,.grid3{grid-template-columns:1fr}}
+
+.pane{background:var(--card2);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.paneHead{display:flex;align-items:center;gap:9px;padding:9px 14px;
+  border-bottom:1px solid var(--line);font-size:12.5px;font-weight:600;flex-wrap:wrap}
+.paneBody{padding:14px}
+.paneNote{padding:0 14px 14px;font-size:11.5px;color:var(--ink3);line-height:1.6}
+.paneBody .paneNote{padding:10px 0 0}
+
+.tag{font-size:10.5px;font-weight:700;border-radius:5px;padding:1.5px 6px;letter-spacing:.03em;flex-shrink:0}
+.tag.bad{background:rgba(248,113,113,.15);color:#fca5a5;border:1px solid rgba(248,113,113,.34)}
+.tag.good{background:rgba(74,222,128,.13);color:#86efac;border:1px solid rgba(74,222,128,.32)}
+.tag.info{background:rgba(139,164,255,.13);color:#a9bcff;border:1px solid rgba(139,164,255,.3)}
+
+/* —— 表格 —— */
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.07);vertical-align:top}
+th{font-size:11px;font-weight:600;color:var(--ink3);letter-spacing:.04em;background:rgba(255,255,255,.03)}
+td.num{font-family:"Cascadia Mono",Consolas,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.022)}
+code,.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:11.5px}
+code{background:rgba(139,164,255,.1);color:#bcc9ff;border-radius:4px;padding:1px 5px}
+td code{background:none;padding:0;color:#b3c0ee}
+.pass{color:var(--ok);font-weight:600}
+.fail{color:var(--bad);font-weight:600}
+
+/* —— 强调块 —— */
+.callout{border:1px solid rgba(245,176,106,.32);background:rgba(245,176,106,.08);
+  border-left:3px solid var(--warn);border-radius:9px;padding:12px 15px;margin:14px 0;font-size:12.5px}
+.callout.crit{border-color:rgba(248,113,113,.34);background:rgba(248,113,113,.08);border-left-color:var(--bad)}
+.callout.ok{border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.07);border-left-color:var(--ok)}
+.callout b{color:#fff;font-weight:640}
+.callout .mono{background:rgba(255,255,255,.07);color:#e6ebf5;padding:1px 5px;border-radius:4px}
+
+/* —— 模拟远端画面 —— */
+.screen{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.screen.dark{background:linear-gradient(160deg,#0d1117 0%,#0a0d12 52%,#0e1420 100%)}
+.screen.light{background:#fff}
+.fakeTerm{padding:7px 12px;font-family:"Cascadia Mono",Consolas,monospace;font-size:10.5px;line-height:1.85;color:#5f6b7d}
+.fakeTerm b{color:#8fd6a5;font-weight:500}
+.fakeTerm i{color:#7d8ea8;font-style:normal}
+.fakeDoc{padding:7px 13px;font-size:10.5px;line-height:1.9;color:#9aa3b0}
+.fakeDoc b{color:#4a5568;font-weight:600}
+.sceneCap{position:absolute;right:8px;bottom:6px;font-size:10px;letter-spacing:.03em;
+  color:rgba(255,255,255,.28);font-family:"Cascadia Mono",Consolas,monospace}
+.screen.light .sceneCap{color:rgba(0,0,0,.25)}
+
+/* —— 放大窗（3× 观察局部）—— */
+.zoomWrap{margin-top:12px}
+.zoomLabel{font-size:11px;color:var(--ink3);margin-bottom:6px;letter-spacing:.03em}
+.zoomWin{position:relative;height:112px;overflow:hidden;border-radius:10px;
+  background:linear-gradient(160deg,#0d1117 0%,#0a0d12 52%,#0e1420 100%);border:1px solid var(--line)}
+.zoomInner{position:absolute;top:0;left:0;transform:scale(3) translateY(-12px);transform-origin:0 0}
+/* 放大窗里 .zoomInner 是 shrink-to-fit 宽度，会让 .capCapsule 的
+   max-width:calc(100% - 24px) 把玻璃底压得比内容窄。此处只解除这一条限制，
+   其余尺寸/颜色声明逐字保留。 */
+.zoomWin .capCapsule{max-width:none}
+
+/* —— 流程链 —— */
+.chain{display:flex;flex-direction:column;gap:0;font-size:12px}
+.node{border:1px solid var(--line);border-radius:9px;padding:8px 12px;background:rgba(255,255,255,.022)}
+.node .t{font-weight:600;font-size:12.5px}
+.node .d{color:var(--ink3);font-size:11.5px;margin-top:1px}
+.node.bad{border-color:rgba(248,113,113,.34);background:rgba(248,113,113,.07)}
+.node.good{border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.06)}
+.node.key{border-color:rgba(139,164,255,.32);background:rgba(139,164,255,.07)}
+.arrow{display:flex;align-items:center;gap:7px;color:var(--ink3);font-size:11px;padding:5px 0 5px 12px}
+.arrow::before{content:"↓";font-size:13px;color:var(--ink3)}
+
+/* —— 读屏播报模拟 —— */
+.srbox{background:#05070b;border:1px solid var(--line);border-radius:9px;padding:11px 14px;overflow-x:auto;
+  font-family:"Cascadia Mono",Consolas,monospace;font-size:11.5px;line-height:1.95;color:#93a0b5;white-space:pre}
+.srbox .who{color:#6d7789}
+.srbox .say{color:#e0e6f0}
+.srbox .no{color:#f58585}
+.srbox .yes{color:#7ddba2}
+
+/* —— 代码块 —— */
+pre{background:#05070b;border:1px solid var(--line);border-radius:9px;padding:12px 14px;overflow-x:auto;
+  font-family:"Cascadia Mono",Consolas,monospace;font-size:11.5px;line-height:1.72;color:#c3cddd}
+pre .del{color:#f09595}
+pre .add{color:#86e0a4}
+pre .cmt{color:#5d6879}
+pre .key{color:#9db8ff}
+
+.docFoot{margin-top:46px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink3)}
+
+/* ══════════════════════════════════════════════════════════════════════
+   乙 · 组件层 —— 逐字复制自 src/components/rc/RemoteComputer.module.css
+   （来源行号见注释；类名与原文件一致，便于与源码对读）
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* :193 .live */
+.live{width:8px;height:8px;border-radius:50%;background:var(--green,#2f9e5f);flex-shrink:0}
+/* :1228 .capCapsule */
+.capCapsule{pointer-events:auto;margin-top:12px;display:flex;align-items:center;gap:8px;height:34px;
+  padding:0 8px 0 12px;background:rgba(13,16,22,.82);backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.09);border-radius:999px;font-size:12px;
+  color:rgba(232,236,242,.95);box-shadow:var(--float-card-shadow,var(--glass-popover-shadow));
+  white-space:nowrap;max-width:calc(100% - 24px)}
+/* :1249 .capWho */
+.capWho{font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+/* :1299 .qualityChip + :1313 .qualityDot */
+.qualityChip{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;font-size:11px;padding:2px 8px;
+  border-radius:999px;background:rgba(148,163,184,.12);color:rgba(220,227,238,.9);
+  border:1px solid rgba(255,255,255,.08);font-variant-numeric:tabular-nums;cursor:pointer}
+.qualityDot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:#4ade80}
+/* :1270 .capPillOn / :1277 .capPillView */
+.capPillOn{font-size:11px;padding:2px 8px;border-radius:999px;flex-shrink:0;display:inline-flex;
+  align-items:center;gap:4px;background:rgba(52,199,123,.16);color:#4ade80;border:1px solid rgba(52,199,123,.35)}
+.capPillView{font-size:11px;padding:2px 8px;border-radius:999px;flex-shrink:0;display:inline-flex;
+  align-items:center;gap:4px;background:rgba(147,160,180,.16);color:rgba(147,160,180,.95);border:1px solid rgba(147,160,180,.3)}
+/* :1351 .capKbOff */
+.capKbOff{font-size:11px;color:rgba(147,160,180,.85);flex-shrink:0}
+/* :1357 .capSep */
+.capSep{width:1px;height:16px;background:rgba(255,255,255,.12);flex-shrink:0}
+/* :1577 .menuBtn（浮条内翻色见 :1437） */
+.menuBtn{font:inherit;font-size:11px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;height:24px;
+  border-radius:7px;border:none;background:transparent;color:var(--text-secondary,#495565);cursor:pointer}
+.capCapsule .menuBtn{color:rgba(232,236,242,.9)}
+.capCapsule .menuCur{color:#fff}
+/* :1365 .capBtn */
+.capBtn{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:8px;border:none;
+  background:transparent;color:rgba(232,236,242,.9);font-size:12px;cursor:pointer;flex-shrink:0;pointer-events:auto}
+.capBtn:hover:not(:disabled){background:rgba(255,255,255,.1);color:#fff}
+.capBtn:disabled{opacity:.45;cursor:not-allowed}
+/* :1391 .capBtnOn */
+.capBtnOn{background:rgba(107,147,255,.28)!important;color:#fff!important}
+/* :1403 .capBtnDanger */
+.capBtnDanger{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:8px;border:none;
+  background:transparent;font-size:12px;cursor:pointer;flex-shrink:0;pointer-events:auto;color:#f09595}
+.capBtnDanger:hover:not(:disabled){background:rgba(214,69,69,.22);color:#fff}
+/* :1404 .capFit —— 现状：只声明了 flex，没有任何 button 子规则，全仓也没有全局 button 重置 */
+.capFit{display:inline-flex;gap:4px}
+/* :1194 .capZone */
+.capZone{position:absolute;top:34px;left:0;right:0;z-index:5;display:flex;flex-direction:column;
+  align-items:center;pointer-events:none}
+/* 演示用舞台：给 .capZone 一个定位父级 */
+.stage{position:relative;height:104px}
+
+/* ---- HUD 面板（§2 用）---- */
+/* :467 .hudPanel */
+.hudPanel{pointer-events:auto;display:flex;flex-direction:column;gap:5px;max-width:100%;padding:9px 11px;
+  border-radius:10px;background:rgba(9,17,28,.86);backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.1);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+/* :484 .hudPanelHead —— 现状 α .62 */
+.hudPanelHead{font-size:10px;font-weight:650;letter-spacing:.3px;color:rgba(200,208,220,.62)}
+/* :509 .hudRow */
+.hudRow{display:flex;align-items:baseline;gap:8px;font-size:10px;line-height:1.55}
+/* :516 .hudRowLabel —— 现状 α .45 */
+.hudRowLabel{flex:0 0 auto;min-width:3.5em;color:rgba(200,208,220,.45)}
+/* :522 .hudRowVal */
+.hudRowVal{flex:0 0 auto;font-variant-numeric:tabular-nums;color:rgba(220,227,238,.92)}
+/* :527 .hudRowHint —— 现状 α .38 */
+.hudRowHint{color:rgba(200,208,220,.38)}
+/* :1020/:1024/:1030/:1034 状态色（实色，实测全部达标） */
+.hudOk{color:#7dcea0!important}
+.hudWarn{color:#e8b87a!important}
+.hudBad{color:#f08c8c!important}
+.hudAccent{color:#9db8ff!important}
+/* :533 .hudTrend 系列 */
+.hudTrend{border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:6px 8px 4px;background:rgba(255,255,255,.03)}
+.hudTrendHead{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:rgba(200,208,220,.5);
+  font-variant-numeric:tabular-nums}
+.hudTrendSvg{display:block;width:100%;height:44px;margin-top:2px}
+.hudTrendLine{fill:none;stroke:#35d0ff;stroke-width:1.5}
+
+/* ---- 修法后的值（方案 A：只改 α，其余逐字同上）---- */
+.hudPanelHead.fix{color:rgba(200,208,220,.72)}
+.hudRowLabel.fix{color:rgba(200,208,220,.72)}
+.hudRowHint.fix{color:rgba(200,208,220,.68)}
+.hudTrendHead.fix{color:rgba(200,208,220,.72)}
+/* 方案 B 备用值（面板底 .93 + 文字单值 .60） */
+.hudPanel.altB{background:rgba(9,17,28,.93)}
+.hudPanel.altB .hudPanelHead,.hudPanel.altB .hudRowLabel,
+.hudPanel.altB .hudRowHint,.hudPanel.altB .hudTrendHead{color:rgba(200,208,220,.6)}
+/* 方案 C 备用值（面板不透明 + 文字单值 .58） */
+.hudPanel.altC{background:rgba(9,17,28,1)}
+.hudPanel.altC .hudPanelHead,.hudPanel.altC .hudRowLabel,
+.hudPanel.altC .hudRowHint,.hudPanel.altC .hudTrendHead{color:rgba(200,208,220,.58)}
+/* §1 说明用：模拟「选中档 + 悬停」在去掉 !important 后的退化底色 */
+.capBtnOnHoverDemo{background:rgba(255,255,255,.1);color:#fff}
+
+/* ---- A2 侧栏角标 / 无障碍工具（§4 用）---- */
+.toolBadge{min-width:16px;height:16px;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:8px;background:var(--accent-solid);color:var(--text-on-accent);font-size:11px;font-weight:700}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+
+/* 稿纸内部小工具 */
+.flex{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mt{margin-top:12px}
+.mt0{margin-top:0}
+.panelCol{display:flex;flex-direction:column;gap:7px}
+.panelLab{font-size:11px;color:var(--ink3);letter-spacing:.03em}
+.badgeRow{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.badge{font-size:10.5px;font-family:"Cascadia Mono",Consolas,monospace;padding:1.5px 6px;border-radius:5px;
+  border:1px solid transparent;font-variant-numeric:tabular-nums}
+.badge.ok{background:rgba(74,222,128,.12);color:#86efac;border-color:rgba(74,222,128,.3)}
+.badge.no{background:rgba(248,113,113,.13);color:#fca5a5;border-color:rgba(248,113,113,.32)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--ink3);margin:6px 0 14px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+.zoomCol{flex:1 1 420px;min-width:0}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ══════════ 页头 ══════════ -->
+<div class="docHead">
+  <div class="kicker">Design Review · 2026-09-27</div>
+  <h1>远程电脑 · 四个 P1 的修法形态</h1>
+  <div class="meta">
+    <span><b>来源</b> <span class="mono">docs/远程电脑-技术审计-2026-09-27.md</span></span>
+    <span><b>基线</b> 14/20 Good（Theming 2 分是主因）</span>
+    <span><b>范围</b> P1-1 / P1-2 / P1-3 / P1-4</span>
+    <span><b>状态</b> 已按本稿实施（2026-09-27）；验收证据见 `docs/远程电脑-技术审计-2026-09-27.md` §6「已落地」</span>
+  </div>
+  <p class="lead">
+    只画四个 P1 的<em>修法形态</em>，不动 P2/P3。控件外观与数值逐字复制自
+    <span class="mono">RemoteComputer.module.css</span>（真实类名、真实数值），背景模拟远端画面，
+    放大窗放大 3× 观察局部。所有对比度按 WCAG 公式对<em>合成后</em>的颜色实算 ——
+    页末会看到一处对审计报告本身的修正：报告里给出的行提示值仍然不达标。
+  </p>
+</div>
+
+<!-- ══════════ §0 总览 ══════════ -->
+<section>
+  <div class="secHead"><span class="no">§0</span><h2>四个 P1 一览</h2></div>
+  <p class="secHint">索引而已，细节在下面各节。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:62px">编号</th><th style="width:230px">问题</th><th>修法</th><th style="width:190px">改动面</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono">P1-1</td>
+          <td>浮条「适应 / 1:1 / 填充」三键无任何样式</td>
+          <td>三键统一挂 <code>.capBtn</code>，当前档再叠 <code>.capBtnOn</code>（对应 <code>RcSessionCapsule.tsx:209</code> 的 <code>undefined</code> 分支）；<code>.capBtnOn</code> 的去 <code>!important</code> 配套改 hover 规则</td>
+          <td>1 个表达式 + 1 条 hover 规则 + 1 条守卫单测</td>
+        </tr>
+        <tr>
+          <td class="mono">P1-2</td>
+          <td>rc 三个弹层不接 <code>useDialogEscape</code>；主窗里按 Esc 会关掉整个设置页，配对码丢失</td>
+          <td>三处各加 <code>useDialogEscape(onClose)</code>；补两侧对账守卫单测</td>
+          <td>3 个 tsx，各 2 行</td>
+        </tr>
+        <tr>
+          <td class="mono">P1-3</td>
+          <td>4 处 <code>aria-label</code> 挂在无 <code>role</code> 容器上，名称被读屏丢弃</td>
+          <td><code>role="group"</code> × 2、<code>role="region"</code> × 1；传输角标改视觉隐藏文字</td>
+          <td>4 个 tsx，各 1–3 行</td>
+        </tr>
+        <tr>
+          <td class="mono">P1-4</td>
+          <td>「连接详情」面板 10px 灰字对比度 2.51–3.3:1</td>
+          <td>提文字 α（方案 A）。<b class="fail">审计里「行提示提到 ≈.6」不达标</b> —— 白底只有 4.04:1，须 ≥.66，取 .68</td>
+          <td>4 条颜色声明 + 1 条对比度守卫</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════ §1 P1-1 ══════════ -->
+<section>
+  <div class="secHead">
+    <span class="no">§1</span><h2>P1-1 · 浮条三键补样式</h2>
+    <span class="src">RcSessionCapsule.tsx:203-216 ↔ RemoteComputer.module.css:1404</span>
+  </div>
+  <p class="secHint">
+    上下两条浮条是同一段 JSX 的两种 className 写法，整条按真实结构摆（身份灯 / 质量芯片 / 可控药丸 / 键盘提示 / 画质下拉 / 下一屏 / 三键 / 全屏 / 详情 / 更多 / 结束），
+    差别只落在三键那一处。浮条内容较宽，所以按整行排布，不缩放。
+  </p>
+
+  <!-- 现状 -->
+  <div class="pane">
+    <div class="paneHead">
+      <span class="tag bad">现状</span>
+      <span class="mono" style="color:#c3cddd">className={fit === k ? styles.capBtnOn : undefined}</span>
+      <span style="color:var(--ink3);font-weight:400">非当前档拿到 undefined ⇒ 无任何类</span>
+    </div>
+    <div class="paneBody">
+      <div class="screen dark stage">
+        <div class="fakeTerm">
+          <i>PS D:\work&gt;</i> npm run test<br />
+          <b>✓ 1799 passed</b> <i>(2.4s)</i>
+        </div>
+        <div class="capZone"><div class="capCapsule">
+          <span class="live"></span>
+          <span class="capWho">DESKTOP-7F3K</span>
+          <span class="qualityChip"><span class="qualityDot"></span>38ms · 30fps</span>
+          <span class="capPillOn">可控</span>
+          <span class="capKbOff">点画面可捕获键盘</span>
+          <span class="capSep"></span>
+          <span class="menuBtn">画质 <span class="menuCur">均衡</span></span>
+          <span class="capSep"></span>
+          <button type="button" class="capBtn">下一屏</button>
+          <span class="capSep"></span>
+          <!-- ⚠️ 现状：非当前档 className = undefined；当前档只有 capBtnOn -->
+          <span class="capFit">
+            <button type="button" title="缩放画面适配窗口">适应</button>
+            <button type="button" class="capBtnOn" title="按原始像素显示（1:1，可拖动平移）">1:1</button>
+            <button type="button" title="填满窗口（可能裁切边缘）">填充</button>
+          </span>
+          <button type="button" class="capBtn" title="全屏显示远程画面"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+          <span class="capSep"></span>
+          <button type="button" class="capBtn" title="连接详情"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button>
+          <button type="button" class="capBtn" title="更多"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          <button type="button" class="capBtnDanger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </div></div>
+        <div class="sceneCap">远端画面模拟 · 深色终端</div>
+      </div>
+      <p class="paneNote">
+        三颗浅灰底、2px 黑立体边框、Arial 13.33px 的原生按钮，紧挨着一颗透明圆角 12px 的项目按钮 ——
+        连选中档也一样是原生外观，只是刷了一层 28% 蓝底。
+      </p>
+    </div>
+  </div>
+
+  <!-- 修法 -->
+  <div class="pane mt">
+    <div class="paneHead">
+      <span class="tag good">修法</span>
+      <span class="mono" style="color:#c3cddd">className={`${styles.capBtn}${fit === k ? " " + styles.capBtnOn : ""}`}</span>
+      <span style="color:var(--ink3);font-weight:400">三键同一族，当前档只多一层底色</span>
+    </div>
+    <div class="paneBody">
+      <div class="screen dark stage">
+        <div class="fakeTerm">
+          <i>PS D:\work&gt;</i> npm run test<br />
+          <b>✓ 1799 passed</b> <i>(2.4s)</i>
+        </div>
+        <div class="capZone"><div class="capCapsule">
+          <span class="live"></span>
+          <span class="capWho">DESKTOP-7F3K</span>
+          <span class="qualityChip"><span class="qualityDot"></span>38ms · 30fps</span>
+          <span class="capPillOn">可控</span>
+          <span class="capKbOff">点画面可捕获键盘</span>
+          <span class="capSep"></span>
+          <span class="menuBtn">画质 <span class="menuCur">均衡</span></span>
+          <span class="capSep"></span>
+          <button type="button" class="capBtn">下一屏</button>
+          <span class="capSep"></span>
+          <span class="capFit">
+            <button type="button" class="capBtn" title="缩放画面适配窗口">适应</button>
+            <button type="button" class="capBtn capBtnOn" title="按原始像素显示（1:1，可拖动平移）">1:1</button>
+            <button type="button" class="capBtn" title="填满窗口（可能裁切边缘）">填充</button>
+          </span>
+          <button type="button" class="capBtn" title="全屏显示远程画面"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+          <span class="capSep"></span>
+          <button type="button" class="capBtn" title="连接详情"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button>
+          <button type="button" class="capBtn" title="更多"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          <button type="button" class="capBtnDanger" title="结束会话"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </div></div>
+        <div class="sceneCap">远端画面模拟 · 深色终端</div>
+      </div>
+      <p class="paneNote">
+        四颗按钮变成同一族：同高 24、同圆角 8、同字号 12、同透明底，选中档只有底色与文字色的差别。
+        <code>.capFit</code> 的 <code>gap:4px</code> 保留 —— 三键比旁边的独立按钮更紧凑一档，分组关系靠间距读出来，不靠额外描边。
+      </p>
+    </div>
+  </div>
+
+  <!-- 放大窗 -->
+  <div class="card mt">
+    <div class="flex"><span class="tag info">放大 3×</span><b>三键局部对照</b>
+      <span style="color:var(--ink3);font-weight:400;font-size:11.5px">背景材质与胶囊一致，仅截取三键 + 全屏键一段</span>
+    </div>
+    <div class="flex mt" style="gap:16px;align-items:flex-start">
+      <div class="zoomCol">
+        <div class="zoomLabel">现状</div>
+        <div class="zoomWin"><div class="zoomInner"><div class="capCapsule">
+          <span class="capFit">
+            <button type="button">适应</button>
+            <button type="button" class="capBtnOn">1:1</button>
+            <button type="button">填充</button>
+          </span>
+          <button type="button" class="capBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        </div></div></div>
+      </div>
+      <div class="zoomCol">
+        <div class="zoomLabel">修法后</div>
+        <div class="zoomWin"><div class="zoomInner"><div class="capCapsule">
+          <span class="capFit">
+            <button type="button" class="capBtn">适应</button>
+            <button type="button" class="capBtn capBtnOn">1:1</button>
+            <button type="button" class="capBtn">填充</button>
+          </span>
+          <button type="button" class="capBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        </div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 实测表 -->
+  <div class="card mt">
+    <div class="flex"><span class="tag info">实测</span><b>渲染盒数值对照</b></div>
+    <table>
+      <thead><tr><th>元素</th><th style="width:150px">class</th><th>border</th><th>radius</th><th>background</th><th>font</th><th>高度</th></tr></thead>
+      <tbody>
+        <tr><td>适应（现状）</td><td class="mono">（无）</td><td class="mono fail">2px outset rgb(0,0,0)</td><td class="mono fail">0px</td><td class="mono fail">rgb(240,240,240)</td><td class="mono fail">13.3333px Arial</td><td class="num fail">21px</td></tr>
+        <tr><td>1:1（现状·选中）</td><td class="mono">capBtnOn</td><td class="mono fail">2px outset rgb(0,0,0)</td><td class="mono fail">0px</td><td class="mono">rgba(107,147,255,.28)</td><td class="mono fail">13.3333px Arial</td><td class="num fail">21px</td></tr>
+        <tr><td>全屏（同类控件·正常）</td><td class="mono">capBtn</td><td class="mono pass">0px none</td><td class="mono pass">8px</td><td class="mono">transparent</td><td class="mono pass">12px</td><td class="num pass">24px</td></tr>
+        <tr><td>适应（修法后）</td><td class="mono">capBtn</td><td class="mono pass">0px none</td><td class="mono pass">8px</td><td class="mono">transparent</td><td class="mono pass">12px</td><td class="num pass">24px</td></tr>
+        <tr><td>1:1（修法后·选中）</td><td class="mono">capBtn capBtnOn</td><td class="mono pass">0px none</td><td class="mono pass">8px</td><td class="mono">rgba(107,147,255,.28)</td><td class="mono pass">12px</td><td class="num pass">24px</td></tr>
+      </tbody>
+    </table>
+    <p class="paneNote">
+      前三行是本次审计用 Edge headless + CDP 对 <span class="mono">dist/assets</span> 编译产物实测的现状值；
+      后两行是修法后的目标值，即 <span class="mono">.capBtn</span>（<span class="mono">:1365</span>）与
+      <span class="mono">.capBtn</span> + <span class="mono">.capBtnOn</span>（<span class="mono">:1391</span>）的声明值。
+      修完之后这三键应当与同排的全屏键逐项一致。
+    </p>
+    <p class="paneNote">
+      一处顺带查明的细节：项目里<b>没有全局 <span class="mono">button</span> 重置</b>（<span class="mono">globals.css</span>
+      只有 <span class="mono">*{margin:0;padding:0}</span>），而 <span class="mono">&lt;button&gt;</span> 不继承
+      <span class="mono">font-family</span> —— 所以修法后的三键字体仍是浏览器默认的 Arial，字号 12px。
+      这与同排的全屏 / 详情 / ⋯ 键<b>完全一致</b>（它们本来就是 Arial 12px），不引入新的不一致。
+      若要把整排按钮统一到界面字体，需要补 <span class="mono">font-family: inherit</span>，那属于样式收口（P2-4）的范围。
+    </p>
+  </div>
+
+  <div class="callout">
+    <b>实施时会带出一个坑，写在这里免得踩。</b>
+    <span class="mono">.capBtnOn</span> 的两条声明带 <span class="mono">!important</span>（<span class="mono">:1391</span>），
+    这不是随手写的：<span class="mono">.capBtn:hover:not(:disabled)</span> 的特异性是 (0,3,0)，高过
+    <span class="mono">.capBtnOn</span> 的 (0,1,0) —— 没有 <span class="mono">!important</span>，
+    <b>鼠标一悬停在当前档上，蓝底就会被灰白 hover 底盖掉</b>，选中态在指针下"消失"。
+    <div class="flex mt" style="gap:26px;align-items:flex-start">
+      <div class="panelCol">
+        <div class="panelLab">若不改 hover 规则、直接去掉 <span class="mono">!important</span>（不推荐）</div>
+        <div class="screen dark" style="width:250px"><div class="capCapsule" style="margin:8px 12px">
+          <span class="capFit"><button type="button" class="capBtn">适应</button><button type="button" class="capBtn capBtnOnHoverDemo">1:1</button></span>
+        </div></div>
+      </div>
+      <div class="panelCol">
+        <div class="panelLab">推荐：hover 规则排除选中档 <span class="mono">:not(.capBtnOn)</span></div>
+        <div class="screen dark" style="width:250px"><div class="capCapsule" style="margin:8px 12px">
+          <span class="capFit"><button type="button" class="capBtn">适应</button><button type="button" class="capBtn capBtnOn">1:1</button></span>
+        </div></div>
+      </div>
+    </div>
+    <p style="margin-top:10px;color:var(--ink2);font-size:12px">
+      左边那颗是「选中 + 悬停」的退化形态：底色落到 <span class="mono">rgba(255,255,255,.1)</span>，与未选中档几乎无异，只剩白字撑着。
+      右边是推荐写法 —— 把规则拆成
+      <span class="mono">.capBtn:hover:not(:disabled):not(.capBtnOn)</span>，去掉两条 <span class="mono">!important</span>：
+      既解决冲突，也与 A2 那张表「禁 <span class="mono">!important</span>」的守卫口径一致（会话侧目前没有这条守卫）。
+    </p>
+  </div>
+
+  <div class="callout ok">
+    <b>守卫单测：钉住这一类，不是这一个。</b>
+    断言对象必须是<b>渲染出的 className</b>，不是源码字符串 ——
+    <pre class="mt"><span class="cmt">// RcSessionCapsule 的 FIT 三键：每颗都必须落在 .capBtn 上，当前档再叠 .capBtnOn</span>
+for (const label of [<span class="add">"适应"</span>, <span class="add">"1:1"</span>, <span class="add">"填充"</span>]) {
+  expect(screen.getByRole(<span class="add">"button"</span>, { name: label })).toHaveClass(styles.capBtn);
+}
+expect(screen.getByRole(<span class="add">"button"</span>, { name: <span class="add">"1:1"</span> })).toHaveClass(styles.capBtnOn);</pre>
+    <p style="margin-top:10px;font-size:12px;color:var(--ink2)">
+      价值在于：把 <span class="mono">styles.capBtn</span> 从 JSX 里删掉它会红；而
+      <span class="mono">tsc</span> / <span class="mono">eslint</span> / <span class="mono">lint:ui</span> /
+      <span class="mono">lint:css</span> 四个工具对此全都是绿的。
+    </p>
+  </div>
+</section>
+
+<!-- ══════════ §2 P1-4 ══════════ -->
+<section>
+  <div class="secHead">
+    <span class="no">§2</span><h2>P1-4 · 「连接详情」面板的对比度</h2>
+    <span class="src">RemoteComputer.module.css:484 / :516 / :527 / :537</span>
+  </div>
+  <p class="secHint">
+    面板浮在远端画面上，底色不可控。下面按两种极端背景各画一遍：左是现状，右是修法（方案 A）。
+    数值是按 WCAG 2.2 相对亮度公式算出的<b>合成后</b>对比度，普通文字门槛 4.5:1。
+  </p>
+
+  <div class="legend">
+    <span><i class="sw" style="background:rgba(200,208,220,.45)"></i>行标签 α .45</span>
+    <span><i class="sw" style="background:rgba(200,208,220,.38)"></i>行提示 α .38</span>
+    <span><i class="sw" style="background:rgba(220,227,238,.92)"></i>行值 α .92</span>
+    <span><i class="sw" style="background:rgba(9,17,28,.86)"></i>面板底 α .86</span>
+    <span><i class="sw" style="background:rgba(200,208,220,.72)"></i>修法后 α .72</span>
+  </div>
+
+  <!-- 场景 A -->
+  <div class="pane">
+    <div class="paneHead"><span class="tag info">场景 A</span> 远端是深色画面（终端 / 深色 IDE）—— 最常见</div>
+    <div class="paneBody">
+      <div class="screen dark" style="padding:16px 14px 18px">
+        <div class="fakeTerm" style="position:absolute;inset:0;opacity:.7">
+          <i>deploy@prod:~$</i> systemctl status pastepanda<br />
+          <b>● pastepanda.service — active (running)</b><br />
+          <i>   Loaded: loaded (/etc/systemd/system/pastepanda.service; enabled)</i><br />
+          <i>   Active: active (running) since Tue 2026-09-23 21:04:11 CST</i>
+        </div>
+        <div class="flex" style="position:relative;gap:24px;align-items:flex-start;padding-top:4px">
+          <div class="panelCol">
+            <div class="panelLab">现状</div>
+            <div class="hudPanel" style="width:360px">
+              <div class="hudPanelHead">连接详情</div>
+              <div class="hudTrend">
+                <div class="hudTrendHead"><span>往返延迟 · 近 60s</span><span>min 31 / 当前 38 / max 62 ms</span></div>
+                <svg viewBox="0 0 280 56" class="hudTrendSvg" role="img" aria-label="近 60 秒往返延迟趋势，最低 31 最高 62 毫秒">
+                  <polyline class="hudTrendLine" points="0,34 20,30 40,36 60,26 80,22 100,29 120,33 140,20 160,25 180,31 200,18 220,24 240,28 260,22 280,30" />
+                </svg>
+              </div>
+              <div class="hudRow"><span class="hudRowLabel">编码</span><span class="hudRowVal">H.264 · 30fps</span><span class="hudRowHint">硬编（D3D11）或 CPU</span></div>
+              <div class="hudRow"><span class="hudRowLabel">画质</span><span class="hudRowVal">自动 · 均衡</span><span class="hudRowHint">按链路状况自动换档</span></div>
+              <div class="hudRow"><span class="hudRowLabel">链路</span><span class="hudRowVal hudOk">已连接</span><span class="hudRowHint">按 pong 新鲜度判定</span></div>
+              <div class="hudRow"><span class="hudRowLabel">往返</span><span class="hudRowVal hudOk">~38ms · 良好</span><span class="hudRowHint">心跳 ping-pong 实测</span></div>
+              <div class="hudRow"><span class="hudRowLabel">丢包</span><span class="hudRowVal hudOk">0.4%</span><span class="hudRowHint">500ms 采样、指数平滑</span></div>
+              <div class="hudRow"><span class="hudRowLabel">码率</span><span class="hudRowVal">6.2Mbps</span><span class="hudRowHint">画面码率估计</span></div>
+            </div>
+          </div>
+          <div class="panelCol">
+            <div class="panelLab">修法（方案 A）</div>
+            <div class="hudPanel" style="width:360px">
+              <div class="hudPanelHead fix">连接详情</div>
+              <div class="hudTrend">
+                <div class="hudTrendHead fix"><span>往返延迟 · 近 60s</span><span>min 31 / 当前 38 / max 62 ms</span></div>
+                <svg viewBox="0 0 280 56" class="hudTrendSvg" role="img" aria-label="近 60 秒往返延迟趋势，最低 31 最高 62 毫秒">
+                  <polyline class="hudTrendLine" points="0,34 20,30 40,36 60,26 80,22 100,29 120,33 140,20 160,25 180,31 200,18 220,24 240,28 260,22 280,30" />
+                </svg>
+              </div>
+              <div class="hudRow"><span class="hudRowLabel fix">编码</span><span class="hudRowVal">H.264 · 30fps</span><span class="hudRowHint fix">硬编（D3D11）或 CPU</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">画质</span><span class="hudRowVal">自动 · 均衡</span><span class="hudRowHint fix">按链路状况自动换档</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">链路</span><span class="hudRowVal hudOk">已连接</span><span class="hudRowHint fix">按 pong 新鲜度判定</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">往返</span><span class="hudRowVal hudOk">~38ms · 良好</span><span class="hudRowHint fix">心跳 ping-pong 实测</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">丢包</span><span class="hudRowVal hudOk">0.4%</span><span class="hudRowHint fix">500ms 采样、指数平滑</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">码率</span><span class="hudRowVal">6.2Mbps</span><span class="hudRowHint fix">画面码率估计</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="sceneCap">远端画面模拟 · 深色</div>
+      </div>
+      <div class="badgeRow">
+        <span class="badge no">现状 行标签 3.30</span>
+        <span class="badge no">现状 行提示 2.69</span>
+        <span class="badge ok">修法 行标签 6.78</span>
+        <span class="badge ok">修法 行提示 6.15</span>
+      </div>
+      <p class="paneNote">
+        深色屏上那两档灰字仍然不达标 —— 不是背景深浅的问题，是文字本身的 α 太低。
+      </p>
+    </div>
+  </div>
+
+  <!-- 场景 B -->
+  <div class="pane mt">
+    <div class="paneHead"><span class="tag info">场景 B</span> 远端是白色文档（Word / 网页）—— 最坏</div>
+    <div class="paneBody">
+      <div class="screen light" style="padding:16px 14px 18px">
+        <div class="fakeDoc" style="position:absolute;inset:0;opacity:.9">
+          <b>季度经营分析 · 第三章</b><br />
+          本季度门店整体营收环比增长 8.4%，其中华东区贡献主要增量。<br />
+          库存周转天数由 42 天降至 37 天，主要来自采购节奏与调价<br />
+          单流程的优化，以及退库单据的合并处理……
+        </div>
+        <div class="flex" style="position:relative;gap:24px;align-items:flex-start;padding-top:4px">
+          <div class="panelCol">
+            <div class="panelLab">现状</div>
+            <div class="hudPanel" style="width:360px">
+              <div class="hudPanelHead">连接详情</div>
+              <div class="hudTrend">
+                <div class="hudTrendHead"><span>往返延迟 · 近 60s</span><span>min 31 / 当前 38 / max 62 ms</span></div>
+                <svg viewBox="0 0 280 56" class="hudTrendSvg" role="img" aria-label="近 60 秒往返延迟趋势，最低 31 最高 62 毫秒">
+                  <polyline class="hudTrendLine" points="0,34 20,30 40,36 60,26 80,22 100,29 120,33 140,20 160,25 180,31 200,18 220,24 240,28 260,22 280,30" />
+                </svg>
+              </div>
+              <div class="hudRow"><span class="hudRowLabel">编码</span><span class="hudRowVal">H.264 · 30fps</span><span class="hudRowHint">硬编（D3D11）或 CPU</span></div>
+              <div class="hudRow"><span class="hudRowLabel">画质</span><span class="hudRowVal">自动 · 均衡</span><span class="hudRowHint">按链路状况自动换档</span></div>
+              <div class="hudRow"><span class="hudRowLabel">链路</span><span class="hudRowVal hudOk">已连接</span><span class="hudRowHint">按 pong 新鲜度判定</span></div>
+              <div class="hudRow"><span class="hudRowLabel">往返</span><span class="hudRowVal hudOk">~38ms · 良好</span><span class="hudRowHint">心跳 ping-pong 实测</span></div>
+              <div class="hudRow"><span class="hudRowLabel">丢包</span><span class="hudRowVal hudOk">0.4%</span><span class="hudRowHint">500ms 采样、指数平滑</span></div>
+              <div class="hudRow"><span class="hudRowLabel">码率</span><span class="hudRowVal">6.2Mbps</span><span class="hudRowHint">画面码率估计</span></div>
+            </div>
+          </div>
+          <div class="panelCol">
+            <div class="panelLab">修法（方案 A）</div>
+            <div class="hudPanel" style="width:360px">
+              <div class="hudPanelHead fix">连接详情</div>
+              <div class="hudTrend">
+                <div class="hudTrendHead fix"><span>往返延迟 · 近 60s</span><span>min 31 / 当前 38 / max 62 ms</span></div>
+                <svg viewBox="0 0 280 56" class="hudTrendSvg" role="img" aria-label="近 60 秒往返延迟趋势，最低 31 最高 62 毫秒">
+                  <polyline class="hudTrendLine" points="0,34 20,30 40,36 60,26 80,22 100,29 120,33 140,20 160,25 180,31 200,18 220,24 240,28 260,22 280,30" />
+                </svg>
+              </div>
+              <div class="hudRow"><span class="hudRowLabel fix">编码</span><span class="hudRowVal">H.264 · 30fps</span><span class="hudRowHint fix">硬编（D3D11）或 CPU</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">画质</span><span class="hudRowVal">自动 · 均衡</span><span class="hudRowHint fix">按链路状况自动换档</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">链路</span><span class="hudRowVal hudOk">已连接</span><span class="hudRowHint fix">按 pong 新鲜度判定</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">往返</span><span class="hudRowVal hudOk">~38ms · 良好</span><span class="hudRowHint fix">心跳 ping-pong 实测</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">丢包</span><span class="hudRowVal hudOk">0.4%</span><span class="hudRowHint fix">500ms 采样、指数平滑</span></div>
+              <div class="hudRow"><span class="hudRowLabel fix">码率</span><span class="hudRowVal">6.2Mbps</span><span class="hudRowHint fix">画面码率估计</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="sceneCap">远端画面模拟 · 白色文档</div>
+      </div>
+      <div class="badgeRow">
+        <span class="badge no">现状 行标签 2.94</span>
+        <span class="badge no">现状 行提示 2.51</span>
+        <span class="badge ok">修法 行标签 5.11</span>
+        <span class="badge ok">修法 行提示 4.74</span>
+      </div>
+      <p class="paneNote">
+        白底屏才是真正的下限：现状在这里几乎读不出行标签。修法后每一档都过线，余量最小的一档是 4.74（行提示）。
+      </p>
+    </div>
+  </div>
+
+  <div class="callout crit">
+    <b>对审计报告的一处修正：报告里「行提示提到 ≈.6」不够。</b><br />
+    把面板底（<span class="mono">.86</span>）与文字 α 分开算之后，白底场景的最小达标 α 是
+    <span class="mono">0.654</span>。审计建议的 <span class="mono">.6</span> 在白底只有
+    <span class="mono fail">4.04:1</span>，仍然不达标 —— 至少要 <span class="mono">.66</span>，
+    取 <span class="mono">.68</span> 留裕量（白底 4.74）。抬头 <span class="mono">.62</span> 同理（白底 4.21），也要一起提。
+  </div>
+
+  <div class="card">
+    <div class="flex"><span class="tag info">实算</span><b>完整数值表</b>
+      <span style="color:var(--ink3);font-weight:400;font-size:11.5px">
+        黑底屏 = 纯 #000；白底屏 = 纯 #fff。面板底 rgba(9,17,28,.86)，正文灰字基色 rgb(200,208,220)。
+      </span>
+    </div>
+    <table>
+      <thead><tr><th>元素</th><th style="width:180px">CSS 现状</th><th>黑底</th><th>白底</th><th style="width:120px">方案 A</th><th>黑底</th><th>白底</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>.hudPanelHead</code> 抬头</td>
+          <td class="num">rgba(200,208,220,.62)</td>
+          <td class="num pass">5.28</td><td class="num fail">4.21</td>
+          <td class="num">α .72</td><td class="num pass">6.78</td><td class="num pass">5.11</td>
+        </tr>
+        <tr>
+          <td><code>.hudRowLabel</code> 行标签</td>
+          <td class="num">rgba(200,208,220,.45)</td>
+          <td class="num fail">3.30</td><td class="num fail">2.94</td>
+          <td class="num">α .72</td><td class="num pass">6.78</td><td class="num pass">5.11</td>
+        </tr>
+        <tr>
+          <td><code>.hudRowHint</code> 行提示</td>
+          <td class="num">rgba(200,208,220,.38)</td>
+          <td class="num fail">2.69</td><td class="num fail">2.51</td>
+          <td class="num">α .68</td><td class="num pass">6.15</td><td class="num pass">4.74</td>
+        </tr>
+        <tr>
+          <td><code>.hudTrendHead</code> 趋势抬头</td>
+          <td class="num">rgba(200,208,220,.50)</td>
+          <td class="num fail">3.81</td><td class="num fail">3.28</td>
+          <td class="num">α .72</td><td class="num pass">6.78</td><td class="num pass">5.11</td>
+        </tr>
+        <tr>
+          <td><code>.hudRowVal</code> 行值</td>
+          <td class="num">rgba(220,227,238,.92)</td>
+          <td class="num pass">12.67</td><td class="num pass">8.70</td>
+          <td class="num">不动</td><td class="num pass">12.67</td><td class="num pass">8.70</td>
+        </tr>
+        <tr>
+          <td><code>.hudOk/.hudWarn/.hudBad/.hudAccent</code><br /><span style="color:var(--ink3);font-size:11.5px">状态色（实色，无 α）</span></td>
+          <td class="num">#7dcea0 / #e8b87a<br />#f08c8c / #9db8ff</td>
+          <td class="num pass">8.11–10.62</td><td class="num pass">5.42–7.09</td>
+          <td class="num">不动</td><td class="num pass">—</td><td class="num pass">—</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="paneNote">
+      顺带一条好消息：面板里的<b>状态色全部达标</b>（最差的 <span class="mono">.hudBad</span> 白底 5.42），
+      趋势线 <span class="mono">#35d0ff</span> 也达标（10.66 / 7.12）。所以这一处的伤<b>只在三档低 α 灰字上</b>，
+      改动范围小、可以精确下手，不需要把所有颜色重做一遍。
+    </p>
+    <p class="paneNote">
+      另外两处附带收益：① 行标签与抬头同取 <span class="mono">.72</span>，面板里的文字层级从三档收成「值 / 标签 / 提示」三档但值最亮，
+      视觉更干净；② 趋势抬头 <span class="mono">.50</span> 审计里没点，但白底 3.28 同样不达标，属同一处伤，一并修。
+    </p>
+  </div>
+
+  <div class="grid3 mt">
+    <div class="pane">
+      <div class="paneHead"><span class="tag good">方案 A · 推荐</span> 只调文字</div>
+      <div class="paneBody">
+        <div class="panelLab">面板底保持 .86，文字 α 上提</div>
+        <div class="hudPanel mt" style="width:100%">
+          <div class="hudPanelHead fix">连接详情</div>
+          <div class="hudRow"><span class="hudRowLabel fix">往返</span><span class="hudRowVal hudOk">~38ms</span><span class="hudRowHint fix">心跳实测</span></div>
+          <div class="hudRow"><span class="hudRowLabel fix">丢包</span><span class="hudRowVal hudOk">0.4%</span><span class="hudRowHint fix">500ms 采样</span></div>
+        </div>
+        <p class="paneNote">
+          改 4 条颜色声明。最差 4.74（白底·提示）。<b>玻璃厚度与遮屏面积完全不变</b>，视觉上只有字变清楚。
+        </p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="paneHead"><span class="tag info">方案 B</span> 抬面板底 + 文字单值</div>
+      <div class="paneBody">
+        <div class="panelLab">面板底 .86 → .93，文字统一 .60</div>
+        <div class="hudPanel altB mt" style="width:100%">
+          <div class="hudPanelHead">连接详情</div>
+          <div class="hudRow"><span class="hudRowLabel">往返</span><span class="hudRowVal hudOk">~38ms</span><span class="hudRowHint">心跳实测</span></div>
+          <div class="hudRow"><span class="hudRowLabel">丢包</span><span class="hudRowVal hudOk">0.4%</span><span class="hudRowHint">500ms 采样</span></div>
+        </div>
+        <p class="paneNote">
+          最差 4.63（白底）。好处是三档只需一个值；代价是面板更实、遮住更多远端画面，且标签与提示的层级被压平。
+        </p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="paneHead"><span class="tag info">方案 C</span> 面板改不透明</div>
+      <div class="paneBody">
+        <div class="panelLab">面板底 → #09111c 实色，文字统一 .58</div>
+        <div class="hudPanel altC mt" style="width:100%">
+          <div class="hudPanelHead">连接详情</div>
+          <div class="hudRow"><span class="hudRowLabel">往返</span><span class="hudRowVal hudOk">~38ms</span><span class="hudRowHint">心跳实测</span></div>
+          <div class="hudRow"><span class="hudRowLabel">丢包</span><span class="hudRowVal hudOk">0.4%</span><span class="hudRowHint">500ms 采样</span></div>
+        </div>
+        <p class="paneNote">
+          对比度<b>恒定</b> 4.73，不再依赖远端画面。<b>代价最大</b>：完全失去玻璃透视，与浮条 / 下拉的材质语言脱节。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <b>为什么推荐 A 而不是 B / C。</b>
+    面板底 α 从 .86 抬到 .93，白底场景的最小文字 α 只从 .654 降到 .588 —— 白底仍会从剩下的 7% 里透上来，
+    <b>抬面板底并不能替代文字提亮</b>（B 方案仍须把文字提到 .60 以上）。既然两者都要动，就动代价小的那个：文字。<br />
+    另外，字号仍建议保持 10px：抬到 11 或 12px <b>不会</b>让门槛从 4.5 降到 3.0
+    （WCAG 的大字档要求 ≥18.66px，或 ≥14px 加粗），别指望靠字号绕开对比度。字号问题是 P2-3（无缩放路径），单独处理。
+  </div>
+
+  <div class="callout ok">
+    <b>顺带补一条会话侧的对比度守卫。</b>
+    A2 有 <span class="mono">rcA2ThemeTokens.test.ts</span> 钉着「主按钮
+    <span class="mono">--accent-solid</span> on <span class="mono">--text-on-accent</span> ≥ 4.5」，
+    会话侧一条都没有 —— 这个 P1 能活到线上就是这个缺口的直接产物。
+    最小可行版本：把面板底与 4 处文字的 α 抽成常量，在单测里按 WCAG 公式算两种极端背景下的合成对比度，
+    断言 &lt; 4.5 即失败。以后谁再调低 α，测试会拦。
+  </div>
+</section>
+
+<!-- ══════════ §3 P1-2 ══════════ -->
+<section>
+  <div class="secHead">
+    <span class="no">§3</span><h2>P1-2 · 三个弹层的 Esc 归属</h2>
+    <span class="src">RcPairDialog / RcUnoDialog / RcAdhocDialog ↔ hooks/useDialogEscape.ts</span>
+  </div>
+  <p class="secHint">
+    这一条不是视觉问题，但它是四个 P1 里<b>唯一会丢用户数据</b>的一条，所以画出来。
+    关键差别在事件阶段：现状的 Esc 走冒泡期、落进全局链；修法走捕获期抢在全局链之前，再 <code>stopPropagation()</code> 截断。
+  </p>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="flex"><span class="tag bad">现状</span><b>Esc 落到全局链</b></div>
+      <div class="chain mt">
+        <div class="node key"><div class="t">用户按 Esc</div><div class="d">配对向导开着：6 位 PIN 已生成，正在核对</div></div>
+        <div class="arrow">捕获期：无人认领</div>
+        <div class="node"><div class="t">冒泡期 · <span class="mono">lib/keyboardActions.ts:215</span></div><div class="d">依次判断 chainOpen / profileOpen / learningsOpen / pinnedPanelOpen …</div></div>
+        <div class="arrow">rc 三个弹窗不在名单里，继续往下</div>
+        <div class="node bad"><div class="t"><span class="mono">if (state.showSettings) return close_dialog: "settings"</span></div><div class="d">而 RcPairLayer 就挂在设置页里（<span class="mono">RcSection.tsx:304</span>）</div></div>
+        <div class="arrow">组件卸载</div>
+        <div class="node bad"><div class="t">整个设置页关闭，配对码 / PIN 一起丢</div><div class="d">与 useDialogEscape 头注释记录的 2026-09-06 事故同型</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="flex"><span class="tag good">修法</span><b>Esc 被弹层自己接住</b></div>
+      <div class="chain mt">
+        <div class="node key"><div class="t">用户按 Esc</div><div class="d">配对向导开着：6 位 PIN 已生成，正在核对</div></div>
+        <div class="arrow">捕获期（capture: true）</div>
+        <div class="node good"><div class="t"><span class="mono">useDialogEscape(onClose)</span> 先拿到事件</div><div class="d">isComposing 时不响应 —— 中文输入法的 Esc 归输入法</div></div>
+        <div class="arrow"><span class="mono">stopPropagation() + preventDefault()</span> 截断</div>
+        <div class="node good"><div class="t">关闭配对弹窗，回到设置页</div><div class="d">PIN / 配对码仍在，用户可继续核对</div></div>
+        <div class="arrow">全局链收不到这个事件</div>
+        <div class="node"><div class="t">设置页保持打开</div><div class="d">符合交互范式 §17「两级取消」：先取消当前层，再取消外层</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt">
+    <div class="flex"><span class="tag info">改动</span><b>三个文件各加两行</b></div>
+    <pre class="mt"><span class="cmt">// RcPairDialog.tsx / RcUnoDialog.tsx / RcAdhocDialog.tsx —— 与 ProfileDialog / LearningsDialog 写法一致</span>
+<span class="add">import { useDialogEscape } from "@/hooks/useDialogEscape";</span>
+
+export function RcPairDialog({ onClose, … }) {
+  …
+  <span class="add">useDialogEscape(onClose);</span>
+  …
+}</pre>
+    <p class="paneNote" style="padding:10px 0 0">
+      两套宿主都要过一遍：主窗（<span class="mono">RcSection.tsx:304</span> 渲染 <span class="mono">RcPairLayer</span>）与 rc 独立窗口。
+      rc 窗口里 rc-main 不加载 App.tsx 的按键链，所以现状是「按 Esc 什么都不发生」，修完两边行为才一致。
+    </p>
+  </div>
+
+  <div class="callout ok">
+    <b>守卫单测，按「两侧对账」写（照 windowCloseCapability.test.ts 的手法）。</b>
+    左侧：扫 <span class="mono">src/components/settings/Rc*.tsx</span> 里所有导出的弹层组件；
+    右侧：断言每个组件的源码里出现 <span class="mono">useDialogEscape(</span>。
+    以后新增弹层忘了接，这条测试会红 —— 正是 AGENTS 规则 11.1 的验收标准：
+    「如果第 7 个调用点被人新写出来时仍会走错，说明还没收口」。
+  </div>
+</section>
+
+<!-- ══════════ §4 P1-3 ══════════ -->
+<section>
+  <div class="secHead">
+    <span class="no">§4</span><h2>P1-3 · 四处被读屏丢弃的名称</h2>
+    <span class="src">RcWindowControls:132 / RcHud:246 / RcPageFiles:69 / RcA2Sidebar:166</span>
+  </div>
+  <p class="secHint">
+    共同的病：<code>aria-label</code> 挂在 <code>role="generic"</code> 的 div / span 上。ARIA 规范不允许给 generic 命名，
+    浏览器与读屏<b>直接忽略</b>这个属性 —— 属性在，名字不在。左边是读屏实际播报，右边是修法后。
+  </p>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="flex"><span class="tag bad">现状</span><b>读屏实际听到</b></div>
+      <div class="srbox mt"><span class="who"># RcWindowControls:132 —— 自绘窗口三键</span>
+&lt;div class=<span class="say">"winControls"</span> <span class="no">aria-label="窗口控制"</span>&gt;
+  &lt;button aria-label="最小化"&gt;
+  &lt;button aria-label="最大化"&gt;
+  &lt;button aria-label="关闭"&gt;
+
+<span class="who">读屏：</span>
+<span class="no">「最小化 按钮」「最大化 按钮」「关闭 按钮」
+→ 三颗孤立按钮，看不出它们是一组窗口控制</span>
+
+<span class="who"># RcA2Sidebar:166 —— 文件页传输角标（这条最贵）</span>
+&lt;span class=<span class="say">"toolBadge"</span> <span class="no">aria-label="3 个传输进行中"</span>&gt;3&lt;/span&gt;
+
+<span class="who">读屏：</span>
+<span class="no">「3」
+→ 一个裸数字，没有任何上下文</span></div>
+    </div>
+    <div class="card">
+      <div class="flex"><span class="tag good">修法</span><b>读屏实际听到</b></div>
+      <div class="srbox mt"><span class="who"># 加 role，容器才允许被命名</span>
+&lt;div class=<span class="say">"winControls"</span> <span class="yes">role="group"</span> aria-label="窗口控制"&gt;
+
+<span class="who">读屏：</span>
+<span class="yes">「窗口控制, 组」「最小化 按钮」…
+→ 分组名先播报，三键有了归属</span>
+
+<span class="who"># 角标：视觉不变，另给一份可读文本</span>
+&lt;button&gt;
+  &lt;span class=<span class="say">"toolBadge"</span> <span class="yes">aria-hidden="true"</span>&gt;3&lt;/span&gt;
+  <span class="yes">&lt;span class="sr-only"&gt;3 个传输进行中&lt;/span&gt;</span>
+  &lt;Icon aria-hidden /&gt;&lt;span&gt;文件&lt;/span&gt;
+&lt;/button&gt;
+
+<span class="who">读屏：</span>
+<span class="yes">「文件, 3 个传输进行中, 按钮」</span></div>
+    </div>
+  </div>
+
+  <div class="card mt">
+    <div class="flex"><span class="tag info">逐处</span><b>四个调用点的修法</b></div>
+    <table>
+      <thead><tr><th style="width:240px">位置</th><th style="width:380px">现状</th><th>修法</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>RcWindowControls.tsx:132</code><br /><span style="color:var(--ink3);font-size:11.5px">自绘窗口三键的容器</span></td>
+          <td class="mono">&lt;div className={styles.winControls} <span class="fail">aria-label="窗口控制"</span>&gt;</td>
+          <td class="mono">加 <span class="pass">role="group"</span>，保留 aria-label</td>
+        </tr>
+        <tr>
+          <td><code>RcHud.tsx:246</code><br /><span style="color:var(--ink3);font-size:11.5px">连接详情面板</span></td>
+          <td class="mono">&lt;div className={styles.hudPanel} <span class="fail">aria-label="连接详情"</span>&gt;</td>
+          <td class="mono">改 <span class="pass">role="region"</span> —— region 允许命名</td>
+        </tr>
+        <tr>
+          <td><code>RcPageFiles.tsx:69</code><br /><span style="color:var(--ink3);font-size:11.5px">目标设备按钮组</span></td>
+          <td class="mono">&lt;div className={styles.fileTargets} <span class="fail">aria-label="选择目标设备"</span>&gt;</td>
+          <td class="mono">加 <span class="pass">role="group"</span></td>
+        </tr>
+        <tr>
+          <td><code>RcA2Sidebar.tsx:166</code><br /><span style="color:var(--ink3);font-size:11.5px">传输进行中角标</span></td>
+          <td class="mono">&lt;span className={styles.toolBadge} <span class="fail">aria-label={`${n} 个传输进行中`}</span>&gt;{n}&lt;/span&gt;</td>
+          <td class="mono">角标加 <span class="pass">aria-hidden="true"</span>，同级补<br /><span class="pass">&lt;span className="sr-only"&gt;{n} 个传输进行中&lt;/span&gt;</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="paneNote">
+      角标为什么不直接改 <span class="mono">role="status"</span>：它是常驻数量、不是活区播报，
+      数字每变一次都播报会吵。<span class="mono">sr-only</span> 文本随按钮名称一起播报，只在该按钮获得焦点时响一次 —— 更安静也更准确。
+      视觉上角标完全不变（<span class="mono">.toolBadge</span> 样式一字未动），只是多了一层对读屏可见的文字。
+    </p>
+    <p class="paneNote">
+      <b>实施时补了一处（同批第 5 处）</b>：<span class="mono">RcPageFiles.tsx:88</span> 的在线圆点
+      <span class="mono">&lt;span className={styles.fileTargetDot} aria-label="在线" /&gt;</span> 是同一处伤 ——
+      审计按行扫漏了它，实施时改用 TypeScript 的 JSX 解析器扫「div / span（含
+      <span class="mono">motion.div</span>）带 aria-label 而整条标签无 role」，才把它显出来。
+      修法与角标一致（圆点 <span class="mono">aria-hidden</span> + 同级 <span class="mono">sr-only</span>）。
+      这条 AST 扫描已沉淀成守卫：<span class="mono">src/__tests__/rcA11yNames.test.tsx</span>。
+    </p>
+  </div>
+
+  <div class="callout">
+    <b>验收手法：别用「属性存在」当证据。</b>
+    这四处 <span class="mono">aria-label</span> 在 DOM 里<b>都在</b>，用
+    <span class="mono">getAttribute("aria-label")</span> 查会全部通过 —— 它们只是<b>不生效</b>。
+    验证要用可访问名称本身：
+    <span class="mono">expect(screen.getByRole("group", { name: "窗口控制" })).toBeTruthy()</span>。
+    改之前先跑一遍看它红，才能证明这条测试真的在测东西。
+  </div>
+</section>
+
+<!-- ══════════ §5 落地清单 ══════════ -->
+<section>
+  <div class="secHead"><span class="no">§5</span><h2>落地清单与验证</h2></div>
+  <p class="secHint">四步互相独立，每步做完都能立刻跑验证。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:52px">步</th><th style="width:330px">改动</th><th>验收</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="num">1</td>
+          <td>
+            <code>RcSessionCapsule.tsx:209</code> 三键 className 统一；<br />
+            <code>RemoteComputer.module.css:1391</code> 去 <code>!important</code>，hover 规则加 <code>:not(.capBtnOn)</code>
+          </td>
+          <td>
+            渲染断言：三键都含 <code>.capBtn</code>，当前档含 <code>.capBtnOn</code>；<br />
+            CDP 量三键盒子 = 高 24 / radius 8 / border none
+          </td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td><code>RcPairDialog</code> / <code>RcUnoDialog</code> / <code>RcAdhocDialog</code> 各加 <code>useDialogEscape(onClose)</code></td>
+          <td>
+            单测：主窗渲染设置页 + 配对弹窗，Esc 后断言配对弹窗关闭<br />
+            且 <b>showSettings 仍为 true</b>
+          </td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td>四处 <code>aria-label</code> 按 §4 表改造</td>
+          <td>用可访问名称断言（不是属性存在）；改前先看见它红</td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td><code>RemoteComputer.module.css:484 / :516 / :527 / :537</code> 四处 α 按方案 A 调整</td>
+          <td>
+            新增会话侧对比度守卫（常量 + WCAG 公式，两极端背景断言 ≥ 4.5）；<br />
+            用本稿的 <span class="mono">.fix</span> 值与渲染出的 computed color 对账
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout">
+    <b>顺序之外的一句提醒。</b>
+    第 1、4 步之后都要跑 <span class="mono">npm run lint:ui</span>（会话侧没有 A2 那种主题守卫，
+    这个 P1 就是那个缺口的产物）。第 1 步的 <span class="mono">:not(.capBtnOn)</span> 写法若被
+    <span class="mono">lint:ui</span> 判为越界，改判据前先读
+    <span class="mono">docs/PastePanda-UI规则.md</span> 对应条文 —— 判据表在
+    <span class="mono">scripts/ui-rules/rules.mjs</span>，改判据必须同步改文档。
+  </div>
+</section>
+
+<div class="docFoot">
+  控件外观与数值逐字取自 <span class="mono">src/components/rc/RemoteComputer.module.css</span> 与
+  <span class="mono">RemoteComputerA2.module.css</span>（来源行号标在各段 CSS 上）。
+  对比度为按 WCAG 2.2 相对亮度公式对<b>合成后</b>颜色的实算值，不是按声明值估计。
+  演示用固定宽度（面板 <span class="mono">360px</span>）仅为并排对比，真实面板宽度由内容撑开。
+</div>
+
+</div>
+</body>
+</html>

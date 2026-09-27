@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import type { FitMode } from "@/lib/rcSessionStats";
+import { rcPanelOpenCount } from "@/lib/rcPanelFocus";
 import { rcWindowClose, rcWindowMinimize, rcWindowToggleMaximize } from "@/lib/rcWindowOps";
 import { WindowControlIcon, useMaximized } from "./RcWindowControls";
 import styles from "./RemoteComputer.module.css";
@@ -39,6 +40,7 @@ export function RcFullscreenHotbar({
   pointerLocked,
   onTogglePointer,
   canControl,
+  kbOn,
   onToggleFullscreen,
   onRequestEnd,
   busy,
@@ -49,6 +51,8 @@ export function RcFullscreenHotbar({
   pointerLocked: boolean;
   onTogglePointer: () => void;
   canControl: boolean;
+  /** 键盘捕获态：捕获中 F10 属远端按键，不作为本条的热键（见下方 effect 注释）。 */
+  kbOn: boolean;
   onToggleFullscreen: () => void;
   /** 与 RcSessionTop 同一个回调（父级包了 ConfirmDialog，这里只触发）。 */
   onRequestEnd: () => void;
@@ -106,6 +110,26 @@ export function RcFullscreenHotbar({
     };
   }, [scheduleHide, pointerLocked]);
 
+  // 审计 P1-2（2026-09-27）：F10 键盘唤出/收起——本条原先只能靠鼠标进顶边 8px
+  // 热区唤出，纯键盘用户在全屏里够不到「退出全屏 / 结束会话」（规则 17.1：
+  // 键盘是加速器）。捕获键盘（kbOn）或锁指针时 F10 属远端交互，热键不生效——
+  // 与动线「点画面捕获键盘 → Esc 释放 → F10 唤出」配套。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F10" || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (kbOn || pointerLocked) return;
+      // 面板/模态展开时让路（同 F11 的 17.6 口径）
+      if (rcPanelOpenCount() > 0 || document.querySelector(".dialog-backdrop")) return;
+      e.preventDefault();
+      setShown((v) => {
+        if (!v) scheduleHide();
+        return !v;
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [kbOn, pointerLocked, scheduleHide]);
+
   const hidden = !shown;
 
   return (
@@ -117,8 +141,8 @@ export function RcFullscreenHotbar({
       // 🔴 再审计（hotbar 盲开键盘捕获，2026-09-25）：非按钮区 mousedown 原先
       // 冒泡到 fakeScreen 的 onMouseDown → focus → setKbOn(true)，点 hotbar
       // 空白就盲开键盘捕获、输入打进远程机器。这里在根容器截停冒泡——按钮的
-      // onClick 是独立事件不受影响。已知限制：hotbar 显示期间没有「键盘已捕获」
-      // 指示（属新 UI，另行设计稿流程再补）。
+      // onClick 是独立事件不受影响。键盘已捕获指示由 RcSessionStage 的
+      // fsKbBadge 常驻承担（2026-09-27 审计 P1-2 落地）。
       onMouseDown={(e) => e.stopPropagation()}
     >
       {FITS.map(([k, label]) => (
@@ -146,7 +170,7 @@ export function RcFullscreenHotbar({
       <button
         type="button"
         tabIndex={hidden ? -1 : undefined}
-        title="退出全屏显示远程画面"
+        title="退出全屏显示远程画面（F11）"
         onClick={onToggleFullscreen}
       >
         退出全屏

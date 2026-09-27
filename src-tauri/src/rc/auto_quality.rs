@@ -284,7 +284,7 @@ mod tests {
         let s = StreamCfg::new();
         s.set_quality("auto").expect("合法");
         s.set_peer_rtt(10); // RTT 满速，纯靠丢包判据
-        s.note_stream_health(10, 60); // 6% 丢包
+        s.note_stream_health(10, 60, 0); // 6% 丢包
         for i in 0..24 {
             let changed = feed(&s, 10_000, i);
             let want = i == 23;
@@ -298,7 +298,7 @@ mod tests {
         let s = StreamCfg::new();
         s.set_quality("auto").expect("合法");
         s.set_peer_rtt(20); // RTT 极好
-        s.note_stream_health(20, 25); // 但 2.5% 丢包
+        s.note_stream_health(20, 25, 0); // 但 2.5% 丢包
         for i in 0..60 {
             assert!(!feed(&s, 1_000, i), "丢包挡升档");
         }

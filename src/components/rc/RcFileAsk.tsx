@@ -8,16 +8,17 @@
  *
  * # 两条不能省的纪律
  *
- * 1. **两个方向的按钮含义完全不同**（`askPrompt` 已分开写）：push = 我要选「放哪儿」，
+ * 1. **两个方向的按钮含义完全不同**（`askPrompt` 已分开写）：push = 接受落盘，
  *    pull = 我要选「发哪个」。共用一句文案会让用户点出最坏后果——把自家文件发出去。
- * 2. **接受必须由用户选完路径才回响应**：后端一收到 accept 就开始灌字节（push）
- *    或读盘（pull），没有「先接受再慢慢选」的余地。所以取消选择 = 不回应，
- *    请求会自然走到 60s 超时（= 拒绝），不会留下半截状态。
+ * 2. 🔴 2026-09-27（用户拍板：不再每次弹目录选择框）：push 的「接受」直接落
+ *    **接收目录**（`rc_file_default_dir`，设置里可改）；「选其他位置」降为次级
+ *    小钮，保留「这次就想放别处」的能力。pull 方向仍是选文件（那一步不能省）。
+ *    旧纪律「接受必须选完路径才回响应」只对「其他位置」路径成立——主路径的
+ *    落点由设置决定，不需要用户再确认一次。
  *
  * 3. **「以后自动接收」勾选只在 push 上出现**（B6 落地）。pull 方向是「我要把哪个
  *    文件发出去」，没有可自动的东西——摆在那里就是个语义含糊的假开关。
- *    勾上之后**不再问目录**：以后那些也落同一个地方，这次却让挑一个别的目录，
- *    反而会让人以为「刚才挑的那个才是以后用的」。
+ *    勾上之后不再询问：以后那些也落**同一个接收目录**（设置里可改）。
  *
  * ❗ 勾选**只跳确认条，不跳门禁**：`gate_inbound` 仍先跑，被禁用/未配对的设备
  *    照样进不来。这条在后端 `file_transfer.rs::auto_accept_dir` 有注释钉着。
@@ -30,7 +31,7 @@ import { ASK_TIMEOUT_MS, askCountdown, askPrompt, formatBytes } from "@/lib/rcFi
 import type { RcFileAsk } from "@/lib/api/rcFile";
 import styles from "./RemoteComputer.module.css";
 
-/** 打开系统选择框，拿到用户选定的路径（取消 → null）。 */
+/** 打开系统选择框，拿到用户选定的路径（取消 → null）。「其他位置」次级路径专用。 */
 async function pickAccept(ask: RcFileAsk): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   if (ask.kind === "push") {
@@ -55,13 +56,11 @@ async function pickAccept(ask: RcFileAsk): Promise<string | null> {
 }
 
 /**
- * 自动接收的落点。
- *
- * 走 `rc_file_default_dir`，与后端 `file_transfer.rs::default_receive_dir()` 是
- * **同一个目录**（`<下载>/PastePanda 接收`）——必须同源，不然「这次落哪儿」
- * 和「以后落哪儿」会不一样。拿不到就返回 null，由调用方退回让用户挑。
+ * 接收落点（push 主路径）：直接用 `rc_file_default_dir`——设置里可改的
+ * 「文件接收目录」，未配置回落 `<下载>/PastePanda 接收`。拿不到（后端异常）
+ * 才返回 null，由调用方退回「其他位置」弹框，别让「点了接受什么也没发生」。
  */
-async function autoAcceptDir(): Promise<string | null> {
+async function receiveDir(): Promise<string | null> {
   try {
     return await rcFileDefaultDir();
   } catch {
@@ -69,7 +68,7 @@ async function autoAcceptDir(): Promise<string | null> {
   }
 }
 
-/** 卡片与一行版共用的交互（选路径 → 回响应 → 失败可重试）。 */
+/** 卡片与一行版共用的交互（接受/其他位置 → 回响应 → 失败可重试）。 */
 function useAskActions(
   ask: RcFileAsk,
   onRespond: (askId: string, acceptDir: string | null) => Promise<boolean>,
@@ -82,6 +81,23 @@ function useAskActions(
   const [autoFailed, setAutoFailed] = useState(false);
   const canAuto = ask.kind === "push";
 
+  const respond = async (path: string | null) => {
+    const ok = await onRespond(ask.id, path);
+    if (!ok) {
+      setFailed(true);
+      return false;
+    }
+    if (auto && canAuto) {
+      try {
+        await rcDeviceAutoAcceptSet(ask.peer, true);
+      } catch {
+        setAutoFailed(true);
+      }
+    }
+    return true;
+  };
+
+  /** 主路径：push 直接落接收目录（不弹框）；pull 仍去选文件。 */
   const accept = async () => {
     if (picking) return;
     setPicking(true);
@@ -89,27 +105,33 @@ function useAskActions(
     setAutoFailed(false);
     try {
       let path: string | null;
-      if (auto && canAuto) {
-        path = await autoAcceptDir();
+      if (ask.kind === "push") {
+        path = await receiveDir();
         if (!path) path = await pickAccept(ask); // 退路：别让「点了接受什么也没发生」
       } else {
         path = await pickAccept(ask);
       }
-      // 用户取消了系统选择框 = 不回应：让请求走 60s 超时（等价拒绝），
+      // 取消了系统选择框（pull / 其他位置）= 不回应：让请求走 60s 超时（等价拒绝），
       // 不能替用户回一个他没选过的路径。
       if (!path) return;
-      const ok = await onRespond(ask.id, path);
-      if (!ok) {
-        setFailed(true);
-        return;
-      }
-      if (auto && canAuto) {
-        try {
-          await rcDeviceAutoAcceptSet(ask.peer, true);
-        } catch {
-          setAutoFailed(true);
-        }
-      }
+      await respond(path);
+    } catch {
+      setFailed(true);
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  /** 次级路径（push 专属）：「这次就想放别处」——弹系统选择框，落用户选的目录。 */
+  const pickOther = async () => {
+    if (picking || ask.kind !== "push") return;
+    setPicking(true);
+    setFailed(false);
+    setAutoFailed(false);
+    try {
+      const path = await pickAccept(ask);
+      if (!path) return;
+      await respond(path);
     } catch {
       setFailed(true);
     } finally {
@@ -125,6 +147,7 @@ function useAskActions(
     autoFailed,
     canAuto,
     accept: () => void accept(),
+    pickOther: () => void pickOther(),
     deny: () => void onRespond(ask.id, null),
   };
 }
@@ -163,6 +186,18 @@ export function RcFileAskCard({
      塞进去会让勾选框的无障碍名变成「主文案 + 落点说明」一长串（屏幕阅读器念不完、
      测试也锚不住）。拆开之后名字仍是干净的一句，说明照样会被念出来。 */
   const autoHintId = useId();
+  /** 接收落点（push 才有意义）：展示「存到哪儿」这个核对事实。 */
+  const [recvDir, setRecvDir] = useState("");
+  useEffect(() => {
+    if (ask.kind !== "push") return;
+    let alive = true;
+    void receiveDir().then((d) => {
+      if (alive && d) setRecvDir(d);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [ask.id, ask.kind]);
 
   return (
     <div className={styles.fileAskCard} role="alertdialog" aria-live="assertive">
@@ -187,6 +222,14 @@ export function RcFileAskCard({
               <dt>大小</dt>
               <dd>{formatBytes(ask.size)}</dd>
             </div>
+            {recvDir && (
+              <div className={styles.ibFact}>
+                <dt>保存到</dt>
+                <dd className={styles.fileAskMono} title={recvDir}>
+                  {recvDir}
+                </dd>
+              </div>
+            )}
           </>
         )}
       </dl>
@@ -205,7 +248,7 @@ export function RcFileAskCard({
             <span>以后自动接收此设备的文件</span>
           </label>
           <div id={autoHintId} className={styles.fileAskAutoHint}>
-            存到默认接收目录（下载 / PastePanda 接收），随时可在设备卡片上撤销
+            存到文件接收目录（设置里可改），随时可在设备卡片上撤销
           </div>
         </>
       )}
@@ -223,6 +266,19 @@ export function RcFileAskCard({
         <button type="button" className={styles.miniBtn} disabled={busy || a.picking} onClick={a.deny}>
           {p.deny}
         </button>
+        {/* push 主路径直接落接收目录（不再弹选框）；「其他位置」是次级出口——
+            这次想放别处才用，落点仍是接受那刻就定死的。 */}
+        {ask.kind === "push" && (
+          <button
+            type="button"
+            className={styles.miniBtn}
+            disabled={busy || a.picking}
+            title="这次把文件存到你指定的位置"
+            onClick={a.pickOther}
+          >
+            其他位置
+          </button>
+        )}
         <button
           type="button"
           className={styles.dangerBtn}
@@ -230,8 +286,7 @@ export function RcFileAskCard({
           title={p.lead}
           onClick={a.accept}
         >
-          {/* 勾了自动接收就不弹目录选择框了，按钮再写「选择保存位置」就是骗人。 */}
-          {a.picking ? "等待选择…" : a.auto && a.canAuto ? "接受" : p.accept}
+          {a.picking ? "等待选择…" : p.accept}
         </button>
       </div>
       <div className={styles.fileAskNote}>
