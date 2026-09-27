@@ -162,12 +162,8 @@ impl RcService {
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("[channel_down] 远程通道未启动——先打开「允许被远程协助」".into());
         };
-        let id =
-            EndpointId::from_str(peer).map_err(|e| format!("[bad_node_id] node_id 解不开：{}", e))?;
-        let mut addr = EndpointAddr::new(id);
-        for sock in presence.addrs_of(peer, now_ms()) {
-            addr = addr.with_ip_addr(sock);
-        }
+        let addr = self.peer_addr(peer, &presence)
+            .map_err(|e| format!("[bad_node_id] {e}"))?;
         // ❗ 失败要单独分档：旧版对端根本没有这条 ALPN，握手必然失败。
         //   塌缩成「连接失败」会让用户去查网络，而实际要做的是升级对方。
         // C-3：与 dial_and_request 同款超时——网络黑洞下后台任务不得无限挂。

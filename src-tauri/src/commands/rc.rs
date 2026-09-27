@@ -14,6 +14,7 @@ use crate::rc::join;
 use crate::rc::local_device_name;
 use crate::rc::protocol::Capability;
 use crate::rc::service::{RcService, RcStatus};
+use crate::rc::short_pair;
 use crate::rc::uno;
 use crate::rc::video::FrameCodec;
 use crate::rc::session::{
@@ -348,6 +349,51 @@ pub fn kb_sync_deny_from_rc(store: State<DataStore>, node_id: String) -> Result<
 /// 别的测试文件够不到这个常量）。
 const RC_INVITE_DOOR_MS: i64 = invite::RC_TTL_SECS * 1000;
 
+/// 首页常驻的八位码仅存在内存，不启动通道；进入页面或重开页面可取回同一份码。
+#[tauri::command]
+pub fn rc_short_pair_code(svc: State<'_, Arc<RcService>>) -> Result<RcInviteCreated, String> {
+    let code = svc.joins().short_code(chrono::Utc::now().timestamp_millis())?;
+    Ok(RcInviteCreated { code: code.code, expires_at: code.expires_at })
+}
+
+/// 双方确认后派生临时 P2P 会合身份，再交换真正的设备身份。
+#[tauri::command]
+pub async fn rc_short_pair_begin(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    own_code: String,
+    peer_code: String,
+) -> Result<RcExchangeStarted, String> {
+    let now = chrono::Utc::now().timestamp_millis();
+    if !svc.joins().valid_short_code(&own_code, now) {
+        return Err("本机配对码已过期，请重新复制新的码".into());
+    }
+    if !short_pair::valid_code(&peer_code) || peer_code == own_code {
+        return Err("请输入对方的八位配对码，不能使用自己的码".into());
+    }
+    let (_attempt, mut cancelled) = svc.joins().begin_short()?;
+    let expires_at = svc.joins().short_code(now)?.expires_at;
+    svc.start(&app_dir(&app)?, true).await?;
+    join::open_door(&store, expires_at)?;
+    let endpoint = svc.short_pair_endpoint().ok_or("远程通道未启动")?;
+    let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
+    let (node_id, name, addr) = tokio::select! {
+        result = short_pair::exchange(endpoint, &me, &own_code, &peer_code, expires_at) => result?,
+        _ = cancelled.changed() => return Err("已取消配对".into()),
+    };
+    if node_id == me.node_id() {
+        return Err("不能与本机配对".into());
+    }
+    svc.arm_exchange_addr(&node_id, &name, expires_at, addr)?;
+    Ok(RcExchangeStarted { node_id, name, expires_at })
+}
+
+#[tauri::command]
+pub fn rc_short_pair_cancel(svc: State<'_, Arc<RcService>>) {
+    svc.joins().cancel_short();
+}
+
 /// 生成远程配对邀请码（开门，等对方粘贴后敲门）。
 #[tauri::command]
 pub async fn rc_invite_create(
@@ -527,6 +573,7 @@ pub async fn rc_forget(
         svc.force_end_if_session(&id, "设备已从信任列表移除").await;
     }
     store.rc_device_forget(&node_id)?;
+    svc.forget_peer_addr(&node_id)?;
     // 忘掉最后一台且未开被控 → 收通道
     if !svc.needs_channel() {
         svc.stop().await;

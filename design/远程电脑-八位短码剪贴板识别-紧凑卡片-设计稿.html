@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>远程电脑 · 八位短码与剪贴板识别 · 紧凑卡片</title>
+  <!-- 仅展示 RcA2SelfCard 的拟改动。示意数字不是有效邀请码；不改设备列表和右侧详情。 -->
+  <style>
+    :root{--bg:#eaf0f6;--side:#f0f4f8;--card:#fff;--ink:#14263e;--muted:#53677f;--line:#d6e0eb;--blue:#087bbd;--blue-bg:#e7f4fc;--green:#078148;--green-bg:#dff5e9;--red:#b42e3a;--red-bg:#fcecef}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 "Segoe UI","Microsoft YaHei",sans-serif}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    .page{max-width:1020px;margin:auto;padding:24px}.eyebrow{color:var(--blue);font-size:11px;font-weight:700;letter-spacing:.08em}.page h1{font-size:21px;margin:4px 0 7px}.lede{margin:0 0 18px;color:var(--muted)}.layout{display:grid;grid-template-columns:338px minmax(0,1fr);gap:26px;align-items:start}
+    .sidebar{height:720px;background:var(--side);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 24px rgba(31,67,103,.09)}.top{padding:17px 12px 8px}.tophead{display:flex;align-items:center;justify-content:space-between}.tophead b{font-size:16px}.tophead span{color:var(--muted)}.count{color:var(--muted);margin:19px 4px}.group{color:var(--muted);font-weight:650;margin:8px 4px}.device{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px}.device.sel{border-color:#9bd3f1;box-shadow:0 0 0 3px #d7eefb}.device b,.device small{display:block}.device small{color:var(--green);margin-top:2px}.device.off small{color:var(--muted)}.spacer{flex:1;min-height:10px}
+    .self{margin:0 8px 8px;padding:8px 12px;border-top:1px solid var(--line)}.self-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}.self-head strong{font-size:13px}.self-head button{border:0;background:none;color:var(--muted);font-size:11px;padding:2px 0}.code-row{height:42px;background:var(--card);border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;padding:0 8px 0 11px;gap:8px}.code-label{font-size:11px;color:var(--muted);white-space:nowrap}.code{font:700 17px Consolas,monospace;letter-spacing:.08em;white-space:nowrap;flex:1}.copy{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:4px 7px;color:var(--blue);font-size:11px;font-weight:650}.peer-row{display:flex;gap:6px;margin-top:7px;height:34px}.peer-wrap{position:relative;flex:1;min-width:0}.peer-wrap input{width:100%;height:34px;border:1px solid var(--line);background:var(--card);border-radius:7px;padding:0 8px;color:var(--ink);font-size:12px}.peer-wrap input.detected{border-color:var(--blue);background:var(--blue-bg)}.peer-wrap input::placeholder{color:var(--muted)}.confirm{width:70px;flex:0 0 70px;background:var(--blue);border:1px solid var(--blue);color:#fff;border-radius:7px;font-size:12px;font-weight:650}.confirm:disabled{background:#d8e5ed;border-color:#d8e5ed;color:#63788b;cursor:default}.status{height:17px;margin-top:4px;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.status.ok{color:var(--green)}.status.error{color:var(--red)}.switch{height:44px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 9px;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}.switch strong,.switch small{display:block}.switch strong{font-size:12px}.switch small{font-size:11px;color:var(--muted)}.switch button{border:1px solid #a8dfc1;background:var(--green-bg);color:var(--green);border-radius:7px;padding:4px 8px;font-size:11px}.foot{padding:8px;border-top:1px solid var(--line)}.help,.tools button{border:1px solid var(--line);background:var(--card);border-radius:8px;min-height:31px;color:var(--ink)}.help{width:100%;text-align:left;padding:0 12px}.help small{float:right;color:var(--muted)}.tools{display:flex;gap:8px;margin-top:8px}.tools button{flex:1}
+    .notes{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}.notes h2{font-size:15px;margin:0 0 8px}.notes p{color:var(--muted);margin:0 0 12px}.flow{margin:0 0 14px;padding-left:20px}.flow li{margin:0 0 8px}.chip{display:inline-block;border-radius:99px;background:var(--blue-bg);color:var(--blue);font-size:11px;padding:3px 9px;margin:0 6px 7px 0}.demo{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 15px}.demo button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:11px}.demo button:hover{background:var(--blue-bg)}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:8px 5px}th{color:var(--muted);font-weight:600}.risk{font-size:11px;color:var(--muted);margin-top:12px}.risk strong{color:var(--ink)}
+    @media(max-width:790px){.page{padding:16px}.layout{grid-template-columns:1fr}.sidebar{max-width:338px}.notes{max-width:650px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="eyebrow">仅重做左侧“这台电脑”卡片</div>
+    <h1>邀请码默认可见，接收的码在同一行确认</h1>
+    <p class="lede">八位数字示意。复制时带上 PastePanda 前缀，方便对方返回窗口时准确识别剪贴板；原来的设备列表和底部工具位置不变。</p>
+    <div class="layout">
+      <section class="sidebar" aria-label="远程电脑左侧栏设计预览">
+        <div class="top"><div class="tophead"><b>我的设备</b><span>⌕</span></div><p class="count">2 台设备 · 状态自动更新</p><div class="group">⌄ 在线 1</div><div class="device sel"><b>机械革命</b><small>● 刚刚可连接</small></div><div class="group">⌄ 不在线 1</div><div class="device off"><b>李清泉</b><small>● 暂时连不上</small></div></div>
+        <div class="spacer"></div>
+        <div class="self">
+          <div class="self-head"><strong>这台电脑</strong><button type="button" title="设备号与其他连接方式">更多方式 ›</button></div>
+          <div class="code-row"><span class="code-label">我的码</span><span class="code" id="mine">4826 7031</span><button class="copy" id="copy" type="button">复制</button></div>
+          <div class="peer-row"><div class="peer-wrap"><input id="peer" inputmode="numeric" maxlength="9" aria-label="对方的邀请码" placeholder="粘贴对方的 8 位码"></div><button class="confirm" id="confirm" type="button" disabled>确认</button></div>
+          <div class="status" id="status" role="status">邀请码 10 分钟有效 · 双方确认后配对</div>
+          <div class="switch"><span><strong>允许别人连接本机</strong><small>已开启，可接收远程请求</small></span><button type="button">已允许</button></div>
+        </div>
+        <div class="foot"><button class="help" type="button">帮助 <small>让别人帮我 / 帮别人连一次</small></button><div class="tools"><button type="button">文件</button><button type="button">记录</button><button type="button">设置</button></div></div>
+      </section>
+      <aside class="notes">
+        <h2>推荐流程：八位短码</h2>
+        <div><span class="chip">卡片不展开</span><span class="chip">复制一步完成</span><span class="chip">识别后仍需确认</span></div>
+        <ol class="flow"><li>进入远程电脑，卡片默认显示 <b>4826 7031</b>；点“复制”得到 <b>PP-4826-7031</b>，发给对方。</li><li>对方复制这串码，返回远程电脑页时，输入框自动填成 <b>4826 7031</b>，按钮变为可点；也可手动输入。</li><li>点“确认”后，同一行显示等待；两边都确认才加入设备列表。失败和过期也在同一位置给出重试。</li></ol>
+        <div class="demo"><button type="button" id="simulate">模拟识别剪贴板</button><button type="button" id="reset">恢复初始状态</button><button type="button" id="expire">模拟邀请码过期</button></div>
+        <h2>方案取舍</h2>
+        <table><tr><th>方案</th><th>好处</th><th>代价</th></tr><tr><td><b>A · 双方各交换八位码（当前方案）</b></td><td>可口述、可复制，不新增短码查询服务</td><td>双方都需输入并确认；跨网继续使用现有 iroh 公共发现与中继</td></tr><tr><td>B · 六位短码</td><td>更易输入</td><td>两组码的组合空间更小，猜码风险更高</td></tr><tr><td>C · 完整身份码</td><td>继续沿用原配对路径</td><td>复制内容仍是 52 位以上的 PP1 码</td></tr></table>
+        <p class="risk"><strong>识别边界：</strong>只在远程电脑页获得焦点时检查剪贴板里的 <b>PP-1234-5678</b> 格式，不后台持续扫描，不凭普通 8 位数字擅自发起连接。双方确认后，两个码共同派生本次临时 P2P 会合身份；码到期失效，设备信任仍需双方确认。</p>
+      </aside>
+    </div>
+  </main>
+  <script>
+    const peer=document.getElementById('peer'),button=document.getElementById('confirm'),status=document.getElementById('status');
+    const normalize=s=>{const m=s.trim().match(/^(?:PP[-\s]?)?(\d{4})[-\s]?(\d{4})$/i);return m?m[1]+' '+m[2]:''};
+    peer.addEventListener('input',()=>{const v=normalize(peer.value);button.disabled=!v;peer.classList.toggle('detected',!!v);status.textContent=v?'对方邀请码已就绪，确认后等待对方':'邀请码 10 分钟有效 · 双方确认后配对';status.className='status'});
+    document.getElementById('simulate').addEventListener('click',()=>{peer.value='2850 1946';peer.dispatchEvent(new Event('input'));status.textContent='已从剪贴板识别对方邀请码';peer.focus()});
+    document.getElementById('copy').addEventListener('click',()=>{status.textContent='已复制 PP-4826-7031，可发给对方';status.className='status ok'});
+    button.addEventListener('click',()=>{if(button.disabled)return;button.textContent='等待中';button.disabled=true;status.textContent='已确认，等待对方也输入你的码';status.className='status'});
+    document.getElementById('expire').addEventListener('click',()=>{document.getElementById('mine').textContent='更新中…';status.textContent='邀请码过期，正在换新码';status.className='status error';setTimeout(()=>{document.getElementById('mine').textContent='7310 5824';status.textContent='新邀请码已就绪';status.className='status ok'},700)});
+    document.getElementById('reset').addEventListener('click',()=>{peer.value='';peer.className='';button.textContent='确认';button.disabled=true;status.textContent='邀请码 10 分钟有效 · 双方确认后配对';status.className='status';document.getElementById('mine').textContent='4826 7031'});
+  </script>
+</body>
+</html>

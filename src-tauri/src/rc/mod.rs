@@ -29,6 +29,7 @@ pub mod probe_out;
 pub mod protocol;
 pub mod rs_fec;
 pub mod service;
+pub mod short_pair;
 pub mod session;
 pub mod stream_cfg;
 pub mod uno;

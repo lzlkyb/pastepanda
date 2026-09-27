@@ -124,7 +124,6 @@ pub fn decode_group(
     shard_len: usize,
 ) -> Option<Vec<Option<Vec<u8>>>> {
     assert!(k > 0 && m > 0);
-    let n = k + m;
     if present.len() < k {
         return None; // 有效片不足 k，不可恢复
     }

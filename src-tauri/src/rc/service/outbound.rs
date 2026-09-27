@@ -13,11 +13,7 @@ impl RcService {
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("远程通道未启动".into());
         };
-        let id = iroh::EndpointId::from_str(peer).map_err(|e| format!("设备号无效：{e}"))?;
-        let mut addr = EndpointAddr::new(id);
-        for sock in presence.addrs_of(peer, now_ms()) {
-            addr = addr.with_ip_addr(sock);
-        }
+        let addr = self.peer_addr(peer, &presence)?;
         let conn = tokio::time::timeout(std::time::Duration::from_secs(8), ep.connect(addr, ALPN))
             .await.map_err(|_| "等待对方上线超时".to_string())?
             .map_err(|e| format!("暂时连不上对方：{e}"))?;
@@ -271,11 +267,7 @@ impl RcService {
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("远程通道未启动".into());
         };
-        let id = iroh::EndpointId::from_str(peer).map_err(|e| format!("node_id 解不开：{}", e))?;
-        let mut addr = EndpointAddr::new(id);
-        for sock in presence.addrs_of(peer, now_ms()) {
-            addr = addr.with_ip_addr(sock);
-        }
+        let addr = self.peer_addr(peer, &presence)?;
         let conn = tokio::time::timeout(std::time::Duration::from_secs(3), ep.connect(addr, ALPN))
             .await
             .map_err(|_| "探测超时".to_string())?
@@ -332,12 +324,8 @@ impl RcService {
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("[channel_down] 远程通道未启动".into());
         };
-        let id = iroh::EndpointId::from_str(peer)
-            .map_err(|e| format!("[bad_node_id] node_id 解不开：{}", e))?;
-        let mut addr = EndpointAddr::new(id);
-        for sock in presence.addrs_of(peer, now_ms()) {
-            addr = addr.with_ip_addr(sock);
-        }
+        let addr = self.peer_addr(peer, &presence)
+            .map_err(|e| format!("[bad_node_id] {e}"))?;
 
         // 🔴 拨号必须带超时（2026-09-20 审计 P2-4）：裸等在网络黑洞下会让
         // OutboundPending 挂死、占住 busy 闸，用户只能手动取消。15 秒对

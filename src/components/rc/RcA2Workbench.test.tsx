@@ -66,7 +66,7 @@ describe("RcA2Sidebar", () => {
     const onNavigate = vi.fn();
     renderSidebar({ targets: [], rc: selfRc(), selfEnabled: true, onToggleSelf: vi.fn(), onNavigate });
 
-    expect(screen.getByRole("button", { name: "生成并复制配对码" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "复制" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "添加设备" })).toBeNull();
     for (const label of ["文件", "记录", "设置"]) {
       expect(screen.getByRole("button", { name: label })).toBeTruthy();
@@ -164,7 +164,7 @@ describe("RcA2Sidebar", () => {
     });
     fireEvent.click(screen.getByText("更多方式与设备号"));
     expect(screen.getByText("读取中…")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "生成并复制配对码" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "复制" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "复制设备号" }) as HTMLButtonElement).disabled).toBe(true);
   });
 

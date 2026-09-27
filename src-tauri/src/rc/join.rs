@@ -27,6 +27,13 @@ pub struct RcExchangeIntent {
     pub node_id: String,
     pub name: String,
     pub expires_at: i64,
+    pub addr: Option<iroh::EndpointAddr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RcShortCode {
+    pub code: String,
+    pub expires_at: i64,
 }
 
 const KNOCK_TTL_MS: i64 = 10 * 60 * 1000;
@@ -39,6 +46,18 @@ pub struct RcJoins {
     /// node_id → 拒绝生效到什么时候（epoch ms）。
     denied: Mutex<HashMap<String, i64>>,
     exchange: Mutex<Option<RcExchangeIntent>>,
+    short_code: Mutex<Option<RcShortCode>>,
+    short_active: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
+}
+
+pub struct RcShortAttempt(Arc<RcJoins>);
+
+impl Drop for RcShortAttempt {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.0.short_active.lock() {
+            *active = None;
+        }
+    }
 }
 
 impl RcJoins {
@@ -46,12 +65,71 @@ impl RcJoins {
         Arc::new(Self::default())
     }
 
+    /// 码只留在内存里。重复打开页面时复用未过期的码，避免已发出的码突然失效。
+    pub fn short_code(&self, now_ms: i64) -> Result<RcShortCode, String> {
+        use ring::rand::{SecureRandom, SystemRandom};
+        let mut guard = self.short_code.lock().map_err(|_| "配对状态暂时不可用")?;
+        if let Some(code) = guard.as_ref().filter(|code| now_ms < code.expires_at) {
+            return Ok(code.clone());
+        }
+        let rng = SystemRandom::new();
+        let mut bytes = [0u8; 4];
+        let value = loop {
+            rng.fill(&mut bytes).map_err(|_| "生成配对码失败")?;
+            let value = u32::from_le_bytes(bytes);
+            // 拒绝尾部余数，保证所有八位码等概率。
+            if value < (u32::MAX / 100_000_000) * 100_000_000 {
+                break value % 100_000_000;
+            }
+        };
+        let code = RcShortCode { code: format!("{value:08}"), expires_at: now_ms + 10 * 60 * 1000 };
+        *guard = Some(code.clone());
+        Ok(code)
+    }
+
+    pub fn valid_short_code(&self, code: &str, now_ms: i64) -> bool {
+        self.short_code.lock().ok().and_then(|g| g.clone())
+            .is_some_and(|current| current.code == code && now_ms < current.expires_at)
+    }
+
+    pub fn begin_short(self: &Arc<Self>) -> Result<(RcShortAttempt, tokio::sync::watch::Receiver<bool>), String> {
+        let mut active = self.short_active.lock().map_err(|_| "配对状态暂时不可用")?;
+        if active.is_some() {
+            return Err("正在等待对方确认，请先完成或等本次配对超时".into());
+        }
+        let (sender, receiver) = tokio::sync::watch::channel(false);
+        *active = Some(sender);
+        Ok((RcShortAttempt(self.clone()), receiver))
+    }
+
+    pub fn cancel_short(&self) {
+        if let Ok(active) = self.short_active.lock() {
+            if let Some(sender) = active.as_ref() {
+                let _ = sender.send(true);
+            }
+        }
+    }
+
+    pub fn clear_short_code(&self) {
+        if let Ok(mut guard) = self.short_code.lock() {
+            *guard = None;
+        }
+    }
+
     pub fn arm_exchange(&self, node_id: &str, name: &str, expires_at: i64) -> Result<(), String> {
+        self.arm_exchange_addr(node_id, name, expires_at, None)
+    }
+
+    pub fn arm_exchange_addr(&self, node_id: &str, name: &str, expires_at: i64, addr: Option<iroh::EndpointAddr>) -> Result<(), String> {
+        if addr.as_ref().is_some_and(|value| value.id.to_string() != node_id) {
+            return Err("设备地址与身份不一致".into());
+        }
         let mut g = self.exchange.lock().map_err(|_| "配对状态暂时不可用")?;
         *g = Some(RcExchangeIntent {
             node_id: node_id.to_string(),
             name: name.to_string(),
             expires_at,
+            addr,
         });
         Ok(())
     }
@@ -180,6 +258,24 @@ mod tests {
         assert!(j.exchange_for("a", 10_000).is_none());
         j.clear_exchange("a");
         assert!(j.exchange_for("a", 9_000).is_none());
+    }
+
+    #[test]
+    fn short_code_is_reused_until_expiry_and_only_one_attempt_can_run() {
+        let joins = RcJoins::new();
+        let first = joins.short_code(1_000).unwrap();
+        assert_eq!(first.code.len(), 8);
+        assert!(first.code.bytes().all(|b| b.is_ascii_digit()));
+        assert_eq!(joins.short_code(2_000).unwrap(), first);
+        assert!(joins.valid_short_code(&first.code, 2_000));
+        let (attempt, cancelled) = joins.begin_short().unwrap();
+        assert!(joins.begin_short().is_err());
+        joins.cancel_short();
+        assert!(*cancelled.borrow());
+        drop(attempt);
+        assert!(joins.begin_short().is_ok());
+        assert!(!joins.valid_short_code(&first.code, first.expires_at));
+        assert_ne!(joins.short_code(first.expires_at).unwrap().expires_at, first.expires_at);
     }
 }
 

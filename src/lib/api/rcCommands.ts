@@ -65,6 +65,18 @@ export function rcExchangeBegin(code: string): Promise<RcExchangeStarted> {
   return invoke<RcExchangeStarted>("rc_exchange_begin", { code });
 }
 
+export function rcShortPairCode(): Promise<RcInviteCreated> {
+  return invoke<RcInviteCreated>("rc_short_pair_code");
+}
+
+export function rcShortPairBegin(ownCode: string, peerCode: string): Promise<RcExchangeStarted> {
+  return invoke<RcExchangeStarted>("rc_short_pair_begin", { ownCode, peerCode });
+}
+
+export function rcShortPairCancel(): Promise<void> {
+  return invoke<void>("rc_short_pair_cancel");
+}
+
 export function rcExchangeCheck(nodeId: string): Promise<"waiting" | "paired"> {
   return invoke<"waiting" | "paired">("rc_exchange_check", { nodeId });
 }

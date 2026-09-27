@@ -67,7 +67,7 @@ export function RcA2SelfCard({
   return (
     <div className={styles.selfCard}>
       <div className={styles.selfHead}><strong>这台电脑</strong></div>
-      <RcA2PairExchange rc={rc} enabled={enabled} toast={toast} />
+      <RcA2PairExchange rc={rc} toast={toast} />
       <div className={styles.selfToggleRow}>
         <span className={styles.selfToggleCopy}>
           <strong>允许别人连接本机</strong>

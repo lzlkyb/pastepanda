@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { readClipboardText } from "@/lib/api";
-import { rcExchangeBegin, rcExchangeCheck } from "@/lib/api/rc";
+import { rcExchangeCheck, rcShortPairBegin, rcShortPairCancel, rcShortPairCode } from "@/lib/api/rc";
+import { formatShortCode, shortCodeFromClipboard, shortCodeFromInput } from "@/lib/rcShortCode";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
@@ -8,34 +9,66 @@ import styles from "./RemoteComputerA2.module.css";
 
 type Notice = { tone: "info" | "success" | "error"; text: string } | null;
 
-/** 首页卡片的长期配对：本机码按需生成，双方都粘贴后才显示成功。 */
-export function RcA2PairExchange({ rc, enabled, toast }: {
+/** 双方各交换八位码，点击确认后通过现有 P2P 通道完成配对。 */
+export function RcA2PairExchange({ rc, toast }: {
   rc: UseRc;
-  enabled: boolean;
   toast: ToastFn;
 }) {
   const visible = useWindowVisible();
   const [ownCode, setOwnCode] = useState("");
   const [expiresAt, setExpiresAt] = useState(0);
   const [peerCode, setPeerCode] = useState("");
-  const [pasteOpen, setPasteOpen] = useState(false);
   const [peerId, setPeerId] = useState("");
   const [peerName, setPeerName] = useState("");
-  const [phase, setPhase] = useState<"idle" | "waiting" | "paired" | "error">("idle");
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "joining" | "waiting" | "paired" | "error">("idle");
   const [notice, setNotice] = useState<Notice>(null);
   const refreshTargets = rc.refreshTargets;
 
-  // 邀请门可能在页面长时间打开后结束。只排一次到期任务，不做常驻倒计时。
+  useEffect(() => {
+    if (phase !== "joining") return;
+    return () => { void rcShortPairCancel(); };
+  }, [phase]);
+
+  useEffect(() => {
+    if (!rc.identity?.node_id) return;
+    let cancelled = false;
+    void rcShortPairCode().then((r) => {
+      if (!cancelled) { setOwnCode(r.code); setExpiresAt(r.expires_at); }
+    }).catch((error) => {
+      if (!cancelled) setNotice({ tone: "error", text: `获取配对码失败：${String(error)}` });
+    });
+    return () => { cancelled = true; };
+  }, [rc.identity?.node_id]);
+
+  // 窗口获焦时只识别带 PP 前缀的码，不在后台监听剪贴板。
+  useEffect(() => {
+    if (!visible || peerCode || !ownCode || phase === "paired") return;
+    let cancelled = false;
+    void readClipboardText().then((text) => {
+      const code = shortCodeFromClipboard(text);
+      if (!cancelled && code && code !== ownCode) {
+        setPeerCode(formatShortCode(code));
+        setNotice({ tone: "info", text: "已识别对方的配对码，点确认即可配对。" });
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [visible, peerCode, ownCode, phase]);
+
+  // 码到期时换新；只排一次到期任务，不做常驻倒计时。
   useEffect(() => {
     if (!expiresAt) return;
     const timer = window.setTimeout(() => {
-      setOwnCode("");
-      setPhase((current) => current === "paired" ? current : "error");
-      setNotice({ tone: "error", text: "本次配对窗口已结束，请重新生成并交换配对码。" });
+      void rcShortPairCode().then((r) => {
+        setOwnCode(r.code);
+        setExpiresAt(r.expires_at);
+        if (phase !== "paired") {
+          setPhase("error");
+          setNotice({ tone: "info", text: "配对码已更新，请把新码发给对方。" });
+        }
+      }).catch((error) => setNotice({ tone: "error", text: `更新配对码失败：${String(error)}` }));
     }, Math.max(0, expiresAt - Date.now()));
     return () => window.clearTimeout(timer);
-  }, [expiresAt]);
+  }, [expiresAt, phase]);
 
   useEffect(() => {
     if (!peerId || phase !== "waiting" || !visible) return;
@@ -48,10 +81,12 @@ export function RcA2PairExchange({ rc, enabled, toast }: {
         if (state === "paired") {
           setPhase("paired");
           setNotice({ tone: "success", text: `已与「${peerName}」配对，设备已加入列表。` });
-          setOwnCode("");
-          setExpiresAt(0);
+          setPeerCode("");
           void refreshTargets();
           toast(`已与「${peerName}」配对`, "success");
+          void rcShortPairCode().then((r) => {
+            if (!cancelled) { setOwnCode(r.code); setExpiresAt(r.expires_at); }
+          });
           return;
         }
       } catch (error) {
@@ -67,88 +102,63 @@ export function RcA2PairExchange({ rc, enabled, toast }: {
   }, [peerId, peerName, phase, visible, refreshTargets, toast]);
 
   const copyCode = async () => {
-    setBusy(true);
+    if (!ownCode) return;
     try {
-      const r = await rc.createInvite(rc.identity?.device_name ?? "");
-      setOwnCode(r.code);
-      setExpiresAt(r.expires_at);
-      setPeerId("");
-      setPhase("idle");
-      try {
-        await navigator.clipboard.writeText(r.code);
-        setNotice({ tone: "success", text: "配对码已复制。发给对方，请对方也把自己的配对码发给你。" });
-      } catch {
-        setNotice({ tone: "error", text: "配对码已生成，但复制失败。请选中上方完整码手动复制。" });
-      }
-    } catch (error) {
-      setNotice({ tone: "error", text: `生成配对码失败：${String(error)}` });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const pasteClipboard = async () => {
-    try {
-      setPeerCode((await readClipboardText()).trim());
-      setNotice(null);
-    } catch (error) {
-      setNotice({ tone: "error", text: `读取剪贴板失败：${String(error)}` });
+      await navigator.clipboard.writeText(`PP-${ownCode.slice(0, 4)}-${ownCode.slice(4)}`);
+      setNotice({ tone: "success", text: "已复制，发给对方；也请对方把自己的码发给你。" });
+    } catch {
+      setNotice({ tone: "error", text: "复制失败，请选中上方的码手动复制。" });
     }
   };
 
   const begin = async () => {
-    if (!ownCode || !peerCode.trim()) return;
-    setBusy(true);
+    const code = shortCodeFromInput(peerCode);
+    if (!ownCode || !code || code === ownCode) return;
+    setPhase("joining");
+    setNotice({ tone: "info", text: "正在等待对方也确认配对…" });
     try {
-      const peer = await rcExchangeBegin(peerCode.trim());
+      const peer = await rcShortPairBegin(ownCode, code);
       setPeerId(peer.node_id);
       setPeerName(peer.name);
       setPhase("waiting");
-      setNotice({ tone: "info", text: `已收到「${peer.name}」的码，等待对方也粘贴你的码。` });
+      setNotice({ tone: "info", text: `已找到「${peer.name}」，正在完成双方确认…` });
     } catch (error) {
-      setPhase("error");
-      setNotice({ tone: "error", text: `未能开始配对：${String(error)}` });
-    } finally {
-      setBusy(false);
+      if (String(error).includes("已取消配对")) {
+        setPhase("idle");
+        setNotice({ tone: "info", text: "已取消配对。" });
+      } else {
+        setPhase("error");
+        setNotice({ tone: "error", text: `未能配对：${String(error)}` });
+      }
     }
   };
 
   return (
     <div className={styles.pairExchange}>
-      <label className={styles.pairLabel} htmlFor="rc-own-pair-code">我的配对码</label>
-      <textarea
-        id="rc-own-pair-code"
-        className={styles.pairCode}
-        rows={3}
-        readOnly
-        value={ownCode}
-        placeholder="点击下方按钮，生成并复制配对码"
-        onFocus={(e) => e.currentTarget.select()}
-      />
-      <button type="button" className={styles.pairPrimary} disabled={busy || !rc.identity || !enabled} onClick={() => void copyCode()}>
-        {busy ? "生成中…" : ownCode ? "重新生成并复制配对码" : "生成并复制配对码"}
-      </button>
-      <div className={styles.pairHint}>{enabled ? "发给对方；本次邀请窗口开放 30 分钟。" : "先开启下方「允许别人连接本机」，再交换配对码。"}</div>
-      <button
-        type="button"
-        className={styles.pairSecondary}
-        aria-expanded={pasteOpen}
-        onClick={() => setPasteOpen((open) => !open)}
-      >
-        {pasteOpen ? "收起对方配对码" : "粘贴对方的配对码"}
-      </button>
-      {pasteOpen && (
-        <div className={styles.pairPaste}>
-          <label className={styles.pairLabel} htmlFor="rc-peer-pair-code">对方发来的码</label>
-          <textarea id="rc-peer-pair-code" rows={3} value={peerCode} onChange={(e) => setPeerCode(e.target.value)} placeholder="在这里粘贴对方的配对码" />
-          <div className={styles.pairPasteActions}>
-            <button type="button" className={styles.pairSecondary} onClick={() => void pasteClipboard()}>从剪贴板填入</button>
-            <button type="button" className={styles.pairPrimary} disabled={busy || !ownCode || !peerCode.trim() || phase === "waiting"} onClick={() => void begin()}>确认交换</button>
-          </div>
-        </div>
-      )}
-      <div className={styles.pairHint}>双方都粘贴对方的码，配对才会完成。</div>
-      {notice && <div role={notice.tone === "error" ? "alert" : "status"} className={notice.tone === "error" ? styles.pairNoticeError : notice.tone === "success" ? styles.pairNoticeSuccess : styles.pairNotice}>{notice.text}</div>}
+      {/* 🔴 aria-label 不能挂在无 role 的 div/span 上（读屏会丢弃，见 rcA11yNames
+          守卫）——整行收成命名 group，码值本身靠「我的码」标签相邻可读。 */}
+      <div className={styles.pairCodeRow} role="group" aria-label="我的配对码">
+        <span className={styles.pairLabel}>我的码</span>
+        <span className={styles.pairShortCode}>{ownCode ? formatShortCode(ownCode) : "获取中…"}</span>
+        <button type="button" className={styles.pairSecondary} disabled={!ownCode} onClick={() => void copyCode()}>复制</button>
+      </div>
+      <div className={styles.pairPeerRow}>
+        <input
+          aria-label="对方的配对码"
+          inputMode="numeric"
+          maxLength={12}
+          value={peerCode}
+          onChange={(e) => { setPeerCode(e.target.value); if (phase === "error") setPhase("idle"); }}
+          placeholder="粘贴对方的 8 位码"
+        />
+        <button type="button" className={styles.pairPrimary} disabled={!ownCode || !shortCodeFromInput(peerCode) || shortCodeFromInput(peerCode) === ownCode || phase === "joining" || phase === "waiting"} onClick={() => void begin()}>
+          {phase === "joining" || phase === "waiting" ? "等待中" : "确认"}
+        </button>
+      </div>
+      {notice && <div role={notice.tone === "error" ? "alert" : "status"} className={notice.tone === "error" ? styles.pairNoticeError : notice.tone === "success" ? styles.pairNoticeSuccess : styles.pairNotice}>
+        <span>{notice.text}</span>
+        {phase === "joining" && <button type="button" className={styles.pairCancel} onClick={() => void rcShortPairCancel()}>取消</button>}
+      </div>}
     </div>
   );
 }

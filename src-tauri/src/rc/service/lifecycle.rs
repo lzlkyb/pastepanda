@@ -408,6 +408,10 @@ impl RcService {
         self.joins.arm_exchange(node_id, name, expires_at)
     }
 
+    pub fn arm_exchange_addr(&self, node_id: &str, name: &str, expires_at: i64, addr: EndpointAddr) -> Result<(), String> {
+        self.joins.arm_exchange_addr(node_id, name, expires_at, Some(addr))
+    }
+
     pub fn exchange_intent(&self, node_id: &str, at_ms: i64) -> Option<join::RcExchangeIntent> {
         self.joins.exchange_for(node_id, at_ms)
     }
@@ -417,14 +421,19 @@ impl RcService {
         if self.is_rc_paired(peer) {
             return Ok(true);
         }
-        if !self.enabled() || !join::door_open(&self.store, now_ms()) {
+        // 短码只建信任，不授予远程控制；接收开关由会话门禁单独执行。
+        if !join::door_open(&self.store, now_ms()) {
             return Ok(false);
         }
         let Some(intent) = self.joins.exchange_for(peer, now_ms()) else {
             return Ok(false);
         };
+        if let Some(addr) = intent.addr.as_ref() {
+            self.save_peer_addr(peer, addr)?;
+        }
         self.store.rc_device_pair(peer, &intent.name)?;
         self.joins.clear_exchange(peer);
+        self.joins.clear_short_code();
         if let Err(e) = join::close_door(&self.store) {
             log::warn!("[RC] 交换配对后关闭邀请窗口失败：{e}");
         }
@@ -466,5 +475,9 @@ impl RcService {
     pub(in crate::rc) fn transport_ready(&self) -> Option<(Endpoint, Arc<PresenceTable>)> {
         let g = self.running.lock().unwrap_or_else(|p| p.into_inner());
         g.as_ref().map(|r| (r.endpoint.clone(), r.presence.clone()))
+    }
+
+    pub fn short_pair_endpoint(&self) -> Option<Endpoint> {
+        self.transport_ready().map(|(endpoint, _)| endpoint)
     }
 }

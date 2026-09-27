@@ -65,3 +65,9 @@ probe/_av/*.zip
 
 # 根目录 target（误生成；Rust 构建目标在 src-tauri/target，已由 src-tauri/.gitignore 管理）
 target/
+
+# impeccable 设计审查工具的本地产物（critique / live 会话，勿入库）
+.impeccable/
+
+# 崩溃报告导出的半成品后缀（导出中断留下的 0 字节残留）
+*.pppart

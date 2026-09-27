@@ -989,26 +989,28 @@
   white-space: nowrap;
 }
 
-.pairExchange { display: grid; gap: 6px; }
-.pairLabel { color: var(--text-secondary); font-size: 11px; font-weight: 600; }
-.pairCode,
-.pairPaste textarea {
+.pairExchange { display: grid; gap: 4px; }
+.pairCodeRow,
+.pairPeerRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pairLabel { flex: 0 0 auto; color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.pairShortCode { flex: 1; min-width: 0; color: var(--text-primary); font: 600 17px/1.4 Consolas, monospace; letter-spacing: 0.08em; white-space: nowrap; user-select: text; }
+.pairPeerRow input {
   box-sizing: border-box;
-  width: 100%;
-  min-height: 40px;
-  resize: vertical;
-  padding: 7px 9px;
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 8px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--card-bg);
   color: var(--text-primary);
-  font: 11px/1.4 Consolas, monospace;
-  overflow-wrap: anywhere;
+  font: 12px/1.4 Consolas, monospace;
 }
-.pairCode { max-height: 68px; }
 .pairPrimary,
 .pairSecondary {
+  flex: 0 0 auto;
   min-height: 30px;
+  padding: 0 8px;
   border-radius: 8px;
   font: inherit;
   font-size: 12px;
@@ -1019,17 +1021,16 @@
 .pairSecondary { border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); }
 .pairPrimary:disabled { opacity: 0.55; cursor: default; }
 .pairPrimary:hover:not(:disabled) { filter: brightness(1.08); }
-.pairSecondary:hover { background: var(--hover); }
-.pairHint { color: var(--text-muted); font-size: 11px; line-height: 1.35; }
-.pairPaste { display: grid; gap: 6px; }
-.pairPasteActions { display: flex; gap: 6px; }
-.pairPasteActions button { flex: 1; }
+.pairSecondary:hover:not(:disabled) { background: var(--hover); }
+.pairSecondary:disabled { opacity: 0.55; cursor: default; }
 .pairNotice,
 .pairNoticeSuccess,
 .pairNoticeError { padding: 6px 8px; border-radius: 8px; font-size: 11px; line-height: 1.35; }
 .pairNotice { color: var(--text-secondary); background: var(--card-bg); }
 .pairNoticeSuccess { color: var(--success); background: var(--success-bg); }
 .pairNoticeError { color: var(--danger); background: var(--danger-bg); }
+.pairNotice:has(.pairCancel) { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pairCancel { flex: 0 0 auto; border: 0; background: transparent; color: var(--accent-solid); font: inherit; text-decoration: underline; cursor: pointer; }
 .selfMore { margin-top: 8px; color: var(--text-secondary); font-size: 11px; }
 .selfMore summary { cursor: pointer; }
 .selfMore .selfCode { margin-top: 8px; font-size: 12px; }
