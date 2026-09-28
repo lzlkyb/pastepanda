@@ -4,7 +4,7 @@
 /* Lenis content 元素 — padding 从 wrapper 移到这里，wrapper 必须干净以便 Lenis 正确计算滚动范围 */
 .cardList {
   --card-height: 72px;
-  --card-gap: 10px;
+  --card-gap: 8px;
   padding: 10px 16px 80px;
   display: flex;
   flex-direction: column;
@@ -414,7 +414,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
 }
 .cardImgRetry {
   width: 32px;
@@ -469,7 +469,7 @@
 .cardPin {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   height: 16px;
   padding: 0 6px;
   border-radius: 4px;
@@ -703,7 +703,7 @@
 }
 .batchBtn {
   font-size: 11px;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
@@ -1042,7 +1042,7 @@
 .cardPopoverCode {
   font-size: 11px;
   font-family: "Fira Code", "SF Mono", "Consolas", monospace;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: 8px;
   background: #1e1e2e;
   color: #cdd6f4;
@@ -1087,7 +1087,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   padding: 12px;
 }
 
@@ -1214,7 +1214,7 @@
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   padding: 4px 6px;
   border-radius: 12px;
   background: var(--float-card-bg, var(--card-bg));
@@ -1235,7 +1235,7 @@
 .imageDetailToolBtn {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -1342,7 +1342,7 @@
   padding: 0 10px !important;
   display: flex !important;
   align-items: center !important;
-  gap: 2px;
+  gap: 4px;
 }
 .ocrToolBtnActive {
   background: color-mix(in srgb, var(--green) 15%, transparent) !important;
@@ -1358,7 +1358,7 @@
   padding: 0 10px !important;
   display: flex !important;
   align-items: center !important;
-  gap: 2px;
+  gap: 4px;
   color: #ec4899 !important;
 }
 .pinToolBtn:hover {
@@ -1371,7 +1371,7 @@
   padding: 0 10px !important;
   display: flex !important;
   align-items: center !important;
-  gap: 2px;
+  gap: 4px;
 }
 
 .ocrSpinnerSmall {
@@ -1400,7 +1400,7 @@
 .ocrResultBar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 12px;
   border-radius: 8px;
   background: var(--accent-light);
@@ -1438,7 +1438,7 @@
 }
 .ocrResultCopyBtn {
   font-size: 10px;
-  padding: 4px 10px;
+  padding: 8px 12px;
   border-radius: 5px;
   border: none;
   /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
@@ -1475,7 +1475,7 @@
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px 12px;
   border: none;
   background: var(--accent-light);
   border-bottom: 1px solid var(--accent-border);
@@ -1617,7 +1617,7 @@
 }
 .ocrFullTextEditToggle {
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 8px 12px;
   border-radius: 5px;
   border: 1px solid var(--accent-border);
   background: transparent;
@@ -1631,7 +1631,7 @@
 }
 .ocrFullTextCopyBtn {
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 8px 12px;
   border-radius: 5px;
   border: 1px solid var(--accent-border);
   background: var(--card-bg);
@@ -1646,7 +1646,7 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .ocrFullTextBody {
-  padding: 10px 12px;
+  padding: 12px;
   font-size: 12px;
   line-height: 1.7;
   color: var(--text-primary);
@@ -1661,7 +1661,7 @@
   width: 100%;
   min-height: 140px;
   max-height: 240px;
-  padding: 10px 12px;
+  padding: 12px;
   border: none;
   outline: none;
   resize: vertical;
@@ -1771,7 +1771,7 @@
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 8px 12px;
   border-radius: 5px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
@@ -1797,8 +1797,8 @@
 /* ===== 微信增强④ 校对模式：左原图缩略 + 右可编辑文本 ===== */
 .ocrProofPanel {
   display: flex;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 12px;
   background: var(--card-bg);
 }
 .ocrProofThumb {
@@ -1824,7 +1824,7 @@
   width: 100%;
   min-height: 160px;
   max-height: 260px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   outline: none;
@@ -1841,7 +1841,7 @@
 /* 选词栏次要动作（变换为…/搜索）：ghost 样式 + 未选词置灰（微信增强③ 按需点亮） */
 .ocrResultGhostBtn {
   font-size: 10px;
-  padding: 4px 10px;
+  padding: 8px 12px;
   border-radius: 5px;
   border: 1px solid var(--accent-border);
   background: transparent;
@@ -1880,7 +1880,7 @@
 .imageExportRow {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   padding: 8px 12px;
   border-radius: 10px;
@@ -1896,7 +1896,7 @@
 }
 .imageExportSeg {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   padding: 2px;
   border-radius: 8px;
   background: var(--card-bg);
@@ -1905,7 +1905,7 @@
 .imageExportSegBtn {
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: 6px;
   border: none;
   background: transparent;
@@ -2072,7 +2072,7 @@
 .cropActionBar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 12px;
   border-radius: 10px;
   background: var(--section-bg);
@@ -2175,7 +2175,7 @@
 /* ===== M5-2 语义命中（搜索结果上方） ===== */
 .semanticHits {
   margin: 0 14px 12px;
-  padding: 10px 12px;
+  padding: 12px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--section-bg);
@@ -2190,7 +2190,7 @@
   margin-bottom: 8px;
 }
 .semanticHitsCount {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 400;
   color: var(--text-muted);
 }
@@ -2209,12 +2209,12 @@
   margin-bottom: 3px;
 }
 .semanticHitScore {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--green);
   font-weight: 500;
 }
 .semanticHitTime {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 .semanticHitText {
@@ -2241,11 +2241,375 @@
   border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 10.5px;
+  font-size: 11px;
   cursor: pointer;
   font-family: inherit;
 }
 .semanticHitBtn:hover {
   border-color: var(--accent);
   color: var(--accent-strong);
+}
+
+/* ===== 图片全屏查看层（「C壳+B芯」：design/图片详情-全屏查看层重做-设计稿.html） ===== */
+
+/* 壳：铺满视口（100vw/100vh）而非 720px 定宽弹窗；透明底 + 强模糊，
+   让图片成为绝对主角，四周压暗只用于衬托。 */
+.fsShell {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* 顶栏：元信息胶囊（hover 浮现）+ 关闭 */
+.fsTop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  padding: 16px 16px 0;
+  z-index: 8;
+  pointer-events: none;
+}
+.fsMeta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: auto;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+.fsMeta:hover { opacity: 1; }
+.fsMetaName { color: var(--text-secondary); }
+.fsTopSp { flex: 1; }
+.fsClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  color: var(--text-secondary);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.fsClose:hover { background: var(--section-bg); color: var(--text-primary); }
+
+/* 图区：吃满剩余高度，图片绝对主角 */
+.fsViewport {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.fsViewport[data-cursor="grabbing"] { cursor: grabbing; }
+.fsViewport[data-cursor="grab"] { cursor: grab; }
+.fsViewport[data-cursor="text"] { cursor: text; }
+.fsViewport[data-cursor="crosshair"] { cursor: crosshair; }
+
+/* 底部唯一操作栏（深色玻璃胶囊，套 §18 截图系视觉语言） */
+.fsToolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--float-card-shadow);
+  z-index: 7;
+  transition: opacity 0.2s ease;
+}
+.fsToolbarWrap {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  z-index: 7;
+  transition: opacity 0.2s ease;
+}
+.fsToolbarWrapDim { opacity: 0.3; pointer-events: none; }
+
+.fsToolBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.fsToolBtn:hover { background: var(--section-bg); color: var(--text-primary); }
+.fsToolBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fsToolBtnOn {
+  --fs-code-cyan: #06b6d4; /* ui-rule-ok: 令牌定义处，截图选区同族青色（同 .codeRectOverlay） */
+  background: color-mix(in srgb, var(--fs-code-cyan) 16%, transparent);
+  border-color: color-mix(in srgb, var(--fs-code-cyan) 45%, transparent);
+  color: var(--fs-code-cyan);
+}
+.fsToolBtnAct {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text-primary);
+}
+.fsToolZoom {
+  min-width: 38px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fsToolSep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--border-color);
+}
+.fsToolSpinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--text-muted) 40%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: fsSpin 400ms linear infinite;
+}
+@keyframes fsSpin { to { transform: rotate(360deg); } }
+
+/* 操作提示胶囊（进场 3s 淡化，hover 过图区即消失） */
+.fsHint {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  color: var(--text-muted);
+  font-size: 11px;
+  z-index: 6;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+.fsHintFaded { opacity: 0.35; }
+.fsHintGone { opacity: 0; visibility: hidden; }
+
+/* 浮出面板通用（OCR 摘要/全文、码面板容器统一规格） */
+.fsPanel,
+.fsExportPop {
+  position: absolute;
+  left: 50%;
+  bottom: 68px;
+  transform: translateX(-50%);
+  width: min(560px, 88vw);
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--float-card-shadow);
+  z-index: 8;
+}
+.fsPanel { animation: fsPanelIn 150ms ease; }
+@keyframes fsPanelIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.fsPanelHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fsPanelTitle { font-size: 12px; color: var(--text-primary); font-weight: 600; }
+.fsPanelSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fsPanelSp { flex: 1; }
+.fsPanelBtn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.fsPanelBtn:hover:not(:disabled) { background: var(--section-bg); color: var(--text-primary); }
+.fsPanelBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.fsPanelBtnPri {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text-primary);
+}
+.fsPanelPreview {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  max-height: 62px;
+  overflow: hidden;
+}
+.fsPanelBody { margin-top: 8px; }
+.fsPanelActs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.fsPanelText {
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.fsPanelEdit {
+  width: 100%;
+  min-height: 26vh;
+  resize: vertical;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.7;
+  font-family: inherit;
+}
+.fsEntityPop { position: absolute; z-index: 3; }
+
+/* 导出浮层（右下角锚定，宽于普通面板） */
+.fsExportPop {
+  left: auto;
+  right: 20px;
+  transform: none;
+  animation: fsExportIn 150ms ease;
+}
+@keyframes fsExportIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fsExportRow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fsExportRow:last-child { margin-bottom: 0; }
+.fsExportLabel { font-size: 11px; color: var(--text-muted); min-width: 28px; }
+.fsExportSeg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.fsExportSegBtn {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.fsExportSegBtnOn { background: color-mix(in srgb, var(--accent) 26%, transparent); color: var(--text-primary); }
+.fsExportSlider { flex: 1; accent-color: var(--accent); }
+.fsExportPct { font-size: 11px; color: var(--text-muted); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.fsExportEstimate { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* 裁剪确认栏（顶替工具栏位置） */
+.fsCropBar {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--text-muted);
+  font-size: 11px;
+  z-index: 8;
+}
+
+/* 裁剪态「还原原图」按钮（右上角，贴元信息胶囊） */
+.fsRestoreBtn {
+  position: absolute;
+  right: 62px;
+  top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  z-index: 8;
+}
+.fsRestoreBtn:hover { color: var(--text-primary); }
+
+/* 码面板复用旧抽屉件（BarcodePanel），在全屏浮层里收平成一块：去掉自带边框/底色，
+   只留内容本身的条目样式（视觉与 OcrSummaryPanel 对齐） */
+.fsPanel > .ocrFullTextPanel {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* OCR 识别中（图区下方一行轻提示，不盖面板） */
+.fsOcrWorking {
+  position: absolute;
+  left: 50%;
+  bottom: 106px;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 11px;
+  z-index: 8;
 }

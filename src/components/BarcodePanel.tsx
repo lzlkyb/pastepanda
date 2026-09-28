@@ -24,22 +24,33 @@ export interface BarcodePanelProps {
   hits: BarcodeHit[];
   /** 悬停某条目时通知父级在图上画出对应码位框；null = 离开 */
   onHover: (index: number | null) => void;
+  /** 受控开合（全屏查看层面板互斥）：传 open 时以受控值为准，auto-open 一次也走回调 */
+  open?: boolean;
+  onOpenChange?: (v: boolean) => void;
 }
 
-export function BarcodePanel({ hits, onHover }: BarcodePanelProps) {
+export function BarcodePanel({ hits, onHover, open: openProp, onOpenChange }: BarcodePanelProps) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const autoOpenedRef = useRef(false);
+  const open = openProp ?? openState;
+  const setOpen = (v: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof v === "function" ? v(open) : v;
+    if (onOpenChange) onOpenChange(next);
+    else setOpenState(next);
+  };
 
-  // 解出码自动展开一次（与 OCR「识别完成自动展开一次」同纪律；收起后不再强开）
+  // 解出码自动展开一次（旧弹窗纪律）。❗ 受控模式下**不自动展开**：全屏查看层的面板
+  // 互斥里「ocr」槽位常被摘要占着，自动抢开会把刚出场的识别摘要顶掉；码数由工具栏
+  // 「码 N」徽标告知，点它才开（设计稿「无码零可见」同款纪律）。
   useEffect(() => {
-    if (hits.length > 0 && !autoOpenedRef.current) {
+    if (hits.length > 0 && !autoOpenedRef.current && !onOpenChange) {
       autoOpenedRef.current = true;
       setOpen(true);
     }
     if (hits.length === 0) autoOpenedRef.current = false;
-  }, [hits.length]);
+  }, [hits.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (hits.length === 0) return null;
 

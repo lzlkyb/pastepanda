@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>图片详情「全屏查看层」重做设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #11151f; color: #e6edf7; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 28px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 34px 0 12px; }
+  .sub { color: #9fb0c8; font-size: 13px; margin-bottom: 22px; line-height: 1.7; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .card { background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 18px; width: 460px; }
+  .card.wide { width: 100%; max-width: 1100px; }
+  .card h3 { font-size: 14px; margin: 0 0 12px; }
+  .card h3 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .tag.before { background: #3a2b2b; color: #f0a0a0; }
+  .tag.after { background: #1f3a2b; color: #8fe0b0; }
+  .stage { position: relative; height: 300px; border-radius: 10px; background: linear-gradient(135deg, #1b2030, #232b40); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+  .stage.fs { height: 420px; }
+  .desk { position: absolute; inset: 0; background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 39px, transparent 39px 40px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 39px, transparent 39px 40px); }
+
+  /* ===== 改前：720px 弹窗 ===== */
+  .dlg { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); width: 420px; background: rgba(18,22,34,.98); border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden; font-size: 10px; }
+  .dlg .dh { display: flex; justify-content: space-between; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.07); color: #c7d2e6; }
+  .dlg .dbody { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .pain { position: relative; border: 1px dashed rgba(240,160,160,.55); border-radius: 6px; padding: 4px 6px; color: #93a2bd; }
+  .pain i { position: absolute; left: -9px; top: -9px; width: 16px; height: 16px; border-radius: 50%; background: #e0524d; color: #fff; font-style: normal; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .p-meta { display: flex; gap: 4px; }
+  .p-meta span { background: rgba(255,255,255,.07); border-radius: 4px; padding: 2px 6px; font-size: 9px; }
+  .p-stage { height: 74px; background: rgba(255,255,255,.04); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #5c6a85; font-size: 10px; }
+  .p-bar { display: flex; gap: 5px; align-items: center; font-size: 9px; }
+  .p-bar b { background: rgba(124,108,255,.18); border: 1px solid rgba(124,108,255,.35); border-radius: 5px; padding: 2px 6px; font-weight: 400; color: #c9c2ff; }
+  .p-foot { display: flex; gap: 5px; align-items: center; border-top: 1px solid rgba(255,255,255,.07); padding: 6px 8px; color: #93a2bd; font-size: 9px; }
+  .p-foot b { background: rgba(124,108,255,.3); border-radius: 5px; padding: 2px 8px; font-weight: 400; color: #e6edf7; }
+
+  /* ===== 改后：全屏查看层 ===== */
+  .fsview { position: absolute; inset: 0; background: rgba(8,10,17,.93); backdrop-filter: blur(10px); display: flex; flex-direction: column; }
+  .fs-top { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 14px; }
+  .meta-pill { display: flex; gap: 8px; align-items: center; font-size: 11px; color: #aebad2; background: rgba(20,26,44,.72); border: 1px solid rgba(255,255,255,.09); padding: 5px 10px; border-radius: 999px; }
+  .meta-pill .dim { color: #6d7d99; }
+  .fs-x { width: 26px; height: 26px; border-radius: 8px; background: rgba(20,26,44,.72); border: 1px solid rgba(255,255,255,.12); color: #c7d2e6; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .fs-img { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; }
+  .pic { width: 46%; height: 62%; border-radius: 6px; background: linear-gradient(135deg, #7fb3d9, #b98fd4 55%, #e8a87c); box-shadow: 0 10px 44px rgba(0,0,0,.5); position: relative; }
+  .pic .zoom-tag { position: absolute; right: -34px; bottom: -6px; font-size: 10px; color: #6d7d99; }
+  .fs-toolbar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 3px; background: rgba(22,28,48,.9); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 5px 8px; box-shadow: 0 10px 34px rgba(0,0,0,.45); }
+  .tb { font-size: 11px; color: #dbe4f5; padding: 5px 9px; border-radius: 9px; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .tb:hover { background: rgba(255,255,255,.09); }
+  .tb.on { background: rgba(6,182,212,.16); color: #7fe3f2; border: 1px solid rgba(6,182,212,.4); }
+  .tb.act { background: rgba(124,108,255,.28); color: #cfcaff; }
+  .tb-sep { width: 1px; height: 16px; background: rgba(255,255,255,.14); margin: 0 4px; }
+  .tb-zoom { font-size: 10px; color: #8fa0bd; min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+  .fs-hint { position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); font-size: 10px; color: #8fa0bd; background: rgba(20,26,44,.6); padding: 3px 10px; border-radius: 999px; opacity: .85; }
+  .fs-hint.fade { opacity: .35; }
+  .panel { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); width: 560px; max-width: 86%; background: rgba(24,30,52,.96); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px 12px; font-size: 11px; color: #c7d2e6; box-shadow: 0 14px 44px rgba(0,0,0,.5); }
+  .panel .ph { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .panel .ph b { font-weight: 600; color: #e6edf7; }
+  .panel .ph .cnt { color: #6d7d99; }
+  .panel .ph .sp { flex: 1; }
+  .pbtn { font-size: 10px; padding: 3px 9px; border-radius: 7px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); color: #dbe4f5; }
+  .pbtn.pri { background: rgba(124,108,255,.3); border-color: rgba(124,108,255,.5); color: #e9e6ff; }
+  .ptext { max-height: 60px; overflow: hidden; color: #aebad2; line-height: 1.6; background: rgba(255,255,255,.04); border-radius: 8px; padding: 7px 9px; }
+  .crop-ovl { position: absolute; inset: 0; background: rgba(8,10,17,.55); }
+  .crop-sel { position: absolute; left: 30%; top: 24%; width: 40%; height: 52%; border: 1.5px solid #7c6cff; border-radius: 4px; background: rgba(124,108,255,.08); }
+  .crop-sel .g { position: absolute; background: rgba(124,108,255,.35); }
+  .crop-bar { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: rgba(24,30,52,.96); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 7px 10px; font-size: 11px; color: #aebad2; }
+  .export-pop { position: absolute; right: 16px; bottom: 62px; width: 300px; background: rgba(24,30,52,.96); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px 12px; font-size: 11px; color: #aebad2; }
+  .seg { display: inline-flex; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; overflow: hidden; margin: 0 6px; }
+  .seg span { padding: 3px 9px; font-size: 10px; }
+  .seg span.on { background: rgba(124,108,255,.3); color: #e9e6ff; }
+  .code-chip { display: flex; gap: 8px; align-items: center; background: rgba(6,182,212,.1); border: 1px dashed rgba(6,182,212,.5); border-radius: 9px; padding: 6px 9px; margin-top: 6px; font-size: 10px; color: #9fe8f2; }
+
+  .hint { margin-top: 12px; font-size: 12px; color: #9fb0c8; line-height: 1.8; }
+  .hint b { color: #cfe8ff; }
+  .kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #c7d2e6; line-height: 1.9; }
+  li b { color: #e6edf7; }
+  .note { margin-top: 14px; font-size: 12px; color: #9fb0c8; background: rgba(34,41,76,.6); border-left: 3px solid #06b6d4; padding: 10px 14px; border-radius: 0 8px 8px 0; line-height: 1.8; }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #ffd9a0; }
+  table.spec { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.spec th, table.spec td { border: 1px solid rgba(255,255,255,.1); padding: 7px 10px; text-align: left; color: #c7d2e6; }
+  table.spec th { background: rgba(255,255,255,.05); color: #e6edf7; font-weight: 600; }
+  .keep { color: #8fe0b0; } .drop { color: #f0a0a0; } .chg { color: #ffd9a0; }
+</style>
+</head>
+<body>
+<!-- status: implemented v7.2.8-dev（2026-09-29 开工落地：全屏查看层 + 底部单栏 + OCR 零二次识别） -->
+<h1>图片详情「全屏查看层」重做 — C 壳 + B 芯</h1>
+<div class="sub">
+  触发：记录模式图片卡片 <b>双击 / 悬停编辑钮 / 右键「编辑内容」</b>（入口不变，单击复制语义不动）。<br>
+  壳 = 720px 模态框 → 全屏查看层；芯 = 全部操作收敛到底部一条胶囊工具栏，功能面板从栏上方按需浮出。
+</div>
+
+<h2>一、改前 / 改后总览</h2>
+<div class="row">
+  <div class="card">
+    <h3>改前 <span class="tag before">720px 弹窗 · 7 层纵堆</span></h3>
+    <div class="stage">
+      <div class="desk"></div>
+      <div class="dlg">
+        <div class="dh"><span>🖼 图片详情</span><span>✕</span></div>
+        <div class="dbody">
+          <div class="pain"><i>1</i><div class="p-meta"><span>📄 xxx.png</span><span>1920×1080</span><span>384 KB</span><span>来自剪贴板</span></div></div>
+          <div class="pain" style="height:78px"><i>2</i><div class="p-stage">悬浮工具条 + 视口（min-height 200px）</div></div>
+          <div class="pain"><i>3</i><div class="p-bar">🔍 已选 2 个词 ·「XXX」 <b>复制选中</b><b>变换为…</b><b>搜索</b><b>全部复制</b></div></div>
+          <div class="pain"><i>4</i><div class="p-bar">⌃ 全部识别文字 · 12 行 · 340 字 <b>可编辑</b><b>全部复制</b><b>复制全部</b><b>存为卡片</b><b>翻译</b><b>搜索</b></div></div>
+        </div>
+        <div class="pain" style="margin:0 8px 6px"><i>5</i><div class="p-foot"><b>复制</b><b>另存</b><b>导出</b><span style="margin-left:8px">滚轮平移 · Ctrl+滚轮缩放 · 0 重置 · R 旋转</span></div></div>
+      </div>
+    </div>
+    <div class="hint">
+      <b>①</b> 低频元信息常驻占一行；<b>②</b> 图片被压到 ~200px 高；<b>③④</b> 「全部复制」×3、「搜索」×2、「变换为…/翻译」同义两名，散在 3 个层级；<b>⑤</b> 提示语与视口内浮标重复两遍；另有 OCR 识别完自动展开抽屉抢空间、<b>滚轮=平移</b> 反主流肌肉记忆。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>改后 <span class="tag after">全屏查看层 · 底部一条栏</span></h3>
+    <div class="stage fs">
+      <div class="fsview">
+        <div class="fs-top">
+          <div class="meta-pill">📄 screenshot.png <span class="dim">1920×1080 · 384 KB · 来自剪贴板</span></div>
+          <div class="fs-x">✕</div>
+        </div>
+        <div class="fs-img">
+          <div class="pic"><span class="zoom-tag">100%</span></div>
+        </div>
+        <div class="fs-hint fade">滚轮缩放 · 拖拽平移 · 0 复位 · R 旋转</div>
+        <div class="fs-toolbar">
+          <span class="tb">−</span><span class="tb-zoom">100%</span><span class="tb">＋</span><span class="tb">1:1</span><span class="tb">⟳</span>
+          <span class="tb-sep"></span>
+          <span class="tb">T 选词</span><span class="tb">✂ 裁剪</span><span class="tb">📌 置顶</span><span class="tb on">⛓ 码 2</span>
+          <span class="tb-sep"></span>
+          <span class="tb act">复制</span><span class="tb">另存</span><span class="tb">导出</span>
+        </div>
+      </div>
+    </div>
+    <div class="hint">
+      图片<b>吃满全屏</b>；元信息变左上角半透明胶囊（hover 图区才现）；操作全部收进<b>底部唯一一条</b>工具栏；提示语只留一条、进场显示 3s 后淡出。
+    </div>
+  </div>
+</div>
+
+<h2>二、状态一览（面板互斥：同一时间最多浮出一条，从工具栏上方升起）</h2>
+<div class="row">
+  <div class="card" style="width:520px">
+    <h3>OCR 态 <span class="tag after">进场即带出 · 不二次识别</span></h3>
+    <div class="stage" style="height:250px">
+      <div class="fsview">
+        <div class="fs-img"><div class="pic" style="width:54%"><span class="zoom-tag">点「选词」才叠加词框，坐标按需跑</span></div></div>
+        <div class="panel">
+          <div class="ph">🔍 <b>识别到 12 行 · 340 字</b><span class="cnt">来自列表缓存</span><span class="sp"></span><span class="pbtn">展开校对 ▴</span><span class="pbtn pri">📋 复制全部</span></div>
+          <div class="ptext">会议纪要：周三 10:00 评审… 联系人 138-XXXX-XXXX https://…</div>
+        </div>
+        <div class="fs-toolbar"><span class="tb">−</span><span class="tb-zoom">100%</span><span class="tb">＋</span><span class="tb">1:1</span><span class="tb">⟳</span><span class="tb-sep"></span><span class="tb on">T 选词</span><span class="tb">✂ 裁剪</span><span class="tb">📌 置顶</span><span class="tb">⛓ 码 2</span><span class="tb-sep"></span><span class="tb act">复制</span><span class="tb">另存</span><span class="tb">导出</span></div>
+      </div>
+    </div>
+    <div class="hint">
+      <b>列表已经识别过的图（卡片有 OCR 徽标 = 库里有全文），进详情摘要条直接在</b>——现在弹框调的 <code>ocr_image</code> 只写缓存不读（<code>images.rs:374</code>），等于每次重跑一遍引擎，这就是「二次识别」。改后：全文走 <code>item.ocr_text</code> / <code>ocr_image_cached</code>（查库零开销）；<b>只有点「选词」需要图上词框坐标时</b>才跑坐标版 <code>ocr_image</code>，且结果会话内按 path 内存缓存，重复打开不再重跑。
+    </div>
+  </div>
+
+  <div class="card" style="width:520px">
+    <h3>裁剪态 <span class="tag after">确认栏复用工具栏位置</span></h3>
+    <div class="stage" style="height:250px">
+      <div class="fsview">
+        <div class="fs-img">
+          <div class="pic" style="width:54%"></div>
+          <div class="crop-ovl" style="width:54%; height:62%"></div>
+          <div class="crop-sel" style="left:36%; top:28%; width:22%; height:36%"><div class="g" style="left:33%;top:0;bottom:0;width:1px"></div><div class="g" style="top:33%;left:0;right:0;height:1px"></div></div>
+        </div>
+        <div class="crop-bar"><span>拖拽画框 · 手柄调整 · <span class="kbd">Enter</span> 确认</span><span class="pbtn pri">✓ 确认裁剪</span><span class="pbtn">取消</span></div>
+        <div class="fs-toolbar" style="opacity:.35"><span class="tb">−</span><span class="tb-zoom">100%</span><span class="tb">＋</span><span class="tb">1:1</span><span class="tb">⟳</span><span class="tb-sep"></span><span class="tb">T 识别文字</span><span class="tb on">✂ 裁剪</span><span class="tb">📌 置顶</span><span class="tb">⛓ 码</span></div>
+      </div>
+    </div>
+    <div class="hint">
+      裁剪进入后主工具栏<b>压暗让位</b>（不再是现在「确认栏+工具栏」双行并存）；<b>Esc 一级</b>退出裁剪回查看态，<b>二级</b>才退出查看层（§17.6 两级取消）。
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" style="width:520px">
+    <h3>导出浮层 <span class="tag after">从「导出」按钮上方弹出</span></h3>
+    <div class="stage" style="height:210px">
+      <div class="fsview">
+        <div class="fs-img"><div class="pic" style="width:60%"></div></div>
+        <div class="export-pop">格式 <span class="seg"><span class="on">PNG</span><span>JPG</span><span>WebP</span></span><br><br>质量 <span style="letter-spacing:2px">●——————</span> 85%　预估 ≈ 212 KB<br><br><span class="pbtn pri" style="float:right">⬇ 导出</span></div>
+        <div class="fs-toolbar"><span class="tb">−</span><span class="tb-zoom">100%</span><span class="tb">＋</span><span class="tb">1:1</span><span class="tb">⟳</span><span class="tb-sep"></span><span class="tb">T 识别文字</span><span class="tb">✂ 裁剪</span><span class="tb">📌 置顶</span><span class="tb">⛓ 码</span><span class="tb-sep"></span><span class="tb act">复制</span><span class="tb">另存</span><span class="tb on">导出</span></div>
+      </div>
+    </div>
+    <div class="hint">导出不再用 footer 弹层，改为右下角锚定弹出；点外部 / <span class="kbd">Esc</span> 收起。格式/质量/预估逻辑原样搬运。</div>
+  </div>
+
+  <div class="card" style="width:520px">
+    <h3>码面板 <span class="tag after">识别到码才出现（零可见）</span></h3>
+    <div class="stage" style="height:210px">
+      <div class="fsview">
+        <div class="fs-img"><div class="pic" style="width:60%"><div style="position:absolute;left:18%;top:30%;width:26%;height:26%;border:1.5px dashed #06b6d4;border-radius:6px"></div></div></div>
+        <div class="panel" style="width:380px">
+          <div class="ph">⛓ <b>识别到 2 个码</b><span class="sp"></span><span class="pbtn pri">📋 复制全部</span></div>
+          <div class="code-chip">二维码 · https://pastepanda.app/…</div>
+          <div class="code-chip">条码 · 6901234567892</div>
+        </div>
+        <div class="fs-toolbar"><span class="tb">−</span><span class="tb-zoom">100%</span><span class="tb">＋</span><span class="tb">1:1</span><span class="tb">⟳</span><span class="tb-sep"></span><span class="tb">T 识别文字</span><span class="tb">✂ 裁剪</span><span class="tb">📌 置顶</span><span class="tb on">⛓ 码 2</span><span class="tb-sep"></span><span class="tb act">复制</span><span class="tb">另存</span><span class="tb">导出</span></div>
+      </div>
+    </div>
+    <div class="hint">悬停条目 → 图上青色虚线框标位（沿用 §18 选区语义），逻辑原样保留；无码时工具栏<b>不显示「码」按钮</b>。</div>
+  </div>
+</div>
+
+<h2>三、交互规格</h2>
+<div class="card wide">
+  <table class="spec">
+    <tr><th style="width:180px">操作</th><th>行为</th></tr>
+    <tr><td>滚轮</td><td><b>缩放</b>（以光标为中心），替代现在的「滚轮=平移」；<span class="kbd">Ctrl+滚轮</span> 同义双保险</td></tr>
+    <tr><td>拖拽图区</td><td>平移（放大后）；100% 且未超出时图区光标 default，不误导可拖</td></tr>
+    <tr><td><span class="kbd">Esc</span></td><td>两级取消：面板/裁剪/选词态 → 先退回查看态；查看态 → 关闭查看层回列表</td></tr>
+    <tr><td><span class="kbd">0</span> / <span class="kbd">R</span> / <span class="kbd">Enter</span></td><td>复位 100% / 旋转 90° / 复制图片（高频一步：Enter=默认动作）</td></tr>
+    <tr><td>点击遮罩空白</td><td>关闭查看层（与现在一致）</td></tr>
+    <tr><td>工具栏按钮</td><td>常驻文字标签（L2 底线），hover 补快捷键提示；激活态高亮（indigo/cyan）。「T」按钮语义随状态：<b>列表已有全文 → 「选词」</b>（按需跑词框）；<b>没有 → 「识别文字」</b>（跑一次并入库）</td></tr>
+    <tr><td>OCR 零二次识别</td><td>进场即读列表已持久化的全文（<code>item.ocr_text</code>，兜底 <code>ocr_image_cached</code> 查库）直接亮摘要条；词框坐标只在进入「选词」态且会话内无缓存时才跑 <code>ocr_image</code></td></tr>
+    <tr><td>面板互斥</td><td>OCR 摘要 / 校对全文 / 导出 / 码面板同时最多一个；开新的自动关旧的</td></tr>
+    <tr><td>进场提示</td><td>操作提示浮标进场显示 3s 后淡出至 35% 透明度，鼠标移入图区即完全消失；<b>不再出现第二份重复提示</b></td></tr>
+  </table>
+</div>
+
+<h2>四、改动点清单（相对现状代码）</h2>
+<div class="card wide">
+  <ul>
+    <li><span class="chg">换壳</span>：<code>ImagePreviewDialog.tsx</code> 的 <code>dialog-box</code> 模态外壳 → 全屏查看层（仍走 <code>customShell</code> 变体，<code>ItemEditorDialog</code> 分派与 <code>useDialogStore</code> 不动）。</li>
+    <li><span class="chg">收敛</span>：OCR 结果栏与抽屉「下一步」工具栏<b>合并为一条摘要条</b>；「全部复制」3 处 → 1 处；「变换为…/翻译/搜索」并入摘要条与全文抽屉各一组（同名同义）。</li>
+    <li><span class="chg">元信息</span>：常驻标签行 → 左上角半透明胶囊，hover 图区浮现。</li>
+    <li><span class="chg">滚轮语义</span>：<code>useImagePreview.ts</code> 的 wheel 分支改「缩放为主」；平移交给拖拽。</li>
+    <li><span class="chg">OCR 带出</span>：进场即用 <code>item.ocr_text</code>（列表懒识别已持久化）亮摘要条；兜底调 <code>ocr_image_cached</code> 查库。<code>useImagePreview.handleOcrRecognize</code> 只保留给「选词」路径（词框坐标必须现跑），并加 path → 词框结果的<b>会话内内存缓存</b>（同 <code>useCardOcr.ts:19</code> 的 memCache 手法）。</li>
+    <li><span class="drop">删除</span>：footer 重复提示语、OCR 识别完自动展开抽屉、7 层纵堆结构。</li>
+    <li><span class="keep">原样保留</span>：OCR 词框叠加与选词、实体 popover、码悬停标位、置顶（pinImage）、裁剪拖拽手柄、导出格式/质量/预估、复制图片/另存、<span class="kbd">0</span>/<span class="kbd">R</span> 快捷键。</li>
+    <li><span class="keep">红线</span>：文件超 300 行必拆——预计拆出 <code>ImageToolbar.tsx</code>（底部工具栏）、<code>OcrSummaryPanel.tsx</code>（摘要/全文抽屉）、<code>ExportPopover.tsx</code>；纯逻辑继续留在 <code>useImagePreview.ts</code>。</li>
+    <li><span class="keep">AI 红线</span>：本层无任何 AI/云端调用（OCR 本地引擎），不涉规则 16。</li>
+  </ul>
+</div>
+
+<div class="note">
+  <b>实现要点（基于真实代码）</b>
+  <ul>
+    <li>入口三路（<code>Card.tsx:442</code> 双击/角标、悬停编辑、右键）全部汇到 <code>useDialogStore.openEditor</code> → <code>resolveEditor</code> → 图片 <code>customShell</code>（<code>editors/ImageEditor.tsx</code>）。只改 ImageEditor 渲染的壳，<b>入口语义零改动</b>。</li>
+    <li>全屏层用主窗口内覆盖层实现（不另开 OS 窗口）：复用 <code>dialog-backdrop</code> 系（含 <code>useModalScrollLock</code> 滚轮穿透锁），尺寸改 <code>100vw/100vh</code>；动画沿用 <code>useDialogAnim</code>。</li>
+    <li>滚轮缩放以光标为中心需在 <code>useImagePreview.ts</code> 的 zoom 分支补 anchor 换算（现仅整体 scale±0.1）。</li>
+    <li>面板互斥用一个 <code>activePanel: 'ocr'|'export'|'codes'|null</code> 状态收口，替代现在多个独立布尔叠加。</li>
+    <li>样式继续在 <code>CardList.module.css</code> 的图片详情段内扩展，颜色只走令牌变量（U 底线）；改完跑 <code>npm run lint:ui</code>。</li>
+  </ul>
+</div>
+</body>
+</html>

@@ -70,6 +70,12 @@ export interface UseImagePreviewReturn {
   ocrResult: OcrResultData | null;
   ocrLoading: boolean;
   ocrActive: boolean;
+  /** 列表已持久化的 OCR 全文（null = 这张图还没识别过）。与 ocrResult 互补：
+     全文展示/复制用它（零成本），选词才需要 ocrResult 的词框。 */
+  ocrCachedText: string | null;
+  /** 浮出面板互斥（'ocr' 摘要/全文 | 'export' 导出 | 'codes' 码 | null 收起） */
+  activePanel: "ocr" | "export" | "codes" | null;
+  setActivePanel: React.Dispatch<React.SetStateAction<"ocr" | "export" | "codes" | null>>;
   selectedWordIndices: Set<string>;
   isSelecting: boolean;
   selRect: { x: number; y: number; w: number; h: number } | null;
@@ -124,6 +130,12 @@ export interface UseImagePreviewReturn {
 // P3 起 hook 实例随 ImageEditor 挂载/卸载，缓存提升到模块级避免关闭即丢失；上限 50 条淘汰最旧。
 const previewStateCache: Record<string, { scale: number; rotation: number; offset: { x: number; y: number } }> = {};
 
+// 坐标版 OCR（词框）的会话内缓存（path → 结果）。
+// 词框只有「图上选词」需要；没有它，同一条图每次进详情点选词都要重跑一遍
+// PP-OCR 引擎——列表侧 useCardOcr 的 memCache 同款手法（设计稿「零二次识别」）。
+// 上限 50 条，与 previewStateCache 同策略淘汰最旧。
+const ocrWordsCache = new Map<string, OcrResultData>();
+
 export function useImagePreview(): UseImagePreviewReturn {
   const { toast } = useToast();
 
@@ -141,6 +153,11 @@ export function useImagePreview(): UseImagePreviewReturn {
   const [ocrResult, setOcrResult] = useState<OcrResultData | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrActive, setOcrActive] = useState(false);
+  /** 列表懒识别已持久化的全文（image_ocr_cache）。「全文查看/复制」用它零成本带出；
+     词框坐标（ocrResult）只有「图上选词」需要，按需现跑。 */
+  const [ocrCachedText, setOcrCachedText] = useState<string | null>(null);
+  /** 浮出面板互斥（设计稿：同时最多一个）：null=全收起。 */
+  const [activePanel, setActivePanel] = useState<"ocr" | "export" | "codes" | null>(null);
   const [selectedWordIndices, setSelectedWordIndices] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
   /** isSelecting 的 ref 镜像：window 原生监听里读它（state 闭包在重渲染前是旧值，
@@ -183,10 +200,13 @@ export function useImagePreview(): UseImagePreviewReturn {
     setPreviewItem(item);
     previewContentRef.current = requestContent;
 
-    // 重置 OCR 状态
+    // 重置 OCR 状态。❗ 全文从列表缓存直接带出（item.ocr_text，列表可视卡片早已
+    // 懒识别入库）——设计稿「零二次识别」：进场即亮摘要条，不再等用户点识别。
     setOcrResult(null);
     setOcrActive(false);
     setSelectedWordIndices(new Set());
+    setOcrCachedText(item.ocr_text ?? null);
+    setActivePanel(item.ocr_text != null ? "ocr" : null);
     setExportEstimate(null);
     setCropMode(false);
     setCropRect(null);
@@ -258,6 +278,8 @@ export function useImagePreview(): UseImagePreviewReturn {
     setOcrResult(null);
     setOcrActive(false);
     setSelectedWordIndices(new Set());
+    setOcrCachedText(null);
+    setActivePanel(null);
     setCropMode(false);
     setCropRect(null);
     setCropOriginal(null);
@@ -268,6 +290,8 @@ export function useImagePreview(): UseImagePreviewReturn {
     if (!previewImage && !previewLoading) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // 两级取消（§17.6）：面板/裁剪/选词先逐步退回查看态，最后一级才退出查看层。
+        // 互斥链与模式本身一致：cropMode → 已选词 → 选词态 → 浮出面板 → 关闭。
         if (cropMode) {
           setCropMode(false);
           setCropRect(null);
@@ -275,6 +299,8 @@ export function useImagePreview(): UseImagePreviewReturn {
           setSelectedWordIndices(new Set());
         } else if (ocrActive) {
           setOcrActive(false);
+        } else if (activePanel) {
+          setActivePanel(null);
         } else {
           closePreview();
         }
@@ -302,25 +328,31 @@ export function useImagePreview(): UseImagePreviewReturn {
     return () => window.removeEventListener("keydown", onKeyDown);
     // 不能补 getSelectedOcrTexts：它定义在本 effect 之后，写进依赖数组会 TDZ ReferenceError
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, toast]);
+  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, activePanel, toast]);
 
+  // 滚轮 = 缩放，以光标为中心（设计稿交互规格；对齐看图器肌肉记忆，替代旧「滚轮平移」）。
+  // 锚点换算：容器 transform = translate(offset)·S(s)（rotation 与均匀缩放可交换，视口坐标下消去），
+  // 要让光标下的图像点不动：offset' = p − (s'/s)·(p − offset)，p 为光标相对视口中心。
+  // 读 previewStateRef 而非 setState 闭包：连续滚轮间不用等重渲染（同 pan 的 ref 手法）。
   const handlePreviewWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    if (e.ctrlKey) {
-      setPreviewScale((prev) => {
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        return Math.max(0.2, Math.min(5, prev + delta));
-      });
-    } else {
-      setPreviewOffset((prev) => ({
-        x: prev.x - (e.shiftKey ? e.deltaY : e.deltaX),
-        y: prev.y - (e.shiftKey ? e.deltaX : e.deltaY),
-      }));
-    }
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const prev = previewStateRef.current;
+    const next = Math.max(0.2, Math.min(5, prev.scale + delta));
+    if (next === prev.scale) return;
+    const vp = viewportRef.current;
+    if (!vp) { setPreviewScale(next); return; }
+    const rect = vp.getBoundingClientRect();
+    const px = e.clientX - rect.left - rect.width / 2;
+    const py = e.clientY - rect.top - rect.height / 2;
+    const k = next / prev.scale;
+    setPreviewScale(next);
+    setPreviewOffset({ x: px - k * (px - prev.offset.x), y: py - k * (py - prev.offset.y) });
   }, []);
 
+  // 拖拽平移只在放大后可用（100% 适配视口时无可平移内容，cursor 也由壳层相应置 default）。
   const handlePanStart = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || previewStateRef.current.scale <= 1) return;
     e.preventDefault();
     setIsPanning(true);
     panStartRef.current = { x: e.clientX, y: e.clientY, offsetX: previewOffset.x, offsetY: previewOffset.y };
@@ -346,12 +378,27 @@ export function useImagePreview(): UseImagePreviewReturn {
   const handleOcrRecognize = useCallback(async () => {
     const path = previewContentRef.current;
     if (!path) return;
+    // 会话内缓存命中直接用（重复打开同一条图不重跑引擎）。
+    const cached = ocrWordsCache.get(path);
+    if (cached) {
+      setOcrResult(cached);
+      setOcrActive(true);
+      setSelectedWordIndices(new Set());
+      return;
+    }
     setOcrLoading(true);
     try {
       const result = await invoke<OcrResultData>("ocr_image", { path });
       // 后端已逐字化（每行 N 个字符框）；图片预览保持「点一行选整行」的旧交互，
       // 把逐字框聚合回行级单框（linesAsRowWords 对已是整行单框的行幂等）。
-      setOcrResult({ ...result, lines: linesAsRowWords(result.lines) });
+      const processed: OcrResultData = { ...result, lines: linesAsRowWords(result.lines) };
+      ocrWordsCache.set(path, processed);
+      // 上限 50 条，淘汰最旧（与 previewStateCache 同策略）
+      if (ocrWordsCache.size > 50) {
+        const first = ocrWordsCache.keys().next().value;
+        if (first != null) ocrWordsCache.delete(first);
+      }
+      setOcrResult(processed);
       setOcrActive(true);
       setSelectedWordIndices(new Set());
     } catch (e) {
@@ -818,7 +865,8 @@ export function useImagePreview(): UseImagePreviewReturn {
     previewImage, previewInfo, previewLoading,
     previewScale, previewRotation, previewOffset, isPanning,
     previewContentRef, viewportRef, previewItem,
-    ocrResult, ocrLoading, ocrActive, selectedWordIndices, isSelecting, selRect,
+    ocrResult, ocrLoading, ocrActive, ocrCachedText, activePanel, setActivePanel,
+    selectedWordIndices, isSelecting, selRect,
     exportFormat, exportQuality, exportEstimate, exporting,
     cropMode, cropRect, cropOriginal,
     openImagePreview, closePreview,
