@@ -118,6 +118,7 @@ fn 码率基准的帧率因子只乘一次() {
         hevc_broken: false,
         nv12_buf: Vec::new(),
         last_scale_change: None,
+        pending_scale: None,
     };
     // 1080p120：8M × 2.6 = 20.8M——不是 ×2.6² 的 54M
     assert_eq!(enc.scaled_bitrate(), 20_800_000);

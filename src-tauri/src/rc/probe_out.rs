@@ -43,6 +43,18 @@ struct Window {
 static WINDOW: Mutex<Option<Window>> = Mutex::new(None);
 static REPORTS: AtomicU64 = AtomicU64::new(0);
 
+/// 帧龄 EMA（NetHint 快速码控的信源，2026-09-28）。**非对称**平滑：升快
+/// （α=1/2，WiFi 队列一涨立刻反映到码控）降慢（α=1/8，恢复要稳，别把码率
+/// 拉成电锯）。-1 = 尚无样本。
+static AGE_EMA: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+/// FEC 逐帧反馈计数（2026-09-28）：收端视角「本帧靠校验片恢复过数据片」的帧数
+/// 与「引用链断裂丢弃」的帧数。发送端据此上调 RS 冗余——比 conn 级丢包‰
+/// 更贴近帧粒度（WiFi 丢包是按突发砸在某几帧上的）。
+static FEC_RECOVERED: AtomicU64 = AtomicU64::new(0);
+static FEC_DROPPED: AtomicU64 = AtomicU64::new(0);
+/// 交付帧总数（frame_loss 反馈的分母）。
+static DELIVERED: AtomicU64 = AtomicU64::new(0);
+
 fn blank(now: Instant) -> Window {
     Window {
         started: now,
@@ -116,6 +128,23 @@ fn note_telemetry(
     jpeg: bool,
 ) {
     let age = chrono::Utc::now().timestamp_millis() - at_ms + skew;
+    // 帧龄 EMA：升快降慢（见 AGE_EMA 注释）。clamp 到 [-1000, 2500]：
+    // 🔴 2026-09-28 真机复盘——13s 级链路停顿的样本若原样进 EMA（曾 clamp 到
+    // 60s），升 α=1/2 一拍跳上去了、降 α=1/8 要几十秒才缓过来，B 端码率被钉死
+    // 在 15% 整整半分钟。停顿是链路事件不是稳态排队，2.5s 封顶让码控「看见了
+    // 就压、过去了就放」，深停顿另由 RTT 档位兜底。
+    let age_c = age.clamp(-1000, 2500);
+    AGE_EMA.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
+        Some(if prev < 0 {
+            age_c
+        } else if age_c > prev {
+            (prev + age_c) / 2
+        } else {
+            (prev * 7 + age_c) / 8
+        })
+    })
+    .ok();
+    DELIVERED.fetch_add(1, Ordering::Relaxed);
     let Ok(mut g) = WINDOW.lock() else { return };
     let w = g.get_or_insert_with(|| blank(Instant::now()));
     w.age_n += 1;
@@ -137,9 +166,32 @@ fn note_telemetry(
 
 /// 数据报重组引用链断裂（spawn_video_dgram_reader 的 damaged 分支）。
 pub(super) fn bump_damaged() {
+    FEC_DROPPED.fetch_add(1, Ordering::Relaxed);
     let Ok(mut g) = WINDOW.lock() else { return };
     let w = g.get_or_insert_with(|| blank(Instant::now()));
     w.damaged += 1;
+}
+
+/// 一帧靠校验片恢复过缺失数据片（vid_dgram 的 `recovered` 标志）。
+pub(super) fn bump_fec_recovered() {
+    FEC_RECOVERED.fetch_add(1, Ordering::Relaxed);
+}
+
+/// 帧龄 EMA 快照（NetHint 快速码控信源）。-1 = 尚无样本。
+pub(super) fn age_ema_ms() -> i64 {
+    AGE_EMA.load(Ordering::Relaxed)
+}
+
+/// FEC 逐帧反馈快照（读后清零，NetHint 每次携带自上一次以来的窗口）。
+/// 返回 `(丢失帧数, 交付帧数)`——调用方折算 permille。无样本返回 `None`。
+pub(super) fn take_frame_loss_feedback() -> Option<(u64, u64)> {
+    let dropped = FEC_DROPPED.swap(0, Ordering::Relaxed);
+    let recovered = FEC_RECOVERED.swap(0, Ordering::Relaxed);
+    let delivered = DELIVERED.swap(0, Ordering::Relaxed);
+    if dropped == 0 && recovered == 0 && delivered == 0 {
+        return None;
+    }
+    Some((dropped, delivered))
 }
 
 /// 满 5s 打一行并清窗。调用方持锁。

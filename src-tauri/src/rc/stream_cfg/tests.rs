@@ -376,3 +376,56 @@ fn bw_采样后参与三信号取min() {
     }
     assert_eq!(s.bitrate_scale(), 100);
 }
+
+
+// ── 2026-09-28：帧龄快速码控（AP 队列 in-band 观测）────────────────────────
+
+#[test]
+fn 排队压力分段_90ms内不约束_超500砍到15() {
+    assert_eq!(super::bitrate_scale_for_queue(0), 100); // 未采样不约束
+    assert_eq!(super::bitrate_scale_for_queue(-50), 100); // 异常样本不约束
+    assert_eq!(super::bitrate_scale_for_queue(90), 100);
+    assert_eq!(super::bitrate_scale_for_queue(91), 70);
+    assert_eq!(super::bitrate_scale_for_queue(180), 70);
+    assert_eq!(super::bitrate_scale_for_queue(300), 45);
+    assert_eq!(super::bitrate_scale_for_queue(500), 25);
+    assert_eq!(super::bitrate_scale_for_queue(501), 15);
+}
+
+#[test]
+fn 排队压力EMA_升快降慢() {
+    let s = c();
+    s.set_peer_queue_ms(170);
+    assert_eq!(s.bitrate_scale(), 70); // 170ms → 立刻压
+    // 队列暴涨：升 α=1/2——两拍就到位大半
+    s.set_peer_queue_ms(600);
+    s.set_peer_queue_ms(600);
+    let after_up = s.bitrate_scale();
+    assert!(after_up <= 25, "持续高压必须深压，得到 {after_up}%");
+    // 队列回落：降 α=1/2（发起端已 EMA 过，这里只轻度平滑——两层慢速叠加
+    // 会把码率钉死几十秒，见 set_peer_queue_ms 注释）
+    s.set_peer_queue_ms(10);
+    assert!(s.bitrate_scale() >= after_up, "回落必须开始恢复");
+    for _ in 0..8 {
+        s.set_peer_queue_ms(10);
+    }
+    assert_eq!(s.bitrate_scale(), 100, "稳态后应满血");
+}
+
+#[test]
+fn 帧粒度丢包反馈_与本端丢包取max() {
+    let s = c();
+    // 本端 0 丢包，对端反馈 80‰ → 应按 80‰ 的档位压
+    s.note_peer_frame_loss(80);
+    let with_hint = s.bitrate_scale();
+    assert!(with_hint < 100, "帧反馈 80‰ 必须压码率，得到 {with_hint}%");
+    // 本端 conn 级丢包更高 → 取更糟的那个
+    s.note_stream_health(10, 200, 0);
+    assert!(s.bitrate_scale() <= with_hint);
+    // 0/负值 = 无样本，不许清掉已有反馈
+    let s2 = c();
+    s2.note_peer_frame_loss(300);
+    s2.note_peer_frame_loss(0);
+    s2.note_peer_frame_loss(-1);
+    assert!(s2.bitrate_scale() < 100);
+}

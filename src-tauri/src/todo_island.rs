@@ -229,8 +229,21 @@ pub(crate) fn island_config(app: &AppHandle) -> IslandConfig {
 }
 
 /// 探针模式绕过一切用户门控（开发诊断不陪绑配置）。
+///
+/// ❗ 只在 debug 构建生效（2026-09-28 用户报障收口）：release 包里这个环境变量
+///    一律视为没设。事故路径——探针调试的终端里 `export PP_TODO_ISLAND_PROBE=1`
+///    忘了撤，同一个终端重启软件就次次命中 `show()` 的绕过闸，设置页的总开关
+///    被无声碾压（用户眼里就是「关了还显示」）；若该变量再被写进系统环境，
+///    打包版也会中招。探针是 dev 工具，就不该在正式版有资格越过用户设置。
 fn probe_on() -> bool {
-    std::env::var(PROBE_ENV).ok().as_deref() == Some("1")
+    #[cfg(debug_assertions)]
+    {
+        std::env::var(PROBE_ENV).ok().as_deref() == Some("1")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
 }
 
 // ===== 定位 =====

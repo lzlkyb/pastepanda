@@ -9,6 +9,11 @@ const SCALE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(2);
 /// 剧变豁免线：差值 ≥50 个百分点不设冷却——紧急降码率（拥塞突增/断网前兆）
 /// 必须立即生效，多等 2s 就是多 2s 的拥塞弃帧。
 const SCALE_JUMP_PCT: u32 = 50;
+/// 2026-09-28 稳定窗口：新码率值须**连续稳住这么久**才提交重开。真机复盘：
+/// 帧龄排队分段加入后，拖动中 EMA 在 90/180/300ms 边界来回弹（scale
+/// 100↔70↔45），15pp 迟滞 + 2s 冷却挡不住「每 2~3s 一次重开」——每次重开
+/// ~1s，正是用户看到的「偶发卡顿」。弹回旧值即重置计时；稳住才放行。
+const SCALE_HOLD: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// [`apply_bitrate_scale`] 的纯判断半（无环境可单测，见项目规则 11.1）：
 /// 距上次变更不足冷却期时放行吗？`last=None`（从未变更过）恒放行；
@@ -23,6 +28,12 @@ fn scale_change_allowed(last: Option<std::time::Instant>, now: std::time::Instan
             now.duration_since(t) >= SCALE_COOLDOWN
         }
     }
+}
+
+/// [`apply_bitrate_scale`] 的稳定窗口半（纯函数，规则 11.1）：候选值稳够
+/// [`SCALE_HOLD`] 了吗？剧变（diff ≥ [`SCALE_JUMP_PCT`]）恒豁免。
+fn scale_hold_satisfied(candidate_since: std::time::Instant, now: std::time::Instant, diff: u32) -> bool {
+    diff >= SCALE_JUMP_PCT || now.duration_since(candidate_since) >= SCALE_HOLD
 }
 
 /// 会话包装：open 失败则标记不可用，调用方走 JPEG。
@@ -62,6 +73,9 @@ pub struct H264SessionEncoder {
     /// 还没变过）。配合 [`SCALE_COOLDOWN`] 挡 RTT 档位边界抖动——判据见
     /// [`scale_change_allowed`]，时间语义与拦截口径都收在那一个函数里。
     pub(in crate::rc) last_scale_change: Option<std::time::Instant>,
+    /// 2026-09-28 稳定窗口的候选值（值, 首见时刻）。换值即重置——来回弹
+    /// 永远提交不了，稳住 3s 才真正触发重开。
+    pub(in crate::rc) pending_scale: Option<(u32, std::time::Instant)>,
 }
 
 // windows-rs COM 指针非 Send；本进程 MTA + 会话任务串行访问。
@@ -177,6 +191,7 @@ impl H264SessionEncoder {
                 hevc_broken: false,
                 nv12_buf: Vec::new(),
                 last_scale_change: None,
+                pending_scale: None,
             }
         };
         match open_chain(codec, width, height, fps, initial) {
@@ -193,6 +208,7 @@ impl H264SessionEncoder {
                 hevc_broken: false,
                 nv12_buf: Vec::new(),
                 last_scale_change: None,
+                pending_scale: None,
             },
             Err(e) => {
                 if codec == VideoCodec::Hevc {
@@ -214,6 +230,7 @@ impl H264SessionEncoder {
                             hevc_broken: true,
                             nv12_buf: Vec::new(),
                             last_scale_change: None,
+                            pending_scale: None,
                         };
                     }
                 }
@@ -281,20 +298,34 @@ impl H264SessionEncoder {
         // （RTT/丢包 25–100 × 用户倍率 50–200），这里只做同域防御，不另立口径。
         let scale = scale_pct.clamp(10, 300);
         if scale == self.scale_pct {
+            self.pending_scale = None;
             return;
         }
         if scale.abs_diff(self.scale_pct) < 15 && self.enc.is_some() {
+            self.pending_scale = None;
             return;
         }
+        let now = std::time::Instant::now();
         let diff = scale.abs_diff(self.scale_pct);
+        // 2026-09-28 稳定窗口：同一新值从首见时刻起算；换成别的值就重置——
+        // 在分段边界来回弹永远提交不了，稳住 SCALE_HOLD 才真正重开。
+        let since = match self.pending_scale {
+            Some((v, t)) if v == scale => t,
+            _ => now,
+        };
+        self.pending_scale = Some((scale, since));
+        if !scale_hold_satisfied(since, now, diff) {
+            return;
+        }
         // 🔴 B5：冷却期拦截也吃掉本次变更（与 <15pp 迟滞同款口径——变更被
         // 拒就整条拒，不排队），下一轮 RTT 上报会带着新值再来。
-        if !scale_change_allowed(self.last_scale_change, std::time::Instant::now(), diff) {
+        if !scale_change_allowed(self.last_scale_change, now, diff) {
             return;
         }
+        self.pending_scale = None;
         self.scale_pct = scale;
         self.reopen_needed = true;
-        self.last_scale_change = Some(std::time::Instant::now());
+        self.last_scale_change = Some(now);
     }
 
     pub(in crate::rc) fn scaled_bitrate(&self) -> u32 {
@@ -468,5 +499,21 @@ mod tests {
         // 冷却期满（≥2s）：放行
         let cooled = now - std::time::Duration::from_secs(2);
         assert!(scale_change_allowed(Some(cooled), now, 20));
+    }
+
+    /// 🔴 2026-09-28 守卫单测：码率缩放的稳定窗口。钉住——候选值稳够 3s 才
+    /// 放行、剧变豁免、窗口未满拦截。防回归：帧龄分段边界弹跳不再逐次重开。
+    #[test]
+    fn 码率缩放的稳定窗口() {
+        let now = std::time::Instant::now();
+        // 刚出现的候选（<3s）：非剧变拦截
+        let fresh = now - std::time::Duration::from_millis(500);
+        assert!(!scale_hold_satisfied(fresh, now, 30));
+        // 稳够 3s：放行
+        let held = now - std::time::Duration::from_secs(3);
+        assert!(scale_hold_satisfied(held, now, 30));
+        // 剧变（≥50pp）：恒豁免（紧急降码率不等窗口）
+        assert!(scale_hold_satisfied(fresh, now, 50));
+        assert!(scale_hold_satisfied(fresh, now, 200));
     }
 }

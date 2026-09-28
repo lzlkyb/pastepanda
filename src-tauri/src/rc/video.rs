@@ -40,10 +40,6 @@ pub struct EncodeProfile {
     /// 目前只有 uhd60 置位：4K60 的 H.264 要 L5.2（解码端兼容性差），HEVC
     /// L5.1 即覆盖且同画质省约一半带宽。其余档位走 H.264（生态最稳）。
     pub hevc: bool,
-    /// P1/G5：本档是否该走 D3D11 零拷贝路径。实际走不走还看「单输出」与「GPU 路径
-    /// 是否已判死」——三条判据集中在 `inbound::want_zero_copy`。true 只给 fps120 与
-    /// uhd60：CPU 管线每帧的读回 + 色彩转换在这两档吃不下（1080p60 CPU 能扛，不置位）。
-    pub gpu: bool,
     pub q_min: u8,
     pub q_max: u8,
     pub q_default: u8,
@@ -64,7 +60,6 @@ impl EncodeProfile {
                 max_w: 1920,
                 interval_ms: 66,
                 hevc: false,
-                gpu: false,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
@@ -75,7 +70,6 @@ impl EncodeProfile {
                 max_w: 2560,
                 interval_ms: 80,
                 hevc: false,
-                gpu: false,
                 q_min: 50,
                 q_max: 85,
                 q_default: 72,
@@ -87,7 +81,6 @@ impl EncodeProfile {
                 max_w: 2560,
                 interval_ms: 50,
                 hevc: false,
-                gpu: false,
                 q_min: 55,
                 q_max: 85,
                 q_default: 75,
@@ -104,7 +97,6 @@ impl EncodeProfile {
                 max_w: 2560,
                 interval_ms: 16,
                 hevc: true,
-                gpu: true,
                 q_min: 55,
                 q_max: 85,
                 q_default: 75,
@@ -117,7 +109,6 @@ impl EncodeProfile {
                 max_w: 1920,
                 interval_ms: 16,
                 hevc: false,
-                gpu: false,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
@@ -132,7 +123,6 @@ impl EncodeProfile {
                 max_w: 1920,
                 interval_ms: 8,
                 hevc: false,
-                gpu: true,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
@@ -149,7 +139,6 @@ impl EncodeProfile {
                 max_w: 1920,
                 interval_ms: 6,
                 hevc: false,
-                gpu: true,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
@@ -160,7 +149,6 @@ impl EncodeProfile {
                 max_w: 1920,
                 interval_ms: 7,
                 hevc: false,
-                gpu: true,
                 q_min: 45,
                 q_max: 85,
                 q_default: 70,
@@ -171,7 +159,6 @@ impl EncodeProfile {
                 max_w: 960,
                 interval_ms: 100,
                 hevc: false,
-                gpu: false,
                 q_min: 25,
                 q_max: 55,
                 q_default: 40,
@@ -183,7 +170,6 @@ impl EncodeProfile {
                 max_w: TARGET_MAX_W,
                 interval_ms: 100,
                 hevc: false,
-                gpu: false,
                 q_min: JPEG_QUALITY_MIN,
                 q_max: JPEG_QUALITY_MAX,
                 q_default: JPEG_QUALITY_DEFAULT,
@@ -220,14 +206,18 @@ impl Default for EncodeProfile {
 
 impl EncodeProfile {
     /// P1/G5：本条会话是否走 D3D11 零拷贝路径。三条判据，缺一回落 CPU 管线：
-    /// ① 档位本身吃不下 CPU 管线（`gpu`：fps120 的 8ms 节拍 / uhd60 的 4K60）；
+    /// ① **硬件 MFT 可用**（`has_hw_mft`）——零拷贝是 MF 专属路径，纯 CPU 机器
+    ///    没得选（真机教训 2026-09-28：旧判据把零拷贝绑在 fps120/uhd60 档位上，
+    ///    60Hz 机器永远进不了高帧率档 ⇒ 永远走 GDI CPU 捕获，拖动实测
+    ///    采集 53–74ms/帧、fps 被钉在 ~15。零拷贝是**本地收益**（捕获 5ms vs
+    ///    60ms），与网络档位无关，任何档位都该享受——失败回落保护不变）；
     /// ② **单输出**——多屏拼接要在 GPU 侧跨屏合成，没有这条路（`dxgi::grab_gpu` 也拒）；
     /// ③ 本会话 GPU 路径没被判死（连续 3 次打不开或编码失败会置位）。
     ///
     /// 做成纯函数/方法是因为**判据错了不会崩**——只会静默跑 CPU 管线，表现为
     /// 「档位给了但跑不满」，这种问题在双机手测里极难定位（见 11.7 的教训）。
-    pub fn wants_zero_copy(&self, virtual_screen: bool, gpu_disabled: bool) -> bool {
-        self.gpu && !virtual_screen && !gpu_disabled
+    pub fn wants_zero_copy(&self, virtual_screen: bool, gpu_disabled: bool, has_hw_mft: bool) -> bool {
+        has_hw_mft && !virtual_screen && !gpu_disabled
     }
 }
 

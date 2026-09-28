@@ -81,6 +81,23 @@ MSYS_NO_PATHCONV=1 schtasks /delete /tn "PastePandaDev" /f
 | 日志里 `tauri_plugin_updater ... update endpoint did not respond` | dev 下连不上更新服务器 | 无害，忽略 |
 | 卡在 `Building [===>] 910/912` 反复重启、窗口迟迟不出来 | **有别的进程在写 `src-tauri/` 源码**，watcher 每次都在编译收尾时打断重来 | 见 §5 |
 
+## 远程电脑：WiFi 下给视频包打 QoS 标记（可选，需管理员）
+
+iroh 1.1.0 不暴露原始 socket，进程内 qWAVE 标记做不了（`IP_TOS` 在 Windows 上被
+协议栈忽略，实测证据见 iperf#336）。退而求其次是 **netsh 策略级 QoS**——按应用
+名给 PastePanda 的 UDP 流量打 DSCP 46（EF），支持 AQM 的路由器（fq_codel/CAKE）
+会优先放行。仅管理员 PowerShell 执行一次，重启后仍生效：
+
+```powershell
+netsh int qos policy add name="PastePanda RC" application="PastePanda.exe" dscpvalue=46 protocol=UDP
+# 撤销：netsh int qos policy delete name="PastePanda RC"
+```
+
+注意：家里路由器不开 SQM/AQM 时这条**没有效果**（AP 自己的队列不受 DSCP 管）；
+跨网场景进运营商网络后 EF 也常被重标记。低优先级优化，卡顿先看 §14.10 的
+帧龄快速码控是否生效。
+
+
 ## 5. 窗口迟迟不出来：watcher 被打断式重启
 
 `tauri dev` 的 file watcher **不等当前编译结束** —— 只要检测到 `src-tauri/` 下的文件变化，

@@ -68,23 +68,26 @@ fn 静止超过阈值发一次高保真回补帧() {
 }
 
 /// G5：零拷贝门控（判据写错不崩，只会静默跑 CPU 管线——所以必须有单测钉住）。
+/// 2026-09-28 重判：不再绑档位（旧判据让 60Hz 机器永远 GDI 捕获，拖动 53–74ms/帧），
+/// 只看「硬件 MFT + 单输出 + 未判死」——零拷贝是本地收益，任何档位都该享受。
 #[test]
-fn 零拷贝门控_只给高带宽档且要求单输出() {
-    // uhd60（4K60）与 fps120（8ms 节拍）走零拷贝；1080p60 留在 CPU（扛得住）
-    assert!(EncodeProfile::of_name("uhd60").wants_zero_copy(false, false));
-    assert!(EncodeProfile::of_name("fps120").wants_zero_copy(false, false));
-    for q in ["fps60", "uhd", "ultra", "sharp", "balanced", "smooth", "auto"] {
+fn 零拷贝门控_要求硬编可用且单输出() {
+    // 硬编可用 + 单输出 + 没判死 ⇒ 全档位都走零拷贝（含 60Hz 机器的 fps60/balanced）
+    for q in ["fps60", "fps120", "uhd60", "uhd", "ultra", "sharp", "balanced", "smooth"] {
         assert!(
-            !EncodeProfile::of_name(q).wants_zero_copy(false, false),
-            "{q} 不该走零拷贝（CPU 管线够用）"
+            EncodeProfile::of_name(q).wants_zero_copy(false, false, true),
+            "{q} 在硬编可用时该走零拷贝"
         );
     }
+    // 纯 CPU 机器（无硬件 MFT）：没有零拷贝这条路
+    assert!(!EncodeProfile::of_name("balanced").wants_zero_copy(false, false, false));
+    assert!(!EncodeProfile::of_name("fps120").wants_zero_copy(false, false, false));
     // 多屏拼接：GPU 侧没有跨屏合成这条路
-    assert!(!EncodeProfile::of_name("uhd60").wants_zero_copy(true, false));
-    assert!(!EncodeProfile::of_name("fps120").wants_zero_copy(true, false));
-    // 本会话 GPU 路径已被判死：两档都不再尝试
-    assert!(!EncodeProfile::of_name("uhd60").wants_zero_copy(false, true));
-    assert!(!EncodeProfile::of_name("fps120").wants_zero_copy(false, true));
+    assert!(!EncodeProfile::of_name("fps60").wants_zero_copy(true, false, true));
+    assert!(!EncodeProfile::of_name("uhd60").wants_zero_copy(true, false, true));
+    // 本会话 GPU 路径已被判死：不再尝试
+    assert!(!EncodeProfile::of_name("fps60").wants_zero_copy(false, true, true));
+    assert!(!EncodeProfile::of_name("uhd60").wants_zero_copy(false, true, true));
 }
 
 #[test]

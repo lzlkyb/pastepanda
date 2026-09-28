@@ -126,6 +126,8 @@ export function useRcFrames(
     // P0-2：解码断链后等关键帧——期间的 delta 帧拦下不解（解了也是花屏），
     // 已向被控端要过 ForceKeyFrame，key 一到即恢复。
     let waitingKey = false;
+    // 2026-09-28：request_key 重试节拍（等关键帧期间每 500ms 重提，见下）。
+    let lastKeyReqMs = 0;
     // R2 看门狗起点（进入等待的时刻）。❗按**时间**判不按帧数：90 帧阈值是按
     // 30fps 标定的，fps120 下只有 750ms，比 1s GOP 还短——会把好端端的会话
     // 误降级成 JPEG。
@@ -136,6 +138,8 @@ export function useRcFrames(
       h264Miss = 0;
       waitingKey = false;
       waitingSinceMs = 0;
+      lastKeyReqMs = 0;
+      lastKeyReqMs = 0;
       void rcSendInput({ kind: "set_codec", codec: "jpeg" }).catch(() => {});
     };
     // Q3：HEVC 解不动（解码器不支持/连续出错）→ 先退 H.264，别直接砸 JPEG——
@@ -328,6 +332,13 @@ export function useRcFrames(
           if (f.codec !== "jpeg") {
             // P0-2：等关键帧期间拦下 delta 帧
             if (waitingKey && !f.key) {
+              // 2026-09-28：request_key 是 UDP 语义的喊话——单次请求若丢了
+              //（或被控端 force_key 恰好失败），就要白等到 3s 看门狗砸 JPEG。
+              // 每 500ms 重提一次（force_key 幂等，多发无害），3s 看门狗兜底不变。
+              if (Date.now() - lastKeyReqMs >= 500) {
+                lastKeyReqMs = Date.now();
+                void rcSendInput({ kind: "request_key" }).catch(() => {});
+              }
               // R2 看门狗：等了 >3s 还没等到关键帧 → 关键帧不会来了
               //（编码器重开失败/链路异常），按当前流的标准走回退链：
               // HEVC 先退 H.264 再说，H.264 才砸 JPEG（与即时失败路径同序，
@@ -352,6 +363,7 @@ export function useRcFrames(
               if (!waitingKey) {
                 waitingKey = true;
                 waitingSinceMs = Date.now();
+                lastKeyReqMs = Date.now();
                 void rcSendInput({ kind: "request_key" }).catch(() => {});
               }
               continue;

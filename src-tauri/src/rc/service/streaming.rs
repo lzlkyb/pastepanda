@@ -149,6 +149,16 @@ impl RcService {
     }
 
     /// 被控端：QUIC stats 采样（推流任务）喂本端链路状况 → 码控（P0-4）。
+    /// 发起端 NetHint 携带的帧龄排队压力（2026-09-28，弱网快速码控信源）。
+    pub(in crate::rc) fn set_peer_queue_ms(&self, queue_ms: i64) {
+        self.stream.set_peer_queue_ms(queue_ms);
+    }
+
+    /// 发起端 NetHint 携带的帧粒度丢包反馈（permille）。
+    pub(in crate::rc) fn note_peer_frame_loss(&self, permille: i64) {
+        self.stream.note_peer_frame_loss(permille);
+    }
+
     pub(in crate::rc) fn note_stream_health(&self, rtt_ms: i64, loss_permille: i64, bw_kbps: i64) {
         self.stream.note_stream_health(rtt_ms, loss_permille, bw_kbps);
     }

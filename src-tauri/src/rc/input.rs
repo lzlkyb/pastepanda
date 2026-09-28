@@ -61,8 +61,16 @@ pub enum InputEvent {
     },
     /// 发起端把测得的 RTT 告知被控端，用于自适应降码率（R5.B2）。
     /// 不注入本机、不要求 Control。
+    /// `queue_ms`（2026-09-28）：发起端**帧龄 EMA**——它包含的排队延迟是 pong
+    /// RTT 看不见的（AP 队列只挡大帧不挡小 ping）。被控端据此快速减码率。
+    /// `frame_loss_pm`：帧粒度丢包率（permille）——靠校验片恢复过 / 整帧丢弃的
+    /// 占比，比 conn 级丢包更贴近 WiFi 的突发形态。两者都是 Option（旧对端不带）。
     NetHint {
         rtt_ms: i64,
+        #[serde(default)]
+        queue_ms: Option<i64>,
+        #[serde(default)]
+        frame_loss_pm: Option<i64>,
     },
     /// 发起端设置「码率倍率」（Q5，50–200，100 = 跟随链路）。与 RTT/丢包的
     /// 自动缩放**相乘**合成——用户调高也不会越过弱网保护，只是抬天花板。

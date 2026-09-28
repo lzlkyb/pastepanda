@@ -345,11 +345,15 @@ pub struct ReasmFrame {
     pub height: u32,
     /// Q3：编码标准随帧走（H.264/HEVC），不做跨通道状态推断。
     pub codec: FrameCodec,
+    /// 2026-09-28：本帧有缺失数据片是靠校验片恢复的（FEC 逐帧反馈的信源）。
+    pub recovered: bool,
 }
 
 struct FrameReasm {
     key: bool,
     codec: FrameCodec,
+    /// 本帧有缺失数据片靠校验片恢复过（交付时随 ReasmFrame 带出）。
+    recovered: bool,
     /// **数据片数** n（RS 帧由 frame_len 推出；旧格式 = frag_count 字段）。
     frag_count: u16,
     /// RS 每组校验片数（0 = 旧 XOR 格式：GROUP=4、每片组 1 片奇偶）。
@@ -595,6 +599,7 @@ impl VidReassembler {
             // frag_count 预留任何槽位（攻击面见 `FrameReasm::frags` 的注释）。
             frags: std::collections::HashMap::new(),
             created: std::time::Instant::now(),
+            recovered: false,
         });
         if reasm.frag_count != n_data as u16
             || reasm.total != total as u16
@@ -668,6 +673,7 @@ impl VidReassembler {
             out.push(ReasmFrame {
                 key: reasm.key,
                 codec: reasm.codec,
+                recovered: reasm.recovered,
                 data,
                 at_ms: reasm.at_ms,
                 cap_ms: reasm.cap_ms,
@@ -720,6 +726,7 @@ impl VidReassembler {
             .min(FRAG);
         rec.truncate(flen);
         reasm.frags.insert(mi, rec);
+        reasm.recovered = true;
     }
 
     /// 用柯西校验片恢复 RS 组内缺失（P3.1）。组定位：校验槽 `(slot−n)/m`，
@@ -778,6 +785,7 @@ impl VidReassembler {
             let real = frame_len.saturating_sub(abs * FRAG).min(FRAG);
             b.truncate(real);
             reasm.frags.insert(abs, b);
+            reasm.recovered = true;
         }
     }
 

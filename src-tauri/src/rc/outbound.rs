@@ -41,6 +41,9 @@ pub(super) struct OutboundVideo {
     /// 被控端码率缩放抖动会反复重开编码器（~1s/次），帧率被钉死。
     rtt_ema_ms: i64,
     rtt_hint_tier: u8,
+    /// NetHint 节拍（2026-09-28）：档位变化立刻发；无变化也每 5 个 pong（≈5s）
+    /// 发一次，把帧龄排队压力 / FEC 帧粒度丢包反馈捎回去。
+    pongs_since_hint: u32,
     /// 对端主动 End 帧带的理由（P2-10）：原先 End 只 return false，理由被丢，
     /// 会话历史里记成「画面流中断」。注意它与 `end_reason`（断流 Err）分工：
     /// 对端主动结束**不**触发自动重连，断流才触发。
@@ -82,6 +85,7 @@ impl OutboundVideo {
             canvas_h: 0,
             rtt_ema_ms: -1,
             rtt_hint_tier: 0,
+            pongs_since_hint: 0,
             peer_end_reason: None,
             #[cfg(target_os = "windows")]
             reasm: std::sync::Arc::new(std::sync::Mutex::new(
@@ -288,6 +292,11 @@ impl OutboundVideo {
                     });
                 }
                 for f in frames {
+                    // 2026-09-28：FEC 逐帧反馈——本帧靠校验片恢复过数据片就计数，
+                    // NetHint 按窗口捎回发送端上调 RS 冗余。
+                    if f.recovered {
+                        super::probe_out::bump_fec_recovered();
+                    }
                     push_h264_frame(
                         &svc,
                         f.key,
@@ -526,18 +535,35 @@ impl OutboundVideo {
                                 };
                                 let (tier, changed) =
                                     super::stream_cfg::rtt_hint_tier(self.rtt_hint_tier, self.rtt_ema_ms);
-                                if changed {
+                                // 2026-09-28：NetHint 节拍从「只在档位变化」扩成
+                                // 「档位变化 ∨ 排队压力超阈 ∨ 每 5 个 pong」——帧龄
+                                // 排队压力（AP 队列）只在帧龄里可见，pong 档位看不见；
+                                // FEC 反馈窗口也要按节奏清空。
+                                let queue = super::probe_out::age_ema_ms();
+                                let fec_fb = super::probe_out::take_frame_loss_feedback();
+                                let frame_loss_pm = fec_fb.map(|(dropped, delivered)| {
+                                    (dropped * 1000 / delivered.max(1)).min(1000) as i64
+                                });
+                                self.pongs_since_hint += 1;
+                                let due = self.pongs_since_hint >= 5;
+                                if changed || due || queue > 120 {
                                     self.rtt_hint_tier = tier;
-                                    log::info!(
-                                        "[RC] RTT EMA {}ms → NetHint 档位 {tier}，告知对端调整码率",
-                                        self.rtt_ema_ms
-                                    );
+                                    self.pongs_since_hint = 0;
+                                    if changed {
+                                        log::info!(
+                                            "[RC] RTT EMA {}ms → NetHint 档位 {tier}，告知对端调整码率",
+                                            self.rtt_ema_ms
+                                        );
+                                    }
                                     let svc = self.svc.clone();
                                     let ema = self.rtt_ema_ms;
+                                    let q = if queue > 0 { Some(queue) } else { None };
                                     tauri::async_runtime::spawn(async move {
                                         let _ = svc
                                             .send_input(&super::input::InputEvent::NetHint {
                                                 rtt_ms: ema,
+                                                queue_ms: q,
+                                                frame_loss_pm,
                                             })
                                             .await;
                                     });

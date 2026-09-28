@@ -88,6 +88,13 @@ pub(super) struct StreamCfg {
     skew_min_rtt_ms: AtomicI64,
     /// skew 离群剔除的连续拒绝数（重锚判据，见 [`StreamCfg::note_clock_skew`]）。
     skew_rej_streak: AtomicI64,
+    /// 发起端帧龄 EMA（NetHint `queue_ms`，2026-09-28）——AP 队列的 in-band 观测。
+    /// 存的是**平滑后**的值（升快降慢，见 [`StreamCfg::set_peer_queue_ms`]）；0 = 尚未收到。
+    peer_queue_ms: AtomicI64,
+    /// 帧粒度丢包反馈（NetHint `frame_loss_pm`，permille，非对称 EMA）。0 = 尚未收到。
+    /// 与本端 conn 级丢包取 max 后喂码控与 RS 冗余——WiFi 丢包按突发砸帧，
+    /// 帧粒度信号比 conn 包级更贴近接收端的真实观感。
+    peer_loss_hint_pm: AtomicI64,
     /// 「自动」档状态（2A）：enabled 时推流循环每帧喂字节数，由 [`StreamCfg::auto_note_frame`]
     /// 决定是否换档（换档 = 直接改 `opts.profile`，推流循环下一圈自己比对套用）。
     auto: Mutex<AutoTier>,
@@ -158,6 +165,25 @@ pub fn bitrate_scale_for_bw(kbps: i64) -> u32 {
     }
 }
 
+/// 排队压力（发起端帧龄 EMA，ms）→ 码率缩放百分比（2026-09-28）。
+///
+/// 为什么需要它：WiFi 的 AP 队列**只挡大帧不挡小 ping**——pong RTT 看着 10ms、
+/// 视频帧却排了 200ms（真机实测：拖动中 RTT EMA ~30ms、帧龄 300ms+）。帧龄里
+/// 扣掉采集/编码剩下的就是「发出去之前的排队 + 路上」——这是 sender 侧唯一
+/// 能看见 AP 队列的信号（RustDesk `video_qos.rs` 同款思路：in-band 探测）。
+/// 负值/未采样（≤0）不约束。分档约等于「排队帧数 ×16ms」：
+/// 90ms≈6 帧、180ms≈11 帧、300ms≈19 帧。
+pub fn bitrate_scale_for_queue(queue_ms: i64) -> u32 {
+    match queue_ms.max(0) {
+        0 => 100,
+        1..=90 => 100,
+        91..=180 => 70,
+        181..=300 => 45,
+        301..=500 => 25,
+        _ => 15,
+    }
+}
+
 /// 丢包率（‰）→ 码率缩放百分比。与 RTT 缩放取 min 后生效——
 /// 两条弱网信号（延迟高 / 丢包多）谁更糟听谁的。
 pub fn bitrate_scale_for_loss(permille: u64) -> u32 {
@@ -188,6 +214,8 @@ impl StreamCfg {
             clock_skew_ms: AtomicI64::new(0),
             skew_min_rtt_ms: AtomicI64::new(0),
             skew_rej_streak: AtomicI64::new(0),
+            peer_queue_ms: AtomicI64::new(0),
+            peer_loss_hint_pm: AtomicI64::new(0),
             auto: Mutex::new(AutoTier::off()),
         }
     }
@@ -217,9 +245,11 @@ impl StreamCfg {
         };
         let loss = self.loss_permille_u64();
         let bw = self.path_bw_kbps.load(Ordering::Relaxed);
+        let queue = self.peer_queue_ms.load(Ordering::Relaxed);
         let auto = bitrate_scale_for_rtt(rtt)
             .min(bitrate_scale_for_loss(loss))
-            .min(bitrate_scale_for_bw(bw));
+            .min(bitrate_scale_for_bw(bw))
+            .min(bitrate_scale_for_queue(queue));
         // Q5：用户倍率与之**相乘**（50–200，100 = 不干预）。乘法而非 min：
         // 弱网把 auto 砍到 40% 时，用户 200% 得到 80%——仍受保护但确实变清晰；
         // 若取 min，200% 在弱网下毫无意义。clamp 防退化（两端乘积域 12.5–200）。
@@ -262,12 +292,50 @@ impl StreamCfg {
 
     /// 自动档判定用的当前丢包率（‰）。
     pub(super) fn loss_permille(&self) -> i64 {
-        self.path_loss_permille.load(Ordering::Relaxed).max(0)
+        let own = self.path_loss_permille.load(Ordering::Relaxed).max(0);
+        // 2026-09-28：帧粒度反馈（发起端实测「这批帧丢了多少」）与本端 conn 级
+        // 丢包取 max——两把尺子谁量出来的更糟就信谁。conn 统计含流/心跳包，
+        // 可能低估视频路径；帧反馈只统计视频帧，但窗口小会抖——互补。
+        let hint = self.peer_loss_hint_pm.load(Ordering::Relaxed).max(0);
+        own.max(hint)
     }
 
     /// 内部：丢包率（‰，无符号视图，码率缩放用）。
     fn loss_permille_u64(&self) -> u64 {
-        self.path_loss_permille.load(Ordering::Relaxed).max(0) as u64
+        self.loss_permille() as u64
+    }
+
+    /// 发起端 NetHint 携带的帧龄排队压力（ms）。发起端已经做过一次「升快降慢」
+    /// 的 EMA——这里**只做轻度平滑（升 α=1/2 / 降 α=1/2）**：两层慢速平滑叠加
+    /// 的等效恢复时间是几十秒（真机复盘 2026-09-28：一次 13s 停顿把码率钉死在
+    /// 15% 半分钟），码率会糊成马赛克还不回升。0/负值 = 无样本，不更新。
+    pub(super) fn set_peer_queue_ms(&self, queue_ms: i64) {
+        if queue_ms <= 0 {
+            return;
+        }
+        let prev = self.peer_queue_ms.load(Ordering::Relaxed);
+        let next = if prev <= 0 {
+            queue_ms
+        } else {
+            (prev + queue_ms) / 2
+        };
+        self.peer_queue_ms.store(next, Ordering::Relaxed);
+    }
+
+    /// 发起端 NetHint 携带的帧粒度丢包率（permille）。非对称 EMA 同上。
+    pub(super) fn note_peer_frame_loss(&self, permille: i64) {
+        if permille <= 0 {
+            return;
+        }
+        let prev = self.peer_loss_hint_pm.load(Ordering::Relaxed);
+        let next = if prev <= 0 {
+            permille
+        } else if permille > prev {
+            (prev + permille) / 2
+        } else {
+            (prev * 7 + permille) / 8
+        };
+        self.peer_loss_hint_pm.store(next, Ordering::Relaxed);
     }
 
     /// 发起端：由 pong 估算的时钟偏差样本（被控端时钟 − 本机时钟，ms）。
@@ -355,6 +423,8 @@ impl StreamCfg {
         self.path_rtt_ms.store(0, Ordering::Relaxed);
         self.path_loss_permille.store(0, Ordering::Relaxed);
         self.path_bw_kbps.store(0, Ordering::Relaxed);
+        self.peer_queue_ms.store(0, Ordering::Relaxed);
+        self.peer_loss_hint_pm.store(0, Ordering::Relaxed);
         self.clock_skew_ms.store(0, Ordering::Relaxed);
         // skew 过滤状态与会话同生命周期：换台对端 min-RTT 完全不同。
         self.skew_min_rtt_ms.store(0, Ordering::Relaxed);

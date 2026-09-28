@@ -372,8 +372,20 @@ pub(super) async fn handle_inbound_input(
             }
             return;
         }
-        InputEvent::NetHint { rtt_ms } => {
+        InputEvent::NetHint {
+            rtt_ms,
+            queue_ms,
+            frame_loss_pm,
+        } => {
             let scale = svc.set_peer_rtt(*rtt_ms);
+            // 2026-09-28：排队压力（帧龄 EMA——AP 队列只挡大帧不挡小 ping）与
+            // 帧粒度丢包反馈。都是弱网快速码控的信源，见 stream_cfg 各自注释。
+            if let Some(q) = queue_ms {
+                svc.set_peer_queue_ms(*q);
+            }
+            if let Some(pm) = frame_loss_pm {
+                svc.note_peer_frame_loss(*pm);
+            }
             log::debug!("[RC] 对端 RTT {rtt_ms}ms → 码率 {scale}%");
             return;
         }

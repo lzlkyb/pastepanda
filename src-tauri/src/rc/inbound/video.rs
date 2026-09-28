@@ -307,10 +307,16 @@ impl InboundVideo {
                 opts.virtual_screen,
                 self.gpu_disabled,
             ));
-            // P1/G5 零拷贝门控：档位要（fps120 / uhd60）+ 单输出 + GPU 路径没被判死。
+            // P1/G5 零拷贝门控（2026-09-28 重判）：硬件 MFT + 单输出 + GPU 路径没判死。
+            // 旧判据绑档位（fps120/uhd60），60Hz 机器永远进不了高帧率档 ⇒ 永远 GDI
+            // CPU 捕获（拖动实测 53–74ms/帧）——零拷贝是本地收益，与网络档位无关。
             // 判据集中在 `EncodeProfile::wants_zero_copy`（有单测）——写错不崩、
             // 只会静默跑 CPU 管线。
-            let want_gpu = opts.profile.wants_zero_copy(opts.virtual_screen, self.gpu_disabled);
+            let want_gpu = opts.profile.wants_zero_copy(
+                opts.virtual_screen,
+                self.gpu_disabled,
+                crate::rc::gpu::encode_caps().h264_gpu,
+            );
             if want_gpu {
                 // P0-2 延迟分段：抓帧耗时单独记
                 let cap_t0 = std::time::Instant::now();
