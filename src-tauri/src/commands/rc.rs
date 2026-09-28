@@ -1540,10 +1540,16 @@ pub async fn rc_push_clipboard(svc: State<'_, Arc<RcService>>, text: String) -> 
 // close() 与 JS window.close() 走同一条运行时路径：仍会触发 CloseRequested，
 // 「有会话先确认」的守卫链（useRcWorkbenchClose）原样生效。
 
-/// 会话态纵向 chrome（逻辑像素）：viewShell 上下边框各 1 + viewTop 33 内容
-/// + 1 分隔线。`rc_fit_window_to_video` 用来把窗口高拆成「顶栏 + 内容区」。
+/// 会话态纵向 chrome（逻辑像素）：就是顶栏 `.viewTop` 的整条高（含它那条 1px
+/// 分隔线；box-sizing 全局 border-box）。`rc_fit_window_to_video` 用它把窗口高
+/// 拆成「顶栏 + 内容区」。
+/// 旧注释还写着「viewShell 上下边框各 1 + viewTop 33」——那对边框 2026-09-27
+/// 方案 A 已删，留着就是两份各说各话的真相（差 1~2px 表现为「适应档」偶尔
+/// 留一条细缝）。现在单一真相在前端 `--rc-session-chrome-h`，两处必须相等的
+/// 不变量由 `src/__tests__/rcSessionChromeHeight.test.ts` 守（规则 11.1）。
 const SESSION_CHROME_H: f64 = 36.0;
-/// 会话态横向 chrome：viewShell 左右边框各 1。
+/// 会话态横向 chrome：`.viewShell` 满幅贴边后已无边框，这里保留 2.0 是窗口
+/// 自身的可见边框余量（贴边主题下为 0，宁可多 2px 也不让画面被切掉一列）。
 const SESSION_CHROME_W: f64 = 2.0;
 
 #[tauri::command]

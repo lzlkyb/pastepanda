@@ -5,7 +5,7 @@
  * 「换会话补发 key-up / 鼠标松开」也放这里——它同样只在换会话 / 卸载时触发，
  * 目的是防止对端修饰键与鼠标键卡在按下态。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { releaseModifiers } from "@/hooks/useRcInput";
 import type { FitMode } from "@/lib/rcSessionStats";
 
@@ -21,6 +21,12 @@ export function useRcDisplayMode(
   const [fullscreen, setFullscreen] = useState(false);
   /** 案 A：非全屏「画面偏小」提示，「知道了」仅本会话生效 */
   const [fsHintDismissed, setFsHintDismissed] = useState(false);
+  /** 方案 A Q4（2026-09-28）：进全屏把 1:1 降回「适应」的计数（父级据此提示一次） */
+  const [fitDowngradeTick, setFitDowngradeTick] = useState(0);
+  const fitRef = useRef<FitMode>(fit);
+  useEffect(() => {
+    fitRef.current = fit;
+  }, [fit]);
 
   const toggleFullscreen = useCallback(() => {
     const el = fullscreenRef.current;
@@ -34,6 +40,23 @@ export function useRcDisplayMode(
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
+
+  // 🔴 1:1（actual）在整屏里必然溢出，而 .panBox 的滚动条在全屏里几乎没人想到去
+  // 拖——「显示不全」的另一半根因。进全屏时静默降回「适应」并计数通知，
+  // 由父级 toast 说明（规则 15：改了用户的选择就要可见）。handledRef 保证
+  // StrictMode 的双跑只算一次，用户主动选 1:1 不受影响（只在进全屏那一刻判）。
+  const fsHandledRef = useRef(false);
+  useEffect(() => {
+    if (!fullscreen) {
+      fsHandledRef.current = false;
+      return;
+    }
+    if (fsHandledRef.current) return;
+    fsHandledRef.current = true;
+    if (fitRef.current !== "actual") return;
+    setFit("fit");
+    setFitDowngradeTick((t) => t + 1);
+  }, [fullscreen]);
 
   const dismissFsHint = useCallback(() => setFsHintDismissed(true), []);
 
@@ -53,5 +76,6 @@ export function useRcDisplayMode(
     toggleFullscreen,
     fsHintDismissed,
     dismissFsHint,
+    fitDowngradeTick,
   };
 }

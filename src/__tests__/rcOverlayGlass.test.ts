@@ -3,7 +3,7 @@
  *
  * # 不变量
  *
- * 压在**远端画面**上的浮层（会话胶囊 / HUD 面板 / 全屏 hotbar / 全屏键盘徽标）
+ * 压在**远端画面**上的浮层（会话胶囊 / HUD 面板 / 全屏键盘徽标）
  * 恒为半透明深玻璃、不随主题翻面——它们底下是不可控的对端内容（白纸或黑终端），
  * 可读性对赌的是画面而非本地主题。工作台面（侧栏 / hero / 卡片）则相反，必须
  * 跟随主题令牌（那条由 rcA2ThemeTokens.test.ts 守）。
@@ -33,7 +33,7 @@ function block(selector: string): string {
   return m[1];
 }
 
-/** 背景声明里的第一个 rgba()（渐变里的第一个色标也算——.fsBar 是深色渐变）。 */
+/** 背景声明里的第一个 rgba()（渐变里的第一个色标也算）。 */
 function firstRgba(selector: string): [number, number, number, number] {
   const text = block(selector).match(/(?:^|[\s;])background:\s*([^;]+);/)?.[1] ?? "";
   const m = text.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/);
@@ -41,11 +41,12 @@ function firstRgba(selector: string): [number, number, number, number] {
   return [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
 }
 
-/** 被守的浮层：全部压在远端画面上（压本地窗口的横幅/抽屉走主题令牌，不在此列）。 */
+/** 被守的浮层：全部压在远端画面上（压本地窗口的横幅/抽屉走主题令牌，不在此列）。
+ *  .capCapsule 一条同时守住**窗口态与全屏态**——2026-09-28 方案 A 起两态共用同
+ *  一条胶囊（原全屏 .fsBar 已退役），所以这里不需要第二条。 */
 const OVERLAYS: ReadonlyArray<[string, string]> = [
-  [".capCapsule", "控端会话胶囊"],
+  [".capCapsule", "控端会话胶囊（窗口态 + 全屏态同一条）"],
   [".hudPanel", "HUD 连接详情面板"],
-  [".fsBar", "全屏 hotbar（深色渐变）"],
   [".fsKbBadge", "全屏键盘捕获徽标"],
 ];
 

@@ -176,6 +176,11 @@
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
+  /* 🔴 高度是「会话窗 chrome」的唯一前端真相（--rc-session-chrome-h 定义在
+     .sessionWrap）：rc_fit_window_to_video 的 Rust 侧 SESSION_CHROME_H 必须与它
+     相等，守卫见 src/__tests__/rcSessionChromeHeight.test.ts（规则 11.1）。
+     box-sizing 全局 border-box ⇒ 36 已含下面那条 1px 分隔线。 */
+  height: var(--rc-session-chrome-h, 36px);
   background: var(--card-bg, #fff);
   border-bottom: 1px solid var(--border-color, #e3e6ea);
   font-size: 12px;
@@ -323,7 +328,7 @@
 .viewShell .placeholder,
 .viewShell .placeholderSub,
 .viewShell .viewOnlyMark {
-  color: #98a2b3; /* ui-rule-ok: 深底说明文字，同 .fsBar 按钮先例 */
+  color: #98a2b3; /* ui-rule-ok: 深底说明文字，同 .capBtn 一族先例 */
 }
 /* ⚠️ `.viewShell .qBar` 已删：方案 B 后 qBar 只出现在侧栏（本机配置），不再进会话
    视图，这条后代选择器永远不匹配。 */
@@ -352,7 +357,7 @@
      position:relative 以下、不创建上下文，数值直接可比）——12 会盖过 .capZone
      全子树（⋯ 面板 .capMore 的 40 被锁在 capZone 自己的层叠上下文里够不着），
      面板展开时被本条压住，点面板误触「全屏/知道了」。降到 4 = 仍在画面元素
-     （画布 auto / .viewOnlyMark 1 / .stageNotice 2 / .fsBar 3）之上、capZone（5）
+     （画布 auto / .viewOnlyMark 1 / .stageNotice 2）之上、capZone（5）
      之下；无面板时「全屏/知道了」照常可点（pointer-events 在按钮上）。 */
   z-index: 4;
   display: flex;
@@ -1078,7 +1083,9 @@
 
 /* ⚠️ .viewTools / .viewTools button（右上浮现工具条）已删（2026-09-24 浮条收编）：
    适应/1:1/填充/全屏/锁定指针全部搬进 RcSessionCapsule。同族的 .viewToolsHidden
-   （隐藏态三重纪律）与 .toolOn（选中态）仍被 .fsBar / .capZone 复用，保留。 */
+   （隐藏态三重纪律）仍被 .capZone 复用，保留。
+   ⚠️ .toolOn（选中态）已删（2026-09-28 方案 A：RcFullscreenHotbar 退役，全屏与
+   窗口态共用胶囊，选中态统一走 .capBtnOn）。 */
 .viewToolsHidden {
   opacity: 0;
   transform: translateY(-6px);
@@ -1091,54 +1098,13 @@
     visibility 0s linear 200ms;
 }
 
-.toolOn {
-  background: rgba(107, 147, 255, 0.28) !important;
-  /* ui-rule-ok: 深底选中态提亮到纯白（不随主题），同 .fsDanger:hover 先例 */
-  color: #fff !important;
-}
+/* ⚠️ .fsBar / .fsDanger / .fsSep / .fsInfo / .fsWin* 整套已删（2026-09-28 方案 A）：
+   全屏会话态的 RcFullscreenHotbar 退役，两态共用 RcSessionCapsule（.capZone /
+   .capCapsule / .capBtn* 一族）。全屏态的窗口键见下方 .capWin*。 */
 
-/* —— 方案 B（2026-09-24）：全屏会话态顶边 hot zone 控制条（RcFullscreenHotbar）——
-   Fullscreen API 只显示 fakeScreen 子树，本条必须挂在它**内部**才可见。
-   浮现状态机与 viewTools 同构（顶边热区滑入 / 悬停保持 / 2.5s 淡出），但：
-   ① 热区只有 8px（少吃远程点击——viewTools 当年误触排查的教训）；
-   ② 指针锁定时不唤出（锁住的指针没有真实光标）；
-   ③ 隐藏态复用 .viewToolsHidden（pointer-events:none + visibility + tabIndex 三重）。
-   深玻璃比 viewTools 更实——横条正压在画面上缘，需要更强可读性。按钮用固定
-   浅色（#c8d0dc）：本条不随主题翻面，light 主题下 var(--text-*) 会糊进深玻璃。 */
-.fsBar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 7px 10px;
-  background: linear-gradient(
-    to bottom,
-    rgba(7, 12, 20, 0.88),
-    rgba(7, 12, 20, 0.55) 80%,
-    transparent
-  );
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12); /* ui-rule-ok: 深玻璃高光描边（2026-09-27 加强） */
-  z-index: 3;
-  /* 2026-09-27 审查修正：根容器 pointer-events:none——条子是全宽的，空白区
-     （含渐变透明尾）原先整条拦截画面顶缘点击、不转发远端。按钮/三键各自
-     auto 恢复命中；mousemove 冒泡到 stage，悬停保持逻辑不受影响。 */
-  pointer-events: none;
-  transition:
-    opacity 200ms cubic-bezier(0.2, 0, 0, 1),
-    transform 200ms cubic-bezier(0.2, 0, 0, 1),
-    visibility 0s linear 0s;
-}
-.fsBar button,
-.fsBar .fsWin {
-  pointer-events: auto;
-}
-
-/* 全屏态「键盘已捕获」常驻徽标（2026-09-27 审计 P1-2）：全屏与胶囊互斥后键盘态
-   原本零指示。底部居中不与顶边 hotbar 抢位；深玻璃同 .capCapsule 口径，文字
-   用固定浅色（本徽标不随主题翻面，同 .fsBar 按钮的理由）。 */
+/* 全屏态「键盘已捕获」常驻徽标（2026-09-27 审计 P1-2）：输入正打进对方机器而
+   屏幕上没有任何说明不可接受。底部居中不与顶部胶囊抢位；深玻璃同 .capCapsule
+   口径，文字用固定浅色（本徽标不随主题翻面）。 */
 .fsKbBadge {
   position: absolute;
   left: 50%;
@@ -1153,7 +1119,7 @@
   backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.12); /* ui-rule-ok: 深玻璃高光描边，同 .capCapsule 先例 */
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45); /* ui-rule-ok: 固定深投影，同 .capCapsule 口径 */
-  color: #e8edf4; /* ui-rule-ok: 深玻璃浮层固定浅色文字，不随主题翻面，同 .fsBar 按钮先例 */
+  color: #e8edf4; /* ui-rule-ok: 深玻璃浮层固定浅色文字，不随主题翻面，同 .capCapsule */
   font-size: 12px;
   pointer-events: none;
   z-index: 3;
@@ -1165,82 +1131,50 @@
   background: #4ade80; /* ui-rule-ok: 深玻璃绿态，同 .capKb 先例 */
 }
 
-.fsBar button {
-  font: inherit;
-  font-size: 11px;
-  padding: 4px 9px;
-  border-radius: 4px; /* ui-rule-ok: 归档 4px（邻居 viewTools 的 6px 是改前存量） */
-  border: none;
-  background: transparent;
-  /* ui-rule-ok: 深玻璃压在画面上、刻意不随主题翻面（light 下 var(--text-*) 会糊进深底）；同 viewTools 先例 */
-  color: #c8d0dc;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.fsBar button:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff; /* ui-rule-ok: 深底 hover 提亮到纯白，同 .toolOn 先例（不随主题） */
-}
-
-.fsBar button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* 破坏性操作在深底上提亮一档（--danger 是浅底语义，直接用会太暗） */
-.fsDanger {
-  color: #ff9a9a !important; /* ui-rule-ok: --danger 是浅底语义，深底上直接用太暗——提亮一档 */
-}
-
-.fsDanger:hover {
-  background: rgba(214, 69, 69, 0.3) !important;
-  color: #fff !important; /* ui-rule-ok: 深底 hover 提亮到纯白（不随主题） */
-}
-
-.fsSep {
-  width: 1px;
-  height: 16px;
-  background: rgba(255, 255, 255, 0.14);
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-
-.fsInfo {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
-  margin-left: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 窗口三键：最右（Windows 习惯位，用户指定），40×30 窄版。
-   选择器带 .fsBar 前缀压过上面的 `.fsBar button`（cursor / padding 不打架）。 */
-.fsWin {
+/* —— 方案 A（2026-09-28）：全屏态挂在胶囊右端的窗口键（最小化 + 关闭）——
+   全屏时顶栏整条退场，窗口键只剩这一处。刻意**不**复用 .capBtn：胶囊里紧邻的
+   「结束会话」也是一枚 X，同族外观会分不清哪颗断远程、哪颗关窗口。方形 +
+   cursor:default 与 RcWindowControls 的窗口按钮语义一致；关闭走 rc_window_close
+   命令（close 语义，「有会话先问」的守卫不变），不摆最大化（全屏里无意义）。 */
+.capWin {
   display: flex;
-  margin-left: auto;
+  align-items: center;
+  /* 间距走胶囊自己的 8px gap（前面有 .capSep 分隔），组内 4px = .capBtn 一档。
+     lint:ui U5：原先的 2px 不在尺度上。 */
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-.fsBar .fsWinBtn {
-  width: 40px;
-  height: 30px;
-  padding: 0;
+.capWinBtn {
+  width: 26px;
+  height: 22px;
   display: grid;
   place-items: center;
-  cursor: default;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  /* ui-rule-ok: 深玻璃上的固定浅色图标，不随主题翻面（同 .capCapsule 口径） */
+  color: rgba(232, 236, 242, 0.85);
+  cursor: default; /* Windows 原生窗口按钮不是手形 */
   transition: background 150ms, color 150ms;
 }
 
-.fsBar .fsWinBtn svg {
-  width: 13px;
-  height: 13px;
+.capWinBtn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* hover 底色与文字族统一取 .capBtn 的 0.1（lint:ui V3rgb：同深玻璃一套浮条不该有两档白） */
+.capWinBtn:hover {
+  /* ui-rule-ok: 逐字对齐上方 .capBtn:hover 的 0.1 档，深玻璃浮条不随主题翻面 */
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff; /* ui-rule-ok: 深底 hover 提亮到纯白（不随主题） */
 }
 
 /* 关闭键 hover 红底白字：Windows 原生配色（系统级语义变量，不随主题变） */
-.fsBar .fsWinBtnClose:hover {
-  background: var(--win-close-hover-bg) !important;
-  color: var(--win-close-hover-fg) !important;
+.capWinBtnClose:hover {
+  background: var(--win-close-hover-bg);
+  color: var(--win-close-hover-fg);
 }
 
 /* —— 方案 B：会话底栏（唯一一条）——
@@ -1256,6 +1190,11 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* 会话态纵向 chrome（顶栏整条高，含 1px 分隔线）。消费方三处，必须同源：
+     .viewTop 的高 / .capZone 的 top / Rust 侧 rc_fit_window_to_video 的
+     SESSION_CHROME_H（守卫单测 rcSessionChromeHeight.test.ts）。
+     全屏态顶栏整条退场，chrome 归 0，画面盒吃掉整屏。 */
+  --rc-session-chrome-h: 36px;
 }
 /* —— 2026-09-24 控端态浮条收编：RcSessionCapsule ——
    画面顶部居中的**唯一**会话控制条（深色玻璃，会隐藏）。原底栏 .sessionBar
@@ -1263,15 +1202,16 @@
    顶栏警示/结束/更多、左上 HUD 按钮、右上 viewTools 一并收编进本条。
 
    深玻璃配色不随主题翻面（light 下 var(--text-*) 会糊进深底）——沿用
-   .viewTools / .fsBar 的既有先例；阴影用浮层 token。
+   .viewTools 的既有先例（.fsBar 一族已随方案 A 退役）；阴影用浮层 token。
 
    浮现策略（B 变体，用户指定）：连接成功首显 15s → 隐藏；顶边 12px 热区或
    悬停唤出，离开 2.5s 淡出；链路异常 / 菜单展开期间锁显。状态机在
    RcSessionCapsule.tsx，这里只管外观。 */
 .capZone {
-  /* 顶栏（.viewTop ≈34px）正下方；胶囊再让 12px。链路异常的微光条贴 canvas 顶缘 */
+  /* 顶栏（.viewTop，高度 = --rc-session-chrome-h）正下方；胶囊再让 12px。
+     链路异常的微光条贴 canvas 顶缘 */
   position: absolute;
-  top: 34px;
+  top: var(--rc-session-chrome-h, 36px);
   left: 0;
   right: 0;
   z-index: 5;
@@ -1284,6 +1224,11 @@
     opacity 200ms cubic-bezier(0.2, 0, 0, 1),
     transform 200ms cubic-bezier(0.2, 0, 0, 1),
     visibility 0s linear 0s;
+}
+/* 方案 A（2026-09-28）：全屏态顶栏整条退场 ⇒ 胶囊直接贴屏幕顶缘（胶囊自身
+   margin-top 12px 仍在，正好与唤出热区同深）。两态同一条组件，只差这一格偏移。 */
+.capZoneFs {
+  top: 0;
 }
 /* 隐藏态复用 .viewToolsHidden（pointer-events:none + visibility:hidden + Tab 纪律） */
 
@@ -1311,7 +1256,7 @@
   gap: 8px;
   height: 34px;
   padding: 0 8px 0 12px;
-  /* ui-rule-ok: 深玻璃压在画面上、刻意不随主题翻面（同 .viewTools/.fsBar 先例）。
+  /* ui-rule-ok: 深玻璃压在画面上、刻意不随主题翻面（同 .viewTools 先例）。
      2026-09-27 描边/投影加强：暗色画面上靠描边+投影分层（投影原挂主题变量，
      亮主题只有 12% 黑几乎隐形——改固定值，与玻璃同口径不随主题翻面）。 */
   background: rgba(13, 16, 22, 0.82);
@@ -1472,24 +1417,24 @@
    注意 `.capBtnOn` 与 `.capBtn` 同为 (0,1,0)，靠源码顺序取胜（在下），别把它挪到前面。 */
 .capBtn:hover:not(:disabled):not(.capBtnOn) {
   background: rgba(255, 255, 255, 0.1);
-  color: #fff; /* ui-rule-ok: 深底 hover 提亮到纯白，同 .toolOn 先例 */
+  color: #fff; /* ui-rule-ok: 深底 hover 提亮到纯白，同 .capBtnOn 先例 */
 }
 .capBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .capBtnOn {
-  /* ui-rule-ok: 深玻璃选中态，同 .toolOn 先例 */
+  /* ui-rule-ok: 深玻璃选中态，同 .capBtnOn 先例 */
   background: rgba(107, 147, 255, 0.28);
-  /* ui-rule-ok: 深玻璃选中态提亮到纯白（不随主题），同 .toolOn 先例 */
+  /* ui-rule-ok: 深玻璃选中态提亮到纯白（不随主题），同 .capBtnOn 先例 */
   color: #fff;
 }
 .capBtnDanger {
-  color: #f09595; /* ui-rule-ok: --danger 是浅底语义，深底提亮一档，同 .fsDanger 先例 */
+  color: #f09595; /* ui-rule-ok: --danger 是浅底语义，深底提亮一档，同 .capBtnDanger 先例 */
 }
 .capBtnDanger:hover:not(:disabled) {
   background: rgba(214, 69, 69, 0.22);
-  color: #fff; /* ui-rule-ok: 同 .fsDanger:hover 先例 */
+  color: #fff; /* ui-rule-ok: 同 .capBtnDanger 先例 */
 }
 
 /* 视图三键组（窄窗整组隐藏，见下方媒体查询） */
@@ -1531,7 +1476,7 @@
 }
 .capCapsule .menuBtn:hover:not(:disabled) {
   border-color: transparent;
-  /* ui-rule-ok: 深玻璃 hover 提亮到纯白（不随主题），同 .toolOn 先例 */
+  /* ui-rule-ok: 深玻璃 hover 提亮到纯白（不随主题），同 .capBtnOn 先例 */
   color: #fff;
 }
 .capCapsule .menuCur {
@@ -1628,7 +1573,7 @@
 }
 .capMore .miniBtn:hover:not(:disabled) {
   border-color: rgba(255, 255, 255, 0.24);
-  /* ui-rule-ok: 深面板 hover 提亮到纯白（不随主题），同 .toolOn 先例 */
+  /* ui-rule-ok: 深面板 hover 提亮到纯白（不随主题），同 .capBtnOn 先例 */
   color: #fff;
 }
 .capMore .miniBtnPri {

@@ -10,7 +10,7 @@
  * - 结束/申请控制权走父级 confirmDialog 回调（红线：这里不得自行弹窗）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RcSession } from "@/lib/api/rc";
@@ -18,6 +18,23 @@ import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import type { UseRc } from "@/hooks/useRc";
 import { RcSessionCapsule } from "./RcSessionCapsule";
 import styles from "./RemoteComputer.module.css";
+
+// 全屏态的窗口键走 lib/rcWindowOps 的 Rust 命令出口（原 RcFullscreenHotbar 的
+// 口径），`invoke` 打桩；`@tauri-apps/api/window` 给 WindowControlIcon 的宿主
+// 一组 spy。vitest 环境没有 `__TAURI_INTERNALS__`，用例里补上再清掉。
+const h = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  isMaximized: vi.fn(),
+  onResized: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    isMaximized: h.isMaximized,
+    onResized: h.onResized,
+  }),
+}));
 
 const SESSION = {
   peer: "peer-a",
@@ -76,6 +93,7 @@ function base(over: Partial<Parameters<typeof RcSessionCapsule>[0]> = {}) {
     onStatus: vi.fn(),
     fit: "fit",
     onFit: vi.fn(),
+    fullscreen: false,
     onToggleFullscreen: vi.fn(),
     onRequestEnd: vi.fn(),
     onReconnect: vi.fn(),
@@ -94,9 +112,14 @@ function zone(container: HTMLElement) {
 describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    h.invoke.mockReset().mockResolvedValue(undefined);
+    h.isMaximized.mockReset().mockResolvedValue(false);
+    h.onResized.mockReset().mockResolvedValue(() => {});
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   });
   afterEach(() => {
     vi.useRealTimers();
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   });
 
   it("连接成功首显：身份段（可控胶囊 + 键盘提示）与画质下拉都在", () => {
@@ -338,6 +361,106 @@ describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
       document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     });
     expect(container.querySelector(`.${styles.capMore}`)).toBeNull();
+  });
+});
+
+/**
+ * 🔴 方案 A（2026-09-28，design/远程电脑-控端全屏胶囊统一-设计稿.html）：
+ * 全屏不再换第二条控制条（RcFullscreenHotbar 退役），两态同一条胶囊。
+ * 这里接管原 hotbar 测试钉住的三条语义：入口不丢、关闭走 rc_window_close、
+ * F10 键盘唤出；并新增「两态一致」这条回归判据（分叉一次就会重演
+ * 「全屏里改不了画质」）。
+ */
+describe("RcSessionCapsule 全屏态（两态同一条）", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    h.invoke.mockReset().mockResolvedValue(undefined);
+    h.isMaximized.mockReset().mockResolvedValue(false);
+    h.onResized.mockReset().mockResolvedValue(() => {});
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  });
+
+  it("🔴 全屏里五类入口一个都不少：画质 / 画面 / 显示三键 / ⓘ 详情 / ⋯ 面板", () => {
+    const { container, getByRole, getByTestId } = render(
+      <RcSessionCapsule {...base({ fullscreen: true })} />,
+    );
+    expect(getByRole("button", { name: /画质/ })).toBeTruthy();
+    expect(getByRole("button", { name: "画面 整屏" })).toBeTruthy();
+    for (const label of ["适应", "1:1", "填充"]) {
+      expect(getByRole("button", { name: label })).toBeTruthy();
+    }
+    expect(getByRole("button", { name: /更多/ })).toBeTruthy();
+    expect(getByTestId("detail")).toBeTruthy();
+    // 顶栏退场 ⇒ 胶囊贴屏幕顶缘（.capZoneFs），窗口态不吃这个类
+    expect(container.querySelector(`.${styles.capZoneFs}`)).not.toBeNull();
+  });
+
+  it("窗口态不吃 .capZoneFs（顶栏还在，胶囊让开一整条 chrome）", () => {
+    const { container } = render(<RcSessionCapsule {...base()} />);
+    expect(container.querySelector(`.${styles.capZoneFs}`)).toBeNull();
+  });
+
+  it("🔴 全屏右端补窗口键：最小化 + 关闭走 Rust 命令，最大化不摆（全屏里无意义）", () => {
+    render(<RcSessionCapsule {...base({ fullscreen: true })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "最小化" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    expect(h.invoke).toHaveBeenCalledWith("rc_window_minimize");
+    expect(h.invoke).toHaveBeenCalledWith("rc_window_close");
+    // 只打三键命令集（原 RcFullscreenHotbar 的同一条断言）：关闭必须是 close
+    // 语义，交给「有会话先问」的窗口守卫，不许绕成 destroy 或结束会话。
+    const cmds = h.invoke.mock.calls.map((c) => c[0]);
+    expect(cmds.every((c) => typeof c === "string" && c.startsWith("rc_window_"))).toBe(true);
+    expect(screen.queryByRole("button", { name: "最大化" })).toBeNull();
+  });
+
+  it("窗口态不摆窗口键（最小化/最大化/关闭仍归顶条，同屏只有一套）", () => {
+    render(<RcSessionCapsule {...base()} />);
+    expect(screen.queryByRole("button", { name: "最小化" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "关闭" })).toBeNull();
+  });
+
+  it("同一颗全屏键翻转语义：全屏里翻成文字键「退出全屏」（稿子 §3-A①，非图标-only）", () => {
+    const onToggleFullscreen = vi.fn();
+    const { getByRole } = render(
+      <RcSessionCapsule {...base({ fullscreen: true, onToggleFullscreen })} />
+    );
+    const key = getByRole("button", { name: "退出全屏" });
+    expect(key.textContent).toBe("退出全屏");
+    expect(key.getAttribute("title")).toBe("退出全屏显示远程画面（F11）");
+    fireEvent.click(key);
+    expect(onToggleFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it("F10 唤出/收起（热键从 hotbar 上收，两态通用）；kbOn 时让路给远端", () => {
+    const { container, rerender } = render(<RcSessionCapsule {...base()} />);
+    act(() => {
+      vi.advanceTimersByTime(15_000); // 首显到点淡出
+    });
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("true");
+
+    act(() => {
+      fireEvent.keyDown(window, { key: "F10" });
+    });
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("false");
+
+    // 键盘已捕获给远端 ⇒ 热键不生效，已显示的不被收起
+    rerender(<RcSessionCapsule {...base({ input: { ...INPUT, kbOn: true } })} />);
+    act(() => {
+      fireEvent.keyDown(window, { key: "F10" });
+    });
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("false");
+
+    rerender(<RcSessionCapsule {...base()} />);
+    act(() => {
+      fireEvent.keyDown(window, { key: "F10" });
+    });
+    expect(zone(container)!.getAttribute("aria-hidden")).toBe("true");
   });
 });
 

@@ -4,7 +4,8 @@
  * 顶栏已瘦身为**纯窗口壳**（灯 / 名字 / 三键）：会话操作（警示 / 结束 / 更多 /
  * 重连）全部搬进 RcSessionCapsule。这里守住三件事：
  * - 拖拽区与 md 全屏编辑器同款：`deep`（整条子树可拖、双击最大化由注入脚本
- *   内置、按钮自动豁免）；全屏态禁拖（="false"）；
+ *   内置、按钮自动豁免）；方案 A（2026-09-28）起全屏态**整条不渲染**，本组件
+ *   不再有全屏分支；
  * - 三键逐字打到 Rust 命令出口（lib/rcWindowOps，不经 per-window ACL）；
  * - 瘦身不再回弹——结束会话/警示胶囊出现在顶栏即为回归（会与浮条双中心）。
  */
@@ -41,7 +42,6 @@ const SESSION = {
 const base = {
   session: SESSION,
   linkState: "connected" as const,
-  fullscreen: false,
 };
 
 beforeEach(() => {
@@ -62,20 +62,9 @@ describe("RcSessionTop（md 全屏编辑器同款拖拽区 + 命令三键）", (
     expect(container.firstElementChild?.getAttribute("data-tauri-drag-region")).toBe("deep");
   });
 
-  it("全屏中禁用拖窗（顶条此时是画面顶边，拖拽会牵动窗口）", () => {
-    const { container } = render(<RcSessionTop {...base} fullscreen />);
-
-    expect(container.firstElementChild?.getAttribute("data-tauri-drag-region")).toBe("false");
-  });
-
-  it("🔴 全屏双组三键：hideWindowControls 隐藏顶条三键（hotbar 右上角已有同语义组）", () => {
-    render(<RcSessionTop {...base} fullscreen hideWindowControls />);
-
-    expect(screen.queryByRole("button", { name: "最小化" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "最大化" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "关闭" })).toBeNull();
-  });
-
+  // 方案 A（2026-09-28）：原「全屏禁拖」「hideWindowControls 隐藏顶条三键」两条
+  // 用例随全屏分支一起删除——全屏态整条顶栏不渲染（RcSessionStage 裁决），
+  // 组件里不再有 fullscreen / hideWindowControls 两个 prop。
   it("完整三键组：最小化 / 最大化 / 关闭，逐字打到 Rust 命令", () => {
     render(<RcSessionTop {...base} />);
 

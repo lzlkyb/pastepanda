@@ -25,7 +25,8 @@ import { rcWindowClose, rcWindowMinimize, rcWindowToggleMaximize } from "@/lib/r
 import styles from "./RemoteComputerA2.module.css";
 
 /** 图标照稿子的 `<symbol>` 同形（viewBox 24 / stroke currentColor）。
-    导出供 RcFullscreenHotbar 复用（方案 B 的全屏 hotbar 里同一套窗口键图形）。 */
+    导出供 RcSessionCapsule 复用（2026-09-28 方案 A：全屏态顶栏退场，窗口键挂在
+    胶囊右端，同一套窗口键图形）。 */
 export function WindowControlIcon({ name }: { name: "min" | "max" | "restore" | "close" }) {
   return (
     <svg
@@ -76,11 +77,12 @@ export function RcCloseButton() {
   );
 }
 
-/** 最大化/还原状态同步（方案 B 从 RcWindowControls 抽出，供全屏 hotbar 复用）：
-    挂载时读一次 + 窗口尺寸变化时同步（最大化/还原、Aero Snap、手动拖边框都会触发）。
-    照 `FullscreenEditor` 的 onResized 先例：StrictMode 下 effect 跑两遍，而 unlisten
-    是 await 之后才赋值的，cleanup 先跑时它还是 undefined——所以用 disposed 兜住迟到的订阅。 */
-export function useMaximized(): boolean {
+/** 最大化/还原状态同步（曾导出给全屏 hotbar 复用，2026-09-28 方案 A 后只有本文件的
+    三键组在用）：挂载时读一次 + 窗口尺寸变化时同步（最大化/还原、Aero Snap、手动拖
+    边框都会触发）。照 `FullscreenEditor` 的 onResized 先例：StrictMode 下 effect 跑
+    两遍，而 unlisten 是 await 之后才赋值的，cleanup 先跑时它还是 undefined——所以用
+    disposed 兜住迟到的订阅。 */
+function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {

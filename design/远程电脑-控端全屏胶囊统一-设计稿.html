@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程电脑 · 控端全屏态与悬浮胶囊统一 · 设计稿</title>
+<!--
+  status: draft 2026-09-28 · 待用户拍板
+  依据真实源码（非凭空虚构）：
+    src/components/rc/RcSessionView.tsx:233        {!display.fullscreen && <RcSessionCapsule/>}  ← 唯一分叉点
+    src/components/rc/RcSessionCapsule.tsx         胶囊分段与 9 组控件（:150-291）
+    src/components/rc/RcFullscreenHotbar.tsx       全屏 hotbar（:148-224，仅 6 个入口 + 三键）
+    src/components/rc/RcSessionStage.tsx:112-184   顶栏常驻 / hotbar / fsKbBadge 挂载
+    src/components/rc/RcSessionTop.tsx:52-68       .viewTop（拖拽区 + 灯 + 名字 + 三键）
+    src/components/rc/RemoteComputer.module.css    .capZone:1271 .capCapsule:1305 .fsBar:1108 .viewTop:174
+                                                   .sessionWrap:fullscreen:249-266 .fakeScreen:275
+    src/hooks/useRcDisplayMode.ts:25-36            全屏 = 浏览器 Fullscreen API，目标 = .sessionWrap
+    src/hooks/useRcCapsuleReveal.ts:24-28          热区 12px / 淡出 2.5s / 首显 15s
+    src-tauri/src/commands/rc.rs:1582-1619         rc_fit_window_to_video（非全屏零黑边的来源）
+    src/components/rc/rcCanvasStyle.ts:4-27        contain / none / cover 三档
+  本稿几何公式与代码逐条同式（§2 的 JS 直接抄 rcCanvasStyle 与 rc.rs 的算法），
+  所有浮层/按钮复刻自 .capCapsule / .fsBar 的真实 CSS 值。
+-->
+<style>
+  :root {
+    --accent: #4f7cff;
+    --cyan: #06b6d4;
+    --danger: #d64545;
+    --warn: #e0803a;
+    --ok: #11813a;
+    --text: #1c1f23;
+    --muted: #6b7280;
+    --border: #e3e6ea;
+    --card: #fff;
+    --bg: #f3f5f8;
+    --shell: #0d0f12;
+    /* 胶囊真实值（RemoteComputer.module.css .capCapsule:1305-1328） */
+    --cap-bg: rgba(13, 16, 22, .82);
+    --cap-line: rgba(255, 255, 255, .12);
+    --cap-text: rgba(232, 236, 242, .95);
+    --cap-shadow: 0 10px 32px rgba(0, 0, 0, .45), 0 2px 8px rgba(0, 0, 0, .3);
+    --cap-on: rgba(107, 147, 255, .28);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 13px; padding: 26px 34px 70px; line-height: 1.65;
+  }
+  h1 { font-size: 21px; margin-bottom: 6px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 18px; }
+  h2 {
+    font-size: 15px; margin: 34px 0 12px; padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  h2 .id { color: var(--accent); font-family: ui-monospace, Consolas, monospace; margin-right: 7px; }
+  h2 .tag { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 8px; }
+  h3 { font-size: 13px; margin: 16px 0 6px; }
+  p { margin: 6px 0; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: #eef1f6; padding: 1px 4px; border-radius: 4px; }
+  .box { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 12px 0; }
+  .warn-box { border-left: 3px solid var(--warn); background: #fff8f1; }
+  .fix-box { border-left: 3px solid var(--ok); background: #f2fbf5; }
+  .bad-box { border-left: 3px solid var(--danger); background: #fdf3f3; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 8px 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #f7f9fc; font-weight: 600; }
+  td.num { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; white-space: nowrap; }
+  .yes { color: var(--ok); font-weight: 600; }
+  .no { color: var(--danger); font-weight: 600; }
+  .mid { color: var(--warn); font-weight: 600; }
+  /* ─── 全局参数条（改一处，三块屏与几何表同时重算）─── */
+  .ctrls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; position: sticky; top: 0; z-index: 60; box-shadow: 0 4px 14px rgba(20,30,50,.06); }
+  .ctrls label { font-size: 12px; color: var(--muted); margin-right: 6px; }
+  select { font: inherit; font-size: 12.5px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 7px; background: #fff; }
+  .chk { font-size: 12.5px; }
+  .chk input { margin-right: 5px; vertical-align: -2px; }
+  /* ─── 屏幕外框：设备像素 → CSS 像素按每块屏自身比例缩放 ─── */
+  .frames { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .frameCard { flex: 1 1 420px; min-width: 380px; }
+  .frameTitle { font-size: 12.5px; font-weight: 600; margin-bottom: 3px; }
+  .frameNote { font-size: 11.5px; color: var(--muted); margin-bottom: 7px; min-height: 30px; }
+  .screen {
+    position: relative; width: 100%; aspect-ratio: 16 / 9;
+    background: var(--shell); border: 1px solid #2a3344; border-radius: 8px; overflow: hidden;
+  }
+  .screen.r16_10 { aspect-ratio: 16 / 10; }
+  .screen.r21_9 { aspect-ratio: 21 / 9; }
+  /* 顶栏（.viewTop 真实值：padding 8px 12px / font-size 12px / 下边框 1px） */
+  .viewTop {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: #fff; border-bottom: 1px solid var(--border); font-size: 12px; color: #333;
+  }
+  .viewTop .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+  .viewTop .sp { flex: 1; }
+  .win3 { display: flex; gap: 2px; }
+  .win3 i { font-style: normal; font-size: 11px; color: #666; padding: 0 7px; }
+  .stage { position: relative; flex: 1; min-height: 0; background: var(--shell); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .stackRow { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  /* 远端画面：等比盒子（JS 按公式设尺寸），内容是一张「对方桌面」 */
+  .pic { position: relative; flex: none; background: linear-gradient(135deg, #1e3a5f 0%, #2c5b7a 45%, #16324f 100%); box-shadow: 0 0 0 1px rgba(255,255,255,.06); overflow: hidden; }
+  .pic .wbar { position: absolute; left: 6%; top: 14%; width: 46%; height: 52%; background: #f4f6f9; border-radius: 5px; box-shadow: 0 8px 22px rgba(0,0,0,.35); }
+  .pic .wbar b { position: absolute; left: 0; right: 0; top: 0; height: 11%; background: #dfe4ec; border-radius: 5px 5px 0 0; }
+  .pic .wbar em { position: absolute; left: 7%; top: 20%; right: 9%; height: 6%; background: #c9d2de; border-radius: 3px; display: block; font-style: normal; }
+  .pic .wbar em + em { top: 31%; width: 55%; height: 5%; }
+  .pic .wbar em + em + em { top: 40%; width: 72%; height: 5%; }
+  .pic .w2 { position: absolute; right: 7%; top: 30%; width: 33%; height: 38%; background: #20303f; border-radius: 5px; box-shadow: 0 8px 22px rgba(0,0,0,.4); }
+  .pic .task { position: absolute; left: 0; right: 0; bottom: 0; height: 8%; background: rgba(12,18,26,.86); display: flex; align-items: center; gap: 4%; padding-left: 3%; }
+  .pic .task u { width: 4%; height: 55%; background: rgba(255,255,255,.22); border-radius: 2px; text-decoration: none; }
+  .pic .cursor { position: absolute; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #fff; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); left: 34%; top: 46%; }
+  /* 黑边标注 */
+  .barHint { position: absolute; z-index: 8; font-size: 10.5px; color: #ffd98a; background: rgba(10,14,20,.72); border: 1px dashed rgba(255,217,138,.55); border-radius: 4px; padding: 0 5px; pointer-events: none; }
+  /* ─── 胶囊（真实 .capZone/.capCapsule/.capBtn 值）─── */
+  .capZone { position: absolute; left: 0; right: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; pointer-events: none; transition: opacity 200ms cubic-bezier(.2,0,0,1), transform 200ms cubic-bezier(.2,0,0,1), visibility 0s linear 0s; }
+  .capCapsule {
+    pointer-events: auto; position: relative; display: flex; align-items: center; gap: 8px;
+    height: 34px; padding: 0 8px 0 12px; background: var(--cap-bg);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--cap-line); border-radius: 999px; font-size: 12px; color: var(--cap-text);
+    box-shadow: var(--cap-shadow); white-space: nowrap; max-width: calc(100% - 16px); overflow: visible;
+  }
+  .capZone.hide { opacity: 0; transform: translateY(-6px); pointer-events: none; visibility: hidden; transition: opacity 200ms cubic-bezier(.2,0,0,1), transform 200ms cubic-bezier(.2,0,0,1), visibility 0s linear 200ms; }
+  .capDot { width: 8px; height: 8px; border-radius: 50%; background: #2f9e5f; flex: none; }
+  .capWho { font-weight: 600; max-width: 118px; overflow: hidden; text-overflow: ellipsis; flex: none; }
+  .qChip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; background: rgba(17,129,58,.22); color: #9fe6bd; border: 1px solid rgba(159,230,189,.28); cursor: pointer; }
+  .qChip u { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; text-decoration: none; }
+  .capPill { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: rgba(107,147,255,.22); color: #cdd8ff; }
+  .capKbOff { font-size: 11.5px; color: #93a0b4; }
+  .capSep { width: 1px; height: 18px; background: rgba(255,255,255,.16); flex: none; }
+  .capBtn { height: 24px; padding: 0 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: rgba(255,255,255,.06); color: #dfe6f0; font-size: 11.5px; cursor: pointer; font-family: inherit; }
+  .capBtn:hover { background: rgba(255,255,255,.13); }
+  .capBtn.on { background: var(--cap-on); color: #fff; border-color: rgba(107,147,255,.55); }
+  .capBtn.icon { padding: 0 7px; }
+  .capBtn.danger { color: #ff9a9a; border-color: rgba(255,154,154,.34); }
+  .capFit { display: inline-flex; gap: 4px; }
+  .menu { position: relative; }
+  .menu > .capBtn::after { content: " ▾"; opacity: .6; }
+  .menuPop { position: absolute; top: calc(100% + 8px); left: 0; display: none; min-width: 168px; background: rgba(13,16,22,.94); backdrop-filter: blur(14px); border: 1px solid var(--cap-line); border-radius: 10px; padding: 6px; box-shadow: var(--cap-shadow); z-index: 40; }
+  .menuPop.open { display: block; }
+  .menuPop button { display: block; width: 100%; text-align: left; background: none; border: 0; color: #dfe6f0; font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+  .menuPop button:hover { background: rgba(255,255,255,.1); }
+  .menuPop button.cur { background: var(--cap-on); color: #fff; }
+  /* ⋯ 面板（.capMore 真实值 320px / 12px 圆角 / .92 底） */
+  .morePop { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: 320px; background: rgba(13,16,22,.92); backdrop-filter: blur(14px); border: 1px solid var(--cap-line); border-radius: 12px; padding: 12px; box-shadow: var(--cap-shadow); z-index: 45; color: var(--cap-text); }
+  .morePop h4 { font-size: 11px; color: #93a0b4; font-weight: 600; margin: 8px 0 5px; letter-spacing: .04em; }
+  .morePop .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* hotbar（.fsBar 真实值：渐变 / padding 7px 10px / 按钮 11px 4px 9px radius4 #c8d0dc / z-index 3） */
+  .fsBar { position: absolute; left: 0; right: 0; top: 0; z-index: 20; display: flex; align-items: center; gap: 4px; padding: 7px 10px; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(7,12,20,.88), rgba(7,12,20,.55) 80%, transparent);
+    border-bottom: 1px solid var(--cap-line);
+    transition: opacity 200ms cubic-bezier(.2,0,0,1), transform 200ms cubic-bezier(.2,0,0,1), visibility 0s linear 0s; }
+  .fsBar.hide { opacity: 0; transform: translateY(-6px); visibility: hidden; pointer-events: none; transition: opacity 200ms cubic-bezier(.2,0,0,1), transform 200ms cubic-bezier(.2,0,0,1), visibility 0s linear 200ms; }
+  .fsBar button { pointer-events: auto; font-size: 11px; padding: 4px 9px; border-radius: 4px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07); color: #c8d0dc; cursor: pointer; font-family: inherit; }
+  .fsBar button.on { background: var(--cap-on); color: #fff; }
+  .fsBar .danger { color: #ff9a9a; }
+  .fsBar .info { font-size: 11px; color: rgba(232,236,242,.9); }
+  .fsBar .fsWin { margin-left: auto; display: flex; gap: 2px; pointer-events: auto; }
+  .fsBar .fsWin button { width: 34px; padding: 4px 0; text-align: center; }
+  .kbBadge { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 19; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; border-radius: 999px; background: var(--cap-bg); border: 1px solid var(--cap-line); color: var(--cap-text); font-size: 11.5px; pointer-events: none; }
+  .kbBadge u { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); text-decoration: none; }
+  .capAlarm { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(to right, transparent, rgba(214,69,69,.55), transparent); opacity: 0; }
+  .capAlarm.on { opacity: 1; }
+  /* 顶边热区可视化（画出来，方便看清 12px 与 8px 的差别） */
+  .band { position: absolute; left: 0; right: 0; top: 0; z-index: 30; background: repeating-linear-gradient(to bottom, rgba(6,182,212,.22) 0 2px, rgba(6,182,212,.06) 2px 4px); border-bottom: 1px solid rgba(6,182,212,.5); display: none; }
+  .band.show { display: block; }
+  .bandLabel { position: absolute; right: 6px; top: 2px; font-size: 10px; color: #7ee7f5; }
+  ul.tight { margin: 4px 0 4px 20px; }
+  ul.tight li { margin: 3px 0; }
+  .kv { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  .legend { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .pick { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .pick b { background: #eaf2ff; border: 1px solid #cfe0ff; border-radius: 999px; padding: 1px 9px; font-size: 11.5px; color: #1d4ed8; }
+  .rec { background: #eaf7ee; border-color: #b9e0c4; color: #12703a; }
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 控端全屏态与悬浮胶囊统一 · 设计稿</h1>
+<p class="sub">
+  诉求：① 全屏态要和非全屏一样用同一条悬浮胶囊；② 全屏交互不友好；③ 全屏还显示不全屏幕内容。<br>
+  本稿三块屏都是<strong>可交互的真控件</strong>（顶边热区唤出、悬停保持、2.5s 淡出、适应/1:1/填充 三档、画质下拉、⋯ 面板都接了真定时器与真公式），
+  尺寸随顶部参数条实时重算 —— 数字与 <code>rcCanvasStyle.ts</code> / <code>rc.rs:rc_fit_window_to_video</code> 同式，不是画出来的示意。
+</p>
+
+<!-- ══════════════ 全局参数条 ══════════════ -->
+<div class="ctrls">
+  <span><label>对方画面</label><select id="contentSel">
+    <option value="1920,1080" selected>1920×1080（16:9）</option>
+    <option value="2560,1440">2560×1440（16:9）</option>
+    <option value="1920,1200">1920×1200（16:10）</option>
+    <option value="3440,1440">3440×1440（21:9 超宽）</option>
+    <option value="1440,1080">1440×1080（4:3）</option>
+  </select></span>
+  <span><label>本机屏幕</label><select id="screenSel">
+    <option value="1920,1080" selected>1920×1080</option>
+    <option value="2560,1440">2560×1440</option>
+    <option value="1366,768">1366×768</option>
+    <option value="3440,1440">3440×1440</option>
+  </select></span>
+  <span class="chk"><label><input type="checkbox" id="showBand" checked>显示顶边热区</label></span>
+  <span class="chk"><label><input type="checkbox" id="linkBad">模拟链路异常（锁显 + 微光条）</label></span>
+  <span style="font-size:11.5px;color:var(--muted)">三块屏共用当前 fit 档之外的独立状态；点画面里的 适应 / 1:1 / 填充 看几何变化</span>
+</div>
+
+<!-- ══════════════ §1 现状 ══════════════ -->
+<h2><span class="id">§1</span>现状：两态是两套浮层，功能与画面高度双双退化<span class="tag">对应你说的「交互不友好」和「显示不全」</span></h2>
+
+<div class="box bad-box">
+  <h3>先更正一条我自己写下过的技术论断</h3>
+  <p>代码里有 <strong>4 处注释</strong>声称「Fullscreen API 只显示 fakeScreen 子树，浮条必须挂在它内部才可见」
+    （<code>RcFullscreenHotbar.tsx:4-5,16</code>、<code>RcSessionStage.tsx:11-12,147-149</code>、
+    <code>RemoteComputer.module.css:1097-1099,1100-1101</code>、<code>lib/rcFsHint.ts:7</code>）。
+    <strong>这话已经不符实</strong>：2026-09-23 全屏目标早就不在画面元素上了 ——
+    <code>useRcDisplayMode.ts:26-29</code> 拿的是 <code>wrapRef</code>，全屏元素是会话壳
+    <code>.sessionWrap</code>，而胶囊 <code>.capZone</code> 正是它的绝对定位子节点（<code>RcSessionView.tsx:233</code>）。</p>
+  <p>⇒ 结论：<strong>胶囊在全屏下本来就能显示</strong>。它现在看不见，纯粹是那行 <code>!display.fullscreen</code> 条件渲染。<strong>这是本次改造最小可行的落点</strong>，
+    不需要搬 DOM、不需要 portal、不需要新的 z-index 战争。那些注释在本稿落地时要一并改成真话（§7）。</p>
+</div>
+
+<div class="box">
+  <h3>全屏丢了什么（hotbar 6 个入口 vs 胶囊 9 组能力，逐项对账）</h3>
+  <table>
+    <thead><tr><th style="width:13%">能力</th><th style="width:29%">非全屏 · 悬浮胶囊</th><th style="width:29%">全屏 · hotbar</th><th>后果</th></tr></thead>
+    <tbody>
+      <tr><td>画质档</td><td class="yes">有（下拉，含 fps120/144/165）</td><td class="no">没有</td><td>全屏里<strong>改不了画质</strong> —— 画面糊了只能退全屏调</td></tr>
+      <tr><td>画面范围 / 下一屏</td><td class="yes">有（下拉 + 循环切屏）</td><td class="no">没有</td><td>对方多屏时全屏切不了屏</td></tr>
+      <tr><td>质量读数（rtt·fps）</td><td class="yes">有（<code>RcQualityChip</code> 常驻）</td><td class="no">没有</td><td>全屏里对延迟/帧率<strong>零可见</strong>（规则 15.1）</td></tr>
+      <tr><td>ⓘ 连接详情 HUD</td><td class="yes">有</td><td class="no">没有</td><td>分链路耗时（编码/网络/解码）看不到</td></tr>
+      <tr><td>⋯ 码率 / 声音 / 剪贴板 / 文件 / 指针 / 重连</td><td class="yes">有</td><td class="mid">只有「锁定指针」</td><td>全屏传不了文件、关不了声音、调不了码率</td></tr>
+      <tr><td>身份（灯 + 设备名 + 可控/只看 + 键盘态）</td><td class="yes">有</td><td class="mid">灯与名字靠顶栏，键盘态靠底部徽标</td><td>三处碎片，hotbar 淡出后全屏<strong>没有任何链路指示</strong></td></tr>
+      <tr><td>适应 / 1:1 / 填充</td><td class="yes">有</td><td class="yes">有（文字按钮）</td><td>同一功能两种长相</td></tr>
+      <tr><td>退出全屏 / 结束会话 / 三键</td><td class="yes">有（图标键 + 结束键；三键在顶栏）</td><td class="yes">有（文字键 + 右上角三键）</td><td>位置与文案都不同，肌肉记忆断裂</td></tr>
+      <tr><td>唤出热区 / 淡出 / 首显</td><td class="num">12px / 2.5s / 15s</td><td class="num">8px / 2.5s / 无首显</td><td>全屏热区<strong>窄 1/3</strong>，更难命中（「要点时它已消失」）</td></tr>
+    </tbody>
+  </table>
+  <p class="legend">数值来源：<code>useRcCapsuleReveal.ts:24-28</code>（12 / 2500 / 15000）与 <code>RcFullscreenHotbar.tsx:33-35,65</code>（8 / 2500 / 挂载即 2.5s 计时）。</p>
+</div>
+
+<!-- ══════════════ §2 几何 ══════════════ -->
+<h2><span class="id">§2</span>为什么全屏反而「显示不全」：35px 顶栏 + contain 的黑边<span class="tag">可交互，公式同代码</span></h2>
+
+<div class="box fix-box">
+  <p>非全屏<strong>没有黑边</strong>不是巧合：<code>rc.rs:1605</code> 的
+    <code>k = min(工作区宽×0.94 / 画面宽, (工作区高×0.90 − 36) / 画面高)</code>
+    把窗口算成「画面比例 + 36px chrome」，所以适应档在窗口态是<strong>零黑边</strong>（方案A 的既定目标，注释原话）。</p>
+  <p>可一进全屏这条路被主动关掉（<code>RcSessionView.tsx:124</code> <code>active: !display.fullscreen</code>），
+    而全屏<strong>没有任何等价补算</strong>。于是画面盒变成 <code>屏宽 × (屏高 − 35)</code> ——
+    <strong>比例必然 ≠ 对方画面比例</strong>，而适应档是 <code>object-fit: contain</code>（<code>rcCanvasStyle.ts:26</code>），
+    等比缩放到「短边贴合」后长边就留黑边。这就是「全屏还没窗口铺得满」的悖论来源。</p>
+  <p>35px 拆法：<code>.viewTop</code> 上下 padding 8+8 + 12px 字号行 + 下边框 1px ≈ 34，与 Rust 侧 <code>SESSION_CHROME_H = 36.0</code> 是<strong>两份平行真相</strong>（本稿按 34 算，落地时统一到 36 并加守卫单测）。</p>
+</div>
+
+<div class="frames" id="frames">
+  <!-- 现状：窗口态 -->
+  <div class="frameCard">
+    <div class="frameTitle">现状 A · 非全屏（窗口态）</div>
+    <div class="frameNote" data-note="win">—</div>
+    <div class="screen" data-kind="win"><div class="stackRow">
+      <div class="viewTop"><span class="dot"></span><span>正在查看 <b class="who">设计组的 Win11</b></span><span class="sp"></span><span class="win3"><i>—</i><i>⤢</i><i>✕</i></span></div>
+      <div class="stage" data-stage="win">
+        <div class="band" data-band="win"></div><span class="bandLabel" style="display:none"></span>
+        <div class="pic" data-pic="win"><span class="wbar"><b></b><em></em><em></em><em></em></span><span class="w2"></span><span class="task"><u></u><u></u><u></u></span><span class="cursor"></span></div>
+        <div class="capZone" data-cap="win"><div class="capAlarm" data-alarm="win"></div><div class="capCapsule" data-capsule="win"></div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 现状：全屏 hotbar -->
+  <div class="frameCard">
+    <div class="frameTitle">现状 B · 全屏（hotbar + 顶栏常驻）<span class="tag" style="color:var(--danger)">问题态</span></div>
+    <div class="frameNote" data-note="fs">—</div>
+    <div class="screen" data-kind="fs"><div class="stackRow">
+      <div class="viewTop" data-viewtop="fs"><span class="dot"></span><span>正在查看 <b class="who">设计组的 Win11</b></span><span class="sp"></span></div>
+      <div class="stage" data-stage="fs">
+        <div class="band" data-band="fs"></div>
+        <div class="pic" data-pic="fs"><span class="wbar"><b></b><em></em><em></em><em></em></span><span class="w2"></span><span class="task"><u></u><u></u><u></u></span><span class="cursor"></span></div>
+        <div class="fsBar" data-bar="fs"></div>
+        <div class="kbBadge" data-kb="fs" style="display:none"><u></u>键盘已捕获 · Esc 释放</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 方案 A：全屏同胶囊 -->
+  <div class="frameCard">
+    <div class="frameTitle">方案 A · 全屏用同一条胶囊 + 顶栏退场 <span class="tag rec">★ 推荐</span></div>
+    <div class="frameNote" data-note="fa">—</div>
+    <div class="screen" data-kind="fa"><div class="stackRow">
+      <div class="stage" data-stage="fa" style="position:absolute; inset:0;">
+        <div class="band" data-band="fa"></div>
+        <div class="pic" data-pic="fa"><span class="wbar"><b></b><em></em><em></em><em></em></span><span class="w2"></span><span class="task"><u></u><u></u><u></u></span><span class="cursor"></span></div>
+        <div class="capZone" data-cap="fa"><div class="capAlarm" data-alarm="fa"></div><div class="capCapsule" data-capsule="fa"></div></div>
+        <div class="kbBadge" data-kb="fa" style="display:none"><u></u>键盘已捕获 · Esc 释放</div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<table id="geoTable">
+  <thead><tr><th>状态</th><th>画面盒（屏内 CSS 折算回设备像素）</th><th>缩放系数 k</th><th>实际绘制</th><th>左右黑边</th><th>上下黑边</th><th>画面占屏</th></tr></thead>
+  <tbody></tbody>
+</table>
+<p class="legend">
+  公式（与代码同式）：<span class="kv">contain k = min(盒宽/画面宽, 盒高/画面高)</span> ·
+  <span class="kv">cover k = max(...)</span>（超出即裁边）·
+  <span class="kv">1:1 = 原始像素，超出部分只能滚动</span>（<code>.panBox overflow:auto</code>）·
+  窗口态盒 = <span class="kv">k×画面 + 36px chrome</span> 反算，故黑边恒 0。
+</p>
+
+<!-- ══════════════ §3 方案 ══════════════ -->
+<h2><span class="id">§3</span>三个方案（推荐 A）</h2>
+
+<div class="box fix-box">
+  <h3>方案 A · 单一胶囊贯穿两态，hotbar 退役 <span class="tag">改动最小的一致性解</span></h3>
+  <ul class="tight">
+    <li><strong>删掉 <code>RcSessionView.tsx:233</code> 的 <code>!display.fullscreen</code></strong>：胶囊两态同挂、同组件、同状态机、同参数（12px / 2.5s / 15s 首显）。</li>
+    <li><strong>胶囊在全屏多两处差异</strong>（都是加一行 className / 一个 prop，不是第二个组件）：
+      ① 全屏时「全屏」图标键变「退出全屏」文案位（同键同族，只是 title 与图标翻面，非全屏仍叫「全屏显示远程画面（F11）」）；
+      ② 全屏时胶囊右端追加窗口「最小化 + 关闭」两枚（最大化在全屏无意义，不摆）。</li>
+    <li><strong>全屏隐藏 <code>.viewTop</code></strong>（身份已在胶囊里，不再需要第二条横条）⇒ 画面盒回到 <code>屏宽×屏高</code>，
+      等比显示器上黑边归零（§2 的表可实时验证）；拖拽区在全屏本无意义，隐藏的正是这条顶栏唯一剩下的窗口壳职责。</li>
+    <li><strong>F10 语义迁移</strong>：现在唤出 hotbar，改后唤出胶囊（状态机加一个 <code>toggle()</code>，逻辑同 <code>RcFullscreenHotbar.tsx:117-131</code>，含 kbOn/指针锁定/面板让路三条守卫）。</li>
+  </ul>
+  <table>
+    <thead><tr><th style="width:14%">维度</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>一致性</td><td class="yes">彻底 —— 一个组件，不可能再漂移</td></tr>
+      <tr><td>功能等价</td><td class="yes">全屏立刻拿回画质 / 画面 / ⋯ / ⓘ / 质量读数五类入口</td></tr>
+      <tr><td>画面高度</td><td class="yes">回收 34px（等比屏黑边归零）</td></tr>
+      <tr><td>代码量</td><td class="yes">净减：<code>RcFullscreenHotbar.tsx</code> 227 行退役 + <code>.fsBar*</code> 约 130 行 CSS 归档</td></tr>
+      <tr><td>测试迁移</td><td class="mid">4 个文件要动：hotbar 测试（230 行）删/并入胶囊测试；<code>RcSessionTop.test.tsx:65,71</code>（全屏禁拖 / 隐藏三键）判据换宿主；<code>rcFsHint.test.ts:20</code>「全屏不提示」需重议；<code>rcOverlayGlass.test.ts</code> 新增胶囊全屏底色守卫</td></tr>
+      <tr><td>主要风险</td><td class="mid">胶囊横向更宽（+ 三枚）→ 窄屏降级媒体查询 <code>@media(max-width:680px)</code> 在全屏下视口变宽会翻面，需按 §6-Q5 复核</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="box">
+  <h3>方案 B · 同一条胶囊 + 全屏「两段式」<span class="tag">遮挡最少，代价是仍两套呈现</span></h3>
+  <p>胶囊在全屏默认收成 <strong>微标</strong>（灯 + 设备名 + rtt·fps，约 200px 宽），顶边 12px 热区或 F10 唤出时展开成完整胶囊。</p>
+  <ul class="tight">
+    <li>优点：全屏常态遮挡最小（约 26px 高、200px 宽的常驻 vs 全宽胶囊展开）；一致性比现状强得多（同一 DOM 树、同一状态机，只是 <code>compact</code> 类）。</li>
+    <li>缺点：<strong>常驻微标违背已拍板的 B 稿「沉浸零常驻」</strong>（<code>design/远程电脑-控端态UI-B沉浸零常驻-设计稿.html</code>，§1 常态画面零浮层）；「展开/收起」是第二套视觉规格，一致性只解决一半；测试面比 A 大。</li>
+    <li>体量：<code>RcSessionCapsule.tsx</code> 现 317 行<strong>已破 .tsx ≤ 300 红线</strong>，再加 compact 分支必被要求先拆（分段子组件 + <code>useRcCapsuleLayout</code>）。</li>
+  </ul>
+</div>
+
+<div class="box warn-box">
+  <h3>方案 C · 保留 hotbar，把它补齐成胶囊的样子 <span class="tag">不推荐</span></h3>
+  <p>往 hotbar 塞画质/画面/⋯/ⓘ 四类入口，并换成深玻璃外观。改动看似最保守，实为<strong>把重复实现推到极致</strong>：
+    两套浮现状态机（12 vs 8px、有/无首显）、两套面板（<code>.capMore</code> vs hotbar 无）、两套下拉，
+    以后每加一个控件都要问「两边都加了吗」—— 正是规则 11.1 要消灭的「第 7 个调用点仍会走错」。
+    列在此处只为对照，不建议选。</p>
+</div>
+
+<!-- ══════════════ §4 对照 ══════════════ -->
+<h2><span class="id">§4</span>三方案对照（决策用）</h2>
+<table>
+  <thead><tr><th style="width:22%">判据</th><th>A 单胶囊贯穿（★默认）</th><th>B 胶囊 + 全屏微标</th><th>C hotbar 补齐</th></tr></thead>
+  <tbody>
+    <tr><td>两态一致</td><td class="yes">完全一致</td><td class="mid">半一致（多一档形态）</td><td class="no">两套实现</td></tr>
+    <tr><td>全屏功能等价</td><td class="yes">是</td><td class="yes">是（展开后）</td><td class="mid">靠人工同步</td></tr>
+    <tr><td>画面高度回收</td><td class="yes">+34px（黑边归零）</td><td class="yes">+34px（同 A）</td><td class="mid">+34px 但 hotbar 仍常驻遮挡</td></tr>
+    <tr><td>常态遮挡</td><td class="mid">淡出后零遮挡，但展开时较宽</td><td class="yes">常驻 26px 微标</td><td class="mid">渐变横条 ~34px</td></tr>
+    <tr><td>与「沉浸零常驻」拍板</td><td class="yes">相符</td><td class="no">冲突（需重议）</td><td class="yes">相符</td></tr>
+    <tr><td>代码净变化</td><td class="yes">约 −350 行</td><td class="mid">约 ±0（要先拆 317 行文件）</td><td class="no">约 +150 行重复</td></tr>
+    <tr><td>回归面</td><td class="mid">4 个测试文件</td><td class="no">6+ 个（含 B 稿规格）</td><td class="mid">2 个</td></tr>
+  </tbody>
+</table>
+
+<!-- ══════════════ §5 待拍板 ══════════════ -->
+<h2><span class="id">§5</span>待你拍板的 6 个点（每题已标 ★默认）</h2>
+<table>
+  <thead><tr><th style="width:6%">#</th><th style="width:30%">问题</th><th>选项与默认</th></tr></thead>
+  <tbody>
+    <tr><td>Q1</td><td>全屏时 <code>.viewTop</code> 顶栏要不要退场？</td><td><strong>★默认：退场</strong>（身份并入胶囊，画面盒回到整屏，等比屏黑边归零）/ 备选：保留（则黑边继续存在，本次「显示不全」只解决浮层一致性那一半）</td></tr>
+    <tr><td>Q2</td><td>全屏的窗口三键放哪？</td><td><strong>★默认：胶囊最右只留「最小化 + 关闭」</strong>（最大化在全屏无意义故不摆；关闭仍走 <code>rc_window_close</code>，保住 <code>RcFullscreenHotbar.test.tsx:101</code> 钉的语义）/ 备选：完全去掉三键，只靠「结束会话」</td></tr>
+    <tr><td>Q3</td><td><code>RcFullscreenHotbar</code> 退役还是留作紧凑档？</td><td><strong>★默认：退役</strong>（组件与 <code>.fsBar*</code> 归档，F10 改唤出胶囊）/ 备选：保留但只给「退出全屏 + 结束会话」两键（则同屏两条浮层，需重定层叠）</td></tr>
+    <tr><td>Q4</td><td>1:1（actual）档在全屏超出屏幕时怎么办？</td><td><strong>★默认：进入全屏时若为 1:1 则自动降回「适应」并在胶囊上给一次性提示</strong>（1:1 只能靠滚动条看 = 真「显示不全」）/ 备选：尊重用户档不自动改，只把「画面偏小/偏大」提示判据放开到全屏</td></tr>
+    <tr><td>Q5</td><td>胶囊在全屏的热区与时长要不要跟窗口态完全一致？</td><td><strong>★默认：完全一致</strong>（12px / 2.5s / 首显 15s）—— 这正是你「要和不是全屏一致」的字面诉求 / 备选：全屏热区加宽到 20px（更易命中，但与窗口态又分叉）</td></tr>
+    <tr><td>Q6</td><td>对方比例与屏幕不一致时（16:10 画面投 16:9 屏）要不要额外做什么？</td><td><strong>★默认：不做，保留 letterbox + 现有「填充」档由用户自选</strong>（等比拉伸会让远端鼠标坐标映射更差，<code>rcPointer.mapNormFromCanvas</code> 按 cover 反解虽可算，但视觉欺骗性更强）/ 备选：加「拉伸铺满」第四档</td></tr>
+  </tbody>
+</table>
+
+<!-- ══════════════ §6 落地清单 ══════════════ -->
+<h2><span class="id">§6</span>方案 A 落地清单（确认后按此实施）</h2>
+<div class="box">
+  <table>
+    <thead><tr><th style="width:30%">文件</th><th>改动</th><th style="width:16%">风险</th></tr></thead>
+    <tbody>
+      <tr><td><code>RcSessionView.tsx:233</code></td><td>去掉 <code>!display.fullscreen</code> 门；给胶囊传 <code>fullscreen</code>（用于文案与三键段）</td><td>低（1 行 + 1 prop）</td></tr>
+      <tr><td><code>RcSessionCapsule.tsx</code>（317 行，<strong>已破红线</strong>）</td><td>先拆：<code>RcCapsuleIdentity</code> + <code>RcCapsuleView</code> 两个子组件（或 <code>useRcCapsuleLayout</code>），再把全屏差异段放进去，落到 ≤300</td><td class="mid">中（规则 7 前置要求）</td></tr>
+      <tr><td><code>useRcCapsuleReveal.ts</code></td><td>加 <code>toggle()</code>（F10 用），并让「首显 15s」在进入全屏那一刻重播一次（全屏是新语境，可发现性要重建）</td><td>低</td></tr>
+      <tr><td><code>RcSessionStage.tsx:112-184</code></td><td>不再挂 <code>RcFullscreenHotbar</code>；<code>hideWindowControls</code> 上提为「全屏整条顶栏不渲染」；<code>fsKbBadge</code> 保留（键盘态常驻指示，是 P1-2 的成果）</td><td class="mid">中（顶栏兼拖拽区，<code>RcSessionTop.test.tsx:59,65</code>）</td></tr>
+      <tr><td><code>RemoteComputer.module.css</code></td><td><code>.capZone</code> 的 <code>top:34px</code> 改为两态分别取值（全屏 <code>top:0</code>，胶囊自身再让 12px）；<code>.fsBar*</code> 归档删除；<code>.sessionWrap:fullscreen .viewTop{display:none}</code></td><td class="mid">中（<code>rcOverlayGlass.test.ts</code> 认 <code>.fsBar</code>，删类要同步改测试）</td></tr>
+      <tr><td>4 处过期注释</td><td>「hotbar 必须挂 fakeScreen 内部」全库改真话（§1 的更正）</td><td>低</td></tr>
+      <tr><td><code>rc.rs:1545</code> <code>SESSION_CHROME_H</code></td><td>全屏不再吃 36px chrome；把「顶栏高」的两份真相（CSS 34 / Rust 36）收口成一处常量 + 守卫单测（规则 11.1）</td><td class="mid">中</td></tr>
+      <tr><td><code>lib/rcFsHint.ts:38</code></td><td>Q4 选自动降档则不动；选放开判据则删掉 <code>m.fullscreen</code> 早退（同批改 <code>rcFsHint.test.ts:20</code>）</td><td>低</td></tr>
+    </tbody>
+  </table>
+  <p class="legend">验证链（不省略）：<code>npx tsc --noEmit</code> → <code>npx vitest run src/components/rc src/__tests__</code> → <code>npm run lint:ui</code> → <code>npm run lint:css</code> → <code>impeccable detect</code> → 双机手测（全屏进/退 × 三键 × F10 × 指针锁定 × 只看态 × 画质改档）。<strong>不升版本、不自动提交。</strong></p>
+</div>
+
+<!-- ══════════════ §7 对标 ══════════════ -->
+<h2><span class="id">§7</span>对标：主流远程桌面在全屏时怎么做<span class="tag">带出处，不编</span></h2>
+<div class="box">
+  <ul class="tight">
+    <li><strong>RustDesk（开源标杆）</strong>：全屏时用的仍是<strong>同一条会话工具栏</strong>，官方高级设置里根本没有「全屏另一套控件」的概念，只有 <code>collapse-toolbar</code>（连接后是否折叠这条工具栏，默认 N）与 <code>show-monitors-toolbar</code>（是否在工具栏里列显示器，默认 N）两个开关。⇒ 与方案 A 的取向一致：<strong>两态同一条浮层 + 折叠而非替换</strong>。<a href="https://rustdesk.com/docs/en/self-host/client-configuration/advanced-settings/" target="_blank">RustDesk Advanced Settings</a></li>
+    <li><strong>微软远程桌面 mstsc</strong>：全屏顶部是<strong>居中的连接栏（connection bar）</strong>，鼠标离开自动收起、回到顶部中央重现；社区反复讨论的正是「如何让它不自动隐藏」—— 说明「自动收起 + 顶边重现」是行业常态而非缺陷。⇒ 12px 热区 / 2.5s 淡出的现状可保留，但热区<strong>不该比窗口态更窄</strong>（Q5）。<a href="https://social.technet.microsoft.com/Forums/virtualization/id-id/0a845f6e-67fd-4db6-b83a-cbee953cee37/mstsc" target="_blank">TechNet：mstsc 全屏连接栏自动隐藏</a></li>
+    <li><strong>本仓库既有拍板</strong>：<code>design/远程电脑-控端态UI-B沉浸零常驻-设计稿.html</code> 已定「常态画面零浮层、顶边唤出、2.5s 淡出」，胶囊就是它的落地（<code>RcSessionCapsule.tsx:5-6</code> 引 B 稿 §5）。方案 A 是<strong>把这条已拍板的语言延伸到全屏</strong>，不引入新范式；方案 B 与它冲突，需重议。</li>
+    <li>未纳入对标依据的（我不下断言）：Parsec / TeamViewer / 向日葵 / ToDesk 的全屏浮层细节，本轮没找到可引用的官方出处，故<strong>不写进结论</strong>；如需，我可以补一轮带出处的拆解。</li>
+  </ul>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   真交互 + 真公式。缩放档、热区唤出、悬停保持、2.5s 淡出、下拉、⋯ 面板
+   全部按源码参数跑（12px / 2500ms / 首显由页面挂载模拟）。
+   ═══════════════════════════════════════════════════════════════ */
+const REVEAL_BAND_PX = 12, AUTO_HIDE_MS = 2500, TOP_BAR_CSS = 34;
+const VIEWPORT = { /* 每块 mock 屏的设备像素 → CSS 像素缩放，靠 aspect-ratio 自适应 */ };
+
+const state = { content: [1920, 1080], screen: [1920, 1080],
+  fit: { win: "fit", fs: "fit", fa: "fit" }, linkBad: false };
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+/* ---- 几何：与 rcCanvasStyle.ts / rc.rs 同式 ---- */
+function boxFor(kind) {
+  const [sw, sh] = state.screen;
+  const [cw, ch] = state.content;
+  if (kind === "win") {
+    // rc.rs:1605 —— 窗口算成「画面比例 + chrome」，故黑边恒 0
+    const waW = sw / 0.94, waH = sh / 0.90; // 反推工作区（示意：屏幕即工作区）
+    const k = Math.min((waW * 0.94) / cw, (waH * 0.90 - 36) / ch);
+    return { w: Math.round(k * cw), h: Math.round(k * ch) };
+  }
+  // 全屏：盒 = 屏 −（仍常驻的顶栏高度）。方案 A（fa）顶栏退场 → 整屏
+  const chrome = kind === "fs" ? TOP_BAR_CSS : 0;
+  return { w: sw, h: sh - chrome };
+}
+function geom(kind) {
+  const box = boxFor(kind), [cw, ch] = state.content, fit = state.fit[kind];
+  let k, dw, dh, cropX = 0, cropY = 0, scroll = false;
+  if (fit === "fit") { k = Math.min(box.w / cw, box.h / ch); dw = cw * k; dh = ch * k; }
+  else if (fit === "fill") { k = Math.max(box.w / cw, box.h / ch); dw = cw * k; dh = ch * k;
+    cropX = Math.max(0, (dw - box.w) / 2); cropY = Math.max(0, (dh - box.h) / 2); }
+  else { k = 1; dw = cw; dh = ch; scroll = dw > box.w || dh > box.h; }
+  return { box, k, dw, dh, barX: Math.max(0, box.w - dw), barY: Math.max(0, box.h - dh),
+    cropX, cropY, scroll, fit };
+}
+
+/* ---- 胶囊与 hotbar 的真实外观（HTML 片段，控件是真的 button/select 行为）---- */
+function capsuleHTML(kind, fullscreen) {
+  const who = $("#contentSel").selectedText || "";
+  const f = state.fit[kind];
+  const btn = (label, key, title, on) =>
+    `<button class="capBtn ${on ? "on" : ""}" data-fit="${kind}:${key}" title="${title}">${label}</button>`;
+  return `
+    <span class="capDot"></span>
+    <span class="capWho">设计组的 Win11</span>
+    <span class="qChip" title="往返 24ms（良好） · 58fps，点击展开连接详情"><u></u>24ms · 58fps</span>
+    <span class="capPill">可控</span>
+    <span class="capKbOff">点画面可捕获键盘</span>
+    <span class="capSep"></span>
+    <span class="menu"><button class="capBtn" data-menu="quality">画质</button>
+      <span class="menuPop" data-pop="quality">
+        <button data-q>流畅 30fps</button><button data-q class="cur">标准 60fps</button>
+        <button data-q>高清 60fps</button><button data-q>极速 120fps</button>
+      </span></span>
+    <span class="menu"><button class="capBtn" data-menu="scope">画面</button>
+      <span class="menuPop" data-pop="scope"><button data-q class="cur">整屏</button><button data-q>主屏</button><button data-q>副屏</button></span></span>
+    <span class="capSep"></span>
+    <span class="capFit">
+      ${btn("适应", "fit", "缩放画面适配窗口", f === "fit")}
+      ${btn("1:1", "actual", "按原始像素显示（1:1，可拖动平移）", f === "actual")}
+      ${btn("填充", "fill", "填满窗口（可能裁切边缘）", f === "fill")}
+    </span>
+    ${fullscreen
+      ? `<button class="capBtn" data-fsbtn="${kind}" title="退出全屏显示远程画面（F11）">退出全屏</button>`
+      : `<button class="capBtn icon" data-fsbtn="${kind}" title="全屏显示远程画面（F11）">⤢</button>`}
+    <span class="capSep"></span>
+    <button class="capBtn icon" title="连接详情">i</button>
+    <button class="capBtn icon" data-more="${kind}" aria-expanded="false" title="更多：码率 / 声音 / 剪贴板 / 文件 / 指针 / 重连">⋯</button>
+    <button class="capBtn danger icon" title="结束会话" aria-label="结束会话">✕</button>
+    ${fullscreen ? `<span class="capSep"></span>
+      <button class="capBtn icon" title="最小化">—</button>
+      <button class="capBtn icon danger" title="关闭">✕</button>` : ""}`;
+}
+function hotbarHTML(kind) {
+  const f = state.fit[kind];
+  const b = (label, key, on) => `<button data-fit="${kind}:${key}" class="${on ? "on" : ""}">${label}</button>`;
+  return `${b("适应", "fit", f === "fit")}${b("1:1", "actual", f === "actual")}${b("填充", "fill", f === "fill")}
+    <button>锁定指针</button><button data-fsbtn="${kind}">退出全屏</button><span class="capSep" style="background:rgba(255,255,255,.18)"></span>
+    <button class="danger">结束会话</button>
+    <span class="info">${state.content.join("×")} · ${state.screen.join("×")} · F10 唤出/收起</span>
+    <span class="fsWin"><button>—</button><button>⤢</button><button>✕</button></span>`;
+}
+
+/* ---- 渲染 ---- */
+function render() {
+  $$("#contentSel option, #screenSel option").forEach(() => {});
+  ["win", "fs", "fa"].forEach((kind) => {
+    const screenEl = $(`[data-kind="${kind}"]`);
+    const stage = $(`[data-stage="${kind}"]`);
+    const pic = $(`[data-pic="${kind}"]`);
+    const g = geom(kind);
+    const sw = screenEl.clientWidth || 420;
+    const s = sw / g.box.w;                     // 设备像素 → CSS 像素
+    // 画面盒尺寸（含顶栏占位）
+    stage.style.position = "relative";
+    const shellH = kind === "fs" ? TOP_BAR_CSS * s : 0;
+    $(`[data-viewtop="fs"]`) && ($(`[data-viewtop="fs"]`).style.height = "");
+    pic.style.width = Math.round(g.dw * s) + "px";
+    pic.style.height = Math.round(g.dh * s) + "px";
+    pic.style.transform = g.fit === "actual" ? "" : "";
+    pic.style.overflow = "hidden";
+    // 1:1 时桌面内容按原始像素（不缩），示意「超出只能滚动」
+    const innerScale = g.fit === "actual" ? 1 : g.k;
+    pic.querySelectorAll(".wbar,.w2,.task,.cursor").forEach(() => {});
+    // 黑边标注
+    screenEl.querySelectorAll(".barHint").forEach((n) => n.remove());
+    if (g.fit === "fit" && (g.barX > 0.5 || g.barY > 0.5)) {
+      const mk = (w, h, l, t, txt) => {
+        const d = document.createElement("div");
+        d.className = "barHint";
+        d.style.cssText = `width:${w}px;height:${h}px;left:${l}px;top:${t}px;line-height:${Math.min(h, 16)}px;`;
+        if (w < 46 || h < 12) d.textContent = "";
+        d.textContent = txt || d.textContent;
+        stage.appendChild(d);
+      };
+      if (g.barX > 1) {
+        const bw = (g.barX / 2) * s;
+        mk(bw, Math.min(18, g.dh * s), 0, (g.box.h * s - Math.min(18, g.dh * s)) / 2, Math.round(g.barX / 2) + "");
+        mk(bw, Math.min(18, g.dh * s), stage.clientWidth - bw, (g.box.h * s - Math.min(18, g.dh * s)) / 2, Math.round(g.barX / 2) + "");
+      }
+      if (g.barY > 1) {
+        const bh = (g.barY / 2) * s;
+        mk(Math.min(56, g.dw * s), bh, (stage.clientWidth - Math.min(56, g.dw * s)) / 2, Math.max(0, (g.box.h * s - g.dh * s) / 2) , Math.round(g.barY / 2) + "");
+      }
+    }
+    if (g.fit === "fill" && (g.cropX > 1 || g.cropY > 1)) {
+      const d = document.createElement("div");
+      d.className = "barHint";
+      d.style.cssText = `right:6px;bottom:6px;top:auto;height:16px;line-height:16px;width:auto;`;
+      d.textContent = `裁掉 ${Math.round(g.cropX * 2)}×${Math.round(g.cropY * 2)}px`;
+      stage.appendChild(d);
+    }
+    // 浮层挂载
+    if (kind === "fs") {
+      const bar = $(`[data-bar="${kind}"]`);
+      bar.innerHTML = hotbarHTML(kind);
+      bar.style.setProperty("--band-h", `${(7 * 2 + 22) * s}px`);
+    } else {
+      const cap = $(`[data-capsule="${kind}"]`);
+      if (cap) cap.innerHTML = capsuleHTML(kind, kind === "fa");
+      const zone = $(`[data-cap="${kind}"]`);
+      if (zone) zone.style.top = kind === "win" ? TOP_BAR_CSS * s + "px" : "0px";
+    }
+    // 说明文字
+    const noteMap = {
+      win: `窗口态：盒 = ${g.box.w}×${g.box.h}（窗口由 rc_fit_window_to_video 算成画面比例）→ 黑边 0`,
+      fs: `全屏现状：顶栏常驻吃掉 ${TOP_BAR_CSS}px → 盒 ${g.box.w}×${g.box.h} · k=${g.k.toFixed(4)} · 黑边 ${Math.round(g.barX)}×${Math.round(g.barY)}px${g.scroll ? " · 1:1 超出只能滚动" : ""}`,
+      fa: `方案A 全屏：顶栏退场 → 盒 = 整屏 ${g.box.w}×${g.box.h} · k=${g.k.toFixed(4)} · 黑边 ${Math.round(g.barX)}×${Math.round(g.barY)}px（等比时归零）`,
+    };
+    const note = $(`[data-note="${kind}"]`);
+    if (note) note.textContent = noteMap[kind];
+    // 链路异常演示
+    const alarm = $(`[data-alarm="${kind}"]`);
+    if (alarm) alarm.classList.toggle("on", state.linkBad && kind !== "fs");
+    const kb = $(`[data-kb="${kind}"]`);
+    if (kb) kb.style.display = (kind !== "win") ? "flex" : "none";
+  });
+  renderTable();
+}
+function renderTable() {
+  const tb = $("#geoTable tbody");
+  tb.innerHTML = "";
+  [["win", "现状 A · 非全屏"], ["fs", "现状 B · 全屏 hotbar"], ["fa", "方案 A · 全屏同胶囊"]].forEach(([k, label]) => {
+    const g = geom(k);
+    const area = (g.dw * g.dh) / (state.screen[0] * state.screen[1]) * 100;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${label}（${{ fit: "适应", actual: "1:1", fill: "填充" }[g.fit]}档）</td>
+      <td class="num">${g.box.w} × ${g.box.h}</td>
+      <td class="num">${g.k.toFixed(4)}</td>
+      <td class="num">${Math.round(g.dw)} × ${Math.round(g.dh)}</td>
+      <td class="num ${g.barX > 1 ? "no" : "yes"}">${Math.round(g.barX / 2)} px/侧${g.fit === "fill" && g.cropX ? "（改为裁切）" : ""}</td>
+      <td class="num ${g.barY > 1 ? "no" : "yes"}">${Math.round(g.barY / 2)} px${g.fit === "fill" && g.cropY ? "（改为裁切）" : ""}${g.scroll ? " · 需滚动" : ""}</td>
+      <td class="num">${area.toFixed(1)}%</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* ---- 浮现状态机（真定时器，参数同源码）---- */
+const timers = {};
+function scheduleHide(kind) {
+  const el = kind === "fs" ? $(`[data-bar="${kind}"]`) : $(`[data-cap="${kind}"]`);
+  if (!el) return;
+  if (timers[kind]) clearTimeout(timers[kind]);
+  timers[kind] = setTimeout(() => el.classList.add("hide"), AUTO_HIDE_MS);
+}
+function reveal(kind, keep) {
+  const el = kind === "fs" ? $(`[data-bar="${kind}"]`) : $(`[data-cap="${kind}"]`);
+  if (!el) return;
+  el.classList.remove("hide");
+  if (keep) { if (timers[kind]) clearTimeout(timers[kind]); timers[kind] = null; }
+  else scheduleHide(kind);
+}
+function wireStage(kind) {
+  const stage = $(`[data-stage="${kind}"]`);
+  const band = $(`[data-band="${kind}"]`);
+  if (band) band.style.height = REVEAL_BAND_PX * (stage.clientWidth / state.screen[0]) + "px";
+  stage.addEventListener("mousemove", (e) => {
+    const r = stage.getBoundingClientRect();
+    const near = e.clientY - r.top <= REVEAL_BAND_PX * (r.width / state.screen[0]);
+    const el = kind === "fs" ? $(`[data-bar="${kind}"]`) : $(`[data-cap="${kind}"]`);
+    if (el) {
+      const cr = el.getBoundingClientRect();
+      const over = e.clientX >= cr.left - 4 && e.clientX <= cr.right + 4 && e.clientY >= cr.top - 4 && e.clientY <= cr.bottom + 4;
+      if (over) { reveal(kind, true); return; }
+    }
+    if (near) reveal(kind, false);
+  });
+  stage.addEventListener("mouseleave", () => scheduleHide(kind));
+  const zone = $(`[data-cap="${kind}"]`);
+  if (zone) zone.addEventListener("mouseleave", () => scheduleHide(kind));
+  const bar = $(`[data-bar="${kind}"]`);
+  if (bar) bar.addEventListener("mouseleave", () => scheduleHide(kind));
+  scheduleHide(kind);
+}
+
+/* ---- 事件委托：fit 三键 / 下拉 / ⋯ 面板 / 全屏按钮 ---- */
+document.addEventListener("click", (e) => {
+  const fitBtn = e.target.closest("[data-fit]");
+  if (fitBtn) {
+    const [kind, mode] = fitBtn.dataset.fit.split(":");
+    state.fit[kind] = mode;
+    render();
+    reveal(kind, true);
+    return;
+  }
+  const menuBtn = e.target.closest("[data-menu]");
+  if (menuBtn) {
+    const pop = menuBtn.parentElement.querySelector(".menuPop");
+    const wasOpen = pop.classList.contains("open");
+    $$(".menuPop").forEach((p) => p.classList.remove("open"));
+    pop.classList.toggle("open", !wasOpen);
+    reveal(pop.closest('[data-cap]')?.dataset.cap ?? "win", true);
+    return;
+  }
+  const qOpt = e.target.closest("[data-q]");
+  if (qOpt) {
+    qOpt.parentElement.querySelectorAll("[data-q]").forEach((b) => b.classList.remove("cur"));
+    qOpt.classList.add("cur");
+    qOpt.closest(".menuPop").classList.remove("open");
+    return;
+  }
+  const moreBtn = e.target.closest("[data-more]");
+  if (moreBtn) {
+    const kind = moreBtn.dataset.more;
+    let pop = $(`[data-cap="${kind}"] .morePop`);
+    $$(".morePop").forEach((p) => p !== pop && p.remove());
+    if (pop) { pop.remove(); return; }
+    pop = document.createElement("div");
+    pop.className = "morePop";
+    pop.innerHTML = `<h4>传输与声音</h4><div class="row">
+        <button class="capBtn">码率 100%</button><button class="capBtn">声音 开</button><button class="capBtn">剪贴板 自动</button></div>
+      <h4>文件</h4><div class="row"><button class="capBtn">传文件</button><button class="capBtn">取文件</button></div>
+      <h4>输入</h4><div class="row"><button class="capBtn">锁定指针</button><button class="capBtn">释放键盘</button></div>
+      <h4>会话</h4><div class="row"><button class="capBtn">断开并重连</button></div>`;
+    $(`[data-cap="${kind}"]`).appendChild(pop);
+    moreBtn.setAttribute("aria-expanded", "true");
+    reveal(kind, true);
+    return;
+  }
+  const fsBtn = e.target.closest("[data-fsbtn]");
+  if (fsBtn) {
+    const k = fsBtn.dataset.fsbtn;
+    // 演示「全屏进/退」：切换现状 B 与方案 A 两块屏的高亮，并说明真窗口走 requestFullscreen
+    [["fs", "hotbar 全屏"], ["fa", "同胶囊全屏"]].forEach(([kk, n]) => {
+      const card = $(`[data-kind="${kk}"]`)?.closest(".frameCard");
+      if (card) card.style.outline = kk === k ? "2px solid var(--accent)" : "";
+    });
+    reveal(k, true);
+    return;
+  }
+  if (!e.target.closest(".menuPop") && !e.target.closest("[data-menu]")) $$(".menuPop").forEach((p) => p.classList.remove("open"));
+});
+
+/* ---- 参数条 ---- */
+function selText(sel) { const o = sel.selectedOptions[0]; return o ? o.textContent : ""; }
+Object.defineProperty(HTMLSelectElement.prototype, "selectedText", { get() { return selText(this); } });
+$("#contentSel").addEventListener("change", (e) => { state.content = e.target.value.split(",").map(Number); render(); });
+$("#screenSel").addEventListener("change", (e) => { state.screen = e.target.value.split(",").map(Number);
+  $$(".screen").forEach((s) => { s.className = "screen " + (state.screen[0] / state.screen[1] > 2 ? "r21_9" : (Math.abs(state.screen[0] / state.screen[1] - 1.6) < 0.05 ? "r16_10" : "")); });
+  render(); });
+$("#showBand").addEventListener("change", (e) => $$("[data-band]").forEach((b) => b.classList.toggle("show", e.target.checked)));
+$("#linkBad").addEventListener("change", (e) => { state.linkBad = e.target.checked; render(); });
+
+["win", "fs", "fa"].forEach(wireStage);
+$$("[data-band]").forEach((b) => b.classList.toggle("show", $("#showBand").checked));
+render();
+window.addEventListener("resize", render);
+setTimeout(() => ["win", "fs", "fa"].forEach((k) => reveal(k, false)), 80);
+</script>
+
+</body>
+</html>

@@ -6,10 +6,12 @@
  * 不改编排」：`input` / `link` / `frames` 三个 hook 仍在 RcSessionView 里调用，
  * 这里整组接收它们的返回值，而不是把 30 个字段逐个摊成 props（那只是把解构搬个家）。
  *
- * 2026-09-24 控端态浮条收编：viewTools / 左上 HUD 按钮退场，非全屏的会话控制
- * 全部交给 RcSessionView 挂的 RcSessionCapsule（会隐藏的顶部胶囊）；全屏态仍由
- * 本组件内的 RcFullscreenHotbar 承担（Fullscreen API 只显示 fakeScreen 子树，
- * 浮条必须挂在它内部才可见）。
+ * 2026-09-24 控端态浮条收编：viewTools / 左上 HUD 按钮退场，会话控制全部交给
+ * RcSessionView 挂的 RcSessionCapsule（会隐藏的顶部胶囊）。
+ *
+ * 2026-09-28 方案 A（design/远程电脑-控端全屏胶囊统一-设计稿.html）：全屏态不再
+ * 换第二条控制条（RcFullscreenHotbar 退役），两态同一条胶囊；顶栏 `.viewTop` 在
+ * 全屏时整条退场（身份/窗口键并入胶囊），画面盒回到整个屏幕。
  */
 import { Eye, Loader2 } from "lucide-react";
 import { useEffect } from "react";
@@ -22,7 +24,6 @@ import type { RcCursorShape } from "@/hooks/useRcCursor";
 import type { FitMode } from "@/lib/rcSessionStats";
 import { qualityLabel } from "@/lib/rcQuality";
 import { rcPanelOpenCount } from "@/lib/rcPanelFocus";
-import { RcFullscreenHotbar } from "./RcFullscreenHotbar";
 import { RcSessionTop } from "./RcSessionTop";
 import { RcScreenCanvas } from "./RcScreenCanvas";
 import { RcFsHint } from "./RcFsHint";
@@ -39,7 +40,6 @@ export function RcSessionStage({
   frames,
   cursorShape,
   fit,
-  onFit,
   fullscreen,
   onToggleFullscreen,
   fsHintDismissed,
@@ -48,16 +48,15 @@ export function RcSessionStage({
   screenRef,
   canvasRef,
   onReconnect,
-  onRequestEnd,
 }: {
   session: RcSession;
+  /** 重连等在途（等待占位里的「重新连接」按钮禁用态） */
   busy: boolean;
   input: RcInput;
   link: RcLinkSnapshot;
   frames: RcFrames;
   cursorShape: RcCursorShape | null;
   fit: FitMode;
-  onFit: (m: FitMode) => void;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
   fsHintDismissed: boolean;
@@ -67,8 +66,6 @@ export function RcSessionStage({
   screenRef: React.RefObject<HTMLDivElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   onReconnect?: () => void;
-  /** 会话内结束（父级包了 ConfirmDialog，这里只负责触发） */
-  onRequestEnd: () => void;
 }) {
   const canControl = session.capability === "control";
   const {
@@ -76,7 +73,6 @@ export function RcSessionStage({
     hasFrame,
     statusText,
     codec,
-    fps,
     contentRef,
     size,
   } = frames;
@@ -89,8 +85,8 @@ export function RcSessionStage({
   const onKeyUp = (e: React.KeyboardEvent) => input.onKeyUp(e);
 
   // 审计 P1-2（2026-09-27）：F11 切换全屏——Windows/浏览器同款惯例，给会话一条
-  // 键盘加速路径（鼠标主路仍是胶囊/浮条按钮）。捕获键盘或锁指针时 F11 属远端
-  // 交互，不生效；有模态时让路。
+  // 键盘加速路径（鼠标主路是胶囊上的全屏键，两态同一颗）。捕获键盘或锁指针时
+  // F11 属远端交互，不生效；有模态时让路。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "F11" || e.ctrlKey || e.altKey || e.metaKey) return;
@@ -106,15 +102,10 @@ export function RcSessionStage({
 
   return (
     <div className={styles.viewShell}>
-      {/* 🔴 再审计（全屏双组三键，2026-09-25）：全屏态顶条三键隐藏——hotbar
-          右上角已有同语义三键，同屏两份会让人不知道点哪份（设计稿意图是
-          全屏只用 hotbar 的）。非全屏照旧渲染。 */}
-      <RcSessionTop
-        session={session}
-        linkState={link.state}
-        fullscreen={fullscreen}
-        hideWindowControls={fullscreen}
-      />
+      {/* 方案 A（2026-09-28）：全屏态顶栏整条退场——身份（灯/名字/能力）与窗口键
+          都在胶囊里，同屏两套只会让画面少一条 36px（「显示不全」的一半根因）。
+          非全屏照旧，拖拽区与三键仍归顶栏。 */}
+      {!fullscreen && <RcSessionTop session={session} linkState={link.state} />}
 
       <div
         ref={screenRef}
@@ -144,38 +135,12 @@ export function RcSessionStage({
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
       >
-        {/* 方案 B（2026-09-24）：全屏态用顶边 hotbar；非全屏的控制全部在
-            RcSessionCapsule（RcSessionView 挂，会隐藏的顶部胶囊）。两者互斥
-            ——Fullscreen API 只显示 fakeScreen 子树，hotbar 必须挂在它内部。 */}
-        {fullscreen && (
-          <RcFullscreenHotbar
-            fit={fit}
-            onFit={onFit}
-            pointerLocked={input.pointerLocked}
-            onTogglePointer={input.togglePointerLock}
-            canControl={canControl}
-            kbOn={input.kbOn}
-            onToggleFullscreen={onToggleFullscreen}
-            onRequestEnd={onRequestEnd}
-            busy={busy}
-            info={
-              hasFrame
-                ? `${size.w}×${size.h} · ${
-                    codec === "h264"
-                      ? "H.264"
-                      : codec === "hevc"
-                        ? "HEVC"
-                        : codec === "av1"
-                          ? "AV1"
-                          : "JPEG"
-                  } · ${fps}fps · F10 唤出/收起`
-                : "F10 唤出/收起本条"
-            }
-          />
-        )}
-        {/* 审计 P1-2（2026-09-27）：全屏态键盘捕获常驻徽标——全屏与胶囊互斥后
-            键盘态原本零指示（输入正打进对方机器而屏幕上没有任何说明）。
-            底部居中不与顶边 hotbar 抢位；pointer-events:none 不挡画面点击。 */}
+        {/* 方案 A（2026-09-28）：全屏态不再挂第二条控制条——会话控制在两态都是
+            RcSessionView 挂的同一条 RcSessionCapsule（它挂在 .sessionWrap 里，
+            全屏元素本身就是 .sessionWrap，所以全屏可见，无需挂进 fakeScreen）。 */}
+        {/* 审计 P1-2（2026-09-27）：全屏态键盘捕获常驻徽标——输入正打进对方机器
+            而屏幕上没有任何说明不可接受。底部居中不与顶部胶囊抢位；
+            pointer-events:none 不挡画面点击。 */}
         {fullscreen && canControl && input.kbOn && (
           <div className={styles.fsKbBadge} role="status">
             <i aria-hidden="true" />

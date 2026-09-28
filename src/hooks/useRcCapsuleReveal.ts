@@ -11,14 +11,17 @@
  *   热区，不锁会把开着的菜单晾成孤儿。锁显解除时：首显窗口还开着就交给剩余
  *   首显计时，否则正常 2.5s 淡出。
  * - 🔴 指针锁定（Pointer Lock）时不唤出——锁住的指针没有真实光标，mousemove
- *   的 clientY 停在锁定前位置，靠它唤出是假象（RcFullscreenHotbar 同款守卫）。
+ *   的 clientY 停在锁定前位置，靠它唤出是假象。
+ * - 键盘：F10 唤出/收起（原全屏 hotbar 的热键，2026-09-28 方案 A 随浮条统一后
+ *   两态通用）。捕获键盘或锁指针时 F10 属远端按键，热键让路；面板/模态展开时
+ *   同样让路（与 Esc 的 17.6 口径一致）。
  *
  * 隐藏态的三重纪律（pointer-events:none + visibility:hidden + tabIndex=-1）
  * 由 CSS `.viewToolsHidden` 与组件里的 `tab` 值共同承担，这里只出状态。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isSessionEscape } from "@/lib/rcKeyGuard";
-import { registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
+import { rcPanelOpenCount, registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
 
 /** B 稿顶边热区：距画面顶缘这么近时唤出。 */
 const REVEAL_BAND_PX = 12;
@@ -32,6 +35,7 @@ export function useRcCapsuleReveal({
   capRef,
   stageRef,
   pointerLocked,
+  kbOn,
   linkLocked,
   detailOpen = false,
 }: {
@@ -45,6 +49,8 @@ export function useRcCapsuleReveal({
   /** 画面容器（fakeScreen）——mousemove 挂它不挂 window（P2-12）。 */
   stageRef: React.RefObject<HTMLDivElement | null>;
   pointerLocked: boolean;
+  /** 键盘已捕获给远端——F10 属远端按键，本条热键让路（见文件头）。 */
+  kbOn: boolean;
   /** 链路维度的锁显：linkState ≠ connected。 */
   linkLocked: boolean;
   /** ⓘ 连接详情面板展开中——与下拉/⋯面板同口径锁显（2026-09-27 审查补），
@@ -158,6 +164,26 @@ export function useRcCapsuleReveal({
     stage.addEventListener("mousemove", onMove);
     return () => stage.removeEventListener("mousemove", onMove);
   }, [capRef, stageRef, pointerLocked, clearTimer, scheduleHide]);
+
+  // 方案 A（2026-09-28）：F10 唤出/收起——原 RcFullscreenHotbar 的热键随浮条统一
+  // 上收到这里，窗口态与全屏态同一条键（规则 17：键盘是加速器，鼠标全流程可达）。
+  // 捕获键盘（kbOn）或锁指针时 F10 属远端交互，热键不生效；面板/模态展开时让路
+  // （口径与 Esc 一致，见 17.6）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F10" || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (kbOn || pointerLocked) return;
+      if (rcPanelOpenCount() > 0 || document.querySelector(".dialog-backdrop")) return;
+      e.preventDefault();
+      setShown((v) => {
+        const next = !v;
+        if (next) scheduleHide();
+        return next;
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [kbOn, pointerLocked, scheduleHide]);
 
   const menuDelta = useCallback((o: boolean) => {
     setMenusOpen((c) => Math.max(0, c + (o ? 1 : -1)));

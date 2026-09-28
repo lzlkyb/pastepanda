@@ -12,7 +12,7 @@
  *
  * 确认一律用 ConfirmDialog（非 window.confirm，见 lib/confirm）。
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import { rcClipAutoFromConfig } from "@/lib/rcClipAuto";
@@ -96,6 +96,12 @@ export function RcSessionView({
   // 显示模式（缩放 / 全屏 / 非全屏提示 + 换会话清理）、声音开关、会话内可调项
   // （画质 / 范围 / 码率）各自独立成 hook，见 hooks/useRc*.ts。
   const display = useRcDisplayMode(session.id, wrapRef);
+  // 方案 A Q4（2026-09-28）：进全屏把 1:1 降回「适应」必须说一句——静默改用户的
+  // 显示档会被读成「我明明选了 1:1」（规则 15：改动与反馈同可见性域）。
+  const fitDowngradeTick = display.fitDowngradeTick;
+  useEffect(() => {
+    if (fitDowngradeTick > 0) toast("1:1 在全屏会超出屏幕，已切回「适应」", "info");
+  }, [fitDowngradeTick, toast]);
   const { audioOn, toggleAudio } = useRcSessionAudio(session.id, toast);
   const prefs = useRcSessionPrefs({
     sessionId: session.id,
@@ -215,7 +221,6 @@ export function RcSessionView({
         frames={frames}
         cursorShape={cursorShape}
         fit={display.fit}
-        onFit={display.setFit}
         fullscreen={display.fullscreen}
         onToggleFullscreen={display.toggleFullscreen}
         fsHintDismissed={display.fsHintDismissed}
@@ -224,69 +229,68 @@ export function RcSessionView({
         screenRef={screenRef}
         canvasRef={canvasRef}
         onReconnect={onReconnect}
-        onRequestEnd={() => void requestEnd()}
       />
 
-      {/* 控端浮条（方案 B 变体）：非全屏唯一会话控制条——连接成功首显 15s 后隐藏，
-          顶边 12px 热区唤出；全屏态由 RcFullscreenHotbar 承担（互斥不双浮层）。
+      {/* 会话浮条（方案 A，2026-09-28）：**窗口态与全屏态同一条**——原先全屏换成
+          RcFullscreenHotbar，画质/画面/⋯/ⓘ/质量读数五类入口整组丢失。非全屏
+          首显 15s 后隐藏、顶边 12px 热区唤出；全屏同参数，另在右端补最小化/关闭。
           放在 Stage 之后：同为 sessionWrap 子元素，后写的兄弟盖在画面上。 */}
-      {!display.fullscreen && (
-        <RcSessionCapsule
-          session={session}
-          rc={rc}
-          busy={busy}
-          canControl={canControl}
-          link={link}
-          input={input}
-          send={send}
-          quality={prefs.qPick}
-          scopePick={prefs.scopePick}
-          bitrate={prefs.bitratePick}
-          rttMs={link.rttMs}
-          fps={frames.fps}
-          audioOn={audioOn}
-          onToggleAudio={toggleAudio}
-          clipAuto={clipAuto}
-          onToggleClipAuto={toggleClipAuto}
-          lastAutoAt={clip.lastAutoAt}
-          autoFail={clip.autoFail}
-          onStatus={(m, k) => toast(m, k)}
-          fit={display.fit}
-          onFit={display.setFit}
-          onToggleFullscreen={display.toggleFullscreen}
-          onRequestEnd={() => void requestEnd()}
-          onReconnect={onReconnect}
-          onRequestControl={onRequestControl ? () => void requestControl() : undefined}
-          stageRef={screenRef}
-          detail={
-            <RcHud
-              codec={frames.codec}
-              fps={frames.fps}
-              rttMs={link.rttMs}
-              frameLatencyMs={frames.latencyMs}
-              lossPermille={rc.status?.loss_permille}
-              bitrateKbps={frames.bitrateKbps}
-              segCapMs={frames.segCapMs}
-              segEncMs={frames.segEncMs}
-              segNetMs={frames.segNetMs}
-              segDecMs={frames.segDecMs}
-              respMs={frames.respMs}
-              quality={prefs.qPick}
-              /* 🔴 自动档的落点只有**推流那台机器**知道。这里只在本机作为被控端
-                  推流（inbound_active）时拿得到生效档；出站会话显示「由对方决定」。 */
-              activeQuality={
-                session.phase === "inbound_active" ? rc.status?.active_quality : undefined
-              }
-              peerDriven={session.phase !== "inbound_active"}
-              scope={prefs.scopePick}
-              linkState={link.state}
-              pathKind={rc.status?.path_kind ?? ""}
-              pointerLocked={input.pointerLocked}
-              frameSize={frames.size}
-            />
-          }
-        />
-      )}
+      <RcSessionCapsule
+        session={session}
+        rc={rc}
+        busy={busy}
+        canControl={canControl}
+        link={link}
+        input={input}
+        send={send}
+        quality={prefs.qPick}
+        scopePick={prefs.scopePick}
+        bitrate={prefs.bitratePick}
+        rttMs={link.rttMs}
+        fps={frames.fps}
+        audioOn={audioOn}
+        onToggleAudio={toggleAudio}
+        clipAuto={clipAuto}
+        onToggleClipAuto={toggleClipAuto}
+        lastAutoAt={clip.lastAutoAt}
+        autoFail={clip.autoFail}
+        onStatus={(m, k) => toast(m, k)}
+        fit={display.fit}
+        onFit={display.setFit}
+        fullscreen={display.fullscreen}
+        onToggleFullscreen={display.toggleFullscreen}
+        onRequestEnd={() => void requestEnd()}
+        onReconnect={onReconnect}
+        onRequestControl={onRequestControl ? () => void requestControl() : undefined}
+        stageRef={screenRef}
+        detail={
+          <RcHud
+            codec={frames.codec}
+            fps={frames.fps}
+            rttMs={link.rttMs}
+            frameLatencyMs={frames.latencyMs}
+            lossPermille={rc.status?.loss_permille}
+            bitrateKbps={frames.bitrateKbps}
+            segCapMs={frames.segCapMs}
+            segEncMs={frames.segEncMs}
+            segNetMs={frames.segNetMs}
+            segDecMs={frames.segDecMs}
+            respMs={frames.respMs}
+            quality={prefs.qPick}
+            /* 🔴 自动档的落点只有**推流那台机器**知道。这里只在本机作为被控端
+                推流（inbound_active）时拿得到生效档；出站会话显示「由对方决定」。 */
+            activeQuality={
+              session.phase === "inbound_active" ? rc.status?.active_quality : undefined
+            }
+            peerDriven={session.phase !== "inbound_active"}
+            scope={prefs.scopePick}
+            linkState={link.state}
+            pathKind={rc.status?.path_kind ?? ""}
+            pointerLocked={input.pointerLocked}
+            frameSize={frames.size}
+          />
+        }
+      />
     </div>
   );
 }
