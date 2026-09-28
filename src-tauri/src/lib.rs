@@ -58,6 +58,8 @@ pub mod similar;
 /// M6 多机同步。当前只有 P1 身份/配对层，无传输层、无界面。
 pub mod sync;
 mod todo_island;
+/// 岛的停靠锚点（六档：2 条边 × 3 个横向位置）与落位公式。
+mod todo_island_anchor;
 mod todo_island_hover;
 mod todo_island_probe;
 /// 岛的舞台尺寸与切换（收起/悬停/展开/输入/全清）。

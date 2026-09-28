@@ -6,6 +6,7 @@ import { reorderAction } from "@/lib/quickOrder";
 import { splitTableToRows, isTableSplitCandidate } from "@/lib/tableSplit";
 import { normalizeTheme } from "@/lib/theme";
 import { normalizeGlass } from "@/lib/todo/glass";
+import { ANCHOR_DEFAULT, normalizeAnchor, type AnchorKey } from "@/lib/todo/anchor";
 import { parseEventRange, isEventRange } from "@/lib/eventLabel";
 
 // ===== 数据类型 =====
@@ -141,13 +142,18 @@ export interface AppConfig {
    *  `resolveStackMaxItems`，不要直接用它做 slice。 */
   stack_max_items: number;
   /** 灵动岛（设置页「灵动岛」分区，2026-09-25）。缺省值必须与 Rust `island_config`、
-   *  岛前端（todoisland-main.tsx）一致：**关** / 遮盖度 95 / 提醒开 / 30s / 到期优先。
+   *  岛前端（todoisland-main.tsx）一致：**关** / 遮盖度 95 / 停靠顶 · 中 / 提醒开 / 30s / 到期优先。
    *  `todo_island_glass` = 岛体遮盖度 66–100（2026-09-26 由四档枚举改成连续滑杆；
    *  2026-09-27 下限 20→66 = 对比度地板，口径收口在 lib/todo/glass.ts；
    *  老用户后端存的仍是档位字符串，进 `updateConfig` 时被 normalizeGlass 折算一次）。
-   *  glass 由岛前端消费（CSS 变量 `--island-glass`），其余由 Rust `todo_island::island_config` 消费。 */
+   *  `todo_island_anchor` = 停靠锚点六档（2026-09-28 C1，口径收口在 lib/todo/anchor.ts；
+   *  字符串集合与 Rust `IslandAnchor::as_str` 同一份账）。
+   *  glass 与 anchor 的 CSS 侧由岛前端消费（`--island-glass` / `html[data-island-dock]`），
+   *  anchor 的几何侧与其余由 Rust `todo_island::island_config` 消费。 */
   todo_island_enabled: boolean;
   todo_island_glass: number;
+  /** 六档字符串联合，口径与缺省收口在 `lib/todo/anchor.ts`。 */
+  todo_island_anchor: AnchorKey;
   todo_island_remind: boolean;
   todo_island_remind_ms: number;
   todo_island_due_sort: boolean;
@@ -484,6 +490,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   stack_max_items: STACK_MAX_ITEMS_DEFAULT,
   todo_island_enabled: false,
   todo_island_glass: 95,
+  todo_island_anchor: ANCHOR_DEFAULT,
   todo_island_remind: true,
   todo_island_remind_ms: 30_000,
   todo_island_due_sort: true,
@@ -1169,6 +1176,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 下次 save_config 落盘即完成迁移（消费方仍各自 normalizeGlass 兜底）。
     if ("todo_island_glass" in clean) {
       clean.todo_island_glass = normalizeGlass(clean.todo_island_glass);
+    }
+    // 停靠锚点：脏值（手改 config / 未来删档）同样在这里收敛成六档之一，
+    // 消费方（Rust island_config、岛前端的 data-island-dock）各自兜底但不会看到非法串。
+    if ("todo_island_anchor" in clean) {
+      clean.todo_island_anchor = normalizeAnchor(clean.todo_island_anchor);
     }
     // 栈容量档位：同上，脏值（手改 config / 旧版本残留 / 未来加档又删档）在这里收敛，
     // 否则 `slice(0, NaN)` 会得到空数组 —— 现象是「栈一条都收不进去」。

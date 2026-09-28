@@ -40,11 +40,10 @@ import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { useIslandContentPhase } from "./useIslandContentPhase";
 import { useHoverVisual, useIntentVisual, useFlashNotice } from "./useIslandSignals";
 import { useIslandVitality } from "./useIslandVitality";
+import { IslandCollapsedMark } from "./IslandCollapsedMark";
 import { TodoIslandList } from "./TodoIslandList";
 import styles from "./TodoIsland.module.css";
 
-/** 进度环周长 = 2πr（r = 6.5，与 CSS 里 `circle r="6.5"` 是同一份账） */
-const RING_CIRC = 2 * Math.PI * 6.5;
 /** 展开态鼠标离开多久后自动收起。读列表需要时间，给足；比胶囊 2.5s 宽一倍多。 */
 const AUTO_COLLAPSE_MS = 6000;
 
@@ -182,41 +181,27 @@ export function TodoIsland() {
   // 内容活性三动效（活性设计稿 §1–§3）：递减走字 / 事件脉冲 / glow 跟随——逻辑全在 Hook（本文件 300 行红线）
   const vital = useIslandVitality({ state, stage, reducedMotion, hover, intent });
 
-  // 折叠态的统一内容：环 + 剩余数 + 一句话（clear 态把环换成勾；提醒态整段换掉）
-  const collapsed = reminding ? (
-    <>
-      <svg className={styles.bell} data-shake={vital.shaking ? "1" : undefined} onAnimationEnd={vital.endShake} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M8 2.5a3.5 3.5 0 0 0-3.5 3.5c0 3-1.5 4-1.5 4h10s-1.5-1-1.5-4A3.5 3.5 0 0 0 8 2.5z" />
-        <path d="M6.8 12.5a1.3 1.3 0 0 0 2.4 0" />
-      </svg>
-      <span className={styles.remindWord}>到点了</span>
-      <span className={styles.sepdot} />
-    </>
-  ) : stage === "clear" ? (
-      <span className={styles.okmark} data-draw={vital.drawing ? "1" : undefined} onAnimationEnd={vital.endDraw} aria-hidden="true">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-          <path d="M3 8.5l3.4 3.4L13 5" />
-        </svg>
-      </span>
-    ) : (
-      <>
-        <svg className={styles.ring} viewBox="0 0 16 16" aria-hidden="true">
-          <circle className={styles.tk2} cx="8" cy="8" r="6.5" />
-          <circle
-            className={styles.arc}
-            cx="8"
-            cy="8"
-            r="6.5"
-            strokeDasharray={RING_CIRC}
-            strokeDashoffset={RING_CIRC * (1 - progress)}
-          />
-        </svg>
-        <span className={styles.cnt}>{remain}</span>
-        <span className={styles.sepdot} />
-      </>
-    );
+  // 折叠态的统一指示器（提醒铃 / 全清勾 / 进度环 + 剩余数）拆在 IslandCollapsedMark
+  const collapsed = (
+    <IslandCollapsedMark
+      reminding={reminding}
+      cleared={stage === "clear"}
+      remain={remain}
+      progress={progress}
+      shaking={vital.shaking}
+      drawing={vital.drawing}
+      onShakeEnd={vital.endShake}
+      onDrawEnd={vital.endDraw}
+    />
+  );
 
   const collapsedHint = stage === "clear" ? "今天没有待办了" : state.hint || "今天没有待办";
+  // 进度只画在环和数字上（纯视觉通道），读屏用户展开前拿不到「还剩几件」——说破它。
+  const collapsedLabel = stage === "clear"
+    ? "待办全部完成，今天没有待办了，点击展开列表"
+    : reminding
+      ? `到点提醒：${alert?.text ?? ""}，点击展开列表`
+      : `还剩 ${remain} 项待办，已吸附在屏幕顶部，点击展开列表`;
 
   return (
     <div
@@ -231,7 +216,7 @@ export function TodoIsland() {
       role={collapsedStage ? "button" : undefined}
       // 状态进语义层（形变设计稿 §7③）：「方顶=吸附」是纯视觉通道，读屏用户从形状收不到
       // 两态信息——标签里说破。
-      aria-label={collapsedStage ? "待办，已吸附在屏幕顶部，点击展开列表" : undefined}
+      aria-label={collapsedStage ? collapsedLabel : undefined}
       // 键盘可达（P1-1）：role="button" 名实相符——Tab 聚焦后 Enter/Space 展开
       tabIndex={collapsedStage ? 0 : -1}
       onKeyDown={
@@ -256,7 +241,9 @@ export function TodoIsland() {
             </>
           ) : null}
           {/* 这一格在三者之间轮换：失败提示（就地替换提示文字）/ 提醒的那条 / 下一条待办。
-              pill 只有 32px 高且 overflow:hidden，浮层会被裁掉，所以错误也只能占这一格。 */}
+              pill 只有 32px 高且 overflow:hidden，浮层会被裁掉，所以错误也只能占这一格。
+              播报走岛层常驻的 alert 活区：role 挂在这个随舞台卸载的节点上，读屏在节点
+              创建那一刻多半来不及报（critique 2026-09-28 P2）。 */}
           <span
             className={
               notice
@@ -265,7 +252,6 @@ export function TodoIsland() {
                   ? `${styles.last} ${styles.lastBright}`
                   : styles.last
             }
-            role={notice ? "alert" : undefined}
           >
             {notice ?? (reminding ? alert?.text : collapsedHint)}
           </span>
@@ -290,11 +276,14 @@ export function TodoIsland() {
 
       {/* 列表态的失败提示：浮在列表底部（勾选/输入的触发点就在列表里）。
          折叠态改由 collapsedLayer 内的 noticeInline 承担，二者互斥不会同时出现。 */}
-      {notice && !collapsedStage ? (
-        <div className={styles.notice} role="alert">
-          {notice}
-        </div>
-      ) : null}
+      {notice && !collapsedStage ? <div className={styles.notice}>{notice}</div> : null}
+
+      {/* 失败提示的播报口：**常驻挂载**的空活区，读屏在页面加载时就登记它，
+          文字变进去的那一刻才会被报出来；随舞台装卸的条件 alert 节点做不到这点。
+          可见的那两处（noticeInline / notice）不再挂 role，避免同一句报两遍。 */}
+      <span className="sr-only" role="alert" aria-live="assertive">
+        {notice ?? ""}
+      </span>
     </div>
   );
 }

@@ -110,6 +110,8 @@ export function TodoIslandList({
           <button
             type="button"
             role="tab"
+            id="island-tab-open"
+            aria-controls="island-tabpanel"
             aria-selected={tab === "open"}
             tabIndex={tab === "open" ? 0 : -1}
             className={tab === "open" ? styles.on : undefined}
@@ -120,6 +122,8 @@ export function TodoIslandList({
           <button
             type="button"
             role="tab"
+            id="island-tab-done"
+            aria-controls="island-tabpanel"
             aria-selected={tab === "done"}
             tabIndex={tab === "done" ? 0 : -1}
             className={tab === "done" ? styles.on : undefined}
@@ -137,78 +141,81 @@ export function TodoIslandList({
         </button>
       </div>
 
-      <div className={styles.ls} role="list">
-        {rows.length === 0 ? (
-          <div className={styles.empty}>
-            {tab === "open" ? (
-              <>
-                <p>没有进行中的待办</p>
-                <p className={styles.emptySub}>点下方「记一条」加一条，或在笔记里写 - [ ] 待办内容；时间写尾部（如 @今天 18:00）会到点提醒</p>
-              </>
-            ) : (
-              <>
-                <p>还没有勾完的待办</p>
-                <p className={styles.emptySub}>勾掉「进行中」里的一条，它会出现在这里</p>
-              </>
-            )}
-          </div>
-        ) : (
-          rows.map((t) => {
-            const key = taskKey(t);
-            const chip = dueChip(t);
-            const dwelling = isDwelling(key) && t.done;
-            return (
-              <div
-                key={key}
-                className={`${styles.row} ${t.done ? styles.rowDone : ""} ${dwelling ? styles.rowDwell : ""} ${isPaused(key) ? styles.rowDwellPaused : ""} ${isLeaving(key) ? styles.rowLeave : ""}`}
-                role="listitem"
-                onClick={() => onTick(t)}
-                onMouseEnter={() => pauseDwell(key)}
-                onMouseLeave={() => resumeDwell(key)}
-              >
-                <button
-                  className={styles.tick}
-                  title={t.done ? "标记为未完成" : "完成"}
-                  aria-label={t.done ? "标记为未完成" : "完成"}
-                  onClick={(e) => {
-                    // 勾圈在行内：不拦冒泡会把同一次点击交给行再 toggle 一遍（翻回去）
-                    e.stopPropagation();
-                    onTick(t);
-                  }}
+      {/* tabpanel 与 list 分两层：同一个 div 不能既 role="tabpanel" 又 role="list"，
+          而只挂半套 tab 语义（有 tab 无面板）读屏的 tab 导航会落空（critique 2026-09-28 P3）。 */}
+      <div
+        className={styles.ls}
+        id="island-tabpanel"
+        role="tabpanel"
+        aria-labelledby={tab === "open" ? "island-tab-open" : "island-tab-done"}
+      >
+        <div className={styles.lsInner} role="list">
+          {rows.length === 0 ? (
+            <div className={styles.empty}>
+              {tab === "open" ? (
+                <>
+                  <p>没有进行中的待办</p>
+                  <p className={styles.emptySub}>点下方「记一条」加一条，或在笔记里写 - [ ] 待办内容；时间写尾部（如 @今天 18:00）会到点提醒</p>
+                </>
+              ) : (
+                <>
+                  <p>还没有勾完的待办</p>
+                  <p className={styles.emptySub}>勾掉「进行中」里的一条，它会出现在这里</p>
+                </>
+              )}
+            </div>
+          ) : (
+            rows.map((t) => {
+              const key = taskKey(t);
+              const chip = dueChip(t);
+              const dwelling = isDwelling(key) && t.done;
+              return (
+                <div
+                  key={key}
+                  className={`${styles.row} ${t.done ? styles.rowDone : ""} ${dwelling ? styles.rowDwell : ""} ${isPaused(key) ? styles.rowDwellPaused : ""} ${isLeaving(key) ? styles.rowLeave : ""}`}
+                  role="listitem"
+                  onClick={() => onTick(t)}
+                  onMouseEnter={() => pauseDwell(key)}
+                  onMouseLeave={() => resumeDwell(key)}
                 >
-                  <span className={styles.tickDot}>
-                    <TickSvg />
-                  </span>
-                </button>
-                <span className={styles.tx}>{t.text}</span>
-                {chip ? <span className={chip.cls}>{chip.text}</span> : null}
-                {dwelling ? (
                   <button
-                    type="button"
-                    className={styles.undoChip}
+                    className={styles.tick}
+                    title={t.done ? "标记为未完成" : "完成"}
+                    aria-label={t.done ? "标记为未完成" : "完成"}
                     onClick={(e) => {
-                      // chip 自己拦冒泡：点撤销不许再触发整行勾选
+                      // 勾圈在行内：不拦冒泡会把同一次点击交给行再 toggle 一遍（翻回去）
                       e.stopPropagation();
                       onTick(t);
                     }}
                   >
-                    撤销
+                    <span className={styles.tickDot}>
+                      <TickSvg />
+                    </span>
                   </button>
-                ) : null}
-                <span
-                  className={styles.src}
-                  onClick={(e) => {
-                    // 来源笔记名不参与整行勾选：这里预留给「打开笔记」
-                    e.stopPropagation();
-                  }}
-                >
-                  {t.noteTitle}
-                </span>
-                {dwelling ? <span className={styles.dwellBar} aria-hidden="true" /> : null}
-              </div>
-            );
-          })
-        )}
+                  <span className={styles.tx}>{t.text}</span>
+                  {chip ? <span className={chip.cls}>{chip.text}</span> : null}
+                  {dwelling ? (
+                    <button
+                      type="button"
+                      className={styles.undoChip}
+                      onClick={(e) => {
+                        // chip 自己拦冒泡：点撤销不许再触发整行勾选
+                        e.stopPropagation();
+                        onTick(t);
+                      }}
+                    >
+                      撤销
+                    </button>
+                  ) : null}
+                  {/* 来源笔记名参与整行勾选：「打开笔记」还没实现，拦下冒泡只会变成
+                      点了没反应的一格（critique 2026-09-28 P3，与 B 方案「整行可点」对齐） */}
+                  <span className={styles.src}>{t.noteTitle}</span>
+                  {dwelling ? <span className={styles.dwellBar} aria-hidden="true" /> : null}
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       {compose ? (

@@ -149,6 +149,21 @@ describe("TodoIsland 舞台机", () => {
     expect(screen.getByText("已办的事")).toBeTruthy();
   });
 
+  it("🔴 语义层跟得上视觉层（audit 2026-09-28 P2/P3）：胶囊标签报剩余数、alert 常驻、tab 关联面板", async () => {
+    const { container } = render(<TodoIsland />);
+    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    // 剩余数只画在环和数字上（纯视觉）——读屏用户展开前也得知道「还剩几件」
+    expect(rootEl(container).getAttribute("aria-label")).toContain("还剩 3 项待办");
+    // 失败提示的播报口在收起态就已挂载：条件挂载的 role 节点第一次来不及播报
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(rootEl(container)); // → list
+    expect(document.getElementById("island-tabpanel")?.getAttribute("role")).toBe("tabpanel");
+    expect(document.getElementById("island-tab-open")?.getAttribute("aria-controls")).toBe("island-tabpanel");
+    expect(document.getElementById("island-tab-done")?.getAttribute("aria-controls")).toBe("island-tabpanel");
+    // 面板里的行仍在真 list 里（tabpanel 与 list 分两层，不能一个 div 兼两个角色）
+    expect(document.querySelector("#island-tabpanel [role='list']")).toBeTruthy();
+  });
+
   it("🔴 展开态点外闲置 6s 自动收起（岛窗外点击穿透，没有点外收起就只能手动关）", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
@@ -336,7 +351,7 @@ describe("TodoIsland 舞台机", () => {
     expect(btn.textContent).toContain("收起");
     expect(btn.getAttribute("title")).toContain("Esc");
   });
-  it("🔴 整行可点 = 勾选（B 方案）：点行文字触发一次 toggle，点勾圈不双重触发，点来源名不触发", async () => {
+  it("🔴 整行可点 = 勾选（B 方案）：点行文字与点来源名都触发一次 toggle，点勾圈不双重触发", async () => {
     const { container } = render(<TodoIsland />);
     await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
     fireEvent.click(rootEl(container)); // → list
@@ -353,11 +368,18 @@ describe("TodoIsland 舞台机", () => {
       expectedText: "交材料",
     });
     h.invoke.mockClear();
-    // 点来源笔记名：不参与整行勾选（预留给「打开笔记」）
+    // 点来源笔记名：参与整行勾选（critique 2026-09-28 P3——「打开笔记」还没实现，
+    // 拦下冒泡只会变成点了没反应的一格，与 B 方案「整行可点」冲突）
     fireEvent.click(screen.getByText("今日速记"));
-    expect(h.invoke).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(h.invoke).toHaveBeenCalledWith("todo_island_toggle_task", {
+      noteId: "n1",
+      line: 3,
+      expectedText: "交材料",
+    });
     // 点勾圈本体：只发一次（stopPropagation 拦住行上的第二次）
-    fireEvent.click(screen.getAllByTitle("完成")[0]);
+    h.invoke.mockClear();
+    fireEvent.click(screen.getAllByRole("button", { name: /完成|标记为未完成/ })[0]);
     await waitFor(() => expect(h.invoke).toHaveBeenCalledTimes(1));
   });
 

@@ -68,15 +68,10 @@ pub const WINDOW_LABEL: &str = "todo-island";
 pub const ISLAND_W: f64 = 208.0;
 pub const ISLAND_H: f64 = 32.0;
 
-/// 岛顶与屏幕上沿的距离（吸附双态设计稿拍板 **0**）。顶部锚定的定义：**屏幕水平中心 × 屏幕上沿 + 此值**。
-///
-/// ❗ 吸附双态设计稿（2026-09-26）拍板为 **0**：岛顶与屏幕顶零间隙——吸附感的来源就是
-/// 「长在上面」而不是「浮在离顶 10px 处」；胶囊上圆角与屏幕边之间的两个小三角空隙由
-/// 壁纸透出，是「贴上去」的自然观感（同 iOS 岛圆角与屏幕边的处理）。
-///
-/// ❗ 展开时顶边钉住不动、只向下生长 —— 即 `set_position` 的 y 恒为它，
-/// 只有 x 按新宽度重算（`x = 屏宽/2 - 新宽/2`）。这条是设计稿第六节写定的口径。
-pub const TOP_MARGIN: f64 = 0.0;
+// ❗ 这里曾有 `TOP_MARGIN: f64 = 0.0`（岛顶与屏幕上沿的间隙，吸附双态设计稿拍板 0）。
+//    2026-09-28 起它被 `todo_island_anchor` 的六档锚点取代：贴哪条边、留多少边距
+//    现在是**每档各自算 work_area**（顶档 y = 工作区顶、底档底边钉住），
+//    「一个常量管不住六档」。零间隙这条口径仍然成立——档内边距只有左右方向的 16px。
 
 // ❗ 光标穿透轮询那一整套（滞回常量、`HOVERING` / `POLL_GEN`、`start_poll` / `stop_poll`、
 //    `cursor_pos`、对应单测）已切到 `todo_island_hover.rs`：本文件到 590 行、红线 600，
@@ -184,18 +179,29 @@ pub struct IslandStateCache(pub std::sync::Mutex<Option<IslandState>>);
 
 /// 岛的配置切片（读 DataStore，键由设置页「灵动岛」分区写）。
 ///
-/// 缺省 = 总开关**关**（新用户须自己在设置页「灵动岛」分区打开）/ 提醒开 / 横幅 30s。
+/// 缺省 = 总开关**关**（新用户须自己在设置页「灵动岛」分区打开）/ 提醒开 / 横幅 30s
+/// / 停靠**顶 · 中**（= 锚点功能之前的唯一落位，老用户升级后观感不变）。
 /// 玻璃透度（`todo_island_glass`，遮盖度 20–100）由
 /// **前端**读（材质在 CSS，见 todoisland-main.tsx），Rust 不消费它。
 pub(crate) struct IslandConfig {
     pub enabled: bool,
     pub remind: bool,
     pub remind_ms: i64,
+    pub anchor: crate::todo_island_anchor::IslandAnchor,
 }
 
 /// 读岛配置。❗ 缺省值必须与 `appStore.ts` 的 `DEFAULT_CONFIG` / `IslandSection.tsx` 一致。
+///
+/// ❗ 副作用：顺手刷新 `todo_island_anchor` 的原子缓存。定位路径（动画每帧 + `recenter`）
+/// 读缓存而不是每次查 store —— 16ms 一帧去 lock DataStore 不划算。
+/// 调用点必须覆盖所有「配置可能已变」的入口，见 `todo_island_anchor` 模块头。
 pub(crate) fn island_config(app: &AppHandle) -> IslandConfig {
-    let mut c = IslandConfig { enabled: false, remind: true, remind_ms: 30_000 };
+    let mut c = IslandConfig {
+        enabled: false,
+        remind: true,
+        remind_ms: 30_000,
+        anchor: crate::todo_island_anchor::DEFAULT_ANCHOR,
+    };
     let Some(store) = app.try_state::<DataStore>() else { return c };
     let Ok(cfg) = store.get_config() else { return c };
     if let Some(v) = cfg.get("todo_island_enabled").and_then(|v| v.as_bool()) {
@@ -211,6 +217,14 @@ pub(crate) fn island_config(app: &AppHandle) -> IslandConfig {
     {
         c.remind_ms = ms;
     }
+    if let Some(s) = cfg.get("todo_island_anchor").and_then(|v| v.as_str()) {
+        match crate::todo_island_anchor::IslandAnchor::from_str(s) {
+            Some(a) => c.anchor = a,
+            // 脏值回落缺省档并留痕：静默回落到「顶 · 中」与「配置没生效」看起来一模一样
+            None => log::warn!("[TodoIsland] 未知停靠锚点 {s:?}，回落 {}", c.anchor.as_str()),
+        }
+    }
+    crate::todo_island_anchor::set_anchor(c.anchor);
     c
 }
 
@@ -223,11 +237,11 @@ fn probe_on() -> bool {
 
 /// 主显示器矩形与缩放：`(x, y, w, h, scale)`，位置与尺寸都是**物理像素**。
 ///
-/// ❗ **显式取主屏**而不是「当前窗口所在屏」：多显示器时岛贴主屏顶边（y = `TOP_MARGIN`）的
-/// 口径必须先确定是**哪块屏**的顶边，否则同一份代码在双屏机器上会把岛贴到副屏上沿。
-/// 兜底值不是硬编码分辨率，而是「取不到就用 (0,0) + 让窗口系统自己收」—— 见 `calc_top_center`。
+/// ❗ **显式取主屏**而不是「当前窗口所在屏」：多显示器时岛贴主屏哪条边（六档锚点，
+/// 见 `todo_island_anchor`）必须先确定是**哪块屏**的边，否则同一份代码在双屏机器上会把
+/// 岛贴到副屏上沿。兜底值不是硬编码分辨率，而是「取不到就用 (0,0) + 让窗口系统自己收」。
 ///
-/// `scale` 一并带出来：调用方要拿它把物理尺寸折成逻辑尺寸（见 `calc_top_center` 的单位教训）。
+/// `scale` 一并带出来：调用方要拿它把物理尺寸折成逻辑尺寸（单位教训见 `todo_island_anchor` 头）。
 ///
 /// `pub(crate)`：探针要回报主屏矩形（`todo_island_probe.rs`）。
 pub(crate) fn primary_monitor_rect(app: &AppHandle) -> Option<(f64, f64, f64, f64, f64)> {
@@ -269,16 +283,33 @@ pub(crate) fn primary_monitor_rect(app: &AppHandle) -> Option<(f64, f64, f64, f6
 pub fn init(app: &AppHandle) {
     // 配置变更 → 开关即时生效（设置页前端保存后广播 todo-island-config-changed）。
     // 开 = show()（窗口不存在会现建，show 内部有 enabled 门控）；关 = hide。
-    // 玻璃档位/提醒时长不用 Rust 搬运：tick 每轮现读配置，材质由岛前端自己读。
+    // 玻璃透度不用 Rust 搬运：材质由岛前端自己读；锚点则由 island_config 刷进原子缓存，
+    // show → recenter 按新档重摆（提醒时长同理，tick 每轮现读配置）。
     app.listen("todo-island-config-changed", {
         let app = app.clone();
         move |_| {
-            if island_config(&app).enabled {
-                show(&app);
-            } else {
+            // 先记下旧档：`island_config` 会把缓存刷成新值，之后就没法再对比了。
+            let prev_anchor = crate::todo_island_anchor::anchor();
+            let cfg = island_config(&app);
+            if !cfg.enabled {
                 hide(&app);
                 log::info!("[TodoIsland] 已按配置关闭（隐藏，窗口保留待重开）");
+                return;
             }
+            if prev_anchor != cfg.anchor {
+                // 设计稿 §5 拍板⑤：换锚点**先收起**。展开态换向会让一次动画同时改
+                // x / y / 朝向三件事，观感是「整块卡跳走」；收回胶囊后只剩位置一件事。
+                log::info!(
+                    "[TodoIsland] 停靠锚点 {} → {}，先收起再重摆",
+                    prev_anchor.as_str(),
+                    cfg.anchor.as_str()
+                );
+                crate::todo_island_stage::set_current_stage(
+                    crate::todo_island_stage::IslandStage::Pill,
+                );
+                let _ = app.emit_to(WINDOW_LABEL, EVENT_STAGE_RESET, ());
+            }
+            show(&app);
         }
     });
     // 提醒轮询（二期「甲案：岛即提醒」）：到点点亮岛 + 横幅，见 `remind_tick`。
@@ -363,13 +394,14 @@ pub fn show(app: &AppHandle) {
     create(app);
 }
 
-/// 按**当前舞台**的宽度重新居中。
+/// 按**当前锚点 + 当前舞台尺寸**重新落位。
 ///
 /// ❗ 不能写死 `ISLAND_W`：展开态（420 宽）下任何一次笔记变动都会走到 show()，
 /// 按胶囊宽（208）算 x 会把岛右偏 (420−208)/2 = 106px，直到下次切舞台才纠正。
+/// 底档同理要带 **h**：`y = 工作区底 − h`，写死胶囊高会让展开态的卡下半截沉出屏幕。
 fn recenter(app: &AppHandle, window: &WebviewWindow) {
-    let (w, _) = crate::todo_island_stage::stage_size(crate::todo_island_stage::current_stage());
-    let _ = window.set_position(crate::todo_island_stage::calc_top_center_for(app, w));
+    let (w, h) = crate::todo_island_stage::stage_size(crate::todo_island_stage::current_stage());
+    let _ = window.set_position(crate::todo_island_anchor::calc_anchor_pos(app, w, h));
     // 已可见路径同样重放 rgn：写路径的 show 都汇聚到这里，方角玻璃最多活到下次写
     crate::todo_island_stage::reapply_stage_region(app);
 }
@@ -560,7 +592,10 @@ fn create(app: &AppHandle) {
         // 探针③基线：**创建 webview 之前**采一次（判定细节全在 todo_island_probe.rs）
         crate::todo_island_probe::mark_rss_baseline();
 
-        let pos = crate::todo_island_stage::calc_top_center_for(app, ISLAND_W);
+        // 首次创建也要读一遍配置：`island_config` 顺手刷新锚点缓存，
+        // 否则这里会按编译期缺省档（顶 · 中）落位，用户选的档要到下次 show 才生效。
+        island_config(app);
+        let pos = crate::todo_island_anchor::calc_anchor_pos(app, ISLAND_W, ISLAND_H);
 
         // 材质说明（2026-09-25 红色探针定稿）：这里**刻意没有任何窗口级 effects**——
         // DWM Acrylic 层不服从 SetWindowRgn（探针实锤见本文件「材质与配置」节），

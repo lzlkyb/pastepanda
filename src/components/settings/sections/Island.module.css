@@ -91,8 +91,95 @@
   color: var(--text-muted);
 }
 
-/* 提醒时长分段（10s/30s/60s/2min）。禁用 = 提醒总开关关着时灰置（U3/L6：点不动要看得出来） */
-.seg {
+/* ===== 停靠位置（C1 六宫格，design/待办灵动岛-停靠位置-设计稿.html）===== */
+
+/* 与透度行同构：标题头一行，预览条与六宫格各占满整行宽 */
+.anchorRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+/* 预览条：一块假屏幕，胶囊贴在所选锚点上。选完立刻看得出「岛会挪到哪」，
+   不用回桌面再试——「移动即预览」（AGENTS.md §18）。底衬沿用透度行的彩色桌面。 */
+.anchorStage {
+  position: relative;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 8px;
+  /* ui-rule-ok: 设计示意色——假桌面（与 .glassStage 同源同值），不对应任何真实主题 */
+  background: linear-gradient(118deg, #f472b6 0%, #fb923c 26%, #fbbf24 48%, #34d399 72%, #38bdf8 100%);
+}
+
+.anchorStage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.22) 0 10px, transparent 10px 22px); /* ui-rule-ok: 假桌面条纹，与 .glassStage 同源 */
+}
+
+/* 预览胶囊：只表意「贴哪条边」，材质不复刻（透度行那条才是看材质的）。
+   压平的边 = 贴屏幕那条边，与岛侧 `data-island-dock` 的镜像规则同一份账。 */
+.anchorPill {
+  position: absolute;
+  z-index: 1;
+  width: 72px;
+  height: 16px;
+  background: rgb(20 20 24 / 95%); /* ui-rule-ok: 复刻岛 tint 的缺省遮盖度（GLASS_DEFAULT=95），预览面不共享岛侧 token */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); /* ui-rule-ok: 复刻 --island-line，无描边则在彩底上糊成一块色斑 */
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.anchorStage[data-edge="top"] .anchorPill {
+  top: 0;
+  border-radius: 0 0 8px 8px;
+}
+
+.anchorStage[data-edge="bottom"] .anchorPill {
+  bottom: 0;
+  border-radius: 8px 8px 0 0;
+}
+
+/* 左右两档留 16px，与 Rust `EDGE_MARGIN` 同一个数（改一边记得改另一边） */
+.anchorStage[data-side="left"] .anchorPill {
+  left: 16px;
+}
+
+.anchorStage[data-side="center"] .anchorPill {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.anchorStage[data-side="right"] .anchorPill {
+  right: 16px;
+}
+
+/* 六宫格：上排顶三档、下排底三档（顺序见 lib/todo/anchor.ts 的 ANCHOR_ORDER） */
+.anchorGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.anchorBtn {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.anchorBtnSel {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--card-bg));
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* 提醒时长分段（10s/30s/60s/2min）。禁用 = 提醒总开关关着时灰置（U3/L6：点不动要看得出来） */.seg {
   display: flex;
   flex: 0 0 auto;
   /* ui-rule-ok: 分段控件的整体轮廓——三颗按钮要靠外框才读成一个控件（去掉就变成三个散按钮，违反 L6） */

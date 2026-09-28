@@ -127,7 +127,7 @@ pub(crate) fn stop_poll() {
     POLL_GEN.fetch_add(1, Ordering::SeqCst);
 }
 
-/// 命中形状（与 stage rgn 是同一份账的**纯几何侧**：停靠半胶囊 = HalfCapsule、
+/// 命中形状（与 stage rgn 是同一份账的**纯几何侧**：停靠半胶囊 = HalfCapsule(Bottom)、
 /// peek 胶囊 = Stadium、展开卡 = Rounded）。
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum IslandShape {
@@ -135,6 +135,9 @@ pub(crate) enum IslandShape {
     Stadium,
     /// 半胶囊（吸附形变设计稿 §3③）：上缘压平贴屏幕顶、下缘 = 高度一半的半圆帽（停靠两态）
     HalfCapsule,
+    /// 半胶囊**镜像**（停靠锚点 C1）：贴屏幕**底边**时下缘压平、上缘是半圆帽。
+    /// 独立变体而不是加 bool：新加形状时编译器会逼着 `shape_hit` 的 match 表态。
+    HalfCapsuleBottom,
     /// 圆角矩形（list / compose 四角 12 逻辑px）
     Rounded { radius: f64 },
 }
@@ -156,6 +159,7 @@ pub(crate) fn shape_hit(shape: IslandShape, w: f64, h: f64, pad: f64, lx: f64, l
     let (r_t, r_b) = match shape {
         IslandShape::Stadium => (eh / 2.0, eh / 2.0),
         IslandShape::HalfCapsule => (pad, eh / 2.0),
+        IslandShape::HalfCapsuleBottom => (eh / 2.0, pad),
         IslandShape::Rounded { radius } => (radius + pad, radius + pad),
     };
     let (r_t, r_b) = (
@@ -210,9 +214,17 @@ fn step_hover(app: &AppHandle, window: &WebviewWindow) {
 
     let stage = crate::todo_island_stage::current_stage();
     let collapsed = matches!(stage, IslandStage::Pill | IslandStage::Clear);
-    // 形状与 rgn 是同一份账（吸附形变设计稿 §3③）：停靠两态半胶囊、peek 满胶囊、展开两态圆角卡
+    // 形状与 rgn 是同一份账（吸附形变设计稿 §3③）：停靠两态半胶囊、peek 满胶囊、展开两态圆角卡。
+    // 半胶囊压平哪条边看**锚点贴哪条边**（C1 停靠位置）——底档镜像，否则命中边界与
+    // 屏幕外的那条边重合，会把贴屏幕那条边外 6px 的窗口当成岛来拦点击。
     let shape = match stage {
-        IslandStage::Pill | IslandStage::Clear => IslandShape::HalfCapsule,
+        IslandStage::Pill | IslandStage::Clear => {
+            if crate::todo_island_anchor::anchor().is_bottom() {
+                IslandShape::HalfCapsuleBottom
+            } else {
+                IslandShape::HalfCapsule
+            }
+        }
         IslandStage::Peek => IslandShape::Stadium,
         IslandStage::List | IslandStage::Compose => IslandShape::Rounded {
             // CSS 的 12 逻辑px → 物理（rgn 的 apply_stage_region 同一份折算）
@@ -365,6 +377,33 @@ mod tests {
         );
         assert!(shape_hit(hc, w, h, 2.0, 16.0 - d17, 16.0 + d17));
         assert!(!shape_hit(hc, w, h, 2.0, 16.0 - d19, 16.0 + d19));
+    }
+
+    /// 底档半胶囊（停靠锚点 C1）必须是顶档的**逐点镜像**：`hit(bottom, x, y)
+    /// == hit(top, x, h − y)`。整片扫点而不是挑几个代表点——压平哪条边这种错
+    /// 只会露在边界带的那一两行上，抽样很容易全绿。
+    #[test]
+    fn test_shape_hit_half_capsule_mirrors_top() {
+        let (w, h, pad) = (208.0, 32.0, 2.0);
+        let top = IslandShape::HalfCapsule;
+        let bottom = IslandShape::HalfCapsuleBottom;
+        let mut x = -5.0;
+        while x <= w + 5.0 {
+            let mut y = -5.0;
+            while y <= h + 5.0 {
+                assert_eq!(
+                    shape_hit(bottom, w, h, pad, x, y),
+                    shape_hit(top, w, h, pad, x, h - y),
+                    "镜像破裂 @ ({x}, {y})"
+                );
+                y += 1.0;
+            }
+            x += 1.0;
+        }
+        // 再钉两条直觉：底档**下缘外**不许拦（那是任务栏 / 屏幕外），
+        // 而半圆帽所在的上缘外 1px 必须拦得到。
+        assert!(!shape_hit(bottom, w, h, pad, w / 2.0, h + 3.0));
+        assert!(shape_hit(bottom, w, h, pad, w / 2.0, -1.0));
     }
 
     /// 事件门控（emit_plan 纯函数）：拦截立即（不走这里），intent 3 拍、hover/peek 4 拍；

@@ -123,7 +123,7 @@ export function TodoIslandCompose({ composeText, onComposeText, onAdd }: Props) 
         <span className={styles.footHint}>回车记下</span>
       </div>
       {preview !== null ? (
-        <div className={`${styles.prow} ${preview.ok ? styles.prowGood : styles.prowBad}`} role="status">
+        <div className={`${styles.prow} ${preview.ok ? styles.prowGood : styles.prowBad}`}>
           {preview.ok ? (
             <>
               <span className={styles.prowMark}>✓</span>
@@ -171,6 +171,15 @@ export function TodoIslandCompose({ composeText, onComposeText, onAdd }: Props) 
           清除
         </button>
       </div>
+      {/* 解析结果的播报口：常驻空活区，随 compose 挂载即登记。
+          预览条本身是条件渲染的，role 挂在那上面第一次来不及报。 */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {preview === null
+          ? ""
+          : preview.ok
+            ? `${preview.label}${preview.hasTime ? " 到点提醒" : "（全天，不提醒）"}`
+            : DUE_BAD_COPY}
+      </span>
     </>
   );
 }

@@ -1,0 +1,224 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>待办灵动岛 · 停靠位置（方案 C）· 设计稿</title>
+<style>
+  /* 字体栈与 globals.css:24 同源（不含 Segoe UI Emoji）；令牌取深色主题实值 */
+  :root{
+    --app-bg:#141417; --card-bg:#1e1e22; --border-color:#33333a;
+    --text-primary:#f4f4f5; --text-secondary:#c8c8ce; --text-muted:#8b8b93;
+    --accent:#6366f1; --danger:#f87171; --ok:#4ade80;
+    --island-glass:95;
+    --island-tint:rgb(20 20 24 / calc(var(--island-glass) * 1%));
+    --island-gloss:rgb(255 255 255 / clamp(0.02, calc(0.348 - var(--island-glass) * 0.00357), 0.07));
+    --island-rim:rgb(255 255 255 / clamp(0.05, calc(0.2015 - var(--island-glass) * 0.00143), 0.09));
+  }
+  body{margin:0;padding:28px 32px 60px;background:var(--app-bg);color:var(--text-primary);
+    font-family:"SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.65}
+  h1{font-size:20px;margin:0 0 6px} h2{font-size:15px;margin:34px 0 10px;color:var(--accent)}
+  h3{font-size:13px;margin:20px 0 8px;color:var(--text-secondary)}
+  p{margin:8px 0;color:var(--text-secondary)} code{background:#0d0d10;border:1px solid var(--border-color);border-radius:4px;padding:1px 5px;font-size:12px;color:#a5b4fc}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12px}
+  th,td{border:1px solid var(--border-color);padding:6px 10px;text-align:left;vertical-align:top}
+  th{background:var(--card-bg);color:var(--text-primary)}
+  .muted{color:var(--text-muted)} .warn{color:var(--danger)} .good{color:var(--ok)}
+  .stage{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;margin-top:14px}
+
+  /* ===== 屏幕示意：1280×720 缩到 0.5 倍，岛用真实逻辑尺寸 ×0.5 摆放 ===== */
+  .screenWrap{position:relative}
+  .screen{position:relative;width:640px;height:360px;border:1px solid var(--border-color);border-radius:6px;overflow:hidden;
+    background:linear-gradient(118deg,#3b2f63 0%,#1f2a4a 40%,#123a3a 100%)}
+  .desk{position:absolute;left:24px;top:64px;width:300px;height:190px;border-radius:6px;background:var(--card-bg);
+    border:1px solid var(--border-color);box-shadow:0 10px 26px rgba(0,0,0,.45)}
+  .desk .bar{height:22px;border-radius:5px 5px 0 0;background:#26262b;display:flex;align-items:center;justify-content:flex-end;padding:0 6px;gap:5px}
+  .desk .x{width:11px;height:11px;border-radius:2px;background:#3a3a41;display:grid;place-items:center;font-size:8px;color:#c8c8ce}
+  .desk .x.hot{background:#c42b1c;color:#fff}
+  .desk .body{padding:8px 10px;font-size:10px;color:var(--text-muted)}
+  .taskbar{position:absolute;left:0;right:0;bottom:0;height:20px;background:rgba(28,28,32,.92);border-top:1px solid var(--border-color);
+    display:flex;align-items:center;justify-content:flex-end;padding:0 8px;font-size:10px;color:var(--text-muted)}
+  .tag{position:absolute;font-size:9px;color:#fff;background:rgba(0,0,0,.55);border-radius:3px;padding:0 4px}
+
+  /* 岛本体：真实尺寸 208×32 / 300×40 / 420×240（示意按 0.5 倍） */
+  .island{position:absolute;width:104px;height:16px;background-color:var(--island-tint);
+    background-image:linear-gradient(156deg,var(--island-gloss) 0,transparent 53%);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.12), inset 0 1px 0 var(--island-rim);
+    color:var(--text-primary);font-size:6.5px;display:flex;align-items:center;justify-content:center;gap:4px;
+    transition:width 200ms cubic-bezier(.2,0,0,1),height 200ms cubic-bezier(.2,0,0,1),left 200ms cubic-bezier(.2,0,0,1),top 200ms cubic-bezier(.2,0,0,1);
+    cursor:pointer;overflow:hidden;white-space:nowrap}
+  .island.top{border-radius:0 0 8px 8px}      /* 贴顶停靠：上缘压平（= 现款半胶囊） */
+  .island.bottom{border-radius:8px 8px 0 0}    /* 贴底停靠：下缘压平，向上生长 */
+  .island.peek{width:150px;height:20px}
+  .island.list{width:210px;height:120px;flex-direction:column;align-items:stretch;justify-content:flex-start;white-space:normal;padding:0}
+  .island .row{padding:4px 6px;font-size:6.5px;border-bottom:1px solid rgba(255,255,255,.08)}
+
+  /* ===== 锚点九宫格（真控件） ===== */
+  .pad{display:grid;grid-template-columns:repeat(3,84px);grid-template-rows:repeat(2,44px);gap:6px}
+  .pad button{border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);border-radius:6px;
+    cursor:pointer;font-size:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-family:inherit}
+  .pad button:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border-color))}
+  .pad button.sel{border:2px solid var(--accent);color:var(--text-primary);font-weight:700}
+  .pad button i{display:block;width:26px;height:4px;border-radius:999px;background:#5b5b66}
+  .pad button.topSlot i{border-radius:0 0 3px 3px}
+  .pad button.botSlot i{border-radius:3px 3px 0 0}
+  .pad button.sel i{background:var(--accent)}
+  .note{border-left:3px solid var(--accent);background:var(--card-bg);padding:10px 14px;border-radius:0 6px 6px 0;margin:14px 0;font-size:12px}
+  .badge{display:inline-block;font-size:10px;border-radius:4px;padding:1px 6px;margin-left:6px;border:1px solid var(--border-color)}
+  .badge.def{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+  .badge.rec{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+  .badge.bad{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,transparent)}
+</style>
+
+<h1>待办灵动岛 · 停靠位置（方案 C）</h1>
+<p class="muted">2026-09-26。前情：岛恒定居中贴顶，路过它去点下面控件时会被收走点击（详见 <code>todo_island_hover.rs:230</code>）；
+方案 A（收起态恒穿透）/ B（展开态点外即收）已另案，本稿只做 C——<b>把顶边让出来</b>。</p>
+
+<h2>§1 交互稿（可点：先选锚点，再把鼠标移到岛上看展开方向）</h2>
+<div class="stage">
+  <div>
+    <div class="pad" id="pad">
+      <button data-a="top-left" class="topSlot"><i></i>顶 · 左</button>
+      <button data-a="top-center" class="topSlot"><i></i>顶 · 中（现款）</button>
+      <button data-a="top-right" class="topSlot"><i></i>顶 · 右</button>
+      <button data-a="bottom-left" class="botSlot"><i></i>底 · 左</button>
+      <button data-a="bottom-center" class="botSlot"><i></i>底 · 中</button>
+      <button data-a="bottom-right" class="botSlot"><i></i>底 · 右</button>
+    </div>
+    <p class="muted" style="max-width:280px">岛是<b>真材质</b>：底色/高光/描边由 <code>--island-glass</code> 现算，与 <code>TodoIsland.module.css</code> 同一组公式（默认 95）。
+    鼠标移到岛上 → 悬停成 peek；再点一下 → 展开列表。<b>贴顶向下长、贴底向上长</b>，压平的那条边始终贴在屏幕边上。</p>
+    <p style="max-width:280px" id="verdict"></p>
+  </div>
+  <div class="screenWrap">
+    <div class="screen" id="scr">
+      <div class="desk"><div class="bar"><span class="x" id="mockX">✕</span></div><div class="body">被操作的应用窗口（标题栏 ✕ 在右上）</div></div>
+      <div class="taskbar">任务栏</div>
+      <div class="island top" id="isl">今天 3 件</div>
+    </div>
+    <p class="muted" style="font-size:11px">屏幕 1280×720 缩到 0.5 倍；岛用真实逻辑尺寸（208×32 / 300×40 / 420×240）同比例摆放。</p>
+  </div>
+</div>
+
+<div class="note">
+  <b>看顶右那一档：</b>它正好压在窗口标题栏 ✕ 上——对「附近有关闭按钮点不到」这个原始抱怨，顶右是<b>反向</b>答案。
+  真正该推荐的是 <b>顶左</b>（让开整条右上热区，仍在顶边、视线习惯不变）与 <b>底左 / 底中</b>（彻底不占顶边）。
+</div>
+
+<h2>§2 三种做法</h2>
+<table>
+  <tr><th></th><th>做法</th><th>成本</th><th>取舍</th></tr>
+  <tr><td><b>C1</b> <span class="badge def">本稿默认</span></td>
+    <td>设置页加「停靠位置」六宫格（顶/底 × 左/中/右），<b>不做拖拽</b></td>
+    <td>小：只改定位与形状镜像，不碰手势与穿透状态机</td>
+    <td>够用且零误触；缺点是想微调几像素做不到</td></tr>
+  <tr><td>C2</td><td>直接拖胶囊到想要的边，松手<b>吸附</b>到最近锚点，设置页同步显示</td>
+    <td>中：要加拖拽手势（<code>start_dragging</code> 在 Windows 走模态消息循环，或自己按光标轮询推 <code>set_position</code>），并处理「拖拽要收事件 ↔ 收起态要穿透」的抢占</td>
+    <td>最顺手，但拖拽起手必须收事件，等于给「吞点击」留了个后门；且手势与悬停展开会打架</td></tr>
+  <tr><td>C3</td><td>C1 + 「距边缘」滑杆（0–48px）</td>
+    <td>中：一旦不贴边，停靠形状要从半胶囊退回<b>满胶囊</b>（rgn / hit / CSS 三处都要三态）</td>
+    <td>适合「顶中但往下让 20px 避开标签栏」这类需求；几何状态从 2 种变 3 种，守卫测试翻倍</td></tr>
+</table>
+<p><b>建议：先 C1。</b>六档能覆盖「让开 ✕」这个诉求的绝大多数场景；C2 的拖拽等 C1 用一段时间、确认还想微调再上（C2 落地时锚点数据格式不用变）。</p>
+
+<h2>§3 几何与数值账（照代码真值）</h2>
+<table>
+  <tr><th>项</th><th>现款</th><th>本稿</th></tr>
+  <tr><td>定位</td><td><code>calc_top_center_for()</code>：x = 屏宽/2 − w/2，y = <code>TOP_MARGIN</code>(=0)</td>
+      <td>改 <code>calc_anchor_pos(app, w, h, anchor)</code>：六档各自的 x/y 公式（见下）</td></tr>
+  <tr><td>取哪块屏</td><td>主屏 <code>monitor.size()</code>（物理÷scale）</td>
+      <td>不变用主屏，但<b>改用 <code>work_area</code></b>：底部两档必须避开任务栏，否则岛压在任务栏上；左右两档各留 16px 边距，避免圆帽贴屏幕圆角</td></tr>
+  <tr><td>生长方向</td><td>顶边钉住，只向下长（<code>stage.rs:22</code> 写死 y 恒为 TOP_MARGIN）</td>
+      <td>顶三档不变；底三档<b>底边钉住、向上长</b> ⇒ 动画每帧 y = 底边 − h（<code>animate_window</code> 三处 <code>set_position</code> 都要按锚点分支）</td></tr>
+  <tr><td>停靠形状</td><td>半胶囊：上缘压平（CSS <code>border-radius:0 0 16px 16px</code>，rgn <code>r_top=0</code>）</td>
+      <td>底三档镜像为<b>下缘压平</b>（CSS <code>16px 16px 0 0</code>，rgn <code>r_bottom=0</code>）。<code>build_top_rounded_region</code> 已具备双半径能力，镜像只是把两个参数调换，<b>零新增拼装代码</b></td></tr>
+  <tr><td>命中判定</td><td><code>IslandShape::HalfCapsule</code>（r_t=pad, r_b=eh/2）</td>
+      <td>加 <code>HalfCapsuleBottom</code>（r_t=eh/2, r_b=pad）——<code>shape_hit</code> 已是「上下角半径可不同」的通用实现，同样只是换参数</td></tr>
+  <tr><td>舞台尺寸</td><td colspan="2">208×32 / 300×40 / 420×240 / 420×280，<b>本稿一律不动</b>（只动摆位与形状朝向）</td></tr>
+</table>
+
+<h3>六档公式（<code>wa</code> = 主屏 work_area 逻辑矩形，<code>M</code> = 左右边距 16，<code>w/h</code> = 当前舞台尺寸）</h3>
+<table>
+  <tr><th>锚点</th><th>x</th><th>y</th></tr>
+  <tr><td>顶 · 左</td><td><code>wa.left + M</code></td><td><code>wa.top</code></td></tr>
+  <tr><td>顶 · 中</td><td><code>wa.left + (wa.w − w)/2</code></td><td><code>wa.top</code></td></tr>
+  <tr><td>顶 · 右</td><td><code>wa.right − M − w</code></td><td><code>wa.top</code></td></tr>
+  <tr><td>底 · 左/中/右</td><td>同上三式</td><td><code>wa.bottom − h</code>（逐帧随 h 变，实现「向上长」）</td></tr>
+</table>
+
+<h2>§4 数据流与改动站点</h2>
+<pre>设置页「停靠位置」六宫格
+  └─ updateAndSave({ todo_island_anchor: "top-left" })   ← 点选即落盘（不是拖动，无 preview 事件）
+       └─ emit("todo-island-config-changed")
+            ├─ Rust：读锚点 → 立即 set_position（当前舞台重摆）→ 重施 rgn（朝向变了要重算）
+            └─ 岛前端：html[data-island-dock="top|bottom"] → CSS 换压平的那条边</pre>
+<table>
+  <tr><th>文件</th><th>动作</th></tr>
+  <tr><td><code>src/stores/appStore.ts</code></td><td>加 <code>todo_island_anchor</code>（6 值联合，默认 <code>"top-center"</code> = 现款观感不变）</td></tr>
+  <tr><td><code>src-tauri/src/todo_island.rs</code></td><td><code>island_config</code> 读锚点（缺省 top-center）；<code>show()/reveal()</code> 的重定位改走 <code>calc_anchor_pos</code></td></tr>
+  <tr><td><code>src-tauri/src/todo_island_stage.rs</code></td><td><code>calc_top_center_for</code> → <code>calc_anchor_pos</code>；<code>animate_window</code> 三处 <code>set_position</code> 按锚点分支；rgn 的 <code>r_top/r_bottom</code> 按朝向调换</td></tr>
+  <tr><td><code>src-tauri/src/todo_island_hover.rs</code></td><td>加 <code>HalfCapsuleBottom</code> 形状（<code>shape_hit</code> 本体不动）</td></tr>
+  <tr><td><code>src/components/todo/TodoIsland.module.css</code></td><td>停靠态圆角按 <code>data-island-dock</code> 分上下两套</td></tr>
+  <tr><td><code>src/components/settings/sections/IslandSection.tsx</code> + <code>Island.module.css</code></td><td>新增「停靠位置」行（六宫格，复用刚做的 <code>glassStage</code> 彩色底衬语言）</td></tr>
+  <tr><td>守卫测试</td><td><code>shape_hit</code> 的 bottom 镜像用例（上角命中/下缘压平逐点与 top 对称）；<code>calc_anchor_pos</code> 的六档纯函数用例（含 work_area 底部避让任务栏）</td></tr>
+</table>
+
+<h2>§5 待你确认（每题标了默认）</h2>
+<table>
+  <tr><th>#</th><th>问题</th><th>选项</th><th>默认</th></tr>
+  <tr><td>1</td><td>做法</td><td>C1 六宫格 / C2 拖拽吸附 / C3 六宫格+边距滑杆</td><td><b>C1</b></td></tr>
+  <tr><td>2</td><td>要不要保留「顶 · 右」这一档</td><td>保留 / 只给 5 档（去掉顶右，它正好压 ✕）</td><td><b>保留</b>（有人把窗口常年开在左边，顶右对他反而是让路）</td></tr>
+  <tr><td>3</td><td>左右边距 M</td><td>16px / 24px / 0（贴屏幕角）</td><td><b>16px</b>（贴 0 时圆帽会顶进屏幕圆角）</td></tr>
+  <tr><td>4</td><td>底部档是否避任务栏</td><td>用 <code>work_area</code>（自动避） / 用整屏（会被任务栏压住）</td><td><b>work_area</b></td></tr>
+  <tr><td>5</td><td>换锚点时正在展开的列表</td><td>立即按新锚点重摆 / 先收起再换</td><td><b>先收起</b>（展开态换向会让动画同时改 x/y/朝向三件事，容易看出跳）</td></tr>
+</table>
+<p class="muted">确认后我按 §4 清单落地；A / B 两案（收起态穿透、展开态点外即收）等 C 用完再谈。</p>
+
+<script>
+const pad=document.getElementById("pad"), isl=document.getElementById("isl"),
+      scr=document.getElementById("scr"), verdict=document.getElementById("verdict"), mockX=document.getElementById("mockX");
+const W=640,H=360,BAR=20,M=8; // 示意区按 0.5 倍：16px 边距 → 8px
+let anchor="top-center", open=false;
+const LABEL={
+  "top-left":{t:"顶 · 左",v:"让开整条右上热区（标题栏 ✕、系统托盘都在右边）。<b>推荐</b>。",ok:1},
+  "top-center":{t:"顶 · 中",v:"现款。居中视线最顺，但正压着标题栏 / 浏览器标签栏那一条。",ok:0},
+  "top-right":{t:"顶 · 右",v:"<b>注意</b>：这一档就在窗口关闭按钮旁边，对你原本的问题反而是加重。",ok:-1},
+  "bottom-left":{t:"底 · 左",v:"完全不占顶边，向上生长。开始菜单在左下时会挨着。",ok:1},
+  "bottom-center":{t:"底 · 中",v:"完全不占顶边，向上生长，与任务栏图标同侧。",ok:0},
+  "bottom-right":{t:"底 · 右",v:"避开顶边，但右下角有托盘时钟 / 显示桌面角。",ok:0},
+};
+function place(){
+  const [edge,side]=anchor.split("-");
+  const w=isl.getBoundingClientRect().width, h=isl.getBoundingClientRect().height;
+  const x = side==="left"?M : side==="right"?W-M-w : (W-w)/2;
+  const y = edge==="top"?0 : H-BAR-h;
+  isl.style.left=x+"px"; isl.style.top=y+"px";
+  isl.classList.toggle("top",edge==="top"); isl.classList.toggle("bottom",edge==="bottom");
+  const info=LABEL[anchor];
+  verdict.innerHTML="<b>"+info.t+"</b>：" + info.v;
+  mockX.classList.toggle("hot", anchor==="top-right");
+}
+/* 逐帧重摆 = 真实实现里 Rust 动画每帧 set_position 的同款不变量（贴边那条边钉住，
+   另一头随尺寸生长）。只在状态切换那一刻摆一次会算到过渡中的旧尺寸，方向就错了。
+   ❗ 用 setInterval 不用 requestAnimationFrame：页面在后台时 rAF 根本不回调，
+   这份稿子会被判成「点了没反应」。 */
+let track=0;
+function trackPlace(ms=460){
+  clearInterval(track);
+  const t0=performance.now();
+  place();
+  track=setInterval(()=>{ place(); if(performance.now()-t0>ms) clearInterval(track); },16);
+}
+pad.addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  anchor=b.dataset.a; open=false;
+  isl.classList.remove("peek","list"); isl.textContent="今天 3 件";
+  [...pad.children].forEach(n=>n.classList.toggle("sel",n===b));
+  trackPlace();
+});
+isl.addEventListener("mouseenter",()=>{ if(open) return; isl.classList.add("peek"); isl.textContent="今天 3 件 · 悬停预览"; trackPlace(); });
+isl.addEventListener("mouseleave",()=>{ if(open) return; isl.classList.remove("peek"); isl.textContent="今天 3 件"; trackPlace(); });
+isl.addEventListener("click",()=>{
+  open=!open; isl.classList.toggle("list",open); isl.classList.remove("peek");
+  isl.innerHTML = open ? '<div class="row">▸ 15:00 评审会</div><div class="row">▸ 今天 3 件 · 点一下收起</div><div class="row">▸ 交周报</div>' : "今天 3 件";
+  trackPlace();
+});
+[...pad.children].find(n=>n.dataset.a===anchor).classList.add("sel");
+place();
+</script>

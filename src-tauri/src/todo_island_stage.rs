@@ -4,9 +4,12 @@
 //!
 //! §4.4 ③曾把「固定大窗口（PILLAR 450×350，内容内部变换）」列为候选 5，
 //! 前提是「窗口内、胶囊之外的透明区域能把点击穿透到下层」。展开批落地时
-//! 设计稿 §6 已给出另一条路并写死：**窗口尺寸由 `set_size` + `set_position`
-//! 在状态切换时一次到位，「长出来」的连续感由内容层伪造**（栈浮标的跟随
-//! 滑入同款）。这条路的前提不需要探针——窗口永远贴合内容，穿透轮询
+//! 设计稿 §6 已给出另一条路并写死：**窗口尺寸由 Rust 逐帧下达**（一次 `SetWindowPos`
+//! 同给尺寸与位置，原子生效），「长出来」的连续感由窗口矩形本身伪造
+//! （2026-09-28 两次修订：先是 `set_size` + `set_position` 两条消息造成抖与排队；
+//! 改成动画线程直接 send 之后节拍准了，却把窗口甩到 WebView2 绘制前面 1–4 帧，
+//! 观感变成「形状/边缘不对」⇒ 现在这次调用投回**主线程队列**执行，见 `apply_frame`）。
+//! 这条路的前提不需要探针——窗口永远贴合内容，穿透轮询
 //! （`todo_island_hover.rs`）拿窗口矩形判定就**天然正确**，不存在「透明区吃点击」。
 //! ⇒ 候选 5 就此否决，无需再验。
 //!
@@ -19,17 +22,19 @@
 //! | List | 420 × 240 | 头 40 + 列表 + 底 40 |
 //! | Compose | 420 × 280 | 列表 + 输入行 |
 //!
-//! 展开时**顶边钉住不动、只向下生长**：y 恒为 `TOP_MARGIN`，x 按新宽度重算。
+//! 展开时**钉住停靠那条边**：顶档 y 恒定只向下长，底档底边恒定只向上长
+//! （`y = wa.bottom − h` 逐帧重算），x 按新宽度重算。锚点六档见 `todo_island_anchor.rs`。
 
 mod motion;
 
 use motion::SpringMotion;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager};
+use tauri::{AppHandle, Manager};
 
-use crate::todo_island::{TOP_MARGIN, WINDOW_LABEL};
+use crate::todo_island_anchor::AnchorFrame;
+use crate::todo_island::WINDOW_LABEL;
 
 /// 当前舞台（0= Pill，顺序按 enum）。show()/reveal() 重定位时要按**当前**宽度居中，
 /// 否则展开态（420 宽）遇上一次笔记变动触发的 show()，会被按胶囊宽度（208）重算，
@@ -71,7 +76,7 @@ pub fn current_stage() -> IslandStage {
 /// 各舞台的逻辑尺寸（CSS px）。
 ///
 /// ❗ 这些是**逻辑**值：交给 Tauri 的 `LogicalSize` / `LogicalPosition` 折算，
-/// 单位教训见 [`calc_top_center_for`] 的注释。
+/// 单位教训见 `todo_island_anchor` 模块头。
 pub fn stage_size(stage: IslandStage) -> (f64, f64) {
     match stage {
         IslandStage::Pill | IslandStage::Clear => (208.0, 32.0),
@@ -97,28 +102,10 @@ pub enum IslandStage {
     Clear,
 }
 
-/// 顶部居中落位（指定宽度版）：`x = 屏宽/2 − w/2`（逻辑），`y = 主屏顶 + TOP_MARGIN`。
-///
-/// ## 🔴 单位教训（第一版在这里算错过，别重复）
-///
-/// 宽高常量是**逻辑**值（CSS px），而 `monitor.size()` 是**物理**像素。第一版把两者
-/// 直接相减，125% 缩放下实测偏右 26px（正好 `(物理宽 − 逻辑宽) / 2`）。
-/// 修法是**整条链路统一逻辑空间**：主屏矩形除以 `scale`，返回 `LogicalPosition`
-/// 交 Tauri 折算。混用单位在 100% 缩放下差值恰好为 0、**完全看不出来**。
-pub(crate) fn calc_top_center_for(app: &AppHandle, width: f64) -> LogicalPosition<f64> {
-    let Some(m) = app.primary_monitor().ok().flatten() else {
-        // 取不到主屏信息（极罕见）：只钉 y，x 交给窗口系统默认摆放，
-        // 不猜分辨率 —— 猜错的岛会落在屏幕外，比偏一点更难排查。
-        return LogicalPosition { x: 0.0, y: TOP_MARGIN };
-    };
-    let p = m.position();
-    let s = m.size();
-    let scale = m.scale_factor();
-    LogicalPosition {
-        x: p.x as f64 / scale + (s.width as f64 / scale - width) / 2.0,
-        y: p.y as f64 / scale + TOP_MARGIN,
-    }
-}
+// 落位公式（旧 `calc_top_center_for`：顶部居中、`y = TOP_MARGIN`）已随「停靠锚点」六档
+// 迁到 `todo_island_anchor::calc_anchor_pos`，那条 🔴 单位教训（逻辑 px 与物理 px 不能直接
+// 相减，125% 缩放下实测偏右 26px）跟着搬过去了。
+// 本文件只负责按当前舞台的 `w` / `h` 逐帧调用它。
 
 /// 切舞台：**窗口尺寸逐帧动画**（2026-09-25 档 3a 修订）。
 ///
@@ -127,8 +114,9 @@ pub(crate) fn calc_top_center_for(app: &AppHandle, width: f64) -> LogicalPositio
 /// 材质（窗口级 Acrylic）按窗口矩形铺：窗口一次切到新尺寸时，材质立刻铺满整个新矩形，
 /// 而 CSS 卡片还要过渡 200–300ms 才长到位——这中间窗口比卡片大出一圈，露出一层玻璃板
 /// （浅色主题下就是用户反馈的「白板」）。修法是把动画的**唯一来源**交给窗口：
-/// Rust 以 16ms 步进插值 `set_size` + `set_position`，CSS 卡片改为永远填满窗口
-/// （`inset:0`），两者每帧同步，玻璃矩形与卡片矩形之间不再存在「差的一圈」。
+/// Rust 逐帧插值、**一次 `SetWindowPos` 同时下达尺寸与位置**（见 [`apply_frame`]），
+/// CSS 卡片改为永远填满窗口（`inset:0`），两者每帧同步，
+/// 玻璃矩形与卡片矩形之间不再存在「差的一圈」。
 ///
 /// ❗ 动画途中重定向：`ANIM_GEN` 作废旧线程，新动画从共享运动状态
 /// （`load_motion()`——位置与速度都每步更新）起算，不从旧舞台尺寸、更不从静止起算：
@@ -147,6 +135,10 @@ pub fn todo_island_set_stage(app: AppHandle, stage: IslandStage) {
 
 /// 动画代次：新动画作废旧动画线程（与 hide epoch 同一手法）。
 static ANIM_GEN: AtomicU64 = AtomicU64::new(0);
+/// **在飞闸**：主线程手里最多压一次窗口下达。见 `apply_frame` 的队列口径说明。
+static DISPATCH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+/// 上一次下达从「投进队列」到「主线程执行完」的排队时延（纳秒）。只给探针读数。
+static DISPATCH_LAT_NS: AtomicU64 = AtomicU64::new(0);
 /// 当前逻辑尺寸（动画每步更新；中途重定向的起点，也是 rgn/重定位的依据）。
 /// 运动状态 + 代次。代次用于写回仲裁：被作废的旧动画线程醒来时不允许再把
 /// 自己的末态写回去（否则新动画接住的是一个已经过时的速度）。
@@ -272,11 +264,25 @@ fn animate_window(app: &AppHandle, window: &tauri::WebviewWindow, stage: IslandS
     let app = app.clone();
     // U2 §弹簧判定 4：系统「减少动态效果」开启 → 回退贝塞尔（无过冲）
     let use_spring = !system_animations_disabled();
+    // 🔴 循环内一个 Tauri **取值器**都不许调（`scale_factor` / `primary_monitor` / `hwnd`
+    // 在 tauri-runtime-wry 里都是 `window_getter!`：投一条消息给主线程再阻塞等回执）。
+    // 逐帧问 = 每帧多两次跨线程往返，正是本次要治的病。起头一次取全，缓存进线程。
+    let Some(frame) = AnchorFrame::capture(&app, &window) else {
+        log::warn!("[TodoIsland] 动画跳过：取不到主屏工作区或窗口尺寸");
+        return;
+    };
+    let scale = frame.scale;
+    #[cfg(target_os = "windows")]
+    let Some(hwnd) = window.hwnd().ok().map(|h| h.0 as isize) else {
+        log::warn!("[TodoIsland] 动画跳过：取不到 hwnd");
+        return;
+    };
+    #[cfg(not(target_os = "windows"))]
+    let hwnd = 0_isize;
     // 起始先用**期望值**裁一刀：缩小时胶囊形状立刻出现（不等到动画结束）；
-    // 长大时期望 rgn 比当前窗口大 = 不裁、无副作用。终帧再按落定后的实测尺寸精裁。
+    // 长大时期望 rgn 比当前窗口大 = 不裁、无副作用。终帧再按**下达的那个子像素取整值**精裁。
     // ❗ 长大方向多留 8%：弹簧过冲 ~4.5% 会让窗口**超过**目标尺寸——rgn 若按目标裁，
     //   过冲那几帧会被平口裁掉，弹簧等于白弹（回退贝塞尔时无过冲，8% 也无害）。
-    let Ok(scale) = window.scale_factor() else { return };
     let growing = tw > start.0 || th > start.1;
     let (ew, eh) = expected_phys_size(stage, scale);
     let rgn_phys = if growing {
@@ -287,80 +293,245 @@ fn animate_window(app: &AppHandle, window: &tauri::WebviewWindow, stage: IslandS
     apply_stage_region(&window, stage, rgn_phys);
     let probe = std::env::var(crate::todo_island::PROBE_ENV).ok().as_deref() == Some("1");
     std::thread::spawn(move || {
-        let step_ms = 16_u64;
-        let step_s = step_ms as f64 / 1000.0;
-        let mut elapsed_ms = 0_u64;
-        // 弹簧：**落定即止**（自然时长 ~500ms），不必把 800ms 兜底步数跑完。
-        // 上一帧的位置/速度已经写回共享状态，下一次 set_stage 从这儿接。
+        // ❗ **真实 Δt**，不是固定 16ms。旧实现每步硬喂 `step_s = 0.016` 再
+        // `sleep(16ms)`：sleep 本身有粒度、每次系统调用还要花时间，实际帧间隔
+        // 20–40ms ⇒ 弹簧的虚拟时间**落后墙钟**（动画被拉成慢动作），而投出去的消息
+        // 一旦在主线程排队，之后就是连续回放（「顿一下再窜到位」）。
+        // 现在弹簧吃真实经过时间，追不上就**丢帧**（一帧跳多一点）而不是排队补帧。
+        // 帧预算 16ms（≈60fps）。2026-09-28 试过按真实刷新率取（本机 100Hz ⇒ 10ms，
+        // 实测节拍 66 帧 / Δt 10.7ms），但用户判「形状边缘不如之前」后退回——账见
+        // `docs/待办灵动岛-实施方案-2026-09-24.md` §15.5。
+        let frame_budget = std::time::Duration::from_millis(16);
+        let anim_start = std::time::Instant::now();
+        let mut prev = anim_start;
+        let mut frames = 0_u32;
+        let mut slowest_ms = 0_f64;
+        // 探针账：`lat_*` = 一次下达从「投进主线程队列」到「主线程执行完」的排队时延
+        // （读的是上一帧的值：本帧刚投，还没跑完）；`dropped` = 被在飞闸丢掉的帧；
+        // `discarded_ms` = 因 Δt 钳制被丢掉的虚拟时间（墙钟走了、弹簧没走完 ⇒ 动画被拉长）。
+        let mut lat_sum = 0_f64;
+        let mut lat_max = 0_f64;
+        let mut dropped = 0_u32;
+        let mut discarded_ms = 0_f64;
         if use_spring {
             loop {
                 if ANIM_GEN.load(Ordering::SeqCst) != gen {
                     return; // 被新动画作废
                 }
-                let (w, h) = motion.advance(step_s);
-                elapsed_ms += step_ms;
+                let now = std::time::Instant::now();
+                let dt_ms = now.duration_since(prev).as_secs_f64() * 1000.0;
+                prev = now;
+                // 上限 34ms（≈2 帧）：久顿之后不许瞬移——瞬移在观感上是一次闪跳。
+                let (w, h) = motion.advance((dt_ms / 1000.0).clamp(0.001, 0.034));
+                frames += 1;
+                slowest_ms = slowest_ms.max(dt_ms);
                 if probe {
                     log::info!(
-                        "[TodoIsland][spring] {elapsed_ms}ms w={w:.1} h={h:.1} v={:.1} spring=true",
+                        "[TodoIsland][spring] {:.0}ms w={w:.1} h={h:.1} v={:.1} dt={dt_ms:.1} spring=true",
+                        anim_start.elapsed().as_secs_f64() * 1000.0,
                         motion.w.v
                     );
                 }
-                let _ = window.set_size(LogicalSize::new(w, h));
-                let _ = window.set_position(calc_top_center_for(&app, w));
+                let sent = apply_frame(&app, &window, hwnd, &frame, w, h);
+                if probe {
+                    if sent {
+                        let lat = DISPATCH_LAT_NS.load(Ordering::Relaxed) as f64 / 1e6;
+                        lat_sum += lat;
+                        lat_max = lat_max.max(lat);
+                    } else {
+                        dropped += 1;
+                    }
+                    discarded_ms += (dt_ms - 34.0).max(0.0);
+                }
                 store_motion(gen, motion);
-                if motion.settled() || elapsed_ms >= SPRING_SETTLE_MS {
+                // 弹簧：**落定即止**（判据见 motion::SETTLE_*，大行程约 700ms），
+                // 不必把 SPRING_SETTLE_MS 的兜底时长跑完。
+                if motion.settled() || anim_start.elapsed().as_millis() as u64 >= SPRING_SETTLE_MS {
                     break;
                 }
-                std::thread::sleep(std::time::Duration::from_millis(step_ms));
+                let spent = prev.elapsed();
+                let rest = frame_budget.saturating_sub(spent);
+                if !rest.is_zero() {
+                    std::thread::sleep(rest);
+                }
             }
         } else {
             // 减少动态效果：按舞台时长表现插值，落点精确、无过冲；
             // 速度不参与，所以终态显式清零，别把弹簧末速带给下一次常规动画。
-            let steps = (duration / step_ms).max(1);
-            for i in 1..=steps {
+            let total_s = duration as f64 / 1000.0;
+            loop {
                 if ANIM_GEN.load(Ordering::SeqCst) != gen {
                     return; // 被新动画作废
                 }
-                let p = ease_progress(i as f64 / steps as f64);
+                let now = std::time::Instant::now();
+                let dt_ms = now.duration_since(prev).as_secs_f64() * 1000.0;
+                prev = now;
+                frames += 1;
+                slowest_ms = slowest_ms.max(dt_ms);
+                let u = anim_start.elapsed().as_secs_f64() / total_s;
+                let p = ease_progress(u);
                 let w = start.0 + (tw - start.0) * p;
                 let h = start.1 + (th - start.1) * p;
                 if probe {
-                    log::info!("[TodoIsland][spring] {i}/{steps} w={w:.1} h={h:.1} spring=false");
+                    log::info!("[TodoIsland][spring] {u:.2} w={w:.1} h={h:.1} dt={dt_ms:.1} spring=false");
                 }
-                let _ = window.set_size(LogicalSize::new(w, h));
-                let _ = window.set_position(calc_top_center_for(&app, w));
-                std::thread::sleep(std::time::Duration::from_millis(step_ms));
+                let sent = apply_frame(&app, &window, hwnd, &frame, w, h);
+                if probe && !sent {
+                    dropped += 1;
+                }
+                if u >= 1.0 {
+                    break;
+                }
+                let rest = frame_budget.saturating_sub(prev.elapsed());
+                if !rest.is_zero() {
+                    std::thread::sleep(rest);
+                }
             }
         }
-        // 终帧精确落位（插值末步可能差亚像素）
-        if ANIM_GEN.load(Ordering::SeqCst) != gen {
-            return;
+        // 终帧精确落位（插值末步可能差亚像素）。❗ 与循环里的帧不同，终帧**不许丢**：
+        // 后面没有下一帧会替它补投，丢了岛就停在最后一个中间尺寸上。所以在飞闸没开就重试。
+        // ❗ 但重试必须有上限：主线程被弹窗/模态卡住时无限自旋 = 这条线程再也不回来。
+        let final_deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        while !apply_frame(&app, &window, hwnd, &frame, tw, th) {
+            if ANIM_GEN.load(Ordering::SeqCst) != gen || std::time::Instant::now() > final_deadline {
+                log::warn!("[TodoIsland] 终帧下达没能在 500ms 内挤进主线程队列，交给 rgn 自愈补正");
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
-        let _ = window.set_size(LogicalSize::new(tw, th));
-        let _ = window.set_position(calc_top_center_for(&app, tw));
+        // 等这一次真的被主线程执行完再读尺寸：`outer_size` 是阻塞取值器，正常情况下它
+        // 排在刚才那条下达后面（同一队列，FIFO）自然拿到新值，但那是队列时序的巧合，
+        // 不是契约——这里显式等，读到的才一定是终帧。
+        wait_dispatch_settled();
         store_motion(gen, SpringMotion::at(tw, th));
-        // ❗ set_size 异步生效：立刻读 outer_size 会拿到旧尺寸 → rgn 半径算成退化值
-        //   （实测翻过车：胶囊舞台上留着 List 的 15px 圆角裁剪）。等落定再精裁。
-        std::thread::sleep(std::time::Duration::from_millis(120));
-        if ANIM_GEN.load(Ordering::SeqCst) != gen {
-            return;
-        }
+        // 终帧精裁：旧实现在这里无条件 `sleep(120ms)` 再读 `outer_size`——那 120ms 是给
+        // 「异步 `set_size` 不知道何时生效」打的补丁，代价就是用户看到的终帧形状 pop。
+        // 现在等的不是时间而是**事件**（在飞下达执行完），所以既不会读到旧尺寸，也不会多等。
+        // ❗ 仍按实测 `outer_size` 裁，不用下达值：region 活在**窗口矩形**坐标系里，
+        //   而 CSS 卡片填的是**客户区**，两者差一个 frame（实测 125% 下 260×40 / 260×47），
+        //   实测值才是唯一不会算错的那一份。
         if let Ok(s) = window.outer_size() {
             apply_stage_region(&window, stage, (s.width as i32, s.height as i32));
         }
+        if probe {
+            let wall_ms = anim_start.elapsed().as_secs_f64() * 1000.0;
+            log::info!(
+                "[TodoIsland][motion] {stage:?} frames={frames} wall={wall_ms:.0}ms avg={:.1}ms \
+                 max={slowest_ms:.1}ms lat_avg={:.2}ms lat_max={lat_max:.2}ms dropped={dropped} \
+                 discarded={discarded_ms:.0}ms spring={use_spring} frame={}x{}",
+                wall_ms / frames.max(1) as f64,
+                lat_sum / frames.max(1) as f64,
+                frame.frame_w,
+                frame.frame_h
+            );
+        }
     });
+}
+
+/// 一帧的窗口下达：**尺寸与位置在同一次系统调用里生效**，且**投进主线程队列**执行。
+///
+/// ## 为什么既不是 `set_size`+`set_position`，也不是动画线程直接 `SetWindowPos`
+///
+/// 查 Tauri 2.11.3：`set_size` / `set_position` 各投一条消息（`send_user_message`），
+/// 于是「变大」与「挪位」可能落在相邻两帧上 ⇒ 有一帧「已经变大但还没挪到锚点」，观感是**抖**。
+/// 2026-09-28 第一次修法是动画线程直接跨线程 `SetWindowPos`（一次给全四个数，原子），
+/// 节拍确实准了（实测 49 帧 / avg 16.6ms / discarded 0），但换来一条更贵的错：
+/// **它是把 `WM_WINDOWPOSCHANGED` 直接 send 给属主线程**，绕开了 WebView2 绘制所在的
+/// 队列 ⇒ 窗口每帧都跑到内容前面 1–4 帧。逐帧像素实测（`pp-mid2` + 基线 diff）：
+/// 窗口 385×186 时画面还是 322×40 的胶囊、窗口 492×312 时画面 376×80，
+/// 也就是「先拉宽、迟迟不长高」，终帧才啪地补上——用户判的「视觉边缘/形状不对」就是它。
+///
+/// 所以本函数保留**一次调用给全四个数**（原子），但把这次调用**投回主线程队列**执行：
+/// 缩放与它后面的绘制在同一个队列里排队，窗口不可能超过内容。代价是需要背压，
+/// 否则又回到「排队回放」——背压就是在飞闸 `DISPATCH_IN_FLIGHT`：**主线程手里最多压一条**，
+/// 追不上时动画线程丢帧（弹簧仍按真实 Δt 前进，所以墙钟时长不变，只是中间尺寸变少）。
+///
+/// 返回值 = 这一帧**有没有真的投出去**（false = 被在飞闸丢掉，或投递失败）。
+/// 终帧必须重试到投出去为止（见调用点），中间帧丢了无所谓。
+fn apply_frame(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    hwnd: isize,
+    frame: &AnchorFrame,
+    w: f64,
+    h: f64,
+) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+        let _ = window;
+        let (x, y, cw, ch) = frame.rect(crate::todo_island_anchor::anchor(), w, h);
+        // 在飞闸：上一条还没被主线程执行完 ⇒ 这一帧直接丢，不排队。
+        if !try_take_dispatch() {
+            return false;
+        }
+        let posted = std::time::Instant::now();
+        let sent = app.clone().run_on_main_thread(move || {
+            unsafe {
+                let _ = SetWindowPos(
+                    HWND(hwnd as *mut core::ffi::c_void),
+                    HWND(core::ptr::null_mut()),
+                    x,
+                    y,
+                    cw as i32,
+                    ch as i32,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            DISPATCH_LAT_NS.store(posted.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            release_dispatch();
+        });
+        if sent.is_err() {
+            // 主线程已经不在（退出中）：闸必须打开，否则后续所有帧都被当成「在飞」丢掉
+            release_dispatch();
+            return false;
+        }
+        true
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        use tauri::LogicalSize;
+        let _ = (hwnd, frame);
+        let _ = window.set_size(LogicalSize::new(w, h));
+        let _ = window.set_position(crate::todo_island_anchor::calc_anchor_pos(app, w, h));
+        true
+    }
+}
+
+/// 在飞闸的开闸尝试。`true` = 本帧可以投；`false` = 主线程手里已经压着一条 ⇒ 丢帧。
+/// 这是 F 方案唯一的背压手段：**丢帧，不排队**（排队就是本次要治的「顿一下再窜到位」）。
+fn try_take_dispatch() -> bool {
+    DISPATCH_IN_FLIGHT
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+        .is_ok()
+}
+
+/// 关闸（下达执行完 / 投递失败）。漏关 = 之后每一帧都被当成「在飞」丢掉，岛冻在原地。
+fn release_dispatch() {
+    DISPATCH_IN_FLIGHT.store(false, Ordering::Release);
+}
+
+/// 等在飞下达被主线程执行完（终帧专用）。上限 200ms：主线程真被卡住时宁可裁早一帧，
+/// 下一轮 `reapply_stage_region` 自愈会补正——但正常情况下这就是「下一条队列消息」的耗时。
+fn wait_dispatch_settled() {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    while DISPATCH_IN_FLIGHT.load(Ordering::Acquire) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }
 
 /// 把窗口（**连材质一起**）裁成舞台形状——消除圆角外的方角玻璃（月牙）。
 ///
 /// 探针 G4 实测（rgn-pill.png）：月牙被裁掉、边缘由 CSS 抗锯齿边盖住看不出锯齿。
-/// ❗ `phys` 必须传**落定后**的实际物理尺寸：`set_size` 异步生效，动画终帧立刻读
-/// `outer_size` 会拿到旧尺寸 → 半径算成退化值（实测表现：胶囊舞台上留着 List 的
-/// 15px 圆角裁剪）。两个调用时机：
+/// ❗ `phys` 必须是**窗口实际（或即将）具有**的物理尺寸。两个调用时机：
 /// - 动画**起始**：传舞台表 × scale 的期望值（长大时 rgn 比窗口大 = 不裁、无副作用；
 ///   缩小时胶囊形状立刻出现）；
-/// - 动画**终帧**：sleep 等尺寸落定后传 `outer_size` 实测值（CSS 卡片填满实际窗口，
-///   rgn 必须跟实际值对齐）。
+/// - 动画**终帧**：传 `AnchorFrame::rect` 算出的**下达值**（尺寸是我们自己按物理像素
+///   定的，不必回读 `outer_size`；原先「sleep 120ms 再读实测值」是异步 `set_size`
+///   路径的补丁，代价是终帧形状 pop，2026-09-28 随单次 `SetWindowPos` 一起删掉）。
+///   历史翻过的车：读未落定的旧尺寸会把半径算成退化值（胶囊舞台上留着 List 的
+///   15px 圆角裁剪）。
 ///
 /// rgn 的所有权交给系统（MSDN：SetWindowRgn 后由系统管理）。仅 Windows 有意义。
 pub fn apply_stage_region(window: &tauri::WebviewWindow, stage: IslandStage, phys: (i32, i32)) {
@@ -372,9 +543,10 @@ pub fn apply_stage_region(window: &tauri::WebviewWindow, stage: IslandStage, phy
         let Ok(raw) = window.hwnd() else { return };
         let hwnd = windows::Win32::Foundation::HWND(raw.0 as isize as *mut core::ffi::c_void);
         let Ok(scale) = window.scale_factor() else { return };
-        // 收起两态（pill/clear）= **半胶囊**（吸附形变设计稿 §3②）：上缘压平贴死屏幕顶
-        // （r_top=0），下缘 = 高度一半的半圆帽（r_card=floor(h/2)，floor 让 GDI 弧落在 CSS 弧
-        // 内侧的既有口径）。peek 仍是满胶囊；展开两态 = 四角统一 12px 圆角卡。
+        // 收起两态（pill/clear）= **半胶囊**（吸附形变设计稿 §3②）：贴屏幕那条边压平
+        // （顶档 r_top=0 / 底档镜像 r_card=0），另一条边 = 高度一半的半圆帽
+        // （floor(h/2)，floor 让 GDI 弧落在 CSS 弧内侧的既有口径）。peek 仍是满胶囊；
+        // 展开两态 = 四角统一 12px 圆角卡。
         // ❗ 两类形状都走**逐行像素中心**多边形 region（build_stadium_region /
         //   build_top_rounded_region）。历史教训（2026-09-25 用户两轮实拍）：
         //   CreateRoundRectRgn 只有统一半径、且弧形与 CSS 正圆对不上（胶囊 r=round(23.5)=24
@@ -409,11 +581,18 @@ pub fn apply_stage_region(window: &tauri::WebviewWindow, stage: IslandStage, phy
                     hrgn // 拼装失败退回 GDI 胶囊：可能有 ≤1px 材质细缝，好过整窗不裁
                 }
             }
-            // 吸附形变（设计稿 §3②）：停靠两态上缘压平（r_top=0）、下缘半圆帽——
+            // 吸附形变（设计稿 §3②）：停靠两态**贴屏幕那条边压平**（半径 0）、
+            // 另一条边 = 半圆帽。顶档压上缘（r_top=0），底档镜像压下缘（r_card=0）——
             // 拼装走 build_top_rounded_region 的双半径能力，**零新增拼装代码**。
             IslandStage::Pill | IslandStage::Clear => {
+                let flat_bottom = crate::todo_island_anchor::anchor().is_bottom();
+                let (r_card, r_top) = if flat_bottom {
+                    (0, radius)
+                } else {
+                    (radius, 0)
+                };
                 let merged = unsafe { CreateRectRgn(0, 0, 0, 0) };
-                let ok = unsafe { build_top_rounded_region(merged, phys.0, phys.1, radius, 0) };
+                let ok = unsafe { build_top_rounded_region(merged, phys.0, phys.1, r_card, r_top) };
                 if ok {
                     let _ = unsafe { DeleteObject(hrgn) };
                     merged
@@ -440,7 +619,8 @@ pub fn apply_stage_region(window: &tauri::WebviewWindow, stage: IslandStage, phy
         // ❗ 永久诊断：月牙问题的三条施加路径都可能缺席（on_page_load 实测常不触发、
         //   动画终帧会被新动画作废）——没有这行日志，「方角玻璃」无从排查。
         log::info!(
-            "[TodoIsland] rgn {stage:?} phys={phys:?} radius={radius} applied={}",
+            "[TodoIsland] rgn {stage:?} phys={phys:?} radius={radius} dock={} applied={}",
+            crate::todo_island_anchor::anchor().as_str(),
             applied != 0
         );
     }
@@ -599,7 +779,6 @@ pub fn reapply_stage_region(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     // ----- 弹簧（U2 2026-09-25 修订：定参 k=130/c=16，判定 1 的守卫） -----
 
@@ -866,5 +1045,18 @@ mod tests {
             assert!(p >= prev, "缓动在 t={} 出现倒退: {p} < {prev}", i as f64 / 40.0);
             prev = p;
         }
+    }
+
+    /// 在飞闸守卫：背压的口径是**丢帧不排队**，所以「一条在飞时第二条必须拿不到闸」，
+    /// 而关闸后必须能重新拿——漏关闸（投递失败分支）会让岛永久冻在最后一个尺寸上。
+    #[test]
+    fn test_dispatch_gate_is_single_flight() {
+        release_dispatch();
+        assert!(try_take_dispatch(), "空闸必须能开");
+        assert!(!try_take_dispatch(), "在飞时第二条必须被丢掉（不许排队回放）");
+        assert!(!try_take_dispatch(), "连续尝试同样必须被挡");
+        release_dispatch();
+        assert!(try_take_dispatch(), "关闸后必须重新可投");
+        release_dispatch();
     }
 }

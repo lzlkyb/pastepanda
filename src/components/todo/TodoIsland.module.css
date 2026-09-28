@@ -415,7 +415,7 @@
 }
 
 /* ===== 停靠态（吸附双态设计稿 §4 + 形变设计稿 §3①）：方顶 + 投影收敛 + 顶缘亮线消隐 =====
-   「嵌」在屏幕顶边的视觉：TOP_MARGIN=0 后顶缘贴死屏幕边，「上缘受光」不成立
+   「嵌」在屏幕顶边的视觉：停靠档与屏幕边零间隙，「上缘受光」不成立
    （亮线由屏幕边自己给），外投影收敛到满档 ×0.6 让重心贴边；
    上圆角压平（0 0 16px 16px）——上缘与屏幕顶零缝隙，像从屏幕里长出来。
    ❗ 圆角写死 16px（= 高度一半）**不能写 999px**：CSS 圆角缩放规则下，上角为 0 时
@@ -426,7 +426,8 @@
    peek/list/compose 不命中本选择器 → 满胶囊/卡片圆角（浮起）。
    意图态（data-intent）**不排除**：它只点亮 glow，投影/亮线/方顶保持停靠档。
    文字 / 环 / 描边 / tint 三态恒定：3a 探针的对比度结论不变，变暗只落在装饰层。
-   box-shadow 过渡已由 .root 基础块声明（200ms），切态不闪跳。 */
+   box-shadow 过渡已由 .root 基础块声明（200ms），切态不闪跳。
+   ❗ 下方紧跟「贴屏幕**底边**」的镜像档（停靠锚点 C1），改这块记得同看它。 */
 .root[data-st="pill"]:not([data-hover="1"]),
 .root[data-st="clear"]:not([data-hover="1"]) {
   /* 半胶囊下角半径 = 高度一半（32/2），与 stage.rs rgn 的 HalfCapsule、hover.rs shape_hit
@@ -437,6 +438,20 @@
     inset 0 -1px 0 var(--island-rim-inner),
     0 2px 5px var(--island-shadow-dock-near),
     0 6px 16px var(--island-shadow-dock-far);
+}
+
+/* 停靠锚点 C1（design/待办灵动岛-停靠位置-设计稿.html）：锚点在**底边**三档时整块上下
+   镜像——压平的边换到下缘、内圈受光线换到上缘、外投影朝上（重心仍贴在它长出来的那条边）。
+   朝向由 `todoisland-main.tsx` 按 `todo_island_anchor` 写在 html 上。
+   ❗ 三处同步账：本块 ↔ stage.rs 的 (r_card, r_top) 调换 ↔ hover.rs 的 HalfCapsuleBottom。 */
+:global(html[data-island-dock="bottom"]) .root[data-st="pill"]:not([data-hover="1"]),
+:global(html[data-island-dock="bottom"]) .root[data-st="clear"]:not([data-hover="1"]) {
+  border-radius: 16px 16px 0 0; /* ui-rule-ok: 半径=高度一半，顶档的镜像 */
+  box-shadow:
+    inset 0 0 0 1px var(--island-line),
+    inset 0 1px 0 var(--island-rim-inner),
+    0 -2px 5px var(--island-shadow-dock-near),
+    0 -6px 16px var(--island-shadow-dock-far);
 }
 
 /* 系统「减少动态效果」：形变成为主角后圆角过渡不能照常 200ms（形变设计稿 §7③），
@@ -709,6 +724,14 @@
   z-index: 1;
 }
 
+/* tabpanel 与 list 分两层后的内层：行仍按列排布。用 flex:1 撑满而不是 min-height:100%
+   ——后者要靠百分比高度解析，撑不满时空态的 margin:auto 就会顶到上边 */
+.lsInner {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -716,9 +739,11 @@
   min-height: 36px;
   padding: 0 4px;
   border-radius: 8px;
+  /* 驻留倒计时条的锚点（下面 .dwellBar）：这条是「刚勾的是哪一行」的进度凭证，
+     必须长在行上；缺 position 时它会退到 .ls 这个定位祖先，整列表共用一条 */
+  position: relative;
   /* 整行可点 = 勾/取消勾（2026-09-27 用户定稿 B 方案）：命中面从 24×24 勾圈扩到全行；
-     误触由勾选后的完成态驻留 + 撤销（critique P1-2，设计稿已定）兜底。
-     来源笔记名 .src 自己拦冒泡，预留给「打开笔记」。 */
+     误触由勾选后的完成态驻留 + 撤销（critique P1-2，设计稿已定）兜底。 */
   cursor: pointer;
 }
 

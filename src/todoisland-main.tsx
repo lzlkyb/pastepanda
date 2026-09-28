@@ -18,6 +18,7 @@ import { TodoIsland } from "./components/todo/TodoIsland";
 import { logger } from "./lib/logger";
 import { applyTheme, isDarkTheme, normalizeTheme } from "./lib/theme";
 import { normalizeGlass } from "./lib/todo/glass";
+import { anchorDock, normalizeAnchor } from "./lib/todo/anchor";
 import "./styles/globals.css";
 import "./styles/theme.css";
 
@@ -37,23 +38,34 @@ function applyIslandGlass(raw?: unknown) {
   document.documentElement.style.setProperty("--island-glass", String(normalizeGlass(raw)));
 }
 
+// 停靠朝向（C1 六档锚点）：Rust 负责窗口落在哪条边，这里只告诉 CSS「压平哪条边」。
+// 六档 → 两个朝向（top/bottom）收口在 lib/todo/anchor.ts 的 anchorDock。
+function applyIslandDock(raw?: unknown) {
+  document.documentElement.dataset.islandDock = anchorDock(normalizeAnchor(raw));
+}
+
 // CSS 默认值是深色（= 深海/午夜用户零变化）；这里兜底 DEFAULT（ocean=浅），
 // 浅色主题用户在配置拉到前会翻一次面——毫秒级，与截图窗同款代价。
 applyIslandTheme();
 applyIslandGlass();
-invoke<{ theme?: string; todo_island_glass?: unknown }>("get_config")
+applyIslandDock();
+invoke<{ theme?: string; todo_island_glass?: unknown; todo_island_anchor?: unknown }>("get_config")
   .then((cfg) => {
     applyIslandTheme(cfg?.theme);
     applyIslandGlass(cfg?.todo_island_glass);
+    applyIslandDock(cfg?.todo_island_anchor);
   })
   .catch(() => { /* 读取失败时保持默认主题与默认档 */ });
 listen<{ theme?: string }>("theme-changed", (e) => {
   applyIslandTheme(e.payload?.theme);
 }).catch(() => { /* 监听注册失败时退化为仅打开时读取一次 */ });
-// 设置页保存「灵动岛」分区后广播（Rust 侧同一个事件做开关门控）；遮盖度变了就重读。
+// 设置页保存「灵动岛」分区后广播（Rust 侧同一个事件做开关门控与重摆位）；遮盖度/朝向变了就重读。
 listen("todo-island-config-changed", () => {
-  invoke<{ todo_island_glass?: unknown }>("get_config")
-    .then((cfg) => applyIslandGlass(cfg?.todo_island_glass))
+  invoke<{ todo_island_glass?: unknown; todo_island_anchor?: unknown }>("get_config")
+    .then((cfg) => {
+      applyIslandGlass(cfg?.todo_island_glass);
+      applyIslandDock(cfg?.todo_island_anchor);
+    })
     .catch(() => { /* 拉不到就保持当前档，下次变更再同步 */ });
 }).catch(() => { /* 同上 */ });
 // 拖动中的实时预览（2026-09-26）：设置页每帧只发这个事件，**不碰磁盘**，Rust 也不听它；

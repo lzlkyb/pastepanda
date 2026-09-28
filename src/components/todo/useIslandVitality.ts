@@ -19,6 +19,8 @@ import type { IslandState, IslandStage } from "@/lib/todo/types";
 const LIVE_DUE_HORIZON_MS = 3_600_000;
 /** 「新待办」静默窗：挂载后这段时间内的 tasks 增长视为初始化/批量灌入，不是事件（设计稿 §2） */
 const MOUNT_QUIET_MS = 1000;
+/** glow 几何缓存的有效期：见动效三注释（窗口逐帧动画期间避免每拍强制布局） */
+const GLOW_RECT_TTL_MS = 120;
 
 /** 纯函数：剩余毫秒 → mm:ss（负值钳到 00:00；视野 1h 内 mm ≤ 59）。 */
 export function formatMmSs(remainMs: number): string {
@@ -120,11 +122,25 @@ export function useIslandVitality(input: IslandVitalityInput) {
   // ===== 动效三：glow 跟随光标 =====
   // 拦截生效后 webview 才收得到 pointermove（Rust 收事件 ⇔ hover/intent），监听天然对齐；
   // 穿透期该处理器根本不会被调用。拒绝 Rust 60ms emit 坐标的方案（跨进程事件风暴，收益为零）。
+  // 🔴 rect 不每拍读：getBoundingClientRect 会强制布局，而窗口尺寸正由 Rust 逐帧动画给出，
+  //   两者在同一帧里互相触发。缓存 120ms 有效——一次舞台动画约 300ms，期间最多读 3 次，
+  //   圆心误差在动画结束后立刻归零（glow 是受光装饰，不是指针跟随精度要求）。
+  const glowRect = useRef<{ at: number; left: number; width: number } | null>(null);
+  useEffect(() => {
+    glowRect.current = null; // 舞台/悬停沿变了，旧几何作废
+  }, [stage, hover, intent]);
+
   const onGlowMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (reducedMotion || (!hover && !intent)) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const now = performance.now();
+      if (!glowRect.current || now - glowRect.current.at > GLOW_RECT_TTL_MS) {
+        const r = e.currentTarget.getBoundingClientRect();
+        glowRect.current = { at: now, left: r.left, width: r.width };
+      }
+      const { left, width } = glowRect.current;
+      if (width <= 0) return;
+      const x = ((e.clientX - left) / width) * 100;
       e.currentTarget.style.setProperty("--glow-x", `${x.toFixed(1)}%`);
     },
     [hover, intent, reducedMotion]
