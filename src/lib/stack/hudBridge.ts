@@ -18,18 +18,47 @@
  * 浮标上的「→ 应用名」必须来自粘贴引擎解析目标的**同一个函数、同一个 trigger**
  * （`pastePrecheck("headless")`）。在这里重算一遍就会出现
  * 「浮标写着 Chrome、实际粘到记事本」。
+ *
+ * ## 总开关（`config.stack_hud_enabled`，默认开）闸在哪
+ *
+ * 三道闸只落在两个地方：`push()`（四种 phase 的唯一出口）、`hudStackModeEntered`
+ * 与 `pushCollecting`（要绕开那次 `pastePrecheck` 跨进程解析）。隐藏路径刻意
+ * **不**闸（见 `hudDismiss`）——关掉开关那一刻正显示的浮标也得收得掉。
+ * 托盘「调整浮标位置」经 `stack_hud_adjust` 直接进 Rust 的 `show_hud`，绕开本文件，
+ * 所以 Rust 在 `show_hud` 再兜一道；窗口可见性除 `show_hud` 没有第二条路。
  */
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 import { useAppStore } from "@/stores/appStore";
 import { onPasteFailure, pastePrecheck } from "@/lib/api/paste";
-import type { StackHudProgress, StackHudState } from "./types";
+import { isHudEnabled, type StackHudProgress, type StackHudState } from "./types";
 
 /** `done` 态留白多久再隐藏（给用户"全部贴完了"的确认时间） */
 const DONE_HOLD_MS = 1500;
 
 /** `success` / `error` 态停留多久后回到「收集中」（让用户能看到"下一个粘到哪"） */
 const RECOVER_MS = 3000;
+
+/**
+ * 浮标总开关（设置 → 热键页「栈」区，默认开）。前端侧读 store 的那一个消费点；
+ * 判据本身在 `types.ts::isHudEnabled`（口径与 Rust 兜底闸同一份账，见那里）。
+ */
+export function hudEnabled(): boolean {
+  return isHudEnabled(useAppStore.getState().config.stack_hud_enabled);
+}
+
+/**
+ * 关掉开关那一刻的收摊动作：把可能正显示的浮标立即隐藏。
+ *
+ * `stack_hud_hide` 在窗口不存在时是幂等空操作，所以调用方不必先判可见性。
+ * 刻意**不**受 `hudEnabled()` 管 —— 这正是「刚被关掉」那一次要起的作用。
+ */
+export function hudDismiss(): void {
+  cancelRecover();
+  invoke("stack_hud_hide", { delayMs: null }).catch((e) =>
+    logger.warn("隐藏栈浮标失败", e),
+  );
+}
 
 /** 把 `ctrl+alt+p` 格式化成 `Ctrl+Alt+P`（纯展示，不改配置） */
 function fmtHotkey(raw: string | undefined, fallback: string): string {
@@ -109,6 +138,8 @@ export function nextPreview(): string | null {
 
 /** 推一次状态。**所有**浮标更新都必须经这里。 */
 function push(state: StackHudState): void {
+  // 开关关在这里：`push` 是状态出口，闸一道就覆盖全部四种 phase 的推送。
+  if (!hudEnabled()) return;
   invoke("stack_hud_update", { state }).catch((e) => logger.warn("推送栈浮标状态失败", e));
 }
 
@@ -123,6 +154,7 @@ async function resolveTarget(): Promise<string | null> {
 
 /** 「收集中」态的推送：需要目标应用名；用序号丢弃过期回调 */
 async function pushCollecting(count: number): Promise<void> {
+  if (!hudEnabled()) return;
   const seq = ++collectSeq;
   const target = await resolveTarget();
   if (seq !== collectSeq) return;
@@ -165,6 +197,9 @@ function cancelRecover(): void {
 
 /** 进入栈模式：显示浮标并推初始状态 */
 export async function hudStackModeEntered(): Promise<void> {
+  // 连目标解析都不做：关掉浮标时这条路径应当完全没有开销（`push` 那道闸太靠后，
+  // 前面还有一次 `pastePrecheck` 的跨进程调用）。
+  if (!hudEnabled()) return;
   cancelRecover();
   await pushCollecting(useAppStore.getState().stackItems.length);
   invoke("stack_hud_show").catch((e) => logger.warn("显示栈浮标失败", e));
@@ -172,10 +207,7 @@ export async function hudStackModeEntered(): Promise<void> {
 
 /** 退出栈模式（主动退出 / 栈被清空）：立即隐藏 */
 export function hudStackModeExited(): void {
-  cancelRecover();
-  invoke("stack_hud_hide", { delayMs: null }).catch((e) =>
-    logger.warn("隐藏栈浮标失败", e),
-  );
+  hudDismiss();
 }
 
 /** 粘贴成功：显示剩余条数 */

@@ -141,6 +141,9 @@ export interface AppConfig {
   /** 粘贴栈容量（50/100/200/500 四档，默认 500）。读取一律走
    *  `resolveStackMaxItems`，不要直接用它做 slice。 */
   stack_max_items: number;
+  /** 栈浮标（屏幕角落那个 240×65 小窗）总开关，默认开。
+   *  读取一律走 `hudBridge.ts` 的 `hudEnabled()`，Rust 侧另有兜底闸。 */
+  stack_hud_enabled: boolean;
   /** 灵动岛（设置页「灵动岛」分区，2026-09-25）。缺省值必须与 Rust `island_config`、
    *  岛前端（todoisland-main.tsx）一致：**关** / 遮盖度 95 / 停靠顶 · 中 / 提醒开 / 30s / 到期优先。
    *  `todo_island_glass` = 岛体遮盖度 66–100（2026-09-26 由四档枚举改成连续滑杆；
@@ -488,6 +491,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   table_split_format: "raw",
   table_split_include_header: false,
   stack_max_items: STACK_MAX_ITEMS_DEFAULT,
+  stack_hud_enabled: true,
   todo_island_enabled: false,
   todo_island_glass: 95,
   todo_island_anchor: ANCHOR_DEFAULT,

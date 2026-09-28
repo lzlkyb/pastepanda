@@ -1,7 +1,9 @@
 import type { AppConfig } from "@/stores/appStore";
-import { STACK_MAX_TIERS, resolveStackMaxItems } from "@/stores/appStore";
+import { STACK_MAX_TIERS, resolveStackMaxItems, useAppStore } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
+import { hudDismiss, hudStackModeEntered } from "@/lib/stack/hudBridge";
+import { isHudEnabled } from "@/lib/stack/types";
 import { ToggleRow, SettingTile } from "../ToggleRow";
 import { NoteTemplateRows } from "../NoteTemplateRows";
 import { HotkeyRecorder } from "../HotkeyRecorder";
@@ -142,6 +144,26 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
           </div>
         </>
       )}
+      {/* 栈浮标开关：放在「栈容量」上方 —— 它管的是「看得见什么」，容量管的是「攒多少」，
+          先看到反馈再看到容量更符合从上往下读的顺序。 */}
+      <ToggleRow icon="🎯" hue="paste" label="栈浮标" desc="开栈时贴在工作现场角落的小窗：条数、目标应用、下一条内容、粘贴结果"
+        value={isHudEnabled(config.stack_hud_enabled)}
+        tooltip="关闭后栈的反馈只剩主窗口横幅与提示；热键照常可用"
+        detailTitle="栈浮标"
+        detail={<>
+          <p>浮标贴在你正在操作的那个窗口旁，显示「栈 N 条 · → 目标应用」，第二行是下一条要粘的内容，第三行提示按哪个热键继续。</p>
+          <p>它存在的理由：栈全程用热键操作，那一刻你的视线在别的应用里，主窗口的横幅和提示你都看不到。</p>
+          <p>关闭后不影响任何热键与粘贴本身 —— 但粘贴进度、目标应用、失败原因这些反馈就只有主窗口可见了；在别的窗口里按热键将是无声的。</p>
+          <p>位置可拖：先开着浮标，从托盘菜单点「调整浮标位置…」，拖动后双击浮标完成。</p>
+        </>}
+        onChange={async (v) => {
+          // 关掉的那一刻就收掉已显示的浮标，不等落盘（否则用户看不到变化）。
+          if (!v) hudDismiss();
+          await updateAndSave({ stack_hud_enabled: v });
+          // 反过来在一轮栈模式里重新打开：立刻补一次显示。不补的话得退出栈、
+          // 再开一次栈才看得见 —— 开关的反馈和它的触发不在同一个可见性域（规则 15.1）。
+          if (v && useAppStore.getState().stackMode) void hudStackModeEntered();
+        }} />
       <div className={styles.sRow}>
         <SettingTile hue="paste">🗃️</SettingTile>
         <div className={`${styles.sRowBody}`}>

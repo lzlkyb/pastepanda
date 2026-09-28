@@ -352,6 +352,15 @@ pub fn save_config(
 ) -> Result<(), String> {
     store.save_config(&config)?;
 
+    // 刷新栈浮标开关缓存（HUD 显示/调整读的是进程内原子量，不每次读库）。
+    // 只有本次报文真的带了这个键才刷新：其它 save_config 调用不带它，
+    // 缺省值会把用户已保存的「关」又打开。
+    if config.get(crate::stack_hud::ENABLED_KEY).is_some() {
+        crate::stack_hud::set_enabled(crate::stack_hud::enabled_or_default(
+            config.get(crate::stack_hud::ENABLED_KEY),
+        ));
+    }
+
     // 刷新剪贴板监听器的 auto_strip 缓存，避免每次都锁数据库读取配置
     if let Some(monitor) = app.try_state::<crate::clipboard_monitor::ClipboardMonitor>() {
         let auto_strip = config

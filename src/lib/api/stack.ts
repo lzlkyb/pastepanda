@@ -27,6 +27,7 @@ export function toggleStackMode() {
     syncStackModeToBackend(true);
     // 栈是无窗口热键操作，用户此刻的视线在**别的应用**里：
     // 主窗口的横幅与 toast 他一条都看不到，反馈必须由浮标承载。
+    // （设置里把浮标关了就没有这条通道 —— 下面那次调用自己判开关，直接不显示。）
     void hudStackModeEntered();
     const pasteKey = store.config.stack_paste_hotkey || "ctrl+alt+p";
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `栈模式已开启 · Ctrl+C 收集 · ${pasteKey} 粘贴`, type: "info" } }));
@@ -178,7 +179,7 @@ export async function stackAutoSplitAndPasteFirst(): Promise<boolean> {
 
   store.setStackMode(true);
   syncStackModeToBackend(true);
-  // 这条路径也会自动开栈（用户没按过开栈热键），浮标同样要亮起来
+  // 这条路径也会自动开栈（用户没按过开栈热键），浮标同样要亮起来（关了则内部自行跳过）
   await hudStackModeEntered();
   useAppStore.getState().stackPushOrSplit(top);
   const pasted = await stackPasteNext();

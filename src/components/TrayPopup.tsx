@@ -4,6 +4,7 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { thumbnailSourcePath } from "@/lib/richContent";
+import { isHudEnabled } from "@/lib/stack/types";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SkinScene } from "@/components/SkinScene";
@@ -160,6 +161,8 @@ export function TrayPopup() {
   const themeKey = (useAppStore((s) => s.config.theme) || DEFAULT_THEME) as ThemeKey;
   // 审查：显示热键提示用真实配置（此前硬编码 "Ctrl+Alt+V"，用户自定义后误导）
   const showHotkey = (useAppStore((s) => s.config.hotkey) as string | undefined) || "Ctrl+Alt+V";
+  // 浮标开关：关掉时托盘不再摆「调整浮标位置…」这一项（口径与 hudBridge 的 hudEnabled 一致）
+  const hudOn = useAppStore((s) => isHudEnabled(s.config.stack_hud_enabled));
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "info" });
   const [operationLoading, setOperationLoading] = useState<string | null>(null); // 正在执行的操作 id
   const menuRef = useRef<HTMLDivElement>(null);
@@ -425,6 +428,27 @@ export function TrayPopup() {
       }
     : null;
 
+  // 浮标关着就不摆这一项：Rust 的 adjust 会被兜底闸拒绝，摆了就是个点了报错的按钮
+  const hudItem: MenuItemDef | null = hudOn
+    ? {
+        id: "adjust_hud",
+        iconClass: "icon-purple",
+        // ui-rule-ok: 整块从菜单数组原位搬来，与相邻菜单项同款图标写法，不在本轮改
+        iconSvg: <span style={{ fontSize: 13 }}>🎯</span>,
+        label: "调整浮标位置…",
+        hint: "栈粘贴浮标",
+        onClick: () => {
+          // toggle：再点一次可退出；双击浮标也会退出。弹层先收起别挡视线
+          void invoke("stack_hud_adjust", { enter: null })
+            .then(() => safeHide())
+            .catch((e) => {
+              console.error("[TrayPopup] 浮标调整失败:", e);
+              showToast("先开一次栈模式再调整浮标", "error");
+            });
+        },
+      }
+    : null;
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const menuItems: MenuItemDef[] = [
     ...(rcItem ? [rcItem] : []),
@@ -454,22 +478,7 @@ export function TrayPopup() {
         });
       },
     },
-    {
-      id: "adjust_hud",
-      iconClass: "icon-purple",
-      iconSvg: <span style={{ fontSize: 13 }}>🎯</span>,
-      label: "调整浮标位置…",
-      hint: "栈粘贴浮标",
-      onClick: () => {
-        // toggle：再点一次可退出；双击浮标也会退出。弹层先收起别挡视线
-        void invoke("stack_hud_adjust", { enter: null })
-          .then(() => safeHide())
-          .catch((e) => {
-            console.error("[TrayPopup] 浮标调整失败:", e);
-            showToast("先开一次栈模式再调整浮标", "error");
-          });
-      },
-    },
+    ...(hudItem ? [hudItem] : []),
     {
       id: "settings",
       iconClass: "icon-purple",

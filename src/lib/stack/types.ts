@@ -51,3 +51,19 @@ export interface StackHudState {
    */
   anchorKind: "control" | "window" | "cursorWindow" | "cursor" | null;
 }
+
+/**
+ * 浮标总开关的取值判据（设置 → 热键页「栈」区，默认开）。
+ *
+ * 收口成函数的原因：口径是「**只有明确 false 才算关**」——缺省值与手改配置存进来的
+ * 脏值都当开。消费方三个（`hudBridge.hudEnabled`、设置页开关行、托盘菜单项）各自
+ * 写 `!== false` 的话，第 4 个调用点很容易写成 `if (config.stack_hud_enabled)`，
+ * 那会让缺省态变成「默认关」，而 Rust 兜底闸 `enabled_or_default` 也是缺省开 ——
+ * 两端一错开，现象就是「设置了开着，浮标死活不出来」。
+ *
+ * 放在这份零依赖文件而不是 `hudBridge.ts`：托盘 / 设置页只需要判据，不该为了它
+ * 把 `hudBridge` 的整条依赖（粘贴预检、appStore 副作用）拖进自己的窗口。
+ */
+export function isHudEnabled(raw: unknown): boolean {
+  return raw !== false;
+}

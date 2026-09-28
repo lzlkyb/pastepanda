@@ -184,6 +184,39 @@ static OFFSET_LOADED: AtomicBool = AtomicBool::new(false);
 const OFFSET_KEY_X: &str = "stack_hud_offset_x";
 const OFFSET_KEY_Y: &str = "stack_hud_offset_y";
 
+// ===== 总开关（设置 → 热键页「栈」区「栈浮标」，默认开）=====
+//
+// 前端 `hudBridge.ts::hudEnabled()` 是第一道闸（关掉就零 IPC、零目标解析）；
+// 这里是第二道，因为托盘的「调整浮标位置」经 `stack_hud_adjust` 直接进 `show_hud`，
+// 那条路绕开了前端。**窗口可见性的唯一入口是 `show_hud`**（`reveal` / `create`
+// 都只由它调用），所以闸只需要下在那一处。
+//
+// 不做成"每次推送读一次 config"：`DataStore::get_config()` 是全表读 + 逐行 JSON
+// 解析，而收集/粘贴每次都推状态（规则 8）。沿用 `auto_strip` 那套原子量缓存：
+// 启动 `init` 读一次，`save_config` 命令里刷新。
+
+/// config 键名。与前端 `AppConfig.stack_hud_enabled` 是同一份账。
+pub const ENABLED_KEY: &str = "stack_hud_enabled";
+
+static ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// 从 config 取值算出开关状态。**口径：只有明确 `false` 才算关** ——
+/// 缺省（老用户配置里没这个键）与脏值一律当开，必须与前端
+/// `lib/stack/types.ts::isHudEnabled`（`raw !== false`）一致，否则会出现
+/// 「前端在推状态、后端拒绝显示」这种查不出来的中间态。
+pub fn enabled_or_default(v: Option<&serde_json::Value>) -> bool {
+    v.and_then(|x| x.as_bool()).unwrap_or(true)
+}
+
+/// 由 `save_config` 调用刷新缓存
+pub fn set_enabled(v: bool) {
+    ENABLED.store(v, Ordering::SeqCst);
+}
+
+fn enabled() -> bool {
+    ENABLED.load(Ordering::SeqCst)
+}
+
 /// 启动时从 config 恢复偏移（`lib.rs` setup 调一次）。
 pub fn init(app: &AppHandle) {
     if OFFSET_LOADED.swap(true, Ordering::SeqCst) {
@@ -195,6 +228,8 @@ pub fn init(app: &AppHandle) {
     let Ok(cfg) = store.get_config() else {
         return;
     };
+    // 开关与偏移同源：读不到配置就走缺省（开），不因此拒绝显示浮标
+    set_enabled(enabled_or_default(cfg.get(ENABLED_KEY)));
     let x = cfg
         .get(OFFSET_KEY_X)
         .and_then(|v| v.as_f64())
@@ -604,6 +639,13 @@ fn hide_is_stale(scheduled: u64, current: u64) -> bool {
 
 /// 显示 HUD（栈模式开始 / 重新定位时调用）
 pub fn show_hud(app: &AppHandle) {
+    // 兜底闸（前端 `hudBridge` 已先拦一道）：这里是窗口可见性的**唯一**入口，
+    // `reveal` / `create` 都只由它调用，所以闸下在这一处就够。
+    // 刻意不在此处顺手 hide：隐藏有自己的路径（`hide_hud`），关开关那一刻靠它收摊。
+    if !enabled() {
+        log::debug!("[StackHud] 浮标已在设置中关闭，拒绝显示");
+        return;
+    }
     // 先作废挂起的延迟隐藏：本次意图是「显示」，晚到的隐藏线程必须让位
     mark_shown();
     // 调整模式只保留「点亮」语义，不做任何重定位 —— 用户正拖着浮标，
@@ -825,11 +867,16 @@ pub fn stack_hud_state(cache: tauri::State<'_, HudStateCache>) -> Option<StackHu
 /// 持久化到 config，恢复穿透。之后跟随目标窗口时保持这个相对位置。
 #[tauri::command]
 pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, String> {
+    let currently = ADJUSTING.load(Ordering::SeqCst);
+    let want_enter = enter.unwrap_or(!currently);
+    // 开关关着就不要把用户带进一个「拖好了、双击保存」却永远显示不出来的浮标。
+    // 只拒绝 enter：退出调整模式照常放行，否则 hide 之外再没别的路能收掉调整态。
+    if want_enter && !enabled() {
+        return Err("粘贴栈浮标已在设置中关闭".to_string());
+    }
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
         return Err("浮标窗口不存在；先开一次栈模式再调整".to_string());
     };
-    let currently = ADJUSTING.load(Ordering::SeqCst);
-    let want_enter = enter.unwrap_or(!currently);
     if want_enter {
         ADJUSTING.store(true, Ordering::SeqCst);
         if !window.is_visible().unwrap_or(false) {
@@ -881,6 +928,28 @@ fn default_position(app: &AppHandle) -> tauri::PhysicalPosition<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 开关口径：**只有明确 false 才算关**。缺省（老用户配置里没这个键）与脏值
+    /// 都必须当开 —— 与前端 `isHudEnabled` 一旦错开，现象就是「设置里开着、
+    /// 浮标死活不出来」，两端各查各的都看不出问题。
+    #[test]
+    fn test_enabled_only_explicit_false_disables() {
+        assert!(enabled_or_default(None));
+        assert!(enabled_or_default(Some(&serde_json::Value::Null)));
+        assert!(enabled_or_default(Some(&serde_json::json!(true))));
+        // 脏值：手改配置存成字符串 / 数字，都按「开」处理
+        assert!(enabled_or_default(Some(&serde_json::json!("false"))));
+        assert!(enabled_or_default(Some(&serde_json::json!(0))));
+        assert!(!enabled_or_default(Some(&serde_json::json!(false))));
+    }
+
+    /// 键名是跨端契约：前端 `AppConfig.stack_hud_enabled` 与本常量必须同字。
+    /// 改任一侧都要同时改另一侧，否则 `init` 读到的是永远不存在的键 ——
+    /// 表现为「用户关了开关，重启后浮标又出来了」。
+    #[test]
+    fn test_enabled_key_is_the_config_key_frontend_writes() {
+        assert_eq!(ENABLED_KEY, "stack_hud_enabled");
+    }
 
     /// 标签必须与 paste_engine 的排除表一致 —— 不一致会让 HUD 把
     /// 「陈旧目标续命」从偶发变成必然。
