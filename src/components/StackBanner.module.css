@@ -274,6 +274,8 @@
 /* ===== 队列行 ===== */
 .queue {
   display: flex;
+  flex: 1;
+  min-width: 0;
   gap: 6px;
   overflow-x: auto;
   padding: 8px 2px 2px;
@@ -286,6 +288,63 @@
   color: var(--orange);
   opacity: 0.6;
   white-space: nowrap;
+}
+
+/* ===== 窗口化队列（StackQueue.tsx）=====
+   栈容量默认 500 之后，队列不再逐个 map：只渲染视口内那几十颗。
+   辅助窗口走 hide() 不 close()，DOM 一直活着，元素数量必须有上限。 */
+.queueRow {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* ui-rule-ok: 与 .queue 原本的 chip 间距同值，跳转键不能比 chip 之间更松 */
+  min-width: 0;
+}
+
+/* 栈顶 / 栈底跳转键：队列长到看不见两端时的滚动条替代品（V1：只上背景色，不加边框） */
+.queueJump {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.queueJump:hover {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+/* 虚拟轨道：宽度由 JS 算好（style.width = 虚拟器总宽），子项绝对定位 */
+.queueTrack {
+  position: relative;
+  flex: none;
+}
+
+/* 兜底轨道：测不到滚动容器宽度时（jsdom / 首帧）退化成的正常 flex 排版 */
+.queueTrackFlow {
+  display: flex;
+  gap: 6px; /* ui-rule-ok: 同 .queue 的 chip 间距 */
+}
+
+.queueCell {
+  position: absolute;
+  top: 0;
+}
+
+/* 轨道内宽度必须恒定：hover 改 padding 会让 measureElement 反复重测，
+   表现为后面的 chip 集体抖一下。待贴项由 .chipReserve 常驻让出手柄位
+   （窗口化后只多花视口内几十颗的 10px），已贴项不可拖，悬停不再让位。 */
+.queueTrack .chip,
+.queueTrack .chip:hover {
+  padding-left: 6px; /* ui-rule-ok: 就是 .chip 自己的左内边距，这里只是不让 hover 改它 */
+}
+
+.queueTrack .chipReserve,
+.queueTrack .chipReserve:hover {
+  padding-left: 16px; /* ui-rule-ok: 原 .chip:hover 让给拖拽手柄的宽度，改成常驻 */
 }
 
 .chip {

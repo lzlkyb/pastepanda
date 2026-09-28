@@ -24,6 +24,12 @@ export type TableSplitFormat = "raw" | "field-value";
 export interface SplitTableOptions {
   format?: TableSplitFormat;
   includeHeader?: boolean;
+  /**
+   * 单次拆分最多产出多少行。**必须由调用方给**（= 当前生效的栈容量，见
+   * `resolveStackMaxItems`），本模块不 import appStore，保持纯函数可单测。
+   * 省略时用 `MAX_TABLE_SPLIT_ROWS_DEFAULT`。
+   */
+  maxRows?: number;
 }
 
 export interface SplitTableResult {
@@ -31,8 +37,15 @@ export interface SplitTableResult {
   totalRows: number;
 }
 
-/** 单次拆分最多保留的行数，与粘贴栈本身的 50 条上限对齐 */
-export const MAX_TABLE_SPLIT_ROWS = 50;
+/**
+ * 拆分行数上限的**默认值** —— 与栈容量的最大档位同值（`STACK_MAX_TIERS` 的 500）。
+ *
+ * ❗ 它以前是 50，写死在这里，而 `stackPushOrSplit` 那边又各自 clamp 一次栈容量：
+ *   用户把栈调到 500 之后，拆一张 200 行的表仍然只出 50 条，而提示说的是
+ *   「栈上限 500」——两处上限各说各话。现在调用方一律显式传 `maxRows`，
+ *   这个常量只是兜底默认。
+ */
+export const MAX_TABLE_SPLIT_ROWS_DEFAULT = 500;
 
 /** 单列候选里单行超过这个长度就不再当列表处理——更像段落文本而非一行一个短值 */
 const MAX_SINGLE_COLUMN_LINE_LENGTH = 80;
@@ -268,11 +281,17 @@ export function splitTableToRows(text: string, opts?: SplitTableOptions): SplitT
   const guarded = protectQuotedNewlines(text);
   const work = guarded ?? text;
   const unwrap = guarded === null ? (c: string) => c : unprotectCell;
+  // 只认正整数：传进 0 / NaN / 负数（调用方算错）时宁可退回默认，
+  // 也不要让 slice(0, 0) 变成「认出是表格却一条都不拆」这种查不出来的表现。
+  const maxRows =
+    typeof opts?.maxRows === "number" && Number.isInteger(opts.maxRows) && opts.maxRows > 0
+      ? opts.maxRows
+      : MAX_TABLE_SPLIT_ROWS_DEFAULT;
 
   const single = (rows: string[]): SplitTableResult => {
     const mapped = rows.map(unwrap);
     return {
-      rows: mapped.slice(0, MAX_TABLE_SPLIT_ROWS),
+      rows: mapped.slice(0, maxRows),
       totalRows: mapped.length,
     };
   };
@@ -321,7 +340,7 @@ export function splitTableToRows(text: string, opts?: SplitTableOptions): SplitT
     const dataRows = t.rows.map(formatDataRow);
     const rows = includeHeader ? [cols.join("\t"), ...dataRows] : dataRows;
 
-    return { rows: rows.slice(0, MAX_TABLE_SPLIT_ROWS), totalRows: t.rows.length };
+    return { rows: rows.slice(0, maxRows), totalRows: t.rows.length };
   }
 
   // ⑤ 多列全部试完还不行，最后试单列：竖着复制的一列值没有列名概念，

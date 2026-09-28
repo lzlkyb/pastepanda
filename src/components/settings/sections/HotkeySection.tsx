@@ -1,4 +1,5 @@
 import type { AppConfig } from "@/stores/appStore";
+import { STACK_MAX_TIERS, resolveStackMaxItems } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { ToggleRow, SettingTile } from "../ToggleRow";
@@ -141,6 +142,28 @@ export function HotkeySection({ config, updateAndSave, chains }: HotkeySectionPr
           </div>
         </>
       )}
+      <div className={styles.sRow}>
+        <SettingTile hue="paste">🗃️</SettingTile>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>栈容量</div>
+          <div className={`${styles.sRowDesc}`}>最多同时攒多少条；撞上限后新的照常入栈、栈底最旧那条被移出（本轮首次移出会提示一次）</div>
+        </div>
+        {/* 档位按钮（点选即存，同上方「拆行格式」那行同款控件）。
+            刻意不做滑杆：配置每存一次都要全量明文备份，拖动类调参会在松手前
+            打好几十次 save_config。 */}
+        <div className={styles.sSegGroup} role="group" aria-label="栈容量">
+          {STACK_MAX_TIERS.map((n) => (
+            <button
+              key={n}
+              className={`${styles.sSegText}${resolveStackMaxItems(config.stack_max_items) === n ? ` ${styles.sSegActive}` : ""}`}
+              aria-pressed={resolveStackMaxItems(config.stack_max_items) === n}
+              onClick={() => updateAndSave({ stack_max_items: n })}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className={styles.sRow}>
         <SettingTile hue="paste">⚡</SettingTile>
         <div className={`${styles.sRowBody}`}>

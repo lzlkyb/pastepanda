@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import {
   splitTableToRows,
-  MAX_TABLE_SPLIT_ROWS,
+  MAX_TABLE_SPLIT_ROWS_DEFAULT,
   looksLikeTableButUnsplit,
 } from "@/lib/tableSplit";
 
@@ -40,13 +40,31 @@ describe("splitTableToRows", () => {
     expect(splitTableToRows("这只是一段普通文本，没有表格结构")).toBeNull();
   });
 
-  it("超过上限行数只保留前 N 条，totalRows 记录真实总数", () => {
+  it("超过 maxRows 只保留前 N 条，totalRows 记录真实总数", () => {
+    // 🔴 这个天花板以前是模块里写死的 50，跟栈容量各说各话：用户把栈调到 500，
+    //    拆一张 62 行的表仍然只出 50 条。现在由调用方（`stackPushOrSplit` 传当前
+    //    生效的栈容量）给，函数本身只认参数。
     const header = "姓名\t编号";
     const dataRows = Array.from({ length: 62 }, (_, i) => `用户${i}\t${i}`);
     const text = [header, ...dataRows].join("\n");
-    const result = splitTableToRows(text);
-    expect(result!.rows).toHaveLength(MAX_TABLE_SPLIT_ROWS);
+    const result = splitTableToRows(text, { maxRows: 50 });
+    expect(result!.rows).toHaveLength(50);
     expect(result!.totalRows).toBe(62);
+  });
+
+  it("省略 maxRows 时用默认上限（与栈容量最大档位同值）", () => {
+    const text = Array.from({ length: 520 }, (_, i) => `ID-${i}`).join("\n");
+    const result = splitTableToRows(text);
+    expect(result!.rows).toHaveLength(MAX_TABLE_SPLIT_ROWS_DEFAULT);
+    expect(result!.totalRows).toBe(520);
+  });
+
+  it("maxRows 传 0 / 负数 / NaN 一律回落默认（不让 slice(0,0) 变成「认出是表格却一条都不拆」）", () => {
+    const text = "姓名\t编号\n张三\t1\n李四\t2";
+    [0, -5, Number.NaN, 1.5].forEach((bad) => {
+      const result = splitTableToRows(text, { maxRows: bad });
+      expect(result!.rows).toHaveLength(2);
+    });
   });
 
   it("format: field-value → 每列格式化为「列名: 值」", () => {
@@ -79,10 +97,10 @@ describe("splitTableToRows", () => {
     expect(splitTableToRows(text)).toBeNull();
   });
 
-  it("单列也遵守 50 条上限，totalRows 记录真实总数", () => {
+  it("单列也遵守 maxRows，totalRows 记录真实总数", () => {
     const lines = Array.from({ length: 62 }, (_, i) => `ID-${i}`);
-    const result = splitTableToRows(lines.join("\n"));
-    expect(result!.rows).toHaveLength(MAX_TABLE_SPLIT_ROWS);
+    const result = splitTableToRows(lines.join("\n"), { maxRows: 50 });
+    expect(result!.rows).toHaveLength(50);
     expect(result!.totalRows).toBe(62);
   });
 

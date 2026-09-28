@@ -1,5 +1,18 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useAppStore, HistoryItem, STACK_MAX_ITEMS } from "@/stores/appStore";
+import {
+  useAppStore,
+  HistoryItem,
+  STACK_MAX_ITEMS_DEFAULT,
+  STACK_MAX_TIERS,
+  resolveStackMaxItems,
+} from "@/stores/appStore";
+
+/** 把栈容量钉到某一档（走的是 store 里那条唯一读取路径，不是测试夹具） */
+function setCap(n: number) {
+  useAppStore.setState({
+    config: { ...useAppStore.getState().config, stack_max_items: n },
+  });
+}
 
 /** 创建测试用 HistoryItem */
 function makeItem(overrides: Partial<HistoryItem> & { id: string; text: string }): HistoryItem {
@@ -31,6 +44,8 @@ function resetStore() {
     stackDoneIds: new Set(),
     stackPasted: 0,
     stackCollected: 0,
+    stackEvicted: 0,
+    stackEvictNoticeTick: 0,
     stackPasteAllActive: false,
     stackLastSplit: null,
     stackLoopPaste: false,
@@ -38,6 +53,7 @@ function resetStore() {
     config: {
       ...useAppStore.getState().config,
       current_workspace: "默认",
+      stack_max_items: STACK_MAX_ITEMS_DEFAULT,
       table_split_enabled: true,
       table_split_format: "raw",
       table_split_include_header: false,
@@ -59,6 +75,8 @@ describe("setStackMode", () => {
       stackDoneIds: new Set(["x"]),
       stackPasted: 5,
       stackCollected: 10,
+      stackEvicted: 7,
+      stackEvictNoticeTick: 1,
     });
 
     useAppStore.getState().setStackMode(true);
@@ -69,6 +87,9 @@ describe("setStackMode", () => {
     expect(s.stackDoneIds.size).toBe(0);
     expect(s.stackPasted).toBe(0);
     expect(s.stackCollected).toBe(0);
+    // 挤出计数与「只提示一次」的信号必须一起复位，否则下一轮栈会话永远不再提醒
+    expect(s.stackEvicted).toBe(0);
+    expect(s.stackEvictNoticeTick).toBe(0);
   });
 
   it("deactivating only sets stackMode to false (preserves items)", () => {
@@ -146,7 +167,8 @@ describe("stackPush", () => {
     expect(useAppStore.getState().stackItems).toHaveLength(2);
   });
 
-  it("caps at 50 items (removes oldest from bottom)", () => {
+  it("caps at the configured tier (evicts oldest from the bottom)", () => {
+    setCap(50);
     useAppStore.getState().setStackMode(true);
     for (let i = 0; i < 55; i++) {
       useAppStore.getState().stackPush(makeItem({ id: `item-${i}`, text: `text-${i}` }));
@@ -159,6 +181,46 @@ describe("stackPush", () => {
     expect(s.stackItems[49].id).toBe("item-5");
     // stackCollected 记录真实总数（不受截断影响）
     expect(s.stackCollected).toBe(55);
+    // 挤出去掉的那几条要留下计数，横幅据此提示
+    expect(s.stackEvicted).toBe(5);
+  });
+
+  it("容量读的是配置，不是写死的 50", () => {
+    // 🔴 上限以前是模块级常量，横幅/拆分/模板三处各自 slice 同一个数；
+    //    现在它是可配置档位，任何一处绕过 resolveStackMaxItems 都会从这里漏出去。
+    setCap(200);
+    useAppStore.getState().setStackMode(true);
+    for (let i = 0; i < 60; i++) {
+      useAppStore.getState().stackPush(makeItem({ id: `n-${i}`, text: `t${i}` }));
+    }
+    const s = useAppStore.getState();
+    expect(s.stackItems).toHaveLength(60);
+    expect(s.stackEvicted).toBe(0);
+    for (let i = 0; i < 200; i++) {
+      useAppStore.getState().stackPush(makeItem({ id: `m-${i}`, text: `m${i}` }));
+    }
+    expect(useAppStore.getState().stackItems).toHaveLength(200);
+  });
+
+  it("一次栈会话里撞上限只把提示信号抬一次", () => {
+    setCap(50);
+    useAppStore.getState().setStackMode(true);
+    for (let i = 0; i < 60; i++) {
+      useAppStore.getState().stackPush(makeItem({ id: `e-${i}`, text: `e${i}` }));
+    }
+    let s = useAppStore.getState();
+    expect(s.stackEvictNoticeTick).toBe(1);
+    expect(s.stackEvicted).toBe(10);
+    // 继续撞：计数涨，信号不再抬（横幅据此只 toast 一次）
+    for (let i = 0; i < 5; i++) {
+      useAppStore.getState().stackPush(makeItem({ id: `f-${i}`, text: `f${i}` }));
+    }
+    s = useAppStore.getState();
+    expect(s.stackEvictNoticeTick).toBe(1);
+    expect(s.stackEvicted).toBe(15);
+    // 退出栈模式再开：信号复位，下一轮还能再提示
+    useAppStore.getState().exitStackMode();
+    expect(useAppStore.getState().stackEvictNoticeTick).toBe(0);
   });
 });
 
@@ -770,6 +832,8 @@ describe("stackConsumeMerged", () => {
     // 🔴 以前是 `[...新, ...旧].slice(0, 50)`：实测栈内 40 条 + 拆一张 60 行的表
     //    = 40 条旧条目全没了，而提示只说「仅前 50 条入栈」。
     //    ❗ 得用 setState 直接置栈：`setStackMode(true)` 会把 stackItems 清空。
+    //    ❗ 容量钉到 50：这条测的是「按剩余空间放」，默认档 500 的话 60 行全塞得下。
+    setCap(50);
     const older: HistoryItem[] = Array.from({ length: 40 }, (_, i) =>
       makeItem({ id: `old-${i}`, text: `旧条目${i}` }),
     );
@@ -778,21 +842,22 @@ describe("stackConsumeMerged", () => {
     const result = useAppStore.getState().stackPushOrSplit(makeItem({ id: "big", text: big }));
     expect(result).toEqual({ splitCount: 10, totalRows: 60 });
     const s = useAppStore.getState();
-    expect(s.stackItems).toHaveLength(STACK_MAX_ITEMS);
+    expect(s.stackItems).toHaveLength(50);
     expect(s.stackItems.filter((i) => i.id.startsWith("old-"))).toHaveLength(40);
   });
 
   it("栈已满时拆分不动栈，返回 splitCount 0 让调用方去提示", () => {
-    const full: HistoryItem[] = Array.from({ length: STACK_MAX_ITEMS }, (_, i) =>
+    setCap(50);
+    const full: HistoryItem[] = Array.from({ length: 50 }, (_, i) =>
       makeItem({ id: `old-${i}`, text: `旧条目${i}` }),
     );
-    useAppStore.setState({ stackMode: true, stackItems: full, stackCollected: STACK_MAX_ITEMS });
+    useAppStore.setState({ stackMode: true, stackItems: full, stackCollected: 50 });
     const result = useAppStore
       .getState()
       .stackPushOrSplit(makeItem({ id: "t", text: "a\tb\n1\t2\n3\t4" }));
     expect(result).toEqual({ splitCount: 0, totalRows: 2 });
     const s = useAppStore.getState();
-    expect(s.stackItems).toHaveLength(STACK_MAX_ITEMS);
+    expect(s.stackItems).toHaveLength(50);
     // 🔴 也不能退化成 stackPush 把整张表塞进去——那会顶掉一条旧条目
     expect(s.stackItems.every((i) => i.id.startsWith("old-"))).toBe(true);
     expect(s.stackLastSplit).toBeNull();
@@ -936,5 +1001,92 @@ describe("stackMarkPastedById", () => {
 
     const split = useAppStore.getState().stackLastSplit;
     expect(split === null || !split.itemIds.includes(first.id)).toBe(true);
+  });
+});
+
+// ============================================================
+// 栈容量收口（规则 11.1）：上限只能从 config 读，档位外的值一律回落
+// ============================================================
+describe("resolveStackMaxItems", () => {
+  it("档位内的值原样通过", () => {
+    STACK_MAX_TIERS.forEach((n) => expect(resolveStackMaxItems(n)).toBe(n));
+  });
+
+  it("档位外 / 缺失 / 脏值 → 回落默认，不猜用户想要什么", () => {
+    // 🔴 老用户的后端里根本没有这个键（新增配置项不迁移），undefined 必须给出默认；
+    //    存成字符串、0、负数、999999 都不能被当成容量拿去 slice。
+    [undefined, null, "", "100", 0, -5, 42, 999, Number.NaN, {}, []].forEach((raw) => {
+      expect(resolveStackMaxItems(raw)).toBe(STACK_MAX_ITEMS_DEFAULT);
+    });
+  });
+
+  it("updateConfig 会把档位外的值归一（写回后 store 里不留脏值）", () => {
+    useAppStore.getState().updateConfig({ stack_max_items: 999999 as unknown as number });
+    expect(useAppStore.getState().config.stack_max_items).toBe(STACK_MAX_ITEMS_DEFAULT);
+    useAppStore.getState().updateConfig({ stack_max_items: 100 });
+    expect(useAppStore.getState().config.stack_max_items).toBe(100);
+  });
+
+  it("载入模板超额也走同一条挤出信号（替换语义丢的是模板尾部）", () => {
+    setCap(50);
+    useAppStore.getState().setStackMode(true);
+    useAppStore
+      .getState()
+      .stackLoadTemplate(
+        Array.from({ length: 70 }, (_, i) => ({ type: "text" as const, text: `t${i}`, content: "" })),
+      );
+    const s = useAppStore.getState();
+    expect(s.stackItems).toHaveLength(50);
+    expect(s.stackEvicted).toBe(20);
+    expect(s.stackEvictNoticeTick).toBe(1);
+  });
+});
+
+// ============================================================
+// 拆分行数天花板必须跟栈容量走（规则 11.1 的第 5 个调用点）
+// ============================================================
+describe("表格拆分的行数上限读的是栈容量", () => {
+  // 🔴 `splitTableToRows` 里另有一个写死的 50：栈提到 500 之后，拆一张 60 行的表
+  //    仍然只出 50 条，而提示说的是「栈上限 500」。新写第 N 个上限读取点时，
+  //    这条用例就是拦住它的那道闸。
+  const table60 =
+    "列A\t列B\n" + Array.from({ length: 60 }, (_, i) => `r${i}\tv${i}`).join("\n");
+
+  it("档位 500 → 60 行的表整张拆得下", () => {
+    useAppStore.getState().setStackMode(true);
+    const result = useAppStore
+      .getState()
+      .stackPushOrSplit(makeItem({ id: "t60", text: table60 }));
+    expect(result).toEqual({ splitCount: 60, totalRows: 60 });
+    expect(useAppStore.getState().stackItems).toHaveLength(60);
+  });
+
+  it("档位 50 → 仍然只出 50 条（拆分天花板跟着降，不是恒定 500）", () => {
+    setCap(50);
+    useAppStore.getState().setStackMode(true);
+    const result = useAppStore
+      .getState()
+      .stackPushOrSplit(makeItem({ id: "t60", text: table60 }));
+    expect(result).toEqual({ splitCount: 50, totalRows: 60 });
+  });
+});
+
+describe("栈容量调小后的挤出计数", () => {
+  it("500 档攒了 300 条再调回 50 档：掉多少条就说多少条（不是固定 1 条）", () => {
+    // 🔴 提示文案会念这个数字。以前是「满了还在进新的就 +1」，档位一变一次掉
+    //    两百多条，提示却说「最旧的 1 条已移出栈底」——错的数字比没有数字更糟。
+    useAppStore.getState().setStackMode(true);
+    for (let i = 0; i < 300; i++) {
+      useAppStore.getState().stackPush(makeItem({ id: `c-${i}`, text: `c${i}` }));
+    }
+    expect(useAppStore.getState().stackEvicted).toBe(0);
+
+    setCap(50);
+    useAppStore.getState().stackPush(makeItem({ id: "after", text: "after" }));
+
+    const s = useAppStore.getState();
+    expect(s.stackItems).toHaveLength(50);
+    expect(s.stackEvicted).toBe(251);
+    expect(s.stackEvictNoticeTick).toBe(1);
   });
 });

@@ -137,6 +137,9 @@ export interface AppConfig {
   table_split_enabled: boolean; // 表格拆分入栈（方案 A/B）总开关，默认开
   table_split_format: "raw" | "field-value"; // 拆行后每条的文本格式：raw=原始行，field-value=字段: 值
   table_split_include_header: boolean; // 拆行时是否保留表头行，默认排除
+  /** 粘贴栈容量（50/100/200/500 四档，默认 500）。读取一律走
+   *  `resolveStackMaxItems`，不要直接用它做 slice。 */
+  stack_max_items: number;
   /** 灵动岛（设置页「灵动岛」分区，2026-09-25）。缺省值必须与 Rust `island_config`、
    *  岛前端（todoisland-main.tsx）一致：**关** / 遮盖度 95 / 提醒开 / 30s / 到期优先。
    *  `todo_island_glass` = 岛体遮盖度 66–100（2026-09-26 由四档枚举改成连续滑杆；
@@ -272,7 +275,12 @@ interface AppState {
   stackItems: HistoryItem[]; // 待粘贴栈（index 0 = 栈顶 = 下一个粘贴）
   stackDoneIds: Set<string>; // 本轮已粘贴的条目 ID（卡片变灰）
   stackPasted: number; // 本轮实际已粘贴条数
-  stackCollected: number; // 本轮真实收集总条数（含被 50 条上限截断丢弃的，进度分母用它，避免虚高）
+  stackCollected: number; // 本轮真实收集总条数（含被上限截断丢弃的，进度分母用它，避免虚高）
+  /** 本轮因撞上限被移出栈底的条数（默认 0；上限见 `resolveStackMaxItems`） */
+  stackEvicted: number;
+  /** 🔴 「栈已满」提示的信号：本轮**第一次**发生移出时才 +1（规则 15.3 要反馈，
+   *  但连按 Ctrl+C 撞满时每条都念一遍就是刷屏）。横幅监听它弹 toast。 */
+  stackEvictNoticeTick: number;
   stackPasteAllActive: boolean; // U58：「全部粘贴」循环进行中（用于显示进度条与中止按钮）
   /** P3 粘贴+Tab 推进开关：开启后每次栈顶粘贴成功后自动补发 Tab 键。默认关 */
   stackTabAdvance: boolean;
@@ -377,12 +385,34 @@ interface AppState {
 // ===== 默认配置 =====
 
 /**
- * 粘贴栈最多装多少条。
+ * 粘贴栈最多装多少条 —— **默认值**，用户可在设置里改（`config.stack_max_items`）。
  *
- * ❗ 以前这个 50 写死在两处 `slice(0, 50)`，而拆分那处的语义跟单条入栈不一样
- *   （一次可能涌进数十条），两边各自看不见对方。收成常量，且提示文案里也用它。
+ * ❗ 这个数以前是写死的常量 50，摊在两处 `slice(0, 50)` 上，而拆分那处的语义跟
+ *   单条入栈不一样（一次可能涌进数十条），两边各自看不见对方。现在既收成一处，
+ *   又成了可配档位 —— 取值一律走下面的 `resolveStackMaxItems`。
  */
-export const STACK_MAX_ITEMS = 50;
+export const STACK_MAX_ITEMS_DEFAULT = 500;
+
+/** 设置里给的档位（四档，点选即存；不在档位内的值一律回落默认） */
+export const STACK_MAX_TIERS = [50, 100, 200, 500] as const;
+
+/**
+ * 🔴 栈上限的**唯一读取点**（规则 11.1）。
+ *
+ * 消费方四个：`stackPush` / `stackPushOrSplit`（算 room 与兜底 slice）/
+ * `stackLoadTemplate`，加上设置行与横幅文案。守卫见
+ * `src/__tests__/appStore-stack.test.ts` 的「上限读配置」组 —— 新增第 5 个入口时
+ * 如果还直接写 `config.stack_max_items`，那条守卫拦不住你，但配置文件里存进
+ * 非法值（手改 SQLite / 旧版本残留）就会变成「slice(0, NaN) = 空数组」，
+ * 表现为「栈一条都收不进去」。档位外的一律回落默认，不猜用户想要什么。
+ */
+export function resolveStackMaxItems(raw: unknown): number {
+  // 只认 number：`"100"` 这种字符串虽然 Number() 得得出 100，但它说明存的东西
+  // 已经不是这个配置项该有的样子，回落默认比顺着它 slice 更安全。
+  return typeof raw === "number" && (STACK_MAX_TIERS as readonly number[]).includes(raw)
+    ? raw
+    : STACK_MAX_ITEMS_DEFAULT;
+}
 
 /**
  * 队列里被「消费掉」（已粘贴）的那些 id 若沾了最近一次拆分，就不能再撤销拆分了。
@@ -451,6 +481,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   table_split_enabled: true,
   table_split_format: "raw",
   table_split_include_header: false,
+  stack_max_items: STACK_MAX_ITEMS_DEFAULT,
   todo_island_enabled: false,
   todo_island_glass: 95,
   todo_island_remind: true,
@@ -513,6 +544,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   stackDoneIds: new Set(),
   stackPasted: 0,
   stackCollected: 0,
+  stackEvicted: 0,
+  stackEvictNoticeTick: 0,
   stackPasteAllActive: false,
   stackTabAdvance: false,
   stackLoopPaste: false,
@@ -837,7 +870,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       active
         // ❗ 开栈必须把循环开关归零：它是会话态低频功能，上次开栈点过循环
         //   不代表这次也要循环（用户明确要求「下次打开默认关」）。
-        ? { stackMode: true, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackLoopPaste: false, stackLoopRound: 1 }
+        ? { stackMode: true, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackEvicted: 0, stackEvictNoticeTick: 0, stackLoopPaste: false, stackLoopRound: 1 }
         : { stackMode: false }
     ),
   stackPush: (item) =>
@@ -847,9 +880,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       const top = s.stackItems[0];
       const keyOf = (it: HistoryItem) => (it.type === "text" ? it.text : it.content || it.text);
       if (top && top.type === item.type && keyOf(top) === keyOf(item)) return s;
-      // 上限 50 条，超出移出最早的（栈底）；stackCollected 记录真实收集总数（不受截断影响）
-      const next = [item, ...s.stackItems].slice(0, STACK_MAX_ITEMS);
-      return { stackItems: next, stackCollected: s.stackCollected + 1 };
+      // 上限可配（默认 500），超出移出最早的（栈底）；stackCollected 记真实总数（不受截断影响）
+      const cap = resolveStackMaxItems(s.config.stack_max_items);
+      const next = [item, ...s.stackItems].slice(0, cap);
+      // 🔴 移出条数要**算**，不能「满了还在进新的就算 1 条」：用户把档位从 500 调回
+      //   50 之后，下一次入栈一次就掉四百多条，写死 +1 会让提示说「最旧的 1 条已
+      //   移出栈底」——数字错得比没有数字更糟。第一次掉的时候抬一次信号（规则 15.3），
+      //   之后同轮不再重复——连按 Ctrl+C 撞满时每条念一遍是刷屏。
+      const dropped = Math.max(0, s.stackItems.length + 1 - cap);
+      return {
+        stackItems: next,
+        stackCollected: s.stackCollected + 1,
+        stackEvicted: s.stackEvicted + dropped,
+        stackEvictNoticeTick:
+          s.stackEvictNoticeTick + (dropped > 0 && s.stackEvictNoticeTick === 0 ? 1 : 0),
+      };
     }),
   stackMarkPasted: () =>
     set((s) => {
@@ -978,12 +1023,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         source: "template",
         workspace: s.config.current_workspace,
       }));
+      const cap = resolveStackMaxItems(s.config.stack_max_items);
+      const dropped = Math.max(0, loaded.length - cap);
       return {
         stackMode: true,
-        // ❗ 防御性上限：后端 `stack_template_save` 已经卡了 50 条，此处取不到
-        //   东西；但这个 action 是公开的，别让它成为唯一不守上限的入口。
-        stackItems: loaded.slice(0, STACK_MAX_ITEMS),
+        // ❗ 防御性上限：后端 `stack_template_save` 卡的条数与这里同源，正常取不到
+        //   超额；但这个 action 是公开的，别让它成为唯一不守上限的入口。
+        //   模板是**替换**语义，超额丢的是模板自己的尾部 —— 同样是丢内容，
+        //   第一次也要走同一条提示信号（复用 stackEvictNoticeTick，不另开一路反馈）。
+        stackItems: loaded.slice(0, cap),
         stackCollected: s.stackCollected + loaded.length,
+        stackEvicted: s.stackEvicted + dropped,
+        stackEvictNoticeTick: s.stackEvictNoticeTick + (dropped > 0 && s.stackEvictNoticeTick === 0 ? 1 : 0),
         stackLastSplit: null,
         // 🔴 这条路径**绕过** `setStackMode` 直接置 `stackMode: true`，
         //   所以开栈复位必须在这里再写一遍 —— 漏了就会出现「载入模板后自动进了
@@ -998,22 +1049,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     if (!s.stackMode) return null;
     if (s.config.table_split_enabled && isTableSplitCandidate(item.type)) {
+      // 🔴 上限先算出来，再传给拆分函数：拆分自己的行数天花板以前是独立写死的 50，
+      //   用户把栈调到 500 之后，拆 200 行的表仍然只出 50 条，而提示说的是「栈上限 500」。
+      const cap = resolveStackMaxItems(s.config.stack_max_items);
       const split = splitTableToRows(item.text || "", {
         format: s.config.table_split_format,
         includeHeader: s.config.table_split_include_header,
+        maxRows: cap,
       });
       if (split && split.rows.length > 0) {
         // 注意：不能逐行调 stackPush 循环推入——它两个行为都不适合批量拆分场景：
         // ① 头插会把最后逐行 push 的行顶到最前面，与表格原始顺序相反；
         // ② 它的去重只比当前栈顶，循环里每 push 一行栈顶就变了，表格里相邻两行完全相同时会被静默吸掉。
         // 直接构造好整批按表格顺序的条目一次性 set()，两个问题同时解决。
-        // 🔴 不能 `[...新, ...旧].slice(0, 50)`：新条目在前，旧的会被静默顶掉。
+        // 🔴 不能 `[...新, ...旧].slice(0, 上限)`：新条目在前，旧的会被静默顶掉。
         //    实测栈内 40 条 + 拆一张 60 行的表 = 40 条旧条目全没了，而提示只说
         //    「仅前 50 条入栈」（讲的是表格截断），对刚删掉的 40 条一字不提。
         //    旧条目是用户主动攒起来的、可能已经排好序；表格还在剪贴板里随时能重来。
         //    ❗ 与 `stackPush` 的口径不同是有意的：复制单条时顶掉最老的一条是正常的
         //    栈行为，而一次拆分顶掉几十条不是。别把两处“统一”。
-        const room = Math.max(0, STACK_MAX_ITEMS - s.stackItems.length);
+        const room = Math.max(0, cap - s.stackItems.length);
         const rows = split.rows.slice(0, room);
         if (rows.length === 0) {
           // 栈满：什么都不做，由调用方提示「先粘掉几条」。整表塞进去也会顶掉一条旧的。
@@ -1032,7 +1087,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }));
         set((s2) => ({
           // slice 只是兜底：上面已经按剩余空间截过，这里截不到东西。
-          stackItems: [...newItems, ...s2.stackItems].slice(0, STACK_MAX_ITEMS),
+          stackItems: [...newItems, ...s2.stackItems].slice(0, cap),
           stackCollected: s2.stackCollected + newItems.length,
           stackLastSplit: { originalText: item.text, itemIds: newItems.map((i) => i.id) },
         }));
@@ -1088,7 +1143,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 关栈即复位：循环开关与轮次一并归零 —— 与 `setStackMode(true)` 两端都清，
   // 是「下次打开默认关」这条约束的双保险（防以后再加第五个开栈入口）。
   exitStackMode: () =>
-    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackPasteAllActive: false, stackLastSplit: null, stackLoopPaste: false, stackLoopRound: 1 }),
+    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackEvicted: 0, stackEvictNoticeTick: 0, stackPasteAllActive: false, stackLastSplit: null, stackLoopPaste: false, stackLoopRound: 1 }),
 
   // 来源图标缓存
   setRealIconUrl: (key, url) => set((s) => ({
@@ -1114,6 +1169,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 下次 save_config 落盘即完成迁移（消费方仍各自 normalizeGlass 兜底）。
     if ("todo_island_glass" in clean) {
       clean.todo_island_glass = normalizeGlass(clean.todo_island_glass);
+    }
+    // 栈容量档位：同上，脏值（手改 config / 旧版本残留 / 未来加档又删档）在这里收敛，
+    // 否则 `slice(0, NaN)` 会得到空数组 —— 现象是「栈一条都收不进去」。
+    if ("stack_max_items" in clean) {
+      clean.stack_max_items = resolveStackMaxItems(clean.stack_max_items);
     }
     // 修复 Low（Zustand 反模式）：副作用（动态 import + 事件派发）移出 set updater，
     // updater 保持纯函数；先读旧工作区，set 之后再触发缓存失效

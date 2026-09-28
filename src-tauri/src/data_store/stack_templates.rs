@@ -11,8 +11,11 @@ use super::*;
 
 /// 模板名称上限（字符）。
 pub const MAX_STACK_TEMPLATE_NAME_CHARS: usize = 30;
-/// 模板条目数上限，与栈本身的 50 条上限对齐（模板不该比栈能装的还多）。
-pub const MAX_STACK_TEMPLATE_ITEMS: usize = 50;
+/// 模板条目数上限。与前端「栈容量」的**最大档位**对齐（档位表见
+/// `src/stores/appStore.ts` 的 `STACK_MAX_TIERS`，默认即 500）：模板不该比栈
+/// 能装的还多。刻意**不**跟着用户当前档位浮动 —— 那是前端会话态的约束，
+/// 落盘校验只认一个固定上界，否则「调小档位后旧模板突然存不了」会反过来咬人。
+pub const MAX_STACK_TEMPLATE_ITEMS: usize = 500;
 
 /// 模板里的一条内容快照。
 #[derive(Debug, Clone, Serialize, Deserialize)]

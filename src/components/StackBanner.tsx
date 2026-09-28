@@ -1,16 +1,16 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, useCallback } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Layers, X, Square } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useAppStore, resolveStackMaxItems } from "@/stores/appStore";
 import type { HistoryItem } from "@/stores/appStore";
 import { stackPasteNext, stackPasteAll, abortStackPasteAll, exitStack } from "@/lib/api";
-import { getTypeIcon } from "@/lib/trayUtils";
 import { useToast } from "@/components/Toast";
 import { formatHotkey } from "@/components/settings/HotkeyRecorder";
 import { stackItemsToMergeItems } from "@/lib/mergeText";
 import { MergeDialog } from "@/components/MergeDialog";
 import { SaveTemplateDialog, TemplateLibraryDialog } from "@/components/StackTemplateDialog";
+import { StackQueue } from "./StackQueue";
 import { loopProgress } from "@/lib/stack/loop";
 import styles from "./StackBanner.module.css";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -18,13 +18,6 @@ import { useClickOutside } from "@/hooks/useClickOutside";
 /** 紧凑热键标签：复用 formatHotkey 的大小写映射，去掉空格适配窄按钮（ctrl+alt+p → Ctrl+Alt+P） */
 function compactHotkey(combo: string): string {
   return formatHotkey(combo).replace(/\s+/g, "");
-}
-
-/** chip 显示文本：优先 text，空时按类型回退（图片/文件可能无文本摘要） */
-function chipText(it: HistoryItem): string {
-  const t = it.text?.trim();
-  if (t) return t;
-  return it.type === "image" ? "图片" : it.type === "file" ? "文件" : "(空)";
 }
 
 /**
@@ -52,13 +45,30 @@ export const StackBanner = memo(function StackBanner() {
   const stackLastSplit = useAppStore((s) => s.stackLastSplit);
   const stackUndoSplit = useAppStore((s) => s.stackUndoSplit);
   const stackConsumeMerged = useAppStore((s) => s.stackConsumeMerged);
+  const stackEvictNoticeTick = useAppStore((s) => s.stackEvictNoticeTick);
   const { toast } = useToast();
 
-  // P1 拖拽重排：dragId 存的是拖拽发起时那一条的 id（而不是下标）——拖拽期间若有新内容入栈导致数组下标整体偏移，
-  // 按 id 取仍能准确定位到同一条，改用下标会拿到错的那条去重排；
-  // dragOverIdx 用 state 只为了画插入位指示线，必须触发重渲染
-  const dragId = useRef<string | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // 撞上限挤出旧条目：这是「用户攒着的东西没了」，必须显式说（规则 15.3）。
+  // 🔴 只能以 tick 为依赖：`stackEvicted` 每条都在涨，把它放进依赖就等于「之后每挤掉
+  //   一条都再念一遍」——正是我们要避免的刷屏。弹的瞬间现读一次计数（把已挤掉的条数
+  //   说全，而不是只说触发那一条），提示过一次就钉住那次的内容不再重复。
+  const evictNotifiedTick = useRef(0);
+  useEffect(() => {
+    // 新一轮栈会话（store 把 tick 清零）必须把「已经提示过」也清掉：
+    // 横幅在栈模式来回切换时并不一定重挂载，不清的话第二轮就再也不提醒。
+    if (stackEvictNoticeTick === 0) {
+      evictNotifiedTick.current = 0;
+      return;
+    }
+    if (stackEvictNoticeTick === evictNotifiedTick.current) return;
+    evictNotifiedTick.current = stackEvictNoticeTick;
+    const s = useAppStore.getState();
+    toast(
+      `栈已满 ${resolveStackMaxItems(s.config.stack_max_items)} 条，最旧的 ${s.stackEvicted} 条已移出栈底`,
+      "info"
+    );
+  }, [stackEvictNoticeTick, toast]);
+
   // chip 内容预览：用自定义悬浮卡替代原生 title（后者延迟高、样式不可控）；hover 300ms 后展示全文。
   // portal 到 body + fixed 定位（同 12 行下 DeepCleanDialog 的 srcPopup 同款做法）：
   // .queue 有 overflow-x:auto，根据 CSS 规范会把未显式设置的 overflow-y 计算为 auto，
@@ -149,7 +159,7 @@ export const StackBanner = memo(function StackBanner() {
    * 所以 `chipNext` 的 `i === 0` 判据与序号 `i + 1` 都不用改。
    */
   const pendingItems = stackItems.filter((it) => !stackDoneIds.has(it.id));
-  // 分母用真实收集总数（含被 50 上限截断丢弃的），避免进度虚高
+  // 分母用真实收集总数（含被栈容量上限截断丢弃的），避免进度虚高
   const total = Math.max(stackCollected, stackPasted + remaining);
   // 循环态改看**本轮**进度：`stackPasted/total` 那里分子一直涨、分母却不动
   // （队列不清空），进度条会一轮一轮来回摆，读不出「离贴完这轮还有多远」。
@@ -329,66 +339,20 @@ export const StackBanner = memo(function StackBanner() {
         </div>
       </div>
 
-      {/* 队列行：按粘贴顺序排列，左 = 先粘贴 */}
-      <div className={styles.queue}>
-        {stackItems.length === 0 && doneItems.length === 0 ? (
-          <span className={styles.queueEmpty}>暂无收集 · 按 Ctrl+C 开始</span>
-        ) : (
-          <>
-            {pendingItems.map((it, i) => (
-              <Fragment key={it.id}>
-                {dragOverIdx === i && dragId.current !== null && dragId.current !== it.id && (
-                  <span className={styles.insertSlot} />
-                )}
-                <div
-                  className={`${styles.chip}${i === 0 ? ` ${styles.chipNext}` : ""}${dragId.current === it.id ? ` ${styles.dragging}` : ""}`}
-                  {...chipHoverHandlers(chipText(it))}
-                  draggable={!stackPasteAllActive}
-                  onDragStart={() => { dragId.current = it.id; }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (dragId.current !== null) setDragOverIdx(i);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragId.current !== null && dragId.current !== it.id) stackReorder(dragId.current, it.id);
-                    dragId.current = null;
-                    setDragOverIdx(null);
-                  }}
-                  onDragEnd={() => {
-                    dragId.current = null;
-                    setDragOverIdx(null);
-                  }}
-                >
-                  {i === 0 && <span className={styles.nextTag}>下一个粘贴</span>}
-                  <span className={styles.grip} aria-hidden="true"><i /><i /><i /></span>
-                  <span className={styles.ord}>{i + 1}</span>
-                  <span className={styles.ico}>{getTypeIcon(it.type)}</span>
-                  <span className={styles.txt}>{chipText(it)}</span>
-                  <button
-                    className={styles.rm}
-                    title="从队列移除（不粘贴）"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      stackRemoveItem(it.id);
-                      toast("已从队列移除", "info");
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              </Fragment>
-            ))}
-            {doneItems.map((it) => (
-              <div key={it.id} className={`${styles.chip} ${styles.chipDone}`} {...chipHoverHandlers(chipText(it))}>
-                <span className={styles.ord}>✓</span>
-                <span className={styles.ico}>{getTypeIcon(it.type)}</span>
-                <span className={styles.txt}>{chipText(it)}</span>
-              </div>
-            ))}
-          </>
-        )}
-      </div>
+      {/* 队列行：按粘贴顺序排列，左 = 先粘贴。
+          渲染窗口化在 StackQueue —— 栈容量默认 500，照原来逐个 map 就是
+          500 颗常驻 chip（辅助窗口 hide 不 close，DOM 一直活着）。 */}
+      <StackQueue
+        pendingItems={pendingItems}
+        doneItems={doneItems}
+        locked={stackPasteAllActive}
+        onReorder={stackReorder}
+        onRemove={(id) => {
+          stackRemoveItem(id);
+          toast("已从队列移除", "info");
+        }}
+        hoverHandlers={chipHoverHandlers}
+      />
 
       {/* 进度行 */}
       <div className={styles.foot}>
