@@ -89,6 +89,7 @@ function Host({ withSave = true, saveOk = true, dirty = true, onApi }: HostProps
           onSave={withSave ? async () => saveOk : undefined}
           onClose={() => guard.requestCloseTab(tab.id)}
           onRequestClose={() => guard.requestCloseTab(tab.id)}
+          onRequestCloseWindow={guard.requestCloseWindow}
           onMeta={(meta) => updateMeta(tab.id, meta)}
           registerSave={(fn) => guard.registerSave(tab.id, fn)}
         >

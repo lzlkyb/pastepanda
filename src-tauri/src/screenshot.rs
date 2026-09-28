@@ -1589,6 +1589,7 @@ fn insert_screenshot_with_rgba(
         source_icon: None,
         content_type: Some("image".to_string()),
         ocr_text: ocr_text.clone(),
+        barcodes: None,
         tags: Vec::new(),
     };
     store.insert_history(&item)?;
@@ -1645,6 +1646,7 @@ pub fn update_screenshot_ocr_summary(
         crate::clipboard_monitor::ClipboardChanged {
             item: crate::data_store::HistoryItem {
                 ocr_text: Some(text.to_string()),
+                barcodes: None,
                 ..item
             },
         },

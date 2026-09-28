@@ -107,6 +107,7 @@ pub fn insert_markdown_history(
         source_icon: None,
         content_type: Some(ContentClassifier::content_type_from_labels(&labels).to_string()),
         ocr_text: None,
+        barcodes: None,
         tags: Vec::new(),
     };
     store.insert_history(&item)?;
@@ -186,6 +187,7 @@ pub fn insert_diagram_history(
         source_icon: None,
         content_type: Some("diagram".to_string()),
         ocr_text: None,
+        barcodes: None,
         tags: Vec::new(),
     };
     store.insert_history(&item)?;

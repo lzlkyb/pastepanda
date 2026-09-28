@@ -41,7 +41,7 @@ interface DocumentChromeProps {
   isFullscreen: boolean;
   onFullscreenToggle: () => void;
   onMinimize: () => void;
-  /** 关闭当前标签（守卫由宿主裁决） */
+  /** 关闭整个窗口（工具栏 ✕ 与最小化/全屏同组的窗口控件；守卫由宿主裁决） */
   onClose: () => void;
   /** 标签栏插槽（宿主渲染，插在工具栏之下） */
   tabBar?: ReactNode;

@@ -136,6 +136,7 @@ export function FullscreenEditor() {
             onFullscreenToggle={toggleFullscreen}
             onMinimize={minimize}
             onRequestClose={() => guard.requestCloseTab(t.id)}
+            onRequestCloseWindow={guard.requestCloseWindow}
             onMeta={(meta) => updateMeta(t.id, meta)}
             registerSave={(fn) => guard.registerSave(t.id, fn)}
             tabBar={isActive ? tabBarNode : undefined}

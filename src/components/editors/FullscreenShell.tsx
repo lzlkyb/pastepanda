@@ -12,17 +12,19 @@
  *   ② 窗口级能力（主题 / 全屏 / 关闭请求）**可外部注入**：宿主接管时传 props，
  *      不传则维持原来的自管行为（单文档场景与测试仍可直接用）。
  *      ❗ 这不是「两套实现并存」，而是同一套逻辑的两种接线：宿主接管时会跳过
- *      自管分支（见 darkMode === undefined 判断），不会出现两份状态打架。
+ *      自管分支（`darkMode === undefined` 才挂监听，判断在 `useShellWindowState` 里），
+ *      不会出现两份状态打架。
+ *      主题与全屏那半已抽到 `useShellWindowState`（规则 7 的体量红线）。
+ *
+ * 关闭有两个**作用域**，别接错：工具栏 ✕ 与最小化/全屏同组，是窗口控件 ⇒
+ * `onRequestCloseWindow`（关整窗，宿主聚合裁决脏标签）；标签栏每个标签自己的 ✕ 才是
+ * `onRequestClose`（关一个标签）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Save, X, Maximize2, Minimize2, Minus } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { DEFAULT_THEME, isDarkTheme } from "@/lib/theme";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SkinScene } from "@/components/SkinScene";
-import { logger } from "@/lib/logger";
+import { useShellWindowState } from "./fullscreen/useShellWindowState";
 import type { TabMeta } from "@/lib/editorTabs";
 import styles from "./FullscreenEditor.module.css";
 
@@ -41,8 +43,16 @@ export interface DocumentViewSlots {
   isFullscreen?: boolean;
   onFullscreenToggle?: () => void;
   onMinimize?: () => void;
-  /** 关闭请求；传了则 ✕/Esc 直通宿主（守卫上提），不传则壳内自带脏守卫 */
+  /** 关闭**本标签**（守卫由宿主裁决）；工具栏 ✕ / Esc 不用它，见下 */
   onRequestClose?: () => void;
+  /**
+   * 关闭**整个窗口**（工具栏 ✕ 与 Esc 的落点）。
+   *
+   * 工具栏 ✕ 与最小化、全屏是同一组**窗口控件**，语义必须是关整窗；
+   * 标签栏每个标签自己的 ✕ 才是 `onRequestClose`（关一个标签）。
+   * 宿主没注入时回退到 `onRequestClose` —— 单文档下两者等价。
+   */
+  onRequestCloseWindow?: () => void;
   /** 元信息上报（宿主标签栏渲染用） */
   onMeta?: (meta: TabMeta) => void;
   /** 注册「关闭前保存」（宿主多标签守卫逐项调用用） */
@@ -90,10 +100,10 @@ export function FullscreenShell({
   onFullscreenToggle,
   onMinimize,
   onRequestClose,
+  onRequestCloseWindow,
   onMeta,
   registerSave,
 }: FullscreenShellProps) {
-  const [ownDark, setOwnDark] = useState(false);
   const [showConfirmClose, setShowConfirmClose] = useState(false);
   // dirty 由调用方通过 prop 实时传入；直接用最新值即可（无需 ref 桥接）
   const isDirty = dirty;
@@ -103,50 +113,12 @@ export function FullscreenShell({
   const registerRef = useRef(registerSave);
   registerRef.current = registerSave;
 
-  // 主题判定：统一走 isDarkTheme（theme.ts 收口），灭掉各类型硬编码 midnight||ocean-dark。
-  // 宿主接管（darkMode 有值）时整段跳过 —— 不挂重复的窗口级监听（规则 8.2）。
-  useEffect(() => {
-    if (darkMode !== undefined) return;
-    const applyTheme = (theme: string) => setOwnDark(isDarkTheme(theme || DEFAULT_THEME));
-    invoke<{ theme?: string }>("get_config")
-      .then((cfg) => applyTheme(cfg.theme ?? DEFAULT_THEME))
-      .catch(() => { /* 读不到就保持默认亮色 */ });
-    // 运行时主题切换也跟随（独立窗口拿不到主窗口 store，只能监听事件）
-    const unsubPromise = listen<{ theme?: string }>("theme-changed", (e) =>
-      applyTheme(e.payload?.theme ?? DEFAULT_THEME));
-    return () => { void unsubPromise.then((u) => u()); };
-  }, [darkMode]);
-
-  const [ownIsFullscreen, setOwnIsFullscreen] = useState(false);
-  useEffect(() => {
-    if (isFullscreen !== undefined) return;
-    const win = getCurrentWindow();
-    let disposed = false;
-    let unlistenResize: (() => void) | undefined;
-    win.isFullscreen().then((fs) => { if (!disposed) setOwnIsFullscreen(fs); }).catch(() => {});
-    win.onResized(() => {
-      win.isFullscreen().then((fs) => { if (!disposed) setOwnIsFullscreen(fs); }).catch(() => {});
-    }).then((fn) => { if (disposed) fn(); else unlistenResize = fn; });
-    return () => { disposed = true; unlistenResize?.(); };
-  }, [isFullscreen]);
-
-  const fullscreenOn = isFullscreen ?? ownIsFullscreen;
-  const darkOn = darkMode ?? ownDark;
-
-  const doToggleFullscreen = useCallback(async () => {
-    if (onFullscreenToggle) {
-      onFullscreenToggle();
-      return;
-    }
-    try {
-      const win = getCurrentWindow();
-      const next = !(await win.isFullscreen());
-      await win.setFullscreen(next);
-      setOwnIsFullscreen(next);
-    } catch (e) {
-      logger.error("切换全屏失败", e);
-    }
-  }, [onFullscreenToggle]);
+  // 窗口级外观（主题明暗 / 全屏态）：宿主注入则直通，未注入才自管
+  const { darkOn, fullscreenOn, toggleFullscreen: doToggleFullscreen } = useShellWindowState({
+    darkMode,
+    isFullscreen,
+    onFullscreenToggle,
+  });
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     if (!onSave) return false;
@@ -158,12 +130,13 @@ export function FullscreenShell({
     }
   }, [onSave]);
 
-  // 关闭守卫：脏 → 先确认；否则直接关。
-  // 宿主接管（onRequestClose）时直通 —— 多标签下守卫必须由宿主统一裁决，
+  // 关闭守卫：工具栏 ✕ 与 Esc 关的是**整个窗口**（它与最小化/全屏同组，是窗口控件）。
+  // 宿主接管时直通 —— 多标签下守卫必须由宿主统一裁决，
   // 否则关窗时每个脏标签各弹一个框，既不告知总数也无法一次处置。
   const guardedClose = useCallback(() => {
-    if (onRequestClose) {
-      onRequestClose();
+    const closeWindow = onRequestCloseWindow ?? onRequestClose;
+    if (closeWindow) {
+      closeWindow();
       return;
     }
     if (isDirty) {
@@ -171,7 +144,7 @@ export function FullscreenShell({
       return;
     }
     onClose();
-  }, [onRequestClose, isDirty, onClose]);
+  }, [onRequestCloseWindow, onRequestClose, isDirty, onClose]);
 
   const handleConfirmClose = useCallback(() => {
     setShowConfirmClose(false);

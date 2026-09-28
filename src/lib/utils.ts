@@ -623,6 +623,127 @@ export function getImageOcrFullText(
   return text;
 }
 
+// ========== 二维码/条码识别（本地解码，不联网——规则 16.4 同 OCR 不受 AI 门控） ==========
+
+/** 与后端 Rust BarcodeHit 一一对应（commands/barcodes.rs 序列化结果）。 */
+export interface BarcodeHit {
+  /** rxing BarcodeFormat 的 Display 小写名，如 "qrcode" / "code128" */
+  format: string;
+  text: string;
+  /** 包围盒（图片像素坐标）：[[minX,minY],[maxX,minY],[maxX,maxY],[minX,maxY]] */
+  points: [number, number][];
+}
+
+/** 图片卡片条码解码状态（由 useCardBarcodes 产出；后端回填 barcodes 不走此状态）。 */
+export type ImageBarcodeState = {
+  /** idle=排队中；decode=解码中；done=已出结果；fail=解码失败 */
+  status: "idle" | "decode" | "done" | "fail";
+  /** 解码结果；仅 status=done 时有意义（空数组=解码过但无码） */
+  hits?: BarcodeHit[];
+};
+
+/** 图片条码显示所需的最小输入（Card.tsx 的 item 子集）。 */
+export interface ImageBarcodeInput {
+  barcodes?: BarcodeHit[] | null;
+}
+
+// 2D 码制集合（徽章上统称「QR」，其余归「条码」）。
+const QR_2D_FORMATS = new Set([
+  "qrcode", "microqrcode", "rmqrcode", "datamatrix", "aztec", "pdf417", "maxicode",
+]);
+
+/** 是否 2D 码（QR/DataMatrix/PDF417 等）；其余按 1D 条码归类。 */
+export function isQrBarcodeFormat(format: string): boolean {
+  return QR_2D_FORMATS.has((format || "").toLowerCase());
+}
+
+/** 码制 → 显示标签（设计稿形态：QRCode / Code128；后端 rxing Display 是小写名）。 */
+const BARCODE_FORMAT_LABELS: Record<string, string> = {
+  qrcode: "QRCode",
+  microqrcode: "Micro QRCode",
+  rmqrcode: "rMCode",
+  datamatrix: "DataMatrix",
+  aztec: "Aztec",
+  pdf417: "PDF417",
+  maxicode: "MaxiCode",
+  code128: "Code128",
+  code39: "Code39",
+  code93: "Code93",
+  codabar: "Codabar",
+  itf: "ITF",
+  ean13: "EAN-13",
+  ean8: "EAN-8",
+  upca: "UPC-A",
+  upce: "UPC-E",
+};
+
+export function barcodeFormatLabel(format: string): string {
+  const key = (format || "").toLowerCase();
+  return BARCODE_FORMAT_LABELS[key] ?? format.toUpperCase();
+}
+
+/**
+ * 合并「后端回填 barcodes」与「前端实时解码状态」，返回最终码列表。
+ * 与 getImageOcrFullText 同判据：后端 != null 是持久化权威（含空数组=解过无码），
+ * 前端状态只在后端没给（新条目）且解码完成时兜底。
+ * 返回 null = 尚无结论（未解码/解码中/失败），调用方据此不显示徽章。
+ */
+export function getImageBarcodes(
+  item: ImageBarcodeInput,
+  barcodeState?: ImageBarcodeState,
+): BarcodeHit[] | null {
+  if (item.barcodes != null) return item.barcodes;
+  if (barcodeState?.status === "done") return barcodeState.hits ?? [];
+  return null;
+}
+
+/**
+ * 卡片角标文本（设计稿：`▦ QR ×1 · 条码 ×1`）。
+ * 无码 / 结论未出 → undefined（徽章不渲染）；未知码制统称「码」。
+ */
+export function barcodeBadgeLabel(hits: BarcodeHit[] | null): string | undefined {
+  if (!hits || hits.length === 0) return undefined;
+  let qr = 0;
+  let bar = 0;
+  let other = 0;
+  for (const h of hits) {
+    const f = (h.format || "").toLowerCase();
+    if (isQrBarcodeFormat(f)) qr++;
+    else if (BARCODE_FORMAT_LABELS[f]) bar++;
+    else other++;
+  }
+  const parts: string[] = [];
+  if (qr > 0) parts.push(`QR ×${qr}`);
+  if (bar > 0) parts.push(`条码 ×${bar}`);
+  if (other > 0) parts.push(`码 ×${other}`);
+  const label = `▦ ${parts.join(" · ")}`;
+  return label.length > 18 ? `▦ 码 ×${hits.length}` : label;
+}
+
+/** 码列表按行拼接（「复制全部」用）。空列表返回空串。 */
+export function joinBarcodeTexts(hits: BarcodeHit[]): string {
+  return hits.map((h) => h.text).join("\n");
+}
+
+/** points 包围盒 → CSS 定位用的 {x,y,width,height}（图片像素坐标）。 */
+export function barcodeBoundingRect(points: [number, number][]): { x: number; y: number; width: number; height: number } | null {
+  if (!points || points.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of points) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** 是否 http/https 链接（预览抽屉「↗ 打开链接」仅对 URL 出现）。 */
+export function isHttpUrl(text: string): boolean {
+  return /^https?:\/\//i.test((text || "").trim());
+}
+
 
 
 /**

@@ -8,7 +8,8 @@ import { useDialogStore } from "@/stores/dialogStore";
 import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
 import { useCardOcr } from "@/hooks/useCardOcr";
-import type { ImageOcrState } from "@/lib/utils";
+import { useCardBarcodes } from "@/hooks/useCardBarcodes";
+import type { ImageOcrState, ImageBarcodeState } from "@/lib/utils";
 import { ContextMenu } from "@/components/ContextMenu";
 import { StackBanner } from "@/components/StackBanner";
 import { MdAssocBanner } from "@/components/MdAssocBanner";
@@ -62,7 +63,7 @@ function RegexPreviewDialogWrapper({ item, ruleId, onClose }: { item: HistoryIte
  * by-id 回调 + 原始类型标志，浅比较通过即跳过，闭包放在行内部创建。
  */
 const VirtualCardRow = memo(function VirtualCardRow({
-  item, selected, pasting, imageState, searchKeyword, stackOrder, stackDone, ocrState,
+  item, selected, pasting, imageState, searchKeyword, stackOrder, stackDone, ocrState, barcodeState,
   index, disablePreview, showMoveToGroup,
   onItemClick, onItemDoubleClick, onRetryImage, onEdit, onEditTags,
   onQrCode, onRegexPreview, onManageRegexRules,
@@ -72,6 +73,7 @@ const VirtualCardRow = memo(function VirtualCardRow({
   pasting: boolean;
   imageState: ImgState | undefined;
   ocrState: ImageOcrState | undefined;
+  barcodeState: ImageBarcodeState | undefined;
   searchKeyword: string;
   stackOrder: number | undefined;
   stackDone: boolean;
@@ -92,6 +94,7 @@ const VirtualCardRow = memo(function VirtualCardRow({
       item={item} selected={selected}
       imageState={imageState}
       ocrState={ocrState}
+      barcodeState={barcodeState}
       searchKeyword={searchKeyword}
       pasting={pasting}
       onRetryImage={(() => {
@@ -371,6 +374,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   // ── 图片条目 OCR 懒识别（可视窗口 ± 缓冲触发，结果以 item.id 为键）──
   const ocrById = useCardOcr(items, thumbFirst, thumbLast);
+  // ── 图片条目二维码/条码懒解码（与 OCR 同窗口同纪律，结果以 item.id 为键）──
+  const barcodeById = useCardBarcodes(items, thumbFirst, thumbLast);
 
   // 异步加载图片缩略图（只加载可视窗口 ± 缓冲范围）
   useEffect(() => {
@@ -848,6 +853,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                           return p ? imgCache[p] : undefined;
                         })()}
                         ocrState={ocrById[item.id]}
+                        barcodeState={barcodeById[item.id]}
                         searchKeyword={searchKeyword}
                         pasting={pastingId === item.id}
                         onItemClick={handleItemClick}

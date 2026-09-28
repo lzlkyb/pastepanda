@@ -508,6 +508,24 @@
   border-radius: 4px;
   padding: 0 5px;
 }
+/* 二维码/条码徽章（设计稿①）：与 cardOcrBadge 同构同尺寸，语义色用 --accent 区分「码」与「文字」。
+   可点（button）：打开预览并自动展开码板块。 */
+.cardCodeBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9.5px; /* ui-rule-ok: 与 .cardOcrBadge 同构同尺寸（徽标档，不是正文） */
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 4px;
+  padding: 0 5px; /* ui-rule-ok: 与 .cardOcrBadge 同构 */
+  cursor: pointer;
+}
+.cardCodeBadge:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 
 .cardSource {
   white-space: nowrap;
@@ -1498,6 +1516,98 @@
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ══ 二维码/条码结果抽屉（设计稿②，BarcodePanel）══
+   容器/头部复用 ocrFullTextPanel + ocrDrawerHead（同一视觉语言），这里只加条目级样式。
+   青色 = 截图选区同款（screenshot.css L1163 的 #06b6d4；--cyan 在 theme.css 从未定义，
+   所以在此定义局部令牌，用法点只引用变量）。 */
+.codeRectOverlay {
+  --code-cyan: #06b6d4; /* ui-rule-ok: 令牌定义处（截图选区同族青色的局部令牌） */
+  border: 2px dashed var(--code-cyan);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 3;
+  animation: codeRectIn 150ms ease-out;
+}
+@keyframes codeRectIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: none; }
+}
+.codeItem {
+  --code-cyan: #06b6d4; /* ui-rule-ok: 令牌定义处，同 .codeRectOverlay */
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  cursor: default;
+}
+.codeItem:hover {
+  border-color: color-mix(in srgb, var(--code-cyan) 55%, var(--border-color));
+}
+.codeMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.codeHint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.codeFmtTag {
+  font-size: 9.5px; /* ui-rule-ok: 与 .cardOcrBadge/.cardCodeBadge 徽标同族同尺寸，标签是徽标不是正文 */
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 0 5px; /* ui-rule-ok: 徽标内边距与 .cardOcrBadge 同构 */
+  border-radius: 4px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.codeFmtTagOned {
+  --code-cyan: #06b6d4; /* ui-rule-ok: 令牌定义处，同 .codeRectOverlay */
+  color: var(--code-cyan);
+  background: color-mix(in srgb, var(--code-cyan) 10%, transparent);
+  border-color: color-mix(in srgb, var(--code-cyan) 30%, transparent);
+}
+.codeText {
+  font: 12px/1.5 Consolas, monospace;
+  word-break: break-all;
+  color: var(--text-primary);
+  user-select: text;
+}
+.codeActs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.codeActBtn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+}
+.codeActBtn:hover { border-color: var(--accent); }
+.codeActBtnPrimary {
+  background: color-mix(in srgb, var(--accent) 18%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.codeActBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.codeSaveRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+.codeHeadGlyph { font-size: 12px; }
+.codeHeadChev { margin-left: auto; }
+.codeChevOpen { transform: rotate(180deg); }
 .ocrFullTextActions {
   display: flex;
   align-items: center;

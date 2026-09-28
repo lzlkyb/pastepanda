@@ -8,6 +8,7 @@ import { normalizeTheme } from "@/lib/theme";
 import { normalizeGlass } from "@/lib/todo/glass";
 import { ANCHOR_DEFAULT, normalizeAnchor, type AnchorKey } from "@/lib/todo/anchor";
 import { parseEventRange, isEventRange } from "@/lib/eventLabel";
+import type { BarcodeHit } from "@/lib/utils";
 
 // ===== 数据类型 =====
 
@@ -52,6 +53,9 @@ export interface HistoryItem {
    *  undefined=从未识别过；""=识别过但无文字；非空=识别结果。
    *  识别文本是本地 OCR 产物，不出本机。 */
   ocr_text?: string;
+  /** 图片条目的二维码/条码解码结果（后端 image_barcode_cache 回填）。
+   *  null/undefined=从未解码过；[]=解码过但无码；非空数组=码列表。本地解码，不出本机。 */
+  barcodes?: BarcodeHit[] | null;
 }
 
 /** 顶部标签页筛选。注：没有 "rich" —— 图文混排归入 "image"（见下方过滤逻辑） */

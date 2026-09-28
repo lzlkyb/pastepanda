@@ -45,16 +45,24 @@ vi.mock("@tauri-apps/api/window", () => ({
  * 审查正是因此漏掉了「零标签」这条分支。
  */
 vi.mock("@/components/editors/EditorDocument", () => ({
-  EditorDocument: (props: { onRequestClose: () => void }) => (
-    <button data-testid="req-close" onClick={props.onRequestClose}>
-      x
-    </button>
+  EditorDocument: (props: { onRequestClose: () => void; onRequestCloseWindow: () => void }) => (
+    <>
+      <button data-testid="req-close" onClick={props.onRequestClose}>
+        x
+      </button>
+      <button data-testid="req-close-window" onClick={props.onRequestCloseWindow}>
+        ■
+      </button>
+    </>
   ),
 }));
 
 const closeCalls = () =>
   vi.mocked(invoke).mock.calls.filter(([c]) => c === "close_editor_window").length;
 const docNode = () => document.querySelector('[data-testid="req-close"]');
+/** 工具栏那个 ✕（窗口控件）—— 与标签栏的单标签 ✕ 不是一条路 */
+const windowCloseNode = () => document.querySelector('[data-testid="req-close-window"]');
+const tabNodes = () => document.querySelectorAll('[data-testid="req-close"]');
 
 beforeEach(() => {
   h.toast.mockReset();
@@ -128,15 +136,50 @@ describe("关掉最后一个标签 = 关窗", () => {
     });
     render(<FullscreenEditor />);
     // 两个标签 ⇒ 视图替身被渲染两份，点第一个
-    await waitFor(() => expect(document.querySelectorAll('[data-testid="req-close"]').length).toBe(2));
+    await waitFor(() => expect(tabNodes().length).toBe(2));
 
     await act(async () => {
-      fireEvent.click(document.querySelectorAll('[data-testid="req-close"]')[0]);
+      fireEvent.click(tabNodes()[0]);
     });
 
     expect(closeCalls(), "还有标签在，窗口不该关").toBe(0);
-    await waitFor(() =>
-      expect(document.querySelectorAll('[data-testid="req-close"]').length).toBe(1),
-    );
+    await waitFor(() => expect(tabNodes().length).toBe(1));
+  }, 15000);
+});
+
+/**
+ * 工具栏 ✕ 与标签栏 ✕ 必须是**两个不同的关闭作用域**。
+ *
+ * 用户报（2026-09-28）：开了多个页签时点窗口上的 ✕，只关掉当前标签、窗口留着。
+ * 根因是宿主把文档视图的 `onRequestClose`（本标签）接到了工具栏那个 ✕ 上 ——
+ * 而 ✕ 与最小化/全屏同组，语义是关整窗。系统级 Alt+F4 走的是另一条
+ * （`onCloseRequested` → `requestCloseWindow`），所以「外面能关、里面不能关」。
+ */
+describe("窗口 ✕ = 关整窗", () => {
+  it("两个标签都干净：点窗口 ✕ 直接关窗，且不先拆标签", async () => {
+    document.documentElement.classList.add("no-anim");
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "take_editor_init") {
+        return [
+          { content: "a", contentType: "markdown", language: null },
+          { content: "b", contentType: "markdown", language: null },
+        ];
+      }
+      if (cmd === "mark_editor_ready") return [];
+      if (cmd === "get_config") return {};
+      return undefined;
+    });
+    render(<FullscreenEditor />);
+    await waitFor(() => expect(tabNodes().length).toBe(2));
+    await waitFor(() => expect(windowCloseNode()).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.click(windowCloseNode()!);
+    });
+
+    // ① 整窗关掉了（改前这里是 0 —— 只关掉一个标签）
+    expect(closeCalls()).toBe(1);
+    // ② 标签一个都没被拆：关窗是「整窗退场」，不是「先拆光再关」
+    expect(tabNodes().length).toBe(2);
   }, 15000);
 });

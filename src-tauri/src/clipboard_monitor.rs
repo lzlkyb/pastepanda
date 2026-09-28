@@ -1284,6 +1284,7 @@ fn process_text(
             source_icon: source_icon.clone(),
             content_type: Some(ContentClassifier::content_type_from_labels(&labels).to_string()),
             ocr_text: None,
+            barcodes: None,
             tags: Vec::new(),
         };
 
@@ -1441,6 +1442,7 @@ fn process_image(
         source_icon,
         content_type: Some("image".to_string()),
         ocr_text: None,
+        barcodes: None,
         tags: Vec::new(),
     };
 
@@ -1557,6 +1559,7 @@ fn process_rich(
         source_icon,
         content_type: Some("rich".to_string()),
         ocr_text: None,
+        barcodes: None,
         tags: Vec::new(),
     };
 
@@ -1673,6 +1676,7 @@ fn process_doc(
         source_icon,
         content_type: Some("doc".to_string()),
         ocr_text: None,
+        barcodes: None,
         tags: Vec::new(),
     };
 
@@ -1757,6 +1761,7 @@ fn process_files(
             source_icon: source_icon.clone(),
             content_type: Some("file".to_string()),
             ocr_text: None,
+            barcodes: None,
             tags: Vec::new(),
         };
         if let Some(ref store) = store {
@@ -1960,6 +1965,7 @@ fn run_polling_listener(
                             ),
                             tags: Vec::new(),
                             ocr_text: None,
+                            barcodes: None,
                         };
 
                         if let Some(ref store) = store {

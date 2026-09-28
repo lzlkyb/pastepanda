@@ -8,6 +8,7 @@ mod content_memory;
 pub mod device;
 mod group;
 mod history;
+mod image_barcode;
 mod image_ocr;
 mod kb_inbox;
 mod kb_shadow;
@@ -79,6 +80,7 @@ pub use daily_brief::{
     DayExcerptRow, DayMetaRow, DISTILL_EXCERPT_CHARS, DISTILL_LOOKBACK_MAX_DAYS, RECENT_META_CAP,
 };
 pub use history::SearchQuery;
+pub use image_barcode::BarcodeHit;
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
 pub use mcp_audit::{McpAuditRow, McpClientRow};
@@ -181,6 +183,10 @@ pub struct HistoryItem {
     /// Some(非空)=识别结果。识别文本是本地 OCR 产物，不出本机。
     #[serde(default)]
     pub ocr_text: Option<String>,
+    /// 图片条目的二维码/条形码解码结果（image_barcode_cache 回填，仅 type=image 有值）。
+    /// None=从未解码过（前端懒触发）；Some([])=解码过但无码；Some(非空)=有码（卡片徽章）。
+    #[serde(default)]
+    pub barcodes: Option<Vec<BarcodeHit>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -414,6 +420,15 @@ impl DataStore {
             CREATE TABLE IF NOT EXISTS image_ocr_cache (
                 image_path TEXT PRIMARY KEY,
                 full_text TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+
+            -- 图片二维码/条形码解码结果缓存（见 data_store/image_barcode.rs）。
+            -- 与 image_ocr_cache 同一套纪律：只存路径 + 本地解码文本，不出本机；
+            -- result_json = 「[]」表示解码过但无码（与未解码过区分，防空跑）。
+            CREATE TABLE IF NOT EXISTS image_barcode_cache (
+                image_path TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL DEFAULT '[]',
                 updated_at TEXT NOT NULL
             );
 

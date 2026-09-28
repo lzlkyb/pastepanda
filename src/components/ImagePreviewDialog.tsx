@@ -12,7 +12,9 @@ import { useDialogAnim } from "@/lib/dialogMotion";
 import { useToast } from "@/components/Toast";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useAppStore } from "@/stores/appStore";
-import { copyToClipboard, extractEntities, type OcrEntity, type OcrEntityType } from "@/lib/utils";
+import { copyToClipboard, extractEntities, barcodeBoundingRect, type OcrEntity, type OcrEntityType } from "@/lib/utils";
+import { BarcodePanel } from "@/components/BarcodePanel";
+import { useImageBarcodes } from "@/hooks/useImageBarcodes";
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_ORDER,
@@ -62,6 +64,13 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
   // 微信借鉴① 实体 popover：{ type, value, 相对结果面板的 x/y }；popFeedback 为按钮内联反馈
   const [entityPop, setEntityPop] = useState<{ type: OcrEntityType; value: string; x: number; y: number } | null>(null);
   const [popFeedback, setPopFeedback] = useState<string | null>(null);
+  // 码板块（设计稿②）：后端回填 barcodes 优先，否则预览图就绪后走 DB 缓存解码。
+  // 悬停条目 → hoveredCodeIdx → 图上青色虚线框（图片像素坐标，随 transform 缩放）。
+  const imageBarcodes = useImageBarcodes(previewImage, previewContentRef, previewItem?.barcodes);
+  const [hoveredCodeIdx, setHoveredCodeIdx] = useState<number | null>(null);
+  const hoveredCodeRect = hoveredCodeIdx != null && imageBarcodes.hits[hoveredCodeIdx]
+    ? barcodeBoundingRect(imageBarcodes.hits[hoveredCodeIdx].points)
+    : null;
   useEffect(() => {
     if (ocrResult?.full_text) {
       setOcrEditText(ocrResult.full_text);
@@ -366,6 +375,21 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                         )}
                       </div>
                     )}
+                    {/* 码位框（设计稿②「悬停 → 图上标出码位」）：青色虚线沿用 §18 选区语义，
+                        与词框同坐标系（图片像素，随 transform 缩放/旋转）；纯指示，pointerEvents:none。 */}
+                    {hoveredCodeRect && (
+                      <div
+                        className={styles.codeRectOverlay}
+                        /* ui-rule-ok: 码位框几何是解码结果里的图片像素坐标（运行期值），只能内联 */
+                        style={{
+                          position: 'absolute',
+                          left: hoveredCodeRect.x,
+                          top: hoveredCodeRect.y,
+                          width: hoveredCodeRect.width,
+                          height: hoveredCodeRect.height,
+                        }}
+                      />
+                    )}
                   </div>
                   {/* 框选矩形：视口坐标（与词框容器分离，避免随 transform 漂移） */}
                   {isSelecting && selRect && (
@@ -544,6 +568,9 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                 </button>
               </div>
             )}
+
+            {/* 码板块（设计稿②）：压在 OCR 抽屉之上；无码不渲染（零可见） */}
+            <BarcodePanel hits={imageBarcodes.hits} onHover={setHoveredCodeIdx} />
 
             {/* OCR 折叠抽屉（A方案③：默认一条，点开上滑全文/校对/下一步） */}
             {ocrResult && (

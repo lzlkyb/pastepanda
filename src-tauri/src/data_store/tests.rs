@@ -26,6 +26,7 @@ pub(super) fn make_item(id: &str, text: &str, time: &str, item_type: &str) -> Hi
         source_icon: None,
         content_type: None,
         ocr_text: None,
+        barcodes: None,
         tags: Vec::new(),
     }
 }
@@ -4566,6 +4567,47 @@ fn test_sequence_mining_long_sequence_stable() {
 // ============================================================
 // 图片 OCR 缓存（image_ocr_cache）测试
 // ============================================================
+
+/// 守卫（规则 11.1）：历史加载的图片条目必须**同时**回填 OCR 文本与条码结果。
+/// 二者收口在 `load_image_extras_into_items`，这条测试钉住「加载路径只走统一入口、
+/// 两样都不缺」的不变量——kb_inbox 曾漏调 OCR 导致全部图片显示「不支持转笔记」。
+#[test]
+fn image_extras_backfill_covers_both_caches() {
+    use crate::data_store::BarcodeHit;
+    let store = make_store();
+    let mut img = make_item("bc-1", "[图片] 100x100", "2024-01-01 10:00:00", "image");
+    img.content = "C:\\img\\both.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    store.set_ocr_text("C:\\img\\both.png", "文字层").unwrap();
+    store
+        .set_barcodes(
+            "C:\\img\\both.png",
+            &[BarcodeHit {
+                format: "QRCode".to_string(),
+                text: "https://a.b".to_string(),
+                points: [[1, 2], [3, 2], [3, 4], [1, 4]],
+            }],
+        )
+        .unwrap();
+
+    let items = store.get_history("默认", "all", "", 0, 100).unwrap();
+    let hit = items.iter().find(|i| i.id == "bc-1").unwrap();
+    assert_eq!(hit.ocr_text.as_deref(), Some("文字层"));
+    let barcodes = hit
+        .barcodes
+        .as_ref()
+        .expect("条码结果应随历史加载一并回填，不得缺席");
+    assert_eq!(barcodes.len(), 1);
+    assert_eq!(barcodes[0].text, "https://a.b");
+    assert_eq!(barcodes[0].points[3], [1, 4]);
+
+    // 「解码过但无码」的空数组同样是有效命中（Some(vec![])），与 None（未解码）区分
+    store.set_barcodes("C:\\img\\both.png", &[]).unwrap();
+    let items = store.get_history("默认", "all", "", 0, 100).unwrap();
+    let hit = items.iter().find(|i| i.id == "bc-1").unwrap();
+    assert_eq!(hit.barcodes, Some(Vec::new()));
+}
 
 #[test]
 fn test_ocr_text_set_get_and_upsert() {

@@ -3,6 +3,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import type { BarcodeHit } from "@/lib/utils";
 import { getImageUrlCache, getMaxImageCacheSize, getThumbnailUrlCache, getMaxThumbnailCacheSize } from "./cache";
 
 /** OCR 识别出的一个词（带坐标框，用于框选） */
@@ -52,6 +53,17 @@ export async function ocrImage(path: string): Promise<OcrResult> {
  */
 export async function ocrImageCached(path: string): Promise<string> {
   return await invoke<string>("ocr_image_cached", { path });
+}
+
+/**
+ * 带持久化缓存的二维码/条码本地解码（rxing，32 种码制）。
+ *
+ * 与 `ocrImageCached` 同构：后端查 `image_barcode_cache` 表优先——命中
+ * （含「解码过但无码」的空数组）直接返回，零解码开销；未命中才解码并入库。
+ * **完全本地**：不联网、不花钱、图片不出机器（规则 16.4，同 OCR 不受 AI 门控）。
+ */
+export async function detectBarcodesCached(path: string): Promise<BarcodeHit[]> {
+  return await invoke<BarcodeHit[]>("detect_barcodes_cached", { path });
 }
 
 /** 获取原图 URL（用于 img src 显示，使用 Tauri asset 协议） */

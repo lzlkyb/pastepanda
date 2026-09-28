@@ -1,7 +1,7 @@
 import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, useSyncExternalStore, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { relativeTime, parseFilePaths, resolveImageCardDisplay, getImageOcrFullText, copyToClipboard, type ImageOcrState } from "@/lib/utils";
+import { relativeTime, parseFilePaths, resolveImageCardDisplay, getImageOcrFullText, getImageBarcodes, barcodeBadgeLabel, joinBarcodeTexts, copyToClipboard, type ImageOcrState, type ImageBarcodeState } from "@/lib/utils";
 import { getContentTypeMeta, hashColor, isCodeLike } from "@/lib/contentTypes";
 import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
@@ -44,6 +44,22 @@ async function copyOcrTextToClipboard(
   if (!text) return;
   const ok = await copyToClipboard(text);
   toast(ok ? "已复制识别文字" : "复制失败", ok ? "success" : "error");
+}
+
+/**
+ * 复制图片解码出的二维码/条码内容（收口函数，规则 #11，与 copyOcrTextToClipboard 同构）。
+ * 右键「复制二维码/条码内容」与预览抽屉「复制全部」共用同一份取数与拼接逻辑；
+ * 多码按行拼接。无码时静默返回（入口本就不该出现）。
+ */
+async function copyBarcodesToClipboard(
+  item: HistoryItem,
+  barcodeState: ImageBarcodeState | undefined,
+  toast: (message: string, type?: "success" | "error") => void,
+): Promise<void> {
+  const hits = getImageBarcodes(item, barcodeState);
+  if (!hits || hits.length === 0) return;
+  const ok = await copyToClipboard(joinBarcodeTexts(hits));
+  toast(ok ? "已复制二维码/条码内容" : "复制失败", ok ? "success" : "error");
 }
 
 export type ImgState = { status: "loading" | "loaded" | "error" | "silent"; url?: string };
@@ -123,8 +139,8 @@ function usePinFlash(pinned: boolean): boolean {
   return flash;
 }
 
-export const Card = memo(function Card({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, menuItems, onEdit, disablePreview, stackOrder, stackDone, ocrState }: {
-  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean; ocrState?: ImageOcrState;
+export const Card = memo(function Card({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, menuItems, onEdit, disablePreview, stackOrder, stackDone, ocrState, barcodeState }: {
+  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean; ocrState?: ImageOcrState; barcodeState?: ImageBarcodeState;
 }) {
   const [hovered, setHovered] = useState(false);
   const [popoverFlipDown, setPopoverFlipDown] = useState(false);
@@ -148,6 +164,9 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   // 图片卡片显示决策（OCR 文本 / 识别中 / 无文字 / 文件名回退 + 尺寸/OCR 徽标），
   // 纯函数放 lib/utils.ts 便于单测；这里只消费结果。
   const imgDisplay = item.type === "image" ? resolveImageCardDisplay(item, ocrState) : null;
+  // 二维码/条码徽章（设计稿）：仅 image 类型；无码或结论未出不渲染。
+  const codeHits = item.type === "image" ? getImageBarcodes(item, barcodeState) : null;
+  const codeBadge = barcodeBadgeLabel(codeHits);
   // MB 级文本先截断再扁平化，避免整块进 DOM / 高亮 split 拖垮列表（M24）
   const title = (() => {
     if (item.type === "file") {
@@ -411,6 +430,22 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
             {/* 图片卡片：尺寸徽标（从占位 [图片] WxH 提取）+ OCR 徽标（有识别文字时） */}
             {imgDisplay?.sizeText && <span className={styles.cardSizeTag}>{imgDisplay.sizeText}</span>}
             {imgDisplay?.ocrLabel && <span className={styles.cardOcrBadge}>{imgDisplay.ocrLabel}</span>}
+            {/* 条码徽章：点击打开预览并展开结果抽屉（预览侧「识别到码自动展开一次」与 OCR 同纪律）。
+                stopPropagation：不拦就会同时触发卡片 onClick（选中/复制）。 */}
+            {codeBadge && (
+              <button
+                type="button"
+                className={styles.cardCodeBadge}
+                title="查看二维码/条码内容"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useDialogStore.getState().openEditor(item);
+                }}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                {codeBadge}
+              </button>
+            )}
             {parsedColor && (
               <span className={styles.colorFormatTag}>{parsedColor.format.toUpperCase()}</span>
             )}
@@ -784,8 +819,8 @@ const InlineCardActions = memo(function InlineCardActions({
 });
 
 /** 卡片上下文包装器（右键菜单 + 操作逻辑） */
-export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, disablePreview, stackOrder, stackDone, ocrState }: {
-  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; onQrCode?: (item: HistoryItem) => void; onRegexPreview?: (item: HistoryItem, ruleId: string) => void; onManageRegexRules?: () => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean; ocrState?: ImageOcrState;
+export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, disablePreview, stackOrder, stackDone, ocrState, barcodeState }: {
+  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; onQrCode?: (item: HistoryItem) => void; onRegexPreview?: (item: HistoryItem, ruleId: string) => void; onManageRegexRules?: () => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean; ocrState?: ImageOcrState; barcodeState?: ImageBarcodeState;
 }) {
   const { toast } = useToast();
 
@@ -1060,6 +1095,10 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onCopyOcr: item.type === "image" && getImageOcrFullText(item, ocrState)
       ? () => void copyOcrTextToClipboard(item, ocrState, toast)
       : undefined,
+    // 图片且解码出码时：右键「复制二维码/条码内容」（有码才出现，无码零可见）
+    onCopyBarcodes: item.type === "image" && (getImageBarcodes(item, barcodeState)?.length ?? 0) > 0
+      ? () => void copyBarcodesToClipboard(item, barcodeState, toast)
+      : undefined,
     onPaste: async () => {
       // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem。
       // **这里此前没有 image / file 分支**：图片条目会粘出 "[图片] 1860x915" 占位文本、
@@ -1103,9 +1142,9 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, enabledRules, noteDraft, hasNote, handleConvertToNote, handleAppendDaily]);
+  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, barcodeState, enabledRules, noteDraft, hasNote, handleConvertToNote, handleAppendDaily]);
 
   return (
-    <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} ocrState={ocrState} />
+    <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} ocrState={ocrState} barcodeState={barcodeState} />
   );
 });

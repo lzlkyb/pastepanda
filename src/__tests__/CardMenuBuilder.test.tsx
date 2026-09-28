@@ -257,6 +257,17 @@ describe("类型工具", () => {
     expect(labels(build({ itemType: "image", onPasteTransform: () => {} }))).not.toContain("复制识别文字");
   });
 
+  it("图片有码内容时给「复制二维码/条码内容」，且排在「复制识别文字」之上（设计稿③）", () => {
+    const items = build({ itemType: "image", onCopyOcr: () => {}, onCopyBarcodes: () => {}, onPasteTransform: () => {} });
+    const ls = labels(items);
+    expect(ls).toContain("复制二维码/条码内容");
+    expect(ls.indexOf("复制二维码/条码内容")).toBeLessThan(ls.indexOf("复制识别文字"));
+  });
+
+  it("没有码回调就不给「复制二维码/条码内容」（无码图片菜单不变，零可见）", () => {
+    expect(labels(build({ itemType: "image", onCopyOcr: () => {}, onPasteTransform: () => {} }))).not.toContain("复制二维码/条码内容");
+  });
+
   it("能用默认应用打开时给对应入口", () => {
     expect(labels(build({ onOpenFile: () => {} }))).toContain("用默认应用打开");
   });

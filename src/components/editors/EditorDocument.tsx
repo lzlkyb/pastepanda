@@ -38,8 +38,10 @@ export interface EditorDocumentProps {
   isFullscreen: boolean;
   onFullscreenToggle: () => void;
   onMinimize: () => void;
-  /** 请求关闭本标签（守卫由宿主裁决） */
+  /** 请求关闭本标签（守卫由宿主裁决）：致命错误等「这份文档待不下去了」的路径 */
   onRequestClose: () => void;
+  /** 请求关闭整个窗口（工具栏 ✕ / Esc —— 与最小化、全屏同组的窗口控件） */
+  onRequestCloseWindow: () => void;
   onMeta: (meta: TabMeta) => void;
   registerSave: (fn: (() => Promise<boolean>) | null) => void;
   /** 标签栏（宿主只发给活动标签） */
@@ -54,6 +56,7 @@ export function EditorDocument({
   onFullscreenToggle,
   onMinimize,
   onRequestClose,
+  onRequestCloseWindow,
   onMeta,
   registerSave,
   tabBar,
@@ -65,9 +68,10 @@ export function EditorDocument({
     onFullscreenToggle,
     onMinimize,
     onRequestClose,
-    /** 壳的 onClose 与 onRequestClose 在宿主模式下是同一个出口：
-     *  Shell 的 guardedClose 优先走 onRequestClose（守卫上提），
-     *  onClose 只是「壳自管」路径的兜底，两条路都落到宿主的 requestCloseTab。 */
+    /** 工具栏 ✕ / Esc 走窗口级出口（宿主聚合裁决脏标签） */
+    onRequestCloseWindow,
+    /** 壳的 onClose 是「自管」路径的兜底：宿主注入 onRequestCloseWindow 后
+     *  guardedClose 不会再用到它，这里仍指向本标签，语义上「没有窗口出口时先关掉自己」。 */
     onClose: onRequestClose,
     onMeta,
     registerSave,
@@ -114,6 +118,7 @@ export function EditorDocument({
           onFullscreenToggle={onFullscreenToggle}
           onMinimize={onMinimize}
           onRequestClose={onRequestClose}
+          onRequestCloseWindow={onRequestCloseWindow}
           onMeta={onMeta}
           registerSave={registerSave}
           tabBar={tabBar}

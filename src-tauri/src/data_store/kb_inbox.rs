@@ -328,7 +328,7 @@ impl DataStore {
         // 前端 `extractNoteDraft` 对 image 的判据就是 `ocr_text`，为空就返回 null。
         // 此前本文件一次都没加载过 OCR（只有 `history.rs` 的三条搜索路径加了），
         // 实测待沉淀里 80 张图片全部有 OCR 文字，却一张都转不了。
-        self.load_ocr_texts_into_items(&mut items)?;
+        self.load_image_extras_into_items(&mut items)?;
         let rows: Vec<InboxCandidate> = items
             .into_iter()
             .zip(metas)

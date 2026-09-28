@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "7.2.7"
+version = "7.2.8"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -142,6 +142,18 @@ tree-sitter-sequel = "0.3"
 # 内存难（19MiB）比 PBKDF2 更抗 GPU。仓库唯一的新直接依赖（2026-09-20）：
 # ring 没有 Argon2，pbkdf2 达不到设计稿的对抗强度；纯 Rust、无 C 构建依赖。
 argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "rand"] }
+# 二维码/条形码本地解码（commands/barcodes.rs）。rxing 是 zxing 的纯 Rust 移植版，
+# 零 C/C++ 构建依赖（本机没有 cmake，zxing-cpp bundled 编不动）。
+# 关默认 features：砍掉 image_formats（avif→rav1e 等全家桶）、encoders（只解码不编码）、
+# client_support（GS1 解析用不上）；保留 image 互转 + 全格式解码器。
+# 解码纯本地，不联网、不受 AI 开关约束（规则 16 第 4 条，同 OCR）。
+rxing = { version = "0.9.3", default-features = false, features = [
+    "image",
+    "decoders",
+    "full_barcode_format_support",
+    "multi_barcode_readers",
+    "encoding_rs",
+] }
 
 [dev-dependencies]
 # v6.10 测试基建：本地 mock OpenAI 服务（tiny_http 轻量、仅测试用，不进发布包）

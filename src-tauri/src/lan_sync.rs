@@ -1140,6 +1140,7 @@ impl LanSync {
                             content_type,
                             tags: Vec::new(),
                             ocr_text: None,
+                            barcodes: None,
                         };
 
                         let history_id = item.id.clone();

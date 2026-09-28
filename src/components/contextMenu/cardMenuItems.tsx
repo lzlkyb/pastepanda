@@ -10,7 +10,7 @@
  * 原处必须去掉 —— 类型工具靠 primaryKey 去重，粘贴并变换靠 primary.transform 去重。
  */
 
-import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex, NotebookPen, CalendarPlus } from "lucide-react";
+import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex, NotebookPen, CalendarPlus, QrCode } from "lucide-react";
 import { isCodeLike } from "@/lib/contentTypes";
 import type { RegexRule } from "@/lib/regexRules";
 import type { MenuItem } from "./menuModel";
@@ -23,6 +23,8 @@ export function createCardMenuItems(opts: {
   onDelete: () => void;
   /** 图片且有 OCR 文本时：复制识别文字（调用方仅在 getImageOcrFullText 非空时注入） */
   onCopyOcr?: () => void;
+  /** 图片且解码出二维码/条码时：复制码内容（调用方仅在码列表非空时注入；与「生成二维码」是反方向） */
+  onCopyBarcodes?: () => void;
   onEdit?: () => void;
   onEditTags?: () => void;
   onMoveToGroup?: () => void;
@@ -211,7 +213,12 @@ function getTypeTools(opts: CardMenuOpts, primaryKey: string | null): MenuItem[]
   const tools: MenuItem[] = [];
   const st = opts.itemSubType;
 
-  // 图片且有 OCR 文本：复制识别文字（首位——图片专属的复制能力，调用方仅在
+  // 图片且解码出码：复制二维码/条码内容（设计稿置于「复制识别文字」上方——
+  // 码内容是结构化载荷，比 OCR 散文更常被复制；调用方仅在码列表非空时注入）
+  if (opts.itemType === "image" && opts.onCopyBarcodes) {
+    tools.push({ icon: <QrCode size={14} />, label: "复制二维码/条码内容", onClick: opts.onCopyBarcodes });
+  }
+  // 图片且有 OCR 文本：复制识别文字（调用方仅在
   // getImageOcrFullText 非空时注入回调；与通用「复制到剪贴板」复制图片区分）
   if (opts.itemType === "image" && opts.onCopyOcr) {
     tools.push({ icon: <FileText size={14} />, label: "复制识别文字", onClick: opts.onCopyOcr });

@@ -120,6 +120,7 @@ pub(super) fn row_to_history_item(row: &rusqlite::Row) -> rusqlite::Result<Histo
         source_icon: row.get(11)?,
         content_type: row.get(12)?,
         ocr_text: None,
+        barcodes: None,
         tags: Vec::new(),
     })
 }
@@ -401,6 +402,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -412,7 +414,7 @@ impl DataStore {
         };
         drop(conn);
         self.load_tags_into_items(&mut items)?;
-        self.load_ocr_texts_into_items(&mut items)?;
+        self.load_image_extras_into_items(&mut items)?;
 
         // ❗ 这里原本把本次返回的全部条目批量 +1，已删——详见 `bump_search_recall`。
 
@@ -499,6 +501,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -511,7 +514,7 @@ impl DataStore {
         //    而 sync_fts_upsert 的 UPSERT 在虚拟表上一直失败、新条目从未进过索引。
         //    image_ocr_fts 一接进来，命中图片就成了常态，这个坑必然踩到。
         drop(conn);
-        self.load_ocr_texts_into_items(&mut items).map_err(|_| ())?;
+        self.load_image_extras_into_items(&mut items).map_err(|_| ())?;
         Ok(items)
     }
 
@@ -630,6 +633,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -641,7 +645,7 @@ impl DataStore {
         };
         drop(conn);
         self.load_tags_into_items(&mut items)?;
-        self.load_ocr_texts_into_items(&mut items)?;
+        self.load_image_extras_into_items(&mut items)?;
 
         // ❗ 原先在这里批量计数，已删——详见 `bump_search_recall`。
 
@@ -675,6 +679,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -898,6 +903,7 @@ impl DataStore {
                     source_icon: row.get(11)?,
                     content_type: row.get(12)?,
                     ocr_text: None,
+                    barcodes: None,
                     tags: Vec::new(),
                 })
             },
@@ -1183,6 +1189,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1285,6 +1292,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1475,6 +1483,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1644,6 +1653,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1686,6 +1696,7 @@ impl DataStore {
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
                         ocr_text: None,
+                        barcodes: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1904,6 +1915,48 @@ impl DataStore {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// 批量回填图片条目的二维码/条码解码结果（image_barcode_cache 一次性 IN 查询，
+    /// 同 load_ocr_texts_into_items 模式）。缓存行存的是 JSON；坏行当未解码（None），
+    /// 前端懒触发重解码一次自愈。
+    pub(crate) fn load_barcodes_into_items(
+        &self,
+        items: &mut [HistoryItem],
+    ) -> Result<(), String> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let paths: Vec<String> = items
+            .iter()
+            .filter(|i| i.item_type == "image" && !i.content.is_empty())
+            .map(|i| i.content.clone())
+            .collect();
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let bc_map = self.get_barcodes_json_map(&paths)?;
+        for item in items.iter_mut() {
+            if item.item_type == "image" {
+                if let Some(json) = bc_map.get(&item.content) {
+                    item.barcodes = Self::parse_barcodes_json(json);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 🔴 图片类条目的派生数据回填统一入口（OCR 文本 + 条码结果）。
+    /// 新增历史/搜索/收件箱加载路径**只调这个**，别只调其中一半——
+    /// kb_inbox 漏调 OCR 导致 80 张图片全显示「不支持转笔记」的事故见其注释。
+    /// 守卫单测：tests.rs `image_extras_backfill_covers_both_caches`。
+    pub(crate) fn load_image_extras_into_items(
+        &self,
+        items: &mut [HistoryItem],
+    ) -> Result<(), String> {
+        self.load_ocr_texts_into_items(items)?;
+        self.load_barcodes_into_items(items)?;
         Ok(())
     }
 

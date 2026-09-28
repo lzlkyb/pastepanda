@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 粘贴模式二维码/条形码识别 — 设计稿</title>
+<style>
+  /* ══ 基线取自真实主题 token（theme.css 默认深色档 506/550 行族）+ CardList.module.css 徽章样式 ══ */
+  :root {
+    --bg: #1e1f26; --card-bg: #262832; --section-bg: #2c2f3b; --border-color: #3a3d4d;
+    --text-primary: #e6e7ee; --text-muted: #9a9db1;
+    --accent: #818cf8;            /* indigo（默认深色档 --accent） */
+    --green: #4ade80; --cyan: #22d3ee;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 34px 80px; background: #17181e; color: var(--text-primary);
+         font: 13px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 34px 0 6px; color: var(--accent); }
+  .sub { color: var(--text-muted); margin-bottom: 22px; }
+  .note { background: var(--section-bg); border: 1px solid var(--border-color); border-radius: var(--radius);
+          padding: 10px 14px; font-size: 12px; color: var(--text-muted); margin: 10px 0 18px; }
+  .note b { color: var(--text-primary); }
+  .pick { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--section-bg);
+          border-radius: 0 var(--radius) var(--radius) 0; margin: 8px 0; font-size: 12.5px; }
+  .pick .def { color: var(--green); font-weight: 600; }
+
+  /* ══ ① 卡片：复刻 Card.tsx 图片卡结构（缩略图+标题行+cardOcrBadge 同排） ══ */
+  .card { width: 420px; background: var(--card-bg); border: 1px solid var(--border-color);
+          border-radius: var(--radius); padding: 8px 10px; display: flex; gap: 10px; align-items: center; }
+  .card + .card { margin-top: 10px; }
+  .thumb { width: 44px; height: 44px; border-radius: 6px; background: #11131a; flex: none;
+           display: grid; place-items: center; font-size: 20px; border: 1px solid var(--border-color); }
+  .titlecol { min-width: 0; flex: 1; }
+  .titlerow { display: flex; align-items: center; gap: 6px; }
+  .title { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .time { margin-left: auto; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  /* 现有 OCR 徽章（CardList.module.css .cardOcrBadge 原样） */
+  .cardOcrBadge { display: inline-flex; align-items: center; font-size: 9.5px; font-weight: 600;
+    line-height: 1.5; white-space: nowrap; color: var(--green);
+    background: color-mix(in srgb, var(--green) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--green) 35%, transparent); border-radius: 4px; padding: 0 5px; }
+  /* ★ 新增：码徽章 —— 与 cardOcrBadge 同构、同尺寸，语义色改用 --accent（indigo）区分「码」与「文字」 */
+  .cardCodeBadge { display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+    font-size: 9.5px; font-weight: 600; line-height: 1.5; white-space: nowrap; color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 4px; padding: 0 5px; }
+  .cardCodeBadge:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+  /* ══ ② 预览弹窗（简化）：图区 + 底部抽屉堆叠（码板块在 OCR 抽屉之上） ══ */
+  .dialog { width: 640px; background: var(--card-bg); border: 1px solid var(--border-color);
+            border-radius: 12px; overflow: hidden; }
+  .stage { position: relative; height: 220px; background: #101218; display: grid; place-items: center; }
+  .stage .fakeimg { width: 300px; height: 170px; border-radius: 6px; background: linear-gradient(135deg,#20222e,#2a2d3d);
+                    display: grid; place-items: center; color: var(--text-muted); font-size: 12px; }
+  /* 码区高亮框：沿用 §18 视觉语言的青色虚线框（与截图选区同款语义） */
+  .codeRect { position: absolute; border: 2px dashed var(--cyan); border-radius: 3px;
+              box-shadow: 0 0 0 1px rgba(0,0,0,.4); display: none; }
+  .codeRect.on { display: block; animation: rectIn .18s ease-out; }
+  @keyframes rectIn { from { opacity: 0; transform: scale(.92);} to { opacity: 1; transform: none;} }
+  .drawer { border-top: 1px solid var(--border-color); }
+  /* 复刻 ocrFullTextPanel/ocrDrawerHead 的一条收起态 */
+  .drawerHead { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+                background: none; border: none; color: var(--text-primary); cursor: pointer; font-size: 12.5px; }
+  .drawerHead .count { color: var(--text-muted); font-size: 11px; }
+  .drawerHead .chev { margin-left: 2px; transition: transform .18s; color: var(--text-muted); }
+  .drawerHead.open .chev { transform: rotate(180deg); }
+  .drawerBody { display: none; padding: 4px 12px 12px; }
+  .drawerHead.open + .drawerBody { display: block; }
+  /* ★ 新增码条目行 */
+  .codeItem { background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 6px;
+              padding: 8px 10px; margin-top: 8px; cursor: default; }
+  .codeItem:hover { border-color: color-mix(in srgb, var(--cyan) 55%, var(--border-color)); }
+  .codeMeta { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .fmtTag { font-size: 9.5px; font-weight: 600; line-height: 1.5; padding: 0 5px; border-radius: 4px;
+            color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+  .fmtTag.oned { color: var(--cyan); background: color-mix(in srgb, var(--cyan) 10%, transparent);
+            border-color: color-mix(in srgb, var(--cyan) 30%, transparent); }
+  .codeText { font: 12px/1.5 Consolas, monospace; word-break: break-all; color: var(--text-primary); }
+  .codeActs { display: flex; gap: 6px; margin-top: 7px; }
+  .actBtn { font-size: 11px; padding: 2px 9px; border-radius: 5px; cursor: pointer;
+            background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--border-color); }
+  .actBtn:hover { border-color: var(--accent); }
+  .actBtn.primary { background: color-mix(in srgb, var(--accent) 18%, var(--card-bg)); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .actBtn.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+  .actBtn:disabled { opacity: .45; cursor: not-allowed; }
+  .saveAsRow { display: flex; gap: 6px; margin-top: 10px; align-items: center; font-size: 11px; color: var(--text-muted); }
+
+  /* ══ ③ 右键菜单（复刻 cardMenuItems 类型工具区视觉） ══ */
+  .menu { width: 230px; background: rgba(38,40,50,.97); backdrop-filter: blur(14px);
+          border: 1px solid var(--border-color); border-radius: 8px; padding: 4px; }
+  .mi { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 5px; font-size: 12.5px; }
+  .mi:hover { background: var(--section-bg); }
+  .mi .ico { width: 16px; text-align: center; }
+  .mi.hl { color: var(--text-muted); }
+  .mi.new { outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent); }
+  .sep { height: 1px; background: var(--border-color); margin: 4px 2px; }
+  kbd { font: 10px Consolas; background: var(--section-bg); border: 1px solid var(--border-color);
+        border-radius: 3px; padding: 0 4px; }
+  .legend { font-size: 11px; color: var(--text-muted); }
+  .legend .star { color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>粘贴模式 · 图片二维码/条形码识别 — 设计稿（v7.2.7 基线）</h1>
+<div class="sub">三层呈现：<b>卡片徽章（自动）</b> + <b>预览抽屉板块</b> + <b>右键菜单项</b>。解码引擎 rxing（本地、不联网，不受 AI 开关约束）。<span class="star">★</span> 标记为新增部分，其余与现状一致。</div>
+
+<h2>① 卡片徽章（图片卡头，与现有「OCR」徽章同排）</h2>
+<div class="card">
+  <div class="thumb">🖼️</div>
+  <div class="titlecol">
+    <div class="titlerow">
+      <span class="title">活动海报-终稿.png</span>
+      <span class="cardOcrBadge">OCR · 128字</span>
+      <span class="cardCodeBadge" id="badge1" title="打开预览并展开码结果">▦ QR ×1 · 条码 ×1</span>
+      <span class="time">10分钟前</span>
+    </div>
+    <div class="legend">缩略图 / 来源 / 操作钮均与现状一致</div>
+  </div>
+</div>
+<div class="card">
+  <div class="thumb">🖼️</div>
+  <div class="titlecol">
+    <div class="titlerow">
+      <span class="title">截图 2026-09-28.png</span>
+      <span class="cardOcrBadge">OCR · 86字</span>
+      <span class="time">2小时前</span>
+    </div>
+    <div class="legend">无码图片：解码过但没找到 → 不显示徽章（零可见，与空 OCR 不显示同理）</div>
+  </div>
+</div>
+<div class="pick">
+  <b>徽章形态</b> —— <span class="def">默认 A</span>：`▦ QR ×n · 条码 ×n`（二维码/一维码分段计数，过长截断为 `▦ 码 ×3`）。
+  B：只显示图标 `▦ ×2`（更短但看不出码类型）。　<b>点击行为</b> —— <span class="def">默认开预览并自动展开码板块</span>；备选：徽章不可点（怕与双击粘贴冲突）。
+</div>
+<div class="note">调度沿用 useCardOcr 的可视区串行队列模式（新 hook <code>useCardBarcodes</code>，同 VIEW_BUFFER、同内存缓存）：仅图片 type、后端 <code>detect_barcodes_cached</code> 带 DB 缓存每图只解码一次。解码在 spawn_blocking，单图典型 30–150ms，不卡滚动。</div>
+
+<h2>② 预览弹窗：码板块（在 OCR 抽屉之上，检测到码默认展开一次）</h2>
+<div class="dialog">
+  <div class="stage" id="stage">
+    <div class="fakeimg">图片预览区（现有，不变）</div>
+    <div class="codeRect" id="rect0" style="left:392px; top:52px; width:86px; height:86px;"></div>
+    <div class="codeRect" id="rect1" style="left:150px; top:132px; width:170px; height:44px;"></div>
+  </div>
+  <div class="drawer">
+    <button class="drawerHead open" id="codeHead">
+      <span>▦</span><span style="font-weight:600">二维码 / 条形码</span>
+      <span class="count">2 个码</span>
+      <span style="flex:1"></span>
+      <span class="chev">▾</span>
+    </button>
+    <div class="drawerBody" id="codeBody">
+      <div class="codeItem" data-rect="rect0">
+        <div class="codeMeta"><span class="fmtTag">QRCode</span><span class="legend" style="margin-left:auto">悬停 → 图上标出码位</span></div>
+        <div class="codeText">https://exampl.com/activity/8f3k</div>
+        <div class="codeActs">
+          <button class="actBtn primary" data-copy>📋 复制</button>
+          <button class="actBtn" data-open>↗ 打开链接</button>
+        </div>
+      </div>
+      <div class="codeItem" data-rect="rect1">
+        <div class="codeMeta"><span class="fmtTag oned">Code128</span></div>
+        <div class="codeText">6901234567892</div>
+        <div class="codeActs">
+          <button class="actBtn primary" data-copy>📋 复制</button>
+          <button class="actBtn" disabled title="仅 URL 内容可打开">↗ 打开链接</button>
+        </div>
+      </div>
+      <div class="saveAsRow">
+        <button class="actBtn" id="copyAll">📋 复制全部（多码按行拼接）</button>
+        <button class="actBtn">💾 每个码存为新卡片</button>
+      </div>
+    </div>
+    <button class="drawerHead">
+      <span>🔍</span><span style="font-weight:600">全部识别文字</span>
+      <span class="count">12 行 · 128 字</span><span style="flex:1"></span><span class="chev">▾</span>
+    </button>
+    <div class="legend" style="padding:0 12px 10px">OCR 抽屉保持现状（收起态/交互不变），只是被码板块压在下面。</div>
+  </div>
+</div>
+<div class="pick">
+  <b>板块顺序</b> —— <span class="def">默认码在上</span>（码内容是高价值一步操作）。备选：OCR 在上维持原位置。
+  <b>默认展开</b> —— <span class="def">检测到码时自动展开一次</span>（对齐 OCR「识别完成自动展开」的现行为，L69）。
+  <b>「存为新卡片」</b> —— <span class="def">默认包含</span>（对齐 OCR 的 💾存为卡片）。
+</div>
+
+<h2>③ 右键菜单（图片卡，类型工具区）</h2>
+<div style="display:flex; gap:26px; align-items:flex-start">
+  <div class="menu">
+    <div class="mi"><span class="ico">🖼</span>粘贴为 Markdown 图片</div>
+    <div class="sep"></div>
+    <div class="mi new"><span class="ico">▦</span>复制二维码/条码内容</div>
+    <div class="mi"><span class="ico">📄</span>复制识别文字</div>
+    <div class="mi"><span class="ico">✏️</span>编辑标签</div>
+    <div class="mi"><span class="ico">📱</span>生成二维码</div>
+    <div class="sep"></div>
+    <div class="mi hl"><span class="ico">📌</span>置顶</div>
+  </div>
+  <div style="max-width:360px">
+    <div class="pick">
+      <b>菜单项可见性</b> —— <span class="def">默认：仅当该图解出码时才出现</span>（零可见原则；无码图片菜单不变）。
+      <b>多码行为</b> —— <span class="def">默认：全部按行拼接复制</span>，不弹子菜单（一步到位）。备选：子菜单逐码复制。
+    </div>
+    <div class="note">「复制二维码/条码内容」与「生成二维码」（文本→码）是两个方向，图标区分：▦ vs 📱。菜单里该项排在「复制识别文字」之上，因为码内容比 OCR 全文更精确、更常是粘贴目的。</div>
+  </div>
+</div>
+
+<h2>交互一致性（键盘/反馈）</h2>
+<div class="note">
+  · 徽章点击、板块按钮、菜单项都有即时反馈：复制→按钮变「✓ 已复制」1.5s（对齐 OCR 全部复制现行为）；失败走 toast（规则 15.3）。<br>
+  · 键盘：预览弹窗内 <kbd>Tab</kbd> 可聚焦码条目动作钮（鼠标全流程可达、键盘加速器——规则 17）。<br>
+  · 打开链接走现有 entity popover 同款「↗ 打开链接」动作（tauri opener，用户显式触发才出网）。
+</div>
+
+<script>
+  // 折叠交互（真实行为复刻：条件渲染 children，收起即卸载——规则 15.2 在实施时用同一结构）
+  document.getElementById('codeHead').addEventListener('click', function () {
+    this.classList.toggle('open');
+  });
+  // 悬停条目 → 图上标出码位（移动即预览，规则 17）
+  document.querySelectorAll('.codeItem').forEach(function (el) {
+    el.addEventListener('mouseenter', function () { document.getElementById(el.dataset.rect).classList.add('on'); });
+    el.addEventListener('mouseleave', function () { document.getElementById(el.dataset.rect).classList.remove('on'); });
+  });
+  // 复制反馈
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.textContent = '✓ 已复制'; b.classList.add('ok');
+      setTimeout(function () { b.textContent = '📋 复制'; b.classList.remove('ok'); }, 1500);
+    });
+  });
+  document.getElementById('copyAll').addEventListener('click', function () {
+    var t = this.textContent; this.textContent = '✓ 已复制 2 个码';
+    var s = this; setTimeout(function () { s.textContent = t; }, 1500);
+  });
+  // 徽章点击示意 = 展开抽屉板块
+  document.getElementById('badge1').addEventListener('click', function () {
+    var h = document.getElementById('codeHead');
+    if (!h.classList.contains('open')) h.classList.add('open');
+    h.animate([{ background: 'color-mix(in srgb, var(--accent) 25%, transparent)' }, { background: 'none' }], { duration: 600 });
+  });
+</script>
+</body>
+</html>

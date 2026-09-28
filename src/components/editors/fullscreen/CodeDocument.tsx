@@ -8,7 +8,8 @@
  * 逻辑与注释逐块搬移。
  *
  * 与宿主的三条上行通道（都用 ref 中转，避免宿主闭包每渲染换引用导致 effect 重跑）：
- *   - `onRequestClose`：工具栏 ✕ / Esc → 请宿主裁决守卫（脏标签要统一列清单）
+ *   - `onRequestCloseWindow`：工具栏 ✕ / Esc → 请宿主裁决**关整窗**（脏标签统一列清单）
+ *   - `onRequestClose`：本标签自己待不下去了（文件致命错误）→ 请宿主裁决关这一个标签
  *   - `onMeta`：文件名/脏/保存态/专注模式 → 标签栏渲染依据
  *   - `registerSave`：把「关闭前保存」注册给宿主，供关窗时逐项调用
  *
@@ -49,8 +50,10 @@ export interface CodeDocumentProps {
   isFullscreen: boolean;
   onFullscreenToggle: () => void;
   onMinimize: () => void;
-  /** 请求关闭本标签（守卫由宿主裁决） */
+  /** 请求关闭本标签（致命错误路径；守卫由宿主裁决） */
   onRequestClose: () => void;
+  /** 请求关闭整个窗口（工具栏 ✕ / Esc） */
+  onRequestCloseWindow: () => void;
   onMeta: (meta: TabMeta) => void;
   /** 注册「关闭前保存」；传 null 注销 */
   registerSave: (fn: (() => Promise<boolean>) | null) => void;
@@ -70,6 +73,7 @@ export function CodeDocument({
   onFullscreenToggle,
   onMinimize,
   onRequestClose,
+  onRequestCloseWindow,
   onMeta,
   registerSave,
   tabBar,
@@ -80,7 +84,7 @@ export function CodeDocument({
   const spec = useMemo(() => resolveFullscreenType(contentType), [contentType]);
   const prefs = useEditorPrefs();
 
-  // 宿主给的三个闭包每次渲染换引用 → 用 useLatest 中转，不放进依赖数组
+  // 宿主给的闭包每次渲染换引用 → 用 useLatest 中转，不放进依赖数组
   const closeRef = useLatest(onRequestClose);
   const metaRef = useLatest(onMeta);
   const registerRef = useLatest(registerSave);
@@ -211,12 +215,12 @@ export function CodeDocument({
           exitFocus();
           return;
         }
-        onRequestClose();
+        onRequestCloseWindow();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [active, toggleFocus, exitFocus, focusMode, onRequestClose]);
+  }, [active, toggleFocus, exitFocus, focusMode, onRequestCloseWindow]);
 
   // ─── 上行：元信息 / 关闭前保存注册 ───────────────────
   useEffect(() => {
@@ -285,7 +289,7 @@ export function CodeDocument({
         isFullscreen={isFullscreen}
         onFullscreenToggle={onFullscreenToggle}
         onMinimize={onMinimize}
-        onClose={onRequestClose}
+        onClose={onRequestCloseWindow}
         tabBar={tabBar}
       />
     </div>

@@ -1186,6 +1186,7 @@ pub fn run() {
             commands::get_app_name,
             commands::ocr_image,
             commands::ocr_image_cached,
+            commands::detect_barcodes_cached,
             commands::open_pinned_image,
             commands::close_pinned_image,
             screenshot::capture_screen,
