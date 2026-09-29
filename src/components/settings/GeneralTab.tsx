@@ -1,15 +1,15 @@
 import { AppConfig } from "@/stores/appStore";
 import { StatsDetail } from "@/lib/api";
 import { useSettingsData } from "@/hooks/useSettingsData";
-import { StatsSection } from "./sections/StatsSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
-import { GeneralSection } from "./sections/GeneralSection";
-import { IslandSection } from "./sections/IslandSection";
-import { LanSyncSection } from "./sections/LanSyncSection";
-import { KbSyncSection } from "./sections/KbSyncSection";
-import { RcSection } from "./sections/RcSection";
+import { CopyPasteSection } from "./sections/CopyPasteSection";
+import { WindowEditorSection } from "./sections/WindowEditorSection";
 import { HotkeySection } from "./sections/HotkeySection";
+import { CaptureSection } from "./sections/CaptureSection";
+import { IslandSection } from "./sections/IslandSection";
 import { DataSection } from "./sections/DataSection";
+import { SyncSection } from "./sections/SyncSection";
+import { StatsSection } from "./sections/StatsSection";
 import type { SettingsSearch } from "@/hooks/useSettingsSearch";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -41,11 +41,13 @@ interface GeneralTabProps {
 }
 
 /**
- * 设置页「通用」页签的**编排层**：只负责搜索框、分区顺序、弹窗，
+ * 设置页左列（九个分区）的**编排层**：只负责分区顺序与弹窗，
  * 具体设置行在 sections/ 下按分区分文件，共用状态在 useSettingsData。
  *
- * 🔴 七个分区组件都返回 <>…</> 片段，所以 settingsSections 容器的 children
+ * 🔴 九个分区组件都返回 <>…</> 片段，所以 settingsSections 容器的 children
  * 仍然是「分区标题 + 设置行」一层扁平结构——搜索过滤就靠这个。
+ * （容器里还会有一批**小节标题**：同样用 `sSection`、同样不入左菜单，
+ * 见 `sections/meta.ts` 的 `SETTINGS_SUBSECTIONS`。）
  */
 export function GeneralTab({
   config, updateAndSave, stats, statsError, onRetryStats, expiredCount,
@@ -66,36 +68,36 @@ export function GeneralTab({
 
   return (
     <>
-      {/* 🔴 七个分区**全部**排在一根滚动里，不按菜单选择只渲染一个。
+      {/* 🔴 九个分区**全部**排在一根滚动里，不按菜单选择只渲染一个。
           两个原因：① 菜单靠滚动位置自动高亮（scroll-spy），全挂载才量得到位置；
           ② 搜索是对已挂载 DOM 逐行过滤的，只挂一个分区就搜不到别的。
           分区顺序必须与 sections/meta.ts 里的 SETTINGS_SECTIONS 一致。 */}
       <div ref={search.containerRef} className={styles.settingsSections}>
-        <StatsSection
-          config={config} stats={stats} statsError={statsError} onRetryStats={onRetryStats}
-          setShowWeekReport={setShowWeekReport}
-          srcOpen={srcOpen} setSrcOpen={setSrcOpen} loadedAt={loadedAt} dash={dash}
-        />
         <AppearanceSection
           config={config} updateAndSave={updateAndSave}
           tabStyle={tabStyle} handleSwitchTabStyle={handleSwitchTabStyle}
         />
-        <GeneralSection
+        <CopyPasteSection config={config} updateAndSave={updateAndSave} />
+        <WindowEditorSection
           config={config} updateAndSave={updateAndSave}
-          cleanupDays={cleanupDays} handlePickCleanupDays={handlePickCleanupDays}
-          trashDays={trashDays} handlePickTrashDays={handlePickTrashDays}
           mdAssoc={mdAssoc} mdAssocBusy={mdAssocBusy} handleMdAssocToggle={handleMdAssocToggle}
         />
+        <HotkeySection config={config} updateAndSave={updateAndSave} />
+        <CaptureSection config={config} updateAndSave={updateAndSave} chains={chains} />
         <IslandSection config={config} updateAndSave={updateAndSave} />
-        <LanSyncSection config={config} updateAndSave={updateAndSave} />
-        <KbSyncSection config={config} updateAndSave={updateAndSave} />
-        <RcSection config={config} updateAndSave={updateAndSave} />
-        <HotkeySection config={config} updateAndSave={updateAndSave} chains={chains} />
         <DataSection
           config={config} updateAndSave={updateAndSave} expiredCount={expiredCount}
           handleExport={handleExport} handleImport={handleImport} handleCleanup={handleCleanup}
           exporting={exporting} importing={importing}
           setShowDeepClean={setShowDeepClean}
+          cleanupDays={cleanupDays} handlePickCleanupDays={handlePickCleanupDays}
+          trashDays={trashDays} handlePickTrashDays={handlePickTrashDays}
+        />
+        <SyncSection config={config} updateAndSave={updateAndSave} />
+        <StatsSection
+          config={config} stats={stats} statsError={statsError} onRetryStats={onRetryStats}
+          setShowWeekReport={setShowWeekReport}
+          srcOpen={srcOpen} setSrcOpen={setSrcOpen} loadedAt={loadedAt} dash={dash}
         />
       </div>
       {/* 空态不能只说「没找到」：这里用户有明确动作能让列表重新出现（清掉搜索），

@@ -11,9 +11,11 @@
  * 而当时它没有任何测试。
  *
  * ❗ 只钉**单向**：每个菜单 label 都得有一个同名标题。反方向不钉——
- *   右栅允许有**不入菜单**的小标题（`HotkeySection` 的「转笔记模板」、
+ *   右栅允许有**不入菜单**的小标题（`WindowEditorSection` 的「转笔记模板」、
  *   `McpTab` 的「知识库 MCP 服务」），scroll-spy 里已明写「认不出的标题直接跳过」。
  *   双向相等会把那两个合法的额外标题误报成错。
+ *   例外是 `SETTINGS_SUBSECTIONS` 里那三个**当锚点用**的小标题：它们不进菜单，
+ *   但外部跳转按它的文字找落点，所以对它们要单独钉一条（见下面「小节锚点」）。
  *
  * 为何扫源码而不渲染：整个 `SettingsView` 要一大堆 Tauri 桩。
  * 而这条约束本质上就是两处源码字面的一致性，扫源码直接就能钉。
@@ -21,7 +23,9 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { settingsNavItems } from "@/components/settings/sections/meta";
+import {
+  SETTINGS_SECTIONS, SETTINGS_SUBSECTIONS, settingsNavItems,
+} from "@/components/settings/sections/meta";
 
 const ROOT = join(process.cwd(), "src", "components", "settings");
 
@@ -60,6 +64,33 @@ function sectionTitles(): Set<string> {
   return titles;
 }
 
+/**
+ * `GeneralTab` 里分区组件的**书写顺序**，以及每个组件的**第一个分区标题**。
+ *
+ * 🔴 2026-09-29 分区重排新增的约束：渲染顺序必须与 `SETTINGS_SECTIONS` 逐位一致。
+ * 两边都是数组，谁忘了改另一边**都不报错**——只是点菜单滚到隔壁分区，
+ * 而 scroll-spy 的高亮会跟着错。存量测试只钉了「label 与标题逐字相等」，
+ * 钉不住顺序，所以这里按同样的「扫源码不渲染」路子补上。
+ */
+function renderOrderTitles(): string[] {
+  const src = readFileSync(join(ROOT, "GeneralTab.tsx"), "utf8");
+  // import { AppearanceSection } from "./sections/AppearanceSection"
+  const file = new Map<string, string>();
+  for (const m of src.matchAll(/import \{ (\w+) \} from "\.\/sections\/(\w+)"/g)) {
+    file.set(m[1], join(ROOT, "sections", `${m[2]}.tsx`));
+  }
+  const out: string[] = [];
+  for (const m of src.matchAll(/<([A-Z]\w*Section)[\s>]/g)) {
+    const path = file.get(m[1]);
+    if (!path) continue;
+    const first = readFileSync(path, "utf8").match(
+      /className=\{[A-Za-z_$][\w$]*\.sSection}>([^<]+)</,
+    );
+    if (first) out.push(first[1].trim());
+  }
+  return out;
+}
+
 describe("设置页左菜单与分区标题", () => {
   it("每个菜单 label 都能在右栅找到逐字同名的标题", () => {
     const titles = sectionTitles();
@@ -69,6 +100,22 @@ describe("设置页左菜单与分区标题", () => {
     const missing = settingsNavItems(false)
       .map((n) => n.label)
       .filter((label) => !titles.has(label));
+    expect(missing).toEqual([]);
+  });
+
+  it("右栅的渲染顺序与 SETTINGS_SECTIONS 逐位一致", () => {
+    expect(renderOrderTitles()).toEqual(SETTINGS_SECTIONS.map((s) => s.label));
+  });
+
+  it("小节锚点的 label 也能在右栅找到逐字同名的标题", () => {
+    // 🔴 `SETTINGS_SUBSECTIONS` 是**不进菜单**的那批标题（远程电脑/剪贴板同步/知识库同步）。
+    //     外部锚点（`openSettingsTab("general","rc")`）靠这段文字找落点，
+    //     标题一改名，`findNavEl` 就永远返回 undefined ⇒ 点进来什么也不发生（连报错都没有）。
+    //     上一条只管菜单项，覆盖不到它们。
+    const titles = sectionTitles();
+    const missing = Object.entries(SETTINGS_SUBSECTIONS)
+      .filter(([, sub]) => !titles.has(sub.label))
+      .map(([key, sub]) => `${key}→${sub.label}`);
     expect(missing).toEqual([]);
   });
 

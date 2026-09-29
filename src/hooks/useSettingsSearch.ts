@@ -172,22 +172,34 @@ export function useSettingsSearch(): SettingsSearch {
       }
       if (match) visibleCount++;
     }
-    // 第二遍：若某分区下已无可见行，则连分区标题一起隐藏
-    let currentSection: HTMLElement | null = null;
-    let sectionHasVisible = false;
-    const flush = () => {
-      if (currentSection) currentSection.style.display = sectionHasVisible ? "" : "none";
-    };
+    // 第二遍：决定每个分区标题的显隐。
+    //
+    // 🔴 不能只看「本节有没有可见行」——合并分区（「同步与互联」下三个小节标题连排）
+    // 会让主标题**自己一行都没有**，按旧算法它永远隐藏，于是左菜单点它没有落点
+    // （`findNavEl` 跳过 display:none 的标题）。新规则三条：
+    //   ① 不搜索 → 全显示；
+    //   ② 本节有可见行 → 显示；
+    //   ③ 紧跟着的是一个**可见的**小节标题 → 也显示（它是这条链的入口）。
+    // 从后往前扫，所以 ③ 看到的是已经定过稿的下一节，连续的纯小节标题能一路串到主标题。
+    const hasRow = new Map<HTMLElement, boolean>();
+    let cur: HTMLElement | null = null;
     for (const el of children) {
       if (el.classList.contains(styles.sSection)) {
-        flush();
-        currentSection = el;
-        sectionHasVisible = false;
-      } else if (el.style.display !== "none") {
-        sectionHasVisible = true;
+        cur = el;
+        hasRow.set(el, false);
+      } else if (cur && el.style.display !== "none") {
+        hasRow.set(cur, true);
       }
     }
-    flush();
+    const isHead = (el: HTMLElement | undefined) =>
+      !!el && el.classList.contains(styles.sSection);
+    for (let i = children.length - 1; i >= 0; i--) {
+      const el = children[i];
+      if (!isHead(el)) continue;
+      const next = children[i + 1];
+      const nextShownHead = isHead(next) && next.style.display !== "none";
+      el.style.display = kw === "" || hasRow.get(el) || nextShownHead ? "" : "none";
+    }
     if (noResultRef.current) {
       noResultRef.current.style.display = kw && visibleCount === 0 ? "" : "none";
     }

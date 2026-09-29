@@ -10,8 +10,9 @@ interface ScreenshotRowsProps {
   chains: SettingsData["chains"];
 }
 
-// 「快捷键」分区里截图相关的行为设置（自动框选、窗口常驻、默认动作链、快速粘贴布局）。
-// 与前面的热键录制器只是把文件切开（规则 #7），渲染顺序没变。
+// 「截图与栈」分区里截图相关的行为设置（自动框选、窗口常驻、默认动作链、快速粘贴布局）。
+// 与栈那一组（StackRows）分文件只是把代码切开（规则 #7）；节标题在 CaptureSection，
+// 两个子组件都返回片段，所以容器 children 依旧扁平。
 // 🔴 必须返回片段，原因同 StatsSection。
 export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRowsProps) {
   return (

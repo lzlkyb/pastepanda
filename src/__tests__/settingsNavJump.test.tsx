@@ -69,16 +69,23 @@ function Harness({
   initialSection,
   jump,
   showMcp = true,
-  showLan = true,
+  showSyncHead = true,
+  showClipSub = true,
+  showRcSub = true,
 }: {
   open: boolean;
   initialTab?: SettingsTabName;
-  /** 通用页内分区 key（剪贴板同步入口用） */
+  /** 通用页内分区 key（剪贴板同步 / 远程电脑等入口用） */
   initialSection?: string;
   jump?: number;
   /** 模拟「MCP 标题那一帧还没渲染出来」 */
   showMcp?: boolean;
-  showLan?: boolean;
+  /** 「同步与互联」主标题（= 菜单项）在不在 DOM 里 */
+  showSyncHead?: boolean;
+  /** 「剪贴板同步」小节标题在不在 DOM 里 */
+  showClipSub?: boolean;
+  /** 「远程电脑」小节标题在不在 DOM 里 */
+  showRcSub?: boolean;
 }) {
   const { nav, bodyRef, handleNavPick } = useSettingsNav({
     open,
@@ -96,9 +103,12 @@ function Harness({
     <button onClick={() => handleNavPick("mcp")}>手点MCP</button>
     <div ref={bodyRef} data-nav={nav}>
       {/* 顺序必须与 `SETTINGS_SECTIONS` + `SETTINGS_PAGES` 一致；
-          文字必须与 `meta.ts` 里的 label **逐字一致**（`findNavEl` 是全等匹配）。 */}
-      <div className="sec">数据统计</div>
-      {showLan && <div className="sec">剪贴板同步</div>}
+          文字必须与 `meta.ts` 里的 label **逐字一致**（`findNavEl` 是全等匹配）。
+          「剪贴板同步」「远程电脑」是**小节标题**：不入菜单，但锚点要落在它们上。 */}
+      <div className="sec">外观</div>
+      {showSyncHead && <div className="sec">同步与互联</div>}
+      {showClipSub && <div className="sec">剪贴板同步</div>}
+      {showRcSub && <div className="sec">远程电脑</div>}
       {showMcp && <div className="sec">MCP</div>}
     </div>
     </>
@@ -147,12 +157,31 @@ describe("设置页从外部跳转", () => {
     expect(scrollWrites.length).toBe(0);
   });
 
-  it("section=lan 要滚到「剪贴板同步」，不能停在数据统计", () => {
+  it("section=lan 落在「剪贴板同步」小节上，菜单亮主节「同步与互联」", () => {
     const { container } = render(
       <Harness open initialTab="general" initialSection="lan" jump={1} />,
     );
     expect(scrollWrites.length).toBeGreaterThan(0);
-    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("lan");
+    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("sync");
+  });
+
+  /**
+   * 🔴 2026-09-29 分区重排新增的那条：三节同步并成一节之后，「远程电脑」不再是菜单项，
+   * 只是节内一个小节标题。锚点必须**落在小节标题上**（跳到分区顶部等于没跳到），
+   * 而菜单要亮住所属主节。两个方向各钉一次：
+   *  - 只留小节标题、去掉主标题 → 仍要滚 ⇒ 证明目标取的是小节文字；
+   *  - 只留主标题、去掉小节标题 → 不滚 ⇒ 证明没有悄悄退回主标题（那会是「看着动了其实没到位」）。
+   */
+  it("section=rc 的落点是小节标题，不是主节标题", () => {
+    const { container } = render(
+      <Harness open initialSection="rc" jump={1} showSyncHead={false} />,
+    );
+    expect(scrollWrites.length).toBeGreaterThan(0);
+    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("sync");
+
+    scrollWrites.length = 0;
+    render(<Harness open initialSection="rc" jump={7} showRcSub={false} />);
+    expect(scrollWrites.length).toBe(0);
   });
 
   it("非法 section 退回第一节，不静默卡死", () => {
@@ -160,16 +189,16 @@ describe("设置页从外部跳转", () => {
       <Harness open initialTab="general" initialSection="nope" jump={1} />,
     );
     expect(scrollWrites.length).toBe(0);
-    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("stats");
+    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("appearance");
   });
 
   it("已打开时 jump+1 要重新定位（open 本身不翻转）", () => {
     const { container, rerender } = render(<Harness open jump={1} />);
-    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("stats");
+    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("appearance");
 
     rerender(<Harness open initialSection="lan" jump={2} />);
     expect(scrollWrites.length).toBeGreaterThan(0);
-    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("lan");
+    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("sync");
   });
 
   /**

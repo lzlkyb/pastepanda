@@ -744,6 +744,25 @@
   to { transform: rotate(360deg); }
 }
 
+/* 设置行内展开的文本输入（应用排除名单）。
+   原先写成内联 style：拿不到 :focus 伪类，outline:none 之后键盘用户看不到焦点环。 */
+.sTextInput {
+  margin-top: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+.sTextInput:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-color));
+}
+
 /* Cleanup options — S1 胶囊多选一（与查找卡/工具箱开关同语言） */
 .sCleanup { display: flex; gap: 4px; flex-wrap: wrap; }
 .sCleanupOpt {

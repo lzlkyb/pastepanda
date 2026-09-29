@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置分区重排 · 方案A · 设计稿</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   令牌：--* 全部逐字抄自 src/styles/theme.css（经典白 ocean / 午夜 midnight）
+   控件样式：逐字抄自 src/components/Settings.module.css
+   （.sSection / .sRow / .sRowLabel / .sRowDesc / .sToggle / .sSegGroup /
+     .sCleanup / .sVal / .sAction / .settingsNav* / .settingsHit / .searchMark）
+   ⇒ 本稿渲染出来的行高、间距、颜色、开关尺寸就是真应用的，不是重画一遍。
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --card-bg: #fff;
+  --text-primary: #0f172a;
+  --text-secondary: #495565;
+  --text-muted: #627083;
+  --border-color: #e0e4eb;
+  --accent: #0284c7;
+  --accent-strong: #0273ad;
+  --accent-light: #e0f2fe;
+  --seg-bg: #e8e8ed;
+  --search-bg: #fff;
+  --search-border: #e0e4eb;
+  --section-bg: #f0f4f8;
+  --dialog-bg: #fff;
+  --toggle-off-bg: #e2e8f0;
+  --hover: #e8ecf2;
+  --green: #11813a;
+  --danger: #d82525;
+  --input-bg: #f1f5f9;
+  --ic-system: linear-gradient(135deg, #fbbf24 0%, #f59e0b 45%, #ea580c 100%);
+  --ic-capture: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 45%, #0284c7 100%);
+  --ic-save: linear-gradient(135deg, #34d399 0%, #10b981 45%, #059669 100%);
+  --ic-editor: linear-gradient(135deg, #a5b4fc 0%, #6366f1 45%, #4f46e5 100%);
+  --ic-privacy: linear-gradient(135deg, #fb7185 0%, #f43f5e 45%, #e11d48 100%);
+  --ic-sync: linear-gradient(135deg, #22d3ee 0%, #06b6d4 45%, #0891b2 100%);
+  --ic-paste: linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 45%, #7c3aed 100%);
+  --ic-brand: linear-gradient(135deg, #93c5fd 0%, #3b82f6 45%, #6366f1 100%);
+  --glass-card-elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+}
+body[data-theme="midnight"] {
+  --card-bg: #18181b;
+  --text-primary: #e4e4e7;
+  --text-secondary: #afafb7;
+  --text-muted: #8d8d95;
+  --border-color: #27272a;
+  --accent: #818cf8;
+  --accent-strong: #c7d2fe;
+  --accent-light: #1e1b4b;
+  --seg-bg: #27272a;
+  --search-bg: #27272a;
+  --search-border: #3f3f46;
+  --section-bg: #0f0f11;
+  --dialog-bg: #18181b;
+  --toggle-off-bg: #3f3f46;
+  --hover: #1f1f23;
+  --green: #4ade80;
+  --danger: #f87171;
+  --input-bg: #27272a;
+  --glass-card-elev: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 16px rgba(0, 0, 0, 0.35);
+  --accent-shadow: rgba(129, 140, 248, 0.25);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  background: #eef2f7;
+  color: var(--text-primary);
+  padding: 24px 20px 60px;
+}
+body[data-theme="midnight"] { background: #09090b; }
+
+/* ── 稿件外壳（不属于设置页）── */
+.doc { max-width: 1120px; margin: 0 auto; }
+.docTop {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 18px 22px;
+  box-shadow: var(--glass-card-elev);
+  margin-bottom: 18px;
+}
+.docTop h1 { margin: 0 0 4px; font-size: 20px; }
+.docTop .sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; }
+.verify {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-size: 11.5px; color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.verify span {
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+  border-radius: 999px; padding: 3px 10px;
+}
+.docBtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.docBtn {
+  font: 600 12px/1 inherit; padding: 8px 13px; border-radius: 9px;
+  border: 1px solid var(--border-color); background: var(--card-bg);
+  color: var(--text-secondary); cursor: pointer; font-family: inherit;
+}
+.docBtn:hover { border-color: var(--accent); color: var(--accent-strong); }
+.docBtn.on {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent-strong);
+}
+h2.sec {
+  font-size: 14px; margin: 26px 0 10px; color: var(--text-primary);
+  display: flex; align-items: center; gap: 8px;
+}
+h2.sec::before { content: ""; width: 3px; height: 15px; border-radius: 2px; background: var(--accent); }
+.note { font-size: 12px; color: var(--text-muted); line-height: 1.7; margin: 0 0 10px; }
+
+/* ── §1 对照表 ── */
+table.map {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  background: var(--card-bg); border: 1px solid var(--border-color);
+  border-radius: 12px; overflow: hidden;
+}
+table.map th, table.map td {
+  padding: 9px 12px; border-bottom: 1px solid var(--border-color);
+  text-align: left; vertical-align: top;
+}
+table.map th {
+  background: var(--section-bg); font-size: 11px; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--text-secondary);
+}
+table.map tr:last-child td { border-bottom: none; }
+table.map td.from { width: 132px; font-weight: 600; }
+table.map td.to { width: 148px; font-weight: 600; color: var(--accent-strong); }
+.tag {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  border-radius: 999px; padding: 1px 8px; margin-left: 4px;
+}
+.tag.move { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-strong); }
+.tag.keep { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+.tag.split { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+/* ══════════════ 设置页真控件（抄自 Settings.module.css）══════════════ */
+.settingsView {
+  display: flex; flex-direction: column;
+  height: 640px; background: var(--dialog-bg);
+  border: 1px solid var(--border-color); border-radius: 14px;
+  overflow: hidden; box-shadow: var(--glass-card-elev);
+}
+.settingsViewHeader {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+}
+.settingsViewBack {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: 600 12px/1 inherit; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--card-bg);
+  color: var(--text-secondary); cursor: pointer;
+}
+.settingsViewTitle { display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600; margin: 0; }
+.settingsSearchBox {
+  display: flex; align-items: center; gap: 8px; flex: 1;
+  padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--search-border); background: var(--search-bg);
+  transition: border-color .2s, box-shadow .2s;
+}
+.settingsSearchBox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-shadow); }
+.settingsSearchInput {
+  flex: 1; padding: 0; font-size: 12px; border: none; background: transparent;
+  color: var(--text-primary); outline: none; font-family: inherit; min-width: 0;
+}
+.settingsSearchClear { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+.settingsSearchCount { font-size: 11px; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
+.settingsViewBody { flex: 1; display: flex; min-height: 0; }
+.settingsNav {
+  flex: 0 0 20%; min-width: 128px; max-width: 220px;
+  border-right: 1px solid var(--border-color); background: var(--section-bg);
+  overflow-y: auto; overflow-x: hidden; padding: 6px 0;
+}
+.settingsNavItem {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 14px; border: none; background: transparent;
+  color: var(--text-primary); font-size: 12.5px; font-family: inherit;
+  cursor: pointer; text-align: left; border-left: 3px solid transparent;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.settingsNavItem:hover { background: var(--hover); }
+.settingsNavItemActive {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-strong, var(--accent)); font-weight: 600;
+  border-left-color: var(--accent);
+}
+.settingsNavIcon { font-size: 14px; flex-shrink: 0; }
+.settingsNavLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settingsNavSep { height: 1px; background: var(--border-color); margin: 6px 12px; }
+.settingsContentCol { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.settingsSearchBanner {
+  display: flex; align-items: center; gap: 8px; margin: 8px 16px 0;
+  padding: 8px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text-secondary); font-size: 11.5px; flex-shrink: 0;
+}
+.settingsSearchSummary { color: var(--text-muted); }
+.settingsContent {
+  flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  position: relative; padding: 0 0 16px;
+}
+.settingsSections > * { animation: settingsSectionIn .3s ease backwards; }
+@keyframes settingsSectionIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.sSection {
+  margin-top: 0; padding: 10px 16px; font-size: 11px; font-weight: 700;
+  color: var(--text-secondary); text-transform: uppercase; letter-spacing: .5px;
+  background: var(--section-bg); border: 1px solid var(--border-color);
+  border-radius: 12px 12px 0 0; box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  position: sticky; top: 0; z-index: 3;
+}
+.sSection::before {
+  content: ""; position: absolute; left: -1px; right: -1px; top: -12px; height: 12px;
+  background: color-mix(in srgb, var(--section-bg) 35%, var(--dialog-bg));
+  pointer-events: none;
+}
+.sRow {
+  display: flex; align-items: center; padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color); gap: 12px; background: var(--card-bg);
+  border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color);
+  transition: background 150ms ease; cursor: pointer;
+}
+.sRow:hover { background: color-mix(in srgb, var(--accent) 4%, var(--card-bg)); }
+.sRow:has(+ .sSection), .settingsSections > .sRow:last-child {
+  border-radius: 0 0 12px 12px; box-shadow: var(--glass-card-elev);
+}
+.sRow > :last-child:not(.sToggle) { flex-shrink: 0; min-width: 72px; display: flex; align-items: center; justify-content: flex-end; }
+.sSection ~ :not(.sSection):not(.lanPanel) {
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+.sRowBody { flex: 1; min-width: 0; }
+.sRowLabel { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.sRowDesc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.sRowRecommend {
+  font-size: 10px; font-weight: 700; color: var(--accent-strong);
+  background: var(--accent-light); border-radius: 999px; padding: 1px 6px; margin-left: 6px;
+}
+.sToggle {
+  display: inline-block; width: 44px; height: 26px; border-radius: 13px; border: none;
+  cursor: pointer; position: relative; flex-shrink: 0; transition: background .25s;
+  padding: 0; vertical-align: middle;
+}
+.sToggle.off { background: var(--toggle-off-bg); }
+.sToggle.on { background: var(--green); }
+.sToggle .sToggleThumb {
+  position: absolute; left: 0; top: 2px; width: 22px; height: 22px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+  transition: transform .25s;
+}
+.sToggle.on .sToggleThumb { transform: translateX(18px); }
+.sToggleLabel {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  font-size: 9px; font-weight: 700; color: var(--text-muted);
+}
+.sToggle.on .sToggleLabel { justify-content: flex-start; padding-left: 6px; color: #fff; }
+.sToggle.off .sToggleLabel { justify-content: flex-end; padding-right: 6px; }
+.sRowIcon {
+  width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 1px 3px rgba(15, 23, 42, .10);
+}
+.sRowIconGlyph { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.ic-system { background: var(--ic-system); } .ic-capture { background: var(--ic-capture); }
+.ic-save { background: var(--ic-save); } .ic-editor { background: var(--ic-editor); }
+.ic-privacy { background: var(--ic-privacy); } .ic-sync { background: var(--ic-sync); }
+.ic-paste { background: var(--ic-paste); } .ic-brand { background: var(--ic-brand); }
+.sVal {
+  font-size: 12px; font-weight: 600; color: var(--accent-strong);
+  padding: 3px 8px; background: var(--accent-light); border-radius: 6px;
+  white-space: nowrap; cursor: pointer; transition: all .15s; font-family: inherit; border: none;
+}
+.sVal:hover { opacity: .85; }
+.sAction {
+  padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--card-bg); font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  cursor: pointer; transition: all .15s; font-family: inherit; white-space: nowrap;
+}
+.sAction:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-light); }
+.sAction.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.sCleanup { display: flex; gap: 4px; flex-wrap: wrap; }
+.sCleanupOpt {
+  height: 24px; padding: 0 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border-color); font-family: inherit;
+  background: var(--card-bg); color: var(--text-muted); transition: all .15s;
+}
+.sCleanupOpt.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.sSegGroup {
+  display: flex; background: var(--seg-bg); border-radius: 8px; padding: 3px; gap: 2px;
+  flex-shrink: 0; max-width: 100%;
+}
+.sSegText {
+  border: none; background: transparent; font: 600 11px/1 inherit; font-family: inherit;
+  color: var(--text-muted); padding: 5px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.sSegText:hover { color: var(--text-primary); }
+.sSegText.sSegActive { background: var(--card-bg); color: var(--accent-strong); box-shadow: 0 1px 3px rgba(15, 23, 42, .10); }
+.sInputBox {
+  margin-top: 6px; width: 100%; padding: 6px 10px; font-size: 12px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-primary);
+  outline: none; font-family: inherit;
+}
+.sToggleRowFull { flex-direction: column; align-items: stretch; gap: 12px; }
+.themeStrip { display: flex; gap: 8px; flex-wrap: wrap; }
+.themeChip {
+  border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; cursor: pointer;
+  font: 600 10px/1 inherit; font-family: inherit; padding: 0; background: var(--card-bg);
+}
+.themeChip span { display: block; padding: 4px 8px; }
+.themeChip i { display: block; height: 22px; }
+.themeChip.on { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.kbd {
+  font: 700 11px/1 "Cascadia Mono", Consolas, monospace; color: var(--accent-strong);
+  background: var(--accent-light); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 6px; padding: 5px 9px; white-space: nowrap;
+}
+.lanPanel {
+  padding: 12px 16px; background: var(--card-bg); border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color); border-top: 1px solid var(--border-color);
+  font-size: 11.5px; color: var(--text-muted);
+}
+.lanPanel b { color: var(--text-secondary); font-size: 12px; }
+.lanPanel:has(+ .sRow) { border-bottom: none; }
+/* 统计示意（组件原样搬入，本稿只占位） */
+.statGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 14px 16px; }
+.statCell {
+  border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 12px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--card-bg));
+}
+.statCell u { display: block; font-size: 10.5px; color: var(--text-muted); text-decoration: none; }
+.statCell b { font-size: 17px; color: var(--text-primary); }
+.settingsHit {
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg)); position: relative;
+}
+.settingsHit::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent);
+}
+.searchMark {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: inherit; border-radius: 2px; padding: 0 1px;
+}
+.settingsNoResult { padding: 40px 16px; text-align: center; font-size: 12.5px; color: var(--text-secondary); }
+.sFooter {
+  flex-shrink: 0; padding: 10px 14px; border-top: 1px solid var(--border-color);
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px; background: var(--section-bg);
+}
+.sResetBtn {
+  font: 600 11px/1 inherit; padding: 7px 12px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); cursor: pointer;
+}
+.sSaveBtn {
+  font: 700 11px/1 inherit; padding: 7px 16px; border-radius: 8px; border: none;
+  background: var(--accent); color: #fff; cursor: pointer;
+}
+/* 搬家标记：走 ::after + data 属性，不生成文本节点 ⇒ 不进搜索 haystack（真实现里不带） */
+body.showMoved .sRow[data-moved] .sRowLabel::after {
+  content: " ← " attr(data-moved);
+  font-size: 10px; font-weight: 700; color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 999px; padding: 1px 6px; margin-left: 6px; white-space: nowrap;
+}
+body.showMoved .sRow[data-moved="原地"] .sRowLabel::after {
+  color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+body.showMoved .lanPanel[data-moved]::after {
+  content: " ← " attr(data-moved); font-size: 10px; font-weight: 700; color: var(--accent-strong);
+}
+
+/* ── §3 决策卡 ── */
+.qs { display: grid; gap: 12px; }
+.q {
+  background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px;
+  padding: 14px 16px; box-shadow: var(--glass-card-elev);
+}
+.q h3 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.q h3 em {
+  font-style: normal; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green);
+}
+.q ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.75; }
+.q .why { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; }
+ul.flat { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
+code {
+  font: 600 11px/1 "Cascadia Mono", Consolas, monospace;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-strong); padding: 1px 5px; border-radius: 4px;
+}
+</style>
+</head>
+<body data-theme="ocean" class="showMoved">
+<div class="doc">
+
+  <div class="docTop">
+    <h1>设置分区重排 · 方案A</h1>
+    <div class="sub">导航项数不变（9 分区 + 4 页 = 13），改的是<b>每一行的归属</b>与<b>节名是否兑现</b>。像素零改动。</div>
+    <div class="verify">
+      <span>本页可点：菜单跳转 + scroll-spy 用真算法（判定线 80px / sticky 临时 relative 量一次）</span>
+      <span>搜索可验：与 useSettingsSearch 同一条规则（分区名命中→整节展开、空节连标题隐掉）</span>
+      <span>开关/分段/档位/主题卡可点</span>
+      <span>主题可切：经典白 / 午夜（真令牌值）</span>
+    </div>
+    <div class="docBtns">
+      <button class="docBtn on" id="btnMoved" onclick="toggleMoved()">搬家标记：显示</button>
+      <button class="docBtn" id="btnTheme" onclick="toggleTheme()">切到午夜</button>
+      <button class="docBtn" onclick="jumpTo('复制与粘贴')">跳「复制与粘贴」</button>
+      <button class="docBtn" onclick="jumpTo('远程电脑')">跳小节「远程电脑」</button>
+    </div>
+  </div>
+
+  <h2 class="sec">§1 旧节 → 新节：谁搬到谁那儿</h2>
+  <table class="map">
+    <tr><th>旧节（现状 9 节）</th><th>新去向</th><th>依据</th></tr>
+    <tr>
+      <td class="from">通用（19 行）<span class="tag split">拆</span></td>
+      <td class="to">外观 / 复制与粘贴 / 窗口与编辑器 / 数据管理</td>
+      <td>六个互不相干的家族挤在一节里。观感行→外观；捕获粘贴规则→复制与粘贴；窗口+编辑器+.md→窗口与编辑器；<b>自动清理 + 笔记回收站→数据管理</b>，和「清理过期记录／保护常用内容／深度清理」并到一起（<code>preserve_valued_content</code> 直接改变 <code>auto_cleanup_days</code> 的效果，现在隔了 6 节）</td>
+    </tr>
+    <tr>
+      <td class="from">外观（2 行）</td>
+      <td class="to">外观（7 行）</td>
+      <td>「来源图标」「卡片悬浮」「双击行为」「时间线」「窗口动画」本来就是观感设置，过去在通用里</td>
+    </tr>
+    <tr>
+      <td class="from">快捷键（18 行）<span class="tag split">拆</span></td>
+      <td class="to">快捷键（8 行，纯热键）+ 截图与栈 + 转笔记模板→窗口与编辑器</td>
+      <td>节名要兑现。截图行为 5 行由 <code>HotkeySection.tsx:273</code> 挂进来、栈 5 行写在 <code>:112–170</code>、转笔记模板在 <code>:278</code>，都不是热键</td>
+    </tr>
+    <tr>
+      <td class="from">剪贴板同步<br>知识库同步<br>远程电脑</td>
+      <td class="to">同步与互联（3 个小节）<span class="tag move">合</span></td>
+      <td>三节各只有 1 个开关 + 一块面板，同族占 3 个导航位。合并用 <code>.sSection</code> 当小节标题——<b>现成机制</b>，<code>NoteTemplateRows.tsx:52</code> 已经在这么干，scroll-spy 认不出的标题会跳过并保留上一节高亮（<code>useSettingsNav.ts:305</code>）</td>
+    </tr>
+    <tr>
+      <td class="from">数据管理（5 行）</td>
+      <td class="to">数据管理（10 行）</td>
+      <td>收进自动清理/回收站两行，本节变成「保留 + 清理 + 进出」一条完整链路</td>
+    </tr>
+    <tr>
+      <td class="from">数据统计（第 1 位）</td>
+      <td class="to">数据统计（分区末位）<span class="tag keep">挪位</span></td>
+      <td>看板不是设置；打开设置第一眼应当是能改的东西。搜索时它 0 命中会被自动隐掉，行为不变</td>
+    </tr>
+    <tr>
+      <td class="from">灵动岛</td>
+      <td class="to">灵动岛 <span class="tag keep">不动</span></td>
+      <td>本节 6 行内部一律不改，只是排位后移一位</td>
+    </tr>
+    <tr>
+      <td class="from">AI / MCP / 帮助 / 关于</td>
+      <td class="to">四页不动</td>
+      <td>仍在搜索容器之外、仍懒挂载 MCP（5s 轮询不能提前起来）</td>
+    </tr>
+  </table>
+  <p class="note">
+    为什么这个重排在代码里便宜：菜单文字与顺序已经收在 <code>sections/meta.ts:18</code> 一处，右栏渲染顺序由 <code>GeneralTab.tsx:73</code> 的数组决定；
+    两套机制都只认「数组顺序＝滚动顺序」和「label 与标题逐字一致」。所以本轮改动是<b>搬 JSX 块 + 改这一处数组</b>，不新增层级、不改任何 CSS 几何。
+  </p>
+
+  <h2 class="sec">§2 交互稿本体（1:1 控件；点击左侧菜单或直接滚，看高亮跟不跟得上）</h2>
+
+  <div class="settingsView">
+    <div class="settingsViewHeader">
+      <button class="settingsViewBack">← 返回</button>
+      <h2 class="settingsViewTitle" id="viewTitle">⚙ 设置</h2>
+      <div class="settingsSearchBox">
+        <span style="font-size:12px;color:var(--text-muted)">🔍</span>
+        <input class="settingsSearchInput" id="searchInput" type="text" placeholder="搜索设置  Ctrl+F">
+        <span class="settingsSearchCount" id="searchCount"></span>
+        <button class="settingsSearchClear" id="searchClear" onclick="clearSearch()" style="display:none">✕</button>
+      </div>
+    </div>
+
+    <div class="settingsViewBody">
+      <div class="settingsNav" id="nav"></div>
+      <div class="settingsContentCol">
+        <div class="settingsSearchBanner" id="searchBanner" style="display:none">
+          <span>🔍</span>
+          <span>「<span id="searchWord"></span>」<span class="settingsSearchSummary" id="searchSummary"></span></span>
+        </div>
+        <div class="settingsContent" id="scroller">
+          <div class="settingsSections" id="sections"></div>
+          <div id="pages"></div>
+          <div class="settingsNoResult" id="noResult" style="display:none">
+            😕 没有找到匹配的设置项<div style="margin-top:6px;font-size:11px">清掉搜索看全部设置，或换个词试试，比如「主题」「热键」「清理」</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sFooter">
+      <button class="sResetBtn">恢复默认…</button>
+      <button class="sSaveBtn">完成</button>
+    </div>
+  </div>
+  <p class="note">
+    上方法线就是真组件：<code>.sSection</code> 吸顶、卡片由 <code>.sSection ~ :not(.sSection):not(.lanPanel)</code> 拼合、开关 44×26、
+    右列 <code>min-width:72px</code> 对齐。带「小节」标题的节（截图与栈／窗口与编辑器／同步与互联）在滚动时菜单高亮<b>保持在该节主标题上</b>，与现状「转笔记模板」一致。
+  </p>
+  <p class="note">
+    实测本稿时顺手发现一条<b>现状就有</b>的搜索怪味（不是本方案引入）：搜「外观」这类<b>分区名</b>时，整节会展开（D4 设计如此），
+    但结果条写「命中 0 项」——因为 <code>hitCount</code> 只数行级直接命中。合并后「同步与互联」下三个小节名同理。
+    要不要顺手把摘要改成「命中 0 项 · 「外观」整节展开」，请在拍板时一并说一句；本稿默认<b>不动它</b>。
+  </p>
+
+  <h2 class="sec">§3 三个决策点（每题已标默认；只回答第一题也够，其余按默认走）</h2>
+  <div class="qs">
+    <div class="q">
+      <h3>Q1 「数据统计」放哪儿 <em>默认：分区最末（本稿所示）</em></h3>
+      <ul>
+        <li>A. 分区最末（默认）—— 打开设置第一眼是「外观」，统计仍在左菜单，滑到底就是</li>
+        <li>B. 留在最前 —— 现状。代价：第 1 屏 0 个可改项，真正设置被推到第 2 屏</li>
+        <li>C. 并入「关于」页 —— 再省一个导航位，代价：统计卡要跟着 AboutTabContent 的 <code>.dialog-body</code> 走，滚动语义变</li>
+      </ul>
+    </div>
+    <div class="q">
+      <h3>Q2 「同步与互联」要不要合并成一节 <em>默认：合并（本稿所示）</em></h3>
+      <ul>
+        <li>A. 合并 + 3 个小节标题（默认）—— 导航少 2 项；<b>外部跳转锚点 <code>section:"rc"</code> 必须保留</b>（<code>App.tsx:185</code> 在用）。做法：小节标题文本仍叫「远程电脑」，scroll-spy 认不出→保留主节高亮，但 <code>meta.ts</code> 里给 rc 留一个 key，跳转时按标题文字定位</li>
+        <li>B. 不合并，三节照旧 —— 只重命名「剪贴板同步→局域网同步」之类，不动结构。锚点零风险，代价：13 项里 3 项同族</li>
+      </ul>
+      <p class="why">选 A 的话，<code>findNavEl</code> 靠标题文字定位，合并后 "rc" 的落点会命中「远程电脑」小节标题（它也是 <code>.sSection</code>），实测在本稿点顶部「跳小节『远程电脑』」就是这个路径。<b>但光有落点不够</b>：小节标题不在 <code>NAV</code> 里，跳转时还得有一张「小节 → 所属主节」归属表把菜单高亮带回「同步与互联」（本稿已实现为 <code>SUB_OWNERS</code>；真实现里同一张表进 <code>useSettingsNav</code>）。</p>
+    </div>
+    <div class="q">
+      <h3>Q3 「截图与栈」这一节的节名 <em>默认：截图与栈</em></h3>
+      <ul>
+        <li>A. 截图与栈（默认）—— 直白，就是两类</li>
+        <li>B. 粘贴工作流 —— 更抽象一档，栈/拆行/截图动作链都能装，但「截图」不再出现在名字里</li>
+        <li>C. 拆成「截图」「粘贴栈」两节 —— 各自最纯，代价：导航回到 14 项</li>
+      </ul>
+      <p class="why">顺带申报一处文字与渲染的差异：现状 <code>meta.ts</code> 注释写「七个分区 + 四个页 = 11 项」，实际数组是 <b>9 + 4 = 13 项</b>。本稿实施时一并把那句注释改对，不改行为。</p>
+    </div>
+  </div>
+
+  <h2 class="sec">§4 实施影响清单（确认后按此执行，范围之外不动）</h2>
+  <ul class="flat">
+    <li><code>sections/meta.ts</code> —— <code>SETTINGS_SECTIONS</code> 换成 9 项新顺序与新 label（label 必须与右栏标题逐字一致）</li>
+    <li>新建 <code>sections/CaptureSection.tsx</code>（复制与粘贴 6 行）、<code>WindowEditorSection.tsx</code>（窗口 3 + 编辑器 3 + 转笔记模板小节）、<code>ShotStackSection.tsx</code>（截图 5 + 栈 5）、<code>SyncSection.tsx</code>（3 个小节）</li>
+    <li><code>GeneralSection.tsx</code> / <code>WindowSystemRows.tsx</code> —— 按上表拆空后删除；清理/回收站两行并入 <code>DataSection.tsx</code>；观感 5 行并入 <code>AppearanceSection.tsx</code></li>
+    <li><code>HotkeySection.tsx</code> —— 只留 8 行热键；对 <code>ScreenshotRows</code>／<code>NoteTemplateRows</code> 的引用移出</li>
+    <li><code>GeneralTab.tsx</code> / <code>SettingsView.tsx</code> —— 分区数组与渲染顺序同步（顺序必须一致）</li>
+    <li>约束照旧不破：分区组件仍返回 <code>&lt;&gt;…&lt;/&gt;</code> 片段（搜索逐行过滤的前提）；MCP 仍 <code>LazyMount</code>；不动任何 <code>.sRow</code>/<code>.sSection</code> 尺寸数值</li>
+    <li>🔴 <b>本稿实测出的必改项</b>：<code>hooks/useSettingsSearch.ts</code> 的第二遍（隐藏空节标题）要改成「不搜索时全显示；搜索时有可见行<b>或紧邻可见小节标题</b>才隐藏」。
+      现状算法只认「本节有没有可见行」，一旦某节的主标题下面直接跟小节标题（合并后的「同步与互联」就是这种），主标题会被永久隐掉，
+      而 <code>findNavEl</code> 跳过 <code>display:none</code> 的标题 ⇒ 点菜单那一项没有落点。存量数据里没有这种排法，所以现状没暴露</li>
+    <li>版本号不动；改完跑 <code>npm run lint:ui</code> + vitest + dev 实机点验（规则 6）</li>
+  </ul>
+
+  <h2 class="sec">§5 本稿已做的机器验证 + 落地记录</h2>
+  <ul class="flat">
+    <li>几何与真组件一致（脚本量过）：菜单项宽 127px（<code>20%</code> 夹在 128–220 的下界）、文字单行不折、图标砖 40px、开关 44×26、分区头 <code>position: sticky</code>、卡片由 <code>.sSection ~ :not(.sSection):not(.lanPanel)</code> 拼合、<code>#sections</code> 的 children 严格扁平（59 行 + 14 标题 + 4 面板，无包裹层）</li>
+    <li>导航落点：9 个分区 + 2 个小节标题（「远程电脑」「粘贴栈」）逐个直算 <code>scrollTop</code>，落点偏差 ≤1px；scroll-spy 判定线 80px 的高亮跟随全部命中，滑到小节标题上时高亮<b>留在主节</b>（与现状「转笔记模板」同口径）</li>
+    <li>搜索：「清理」→ 4 项全在合并后的数据管理（不再跨两节）；「远程」→ 只展开远程电脑小节 3 行；「同步」→ 主标题 + 两个小节标题一起留；「不存在词」→ 空态 + 四页隐掉；清空后标题/行/mark 全部还原，无残留</li>
+    <li>🔴 验证中发现并已在本稿修掉一条<b>现状算法</b>的坑（见 §4 必改项）：主标题下面直接跟小节标题时，旧的第二遍会把它永久隐掉，导致菜单点不动。修法是「不搜索全显示；搜索时有可见行或紧邻可见小节标题才显示」，本稿已按此实现并复验通过</li>
+    <li>一处测量假象，免得误判：无头/隐藏视口里 CSS 动画的时钟是冻住的（<code>transform: translateY(8px)</code> 停在首帧），所以带入场动画量到的偏移会恒定多 8px。真浏览器里入场 0.3s 就结束，且外部跳转另有 <code>settling</code> 校正窗口兜着，不是问题</li>
+  </ul>
+  <p class="note" id="landed">落地记录：已实施（2026-09-29），详见下面四条。</p>
+  <ul class="flat">
+    <li><b>实际顺序就是本页 §2 的数据数组</b>：外观 → 复制与粘贴 → 窗口与编辑器 → 快捷键 → 截图与栈 → 灵动岛 → 数据管理 → 同步与互联 → 数据统计。「通用」分区消失，七个旧分区变九个。</li>
+    <li><b>与本页的两处实现偏差</b>（都不影响观感）：① 本页 §4 写的 <code>ShotStackSection.tsx</code> 实际拆成 <code>CaptureSection.tsx</code>（截图 5 行 + 小节）+ <code>StackRows.tsx</code>（「粘贴栈」小节标题与它的 4 行），因为截图那 5 行本来就是 <code>ScreenshotRows</code>，再套一层没意义；② 新增了一张本页没提的归属表 <code>SETTINGS_SUBSECTIONS</code>（<code>lan/kb/rc → 小节标题</code>），<code>App.tsx</code> 的 <code>section:"rc"</code> 与 <code>LanSyncCap</code> 的 <code>openSettingsTab("general","lan")</code> 两个外部锚点因此<b>一行没改</b>，跳转靠小节标题文字落点。</li>
+    <li><b>§4 那条必改项已改并有测试钉着</b>：<code>useSettingsSearch</code> 第二遍现在是「不搜索全显示；搜索时有可见行<b>或</b>紧邻可见小节标题」。存量单测 <code>settingsSearchSectionHeads.test.tsx</code> 逐条复现了那个 bug（搜「共享」时主标题必须可见），改回旧算法它就红。</li>
+    <li><b>补了 3 条守卫（都是「不报错、只是功能没了」的静默失效）</b>：<code>settingsNavLabels.test.ts</code> 加钉「右栅渲染顺序 == <code>SETTINGS_SECTIONS</code> 逐位一致」；新建 <code>settingsSectionsFlatTree.test.tsx</code> 钉「分区组件必须返回片段」（含一条反向用例，证明包一层 <code>&lt;div&gt;</code> 真会被判出来）；新建 <code>settingsAliasKeysExist.test.ts</code> 钉「别名表的键还能在设置页源码里找到原文」——真代码里那玩意只有 dev 构建的 <code>console.warn</code>，WebView 控制台没人看。</li>
+    <li><b>顺手修的两处 UI 规则</b>（<code>npm run lint:ui</code> 的改动行报告里冒出来的）：「清理过期记录」的空态从「暂无过期记录」改成说清为什么为 0（自动清理关着 vs 还没到期，两条路径的 <code>expiredCount</code> 都是 0）；应用排除名单的输入框从内联 <code>style</code> 上提成 <code>.sTextInput</code>，<b>因此多了 <code>:focus</code> 边框</b>——原内联写法只有 <code>outline:none</code> 没有替换，键盘用户看不到焦点。间距数值 <code>6px / 6px 10px</code> 按原样搬，没改成 8px 档位（U5 是建议级，几何改了就和稿子对不上）。</li>
+    <li><b>机器校验</b>：lint:ui block 级 0；<code>tsc --noEmit</code> 干净；<code>vitest run</code> 3260 通过 / 3 失败，失败的 3 例全在 <code>src/hooks/useRcInput.test.ts</code>（IME <code>isComposing</code> 取值，属同时在途的远程电脑改动，与本次分区重排无关，未动）。</li>
+    <li><b>还欠的</b>：dev 实机点验（菜单九项逐条跳转、<code>rc/lan</code> 两个锚点落在小节标题上、搜索显隐、scroll-spy 滑过「转笔记模板/粘贴栈/三个同步小节」时高亮留在主节）。这一条机器替不了眼睛。</li>
+  </ul>
+
+</div>
+
+<script>
+/* ══ 数据：唯一来源，数组顺序＝滚动顺序（与 meta.ts 同一约定）══ */
+const SECTIONS = [
+  { label: "外观", icon: "🎨", rows: [
+    { kind: "themeRow", icon: "🎨", hue: "brand", label: "主题配色", desc: "选择你喜欢的配色方案", moved: "原地" },
+    { kind: "val", icon: "📑", hue: "system", label: "标签样式", desc: "切换筛选标签的显示风格", val: ["分段控件", "圆形图标"], moved: "原地" },
+    { kind: "seg", icon: "🎯", hue: "system", label: "来源图标", desc: "显示真实程序图标，更直观", opts: ["Emoji", "应用图标"], idx: 1, rec: true, moved: "原·通用" },
+    { kind: "seg", icon: "👆", hue: "system", label: "卡片悬浮行为", desc: "弹出 Popover 预览气泡，内容预览+操作", opts: ["关闭", "操作按钮", "预览气泡"], idx: 2, rec: true, moved: "原·通用" },
+    { kind: "val", icon: "👆", hue: "system", label: "双击列表行为", desc: "双击复制到剪贴板", val: ["复制", "预览"], moved: "原·通用" },
+    { kind: "toggle", icon: "⏱️", hue: "editor", label: "时间线", desc: "主页面左侧显示竖版时间轴导航", on: true, moved: "原·通用" },
+    { kind: "toggle", icon: "✨", hue: "system", label: "窗口动画", desc: "弹框与全屏窗口打开/关闭时的过渡动画", on: true, moved: "原·通用" },
+  ]},
+  { label: "复制与粘贴", icon: "📋", rows: [
+    { kind: "toggle", icon: "✂️", hue: "save", label: "自动去除空白", desc: "复制时去除首尾空白字符", on: true, moved: "原·通用" },
+    { kind: "toggle", icon: "📄", hue: "capture", label: "文档保真采集", desc: "从 Word/网页等复制时保留格式结构", on: true, moved: "原·通用" },
+    { kind: "toggle", icon: "📋", hue: "paste", label: "保留格式粘贴", desc: "粘贴文档/图文时保留富格式", on: true, moved: "原·通用" },
+    { kind: "toggle", icon: "🛡️", hue: "privacy", label: "敏感内容防护", desc: "不记录匹配密钥/凭证模式的内容", on: true, moved: "原·通用" },
+    { kind: "input", icon: "🚫", hue: "privacy", label: "应用排除名单", desc: "来自这些应用的复制内容不会被记录（逗号分隔）", val: "KeePass, 1Password, Bitwarden", moved: "原·通用" },
+    { kind: "toggle", icon: "🔁", hue: "paste", label: "依次粘贴循环", desc: "到达末尾后从头开始", on: true, moved: "原·通用" },
+  ]},
+  { label: "窗口与编辑器", icon: "🪟", rows: [
+    { kind: "toggle", icon: "📌", hue: "system", label: "窗口置顶", desc: "始终显示在其他窗口之上", on: false, moved: "原·通用" },
+    { kind: "toggle", icon: "👁️", hue: "system", label: "失焦自动隐藏", desc: "窗口失去焦点时隐藏到托盘", on: true, moved: "原·通用" },
+    { kind: "toggle", icon: "🚀", hue: "system", label: "开机自启", desc: "Windows 启动时自动运行", on: true, moved: "原·通用" },
+    { kind: "toggle", icon: "💾", hue: "editor", label: "编辑器自动保存", desc: "全屏编辑器中停止输入后自动回写内容", on: true, moved: "原·通用" },
+    { kind: "toggle", icon: "📝", hue: "editor", label: "编辑器保存写入历史", desc: "全屏编辑器中保存 .md 文件时，同时写入剪贴板历史", on: true, moved: "原·通用" },
+    { kind: "val", icon: "📎", hue: "editor", label: ".md 文件关联", desc: "状态实时取自注册表，三态显示", val: ["已关联", "未关联"], moved: "原·通用" },
+    { kind: "sub", label: "转笔记模板" },
+    { kind: "val", icon: "🗂️", hue: "editor", label: "默认模板", desc: "转笔记时套用的模板", val: ["内置·简洁笔记", "无模板"], moved: "原·快捷键" },
+    { kind: "action", icon: "🧩", hue: "editor", label: "按类型定制", desc: "为图片/文件/长文本各配一套模板", btn: "配置…", moved: "原·快捷键" },
+  ]},
+  { label: "快捷键", icon: "⌨️", rows: [
+    { kind: "kbd", icon: "🪟", hue: "system", label: "唤出窗口", desc: "全局唤起主窗口", val: "Ctrl+Shift+V", moved: "原地" },
+    { kind: "kbd", icon: "🔁", hue: "paste", label: "依次粘贴", desc: "按顺序把栈里内容一条条粘出去", val: "Ctrl+Shift+Enter", moved: "原地" },
+    { kind: "kbd", icon: "🧺", hue: "capture", label: "收集模式开关", desc: "开启后连续复制自动入栈", val: "Ctrl+Shift+S", moved: "原地" },
+    { kind: "kbd", icon: "📥", hue: "paste", label: "粘贴最近收集", desc: "一次粘贴最近收集的栈内容", val: "Ctrl+Shift+B", moved: "原地" },
+    { kind: "kbd", icon: "⚡", hue: "paste", label: "快捷粘贴", desc: "轻量粘贴条，不打开主窗口", val: "Ctrl+Shift+K", moved: "原地" },
+    { kind: "kbd", icon: "✂️", hue: "capture", label: "截图标注", desc: "区域截图并进标注", val: "Ctrl+Shift+X", moved: "原地" },
+    { kind: "kbd", icon: "📝", hue: "editor", label: "今日速记", desc: "直接落一条今日笔记", val: "Ctrl+Shift+N", moved: "原地" },
+    { kind: "kbd", icon: "🏖️", hue: "sync", label: "待办岛唤起", desc: "呼出/收起灵动岛", val: "Ctrl+Shift+D", moved: "原地" },
+  ]},
+  { label: "截图与栈", icon: "📸", rows: [
+    { kind: "toggle", icon: "🎯", hue: "capture", label: "自动框选当前窗口", desc: "热键按下即框住活动窗口", on: true, moved: "原·快捷键" },
+    { kind: "toggle", icon: "⚡", hue: "capture", label: "截图窗口常驻", desc: "首帧之后不销毁，二次截图更快", on: true, moved: "原·快捷键" },
+    { kind: "val", icon: "🔤", hue: "capture", label: "OCR 选字模式", desc: "取文字时默认整段还是逐字", val: ["整段识别", "逐字选取"], moved: "原·快捷键" },
+    { kind: "val", icon: "🔗", hue: "capture", label: "完成后自动执行动作链", desc: "截图收尾直接跑常用动作", val: ["未设置", "打码+钉图"], moved: "原·快捷键" },
+    { kind: "seg", icon: "🧭", hue: "capture", label: "面板布局", desc: "标注面板按钮的排布", opts: ["自动", "紧凑", "展开"], idx: 0, moved: "原·快捷键" },
+    { kind: "sub", label: "粘贴栈" },
+    { kind: "toggle", icon: "📐", hue: "paste", label: "表格自动拆行入栈", desc: "栈模式下复制表格时自动按行拆分（关闭=表格整块入栈）", on: true, moved: "原·快捷键" },
+    { kind: "val", icon: "🧱", hue: "paste", label: "拆行格式", desc: "每行拆成几条记录", val: ["按行", "按列合并"], moved: "原·快捷键" },
+    { kind: "val", icon: "🏷️", hue: "paste", label: "表头", desc: "首行是否当作表头保留", val: ["保留首行", "不保留"], moved: "原·快捷键" },
+    { kind: "toggle", icon: "🎯", hue: "paste", label: "栈浮标", desc: "开栈时贴在工作现场角落的小窗：条数、目标应用、下一条内容、粘贴结果", on: true, moved: "原·快捷键" },
+    { kind: "chips", icon: "🗃️", hue: "paste", label: "栈容量", desc: "一次最多攒多少条", opts: ["50", "100", "200", "500"], idx: 3, moved: "原·快捷键" },
+  ]},
+  { label: "灵动岛", icon: "🏖️", rows: [
+    { kind: "toggle", icon: "🏝️", hue: "sync", label: "启用灵动岛", desc: "顶部常驻的待办提醒条", on: true, moved: "原地" },
+    { kind: "slider", icon: "🫧", hue: "sync", label: "玻璃透度", desc: "拖动即时预览，松手才写盘", val: 62, moved: "原地" },
+    { kind: "seg", icon: "📍", hue: "sync", label: "停靠位置", desc: "顶中 / 顶左 / 顶右 / 底中 / 底左 / 底右", opts: ["顶中", "顶右", "底中"], idx: 1, moved: "原地" },
+    { kind: "toggle", icon: "⏰", hue: "system", label: "到点提醒", desc: "到期时弹出提醒横幅", on: true, moved: "原地" },
+    { kind: "val", icon: "⏳", hue: "system", label: "提醒横幅停留", desc: "横幅自动收起的时间", val: ["6 秒", "10 秒"], moved: "原地" },
+    { kind: "toggle", icon: "🔝", hue: "system", label: "到期优先排序", desc: "快到期/已过期的排到最前", on: true, moved: "原地" },
+  ]},
+  { label: "数据管理", icon: "💾", rows: [
+    { kind: "chips", icon: "🗑", hue: "save", label: "自动清理", desc: "清理超过该天数的记录（置顶除外），启动后每小时自动执行", opts: ["关", "7天", "15天", "30天", "60天"], idx: 3, moved: "原·通用" },
+    { kind: "chips", icon: "♻", hue: "save", label: "笔记回收站", desc: "删掉的笔记先进回收站，超过该天数后自动销毁（不可恢复）", opts: ["关", "7天", "15天", "30天", "60天"], idx: 3, moved: "原·通用" },
+    { kind: "toggle", icon: "💎", hue: "save", label: "保护常用内容", desc: "打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理", on: true, moved: "原地" },
+    { kind: "action", icon: "🧹", hue: "save", label: "清理过期记录", desc: "12 条记录已过期", btn: "清理 12 条", danger: true, moved: "原地" },
+    { kind: "action", icon: "🛟", hue: "privacy", label: "深度清理", desc: "按时间 / 类型 / 来源组合条件清理，支持预览与撤销", btn: "打开", moved: "原地" },
+    { kind: "action", icon: "📦", hue: "save", label: "导出数据", desc: "导出为 Excel / CSV / JSON，在保存对话框里选格式", btn: "导出", moved: "原地" },
+    { kind: "action", icon: "📥", hue: "save", label: "导入数据", desc: "从 JSON 文件导入历史记录", btn: "导入", moved: "原地" },
+    { kind: "action", icon: "📂", hue: "editor", label: "导出笔记为 Markdown 目录", desc: "含历史版本与标签，可选范围", btn: "导出", moved: "原地" },
+    { kind: "action", icon: "📁", hue: "editor", label: "从 Markdown 目录导入", desc: "同名笔记合并为新版本", btn: "导入", moved: "原地" },
+  ]},
+  { label: "同步与互联", icon: "🌐", rows: [
+    { kind: "sub", label: "剪贴板同步" },
+    { kind: "toggle", icon: "🌐", hue: "sync", label: "剪贴板同步", desc: "与同一局域网内的设备互相同步记录", on: true, moved: "原·剪贴板同步" },
+    { kind: "panel", rows: ["附近设备 / 已配对设备 / 同步状态条", "（LanSyncPanel 原样搬入，一行不改）"], moved: "原·剪贴板同步" },
+    { kind: "sub", label: "知识库同步" },
+    { kind: "toggle", icon: "📚", hue: "sync", label: "知识库同步", desc: "把笔记库同步给配对的设备", on: false, moved: "原·知识库同步" },
+    { kind: "panel", rows: ["配对向导 / 加入请求 / 同步进度", "（KbSyncPanel 原样搬入，一行不改）"], moved: "原·知识库同步" },
+    { kind: "sub", label: "远程电脑" },
+    { kind: "toggle", icon: "🖥️", hue: "sync", label: "允许被远程协助", desc: "其他设备可请求远程控制本机", on: false, moved: "原·远程电脑" },
+    { kind: "action", icon: "🎫", hue: "privacy", label: "一次性帮助码", desc: "生成 6 位码，用过即废", btn: "生成", moved: "原·远程电脑" },
+    { kind: "action", icon: "🔑", hue: "privacy", label: "无人值守码", desc: "长期有效，可随时吊销", btn: "管理", moved: "原·远程电脑" },
+    { kind: "panel", rows: ["允许列表 / 会话记录 / 浮条设置", "（RcAllowPanel、RcSyncOffers 原样搬入，一行不改）"], moved: "原·远程电脑" },
+  ]},
+  { label: "数据统计", icon: "📊", rows: [
+    { kind: "stats", moved: "原·第 1 节 → 末位" },
+  ]},
+];
+const PAGES = [
+  { label: "AI", icon: "✨", rows: ["模型与密钥、动作库、用量与预算（AiTab 原样，仍在搜索容器之外）"] },
+  { label: "MCP", icon: "🧩", rows: ["对外暴露的读写服务（McpTab 原样，仍懒挂载——5s 轮询不能提前起来）"] },
+  { label: "帮助", icon: "📖", rows: ["快捷键速查 / 常见问题（HelpTabContent 原样）"] },
+  { label: "关于", icon: "ℹ️", rows: ["版本、更新日志、赞助（AboutTabContent 原样）"] },
+];
+
+/* ══ 渲染 ══ */
+const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h !== undefined) n.innerHTML = h; return n; };
+const tile = (icon, hue) => `<span class="sRowIcon ic-${hue}"><span class="sRowIconGlyph">${icon}</span></span>`;
+const bodyOf = (r) => `<div class="sRowBody"><div class="sRowLabel">${r.label}${r.rec ? '<span class="sRowRecommend">⭐推荐</span>' : ''}</div><div class="sRowDesc">${r.desc}</div></div>`;
+const setMoved = (n, r) => { if (r.moved) n.dataset.moved = r.moved; return n; };
+
+function makeRow(r) {
+  let n;
+  if (r.kind === "sub") {
+    n = el("div", "sSection", r.label);
+    return n;
+  }
+  if (r.kind === "panel") {
+    n = el("div", "lanPanel", (r.label ? `<b>${r.label}</b><br>` : "") + r.rows.join("<br>"));
+    return setMoved(n, r);
+  }
+  if (r.kind === "stats") {
+    n = el("div", "lanPanel");
+    n.innerHTML = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div class="statCell"><u>记录总数</u><b>1,284</b></div>
+      <div class="statCell"><u>近 7 天</u><b>312</b></div>
+      <div class="statCell"><u>置顶</u><b>47</b></div>
+      <div class="statCell"><u>截图</u><b>89</b></div></div>
+      <div style="padding:0 16px 12px;font-size:11px">数字为示意 —— StatsSection 组件原样搬入（含周报入口、趋势、时段/类型占比、来源 Top 5）</div>`;
+    return setMoved(n, r);
+  }
+  n = el("div", "sRow" + (r.kind === "themeRow" ? " sToggleRowFull" : ""));
+  if (r.kind === "toggle") {
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    const t = el("button", "sToggle " + (r.on ? "on" : "off"),
+      '<span class="sToggleThumb"></span><span class="sToggleLabel">' + (r.on ? "开" : "关") + '</span>');
+    t.onclick = (e) => { e.stopPropagation(); r.on = !r.on; t.className = "sToggle " + (r.on ? "on" : "off"); t.children[1].textContent = r.on ? "开" : "关"; };
+    n.appendChild(t);
+    n.onclick = () => t.click();
+  } else if (r.kind === "seg") {
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    const g = el("div", "sSegGroup");
+    r.opts.forEach((o, i) => {
+      const b = el("button", "sSegText" + (i === r.idx ? " sSegActive" : ""), o);
+      b.onclick = (e) => { e.stopPropagation(); r.idx = i; [...g.children].forEach((c, j) => c.classList.toggle("sSegActive", j === i)); };
+      g.appendChild(b);
+    });
+    n.appendChild(g);
+  } else if (r.kind === "chips") {
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    const g = el("div", "sCleanup");
+    r.opts.forEach((o, i) => {
+      const b = el("button", "sCleanupOpt" + (i === r.idx ? " active" : ""), o);
+      b.onclick = (e) => { e.stopPropagation(); r.idx = i; [...g.children].forEach((c, j) => c.classList.toggle("active", j === i)); };
+      g.appendChild(b);
+    });
+    n.appendChild(g);
+  } else if (r.kind === "val") {
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    let i = 0;
+    const b = el("button", "sVal", r.val[i]);
+    b.onclick = (e) => { e.stopPropagation(); i = (i + 1) % r.val.length; b.textContent = r.val[i]; };
+    n.appendChild(b);
+  } else if (r.kind === "action") {
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    const b = el("button", "sAction" + (r.danger ? " danger" : ""), r.btn);
+    b.onclick = (e) => e.stopPropagation();
+    n.appendChild(b);
+  } else if (r.kind === "kbd") {
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    n.appendChild(el("span", "kbd", r.val));
+  } else if (r.kind === "input") {
+    n.style.cursor = "default";
+    n.innerHTML = tile(r.icon, r.hue) + `<div class="sRowBody"><div class="sRowLabel">${r.label}</div><div class="sRowDesc">${r.desc}</div><input class="sInputBox" value="${r.val}"></div>`;
+  } else if (r.kind === "slider") {
+    n.style.cursor = "default";
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    const s = el("input");
+    s.type = "range"; s.min = 0; s.max = 100; s.value = r.val;
+    s.style.cssText = "width:132px;accent-color:var(--accent)";
+    n.appendChild(s);
+  } else if (r.kind === "themeRow") {
+    n.innerHTML = tile(r.icon, r.hue) + bodyOf(r);
+    const strip = el("div", "themeStrip");
+    const themes = [["经典白", "#F4F6F9", "#0284C7"], ["午夜", "#060D14", "#3B9EFF"], ["美乐蒂", "#FFF7FA", "#F0568C"], ["晨曦", "#FFF4E6", "#E8734A"], ["森林", "#F2F7F5", "#059669"]];
+    themes.forEach((t, i) => {
+      const b = el("button", "themeChip" + (i === 0 ? " on" : ""),
+        `<i style="background:${t[1]};border-bottom:1px solid ${t[2]}"></i><span style="color:${t[2]}">${t[0]}</span>`);
+      b.onclick = (e) => { e.stopPropagation(); [...strip.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); };
+      strip.appendChild(b);
+    });
+    n.appendChild(strip);
+  }
+  return setMoved(n, r);
+}
+
+const sectionsEl = document.getElementById("sections");
+SECTIONS.forEach((s) => {
+  sectionsEl.appendChild(el("div", "sSection", s.label));
+  s.rows.forEach((r) => sectionsEl.appendChild(makeRow(r)));
+});
+const pagesEl = document.getElementById("pages");
+PAGES.forEach((p) => {
+  pagesEl.appendChild(el("div", "sSection", p.label));
+  pagesEl.appendChild(el("div", "lanPanel", `<b>${p.label}</b><br>` + p.rows.join("<br>")));
+});
+
+/* ══ 导航 + scroll-spy：与 useSettingsNav 同一口径 ══ */
+const NAV = [
+  ...SECTIONS.map((s) => ({ label: s.label, icon: s.icon })),
+  ...PAGES.map((p) => ({ label: p.label, icon: p.icon })),
+];
+const SEP_AT = SECTIONS.length;
+const navEl = document.getElementById("nav");
+const scroller = document.getElementById("scroller");
+let navActive = 0;
+function renderNav() {
+  navEl.innerHTML = "";
+  NAV.forEach((n, i) => {
+    if (i === SEP_AT) navEl.appendChild(el("div", "settingsNavSep"));
+    const searching = document.getElementById("searchInput").value.trim() !== "";
+    const b = el("button", "settingsNavItem" + (!searching && i === navActive ? " settingsNavItemActive" : ""),
+      `<span class="settingsNavIcon">${n.icon}</span><span class="settingsNavLabel">${n.label}</span>`);
+    b.onclick = () => { navActive = i; renderNav(); scrollToLabel(n.label, true); };
+    navEl.appendChild(b);
+  });
+}
+/* 真 findNavEl：按标题文字逐个比（label 与标题逐字一致是硬约定） */
+function findNavEl(label) {
+  return Array.from(scroller.querySelectorAll(".sSection")).find(
+    (e) => e.style.display !== "none" && e.textContent.trim() === label
+  );
+}
+/* 真 offsetInScroller：sticky 目标临时改 relative 量一次 */
+function offsetInScroller(t) {
+  const measure = () => scroller.scrollTop + t.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  if (getComputedStyle(t).position !== "sticky") return measure();
+  const p = t.style.position, tp = t.style.top;
+  t.style.position = "relative"; t.style.top = "auto";
+  const v = measure(); t.style.position = p; t.style.top = tp;
+  return v;
+}
+let mutedUntil = 0;
+function scrollToLabel(label, smooth) {
+  const t = findNavEl(label);
+  if (!t) return false;
+  const top = offsetInScroller(t);
+  if (smooth) scroller.scrollTo({ top, behavior: "smooth" }); else scroller.scrollTop = top;
+  mutedUntil = performance.now() + (smooth ? 900 : 2500);
+  return true;
+}
+/* 小节标题 → 所属主节：合并/加小节之后，外部跳转锚点落在小节的**标题文字**上，
+   但菜单高亮必须回到主节（NAV 里没有小节这一项）。真实现里同一张表要进 useSettingsNav。 */
+const SUB_OWNERS = {
+  转笔记模板: "窗口与编辑器",
+  粘贴栈: "截图与栈",
+  剪贴板同步: "同步与互联",
+  知识库同步: "同步与互联",
+  远程电脑: "同步与互联",
+};
+function jumpTo(label) {
+  const owner = SUB_OWNERS[label] || label;
+  const i = NAV.findIndex((n) => n.label === owner);
+  if (i < 0) return;
+  navActive = i; renderNav();
+  scrollToLabel(label, true);
+}
+scroller.addEventListener("scroll", () => {
+  if (performance.now() < mutedUntil) return;
+  if (document.getElementById("searchInput").value.trim()) return;
+  const line = scroller.getBoundingClientRect().top + 80;
+  let cur = null;
+  for (const e of scroller.querySelectorAll(".sSection")) {
+    if (e.offsetParent === null) continue;
+    if (e.getBoundingClientRect().top > line) break;
+    const hit = NAV.findIndex((n) => n.label === e.textContent.trim());
+    if (hit >= 0) cur = hit;
+  }
+  if (cur !== null && cur !== navActive) { navActive = cur; renderNav(); }
+}, { passive: true });
+
+/* ══ 搜索：与 useSettingsSearch 同一套规则（第一遍按文本过滤，第二遍隐掉空节的标题）══ */
+const input = document.getElementById("searchInput");
+const clearBtn = document.getElementById("searchClear");
+const banner = document.getElementById("searchBanner");
+function rowLabelOf(n) { const l = n.querySelector(".sRowLabel"); return l ? (l.firstChild && l.firstChild.nodeType === 3 ? l.firstChild.textContent : l.textContent).trim() : ""; }
+function haystack(n) {
+  let out = "";
+  const walk = (x) => {
+    if (x.nodeType === 3) { out += x.textContent; return; }
+    if (x instanceof HTMLElement && x.classList.contains("sToggleLabel")) return;
+    x.childNodes.forEach(walk);
+  };
+  walk(n);
+  return out.toLowerCase();
+}
+function clearMarks(root) {
+  root.querySelectorAll("mark.searchMark").forEach((m) => {
+    const p = m.parentNode; p.replaceChild(document.createTextNode(m.textContent || ""), m); p.normalize();
+  });
+}
+function markIn(row, kw) {
+  row.querySelectorAll(".sRowLabel, .sRowDesc").forEach((box) => {
+    const walk = (node) => {
+      if (node.nodeType === 3) {
+        const text = node.textContent, lower = text.toLowerCase();
+        let from = 0, idx = lower.indexOf(kw, from);
+        if (idx < 0) return;
+        const frag = document.createDocumentFragment();
+        while (idx >= 0) {
+          if (idx > from) frag.appendChild(document.createTextNode(text.slice(from, idx)));
+          const m = document.createElement("mark"); m.className = "searchMark"; m.textContent = text.slice(idx, idx + kw.length);
+          frag.appendChild(m); from = idx + kw.length; idx = lower.indexOf(kw, from);
+        }
+        if (from < text.length) frag.appendChild(document.createTextNode(text.slice(from)));
+        node.parentNode.replaceChild(frag, node); return;
+      }
+      Array.from(node.childNodes).forEach(walk);
+    };
+    Array.from(box.childNodes).forEach(walk);
+  });
+}
+function runSearch() {
+  const kw = input.value.trim().toLowerCase();
+  const searching = kw !== "";
+  clearBtn.style.display = searching ? "" : "none";
+  banner.style.display = searching ? "flex" : "none";
+  document.getElementById("searchWord").textContent = input.value.trim();
+  pagesEl.style.display = searching ? "none" : "";
+  document.getElementById("viewTitle").innerHTML = searching ? "🔍 搜索结果" : "⚙ 设置";
+  clearMarks(sectionsEl);
+  const kids = Array.from(sectionsEl.children);
+  let visible = 0, hits = 0, sectionTitle = "", sectionHit = false;
+  const hitSections = [];
+  for (const n of kids) {
+    if (n.classList.contains("sSection")) {
+      sectionTitle = n.textContent.trim();
+      sectionHit = searching && sectionTitle.toLowerCase().includes(kw);
+      continue;
+    }
+    const direct = searching && haystack(n).includes(kw);
+    n.style.display = !searching || sectionHit || direct ? "" : "none";
+    n.classList.toggle("settingsHit", !!direct);
+    if (direct) {
+      hits++;
+      if (sectionTitle && !hitSections.includes(sectionTitle)) hitSections.push(sectionTitle);
+      markIn(n, kw);
+    }
+    if (n.style.display !== "none") visible++;
+  }
+  /* 第二遍：决定每个分区标题显不显示。
+     🔴 本稿实测踩到的坑：合并「同步与互联」后，主标题下面**直接跟小节标题**，它自己没有行。
+     真算法现在（useSettingsSearch.ts:168）只按「本节有没有可见行」判，于是这种主标题会被**永久隐掉**，
+     而 findNavEl 会跳过 display:none 的标题 ⇒ 点菜单那一项没有任何落点。
+     修法：不搜索时全显示；搜索时「自己有可见行」或「紧邻的下一个标题是可见的（组标题跟着子块走）」才显示。 */
+  const hasRow = new Map();
+  let cur = null;
+  for (const n of kids) {
+    if (n.classList.contains("sSection")) { cur = n; hasRow.set(n, false); }
+    else if (cur && n.style.display !== "none") hasRow.set(cur, true);
+  }
+  for (let i = kids.length - 1; i >= 0; i--) {
+    const n = kids[i];
+    if (!n.classList.contains("sSection")) continue;
+    const next = kids[i + 1];
+    const nextShownHead = next && next.classList.contains("sSection") && next.style.display !== "none";
+    const show = !searching || hasRow.get(n) || nextShownHead;
+    n.style.display = show ? "" : "none";
+  }
+  document.getElementById("noResult").style.display = searching && visible === 0 ? "" : "none";
+  document.getElementById("searchCount").textContent = searching ? hits + " 项" : "";
+  document.getElementById("searchSummary").textContent = searching
+    ? (hits === 0 ? "没有匹配项" : "命中 " + hits + " 项" + (hitSections.length ? " · 分布在「" + hitSections.join("」「") + "」" : ""))
+    : "";
+  renderNav();
+  if (searching) scroller.querySelector(".settingsHit")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+input.addEventListener("input", runSearch);
+function clearSearch() { input.value = ""; runSearch(); input.focus(); }
+window.addEventListener("keydown", (e) => {
+  const inField = ["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); input.focus(); input.select(); return; }
+  if (e.key === "/" && !inField && !e.ctrlKey && !e.metaKey) { e.preventDefault(); input.focus(); return; }
+  if (e.key === "Escape" && input.value) { input.value = ""; runSearch(); input.focus(); }
+});
+
+/* ══ 稿件外壳 ══ */
+function toggleMoved() {
+  document.body.classList.toggle("showMoved");
+  const on = document.body.classList.contains("showMoved");
+  const b = document.getElementById("btnMoved");
+  b.textContent = "搬家标记：" + (on ? "显示" : "隐藏");
+  b.classList.toggle("on", on);
+}
+function toggleTheme() {
+  const dark = document.body.dataset.theme === "ocean";
+  document.body.dataset.theme = dark ? "midnight" : "ocean";
+  const b = document.getElementById("btnTheme");
+  b.textContent = dark ? "切到经典白" : "切到午夜";
+}
+renderNav();
+scrollToLabel(SECTIONS[0].label, false);
+mutedUntil = performance.now() + 600;
+</script>
+</body>
+</html>

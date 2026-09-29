@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { CHANGELOG } from "@/lib/changelog.generated";
 import { setLastSeenVersion } from "@/lib/changelog";
 import {
-  SETTINGS_SECTIONS, settingsNavItems,
+  SETTINGS_SECTIONS, SETTINGS_SUBSECTIONS, settingsNavItems,
   type SettingsNavKey, type SettingsNavEntry,
 } from "@/components/settings/sections/meta";
 import type { SettingsTabName } from "@/lib/openSettings";
@@ -13,6 +13,9 @@ import type { SettingsTabName } from "@/lib/openSettings";
  * 🔴 整个机制建在一个约定上：**`settingsNavItems()` 的数组顺序＝右栏的滚动顺序**，
  * 且每一项的 `label` 与右栏分区标题的文字逐字一致（反查靠的就是这段文字）。
  * 两者都写在 `sections/meta.ts` 的注释里。
+ *
+ * 分区内允许有**不进菜单的小节标题**（合并后的「剪贴板同步」等，见 `SETTINGS_SUBSECTIONS`）：
+ * scroll-spy 认不出就跳过、保留上一个高亮；外部锚点则菜单亮主节、滚动落在小节标题上。
  */
 
 /**
@@ -23,6 +26,18 @@ import type { SettingsTabName } from "@/lib/openSettings";
  * 用户早就自己动了，而那种情况下我们本就该收手（见下面的 wheel 监听）。
  */
 const SETTLE_MS = 2500;
+
+/**
+ * 一次滚动的目标：菜单亮哪一项 + 右栅停在哪个标题上。
+ *
+ * 🔴 这两者可以**不是同一项**：合并分区后「远程电脑」只是「同步与互联」里的一个小节标题，
+ * 锚点要落在小节标题上（否则跳过来看到的是分区顶部），而菜单高亮必须落在主节上
+ * （主节才是菜单项）。所以定位统一按 `label` 找元素，`key` 只管菜单。
+ */
+interface ScrollTarget {
+  key: SettingsNavKey;
+  label: string;
+}
 
 export function useSettingsNav({ open, initialTab, initialSection, jump, blossom, searching, sectionClass }: {
   open: boolean;
@@ -52,15 +67,16 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
    * - 手点菜单（true）：页面早就加载完、布局是稳的，平滑滑过去是对的；
    * - 外部跳转（false）：见下面 `settling` 那段，那时页面还没长齐。
    */
-  const pendingScrollRef = useRef<{ key: SettingsNavKey; smooth: boolean } | null>(null);
+  const pendingScrollRef = useRef<{ target: ScrollTarget; smooth: boolean } | null>(null);
   /**
    * 外部跳转（`initialTab`）后的**校正窗口**：期间内容一长高就重新对齐。
    *
    * 🔴 这是 2026-09-10 报的那个 bug 的修复：从知识库「⋯」点「连接 AI 工具（MCP）」，
    * 结果停在「数据管理」。根因**不是**找不到目标、也不是滚不动，而是**算早了**：
    * 下面那个 effect 依赖 `[open]`，在 `SettingsView` 挂载那一刻就排了滚动，而那时：
-   *   ・`stats`（页面最顶上那块）还是 `null`，异步回来后要撑出一整块；
-   *   ・`expiredCount` 还是 0；
+   *   ・`expiredCount` 还是 0；`stats` 还是 `null`，异步回来后要撑出一整块
+   *     （2026-09-29 分区重排后「数据统计」已在九节**最末**，不再把后面的目标往下推；
+   *     当年它排在第一节，是那次偏移的最大来源）；
    *   ・`AiTab` 的 providers 没到，回来后可能自动展开「服务商与密钥」；
    *   ・`McpTab` 压根没挂载（`LazyMount` 靠 IntersectionObserver），只有 220px 占位。
    * 于是按一个矮得多的页面算出 `top` 滑过去；随后这些内容陆续到达，
@@ -68,7 +84,7 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
    *
    * 手点菜单一直是好的，正因为那时候上面这些都已就位——同一段代码，只是跑在对的时刻。
    */
-  const [settling, setSettling] = useState<SettingsNavKey | null>(null);
+  const [settling, setSettling] = useState<ScrollTarget | null>(null);
   /**
    * 平滑期间抑制 scroll-spy 的截止时间。
    * 不加这个的话：点「数据管理」→ 开始平滑 → 途中扫过「快捷键」→ spy 把 nav 改成快捷键，
@@ -86,20 +102,29 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
    */
   const [, setPickSeq] = useState(0);
 
-  /** 菜单全部 11 项，**顺序即滚动顺序** */
+  /** 菜单全部 13 项（九个分区 + 四个页），**顺序即滚动顺序** */
   const navItems = useMemo(() => settingsNavItems(blossom), [blossom]);
+
+  /** 某一项对应的右栏标题文字；查不到返回空串（findNavEl 会当「还没渲染」重试） */
+  const labelOf = (key: SettingsNavKey): string =>
+    navItems.find((n) => n.key === key)?.label ?? "";
 
   useEffect(() => {
     if (!open) return;
     // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定页；
     // 不传或传 "general" 就落在第一个分区（右栅永远不能是空的）。
     // 剪贴板同步等入口可再带 section（如 "lan"）：合法分区 key 优先于 tab 落点。
+    // 「同步与互联」合并后旧 key 不再是菜单项，改查 SETTINGS_SUBSECTIONS：
+    // 菜单亮主节、滚动落在小节标题上（见 ScrollTarget）。
+    const sub = initialSection ? SETTINGS_SUBSECTIONS[initialSection] : undefined;
     const sectionHit =
+      !sub &&
       initialSection &&
       SETTINGS_SECTIONS.some((s) => s.key === initialSection)
         ? (initialSection as SettingsNavKey)
         : null;
     const key =
+      sub?.section ??
       sectionHit ??
       (initialTab && initialTab !== "general" ? initialTab : SETTINGS_SECTIONS[0].key);
     setNav(key);
@@ -118,7 +143,7 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
     if (key !== SETTINGS_SECTIONS[0].key) {
       // 外部跳转不用 smooth：页面刚打开、用户还没看到内容，
       // 从顶部滑到第 9 项那段动画既没有信息量，又会与下面的校正互相打断。
-      pendingScrollRef.current = { key, smooth: false };
+      pendingScrollRef.current = { target: { key, label: sub?.label ?? labelOf(key) }, smooth: false };
       spyMutedUntilRef.current = performance.now() + SETTLE_MS;
     }
     // initialTab / initialSection / jump 只在「打开或外部再跳」那一刻消费。
@@ -128,19 +153,18 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
   }, [open, jump]);
 
   /**
-   * 在滚动容器里找某一项的标题元素。靠**标题文字**对应——meta.ts 已声明
-   * label 必须与分区标题逐字一致；AI/MCP/帮助/关于 的标题也按同一套文字渲染。
+   * 在滚动容器里找目标标题元素。靠**标题文字**对应——meta.ts 已声明
+   * 菜单 label 必须与分区标题逐字一致；AI/MCP/帮助/关于 的标题也按同一套文字渲染。
+   * 小节标题（不在菜单里的那些）走同一套匹配，见 `SETTINGS_SUBSECTIONS`。
    * 用 querySelectorAll 而不是遍历 container.children：四个页的标题在搜索容器**之外**。
    *
    * 跳过被搜索 `display:none` 的标题：它们的 rect 全 0，alignTo 会「成功」
    * 滚到错误位置并清掉 pending。❗ 不能用 `offsetParent === null` 判隐藏——
    * jsdom 里 offsetParent 恒为 null，会把所有目标滤掉（测试与真实 DOM 行为不一致）。
    */
-  const findNavEl = (key: SettingsNavKey): HTMLElement | undefined => {
+  const findNavEl = (label: string): HTMLElement | undefined => {
     const scroller = bodyRef.current;
-    if (!scroller) return undefined;
-    const label = navItems.find((n) => n.key === key)?.label;
-    if (!label) return undefined;
+    if (!scroller || !label) return undefined;
     return Array.from(scroller.querySelectorAll<HTMLElement>("." + sectionClass)).find(
       (el) =>
         el.style.display !== "none" &&
@@ -188,7 +212,7 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
     // 不在点击瞬间直接滚：MCP 是懒挂载，可能还没渲染出来，交给 effect 重试。
     // smooth:true 表示「用户主动点的」——不要再开 settling；
     // 真正怎么滚由 alignTo 决定（直接写 scrollTop）。
-    pendingScrollRef.current = { key, smooth: true };
+    pendingScrollRef.current = { target: { key, label: labelOf(key) }, smooth: true };
     // 防 setNav bailout（nav 已是目标时）导致滚动 effect 一帧都不跑
     setPickSeq((n) => n + 1);
   };
@@ -200,11 +224,11 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
    * 测距已对 sticky 做过校正，不再需要「先打断再滚」的双调用（WebView2 会吞第二次）。
    * 外部跳转 / settling 重对齐仍用 scrollTop 直赋，要的是准不是动画。
    */
-  const alignTo = (key: SettingsNavKey, smooth: boolean): boolean => {
+  const alignTo = (target: ScrollTarget, smooth: boolean): boolean => {
     const scroller = bodyRef.current;
-    const target = findNavEl(key);
-    if (!scroller || !target) return false;
-    const top = offsetInScroller(target, scroller);
+    const el = findNavEl(target.label);
+    if (!scroller || !el) return false;
+    const top = offsetInScroller(el, scroller);
     if (smooth) {
       scroller.scrollTo({ top, behavior: "smooth" });
     } else {
@@ -227,15 +251,15 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
     const p = pendingScrollRef.current;
     if (!p) return;
     // 🔴 没找到目标时**不清 ref**，留给下一次渲染重试。
-    //    原来的代码在取 target **之前**就清了，于是「那一帧恰好还没渲染出来」
+    //    原来的代码在取到目标元素**之前**就清了，于是「那一帧恰好还没渲染出来」
     //    等于永久放弃——本 effect 没有依赖数组、每次渲染都跑，本来是有机会重试的。
-    if (!alignTo(p.key, p.smooth)) return;
+    if (!alignTo(p.target, p.smooth)) return;
     pendingScrollRef.current = null;
     // 手点菜单的 smooth 可能超过 700ms（长页），mute 拉长一点，避免途中 spy 抢高亮
     spyMutedUntilRef.current = performance.now() + (p.smooth ? 900 : SETTLE_MS);
     // 外部跳转：进入校正窗口，在页面长齐的过程中持续对齐。
     // 手点菜单不进：那时布局已稳，再插手只会把平滑动画打断。
-    if (!p.smooth) setSettling(p.key);
+    if (!p.smooth) setSettling(p.target);
   });
 
   /**

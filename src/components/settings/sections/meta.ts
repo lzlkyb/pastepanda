@@ -16,21 +16,42 @@ import type { SettingsTabName } from "@/lib/openSettings";
  * 少数码位（`🫧` `🛟`）连彩色版都没有，只能换字形。
  */
 export const SETTINGS_SECTIONS = [
-  { key: "stats",      label: "数据统计",     icon: "📊" },
   { key: "appearance", label: "外观",         icon: "🎨" },
-  { key: "general",    label: "通用",         icon: "⚙️" },
-  { key: "island",     label: "灵动岛",       icon: "🏖️" },
-  { key: "lan",        label: "剪贴板同步",   icon: "🌐" },
-  { key: "kb",         label: "知识库同步",   icon: "📚" },
-  { key: "rc",         label: "远程电脑",     icon: "🖥️" },
+  { key: "copy",       label: "复制与粘贴",   icon: "📋" },
+  { key: "window",     label: "窗口与编辑器", icon: "🪟" },
   { key: "hotkey",     label: "快捷键",       icon: "⌨️" },
+  { key: "capture",    label: "截图与栈",     icon: "📸" },
+  { key: "island",     label: "灵动岛",       icon: "🏖️" },
   { key: "data",       label: "数据管理",     icon: "💾" },
+  { key: "sync",       label: "同步与互联",   icon: "🌐" },
+  { key: "stats",      label: "数据统计",     icon: "📊" },
 ] as const;
 
 export type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]["key"];
 
 /**
- * 四个独立页（原顶层 tab）。「通用」拆成了上面七个分区，不再占一项。
+ * 分区**内**的小节标题 → 它归属哪个菜单项。
+ *
+ * 小节标题用的是同一个 `sSection` 类（视觉与吸顶行为一致），但**不进左菜单**：
+ * 合并分区后的「剪贴板同步 / 知识库同步 / 远程电脑」、截图与栈里的「粘贴栈」、
+ * 窗口与编辑器里的「转笔记模板」。
+ *
+ * 这张表管一件事：外部拿**旧分区 key** 跳进来时（`openSettingsTab("general", "rc")`），
+ * 菜单亮所属主节、右栅停在**小节标题**上。没有它的话 `rc` 这个锚点会退回第一节。
+ *
+ * ❗ scroll-spy 不需要这张表：认不出的标题本来就跳过并保留上一个高亮（见 `useSettingsNav`）。
+ *   目前只有 `rc`（App.tsx 的知识库「⋯」）和 `lan`（LanSyncCap 横幅）有调用点，
+ *   `kb` 是三个旧 key 里的第三个——留着是因为它对应的小节真实存在，跳进来也该落在墙上。
+ */
+export const SETTINGS_SUBSECTIONS: Record<string, { section: SettingsSectionKey; label: string }> = {
+  lan: { section: "sync", label: "剪贴板同步" },
+  kb: { section: "sync", label: "知识库同步" },
+  rc: { section: "sync", label: "远程电脑" },
+};
+
+/**
+ * 四个独立页（原顶层 tab）。「通用」这个兜底分区在 2026-09 的分区重排里被拆掉了，
+ * 不再占一项。
  *
  * ❗ 它们原本写在 `SettingsView` 组件里，与上面的 `SETTINGS_SECTIONS` **散成两处**。
  * 而 scroll-spy 与菜单跳转都依赖「数组顺序＝滚动顺序」这个约定，
@@ -49,7 +70,7 @@ export const SETTINGS_PAGES = [
 
 export type SettingsPageKey = typeof SETTINGS_PAGES[number]["key"];
 
-/** 左菜单的一项：要么是「通用」下的一个分区，要么是四个独立页之一 */
+/** 左菜单的一项：要么是九个分区之一，要么是四个独立页之一 */
 export type SettingsNavKey = SettingsSectionKey | SettingsPageKey;
 
 /**
@@ -70,8 +91,10 @@ export interface SettingsNavEntry {
 }
 
 /**
- * 菜单全部 11 项（七个分区 + 四个页）。
+ * 菜单全部 13 项（九个分区 + 四个页）。
  * 🔴 **数组顺序即右栏的滚动顺序**，scroll-spy 与点菜单跳转都建在这个约定上。
+ * 条目数别在注释里当真理看——分区变了要回来对一眼（真正的双向一致性由
+ * `settingsNavLabels.test.ts` 与渲染顺序钉）。
  */
 export function settingsNavItems(blossom: boolean): SettingsNavEntry[] {
   return [
