@@ -66,6 +66,7 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
+        "installerHooks": "./nsis-hooks.nsh",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
         "headerImage": "icons/nsis-header.bmp",
