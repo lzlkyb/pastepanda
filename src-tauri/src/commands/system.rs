@@ -141,27 +141,19 @@ pub fn open_url(url: String) -> Result<(), String> {
     }
 }
 
-/// 设置开机自启
+/// 设置开机自启（注册表读写收口在 `crate::autostart`）
 #[tauri::command]
 pub fn set_startup(enable: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use winreg::enums::*;
-        use winreg::RegKey;
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-        let (key, _) = hkcu.create_subkey(path).map_err(|e| e.to_string())?;
         if enable {
-            let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
-            // U5：自启命令追加 /silent 标志 — 开机启动时静默驻留托盘，不弹窗抢焦点
-            // （路径加引号防止空格导致解析错误）
-            let cmd = format!("\"{}\" /silent", exe_path.to_string_lossy());
-            key.set_value("ClipboardManager", &cmd)
-                .map_err(|e| e.to_string())?;
+            // 重写 Run 值之外必须同时清 StartupApproved 禁用标记：
+            // 用户若曾在任务管理器里禁用过，只写 Run 值 Windows 照样拦截（失效路径之一）
+            crate::autostart::write_run_command()?;
+            crate::autostart::clear_approved_flag()?;
         } else {
-            if let Err(e) = key.delete_value("ClipboardManager") {
-                log::warn!("[Commands] 删除开机自启注册表失败: {}", e);
-            }
+            crate::autostart::delete_run_command()?;
+            crate::autostart::clear_approved_flag()?;
         }
         Ok(())
     }
@@ -172,19 +164,12 @@ pub fn set_startup(enable: bool) -> Result<(), String> {
     }
 }
 
-/// 获取开机自启状态
+/// 获取开机自启状态（实测口径：条目存在 && 指向当前 exe && 未被 StartupApproved 禁用）
 #[tauri::command]
 pub fn get_startup() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use winreg::enums::*;
-        use winreg::RegKey;
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-        match hkcu.open_subkey(path) {
-            Ok(key) => Ok(key.get_value::<String, _>("ClipboardManager").is_ok()),
-            Err(_) => Ok(false),
-        }
+        crate::autostart::effective_enabled()
     }
     #[cfg(not(target_os = "windows"))]
     {

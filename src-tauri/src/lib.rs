@@ -19,6 +19,7 @@ fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fm
 pub mod ai;
 mod atomic_write;
 mod auto_cleanup;
+pub mod autostart;
 /// AM-5 召回基准。`#[cfg(test)]`：只在 `cargo test` 下编译，**不进安装包**。
 /// 真库跑法见模块文档。
 #[cfg(test)]
@@ -643,6 +644,43 @@ pub fn run() {
                     .unwrap_or("Alt+T")
                     .to_string(),
             };
+
+            // 开机自启对账（修复「自启有时候失效」）：条目只在设置开关切换那一刻写一次，
+            // 被清理工具删值/重装换目录后不会自愈且界面仍显示已开启。启动时按配置核对：
+            // 缺失/路径过期 → 补写；被任务管理器等禁用 → 尊重外部关停并把配置收敛为关。
+            // 只写单键（INSERT OR REPLACE per key），不会像全量快照那样覆盖 lan_device_id。
+            {
+                let auto_startup_on = saved_config
+                    .get("auto_startup")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                match autostart::sync_on_boot(auto_startup_on) {
+                    Ok(autostart::BootSync::None) => {}
+                    Ok(autostart::BootSync::Repaired) => {
+                        log::info!("[AutoStart] 自启条目缺失或路径过期，已按配置重写");
+                    }
+                    Ok(autostart::BootSync::CleanedGhost) => {
+                        log::info!("[AutoStart] 配置为关但注册表有自启残留，已清除");
+                    }
+                    Ok(autostart::BootSync::DisabledExternally) => {
+                        log::warn!("[AutoStart] 自启已被系统/安全软件禁用，应用内开关同步为关");
+                        let mut one = serde_json::Map::new();
+                        one.insert(
+                            "auto_startup".to_string(),
+                            serde_json::Value::Bool(false),
+                        );
+                        if let Err(e) = store.save_config(&serde_json::Value::Object(one)) {
+                            log::warn!(
+                                "[AutoStart] 回写 auto_startup=false 失败: {}（设置页打开时会再次对账）",
+                                e
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("[AutoStart] 启动对账失败: {}（设置页打开时会再次对账）", e);
+                    }
+                }
+            }
 
             app.manage(store);
 

@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import type { AppConfig } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { ToggleRow, SettingTile } from "../ToggleRow";
 import type { SettingsData } from "@/hooks/useSettingsData";
+import { resolveAutoStartupDesync } from "@/lib/autoStartup";
 import styles from "../../Settings.module.css";
 
 interface WindowSystemRowsProps {
@@ -18,6 +20,27 @@ interface WindowSystemRowsProps {
 // 🔴 必须返回片段，原因同 StatsSection。
 export function WindowSystemRows({ config, updateAndSave, mdAssoc, mdAssocBusy, handleMdAssocToggle }: WindowSystemRowsProps) {
   const { toast } = useToast();
+
+  // 挂载时用注册表实测对账一次：条目被清理工具删值/被任务管理器禁用/路径过期后，
+  // 配置和注册表会脱节，开关必须以实测为准（规则 #15：显示"已开启"就必须真的生效）。
+  // 后端启动时已对账过一次，这里是设置页打开时的兜底（含启动对账失败的场景）。
+  // 依赖留空：只在打开设置页时对账；开关切换由 onChange 同时写两边，无需跟踪 config。
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const real = await invoke<boolean>("get_startup");
+        if (cancelled) return;
+        const d = resolveAutoStartupDesync(config.auto_startup, real);
+        if (d.action !== "sync-config") return;
+        await updateAndSave({ auto_startup: d.registryEnabled });
+        toast(d.message, d.registryEnabled ? "info" : "warning");
+      } catch { /* 探测失败不打扰：启动对账是主路径，这里只是兜底 */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <>
       <ToggleRow icon="⏱️" hue="editor" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
