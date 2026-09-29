@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Check, RotateCcw } from "lucide-react";
+import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useToast } from "@/components/Toast";
@@ -20,6 +20,7 @@ import { ImageToolbar } from "@/components/ImageToolbar";
 import { OcrSummaryPanel } from "@/components/OcrSummaryPanel";
 import { OcrWordLayer } from "@/components/OcrWordLayer";
 import { ExportPopover } from "@/components/ExportPopover";
+import { CropOverlay, CropConfirmBar } from "@/components/CropOverlay";
 import type { UseImagePreviewReturn } from "@/hooks/useImagePreview";
 import styles from "./CardList.module.css";
 import { useModalScrollLock } from "@/contexts/ScrollContext";
@@ -203,46 +204,12 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                   }} />
                 )}
                 {cropMode && previewImage && !previewLoading && (
-                  <>
-                    <div className={styles.cropBackdrop} onMouseDown={handleCropMouseDown} style={{ cursor: "crosshair" }} />
-                    {cropRect && (
-                      <>
-                        <div className={styles.cropMask} style={{ top: 0, left: 0, right: 0, height: cropRect.y }} />
-                        <div className={styles.cropMask} style={{ bottom: 0, left: 0, right: 0, height: `calc(100% - ${cropRect.y + cropRect.h}px)` }} />
-                        <div className={styles.cropMask} style={{ top: cropRect.y, left: 0, width: cropRect.x, height: cropRect.h }} />
-                        <div className={styles.cropMask} style={{ top: cropRect.y, right: 0, width: `calc(100% - ${cropRect.x + cropRect.w}px)`, height: cropRect.h }} />
-                        <div className={styles.cropSel} style={{ left: cropRect.x, top: cropRect.y, width: cropRect.w, height: cropRect.h }}>
-                          <div className={styles.cropGridH} style={{ top: "33.333%" }} />
-                          <div className={styles.cropGridH} style={{ top: "66.667%" }} />
-                          <div className={styles.cropGridV} style={{ left: "33.333%" }} />
-                          <div className={styles.cropGridV} style={{ left: "66.667%" }} />
-                          {(["tl", "tc", "tr", "ml", "mr", "bl", "bc", "br"] as const).map((name) => (
-                            <div
-                              key={name}
-                              className={`${styles.cropHandle}${name.length === 2 && !name.includes("c") ? ` ${styles.cropHandleCorner}` : ""}`}
-                              /* ui-rule-ok: 手柄定位由手柄方位决定（运行期枚举），只能内联 */
-                              style={
-                                name === "tl" ? { left: -5, top: -5, cursor: "nwse-resize" }
-                                : name === "tc" ? { left: "50%", top: -5, cursor: "ns-resize", transform: "translateX(-50%)" }
-                                : name === "tr" ? { right: -5, top: -5, cursor: "nesw-resize" }
-                                : name === "ml" ? { left: "50%", top: "50%", cursor: "ew-resize", transform: "translateY(-50%)" }
-                                : name === "mr" ? { right: -5, top: "50%", cursor: "ew-resize", transform: "translateY(-50%)" }
-                                : name === "bl" ? { left: -5, bottom: -5, cursor: "nesw-resize" }
-                                : name === "bc" ? { left: "50%", bottom: -5, cursor: "ns-resize", transform: "translateX(-50%)" }
-                                : { right: -5, bottom: -5, cursor: "nwse-resize" }
-                              }
-                            />
-                          ))}
-                          <div className={styles.cropHintBar}><span>{Math.round(cropRect.w)} × {Math.round(cropRect.h)}</span></div>
-                        </div>
-                      </>
-                    )}
-                    {cropOriginal && (
-                      <button className={styles.fsRestoreBtn} onClick={(e) => { e.stopPropagation(); restoreOriginal(); }} title="还原原图">
-                        <RotateCcw size={13} /> 还原原图
-                      </button>
-                    )}
-                  </>
+                  <CropOverlay
+                    cropRect={cropRect}
+                    cropOriginal={cropOriginal}
+                    onMouseDown={handleCropMouseDown}
+                    onRestore={restoreOriginal}
+                  />
                 )}
               </div>
 
@@ -253,17 +220,7 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
 
               {/* 裁剪确认栏（顶替工具栏位置，主工具栏压暗） */}
               {cropMode && (
-                <div className={styles.fsCropBar}>
-                  <span>拖拽绘制选区 · 拖动手柄调整 · Enter 确认</span>
-                  <button
-                    className={`${styles.fsPanelBtn} ${styles.fsPanelBtnPri}`}
-                    onClick={() => void confirmCrop()}
-                    disabled={!cropRect || cropRect.w < 10 || cropRect.h < 10}
-                  >
-                    <Check size={13} /> 确认裁剪
-                  </button>
-                  <button className={styles.fsPanelBtn} onClick={cancelCrop}>取消</button>
-                </div>
+                <CropConfirmBar cropRect={cropRect} onConfirm={() => void confirmCrop()} onCancel={cancelCrop} />
               )}
 
               {/* 浮出面板（互斥收口在 activePanel；选词条让位给码/导出，切回即恢复——选区不清） */}
