@@ -103,6 +103,10 @@ export interface AppConfig {
    *  2026-09-25）。读取口径收口在 lib/rcClipAuto 的 `rcClipAutoFromConfig`——别处
    *  直接读这个键会漏掉旧配置缺键的默认分支。 */
   rc_clip_auto: boolean;
+  /** 远程会话（控端浮条）：顶缘 hover 唤出。**默认开**；关掉＝顶缘零触发，唤出只剩
+   *  常驻把手与 F10（乙档 2026-09-29）。读取口径收口在 lib/rcHoverReveal——别处直接
+   *  读这个键会漏掉旧配置缺键的默认分支。 */
+  rc_hover_reveal: boolean;
   always_on_top: boolean;
   auto_startup: boolean;
   sequential_hotkey: string;
@@ -460,6 +464,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   kb_sync_enabled: false,
   rc_enabled: false,
   rc_clip_auto: true,
+  rc_hover_reveal: true,
   always_on_top: false,
   auto_startup: false,
   sequential_hotkey: "ctrl+alt+q",

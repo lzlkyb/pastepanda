@@ -1,5 +1,6 @@
 /**
- * RcDropdown — 会话底栏用的紧凑下拉（画质 / 画面 / 码率）。
+ * RcDropdown — 会话浮条用的紧凑下拉（画质 / 画面 / 码率）。宿主是
+ * `RcSessionCapsule`（画面顶缘的胶囊）和它的 ⋯ 面板。
  *
  * 为什么不用 `<select>`：原生 select 在各平台的弹出层完全不可控（Windows 上是
  * 系统绘制的白底列表，在深色会话条上像弹了个系统对话框），且没法显示 `tip`。
@@ -15,8 +16,13 @@
  *    DOM 靠后的兄弟块（同 FullscreenEditor 工具栏那次踩过的坑）。
  *    portal 到 body 同时绕开这两条。
  *
- * 向上弹的原因不变：底栏贴着窗口下沿，向下弹会被窗口底边裁掉。portal 后是
- * `position: fixed`，坐标相对视口算（用 `bottom` 锚，不给菜单量高度）。
+ * 🧭 弹出方向交给 Floating UI（2026-09-29 修「画质菜单往上开出屏幕外」）。此前它
+ * 手写 `bottom: innerHeight - btn.top + 6` 把自己**钉死在按钮上方**——那行坐标的
+ * 前提是 2026-09-22 那条「底栏贴着窗口下沿」，而 2026-09-28 浮条统一之后三档下拉
+ * 全都住在**画面顶缘**的胶囊/⋯ 面板里，前提反了：菜单往上弹正好撞穿视口上沿，
+ * 8 项双列的画质菜单被截成一小截。现在改由 `flip` 判两侧空间（优先向下、放不下
+ * 才向上）＋ `shift` 收回左右缘 ＋ `size` 把高度也封顶，窗口 resized/滚动由
+ * `autoUpdate` 重算，不再自己量。见 `RcSessionCapsule` 的几何注释。
  *
  * 关闭时机：点击菜单外任意处（`mousedown` 而非 `click`——用户按下就表示想点别的，
  * 等 click 结束才关会让这一次点击落在被遮挡的元素上）。⚠️ 菜单已不在 wrapRef 里，
@@ -31,6 +37,15 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useFloating,
+  useMergeRefs,
+} from "@floating-ui/react";
 import { Check, ChevronDown } from "lucide-react";
 import { isSessionEscape } from "@/lib/rcKeyGuard";
 import { registerRcPanel, unregisterRcPanel } from "@/lib/rcPanelFocus";
@@ -38,10 +53,8 @@ import styles from "./RemoteComputer.module.css";
 
 /** 菜单与按钮的间距（px），沿用旧 CSS `calc(100% + 6px)` 的值。 */
 const MENU_GAP = 6;
-/** 贴边留白（px）：菜单比按钮宽时不许顶出窗口右缘。 */
+/** 贴边留白（px）：菜单比按钮宽时不许顶出窗口边缘（`shift`/`flip`/`size` 共用同一个数）。 */
 const EDGE_PAD = 8;
-
-type Pos = { left: number; bottom: number; minWidth: number };
 
 /** 一项。`meta` / `solo` 只作用于菜单——按钮上的当前值仍只写 `label`。 */
 export interface RcDropdownOption<T extends string> {
@@ -84,10 +97,40 @@ export function RcDropdown<T extends string>({
   onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<Pos | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 坐标全交给 Floating UI：`bottom-start` 是**默认**方向（三档下拉都在画面顶缘，
+   * 下方是整片画面），`flip` 在下方放不下时才翻到上方；`shift` 管左右缘，`size`
+   * 同时把宽度对齐按钮、把高度封顶到剩余空间（配合 `.menuPop` 的 overflow，
+   * 两侧都不够的极矮窗口里退化成滚动菜单，而不是被截断）。
+   * `isPositioned` 用来压住首帧——旧代码靠「先定位再开」避免拿上次关闭时的旧坐标
+   * 闪一下，这里改成挂载后先不可见，坐标到位才显形。
+   */
+  const { refs, floatingStyles, isPositioned } = useFloating({
+    strategy: "fixed",
+    open,
+    placement: "bottom-start",
+    middleware: [
+      offset(MENU_GAP),
+      flip({ fallbackPlacements: ["top-start"], padding: EDGE_PAD }),
+      shift({ padding: EDGE_PAD }),
+      size({
+        padding: EDGE_PAD,
+        // 这版 @floating-ui 的 `apply` 只收函数（对象简写在 0.27 的 dom 类型里没有），
+        // 高度封顶和「菜单至少和按钮一样宽」都在这一处写，别再散回 CSS
+        apply({ availableWidth, availableHeight, elements }) {
+          const refW = elements.reference.getBoundingClientRect().width;
+          Object.assign(elements.floating.style, {
+            minWidth: `${Math.min(refW, availableWidth)}px`,
+            maxHeight: `${availableHeight}px`,
+          });
+        },
+      }),
+    ],
+    whileElementsMounted: autoUpdate,
+  });
 
   /** setOpen 的唯一出口：状态与外报同源，避免两条路径漂移。 */
   const commit = useCallback(
@@ -97,39 +140,6 @@ export function RcDropdown<T extends string>({
     },
     [onOpenChange],
   );
-
-  /**
-   * 按按钮当前位置算 fixed 坐标。`clamp` = 菜单已挂载、宽度已知时把右缘收回窗口内
-   * （首帧量不到宽度，先按按钮左缘对齐，下一帧再校正）。
-   */
-  const place = useCallback((clamp: boolean) => {
-    const b = btnRef.current?.getBoundingClientRect();
-    if (!b) return;
-    const w = popRef.current?.offsetWidth ?? 0;
-    const left =
-      clamp && w > 0 ? Math.min(b.left, Math.max(EDGE_PAD, window.innerWidth - w - EDGE_PAD)) : b.left;
-    setPos({ left, bottom: window.innerHeight - b.top + MENU_GAP, minWidth: b.width });
-  }, []);
-
-  // 打开即定位；菜单挂载后（宽度已知）再校正一次右缘
-  useEffect(() => {
-    if (!open) return;
-    place(false);
-    const raf = requestAnimationFrame(() => place(true));
-    return () => cancelAnimationFrame(raf);
-  }, [open, place]);
-
-  // 打开期间窗口尺寸/滚动变化 → 就地重算（底栏换行会挪按钮位置）
-  useEffect(() => {
-    if (!open) return;
-    const onReflow = () => place(true);
-    window.addEventListener("resize", onReflow);
-    window.addEventListener("scroll", onReflow, true);
-    return () => {
-      window.removeEventListener("resize", onReflow);
-      window.removeEventListener("scroll", onReflow, true);
-    };
-  }, [open, place]);
 
   // 点击菜单外任意处关闭
   useEffect(() => {
@@ -165,11 +175,18 @@ export function RcDropdown<T extends string>({
   }, [open, commit]);
 
   const current = options.find((o) => o.key === value);
+  // ⚠️ 挂钩必须在顶层：`useMergeRefs` 写在 `{open && createPortal(...)}` 里面就是
+  // 条件调用 hook（rules-of-hooks 直接报错）。
+  const setPopRef = useMergeRefs([refs.setFloating, popRef]);
+  // 坐标到位前不可见（旧代码靠「先定位再开」躲旧坐标闪一下，语义等价）
+  const popClass = `${styles.menuPop}${columns === 2 ? ` ${styles.menuPopTwo}` : ""}${
+    isPositioned ? "" : ` ${styles.menuPopPending}`
+  }`;
 
   return (
     <div className={styles.menuWrap} ref={wrapRef}>
       <button
-        ref={btnRef}
+        ref={refs.setReference}
         type="button"
         className={styles.menuBtn}
         aria-haspopup="listbox"
@@ -181,8 +198,6 @@ export function RcDropdown<T extends string>({
             commit(false);
             return;
           }
-          // 先定位再开：否则首帧会用上一次关闭时的旧坐标闪一下
-          place(false);
           commit(true);
         }}
       >
@@ -190,19 +205,16 @@ export function RcDropdown<T extends string>({
         <ChevronDown size={12} className={styles.menuCaret} />
       </button>
       {open &&
-        pos &&
         createPortal(
           <div
-            ref={popRef}
+            ref={setPopRef}
             // 再审计 A9（2026-09-25）：portal 挂在 body，父级「点外收起」的
             // contains 判定够不到这里——用这个标记让点外收起豁免菜单内点击
             data-rc-portal-menu=""
-            className={
-              columns === 2 ? `${styles.menuPop} ${styles.menuPopTwo}` : styles.menuPop
-            }
+            className={popClass}
             role="listbox"
             aria-label={label}
-            style={{ left: pos.left, bottom: pos.bottom, minWidth: pos.minWidth }}
+            style={floatingStyles}
           >
             {options.flatMap((o, i) => {
               const on = o.key === value;

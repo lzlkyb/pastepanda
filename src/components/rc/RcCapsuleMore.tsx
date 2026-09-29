@@ -8,6 +8,7 @@
  *   剪贴板组（RcClipboardBar，仅可控）。
  * - 文件：传/取文件（RcFileBar，仅可控——写对端磁盘与键鼠注入同级）。
  * - 输入：锁定指针 / 释放键盘。
+ * - 浮现：顶缘悬停唤出开关（🔴 乙-①，2026-09-29；持久化在 config.rc_hover_reveal）。
  * - 会话：重连（断开并重新发起；confirmDialog 在父级，这里只触发）。
  *
  * 🔴 深色玻璃面板里的浅色控件：RcAudioBar / RcClipboardBar / RcFileBar 的按钮
@@ -16,7 +17,7 @@
  * 🔴 面板展开期间浮条由父组件锁显（menusOpen / panelOpen），鼠标移进面板
  *    （DOM 上在浮条 root 内）不会触发淡出。
  */
-import { Power, Pointer, Keyboard } from "lucide-react";
+import { Power, Pointer, Keyboard, MousePointerClick } from "lucide-react";
 import type { UseRc } from "@/hooks/useRc";
 import { RcDropdown, type RcDropdownOption } from "./RcDropdown";
 import { RcAudioBar } from "./RcAudioBar";
@@ -37,6 +38,8 @@ export function RcCapsuleMore({
   lastAutoAt,
   autoFail,
   onStatus,
+  hoverReveal,
+  onToggleHoverReveal,
   pointerLocked,
   onTogglePointer,
   kbOn,
@@ -57,6 +60,10 @@ export function RcCapsuleMore({
   lastAutoAt: number;
   autoFail: number;
   onStatus: (msg: string, kind: "success" | "error" | "info") => void;
+  /** 🔴 乙-①（2026-09-29）：顶缘 hover 唤出开关。关掉＝顶缘零触发，只剩把手与 F10。
+   *  持久化在 config.rc_hover_reveal（读写收口 hooks/useRcHoverReveal）。 */
+  hoverReveal: boolean;
+  onToggleHoverReveal: () => void;
   pointerLocked: boolean;
   onTogglePointer: () => void;
   kbOn: boolean;
@@ -131,6 +138,28 @@ export function RcCapsuleMore({
             <span className={styles.capMoreCur}>Esc</span>
           </button>
         )}
+      </div>
+
+      <div className={styles.capMoreSec}>浮现</div>
+      <div className={styles.capMoreRows}>
+        {/* 🔴 乙-①：有了常驻把手之后，顶缘 hover 从「唯一出口」降级成「加速器」，
+            才可以安全地给一个关掉它的选项（关掉＝顶缘零触发，与 RustDesk 新版同构）。
+            默认开——甲方案的四条收紧（3px/180ms/200ms 穿透/隐藏态不认胶囊矩形）保留。 */}
+        <button
+          type="button"
+          className={styles.capMoreRow}
+          aria-pressed={hoverReveal}
+          title={
+            hoverReveal
+              ? "关闭后顶缘不再有任何触发：指针划过画面最上缘不会唤出浮条，只剩点把手与 F10"
+              : "恢复甲方案的顶缘唤出：指针在画面最上缘 3px 内停住 180ms 即唤出浮条"
+          }
+          onClick={onToggleHoverReveal}
+        >
+          <MousePointerClick size={13} aria-hidden="true" />
+          <span className={styles.capMoreLab}>顶缘悬停唤出</span>
+          <span className={styles.capMoreCur}>{hoverReveal ? "开" : "关（只剩把手与 F10）"}</span>
+        </button>
       </div>
 
       {onReconnect && (

@@ -1085,7 +1085,10 @@
    适应/1:1/填充/全屏/锁定指针全部搬进 RcSessionCapsule。同族的 .viewToolsHidden
    （隐藏态三重纪律）仍被 .capZone 复用，保留。
    ⚠️ .toolOn（选中态）已删（2026-09-28 方案 A：RcFullscreenHotbar 退役，全屏与
-   窗口态共用胶囊，选中态统一走 .capBtnOn）。 */
+   窗口态共用胶囊，选中态统一走 .capBtnOn）。
+   🔴 下面这条 transition **单靠自己不生效**：宿主（现在是 `.capFloat`）同特异性、
+   写在后面，整条覆盖它 ⇒ 收起态的 visibility 延迟要由 `.capFloat.viewToolsHidden`
+   那条复合选择器来定（见 1229 行附近）。删那条就会退回「瞬隐」。 */
 .viewToolsHidden {
   opacity: 0;
   transform: translateY(-6px);
@@ -1204,14 +1207,21 @@
    深玻璃配色不随主题翻面（light 下 var(--text-*) 会糊进深底）——沿用
    .viewTools 的既有先例（.fsBar 一族已随方案 A 退役）；阴影用浮层 token。
 
-   浮现策略（B 变体，用户指定）：连接成功首显 15s → 隐藏；顶边 12px 热区或
-   悬停唤出，离开 2.5s 淡出；链路异常 / 菜单展开期间锁显。状态机在
-   RcSessionCapsule.tsx，这里只管外观。 */
+   浮现策略（B 变体 + 甲方案 2026-09-29 + 乙档 2026-09-29）：连接成功首显 15s → 收起
+   （收成顶缘一枚常驻把手，不再收进零）；隐藏态**只认顶缘 3px 带**（停满 180ms 才出，
+   且出来那 200ms 不吃点击），已显示后悬停胶囊保持，离开 2.5s 淡出；顶缘悬停可在 ⋯
+   面板里关掉（关掉＝零触发，只剩把手与 F10）。状态机在 useRcCapsuleReveal.ts，这里只管外观。
+
+   🔴 乙档起的分层：`.capZone` 本身**永不** visibility:hidden（它是把手与微光条的宿主，
+   那两者必须常驻），隐藏态三重纪律 `.viewToolsHidden` 下移到内层 `.capFloat`。 */
 .capZone {
   /* 顶栏（.viewTop，高度 = --rc-session-chrome-h）正下方；胶囊再让 12px。
-     链路异常的微光条贴 canvas 顶缘 */
+     链路异常的微光条贴 canvas 顶缘
+     `--cap-zone-top` 是这一团的**唯一**纵向来源：窗口态/全屏态各给一个值，
+     下面 `.capMore` 的封顶高度要用同一个数算剩余空间，不能各自写死。 */
+  --cap-zone-top: var(--rc-session-chrome-h, 36px);
   position: absolute;
-  top: var(--rc-session-chrome-h, 36px);
+  top: var(--cap-zone-top);
   left: 0;
   right: 0;
   z-index: 5;
@@ -1219,18 +1229,53 @@
   flex-direction: column;
   align-items: center;
   pointer-events: none;
-  /* 同 viewTools：靠近上缘滑入、无交互淡出；visibility 延迟到淡出结束再切 */
+}
+/* 乙档：会被收起的那一团（胶囊 + ⋯ 面板）单独包一层，隐藏态三重纪律挂这里。
+   基准 transition 与原先 .capZone 的同值——淡入也要走动画。 */
+.capFloat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
   transition:
     opacity 200ms cubic-bezier(0.2, 0, 0, 1),
     transform 200ms cubic-bezier(0.2, 0, 0, 1),
     visibility 0s linear 0s;
 }
+/* 🔴 存量修复（2026-09-29 自查）：收起态必须把 `visibility` 的切换推迟到淡出结束。
+   `.viewToolsHidden` 自己那条 transition 写的就是 `visibility 0s linear 200ms`，但它和
+   `.capFloat` **同特异性**且写在前面（1089 vs 1229），被上面这条整条覆盖 ⇒ 收起时
+   t=0 就 `visibility:hidden`，200ms 的淡出根本没被看见（现象：浮条「啪」地消失）。
+   显示方向要维持 0s（淡入第一帧就得可见），所以修在「只在收起态生效」的复合选择器上。 */
+.capFloat.viewToolsHidden {
+  transition:
+    opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 200ms;
+}
 /* 方案 A（2026-09-28）：全屏态顶栏整条退场 ⇒ 胶囊直接贴屏幕顶缘（胶囊自身
-   margin-top 12px 仍在，正好与唤出热区同深）。两态同一条组件，只差这一格偏移。 */
+   margin-top 12px 仍在，仍是遮挡带起点；唤出热区已于 09-29 甲方案收到 3px，
+   与本条偏移无关）。两态同一条组件，只差这一格偏移。 */
 .capZoneFs {
-  top: 0;
+  /* 顶栏退场 ⇒ 整团贴屏幕顶缘。改这个数就等于同时改 `.capMore` 的封顶高度。 */
+  --cap-zone-top: 0px;
 }
 /* 隐藏态复用 .viewToolsHidden（pointer-events:none + visibility:hidden + Tab 纪律） */
+
+/* 甲方案③（2026-09-29）：顶缘唤出后的 200ms「穿透窗口」——浮条照常淡入，但这
+   一下点击穿过胶囊落到远端内容（用户那一击是冲标签 ✕ / 地址栏去的）。
+   只摘 pointer-events 这一层：opacity/transform/Tab 纪律都不动。
+   🔴 必须连子元素一起摘：`.capBtn` / `.capReq` / `.hudPanel` 各自重申了
+   `pointer-events: auto`，父级置 none 对它们是**可覆盖的继承值**，漏掉子选择器
+   等于穿透窗口对按钮本体完全失效（而按钮正是会吃掉这一击的东西）。
+   🔴 乙档起还要带上 `.capHandle`：它就是 `*` 覆盖不到的那个兄弟节点，且它的
+   `::after` 命中盒（y 0–20）正好压在 3px 唤出带上——漏掉它，顶缘 dwell 唤出的
+   那一下会被把手自己接住（而用户点的是远端标签栏）。 */
+.capZoneThru .capCapsule,
+.capZoneThru .capCapsule *,
+.capZoneThru .capHandle {
+  pointer-events: none;
+}
 
 /* 链路异常时常显的微光条（B 稿 §5：异常永远有两个可见信号——灯 + 光条 + 锁显浮条） */
 .capAlarm {
@@ -1245,6 +1290,106 @@
 }
 .capAlarmOn {
   opacity: 1;
+}
+
+/* —— 乙档（2026-09-29，design/远程电脑-浮条角标化-乙-设计稿.html §3 申报表）——
+   控端浮条的常驻把手：收起态唯一「看得见、点得着」的出口，同时是链路状态色与
+   「有等你处理的」徽标的宿主（这两件事原先挂在会被 visibility:hidden 卸载的子树里）。
+   几何：可见 24×12 贴画面顶缘正中，12px 高正好落在遮挡带（y 12–46）**之外**，
+   与展开后的胶囊不重叠。正中避开 Chrome 标签（靠左排）、新建标签「+」与窗口三键。
+   深玻璃/描边/模糊逐字同 .capCapsule（不新造视觉语言）；顶边不描边因为它贴住边缘。 */
+.capHandle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  /* 6 > 胶囊（z-index:auto）：展开时把手不被胶囊那圈向上的投影糊住。
+     「让位」不靠层叠实现（正数 z-index 压不过谁都一样），靠 `.capHandleBehind::after`
+     收回命中盒——见下面那条。 */
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12); /* ui-rule-ok: 深玻璃描边，逐字同 .capCapsule */
+  border-top: none;
+  /* 稿子 §3 写的是 7px，落到 4/8/12 档位取 8px（肉眼无差，U5radius 不豁免） */
+  border-radius: 0 0 8px 8px;
+  background: rgba(13, 16, 22, 0.82); /* ui-rule-ok: 深玻璃底色，同 .capCapsule，不随主题翻面 */
+  backdrop-filter: blur(14px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32); /* ui-rule-ok: 固定深投影分层，同浮条一族 */
+  cursor: pointer;
+  pointer-events: auto;
+}
+/* 命中区外扩（可见 24×12 → 命中 40×15），不改视觉尺寸。
+   ⚠️ 9 不是 8：左右各 1px 边框、**上缘无边框**，::after 的偏移量相对的是 padding box
+   （22×11），所以 22+9+9=40、11+4=15。
+   🔴 下探 2026-09-29 从 -9px 收到 -4px（C 项拍板）：胶囊展开前把手是唯一出口，
+   但那多出来的 8px 正好压在遮挡带（画面 y 12–46）第一行——全屏态那就是远端浏览器
+   标签 ✕ 所在的一条。收到 4px 后吃进遮挡带 3px，可达性几乎不亏：全屏时屏幕顶缘
+   本身就是「无限长的一堵墙」，窗口时上面紧挨着我们自己的 36px 顶栏，指针从上方
+   下来照样接得住。（21px 与 15px 都不满足 WCAG 2.5.8 的 24 见方——往上扩才合规，
+   但全屏态往上有窗缘挡着，等于扩到看不见的地方，所以这条按「遮挡带让给远端」判。）
+   ⚠️ 胶囊展开时下探要全收（见 `.capHandleBehind::after`），否则压住按钮上沿。 */
+.capHandle::after {
+  content: "";
+  position: absolute;
+  left: -9px;
+  right: -9px;
+  top: 0;
+  bottom: -4px;
+}
+.capHandleKnob {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80; /* ui-rule-ok: 深玻璃绿态，同 .capKb / .fsKbBadge i 先例 */
+}
+/* 链路异常：整枚染红（Windows 关闭键同族语义色），电点转白保证对比度 */
+.capHandleBad {
+  background: rgba(214, 69, 69, 0.9); /* ui-rule-ok: 深玻璃危险态底，同 .liveBad 的色相 */
+  border-color: rgba(255, 255, 255, 0.22); /* ui-rule-ok: 深玻璃描边加强，同 .hudAccent 思路 */
+}
+.capHandleBad .capHandleKnob {
+  background: #fff; /* ui-rule-ok: 深红底上的固定白，不随主题翻面 */
+}
+/* 有等你处理的（对端文件请求）：**整枚染橙**，与 .capHandleBad 同构。
+   🔴 F 项改口（2026-09-29 拍板）：原先是右上角 `top:-3px` 的 7px 外挂点，天生探出
+   把手上缘 3px——窗口态无所谓（上面还有自己的顶栏），全屏态 `.capZoneFs{top:0}` 把手
+   贴屏幕顶缘，徽标顶上那 3px 落在窗口外，7px 只剩下面 4px，看着像被切一半。
+   演示稿里 `.capZone` 也在 top:0，但页面不是真窗口、没有窗缘可裁，稿子暴露不了这处。
+   两个修法都要留一条「外挂徽标」：塞进 24×12 得同时挪中间 8px 电点（动已拍板几何），
+   给全屏单开一条选择器则两态两套徽标。整枚染色把四档变成 idle/bad/ask/dim 各一个
+   整块语义色，没有任何元素能被窗缘裁掉，也不用再维护那条特例。 */
+.capHandleAsk {
+  background: rgba(224, 128, 58, 0.92); /* ui-rule-ok: 深玻璃橙态，色相同 var(--orange) / .liveOff，压在画面上不随主题翻面 */
+  border-color: rgba(255, 255, 255, 0.22); /* ui-rule-ok: 深玻璃描边加强，逐字同 .capHandleBad */
+}
+.capHandleAsk .capHandleKnob {
+  /* 橙比红亮得多，白点在这底色上只有约 2.2:1（1.4.11 要求 3:1）——反向走深色，
+     与 .capHandleBad 转白正好相反，判据都是「与底色拉开 3:1 以上」 */
+  background: #0d1016; /* ui-rule-ok: 橙底上的固定深，同 .capCapsule 底色族 */
+}
+/* 指针锁定：本地根本没有光标，常驻把手只会白吃像素（沿用甲「锁指针不唤出」口径）。
+   同档下组件把 tabIndex 收到 -1，隐形元素不该进 Tab 环。 */
+.capHandleDim {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+/* 展开态「让位」修在**命中盒**上，不修在层叠上。
+   🔴 2026-09-29 自查：原写法把 `.capHandleBehind` 的 z-index 收到 4 是**无效**的——
+   同级的 `.capCapsule` 是 `position:relative` + `z-index:auto`（画在层叠第 8 步），
+   任何**正数** z-index 都在它**上面**（第 9 步），4 和 6 一样压着胶囊。后果不是
+   难看（可见的 24×12 本就贴到 y 12，与胶囊不重叠），而是 `::after` 下探那 9px
+   正好盖住胶囊上沿：命中到 y 20，而那排 `.capBtn`（高 24、在 34 高的胶囊里居中）
+   从 y 17 就开始——展开后往胶囊上移鼠标、落在这一带的那一下被把手接住
+   = 「点按钮却把浮条收起来了」。
+   收起态仍保留 40×15 的宽松命中区（那是把手唯一的用处）。 */
+.capHandleBehind::after {
+  bottom: 0;
 }
 
 .capCapsule {
@@ -1489,6 +1634,13 @@
   margin-top: 8px;
   width: 320px;
   max-width: calc(100% - 24px);
+  /* 封顶高度（先例 `.hudPanel`）。2026-09-29 与 RcDropdown 的截断同一轮：面板里
+     收了 传输与声音 / 文件 / 输入 / 浮现 / 会话 五段，矮窗口或全屏拉到一半屏时
+     「重连」那一段直接开出画面下沿用不了。
+     54 = 胶囊让顶缘的 12 + 胶囊本体 34 + 面板与胶囊的 8；24 = 底部留白。
+     顶部偏移读 `--cap-zone-top`（窗口 36 / 全屏 0），别在这儿再写死一个数。 */
+  max-height: calc(100vh - var(--cap-zone-top, 36px) - 54px - 24px);
+  overflow-y: auto;
   padding: 12px;
   border-radius: 12px;
   /* ui-rule-ok: 深玻璃面板不随主题翻面（同上先例） */
@@ -1664,11 +1816,14 @@
 .menuCaret {
   opacity: 0.7;
 }
-/* 菜单已 portal 到 body（见 `RcDropdown` 文件头）：坐标由组件内联的
-   left/bottom/minWidth 给出（fixed 定位，视口基准），这里只管外观。
+/* 菜单已 portal 到 body（见 `RcDropdown` 文件头）：坐标由 Floating UI 的
+   `floatingStyles`（fixed，视口基准）内联给出，`min-width` / `max-height` 由
+   `size` 中间件按剩余空间算，这里只管外观。
    ❗ 不要再改回 `position: absolute; bottom: calc(100% + 6px)` —— 底栏有
-   `overflow-y: auto`，向上弹的菜单会被自己的滚动容器整块裁掉（实测
-   elementFromPoint 命中画面区），且 backdrop-filter 会把它困在底栏的层叠上下文里。
+   `overflow-y: auto`，菜单会被自己的滚动容器整块裁掉（实测 elementFromPoint
+   命中画面区），且 backdrop-filter 会把它困在底栏的层叠上下文里。
+   ❗ 也不要再写死方向（旧代码用 `bottom:` 锚 = 永远往上弹）：胶囊搬到画面顶缘之后，
+   往上弹正好开出视口上沿，2026-09-29 的截断就来自这一条。方向由 `flip` 判。
 
    外观对齐项目浮层基准（`ContextMenu.module.css` 的 `.ctxMenu`）：12px 圆角 /
    `--float-card-*` 三件套 / hover 走中性 `--hover`。改前它是 radius 10、padding 4、
@@ -1683,9 +1838,18 @@
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
+  /* `size` 中间件封顶 max-height 后由这里接手滚动（上下都放不下的极矮窗口）。
+     优先 x 不滚：`shift` 已把菜单收回视口内，横向溢出只可能是两列本身太宽。 */
+  overflow: hidden auto;
   background: var(--float-card-bg, var(--card-bg));
   border: 1px solid var(--float-card-border, var(--border-color));
   box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
+}
+/* 首帧遮罩：Floating UI 的坐标是异步算的，算到位之前菜单已经挂在 body 上了。
+   不给它藏起来的话，这一帧用的是上一次打开时的旧坐标——闪一下。
+   用 class 而不是内联 `visibility`（jsdom 不注入样式，守卫测试照常查 role）。 */
+.menuPopPending {
+  visibility: hidden;
 }
 /* 双列（画质）：8–9 项单列是根 200px 高的细长条，双列把它压成一张信息卡。 */
 .menuPopTwo {

@@ -10,13 +10,22 @@
  * 3. solo 项要独占一行、且只在「后面还有项」时补分隔线（末项补线会在菜单底部
  *    留一条悬空的横线）。
  *
- * jsdom 的 getBoundingClientRect 全返 0：按钮矩形退化为原点，弹层仍会挂载
- * （`place()` 只要拿得到 rect 就 setPos，不依赖真实尺寸）。
+ * jsdom 的 getBoundingClientRect 全返 0，Floating UI 也算不出真坐标，所以这里
+ * 一律不断言数值（assertions 会空转）；弹层在任何矩形下都会挂载，`isPositioned`
+ * 只影响一个 `visibility:hidden` 的 class，不影响 role 查询。
  */
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { RcDropdown, type RcDropdownOption } from "./RcDropdown";
 import styles from "./RemoteComputer.module.css";
+
+const SRC = readFileSync(join(process.cwd(), "src", "components", "rc", "RcDropdown.tsx"), "utf8");
+const CSS = readFileSync(
+  join(process.cwd(), "src", "components", "rc", "RemoteComputer.module.css"),
+  "utf8",
+);
 
 /** 覆盖三种项：solo 带 meta、普通带 meta、普通无 meta。 */
 const OPTIONS: readonly RcDropdownOption<string>[] = [
@@ -125,5 +134,70 @@ describe("RcDropdown 底栏下拉", () => {
     // 再按一次 Esc：面板已收、计数归零，事件不再被这里拦截（会话兜底可接管）
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+});
+
+/**
+ * 🔴 定位收口（2026-09-29）。坏掉的不是外观而是「方向被写死」：旧代码
+ * `bottom: innerHeight - btn.top + 6` 把菜单钉在按钮**上方**，而浮条统一（2026-09-28）
+ * 之后三档下拉全住在画面顶缘的胶囊里 → 往上弹正好开出视口上沿，画质那 8 项被截断。
+ *
+ * 规则 11.1 的口径：修法必须是「让中间件判方向」，不是往那条手算公式上再补一个
+ * `if (btn.top < 300)`。jsdom 全零矩形，量不出坐标也翻不出向，所以这里守的是
+ * **机制本身**（还在不在、有没有被逐处写死），坐标手感留给实机点验。
+ */
+describe("RcDropdown 定位（Floating UI 收口）", () => {
+  it("🔴 不许再手算视口坐标：方向交给 flip", () => {
+    expect(SRC).not.toMatch(/window\.inner(Height|Width)/);
+    // 手算那一套整个拆干净：没有坐标 state，也没有 place() 了
+    //（`size` 里读一次 reference 宽度对齐按钮是中间件的正经用法，不算手算）
+    expect(SRC).not.toMatch(/setPos|const place\b|type Pos\b/);
+    expect(SRC).not.toMatch(/bottom:\s*(window|b\.|pos)/);
+    expect(SRC).toMatch(/flip\(\{[^}]*fallbackPlacements:\s*\["top-start"\]/);
+    // 基准方向是**向下**：宿主在画面顶缘，下方才是整片放菜单的空间
+    expect(SRC).toMatch(/placement:\s*"bottom-start"/);
+    // portal 在 body 上，absolute 会跟着文档流跑（旧代码同样是 fixed）
+    expect(SRC).toMatch(/strategy:\s*"fixed"/);
+    // 窗口 resize / 画面滚动 / 底栏换行都要重算（旧代码自己挂的两个监听）
+    expect(SRC).toMatch(/whileElementsMounted:\s*autoUpdate/);
+  });
+
+  it("贴边留白只有 EDGE_PAD 一个数，三个中间件共用", () => {
+    for (const mw of ["flip", "shift", "size"]) {
+      expect(SRC, `${mw} 的 padding 没读 EDGE_PAD（各处写死就会分叉）`).toMatch(
+        new RegExp(`${mw}\\(\\{[^}]*padding:\\s*EDGE_PAD`),
+      );
+    }
+  });
+
+  it("size 同时封顶宽与高：上下都放不下的极矮窗口退化成滚动菜单", () => {
+    expect(SRC).toMatch(/maxHeight:\s*`\$\{availableHeight\}px`/);
+    // 旧代码的「菜单至少和按钮一样宽」要跟着搬过来，别在迁移时丢掉
+    expect(SRC).toMatch(/minWidth:\s*`\$\{Math\.min\(refW, availableWidth\)\}px`/);
+    // 封了高度就必须有人接手滚动，否则 max-height 只是把菜单剪掉
+    const menuPop = CSS.match(/(?:^|\n)\.menuPop\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(menuPop).toMatch(/overflow:[^;]*(auto|scroll)/);
+  });
+
+  it("首帧遮罩类存在（旧「先定位再开」的等价物）", () => {
+    const pending = CSS.match(/(?:^|\n)\.menuPopPending\s*\{([^}]*)\}/);
+    expect(pending, "找不到 .menuPopPending —— 坐标到位前那一帧会拿旧坐标闪一下").not.toBeNull();
+    expect(pending![1]).toMatch(/visibility:\s*hidden/);
+    expect(SRC).toMatch(/isPositioned\s*\?\s*""\s*:\s*`\s*\$\{styles\.menuPopPending\}`/);
+  });
+
+  it("⋯ 面板自己也封顶，顶部偏移只从 --cap-zone-top 来", () => {
+    const more = CSS.match(/(?:^|\n)\.capMore\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(more).toMatch(/max-height:/);
+    expect(more, "封顶高度要读变量：全屏时顶缘偏移是 0，写死 36px 会多扣一条顶栏").toMatch(
+      /var\(--cap-zone-top/,
+    );
+    expect(more).toMatch(/overflow-y:\s*auto/);
+    const zone = CSS.match(/(?:^|\n)\.capZone\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(zone).toMatch(/--cap-zone-top:/);
+    // 全屏档改的是变量，不再是第二条 top（两处写死迟早对不上）
+    const fs = CSS.match(/(?:^|\n)\.capZoneFs\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(fs).toMatch(/--cap-zone-top:\s*0px/);
+    expect(fs).not.toMatch(/(?:^|[^-\w])top:/);
   });
 });

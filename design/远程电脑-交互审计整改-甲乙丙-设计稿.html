@@ -1,0 +1,1962 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>远程电脑 · 交互审计整改 甲/乙/丙 设计稿（2026-09-29）</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <style>
+      /* ============ 基线：以下数值全部抄自真实源码，不是虚构 ============
+         控制端胶囊：RemoteComputer.module.css .capZone:1210 / .capCapsule:1250
+                     / .capBtn:1397 / .capMore:1487 / .capPill*:1283-1327
+                     / .qualityChip:1331 / .capAlarm:1236
+         被控端胶囊：.ctrlPillWrap:2897 / .ctrlPill:2904 / .ctrlDrawer:2996
+         入站申请条：.joinGlobal:991
+         主题令牌：theme.css 浅色 --danger:#d82525 --orange:#c54a0a --accent:#0284c7
+                   --card-bg:#fff --border-color:#e0e4eb --text-muted:#627083
+      */
+      :root {
+        --danger: #d82525;
+        --orange: #c54a0a;
+        --warning: var(--orange);
+        --accent: #0284c7;
+        --success: #15803d;
+        --card-bg: #fff;
+        --border-color: #e0e4eb;
+        --text-muted: #627083;
+        --ink: #1c2430;
+        --glass: rgba(13, 16, 22, 0.82);
+        --glass-strong: rgba(13, 16, 22, 0.92);
+        --glass-line: rgba(255, 255, 255, 0.12);
+        --glass-txt: rgba(232, 236, 242, 0.95);
+        --glass-dim: rgba(147, 160, 180, 0.95);
+        --ok: #4ade80;
+        --amber: #f5b06a;
+        --bad: #f09595;
+        --chrome-h: 36px; /* --rc-session-chrome-h，已拍板几何，本稿不动 */
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0 0 80px;
+        background: #f4f6f9;
+        color: var(--ink);
+        font: 14px/1.65 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      header {
+        padding: 28px 32px 20px;
+        background: #0d1016;
+        color: #e8ecf2;
+      }
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 20px;
+        letter-spacing: 0.2px;
+      }
+      header p {
+        margin: 4px 0;
+        color: #93a0b4;
+        font-size: 13px;
+        max-width: 1080px;
+      }
+      .wrap {
+        padding: 0 32px;
+        max-width: 1280px;
+      }
+      section {
+        margin-top: 40px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 0 0 4px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 26px 0 10px;
+      }
+      .sub {
+        color: var(--text-muted);
+        font-size: 12.5px;
+        margin: 6px 0 18px;
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: start;
+      }
+      .cols-3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 16px;
+      }
+      .pane {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .pane > .tag {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+      }
+      /* 画面替身：用渐变模拟远程桌面，避免把注意力放在装饰上 */
+      .screen {
+        position: relative;
+        height: 236px;
+        border-radius: 8px;
+        /* 胶囊示意在窄于此的评审宽度下会横向溢出（真控件是 nowrap + flex-shrink:0，
+           真实应用在 ≤680px 靠隐藏 .capWho 让位，见 RemoteComputer.module.css:1596） */
+        overflow: auto hidden;
+        background:
+          radial-gradient(120% 90% at 12% 8%, #2b3a55 0%, #1b2436 45%, #121826 100%);
+        border: 1px solid #26314a;
+      }
+      .screen .winbar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 26px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #c8d2e0;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        gap: 8px;
+      }
+      .screen .tile {
+        position: absolute;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #aebaca;
+        font-size: 10.5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .screen .dead {
+        position: absolute;
+        inset: 0;
+        background: rgba(6, 8, 12, 0.62);
+        backdrop-filter: blur(1.5px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: var(--glass-txt);
+        text-align: center;
+        padding: 0 16px;
+      }
+      .screen .dead b {
+        font-size: 15px;
+      }
+      .screen .dead span {
+        font-size: 12px;
+        color: #9fb0c6;
+        max-width: 340px;
+      }
+
+      /* ====== 真控件复刻（与源码同名类同数值） ====== */
+      .capZone {
+        position: absolute;
+        top: var(--chrome-h);
+        left: 0;
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        pointer-events: none;
+      }
+      .capZone.fs {
+        top: 0;
+      }
+      .capZone.faded {
+        opacity: 0.12;
+      }
+      .capAlarm {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(to right, transparent, rgba(214, 69, 69, 0.55), transparent);
+        opacity: 0;
+      }
+      .capAlarm.on {
+        opacity: 1;
+      }
+      .capCapsule {
+        pointer-events: auto;
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        padding: 0 8px 0 12px;
+        background: var(--glass);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--glass-line);
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--glass-txt);
+        box-shadow:
+          0 10px 32px rgba(0, 0, 0, 0.45),
+          0 2px 8px rgba(0, 0, 0, 0.3);
+        white-space: nowrap;
+        max-width: calc(100% - 24px);
+      }
+      .capWho {
+        font-weight: 600;
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pill {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid transparent;
+      }
+      .pill.on {
+        background: rgba(52, 199, 123, 0.16);
+        color: var(--ok);
+        border-color: rgba(52, 199, 123, 0.35);
+      }
+      .pill.view {
+        background: rgba(147, 160, 180, 0.16);
+        color: var(--glass-dim);
+        border-color: rgba(147, 160, 180, 0.3);
+      }
+      .pill.warn {
+        background: rgba(224, 128, 58, 0.18);
+        color: var(--amber);
+        border-color: rgba(224, 128, 58, 0.4);
+      }
+      .pill.bad {
+        background: rgba(214, 69, 69, 0.2);
+        color: var(--bad);
+        border-color: rgba(214, 69, 69, 0.45);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.12);
+        color: rgba(220, 227, 238, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        font-variant-numeric: tabular-nums;
+      }
+      .chip .d {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .chip.ok .d {
+        background: var(--ok);
+      }
+      .chip.warn {
+        border-color: rgba(224, 128, 58, 0.4);
+      }
+      .chip.warn .d {
+        background: var(--amber);
+      }
+      .sep {
+        width: 1px;
+        height: 16px;
+        background: var(--glass-line);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: rgba(232, 236, 242, 0.9);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn:hover:not(:disabled):not(.on) {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      .btn.on {
+        background: rgba(107, 147, 255, 0.28);
+        color: #fff;
+      }
+      .btn.danger {
+        color: var(--bad);
+      }
+      .btn.danger:hover {
+        background: rgba(214, 69, 69, 0.22);
+        color: #fff;
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .req {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 0 12px;
+        border-radius: 8px;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      /* ⋯ 面板：width 320 / radius 12 / padding 12 / bg .92（抄 .capMore:1487） */
+      .more {
+        pointer-events: auto;
+        margin-top: 8px;
+        width: 320px;
+        max-width: calc(100% - 24px);
+        padding: 12px;
+        border-radius: 12px;
+        background: var(--glass-strong);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--glass-line);
+        box-shadow:
+          0 10px 32px rgba(0, 0, 0, 0.45),
+          0 2px 8px rgba(0, 0, 0, 0.3);
+        font-size: 12px;
+        color: var(--glass-txt);
+        text-align: left;
+      }
+      .more .sec {
+        font-size: 11px;
+        letter-spacing: 0.8px;
+        color: rgba(147, 160, 180, 0.9);
+        margin: 12px 4px 8px;
+      }
+      .more .sec:first-child {
+        margin-top: 0;
+      }
+      .more .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: rgba(232, 236, 242, 0.9);
+        font: inherit;
+        font-size: 12px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .more .row:hover {
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .more .row .cur {
+        margin-left: auto;
+        color: var(--glass-dim);
+        font-size: 11px;
+      }
+
+      /* ====== 本稿新增：常驻结果出口（甲-1） ====== */
+      .outlet {
+        pointer-events: auto;
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        max-width: calc(100% - 24px);
+        padding: 3px 8px 3px 12px;
+        border-radius: 999px;
+        background: var(--glass);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--glass-line);
+        box-shadow:
+          0 10px 32px rgba(0, 0, 0, 0.45),
+          0 2px 8px rgba(0, 0, 0, 0.3);
+        font-size: 11.5px;
+        color: var(--glass-txt);
+        white-space: nowrap;
+      }
+      .outlet .ic {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .outlet.ok .ic {
+        background: var(--ok);
+      }
+      .outlet.bad .ic {
+        background: var(--bad);
+      }
+      .outlet.run .ic {
+        background: var(--amber);
+        animation: blink 1s steps(2, start) infinite;
+      }
+      .outlet .lab {
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+      .outlet .bar {
+        position: relative;
+        width: 120px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.14);
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .outlet .bar i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 62%;
+        background: var(--amber);
+      }
+      .outlet .x {
+        margin-left: auto;
+        border: none;
+        background: transparent;
+        color: var(--glass-dim);
+        font: inherit;
+        cursor: pointer;
+        padding: 0 4px;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.25;
+        }
+      }
+
+      /* ====== 被控端：真胶囊复刻（抄 .ctrlPill:2904） ====== */
+      .ctrlPillWrap {
+        margin: 8px 12px 0;
+        position: relative;
+      }
+      .ctrlPill {
+        display: flex;
+        align-items: center;
+        column-gap: 4px;
+        padding: 4px 8px 4px 12px;
+        background: color-mix(in srgb, var(--danger) 12%, var(--card-bg));
+        border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-color));
+        border-radius: 999px;
+        font-size: 12px;
+      }
+      .ctrlPill .main {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 4px 8px;
+        border: none;
+        background: transparent;
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        text-align: left;
+      }
+      .ctrlPill .who {
+        font-weight: 600;
+        color: var(--danger);
+      }
+      .dotDanger {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--danger);
+        flex-shrink: 0;
+      }
+      .pillDanger {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-color));
+        background: color-mix(in srgb, var(--danger) 10%, var(--card-bg));
+        color: var(--danger);
+      }
+      .timer {
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .ctrlBadge {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--warning);
+      }
+      .ctrlDrawer {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: min(460px, calc(100vw - 24px));
+        padding: 14px;
+        background: var(--card-bg);
+        border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border-color));
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+        font-size: 12px;
+      }
+      .sbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        color: var(--ink);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .sbtn:hover {
+        border-color: color-mix(in srgb, var(--accent) 50%, var(--border-color));
+      }
+      .sbtn.pri {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+        font-weight: 600;
+      }
+      .sbtn.dgr {
+        background: var(--danger);
+        border-color: var(--danger);
+        color: #fff;
+      }
+      .joinGlobal {
+        border: 1px solid color-mix(in srgb, var(--orange) 40%, var(--border-color));
+        background: color-mix(in srgb, var(--orange) 8%, var(--card-bg));
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 12px;
+      }
+      .joinGlobal h4 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 6px;
+        font-size: 13px;
+      }
+      .joinFp {
+        font-family: ui-monospace, Consolas, monospace;
+        font-weight: 700;
+      }
+      .joinNote {
+        margin: 6px 0 8px;
+        color: var(--text-muted);
+        line-height: 1.65;
+      }
+      .joinBtns {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      /* 桌面替身（被控端场景） */
+      .desk {
+        position: relative;
+        height: 260px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        background: linear-gradient(160deg, #dbe4f0 0%, #eef2f8 55%, #e6ebf3 100%);
+      }
+      .desk .app {
+        position: absolute;
+        top: 26px;
+        left: 20px;
+        right: 20px;
+        bottom: 44px;
+        border-radius: 8px 8px 0 0;
+        background: #fff;
+        border: 1px solid #c9d2e0;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+      }
+      .desk .app .tb {
+        height: 24px;
+        background: #f1f4f9;
+        border-bottom: 1px solid #e3e8f0;
+        font-size: 11px;
+        color: #7b8798;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+      }
+      .desk .app .bd {
+        padding: 12px;
+        color: #99a4b4;
+        font-size: 11.5px;
+      }
+      .desk .task {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 34px;
+        background: rgba(255, 255, 255, 0.86);
+        border-top: 1px solid #d4dbe6;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+      }
+      .desk .tray {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: #6b7787;
+      }
+      .tdot {
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+        background: #dfe5ee;
+        border: 1px solid #cbd5e1;
+      }
+      .tdot.hot {
+        background: color-mix(in srgb, var(--danger) 22%, #fff);
+        border-color: var(--danger);
+        position: relative;
+      }
+      .tdot.hot::after {
+        content: "";
+        position: absolute;
+        right: -2px;
+        top: -2px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--danger);
+        border: 1px solid #fff;
+      }
+      /* 丙档：桌面常驻角标（贴在替身桌面的右下角，等效 always-on-top 小浮层） */
+      .ghostPill {
+        position: absolute;
+        right: 12px;
+        bottom: 44px;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 9px 5px 11px;
+        border-radius: 999px;
+        background: rgba(13, 16, 22, 0.86);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(216, 37, 37, 0.55);
+        color: var(--glass-txt);
+        font-size: 11.5px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      .ghostPill .stop {
+        border: none;
+        border-radius: 6px;
+        background: rgba(214, 69, 69, 0.24);
+        color: var(--bad);
+        font: inherit;
+        font-size: 11px;
+        padding: 2px 7px;
+        cursor: pointer;
+      }
+      .note {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin: 10px 0 0;
+        line-height: 1.7;
+      }
+      .flag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid;
+        vertical-align: 1px;
+      }
+      .flag.new {
+        color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+      }
+      .flag.move {
+        color: var(--orange);
+        border-color: color-mix(in srgb, var(--orange) 45%, transparent);
+        background: color-mix(in srgb, var(--orange) 8%, transparent);
+      }
+      .flag.geo {
+        color: var(--success);
+        border-color: color-mix(in srgb, var(--success) 45%, transparent);
+        background: color-mix(in srgb, var(--success) 8%, transparent);
+      }
+      .flag.nope {
+        color: var(--danger);
+        border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+        background: color-mix(in srgb, var(--danger) 8%, transparent);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+        background: #fff;
+      }
+      th,
+      td {
+        border: 1px solid var(--border-color);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #f1f4f9;
+        font-size: 12px;
+      }
+      td code {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 11.5px;
+      }
+      .geo {
+        background: #0d1016;
+        color: #c8d2e0;
+        border-radius: 10px;
+        padding: 14px 16px;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.85;
+        margin: 14px 0 0;
+      }
+      .geo b {
+        color: #7dd3fc;
+        font-weight: 600;
+      }
+      .switch {
+        display: inline-flex;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .switch button {
+        border: none;
+        background: #fff;
+        padding: 4px 10px;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        color: var(--text-muted);
+      }
+      .switch button + button {
+        border-left: 1px solid var(--border-color);
+      }
+      .switch button.on {
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+      }
+      .kbd {
+        display: inline-block;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 11px;
+        border: 1px solid var(--border-color);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        padding: 0 5px;
+        background: #fff;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin: 12px 0 0;
+      }
+      .legend > span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      /* 窄窗收折：镜像真实规则 .capWho/.capKb 在 ≤680px 隐藏（RemoteComputer.module.css:1596）
+         再往窄本稿自行收折视图三键，避免胶囊被裁成半条。 */
+      @media (max-width: 1080px) {
+        .cols,
+        .cols-3 {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 680px) {
+        .capWho {
+          display: none;
+        }
+      }
+      /* ====== 甲-⓪ 交互演示（浮现带整改，已落地）专属 ====== */
+      .bd-tabs {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 46px;
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        padding: 0 6px 6px;
+      }
+      .bd-tab {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 7px;
+        border-radius: 7px 7px 0 0;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #c8d2e0;
+        font-size: 10.5px;
+        white-space: nowrap;
+      }
+      .bd-tab.gone {
+        opacity: 0.28;
+        text-decoration: line-through;
+      }
+      .bd-x {
+        width: 15px;
+        height: 15px;
+        border: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.12);
+        color: #e6edf7;
+        font-size: 10px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .bd-x:hover {
+        background: rgba(214, 69, 69, 0.7);
+      }
+      .bd-band {
+        position: absolute;
+        top: 12px;
+        left: 0;
+        right: 0;
+        height: 34px;
+        border-top: 1px dashed rgba(240, 149, 149, 0.7);
+        border-bottom: 1px dashed rgba(240, 149, 149, 0.7);
+        background: rgba(214, 69, 69, 0.1);
+        pointer-events: none;
+        display: none;
+      }
+      .bd-band.on {
+        display: block;
+      }
+      .bd-hot {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: rgba(99, 179, 237, 0.8);
+        pointer-events: none;
+        display: none;
+      }
+      .bd-hot.on {
+        display: block;
+      }
+      .capZone.thru .capCapsule,
+      .capZone.thru .capCapsule * {
+        pointer-events: none;
+      }
+      /* 淡入淡出走真源码 .capZone 的同一组时长与曲线（RemoteComputer.module.css:1223） */
+      #bdZone {
+        transition:
+          opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+          transform 200ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      #bdZone.bdde {
+        opacity: 0;
+        transform: translateY(-6px);
+        visibility: hidden;
+      }
+      .capZone.bdde .capCapsule {
+        pointer-events: none;
+      }
+      .bd-replay {
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .bd-ctl {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        align-items: center;
+        margin: 10px 0 0;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      .bd-ctl label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .bd-read {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin-top: 10px;
+        font-size: 11.5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--text-muted);
+      }
+      .bd-read b {
+        color: var(--accent);
+      }
+      .bd-log {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 11.5px;
+        min-height: 62px;
+      }
+      .bd-log li {
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: var(--code-bg, rgba(127, 127, 127, 0.1));
+        color: var(--text-secondary);
+      }
+      .bd-log li.remote {
+        color: #6dd0a0;
+      }
+      .bd-log li.eaten {
+        color: #f09595;
+      }
+      .bd-log li.pop {
+        color: #7cc0f0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>远程电脑 · 交互审计整改 — 甲 / 乙 / 丙 三档设计稿</h1>
+      <p>
+        配套文档：<code>docs/远程电脑-交互审计与方案-2026-09-29.md</code>（问题清单 C1–C10 / H1–H6 + 六家对标 §6）。
+        本稿所有几何、配色、控件外观均抄自 <code>RemoteComputer.module.css</code> 与 <code>theme.css</code> 的真实值，
+        不新造视觉语言；标 <span class="flag new">新增</span> 的才是本稿提案。
+      </p>
+      <p>
+        红线：不动已拍板项（全屏胶囊 36px/12px 几何、乙方案默认保留配对、局域网 6 位 SAS、
+        剪贴板自动同步默认开、码格=设备号短指纹、青蓝方案 A）。
+      </p>
+      <div class="legend">
+        <span><span class="flag new">新增</span> 本稿新提的控件</span>
+        <span><span class="flag move">重排</span> 只改分级/位置，不改控件</span>
+        <span><span class="flag geo">几何</span> 有数值改动，须照稿对照点验后再动</span>
+        <span><span class="flag nope">不可行</span> 现架构做不到，本稿不承诺</span>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <!-- ================================================================ -->
+      <section id="band">
+        <h2>甲-⓪ 浮现带整改 · 可玩对照（2026-09-29 已落地）<span class="flag geo">几何</span></h2>
+        <p class="sub">
+          这一节解决的是用户实报的缺陷：「打开远端网页后要关标签，悬浮条挡住点不到」。
+          下面这块是<strong>真交互</strong>：鼠标在画面里移动就是 hook 里同一条判断
+          （<code>rcRevealGestureOf</code>），点标签上的 ✕ 走浏览器真实命中测试——
+          浮条活着就接住这一击，穿透窗口内就落到远端。左下角可切「旧参数」复现原缺陷。
+        </p>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">可玩：远端浏览器（标签栏就在遮挡带里）</div>
+            <div class="screen" id="bdScreen">
+              <div class="bd-band" id="bdBand"></div>
+              <div class="bd-hot" id="bdHot"></div>
+              <div class="bd-tabs" id="bdTabs"></div>
+              <div class="capZone fs bdde" id="bdZone">
+                <div class="capAlarm"></div>
+                <div class="capCapsule">
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill on">可控</span>
+                  <span class="sep"></span>
+                  <button class="btn" data-cap="画质 自动">画质 自动</button>
+                  <button class="btn" data-cap="画面 全屏">画面 全屏</button>
+                  <span class="sep"></span>
+                  <button class="btn" data-cap="适应">适应</button>
+                  <button class="btn on" data-cap="1:1">1:1</button>
+                  <button class="btn" data-cap="填充">填充</button>
+                  <button class="btn danger" data-cap="结束会话">✕</button>
+                </div>
+              </div>
+            </div>
+            <div class="bd-ctl">
+              <label><input type="checkbox" id="bdLegacy" /> 用旧参数（12px 热区 / 无 dwell / 无穿透 / 隐形胶囊也算悬停）</label>
+              <label><input type="checkbox" id="bdGuides" checked /> 标出遮挡带(12–46)与热区</label>
+              <button class="bd-replay" id="bdReplay">重播首显 15s</button>
+            </div>
+            <div class="bd-read" id="bdRead"></div>
+            <ul class="bd-log" id="bdLog"></ul>
+          </div>
+          <div class="pane">
+            <div class="tag">四条措施（各堵一段）</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>量</th>
+                  <th>修前</th>
+                  <th>修后</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>顶缘唤出热区</td>
+                  <td>12px（= 遮挡带同深）</td>
+                  <td><b>3px</b></td>
+                </tr>
+                <tr>
+                  <td>隐藏态的隐形胶囊矩形</td>
+                  <td>是悬停目标（飘过即弹）</td>
+                  <td><b>不是</b>目标，只有顶缘 3px 算</td>
+                </tr>
+                <tr>
+                  <td>进带后多久才唤出</td>
+                  <td>0ms（立刻）</td>
+                  <td><b>180ms</b> dwell（离开即作废）</td>
+                </tr>
+                <tr>
+                  <td>唤出后多久不吃点击</td>
+                  <td>0ms（立刻可点）</td>
+                  <td><b>200ms</b> <code>pointer-events:none</code></td>
+                </tr>
+                <tr>
+                  <td>胶囊几何（遮挡带起点）</td>
+                  <td>margin-top 12 / 高 34</td>
+                  <td>不动（2026-09-28 已拍板）</td>
+                </tr>
+                <tr>
+                  <td>首显 / 淡出 / 锁显 / F10</td>
+                  <td>15s / 2.5s / 链路异常 / F10</td>
+                  <td>不动</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="note">
+              依据：Fitts 定律里屏幕边缘是无限大目标（顶缘该让给内容）；RustDesk 新 UI
+              直接取消 hover 唤出（#1842）、折叠钮横向钳在 35–65%（#3842 / PR #3881）；
+              dwell 量级参考 Windows <code>SM_MOUSEHOVERTIME</code>（默认 400ms，会话内往下压）；
+              浮现动画先不吃这一击是 Chrome RDP 连接条 / Moonlight 工具条的常规做法。
+            </p>
+            <p class="note">
+              180 / 200ms 是<strong>未实测的起点值</strong>（两个常量好改）；残留：首显那 15s
+              仍会压住顶缘中央，F10 可立刻收起。详见 <code>docs/远程电脑-交互审计与方案-2026-09-29.md</code> §8。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <section>
+        <h2>甲档 · 反馈可见性收口（纯前端）</h2>
+        <p class="sub">
+          一句话：把「结果」从会被卸载的「⋯」面板里搬到与按钮同一可见性域。四件事：常驻结果出口、错误条进全屏元素内、断连遮罩、一级项按对标重排。
+        </p>
+
+        <h3>甲-① 现状：面板一关，结果和重试一起消失（对应 C1 / C2）</h3>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">现状 · ⋯ 展开时（还能看到结果）</div>
+            <div class="screen">
+              <div class="winbar"><span>对方桌面 · 1920×1080</span></div>
+              <div class="capZone">
+                <div class="capAlarm"></div>
+                <div class="capCapsule">
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill on">可控</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <button class="btn">画面 全屏</button>
+                  <span class="sep"></span>
+                  <button class="btn">适应</button>
+                  <button class="btn on">1:1</button>
+                  <button class="btn">填充</button>
+                  <button class="btn">⤢</button>
+                  <button class="btn on">⋯</button>
+                  <button class="btn danger">✕</button>
+                </div>
+                <div class="more">
+                  <div class="sec">传输与声音</div>
+                  <div class="row"><span>码率</span><span class="cur">150%</span></div>
+                  <div class="row"><span>声音</span><span class="cur">开</span></div>
+                  <div class="row"><span>自动同步剪贴板</span><span class="cur">开</span></div>
+                  <div class="sec">文件</div>
+                  <div class="row"><span>推送剪贴板 / 拉取…</span><span class="cur">失败：检查剪贴板权限</span></div>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              反馈（右列红字）写在 <code>.capMore</code> 内部 —— <code>RcSessionCapsule.tsx:240</code> 是
+              <code>{moreOpen && &lt;RcCapsuleMore/&gt;}</code>，条件渲染。
+            </p>
+          </div>
+
+          <div class="pane">
+            <div class="tag">现状 · 2.5s 后（面板收起，结果蒸发）</div>
+            <div class="screen">
+              <div class="winbar"><span>对方桌面 · 1920×1080</span></div>
+              <div class="capZone faded">
+                <div class="capAlarm"></div>
+                <div class="capCapsule">
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill on">可控</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <button class="btn">画面 全屏</button>
+                  <span class="sep"></span>
+                  <button class="btn">适应</button>
+                  <button class="btn on">1:1</button>
+                  <button class="btn">填充</button>
+                  <button class="btn">⤢</button>
+                  <button class="btn">⋯</button>
+                  <button class="btn danger">✕</button>
+                </div>
+              </div>
+              <div
+                class="dead"
+                style="background: transparent; justify-content: flex-end; padding-bottom: 24px"
+              >
+                <span style="color: #f09595">用户在这里失去了「失败」这条信息，也没有重试按钮</span>
+              </div>
+            </div>
+            <p class="note">
+              同一时刻若链路出错，错误面板 <code>RcStage.tsx:102</code> 挂在全屏元素（<code>wrapRef</code>）之外 ——
+              全屏里连这条都没有。
+            </p>
+          </div>
+        </div>
+
+        <h3>甲-② 方案：胶囊下方挂一条「常驻结果出口」<span class="flag new">新增</span></h3>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">提案 · 浮条淡出后出口仍常驻（可点重试）</div>
+            <div class="screen">
+              <div class="winbar"><span>对方桌面 · 1920×1080</span></div>
+              <div class="capZone faded">
+                <div class="capAlarm"></div>
+                <div class="capCapsule">
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill on">可控</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <button class="btn">画面 全屏</button>
+                  <span class="sep"></span>
+                  <button class="btn">适应</button>
+                  <button class="btn on">1:1</button>
+                  <button class="btn">填充</button>
+                  <button class="btn">⤢</button>
+                  <button class="btn">⋯</button>
+                  <button class="btn danger">✕</button>
+                </div>
+                <div class="outlet bad">
+                  <span class="ic"></span>
+                  <span class="lab">剪贴板推送失败</span>
+                  <span>窗口没焦点时系统拒绝读取（不是权限坏了）</span>
+                  <button class="sbtn" style="height: 22px; padding: 0 8px; font-size: 11px">重试</button>
+                  <button class="x">✕</button>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              出口条挂在 <code>.capZone</code> 的 flex 列里、<code>.capMore</code> 之外，所以浮条淡出不影响它；
+              它自己的 <code>pointer-events:auto</code> 与胶囊同口径。四类来源（码率/声音/剪贴板/文件）
+              共用这一条队列，同刻只显示最新一条 + 计数。<b>成功也报</b>（绿点，2s 后自动收起），
+              这才满足规则 15.1「触发与反馈同域」。
+            </p>
+          </div>
+
+          <div class="pane">
+            <div class="tag">提案 · 文件传输进行中（面板关了也走得完）</div>
+            <div class="screen">
+              <div class="winbar"><span>对方桌面 · 1920×1080</span></div>
+              <div class="capZone">
+                <div class="capAlarm"></div>
+                <div class="capCapsule">
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill on">可控</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <span class="sep"></span>
+                  <button class="btn">适应</button>
+                  <button class="btn on">1:1</button>
+                  <button class="btn">⤢</button>
+                  <button class="btn">⋯</button>
+                  <button class="btn danger">✕</button>
+                </div>
+                <div class="outlet run">
+                  <span class="ic"></span>
+                  <span class="lab">传文件 2/3</span>
+                  <span class="bar"><i></i></span>
+                  <span>report.pdf · 62% · 余 41s</span>
+                  <button class="sbtn" style="height: 22px; padding: 0 8px; font-size: 11px">取消</button>
+                  <button class="x">✕</button>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              进度条宽 120px / 高 4px，沿用 <code>.capAlarm</code> 的 3px 量级往上取一档，避免抢画面。
+              「空闲不显示」的现有行为（<code>RcFileBar.tsx:106-108</code>）保留：无任务时这条完全不渲染，不多占一行。
+            </p>
+          </div>
+        </div>
+
+        <h3>甲-③ 断连遮罩与全屏内错误条 <span class="flag new">新增</span></h3>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">提案 · 全屏/窗口通用：链路中断遮罩</div>
+            <div class="screen">
+              <div class="tile" style="left: 8px; top: 8px; width: 140px; height: 60px">最后一帧</div>
+              <div class="dead">
+                <span class="chip warn" style="font-size: 12px"><span class="d"></span>连接已中断</span>
+                <b>正在尝试恢复</b>
+                <span>
+                  与 DESKTOP-7K2 的链路在 14:22:07 中断（对端 ping 超时）。恢复后会自动回到画面，你不需要做任何事。
+                </span>
+                <div style="display: flex; gap: 8px">
+                  <button class="sbtn" style="background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.22); color: #fff">
+                    结束会话
+                  </button>
+                  <button class="req">立即重连</button>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              文案按对标 §6.6 的共识收敛为<b>只讲结果</b>：恢复 → 遮罩自己退；失败到底 → 换一条
+              「需要对方重新同意」并把按钮改成「重新发起」。
+              <b>不写「第 N/M 次」</b> —— 各家都把自动重连当默认体验而非用户决策点。
+            </p>
+            <p class="note">
+              <span class="flag nope">六家无先例</span> 「冻结画面 + 进度 + 预估」我没查到任何官方描述，这块是自定方案，
+              必须靠本稿点验而不是靠对标背书。
+            </p>
+          </div>
+
+          <div class="pane">
+            <div class="tag">提案 · 错误条搬进全屏元素（C2）</div>
+            <div class="screen">
+              <div class="winbar"><span>对方桌面 · 全屏</span></div>
+              <div class="capZone">
+                <div class="capAlarm on"></div>
+                <div class="capCapsule">
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill bad">重连失败</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <span class="sep"></span>
+                  <button class="btn">⤢</button>
+                  <button class="btn">⋯</button>
+                  <button class="btn danger">✕</button>
+                </div>
+                <div class="outlet bad">
+                  <span class="ic"></span>
+                  <span class="lab">对方版本偏旧（v7.2.8），本次会话按兼容模式运行</span>
+                  <button class="sbtn" style="height: 22px; padding: 0 8px; font-size: 11px">查看差异</button>
+                  <button class="x">✕</button>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              三条常驻信号（<code>.capAlarm</code> 微光条 + 红 pill + 出口条）里，红 pill 与出口条
+              <b>不参与 2.5s 淡出</b>；现有实现是警示 pill 随浮条一起藏（<code>RcCapsuleAlerts.tsx:34-47</code>），
+              对标 Parsec「角标旁常驻警告图标」（§6.5）。改的是淡出参与方，不改胶囊几何。
+            </p>
+          </div>
+        </div>
+
+        <h3>甲-④ 一级项重排（对标 §6.4：断连/画质是常识一级，我们现在放反了）<span class="flag move">重排</span></h3>
+        <div class="pane">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 20%">控件</th>
+                <th style="width: 16%">现状层级</th>
+                <th style="width: 16%">提案层级</th>
+                <th>理由 / 代价</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>画质（自动/…）</td>
+                <td>一级</td>
+                <td>一级（不变）</td>
+                <td>与 TeamViewer View / RustDesk 顶栏一致。</td>
+              </tr>
+              <tr>
+                <td>重连</td>
+                <td>「⋯」第 4 组</td>
+                <td><b>一级</b>（断开时才出现）</td>
+                <td>断线时它是最要紧的一步，藏在必须先在顶边唤出浮条、再点 ⋯ 的两级之外。<b>只在中断态出现</b>，正常态不占宽。</td>
+              </tr>
+              <tr>
+                <td>画面范围 / 下一屏 / 适应·1:1·填充</td>
+                <td>一级</td>
+                <td>一级（不变）</td>
+                <td>窄窗媒体查询已有一档收折，不动。</td>
+              </tr>
+              <tr>
+                <td>码率 / 声音 / 剪贴板 / 文件 / 指针锁 / 释放键盘</td>
+                <td>「⋯」</td>
+                <td>「⋯」（不变）</td>
+                <td>符合共识（文件收二级）。改的是<b>它们的反馈出口</b>（甲-②），不是收纳位。</td>
+              </tr>
+              <tr>
+                <td>Ctrl+Alt+Del</td>
+                <td>设置页一句说明</td>
+                <td><span class="flag nope">本档不做</span></td>
+                <td>
+                  设置页 <code>RcPageSettings.tsx:252</code> 已经写明「系统级组合键无法远程发送」。要做需要
+                  SendSAS + 服务级权限（RustDesk 走的是服务/驱动路线），不是加个按钮的事。甲乙丙三档都不承诺，
+                  真要做得单独立项。
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="geo">
+            <b>几何申报（甲档全部改动）</b><br />
+            .capZone top = var(--rc-session-chrome-h)=36px，全屏 .capZoneFs top=0；胶囊 margin-top 12px、height 34px — <b>三处已拍板数值，零改动</b><br />
+            新增「常驻结果出口」：margin-top 8px（= .capMore 的 8px 口径）、height ≈ 30px（3px 上下内边距 + 22px 内联按钮）、radius 999px、padding 3px 8px 3px 12px、font 11.5px<br />
+            断连遮罩：盖满 .fakeScreen，z-index 高于 .capZone(5)，低于 confirmDialog<br />
+            中断态一级「立即重连」：沿用 .capReq（height 24px / radius 8px / padding 0 12px / --accent 实底）—— 胶囊宽度最坏 +96px
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <section>
+        <h2>乙档 · 输入接管与键盘模式（前端 + 少量协议）</h2>
+        <p class="sub">
+          对标结论：六家的键盘模式都是<b>会话内显式开关</b>（RustDesk map/scancode/translate 三档、TeamViewer 自动+直接两档），
+          无一自动判定成功；输入权交接要么竞争、要么显式开关，<b>没有一家做「本地一动就自动断开对方」</b>。
+        </p>
+
+        <h3>乙-① 中文输入法：候选期间一律不发键 <span class="flag new">新增</span></h3>
+        <div class="cols-3">
+          <div class="pane">
+            <div class="tag">现状（C5）</div>
+            <div class="screen" style="height: auto; padding: 14px; background: #12182a">
+              <div style="font-size: 12px; color: #c8d2e0; line-height: 2">
+                本机打「panda」选字 →<br />
+                <span style="color: #f09595">p·a·n·d·a 逐键打进对端</span><br />
+                <span style="color: #f09595">选字的 Enter 被当成回车发给对端</span>
+              </div>
+            </div>
+            <p class="note">证据：RC 键盘链路（<code>useRcInput.ts</code> → <code>rcKeyMap.ts:66</code>）全仓零 <code>isComposing</code>/composition 处理。</p>
+          </div>
+          <div class="pane">
+            <div class="tag">提案 A · 自动暂停（默认）</div>
+            <div class="screen" style="height: auto; padding: 14px; background: #12182a">
+              <div style="font-size: 12px; color: #c8d2e0; line-height: 2">
+                本机打「panda」选字 →<br />
+                <span style="color: #4ade80">画面旁出现「本机输入法输入中」琥珀 chip</span><br />
+                <span style="color: #4ade80">零键外发，选字完成后按模式处理</span>
+              </div>
+            </div>
+            <p class="note">默认开。<b>待拍板 ①</b>：选字确认后，是把最终字符串按 Unicode 送对端（能打出中文），还是仍然什么都不发（安全但打不出中文）。</p>
+          </div>
+          <div class="pane">
+            <div class="tag">提案 B · 打字 / 直传 两档开关</div>
+            <div class="screen" style="height: auto; padding: 14px; background: #12182a; display: flex; flex-direction: column; gap: 10px; align-items: flex-start">
+              <div class="switch">
+                <button class="on">打字模式</button>
+                <button>直传模式</button>
+              </div>
+              <div style="font-size: 11.5px; color: #9fb0c6; line-height: 1.8">
+                打字模式：按字符翻译，中文可输入，游戏里可能错位<br />
+                直传模式：按 scancode 原样送，游戏/快捷键准，中文打不出
+              </div>
+            </div>
+            <p class="note">挂在胶囊一级（用 <code>.capBtn</code> 同族，高 24px）。两档都必须显式，不做自动判定 —— 六家都没做成。</p>
+          </div>
+        </div>
+
+        <h3>乙-② 焦点与释放解耦（C4）</h3>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">现状</div>
+            <div class="screen" style="height: auto; padding: 14px; background: #12182a">
+              <div style="font-size: 12px; color: #c8d2e0; line-height: 2">
+                按住 <span class="kbd" style="background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.25)">Ctrl</span> 去点「画质」下拉 →
+                <span style="color: #f09595">onBlur 释放全部按住键</span><br />
+                回到画面要再点一次才恢复键盘捕获
+              </div>
+            </div>
+            <p class="note">证据：<code>RcSessionStage.tsx:117-124</code>（<code>setKbOn(false)</code> + <code>releaseModifiers()</code> + <code>releaseTracked()</code>）。</p>
+          </div>
+          <div class="pane">
+            <div class="tag">提案</div>
+            <div class="screen" style="height: auto; padding: 14px; background: #12182a">
+              <div style="font-size: 12px; color: #c8d2e0; line-height: 2">
+                焦点进浮条 = <b>只暂停注入</b>，不清按住态<br />
+                焦点回画面 = 按住态自然续上（与浏览器真实失焦同语义）<br />
+                <span style="color: #f5b06a">仍保留：会话结束 / 指针解锁 / 按 Esc 时清按住态</span>
+              </div>
+            </div>
+            <p class="note">风险申报：不清按住态 ⇒ 若画面被最小化，对端可能留着 Ctrl 按下。所以「窗口失焦（跨应用）」与「焦点进浮条（同窗内）」必须分两条路径，只有前者释放。</p>
+          </div>
+        </div>
+
+        <h3>乙-③ 输入权交接（H4，对应 Parsec 红/绿闪烁 + Quick Assist Cancel control）</h3>
+        <div class="cols-3">
+          <div class="pane">
+            <div class="tag">被控端抽屉新增行</div>
+            <div class="ctrlPillWrap">
+              <div class="ctrlPill">
+                <button class="main">
+                  <span class="dotDanger"></span>
+                  <span class="who">正在被「DESKTOP-7K2」远程</span>
+                  <span class="pillDanger">可控</span>
+                  <span class="timer">02:41</span>
+                </button>
+              </div>
+              <div class="ctrlDrawer" style="position: static; margin-top: 6px; width: auto">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+                  <button class="sbtn">暂时收回我的键鼠</button>
+                  <span style="color: var(--danger); font-size: 11.5px">对方会收到「主机正在自己操作」</span>
+                </div>
+                <p class="note" style="margin-top: 10px">
+                  <span class="flag new">新增</span> 一键收回（不做「本地一动就断对方」的自动抢占）。收回后对方画面右侧出现琥珀说明，10 分钟无操作自动归还。
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="pane">
+            <div class="tag">控制端胶囊新增：锁定对方键鼠</div>
+            <div class="screen">
+              <div class="capZone">
+                <div class="capCapsule">
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill warn">主机取回键鼠</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <span class="sep"></span>
+                  <button class="btn on">锁定对方</button>
+                  <button class="btn">⤢</button>
+                  <button class="btn">⋯</button>
+                  <button class="btn danger">✕</button>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              这颗键<b>必须受被控端授权</b>（RustDesk 的 block-input 就是这个语义，且仅 Windows）。所以它默认不可用，
+              只有被控端抽屉里勾了「允许对方锁定我的输入」才可点 —— <b>待拍板 ②</b>：这条授权放「本次」还是「长期」。
+            </p>
+          </div>
+          <div class="pane">
+            <div class="tag">「谁在动鼠标」指示（Parsec 语义）</div>
+            <div class="screen" style="height: auto; padding: 14px; background: #12182a; display: flex; flex-direction: column; gap: 10px">
+              <span class="pill on" style="align-self: flex-start">键盘 · 对方正在用</span>
+              <span class="pill view" style="align-self: flex-start">鼠标 · 本机在用</span>
+              <span class="pill bad" style="align-self: flex-start">鼠标 · 对方无权却被按下（已拦）</span>
+              <div style="font-size: 11.5px; color: #9fb0c6">三枚小图标，绿=有权且在用（闪）、灰=另一方正用、红=无权尝试</div>
+            </div>
+            <p class="note"><span class="flag new">新增</span> 放被控端抽屉首屏，不塞进胶囊——胶囊只有一条 34px，塞满就读不到名字。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <section>
+        <h2>丙档 · 系统级存在与信任（含协议与安全语义，建议独立版本）</h2>
+
+        <h3>丙-① 入站请求：置顶确认浮层（对标 §6.1，不是系统通知）</h3>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">现状：申请条住在本机主窗里</div>
+            <div class="desk">
+              <div class="app">
+                <div class="tb">PastePanda · 主窗口（未置顶）</div>
+                <div class="bd" style="padding: 10px 14px">
+                  <div class="joinGlobal">
+                    <h4>有 1 台设备想远程这台电脑</h4>
+                    <div style="font-size: 11px; color: var(--text-muted)">对方指纹</div>
+                    <div class="joinFp" style="font-size: 12px">9f2c·a71d</div>
+                    <p class="joinNote">申请能力：<b>可控（含只看）</b> · 设备名「DESKTOP-7K2」（可自称，以指纹为准）</p>
+                    <div class="joinBtns">
+                      <button class="sbtn">拒绝</button>
+                      <button class="sbtn pri">同意远程</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="tdot"></span><span class="tdot"></span>
+                <span>用户此刻在 Word 里干活，主窗在下一层</span>
+                <span class="tray"><span class="tdot"></span></span>
+              </div>
+            </div>
+            <p class="note">
+              现状不是「零告知」——<code>RcOverlay.tsx:66-86</code> 会 toast + <code>summonMainWindow</code> 拉起主窗，
+              免确认直连那条路 B13（<code>:102-115</code>）也补了拉起。但拉起的是<b>非置顶的主窗</b>：
+              用户手动把窗口收回去、或正被全屏应用挡着时，120s 窗就在没人看见的地方走完；
+              超时后主机侧那条只是从列表里消失（<code>inbound.rs:303-306</code>），满员丢最早只 <code>log::warn</code>（<code>:202-209</code>）。
+            </p>
+          </div>
+
+          <div class="pane">
+            <div class="tag">提案：独立置顶小浮层（只做一件事）</div>
+            <div class="desk">
+              <div class="app">
+                <div class="tb">Word — 用户自己的窗口</div>
+                <div class="bd">文档正文…</div>
+              </div>
+              <div
+                class="ghostPill"
+                style="
+                  left: 50%;
+                  right: auto;
+                  bottom: auto;
+                  top: 14px;
+                  transform: translateX(-50%);
+                  flex-direction: column;
+                  align-items: stretch;
+                  gap: 8px;
+                  width: 320px;
+                  border-color: rgba(224, 128, 58, 0.55);
+                  padding: 12px;
+                  border-radius: 12px;
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--amber)"></span>
+                  <b style="font-size: 12.5px; color: #fff">DESKTOP-7K2 想远程这台电脑</b>
+                  <span class="pill warn" style="margin-left: auto">1:47</span>
+                </div>
+                <div style="font-size: 11.5px; color: #b7c3d4; line-height: 1.75">
+                  指纹 <span class="joinFp" style="color: #fff">9f2c·a71d</span> ·
+                  申请：<b style="color: #fff">看屏幕 + 控制键鼠</b>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center">
+                  <button class="sbtn" style="background: transparent; border-color: rgba(255, 255, 255, 0.25); color: #dfe7f1">拒绝</button>
+                  <button class="sbtn" style="background: transparent; border-color: rgba(255, 255, 255, 0.25); color: #dfe7f1">只同意看屏幕</button>
+                  <button class="req" style="margin-left: auto">同意远程</button>
+                </div>
+                <div style="font-size: 11px; color: #93a0b4">
+                  超时会自动拒绝并告诉对方原因（不再只是消失）· 这台设备已免确认时不会出现本条，改由右下角常驻角标告知
+                </div>
+              </div>
+              <div class="task">
+                <span class="tdot"></span><span class="tdot"></span>
+                <span>用户不用离开手头的活</span>
+                <span class="tray"><span class="tdot hot"></span>托盘</span>
+              </div>
+            </div>
+            <p class="note">
+              <span class="flag new">新增</span> 三个要点：① 独立置顶浮层（新窗口，<code>alwaysOnTop</code> + 不进任务栏 + 不抢焦点）；
+              ② <b>「只看」与「控制」分两次授权</b>（Quick Assist / RustDesk password-click 同款，§6.1），比现在一个 capability 全给更细；
+              ③ 超时/被丢弃要给主机一个明确原因行。
+              <b>待拍板 ③</b>：免确认设备是否也走这条常驻角标（我建议：免确认只免「同意」这一步，不免「告知」）。
+            </p>
+          </div>
+        </div>
+
+        <h3>丙-② 常驻隐私指示（对标 §6.2：六家无水印，正解是小面积常驻 + 一键终止）</h3>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">桌面右下角常驻角标（会话期间一直在）</div>
+            <div class="desk">
+              <div class="app"><div class="tb">任意应用</div><div class="bd">…</div></div>
+              <div class="ghostPill">
+                <span class="dotDanger" style="background: var(--danger); animation: blink 1.6s infinite"></span>
+                <span>DESKTOP-7K2 正在远程</span>
+                <span style="color: #93a0b4; font-variant-numeric: tabular-nums">02:41</span>
+                <button class="stop">结束</button>
+              </div>
+              <div class="task">
+                <span class="tdot"></span>
+                <span>托盘图标带红环（可选，先例查不到）</span>
+                <span class="tray"><span class="tdot hot"></span>托盘</span>
+              </div>
+            </div>
+            <p class="note">
+              这是<b>独立小置顶窗口</b>，不受主窗显隐影响（解决 H1 的真实缺口：常驻提示目前住在主窗里，
+              <code>grep tray src-tauri/src/rc/</code> 零命中）。托盘变色那条我没查到任何先例，标为可选、不硬做。
+              几何：胶囊口径（radius 999、font 11.5px、深玻璃同 <code>.capCapsule</code>），高约 28px，右/下各 12px。
+            </p>
+          </div>
+          <div class="pane">
+            <div class="tag">能力分级授权（H5，含剪贴板/文件）</div>
+            <div style="font-size: 12.5px">
+              <div class="ctrlPillWrap" style="margin: 0 0 8px">
+                <div class="ctrlPill" style="pointer-events: none">
+                  <span class="main" style="cursor: default">
+                    <span class="dotDanger"></span>
+                    <span class="who">DESKTOP-7K2 · 会话权限</span>
+                    <span class="pillDanger">可控</span>
+                  </span>
+                </div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>能力</th>
+                    <th>本次</th>
+                    <th>本会话</th>
+                    <th>长期</th>
+                    <th>默认（本稿建议）</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>看屏幕</td>
+                    <td>●</td>
+                    <td>●</td>
+                    <td>●</td>
+                    <td>同意时定</td>
+                  </tr>
+                  <tr>
+                    <td>控制键鼠</td>
+                    <td>●</td>
+                    <td>●</td>
+                    <td>●</td>
+                    <td><b>与看屏幕分两次授权</b></td>
+                  </tr>
+                  <tr>
+                    <td>剪贴板同步</td>
+                    <td>●</td>
+                    <td>●</td>
+                    <td>○</td>
+                    <td>沿用已拍板「默认开 + 记住关闭」，但<b>必须在常驻条上可见</b>（甲-②出口条）</td>
+                  </tr>
+                  <tr>
+                    <td>文件传输</td>
+                    <td>●</td>
+                    <td>○</td>
+                    <td>○</td>
+                    <td>只给「本次」（逐次询问，现有 <code>RcFileAsk</code> 保持）</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="note">
+                ●=可单独给 ○=不给该档（避免造出没人用的中档）。<b>待拍板 ④</b>：文件传输是否允许「本会话内不再问」——
+                现有 <code>RcFileAsk</code>（346 行，已超 300 红线）需要顺带拆分。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <h3>丙-③ 隐私黑屏（RustDesk privacy-mode 同款，六家里只有它有）</h3>
+        <div class="pane">
+          <p style="margin: 0; font-size: 12.5px">
+            被控端抽屉加一行「遮盖本机屏幕（对方仍在看，但看到的是黑）」—— 会话不断，主机去接电话/拿文件时最实用。
+            需要 Rust 侧加一层全屏黑窗（多显示器要逐台遮），<b>属丙档独立立项</b>：它改的是「对方能不能看见我」这个安全语义，
+            不是配色。与已拍板的「默认保留配对」不冲突，但要一并复核无人值守固定密码那条路径（黑屏不该被无人值守跳过）。
+          </p>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <section>
+        <h2>待拍板清单（每题都标了本稿建议，不选就按建议走）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 6%">#</th>
+              <th style="width: 34%">问题</th>
+              <th style="width: 30%">本稿建议（默认）</th>
+              <th>不这么选的后果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>档</td>
+              <td>先做哪一档</td>
+              <td><b>甲</b>，同批带上 <code>useRcFrames.ts:348</code> 的同码分支真 bug</td>
+              <td>只做乙/丙而不做甲，「点了没反应」还在。</td>
+            </tr>
+            <tr>
+              <td>①</td>
+              <td>中文 IME：选字确认后要不要把字符串发给对端</td>
+              <td><b>发</b>（打字模式下），直传模式下不发</td>
+              <td>不发＝远控时中文打不出来，等于没修。</td>
+            </tr>
+            <tr>
+              <td>②</td>
+              <td>「允许对方锁定我的输入」放本次还是长期</td>
+              <td><b>本次</b>（每次会话重新拿）</td>
+              <td>长期＝把「主机永远能物理抢占」这条底线让掉。</td>
+            </tr>
+            <tr>
+              <td>③</td>
+              <td>免确认设备接入时是否也给常驻角标</td>
+              <td><b>给</b>。免确认只免「同意」，不免「告知」</td>
+              <td>否则用户会以为「没人同意过，机器自己开了」。</td>
+            </tr>
+            <tr>
+              <td>④</td>
+              <td>文件传输允许「本会话内不再问」吗</td>
+              <td><b>不允许</b>，保持逐次询问</td>
+              <td>开了就是「一次同意，整场可写盘」，与看屏幕同级不同险。</td>
+            </tr>
+            <tr>
+              <td>⑤</td>
+              <td>断连遮罩要不要显示「已尝试恢复」这类过程信息</td>
+              <td><b>只显示结果</b>（恢复/需重新授权）</td>
+              <td>计数会让用户开始数次数并怀疑产品不稳（对标 §6.6）。</td>
+            </tr>
+            <tr>
+              <td>⑥</td>
+              <td>托盘红环要不要做</td>
+              <td><b>先不做</b>，靠独立置顶角标</td>
+              <td>六家无先例，且 <code>grep tray src-tauri/src/rc/</code> 目前零接线，做了不好验证。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>禁区提醒</h3>
+        <p class="sub">
+          <code>RcA2ConnectSplit.tsx</code>（已删）/ <code>RcA2ConnectAction.tsx</code>（未跟踪）/
+          <code>RcA2DeviceHero.tsx</code> / <code>RcA2DeviceDetail.tsx</code> / <code>RcA2PairExchange.tsx</code> /
+          <code>RemoteComputerA2.module.css</code> / <code>RcA2Workbench.test.tsx</code> 有 ~480 行<b>未提交在途改动</b>。
+          本稿全部避开 A2 连接发起区；甲-④ 的「一级重排」只动会话胶囊，不动 A2。
+        </p>
+      </section>
+    </div>
+
+    <script>
+      /* 甲-⓪ 演示：与 src/hooks/useRcCapsuleReveal.ts 同一条判断表、同一组数值。
+         改这里之前先改 hook，两边不一致就失去对照价值。 */
+      (() => {
+        const screen = document.getElementById("bdScreen");
+        const zone = document.getElementById("bdZone");
+        const cap = zone.querySelector(".capCapsule");
+        const tabsEl = document.getElementById("bdTabs");
+        const bandEl = document.getElementById("bdBand");
+        const hotEl = document.getElementById("bdHot");
+        const readEl = document.getElementById("bdRead");
+        const logEl = document.getElementById("bdLog");
+        const legacyEl = document.getElementById("bdLegacy");
+        const guidesEl = document.getElementById("bdGuides");
+        const replayEl = document.getElementById("bdReplay");
+
+        const AUTO_HIDE_MS = 2500; // 与 hook 同值
+        const INITIAL_SHOW_MS = 15000;
+        const P = {
+          now: { band: 3, dwell: 180, thru: 200, capWhenHidden: false },
+          old: { band: 12, dwell: 0, thru: 0, capWhenHidden: true },
+        };
+        const par = () => (legacyEl.checked ? P.old : P.now);
+
+        let shown = false;
+        let thru = false;
+        let hideT = null;
+        let dwellT = null;
+        let thruT = null;
+        let lastGesture = "-";
+
+        function clearTimer() {
+          if (hideT != null) {
+            clearTimeout(hideT);
+            hideT = null;
+          }
+        }
+        function cancelDwell() {
+          if (dwellT != null) {
+            clearTimeout(dwellT);
+            dwellT = null;
+          }
+        }
+        function scheduleHide(ms) {
+          clearTimer();
+          hideT = setTimeout(() => {
+            hideT = null;
+            if (!cap.matches(":hover")) hideIt();
+          }, ms);
+        }
+        function showIt() {
+          if (!shown) {
+            shown = true;
+            zone.classList.remove("bdde");
+          }
+        }
+        function hideIt() {
+          shown = false;
+          zone.classList.add("bdde");
+        }
+        function revealThrough() {
+          dwellT = null;
+          showIt();
+          scheduleHide(AUTO_HIDE_MS);
+          const t = par().thru;
+          if (t > 0) {
+            thru = true;
+            zone.classList.add("thru");
+            if (thruT != null) clearTimeout(thruT);
+            thruT = setTimeout(() => {
+              thruT = null;
+              thru = false;
+              zone.classList.remove("thru");
+              read();
+            }, t);
+          }
+          log("pop", `顶缘站满 ${par().dwell}ms ⇒ 浮条唤出（${t}ms 内不吃点击）`);
+          read();
+        }
+
+        function gestureOf(overCap, inBand, isShown) {
+          const p = par();
+          if (isShown) {
+            if (overCap) return "hold";
+            return inBand ? "keep" : "idle";
+          }
+          if (p.capWhenHidden && overCap) return "hold"; // 旧参数：隐形胶囊也是目标
+          return inBand ? "dwell" : "idle";
+        }
+
+        function read() {
+          const p = par();
+          readEl.innerHTML =
+            `判定 <b>${lastGesture}</b>` +
+            ` · 浮条 <b>${shown ? "显示" : "隐藏"}</b>` +
+            ` · 穿透 <b>${thru ? "开（点得到远端）" : "关"}</b>` +
+            ` · 热区 <b>${p.band}px</b> · dwell <b>${p.dwell}ms</b> · 穿透窗 <b>${p.thru}ms</b>` +
+            ` · 模式 <b>${legacyEl.checked ? "旧参数（复现缺陷）" : "甲方案（已落地）"}</b>`;
+        }
+        function log(cls, text) {
+          const li = document.createElement("li");
+          if (cls) li.className = cls;
+          li.textContent = text;
+          logEl.prepend(li);
+          while (logEl.children.length > 5) logEl.lastElementChild.remove();
+        }
+
+        screen.addEventListener("mousemove", (e) => {
+          const s = screen.getBoundingClientRect();
+          const r = cap.getBoundingClientRect();
+          // 导视框 .screen 有 1px 描边：热区原点取**内容盒**顶（与真 fakeScreen 无描边同口径），
+          // 否则演示里的 3px 会比应用里的浅 1px。
+          const bt = parseFloat(getComputedStyle(screen).borderTopWidth) || 0;
+          const inStage =
+            e.clientX >= s.left && e.clientX <= s.right && e.clientY >= s.top && e.clientY <= s.bottom;
+          if (!inStage) return;
+          const overCap =
+            e.clientX >= r.left - 4 &&
+            e.clientX <= r.right + 4 &&
+            e.clientY >= r.top - 4 &&
+            e.clientY <= r.bottom + 4;
+          const inBand = e.clientY - (s.top + bt) <= par().band;
+          const g = gestureOf(overCap, inBand, shown);
+          lastGesture = g;
+          switch (g) {
+            case "hold":
+              cancelDwell();
+              showIt();
+              clearTimer();
+              break;
+            case "keep":
+              cancelDwell();
+              scheduleHide(AUTO_HIDE_MS);
+              break;
+            case "dwell":
+              if (dwellT == null) {
+                const d = par().dwell;
+                dwellT = setTimeout(revealThrough, d);
+                if (d === 0) log("pop", "旧参数：一进 12px 热区立刻唤出且马上可点");
+              }
+              break;
+            case "idle":
+              cancelDwell();
+              break;
+          }
+          read();
+        });
+        screen.addEventListener("mouseleave", () => {
+          cancelDwell();
+          lastGesture = "leave";
+          read();
+        });
+
+        /* 远端浏览器标签：点 ✕ 若真的落到标签（浮条没接住）就算成功。 */
+        ["PastePanda 文档", "远端桌面 · 标签二", "内网 OA 首页", "工单系统", "设计稿索引"].forEach(
+          (name, i) => {
+            const tab = document.createElement("div");
+            tab.className = "bd-tab";
+            const label = document.createElement("span");
+            label.textContent = name;
+            const x = document.createElement("button");
+            x.className = "bd-x";
+            x.textContent = "✕";
+            x.title = "关闭标签（这一击是用户真正想发的）";
+            x.addEventListener("click", () => {
+              tab.classList.add("gone");
+              log("remote", `这一击落到远端 ⇒ 关闭「${name}」`);
+            });
+            tab.append(label, x);
+            tabsEl.append(tab);
+          }
+        );
+        zone.querySelectorAll(".capCapsule .btn").forEach((b) => {
+          b.addEventListener("click", () => {
+            log("eaten", `这一击被浮条接住 ⇒「${b.dataset.cap}」`);
+          });
+        });
+
+        guidesEl.addEventListener("change", guides);
+        legacyEl.addEventListener("change", () => {
+          cancelDwell();
+          clearTimer();
+          hideIt();
+          guides();
+          read();
+          log("", "已切换参数：浮条收起，重新用鼠标试一遍同一条路径");
+        });
+        replayEl.addEventListener("click", () => {
+          showIt();
+          scheduleHide(INITIAL_SHOW_MS);
+          log("pop", `首显重播：${INITIAL_SHOW_MS / 1000}s 后淡出（期间顶缘中央被压住是刻意的）`);
+          read();
+        });
+        function guides() {
+          bandEl.classList.toggle("on", guidesEl.checked);
+          hotEl.classList.toggle("on", guidesEl.checked);
+          hotEl.style.height = par().band + "px";
+        }
+        guides();
+        read();
+      })();
+    </script>
+  </body>
+</html>

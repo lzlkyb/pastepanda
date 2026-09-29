@@ -233,7 +233,8 @@ export function RcSessionView({
 
       {/* 会话浮条（方案 A，2026-09-28）：**窗口态与全屏态同一条**——原先全屏换成
           RcFullscreenHotbar，画质/画面/⋯/ⓘ/质量读数五类入口整组丢失。非全屏
-          首显 15s 后隐藏、顶边 12px 热区唤出；全屏同参数，另在右端补最小化/关闭。
+          首显 15s 后隐藏、顶边 3px 热区停 180ms 唤出（甲方案 2026-09-29）；全屏同参数，
+          另在右端补最小化/关闭。
           放在 Stage 之后：同为 sessionWrap 子元素，后写的兄弟盖在画面上。 */}
       <RcSessionCapsule
         session={session}

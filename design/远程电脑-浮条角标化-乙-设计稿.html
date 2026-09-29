@@ -1,0 +1,1364 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>远程电脑 · 浮条角标化（乙方案）· 设计稿</title>
+    <style>
+      /* ====== 主题令牌：抄自 src/theme.css 与上一稿（甲乙丙）的取值 ====== */
+      :root {
+        --bg: #f4f6fa;
+        --card-bg: #fff;
+        --border-color: #e3e6ea;
+        --text-primary: #1f2430;
+        --text-secondary: #4b5566;
+        --text-muted: #7b8698;
+        --accent: #4f46e5;
+        --green: #2f9e5f;
+        --danger: #d64545;
+        --warning: #e0a13a;
+        --orange: #e0803a;
+        --glass: rgba(13, 16, 22, 0.82);
+        --glass-line: rgba(255, 255, 255, 0.12);
+        --glass-txt: rgba(232, 236, 242, 0.95);
+        --glass-dim: rgba(147, 160, 180, 0.95);
+        --chrome-h: 36px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 28px 24px 120px;
+        background: var(--bg);
+        color: var(--text-primary);
+        font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      header {
+        max-width: 1120px;
+        margin: 0 auto 8px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+      }
+      section {
+        margin-top: 40px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 0 0 4px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 26px 0 10px;
+      }
+      .sub {
+        color: var(--text-muted);
+        font-size: 12.5px;
+        margin: 6px 0 18px;
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: start;
+      }
+      .pane {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .pane > .tag {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+      }
+      .note {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin: 8px 0 0;
+      }
+      code {
+        background: rgba(127, 127, 127, 0.12);
+        padding: 1px 4px;
+        border-radius: 4px;
+        font-size: 11.5px;
+        /* 长路径 / 长 prop 名（如 design/远程电脑-…设计稿.html）不能把四列表撑到 min-content 溢出 */
+        overflow-wrap: anywhere;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .flag {
+        display: inline-block;
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 1px 6px;
+        border-radius: 999px;
+        margin-left: 4px;
+      }
+      .flag.new {
+        background: rgba(79, 70, 229, 0.12);
+        color: #3730a3;
+      }
+      .flag.geo {
+        background: rgba(224, 128, 58, 0.16);
+        color: #9a4f16;
+      }
+      .flag.keep {
+        background: rgba(47, 158, 95, 0.14);
+        color: #1d6b41;
+      }
+      .flag.open {
+        background: rgba(214, 69, 69, 0.12);
+        color: #9c2b2b;
+      }
+
+      /* ====== 画面（远端内容）——与上一稿同数值 ====== */
+      .screen {
+        position: relative;
+        height: 236px;
+        border-radius: 8px;
+        overflow: auto hidden;
+        background: radial-gradient(120% 90% at 12% 8%, #2b3a55 0%, #1b2436 45%, #121826 100%);
+        border: 1px solid #26314a;
+      }
+      .screen .winbar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 26px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #c8d2e0;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        gap: 8px;
+      }
+
+      /* ====== 真控件复刻（数值全部来自 RemoteComputer.module.css） ====== */
+      .capZone {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        pointer-events: none;
+        transition:
+          opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+          transform 200ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      .capZone.hid {
+        opacity: 0;
+        transform: translateY(-6px);
+        visibility: hidden;
+      }
+      .capZone.hid .capCapsule {
+        pointer-events: none;
+      }
+      .capAlarm {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(to right, transparent, rgba(214, 69, 69, 0.55), transparent);
+        opacity: 0;
+      }
+      .capAlarm.on {
+        opacity: 1;
+      }
+      .capCapsule {
+        pointer-events: auto;
+        position: relative;
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        padding: 0 8px 0 12px;
+        background: var(--glass);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--glass-line);
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--glass-txt);
+        box-shadow:
+          0 10px 32px rgba(0, 0, 0, 0.45),
+          0 2px 8px rgba(0, 0, 0, 0.3);
+        white-space: nowrap;
+      }
+      .capWho {
+        font-weight: 600;
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pill {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+      }
+      .pill.on {
+        background: rgba(52, 199, 123, 0.16);
+        color: #4ade80;
+        border-color: rgba(52, 199, 123, 0.35);
+      }
+      .pill.bad {
+        background: rgba(214, 69, 69, 0.18);
+        color: #f09595;
+        border-color: rgba(214, 69, 69, 0.4);
+      }
+      .sep {
+        width: 1px;
+        height: 16px;
+        background: var(--glass-line);
+        flex-shrink: 0;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: rgba(232, 236, 242, 0.9);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .btn.on {
+        background: rgba(107, 147, 255, 0.28);
+        color: #fff;
+      }
+      .btn.danger {
+        color: #f09595;
+      }
+      .live {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+        flex-shrink: 0;
+      }
+      .live.bad {
+        background: var(--danger);
+      }
+      .live.off {
+        background: var(--orange);
+      }
+
+      /* 远端浏览器标签栏（遮挡带里那些「本来该点得到」的目标） */
+      .bd-tabs {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 46px;
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        padding: 0 6px 6px;
+        z-index: 1;
+      }
+      .bd-tab {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 7px;
+        border-radius: 7px 7px 0 0;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #c8d2e0;
+        font-size: 10.5px;
+        white-space: nowrap;
+      }
+      .bd-tab.gone {
+        opacity: 0.28;
+        text-decoration: line-through;
+      }
+      .bd-x {
+        width: 15px;
+        height: 15px;
+        border: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.12);
+        color: #e6edf7;
+        font-size: 10px;
+        cursor: pointer;
+      }
+      .bd-x:hover {
+        background: rgba(214, 69, 69, 0.7);
+      }
+      .bd-band {
+        position: absolute;
+        top: 12px;
+        left: 0;
+        right: 0;
+        height: 34px;
+        border-top: 1px dashed rgba(240, 149, 149, 0.7);
+        border-bottom: 1px dashed rgba(240, 149, 149, 0.7);
+        background: rgba(214, 69, 69, 0.1);
+        pointer-events: none;
+        display: none;
+        z-index: 4;
+      }
+      .bd-hot {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: rgba(99, 179, 237, 0.8);
+        pointer-events: none;
+        display: none;
+        z-index: 4;
+      }
+      .bd-band.on,
+      .bd-hot.on {
+        display: block;
+      }
+
+      /* ====== 本稿新增：把手角标（.capHandle） ======
+         数值见 §3 的申报表：可见 24×12 / 命中 40×15 / 顶缘水平居中（可拍板改钳位）。
+         颜色全部复用既有的语义 token：--glass 深玻璃、.live 一族状态色（ask 态 2026-09-29
+         起整枚染橙，不再用外挂徽标——见下面 F 项改口注释）。 */
+      .capHandle {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 24px;
+        height: 12px;
+        padding: 0;
+        border: 1px solid var(--glass-line);
+        border-top: none;
+        border-radius: 0 0 8px 8px; /* 落地值：本稿原写 7px，归到 U5 的 4/8/12 档 */
+        background: var(--glass);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+        cursor: pointer;
+      }
+      .capHandle .knob {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+      }
+      .capHandle.bad {
+        background: rgba(214, 69, 69, 0.9);
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+      .capHandle.bad .knob {
+        background: #fff;
+      }
+      .capHandle.dim {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      /* 🔴 F 项改口（2026-09-29 落地后第二轮）：原先是右上角 `top:-3px` 的 7px 外挂橙点，
+         天生探出把手上缘 3px——全屏态 `.capZone` 在 top:0，那 3px 落在**窗口外**，
+         7px 的点只剩下面 4px，看着像被切一半。本稿的演示区在页面里、没有真窗缘可裁，
+         所以这处稿子暴露不了（教训一类：外挂徽标的偏移量要拿窗口边界判，不是拿稿子判）。
+         现在与 `.capHandle.bad` 同构：整枚染橙，电点转深（橙比红亮，白点在橙底上不到
+         3:1，判据都是「与底色拉开 3:1」）。 */
+      .capHandle.ask {
+        background: rgba(224, 128, 58, 0.92);
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+      .capHandle.ask .knob {
+        background: var(--glass);
+      }
+      /* 命中区外扩（可见 24×12 → 命中 40×15）：伪元素撑，不改视觉尺寸。
+         ⚠️ 9 不是 8：`.capHandle` 有左右各 1px 边框、**上缘无边框**，
+         偏移量相对的是 padding box（22×11），所以 22+9+9=40、11+4=15。
+         🔴 C 项改口（2026-09-29 落地后第二轮）：下探原本 -9px（命中到 y 20，吃进遮挡带
+         y 12–46 共 8px，全屏时正压在远端浏览器标签 ✕ 那一行）——而甲方案整轮修的就是
+         「别在用户往上够标签的路上吃点击」，常驻把手再吃 8px 与它相抵。收到 -4px：
+         遮挡带里只剩 3px，可达性几乎不亏（屏幕顶缘按无限大目标算，窗口态上面还挨着
+         自己的 36px 顶栏）。宽度 -9px 不动。 */
+      .capHandle::after {
+        content: "";
+        position: absolute;
+        left: -9px;
+        right: -9px;
+        top: 0;
+        bottom: -4px;
+      }
+      /* 把手钳位档（RustDesk 折叠钮 35–65% 先例） */
+      .capHandle.clamp {
+        left: 40%;
+      }
+      /* 展开态：把手让位给胶囊（避免两个可点元素叠着抢同一击）。
+         🔴 2026-09-29 落地后自查修正：原先写 `z-index: 4` 是想当然——同级胶囊是
+         `position:relative` + `z-index:auto`（层叠第 8 步），任何正数 z-index 都在
+         它**上面**（第 9 步），4 与 6 一样压着胶囊。真正抢那一击的是 `::after`
+         下探的 9px（命中到 y 20，胶囊从 y 12 起），所以让位改在命中盒上。 */
+      .capHandle.behind::after {
+        bottom: 0;
+      }
+      /* 焦点环＝真值：globals.css:103 的零特异性兜底就是 `2px solid var(--accent)` + offset 2，
+         §6 承诺把手常驻 Tab 环，这里必须画得出来（`--accent` 是演示页的假值，逐主题见 theme.css）。 */
+      .capHandle:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* 演示页控件 */
+      .demo-ctl {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .demo-ctl button {
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .demo-ctl button.on {
+        background: rgba(79, 70, 229, 0.1);
+        border-color: var(--accent);
+        color: #3730a3;
+      }
+      .demo-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px 18px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      .demo-row label {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        cursor: pointer;
+      }
+      .read {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        margin-top: 10px;
+        font-size: 11.5px;
+        font-family: ui-monospace, Menlo, monospace;
+        color: var(--text-muted);
+      }
+      .read b {
+        color: var(--accent);
+      }
+      .log {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 11.5px;
+        min-height: 62px;
+      }
+      .log li {
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: rgba(127, 127, 127, 0.1);
+        color: var(--text-secondary);
+      }
+      .log li.remote {
+        color: #1d6b41;
+      }
+      .log li.eaten {
+        color: #9c2b2b;
+      }
+      .log li.pop {
+        color: #3730a3;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+        background: #fff;
+      }
+      th,
+      td {
+        border: 1px solid var(--border-color);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #f7f8fb;
+        font-size: 12px;
+      }
+      td.def {
+        color: #3730a3;
+        font-weight: 600;
+      }
+      .src {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>远程电脑 · 浮条角标化（乙方案）· 设计稿</h1>
+      <p class="sub">
+        配套文档：<code>docs/远程电脑-交互审计与方案-2026-09-29.md</code> §8（甲方案四条已落地）、
+        §9（本稿的实测自检、两处自我修正、探针边界与 6 条待拍板）。<b>本稿已落地</b>
+        （2026-09-29，§8 那 6 条全按本稿默认执行；落地记录与对稿偏差见配套文档 §10）。
+        本稿所有几何、配色、控件外观均抄自 <code>RemoteComputer.module.css</code> 与
+        <code>theme.css</code> 的真实值；新控件（把手角标）的尺寸与色值在 §3 逐条申报。
+      </p>
+      <div class="legend">
+        <span><span class="flag new">新增</span> 本稿新提的控件</span>
+        <span><span class="flag geo">几何</span> 有数值改动，须照稿对照点验后再动</span>
+        <span><span class="flag keep">保留</span> 甲方案已落地，本稿不改</span>
+        <span><span class="flag open">待拍板</span> 有取舍，本稿给默认建议</span>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <section>
+        <h2>0. 甲落地后还剩下什么（乙要解决的三件事）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>残留</th>
+              <th>甲之后还剩多少</th>
+              <th>乙的对策</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>R1</td>
+              <td><b>收起态没有任何出口</b></td>
+              <td>
+                2.5s 淡出后画面上一条 UI 都不剩。想知道「连着没 / 画质 / 结束会话」必须先靠
+                <b>顶缘 3px + 站住 180ms</b> 或 <code>F10</code>——第一条对远端内容仍有残留风险，
+                第二条没有可发现性（没人知道 F10）。
+              </td>
+              <td>顶缘正中留一枚 24×12 的<b>把手角标</b>：常驻、可点、点一下才展开胶囊。</td>
+            </tr>
+            <tr>
+              <td>R2</td>
+              <td><b>顶缘仍有一段「经过即可能触发」</b></td>
+              <td>3px × 180ms dwell 已经把误触压到很低，但机制还在（本稿提供开关演示）。</td>
+              <td>
+                把手出现后，hover 唤出从「唯一出口」降级成「加速器」，可以关掉；
+                关掉后顶缘<b>零触发</b>，与 RustDesk 新版同构（<span class="flag open">待拍板 ①</span>）。
+              </td>
+            </tr>
+            <tr>
+              <td>R3</td>
+              <td><b>异常只剩一条 3px 微光</b></td>
+              <td>
+                链路异常时靠 <code>.capAlarm</code>（3px 红渐变）+ 浮条锁显；但
+                <code>.capAlarm</code> 在 <code>.capZone</code> 里，胶囊一旦收起就一起被
+                <code>visibility:hidden</code> 带走（规则 15.1 的同源问题）。
+              </td>
+              <td>把手就是那个<b>不被卸载的常驻载体</b>：绿点=正常，整枚染红=链路异常，整枚染橙=有等你处理的事。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>1. 可玩对照（先按默认档试：把手 + hover 保留）</h2>
+        <p class="sub">
+          画面里是真交互：点顶缘把手展开胶囊，2.5s 无交互自己收起；点远端标签上的 ✕
+          走浏览器真实命中测试。下方按钮模拟四种状态。
+        </p>
+        <div class="pane">
+          <div class="tag">控端全屏态 · 乙档（把手常驻 + 胶囊按需展开）</div>
+          <div class="screen" id="dScreen">
+            <div class="bd-band" id="dBand"></div>
+            <div class="bd-hot" id="dHot"></div>
+            <div class="bd-tabs" id="dTabs"></div>
+            <button class="capHandle" id="dHandle" aria-expanded="false" aria-controls="dZone">
+              <span class="knob" aria-hidden="true"></span>
+            </button>
+            <!-- 🔴 微光条**刻意放在 .capZone 之外**：甲的 `.capAlarm` 在 `.capZone` 里，
+                 收起时随 `visibility:hidden` + `translateY(-6px)` 一起消失（规则 15.1）。
+                 乙把它上提到与把手同层，异常在收起态也看得见。 -->
+            <div class="capAlarm" id="dAlarm"></div>
+            <div class="capZone hid" id="dZone">
+              <div class="capCapsule" id="dCap">
+                <span class="live" id="dDot"></span>
+                <span class="capWho">DESKTOP-7K2</span>
+                <span class="pill on" id="dPill">可控</span>
+                <span class="sep"></span>
+                <button class="btn" data-cap="画质 自动">画质 自动</button>
+                <button class="btn" data-cap="画面 全屏">画面 全屏</button>
+                <span class="sep"></span>
+                <button class="btn" data-cap="适应">适应</button>
+                <button class="btn on" data-cap="1:1">1:1</button>
+                <button class="btn" data-cap="填充">填充</button>
+                <button class="btn" data-cap="ⓘ 连接详情">ⓘ</button>
+                <button class="btn" data-cap="⋯ 更多">⋯</button>
+                <button class="btn danger" data-cap="结束会话">✕</button>
+              </div>
+            </div>
+          </div>
+          <div class="demo-row">
+            <label><input type="checkbox" id="dHover" checked /> 保留顶缘 hover 唤出（甲的四条；关掉＝顶缘零触发）</label>
+            <label><input type="checkbox" id="dClamp" /> 把手钳位到 40%（RustDesk 折叠钮档）</label>
+            <label><input type="checkbox" id="dGuides" checked /> 标出遮挡带(12–46)与热区</label>
+          </div>
+          <div class="demo-ctl">
+            <button data-s="normal" class="on">正常（绿点）</button>
+            <button data-s="bad">链路异常（把手染红 + 微光条）</button>
+            <button data-s="ask">有等你处理的（整枚染橙）</button>
+            <button data-s="lock">指针锁定（把手隐形）</button>
+            <button data-s="initial">重播首显 15s</button>
+          </div>
+          <div class="read" id="dRead"></div>
+          <ul class="log" id="dLog"></ul>
+        </div>
+        <p class="note">
+          遮挡面积实测（收起态）：
+          <span id="dArea"></span>
+        </p>
+      </section>
+
+      <section>
+        <h2>2. 现状对照：甲档（无把手）与乙档（有把手）</h2>
+        <div class="cols">
+          <div class="pane">
+            <div class="tag">甲 · 已落地（收起态零 UI）</div>
+            <div class="screen" style="height: 150px">
+              <div class="bd-band on" style="opacity: 0.5"></div>
+              <div class="bd-hot on" style="opacity: 0.5"></div>
+              <div class="capZone hid">
+                <div class="capCapsule">
+                  <span class="live"></span>
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill on">可控</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <button class="btn danger">✕</button>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              想看一眼状态：<b>顶缘 3px + 180ms</b> 或 <code>F10</code>。异常时微光条在，
+              但胶囊收起后它也跟着被卸载。
+            </p>
+          </div>
+          <div class="pane">
+            <div class="tag">乙 · 本稿（收起态剩一枚把手）</div>
+            <div class="screen" style="height: 150px">
+              <div class="bd-band on" style="opacity: 0.5"></div>
+              <div class="bd-hot on" style="opacity: 0.5"></div>
+              <button class="capHandle"><span class="knob"></span></button>
+              <div class="capZone hid">
+                <div class="capCapsule">
+                  <span class="live"></span>
+                  <span class="capWho">DESKTOP-7K2</span>
+                  <span class="pill on">可控</span>
+                  <span class="sep"></span>
+                  <button class="btn">画质 自动</button>
+                  <button class="btn danger">✕</button>
+                </div>
+              </div>
+            </div>
+            <p class="note">
+              账要两面算。<b>比甲之前好</b>：顶缘被吃掉的像素从「一整条 570×34」降到「24×12 一小格」，
+              而且这一格在 Chrome 标签行里正落在<b>空白区</b>（标签是靠左排的）——见 §4 的位置论证。
+              <b>但比甲差</b>：甲落地后收起态遮挡是 <b>0 px²</b>，乙净增 <b>288 px²</b> 的常驻可点区，
+              顶缘 y 0–12 也不再是「经过即无事」，它变成一枚控件。这笔账买回来的是
+              <b>收起态有出口、异常不随胶囊被卸载</b>（§0 的 R1/R3）——值不值由你拍板，本稿不替你判定。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>3. 新增控件申报（几何 / 色值 / 命中区）<span class="flag geo">几何</span></h2>
+        <table>
+          <thead>
+            <tr>
+              <th>量</th>
+              <th>本稿取值</th>
+              <th>为什么是这个数</th>
+              <th>来源</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>把手可见尺寸</td>
+              <td><b>24 × 12 px</b></td>
+              <td>
+                刚好容下一枚 8px 状态点 + 上下各 2px；12px 高 ≤ 胶囊的 <code>margin-top</code>，
+                于是把手落在<b>遮挡带之外</b>（y 0–12，遮挡带是 12–46），展开胶囊时两者不打架。
+              </td>
+              <td>新提</td>
+            </tr>
+            <tr>
+              <td>命中区</td>
+              <td>40 × 15 px（<code>::after</code> 左右各 -9、下 -4；实测见 §1 演示区读数）</td>
+              <td>贴屏幕顶缘的目标在 Fitts 里高度算无限，宽度补到 40 就够点；仍小于 24×24 的 WCAG 目标档，用 <code>F10</code> 等价键盘操作兜（AA 的 equivalent-control 例外）。
+                  <b>2026-09-29 C 项改口</b>：下探从 -9 收到 -4，吃进遮挡带（y 12–46）由 8px 降到 3px——
+                  那 8px 全屏时正压在远端标签 ✕ 那一行，与甲方案「别在往上够标签的路上吃点击」相抵。</td>
+              <td>新提</td>
+            </tr>
+            <tr>
+              <td>位置</td>
+              <td><code>top: 0; left: 50%; translateX(-50%)</code></td>
+              <td>正中避开 Chrome 标签（靠左排）与「新建标签 +」（右移），也避开 Windows 窗口三键（最右）。</td>
+              <td>新提</td>
+            </tr>
+            <tr>
+              <td>底色 / 描边 / 模糊</td>
+              <td><code>rgba(13,16,22,.82)</code> + <code>blur(14px)</code> + 描边 <code>rgba(255,255,255,.12)</code>（顶边不描）</td>
+              <td>与 <code>.capCapsule</code> 同一块深玻璃，不新造视觉语言；顶边不描边因为贴住屏幕边缘。</td>
+              <td>真值</td>
+            </tr>
+            <tr>
+              <td>圆角 / 投影</td>
+              <td>下沿 <code>0 0 8px 8px</code>（本稿原写 7px，落地归到 U5 的 4/8/12 档）；<code>0 4px 12px rgba(0,0,0,.32)</code></td>
+              <td>「从顶缘拉出的一小格」的形状，读起来是把手而不是圆点。</td>
+              <td>新提</td>
+            </tr>
+            <tr>
+              <td>状态色</td>
+              <td>绿 <code>var(--green,#2f9e5f)</code> / 异常整枚 <code>rgba(214,69,69,.9)</code> / 待处理整枚 <code>rgba(224,128,58,.92)</code></td>
+              <td>沿用 <code>.live</code> / <code>.liveBad</code> 现成语义色，不新增色。<b>2026-09-29 F 项改口</b>：
+                  原先「待处理」是右上角 <code>var(--warning)</code> 的 7px 外挂橙点（<code>top:-3px</code>），
+                  在全屏态（<code>.capZone</code> 贴 top:0）被窗口上缘裁掉 3px、只剩半个点；
+                  本稿演示区在页面里没有真窗缘，这处暴露不了。改成与异常态同构的整枚染色后，
+                  四档 idle/bad/ask/dim 各一块整色，没有任何可被窗缘裁的元素。
+                  电点在两档里方向相反（红底转白、橙底转深），判据都是与底色拉开 3:1（WCAG 1.4.11）。</td>
+              <td>真值</td>
+            </tr>
+            <tr>
+              <td>层级</td>
+              <td><code>z-index: 6</code>（胶囊 <code>.capZone</code> 是 5）</td>
+              <td>展开时的让位**不在层叠上**（同级胶囊是 <code>z-index:auto</code>，正数一律压不过），
+                  而是把 <code>::after</code> 下探收回（<code>.capHandleBehind::after{bottom:0}</code>），
+                  命中盒从 40×15 收到 40×12，不再抢胶囊上沿那一击。</td>
+              <td>真值+新</td>
+            </tr>
+            <tr>
+              <td>指针锁定态</td>
+              <td><code>opacity:0 + visibility:hidden + pointer-events:none</code></td>
+              <td>锁指针时本地根本没有光标，常驻把手只会白白占像素（与甲里「锁指针不唤出」同口径）。</td>
+              <td>沿用现规则</td>
+            </tr>
+            <tr>
+              <td>焦点环</td>
+              <td><code>outline: 2px solid var(--accent); outline-offset: 2px</code>（<code>:focus-visible</code>）</td>
+              <td>不新造环：这就是 <code>globals.css:103</code> 那条零特异性兜底给所有 <code>button</code> 的画法。把手常驻 Tab 环（§6），所以必须看得见焦点。</td>
+              <td>真值</td>
+            </tr>
+            <tr>
+              <td>胶囊几何</td>
+              <td>不动（<code>margin-top: 12px</code> / <code>height: 34px</code> / <code>--rc-session-chrome-h: 36px</code>）</td>
+              <td>2026-09-28 方案 A 已拍板（文档 §5 不可重开）。</td>
+              <td><span class="flag keep">保留</span></td>
+            </tr>
+            <tr>
+              <td>甲的四条（3px / 隐形胶囊不算目标 / 180ms / 200ms 穿透）</td>
+              <td>不删</td>
+              <td>把手只是<b>补出口</b>，不是替代 hover。是否保留 hover 见待拍板 ①。</td>
+              <td><span class="flag keep">保留</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>4. 为什么是「顶缘正中」而不是角落</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>候选位</th>
+              <th>会撞上什么</th>
+              <th>结论</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>顶缘正中（本稿默认）</td>
+              <td>
+                Chrome/Edge 标签靠左排、新建标签「+」在标签组右端、窗口三键在最右——正中通常是
+                <b>标签栏空白</b>；y 0–12 又高于遮挡带起点 12，不压任何按钮。
+              </td>
+              <td class="def">建议</td>
+            </tr>
+            <tr>
+              <td>顶缘 35–65% 随机钳位</td>
+              <td>躲开正中，但每次会话位置会跳，肌肉记忆建立不起来；正是 RustDesk #3842 的处理对象（它钳位是为了<b>避开折叠钮自己</b>，不是为让路给内容）。</td>
+              <td>作为演示开关保留，不作默认</td>
+            </tr>
+            <tr>
+              <td>右上角</td>
+              <td>Windows 的「关闭 ✕」就在这（最大化窗口 12–16px 宽、贴顶缘）——把遮挡缺陷搬了个家。</td>
+              <td>否</td>
+            </tr>
+            <tr>
+              <td>右下角 / 底部中央</td>
+              <td>右下角是 Windows 的「显示桌面」热角；底部中央是被控端任务栏（开始按钮/搜索框）。</td>
+              <td>否</td>
+            </tr>
+            <tr>
+              <td>画面外（窗口标题栏 / 系统托盘）</td>
+              <td>窗口态没有自定义标题栏（文档 §6.7），托盘红环六家无先例且 <code>grep tray src-tauri/src/rc/</code> 零接线。</td>
+              <td>属于丙档，不在乙里做</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>5. 状态表（把手要承接什么）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>会话状态</th>
+              <th>把手外观</th>
+              <th>胶囊</th>
+              <th>现在的等价物</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>已连接、正常</td>
+              <td>深玻璃 + 绿点</td>
+              <td>收起</td>
+              <td>无（甲之后顶缘零 UI）</td>
+            </tr>
+            <tr>
+              <td>链路异常 / 未连通</td>
+              <td>整枚染红 + <code>.capAlarm</code> 微光条<b>常显</b>（收起态也在）</td>
+              <td>自动展开一次 → 2.5s 后收起（<b>不再永久锁显</b>，见 §8 待拍板⑥）</td>
+              <td>现在微光条随胶囊一起被卸载 → 乙把它挂到把手上（新 prop <code>alarmOnHandle</code>）</td>
+            </tr>
+            <tr>
+              <td>有等你处理的（文件请求 / 对端改画质 / 扬声器被静音）</td>
+              <td>整枚染橙（外挂橙点 2026-09-29 已退役：全屏态会被窗缘裁，见 §3 状态色行）</td>
+              <td>自动展开一次（沿用甲-②的 <code>prevNoticeSig</code> 判据）</td>
+              <td>现在只有胶囊上的 <code>.ctrlBadge</code>，收起态看不见</td>
+            </tr>
+            <tr>
+              <td>指针锁定</td>
+              <td>隐形（不占像素、不可点）</td>
+              <td>收起</td>
+              <td>沿用「锁指针不唤出」</td>
+            </tr>
+            <tr>
+              <td>菜单 / ⋯ / ⓘ 详情展开中</td>
+              <td>收起命中盒下探（40×15 → 40×12，让出胶囊上沿）</td>
+              <td>锁显</td>
+              <td>沿用 <code>menusOpen / moreOpen / detailOpen</code></td>
+            </tr>
+            <tr>
+              <td>会话结束</td>
+              <td colspan="3">整块卸载（把手随 <code>RcSessionCapsule</code> 一起消失，不留残影）</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          规则 15.1 的对账：把手是<b>常驻可见</b>的触发口，所以它的结果（展开/收起/状态）也常驻可见；
+          「结果出口」（甲-② 的失败提示）仍挂在胶囊里，收起态只以<b>整枚橙色</b>提示「有事，点开看」，
+          不在把手上写字——一格里写不下也不该写。
+        </p>
+      </section>
+
+      <section>
+        <h2>6. 键盘与可发现性</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>路径</th>
+              <th>行为</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>鼠标</td>
+              <td>点把手 ⇄ 展开/收起胶囊</td>
+              <td>把手是 <code>&lt;button aria-expanded&gt;</code>，不是 div</td>
+            </tr>
+            <tr>
+              <td><code>F10</code></td>
+              <td>同义切换（已落地）</td>
+              <td>把手给它提供「可见的落点」，解决甲之后 F10 没人知道的问题</td>
+            </tr>
+            <tr>
+              <td><code>Tab</code></td>
+              <td>把手<b>常驻在 Tab 环</b>（不随胶囊的 <code>tabIndex=-1</code> 纪律）</td>
+              <td>隐藏态三重纪律只约束胶囊本体</td>
+            </tr>
+            <tr>
+              <td><code>Esc</code></td>
+              <td>胶囊展开时先收胶囊（<code>registerRcPanel</code> 现成口径），收起后 <code>Esc</code> 才轮到结束会话</td>
+              <td>两级取消，规则 17.6</td>
+            </tr>
+            <tr>
+              <td>首显 15s</td>
+              <td>照旧展开 15s，收口时<b>收成把手</b>而不是收进零</td>
+              <td>把手因此永远有「第一次见到它」的教学窗口</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>7. 改动面（按现架构，不碰 A2 禁区）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>文件</th>
+              <th>改动</th>
+              <th>行数风险</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/components/rc/RcCapsuleHandle.tsx</code>（新）</td>
+              <td>把手本体 + 状态外观映射（绿/红/橙/隐形）</td>
+              <td>~60 行，另起文件避免把 <code>RcSessionCapsule</code> 推过 300 红线</td>
+            </tr>
+            <tr>
+              <td><code>src/hooks/useRcCapsuleReveal.ts</code>（333 行）</td>
+              <td>
+                ① 出 <code>handleOn</code>（常驻）与 <code>expanded</code>（=现有 <code>shown</code>）两层；
+                ② 甲的 hover 四条包进 <code>hoverReveal</code> 开关；③ 微光条条件从「随胶囊」改挂把手。
+                纯判断继续收在 <code>rcRevealGestureOf</code> 一类导出函数里（规则 11.1）。
+              </td>
+              <td>.ts 不受 300 行红线，但要在守卫单测里同步钉住「把手常驻 ≠ 胶囊展开」</td>
+            </tr>
+            <tr>
+              <td><code>src/components/rc/RcSessionCapsule.tsx</code>（265 行）</td>
+              <td>挂 <code>&lt;RcCapsuleHandle/&gt;</code>；把 <code>capAlarm</code> 上提到把手层</td>
+              <td>约 +10 行，仍在红线内</td>
+            </tr>
+            <tr>
+              <td><code>RemoteComputer.module.css</code></td>
+              <td><code>.capHandle</code> 一族（含 <code>::after</code> 命中外扩、<code>.bad</code>、<code>.ask</code>、<code>.dim</code>）</td>
+              <td>~40 行，深玻璃/语义色全复用</td>
+            </tr>
+            <tr>
+              <td>测试</td>
+              <td>
+                守卫：把手存在且 <code>aria-expanded</code> 跟随展开态；收起态下「顶缘零触发」档不注册
+                mousemove；锁指针时把手不可点。行为：点把手展开 / 2.5s 收起 / 染橙态。
+              </td>
+              <td>沿用 <code>RcSessionCapsule.test.tsx</code> 的几何桩手法</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          <b>禁区提醒</b>：<code>RemoteComputerA2.module.css</code> / <code>RcA2*</code> 仍有 ~480 行未提交在途改动，
+          本稿一律不碰；A2 连接区不变。
+        </p>
+      </section>
+
+      <section>
+        <h2>8. 拍板结果（六条全按本稿默认执行，2026-09-29）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>问题</th>
+              <th>本稿建议</th>
+              <th>理由</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>①</td>
+              <td>保留顶缘 hover 唤出吗</td>
+              <td class="def">保留（默认开），设置里可关成「顶缘零触发」</td>
+              <td>
+                关掉才是「和 RustDesk 新版同构」，但会让所有习惯鼠标的人多一次点击；有把手之后 hover
+                只是加速器，不再是唯一出口——风险面比甲之前小得多。
+              </td>
+            </tr>
+            <tr>
+              <td>②</td>
+              <td>把手尺寸 24×12 / 命中 40×15（下探已在落地后自查从 -9 收到 -4，见 §3 C 项）</td>
+              <td class="def">先按此值落地，真机看手感再定</td>
+              <td>12px 高正好在遮挡带之上；再小就点不动，再大就吃回内容区。</td>
+            </tr>
+            <tr>
+              <td>③</td>
+              <td>微光条挂把手还是随胶囊</td>
+              <td class="def">挂把手（收起态也看得见）</td>
+              <td>现状胶囊一收起，异常只剩一个看不见的灯——规则 15.1 的直接违反。</td>
+            </tr>
+            <tr>
+              <td>④</td>
+              <td>被控端（别人控我）要不要同款把手</td>
+              <td class="def">不要</td>
+              <td>
+                被控端胶囊 <code>.ctrlPill</code> 挂在页面上、不压远端画面，遮挡问题不存在；
+                它的常驻提示已经在 <code>RcOverlay</code> 里解决了。搬过去只会多一处要维护的状态。
+              </td>
+            </tr>
+            <tr>
+              <td>⑤</td>
+              <td>把手能不能拖</td>
+              <td class="def">不做</td>
+              <td>正中避得开所有热点，收益小；要拖就得存位置（配置写盘）+ 处理窗口态/全屏态两套基准，成本不成比例。</td>
+            </tr>
+            <tr>
+              <td>⑥</td>
+              <td>链路异常还要不要<b>永久锁显整条</b>（甲现状 <code>linkLocked</code>）</td>
+              <td class="def">不要，改成展开一次 + 把手常驻染红</td>
+              <td>
+                永久锁显等于让 12–46 那条遮挡带<b>一直到会话结束都在</b>——正是甲要修的原点。
+                乙有了不被卸载的把手（染红 + 微光条），提示职责已经满足，不必再拿遮挡换告知。
+                ⚠️ 这条改的是 2026-09-23 那轮拍过的「异常锁显」，所以要单独点头；演示区按默认档走。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>9. 对标出处（本节结论的来源，逐条可查）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>做法</th>
+              <th>谁在用</th>
+              <th>出处</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>收起后不留 hover 区，改显式控件</td>
+              <td>RustDesk 新版（维护者：新 UI 没这问题因为它没有 hover）</td>
+              <td class="src">rustdesk#1842（文档 §6.5）</td>
+            </tr>
+            <tr>
+              <td>浮动条折叠钮横向钳位</td>
+              <td>RustDesk（#3842 → PR #3881，参照 TeamViewer 浮动条）</td>
+              <td class="src">文档 §6.5</td>
+            </tr>
+            <tr>
+              <td>会话工具条常驻、可钉住（不靠 hover）</td>
+              <td>TeamViewer Remote Support session toolbar</td>
+              <td class="src">teamviewer.com KB「remote-session-toolbar」</td>
+            </tr>
+            <tr>
+              <td>边缘目标按无限大算，最易命中</td>
+              <td>Fitts 定律（屏幕边缘/角落）</td>
+              <td class="src">文档 §6.5 引 MacKenzie</td>
+            </tr>
+            <tr>
+              <td>常驻小角标 + 一键终止，而不是整条横幅</td>
+              <td>Parsec 角落 HUD / Chrome RDP 连接条 / AnyDesk 边框</td>
+              <td class="src">文档 §6.2</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          与上一稿的接续：甲的四条见 <code>design/远程电脑-交互审计整改-甲乙丙-设计稿.html</code> §甲-⓪（已落地版），
+          本稿的把手<b>叠在甲之上</b>，不是把它换掉。
+        </p>
+      </section>
+    </div>
+
+    <script>
+      (() => {
+        const scr = document.getElementById("dScreen");
+        const zone = document.getElementById("dZone");
+        const cap = document.getElementById("dCap");
+        const handle = document.getElementById("dHandle");
+        const alarm = document.getElementById("dAlarm");
+        const dot = document.getElementById("dDot");
+        const pill = document.getElementById("dPill");
+        const bandEl = document.getElementById("dBand");
+        const hotEl = document.getElementById("dHot");
+        const tabsEl = document.getElementById("dTabs");
+        const readEl = document.getElementById("dRead");
+        const logEl = document.getElementById("dLog");
+        const areaEl = document.getElementById("dArea");
+        const hoverEl = document.getElementById("dHover");
+        const clampEl = document.getElementById("dClamp");
+        const guidesEl = document.getElementById("dGuides");
+
+        /* 与 src/hooks/useRcCapsuleReveal.ts 同值（甲已落地） */
+        const BAND_PX = 3;
+        const DWELL_MS = 180;
+        const THROUGH_MS = 200;
+        const AUTO_HIDE_MS = 2500;
+        const INITIAL_SHOW_MS = 15000;
+
+        let expanded = false;
+        let thru = false;
+        let locked = false;
+        let state = "normal";
+        let hideT = null;
+        let dwellT = null;
+        let thruT = null;
+        let gesture = "-";
+
+        const clearTimer = () => hideT != null && (clearTimeout(hideT), (hideT = null));
+        const cancelDwell = () =>
+          dwellT != null && (clearTimeout(dwellT), (dwellT = null));
+        const scheduleHide = (ms) => {
+          if (locked) return;
+          clearTimer();
+          hideT = setTimeout(() => collapse("无交互 2.5s 自动收起"), ms);
+        };
+        function expand(why) {
+          if (hideT != null) {
+            clearTimeout(hideT);
+            hideT = null;
+          }
+          if (!expanded) log("pop", `${why} ⇒ 胶囊展开`);
+          expanded = true;
+          zone.classList.remove("hid");
+          handle.classList.add("behind");
+          handle.setAttribute("aria-expanded", "true");
+          paint();
+        }
+        function collapse(why) {
+          cancelDwell();
+          clearTimer();
+          expanded = false;
+          zone.classList.add("hid");
+          handle.classList.remove("behind");
+          handle.setAttribute("aria-expanded", "false");
+          if (why) log("", `胶囊收起 ⇒ 只剩把手（状态仍在这格上：${why}）`);
+          paint();
+        }
+        function revealThrough() {
+          dwellT = null;
+          expand("顶缘站满 180ms（hover 唤出）");
+          thru = true;
+          zone.classList.add("thru");
+          if (thruT != null) clearTimeout(thruT);
+          thruT = setTimeout(() => {
+            thruT = null;
+            thru = false;
+            zone.classList.remove("thru");
+            paint();
+          }, THROUGH_MS);
+          scheduleHide(AUTO_HIDE_MS);
+        }
+        function gestureOf(overCap, inBand) {
+          if (expanded) {
+            if (overCap) return "hold";
+            return inBand ? "keep" : "idle";
+          }
+          return inBand ? "dwell" : "idle";
+        }
+
+        scr.addEventListener("mousemove", (e) => {
+          if (!hoverEl.checked) return; // 待拍板①的「关掉 hover」档：顶缘零触发
+          const s = scr.getBoundingClientRect();
+          const r = cap.getBoundingClientRect();
+          const bt = parseFloat(getComputedStyle(scr).borderTopWidth) || 0;
+          const inStage =
+            e.clientX >= s.left && e.clientX <= s.right && e.clientY >= s.top && e.clientY <= s.bottom;
+          if (!inStage) return;
+          const overCap =
+            e.clientX >= r.left - 4 &&
+            e.clientX <= r.right + 4 &&
+            e.clientY >= r.top - 4 &&
+            e.clientY <= r.bottom + 4;
+          const inBand = e.clientY - (s.top + bt) <= BAND_PX;
+          gesture = gestureOf(overCap, inBand);
+          switch (gesture) {
+            case "hold":
+              cancelDwell();
+              expandOnce();
+              clearTimer();
+              break;
+            case "keep":
+              cancelDwell();
+              scheduleHide(AUTO_HIDE_MS);
+              break;
+            case "dwell":
+              if (dwellT == null) dwellT = setTimeout(revealThrough, DWELL_MS);
+              break;
+            case "idle":
+              cancelDwell();
+              break;
+          }
+          paint();
+        });
+        scr.addEventListener("mouseleave", () => {
+          cancelDwell();
+          gesture = "leave";
+          paint();
+        });
+        function expandOnce() {
+          if (!expanded) expand("悬停胶囊本体");
+        }
+
+        handle.addEventListener("click", () => {
+          if (expanded) collapse("点了把手");
+          else {
+            expand("点了把手（乙的主入口）");
+            scheduleHide(AUTO_HIDE_MS);
+          }
+        });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "F10") {
+            expanded ? collapse("F10") : (expand("F10"), scheduleHide(AUTO_HIDE_MS));
+          }
+          if (e.key === "Escape" && expanded) {
+            e.preventDefault();
+            collapse("Esc 两级取消：先收胶囊");
+          }
+        });
+
+        ["PastePanda 文档", "远端桌面 · 标签二", "内网 OA 首页", "工单系统"].forEach((name) => {
+          const tab = document.createElement("div");
+          tab.className = "bd-tab";
+          const label = document.createElement("span");
+          label.textContent = name;
+          const x = document.createElement("button");
+          x.className = "bd-x";
+          x.textContent = "✕";
+          x.addEventListener("click", () => {
+            tab.classList.add("gone");
+            log("remote", `这一击落到远端 ⇒ 关闭「${name}」`);
+          });
+          tab.append(label, x);
+          tabsEl.append(tab);
+        });
+        cap.querySelectorAll(".btn").forEach((b) => {
+          b.addEventListener("click", () => log("eaten", `这一击被浮条接住 ⇒「${b.dataset.cap}」`));
+        });
+
+        document.querySelectorAll(".demo-ctl button").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".demo-ctl button").forEach((o) => o.classList.remove("on"));
+            btn.classList.add("on");
+            const s = btn.dataset.s;
+            state = s === "initial" ? "normal" : s;
+            if (s === "bad") {
+              /* 乙的关键取舍：异常**不再永久锁显整条**。把手常驻 + 染红 + 微光条常显已经
+                 承担了的 R3，永久锁显反而让顶缘 12–46 一直是遮挡带（回到甲要修的原点）。
+                 默认档＝自动展开一次提示、2.5s 后收起，见 §8 待拍板⑥。 */
+              locked = false;
+              expand("链路异常 ⇒ 展开一次提示");
+              scheduleHide(AUTO_HIDE_MS);
+            } else if (s === "lock") {
+              locked = false;
+              collapse("指针锁定 ⇒ 把手隐形");
+            } else {
+              locked = false;
+              if (s === "initial") {
+                expand("首显重播");
+                scheduleHide(INITIAL_SHOW_MS);
+              } else if (s === "ask") {
+                log("pop", "有等你处理的（文件请求）⇒ 自动展开一次，整枚橙色留在把手上");
+                expand("自动展开一次");
+                scheduleHide(AUTO_HIDE_MS);
+              }
+            }
+            paint();
+          });
+        });
+        hoverEl.addEventListener("change", () => {
+          cancelDwell();
+          log("", hoverEl.checked ? "顶缘 hover 唤出：开（3px + 180ms + 200ms 穿透）" : "顶缘 hover 唤出：关 ⇒ 顶缘零触发，只剩把手与 F10");
+          paint();
+        });
+        clampEl.addEventListener("change", () => {
+          handle.classList.toggle("clamp", clampEl.checked);
+          paint();
+        });
+        guidesEl.addEventListener("change", guides);
+
+        function guides() {
+          bandEl.classList.toggle("on", guidesEl.checked);
+          hotEl.classList.toggle("on", guidesEl.checked && hoverEl.checked);
+        }
+        function paint() {
+          handle.classList.toggle("bad", state === "bad");
+          handle.classList.toggle("ask", state === "ask");
+          handle.classList.toggle("dim", state === "lock");
+          dot.classList.toggle("bad", state === "bad");
+          alarm.classList.toggle("on", state === "bad");
+          pill.textContent = state === "bad" ? "链路异常" : "可控";
+          pill.className = "pill " + (state === "bad" ? "bad" : "on");
+          const hr = handle.getBoundingClientRect();
+          const live = state !== "lock" && !expanded;
+          /* 遮挡面积只按**可见盒**记账：`::after` 的外扩是命中区，
+             但它叠在可见盒已经吃过的那条带上（顶缘 y 0–20），不额外遮像素。
+             命中值直接读 `::after` 的计算样式，不自己加减（边框/padding box 会骗人）。 */
+          const ca = getComputedStyle(handle, "::after");
+          const hitW = Math.round(parseFloat(ca.width));
+          const hitH = Math.round(parseFloat(ca.height));
+          const visW = Math.round(hr.width);
+          const visH = Math.round(hr.height);
+          readEl.innerHTML =
+            `把手 <b>${state === "lock" ? "隐形（锁指针）" : expanded ? "退到胶囊后" : "常驻"}</b>` +
+            ` · 胶囊 <b>${expanded ? "展开" : "收起"}</b>` +
+            ` · 判定 <b>${gesture}</b>` +
+            ` · 穿透 <b>${thru ? "开" : "关"}</b>` +
+            ` · hover 唤出 <b>${hoverEl.checked ? "开" : "关"}</b>` +
+            ` · 收起态顶缘被吃 <b>${live ? visW + "×" + visH : "—"}</b>`;
+          areaEl.textContent = live
+            ? `遮挡＝可见盒 ${visW}×${visH} = ${visW * visH} px²` +
+              `（命中区实测 ${hitW}×${hitH}，比可见盒宽 ${hitW - visW}px / 高 ${hitH - visH}px，但不多遮像素）；` +
+              `甲之前的整条胶囊是 ${Math.round(cap.getBoundingClientRect().width)}×34 = ${Math.round(cap.getBoundingClientRect().width * 34)} px²。` +
+              `⚠️ 甲的收起态遮挡是 0 px²，乙的 ${visW * visH} px² 是净增，换来的是收起态有了出口。`
+            : "展开态由胶囊承担遮挡，与甲一致（收起后回到上面那一格）。";
+          guides();
+        }
+        function log(cls, text) {
+          const li = document.createElement("li");
+          if (cls) li.className = cls;
+          li.textContent = text;
+          logEl.prepend(li);
+          while (logEl.children.length > 5) logEl.lastElementChild.remove();
+        }
+        paint();
+      })();
+    </script>
+  </body>
+</html>
