@@ -986,7 +986,7 @@
       </p>
       <p>
         <b>落地状态（2026-09-30）</b>：甲-①②③④、乙-①②③④⑤⑥、丙-①②③ <b>全部已落地</b>
-        （<b>未提交、未升版</b>；落地记录与对稿偏差申报见配套文档 §12，尤其 §12.7）。
+        （<b>已提交 <code>8aadac5</code> + <code>a83553d</code>、未升版</b>；落地记录与对稿偏差申报见配套文档 §12，尤其 §12.7）。
         <b>甲-⑤（一级项重排）已落成「条件键」口径</b>：⋯ 的分级按共识收了口，「重连入口提到一级」
         也做了——链路异常时光标级常驻的「立即重连」条件键（<code>RcCapsuleAlerts.tsx:102-112</code>，
         由 <code>rcReconnectPrimaryOf</code> 判定）＋断连遮罩里的重连，二级那行同时保留。
@@ -1516,7 +1516,7 @@
 
         <h3>丙-① 入站请求：置顶确认浮层（对标 §6.1，不是系统通知）</h3>
         <p class="sub">
-          <b>已落地（2026-09-30，未提交）</b>：窗口 <code>rc-ask</code> =
+          <b>已落地（2026-09-30，已提交 <code>8aadac5</code>）</b>：窗口 <code>rc-ask</code> =
           <code>src-tauri/src/rc/ask_pop.rs</code> + <code>rcask.html</code> /
           <code>src/rcask-main.tsx</code> + <code>RcAskPop.tsx</code>。
           三点对齐：置顶/不抢焦点全在 Rust；「只同意看屏幕」走 <code>approve_inbound_as(.., Some(View))</code>
@@ -1616,7 +1616,7 @@
 
         <h3>丙-② 常驻隐私指示（对标 §6.2：六家无水印，正解是小面积常驻 + 一键终止）</h3>
         <p class="sub">
-          <b>已落地（2026-09-30，未提交）</b>：角标 = <code>RcPrivPill.tsx</code>（同一块
+          <b>已落地（2026-09-30，已提交 <code>8aadac5</code>）</b>：角标 = <code>RcPrivPill.tsx</code>（同一块
           <code>rc-ask</code> 窗口的 <code>capsule</code> 形态，几何 264×28 在 Rust 侧），
           措辞与计时在 <code>src/lib/rcPrivPill.ts</code>。待拍板③ 按建议走：判据是会话相位
           <code>InboundActive</code>，<b>免确认设备同样亮</b>；待拍板⑥ 按建议「不做」，
@@ -1710,7 +1710,7 @@
 
         <h3>丙-③ 暂停对方观看（本稿原名「隐私黑屏」，RustDesk privacy-mode 同款）</h3>
         <p class="sub">
-          <b>已落地（2026-09-30，未提交）</b>：机制按用户拍板走「停止推流」那一档。本稿那句「对方仍在看，但看到的是黑」在两种机制下
+          <b>已落地（2026-09-30，已提交 <code>8aadac5</code>）</b>：机制按用户拍板走「停止推流」那一档。本稿那句「对方仍在看，但看到的是黑」在两种机制下
           含义正好相反，选定如下：
           ① 每屏一块黑色置顶窗——不调 <code>SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)</code>
           时画面源（DXGI 桌面复制）会把黑窗一并抓走 ⇒ 对方看到的也是黑；调了它 ⇒ 对方看到正常画面，
