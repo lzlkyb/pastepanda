@@ -426,8 +426,8 @@ code {
     <tr><th>旧节（现状 9 节）</th><th>新去向</th><th>依据</th></tr>
     <tr>
       <td class="from">通用（19 行）<span class="tag split">拆</span></td>
-      <td class="to">外观 / 复制与粘贴 / 窗口与编辑器 / 数据管理</td>
-      <td>六个互不相干的家族挤在一节里。观感行→外观；捕获粘贴规则→复制与粘贴；窗口+编辑器+.md→窗口与编辑器；<b>自动清理 + 笔记回收站→数据管理</b>，和「清理过期记录／保护常用内容／深度清理」并到一起（<code>preserve_valued_content</code> 直接改变 <code>auto_cleanup_days</code> 的效果，现在隔了 6 节）</td>
+      <td class="to">外观 / 复制与粘贴 / 系统与编辑 / 数据管理</td>
+      <td>六个互不相干的家族挤在一节里。观感行→外观；捕获粘贴规则→复制与粘贴；窗口+编辑器+.md→系统与编辑；<b>自动清理 + 笔记回收站→数据管理</b>，和「清理过期记录／保护常用内容／深度清理」并到一起（<code>preserve_valued_content</code> 直接改变 <code>auto_cleanup_days</code> 的效果，现在隔了 6 节）</td>
     </tr>
     <tr>
       <td class="from">外观（2 行）</td>
@@ -436,7 +436,7 @@ code {
     </tr>
     <tr>
       <td class="from">快捷键（18 行）<span class="tag split">拆</span></td>
-      <td class="to">快捷键（8 行，纯热键）+ 截图与栈 + 转笔记模板→窗口与编辑器</td>
+      <td class="to">快捷键（8 行，纯热键）+ 截图与栈 + 转笔记模板→系统与编辑</td>
       <td>节名要兑现。截图行为 5 行由 <code>HotkeySection.tsx:273</code> 挂进来、栈 5 行写在 <code>:112–170</code>、转笔记模板在 <code>:278</code>，都不是热键</td>
     </tr>
     <tr>
@@ -508,7 +508,7 @@ code {
   </div>
   <p class="note">
     上方法线就是真组件：<code>.sSection</code> 吸顶、卡片由 <code>.sSection ~ :not(.sSection):not(.lanPanel)</code> 拼合、开关 44×26、
-    右列 <code>min-width:72px</code> 对齐。带「小节」标题的节（截图与栈／窗口与编辑器／同步与互联）在滚动时菜单高亮<b>保持在该节主标题上</b>，与现状「转笔记模板」一致。
+    右列 <code>min-width:72px</code> 对齐。带「小节」标题的节（截图与栈／系统与编辑／同步与互联）在滚动时菜单高亮<b>保持在该节主标题上</b>，与现状「转笔记模板」一致。
   </p>
   <p class="note">
     实测本稿时顺手发现一条<b>现状就有</b>的搜索怪味（不是本方案引入）：搜「外观」这类<b>分区名</b>时，整节会展开（D4 设计如此），
@@ -569,7 +569,15 @@ code {
   </ul>
   <p class="note" id="landed">落地记录：已实施（2026-09-29），详见下面四条。</p>
   <ul class="flat">
-    <li><b>实际顺序就是本页 §2 的数据数组</b>：外观 → 复制与粘贴 → 窗口与编辑器 → 快捷键 → 截图与栈 → 灵动岛 → 数据管理 → 同步与互联 → 数据统计。「通用」分区消失，七个旧分区变九个。</li>
+    <li><b>实际顺序就是本页 §2 的数据数组</b>：外观 → 复制与粘贴 → 系统与编辑 → 快捷键 → 截图与栈 → 灵动岛 → 数据管理 → 同步与互联 → 数据统计。「通用」分区消失，七个旧分区变九个。</li>
+    <li><b>落地后改过一次节名</b>：「窗口与编辑器」→「<b>系统与编辑</b>」。原因是量出来的硬约束，不是审美——
+      <code>.settingsNav</code> 是 <code>flex: 0 0 20% / min-width: 128px</code>，扣掉左边框 3 + 左右内边距 28 + 图标间隙 8 + 图标 16
+      （14px 字号的 emoji 前进宽度）按盒模型算只剩 <b>72px</b>，真浏览器在最窄档量到的是 <b>70px</b> 给文字，而 12.5px 字号下六个汉字实测 <b>75px</b>（Chromium canvas 度量）⇒
+      <code>.settingsNavLabel</code> 的 <code>text-overflow: ellipsis</code> 会把它显示成「窗口与编辑…」。
+      五个字 63px 正好放得下，所以<b>节名上限按 5 个汉字算</b>，已在 <code>settingsNavLabels.test.ts</code> 里加宽度用例钉住
+      （jsdom 没字体度量，按汉字 12.5px／其余 0.6em 估）。名字选「系统与编辑」而不是「窗口编辑器」：
+      置顶／失焦隐藏／开机自启是<b>应用与系统</b>的事（这组代码在 HEAD 里就叫 <code>WindowSystemRows</code>），
+      而窗口行为被「编辑器」三个字盖住的话，找它的人只能靠搜索。</li>
     <li><b>与本页的两处实现偏差</b>（都不影响观感）：① 本页 §4 写的 <code>ShotStackSection.tsx</code> 实际拆成 <code>CaptureSection.tsx</code>（截图 5 行 + 小节）+ <code>StackRows.tsx</code>（「粘贴栈」小节标题与它的 4 行），因为截图那 5 行本来就是 <code>ScreenshotRows</code>，再套一层没意义；② 新增了一张本页没提的归属表 <code>SETTINGS_SUBSECTIONS</code>（<code>lan/kb/rc → 小节标题</code>），<code>App.tsx</code> 的 <code>section:"rc"</code> 与 <code>LanSyncCap</code> 的 <code>openSettingsTab("general","lan")</code> 两个外部锚点因此<b>一行没改</b>，跳转靠小节标题文字落点。</li>
     <li><b>§4 那条必改项已改并有测试钉着</b>：<code>useSettingsSearch</code> 第二遍现在是「不搜索全显示；搜索时有可见行<b>或</b>紧邻可见小节标题」。存量单测 <code>settingsSearchSectionHeads.test.tsx</code> 逐条复现了那个 bug（搜「共享」时主标题必须可见），改回旧算法它就红。</li>
     <li><b>补了 3 条守卫（都是「不报错、只是功能没了」的静默失效）</b>：<code>settingsNavLabels.test.ts</code> 加钉「右栅渲染顺序 == <code>SETTINGS_SECTIONS</code> 逐位一致」；新建 <code>settingsSectionsFlatTree.test.tsx</code> 钉「分区组件必须返回片段」（含一条反向用例，证明包一层 <code>&lt;div&gt;</code> 真会被判出来）；新建 <code>settingsAliasKeysExist.test.ts</code> 钉「别名表的键还能在设置页源码里找到原文」——真代码里那玩意只有 dev 构建的 <code>console.warn</code>，WebView 控制台没人看。</li>
@@ -600,7 +608,7 @@ const SECTIONS = [
     { kind: "input", icon: "🚫", hue: "privacy", label: "应用排除名单", desc: "来自这些应用的复制内容不会被记录（逗号分隔）", val: "KeePass, 1Password, Bitwarden", moved: "原·通用" },
     { kind: "toggle", icon: "🔁", hue: "paste", label: "依次粘贴循环", desc: "到达末尾后从头开始", on: true, moved: "原·通用" },
   ]},
-  { label: "窗口与编辑器", icon: "🪟", rows: [
+  { label: "系统与编辑", icon: "🪟", rows: [
     { kind: "toggle", icon: "📌", hue: "system", label: "窗口置顶", desc: "始终显示在其他窗口之上", on: false, moved: "原·通用" },
     { kind: "toggle", icon: "👁️", hue: "system", label: "失焦自动隐藏", desc: "窗口失去焦点时隐藏到托盘", on: true, moved: "原·通用" },
     { kind: "toggle", icon: "🚀", hue: "system", label: "开机自启", desc: "Windows 启动时自动运行", on: true, moved: "原·通用" },
@@ -826,7 +834,7 @@ function scrollToLabel(label, smooth) {
 /* 小节标题 → 所属主节：合并/加小节之后，外部跳转锚点落在小节的**标题文字**上，
    但菜单高亮必须回到主节（NAV 里没有小节这一项）。真实现里同一张表要进 useSettingsNav。 */
 const SUB_OWNERS = {
-  转笔记模板: "窗口与编辑器",
+  转笔记模板: "系统与编辑",
   粘贴栈: "截图与栈",
   剪贴板同步: "同步与互联",
   知识库同步: "同步与互联",

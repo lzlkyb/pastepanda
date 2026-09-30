@@ -10,6 +10,12 @@ import type { SettingsTabName } from "@/lib/openSettings";
  * 搜索的 D4 （分区名命中则整节展开）靠的就是那段文字，两边对不上会让「搜分区名」行为不一致。
  * scroll-spy 同样靠标题文字反查菜单项。
  *
+ * ❗ **label 不能长过 5 个汉字**：`.settingsNav` 是 `flex: 0 0 20% / min-width: 128px`，
+ * 扣掉左边框 3 + 内边距 28 + 间隙 8 + 图标实占 16px（14px 字号的 emoji 前进宽度）后，
+ * 最窄档只剩 **70px** 给文字，而 12.5px 字号下六个汉字实测 75px ⇒ `.settingsNavLabel` 的 `text-overflow: ellipsis`
+ * 会把「窗口与编辑器」截成「窗口与编辑…」（五个 63px 放得下）。这条由
+ * `settingsNavLabels.test.ts` 的宽度用例钉着——jsdom 没有字体度量，所以按 12.5px/字估。
+ *
  * 🔴 **icon 一律写带 U+FE0F 的 emoji 形式**（`🏖️` 而不是 `🏝`）：全局字体栈
  * （globals.css）里没有 Segoe UI Emoji，Windows 对缺 VS16 的码位走「文本呈现」= 单色字形，
  * 于是彩色图标变黑白（实测：`🏝`/`🗓`/`⏱`/`✂`/`🛡`/`👁`/`ℹ` 裸码位 chroma 0，补 VS16 后 200+）。
@@ -18,7 +24,7 @@ import type { SettingsTabName } from "@/lib/openSettings";
 export const SETTINGS_SECTIONS = [
   { key: "appearance", label: "外观",         icon: "🎨" },
   { key: "copy",       label: "复制与粘贴",   icon: "📋" },
-  { key: "window",     label: "窗口与编辑器", icon: "🪟" },
+  { key: "window",     label: "系统与编辑",   icon: "🪟" },
   { key: "hotkey",     label: "快捷键",       icon: "⌨️" },
   { key: "capture",    label: "截图与栈",     icon: "📸" },
   { key: "island",     label: "灵动岛",       icon: "🏖️" },
@@ -34,7 +40,7 @@ export type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]["key"];
  *
  * 小节标题用的是同一个 `sSection` 类（视觉与吸顶行为一致），但**不进左菜单**：
  * 合并分区后的「剪贴板同步 / 知识库同步 / 远程电脑」、截图与栈里的「粘贴栈」、
- * 窗口与编辑器里的「转笔记模板」。
+ * 「系统与编辑」里的「转笔记模板」。
  *
  * 这张表管一件事：外部拿**旧分区 key** 跳进来时（`openSettingsTab("general", "rc")`），
  * 菜单亮所属主节、右栅停在**小节标题**上。没有它的话 `rc` 这个锚点会退回第一节。

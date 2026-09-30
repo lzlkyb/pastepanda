@@ -12,7 +12,7 @@ interface HotkeySectionProps {
 
 // 🔴 必须返回片段，原因同 StatsSection。
 // 2026-09-29 分区重排：这一节只留**热键本身**。原先混在下面的栈行为、截图行为、
-// 转笔记模板分别搬进了「截图与栈」和「窗口与编辑器」——它们配的是行为，不是按键。
+// 转笔记模板分别搬进了「截图与栈」和「系统与编辑」——它们配的是行为，不是按键。
 export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
   const { toast } = useToast();
   return (

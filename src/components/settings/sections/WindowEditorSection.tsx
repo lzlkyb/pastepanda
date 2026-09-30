@@ -1,5 +1,6 @@
 /**
- * 设置页「窗口与编辑器」分区（2026-09-29 分区重排 方案A）。
+ * 设置页「系统与编辑」分区（2026-09-29 分区重排 方案A；原名「窗口与编辑器」，6 字会被
+ * 左菜单截成省略号，见 `meta.ts` 的宽度约束）。
  *
  * 原先散在「通用」的后半段（WindowSystemRows）里，与窗口无关的时间线/动画/依次粘贴混在一起；
  * 本文件只留「窗口行为 + Markdown 编辑器 + .md 关联」，末尾接「转笔记模板」小节
@@ -53,7 +54,7 @@ export function WindowEditorSection({
 
   return (
     <>
-      <div className={styles.sSection}>窗口与编辑器</div>
+      <div className={styles.sSection}>系统与编辑</div>
       <ToggleRow icon="📌" hue="system" label="窗口置顶" desc="始终显示在其他窗口之上" value={config.always_on_top}
         tooltip="适合频繁粘贴时使用，窗口始终可见"
         onChange={async (v) => {

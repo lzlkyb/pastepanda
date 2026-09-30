@@ -91,7 +91,33 @@ function renderOrderTitles(): string[] {
   return out;
 }
 
+/**
+ * 最窄一档左菜单留给**文字**的宽度（px）。
+ * `.settingsNav` 是 `flex: 0 0 20% / min-width: 128px`，再扣掉
+ * 左边框 3 + 左右内边距 28 + 图标间隙 8 + 图标 16（14px 字号的 emoji 前进宽度）⇒ 72，
+ * 真浏览器按同一套盒模型量到的是 **70**，这里取量到的那个。
+ */
+const NAV_TEXT_PX = 70;
+const GLYPH_PX = 12.5; // `.settingsNavItem` 的 font-size
+
+/** jsdom 没有字体度量，按「汉字满宽、其余 0.6em」估（Chromium 实测：六个汉字 75px）。 */
+function navLabelWidth(label: string): number {
+  let em = 0;
+  for (const ch of label) em += /[\u3000-\u9fff\uff00-\uffef]/.test(ch) ? 1 : 0.6;
+  return Math.round(em * GLYPH_PX);
+}
+
 describe("设置页左菜单与分区标题", () => {
+  it("菜单文字在最窄档放得下（超了会被截成省略号）", () => {
+    // 2026-09-29 的实际故障：「窗口与编辑器」六个字 75px > 70px，
+    // 窄窗口下显示成「窗口与编辑…」——不报错，只是名字被吃掉一个字。
+    const tooLong = settingsNavItems(false)
+      .map((n) => n.label)
+      .filter((label) => navLabelWidth(label) > NAV_TEXT_PX);
+    expect(tooLong).toEqual([]);
+  });
+
+
   it("每个菜单 label 都能在右栅找到逐字同名的标题", () => {
     const titles = sectionTitles();
     // 先确认抓到了东西，否则正则一改这条测试就空跑也不报错。
