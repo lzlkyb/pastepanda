@@ -89,6 +89,12 @@
 .rcDevBtn {
   flex-shrink: 0;
 }
+/* 子表是面板的唯一内容：`.lanDeviceList` 自带的 8px 下边距会在 lanPanel 内
+   多出一截，让上下 padding 不对称（原来它外面还有一层 rcBlock，那 8px 是段间距）。
+   双写类名抬一档权重：跨 module 的同类名靠打包顺序定胜负，不能赌。 */
+.rcDevListFlush.rcDevListFlush {
+  margin-bottom: 0;
+}
 /* —— 远程电脑 · RcSection（D11：同一批内联样式收口）—— */
 .rcFpLine {
   font-size: 12px;
@@ -126,4 +132,94 @@
   font-size: 12px;
   color: var(--danger, #d64545);
   margin-top: 8px;
+}
+
+/* —— 远程电脑 · 四个折叠组（方案甲：原地减法 + 分组折叠）——
+   🔴 为什么每条都要把 .rcGroupHead 写两遍：组头同时挂着 Settings.module.css 的
+   .sSection（sticky 顶栏、::before 那 12px 遮缝条、uppercase + 字距），而 CSS module
+   跨文件选不到别人的类名，两边都是单类选择器就只能靠源码顺序撞运气。写两遍把
+   特异度抬到 0-2-0，稳定压过 .sSection 的 0-1-0，不依赖打包顺序。
+   组头**不是**小节标题：它不入左菜单（findNavEl 判的是 textContent 全等，
+   组名 + 摘要永远拼不出任何菜单 label），但必须是 .settingsSections 的直接子节点。 */
+.rcGroupHead.rcGroupHead {
+  position: static;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11.5px; /* ui-rule-ok: 与同页 `.mcpGroupSummary` 逐字同值；归到 11px 会让远程电脑的组头比隔壁 MCP 组头小半号 */
+  color: var(--text-secondary);
+}
+.rcGroupHead.rcGroupHead::before {
+  content: none;
+}
+.rcGroupHead.rcGroupHead:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 6%, var(--section-bg));
+}
+.rcGroupHead.rcGroupHead:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* 收起的组头就是一张卡的全部底部，得自己把圆角和阴影收回来（展开时底部圆角归最后一行） */
+.rcGroupHead[aria-expanded="false"] {
+  border-radius: 12px;
+  box-shadow: var(--glass-card-elev, 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07));
+}
+.rcGroupHead[aria-expanded="true"] {
+  border-radius: 12px 12px 0 0;
+}
+/* 折叠记号沿用 MCP 那套 ▸/▾（.mcpAdvanced > summary），同一个产品里别出现第二种折叠长法 */
+.rcGroupChev {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.rcGroupChev::before {
+  content: "▸";
+}
+.rcGroupHead[aria-expanded="true"] .rcGroupChev::before {
+  content: "▾";
+}
+.rcGroupName {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+/* 摘要只在收起态显示：展开时组里每行都写着现状，摘要是重复信息。
+   安全类计数（生效码 / 固定密码 / 待确认）靠它才能在收起态也看得见（规则 15.1）。 */
+.rcGroupHead[aria-expanded="true"] .rcGroupSum {
+  display: none;
+}
+.rcGroupSum {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+.rcGroupSum b {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+/* 计数胶囊同 .mcpGroupCount 的取值：数字是状态不是正文，得有底色才不会被读成文案 */
+.rcGroupCount {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--hover);
+  font-size: 10.5px; /* ui-rule-ok: 与 .mcpGroupCount 取值逐字一致，同一页里两枚计数胶囊不能差半号 */
+  line-height: 1.6;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }

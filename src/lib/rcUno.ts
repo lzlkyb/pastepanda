@@ -62,6 +62,22 @@ export function unoPassCharsOk(pass: string): boolean {
 }
 
 /**
+ * 限时无人值守码：「X 小时后过期 / X 分钟后过期」的文案（取最近到期的那个码）。
+ *
+ * 原先这段是 `RcSection` 里的一段 IIFE，搬成函数有两个原因：设置页的组头摘要
+ * 也要用同一个口径（收起态得看得见还有几个码生效），而这段判据（整小时向下取整、
+ * 不足一小时也至少报 1 分钟）值得被无环境测试钉住。
+ * `now` 显式传入而不是内部读 `Date`——同 `rcHistory` 的判据风格。
+ * 空列表返回 `null`：由调用方决定「这半句不写」，不在这里编出「0 分钟后过期」。
+ */
+export function unoExpiryText(expiresMs: readonly number[], now: number): string | null {
+  if (expiresMs.length === 0) return null;
+  const left = Math.max(0, Math.max(...expiresMs) - now);
+  if (left >= 3_600_000) return `${Math.floor(left / 3_600_000)} 小时后过期`;
+  return `${Math.max(1, Math.floor(left / 60_000))} 分钟后过期`;
+}
+
+/**
  * iroh node_id 的形状：52 位 base32。大小写都收（粘贴容错），
  * 真正的解析在被控端拨号时（`bad_node_id`）。
  */

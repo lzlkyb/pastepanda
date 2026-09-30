@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>远程电脑设置 · 分组折叠（方案甲）设计稿</title>
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/styles/globals.css" />
+<link rel="stylesheet" href="../src/styles/buttons.css" />
+<link rel="stylesheet" href="../src/components/HelpTooltip.module.css" />
+<link rel="stylesheet" href="../src/components/Settings.module.css" />
+<link rel="stylesheet" href="../src/components/settings/RcSettings.module.css" />
+<link rel="stylesheet" href="../src/components/rc/RemoteComputer.module.css" />
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   🔴 本稿**不再手抄任何组件样式**——上面 6 个 <link> 直接吃项目真实样式表。
+   CSS Modules 的类名在选择器里就是字面量（`.sRow`），所以可以原样引；
+   颜色/圆角/阴影全部来自 `src/styles/theme.css` 的令牌，
+   右上角主题切换条换哪一档，两栏就跟着换哪一档（和真 app 同一份变量）。
+   这个 <style> 里只剩两类东西：① 文档自己的外壳；② 方案甲要**新增**的 4 个类。
+
+   页脚 JS 量的是 link 真样式之后的真实渲染高度，不靠估。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── ① 文档外壳 ── */
+/* globals.css 把 body 定成 overflow:hidden（应用窗口不需要滚动条）、user-select:none
+   （桌面 app 里防误选），文档页两样都要反过来 */
+html, body { overflow: auto; }
+body {
+  padding: 24px 28px 80px; background: var(--app-bg); color: var(--text-primary);
+  user-select: text; -webkit-user-select: text; line-height: 1.65;
+}
+h1 { font-size: 21px; margin: 0 0 6px; }
+h2 { font-size: 15px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+h3 { font-size: 13px; margin: 18px 0 6px; }
+p { margin: 6px 0; font-size: 12.5px; }
+code { background: color-mix(in srgb, var(--accent) 8%, var(--card-bg)); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; font-family: ui-monospace, Consolas, monospace; }
+.note { font-size: 12px; color: var(--text-secondary); background: var(--card-bg); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 0 8px 8px 0; margin: 10px 0; border: 1px solid var(--border-color); border-left-width: 3px; }
+.warn { border-left-color: var(--orange, #f59e0b); }
+.bad  { border-left-color: var(--danger); }
+.good { border-left-color: var(--green); }
+.flat { font-size: 12.5px; padding-left: 20px; margin: 6px 0; }
+.flat li { margin: 4px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 10px 0; }
+th, td { border: 1px solid var(--border-color); padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: var(--section-bg); font-weight: 600; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-strong, var(--accent)); }
+.pill.def { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+.frames { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.frameBox { width: 550px; }
+.frameCap { font-size: 12px; font-weight: 700; margin-bottom: 6px; color: var(--text-secondary); }
+.frameCap span { font-weight: 400; color: var(--text-muted); }
+.docBar { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; }
+.docBar button { font: inherit; font-size: 11.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); cursor: pointer; }
+.docBar button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+/* 窗口外壳是文档自己的（真 app 由 .settingsView 撑满窗口，这里要的是 550px 定宽 + 620px 定高） */
+.win {
+  width: 550px; background: var(--dialog-bg); border: 1px solid var(--border-color);
+  border-radius: 12px; overflow: hidden; box-shadow: 0 8px 28px rgba(15, 23, 42, .10);
+}
+.win .settingsViewBody { height: 620px; }
+
+/* ── ② 方案甲新增的类（落地时全部进 `RcSettings.module.css`）──
+   只有 5 个：`.rcGroupHead / .rcGroupChev / .rcGroupName / .rcGroupSum / .rcGroupCount`。
+   其余一律复用真类：卡片外壳用 `.lanPanel`（含它现成的 :has(+ .sSection) / :last-child 收口）、
+   折叠记号用 MCP 组头那套「▸/▾」、计数胶囊照 `.mcpGroupCount` 的值、
+   等宽串用 `.rcFpValue`、变灰禁用用 `.rcPanelOff`+`.rcGated`、档位菜单用 `RcDropdown`。
+
+   🔴 组头必须写成 `.sSection.rcGroupHead`（两个类）而不是单类，
+   因为要覆盖真 `.sSection` 的三条规则，而 CSS Modules 的打包顺序不保证谁在后：
+   ① `position: sticky` ⇒ 4 个组头全会吸顶，滚起来互相压；
+   ② `::before` 那条 12px 假遮缝条（给吸顶头挡缝用的）⇒ 组头不吸顶后它没有意义，
+      改用真 `margin-top` 造间距，记号另有 `.rcGroupChev` 来画；
+   ③ `text-transform: uppercase` + `letter-spacing: .5px` ⇒ 分区名是全大写小标，
+      组名是句子，不能跟着拉字距。 */
+.sSection.rcGroupHead {
+  position: static; margin-top: 12px;
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  user-select: none; text-transform: none; letter-spacing: 0; font-size: 11.5px; color: var(--text-secondary);
+}
+.sSection.rcGroupHead::before { content: none; }
+.sSection.rcGroupHead:hover { color: var(--text-primary); background: color-mix(in srgb, var(--accent) 6%, var(--section-bg)); }
+.sSection.rcGroupHead:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 折叠记号：与 `.mcpAdvanced > summary` / `.mcpGroupSummary` 同一个「▸/▾」，
+   同一个设置页里出现两种折叠记号就是风格跑偏。 */
+.rcGroupChev { flex-shrink: 0; color: var(--text-muted); }
+.rcGroupChev::before { content: "▸"; }
+.sSection.rcGroupHead[aria-expanded="true"] .rcGroupChev::before { content: "▾"; }
+/* 卡片在组头自己身上闭合：收起＝一整张卡，展开＝卡头 */
+.rcGroupHead[aria-expanded="false"] {
+  border-radius: 12px;
+  box-shadow: var(--glass-card-elev, 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.07));
+}
+.rcGroupHead[aria-expanded="true"] { border-radius: 12px 12px 0 0; }
+.rcGroupName { flex-shrink: 0; font-weight: 700; }
+/* 🔴 展开态**不显示**摘要：组内每行本来就写着现状，摘要这时是重复信息；
+   收起时它才退回来当"一眼看清现状"的线索。
+   副作用正好是想要的：展开的组头 = 一条普通分区标题（只有 ▾ + 名字），
+   和设置页其余分区长得一模一样，这是"风格一致"最省事的一条路。 */
+.sSection.rcGroupHead[aria-expanded="true"] .rcGroupSum { display: none; }
+/* 摘要：右贴一行现状，太长截断——它是线索不是正文。
+   必须是 block 才能让 text-overflow: ellipsis 生效（inline-flex 上这条不工作）。 */
+.rcGroupSum {
+  flex: 1; min-width: 0; display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 400; color: var(--text-muted); font-size: 11px; text-align: right;
+}
+.rcGroupSum b { color: var(--text-secondary); font-weight: 600; }
+/* 计数胶囊：照 `.mcpGroupCount`（Mcp.module.css:556）的值，不换第二套圆角/底色 */
+.rcGroupCount {
+  display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 999px;
+  background: var(--hover); font-size: 10.5px; line-height: 1.6; text-align: center;
+  font-weight: 600; color: var(--text-secondary); font-variant-numeric: tabular-nums;
+}
+/* 🔴 真实现是「收起 ⇒ 根本不渲染这些行」（AiSection 的折叠即不挂载范式），
+   本稿用 `.sRow[hidden]` 模拟同一个结果。但 hidden 单独用**没效果**：
+   UA 样式表的 `[hidden]{display:none}` 优先级低于作者样式，
+   而 `.sRow{display:flex}` 是作者规则 ⇒ 行照样显示。所以这里必须显式补一条。
+   （落地时同理：组内行别指望 hidden，要么不渲染，要么带这条规则。） */
+.sRow[hidden], .lanPanel[hidden], [data-g][hidden] { display: none; }
+
+</style>
+</head>
+<body>
+
+<h1>远程电脑设置区 · 分组折叠（方案甲）</h1>
+<p>设计稿基线：真实组件源码 <code>RcSection.tsx</code>(307 行) / <code>RcAllowPanel.tsx</code>(265 行) / <code>RcSettings.module.css</code> / <code>Settings.module.css</code>。<b>左栏是现状忠实复刻，右栏是拟改后</b>；两栏同为 550px 主窗、同一套卡片 CSS。页脚自动量高，不靠估。</p>
+
+<div class="docBar">主题（<code>&lt;link&gt;</code> 的是真 <code>theme.css</code>，换档＝整页跟着换，和真 app 同一批变量）：
+  <button class="on" data-theme-btn="ocean">经典白</button>
+  <button data-theme-btn="ocean-dark">深海</button>
+  <button data-theme-btn="midnight">午夜</button>
+  <button data-theme-btn="forest">森林</button>
+  <button data-theme-btn="blossom">美乐蒂</button>
+  <button data-theme-btn="dawn">晨曦</button>
+</div>
+
+<div class="note">
+  <b>本稿要解决的三件事，按重要性排：</b>
+  <ol class="flat" style="margin:6px 0">
+    <li><b>一行只剩 72–96px 放控件，平铺档位装不下。</b>（这组数字是 link 真样式之后现场量的，不是推算）主窗 550 → 右栏滚动容器 <code>.settingsContent</code> 实测 <b>420px</b> 宽 → <code>.sRow</code> 扣左右内边距 32 ＝ 388 → 彩砖 40 ＋ 间隙 12 → label/desc 实占 <b>189–213</b> → 右控件列（<code>.sRow &gt; :last-child</code>，<code>min-width:72</code>）只剩 <b>72–96px</b>。而画质档表 <code>RC_QUALITIES</code> 有 <b>11 个档</b>（能力门控后可见 6–9 个），现状那排满宽 <code>rcChoiceBtn</code> 折在 349px 的面板里实测 <b>3 行</b>（页脚 JS 数的是真 <code>getBoundingClientRect().top</code>），「画面范围」4 档刚好 1 行。<b>结论：≥5 档的选项在设置页只能是「当前值 + 菜单」，2 档才配平铺。</b></li>
+    <li><b>现在这块搜索搜不动。</b><code>lanPanel</code> 整块是右栅容器的<b>一个</b> child，而 <code>rowLabel()</code> 只认 <code>.sRowLabel</code>、<code>highlightSearchKw()</code> 只标 <code>.sRowLabel/.sRowDesc</code> ⇒ 搜「固定密码」会显示「命中 1 项」但<b>没有任何底纹</b>，<code>scrollIntoView</code> 只滚到整块顶部。改成真 <code>.sRow</code> 行即可一并修好（右栏的搜索框可以真打字试）。</li>
+    <li><b>体量。</b>现状整块 <b>2701px ≈ 4.4 屏</b>（视口 620）、<b>42 个可点元素</b>、首屏只露出 4 个：8 个组标题 + 10 段 11–12px 说明文 + 6 个满宽按钮 + 最多 20 行会话记录，全在一层里。折叠只解决"看不见"，<b>减法</b>才解决"一次要处理多少决策"——所以本稿是 丙(减法) 打底 + 甲(折叠) 收口。<br><span style="color:var(--danger)">改口径要更正一句：</span>减法省的是<b>决策数</b>（可点元素 42→25、首屏可见 4→7），省高度主要<b>不靠它</b>——行式布局本身只少 6%（排版税被"说明文下沉 + 满宽按钮缩小"抵掉了，见 §2 末行）；<b>−75% 全是折叠给的</b>（2701→669px）。上一版稿子写「行式反而 +21%」是手抄 CSS 抄出来的假数，link 真样式后翻案，详见 §5 ⑦。</li>
+  </ol>
+</div>
+
+<h2>§1 并排对照（可交互）</h2>
+<div class="frames">
+  <!-- ══════════ 现状 ══════════ -->
+  <div class="frameBox">
+    <div class="frameCap">A · 现状 <span>忠实复刻：lanPanel 外壳 + rcJoinBlock + rcBtnRow + histItem</span></div>
+    <div class="win">
+      <div class="settingsViewHeader">
+        <button class="settingsViewBack">← 返回</button>
+        <div class="settingsViewTitle">⚙️ 设置</div>
+        <div class="settingsSearchBox"><span class="settingsSearchIcon">🔍</span><input class="settingsSearchInput" placeholder="搜索设置  Ctrl+F（本栏不响应）" /><span class="settingsSearchCount"></span></div>
+      </div>
+      <div class="settingsViewBody">
+        <div class="settingsNav">
+          <div class="settingsNavItem"><span class="settingsNavIcon">🎨</span><span class="settingsNavLabel">外观</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">📋</span><span class="settingsNavLabel">复制与粘贴</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">🪟</span><span class="settingsNavLabel">系统与编辑</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">⌨️</span><span class="settingsNavLabel">快捷键</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">📸</span><span class="settingsNavLabel">截图与栈</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">🏖️</span><span class="settingsNavLabel">灵动岛</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">💾</span><span class="settingsNavLabel">数据管理</span></div>
+          <div class="settingsNavItem settingsNavItemActive"><span class="settingsNavIcon">🌐</span><span class="settingsNavLabel">同步与互联</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">📊</span><span class="settingsNavLabel">数据统计</span></div>
+        </div>
+        <div class="settingsContentCol">
+          <div class="settingsContent">
+            <div class="settingsSections" id="beforeScroll">
+            <div class="sSection">同步与互联</div>
+            <div class="sSection">远程电脑</div>
+            <div class="sRow">
+              <span class="sRowIcon"><span class="sRowIconGlyph">🖥️</span></span>
+              <div class="sRowBody"><div class="sRowLabel">允许被远程协助<span class="triggerWrap"><span class="trigger" title="会话制：申请 → 你确认 → 常驻横幅可随时结束；不做远程 shell / 文件管理">?</span></span></div><div class="sRowDesc">独立于知识库同步：配对后对方可申请查看或控制这台电脑；默认关闭</div></div>
+              <button class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+            </div>
+            <div class="lanPanel">
+              <div class="rcFpLine">本机指纹 <span class="rcFpValue">7F2C·A91B·44DE</span><br />远程配对与知识库同步配对<b>分开</b>：这里只授权远程，不同步笔记。<br />发起远程<b>不需要</b>打开「允许被远程协助」。</div>
+              <button class="lanTestBtn">＋ 远程配对设备</button>
+              <div class="rcJoinBlock">
+                <div class="rcJoinTitle">一次性帮助（不用配对）</div>
+                <div class="credRow"><span class="credTag" data-tone="help"><i></i>一次性帮助码</span><span class="rcHint rcJoinRow">双方都要在场，用完自动失效</span></div>
+                <div class="rcHint">码用完即弃，对方仍会收到确认，你也可以随时结束。这次之后对方会<b>默认留在设备列表里</b>，不想留随时在列表删。</div>
+                <button class="lanTestBtn">让别人帮我（出码给对方）</button>
+                <button class="lanTestBtn">帮别人连一次（粘对方的码）</button>
+              </div>
+              <div class="rcJoinBlock">
+                <div class="rcJoinTitle">无人值守码</div>
+                <div class="credRow"><span class="credTag" data-tone="uno"><i></i>无人值守码</span><span class="rcHint rcJoinRow">对面没人也能连 · 可撤销</span></div>
+                <div class="rcHint">对方不在电脑前也能连：生成限时接入码（默认 15 分钟 · 限 1 次，不落盘、可撤销），对方粘贴后自动配对连入，接入全程有横幅、有记录。</div>
+                <div class="rcHint">⏳ 有 2 个无人值守码生效中（最近一个 47 分钟后过期）<button class="lanRefreshBtn" style="margin-left:8px">撤销全部</button></div>
+                <button class="lanTestBtn">生成无人值守码</button>
+                <button class="lanTestBtn">我有对方的无人值守码</button>
+              </div>
+              <div class="rcJoinBlock">
+                <div class="rcJoinTitle">无人值守固定密码</div>
+                <div class="rcHint">给长期挂机的机器：设一个固定密码，知道密码的设备随时可连。哈希存储、限速防爆破；默认仅限局域网，横幅常驻、可一键关闭。</div>
+                <div class="rcHint">🟢 无人值守模式中（可控 · 仅限局域网）<button class="lanRefreshBtn" style="margin-left:8px">立即关闭</button></div>
+                <button class="lanTestBtn">查看 / 修改固定密码</button>
+              </div>
+            </div>
+            <div class="lanPanel">
+              <div class="rcIntro">仅限<b>已配对</b>设备；默认每次远程都要你在本机点同意，可对单台设备开「免确认」跳过。远程 shell / 文件管理<b>不做</b>。</div>
+              <div class="rcBlock">
+                <div class="rcLabel">能力上限</div>
+                <div class="rcHint">「可控」包含只看。对方申请的能力不能超过这里选的档。</div>
+                <div class="rcBtnRow"><button class="btn-secondary rcChoiceBtn">只看</button><button class="btn-primary rcChoiceBtn">可控（含只看）</button></div>
+              </div>
+              <div class="rcBlockSpaced">
+                <div class="rcLabel">画质档（被控端编码）</div>
+                <div class="rcHint">默认「自动」：会话中按延迟与带宽在 流畅/均衡/清晰/超清 间自动切换；选其它档即锁定。</div>
+                <div class="rcBtnRow" id="qFlat">
+                  <button class="btn-primary rcChoiceBtn">自动</button><button class="btn-secondary rcChoiceBtn">流畅</button><button class="btn-secondary rcChoiceBtn">均衡</button>
+                  <button class="btn-secondary rcChoiceBtn">清晰</button><button class="btn-secondary rcChoiceBtn">超清</button><button class="btn-secondary rcChoiceBtn">原生</button>
+                  <button class="btn-secondary rcChoiceBtn">4K60</button><button class="btn-secondary rcChoiceBtn">高帧率</button><button class="btn-secondary rcChoiceBtn">高帧率+</button>
+                  <button class="btn-secondary rcChoiceBtn">高帧率·144</button><button class="btn-secondary rcChoiceBtn">高帧率·165</button>
+                </div>
+                <div class="rcLabelTop">画面范围</div>
+                <div class="rcBtnRow"><button class="btn-primary rcChoiceBtn">整个虚拟屏（含副屏）</button><button class="btn-secondary rcChoiceBtn">仅主屏</button><button class="btn-secondary rcChoiceBtn">屏 1</button><button class="btn-secondary rcChoiceBtn">屏 2</button></div>
+              </div>
+              <div class="rcBlock">
+                <div class="rcLabel">设备级限制</div>
+                <div class="rcHint">与「暂停同步」是<b>两个开关</b>：暂停停同步，这里停远程。</div>
+                <div class="lanDeviceList">
+                  <div class="lanDeviceItem"><div class="lanDeviceAvatar" style="background:#6366f1">办</div><div class="lanDeviceInfo"><div class="lanDeviceName">办公室台式机</div><div class="lanDeviceTime">7F2C·A91B · 在线</div></div><span class="rcDevState rcDevStateOn">允许</span><button class="lanRefreshBtn">免确认·开</button><button class="lanRefreshBtn">关闭</button></div>
+                  <div class="lanDeviceItem"><div class="lanDeviceAvatar" style="background:#0ea5e9">家</div><div class="lanDeviceInfo"><div class="lanDeviceName">家里笔记本</div><div class="lanDeviceTime">2B9E·11AC · 3 天前</div></div><span class="rcDevState rcDevStateOn">允许</span><button class="lanRefreshBtn">免确认</button><button class="lanRefreshBtn">关闭</button></div>
+                  <div class="lanDeviceItem"><div class="lanDeviceAvatar" style="background:#94a3b8">客</div><div class="lanDeviceInfo"><div class="lanDeviceName">客房迷你主机</div><div class="lanDeviceTime">5D0F·7E33 · 3 周前</div></div><span class="rcDevState rcDevStateOff">已禁止</span><button class="lanRefreshBtn" disabled>免确认</button><button class="lanRefreshBtn">允许</button></div>
+                </div>
+              </div>
+            </div>
+            <div class="rcBlockTop">
+              <div class="rcSubTitle">最近会话</div>
+              <div class="histList" id="beforeHist"></div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+    <div class="note bad" style="margin-top:10px">画质档 11 个按钮（能力齐全时）实测在 388px 的面板内宽里折成 <b>3 行</b>（页脚 JS 数的是真 <code>getBoundingClientRect().top</code>）；「画面范围」4 档刚好 1 行。会话记录按 <code>RC_HISTORY_MAX=20</code> 铺满 20 条真 <code>.histItem</code>（每条是一张独立小卡，自带边框与 6px 间隙）——本稿左栏由 JS 补到 20 条，保证量的不是截断值。</div>
+  </div>
+
+  <!-- ══════════ 拟改后 ══════════ -->
+  <div class="frameBox">
+    <div class="frameCap">B · 方案甲 <span>减法 + 4 组折叠：组头带状态摘要 · 每行是真 .sRow（含彩砖）· 档位复用 RcDropdown</span></div>
+    <div class="win">
+      <div class="settingsViewHeader">
+        <button class="settingsViewBack">← 返回</button>
+        <div class="settingsViewTitle" id="afterTitle">⚙️ 设置</div>
+        <div class="settingsSearchBox"><span class="settingsSearchIcon">🔍</span><input class="settingsSearchInput" id="kw" placeholder="试试打「固定密码」「免确认」" /><span class="settingsSearchCount" id="kwCount"></span></div>
+      </div>
+      <div class="settingsViewBody">
+        <div class="settingsNav">
+          <div class="settingsNavItem"><span class="settingsNavIcon">🎨</span><span class="settingsNavLabel">外观</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">📋</span><span class="settingsNavLabel">复制与粘贴</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">🪟</span><span class="settingsNavLabel">系统与编辑</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">⌨️</span><span class="settingsNavLabel">快捷键</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">📸</span><span class="settingsNavLabel">截图与栈</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">🏖️</span><span class="settingsNavLabel">灵动岛</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">💾</span><span class="settingsNavLabel">数据管理</span></div>
+          <div class="settingsNavItem settingsNavItemActive"><span class="settingsNavIcon">🌐</span><span class="settingsNavLabel">同步与互联</span></div>
+          <div class="settingsNavItem"><span class="settingsNavIcon">📊</span><span class="settingsNavLabel">数据统计</span></div>
+        </div>
+        <div class="settingsContentCol">
+          <div class="settingsSearchBanner" id="banner" style="display:none"><span class="settingsSearchIcon">🔍</span><span class="settingsSearchBannerText">「<span id="bannerKw"></span>」<span class="settingsSearchSummary" id="bannerText"></span></span><button class="settingsSearchClear" id="bannerClear">清除</button></div>
+          <div class="settingsContent">
+            <div class="settingsSections" id="afterScroll">
+            <div class="sSection">同步与互联</div>
+            <div class="sSection">远程电脑</div>
+
+            <!-- 主开关：唯一常驻、永远第一行 -->
+            <div class="sRow" id="mainRow">
+              <span class="sRowIcon"><span class="sRowIconGlyph">🖥️</span></span>
+              <div class="sRowBody">
+                <div class="sRowLabel">允许被远程协助<span class="triggerWrap"><span class="trigger" title="会话制：申请 → 你确认 → 常驻横幅可随时结束；不做远程 shell / 文件管理；无人值守只限限时码">?</span></span></div>
+                <div class="sRowDesc">独立于知识库同步：配对后对方可申请查看或控制这台电脑；默认关闭</div>
+              </div>
+              <button class="sToggle on" id="mainToggle"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+            </div>
+
+            <!-- ── 组 1 ── -->
+            <div class="sSection rcGroupHead" role="button" tabindex="0" aria-expanded="true" data-group="g1" data-label="谁能连进来">
+              <span class="rcGroupChev"></span>
+              <span class="rcGroupName">谁能连进来</span>
+              <span class="rcGroupSum">已配对<span class="rcGroupCount">3</span> · 待确认<span class="rcGroupCount">1</span> · 免确认<span class="rcGroupCount">1</span> · 指纹 <span class="rcFpValue">7F2C·A91B</span></span>
+            </div>
+            <div class="sRow" data-g="g1">
+              <span class="sRowIcon icSync"><span class="sRowIconGlyph">🔗</span></span>
+              <div class="sRowBody"><div class="sRowLabel">远程配对设备<span class="triggerWrap"><span class="trigger" title="长期配对：对方粘你的邀请码，连完默认保留在设备列表。与知识库同步配对是两套授权，互不影响。">?</span></span></div><div class="sRowDesc">生成邀请码给对方，连完默认保留配对</div></div>
+              <button class="lanRefreshBtn">配对</button>
+            </div>
+            <div class="sRow" data-g="g1">
+              <span class="sRowIcon icCapture"><span class="sRowIconGlyph">🤝</span></span>
+              <div class="sRowBody"><div class="sRowLabel">一次性帮助<span class="triggerWrap"><span class="trigger" title="双方都在场：一方出码、一方粘码。码用完即弃，对方仍会收到确认，你也可以随时结束；这次之后对方默认留在设备列表里。">?</span></span></div><div class="sRowDesc">双方都在场：我出码给对方帮 / 粘对方的码去帮</div></div>
+              <span class="rcBtnRow"><button class="lanRefreshBtn">我出码</button><button class="lanRefreshBtn">粘码</button></span>
+            </div>
+            <div class="sRow" data-g="g1">
+              <span class="sRowIcon icPrivacy"><span class="sRowIconGlyph">🔔</span></span>
+              <div class="sRowBody"><div class="sRowLabel">待确认请求</div><div class="sRowDesc">1 台设备想用指纹 <span class="rcFpValue">C4A1·88FE</span> 完成配对</div></div>
+              <span class="rcBtnRow"><button class="lanRefreshBtn">拒绝</button><button class="lanRefreshBtn">允许</button></span>
+            </div>
+            <div class="sRow" data-g="g1">
+              <span class="sRowIcon icSystem"><span class="sRowIconGlyph">💻</span></span>
+              <div class="sRowBody"><div class="sRowLabel">已配对设备<span class="triggerWrap"><span class="trigger" title="与「暂停同步」是两个开关：暂停停同步，这里停远程。免确认只对单台设备生效。">?</span></span></div><div class="sRowDesc">免确认 1 台 · 已禁止 1 台；点开逐台改</div></div>
+              <button class="lanRefreshBtn" data-toggle="dev">展开 3 台</button>
+            </div>
+            <div class="lanPanel" data-g="g1" data-sub="dev" hidden>
+              <div class="lanDeviceList" style="margin:0">
+                <div class="lanDeviceItem"><div class="lanDeviceAvatar" style="background:#6366f1">办</div><div class="lanDeviceInfo"><div class="lanDeviceName">办公室台式机</div><div class="lanDeviceTime">7F2C·A91B · 在线</div></div><button class="lanRefreshBtn">免确认·开</button><button class="lanRefreshBtn">禁止</button></div>
+                <div class="lanDeviceItem"><div class="lanDeviceAvatar" style="background:#0ea5e9">家</div><div class="lanDeviceInfo"><div class="lanDeviceName">家里笔记本</div><div class="lanDeviceTime">2B9E·11AC · 3 天前</div></div><button class="lanRefreshBtn">免确认</button><button class="lanRefreshBtn">禁止</button></div>
+                <div class="lanDeviceItem"><div class="lanDeviceAvatar" style="background:#94a3b8">客</div><div class="lanDeviceInfo"><div class="lanDeviceName">客房迷你主机</div><div class="lanDeviceTime">5D0F·7E33 · 3 周前</div></div><button class="lanRefreshBtn" disabled>免确认</button><button class="lanRefreshBtn">允许</button></div>
+              </div>
+            </div>
+
+            <!-- ── 组 2 ── -->
+            <div class="sSection rcGroupHead" role="button" tabindex="0" aria-expanded="false" data-group="g2" data-label="不用在场的连法">
+              <span class="rcGroupChev"></span>
+              <span class="rcGroupName">不用在场的连法</span>
+              <span class="rcGroupSum">接入码<span class="rcGroupCount">2</span> · 固定密码<b>已开（仅局域网）</b></span>
+            </div>
+            <div class="sRow" data-g="g2" hidden>
+              <span class="sRowIcon icSave"><span class="sRowIconGlyph">⏳</span></span>
+              <div class="sRowBody"><div class="sRowLabel">限时接入码<span class="triggerWrap"><span class="trigger" title="对面没人也能连：默认 15 分钟、限 1 次，不落盘、可撤销；接入全程有横幅、有记录。">?</span></span></div><div class="sRowDesc">2 个生效中（最近 47 分钟后过期）· 15 分钟 / 1 次</div></div>
+              <span class="rcBtnRow"><button class="lanRefreshBtn">生成</button><button class="lanRefreshBtn">撤销</button></span>
+            </div>
+            <div class="sRow" data-g="g2" hidden>
+              <span class="sRowIcon icPaste"><span class="sRowIconGlyph">📥</span></span>
+              <div class="sRowBody"><div class="sRowLabel">我有对方的接入码</div><div class="sRowDesc">粘过去即可连入对面，无需对方在场确认</div></div>
+              <button class="lanRefreshBtn">粘贴连接</button>
+            </div>
+            <div class="sRow" data-g="g2" hidden>
+              <span class="sRowIcon icPrivacy"><span class="sRowIconGlyph">🔑</span></span>
+              <div class="sRowBody"><div class="sRowLabel">固定密码<span class="triggerWrap"><span class="trigger" title="长期挂机的机器：哈希存储、连错 5 次锁 10 分钟；默认仅限局域网，跨网要单独打开。横幅常驻、可一键关闭。">?</span></span></div><div class="sRowDesc">知道密码的设备随时可连 · 当前：可控 · 仅限局域网</div></div>
+              <span class="rcBtnRow"><button class="lanRefreshBtn">修改</button><button class="lanRefreshBtn">关闭</button></span>
+            </div>
+
+            <!-- ── 组 3 ── -->
+            <div class="sSection rcGroupHead" role="button" tabindex="0" aria-expanded="false" data-group="g3" data-label="被控上限">
+              <span class="rcGroupChev"></span>
+              <span class="rcGroupName">被控上限</span>
+              <span class="rcGroupSum">上限<b>可控</b> · 画质<b>自动</b> · 范围<b>整屏</b></span>
+            </div>
+            <div class="sRow" data-g="g3" hidden>
+              <span class="sRowIcon icEditor"><span class="sRowIconGlyph">👁️</span></span>
+              <div class="sRowBody"><div class="sRowLabel">能力上限<span class="triggerWrap"><span class="trigger" title="对方申请的能力不能超过这里选的档；「可控」包含只看。">?</span></span></div><div class="sRowDesc">对方最高能申请到的档</div></div>
+              <div class="sSegGroup"><button class="sSegText">只看</button><button class="sSegText sSegActive">可控</button></div>
+            </div>
+            <div class="sRow" data-g="g3" hidden>
+              <span class="sRowIcon icCapture"><span class="sRowIconGlyph">🎬</span></span>
+              <div class="sRowBody"><div class="sRowLabel">画质档<span class="triggerWrap"><span class="trigger" title="被控端编码档位。默认「自动」：会话中按延迟与带宽在 流畅/均衡/清晰/超清 间自动切换；选其它档即锁定。高帧率/4K60 档需本机硬件编码器，能力不足时不出现在菜单里。">?</span></span></div><div class="sRowDesc">会话中按延迟与带宽自动换挡</div></div>
+              <div class="menuWrap"><button class="menuBtn" data-menu="qMenu" aria-haspopup="listbox" aria-expanded="false">画质 <b class="menuCur">自动</b><svg class="menuCaret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-9"/></svg></button></div>
+            </div>
+            <div class="sRow" data-g="g3" hidden>
+              <span class="sRowIcon icSystem"><span class="sRowIconGlyph">🖥️</span></span>
+              <div class="sRowBody"><div class="sRowLabel">画面范围<span class="triggerWrap"><span class="trigger" title="整个虚拟屏含副屏拼接；逐屏只推那一块，带宽最省。">?</span></span></div><div class="sRowDesc">本机 2 块屏</div></div>
+              <div class="menuWrap"><button class="menuBtn" data-menu="sMenu" aria-haspopup="listbox" aria-expanded="false">画面 <b class="menuCur">整屏</b><svg class="menuCaret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-9"/></svg></button></div>
+            </div>
+
+            <!-- ── 组 4 ── -->
+            <div class="sSection rcGroupHead" role="button" tabindex="0" aria-expanded="false" data-group="g4" data-label="最近会话">
+              <span class="rcGroupChev"></span>
+              <span class="rcGroupName">最近会话</span>
+              <span class="rcGroupSum"><span class="rcGroupCount">20</span> 条 · 最近 昨天 14:02 办公室台式机（可控）</span>
+            </div>
+            <div class="lanPanel" data-g="g4" data-hist hidden>
+              <div class="histList" id="afterHist"></div>
+              <div class="histFoot">
+                <button class="miniBtn" id="moreHist">展开全部 20 条</button>
+                <span class="rcHint" style="margin:6px 0 0">只记元数据（时间 / 时长 / 结果），不含画面与键鼠。已到 20 条上限：更早的记录不再保留，会话数据只存本机。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+    <div class="note good" style="margin-top:10px">右栏的搜索框、组头、设备展开、两个档位菜单都<b>可以真点</b>，且判据逐条复刻 <code>useSettingsSearch</code>（不命中的行整块藏 / 命中行加 <code>.settingsHit</code> 左条 + <code>.searchMark</code> 底纹 / 搜索期间强制展开、清空后回到用户态）——不是画个样子给你看。<br>本稿直接 <code>&lt;link&gt;</code> 项目真样式表（7 个文件，含 <code>theme.css</code> 六套变量），上面那条主题条换档＝整页跟着换，<b>稿子里的配色/圆角/行高就是实现后的配色/圆角/行高</b>。<br><span style="color:var(--danger)">看的时候注意两件事：</span>① 右栏只摆了「远程电脑」这一块，所以搜「外观」必然 0 命中，那不是搜索坏了；② 用软件内置预览打开本稿时页面不被绘制，CSS 过渡与入场动画<b>不推进</b>（行底色看着像没跟主题变、<code>opacity</code> 停在动画首帧），几何与高度量的仍是真值——要看换肤效果请用系统浏览器打开这个文件。</div>
+  </div>
+</div>
+
+
+
+<h2>§2 度量（页脚 JS 现场量，不是估的）</h2>
+<table id="metricTable">
+  <tr><th>指标</th><th>A 现状</th><th>B 方案甲</th><th>怎么量的</th></tr>
+  <tr><td>远程电脑整块渲染高度</td><td class="num" id="mA">—</td><td class="num" id="mB">—</td><td><code>#beforeScroll / #afterScroll</code> 的 <code>scrollHeight</code>（默认收起态）</td></tr>
+  <tr><td>全部展开后的总高度</td><td class="num" id="mAf">—</td><td class="num" id="mBf">—</td><td>把 4 个组与设备子表全展开后再量同一个容器</td></tr>
+  <tr><td>首屏可见的可点元素 / 整块可点元素总数</td><td class="num" id="mAv">—</td><td class="num" id="mBv">—</td><td>数 <code>&lt;button&gt;</code>：以真的滚动容器 <code>.settingsContent</code> 的 <code>clientHeight</code>（本稿固定 620）为视口，<code>getBoundingClientRect()</code> 落在其中且未被 <code>hidden</code> 的才算「可见」；总数含收起时不渲染的那些</td></tr>
+  <tr><td>一行右控件列实测可用宽度</td><td class="num">349（面板内宽，满宽按钮 6 个）</td><td class="num">72–96</td><td>420 内容列 − 32 内边距 − 40 彩砖 − 2×12 间隙 − label/desc 实占 189–213；两栏都由页脚 JS 现量</td></tr>
+  <tr><td>搜「固定密码」</td><td class="num" style="color:var(--danger)">命中 1 项 · 零底纹</td><td class="num" style="color:var(--green)">命中 1 行 · 有底纹并滚过去</td><td>右栏实测横幅：<code>固定密码｜命中 1 项 · 分布在「不用在场的连法」</code>，<code>&lt;mark class="searchMark"&gt;</code> 注入在 <code>.sRowDesc</code> 里。现状那块是 <code>lanPanel</code> 外壳，<code>rowLabel()</code> 只认 <code>.sRowLabel</code> → 命中的是整块、高亮不了</td></tr>
+  <tr><td>画质档占几行</td><td class="num">3 行（11 个满宽钮）</td><td class="num">1 行（当前值 ▾ + 两列菜单）</td><td>页脚 JS 数 <code>#qFlat</code> 各按钮的 <code>getBoundingClientRect().top</code> 去重＝3；B 栏 <code>.menuBtn</code> 实测 86px 宽 1 行，弹出层 <code>.menuPopTwo</code> 两列 345×211px（11 项 + 1 条 <code>.menuSep</code>）</td></tr>
+</table>
+
+<h2>§3 结构映射（现状 → 拟改，一行不漏）</h2>
+<table>
+  <tr><th>现状那块</th><th>去哪了</th><th>取舍理由</th></tr>
+  <tr><td>主开关 <code>ToggleRow 允许被远程协助</code></td><td>原样，仍是整块第一行、<b>永远在折叠之外</b></td><td>开关是这块的入口；收进组里会变成"找不到总闸"。它的三行 detail 里「会话制 / 不做 shell」两句是<b>安全告知</b>，保留在 <code>?</code> 的 detail 里但措辞一字不改。</td></tr>
+  <tr><td>rcFpLine（3 行说明 + 指纹）</td><td>指纹值上提到组 1 的<b>摘要行</b>（<code>指纹 7F2C·A91B</code>）；两句说明拆给两行的 <code>?</code></td><td>「与知识库同步配对分开」「发起远程不需要打开开关」是<b>答疑</b>不是操作，不该占 3 行常驻高度。</td></tr>
+  <tr><td>按钮「＋远程配对设备」</td><td>组 1 · 行「远程配对设备」右列小按钮「配对」</td><td>满宽按钮 → 行内按钮，宽度从 389px 降到 ~52px；文案「配对」在行标题里已经出现过一次，右列不用重复整句。</td></tr>
+  <tr><td>rcJoinBlock 一次性帮助（标题+credTag+hint+2 按钮）</td><td>组 1 · 一行两钮；<b>credTag 徽标不进设置行</b>，语义由行标题＋desc 承担</td><td>credTag 是为工作台大卡设计的（带色点的一整枚 chip），右控件列实测只有 72–96px，塞进去要么截字要么把按钮挤没。语义色在弹层里照样有。<b>"用完默认保留配对"</b>这句隐私相关，挪进行标题的 <code>?</code> 与 <code>SETTING_ALIASES</code>，不删。</td></tr>
+  <tr><td>rcJoinBlock 无人值守码（含"生效中"状态行 + 撤销全部）</td><td>组 2 · 「限时接入码」一行：状态并进 desc 与<b>组头摘要</b>，「撤销」按钮常驻右列</td><td>撤销入口不能因为收起就消失——摘要显示「2 个生效中」的同时给按钮，规则 15.1「反馈与触发同可见性域」。</td></tr>
+  <tr><td>rcJoinBlock「我有对方的无人值守码」</td><td>组 2 · 一行 + 「粘贴连接」</td><td>—</td></tr>
+  <tr><td>rcJoinBlock 固定密码（含 🟢 状态行 + 立即关闭）</td><td>组 2 · 一行：状态写进 desc「当前：可控 · 仅限局域网」，右列「修改 / 关闭」</td><td>安全态必须在<b>收起态也看得见</b>，所以同时进组头摘要。</td></tr>
+  <tr><td>joins 待确认列表（条件渲染）</td><td>组 1 · 一行「待确认请求」，<b>有请求时自动展开组 1</b></td><td>这是唯一"会过期、要点头"的被动入口，静默收起来等于漏单。计数也进组头摘要。</td></tr>
+  <tr><td>RcAllowPanel 能力上限 / 画质档 / 画面范围</td><td>组 3 三行，档位控件按<b>档数</b>分流：2 档用 <code>.sSegGroup</code>（现有），≥3 档用「当前值 ▾」菜单</td><td>菜单项直接吃 <code>lib/rcQuality</code> 的 <code>label + meta</code>（<code>4K · 60fps</code>），与工作台同源；<code>auto</code> 的 <code>solo</code> 标志在菜单里占整行 + 分隔线——这套语义现成，只是设置页此前没用。</td></tr>
+  <tr><td>RcAllowPanel「设备级限制」设备列表（禁止 / 免确认）</td><td><b>搬到组 1</b>：它是逐台的属性，跟"谁能连进来"是同一件事；行「已配对设备」点开</td><td>现状把它留在 RcAllowPanel，与设备列表隔了两块面板，改一台的免确认要上下滚着找。</td></tr>
+  <tr><td>rcSubTitle 最近会话 + RcSessionHistory compact 最多 20 行</td><td>组 4：默认 3 行 + 「展开全部 20 条」；收起态只有摘要一行</td><td>compact 变体现在把 <code>source.list</code> 整份渲染（<code>RC_HISTORY_MAX=20</code>），是单块最大的体量来源。给组件加一个 <code>limit</code> prop，工作台 <code>page</code> 变体不受影响。</td></tr>
+  <tr><td>rcErrLine（<code>rc.error</code>）</td><td><b>不折叠</b>：紧跟主开关行下方常驻</td><td>规则 15.3：失败路径不能藏进收起的组里。</td></tr>
+  <tr><td>RcPairLayer（弹层）</td><td><b>不折叠</b>：留在 <code>RcSection</code> 顶层</td><td>规则 15.2：组收起会卸载 children，弹层必须挂在不会被卸载的层级。</td></tr>
+</table>
+
+<h2>§4 四种状态（都是要实现的，不是画着好看）</h2>
+<table>
+  <tr><th>状态</th><th>表现</th><th>判据</th></tr>
+  <tr><td>默认</td><td>只展开「谁能连进来」，其余 3 组收起只见摘要</td><td>localStorage 记忆上次开合；首次进 = 这套默认</td></tr>
+  <tr><td>搜索中</td><td><b>四组全展开</b>，命中行加底纹 + 左侧色条，<b>不命中的行整块隐藏</b>（现状就是这样，不是新行为），滚到第一条命中</td><td><code>filter</code> 非空即强制展开（<code>open = 用户态 || filter !== ""</code>）；退出搜索回到用户态——右栏实测搜完清空后开合＝<code>g1:开, g2/g3/g4:关</code>。<code>GeneralTab</code> 已持有 <code>search</code>，透传一层 prop 即可。<br>🔴 但要动 hook <b>一行</b>：hook 第二遍用 <code>textContent</code> 当节名（<code>useSettingsSearch.ts:159</code>），组头的 textContent 含摘要数字 ⇒ 横幅会变成「分布在『谁能连进来已配对3 · 待确认1…』」。改法：组头带 <code>data-label="谁能连进来"</code>，hook 取 <code>el.dataset.label || textContent</code>；<b>兜底不能省</b>（本稿第一版就是这么漏掉「搜『远程电脑』时整节展开」的）。导航那边 <code>findNavEl</code> 用全等，组头带摘要也抢不走落点，不用动。</td></tr>
+  <tr><td>搜索的两处已知限制（<b>现状同款，本轮不修</b>）</td><td>① 搜「远程电脑」这类<b>小节名</b>：本节会展开但横幅写「没有匹配项」——因为 <code>hits</code> 只数 <code>direct</code>，<code>sectionHit</code> 撑开的行不计（实测：<code>shown=1 · 没有匹配项</code>）。② 搜「办公室台式机」：<b>命中 2 项、零底纹</b>，因为命中的是设备子表与会话记录两块<b>续面板</b>，而 <code>highlightSearchKw()</code> 只往 <code>.sRowLabel/.sRowDesc</code> 注 <code>&lt;mark&gt;</code>。同族的还有一条：<b>设备子表有自己的开合位</b>，搜索强展组时它仍收（右栏实测搜「免确认」= 命中 2 项、可见 1 行），所以「已配对设备」这一行入口必须在搜索态可见可点，别跟着摘要一起藏。</td><td>右栏可直接复现（搜这两个词各看一眼）。修法要么动 hook 的选择器、要么给设备名/会话行套 <code>.sRowLabel</code> 语义，都会牵别的分区，所以单独立项，不混进这次折叠。</td></tr>
+  <tr><td>主开关关</td><td>四个组头 + 摘要照常可见、<b>不可点</b>（<code>.rcGated</code> 的 <code>pointer-events:none</code> + <code>.rcPanelOff</code> 的 <code>opacity:.55</code>）</td><td>沿用现有两个类；不再需要 lanPanel 外壳承载变灰</td></tr>
+  <tr><td>从托盘/浮条跳进来</td><td><code>openSettingsTab("general","rc")</code> 仍滚到「远程电脑」小节标题；<b>组开合不改</b></td><td>锚点匹配的是 <code>.sSection</code> 文字，而且是 <code>=== label</code> <b>全等</b> ⇒ 组头（名字 + 摘要）永远抢不走落点，小节标题也必须在容器直接子节点层。<code>SETTINGS_SUBSECTIONS</code> 的 <code>rc</code> 条目不用动。</td></tr>
+</table>
+
+<h2>§5 拍板记录（2026-09-30 全部按默认通过，照 §3 落地）</h2>
+<ul class="flat">
+  <li><b>① 搜索时强制展开全部组</b>，而不是"只展开命中的那个组"。<span class="pill def">✅ 已拍：强制全展开</span> 理由：命中判定在 DOM 里做，逐组判要不要开会和 hook 打架；全展开的代价只在搜索期间。<span class="pill">未采用：只展开命中组</span></li>
+  <li><b>② 组头摘要只在收起态显示。</b><span class="pill def">✅ 已拍：收起显示、展开隐藏</span> 展开时组里每行都写着现状，摘要是重复信息；收起时它是"一眼看清现状"的唯一来源，所以安全类计数（生效码 / 固定密码 / 待确认）<b>必须</b>进摘要，不能只写在被藏起来的行里。附带好处：展开的组头退回成"▾ + 名字"，和设置页其它分区标题一个长相。</li>
+  <li><b>③ 画质 / 画面范围 换成「当前值 ▾」菜单。</b><span class="pill def">✅ 已拍：换</span> 这是右控件列 72–96px 约束下的唯一解（11 档平铺实测 3 行）。<span class="pill">未采用：保留按钮组、折成多行</span>——那条只适合 2–3 档，本稿的「能力上限」就还在用它。</li>
+  <li><b>④ 最近会话展开后默认给几条？</b><span class="pill def">✅ 已拍：3 条 + 展开全部</span> 再连按钮在这 3 条里必须可见（高频路径）。</li>
+  <li><b>⑤ 10 段说明文全部下沉到 <code>?</code> 的 detail，唯一例外：</b><span class="pill def">✅ 已拍：无人值守「对面没人也能连」的安全警示各留一句在 desc 里</span></li>
+  <li><b>⑥ 组开合状态存哪？</b><span class="pill def">✅ 已拍：localStorage（同 <code>lib/rcPrefs</code> 的路子），不进 config</span> 理由：<code>save_config</code> 每次全量明文备份，纯 UI 偏好不该落盘（见 [[project-config-write-cost]]）。<b>§6 的动画副作用同批拍板：保留错峰淡入</b>，不给组内行加 <code>animation:none</code>。</li>
+  <li><b>⑦ 这不是待拍板，是更正：上一版写的「全展开反而 +21%」是假数。</b><span class="pill def">结论：行式布局不吃亏，不用为它做取舍</span>
+    上一版的手抄 CSS 把 <code>.sRow</code> 的内边距/行高抄大了，量出 1913 vs 1587；这版改成 <code>&lt;link&gt;</code> 真样式表后重量——
+    全展开 <b>2542px vs 现状 2701px（少 6%，4.1 屏 vs 4.4 屏）</b>，默认收起 <b>669px（少 75%，1.1 屏）</b>。
+    所以结论改写成两句：<b>减的高度几乎全是折叠给的</b>，减法给的是决策数（可点元素 42→25、首屏可见 4→7）。
+    <span class="pill">仍然备选：组内行去掉 desc、只留 label + 右控件（单行 ~34px）</span>——还能再省一截，但设置页其余分区全是双行结构，会出现两种行高；本稿不采用。</li>
+</ul>
+
+<h2>§6 实施要点与守卫（写下来是为了落地时不返工）</h2>
+<ul class="flat">
+  <li><b>DOM 约束（最容易踩）：</b>折叠组<b>不能</b>用 <code>&lt;details&gt;</code> 或 wrapper div 装行——<code>.settingsSections</code> 的 children 必须是「标题 + 行」一层扁平（<code>useSettingsSearch</code> 的遍历前提，<code>settingsSectionsFlatTree.test.tsx</code> 钉着）。做法：组头是带 <code>.sSection</code> 类的可点 div，行是该组件返回 <code>&lt;&gt;&lt;/&gt;</code> 片段里的兄弟节点，<b>收起时不渲染</b>那些行（同 <code>AiSection</code> 的「折叠即不挂载」范式）。这也顺带把现状 <code>lanPanel</code> 外壳干掉，§2 表里那行搜索缺陷一并修好。</li>
+  <li><b>卡片闭合不用新写一行 CSS——但要知道它是谁干的：</b>本稿实测四条既有规则自动接住：<code>.sRow:has(+ .sSection)</code>（组头跟在某行后面 ⇒ 上一行补下圆角＋阴影，收起态的接缝就是这么闭合的）、<code>.sSection ~ .lanPanel:has(+ .sSection)</code> 与 <code>.settingsSections &gt; .lanPanel:last-child</code>（设备子表 / 会话记录两块续面板）、<code>.settingsSections &gt; *:last-child:not(.lanPanel)</code>。所以<b>收起的面板必须整个不渲染或 hidden</b>——CSS 里没有「最后一个<em>可见</em>子节点」这种选择器，用 <code>display:none</code> 之外的方式藏（例如只藏内容留外壳）就会露出一个方角。<br>🔴 <code>hidden</code> 属性单独用<b>没效果</b>：UA 的 <code>[hidden]{display:none}</code> 优先级低于作者的 <code>.sRow{display:flex}</code>，本稿靠显式补一条 <code>.sRow[hidden]{display:none}</code> 才隐得掉；落地走「不渲染」就没这个坑。</li>
+  <li><b>收起不渲染 ⇒ 三件事要跟着上提：</b>弹层 <code>RcPairLayer</code> 留在顶层（已经是了）；设备子表的展开态提到组组件（不能存在会被卸载的行里）；<code>RcAllowPanel</code> 里 <code>rcListMonitors/rcEncodeCaps</code> 的读取提到不受折叠影响的位置——否则每次展开组都重读一次本机能力。另外「待确认请求 ≥1 ⇒ 自动展开组 1」这条只能在<b>父级编排层</b>做：组 1 收起时它自己的 join 列表根本不在 DOM 里，自己判不了。</li>
+  <li><b>文件拆分（硬性：单组件 ≤300 行，<code>RcSection</code> 已 307）：</b><code>RcSection.tsx</code> 收成"小节标题 + 主开关 + 4 个组 + 弹层"的编排层（开合状态、搜索透传、自动展开判据都在这层），<code>RcPairingGroup / RcUnoGroup / RcCapGroup / RcRecentGroup</code> 各一个文件；<code>RcAllowPanel.tsx</code> 拆散并入前三个，拆完删掉。档位菜单复用 <code>lib/rcQuality</code> / <code>lib/rcScope</code> 的现成表，不新建第二份。</li>
+  <li><b>新增 CSS 只有 5 个类，全进 <code>RcSettings.module.css</code>：</b><code>.rcGroupHead / .rcGroupChev / .rcGroupName / .rcGroupSum / .rcGroupCount</code>（写在 <code>.sSection.rcGroupHead</code> 上以压过 sticky／遮缝条／uppercase 三条既有规则）。
+    <b>其它一律复用，不许另发明：</b>续面板 <code>.lanPanel</code>、会话行 <code>.histItem/.histInfo/.histName/.histNameMeta/.histTime/.histFoot/.miniBtn</code>、档位菜单 <code>RcDropdown</code>（<code>.menuWrap/.menuBtn/.menuCur/.menuCaret/.menuPop/.menuPopTwo/.menuItem/.menuItemOn/.menuItemSolo/.menuCheck/.menuMeta/.menuSep</code>）、两档选择 <code>.sSegGroup/.sSegText/.sSegActive</code>、行内小钮 <code>.lanRefreshBtn</code>、设备行 <code>.lanDeviceItem</code> 三件套、等宽串 <code>.rcFpValue</code>、变灰禁用 <code>.rcPanelOff/.rcGated</code>、帮助点 <code>.triggerWrap/.trigger</code>、按钮 <code>btn-primary/btn-secondary + rcChoiceBtn</code>、命中态 <code>.settingsHit/.searchMark</code>、结果条 <code>.settingsSearchBanner/.settingsSearchSummary/.settingsSearchClear</code>、折叠记号 ▸/▾（同 <code>.mcpAdvanced &gt; summary</code>）、计数胶囊（同 <code>.mcpGroupCount</code> 的值）。
+    本稿顶部那 7 个 <code>&lt;link&gt;</code> 引的就是这 5 个文件，所以<b>稿子里看到的配色/圆角/行高＝实现后的配色/圆角/行高</b>，不存在"手抄抄歪"。落地后跑 <code>npm run lint:ui</code> 与 <code>check-css-classes.mjs</code>（钩子会查类名是否真在 module.css 里定义）。</li>
+  <li><b>新守卫测试：</b>①「搜索非空 ⇒ 4 组全渲染」（把 filter 塞进去渲染一次，断言行数 = 全展开行数）；②「组头不会被导航误认」——<code>useSettingsNav</code> 的 <code>findNavEl</code>（:171）与 scroll-spy（:329）判的都是 <code>textContent.trim() === label</code> <b>全等</b>，所以组头带摘要文字本身安全，但要钉住这个依赖：四个组名 + 摘要拼起来仍不得等于任何 <code>SETTINGS_SECTIONS / SUBSECTIONS</code> 的 label；③ 摘要行里的计数与真值同源（禁止写死数字）；④「横幅节名取 <code>data-label</code>，且 <code>data-label</code> 缺失时回退 <code>textContent</code>」——本稿第一版就是漏了回退，搜「远程电脑」这种<b>小节名命中整节</b>的行为被悄悄改掉了（§4 第一行有实测复现步骤）。这条要钉在 hook 的纯函数上，不要靠快照。</li>
+  <li><b>不动的：</b>配置键一个不改（<code>rc_enabled</code> 等）、<code>rc*</code> 命令一个不改、A2 工作台那批在途文件（<code>RcA2*</code> / <code>RemoteComputerA2.module.css</code>）不碰；与工作台 <code>RcPageSettings</code> 重复的 5 项<b>本轮只对齐文案口径、不改归属</b>（已拍板）。</li>
+  <li><b>动画副作用：</b><code>.settingsSections &gt; *</code> 有错峰淡入（<code>nth-child</code> 延迟封顶 0.48s），展开组会让新行<b>重播</b>一次上浮。观感上像"内容长出来"，可接受；要豁免就给组内行加 <code>animation:none</code>，拍板时顺带说一句。</li>
+  <li><b>验收：</b>按规则 6 起 <code>npm run tauri dev</code>，四条点验——① 四种状态逐一目测（尤其主开关关时的变灰+不可点）；② 搜「固定密码」「免确认」「无人值守」各一次，底纹与定位；③ 从托盘「远程」入口跳进来落在小节标题、组保持默认态；④ 收起态摘要数字与真值一致（撤销一个码、开一次免确认各看一次）。</li>
+</ul>
+
+<script>
+/* ── 会话记录：两栏都按 RC_HISTORY_MAX = 20 铺满，量的才是真值。
+   行结构用真组件的（RemoteComputer.module.css 的 .histItem/.histInfo/.histName/
+   .histNameMeta/.histTime + .miniBtn），不自己发明第二种会话行。 ── */
+const WHO = [["办公室台式机", "可控"], ["家里笔记本", "只看"], ["客房迷你主机", "只看"], ["家里笔记本", "可控"]];
+const RES = ["正常结束", "对方拒绝", "正常结束", "超时未确认", "已中断", "正常结束"];
+function histRow(i, extra) {
+  const w = WHO[i % WHO.length], r = RES[i % RES.length];
+  const min = (i * 7 + 3) % 60, hr = (9 + i) % 21;
+  const dur = `${String(hr).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  const canRetry = i % 2 === 0;
+  return `<div class="histItem"${extra || ""}><div class="histInfo"><div class="histName">${w[0]}<span class="histNameMeta">${i % 2 ? "对方控我" : "我发起"} · ${w[1]}</span></div><div class="histTime">昨天 ${dur} · ${dur} · ${r}</div></div>${
+    canRetry ? `<button class="miniBtn" title="沿用这次会话用过的档，再次发起">再次连接 · ${w[1]}</button>` : ""
+  }</div>`;
+}
+document.getElementById("beforeHist").innerHTML = Array.from({ length: 20 }, (_, i) => histRow(i)).join("");
+/* 拟改栏：默认 3 条，「展开全部」补到 20 条（收起组时跟着组一起消失） */
+const moreBtn = document.getElementById("moreHist");
+const afterHist = document.getElementById("afterHist");
+afterHist.innerHTML = Array.from({ length: 3 }, (_, i) => histRow(i)).join("");
+function setHist(on) {
+  if (on) {
+    if (moreBtn.dataset.on === "1") return;
+    afterHist.insertAdjacentHTML("beforeend", Array.from({ length: 17 }, (_, i) => histRow(i + 3)).join(""));
+    moreBtn.textContent = "收起，只看最近 3 条"; moreBtn.dataset.on = "1";
+  } else {
+    [...afterHist.children].slice(3).forEach((n) => n.remove());
+    moreBtn.textContent = "展开全部 20 条"; moreBtn.dataset.on = "";
+  }
+}
+moreBtn.addEventListener("click", (e) => { e.stopPropagation(); setHist(moreBtn.dataset.on !== "1"); });
+/* ── 折叠交互 ── */
+const groups = [...document.querySelectorAll("[data-group]")];
+const rowsOf = (g) => [...document.querySelectorAll(`[data-g="${g}"]`)];
+/* 子表（设备级限制）有自己的开合位，不能被组的 setOpen 覆盖：
+   用户态 = 组开 + 子表收 两个独立位，清空搜索时要一起还原。 */
+function setOpen(g, open) {
+  const head = groups.find((h) => h.dataset.group === g);
+  head.setAttribute("aria-expanded", String(open));
+  rowsOf(g).forEach((el) => {
+    el.hidden = !open || (el.dataset.sub !== undefined && el._subClosed === true);
+  });
+  const sub = rowsOf(g).find((el) => el.dataset.sub !== undefined);
+  if (sub) {
+    const btn = document.querySelector(`[data-toggle="${sub.dataset.sub}"]`);
+    if (btn) btn.textContent = sub.hidden ? "展开 3 台" : "收起";
+  }
+}
+groups.forEach((h) => {
+  h.addEventListener("click", () => setOpen(h.dataset.group, h.getAttribute("aria-expanded") !== "true"));
+});
+/* 设备子表 */
+document.querySelector('[data-toggle="dev"]').addEventListener("click", (e) => {
+  e.stopPropagation();
+  const sub = document.querySelector('[data-sub="dev"]');
+  sub.hidden = !sub.hidden;
+  sub._subClosed = sub.hidden;
+  e.target.textContent = sub.hidden ? "展开 3 台" : "收起";
+});
+/* ── 搜索：逐条复刻 useSettingsSearch.ts:147-199 的两遍判据（head = .sSection） ──
+   ① 第一遍给**每个非标题 child** 写 display（不命中的整块藏，不只是加底纹）；
+   ② sectionHit（标题自身含关键词）⇒ 本节全展开、但**不给底纹**；
+   ③ 第二遍从后往前定标题显隐：不搜索 / 本节有可见行 / 紧跟一个可见标题 ⇒ 显示。
+   rowLabel() 取的是 .sRowLabel 首个文本节点；这里用 textContent 近似判 direct，
+   落地时必须用 hook 那个 rowHaystack（它还排掉开关上的「开/关」状态字）。 */
+const box = document.getElementById("afterScroll");
+const banner = document.getElementById("banner");
+const bannerText = document.getElementById("bannerText");
+const kwInput = document.getElementById("kw");
+const isHead = (el) => el.classList.contains("sSection");
+const clearMarks = (root) => root.querySelectorAll("mark").forEach((m) => { const p = m.parentNode; p.replaceChild(document.createTextNode(m.textContent || ""), m); p.normalize(); });
+/* 🔴 与真 hook 同一条判据：highlightSearchKw() 只往 `.sRowLabel / .sRowDesc` 里注 mark，
+   组头的摘要文字**不标**（真 app 不会标），所以这里也不标——否则稿子和实现又会分叉。 */
+function highlight(el, kw) {
+  el.querySelectorAll(".sRowLabel, .sRowDesc").forEach((bx) => {
+    [...bx.childNodes].forEach((n) => {
+      if (n.nodeType !== 3) return;
+      const t = n.textContent, i = t.toLowerCase().indexOf(kw);
+      if (i < 0) return;
+      const f = document.createDocumentFragment();
+      if (i > 0) f.appendChild(document.createTextNode(t.slice(0, i)));
+      const m = document.createElement("mark"); m.className = "searchMark"; m.textContent = t.slice(i, i + kw.length); f.appendChild(m);
+      if (i + kw.length < t.length) f.appendChild(document.createTextNode(t.slice(i + kw.length)));
+      n.parentNode.replaceChild(f, n);
+    });
+  });
+}
+kwInput.addEventListener("input", () => {
+  const raw = kwInput.value.trim(), kw = raw.toLowerCase();
+  clearMarks(box);
+  /* 待拍板 ①：搜索期间强制展开所有组，退出搜索回到用户态（_user 存第一次进搜索前的开合） */
+  groups.forEach((h) => { h._user = h._user ?? h.getAttribute("aria-expanded"); setOpen(h.dataset.group, kw ? true : h._user === "true"); });
+  const kids = [...box.children];
+  let hits = 0, secs = [], secName = "", sectionHit = false, sectionTitle = "";
+  for (const el of kids) {
+    if (isHead(el)) {
+      /* 组头里除名字还有摘要（全是计数）。横幅与"本节名"取 .rcGroupName，
+         但 sectionHit 判的是整段 textContent——真 hook 就是这么写的，
+         所以搜「免确认」会命中组 1 摘要、把整节展开。落地时这条行为要一起搬。 */
+      secName = sectionTitle = el.dataset.label || (el.textContent || "").trim();
+      sectionHit = !!kw && sectionTitle.toLowerCase().includes(kw);
+      el.classList.remove("settingsHit");
+      continue;
+    }
+    const direct = !!kw && (el.textContent || "").toLowerCase().includes(kw);
+    const match = !kw || sectionHit || direct;
+    el.style.display = match ? "" : "none";
+    el.classList.toggle("settingsHit", direct);
+    if (direct) { hits++; highlight(el, kw); if (secName && !secs.includes(secName)) secs.push(secName); }
+  }
+  const hasRow = new Map();
+  let cur = null;
+  for (const el of kids) {
+    if (isHead(el)) { cur = el; hasRow.set(el, false); }
+    else if (cur && el.style.display !== "none") hasRow.set(cur, true);
+  }
+  for (let i = kids.length - 1; i >= 0; i--) {
+    const el = kids[i];
+    if (!isHead(el)) continue;
+    const next = kids[i + 1];
+    const nextShownHead = !!next && isHead(next) && next.style.display !== "none";
+    el.style.display = !kw || hasRow.get(el) || nextShownHead ? "" : "none";
+  }
+  /* 结果条文案与 useSettingsSearch.ts:208-222 逐字同格式：
+     计数进搜索框旁的 .settingsSearchCount，摘要进 .settingsSearchSummary，
+     标题栏在搜索时换成「🔍 搜索结果」。 */
+  document.getElementById("kwCount").textContent = kw ? `${hits} 项` : "";
+  document.getElementById("bannerKw").textContent = kwInput.value.trim();
+  document.getElementById("afterTitle").textContent = kw ? "🔍 搜索结果" : "⚙️ 设置";
+  bannerText.textContent = !kw ? "" : hits ? `命中 ${hits} 项${secs.length ? ` · 分布在「${secs.join("」「")}」` : ""}` : "没有匹配项";
+  banner.style.display = kw ? "" : "none";
+  if (hits) box.querySelector(".settingsHit")?.scrollIntoView({ block: "nearest" });
+});
+document.getElementById("bannerClear").addEventListener("click", () => {
+  kwInput.value = "";
+  kwInput.dispatchEvent(new Event("input"));
+  kwInput.focus();
+});
+/* ── 主开关关：四个组头 + 组内行一起变灰不可点（真类 .rcPanelOff + .rcGated，不另写） ── */
+document.getElementById("mainToggle").addEventListener("click", (e) => {
+  const t = e.currentTarget, on = t.classList.toggle("on"), off = t.classList.toggle("off");
+  t.querySelector(".sToggleLabel").textContent = on ? "开" : "关";
+  document.querySelectorAll(".rcGroupHead, [data-g]").forEach((el) => {
+    el.classList.toggle("rcPanelOff", !on);
+    el.classList.toggle("rcGated", !on);
+  });
+});
+/* ── 档位菜单：这就是真组件 RcDropdown（RemoteComputer.module.css 的
+   .menuWrap/.menuBtn/.menuCur/.menuCaret + portal 出去的 .menuPop/.menuItem/
+   .menuCheck/.menuMeta/.menuSep）。数据吃 lib/rcQuality 的 label + meta + solo。
+   画质 11 档走两列（menuPopTwo），画面范围 4 档走单列——列数由调用方指定，
+   和真 app 同一条规矩。 ── */
+const CHECK = '<svg class="menuCheck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const MENUS = {
+  qMenu: { two: true, items: [
+    ["自动", "", 1, 1], ["流畅", "10fps · 960"], ["均衡", "10fps · 1280"], ["清晰", "15fps · 1920"],
+    ["超清", "12fps · 2560"], ["原生", "4K · 20fps"], ["4K60", "4K · 60fps"], ["高帧率", "1080p · 60"],
+    ["高帧率+", "1080p · 120"], ["高帧率·144", "1080p · 144"], ["高帧率·165", "1080p · 165"]] },
+  sMenu: { two: false, items: [["整屏", "含副屏拼接", 1], ["主屏", ""], ["屏 1", "2560×1440"], ["屏 2", "1920×1080"]] },
+};
+let open = null;
+const closeMenu = () => { if (open) { open.el.remove(); open.btn.setAttribute("aria-expanded", "false"); open = null; } };
+document.querySelectorAll("[data-menu]").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (open) { closeMenu(); return; }
+    const cfg = MENUS[btn.dataset.menu];
+    const el = document.createElement("div");
+    el.className = `menuPop${cfg.two ? " menuPopTwo" : ""}`;
+    el.setAttribute("role", "listbox");
+    el.dataset.rcPortalMenu = "";
+    el.innerHTML = cfg.items.map(([label, meta, on, solo], i) => {
+      const item = `<button role="option" aria-selected="${on ? "true" : "false"}" class="menuItem${on ? " menuItemOn" : ""}${solo ? " menuItemSolo" : ""}">${CHECK}${label}${meta ? `<span class="menuMeta">${meta}</span>` : ""}</button>`;
+      // solo 项与其后一段之间补分隔线；末项不补（同真组件）
+      return solo && i < cfg.items.length - 1 ? `${item}<span class="menuSep"></span>` : item;
+    }).join("");
+    document.body.appendChild(el);
+    const r = btn.getBoundingClientRect();
+    // 真 app 里这几个坐标由 Floating UI 算（flip 判上下、shift 收左右、size 封顶）；
+    // 稿子里按同一语义手算：默认向下，下方放不下才向上，左右收进视口。
+    const below = window.innerHeight - r.bottom - 16;
+    const up = below < el.offsetHeight;
+    el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - el.offsetWidth - 8)) + "px";
+    el.style.top = (up ? r.top - el.offsetHeight - 6 : r.bottom + 6) + "px";
+    el.querySelectorAll(".menuItem").forEach((it, i) => it.addEventListener("click", () => {
+      btn.querySelector(".menuCur").textContent = cfg.items[i][0];
+      closeMenu();
+    }));
+    btn.setAttribute("aria-expanded", "true");
+    open = { el, btn };
+  });
+});
+document.addEventListener("mousedown", (e) => {
+  if (open && !open.el.contains(e.target) && !open.btn.contains(e.target)) closeMenu();
+});
+/* ── 度量：现场量两栏。口径必须一致——
+   两栏的会话记录都按 RC_HISTORY_MAX=20 铺满，减法与折叠各自的贡献才分得开。
+   视口高取真的滚动容器 .settingsContent 的 clientHeight（不是 .settingsSections，
+   后者是被滚的内容本身，量出来是内容高，当视口用会把「首屏」放大成整块）。 ── */
+function measure() {
+  const A = document.getElementById("beforeScroll"), B = document.getElementById("afterScroll");
+  const h = (el) => Math.round(el.scrollHeight);
+  const dev = document.querySelector('[data-sub="dev"]');
+  const allOpen = () => { dev._subClosed = false; groups.forEach((g) => setOpen(g.dataset.group, true)); };
+  const asDefault = () => { dev._subClosed = true; groups.forEach((g) => setOpen(g.dataset.group, g.dataset.group === "g1")); };
+  const set = (id, v) => { document.getElementById(id).textContent = v + "px"; };
+
+  const defaultB = h(B);                 // B 默认态：g1 开、其余收起、历史 3 条
+  setHist(true); allOpen();
+  const expandedB = h(B);                // B 全展开：4 组 + 设备子表 + 历史 20 条
+  setHist(false); asDefault();
+
+  const heightA = h(A);                  // A 无折叠，历史已由 JS 补满 20 条
+  set("mA", heightA); set("mAf", heightA);
+  set("mB", defaultB); set("mBf", expandedB);
+
+  const VIEWPORT = Math.round(A.parentElement.clientHeight);   // 两栏同为 620（.win .settingsViewBody）
+  const clickable = (el) => {
+    const sc = el.parentElement;                               // .settingsContent
+    const base = el.getBoundingClientRect().top;
+    const all = [...el.querySelectorAll("button")];
+    const shown = all.filter((b) => {
+      if (b.offsetParent === null) return false;
+      const t = b.getBoundingClientRect().top - base + sc.scrollTop;
+      return t >= 0 && t < VIEWPORT;
+    }).length;
+    return { shown, total: all.length };
+  };
+  const ca = clickable(A), cb = clickable(B);
+  document.getElementById("mAv").textContent = `${ca.shown} / ${ca.total}`;
+  document.getElementById("mBv").textContent = `${cb.shown} / ${cb.total}`;
+
+  const screens = (v) => (v / VIEWPORT).toFixed(1);
+  const d = Math.round((expandedB / heightA - 1) * 100);
+  const row = document.createElement("tr");
+  row.innerHTML = `<td>减法 / 折叠各自的贡献<br><span style="font-size:11px;color:var(--text-muted)">（这条是 link 真样式之后重量的，结论和上一版相反）</span></td><td class="num">${screens(heightA)} 屏 · ${ca.total} 钮</td><td class="num">默认 ${screens(defaultB)} 屏<br>全展开 ${screens(expandedB)} 屏 · ${cb.total} 钮</td><td class="num" style="text-align:left">
+    <b>减法减的是"一次要处理的决策数"，不是高度</b>：可点元素 ${ca.total}→${cb.total}、首屏可见 ${ca.shown}→${cb.shown}。<br>
+    <b>高度上，行式布局这次没有吃亏</b>：全展开 ${expandedB}px vs 现状 ${heightA}px ＝ ${d >= 0 ? "多" : "少"} ${Math.abs(d)}%。改成 <code>.sRow</code> 行式要付排版税（每行 label+desc 两行、上下各 12px、右控件列 <code>min-width:72</code>），但「10 段说明文下沉进 <code>?</code>」＋「6 个满宽按钮缩成行内小钮」省下的更多，两者相抵是净赚。<br>
+    <b>真正的高度来自折叠</b>：默认收起 ${defaultB}px，相对现状 −${Math.round((1 - defaultB / heightA) * 100)}%（${screens(heightA)}→${screens(defaultB)} 屏）。
+  </td>`;
+  (document.querySelector("#metricTable tbody") || document.getElementById("metricTable")).appendChild(row);
+}
+/* ── 主题切换：直接写 documentElement 的 data-theme，和真 app 的 applyTheme
+   （lib/theme.ts:52）同一件事、同一份 theme.css。 ── */
+document.querySelectorAll("[data-theme-btn]").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.documentElement.setAttribute("data-theme", b.dataset.themeBtn);
+    document.querySelectorAll("[data-theme-btn]").forEach((x) => x.classList.toggle("on", x === b));
+  });
+});
+/* 本脚本在 </body> 前，布局已可用；直接量一次（不用 rAF：rAF 那版在某些内核里
+   会在这一帧之前就被 evaluate 读到，看起来像"没跑"）。重复点按钮时由 measure 自带去重。 */
+let measured = false;
+function measureOnce() { if (measured) return; measured = true; measure(); }
+measureOnce();
+</script>
+</body>
+</html>

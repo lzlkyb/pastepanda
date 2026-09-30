@@ -46,6 +46,19 @@ function clearSearchMarks(root: ParentNode) {
 }
 
 /**
+ * 取节标题（结果条「分布在「…」」和 sectionHit 判定共用）。
+ *
+ * 🔴 必须优先读 `data-label`：「远程电脑」那节的小节标题是**可折叠组头**，
+ * 收起态在名字后面还挂着一串状态摘要（`已配对3 · 待确认1 · 指纹 7F2C·A91B`）。
+ * 直接取 textContent 会让横幅变成「分布在『谁能连进来已配对3…』」。
+ * **回退到 textContent 不能省**——其余分区的标题都只有文字、没有 data-label，
+ * 省掉回退会把「搜小节名 ⇒ 整节展开」这条既有行为悄悄改掉。
+ */
+export function sectionTitleOf(el: HTMLElement): string {
+  return (el.dataset.label || el.textContent || "").trim();
+}
+
+/**
  * 在标题/描述文本节点里给关键词包 <mark>。
  * 只动这两个节点：整行 walk 会碰开关「开/关」和数值，误伤状态文案。
  */
@@ -154,7 +167,7 @@ export function useSettingsSearch(): SettingsSearch {
     let sectionTitle = "";
     for (const el of children) {
       if (el.classList.contains(styles.sSection)) {
-        sectionTitle = (el.textContent || "").trim();
+        sectionTitle = sectionTitleOf(el);
         sectionHit = kw !== "" && sectionTitle.toLowerCase().includes(kw);
         continue;
       }

@@ -16,7 +16,6 @@
  * （`data` 不传时仍自拉，主窗设置页走这条路，不必为它多挂一个 hook）。
  */
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import {
   rcSessionHistory,
   type RcCapability,
@@ -29,16 +28,17 @@ import {
   historyCapabilityLabel,
   historyPeerLabel,
   RC_HISTORY_MAX,
-  resultTone,
   type RcHistoryDirFilter,
 } from "@/lib/rcHistory";
 import { capabilityLabel } from "@/lib/rcRequest";
 import { formatDuration, formatWhen, pathKindLabel } from "@/lib/rcSessionStats";
+import { RcHistoryPageRow } from "./RcHistoryPageRow";
 // D10：历史记录用 rc 会话专用的 hist* 类，不再复用「局域网同步」的 lanDevice* 类
 import styles from "./RemoteComputer.module.css";
 
-/** 结果列的四态着色见 `@/lib/rcHistory` 的 `resultTone` —— 抽出去是因为详情面
- * 「最近会话」要用同一份判据（原先两处各判一次，同一 `reason` 会一绿一灰）。 */
+/** 结果列的四态着色见 `@/lib/rcHistory` 的 `resultTone`（page 变体在
+ * `RcHistoryPageRow` 里用它）——抽出去是因为详情面「最近会话」要用同一份
+ * 判据（原先两处各判一次，同一 `reason` 会一绿一灰）。 */
 
 interface HistorySource {
   list: RcHistoryItem[];
@@ -72,6 +72,7 @@ export function RcSessionHistory({
   variant = "compact",
   data,
   peer = null,
+  limit,
 }: {
   /** 当前配对设备列表：判断这条记录的设备是否还在（决定要不要摆「再次连接」）。 */
   targets: RcTargetDevice[];
@@ -86,9 +87,19 @@ export function RcSessionHistory({
   data?: HistorySource;
   /** 受控的设备筛选（node_id）。null = 全部设备。只作用于 page 变体。 */
   peer?: string | null;
+  /**
+   * compact 变体先渲染几条 + 「展开全部」（设置页折叠组用）。
+   * 不传 = 整份渲染（原行为）。只作用于 compact：page 变体有自己的筛选与分页语境。
+   *
+   * ⚠️ 「已展开」是本组件的内部态，而设置页收起整组时本组件会被卸载——
+   * 于是下次展开回到前 N 条。这是接受的取舍：那是个浏览列表不是草稿，
+   * 记住它反而要在外层多养一份状态。
+   */
+  limit?: number;
 }) {
   const source = useHistorySource(data);
   const [dir, setDir] = useState<RcHistoryDirFilter>("all");
+  const [expanded, setExpanded] = useState(false);
 
   const shown = useMemo(
     () => (variant === "page" ? filterHistory(source.list, { peer, dir }) : source.list),
@@ -158,7 +169,7 @@ export function RcSessionHistory({
         ) : (
           <div className={styles.histList}>
             {shown.map((h, i) => (
-              <PageRow
+              <RcHistoryPageRow
                 key={`${h.started_ms}-${i}`}
                 h={h}
                 targets={targets}
@@ -179,10 +190,13 @@ export function RcSessionHistory({
     );
   }
 
+  const overLimit = limit !== undefined && source.list.length > limit;
+  const rows = overLimit && !expanded ? source.list.slice(0, limit) : source.list;
+
   return (
     <div>
       <div className={styles.histList}>
-        {source.list.map((h, i) => {
+        {rows.map((h, i) => {
         // 路径与延迟都是「本次**实测**」，缺了就整段不显示。
         // 更早的记录没有这两个字段，不能编默认值——那会变成假信息。
         const path = pathKindLabel(h.path_kind ?? "");
@@ -226,71 +240,24 @@ export function RcSessionHistory({
         );
       })}
       </div>
-      {/* U7：compact 变体同款截断提示（主窗设置页） */}
-      {source.list.length >= RC_HISTORY_MAX && (
+      {(overLimit || source.list.length >= RC_HISTORY_MAX) && (
         <div className={styles.histFoot}>
-          已到 {RC_HISTORY_MAX} 条上限：仅保留最近 {RC_HISTORY_MAX} 条，更早的记录不再保留。会话数据只存本机。
+          {overLimit && (
+            <button
+              type="button"
+              className={styles.miniBtn}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? `收起，只看最近 ${limit} 条` : `展开全部 ${source.list.length} 条`}
+            </button>
+          )}
+          {/* U7：compact 变体同款截断提示（主窗设置页） */}
+          {source.list.length >= RC_HISTORY_MAX && (
+            <span>
+              已到 {RC_HISTORY_MAX} 条上限：仅保留最近 {RC_HISTORY_MAX} 条，更早的记录不再保留。会话数据只存本机。
+            </span>
+          )}
         </div>
-      )}
-    </div>
-  );
-}
-
-/** page 变体的单行（五列）。路径/延迟收进 title 悬停——列宽有限，不摆假列。 */
-function PageRow({
-  h,
-  targets,
-  running,
-  busy,
-  onReconnect,
-}: {
-  h: RcHistoryItem;
-  targets: RcTargetDevice[];
-  running: boolean;
-  busy: boolean;
-  onReconnect: (nodeId: string, name: string, cap: RcCapability) => void;
-}) {
-  const cap: RcCapability = h.capability === "control" ? "control" : "view";
-  const peerLabel = historyPeerLabel(h);
-  const canRetry = canReconnectTo(targets, h.peer, running);
-  const path = pathKindLabel(h.path_kind ?? "");
-  const rtt = h.rtt_avg && h.rtt_avg > 0 ? h.rtt_avg : 0;
-  const tone = resultTone(h.reason);
-  return (
-    <div
-      className={styles.histRow}
-      title={path || rtt ? `${h.reason}${path ? ` · ${path}` : ""}${rtt ? ` · 延迟 ~${rtt}ms` : ""}` : undefined}
-    >
-      {/* v5 方向 icon-chip（设计稿 D 窗）：出站 ↗ / 入站 ↘，扫一眼即知方向 */}
-      <span className={h.dir === "outbound" ? styles.dirPillOut : styles.dirPillIn}>
-        {h.dir === "outbound" ? (
-          <ArrowUpRight size={10} aria-hidden="true" />
-        ) : (
-          <ArrowDownRight size={10} aria-hidden="true" />
-        )}
-        {h.dir === "outbound" ? "出站" : "入站"}
-      </span>
-      <span className={styles.phName}>
-        {peerLabel}
-        <span className={styles.tagRc}>{historyCapabilityLabel(h.capability)}</span>
-      </span>
-      <span className={styles.phDur}>{formatDuration(h.duration_ms)}</span>
-      <span className={styles.phTime}>{formatWhen(h.started_ms)}</span>
-      {/* v5：结果图标退化成状态点（.phRes::before，颜色随 data-tone），文字自足。
-          用 data-tone 而非四个语义类：详情面「最近会话」共用同一套色，
-          同一个属性名让两处能一眼对上、也不会有「漏配某档」的空档。 */}
-      <span className={styles.phRes} data-tone={tone}>{h.reason}</span>
-      {canRetry && (
-        <button
-          type="button"
-          className={styles.linkBtn}
-          disabled={busy}
-          title={`沿用这次会话用过的档，再次发起`}
-          onClick={() => onReconnect(h.peer, peerLabel, cap)}
-        >
-          {/* U6：档位上脸——一键可能直接发「可控」，藏在悬浮提示里不够 */}
-          再次连接 · {capabilityLabel(cap)}
-        </button>
       )}
     </div>
   );

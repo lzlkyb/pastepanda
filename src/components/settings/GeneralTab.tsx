@@ -93,7 +93,7 @@ export function GeneralTab({
           cleanupDays={cleanupDays} handlePickCleanupDays={handlePickCleanupDays}
           trashDays={trashDays} handlePickTrashDays={handlePickTrashDays}
         />
-        <SyncSection config={config} updateAndSave={updateAndSave} />
+        <SyncSection config={config} updateAndSave={updateAndSave} filter={search.filter} />
         <StatsSection
           config={config} stats={stats} statsError={statsError} onRetryStats={onRetryStats}
           setShowWeekReport={setShowWeekReport}

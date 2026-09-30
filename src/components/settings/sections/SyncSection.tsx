@@ -21,15 +21,17 @@ import styles from "../../Settings.module.css";
 interface SyncSectionProps {
   config: AppConfig;
   updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  /** 搜索关键词：透传给「远程电脑」的四个折叠组——搜索期间强制全展开。 */
+  filter: string;
 }
 
-export function SyncSection({ config, updateAndSave }: SyncSectionProps) {
+export function SyncSection({ config, updateAndSave, filter }: SyncSectionProps) {
   return (
     <>
       <div className={styles.sSection}>同步与互联</div>
       <LanSyncSection config={config} updateAndSave={updateAndSave} />
       <KbSyncSection config={config} updateAndSave={updateAndSave} />
-      <RcSection config={config} updateAndSave={updateAndSave} />
+      <RcSection config={config} updateAndSave={updateAndSave} filter={filter} />
     </>
   );
 }

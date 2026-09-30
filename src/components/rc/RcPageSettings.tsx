@@ -8,7 +8,7 @@
  *   工作台内不提供——A2 设计稿本就没给画质留位置（2026-09-22 校正：旧文案「常驻主页左栏」
  *   在 A2 重构后已不成立，旧侧栏 `RcWorkbenchSide` 亦已作死代码删除）；
  * - 「被控能力上限」= 后端 `rc_status.capability`（rc_set_capability 持久写
- *   config，服务端 max_capability() 真实钳制入站授权）；主窗 RcAllowPanel 同款；
+ *   config，服务端 max_capability() 真实钳制入站授权）；主窗「被控上限」组（RcCapGroup）同款；
  * - 「默认发起方式」「自动开通道」是纯前端偏好（lib/rcRequest / lib/rcPrefs）。
  * 顶栏不摆「恢复默认」：没有对应后端，摆了就是新的摆设。
  *
