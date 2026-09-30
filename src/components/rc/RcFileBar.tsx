@@ -19,6 +19,7 @@ import { FolderDown, FolderUp } from "lucide-react";
 import { rcFileDefaultDir } from "@/lib/api/rcFile";
 import { useRcFile } from "@/hooks/useRcFile";
 import { useOkAutoClear } from "@/hooks/useOkAutoClear";
+import { pushRcOutlet } from "@/stores/rcOutletStore";
 import styles from "./RemoteComputer.module.css";
 
 type Fb = { kind: "ok" | "bad" | "info"; text: string } | null;
@@ -29,6 +30,13 @@ export function RcFileBar({ peer }: { peer: string }) {
   // P3-5：成功/信息 6s 自清，错误保留
   const clearFb = useCallback(() => setFb(null), []);
   useOkAutoClear(fb?.kind ?? null, clearFb);
+
+  // 内联反馈 + 常驻出口条各写一次（甲-②）：`kind` 两边同一套档位，不用翻译。
+  // 面板里这句会随 ⋯ 收起而卸载（规则 15.2），出口条不会。
+  const say = useCallback((kind: "ok" | "bad" | "info", text: string) => {
+    setFb({ kind, text });
+    pushRcOutlet({ kind, label: text });
+  }, []);
 
   // 拿不到对端 node_id 时不摆——`useRcFile(null)` 是「不过滤」，那会把**别的设备**
   // 的任务念进这场会话的底栏里，比不显示更糟。
@@ -43,13 +51,10 @@ export function RcFileBar({ peer }: { peer: string }) {
       );
       if (paths.length === 0) return;
       const ok = await file.send(paths);
-      setFb(
-        ok
-          ? { kind: "info", text: `已加入传输 · ${paths.length} 个文件（对方需确认）` }
-          : { kind: "bad", text: "发起失败：对方可能离线或尚未配对" },
-      );
+      if (ok) say("info", `已加入传输 · ${paths.length} 个文件（对方需确认）`);
+      else say("bad", "发起失败：对方可能离线或尚未配对");
     } catch (e) {
-      setFb({ kind: "bad", text: `传文件失败：${e}` });
+      say("bad", `传文件失败：${e}`);
     }
   };
 
@@ -71,13 +76,10 @@ export function RcFileBar({ peer }: { peer: string }) {
       });
       if (typeof dir !== "string") return;
       const ok = await file.pull(dir);
-      setFb(
-        ok
-          ? { kind: "info", text: "已发出请求 · 等对方选文件" }
-          : { kind: "bad", text: "发起失败：对方可能离线或尚未配对" },
-      );
+      if (ok) say("info", "已发出请求 · 等对方选文件");
+      else say("bad", "发起失败：对方可能离线或尚未配对");
     } catch (e) {
-      setFb({ kind: "bad", text: `发起失败：${e}` });
+      say("bad", `发起失败：${e}`);
     }
   };
 

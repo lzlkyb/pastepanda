@@ -155,5 +155,27 @@ export function useRcRemoteSend({
     pickScope(next);
   }, [canCycleScreen, peerMonitors.length, pickScope]);
 
-  return { qualities, scopes, bitrateOptions, canCycleScreen, cycleScreen, pickQuality, pickScope, pickBitrate };
+  // 🔴 乙-③：「锁定对方」的乐观更新会**说谎**——锁的生效与否只有对方的钩子知道
+  //（它可能没授权、可能钩子没装上）。所以这里不碰任何本地状态：真值由对端推回的
+  // `input_state` 帧落到 `status.peer_input`，本条只负责「发不出去」时的报错。
+  const sendInputLock = useCallback(
+    (on: boolean) => {
+      rcSendInput({ kind: "set_input_lock", on }).catch((e) =>
+        onStatus(`锁定请求失败：${e}`, "error")
+      );
+    },
+    [onStatus],
+  );
+
+  return {
+    qualities,
+    scopes,
+    bitrateOptions,
+    canCycleScreen,
+    cycleScreen,
+    pickQuality,
+    pickScope,
+    pickBitrate,
+    sendInputLock,
+  };
 }

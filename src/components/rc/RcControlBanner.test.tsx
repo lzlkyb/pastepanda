@@ -141,4 +141,165 @@ describe("RcControlBanner 胶囊 + 抽屉（2026-09-24 方案 B）", () => {
     );
     expect(getByText("立即结束")).toBeDefined();
   });
+
+  /**
+   * 🔴 乙-③（2026-09-30）：被控侧的输入权交接。
+   *
+   * 这里最容易被写错的不是逻辑而是**措辞**：「收回」挡的是对方发来的键鼠，
+   * 「锁定」吞的是我自己的物理键鼠——两句话被互换，被控者就会以为自己已经把
+   * 对方赶出去了，而实际上什么都没发生。断言按这条口径写。
+   */
+  describe("乙-③ 输入权交接（收回 / 允许锁定 / 谁在动）", () => {
+    const open = (container: HTMLElement) =>
+      fireEvent.click(container.querySelector(`.${styles.ctrlPillMain}`)!);
+
+    it("⑦ 收回键鼠：胶囊上挂常驻徽标（抽屉一收就看不见的状态不算告知）", () => {
+      const onToggleInputHold = vi.fn();
+      const { container } = renderBanner({
+        inputHold: true,
+        onToggleInputHold,
+      });
+      const badge = container.querySelector(`.${styles.pillHold}`);
+      expect(badge).not.toBeNull();
+      expect(badge!.textContent).toContain("键鼠已收回");
+      // 🔴 必须是胶囊主键的**同级**：button 套 button 在 HTML 里非法，且点徽标会
+      // 顺带把抽屉展开（jsdom 不拦这种结构，只有这条断言拦得住）。
+      expect(badge!.parentElement!.classList.contains(styles.ctrlPill)).toBe(true);
+      expect(badge!.closest(`.${styles.ctrlPillMain}`)).toBeNull();
+      // 橙点徽标同时亮起（有需要处理的状态，与文件请求同一判据）
+      expect(container.querySelector(`.${styles.ctrlBadge}`)).not.toBeNull();
+      fireEvent.click(badge!);
+      expect(onToggleInputHold).toHaveBeenCalledTimes(1);
+    });
+
+    it("⑧ 未收回时不摆徽标（常驻 UI 只在状态成立时出现）", () => {
+      const { container } = renderBanner({ onToggleInputHold: vi.fn() });
+      expect(container.querySelector(`.${styles.pillHold}`)).toBeNull();
+    });
+
+    it("⑨ 抽屉两把闸的措辞不得互换：收回说「对方发来的」，授权说「我的输入」", () => {
+      const { container } = renderBanner({
+        onToggleInputHold: vi.fn(),
+        onToggleLockGrant: vi.fn(),
+      });
+      open(container);
+      const hold = screen.getByText("暂时收回我的键鼠");
+      const grant = screen.getByText(/允许对方锁定我的输入/);
+      expect(hold.classList.contains(styles.inputActBtn)).toBe(true);
+      expect(grant.classList.contains(styles.inputActBtn)).toBe(true);
+      expect(hold.getAttribute("title")).toContain("对方发来的键鼠会被拦下");
+      expect(grant.getAttribute("title")).toContain("锁住你的键盘鼠标");
+      // 授权默认关（aria-pressed=false）——默认开 = 任何人连进来就能锁住这台机器
+      expect(grant.getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("⑩ 收回态：按钮翻成「归还」并带选中态；锁定生效时给常驻说明行", () => {
+      const { container } = renderBanner({
+        inputHold: true,
+        lockGranted: true,
+        lockActive: true,
+        onToggleInputHold: vi.fn(),
+        onToggleLockGrant: vi.fn(),
+      });
+      open(container);
+      const back = screen.getByText("归还键鼠给对方");
+      expect(back.classList.contains(styles.inputActBtnOn)).toBe(true);
+      expect(container.textContent).toContain("对方现在锁着你的键盘鼠标");
+      expect(screen.getByText(/允许对方锁定我的输入：开/).getAttribute("aria-pressed")).toBe("true");
+    });
+
+    it("⑪ 谁在动：只有窗口内点亮的那枚才摆，idle 不凭空挂灰点", () => {
+      const first = renderBanner({
+        onToggleInputHold: vi.fn(),
+        inputPills: { keyboard: "idle", mouse: "blocked" },
+      });
+      open(first.container);
+      const pills = first.container.querySelector(`.${styles.inputPills}`);
+      expect(pills).not.toBeNull();
+      expect(pills!.textContent).toContain("鼠标·对方无权却被按下");
+      expect(pills!.textContent).not.toContain("键盘");
+      first.unmount();
+
+      // 两枚都 idle ⇒ 整行不渲染（抽屉不凭空挂两枚读不懂的灰点）
+      const second = renderBanner({
+        onToggleInputHold: vi.fn(),
+        inputPills: { keyboard: "idle", mouse: "idle" },
+      });
+      open(second.container);
+      expect(second.container.querySelector(`.${styles.inputPills}`)).toBeNull();
+    });
+  });
+
+  /**
+   * 🔴 丙-③（2026-09-30）：暂停对方观看。
+   *
+   * 与乙-③ 是两条正交的路——这条挡对方的**眼睛**（画面停帧），那条挡对方的**手**
+   * （注入被拦）。所以断言重点是：两枚徽标各自独立出现、措辞不许互相借词，
+   * 以及「抽屉一收起状态就看不见」这条老坑不许复发（规则 15.1）。
+   */
+  describe("丙-③ 暂停对方观看（画面停帧，会话不断）", () => {
+    const open = (container: HTMLElement) =>
+      fireEvent.click(container.querySelector(`.${styles.ctrlPillMain}`)!);
+
+    it("⑫ 暂停中：胶囊行挂常驻徽标，点它直接恢复（不必再开抽屉）", () => {
+      const onToggleVideoPause = vi.fn();
+      const { container } = renderBanner({
+        videoPaused: true,
+        onToggleInputHold: vi.fn(),
+        onToggleVideoPause,
+      });
+      const badge = container.querySelector(`.${styles.pillPause}`);
+      expect(badge).not.toBeNull();
+      expect(badge!.textContent).toContain("画面已暂停");
+      // 同 ⑦ 的结构红线：button 不能套 button，徽标必须是胶囊主键的同级
+      expect(badge!.parentElement!.classList.contains(styles.ctrlPill)).toBe(true);
+      expect(badge!.closest(`.${styles.ctrlPillMain}`)).toBeNull();
+      fireEvent.click(badge!);
+      expect(onToggleVideoPause).toHaveBeenCalledTimes(1);
+    });
+
+    it("⑬ 收回键鼠与暂停画面各挂各的徽标：一条成立不影响另一条（正交的两把闸）", () => {
+      const { container } = renderBanner({
+        inputHold: true,
+        onToggleInputHold: vi.fn(),
+        videoPaused: false,
+        onToggleVideoPause: vi.fn(),
+      });
+      expect(container.querySelector(`.${styles.pillHold}`)).not.toBeNull();
+      // 只按了收回 ⇒ 画面照常在推，不许凭空挂一枚「画面已暂停」
+      expect(container.querySelector(`.${styles.pillPause}`)).toBeNull();
+    });
+
+    it("⑭ 抽屉里那颗键：默认「暂停对方观看」，点它调一次动作", () => {
+      const onToggleVideoPause = vi.fn();
+      const first = renderBanner({ onToggleInputHold: vi.fn(), onToggleVideoPause });
+      open(first.container);
+      const btn = screen.getByText("暂停对方观看");
+      expect(btn.getAttribute("aria-pressed")).toBe("false");
+      fireEvent.click(btn);
+      expect(onToggleVideoPause).toHaveBeenCalledTimes(1);
+      first.unmount();
+    });
+
+    it("⑭b 不传 handler ⇒ 整颗键不摆（与「不发送声音」同款纪律：不给半条路）", () => {
+      const { container } = renderBanner({ onToggleInputHold: vi.fn() });
+      open(container);
+      expect(screen.queryByText("暂停对方观看")).toBeNull();
+      expect(container.querySelector(`.${styles.inputPanelActs}`)).not.toBeNull();
+    });
+
+    it("⑮ 暂停态：按钮文案翻面 + 常驻徽标同时在位（触发与反馈同一可见性域）", () => {
+      const { container } = renderBanner({
+        onToggleInputHold: vi.fn(),
+        videoPaused: true,
+        onToggleVideoPause: vi.fn(),
+      });
+      open(container);
+      const back = screen.getByText("恢复对方观看");
+      expect(back.classList.contains(styles.inputActBtnOn)).toBe(true);
+      expect(container.querySelector(`.${styles.pillPause}`)).not.toBeNull();
+      // 措辞守住边界：暂停不是断连，也不许写成黑屏（机制已在拍板时否掉）
+      expect(container.textContent).not.toMatch(/已断开|黑屏/);
+    });
+  });
 });

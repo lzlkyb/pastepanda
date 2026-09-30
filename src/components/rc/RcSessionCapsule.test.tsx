@@ -17,6 +17,7 @@ import type { RcSession } from "@/lib/api/rc";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import type { UseRc } from "@/hooks/useRc";
 import { useAppStore } from "@/stores/appStore";
+import { clearRcOutlet, pushRcOutlet } from "@/stores/rcOutletStore";
 import { RcSessionCapsule } from "./RcSessionCapsule";
 import styles from "./RemoteComputer.module.css";
 
@@ -85,6 +86,8 @@ const SEND = {
   pickQuality: vi.fn(),
   pickScope: vi.fn(),
   pickBitrate: vi.fn(),
+  // 乙-③：锁定请求只发不猜（真值由对端回帧），测试里 spy 它有没有被调
+  sendInputLock: vi.fn(),
 } as unknown as Parameters<typeof RcSessionCapsule>[0]["send"];
 
 const RC = { busy: false, status: {} } as unknown as UseRc;
@@ -115,6 +118,9 @@ function base(over: Partial<Parameters<typeof RcSessionCapsule>[0]> = {}) {
     onStatus: vi.fn(),
     fit: "fit",
     onFit: vi.fn(),
+    // 乙-①：键盘模式两档（打字/直传）的当前值与点选——测试里固定打字档
+    keyMode: "type",
+    onPickKeyMode: vi.fn(),
     fullscreen: false,
     onToggleFullscreen: vi.fn(),
     onRequestEnd: vi.fn(),
@@ -249,6 +255,26 @@ describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
     // 🔴 规则 15.1 的判据：胶囊收走了，异常的两个信号一个都不许跟着被 visibility 带走
     expect(container.querySelector(`.${styles.capAlarmOn}`)).not.toBeNull();
     expect(handle(container).getAttribute("aria-hidden")).toBe("false");
+  });
+
+  it("🔴 甲-④：一级「立即重连」只在中断态出现（正常态不占宽），且用 .capReq 主按钮", () => {
+    // 对标 §6.4：断线时最要紧的一步不能藏在「先唤浮条、再点 ⋯」两级之外。
+    // 代价上限是胶囊宽度 +96px，所以正常态必须一个像素都不占。
+    const onReconnect = vi.fn();
+    const { container, rerender } = render(
+      <RcSessionCapsule {...base({ link: { ...LINK, state: "connected" }, onReconnect })} />,
+    );
+    expect(container.querySelector(`.${styles.capReq}`)).toBeNull();
+    for (const state of ["unstable", "reconnecting", "failed"] as const) {
+      rerender(<RcSessionCapsule {...base({ link: { ...LINK, state }, onReconnect })} />);
+      const btn = container.querySelector(`.${styles.capReq}`);
+      expect(btn?.textContent).toContain("立即重连");
+    }
+    fireEvent.click(container.querySelector(`.${styles.capReq}`)!);
+    expect(onReconnect).toHaveBeenCalled();
+    // 没给回调（父级没接线）就不摆按钮——一级入口不许点了没反应
+    rerender(<RcSessionCapsule {...base({ link: { ...LINK, state: "failed" }, onReconnect: undefined })} />);
+    expect(container.querySelector(`.${styles.capReq}`)).toBeNull();
   });
 
   it("🔴 乙-⑥：会话中途断线 ⇒ 自动展开一次提示，2.5s 后收起（不锁到会话结束）", () => {
@@ -446,6 +472,205 @@ describe("RcSessionCapsule（控端浮条，B 变体：首显 15s）", () => {
     const end = getByRole("button", { name: "结束会话" });
     expect(end.classList.contains(styles.capBtn)).toBe(true);
     expect(end.classList.contains(styles.capBtnDanger)).toBe(true);
+  });
+
+  /**
+   * 🔴 乙-③（2026-09-30）：输入权交接的发起端半边。
+   *
+   * 三条判据各钉一条会「说谎」的写法：
+   * - 「锁定对方」的**可点性**由对端报来的状态决定——缺帧（旧版对端）与「有这功能
+   *   但他没勾」必须分开说，都写成不可用 = 用户不知道该催谁；
+   * - 收回期间画面照常在动，所以「主机取回键鼠」这条**同时**出现在胶囊 pill（浮条
+   *   展开时）和常驻出口条（浮条收起时）——规则 15.1 的分层，少一层就是「点了没反应」；
+   * - 新加的键必须落在 `.capBtn` 基底上（P1-1 那条教训：四个 lint 工具对此全绿）。
+   */
+  it("🔴 乙-③：锁定键落在 .capBtn 基底，可点时点了只发 set_input_lock（不做乐观置位）", () => {
+    clearRcOutlet();
+    const rc = {
+      busy: false,
+      status: { peer_input: { host_hold: false, lock_granted: true, lock_active: false } },
+    } as unknown as UseRc;
+    const { getByRole } = render(<RcSessionCapsule {...base({ rc })} />);
+    const lock = getByRole("button", { name: "锁定对方" }) as HTMLButtonElement;
+    expect(lock.classList.contains(styles.capBtn)).toBe(true);
+    expect(lock.disabled).toBe(false);
+    fireEvent.click(lock);
+    expect(SEND.sendInputLock).toHaveBeenCalledWith(true);
+    // 🔴 点完按钮上**不许**立刻变成「解除锁定」——真值要等对端钩子回帧
+    expect(getByRole("button", { name: "锁定对方" })).toBeTruthy();
+  });
+
+  it("🔴 乙-③：对方已锁 → 键翻成「解除锁定」并带选中态；点了发 false", () => {
+    clearRcOutlet();
+    const rc = {
+      busy: false,
+      status: { peer_input: { host_hold: false, lock_granted: true, lock_active: true } },
+    } as unknown as UseRc;
+    const { getByRole } = render(<RcSessionCapsule {...base({ rc })} />);
+    const lock = getByRole("button", { name: "解除锁定" });
+    expect(lock.classList.contains(styles.capBtnOn)).toBe(true);
+    fireEvent.click(lock);
+    expect(SEND.sendInputLock).toHaveBeenCalledWith(false);
+  });
+
+  it("🔴 乙-③：没授权 / 旧版对端 两种「不可点」原因分开说（都写成不可用 = 不知道催谁）", () => {
+    const ungranted = {
+      busy: false,
+      status: { peer_input: { host_hold: false, lock_granted: false, lock_active: false } },
+    } as unknown as UseRc;
+    const { getByTitle, unmount } = render(<RcSessionCapsule {...base({ rc: ungranted })} />);
+    const btn = getByTitle(/请让对方在会话抽屉里勾上/);
+    expect(btn.classList.contains(styles.capBtn)).toBe(true);
+    unmount();
+
+    // 缺帧 = 分不清「没授权」与「没这个功能」，宁可不点也不谎称对方拒绝过你
+    const legacy = { busy: false, status: {} } as unknown as UseRc;
+    const second = render(<RcSessionCapsule {...base({ rc: legacy })} />);
+    expect(second.getByTitle(/还没有这个功能/).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("🔴 乙-③：主机收回键鼠 = 胶囊琥珀 pill + 常驻出口条两层都有（浮条收起也看得见）", () => {
+    clearRcOutlet();
+    const rc = {
+      busy: false,
+      status: { peer_input: { host_hold: true, lock_granted: false, lock_active: false } },
+    } as unknown as UseRc;
+    const { container, getByText } = render(<RcSessionCapsule {...base({ rc })} />);
+    // 胶囊那枚（浮条展开时）
+    expect(getByText("主机取回键鼠").classList.contains(styles.capPillWarn)).toBe(true);
+    // 常驻出口条那行（住在 .capFloat **之外**，收起态也还在）
+    const outlet = container.querySelector(`.${styles.capOutlet}`);
+    expect(outlet).not.toBeNull();
+    expect(outlet!.parentElement!.classList.contains(styles.capFloat)).toBe(false);
+    expect(outlet!.textContent).toContain("主机正在自己操作");
+    expect(outlet!.textContent).toContain("10 分钟无操作会自动归还");
+    // 不写「已断开」：画面与剪贴板都还在动
+    expect(outlet!.textContent).not.toContain("断开");
+  });
+
+  it("🔴 乙-③：锁定未生效 → 胶囊短标签 + 出口条带完整原因", () => {
+    clearRcOutlet();
+    const rc = {
+      busy: false,
+      status: {
+        peer_input: {
+          host_hold: false,
+          lock_granted: true,
+          lock_active: false,
+          err: "本机输入监视未运行，无法锁定",
+        },
+      },
+    } as unknown as UseRc;
+    const { container } = render(<RcSessionCapsule {...base({ rc })} />);
+    const outlet = container.querySelector(`.${styles.capOutlet}`);
+    expect(outlet!.textContent).toContain("锁定未生效");
+    expect(outlet!.textContent).toContain("本机输入监视未运行");
+    expect(outlet!.classList.contains(styles.capOutletBad)).toBe(true);
+  });
+
+  /**
+   * 🔴 丙-③（2026-09-30）：对方暂停了画面。
+   *
+   * 与乙-③ 同一种分层（pill + 常驻出口条），但多一条**排他**判据：画面不来的原因
+   * 既然已经查明是「对方按了暂停」，就不许再同时挂一枚琥珀的「操作后 Ns 无画面」——
+   * 那条会把人引向「去重连」，而重连解决不了对方主动挡着的事。
+   */
+  it("🔴 丙-③：对方暂停画面 → 胶囊 pill + 出口条两层都有，且不摆「操作后 Ns 无画面」", () => {
+    clearRcOutlet();
+    const rc = { busy: false, status: { peer_video_paused: true } } as unknown as UseRc;
+    const { container, getByText, queryByText } = render(
+      <RcSessionCapsule {...base({ rc, link: { ...LINK, unansweredSec: 3 } })} />,
+    );
+    const pill = getByText("对方已暂停画面");
+    expect(pill.classList.contains(styles.capPillWarn)).toBe(true);
+    const outlet = container.querySelector(`.${styles.capOutlet}`)!;
+    expect(outlet.parentElement!.classList.contains(styles.capFloat)).toBe(false);
+    expect(outlet.textContent).toContain("对方暂停了画面");
+    // 措辞不许越界成「断开」：会话没断，键鼠与剪贴板照常在动
+    expect(outlet.textContent).not.toContain("断开");
+    expect(queryByText(/操作后 3s 无画面/)).toBeNull();
+  });
+
+  it("🔴 丙-③：旧对端不发这条帧 → 什么都不摆（没有证据就不摆断言）", () => {
+    clearRcOutlet();
+    const rc = { busy: false, status: {} } as unknown as UseRc;
+    const { queryByText, container } = render(
+      <RcSessionCapsule {...base({ rc, link: { ...LINK, unansweredSec: 3 } })} />,
+    );
+    expect(queryByText("对方已暂停画面")).toBeNull();
+    // 无暂停时「操作后 Ns 无画面」照常出（上一条的排他不许把链路警示一起吃掉）
+    expect(container.textContent).toContain("操作后 3s 无画面");
+  });
+
+  it("🔴 乙-④：键盘捕获中 → 一级出现**可点**芯片，点了走 releaseKb（不必再钻「⋯」）", () => {
+    const releaseKb = vi.fn();
+    const togglePointerLock = vi.fn();
+    const { getByRole } = render(
+      <RcSessionCapsule
+        {...base({
+          input: {
+            kbOn: true,
+            pointerLocked: false,
+            releaseKb,
+            togglePointerLock,
+          } as unknown as typeof INPUT,
+        })}
+      />
+    );
+    const chip = getByRole("button", { name: "键盘捕获中" });
+    // P1-1 那条教训：类名没接上时 tsc/eslint/lint:ui/lint:css 四个工具全绿，
+    // 芯片会退回浏览器原生按钮外观，只有渲染断言拦得住。
+    expect(chip.classList.contains(styles.capChip)).toBe(true);
+    expect(chip.classList.contains(styles.capChipKb)).toBe(true);
+    fireEvent.click(chip);
+    expect(releaseKb).toHaveBeenCalledTimes(1);
+    expect(togglePointerLock).not.toHaveBeenCalled();
+  });
+
+  it("🔴 乙-④：指针锁与键盘同时为真 → 只摆一枚（指针锁优先），点了解锁", () => {
+    const releaseKb = vi.fn();
+    const togglePointerLock = vi.fn();
+    const { getByRole, queryByRole } = render(
+      <RcSessionCapsule
+        {...base({
+          input: {
+            kbOn: true,
+            pointerLocked: true,
+            releaseKb,
+            togglePointerLock,
+          } as unknown as typeof INPUT,
+        })}
+      />
+    );
+    const chip = getByRole("button", { name: "指针锁定中" });
+    expect(chip.classList.contains(styles.capChipLock)).toBe(true);
+    // 锁着时系统光标在画面里，第二枚根本点不到 ⇒ 不许同时摆两枚
+    expect(queryByRole("button", { name: "键盘捕获中" })).toBeNull();
+    fireEvent.click(chip);
+    expect(togglePointerLock).toHaveBeenCalledTimes(1);
+    expect(releaseKb).not.toHaveBeenCalled();
+  });
+
+  it("🔴 乙-④：没捕获 → 只有灰字提示；只看档哪怕传了 kbOn 也不许摆捕获芯片（它没这能力）", () => {
+    const { getByText, queryByRole } = render(<RcSessionCapsule {...base()} />);
+    expect(getByText("点画面可捕获键盘")).toBeTruthy();
+    expect(queryByRole("button", { name: "键盘捕获中" })).toBeNull();
+
+    const view = render(
+      <RcSessionCapsule
+        {...base({
+          canControl: false,
+          input: {
+            kbOn: true,
+            pointerLocked: true,
+            releaseKb: vi.fn(),
+            togglePointerLock: vi.fn(),
+          } as unknown as typeof INPUT,
+        })}
+      />
+    );
+    expect(view.queryByRole("button", { name: "指针锁定中" })).toBeNull();
+    expect(view.queryByRole("button", { name: "键盘捕获中" })).toBeNull();
   });
 
   it("⋯ 面板开合：点击展开（码率/声音/重连收纳位），点外面收", () => {
@@ -918,5 +1143,107 @@ describe("RcCapsuleHandle（乙档常驻把手）", () => {
       await Promise.resolve();
     });
     expect(useAppStore.getState().config.rc_hover_reveal).toBe(true);
+  });
+});
+
+/**
+ * 🔴 甲-②（2026-09-29）常驻结果出口条。
+ * design/远程电脑-交互审计整改-甲乙丙-设计稿.html §甲-②。
+ *
+ * 这条钉的不是外观，是**可见性域**（规则 15.1 / 15.2 / 15.3）：
+ * 结果的来源有四处，其中剪贴板与文件那两处住在 `{moreOpen && <RcCapsuleMore/>}` 里，
+ * 面板一收就连反馈一起卸载（=C1）；`onStatus` 走的全局 toast 又挂在 rc-main 树根，
+ * **不在全屏元素 `.sessionWrap` 的子树里**（=C2 的同一个根）。出口条必须挂在
+ * `.capZone` 直系、`.capFloat` 之外，才能两态、两档收起都还在。
+ */
+describe("RcCapsuleOutlet（甲-②常驻结果出口）", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    h.invoke.mockReset().mockResolvedValue(undefined);
+    h.isMaximized.mockReset().mockResolvedValue(false);
+    h.onResized.mockReset().mockResolvedValue(() => {});
+    h.asks = [];
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    useAppStore.getState().updateConfig({ rc_hover_reveal: true });
+    clearRcOutlet();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    clearRcOutlet();
+  });
+
+  function outlet(container: HTMLElement) {
+    return container.querySelector<HTMLElement>(`.${styles.capOutlet}`);
+  }
+
+  it("收起态（首显 15s 到点）出口条仍在场，且是 .capZone 的直系子元素", () => {
+    pushRcOutlet({ kind: "bad", label: "重连失败" });
+    const props = base();
+    const r = render(<RcSessionCapsule {...props} />);
+    stubGeometry(r.container, props.stageRef.current!);
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(float(r.container)!.getAttribute("aria-hidden")).toBe("true");
+    const o = outlet(r.container);
+    expect(o, "浮条收起了，结果也跟着消失 = C1 复发").toBeTruthy();
+    expect(o!.parentElement).toBe(zone(r.container));
+    expect(float(r.container)!.contains(o!)).toBe(false);
+    expect(o!.textContent).toContain("重连失败");
+  });
+
+  it("失败常驻、成功自清（bad 不许 2s 就蒸发）", () => {
+    pushRcOutlet({ kind: "bad", label: "推送失败" });
+    const { container } = render(<RcSessionCapsule {...base()} />);
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(outlet(container)!.textContent).toContain("推送失败");
+
+    clearRcOutlet();
+    pushRcOutlet({ kind: "ok", label: "已推送" });
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(outlet(container)).toBeNull();
+  });
+
+  it("同刻只显示最新一条 + 计数（多条不叠成第二块遮挡）", () => {
+    pushRcOutlet({ kind: "bad", label: "重连失败" });
+    pushRcOutlet({ kind: "info", label: "已发出请求" });
+    const { container } = render(<RcSessionCapsule {...base()} />);
+    const o = outlet(container)!;
+    expect(container.querySelectorAll(`.${styles.capOutlet}`)).toHaveLength(1);
+    expect(o.textContent).toContain("重连失败");
+    expect(o.textContent).not.toContain("已发出请求");
+    expect(o.querySelector(`.${styles.capOutletCnt}`)!.textContent).toBe("+1");
+  });
+
+  it("✕ 只管队列里的：进度行（现算、id 为负）不摆 ✕——关不掉一条在跑的进度才是说谎", () => {
+    pushRcOutlet({ kind: "bad", label: "推送失败" });
+    const { container, getByRole } = render(<RcSessionCapsule {...base()} />);
+    fireEvent.click(getByRole("button", { name: "关闭提示" }));
+    expect(outlet(container)).toBeNull();
+  });
+
+  it("🔴 样式表：.capZone 本体不许再挂 visibility（把手与出口条都住在这一层）", () => {
+    const CSS = readFileSync(
+      join(process.cwd(), "src", "components", "rc", "RemoteComputer.module.css"),
+      "utf8",
+    );
+    const zoneRule = CSS.match(/(?:^|\n)\.capZone\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(zoneRule, ".capZone 一旦 visibility:hidden，把手和出口条会一起消失").not.toMatch(
+      /visibility\s*:/,
+    );
+    // 隐藏态三重纪律挂在内层：基准 transition 在 `.capFloat`，`visibility:hidden`
+    // 由复用的 `.viewToolsHidden` 提供（`.capFloat.viewToolsHidden` 只把它推迟到淡出后）
+    const base = CSS.match(/(?:^|\n)\.capFloat\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(base, ".capFloat 本体不许挂 visibility——收起是复用 .viewToolsHidden 做的").not.toMatch(
+      /visibility\s*:/,
+    );
+    expect(CSS).toMatch(/(?:^|\n)\.viewToolsHidden\s*\{[^}]*visibility:\s*hidden/);
+    const delayed = CSS.match(/(?:^|\n)\.capFloat\.viewToolsHidden\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(delayed).toMatch(/visibility 0s linear 200ms/);
   });
 });

@@ -143,6 +143,19 @@ impl InboundVideo {
                 tokio::time::sleep(std::time::Duration::from_millis(400)).await;
                 continue;
             }
+            // 丙-③：被控者按了「暂停对方观看」。与上面那条**省带宽**的暂停无关，
+            // 这条是隐私闸：光标形状也算画面的一部分（对方屏幕上那颗指针也是本机
+            // 此刻的状态），所以整圈跳过——采集、编码、发送、光标上报一概不做。
+            // 🔴 会话、心跳、输入读取、剪贴板、文件通道都不受它影响：这条按钮答的是
+            // 「别看我屏幕」，不是「别动我电脑」（后者是乙-③ 的收回键鼠）。
+            // 空转只读一个原子量，300ms 一轮：恢复后最多半秒就重新出帧。
+            if self.svc.video_paused() {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    crate::rc::service::video_pause::PAUSE_POLL_MS,
+                ))
+                .await;
+                continue;
+            }
             // 等待：到点（固定节奏）或 输入提帧（拖动跟手）。
             // 提帧走 `boost_frame`（notify_one，**存许可**）⇒ 本圈干活期间到达的
             // 输入不会落空。旧实现用 notify_waiters 不存许可，错过一次就要等

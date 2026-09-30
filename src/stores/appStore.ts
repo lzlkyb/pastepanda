@@ -107,6 +107,10 @@ export interface AppConfig {
    *  常驻把手与 F10（乙档 2026-09-29）。读取口径收口在 lib/rcHoverReveal——别处直接
    *  读这个键会漏掉旧配置缺键的默认分支。 */
   rc_hover_reveal: boolean;
+  /** 远程会话（控端键盘模式）：`"type"` 打字（按字符翻译，中文可输入，默认）/
+   *  `"direct"` 直传（按扫描码，游戏与快捷键准，中文打不出）。乙-① 2026-09-30，
+   *  两档都必须显式切换、不做自动判定。读取口径收口在 lib/rcKeyMode 的 `rcKeyModeOf`。 */
+  rc_key_mode: string;
   always_on_top: boolean;
   auto_startup: boolean;
   sequential_hotkey: string;
@@ -465,6 +469,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   rc_enabled: false,
   rc_clip_auto: true,
   rc_hover_reveal: true,
+  rc_key_mode: "type",
   always_on_top: false,
   auto_startup: false,
   sequential_hotkey: "ctrl+alt+q",

@@ -453,6 +453,110 @@
   max-width: 280px;
 }
 
+/* —— 甲-③（2026-09-29）：断连遮罩 .linkMask ——
+   挂在 fakeScreen **内部**（= 全屏元素 .sessionWrap 的子树），所以窗口态与全屏态都
+   看得见；这是它存在的全部理由：断连后画面停在最后一帧，而唯一的说明（浮条里那枚
+   pill）会随浮条一起淡出（=C3）。
+   规则 8：稿里的 backdrop-filter:blur(1.5px) 没照搬——这一层盖的是整个画面盒
+   （全屏时就是整屏），模糊的代价按面积算，而它出现的时机恰恰是网络最差、最该省 GPU
+   的时候。用不透明底 + 一张卡片达到同样的「画面已死」的分离感。 */
+.linkMask {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  background: rgba(6, 8, 12, 0.78); /* ui-rule-ok: 遮罩压在恒黑的画面盒上，不随主题翻面 */
+  color: rgba(232, 236, 242, 0.95); /* ui-rule-ok: 同上，深底正文 */
+  text-align: center;
+}
+.linkMaskCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 380px;
+}
+.linkMaskChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(214, 69, 69, 0.22); /* ui-rule-ok: 遮罩内语义色底，压在深底上不随主题翻面 */
+  color: #f09595; /* ui-rule-ok: 深底上的红字（对比度 ≥4.5，同 .capAlarm 一族） */
+}
+.linkMaskDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef6b6b; /* ui-rule-ok: 同 .capOutletBad 的点 */
+}
+/* 恢复中：琥珀 + 呼吸。规则 8——这是遮罩存在期间唯一的常驻动画，且只在链路真断时跑，
+   一个 7px 点的 opacity，不碰 blur/尺寸。 */
+.linkMaskDotRun {
+  background: #e0803a; /* ui-rule-ok: 同 .capHandleAsk 的橙 */
+  animation: rcMaskBreathe 1.6s ease-in-out infinite;
+}
+@keyframes rcMaskBreathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.linkMaskTitle {
+  font-size: 15px;
+}
+.linkMaskText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #9fb0c6; /* ui-rule-ok: 遮罩内的次级正文，同 .dead span 稿值 */
+}
+.linkMaskRow {
+  display: flex;
+  gap: 8px;
+}
+.linkMaskBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22); /* ui-rule-ok: 遮罩内次级键描边，不随主题翻面 */
+  background: rgba(255, 255, 255, 0.1); /* ui-rule-ok: 遮罩内次级键底 */
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.linkMaskBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18); /* ui-rule-ok: 遮罩内 hover 提亮 */
+}
+.linkMaskBtnPri {
+  background: rgba(79, 124, 255, 0.9); /* ui-rule-ok: 遮罩内主键（accent 的深蓝版，保证深底对比） */
+  border-color: transparent;
+  color: #fff; /* ui-rule-ok: 主键固定白 */
+}
+.linkMaskBtnPri:hover:not(:disabled) {
+  background: rgba(96, 138, 255, 0.95); /* ui-rule-ok: 同上提亮一档 */
+}
+.linkMaskBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .linkMaskDotRun {
+    animation: none;
+  }
+}
+
 /* 状态入口交互壳（2026-09-21 A 方案稿对账后收编）：wrapper 负责**定位**但自身
    穿透；可交互的只有「连接详情」按钮（.hudBtn）与展开的面板（.hudPanel）自己的
    盒子。wrapper 用 pointer-events:none 而后代用 auto 的组合成立。
@@ -988,6 +1092,111 @@
   color: color-mix(in srgb, var(--green, #11813a) 95%, var(--text-primary, #1c1f23));
 }
 
+/* —— 乙-③：被控抽屉里的「输入权交接」面板 ——
+   两把闸分开着色，因为它们的语义方向相反：
+   .inputActBtnOn（绿）= 我这条隐私开关**已生效**（同 .trustOn / .audioMuteBtnOn 一族）；
+   .inputActBtnGrant（琥珀）= 我把一份权力**交出去了**（是风险敞口，不是保护）。
+   颜色全走语义令牌（V3/U6：不写 hex 兜底、不用 --green/--orange 这类色名）。 */
+.inputPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--card-bg) 60%, transparent);
+}
+
+.inputPanelActs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.inputActBtn {
+  font: inherit;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.inputActBtn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border-color));
+  color: var(--accent);
+}
+.inputActBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.inputActBtnOn {
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, var(--card-bg));
+  color: color-mix(in srgb, var(--success) 85%, var(--text-primary));
+  font-weight: 600;
+}
+.inputActBtnOn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--success) 70%, transparent);
+  color: color-mix(in srgb, var(--success) 95%, var(--text-primary));
+}
+.inputActBtnGrant {
+  border-color: color-mix(in srgb, var(--warning) 50%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, var(--card-bg));
+  color: color-mix(in srgb, var(--warning) 92%, var(--text-primary));
+  font-weight: 600;
+}
+.inputActBtnGrant:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--warning) 72%, transparent);
+  color: color-mix(in srgb, var(--warning) 96%, var(--text-primary));
+}
+
+/* 锁定生效时的一行常驻说明（它是「现在正在发生」，不是点了才闪一下的反馈）。 */
+.inputLockNow {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--warning) 88%, var(--text-primary));
+}
+
+/* 「谁在动」两枚：三档各一色，idle 不渲染（判据在 rcInputGate）。 */
+.inputPills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.inputPill {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+.inputPillPeer {
+  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: color-mix(in srgb, var(--success) 85%, var(--text-primary));
+}
+.inputPillLocal {
+  border-color: color-mix(in srgb, var(--text-muted) 30%, transparent);
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  color: var(--text-muted);
+}
+.inputPillBlocked {
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: color-mix(in srgb, var(--danger) 88%, var(--text-primary));
+}
+
 .joinGlobal {
   border: 1px solid color-mix(in srgb, var(--orange, #e0803a) 40%, var(--border-color, #e3e6ea));
   background: color-mix(in srgb, var(--orange, #e0803a) 8%, var(--card-bg, #fff));
@@ -1034,6 +1243,8 @@
 /* —— UX 升级 —— */
 .pill,
 .pillOn,
+.pillHold,
+.pillPause,
 .pillDanger {
   font: inherit;
   font-size: 11px;
@@ -1060,6 +1271,27 @@
   color: var(--danger, #d64545);
   border-color: color-mix(in srgb, var(--danger, #d64545) 35%, var(--border-color, #e3e6ea));
   cursor: default;
+}
+
+/* 乙-③：被控胶囊上的「键鼠已收回」常驻徽标（同 `.ctrlBadge` 的先例：抽屉里的
+   状态必须能在收起态也被看见，否则被控者会以为对方闲置着）。它是可点的归还键，
+   所以 cursor 跟 .pill 族而不是 .pillDanger。
+   🔴 它是 `.ctrlPill` 行的**同级**元素（button 不能套 button），于是必须自己
+   flex-shrink:0 —— 09-22 窄窗崩坏的教训是「压缩量只能由 .who 一个元素承担」，
+   这颗键一参与收缩就会被压成竖排。 */
+/* 琥珀 = 「本机此刻收回了一样东西，点此交回去」：键鼠收回（乙-③）与画面暂停
+   （丙-③）共用同一族——两枚并排时靠文案区分，颜色不许各写一遍（两处真相）。 */
+.pillHold,
+.pillPause {
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: color-mix(in srgb, var(--warning) 92%, var(--text-primary));
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border-color));
+  font-weight: 600;
+}
+.pillHold:hover,
+.pillPause:hover {
+  border-color: color-mix(in srgb, var(--warning) 70%, transparent);
 }
 
 .hudOk {
@@ -1131,7 +1363,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #4ade80; /* ui-rule-ok: 深玻璃绿态，同 .capKb 先例 */
+  background: #4ade80; /* ui-rule-ok: 深玻璃绿态，同 .capChipKb 先例 */
 }
 
 /* —— 方案 A（2026-09-28）：全屏态挂在胶囊右端的窗口键（最小化 + 关闭）——
@@ -1345,7 +1577,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #4ade80; /* ui-rule-ok: 深玻璃绿态，同 .capKb / .fsKbBadge i 先例 */
+  background: #4ade80; /* ui-rule-ok: 深玻璃绿态，同 .capChipKb / .fsKbBadge i 先例 */
 }
 /* 链路异常：整枚染红（Windows 关闭键同族语义色），电点转白保证对比度 */
 .capHandleBad {
@@ -1392,6 +1624,123 @@
   bottom: 0;
 }
 
+/* —— 甲-②（2026-09-29）：常驻结果出口条 .capOutlet ——
+   四类来源（远程改档 / 声音 / 剪贴板 / 文件）共用的**一条**结果。它必须住在
+   `.capZone` 直下、`.capFloat` **之外**：`.capFloat` 收起态被 `visibility:hidden`
+   带走，而「面板关了也要看到结果」正是本条存在的理由（规则 15.1）。
+   淡入淡出不参与——它不是浮条的一部分，是会话的常驻告知。
+   深玻璃配色逐字同 .capCapsule（压在画面上、刻意不随主题翻面）。 */
+.capOutlet {
+  pointer-events: auto;
+  margin-top: 8px; /* 与 .capMore 的面板间距同口径 */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(560px, calc(100% - 24px));
+  min-height: 30px;
+  padding: 4px 8px 4px 12px;
+  background: rgba(13, 16, 22, 0.82); /* ui-rule-ok: 深玻璃底色，同 .capCapsule，不随主题翻面 */
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12); /* ui-rule-ok: 深玻璃描边，同 .capCapsule */
+  border-radius: 999px; /* 胶囊一族几何：999px 走 U5 放行档 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32); /* ui-rule-ok: 固定深投影分层，同浮条一族 */
+  color: rgba(232, 236, 242, 0.95); /* ui-rule-ok: 深玻璃正文，同 .capCapsule */
+  font-size: 11.5px;
+}
+.capOutletDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80; /* ui-rule-ok: 深玻璃绿态，同 .capHandleKnob */
+}
+/* 四档语义色只改「点」和左边一点底色倾向，正文一律同色——出口条是读句子的地方，
+   不是读颜色的地方。 */
+.capOutletOk .capOutletDot {
+  background: #4ade80; /* ui-rule-ok: 成功，同 .capHandleKnob 的绿 */
+}
+.capOutletInfo .capOutletDot {
+  background: #7aa2ff; /* ui-rule-ok: 信息，深玻璃上的亮蓝（var(--accent) 在暗底偏暗） */
+}
+.capOutletBad {
+  border-color: rgba(214, 69, 69, 0.55); /* ui-rule-ok: 危险态描边加强，同 .liveBad 的色相 */
+}
+.capOutletBad .capOutletDot {
+  background: #ef6b6b; /* ui-rule-ok: 失败，深红底画面上的亮红（.capAlarm 同族） */
+}
+.capOutletRun .capOutletDot {
+  background: #22d3ee; /* ui-rule-ok: 进行中，青蓝一族（与 .capReq 主色同相） */
+}
+.capOutletText {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.capOutletDetail {
+  font-style: normal;
+  opacity: 0.72;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 进度槽：稿 §甲-② 的 120×4。宽度是数据（`<i style={{width}}/>`，项目既有先例）。 */
+.capOutletBar {
+  flex: none;
+  width: 120px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16); /* ui-rule-ok: 深玻璃轨道，同 .capCapsule 描边色相 */
+  overflow: hidden;
+}
+.capOutletBar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #22d3ee; /* ui-rule-ok: 进度填充，同 .capOutletRun 的点 */
+  transition: width 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.capOutletAct {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18); /* ui-rule-ok: 深玻璃次级键描边 */
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.capOutletAct:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1); /* ui-rule-ok: 深玻璃 hover，同 .capBtn 一族 */
+}
+.capOutletCnt {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.capOutletX {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+}
+.capOutletX:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12); /* ui-rule-ok: 深玻璃 hover，同 .capBtn 一族 */
+}
+
 .capCapsule {
   pointer-events: auto;
   position: relative; /* hudWrapCap（ⓘ 详情浮层）的定位锚 */
@@ -1428,7 +1777,8 @@
 .capPillOn,
 .capPillView,
 .capPillWarn,
-.capPillBad {
+.capPillBad,
+.capChip {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1509,21 +1859,39 @@
   border-color: rgba(214, 69, 69, 0.45);
 }
 
-/* 键盘捕获态（原底栏灰字「点画面可捕获键盘」升级上浮条） */
-.capKb {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: #4ade80; /* ui-rule-ok: 深玻璃绿态文字，同 .capPillOn 先例 */
-  flex-shrink: 0;
+/* 🔴 乙-④：捕获态芯片 = 「可点的 pill」。几何挂在上面那组 pill 基底上，这里只补
+   按钮该有的 font / cursor / 反馈。原 `.capKb`（只读的绿点标签）已删——捕获态从此
+   一律带出口，不再只能靠 Esc。
+   ⚠️ 基底那一步不能省：不挂基底就退回浏览器原生外观（2026-09-27 P1-1 那条教训——
+   tsc / eslint / lint:ui / lint:css 四个工具对此全绿，只有渲染断言拦得住）。 */
+.capChip {
+  font: inherit;
+  cursor: pointer;
 }
-.capKb i {
+.capChip i {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #4ade80; /* ui-rule-ok: 同上 */
   display: inline-block;
+  background: currentColor;
+}
+.capChipKb {
+  color: #4ade80; /* ui-rule-ok: 深玻璃绿态文字，沿用原 .capKb / .capPillOn 先例 */
+  background: rgba(52, 199, 123, 0.16); /* ui-rule-ok: 同上，深底不随主题翻面 */
+  border-color: rgba(52, 199, 123, 0.4); /* ui-rule-ok: 同上 */
+}
+.capChipLock {
+  color: #f5b06a; /* ui-rule-ok: 深玻璃琥珀，同 .capPillWarn——「本机正被捕获」是需要知道的态，不是错误 */
+  background: rgba(224, 128, 58, 0.18); /* ui-rule-ok: 同上 */
+  border-color: rgba(224, 128, 58, 0.45); /* ui-rule-ok: 同上 */
+}
+.capChip:hover:not(:disabled) {
+  /* ui-rule-ok: 深玻璃上的 hover 提亮，同 .capPillWarn:focus-visible 描边先例 */
+  border-color: rgba(255, 255, 255, 0.45);
+}
+.capChip:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.45); /* ui-rule-ok: 深玻璃固定焦点描边，同浮层先例 */
+  outline-offset: 1px;
 }
 .capKbOff {
   font-size: 11px;
@@ -1744,10 +2112,11 @@
 }
 
 /* 窄窗：名字与键盘提示让位（灯色保身份；视图三键保留——宽度小）。
-   绝不换行——旧底栏 72px 换行封顶的问题从此不存在。 */
+   绝不换行——旧底栏 72px 换行封顶的问题从此不存在。
+   🔴 乙-④：捕获态芯片（.capChip）**故意不在这里隐藏**——窄窗正是「找不到出口」
+   最要命的一档，它是 Esc 之外唯一的鼠标出口。 */
 @media (max-width: 680px) {
   .capWho,
-  .capKb,
   .capKbOff {
     display: none;
   }

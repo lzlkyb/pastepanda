@@ -32,7 +32,7 @@ use super::input::{
     assert_control_allowed, converge_key_vk, get_clipboard_text_async, inject,
     set_clipboard_text_async,
 };
-use super::input::{InputEvent, ScreenRegion};
+use super::input::{InputEvent, KeyMode, ScreenRegion};
 use super::encode_h264::VideoCodec;
 use super::protocol::SessionPhase;
 use super::service::{
@@ -44,6 +44,7 @@ use crate::sync::transport::write_frame;
 // 尺寸工具（primary/virtual_screen_size）也一并搬过去，这里通过下面的
 // `use` 把它们拉回来，调用点保持原样。
 use super::inbound_tasks::{primary_screen_size, send_caps_frame, virtual_screen_size};
+use super::inbound_tasks::{primary_screen_size, virtual_screen_size};
 
 /// 被控端推流任务。
 pub(super) struct InboundVideo {
@@ -469,11 +470,61 @@ pub(super) async fn handle_inbound_input(
             svc.emit_host_audio(err.as_deref()).await;
             return;
         }
+        // 乙-①：控端声明它的按键口径（打字档 / 直传档）。
+        //
+        // 🔴 **要求 Control**——判据与 `SetCaptureScope` 的 D-2 同源：这改的是
+        // **本机怎么被按键**（注入用 `wVk` 还是扫描码），不是「我自己看什么」。
+        // 「只看」会话的键鼠本来就进不来，档位对它没有意义，静默拒绝即可
+        //（发起端的开关在 UI 上本就随可控性置灰）。
+        //
+        // 未知 `mode` 不报错：`KeyMode::from_wire` 回落打字档 = 历史行为。
+        // 失败形态必须是「直传没生效」，而不是「键打不出去」。
+        InputEvent::SetKeyMode { mode } => {
+            if assert_control_allowed(cap).is_err() {
+                log::info!("[RC] 只看会话试图改按键口径，已拒绝：{mode}");
+                return;
+            }
+            let m = KeyMode::from_wire(mode);
+            let prev = svc.set_peer_key_mode(m);
+            if prev != m {
+                log::info!("[RC] 按键口径：{} → {}", prev.wire(), m.wire());
+            }
+            return;
+        }
+        // 乙-③：控端要求锁住**被控者本人的物理键鼠**（RustDesk block-input 语义）。
+        //
+        // 🔴 两重门禁：`Control`（与键鼠注入同量级）+ **被控者本场授权**。
+        // 授权不在只回一条失败给发起端，本机一个键都不吞——「把人锁在自己机器
+        // 外面」不能有第二条路径。判据与落地全在 `service/input_gate.rs`。
+        InputEvent::SetInputLock { on } => {
+            if assert_control_allowed(cap).is_err() {
+                log::info!("[RC] 只看会话试图锁定本机输入，已拒绝");
+                return;
+            }
+            svc.peer_request_input_lock(*on).await;
+            return;
+        }
         _ => {}
     }
 
     if assert_control_allowed(cap).is_err() {
         log::debug!("[RC] 拒绝只看会话的键鼠注入");
+        return;
+    }
+
+    // 🔴 乙-③ 闸 A：被控者「暂时收回我的键鼠」期间，对端的键鼠**一拍都不进本机**。
+    //
+    // 位置在能力校验之后、region 计算之前：越靠前越省，且收回期间连坐标换算都不必做。
+    // 剪贴板 / 流控那些在上面就已 `return`，不受这道闸影响——收回管的是「谁的手在
+    // 动这台机器的键鼠」，不是「对方能不能传个文本过来」。
+    if !svc.input_injection_allowed() {
+        match &ev {
+            InputEvent::Key { .. } | InputEvent::Text { .. } => svc.note_peer_kbd(false),
+            InputEvent::MouseMove { .. }
+            | InputEvent::MouseButton { .. }
+            | InputEvent::Wheel { .. } => svc.note_peer_mouse(false),
+            _ => {}
+        }
         return;
     }
 
@@ -600,7 +651,22 @@ pub(super) async fn handle_inbound_input(
         _ => None,
     };
 
-    let r = inject(&ev, &region);
+    // 乙-①：口径**紧贴注入**读一次（与 `session_peer_unchanged` 同期）。取早了
+    // 会在「region 计算期间对端改了档」时用旧口径打下一批键。
+    let mode = svc.key_mode();
+    let r = inject(&ev, &region, mode);
+    // 乙-③：「谁在动」的活动戳。只在**真的落进本机**时记绿——注入失败（UIPI、
+    // 无效键值）不是「对方在用」，更不是「对方无权被拦」，那条红的另有来源
+    //（收回闸，见上面）。失败留旧戳，靠时间窗自己淡出。
+    if r.ok {
+        match &ev {
+            InputEvent::Key { .. } | InputEvent::Text { .. } => svc.note_peer_kbd(true),
+            InputEvent::MouseMove { .. }
+            | InputEvent::MouseButton { .. }
+            | InputEvent::Wheel { .. } => svc.note_peer_mouse(true),
+            _ => {}
+        }
+    }
     if !r.ok {
         // 🔴 P3-3：回滚 pressed（[`pressed_rollback`] 的三种情形），保证
         // 「集合里的键都真的按着」这条不变量，end_session 的 release_all

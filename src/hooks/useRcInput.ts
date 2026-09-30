@@ -1,11 +1,18 @@
 /**
  * useRcInput — 鼠标节流、指针锁定相对位移、两级 Esc、键盘捕获、本地光标。
+ *
+ * 乙-①（2026-09-30）起，键盘转发前多一道**输入法闸**（判据在 `lib/rcKeyMode`，
+ * 事件与出口条在 `hooks/useRcImeGuard`）：候选期间零键外发，选字完成后按模式处理。
+ * 闸必须挂在这个文件而不是调用方——这里是「按键出本机」的唯一收口，多开一个
+ * 转发口就会多一个漏守卫的地方（规则 11.1）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rcSendInput } from "@/lib/api/rc";
 import { isSessionEscape, shouldSwallowEscape } from "@/lib/rcKeyGuard";
 import { rcPanelOpenCount } from "@/lib/rcPanelFocus";
 import { keyToVk, shouldForwardToRemote } from "@/lib/rcKeyMap";
+import type { RcKeyMode } from "@/lib/rcKeyMode";
+import { useRcImeGuard } from "@/hooks/useRcImeGuard";
 // 几何换算收口在 lib/rcPointer（2026-09-22 拆出，本文件压回 400 行内）。
 // re-export 保持既有 import 路径（@/hooks/useRcInput）不变。
 import { mapNormFromCanvas, type RcCursorPos } from "@/lib/rcPointer";
@@ -56,6 +63,7 @@ export function useRcInput({
   fit = "fit",
   moveThrottleMs = MOVE_THROTTLE_MS,
   inputEpochRef,
+  keyMode = "type",
 }: {
   canControl: boolean;
   hasFrame: boolean;
@@ -68,9 +76,16 @@ export function useRcInput({
   moveThrottleMs?: number;
   /** P4：每次输入（移动/按键/点击）发出的本地时刻。操作延迟 HUD 用，可缺省。 */
   inputEpochRef?: React.MutableRefObject<number>;
+  /** 乙-①：打字 / 直传（决定输入法选字结果发不发；注入方式由对端按同一条信令执行）。 */
+  keyMode?: RcKeyMode;
 }) {
   const [kbOn, setKbOn] = useState(false);
   const [pointerLocked, setPointerLocked] = useState(false);
+  // 乙-①：输入法候选闸（候选期间一律不发键；选字完成后按 keyMode 发整串文本）。
+  const ime = useRcImeGuard({ canControl, keyMode });
+  // 成员表达式进不了依赖数组（eslint 只认根对象，RcOverlay 同一处先例）：两个闸函数
+  // 本身是 useCallback 稳定的，取成局部名依赖就写得准。
+  const { imeBlocksKey, noteImeCancelled } = ime;
   // B1：本地光标。发送坐标（归一化 0..65535）在这里是唯一汇合点
   // （普通模式与指针锁定模式都走 queueMove），所以光标状态也在这更新——
   // 视觉跟随本地输入即时移动，不等对端画面回传（那是 200-400ms 的"飘"）。
@@ -278,13 +293,22 @@ export function useRcInput({
     };
   }, [canControl, pointerLocked, norm, releaseTracked]);
 
-  // 两级 Esc：捕获中先释放键盘；再按确认结束。
+  // 🔴 乙-④（2026-09-29 收敛）：Esc 只有**两类**结局——「收起一层附加态」或「退出会话」。
+  // 附加态按盖在上面的顺序逐层收：面板 → 指针锁 → 键盘捕获；每收一层，胶囊上那枚
+  // 可点的捕获芯片（`rcCaptureChipOf`）就少一层，用户看得见自己刚收掉了什么。
   // 2026-09-23：只看档不再整段早退——它没有键盘/指针锁可释放，Esc 天然
   // 落到「确认结束」这一级，给只看会话一条键盘退出加速路径（顶栏按钮仍是
   // 鼠标主路，规则 17.1）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isSessionEscape(e)) return;
+      // 🔴 乙-①：候选期间的 Esc 归输入法（它用来关掉候选框），不能顺手把会话结束
+      // 确认糊上去；同时记一笔「这次候选是被取消的」，compositionend 带回来的
+      // 还是拼音字母，当文本发出去就等于把用户的撤回归档打进对方文档。
+      if (imeBlocksKey(e)) {
+        noteImeCancelled();
+        return;
+      }
       // 有其它模态时把 Esc 让给它，避免误结束会话。
       // 会话视图本身永远渲染在带 data-rc-root 的 backdrop 内，因此排除自身，
       // 只让「嵌套打开、不带该属性」的模态（如 RcPairDialog）优先拿到 Esc。
@@ -316,7 +340,7 @@ export function useRcInput({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canControl, kbOn, pointerLocked, releaseKb, onConfirmEnd]);
+  }, [canControl, kbOn, pointerLocked, releaseKb, onConfirmEnd, imeBlocksKey, noteImeCancelled]);
 
   useEffect(() => {
     return () => {
@@ -363,6 +387,9 @@ export function useRcInput({
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!canControl || !kbOn) return;
+      // 🔴 乙-①：候选期间的键一个都不发。**不做 preventDefault**——那一脚会把
+      // 键抢回给页面，输入法自己的候选框就收不到字母了。
+      if (imeBlocksKey(e)) return;
       if (isSessionEscape(e) && shouldSwallowEscape(kbOn, pointerLocked, canControl)) return;
       if (!shouldForwardToRemote(e)) return;
       const vk = keyToVk(e);
@@ -377,12 +404,15 @@ export function useRcInput({
       pressedKeys.current.add(vk);
       void rcSendInput({ kind: "key", vk, down: true }).catch(() => {});
     },
-    [canControl, kbOn, pointerLocked, noteAction, inputEpochRef],
+    [canControl, kbOn, pointerLocked, noteAction, inputEpochRef, imeBlocksKey],
   );
 
   const onKeyUp = useCallback(
     (e: React.KeyboardEvent) => {
       if (!canControl || !kbOn) return;
+      // 与 keydown 同闸：候选期间的抬起同样不许发（对端会丢未配对抬起，但那
+      // 是兜底，不是我们该依赖的东西）。
+      if (imeBlocksKey(e)) return;
       if (isSessionEscape(e) && shouldSwallowEscape(kbOn, pointerLocked, canControl)) return;
       const vk = keyToVk(e);
       if (vk == null) return;
@@ -391,7 +421,7 @@ export function useRcInput({
       pressedKeys.current.delete(vk);
       void rcSendInput({ kind: "key", vk, down: false }).catch(() => {});
     },
-    [canControl, kbOn, pointerLocked],
+    [canControl, kbOn, pointerLocked, imeBlocksKey],
   );
 
   return {
@@ -412,6 +442,9 @@ export function useRcInput({
     /** 键盘捕获/转发 handlers（挂 fakeScreen）。 */
     onKeyDown,
     onKeyUp,
+    /** 🔴 乙-①：输入法候选 handlers 也挂同一个 fakeScreen（keydown 的闸在它们中间）。 */
+    imeHandlers: ime.imeHandlers,
+    imeComposing: ime.composing,
     /** B1：本地光标位置（内容坐标 0..1）；null = 还没动过，不渲染。 */
     cursor,
     cursorPressed,

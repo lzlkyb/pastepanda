@@ -95,10 +95,16 @@ impl RcService {
         // 会话结束态下它的 session_capability() 返回 None，能力校验会拦掉释放。
         // `end_session_releases_pressed_keys` 单测钉住「释放确实发生了」。
         // 🔴 P1-3：返回值不再丢掉——重试一次仍失败的项要走到用户眼前（见下面上报处）。
+        //
+        // 乙-①：补发必须用**本场按下时的口径**，所以 `release_all` 收 `key_mode()`；
+        // 复位排在它**之后**——先复位会把扫描码按下的键用 `wVk` 弹起，
+        // 只读扫描码的应用（游戏 / RawInput）那头这颗键就卡住了。
         let release_failures = {
+            let mode = self.key_mode();
             let mut g = self.pressed.lock().unwrap_or_else(|p| p.into_inner());
-            g.release_all()
+            g.release_all(mode)
         };
+        self.reset_key_mode();
         // 🔴 再审计 A4：到这里 await 已全部结束（之后无 yield 点，下面的复核
         // 不会被任务切换跳过）。take 已把本场会话取出——槽里若还有会话，只能是
         // 收口途中新建的，绝不能抹掉。
@@ -195,6 +201,15 @@ impl RcService {
             // 换个对端申请音频也听不到，无报错无横幅。接线补在这里，与
             // `reset_stream_after_session` 同层（inner 锁已放出）。
             self.audio_reset();
+            // 乙-③：输入权同样随会话收口作废——收回位留着＝下一场会话没人点按钮
+            // 却把对端键鼠全拦下；授权位留着＝把「本次」偷偷变成「长期」。
+            // 钩子摘掉（低层钩子在输入路径上同步执行，没人远程时不该收这份钱），
+            // `stop_watching` 自己也会清锁位，与上面 `input_reset` 互为兜底。
+            self.input_reset();
+            // 丙-③：画面暂停位也随会话收口作废（暂停不是跨会话的隐私意愿，与
+            // `audio_local_mute` 相反）；发起端那份「对方已暂停」同理不能留着。
+            self.video_pause_reset();
+            crate::rc::local_input::stop_watching();
             // Q6：收口顺手清自动重连状态。异常断流路径的顺序是 force_end（清）→
             // begin（重建），这里清掉不碍触发；它兜的是「用户主动结束」要清掉
             // 残留的「重连中/重连失败」横幅——用户已经自己做了决定。

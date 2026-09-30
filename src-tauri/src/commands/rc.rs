@@ -958,13 +958,23 @@ pub fn rc_clear_outbound_error(svc: State<'_, Arc<RcService>>) -> Result<(), Str
     Ok(())
 }
 
+/// 同意一条入站申请。
+///
+/// 🔴 丙-①：`capability` 只接受 `"view"` 这一种**降档**（「只同意看屏幕」）。
+/// 传 `"control"` 或别的都按对方申请的原样批——升档等于本机替对方给了他没申请过的
+/// 权力，判据收在 [`RcService::approve_inbound_as`]。
 #[tauri::command]
 pub async fn rc_approve_inbound(
     app: AppHandle,
     svc: State<'_, Arc<RcService>>,
     node_id: String,
+    capability: Option<String>,
 ) -> Result<Session, String> {
-    let s = svc.approve_inbound(&node_id)?;
+    let grant = match capability.as_deref() {
+        Some("view") => Some(Capability::View),
+        _ => None,
+    };
+    let s = svc.approve_inbound_as(&node_id, grant)?;
     emit_changed(&app, &svc);
     Ok(s)
 }
@@ -1238,6 +1248,46 @@ pub async fn rc_host_mute_set(
     _on: bool,
 ) -> Result<(), String> {
     Err("主机扬声器静音只支持 Windows".into())
+}
+
+/// 乙-③：被控者**暂时收回自己的键鼠**（对端的键鼠一拍都不进本机）。
+///
+/// 与「锁定对方键鼠」是两把**独立**的闸：这条动的是**注入**那一路（挡对端的手），
+/// 不吞被控者本人的物理输入——吞了他就点不到「恢复」，等于把人锁在自己的键盘外面。
+/// 收回后 10 分钟无本机操作自动归还（判据 `local_input::hold_should_return`）。
+///
+/// 返回改后的状态：前端据此切按钮，不做乐观置位。
+#[tauri::command]
+pub async fn rc_input_hold(svc: State<'_, Arc<RcService>>, on: bool) -> Result<bool, String> {
+    Ok(svc.set_input_hold(on).await)
+}
+
+/// 乙-③：被控者勾选 / 取消「允许对方锁定我的输入」（**本次会话**的授权）。
+///
+/// 取消会顺手解开已经生效的锁（授权是锁的唯一来源，撤了还锁着就是假反馈）。
+/// 授权不落盘、不跨会话——理由写在 `service/input_gate.rs` 的档头。
+#[tauri::command]
+pub async fn rc_input_lock_grant(
+    svc: State<'_, Arc<RcService>>,
+    on: bool,
+) -> Result<(), String> {
+    svc.set_input_lock_grant(on).await;
+    Ok(())
+}
+
+/// 丙-③：被控者暂停 / 恢复**对方看到的画面**（会话不断，只是不出帧）。
+///
+/// 与「暂时收回我的键鼠」是两件正交的事：这条挡的是**对方的眼睛**（本机屏幕照常用、
+/// 键鼠照用、剪贴板照走），那条挡的是**对方的手**。只在当场会话有效，会话收口自动
+/// 恢复推流（判据与理由见 `service/video_pause.rs` 的档头）。
+///
+/// 返回改后的状态：前端据此切按钮，不做乐观置位。
+#[tauri::command]
+pub async fn rc_video_pause_set(
+    svc: State<'_, Arc<RcService>>,
+    on: bool,
+) -> Result<bool, String> {
+    Ok(svc.set_video_pause(on).await)
 }
 
 #[cfg(test)]

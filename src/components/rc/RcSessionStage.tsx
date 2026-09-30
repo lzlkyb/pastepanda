@@ -16,6 +16,7 @@
 import { Eye, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import type { RcSession } from "@/lib/api/rc";
+import { rcDisplayName } from "@/lib/rcDevice";
 import type { useRcFrames } from "@/hooks/useRcFrames";
 import { releaseModifiers } from "@/hooks/useRcInput";
 import type { useRcInput } from "@/hooks/useRcInput";
@@ -23,10 +24,12 @@ import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import type { RcCursorShape } from "@/hooks/useRcCursor";
 import type { FitMode } from "@/lib/rcSessionStats";
 import { qualityLabel } from "@/lib/rcQuality";
+import { rcBlurReleasesHeld, rcBlurTarget } from "@/lib/rcFocusRelease";
 import { rcPanelOpenCount } from "@/lib/rcPanelFocus";
 import { RcSessionTop } from "./RcSessionTop";
 import { RcScreenCanvas } from "./RcScreenCanvas";
 import { RcFsHint } from "./RcFsHint";
+import { RcLinkMask } from "./RcLinkMask";
 import styles from "./RemoteComputer.module.css";
 
 type RcInput = ReturnType<typeof useRcInput>;
@@ -46,8 +49,10 @@ export function RcSessionStage({
   onDismissFsHint,
   qPick,
   screenRef,
+  wrapRef,
   canvasRef,
   onReconnect,
+  onRequestEnd,
 }: {
   session: RcSession;
   /** 重连等在途（等待占位里的「重新连接」按钮禁用态） */
@@ -64,8 +69,15 @@ export function RcSessionStage({
   /** 会话内生效的画质档（等待占位文案用它） */
   qPick: string;
   screenRef: React.RefObject<HTMLDivElement | null>;
+  /**
+   * 🔴 乙-②：会话壳（`.sessionWrap`）。焦点离开画面时用它判断「新焦点还在不在同
+   * 一扇窗里」——在＝只暂停注入，不在＝才释放按住键。判据在 `lib/rcFocusRelease`。
+   */
+  wrapRef: React.RefObject<HTMLDivElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   onReconnect?: () => void;
+  /** 遮罩上的「结束会话」（父级已包 confirmDialog，这里只触发）。 */
+  onRequestEnd: () => void;
 }) {
   const canControl = session.capability === "control";
   const {
@@ -114,14 +126,20 @@ export function RcSessionStage({
         onFocus={() => {
           if (canControl) input.setKbOn(true);
         }}
-        onBlur={() => {
+        onBlur={(e) => {
           if (canControl) {
             input.setKbOn(false);
-            void releaseModifiers();
-            // 普通键/鼠标键的按下态跟踪释放（releaseModifiers 只管修饰键+鼠标）
-            input.releaseTracked();
+            // 🔴 乙-②：焦点进浮条（还在同一会话壳里）＝**只暂停注入**，按住态留着，
+            // 回到画面自然续上。只有真离开（切窗口 / 最小化 / relatedTarget 为 null）
+            // 才释放——那才是「对端留着一只按下的 Ctrl」的事故源。
+            if (rcBlurReleasesHeld(rcBlurTarget(e.relatedTarget, wrapRef.current))) {
+              void releaseModifiers();
+              // 普通键/鼠标键的按下态跟踪释放（releaseModifiers 只管修饰键+鼠标）
+              input.releaseTracked();
+            }
           }
         }}
+        {...input.imeHandlers}
         onMouseDown={() => {
           if (canControl) screenRef.current?.focus();
         }}
@@ -157,6 +175,18 @@ export function RcSessionStage({
           active={visible}
           input={input}
           cursorShape={cursorShape}
+        />
+        {/* 甲-③（2026-09-29）：链路中断遮罩。挂在 fakeScreen **内部**（= 全屏元素
+            .sessionWrap 的子树）——挂在 <main> 上就像 C2 一样在全屏里隐形。
+            判据在 lib/rcLinkMask：没有画面时不遮（placeholder 在说话）、unstable 不遮
+            （它会自愈，铺一层黑等于把「还能用」说成「已经断了」）。 */}
+        <RcLinkMask
+          hasFrame={hasFrame}
+          state={link.state}
+          busy={busy}
+          peerName={rcDisplayName(session) || session.peer_name || "对方"}
+          onReconnect={onReconnect}
+          onRequestEnd={onRequestEnd}
         />
         {/* B3（2026-09-23）：statusText 原先只在 !hasFrame 的占位块里渲染——
             连续取帧失败到阈值写进画面的「画面接收异常，正在自动重试…」在

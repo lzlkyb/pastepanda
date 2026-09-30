@@ -1,0 +1,138 @@
+/* 丙-① 入站申请置顶浮层 · 卡片 320×168，窗口四周各多 12px 留给投影
+   （与 src-tauri/src/rc/ask_pop.rs 的 CARD_W / CARD_H / BLEED 是同一份账，改一处必须改另一处）。
+
+   ❗ 两条从栈浮标（StackHud.module.css）继承来的硬约束，不是审美选择：
+   1. **不用 backdrop-filter**：窗口 transparent(true) 时 CSS 模糊只作用于 webview 内部，
+      穿不出窗口（tauri issue #10064），却多一层 GPU 合成；
+   2. **描边用 inset 阴影而不是 border**：globals.css 的 `* { box-sizing: border-box }`
+      会让 border 吃掉布局高度，卡片 168px 是按内容刚好排出来的。
+   玻璃感 = 半透明底色 + 描边 + 阴影，靠 --shot-bar-* 那组跨六套主题的令牌。 */
+
+/* 窗口是 transparent(true)：必须压掉 globals.css 的 body 底色，
+   否则圆角外那四个角是白底方块 */
+:global(html),
+:global(body),
+:global(#root) {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.card {
+  position: fixed;
+  /* = ask_pop.rs 的 BLEED */
+  inset: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  /* ui-rule-ok: rgba(15,23,42,.28) 与 StackHud .root 同一配方——浮层投影必须恒深，不随主题翻成白 glow */
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--warning) 55%, transparent),
+    0 8px 24px rgba(15, 23, 42, 0.28);
+  font-size: 12px;
+  line-height: 1.6;
+  cursor: default;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.who {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cd {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px; /* ui-rule-ok: 徽章内的垂直留白按行高算，非布局阶梯 */
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+  color: var(--warning);
+  font-variant-numeric: tabular-nums;
+}
+
+.meta {
+  color: var(--shot-bar-muted);
+}
+
+.fp {
+  font-family: ui-monospace, Consolas, monospace;
+  font-weight: 700;
+  color: var(--shot-bar-text);
+}
+
+.btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+
+/* 「同意远程」是这条路径上唯一的高危肯定动作：靠右、实心（全局 .btn-primary）。
+   不设快捷键（B6 同源：同意远程永远不该由键盘顺手碰到）。 */
+.go {
+  margin-left: auto;
+}
+
+.foot {
+  color: var(--shot-bar-muted);
+  font-size: 11px;
+}
+
+.note {
+  color: var(--warning);
+  font-size: 11px;
+}
+
+/* 动作失败（同意/拒绝被后端拒）。AGENTS.md §15.3：这条路径只 setState 没有 toast
+   可挂——独立 webview 里根本没有 app-toast，所以它必须常驻在卡片里。 */
+.err {
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.extra {
+  color: var(--shot-bar-muted);
+  font-size: 11px;
+}
+
+.close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px; /* ui-rule-ok: 关闭键与标题的贴合间距，非布局阶梯 */
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--shot-bar-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.close:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+  color: var(--shot-bar-text);
+}

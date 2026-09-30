@@ -576,3 +576,95 @@ fn 守卫_COM公寓初始化必须收口() {
         );
     }
 }
+
+/// 丙-①：入站申请浮层（`rc/ask_pop.rs`）的**三处外部接线**必须同时存在。
+///
+/// 这三处全都是**静默失败**型：少一处，浮层照样弹得出来或干脆不弹，但没有任何
+/// 报错指向真正的原因。
+/// - `capabilities/*.json` 的 windows 名单：漏了 → 独立 webview 的 `listen()` /
+///   `invoke()` 全被权限层拒，窗口白屏冻在首帧（待办岛实施方案 §5 记录过同一个坑）；
+/// - `lib.rs` 的 `invoke_handler`：漏了 → `rc_ask_state` 报 command not found；
+/// - `paste_engine::TOOL_WINDOW_LABELS`：漏了 → 有人敲门时那条置顶窗让
+///   「自己的界面可见」判据为真 ⇒ 陈旧粘贴目标被续命。
+#[test]
+fn 守卫_入站浮层三处接线() {
+    let caps = [
+        (
+            "capabilities/default.json",
+            include_str!("../../../capabilities/default.json"),
+        ),
+        (
+            "capabilities/desktop-plugins.json",
+            include_str!("../../../capabilities/desktop-plugins.json"),
+        ),
+    ];
+    for (name, src) in caps {
+        assert!(
+            src.contains("\"rc-ask\""),
+            "{name} 的 windows 名单里没有 rc-ask —— 浮层收不到任何事件"
+        );
+    }
+    let lib = include_str!("../../lib.rs");
+    assert!(
+        lib.contains("rc::ask_pop::rc_ask_state,") && lib.contains("rc::ask_pop::rc_ask_hide,"),
+        "ask_pop 的两个命令没进 invoke_handler"
+    );
+    assert!(
+        crate::paste_engine::PasteEngine::TOOL_WINDOW_LABELS.contains(&super::super::ask_pop::WINDOW_LABEL),
+        "rc-ask 必须在工具窗排除表里，否则它会污染前台窗口判据"
+    );
+    // 丙-② 加了第二种形态（角标）之后，开关权整块收进 ask_pop：调用方只报「状态变了」。
+    // 若有人把 on_change 换回按 pending 数开关的旧写法，角标就永远不会出现。
+    assert!(
+        lib.contains("rc::ask_pop::on_change("),
+        "lib.rs 没接 on_change —— 桌面浮层不再随状态换档（丙-② 角标会消失）"
+    );
+}
+
+/// 守卫：丙-③「暂停对方观看」的**五处接线成对**。
+///
+/// 这条功能的失败方式全是静默的：闸没接进推流循环 = 按了按钮画面照动；帧名两端
+/// 写岔 = 发起端永远看不到「对方已暂停画面」；会话收口漏清位 = 下一场对端一进来
+/// 就看见一张冻住的旧画面。跑不了双机联测，所以按本项目做法（见
+/// `守卫_caps上报dgram_input`）用源码文本钉住接线。
+#[test]
+fn 守卫_画面暂停五处接线成对() {
+    // ① 出帧闸门：推流主循环真的问了这个判据（没有它，按钮就只是个装饰）。
+    let run = include_str!("../inbound/video_run.rs");
+    assert!(
+        run.contains("self.svc.video_paused()"),
+        "推流主循环没有暂停闸 —— 按了「暂停对方观看」画面照旧推送"
+    );
+    // ② 会话开始清位：与 input_gate_begin 同一条理由（换场路径跳过全局复位）。
+    let accept = include_str!("../service/inbound_accept.rs");
+    assert!(
+        accept.contains("self.video_pause_begin();"),
+        "建立入站会话时没清暂停位 —— 上一场的暂停会漏进下一场"
+    );
+    // ③ 会话收口清位。
+    let ses = include_str!("../session/lifecycle.rs");
+    assert!(
+        ses.contains("self.video_pause_reset();"),
+        "会话收口没清暂停位 —— 结束会话后按钮仍停在「恢复对方观看」"
+    );
+    // ④ 帧名两端成对：被控端写 `vpause`，发起端分派 `vpause`。写岔不报错，
+    //    只是发起端永远看不到告知（规则 15.1 的触发/反馈同域就断了）。
+    let gate = include_str!("../service/video_pause.rs");
+    let outbound = include_str!("../outbound.rs");
+    assert!(
+        gate.contains("\"t\": \"vpause\"") && outbound.contains("Some(\"vpause\")"),
+        "vpause 控制帧的两端字面量不成对 —— 暂停状态到不了发起端眼前"
+    );
+    // ⑤ 命令注册 + 状态投影：前端两处数据源（被控端按钮 / 发起端告知）都得有字段。
+    let lib = include_str!("../../lib.rs");
+    assert!(
+        lib.contains("commands::rc_video_pause_set,") || lib.contains("commands::rc_video_pause_set::"),
+        "rc_video_pause_set 没进 invoke_handler —— 抽屉那颗按钮点了没反应"
+    );
+    let status = include_str!("../service/lifecycle.rs");
+    assert!(
+        status.contains("video_paused: self.video_paused()")
+            && status.contains("peer_video_paused: self.peer_video_paused()"),
+        "RcStatus 没投影 video_paused / peer_video_paused —— 两端 UI 都没有状态源"
+    );
+}

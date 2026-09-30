@@ -4,7 +4,7 @@
 //! 会永久卡在按下态。本模块在 `handle_inbound_input` 里记录每次按下/抬起，
 //! 由 `end_session` 调 `release_all()` 直接注入 up，不依赖会话能力校验。
 
-use super::input::{inject, InputEvent, InjectResult, ScreenRegion};
+use super::input::{inject, InputEvent, InjectResult, KeyMode, ScreenRegion};
 use std::collections::HashSet;
 
 /// 🔴 P1-3（2026-09-23 审计）：收口补发 up 时**重试后仍失败**的一项。
@@ -58,8 +58,12 @@ impl Pressed {
     }
 
     /// 生产入口：用真实注入函数补发 up（语义见 [`Self::release_all_with`]）。
-    pub fn release_all(&mut self) -> Vec<ReleaseFailure> {
-        self.release_all_with(inject)
+    ///
+    /// `mode` 必须是**本场会话按下时用的同一个口径**（乙-①）：直传档按下的键
+    /// 若用 `wVk` 补发 up，只读扫描码的应用（游戏 / RawInput）收不到抬起，
+    /// 键就卡在那儿。会话收口处从 `RcService::key_mode()` 取。
+    pub fn release_all(&mut self, mode: KeyMode) -> Vec<ReleaseFailure> {
+        self.release_all_with(mode, inject)
     }
 
     /// 补发所有 up 事件（直接注入本机，不走会话能力校验），然后清空集合；
@@ -78,13 +82,14 @@ impl Pressed {
     /// 重试与失败收集这两条纯逻辑就能在没有注入环境的机器上钉住。
     pub fn release_all_with(
         &mut self,
-        mut do_inject: impl FnMut(&InputEvent, &ScreenRegion) -> InjectResult,
+        mode: KeyMode,
+        mut do_inject: impl FnMut(&InputEvent, &ScreenRegion, KeyMode) -> InjectResult,
     ) -> Vec<ReleaseFailure> {
         let region = ScreenRegion::virtual_screen();
         let mut failures = Vec::new();
         for vk in std::mem::take(&mut self.keys) {
             let ev = InputEvent::Key { vk, down: false };
-            if let Some(error) = inject_up_with_retry(&mut do_inject, &ev, &region) {
+            if let Some(error) = inject_up_with_retry(&mut do_inject, mode, &ev, &region) {
                 failures.push(ReleaseFailure {
                     what: format!("按键 vk={vk}"),
                     error,
@@ -99,7 +104,7 @@ impl Pressed {
                 button: b,
                 down: false,
             };
-            if let Some(error) = inject_up_with_retry(&mut do_inject, &ev, &region) {
+            if let Some(error) = inject_up_with_retry(&mut do_inject, mode, &ev, &region) {
                 failures.push(ReleaseFailure {
                     what: format!("鼠标键 {b}"),
                     error,
@@ -111,15 +116,19 @@ impl Pressed {
 }
 
 /// 注入一次 up；失败就原样再试一次。返回「重试后仍失败」的错误文本。
+///
+/// `mode` 一路透传（乙-①）：重试的这一次也必须和按下时同口径，不然「补发」
+/// 本身就是一次错位的输入。
 fn inject_up_with_retry(
-    do_inject: &mut impl FnMut(&InputEvent, &ScreenRegion) -> InjectResult,
+    do_inject: &mut impl FnMut(&InputEvent, &ScreenRegion, KeyMode) -> InjectResult,
+    mode: KeyMode,
     ev: &InputEvent,
     region: &ScreenRegion,
 ) -> Option<String> {
-    if do_inject(ev, region).ok {
+    if do_inject(ev, region, mode).ok {
         return None;
     }
-    let second = do_inject(ev, region);
+    let second = do_inject(ev, region, mode);
     if second.ok {
         return None;
     }
@@ -157,7 +166,7 @@ mod tests {
         let mut p = Pressed::new();
         p.press_key(160);
         p.press_button(1);
-        let failures = p.release_all_with(|ev, _| ok(&format!("{ev:?}")));
+        let failures = p.release_all_with(KeyMode::VirtualKey, |ev, _, _| ok(&format!("{ev:?}")));
         assert!(failures.is_empty(), "全成功不该有失败项：{failures:?}");
         assert!(p.is_empty(), "无论成败都必须清空集合");
     }
@@ -167,7 +176,7 @@ mod tests {
         let mut p = Pressed::new();
         p.press_key(160);
         let calls = std::cell::Cell::new(0usize);
-        let failures = p.release_all_with(|_, _| {
+        let failures = p.release_all_with(KeyMode::VirtualKey, |_, _, _| {
             let n = calls.get();
             calls.set(n + 1);
             if n == 0 {
@@ -186,7 +195,7 @@ mod tests {
         p.press_key(160);
         p.press_key(17);
         p.press_button(2);
-        let failures = p.release_all_with(|_, _| fail());
+        let failures = p.release_all_with(KeyMode::VirtualKey, |_, _, _| fail());
         assert_eq!(failures.len(), 3, "三项都卡住了：{failures:?}");
         // 每项各试两次（一次正式 + 一次重试）
         let what: Vec<&str> = failures.iter().map(|f| f.what.as_str()).collect();
@@ -204,7 +213,7 @@ mod tests {
     fn test_空集合释放是空操作() {
         let mut p = Pressed::new();
         let calls = std::cell::Cell::new(0usize);
-        let failures = p.release_all_with(|_, _| {
+        let failures = p.release_all_with(KeyMode::VirtualKey, |_, _, _| {
             calls.set(calls.get() + 1);
             ok("")
         });
@@ -219,7 +228,7 @@ mod tests {
         p.press_button(3);
         let seen = std::rc::Rc::new(RefCell::new(Vec::<InputEvent>::new()));
         let seen2 = seen.clone();
-        let failures = p.release_all_with(|ev, _| {
+        let failures = p.release_all_with(KeyMode::VirtualKey, |ev, _, _| {
             seen2.borrow_mut().push(ev.clone());
             ok("")
         });

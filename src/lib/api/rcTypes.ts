@@ -32,6 +32,35 @@ export interface RcInboundKnock {
   first_seen_ms: number;
 }
 
+/**
+ * 丙-①：一条入站申请**为什么没了**（只给本机置顶浮层看）。
+ *
+ * 🔴 后端只出 `code`，整句中文在 `src/lib/rcAskPop.ts`——跨端「后端出码、前端出话」
+ * 纪律的同一条先例。`at_ms` 是后端写下它的时刻，浮层据此决定何时自己收起。
+ * 后端在 TTL 内**每次轮询都给**（不是取走即清）：取走的话卡片会在用户读完前变回去。
+ */
+export interface RcAskNote {
+  peer: string;
+  code: string;
+  at_ms: number;
+}
+
+/**
+ * 丙-②：隐私角标要说的哪句话——被控会话的**最小投影**。
+ *
+ * 🔴 只有「对方是谁、给了什么能力、什么时候开始」三项，不含凭证、不含帧内容：
+ * 这块窗口常驻桌面，任何多投影出去的字段都是长期暴露面。
+ */
+export interface RcAskHost {
+  peer: string;
+  display_name: string;
+  capability: RcCapability;
+  started_ms: number;
+}
+
+/** 桌面浮层的形态，与 `src-tauri/src/rc/ask_pop.rs` 的 `FloatMode::as_str` 逐字同口径。 */
+export type RcAskMode = "ask" | "capsule" | "hidden";
+
 export interface RcJoinRequest {
   node_id: string;
   first_seen_ms: number;
@@ -132,7 +161,11 @@ export interface RcStatus {
   outbound_error?: RcOutboundError | null;
   /**
    * Q6：发起端自动重连进度（免确认设备异常断流后）。null = 没有。
-   * attempt/max 驱动「正在重连 N/M」；gave_up = 次数用尽，提示手动重连。
+   * gave_up = 次数用尽，提示手动重连。
+   *
+   * 🔴 乙-⑤（待拍板⑤）：`attempt/max` 后端仍在投影，但 **UI 不显示计数**——
+   * 各家都把自动重连当默认体验而非用户决策点，遮罩与横幅只讲结果
+   * （「正在尝试恢复」/「需要对方重新同意」/「已恢复」）。
    */
   reconnecting?: {
     peer: string;
@@ -167,6 +200,63 @@ export interface RcStatus {
   } | null;
   /** G3-C：对端静音了**本机**扬声器（被控端视角，横幅提示 + 恢复入口）。 */
   spk_muted_by_peer?: boolean;
+  /** 乙-③：被控端**本机**收回了键鼠（此刻对端的键鼠会被拦下）。 */
+  input_hold?: boolean;
+  /** 乙-③：被控者本场是否允许对方锁定本机输入（授权位，不等于锁已生效）。 */
+  input_lock_granted?: boolean;
+  /** 乙-③：本机物理键鼠现在**真的**被锁住吗（读钩子闸位，不读「对方要求过」）。 */
+  input_lock_active?: boolean;
+  /**
+   * 乙-③：被控端抽屉上的「谁在动」两枚结论（键盘 / 鼠标）。
+   *
+   * 缺失 = 旧版后端。只有被控端侧有意义（本机才有物理输入活动戳）。
+   */
+  input_pills?: RcInputPills;
+  /**
+   * 乙-③：**对端**报来的主机输入权状态（发起端视角）。
+   *
+   * `null` / 缺失 = 旧对端不发这条帧，或本会话还没收到 → 「锁定对方」不可点，
+   * 且**不声称**对方拒绝过你（分不清「没授权」与「没这个功能」）。
+   */
+  peer_input?: RcPeerInputState | null;
+  /**
+   * 丙-③：被控端**本机**暂停了向对方推送画面（会话不断，只是不出帧）。
+   *
+   * 缺失 = 旧版后端。为真时对方看到的是暂停前那一帧。
+   */
+  video_paused?: boolean;
+  /**
+   * 丙-③：**对端**报来的画面暂停状态（发起端视角）。
+   *
+   * 缺失 / false = 对方没暂停，或旧对端不发这条帧（两者都不该出「对方已暂停画面」）。
+   * 与 [`RcStatus.peer_input`] 用 `Option` 不同，这条没有三态：只有「此刻不推帧」。
+   */
+  peer_video_paused?: boolean;
+}
+
+/**
+ * 「谁在动」一枚 pill 的结论（后端 `input_gate::InputActor`，优先级
+ * `blocked > peer > local`）。
+ *
+ * 颜色语义（设计稿乙-③）：绿=有权且在用、灰=另一方正用、红=无权却被按下（已拦）。
+ */
+export type RcInputActor = "idle" | "local" | "peer" | "blocked";
+
+export interface RcInputPills {
+  keyboard: RcInputActor;
+  mouse: RcInputActor;
+}
+
+/** 发起端看到的「对方主机输入权状态」（后端 `PeerInputState`，乙-③）。 */
+export interface RcPeerInputState {
+  /** 对方按了「暂时收回我的键鼠」——此刻你发的键鼠会被拦下。 */
+  host_hold: boolean;
+  /** 对方允许你锁定他的输入（本次会话的授权）。 */
+  lock_granted: boolean;
+  /** 锁定现在真的生效（读对方钩子的实际闸位）。 */
+  lock_active: boolean;
+  /** 上一次动作在对方那边失败的原因（成功 = 空）。 */
+  err?: string | null;
 }
 
 /** 路径切换事件 payload（C：relay ↔ 直连 自动切换）。 */

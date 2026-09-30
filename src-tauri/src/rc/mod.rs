@@ -4,6 +4,7 @@
 //! **不做** shell / 文件。无人值守接入（Q2 方案 B 一次性接入码、方案 C 固定密码）
 //! 2026-09-19 落地。默认关闭。
 
+pub mod ask_pop;
 pub mod auto_quality;
 pub mod clipboard;
 pub mod discovery;
@@ -17,6 +18,7 @@ pub mod input;
 pub mod join;
 pub mod jpeg;
 pub mod link;
+pub mod local_input;
 pub mod mono;
 pub mod net;
 pub mod notify;

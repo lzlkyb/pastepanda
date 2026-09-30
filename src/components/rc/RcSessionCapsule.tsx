@@ -26,6 +26,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ArrowDownToLine, MoreHorizontal, X } from "lucide-react";
 import type { RcSession } from "@/lib/api/rc";
 import type { FitMode } from "@/lib/rcSessionStats";
+import type { RcKeyMode } from "@/lib/rcKeyMode";
 import type { UseRc } from "@/hooks/useRc";
 import type { useRcInput } from "@/hooks/useRcInput";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
@@ -34,10 +35,10 @@ import { useRcCapsuleReveal } from "@/hooks/useRcCapsuleReveal";
 import { useRcHoverReveal } from "@/hooks/useRcHoverReveal";
 import { useRcFile } from "@/hooks/useRcFile";
 import { onRcDetailOpen } from "@/lib/rcDetailPanel";
-import { rcWindowClose, rcWindowMinimize } from "@/lib/rcWindowOps";
-import { WindowControlIcon } from "./RcWindowControls";
 import { RcCapsuleIdentity } from "./RcCapsuleIdentity";
 import { RcCapsuleHandle } from "./RcCapsuleHandle";
+import { RcCapsuleOutlet } from "./RcCapsuleOutlet";
+import { RcCapsuleWinKeys } from "./RcCapsuleWinKeys";
 import { RcCapsuleView } from "./RcCapsuleView";
 import { RcCapsuleMore } from "./RcCapsuleMore";
 import styles from "./RemoteComputer.module.css";
@@ -67,6 +68,8 @@ export function RcSessionCapsule({
   onStatus,
   fit,
   onFit,
+  keyMode,
+  onPickKeyMode,
   fullscreen,
   onToggleFullscreen,
   onRequestEnd,
@@ -98,6 +101,9 @@ export function RcSessionCapsule({
   onStatus: (msg: string, kind: "success" | "error" | "info") => void;
   fit: FitMode;
   onFit: (m: FitMode) => void;
+  /** 乙-①：键盘模式（打字 / 直传）——一级两档开关的当前值与点选。 */
+  keyMode: RcKeyMode;
+  onPickKeyMode: (m: RcKeyMode) => void;
   /** 会话壳全屏中（决定顶栏退场后是否补窗口键，以及全屏键的语义翻转）。 */
   fullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -165,7 +171,11 @@ export function RcSessionCapsule({
             link={link}
             canControl={canControl}
             kbOn={input.kbOn}
+            pointerLocked={input.pointerLocked}
+            onReleaseCapture={(action) => (action === "pointer" ? input.togglePointerLock() : input.releaseKb())}
             peerDgramInput={peerDgramInput}
+            peerInput={rc.status?.peer_input}
+            peerVideoPaused={rc.status?.peer_video_paused}
             rttMs={rttMs}
             fps={fps}
             tab={tab}
@@ -183,6 +193,9 @@ export function RcSessionCapsule({
             sendAvailable={sendAvailable}
             fit={fit}
             onFit={onFit}
+            keyMode={keyMode}
+            onPickKeyMode={onPickKeyMode}
+            peerInput={rc.status?.peer_input}
             fullscreen={fullscreen}
             onToggleFullscreen={onToggleFullscreen}
             tab={tab}
@@ -221,37 +234,9 @@ export function RcSessionCapsule({
           >
             <X size={13} aria-hidden="true" />
           </button>
-          {/* 全屏态顶栏退场 ⇒ 窗口键只能挂在这里。只留最小化 + 关闭（最大化在全屏
-            无意义），关闭走 rc_window_close 命令语义（与原全屏 hotbar 同一条，
-            「有会话先问」的关闭守卫不变），方形按钮 + hover 红底与圆角胶囊键
-            分族，避免与左边的「结束会话」X 混淆。 */}
-          {fullscreen && (
-            <>
-              <span className={styles.capSep} aria-hidden="true" />
-              <span className={styles.capWin} data-tauri-drag-region="false">
-                <button
-                  type="button"
-                  tabIndex={tab}
-                  className={styles.capWinBtn}
-                  aria-label="最小化"
-                  title="最小化"
-                  onClick={() => void rcWindowMinimize(onStatus)}
-                >
-                  <WindowControlIcon name="min" />
-                </button>
-                <button
-                  type="button"
-                  tabIndex={tab}
-                  className={`${styles.capWinBtn} ${styles.capWinBtnClose}`}
-                  aria-label="关闭"
-                  title="关闭窗口"
-                  onClick={() => void rcWindowClose(onStatus)}
-                >
-                  <WindowControlIcon name="close" />
-                </button>
-              </span>
-            </>
-          )}
+          {/* 全屏态顶栏退场 ⇒ 窗口键只能挂在这里（只留最小化 + 关闭，几何与
+            「有会话先问」的关闭守卫见 RcCapsuleWinKeys）。 */}
+          {fullscreen && <RcCapsuleWinKeys tab={tab} onStatus={onStatus} />}
         </div>
 
         {moreOpen && (
@@ -279,6 +264,15 @@ export function RcSessionCapsule({
           />
         )}
       </div>
+
+      {/* 甲-②（2026-09-29）：常驻结果出口条。刻意住在 `.capFloat` **之外**——
+          收起态 `.capFloat` 被 visibility:hidden 带走、⋯ 面板整棵被卸载，而「失败」
+          这两件事都必须还在（规则 15.1 / 15.3，全屏态里 toast 也不在这个子树）。 */}
+      <RcCapsuleOutlet
+        peer={session.peer}
+        peerInput={rc.status?.peer_input}
+        peerVideoPaused={rc.status?.peer_video_paused}
+      />
     </div>
   );
 }

@@ -195,6 +195,27 @@ pub struct RcStatus {
     /// 只反映「对端做过这个动作且没人撤销」——本机用户自己按静音键**不会**置位
     /// （我们不监听系统静音变化），所以它不声称等于扬声器当前物理态。
     pub spk_muted_by_peer: bool,
+    /// 乙-③：被控端**本机**收回了键鼠（对端此刻的输入会被拦下）。
+    pub input_hold: bool,
+    /// 乙-③：被控者本场是否**允许**对方锁定本机输入（授权位，不是锁本身）。
+    pub input_lock_granted: bool,
+    /// 乙-③：本机的物理键鼠现在真的被锁住吗（读钩子闸位，不读「对方要求过」）。
+    pub input_lock_active: bool,
+    /// 乙-③：被控端抽屉上的「谁在动」两枚结论（键盘 / 鼠标）。
+    ///
+    /// 只有被控端侧有意义；发起端读到的恒是 idle（本机没有钩子，也没有对方的活动戳）。
+    pub input_pills: RcInputPills,
+    /// 乙-③：**对端**报来的主机输入权状态（发起端视角）。`None` = 旧对端不发这条帧
+    /// 或本会话还没收到 → 发起端的「锁定对方」按钮不可点，且不声称对方拒绝过。
+    pub peer_input: Option<PeerInputState>,
+    /// 丙-③：本机（被控端）已暂停向对方推送画面。会话不断，只是不出帧。
+    pub video_paused: bool,
+    /// 丙-③：**对端**报来的画面暂停状态（发起端视角）。
+    ///
+    /// 与 [`RcStatus::peer_input`] 用 `Option` 不同，这里只用 `bool`：这条没有
+    /// 「未授权 / 未生效」的三态，只有「此刻对方屏幕不推过来了」。旧对端不发这条
+    /// 帧 ⇒ 恒 false ⇒ 前端不摆「对方已暂停画面」。
+    pub peer_video_paused: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -280,6 +301,8 @@ pub struct RcService {
     /// 发起端：自动重连 episode 状态（Q6）。None = 没有进行中/待展示的自动重连。
     /// 由 session.rs 的 `begin_auto_reconnect` 驱动；用户手动发起/结束会清掉。
     pub(super) auto_reconnect: Mutex<Option<AutoReconnect>>,
+    /// 丙-①：入站申请被自动收掉的一次性原因（见 [`RcAskNote`]）。取走即清。
+    pub(super) ask_note: Mutex<Option<RcAskNote>>,
     /// episode 代次发生器（配 [`AutoReconnect::epoch`]，见 session.rs）。
     pub(super) reconnect_epoch: std::sync::atomic::AtomicU64,
     /// 无人值守接入码的内存待验表（Q2 方案 B，见 `uno.rs`）。
@@ -329,6 +352,58 @@ pub struct RcService {
     /// （我们不监听系统静音变化，见 `MEMORY-rc`），所以它回答的是「对端做过这个
     /// 动作且没人撤销」，用来决定横幅上那条提示与「恢复声音」按钮摆不摆。
     pub(super) spk_mute_by_peer: std::sync::atomic::AtomicBool,
+    /// 被控端：本场会话的按键口径（乙-①，打字档 / 直传档）。
+    ///
+    /// 状态、判据、复位入口同在 `key_mode.rs`（`key_mode` / `set_peer_key_mode` /
+    /// `reset_key_mode`）。这里只留原子槽：注入路径每条输入都要读它，锁不值得。
+    key_mode: std::sync::atomic::AtomicU8,
+    /// 被控端：本场会话的输入权状态（乙-③，两把闸 + 「谁在动」活动戳）。
+    ///
+    /// 状态、判据、收口同在 `input_gate.rs`。热路径（每条输入）只读一个原子量，
+    /// 所以这里不放锁。
+    input_gate: input_gate::InputGate,
+    /// 发起端：从对端 `input_state` 帧收到的**对方主机侧输入权状态**（乙-③）。
+    /// None = 还没收到（旧对端不发这条帧）——发起端的「锁定对方」按钮据此不可点。
+    pub(super) peer_input_state: Mutex<Option<PeerInputState>>,
+    /// 丙-③：本场会话的画面暂停位（被控端自己按的 + 发起端读到的对端位）。
+    ///
+    /// 状态、判据、跨端推送、收口同在 `video_pause.rs`。热路径（推流每圈一次）
+    /// 只读原子量，不放锁。
+    video_pause: video_pause::VideoPauseGate,
+}
+
+/// 发起端侧看到的「对端主机输入权状态」（乙-③，见 `RcService::peer_input_state`）。
+///
+/// 三条都是**对方机器上的事实**，本机只能如实显示：`host_hold` = 对方按了
+/// 「暂时收回我的键鼠」（我这边的键鼠此刻会被拦下）；`lock_granted` = 对方允许
+/// 我锁他的输入；`lock_active` = 锁现在真的生效。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct PeerInputState {
+    pub host_hold: bool,
+    pub lock_granted: bool,
+    pub lock_active: bool,
+    /// 上一次动作在对方那边失败的原因（成功 = None）。与 [`PeerHostAudio::err`] 同理由。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub err: Option<String>,
+}
+
+/// 被控端抽屉上那两枚「谁在动」的当前结论（乙-③，判据在 `input_gate::input_actor`）。
+///
+/// 取值 `idle` / `local` / `peer` / `blocked`，颜色语义：
+/// 绿=有权且在用、灰=另一方正用、红=无权却被按下（已拦）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RcInputPills {
+    pub keyboard: &'static str,
+    pub mouse: &'static str,
+}
+
+impl Default for RcInputPills {
+    fn default() -> Self {
+        Self {
+            keyboard: input_gate::InputActor::Idle.wire(),
+            mouse: input_gate::InputActor::Idle.wire(),
+        }
+    }
 }
 
 /// 发起端侧看到的「对端主机音频状态」（G3-B/C，见 `RcService::peer_host_audio`）。
@@ -381,6 +456,32 @@ pub struct RcOutboundError {
     pub session_id: String,
     pub error: String,
 }
+
+/// 丙-①（2026-09-30）：一条入站申请**为什么没了**的一次性说明（只给本机浮层看）。
+///
+/// 审计原文：超时后主机侧那条只是从列表里消失（`inbound.rs`），满员丢最早只
+/// `log::warn`。用户看到的是「刚刚明明有人敲门，现在什么都没了」。这里留一个
+/// **取走即清**的单槽（同 `take_inject_err` 那一招）：浮层下一次 `rc_ask_state`
+/// 读到它，说过一次就不再重复。
+///
+/// 🔴 只带 `code` 不带整句文案——措辞归前端（`src/lib/rcAskPop.ts`），与跨端
+/// deny reason 同一套「后端出码、前端出话」的纪律。
+#[derive(Debug, Clone, Serialize)]
+pub struct RcAskNote {
+    pub peer: String,
+    /// `"confirm_timeout"`（120s 无人应答，已自动拒绝对方）
+    /// `"pending_full"`（待确认表满了，丢的是最早那条）
+    pub code: &'static str,
+    /// 记录时刻：浮层用它判「还来不及看见」还是「陈年旧账」，见 [`ASK_NOTE_TTL_MS`]。
+    pub at_ms: i64,
+}
+
+/// 原因行的有效期（丙-①）。
+///
+/// 浮层在 pending 归零时**不立刻收起**，就是为了让用户读到这条原因；但原因不能
+/// 永久拦着收起——下一次有申请进来时浮层里还挂着上一条的「已自动拒绝」，等于
+/// 拿旧账吓用户。20s 是「读到并反应」的宽裕值，不是协议常量。
+pub const ASK_NOTE_TTL_MS: i64 = 20_000;
 
 /// status 里给前端的自动重连进度（Q6）。
 #[derive(Debug, Clone, Serialize)]
@@ -525,6 +626,7 @@ impl RcService {
             notify: NotifyState::new(),
             last_outbound_error: Mutex::new(None),
             auto_reconnect: Mutex::new(None),
+            ask_note: Mutex::new(None),
             reconnect_epoch: std::sync::atomic::AtomicU64::new(0),
             uno: uno::UnoCodes::default(),
             pass_gate: unop::BruteGate::default(),
@@ -541,6 +643,14 @@ impl RcService {
             audio_local_mute: std::sync::atomic::AtomicBool::new(false),
             peer_host_audio: Mutex::new(None),
             spk_mute_by_peer: std::sync::atomic::AtomicBool::new(false),
+            // 乙-①：默认打字档（= 历史行为）。0 与「任何脏值」都读成默认档，
+            // 见 key_mode.rs 的 mode_of_code。
+            key_mode: std::sync::atomic::AtomicU8::new(0),
+            // 乙-③：两把闸默认全关（不收回、未授权），授权默认「不允许」是安全侧默认。
+            input_gate: input_gate::InputGate::default(),
+            peer_input_state: Mutex::new(None),
+            // 丙-③：默认不暂停（正常推流）——暂停只在当场会话里成立。
+            video_pause: video_pause::VideoPauseGate::default(),
         }
     }
 
@@ -556,6 +666,11 @@ mod outbound;
 mod inbound;
 mod uno_pass;
 mod inbound_accept;
+mod key_mode;
+mod input_gate;
+// `pub(super)` 而非同批其余的私有 `mod`：推流主循环（`rc::inbound::video_run`）
+// 要读暂停轮询周期这一个常量，为它在 service 上再开一层转发方法不值。
+pub(super) mod video_pause;
 
 pub fn cfg_enabled(store: &DataStore) -> bool {
     store

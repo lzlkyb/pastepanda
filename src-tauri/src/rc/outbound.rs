@@ -584,6 +584,33 @@ impl OutboundVideo {
                             };
                             self.svc.set_peer_host_audio(st);
                         }
+                        Some("input_state") => {
+                            // 乙-③：对端报来的**主机侧输入权状态**。三条都是对方机器上的
+                            // 事实，本机只如实显示：`host_hold` = 对方收回了键鼠（我这边的
+                            // 输入正在被拦下），`lock_granted` = 对方允许我锁他的输入。
+                            let st = super::service::PeerInputState {
+                                host_hold: v
+                                    .get("host_hold")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                lock_granted: v
+                                    .get("lock_granted")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                lock_active: v
+                                    .get("lock_active")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                err: v.get("err").and_then(|x| x.as_str()).map(str::to_string),
+                            };
+                            self.svc.set_peer_input_state(st);
+                        }
+                        Some("vpause") => {
+                            // 丙-③：对方暂停了向本机推送画面。这是**对方机器上的事实**，
+                            // 措辞不许越界成「连接断了/对方离线」——会话、键鼠、剪贴板都还通。
+                            let on = v.get("on").and_then(|x| x.as_bool()).unwrap_or(false);
+                            self.svc.set_peer_video_paused(on);
+                        }
                         Some("caps") => {
                             // P1：被控端画面能力（fps120 可用性 + 刷新率），UI 诚实出档
                             let fps120 = v.get("fps120").and_then(|x| x.as_bool()).unwrap_or(false);

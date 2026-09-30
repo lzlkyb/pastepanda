@@ -7,7 +7,11 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  RcAskHost,
+  RcAskMode,
+  RcAskNote,
   RcCapability,
+  RcInboundKnock,
   RcDeviceTag,
   RcExchangeStarted,
   RcIdentity,
@@ -199,12 +203,40 @@ export function rcClearOutboundError(): Promise<void> {
   return invoke("rc_clear_outbound_error");
 }
 
-export function rcApproveInbound(nodeId: string): Promise<RcSession> {
-  return invoke("rc_approve_inbound", { nodeId });
+/**
+ * 批准一条入站申请。
+ *
+ * 🔴 丙-①「分两次授权」：`grant="view"` 是**只降级不升级**——对方申请可控时
+ * 同意成只看（后端 `approve_inbound_as` 只认这一种收窄）；申请本来就只看的，
+ * 传不传 "view" 结果一样。绝不存在「传 control 把只看升成可控」这条路。
+ */
+export function rcApproveInbound(nodeId: string, capability?: "view"): Promise<RcSession> {
+  return invoke("rc_approve_inbound", { nodeId, capability: capability ?? null });
 }
 
 export function rcDenyInbound(nodeId: string): Promise<void> {
   return invoke("rc_deny_inbound", { nodeId });
+}
+
+/**
+ * 丙-①②：桌面浮层（独立置顶窗口 `rc-ask`）取当前形态与内容。
+ *
+ * 挂载时主动问一次，**这一步顺带解决创建竞态**：Rust 先建窗、事件后到也没关系。
+ * `note` 在 TTL 内每次都给；`host` 只在**正被远程**时非空（角标的那三项）。
+ * `mode` 由 Rust 算（判据全在 `RcService`，而主窗可能整场没打开），前端只按它分流。
+ */
+export function rcAskState(): Promise<{
+  mode: RcAskMode;
+  pending: RcInboundKnock[];
+  note: RcAskNote | null;
+  host: RcAskHost | null;
+}> {
+  return invoke("rc_ask_state");
+}
+
+/** 浮层被用户关掉（不答复）：只收确认卡，pending 照旧活到超时；角标不收。 */
+export function rcAskHide(): Promise<void> {
+  return invoke("rc_ask_hide");
 }
 
 /** 方案 D：设置某台设备的「免确认直连」。`trusted=false` 即恢复每次询问。 */
@@ -260,6 +292,40 @@ export function rcSetAudioLocalMute(muted: boolean): Promise<void> {
  */
 export function rcHostMuteSet(on: boolean): Promise<void> {
   return invoke("rc_host_mute_set", { on });
+}
+
+/**
+ * 乙-③：被控者**暂时收回自己的键鼠**（对端此刻的输入一拍都不进本机）。
+ *
+ * 与「锁定对方」是两把独立的闸：这条挡的是**对方注入的手**，不吞你本人的物理输入
+ * ——吞了你连「恢复」都点不到。收回后 10 分钟无本机操作自动归还。
+ *
+ * 返回改后的状态（前端据此切按钮，不做乐观置位）。
+ */
+export function rcInputHold(on: boolean): Promise<boolean> {
+  return invoke<boolean>("rc_input_hold", { on });
+}
+
+/**
+ * 乙-③：勾选 / 取消「允许对方锁定我的输入」（**本次会话**的授权，不落盘）。
+ *
+ * 取消会顺手解开已经生效的锁——授权是锁的唯一来源，撤了授权还锁着就是假反馈。
+ */
+export function rcInputLockGrant(on: boolean): Promise<void> {
+  return invoke("rc_input_lock_grant", { on });
+}
+
+/**
+ * 丙-③：暂停 / 恢复**对方看到的画面**（会话不断，只是不再出帧）。
+ *
+ * 与「暂时收回我的键鼠」正交：这条挡的是对方的**眼睛**——本机屏幕照常用、键鼠照用、
+ * 剪贴板照走，对方那边停在最后一帧并常驻显示「对方已暂停画面」。只在当场会话有效，
+ * 会话结束自动恢复推流。
+ *
+ * 返回改后的状态（前端据此切按钮，不做乐观置位）。
+ */
+export function rcVideoPauseSet(on: boolean): Promise<boolean> {
+  return invoke<boolean>("rc_video_pause_set", { on });
 }
 
 export function rcSendInput(event: RcInputEvent): Promise<void> {

@@ -61,6 +61,15 @@ export type RcInputEvent =
   | { kind: "mouse_button"; x: number; y: number; button: number; down: boolean }
   | { kind: "wheel"; x: number; y: number; delta: number }
   | { kind: "key"; vk: number; down: boolean }
+  /**
+   * 乙-①：输入法选字完成后的**整串文本**，被控端按 Unicode 注入
+   * （`SendInput` 的 `KEYEVENTF_UNICODE`，不经 VK 表）。
+   *
+   * 为什么必须有这条：候选期间的按键被守卫全部拦下（那是「打进对方机器」的事故源），
+   * 拦完之后如果什么都不发，远控就打不出中文——等于把 bug 换成了残废。
+   * 只在「打字模式」下发（判据 `lib/rcKeyMode.rcImeCommitOf`）。
+   */
+  | { kind: "text"; text: string }
   | { kind: "clipboard_push"; text: string }
   | { kind: "clipboard_pull" }
   | { kind: "ping"; ts?: number }
@@ -74,7 +83,23 @@ export type RcInputEvent =
   /** G3：开关系统声音（音频流）。被控端有可见提示。 */
   | { kind: "audio_on"; on: boolean }
   /** G3-C：请被控端把**主机扬声器**静音/恢复（要求 Control 会话）。 */
-  | { kind: "set_host_mute"; on: boolean };
+  | { kind: "set_host_mute"; on: boolean }
+  /**
+   * 乙-①：把本机的键盘模式告诉被控端——`"type"` 按 VK 注入（打字模式，中文可输入），
+   * `"direct"` 按扫描码注入（直传模式，游戏/快捷键准）。
+   *
+   * 要求 Control：它改的是「对方的机器怎么被按键」，不是「我自己看什么画面」，
+   * 与键鼠注入同量级（口径同 `set_host_mute`）。
+   */
+  | { kind: "set_key_mode"; mode: string }
+  /**
+   * 乙-③：要求锁住**被控者本人的物理键鼠**（RustDesk 的 block-input 语义，仅 Windows 有意义）。
+   *
+   * 🔴 这条不是「一键就能锁」：被控端必须先在抽屉里勾了「允许对方锁定我的输入」，
+   * 没勾它只回一条失败原因（`status.peer_input.err`），本机一个键都不吞。
+   * 锁的是**物理输入**，不锁注入那一路——所以锁上之后你照常能操作对方机器。
+   */
+  | { kind: "set_input_lock"; on: boolean };
 
 export interface RcHistoryItem {
   peer: string;

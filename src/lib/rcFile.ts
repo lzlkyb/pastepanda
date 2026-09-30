@@ -96,6 +96,22 @@ export function runningTasks(tasks: RcFileTask[]): RcFileTask[] {
 }
 
 /**
+ * 「当前正在动的那一条」——进度百分比与速率都只能按它算（多文件串行时整体百分比
+ * 会把 5 个文件压成一个长条）。优先真正 `transferring` 的；都没有 transferring
+ * （只剩 awaiting 等确认）时取最早 `started_ms`，而不是数组末尾那条。
+ *
+ * 收口在此（规则 11.1）：底栏摘要 `barSummary` 和会话出口条 `RcCapsuleOutlet`
+ * 读的是同一个「当前任务」，两处各写一遍 reduce 会出现两条进度互相打脸。
+ */
+export function currentRunTask(tasks: RcFileTask[]): RcFileTask | null {
+  const run = runningTasks(tasks);
+  if (run.length === 0) return null;
+  const transferring = run.filter((t) => t.state === "transferring");
+  const pool = transferring.length > 0 ? transferring : run;
+  return pool.reduce((a, b) => (a.started_ms <= b.started_ms ? a : b));
+}
+
+/**
  * 摘要条的方向前缀（本机视角）。
  *
  * 🔴 2026-09-23 审计修：侧栏摘要条曾写死「传给 X」，而 `runningTasks[0]`
@@ -122,30 +138,50 @@ export function sortTasks(tasks: RcFileTask[]): RcFileTask[] {
 }
 
 /**
- * 底栏那一句汇总：`传文件中 3/5 · 42% · 6.2 MB/s · 剩 12s`。
+ * 一条进行中的传输（出口条 / 底栏摘要共用的读法）。
  *
- * 没有任何运行中任务时返回 null（底栏就不占位）——**不返回「空闲」**，
+ * 没有任何运行中任务时 `runProgress` 返回 null（UI 就不占位）——**不返回「空闲」**，
  * 那是把「无事发生」也说出来占地方。
  */
-export function barSummary(tasks: RcFileTask[], rateOf: (t: RcFileTask) => number): string | null {
+export interface RunProgress {
+  /** 短标签：`传文件中 3/5`（串行队列里第几条 / 共几条）。 */
+  label: string;
+  /** 正在动的那条的百分比（0..100）。 */
+  pct: number;
+  /** 字节/秒，0 = 还没量到（不编造速率）。 */
+  rate: number;
+  /** 剩余毫秒；`null` = 没速率或已到底，说不出预估就不说。 */
+  etaMs: number | null;
+  /** 去掉短标签的那半句：`42% · 6.2 MB/s · 剩 12s`（出口条要在前面拼文件名）。 */
+  rest: string;
+  /** 一行汇总：`传文件中 3/5 · 42% · 6.2 MB/s · 剩 12s`（原 `barSummary` 文案）。 */
+  summary: string;
+  /** 正在动的那条——「取消」按钮要对准它，不是队列里最后一条。 */
+  task: RcFileTask;
+}
+
+export function runProgress(
+  tasks: RcFileTask[],
+  rateOf: (t: RcFileTask) => number,
+): RunProgress | null {
+  const cur = currentRunTask(tasks);
+  if (!cur) return null;
   const run = runningTasks(tasks);
-  if (run.length === 0) return null;
-  const total = tasks.length;
-  const idx = total - run.length + 1;
-  // 多文件串行：进度按**当前这一条**算，整体百分比会把 5 个文件算成一个长条。
-  // P2-7：优先真正 `transferring` 的（串行时它才是正在动的）；都没有 transferring
-  // （只剩 awaiting 等确认）时取最早 `started_ms`，而不是数组末尾那条。
-  const transferring = run.filter((t) => t.state === "transferring");
-  const pool = transferring.length > 0 ? transferring : run;
-  const cur = pool.reduce((a, b) => (a.started_ms <= b.started_ms ? a : b));
-  const parts = [`传文件中 ${idx}/${total}`, `${taskPercent(cur)}%`];
+  const label = `传文件中 ${tasks.length - run.length + 1}/${tasks.length}`;
+  const pct = taskPercent(cur);
   const rate = rateOf(cur);
-  if (rate > 0) {
-    parts.push(formatRate(rate));
-    const left = cur.size - cur.done;
-    if (left > 0) parts.push(formatEta((left / rate) * 1000));
-  }
-  return parts.join(" · ");
+  const left = cur.size - cur.done;
+  const etaMs = rate > 0 && left > 0 ? (left / rate) * 1000 : null;
+  const parts = [`${pct}%`];
+  if (rate > 0) parts.push(formatRate(rate));
+  if (etaMs !== null) parts.push(formatEta(etaMs));
+  const rest = parts.join(" · ");
+  return { label, pct, rate, etaMs, rest, summary: `${label} · ${rest}`, task: cur };
+}
+
+/** 底栏那一句汇总（`runProgress().summary` 的便捷壳，文案单一来源）。 */
+export function barSummary(tasks: RcFileTask[], rateOf: (t: RcFileTask) => number): string | null {
+  return runProgress(tasks, rateOf)?.summary ?? null;
 }
 
 /** 单行任务状态文案（进度列表用）。 */

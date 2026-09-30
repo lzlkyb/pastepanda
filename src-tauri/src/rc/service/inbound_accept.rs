@@ -6,6 +6,12 @@
 
 use super::*;
 
+/// 原因行还在「来得及被看见」的窗口里吗（见 `ASK_NOTE_TTL_MS`）。
+fn ask_note_fresh(slot: &Option<RcAskNote>) -> bool {
+    slot.as_ref()
+        .is_some_and(|n| now_ms() - n.at_ms < ASK_NOTE_TTL_MS)
+}
+
 impl RcService {
     /// 建立入站会话的**核心**（人工同意与方案 D 免确认共用）。
     ///
@@ -60,6 +66,15 @@ impl RcService {
         // 新会话的推流所有权从头分配（上一场的标记必须清，否则第一个批准循环
         // 会误判「已有人推流」而拒绝回 Accept）。
         inner.inbound_streaming = false;
+        // 乙-③：输入权从安全侧起步（不收回、未授权、未锁定）+ 装上本机物理输入的
+        // 钩子。两者都只碰原子量/起一个线程，不拿锁——这里正持着 `inner`。
+        // 钩子**只在会话期间存在**：低层钩子在输入路径上同步执行，没人远程的时候
+        // 不该给全系统每一次键鼠事件加一次回调。
+        self.input_gate_begin();
+        // 丙-③：画面暂停同样从「正常推流」起步——上一场按的暂停不能漏进这一场，
+        // 否则新对端一连进来就看见一张冻住的旧画面，还以为是链路坏了。
+        self.video_pause_begin();
+        crate::rc::local_input::start_watching();
         Ok(s)
     }
 
@@ -85,6 +100,21 @@ impl RcService {
     }
 
     pub fn approve_inbound(&self, peer: &str) -> Result<Session, String> {
+        self.approve_inbound_as(peer, None)
+    }
+
+    /// 丙-①：**「只看」与「控制」分两次授权**（对标 §6.1，Quick Assist 与 RustDesk
+    /// password-click 都是这个形状）。对方申请的是「看屏幕 + 控制键鼠」，本机可以只
+    /// 给「看屏幕」——那一趟他只能看，要拿键鼠得再敲一次门。
+    ///
+    /// 🔴 **只许降档，不许升档**：`grant = Some(Control)` 而对方只申请了 View 时，
+    /// 按对方申请的原样批。否则等于本机替对方给了他没申请过的权力（授权方向只能
+    /// 由申请侧决定，本机只能收紧）。
+    pub fn approve_inbound_as(
+        &self,
+        peer: &str,
+        grant: Option<Capability>,
+    ) -> Result<Session, String> {
         let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let idx = inner
             .pending
@@ -92,13 +122,12 @@ impl RcService {
             .position(|k| k.peer == peer)
             .ok_or("没有待确认的远程申请")?;
         let knock = inner.pending[idx].clone();
-        let s = self.establish_inbound_with(
-            &mut inner,
-            peer,
-            knock.peer_name,
-            knock.capability,
-            InboundTrust::Whitelist,
-        )?;
+        let cap = if grant == Some(Capability::View) {
+            Capability::View
+        } else {
+            knock.capability
+        };
+        let s = self.establish_inbound_with(&mut inner, peer, knock.peer_name, cap, InboundTrust::Whitelist)?;
         inner.pending.remove(idx);
         drop(inner);
         // B-b：人工批准 = 首次 elevate 确认。仅同步配对的设备在此写入 rc_devices，
@@ -108,6 +137,32 @@ impl RcService {
         }
         self.emit_changed();
         Ok(s)
+    }
+
+    /// 丙-①：记一条「这条申请被自动收掉了」的原因（浮层下一次轮询读到，TTL 内一直读到）。
+    /// 单槽、后来者覆盖：两条同时过期时用户只需要知道「刚才那条为什么没了」这一句，
+    /// 逐条播报会把浮层变成日志。
+    pub(in crate::rc) fn note_ask_dropped(&self, peer: &str, code: &'static str) {
+        let mut slot = self.ask_note.lock().unwrap_or_else(|p| p.into_inner());
+        *slot = Some(RcAskNote {
+            peer: peer.to_string(),
+            code,
+            at_ms: now_ms(),
+        });
+    }
+
+    /// 读那条还新鲜的原因（**不取走**）。
+    ///
+    /// 为什么不学 `take_inject_err` 的取走即清：这条原因是浮层的**内容**，不是一次性
+    /// 告警。取走的话下一次 `rc-session-changed` 轮询就空了，卡片会在用户还没读完时
+    /// 自己变回去；「什么时候不再算数」交给 `ask_note_waiting` 的同一份 TTL。
+    pub fn ask_note(&self) -> Option<RcAskNote> {
+        let slot = self.ask_note.lock().unwrap_or_else(|p| p.into_inner());
+        if ask_note_fresh(&slot) {
+            slot.clone()
+        } else {
+            None
+        }
     }
 
     pub fn deny_inbound(&self, peer: &str) -> Result<(), String> {

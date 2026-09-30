@@ -860,6 +860,10 @@ pub fn run() {
                                     island_rc_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                                     crate::todo_island::set_privacy_gate(&handle_rc, false);
                                 }
+                                // 🔴 丙-①②：有人敲门 → 置顶确认卡顶出来；正在被远程 →
+                                // 右下角常驻角标。主窗可能整场都没打开，拉起主窗那条
+                                // 只在 webview 活着时才有效，所以这块窗口独立于主窗。
+                                rc::ask_pop::on_change(&handle_rc);
                             }
                             if let Some(err) = svc.take_inject_err() {
                                 let _ = handle_rc.emit("rc-inject-error", err);
@@ -1176,6 +1180,9 @@ pub fn run() {
             commands::rc_audio_toggle,
             commands::rc_set_audio_local_mute,
             commands::rc_host_mute_set,
+            commands::rc_input_hold,
+            commands::rc_input_lock_grant,
+            commands::rc_video_pause_set,
             commands::rc_send_input,
             commands::rc_open_workbench,
             commands::rc_push_clipboard,
@@ -1191,6 +1198,9 @@ pub fn run() {
             commands::rc_pull_clipboard,
             commands::rc_session_history,
             commands::rc_history_clear,
+            // 丙-①：入站申请的独立置顶浮层（主窗可能整场没开，告知不能只住主窗）
+            rc::ask_pop::rc_ask_state,
+            rc::ask_pop::rc_ask_hide,
             // 局域网配对（A3）：附近设备 + 6 位数字核对
             commands::rc_nearby_status,
             commands::rc_nearby_pair,

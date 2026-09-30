@@ -188,6 +188,7 @@ impl RcService {
             };
 
             if !auto_accepted {
+                let mut dropped_full: Option<String> = None;
                 let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
                 if !inner.pending.iter().any(|k| k.peer == peer) {
                     // 🔴 D10（2026-09-22 审计）：待确认表是**无上限**的。灌它的前提
@@ -201,6 +202,7 @@ impl RcService {
                     // 用户多半不会去点了。
                     if inner.pending.len() >= PENDING_KNOCK_MAX {
                         let dropped = inner.pending.remove(0);
+                        dropped_full = Some(dropped.peer.clone());
                         log::warn!(
                             "[RC] {short} 待确认申请已满（{PENDING_KNOCK_MAX}），丢弃最早一条"
                         );
@@ -214,6 +216,11 @@ impl RcService {
                         capability: requested,
                         first_seen_ms: now_ms(),
                     });
+                }
+                // 丙-①：满员丢最早原来只 `log::warn`——用户那边是「刚才还有人敲门，
+                // 现在列表里凭空少一条」。锁外记原因，别在持 inner 锁时去碰第二把锁。
+                if let Some(gone) = dropped_full {
+                    self.note_ask_dropped(&gone, "pending_full");
                 }
             }
         }
@@ -303,6 +310,9 @@ impl RcService {
                     // 只有「还在等」才允许超时（P1-2 修正：超时判定移到 decision 之后）
                     if now_ms() > deadline {
                         self.clear_pending(&peer);
+                        // 丙-①：超时自动拒绝对方之后，主机这边也要有一句交代——
+                        // 原来那条申请只是从列表里消失，看起来像「软件自己吞了一条」。
+                        self.note_ask_dropped(&peer, "confirm_timeout");
                         deny_and_close(&link_conn, &mut send, "等待确认超时", "confirm_timeout")
                             .await;
                         return;

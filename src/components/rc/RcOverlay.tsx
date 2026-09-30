@@ -22,8 +22,10 @@ import { RcUnoPassBanner } from "./RcUnoPassBanner";
 import { RcPairJoins } from "./RcPairJoins";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice"; // C4：与 RcSection 统一默认设备名来源；显示名收口见 rcDisplayName
+import { rcReconnectRecoveredOf } from "@/lib/rcLinkMask";
 import { capabilityLabel } from "@/lib/rcRequest";
 import { summonMainWindow } from "@/lib/rcWindow";
+import type { RcStatus } from "@/lib/api/rc";
 
 export function RcOverlay() {
   const { toast } = useToast();
@@ -36,6 +38,13 @@ export function RcOverlay() {
     toggleAudioLocalMute,
     spkMutedByPeer,
     restoreSpk,
+    inputHold,
+    toggleInputHold,
+    lockGranted,
+    lockActive,
+    toggleLockGrant,
+    videoPaused,
+    toggleVideoPause,
     enableTrust,
     endSession,
   } = useRcInboundControls(rc);
@@ -114,6 +123,17 @@ export function RcOverlay() {
     if (!inboundActive) lastInboundId.current = null;
   }, [inboundActive, session, toast]);
 
+  // 🔴 乙-⑤：自动重连**成功**的结果告知。episode 一清空，遮罩与顶栏那条横幅会同时
+  // 消失，用户只看见「它自己没了」；判据三条都成立才说「已恢复」（见
+  // `rcReconnectRecoveredOf`——手动结束会话同样会清空 episode，所以必须核此刻真有会话）。
+  const prevReconnecting = useRef<RcStatus["reconnecting"] | null>(null);
+  useEffect(() => {
+    const prev = prevReconnecting.current;
+    prevReconnecting.current = reconnecting;
+    if (!prev || !rcReconnectRecoveredOf({ prev, now: reconnecting, livePeer: peer })) return;
+    toast(`与「${rcDisplayName(prev, fingerprintOf(prev.peer))}」的连接已恢复`, "success");
+  }, [reconnecting, peer, toast]);
+
   if (
     !inboundActive &&
     !outboundLive &&
@@ -159,6 +179,14 @@ export function RcOverlay() {
           quality={rc.status?.quality}
           activeQuality={rc.status?.active_quality}
           captureScope={rc.status?.capture_scope}
+          inputHold={inputHold}
+          onToggleInputHold={toggleInputHold}
+          lockGranted={lockGranted}
+          lockActive={lockActive}
+          onToggleLockGrant={toggleLockGrant}
+          inputPills={rc.status?.input_pills}
+          videoPaused={videoPaused}
+          onToggleVideoPause={toggleVideoPause}
           onEnd={endSession}
         />
       )}

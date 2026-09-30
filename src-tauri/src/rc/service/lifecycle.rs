@@ -152,6 +152,18 @@ impl RcService {
             },
             // G3-C：被控端视角——对端静音了本机扬声器（提示 + 恢复入口）。
             spk_muted_by_peer: self.spk_muted_by_peer(),
+            // 乙-③：输入权。`input_hold` / 授权位 / 锁的真实闸位三者分开投影——
+            // 「对方要求过锁」和「锁现在生效」不是一回事（钩子可能压根没装上）。
+            input_hold: self.input_hold(),
+            input_lock_granted: self.input_lock_granted(),
+            input_lock_active: self.input_lock_active(),
+            // 活动戳带时间窗语义，只能在投影这一刻判（前端拿不到本机的单调基座）。
+            input_pills: self.input_pills(),
+            // 发起端视角：对方报来的主机输入权状态。None = 旧对端不发这条帧。
+            peer_input: self.peer_input_state(),
+            // 丙-③：画面暂停。两位分开投影——被控端读自己的闸位，发起端读对端帧。
+            video_paused: self.video_paused(),
+            peer_video_paused: self.peer_video_paused(),
         }
     }
 

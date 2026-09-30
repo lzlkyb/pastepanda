@@ -2,7 +2,10 @@
  * RcReconnectBanner — 主窗顶栏「免确认设备异常断流 → 自动重连」横幅（Q6）。
  *
  * B2（2026-09-23）从 `RcOverlay` 拆出（300 行红线，拆分先行）。
- * 变化仅两处：「重新发起」失败补 toast；`gave_up` 常驻文案与原先一致。
+ *
+ * 🔴 乙-⑤（2026-09-29，待拍板⑤）：**只讲结果，不报过程**。原先的「（1/3）」计数
+ * 拿掉——对标 §6.6 六家都把自动重连当默认体验而非用户决策点，给用户看第几圈只会
+ * 让人去数它失败几次。真要用尽就说清下一步（重新发起，可能需要对方同意）。
  */
 import { useToast } from "@/components/Toast";
 import { runRcAction } from "@/lib/rcFeedback";
@@ -26,14 +29,12 @@ export function RcReconnectBanner({
     <div className={styles.ctrlBanner} role="status" aria-live="polite">
       <span className={styles.who}>
         <span className={styles.live} />
-        {reconnecting.gave_up
-          ? `「${name}」自动重连失败`
-          : `「${name}」连接中断，正在自动重连（${reconnecting.attempt}/${reconnecting.max}）`}
+        {reconnecting.gave_up ? `「${name}」没能自动恢复` : `「${name}」连接中断，正在尝试恢复`}
       </span>
       <span className={styles.sp} />
       <span className={styles.meta}>
         {reconnecting.gave_up
-          ? "对方可能不在线；也可稍等对方恢复后自动恢复"
+          ? "对方可能不在线，或已关闭这台设备的免确认——重新发起时需要对方同意"
           : "对方是免确认设备，重连无需对方确认"}
       </span>
       {reconnecting.gave_up && (

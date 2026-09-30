@@ -12,11 +12,11 @@
  *
  * 确认一律用 ConfirmDialog（非 window.confirm，见 lib/confirm）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useToast } from "@/components/Toast";
+import { useCallback, useEffect, useRef } from "react";
 import { confirmDialog } from "@/lib/confirm";
-import { rcClipAutoFromConfig } from "@/lib/rcClipAuto";
-import { useAppStore } from "@/stores/appStore";
+import { useRcOutcome } from "@/hooks/useRcOutcome";
+import { useRcClipAutoPref } from "@/hooks/useRcClipAutoPref";
+import { useRcKeyMode } from "@/hooks/useRcKeyMode";
 import type { RcSession } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { useRcFrames } from "@/hooks/useRcFrames";
@@ -44,6 +44,7 @@ export function RcSessionView({
   rc,
   quality,
   captureScope,
+  errorSlot,
 }: {
   session: RcSession;
   busy: boolean;
@@ -56,35 +57,21 @@ export function RcSessionView({
   rc: UseRc;
   quality: string;
   captureScope: string;
+  /**
+   * 🔴 甲-③（=C2）：连接类错误面板由父级（RcStage）构造后**下传**到这里渲染。
+   * 原因不是排版偏好：全屏目标是 `.sessionWrap`，而浏览器只渲染全屏元素的子树——
+   * 面板继续挂在 `<main>` 就等于全屏时「错误一个字都不说」。构造留在父级是因为
+   * 重试链路（lastAttempt / doRequest / capFor）只在那里，这里只负责承载。
+   */
+  errorSlot?: React.ReactNode;
 }) {
-  const { toast } = useToast();
-  // 剪贴板自动同步（B 方案，2026-09-25 拍板）：**默认开 + 记住关闭**。初值从
-  // store 的 config 同步读（启动时 lib/api/init 已水合，会话挂载无时序问题；
-  // 旧配置缺键 → 默认开，口径收口在 rcClipAutoFromConfig）。只看会话双重门控
-  //（hook no-op + 按钮不渲染）；首轮 poll 只建基线不发送、失焦拒读防护不变。
-  const [clipAuto, setClipAuto] = useState(() =>
-    rcClipAutoFromConfig(useAppStore.getState().config),
-  );
-  // 切换即持久化：乐观写 store → 串行落盘（链内读最新快照，快速连点最后写
-  // 的必是最新状态）→ 失败回滚屏上与 store。对齐设置壳 updateAndSave——
-  // 不回滚的话「下次启动自己变回去」会被当成存不住的怪 bug。
-  const updateConfig = useAppStore((s) => s.updateConfig);
-  const clipSaveChainRef = useRef(Promise.resolve() as Promise<unknown>);
-  const toggleClipAuto = () => {
-    const next = !clipAuto;
-    setClipAuto(next);
-    updateConfig({ rc_clip_auto: next });
-    const task = clipSaveChainRef.current.then(async () => {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("save_config", { config: useAppStore.getState().config });
-    });
-    clipSaveChainRef.current = task.catch(() => {});
-    void task.catch(() => {
-      updateConfig({ rc_clip_auto: !next });
-      setClipAuto(!next);
-      toast("剪贴板同步偏好保存失败，已还原", "error");
-    });
-  };
+  // 甲-②（2026-09-29）：会话里所有「一件事的结果」走 `say`——toast 之外再进常驻
+  // 出口条一次。全屏态 toast 在 `.sessionWrap` 子树**之外**（挂在 rc-main 树根），
+  // 那条通道在全屏里等于没说；出口条住在 `.capZone` 直系，两态都在。
+  const { say } = useRcOutcome(session.id);
+  // 剪贴板自动同步（B 方案，2026-09-25 拍板）：**默认开 + 记住关闭**，切换即持久化。
+  // 读写与失败回滚收口在 useRcClipAutoPref（只看会话的双重门控不在那里）。
+  const { clipAuto, toggleClipAuto } = useRcClipAutoPref(say);
   // 全屏目标 = 会话壳（见 useRcDisplayMode 注释）；screenRef 仍是输入坐标的基准
   const wrapRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
@@ -92,6 +79,9 @@ export function RcSessionView({
   // P4：每次输入发出的本地时刻（useRcInput 写、useRcFrames 读），操作延迟 HUD 用
   const inputEpochRef = useRef(0);
   const canControl = session.capability === "control";
+  // 乙-①（2026-09-30）：打字 / 直传两档显式切换（不做自动判定，对标 §6.7）。
+  // 偏好持久化 + 「告诉对端」都在 hook 里，这里只把档位分发给输入链和胶囊。
+  const { keyMode, pickKeyMode } = useRcKeyMode({ canControl, sessionId: session.id, say });
 
   // 显示模式（缩放 / 全屏 / 非全屏提示 + 换会话清理）、声音开关、会话内可调项
   // （画质 / 范围 / 码率）各自独立成 hook，见 hooks/useRc*.ts。
@@ -100,9 +90,9 @@ export function RcSessionView({
   // 显示档会被读成「我明明选了 1:1」（规则 15：改动与反馈同可见性域）。
   const fitDowngradeTick = display.fitDowngradeTick;
   useEffect(() => {
-    if (fitDowngradeTick > 0) toast("1:1 在全屏会超出屏幕，已切回「适应」", "info");
-  }, [fitDowngradeTick, toast]);
-  const { audioOn, toggleAudio } = useRcSessionAudio(session.id, toast);
+    if (fitDowngradeTick > 0) say("1:1 在全屏会超出屏幕，已切回「适应」", "info");
+  }, [fitDowngradeTick, say]);
+  const { audioOn, toggleAudio } = useRcSessionAudio(session.id, say);
   const prefs = useRcSessionPrefs({
     sessionId: session.id,
     quality,
@@ -122,8 +112,8 @@ export function RcSessionView({
   const cursorShape = useRcCursor(session.id);
 
   // 方案A（2026-09-25）：会话窗按对方画面比例自适应（首帧 / 切屏·改范围时
-  // 各调一次，同比例不重调；全屏态不参与）。失败 toast，不静默。
-  const fitNotify = useCallback((m: string, k: "error") => toast(m, k), [toast]);
+  // 各调一次，同比例不重调；全屏态不参与）。失败要有声音，不静默。
+  const fitNotify = useCallback((m: string, k: "error") => say(m, k), [say]);
   useRcWindowFit({
     sessionId: session.id,
     size: frames.size,
@@ -133,8 +123,8 @@ export function RcSessionView({
 
   // C-UI3：自动同步剪贴板失败要说人话，禁止静默 catch。
   const onAutoFailToast = useCallback(
-    (e: string) => toast(`自动同步剪贴板失败：${e}`, "error"),
-    [toast],
+    (e: string) => say(`自动同步剪贴板失败：${e}`, "error"),
+    [say],
   );
   // B5：基线由 hook 在开启时自动建立，这里只切开关，不手动 reset
   const clip = useRcClipboardAuto({
@@ -156,12 +146,12 @@ export function RcSessionView({
 
   // B-1：会话内申请升级为可控。乙方案 §6（2026-09-26）删掉了这道确认——
   // 双保险已经够重（会话断开会立刻可见，且对方那头还要再确认一次），
-  // 一键直发 + 预告 toast 就够；真正的反馈由发起链路自己的 toast 承担。
+  // 一键直发 + 预告一句就够；真正的反馈由发起链路自己的结果出口承担。
   const requestControl = useCallback(async () => {
     if (!onRequestControl) return;
-    toast("正在重新申请可控，等对方确认…", "info");
+    say("正在重新申请可控，等对方确认…", "info");
     onRequestControl();
-  }, [onRequestControl, toast]);
+  }, [onRequestControl, say]);
 
   const input = useRcInput({
     canControl,
@@ -176,6 +166,7 @@ export function RcSessionView({
     moveThrottleMs:
       prefs.qPick === "fps165" ? 6 : prefs.qPick === "fps144" ? 7 : prefs.qPick === "fps120" ? 8 : 16,
     inputEpochRef,
+    keyMode,
   });
 
   // 会话内不停发心跳（窗口失焦也发，否则对方 3.5s 后暂停推流，像断线）。
@@ -192,7 +183,7 @@ export function RcSessionView({
 
   // 会话内的一次性通知（对端注入失败 / 路径自动切换 relay↔直连）收口在 hook 里——
   // 这两条都是「说一次就够」的消息，留在会话壳里会把这个文件推过 300 行红线。
-  const notify = useCallback((m: string, kind?: "error") => toast(m, kind), [toast]);
+  const notify = useCallback((m: string, kind?: "error") => say(m, kind), [say]);
   useRcSessionNotices({
     pathNotice: rc.pathNotice,
     onPathConsumed: rc.clearPathNotice,
@@ -208,11 +199,13 @@ export function RcSessionView({
     onPickQuality: prefs.setQPick,
     onPickScope: prefs.setScopePick,
     onPickBitrate: prefs.setBitratePick,
-    onStatus: (m, k) => toast(m, k),
+    onStatus: (m, k) => say(m, k),
   });
 
   return (
     <div className={styles.sessionWrap} ref={wrapRef}>
+      {/* 错误面板住在全屏元素的子树里（见 errorSlot 注释），收起/关闭都归它自己 */}
+      {errorSlot}
       <RcSessionStage
         session={session}
         busy={busy}
@@ -227,8 +220,10 @@ export function RcSessionView({
         onDismissFsHint={display.dismissFsHint}
         qPick={prefs.qPick}
         screenRef={screenRef}
+        wrapRef={wrapRef}
         canvasRef={canvasRef}
         onReconnect={onReconnect}
+        onRequestEnd={() => void requestEnd()}
       />
 
       {/* 会话浮条（方案 A，2026-09-28）：**窗口态与全屏态同一条**——原先全屏换成
@@ -255,9 +250,11 @@ export function RcSessionView({
         onToggleClipAuto={toggleClipAuto}
         lastAutoAt={clip.lastAutoAt}
         autoFail={clip.autoFail}
-        onStatus={(m, k) => toast(m, k)}
+        onStatus={(m, k) => say(m, k)}
         fit={display.fit}
         onFit={display.setFit}
+        keyMode={keyMode}
+        onPickKeyMode={pickKeyMode}
         fullscreen={display.fullscreen}
         onToggleFullscreen={display.toggleFullscreen}
         onRequestEnd={() => void requestEnd()}

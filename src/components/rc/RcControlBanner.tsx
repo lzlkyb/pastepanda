@@ -7,8 +7,8 @@
  *
  * - **胶囊（默认态，唯一常驻 UI）**：红点 + 名字 + 可控/只看 + 时长 + 橙点徽标
  *   + 结束图标 + 展开箭头。压缩量仍只由 `.who` 承担（09-22 窄窗崩坏的教训）。
- * - **抽屉（点击展开）**：提示条 / 文件请求完整卡片 / 事实表（指纹·范围·画质·
- *   免确认）/ 不发送声音 / 免确认二段确认（U9）+ 立即结束。
+ * - **抽屉（点击展开）**：提示条 / 文件请求完整卡片 / 输入权交接（乙-③）/
+ *   事实表（指纹·范围·画质·免确认）/ 不发送声音 / 免确认二段确认（U9）+ 立即结束。
  * - **自动展开**：文件请求或对端变更到达时弹开抽屉一次（规则 15：触发可见），
  *   胶囊同时挂橙点徽标；用户收起后不重复弹，徽标留到处理完。
  */
@@ -17,9 +17,10 @@ import { ChevronDown, X } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import { formatDuration } from "@/lib/rcSessionStats";
+import { rcPauseBadgeOf } from "@/lib/rcVideoPause";
 import { useRcFile } from "@/hooks/useRcFile";
 import { confirmDialog } from "@/lib/confirm";
-import type { RcSession } from "@/lib/api/rc";
+import type { RcInputPills, RcSession } from "@/lib/api/rc";
 import { RcControlDrawer } from "./RcControlDrawer";
 import styles from "./RemoteComputer.module.css";
 
@@ -40,6 +41,14 @@ export function RcControlBanner({
   quality,
   activeQuality,
   captureScope,
+  inputHold,
+  onToggleInputHold,
+  lockGranted,
+  lockActive,
+  onToggleLockGrant,
+  inputPills,
+  videoPaused,
+  onToggleVideoPause,
 }: {
   session: RcSession;
   busy: boolean;
@@ -68,6 +77,19 @@ export function RcControlBanner({
   activeQuality?: string;
   /** 本机采集范围，事实表用。 */
   captureScope?: string;
+  /** 乙-③：本机键鼠已收回（对端注入正被拦下）。为真时胶囊上挂常驻徽标。 */
+  inputHold?: boolean;
+  onToggleInputHold?: () => void;
+  /** 乙-③：本次会话是否允许对方锁定本机物理输入。 */
+  lockGranted?: boolean;
+  lockActive?: boolean;
+  onToggleLockGrant?: () => void;
+  /** 乙-③：抽屉上的「谁在动」两枚结论。 */
+  inputPills?: RcInputPills;
+  /** 丙-③：本机已暂停向对方推送画面（为真时胶囊行挂常驻徽标）。 */
+  videoPaused?: boolean;
+  /** 丙-③：暂停 / 恢复对方观看。 */
+  onToggleVideoPause?: () => void;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -83,7 +105,12 @@ export function RcControlBanner({
   const rootRef = useRef<HTMLDivElement>(null);
   const drawerId = useId();
 
-  const hasNotes = Boolean(scopeNotice || streamNotice || file.asks.length > 0 || spkMutedByPeer);
+  const hasNotes = Boolean(
+    scopeNotice || streamNotice || file.asks.length > 0 || spkMutedByPeer || inputHold
+  );
+
+  // 丙-③：暂停徽标的文案判据收在 `@/lib/rcVideoPause`（与抽屉里那颗键同一措辞源）。
+  const pauseBadge = rcPauseBadgeOf(videoPaused ?? false);
 
   // 自动展开：只在「新东西到达」时弹一次。asks 按数量增量判（并发第二个请求不重复弹）；
   // notice 按内容签名判——用户点「知道了」清掉后再来新的会再次展开。
@@ -160,6 +187,35 @@ export function RcControlBanner({
           </span>
           {hasNotes && <span className={styles.ctrlBadge} title="有需要你处理的提示（已自动展开过抽屉）" />}
         </button>
+        {/* 🔴 乙-③：收回状态的常驻徽标挂在 `.ctrlPill` 那一行、**与胶囊主键同级**
+            （DOM 里 button 不能套 button，套了既非法又会让点徽标顺带展开抽屉）。
+            规则 15.1：触发在抽屉里、状态却常驻成立，那状态就得有个不靠抽屉的落点；
+            点它直接归还，不用再把抽屉开一遍。 */}
+        {inputHold && onToggleInputHold && (
+          <button
+            type="button"
+            className={styles.pillHold}
+            disabled={busy}
+            title="你已收回本机键鼠，对方发来的键鼠正被拦下（画面与剪贴板不受影响）。点此归还。"
+            onClick={onToggleInputHold}
+          >
+            键鼠已收回·点此归还
+          </button>
+        )}
+        {/* 丙-③：暂停状态的常驻落点（规则 15.1，与上面那枚同级）。画面暂停是
+            「我此刻正在挡对方的眼睛」，抽屉一收起就没人知道自己屏幕上正在发生什么——
+            徽标点一下直接恢复，不用把抽屉再开一遍。措辞不许写成「已断开」。 */}
+        {pauseBadge && onToggleVideoPause && (
+          <button
+            type="button"
+            className={styles.pillPause}
+            disabled={busy}
+            title="你已暂停对方看到的画面：会话没断，他还在用你的键鼠和剪贴板，只是看不到新画面。点此恢复推送。"
+            onClick={onToggleVideoPause}
+          >
+            {pauseBadge}
+          </button>
+        )}
         <button
           type="button"
           className={styles.ctrlPillEnd}
@@ -194,6 +250,14 @@ export function RcControlBanner({
             quality={quality}
             activeQuality={activeQuality}
             captureScope={captureScope}
+            inputHold={inputHold}
+            onToggleInputHold={onToggleInputHold}
+            lockGranted={lockGranted}
+            lockActive={lockActive}
+            onToggleLockGrant={onToggleLockGrant}
+            inputPills={inputPills}
+            videoPaused={videoPaused}
+            onToggleVideoPause={onToggleVideoPause}
           />
         </div>
       )}

@@ -7,7 +7,9 @@
 //!
 //! # 文本
 //!
-//! 长文本不走逐键注入，走「推剪贴板 → 对端 Ctrl+V」（`clipboard_push`）。
+//! 两条路，按长度分：输入法候选串走 [`InputEvent::Text`]（Unicode 逐码元注入，
+//! 上限 [`TEXT_MAX_UTF16_UNITS`]）；更长的文本不走逐键注入，走「推剪贴板 →
+//! 对端 Ctrl+V」（[`InputEvent::ClipboardPush`]）。
 
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +39,20 @@ pub enum InputEvent {
     Key {
         vk: u32,
         down: bool,
+    },
+    /// 乙-①（2026-09-29）：控端**输入法候选串确认后**的整串文本注入
+    ///（`KEYEVENTF_UNICODE`，逐 UTF-16 码元 down/up）。
+    ///
+    /// 为什么不让逐键 `Key` 穿过去：组合期间的按键（拼音字母）打到对方机器上会
+    /// **二次触发对端的输入法**，出来的是拼音字母 + 乱码候选。打字档下前端把
+    /// 候选期按键全拦（`src/lib/rcKeyMode.ts` 的 `imeIntercepted`），只在
+    /// `compositionend` 发这一条整串——中文这才打得出来。
+    ///
+    /// 与 [`InputEvent::ClipboardPush`] 的分工：本条注入到**当前焦点控件**，
+    /// 不碰剪贴板、不需要对端按 Ctrl+V；超过 [`TEXT_MAX_UTF16_UNITS`] 的长文本
+    /// 才该走剪贴板。
+    Text {
+        text: String,
     },
     ClipboardPush {
         text: String,
@@ -96,6 +112,110 @@ pub enum InputEvent {
     SetHostMute {
         on: bool,
     },
+    /// 乙-①：控端声明「它的按键按什么口径打在对方机器上」——`"type"`（打字档，
+    /// 默认）| `"direct"`（直传档，按扫描码）。
+    ///
+    /// ❗ **要求 `Control`**：这改的是**对方机器怎么被按键**，与画面范围同量级，
+    /// 不是「我自己看什么」（同 `SetCaptureScope` 的 D-2 判据）。
+    ///
+    /// 被控端只认这两个值，**未知值回落默认档且不报错**：直传没生效只是退回原样，
+    /// 而拒收会让用户的键凭空消失。
+    ///
+    /// 两档的取舍（对标结论：六家都是会话内显式开关，无一做成自动判定）：
+    /// - 打字档 `wVk` 注入：按字符翻译，中文可输入，游戏里可能错位；
+    /// - 直传档 `KEYEVENTF_SCANCODE`：游戏/快捷键准，中文打不出（候选串不发）。
+    SetKeyMode {
+        mode: String,
+    },
+    /// 乙-③：控端要求**锁住被控者本人的物理键鼠**（RustDesk 的 block-input 语义）。
+    ///
+    /// ❗ **要求 `Control`**，且**还要求被控端本场已授权**（抽屉里勾了「允许对方
+    /// 锁定我的输入」）。两重门禁缺一不可：授权不在，这条帧只回一个失败原因给
+    /// 发起端，本机一个键都不吞——「远程把人锁在自己机器外面」不能有第二条路径。
+    ///
+    /// 与 `SetHostMute` 同量级：它动的是**对方屋里那个人能不能操作自己的电脑**。
+    /// 线上仍是 `on: bool`（开关只有一个方向，档位留给 `SetKeyMode` 那种多值场景）。
+    SetInputLock {
+        on: bool,
+    },
+}
+
+/// 乙-①：按键注入口径（线格式见 [`InputEvent::SetKeyMode`]）。
+///
+/// 为什么不是 `bool`：档位名是**跨端契约**，将来加第三档（RustDesk 有 map /
+/// scancode / translate 三档）时 `bool` 会被迫翻转语义或改默认值，而线上旧值
+/// 的含义跟着变——那是最难查的一种不兼容。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KeyMode {
+    /// 打字档：`wVk` 注入（历史行为，默认）。
+    #[default]
+    VirtualKey,
+    /// 直传档：`KEYEVENTF_SCANCODE` + 键盘布局映射出的扫描码。
+    ScanCode,
+}
+
+impl KeyMode {
+    /// 线上字符串 → 档位。**未知值一律回落默认档**（理由见 `SetKeyMode` 的注释）。
+    pub fn from_wire(s: &str) -> Self {
+        match s {
+            "direct" => Self::ScanCode,
+            _ => Self::VirtualKey,
+        }
+    }
+
+    /// 档位 → 线上字符串（与前端 `src/lib/rcKeyMode.ts` 的 `RcKeyMode` 同集合）。
+    pub fn wire(self) -> &'static str {
+        match self {
+            Self::ScanCode => "direct",
+            Self::VirtualKey => "type",
+        }
+    }
+}
+
+/// 单次文本注入的上限（UTF-16 码元）。
+///
+/// IME 候选串远小于它；越界说明对端在把 `text` 当长文本通道用——那种量级该走
+/// [`InputEvent::ClipboardPush`]，而不是往输入队列里一次塞上千条 `SendInput`。
+pub const TEXT_MAX_UTF16_UNITS: usize = 512;
+
+/// 文本 → 待注入的 UTF-16 码元序列（纯函数，可离线单测）。
+///
+/// 空串与越界都返回 `Err`，错误串原样回给发起端（`reply_inject_err`）——
+/// **不静默截断**：截断出来的半句话被对方发出去，比不发更糟。
+/// 代理对（emoji）按码元展开，两个码元各发一次 down/up（与 AutoHotkey 同做法，
+/// 目标应用会在同一个编辑控件里拼回一个字）。
+pub fn unicode_input_units(text: &str) -> Result<Vec<u16>, String> {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    if units.is_empty() {
+        return Err("没有要发送的文本".into());
+    }
+    if units.len() > TEXT_MAX_UTF16_UNITS {
+        return Err(format!(
+            "文本过长（{} 个字符，单次上限 {}），请改走剪贴板",
+            units.len(),
+            TEXT_MAX_UTF16_UNITS
+        ));
+    }
+    Ok(units)
+}
+
+/// 直传档的扫描码方案（纯函数，可离线单测）：
+/// `MapVirtualKeyExW(vk, MAPVK_VK_TO_VSC_EX, 当前布局)` 的返回值 → `(wScan, 扩展键)`。
+///
+/// `None` = 映射不到（当前键盘布局里没有这颗键，例如法语布局没有反引号）
+/// ⇒ 调用方**回落 `wVk` 注入**，绝不丢键。
+///
+/// `VSC_EX` 把扩展前缀放在高位字节（Home → `0xE047`）：这里让 `wScan` **带着前缀**，
+/// 同时置 `KEYEVENTF_EXTENDEDKEY`——前者给按扫描码读的应用，后者给按标志位读的应用。
+/// 只发标志不发前缀，读原始扫描码的游戏会把方向键认成小键盘 4/6/8/2。
+pub fn direct_scan_plan(mapped: u32) -> Option<(u16, bool)> {
+    let body = (mapped & 0xFF) as u16;
+    if body == 0 {
+        return None;
+    }
+    let prefix = ((mapped >> 8) & 0xFF) as u16;
+    let extended = prefix == 0xE0 || prefix == 0xE1;
+    Some((if extended { mapped as u16 } else { body }, extended))
 }
 
 /// 远端光标形状。由被控端比对系统标准光标句柄得出，
@@ -362,10 +482,14 @@ pub(crate) fn is_extended_vk(vk: u16) -> bool {
 }
 
 /// 执行一条输入事件。仅 Windows。
-pub fn inject(ev: &InputEvent, region: &ScreenRegion) -> InjectResult {
+///
+/// `mode` 是乙-① 的按键口径（打字档 = `wVk`，直传档 = 扫描码）。它由**调用方**
+/// 传进来（`RcService::key_mode`），不在本模块藏全局：按下与补发的 up 必须用
+/// 同一个口径，而 `Pressed::release_all` 是在会话收口处直接调注入的。
+pub fn inject(ev: &InputEvent, region: &ScreenRegion, mode: KeyMode) -> InjectResult {
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (ev, region);
+        let _ = (ev, region, mode);
         InjectResult {
             ok: false,
             error: "远程键鼠目前仅支持 Windows".into(),
@@ -373,7 +497,7 @@ pub fn inject(ev: &InputEvent, region: &ScreenRegion) -> InjectResult {
     }
     #[cfg(target_os = "windows")]
     {
-        match inject_win(ev, region) {
+        match inject_win(ev, region, mode) {
             Ok(()) => InjectResult {
                 ok: true,
                 error: String::new(),
@@ -387,12 +511,13 @@ pub fn inject(ev: &InputEvent, region: &ScreenRegion) -> InjectResult {
 }
 
 #[cfg(target_os = "windows")]
-fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
+fn inject_win(ev: &InputEvent, region: &ScreenRegion, mode: KeyMode) -> Result<(), String> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-        KEYEVENTF_KEYUP, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-        MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
-        MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEINPUT,
+        KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE,
+        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
+        MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL,
+        MOUSEINPUT, VIRTUAL_KEY,
     };
     use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
 
@@ -481,9 +606,23 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
             } else {
                 KEYEVENTF_KEYUP
             };
+            // 乙-①：直传档改发扫描码。映射不到（当前布局没这颗键）就回落 `wVk`——
+            // 「直传没生效」不能演变成「这颗键打不出去」。
+            let mut w_vk = VIRTUAL_KEY(vk);
+            let mut w_scan = 0u16;
+            if mode == KeyMode::ScanCode {
+                if let Some((scan, extended)) = direct_scan_plan(scan_code_of_vk(vk)) {
+                    w_vk = VIRTUAL_KEY(0);
+                    w_scan = scan;
+                    flags |= KEYEVENTF_SCANCODE;
+                    if extended {
+                        flags |= KEYEVENTF_EXTENDEDKEY;
+                    }
+                }
+            }
             // 扩展键（扫描码带 0xE0 前缀，如方向键/Home/End/Win 等）必须带
             // KEYEVENTF_EXTENDEDKEY，否则 Windows 会把它解释成小键盘数字键
-            //（方向键变小键盘 4/6/8/2 等）。
+            //（方向键变小键盘 4/6/8/2 等）。两档都要，故在上面的分支之后。
             if is_extended_vk(vk) {
                 flags |= KEYEVENTF_EXTENDEDKEY;
             }
@@ -491,8 +630,8 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
                 r#type: INPUT_KEYBOARD,
                 Anonymous: INPUT_0 {
                     ki: KEYBDINPUT {
-                        wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(vk),
-                        wScan: 0,
+                        wVk: w_vk,
+                        wScan: w_scan,
                         dwFlags: flags,
                         time: 0,
                         dwExtraInfo: 0,
@@ -500,6 +639,36 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
                 },
             };
             send_inputs(&[input])
+        }
+        InputEvent::Text { text } => {
+            // 乙-①：候选串整串按 Unicode 注入。所有 down/up **合成一次 SendInput**：
+            // 分批提交时若插进本机物理输入，串就被拆开、字序错乱——那是用户最难
+            // 复现的形态（画面里看着对，发出去少半截）。
+            let units = unicode_input_units(text)?;
+            let mut inputs = Vec::with_capacity(units.len() * 2);
+            for u in units {
+                for up in [false, true] {
+                    inputs.push(INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                // KEYEVENTF_UNICODE 的口径：wVk 必须为 0，字符放 wScan
+                                wVk: VIRTUAL_KEY(0),
+                                wScan: u,
+                                dwFlags: KEYEVENTF_UNICODE
+                                    | if up {
+                                        KEYEVENTF_KEYUP
+                                    } else {
+                                        Default::default()
+                                    },
+                                time: 0,
+                                dwExtraInfo: 0,
+                            },
+                        },
+                    });
+                }
+            }
+            send_inputs(&inputs)
         }
         InputEvent::ClipboardPush { text } => set_clipboard_text(text),
         InputEvent::ClipboardPull => Ok(()),
@@ -512,8 +681,27 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion) -> Result<(), String> {
         | InputEvent::RequestKey
         | InputEvent::AudioOn { .. }
         // G3-C：不注入键鼠（由 `inbound.rs` 直接调端点音量接口处理）
-        | InputEvent::SetHostMute { .. } => Ok(()),
+        | InputEvent::SetHostMute { .. }
+        // 乙-①：档位本身不注入任何东西，落地是 `RcService::set_key_mode`
+        //（在 `inbound.rs` 的流控组里做），这里只是 exhaustive match 的收口。
+        | InputEvent::SetKeyMode { .. }
+        // 乙-③：同理，它动的是**本机物理键鼠的钩子**（`local_input::set_swallow`），
+        // 不是往系统里注键。落地在 `inbound.rs`，这里只收口。
+        | InputEvent::SetInputLock { .. } => Ok(()),
     }
+}
+
+/// vk → `MAPVK_VK_TO_VSC_EX` 的原始映射值（本机当前键盘布局）。
+/// 判据在纯函数 [`direct_scan_plan`] 里，这里只负责问系统。
+#[cfg(target_os = "windows")]
+fn scan_code_of_vk(vk: u16) -> u32 {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetKeyboardLayout, MapVirtualKeyExW, MAPVK_VK_TO_VSC_EX,
+    };
+    // 线程 id 0 = 当前线程的布局。❗ 不去取「前台窗口」的布局：焦点在两个应用
+    // 之间切换的瞬间，同一颗键的 down 与 up 会取到不同布局，比统一用本机布局
+    // 更容易打出不配对的键。
+    unsafe { MapVirtualKeyExW(vk as u32, MAPVK_VK_TO_VSC_EX, GetKeyboardLayout(0)) }
 }
 
 /// 写入系统剪贴板文本。走 arboard（与 paste_engine 同一依赖，带瞬时占用重试）。
@@ -707,5 +895,105 @@ mod tests {
         let v2 = serde_json::to_value(InputEvent::SetHostMute { on: false }).unwrap();
         let back2: InputEvent = serde_json::from_value(v2).unwrap();
         assert_eq!(back2, InputEvent::SetHostMute { on: false });
+    }
+
+    /// 乙-① 线格式守卫：`text` / `set_key_mode` 的键名与前端
+    /// `src/lib/api/rcFrameTypes.ts` 的 union 一致。改了这里 = 跨端静默无效
+    ///（旧被控端把不认识的 `kind` 落在 match 的 `_` 上，一声不吭）。
+    #[test]
+    fn 乙1_文本与键盘模式线格式钉住() {
+        let v = serde_json::to_value(InputEvent::Text {
+            text: "熊猫".into(),
+        })
+        .unwrap();
+        assert_eq!(v["kind"], "text");
+        assert_eq!(v["text"], "熊猫");
+        let back: InputEvent = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            back,
+            InputEvent::Text {
+                text: "熊猫".into()
+            }
+        );
+
+        let m = serde_json::to_value(InputEvent::SetKeyMode {
+            mode: "direct".into(),
+        })
+        .unwrap();
+        assert_eq!(m["kind"], "set_key_mode");
+        assert_eq!(m["mode"], "direct");
+        let backm: InputEvent = serde_json::from_value(m).unwrap();
+        assert_eq!(
+            backm,
+            InputEvent::SetKeyMode {
+                mode: "direct".into()
+            }
+        );
+    }
+
+    /// 乙-③ 线格式守卫：`set_input_lock` 的键名与前端 `rcFrameTypes.ts` 的 union
+    /// 一致。这条改错的失败形态最坏：**发起端点了「锁定对方」而对面毫无反应**
+    ///（旧被控端把不认识的 `kind` 落在 match 的 `_` 上，一声不吭）。
+    #[test]
+    fn 乙3_输入锁定线格式钉住() {
+        let v = serde_json::to_value(InputEvent::SetInputLock { on: true }).unwrap();
+        assert_eq!(v["kind"], "set_input_lock");
+        assert_eq!(v["on"], true);
+        let back: InputEvent = serde_json::from_value(v).unwrap();
+        assert_eq!(back, InputEvent::SetInputLock { on: true });
+        // 解除那一档同样要能往返（bool 反了 = 锁上就解不开）
+        let v2 = serde_json::to_value(InputEvent::SetInputLock { on: false }).unwrap();
+        let back2: InputEvent = serde_json::from_value(v2).unwrap();
+        assert_eq!(back2, InputEvent::SetInputLock { on: false });
+    }
+
+    /// 乙-① 档位判据：只有 `direct` 是直传，**其它一切值（含脏值 / 缺省）回落打字档**。
+    /// 失败形态必须是「直传没生效」而不是「键打不出去」。
+    #[test]
+    fn 乙1_键盘模式未知值回落打字档() {
+        assert_eq!(KeyMode::from_wire("direct"), KeyMode::ScanCode);
+        for s in ["type", "", "Direct", "scancode", "自动"] {
+            assert_eq!(KeyMode::from_wire(s), KeyMode::VirtualKey, "{s} 必须是打字档");
+        }
+        assert_eq!(KeyMode::default(), KeyMode::VirtualKey);
+        // wire 是 from_wire 的逆（两档都能 round-trip，否则控端收了读不回来）
+        for m in [KeyMode::VirtualKey, KeyMode::ScanCode] {
+            assert_eq!(KeyMode::from_wire(m.wire()), m);
+        }
+    }
+
+    /// 乙-① 文本上限判据：空串与越界必须**报错**，不静默截断。
+    #[test]
+    fn 乙1_文本注入序列_空与超限都拒() {
+        assert_eq!(unicode_input_units("AB"), Ok(vec![0x41, 0x42]));
+        let zh: Vec<u16> = "中".encode_utf16().collect();
+        assert_eq!(unicode_input_units("中"), Ok(zh));
+        // 代理对：一个 emoji = 两个码元（各发一对 down/up，见函数注释）
+        assert_eq!(unicode_input_units("🐼").unwrap().len(), 2);
+        assert!(unicode_input_units("").is_err(), "空串必须拒，不能让注入静默成功");
+        let big = "啊".repeat(TEXT_MAX_UTF16_UNITS + 1);
+        let err = unicode_input_units(&big).unwrap_err();
+        assert!(err.contains("512"), "错误里要带上限，用户才知道怎么绕：{err}");
+        assert_eq!(
+            unicode_input_units(&"啊".repeat(TEXT_MAX_UTF16_UNITS)).unwrap().len(),
+            TEXT_MAX_UTF16_UNITS,
+            "恰好到上限必须放行"
+        );
+    }
+
+    /// 乙-① 直传档扫描码判据：`MAPVK_VK_TO_VSC_EX` 的三种返回值。
+    /// 0 = 当前布局没这颗键 → 回落 `wVk`；带 E0/E1 前缀 → 前缀留在 `wScan`
+    /// 且报扩展键（漏了标志位，游戏把方向键认成小键盘 4/6/8/2）。
+    #[test]
+    fn 乙1_扫描码方案_前缀与回落都判对() {
+        // A：普通键，无前缀
+        assert_eq!(direct_scan_plan(0x1E), Some((0x1E, false)));
+        // Home：VSC_EX 返回 0xE047
+        assert_eq!(direct_scan_plan(0xE047), Some((0xE047, true)));
+        // Pause 一类：E1 前缀
+        assert_eq!(direct_scan_plan(0xE145), Some((0xE145, true)));
+        // 映射不到（整值 0）与「只有前缀没有正文」都必须回落
+        assert_eq!(direct_scan_plan(0), None);
+        assert_eq!(direct_scan_plan(0xE000), None);
     }
 }

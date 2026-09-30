@@ -53,6 +53,11 @@ export function useRcFrames(
     lastInputAt?: React.RefObject<number>;
     /** D4：当前画质档名。高帧率档解码配置要按真实 fps 抬 H.264 level（144/165 → L5.2）。 */
     qualityHint?: string;
+    /**
+     * 手机端（2026-09-30）：无会话时显式传 false 关泵——沙盒/静态画布模式
+     * 不该对 rc_drain_frames 空转 IPC。缺省 true，桌面行为不变。
+     */
+    enabled?: boolean;
   },
 ) {
   const visible = useWindowVisible();
@@ -114,8 +119,9 @@ export function useRcFrames(
     if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
   }, [sessionId, canvasRef]);
 
+  const enabled = opts?.enabled !== false;
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !enabled) return;
     // 与原实现一致：EMA/抖动缓冲是 effect 局部状态——visible 每次由假转真
     // 都重置（停播期间的旧样本不该污染恢复后的延迟/码率显示）
     stats.current.reset();
@@ -345,7 +351,7 @@ export function useRcFrames(
               // 2026-09-19 审查：曾一律 forceJpeg 跳过 H.264 这一级）
               if (Date.now() - waitingSinceMs > 3000) {
                 if (curStd === "h264") forceJpeg();
-                else forceJpeg();
+                else forceH264();
               }
               continue;
             }
@@ -417,7 +423,7 @@ export function useRcFrames(
       unlisten?.();
       h264?.close();
     };
-  }, [sessionId, visible, canvasRef]);
+  }, [sessionId, visible, canvasRef, enabled]);
 
   return {
     /** B1：窗口当前是否「可见且在前台」（= 取帧循环在跑）。消费方（RcScreenCanvas

@@ -3,7 +3,8 @@
  *
  * 从 RcControlBanner 拆出（.tsx ≤ 300 红线）：胶囊负责「常驻极轻」，这里负责
  * 「点开才见的全部详情」——提示条（范围/推流档位/扬声器）/ 文件请求完整卡片 /
- * 事实表（指纹·范围·画质·免确认）/ 不发送声音 / 免确认二段确认（U9）/ 立即结束。
+ * 输入权交接 + 画面暂停（乙-③ / 丙-③，RcInputControlPanel）/ 事实表（指纹·范围·画质·免确认）/
+ * 不发送声音 / 免确认二段确认（U9）/ 立即结束。
  * 渲染时机由父组件决定（open && <RcControlDrawer …/>）。
  */
 import { useEffect, useState } from "react";
@@ -13,8 +14,9 @@ import { rcDisplayName } from "@/lib/rcDevice";
 import { scopeLabelLong } from "@/lib/rcScope";
 import { qualityHudLabel, qualityLabel } from "@/lib/rcQuality";
 import { useRcFile } from "@/hooks/useRcFile";
-import type { RcSession } from "@/lib/api/rc";
+import type { RcInputPills, RcSession } from "@/lib/api/rc";
 import { RcFileAskCard } from "./RcFileAsk";
+import { RcInputControlPanel } from "./RcInputControlPanel";
 import styles from "./RemoteComputer.module.css";
 
 export function RcControlDrawer({
@@ -34,6 +36,14 @@ export function RcControlDrawer({
   quality,
   activeQuality,
   captureScope,
+  inputHold,
+  onToggleInputHold,
+  lockGranted,
+  lockActive,
+  onToggleLockGrant,
+  inputPills,
+  videoPaused,
+  onToggleVideoPause,
 }: {
   session: RcSession;
   busy: boolean;
@@ -51,6 +61,20 @@ export function RcControlDrawer({
   quality?: string;
   activeQuality?: string;
   captureScope?: string;
+  /** 乙-③：本机键鼠是否已收回（对端注入正被拦下）。 */
+  inputHold?: boolean;
+  onToggleInputHold?: () => void;
+  /** 乙-③：本次会话是否允许对方锁定本机物理输入。 */
+  lockGranted?: boolean;
+  /** 乙-③：对方的锁定现在真的生效。 */
+  lockActive?: boolean;
+  onToggleLockGrant?: () => void;
+  /** 乙-③：「谁在动」两枚结论（旧后端缺值则整行不摆）。 */
+  inputPills?: RcInputPills;
+  /** 丙-③：本机已暂停向对方推送画面（会话不断，只是不出帧）。 */
+  videoPaused?: boolean;
+  /** 丙-③：暂停 / 恢复对方观看。不传 = 不摆这一键（不给半条路）。 */
+  onToggleVideoPause?: () => void;
 }) {
   const canControl = session.capability === "control";
   const name = rcDisplayName(session, fingerprintOf(session.peer));
@@ -119,6 +143,23 @@ export function RcControlDrawer({
       {/* G6：文件请求完整卡片——「有东西要写进我的磁盘」是现在就要做的决定，
           摆核对用的事实（指纹 / 文件名 / 大小）。B6：全部待响应请求都摆出来。 */}
       <DrawerFiles session={session} busy={busy} />
+
+      {/* 乙-③ + 丙-③：本机控制权（收回键鼠 / 暂停画面 / 授权锁定）。摆在这里而不是
+          胶囊上——这些是「要看着对方正在做什么再决定」的动作，胶囊那条常驻条放不下
+          这层语境（判据文案见 `@/lib/rcInputGate`、`@/lib/rcVideoPause`）。 */}
+      {onToggleInputHold && (
+        <RcInputControlPanel
+          hold={inputHold ?? false}
+          granted={lockGranted ?? false}
+          lockActive={lockActive ?? false}
+          pills={inputPills}
+          busy={busy}
+          onToggleHold={onToggleInputHold}
+          onToggleGrant={onToggleLockGrant}
+          videoPaused={videoPaused}
+          onToggleVideoPause={onToggleVideoPause}
+        />
+      )}
 
       {/* 事实表：指纹是身份锚点，范围和画质是「我交出去了什么」。 */}
       <dl className={styles.ibFacts}>

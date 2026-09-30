@@ -94,24 +94,31 @@ export function RcStage({
   // （RcWorkbench 设备页错误槽共用同一份，U3）。
   const retryable = rc.error != null && rcErrorRetryable(rc.error);
 
+  // 🔴 甲-③（2026-09-29，=C2）：会话态这条必须**搬进**全屏元素里。浏览器只渲染
+  // 全屏元素的子树，而全屏目标正是 RcSessionView 的 `.sessionWrap`——面板继续挂在
+  // `<main>`（子树之外）就等于「全屏时错误一个字都不说」。
+  const errorPanel = rc.error ? (
+    <RcErrorPanel
+      error={rc.error}
+      onRetry={
+        rc.isOpError
+          ? retryable && lastAttempt
+            ? () => void doRequest(lastAttempt, capFor(lastAttempt))
+            : undefined
+          : () => void rc.refresh()
+      }
+      onDismiss={() => rc.clearError()}
+    />
+  ) : null;
+
   return (
     <main
       className={`${styles.wbMain} ${inSession ? styles.wbMainFlush : ""}`}
       data-rc-session-main={inSession || undefined}
     >
-      {rc.error && (
-        <RcErrorPanel
-          error={rc.error}
-          onRetry={
-            rc.isOpError
-              ? retryable && lastAttempt
-                ? () => void doRequest(lastAttempt, capFor(lastAttempt))
-                : undefined
-              : () => void rc.refresh()
-          }
-          onDismiss={() => rc.clearError()}
-        />
-      )}
+      {/* 会话态的错误走 `errorSlot` 下传给 RcSessionView（挂进 .sessionWrap），
+          这里不再摆——双挂会出两条，而下面那条在全屏里根本看不见。 */}
+      {!inSession && errorPanel}
       {inbound && session ? (
         <div className={styles.wbHero}>
           {(() => {
@@ -143,6 +150,14 @@ export function RcStage({
                 quality={rc.status?.quality}
                 activeQuality={rc.status?.active_quality}
                 captureScope={rc.status?.capture_scope}
+                inputHold={inboundControls.inputHold}
+                onToggleInputHold={inboundControls.toggleInputHold}
+                lockGranted={inboundControls.lockGranted}
+                lockActive={inboundControls.lockActive}
+                onToggleLockGrant={inboundControls.toggleLockGrant}
+                inputPills={rc.status?.input_pills}
+                videoPaused={inboundControls.videoPaused}
+                onToggleVideoPause={inboundControls.toggleVideoPause}
                 onEnd={inboundControls.endSession}
               />
             );
@@ -199,6 +214,7 @@ export function RcStage({
           rc={rc}
           quality={rc.status?.quality ?? "auto"}
           captureScope={rc.status?.capture_scope ?? "virtual"}
+          errorSlot={errorPanel}
         />
       ) : mode === "pending" && session ? (
         <RcPendingWait
