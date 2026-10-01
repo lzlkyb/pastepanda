@@ -135,6 +135,15 @@
   padding: 8px 10px;
 }
 
+/* 第三栏是持续阅读区；弹窗仍沿用紧凑内边距。只加静态留白，不给编辑器祖先做位移动画。 */
+.detailSplit .previewPane {
+  padding: 16px clamp(12px, 4%, 24px);
+}
+
+.detailSplit .previewPane > * {
+  margin-inline: auto;
+}
+
 /* 行长限制。窗口拉宽后一行上百个字，眼睛回行时会找不到位置。
    34em 在 13.5px 下约 460px：窄屏（480 的弹窗）里它根本不生效，
    只在宽屏的第三栏里才起作用——恰好是想要的行为。 */

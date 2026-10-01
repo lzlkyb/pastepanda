@@ -2250,116 +2250,82 @@
   color: var(--accent-strong);
 }
 
-/* ===== 图片全屏查看层（「C壳+B芯」：design/图片详情-全屏查看层重做-设计稿.html） ===== */
+/* ===== 图片详情宽幅弹框（design/记录模式图片详情-弹框风格统一-设计稿.html，方案 B） ===== */
 
-/* 壳：铺满视口（100vw/100vh）而非 720px 定宽弹窗；透明底 + 强模糊，
-   让图片成为绝对主角，四周压暗只用于衬托。 */
+/* 与记录模式其它弹框共用 dialog-box 材质，只给看图增加宽幅尺寸。 */
 .fsShell {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  max-width: none;
-  max-height: none;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-  background: transparent;
-  border: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: none;
+  position: relative;
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
 }
 
-/* 顶栏：元信息胶囊（hover 浮现）+ 关闭 */
+/* 顶栏跟随通用弹框；文件名占余量，尺寸和体积在窄窗自动隐藏。 */
 .fsTop {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: flex-start;
-  padding: 16px 16px 0;
-  z-index: 8;
-  pointer-events: none;
+  gap: 12px;
 }
 .fsMeta {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: var(--float-card-bg, var(--card-bg));
-  border: 1px solid var(--float-card-border, var(--border-color));
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  min-width: 0;
   color: var(--text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  pointer-events: auto;
-  opacity: 0.55;
-  transition: opacity 0.2s ease;
 }
-.fsMeta:hover { opacity: 1; }
-.fsMetaName { color: var(--text-secondary); }
-.fsTopSp { flex: 1; }
-.fsClose {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--float-card-bg, var(--card-bg));
-  border: 1px solid var(--float-card-border, var(--border-color));
+.fsMetaName {
   color: var(--text-secondary);
-  cursor: pointer;
-  pointer-events: auto;
-  transition: background 0.15s ease, color 0.15s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(35vw, 360px);
 }
-.fsClose:hover { background: var(--section-bg); color: var(--text-primary); }
+.fsTop :global(.dialog-close) { margin-left: auto; flex-shrink: 0; }
 
-/* 图区：吃满剩余高度，图片绝对主角 */
+/* 图区：主题中性画布，图片仍占窗体主要空间。 */
 .fsViewport {
   position: relative;
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  background: var(--section-bg);
 }
 .fsViewport[data-cursor="grabbing"] { cursor: grabbing; }
 .fsViewport[data-cursor="grab"] { cursor: grab; }
 .fsViewport[data-cursor="text"] { cursor: text; }
 .fsViewport[data-cursor="crosshair"] { cursor: crosshair; }
 
-/* 底部唯一操作栏（深色玻璃胶囊，套 §18 截图系视觉语言） */
+/* 沿用通用 dialog-footer 的分隔；550px 主窗两行，窄窗自然换行。 */
 .fsToolbar {
-  position: absolute;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.fsToolbarWrap:global(.dialog-footer) {
+  flex-shrink: 0;
+  width: 100%;
+  height: auto;
+  min-height: 48px;
+  padding: 6px 12px;
+  display: block;
+}
+.fsToolbarMain,
+.fsToolbarSecondary,
+.fsToolGroup {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
-  border-radius: 12px;
-  background: var(--float-card-bg, var(--card-bg));
-  border: 1px solid var(--float-card-border, var(--border-color));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--float-card-shadow);
-  z-index: 7;
-  transition: opacity 0.2s ease;
 }
-.fsToolbarWrap {
-  position: absolute;
-  left: 50%;
-  bottom: 22px;
-  z-index: 7;
-  transition: opacity 0.2s ease;
-}
-.fsToolbarWrapDim { opacity: 0.3; pointer-events: none; }
+.fsToolbarMain { justify-content: space-between; min-height: 34px; }
+.fsToolbarSecondary { flex-wrap: wrap; }
+.fsToolbarMain .fsToolBtn,
+.fsToolbarSecondary .fsToolBtn { padding: 6px 8px; }
 
 .fsToolBtn {
   display: inline-flex;
@@ -2379,28 +2345,15 @@
 .fsToolBtn:hover { background: var(--section-bg); color: var(--text-primary); }
 .fsToolBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .fsToolBtnOn {
-  --fs-code-cyan: #06b6d4; /* ui-rule-ok: 令牌定义处，截图选区同族青色（同 .codeRectOverlay） */
-  background: color-mix(in srgb, var(--fs-code-cyan) 16%, transparent);
-  border-color: color-mix(in srgb, var(--fs-code-cyan) 45%, transparent);
-  color: var(--fs-code-cyan);
-}
-.fsToolBtnAct {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  color: var(--text-primary);
+  background: var(--accent-light);
+  color: var(--accent-strong);
 }
 .fsToolZoom {
-  min-width: 38px;
+  min-width: 34px;
   text-align: center;
   font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-}
-.fsToolSep {
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--border-color);
 }
 .fsToolSpinner {
   width: 12px;
@@ -2416,7 +2369,7 @@
 .fsHint {
   position: absolute;
   left: 50%;
-  bottom: 70px;
+  bottom: 12px;
   transform: translateX(-50%);
   padding: 4px 12px;
   border-radius: 999px;
@@ -2431,14 +2384,40 @@
 .fsHintFaded { opacity: 0.35; }
 .fsHintGone { opacity: 0; visibility: hidden; }
 
+@media (max-width: 700px) {
+  .fsMeta span:not(.fsMetaName) { display: none; }
+  .fsMetaName { max-width: 36vw; }
+  .fsCropBar > span { display: none; }
+}
+@media (max-width: 400px) {
+  .fsToolbarMain,
+  .fsToolbarSecondary,
+  .fsToolGroup { gap: 2px; }
+  .fsToolbarWrap:global(.dialog-footer) { padding: 4px 8px; }
+  .fsToolbarMain .fsToolBtn,
+  .fsToolbarSecondary .fsToolBtn { padding: 5px 6px; }
+  .fsHint { display: none; }
+}
+
 /* 浮出面板通用（OCR 摘要/全文、码面板容器统一规格） */
+.fsOverlayLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+}
+.fsOverlayLayer .fsPanel,
+.fsOverlayLayer .fsExportPop { pointer-events: auto; }
 .fsPanel,
 .fsExportPop {
   position: absolute;
   left: 50%;
-  bottom: 68px;
+  bottom: 12px;
   transform: translateX(-50%);
-  width: min(560px, 88vw);
+  width: min(560px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px;
   border-radius: 12px;
   background: var(--float-card-bg, var(--card-bg));
@@ -2478,10 +2457,11 @@
 .fsPanelBtn:hover:not(:disabled) { background: var(--section-bg); color: var(--text-primary); }
 .fsPanelBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .fsPanelBtnPri {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  color: var(--text-primary);
+  background: var(--accent-solid);
+  border-color: transparent;
+  color: white;
 }
+.fsPanelBtnPri:hover:not(:disabled) { background: var(--accent-solid); color: white; opacity: 0.9; }
 .fsPanelPreview {
   margin-top: 8px;
   padding: 8px 12px;
@@ -2498,6 +2478,7 @@
 .fsPanelText {
   max-height: 30vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px 12px;
   border-radius: 8px;
   background: var(--section-bg);
@@ -2525,7 +2506,7 @@
 /* 导出浮层（右下角锚定，宽于普通面板） */
 .fsExportPop {
   left: auto;
-  right: 20px;
+  right: 12px;
   transform: none;
   animation: fsExportIn 150ms ease;
 }
@@ -2551,30 +2532,23 @@
 .fsExportPct { font-size: 11px; color: var(--text-muted); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 .fsExportEstimate { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-/* 裁剪确认栏（顶替工具栏位置） */
+/* 裁剪确认栏取代操作栏，和其它弹框一样落在 footer。 */
 .fsCropBar {
-  position: absolute;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--float-card-bg, var(--card-bg));
-  border: 1px solid var(--float-card-border, var(--border-color));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  width: 100%;
   color: var(--text-muted);
   font-size: 11px;
-  z-index: 8;
+  white-space: nowrap;
 }
+.fsCropBar > span { margin-right: auto; }
 
-/* 裁剪态「还原原图」按钮（右上角，贴元信息胶囊） */
+/* 裁剪态「还原原图」按钮（图区右上角） */
 .fsRestoreBtn {
   position: absolute;
-  right: 62px;
+  right: 16px;
   top: 16px;
   display: inline-flex;
   align-items: center;
@@ -2603,7 +2577,7 @@
 .fsOcrWorking {
   position: absolute;
   left: 50%;
-  bottom: 106px;
+  bottom: 48px;
   transform: translateX(-50%);
   padding: 4px 12px;
   border-radius: 999px;

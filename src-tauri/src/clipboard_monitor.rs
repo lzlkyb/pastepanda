@@ -1,5 +1,8 @@
 use crate::content_classifier::ContentClassifier;
 use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem, TimeBump};
+// arboard 是桌面剪贴板引擎：Windows 走事件路径、macOS/Linux 走轮询兜底（都在 desktop），
+// mobile 不监听系统剪贴板（RC 会话内剪贴板走 rc/clipboard.rs），整个引擎不编译。
+#[cfg(desktop)]
 use arboard::Clipboard;
 use regex::Regex;
 use serde::Serialize;
@@ -101,71 +104,358 @@ pub struct ClipboardChanged {
     pub item: HistoryItem,
 }
 
-/// 粘贴抑制状态 — 防止自身粘贴被记录
+/// 采集端按哪一类内容识别一次读取 —— 与 `stage1_capture` 的分支一一对应。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WriteKind {
+    Rich,
+    Text,
+    Image,
+    Files,
+}
+
+/// 写入线程持有剪贴板的**临界区**上限。
+///
+/// 闸门唯一的存在理由：写入方 `OpenClipboard` 期间监听线程去读会撞 `os error 1418`。
+/// 正常路径靠 [`WriteGuard::drop`] 即时开闸；这个上限只防守卫没走到 Drop（线程 panic）
+/// 把闸门焊死 —— 「读不到剪贴板」绝不能变成永久状态。
+const RACE_MAX: Duration = Duration::from_millis(500);
+
+/// 写入方算不出 hash 时的身份窗口长度（沿用历史 3s）。
+///
+/// 它只压制写入方**声明过的那一类**内容（见 [`WriteOpts::kinds`]），不再无差别吞掉
+/// 窗口内用户的每一次复制 —— 旧行为的成因与影响见
+/// `docs/复制未入库诊断与方案-2026-09-28.md` §9。
+const IDENTITY_WINDOW: Duration = Duration::from_millis(3000);
+
+/// 文件列表写入/采集的共用 hash 口径（规则 11.1：两边算不出同一个 hash 就等于没报备）。
+pub fn files_clipboard_hash(paths: &[String]) -> String {
+    md5_hex(paths.join("|").as_bytes())
+}
+
+/// 一次「应用自己写剪贴板」的报备内容。
+pub struct WriteOpts {
+    hashes: Vec<String>,
+    /// `None` = 全部类别（写入方说不清自己要写什么内容，如「粘贴当前剪贴板」）
+    kinds: Option<Vec<WriteKind>>,
+    /// `true` = 采集端一定能算出同一个 hash → 进入「只认 hash」模式，
+    /// 窗口内用户复制的别的内容照常采集。
+    ///
+    /// `false` = 算不出（图文的采集 hash 是内联图片落地后被改写过的片段；
+    /// 「粘贴当前剪贴板」压根不知道内容是什么）→ 只能按 [`kinds`] 做时间兜底。
+    precise: bool,
+}
+
+impl WriteOpts {
+    /// 纯文本。同时登记原串与 trim 串：采集端是否去空白取决于用户配置，只登记一种口径
+    /// 会让另一半自粘贴落到阶段 2 的智能合并（多一次无谓的卡片置顶）。
+    pub fn text(raw: &str) -> Self {
+        let mut hashes = vec![md5_hex(raw.as_bytes())];
+        let trimmed = raw.trim();
+        if trimmed != raw {
+            hashes.push(md5_hex(trimmed.as_bytes()));
+        }
+        Self {
+            hashes,
+            kinds: Some(vec![WriteKind::Text]),
+            precise: true,
+        }
+    }
+
+    /// 图文混排。采集端的 hash 是**内联图片落地之后**被改写过的片段，写入方算不出同一个
+    /// hash，所以这条只能走类别窗口；CF_HTML 也可能被读成纯文本，两个类别都声明。
+    pub fn rich(html_fragment: &str) -> Self {
+        Self {
+            hashes: vec![md5_hex(html_fragment.as_bytes())],
+            kinds: Some(vec![WriteKind::Rich, WriteKind::Text]),
+            precise: false,
+        }
+    }
+
+    /// 图片（RGBA 像素字节，与采集端一致）。
+    pub fn image_rgba(rgba: &[u8]) -> Self {
+        Self {
+            hashes: vec![md5_hex(rgba)],
+            kinds: Some(vec![WriteKind::Image]),
+            precise: true,
+        }
+    }
+
+    /// 文件列表（CF_HDROP）。
+    pub fn files(paths: &[String]) -> Self {
+        Self {
+            hashes: vec![files_clipboard_hash(paths)],
+            kinds: Some(vec![WriteKind::Files]),
+            precise: true,
+        }
+    }
+
+    /// 说不清写了什么 → 全部类别按时间兜底。
+    pub fn unknown() -> Self {
+        Self {
+            hashes: Vec::new(),
+            kinds: None,
+            precise: false,
+        }
+    }
+}
+
+/// 守卫：作用域结束即打开读取闸门。写入方必须把它持有到剪贴板写完。
+pub struct WriteGuard<'a> {
+    suppress: &'a PasteSuppress,
+}
+
+impl Drop for WriteGuard<'_> {
+    fn drop(&mut self) {
+        self.suppress.open_race();
+    }
+}
+
+/// 粘贴抑制状态 — 防止自身粘贴被记录。
+///
+/// 两道闸，职责不同，**混用会出事**：
+/// - **竞争闸** `race_until`：写入线程持有剪贴板的临界区。期间阶段 1 干脆不读剪贴板，
+///   避免和写入线程抢 `OpenClipboard`（os error 1418）。由 [`PasteSuppress::begin_write`]
+///   返回的守卫配对释放。
+/// - **身份窗口** `until` + `kinds` + `expected`：内容已落定，用来认出「这次读到的就是我们
+///   刚写的那一份」。算得准靠 hash（一次性命中，命中后整段身份作废）；算不准靠**类别**窗口。
+///
+/// 旧实现把两道闸合成一个「3 秒内一律不读」，代价是粘贴后 3 秒内用户的任何复制都被吞掉，
+/// 而阶段 1 顶部的无差别早退又架空了各分支里的 U57 hash 判据。
 pub struct PasteSuppress {
-    pub until: Mutex<Option<Instant>>,
-    /// 预期粘贴内容的 hash，即使时间抑制过期，匹配 hash 也跳过
-    pub expected_hash: Mutex<Option<String>>,
+    until: Mutex<Option<Instant>>,
+    /// 报备过的内容 hash（可能多个口径）。空 = 未设防。
+    expected: Mutex<Vec<String>>,
+    /// `None` = 未报备类别 = 按全部类别兜底。
+    kinds: Mutex<Option<Vec<WriteKind>>>,
+    /// 本次报备是否精确到「采集端算得出同一个 hash」。
+    precise: Mutex<bool>,
+    race_until: Mutex<Option<Instant>>,
 }
 
 impl PasteSuppress {
     pub fn new() -> Self {
         Self {
             until: Mutex::new(None),
-            expected_hash: Mutex::new(None),
+            expected: Mutex::new(Vec::new()),
+            kinds: Mutex::new(None),
+            precise: Mutex::new(false),
+            race_until: Mutex::new(None),
         }
     }
 
-    pub fn set(&self, duration: Duration) {
+    /// 应用自己写剪贴板**之前**调用。返回的守卫必须活到写入结束（临界区一到就开闸）。
+    pub fn begin_write(&self, opts: WriteOpts) -> WriteGuard<'_> {
+        if let Ok(mut guard) = self.race_until.lock() {
+            *guard = Some(Instant::now() + RACE_MAX);
+        }
         if let Ok(mut guard) = self.until.lock() {
-            *guard = Some(Instant::now() + duration);
+            *guard = Some(Instant::now() + IDENTITY_WINDOW);
         }
+        if let Ok(mut guard) = self.expected.lock() {
+            *guard = opts.hashes;
+        }
+        if let Ok(mut guard) = self.kinds.lock() {
+            *guard = opts.kinds;
+        }
+        if let Ok(mut guard) = self.precise.lock() {
+            *guard = opts.precise;
+        }
+        WriteGuard { suppress: self }
     }
 
-    pub fn set_with_hash(&self, duration: Duration, hash: String) {
-        if let Ok(mut guard) = self.until.lock() {
-            *guard = Some(Instant::now() + duration);
-        }
-        if let Ok(mut guard) = self.expected_hash.lock() {
-            *guard = Some(hash);
-        }
-    }
-
-    /// 时间抑制兜底检查：是否仍处于自粘贴抑制窗口内。
-    /// 作为 hash 主检查的兜底——覆盖 hash 已被清除的轮询竞态，以及无 hash 的粘贴路径（如文件）。
-    pub fn is_suppressed(&self) -> bool {
-        if let Ok(guard) = self.until.lock() {
-            guard.is_some_and(|t| Instant::now() < t)
-        } else {
-            false
-        }
-    }
-
-    /// 检查内容 hash 是否匹配预期粘贴内容（即使时间抑制已过期也跳过）
-    pub fn is_hash_suppressed(&self, hash: &str) -> bool {
-        if let Ok(guard) = self.expected_hash.lock() {
-            guard.as_ref().is_some_and(|h| h == hash)
-        } else {
-            false
-        }
-    }
-
-    /// U57：是否处于"hash 设防"模式（已知预期粘贴内容）。
-    /// hash 模式下监听端只应按 hash 匹配跳过，不得用时间窗口无差别吞掉
-    /// 粘贴后 3 秒内用户的新复制；时间兜底仅适用于无 hash 的粘贴路径。
-    pub fn has_expected_hash(&self) -> bool {
-        if let Ok(guard) = self.expected_hash.lock() {
-            guard.is_some()
-        } else {
-            false
-        }
-    }
-
-    pub fn clear_hash(&self) {
-        if let Ok(mut guard) = self.expected_hash.lock() {
+    fn open_race(&self) {
+        if let Ok(mut guard) = self.race_until.lock() {
             *guard = None;
         }
     }
+
+    /// 竞争闸是否开着（阶段 1 据此决定「这次要不要读剪贴板」）。
+    pub fn in_race(&self) -> bool {
+        self.race_until
+            .lock()
+            .map(|guard| guard.is_some_and(|t| Instant::now() < t))
+            .unwrap_or(false)
+    }
+
+    fn window_alive(&self) -> bool {
+        self.until
+            .lock()
+            .map(|guard| guard.is_some_and(|t| Instant::now() < t))
+            .unwrap_or(false)
+    }
+
+    /// 身份窗口是否仍覆盖 `kind` 这一类内容。
+    fn window_covers(&self, kind: WriteKind) -> bool {
+        if !self.window_alive() {
+            return false;
+        }
+        self.kinds
+            .lock()
+            .map(|guard| match guard.as_ref() {
+                None => true,
+                Some(kinds) => kinds.contains(&kind),
+            })
+            .unwrap_or(true)
+    }
+
+    fn hash_hit(&self, candidates: &[&str]) -> bool {
+        self.expected
+            .lock()
+            .map(|guard| candidates.iter().any(|c| guard.iter().any(|h| h == c)))
+            .unwrap_or(false)
+    }
+
+    fn has_expected(&self) -> bool {
+        self.expected
+            .lock()
+            .map(|guard| !guard.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// 是否处于「精确设防」模式：写入方报备了采集端算得出的 hash。
+    fn precise_armed(&self) -> bool {
+        self.precise.lock().map(|g| *g).unwrap_or(false) && self.has_expected()
+    }
+
+    /// 身份已经用上（hash 命中）→ 整段作废。
+    ///
+    /// 🔴 必须连时间窗口一起清掉：只清 hash 的话，自粘贴回显之后窗口内用户复制的**别的**
+    /// 内容会被类别兜底一起吞掉 —— 那正是本次要修的病灶。
+    fn identity_done(&self) {
+        if let Ok(mut guard) = self.expected.lock() {
+            guard.clear();
+        }
+        if let Ok(mut guard) = self.kinds.lock() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.precise.lock() {
+            *guard = false;
+        }
+        if let Ok(mut guard) = self.until.lock() {
+            *guard = None;
+        }
+    }
+
+    fn clear_stale(&self) {
+        if let Ok(mut guard) = self.expected.lock() {
+            guard.clear();
+        }
+    }
+
+    /// 阶段 1 唯一的「这次读取是不是应用自己刚写的」判定（规则 11.1 收口）。
+    ///
+    /// `candidates` 是这次读取用到的全部 hash 口径（Doc 条目同时给「片段 hash」和
+    /// 「纯文本 hash」），第一个用于日志展示。
+    ///
+    /// 返回跳过原因串，`None` = 照常采集。判据顺序即优先级：
+    /// 1. 窗口不覆盖这个类别（或已过期）→ 本次读取与本次写入无关，直接采集；
+    ///    过期时顺手作废陈旧身份，免得同内容日后被莫名吞掉；
+    /// 2. hash 命中 → 精确到内容，命中后整段身份作废；
+    /// 3. 精确设防但没命中 → **只认 hash**，窗口内用户别的内容照常采集（U57）；
+    /// 4. 写入方说不清内容（如富文本片段落不了地、或「粘贴当前剪贴板」）→ 按类别做时间兜底。
+    pub fn own_write_reason(&self, candidates: &[&str], kind: WriteKind) -> Option<&'static str> {
+        if !self.window_covers(kind) {
+            if !self.window_alive() {
+                self.clear_stale();
+            }
+            return None;
+        }
+        if self.hash_hit(candidates) {
+            self.identity_done();
+            return Some("self_paste_hash");
+        }
+        if self.precise_armed() {
+            return None;
+        }
+        Some("self_paste_window")
+    }
+}
+
+/// 各采集分支共用的自粘贴跳过判定 + 日志（规则 11.1：判定与日志口径只此一处）。
+fn own_write_skip(
+    paste_suppress: &PasteSuppress,
+    candidates: &[&str],
+    kind_name: &'static str,
+    kind: WriteKind,
+) -> bool {
+    match paste_suppress.own_write_reason(candidates, kind) {
+        Some(reason) => {
+            log::info!(
+                "[ClipboardMonitor] 跳过采集 reason={} kind={} hash8={}",
+                reason,
+                kind_name,
+                hash8(candidates[0])
+            );
+            true
+        }
+        None => false,
+    }
+}
+
+/// 采集去重窗口：一次复制在多久之内的重复读取算「同一份内容已被采过」。
+const DEDUP_TTL: Duration = Duration::from_millis(1500);
+
+/// 采集去重状态 —— 只用来合并「同一次复制被读两遍」（50ms 防抖 + 1s 序列号兜底 +
+/// Office 延迟渲染补写格式），**不是**「这段内容见过了就别再记」。
+///
+/// 为什么必须带 TTL：没有期限的单值基线会把任何一次「跳过但没落库」变成对该内容的
+/// **永久拉黑**。三条污染路径的共同点是「写了基线却没有产生记录」——
+/// ① 监听线程启动/暂停恢复时以当前剪贴板为基线；② 自身粘贴 hash 命中时写基线；
+/// ③ 基线在阶段 1 被消费、阶段 2 才决定存不存（排除名单 / 敏感 / 插库失败 / 队列丢弃）。
+/// 用户侧表现都是「复制没进、重复制也不进、改一个字才进」。
+/// 详见 `docs/复制未入库诊断与方案-2026-09-28.md` §2.0。
+///
+/// 真正的「重复内容不新建记录」仍由阶段 2 的智能合并（按 md5 查库）负责，所以这里
+/// 多放过一次重复采集的代价只是旧卡片移到顶部，而不是丢一条记录。
+pub struct CaptureDedup {
+    last: Mutex<Option<(String, Instant)>>,
+}
+
+impl CaptureDedup {
+    pub fn new() -> Self {
+        Self {
+            last: Mutex::new(None),
+        }
+    }
+
+    /// 是否是 `DEDUP_TTL` 内刚采过的同一份内容
+    pub fn is_recent(&self, hash: &str) -> bool {
+        self.recent_at(hash, Instant::now())
+    }
+
+    /// **只允许在真的入队之后调用**（规则 #11.1）：跳过路径写这里 = 重新开出
+    /// 「永久拉黑」的口子，所以调用点收在这个类型里，监听侧拿不到写权限的其它入口。
+    pub fn note(&self, hash: &str) {
+        self.note_at(hash, Instant::now());
+    }
+
+    /// 剪贴板变空 / 只剩不可读内容：忘记上一份，让同样的内容下次仍走完整流程。
+    pub fn clear(&self) {
+        if let Ok(mut guard) = self.last.lock() {
+            *guard = None;
+        }
+    }
+
+    fn recent_at(&self, hash: &str, now: Instant) -> bool {
+        self.last
+            .lock()
+            .map(|guard| match guard.as_ref() {
+                Some((h, at)) => h == hash && now - *at < DEDUP_TTL,
+                None => false,
+            })
+            .unwrap_or(false)
+    }
+
+    fn note_at(&self, hash: &str, at: Instant) {
+        if let Ok(mut guard) = self.last.lock() {
+            *guard = Some((hash.to_string(), at));
+        }
+    }
+}
+
+/// 日志里用的 hash 前缀（完整 md5 太吵，前 8 位足够对上同一条内容）
+fn hash8(hash: &str) -> &str {
+    &hash[..hash.len().min(8)]
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -313,6 +603,51 @@ fn read_bool_cache(cache: &std::sync::RwLock<bool>) -> bool {
     cache.read().map(|g| *g).unwrap_or(false)
 }
 
+/// 监听器四项进程内缓存的**解析结果**，每项都是 `Option`。
+///
+/// 🔴 为什么必须有这一层：`save_config` 是按键 upsert，允许只传一个字段
+/// （截图遮罩改「OCR 选字模式」就只发 `{ocr_select_mode}`）。旧写法对这四项
+/// `unwrap_or(默认)`，于是那种局部报文被读成「用户把它们关了」——敏感防护、
+/// 排除名单、auto_strip 的**运行中缓存当场清零**，而设置页显示的是 config 里的值、
+/// 依旧亮着「开」，密码照常入历史。缓存只在启动和 save_config 时刷新，
+/// 所以这个静默失效会一路带到下次全量保存或重启。
+///
+/// 启动路径（`lib.rs`）与保存路径共用这一个解析函数，缺省值只在那一处写。
+/// 规则 #11.1：以后加第五项隐私开关，只需在这里加一个字段——
+/// 两处调用点都拿的是结构体，不会有人新写一个 `unwrap_or` 走错。
+#[derive(Debug, PartialEq, Eq, Default)]
+pub(crate) struct MonitorCachePatch {
+    pub auto_strip: Option<bool>,
+    pub skip_sensitive: Option<bool>,
+    pub excluded_apps: Option<Vec<String>>,
+    pub doc_capture: Option<bool>,
+}
+
+fn bool_flag(cfg: &serde_json::Value, key: &str) -> Option<bool> {
+    cfg.get(key).and_then(|v| v.as_bool())
+}
+
+/// 排除名单是逗号分隔串。传空串 = 用户清空了名单（要刷成空），
+/// 没带这个键 = 别处的局部报文，不动缓存。
+fn excluded_apps_list(cfg: &serde_json::Value) -> Option<Vec<String>> {
+    cfg.get("excluded_apps").and_then(|v| v.as_str()).map(|s| {
+        s.split(',')
+            .map(|a| a.trim().to_string())
+            .filter(|a| !a.is_empty())
+            .collect()
+    })
+}
+
+/// 从一份（可能是局部的）config 报文里算出该刷新哪些缓存。
+pub(crate) fn cache_patch_from(cfg: &serde_json::Value) -> MonitorCachePatch {
+    MonitorCachePatch {
+        auto_strip: bool_flag(cfg, "auto_strip"),
+        skip_sensitive: bool_flag(cfg, "skip_sensitive"),
+        excluded_apps: excluded_apps_list(cfg),
+        doc_capture: bool_flag(cfg, "doc_capture"),
+    }
+}
+
 /// 修复 U36：判断文本是否应按敏感内容跳过记录（两条监听路径共用）
 fn should_skip_sensitive_with(skip_cache: &std::sync::RwLock<bool>, text: &str) -> bool {
     // 🔴 自有凭证无条件跳过，**不看用户开关**，且必须在开关判断之前。
@@ -399,13 +734,21 @@ impl ClipboardMonitor {
         read_bool_cache(&self.cached_auto_strip)
     }
 
-    /// 修复 U36：更新敏感内容防护缓存（由前端保存配置后调用）
-    pub fn update_sensitive_cache(&self, skip_sensitive: bool, excluded_apps: Vec<String>) {
+    /// 修复 U36：更新敏感内容防护总闸缓存（由前端保存配置后调用）。
+    ///
+    /// ❗ 与排除名单**各自一个 setter**：合成一个 `update(两值)` 的话，
+    /// 报文只带来其中一个时，另一个没有可信来源，调用方只能瞎填默认值——
+    /// 那正是「局部 save_config 把隐私开关静默清零」的成因（见 `commands/history.rs` 的 `monitor_cache_patch`）。
+    pub fn update_skip_sensitive_cache(&self, enabled: bool) {
         if let Ok(mut guard) = self.cached_skip_sensitive.write() {
-            *guard = skip_sensitive;
+            *guard = enabled;
         }
+    }
+
+    /// 修复 U36：更新应用排除名单缓存（由前端保存配置后调用）
+    pub fn update_excluded_apps_cache(&self, apps: Vec<String>) {
         if let Ok(mut guard) = self.cached_excluded_apps.write() {
-            *guard = excluded_apps;
+            *guard = apps;
         }
     }
 
@@ -430,7 +773,7 @@ impl ClipboardMonitor {
 
     pub fn start(&self) {
         // 修复 M2：原子 CAS 替代"先判断后置位"，防止并发 toggle 同时通过检查
-        // 而 spawn 出两个监听线程（各持独立 last_text_hash → 图片/文件重复入库）
+        // 而 spawn 出两个监听线程（各持独立 CaptureDedup → 图片/文件重复入库）
         if self
             .running
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -470,7 +813,9 @@ impl ClipboardMonitor {
             });
         }
 
-        #[cfg(not(target_os = "windows"))]
+        // 轮询兜底是「桌面非 Windows」专属（macOS/Linux 无剪贴板消息）；
+        // mobile 不采集系统剪贴板，不编译。
+        #[cfg(all(desktop, not(target_os = "windows")))]
         {
             std::thread::spawn(move || {
                 run_polling_listener(running, app_handle, paste_suppress, auto_strip_cache);
@@ -642,21 +987,11 @@ fn run_event_listener(running: Arc<AtomicBool>, app_handle: AppHandle, shared: L
             }
         };
 
-        // 以当前剪贴板内容作为基准 hash（与轮询版一致：避免监听恢复后
-        // 把已存在的内容重复记录一条）
-        let mut last_text_hash: Option<String> = None;
-        if let Ok(initial_text) = clipboard.get_text() {
-            if !initial_text.is_empty() {
-                let initial_text = if read_bool_cache(&auto_strip_cache) {
-                    initial_text.trim().to_string()
-                } else {
-                    initial_text
-                };
-                if !initial_text.is_empty() {
-                    last_text_hash = Some(md5_hex(initial_text.as_bytes()));
-                }
-            }
-        }
+        // 采集去重状态：**不**以当前剪贴板内容作为基线（P1，见 docs/复制未入库诊断与
+        // 方案-2026-09-28.md §2.0）。旧做法在每次监听线程启动（含托盘「暂停记录→恢复
+        // 记录」）时把剪贴板上躺着的内容标记为已采，而那条内容其实并没有落库 —— 于是
+        // 用户之后复制它一次都不进，直到内容变化。宁可让阶段 2 的智能合并多兜一次。
+        let dedup = CaptureDedup::new();
         // 基准序列号：兜底定时器只在序列号变化时才补读
         let mut last_seq = GetClipboardSequenceNumber();
         // 连续读取失败计数（达到上限后放弃当前序列号，避免无限重试）
@@ -704,7 +1039,7 @@ fn run_event_listener(running: Arc<AtomicBool>, app_handle: AppHandle, shared: L
                         let _ = KillTimer(hwnd, TIMER_DEBOUNCE);
                         let ok = stage1_capture(
                             &mut clipboard,
-                            &mut last_text_hash,
+                            &dedup,
                             &paste_suppress,
                             &auto_strip_cache,
                             &doc_capture_cache,
@@ -723,7 +1058,7 @@ fn run_event_listener(running: Arc<AtomicBool>, app_handle: AppHandle, shared: L
                         if seq != last_seq {
                             let ok = stage1_capture(
                                 &mut clipboard,
-                                &mut last_text_hash,
+                                &dedup,
                                 &paste_suppress,
                                 &auto_strip_cache,
                                 &doc_capture_cache,
@@ -778,20 +1113,22 @@ fn advance_seq(seq: u32, ok: bool, last_seq: &mut u32, fail_streak: &mut u32) {
 #[cfg(target_os = "windows")]
 fn stage1_capture(
     clipboard: &mut Clipboard,
-    last_text_hash: &mut Option<String>,
+    dedup: &CaptureDedup,
     paste_suppress: &PasteSuppress,
     auto_strip_cache: &std::sync::RwLock<bool>,
     doc_capture_cache: &std::sync::RwLock<bool>,
     queue: &CaptureQueue,
     app_handle: &AppHandle,
 ) -> bool {
-    // 自粘贴抑制窗口内（写入方已 set_with_hash/set 3 秒）：完全跳过剪贴板读取。
-    // 写入方负责自己的入库（截图主动 insert_screenshot_to_history；历史复制已有条目不需要
-    // 重复采集），监听不需要读剪贴板判断"是不是自己"——读了再跳过是白抢一次全局互斥的
-    // OpenClipboard，与写入线程并发时一方报 os error 1418（截图完成复制失败的根源；
-    // 微信截图无监听线程所以没有此竞争）。
-    if paste_suppress.is_suppressed() {
-        log::debug!("[ClipboardMonitor] 自粘贴抑制窗口内，跳过剪贴板读取");
+    // 竞争闸（写入线程持有剪贴板的临界区）内：不读剪贴板。
+    // 读了再判断是白抢一次全局互斥的 OpenClipboard，与写入线程并发时一方报
+    // os error 1418（截图完成复制失败的根源；微信截图无监听线程所以没有此竞争）。
+    //
+    // 🔴 这道闸只覆盖临界区（守卫 Drop 即开，上限 RACE_MAX）。它**不能**兼任身份判断：
+    // 旧实现在这里挂一个 3 秒窗口，把「粘贴后 3 秒内的任意一次复制」整批静默吞掉，
+    // 还架空了下面各分支里的 U57 hash 判据。身份判断走 `PasteSuppress::own_write_reason`。
+    if paste_suppress.in_race() {
+        log::info!("[ClipboardMonitor] 跳过采集 reason=self_paste_race kind=all");
         return true;
     }
 
@@ -824,37 +1161,28 @@ fn stage1_capture(
 
                 let hash = md5_hex(rewritten.as_bytes());
 
-                if paste_suppress.is_hash_suppressed(&hash) {
-                    log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配·富文本)");
-                    paste_suppress.clear_hash();
-                    *last_text_hash = Some(hash);
+                if own_write_skip(paste_suppress, &[&hash], "rich", WriteKind::Rich) {
                     return true;
                 }
-                if paste_suppress.has_expected_hash() {
-                    if !paste_suppress.is_suppressed() {
-                        paste_suppress.clear_hash();
-                    }
-                } else if paste_suppress.is_suppressed() {
+
+                if dedup.is_recent(&hash) {
                     log::info!(
-                        "[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·富文本)"
+                        "[ClipboardMonitor] 跳过采集 reason=dedup kind=rich hash8={}",
+                        hash8(&hash)
                     );
-                    *last_text_hash = Some(hash);
                     return true;
                 }
+                dedup.note(&hash);
 
-                if Some(&hash) != last_text_hash.as_ref() {
-                    *last_text_hash = Some(hash.clone());
-
-                    let (title, exe_path) = capture_foreground_source(app_handle);
-                    queue.push(CapturedItem::Rich {
-                        html_fragment: rewritten,
-                        plain_text,
-                        hash,
-                        title,
-                        exe_path,
-                        time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                    });
-                }
+                let (title, exe_path) = capture_foreground_source(app_handle);
+                queue.push(CapturedItem::Rich {
+                    html_fragment: rewritten,
+                    plain_text,
+                    hash,
+                    title,
+                    exe_path,
+                    time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                });
                 return true;
             } else {
                 log::warn!("[ClipboardMonitor] 获取应用数据目录失败，图文富文本降级为纯文本采集");
@@ -896,7 +1224,7 @@ fn stage1_capture(
             };
 
             if text.is_empty() {
-                *last_text_hash = None;
+                dedup.clear();
                 return true;
             }
 
@@ -921,33 +1249,25 @@ fn stage1_capture(
                 None => text_hash.clone(),
             };
 
-            // 自粘贴抑制（与轮询版一致）：hash 匹配优先跳过（文本或片段命中均算）；
-            // doc_fragment 为 Some 时 hash == 片段 hash，直接用 hash 判断，不重复算 md5。
-            // 时间窗口仅作无 hash 路径兜底（U57）
-            let own_hash_hit = paste_suppress.is_hash_suppressed(&text_hash)
-                || (doc_fragment.is_some() && paste_suppress.is_hash_suppressed(&hash));
-            if own_hash_hit {
-                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配·文本/doc)");
-                paste_suppress.clear_hash();
-                *last_text_hash = Some(hash);
-                return true;
-            }
-            if paste_suppress.has_expected_hash() {
-                if !paste_suppress.is_suppressed() {
-                    paste_suppress.clear_hash();
-                }
-            } else if paste_suppress.is_suppressed() {
-                log::info!(
-                    "[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·文本/doc)"
-                );
-                *last_text_hash = Some(hash);
+            // 自粘贴抑制：Doc 条目带「片段 hash + 纯文本 hash」两个口径，命中任一即算自己
+            // 刚写的；时间窗口只兜「写入方说不清内容」的路径（见 own_write_reason）
+            if own_write_skip(
+                paste_suppress,
+                &[&hash, &text_hash],
+                "text/doc",
+                WriteKind::Text,
+            ) {
                 return true;
             }
 
-            if Some(&hash) == last_text_hash.as_ref() {
-                return true; // 内容未变化
+            if dedup.is_recent(&hash) {
+                log::info!(
+                    "[ClipboardMonitor] 跳过采集 reason=dedup kind=text/doc hash8={}",
+                    hash8(&hash)
+                );
+                return true;
             }
-            *last_text_hash = Some(hash.clone());
+            dedup.note(&hash);
 
             let (title, exe_path) = capture_foreground_source(app_handle);
             let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -982,32 +1302,24 @@ fn stage1_capture(
                     "[ClipboardMonitor] 图片过大 ({} bytes)，跳过记录",
                     img.bytes.len()
                 );
-                *last_text_hash = None;
+                dedup.clear();
                 return true;
             }
 
             let img_hash = md5_hex(&img.bytes);
 
-            if paste_suppress.is_hash_suppressed(&img_hash) {
-                log::info!("[ClipboardMonitor] 跳过自身粘贴图片 (hash匹配)");
-                paste_suppress.clear_hash();
-                *last_text_hash = Some(img_hash);
-                return true;
-            }
-            if paste_suppress.has_expected_hash() {
-                if !paste_suppress.is_suppressed() {
-                    paste_suppress.clear_hash();
-                }
-            } else if paste_suppress.is_suppressed() {
-                log::info!("[ClipboardMonitor] 跳过自身粘贴图片 (无hash路径·时间抑制窗口内)");
-                *last_text_hash = Some(img_hash);
+            if own_write_skip(paste_suppress, &[&img_hash], "image", WriteKind::Image) {
                 return true;
             }
 
-            if Some(&img_hash) == last_text_hash.as_ref() {
+            if dedup.is_recent(&img_hash) {
+                log::info!(
+                    "[ClipboardMonitor] 跳过采集 reason=dedup kind=image hash8={}",
+                    hash8(&img_hash)
+                );
                 return true;
             }
-            *last_text_hash = Some(img_hash.clone());
+            dedup.note(&img_hash);
 
             let (title, exe_path) = capture_foreground_source(app_handle);
             queue.push(CapturedItem::Image {
@@ -1025,24 +1337,33 @@ fn stage1_capture(
 
     // ── 文件列表 (CF_HDROP) ──
     if let Some(files) = get_clipboard_files() {
-        let files_hash = files.join("|");
-        let hash = md5_hex(files_hash.as_bytes());
-        if Some(&hash) != last_text_hash.as_ref() {
-            *last_text_hash = Some(hash);
-            let (title, exe_path) = capture_foreground_source(app_handle);
-            queue.push(CapturedItem::Files {
-                paths: files,
-                title,
-                exe_path,
-                time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            });
+        // hash 口径与写入方共用 files_clipboard_hash（旧实现在这里没有任何自粘贴判定，
+        // 全靠阶段 1 顶部的无差别时间早退兜着 —— 那道闸已经缩成竞争闸，必须自己认）
+        let hash = files_clipboard_hash(&files);
+        if own_write_skip(paste_suppress, &[&hash], "file", WriteKind::Files) {
+            return true;
         }
+        if dedup.is_recent(&hash) {
+            log::info!(
+                "[ClipboardMonitor] 跳过采集 reason=dedup kind=file hash8={}",
+                hash8(&hash)
+            );
+            return true;
+        }
+        dedup.note(&hash);
+        let (title, exe_path) = capture_foreground_source(app_handle);
+        queue.push(CapturedItem::Files {
+            paths: files,
+            title,
+            exe_path,
+            time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        });
         return true;
     }
 
     // 无可读内容：文本读取成功（剪贴板确实为空/仅含不支持格式）记为成功；
     // 文本读取失败则返回 false，由兜底定时器重试
-    *last_text_hash = None;
+    dedup.clear();
     text_read_ok
 }
 
@@ -1787,7 +2108,7 @@ fn process_files(
 // 此分支仅保证跨平台可编译）
 // ═══════════════════════════════════════════════════════════════
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(desktop, not(target_os = "windows")))]
 fn run_polling_listener(
     running: Arc<AtomicBool>,
     app_handle: AppHandle,
@@ -1809,27 +2130,10 @@ fn run_polling_listener(
         }
     };
 
-    let mut last_text_hash: Option<String> = None;
+    // 采集去重状态：**不**以当前剪贴板内容作为基线（P1，理由与事件驱动路径完全一致，
+    // 见 `CaptureDedup` 与 docs/复制未入库诊断与方案-2026-09-28.md §2.0）
+    let dedup = CaptureDedup::new();
     let poll_interval = Duration::from_millis(400);
-
-    // Low 修复：启动/重启时以当前剪贴板内容作为基准 hash，
-    // 避免监听恢复后必然把已存在的内容重复记录一条
-    if let Ok(initial_text) = clipboard.get_text() {
-        if !initial_text.is_empty() {
-            let initial_text = if let Some(monitor) = app_handle.try_state::<ClipboardMonitor>() {
-                if monitor.get_auto_strip() {
-                    initial_text.trim().to_string()
-                } else {
-                    initial_text
-                }
-            } else {
-                initial_text
-            };
-            if !initial_text.is_empty() {
-                last_text_hash = Some(md5_hex(initial_text.as_bytes()));
-            }
-        }
-    }
 
     while running.load(Ordering::SeqCst) {
         std::thread::sleep(poll_interval);
@@ -1849,35 +2153,21 @@ fn run_polling_listener(
                 };
 
                 if text.is_empty() {
-                    last_text_hash = None;
+                    dedup.clear();
                     continue;
                 }
 
                 let hash = md5_hex(text.as_bytes());
 
-                // 检查是否是我们自己写入的粘贴内容（hash 匹配）
-                if paste_suppress.is_hash_suppressed(&hash) {
-                    log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配)");
-                    paste_suppress.clear_hash();
-                    last_text_hash = Some(hash);
+                // 自粘贴抑制：与 Windows 事件路径共用同一判定（规则 11.1）。
+                // 轮询路径没有「写入线程持有剪贴板」的临界区可让守卫覆盖，因此它只走
+                // hash + 类别窗口两道判据，不受竞争闸影响。
+                if own_write_skip(&paste_suppress, &[&hash], "text", WriteKind::Text) {
                     continue;
                 }
 
-                // U57：hash 设防模式下只认 hash 匹配（上面已处理），
-                // 窗口过期仍未命中则清除陈旧 hash，避免误吞用户后续复制的相同内容；
-                // 时间兜底仅对无 hash 的粘贴路径（如"粘贴当前剪贴板"）生效
-                if paste_suppress.has_expected_hash() {
-                    if !paste_suppress.is_suppressed() {
-                        paste_suppress.clear_hash();
-                    }
-                } else if paste_suppress.is_suppressed() {
-                    log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内)");
-                    last_text_hash = Some(hash);
-                    continue;
-                }
-
-                if Some(&hash) != last_text_hash.as_ref() {
-                    last_text_hash = Some(hash.clone());
+                if !dedup.is_recent(&hash) {
+                    dedup.note(&hash);
 
                     // 获取前台窗口信息（标题 + 图标，一次调用）
                     let (source_title, source_icon) = get_foreground_window_info(&app_handle);
@@ -1993,7 +2283,7 @@ fn run_polling_listener(
                 // 注意：重构前此分支还会探测图片（跨平台）与文件（Windows）。
                 // 本项目仅发布 Windows（事件驱动路径已完整覆盖三类内容），
                 // 此兜底分支只保留文本轮询以保证跨平台可编译。
-                last_text_hash = None;
+                dedup.clear();
             }
         }
     }
@@ -2437,95 +2727,169 @@ mod tests {
     use super::*;
     use std::thread;
 
-    #[test]
-    fn test_new_not_suppressed() {
-        let ps = PasteSuppress::new();
-        assert!(!ps.is_suppressed());
-        assert!(!ps.has_expected_hash());
+    fn hash_of(s: &str) -> String {
+        md5_hex(s.as_bytes())
     }
 
     #[test]
-    fn test_set_activates_time_window() {
+    fn test_new_has_no_own_write_identity() {
         let ps = PasteSuppress::new();
-        ps.set(Duration::from_millis(200));
-        assert!(ps.is_suppressed());
+        assert!(!ps.in_race());
+        assert_eq!(ps.own_write_reason(&[&hash_of("x")], WriteKind::Text), None);
     }
 
+    /// 竞争闸靠守卫配对释放，不是靠时长。
     #[test]
-    fn test_time_window_expires() {
+    fn test_guard_releases_race_on_drop() {
         let ps = PasteSuppress::new();
-        ps.set(Duration::from_millis(50));
-        assert!(ps.is_suppressed());
-        thread::sleep(Duration::from_millis(80));
-        assert!(!ps.is_suppressed());
+        let guard = ps.begin_write(WriteOpts::text("粘贴的内容"));
+        assert!(ps.in_race());
+        drop(guard);
+        assert!(!ps.in_race());
     }
 
+    /// 🔴 竞争闸必须有硬上限：守卫没走到 Drop（线程 panic）时，「读不到剪贴板」
+    /// 不能变成永久状态；同时上限要显著大于一次剪贴板写入，否则挡不住 1418 竞争。
     #[test]
-    fn test_set_with_hash() {
-        let ps = PasteSuppress::new();
-        ps.set_with_hash(Duration::from_millis(200), "abc123".to_string());
-        assert!(ps.is_suppressed());
-        assert!(ps.has_expected_hash());
-        assert!(ps.is_hash_suppressed("abc123"));
-        assert!(!ps.is_hash_suppressed("other"));
+    fn test_race_window_is_bounded() {
+        assert!(RACE_MAX < Duration::from_millis(2000), "{:?}", RACE_MAX);
+        assert!(RACE_MAX > Duration::from_millis(50), "{:?}", RACE_MAX);
     }
 
+    /// 🔴 本次修复的核心不变量：hash 设防期间，窗口内用户复制的**别的内容**必须照常采集。
+    /// 旧实现把身份判断挂在阶段 1 顶部的 3 秒无差别早退上，这条会稳定失败。
     #[test]
-    fn test_hash_suppressed_after_time_expires() {
+    fn test_hash_mode_does_not_swallow_other_content() {
         let ps = PasteSuppress::new();
-        ps.set_with_hash(Duration::from_millis(30), "hash1".to_string());
-        thread::sleep(Duration::from_millis(60));
-        // 时间窗口过期
-        assert!(!ps.is_suppressed());
-        // 但 hash 仍然匹配（U57 双重检查的核心）
-        assert!(ps.has_expected_hash());
-        assert!(ps.is_hash_suppressed("hash1"));
+        let guard = ps.begin_write(WriteOpts::text("被粘贴的那一条"));
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("用户紧接着复制的新内容")], WriteKind::Text),
+            None
+        );
+        drop(guard);
     }
 
+    /// hash 命中 = 身份已经用上 → 整段作废，后续同窗口内的内容一律照常采集。
+    /// 只清 hash 不清窗口的话，自粘贴回显之后用户复制的别的内容会被类别兜底一起吞掉。
     #[test]
-    fn test_clear_hash() {
+    fn test_hash_hit_finishes_identity() {
         let ps = PasteSuppress::new();
-        ps.set_with_hash(Duration::from_secs(10), "h".to_string());
-        assert!(ps.has_expected_hash());
-        ps.clear_hash();
-        assert!(!ps.has_expected_hash());
-        assert!(!ps.is_hash_suppressed("h"));
-        // 时间窗口不受 clear_hash 影响
-        assert!(ps.is_suppressed());
+        let pasted = "同一条内容";
+        let guard = ps.begin_write(WriteOpts::text(pasted));
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of(pasted)], WriteKind::Text),
+            Some("self_paste_hash")
+        );
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("别的内容")], WriteKind::Text),
+            None
+        );
+        drop(guard);
     }
 
+    /// 类别窗口只对写入方声明过的类别生效。图文写入会带 CF_HTML，也可能被采集端读成
+    /// 纯文本，所以 rich 报备同时覆盖 Rich + Text，但与图片/文件无关。
     #[test]
-    fn test_u57_dual_check_pattern() {
-        // 模拟 U57 修复后的监听循环逻辑：
-        // if has_expected_hash() { if !is_hash_suppressed(hash) { clear_hash(); } }
-        // else if is_suppressed() { skip }
+    fn test_identity_window_is_kind_scoped() {
         let ps = PasteSuppress::new();
-        ps.set_with_hash(Duration::from_millis(30), "pasted_content".to_string());
-        thread::sleep(Duration::from_millis(60)); // 时间过期
+        let guard = ps.begin_write(WriteOpts::rich("<p>片段</p>"));
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("x")], WriteKind::Rich),
+            Some("self_paste_window")
+        );
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("y")], WriteKind::Image),
+            None
+        );
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("z")], WriteKind::Files),
+            None
+        );
+        drop(guard);
+    }
 
-        // 场景 1：新复制的内容 hash 匹配 → 应跳过（自粘贴回显）
-        let new_hash = "pasted_content";
-        if ps.has_expected_hash() {
-            assert!(ps.is_hash_suppressed(new_hash)); // 匹配 → 跳过
+    /// 写入方说不清自己写了什么（「粘贴当前剪贴板」）→ 全部类别按时间兜底。
+    #[test]
+    fn test_unknown_opts_cover_all_kinds() {
+        let ps = PasteSuppress::new();
+        let guard = ps.begin_write(WriteOpts::unknown());
+        for kind in [
+            WriteKind::Rich,
+            WriteKind::Text,
+            WriteKind::Image,
+            WriteKind::Files,
+        ] {
+            assert_eq!(
+                ps.own_write_reason(&[&hash_of("h")], kind),
+                Some("self_paste_window"),
+                "类别 {:?}",
+                kind
+            );
         }
+        drop(guard);
+    }
 
-        // 场景 2：新复制的内容 hash 不匹配 → 应清除 hash 并正常记录
-        let different_hash = "user_new_content";
-        if ps.has_expected_hash() {
-            if !ps.is_hash_suppressed(different_hash) {
-                ps.clear_hash(); // 不匹配 → 清除，正常记录
-            }
+    /// 文本报备同时覆盖原串与 trim 串：采集端是否去空白取决于用户配置，
+    /// 只登记一种口径会让另一半自粘贴落到阶段 2 的智能合并。
+    #[test]
+    fn test_text_opts_register_both_trim_states() {
+        let raw = "  带尾随空白的内容  ";
+        for candidate in [raw.to_string(), raw.trim().to_string()] {
+            let ps = PasteSuppress::new();
+            let guard = ps.begin_write(WriteOpts::text(raw));
+            assert_eq!(
+                ps.own_write_reason(&[&hash_of(&candidate)], WriteKind::Text),
+                Some("self_paste_hash"),
+                "口径 {:?}",
+                candidate
+            );
+            drop(guard);
         }
-        assert!(!ps.has_expected_hash());
+    }
+
+    /// 文件列表的 hash 口径写死成 `join("|")` 的 md5：采集端与写入端算不出同一个值，
+    /// 报备就等于没做（历史上文件分支正是靠无差别时间早退掩盖了这个缺口）。
+    #[test]
+    fn test_files_hash_uses_shared_join_format() {
+        let paths = vec!["C:\\a.txt".to_string(), "C:\\b.txt".to_string()];
+        assert_eq!(
+            files_clipboard_hash(&paths),
+            md5_hex("C:\\a.txt|C:\\b.txt".as_bytes())
+        );
+    }
+
+    /// 陈旧身份不得永久生效：窗口过期且没命中 → 作废，避免日后同内容被莫名吞掉。
+    #[test]
+    fn test_stale_identity_dropped_after_window_expires() {
+        let ps = PasteSuppress::new();
+        let guard = ps.begin_write(WriteOpts::text("a"));
+        drop(guard);
+        thread::sleep(IDENTITY_WINDOW + Duration::from_millis(150));
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("别的用户内容")], WriteKind::Text),
+            None
+        );
+        assert!(
+            !ps.has_expected(),
+            "窗口过期且没命中 → 陈旧 hash 必须作废（否则同内容日后被永久拉黑）"
+        );
     }
 
     #[test]
-    fn test_set_overwrites_previous() {
+    fn test_begin_write_overwrites_previous_identity() {
         let ps = PasteSuppress::new();
-        ps.set_with_hash(Duration::from_secs(10), "old".to_string());
-        ps.set_with_hash(Duration::from_secs(10), "new".to_string());
-        assert!(ps.is_hash_suppressed("new"));
-        assert!(!ps.is_hash_suppressed("old"));
+        let g1 = ps.begin_write(WriteOpts::text("旧内容"));
+        let g2 = ps.begin_write(WriteOpts::text("新内容"));
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("新内容")], WriteKind::Text),
+            Some("self_paste_hash")
+        );
+        // 上一条报备已被覆盖，不该继续吞
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("旧内容")], WriteKind::Text),
+            None
+        );
+        drop((g1, g2));
     }
 
     #[test]
@@ -2533,11 +2897,72 @@ mod tests {
         let ps = Arc::new(PasteSuppress::new());
         let ps2 = Arc::clone(&ps);
         let handle = thread::spawn(move || {
-            ps2.set_with_hash(Duration::from_millis(100), "t".to_string());
+            let _guard = ps2.begin_write(WriteOpts::text("t"));
         });
         handle.join().unwrap();
-        assert!(ps.is_suppressed());
-        assert!(ps.is_hash_suppressed("t"));
+        // 跨线程可见；线程内守卫已 Drop → 竞争闸已开，身份仍在
+        assert!(!ps.in_race());
+        assert_eq!(
+            ps.own_write_reason(&[&hash_of("t")], WriteKind::Text),
+            Some("self_paste_hash")
+        );
+    }
+
+    // ── 采集去重状态测试（P1–P3 根因的守卫，见 docs/复制未入库诊断与方案-2026-09-28.md） ──
+
+    #[test]
+    fn test_dedup_ttl_is_bounded() {
+        // 🔴 守卫：去重窗口必须有期限。无限期的单值基线正是「复制没进、重复制也不进、
+        // 改一个字才进」的根因 —— 任何一次「跳过但没落库」都会把该内容永久拉黑。
+        assert!(
+            DEDUP_TTL < Duration::from_secs(5),
+            "去重窗口必须短到用户不会以为「重复制没反应」"
+        );
+        assert!(
+            DEDUP_TTL > Duration::from_millis(500),
+            "去重窗口必须长到能盖住 50ms 防抖 + 1s 序列号兜底对同一次复制的二次读取"
+        );
+    }
+
+    #[test]
+    fn test_dedup_recent_only_inside_ttl() {
+        let dedup = CaptureDedup::new();
+        let t0 = Instant::now();
+        dedup.note_at("aaaa", t0);
+        assert!(dedup.recent_at("aaaa", t0 + Duration::from_millis(1499)));
+        assert!(!dedup.recent_at("aaaa", t0 + DEDUP_TTL));
+        // TTL 之后同样的内容必须重新走一遍采集流程（由阶段 2 的智能合并兜重复，
+        // 表现为旧卡片移到顶部，而不是「没有任何反应」）
+        assert!(!dedup.recent_at("aaaa", t0 + Duration::from_secs(3)));
+    }
+
+    #[test]
+    fn test_dedup_is_single_slot_not_a_set() {
+        // A → B → A：第三次复制 A 不能被「A 见过」挡住，否则用户看不到卡片置顶。
+        let dedup = CaptureDedup::new();
+        let t0 = Instant::now();
+        dedup.note_at("a", t0);
+        dedup.note_at("b", t0 + Duration::from_millis(100));
+        assert!(!dedup.recent_at("a", t0 + Duration::from_millis(200)));
+        assert!(dedup.recent_at("b", t0 + Duration::from_millis(200)));
+    }
+
+    #[test]
+    fn test_dedup_clear_forgets() {
+        // 剪贴板变空 / 只剩不可读内容时必须忘记上一份（旧行为一致）
+        let dedup = CaptureDedup::new();
+        dedup.note("x");
+        assert!(dedup.is_recent("x"));
+        dedup.clear();
+        assert!(!dedup.is_recent("x"));
+    }
+
+    #[test]
+    fn test_dedup_default_is_not_recent() {
+        // P1 守卫：监听线程启动时不再以当前剪贴板为基线，所以「刚启动」状态下
+        // 任何 hash 都不算刚采过 —— 恢复监听后的第一次复制一定会被采集。
+        let dedup = CaptureDedup::new();
+        assert!(!dedup.is_recent("whatever"));
     }
 
     // ── 捕获队列测试（事件驱动路径） ──
@@ -2911,5 +3336,67 @@ mod tests {
         let short = "ab";
         let long = "abcdefghijklmnopqrstuvwxyz";
         assert!(!text_substantially_matches(short, long));
+    }
+
+    // ===== 局部 save_config 不得清零隐私缓存（P0 #1）=====
+    //
+    // 🔴 钉的是这条不变量：报文没带某个键 → 该项是 None（不刷新）。
+    // 旧实现对四项 `unwrap_or(默认)`，于是截图遮罩那次只发 `{ocr_select_mode}`
+    // 的报文被读成「用户关了敏感防护/清空的排除名单」，而设置页仍显示「开」。
+
+    /// 只带一个无关键的局部报文（截图遮罩改 OCR 选字模式）→ 四项全 None。
+    #[test]
+    fn partial_payload_touches_no_privacy_cache() {
+        let patch = cache_patch_from(&serde_json::json!({ "ocr_select_mode": "modifier" }));
+        assert_eq!(
+            patch,
+            MonitorCachePatch {
+                auto_strip: None,
+                skip_sensitive: None,
+                excluded_apps: None,
+                doc_capture: None,
+            }
+        );
+    }
+
+    /// 全量报文（设置页那条路径）→ 四项都取值，缺省仍由调用点决定。
+    #[test]
+    fn full_payload_reports_every_cached_flag() {
+        let patch = cache_patch_from(&serde_json::json!({
+            "auto_strip": true,
+            "skip_sensitive": true,
+            "excluded_apps": "KeePass, 1Password",
+            "doc_capture": false,
+        }));
+        assert_eq!(patch.auto_strip, Some(true));
+        assert_eq!(patch.skip_sensitive, Some(true));
+        assert_eq!(
+            patch.excluded_apps,
+            Some(vec!["KeePass".to_string(), "1Password".to_string()])
+        );
+        assert_eq!(patch.doc_capture, Some(false));
+    }
+
+    /// 空串 = 用户**清空**了名单，要刷成空表；这和「没带这个键」是两回事。
+    /// 混成一件事的话，清空的名单会在下次启动时复活。
+    #[test]
+    fn cleared_list_is_distinct_from_absent_list() {
+        assert_eq!(
+            cache_patch_from(&serde_json::json!({ "excluded_apps": "" })).excluded_apps,
+            Some(vec![])
+        );
+        assert_eq!(
+            cache_patch_from(&serde_json::json!({})).excluded_apps,
+            None
+        );
+    }
+
+    /// 每项独立判定：敏感防护单独翻转时不得把排除名单刷成空。
+    /// 这是拆掉旧 `update_sensitive_cache(两值)` 的理由。
+    #[test]
+    fn each_key_refreshes_only_itself() {
+        let patch = cache_patch_from(&serde_json::json!({ "skip_sensitive": false }));
+        assert_eq!(patch.skip_sensitive, Some(false));
+        assert_eq!(patch.excluded_apps, None);
     }
 }

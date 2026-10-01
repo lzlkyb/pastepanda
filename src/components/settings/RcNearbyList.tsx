@@ -6,7 +6,7 @@
  * # 🔴 名字不可信，所以行里只放名字、把判据留给下一步
  *
  * `name` 由对方在明文招呼包里自报（`wire::clean_name`），同网段任何人都能填。
- * 这一屏**不用它做任何判断**——点「配对」之后两端会算出同一个 6 位数字，
+ * 这一屏**不用它做任何判断**——点「配对」之后两端会算出同一个 8 位配对码，
  * 那才是唯一靠人把关的地方。脚注把这件事写出来，是因为用户会以为
  * 「名字对得上就是那台机器」。
  *
@@ -71,8 +71,7 @@ export function RcNearbyList({ neighbors, busy, onPair }: {
         <ol className={lanStyles.lanNearbySteps}>
           <li>另一台电脑安装并打开 <b>PastePanda</b></li>
           <li>确保在同一 Wi-Fi / 局域网</li>
-          <li>两边都打开 <b>远程电脑</b></li>
-          <li>对方的 PastePanda 是<b>最新版</b>（旧版只能走配对码）</li>
+          <li>对方的 PastePanda 是<b>最新版</b>（旧版没有「附近的设备」，只能手动搬配对码）</li>
         </ol>
       </div>
     );
@@ -101,7 +100,7 @@ export function RcNearbyList({ neighbors, busy, onPair }: {
       </div>
       <div className={rcStyles.foot}>
         设备名由对方自报、可随意填写（可自称，以指纹为准）——
-        真正定对方是谁的是核对环节的那串数字。列表 20 秒听不到会自动移除。
+        真正定对方是谁的是核对环节的那串配对码。列表 20 秒听不到会自动移除。
       </div>
     </>
   );

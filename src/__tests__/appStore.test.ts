@@ -184,4 +184,44 @@ describe("appStore", () => {
     store.setFilterType("text");
     expect(useAppStore.getState().getFilteredItems().map((h) => h.id)).toEqual(["t"]);
   });
+
+  // U3.5 守卫：「没搜成」不能和「没搜到」共用同一屏。
+  // 以前 catch 里 setSearchResults([], key) 会把失败标成新鲜空结果，永远不重试。
+  it("搜索失败：searchError 置位，且不把空结果标成新鲜", () => {
+    const store = useAppStore.getState();
+    store.setSearchLoading(true);
+    store.setSearchError(true);
+    expect(useAppStore.getState().searchError).toBe(true);
+    expect(useAppStore.getState().searchLoading).toBe(false);
+    // 失败时不应写入 searchResults（保持 null 或旧值，而不是 [] + key）
+    expect(useAppStore.getState().searchResults).toBe(null);
+    expect(useAppStore.getState().searchResultsKey).toBe("");
+  });
+
+  it("setSearchResults 成功路径清掉 searchError", () => {
+    const store = useAppStore.getState();
+    store.setSearchError(true);
+    store.setSearchResults([], "k-ok");
+    expect(useAppStore.getState().searchError).toBe(false);
+    expect(useAppStore.getState().searchResultsKey).toBe("k-ok");
+  });
+
+  it("retrySearch 清错误并 bump tick 让搜索 effect 重跑", () => {
+    const store = useAppStore.getState();
+    const tick0 = useAppStore.getState().searchRetryTick;
+    store.setSearchError(true);
+    store.retrySearch();
+    const s = useAppStore.getState();
+    expect(s.searchError).toBe(false);
+    expect(s.searchRetryTick).toBe(tick0 + 1);
+    expect(s.searchLoading).toBe(true);
+  });
+
+  it("清空搜索词时一并清掉 searchError", () => {
+    const store = useAppStore.getState();
+    store.setSearchKeyword("x");
+    store.setSearchError(true);
+    store.setSearchKeyword("");
+    expect(useAppStore.getState().searchError).toBe(false);
+  });
 });

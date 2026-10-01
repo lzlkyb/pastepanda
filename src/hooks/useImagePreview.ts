@@ -1,8 +1,7 @@
 /**
  * useImagePreview — 图片预览 + OCR 逻辑（从 CardList.tsx 提取）
  *
- * 管理：预览状态（scale/rotation/offset/panning）、OCR 识别与框选、
- * 预览状态缓存（按图片路径记忆缩放/旋转/偏移）。
+ * 管理：预览状态（适应窗口/缩放/旋转/偏移/平移）、OCR 识别与框选。
  */
 import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,6 +16,7 @@ import {
   formatBytes,
 } from "@/lib/imageFormat";
 import { linesAsRowWords } from "@/lib/screenshot/ocrTable";
+import { clampImageZoom, imageFitScale } from "@/lib/imagePreviewFit";
 
 // ===== 类型 =====
 
@@ -61,6 +61,8 @@ export interface UseImagePreviewReturn {
   previewItem: HistoryItem | null;
   previewLoading: boolean;
   previewScale: number;
+  fitScale: number;
+  isFitMode: boolean;
   previewRotation: number;
   previewOffset: { x: number; y: number };
   isPanning: boolean;
@@ -104,9 +106,11 @@ export interface UseImagePreviewReturn {
   confirmCrop: () => Promise<void>;
   cancelCrop: () => void;
   restoreOriginal: () => void;
-  setPreviewScale: React.Dispatch<React.SetStateAction<number>>;
-  setPreviewRotation: React.Dispatch<React.SetStateAction<number>>;
-  setPreviewOffset: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
+  fitPreview: () => void;
+  zoomPreview: (factor: number) => void;
+  showActualSize: () => void;
+  rotatePreview: () => void;
+  onPreviewImageLoad: (e: React.SyntheticEvent<HTMLImageElement>) => void;
   setSelectedWordIndices: React.Dispatch<React.SetStateAction<Set<string>>>;
   // 事件处理
   handlePreviewWheel: (e: React.WheelEvent) => void;
@@ -126,14 +130,10 @@ export interface UseImagePreviewReturn {
   handlePinImage: () => void;
 }
 
-// 模块级缓存：保存每个图片的上次预览状态（按 content 路径 key）。
-// P3 起 hook 实例随 ImageEditor 挂载/卸载，缓存提升到模块级避免关闭即丢失；上限 50 条淘汰最旧。
-const previewStateCache: Record<string, { scale: number; rotation: number; offset: { x: number; y: number } }> = {};
-
 // 坐标版 OCR（词框）的会话内缓存（path → 结果）。
 // 词框只有「图上选词」需要；没有它，同一条图每次进详情点选词都要重跑一遍
 // PP-OCR 引擎——列表侧 useCardOcr 的 memCache 同款手法（设计稿「零二次识别」）。
-// 上限 50 条，与 previewStateCache 同策略淘汰最旧。
+// 上限 50 条，避免连续查看大量图片后无限增长。
 const ocrWordsCache = new Map<string, OcrResultData>();
 
 export function useImagePreview(): UseImagePreviewReturn {
@@ -145,6 +145,8 @@ export function useImagePreview(): UseImagePreviewReturn {
   const [previewItem, setPreviewItem] = useState<HistoryItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewScale, setPreviewScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
+  const [isFitMode, setIsFitMode] = useState(true);
   const [previewRotation, setPreviewRotation] = useState(0);
   const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -185,13 +187,93 @@ export function useImagePreview(): UseImagePreviewReturn {
   const selectAppendRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
+  const imageDimensionsRef = useRef<{ width: number; height: number } | null>(null);
+  const fitScaleRef = useRef(1);
+  const fitModeRef = useRef(true);
   // 使用 ref 存储预览状态，避免 closePreview 闭包导致 ESC 监听器频繁重新注册
   const previewStateRef = useRef({ scale: 1, rotation: 0, offset: { x: 0, y: 0 } });
-  // 当前预览的图片 content 路径（用于关闭时保存状态）
+  // 当前预览的图片 content 路径（异步加载与复制时校验当前图片）
   const previewContentRef = useRef<string | null>(null);
 
   // 同步预览状态到 ref
   previewStateRef.current = { scale: previewScale, rotation: previewRotation, offset: previewOffset };
+
+  const calculateFit = useCallback((rotation: number) => {
+    const image = imageDimensionsRef.current;
+    const viewport = viewportRef.current;
+    if (!image || !viewport) return 1;
+    return imageFitScale(image.width, image.height, viewport.clientWidth, viewport.clientHeight, rotation);
+  }, []);
+
+  const fitPreviewAtRotation = useCallback((rotation: number) => {
+    const scale = calculateFit(rotation);
+    fitScaleRef.current = scale;
+    fitModeRef.current = true;
+    setFitScale(scale);
+    setIsFitMode(true);
+    setPreviewScale(scale);
+    setPreviewOffset({ x: 0, y: 0 });
+  }, [calculateFit]);
+
+  const fitPreview = useCallback(() => fitPreviewAtRotation(previewStateRef.current.rotation), [fitPreviewAtRotation]);
+
+  const onPreviewImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth, naturalHeight } = e.currentTarget;
+    if (!naturalWidth || !naturalHeight) return;
+    const hadImage = imageDimensionsRef.current != null;
+    const oldFit = fitScaleRef.current;
+    imageDimensionsRef.current = { width: naturalWidth, height: naturalHeight };
+    const nextFit = calculateFit(previewStateRef.current.rotation);
+    fitScaleRef.current = nextFit;
+    setFitScale(nextFit);
+    if (fitModeRef.current) {
+      setPreviewScale(nextFit);
+      setPreviewOffset({ x: 0, y: 0 });
+    } else if (hadImage && oldFit > 0) {
+      // 缩略图换原图时按适应比例换算，保留用户已放大的视觉倍率。
+      setPreviewScale((scale) => clampImageZoom(scale * nextFit / oldFit, nextFit));
+    }
+  }, [calculateFit]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!previewImage || !viewport) return;
+    const observer = new ResizeObserver(() => {
+      const scale = calculateFit(previewStateRef.current.rotation);
+      fitScaleRef.current = scale;
+      setFitScale(scale);
+      if (fitModeRef.current) {
+        setPreviewScale(scale);
+        setPreviewOffset({ x: 0, y: 0 });
+      }
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [previewImage, calculateFit]);
+
+  const zoomPreview = useCallback((factor: number) => {
+    const prev = previewStateRef.current;
+    const next = clampImageZoom(prev.scale * factor, fitScaleRef.current);
+    if (next === prev.scale) return;
+    fitModeRef.current = false;
+    setIsFitMode(false);
+    setPreviewScale(next);
+    const ratio = next / prev.scale;
+    setPreviewOffset({ x: prev.offset.x * ratio, y: prev.offset.y * ratio });
+  }, []);
+
+  const showActualSize = useCallback(() => {
+    fitModeRef.current = false;
+    setIsFitMode(false);
+    setPreviewScale(1);
+    setPreviewOffset({ x: 0, y: 0 });
+  }, []);
+
+  const rotatePreview = useCallback(() => {
+    const rotation = (previewStateRef.current.rotation + 90) % 360;
+    setPreviewRotation(rotation);
+    fitPreviewAtRotation(rotation);
+  }, [fitPreviewAtRotation]);
 
   const openImagePreview = useCallback(async (item: HistoryItem) => {
     const requestContent = item.content || null;
@@ -212,17 +294,15 @@ export function useImagePreview(): UseImagePreviewReturn {
     setCropRect(null);
     setCropOriginal(null);
 
-    // 恢复上次的预览状态（如果有）
-    const cached = item.content ? previewStateCache[item.content] : null;
-    if (cached) {
-      setPreviewScale(cached.scale);
-      setPreviewRotation(cached.rotation);
-      setPreviewOffset(cached.offset);
-    } else {
-      setPreviewScale(1);
-      setPreviewRotation(0);
-      setPreviewOffset({ x: 0, y: 0 });
-    }
+    // 每次打开先适应窗口；不能沿用上次的倍率，否则大图再次打开仍可能被裁掉。
+    imageDimensionsRef.current = null;
+    fitScaleRef.current = 1;
+    fitModeRef.current = true;
+    setFitScale(1);
+    setIsFitMode(true);
+    setPreviewScale(1);
+    setPreviewRotation(0);
+    setPreviewOffset({ x: 0, y: 0 });
 
     // 先尝试用已有缩略图占位（秒开）
     const thumbUrl = await getImageThumbnail(item.content).catch(() => "");
@@ -251,28 +331,16 @@ export function useImagePreview(): UseImagePreviewReturn {
   }, [toast]);
 
   const closePreview = useCallback(() => {
-    // 保存当前预览状态（按图片路径）
-    const contentKey = previewContentRef.current;
-    if (contentKey) {
-      const state = previewStateRef.current;
-      previewStateCache[contentKey] = {
-        scale: state.scale,
-        rotation: state.rotation,
-        offset: state.offset,
-      };
-      // 上限 50 条，淘汰最旧
-      const keys = Object.keys(previewStateCache);
-      if (keys.length > 50) {
-        for (const k of keys.slice(0, keys.length - 50)) {
-          delete previewStateCache[k];
-        }
-      }
-    }
     previewContentRef.current = null;
+    imageDimensionsRef.current = null;
+    fitScaleRef.current = 1;
+    fitModeRef.current = true;
     setPreviewImage(null);
     setPreviewInfo(null);
     setPreviewItem(null);
     setPreviewScale(1);
+    setFitScale(1);
+    setIsFitMode(true);
     setPreviewRotation(0);
     setPreviewOffset({ x: 0, y: 0 });
     setOcrResult(null);
@@ -318,17 +386,17 @@ export function useImagePreview(): UseImagePreviewReturn {
       // 快捷键：0 重置 / R 旋转 / +/- 缩放
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       switch (e.key) {
-        case '0': setPreviewScale(1); setPreviewOffset({ x: 0, y: 0 }); break;
-        case 'r': case 'R': setPreviewRotation(r => (r + 90) % 360); break;
-        case '+': case '=': setPreviewScale(s => Math.min(5, s + 0.25)); break;
-        case '-': setPreviewScale(s => Math.max(0.2, s - 0.25)); break;
+        case '0': fitPreview(); break;
+        case 'r': case 'R': rotatePreview(); break;
+        case '+': case '=': zoomPreview(1.25); break;
+        case '-': zoomPreview(0.8); break;
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // 不能补 getSelectedOcrTexts：它定义在本 effect 之后，写进依赖数组会 TDZ ReferenceError
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, activePanel, toast]);
+  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, activePanel, toast, fitPreview, rotatePreview, zoomPreview]);
 
   // 滚轮 = 缩放，以光标为中心（设计稿交互规格；对齐看图器肌肉记忆，替代旧「滚轮平移」）。
   // 锚点换算：容器 transform = translate(offset)·S(s)（rotation 与均匀缩放可交换，视口坐标下消去），
@@ -336,10 +404,11 @@ export function useImagePreview(): UseImagePreviewReturn {
   // 读 previewStateRef 而非 setState 闭包：连续滚轮间不用等重渲染（同 pan 的 ref 手法）。
   const handlePreviewWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
     const prev = previewStateRef.current;
-    const next = Math.max(0.2, Math.min(5, prev.scale + delta));
+    const next = clampImageZoom(prev.scale * (e.deltaY > 0 ? 0.9 : 1.1), fitScaleRef.current);
     if (next === prev.scale) return;
+    fitModeRef.current = false;
+    setIsFitMode(false);
     const vp = viewportRef.current;
     if (!vp) { setPreviewScale(next); return; }
     const rect = vp.getBoundingClientRect();
@@ -350,9 +419,9 @@ export function useImagePreview(): UseImagePreviewReturn {
     setPreviewOffset({ x: px - k * (px - prev.offset.x), y: py - k * (py - prev.offset.y) });
   }, []);
 
-  // 拖拽平移只在放大后可用（100% 适配视口时无可平移内容，cursor 也由壳层相应置 default）。
+  // 拖拽平移只在大于适应倍率后可用（适应窗口时图片完整可见，无需拖动）。
   const handlePanStart = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0 || previewStateRef.current.scale <= 1) return;
+    if (e.button !== 0 || previewStateRef.current.scale <= fitScaleRef.current * 1.001) return;
     e.preventDefault();
     setIsPanning(true);
     panStartRef.current = { x: e.clientX, y: e.clientY, offsetX: previewOffset.x, offsetY: previewOffset.y };
@@ -361,11 +430,18 @@ export function useImagePreview(): UseImagePreviewReturn {
   const handlePanMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning) return;
     const vp = viewportRef.current;
-    const maxOffset = vp ? Math.max(vp.clientWidth, vp.clientHeight) * 2 : 2000;
-    const clamp = (v: number) => Math.max(-maxOffset, Math.min(maxOffset, v));
+    const image = imageDimensionsRef.current;
+    if (!vp || !image) return;
+    const { scale, rotation } = previewStateRef.current;
+    const sideways = rotation % 180 === 90;
+    const displayWidth = (sideways ? image.height : image.width) * scale;
+    const displayHeight = (sideways ? image.width : image.height) * scale;
+    const maxX = Math.max(0, (displayWidth - vp.clientWidth) / 2);
+    const maxY = Math.max(0, (displayHeight - vp.clientHeight) / 2);
+    const clamp = (v: number, max: number) => Math.max(-max, Math.min(max, v));
     setPreviewOffset({
-      x: clamp(panStartRef.current.offsetX + (e.clientX - panStartRef.current.x)),
-      y: clamp(panStartRef.current.offsetY + (e.clientY - panStartRef.current.y)),
+      x: clamp(panStartRef.current.offsetX + (e.clientX - panStartRef.current.x), maxX),
+      y: clamp(panStartRef.current.offsetY + (e.clientY - panStartRef.current.y), maxY),
     });
   }, [isPanning]);
 
@@ -393,7 +469,7 @@ export function useImagePreview(): UseImagePreviewReturn {
       // 把逐字框聚合回行级单框（linesAsRowWords 对已是整行单框的行幂等）。
       const processed: OcrResultData = { ...result, lines: linesAsRowWords(result.lines) };
       ocrWordsCache.set(path, processed);
-      // 上限 50 条，淘汰最旧（与 previewStateCache 同策略）
+      // 上限 50 条，淘汰最旧。
       if (ocrWordsCache.size > 50) {
         const first = ocrWordsCache.keys().next().value;
         if (first != null) ocrWordsCache.delete(first);
@@ -837,6 +913,8 @@ export function useImagePreview(): UseImagePreviewReturn {
       const dataUrl = out.toDataURL("image/png");
       const originalForRestore = cropOriginal ?? previewImage;
       setCropOriginal(originalForRestore);
+      fitModeRef.current = true;
+      setIsFitMode(true);
       setPreviewImage(dataUrl);
       setPreviewInfo((prev) => prev ? { ...prev, width: out.width, height: out.height, size_str: formatBytes(out.toDataURL("image/png").length) } : prev);
       setCropMode(false);
@@ -855,6 +933,8 @@ export function useImagePreview(): UseImagePreviewReturn {
 
   const restoreOriginal = useCallback(() => {
     if (!cropOriginal) return;
+    fitModeRef.current = true;
+    setIsFitMode(true);
     setPreviewImage(cropOriginal);
     setCropOriginal(null);
     setPreviewInfo(null); // 让 openImagePreview 重新拉取信息，或由外部重新加载
@@ -863,7 +943,7 @@ export function useImagePreview(): UseImagePreviewReturn {
 
   return {
     previewImage, previewInfo, previewLoading,
-    previewScale, previewRotation, previewOffset, isPanning,
+    previewScale, fitScale, isFitMode, previewRotation, previewOffset, isPanning,
     previewContentRef, viewportRef, previewItem,
     ocrResult, ocrLoading, ocrActive, ocrCachedText, activePanel, setActivePanel,
     selectedWordIndices, isSelecting, selRect,
@@ -874,7 +954,7 @@ export function useImagePreview(): UseImagePreviewReturn {
     setCropMode, setCropRect, toggleCropMode,
     handleCropMouseDown, handleCropMouseMove, handleCropMouseUp,
     confirmCrop, cancelCrop, restoreOriginal,
-    setPreviewScale, setPreviewRotation, setPreviewOffset, setSelectedWordIndices,
+    fitPreview, zoomPreview, showActualSize, rotatePreview, onPreviewImageLoad, setSelectedWordIndices,
     handlePreviewWheel, handlePanStart, handlePanMove, handlePanEnd,
     handleOcrRecognize, toggleOcrOverlay, getSelectedOcrTexts, getSelectedOcrJoined,
     handleOcrWordClick, handleOcrSelectStart, handleOcrSelectMove, handleOcrSelectEnd,

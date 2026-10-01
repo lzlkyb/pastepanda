@@ -50,3 +50,19 @@ fn 收尾冲突时递增换名() {
     assert!(!part.exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Android 接收目录的包名段写死在 Rust 里（`EXTERNAL_STORAGE` 环境变量拿不到
+/// 包名），必须与 tauri.conf.json 的 identifier 一致——分叉的表现是文件落进
+/// 一个包名不存在的幽灵目录，手机文件管理器里永远找不到。
+/// 本测试在桌面跑：跨平台配置的另一半永远没人编译就没人验（P1 文档坑 6 的教训）。
+#[test]
+fn android_app_id_与_tauri配置一致() {
+    let conf = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"))
+        .expect("tauri.conf.json 必须在 crate 根");
+    let ident = conf
+        .split("\"identifier\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').nth(1))
+        .expect("tauri.conf.json 里要有 identifier");
+    assert_eq!(ANDROID_APP_ID, ident, "Android 包名段必须跟 tauri.conf.json 走");
+}

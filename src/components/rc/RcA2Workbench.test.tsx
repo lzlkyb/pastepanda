@@ -66,7 +66,12 @@ describe("RcA2Sidebar", () => {
     const onNavigate = vi.fn();
     renderSidebar({ targets: [], rc: selfRc(), selfEnabled: true, onToggleSelf: vi.fn(), onNavigate });
 
-    expect(screen.getByRole("button", { name: "复制" })).toBeTruthy();
+    // 单码会合（2026-09-29）：首页只留输入框 + 两个固定角色的动作入口，
+    // 不再有「我的码 / 复制那一行」——出示方与输入方输的是同一枚码。
+    expect(screen.getByRole("button", { name: "我出示这枚码" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "对方给我这枚码" })).toBeTruthy();
+    // 没填码时两个入口都禁用（不是点了才告诉你缺什么）
+    expect((screen.getByRole("button", { name: "我出示这枚码" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "添加设备" })).toBeNull();
     for (const label of ["文件", "记录", "设置"]) {
       expect(screen.getByRole("button", { name: label })).toBeTruthy();
@@ -164,8 +169,9 @@ describe("RcA2Sidebar", () => {
     });
     fireEvent.click(screen.getByText("更多方式与设备号"));
     expect(screen.getByText("读取中…")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "复制" }) as HTMLButtonElement).disabled).toBe(true);
+    // 设备号没读到时，复制设备号与完整接入串都不能可点
     expect((screen.getByRole("button", { name: "复制设备号" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "完整接入串" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("状态更新时设备保留原顺序，不因分组跳行", () => {
@@ -369,7 +375,7 @@ function renderDetail(props: Partial<ComponentProps<typeof RcA2DeviceDetail>> = 
 }
 
 describe("RcA2DeviceDetail", () => {
-  it("详情区把只看、可控和传文件接到各自真实动作（方案 A：连接走 hero 分体钮）", async () => {
+  it("详情区把只看、可控和传文件接到各自真实动作", async () => {
     const onConnect = vi.fn();
     const onSendFiles = vi.fn();
     const onSetTrust = vi.fn().mockResolvedValue(true);
@@ -378,9 +384,8 @@ describe("RcA2DeviceDetail", () => {
     renderDetail({ onConnect, onSendFiles, onSetTrust, onSetAutoAccept, onForget });
 
     fireEvent.click(screen.getByRole("button", { name: "连接工作电脑" }));
-    // 「只看」不再是常驻按钮：⌄ 菜单里直发（菜单 portal 到 body，screen 可见）
-    fireEvent.click(screen.getByRole("button", { name: "选择工作电脑的发起档位" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /只看/ }));
+    expect(screen.queryByRole("button", { name: "选择工作电脑的发起档位" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "只看" }));
     fireEvent.click(screen.getByRole("button", { name: "传文件" }));
     expect(onConnect.mock.calls).toEqual([
       ["peer-a", "control"],
@@ -420,6 +425,8 @@ describe("RcA2DeviceDetail", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "连接工作电脑" }));
     expect(onConnect).toHaveBeenCalledWith("peer-a", "view");
+    fireEvent.click(screen.getByRole("button", { name: "可控" }));
+    expect(onConnect).toHaveBeenCalledWith("peer-a", "control");
   });
 
   it("「只看」恢复常驻右下（拼装稿 hero-actions），直发 view 档", () => {

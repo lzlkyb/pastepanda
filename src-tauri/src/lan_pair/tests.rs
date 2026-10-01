@@ -1,7 +1,7 @@
 //! 附近设备配对的单测。
 //!
 //! 重点不是“路跑得通”，而是**安全性质真的成立**：
-//! 中间人会不会被 pin 拆穿、分道派生是不是真的分开了。
+//! 中间人会不会被配对码拆穿、分道派生是不是真的分开了。
 //! 这些错了都不会让功能看起来坏，只会静默地不安全。
 
 use super::*;
@@ -17,17 +17,17 @@ fn handshake(now: i64) -> (PendingPair, PendingPair) {
 }
 
 #[test]
-fn test_两端算出同一个pin() {
+fn test_两端算出同一个配对码() {
     let (a, b) = handshake(1000);
-    assert_eq!(a.pin, b.pin, "两端 pin 必须一致，否则用户永远配不上");
+    assert_eq!(a.pin, b.pin, "两端配对码必须一致，否则用户永远配不上");
     assert_eq!(a.shared, b.shared, "共享值也必须一致");
 }
 
 #[test]
-fn test_中间人会让两端pin对不上() {
+fn test_中间人会让两端配对码对不上() {
     // 🔴 这是整个方案的安全基础。M 分别与 A、B 协商，
-    //    两边得到不同的共享值 → 两个 pin 不同 → 用户当场发现。
-    //    这一条若不成立，6 位数字就只是个装饰。
+    //    两边得到不同的共享值 → 两个配对码不同 → 用户当场发现。
+    //    这一条若不成立，这串数字就只是个装饰。
     let now = 1000;
     let mut a = PendingPair::start("B", "B 机", PairRole::Initiator, now).unwrap();
     let mut b = PendingPair::start("A", "A 机", PairRole::Responder, now).unwrap();
@@ -45,18 +45,48 @@ fn test_中间人会让两端pin对不上() {
 
     assert_ne!(
         a.pin, b.pin,
-        "被中间人插足时两端 pin 必须不同，否则整套机制失效"
+        "被中间人插足时两端配对码必须不同，否则整套机制失效"
     );
 }
 
 #[test]
-fn test_pin固定六位() {
-    // 不补齐的话，一端显示 7412、另一端显示 007412，用户会以为不一致。
+fn test_pin固定八位() {
+    // 不补齐的话，一端显示 418920、另一端显示 00418920，用户会以为不一致。
+    // 位数由 PAIR_CODE_DIGITS 收口（2026-09-29 由 6 改 8）——这条测试就是
+    // 那个常量的守卫：谁把它改成别的值而不改测试，这里立刻红。
     for seed in 0u8..30 {
         let pin = verify_pin(&[seed; 32]);
-        assert_eq!(pin.len(), 6, "pin 必须恒为 6 位，实得 {}", pin);
+        assert_eq!(
+            pin.len() as u32,
+            PAIR_CODE_DIGITS,
+            "配对码必须恒为 {} 位，实得 {}",
+            PAIR_CODE_DIGITS,
+            pin
+        );
         assert!(pin.chars().all(|c| c.is_ascii_digit()));
     }
+}
+
+#[test]
+fn test_pin前导零会补齐() {
+    // 真正要钉的性质：**数值不足 8 位时也要显示 8 位**。
+    // 做法是扫描 seed 找一个必然带前导零的码（< 10^7 即有前导零，概率 1/10），
+    // 再断言它的长度仍是 PAIR_CODE_DIGITS。去掉 format! 的补齐这条就会红。
+    // seed 固定、非随机，所以结果可复现；换了派生算法也只是换个 seed 命中。
+    let modulus = 10u32.pow(PAIR_CODE_DIGITS);
+    let padded = (0u16..500)
+        .map(|s| verify_pin(&[(s % 256) as u8; 32]))
+        .find(|p| p.starts_with('0'))
+        .expect("500 个 seed 里必然有前导零码（概率 1 - 0.9^500）");
+    assert_eq!(
+        padded.len() as u32,
+        PAIR_CODE_DIGITS,
+        "前导零码也必须补齐到 {} 位，实得 {}",
+        PAIR_CODE_DIGITS,
+        padded
+    );
+    let value: u32 = padded.parse().unwrap();
+    assert!(value < modulus / 10, "这条命中的必须是前导零档，实得 {}", padded);
 }
 
 #[test]
@@ -87,9 +117,9 @@ fn test_共享值不对就解不开() {
 }
 
 #[test]
-fn test_pin与传输密钥是分道的() {
-    // 🔴 pin 会显示给人看，等于公开。如果两者同源且不分道，
-    //    pin 就泄露了传输密钥的前几个字节。
+fn test_pairing_digest与传输密钥是分道的() {
+    // 🔴 配对码摘要会显示给人看，等于公开。如果两者同源且不分道，
+    //    配对码就泄露了传输密钥的前几个字节。
     let shared = vec![7u8; 32];
     let pin_material = hkdf32(&shared, "pp-pair-verify");
     let key_material = hkdf32(&shared, "pp-key-transfer");

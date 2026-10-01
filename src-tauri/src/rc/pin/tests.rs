@@ -40,7 +40,11 @@ fn handshake() -> (Pairs, Pairs) {
     let (pb, out_b) = b
         .on_req("aa", "台式机", &pk_a, T0 + 10)
         .expect("应答方要接");
-    assert_eq!(pb.pin.len(), 6, "数字从第一次就能显示（公钥随包到了）");
+    assert_eq!(
+        pb.pin.len() as u32,
+        crate::lan_pair::PAIR_CODE_DIGITS,
+        "配对码从第一次就能显示（公钥随包到了），且位数与全 app 口径一致"
+    );
     let Outgoing::Packet {
         kind: k, pk: pk_b, ..
     } = out_b
@@ -55,7 +59,7 @@ fn handshake() -> (Pairs, Pairs) {
 /// 🔴 全组最要紧的一条：**两端拿到同一个公钥，数字就必须一样**。
 /// 这就是「用户对一眼数字」能成立的全部前提。
 #[test]
-fn 走完一轮握手两端数字一致且是六位() {
+fn 走完一轮握手两端配对码一致且是八位() {
     let (a, b) = handshake();
     assert_eq!(
         a.prompt(T0 + 20).unwrap().pin,
@@ -65,7 +69,7 @@ fn 走完一轮握手两端数字一致且是六位() {
 }
 
 /// 中间人换了公钥 → 两端算出**不同**的共享值 → 数字对不上。
-/// 这一条是「6 位数字能挡主动替换」的证明；它红了就说明整条路的安全前提没了。
+/// 这一条是「配对码能挡主动替换」的证明；它红了就说明整条路的安全前提没了。
 #[test]
 fn 有人换过公钥时两端数字必须不同() {
     let a = Pairs::new(store());
@@ -93,7 +97,11 @@ fn 有人换过公钥时两端数字必须不同() {
     assert!(a.on_resp("bb", &pk_b, T0 + 20));
 
     let pa = a.prompt(T0 + 20).unwrap();
-    assert_eq!(pb.pin.len(), 6);
+    assert_eq!(
+        pb.pin.len() as u32,
+        crate::lan_pair::PAIR_CODE_DIGITS,
+        "配对码位数与全 app 口径一致（收口在 lan_pair::PAIR_CODE_DIGITS）"
+    );
     assert_ne!(
         pa.pin, pb.pin,
         "被换了公钥之后两端数字必须不同——相同就说明这层防护是假的"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { relativeTime, truncate, cn, looksLikeIdentifier, parseImagePlaceholderSize, resolveImageCardDisplay, getImageOcrFullText, type ImageCardDisplayInput } from "@/lib/utils";
+import { relativeTime, truncate, cn, looksLikeIdentifier, parseImagePlaceholderSize, resolveImageCardDisplay, getImageOcrFullText, formatPairCode, pairCodeDigest, type ImageCardDisplayInput } from "@/lib/utils";
 
 /** 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"（与 Rust chrono::Local 写入格式一致） */
 function fmtLocal(d: Date = new Date()): string {
@@ -214,5 +214,78 @@ describe("getImageOcrFullText", () => {
     expect(getImageOcrFullText(img(), { status: "ocr" })).toBeNull();
     expect(getImageOcrFullText(img(), { status: "fail" })).toBeNull();
     expect(getImageOcrFullText(img())).toBeNull();
+  });
+});
+
+describe("formatPairCode（配对码唯一展示口径，三条配对路共用）", () => {
+  it("8 位码按 4+4 分组", () => {
+    expect(formatPairCode("41820620")).toBe("4182 0620");
+    expect(formatPairCode("60429183")).toBe("6042 9183");
+  });
+
+  it("不满 4 位不分组（输入框半截态原样显示）", () => {
+    expect(formatPairCode("6")).toBe("6");
+    expect(formatPairCode("604")).toBe("604");
+    expect(formatPairCode("6042")).toBe("6042");
+  });
+
+  it("超过 8 位继续按 4 分组（不截断，兼容未来更长的码）", () => {
+    expect(formatPairCode("123456789")).toBe("1234 5678 9");
+    expect(formatPairCode("123456789012")).toBe("1234 5678 9012");
+  });
+
+  it("非数字字符剥掉而不是原样留着（粘贴带空格/横线的码）", () => {
+    expect(formatPairCode("4182-0620")).toBe("4182 0620");
+    expect(formatPairCode("4182 0620")).toBe("4182 0620");
+    expect(formatPairCode(" 4182\t0620\n")).toBe("4182 0620");
+  });
+
+  it("空串 / 全非数字 → 空串（不抛异常）", () => {
+    expect(formatPairCode("")).toBe("");
+    expect(formatPairCode("--")).toBe("");
+  });
+});
+
+describe("pairCodeDigest（凭证 → 8 位核对数）", () => {
+  // 已知答案向量：**移动端必须折出同一串**（step ③ 手机粘码后要和电脑对数）。
+  // 改算法这三行先红——那是一次跨端口径破裂，不是「顺手优化」。
+  const KNOWN: [string, string][] = [
+    ["PP1-3F9A21C0DEADBEEF0123456789abcdef01234567-7K3P", "28493116"],
+    ["PP1a", "62174991"],
+    ["PP1b", "78952610"],
+  ];
+
+  it("已知答案向量（跨端口径，改了这三行必红）", () => {
+    for (const [code, want] of KNOWN) {
+      expect(pairCodeDigest(code)).toBe(want);
+    }
+  });
+
+  it("同一个凭证折出同一个数，且始终 8 位、前导零补齐", () => {
+    const code = "PP1-3F9A21C0DEADBEEF0123456789abcdef01234567-7K3P";
+    expect(pairCodeDigest(code)).toBe(pairCodeDigest(code));
+    expect(pairCodeDigest(code)).toMatch(/^\d{8}$/);
+    // 空白是凭证的一部分，不静默修掉：两端各折自己的那串，容错留给调用方 trim
+    expect(pairCodeDigest(`${code} `)).not.toBe(pairCodeDigest(code));
+  });
+
+  it("差一个字符的数就不同（人眼核对才有意义）", () => {
+    expect(pairCodeDigest("PP1a")).not.toBe(pairCodeDigest("PP1b"));
+    expect(pairCodeDigest("PP1-aaaa-0001")).not.toBe(pairCodeDigest("PP1-aaaa-0002"));
+  });
+
+  it("折出来能直接走 4+4 展示口径", () => {
+    for (const [code] of KNOWN) {
+      expect(formatPairCode(pairCodeDigest(code))).toMatch(/^\d{4} \d{4}$/);
+    }
+  });
+
+  it("不是常量函数（9000 份凭证几乎不重样）", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 9000; i++) {
+      seen.add(pairCodeDigest(`PP1-${i.toString(36).padStart(8, "x")}-ABCD`));
+    }
+    // 8 位十进制 ≈ 27 bit，生日碰撞率约 0.3%；留 1% 余量，塌成常量会远低于此
+    expect(seen.size).toBeGreaterThan(8900);
   });
 });

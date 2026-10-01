@@ -81,6 +81,18 @@ export function rcShortPairCancel(): Promise<void> {
   return invoke<void>("rc_short_pair_cancel");
 }
 
+/**
+ * 单枚 8 位码会合（两端各输同一个数）。
+ *
+ * `listen` 如实传用户动作：出示方 true，输入方 false。两端必须是**相反**的
+ * 两个角色——同一枚码派生出两个临时身份，同角色只会自己连自己。
+ * 安全等级 ≈ 27 bit（低于两码版的 ≈ 53 bit），换取用户只记一个数；
+ * 说明写在 `src-tauri/src/rc/short_pair.rs` 的 `exchange_pin` 上。
+ */
+export function rcPinPairBegin(code: string, listen: boolean): Promise<RcExchangeStarted> {
+  return invoke<RcExchangeStarted>("rc_pin_pair_begin", { code, listen });
+}
+
 export function rcExchangeCheck(nodeId: string): Promise<"waiting" | "paired"> {
   return invoke<"waiting" | "paired">("rc_exchange_check", { nodeId });
 }

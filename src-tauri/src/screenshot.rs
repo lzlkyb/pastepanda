@@ -706,7 +706,7 @@ fn create_window(app: &AppHandle) {
         if let Ok(mut slot) = SHOT_START.lock() {
             *slot = Some((generation, Instant::now()));
         }
-        match tauri::WebviewWindowBuilder::new(
+        let shot_builder = tauri::WebviewWindowBuilder::new(
             &app,
             WINDOW_LABEL,
             tauri::WebviewUrl::App("screenshot.html".into()),
@@ -715,13 +715,16 @@ fn create_window(app: &AppHandle) {
         .inner_size(w as f64, h as f64)
         .position(x as f64, y as f64)
         .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(false)
-        .transparent(true)
-        .visible(false)
-        .build()
+        .visible(false);
+        // 置顶/无边框/跳过任务栏/阴影/透明是桌面窗口概念（mobile 全屏页面无这些属性）
+        #[cfg(desktop)]
+        let shot_builder = shot_builder
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .shadow(false)
+            .transparent(true);
+        match shot_builder.build()
         {
             Ok(window) => {
                 // ⚠️ builder 的 inner_size / position 收的是**逻辑像素**
@@ -1053,6 +1056,7 @@ pub fn close_screenshot_window(app: tauri::AppHandle) {
     // （Esc / 失焦自动取消 / 各个完成出口 / 截屏失败页的关闭按钮），
     // 它们最终都汇到这个命令，在这里收口才不会漏（规则 11.1）。
     purge_ocr_temp(&app);
+    #[cfg(desktop)]
     unregister_longshot_escape(&app); // 兜底：长截图中强关窗也要释放全局 Esc
     // 截图会话结束 → 先解除隐私门控再 refresh（refresh 里 show 门内才放行），
     // 岛回归（有待办就回来；没有则此处 hide 是空操作）
@@ -1221,13 +1225,16 @@ pub async fn open_longshot_status(
             .title("")
             .inner_size(LONGSHOT_W, LONGSHOT_H)
             .resizable(false)
-            .decorations(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .shadow(false)
-            .transparent(true)
-            .focused(false) // 不抢焦点：抢了会把滚轮目标窗口激活态打乱
             .visible(false);
+            // 置顶/无边框/跳过任务栏/阴影/透明/不抢焦点是桌面窗口概念（mobile 无这些属性）
+            #[cfg(desktop)]
+            let mut b = b
+                .decorations(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .shadow(false)
+                .transparent(true)
+                .focused(false);
             if let Some(p) = &d {
                 b = b.data_directory(p.clone());
             }
@@ -1311,6 +1318,7 @@ pub async fn open_longshot_status(
 /// 关闭长截图状态小窗（长截图结束/失败/放弃都走这里，在 finally 里调用）
 #[tauri::command]
 pub fn close_longshot_status(app: tauri::AppHandle) {
+    #[cfg(desktop)]
     unregister_longshot_escape(&app);
     if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
         let _ = win.close();
@@ -1337,6 +1345,8 @@ pub fn close_longshot_status(app: tauri::AppHandle) {
 // close_longshot_status / show_screenshot_window / close_screenshot_window，
 // 任一路径都会释放，避免异常退出后 Esc 被永久占着。
 
+// 全局快捷键是桌面插件（mobile 无此概念）：三个辅助函数桌面限定，调用点各自 cfg。
+#[cfg(desktop)]
 fn longshot_esc_shortcut() -> Option<tauri_plugin_global_shortcut::Shortcut> {
     use std::str::FromStr;
     tauri_plugin_global_shortcut::Shortcut::from_str("Escape").ok()
@@ -1349,9 +1359,14 @@ fn longshot_esc_shortcut() -> Option<tauri_plugin_global_shortcut::Shortcut> {
 /// 全局 Esc 根本没注册上。逃生舱不能依赖它要保护的东西。
 #[tauri::command]
 pub fn arm_longshot_escape(app: tauri::AppHandle) -> bool {
-    register_longshot_escape(&app)
+    // 全局 Esc 逃生舱是桌面能力；mobile 只有状态窗按钮兜底
+    #[cfg(desktop)]
+    { register_longshot_escape(&app) }
+    #[cfg(mobile)]
+    { false }
 }
 
+#[cfg(desktop)]
 fn register_longshot_escape(app: &AppHandle) -> bool {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     let Some(sc) = longshot_esc_shortcut() else {
@@ -1378,6 +1393,7 @@ fn register_longshot_escape(app: &AppHandle) -> bool {
     }
 }
 
+#[cfg(desktop)]
 fn unregister_longshot_escape(app: &AppHandle) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let Some(sc) = longshot_esc_shortcut() else {
@@ -1500,6 +1516,7 @@ const LONGSHOT_H: f64 = 242.0;
 /// 重新显示截图窗口（长截图完成后恢复，状态保留）
 #[tauri::command]
 pub fn show_screenshot_window(app: tauri::AppHandle) {
+    #[cfg(desktop)]
     unregister_longshot_escape(&app); // 长截图已结束，释放全局 Esc
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.show();
@@ -1896,19 +1913,30 @@ pub fn virtual_screen_size() -> (i32, i32) {
 /// 当前贴图路径列表
 #[tauri::command]
 pub fn list_pinned_images() -> Vec<String> {
-    crate::pinned_window::list_pinned_images()
+    // 贴图是桌面功能（pinned_window 模块 mobile 不编译）
+    #[cfg(desktop)]
+    let list = crate::pinned_window::list_pinned_images();
+    #[cfg(mobile)]
+    let list = Vec::new();
+    list
 }
 
 /// 关闭指定贴图（面板"关闭单张"）
 #[tauri::command]
 pub fn close_pinned_image_by_path(path: String) {
+    #[cfg(desktop)]
     crate::pinned_window::close_pinned_by_path(&path);
+    #[cfg(mobile)]
+    let _ = path;
 }
 
 /// 管理面板"旋转/翻转"：按 path 向贴图窗口下发变换指令（action: 1=旋转90° 2=水平翻转 3=垂直翻转 4=恢复）
 #[tauri::command]
 pub fn transform_pinned_image_by_path(path: String, action: u8) {
+    #[cfg(desktop)]
     crate::pinned_window::transform_pinned_image_by_path(&path, action);
+    #[cfg(mobile)]
+    let _ = (path, action);
 }
 
 /// 托盘"贴图管理"入口：显示主窗口并通知前端弹出贴图面板
@@ -2286,18 +2314,24 @@ unsafe fn enum_controls_impl(
 struct ComInit;
 impl ComInit {
     fn new() -> Option<Self> {
-        use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-        // S_OK(0) 才代表本调用新初始化了一个公寓；其余情况不该由我们卸载。
-        let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-        if hr.0 == 0 {
-            Some(ComInit)
-        } else {
+        // COM 公寓初始化是 Windows 概念（mobile 无 COM，恒 None = 无守卫）
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+            // S_OK(0) 才代表本调用新初始化了一个公寓；其余情况不该由我们卸载。
+            let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            if hr.0 == 0 {
+                return Some(ComInit);
+            }
             None
         }
+        #[cfg(not(target_os = "windows"))]
+        { None }
     }
 }
 impl Drop for ComInit {
     fn drop(&mut self) {
+        #[cfg(target_os = "windows")]
         unsafe {
             windows::Win32::System::Com::CoUninitialize();
         }

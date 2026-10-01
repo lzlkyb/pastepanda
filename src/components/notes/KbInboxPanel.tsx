@@ -85,6 +85,8 @@ export function KbInboxPanel() {
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<InboxCandidate[]>([]);
   const [loading, setLoading] = useState(false);
+  /** 首批拉取失败。与空态「这批已经处理完了」必须分开（U3.5） */
+  const [loadError, setLoadError] = useState(false);
   /** 刚忽略掉的那一条，给一个可撤销的窗口。不用 toast（②），就在原位给条提示 */
   const [justDismissed, setJustDismissed] = useState<InboxCandidate | null>(null);
   // L4：第一次真的有候选时解释一句。空的时候不说（那是 L3，不适用）
@@ -126,13 +128,21 @@ export function KbInboxPanel() {
 
   const loadFirstBatch = useCallback(async () => {
     setLoading(true);
-    const [list, groups] = await Promise.all([
-      kbInboxList(BATCH, 0, view),
-      kbInboxGroupCounts(view),
-    ]);
-    setRows(list);
-    setGroupCounts(groups);
-    setLoading(false);
+    setLoadError(false);
+    try {
+      const [list, groups] = await Promise.all([
+        kbInboxList(BATCH, 0, view),
+        kbInboxGroupCounts(view),
+      ]);
+      setRows(list);
+      setGroupCounts(groups);
+    } catch {
+      // 🔴 失败不能落成空态：否则会被渲染成「这批已经处理完了」（U3.5）
+      setRows([]);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, [view]);
 
   /**
@@ -142,9 +152,16 @@ export function KbInboxPanel() {
   const loadMore = useCallback(async () => {
     if (loadingMore || loading) return;
     setLoadingMore(true);
-    const more = await kbInboxList(BATCH, rows.length, view);
-    setRows((cur) => [...cur, ...more]);
-    setLoadingMore(false);
+    setLoadError(false);
+    try {
+      const more = await kbInboxList(BATCH, rows.length, view);
+      setRows((cur) => [...cur, ...more]);
+    } catch {
+      // 保持已有行；api 层已 toast。不把「加载更多失败」伪装成「到底了」
+      setLoadError(true);
+    } finally {
+      setLoadingMore(false);
+    }
   }, [loading, loadingMore, rows.length, view]);
 
   // 横幅计数无论展开与否都要拉（它就是入口）；候选列表只在展开后拉。
@@ -311,6 +328,14 @@ export function KbInboxPanel() {
 
           {loading && rows.length === 0 ? (
             <div className={styles.listEmpty}>正在加载…</div>
+          ) : loadError && rows.length === 0 ? (
+            /* 错误态抢在「处理完了」前面：两者都是 rows.length===0，含义相反 */
+            <div className={styles.loadErrorBox} role="alert">
+              <div>没能把候选读出来——这不是「已经处理完」，数据还在。</div>
+              <button type="button" className={styles.retryBtn} onClick={() => void loadFirstBatch()}>
+                重试
+              </button>
+            </div>
           ) : rows.length === 0 ? (
             <div className={styles.listEmpty}>这批已经处理完了。</div>
           ) : (
@@ -331,6 +356,15 @@ export function KbInboxPanel() {
                   </Fragment>
                 );
               })}
+              {/* 已有行时的「加载更多失败」：不伪装成到底了（U3） */}
+              {loadError && (
+                <div className={styles.loadErrorBox} role="alert">
+                  <span>后面几条没读出来。</span>
+                  <button type="button" className={styles.retryBtn} onClick={() => void loadMore()}>
+                    重试加载更多
+                  </button>
+                </div>
+              )}
               <LoadMoreSentinel
                 hasMore={rows.length < total}
                 loading={loadingMore}

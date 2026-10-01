@@ -246,7 +246,7 @@ pub fn lan_set_device_paused(
 pub struct LanPairState {
     pub peer_id: String,
     pub peer_name: String,
-    /// 两端核对用的 6 位数字。协商完成前为空串。
+    /// 两端核对用的配对码（PAIR_CODE_DIGITS 位）。协商完成前为空串。
     pub pin: String,
     /// `"initiator"` / `"responder"`。接受方要先弹一个“对方想配对”。
     pub role: String,
@@ -326,10 +326,10 @@ pub fn lan_pair_start(app: tauri::AppHandle, device_id: String) -> Result<(), St
 /// [`crate::lan_pair::PendingPair::stashed_key`]，本函数发现暂存就当场完成。
 ///
 /// ❗ 为何不能干脆让发起方免确认（用户提过这个，已否决）：
-/// 6 位安全码是共享密钥的**指纹**，中间人同时冒充两边时，
-/// 发起方与他算出 pin1、接受方与他算出 pin2。
+/// 配对码是共享密钥的**指纹**，中间人同时冒充两边时，
+/// 发起方与他算出码1、接受方与他算出码2。
 /// **只有把两个屏幕上的数字放在一起比，才能发现它们不一样**。
-/// 发起方免确认 = 接受方一个人盯着 pin2 而没有参照物，
+/// 发起方免确认 = 接受方一个人盯着码2 而没有参照物，
 /// 他一点确认，发起方就自动把真密钥送给了中间人。整道核对门会白设。
 #[tauri::command]
 pub fn lan_pair_confirm(app: tauri::AppHandle) -> Result<(), String> {

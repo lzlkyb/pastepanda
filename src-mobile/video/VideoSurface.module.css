@@ -1,0 +1,15 @@
+/* VideoSurface — 状态层（画布样式由会话壳 .canvas 承担，这里只管诚实文案）。 */
+
+.status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary, #9aa8bd);
+  background: var(--app-bg, #0b1220);
+  pointer-events: none;
+}

@@ -345,6 +345,7 @@ export function NoteDetailPane({
         />
       ) : (
         <NoteEditorPane
+          detailSurface
           /* 初值给当前草稿而不是 `note.content`：从历史视图返回时本组件会重新挂载，
              给 note.content 就把用户未保存的修改换成了库里的旧文。 */
           initialContent={ed.content}

@@ -686,18 +686,24 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Alt+T")
         .to_string();
-    let hotkey_config = crate::hotkey_manager::HotkeyConfig {
-        show_window,
-        seq_paste,
-        index_prefix: "Ctrl+Alt".to_string(),
-        stack_toggle,
-        stack_paste,
-        quick_paste,
-        screenshot,
-        daily_note,
-        todo_island,
-    };
-    crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
+    // 全局热键是桌面专属（hotkey_manager 模块在 mobile 不编译）；手机端诚实报不支持
+    #[cfg(desktop)]
+    {
+        let hotkey_config = crate::hotkey_manager::HotkeyConfig {
+            show_window,
+            seq_paste,
+            index_prefix: "Ctrl+Alt".to_string(),
+            stack_toggle,
+            stack_paste,
+            quick_paste,
+            screenshot,
+            daily_note,
+            todo_island,
+        };
+        crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
+    }
+    #[cfg(mobile)]
+    Err("全局热键仅桌面端支持".to_string())
 }
 
 /// 隐藏托盘弹窗（前端点击弹窗外部时调用）
@@ -1016,14 +1022,16 @@ fn build_editor_window(app: &tauri::AppHandle, content_type: Option<&str>) -> Re
         _ => "PastePanda Markdown 编辑器",
     };
 
-    let mut builder = WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         app,
         "md-editor",
         tauri::WebviewUrl::App("editor.html".into()),
     )
-    .title(title)
-    .decorations(false)
-    .visible(false);
+    .title(title);
+    // 自绘标题栏是桌面窗口概念（mobile 全屏页面无装饰位）
+    #[cfg(desktop)]
+    let mut builder = builder.decorations(false);
+    let mut builder = builder.visible(false);
 
     // 方案 A（近全屏留边）：按主窗口所在显示器（回退主显示器）计算 94%×90% 的居中尺寸，
     // 四周保留呼吸边，不再 100% 霸屏。
@@ -1044,7 +1052,10 @@ fn build_editor_window(app: &tauri::AppHandle, content_type: Option<&str>) -> Re
         let y = pos.y as f64 / scale + (mon_h - win_h) / 2.0;
         builder = builder.inner_size(win_w, win_h).position(x, y);
     } else {
-        builder = builder.inner_size(1280.0, 800.0).center();
+        builder = builder.inner_size(1280.0, 800.0);
+        // 居中是桌面窗口定位概念（mobile 页面默认铺满，无窗口定位）
+        #[cfg(desktop)]
+        { builder = builder.center(); }
     }
 
     let window = builder

@@ -9,8 +9,11 @@
  *   + 结束图标 + 展开箭头。压缩量仍只由 `.who` 承担（09-22 窄窗崩坏的教训）。
  * - **抽屉（点击展开）**：提示条 / 文件请求完整卡片 / 输入权交接（乙-③）/
  *   事实表（指纹·范围·画质·免确认）/ 不发送声音 / 免确认二段确认（U9）+ 立即结束。
- * - **自动展开**：文件请求或对端变更到达时弹开抽屉一次（规则 15：触发可见），
- *   胶囊同时挂橙点徽标；用户收起后不重复弹，徽标留到处理完。
+ * - **自动展开**：只有**需要用户拍板**的文件请求到达时弹开抽屉一次（规则 15：
+ *   对端在等答复，要兜住「人不在旁边」）；编码/画质/范围/扬声器这类纯知会型
+ *   通知默认不弹（2026-10-01 用户拍板）——它们没有要按的键，弹出整只抽屉只会
+ *   把人从手头的远程操作里拽开，改由胶囊橙点徽标常驻告知，提示条留在抽屉里
+ *   待点开查看。徽标留到用户处理完为止。
  */
 import { rcCanControl } from "@/lib/rcCapability";
 import { useEffect, useId, useRef, useState } from "react";
@@ -113,21 +116,12 @@ export function RcControlBanner({
   // 丙-③：暂停徽标的文案判据收在 `@/lib/rcVideoPause`（与抽屉里那颗键同一措辞源）。
   const pauseBadge = rcPauseBadgeOf(videoPaused ?? false);
 
-  // 自动展开：只在「新东西到达」时弹一次。asks 按数量增量判（并发第二个请求不重复弹）；
-  // notice 按内容签名判——用户点「知道了」清掉后再来新的会再次展开。
+  // 自动展开的边界：**只有文件请求会弹**（见组件头注释，2026-10-01 拍板）。
   const prevAsks = useRef(0);
   useEffect(() => {
     if (file.asks.length > prevAsks.current) setOpen(true);
     prevAsks.current = file.asks.length;
   }, [file.asks.length]);
-  const prevNoticeSig = useRef("");
-  useEffect(() => {
-    const sig = `${scopeNotice ?? ""}|${streamNotice ? `${streamNotice.kind}:${streamNotice.name}` : ""}|${spkMutedByPeer ? 1 : 0}`;
-    if (sig !== prevNoticeSig.current) {
-      if (scopeNotice || streamNotice || spkMutedByPeer) setOpen(true);
-      prevNoticeSig.current = sig;
-    }
-  }, [scopeNotice, streamNotice, spkMutedByPeer]);
 
   // 展开时：Esc / 点击胶囊外收起。抽屉是就地展开不是模态，用户去点别处 = 收起意图。
   useEffect(() => {
@@ -186,7 +180,9 @@ export function RcControlBanner({
           <span className={styles.timer} aria-hidden="true">
             {formatDuration(now - session.started_ms)}
           </span>
-          {hasNotes && <span className={styles.ctrlBadge} title="有需要你处理的提示（已自动展开过抽屉）" />}
+          {hasNotes && (
+            <span className={styles.ctrlBadge} title="有需要你处理的提示，点开胶囊查看" />
+          )}
         </button>
         {/* 🔴 乙-③：收回状态的常驻徽标挂在 `.ctrlPill` 那一行、**与胶囊主键同级**
             （DOM 里 button 不能套 button，套了既非法又会让点徽标顺带展开抽屉）。

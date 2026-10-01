@@ -33,6 +33,8 @@ use super::input::{
     set_clipboard_text_async,
 };
 use super::input::{InputEvent, KeyMode, ScreenRegion};
+// VideoCodec 仅 Windows 宿主编码路径使用（mobile 无推流管线）
+#[cfg(target_os = "windows")]
 use super::encode_h264::VideoCodec;
 use super::protocol::SessionPhase;
 use super::service::{
@@ -43,7 +45,9 @@ use crate::sync::transport::write_frame;
 // 后台任务与画面能力上报已拆到 `inbound_tasks.rs`（2026-09-21）；
 // 尺寸工具（primary/virtual_screen_size）也一并搬过去，这里通过下面的
 // `use` 把它们拉回来，调用点保持原样。
-use super::inbound_tasks::{primary_screen_size, send_caps_frame, virtual_screen_size};
+use super::inbound_tasks::send_caps_frame;
+// 尺寸工具是 Windows 宿主专属（采集坐标系），mobile 无推流管线用不到
+#[cfg(target_os = "windows")]
 use super::inbound_tasks::{primary_screen_size, virtual_screen_size};
 
 /// 被控端推流任务。
@@ -434,6 +438,8 @@ pub(super) async fn handle_inbound_input(
         InputEvent::AudioOn { on } => {
             // C-1 拍板：只看可收系统声音。AudioOn 只切换发起端收听开关，
             // 不改主机环境，故 inbound 侧不要求 Control（与 send_input 白名单一致）。
+            // 音频镜像位是 Windows 宿主专属字段（mobile 无音频链路）。
+            #[cfg(target_os = "windows")]
             svc.set_audio_muted(!*on);
             // 与 quality/codec 同款分工：note 里传**原值**（on/off），中文文案归前端。
             // 传句子会让被控横幅的「不是 codec 就是画质」分支把它读成画质。
@@ -450,7 +456,9 @@ pub(super) async fn handle_inbound_input(
             let err = if assert_control_allowed(cap).is_err() {
                 Some("当前会话仅为「只看」，无法改对方主机声音".to_string())
             } else {
-                match super::audio::spk_mute_set(*on) {
+                // 扬声器静音走 Windows 音频端点（mobile 宿主不存在，诚实回报不支持）
+                #[cfg(target_os = "windows")]
+                { match super::audio::spk_mute_set(*on) {
                     Ok(actual) => {
                         // 记「对端操作过且未撤销」——横幅据此摆提示与恢复入口。
                         svc.set_spk_muted_by_peer(actual);
@@ -464,7 +472,9 @@ pub(super) async fn handle_inbound_input(
                         log::warn!("[RC] 切换本机扬声器静音失败：{e}");
                         Some(format!("切换主机扬声器失败：{e}"))
                     }
-                }
+                } }
+                #[cfg(not(target_os = "windows"))]
+                { Some("本机无音频输出链路（宿主仅 Windows）".to_string()) }
             };
             // 回帧带**读回的真实值**（可能与我们请求的不同），发起端的按钮态以它为准。
             svc.emit_host_audio(err.as_deref()).await;
@@ -539,10 +549,14 @@ pub(super) async fn handle_inbound_input(
     let region = {
         let opts = svc.stream_opts_snapshot();
         if opts.monitor >= 0 {
-            match crate::screenshot::monitor_region(opts.monitor) {
+            // 指定屏几何是 Windows 宿主能力（mobile 无多屏采集）
+            #[cfg(target_os = "windows")]
+            { match crate::screenshot::monitor_region(opts.monitor) {
                 Ok((x, y, w, h)) => ScreenRegion { x, y, w, h },
                 Err(_) => ScreenRegion::virtual_screen(),
-            }
+            } }
+            #[cfg(not(target_os = "windows"))]
+            { ScreenRegion::virtual_screen() }
         } else if opts.virtual_screen {
             ScreenRegion::virtual_screen()
         } else {

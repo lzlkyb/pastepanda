@@ -4,6 +4,8 @@ use super::*;
 
 /// 编码标准决策（纯函数，规则 11.1：判据两处调用必收口）。
 /// 档位自带 HEVC 偏好（uhd60）优先于显式 SetCodec；AV1 只在显式选择时启用。
+/// （Windows 宿主专属：VideoCodec 属编码器域，mobile 无推流管线不编译）
+#[cfg(target_os = "windows")]
 pub(in crate::rc) fn want_stream_codec(
     profile_hevc: bool,
     codec: &crate::rc::stream_cfg::StreamCodec,
@@ -190,22 +192,28 @@ impl InboundVideo {
     ) -> crate::rc::perf::ReportExtra {
         let pipeline = if !self.perf_last.produced {
             "空转".to_string()
-        } else if self.h264.is_some() {
-            // 编码标准取自编码器本体（HEVC 可能已回落 H.264）
-            let std = self
-                .h264
-                .as_ref()
-                .map(|e| e.codec().as_str().to_uppercase())
-                .unwrap_or_else(|| "?".into());
-            // GPU 模式不好从外面读（`gpu_mode` 私有）——但 `gpu_disabled`
-            // 能区分「零拷贝可用」与「已判死回落 CPU」，够诊断用了。
-            if self.gpu_disabled {
-                format!("{std}-CPU（零拷贝已判死）")
-            } else {
-                std
-            }
         } else {
-            "JPEG".to_string()
+            // 编码器 / 零拷贝判死位是 Windows 宿主专属字段（mobile 无推流管线）
+            #[cfg(target_os = "windows")]
+            { if self.h264.is_some() {
+                // 编码标准取自编码器本体（HEVC 可能已回落 H.264）
+                let std = self
+                    .h264
+                    .as_ref()
+                    .map(|e| e.codec().as_str().to_uppercase())
+                    .unwrap_or_else(|| "?".into());
+                // GPU 模式不好从外面读（`gpu_mode` 私有）——但 `gpu_disabled`
+                // 能区分「零拷贝可用」与「已判死回落 CPU」，够诊断用了。
+                if self.gpu_disabled {
+                    format!("{std}-CPU（零拷贝已判死）")
+                } else {
+                    std
+                }
+            } else {
+                "JPEG".to_string()
+            } }
+            #[cfg(not(target_os = "windows"))]
+            { "JPEG".to_string() }
         };
         let active_quality = if self.svc.auto_enabled() {
             self.svc.auto_tier_name()
@@ -229,14 +237,18 @@ impl InboundVideo {
         // 收尾时 `perf_last` 可能停在最后一个空转圈 → 别让它把管线谎报成「空转」
         let mut extra = self.perf_extra(&opts, interval);
         if extra.pipeline == "空转" {
-            extra.pipeline = if self.h264.is_some() {
+            // 编码器字段 Windows 宿主专属（同 perf_extra）
+            #[cfg(target_os = "windows")]
+            { extra.pipeline = if self.h264.is_some() {
                 self.h264
                     .as_ref()
                     .map(|e| e.codec().as_str().to_uppercase())
                     .unwrap_or_else(|| "H264".into())
             } else {
                 "JPEG".to_string()
-            };
+            }; }
+            #[cfg(not(target_os = "windows"))]
+            { extra.pipeline = "JPEG".to_string(); }
         }
         extra
     }

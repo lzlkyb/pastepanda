@@ -1,8 +1,8 @@
 /**
- * ImagePreviewDialog — 图片全屏查看层（「C壳+B芯」重做，设计稿 design/图片详情-全屏查看层重做-设计稿.html）。
+ * ImagePreviewDialog — 宽幅图片详情弹框（设计稿 design/记录模式图片详情-弹框风格统一-设计稿.html）。
  *
- * 壳：720px 模态框 → 全屏覆盖层，图片吃满；元信息变左上角半透明胶囊（hover 浮现）。
- * 芯：底部一条胶囊工具栏（ImageToolbar），OCR 摘要 / 导出 / 码面板互斥浮出
+ * 壳：复用通用弹框的标题栏和窗体材质，图片仍占主要空间。
+ * 芯：底部一条操作栏（ImageToolbar），OCR 摘要 / 导出 / 码面板互斥浮出
  *     （OcrSummaryPanel / ExportPopover / BarcodePanel），面板互斥收口在 hook 的 activePanel。
  * OCR 零二次识别：全文进场即从列表缓存带出（item.ocr_text），词框只在「选词」时按需跑。
  */
@@ -13,6 +13,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useToast } from "@/components/Toast";
 import { barcodeBoundingRect } from "@/lib/utils";
+import { shouldZoomImageWheel } from "@/lib/imagePreviewWheel";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useImageBarcodes } from "@/hooks/useImageBarcodes";
 import { BarcodePanel } from "@/components/BarcodePanel";
@@ -41,7 +42,8 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
   useModalScrollLock();
   const {
     previewImage, previewInfo, previewLoading,
-    previewScale, previewRotation, previewOffset, isPanning,
+    previewScale, fitScale, previewRotation, previewOffset, isPanning,
+    onPreviewImageLoad,
     previewContentRef, viewportRef, previewItem,
     ocrResult, ocrLoading, ocrActive, selectedWordIndices, isSelecting, selRect,
     activePanel, setActivePanel,
@@ -134,26 +136,26 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
       {(previewImage || previewLoading) && (
         <motion.div {...anim.backdrop} className="dialog-backdrop" onClick={closePreview}>
           <FocusTrap>
-            <motion.div {...anim.panel} className={styles.fsShell} onClick={(e) => e.stopPropagation()}>
-              {/* 顶栏：元信息胶囊（hover 浮现）+ 关闭 */}
-              <div className={styles.fsTop}>
+            <motion.div {...anim.panel} className={`dialog-box ${styles.fsShell}`} onClick={(e) => e.stopPropagation()}>
+              {/* 与其他详情弹框同一标题栏；长文件名在可用空间内截断。 */}
+              <div className={`dialog-header ${styles.fsTop}`}>
+                <h2 className="dialog-title">图片详情</h2>
                 {previewInfo && (
                   <div className={styles.fsMeta}>
-                    <span className={styles.fsMetaName}>📄 {previewInfo.file_name}</span>
+                    <span className={styles.fsMetaName} title={previewInfo.file_name}>{previewInfo.file_name}</span>
                     <span>{previewInfo.width} × {previewInfo.height}</span>
                     <span>{previewInfo.size_str}</span>
                   </div>
                 )}
-                <span className={styles.fsTopSp} />
-                <button className={styles.fsClose} onClick={closePreview} title="关闭（Esc）"><X size={16} /></button>
+                <button className="dialog-close" onClick={closePreview} title="关闭（Esc）" aria-label="关闭图片详情"><X size={16} /></button>
               </div>
 
               {/* 图区 */}
               <div
                 ref={viewportRef}
                 className={styles.fsViewport}
-                data-cursor={ocrActive ? (isSelecting ? "crosshair" : "text") : isPanning ? "grabbing" : previewScale > 1 ? "grab" : "default"}
-                onWheel={handlePreviewWheel}
+                data-cursor={ocrActive ? (isSelecting ? "crosshair" : "text") : isPanning ? "grabbing" : previewScale > fitScale * 1.001 ? "grab" : "default"}
+                onWheel={(e) => { if (shouldZoomImageWheel(e.target)) handlePreviewWheel(e); }}
                 onMouseDown={ocrActive ? handleOcrSelectStart : handlePanStart}
                 onMouseMove={ocrActive ? undefined : (e) => { if (isPanning) pannedRef.current = true; handlePanMove(e); }}
                 onMouseUp={ocrActive ? undefined : handlePanEnd}
@@ -175,7 +177,7 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                       transition: isPanning ? "none" : "transform 0.2s ease-out",
                     }}
                   >
-                    <img src={previewImage} alt="预览" className={styles.imageDetailImg} draggable={false} />
+                    <img src={previewImage} alt="预览" className={styles.imageDetailImg} draggable={false} onLoad={onPreviewImageLoad} />
                     {ocrActive && ocrResult && !cropMode && (
                       <OcrWordLayer ocrResult={ocrResult} selectedWordIndices={selectedWordIndices} onWordClick={handleOcrWordClick} />
                     )}
@@ -211,47 +213,42 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                     onRestore={restoreOriginal}
                   />
                 )}
-              </div>
-
-              {/* 提示胶囊（进场 3s 后淡化，hover 过图区即消失） */}
-              <div className={`${styles.fsHint}${hintState === "faded" ? ` ${styles.fsHintFaded}` : ""}${hintState === "gone" ? ` ${styles.fsHintGone}` : ""}`}>
-                滚轮缩放 · 拖拽平移 · 0 复位 · R 旋转 · Enter 复制
-              </div>
-
-              {/* 裁剪确认栏（顶替工具栏位置，主工具栏压暗） */}
-              {cropMode && (
-                <CropConfirmBar cropRect={cropRect} onConfirm={() => void confirmCrop()} onCancel={cancelCrop} />
-              )}
-
-              {/* 浮出面板（互斥收口在 activePanel；选词条让位给码/导出，切回即恢复——选区不清） */}
-              {(ocrActive ? activePanel !== "codes" && activePanel !== "export" : activePanel === "ocr") && (
-                <OcrSummaryPanel preview={preview} onOpenHub={handleOpenHub} mode={ocrActive ? "selection" : "summary"} />
-              )}
-              {/* 码面板：只在「码」槽位激活时渲染（互斥）；抽屉样式借旧件，外框借 fsPanel，
-                  样式由 CSS 里 .fsPanel > .ocrFullTextPanel 收平成一块浮层 */}
-              {activePanel === "codes" && (
-                <div className={styles.fsPanel} onClick={(e) => e.stopPropagation()}>
-                  <BarcodePanel
-                    hits={imageBarcodes.hits}
-                    onHover={setHoveredCodeIdx}
-                    open
-                    onOpenChange={(v) => { if (!v) setActivePanel(null); }}
-                  />
+                {/* 浮层锚定图片画布底边，底部操作区在窄窗口换行时也不会盖住浮层。 */}
+                <div className={`${styles.fsHint}${hintState === "faded" ? ` ${styles.fsHintFaded}` : ""}${hintState === "gone" ? ` ${styles.fsHintGone}` : ""}`}>
+                  滚轮缩放 · 拖拽平移 · 0 适应 · R 旋转 · Enter 复制
                 </div>
-              )}
-              {activePanel === "export" && <ExportPopover preview={preview} />}
-
-              {/* 底部唯一工具栏（裁剪态压暗让位） */}
-              <div className={`${styles.fsToolbarWrap}${cropMode ? ` ${styles.fsToolbarWrapDim}` : ""}`}>
-                <ImageToolbar
-                  preview={preview}
-                  activePanel={activePanel}
-                  onPanel={setActivePanel}
-                  codeCount={imageBarcodes.hits.length}
-                  onCopyImage={() => void handleCopyImage()}
-                />
+                <div className={styles.fsOverlayLayer} data-image-preview-overlay>
+                  {(ocrActive ? activePanel !== "codes" && activePanel !== "export" : activePanel === "ocr") && (
+                    <OcrSummaryPanel preview={preview} onOpenHub={handleOpenHub} mode={ocrActive ? "selection" : "summary"} />
+                  )}
+                  {activePanel === "codes" && (
+                    <div className={styles.fsPanel} onClick={(e) => e.stopPropagation()}>
+                      <BarcodePanel
+                        hits={imageBarcodes.hits}
+                        onHover={setHoveredCodeIdx}
+                        open
+                        onOpenChange={(v) => { if (!v) setActivePanel(null); }}
+                      />
+                    </div>
+                  )}
+                  {activePanel === "export" && <ExportPopover preview={preview} />}
+                </div>
+                {ocrLoading && <div className={styles.fsOcrWorking}>正在识别文字…</div>}
               </div>
-              {ocrLoading && <div className={styles.fsOcrWorking}>正在识别文字…</div>}
+
+              <div className={`dialog-footer ${styles.fsToolbarWrap}`}>
+                {cropMode ? (
+                  <CropConfirmBar cropRect={cropRect} onConfirm={() => void confirmCrop()} onCancel={cancelCrop} />
+                ) : (
+                  <ImageToolbar
+                    preview={preview}
+                    activePanel={activePanel}
+                    onPanel={setActivePanel}
+                    codeCount={imageBarcodes.hits.length}
+                    onCopyImage={() => void handleCopyImage()}
+                  />
+                )}
+              </div>
             </motion.div>
           </FocusTrap>
         </motion.div>

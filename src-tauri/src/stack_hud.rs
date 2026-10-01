@@ -674,6 +674,8 @@ pub fn show_hud(app: &AppHandle) {
 pub fn hide_hud(app: &AppHandle) {
     if ADJUSTING.swap(false, Ordering::SeqCst) {
         if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+            // 点击穿透是桌面窗口概念（mobile 无该 API）
+            #[cfg(desktop)]
             let _ = window.set_ignore_cursor_events(true);
         }
         let _ = app.emit_to(WINDOW_LABEL, EVENT_ADJUST, false);
@@ -755,6 +757,8 @@ fn reveal(app: &AppHandle, window: &WebviewWindow) {
     mark_shown();
     follow_anchor_with(app, false);
     // 纯展示窗口：鼠标事件必须穿透，否则它挡住目标应用上正在编辑的区域
+    // （点击穿透是桌面窗口概念，mobile 无该 API）
+    #[cfg(desktop)]
     let _ = window.set_ignore_cursor_events(true);
     notify_shown(app);
     let _ = window.show();
@@ -789,7 +793,7 @@ fn create(app: &AppHandle) {
 
         let pos = calc_position(app);
         inject_anchor_kind_into_cache(app);
-        match WebviewWindowBuilder::new(
+        let hud_builder = WebviewWindowBuilder::new(
             app,
             WINDOW_LABEL,
             tauri::WebviewUrl::App("stackhud.html".into()),
@@ -797,18 +801,23 @@ fn create(app: &AppHandle) {
         .title("")
         .inner_size(HUD_W, HUD_H)
         .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(false)
-        .transparent(true)
-        .focused(false) // 不抢焦点：抢了用户的下一个 Ctrl+V 会打进 HUD
-        .visible(false)
-        .build()
+        .visible(false);
+        // 置顶/无边框/跳过任务栏/阴影/透明/不抢焦点是桌面窗口概念（mobile 无这些属性）
+        #[cfg(desktop)]
+        let hud_builder = hud_builder
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .shadow(false)
+            .transparent(true)
+            .focused(false);
+        match hud_builder.build()
         {
             Ok(window) => {
                 let _ = window.set_position(pos);
                 inject_anchor_kind_into_cache(app);
+                // 点击穿透是桌面窗口概念（mobile 无该 API）
+                #[cfg(desktop)]
                 let _ = window.set_ignore_cursor_events(true);
 
                 #[cfg(target_os = "windows")]
@@ -882,6 +891,8 @@ pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, Str
         if !window.is_visible().unwrap_or(false) {
             show_hud(&app);
         }
+        // 点击穿透是桌面窗口概念（mobile 无该 API）
+        #[cfg(desktop)]
         let _ = window.set_ignore_cursor_events(false);
         let _ = app.emit_to(WINDOW_LABEL, EVENT_ADJUST, true);
         log::info!("[StackHud] 进入调整模式");
@@ -893,6 +904,8 @@ pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, Str
     }
 
     ADJUSTING.store(false, Ordering::SeqCst);
+    // 点击穿透是桌面窗口概念（mobile 无该 API）
+    #[cfg(desktop)]
     let _ = window.set_ignore_cursor_events(true);
     let _ = app.emit_to(WINDOW_LABEL, EVENT_ADJUST, false);
 

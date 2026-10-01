@@ -81,7 +81,7 @@ impl PresenceApp {
 ///    让用户看到一台名字对得上、指纹却是别人的设备。有签名，攻击者只能宣告自己。
 ///
 /// 签名不覆盖 `name` / `pk` / `to_id`：被改的后果是「名字显示错」或
-/// 「两端算出的 6 位数字不一样」——而后者正是用户要靠肉眼识破中间人的那条路
+/// 「两端算出的配对码不一样」——而后者正是用户要靠肉眼识破中间人的那条路
 /// （见 `rc/pin.rs`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -394,6 +394,43 @@ pub fn rc_short_pair_cancel(svc: State<'_, Arc<RcService>>) {
     svc.joins().cancel_short();
 }
 
+/// 单枚 8 位码会合（两端各输同一个数）。
+///
+/// 与 `rc_short_pair_begin` 的分工：那边要**两枚**码（双方各出示一枚），
+/// 强度 ≈ 53 bit；这边只要一枚，强度 ≈ 27 bit（见 `rc/short_pair.rs` 的
+/// `exchange_pin` 安全等级说明）。`listen` 由调用方按用户动作如实传：
+/// 出示方传 true（监听），输入方传 false（拨号），传反了两端永远连不上。
+#[tauri::command]
+pub async fn rc_pin_pair_begin(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    code: String,
+    listen: bool,
+) -> Result<RcExchangeStarted, String> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let code = code.trim().to_string();
+    if !short_pair::valid_code(&code) {
+        return Err("配对码必须是 8 位数字".into());
+    }
+    let (_attempt, mut cancelled) = svc.joins().begin_short()?;
+    // 会合窗口与两码版同源（同一份 short_code 的过期时刻），不另立一套口径。
+    let expires_at = svc.joins().short_code(now)?.expires_at;
+    svc.start(&app_dir(&app)?, true).await?;
+    join::open_door(&store, expires_at)?;
+    let endpoint = svc.short_pair_endpoint().ok_or("远程通道未启动")?;
+    let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
+    let (node_id, name, addr) = tokio::select! {
+        result = short_pair::exchange_pin(endpoint, &me, &code, listen, expires_at) => result?,
+        _ = cancelled.changed() => return Err("已取消配对".into()),
+    };
+    if node_id == me.node_id() {
+        return Err("不能与本机配对".into());
+    }
+    svc.arm_exchange_addr(&node_id, &name, expires_at, addr)?;
+    Ok(RcExchangeStarted { node_id, name, expires_at })
+}
+
 /// 生成远程配对邀请码（开门，等对方粘贴后敲门）。
 #[tauri::command]
 pub async fn rc_invite_create(
@@ -459,18 +496,53 @@ pub async fn rc_exchange_begin(
     Ok(RcExchangeStarted { node_id: inv.node_id, name: name.to_string(), expires_at })
 }
 
+/// 配对轮询的取值口径（纯判断，抽出来给单测钉不变量）。
+///
+/// 🔴 2026-09-30 真机实证：本地配对行**不能**在交换进行中当成「已配对」用。
+///    手机第一轮（18:18）配对成功、PC 侧随后手动删了设备行，但手机行还在；
+///    第二轮手机端 `rc_exchange_check` 首行就撞见本地行 → 秒回 `paired` →
+///    收卡停轮询，PC 侧永远等不到它的确认（表现：手机「配对成功」、
+///    PC 挂「等待中」。对端删了我们，本地残留行就是假阳性）。
+/// 正确口径：**交换进行中以对端 PairCheck 为准**；本地行只在没有进行中的
+/// 交换意图时（重进配对流的老配对）才可作数。
+#[derive(Debug, PartialEq, Eq)]
+enum PairPollVerdict {
+    /// 没有进行中的交换且本地有行：老配对，直接算已配对。
+    AlreadyPaired,
+    /// 交换进行中且门还开着：必须等对端 PairCheck 确认。
+    NeedPeerCheck,
+    /// 窗口已结束：让前端提示重新交换码。
+    WindowEnded,
+}
+
+fn pair_poll_verdict(has_local_row: bool, intent_active: bool, door_open: bool) -> PairPollVerdict {
+    if intent_active {
+        if door_open {
+            PairPollVerdict::NeedPeerCheck
+        } else {
+            PairPollVerdict::WindowEnded
+        }
+    } else if has_local_row {
+        PairPollVerdict::AlreadyPaired
+    } else {
+        PairPollVerdict::WindowEnded
+    }
+}
+
 #[tauri::command]
 pub async fn rc_exchange_check(
     store: State<'_, DataStore>,
     svc: State<'_, Arc<RcService>>,
     node_id: String,
 ) -> Result<&'static str, String> {
-    if store.rc_device_get(&node_id)?.is_some() {
-        return Ok("paired");
-    }
     let now = chrono::Utc::now().timestamp_millis();
-    if !join::door_open(&store, now) || svc.exchange_intent(&node_id, now).is_none() {
-        return Err("本次配对窗口已结束，请重新交换配对码".into());
+    let intent_active = svc.exchange_intent(&node_id, now).is_some();
+    match pair_poll_verdict(store.rc_device_get(&node_id)?.is_some(), intent_active, join::door_open(&store, now)) {
+        PairPollVerdict::AlreadyPaired => return Ok("paired"),
+        PairPollVerdict::WindowEnded => {
+            return Err("本次配对窗口已结束，请重新交换配对码".into())
+        }
+        PairPollVerdict::NeedPeerCheck => {}
     }
     match svc.pair_check(&node_id).await {
         Ok(true) => {
@@ -1539,13 +1611,16 @@ pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
     //    也关不掉——见 `RcSessionTop` 的 drag-region 与 `chromeHidden` 分支。
     // ③ `.resizable(true)` 要保留：`decorations(false)` 仍带 WS_THICKFRAME，
     //    边框拖拽调整大小、Aero Snap 都还在（需真机确认，见批7 验收清单）。
-    .decorations(false)
     // 防闪黑（方案 A，照 md-editor / 截图窗先例）：
     // ① 先隐藏建窗——Tauri 默认 visible=true，`build()` 返回时 HWND 已上屏，
     //    WebView 尚未 paint，Windows 客户区会露出系统默认黑底（整窗闪一下黑框）。
     // ② 客户区底色对齐主窗 `backgroundColor: #F4F6F9`，隐藏阶段也不会是黑的。
     .visible(false)
     .background_color(tauri::window::Color(244, 246, 249, 255)); // #F4F6F9
+    // 自绘标题栏（decorations=false）是桌面窗口概念：mobile 全屏页面无装饰位。
+    // 上面 ①③ 两条注释描述的拖拽/边框行为在桌面侧不变。
+    #[cfg(desktop)]
+    let mut builder = builder.decorations(false);
 
     // 按主窗口所在显示器（回退主显示器）居中——照 md-editor 的先例
     let monitor = app
@@ -1564,7 +1639,9 @@ pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
         let y = pos.y as f64 / scale + (mon_h - win_h) / 2.0;
         builder = builder.inner_size(win_w, win_h).position(x, y);
     } else {
-        builder = builder.center();
+        // 居中是桌面窗口定位概念（mobile 页面默认铺满，无窗口定位；尺寸取链首 inner_size）
+        #[cfg(desktop)]
+        { builder = builder.center(); }
     }
     let window = builder
         .build()
@@ -1604,23 +1681,35 @@ const SESSION_CHROME_W: f64 = 2.0;
 
 #[tauri::command]
 pub fn rc_window_minimize(window: tauri::WebviewWindow) -> Result<(), String> {
-    window
+    // 窗口最小化/最大化是桌面窗口概念；mobile 会话全屏无此操作，诚实报不支持
+    #[cfg(desktop)]
+    { window
         .minimize()
-        .map_err(|e| format!("最小化窗口被拒绝：{e}"))
+        .map_err(|e| format!("最小化窗口被拒绝：{e}")) }
+    #[cfg(mobile)]
+    { Err("窗口最小化仅桌面端支持".to_string()) }
 }
 
 #[tauri::command]
 pub fn rc_window_toggle_maximize(window: tauri::WebviewWindow) -> Result<(), String> {
-    // Rust 端没有 JS 那样的 toggle_maximize，按状态二选一（同 JS 实现口径）
-    let maximized = window
-        .is_maximized()
-        .map_err(|e| format!("读取窗口状态失败：{e}"))?;
-    let r = if maximized {
-        window.unmaximize()
-    } else {
-        window.maximize()
-    };
-    r.map_err(|e| format!("最大化/还原被拒绝：{e}"))
+    #[cfg(desktop)]
+    {
+        // Rust 端没有 JS 那样的 toggle_maximize，按状态二选一（同 JS 实现口径）
+        let maximized = window
+            .is_maximized()
+            .map_err(|e| format!("读取窗口状态失败：{e}"))?;
+        let r = if maximized {
+            window.unmaximize()
+        } else {
+            window.maximize()
+        };
+        r.map_err(|e| format!("最大化/还原被拒绝：{e}"))
+    }
+    #[cfg(mobile)]
+    {
+        let _ = &window;
+        Err("窗口最大化切换仅桌面端支持".to_string())
+    }
 }
 
 #[tauri::command]
@@ -1745,6 +1834,37 @@ pub async fn rc_pull_clipboard(svc: State<'_, Arc<RcService>>) -> Result<Option<
 mod tests {
     use super::*;
 
+    /// 🔴 2026-09-30 真机实证：交换进行中，本地残留行必须让位给对端确认。
+    /// 旧口径「有本地行就回 paired」让删过我们的一方永远停在等待态。
+    #[test]
+    fn test_交换进行中本地行不作数() {
+        assert_eq!(
+            pair_poll_verdict(true, true, true),
+            PairPollVerdict::NeedPeerCheck,
+            "交换进行中：本地行可能是上一轮残留（对端已删我们），必须以 PairCheck 为准"
+        );
+        assert_eq!(
+            pair_poll_verdict(true, false, true),
+            PairPollVerdict::AlreadyPaired,
+            "没有进行中的交换：本地行可信，直接算已配对"
+        );
+        assert_eq!(
+            pair_poll_verdict(false, true, true),
+            PairPollVerdict::NeedPeerCheck,
+            "全新配对：等对端确认"
+        );
+        assert_eq!(
+            pair_poll_verdict(true, true, false),
+            PairPollVerdict::WindowEnded,
+            "交换进行中但门已关：提示重新换码，不是 paired"
+        );
+        assert_eq!(
+            pair_poll_verdict(false, false, false),
+            PairPollVerdict::WindowEnded,
+            "既无行也无意图：窗口结束"
+        );
+    }
+
     /// 🔴 邀请门的时长**必须**由邀请码的窗口派生，不许各写一个数。
     ///
     /// 修复前是两个独立字面量：码 7 天（`invite::TTL_SECS`）、门 30 分钟
@@ -1762,12 +1882,13 @@ mod tests {
         );
         assert_eq!(
             invite::RC_TTL_SECS,
-            30 * 60,
-            "远程配对的窗口是 30 分钟——改它是个产品决定，不该顺手改"
+            5 * 60,
+            "远程配对的窗口是 5 分钟——2026-09-29 配对码时效重设计定的 \
+             （design/远程电脑-配对码时效与遮掩-设计稿.html §5），仍是产品决定，不该顺手改"
         );
         // 先落到局部变量：直接写两个 `const` 比较会被 `assertions_on_constants`
         // 判成「常量断言」而要求塞进 `const {}`，但 `const {}` 里带不了格式化参数，
-        // 这条断言的「30 vs 604800」恰好是要给人看的。
+        // 这条断言的「两档谁严」恰好是要给人看的。
         let rc_ttl = invite::RC_TTL_SECS;
         let kb_ttl = invite::TTL_SECS;
         assert!(

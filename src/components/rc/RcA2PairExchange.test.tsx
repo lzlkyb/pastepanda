@@ -1,70 +1,200 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+/**
+ * 配对码显示 / 读秒的守卫测试（2026-09-29 设计稿 §0-§4，10-01 联调修订）。
+ *
+ * 钉住的四件事在产品上「错了也看不出来」：
+ * ① **进卡片即亮码**（2026-10-01 用户拍板：默认常驻显示，不再先点「出示」；
+ *    「收起」按钮兜隐私）；
+ * ② **收起只收回显示，不清会话**——收起了还必须是同一枚码（用户 alt-tab
+ *    去手机拿码回来点「重新出示」，看到的不能是一枚新码，否则已发出去的那枚作废）；
+ * ③ **二维码随码常驻**——手机「扫一扫」扫的就是它，电脑侧漏了它手机就没东西可扫
+ *    （2026-10-01 联调实测踩过）；
+ * ④ **出示方的码来自后端**（均匀随机），不留给用户手敲——手敲的生日/连号
+ *    实际熵远低于 27 bit，会合通道的认证强度就不成立。
+ */
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UseRc } from "@/hooks/useRc";
 import { RcA2PairExchange } from "./RcA2PairExchange";
 
-const shortPairCode = vi.hoisted(() => vi.fn());
-const shortPairBegin = vi.hoisted(() => vi.fn());
-const shortPairCancel = vi.hoisted(() => vi.fn(async () => undefined));
-const exchangeCheck = vi.hoisted(() => vi.fn());
-const readClipboard = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/api/rc", () => ({
-  rcShortPairCode: shortPairCode,
-  rcShortPairBegin: shortPairBegin,
-  rcShortPairCancel: shortPairCancel,
-  rcExchangeCheck: exchangeCheck,
+const rc = vi.hoisted(() => ({
+  exchangeCheck: vi.fn(),
+  pinPairBegin: vi.fn(),
+  shortPairCancel: vi.fn(async () => undefined),
+  shortPairCode: vi.fn(),
 }));
-vi.mock("@/lib/api", () => ({ readClipboardText: readClipboard }));
+const clipboard = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/api/rc", () => ({
+  rcExchangeCheck: rc.exchangeCheck,
+  rcPinPairBegin: rc.pinPairBegin,
+  rcShortPairCancel: rc.shortPairCancel,
+  rcShortPairCode: rc.shortPairCode,
+}));
+vi.mock("@/lib/api", () => ({ readClipboardText: clipboard }));
 vi.mock("@/hooks/useWindowVisible", () => ({ useWindowVisible: () => true }));
 
-describe("RcA2PairExchange", () => {
-  it("默认显示八位码，识别剪贴板后仍由用户确认配对", async () => {
-    shortPairCode.mockResolvedValue({ code: "12345678", expires_at: Date.now() + 60_000 });
-    shortPairBegin.mockResolvedValue({ node_id: "peer", name: "对方", expires_at: Date.now() + 60_000 });
-    exchangeCheck.mockResolvedValue("waiting");
-    readClipboard.mockResolvedValue("PP-8765-4321");
-    const writeText = vi.fn(async () => undefined);
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-    const refreshTargets = vi.fn();
-    const toast = vi.fn();
-    const rc = {
-      identity: { node_id: "local", device_name: "本机" },
-      refreshTargets,
-    } as unknown as UseRc;
+/** 未来 3 分钟过期（对齐设计稿 §0：会合码 3 分钟）。 */
+const EXPIRES_AT = Date.now() + 3 * 60 * 1000;
 
-    render(<RcA2PairExchange rc={rc} toast={toast} />);
-    // 🔴 码值 span 不能挂 aria-label（generic 禁止命名，rcA11yNames 守卫）——
-    // 名字挂在整行 group 上，码值文本在 group 内断言。
-    await waitFor(() =>
-      expect(within(screen.getByRole("group", { name: "我的配对码" })).getByText("1234 5678")).toBeTruthy(),
-    );
-    await waitFor(() => expect((screen.getByLabelText("对方的配对码") as HTMLInputElement).value).toBe("8765 4321"));
-    expect(shortPairBegin).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "复制" }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("PP-1234-5678"));
-    fireEvent.click(screen.getByRole("button", { name: "确认" }));
-    await waitFor(() => expect(shortPairBegin).toHaveBeenCalledWith("12345678", "87654321"));
-    await waitFor(() => expect(exchangeCheck).toHaveBeenCalledWith("peer"));
-    expect(refreshTargets).not.toHaveBeenCalled();
-    expect(toast).not.toHaveBeenCalledWith(expect.stringContaining("已与"), "success");
+function renderPane() {
+  const api = {
+    identity: { node_id: "local", device_name: "本机", fingerprint: "3F9A·21C0" },
+    refreshTargets: vi.fn(async () => {}),
+  } as unknown as UseRc;
+  render(<RcA2PairExchange rc={api} toast={vi.fn()} />);
+}
+
+/** 当前亮着的那枚码（null = 遮着）。 */
+function shownDigits(): string | null {
+  const el = document.querySelector("[class*='pairDigits']");
+  return el?.textContent ?? null;
+}
+
+describe("配对码遮罩（设计稿 §1）", () => {
+  beforeEach(() => {
+    clipboard.mockResolvedValue("");
+    rc.exchangeCheck.mockResolvedValue("waiting");
+    // 🔴 必须清计数：这几个 vi.fn 跨用例共享，`toHaveBeenCalledTimes` 是绝对值，
+    // 不清就会读到上一个用例留下的调用记录（表现为「明明只取一次码却报三次」）。
+    rc.shortPairCode.mockReset();
+    rc.pinPairBegin.mockReset();
+    rc.shortPairCode.mockResolvedValue({ code: "41820620", expires_at: EXPIRES_AT });
+    rc.pinPairBegin.mockResolvedValue({
+      node_id: "peer-1",
+      name: "那台手机",
+      expires_at: EXPIRES_AT,
+    });
   });
 
-  it("等待另一端时可取消，不必等短码到期", async () => {
-    shortPairCode.mockResolvedValue({ code: "12345678", expires_at: Date.now() + 60_000 });
-    shortPairBegin.mockReturnValue(new Promise(() => {}));
-    readClipboard.mockResolvedValue("");
-    shortPairCancel.mockClear();
-    const rc = {
-      identity: { node_id: "local", device_name: "本机" },
-      refreshTargets: vi.fn(),
-    } as unknown as UseRc;
-    render(<RcA2PairExchange rc={rc} toast={vi.fn()} />);
-    await waitFor(() =>
-      expect(within(screen.getByRole("group", { name: "我的配对码" })).getByText("1234 5678")).toBeTruthy(),
-    );
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("进卡片即亮码；二维码默认藏，点了在弹框里展示", async () => {
+    vi.useFakeTimers();
+    renderPane();
+    // 不点任何按钮：挂载即取码亮出
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(shownDigits()).toBe("4182 0620");
+    expect(rc.shortPairCode).toHaveBeenCalledTimes(1);
+    // 二维码默认不在 DOM（jsdom 画不了 canvas，只钉「入口在、弹框开关走」）
+    expect(document.querySelector("canvas[aria-label='配对码二维码']")).toBeNull();
+    expect(screen.getByRole("button", { name: "二维码" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "收起" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "出示" })).toBeNull();
+
+    // 点「二维码」→ 弹框出现（含画布与明文码），Esc / 关闭都能收
+    fireEvent.click(screen.getByRole("button", { name: "二维码" }));
+    const dialog = screen.getByRole("dialog", { name: "配对码二维码" });
+    expect(dialog.querySelector("canvas[aria-label='配对码二维码']")).toBeTruthy();
+    // 明文码在弹框里再出现一份（码条上那一份仍在）
+    expect(dialog.textContent).toContain("4182 0620");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.queryByRole("dialog", { name: "配对码二维码" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "二维码" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByRole("dialog", { name: "配对码二维码" })).toBeNull();
+    // 亮码不受弹框开关影响
+    expect(shownDigits()).toBe("4182 0620");
+  });
+
+  it("亮码常驻：收起计时不存在，60 秒后仍是同一枚码且没再取新码", async () => {
+    vi.useFakeTimers();
+    renderPane();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(shownDigits()).toBe("4182 0620");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(shownDigits()).toBe("4182 0620");
+    // 亮码期间绝不另取新码（有效期内复用同一枚）
+    expect(rc.shortPairCode).toHaveBeenCalledTimes(1);
+  });
+
+  it("用户点「收起」立刻收回、再出示还是同一枚，全程不换码", async () => {
+    vi.useFakeTimers();
+    renderPane();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(shownDigits()).toBe("4182 0620");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(shownDigits()).toBeNull();
+    expect(rc.shortPairCode).toHaveBeenCalledTimes(1);
+
+    // 再出示：同一枚未过期的码，不重新取
+    fireEvent.click(screen.getByRole("button", { name: "出示" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(shownDigits()).toBe("4182 0620");
+    expect(rc.shortPairCode).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("出示方点「我出示这枚码」用这枚码发起，角色固定 listen=true", async () => {
+    vi.useFakeTimers();
+    renderPane();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(shownDigits()).toBe("4182 0620");
+
+    fireEvent.click(screen.getByRole("button", { name: "我出示这枚码" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(rc.pinPairBegin).toHaveBeenCalledWith("41820620", true);
+    vi.useRealTimers();
+  });
+
+  it("输入方填对方那枚码发起，角色固定 listen=false", async () => {
+    renderPane();
     fireEvent.change(screen.getByLabelText("对方的配对码"), { target: { value: "87654321" } });
-    fireEvent.click(screen.getByRole("button", { name: "确认" }));
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-    await waitFor(() => expect(shortPairCancel).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "对方给我这枚码" }));
+    });
+
+    await waitFor(() => expect(rc.pinPairBegin).toHaveBeenCalledWith("87654321", false));
+  });
+});
+
+describe("到期换新（设计稿 §4）", () => {
+  beforeEach(() => {
+    clipboard.mockResolvedValue("");
+    rc.exchangeCheck.mockResolvedValue("waiting");
+    rc.shortPairCode.mockReset();
+    rc.pinPairBegin.mockReset();
+    rc.pinPairBegin.mockResolvedValue({ node_id: "p", name: "n", expires_at: Date.now() + 180000 });
+  });
+
+  /** 出示一枚「已经过期」的码 → 组件应立即换新并提示。返回即已换过。 */
+  async function revealExpiredCode() {
+    rc.shortPairCode.mockReset();
+    rc.shortPairCode
+      .mockResolvedValueOnce({ code: "41820620", expires_at: Date.now() - 1 })
+      .mockResolvedValue({ code: "60429183", expires_at: Date.now() + 3 * 60 * 1000 });
+    // 挂载即自动取码（2026-10-01 起默认亮码），不需要点「出示」
+    renderPane();
+  }
+
+  it("取到一枚已过期的码 → 静默自动换新（无文字提醒条），新码直接可见", async () => {
+    await revealExpiredCode();
+
+    // 静默换代：没有「知道了」提示条（2026-10-01 用户拍板），只有新码值
+    expect(screen.queryByText(/已自动换新的/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "知道了" })).toBeNull();
+    // 换代不动显示态：这里是亮码态，所以新码直接可见——
+    // 用户正看着屏，把新码藏起来比让他多等更糟。
+    await waitFor(() => expect(shownDigits()).toBe("6042 9183"));
+    expect(rc.shortPairCode.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("换新后收起再出示，看到的是新码（旧码已作废）", async () => {
+    await revealExpiredCode();
+    await waitFor(() => expect(shownDigits()).toBe("6042 9183"));
+
+    // 收起 → 遮罩态 → 再出示：仍是同一枚新码（不再回退到旧码）
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    await waitFor(() => expect(shownDigits()).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "出示" }));
+    // 关键断言：回来的是新码，不是那枚已作废的旧码
+    await waitFor(() => expect(shownDigits()).toBe("6042 9183"));
   });
 });

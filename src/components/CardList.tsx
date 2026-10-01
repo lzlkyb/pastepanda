@@ -122,6 +122,7 @@ const VirtualCardRow = memo(function VirtualCardRow({
 export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef, showMoveToGroup = false }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null>; showMoveToGroup?: boolean }) {
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const searchLoading = useAppStore((s) => s.searchLoading);
+  const searchError = useAppStore((s) => s.searchError);
   const filterType = useAppStore((s) => s.filterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
@@ -688,6 +689,32 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
               <div style={{ textAlign: "center" }}>
                 <p className={styles.emptyTitle}>搜索中…</p>
                 <p className={styles.emptyDesc}>正在全量检索 “{searchKeyword}”</p>
+              </div>
+            </div>
+          ) : searchMode && searchError ? (
+            /* 🔴 错误态抢在空态前：「没搜到」与「没搜成」在 items.length===0 上一样，
+               但该说的话相反。对照 NoteListEmpty 的 loadError 写法（U3.5）。 */
+            <div className={styles.emptyState} role="alert">
+              <div className={styles.emptyIconWrap}>
+                <div className={styles.emptyRing} />
+                <div className={styles.emptyIcon}>
+                  <FileX size={28} style={{ color: "var(--danger)" }} strokeWidth={1.5} />
+                </div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <p className={styles.emptyTitle}>没能把搜索跑完</p>
+                <p className={styles.emptyDesc}>
+                  这不是「没有相关记录」——历史都还在，只是这一次查询没跑成。
+                  数据库可能正被占着（同步或备份在写），重试一下多半就好。
+                </p>
+                <div className={styles.emptyActions}>
+                  <button
+                    onClick={() => useAppStore.getState().retrySearch()}
+                    className={styles.emptyPrimaryBtn}
+                  >
+                    重试搜索
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

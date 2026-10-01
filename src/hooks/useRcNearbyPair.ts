@@ -11,16 +11,22 @@
  * 反过来说，**没有人在看的时候不需要重传**——所以窗口不可见就停（规则 #8），
  * 语义上与「用户走开了，这次配对不该继续往后推」是一致的。
  *
- * 也因此**不要**把它挪进 `rcStore` 那种 app 级轮询：配对是模态框里的临时会话，
- * 对话框一关就该停。
+ * 也因此**不要**把它挪进 `rcStore` 那种 app 级轮询：配对是界面上的临时会话，
+ * 配对界面一关就该停。常驻卡（`rc/RcNearbyPairPane`）挂着它时同理——
+ * 它跟着设备页的生死走，不是全局后台任务。
  *
  * # `done` 为什么必须留一份在本地
  *
  * 后端 `rc_nearby_status` 里那个 `done`（🔴 P1-7 起）**60 秒窗口内多重可读**——
- * 主窗口与工作台两个轮询者都看得见，谁先读到不影响另一个。界面仍要自留一份：
- * 乙方案（2026-09-26）后完成屏已删，`done` 的唯一消费点是 `RcPairDialog` 的
- * 「关窗 + toast + 选中新设备」一次性副作用——正因如此**去重必须可靠**，
- * 重开对话框重播那条 toast 会变成噪音。按 `at_ms` 去重（去重归界面，后端不归）。
+ * 主窗口与工作台多个轮询者都看得见，谁先读到不影响另一个。界面仍要自留一份：
+ * 乙方案（2026-09-26）后完成屏已删，`done` 的消费点是「关窗 + toast + 选中新设备」
+ * 这类一次性副作用——正因如此**去重必须可靠**，重开对话框重播那条 toast 会变成噪音。
+ * 按 `at_ms` 去重（去重归界面，后端不归）。
+ *
+ * ❗ **模块级 `shownDoneAtMs` 去重的代价**：同一时刻只有一个 hook 实例看得到某一条
+ * `done`。配对从常驻卡发起时对话框通常没挂，所以基本总是卡拿到；但用户完全可能在
+ * 卡处于核对态时又从侧栏打开对话框——那种边角下对话框赢、卡不 toast。两条路径都会
+ * 各自刷新设备列表，用户不会卡在「配好了但列表不更新」，可接受。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
@@ -41,9 +47,22 @@ import {
  *
  * 2 秒而不是 5 秒：附近设备的 TTL 是 20 秒，而配对窗口只有 60 秒。
  * 慢一轮就可能让用户看到的邻居已经走了，或者错过一次重传。
- * 只有对话框开着时才跑，所以这个频率的影响面很小。
+ * 只有配对相关界面开着时才跑，所以这个频率的影响面很小。
  */
 export const NEARBY_POLL_MS = 2000;
+
+/**
+ * 空闲态轮询间隔（毫秒）——**没有配对在进行时**用这个。
+ *
+ * 来源：常驻卡（`rc/RcNearbyPairPane``）把附近列表从「对话框里才有」
+ * 变成「远程电脑主页一直在」，2 秒一轮就成了常驻开销。没有配对时，
+ * `rc_nearby_status` 不重传任何包（见文件头），慢一轮只影响邻居列表的
+ * 新鲜度——TTL 20 秒，5 秒仍在「刚听到」的感知内。
+ *
+ * ❗ 这里只做**间隔收俭**，没有做更激进的手段（共享请求 / 事件推送）：
+ * 未实测过那些方案在本机的收益，不把没量过的东西写进注释。
+ */
+export const NEARBY_IDLE_POLL_MS = 5000;
 
 /**
  * A4（2026-09-23 复审）：`done` 在后端 60 秒窗口内**多重可读**（P1-7），而
@@ -60,7 +79,7 @@ export interface RcNearbyPair {
   /** 刚配上的那一台。**一直留着**，直到本 hook 卸载（对话框关闭）。 */
   done: RcPairDone | null;
   busy: boolean;
-  /** 手动刷一次（配对前后用，免得等满 2 秒）。 */
+  /** 手动刷一次（配对前后用，免得等满一个轮询周期）。 */
   refresh: () => Promise<void>;
   /** 对一台邻居发起配对。失败抛出，由调用方 toast。 */
   startPair: (peerId: string) => Promise<void>;
@@ -70,13 +89,26 @@ export interface RcNearbyPair {
   cancel: () => Promise<void>;
 }
 
-export function useRcNearbyPair(): RcNearbyPair {
+export interface UseRcNearbyPairOpts {
+  /**
+   * 空闲态（没有配对在进行）的轮询间隔，默认 [`NEARBY_POLL_MS`]。
+   *
+   * 对话框保持默认：它开着就是为了配对，2 秒是配对窗口的需要。
+   * 常驻卡传 [`NEARBY_IDLE_POLL_MS`]：没人配对时没必要那么密。
+   */
+  idlePollMs?: number;
+}
+
+export function useRcNearbyPair(opts?: UseRcNearbyPairOpts): RcNearbyPair {
   const [neighbors, setNeighbors] = useState<RcNeighbor[]>([]);
   const [pair, setPair] = useState<RcPairPrompt | null>(null);
   const [done, setDone] = useState<RcPairDone | null>(null);
   const [busy, setBusy] = useState(false);
   const aliveRef = useRef(true);
   const visible = useWindowVisible();
+  const idlePollMs = opts?.idlePollMs ?? NEARBY_POLL_MS;
+  /** 有没有配对在进行。轮询 effect 只认这个布尔（见那边的 🔴 注释）。 */
+  const pairing = pair !== null;
 
   const refresh = useCallback(async () => {
     try {
@@ -102,12 +134,21 @@ export function useRcNearbyPair(): RcNearbyPair {
     if (!visible) return;
     aliveRef.current = true;
     void refresh();
-    const t = window.setInterval(() => void refresh(), NEARBY_POLL_MS);
+    // 配对在进行中走 2 秒（重传与确认都等不起），空闲走 idlePollMs。
+    // 进出配对时整个 effect 重跑一轮：进配对那一刻立刻补一次 refresh，
+    // 不干等下一个间隔——用户刚点完按钮，屏幕上必须马上有反应。
+    //
+    // 🔴 依赖必须是 `pairing` 这个**布尔值**，不能是 `pair` 对象：
+    // 后端每轮都序列化出一份新 `PairPrompt`（引用必变），拿对象当依赖会让
+    // 这个 effect 每轮重跑 → 每次重跑都立刻 refresh → 再拿新对象 →
+    // 变成不受间隔约束的忙轮询（2 秒的窗口内把 CPU 打满）。布尔值只在
+    // 「开始配对 / 配对结束」两个时刻翻，重跑次数与轮询次数解耦。
+    const t = window.setInterval(() => void refresh(), pairing ? NEARBY_POLL_MS : idlePollMs);
     return () => {
       aliveRef.current = false;
       window.clearInterval(t);
     };
-  }, [refresh, visible]);
+  }, [refresh, visible, pairing, idlePollMs]);
 
   const startPair = useCallback(async (peerId: string) => {
     setBusy(true);

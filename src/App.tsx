@@ -97,6 +97,8 @@ function App() {
   const historyVersion = useAppStore((s) => s.historyVersion);
   const setSearchResults = useAppStore((s) => s.setSearchResults);
   const setSearchLoading = useAppStore((s) => s.setSearchLoading);
+  const setSearchError = useAppStore((s) => s.setSearchError);
+  const searchRetryTick = useAppStore((s) => s.searchRetryTick);
   const { toast } = useToast();
   const anim = useDialogAnim();
 
@@ -421,7 +423,8 @@ function App() {
     if (!searchKeyword.trim() && !isEventRange(timeFilter)) return;
     const st = useAppStore.getState();
     const key = buildSearchKey(st);
-    if (st.searchResults !== null && st.searchResultsKey === key) return; // 同查询结果已新鲜
+    // 同查询且已成功才跳过；失败结果不能当新鲜（否则永远不重试）
+    if (st.searchResults !== null && st.searchResultsKey === key && !st.searchError) return;
     const seq = ++searchSeqRef.current;
     setSearchLoading(true);
     searchHistory({
@@ -437,9 +440,11 @@ function App() {
     }).catch((e) => {
       if (seq !== searchSeqRef.current) return;
       logger.warn("全量搜索失败", e);
-      setSearchResults([], key); // 失败返回空结果，避免 loading 悬挂
+      // 🔴 不能 setSearchResults([], key)：那是把「没搜到」和「没搜成」写成同一屏（U3.5）。
+      // 标 searchError，CardList 优先展示错误态 + 重试；retrySearch 会 bump tick 重跑本 effect。
+      setSearchError(true);
     });
-  }, [searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, workspace, historyVersion, setSearchResults, setSearchLoading]);
+  }, [searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, workspace, historyVersion, searchRetryTick, setSearchResults, setSearchLoading, setSearchError]);
 
   // 侧边栏分组数据（计数全部来自后端聚合，前端只做名称清洗 + 图标映射 + 排序）
   const sidebarGroups = useMemo<SidebarGroup[]>(() => {

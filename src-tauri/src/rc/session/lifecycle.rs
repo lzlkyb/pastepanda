@@ -200,6 +200,8 @@ impl RcService {
             // `spk_muted_by_peer` 会跨会话残留：上一场对端关过声音，下一场
             // 换个对端申请音频也听不到，无报错无横幅。接线补在这里，与
             // `reset_stream_after_session` 同层（inner 锁已放出）。
+            // 音频状态是 Windows 宿主专属字段，mobile 下无可清，整条跳过。
+            #[cfg(target_os = "windows")]
             self.audio_reset();
             // 乙-③：输入权同样随会话收口作废——收回位留着＝下一场会话没人点按钮
             // 却把对端键鼠全拦下；授权位留着＝把「本次」偷偷变成「长期」。

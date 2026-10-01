@@ -136,10 +136,16 @@ pub fn todo_island_probe(app: AppHandle) -> ProbeReport {
         transparent: true,
         always_on_top: true,
         hovering: is_hovering(),
-        hit_test_hits_island: hit_test(center.0, center.1)
-            .zip(window.as_ref().and_then(|w| w.hwnd().ok()))
-            .map(|(hit, own)| hit == own.0 as isize)
-            .unwrap_or(false),
+        hit_test_hits_island: {
+            // HWND 比对是桌面概念（mobile 无原生窗口句柄）
+            #[cfg(target_os = "windows")]
+            { hit_test(center.0, center.1)
+                .zip(window.as_ref().and_then(|w| w.hwnd().ok()))
+                .map(|(hit, own)| hit == own.0 as isize)
+                .unwrap_or(false) }
+            #[cfg(not(target_os = "windows"))]
+            { false }
+        },
         position,
         size,
         monitor: primary_monitor_rect(&app).map(|(x, y, w, h, _)| [x, y, w, h]),
@@ -193,7 +199,9 @@ pub(crate) fn run_probe_sequence(app: AppHandle) {
         // 单看岛体颜色判不出透明成不成立：桌面本身若为浅色，「透出桌面」和「webview 白底」
         // **都是亮值** ⇒ 必须用「岛中心 − 窗外」这个差值。差 0 只有真透明才可能。
         let mut shot: Option<Vec<u8>> = None;
-        match crate::screenshot::grab_rect_rgba(x, y, w, h) {
+        // 抓屏走 Windows 宿主能力（mobile 无 GDI 抓图，探针判据自然缺省）
+        #[cfg(target_os = "windows")]
+        { match crate::screenshot::grab_rect_rgba(x, y, w, h) {
             Ok(px) => {
                 save_probe_png("island", w, h, &px);
                 let cx = ix + s.width as i32 / 2;
@@ -217,7 +225,9 @@ pub(crate) fn run_probe_sequence(app: AppHandle) {
                 shot = Some(px);
             }
             Err(e) => log::warn!("[TodoIsland][probe] 抓屏失败: {e}"),
-        }
+        } }
+        #[cfg(not(target_os = "windows"))]
+        { let _ = (&ix, &iy, &mut shot); }
 
         // ④ 沿窗口左上角 45° 向内逐像素取值 —— **缺口就藏在这条线上**。
         //

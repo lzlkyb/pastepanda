@@ -36,6 +36,14 @@ pub struct RcShortCode {
     pub expires_at: i64,
 }
 
+/// 交换用配对码的有效期（2026-09-29 由 10 分钟压到 3 分钟）。
+///
+/// 这枚码 ≈ 27 bit、靠人手搬运，是三种凭证里最弱的一档；邀请码那份是
+/// 128 位身份、照抄即全部，反而更长不了——两者的窗口按「被拿走后的代价」分档，
+/// 不按位数排。3 分钟够覆盖「解锁手机 → 打开 app → 输码 → 确认」的正常流程。
+/// 到点换**新码**而不是延命：已暴露过的码延长窗口只是拉长风险。
+pub(crate) const SHORT_CODE_TTL_MS: i64 = 3 * 60 * 1000;
+
 const KNOCK_TTL_MS: i64 = 10 * 60 * 1000;
 /// 拒绝配对后的冷却：到点自动允许再敲门，避免一次误拒永久锁死。
 const DENY_TTL_MS: i64 = 30 * 60 * 1000;
@@ -66,6 +74,10 @@ impl RcJoins {
     }
 
     /// 码只留在内存里。重复打开页面时复用未过期的码，避免已发出的码突然失效。
+    ///
+    /// 2026-09-29：有效期由 10 分钟压到 3 分钟。这枚码 ≈ 27 bit、靠人手搬运，
+    /// 是三种凭证里最弱的一档；3 分钟够覆盖「解锁手机 → 打开 app → 输码 → 确认」
+    /// 的正常流程。到点换**新码**而不是延命——已暴露过的码延长窗口只是拉长风险。
     pub fn short_code(&self, now_ms: i64) -> Result<RcShortCode, String> {
         use ring::rand::{SecureRandom, SystemRandom};
         let mut guard = self.short_code.lock().map_err(|_| "配对状态暂时不可用")?;
@@ -82,7 +94,10 @@ impl RcJoins {
                 break value % 100_000_000;
             }
         };
-        let code = RcShortCode { code: format!("{value:08}"), expires_at: now_ms + 10 * 60 * 1000 };
+        let code = RcShortCode {
+            code: format!("{value:08}"),
+            expires_at: now_ms + SHORT_CODE_TTL_MS,
+        };
         *guard = Some(code.clone());
         Ok(code)
     }

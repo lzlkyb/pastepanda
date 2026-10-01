@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>远程电脑·手机端 — 设备页设计稿（2026-09-30）</title>
+<style>
+  :root {
+    --app-bg: #0b1220; --card-bg: #111a2e; --text-primary: #e6edf7; --text-secondary: #9aa8bd;
+    --text-muted: #64748b; --border-color: #22304a; --accent: #6366f1; --accent-cyan: #22d3ee;
+    --accent-green: #34d399; --accent-amber: #fbbf24; --accent-red: #f87171;
+    --glass: rgba(17, 26, 46, 0.72); --glass-border: rgba(99, 102, 241, 0.22);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--app-bg); color: var(--text-primary); font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; line-height: 1.75; font-size: 15px; }
+  .page { max-width: 1180px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h1 .sub { font-size: 14px; color: var(--text-muted); font-weight: 400; margin-left: 12px; }
+  h2 { font-size: 20px; margin: 56px 0 8px; padding-top: 20px; border-top: 1px solid var(--border-color); }
+  h2 .no { color: var(--accent-cyan); font-family: Consolas, monospace; margin-right: 8px; }
+  h3 { font-size: 16px; margin: 28px 0 8px; }
+  p, li { color: var(--text-secondary); }
+  strong { color: var(--text-primary); }
+  code { font-family: Consolas, monospace; font-size: 13px; background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.25); color: #c7d2fe; border-radius: 5px; padding: 1px 6px; }
+  .meta { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .tag { display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 20px; margin-right: 8px; vertical-align: 2px; }
+  .tag-warn { background: rgba(251,191,36,.12); color: var(--accent-amber); border: 1px solid rgba(251,191,36,.3); }
+  .tag-ok { background: rgba(52,211,153,.12); color: var(--accent-green); border: 1px solid rgba(52,211,153,.3); }
+  .tag-info { background: rgba(99,102,241,.12); color: #a5b4fc; border: 1px solid rgba(99,102,241,.3); }
+  .card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 18px 22px; margin: 14px 0; backdrop-filter: blur(6px); }
+  .card.redline { border-left: 3px solid var(--accent-red); }
+  .card.okline { border-left: 3px solid var(--accent-green); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .decision { border-left: 3px solid var(--accent); }
+  .decision .dt { font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .decision .dt::before { content: "▸ "; color: var(--accent-cyan); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th { background: rgba(99,102,241,.10); color: var(--text-primary); text-align: left; padding: 9px 12px; border: 1px solid var(--border-color); font-size: 13px; white-space: nowrap; }
+  td { padding: 9px 12px; border: 1px solid var(--border-color); vertical-align: top; color: var(--text-secondary); }
+  td b { color: var(--text-primary); font-weight: 600; }
+  .num { font-family: Consolas, monospace; color: var(--accent-cyan); }
+  .warn { color: var(--accent-amber); } .good { color: var(--accent-green); } .bad { color: var(--accent-red); }
+  ul.tight li { margin: 4px 0; }
+  .kbd-hint { display:inline-block; background: var(--card-bg); border:1px solid var(--border-color); border-bottom-width: 2px; border-radius: 5px; padding: 0 7px; font-size: 12px; font-family: Consolas, monospace; color: var(--text-primary); }
+
+  /* ===== 手机 mockup ===== */
+  .phoneRow { display: flex; gap: 30px; flex-wrap: wrap; margin: 18px 0; align-items: flex-start; }
+  .phone { width: 300px; border-radius: 34px; border: 3px solid #2a3a58; overflow: hidden; background: var(--app-bg); box-shadow: 0 18px 50px rgba(0,0,0,.5); flex-shrink: 0; }
+  .phone .pstatus { display: flex; align-items: center; gap: 8px; padding: 14px 16px 8px; font-size: 13px; color: var(--text-muted); }
+  .phone .pbody { padding: 6px 14px 14px; display: flex; flex-direction: column; gap: 10px; min-height: 420px; }
+  .phone .tabbar { display: flex; border-top: 1px solid var(--border-color); background: var(--card-bg); padding-bottom: env(safe-area-inset-bottom, 8px); }
+  .phone .tab { flex: 1; text-align: center; padding: 12px 0 10px; font-size: 13px; color: var(--text-muted); font-weight: 600; }
+  .phone .tab.on { color: var(--accent-cyan); }
+  .mcard { border: 1px solid var(--border-color); border-radius: 14px; background: var(--card-bg); padding: 14px 16px; }
+  .mcard .mt { font-weight: 700; font-size: 15px; color: var(--text-primary); }
+  .mcard .ms { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .dLive { background: var(--accent-green); } .dRecent { background: var(--accent-cyan); }
+  .dSeen { background: var(--text-muted); } .dNever { background: var(--accent-red); }
+  .mbtn { display: block; width: 100%; text-align: center; padding: 12px; border-radius: 12px; border: 1px solid var(--accent); background: rgba(99,102,241,.16); color: var(--text-primary); font-size: 14px; font-weight: 700; }
+  .mbtn.ghost { border-color: var(--border-color); background: transparent; color: var(--text-secondary); font-weight: 400; }
+  .mbtn.cyan { border-color: var(--accent-cyan); background: rgba(34,211,238,.14); }
+  .bigCode { font-family: Consolas, monospace; font-size: 30px; letter-spacing: 4px; text-align: center; color: var(--accent-cyan); padding: 10px 0 2px; }
+  .codeExp { font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 8px; }
+  .codeInput { display: flex; gap: 8px; justify-content: center; margin: 6px 0; }
+  .codeInput .ci { width: 44px; height: 52px; border: 1px solid var(--border-color); border-radius: 10px; background: rgba(99,102,241,.08); display: flex; align-items: center; justify-content: center; font-size: 22px; font-family: Consolas, monospace; color: var(--text-primary); }
+  .codeInput .ci.dash { border: none; background: none; width: 12px; }
+  .cap2 { display: flex; gap: 8px; }
+  .cap2 .mbtn { flex: 1; padding: 10px; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-cyan); border-top-color: transparent; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -1px; margin-right: 6px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .phoneCap { font-size: 12.5px; color: var(--text-muted); margin-top: 10px; max-width: 300px; }
+  .fsm { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin: 16px 0; }
+  .fsm .node { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; min-width: 128px; }
+  .fsm .node .st { font-weight: 700; font-size: 13px; }
+  .fsm .node .desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 3px; }
+  .fsm .node.start { border-color: var(--accent); }
+  .fsm .node.emit { border-color: var(--accent-green); background: rgba(52,211,153,.07); }
+  .fsm .node.emit .st { color: var(--accent-green); }
+  .fsm .node.warn2 { border-color: var(--accent-amber); }
+  .fsm .arrow { align-self: center; color: var(--text-muted); font-size: 18px; padding: 0 2px; }
+  .fsm .cond { font-size: 11px; color: var(--accent-cyan); display: block; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>远程电脑 · 手机端 — 设备页设计稿<span class="sub">2026-09-30 · 待确认</span></h1>
+  <div class="meta">
+    <span class="tag tag-info">P1 第 6 条：配对 → 设备列表 → 发起会话</span>
+    <span class="tag tag-ok">逻辑层全复用，后端 0 行改动</span>
+    <span class="tag tag-warn">P1 粘贴码配对；扫码 P2</span>
+  </div>
+
+  <div class="card">
+    <strong>本稿解决什么</strong>：设备页签的真身——配对流、设备列表、发起会话三段。基于真实源码（规则 12）：
+    <code>src/hooks/useRc.ts</code> / <code>src/stores/rcStore.ts</code>（状态 hub，zustand 单例：status/targets/identity/busy/error 全在）、
+    <code>src/components/rc/RcA2PairExchange.tsx</code>（桌面配对流：双方各出八位码 → rcShortPairBegin → 轮询 rcExchangeCheck → paired）、
+    <code>src/lib/rcShortCode.ts</code>（PP-XXXX-XXXX 格式与识别）、
+    <code>src/lib/api/rcCommands.ts</code>（rcRequestSession / rcCancelRequest / rcEndSession / rcRequireActive）、
+    <code>src/lib/api/rcTypes.ts</code>（RcSession.phase：outbound_pending → outbound_active；RcTargetDevice.presence：live/recent/seen/never）。
+  </div>
+
+  <h2><span class="no">§0</span>结论先行（四条核心决策）</h2>
+  <div class="grid2">
+    <div class="card decision">
+      <div class="dt">D1 · 逻辑层全复用：rcStore / useRc / rcCommands / rcShortCode 原样 import</div>
+      状态轮询、设备列表、配对、会话发起的状态机桌面早已写好且是纯逻辑层——手机端只新写 UI 壳。后端 0 行改动。
+    </div>
+    <div class="card decision">
+      <div class="dt">D2 · P1 配对 = 短码互输（与桌面 A2 同一条流），扫码 P2</div>
+      双方各显示 8 位码（PP-XXXX-XXXX）、互输对方码即配对——桌面 A2 已是这条流，手机贴着走。扫码要相机权限 + 解码库 + Tauri 权限配置，P2 再上（邀请码本就支持粘贴）。
+    </div>
+    <div class="card decision">
+      <div class="dt">D3 · 会话发起点设备卡 = 底部动作面板（控制 / 只看），非模态</div>
+      点卡弹动作面板两键（规则 18 轻交互：高频一步、非模态不挡视野、点外部收回）。控制是默认色，只看次级。
+    </div>
+    <div class="card decision">
+      <div class="dt">D4 · 会话态直接换屏：outbound_active ⇒ 全屏 RcMobileSession</div>
+      pending（等对方确认）与 active（已连上）是两屏：pending 是可取消的等待卡；active 全屏切会话壳（触摸语义已验收那套）。会话断开自动回设备页。
+    </div>
+  </div>
+
+  <h2><span class="no">§1</span>页面三态（竖屏 mockup）</h2>
+  <div class="phoneRow">
+    <div>
+      <div class="phone">
+        <div class="pstatus">PastePanda</div>
+        <div class="pbody" style="justify-content:center; align-items:center; text-align:center">
+          <div style="font-size:34px">🖥</div>
+          <div style="font-weight:700; color:var(--text-primary); font-size:15px">还没有配对的电脑</div>
+          <div style="font-size:12px; color:var(--text-muted)">和电脑互相输入对方的 8 位配对码，<br>一次配对，长期可用</div>
+          <button class="mbtn" style="margin-top:8px">配对电脑</button>
+        </div>
+        <div class="tabbar"><div class="tab on">设备</div><div class="tab">文件</div><div class="tab">设置</div></div>
+      </div>
+      <div class="phoneCap"><b>空态 = 教学位</b>（L3）：一句话说清配对怎么做 + 唯一大按钮。配对入口从此处进。</div>
+    </div>
+    <div>
+      <div class="phone">
+        <div class="pstatus">PastePanda</div>
+        <div class="pbody">
+          <div class="mcard">
+            <div class="mt">这台手机 <span style="font-size:11px;color:var(--text-muted);font-weight:400">本机</span></div>
+            <div class="ms num" style="font-size:10px">node · a3f9…c21e</div>
+          </div>
+          <div class="mcard" style="border-color:rgba(99,102,241,.4)">
+            <div class="mt"><span class="dot dLive"></span>办公室-台式机</div>
+            <div class="ms">在线 · 上次直连 · 3 分钟前会话</div>
+          </div>
+          <div class="mcard">
+            <div class="mt"><span class="dot dSeen"></span>家里的笔记本</div>
+            <div class="ms">一周内见过 · 12 天前会话</div>
+          </div>
+          <div style="flex:1"></div>
+          <button class="mbtn ghost">＋ 配对新电脑</button>
+        </div>
+        <div class="tabbar"><div class="tab on">设备</div><div class="tab">文件</div><div class="tab">设置</div></div>
+      </div>
+      <div class="phoneCap"><b>列表态</b>：本机卡（身份锚点）+ 设备卡。presence 四档色点（<span class="good">live</span>/<span style="color:var(--accent-cyan)">recent</span>/灰 seen/<span class="bad">never</span>），副行 = 在线状态 + 上次路径/会话（RcTargetDevice 现成字段，不猜）。</div>
+    </div>
+    <div>
+      <div class="phone">
+        <div class="pstatus">PastePanda</div>
+        <div class="pbody" style="justify-content:center">
+          <div class="mcard" style="text-align:center; border-color:rgba(34,211,238,.4)">
+            <div style="padding:8px 0 2px"><span class="spin"></span></div>
+            <div class="mt">正在连接 办公室-台式机…</div>
+            <div class="ms">等对方在电脑上确认（受信任设备将自动通过）</div>
+            <button class="mbtn ghost" style="margin-top:10px">取消</button>
+          </div>
+        </div>
+        <div class="tabbar"><div class="tab on">设备</div><div class="tab">文件</div><div class="tab">设置</div></div>
+      </div>
+      <div class="phoneCap"><b>pending 态</b>（outbound_pending）：可取消的等待卡。trusted/auto-accept 设备此态一闪即过。active 后全屏切会话壳（不画在本稿）。</div>
+    </div>
+  </div>
+
+  <h2><span class="no">§2</span>配对流：短码互输（与桌面 A2 同流）</h2>
+  <div class="fsm">
+    <div class="node start"><div class="st">配对卡打开</div><div class="desc">rcShortPairCode()<br>显示自己的 PP-XXXX-XXXX</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="st">输入对方码</div><div class="desc">8 位分 4+4 两段<br>rcShortPairBegin(own, peer)</div>
+      <span class="cond">码错/过期 → 行内红字，可改</span></div>
+    <div class="arrow">→</div>
+    <div class="node warn2"><div class="st">waiting</div><div class="desc">轮询 rcExchangeCheck<br>可取消（rcShortPairCancel）</div></div>
+    <div class="arrow">→</div>
+    <div class="node emit"><div class="st">paired</div><div class="desc">成功反馈 → 回列表<br>refreshTargets()</div></div>
+  </div>
+  <div class="phoneRow">
+    <div>
+      <div class="phone">
+        <div class="pstatus">‹ 设备 · 配对</div>
+        <div class="pbody">
+          <div class="mcard">
+            <div class="ms">把这串码输入到电脑的「配对」页</div>
+            <div class="bigCode">4821<span style="color:var(--text-muted)">-</span>9073</div>
+            <div class="codeExp">10 分钟内有效 · <span style="color:var(--accent-cyan)">复制</span></div>
+          </div>
+          <div class="mcard">
+            <div class="ms">输入电脑上显示的 8 位码</div>
+            <div class="codeInput">
+              <div class="ci">7</div><div class="ci">3</div><div class="ci">5</div><div class="ci">0</div><div class="ci dash">-</div><div class="ci">2</div><div class="ci">2</div><div class="ci">8</div><div class="ci">1</div>
+            </div>
+          </div>
+          <button class="mbtn">开始配对</button>
+          <div style="flex:1"></div>
+          <div style="font-size:11px; color:var(--text-muted); text-align:center">两端同屏核对配对码即安全性来源（SAS 同语义）</div>
+        </div>
+        <div class="tabbar"><div class="tab on">设备</div><div class="tab">文件</div><div class="tab">设置</div></div>
+      </div>
+      <div class="phoneCap"><b>配对卡</b>：上半显示自己的码（可复制），下半输入对方的。输入自动跳格；确认即 begin。</div>
+    </div>
+    <div>
+      <div class="phone">
+        <div class="pstatus">‹ 设备 · 配对</div>
+        <div class="pbody" style="justify-content:center">
+          <div class="mcard" style="text-align:center">
+            <div class="mt"><span class="spin"></span>正在等双方确认…</div>
+            <div class="ms">电脑端也在输入你这串码。<br>对方确认后这里会自动跳。</div>
+            <button class="mbtn ghost" style="margin-top:10px">取消配对</button>
+          </div>
+        </div>
+        <div class="tabbar"><div class="tab on">设备</div><div class="tab">文件</div><div class="tab">设置</div></div>
+      </div>
+      <div class="phoneCap"><b>waiting 态</b>：桌面 A2 的 phase 同名复用；卸载必 cancel（桌面同款 effect）。过期/失败行内红字 + 可重开一张卡。</div>
+    </div>
+  </div>
+  <div class="card okline">
+    <strong>为什么手机端不做「PC 显示二维码、手机扫」的 P1</strong>：扫码 = 相机权限（AndroidManifest/WebView getUserMedia）+ QR 解码依赖 + 低光实拍调试，三件套全是设备相关风险；而短码互输桌面两端已有完整 UI，手机只要一张卡。粘贴路径（复制 PC 上的码）在手机上同样一步。<b>P2 补扫码</b>：进配对卡加一颗「扫二维码」入口，解析同一 8 位码。
+  </div>
+
+  <h2><span class="no">§3</span>会话发起状态机（驱动源 = rcStore 轮询的 status.session）</h2>
+  <div class="fsm">
+    <div class="node start"><div class="st">列表态</div><div class="desc">点设备卡 → 动作面板<br>（控制 / 只看）</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="st">rcRequestSession</div><div class="desc">capability 随选</div></div>
+    <div class="arrow">→</div>
+    <div class="node warn2"><div class="st">outbound_pending</div><div class="desc">等待卡（§1 右）<br>rcCancelRequest 可撤</div></div>
+    <div class="arrow">→</div>
+    <div class="node emit"><div class="st">outbound_active</div><div class="desc">全屏切 RcMobileSession<br>sessionId = session.id</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="st">结束</div><div class="desc">断开键 / 对端断 / 掉线<br>→ rcEndSession 回列表</div></div>
+  </div>
+  <table>
+    <tr><th>状态呈现</th><th>数据源（store 现成）</th><th>呈现</th></tr>
+    <tr><td><b>pending</b></td><td><code>status.session.phase === "outbound_pending"</code></td><td>等待卡 + 取消；<span class="warn">trusted 设备自动通过，此态可能一闪而过</span>——渲染不抢单帧，直接跟随 status</td></tr>
+    <tr><td><b>active</b></td><td><code>phase === "outbound_active"</code></td><td>整屏切 RcMobileSession（触摸/帧泵已验收）；标题 = 对端显示名（display_name 回落链复用）</td></tr>
+    <tr><td><b>断开</b></td><td>session 变 null / busy / error</td><td>回列表态；异常断开给一条说人话的错误条（isOpError 区分操作失败 vs 状态刷新失败）</td></tr>
+    <tr><td><b>busy</b></td><td><code>store.busy</code></td><td>请求期间按钮防重入（禁用 + 原文案不动）</td></tr>
+  </table>
+  <div class="card redline">
+    <strong>错误呈现红线（规则 15.3 / U3.5）</strong>：配对失败、请求失败、取消失败——全部走设备页内的常驻错误条（不是 toast 一闪），文案说人话（「对方电脑没响应，确认电脑端 PastePanda 开着」级别），技术细节进日志。store 的 error/statusError 已区分两类失败，手机端沿用同一判据。
+  </div>
+
+  <h2><span class="no">§4</span>视觉与复用</h2>
+  <div class="grid2">
+    <div class="card okline">
+      <strong>复用（零重写）</strong>
+      <ul class="tight">
+        <li><code>useRc / rcStore / rcStoreEngine</code> — 状态轮询 + 全部 action（request/cancel/end/pair…）</li>
+        <li><code>rcShortPairCode / Begin / Check / Cancel</code> + <code>rcShortCode</code> — 配对流</li>
+        <li><code>RcMobileSession</code> — 会话壳（已验收）</li>
+        <li><code>rcDisplayName</code> 回落链、presence/last_path 字段</li>
+        <li><b>后端 0 行改动</b></li>
+      </ul>
+      <strong>新增（src-mobile/，≤300 行红线）</strong>
+      <ul class="tight">
+        <li><code>devices/RcDevicesPage.tsx</code> — 三态编排（空/列表/会话切换）</li>
+        <li><code>devices/RcPairCard.tsx</code> — 配对卡（显示码/输入码/waiting）</li>
+        <li><code>devices/RcDeviceList.tsx</code> — 设备卡列表 + 动作面板</li>
+        <li><code>App.tsx</code> — 设备页签挂真身，沙盒入口挪到设置页（开发者联调用）</li>
+      </ul>
+    </div>
+    <div class="card redline">
+      <strong>P1 明确不做</strong>
+      <ul class="tight">
+        <li>扫码配对（P2：相机权限 + 解码库 + 实拍调试）</li>
+        <li>无人值守接入码 / 固定密码（uno 流 UI，P1.5——命令已备好，只缺 UI）</li>
+        <li>设备重命名 / 标签 / 分组管理（桌面已有，手机 P2 只读展示）</li>
+        <li>文件页签真身（rc-file ALPN，P1.5）</li>
+        <li>附近设备发现（规划红线：手机端永不）</li>
+      </ul>
+      <strong>已知边界</strong>
+      <ul class="tight">
+        <li>手机端只当<b>发起端</b>（被控 = 桌面专用，规划 §3.1）</li>
+        <li>会话内设置（画质/码率细调）沿用会话壳工具条，本稿不重复设计</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <strong>确认点小结</strong>：① P1 配对走短码互输（桌面 A2 同流），扫码 P2；② 设备卡点按 = 底部动作面板（控制/只看）；③ pending/active 两态换屏，active 全屏切已验收的会话壳；④ 沙盒入口挪到设置页。确认后按 §4 新增清单实施。
+  </div>
+
+</div>
+</body>
+</html>

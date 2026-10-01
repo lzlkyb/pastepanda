@@ -584,14 +584,24 @@ pub fn open_pinned_image(
 ) -> Result<(), String> {
     log::info!("[pinned-image] open_pinned_image 被调用, path: {}", path);
     // (app, path) 直接随窗口创建线程带下去绑定，避免全局 slot 被连续双击覆盖（"双击A开B"）。
-    crate::pinned_window::create_native_window(app, &path)
+    // 贴图窗口是桌面能力（pinned_window 模块 mobile 不编译）
+    #[cfg(desktop)]
+    return crate::pinned_window::create_native_window(app, &path);
+    #[cfg(mobile)]
+    {
+        let _ = (&app, &path);
+        Err("贴图功能仅桌面端支持".to_string())
+    }
 }
 
 /// 关闭置顶图片（通知前端隐藏遮罩层 + 主动关闭当前原生置顶窗口）
 #[tauri::command]
 pub fn close_pinned_image() -> Result<(), String> {
     log::info!("[pinned-image] close_pinned_image 被调用");
+    #[cfg(desktop)]
     crate::pinned_window::close_current_window();
+    #[cfg(mobile)]
+    let _ = &(); // mobile 无贴图窗口，无需动作
     Ok(())
 }
 

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手机端 WebCodecs 解码探针 · PastePanda RC</title>
+<style>
+  :root {
+    --bg: #0b0e14; --card: #131824; --line: #232b3d;
+    --text: #e6ebf5; --dim: #8a94a8;
+    --ok: #34d399; --bad: #f87171; --warn: #fbbf24; --cyan: #22d3ee;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 16px 16px 96px; }
+  h1 { font-size: 18px; margin-bottom: 2px; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 14px; }
+  h2 { font-size: 14px; margin: 20px 0 8px; color: var(--cyan); }
+  .verdict { border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; font-size: 16px; font-weight: 700; border: 1px solid var(--line); }
+  .verdict.pass { background: rgba(52,211,153,.12); color: var(--ok); }
+  .verdict.fail { background: rgba(248,113,113,.12); color: var(--bad); }
+  .verdict.run { background: rgba(99,102,241,.12); color: var(--cyan); }
+  .env { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; font-size: 12px; color: var(--dim); word-break: break-all; }
+  .env b { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .pill.ok { background: rgba(52,211,153,.15); color: var(--ok); }
+  .pill.bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  .pill.na { background: rgba(138,148,168,.15); color: var(--dim); }
+  .pill.hw { background: rgba(34,211,238,.15); color: var(--cyan); }
+  #copyBtn { position: fixed; right: 14px; bottom: 14px; z-index: 9; background: #6366f1; color: #fff; border: 0; border-radius: 10px; padding: 11px 16px; font-size: 14px; font-weight: 600; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 11px; overflow-x: auto; color: var(--dim); }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+  <h1>WebCodecs 解码探针</h1>
+  <div class="sub">PastePanda RC 手机端 P0.5 探针 B · 自动运行 · 完成后点右下角「复制报告」回传</div>
+
+  <div id="verdict" class="verdict run">探测中…</div>
+  <div id="env" class="env">环境采集中…</div>
+
+  <h2>视频 · H.264（avc1 High，Annex-B，与桌面 H264Decoder 同口径）</h2>
+  <table><thead><tr><th>场景</th><th>codec 串</th><th>isConfigSupported</th><th>硬件偏好</th></tr></thead><tbody id="t-h264"></tbody></table>
+
+  <h2>视频 · HEVC（hev1，无 description = Annex-B）</h2>
+  <table><thead><tr><th>场景</th><th>codec 串</th><th>isConfigSupported</th><th>硬件偏好</th></tr></thead><tbody id="t-hevc"></tbody></table>
+
+  <h2>视频 · AV1（av01，与桌面 webcodecsAv1For 同口径）</h2>
+  <table><thead><tr><th>场景</th><th>codec 串</th><th>isConfigSupported</th><th>硬件偏好</th></tr></thead><tbody id="t-av1"></tbody></table>
+
+  <h2>音频 · AudioDecoder（mp4a.40.2 = AAC-LC，ASC 作 description，与桌面 rcAudio.ts 同口径）</h2>
+  <table><thead><tr><th>场景</th><th>codec / 参数</th><th>isConfigSupported</th></tr></thead><tbody id="t-aac"></tbody></table>
+
+  <h2>音频 · 参考（Opus，未来降级备选）</h2>
+  <table><thead><tr><th>场景</th><th>codec / 参数</th><th>isConfigSupported</th></tr></thead><tbody id="t-opus"></tbody></table>
+
+  <h2>原始报告 JSON</h2>
+  <pre id="report" class="hide">{}</pre>
+
+  <button id="copyBtn">复制报告</button>
+
+<script>
+"use strict";
+/* ============================================================
+ * ① codec 串生成 —— 从 src/lib/rcH264.ts 原样移植（TS 类型剥除），
+ *    保证探针串与桌面端逐字节相同。
+ * ============================================================ */
+
+/** 与桌面 webcodecsCodecFor 同源：High profile + 动态 level。 */
+function webcodecsCodecFor(w, h, fps) {
+  fps = fps || 0;
+  var width = Math.max(1, w | 0), height = Math.max(1, h | 0);
+  var level;
+  if (width >= 3200 || height >= 1800) level = 0x33;      // 5.1
+  else if (width >= 2560 || height >= 1440) level = 0x32; // 5.0
+  else if (width >= 1920 || height >= 1080) level = 0x2a; // 4.2
+  else level = 0x28;                                      // 4.0
+  if (fps > 60 && level < 0x33) level = 0x33;
+  var frameMbs = Math.ceil(width / 16) * Math.ceil(height / 16) * Math.max(1, fps | 0);
+  var ladder = [[0x28, 245760], [0x2a, 522240], [0x30, 589824], [0x33, 983040], [0x34, 2073600]];
+  for (var i = 0; i < ladder.length; i++) {
+    if (frameMbs <= ladder[i][1]) {
+      if (ladder[i][0] > level) level = ladder[i][0];
+      break;
+    }
+  }
+  return "avc1.6400" + level.toString(16).padStart(2, "0");
+}
+
+/** 与桌面 webcodecsHevcFor 同源：按 luma 采样率取最小覆盖档。 */
+function webcodecsHevcFor(w, h, fps) {
+  fps = fps || 0;
+  var width = Math.max(1, w | 0), height = Math.max(1, h | 0);
+  var f = fps === 0 ? 60 : Math.max(1, fps);
+  var lumaSr = width * height * f;
+  var levelIdc =
+    lumaSr > 534768640 ? 156 :
+    lumaSr > 267382784 ? 153 :
+    lumaSr > 133691392 ? 150 :
+    lumaSr > 66732480 ? 123 : 120;
+  return "hev1.1.6.L" + levelIdc + ".B0";
+}
+
+/** 与桌面 webcodecsAv1For 同源。 */
+function webcodecsAv1For(w, h, fps) {
+  fps = fps || 0;
+  var f = fps === 0 ? 60 : Math.max(1, fps);
+  var lumaSr = Math.max(1, w) * Math.max(1, h) * f;
+  var levelIdx =
+    lumaSr > 213389312 ? 16 :
+    lumaSr > 106420080 ? 14 :
+    lumaSr > 49766400 ? 13 :
+    lumaSr > 24322048 ? 10 :
+    lumaSr > 17567232 ? 9 : 8;
+  return "av01.0.0" + levelIdx + "M.08";
+}
+
+/* ============================================================
+ * ② ASC（AudioSpecificConfig）2 字节 —— AAC-LC 的 description。
+ *    位序：AOT(5)=2 + SFIDX(4bit→5bit) + CHCFG(4bit) + 三个标志位 0。
+ * ============================================================ */
+var SFIDX = { 96000: 0, 88200: 1, 64000: 2, 48000: 3, 44100: 4, 32000: 5, 24000: 6, 22050: 7 };
+function ascLc(sampleRate, channels) {
+  var sf = SFIDX[sampleRate];
+  if (sf === undefined || channels < 1 || channels > 15) return null;
+  var bits = "00010" + sf.toString(2).padStart(5, "0") +
+             channels.toString(2).padStart(4, "0") + "000";
+  var b1 = parseInt(bits.slice(0, 8), 2);
+  var b2 = parseInt(bits.slice(8, 16).padEnd(8, "0"), 2);
+  return new Uint8Array([b1, b2]);
+}
+
+/* ============================================================
+ * ③ 探针执行
+ * ============================================================ */
+var results = { meta: {}, video: [], audio: [], criteria: {} };
+
+function pill(el) {
+  if (el === null) return '<span class="pill na">API 不存在</span>';
+  return el ? '<span class="pill ok">支持</span>' : '<span class="pill bad">不支持</span>';
+}
+function addRow(tbodyId, cells) {
+  var tr = document.createElement("tr");
+  tr.innerHTML = cells.map(function (c, i) {
+    return "<td" + (i === 1 ? ' class="mono"' : "") + ">" + c + "</td>";
+  }).join("");
+  document.getElementById(tbodyId).appendChild(tr);
+}
+
+/** 视频：桌面 H264Decoder.configure 同参（optimizeForLatency + annexb），
+ *  另测 hardwareAcceleration prefer-hardware 以判断硬解。 */
+async function probeVideo(tbodyId, scene, codec, std) {
+  var base = { codec: codec, optimizeForLatency: true };
+  if (std === "h264") base.avc = { format: "annexb" };
+
+  var soft = null, hw = null;
+  if (typeof VideoDecoder === "undefined") {
+    addRow(tbodyId, [scene, codec, pill(null), "—"]);
+  } else {
+    try { soft = (await VideoDecoder.isConfigSupported(base)).supported; }
+    catch (e) { soft = false; }
+    try {
+      hw = (await VideoDecoder.isConfigSupported(
+        Object.assign({}, base, { hardwareAcceleration: "prefer-hardware" })
+      )).supported;
+    } catch (e) { hw = false; }
+    addRow(tbodyId, [scene, codec, pill(soft),
+      hw ? '<span class="pill hw">硬解可用</span>' : '<span class="pill na">仅软解/未声明</span>']);
+  }
+  results.video.push({ scene: scene, codec: codec, std: std, supported: soft, hw: hw });
+}
+
+/** 音频：desktop rcAudio.ts 的 AudioDecoder config = codec + sampleRate +
+ *  numberOfChannels + description(ASC)。 */
+async function probeAudio(tbodyId, scene, codec, sampleRate, channels, asc) {
+  var res = null;
+  if (typeof AudioDecoder === "undefined") {
+    addRow(tbodyId, [scene, codec + " · " + sampleRate + "Hz ×" + channels, pill(null)]);
+  } else {
+    var cfg = { codec: codec, sampleRate: sampleRate, numberOfChannels: channels };
+    if (asc) cfg.description = asc;
+    try { res = (await AudioDecoder.isConfigSupported(cfg)).supported; }
+    catch (e) { res = false; }
+    addRow(tbodyId, [scene, codec + " · " + sampleRate + "Hz ×" + channels, pill(res)]);
+  }
+  results.audio.push({ scene: scene, codec: codec, sampleRate: sampleRate, channels: channels, withAsc: !!asc, supported: res });
+}
+
+(async function main() {
+  var secure = window.isSecureContext;
+  var hasVD = typeof VideoDecoder !== "undefined";
+  var hasAD = typeof AudioDecoder !== "undefined";
+
+  results.meta = {
+    userAgent: navigator.userAgent,
+    isSecureContext: secure,
+    api: { VideoDecoder: hasVD, AudioDecoder: hasAD },
+    screen: screen.width + "x" + screen.height + " @ " + (window.devicePixelRatio || 1) + "x",
+    probedAt: new Date().toISOString(),
+  };
+  document.getElementById("env").innerHTML =
+    "<b>UA</b> " + navigator.userAgent +
+    "<br><b>安全上下文</b> " + (secure ? "是（WebCodecs 前提满足）" : "否 ⚠ http 非 localhost 下 WebCodecs 整体不可用") +
+    "<br><b>API 存在</b> VideoDecoder=" + hasVD + " · AudioDecoder=" + hasAD +
+    "<br><b>屏幕</b> " + results.meta.screen;
+
+  // —— 视频：桌面端真实会用到的档位 ——
+  var vScenes = [
+    ["720p 30fps", 1280, 720, 30],
+    ["1080p 30fps", 1920, 1080, 30],
+    ["1080p 60fps", 1920, 1080, 60],
+    ["2K 60fps", 2560, 1440, 60],
+    ["4K 30fps", 3840, 2160, 30],
+    ["4K 60fps", 3840, 2160, 60],
+  ];
+  if (!hasVD) {
+    addRow("t-h264", ["—", "VideoDecoder 不存在（非安全上下文或 WebView 过旧）", pill(null), "—"]);
+  } else {
+    for (var i = 0; i < vScenes.length; i++) {
+      var s = vScenes[i];
+      await probeVideo("t-h264", s[0], webcodecsCodecFor(s[1], s[2], s[3]), "h264");
+    }
+    await probeVideo("t-hevc", "1080p 60fps", webcodecsHevcFor(1920, 1080, 60), "hevc");
+    await probeVideo("t-hevc", "4K 60fps", webcodecsHevcFor(3840, 2160, 60), "hevc");
+    await probeVideo("t-av1", "1080p 60fps", webcodecsAv1For(1920, 1080, 60), "av1");
+    await probeVideo("t-av1", "4K 60fps", webcodecsAv1For(3840, 2160, 60), "av1");
+  }
+
+  // —— 音频：AAC-LC（桌面同口径）——
+  await probeAudio("t-aac", "48kHz 立体声 + ASC", "mp4a.40.2", 48000, 2, ascLc(48000, 2));
+  await probeAudio("t-aac", "44.1kHz 立体声 + ASC", "mp4a.40.2", 44100, 2, ascLc(44100, 2));
+  await probeAudio("t-aac", "48kHz 单声道 + ASC", "mp4a.40.2", 48000, 1, ascLc(48000, 1));
+  await probeAudio("t-aac", "48kHz 立体声 无 ASC", "mp4a.40.2", 48000, 2, null);
+  // —— 音频：Opus（未来降级备选，顺带采集真值）——
+  await probeAudio("t-opus", "48kHz 立体声", "opus", 48000, 2, null);
+
+  // —— 判据（规划 §P0.5 探针 B）：H.264 至少一档 + AAC-LC ——
+  var h264ok = results.video.some(function (v) { return v.std === "h264" && v.supported; });
+  var aacok = results.audio.some(function (a) { return a.codec === "mp4a.40.2" && a.withAsc && a.supported; });
+  results.criteria = { h264Any: h264ok, aacLc: aacok };
+
+  var v = document.getElementById("verdict");
+  if (h264ok && aacok) {
+    v.className = "verdict pass";
+    v.textContent = "✅ 判据通过：H.264 至少一档 + AAC-LC 均支持 → 探针 B 过";
+  } else if (!secure || !hasVD) {
+    v.className = "verdict fail";
+    v.textContent = "❌ 前提不成立：需在安全上下文（https:// 或 file://）打开本页";
+  } else {
+    v.className = "verdict fail";
+    v.textContent = "❌ 判据未过：" + (h264ok ? "" : "H.264 无一档支持；") + (aacok ? "" : "AAC-LC 不支持；") + "→ 视频走原生 MediaCodec 插件路线";
+  }
+
+  var rep = document.getElementById("report");
+  rep.textContent = JSON.stringify(results, null, 2);
+  rep.classList.remove("hide");
+
+  document.getElementById("copyBtn").addEventListener("click", async function () {
+    var text = JSON.stringify(results, null, 2);
+    var btn = this;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = "已复制 ✓";
+    } catch (e) {
+      // 剪贴板 API 不可用时的兜底：选中让用户手动 Ctrl+C
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); ta.remove();
+      btn.textContent = "已复制(兜底) ✓";
+    }
+    setTimeout(function () { btn.textContent = "复制报告"; }, 2000);
+  });
+})();
+</script>
+</body>
+</html>

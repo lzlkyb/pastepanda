@@ -10,7 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Sparkles, Maximize2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useDialogStore } from "@/stores/dialogStore";
-import { getAiAvailability } from "@/lib/aiAvailability";
+import { useAiStatus } from "@/hooks/useAiStatus";
 import { errText } from "@/lib/utils";
 import { openInEditor } from "@/lib/openInEditor";
 import { generateDiagramFromPrompt } from "@/lib/diagram/aiGenerate";
@@ -34,7 +34,10 @@ export function DiagramEditor({ item, registerActions }: { item: import("@/store
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
-  const ai = getAiAvailability();
+  // 🔴 用订阅版而不是 getAiAvailability()：后者是同步读缓存，只在挂载那一刻取一次值。
+  //   编辑器开着时去设置页关掉总闸（或清空 key），入口就会一直留着 ——
+  //   规则 #16 要的是「跟总闸同步消失」，不是一个初始化快照。
+  const ai = useAiStatus();
   const closeEditor = useDialogStore((s) => s.closeEditor);
 
   const initialDoc = useRef(parseDiagram(item.content)).current;

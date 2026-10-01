@@ -20,26 +20,28 @@ export function NoteLayoutSwitch({
   onChange: (l: NoteLayout) => void;
 }) {
   return (
-    <div className={styles.modeSeg} role="group" aria-label="列表形态">
+    <div className={`${styles.modeSeg} ${styles.layoutSeg}`} role="group" aria-label="列表形态">
       <button
         type="button"
-        className={`${styles.modeBtn} ${value === "list" ? styles.modeOn : ""}`}
+        className={`${styles.modeBtn} ${styles.layoutBtn} ${value === "list" ? styles.modeOn : ""}`}
         onClick={() => onChange("list")}
         title="列表"
         aria-label="列表"
         aria-pressed={value === "list"}
       >
         <List size={14} />
+        <span>列表</span>
       </button>
       <button
         type="button"
-        className={`${styles.modeBtn} ${value === "grid" ? styles.modeOn : ""}`}
+        className={`${styles.modeBtn} ${styles.layoutBtn} ${value === "grid" ? styles.modeOn : ""}`}
         onClick={() => onChange("grid")}
         title="网格"
         aria-label="网格"
         aria-pressed={value === "grid"}
       >
         <LayoutGrid size={14} />
+        <span>网格</span>
       </button>
     </div>
   );

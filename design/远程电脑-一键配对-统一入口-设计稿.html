@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>远程电脑-一键配对-统一入口-设计稿</title>
+<style>
+  :root {
+    --app-bg: #f4f6f8; --card-bg: #ffffff; --border-color: #e3e6ea;
+    --text-primary: #1c1f23; --text-secondary: #5f6b76; --text-muted: #8b95a1;
+    --accent: #2f6fed; --accent-light: #e8f0fe; --accent-solid: #2f6fed;
+    --accent-border: #bcd0f7;
+    --success: #159a4a; --success-bg: #e6f6ec;
+    --warning: #b7791f; --warning-bg: #fdf3e0;
+    --danger: #c53030; --danger-bg: #fdecec;
+    --text-on-accent: #fff; --shadow-md: 0 8px 28px rgba(15,23,42,.16);
+    --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+    --section-bg: #eef1f5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #e9edf1; color: var(--text-primary);
+    font: 13px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--text-secondary); margin-bottom: 8px; max-width: 880px; }
+  h2 { font-size: 15px; margin: 32px 0 2px; }
+  .where { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+  del { color: var(--text-muted); }
+  ins { text-decoration: none; color: var(--success); font-weight: 600; }
+  table { border-collapse: collapse; font-size: 12px; background: var(--card-bg); }
+  th, td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--app-bg); font-weight: 600; }
+  code { font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--section-bg);
+    padding: 1px 5px; border-radius: var(--radius-sm); }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .cap { font-size: 12px; color: var(--text-muted); margin-top: 6px; max-width: 430px; line-height: 1.55; }
+  .cap b { color: var(--text-secondary); }
+
+  /* ── 桌面工作台外框 ── */
+  .wb { width: 720px; background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-md); overflow: hidden; }
+  .wb-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color); font-size: 12px; color: var(--text-muted); }
+  .wb-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+  .wb-body { display: flex; min-height: 300px; }
+  .wb-side { width: 190px; border-right: 1px solid var(--border-color); padding: 10px;
+    background: var(--app-bg); font-size: 12px; }
+  .wb-side .si { padding: 6px 8px; border-radius: var(--radius-md); color: var(--text-secondary);
+    display: flex; align-items: center; gap: 6px; }
+  .wb-side .si.on { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+  .wb-side .self { margin-top: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    background: var(--card-bg); padding: 8px; }
+  .wb-side .self b { font-size: 12px; }
+  .wb-side .self .tgl { margin-top: 6px; font-size: 11px; border: 1px solid var(--border-color);
+    border-radius: 999px; padding: 2px 8px; display: inline-flex; gap: 4px; align-items: center; }
+  .wb-main { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--section-bg); }
+
+  /* ── 常驻卡 / 统一配对屏共用件 ── */
+  .card { background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 12px; }
+  .card.acc { border-color: var(--accent-border); }
+  .card h3 { margin: 0 0 2px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .card .sub { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+  .nrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--card-bg); }
+  .nrow + .nrow { margin-top: 6px; }
+  .av { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-light);
+    color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .av.ro { border-radius: 50%; background: var(--section-bg); color: var(--text-secondary); }
+  .nrow .meta { font-size: 11px; color: var(--text-muted); }
+  .nrow .go { margin-left: auto; }
+  .foot { font-size: 11px; color: var(--text-secondary); margin-top: 8px; line-height: 1.5; }
+  .pause { display: flex; align-items: center; gap: 8px; background: var(--warning-bg);
+    border-radius: var(--radius-md); padding: 8px 10px; font-size: 12px; color: #7a5410; }
+
+  /* ── 一份凭证，两种形态（§3 核心） ── */
+  .split { display: flex; gap: 16px; align-items: center; }
+  .qr { width: 132px; height: 132px; flex: none; display: grid; place-items: center;
+    background:
+      repeating-conic-gradient(var(--text-primary) 0 25%, transparent 0 50%) 0 0/16px 16px,
+      var(--card-bg);
+    border: 8px solid var(--card-bg); outline: 1px solid var(--border-color); }
+  .codeside { flex: 1; }
+  .code8 { font: 700 34px/1.1 ui-monospace, Consolas, monospace; letter-spacing: 8px;
+    color: var(--text-primary); padding: 6px 0 2px; }
+  .cdown { font-size: 11px; color: var(--text-muted); }
+  .onecred { display: flex; gap: 8px; align-items: flex-start; background: var(--accent-light);
+    border-radius: var(--radius-md); padding: 8px 10px; font-size: 12px; color: #1d4fd7; margin-top: 10px; }
+
+  /* ── 8 位配对码核对屏 ── */
+  .pin { text-align: center; padding: 18px 12px 12px; }
+  .pin .digits { font: 700 30px/1.1 ui-monospace, Consolas, monospace; letter-spacing: 6px;
+    color: var(--accent); margin: 10px 0 4px; }
+  .pin .who { font-size: 12px; color: var(--text-secondary); }
+  .pin .warn { font-size: 11px; color: var(--warning); margin-top: 8px; }
+  .pin .acts { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+  .pin .waiting { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+
+  /* ── 统一配对屏骨架 ── */
+  .sheet-title { font-size: 14px; font-weight: 700; }
+  .sec-label { font-size: 11px; color: var(--text-muted); font-weight: 600; margin: 12px 0 6px; }
+  .act { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left;
+    padding: 11px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    background: var(--card-bg); }
+  .act + .act { margin-top: 8px; }
+  .act .oi { width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--accent-light);
+    color: var(--accent); display: grid; place-items: center; font-size: 15px; flex: none; }
+  .act b { font-size: 13px; display: block; }
+  .act small { color: var(--text-secondary); font-size: 11px; }
+  .act.pri { border-color: var(--accent); }
+  .inp { width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    padding: 9px 10px; font: 15px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 2px;
+    background: var(--card-bg); }
+  .adv { border-top: 1px dashed var(--border-color); padding-top: 8px; margin-top: 12px; }
+  .adv summary { color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+  .allowbar { display: flex; align-items: center; gap: 10px; background: var(--card-bg);
+    border: 1px solid var(--accent); border-radius: var(--radius-lg); padding: 10px 12px;
+    box-shadow: var(--shadow-md); width: 620px; }
+  .allowbar .fp { font: 11px/1.3 ui-monospace, Consolas, monospace; color: var(--text-muted); }
+
+  /* ── 手机框 ── */
+  .phone { width: 375px; border: 8px solid #1c1f23; border-radius: 28px; overflow: hidden;
+    background: #f7f9fb; box-shadow: var(--shadow-md); }
+  .phone .pbar { display: flex; justify-content: space-between; padding: 6px 14px;
+    font-size: 10px; color: var(--text-muted); background: #eef2f6; }
+  .phone .ptabs { display: flex; border-top: 1px solid var(--border-color); background: var(--card-bg); }
+  .phone .ptabs span { flex: 1; text-align: center; font-size: 11px; padding: 8px 0; color: var(--text-muted); }
+  .phone .ptabs .on { color: var(--accent); font-weight: 700; }
+  .pbody { padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 420px; }
+  .pcard { background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 12px; }
+  .pcard h4 { margin: 0 0 2px; font-size: 13px; }
+  .pcard .sub { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+  .scanbox { height: 140px; border: 2px dashed var(--accent); border-radius: var(--radius-md);
+    display: grid; place-items: center; color: var(--accent); font-size: 12px;
+    background: repeating-linear-gradient(45deg, #fbfcfe 0 10px, #f3f6fb 10px 20px); }
+  .btn { border: 1px solid var(--border-color); background: var(--card-bg); border-radius: 6px;
+    padding: 7px 14px; font-size: 12px; color: var(--text-primary); cursor: pointer; }
+  .btn-pri { border: 0; background: var(--accent-solid); color: var(--text-on-accent);
+    border-radius: 6px; padding: 7px 14px; font-size: 12px; }
+  .btn-block { width: 100%; text-align: center; padding: 10px 12px; border-radius: var(--radius-md); }
+  .btn-ghost { background: transparent; }
+  .ok { color: var(--success); }
+  .mut { color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 一键配对（统一入口）设计稿</h1>
+<p class="lede">
+<b>一个入口，一种码，不做网络判断。</b>用户分不清内网/外网，所以界面也不许出现这个判断：
+<strong>附近设备自动出现，能点就点；看不到就生成一份凭证——同一份凭证同屏显示为二维码和 8 位码</strong>，
+对方手机扫码、对方电脑敲码，走的是同一个秘密，用户不用选方式、不用选网络。
+全程只有一个 <b>8 位「配对码」</b>，只有一个动作：<b>两端显示同一个码，一样就各点确认</b>——
+同网点邻居时它是系统从两端密钥算出的核对值；走凭证时它就是你输/扫到的那一个（连上后原数回显，不会变）。
+所有路径末尾都是同一套 ed25519 身份落库，<strong>配对只发生一次</strong>，之后打开即连。
+</p>
+
+<!-- ══════════════════════ §0 ══════════════════════ -->
+<h2>§0 一张入口：用户做什么 / 系统自动做什么</h2>
+<table>
+  <tr><th style="width:170px">用户看到的</th><th>用户动作</th><th>系统自动做的事</th></tr>
+  <tr><td><b>主区常驻「附近的设备」卡</b></td><td>打开远程电脑就看，邻居出现就点</td>
+      <td>局域网 UDP 发现（2s 刷新，窗口隐藏即停）；通道未启动/无邻居时卡照渲但不列项</td></tr>
+  <tr><td><b>点一个邻居 → 8 位配对码核对</b></td><td>看一眼数字一样 → 各点确认</td>
+      <td>QUIC 密钥交换，从两端密钥算出 8 位核对值，两端都确认才写库</td></tr>
+  <tr><td><b>没看到对方 →「配对新设备」</b></td><td>点卡上主按钮 → 出示给对方</td>
+      <td>生成一次性凭证（secret 派生：二维码票据 + 8 位码两种编码，10 分钟、单次有效）</td></tr>
+  <tr><td><b>对端扫码 / 对端敲码</b></td><td>（对方侧）核对同一个 8 位码 → 各点确认</td>
+      <td>连上后两端回显凭证本身（扫到的/敲的就是那个数）——码被换过=两端对不上；不允许出现第二个数</td></tr>
+  <tr><td><b>手里有对方的凭证</b></td><td>「我拿到了对方给的配对码」→ 输入</td>
+      <td>直连该 secret 的临时端点（走公共中继也不改信任链）</td></tr>
+  <tr><td colspan="3" class="mut">
+        整个流程里用户只需要回答「我是出示方还是输入方」——这件事他天然知道（谁先打开谁出示）。
+        「内网/公网」不进界面，只作为系统内部自动切换的传输路径（LAN 直连优先，跨网回落中继）。
+        全程一个 8 位码、一个动作：两端一样，各点确认。
+      </td></tr>
+</table>
+
+<!-- ══════════════════════ §1 ══════════════════════ -->
+<h2>§1 电脑端 · 主页主区：常驻卡 = 单一入口</h2>
+<p class="where">位置：远程电脑主工作台 → 主区（设备详情上方）。卡上只有一个主按钮「配对新设备」，
+附近能看到的直接点，看不到的走按钮——两条路都不需要用户判断网络。</p>
+
+<div class="row">
+  <div>
+    <div class="wb">
+      <div class="wb-head"><span class="dot"></span>远程电脑 · 通道已启动 · LAPTOP-LZL</div>
+      <div class="wb-body">
+        <div class="wb-side">
+          <div class="si on">🖥 设备</div>
+          <div class="si">📁 文件</div>
+          <div class="si">🕘 记录</div>
+          <div class="si">⚙ 设置</div>
+          <div class="self">
+            <b>这台电脑</b>
+            <div class="tgl">✓ 已允许别人连接</div>
+            <div class="mut" style="font-size:11px;margin-top:4px">更多方式与设备号 ›</div>
+          </div>
+        </div>
+        <div class="wb-main">
+          <!-- ▼▼▼ 单一入口 ▼▼▼ -->
+          <div class="card acc">
+            <h3>📡 附近的设备</h3>
+            <div class="sub">自动发现同一个网络里的设备。配对只要一次，以后打开就能连。</div>
+            <div class="nrow">
+              <div class="av">这</div>
+              <div>
+                <b>这台手机</b> <span class="mut" style="font-size:11px">· 未配对</span>
+                <div class="meta">刚刚听到 · Redmi K90 Pro Max</div>
+              </div>
+              <button class="btn btn-pri go">配对</button>
+            </div>
+            <div class="nrow">
+              <div class="av">书</div>
+              <div>
+                <b>书房那台台式机</b> <span class="mut" style="font-size:11px">· 未配对</span>
+                <div class="meta">12 秒前听到</div>
+              </div>
+              <button class="btn btn-pri go">配对</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-pri" style="flex:1">＋ 配对新设备</button>
+            </div>
+            <div class="foot">
+              没看到对方？点「配对新设备」生成凭证——<b>同一份凭证，二维码和 8 位码都有</b>，
+              对方手机扫码、另一台电脑敲码都行。设备名是对方自报的，认不认得准以核对时的那个 8 位码为准。
+            </div>
+          </div>
+          <!-- ▲▲▲ 单一入口 ▲▲▲ -->
+          <div class="card" style="opacity:.55">
+            <h4>我的电脑（已配对）</h4>
+            <div class="sub">在线 · Windows 11 · 局域网直连</div>
+            <button class="btn btn-pri btn-block">远程控制</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>要点：</b>卡是唯一配对入口（旧「其他配对方式」折叠入口保留给高级，不再是主路）。
+      列表项沿用现有 <code>RcNearbyList</code> 形态（方圆角头像=未配对邻居，圆形=已配对设备）。
+      主按钮永远在——附近为空时它就是第一行动，不逼用户先明白「为什么是空的」。</div>
+  </div>
+
+  <div>
+    <div class="wb" style="width:340px">
+      <div class="wb-head"><span class="dot" style="background:var(--warning)"></span>远程电脑</div>
+      <div class="wb-body">
+        <div class="wb-main">
+          <div class="card acc">
+            <h3>📡 附近的设备</h3>
+            <div class="sub">自动发现同一个网络里的设备。</div>
+            <div class="pause">⚠ 你已暂停「允许别人连接本机」——附近的人看不到你，也收不到配对请求。<button class="btn" style="margin-left:auto">去开启</button></div>
+            <div class="nrow" style="margin-top:8px">
+              <div class="av">这</div>
+              <div><b>这台手机</b><div class="meta">刚刚听到 · 未配对</div></div>
+              <button class="btn btn-pri go">配对</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-pri" style="flex:1">＋ 配对新设备</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>门控提示（真实存在）：</b>发现依赖「允许别人连接本机」开关。暂停时卡内首行给黄色提示
+      + 一跳去开，否则用户只会看到「对方明明在旁边却列不出来」。</div>
+  </div>
+</div>
+
+<div class="cap" style="margin-top:10px">
+<b>通道未启动时</b>卡照渲（按钮仍是第一行动），顶部加一行小字「远程通道未启动 · 正在自动开启」——
+不开门也不引导，用户点任何按钮都会先拉起通道。无邻居时不渲空列表，主按钮承担行动（U3：空态要说清怎么让它不空）。
+</div>
+
+<!-- ══════════════════════ §2 ══════════════════════ -->
+<h2>§2 点邻居 → 卡内原地切 8 位配对码核对屏</h2>
+<p class="where">点「配对」后卡片原地切换（不开弹层、不跳页）。两端显示同一个 8 位配对码；人眼一致 → 各点确认。任一端取消即整轮作废。</p>
+
+<div class="row">
+  <div>
+    <div class="wb" style="width:420px">
+      <div class="wb-head"><span class="dot"></span>远程电脑 · 配对进行中</div>
+      <div class="wb-body"><div class="wb-main">
+        <div class="card acc">
+          <div class="pin">
+            <div class="who">正在和 <b>这台手机</b> 配对</div>
+            <div class="digits">4182 0620</div>
+            <div class="who">让对方在 Ta 的屏幕上看这串码</div>
+            <div class="warn">码不一样 ⇒ 有人在中间换密钥，点「不一样」取消</div>
+            <div class="acts">
+              <button class="btn">不一样，取消</button>
+              <button class="btn btn-pri">一样，确认配对</button>
+            </div>
+            <div class="waiting">已等对方确认…（对方确认后这里自动跳「已配对」）</div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="cap">确认是<b>两端各一次</b>：本端点「一样」后按钮转已点态，等对端回包；两端都确认即写库、
+      卡片收起、新设备进侧栏并自动选中（沿用现有 <code>onPairAccepted</code> 行为，不再加完成屏）。
+      U3 四态在卡内齐：等待中 / 已一端确认 / 配对成功（toast+列表刷新）/ 失败（说人话+重进入口，不靠 toast 存活）。</div>
+  </div>
+  <div>
+    <div class="wb" style="width:420px">
+      <div class="wb-head"><span class="dot" style="background:var(--danger)"></span>远程电脑</div>
+      <div class="wb-body"><div class="wb-main">
+        <div class="card" style="border-color:var(--danger)">
+          <div class="pin">
+            <div class="who">正在和 <b>这台手机</b> 配对</div>
+            <div class="digits mut">— — — —</div>
+            <div class="who">这次配对已经结束了</div>
+            <div class="mut" style="font-size:11px;margin-top:6px">对方取消了，或超过 60 秒未确认</div>
+            <div class="acts"><button class="btn btn-pri">重新发起</button></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="cap">失败态给「重新发起」——一键回到凭证屏，不回主界面让用户重新找入口。</div>
+  </div>
+</div>
+
+<!-- ══════════════════════ §3 ══════════════════════ -->
+<h2>§3 统一配对屏（电脑端）：一份凭证，两种形态</h2>
+<p class="where">入口：常驻卡主按钮「＋ 配对新设备」。屏内不再问「什么网络、对方是什么设备」——默认动作就是出示，
+凭证同时给二维码（手机扫）和 8 位码（电脑敲），同一秘密；次动作是「我拿到了对方的码」。</p>
+
+<div class="row">
+  <div>
+    <div class="wb" style="width:440px">
+      <div class="wb-head">配对新设备</div>
+      <div class="wb-body"><div class="wb-main">
+        <div class="sec-label">先看看附近（自动刷新）</div>
+        <div class="card">
+          <div class="nrow" style="border:0;padding:2px 0">
+            <div class="av">这</div>
+            <div><b style="font-size:12px">这台手机</b><div class="meta">刚刚听到 · 未配对</div></div>
+            <button class="btn btn-pri go" style="padding:5px 12px">配对</button>
+          </div>
+          <div class="foot" style="margin-top:4px">附近列表 20 秒听不到会自动移除；对方也开着 PastePanda 才会出现。</div>
+        </div>
+        <div class="sec-label">没看到对方？出示这份凭证给 Ta</div>
+        <button class="act pri">
+          <div class="oi">📋</div>
+          <div><b>出示给对方</b>
+            <small>生成后用：对方手机扫二维码，或另一台电脑输 8 位码</small></div>
+        </button>
+        <button class="act">
+          <div class="oi">⌨</div>
+          <div><b>我拿到了对方给的配对码</b>
+            <small>对方已经出示凭证在等你时用</small></div>
+        </button>
+        <div class="adv"><summary>高级：粘贴完整接入串 / 使用旧邀请码</summary></div>
+      </div></div>
+    </div>
+    <div class="cap">全部动作就三个，按尝试顺序排：附近（最省事）→ 出示（最普适）→ 输入（对端在等）。
+      没有「二维码配对」和「配对码配对」两个并列入口——那是把系统内部细节抛给用户。</div>
+  </div>
+
+  <div>
+    <div class="wb" style="width:440px">
+      <div class="wb-head">出示给对方</div>
+      <div class="wb-body"><div class="wb-main">
+        <div class="card">
+          <div class="split">
+            <div class="qr" title="配对凭证二维码（示意）"></div>
+            <div class="codeside">
+              <div class="mut" style="font-size:11px">或者让另一台电脑输这串码</div>
+              <div class="code8">6042 9183</div>
+              <div class="cdown">10 分钟内有效 · 只能用一次</div>
+              <button class="btn btn-block" style="margin-top:10px">复制这串码</button>
+            </div>
+          </div>
+          <div class="onecred">
+            <span>💡</span>
+            <span><b>这是同一份凭证。</b>手机扫左边的码，电脑敲右边的码，连的都是本机。谁先用掉，另一个就作废。
+            <b>对方连上后，两端显示的还是这个码</b>——一样就各点确认，全程不用记第二个数。</span>
+          </div>
+          <div class="foot">
+            对方确认后，本机弹「允许」才真正建立信任。这之前凭证就是唯一认证——只走你信过的渠道发送。
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="cap">二维码 = 一次性票据（对端公钥+中继地址+过期，iroh ticket 口径）；8 位码 = 同一 secret 的另一编码。
+      <b>电脑端全程不需要摄像头。</b></div>
+  </div>
+</div>
+
+<div class="row" style="margin-top:12px">
+  <div>
+    <div class="wb" style="width:440px">
+      <div class="wb-head">我拿到了对方给的配对码</div>
+      <div class="wb-body"><div class="wb-main">
+        <div class="card">
+          <input class="inp" placeholder="对方凭证上的 8 位码" />
+          <button class="btn btn-pri btn-block" style="margin-top:10px">开始配对</button>
+          <div class="mut" style="font-size:11px;margin-top:8px;line-height:1.6">
+            码不对会提示「不是有效配对码」；超过 10 分钟会提示「已过期，让对方重新出示一份」。<br>
+            输入即连接，无需对方实时在线。连上后两端显示同一个码——<b>就是你输的这个数</b>，
+            和对方屏幕对一眼即可确认；对不上说明码在传递途中被换过。
+          </div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+  <div>
+    <div class="allowbar">
+      <div class="av ro">书</div>
+      <div style="flex:1">
+        <b>书房那台台式机 想和本机配对</b>
+        <div class="fp">指纹 3F9A·21C0 · 刚刚通过配对凭证连接</div>
+      </div>
+      <button class="btn">拒绝</button>
+      <button class="btn btn-pri">允许</button>
+    </div>
+    <div class="cap"><b>允许弹窗：</b>独立于配对屏、最小化也能收到（复用现有 <code>RcJoinRequests</code> 挂载位）。
+      展示对端自报名 + 指纹短值；「允许」即写库并消费凭证（配对成功即关门，现有行为不变）。</div>
+  </div>
+</div>
+
+<!-- ══════════════════════ §4 ══════════════════════ -->
+<h2>§4 手机端 · 同一套入口，多了「扫一扫」</h2>
+<p class="where">手机是「有摄像头、键盘烂」的一端：统一屏里多一个扫一扫动作（电脑没有这个硬件，不放）。
+凭证出示时把 8 位码放大为主、二维码缩小为辅——因为对着手机出示的对端大概率是电脑，敲码更顺。</p>
+
+<div class="row">
+  <div>
+    <div class="phone">
+      <div class="pbar"><span>18:29</span><span>5G · 100%</span></div>
+      <div class="pbody">
+        <div class="pcard" style="opacity:.6">
+          <h4>这台手机 · 本机</h4><div class="sub">指纹 …a17f</div>
+        </div>
+        <div class="pcard acc" style="border-color:var(--accent)">
+          <h4>📡 附近的电脑</h4>
+          <div class="sub">自动发现同一个 WiFi 里的设备 · 配对一次以后直接连</div>
+          <div class="pcard" style="padding:8px 10px;margin-bottom:6px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="av ro">L</div>
+              <div style="flex:1"><b style="font-size:12px">LAPTOP-LZL</b>
+                <div class="mut" style="font-size:11px">未配对 · 刚刚听到</div></div>
+              <button class="btn btn-pri" style="padding:5px 12px">配对</button>
+            </div>
+          </div>
+          <button class="btn btn-pri btn-block">＋ 配对新电脑</button>
+        </div>
+      </div>
+      <div class="ptabs"><span class="on">设备</span><span>文件</span><span>设置</span></div>
+    </div>
+    <div class="cap">已配对电脑走原设备卡（圆头像+在线点）；附近卡只列未配对邻居，两层不混。
+      空列表态沿用现有「还没有配对的电脑 + 配对电脑按钮」。</div>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="pbar"><span>18:29</span><span>5G · 100%</span></div>
+      <div class="pbody">
+        <div class="sec-label" style="margin:0 0 6px">先看看附近</div>
+        <div class="pcard" style="padding:8px 10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="av ro">L</div>
+            <div style="flex:1"><b style="font-size:12px">LAPTOP-LZL</b>
+              <div class="mut" style="font-size:11px">未配对 · 刚刚听到</div></div>
+            <button class="btn btn-pri" style="padding:5px 12px">配对</button>
+          </div>
+        </div>
+        <div class="sec-label" style="margin:2px 0 6px">没看到？三种办法，哪个顺手用哪个</div>
+        <button class="act pri"><div class="oi">📷</div>
+          <div><b>扫电脑上的二维码</b><small>电脑出示凭证时用</small></div></button>
+        <button class="act"><div class="oi">📋</div>
+          <div><b>出示给对方</b><small>把码给电脑敲，或给另一台手机扫</small></div></button>
+        <button class="act"><div class="oi">⌨</div>
+          <div><b>我拿到了对方给的码</b><small>输入 8 位配对码</small></div></button>
+        <div class="adv"><summary>高级：粘贴完整接入串</summary></div>
+      </div>
+      <div class="ptabs"><span class="on">设备</span><span>文件</span><span>设置</span></div>
+    </div>
+    <div class="cap">手机的统一屏三个动作 = 电脑屏 + 扫一扫。没有网络判断、没有方式选择成本。</div>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="pbar"><span>18:29</span><span>5G · 100%</span></div>
+      <div class="pbody">
+        <div class="pcard" style="text-align:center">
+          <div class="mut" style="font-size:11px">出示这份凭证给对方</div>
+          <div class="code8" style="font-size:30px;padding:10px 0 2px">6042 9183</div>
+          <div class="cdown">给电脑敲这串码 · 10 分钟有效</div>
+          <div class="qr" style="width:96px;height:96px;margin:12px auto 4px"></div>
+          <div class="cdown">旁边有手机的话，也可以让 Ta 扫这个</div>
+          <div class="foot" style="text-align:left;margin-top:10px">同一份凭证：码和二维码连的都是本机，谁先用另一个作废。
+            对方连上后，两端显示的还是这个 8 位码——<b>就是你出示的这个数</b>，一样就各点确认。</div>
+        </div>
+      </div>
+      <div class="ptabs"><span class="on">设备</span><span>文件</span><span>设置</span></div>
+    </div>
+    <div class="cap">手机出示时码大、码小——屏幕小，敲码是主路径。仍是同一 secret，只是展示侧重不同。</div>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="pbar"><span>18:29</span><span>5G · 100%</span></div>
+      <div class="pbody">
+        <div class="pcard" style="text-align:center">
+          <div class="mut" style="font-size:11px">正在和 <b>LAPTOP-LZL</b> 配对</div>
+          <div class="digits" style="font:700 30px/1.1 ui-monospace,Consolas,monospace;
+            letter-spacing:6px;color:var(--accent);margin:14px 0 6px">4182 0620</div>
+          <div style="font-size:12px">和电脑屏幕上的一样吗？</div>
+          <button class="btn btn-pri btn-block" style="margin-top:14px">一样，确认配对</button>
+          <button class="btn btn-block btn-ghost" style="margin-top:8px">不一样，取消</button>
+          <div class="mut" style="font-size:11px;margin-top:10px;line-height:1.6">
+            等电脑端也确认…（屏幕 keep 亮着这个界面，锁屏会中断）<br>
+            附近配对时这串码由两端密钥算出；扫码/敲码连上后它就是那份凭证本身——全程只有这一个 8 位数。</div>
+        </div>
+      </div>
+      <div class="ptabs"><span class="on">设备</span><span>文件</span><span>设置</span></div>
+    </div>
+    <div class="cap">保留「屏幕保持亮着」提醒——真机实测息屏会断 HMR/轮询（已记入 P1 坑清单）。</div>
+  </div>
+</div>
+
+<!-- ══════════════════════ §5 ══════════════════════ -->
+<h2>§5 与现状的差异（只列变化）</h2>
+<table>
+  <tr><th>位置</th><th>现状</th><th>本稿</th></tr>
+  <tr><td>配对入口</td>
+      <td><del>侧栏「这台电脑」卡 → 折叠「更多方式与设备号」→「其他配对方式」</del>；空态时另有「开始配对」</td>
+      <td><ins>唯一入口：主区常驻卡 +「＋ 配对新设备」按钮</ins>（折叠入口保留给高级）</td></tr>
+  <tr><td>跨网方式</td>
+      <td><del>8+8 双向搬码 / 长邀请码</del></td>
+      <td><ins>一份凭证双形态：二维码（手机扫）+ 8 位码（电脑敲），同一 secret</ins>；单向、10 分钟、单次有效</td></tr>
+  <tr><td>用户要判断的事</td>
+      <td>内网还是外网？用二维码还是配对码？</td>
+      <td><ins>都不用判断</ins>：附近自动出现；凭证双形态全给；只区分「出示 / 输入」</td></tr>
+  <tr><td>侧栏 8 位互换卡</td>
+      <td>内联 <code>RcA2PairExchange</code>（双向 8+8，本次真机痛点）</td>
+      <td>保留原位不动（桌面自用/兜底），但不再是对配对的唯一路径</td></tr>
+  <tr><td>配对弹层</td>
+      <td>「远程配对」对话框（附近主路 + 高级码路）</td>
+      <td>不删：设置页入口与其共用；工作台主页改走常驻卡。两者后端状态同源（<code>useRcNearbyPair</code>）</td></tr>
+  <tr><td>手机端</td>
+      <td>设备页只有 8 位码卡</td>
+      <td><ins>附近卡 + 统一屏（扫一扫/出示/输入）+ 8 位配对码核对屏</ins>（后端命令现成，只做 UI）</td></tr>
+  <tr><td>码的位数</td>
+      <td><del>附近配对 6 位核对、互换码 8 位、邀请码一长串</del>——三种长度并存</td>
+      <td><ins>全程只用一个 8 位「配对码」</ins>：附近核对 6→8（研磨成本 ×64），扫码/敲码路径连上后
+          回显凭证本身（扫到的/敲的就是那个数），取消二次 SAS——不引入第二个数</td></tr>
+</table>
+
+<!-- ══════════════════════ §6 ══════════════════════ -->
+<h2>§6 实现要点（确认后实施用）</h2>
+<table>
+  <tr><th>项</th><th>做法</th></tr>
+  <tr><td>常驻卡 + 核对屏</td><td>新 <code>rc/RcNearbyPairPane.tsx</code>：卡 + 卡内 8 位配对码核对态（展开现成 <code>RcNearbyList</code>；
+      核对组件由 <code>RcPairPin</code> 泛化出 8 位形态或直接换新组件）。<code>RcWorkbench</code> 已 299/300 行——主文件只加一行包裹，不写逻辑。</td></tr>
+  <tr><td>配对码统一 8 位</td><td>附近链路的 SAS 从 6 位改 8 位：<code>short_pair</code>/<code>nearby</code> 两侧取位宽度一起改（错开版本=两端码长不同，必须同发）；
+      扫码/敲码路径连上后<b>回显凭证本身</b>，取消二次 SAS；<b>统一「配对码」展示组件</b>（断位 4+4、等宽、字距）三路复用：附近核对 / 凭证出示 / 输入预览。</td></tr>
+  <tr><td>一份凭证两个编码</td><td>新命令 <code>rc_pair_issue</code>：生成一次性 secret（10 分钟单效）→ 同回
+      <code>{ code: 8 位, ticket: 二维码票据 }</code>。二维码=ticket 的编码，8 位码=同一 secret 的另一种人类编码，
+      后端只存一份。<b>新增单向 secret 派生</b>（acceptor=出示方），<code>short_pair</code> 增加单向模式，旧双向流兼容保留。</td></tr>
+  <tr><td>统一屏</td><td>新 <code>settings/RcPairUnified.tsx</code>：附近列表 + 出示（双形态）+ 输入 + 高级折叠。
+      手机端同组件 Mobile 版式（多一个扫一扫 action，相机用现成扫码头）。</td></tr>
+  <tr><td>传输路径</td><td>界面零感知：LAN 直连优先、跨网回落公共中继，由 iroh 自己选路。UI 不展示「中继/直连」字样，
+      只在设备详情留一行「上次·局域网直连」的事实回放（现有行为）。</td></tr>
+  <tr><td>轮询</td><td>沿用 <code>useRcNearbyPair</code>（2s、窗口隐藏即停）。常驻后加一条：无配对进行中时退到 5s 节流
+      （量一下再定，不在注释里宣称「开销极小」）。</td></tr>
+  <tr><td>安全不变量</td><td>8 位配对码核对不允许跳过（三条路径同一个组件、同一套「一样/不一样」）；名字一律视为对端自报；
+      凭证 10 分钟过期 + 单次；「允许」弹窗是信任成立点；配对成功即消费凭证并关门（现有行为）。</td></tr>
+  <tr><td>规则符合</td><td>U1（>1s 出等待态）/ U3（四态齐全）/ U5（间距 4/8/12/16、圆角 4/8/12）/ U6（语义色）/
+      L1（「这台手机」「书房那台台式机」全用户语言，不提内网/外网/中继）/ L2（图标常驻文字）。实施后跑 <code>npm run lint:ui</code>。</td></tr>
+</table>
+
+<p class="lede" style="margin-top:24px">
+配套落地顺序建议：① 常驻卡 + 核对屏（内网零输入，当天可验）→ ② 统一屏 + 凭证双形态 + 单向 secret
+→ ③ 手机端三屏。每步独立可用，不等待全部完成。
+</p>
+
+</body>
+</html>

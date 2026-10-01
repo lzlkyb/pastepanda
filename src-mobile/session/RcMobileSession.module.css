@@ -1,0 +1,302 @@
+/* RcMobileSession — 会话壳样式。令牌与 src/styles/theme.css 同源（带兜底）。 */
+
+.root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg, #0b1220);
+  color: var(--text-primary, #e6edf7);
+  overflow: hidden;
+}
+
+/* ── 竖屏状态行 ── */
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px calc(6px + env(safe-area-inset-top, 0px));
+  font-size: 13px;
+  color: var(--text-secondary, #9aa8bd);
+  border-bottom: 1px solid var(--border-color, #22304a);
+}
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-green, #34d399);
+  flex-shrink: 0;
+}
+.statusTitle {
+  color: var(--text-primary, #e6edf7);
+  font-weight: 600;
+}
+.statusSub {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+
+/* ── 画面区 ── */
+.screenArea {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* contain 语义：canvas 内部像素按比例缩放，letterbox 由容器底色承担
+     （与桌面 rcCanvasStyle fit 分支同口径） */
+  object-fit: contain;
+}
+
+/* 本地触摸反馈（design §1：反馈即时，不靠猜） */
+.cursorRing {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-cyan, #22d3ee);
+  background: rgba(34, 211, 238, 0.14);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+  z-index: 3;
+}
+.cursorRingOn {
+  opacity: 1;
+}
+.chargeRing {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-amber, #fbbf24);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 3;
+}
+.chargeRingOn {
+  opacity: 1;
+  animation: chargePulse 550ms linear forwards;
+}
+.chargeRingDrag {
+  opacity: 1;
+  border-color: var(--accent-green, #34d399);
+  background: rgba(52, 211, 153, 0.22);
+  animation: none;
+}
+@keyframes chargePulse {
+  from {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5);
+  }
+  to {
+    box-shadow: 0 0 0 26px rgba(251, 191, 36, 0);
+  }
+}
+.ripple {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid var(--accent, #6366f1);
+  pointer-events: none;
+  animation: rip 450ms ease-out forwards;
+  z-index: 3;
+}
+.rippleRight {
+  border-color: var(--accent-amber, #fbbf24);
+}
+.rippleBig {
+  border-color: var(--accent-cyan, #22d3ee);
+}
+@keyframes rip {
+  from {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+/* ── 修饰键条（软键盘上缘） ── */
+.modifierBar {
+  border-top: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
+  background: var(--card-bg, #111a2e);
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.modRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mkKey {
+  min-width: 42px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--border-color, #22304a);
+  color: var(--text-primary, #e6edf7);
+  font-size: 13px;
+  font-weight: 600;
+}
+.mkSticky {
+  background: rgba(34, 211, 238, 0.22);
+  border-color: var(--accent-cyan, #22d3ee);
+  color: var(--accent-cyan, #22d3ee);
+}
+.mkSep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-color, #22304a);
+  margin: 2px 4px;
+}
+.modeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modeBtn {
+  padding: 5px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border-color, #22304a);
+  background: transparent;
+  color: var(--text-secondary, #9aa8bd);
+  font-size: 12px;
+}
+.modeOn {
+  border-color: var(--accent, #6366f1);
+  color: var(--text-primary, #e6edf7);
+  background: rgba(99, 102, 241, 0.16);
+}
+.modeHint {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+/* ── 工具条：竖屏底栏 / 横屏顶缘胶囊 ── */
+.toolbar {
+  display: flex;
+  justify-content: space-around;
+  border-top: 1px solid var(--border-color, #22304a);
+  background: var(--card-bg, #111a2e);
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  /* 剪贴板菜单 / hint 以本条为锚（竖屏静态时也要有定位上下文） */
+  position: relative;
+}
+.toolbarCapsule {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
+  border-radius: 22px;
+  padding: 6px 10px;
+  gap: 4px;
+  background: var(--glass, rgba(17, 26, 46, 0.72));
+  backdrop-filter: blur(6px);
+  z-index: 4;
+  transition: opacity 200ms;
+}
+/* 横屏隐藏态三重纪律（桌面 RcSessionCapsule 同款） */
+.toolbarHidden {
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+}
+.tbBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary, #9aa8bd);
+  font-size: 11px;
+}
+.tbBtn:active {
+  background: rgba(99, 102, 241, 0.14);
+}
+.tbOn {
+  color: var(--accent-cyan, #22d3ee);
+}
+.tbEnd {
+  color: var(--accent-red, #f87171);
+}
+.tbIcon {
+  font-size: 18px;
+  line-height: 1;
+}
+.tbLabel {
+  white-space: nowrap;
+}
+
+/* ── 剪贴板入口（推/取二选一菜单）+ 操作反馈条 ──
+   竖屏底栏向上弹，横屏胶囊向下弹（同一条规则按容器翻面）。 */
+.tbWrap {
+  position: relative;
+  display: flex;
+}
+.tbMenu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
+  border-radius: 12px;
+  background: var(--card-bg, #111a2e);
+  z-index: 5;
+}
+.toolbarCapsule .tbMenu {
+  bottom: auto;
+  top: calc(100% + 10px);
+}
+.tbMenuItem {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary, #e6ebf5);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+.tbMenuItem:active {
+  background: rgba(99, 102, 241, 0.14);
+}
+.tbHint {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 12px;
+  right: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color, #22304a);
+  border-radius: 8px;
+  background: var(--glass, rgba(17, 26, 46, 0.9));
+  color: var(--text-primary, #e6ebf5);
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+}
+.toolbarCapsule .tbHint {
+  bottom: auto;
+  top: calc(100% + 8px);
+}

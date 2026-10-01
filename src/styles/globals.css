@@ -66,6 +66,10 @@ img { -webkit-user-drag: none; user-select: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    /* 🔴 animation-delay 也得归零：时长被压成 0 之后，`backwards` 填充仍会让元素
+       在整段延迟里保持 opacity:0（设置页错峰入场封顶是 0.15s）。减少动画的用户
+       不该反而看到一段空白。 */
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;

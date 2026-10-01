@@ -33,6 +33,8 @@ pub mod data_store;
 pub mod dpapi;
 pub mod error;
 pub mod hashing;
+// 桌面专属子系统（手机端不编译）：热键建在 global-shortcut 插件上，手机无此概念。
+#[cfg(desktop)]
 mod hotkey_manager;
 mod icon_extractor;
 mod lan_pair;
@@ -44,6 +46,9 @@ mod mask;
 pub mod mcp;
 mod paste_engine;
 mod paste_target;
+// 贴图窗口整个建在 windows 原生 API 上（HWND/点击穿透/DWM），32 处原生调用，
+// 手机 RC 客户端无贴图概念——模块级门控，不为它逐点写 32 个空壳。
+#[cfg(desktop)]
 mod pinned_window;
 mod quick_paste;
 mod screenshot;
@@ -88,6 +93,8 @@ pub fn main_window_showing(window: &tauri::WebviewWindow) -> bool {
 /// **不会把它从任务栏恢复回来**，窗口依然缩着。全仓十几处
 /// `show() + set_focus()` 里只有两处带了它，其余都拉不回最小化的窗口。
 pub fn present_window(window: &tauri::WebviewWindow) {
+    // unminimize 是桌面 API（手机端没有最小化概念），mobile 下不编译。
+    #[cfg(desktop)]
     window.unminimize().ok();
     if let Err(e) = window.show() {
         log::warn!("[Window] 显示窗口失败: {}", e);
@@ -217,10 +224,26 @@ pub fn run() {
     // GPU 驱动级崩溃仍要靠 Windows 事件查看器的故障模块名。
     std::panic::set_hook(Box::new(|info| {
         use std::io::Write;
-        let dir = match std::env::var("APPDATA") {
-            Ok(d) => std::path::PathBuf::from(d).join("com.pastepanda.app"),
-            Err(_) => return,
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<非字符串 payload>".into());
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "<unknown>".into());
+        let bt = std::backtrace::Backtrace::force_capture().to_string();
+        let thread = std::thread::current().name().unwrap_or("<unnamed>").to_string();
+        // 🔴 Android（2026-09-30）：无 APPDATA 环境变量，旧 hook 在这里直接 return，
+        // 把 panic 消息整个吞掉（真机上只剩 "attempt to unwind out of rust" 一行，
+        // 无法定位）。改为 stderr 直落 logcat（tauri CLI 以 RustStdoutStderr 流式转发）。
+        let Ok(d) = std::env::var("APPDATA") else {
+            eprintln!("[PANIC] thread: {thread} @ {loc}\npayload: {msg}\nbacktrace:\n{bt}");
+            return;
         };
+        let dir = std::path::PathBuf::from(d).join("com.pastepanda.app");
         let _ = std::fs::create_dir_all(&dir);
         let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
@@ -229,21 +252,10 @@ pub fn run() {
         else {
             return;
         };
-        let msg = info
-            .payload()
-            .downcast_ref::<&str>()
-            .map(|s| (*s).to_string())
-            .or_else(|| info.payload().downcast_ref::<String>().cloned())
-            .unwrap_or_else(|| "<非字符串 payload>".into());
         let _ = writeln!(
             f,
-            "===== {} =====\nthread:  {}\npayload: {msg}\nlocation: {}\nbacktrace:\n{}\n",
+            "===== {} =====\nthread:  {thread}\npayload: {msg}\nlocation: {loc}\nbacktrace:\n{bt}\n",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
-            std::thread::current().name().unwrap_or("<unnamed>"),
-            info.location()
-                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-                .unwrap_or_else(|| "<unknown>".into()),
-            std::backtrace::Backtrace::force_capture(),
         );
         // dev 控制台同步可见
         log::error!("[PANIC] {msg} @ {}", info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default());
@@ -256,7 +268,20 @@ pub fn run() {
     #[cfg(target_os = "windows")]
     crate::rc::mft_diag::probe_nvenc_snapshot("P0 run 入口·logger 就绪");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // 🔴 rustls crypto provider 必须在任何 Client::build 之前装好（2026-09-30
+    //   真机实测）：依赖树里 axum-server 选的是 `tls-rustls-no-provider`，
+    //   reqwest/tauri 在 Android 上同样解析出 no-provider——没人装 provider 时
+    //   Tauri 建 WebView 的内部 reqwest 客户端（protocol/tauri.rs）直接 panic：
+    //   "No rustls crypto provider is configured"，启动即崩且消息被旧 hook 吞掉。
+    //   统一在入口装一次：幂等，先装者赢，后续全部路径（reqwest / axum-server /
+    //   mcp tls）复用进程级默认。
+    crate::mcp::tls::ensure_crypto_provider();
+    // 桌面专属插件（Cargo.toml 里三者也只在桌面依赖段声明，mobile 下不编译）：
+    // single-instance = 第二实例聚合；clipboard-manager 的底座 arboard 无 Android 实现；
+    // global-shortcut 手机端没有全局热键概念。
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // 文件关联：应用已运行时，系统双击 .md 文件会启动第二个实例，
             // 文件路径作为命令行参数传入，提取后发送事件到前端打开全屏编辑器
@@ -278,12 +303,13 @@ pub fn run() {
                 present_window(&window);
             }
         }))
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             log::info!("[BOOT] 0 setup 进入");
@@ -571,33 +597,20 @@ pub fn run() {
                 }
             };
 
-            let auto_strip_enabled = saved_config
-                .get("auto_strip")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            // 修复 U36：读取敏感内容防护配置。默认值须与前端 DEFAULT_CONFIG 一致
-            // （false = 默认关闭，由用户在设置中显式开启）——此前 unwrap_or(true)
+            // 剪贴板监听器的四项缓存：解析收口在 `clipboard_monitor::cache_patch_from`
+            // （与 `save_config` 共用同一份，规则 #11.1），**缺省值只在这里写**，
+            // 且必须与前端 DEFAULT_CONFIG 一致。
+            let cache_patch = clipboard_monitor::cache_patch_from(&saved_config);
+            let auto_strip_enabled = cache_patch.auto_strip.unwrap_or(false);
+            // 修复 U36：敏感内容防护默认关闭（false）。此前 unwrap_or(true)
             // 与前端默认 false 脱节，导致未保存过配置的用户防护被静默开启
-            let skip_sensitive_enabled = saved_config
-                .get("skip_sensitive")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let excluded_apps_list: Vec<String> = saved_config
-                .get("excluded_apps")
-                .and_then(|v| v.as_str())
-                .map(|s| {
-                    s.split(',')
-                        .map(|a| a.trim().to_string())
-                        .filter(|a| !a.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default();
+            let skip_sensitive_enabled = cache_patch.skip_sensitive.unwrap_or(false);
+            let excluded_apps_list = cache_patch.excluded_apps.unwrap_or_default();
             // P1 文档采集：结构化文本复制保留 CF_HTML。默认 true（与前端 DEFAULT_CONFIG 对齐），
             // 未保存过配置的用户也能直接用上文档保真采集
-            let doc_capture_enabled = saved_config
-                .get("doc_capture")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            let doc_capture_enabled = cache_patch.doc_capture.unwrap_or(true);
+            // 全局热键配置（桌面专属：类型在 hotkey_manager，mobile 不编译）
+            #[cfg(desktop)]
             let hotkey_config = hotkey_manager::HotkeyConfig {
                 show_window: saved_config
                     .get("hotkey")
@@ -738,7 +751,8 @@ pub fn run() {
             // 从数据库初始化 auto_strip 缓存（在 store.manage 之前已读取），避免轮询时每次都锁数据库
             monitor.update_auto_strip_cache(auto_strip_enabled);
             // 修复 U36：初始化敏感内容防护缓存
-            monitor.update_sensitive_cache(skip_sensitive_enabled, excluded_apps_list);
+            monitor.update_skip_sensitive_cache(skip_sensitive_enabled);
+            monitor.update_excluded_apps_cache(excluded_apps_list);
             // P1 文档采集：初始化 doc_capture 缓存
             monitor.update_doc_capture_cache(doc_capture_enabled);
             monitor.start();
@@ -753,7 +767,8 @@ pub fn run() {
                 log::warn!("[TrayManager] 托盘初始化失败: {}", e);
             }
 
-            // 全局热键
+            // 全局热键（桌面专属子系统，mobile 不编译）
+            #[cfg(desktop)]
             if let Err(e) = hotkey_manager::register_global_hotkeys(&handle, &hotkey_config) {
                 log::warn!("[HotkeyManager] 热键注册失败: {}", e);
                 // release 版为 windows_subsystem = "windows"，无控制台可见，仅 log::warn! 用户无法感知，
@@ -1139,6 +1154,7 @@ pub fn run() {
             commands::rc_short_pair_code,
             commands::rc_short_pair_begin,
             commands::rc_short_pair_cancel,
+            commands::rc_pin_pair_begin,
             commands::rc_exchange_check,
             commands::rc_invite_preview,
             commands::rc_pair,
@@ -1169,6 +1185,7 @@ pub fn run() {
             commands::rc_latest_frame,
             commands::rc_drain_frames,
             commands::rc_file_send,
+            commands::rc_file_send_blob,
             commands::rc_file_pull,
             commands::rc_file_respond,
             commands::rc_file_cancel,
@@ -1201,7 +1218,7 @@ pub fn run() {
             // 丙-①：入站申请的独立置顶浮层（主窗可能整场没开，告知不能只住主窗）
             rc::ask_pop::rc_ask_state,
             rc::ask_pop::rc_ask_hide,
-            // 局域网配对（A3）：附近设备 + 6 位数字核对
+            // 局域网配对（A3）：附近设备 + 配对码核对
             commands::rc_nearby_status,
             commands::rc_nearby_pair,
             commands::rc_nearby_confirm,

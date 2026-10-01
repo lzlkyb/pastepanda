@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识库 × PM · 决定日志 + 本周草稿（P0）— 设计稿</title>
+
+<!-- 真实主题令牌：以下 <style> 的 6 套变量整块抄自 design/kb-b-library-view.html:15-130
+     （那份又逐个抄自 src/styles/theme.css），本稿未改动任何一个色值。 -->
+<style>
+  :root,
+[data-theme="ocean"] {
+    --app-bg: #F7F7F8;
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #fff;
+    --card-border: #E0E4EB;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-light: #E0F2FE;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="midnight"] {
+    --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-solid: #666FC4;
+    --accent-light: #1E1B4B;
+    --warn-bg: #431407;
+    --warn-text: #FB923C;
+    --ok-bg: #14532D;
+    --ok-text: #4ADE80;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="forest"] {
+    --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #fff;
+    --card-border: #D1D9D3;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #171717;
+    --text-secondary: #58524F;
+    --text-muted: #726E6B;
+    --accent: #059669;
+    --accent-solid: #05875F;
+    --accent-light: #ECFDF5;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="blossom"] {
+    --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #fff;
+    --card-border: #F9D3E2;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #3D2231;
+    --text-secondary: #5F4755;
+    --text-muted: #86596D;
+    --accent: #F0568C;
+    --accent-solid: #CE3B70;
+    --accent-light: #FFDDEC;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="dawn"] {
+    --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #fff;
+    --card-border: #F0DDC8;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #2B2016;
+    --text-secondary: #5C4B38;
+    --text-muted: #7D6B58;
+    --accent: #E8734A;
+    --accent-solid: #C85A34;
+    --accent-light: #FFEDE2;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="ocean-dark"] {
+    --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #0A1628;
+    --card-border: #162B45;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #E0E8F0;
+    --text-secondary: #A2B6CD;
+    --text-muted: #7994B4;
+    --accent: #3B9EFF;
+    --accent-solid: #2D78C2;
+    --accent-light: #0A1E3A;
+    --warn-bg: #431407;
+    --warn-text: #FB923C;
+    --ok-bg: #14532D;
+    --ok-text: #4ADE80;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+
+  /* 补 3 个令牌（本稿的 .row.on / :hover / ::before 用到，kb-b 那批变量里没有）。
+     真值逐条抄自 src/styles/theme.css：
+       --accent-strong  327 / 511 / 637 / 752 / 867 / 982
+       --accent-shadow  386 / 543 / 664 / 779 / 894 / 1018
+       --hover          388 / 546 / 666 / 781 / 896 / 1021
+     midnight 与 ocean-dark 的 --accent-strong 在源文件里就是 var(--accent)，照抄不折值。 */
+  [data-theme="ocean"] {
+    --accent-strong: #0273AD;
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --hover: #E8ECF2;
+  }
+  [data-theme="midnight"] {
+    --accent-strong: var(--accent);
+    --accent-shadow: rgba(129, 140, 248, 0.2);
+    --hover: #1F1F23;
+  }
+  [data-theme="forest"] {
+    --accent-strong: #04835B;
+    --accent-shadow: rgba(5, 150, 105, 0.15);
+    --hover: #E8EDE8;
+  }
+  [data-theme="blossom"] {
+    --accent-strong: #B02C5D;
+    --accent-shadow: rgba(240, 86, 140, 0.15);
+    --hover: #FBE7F0;
+  }
+  [data-theme="dawn"] {
+    --accent-strong: #B95432;
+    --accent-shadow: rgba(232, 115, 74, 0.15);
+    --hover: #F7E9DA;
+  }
+  [data-theme="ocean-dark"] {
+    --accent-strong: var(--accent);
+    --accent-shadow: rgba(59, 158, 255, 0.2);
+    --hover: #0F1F35;
+  }
+</style>
+
+<style>
+  /* ===== 对齐版主题切换器（非界面内容，仅预览用） ===== */
+  .theme-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--card-bg);
+    border-bottom: 1px solid var(--card-border);
+    font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .theme-bar .tb-label { color: var(--text-secondary); font-weight: 600; }
+  .theme-bar button {
+    cursor: pointer; border: 1px solid var(--card-border); background: var(--card-bg);
+    color: var(--text-primary); border-radius: 999px; padding: 4px 12px; font-size: 11.5px;
+  }
+  .theme-bar button.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+  body { padding-top: 56px; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text-primary);
+    padding-left: 20px; padding-right: 20px; padding-bottom: 60px;
+    display: flex; flex-direction: column; align-items: center; gap: 32px;
+    font-size: 13px; line-height: 1.65;
+  }
+  .doc { max-width: 1080px; width: 100%; }
+  h1 { font-size: 20px; font-weight: 700; }         /* U5 字号档：20 */
+  h2 { font-size: 15px; font-weight: 600; margin: 32px 0 8px; padding-top: 16px; border-top: 1px solid var(--card-border); }
+  h3 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 16px 0 6px; }
+  p.meta { margin-top: 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: var(--accent-light); color: var(--accent-strong); padding: 1px 5px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 12px 0; }
+  th, td { border: 1px solid var(--card-border); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+  .def { color: var(--accent-strong); font-weight: 600; }
+  .warn { border-left: 3px solid var(--warn-text); background: var(--warn-bg); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 12px; margin: 12px 0; }
+  .ok { border-left: 3px solid var(--ok-text); background: var(--ok-bg); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 12px; margin: 12px 0; }
+
+  /* ===== 模拟窗口外壳 ===== */
+  .win { border: 1px solid var(--card-border); border-radius: 12px; overflow: hidden; background: var(--card-bg); margin: 8px 0 4px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .cap { font-size: 11px; color: var(--text-muted); margin: 0 0 12px; }
+
+  /* ---- 左栏内置项：数值全部照抄 FolderTree.module.css 的 .row ---- */
+  /* .row: display:flex; gap:6px; padding:7px 8px 7px 10px; font-size:13px; color:var(--text-primary)
+     .rowOn: background:var(--accent-light); color:var(--accent-strong); font-weight:600;
+             + ::before 左侧 3×16px 圆角 2px 竖条，left:2px，box-shadow:0 0 6px var(--accent-shadow)
+     .row:hover: background:var(--hover); transform:translateX(2px)
+     .row:focus-visible: outline:2px solid var(--accent); outline-offset:-2px            */
+  .side { width: 208px; flex: none; border-right: 1px solid var(--card-border); background: var(--card-bg); padding: 8px 0; }
+  .side-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 4px 10px; font-size: 11px; color: var(--text-muted); }
+  .row { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 10px; font-size: 13px; cursor: pointer; border-radius: 4px; }
+  .row:hover { background: var(--hover); transform: translateX(2px); }
+  .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .row.on { position: relative; background: var(--accent-light); color: var(--accent-strong); font-weight: 600; transform: none; }
+  .row.on::before { content: ""; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 3px; height: 16px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 6px var(--accent-shadow); }
+  .row .ico { width: 14px; height: 14px; flex: none; color: var(--text-secondary); }
+  .row.on .ico { color: var(--accent-strong); }
+  .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .ct { font-size: 11px; color: var(--text-muted); background: var(--hover); border: 1px solid var(--card-border); border-radius: 999px; padding: 0 6px; }
+  .row.on .ct { color: var(--accent-strong); background: var(--card-bg); border-color: var(--accent); }
+  .sep { height: 1px; background: var(--card-border); margin: 8px 10px; }
+  .newmark { font-size: 11px; color: var(--warn-text); }
+
+  /* ---- 中栏工具条（真实组件 KnowledgeToolbar；crumbExtra 是它的既有插槽） ---- */
+  .crumb { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--card-border); font-size: 13px; }
+  .crumb .path b { font-weight: 600; }
+  .crumb .n { font-size: 11px; color: var(--text-muted); }
+  .cap-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent-strong); background: var(--accent-light); cursor: pointer; }
+  .cap-chip:hover { background: var(--hover); }
+  .cap-chip.ghost { border-style: dashed; background: transparent; color: var(--text-secondary); }
+  .grow { flex: 1; }
+
+  /* ---- 决定日志行列表（复用 KbInboxPanel 的行节奏 + relativeTime） ---- */
+  .body3 { display: flex; }
+  .mid { flex: 1; min-width: 0; }
+  .grp { padding: 8px 12px 4px; font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+  .d-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--card-border); cursor: pointer; }
+  .d-row:hover { background: var(--hover); }
+  .d-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .d-date { font-size: 11px; color: var(--text-muted); flex: none; width: 40px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .d-kind { font-size: 11px; flex: none; padding: 1px 6px; border-radius: 4px; background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+  .d-kind.fact { background: var(--ok-bg); color: var(--ok-text); }
+  .d-kind.risk { background: var(--warn-bg); color: var(--warn-text); }
+  .d-txt { flex: 1; min-width: 0; font-size: 13px; }
+  .d-txt .src { display: block; margin-top: 2px; font-size: 11px; color: var(--text-muted); }
+  .d-when { font-size: 11px; color: var(--text-muted); flex: none; }
+
+  /* ---- 本周草稿：非模态预览层（§18 P3：不是弹窗、不挡视野、可一键推翻） ---- */
+  .draft { margin: 8px 12px; border: 1px dashed var(--accent); border-radius: 8px; background: var(--card-bg); }
+  .draft-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--card-border); font-size: 12px; color: var(--text-secondary); }
+  .draft-body { padding: 12px; font-size: 12.5px; line-height: 1.75; }
+  .draft-body h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .draft-body ul { list-style: none; }
+  .draft-body li { display: flex; gap: 6px; padding: 2px 0; }
+  .draft-body li .tick { color: var(--ok-text); flex: none; }
+  .draft-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--card-border); flex-wrap: wrap; }
+  .stats { font-size: 11px; color: var(--text-muted); }   /* 照抄 KbHealthBar .stats：中性统计，无 × 无动作 */
+  .btn { font-size: 12px; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-primary); cursor: pointer; }
+  .btn:hover { background: var(--hover); }
+  .btn.pri { background: var(--accent-solid); border-color: var(--accent-solid); color: #fff; }
+  .kbd { font-size: 11px; color: var(--text-muted); }
+
+  /* ---- 空态（首次指引：教那一行怎么写） ---- */
+  .empty { padding: 24px 16px; text-align: center; color: var(--text-secondary); font-size: 12.5px; }
+  .empty .eg { display: inline-block; margin-top: 8px; text-align: left; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: var(--hover); border: 1px solid var(--card-border); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); }
+  .flex { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 12px; }
+  /* 空态那行类别说明的间距（原来写在内联 style 里） */
+  .stats.gap-top { margin-top: 12px; }
+</style>
+</head>
+<body>
+
+<div class="theme-bar">
+  <span class="tb-label">主题（真实 6 套令牌）</span>
+  <button data-t="ocean" class="active">ocean 浅</button>
+  <button data-t="midnight">midnight 暗</button>
+  <button data-t="forest">forest 护眼</button>
+  <button data-t="blossom">blossom 粉</button>
+  <button data-t="dawn">dawn 暖橙</button>
+  <button data-t="ocean-dark">ocean-dark 深蓝</button>
+</div>
+
+<div class="doc">
+  <h1>知识库 × PM · 决定日志 + 本周草稿（P0）</h1>
+  <p class="meta">
+    对应规划：<code>docs/知识库-项目经理场景-规划-2026-09-28.md</code> §4 P0 的第 1、2、3 项。<br>
+    本稿只画<b>拟改变的部分</b>：左栏新增一个内置项、面包屑新增一个胶囊、中栏新增一个非模态预览层。其余（工具条、筛选控件、正文栏、右键菜单）与现有界面逐像素一致，故不重绘。<br>
+    真实基线：<code>KnowledgeView.tsx:360-429</code>、<code>FolderTree.tsx:273-337</code> 与 <code>FolderTree.module.css:144-219</code>、<code>KbInboxPanel.tsx:1-60</code>、<code>KbHealthBar.tsx:263-267</code>。
+  </p>
+
+  <h2>0 · 先申报三处「不 invent」的取舍</h2>
+  <table>
+    <tr><th>事</th><th>本稿怎么处理</th><th>为什么</th></tr>
+    <tr><td>「已被推翻」状态</td><td><b>不做</b>，决定行只有文字 + 出处 + 时间</td><td>规划里 <code>②丙 观察的「已被推翻」</code> 标着 ⏸ 缓（等写入判据产出观察）。现在画一个状态徽章就是虚构后端没有的字段</td></tr>
+    <tr><td>负责人 owner</td><td><b>不做</b>，行内不显示人名</td><td>P1#5 明确押后；<code>due</code> 已由待办 C2 落地（<code>@今天 18:00</code>），owner 没有解析器</td></tr>
+    <tr><td>项目=新实体</td><td><b>不做</b>，「决定日志」按现有 <code>folder_id</code> 聚合</td><td>§6 ① 的 a 案（文件夹 + 约定模板），新开表会撞同步协议红线</td></tr>
+  </table>
+  <div class="warn">🔴 <b>几何申报</b>：本稿没有引入任何新数值。行用 <code>FolderTree</code> 现值（<code>gap 6px</code> / <code>padding 7px 8px 7px 10px</code> / 选中竖条 3×16px）；字号只用 11/12/13/15/20；圆角只用 4/8/12；间距只用 4/8/12/16/24（U5 三张表）。预览层虚线框沿用「青色/紫色虚框预览」的既有视觉语言。</div>
+
+  <h2>1 · 决定日志（左栏第 5 个内置项）</h2>
+  <p class="cap">落点照抄回收站（W1）的做法：<code>folderFilter === "decisions"</code> 时把中栏<b>整个换掉</b>（<code>KnowledgeView.tsx:372-375</code> 的 TrashPanel 分支），因为这里没有搜索/新建/网格切换的意义。必须包一层 <code>.listWrap</code>（那条注释是 2026-09-15 实报的滚动 bug）。</p>
+
+  <div class="win">
+    <div class="body3">
+      <div class="side">
+        <div class="side-head"><span>文件夹</span><span>＋</span></div>
+        <div class="row"><span class="ico">▤</span><span class="nm">全部笔记</span><span class="ct">128</span></div>
+        <div class="row"><span class="ico">▥</span><span class="nm">未分类</span><span class="ct">12</span></div>
+        <div class="row"><span class="ico">▦</span><span class="nm">今日速记</span></div>
+        <div class="row on"><span class="ico">≣</span><span class="nm">决定</span><span class="ct">37</span><span class="newmark">新</span></div>
+        <div class="sep"></div>
+        <div class="row"><span class="ico">▾</span><span class="nm">项目 · 云平台迁移</span><span class="ct">24</span></div>
+        <div class="row"><span class="ico">▸</span><span class="nm">项目 · 客户端交付</span><span class="ct">19</span></div>
+        <div class="sep"></div>
+        <div class="row"><span class="ico">⌫</span><span class="nm">回收站</span><span class="ct">3</span></div>
+      </div>
+      <div class="mid">
+        <div class="crumb">
+          <span class="path"><b>决定</b></span><span class="n">37 条</span>
+          <span class="cap-chip ghost">时间倒序 ▾</span>
+          <span class="cap-chip ghost">不限项目 ▾</span>
+          <span class="grow"></span>
+          <span class="n">搜索框（沿用现组件）</span>
+        </div>
+        <div class="grp">2026 年 9 月 · 37 条</div>
+        <div class="d-row" tabindex="0">
+          <span class="d-date">09-26</span><span class="d-kind">决定</span>
+          <span class="d-txt">一期不做甘特图，行动项复用笔记正文的 <code>- [ ]</code> 行
+            <span class="src">出自《云平台迁移 · 评审纪要》 · 项目 · 云平台迁移</span></span>
+          <span class="d-when">3 天前</span>
+        </div>
+        <div class="d-row" tabindex="0">
+          <span class="d-date">09-24</span><span class="d-kind fact">事实</span>
+          <span class="d-txt">客户 A 的验收口径是「导出单文件能打开」，不要求在线协同
+            <span class="src">出自《客户 A ·  kickoff》 · 项目 · 客户端交付</span></span>
+          <span class="d-when">5 天前</span>
+        </div>
+        <div class="d-row" tabindex="0">
+          <span class="d-date">09-22</span><span class="d-kind risk">风险</span>
+          <span class="d-txt">对方接口联调窗口只有 3 天，晚一天交付就撞国庆
+            <span class="src">出自《进度讨论》 · 项目 · 云平台迁移</span></span>
+          <span class="d-when">7 天前</span>
+        </div>
+        <div class="grp">加载更多（沿用 <code>LoadMoreSentinel</code>，每批 20 条，同收件箱）</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>交互（规则 17 逐条对照）</h3>
+  <table>
+    <tr><th>动作</th><th>行为</th><th>依据</th></tr>
+    <tr><td>点整行 <span class="def">（默认）</span></td><td>打开出处笔记并<b>滚到那一行、高亮两秒</b>。定位用 <code>{noteId, line, expectedText}</code> 三元组，正文已漂移就报错刷新，<b>绝不静默跳错行</b></td><td>照抄 <code>todo_tasks.rs:480 apply_toggle</code> 的三重校验与「失败也推真实现状」（规则 15.3）</td></tr>
+    <tr><td>行右侧「⋯」/ 右键</td><td>复制这一条文字 · 在正文里定位 · 打开出处</td><td>规则 17.2：高频一步（点行=看上下文），低频进「⋯」</td></tr>
+    <tr><td>键盘</td><td>↑↓ 走行，Enter=点行，Ctrl+C=复制</td><td>规则 17.1：鼠标全流程可达，键盘只是加速器。<b>每行都有 <code>:focus-visible</code></b>（U7）</td></tr>
+    <tr><td>类别徽章</td><td>只显示<b>真被写过的 kind</b>；未知 kind 原样显示（词表是开放的，≤12 字）</td><td><code>annotate.rs:42 MAX_KIND_CHARS</code>；不发明枚举就不会有「显示不出来」</td></tr>
+    <tr><td>计数胶囊</td><td>左栏那个 37 走后端真计数，<b>不数前端已加载的行</b></td><td><code>commands/notes.rs:245 note_group_counts</code> 注释里那条「组头写 12 实际 20」的教训</td></tr>
+    <tr><td>性能</td><td>扫描<b>复用待办那张 <code>TodoScanCache</code></b>（按 <code>updated_ms</code> 失效），不新建第二份全库扫描</td><td>规则 11.1 收口 + 规则 8。<b>开销数字待真实规模库实测后才写</b>，本稿不宣称「极小」</td></tr>
+  </table>
+
+  <h2>2 · 本周草稿（面包屑胶囊 → 非模态预览）</h2>
+  <p class="cap">入口用 <code>KnowledgeToolbar</code> 已有的 <code>crumbExtra</code> 插槽（现在住着同步胶囊 <code>KbSyncCap</code>，<code>KnowledgeView.tsx:404-409</code>）——选中项目文件夹时出现，不新增顶栏宽度压力（待办规划 §2#5 记过那条宽度硬约束）。</p>
+
+  <div class="win">
+    <div class="mid">
+      <div class="crumb">
+        <span class="path">项目 · <b>云平台迁移</b></span><span class="n">24 篇</span>
+        <span class="cap-chip">本周草稿</span><span class="newmark">新</span>
+        <span class="grow"></span>
+        <span class="n">搜索框 · 视图控件（沿用现组件，不重绘）</span>
+      </div>
+
+      <div class="draft">
+        <div class="draft-head">
+          <span>预览：<b>未落库</b>（虚线框 = 还没写进库，同收件箱/选区的预览视觉语言）</span>
+          <span class="grow"></span>
+          <span class="cap-chip ghost">范围 · 本周（7 天）▾</span>
+          <button class="btn" title="放弃这份草稿，什么都不写">放弃</button>
+        </div>
+        <div class="draft-body">
+          <h4>云平台迁移 · 本周（09-22 ~ 09-29）</h4>
+          <ul>
+            <li><span class="tick">✓</span> 完成 6 条：接口联调环境就绪 / 导出单文件验收脚本 / …</li>
+            <li><span class="tick">◆</span> 新增决定 2 条：一期不做甘特图；验收口径改为单文件可打开</li>
+            <li><span class="tick">▲</span> 风险 1 条：联调窗口只剩 3 天，撞国庆</li>
+            <li><span class="tick">○</span> 本周新建/更新笔记 9 篇：<code>评审纪要</code>、<code>接口口径</code>、…</li>
+            <li><span class="tick">□</span> 未闭环待办 4 条（列前 5 条，按到期升序）</li>
+          </ul>
+        </div>
+        <div class="draft-foot">
+          <button class="btn pri">存为笔记</button>
+          <button class="btn">复制全文</button>
+          <span class="kbd">Esc 先回预览态 · 再 Esc 放弃</span>
+          <span class="grow"></span>
+          <span class="stats">纳入 9 篇 · 完成 6 条 · 决定 2 条 · 风险 1 条 · 数据全部来自本机笔记，未出本机</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>为什么是「预览 → 存为笔记」而不是直接生成</h3>
+  <table>
+    <tr><th>判据</th><th>本稿选择</th></tr>
+    <tr><td>§18.1 P1 预览即默认</td><td>点胶囊就把<b>完整草稿</b>摆出来，不要求先选时间窗、先勾内容</td></tr>
+    <tr><td>§18.1 P3 非模态、不挡视野</td><td>它是中栏里的一块面板（照 <code>KbInboxPanel</code> 的形态），不是弹窗；笔记列表还在下面能滚</td></tr>
+    <tr><td>§18.1 P4 两级取消</td><td>Esc 先收起预览 → 再 Esc 才放弃；放弃什么都不写</td></tr>
+    <tr><td>红线（排期 §1.1 / 规则 16）</td><td><b>永不自动跑</b>：没有定时器、没有「周一自动生成」。纯统计版无 AI、无联网，所以可默认开；要润色措辞才叠 <code>ai_enabled</code> 门控</td></tr>
+    <tr><td>落库路径</td><td>「存为笔记」走 <code>note_create</code> → 项目文件夹内，标题 <code>{项目} · 本周（起~止）</code>。同步、版本快照、回收站全都自动继承（这正是 §0「不开新表」换来的东西）</td></tr>
+  </table>
+
+  <div class="warn">🔴 <b>一处已知口径不准，先说明不藏</b>：「本周新建」只能用 <code>updated_within="7d"</code> 近似（<code>note.rs:526-533</code> 的白名单只按 <code>updated_ms</code> 筛，没有 created 窗口）。所以预览里的「纳入 9 篇」真话是<b>「本周改动过的 9 篇」</b>。§6 ② 选了 a 案，文案就照这句写，不写成「本周新建」。若实测后用户抱怨，再升 b 案（白名单加 <code>1d/1w</code> + created 窗口）。</div>
+
+  <h2>3 · 首次指引（决定日志的空态）</h2>
+  <p class="cap">这一屏是整个 P0 的<b>进入条件</b>（规划 §4 甲-1）：没有它，决定日志就是一张空表，而我们无法区分「没人用」和「没人知道能这么写」。</p>
+
+  <div class="win">
+    <div class="mid">
+      <div class="crumb"><span class="path"><b>决定</b></span><span class="n">0 条</span></div>
+      <div class="empty">
+        还没有任何一条决定被记下来。<br>
+        在任意笔记正文里，把一句已经定了的事写成下面这样的一行，它就会出现在这里：
+        <div class="eg">- [decision] 一期不做甘特图，行动项复用正文的 - [ ] 行</div>
+        <div class="flex">
+          <button class="btn pri">建一个「项目」文件夹并开始</button>
+          <button class="btn">看看还能记哪些类别</button>
+        </div>
+        <div class="stats gap-top">类别名是开放的（≤12 字）：<code>decision</code> / <code>fact</code> / <code>risk</code> / <code>question</code> / 中文也行</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>4 · 待你确认（每题已标默认，点头一款式即可）</h2>
+  <table>
+    <tr><th>#</th><th>问题</th><th>选项</th><th>默认</th></tr>
+    <tr><td>Q1</td><td>「决定」进左栏当第 5 个内置项？</td><td>a) 进（本稿）　b) 只进「⋯」菜单　c) 只内嵌在项目文件夹里</td><td class="def">a</td></tr>
+    <tr><td>Q2</td><td>决定日志默认按什么排？</td><td>a) 时间倒序（本稿）　b) 按项目分组，组内时间倒序</td><td class="def">a —— 分组留给视图控件的 <code>group_by</code>，不改默认</td></tr>
+    <tr><td>Q3</td><td>点整行的行为？</td><td>a) 打开出处并定位那一行（本稿）　b) 只打开出处不定位</td><td class="def">a</td></tr>
+    <tr><td>Q4</td><td>「本周草稿」入口位置？</td><td>a) 面包屑胶囊（本稿）　b) 「⋯」菜单项　c) 两处都放</td><td class="def">a</td></tr>
+    <tr><td>Q5</td><td>「类别徽章」要不要显示 kind 原文？</td><td>a) 已知三类给色、其余原样灰显（本稿）　b) 全部原样不染色</td><td class="def">a</td></tr>
+    <tr><td>Q6</td><td>统计行（§0.2 的 ⑧ b 案）放哪？</td><td>a) 只在草稿预览底部一行（本稿）　b) 另做独立面板　c) 不做</td><td class="def">a —— 零上报、零新界面，用户自己看得见也能截图反馈</td></tr>
+    <tr><td>Q7</td><td>左栏那个计数在 0 条时显示吗？</td><td>a) 显示 0（本稿，空入口照旧在，同回收站的处理）　b) 不显示数字</td><td class="def">a</td></tr>
+  </table>
+
+  <h2>5 · 实现清单（确认后照此开工，规则 7：新视图一律新文件）</h2>
+  <table>
+    <tr><th>层</th><th>新增</th><th>复用（不重写）</th></tr>
+    <tr><td>Rust</td><td>1 条只读命令：跨活笔记扫 <code>- [decision]</code> 等观察行；1 条纯统计聚合命令（草稿正文由前端拼还是后端拼见下）</td><td><code>parse_observations</code>（<code>annotate.rs:84</code>）、<code>fence_at</code>、<code>TodoScanCache</code>、<code>note_group_counts</code> 的计数口径</td></tr>
+    <tr><td>前端</td><td><code>notes/DecisionLogPanel.tsx</code>、<code>notes/WeeklyDraftPanel.tsx</code>（各 &lt;300 行）+ <code>hooks/useDecisionLog.ts</code>、<code>hooks/useWeeklyDraft.ts</code> + 各自 <code>.module.css</code></td><td><code>ViewControls</code>、<code>LoadMoreSentinel</code>、<code>relativeTime</code>、<code>useNoteQuery</code> 的刷新版本号、<code>KbInboxPanel</code> 的面板节奏</td><td></td></tr>
+    <tr><td>挂载</td><td><code>KnowledgeView.tsx</code> 加分支、<code>FolderTree.tsx</code> 加一行内置项</td><td>TrashPanel 的替换中栏分支 + <code>crumbExtra</code> 插槽</td></tr>
+    <tr><td>守卫单测</td><td>①「扫到的 kind 词表不被硬编码」②「草稿统计里没有一项来自未过 <code>is_kind_label</code> 的行」③「周报不自动跑：无定时器」</td><td>照 <code>annotate.rs</code> 那条「唯一判定出口」的既有守卫写法（规则 11.1）</td></tr>
+  </table>
+
+  <div class="ok">✅ <b>本稿刻意不做的事</b>：不新增 MCP 工具（正文就是接口）；不动 <code>notes</code> 表结构；不新增顶栏模式；不加任何自动/定时行为；不在设计稿里宣称性能数字。</div>
+</div>
+
+<script>
+  (function(){
+    var bar = document.querySelector('.theme-bar');
+    bar.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      document.documentElement.setAttribute('data-theme', b.dataset.t);
+      bar.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x===b); });
+    });
+  })();
+</script>
+</body>
+</html>

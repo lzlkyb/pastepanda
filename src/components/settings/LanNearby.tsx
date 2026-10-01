@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import { formatPairCode } from "@/lib/utils";
 import shared from "../Settings.module.css";
 import styles from "./Lan.module.css";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
@@ -28,10 +29,10 @@ const POLL_MS = 2000;
  *
  * 设计稿：`design/PastePanda-局域网同步-附近设备配对-设计稿.html`
  *
- * # 🔴 两端都要看到同一个 6 位数字
+ * # 🔴 两端都要看到同一个配对码（8 位）
  *
  * 它不是密码，是协商出来那把密钥的**指纹**。中间人插足会让两端
- * 算出不同的值 → 数字对不上 → 用户当场发现。所以：
+ * 算出不同的值 → 码对不上 → 用户当场发现。所以：
  * - 数字要够大够清楚，拉开字距方便逐位比
  * - 确认按钮**不预选**，不能让人回车就过
  * - 文案直接写“两边不一样就点取消”
@@ -142,9 +143,9 @@ export function LanNearby({ toast, onReady }: {
                 ? `与「${pair.peer_name}」配对`
                 : `「${pair.peer_name}」想与本机同步剪贴板`}
             </div>
-            <div className={styles.lanPairPin}>{pair.pin}</div>
+            <div className={styles.lanPairPin}>{formatPairCode(pair.pin)}</div>
             <div className={styles.lanPairHint}>
-              确认<b>另一台设备</b>上显示的是同一串数字。
+              确认<b>另一台设备</b>上显示的是同一串码。
               <br />
               两边不一样就点取消——那意味着有人在中间插足。
               <br />
@@ -152,7 +153,7 @@ export function LanNearby({ toast, onReady }: {
                   对方都确认了自己那下是多余的二次确认（用户原话）——
                   而它实际上是「我这边也核对过了」，不是确认对方的确认。 */}
               两台设备<b>各自都要确认一次</b>（谁先点都行）——
-              这串数字只有两边放在一起比才有意义。
+              这串码只有两边放在一起比才有意义。
             </div>
             {pair.role === "responder" && (
               <div className={styles.lanPairWarn}>

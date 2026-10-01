@@ -5,7 +5,7 @@
  *
  * # 🔴 主路只剩「附近设备」一条
  *
- * 局域网是**零字符串搬运**的一条路：点一下、对一眼 6 位数字就完事，而且能挡住
+ * 局域网是**零字符串搬运**的一条路：点一下、对一眼 8 位配对码就完事，而且能挡住
  * 中间人（换公钥 → 两端数字对不上）。跨网第一次连接的正路已改走「帮助」
  * （出码/粘码，连完设备默认保留）——邀请码不再挡在主路，降级进折叠「高级」，
  * 留一版观察使用情况后移除。
@@ -35,7 +35,7 @@ export function RcPairModeSelect({ neighbors, busy, onPair, onCreate, onPaste }:
       <div className={pairStyles.secLabel}>同一局域网（推荐，零搬运）</div>
       <RcNearbyList neighbors={neighbors} busy={busy} onPair={onPair} />
       <div className={styles.foot}>
-        点「配对」→ 两边各核一次 6 位数字 → 完成。<b>配对成功的设备会自动出现在列表里</b>，
+        点「配对」→ 两边各核一次 8 位配对码 → 完成。<b>配对成功的设备会自动出现在列表里</b>，
         直接点大钮就能连。
       </div>
       <div className={`${styles.foot} ${pairStyles.hintMuted}`}>

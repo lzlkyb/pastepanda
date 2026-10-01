@@ -6,7 +6,8 @@
  *
  * ① 抽屉默认收起——被控提示常驻但极轻（胶囊 ~34px），事实表不该常占 DOM。
  * ② 展开抽屉必须经胶囊点击，且 aria-expanded 跟着走（屏幕阅读器的展开状态）。
- * ③ 文件请求到达自动展开抽屉一次（规则 15：触发可见）。
+ * ③ 文件请求到达自动展开抽屉一次（规则 15：触发可见）；而知会型通知反过来——
+ *   编码/画质/范围/扬声器到达只挂橙点徽标、不弹抽屉（2026-10-01 用户拍板，见 ④b）。
  * ④ 结束入口（图标 + 抽屉按钮）都必须走 confirmDialog——红线：误触代价不对称，
  *    mock 返回 false 时 onEnd 绝不能被调。
  */
@@ -108,10 +109,49 @@ describe("RcControlBanner 胶囊 + 抽屉（2026-09-24 方案 B）", () => {
         first_seen_ms: Date.now(),
       },
     ];
-    const { container } = renderBanner({ scopeNotice: "full" });
+    const { container } = renderBanner();
     // 未点击任何东西，抽屉已展开
     expect(container.querySelector(`.${styles.ctrlDrawer}`)).not.toBeNull();
     expect(container.querySelector(`.${styles.ctrlBadge}`)).not.toBeNull();
+  });
+
+  it("④b 知会型通知（编码/画质/范围/扬声器）默认不弹抽屉；只挂橙点徽标", () => {
+    // 2026-10-01 拍板：提示类通知没有要按的键，不许把人从远程操作里拽开。
+    const stream = renderBanner({
+      streamNotice: { kind: "codec", name: "jpeg" },
+      scopeNotice: "full",
+      spkMutedByPeer: true,
+    });
+    expect(stream.container.querySelector(`.${styles.ctrlDrawer}`)).toBeNull();
+    // 徽标照亮：不弹 ≠ 看不见（规则 15 的另一半——点开胶囊仍能看到提示条）
+    expect(stream.container.querySelector(`.${styles.ctrlBadge}`)).not.toBeNull();
+    // aria-expanded 保持 false：屏幕阅读器不会误报「已展开」
+    expect(
+      stream.container.querySelector(`.${styles.ctrlPillMain}`)!.getAttribute("aria-expanded"),
+    ).toBe("false");
+    stream.unmount();
+
+    // 新通知到达也不弹（对端连续改档位时每来一条都不弹）
+    const { container, rerender } = renderBanner({
+      streamNotice: { kind: "codec", name: "jpeg" },
+    });
+    rerender(
+      <RcControlBanner
+        session={session}
+        busy={false}
+        onEnd={() => {}}
+        streamNotice={{ kind: "codec", name: "h264" }}
+      />,
+    );
+    expect(container.querySelector(`.${styles.ctrlDrawer}`)).toBeNull();
+  });
+
+  it("④c 通知没被看到时，点开胶囊仍能看到提示条（不弹但可查）", () => {
+    const { container, getByText } = renderBanner({
+      streamNotice: { kind: "codec", name: "jpeg" },
+    });
+    fireEvent.click(container.querySelector(`.${styles.ctrlPillMain}`)!);
+    expect(getByText(/对方把编码切成了「JPEG」/)).toBeDefined();
   });
 
   it("⑤ 结束入口两处都走 confirmDialog；拒绝时 onEnd 不被调（红线）", async () => {

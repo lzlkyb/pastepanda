@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>远程电脑-配对码时效与遮掩-设计稿</title>
+<style>
+  :root {
+    --app-bg: #f4f6f8; --card-bg: #ffffff; --border-color: #e3e6ea;
+    --text-primary: #1c1f23; --text-secondary: #5f6b76; --text-muted: #8b95a1;
+    --accent: #2f6fed; --accent-light: #e8f0fe; --accent-solid: #2f6fed;
+    --accent-border: #bcd0f7;
+    --success: #159a4a; --success-bg: #e6f6ec;
+    --warning: #b7791f; --warning-bg: #fdf3e0;
+    --danger: #c53030; --danger-bg: #fdecec;
+    --text-on-accent: #fff; --shadow-md: 0 8px 28px rgba(15,23,42,.16);
+    --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+    --section-bg: #eef1f5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #e9edf1; color: var(--text-primary);
+    font: 13px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--text-secondary); margin-bottom: 8px; max-width: 880px; }
+  h2 { font-size: 15px; margin: 32px 0 2px; }
+  h3 { font-size: 13px; margin: 20px 0 4px; }
+  .where { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+  del { color: var(--text-muted); }
+  ins { text-decoration: none; color: var(--success); font-weight: 600; }
+  table { border-collapse: collapse; font-size: 12px; background: var(--card-bg); }
+  th, td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--app-bg); font-weight: 600; }
+  code { font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--section-bg);
+    padding: 1px 5px; border-radius: var(--radius-sm); }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .cap { font-size: 12px; color: var(--text-muted); margin-top: 6px; max-width: 430px; line-height: 1.55; }
+  .cap b { color: var(--text-secondary); }
+
+  /* ── 桌面工作台外框 ── */
+  .wb { width: 720px; background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-md); overflow: hidden; }
+  .wb-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color); font-size: 12px; color: var(--text-secondary); }
+  .wb-body { display: flex; }
+  .wb-main { flex: 1; padding: 12px; min-height: 300px; }
+  .side { width: 232px; flex: none; border-left: 1px solid var(--border-color); background: var(--app-bg);
+    padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .self { background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); padding: 10px; }
+  .self h4 { margin: 0 0 6px; font-size: 12px; }
+  .foot { font-size: 11px; color: var(--text-secondary); margin-top: 8px; line-height: 1.5; }
+  .mut { color: var(--text-muted); }
+
+  /* ── §1 侧栏「这台电脑」卡：遮罩 / 亮码 / 收起 ── */
+  .codebar { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); padding: 8px 10px; background: var(--card-bg); }
+  .codebar .digits { font: 700 22px/1 ui-monospace, Consolas, monospace; letter-spacing: 4px;
+    color: var(--accent); flex: 1; }
+  /* 遮罩态：不是「空着」，是明说这里有一颗码但没亮 */
+  .codebar.masked { border-style: dashed; background: var(--section-bg); }
+  .codebar.masked .ph { font-size: 12px; color: var(--text-muted); flex: 1; letter-spacing: 0; }
+  .btn { border: 1px solid var(--border-color); background: var(--card-bg); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; color: var(--text-primary); cursor: pointer; }
+  .btn-pri { border: 0; background: var(--accent-solid); color: var(--text-on-accent); }
+  .btn-sm { padding: 4px 8px; font-size: 11px; }
+  .btn-row { display: flex; gap: 6px; margin-top: 8px; }
+  .btn-row .btn { flex: 1; text-align: center; }
+  /* 读秒：< 60s 转警示色，但不弹不跳——只是颜色 */
+  .ttl { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .ttl.hot { color: var(--warning); font-weight: 600; }
+  /* 已收起：一行说明 + 一个重新出示；不显示码值 */
+  .collapsed { display: flex; align-items: center; gap: 8px; border: 1px dashed var(--accent-border);
+    border-radius: var(--radius-md); padding: 8px 10px; background: var(--accent-light); font-size: 11px; color: #1d4fd7; }
+  /* 到期换新：换的是新码，不是延命 */
+  .rotated { display: flex; gap: 8px; align-items: flex-start; background: var(--warning-bg);
+    border-radius: var(--radius-md); padding: 8px 10px; font-size: 11px; color: #7a5410; }
+  .inp { width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    padding: 8px 10px; font: 15px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 2px;
+    background: var(--card-bg); margin-top: 8px; }
+
+  /* ── §2 出示给对方（二维码 + 完整串） ── */
+  .split { display: flex; gap: 14px; align-items: center; }
+  .qr { width: 120px; height: 120px; flex: none; display: grid; place-items: center;
+    background:
+      repeating-conic-gradient(var(--text-primary) 0 25%, transparent 0 50%) 0 0/16px 16px,
+      var(--card-bg);
+    border: 8px solid var(--card-bg); outline: 1px solid var(--border-color); }
+  .codeside { flex: 1; }
+  .fullstr { font: 11px/1.4 ui-monospace, Consolas, monospace; word-break: break-all;
+    border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 6px 8px;
+    background: var(--section-bg); margin-top: 6px; }
+  .maskedqr { filter: blur(7px); }
+
+  /* ── §3 手机框 ── */
+  .phone { width: 375px; border: 8px solid #1c1f23; border-radius: 28px; overflow: hidden;
+    background: #f7f9fb; box-shadow: var(--shadow-md); }
+  .phone .pbar { display: flex; justify-content: space-between; padding: 6px 14px;
+    font-size: 10px; color: var(--text-muted); background: #eef2f6; }
+  .phone .ptabs { display: flex; border-top: 1px solid var(--border-color); background: var(--card-bg); }
+  .phone .ptabs span { flex: 1; text-align: center; font-size: 11px; padding: 8px 0; color: var(--text-muted); }
+  .phone .ptabs .on { color: var(--accent); font-weight: 700; }
+  .pbody { padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 420px; }
+  .pcard { background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 12px; }
+  .pcard h4 { margin: 0 0 2px; font-size: 13px; }
+  .pcard .sub { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+  .btn-ghost { background: transparent; }
+  .btn-block { width: 100%; text-align: center; padding: 10px 12px; border-radius: var(--radius-md); }
+  .ok { color: var(--success); }
+  .scanbox { height: 120px; border: 2px dashed var(--accent); border-radius: var(--radius-md);
+    display: grid; place-items: center; color: var(--accent); font-size: 12px;
+    background: repeating-linear-gradient(45deg, #fbfcfe 0 10px, #f3f6fb 10px 20px); }
+  .pcode8 { font: 700 30px/1.1 ui-monospace, Consolas, monospace; letter-spacing: 6px;
+    color: var(--accent); text-align: center; padding: 10px 0 2px; }
+</style>
+</head>
+<body>
+
+<h1>远程电脑 · 配对码时效与遮掩设计稿</h1>
+<p class="lede">
+<b>把「码在屏幕上待多久」和「码还能用多久」分成两件事，分别压到最短。</b>
+上一轮把跨网配对收成「一枚 8 位码 + 两个固定角色」，但暴露面和上一版一样大：码常驻显示，而它 10 分钟内都有效——
+看得见的人不用猜，照抄就行。本稿做两件事：
+<b>① 可见时长</b>——默认遮罩，点「出示」才亮，亮 60 秒自动收回；
+<b>② 有效期分档</b>——二维码 5 分钟（它最好偷，扫一下等于拿走全部凭证）、8 位会合码 3 分钟、无人值守码不动。
+到期<b>换新码</b>而不是延命：已经暴露过的码延长窗口只是把风险拉长。
+</p>
+<p class="lede">
+同batch修一处实现缺口：<b>出示侧的码改为机器生成</b>（现状两端都不生成，码由用户手敲——
+手工选的「12345678」/生日实际熵远低于 27 bit，此前给你的安全等级是<del>按均匀随机码算的</del><ins>在当前实现下不成立</ins>）。
+出示方点「出示」时后端生成一枚均匀随机码，输入方手输或扫码。手机端 <code>RcPairCard</code> 文件头注释写着
+「rcShortPairCode 出自己的 8 位码」而代码里已经没有，一并改回实现。
+</p>
+
+<!-- ══════════════════════ §0 ══════════════════════ -->
+<h2>§0 三个窗口，各管什么</h2>
+<p class="where">把「多久失效」「多久看得见」「多久能重试」分开，是为了不让用户为安全付两次代价。</p>
+<table>
+  <tr><th style="width:130px">窗口</th><th style="width:110px">取值</th><th>管什么 / 为什么是这个数</th></tr>
+  <tr><td><b>可见时长</b></td><td><b>60 秒</b></td>
+      <td>码在屏幕上以明文存在的时长。独立于有效期，纯前端：到点收回成遮罩态，<b>不清会话</b>。
+          60 秒够输 8 位 + 点确认；用户在两端设备间切换时遮罩不影响他，回来点一下又能看。</td></tr>
+  <tr><td><b>会合码有效期</b></td><td><b>10 分钟 → 3 分钟</b><br><span class="mut">join.rs short_code</span></td>
+      <td>码还能被接受多久。它最弱（≈27 bit）且要两端同时在线，所以窗口最短。
+          3 分钟覆盖「解锁手机 → 打开 app → 输码 → 点确认」的正常流程。</td></tr>
+  <tr><td><b>二维码 / 接入串有效期</b></td><td><b>30 分钟 → 5 分钟</b><br><span class="mut">invite.rs RC_TTL_SECS</span></td>
+      <td>同上但凭证本身是 128 位身份，<b>照抄即全部</b>，不需要猜——所以暴露风险更高、窗口更该短。
+          门宽 <code>RC_INVITE_DOOR_MS</code> 由该常量派生，改一处即可，不允许两处各写一个数。</td></tr>
+  <tr><td>无人值守码</td><td>不动（15 分钟 / 24 小时）</td>
+      <td>设计上就是「贴在机房那种地方」的长期物，缩短它等于废掉这个功能。</td></tr>
+  <tr><td>附近配对 SAS</td><td>不动（60 秒会话）</td>
+      <td>另一条路，本来就是逐位人眼核对，不涉及搬运。</td></tr>
+</table>
+<p class="cap">
+  <b>为什么不做「TTL 压到 1–2 分钟」：</b>用户会 alt-tab 去手机拿码、手机锁屏再解锁，常常超过 2 分钟，
+  两端一起过期就要整轮重来；更糟的是这会把人逼去「截图发过去」——截图里的码不过期，
+  比现在更不安全。遮罩才是压暴露的主手段，TTL 只是第二道。
+</p>
+
+<!-- ══════════════════════ §1 ══════════════════════ -->
+<h2>§1 桌面：侧栏「这台电脑」卡</h2>
+<p class="where">四个状态一条线：遮罩（默认）→ 亮码 → 收起 → 到期换新。旧的两枚码互输屏删掉的「我的码 / 复制」行不再回来，
+出示方的码由后端生成，输入方不变。</p>
+
+<div class="row">
+  <div>
+    <div class="wb">
+      <div class="wb-head">远程电脑 · 工作台</div>
+      <div class="wb-body">
+        <div class="wb-main">
+          <div class="nrow" style="border-style:dashed;color:var(--text-muted)">（主区内容不变：设备列表 / 会话画面）</div>
+          <div class="foot">主区常驻的「附近的设备」卡照旧；本稿只改侧栏「这台电脑」卡与出示屏。</div>
+        </div>
+        <div class="side">
+          <div class="self">
+            <h4>这台电脑 · <span class="mut">未配对新设备</span></h4>
+
+            <!-- 状态 1：遮罩（默认，进卡片就是它） -->
+            <div class="codebar masked">
+              <span class="ph">配对码已收起</span>
+              <button class="btn btn-sm btn-pri">出示</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-sm" disabled>我出示这枚码</button>
+              <button class="btn btn-sm" disabled>对方给我这枚码</button>
+            </div>
+            <div class="foot">默认看不见码值。<b>点「出示」才生成并亮 60 秒</b>；两个动作入口在亮着时可用。</div>
+
+            <div style="border-top:1px dashed var(--border-color);margin:10px 0"></div>
+            <h4 class="mut" style="font-size:11px">↑ 状态 1 · 遮罩（默认）</h4>
+
+            <!-- 状态 2：亮码 + 读秒 -->
+            <div class="codebar">
+              <span class="digits">4182 0620</span>
+              <span class="ttl hot">0:47</span>
+              <button class="btn btn-sm">收起</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-sm btn-pri">我出示这枚码</button>
+              <button class="btn btn-sm">对方给我这枚码</button>
+            </div>
+            <div class="foot">
+              读秒到 <b>0:00 自动收回</b>遮罩态（码本身还有效，只是不再显示）；
+              到 <b>3:00</b> 整枚作废并自动换一枚新码（见状态 4）。
+            </div>
+
+            <div style="border-top:1px dashed var(--border-color);margin:10px 0"></div>
+            <h4 class="mut" style="font-size:11px">↑ 状态 2 · 亮码（出示后 60 秒内）</h4>
+
+            <!-- 状态 3：已收起 -->
+            <div class="collapsed">
+              <span>配对码已收起，屏幕上不留明文</span>
+              <button class="btn btn-sm" style="margin-left:auto">重新出示</button>
+            </div>
+            <div class="foot">
+              收起只是不再显示，<b>会话与有效期都不动</b>——重新出示复用同一枚码（到期才换）。
+              用户 alt-tab 去手机、锁屏解锁回来，点一下就能再看，不会遇到「已过期请重来」。
+            </div>
+
+            <div style="border-top:1px dashed var(--border-color);margin:10px 0"></div>
+            <h4 class="mut" style="font-size:11px">↑ 状态 3 · 已收起（60 秒到点 / 用户点收起）</h4>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">侧栏卡。四个状态在同一张卡里顺序展示，实际同一时刻只出现一个。</div>
+  </div>
+
+  <div>
+    <div class="wb">
+      <div class="wb-head">远程电脑 · 配对码已到期</div>
+      <div class="wb-body">
+        <div class="wb-main">
+          <div class="self">
+            <h4>这台电脑</h4>
+            <!-- 状态 4：到期换新 -->
+            <div class="rotated">
+              <span>⚠</span>
+              <span>
+                <b>这枚配对码已过期，已自动换新的。</b><br />
+                旧码作废，看见过旧码的人也无法再用。请让对方用新码重试一次。
+              </span>
+            </div>
+            <div class="codebar" style="margin-top:8px">
+              <span class="digits">6042 9183</span>
+              <span class="ttl">3:00</span>
+              <button class="btn btn-sm">收起</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-sm btn-pri">我出示这枚码</button>
+              <button class="btn btn-sm">对方给我这枚码</button>
+            </div>
+            <div class="foot">
+              到期<b>换新码</b>而不是「续期同一枚」——已暴露过的码延长窗口只是把风险拉长。
+              提示条出现一次，用户点任一动作或收起后消失，不常驻。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">状态 4 · 到期自动换新。提示只在换新那一刻出现。</div>
+  </div>
+</div>
+
+<!-- ══════════════════════ §2 ══════════════════════ -->
+<h2>§2 出示给对方（二维码 + 完整接入串）</h2>
+<p class="where">这条路的凭证是 128 位身份，<b>照抄即全部</b>，比 8 位码更好偷。所以二维码与完整串一起遮罩，且有效期压到 5 分钟。</p>
+
+<div class="row">
+  <div>
+    <div class="wb" style="width:520px">
+      <div class="wb-head">出示给对方 · 未出示</div>
+      <div class="wb-body"><div class="wb-main">
+        <div class="split">
+          <div class="qr maskedqr" aria-label="二维码未生成"></div>
+          <div class="codeside">
+            <div style="font-size:12px;color:var(--text-secondary)">完整接入串</div>
+            <div class="fullstr" style="filter:blur(5px)">PP1-3F9A21C0DEADBEEF0123456789abcdef01234567-7K3P</div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-pri" style="flex:1">出示（生成凭证）</button>
+        </div>
+        <div class="foot">
+          <b>和侧栏卡同一个规则：默认遮罩，点「出示」才生成并亮 60 秒。</b>
+          这条路的凭证扫一下/复制一下就等于拿走全部，遮罩比 8 位码那边更要紧。
+        </div>
+      </div></div>
+    </div>
+    <div class="cap">遮罩态。二维码模糊 + 接入串打码，都不是「空着」——用户看得见这里有东西，点一下才亮。</div>
+  </div>
+
+  <div>
+    <div class="wb" style="width:520px">
+      <div class="wb-head">出示给对方 · 已出示</div>
+      <div class="wb-body"><div class="wb-main">
+        <div class="split">
+          <div class="qr" aria-label="二维码"></div>
+          <div class="codeside">
+            <div style="font-size:12px;color:var(--text-secondary)">
+              完整接入串 <span class="ttl hot" style="margin-left:6px">剩余 4:12</span>
+            </div>
+            <div class="fullstr">PP1-3F9A21C0DEADBEEF0123456789abcdef01234567-7K3P</div>
+            <div class="foot" style="margin-top:6px">核对数 <b>2849 3116</b> · 让对方在 Ta 那边粘这串码，两边是同一个数才说明途中没被换过。</div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" style="flex:1">复制接入串</button>
+          <button class="btn" style="flex:1">收起</button>
+        </div>
+        <div class="foot">
+          可见 60 秒，到期 5 分钟。<b>5 分钟到点整份作废，不提供续期</b>——重新出示会得到一份新凭证（新二维码 + 新核对数）。
+        </div>
+      </div></div>
+    </div>
+    <div class="cap">亮码态。二维码与接入串同屏，两个形态指向同一份凭证；核对数（8 位）沿用上一版口径。</div>
+  </div>
+</div>
+
+<!-- ══════════════════════ §3 ══════════════════════ -->
+<h2>§3 手机端配对卡</h2>
+<p class="where">手机是「有摄像头、键盘烂」的一端：单码流程里手机固定是<b>输入方</b>。输入态不变（输入框 + 扫一扫），
+另外把删掉的「出示」半边按新规则补回来——手机出示时同样遮罩 + 60 秒。</p>
+
+<div class="row">
+  <div>
+    <div class="phone">
+      <div class="pbar"><span>9:41</span><span> PastePanda</span></div>
+      <div class="ptabs"><span>设备</span><span class="on">配对</span><span>记录</span></div>
+      <div class="pbody">
+        <div class="pcard">
+          <h4>输入电脑上出示的那枚码</h4>
+          <div class="sub">手机固定是输入方；码由电脑端生成</div>
+          <input class="inp" value="4182 0620" readonly />
+          <div class="btn-row">
+            <button class="btn" style="flex:1">扫一扫</button>
+            <button class="btn btn-pri" style="flex:1">开始配对</button>
+          </div>
+          <div class="foot">输满 8 位即可点。<b>码 3 分钟内有效</b>，过期电脑端会换新一枚，重新输一次。</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">输入态（现状不变）。</div>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="pbar"><span>9:41</span><span> PastePanda</span></div>
+      <div class="ptabs"><span>设备</span><span class="on">配对</span><span>记录</span></div>
+      <div class="pbody">
+        <div class="pcard">
+          <h4>我的配对码</h4>
+          <div class="sub">给另一台电脑 / 手机输这枚码</div>
+          <div class="pcode8">4182 0620</div>
+          <div class="foot" style="text-align:center">
+            <span class="ttl hot">0:47</span> 后自动收起 · 3:00 后作废
+          </div>
+          <div class="scanbox" style="margin-top:8px">二维码（出示时一起亮 60 秒）</div>
+          <div class="btn-row">
+            <button class="btn" style="flex:1">收起</button>
+            <button class="btn" style="flex:1">复制</button>
+          </div>
+          <div class="foot">
+            机器生成，不手敲。<b>同一套遮罩规则</b>：默认收起，点「出示」亮 60 秒；
+            再要就重新出示（同一枚，到期才换新）。
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">出示态（按新规则补齐）。之前删掉的「我的码」行以遮罩形态回来，且码由后端生成。</div>
+  </div>
+</div>
+
+<!-- ══════════════════════ §4 ══════════════════════ -->
+<h2>§4 边界与失败路径</h2>
+<table>
+  <tr><th style="width:200px">情况</th><th>界面怎么办</th></tr>
+  <tr><td>亮码 60 秒到点</td><td>自动收回遮罩态，<b>不弹 toast</b>（用户没操作失败，不需要打断）。会话与有效期不动。</td></tr>
+  <tr><td>3 分钟整枚过期</td><td>作废 + <b>自动生成一枚新码</b> + 一次性提示条（状态 4）。旧码即使被人抄走也不能再用。</td></tr>
+  <tr><td>出示中点「我出示这枚码」</td><td>正常发起会合；会合期间<b>保持亮码</b>不收遮罩——配对正等着对方输码，收回会让用户以为出错了。</td></tr>
+  <tr><td>会合失败 / 对方取消</td><td>回到遮罩态。已生成的那枚码仍然有效（未被使用），可直接「重新出示」继续用，不必换新。</td></tr>
+  <tr><td>二维码画不出来</td><td>照旧给人话 + 复制接入串的路（上一版已有）。</td></tr>
+  <tr><td>输入方粘了一枚过期码</td><td>沿用后端现有错误（「配对码已过期」类），输入区常驻红字，不弹 toast。</td></tr>
+  <tr><td>用户想截图外传</td><td><b>不拦，也拦不住</b>——但截图不带状态：3 分钟后码作废，截图变成废纸。这是把 TTL 压短的真正收益点。</td></tr>
+</table>
+
+<h2>§5 要改的常量与调用点</h2>
+<table>
+  <tr><th style="width:220px">位置</th><th>现在</th><th>改成</th></tr>
+  <tr><td><code>sync/invite.rs :: RC_TTL_SECS</code></td><td>30 * 60</td><td><b>5 * 60</b>（门宽 <code>RC_INVITE_DOOR_MS</code> 由它派生，随之变）</td></tr>
+  <tr><td><code>rc/join.rs :: short_code</code> 过期</td><td>10 * 60 * 1000</td><td><b>3 * 60 * 1000</b></td></tr>
+  <tr><td>侧栏卡 / 出示屏 / 手机出示</td><td>常驻明文</td><td><b>遮罩默认 + 亮 60 秒自动收回</b></td></tr>
+  <tr><td>出示方码源</td><td><del>用户手敲</del></td><td><b>调 <code>rcShortPairCode()</code> 取后端均匀随机码</b>；输入方保持手输/扫码</td></tr>
+  <tr><td>手机 <code>RcPairCard</code> 文件头注释</td><td>写着「出自己的 8 位码」而实现没有</td><td>改成与实现一致（输入方不出码）</td></tr>
+  <tr><td>无人值守 / 附近 SAS</td><td>—</td><td><b>不动</b></td></tr>
+</table>
+<p class="cap">
+  <b>验收口径：</b>① 进卡片看不到码值；② 点出示后 60 秒自动收回且会话仍在；③ 3 分钟到点换新码并有一次性提示；
+  ④ 出示方的码来自后端（连点两次出示得到同一枚，到期后得到不同的一枚）；⑤ 无人值守码与附近配对本稿不受影响。
+</p>
+
+</body>
+</html>

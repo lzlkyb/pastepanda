@@ -437,7 +437,11 @@ pub(super) async fn send_caps_frame(
     // R3：声明本机能读「鼠标移动数据报」。旧版对端没有这个字段 → 发起端
     // 解析为 false，会话 UI 提示升级；**不改传输路径**（见 §9 方案 R3）。
     // P2.3：AV1 硬编可用性（FF 候选链探测）。旧版对端忽略。
+    // 编码能力探测是 Windows 宿主专属（mobile 无硬编，恒 false，与 hevc 同款处理）。
+    #[cfg(target_os = "windows")]
     let av1 = crate::rc::encode_h264::av1_hw_available();
+    #[cfg(not(target_os = "windows"))]
+    let av1 = false;
     let msg = serde_json::json!({
         "t": "caps",
         "fps120": fps120,

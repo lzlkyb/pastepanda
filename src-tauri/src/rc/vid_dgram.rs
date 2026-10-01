@@ -21,8 +21,15 @@
 //!   +1），其后已到的 P 帧仍是合法引用——过渡不破坏引用链。
 //! - JPEG 不走这里：脏块帧没有链式依赖，丢一片只是那块区域旧一点，
 //!   静态精修（300ms 后 q95 回补）会把它补回来。
-
-#![cfg(target_os = "windows")]
+//!
+//! # 平台：全平台可用（Android 2026-10-01 解禁）
+//!
+//! 本模块是纯 Rust 组帧逻辑（收进传出的只有 `iroh::endpoint::Connection`
+//! 的 send/read_datagram），零 Windows API 依赖。此前整体 `#![cfg(windows)]`
+//! 造成手机端没有数据报读取任务却自报能力位（已修：`vid_dgram_capability`
+//! 如实返回 None），被控端只能全帧走可靠流——AP 队列把大帧排到几百 ms，
+//! 帧龄驱动码率缩放到 25~45%，画质糊成马赛克（真机联调实测）。解禁后
+//! Android 与 Windows 同享 FEC 低延迟通道，能力位按平台如实自报。
 
 use super::video::FrameCodec;
 

@@ -2461,6 +2461,14 @@
   resize: none;
   word-break: break-all;
 }
+/* 遮罩态：同一段长串凭证藏在「••••」后面（设计稿 §2）。字号行高不换——
+   点数固定后不会因展开/收起而跳动，也不会泄露出长度信息。
+   `-webkit-text-security` 是 WebView2/Chromium 认的属性；不认的引擎还有
+   `color: transparent` 兜底，两条任一生效都看不到明文。 */
+.inviteCodeMasked {
+  color: transparent;
+  -webkit-text-security: disc;
+}
 
 @media (max-width: 640px) {
   .steps,
@@ -3794,4 +3802,22 @@
   display: flex;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* 配对码出示屏的二维码（手机扫）。画布自带白底黑模块（qrcode 默认配色），
+   这里只管尺寸与圆角；`data-ready="0"` 时藏起来，不留一块空白让用户猜。 */
+.pairQrWrap {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pairQr {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+}
+.pairQr[data-ready="0"] {
+  display: none;
 }

@@ -175,6 +175,13 @@ fn build_updater(
     app: &tauri::AppHandle,
     endpoints: &[String],
 ) -> Result<tauri_plugin_updater::Updater, String> {
+    // 🔴 mobile 守卫（2026-09-30 真机实证）：UpdaterState 只在 desktop 分支 manage
+    //    （见 lib.rs 的 #[cfg(desktop)] 注册），而 app.updater_builder() 内部
+    //    `state::<UpdaterState>()` 未注册即 panic——且 panic 在线程里，IPC 调用方
+    //    只看到连接断。任何入口在 mobile 下调到这里都应得到错误而不是进程 panic。
+    if !cfg!(desktop) {
+        return Err("自动更新仅桌面端支持".to_string());
+    }
     let parsed: Vec<url::Url> = endpoints
         .iter()
         .filter_map(|u| url::Url::parse(u).ok())

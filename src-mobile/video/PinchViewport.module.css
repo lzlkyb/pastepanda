@@ -1,0 +1,22 @@
+/* PinchViewport — 本地视野容器（design §1 手势⑦） */
+
+.container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* 🔴 一行关掉浏览器手势竞争：双击缩放 / 长按选择 / 下拉刷新
+     （design §4.4「点不准」风险清单第 4 条） */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  background: var(--app-bg, #0b1220);
+}
+
+.wrapper {
+  position: absolute;
+  inset: 0;
+  /* 缩放数学假定原点在左上：锚点公式与 translate 的叠加都按 0 0 推导 */
+  transform-origin: 0 0;
+  will-change: transform;
+}

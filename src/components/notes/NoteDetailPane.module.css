@@ -51,7 +51,7 @@
   padding: 0 10px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: var(--input-bg, var(--card-bg));
+  background: var(--control-glass, var(--input-bg, var(--card-bg)));
   color: var(--text-primary);
   font-family: inherit;
   font-size: 13px;
@@ -273,18 +273,18 @@
 .summaryRow {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
-  padding: 5px 8px;
-  border-radius: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .summaryText {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
-  line-height: 1.55;
+  font-size: var(--kb-fs-body);
+  line-height: 1.6;
   color: var(--text-secondary);
 }
 

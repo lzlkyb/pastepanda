@@ -187,7 +187,8 @@
 .crumb {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  flex-wrap: wrap;
   flex-shrink: 0;
   font-size: var(--kb-fs-body);
   color: var(--text-muted);
@@ -201,6 +202,16 @@
   color: var(--text-primary);
   font-weight: 600;
   font-size: var(--kb-fs-body);
+  min-width: 4ch;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumb > span:first-of-type {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* `.burger`（20×20 的汉堡按钮）已删：JSX 里零引用，
@@ -227,8 +238,8 @@
   inset: -6px;
 }
 
-/* 新建空白笔记（#13）。margin-left:auto 把它顶到面包屑行最右，
-   不另开一行工具栏：480px 宽的窗口里多一行就少两条笔记。
+/* 新建空白笔记（#13）。由动作组的 margin-left:auto 顶到面包屑行最右，
+   与搜索、视图操作保持独立的操作层级。
    2026-09：与 .wideBtn 同套控制层玻璃。 */
 .newBtn {
   display: flex;
@@ -302,6 +313,32 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+}
+
+/* 搜索独占一行，视图操作在下一行：三栏时输入不再被五个按钮挤短。 */
+.viewBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  flex-shrink: 0;
+}
+
+.viewBar > :last-child {
+  margin-left: auto;
+}
+
+.layoutSeg {
+  background: var(--hover);
+}
+
+.layoutBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: var(--kb-fs-badge);
 }
 
 /* 搜索盒子。结构与记录模式 `TopBar .searchBox` 一致：**边框与底色在盒子上，
@@ -657,14 +694,8 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  /* 🔴 这是记录模式 `--card-gap` 的**副本**，不是同一个变量。
-     那个变量只存在于 `CardList.module.css:7` 内部，这边拿不到。
-     改动要两边同步——原注释写的是「同记录模式的 --card-gap」，
-     读起来像共享一个值，而它们一直是两份。
-
-     原来是 4px（紧密列表），卡片化后必须拉开——
-     挨在一起的卡片看上去反而像表格。 */
-  gap: 10px;
+  /* 列表比记录卡片稍紧，给扫描留足节奏且不额外占用纵向空间。 */
+  gap: 8px;
 }
 
 /* ── 笔记行：与记录模式的卡片同一套玻璃材质（设计稿 §3）──
@@ -672,7 +703,7 @@
    一重调就意味着两套参数得同时维护，而这正是本轮要消除的东西。 */
 .row {
   position: relative;
-  /* 光泽扫过的 `::after` 要被圆角裁住，所以得 hidden。
+  /* 静态微光和行内内容要被圆角裁住，所以得 hidden。
 
      🔴 但它带了个坑：`.list` 是 `flex-direction: column` + `overflow-y: auto`，
      而 CSS 规定 flex 项的自动最小尺寸（`min-height: auto`）**只在
@@ -687,13 +718,13 @@
   display: flex;
   align-items: stretch;
   gap: 4px;
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--glass-card-bg);
   border: 1px solid var(--glass-card-border);
-  box-shadow: var(--glass-card-shadow);
+  box-shadow: var(--shadow-sm);
   /* 🔴 故意不写 backdrop-filter。记录模式为它付过 GPU 代价并在 v5.5.2 删掉了
      （CardList.module.css 里那段长注释就是尸检报告）。不重蹈同一个坑。 */
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
 /* 顶部静态微光——玻璃感的主要来源，成本是零（纯渐变）。
@@ -709,36 +740,10 @@
   z-index: 0;
 }
 
-/* 悬停光泽扫过。关键帧在 styles/surface.css，与卡片共用同一份。 */
-.row::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    120deg,
-    transparent 20%,
-    var(--glass-shimmer) 35%,
-    var(--glass-shimmer) 45%,
-    transparent 60%
-  );
-  background-size: 200% 100%;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.row:hover::after {
-  opacity: 1;
-  animation: var(--card-shimmer-anim, pp-shimmer-sweep 1.6s ease-in-out infinite);
-}
-
-/* hover：边框亮起 + 阴影加深。
-   抬升位移由 NoteList 的 motion.li `whileHover` 驱动——
-   内联 transform 会覆盖样式表里的 transform，此处不可再写（同卡片）。 */
+/* hover 只增加层次；位移由 NoteList 的 motion.li 驱动。 */
 .row:hover {
   border-color: var(--glass-card-hover-border);
-  box-shadow: var(--glass-card-hover-shadow);
+  box-shadow: var(--shadow-md);
 }
 
 /* 第三栏里正在看的那条。只在 ≥800px 会出现（窄屏下 activeId 永远为 null）。
@@ -746,7 +751,11 @@
 .rowActive {
   background: var(--card-selected-bg);
   border-color: var(--card-selected-border);
-  box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+  box-shadow: var(--shadow-sm);
+}
+
+.rowActive:hover {
+  border-color: var(--card-selected-border);
 }
 
 /* 所属文件夹（仅侧栏收起时显示） */
@@ -763,7 +772,7 @@
 }
 
 /* 整行可点：用 button 而不是给 li 绑 onClick——前者自带键盘可达与焦点环。
-   ❗ `position: relative; z-index: 1` 必需：`.row::before/::after` 是定位元素，
+   ❗ `position: relative; z-index: 1` 必需：`.row::before` 是定位元素，
    不抬高层级的话文字会被那层光泽盖着，看着像蒙了层灰。 */
 .rowMain {
   position: relative;
@@ -777,7 +786,7 @@
   gap: 10px;
   padding: 10px 12px;
   border: none;
-  border-radius: 15px;
+  border-radius: 12px;
   background: transparent;
   color: inherit;
   font-family: inherit;
@@ -1130,9 +1139,8 @@
   grid-column: 1 / -1;
 }
 
-/* 卡片本体。🔴 材质与 `.row` **逐条相同**（设计稿 §3）：
-   同一套 glass token、radius 16（不是 C 稿写的 14）、同一套 shimmer。
-   否则会出现「列表形态有玻璃、网格形态没有」——比现状更不统一。
+/* 卡片本体与 `.row` 共用材质、12px 圆角和轻量阴影。
+   两种视图只改变排列，不改变同一条笔记的视觉身份。
 
    ❗ `overflow: hidden` 在这里是安全的，但理由与 `.row` 不同：
      `.row` 必须配 `flex-shrink: 0`（flex 项的自动最小尺寸会被 hidden 打成 0，
@@ -1142,12 +1150,12 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--glass-card-bg);
   border: 1px solid var(--glass-card-border);
-  box-shadow: var(--glass-card-shadow);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
 /* 静态微光。走 `--card-shimmer-display`：浅色主题（包括默认的 ocean）
@@ -1164,7 +1172,7 @@
 
 .card:hover {
   border-color: var(--glass-card-hover-border);
-  box-shadow: var(--glass-card-hover-shadow);
+  box-shadow: var(--shadow-md);
 }
 
 /* 卡片主体（可点区）。z-index 同 `.rowMain`：不抬层级会被 `::before` 盖着。 */
@@ -1182,7 +1190,7 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  border-radius: 15px;
+  border-radius: 12px;
 }
 
 .cardMain:focus-visible {

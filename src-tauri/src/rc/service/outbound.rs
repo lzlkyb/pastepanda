@@ -350,10 +350,14 @@ impl RcService {
             capability,
             uno_code,
             uno_pass,
-            // 本端支持视频数据报；旧对端 serde 忽略未知字段，照常受理
-            vid_dgram: Some(true),
-            // P3.1：本端能解 RS FEC——旧对端 serde 忽略未知字段照常受理
-            fec_rs: Some(true),
+            // 本端支持视频数据报；旧对端 serde 忽略未知字段，照常受理。
+            // 🔴 能力位必须与平台真实支持一致（vid_dgram_capability 注释）——
+            // 谎报 Some(true) 会让被控端把全部 H.264 帧走 QUIC 数据报 blast
+            // 出去，而本端没有数据报读取任务，一帧都收不到。
+            vid_dgram: vid_dgram_capability(),
+            // P3.1：本端能解 RS FEC——只在数据报可用时有意义，随 vid_dgram 同门。
+            // 旧对端 serde 忽略未知字段照常受理。
+            fec_rs: vid_dgram_capability(),
             // G3：本端支持音频。会话中由 AudioOn 开关；被控端无渲染设备时自动无声
             audio: Some(true),
         };
@@ -386,5 +390,31 @@ impl RcService {
             }
             other => Err(format!("对端回了意外的帧：{other:?}")),
         }
+    }
+}
+
+/// Request.vid_dgram / fec_rs 能力位的**唯一事实来源**：本端能不能收视频数据报。
+///
+/// 自报必须与平台真实支持一致。2026-10-01 真机联调的两次教训收在这里：
+/// 1. 曾无条件 `Some(true)`，而 Android 当时没有数据报读取任务——全部
+///    H.264 帧走 QUIC 数据报发送却无人接收，画面永远「等待对方画面」；
+/// 2. 只报可靠流兜底后画质糊——AP 队列只挡大帧不挡 ping，帧龄涨到几百 ms，
+///    码率被缩到 25~45%。
+/// 现在 vid_dgram 模块已全平台可用（纯 Rust 组帧，无平台 API），答案为恒真。
+/// **将来若新增平台不支持，改这里一处即可**，别再去逐调用点补 `if`（规则 11.1）。
+fn vid_dgram_capability() -> Option<bool> {
+    Some(true)
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::vid_dgram_capability;
+
+    /// 能力位必须与模块声明一致：vid_dgram 已全平台可用，两平台都自报 true
+    /// （2026-10-01 解禁；真机联调「谎报 None 后画质糊、谎报 Some 却无读取
+    /// 任务一帧不到」两次教训后，把自报收口成这个函数的返回值）。
+    #[test]
+    fn 能力位与平台支持一致() {
+        assert_eq!(vid_dgram_capability(), Some(true));
     }
 }

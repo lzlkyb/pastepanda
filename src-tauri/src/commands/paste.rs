@@ -185,14 +185,19 @@ pub fn toggle_window(app: tauri::AppHandle) -> Result<(), String> {
                 engine.save_foreground_hwnd();
             }
             // 临时置顶确保窗口获得焦点，随后恢复（避免托盘弹窗关闭后焦点丢失）
+            // （置顶/最小化恢复是桌面窗口概念，mobile 无该 API）
+            #[cfg(desktop)]
             let _ = window.set_always_on_top(true);
             crate::present_window(&window);
             // 延迟恢复置顶状态，确保焦点已稳定
-            let w = window.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(150));
-                let _ = w.set_always_on_top(false);
-            });
+            #[cfg(desktop)]
+            {
+                let w = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    let _ = w.set_always_on_top(false);
+                });
+            }
         }
     }
     Ok(())
@@ -215,10 +220,12 @@ pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
             engine.save_foreground_hwnd();
         }
 
-        // 如果窗口最小化，先恢复
+        // 如果窗口最小化，先恢复（桌面 API，mobile 无最小化概念）
+        #[cfg(desktop)]
         window.unminimize().ok();
 
         // 临时置顶确保获得焦点，随后恢复
+        #[cfg(desktop)]
         let _ = window.set_always_on_top(true);
         if let Err(e) = window.show() {
             log::warn!("[Commands] show_main_window 显示失败: {}", e);
@@ -226,11 +233,14 @@ pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
         window.set_focus().ok();
 
         // 延迟恢复置顶状态
-        let w = window.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            let _ = w.set_always_on_top(false);
-        });
+        #[cfg(desktop)]
+        {
+            let w = window.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                let _ = w.set_always_on_top(false);
+            });
+        }
     }
 
     Ok(())

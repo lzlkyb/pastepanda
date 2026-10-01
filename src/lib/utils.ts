@@ -56,6 +56,56 @@ export function relativeTime(timeStr: string): string {
   return `${month}月${day}日 周${weekday}`;
 }
 
+/**
+ * 配对码 → 人眼比对用的展示形态（4 位一组，如 `4182 0620`）。
+ *
+ * 🔴 **三条配对路共用的唯一展示口径**（规则 11 收口，2026-09-29）：
+ * ① 附近配对的两端核对码、② 跨网凭证出示的 8 位码、③ 输入凭证的预览回显。
+ * 此前三处各自 `slice(0,4) + " " + slice(4)`，一旦有位数的第二来源就会分叉。
+ *
+ * 分组宽度 4 而不是 3：配对码是 **8 位**（`lan_pair::PAIR_CODE_DIGITS`），
+ * 4+4 正好两半，与「前一半 / 后一半」的念法对齐；3+3+2 是电话号码的读法，
+ * 用在这里会让人念错。
+ *
+ * 非数字字符（空串、半截输入）原样返回——**不抛异常、不补零**：
+ * 输入框正打着「604」时显示「604」比显示「0604」更贴近用户刚敲的东西。
+ */
+export function formatPairCode(code: string): string {
+  const digits = code.replace(/\D/g, "");
+  if (digits.length <= 4) return digits;
+  const chunks: string[] = [];
+  for (let i = 0; i < digits.length; i += 4) chunks.push(digits.slice(i, i + 4));
+  return chunks.join(" ");
+}
+
+/**
+ * 配对凭证 → 8 位核对数（FNV-1a 32 位取末 8 位）。
+ *
+ * 用来把「二维码 / 那一长串接入码」折成一个和**附近配对**同规格的 8 位数：
+ * 用户在两条路上看到的都是 8 位、都是 4+4 分组，不需要先判断自己在走哪条路
+ * （2026-09-29 统一入口的诉求）。展示一律走 [`formatPairCode`]。
+ *
+ * 🔴 **它不新增安全强度**，写在这里免得后人误读：
+ * 凭证本身是自签的（`sync/invite.rs` 模块头论证过，中间人换成自己那份时
+ * 两端折出来的数照样一致）。中间人防护仍然是两件已有的事——
+ * ① 生成方那一侧的确认（写白名单的一侧）＋ 指纹；② 附近配对的 SAS 数字
+ * （换公钥 → 两端必不一致）。本函数只解决「三种长度的码并存」的一致性问题。
+ *
+ * 纯函数、无环境依赖：**两端各算各的**（生成方折自己的码，输入方折刚粘的码），
+ * 同一串输入必然同一个结果，因此不需要后端参与，也没有第二处口径。
+ */
+export function pairCodeDigest(code: string): string {
+  let h = 0x811c9dc5; // FNV-1a offset basis（32 位）
+  for (let i = 0; i < code.length; i++) {
+    // 直接吃整个 UTF-16 码元（不做 & 0xff 掩码）：凭证是 ASCII（`PP1-` +
+    // base58 + CRC），掩码只会让非 ASCII 输入白白多撞车。移动端实现同一口径
+    // 时逐码元 XOR 即可，不必引 TextEncoder。
+    h ^= code.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0; // FNV prime；>>> 0 保持无符号
+  }
+  return String(h % 100000000).padStart(8, "0");
+}
+
 /** 截断文本 */
 export function truncate(text: string, maxLen: number): string {
   if (!text) return "";

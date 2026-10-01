@@ -1,5 +1,5 @@
 /**
- * imageFullscreen.test.ts — 图片全屏查看层（「C壳+B芯」）守卫测试。
+ * imageFullscreen.test.ts — 图片详情查看层交互守卫测试。
  *
  * 钉住三条不变量（按规则 #11.1：分支逻辑收口后必须有守卫钉住）：
  * 1. 滚轮 = 以光标为中心的缩放：缩放换算公式与 clamp 边界（hook 内的纯推导）；
@@ -7,6 +7,7 @@
  * 3. 面板互斥：OCR 选词态顶替摘要面板、裁剪态收起一切面板——互斥链唯一收口。
  */
 import { describe, it, expect } from "vitest";
+import { clampImageZoom } from "@/lib/imagePreviewFit";
 
 // ===== 1. 滚轮缩放（光标为中心）的纯推导 =====
 // 与 useImagePreview.handlePreviewWheel 同公式：容器 transform = translate(offset)·scale，
@@ -43,13 +44,13 @@ describe("滚轮以光标为中心缩放", () => {
     expect(r.offset.y + next * p.y).toBeCloseTo(prev.offset.y + prev.scale * p.y);
   });
 
-  it("缩放倍率被夹取在 0.2–5（hook 先 clamp 再传入）", () => {
-    const clamp = (v: number) => Math.max(0.2, Math.min(5, v));
-    expect(clamp(0.05)).toBe(0.2);
-    expect(clamp(9)).toBe(5);
+  it("缩放下限随适应比例变化，大图在窄窗仍能继续缩小", () => {
+    const fit = 0.08;
+    expect(clampImageZoom(0.05, fit)).toBe(0.05);
+    expect(clampImageZoom(9, fit)).toBe(5);
     // 夹到边界后倍率与当前相同 ⇒ hook 直接 return，不产生任何平移抖动
-    const same = zoomAtCursor({ scale: 0.2, offset: { x: 5, y: -3 } }, clamp(0.05), { x: 30, y: 0 });
-    expect(same.scale).toBe(0.2);
+    const same = zoomAtCursor({ scale: 0.02, offset: { x: 5, y: -3 } }, clampImageZoom(0.01, fit), { x: 30, y: 0 });
+    expect(same.scale).toBe(0.02);
     expect(same.offset).toEqual({ x: 5, y: -3 });
   });
 });

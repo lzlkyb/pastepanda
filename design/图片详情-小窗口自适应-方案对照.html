@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>图片详情 · 小窗口自适应方案</title>
+<style>
+  :root { --ink:#0f172a; --sub:#495565; --muted:#627083; --line:#e0e4eb; --canvas:#f0f4f8; --accent:#027cbb; --accent-light:#e0f2fe; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#e9eef4; color:var(--ink); font:13px/1.5 "Segoe UI","Microsoft YaHei",sans-serif; }
+  main { max-width:1240px; margin:auto; padding:28px 24px 60px; }
+  h1 { font-size:22px; margin:0 0 8px; }
+  .lede { margin:0 0 26px; color:var(--sub); }
+  h2 { font-size:17px; margin:0 0 8px; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+  .choice { min-width:0; }
+  .choice p { color:var(--sub); min-height:40px; margin:0 0 12px; }
+  .mark { padding:3px 8px; border-radius:4px; color:var(--accent); background:var(--accent-light); font-size:11px; margin-left:8px; }
+  .stage { display:grid; place-items:center; min-height:740px; background:#dce6ef; border-radius:12px; padding:15px; }
+  .app { position:relative; width:550px; height:700px; max-width:100%; overflow:hidden; background:#f6f8fb; border-radius:12px; box-shadow:0 12px 34px #17202d26; }
+  .apphead { height:40px; background:#fff; display:flex; align-items:center; padding:0 14px; gap:15px; color:var(--sub); font-size:11px; }
+  .apphead b { color:var(--ink); }
+  .list { display:flex; gap:8px; padding:12px; }
+  .list i { width:30%; height:72px; background:#fff; border:1px solid var(--line); border-radius:8px; }
+  .veil { position:absolute; inset:0; display:grid; place-items:center; background:#16213160; padding:16px; }
+  .dialog { width:100%; height:100%; border-radius:12px; background:#fff; box-shadow:0 12px 30px #17202d35; display:flex; flex-direction:column; overflow:hidden; }
+  .head { height:48px; flex:none; display:flex; align-items:center; gap:10px; padding:0 16px; border-bottom:1px solid var(--line); }
+  .head b { font-size:15px; white-space:nowrap; }
+  .head .filename { color:var(--sub); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px; }
+  .head .x { margin-left:auto; color:var(--sub); font-size:18px; }
+  .viewport { min-height:0; flex:1; display:grid; place-items:center; background:var(--canvas); position:relative; }
+  .photo { width:82%; aspect-ratio:16/9; max-height:90%; border-radius:4px; background:linear-gradient(145deg,#aac7dc 0 42%,#e8d2a8 42% 58%,#8dac95 58%); box-shadow:0 7px 19px #15223629; position:relative; }
+  .photo:after { content:"示意图片 · 1920 × 1080"; position:absolute; right:8px; bottom:5px; font-size:10px; color:#213b47; }
+  .fit { position:absolute; left:12px; bottom:10px; padding:4px 8px; background:#fff; border-radius:4px; font-size:11px; color:var(--muted); }
+  .footer { flex:none; background:#fff; border-top:1px solid var(--line); padding:6px 10px; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:4px; min-height:34px; }
+  .row + .row { border-top:1px solid var(--line); padding-top:5px; margin-top:5px; }
+  .group { display:flex; align-items:center; gap:2px; white-space:nowrap; }
+  .btn { padding:6px 8px; border-radius:8px; color:var(--sub); font-size:11px; background:transparent; }
+  .btn.primary { color:#fff; background:var(--accent); }
+  .btn.active { background:var(--accent-light); color:#0273ad; }
+  .divider { width:1px; height:16px; background:var(--line); }
+  .notes { margin-top:10px; background:#fff; border-radius:8px; padding:12px 14px; color:var(--sub); }
+  .notes strong { color:var(--ink); }
+  .small-title { margin:32px 0 12px; font-size:17px; }
+  .tiny-stage { display:flex; justify-content:center; background:#dce6ef; border-radius:12px; padding:16px; }
+  .tiny { width:320px; height:400px; border-radius:10px; background:#fff; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 22px #17202d26; }
+  .tiny .head { padding:0 12px; }
+  .tiny .head .filename { max-width:96px; }
+  .tiny .viewport .photo { width:76%; }
+  .tiny .footer { padding:4px 6px; }
+  .tiny .btn { padding:4px 5px; }
+  .tiny .row + .row { padding-top:3px; margin-top:3px; }
+  .tiny .row:last-child { flex-wrap:wrap; justify-content:flex-start; }
+  .tiny .row:last-child .group { flex-wrap:wrap; }
+  .tiny .fit { bottom:5px; left:6px; }
+  @media (max-width:1000px) { .grid { grid-template-columns:1fr; } }
+  @media (max-width:600px) { main { padding:20px 10px; } .stage { min-height:0; } .app { width:100%; } }
+</style>
+</head>
+<body><main>
+  <h1>图片详情 · 550px 主窗口下的布局修正</h1>
+  <p class="lede">以现有窗口默认 550×700、最小 320×400 为约束。图片和背景是排版示意；按钮对应现有功能。两案均让图片打开时完整进入画布，并在调整窗口尺寸时继续适应。</p>
+  <div class="grid">
+    <section class="choice"><h2>方案 A · 两行直达 <span class="mark">建议</span></h2><p>第一行保留高频看图和复制，第二行放全部处理操作；默认窗口无需横向找按钮。</p>
+      <div class="stage"><div class="app"><div class="apphead"><b>PastePanda</b><span>记录</span><span>知识</span></div><div class="list"><i></i><i></i><i></i></div><div class="veil"><div class="dialog"><div class="head"><b>图片详情</b><span class="filename">风景照片.png</span><span class="x">×</span></div><div class="viewport"><div class="photo"></div><span class="fit">适应窗口 · 25%</span></div><div class="footer"><div class="row"><div class="group"><span class="btn">－</span><span class="btn active">适应 · 25%</span><span class="btn">＋</span><span class="btn">1:1</span></div><div class="group"><span class="btn primary">复制</span></div></div><div class="row"><div class="group"><span class="btn">旋转</span><span class="btn">选词</span><span class="btn">裁剪</span><span class="btn">置顶</span><span class="btn">另存</span><span class="btn">导出</span></div></div></div></div></div></div></div><div class="notes"><strong>优点：</strong>现有功能都可直接看见并点击。<br><strong>取舍：</strong>底部约多占 36px，图片画布略矮。</div></section>
+    <section class="choice"><h2>方案 B · 单行主操作 + 更多</h2><p>看图和复制始终可见，其余处理动作收入“更多”菜单；画布高度最大。</p>
+      <div class="stage"><div class="app"><div class="apphead"><b>PastePanda</b><span>记录</span><span>知识</span></div><div class="list"><i></i><i></i><i></i></div><div class="veil"><div class="dialog"><div class="head"><b>图片详情</b><span class="filename">风景照片.png</span><span class="x">×</span></div><div class="viewport"><div class="photo"></div><span class="fit">适应窗口 · 25%</span></div><div class="footer"><div class="row"><div class="group"><span class="btn">－</span><span class="btn active">适应 · 25%</span><span class="btn">＋</span><span class="btn">1:1</span></div><div class="group"><span class="btn primary">复制</span><span class="btn">更多 ▾</span></div></div></div></div></div></div></div><div class="notes"><strong>优点：</strong>图片空间较大，操作栏简洁。<br><strong>取舍：</strong>裁剪、选词、另存等动作多一步，发现性较弱。</div></section>
+  </div>
+  <h2 class="small-title">最小窗口 320×400 · 方案 A 按钮换行示意</h2>
+  <div class="tiny-stage"><div class="tiny"><div class="head"><b>图片详情</b><span class="filename">风景照片.png</span><span class="x">×</span></div><div class="viewport"><div class="photo"></div><span class="fit">适应 · 14%</span></div><div class="footer"><div class="row"><div class="group"><span class="btn">－</span><span class="btn active">适应</span><span class="btn">＋</span><span class="btn">1:1</span></div><span class="btn primary">复制</span></div><div class="row"><div class="group"><span class="btn">旋转</span><span class="btn">选词</span><span class="btn">裁剪</span><span class="btn">置顶</span><span class="btn">另存</span><span class="btn">导出</span></div></div></div></div></div>
+</main></body></html>

@@ -49,9 +49,14 @@ impl RcService {
 
     /// 向对端要文件。**必须在发请求之前选好本机落点**——对方一接受就会灌字节
     /// （设计稿 11.2 的注意事项 1）。
+    ///
+    /// 落点不存在时先补建（与 `effective_receive_dir` 的「建不了才报错」同一纪律）：
+    /// 手机的默认接收目录要等第一次取回才真正落盘，拿「目录还不存在」去拦
+    /// 第一次使用的人是自找麻烦。
     pub async fn file_pull(self: &Arc<Self>, peer: &str, dir: PathBuf) -> Result<(), String> {
         if !dir.is_dir() {
-            return Err(format!("{} 不是目录", dir.display()));
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("接收目录 {} 建不出来：{e}", dir.display()))?;
         }
         let svc = self.clone();
         let peer = peer.to_string();

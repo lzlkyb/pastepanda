@@ -149,6 +149,7 @@ export function RcA2DeviceDetail({
   return (
     <section className={styles.detail} aria-label={`${name}设备详情`}>
       <RcA2DeviceHero
+        key={target.node_id}
         target={target}
         name={name}
         status={status}
@@ -210,7 +211,7 @@ export function RcA2DeviceDetail({
           </button>
         </div>
         {manageOpen && (
-          <div id="rc-a2-manage">
+          <div id="rc-a2-manage" className={styles.manageReveal}>
             <RcDeviceManageActions
               target={target}
               name={name}

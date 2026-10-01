@@ -1,0 +1,75 @@
+/* 手机骨架样式：令牌来自 src/styles/theme.css（main.tsx 引入），fallback 保底。
+   视觉稿定稿后此处按稿重写——骨架期的目标只是「结构真实、可跑、不摆假 UI」。 */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.pane {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  /* 底部导航 + 手势条安全区 */
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+.emptyCard {
+  max-width: 320px;
+  text-align: center;
+  padding: 20px;
+  border: 1px solid var(--border-color, #232b3d);
+  border-radius: 14px;
+  background: var(--card-bg, #131824);
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #e6ebf5);
+  margin-bottom: 8px;
+}
+
+.emptyHint {
+  font-size: 13px;
+  color: var(--text-muted, #8a94a8);
+}
+
+.sandboxBtn {
+  margin-top: 16px;
+  padding: 10px 18px;
+  border: 1px solid var(--accent, #6366f1);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.14);
+  color: var(--text-primary, #e6ebf5);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--border-color, #232b3d);
+  background: var(--card-bg, #131824);
+}
+
+.tab {
+  flex: 1;
+  padding: 14px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted, #8a94a8);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tabActive {
+  color: var(--accent, #22d3ee);
+}

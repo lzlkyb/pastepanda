@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PastePanda · 顶栏减负 + 新建分组渐进披露 · 设计稿</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   基线：TopBar.tsx / Sidebar.tsx 真实结构复刻
+   改后：同一信息架构上的渐进披露（不改功能，只减默认可见项）
+   窗口 480×560 · 记录模式
+   ═══════════════════════════════════════════════════════ */
+*{box-sizing:border-box}
+body{
+  margin:0;padding:28px 20px 100px;
+  font:14px/1.65 "Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  background:#E8EEF4;color:#0F172A;
+}
+.wrap{max-width:1120px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{font-size:12.5px;color:#5B6B7F;margin:0 0 14px;line-height:1.7}
+h2{font-size:15px;margin:36px 0 12px;padding-top:16px;border-top:1px solid #D5DEE8}
+h2 .n{
+  display:inline-flex;width:22px;height:22px;border-radius:7px;
+  align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  background:#DCEBFA;color:#0273AD;margin-right:8px;
+}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;padding:1px 5px;border-radius:4px;background:#E7EEF6}
+.note{
+  border-radius:10px;padding:12px 14px;margin:12px 0;font-size:12.5px;line-height:1.65;
+  background:#fff;border:1px solid #D8E0EA;border-left:3px solid #0284C7;color:#495565;
+}
+.note.warn{border-left-color:#D97706;background:#FFFBEB}
+.note.ok{border-left-color:#059669;background:#ECFDF5}
+.note b{color:#0F172A}
+.pair{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+.col{flex:1;min-width:300px;max-width:520px}
+.lab{
+  display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:8px;
+}
+.labA{background:#E8ECF2;color:#627083;border:1px solid #E0E4EB}
+.labB{background:#DCEBFA;color:#0273AD;border:1px solid #7DD3FC}
+
+/* ── 通用清单 ── */
+ul.plain{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:#495565;line-height:1.75}
+ul.plain li{margin:4px 0}
+ul.plain li b{color:#0F172A}
+.delta{
+  display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:4px;
+  vertical-align:1px;margin-left:4px;
+}
+.d-add{background:#D1FAE5;color:#047857}
+.d-cut{background:#FEE2E2;color:#B91C1C}
+.d-mv{background:#EDE9FE;color:#6D28D9}
+
+/* ═══════ 窗口壳 ═══════ */
+.win{
+  width:480px;border-radius:12px;overflow:hidden;position:relative;
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 20px 48px rgba(15,23,42,.16), 0 2px 8px rgba(15,23,42,.04);
+  font-size:13px;color:#0F172A;background:#F7F7F8;
+}
+.win.dark{background:#12141C;color:#E8ECF4;border-color:rgba(255,255,255,.08)}
+
+/* ── TopBar ── */
+.hd{padding:14px 14px 0;background:linear-gradient(180deg,#EEF2F7 0%,#F7F7F8 100%)}
+.win.dark .hd{background:linear-gradient(180deg,#1A1D28 0%,#12141C 100%)}
+.hTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+.hLeft{display:flex;align-items:center;gap:7px;min-width:0}
+.hRight{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.ib{
+  width:28px;height:28px;border-radius:8px;border:none;background:transparent;
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+  color:#495565;font-size:13px;
+}
+.win.dark .ib{color:#A8B0C0}
+.ib:hover{background:rgba(129,140,248,.12)}
+.ib.act{background:rgba(245,158,11,.16);color:#B45309}
+.brand{font-size:12px;font-weight:700;letter-spacing:-.01em}
+.brand .ai{
+  font-size:8px;font-weight:800;padding:1px 3px;border-radius:3px;
+  background:linear-gradient(135deg,#818CF8,#22D3EE);color:#fff;margin-left:3px;vertical-align:2px;
+}
+.modes{
+  display:inline-flex;background:rgba(15,23,42,.06);border-radius:8px;padding:2px;gap:1px;
+}
+.win.dark .modes{background:rgba(255,255,255,.07)}
+.mode{
+  border:none;background:transparent;border-radius:6px;padding:3px 8px;
+  font:600 11px/1 inherit;color:#5B6B7F;cursor:pointer;
+}
+.mode.on{background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.1);color:#0F172A}
+.win.dark .mode.on{background:#2A2F3E;color:#fff}
+.divider{width:1px;height:16px;background:rgba(15,23,42,.12);margin:0 2px}
+
+/* 搜索 / 筛选 / Tab */
+.searchRow{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.search{
+  flex:1;height:34px;padding:0 12px;border-radius:8px;display:flex;align-items:center;gap:7px;
+  background:#fff;border:1px solid #E0E4EB;color:#627083;font-size:12px;min-width:0;
+}
+.win.dark .search{background:#1C2030;border-color:#2A3040;color:#8B95A8}
+.fbtn{
+  height:34px;padding:0 9px;border-radius:8px;border:1px solid #E0E4EB;background:#fff;
+  color:#495565;font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;
+  font-family:inherit;
+}
+.win.dark .fbtn{background:#1C2030;border-color:#2A3040;color:#A8B0C0}
+.fbtn.on{background:#EEF2FF;border-color:#A5B4FC;color:#3730A3;font-weight:600}
+.win.dark .fbtn.on{background:rgba(99,102,241,.22);border-color:#6366F1;color:#C7D2FE}
+.fbtn.ghost{border-style:dashed;opacity:.9}
+
+.tabs{display:flex;gap:4px;margin-bottom:8px}
+.tab{
+  flex:1;height:30px;border-radius:8px;border:1px solid transparent;background:transparent;
+  font:600 11px/1 inherit;color:#5B6B7F;cursor:pointer;display:inline-flex;
+  align-items:center;justify-content:center;gap:3px;position:relative;
+}
+.tab:hover{background:rgba(15,23,42,.05)}
+.tab.on{background:#027CBB;border-color:transparent;color:#fff}
+.tab .ct{font-size:9px;opacity:.75;font-weight:600}
+
+/* 标签行 */
+.tagBar{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.chip{
+  display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:999px;
+  background:#E0E7FF;color:#3730A3;font-size:11px;font-weight:600;
+}
+.chip .x{opacity:.55;font-size:12px;cursor:pointer}
+.chip.soft{background:rgba(15,23,42,.06);color:#5B6B7F;font-weight:500;cursor:pointer}
+.win.dark .chip.soft{background:rgba(255,255,255,.08);color:#A8B0C0}
+.chip.outline{background:transparent;border:1px dashed #A5B4FC;color:#4F46E5}
+
+/* ── Sidebar ── */
+.body{display:flex;min-height:360px}
+.sb{
+  width:168px;background:#EFF1F5;border-right:1px solid #E0E4EB;padding:10px 8px;
+  display:flex;flex-direction:column;gap:2px;flex-shrink:0;
+}
+.win.dark .sb{background:#171A24;border-color:#2A3040}
+.sItem{
+  display:flex;align-items:center;gap:7px;height:30px;padding:0 8px;border-radius:7px;
+  font-size:12px;color:#334155;cursor:pointer;
+}
+.win.dark .sItem{color:#C5CDDC}
+.sItem:hover{background:rgba(15,23,42,.05)}
+.sItem.on{background:#DCEBFA;color:#0273AD;font-weight:600}
+.win.dark .sItem.on{background:rgba(56,130,246,.2);color:#93C5FD}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sep{height:1px;background:rgba(15,23,42,.08);margin:8px 4px}
+.sec{font-size:10px;font-weight:700;color:#94A3B8;padding:4px 8px 2px;letter-spacing:.04em}
+.add{
+  display:flex;align-items:center;gap:7px;height:30px;padding:0 8px;border-radius:7px;
+  font-size:12px;color:#5B6B7F;cursor:pointer;border:1px dashed #C5CDD8;background:transparent;
+  margin-top:4px;font-family:inherit;width:100%;
+}
+.win.dark .add{border-color:#3A4258;color:#A8B0C0}
+
+/* 新建分组 · 改前 */
+.createOld{padding:6px 4px;display:flex;flex-direction:column;gap:6px}
+.pal{display:flex;flex-wrap:wrap;gap:6px;padding:0 4px}
+.sw{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+.sw.on{border-color:#0F172A;transform:scale(1.12);box-shadow:0 0 0 2px #fff}
+.icons{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px}
+.idot{
+  width:26px;height:26px;border-radius:6px;border:2px solid transparent;background:rgba(15,23,42,.05);
+  font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.idot.on{border-color:#0F172A;background:#E2E8F0}
+.inRow{
+  display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;background:rgba(15,23,42,.05);
+}
+.win.dark .inRow{background:rgba(255,255,255,.06)}
+.inRow input{
+  flex:1;border:none;background:transparent;outline:none;font-size:12px;color:inherit;font-family:inherit;min-width:0;
+}
+.ok{
+  width:22px;height:22px;border-radius:6px;border:none;background:#027CBB;color:#fff;
+  font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+
+/* 新建分组 · 改后 */
+.createNew{padding:6px 4px;display:flex;flex-direction:column;gap:6px}
+.looks{
+  display:flex;align-items:center;gap:6px;padding:2px 4px;
+}
+.looksBtn{
+  height:24px;padding:0 8px;border-radius:6px;border:1px solid #D5DEE8;background:#fff;
+  font:500 11px/1 inherit;color:#495565;cursor:pointer;display:inline-flex;align-items:center;gap:5px;
+  font-family:inherit;
+}
+.win.dark .looksBtn{background:#1C2030;border-color:#2A3040;color:#A8B0C0}
+.looksBtn .swm{width:10px;height:10px;border-radius:50%}
+.expand{
+  border:1px solid #E0E4EB;border-radius:8px;padding:8px;background:#fff;
+}
+.win.dark .expand{background:#1C2030;border-color:#2A3040}
+.expand .pal,.expand .icons{padding:0 0 6px}
+.hint{font-size:10.5px;color:#94A3B8;padding:0 4px;line-height:1.5}
+
+/* 卡片列表预览 */
+.list{flex:1;padding:8px;display:flex;flex-direction:column;gap:6px;background:#F7F7F8}
+.win.dark .list{background:#12141C}
+.card{
+  background:#fff;border:1px solid #E4E8EE;border-radius:10px;padding:10px 12px;
+  font-size:11.5px;color:#334155;line-height:1.5;
+  box-shadow:0 1px 3px rgba(15,23,42,.04);
+}
+.win.dark .card{background:#1A1E2A;border-color:#2A3040;color:#C5CDDC}
+.card .meta{font-size:10px;color:#94A3B8;margin-top:4px}
+.badge{
+  display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;
+  background:#DCEBFA;color:#0273AD;margin-right:4px;
+}
+
+/* 状态条 mock */
+.statebar{
+  display:flex;align-items:center;gap:6px;padding:8px 10px;margin:0 14px 12px;
+  border-radius:8px;font-size:11px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;
+}
+.statebar.err{background:#FEF2F2;color:#B91C1C;border-color:#FECACA}
+.statebar .act{
+  margin-left:auto;border:none;background:#1D4ED8;color:#fff;border-radius:6px;
+  padding:3px 8px;font:600 10px/1 inherit;cursor:pointer;font-family:inherit;
+}
+.statebar.err .act{background:#B91C1C}
+
+/* 交互说明卡 */
+.flow{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0;
+}
+.fcard{
+  background:#fff;border:1px solid #D8E0EA;border-radius:10px;padding:12px 14px;
+  font-size:12px;line-height:1.65;color:#495565;
+}
+.fcard h4{margin:0 0 6px;font-size:12.5px;color:#0F172A}
+.fcard .step{
+  display:flex;gap:8px;margin:6px 0;align-items:flex-start;
+}
+.fcard .num{
+  width:18px;height:18px;border-radius:5px;background:#DCEBFA;color:#0273AD;
+  font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;
+}
+table.cmp{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0}
+table.cmp th,table.cmp td{
+  border:1px solid #D8E0EA;padding:8px 10px;text-align:left;vertical-align:top;line-height:1.55;
+}
+table.cmp th{background:#F1F5F9;font-size:11px;color:#475569;font-weight:700}
+table.cmp td.good{background:#ECFDF5}
+table.cmp td.bad{background:#FEF2F2}
+
+/* 折叠演示 */
+.foldDemo{
+  border:1px solid #E0E4EB;border-radius:10px;overflow:hidden;background:#fff;margin:10px 0;
+}
+.win.dark .foldDemo{background:#1A1E2A;border-color:#2A3040}
+.foldHead{
+  padding:10px 14px;font-size:12px;font-weight:600;cursor:pointer;display:flex;
+  align-items:center;gap:8px;user-select:none;
+}
+.foldHead .car{transition:transform .15s;font-size:10px;color:#94A3B8}
+.foldDemo.open .car{transform:rotate(90deg)}
+.foldBody{display:none;padding:0 14px 12px;border-top:1px solid #E8EEF4}
+.foldDemo.open .foldBody{display:block}
+.win.dark .foldBody{border-color:#2A3040}
+
+.footer{
+  margin-top:48px;padding-top:16px;border-top:1px solid #D5DEE8;
+  font-size:12px;color:#5B6B7F;line-height:1.7;
+}
+.kbd{
+  display:inline-block;font-family:ui-monospace,Consolas,monospace;font-size:10.5px;
+  padding:1px 5px;border-radius:4px;background:#E7EEF6;border:1px solid #D0D9E4;color:#334155;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>顶栏减负 + 新建分组渐进披露</h1>
+<p class="sub">
+  对照稿 · 基于 <code>TopBar.tsx</code> / <code>Sidebar.tsx</code> 真实结构 · 480px 默认窗宽 · 记录模式<br>
+  目标：砍默认决策点，不砍能力；高频路径更短，低频配置可到达。
+</p>
+
+<div class="note">
+  <b>本稿解决审查里的两条认知负荷问题：</b>
+  ① 顶栏记录模式一行内 5 tab + 时间/来源/标签三套筛选并行（决策点 &gt; 4）；
+  ② 新建分组 9 色 + 12 图标 + 名称输入同屏三选一。
+  功能不删，只改「默认露出什么」。
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2><span class="n">1</span>顶栏减负 · 改前 / 改后</h2>
+
+<div class="pair">
+
+  <!-- 改前 -->
+  <div class="col">
+    <div class="lab labA">改前 · 现状（4 行信息）</div>
+    <div class="win">
+      <div class="hd">
+        <div class="hTop">
+          <div class="hLeft">
+            <button class="ib">☰</button>
+            <span style="font-size:16px">🐼</span>
+            <span class="brand">PastePanda<span class="ai">AI</span></span>
+            <div class="modes">
+              <button class="mode on">记录</button>
+              <button class="mode">工具</button>
+              <button class="mode">知识</button>
+            </div>
+          </div>
+          <div class="hRight">
+            <button class="ib act" title="收集模式">⬡</button>
+            <button class="ib">⚙</button>
+            <span class="divider"></span>
+            <button class="ib">—</button>
+            <button class="ib">👁</button>
+          </div>
+        </div>
+        <div class="searchRow">
+          <div class="search">🔍 搜索记录、文件名、URL…</div>
+          <button class="fbtn on">时间 · 今天</button>
+          <button class="fbtn">来源 ▾</button>
+        </div>
+        <div class="tabs">
+          <button class="tab on">📋 全部 <span class="ct">128</span></button>
+          <button class="tab">📝 文本</button>
+          <button class="tab">📸 图片</button>
+          <button class="tab">📁 文件</button>
+          <button class="tab">⭐ 收藏</button>
+        </div>
+        <div class="tagBar">
+          <span class="chip"># 工作 <span class="x">×</span></span>
+          <span class="chip"># 待办 <span class="x">×</span></span>
+          <button class="chip soft">清除</button>
+          <button class="chip soft">🏷 标签筛选</button>
+          <span style="flex:1"></span>
+          <button class="chip soft">☁ 同步中</button>
+        </div>
+      </div>
+      <div class="body">
+        <div class="sb">
+          <div class="sItem on">📋 全部</div>
+          <div class="sItem">📂 未分组</div>
+          <div class="sItem">⭐ 收藏</div>
+          <div class="sep"></div>
+          <div class="sec">分组</div>
+          <div class="sItem"><span class="dot" style="background:#3B82F6"></span>工作</div>
+          <div class="sItem"><span class="dot" style="background:#22C55E"></span>生活</div>
+          <div class="createOld">
+            <div class="pal">
+              <button class="sw on" style="background:#3B82F6"></button>
+              <button class="sw" style="background:#22C55E"></button>
+              <button class="sw" style="background:#F97316"></button>
+              <button class="sw" style="background:#A855F7"></button>
+              <button class="sw" style="background:#EF4444"></button>
+              <button class="sw" style="background:#EC4899"></button>
+              <button class="sw" style="background:#14B8A6"></button>
+              <button class="sw" style="background:#F59E0B"></button>
+              <button class="sw" style="background:#6366F1"></button>
+            </div>
+            <div class="icons">
+              <button class="idot on">📁</button>
+              <button class="idot">📂</button>
+              <button class="idot">🏷️</button>
+              <button class="idot">📌</button>
+              <button class="idot">⭐</button>
+              <button class="idot">❤️</button>
+              <button class="idot">🔥</button>
+              <button class="idot">💼</button>
+              <button class="idot">🎯</button>
+              <button class="idot">📝</button>
+              <button class="idot">💡</button>
+              <button class="idot">🔖</button>
+            </div>
+            <div class="inRow">
+              <span class="dot" style="background:#3B82F6"></span>
+              <input placeholder="分组名称" value="项目 A">
+              <button class="ok">✓</button>
+            </div>
+          </div>
+          <button class="add">+ 新建分组</button>
+        </div>
+        <div class="list">
+          <div class="card">
+            <span class="badge">VS Code</span>把这段 TypeScript 抽成 hook…
+            <div class="meta">今天 14:22 · 文本</div>
+          </div>
+          <div class="card">
+            <span class="badge">Chrome</span>https://github.com/lzlkyb/…
+            <div class="meta">今天 13:01 · URL</div>
+          </div>
+          <div class="card">
+            <span class="badge">截图</span>image_2026-09-30.png
+            <div class="meta">今天 11:40 · 图片</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="plain">
+      <li><b>默认决策点 ≥ 7</b>：时间筛选、来源筛选、5 个 tab、标签芯片、同步入口、色板、图标板</li>
+      <li>标签行即使「只加一个筛选」也常年占一行</li>
+      <li>新建分组：先配色 → 再选图标 → 再起名，顺序反了（名字才是必填）</li>
+    </ul>
+  </div>
+
+  <!-- 改后 -->
+  <div class="col">
+    <div class="lab labB">改后 · 渐进披露（推荐）</div>
+    <div class="win">
+      <div class="hd">
+        <div class="hTop">
+          <div class="hLeft">
+            <button class="ib">☰</button>
+            <span style="font-size:16px">🐼</span>
+            <span class="brand">PastePanda<span class="ai">AI</span></span>
+            <div class="modes">
+              <button class="mode on">记录</button>
+              <button class="mode">工具</button>
+              <button class="mode">知识</button>
+            </div>
+          </div>
+          <div class="hRight">
+            <button class="ib act" title="收集模式">⬡</button>
+            <button class="ib">⚙</button>
+            <span class="divider"></span>
+            <button class="ib">—</button>
+            <button class="ib">👁</button>
+          </div>
+        </div>
+        <div class="searchRow">
+          <div class="search">🔍 搜索记录、文件名、URL…</div>
+          <!-- 唯一筛选入口：时间+来源合体；有生效项时高亮 -->
+          <button class="fbtn on">筛选 1</button>
+        </div>
+        <div class="tabs">
+          <button class="tab on">📋 全部 <span class="ct">128</span></button>
+          <button class="tab">📝 文本</button>
+          <button class="tab">📸 图片</button>
+          <button class="tab">📁 文件</button>
+          <button class="tab">⭐ 收藏</button>
+        </div>
+        <!-- 标签行默认只留「已生效芯片」；无选中时整行不占位 -->
+        <div class="tagBar">
+          <span class="chip"># 工作 <span class="x">×</span></span>
+          <span class="chip soft">+ 标签</span>
+        </div>
+      </div>
+      <div class="body">
+        <div class="sb">
+          <div class="sItem on">📋 全部</div>
+          <div class="sItem">📂 未分组</div>
+          <div class="sItem">⭐ 收藏</div>
+          <div class="sep"></div>
+          <div class="sec">分组</div>
+          <div class="sItem"><span class="dot" style="background:#3B82F6"></span>工作</div>
+          <div class="sItem"><span class="dot" style="background:#22C55E"></span>生活</div>
+          <!-- 新建：只问名字 -->
+          <div class="createNew">
+            <div class="inRow">
+              <span class="dot" style="background:#3B82F6"></span>
+              <input placeholder="分组名称，回车创建" value="项目 A">
+              <button class="ok">✓</button>
+            </div>
+            <div class="looks">
+              <button class="looksBtn"><span class="swm" style="background:#3B82F6"></span>📁</button>
+              <button class="looksBtn">改外观 ▾</button>
+            </div>
+          </div>
+          <button class="add">+ 新建分组</button>
+        </div>
+        <div class="list">
+          <div class="card">
+            <span class="badge">VS Code</span>把这段 TypeScript 抽成 hook…
+            <div class="meta">今天 14:22 · 文本</div>
+          </div>
+          <div class="card">
+            <span class="badge">Chrome</span>https://github.com/lzlkyb/…
+            <div class="meta">今天 13:01 · URL</div>
+          </div>
+          <div class="card">
+            <span class="badge">截图</span>image_2026-09-30.png
+            <div class="meta">今天 11:40 · 图片</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="plain">
+      <li><span class="delta d-cut">收</span><b>时间 / 来源</b>并入「筛选」弹层，按钮只显示生效数</li>
+      <li><span class="delta d-cut">收</span><b>标签行</b>无筛选时不占高度；有筛选只留芯片 + 「+ 标签」</li>
+      <li><span class="delta d-mv">移</span>同步入口 → 筛选弹层底部 / 设置（非常驻）</li>
+      <li><span class="delta d-cut">收</span><b>新建分组</b>默认只输入名称；色/图标进「改外观」</li>
+      <li><span class="delta d-add">增</span>创建后仍可右键改色 / 改图标（已有能力，不新增）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="note ok">
+  <b>密度收益（480px）：</b>顶栏默认高度少约 <b>28–32px</b>（标签行 + 一枚筛选钮）；
+  侧栏新建区从 3 行决策压到 1 行必填。搜索框净宽 <b>+48px</b> 左右。
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2><span class="n">2</span>「筛选」弹层 · 内容结构</h2>
+
+<div class="pair">
+  <div class="col">
+    <div class="lab labB">点「筛选」后（非模态浮层）</div>
+    <div class="win">
+      <div class="hd" style="padding-bottom:12px">
+        <div class="searchRow">
+          <div class="search">🔍 搜索记录、文件名、URL…</div>
+          <button class="fbtn on">筛选 1</button>
+        </div>
+        <div class="tabs" style="opacity:.45;pointer-events:none">
+          <button class="tab on">📋 全部</button>
+          <button class="tab">📝 文本</button>
+          <button class="tab">📸 图片</button>
+          <button class="tab">📁 文件</button>
+          <button class="tab">⭐ 收藏</button>
+        </div>
+        <!-- 浮层 mock -->
+        <div class="expand" style="margin-top:4px;box-shadow:0 12px 32px rgba(15,23,42,.14)">
+          <div style="font-size:11px;font-weight:700;color:#627083;margin-bottom:8px">时间</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+            <button class="fbtn" style="height:28px">全部时间</button>
+            <button class="fbtn on" style="height:28px">今天</button>
+            <button class="fbtn" style="height:28px">本周</button>
+            <button class="fbtn" style="height:28px">本月</button>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#627083;margin-bottom:8px">来源</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+            <button class="fbtn" style="height:28px">全部来源</button>
+            <button class="fbtn" style="height:28px">VS Code</button>
+            <button class="fbtn" style="height:28px">Chrome</button>
+            <button class="fbtn" style="height:28px">微信</button>
+            <button class="fbtn" style="height:28px">截图</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px solid #E8EEF4">
+            <button class="fbtn" style="height:28px">清除全部</button>
+            <span style="flex:1"></span>
+            <button class="ok" style="width:auto;padding:0 12px;height:28px;font-size:11px;font-weight:600">完成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="plain">
+      <li>沿用现有 <code>FilterDropdown</code> / <code>SourceFilterDropdown</code> 数据源，只是壳合并</li>
+      <li>浮层 <b>非模态</b>（规则 18）：点空白 / <span class="kbd">Esc</span> 收起，不挡列表</li>
+      <li>有生效项时按钮变 <code>筛选 1</code> / <code>筛选 2</code>，可一键「清除全部」</li>
+    </ul>
+  </div>
+
+  <div class="col">
+    <div class="lab labB">标签：默认零高度 → 有筛选才占行</div>
+
+    <div class="foldDemo">
+      <div class="foldHead"><span class="car">▶</span>无标签筛选（默认）· 标签行不渲染</div>
+      <div class="foldBody">
+        <div class="tagBar" style="margin:8px 0 0">
+          <span class="chip outline">+ 标签筛选</span>
+          <span class="hint" style="flex:1">点击展开标签选择；整行不占高度（同 <code>lanSyncEnabled=false</code> 时的现状逻辑）</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="foldDemo open">
+      <div class="foldHead"><span class="car">▶</span>有 1 个标签筛选 · 只留芯片</div>
+      <div class="foldBody">
+        <div class="tagBar" style="margin:8px 0 0">
+          <span class="chip"># 工作 <span class="x">×</span></span>
+          <span class="chip soft">+ 标签</span>
+          <button class="chip soft" style="margin-left:auto">清除</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>与现状的唯一差别：</b>去掉常驻的「标签筛选」大按钮和同步胶囊。
+      同步状态改挂在「筛选」弹层底部或顶栏设置绿点旁的小胶囊（仅 <code>lanSyncEnabled</code> 时出现）。
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2><span class="n">3</span>新建分组 · 渐进披露三态</h2>
+
+<div class="pair">
+  <div class="col">
+    <div class="lab labB">态 A · 刚点「+ 新建分组」（默认）</div>
+    <div class="win" style="width:280px">
+      <div class="sb" style="width:100%;min-height:220px">
+        <div class="sec">分组</div>
+        <div class="sItem"><span class="dot" style="background:#3B82F6"></span>工作</div>
+        <div class="sItem"><span class="dot" style="background:#22C55E"></span>生活</div>
+        <div class="createNew">
+          <div class="inRow">
+            <span class="dot" style="background:#3B82F6"></span>
+            <input placeholder="分组名称，回车创建" autofocus>
+            <button class="ok">✓</button>
+          </div>
+          <div class="looks">
+            <button class="looksBtn"><span class="swm" style="background:#3B82F6"></span>📁</button>
+            <button class="looksBtn">改外观 ▾</button>
+          </div>
+          <div class="hint">回车 = 用当前默认外观直接创建</div>
+        </div>
+        <button class="add">+ 新建分组</button>
+      </div>
+    </div>
+    <ul class="plain">
+      <li>自动聚焦名称框（现状已做，保留）</li>
+      <li>默认色 = 预设 1 号蓝，默认图标 = 📁（blossom 主题用 🎀）</li>
+      <li><span class="kbd">Enter</span> 确认 · <span class="kbd">Esc</span> 取消（现状已做）</li>
+    </ul>
+  </div>
+
+  <div class="col">
+    <div class="lab labB">态 B · 点「改外观 ▾」展开</div>
+    <div class="win" style="width:280px">
+      <div class="sb" style="width:100%;min-height:220px">
+        <div class="sec">分组</div>
+        <div class="sItem"><span class="dot" style="background:#3B82F6"></span>工作</div>
+        <div class="createNew">
+          <div class="inRow">
+            <span class="dot" style="background:#A855F7"></span>
+            <input value="项目 A">
+            <button class="ok">✓</button>
+          </div>
+          <div class="looks">
+            <button class="looksBtn"><span class="swm" style="background:#A855F7"></span>🎯</button>
+            <button class="looksBtn">收起 ▴</button>
+          </div>
+          <div class="expand" style="margin-top:2px">
+            <div class="pal" style="margin-bottom:6px">
+              <button class="sw" style="background:#3B82F6"></button>
+              <button class="sw" style="background:#22C55E"></button>
+              <button class="sw" style="background:#F97316"></button>
+              <button class="sw on" style="background:#A855F7"></button>
+              <button class="sw" style="background:#EF4444"></button>
+              <button class="sw" style="background:#EC4899"></button>
+              <button class="sw" style="background:#14B8A6"></button>
+              <button class="sw" style="background:#F59E0B"></button>
+              <button class="sw" style="background:#6366F1"></button>
+            </div>
+            <div class="icons">
+              <button class="idot">📁</button>
+              <button class="idot">📂</button>
+              <button class="idot">🏷️</button>
+              <button class="idot">📌</button>
+              <button class="idot">⭐</button>
+              <button class="idot">❤️</button>
+              <button class="idot">🔥</button>
+              <button class="idot">💼</button>
+              <button class="idot on">🎯</button>
+              <button class="idot">📝</button>
+              <button class="idot">💡</button>
+              <button class="idot">🔖</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="plain">
+      <li>色板 / 图标数据源就是现有 <code>PRESET_COLORS</code> / <code>PRESET_ICONS</code>，零新增</li>
+      <li>展开是可选步骤：不展开也能建组</li>
+      <li>创建后右键分组 → 改色 / 重命名（已有）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="note warn">
+  <b>不改的部分：</b>blossom 甜色板与 🎀 图标集、色点 24×24 判定区（<code>::after</code>）、
+  选中 ✓ 钩、<code>aria-pressed</code> / <code>aria-label</code> 读屏命名——全部保留。
+  只是把「必看」改成「想看再展开」。
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2><span class="n">4</span>方案取舍（顶栏筛选合并）</h2>
+
+<table class="cmp">
+  <tr>
+    <th style="width:18%">方案</th>
+    <th>做法</th>
+    <th>优点</th>
+    <th>代价</th>
+    <th>建议</th>
+  </tr>
+  <tr>
+    <td><b>A · 合并筛选</b><br><span class="delta d-add">推荐</span></td>
+    <td>时间+来源进「筛选」浮层；标签行按需</td>
+    <td class="good">顶栏少 2 控件；搜索更宽；状态用数字表达仍可扫</td>
+    <td>多一次点击才能改时间筛选</td>
+    <td class="good"><b>选这个</b>——时间筛选低频，搜索是高频</td>
+  </tr>
+  <tr>
+    <td>B · 只收标签行</td>
+    <td>时间/来源仍并排，仅标签默认折叠</td>
+    <td>改动最小，回归风险最低</td>
+    <td class="bad">搜索行仍挤，480px 问题只解决一半</td>
+    <td>保守过渡可先做 B，再做 A</td>
+  </tr>
+  <tr>
+    <td>C · 双行弹出</td>
+    <td>点搜索聚焦后才展开筛选行（聚焦态）</td>
+    <td>平时极简</td>
+    <td class="bad">「移动即预览」被破坏；失焦闪动；触屏更差</td>
+    <td>不建议</td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2><span class="n">5</span>落地要点（实施时对照）</h2>
+
+<div class="flow">
+  <div class="fcard">
+    <h4>顶栏</h4>
+    <div class="step"><div class="num">1</div><div>合并 <code>FilterDropdown</code>+<code>SourceFilterDropdown</code> 为 <code>FilterPanel</code>，状态仍读 <code>timeFilter</code>/<code>sourceFilter</code></div></div>
+    <div class="step"><div class="num">2</div><div>按钮角标：生效项数；有筛选时 <code>on</code> 高亮</div></div>
+    <div class="step"><div class="num">3</div><div>标签行条件改为 <code>selectedTagIds.length &gt; 0</code> 时才占行；「+ 标签」进浮层或行尾</div></div>
+    <div class="step"><div class="num">4</div><div><code>LanSyncCap</code> 迁到筛选浮层底部，或设置绿点旁小胶囊</div></div>
+  </div>
+  <div class="fcard">
+    <h4>侧栏新建</h4>
+    <div class="step"><div class="num">1</div><div><code>creating</code> 态只渲染 <code>createInputRow</code> + 「改外观」</div></div>
+    <div class="step"><div class="num">2</div><div>新增本地态 <code>looksOpen</code>，展开才挂 colorPicker/iconPicker</div></div>
+    <div class="step"><div class="num">3</div><div>预览点（色点）跟 <code>newColor</code> 同步，点它也可展开</div></div>
+    <div class="step"><div class="num">4</div><div>Enter 创建逻辑不变；Esc 两级：先收外观，再取消创建</div></div>
+  </div>
+  <div class="fcard">
+    <h4>反馈与规则对齐</h4>
+    <div class="step"><div class="num">1</div><div>筛选浮层非模态、Esc 收起（规则 18 / 17.6）</div></div>
+    <div class="step"><div class="num">2</div><div>生效筛选在按钮上<b>常驻可见</b>数字，不靠 hover（L2）</div></div>
+    <div class="step"><div class="num">3</div><div>新建失败 toast 与按钮同屏（规则 15.1）</div></div>
+    <div class="step"><div class="num">4</div><div>新动效走 150/200ms 两档（U2）；不新增内联 style</div></div>
+  </div>
+</div>
+
+<div class="footer">
+  <b>验收（黑话测试 / 扫视）：</b>
+  ① 新用户指着顶栏能说出「搜什么、看哪类、筛什么」；
+  ② 新建分组只需看一处输入框；
+  ③ 打开筛选浮层后能独立回答「我筛了什么」。<br>
+  <b>下一步：</b>你确认方案 A（或先 B）后，我按 <code>AGENTS.md</code> 规则直接改代码；涉及布局交互，以本稿为基线实施，不另起炉灶。
+</div>
+
+</div>
+<script>
+document.querySelectorAll('.foldHead').forEach(function(h){
+  h.addEventListener('click', function(){
+    h.parentElement.classList.toggle('open');
+  });
+});
+</script>
+</body>
+</html>

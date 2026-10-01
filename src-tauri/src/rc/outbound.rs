@@ -49,7 +49,7 @@ pub(super) struct OutboundVideo {
     /// 对端主动结束**不**触发自动重连，断流才触发。
     peer_end_reason: Option<String>,
     /// P2-1：数据报视频重组器（流路径与数据报路径共用一把 seq 尺子）。
-    #[cfg(target_os = "windows")]
+    /// 全平台（Android 2026-10-01 解禁，见 vid_dgram 模块头）。
     reasm: std::sync::Arc<std::sync::Mutex<super::vid_dgram::VidReassembler>>,
 }
 
@@ -87,7 +87,6 @@ impl OutboundVideo {
             rtt_hint_tier: 0,
             pongs_since_hint: 0,
             peer_end_reason: None,
-            #[cfg(target_os = "windows")]
             reasm: std::sync::Arc::new(std::sync::Mutex::new(
                 super::vid_dgram::VidReassembler::new(),
             )),
@@ -246,8 +245,9 @@ impl OutboundVideo {
     /// P2-1：视频数据报读取任务。P 帧走 QUIC datagram（不可靠 + XOR FEC），
     /// 重组完成的帧直接进 outbox；流路径的关键帧到达时（handle_h264）重置
     /// 重组器。有界退出（P0-1 B5 同款）：500ms 一拍查会话。
+    ///
+    /// 全平台（Android 2026-10-01 解禁：vid_dgram 无平台依赖）。
     fn spawn_video_dgram_reader(&self) {
-        #[cfg(target_os = "windows")]
         {
             let svc = self.svc.clone();
             // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id——LAN 快速
@@ -720,22 +720,18 @@ impl OutboundVideo {
     ) {
         // P2-1：走流的关键帧 = 数据报重组器的锚。新对端的 sq 从 1 起（0 是
         // 「旧对端无序号」的保留值，见 `vid_dgram.rs` 的 `VidDgramSender`）。
-        #[cfg(target_os = "windows")]
+        // 全平台（Android 2026-10-01 解禁）。
         let mut drained: Vec<super::vid_dgram::ReasmFrame> = Vec::new();
         if key && sq > 0 {
-            #[cfg(target_os = "windows")]
-            {
-                drained = self
-                    .reasm
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .reset_after_stream_key(sq);
-            }
+            drained = self
+                .reasm
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .reset_after_stream_key(sq);
         }
         push_h264_frame(&self.svc, key, width, height, data, ts, cap_ms, enc_ms, codec);
         // D2：锚定后按序补交付缓冲完整的 P 帧——走流的关键帧被拥塞延迟时，
         // 先到的数据报 P 帧已缓存，等锚一到就能续播（不再整 GOP 作废）。
-        #[cfg(target_os = "windows")]
         for f in drained {
             push_h264_frame(
                 &self.svc,

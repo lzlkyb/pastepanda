@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>PastePanda · 手机端 A / B / C 设计对比</title>
+  <link rel="stylesheet" href="../src/styles/theme.css">
+  <link rel="stylesheet" href="mobile-ui-abc-2026-10-01/preview.css">
+</head>
+<body>
+  <header class="review-head">
+    <a class="wordmark" href="?"> <span class="brand-mark" data-icon="PanelsTopLeft"></span> PastePanda <span>设计预览</span></a>
+    <button id="theme-toggle" class="review-button"><span data-icon="Moon"></span><span>深色模式</span></button>
+  </header>
+  <main class="review-main">
+    <div class="review-intro">
+      <div><h1>同一个 PastePanda，三种手机体验。</h1><p>同样的功能与示例数据，比较布局、触控和动效。手机端延续桌面的品牌蓝与图标语言。</p></div>
+      <span class="prototype-note">交互设计稿 · 数据与连接均为演示</span>
+    </div>
+    <section class="review-controls" aria-label="设计稿演示控制">
+      <div class="control-group"><span>一起查看</span><div class="segmented" id="page-controls"><button data-page="devices" aria-pressed="true">设备</button><button data-page="files" aria-pressed="false">文件</button><button data-page="settings" aria-pressed="false">设置</button><button data-page="session" aria-pressed="false">远控</button></div></div>
+      <div class="control-group"><span>页面状态</span><select id="scenario" aria-label="页面状态"><option value="normal">正常内容</option><option value="empty">空状态</option><option value="error">错误与重试</option><option value="waiting">等待连接</option></select></div>
+      <div class="control-group"><span>宽度</span><select id="phone-width" aria-label="模拟手机宽度"><option value="390">390px</option><option value="360">360px · 小屏</option><option value="430">430px · 大屏</option></select></div>
+    </section>
+    <div id="focus-note" hidden></div>
+    <section id="concepts" class="concepts" aria-label="三个设计方向"></section>
+    <section class="comparison-section">
+      <div><h2>风格同源，操作适配手机。</h2><p>下方为桌面视觉语言示意，取自现有主题与远程电脑结构；不是桌面界面的逐像素截图。</p></div>
+      <div class="desktop-reference">
+        <div class="desktop-title"><span data-icon="PanelsTopLeft"></span><strong>PastePanda</strong><span>远程电脑</span><span class="desktop-online">远程通道已开启</span></div>
+        <div class="desktop-content"><aside><strong>设备</strong><div class="desktop-selected"><span data-icon="Monitor"></span>工作室电脑</div><div><span data-icon="Laptop"></span>随身笔记本</div><small>文件传输<br>会话记录<br>设置</small></aside><div class="desktop-detail"><span class="device-emblem" data-icon="Monitor"></span><h3>工作室电脑</h3><p><span class="status-dot"></span>可连接 · 上次局域网连接</p><span class="static-primary">远程控制</span><span class="static-secondary">只看画面</span><small>手机共用品牌色、状态词、图标与反馈节奏。</small></div></div>
+      </div>
+      <div class="compare-table"><table><thead><tr><th>比较点</th><th>A · 原生分组</th><th>B · 设备卡片</th><th>C · 轻玻璃</th></tr></thead><tbody><tr><th>首页焦点</th><td>清楚的设备列表</td><td>常用电脑与直接连接</td><td>内容与浮动操作区</td></tr><tr><th>适合场景</th><td>长期使用、多台设备</td><td>主要使用一两台电脑</td><td>偏好更强的材质与动效</td></tr><tr><th>桌面关联</th><td>分组、状态与主题色</td><td>设备详情与主动作</td><td>会话胶囊与局部材质</td></tr><tr><th>实施重点</th><td>层级与返回体验</td><td>设备主次与卡片布局</td><td>对比度与材质性能</td></tr></tbody></table></div>
+    </section>
+    <footer class="review-footer"><p>试一试：点设备打开操作面板，添加电脑体验配对，点“远程控制”进入演示；文件页可模拟收发，远控可查看键盘与横屏。</p><p>外观切换、全局提示与工具栏收纳属于拟议交互。原生键盘、系统选文件、真实连接与触觉需要实施后真机验收。</p></footer>
+  </main>
+  <script src="mobile-ui-abc-2026-10-01/icons.js"></script>
+  <script src="mobile-ui-abc-2026-10-01/preview.js"></script>
+</body>
+</html>

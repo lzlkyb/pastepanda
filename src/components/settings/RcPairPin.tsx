@@ -1,15 +1,23 @@
 /**
- * RcPairPin — 6 位数字核对屏（A3 局域网配对的第 3 步）。
+ * RcPairPin — 配对码核对屏（A3 局域网配对的第 3 步）。
  *
- * 设计稿：`design/远程电脑-配对流程重做-设计稿.html` §4.3。
+ * 设计稿：`design/远程电脑-配对流程重做-设计稿.html` §4.3、
+ * `design/远程电脑-一键配对-统一入口-设计稿.html` §2。
  *
  * # 🔴 三条硬约束（设计稿原文，改之前先读）
  *
  * ① **数字要够大够疏**：它是逐位比对用的，做小了等于逼用户猜。
- *    尺寸（30px / 字距 9px / 700）来自 `Lan.module.css` 的 `.lanPairPin`，
+ *    尺寸（26px / 字距 5px / 700）来自 `Lan.module.css` 的 `.lanPairPin`，
  *    与知识库同步那边的配对核对**同一个类**——不新造数值。
+ *    2026-09-29 由 6 位改 8 位时字号字距一起收小（30/9 → 26/5）：
+ *    8 位按原字距在窄面板与手机上会溢出。
  * ② **确认按钮不预选**：不能让人回车就过。所以 `autoFocus` 落在「取消」上。
  * ③ **文案直说「不一样就取消」**：不写这句，用户会以为两个按钮只是「再想想」。
+ *
+ * # 展示口径只有一份
+ *
+ * 分组（4+4）由 `lib/utils` 的 `formatPairCode` 出，本组件不自己切片——
+ * 附近核对、凭证出示、输入预览三处共用它（规则 11）。
  *
  * # 为什么两端各点一次
  *
@@ -23,6 +31,7 @@
  * 各授权各的，照搬过来就是错的，所以这里没有。
  */
 import type { RcPairPrompt } from "@/lib/api/rcPair";
+import { formatPairCode } from "@/lib/utils";
 import lanStyles from "./Lan.module.css";
 
 export function RcPairPin({ prompt, busy, onConfirm, onCancel }: {
@@ -45,17 +54,17 @@ export function RcPairPin({ prompt, busy, onConfirm, onCancel }: {
         <div className={lanStyles.lanPairHint} style={{ padding: "12px 0" }}>
           正在与对方建立一次性加密信道（X25519），
           <br />
-          然后各自算一串 6 位数字…
+          然后各自算一串配对码…
         </div>
       ) : (
         <>
-          <div className={lanStyles.lanPairPin}>{prompt.pin}</div>
+          <div className={lanStyles.lanPairPin}>{formatPairCode(prompt.pin)}</div>
           <div className={lanStyles.lanPairHint}>
-            确认<b>另一台设备</b>上显示的是同一串数字。
+            确认<b>另一台设备</b>上显示的是同一串码。
             <br />
             两台设备<b>各自都要确认一次</b>（谁先点都行）——
             <br />
-            这串数字只有两边放在一起比才有意义。
+            这串码只有两边放在一起比才有意义。
             <br />
             两边不一样就点取消——那意味着有人在中间插足。
           </div>

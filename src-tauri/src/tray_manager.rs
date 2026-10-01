@@ -2,12 +2,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
-use tauri::{
-    image::Image,
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    webview::WebviewWindowBuilder,
-    AppHandle, Emitter, Manager,
-};
+// 托盘是桌面专属能力（mobile 无托盘/无全局菜单），托盘事件类型仅桌面编译；
+// setup_tray / set_tray_stack_mode 两个函数体随 cfg(desktop) 整体门控。
+#[cfg(desktop)]
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{image::Image, webview::WebviewWindowBuilder, AppHandle, Emitter, Manager};
 
 /// 截断文本，确保适合预览显示（最大 30 个字符）
 fn truncate_preview(text: &str, max_len: usize) -> String {
@@ -405,7 +404,7 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
 
         log::info!("[TrayManager] 开始创建弹窗窗口...");
 
-        match WebviewWindowBuilder::new(
+        let popup_builder = WebviewWindowBuilder::new(
             app,
             popup_label,
             tauri::WebviewUrl::App("popup.html".into()),
@@ -413,12 +412,15 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
         .title("")
         .inner_size(popup_w, popup_h)
         .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(false)
-        .visible(false)
-        .build()
+        .visible(false);
+        // 置顶/无边框/跳过任务栏/阴影是桌面窗口概念（mobile 无这些属性）
+        #[cfg(desktop)]
+        let popup_builder = popup_builder
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .shadow(false);
+        match popup_builder.build()
         {
             Ok(window) => {
                 log::info!("[TrayManager] 弹窗窗口创建成功");
@@ -507,6 +509,8 @@ pub(crate) fn set_dwm_round_corners(window: &tauri::WebviewWindow) {
 pub(crate) fn set_dwm_round_corners(_window: &tauri::WebviewWindow) {}
 
 /// 初始化系统托盘图标（纯自绘弹窗，无原生菜单）
+// 托盘构建是桌面专属：函数体整体桌面限定（mobile 用下方占位实现）
+#[cfg(desktop)]
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let icon = Image::from_bytes(include_bytes!("../icons/icon.png")).unwrap_or_else(|e| {
         log::error!("[TrayManager] 加载托盘图标失败: {}", e);
@@ -621,8 +625,18 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// 托盘是桌面专属：mobile 下占位实现，调用方（lib.rs setup）无需感知平台差异。
+#[cfg(mobile)]
+pub fn setup_tray(_app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    log::info!("[TrayManager] mobile 无托盘，跳过初始化");
+    Ok(())
+}
+
 /// 切换托盘图标的栈模式状态（叠加/移除橙色圆点）
 pub fn set_tray_stack_mode(app: &AppHandle, active: bool) {
+    // 托盘图标是桌面专属（mobile 无托盘），整个改图标流程桌面限定
+    #[cfg(desktop)]
+    {
     let Some(tray) = app.tray_by_id("main-tray") else {
         log::warn!("[TrayManager] 未找到托盘图标，无法切换栈模式状态");
         return;
@@ -677,4 +691,7 @@ pub fn set_tray_stack_mode(app: &AppHandle, active: bool) {
     let stack_icon = Image::new_owned(pixels, w as u32, h as u32);
     let _ = tray.set_icon(Some(stack_icon));
     log::info!("[TrayManager] 托盘图标已切换为栈模式（橙色圆点）");
+    }
+    #[cfg(mobile)]
+    { let _ = (app, active); }
 }

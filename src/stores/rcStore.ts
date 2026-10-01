@@ -104,6 +104,10 @@ export const useRcStore = create<RcState>((set, get) => {
     if (n === 1) {
       // 首个订阅者：立刻探一次 + 起定时器 + 装事件监听
       void get().refresh();
+      // 🔴 设备列表不在轮询里（引擎每个 tick 只刷 rc_status），启动必须显式拉
+      // 一次——漏了它，重启后没人去读 rc_devices 表，列表永远空着、界面退回
+      // 配对页（2026-10-01 真机联调踩过：数据在库里，只是没人取）。
+      void get().refreshTargets();
       void ensureListener(get);
       scheduleNext(get);
     }

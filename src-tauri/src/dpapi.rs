@@ -69,7 +69,41 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "android")]
+mod imp {
+    //! Android 实现（2026-09-30 真机配对实证）：**app 沙箱即边界**。
+    //!
+    //! 为什么不像 Windows 那样做 DPAPI 级加密：
+    //! · Android 对 app 的保护是内核强制的 UID 沙箱——`/data/user/0/<pkg>/` 下
+    //!   的文件其它 app 读不到（root/物理提取另说，那是设备级威胁，与该文件
+    //!   同级的 SQLite 历史库、配置本来也是同等级暴露）。
+    //! · Keystore 包装 AES-GCM 要 JNI 拿到 Context 再走 Java 层，为一个 32 字节
+    //!   身份种子引入那条链路不值得（要换随时能换：调用方只认
+    //!   protect/unprotect 契约，实现是 dpapi 内的私事）。
+    //!
+    //! 但它**不静默**：产物带 `PPANDROID1` 版本头，文件自己声明了保护等级；
+    //! 解包时对不上这个头（比如把 Windows DPAPI 的产物拷进来）直接报错，
+    //! 不会把乱码当明文用。Windows 上的注释（不提供明文回退）在这里被沙箱
+    //! 边界替代——同一份文件在 Android 落盘位置本来就是 app 私有目录。
+
+    const ANDROID_PASSTHROUGH_PREFIX: &[u8] = b"PPANDROID1";
+
+    pub fn protect(plain: &[u8], _entropy: &[u8]) -> Result<Vec<u8>, String> {
+        let mut out = Vec::with_capacity(ANDROID_PASSTHROUGH_PREFIX.len() + plain.len());
+        out.extend_from_slice(ANDROID_PASSTHROUGH_PREFIX);
+        out.extend_from_slice(plain);
+        Ok(out)
+    }
+
+    pub fn unprotect(cipher: &[u8], _entropy: &[u8]) -> Result<Vec<u8>, String> {
+        let Some(rest) = cipher.strip_prefix(ANDROID_PASSTHROUGH_PREFIX) else {
+            return Err("加密存储格式不匹配（文件可能来自其它平台或已损坏）".to_string());
+        };
+        Ok(rest.to_vec())
+    }
+}
+
+#[cfg(all(not(windows), not(target_os = "android")))]
 mod imp {
     // 非 Windows 平台不提供「明文落盘」的回退实现 —— 宁可不能用，
     // 也不能默默把密钥/令牌写成明文（规则 #15.3：失败不静默）。

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>图片详情弹框风格统一 · 方案对照</title>
+  <style>
+    :root { --page:#edf2f7; --paper:#fff; --canvas:#f0f4f8; --line:#e0e4eb; --ink:#0f172a; --sub:#495565; --muted:#627083; --accent:#0273ad; --accent-wash:#e0f2fe; --shade:rgba(18,27,42,.42); }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--page); color:var(--ink); font:13px/1.55 "Segoe UI","Microsoft YaHei",sans-serif; }
+    .page { max-width:1320px; padding:32px 24px 64px; margin:auto; }
+    h1 { font-size:24px; line-height:1.25; margin:0 0 10px; letter-spacing:-.025em; }
+    .intro { max-width:780px; margin:0 0 28px; color:var(--sub); }
+    .options { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    .option { min-width:0; }
+    .option h2 { margin:0 0 8px; font-size:18px; }
+    .option p { min-height:42px; margin:0 0 14px; color:var(--sub); }
+    .badge { font-size:11px; font-weight:600; color:var(--accent); background:var(--accent-wash); padding:3px 8px; border-radius:4px; margin-left:8px; vertical-align:middle; }
+    .screen { position:relative; aspect-ratio:1.39; border-radius:12px; overflow:hidden; background:#dce7f1; box-shadow:0 4px 16px rgba(18,27,42,.12); }
+    .appbar { height:35px; display:flex; align-items:center; gap:16px; padding:0 14px; background:#fff; color:#495565; font-size:10px; }
+    .appbar strong { color:#0f172a; font-size:12px; }
+    .appbar .right { margin-left:auto; }
+    .fake-list { display:flex; padding:12px; gap:9px; }
+    .fake-card { width:25%; height:76px; border:1px solid #d9e2ed; border-radius:8px; background:#fff; }
+    .veil { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:14px; background:var(--shade); }
+    .dialog { background:var(--paper); border:1px solid var(--line); border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 4px 12px rgba(18,27,42,.16),0 20px 54px rgba(18,27,42,.22); }
+    .dialog.a { width:81%; height:80%; }
+    .dialog.b { width:100%; height:100%; }
+    .head { display:flex; align-items:center; min-height:48px; padding:0 20px; border-bottom:1px solid var(--line); gap:10px; }
+    .title { font-size:15px; font-weight:600; white-space:nowrap; }
+    .meta { display:flex; gap:8px; min-width:0; margin-left:12px; color:var(--muted); font-size:11px; white-space:nowrap; }
+    .meta span:first-child { overflow:hidden; text-overflow:ellipsis; max-width:210px; color:var(--sub); }
+    .close { margin-left:auto; border:0; background:transparent; color:var(--sub); border-radius:8px; width:28px; height:28px; font-size:17px; cursor:pointer; }
+    .close:hover, .tool:hover { background:var(--canvas); }
+    .viewer { flex:1; min-height:0; display:grid; place-items:center; padding:16px; background:var(--canvas); position:relative; }
+    .sample { position:relative; width:72%; height:78%; max-height:240px; border-radius:4px; overflow:hidden; box-shadow:0 8px 24px rgba(18,27,42,.16); background:linear-gradient(160deg,#cddfed 0 42%,#bed0db 42% 52%,#91b6a4 52% 100%); }
+    .sample::before { content:""; position:absolute; inset:15% 20% 28%; border-radius:50% 50% 0 0; background:linear-gradient(145deg,#f3dfb9,#d8af8e); clip-path:polygon(15% 100%,48% 9%,67% 57%,82% 27%,100% 100%); }
+    .sample::after { content:"示意图片"; position:absolute; right:8px; bottom:5px; color:#253c48; font-size:10px; }
+    .bottom { display:flex; align-items:center; gap:3px; min-height:50px; padding:6px 12px; border-top:1px solid var(--line); white-space:nowrap; overflow-x:auto; scrollbar-width:thin; }
+    .tool { border:0; border-radius:8px; background:transparent; color:var(--sub); font:inherit; font-size:11px; padding:7px 8px; cursor:pointer; flex:none; }
+    .tool.primary { color:#fff; background:#027cbb; }
+    .tool.primary:hover { background:#0273ad; }
+    .zoom { color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+    .sep { height:17px; width:1px; flex:none; margin:0 5px; background:var(--line); }
+    .details { margin-top:14px; padding:12px 16px; border-radius:8px; background:#fff; color:var(--sub); }
+    .details strong { color:var(--ink); }
+    .scope { margin-top:28px; color:var(--sub); }
+    .scope h2 { font-size:15px; color:var(--ink); margin:0 0 8px; }
+    .scope ul { margin:0; padding-left:18px; }
+    @media (max-width:980px) { .options { grid-template-columns:1fr; } .screen { aspect-ratio:1.5; } }
+    @media (max-width:600px) { .page { padding:22px 12px; } .screen { aspect-ratio:1.12; } .meta span:not(:first-child) { display:none; } .head { padding:0 12px; } .dialog.a { width:90%; height:78%; } .sample { width:90%; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>记录模式 · 图片详情弹框风格统一</h1>
+    <p class="intro">以现有图片详情的文件信息、缩放、选词、裁剪、置顶、复制、另存、导出为基线。以下是界面示意，图片内容仅用于展示查看区域。两个方案都沿用应用现有主题色与弹框控件。</p>
+    <div class="options">
+      <section class="option">
+        <h2>方案 A · 标准大弹框</h2>
+        <p>边界和文件详情最接近，标题与工具栏完整收在窗体内；查看区域相应变小。</p>
+        <div class="screen"><div class="appbar"><strong>PastePanda</strong><span>记录</span><span>知识</span><span class="right">搜索</span></div><div class="fake-list"><div class="fake-card"></div><div class="fake-card"></div><div class="fake-card"></div></div><div class="veil"><div class="dialog a"><div class="head"><span class="title">图片详情</span><div class="meta"><span>风景照片.png</span><span>1920 × 1080</span><span>384 KB</span></div><button class="close" aria-label="关闭">×</button></div><div class="viewer"><div class="sample"></div></div><div class="bottom"><button class="tool">－</button><span class="zoom">100%</span><button class="tool">＋</button><button class="tool">1:1</button><button class="tool">旋转</button><i class="sep"></i><button class="tool">选词</button><button class="tool">裁剪</button><button class="tool">置顶</button><i class="sep"></i><button class="tool primary">复制</button><button class="tool">另存</button><button class="tool">导出</button></div></div></div></div>
+        <div class="details"><strong>优点：</strong>弹框语言统一；背景记录仍可辨认。<br><strong>取舍：</strong>大图显示面积较小，频繁看图时更容易需要缩放。</div>
+      </section>
+      <section class="option">
+        <h2>方案 B · 宽幅工作弹框 <span class="badge">建议</span></h2>
+        <p>保留当前的大图空间，以统一的窗体、标题栏和底部操作区建立弹框层级。</p>
+        <div class="screen"><div class="appbar"><strong>PastePanda</strong><span>记录</span><span>知识</span><span class="right">搜索</span></div><div class="fake-list"><div class="fake-card"></div><div class="fake-card"></div><div class="fake-card"></div></div><div class="veil"><div class="dialog b"><div class="head"><span class="title">图片详情</span><div class="meta"><span>风景照片.png</span><span>1920 × 1080</span><span>384 KB</span></div><button class="close" aria-label="关闭">×</button></div><div class="viewer"><div class="sample"></div></div><div class="bottom"><button class="tool">－</button><span class="zoom">100%</span><button class="tool">＋</button><button class="tool">1:1</button><button class="tool">旋转</button><i class="sep"></i><button class="tool">选词</button><button class="tool">裁剪</button><button class="tool">置顶</button><i class="sep"></i><button class="tool primary">复制</button><button class="tool">另存</button><button class="tool">导出</button></div></div></div></div>
+        <div class="details"><strong>优点：</strong>更接近现有看图体验，图片仍是主角；弹框结构、关闭入口、操作区与其他弹框统一。<br><strong>取舍：</strong>外层留白较少，遮罩下的记录列表几乎不可见。</div>
+      </section>
+    </div>
+    <section class="scope"><h2>实施范围</h2><ul><li>只调整图片详情查看层的窗体结构、信息层级和控件样式。</li><li>缩放、平移、OCR、裁剪、码信息、导出等能力与当前触发方式保持一致。</li><li>窄窗口的操作栏可横向滚动；浮出面板跟随底部操作区定位。</li></ul></section>
+  </main>
+</body>
+</html>

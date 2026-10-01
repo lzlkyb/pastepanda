@@ -19,8 +19,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png", "devtools", "protocol-asset"] }
 tauri-plugin-opener = "2"
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-clipboard-manager = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -44,7 +42,6 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml_edit = "0.25"
 rusqlite = { version = "0.31", features = ["bundled"] }
 scraper = "0.21"
-arboard = { version = "3", features = ["image-data"] }
 tokio = { version = "1", features = ["full"] }
 image = { version = "0.25", features = ["png"] }
 # PP-OCRv6 离线 OCR 引擎（纯 Rust + MNN，模型随包发布）。替换原 Windows 自带 OCR，
@@ -207,9 +204,15 @@ windows = { version = "0.58", features = [
 ] }
 winreg = "0.52"
 
+# 桌面专属依赖（Android/iOS 目标不编译）。global-shortcut / clipboard-manager 是桌面
+# 插件；clipboard-manager 传递依赖的 arboard 无 Android 实现，arboard 直接依赖同理——
+# 探针 A 实测（docs/远程电脑-手机端-P0.5探针报告-2026-09-29.md §1.2）。
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-clipboard-manager = "2"
+arboard = { version = "3", features = ["image-data"] }
 
 # 开发构建：把链接时间压下去（2026-09-05）。
 #

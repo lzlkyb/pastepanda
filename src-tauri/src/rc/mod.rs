@@ -54,7 +54,6 @@ pub mod gpu;
 pub mod mft_diag;
 #[cfg(target_os = "windows")]
 pub mod mft_pick;
-#[cfg(target_os = "windows")]
 pub mod vid_dgram;
 
 #[cfg(test)]

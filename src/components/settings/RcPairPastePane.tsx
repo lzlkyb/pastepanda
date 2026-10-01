@@ -28,6 +28,7 @@ import { canSubmitPair, looksLikeRcInvite } from "@/lib/rcPairState";
 import type { ToastFn } from "@/components/Toast";
 import { FpBox } from "./RcPairFpBox";
 import { RcCredTag } from "./RcCredTag";
+import { RcPairDigest } from "./RcPairDigest";
 import styles from "../rc/RemoteComputer.module.css";
 
 export function RcPairPastePane({
@@ -232,6 +233,7 @@ export function RcPairPastePane({
               accent
             />
           </div>
+          <RcPairDigest tone="enter" code={code.trim()} />
           <div className={styles.foot}>
             发出去之后，<b>对方那台会弹出确认</b>（带你的指纹与设备名）——
             由对方点头，这次配对才算数。

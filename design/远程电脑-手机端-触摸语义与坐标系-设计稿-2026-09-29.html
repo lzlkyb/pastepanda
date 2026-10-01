@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>远程电脑·手机端 — 触摸语义与坐标系设计稿（2026-09-29）</title>
+<style>
+  /* ===== 设计稿基线：与 src/styles/theme.css 同源令牌（深色玻璃 + indigo/cyan） ===== */
+  :root {
+    --app-bg: #0b1220;
+    --card-bg: #111a2e;
+    --text-primary: #e6edf7;
+    --text-secondary: #9aa8bd;
+    --text-muted: #64748b;
+    --border-color: #22304a;
+    --accent: #6366f1;        /* indigo */
+    --accent-cyan: #22d3ee;
+    --accent-green: #34d399;
+    --accent-amber: #fbbf24;
+    --accent-red: #f87171;
+    --glass: rgba(17, 26, 46, 0.72);
+    --glass-border: rgba(99, 102, 241, 0.22);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--app-bg); color: var(--text-primary);
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    line-height: 1.75; font-size: 15px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h1 .sub { font-size: 14px; color: var(--text-muted); font-weight: 400; margin-left: 12px; }
+  h2 { font-size: 20px; margin: 56px 0 8px; padding-top: 20px; border-top: 1px solid var(--border-color); }
+  h2 .no { color: var(--accent-cyan); font-family: Consolas, monospace; margin-right: 8px; }
+  h3 { font-size: 16px; margin: 28px 0 8px; color: var(--text-primary); }
+  p, li { color: var(--text-secondary); }
+  strong { color: var(--text-primary); }
+  code {
+    font-family: Consolas, "JetBrains Mono", monospace; font-size: 13px;
+    background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.25);
+    color: #c7d2fe; border-radius: 5px; padding: 1px 6px;
+  }
+  .meta { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .tag { display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 20px; margin-right: 8px; vertical-align: 2px; }
+  .tag-warn { background: rgba(251, 191, 36, .12); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, .3); }
+  .tag-ok   { background: rgba(52, 211, 153, .12); color: var(--accent-green); border: 1px solid rgba(52, 211, 153, .3); }
+  .tag-info { background: rgba(99, 102, 241, .12); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, .3); }
+
+  .card {
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: 14px; padding: 18px 22px; margin: 14px 0;
+    backdrop-filter: blur(6px);
+  }
+  .card.redline { border-left: 3px solid var(--accent-red); }
+  .card.okline  { border-left: 3px solid var(--accent-green); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 900px) { .grid2, .grid4 { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th { background: rgba(99, 102, 241, 0.10); color: var(--text-primary); text-align: left; padding: 9px 12px; border: 1px solid var(--border-color); font-size: 13px; white-space: nowrap; }
+  td { padding: 9px 12px; border: 1px solid var(--border-color); vertical-align: top; color: var(--text-secondary); }
+  td b { color: var(--text-primary); font-weight: 600; }
+  .num { font-family: Consolas, monospace; color: var(--accent-cyan); }
+  .warn { color: var(--accent-amber); }
+  .good { color: var(--accent-green); }
+  .bad  { color: var(--accent-red); }
+
+  /* ===== 决策卡 ===== */
+  .decision { border-left: 3px solid var(--accent); }
+  .decision .dt { font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .decision .dt::before { content: "▸ "; color: var(--accent-cyan); }
+
+  /* ===== 状态机图 ===== */
+  .fsm { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin: 16px 0; }
+  .fsm .node {
+    background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px;
+    padding: 10px 14px; min-width: 132px;
+  }
+  .fsm .node .st { font-weight: 700; font-size: 13px; }
+  .fsm .node .desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 3px; }
+  .fsm .node.start { border-color: var(--accent); }
+  .fsm .node.emit { border-color: var(--accent-green); background: rgba(52, 211, 153, .07); }
+  .fsm .node.emit .st { color: var(--accent-green); }
+  .fsm .node.move { border-color: var(--accent-cyan); }
+  .fsm .node.right { border-color: var(--accent-amber); background: rgba(251, 191, 36, .06); }
+  .fsm .arrow { align-self: center; color: var(--text-muted); font-size: 18px; padding: 0 2px; }
+  .fsm .cond { font-size: 11px; color: var(--accent-cyan); display: block; }
+
+  /* ===== 交互演示 ===== */
+  .demo { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .demo { grid-template-columns: 1fr; } }
+  #touchpad {
+    position: relative; height: 380px; border-radius: 12px; overflow: hidden;
+    background:
+      repeating-conic-gradient(#0d1526 0% 25%, #101a30 0% 50%) 0 0 / 40px 40px;
+    border: 1px dashed rgba(99, 102, 241, 0.5); cursor: crosshair;
+    touch-action: none; user-select: none;
+  }
+  #padCursor {
+    position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+    border: 2px solid var(--accent-cyan); background: rgba(34, 211, 238, .15);
+    pointer-events: none; opacity: 0; transition: opacity .15s;
+  }
+  #padCursor.charging { border-color: var(--accent-amber); animation: charge 550ms linear forwards; }
+  #padCursor.dragging { border-color: var(--accent-green); background: rgba(52, 211, 153, .25); }
+  @keyframes charge { from { box-shadow: 0 0 0 0 rgba(251,191,36,.5); } to { box-shadow: 0 0 0 26px rgba(251,191,36,0); border-color: var(--accent-amber); } }
+  .ripple {
+    position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+    border: 2px solid var(--accent); pointer-events: none; animation: rip .45s ease-out forwards;
+  }
+  .ripple.right { border-color: var(--accent-amber); }
+  @keyframes rip { from { transform: scale(.6); opacity: .9; } to { transform: scale(3.2); opacity: 0; } }
+  .padLabel { position: absolute; top: 10px; left: 12px; font-size: 12px; color: var(--text-muted); pointer-events: none; }
+  #padState {
+    position: absolute; bottom: 10px; left: 12px; font-size: 13px; color: var(--accent-cyan);
+    font-family: Consolas, monospace; pointer-events: none; min-height: 20px;
+  }
+  #eventLog {
+    background: #0a0f1c; border: 1px solid var(--border-color); border-radius: 12px;
+    height: 380px; overflow-y: auto; padding: 10px 12px; font-family: Consolas, monospace; font-size: 12px;
+  }
+  #eventLog .ev { padding: 2px 0; border-bottom: 1px dashed rgba(34,48,74,.5); color: var(--text-secondary); }
+  #eventLog .ev b { color: #c7d2fe; font-weight: 600; }
+  #eventLog .ev.right b { color: var(--accent-amber); }
+  #eventLog .ev.move b { color: var(--accent-cyan); }
+  #eventLog .ev.drag b { color: var(--accent-green); }
+  #eventLog .hint { color: var(--text-muted); }
+
+  /* ===== 手机 mockup ===== */
+  .phoneRow { display: flex; gap: 30px; flex-wrap: wrap; margin: 18px 0; align-items: flex-start; }
+  .phone {
+    width: 300px; border-radius: 34px; border: 3px solid #2a3a58; overflow: hidden;
+    background: var(--app-bg); box-shadow: 0 18px 50px rgba(0,0,0,.5); flex-shrink: 0;
+  }
+  .phone.landscape { width: 560px; }
+  .phone .pstatus {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .phone .pstatus .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-green); }
+  .phone .pscreen {
+    height: 300px; margin: 6px 10px; border-radius: 10px; position: relative; overflow: hidden;
+    background:
+      linear-gradient(135deg, rgba(99,102,241,.14), rgba(34,211,238,.07)),
+      repeating-conic-gradient(#0d1526 0% 25%, #101a30 0% 50%) 0 0 / 34px 34px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .phone.landscape .pscreen { height: 240px; }
+  .phone .pscreen .deskMock {
+    width: 82%; height: 72%; border: 1px solid rgba(34, 211, 238, .35); border-radius: 6px;
+    background: linear-gradient(160deg, #16233e, #0e1830); position: relative;
+  }
+  .phone .pscreen .deskMock::after {
+    content: "1920 × 1080"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: rgba(154, 168, 189, .55); font-size: 11px; letter-spacing: 1px;
+  }
+  .phone .pscreen .letterboxTag {
+    position: absolute; font-size: 10px; color: var(--text-muted); border: 1px dashed var(--border-color);
+    border-radius: 4px; padding: 2px 8px;
+  }
+  .phone .ptoolbar {
+    display: flex; justify-content: space-around; padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border-color); background: var(--glass);
+  }
+  .phone .ptoolbar .tb {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px; color: var(--text-secondary); width: 56px;
+  }
+  .phone .ptoolbar .tb .ic { font-size: 18px; line-height: 1; }
+  .phone .ptoolbar .tb.on { color: var(--accent-cyan); }
+  .phone .pill {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 20px;
+    padding: 4px 14px; font-size: 11px; color: var(--text-secondary); white-space: nowrap;
+    backdrop-filter: blur(4px);
+  }
+  .phone .kbdbar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: var(--glass); border-top: 1px solid var(--glass-border);
+    padding: 7px 8px; display: flex; gap: 6px; flex-wrap: wrap; backdrop-filter: blur(6px);
+  }
+  .phone .kbdbar .mk {
+    min-width: 40px; text-align: center; padding: 6px 8px; border-radius: 8px;
+    background: rgba(99,102,241,.10); border: 1px solid var(--border-color);
+    font-size: 12px; color: var(--text-primary); font-weight: 600;
+  }
+  .phone .kbdbar .mk.sticky { background: rgba(34,211,238,.22); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+  .phone .kbdbar .sep { width: 1px; background: var(--border-color); margin: 2px 3px; }
+  .phone .kbdnote { position: absolute; bottom: -26px; left: 4px; font-size: 11px; color: var(--text-muted); width: 100%; }
+  .phoneWrap { position: relative; }
+  .phoneCap { font-size: 12.5px; color: var(--text-muted); margin-top: 10px; max-width: 300px; }
+  .phone.landscape ~ .phoneCap { max-width: 560px; }
+
+  /* ===== 坐标系图解 ===== */
+  .coordChain { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; margin: 16px 0; }
+  .coordChain .cstep {
+    background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px;
+    padding: 12px 16px; flex: 1; min-width: 170px;
+  }
+  .coordChain .cstep .t { font-weight: 700; font-size: 13px; color: var(--accent-cyan); }
+  .coordChain .cstep .d { font-size: 12px; color: var(--text-secondary); margin-top: 4px; line-height: 1.55; }
+  .coordChain .arr { align-self: center; padding: 0 10px; color: var(--accent); font-size: 20px; }
+  .fitDemo { display: flex; gap: 14px; flex-wrap: wrap; margin: 14px 0; }
+  .fitDemo .fd {
+    width: 200px; height: 150px; border: 1px solid var(--border-color); border-radius: 10px;
+    position: relative; overflow: hidden; background: #0d1526; flex-shrink: 0;
+  }
+  .fitDemo .fd .content { position: absolute; background: linear-gradient(150deg, rgba(99,102,241,.35), rgba(34,211,238,.18)); border: 1px solid rgba(34,211,238,.4); }
+  .fitDemo .fd .cap { position: absolute; bottom: 0; left: 0; right: 0; font-size: 11px; padding: 4px 8px; background: rgba(10,15,28,.85); color: var(--text-secondary); }
+  .fitDemo .fd .crosshair { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 1.5px solid var(--accent-amber); border-radius: 50%; }
+
+  ul.tight li { margin: 4px 0; }
+  .kbd-hint { display:inline-block; background: var(--card-bg); border:1px solid var(--border-color); border-bottom-width: 2px; border-radius: 5px; padding: 0 7px; font-size: 12px; font-family: Consolas, monospace; color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>远程电脑 · 手机端 — 触摸语义与坐标系设计稿<span class="sub">2026-09-29 · 待确认</span></h1>
+  <div class="meta">
+    <span class="tag tag-info">规划 §3.3 的「唯一大块新工作」</span>
+    <span class="tag tag-info">手势集对标 RustDesk / AnyDesk 移动端，不自创</span>
+    <span class="tag tag-ok">后端 0 行改动</span>
+  </div>
+
+  <div class="card">
+    <strong>本稿解决什么</strong>：手机端会话视图的①触摸手势 → 远端键鼠事件的映射与判定状态机、②软键盘 + 修饰键条、③坐标系（DPR / 适应·1:1·填充 / 横竖屏 / 双指缩放）。
+    <strong>基于真实源码</strong>（规则 12）：<code>src/lib/rcPointer.ts</code>（mapNormFromCanvas）、<code>src/hooks/useRcInput.ts</code>（sendButton / sendWheel / queueMove / pressedKeys·pressedButtons / releaseTracked）、<code>src/components/rc/RcScreenCanvas.tsx</code>（滚轮 sign 约定）、<code>src/lib/rcKeyMap.ts</code>（keyToVk）、<code>src/lib/rcKeyGuard.ts</code>、<code>src-tauri/src/rc/input.rs</code>（InputEvent 线格式：mouse_move / mouse_button / wheel / key / text）、<code>src-mobile/App.tsx</code>（脚手架空态）、<code>src/styles/theme.css</code>（令牌）。
+  </div>
+
+  <!-- ======================== 0 结论先行 ======================== -->
+  <h2><span class="no">§0</span>结论先行（四条核心决策）</h2>
+  <div class="grid2">
+    <div class="card decision">
+      <div class="dt">D1 · 手势集抄 RustDesk 移动端最小集（7 个）</div>
+      点按=左键、快速双击=双击、单指拖动=移动、长按=右键、长按拖拽=左键拖拽、双指滑动=滚轮、双指捏合=本地视野缩放。不做三指、旋转、双指点按等扩展。
+    </div>
+    <div class="card decision">
+      <div class="dt">D2 · 坐标换算零修改，复用 mapNormFromCanvas</div>
+      桌面链路全程 <strong>CSS 像素口径</strong>（clientX/Y → rect → 0..65535 归一化），天然 DPR 无关。双指缩放用 CSS transform，<code>getBoundingClientRect()</code> 返回 transform 后包围盒，几何公式自动吸收——「点不准」的最大风险已被现有设计覆盖。
+    </div>
+    <div class="card decision">
+      <div class="dt">D3 · 软键盘走打字档（Text 整串注入），修饰键条 sticky 挂起</div>
+      手机 IME 必走组串：compositionend 后发 <code>{kind:"text"}</code>（乙-①已有通道），逐键 key 只作直传档。修饰键点按=挂起一次，组合后自动解除。<strong>Win 键手机端可直接用</strong>——桌面端拦 Meta 是防本机被劫持，手机没有这个问题。
+    </div>
+    <div class="card decision">
+      <div class="dt">D4 · fit 三档语义保留，pinch 是另一层「本地视野」</div>
+      适应/填充/1:1 决定 canvas 布局基准（与桌面 RcCapsule 同语义）；双指捏合是 canvas 容器上的 transform 缩放（0.5×–4×），不碰远端、不影响归一化坐标。两层独立，高频路是 pinch，fit 档收进画质浮条。
+    </div>
+  </div>
+
+  <!-- ======================== 1 手势总表 ======================== -->
+  <h2><span class="no">§1</span>手势映射总表（对标 RustDesk 移动端）</h2>
+  <p>判定常数集中一处（<code>src-mobile/session/touchConstants.ts</code>），全部可调。阈值为业界常用值：移动阈值 12px（≈3mm，防手抖）、点按上限 220ms、长按充能 550ms（高于 Android 系统 400ms，避免与 WebView 长按行为竞争）、双击间隔 320ms。</p>
+  <table>
+    <tr><th style="width:130px">手势</th><th>判定条件</th><th>远端动作（InputEvent）</th><th style="width:200px">即时反馈</th><th style="width:230px">边界 / 误触防护</th></tr>
+    <tr>
+      <td><b>① 单指点按</b></td>
+      <td>按下→抬起 <span class="num">&lt;220ms</span> 且位移 <span class="num">&lt;12px</span></td>
+      <td><code>mouse_button</code> button=1 down + up（坐标同点）</td>
+      <td>本地光标处 indigo 波纹</td>
+      <td>双击的第一次也走这条，由②合并改判</td>
+    </tr>
+    <tr>
+      <td><b>② 快速双击</b></td>
+      <td>两次①间隔 <span class="num">&lt;320ms</span> 且两点相距 <span class="num">&lt;24px</span></td>
+      <td>补发第二组 down+up（对端 Windows DoubleClickTime=500ms 内收到两组即双击）</td>
+      <td>波纹放大一档</td>
+      <td>第一击已在 220ms 内发出——若第二击超时，远端就是两次单击，语义仍成立，<b>无需撤回</b></td>
+    </tr>
+    <tr>
+      <td><b>③ 单指拖动</b></td>
+      <td>按下后位移 <span class="num">≥12px</span>（且未充能）</td>
+      <td><code>mouse_move</code> 流（16ms 节流，复用 queueMove 语义），<b>不发任何按键</b></td>
+      <td>青色光标圈跟随</td>
+      <td>进入本态后当次触摸不再判定点按/长按</td>
+    </tr>
+    <tr>
+      <td><b>④ 长按 = 右键</b></td>
+      <td>按住 <span class="num">≥550ms</span> 位移 <span class="num">&lt;12px</span> 后<b>原位抬起</b></td>
+      <td><code>mouse_button</code> button=2 down + up</td>
+      <td><span class="warn">550ms 时刻：震动 20ms + 琥珀色充能圈</span>；松手时琥珀波纹</td>
+      <td>充能只给「即将有叉路」的预告，不预发任何事件——松手才定论，误触零成本（规则 17.5）</td>
+    </tr>
+    <tr>
+      <td><b>⑤ 长按拖拽</b></td>
+      <td>充能完成后位移 <span class="num">≥12px</span></td>
+      <td>起点 <code>button=1 down</code> → <code>mouse_move</code> 流 → 抬起 <code>button=1 up</code>（拖文件/框选/拖窗口）</td>
+      <td>充能圈变绿（左键拖拽态），松手结束</td>
+      <td>与④共享入口，分支在「充能后是否移动」；复用 pressedButtons 跟踪，画外抬起有 releaseTracked 兜底（桌面同款，防卡键）</td>
+    </tr>
+    <tr>
+      <td><b>⑥ 双指滑动 = 滚轮</b></td>
+      <td>第二指落下，双指<b>中点位移</b>主导</td>
+      <td><code>wheel</code>（16ms 合并、±120 量化，复用 sendWheel；sign 对齐桌面：内容下滚 = -120）</td>
+      <td>画面按滚动方向微移的视觉暗示（可选 P2）</td>
+      <td>进入滚动态后锁定到全部抬起；期间③④⑤全部哑</td>
+    </tr>
+    <tr>
+      <td><b>⑦ 双指捏合 = 本地缩放</b></td>
+      <td>双指<b>间距变化</b>主导（|Δ间距| &gt; 1.4×|Δ中点|）</td>
+      <td><b>无远端事件</b>——canvas 容器 transform: scale(0.5–4)，双指中心为缩放锚点</td>
+      <td>实时缩放，双击工具条「画面」键复位 1.0×</td>
+      <td>transform 只允许均匀 scale+translate，<span class="bad">禁止旋转</span>（会破坏 rect 几何，见 §4）</td>
+    </tr>
+  </table>
+
+  <div class="card redline">
+    <strong>为什么「长按拖拽」映射左键而不是右键拖动</strong>：高频需求是拖文件、框选、移动窗口，全部是左键拖拽；右键拖动（Send to / 右键菜单拖动）是极低频操作。RustDesk 同此判。④⑤共享「按住不动 550ms」入口的分支设计：<b>不动松手=右键，动了=左键拖拽</b>，一次判定两个语义，无需额外开关。
+  </div>
+
+  <!-- ======================== 2 状态机 ======================== -->
+  <h2><span class="no">§2</span>触摸判定状态机</h2>
+  <h3>单指状态机（pointerdown 起，pointerup 止）</h3>
+  <div class="fsm">
+    <div class="node start"><div class="st">IDLE</div><div class="desc">pointerdown 进入<br>记录 t₀ 与起点</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="st">PENDING</div><div class="desc">观测窗口：<br>&lt;220ms 且 &lt;12px</div>
+      <span class="cond">位移≥12px → MOVE</span></div>
+    <div class="arrow">→</div>
+    <div class="node move"><div class="st">MOVE ③</div><div class="desc">纯移动指针<br>mouse_move 流</div>
+      <span class="cond">抬手 → 终态（无事件）</span></div>
+    <div class="node right"><div class="st">CHARGED</div><div class="desc">550ms 充能达成<br>震动 + 琥珀圈</div>
+      <span class="cond">位移≥12px → DRAG；原位抬手 → 右键</span></div>
+    <div class="arrow">→</div>
+    <div class="node emit"><div class="st">TAP ①② / RIGHT ④</div><div class="desc">抬手结算：<br>左键单击/双击 · 右键单击</div></div>
+    <div class="node emit"><div class="st">DRAG ⑤</div><div class="desc">左键 down 已发<br>move 流 → 抬手 up</div></div>
+  </div>
+  <h3>双指状态机</h3>
+  <div class="fsm">
+    <div class="node start"><div class="st">IDLE</div><div class="desc">第二指落下进入</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="st">TWO-FINGER</div><div class="desc">每帧比较主导量</div></div>
+    <div class="arrow">→</div>
+    <div class="node move"><div class="st">SCROLL ⑥</div><div class="desc">中点位移主导<br>wheel 流（锁定）</div></div>
+    <div class="node move"><div class="st">PINCH ⑦</div><div class="desc">间距变化主导<br>本地 transform（锁定）</div></div>
+    <div class="arrow">→</div>
+    <div class="node emit"><div class="st">全部抬起 → 终态</div><div class="desc">两态互不切换，防抖动</div></div>
+  </div>
+  <p>实现载体：<code>Pointer Events</code>（pointerId 跟踪多指，Android WebView 全支持），容器 <code>touch-action: none</code> 一行关掉浏览器手势竞争（双击缩放 / 长按选择 / 下拉刷新）。状态机为纯逻辑模块（<code>useTouchGestures.ts</code> 判定半 + 回调半分离），阈值常数独立文件，<b>可无环境单测</b>（规则 11.1 精神：判定收口一处）。</p>
+
+  <!-- ======================== 3 交互演示 ======================== -->
+  <h2><span class="no">§3</span>可交互演示（本页可用鼠标模拟单指触摸）</h2>
+  <p>在左侧触摸板按住/拖动/长按，右栏是「远端将收到的事件流」（0..65535 归一化坐标，与 <code>rcSendInput</code> 同格式）。长按 550ms 可体验充能反馈。</p>
+  <div class="demo">
+    <div id="touchpad">
+      <div class="padLabel">触摸板（模拟单指）— 点按 / 拖动 / 长按550ms</div>
+      <div id="padCursor"></div>
+      <div id="padState"></div>
+    </div>
+    <div id="eventLog"><div class="hint">等待输入…（mouse_move / mouse_button / wheel 同 InputEvent 线格式）</div></div>
+  </div>
+
+  <!-- ======================== 4 坐标系 ======================== -->
+  <h2><span class="no">§4</span>坐标系与 DPR（「点不准」的技术判书）</h2>
+
+  <h3>4.1 全链路只有一种像素口径：CSS 像素</h3>
+  <div class="coordChain">
+    <div class="cstep"><div class="t">触摸点 clientX/Y</div><div class="d">浏览器给的就是 CSS 像素，与 DPR 无关（DPR 只影响物理渲染密度）</div></div>
+    <div class="arr">→</div>
+    <div class="cstep"><div class="t">mapNormFromCanvas</div><div class="d">getBoundingClientRect() 同为 CSS 像素 → contain/cover 几何 → clamp 0..1</div></div>
+    <div class="arr">→</div>
+    <div class="cstep"><div class="t">0..65535 归一化</div><div class="d">对端虚拟屏分辨率无关（MOUSEEVENTF_ABSOLUTE 同口径）</div></div>
+    <div class="arr">→</div>
+    <div class="cstep"><div class="t">对端注入</div><div class="d">Windows 宿主侧换算，一行不用动</div></div>
+  </div>
+  <div class="card okline">
+    <strong>结论：手机端不需要任何 DPR 换算代码。</strong>桌面端在物理像素屏幕上跑同一套函数已经是对的；手机 DPR 2.5–3.5 只是「CSS 像素更小、物理点更密」，链路上没有任何一处出现 DPR。Pinch 缩放用 CSS transform 后，<code>getBoundingClientRect()</code> 返回 transform 后包围盒（均匀 scale 无旋转时），<code>mapNormFromCanvas</code> 的 <code>rect.width / nw</code> 公式自动吸收缩放系数——<b>缩放中点按依然准</b>。唯一红线：不允许旋转 / 非均匀缩放（§1 手势⑦已锁）。
+  </div>
+
+  <h3>4.2 fit 三档在手机竖屏（393×852 看 1920×1080）的表现</h3>
+  <div class="fitDemo">
+    <div class="fd">
+      <div class="content" style="left:0;top:37px;width:198px;height:111px"></div>
+      <div class="crosshair" style="left:60px;top:70px"></div>
+      <div class="cap"><b>适应 fit</b>（默认）：整画面可见，上下 letterbox。画面小 → 高频靠 pinch 放大看，这是手机与桌面最大的体验差</div>
+    </div>
+    <div class="fd">
+      <div class="content" style="left:-32px;top:10px;width:264px;height:148px"></div>
+      <div class="crosshair" style="left:20px;top:80px"></div>
+      <div class="cap"><b>填充 fill</b>：左右裁切，无黑边。内容不全，坐标仍准（几何同 contain 的 max 分支，函数已支持）</div>
+    </div>
+    <div class="fd">
+      <div class="content" style="left:0;top:0;width:640px;height:360px"></div>
+      <div class="crosshair" style="left:120px;top:60px"></div>
+      <div class="cap"><b>1:1 actual</b>：canvas CSS 尺寸 = 帧物理像素，手机上≈放大 3 倍只看局部，配 panBox 滚动。低频，收进浮条「画面」档</div>
+    </div>
+  </div>
+  <p><span class="warn">⚠ 与桌面的一个语义差</span>：桌面「1:1」= 物理像素对物理像素；手机 DPR≈3，「1:1」实际观感是放大三倍。但<b>坐标语义完全一致</b>（canvas 内部像素 ↔ 远端像素一一对应），不引入第四档「真实物理 1:1」——P1 不做，列 §6。</p>
+
+  <h3>4.3 横竖屏旋转</h3>
+  <ul class="tight">
+    <li><b>机制零新增</b>：旋转 = Android WebView resize → <code>getBoundingClientRect()</code> 现算自校正（桌面「窗口 resize 后下一次移动鼠标即自校正」同机制，rcCanvasStyle.ts 注释原话）。</li>
+    <li><b>旋转瞬间正在按住</b>（拖拽中转屏）：触发 <code>releaseTracked()</code> 等价逻辑全量松开——按键不跨布局存活，防「松手在旧几何、UP 发到新坐标」的错位点按。</li>
+    <li><b>会话不重连</b>：旋转只影响布局，WebCodecs 解码器与帧泵不销毁（surface 尺寸变化由 canvas width/height 重设承接，与解码解耦）。</li>
+    <li><b>横屏建议</b>：会话中首次旋转到横屏时给一次轻提示「横屏画面更大」（L4 就地一句话），不自动旋转锁定——尊重系统旋转锁。</li>
+  </ul>
+
+  <h3>4.4 「点不准」风险清单（对号入座）</h3>
+  <table>
+    <tr><th>风险</th><th>成因</th><th>本稿对策</th></tr>
+    <tr><td>双指滚动误发指针移动</td><td>第二指落下瞬间第一指已产生 move 流</td><td>状态机：第二指落下即冻结单指态，双指期间不发 move（§2）</td></tr>
+    <tr><td>pinch 后点按漂移</td><td>以为 rect 是静态的</td><td>无此问题：rect 每次触摸现算，transform 已含在内（§4.1）</td></tr>
+    <tr><td>旋转中拖拽错位</td><td>按下/抬起跨越两次布局</td><td>旋转回调里全量松开（§4.3）</td></tr>
+    <tr><td>浏览器手势抢事件</td><td>WebView 默认双击缩放/长按选择/下拉刷新</td><td>画面容器 <code>touch-action:none</code> + pointer events preventDefault</td></tr>
+    <tr><td>键盘弹出后坐标压扁</td><td>viewport resize，画面被压缩变小</td><td>接受压缩但坐标仍准（rect 现算）；键盘弹出时修饰键条贴 visualViewport 底缘（§5.3）</td></tr>
+  </table>
+
+  <!-- ======================== 5 键盘 ======================== -->
+  <h2><span class="no">§5</span>软键盘 + 修饰键条</h2>
+
+  <h3>5.1 文字输入主路：打字档（Text 整串注入）</h3>
+  <p>手机 IME（拼音/手写/语音）必然走组串，桌面乙-① 的通道原样可用：隐藏 <code>&lt;input&gt;</code> 聚焦唤起软键盘 → 监听 <code>compositionend</code> → 发 <code>{kind:"text", text}</code>（对端 KEYEVENTF_UNICODE 逐码元注入）。<b>逐键 key 转发（keyToVk）只服务直传档</b>（密码框/游戏/快捷键场景，用户在浮条显式切换，同桌面两档语义）；手机默认打字档。</p>
+
+  <h3>5.2 修饰键条：sticky 挂起（点按 = 挂一次）</h3>
+  <table>
+    <tr><th style="width:150px">操作</th><th>行为</th><th>线上事件</th></tr>
+    <tr><td><span class="kbd-hint">Ctrl</span> 点按</td><td>挂起：高亮青色；键盘条上该键呈粘滞态</td><td><code>key vk=0xa2 down:true</code>（立即发，远端光标可见 Ctrl 生效）</td></tr>
+    <tr><td>挂起后按任意键（软键盘字符 / 功能键 / 点画面）</td><td>组合完成，自动解除挂起</td><td>后续键的 down/up 正常发，随后补 <code>ctrl up</code></td></tr>
+    <tr><td>挂起后<span class="kbd-hint">Ctrl</span> 再点</td><td>取消挂起</td><td>补 <code>ctrl up</code>（零副作用）</td></tr>
+    <tr><td>多颗修饰键连点</td><td>组合挂起（Ctrl+Alt+Del 场景）</td><td>各 <code>down</code> 依次发，组合键完成后逆序 <code>up</code></td></tr>
+  </table>
+  <div class="card">
+    <strong>Win 键是手机端与桌面端行为唯一不同的一颗键</strong>：桌面 <code>shouldForwardToRemote</code> 拦 Meta（rcKeyMap.ts:93）是防止本机 Windows 被真实 Win 键劫持；手机上没有本机桌面可劫持，<b>Win 键走同一条 sticky 挂起</b>，Win+D / Win+E / Win+Tab 手机直达。这是移动修饰键条的核心价值之一。
+  </div>
+
+  <h3>5.3 布局（竖屏 / 横屏 mockup）</h3>
+  <div class="phoneRow">
+    <div class="phoneWrap">
+      <div class="phone">
+        <div class="pstatus"><span class="dot"></span> 办公室-台式机 <span style="margin-left:auto;color:var(--accent-green)">直连 · 23ms</span></div>
+        <div class="pscreen">
+          <div class="pill">延迟 23ms · 60fps · 平衡档</div>
+          <div class="deskMock"></div>
+          <div class="kbdbar">
+            <span class="mk sticky">Ctrl</span><span class="mk">Alt</span><span class="mk">Shift</span><span class="mk">Win</span>
+            <span class="sep"></span>
+            <span class="mk">Tab</span><span class="mk">Esc</span><span class="mk">Del</span>
+            <span class="sep"></span>
+            <span class="mk">◀</span><span class="mk">▲</span><span class="mk">▼</span><span class="mk">▶</span>
+          </div>
+        </div>
+        <div class="ptoolbar">
+          <span class="tb on"><span class="ic">⌨</span>键盘</span>
+          <span class="tb"><span class="ic">🖥</span>画面</span>
+          <span class="tb"><span class="ic">⚙</span>画质</span>
+          <span class="tb"><span class="ic">🔊</span>声音</span>
+          <span class="tb"><span class="ic">⏻</span>断开</span>
+        </div>
+      </div>
+      <div class="phoneCap">竖屏：修饰键条贴软键盘上缘（visualViewport 底缘对齐）；底部工具条五键，键盘键高亮 = 键盘已唤起。Del/方向键属 P1（高频：表格、命令行），F1–F12 不做（§6）。</div>
+    </div>
+    <div class="phoneWrap">
+      <div class="phone landscape">
+        <div class="pstatus"><span class="dot"></span> 办公室-台式机 <span style="margin-left:auto;color:var(--accent-green)">直连 · 23ms</span></div>
+        <div class="pscreen">
+          <div class="deskMock" style="width:92%;height:88%"></div>
+        </div>
+        <div class="ptoolbar">
+          <span class="tb"><span class="ic">⌨</span>键盘</span>
+          <span class="tb"><span class="ic">🖥</span>画面</span>
+          <span class="tb"><span class="ic">⚙</span>画质</span>
+          <span class="tb"><span class="ic">🔊</span>声音</span>
+          <span class="tb"><span class="ic">⏻</span>断开</span>
+        </div>
+      </div>
+      <div class="phoneCap">横屏：画面占比最大化（约等于桌面端全屏体验）；工具条同构不换布局——同一套组件两个朝向，只是 pscreen 高度伸缩（规则 17.7 交互一致）。<b>沉浸态下工具条自动隐藏、顶缘热区唤出</b>，见 §5.5。</div>
+    </div>
+  </div>
+
+  <h3>5.4 首次手势引导（L4：第一次出现的地方解释，不做开屏教程）</h3>
+  <p>首帧渲染后，画面底部浮现一次性轻提示条（几秒淡出 / 首次成功手势即撤）：</p>
+  <p style="text-align:center"><span class="kbd-hint">点按=左键 · 长按=右键 · 长按拖动=拖拽 · 双指滑动=滚动 · 双指捏合=缩放</span></p>
+  <p>只出现一次（会话级记忆，非持久化——每次会话前几秒出现成本低、对新设备有用）。</p>
+
+  <h3>5.5 横屏沉浸模式：工具条自动隐藏 + 顶缘热区唤出</h3>
+  <p>横屏画面已占满，常驻底栏是唯一的遮挡。方案对齐桌面端 <code>RcSessionCapsule</code> 的成熟机制（<code>useRcCapsuleReveal.ts</code>：顶缘热区 / dwell / 2.5s 淡出 / 首显 15s / 隐藏态三重纪律），<b>参数同源、只换触发手型</b>。沉浸只在横屏启用，竖屏保持常驻底栏（竖屏本就有 letterbox，遮挡有限，不值得引入第二套显隐逻辑）。</p>
+  <div class="phoneRow">
+    <div class="phoneWrap">
+      <div class="phone landscape">
+        <div class="pstatus"><span class="dot"></span> 办公室-台式机 <span style="margin-left:auto;color:var(--accent-green)">直连 · 23ms</span></div>
+        <div class="pscreen" style="height:250px">
+          <div class="deskMock" style="width:94%;height:92%"></div>
+          <div style="position:absolute;top:0;left:0;right:0;height:22px;border-bottom:1px dashed rgba(34,211,238,.55);background:rgba(34,211,238,.06);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent-cyan)">顶缘热区 24px — 点按唤出（平时不可见）</div>
+        </div>
+      </div>
+      <div class="phoneCap"><b>隐藏态（默认）</b>：整条工具条退场，画面全屏。顶缘 24px 横带是唤出热区——<b>热区平时不可见</b>，此图虚线仅为本稿示意。</div>
+    </div>
+    <div class="phoneWrap">
+      <div class="phone landscape">
+        <div class="pstatus"><span class="dot"></span> 办公室-台式机 <span style="margin-left:auto;color:var(--accent-green)">直连 · 23ms</span></div>
+        <div class="pscreen" style="height:250px">
+          <div class="deskMock" style="width:94%;height:76%;margin-top:14px"></div>
+          <div style="position:absolute;top:6px;left:50%;transform:translateX(-50%);background:var(--glass);border:1px solid var(--glass-border);border-radius:20px;padding:5px 14px;display:flex;gap:14px;font-size:11px;color:var(--text-secondary);backdrop-filter:blur(4px);white-space:nowrap">
+            <span style="color:var(--accent-cyan)">⌨ 键盘</span><span>🖥 画面</span><span>⚙ 画质</span><span>🔊 声音</span><span style="color:var(--accent-red)">⏻ 断开</span>
+          </div>
+        </div>
+      </div>
+      <div class="phoneCap"><b>唤出态</b>：深色玻璃胶囊挂<b>顶缘中央</b>（与桌面 RcSessionCapsule 同位同语言），停 2.5s 自动淡回。</div>
+    </div>
+  </div>
+  <table>
+    <tr><th style="width:190px">参数</th><th>桌面端原值</th><th>手机横屏适配值</th><th style="width:260px">为什么改</th></tr>
+    <tr><td>热区位置</td><td>顶缘横带</td><td class="good">同为顶缘</td><td>桌面胶囊就在顶缘；且手机<b>底缘是 Android 系统手势区</b>（返回/桌面），必须避开</td></tr>
+    <tr><td>热区高度</td><td class="num">3px</td><td class="num">24px</td><td>3px 是给鼠标的（12→3px 防误触史）；指尖命中下限 ≈ 7–9mm，24px(≈4mm) 已是保守窄带。误唤出成本极低（见下），不再收窄</td></tr>
+    <tr><td>唤出方式</td><td>悬停 dwell 180ms</td><td class="good"><b>点按即唤出</b></td><td>触摸没有 hover，dwell 不适用；点按本身就是明确意图。横滑唤出不可用——顶缘滑动手势被系统通知栏收走</td></tr>
+    <tr><td>热区点按的去向</td><td>—（鼠标点击可穿透）</td><td class="good"><b>本地吃掉，绝不转发</b></td><td>🔴 触摸特有红线：热区 tap 若漏进手势状态机就成了发给远端的左键。输入分发顺序收口为：<b>热区判定 → 手势状态机 → 远端</b>（规则 11.1 收口点，实现时在 pointerdown 最前判）</td></tr>
+    <tr><td>自动隐藏</td><td class="num">2.5s 淡出</td><td class="good">同 2.5s</td><td>最后一次触摸胶囊后计时；软键盘打开期间<b>不隐藏</b>（键盘条与胶囊成对存在）</td></tr>
+    <tr><td>首显教学</td><td class="num">15s</td><td class="good">同 15s</td><td>首次进横屏会话，胶囊先常驻 15s 再开始隐藏——一次性告诉用户「工具条在顶缘」</td></tr>
+    <tr><td>隐藏态纪律</td><td colspan="3" class="good">三重纪律原样照搬：pointer-events:none + visibility:hidden + 不进 Tab 环（隐藏的胶囊矩形不构成触摸目标——它压着远端顶部 UI，误触会打穿）</td></tr>
+    <tr><td>误唤出的代价</td><td>—</td><td class="good">点画面任意处即落回</td><td>误唤出只弹一条会自己消失的胶囊，<b>不产生远端点击</b>（热区 tap 被吃）——误触零成本（规则 17.5）。反向（点热区想唤出却转发成远端点击）才是不可接受的，已被上一条红线堵死</td></tr>
+    <tr><td>转回竖屏</td><td>—</td><td class="good">竖屏底栏常驻自然回归</td><td>显隐状态不跨朝向存活，无需记忆</td></tr>
+  </table>
+
+  <!-- ======================== 6 落点与不做 ======================== -->
+  <h2><span class="no">§6</span>实现落点清单 + P1 明确不做</h2>
+  <div class="grid2">
+    <div class="card okline">
+      <strong>新增（全部在 src-mobile/，遵守 ≤300 行红线）</strong>
+      <ul class="tight">
+        <li><code>session/RcMobileSession.tsx</code> — 会话编排壳（对齐 RcSessionView 的 hooks 组合思路）</li>
+        <li><code>session/useTouchGestures.ts</code> — 状态机（判定半纯逻辑 + 回调半，可单测）</li>
+        <li><code>session/touchConstants.ts</code> — 阈值常数集中</li>
+        <li><code>session/ModifierKeyBar.tsx</code> — 修饰键条（sticky 状态机）</li>
+        <li><code>session/SoftKeyboardBridge.ts</code> — 隐藏 input + compositionend → text 事件</li>
+        <li><code>video/PinchViewport.tsx</code> — transform 缩放容器（scale+translate only）</li>
+        <li><code>session/useImmersiveCapsule.ts</code> — 横屏沉浸显隐（顶缘热区/2.5s/15s 参数与隐藏态三重纪律照搬 useRcCapsuleReveal；触摸差异 = 点按唤出 + 热区 tap 本地吃掉）。输入分发顺序收口在会话壳 pointerdown 最前：<b>热区判定 → 手势状态机 → 远端</b></li>
+      </ul>
+      <strong>复用不改</strong>
+      <ul class="tight">
+        <li><code>lib/rcPointer.ts</code> mapNormFromCanvas — 坐标链路零修改</li>
+        <li><code>lib/rcKeyMap.ts</code> keyToVk — 直传档逐键</li>
+        <li><code>lib/api/rc.ts</code> rcSendInput — 跨平台 invoke</li>
+        <li><code>useRcInput</code> 的语义资产：pressedButtons/pressedKeys 跟踪、releaseTracked 兜底、16ms 节流、wheel 合并 ±120——手机版 input hook 按同口径实现，不复制桌面 hook（它绑了 pointerLock/IME 等桌面概念）</li>
+        <li><b>后端 0 行改动</b>：InputEvent 全可移植，注入在 Windows 宿主侧</li>
+      </ul>
+    </div>
+    <div class="card redline">
+      <strong>P1 明确不做（也是决策，防止范围膨胀）</strong>
+      <ul class="tight">
+        <li>双指点按 = 右键（AnyDesk 有；P1 只留长按，若实测误触率高再补）</li>
+        <li>三指手势 / 双指旋转 / 压感</li>
+        <li>修饰键锁定（双击锁定持续按住）——挂起已覆盖 Ctrl+Alt+Del 类组合</li>
+        <li>F1–F12 功能键行（P2 按需）</li>
+        <li>第四显示档「真实物理 1:1」（§4.2）</li>
+        <li>物理鼠标 OTG 专门适配（Android 会自动转 pointer 事件，天然可用）</li>
+        <li>会话内申请升级控制权的手机版流程（沿用「结束重连式」，同桌面 B-1 口径）</li>
+      </ul>
+      <strong>已确认的依赖前提</strong>
+      <ul class="tight">
+        <li>解码层：WebCodecs（真机探针全过：H.264 硬解全通、HEVC 硬解可用）</li>
+        <li>会话信令/帧流：可靠 uni 流（vid_dgram 是 Windows-only，P1 接受队头阻塞代价，规划 §3.2 已拍板）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <strong>确认点小结</strong>：① 手势集 7 条按表执行（尤其④⑤共享入口的分支设计）；② 修饰键 sticky 挂起 + Win 键可用；③ 坐标链路零修改、pinch 走 transform；④ 首帧手势轻提示一次；⑤ 横屏沉浸（顶缘 24px 热区点按唤出、2.5s 淡出、热区 tap 本地吃掉不转发）。确认后按 §6 落点清单实施。
+  </div>
+
+</div>
+
+<script>
+/* ================= §3 交互演示：鼠标模拟单指触摸状态机 ================= */
+(function () {
+  const pad = document.getElementById('touchpad');
+  const cur = document.getElementById('padCursor');
+  const st = document.getElementById('padState');
+  const log = document.getElementById('eventLog');
+  const TAP_MS = 220, LONG_MS = 550, MOVE_PX = 12, DBL_MS = 320, DBL_PX = 24;
+
+  let down = false, sx = 0, sy = 0, lx = 0, ly = 0, t0 = 0, charged = false;
+  let dragBtn = 0; // 1=左键拖拽已发 down
+  let lastTapAt = 0, lastTapX = 0, lastTapY = 0, moveMode = false;
+  let chargeTimer = null;
+
+  function norm(e) {
+    const r = pad.getBoundingClientRect();
+    return {
+      x: Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * 65535),
+      y: Math.round(Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) * 65535),
+    };
+  }
+  function addLog(kind, text, cls) {
+    const hint = log.querySelector('.hint'); if (hint) hint.remove();
+    const div = document.createElement('div');
+    div.className = 'ev ' + (cls || '');
+    const t = new Date();
+    div.innerHTML = '<b>' + kind + '</b> ' + text + ' <span style="color:#475569">' +
+      String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0') + '.' +
+      String(t.getMilliseconds()).padStart(3, '0') + '</span>';
+    log.appendChild(div); log.scrollTop = log.scrollHeight;
+  }
+  function ripple(x, y, right) {
+    const r = document.createElement('div');
+    r.className = 'ripple' + (right ? ' right' : '');
+    r.style.left = x + 'px'; r.style.top = y + 'px';
+    pad.appendChild(r); setTimeout(() => r.remove(), 500);
+  }
+  function setState(s) { st.textContent = s; }
+
+  pad.addEventListener('pointerdown', (e) => {
+    // 捕获失败（指针已释放/合成事件）不应打断手势状态机——只丢「画外抬起」兜底
+    try { pad.setPointerCapture(e.pointerId); } catch { /* 尽力而为 */ }
+    down = true; charged = false; moveMode = false; dragBtn = 0;
+    sx = lx = e.clientX; sy = ly = e.clientY; t0 = performance.now();
+    cur.style.opacity = 1; place(e);
+    cur.classList.remove('charging', 'dragging');
+    chargeTimer = setTimeout(() => {
+      if (down && !moveMode) {
+        charged = true;
+        cur.classList.add('charging');
+        setState('已充能：原位松手=右键 · 继续拖=左键拖拽');
+        if (navigator.vibrate) navigator.vibrate(20);
+      }
+    }, LONG_MS);
+    setState('PENDING…');
+  });
+  pad.addEventListener('pointermove', (e) => {
+    if (!down) { place(e); return; }
+    place(e);
+    const dist = Math.hypot(e.clientX - sx, e.clientY - sy);
+    if (!moveMode && !charged && dist >= MOVE_PX && performance.now() - t0 < LONG_MS + 1) {
+      moveMode = true; clearTimeout(chargeTimer); cur.classList.remove('charging');
+      setState('MOVE：仅移动指针（无按键）');
+    }
+    if (charged && !dragBtn && dist >= MOVE_PX) {
+      dragBtn = 1; cur.classList.remove('charging'); cur.classList.add('dragging');
+      const n = norm(e);
+      addLog('mouse_button', 'button=1 down  @(' + n.x + ',' + n.y + ')', 'drag');
+      setState('DRAG：左键按住拖拽中…');
+    }
+    lx = e.clientX; ly = e.clientY;
+  });
+  function place(e) {
+    const r = pad.getBoundingClientRect();
+    cur.style.left = (e.clientX - r.left) + 'px';
+    cur.style.top = (e.clientY - r.top) + 'px';
+  }
+  pad.addEventListener('pointerup', (e) => {
+    if (!down) return;
+    down = false; clearTimeout(chargeTimer);
+    cur.classList.remove('charging', 'dragging');
+    const dt = performance.now() - t0;
+    const dist = Math.hypot(e.clientX - sx, e.clientY - sy);
+    const n = norm(e);
+    if (moveMode) {
+      addLog('mouse_move', '（移动流结束，共跟随 ' + dist.toFixed(0) + 'px，无按键）', 'move');
+      setState('→ 终态：纯移动');
+    } else if (dragBtn) {
+      addLog('mouse_button', 'button=1 up    @(' + n.x + ',' + n.y + ')', 'drag');
+      setState('→ 终态：左键拖拽完成');
+    } else if (charged && dist < MOVE_PX) {
+      addLog('mouse_button', 'button=2 down+up（右键单击）@(' + n.x + ',' + n.y + ')', 'right');
+      ripple(e.clientX - pad.getBoundingClientRect().left, e.clientY - pad.getBoundingClientRect().top, true);
+      setState('→ 终态：右键单击（长按）');
+    } else if (dt < TAP_MS && dist < MOVE_PX) {
+      const now = performance.now();
+      const isDbl = now - lastTapAt < DBL_MS && Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY) < DBL_PX;
+      addLog('mouse_button', 'button=1 down+up（' + (isDbl ? '双击的第二击' : '左键单击') + '）@(' + n.x + ',' + n.y + ')');
+      ripple(e.clientX - pad.getBoundingClientRect().left, e.clientY - pad.getBoundingClientRect().top);
+      if (isDbl) { addLog('对端', '500ms 内收到两组 → Windows 判定为双击', 'drag'); }
+      lastTapAt = now; lastTapX = e.clientX; lastTapY = e.clientY;
+      setState('→ 终态：左键' + (isDbl ? '双击' : '单击'));
+    } else {
+      setState('→ 终态：超时/超距，无事件（防误触）');
+      if (dt >= TAP_MS && dist < MOVE_PX) addLog('—', '按住 ' + dt.toFixed(0) + 'ms 未满 550ms 充能、也超 220ms 点按窗 → 不产生任何事件');
+    }
+    charged = false; moveMode = false; dragBtn = 0;
+    setTimeout(() => { if (!down) cur.style.opacity = 0; }, 900);
+  });
+  pad.addEventListener('pointercancel', () => {
+    down = false; clearTimeout(chargeTimer);
+    cur.classList.remove('charging', 'dragging');
+    if (dragBtn) addLog('mouse_button', 'button=1 up（pointercancel 兜底，releaseTracked 语义）', 'drag');
+    charged = false; moveMode = false; dragBtn = 0;
+    setState('→ 兜底松开全部（防卡键）');
+  });
+})();
+</script>
+</body>
+</html>

@@ -504,3 +504,23 @@ Root "受信任的根证书颁发机构"
         );
     }
 }
+
+#[cfg(test)]
+mod provider_tests {
+    /// 🔴 守卫（2026-09-30）：入口（lib.rs run）靠 ensure_crypto_provider 在任何
+    ///   Client::build 之前把进程级默认 provider 装好。这条钉子三件事：
+    ///   调用后 rustls 全局能拿到 provider；重复调用不炸（幂等，先装者赢）；
+    ///   从不 panic——Android 启动崩溃的修复全靠它。
+    /// 万一哪天有人把这里改成会 panic 的实现，或 run 入口忘了调用，
+    /// 拿到的默认仍是 Some（因为本测试先装了）——所以真正防回归的是
+    /// lib.rs 里的调用点本身，测试钉住的是「装了就有、多装不炸」这个契约。
+    #[test]
+    fn ensure_provider_is_idempotent_and_installs_default() {
+        use super::ensure_crypto_provider;
+        use rustls::crypto::CryptoProvider;
+        ensure_crypto_provider();
+        ensure_crypto_provider();
+        let provider = CryptoProvider::get_default();
+        assert!(provider.is_some(), "装完后 rustls 必须能拿到默认 provider");
+    }
+}

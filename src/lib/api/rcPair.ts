@@ -1,9 +1,9 @@
 /**
- * 远程电脑 · 局域网 6 位数字配对（A3）—— 对应 `src-tauri/src/commands/rc_pair.rs`。
+ * 远程电脑 · 局域网配对码配对（A3，8 位）—— 对应 `src-tauri/src/commands/rc_pair.rs`。
  *
  * 与 `lib/api/rc.ts` **分开**：那边是邀请码 / 会话 / 目标列表（700+ 行的命令层），
  * 这边是**独立的一条路**——不走邀请码、不走 Endpoint 握手，靠 presence 上的
- * 明文包 + 6 位数字核对完成。后端同样把命令层拆成两个文件，这里对齐。
+ * 明文包 + 8 位配对码核对完成。后端同样把命令层拆成两个文件，这里对齐。
  *
  * # 与邀请码那条路的关系
  *
@@ -30,7 +30,7 @@ export interface RcNeighbor {
 export interface RcPairPrompt {
   peer_id: string;
   peer_name: string;
-  /** 6 位数字；空串 = 还在等对方的公钥（界面显示「正在与对方核对…」）。 */
+  /** 8 位配对码；空串 = 还在等对方的公钥（界面显示「正在与对方核对…」）。 */
   pin: string;
   /** 本端是不是发起方。只影响文案。 */
   initiator: boolean;

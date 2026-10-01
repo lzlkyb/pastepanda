@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda · 截图交互审计整改 设计稿</title>
+<style>
+:root{
+  /* 取自 src/styles/theme.css（ocean 深色档）与 screenshot.css 的实际消费值 */
+  --bg:#0B1120; --panel:#111A2E; --line:rgba(99,102,241,0.22);
+  --text-primary:#E0E8F0; --text-muted:#7994B4; --hover:#0F1F35;
+  --border-color:#162B45; --input-bg:#162B45;
+  --accent:#3B9EFF; --accent-solid:#2D78C2; --accent-light:#0A1E3A; --accent-border:rgba(59,158,255,.35);
+  --glass-dialog-bg:rgba(10,22,40,.66);   /* theme.css:1071 ocean-dark 实值；screenshot.css 里的 .92 只是 var() 兜底，永不生效 */
+  --float-card-bg:#0A1628;               /* theme.css:237 = 各主题 --card-bg；ocean-dark 的 --card-bg 实值 #0a1628（theme.css:971） */
+  --danger:#F87171; --danger-hover:#FCA5A5; --danger-bg:#450A0A;
+  --success:#4ADE80; --warning:#FB923C;
+  --shot-bar-bg:rgba(10,14,24,.92); --shot-bar-border:rgba(255,255,255,.18); --shot-bar-text:#E0E8F0;
+  --shot-bar-muted:#9DB2D0; --shot-ocr:#7DE0C4;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text-primary);
+  font:14px/1.75 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:36px 28px 90px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:22px;margin:0 0 6px;color:#DCE7FA}
+.doc-sub{color:var(--shot-bar-muted);font-size:12.5px;margin:0 0 26px}
+h2{font-size:16px;margin:40px 0 12px;padding-left:10px;border-left:3px solid var(--accent)}
+h3{font-size:13.5px;margin:20px 0 8px;color:#B9C6F0}
+p,li{font-size:13px;color:#C7D3E6}
+code{background:rgba(99,102,241,.16);padding:1px 5px;border-radius:4px;font-size:12px;color:#B9C6F0;
+  font-family:ui-monospace,Consolas,monospace}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+.card.bad{border-color:rgba(248,113,113,.35)}
+.card.good{border-color:rgba(34,197,94,.35)}
+.card h3:first-child,.card p:first-child{margin-top:0}
+.tag{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:999px;margin-right:6px;vertical-align:2px;
+  font-family:inherit}
+.tag.x{background:rgba(248,113,113,.16);color:#FCA5A5;border:1px solid rgba(248,113,113,.4)}
+.tag.v{background:rgba(34,197,94,.16);color:#86EFAC;border:1px solid rgba(34,197,94,.4)}
+.tag.i{background:rgba(59,158,255,.16);color:#8CC5FF;border:1px solid rgba(59,158,255,.4)}
+.tag.w{background:rgba(251,146,60,.16);color:#FDBA74;border:1px solid rgba(251,146,60,.4)}
+.stage{background:#070C16;border:1px dashed rgba(99,102,241,.28);border-radius:12px;
+  padding:26px 18px;margin:12px 0;position:relative;overflow:hidden}
+.stage .desk{position:absolute;inset:0;background:
+  linear-gradient(105deg,#1b2a45 0%,#243a5e 42%,#0f1830 43%,#131f38 100%);opacity:.55}
+.stage .row{position:relative;display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;justify-content:center}
+.cap{width:100%;text-align:center;font-size:11.5px;color:var(--shot-bar-muted);margin-top:10px}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:rgba(99,102,241,.12);color:#B9C6F0;font-weight:600}
+td.num{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#B9C6F0;white-space:nowrap}
+.def{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:999px;
+  background:rgba(59,158,255,.2);color:#8CC5FF;border:1px solid rgba(59,158,255,.45);margin-left:6px}
+.qbox{border-left:2px solid var(--accent);padding-left:14px;margin:16px 0}
+.scrim{position:absolute;inset:0;pointer-events:none}
+.note{font-size:11.5px;color:var(--shot-bar-muted);margin:6px 0 0}
+
+/* ============ 以下从 src/styles/screenshot.css 原样搬运（数值未改） ============ */
+/* 行高口径必须与真实截图窗一致：那个窗口的入口 screenshot-main.tsx 导入了 globals.css，
+   其 body 是 font-size:13px / line-height:1.5（globals.css:31-32），screenshot.css 自己不设字号行高。
+   本稿外层为了正文可读用的是 14px/1.75，不隔离的话面板会比真实版每行高一截，
+   本稿申报的所有尺寸都会被自己的排版口径污染。 */
+.annot-toolbar,.ocr-drawer,.act-panel,.pop-layer,.shot-toast,.picker-bar,.shot-hint,
+.sel-size,.qr-bar,.bottom-stack,.tool,.act-row,.ocr-row,.fbtn{line-height:1.5}
+.annot-toolbar{position:relative;display:flex;align-items:center;gap:2px;padding:5px 7px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(20,28,52,.94),rgba(16,21,40,.96));border:1px solid var(--shot-bar-border);
+  box-shadow:0 12px 36px rgba(0,0,0,.45);white-space:nowrap}
+.tool{min-width:38px;height:42px;border-radius:8px;padding:0 3px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;cursor:pointer;border:1px solid transparent;
+  color:var(--shot-bar-text);font-size:12px;position:relative}
+.tool .lb{font-size:9px;line-height:1;letter-spacing:.2px;opacity:.72}
+.tool .ic svg{width:17px;height:17px;display:block}
+.tool:hover{background:var(--hover)}
+/* 选中态 / 次要态：screenshot.css:178-186 原值 */
+.tool.on{background:var(--accent-solid);border-color:rgba(255,255,255,.4);color:#fff;
+  box-shadow:0 2px 12px color-mix(in srgb,var(--accent) 50%,transparent)}
+.tool.on .lb{opacity:1}
+.tool.dim{color:var(--shot-bar-muted)}
+.tool.done-btn{flex-direction:row;height:34px;padding:0 12px;font-size:12px;font-weight:600;color:#fff;
+  background:var(--accent-solid);border:1px solid rgba(255,255,255,.25)}
+.tool.cancel-btn{flex-direction:row;height:34px;padding:0 12px;font-size:12px;color:var(--shot-bar-muted)}
+.pair-sep{width:1px;height:20px;margin:0 2px;background:rgba(157,178,208,.3)}
+
+.sel-rect{position:absolute;outline:3px solid var(--accent);box-shadow:0 0 0 1px rgba(0,0,0,.55)}
+.sel-size{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;
+  padding:4px 12px;border-radius:7px;background:var(--shot-bar-bg);color:#fff;
+  border:1px solid var(--shot-bar-border);font-size:12px;white-space:nowrap}
+.sel-size .hint{color:rgba(224,232,240,.55);font-size:10.5px}
+
+/* OCR 抽屉：width 252 与 OCR_PANEL_W 一致；backdrop-filter 是 :502 的写死原值（§5⑥ 要删） */
+.ocr-drawer{position:relative;width:252px;background:var(--glass-dialog-bg);border:1px solid var(--border-color);
+  backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);
+  border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.4);overflow:hidden;display:flex;flex-direction:column}
+.ocr-head{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:12px;font-weight:600;
+  background:var(--accent-light);border-bottom:1px solid var(--accent-border);color:var(--accent)}
+.ocr-head .sp{flex:1}
+.ocr-head .copy-all{display:flex;align-items:center;gap:4px;height:24px;padding:0 10px;border:none;border-radius:6px;
+  background:var(--accent-solid);color:#fff;font-size:11px;cursor:pointer}
+.ocr-body{padding:8px 10px;overflow-y:auto}
+.ocr-row{width:100%;text-align:left;display:flex;align-items:flex-start;gap:6px;padding:5px 8px;margin-bottom:3px;
+  border-radius:6px;font-size:11px;line-height:1.6;color:var(--text-primary);cursor:pointer;border:none;background:none}
+.ocr-row:hover{background:var(--hover)}
+.ocr-row .n{font-size:10px;color:var(--text-muted);font-family:ui-monospace,Consolas,monospace;padding-top:2px;min-width:15px}
+.ocr-row .tx{flex:1;word-break:break-all}
+.ocr-foot{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-top:1px solid var(--border-color)}
+.ocr-foot .fbtn{flex:1;min-width:68px;height:28px;border-radius:8px;font-size:11px;cursor:pointer;
+  border:1px solid var(--border-color);background:transparent;color:var(--text-primary);display:flex;
+  align-items:center;justify-content:center;gap:4px}
+.ocr-foot .fbtn:hover{background:var(--hover)}
+.ocr-foot .fbtn.ai{border-color:rgba(99,102,241,.45);color:#A5B4FC}
+.ocr-foot .fbtn.chain{border-color:rgba(34,197,94,.4);color:#86EFAC}
+/* 选区内兜底档：screenshot.css:913 / :567 原值（§5⑥ 要删的两行） */
+.ocr-drawer.inside{opacity:.93}
+.act-panel.inside{opacity:.94}
+/* .qr-btn 现值 height:22px（§5 要改的那条） */
+.qr-bar{display:flex;align-items:center;gap:6px;padding:7px 10px;font-size:11px;
+  background:rgba(34,197,94,.12);border-bottom:1px solid rgba(34,197,94,.25)}
+.qr-tx{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qr-btn{flex-shrink:0;height:22px;padding:0 9px;border-radius:6px;border:1px solid rgba(34,197,94,.4);
+  background:transparent;color:#34d399;font-size:10px;cursor:pointer}
+
+/* 出口面板：width 224 */
+.act-panel{position:relative;width:224px;background:var(--glass-dialog-bg);border:1px solid var(--border-color);
+  backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);
+  border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.4);overflow:hidden}
+.act-head{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:12px;font-weight:600;
+  border-bottom:1px solid var(--border-color)}
+.act-head .dot{width:7px;height:7px;border-radius:50%;background:#22c55e}
+.act-group{padding:7px 12px 3px;font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--text-muted);
+  border-top:1px solid rgba(22,43,69,.8)}
+.act-group:first-of-type{border-top:0}
+.act-row{width:100%;text-align:left;display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;
+  color:var(--text-primary);cursor:pointer;border:none;background:none}
+.act-row:hover{background:var(--hover)}
+.act-row .ic{width:26px;height:26px;border-radius:7px;background:var(--input-bg);display:flex;align-items:center;
+  justify-content:center;font-size:13px;flex-shrink:0}
+.act-row .lbl{display:block;font-size:12px}
+.act-row .sub{display:block;font-size:10px;color:var(--text-muted);margin-top:1px}
+.act-row .k{margin-left:auto;font-size:10px;color:var(--text-muted);font-family:ui-monospace,Consolas,monospace}
+.act-row.pin .ic{color:#ec4899}
+.act-row.ai .ic{background:linear-gradient(135deg,#5B6AF0,#7C5CF0);color:#fff}
+.act-row.chain .ic{background:linear-gradient(135deg,#0ea5e9,#06b6d4);color:#fff}
+.act-row.primary{background:var(--accent-light);border-radius:8px;margin:6px 8px;padding:8px 10px}
+.act-row.primary .ic{background:var(--accent-solid);color:#fff}
+/* 敏感提示：现状是内联 style（§5 要搬进类） */
+.act-sens{padding:6px 12px;font-size:11px;line-height:1.5;color:var(--danger);
+  background:rgba(248,113,113,.12);border-bottom:1px solid rgba(248,113,113,.25)}
+
+/* 底部带：三个元素都写死 bottom:16px（§3 的病根） */
+.shot-toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:70;display:flex;
+  align-items:center;gap:8px;padding:7px 14px;border-radius:10px;background:var(--shot-bar-bg);
+  border:1px solid rgba(248,113,113,.45);color:#FCA5A5;box-shadow:0 8px 24px rgba(0,0,0,.4);
+  font-size:12px;white-space:nowrap}
+.shot-toast.ok{border-color:rgba(34,197,94,.45);color:#86EFAC}
+.picker-bar{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:46;display:flex;
+  align-items:center;gap:8px;padding:6px 14px;border-radius:10px;background:var(--shot-bar-bg);
+  border:1px solid rgba(59,158,255,.35);box-shadow:0 8px 24px rgba(0,0,0,.4);font-size:12px;color:var(--shot-bar-text)}
+.picker-bar .sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.35); }
+.picker-bar .hex { font-family: ui-monospace, Consolas, monospace; font-weight: 600; letter-spacing: 0.5px; }
+.picker-bar .hint { color: color-mix(in srgb, var(--shot-bar-text) 55%, transparent); font-size: 10px; }
+.pop-layer{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:440px;max-height:230px;
+  background:var(--glass-dialog-bg);border:1px solid var(--border-color);border-radius:12px;
+  box-shadow:0 16px 44px rgba(0,0,0,.45);display:flex;flex-direction:column;overflow:hidden;z-index:60}
+.pop-head{display:flex;align-items:center;padding:9px 12px;font-size:12px;font-weight:600;
+  background:var(--accent-light);border-bottom:1px solid var(--accent-border);color:var(--accent)}
+.pop-body{overflow-y:auto;padding:8px}
+.pop-foot{padding:8px 10px;border-top:1px solid var(--border-color);display:flex;gap:6px}
+.pop-foot .fb{flex:1;height:28px;border-radius:8px;font-size:11px;cursor:pointer;border:1px solid var(--border-color);
+  background:transparent;color:var(--text-primary)}
+.pop-foot .fb.primary{border:none;background:var(--accent-solid);color:#fff}
+.shot-hint{position:relative;display:flex;align-items:center;gap:12px;padding:7px 12px 7px 14px;border-radius:10px;
+  background:var(--shot-bar-bg);border:1px solid var(--shot-bar-border);color:var(--shot-bar-text);
+  font-size:12px;white-space:nowrap}
+.shot-hint .hk{color:var(--accent);font-weight:600}
+.shot-hint .sep{width:1px;height:12px;background:rgba(224,232,240,.18)}
+
+/* ---------- 新增①：找回条（§1）——.shot-toast 的动作变体 ---------- */
+.shot-toast.act{border-color:rgba(59,158,255,.45);color:var(--shot-bar-text);padding-right:8px}
+.shot-toast.act .tray-btn{display:flex;align-items:center;gap:4px;height:24px;padding:0 10px;border:none;border-radius:6px;
+  background:var(--accent-solid);color:#fff;font-size:11px;cursor:pointer;font-family:inherit}
+.shot-toast.act .tray-cd{width:26px;height:24px;display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:var(--text-muted);font-family:ui-monospace,Consolas,monospace}
+/* 底部带单一所有者（§3）：一条竖排容器，元素之间 8px，不再各写各的 bottom */
+.bottom-stack{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:70;
+  display:flex;flex-direction:column;align-items:center;gap:8px}
+.bottom-stack>*{position:static;left:auto;bottom:auto;transform:none}
+
+/* ---------- 新增②：OCR 抽屉的三个非成功态（§2） ---------- */
+.ocr-state{padding:14px 12px;display:flex;flex-direction:column;gap:9px;align-items:flex-start}
+.ocr-state .t{font-size:12px;color:var(--text-primary)}
+.ocr-state.err .t{color:var(--danger)}
+.ocr-state .d{font-size:11px;color:var(--text-muted);line-height:1.6}
+.ocr-state .retry{height:26px;padding:0 12px;border-radius:8px;border:1px solid var(--accent-border);
+  background:transparent;color:var(--accent);font-size:11px;cursor:pointer;font-family:inherit}
+.ocr-state .retry:hover{background:var(--hover)}
+.ocr-spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(157,178,208,.28);
+  border-top-color:var(--shot-ocr);animation:sp .8s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---------- 新增③：§5⑥ 的对照演示（只有 .demo-* 两个类是本稿演示用，不进项目） ---------- */
+/* 左：现状——面板吃 --glass-dialog-bg（深色两档实值 0.66 alpha），落在选区内时 CSS 又叠
+   opacity:.93（screenshot.css:913 / :567）；右：改后——吃 --float-card-bg（不透明），去 backdrop-filter。
+   底图用 200px 白条模拟「未加遮罩的选区内截图」，即最亮情况。 */
+.demo-bright{position:absolute;inset:0;background:#fff}
+.demo-solid{background:var(--float-card-bg) !important;opacity:1 !important;-webkit-backdrop-filter:none;backdrop-filter:none}
+.demo-ratio{display:flex;gap:6px;margin-top:8px;font-size:10.5px;font-family:ui-monospace,Consolas,monospace}
+.demo-ratio span{padding:1px 6px;border-radius:5px;background:rgba(0,0,0,.55);color:#E0E8F0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>截图交互审计整改（五项优先问题）</h1>
+<p class="doc-sub">PastePanda · 2026-10-01 · 依据 <code>impeccable critique</code>（26/40）· 现状数值全部取自
+<code>src/styles/screenshot.css</code> / <code>src/lib/screenshot/panelPos.ts</code> / <code>ScreenshotOverlay.tsx</code>，未虚构</p>
+
+<div class="card">
+<h3 style="margin-top:0">先申报几何（本轮所有布局改动）</h3>
+<table>
+<tr><th style="width:210px">元素</th><th style="width:120px">现值</th><th>本轮</th></tr>
+<tr><td>OCR 抽屉宽</td><td class="num">252px（= OCR_PANEL_W）</td><td>不变</td></tr>
+<tr><td>出口面板宽</td><td class="num">224px</td><td>不变</td></tr>
+<tr><td>贴图浮动预览</td><td class="num">240 × 210（PIN_FLOAT_W/H）</td><td>不变，只改出现时机</td></tr>
+<tr><td>底部带各元素</td><td class="num">toast / picker-bar / pop-layer / shot-hint 都写死 <code>bottom:16px</code>；<code>ocrToast</code> 用内联 <code>bottom:64</code> 手动让位</td><td>收进一条竖排容器，行距 8px；元素自身 bottom 归零（<b>±6px 视觉位移</b>）</td></tr>
+<tr><td><code>layoutSidePanel</code> 的 <code>avoid</code></td><td class="num">只认<b>一个</b>矩形（标注态 = 工具栏；result 态 = 出口面板）</td>
+  <td><b>只改名单</b>：扩成矩形数组取并集（result 态 = 出口面板 + 贴图预览 + <b>底部带</b>；标注态 = 工具栏 + 属性条 + 底部带）。
+    候选顺序（右→左→内）、<code>gap=8</code>、<code>PANEL_MIN_H=120</code>、<code>PANEL_MAX_VH=.62</code> 一律不动，
+    沿用现成的「压高度而不是挪位置」，所以抽屉不会跳。抽屉让带子，带子不让抽屉（单向，否则两条规则互追）。
+    <b>实测</b>（3 屏幕 × 5 选区 × 4 态 = 120 组，整数布局像素）：整改前「抽屉尾压底部带」<b>3 组 / 190~201×80</b>（整条盖掉）；
+    整改后归零，只剩 1366×768 + 左下选区 <b>7~11px</b> —— <code>PANEL_MIN_H=120</code> 兜不住，是既有语义，本稿不改它。</td></tr>
+<tr><td>底部带落点（新增 <code>layoutBand</code>）</td><td class="num">各元素自己写 <code>bottom</code>，无人协调</td>
+  <td>容器默认仍贴 <code>bottom:16</code>，只有与出口面板 / 贴图预览 / 工具栏 / 属性条<b>真相交</b>才整条上移：
+    抬升量 <code>min(vh - r.y + 8, vh - 8 - bandH)</code>，迭代到稳定（抬一次会撞到第二个矩形）；抬不到位就不抬（原地被盖比浮到屏幕中间好）。
+    不撞时零位移；最坏上移 <code>bandH + 8</code>（实测 1 行 32 / 2 行 71~75）。整改前「工具栏压带」<b>3 组 / 201×32</b> 归零。</td></tr>
+<tr><td>找回条</td><td class="num">新增</td><td>沿用 <code>.shot-toast</code>（<code>padding:7px 14px / font-size:12px</code>）：纯回执实测 <b>32px</b>，加动作钮（24px，与 <code>.copy-all</code> 同档）后实测 <b>40px</b> → <b>+8px</b>，宽随文案</td></tr>
+<tr><td><code>.qr-btn</code> 热区</td><td class="num">22px</td><td>24px（U7 下限），抽屉头一行高度 <b>+2px</b></td></tr>
+<tr><td>面板底色材质</td><td class="num">三块面板吃窗口级玻璃（除 <code>ocean</code> 外五套实值都是 <code>.66</code> alpha：深色两档 <code>rgba(20,20,24,.66)</code> / <code>rgba(10,22,40,.66)</code>，浅色三套 <code>rgba(255,255,255,.66)</code>）</td><td>改吃 <code>--float-card-bg</code> 实底（待拍板 ③）。<b>零几何变化</b>；观感变化面比初稿写的大：五套都会从「透底下的图」变成「实卡片」，只有 ocean 零变化</td></tr>
+<tr><td>标注工具栏 / 出口数量</td><td class="num">19 键（AI 开 20）· 出口 9 行 / 3 组</td><td><b>不动</b>（已落地决策，见 §6）</td></tr>
+</table>
+<p class="note">浅色四套主题的 <code>--glass-dialog-bg</code> 等令牌由 theme.css 各主题块覆写，本稿只演示深色档；
+§5①②③④⑤ 对六套主题都是同值替换、不改观感，<b>唯独 §5⑥（面板底色）会让除 ocean 外的五套从半透明变实底</b>，所以单独立了待拍板 ③。</p>
+<p class="note"><b>命名隔离</b>：本稿的搬运块<b>故意沿用真实类名</b>（<code>.act-panel / .act-row / .ocr-drawer / .tool</code>），这样验过的样式能原样迁进项目；
+代价是本页自己的排版类一旦与真实组件同名，就会串味——实测踩过一次：外层副标题叫 <code>.sub</code>，
+把组件的 <code>.act-row .sub</code> 撑出 26px 下边距，每一行虚高到 76px。已改为 <code>.doc-sub</code>。
+新提议的 <code>.bottom-stack / .ocr-state / .act-sens / .act-row.insert / .shot-fatal / .shot-toast.act</code>
+与 <code>--preview-fixed / --preview-mask / --preview-pin / --preview-snap</code> 四个令牌，在 <code>src/styles</code> 的 10 份全局样式 + 64 份 CSS Module 里
+<b>均无同名规则</b>（<code>grep</code> 逐个核对，本机 impeccable 未附 copy-collision 脚本），也不会被本页外层规则污染。
+只有 <code>.demo-bright / .demo-solid / .demo-ratio</code> 是本稿演示专用，不迁进项目。</p>
+<p class="note"><b>测量口径</b>：本稿外层正文是 <code>14px/1.75</code>，而真实截图窗的字号行高来自 <code>globals.css:31-32</code> 的 <code>13px/1.5</code>
+（<code>screenshot.css</code> 自己不设）。搬运块因此单独锁 <code>line-height:1.5</code>；本稿所有实测高度（<code>.act-row</code> 50px、
+找回条 40px、折叠面板 291px）都是在这个口径下量出来的。</p>
+</div>
+
+<h2>〇、一页结论</h2>
+<div class="card">
+<table>
+<tr><th style="width:44px">级别</th><th style="width:250px">问题（证据行号）</th><th>方案</th><th style="width:120px">默认档</th></tr>
+<tr><td><span class="tag x">P1</span></td><td>标注态一按 Esc 就销毁全部标注、撤销栈、重做栈、打码预览，<b>无任何反悔路径</b><br><code>ScreenshotOverlay.tsx:924-935 / 1015-1018</code></td>
+<td>两级取消保留，但第一次 Esc 改成「暂存 + 找回条」，6 秒内可一键回标注态继续</td><td>甲 <span class="def">默认</span></td></tr>
+<tr><td><span class="tag x">P1</span></td><td>result 态 OCR 失败时抽屉写「未从图片识别到文字」，且<b>重试入口此时不存在</b><br><code>OcrDrawer.tsx:88-92</code> · <code>ScreenshotOverlay.tsx:3801 / 4004 / 1576-1577</code></td>
+<td>抽屉体收口成三态（识别中 / 失败+重试 / 真的没有文字），文案与 <code>ocrStatus</code> 同源</td><td>甲 <span class="def">默认</span></td></tr>
+<tr><td><span class="tag w">P2</span></td><td>交付态同时堆 5 类浮层；底部一条横带挤了 6 个候选元素，其中 5 个各自写死 <code>bottom:16px</code>，第 6 个靠手写 <code>bottom:64</code> 让位</td>
+<td>底部带单一所有者 + 抽屉不再自动开（默认只留出口面板与贴图预览）</td><td>甲 <span class="def">默认</span></td></tr>
+<tr><td><span class="tag w">P2</span></td><td>命名漂移：抽屉脚「完成」实为关窗；「复制全文 / 复制全部」同事件两名；尺寸标签写「拖选区移动」而代码已删该行为</td>
+<td>改三处文案，删除重复按钮</td><td>— <span class="def">无取舍</span></td></tr>
+<tr><td><span class="tag w">P2</span></td><td>规则漂移：截图预览色写死 10 处（紫/橙/粉/黄）、<code>--green/--orange</code> 当语义色用（screenshot.css 内 17 处）、错误卡透明底叠任意桌面实测 <b>2.39:1</b>、交付态三块面板用窗口级玻璃当工具浮层（深色档压进选区内侧时副文 <b>1.60:1</b>）、内联 <code>style={{}}</code> 本稿点名 11 处</td>
+<td>补 4 个 <code>--preview-*</code> 令牌 + 换 <code>--success/--warning</code> + 错误卡与三块面板改不透明底 + 内联样式搬进类</td><td>甲 <span class="def">默认</span></td></tr>
+</table>
+</div>
+
+<h2>一、Esc 毁标注：把「放弃」做成可反悔的</h2>
+
+<div class="card bad">
+<p><span class="tag x">现状</span><code>cancelAnnot()</code> 一次清 <b>6 项</b>：annotations、undoStack、redoStack、textDraft、maskPreview、ocr 状态，然后 <code>setPhase("select")</code>。
+调用点是标注态 Esc 的唯一出口（<code>:1015-1018</code>），工具栏上的「取消」按钮也走它。</p>
+<p>代价不对称：<b>画 12 个箭头 + 一段马赛克</b>是几十秒，<b>销毁</b>是 0 次确认、0 秒、0 反馈——而且窗口是透明全屏，
+按完 Esc 用户看见的是自己刚框的区域又变回暗遮罩，没有任何一句话告诉他标注没了。规则 17.6 要求两级取消，
+做到了「不一步关窗」，但没做到「误触低成本」（规则 17.5）。</p>
+</div>
+
+<div class="stage">
+  <div class="desk"></div>
+  <div class="row">
+    <div style="position:relative;width:420px">
+      <div class="annot-toolbar" style="display:inline-flex">
+        <div class="tool"><span class="ic">✏</span><span class="lb">矩形</span></div>
+        <div class="tool on"><span class="ic">▦</span><span class="lb">马赛克</span></div>
+        <div class="tool dim"><span class="ic">↩</span><span class="lb">撤销</span></div>
+        <span class="pair-sep"></span>
+        <div class="tool cancel-btn">取消</div>
+        <div class="tool done-btn">完成</div>
+      </div>
+      <div style="height:14px"></div>
+      <div class="shot-toast act">
+        <span>已退出标注 · 12 处标注已暂存</span>
+        <button type="button" class="tray-btn">找回 (Enter)</button>
+        <span class="tray-cd" id="cd1">6s</span>
+      </div>
+    </div>
+  </div>
+  <div class="cap">改后 · 第一次 Esc 回选区并给 6 秒找回条；再按 Esc 才真的退出截图</div>
+</div>
+
+<div class="card good">
+<h3>甲方案（默认）：暂存槽 + 找回条</h3>
+<ul>
+<li><b>暂存槽单格</b>：<code>discardedRef: {annotations, undo, redo} | null</code>。只留最近一次，不做历史——找回的语义是「我按错了」，不是「版本管理」。
+按 <code>规则 15.2</code> 的要求，它挂在 overlay 顶层 ref 上而非子组件里（面板是条件渲染的，会被卸载）。</li>
+<li><b>进 select 态即失效</b>：用户一旦重新拖框（<code>finalizeSelectDrag</code>）或按 Enter 进新标注，槽清空——旧标注对新选区没有意义，留着就会「找回一批画在别处的箭头」。</li>
+<li><b>找回 = 还原三栈 + <code>setPhase("annotate")</code></b>，选区不变（第一次 Esc 没动 <code>sel</code>）。</li>
+<li><b>键盘可达</b>：6 秒内 <code>Enter</code> 与点击找回等效。选区已存在且未重新框选时，Enter 的原语义本来就是「确认选区进标注」（<code>:3392</code> 的提示条在讲这件事），所以这里<b>不新增键位、也不与既有键位冲突</b>。</li>
+<li><b>不弹确认框</b>：确认框是模态，违反规则 18「非模态不挡视野」；找回条是回执，不拦截。</li>
+</ul>
+<p class="note">实现代价：<code>showToast(text, ok)</code> 现在不支持动作（<code>:799-803</code>，3s 自动收）。找回条要走它，就得扩成
+<code>showToast({text, tone, action, ttlMs})</code>；同时 <code>ocrToast</code>（<code>:3976-3993</code>，用 <code>.picker-bar</code> 当按钮、手写 <code>bottom:64</code>）
+应一并并入，否则底部带就出现第三套自制变体——这正是 §3 要收的口子。</p>
+</div>
+
+<div class="qbox">
+<h3>待拍板 ①</h3>
+<p>找回窗口给多长？</p>
+<table>
+<tr><th style="width:90px">档</th><th>取舍</th></tr>
+<tr><td>6s <span class="def">默认</span></td><td>与 <code>ocrToast</code> 现行 6s 同窗口（<code>:3978</code> 注释里写明「与撤销条同窗口」）；用户已经在这个时长上被校准过</td></tr>
+<tr><td>3s</td><td>与 <code>.shot-toast</code> 一致（<code>:802</code>），底部带最多同时只有一条；但 6s 内还想找回的人会错过</td></tr>
+<tr><td>常驻到失效</td><td>最安全，但底部带被长期占用，与 §3 的堆叠预算冲突</td></tr>
+</table>
+</div>
+
+<h2>二、OCR 抽屉三态：别再对失败说谎</h2>
+
+<div class="card bad">
+<p><span class="tag x">现状</span>抽屉体只有一个分支：<code>ocr.lines.length === 0 ? "未从图片识别到文字" : 行列表</code>（<code>OcrDrawer.tsx:88-92</code>）。
+而 <code>ocrStatus</code> 有 <b>idle / running / done / empty / failed</b> 五值（<code>:349</code>），失败路径写的是
+<code>setOcr({lines:[],fullText:""}) + setOcrStatus("failed")</code>（<code>:1576-1577</code>）。</p>
+<p>三个后果，都能在代码里指出来：</p>
+<ol>
+<li><b>文案是假的</b>：failed 时抽屉说「未从图片识别到文字」——用户会以为那张图没字，实际是引擎超时。首次加载模型慢、超时常见，这条路径不是边角（<code>:3166-3167</code> 的注释正是为这件事写的）。</li>
+<li><b>重试在 result 态不可达</b>：唯一的重试入口是工具栏「取文字」按钮的 failed 分支（<code>onOcrButton</code>，<code>:1986-1989</code>），而 <code>AnnotToolbar</code> 的渲染条件是 <code>phase === "annotate"</code>（<code>:3801</code>）。
+进了 result 态，工具栏已经不在了，抽屉却自动打开（<code>4004</code>：<code>phase === "result" || ocrDrawerOpen</code>）——于是<b>唯一挡在用户面前的面板，恰好没有他需要的出口</b>。</li>
+<li><b>下游跟着一起假</b>：<code>onAiButton</code> 在无文字时提示「图中未识别到文字，AI 没有可处理的内容」（<code>:2004-2006</code>）——失败时也说这句，原因给错。</li>
+</ol>
+</div>
+
+<div class="stage">
+  <div class="desk"></div>
+  <div class="row">
+    <div class="ocr-drawer">
+      <div class="ocr-head"><span>OCR 识别</span><span class="sp"></span></div>
+      <div class="ocr-state"><span class="t"><span class="ocr-spin"></span> 正在识别文字…</span>
+        <span class="d">首次使用需加载模型，可能比后续几次慢</span></div>
+      <div class="ocr-foot"><button class="fbtn">关闭</button></div>
+    </div>
+    <div class="ocr-drawer">
+      <div class="ocr-head"><span>OCR 识别</span><span class="sp"></span></div>
+      <div class="ocr-state err">
+        <span class="t">文字识别失败</span>
+        <span class="d">OCR 引擎没有返回结果（多为首次加载超时）。图片本身已经截好，复制 / 保存 / 贴图不受影响。</span>
+        <button type="button" class="retry">重试识别</button>
+      </div>
+      <div class="ocr-foot"><button class="fbtn">关闭</button></div>
+    </div>
+    <div class="ocr-drawer">
+      <div class="ocr-head"><span>OCR 识别 · 0 行</span><span class="sp"></span></div>
+      <div class="ocr-state">
+        <span class="t">这张图里没有文字</span>
+        <span class="d">引擎正常返回，内容为空。可以试试重新框一块更清晰的区域。</span>
+      </div>
+      <div class="ocr-foot"><button class="fbtn">关闭</button></div>
+    </div>
+  </div>
+  <div class="cap">改后 · 三个非成功态各自说清「发生了什么 + 还能做什么」；失败态自带重试</div>
+</div>
+
+<div class="card good">
+<h3>甲方案（默认）：状态上提到抽屉，抽屉成为唯一的说法</h3>
+<table>
+<tr><th style="width:150px">props</th><th style="width:200px">现值</th><th>改后</th></tr>
+<tr><td><code>status</code></td><td class="num">未传</td><td>新增，直接吃 <code>ocrStatus</code>（单一数据源，不在抽屉里另推一遍）</td></tr>
+<tr><td><code>onRetry</code></td><td class="num">未传</td><td>新增，接现成的 <code>retryOcr()</code>（<code>:1975-1980</code>）</td></tr>
+<tr><td><code>err</code></td><td class="num">未传</td><td>可选传入 <code>ocrErr</code>，失败原因写进 <code>.d</code>（规则 15.3：说问题也说恢复路径）</td></tr>
+</table>
+<p>抽屉体的判据改为 <code>status</code>，<b>不再用 <code>lines.length</code> 猜状态</b>；<code>lines.length === 0</code> 只在 <code>done/empty</code> 时才意味着「真的没字」。</p>
+<p class="note">工具栏上的四态表达（转圈 / 行数角标 / 感叹号角标）保持不变——它在 annotate 态是对的。本条只补 result 态缺的那一份，
+并把 <code>onAiButton</code> 的提示按 <code>status === "failed"</code> 分流成「识别没成功，先重试再让 AI 看」。
+抽屉自动打开的条件同 §3：只有 <code>status === "done" &amp;&amp; lines.length &gt; 0</code> 才自动开。</p>
+</div>
+
+<h2>三、交付态堆叠：底部带要有一个所有者</h2>
+
+<div class="card bad">
+<p><span class="tag x">现状</span>按「完成」进入 result 态的一瞬，最多 <b>5 类</b>浮层同时出现（最后一类里含 3 个候选元素），各自定位、无人协调：</p>
+<table>
+<tr><th style="width:150px">元素</th><th style="width:170px">定位</th><th style="width:70px">z-index</th><th>此刻在做什么</th></tr>
+<tr><td>出口面板 <code>.act-panel</code></td><td class="num">JS <code>layoutToolbar</code>，贴选区下方</td><td class="num">50</td><td>9 行出口</td></tr>
+<tr><td>OCR 抽屉 <code>.ocr-drawer</code></td><td class="num">JS <code>layoutSidePanel</code>，选区右外侧</td><td class="num">50</td><td><b>只要 <code>ocr</code> 非 null 就自动开</b>（含失败/空）</td></tr>
+<tr><td>贴图预览 <code>.pin-float</code></td><td class="num">选区正中，240×210 钳位</td><td class="num">—</td><td>每轮首弹（<code>pinPreviewShownRef</code>）</td></tr>
+<tr><td>弹层 <code>.pop-layer</code></td><td class="num"><code>left:50%; bottom:16</code>，宽 440</td><td class="num">60</td><td>AI / 动作链 / 表格 / 编辑文本</td></tr>
+<tr><td>回执 <code>.shot-toast</code> / <code>.picker-bar</code> / <code>.shot-hint</code></td><td class="num"><code>bottom:16</code>（三个都写死）</td><td class="num">70 / 46 / 60</td><td>结果回执、取色、提示条</td></tr>
+</table>
+<p>两个可验证的碰撞，不靠推测：</p>
+<ul>
+<li><b>回执压在弹层的确认键上</b>：动作链跑完，回执 <code>.shot-toast</code>（bottom 16 / z 70）落在 <code>.pop-layer</code>（bottom 16 / z 60）的 <code>.pop-foot</code>（按钮高 28 + padding 8）之上——也就是「确定 / 取消」那一条。停留 3 秒（<code>:802</code>）。</li>
+<li><b>已经有人在手动让位</b>：<code>ocrToast</code> 用内联 <code>bottom: 64</code>（<code>:3982</code>）躲开 bottom:16。这说明底部带需要协调是既成事实，只是没有做成机制；再来一条就要再来一个手写的 64/112。</li>
+<li><b>抽屉避让只算工具栏</b>：<code>layoutSidePanel(..., avoid)</code> 的 <code>avoid</code> 只传标注工具栏（<code>panelPos.ts:52-73</code>），而 result 态工具栏不存在，于是抽屉与出口面板、贴图预览三者互不避让。
+  <b>底部带也不在名单里</b>：1:1 稿实测（3 屏幕 × 5 选区 × 4 态，整数布局像素）——选区落在屏幕左下 74% 处时，
+  result 态抽屉 <code>252×226</code> 的尾巴把整条底部带（<code>201×80</code>）盖掉 <b>190~201 × 80</b>；全屏框 + 标注态则是工具栏压带 <b>201 × 32</b>。</li>
+</ul>
+<p>另外「预览即钉」（<code>§18</code>）与抽屉同时冒头：贴图预览落在<b>选区正中</b>，也就是刚截的那块图上，而抽屉同时在右边铺开文字。
+两条各自合理的高频路径同时投放，等于互相抢视线。</p>
+</div>
+
+<div class="stage" style="height:330px">
+  <div class="desk"></div>
+  <div style="position:relative;height:300px">
+    <div class="sel-rect" style="position:absolute;left:180px;top:34px;width:300px;height:150px"></div>
+    <!-- 出口面板：贴选区下方 -->
+    <div class="act-panel" style="position:absolute;left:256px;top:192px">
+      <div class="act-head"><span class="dot"></span>截图完成 · 选择出口</div>
+      <button class="act-row primary"><span class="ic">⬡</span><span><span class="lbl">复制图片</span><span class="sub">写入剪贴板历史</span></span><span class="k">Ctrl+C</span></button>
+      <div class="act-row"><span class="ic">⬇</span><span><span class="lbl">保存到图库</span><span class="sub">另存为图片文件</span></span><span class="k">Ctrl+S</span></div>
+      <div class="act-row pin"><span class="ic">📌</span><span><span class="lbl">贴图置顶</span><span class="sub">已钉在选区位置 · 拖动可移动</span></span></div>
+      <div class="act-group">文字 · 其它（收起）</div>
+      <button class="act-row"><span class="ic">⌄</span><span><span class="lbl">展开 6 项</span><span class="sub">AI 处理 / 翻译 / 送动作链 / 固定区域 / 重新截图 / 插入文档</span></span></button>
+    </div>
+    <!-- 贴图预览：选区正中 -->
+    <div style="position:absolute;left:210px;top:60px;width:240px;height:100px;border-radius:10px;
+      border:1px dashed rgba(249,168,212,.75);background:rgba(236,72,153,.10);
+      display:flex;align-items:center;justify-content:center;font-size:11px;color:#F9A8D4">
+      📌 预览即钉 · 拖动定位 · Esc 取消
+    </div>
+    <!-- 底部带：唯一所有者 -->
+    <div class="bottom-stack">
+      <div class="shot-toast act">
+        <span>已复制图片</span><button type="button" class="tray-btn">打开历史</button>
+      </div>
+      <div class="picker-bar"><span>#3B9EFF</span><span class="hint">点击画布复制该颜色</span></div>
+    </div>
+  </div>
+  <div class="cap">改后 · result 态默认只留「出口面板 + 贴图预览」；底部带是一条竖排栈（gap 8px，最多 2 行，后来的把先前的顶上去），抽屉由面板里的「文字」组按需展开</div>
+</div>
+
+<div class="card good">
+<h3>甲方案（默认）：底部带归一 + 抽屉改为可选</h3>
+<table>
+<tr><th style="width:210px">改动</th><th>具体</th></tr>
+<tr><td><code>bottomStack</code> 单一所有者</td><td>一个 <code>flex-column; gap:8</code>、最多 2 行的容器包住回执 / 取色条 / 强度提示 / 找回条 / <code>ocrToast</code>。各元素<b>删掉自己的 bottom 与内联让位值</b>。栈按「错误 &gt; 找回 &gt; 进度 &gt; 回执 &gt; 提示」排序，超过 2 行时挤掉最低优先级。
+容器仍然贴 <code>bottom:16</code>，但落点改由 <code>layoutBand()</code> 给值（1:1 稿已带这条公式）：只有当它和出口面板 / 贴图预览 / 工具栏 / 属性条<b>真的相交</b>才整条上移，且<b>抬不过去就不抬</b>（原地被盖比浮到屏幕中间好）。这就是今天 <code>ocrToast</code> 手写 <code>bottom:64</code> 在做的事，改成公式给值，再多一条也不会漏。</td></tr>
+<tr><td>抽屉不自动开</td><td><code>4004</code> 的条件加严：<code>ocrDrawerOpen || (phase === "result" &amp;&amp; status === "done" &amp;&amp; lines.length &gt; 0)</code>。失败/空不再自动铺一屏，改由 §2 的状态行 + 面板里的「文字」组承接。</td></tr>
+<tr><td>四方互相避让</td><td><code>layoutSidePanel</code> 的 <code>avoid</code> 从「只让一个矩形」扩成矩形数组（result 态传出口面板 + 贴图预览 + <b>底部带</b>，标注态传工具栏 + 属性条 + 底部带）。函数已有 <code>roomAt()</code> 的压高逻辑，改成对每个水平投影重叠的矩形各压一次即可，候选顺序、钳位、<code>PANEL_MIN_H</code> 一律不动——<b>不引入面板跳动</b>。
+代价实测要说清：最矮屏幕（1366×768）+ 左下选区时，压到 <code>PANEL_MIN_H=120</code> 就压不动了，仍剩 <b>7~11px</b> 的带顶被盖；现状是整条 <b>80px</b> 被盖，且这条兜底（「宁可盖住工具栏也要能用」）是产品已有语义，本稿不改它。</td></tr>
+<tr><td>面板数量：9 行 → 3 + 收起</td><td>出口面板默认显示「图片」组 3 行（复制 / 保存 / 贴图）与主出口高亮，「文字」「其它」收成一行「展开 6 项」。<b>不删行</b>，键盘与鼠标两条路都还在。</td></tr>
+</table>
+<p class="note">桌面骨架保持不变：仍然是<b>贴着选区的双面板</b>（下方面板 + 侧向抽屉）＋ 底部窄带，
+不改成网页式的单列居中流。栏内做减法，骨架不动。</p>
+</div>
+
+<div class="qbox">
+<h3>待拍板 ②</h3>
+<p>出口面板要不要折叠成「3 行 + 展开」？</p>
+<table>
+<tr><th style="width:90px">档</th><th>取舍</th></tr>
+<tr><td>折叠 <span class="def">默认</span></td><td>交付态浮层从 5 降到 3，视线落点唯一；代价是 6 项出口多一次点击，且要新增展开态的键盘可达（进入面板 Tab 到「展开」行）</td></tr>
+<tr><td>保持 9 行</td><td>零回归、零新键位；但 §3 的堆叠问题只剩「抽屉不自动开 + 底部带归一」两条在解决，面板仍占满 3 组头 + 9 行（实测一行 <b>50px</b> = padding 8+8 + 文本两行 34；整块 ≈ <b>568px</b>，而本稿折叠版实测 <b>291px</b>）</td></tr>
+</table>
+<p class="note">这一条与 <code>design/PastePanda-截图主力出口上升-设计稿.html</code>（已落地）方向一致：那次把三个主力出口<b>提到工具栏</b>，
+本次是把 result 态面板里剩下的低频项<b>收起来</b>，两次都不删路。</p>
+</div>
+
+<h2>四、命名与文案：三处「说的话和做的事不一致」</h2>
+
+<div class="card bad">
+<table>
+<tr><th style="width:250px">界面原文</th><th style="width:120px">实际行为</th><th>证据</th></tr>
+<tr><td>抽屉脚 <span class="tag x">完成</span></td><td><code>onClose={close}</code> = <b>结束整轮截图并关窗</b></td><td class="num"><code>OcrDrawer.tsx:127-129</code> + <code>ScreenshotOverlay.tsx:4032</code></td></tr>
+<tr><td>抽屉头 <span class="tag x">复制全文</span> 与 抽屉脚 <span class="tag x">复制全部</span></td><td>同一个 <code>onCopyAll</code></td><td class="num"><code>OcrDrawer.tsx:66 / 113</code></td></tr>
+<tr><td>尺寸标签「拖选区移动」</td><td>select 态按下<b>画新框</b>，任意起点都是</td><td class="num"><code>ScreenshotOverlay.tsx:3427</code> vs <code>:2497-2498</code>（注释原文：「不再"按在选区内=平移"」）</td></tr>
+</table>
+<p>第一条最伤：抽屉脚一排是「复制全部 / 编辑文本 / 提取表格 / AI 解释 / 送动作链 / <b>完成</b>」，
+用户读到的「完成」是「这轮 OCR 做完了」，点下去整轮截图结束、图也没了出口面板。
+工具栏那边已经有一个语义正确的「完成」（走 <code>runExit</code> 出图），两个「完成」不是同一个动作。</p>
+</div>
+
+<div class="card good">
+<h3>改法（无取舍，直接改）</h3>
+<table>
+<tr><th style="width:170px">位置</th><th style="width:130px">现</th><th>改后</th></tr>
+<tr><td>抽屉脚最后一钮</td><td>完成</td><td><b>关闭</b>（只收抽屉；关窗那条路留在出口面板与工具栏的「完成」上）</td></tr>
+<tr><td>抽屉脚重复钮</td><td>复制全部（与头部同事件）</td><td>删掉。<span class="tag i">注意</span>252 宽抽屉的脚内宽是 <code>252−2−20=230</code>，而 <code>.fbtn</code> 有 <code>min-width:68px</code> → 每行最多 3 个；6 个是 3+3 两行，5 个是 3+2 两行，<b>行数不变、高度不变</b>，这条的收益只在语义不重复</td></tr>
+<tr><td>尺寸标签提示</td><td>单击进标注 · 拖选区移动 · 拖边缘缩放</td><td><b>拖边缘缩放 · 框内再拖出新框</b>（与 <code>:2497</code> 的真实行为一致；「单击进标注」已由提示条的 Enter 承担，不在两处重复）</td></tr>
+<tr><td>AI 无文字的提示</td><td>「图中未识别到文字，AI 没有可处理的内容」（失败时也说这句）</td><td>按 <code>status</code> 分流：failed → 「刚才识别失败了，先点重试」；empty → 「这张图里没有文字」</td></tr>
+</table>
+</div>
+
+<h2>五、规则漂移收口（U6 / V2 / 内联样式 / 热区）</h2>
+
+<div class="card">
+<h3>① 截图预览色令牌化（现在全是硬编码，六套主题都不跟）</h3>
+<table>
+<tr><th style="width:170px">选择器</th><th style="width:180px">现值</th><th>改为</th></tr>
+<tr><td><code>.sel-rect.fixed-preview</code></td><td class="num"><code>#7c6cff</code> · <code>:1051</code></td><td class="num"><code>--preview-fixed</code></td></tr>
+<tr><td><code>.pin-preview-lbl</code> / <code>.pin-quick-btn</code></td><td class="num"><code>rgba(124,108,255,.92/.22/.34)</code> · <code>#cdbcff</code> <code>:1059-1081</code></td><td class="num"><code>--preview-fixed</code> 的 color-mix 派生</td></tr>
+<tr><td><code>.mask-preview</code> 及其 tip</td><td class="num"><code>#ff9f43</code> · <code>rgba(255,159,67,.18/.9)</code> · <code>:1086-1103</code></td><td class="num"><code>--preview-mask</code></td></tr>
+<tr><td><code>.act-row.pin .ic</code> / <code>.tool.exit-pin</code></td><td class="num"><code>#ec4899</code>（<code>--shot-pin</code> 已有令牌，行图标没用上）</td><td class="num"><code>--preview-pin</code> / <code>--shot-pin</code></td></tr>
+<tr><td><code>.snap-tip</code></td><td class="num"><code>#ffd75e</code> · <code>:717</code></td><td class="num"><code>--preview-snap</code></td></tr>
+</table>
+<p class="note">§18 的「轻预览视觉语言」（虚线紫框 + 橙色打码预览 + 青色手柄）是刻意的一致表达，本条<b>不改颜色取值</b>，
+只是把同一语义的重复字面量（上表 <b>11 处</b>，逐条见「现值」列）收成 <b>4 个</b>令牌，让浅色主题能给更深的描边。新令牌进 <code>:root</code>，六套主题先给同值，
+需要调的主题再各自覆写。</p>
+
+<h3>② 色名 → 语义名（theme.css 已备好两套，直接用）</h3>
+<p>截图 CSS 里 <code>--green</code> / <code>--orange</code> 共 <b>17 处</b>在当语义色用（<code>grep -c</code> 实测）。theme.css 已为七套主题补了
+<code>--success / --warning / --danger-bg</code> 的三件套（<code>theme.css:404-413 / 557-567</code>，注释明写「U6：新代码只许用语义名」），
+所以这条是纯替换、零视觉变化：底带成功绿 <code>.shot-toast.ok</code>、二维码条 <code>.qr-bar/.qr-btn/.qr-ic</code>、
+OCR 行已复制态 <code>.ocr-row.copied</code>、<code>.fbtn.chain</code>、面板状态点 <code>.act-head .dot</code>、<code>.pop-row .net</code> 的橙。</p>
+
+<h3>③ 截图失败卡：不是「对比度偏低」，是对比度<b>不可保证</b></h3>
+<p><span class="tag x">实测</span>截图窗是透明全屏覆盖层（<code>screenshot.css:9 background: transparent</code>），
+而失败卡的底色是 <code>color-mix(in srgb, var(--danger) 15%, transparent)</code>（<code>ScreenshotOverlay.tsx:3187</code>）——
+15% 的透明红<b>直接叠在用户桌面上</b>。同一个 <code>#F87171</code> 文字：
+叠在暗桌面合成 <code>#2f202c</code> → <b>5.57:1</b>（过 AA）；叠在亮桌面合成 <code>#feeaea</code> → <b>2.39:1</b>（AA 要 4.5:1）；
+代码里的兜底字面量 <code>#FCA5A5</code> 更差，<b>1.64:1</b>。也就是说这张卡能不能读，取决于用户当时桌面上是什么。</p>
+<p><span class="tag v">改法</span>底色换成<b>不透明</b>的浮层令牌 <code>--float-card-bg</code>（theme.css 已按「工具浮层=不透明、禁 backdrop-filter」的双轨规则备好），
+上面再叠 <code>--danger-bg</code> 的 tint，文字用 <code>--danger</code>；两个按钮进 CSS 类，别留内联。</p>
+
+<h3>④ 内联 <code>style={{}}</code> 清单（规则 19 V：新组件不写内联样式）</h3>
+<table>
+<tr><th style="width:270px">位置</th><th>内容</th></tr>
+<tr><td class="num"><code>ResultActions.tsx:76-90</code></td><td>敏感提示条整块（padding / 字号 / danger tint + color-mix ×2）→ <code>.act-sens</code>（本稿已给类名与数值）</td></tr>
+<tr><td class="num"><code>ResultActions.tsx:166-170</code></td><td>「插入到当前文档」行的 cyan 强调 → <code>.act-row.insert</code></td></tr>
+<tr><td class="num"><code>OcrDrawer.tsx:84-86</code></td><td>空态的 fontSize / color / padding → 由 §2 的 <code>.ocr-state</code> 取代</td></tr>
+<tr><td class="num"><code>ScreenshotOverlay.tsx:3181-3206</code></td><td>失败卡 5 处（含 §5③ 那张不可保证对比度的底）→ <code>.shot-fatal</code> + <code>.shot-fatal-btn(.primary)</code></td></tr>
+<tr><td class="num"><code>ScreenshotOverlay.tsx:3971 / 3982</code></td><td><code>.picker-bar</code> 的 borderColor 覆写、<code>bottom:64</code> 手动让位 → §3 的 <code>bottomStack</code> 之后自然消失</td></tr>
+<tr><td class="num"><code>ScreenshotOverlay.tsx:3214</code></td><td>「正在截取屏幕…」的 <code>fontSize:13</code> → 并进 <code>.shot-fatal</code> 的姊妹类 <code>.shot-loading</code></td></tr>
+</table>
+<p class="note">上表是本稿点名的 <b>11 处</b>。三个文件的实际内联样式总量是 <b>40 处</b>
+（<code>ScreenshotOverlay.tsx</code> 35 / <code>ResultActions.tsx</code> 3 / <code>OcrDrawer.tsx</code> 2，<code>grep -c "style={{"</code> 实测）；
+其余 29 处多数是跟随 JS 算出的坐标（<code>left/top/width/height</code>），那是定位而不是装饰样式，不属于 V 组的禁止对象，留作独立收口。</p>
+
+<h3>⑤ 热区下限 24px（U7）</h3>
+<p><code>.qr-btn</code> 现 <code>height: 22px</code>（<code>screenshot.css:802</code>）——本文件里 <code>.shot-hint .hk-close</code> 的注释
+（<code>:756-764</code>）已经把「画面 16×16、可点 24×24」这条标准写死了，二维码条那两个 22px 的钮是唯一没过线的可见控件。
+改法：到 24px，同时用等量负 margin 保住行高不变（照抄 <code>.hk-close</code> 已有的做法）。抽屉头 <code>.copy-all</code> 已是 24px，不动。</p>
+
+<h3>⑥ 交付态面板的底色材质：把「窗口级玻璃」当成了「工具浮层」用（V2 / 双轨规则）</h3>
+<p><span class="tag x">证据</span><code>.ocr-drawer</code>（<code>screenshot.css:501</code>）、<code>.act-panel</code>（<code>:560</code>）、
+<code>.pop-layer</code>（<code>:617</code>）三块的底都写的是 <code>var(--glass-dialog-bg, rgba(10,22,40,.92))</code>。
+那个 <code>.92</code> 是<b>永远不生效的兜底字面量</b>——六套主题全部定义了 <code>--glass-dialog-bg</code>，深色两档的实值是
+<b>0.66 alpha</b>（<code>theme.css:600 / :1072</code>），浅色三档是 <code>rgba(255,255,255,.66)</code>（<code>:715 / :830 / :945</code>），
+默认浅色档 ocean 是 <code>#ffffff</code> 实底（<code>:466</code>）。本稿初稿也把 <code>.92</code> 当成了实值，已按实值重算。</p>
+<p>而 <code>theme.css:228-236</code> 的「双轨材质」判定，条文原话是：<b>工具浮层——短命、要盖在正文上读字、可能叠多层
+→ <code>--float-card-*</code>：不透明、禁 backdrop-filter</b>。截图的抽屉 / 出口面板 / AI 弹层三条全部命中（最长命的一个 6 秒就收），
+却在用窗口级玻璃。同一份漂移还带出一个次要问题：三处 <code>backdrop-filter: blur(18px) saturate(1.3)</code> 是写死的，
+而项目的玻璃模糊统一走 <code>--glass-dialog-filter</code>（<code>theme.css:468-472</code>，<code>app.css:239</code> 等 6 处消费方），
+ocean 档已经把它设成 <code>none</code>——主窗口的玻璃都不糊了，截图面板还在糊 18px。</p>
+<p><span class="tag w">代价（深色档，同口径手算）</span>面板底下的亮度分三档，<b>只有 A 档是有遮罩的</b>：</p>
+<table>
+<tr><th style="width:270px">面板底下的内容</th><th style="width:110px">合成底色</th><th>正文 <code>--text-primary</code> / 副文 <code>--text-muted</code>（10px）/ <code>--accent</code></th></tr>
+<tr><td><b>A</b> 普通选区的外侧，被 <code>.shade-block rgba(10,14,24,.6)</code>（<code>screenshot.css:29</code>）压暗的最亮内容</td>
+<td class="num"><code>#2B3442</code></td><td class="num">10.1 / <b>4.00</b> / 4.49 —— 副文差 AA 小字一档</td></tr>
+<tr><td><b>B</b> <b>全屏 / 近全屏选区</b>：4 块 shade 的尺寸为 0，只剩屏幕四边 5px 暗带（<code>ScreenshotOverlay.tsx:3374-3378</code>），整幅都是<b>原亮度</b>截图</td>
+<td class="num"><code>#5D6571</code></td><td class="num"><b>4.76 / 1.88 / 2.11</b> —— 正文刚卡线，副文与强调色全废</td></tr>
+<tr><td><b>C</b> 两侧都放不下、贴进选区内部（<code>panelPos.ts:82-85</code> 的兜底档），再叠 <code>.inside{opacity:.93}</code>（<code>:913</code>；面板是 <code>.94</code>，<code>:567</code>），有效底色 alpha 只剩 <b>0.61</b></td>
+<td class="num"><code>#69707B</code></td><td class="num"><b>4.04 / 1.60 / 1.79</b> —— 正文也不达标</td></tr>
+</table>
+<p>B 档不是边界情况：<b>「截全屏」是截图最常用的入口</b>，而 <code>panelPos.ts</code> 在这种情况下把面板放「选区外侧」
+= 放在没有任何暗化的原亮度画面上。C 档则是 <code>.inside</code> 那句注释「调淡一点，尽量让底下的图还看得见」把要看清的字一起调淡了——
+为了露出底下的图，拿到的是三档里最差的文字对比。</p>
+
+<div class="stage">
+  <div class="demo-bright"></div>
+  <div class="row">
+    <div class="ocr-drawer inside">
+      <div class="ocr-head"><span>OCR 识别 · 3 行</span><span class="sp"></span></div>
+      <div class="ocr-row"><span class="n">1</span><span class="tx">规则 19：颜色只用语义名</span></div>
+      <div class="ocr-row"><span class="n">2</span><span class="tx">面板压在选区内侧时</span></div>
+      <div class="ocr-foot"><button class="fbtn">复制全部</button><button class="fbtn">关闭</button></div>
+      <div class="demo-ratio"><span>正文 4.04:1 ✕</span><span>副文 1.60:1 ✕</span></div>
+    </div>
+    <div class="ocr-drawer demo-solid">
+      <div class="ocr-head"><span>OCR 识别 · 3 行</span><span class="sp"></span></div>
+      <div class="ocr-row"><span class="n">1</span><span class="tx">规则 19：颜色只用语义名</span></div>
+      <div class="ocr-row"><span class="n">2</span><span class="tx">面板压在选区内侧时</span></div>
+      <div class="ocr-foot"><button class="fbtn">复制全部</button><button class="fbtn">关闭</button></div>
+      <div class="demo-ratio"><span>正文 14.7:1 ✓</span><span>副文 5.79:1 ✓</span></div>
+    </div>
+  </div>
+  <div class="cap">两块面板的宽度、行高、字号完全相同，底都是纯白（最亮情况）：前一块 = C 档（<code>--glass-dialog-bg</code> .66 + <code>.inside</code> .93，含真实的 <code>blur(18px)</code>），后一块 = 改后（<code>--float-card-bg</code> 实底）</div>
+</div>
+<p class="note">改法（三块一起，纯令牌替换）：<code>background → var(--float-card-bg)</code>、<code>border → var(--float-card-border)</code>、
+<code>box-shadow → var(--float-card-shadow)</code>，删掉三处 <code>backdrop-filter</code> 与两处 <code>.inside</code> 的 opacity 降级。
+值从各主题 <code>--card-bg / --border-color</code> 推导（<code>theme.css:237-239</code>），六套主题自动继承，深色两档已各自抬高阴影，本稿不需要新增令牌。</p>
+<p class="note"><b>本条是本稿唯一会改变外观（而不只是改对）的改动</b>：面板从半透明变实底之后，「透过面板看见底下的图」这个能力就没了。
+现状确实有人靠它——但它现在是用 1.60:1 的字号换来的。取舍见待拍板 ③。</p>
+</div>
+
+<div class="card">
+<h3>⑦ 入场动画还替元素「居中」，而元素早就改成 JS 定位了（V6 / 规则 11.1 的同类漂移）</h3>
+<p><span class="tag x">现状</span><code>layoutToolbar</code> 落地时把属性条改成 <code>style={{ left, top }}</code>（<code>AttrBar.tsx:161</code>），
+基线规则 <code>.attr-bar</code>（<code>screenshot.css:294-299</code>）里<b>没有</b> <code>transform</code>。
+但它的入场动画 <code>@keyframes tbAttrIn</code>（<code>screenshot.css:1257-1260</code>）from / to 两端都写着
+<code>translate(-50%, …)</code>，注释还停留在「保留 <code>translateX(-50%)</code> 居中」——那是绝对定位之前（CSS <code>left:50%</code>）的措辞。</p>
+<table>
+<tr><th style="width:210px">表现</th><th>数值（静态 CSS + JSX 读出来的，不是猜）</th></tr>
+<tr><td>入场期间偏移</td><td>属性条实测宽 <b>435px</b> → 前 <b>0.26s</b> 整条挂在 <code>layoutToolbar</code> 算好的位置<b>左侧 218px</b> 处，动画结束（没有 <code>fill-mode</code>）瞬移回位</td></tr>
+<tr><td>双层错位</td><td>主栏在 <code>l.left</code>、属性条在 <code>l.left − 218</code>：换工具的瞬间两层是分开的两条，然后合并</td></tr>
+<tr><td>同类调用点核对</td><td><code>screenshot.css</code> 全文含 <code>-50%</code> 的<b>17 行</b> = 9 条基线规则（<code>:63 :350 :614 :715 :726 :872 :891 :1100 :1117</code>）+ 3 组 keyframe（<code>:885-886</code> / <code>:1131-1132</code> / <code>:1259-1260</code>）+ 2 行注释。三组 keyframe 里 <code>shotToastIn</code>（基线 <code>:872</code>）与 <code>maskIn</code>（基线 <code>:1117</code>）都自带 <code>translateX(-50%)</code>，与之一致 → 不受影响；<b>只有 <code>tbAttrIn</code> 的宿主 <code>.attr-bar</code> 基线没有 transform</b>，所以它是唯一漏网的那一处</td></tr>
+</table>
+<p><span class="tag ok">改法</span>keyframe 只留 Y 位移：<code>from { opacity:0; transform:translateY(-10px) } to { opacity:1; transform:none }</code>。
+<b>并且这条要在 §3 落 <code>bottom-stack</code> 时一起做</b>：栈的规则是 <code>.bottom-stack &gt; * { transform:none }</code>，
+而这几条 keyframe 又把 <code>-50%</code> 加回来——不改的话，栈里每条回执入场都会横着闪一下（1:1 稿用 <code>ppAttrIn / ppStackIn</code> 演示了只动 Y 的版本）。</p>
+</div>
+
+<div class="qbox">
+<h3>待拍板 ③</h3>
+<p>交付态三块面板（OCR 抽屉 / 出口面板 / AI 弹层）的底色走哪条？宽度、圆角、位置在所有档里都不变，差别只在通透感——
+但「只有深色两档会变」这句是本稿初稿的错话：实测浅色三套也是 <code>.66</code> 半透明白，见下表。</p>
+<table>
+<tr><th style="width:150px">档</th><th>取舍</th></tr>
+<tr><td>甲：三块全换实底 <code>--float-card-bg</code> <span class="def">默认</span></td>
+<td>与 <code>theme.css:228-236</code> 的双轨条文一致。逐套实测（正文色 vs 面板底，底色按压在 <code>#2B3442</code> 遮罩内容上合成；
+本节 §5⑥ 表里的 4.00:1 那一档量的是<b>副文</b>，两处口径不同）：
+只有 <code>ocean</code> 零变化（它本来就是 <code>#ffffff</code> 实底、<code>--glass-dialog-filter:none</code>）；
+<code>forest 9.21 → 17.93</code>、<code>blossom 7.33 → 14.27</code>、<code>dawn 8.16 → 15.90</code>（三套是 <code>rgba(255,255,255,.66)</code> → 纯白，面板更实、底下的图不再透上来）；
+<code>midnight 13.01 → 13.96</code>（→ <code>#18181b</code>）、<code>ocean-dark 13.20 → 14.65</code>（→ <code>#0a1628</code>）。
+六套在改前改后都过 AA，差别全在「透过来的桌面内容把对比度往下拽」这件事是否还存在——对比度与桌面内容彻底解耦，这一类 bug 一次消掉。</td></tr>
+<tr><td>乙：保留玻璃，把有 alpha 的五套（深色两档 + 浅色三套）一起提到 ≥0.92</td>
+<td>质感不动，改动最小（新增一个截图作用域的底色令牌，五档覆写）。但违背自己写的双轨条文，且 <code>.inside</code> 的淡出仍得删；
+下一次加面板还会再漂移一次。</td></tr>
+<tr><td>丙：只在 <code>.inside</code> 档换实底，其余留玻璃</td>
+<td>承认最坏的那一档（C 档副文 1.60:1）并只修它；但全屏截图的 B 档（副文 1.88:1）和 A 档（4.00:1）仍然不达 AA 小字标准，等于已知违规留着大半不修。不推荐。</td></tr>
+</table>
+<p class="note">三档都包含：删掉 <code>.ocr-drawer.inside / .act-panel.inside</code> 的 opacity 降级、去掉三处写死的 <code>blur(18px)</code>。
+面板的「让底下的图还看得见」改由 <code>panelPos.ts</code> 负责——它本来就先试选区外侧，只有真的很宽才退到内侧。</p>
+</div>
+
+<h2>六、审计里点名但本稿<b>不改</b>的，以及为什么</h2>
+<div class="card">
+<table>
+<tr><th style="width:230px">项</th><th>不改的理由</th></tr>
+<tr><td>工具栏 19 键（AI 开 20）/ 出口数量 / 三个主力出口平铺</td><td>是已落地决策（<code>design/PastePanda-截图主力出口上升-设计稿.html</code>），本稿不回头推翻；§3 只在 result 态的面板里折叠低频项</td></tr>
+<tr><td><code>.tool .lb</code> 的 9px 标签</td><td>实测对比度 <b>8.00 ~ 9.21:1</b>（72% 不透明白字 <code>--shot-bar-text</code>，沿工具栏 180° 渐变两端 <code>#141C34 / #101528</code> 分别算），<b>不是合规问题</b>，是字号观感；改大要让工具栏整体加宽/加高，与「19 键挤在一行」冲突，留作独立议题</td></tr>
+<tr><td>抽屉 5 个出口按钮的 AI 门控</td><td>已按规则 16 做对：<code>aiOk</code> 为假时<b>不渲染</b>（<code>OcrDrawer.tsx:120-122</code>、<code>ResultActions.tsx:130-145</code>），不是渲染后 early return。本稿只把它们从 9 行折成「展开」，门控条件原样搬</td></tr>
+<tr><td><code>LONG_DEADLINE_MS = 25_000</code>（<code>shotConstants.ts:70</code>）声明了「超时停止出图」却没有任何读取点；<code>ScreenshotOverlay.tsx</code> 4177 行超 §7 的 300 行上限</td><td>属于代码架构债，不是交互设计；单列成独立任务，不混进本稿</td></tr>
+</table>
+</div>
+
+<h2>七、改动清单</h2>
+<div class="card">
+<table>
+<tr><th style="width:290px">文件</th><th>改动</th></tr>
+<tr><td><code>OcrDrawer.tsx</code></td><td>新增 <code>status / onRetry / err</code> props；抽屉体按 status 三分支；脚「完成→关闭」、删重复「复制全部」</td></tr>
+<tr><td><code>ResultActions.tsx</code></td><td>敏感条与 insert 行的内联样式换类；按 §3 折叠为「3 行 + 展开」，展开态由父级受控</td></tr>
+<tr><td><code>ScreenshotOverlay.tsx</code></td><td><code>cancelAnnot</code> 改为暂存 + 找回条；<code>showToast</code> 扩成带 <code>action/ttl</code>；抽屉自动开条件加严；Esc 找回分支；失败卡换类；<code>:3427</code> 文案</td></tr>
+<tr><td><code>BottomStack.tsx</code>（新增子组件）</td><td>包住回执 / 取色 / 强度 / 找回 / <code>ocrToast</code>，按优先级排 2 行；overlay 已 4177 行，按 §7 必须外提</td></tr>
+<tr><td><code>panelPos.ts</code></td><td><code>avoid</code> 由单矩形改矩形数组并<b>含底部带</b>（出口面板 + 贴图预览 + 带子），位置算法不变；新增同文件纯函数 <code>layoutBand()</code>（默认 <code>bottom:16</code>，真相交才抬、抬不到位不抬、迭代到稳定）。补两条单测：① 两矩形并集把抽屉压高而非搬走；② 带子与出口面板相交时上移量 = <code>bandH + 8</code>，且不撞时位移为 0</td></tr>
+<tr><td><code>screenshot.css</code></td><td>§5⑦：<code>tbAttrIn</code>（<code>:1257-1260</code>）两端去掉 <code>-50%</code>，只留 Y；§3 的栈落地时 <code>shotToastIn</code> 同步改（否则 <code>.bottom-stack &gt; * { transform:none }</code> 与 keyframe 互架）。§5⑥：三块面板换 <code>--float-card-*</code>、删三处 <code>blur(18px)</code> 与两处 <code>.inside</code> 淡出</td></tr>
+<tr><td><code>screenshot.css</code></td><td>新增 <code>.shot-toast.act / .bottom-stack / .ocr-state / .act-sens / .act-row.insert / .shot-fatal</code>；预览色令牌化；<code>--green/--orange → --success/--warning</code>；<code>.qr-btn</code> 22→24；<b>§5⑥</b>：<code>.ocr-drawer / .act-panel / .pop-layer</code> 底色 → <code>--float-card-bg</code>，删三处写死的 <code>backdrop-filter</code> 与 <code>:567/:913</code> 两条 <code>.inside</code> 淡出</td></tr>
+<tr><td><code>theme.css</code></td><td><code>:root</code> 新增 <code>--preview-fixed / --preview-mask / --preview-pin / --preview-snap</code>（六主题先同值）；§5⑥ 不新增令牌，<code>--float-card-*</code> 已备（<code>:237-239</code>）</td></tr>
+<tr><td>测试</td><td><code>OcrDrawer</code> 三态快照；「failed 时 DOM 里出现重试钮」守卫单测（钉住 §2 的收口）；<code>cancelAnnot</code> 后找回能还原三栈</td></tr>
+</table>
+<p class="note">每处 UI 改动落地后跑 <code>npm run lint:ui</code>（只查改动行）。</p>
+</div>
+
+<h2>八、验收清单</h2>
+<div class="card">
+<table>
+<tr><th style="width:56px">条目</th><th>判据（能一眼看出来，不含主观词）</th></tr>
+<tr><td>§1</td><td>画 3 个标注 → 按 Esc → 底部出现找回条 → 按 Enter → 回到标注态且 3 个标注、撤销栈都在；重新拖框后找回条不再出现</td></tr>
+<tr><td>§2</td><td>把 OCR 引擎打失败（首次超时）→ 抽屉出现「文字识别失败 + 重试识别」，且<b>没有</b>「未从图片识别到文字」这句；点重试能出结果</td></tr>
+<tr><td>§2b</td><td>result 态下，失败抽屉是唯一的失败说法入口（工具栏已不在）——用键盘 Tab 能走到重试钮</td></tr>
+<tr><td>§3</td><td>按「完成」后同屏浮层数 ≤ 3；跑一条动作链 → 回执不再压在弹层「确定」按钮上（量：两者底边距 ≥ 8px）。
+  避让名单：<code>layoutSidePanel</code> 的 <code>avoid</code> 调用点在 result 态传<b>数组</b>（出口面板 + 贴图预览 + 底部带），
+  判据是「选区压在屏幕左下 + 1366×768」这一档抽屉不再整条盖住底部带（现状 <code>190~201×80</code>，改后 ≤ 11px 且来自 <code>PANEL_MIN_H</code>）</td></tr>
+<tr><td>§4</td><td>抽屉脚点「关闭」后出口面板仍在；全仓 <code>grep</code> 不再有「拖选区移动」</td></tr>
+<tr><td>§5①-⑤</td><td>把桌面壁纸换成纯白 → 截图失败卡文字仍 ≥ 4.5:1；<code>screenshot.css</code> 里 <code>#7c6cff / #cdbcff / rgba(124,108,255 / #ff9f43 / rgba(255,159,67 / #ec4899 / #ffd75e</code> 七个字面量的引用数合计为 0（§5① 那 11 处的另一种写法）；<b>定位类</b> <code>style={{…}}</code> 允许留存，判据见 §5④ 的 11/40 说明；<code>.qr-btn</code> computed height = 24px</td></tr>
+<tr><td>§5⑥</td><td>主题切到 <code>ocean-dark</code>，截一张<b>纯白页面</b>并选全屏 → OCR 抽屉里最浅那档文字（行号、副标）肉眼可读，DevTools 取 computed background 为不透明；<code>grep -c "blur(18px)" src/styles/screenshot.css</code> 为 0；<code>.ocr-drawer.inside / .act-panel.inside</code> 两条淡出规则已删</td></tr>
+</table>
+</div>
+
+<p style="margin-top:34px;color:var(--shot-bar-muted);font-size:11.5px;text-align:center">
+PastePanda 设计稿 · 2026-10-01 · 控件与数值取自 <code>src/styles/screenshot.css</code> · <code>src/lib/screenshot/panelPos.ts</code> · <code>ScreenshotOverlay.tsx</code> · 对比度用 sRGB WCAG 2.2 公式计算
+</p>
+
+</div>
+<script>
+// 找回条倒计时只做示意：演示 6s 窗口与「找回」的真实观感，不参与任何布局计算。
+(function () {
+  var el = document.getElementById('cd1');
+  if (!el) return;
+  var n = 6;
+  setInterval(function () { n = n <= 1 ? 6 : n - 1; el.textContent = n + 's'; }, 1000);
+})();
+</script>
+</body>
+</html>

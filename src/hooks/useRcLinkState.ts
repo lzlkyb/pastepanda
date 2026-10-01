@@ -32,7 +32,7 @@
  * （RTT 恰好每轮相同会误判为无变化），所以后端字段一旦可用就该走它。
  */
 import { useEffect, useRef, useState } from "react";
-import { rcSendInput } from "@/lib/api/rc";
+import { useRcHeartbeat } from "@/hooks/useRcHeartbeat";
 import {
   actionUnansweredMs,
   frameIdleMs as computeFrameIdleMs,
@@ -40,8 +40,6 @@ import {
   type RcLinkState,
 } from "@/lib/rcSessionStats";
 
-/** ping 发送周期。被控端 3.5s 收不到心跳会暂停推流，所以不能停。 */
-const PING_MS = 1000;
 /** 派生状态的刷新周期。派生值已量化到秒，实际每秒最多一次 setState。 */
 const TICK_MS = 500;
 
@@ -103,7 +101,7 @@ export function useRcLinkState({
     }
   }, [backendPongAgeMs]);
 
-  // 心跳发送：会话内不停（窗口失焦也发，否则对端会当断线）。
+  // 心跳：抽到 `useRcHeartbeat`（手机会话壳共用同一份实现，规则 11.1）。
   // 注意这里**不**用 resolve/reject 判活性——那只是本地 IPC 的结果。
   useEffect(() => {
     localPongAt.current = 0;
@@ -113,14 +111,8 @@ export function useRcLinkState({
     // 就判 failed，加载态不许永远演「连接中」（U3）。单调域，会话中途改系统时间不影响。
     sessionStartRef.current = performance.now();
     setSnap(INITIAL);
-    const t = window.setInterval(() => {
-      // ping 载荷的 ts 保持 epoch：它跨进程给对端算 RTT，两端唯一公共基座是墙钟。
-      void rcSendInput({ kind: "ping", ts: Date.now() }).catch(() => {
-        /* 发送失败由 pong 新鲜度兜底判定，不在这里下结论 */
-      });
-    }, PING_MS);
-    return () => window.clearInterval(t);
   }, [sessionId]);
+  useRcHeartbeat(sessionId);
 
   // 后端 RTT 变化 ⇒ 收到过 pong（退化判据）
   useEffect(() => {

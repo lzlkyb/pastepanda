@@ -1,8 +1,7 @@
 /**
- * KnowledgeToolbar.tsx —— 知识模式中栏顶部：面包屑 + 新建 + 搜索/提问。
+ * KnowledgeToolbar.tsx —— 知识模式中栏顶部：面包屑、新建、搜索与视图控件。
  *
- * 从 `KnowledgeView` 里抽出来的：那边已经恰好 300 行（规则 #7 的上限），
- * 再加一个「＋」就超了。此处正好是一块完整的展示层，不担任何数据职责。
+ * 从 `KnowledgeView` 里抽出来的展示层，不担任何数据职责。
  *
  * 「⋯ 更多」已搬到顶栏的模式专属段，见 `KbTopBarActions`：那里面是导入/导出/MCP/回收站，
  * 全是对**整个知识库**做的事，与当前在哪个文件夹无关。
@@ -48,14 +47,13 @@ export function KnowledgeToolbar({
   onNew: () => void;
   /** 新建按钮的悬停提示。由调用方给：选「全部」时落点并不是面包屑上那个名字 */
   newHint: string;
-  /** 字段视图的三个图标（B2 #9）。塞在**搜索行内**，不另开一行——
-   *  下面那句注释就是为这个写的：480px 宽的窗口里多一行就少两条笔记 */
+  /** 视图控件另占一行，让三栏布局下的搜索框保留完整输入宽度。 */
   controls?: React.ReactNode;
   /** 已生效选项的 chips 行。**默认态它自己返回 null**，所以不占行高 */
   chips?: React.ReactNode;
   /**
    * 问答可用（AI 开关开着）。关着时切换器**整个不渲染**，不是置灰
-   * （规则 #16：未启用 = 零可见零请求零费用）。此时这一行与做这个功能之前一模一样。
+   * （规则 #16：未启用 = 零可见零请求零费用）。搜索框仍保留放大镜标识。
    */
   qaEnabled: boolean;
   mode: KnowledgeMode;
@@ -243,8 +241,13 @@ export function KnowledgeToolbar({
             </button>
           )}
         </div>
-        {controls}
       </div>
+
+      {controls && (
+        <div className={styles.viewBar} role="group" aria-label="笔记视图">
+          {controls}
+        </div>
+      )}
 
       {chips}
     </>

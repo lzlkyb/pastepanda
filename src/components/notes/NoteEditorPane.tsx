@@ -28,6 +28,7 @@ export function NoteEditorPane({
   onSave,
   /** 把 openSearch 交给外层标题栏（预览态也要能点「查找」） */
   onOpenSearch,
+  detailSurface = false,
 }: {
   /** 挂载时的初值。**变了也不会重建编辑器**（hook 的装配只跟 ready），
    *  所以换笔记时必须靠外层 key 重建本组件——NoteDialog 那边已经这么做了。 */
@@ -44,6 +45,8 @@ export function NoteEditorPane({
   /** Ctrl+S：与底部「保存」同一条路 */
   onSave: () => void;
   onOpenSearch?: (fn: () => void) => void;
+  /** 宽屏第三栏的阅读留白；弹窗维持原排版。 */
+  detailSurface?: boolean;
 }) {
   /**
    * 语言与编辑增强。hook 要的是 `(ctx) => Extension`（Extension 可以是数组）。
@@ -87,7 +90,7 @@ export function NoteEditorPane({
   }, [onOpenSearch, bridge]);
 
   return (
-    <div className={styles.split}>
+    <div className={`${styles.split}${detailSurface ? ` ${styles.detailSplit}` : ""}`}>
       {/* ❗ 编辑区**始终挂着**，仅预览时靠 CSS 隐而不是不渲染。
           CodeMirror 的初值只在挂载时读一次（见下面的 hook 注释），
           卸掉再挂会把用户在编辑态敲的、还没提交给 state 的那一小段丢掉，

@@ -21,8 +21,6 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "shell:default",
-    "clipboard-manager:default",
-    "global-shortcut:default",
     "dialog:default",
     "fs:default",
     "fs:allow-write-file",

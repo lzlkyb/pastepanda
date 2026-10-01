@@ -32,7 +32,7 @@
   align-items: center;
   gap: 10px;
   padding-left: 14px;
-  background: var(--card-bg);
+  background: var(--section-bg);
   border-bottom: 1px solid var(--border-color);
   /* 不加投影：标题栏与下方页面之间不要凹凸感（A 方案稿此条无 box-shadow，
      实现史的 shadow-md 让整条看起来浮在内容之上，2026-09-23 按用户反馈去掉） */
@@ -423,13 +423,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 设备行 = 一张卡片（C）。质感升级三级浮起（B 方案 §2）：
-   静止 --shadow-sm 近影（不再平贴）→ hover 上浮 1px + --shadow-md →
-   选中 = --card-selected-* 主题适配浅底 + 左缘 2px 竖条（下方 ::before）。
-   🔴 浅底沿用 09-22 调研出的 --card-selected-bg 而不是稿子的 accent 55% 混白：
-   逐主题比对过 accent-light 与选中底在 6 套里有 5 套同值（撞色实害），
-   稿子的「accent 浅底」意图由 card-selected-* 承担，「竖条 + 阴影升级」照稿新增。
-   stagger 入场动画见文件末尾「质感升级 · 微动画」块。 */
+/* 静止行贴合侧栏；悬停给近影，选中用主题背景与轮廓常驻标明。 */
 .deviceItem {
   position: relative; /* 标签色点堆（.tagDots）的定位基准 */
   min-height: 48px;
@@ -442,7 +436,7 @@
   background: var(--card-bg);
   border: 1px solid transparent;
   border-radius: 8px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   transition:
     box-shadow var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
     transform var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
@@ -451,8 +445,8 @@
 }
 
 .deviceItem:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  background: var(--hover);
+  box-shadow: var(--shadow-sm);
 }
 
 /* —— 设备组织（2026-09-26 对齐稿①，RustDesk TagPainter 对应物）——
@@ -629,14 +623,17 @@
   cursor: pointer;
 }
 
-/* 选中态三要素（B 方案 §2）：主题适配浅底（保留 09-22 调研结论）+ 左缘竖条 + 阴影。
-   阴影用 --card-selected-shadow（光环 + 投影，比 hover 的 --shadow-md 更强调），
-   不降回稿子的 --shadow-md——选中必须强于 hover，否则浮起层级是断的。 */
+/* 选中态在悬停结束后仍靠主题背景、描边和左侧标记辨认。 */
 .deviceItemSelected {
   position: relative;
   background: var(--card-selected-bg);
   border-color: var(--card-selected-border);
-  box-shadow: var(--card-selected-shadow);
+  box-shadow: var(--shadow-sm);
+}
+
+.deviceItemSelected:hover {
+  background: var(--card-selected-bg);
+  box-shadow: var(--shadow-sm);
 }
 
 .deviceItemSelected::before {
@@ -712,12 +709,9 @@
   background: var(--text-muted);
 }
 
-/* 质感升级 3.1：在线点呼吸 —— 全工作台**唯一**常驻动画（B 方案红线②）。
-   只动 opacity（合成层属性，9px 小元素零重排）；@keyframes 定义在文件末尾
-   「质感升级 · 微动画」块。 */
+/* 在线状态由绿点与文字同时表达；静态显示，窗口闲置时没有常驻动画。 */
 .deviceIcon[data-tone="ok"]::after {
   background: var(--success);
-  animation: rcBreathe 2s ease-in-out infinite;
 }
 
 .deviceIcon[data-tone="checking"]::after {
@@ -768,13 +762,12 @@
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  /* 质感升级（B 方案）：过渡统一走 --motion-* 令牌；transform 100ms 是按压档
-     （设计稿 §4：fast 120ms，按压再快一档），:active scale(.97) 见下方共享块。 */
+  /* 按下动作与其余控件共用 200ms 位移反馈。 */
   transition:
     background-color var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
     border-color var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
     color var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
-    transform 100ms cubic-bezier(0.2, 0, 0, 1);
+  transform var(--motion-base) cubic-bezier(0.2, 0, 0, 1);
 }
 
 .probeButton:hover:not(:disabled) {
@@ -789,6 +782,7 @@
 }
 
 .connectButton,
+.connectButtonSec,
 .dangerButton {
   min-height: 32px;
   display: inline-flex;
@@ -804,7 +798,7 @@
     background-color var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
     border-color var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
     color var(--motion-base) cubic-bezier(0.2, 0, 0, 1),
-    transform 100ms cubic-bezier(0.2, 0, 0, 1);
+    transform var(--motion-base) cubic-bezier(0.2, 0, 0, 1);
 }
 
 .primaryButton,
@@ -852,7 +846,8 @@
 
 .primaryButton:disabled,
 .secondaryButton:disabled,
-.connectButton:disabled {
+.connectButton:disabled,
+.connectButtonSec:disabled {
   opacity: 0.48;
   cursor: not-allowed;
 }
@@ -862,15 +857,13 @@
   cursor: not-allowed;
 }
 
-/* 质感升级 · 反馈三件套之二三（design/远程电脑-质感升级-交互反馈与微动画-设计稿.html §1）：
-   按压 scale(.97)（100ms，transition 在上面各组声明里）+ 键盘焦点环。
-   工作台全部可点控件一组通吃——只改按钮会让同一屏里「有的沉有的不沉」。 */
+/* 操作控件共用按下反馈与键盘焦点环。 */
 .primaryButton:active:not(:disabled),
 .secondaryButton:active:not(:disabled),
 .probeButton:active:not(:disabled),
 .connectButton:active:not(:disabled),
+.connectButtonSec:active:not(:disabled),
 .dangerButton:active:not(:disabled),
-.connectCaret:active:not(:disabled),
 .receiveOn:active:not(:disabled),
 .receiveOff:active:not(:disabled),
 .deviceSelect:active:not(:disabled),
@@ -884,8 +877,8 @@
 .secondaryButton:focus-visible,
 .probeButton:focus-visible,
 .connectButton:focus-visible,
+.connectButtonSec:focus-visible,
 .dangerButton:focus-visible,
-.connectCaret:focus-visible,
 .receiveOn:focus-visible,
 .receiveOff:focus-visible,
 .deviceSelect:focus-visible,
@@ -991,6 +984,10 @@
 
 .pairExchange { display: grid; gap: 4px; }
 .pairCodeRow,
+/* 单码会合的两个动作入口。等宽并排：一边是「我出示」一边是「对方给我」，
+   看着就是两条平权的路，不像主/次按钮那样暗示只有一条是对的。 */
+.pairRoleBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pairRoleBtns button { min-height: 32px; }
 .pairPeerRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pairLabel { flex: 0 0 auto; color: var(--text-secondary); font-size: 11px; font-weight: 600; }
 .pairShortCode { flex: 1; min-width: 0; color: var(--text-primary); font: 600 17px/1.4 Consolas, monospace; letter-spacing: 0.08em; white-space: nowrap; user-select: text; }
@@ -1005,7 +1002,9 @@
   background: var(--card-bg);
   color: var(--text-primary);
   font: 12px/1.4 Consolas, monospace;
+  transition: border-color 150ms cubic-bezier(0.2, 0, 0, 1), background-color 150ms cubic-bezier(0.2, 0, 0, 1);
 }
+.pairPeerRow input:focus-visible { border-color: var(--accent); }
 .pairPrimary,
 .pairSecondary {
   flex: 0 0 auto;
@@ -1019,13 +1018,19 @@
 }
 .pairPrimary { border: 1px solid var(--accent-solid); background: var(--accent-solid); color: var(--text-on-accent); }
 .pairSecondary { border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); }
+.pairPrimary,
+.pairSecondary { transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1); }
+.pairPrimary:active:not(:disabled),
+.pairSecondary:active:not(:disabled) { transform: translateY(1px); }
 .pairPrimary:disabled { opacity: 0.55; cursor: default; }
-.pairPrimary:hover:not(:disabled) { filter: brightness(1.08); }
+.pairPrimary:hover:not(:disabled) { background: var(--accent-strong); }
 .pairSecondary:hover:not(:disabled) { background: var(--hover); }
 .pairSecondary:disabled { opacity: 0.55; cursor: default; }
 .pairNotice,
 .pairNoticeSuccess,
 .pairNoticeError { padding: 6px 8px; border-radius: 8px; font-size: 11px; line-height: 1.35; }
+.pairFeedback { min-height: 24px; }
+.pairHint { color: var(--text-muted); font-size: 11px; line-height: 24px; }
 .pairNotice { color: var(--text-secondary); background: var(--card-bg); }
 .pairNoticeSuccess { color: var(--success); background: var(--success-bg); }
 .pairNoticeError { color: var(--danger); background: var(--danger-bg); }
@@ -1313,6 +1318,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  animation: rcRiseIn 200ms cubic-bezier(0.05, 0.7, 0.1, 1);
 }
 
 .detailName h2 {
@@ -1427,30 +1433,6 @@
   color: var(--text-secondary);
 }
 
-/* 在线 pill 与详情状态行共用同一份当前可连接状态（稿 .pill.ok：绿字浅底 + 同色描边）。 */
-.detailPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  color: var(--success);
-  background: var(--success-bg);
-  border: 1px solid color-mix(in srgb, var(--success) 25%, transparent);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* 稿 pill 里那颗绿点（代替原 Check 图标：状态语义由颜色承担，光圈同稿 .dot.ok）。 */
-.detailPillDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
-}
-
 .onlineText[data-tone="ok"] {
   color: var(--success);
 }
@@ -1481,15 +1463,30 @@
   font-size: 13px;
 }
 
-.detailActions .connectCaret,
-.detailActions .connectCaretSec {
-  min-width: 30px;
-}
-
 .detailActions .secondaryButton {
   min-height: 42px;
   padding: 0 18px;
   font-size: 13px;
+}
+
+.detailActions .connectButton,
+.detailActions .connectButtonSec,
+.detailActions .secondaryButton {
+  box-shadow: var(--shadow-sm);
+  transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1), border-color 150ms cubic-bezier(0.2, 0, 0, 1), box-shadow 150ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.detailActions .connectButton:hover:not(:disabled),
+.detailActions .connectButtonSec:hover:not(:disabled),
+.detailActions .secondaryButton:hover:not(:disabled) {
+  box-shadow: var(--shadow-md);
+}
+
+.detailActions .connectButton:active:not(:disabled),
+.detailActions .connectButtonSec:active:not(:disabled),
+.detailActions .secondaryButton:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 .heroChips {
@@ -1499,8 +1496,7 @@
   gap: 8px;
 }
 
-/* 中性信息胶囊（稿 .chip：32px 高白玻璃 + 极浅投影）：状态 pill 之外的一排
-   「事实」标签，刻意比 .detailPill 弱一档——在线那个绿色语义 pill 才是主角。 */
+/* 中性信息胶囊保持贴地，状态点和连接按钮承担主要强调。 */
 .heroChip {
   display: inline-flex;
   align-items: center;
@@ -1511,7 +1507,7 @@
   background: var(--card-bg);
   /* ui-rule-ok: 事实胶囊的轮廓——它的底色是 .card-bg（比状态 pill 弱一档是刻意的），去掉边框这排标签就没有边界 */
   border: 1px solid var(--border-color);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: none;
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
@@ -1545,7 +1541,7 @@
   align-items: flex-start;
   gap: 8px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--card-bg);
   /* ui-rule-ok: 事实卡的轮廓——卡片与详情面底色同层（都是 --card-bg），不画线四张卡会连成一片 */
   border: 1px solid var(--border-color);
@@ -1707,8 +1703,7 @@
 }
 
 
-/* 最近会话：设备名不重复（在页头），三列 = 能力+时间 / 时长 / 结果。
-   行卡片化（C）——容器透明，每行自己是一张卡。 */
+/* 最近会话合在一个列表容器内，减少连续卡片带来的视觉噪音。 */
 .recentBlock {
   margin-top: 24px;
 }
@@ -1716,7 +1711,11 @@
   margin-bottom: 4px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
 }
 .recentLine {
   display: grid;
@@ -1726,11 +1725,13 @@
   /* 46 = A 的 5 条能放进 dbody、又容得下 21px 药丸的那个值（60 放不下 5 条） */
   min-height: 46px;
   padding: 0 16px;
-  border-radius: 8px;
-  background: var(--card-bg);
+  background: transparent;
   font-size: 13px;
   color: var(--text-secondary);
 }
+.recentLine + .recentLine { border-top: 1px solid var(--border-color); }
+.recentLine:hover { background: var(--hover); }
+.manageReveal { animation: rcRiseIn 200ms cubic-bezier(0.05, 0.7, 0.1, 1); }
 .recentLine span {
   font-variant-numeric: tabular-nums;
 }
@@ -1785,131 +1786,6 @@
 }
 
 /* ═══ UX 体检落地（2026-09-23，design/远程电脑-UX体检-操作友好度-设计稿.html）═══ */
-
-/* U1：连接分体按钮 —— 主按钮沿用默认档，⌄ 展开档位菜单。
-   形态照稿：主按钮与 ⌄ 无缝拼接（左圆右直 / 右圆左直、相连无隙）。
-   菜单照稿是挂在按钮下方的 196px 小浮层；但侧栏列表是滚动容器，
-   absolute 浮层会被 overflow 裁掉（判据 11 两次同款事故），所以用
-   position:fixed（视口定位，不受任何祖先 overflow 影响）+ 透明背板
-   （点外即收、背板挡住滚轮使列表不滚，菜单位置因此不会漂移）。 */
-.connectGroup {
-  display: inline-flex;
-  align-items: stretch;
-}
-.connectGroup > button:first-child {
-  border-radius: 8px 0 0 8px;
-  border-right: 0;
-}
-.connectCaret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  min-height: 28px;
-  padding: 0;
-  border-radius: 0 8px 8px 0;
-  font-size: 12px;
-  color: var(--text-on-accent);
-  background: var(--accent-solid);
-  border-color: var(--accent-solid);
-  /* 方案 A（分隔线式 split button）：与主按钮之间的 1px 半透明白竖线，
-     让两块读成「一颗按钮的两个分区」而不是贴上去的色疤。
-     白取 --text-on-accent（A2 禁写死颜色），35% 与设计稿一致。 */
-  border-left: 1px solid color-mix(in srgb, var(--text-on-accent) 35%, transparent);
-}
-
-/* hover 整组联动：鼠标落在分体任一半，两块一起变深——
-   否则交界处出现深浅不一的两块蓝（2026-09-23 用户截图实测）。
-   🔴 caret 的白分隔线是 border-left-color，会被下面的 border-color 简写
-   一起刷成深蓝，必须在其后单独钉回。 */
-.connectGroup:hover > .connectButton:not(:disabled),
-.connectGroup:hover > .connectCaret:not(:disabled) {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
-}
-
-.connectGroup:hover > .connectCaret:not(:disabled) {
-  border-left-color: color-mix(in srgb, var(--text-on-accent) 35%, transparent);
-}
-
-.connectGroup:hover > .connectButtonSec:not(:disabled),
-.connectGroup:hover > .connectCaretSec:not(:disabled) {
-  border-color: var(--text-secondary);
-}
-
-.connectCaret:hover:not(:disabled) {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
-}
-.connectCaret:disabled {
-  opacity: 0.5;
-}
-/* ⌄ 跟随主按钮的降级形态（被禁设备：主按钮中性描边，⌄ 同款，不搞双色拼盘）。
-   主按钮 border-right: 0，这里补 1px 描边分隔线，接缝不断线。 */
-.connectCaretSec {
-  color: var(--text-primary);
-  background: var(--card-bg);
-  border-color: var(--border-color);
-  border-left: 1px solid var(--border-color);
-}
-.connectCaretSec:hover:not(:disabled) {
-  background: var(--card-bg);
-  border-color: var(--text-secondary);
-}
-.menuBackdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 29;
-  background: transparent;
-  cursor: default;
-}
-.capMenu {
-  position: fixed;
-  z-index: 30;
-  width: 196px;
-  display: grid;
-  gap: 1px;
-  padding: 5px;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: var(--shadow-md);
-  text-align: left;
-  /* 质感升级 3.2：从右上（按钮方向）长出来，一次性 140ms（B 方案 §3） */
-  transform-origin: top right;
-  animation: rcPopIn var(--motion-base) cubic-bezier(0.2, 0, 0, 1);
-}
-.capMenu button {
-  display: block;
-  width: 100%;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  text-align: left;
-  color: var(--text-primary);
-  font-size: 13px;
-}
-.capMenu button:hover {
-  background: var(--hover);
-}
-.capMenu small {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.capMark {
-  font-style: normal;
-  margin-right: 4px;
-  color: var(--accent);
-  font-weight: 600;
-}
-.capMarkOff {
-  font-style: normal;
-  margin-right: 4px;
-  color: var(--text-muted);
-}
 
 /* U1/U5：被禁设备的连接按钮降级为中性描边（deny 挡进不挡出，仍可点击） */
 .connectButtonSec {
@@ -2005,34 +1881,7 @@
   padding: 2px 4px;
 }
 
-/* ═══ 质感升级 · 微动画（2026-09-23，design/远程电脑-质感升级-交互反馈与微动画-设计稿.html §3）
-   红线（AGENTS.md 规则 8 + 设计稿 §4）：
-   ① 只动 transform / opacity（shimmer 例外：background-position 位移动画，
-      仅加载态短暂出现，非常驻）；② 常驻动画仅绿点呼吸一个；③ 不引入玻璃拟态采样
-      （规则 8.3，该词在此不能写，守卫是字符串包含检查）；
-   ④ stagger 只在列表出现时播一次（React 复用 DOM 节点，重渲染不重播）；
-   ⑤ 全部动效在 prefers-reduced-motion 兜底块统一关闭。 */
-
-@keyframes rcBreathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-
-@keyframes rcPopIn {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translateY(-3px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
+/* 入场只播放一次；窗口闲置时不运行持续装饰动效。 */
 
 @keyframes rcShimmer {
   from {
@@ -2074,34 +1923,249 @@
 .skeletonRow:nth-child(2) { width: 60%; }
 .skeletonRow:nth-child(3) { width: 40%; }
 
-/* 3.5 列表逐项入场：240ms + 每行 40ms 延迟，仅入场时一次。
-   backwards = 延迟期间保持 from 态（透明），避免先闪现再重播。 */
-/* 方案 A 后行嵌在分组 div 里，不再是 .deviceList 的直系子节点 */
-.deviceList .deviceItem {
-  animation: rcRiseIn var(--motion-slow) cubic-bezier(0.2, 0, 0, 1) backwards;
-}
-
-.deviceList .deviceItem:nth-child(2) { animation-delay: 40ms; } /* ui-rule-ok: stagger 步进 40ms/行是设计稿 §3.5 的规格，四档时长管的是过渡，入场错峰不适用 */
-.deviceList .deviceItem:nth-child(3) { animation-delay: 80ms; } /* ui-rule-ok: 同上，stagger 错峰步进 */
-.deviceList .deviceItem:nth-child(4) { animation-delay: 120ms; } /* ui-rule-ok: 同上 */
-.deviceList .deviceItem:nth-child(5) { animation-delay: 160ms; } /* ui-rule-ok: 同上 */
-
 @media (prefers-reduced-motion: reduce) {
-  /* 反馈三件套 + 三级浮起：过渡全部即时 */
+  /* 大位移与列表加载动效关闭；全局兜底处理其余过渡。 */
   .primaryButton,
   .secondaryButton,
   .probeButton,
   .connectButton,
+  .connectButtonSec,
   .deviceItem {
     /* ui-rule-ok: 0.01ms 是 reduce 兜底的惯用「近零时长」，不是设计档 */
     transition-duration: 0.01ms;
   }
 
-  /* 微动画全部关闭（含常驻的绿点呼吸） */
-  .deviceIcon[data-tone="ok"]::after,
-  .capMenu,
+  .detailName,
+  .manageReveal,
   .skeletonRow,
-  .deviceList .deviceItem {
+  .deviceItem {
     animation: none;
   }
+}
+
+/* ── 常驻配对卡（2026-09-29 统一入口：`rc/RcNearbyPairPane`）
+   设计稿：design/远程电脑-一键配对-统一入口-设计稿.html §1/§2。
+   位置：设备页主区顶部、设备详情上方——配对入口不再藏在折叠里。 */
+.nearbyCard {
+  flex: 0 0 auto;
+  margin: 12px 12px 0;
+  padding: 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--card-bg);
+}
+
+.nearbyCardHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.nearbyCardTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nearbyCardSub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 4px 0 8px;
+}
+
+.nearbyCardList {
+  margin-bottom: 12px;
+}
+
+/* 核对屏在卡内的一层间距。RcPairPin 自带 .lanPairBox 边框，这里只控间距。 */
+.nearbyVerify {
+  margin-top: 8px;
+}
+
+/* 主按钮永远在：附近为空时它就是第一行动（U3：空态要说清怎么让它不空）。 */
+.nearbyCardMainBtn {
+  width: 100%;
+  min-height: 32px;
+}
+
+.nearbyCardFoot {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+/* 通道未启动的一行小字。卡照渲、按钮仍是第一行动，不开门也不引导。 */
+.nearbyChannelHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+/* 暂停接收的门控提示。🔴 文案只说真实行为：rc_enabled 挡的是「别人连你」，
+   不挡局域网招呼包（问候包由 presence 线程发，与开关无关）——所以写的是
+   「仍能配对、连不上」，不是「看不到你」。 */
+.nearbyPaused {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+/* 暂停提示里那个「去开启」。U7：点击目标 ≥24×24——高度钉 24px，
+   不跟随 11.5px 字号缩成一条线。 */
+.nearbyPausedBtn {
+  margin-left: auto;
+  flex: none;
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning);
+  background: transparent;
+  border: 1px solid currentcolor;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.nearbyPausedBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
+.nearbyPausedBtn:focus-visible {
+  outline: 2px solid var(--warning);
+  outline-offset: 2px;
+}
+
+.nearbyPausedBtn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+/* 配对收尾态：这一轮没成（对方取消 / 超时）。给原因 + 重新发起，
+   不静默弹回列表——那正是 U3 说的「失败被渲染成空」。 */
+.nearbyEnded {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.nearbyEndedBtns {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ── 配对码遮罩 / 亮码 / 读秒（2026-09-29 设计稿 §1） ──
+   遮罩态用虚线 + 灰底，明说「这里有一颗码但没亮」——不是空着让用户猜。
+   码值亮着时是等宽大字 + 读秒；读秒 < 60s 转警示色但不弹不跳。 */
+.pairCodeBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--card-bg);
+}
+.pairCodeBarMasked {
+  border-style: dashed;
+  background: var(--section-bg);
+}
+.pairMaskedLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.pairDigits {
+  flex: 1;
+  min-width: 0;
+  font: 700 22px/1 ui-monospace, Consolas, monospace;
+  letter-spacing: 4px;
+  color: var(--accent);
+  white-space: nowrap;
+  user-select: text;
+}
+/* tabular-nums：读秒每 250ms 变一次，等宽数字才不会左右抖 */
+.pairTtl {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.pairTtlHot { color: var(--warning); font-weight: 600; }
+.pairGhostSm {
+  flex: none;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  border-radius: var(--radius-md, 8px);
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-primary);
+}
+.pairGhostSm:disabled { opacity: 0.5; }
+
+/* 会合码二维码（RcShortCodeQr）：画好才显示，画不出来不占位（明文码兜底） */
+.pairQr {
+  display: block;
+  margin: 8px auto 0;
+  border-radius: 8px;
+}
+.pairQr[data-ready="0"] { display: none; }
+
+/* 二维码弹框（2026-10-01 用户拍板：默认藏，点了再弹）。
+   遮罩用前景色半透明，六套主题下都成立（不写死颜色）。 */
+.pairQrBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
+}
+.pairQrDialog {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 260px;
+  padding: 18px 22px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--card-bg);
+  box-shadow: var(--shadow-md, var(--shadow-sm));
+}
+.pairQrTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.pairQrDialog .pairQr { margin: 4px 0 0; }
+.pairQrDigits {
+  font: 700 18px/1 ui-monospace, Consolas, monospace;
+  letter-spacing: 4px;
+  color: var(--accent);
+  user-select: text;
+}
+
+/* 码行 + 动作行分两排：270px 侧栏一行塞「码+读秒+两个按钮」会互相挤压
+   （2026-10-01 联调反馈「全部重叠」）。 */
+.pairCodeActs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }

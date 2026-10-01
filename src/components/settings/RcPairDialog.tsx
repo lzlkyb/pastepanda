@@ -13,7 +13,7 @@
  * | 入口屏（附近设备主路 + 折叠「高级」两条码路） | `RcPairModeSelect` + `RcNearbyList` |
  * | 生成配对码 | `RcPairCreatePane`（原有） |
  * | 粘贴配对码（含剪贴板「填入」询问） | `RcPairPastePane`（拆出） |
- * | 6 位数字核对 | `RcPairPin`（拆出） |
+ * | 配对码核对（8 位） | `RcPairPin`（拆出） |
  *
  * 局域网那一侧的状态与轮询在 `hooks/useRcNearbyPair`。
  *
@@ -27,7 +27,7 @@
  * # 显示优先级：局域网配对**压过**两条码路那两屏
  *
  * 对方在局域网里主动发起时，用户可能正停在「生成配对码」那一屏。
- * 6 位数字是**安全相关的提示**，不能让它在别的屏后面等着——所以只要有一轮
+ * 配对码是**安全相关的提示**，不能让它在别的屏后面等着——所以只要有一轮
  * 配对在进行，就盖住上面。取消后回到原来那一屏（`mode` 没被清掉）。
  *
  * # 按钮可用性的唯一判据
@@ -43,6 +43,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { useRcNearbyPair } from "@/hooks/useRcNearbyPair";
+import { usePairCodeVisibility } from "@/hooks/usePairCodeVisibility";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
@@ -72,10 +73,12 @@ export function RcPairDialog({
   // 🔴 Esc 必须由弹层自己接（2026-09-27 P1-2）。RcPairLayer 挂在设置页里
   // （RcSection.tsx:304），App 那条全局 Esc 链**不认识**这个弹窗，按 Esc 会
   // 一路落到 `close_dialog: "settings"` —— 整个设置页被关掉，正在核对的
-  // 6 位 PIN / 刚生成的配对码一起丢（与 useDialogEscape 头注释里 2026-09-06
+  // 正在核对的配对码 / 刚生成的配对码一起丢（与 useDialogEscape 头注释里 2026-09-06
   // 那次事故同型）。捕获期 + stopPropagation 抢在全局链之前截断。
   useDialogEscape(onClose);
   const near = useRcNearbyPair();
+  /** 出示屏（PP1 凭证）的遮罩 / 亮码。规则见 usePairCodeVisibility。 */
+  const cred = usePairCodeVisibility();
   const [mode, setMode] = useState<"create" | "paste" | null>(null);
   const [name, setName] = useState(rc.identity?.device_name ?? "");
   const [created, setCreated] = useState<string | null>(null);
@@ -182,6 +185,12 @@ export function RcPairDialog({
                 toast={toast}
                 onGenerate={handleCreate}
                 onBack={() => setMode(null)}
+                revealed={cred.vis === "shown"}
+                onReveal={() => {
+                  // 已生成过就直接亮；否则先生成再亮（遮罩态不留任何明文）
+                  if (!created) void handleCreate().then(() => cred.show());
+                  else cred.show();
+                }}
               />
             ) : mode === "paste" ? (
               <RcPairPastePane

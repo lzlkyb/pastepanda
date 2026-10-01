@@ -239,6 +239,8 @@ fn step_hover(app: &AppHandle, window: &WebviewWindow) {
     if inside != was {
         HOVERING.store(inside, Ordering::SeqCst);
         // inside → 收事件（false = 不忽略光标）；outside → 穿透（true = 忽略光标）
+        // （点击穿透是桌面窗口概念，mobile 无该 API）
+        #[cfg(desktop)]
         let _ = window.set_ignore_cursor_events(!inside);
     }
 

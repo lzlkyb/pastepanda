@@ -149,7 +149,7 @@ fn create_panel(app: &AppHandle) {
         let (panel_w, panel_h) = panel_size(&layout);
         let pos = calc_position(panel_w, panel_h);
 
-        match WebviewWindowBuilder::new(
+        let qp_builder = WebviewWindowBuilder::new(
             app,
             WINDOW_LABEL,
             tauri::WebviewUrl::App("quickpaste.html".into()),
@@ -157,12 +157,15 @@ fn create_panel(app: &AppHandle) {
         .title("")
         .inner_size(panel_w, panel_h)
         .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(false)
-        .visible(false)
-        .build()
+        .visible(false);
+        // 置顶/无边框/跳过任务栏/阴影是桌面窗口概念（mobile 无这些属性）
+        #[cfg(desktop)]
+        let qp_builder = qp_builder
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .shadow(false);
+        match qp_builder.build()
         {
             Ok(window) => {
                 let _ = window.set_position(pos);

@@ -363,37 +363,24 @@ pub fn save_config(
         ));
     }
 
-    // 刷新剪贴板监听器的 auto_strip 缓存，避免每次都锁数据库读取配置
+    // 刷新剪贴板监听器的进程内缓存（避免每次都锁数据库读配置）。
+    // 🔴 四项都**只在本报文带了对应键时**才刷新，判据收口在
+    // `clipboard_monitor::cache_patch_from`——理由写在那儿（局部 save_config 会把
+    // 隐私开关的运行中缓存静默清零）。上面栈浮标那三行是同一不变量的更早一份实现。
     if let Some(monitor) = app.try_state::<crate::clipboard_monitor::ClipboardMonitor>() {
-        let auto_strip = config
-            .get("auto_strip")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        monitor.update_auto_strip_cache(auto_strip);
-
-        // 修复 U36：刷新敏感内容防护缓存（默认关闭，与 lib.rs 和前端 DEFAULT_CONFIG 对齐）
-        let skip_sensitive = config
-            .get("skip_sensitive")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let excluded_apps: Vec<String> = config
-            .get("excluded_apps")
-            .and_then(|v| v.as_str())
-            .map(|s| {
-                s.split(',')
-                    .map(|a| a.trim().to_string())
-                    .filter(|a| !a.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default();
-        monitor.update_sensitive_cache(skip_sensitive, excluded_apps);
-
-        // P1 文档采集：刷新 doc_capture 缓存（默认开启）
-        let doc_capture = config
-            .get("doc_capture")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        monitor.update_doc_capture_cache(doc_capture);
+        let patch = crate::clipboard_monitor::cache_patch_from(&config);
+        if let Some(auto_strip) = patch.auto_strip {
+            monitor.update_auto_strip_cache(auto_strip);
+        }
+        if let Some(skip_sensitive) = patch.skip_sensitive {
+            monitor.update_skip_sensitive_cache(skip_sensitive);
+        }
+        if let Some(excluded_apps) = patch.excluded_apps {
+            monitor.update_excluded_apps_cache(excluded_apps);
+        }
+        if let Some(doc_capture) = patch.doc_capture {
+            monitor.update_doc_capture_cache(doc_capture);
+        }
     }
 
     Ok(())

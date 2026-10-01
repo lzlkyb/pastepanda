@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean-dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PastePanda · 截图整改后 1:1 实景稿</title>
+
+<!-- 关键：这三张表是**产品真用的样式表**，不是抄写件。
+     与截图窗入口 src/screenshot-main.tsx 的导入顺序一致（globals → theme → screenshot）。
+     所以本页量出来的每一个像素高度、每一种主题色，都是改完之后应用里会出现的值。 -->
+<link rel="stylesheet" href="../src/styles/globals.css" />
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/styles/screenshot.css" />
+
+<style>
+/* ============ 页面骨架：整屏 = 一次截图会话的透明覆盖层 ============ */
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body { background: #05070d; }
+/* 1:1 的「1:1」指的是**逻辑像素**，不是浏览器窗口大小。
+   真实截图窗是一块全屏透明层，版式公式吃的就是屏幕的 CSS 像素；
+   把公式接到浏览器视口上会得到一个假结论（窗口 540px 宽时，工具栏 907px 必然出界，
+   而那在 1440 屏上根本不会发生）。所以这里固定一块 1440×900 的「屏幕」，
+   再整体缩放到当前窗口 —— 缩放只发生在最后一步，不影响任何一个测量值。 */
+#app { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; flex: none; width: var(--sw, 1440px); height: var(--sh, 900px);
+  transform: scale(var(--k, 1)); overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .65), 0 0 0 1px rgba(148, 168, 255, .22); }
+
+/* 「被截的那块屏」：一块白底文档窗口 + 壁纸。
+   故意留大面积纯白 —— §5⑥ 的结论要在最亮内容上被看见，而不是躲在注释里。 */
+.desk { position: absolute; inset: 0; overflow: hidden;
+  background: linear-gradient(120deg, #1d3a5f 0%, #2b5c86 38%, #10233c 39%, #0b1526 100%); }
+.desk .win { position: absolute; left: 4%; top: 7%; width: 62%; height: 74%;
+  background: #fff; color: #1f2937; border-radius: 10px; box-shadow: 0 24px 70px rgba(0,0,0,.5);
+  overflow: hidden; font-size: 13px; line-height: 1.7; }
+.desk .win .bar { height: 30px; background: #f1f3f7; border-bottom: 1px solid #e2e6ee;
+  display: flex; align-items: center; gap: 6px; padding: 0 12px; color: #6b7280; font-size: 11px; }
+.desk .win .bar i { width: 9px; height: 9px; border-radius: 50%; background: #d7dce4; display: block; }
+.desk .win .doc { padding: 16px 22px; }
+.desk .win h4 { font-size: 17px; margin-bottom: 8px; color: #111827; }
+.desk .win p { color: #374151; margin-bottom: 8px; }
+.desk .win .code { background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 6px;
+  padding: 8px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: #0f3460; }
+.desk .dock { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  display: flex; gap: 10px; padding: 8px 14px; border-radius: 14px;
+  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.2); }
+.desk .dock b { width: 30px; height: 30px; border-radius: 8px; display: block;
+  background: linear-gradient(140deg, #6d7cff, #38bdf8); }
+.desk .dock b:nth-child(2) { background: linear-gradient(140deg, #f472b6, #fb923c); }
+.desk .dock b:nth-child(3) { background: linear-gradient(140deg, #34d399, #06b6d4); }
+
+/* 截图覆盖层：真实截图窗是透明全屏，这里用同样的 #app 承载 */
+.shot-root { position: absolute; inset: 0; }
+
+/* ============ 整改项的补丁层：只在 #app.after 下生效 ============ */
+/* 于是同一个页面能一键对比「整改前 / 整改后」，两边用的都是产品真实 CSS。 */
+
+/* §5② 色名 → 语义名：把色名令牌指向语义令牌，消费方一行不改就等于全量替换（零视觉变化） */
+#app.after { --green: var(--success); --orange: var(--warning);
+  --green-bg: var(--success-bg); --orange-bg: var(--warning-bg); }
+/* §5① 预览色令牌（先给同值，浅色主题日后可各自加深） */
+#app.after { --preview-fixed: #7c6cff; --preview-mask: #ff9f43; --preview-pin: #ec4899; --preview-snap: #ffd75e; }
+#app.after .act-row.pin .ic { color: var(--preview-pin); }
+
+/* §5⑥ 交付态三块面板：窗口级玻璃 → 工具浮层实底（theme.css:228-236 的双轨条文） */
+#app.after .ocr-drawer, #app.after .act-panel, #app.after .pop-layer {
+  background: var(--float-card-bg);
+  border-color: var(--float-card-border);
+  box-shadow: var(--float-card-shadow);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+#app.after .ocr-drawer.inside, #app.after .act-panel.inside { opacity: 1; }
+
+/* §5⑤ 热区下限 24px（用等量负 margin 保住行高，照抄 .hk-close 的既有做法） */
+#app.after .qr-btn { height: 24px; margin: -1px 0; }
+
+/* §3 底部带单一所有者。left / bottom 由 layoutBottomBand() 算完写进 style，
+   CSS 只留排版——带子不再自己声明 bottom，也就没有「第五条写 64 躲开」的可能。 */
+.bottom-stack { position: absolute; bottom: 16px; z-index: 70;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bottom-stack > * { position: static; left: auto; right: auto; bottom: auto; transform: none; }
+
+/* §1 找回条 = .shot-toast 的动作变体 */
+.shot-toast.act { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--shot-bar-text); padding-right: 8px; }
+.shot-toast.act .tray-btn { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px;
+  border: none; border-radius: 6px; background: var(--accent-solid); color: #fff; font-size: 11px;
+  cursor: pointer; font-family: inherit; }
+.shot-toast.act .tray-cd { width: 26px; height: 24px; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--text-muted); font-family: ui-monospace, Consolas, monospace; }
+
+/* §2 OCR 抽屉的三个非成功态 */
+.ocr-state { padding: 14px 12px; display: flex; flex-direction: column; gap: 9px; align-items: flex-start; }
+.ocr-state .t { font-size: 12px; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+.ocr-state.err .t { color: var(--danger); }
+.ocr-state .d { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+.ocr-state .retry { height: 26px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--accent-border);
+  background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; font-family: inherit; }
+.ocr-state .retry:hover { background: var(--hover); }
+.ocr-state .ocr-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(157,178,208,.28);
+  border-top-color: var(--shot-ocr); animation: pp-spin .8s linear infinite; display: inline-block; }
+@keyframes pp-spin { to { transform: rotate(360deg); } }
+
+/* §3 出口面板折叠：被收起来的 6 行不删，换成一行「展开」 */
+.act-row.expand .ic { background: transparent; border: 1px dashed var(--border-color); color: var(--text-muted); }
+.act-row.expand .lbl { color: var(--text-muted); }
+
+/* §5④ 原先写在内联 style 上的两块，搬进类 */
+#app.after .bottom-stack .ocr-toast { cursor: pointer;
+  border-color: color-mix(in srgb, var(--success) 55%, transparent); }
+.act-sens { padding: 6px 12px; font-size: 11px; line-height: 1.5; color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); }
+.act-row.insert { border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* §3 的连带项（静态可核对）：screenshot.css:1258-1260 的入场 keyframes 到值是
+   `transform: translate(-50%, 0)`，而 `.attr-bar`（:294）本身没有任何 transform——
+   因为定位早就从 CSS 居中改成了 JS 写 left。两条同时成立的结果是：属性条每次挂载，
+   那 0.26s 里它都停在 JS 位置**左边半个身位**（435px 宽的条 = 217px），动画结束才跳回；
+   选区贴屏幕左侧时这半个身位就在屏外。收进竖排栈的 .shot-toast / .picker-bar 是同一件事
+   （base 被 .bottom-stack > * 改成 transform:none，keyframes 又把 -50% 加回来）。改法：入场只动 Y。 */
+#app.after .attr-bar { animation-name: ppAttrIn; }
+@keyframes ppAttrIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+#app.after .bottom-stack .shot-toast, #app.after .bottom-stack .picker-bar,
+#app.after .bottom-stack .shot-hint { animation-name: ppStackIn; }
+@keyframes ppStackIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* 整改点角标：只在「整改后」显示，指向屏幕上刚发生变化的地方 */
+.mark { position: absolute; z-index: 90; width: 17px; height: 17px; border-radius: 50%;
+  display: none; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+  background: var(--accent-solid); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.45); }
+#app.after.showmarks .mark { display: flex; }
+
+/* ============ 右侧控件栏：设计稿外壳，不属于产品 UI ============ */
+#rail { position: fixed; right: 12px; top: 12px; width: 236px; z-index: 200;
+  background: rgba(9,14,24,.9); border: 1px solid rgba(148,168,255,.28); border-radius: 12px;
+  padding: 11px 12px; font-size: 11.5px; color: #c7d3e6; line-height: 1.6;
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif; }
+#rail h5 { margin: 0 0 2px; font-size: 12px; color: #e6edf7; }
+#rail .who { font-size: 10px; color: #7f93b5; margin-bottom: 8px; }
+#rail .grp { margin-top: 9px; }
+#rail .grp > span { display: block; font-size: 10px; color: #7f93b5; margin-bottom: 3px; letter-spacing: .3px; }
+#rail button { font: inherit; color: #c7d3e6; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(148,168,255,.22); border-radius: 7px; padding: 3px 7px; cursor: pointer; margin: 0 3px 3px 0; }
+#rail button.on { background: #2d78c2; border-color: transparent; color: #fff; }
+#rail .lg { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,168,255,.2); font-size: 10.5px; color: #9db2d0; }
+#rail .lg b { color: #cdd9ea; }
+</style>
+</head>
+<body>
+<div id="app" class="after">
+  <div id="stage">
+    <div class="desk">
+      <div class="win">
+        <div class="bar"><i></i><i></i><i></i> 需求备忘.md — PastePanda</div>
+        <div class="doc">
+          <h4>截图交付态要留几层浮层</h4>
+          <p>纯白底、正文黑，是文字对比度最吃亏的一种内容：面板只要有一档透明，白就透过来了。</p>
+          <div class="code">.ocr-drawer { background: var(--glass-dialog-bg); /* 深色档实值 rgba(10,22,40,.66) */ }</div>
+          <p style="margin-top:10px">整改后：工具浮层走不透明卡轨，玻璃只留给整窗级的弹窗。</p>
+        </div>
+      </div>
+      <div class="dock"><b></b><b></b><b></b></div>
+    </div>
+    <div class="shot-root" id="root"></div>
+  </div>
+</div>
+
+<aside id="rail">
+  <h5>截图整改后 · 1:1 实景</h5>
+  <div class="who">右侧控件是设计稿外壳，不属于产品界面</div>
+
+  <div class="grp"><span>阶段</span>
+    <button data-phase="select">选区</button>
+    <button data-phase="annotate">标注</button>
+    <button data-phase="afterEsc">标注后按 Esc</button>
+    <button data-phase="result">交付</button>
+  </div>
+  <div class="grp"><span>对照</span>
+    <button data-mode="before">整改前</button>
+    <button data-mode="after">整改后</button>
+    <button data-marks="1">整改点角标</button>
+  </div>
+  <div class="grp"><span>选区（也可直接在屏幕上拖）</span>
+    <button data-sel="small">左上小框</button>
+    <button data-sel="mid">中央中框</button>
+    <button data-sel="wide">超宽框·逼出内侧档</button>
+    <button data-sel="low">左下框·压底部带</button>
+    <button data-sel="full">全屏</button>
+  </div>
+  <div class="grp"><span>OCR 状态（§2）</span>
+    <button data-ocr="done">有文字</button>
+    <button data-ocr="running">识别中</button>
+    <button data-ocr="failed">失败</button>
+    <button data-ocr="empty">真的没字</button>
+  </div>
+  <div class="grp"><span>其他</span>
+    <button data-t="theme">换主题</button>
+    <button data-t="screen">屏幕 1440×900</button>
+    <button data-t="ai">AI 门控</button>
+    <button data-t="drawer">抽屉</button>
+    <button data-t="fold">面板折叠</button>
+  </div>
+  <div class="lg" id="log"></div>
+  <div class="lg"><b>角标 = 审计稿章节号</b><br>
+    ① Esc 找回条（§1）· ② OCR 三态（§2）<br>
+    ③ 底部带单一所有者（§3）· ④ 抽屉脚「完成」改名（§4）<br>
+    ⑤ 二维码条热区 22→24px（§5⑤）· ⑥ 面板底色改实底（§5⑥）</div>
+  <div class="lg"><b>碰撞实测（120 组 = 3 屏幕 × 5 选区 × 4 态 × 前后两版）</b><br>
+    判据只用 <code>offsetLeft/Top/Width/Height</code>（整数布局像素）。<br>
+    整改前：底部带自身互叠 <b>30</b> · 抽屉尾压底部带 <b>3</b>（190~201×80，整条盖掉）·
+    工具栏压底部带 <b>3</b> · 出口面板×抽屉 <b>1</b><br>
+    整改后：以上归零，只剩 <b>1366×768 + 左下框</b> 的 7~11px —— 那是 <code>panelPos.ts</code>
+    的 <code>PANEL_MIN_H=120</code> 兜底（现状是整条 80px），不是新增缺陷。<br>
+    出屏：两版均 <b>0</b>。</div>
+</aside>
+
+<script>
+/* ---- 图标：路径逐条取自 src/components/screenshot/tools.tsx / AnnotToolbar.tsx ---- */
+const SV = (inner) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+const IC = {
+  rect: SV('<rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/>'),
+  ellipse: SV('<ellipse cx="8" cy="8" rx="5.75" ry="4.25"/>'),
+  arrow: SV('<path d="M3.2 12.8L11 5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/>'),
+  pen: SV('<path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z"/><path d="M9.9 4.1l2 2"/>'),
+  highlight: SV('<path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" stroke="none" opacity="0.8"/>'),
+  mosaic: SV('<rect x="2.5" y="2.5" width="11" height="11" rx="1.2"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/>'),
+  dewarp: SV('<path d="M3.2 12.8L9.6 6.4"/><path d="M11 2.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/>'),
+  text: SV('<path d="M3 3.8h10"/><path d="M8 3.8v8.4"/><path d="M5.8 12.2h4.4"/>'),
+  number: SV('<circle cx="8" cy="8" r="5.6"/><path d="M6.9 6.6L8.4 5.6v5"/><path d="M6.9 10.6h3"/>'),
+  eraser: SV('<path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z"/><path d="M6.1 6.1l3.8 3.8"/><path d="M2.5 13.5h11"/>'),
+  undo: SV('<path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6"/><path d="M6.4 3L3.2 6.2l3.2 3.2"/>'),
+  redo: SV('<path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4"/><path d="M9.6 3l3.2 3.2-3.2 3.2"/>'),
+  longshot: SV('<rect x="4" y="1.8" width="8" height="5" rx="1"/><path d="M8 8v5.4"/><path d="M5.4 11l2.6 2.6L10.6 11"/>'),
+  ocr: SV('<path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z"/><path d="M9.3 2.5v3.2h3.2"/><path d="M5 8.4h6"/><path d="M5 11h4"/>'),
+  save: SV('<path d="M8 2.4v6.7"/><path d="M5.3 6.5L8 9.2l2.7-2.7"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9"/>'),
+  pin: SV('<path d="M6.1 2.6h3.8"/><path d="M8 9.4v4.1"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z"/>'),
+  ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
+  picker: SV('<path d="M10.4 2.6a1.5 1.5 0 0 1 2.1 0l0.9 0.9a1.5 1.5 0 0 1 0 2.1L6.6 12.4l-3 0.9 0.9-3z"/><path d="M9.4 3.6l3 3"/>'),
+};
+
+/* ---- 位置算法：逐行转写自 src/lib/screenshot/{toolbarPos,panelPos,sizeLabelPos}.ts ----
+     常量与分支顺序保持原样，所以本页的面板落点 = 应用里的落点。 */
+const TB_GAP = 8, TB_ATTR_GAP = 6;
+function layoutToolbar(sel, tbW, tbH, attrH, vw, vh) {
+  let left = tbW <= sel.w ? sel.x + sel.w - tbW : sel.x;
+  if (left < TB_GAP) left = TB_GAP;
+  if (left + tbW > vw - TB_GAP) left = vw - TB_GAP - tbW;
+  const totalH = attrH > 0 ? tbH + TB_ATTR_GAP + attrH : tbH;
+  const belowTop = sel.y + sel.h + TB_GAP, aboveTop = sel.y - TB_GAP - totalH;
+  let top, attach;
+  if (belowTop + totalH <= vh - TB_GAP) { top = belowTop; attach = "below"; }
+  else if (aboveTop >= TB_GAP) { top = sel.y - TB_GAP - tbH; attach = "above"; }
+  else { top = sel.y + sel.h - TB_GAP - tbH;
+    if (top + tbH > vh - TB_GAP) top = vh - TB_GAP - tbH;
+    if (top < TB_GAP) top = TB_GAP; attach = "inside"; }
+  const attrTop = attach === "below" ? top + tbH + TB_ATTR_GAP : top - TB_ATTR_GAP - attrH;
+  return { left, top, attrTop, attach };
+}
+const PANEL_GAP = 8, PANEL_MIN_H = 120, PANEL_MAX_VH = 0.62, OCR_PANEL_W = 252;
+function layoutSidePanel(sel, panelW, vw, vh, avoid, gap = PANEL_GAP) {
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const top = clamp(sel.y, gap, Math.max(gap, vh - gap - PANEL_MIN_H));
+  const roomAt = (l) => {
+    let h = vh - gap - top;
+    if (avoid) {
+      const overlapX = !(l + panelW <= avoid.x || l >= avoid.x + avoid.w);
+      if (overlapX) h = Math.min(h, avoid.y - gap - top);
+    }
+    return h;
+  };
+  const cands = [];
+  const rightSide = sel.x + sel.w + gap, leftSide = sel.x - gap - panelW;
+  if (rightSide + panelW <= vw - gap) cands.push({ left: rightSide, side: "right" });
+  if (leftSide >= gap) cands.push({ left: leftSide, side: "left" });
+  cands.push({ left: clamp(sel.x + sel.w - panelW - gap, gap, Math.max(gap, vw - gap - panelW)), side: "inside" });
+  const picked = cands.find((c) => roomAt(c.left) >= PANEL_MIN_H) ?? cands[0];
+  return { left: picked.left, top, maxHeight: clamp(roomAt(picked.left), PANEL_MIN_H, Math.round(vh * PANEL_MAX_VH)), side: picked.side };
+}
+const SIZE_LABEL_H = 26, SIZE_LABEL_GAP = 4;
+function layoutSizeLabel(selTop, selH, vh) {
+  const belowTop = selH + SIZE_LABEL_GAP;
+  if (selTop + belowTop + SIZE_LABEL_H <= vh) return { top: belowTop, place: "below" };
+  const aboveTop = -(SIZE_LABEL_H + SIZE_LABEL_GAP);
+  if (selTop + aboveTop >= 0) return { top: aboveTop, place: "above" };
+  return { top: SIZE_LABEL_GAP, place: "inside" };
+}
+
+/* ---- §3 拟改动（当前产品里还没有）：两处避让都从「单矩形」升级为「矩形数组取并集」 ----
+   1) layoutPanelMulti = panelPos.ts 原样，只把 avoid: TbRect|null 换成 rects: TbRect[]，
+      roomAt 里对每个水平投影重叠的矩形各压一次高度；候选顺序、钳位、PANEL_MIN_H 一律不动，
+      所以不会引入面板跳动（这是审计稿 §3 承诺的前提）。
+   2) layoutBand：底部带仍贴 bottom:16，只有当它和某个面板真的相交时整条上移——
+      这就是今天 ocrToast 手写 bottom:64 在做的事，改成由公式给值，再多一条也不会漏。 */
+function layoutPanelMulti(sel, panelW, vw, vh, rects, gap = PANEL_GAP) {
+  const top = clampV(sel.y, gap, Math.max(gap, vh - gap - PANEL_MIN_H));
+  const roomAt = (l) => {
+    let h = vh - gap - top;
+    for (const r of rects || []) {
+      if (!r) continue;
+      if (l + panelW <= r.x || l >= r.x + r.w) continue; // 水平不相交就不算撞
+      h = Math.min(h, r.y - gap - top);
+    }
+    return h;
+  };
+  const cands = [];
+  const rightSide = sel.x + sel.w + gap;
+  const leftSide = sel.x - gap - panelW;
+  if (rightSide + panelW <= vw - gap) cands.push({ left: rightSide, side: "right" });
+  if (leftSide >= gap) cands.push({ left: leftSide, side: "left" });
+  cands.push({ left: clampV(sel.x + sel.w - panelW - gap, gap, Math.max(gap, vw - gap - panelW)), side: "inside" });
+  const picked = cands.find((c) => roomAt(c.left) >= PANEL_MIN_H) ?? cands[0];
+  return { left: picked.left, top, maxHeight: clampV(roomAt(picked.left), PANEL_MIN_H, Math.round(vh * PANEL_MAX_VH)), side: picked.side };
+}
+const BAND_BOTTOM = 16, BAND_LIFT_GAP = 8;
+function layoutBand(vw, vh, bandW, bandH, rects) {
+  const left = Math.round((vw - bandW) / 2);
+  let bottom = BAND_BOTTOM;
+  // 抬一次不够：抬到属性条上方后会撞工具栏，所以迭代到稳定为止（最多 rects.length+1 轮）
+  for (let pass = 0; pass <= rects.length; pass++) {
+    const top = vh - bottom - bandH;
+    let moved = false;
+    for (const r of rects) {
+      if (!r) continue;
+      if (left + bandW <= r.x || left >= r.x + r.w) continue;            // 水平不相交
+      if (top >= r.y + r.h || top + bandH <= r.y) continue;              // 垂直不相交
+      const want = Math.min(vh - r.y + BAND_LIFT_GAP, vh - BAND_LIFT_GAP - bandH);
+      if (want > bottom) { bottom = want; moved = true; }
+    }
+    if (!moved) break;
+  }
+  return { left, bottom };
+}
+const clampV = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ---- 状态 ---- */
+const THEMES = ["ocean", "ocean-dark", "midnight", "forest", "blossom", "dawn"];
+const S = {
+  phase: "annotate", mode: "after", marks: true, theme: 1, aiOk: false,
+  ocr: "done", drawer: true, fold: true, tool: "mosaic", screen: 0,
+  sel: { x: 0, y: 0, w: 0, h: 0 },
+};
+const root = document.getElementById("root"), app = document.getElementById("app");
+
+/* ---- 逻辑屏幕：公式吃的是屏幕 CSS 像素，不是浏览器窗口 ---- */
+const SCREENS = [[1440, 900], [1920, 1080], [1366, 768]];
+const stage = document.getElementById("stage");
+let K = 1;
+const sw = () => SCREENS[S.screen][0];
+const sh = () => SCREENS[S.screen][1];
+function fit() {
+  const w = sw(), h = sh();
+  // 右侧控件栏是设计稿外壳（236 + 12 + 24）；产品界面本身按屏幕比例缩放
+  const availW = innerWidth - 272, availH = innerHeight - 28;
+  K = Math.max(.2, Math.min(1, availW / w, availH / h));
+  stage.style.setProperty("--sw", w + "px");
+  stage.style.setProperty("--sh", h + "px");
+  stage.style.setProperty("--k", String(K));
+  const b = document.querySelector('#rail button[data-t="screen"]');
+  if (b) b.textContent = `屏幕 ${w}×${h}${K < 1 ? `（显示 ${(K * 100) | 0}%）` : ""}`;
+}
+function toStage(e) {
+  const r = stage.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / K, y: (e.clientY - r.top) / K };
+}
+function presetSel(kind) {
+  const vw = sw(), vh = sh();
+  if (kind === "small") return { x: 40, y: 40, w: 210, h: 120 };
+  if (kind === "wide") return { x: 30, y: 90, w: vw - 60, h: vh - 260 };
+  if (kind === "full") return { x: 0, y: 0, w: vw, h: vh };
+  // 左下选区：选区顶部在 74% 处，抽屉可用高度被 vh-8-top 卡住 → 底部落到 bottom:16 的底部带上；
+  // 抽屉在选区右外侧（x≈0.4vw），与居中的底部带水平相交。这是 §3「avoid 只认工具栏」的实测档。
+  if (kind === "low") return { x: 40, y: Math.round(vh * .74), w: Math.round(vw * .4), h: Math.round(vh * .18) };
+  // 下方选区：选区顶部落在 72% 处 → layoutSidePanel 的可用高度取 vh-8-top 那一项，
+  // 抽屉底部正好落到 bottom:16 的底部带上（§3「抽屉只让工具栏」的实测档）
+  if (kind === "low") return { x: Math.round(vw * .22), y: Math.round(vh * .72), w: Math.round(vw * .42), h: Math.round(vh * .2) };
+  return { x: Math.round(vw * .3), y: Math.round(vh * .16), w: Math.round(vw * .38), h: Math.round(vh * .5) };
+}
+const OCR_LINES = [
+  "截图交付态要留几层浮层",
+  "面板只要有一档透明，白就透过来",
+  "工具浮层走不透明卡轨",
+];
+
+/* ---- 片段 ---- */
+const toolbarHTML = () => {
+  const tools = [["rect","矩形"],["ellipse","椭圆"],["arrow","箭头"],["pen","画笔"],["highlight","高亮"],
+    ["mosaic","马赛克"],["dewarp","去水印"],["text","文字"],["number","序号"],["eraser","橡皮擦"]];
+  const tsep = '<div class="tsep"></div>';
+  return `<div id="tb" class="annot-toolbar" role="toolbar" aria-label="截图工具栏">
+    ${tools.map(([id, lb]) => `<button type="button" class="tool${S.tool === id ? " on" : ""}"><span class="ic">${IC[id]}</span><span class="lb">${lb}</span></button>`).join("")}
+    ${tsep}
+    <button type="button" class="tool dim tb-undo"><span class="ic">${IC.undo}</span><span class="lb">撤销</span></button>
+    <button type="button" class="tool dim tb-redo disabled"><span class="ic">${IC.redo}</span><span class="lb">重做</span></button>
+    ${tsep}
+    <button type="button" class="tool longshot"><span class="ic">${IC.longshot}</span><span class="lb">长截图</span></button>
+    <button type="button" class="tool ocr-btn${S.ocr === "running" ? " busy" : ""}${S.ocr === "failed" ? " failed" : ""}${S.ocr === "done" ? " done" : ""}${S.ocr === "empty" ? " disabled" : ""}">
+      ${S.ocr === "done" ? '<span class="badge">' + OCR_LINES.length + "</span>" : ""}${S.ocr === "failed" ? '<span class="badge warn">!</span>' : ""}
+      <span class="ic">${S.ocr === "running" ? '<span class="ocr-spin"></span>' : IC.ocr}</span><span class="lb">取文字</span></button>
+    ${tsep}
+    <button type="button" class="tool exit-save"><span class="ic">${IC.save}</span><span class="lb">保存</span></button>
+    <button type="button" class="tool exit-pin"><span class="ic">${IC.pin}</span><span class="lb">贴图</span></button>
+    ${S.aiOk ? `<button type="button" class="tool exit-ai"><span class="ic">${IC.ai}</span><span class="lb">AI</span></button>` : ""}
+    <button type="button" class="tool more-btn">更多 ⋯</button>
+    ${tsep}
+    <button type="button" class="tool cancel-btn">✕ 取消</button><span class="pair-sep"></span>
+    <button type="button" class="tool done-btn">完成 ✓</button>
+  </div>`;
+};
+const attrBarHTML = () => `<div id="ab" class="attr-bar">
+  <span class="albl">颜色</span>
+  ${["#ef4444","#3b9eff","#facc15","#22c55e","#1f2937"].map((c,i)=>`<span class="cwrap"><span class="cp${i===1?" on":""}" style="background:${c}"></span></span>`).join("")}
+  <span class="cwrap picker">${IC.picker}</span>
+  <span class="asep"></span><span class="albl">粗细</span>
+  <button type="button" class="wpick">细</button><button type="button" class="wpick on">中</button><button type="button" class="wpick">粗</button>
+  <span class="asep"></span><span class="albl">强度</span>
+  <button type="button" class="wpick">细</button><button type="button" class="wpick on">中</button><button type="button" class="wpick">粗</button>
+</div>`;
+const drawerBody = () => {
+  /* before = 产品现状：running / failed / 真空 三种原因共用同一句「未从图片识别到文字」，
+     也没有任何重试入口（OcrDrawer.tsx:84-89 只有 lines.length === 0 这一个分支） */
+  if (S.mode === "before" && S.ocr !== "done")
+    return `<div class="ocr-body"><div style="font-size:11px;color:var(--text-muted);padding:6px 4px">未从图片识别到文字</div></div>`;
+  if (S.ocr === "running")
+    return `<div class="ocr-state"><span class="t"><span class="ocr-spin"></span> 正在识别文字…</span><span class="d">首次使用需加载模型，可能比后续几次慢</span></div>`;
+  if (S.ocr === "failed")
+    return `<div class="ocr-state err"><span class="t">文字识别失败</span><span class="d">OCR 引擎没有返回结果（多为首次加载超时）。图片本身已经截好，复制 / 保存 / 贴图不受影响。</span><button type="button" class="retry">重试识别</button></div>`;
+  if (S.ocr === "empty")
+    return `<div class="ocr-state"><span class="t">这张图里没有文字</span><span class="d">引擎正常返回，内容为空。可以试试重新框一块更清晰的区域。</span></div>`;
+  return `${qrBar()}<div class="ocr-body">${OCR_LINES.map((t,i)=>`<button type="button" class="ocr-row"><span class="n">${i+1}</span><span class="tx">${t}</span></button>`).join("")}</div>`;
+};
+const drawerHead = () => {
+  /* before = 产品现状：标题只有「N 行」这一种说法，且 0 行也照样给「复制全文」（OcrDrawer.tsx:62-67） */
+  if (S.mode === "before") {
+    const n = S.ocr === "done" ? OCR_LINES.length : 0;
+    return `<div class="ocr-head"><span>OCR 识别 · ${n} 行</span><span class="sp"></span><button type="button" class="copy-all">复制全文</button></div>`;
+  }
+  const title = S.ocr === "done" ? `OCR 识别 · ${OCR_LINES.length} 行` : S.ocr === "failed" ? "OCR 识别 · 失败" : S.ocr === "empty" ? "OCR 识别 · 0 行" : "OCR 识别";
+  return `<div class="ocr-head"><span>${title}</span><span class="sp"></span>${S.ocr === "done" ? '<button type="button" class="copy-all">复制全文</button>' : ""}</div>`;
+};
+/* §5⑤ 热区整改的落点：二维码条的两个 .qr-btn（真实代码 OcrDrawer.tsx:70-82） */
+const qrBar = () => `<div class="qr-bar"><span class="qr-ic">▦</span><span class="qr-tx" title="https://example.com/req/42">https://example.com/req/42</span><button type="button" class="qr-btn">复制</button><button type="button" class="qr-btn">打开</button></div>`;
+const drawerFoot = () => {
+  const after = S.mode === "after";
+  const btns = after
+    ? ["编辑文本", "提取表格", S.aiOk ? "AI 解释" : null, "送动作链", "关闭"]
+    : ["复制全部", "编辑文本", "提取表格", S.aiOk ? "AI 解释" : null, "送动作链", "完成"];
+  return `<div class="ocr-foot">${btns.filter(Boolean).map((b) => `<button type="button" class="fbtn${b.startsWith("AI") ? " ai" : ""}${b === "送动作链" ? " chain" : ""}">${b}</button>`).join("")}</div>`;
+};
+const actPanelHTML = () => {
+  const folded = S.mode === "after" && S.fold;
+  const row = (ic, lb, sub, k, cls = "") =>
+    `<button type="button" class="act-row ${cls}"><span class="ic">${ic}</span><span><span class="lbl">${lb}</span><span class="sub">${sub}</span></span>${k ? `<span class="k">${k}</span>` : ""}</button>`;
+  const low = [
+    S.aiOk ? row("AI", "AI 处理", "解释 / 翻译 / 总结", "", "ai") : "",
+    S.aiOk ? row("译", "翻译", "识别文字翻译成中文", "⚡", "ai") : "",
+    row("⚡", "送动作链", "对识别文字跑自定义链", "", "chain"),
+    row("🔒", "记住为固定区域", "下次截图直接用这块区域"),
+    row("↺", "重新截图", "重选区域"),
+    `<button type="button" class="act-row insert"><span class="ic">📄</span><span><span class="lbl">插入到当前文档</span><span class="sub">作为图片块插入</span></span></button>`,
+  ].join("");
+  return `<div id="ap" class="act-panel">
+    <div class="act-head"><span class="dot"></span> 截图完成 · 选择出口</div>
+    <div class="act-sens">⚠️ 检测到疑似敏感内容（手机号），AI / 云端出口已拦截，需确认后才发送</div>
+    <div class="act-group">图片</div>
+    ${row("⬡", "复制图片", "写入剪贴板历史", "Ctrl+C", "primary")}
+    ${row("⬇", "保存到图库", "另存为图片文件", "Ctrl+S")}
+    ${row("📌", "贴图置顶", "钉在屏幕上")}
+    ${folded ? `<div class="act-group">文字 · 其它（收起）</div>
+      <button type="button" class="act-row expand"><span class="ic">⌄</span><span><span class="lbl">展开 ${S.aiOk ? 6 : 4} 项</span><span class="sub">AI 处理 / 翻译 / 送动作链 / 固定区域 / 重新截图 / 插入文档</span></span></button>`
+    : `<div class="act-group">文字</div>${low}`}
+  </div>`;
+};
+const bandHTML = () => {
+  /* 六个底部带候选，全部照抄真实 markup 与真实 bottom 值：
+     .shot-toast(16, z70) / .picker-bar 取色(16, z46) / .picker-bar 强度(16, z46)
+     .picker-bar ocrToast(**手写 64**, z46, ScreenshotOverlay.tsx:3976-3993)
+     .shot-hint(16, z60) / .pop-layer(16, z60) */
+  const toast = `<div class="shot-toast ok"><span class="ic">✓</span><span>已复制图片</span></div>`;
+  const picker = `<div class="picker-bar"><span class="sw" style="background:#3B9EFF"></span><span class="hex">#3B9EFF</span><span class="hint">点击画布复制该颜色</span></div>`;
+  const strength = `<div class="picker-bar"><span>强度 中 · 3px</span></div>`;
+  const ocrToast = `<button type="button" class="picker-bar ocr-toast"><span>📄 已识别 3 行 · 点击复制全文</span></button>`;
+  const tray = `<div class="shot-toast act"><span>已退出标注 · 12 处标注已暂存</span><button type="button" class="tray-btn">找回 (Enter)</button><span class="tray-cd">6s</span></div>`;
+  const hint = `<div class="shot-hint"><span><span class="hk">拖拽</span> 框选 · 松手自动标注</span><span class="sep"></span><span><span class="hk">悬停</span> 自动吸附窗口/控件</span><span class="sep"></span><span><span class="hk">Tab / 方向键</span> 切换控件</span><span class="sep"></span><span><span class="hk">Enter</span> 进入标注</span><span class="sep"></span><span><span class="hk">Esc</span> 退出</span><button type="button" class="hk-close" aria-label="关闭提示">×</button></div>`;
+  if (S.mode === "before") {
+    // 整改前：各写各的 bottom。同一态里两条都写 16 → 实测就是叠在一起（§3 的病根）。
+    // 这里直接输出真实元素本身：它们的 left:50% / bottom / z-index 全在 screenshot.css 里自带
+    // （外加 ocrToast 的手写 bottom:64 = ScreenshotOverlay.tsx:3976 的行内样式）。
+    // 之前套一层定位 div 会把宽度塌成 0，量出来的宽高是假的（已修正）。
+    const inline = (el, css) => el.replace(/^(<[a-z]+ ?)/, `$1style="${css}" `);
+    if (S.phase === "select") return hint;
+    if (S.phase === "annotate") return picker + strength;
+    // Esc 之后：底部带上一条话都没有 —— 这就是 §1 的 P1（0 反馈）
+    if (S.phase === "afterEsc") return "";
+    return toast + picker + inline(ocrToast, "bottom:64px");
+  }
+  const rows =
+    S.phase === "select" ? [hint] :
+    S.phase === "annotate" ? [picker, strength] :
+    S.phase === "afterEsc" ? [tray] :
+    S.ocr === "failed" ? [ocrToast, toast, picker] : [toast, picker];
+  return `<div class="bottom-stack">${rows.join("")}</div>`;
+};
+const pinPreview = () => `<div id="pp" class="pin-preview" style="position:absolute;border:1px dashed color-mix(in srgb, var(--preview-pin,#ec4899) 75%, transparent);
+  background:color-mix(in srgb, var(--preview-pin,#ec4899) 10%, transparent);display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--shot-pin,#F9A8D4);border-radius:10px;z-index:52">预览即钉 · 拖动定位 · Esc 取消</div>`;
+const selSize = (txt) => `<div id="sz" class="sel-size"><span>${
+  (() => { const full = S.sel.w >= sw() - 2 && S.sel.h >= sh() - 2; return full ? `全屏 ${txt}` : txt; })()
+}</span><span class="hint">${
+  S.mode === "after" ? "拖边缘缩放 · 框内再拖 = 画新框" : "单击进标注 · 拖选区移动 · 拖边缘缩放"}</span></div>`;
+
+/* ---- 渲染：先出结构，再量真实宽高，最后按公式定位（与应用的 ResizeObserver 同思路） ---- */
+function render() {
+  const vw = sw(), vh = sh(), sel = S.sel;
+  const isFull = sel.w >= vw - 2 && sel.h >= vh - 2;
+  const showSel = S.phase !== "select" || sel.w > 0;
+  let html = "";
+  if (showSel && !isFull) {
+    html += `<div class="shade-block" style="left:0;top:0;width:100%;height:${sel.y}px"></div>
+      <div class="shade-block" style="left:0;top:${sel.y}px;width:${sel.x}px;height:${sel.h}px"></div>
+      <div class="shade-block" style="left:${sel.x + sel.w}px;top:${sel.y}px;right:0;height:${sel.h}px"></div>
+      <div class="shade-block" style="left:0;top:${sel.y + sel.h}px;width:100%;height:${vh - sel.y - sel.h}px"></div>`;
+  } else if (showSel) {
+    [0, 1, 2, 3].forEach((i) => {
+      const st = [0, 5, 0, 5][i], sd = [1, 0, 0, 1][i];
+      html += `<div class="edge-band" style="${sd ? `top:0;left:${i === 3 ? "auto" : 0};${i === 3 ? "right:0;" : ""}width:5px;height:100%` : `left:0;width:100%;top:${st}px;height:5px`}"></div>`;
+    });
+  }
+  html += `<div class="sel-rect${isFull ? " full" : ""}" style="left:${sel.x}px;top:${sel.y}px;width:${sel.w}px;height:${sel.h}px"></div>`;
+  /* 尺寸标签在真实代码里只属于 select 态（ScreenshotOverlay.tsx:3421 `phase === "select" && !fixedPreview`）。
+     afterEsc = 整改后「第一次 Esc 回 select 态」，所以它也在；annotate / result 态没有标签。 */
+  if (S.phase === "select" || S.phase === "afterEsc")
+    html += `<div style="position:absolute;left:${sel.x}px;top:${sel.y}px;width:${sel.w}px;height:${sel.h}px">${selSize(`${Math.round(sel.w)} × ${Math.round(sel.h)}`)}</div>`;
+
+  // afterEsc = Esc 已经把人送回 select 态：标注层、工具栏、属性条、抽屉全没了（§1 的现状与代价）
+  if (S.phase === "annotate") html += toolbarHTML() + attrBarHTML();
+  if (S.phase === "result" && S.mode === "after") html += pinPreview();
+  if (S.phase === "result") html += actPanelHTML();
+  const drawerWanted = S.phase === "annotate" && S.drawer;
+  const drawerResult = S.phase === "result" && S.drawer && !(S.mode === "after" && S.ocr !== "done");
+  if (drawerWanted || drawerResult) html += `<div id="od" class="ocr-drawer">${drawerHead()}${drawerBody()}${drawerFoot()}</div>`;
+  html += bandHTML();
+  html += `<span class="mark" id="m6">⑥</span><span class="mark" id="m3">③</span><span class="mark" id="m1">①</span><span class="mark" id="m2">②</span><span class="mark" id="m4">④</span><span class="mark" id="m5">⑤</span>`;
+  root.innerHTML = html;
+  place(vw, vh, sel);
+  log();
+}
+function place(vw, vh, sel) {
+  const q = (id) => document.getElementById(id);
+  const tb = q("tb"), ab = q("ab"), ap = q("ap"), od = q("od"), sz = q("sz"), pp = q("pp");
+  const bs = root.querySelector(".bottom-stack");
+  const box = (el) => ({ x: parseFloat(el.style.left), y: parseFloat(el.style.top), w: el.offsetWidth, h: el.offsetHeight });
+  const attrH = ab ? ab.offsetHeight + TB_ATTR_GAP : 0;
+  if (tb) {
+    const l = layoutToolbar(sel, tb.offsetWidth, tb.offsetHeight, attrH, vw, vh);
+    tb.style.left = l.left + "px"; tb.style.top = l.top + "px";
+    if (l.attach !== "below") tb.classList.add("top-attached");
+    if (ab) { ab.style.left = l.left + "px"; ab.style.top = l.attrTop + "px";
+      if (l.attach !== "below") ab.classList.add("top-attached"); }
+  }
+  if (ap) {
+    const l = layoutToolbar(sel, ap.offsetWidth, ap.offsetHeight, 0, vw, vh);
+    ap.style.left = l.left + "px"; ap.style.top = l.top + "px";
+    if (l.attach === "inside") ap.classList.add("inside");
+  }
+  if (pp) {
+    // 落点仍是真实规则（ScreenshotOverlay.tsx:1589：选区正中，只钳屏幕边）
+    const w = Math.min(240, sel.w - 16), h = Math.min(150, Math.max(70, sel.h - 16));
+    let left = sel.x + (sel.w - w) / 2, top = sel.y + (sel.h - h) / 2;
+    // after：预览与出口面板互不避让是 §3 点名的缺陷，这里给它加一次「向上让」
+    if (ap && S.mode === "after") {
+      const a = { x: parseFloat(ap.style.left), y: parseFloat(ap.style.top), w: ap.offsetWidth, h: ap.offsetHeight };
+      if (!(left + w <= a.x || left >= a.x + a.w) && !(top + h <= a.y || top >= a.y + a.h)) {
+        const up = a.y - 8 - h;
+        top = up >= sel.y + 8 ? up : Math.max(sel.y + 8, a.y + a.h + 8);
+      }
+    }
+    pp.style.left = left + "px"; pp.style.top = top + "px";
+    pp.style.width = w + "px"; pp.style.height = h + "px";
+  }
+  let band = null;
+  if (bs) {
+    band = layoutBand(vw, vh, bs.offsetWidth, bs.offsetHeight,
+      [ap && box(ap), pp && { x: parseFloat(pp.style.left), y: parseFloat(pp.style.top), w: pp.offsetWidth, h: pp.offsetHeight },
+       tb && box(tb), ab && box(ab)].filter(Boolean));
+    band.rect = { x: band.left, y: vh - band.bottom - bs.offsetHeight, w: bs.offsetWidth, h: bs.offsetHeight };
+    bs.style.left = band.left + "px"; bs.style.bottom = band.bottom + "px";
+  }
+  if (od) {
+    // before = 产品现状（avoid 只认一个矩形）；after = §3 拟改动（矩形数组取并集：出口面板 + 贴图预览 + 底部带）
+    const rects = S.mode === "after"
+      ? [ap && box(ap), pp && box(pp), tb && box(tb), band && band.rect].filter(Boolean)
+      : [(ap || tb) && box(ap || tb)].filter(Boolean);
+    const l = S.mode === "after"
+      ? layoutPanelMulti(sel, OCR_PANEL_W, vw, vh, rects)
+      : layoutSidePanel(sel, OCR_PANEL_W, vw, vh, rects[0] ?? null);
+    od.style.left = l.left + "px"; od.style.top = l.top + "px"; od.style.maxHeight = l.maxHeight + "px";
+    if (l.side === "inside") od.classList.add("inside");
+    od.dataset.side = l.side;
+  }
+  if (sz) {
+    const l = layoutSizeLabel(sel.y, sel.h, vh);
+    sz.style.top = l.top + "px";
+    if (l.place === "inside") sz.classList.add("inside");
+  }
+  // 角标编号 = 审计稿章节号：① Esc 找回条 ② OCR 三态 ③ 底部带归一 ④ 命名文案 ⑤ 热区 ⑥ 面板材质
+  mark("m6", od ?? ap, "114"); mark("m3", bs, "-26"); mark("m1", root.querySelector(".shot-toast.act"), "-26");
+  mark("m4", od?.querySelector(".ocr-foot"), "-6"); mark("m2", od?.querySelector(".ocr-state"), "-6");
+  mark("m5", od?.querySelector(".qr-btn"), "-6");
+}
+function mark(id, el, dy) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  if (!el) { m.style.display = "none"; return; }
+  // 角标在缩放舞台内部，rect 差值是缩放后的像素 → 除以 K 换回逻辑像素
+  const r = el.getBoundingClientRect(), host = root.getBoundingClientRect();
+  m.style.left = (r.left - host.left) / K - 9 + "px";
+  m.style.top = (r.top - host.top) / K + parseInt(dy, 10) + "px";
+}
+function log() {
+  const od = document.getElementById("od"), ap = document.getElementById("ap");
+  const rows = [];
+  rows.push(`屏幕 ${sw()}×${sh()}（显示 ${Math.round(K * 100)}%）· 主题 <b>${THEMES[S.theme]}</b>`);
+  if (od) rows.push(`抽屉实测 <b>${od.offsetWidth}×${od.offsetHeight}</b>，落点 side=<b>${od.dataset.side}</b>（${od.dataset.side === "inside" ? "压在选区内部 → §5⑥ 最坏档" : "选区外侧"}）`);
+  if (ap) rows.push(`出口面板实测 <b>${ap.offsetWidth}×${ap.offsetHeight}</b>${S.fold && S.mode === "after" ? "（折叠版）" : "（9 行版）"}`);
+  rows.push(S.mode === "after" ? "整改后：面板实底、底部带一条栈、抽屉按状态决定开不开" : "整改前：面板半透明玻璃、底部各写各的 bottom、抽屉无条件自动开");
+  document.getElementById("log").innerHTML = rows.join("<br>");
+}
+
+/* ---- 控件 ---- */
+function paint() {
+  app.classList.toggle("after", S.mode === "after");
+  app.classList.toggle("showmarks", S.marks && S.mode === "after");
+  document.documentElement.dataset.theme = THEMES[S.theme];
+  document.querySelectorAll("#rail button").forEach((b) => {
+    const on = (b.dataset.phase === S.phase) || (b.dataset.mode === S.mode) ||
+      (b.dataset.sel && b.dataset.sel === S.selKind) || (b.dataset.ocr === S.ocr) ||
+      (b.dataset.t === "ai" && S.aiOk) || (b.dataset.t === "drawer" && S.drawer) ||
+      (b.dataset.t === "fold" && S.fold) || (b.dataset.marks && S.marks);
+    b.classList.toggle("on", !!on);
+  });
+}
+function update() { paint(); render(); }
+document.getElementById("rail").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.phase) S.phase = b.dataset.phase;
+  if (b.dataset.mode) S.mode = b.dataset.mode;
+  if (b.dataset.ocr) S.ocr = b.dataset.ocr;
+  if (b.dataset.sel) { S.selKind = b.dataset.sel; S.sel = presetSel(b.dataset.sel); }
+  if (b.dataset.marks) S.marks = !S.marks;
+  if (b.dataset.t === "theme") S.theme = (S.theme + 1) % THEMES.length;
+  if (b.dataset.t === "screen") {
+    S.screen = (S.screen + 1) % SCREENS.length; fit();
+    S.sel = presetSel(S.selKind || "mid");
+  }
+  if (b.dataset.t === "ai") S.aiOk = !S.aiOk;
+  if (b.dataset.t === "drawer") S.drawer = !S.drawer;
+  if (b.dataset.t === "fold") S.fold = !S.fold;
+  update();
+});
+
+/* 拖拽画新框：与真实行为一致（select / annotate / result 态按下一律重新框选，
+   见 ScreenshotOverlay.tsx:2497「微信同款：按下即画新矩形」） */
+let drag = null;
+root.addEventListener("mousedown", (e) => {
+  if (e.target.closest(".annot-toolbar,.attr-bar,.act-panel,.ocr-drawer,.bottom-stack,.picker-bar,.shot-toast")) return;
+  const p = toStage(e);
+  drag = { x: p.x, y: p.y };
+  S.phase = "select";
+});
+addEventListener("mousemove", (e) => {
+  if (!drag) return;
+  const p = toStage(e);
+  const x = Math.min(drag.x, p.x), y = Math.min(drag.y, p.y);
+  S.sel = { x, y, w: Math.abs(p.x - drag.x), h: Math.abs(p.y - drag.y) };
+  render();
+});
+addEventListener("mouseup", (e) => {
+  if (!drag) return;
+  const moved = S.sel.w > 6 && S.sel.h > 6;
+  if (moved) { S.phase = "annotate"; S.selKind = null; }
+  else { S.sel = presetSel("mid"); S.selKind = "mid"; S.phase = "annotate"; }
+  drag = null; update();
+});
+addEventListener("resize", () => {
+  if (!S.selKind) { S.sel = presetSel("mid"); S.selKind = "mid"; }
+  fit(); render();
+});
+
+fit();
+S.selKind = "mid"; S.sel = presetSel("mid");
+update();
+</script>
+</body>
+</html>

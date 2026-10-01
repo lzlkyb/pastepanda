@@ -1,0 +1,26 @@
+/* 移动端基线：极简，视觉稿定稿后再扩。
+   - 禁用双指缩放由 viewport meta 负责；这里只做盒模型与底色
+   - 安全区：底部导航用 env(safe-area-inset-bottom) 让开手势条 */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--app-bg, #0b1220);
+  color: var(--text-primary, #e6ebf5);
+  font:
+    15px/1.5 -apple-system,
+    "Segoe UI",
+    "Microsoft YaHei",
+    sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100%;
+}

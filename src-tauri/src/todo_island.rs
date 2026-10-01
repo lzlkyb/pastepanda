@@ -622,14 +622,17 @@ fn create(app: &AppHandle) {
         .title("")
         .inner_size(ISLAND_W, ISLAND_H)
         .position(pos.x, pos.y)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(false)
-        .transparent(true)
-        .focused(false)
-        .visible(false)
+        .resizable(false);
+        // 置顶/无边框/跳过任务栏/阴影/透明/不抢焦点是桌面窗口概念（mobile 无这些属性）
+        #[cfg(desktop)]
+        let wb = wb
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .shadow(false)
+            .transparent(true)
+            .focused(false);
+        let wb = wb.visible(false)
         // ❗ **等页面加载完再 show** —— 这条是本轮实测出来的，不是「保险起见」。
         //
         // `build()` 返回时 webview 只是**被创建**，页面还在加载。此时立刻 `show()`，

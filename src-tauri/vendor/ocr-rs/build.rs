@@ -773,6 +773,13 @@ fn link_libraries(
     for library in cpp_runtime_libraries(target, features.static_cpp_runtime) {
         match library.kind {
             NativeLinkKind::Dynamic => println!("cargo:rustc-link-lib=dylib={}", library.name),
+            // 🔴 Android 的静态 C++ 运行时（c++_static / c++abi）必须 whole-archive：
+            // 普通静态链接按归档抽取规则会丢掉 typeinfo/异常表成员（_ZTISt12length_error
+            // 等在 libc++abi.a），dlopen 时报 cannot locate symbol 直接崩
+            //（2026-09-30 真机首装实测）。本 app 只有这一个 native 库，无重复符号风险。
+            NativeLinkKind::Static if target.os == "android" => {
+                println!("cargo:rustc-link-lib=static:+whole-archive={}", library.name)
+            }
             NativeLinkKind::Static => println!("cargo:rustc-link-lib=static={}", library.name),
         }
     }
@@ -849,6 +856,15 @@ fn link_libraries(
 }
 
 fn emit_static_cpp_runtime_search_paths(target: &TargetInfo<'_>, features: &BuildFeatures) {
+    // 🔴 Android **不许**在这里 emit `-L <sysroot>/usr/lib/<abi>`：该目录同时有
+    // `libc.a`，会把 rust 的 `-lc` 从动态 bionic 毒化成静态链接——静态 bionic 的
+    // getauxval 读不到 auxv，开机 dlopen 即 SIGSEGV（init_have_lse_atomics →
+    // getauxval+28，2026-09-30 真机实测）。C++ 运行时走 `c++_shared`（见
+    // build_support.rs 的 ANDROID_CPP_RUNTIME），无需任何额外搜索路径。
+    // 历史：这里曾为 c++_static 补过该 -L（P0.5 的 RUSTFLAGS 同源），即毒源本体。
+    if target.os == "android" {
+        return;
+    }
     if target.os != "windows" || target.env != "gnu" || !features.static_cpp_runtime {
         return;
     }

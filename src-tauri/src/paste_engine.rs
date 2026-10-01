@@ -1,7 +1,11 @@
-use crate::clipboard_monitor::PasteSuppress;
+use crate::clipboard_monitor::{PasteSuppress, WriteOpts};
+// arboard 是 Windows 桌面剪贴板引擎（mobile 无此 crate，探针 A 实测）。本文件的
+// 剪贴板读写全部收口在 with_clipboard_retry（规则 11），mobile 下公共函数诚实报错
+// ——RC 会话内剪贴板走 rc/clipboard.rs，不依赖系统剪贴板。
+#[cfg(target_os = "windows")]
 use arboard::Clipboard;
+#[cfg(target_os = "windows")]
 use arboard::ImageData;
-use md5::Digest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -360,23 +364,21 @@ impl PasteEngine {
             }
         };
 
-        // 2. 目标已确认，这才设置粘贴抑制（必须在写入剪贴板之前）
-        let content_hash = text.as_ref().map(|t| {
-            format!(
-                "{:x}",
-                md5::Md5::new().chain_update(t.as_bytes()).finalize()
-            )
-        });
-        if let Some(ref hash) = content_hash {
-            self.paste_suppress
-                .set_with_hash(Duration::from_millis(3000), hash.clone());
-        } else {
-            self.paste_suppress.set(Duration::from_millis(3000));
-        }
+        // 2. 目标已确认，这才报备「应用自己写剪贴板」（必须在写入之前）。
+        //    守卫持有到本函数结束：写入一完成竞争闸就打开，监听端不再被 3 秒无差别闸
+        //    挡住；「是不是我们自己写的」交给 PasteSuppress::own_write_reason 按内容判。
+        //    text=None 是「粘贴当前剪贴板」，写入方说不清内容 → 全类别按时间兜底。
+        let _suppress = match text.as_deref() {
+            Some(t) => self.paste_suppress.begin_write(WriteOpts::text(t)),
+            None => self.paste_suppress.begin_write(WriteOpts::unknown()),
+        };
 
         // 3. 写入剪贴板
         if let Some(ref t) = text {
+            #[cfg(target_os = "windows")]
             Self::with_clipboard_retry("写入剪贴板", |cb| cb.set_text(t.as_str()))?;
+            #[cfg(not(target_os = "windows"))]
+            { let _ = t; }
             result.clipboard_written = true;
         }
 
@@ -404,12 +406,19 @@ impl PasteEngine {
     /// 这个浏览器弹框完全是多余的。走这条路同时能用上 `with_clipboard_retry`，
     /// 比 Web API 在剪贴板被占时可靠得多。
     pub fn read_text(&self) -> Result<String, String> {
-        Self::with_clipboard_retry("读取剪贴板", |cb| cb.get_text())
+        // 系统剪贴板引擎是 Windows 桌面专属（mobile 走 RC 会话内剪贴板）
+        #[cfg(target_os = "windows")]
+        { Self::with_clipboard_retry("读取剪贴板", |cb| cb.get_text()) }
+        #[cfg(not(target_os = "windows"))]
+        { Err("系统剪贴板读取仅桌面端可用".to_string()) }
     }
 
     /// 仅复制不粘贴
     pub fn copy_only(&self, text: &str) -> Result<(), String> {
-        Self::with_clipboard_retry("复制文字", |cb| cb.set_text(text))?;
+        #[cfg(target_os = "windows")]
+        { Self::with_clipboard_retry("复制文字", |cb| cb.set_text(text))?; }
+        #[cfg(not(target_os = "windows"))]
+        { let _ = text; }
         Ok(())
     }
 
@@ -426,6 +435,7 @@ impl PasteEngine {
     ///
     /// 递增退避而不是固定间隔：占用方可能正在写一大块数据，固定 10ms 转 5 次
     /// 总共只等 50ms，太短。
+    #[cfg(target_os = "windows")]
     fn with_clipboard_retry<T>(
         what: &str,
         mut op: impl FnMut(&mut Clipboard) -> Result<T, arboard::Error>,
@@ -511,23 +521,24 @@ impl PasteEngine {
         let img = image::open(image_path).map_err(|e| format!("无法解码图片: {}", e))?;
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
-        // hash 口径与监听线程一致：对 RGBA 像素字节计算
-        let content_hash = format!(
-            "{:x}",
-            md5::Md5::new().chain_update(rgba.as_raw()).finalize()
-        );
+        // 报备自写入（hash 口径由 WriteOpts 统一：RGBA 像素字节，与监听线程一致）
+        let _suppress = self
+            .paste_suppress
+            .begin_write(WriteOpts::image_rgba(rgba.as_raw()));
 
-        // 设置粘贴抑制（hash），防止剪贴板监听器重复记录
-        self.paste_suppress
-            .set_with_hash(Duration::from_millis(3000), content_hash);
-
-        let img_data = ImageData {
-            width: width as usize,
-            height: height as usize,
-            bytes: std::borrow::Cow::Borrowed(rgba.as_raw()),
-        };
-        // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
-        Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
+        // 写入引擎是 Windows 桌面专属（mobile 无 arboard）
+        #[cfg(target_os = "windows")]
+        {
+            let img_data = ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: std::borrow::Cow::Borrowed(rgba.as_raw()),
+            };
+            // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
+            Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
+        }
+        #[cfg(not(target_os = "windows"))]
+        { let _ = (width, height, rgba); }
         Ok(())
     }
 
@@ -544,20 +555,22 @@ impl PasteEngine {
                 rgba.len()
             ));
         }
-        // hash 口径与监听线程一致：对 RGBA 像素字节计算
-        let content_hash = format!("{:x}", md5::Md5::new().chain_update(rgba).finalize());
+        // 报备自写入（hash 口径由 WriteOpts 统一：RGBA 像素字节）
+        let _suppress = self.paste_suppress.begin_write(WriteOpts::image_rgba(rgba));
 
-        // 设置粘贴抑制（hash），防止剪贴板监听器重复记录
-        self.paste_suppress
-            .set_with_hash(Duration::from_millis(3000), content_hash);
-
-        let img_data = ImageData {
-            width: width as usize,
-            height: height as usize,
-            bytes: std::borrow::Cow::Borrowed(rgba),
-        };
-        // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
-        Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
+        // 写入引擎是 Windows 桌面专属（mobile 无 arboard）
+        #[cfg(target_os = "windows")]
+        {
+            let img_data = ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: std::borrow::Cow::Borrowed(rgba),
+            };
+            // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
+            Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
+        }
+        #[cfg(not(target_os = "windows"))]
+        { let _ = (width, height); }
         Ok(())
     }
 
@@ -573,8 +586,9 @@ impl PasteEngine {
             return Err("文件列表为空".to_string());
         }
 
-        // 设置时间窗口抑制，防止监听器把这次写入当成新内容记录
-        self.paste_suppress.set(Duration::from_millis(3000));
+        // 报备自写入。hash 口径与采集端共用 files_clipboard_hash —— 旧实现只设了一个
+        // 3 秒时间闸，而采集端的文件分支根本不查抑制，全靠阶段 1 顶部的无差别早退兜着。
+        let _suppress = self.paste_suppress.begin_write(WriteOpts::files(paths));
 
         // 构建双 null 结尾的宽字符文件列表
         let mut data: Vec<u16> = Vec::new();
@@ -728,14 +742,11 @@ impl PasteEngine {
     /// 仅复制图文混排内容到剪贴板（不粘贴）
     #[cfg(target_os = "windows")]
     pub fn copy_rich_only(&self, html_fragment: &str, plain_text: &str) -> Result<(), String> {
-        let content_hash = format!(
-            "{:x}",
-            md5::Md5::new()
-                .chain_update(html_fragment.as_bytes())
-                .finalize()
-        );
-        self.paste_suppress
-            .set_with_hash(Duration::from_millis(3000), content_hash);
+        // 报备自写入。采集端对图文算的 hash 是「内联图片落地后被改写过的片段」，写入方算不出
+        // 同一个值，所以这条主要靠 WriteOpts::rich 声明的类别窗口兜底。
+        let _suppress = self
+            .paste_suppress
+            .begin_write(WriteOpts::rich(html_fragment));
         Self::write_rich_to_clipboard(html_fragment, plain_text)
     }
 
@@ -775,15 +786,10 @@ impl PasteEngine {
             }
         };
 
-        // 3. 粘贴抑制（hash 口径需与采集时一致：md5(片段字节)，采集时也是这样算的）
-        let content_hash = format!(
-            "{:x}",
-            md5::Md5::new()
-                .chain_update(html_fragment.as_bytes())
-                .finalize()
-        );
-        self.paste_suppress
-            .set_with_hash(Duration::from_millis(3000), content_hash);
+        // 3. 报备自写入（同 copy_rich_only：图文的采集 hash 会被改写，主要靠类别窗口）
+        let _suppress = self
+            .paste_suppress
+            .begin_write(WriteOpts::rich(html_fragment));
 
         // 4. 写入剪贴板
         Self::write_rich_to_clipboard(html_fragment, plain_text)?;
@@ -812,10 +818,6 @@ impl PasteEngine {
         let img = image::open(image_path).map_err(|e| format!("无法解码图片: {}", e))?;
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
-        let content_hash = format!(
-            "{:x}",
-            md5::Md5::new().chain_update(rgba.as_raw()).finalize()
-        );
 
         // 2. 获取粘贴锁，防止剪贴板写入与粘贴投递之间的竞态条件
         if self.paste_lock.swap(true, Ordering::Acquire) {
@@ -847,18 +849,24 @@ impl PasteEngine {
             }
         };
 
-        // 4. 设置粘贴抑制（hash = RGBA 像素字节的 MD5，与监听线程匹配）
-        self.paste_suppress
-            .set_with_hash(Duration::from_millis(3000), content_hash);
+        // 4. 报备自写入（hash = RGBA 像素字节，与监听线程口径一致，由 WriteOpts 统一算）
+        let _suppress = self
+            .paste_suppress
+            .begin_write(WriteOpts::image_rgba(rgba.as_raw()));
 
-        // 5. 写入剪贴板
-        let img_data = ImageData {
-            width: width as usize,
-            height: height as usize,
-            bytes: std::borrow::Cow::Borrowed(rgba.as_raw()),
-        };
+        // 5. 写入剪贴板（Windows 桌面专属引擎；mobile 走 RC 会话内剪贴板）
+        #[cfg(target_os = "windows")]
+        {
+            let img_data = ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: std::borrow::Cow::Borrowed(rgba.as_raw()),
+            };
 
-        Self::with_clipboard_retry("写入图片", |cb| cb.set_image(img_data.clone()))?;
+            Self::with_clipboard_retry("写入图片", |cb| cb.set_image(img_data.clone()))?;
+        }
+        #[cfg(not(target_os = "windows"))]
+        { let _ = (&width, &height, &rgba); }
 
         // 6. 发送 Ctrl+V（目标已在第 3 步确认）
         #[cfg(target_os = "windows")]

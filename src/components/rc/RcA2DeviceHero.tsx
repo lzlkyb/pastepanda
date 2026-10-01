@@ -1,18 +1,15 @@
 /**
  * RcA2DeviceHero — 详情面头（拼装稿 2026-09-26 全量对齐版）。
  *
- * 五块：右上标语笔触、显示器插画（纯 CSS，渐变全走 theme.css hero 令牌）、
- * 名字/改名（铅笔图标，稿口径）、状态行（彩点 + ? 气泡就地解释）、
- * 事实胶囊行（在线 pill + OS/路径/RTT 带图标），右下动作组
- * （分体大钮 + 常驻「只看」「传文件」——稿 `.hero-actions`，只看从 ⌄
- * 菜单里回到常驻，菜单仍保留选档）。
+ * 显示器插画、设备名与状态、事实胶囊、默认连接动作和另一个连接模式。
+ * 连接档位由设备记忆决定，另一种模式始终有直达按钮。
  * 改名草稿态仍在工作台层（`useRcDeviceUi`，规则 15.2），本组件只渲染与转发。
  */
 import { useState } from "react";
-import { Activity, Check, Eye, FileUp, Monitor, Pencil, Shield, X } from "lucide-react";
+import { Activity, Check, Eye, FileUp, Monitor, MousePointer2, Pencil, Shield, X } from "lucide-react";
 import type { RcCapability, RcTargetDevice } from "@/lib/api/rc";
 import { rcCheckTime, rcDeviceStatus } from "@/lib/utils";
-import { RcA2ConnectSplit } from "./RcA2ConnectSplit";
+import { RcA2ConnectAction } from "./RcA2ConnectAction";
 import styles from "./RemoteComputerA2.module.css";
 
 export function RcA2DeviceHero({
@@ -127,16 +124,8 @@ export function RcA2DeviceHero({
             {statusHint}
           </p>
         )}
-        {/* hero 胶囊行（稿 `.hero-chips`）：OS 与 RTT 都是「采不到就整段不出」，不编占位。 */}
+        {/* 系统、路径与延迟只在有实测数据时显示；连接状态已在上一行。 */}
         <div className={styles.heroChips}>
-          {/* U8 后状态行文案是「局域网在线」，pill 判据按 presence 判，
-              别绑字符串（文案再改这里就静默失效） */}
-          {target.presence === "live" && (
-            <span className={styles.detailPill}>
-              <i className={styles.detailPillDot} aria-hidden="true" />
-              在线
-            </span>
-          )}
           {deviceOs && (
             <span className={styles.heroChip}>
               <Monitor size={12} aria-hidden="true" />
@@ -158,8 +147,7 @@ export function RcA2DeviceHero({
         </div>
       </div>
       <div className={styles.detailActions}>
-        {/* 连接仍只此一颗分体大钮（⌄ 选档直发）；只看/传文件按稿常驻右下 */}
-        <RcA2ConnectSplit
+        <RcA2ConnectAction
           targetId={target.node_id}
           name={name}
           cap={heroCap}
@@ -172,11 +160,11 @@ export function RcA2DeviceHero({
           type="button"
           className={styles.secondaryButton}
           disabled={busy || cannotConnect}
-          title="仅查看画面，不能操作对方键鼠"
-          onClick={() => onConnect(target.node_id, "view")}
+          title={heroCap === "view" ? "可操作对方键鼠与剪贴板" : "仅查看画面，不能操作对方键鼠"}
+          onClick={() => onConnect(target.node_id, heroCap === "view" ? "control" : "view")}
         >
-          <Eye size={14} aria-hidden="true" />
-          只看
+          {heroCap === "view" ? <MousePointer2 size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+          {heroCap === "view" ? "可控" : "只看"}
         </button>
         <button
           type="button"

@@ -223,9 +223,15 @@ const LIBSTDCXX_RUNTIME: &[NativeLibrary] = &[NativeLibrary {
     kind: NativeLinkKind::Dynamic,
 }];
 
+// 🔴 Android 用 `c++_shared`（动态 libc++）：
+// - 静态 c++_static+whole-archive 仍崩（init_have_lse_atomics 构造器里 getauxval
+//   空指针，2026-09-30 真机实测）——静态归档里 MNN 内嵌的旧 compiler-rt 与
+//   NDK r27 运行时构造器打架；
+// - c++_shared 由 NDK 随包提供（sysroot/usr/lib/<abi>/libc++_shared.so），需复制进
+//   gen/android/app/src/main/jniLibs/<abi>/（一次性，见运行手册真机联调节）。
 const ANDROID_CPP_RUNTIME: &[NativeLibrary] = &[NativeLibrary {
-    name: "c++_static",
-    kind: NativeLinkKind::Static,
+    name: "c++_shared",
+    kind: NativeLinkKind::Dynamic,
 }];
 
 pub fn cpp_runtime_libraries(

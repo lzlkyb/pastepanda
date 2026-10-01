@@ -28,9 +28,9 @@ import { readAutoStartChannel } from "@/lib/rcPrefs";
 import { capabilityLabel } from "@/lib/rcRequest";
 import { isSessionActive, workbenchMainMode } from "@/lib/rcWorkbench";
 import { resolveRcA2Selection, resolveRcA2Surface, hidesWorkbenchTitleBar, type RcA2Page } from "@/lib/rcWorkbenchA2";
-import { RcA2DeviceDetail } from "./RcA2DeviceDetail";
 import { RcA2Sidebar } from "./RcA2Sidebar";
 import { RcA2TitleBar } from "./RcA2TitleBar";
+import { RcDevicesPane } from "./RcDevicesPane";
 import { RcJoinRequests } from "./RcJoinRequests";
 import { RcPageFiles } from "./RcPageFiles";
 import { RcPageHistory } from "./RcPageHistory";
@@ -175,7 +175,8 @@ export function RcWorkbench() {
         onOpenUno={(m) => setOverlay(m)}
       />
     ) : (
-      <RcA2DeviceDetail
+      <RcDevicesPane
+        rc={rc}
         target={selectedTarget}
         check={selectedId ? rc.reachability[selectedId] : undefined}
         channelUp={rc.status ? channelUp : null}

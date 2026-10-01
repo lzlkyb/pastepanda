@@ -285,6 +285,8 @@ interface AppState {
   // 不再 filter 分页加载的内存窗口，从而能搜到未加载的记录）
   searchResults: HistoryItem[] | null; // null = 非搜索模式 / 尚未加载
   searchResultsKey: string; // 产生 searchResults 的查询签名（buildSearchKey）
+  searchError: boolean;
+  searchRetryTick: number;
   searchLoading: boolean; // 搜索查询进行中
 
   // 应用模式（D15 三模式框架）
@@ -336,6 +338,10 @@ interface AppState {
   setSemanticHits: (hits: SemanticHit[]) => void;
   setSearchResults: (results: HistoryItem[] | null, key: string) => void;
   setSearchLoading: (loading: boolean) => void;
+  /** 上一次全量搜索**没查成**（不是查成了 0 条）。优先于空结果文案（U3.5） */
+  setSearchError: (err: boolean) => void;
+  /** 重试上一次失败的搜索：清错误标记并 bump tick 让 App 搜索 effect 重跑 */
+  retrySearch: () => void;
   setFilterType: (ft: FilterType) => void;
   setTimeFilter: (tf: TimeFilter) => void;
   setSourceFilter: (sf: SourceFilter) => void;
@@ -585,6 +591,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   searchResults: null,
   searchResultsKey: "",
+  searchError: false,
+  searchRetryTick: 0,
   searchLoading: false,
 
   // 数据操作
@@ -767,13 +775,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       focusId: null,
       lastClickedId: null,
       // 清空关键词 → 退出搜索模式，丢弃后端搜索结果（回到内存窗口过滤）
-      ...(kw.trim() ? {} : { searchResults: null, searchResultsKey: "", searchLoading: false }),
+      ...(kw.trim() ? {} : { searchResults: null, searchResultsKey: "", searchLoading: false, searchError: false }),
     });
   },
   setSearchResults: (results, key) =>
-    set({ searchResults: results, searchResultsKey: key, searchLoading: false }),
+    set({ searchResults: results, searchResultsKey: key, searchLoading: false, searchError: false }),
   setSemanticHits: (hits) => set({ semanticHits: hits }),
   setSearchLoading: (loading) => set({ searchLoading: loading }),
+  setSearchError: (err) => set({ searchError: err, searchLoading: false }),
+  retrySearch: () =>
+    set((s) => ({ searchError: false, searchRetryTick: s.searchRetryTick + 1, searchLoading: true })),
   setFilterType: (ft) => set({ filterType: ft, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setTimeFilter: (tf) => set({ timeFilter: tf, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setSourceFilter: (sf) => set({ sourceFilter: sf, selectedIds: new Set(), focusId: null, lastClickedId: null }),

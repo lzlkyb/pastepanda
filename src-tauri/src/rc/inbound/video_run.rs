@@ -96,7 +96,8 @@ impl InboundVideo {
         // P0-3 / P0-4：鼠标数据报通道 + 本端链路状况采样
         self.spawn_datagram_reader();
         self.spawn_stats_sampler();
-        // G3：对端申请了系统声音 → 音频采集 + 专用流
+        // G3：对端申请了系统声音 → 音频采集 + 专用流（Windows 宿主专属，mobile 无音频）
+        #[cfg(target_os = "windows")]
         self.spawn_audio_task();
         // 会话刚建立：立刻可推流，等首个心跳
         self.svc.touch_activity();
@@ -179,11 +180,18 @@ impl InboundVideo {
             // 有效节拍（含 D6b 的 fps120 降频）收口在 `effective_interval_ms`：
             // 编码器 fps（`want_fps_for`）必须看到同一个值，否则时间戳步进与
             // 实际节拍脱节（判据写两遍必漏一处，2026-09-22 收口）。
-            let interval = effective_interval_ms(
-                opts.profile.interval_ms,
-                opts.virtual_screen,
-                self.gpu_disabled,
-            );
+            let interval = {
+                // gpu_disabled 是 Windows 宿主字段（mobile 恒 false：无硬编可判死）
+                #[cfg(target_os = "windows")]
+                let gpu_disabled = self.gpu_disabled;
+                #[cfg(not(target_os = "windows"))]
+                let gpu_disabled = false;
+                effective_interval_ms(
+                    opts.profile.interval_ms,
+                    opts.virtual_screen,
+                    gpu_disabled,
+                )
+            };
             let boost_gap = std::time::Duration::from_millis(boost_gap_ms(interval));
             let frame_start = {
                 let now = tokio::time::Instant::now();
@@ -228,6 +236,8 @@ impl InboundVideo {
                     // 探针：走 JPEG 兜底说明硬编这条路这一圈没成。
                     // 只在「硬编本该可用却回退了」时才有诊断价值——
                     // 一开始就没开硬编（用户选 JPEG / 机器不支持）不算回退。
+                    // 编码器回退计数只对 Windows 宿主管线有意义
+                    #[cfg(target_os = "windows")]
                     if self.h264.is_some() || self.enc_retry_after.is_some() {
                         crate::rc::perf::bump(&crate::rc::perf::counters::JPEG_FALLBACK);
                     }

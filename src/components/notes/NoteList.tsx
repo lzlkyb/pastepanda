@@ -363,9 +363,7 @@ function NoteRow({
 }) {
   // 字数条已随标题/摘要/元信息一起进了 `NoteItemBody`，那里自己算。
   return (
-    // 抬升 / 按压的参数**直接用卡片的**（Card.tsx 那两行），不另定一套——
-    // 两套弹簧参数是「风格不统一」的另一种形式。
-    // scale 向外长的那 1.5px 靠 `.list` 的左右 2px padding 接住，不然会被滚动容器剪掉。
+    // 知识库需要连续扫读；悬停只轻抬一像素，避免逐行放大干扰视线。
     <motion.li
       className={`${styles.row} ${active ? styles.rowActive : ""} ${
         selected ? styles.rowSelected : ""
@@ -375,7 +373,7 @@ function NoteRow({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-      whileHover={{ y: -2, scale: 1.01, transition: { type: "spring", stiffness: 500, damping: 30 } }}
+      whileHover={{ y: -1, transition: { duration: 0.15, ease: "easeOut" } }}
       whileTap={{ scale: 0.985, transition: { duration: 0.08, ease: "easeOut" } }}
       onContextMenu={(e) => {
         if (!ctxTrigger) return;

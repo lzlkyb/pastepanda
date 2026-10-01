@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { setItemTags, createTag } from "@/lib/api";
+import { toastActionFailed } from "@/lib/utils";
 import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { useToast } from "@/components/Toast";
 import { X, Search } from "lucide-react";
@@ -105,10 +106,14 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
     if (!item || saving) return;
     setSaving(true);
     try {
-      await setItemTags(item.id, selectedIds);
+      // setItemTags 失败时返回 false 并已 toastActionFailed（api 层收口）。
+      // 🔴 不能关窗：关了用户会以为存上了，而列表里的标签其实没变（规则 15.1 / 15.3）。
+      const ok = await setItemTags(item.id, selectedIds);
+      if (!ok) return;
       onClose();
-    } catch {
-      // silently fail
+    } catch (e) {
+      // 兜底：api 层正常不抛；真抛了也不能静默
+      toastActionFailed("设置标签", e);
     } finally {
       setSaving(false);
     }

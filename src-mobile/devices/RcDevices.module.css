@@ -1,0 +1,598 @@
+/* 设备页（列表 / 配对 / 会话发起）样式。令牌与 theme.css 同源（带兜底）。 */
+
+.errBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 12px;
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--text-primary, #e6edf7);
+  font-size: 13px;
+}
+.errBarText {
+  flex: 1;
+  min-width: 0;
+}
+.errBtn {
+  border: 1px solid var(--border-color, #22304a);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary, #9aa8bd);
+  font-size: 12px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.selfCard,
+.deviceCard {
+  border: 1px solid var(--border-color, #22304a);
+  border-radius: 14px;
+  background: var(--card-bg, #111a2e);
+  padding: 14px 16px;
+}
+.deviceCard {
+  border-color: rgba(99, 102, 241, 0.35);
+  text-align: left;
+  width: 100%;
+}
+.deviceName {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-primary, #e6edf7);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.deviceSub {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  margin-top: 3px;
+}
+.selfTag {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  font-weight: 400;
+  margin-left: 6px;
+}
+.fp {
+  font-family: Consolas, monospace;
+  font-size: 10px;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+.dotOk { background: var(--accent-green, #34d399); }
+.dotChecking { background: var(--accent-cyan, #22d3ee); }
+.dotUnknown { background: var(--text-muted, #64748b); }
+
+.primaryBtn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 13px;
+  border-radius: 12px;
+  border: 1px solid var(--accent, #6366f1);
+  background: rgba(99, 102, 241, 0.16);
+  color: var(--text-primary, #e6edf7);
+  font-size: 14px;
+  font-weight: 700;
+}
+.primaryBtn:disabled {
+  opacity: 0.5;
+}
+.ghostBtn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color, #22304a);
+  background: transparent;
+  color: var(--text-secondary, #9aa8bd);
+  font-size: 13px;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px 12px 0;
+}
+.emptyIcon {
+  font-size: 34px;
+}
+.emptyTitle {
+  font-weight: 700;
+  color: var(--text-primary, #e6edf7);
+  font-size: 15px;
+  margin: 8px 0 4px;
+}
+.emptyHint {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 18px;
+}
+
+/* 配对卡 */
+.pairCard {
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 14px;
+  background: var(--card-bg, #111a2e);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pairHint {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+.bigCode {
+  font-family: Consolas, monospace;
+  font-size: 30px;
+  letter-spacing: 4px;
+  text-align: center;
+  color: var(--accent-cyan, #22d3ee);
+  padding: 6px 0 0;
+}
+.codeExp {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  text-align: center;
+}
+.codeInput {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #22304a);
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--text-primary, #e6edf7);
+  font-size: 18px;
+  font-family: Consolas, monospace;
+  letter-spacing: 3px;
+  text-align: center;
+}
+.codeInput::placeholder {
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: normal;
+  color: var(--text-muted, #64748b);
+}
+.notice {
+  font-size: 12.5px;
+  color: var(--text-secondary, #9aa8bd);
+}
+.noticeError {
+  color: var(--accent-red, #f87171);
+}
+.noticeSuccess {
+  color: var(--accent-green, #34d399);
+}
+.spin {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent-cyan, #22d3ee);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  vertical-align: -1px;
+  margin-right: 6px;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* pending 等待卡 */
+.pendingCard {
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 14px;
+  background: var(--card-bg, #111a2e);
+  padding: 18px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pendingTitle {
+  font-weight: 700;
+  color: var(--text-primary, #e6edf7);
+  font-size: 15px;
+}
+.pendingSub {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 8px;
+}
+
+/* 底部动作面板（非模态） */
+.sheetBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  z-index: 21;
+  margin: 0 10px;
+  border: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
+  border-radius: 16px;
+  background: var(--glass, rgba(17, 26, 46, 0.92));
+  backdrop-filter: blur(8px);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: sheetUp 160ms ease-out;
+}
+@keyframes sheetUp {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.sheetTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary, #e6edf7);
+  text-align: center;
+  padding-bottom: 2px;
+}
+.sheetBtn {
+  padding: 13px;
+  border-radius: 12px;
+  border: 1px solid var(--accent, #6366f1);
+  background: rgba(99, 102, 241, 0.16);
+  color: var(--text-primary, #e6edf7);
+  font-size: 14px;
+  font-weight: 700;
+}
+.sheetBtnCyan {
+  border-color: var(--accent-cyan, #22d3ee);
+  background: rgba(34, 211, 238, 0.12);
+  font-weight: 400;
+  color: var(--text-primary, #e6edf7);
+}
+.sheetBtnGhost {
+  border-color: var(--border-color, #22304a);
+  background: transparent;
+  color: var(--text-secondary, #9aa8bd);
+  font-weight: 400;
+}
+.sheetBtn:disabled {
+  opacity: 0.5;
+}
+
+/* 出示侧的二维码（次要形态）：电脑没摄像头扫不了它，所以压到 160px 不抢大字码。 */
+.pairQr {
+  width: 160px;
+  height: 160px;
+  border-radius: 8px;
+  align-self: center;
+  margin: 8px 0;
+}
+.pairQr[data-ready="0"] {
+  display: none;
+}
+
+/* ── 扫一扫浮层 ──
+   全宽取景 + 一行状态说明。失败态不弹窗、不 toast：摄像头权限被拒是常见路径，
+   用户需要的是"还能手动输入"，这句话必须一直在屏幕上（规则 15.3）。 */
+.scanOverlay {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.scanHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.scanTitle {
+  font-size: 15px;
+  font-weight: 700;
+}
+.scanVideo {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #0b1220;
+}
+.scanHint {
+  font-size: 12px;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.6;
+}
+
+/* ── 单码出示态：遮罩 / 亮码 / 读秒（2026-09-29 设计稿 §3） ──
+   与桌面 usePairCodeVisibility 同一套规则，样式按手机密度单独一份。 */
+.codeBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #e3e6ea);
+  border-radius: 8px;
+  background: var(--card-bg, #fff);
+}
+.codeBarMasked {
+  border-style: dashed;
+  background: var(--section-bg, #eef1f5);
+}
+.maskedLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+.bigCode {
+  flex: 1;
+  min-width: 0;
+  font: 700 24px/1 ui-monospace, Consolas, monospace;
+  letter-spacing: 4px;
+  color: var(--accent, #2f6fed);
+  white-space: nowrap;
+  user-select: text;
+}
+/* tabular-nums：读秒等宽才不会左右抖 */
+.ttl {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.ttlHot { color: var(--warning, #b7791f); font-weight: 600; }
+
+
+/* ── 文件页（P1.5）：落点卡 / ask 确认 / 任务列表 ── */
+.filesView {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+}
+.dirCard {
+  border: 1px solid var(--border-color, #232b3d);
+  border-radius: 12px;
+  background: var(--card-bg, #131824);
+  padding: 12px;
+}
+.dirLabel {
+  font-size: 11px;
+  color: var(--text-muted, #8a94a8);
+  margin-bottom: 4px;
+}
+.dirPath {
+  font: 12px/1.5 ui-monospace, Consolas, monospace;
+  color: var(--text-primary, #e6ebf5);
+  word-break: break-all;
+  user-select: text;
+}
+.dirHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted, #8a94a8);
+}
+.fileEmpty {
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-muted, #8a94a8);
+  padding: 12px 0;
+}
+.fileAsk {
+  border: 1px solid var(--accent, #6366f1);
+  border-radius: 12px;
+  background: var(--card-bg, #131824);
+  padding: 12px;
+}
+.fileAskTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #e6ebf5);
+  margin-bottom: 4px;
+}
+.fileAskLead {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary, #b6c0d4);
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+.fileAskBtns {
+  display: flex;
+  gap: 8px;
+}
+.fileAskBtns .primaryBtn,
+.fileAskBtns .ghostBtn {
+  flex: 1;
+  margin-top: 0;
+}
+.peerPick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.peerChip {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color, #232b3d);
+  border-radius: 999px;
+  background: var(--card-bg, #131824);
+  color: var(--text-secondary, #b6c0d4);
+  font-size: 13px;
+}
+.peerChipOn {
+  border-color: var(--accent, #6366f1);
+  background: rgba(99, 102, 241, 0.16);
+  color: var(--text-primary, #e6ebf5);
+}
+.fileTasksHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted, #8a94a8);
+  margin-top: 4px;
+}
+.fileClear {
+  border: none;
+  background: transparent;
+  color: var(--accent, #6366f1);
+  font-size: 12px;
+  padding: 4px 6px;
+}
+.fileTasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fileTask {
+  border: 1px solid var(--border-color, #232b3d);
+  border-radius: 12px;
+  background: var(--card-bg, #131824);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fileTaskHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fileDir {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-cyan, #22d3ee);
+}
+.fileDirIn {
+  color: var(--accent-green, #34d399);
+}
+.fileTaskName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary, #e6ebf5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileTaskCancel {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #8a94a8);
+  padding: 4px;
+  display: flex;
+}
+.fileTaskBar {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--section-bg, #1a2130);
+  color: var(--accent, #6366f1);
+}
+.fileTaskBar::-webkit-progress-bar {
+  background: var(--section-bg, #1a2130);
+}
+.fileTaskBar::-webkit-progress-value {
+  background: var(--accent, #6366f1);
+}
+.fileTaskLine {
+  font-size: 12px;
+  color: var(--text-secondary, #b6c0d4);
+  font-variant-numeric: tabular-nums;
+}
+.fileTaskErr {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--danger, #f87171);
+}
+.fileTaskSub {
+  font-size: 11px;
+  color: var(--text-muted, #8a94a8);
+}
+.fileTaskPeer {
+  font-size: 11px;
+  color: var(--text-muted, #8a94a8);
+}
+/* 视觉隐藏的 <input type="file">：承接系统选择器，按钮才是触摸目标 */
+.filePickInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── 无人值守接入卡（手机端 RcUnoJoinCard） ── */
+.unoModes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.unoInput {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px;
+  font: 13px/1.5 inherit;
+  font-family: ui-monospace, Consolas, monospace;
+  border: 1px solid var(--border-color, #232b3d);
+  border-radius: 8px;
+  background: var(--section-bg, #1a2130);
+  color: var(--text-primary, #e6ebf5);
+  resize: none;
+}
+.unoFp {
+  font-size: 12px;
+  color: var(--text-muted, #8a94a8);
+  font-variant-numeric: tabular-nums;
+}
+.unoPickBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 动作面板追加项（P1.5）：危险项独立色；页脚双入口并排 */
+.sheetBtnDanger {
+  border-color: var(--danger, #f87171);
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--danger, #f87171);
+  font-weight: 400;
+}
+.actionsRow {
+  display: flex;
+  gap: 8px;
+}
+.actionsRow .ghostBtn {
+  flex: 1;
+  margin-top: 0;
+}
