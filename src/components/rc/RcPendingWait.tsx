@@ -13,6 +13,7 @@
  * **确定**进度条——后端有确切的确认窗口（WAIT_CONFIRM_MS，对齐 service.rs 的
  * 120_000），确定条能多给一条信息「还剩多久」。倒计时只显示不驱动取消，见 rcWait.ts。
  */
+import { rcCanControl, rcCapShort } from "@/lib/rcCapability";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { formatWaitSpan, waitedMs, waitProgress, waitRemainingMs } from "@/lib/rcWait";
@@ -50,7 +51,7 @@ export function RcPendingWait({
       <div className={styles.waitHead}>
         <Loader2 size={14} className={styles.spin} />
         <span>
-          已向 <b>{peerName}</b> 发送申请（{capability === "control" ? "可控" : "只看"}
+          已向 <b>{peerName}</b> 发送申请（{rcCapShort(capability)}
           ），等待对方确认…
         </span>
       </div>
@@ -83,7 +84,7 @@ export function RcPendingWait({
             : " · 等待超时，正在收尾…"}
       </div>
       <div className={styles.waitActions}>
-        {capability !== "control" && onRaise && (
+        {!rcCanControl(capability) && onRaise && (
           <button
             type="button"
             className={styles.miniBtnPri}

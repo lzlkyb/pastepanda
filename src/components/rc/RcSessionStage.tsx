@@ -13,6 +13,7 @@
  * 换第二条控制条（RcFullscreenHotbar 退役），两态同一条胶囊；顶栏 `.viewTop` 在
  * 全屏时整条退场（身份/窗口键并入胶囊），画面盒回到整个屏幕。
  */
+import { rcCanControl } from "@/lib/rcCapability";
 import { Eye, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import type { RcSession } from "@/lib/api/rc";
@@ -79,7 +80,7 @@ export function RcSessionStage({
   /** 遮罩上的「结束会话」（父级已包 confirmDialog，这里只触发）。 */
   onRequestEnd: () => void;
 }) {
-  const canControl = session.capability === "control";
+  const canControl = rcCanControl(session.capability);
   const {
     visible,
     hasFrame,

@@ -66,9 +66,17 @@ export const AiCustomProviderDialog = memo(function AiCustomProviderDialog({
   // 不阻断的话 App 的 Esc 链会把**整个设置页**一起关掉。
   useDialogEscape(onClose);
 
+  // Enter = 保存。两条闸缺一不可（同 `useDialogEscape` 里的输入法判据）：
+  // 🔴 ① 合成中的 Enter 归输入法（确认候选词），不拦的话打到「保存」——
+  //    本弹窗填的是服务商名/模型名，中文输入法下这是高频反射动作；
+  // 🔴 ② 焦点在按钮上时 Enter 已经触发了那个按钮（取消/关闭），
+  //    再走一遍 save 就是「一次按键既关窗又写库」。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && canSave) void save();
+      if (e.key !== "Enter" || e.isComposing) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "BUTTON" || t.tagName === "SELECT")) return;
+      if (canSave) void save();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

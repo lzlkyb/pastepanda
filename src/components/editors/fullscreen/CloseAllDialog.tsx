@@ -15,12 +15,13 @@
  *   - 全部保存并关闭 —— 会逐个真写盘；任一失败就**不关窗**（把失败留在用户眼前，
  *                      而不是关完窗口再告诉他「有一个没存上」）
  */
-import { useEffect } from "react";
+import { useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import styles from "./CloseAllDialog.module.css";
 
 export interface CloseTarget {
@@ -61,16 +62,13 @@ export function CloseAllDialog({
 }: CloseAllDialogProps) {
   const anim = useDialogAnim();
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      if (!busy) onCancel();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onCancel, busy]);
+  // Esc = 取消，但**忙碌期间只截断事件、不关窗**（原实现同意：不拦就是
+  // 「一按 Esc 既取消又关窗」，因为底下的编辑器也在监听 Esc）。
+  // 走公共 hook：输入法合成态、嵌套确认框让路两条闸一起拿到（判据见 `lib/modalLayers.ts`，规则 #11.1）。
+  const escCancel = useCallback(() => {
+    if (!busy) onCancel();
+  }, [busy, onCancel]);
+  useDialogEscape(escCancel, open);
 
   const title = scope === "tab" ? "还有未保存的修改" : `有 ${targets.length} 个文档未保存`;
   const failCount = targets.filter((t) => t.tabError).length;

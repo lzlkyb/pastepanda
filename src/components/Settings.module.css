@@ -139,9 +139,17 @@
 
 /* #16 设置分区错峰入场 — 标签页面板每次挂载（AnimatePresence mode="wait" 按 key 重挂载）
    时子块按序淡入上浮；搜索过滤切换 display 时新显现的块也会重播一次，强化命中反馈。
-   16 个之后统一封顶延迟，避免折叠线以下的块反向晚到 */
+
+   🔴 延迟必须封顶，且命中行自己不参与动画：`animation … backwards` 在延迟期间就把
+   opacity 定在 0，旧版排到第 16 项 = 0.45s，而**搜索会滚到第一条命中**——那行往往排在
+   几十位之后，于是「滚到了、内容还没出现」，用户看到半秒空白（`animation-delay` 按
+   nth-child 数的是全部子节点，隐藏的也算）。现在：可见的最多排到 0.15s（U2 四档里的那一档），
+   滚到的那一行直接不播。 */
 .settingsSections > * {
   animation: settingsSectionIn 0.3s ease backwards;
+}
+.settingsSections > .settingsHit {
+  animation: none;
 }
 @keyframes settingsSectionIn {
   from { opacity: 0; transform: translateY(8px); }
@@ -151,19 +159,7 @@
 .settingsSections > *:nth-child(2)  { animation-delay: 0.03s; }
 .settingsSections > *:nth-child(3)  { animation-delay: 0.06s; }
 .settingsSections > *:nth-child(4)  { animation-delay: 0.09s; }
-.settingsSections > *:nth-child(5)  { animation-delay: 0.12s; }
-.settingsSections > *:nth-child(6)  { animation-delay: 0.15s; }
-.settingsSections > *:nth-child(7)  { animation-delay: 0.18s; }
-.settingsSections > *:nth-child(8)  { animation-delay: 0.21s; }
-.settingsSections > *:nth-child(9)  { animation-delay: 0.24s; }
-.settingsSections > *:nth-child(10) { animation-delay: 0.27s; }
-.settingsSections > *:nth-child(11) { animation-delay: 0.30s; }
-.settingsSections > *:nth-child(12) { animation-delay: 0.33s; }
-.settingsSections > *:nth-child(13) { animation-delay: 0.36s; }
-.settingsSections > *:nth-child(14) { animation-delay: 0.39s; }
-.settingsSections > *:nth-child(15) { animation-delay: 0.42s; }
-.settingsSections > *:nth-child(16) { animation-delay: 0.45s; }
-.settingsSections > *:nth-child(n+17) { animation-delay: 0.48s; }
+.settingsSections > *:nth-child(n+5) { animation-delay: 0.15s; }
 
 .settingsSearchIcon {
   display: flex;
@@ -484,6 +480,19 @@
   background: var(--accent-light);
 }
 
+/* 空态里「整块页面」那四个跳转按钮：横排一行，间距由这里给。
+   子按钮自带的 margin-top:12 在这里会变成每行都多 12px，压掉。 */
+.settingsNoResultPages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 12px;
+}
+.settingsNoResultPages .settingsNoResultBtn {
+  margin-top: 0;
+}
+
 /* Setting row — S1：行落在分区卡片内（左右下描边），可点行有 hover */
 .sRow {
   display: flex;
@@ -518,8 +527,12 @@
    🔴 排除 .sToggle：开关自己就是 last-child，吃掉 min-width:72 会把 44×26
    轨道撑成 72px 长胶囊（旋钮贴边、字挤），和设计稿对不上。
    🔴 不写 gap / flex-wrap：子控件自己的间距（sCleanup 4px、sSegGroup 2px）
-   特异性压不过本规则，写了会把它们盖掉。 */
-.sRow > :last-child:not(.sToggle) {
+   特异性压不过本规则，写了会把它们盖掉。
+   🔴 排除 [data-stack]：本规则是 0-4-0（.sRow + :last-child + 两个 :not()），
+   分区里那些「整块纵向内容恰好排在行末」的子节点（灵动岛的停靠六宫格、透度滑杆）
+   自己的 0-1-0 规则必输，`display:grid/column` 会被拍成右对齐单行——跨 module 也没法
+   靠顺序翻盘。这类子节点显式挂 data-stack 退出本规则，而不是去堆类名权重。 */
+.sRow > :last-child:not(.sToggle):not([data-stack]) {
   flex-shrink: 0;
   min-width: 72px;
   display: flex;
@@ -1040,6 +1053,14 @@
   /* 计数后缀整段不拆，避免「记住了 3 / 台」断在数字和单位之间 */
 }
 .lanStatusText span { white-space: nowrap; }
+/* 状态行后缀：主句说「监听中」但某条通道其实没通时用（规则 15.1——反馈要和它的
+   触发待在同一可见性域，否则折叠区里的告警等于没有）。用 --warning 而不是 --danger：
+   这不是错误，是「一个能力当前不可用」。 */
+.lanStatusWarn {
+  color: var(--warning);
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 .lanTestBtn {
   margin-top: 10px; width: 100%; padding: 6px 0; border-radius: 8px;

@@ -9,7 +9,6 @@ import {
   shift,
   arrow,
   useHover,
-  useClick,
   useDismiss,
   useRole,
   useInteractions,
@@ -33,6 +32,11 @@ interface HelpTooltipProps {
  * - 点击 ? 图标 → 弹出详细气泡
  * - 单元素 + visibility 控制：定位完成前隐藏，完成后 opacity 淡入
  *   动画只改 opacity 不改位置，避免与 Floating UI 的 transform 冲突
+ *
+ * 🔴 交互监听只能经 `getReferenceProps()` 挂到触发元素上：floating-ui 0.27 的
+ * `useHover/useClick/useRole` 把 listener 装进这对 getter 里，不 spread 就等于没注册
+ * （本文件此前只 spread 了 floating 那半，悬浮路径静默失效、只剩原生 title，
+ * 而原生 title 不受主题控制、也没有 500ms 延迟）。加新交互时先确认它落在哪一半。
  */
 export function HelpTooltip({ tooltip, detail, detailTitle }: HelpTooltipProps) {
   const [showTooltip, setShowTooltip] = useState(false);
@@ -82,10 +86,7 @@ export function HelpTooltip({ tooltip, detail, detailTitle }: HelpTooltipProps) 
     useDismiss(tooltipCtx),
   ]);
 
-  const detailInteractions = useInteractions([
-    useClick(detailCtx),
-    useDismiss(detailCtx),
-  ]);
+  const detailInteractions = useInteractions([useDismiss(detailCtx)]);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -108,10 +109,10 @@ export function HelpTooltip({ tooltip, detail, detailTitle }: HelpTooltipProps) 
           tooltipRefs.setReference(node);
           detailRefs.setReference(node);
         }}
+        {...tooltipInteractions.getReferenceProps()}
         className={`${styles.trigger}${showDetail ? ` ${styles.triggerActive}` : ""}`}
         onClick={handleClick}
         aria-label={detailTitle || tooltip || "帮助"}
-        title={!detail ? tooltip : undefined}
       >
         <HelpCircle size={14} />
       </button>

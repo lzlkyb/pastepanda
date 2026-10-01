@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect, type RefObject } from "react";
+import { useCallback, useEffect, useState, useRef, useLayoutEffect, type RefObject } from "react";
 import { aliasesFor, warnStaleAliasKeys } from "@/lib/settings-aliases";
 import styles from "@/components/Settings.module.css";
 
@@ -56,6 +56,60 @@ function clearSearchMarks(root: ParentNode) {
  */
 export function sectionTitleOf(el: HTMLElement): string {
   return (el.dataset.label || el.textContent || "").trim();
+}
+
+/** 最近的纵向可滚动祖先：`.settingsSections` 自己不滚，滚动位置要相对滚动口算 */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if ((y === "auto" || y === "scroll") && p.scrollHeight > p.clientHeight + 1) return p;
+  }
+  return null;
+}
+
+/**
+ * 命中行上方**最近的一根分区标题**的实占高度——它就是此刻吸在视口顶部、
+ * 会盖住贴顶内容的那根（小节标题与主标题都 `top: 0`，叠着时后一根在上，
+ * 而「后一根」正是往上找到的第一根）。往上找不到（第一节）算 0。
+ */
+function stickyCoverAbove(row: HTMLElement): number {
+  for (let p = row.previousElementSibling; p; p = p.previousElementSibling) {
+    if (p.classList.contains(styles.sSection)) return (p as HTMLElement).offsetHeight;
+  }
+  return 0;
+}
+
+/**
+ * 把第一条命中滚到视口上沿。
+ *
+ * 🔴 不能直接用 `scrollIntoView`：`.sSection` 是 `position: sticky; top: 0` 的吸顶标题，
+ * 命中行只要贴着滚动口顶部就整条被它盖住（搜「主题配色」即现：滚到位了，但那一行在标题底下）。
+ * 所以按**当前**几何算出目标 scrollTop 再滚——平滑动画途中不重新测量，免得读到中途的 rect。
+ * 已经在「标题下方」完整可见的行不动它：本 effect 每次渲染都跑，跟用户抢滚动条是最糟的体验。
+ */
+function scrollToHit(row: HTMLElement, container: HTMLElement) {
+  const scroller = scrollerOf(container);
+  if (!scroller) {
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return;
+  }
+  const rect = row.getBoundingClientRect();
+  const cover = stickyCoverAbove(row) + 8;
+  const top = rect.top - scroller.getBoundingClientRect().top;
+  if (top >= cover && rect.bottom <= scroller.getBoundingClientRect().bottom) return;
+  scroller.scrollTo({ top: scroller.scrollTop + top - cover, behavior: "smooth" });
+}
+
+/**
+ * 「· 分布在「X」「Y」」：分区名最多列 2 个，剩下的折成「等 N 处」。
+ * 横幅可用宽度在 550px 窗口下只有 ~320px（还要减图标、「清除」按钮和「… 命中 N 项」），
+ * 全列的话四个节名就把关键词那段顶掉了，末尾直接变成省略号。
+ */
+function distText(titles: string[]): string {
+  if (titles.length === 0) return "";
+  const shown = titles.slice(0, 2).join("」「");
+  const more = titles.length > 2 ? ` 等 ${titles.length} 处` : "";
+  return ` · 分布在「${shown}」${more}`;
 }
 
 /**
@@ -130,14 +184,14 @@ export function useSettingsSearch(): SettingsSearch {
   const countRef = useRef<HTMLSpanElement>(null);
   const summaryRef = useRef<HTMLSpanElement>(null);
 
-  // 不写依赖数组＝每次渲染后都重跑。过滤是对真实 DOM 做的，而 React 新插入的节点
-  // 默认 display 为空串，会绕过当前关键词直接显形；只要容器里有条件渲染的分区
-  // （局域网同步、知识库同步…），漏列一项就是搜索静默失效。列举依赖必然漏，故不列。
-  //
-  // 🔴 这套过滤要求 containerRef 的 children 是「一层扁平的行」：分区标题
-  // 和设置行是兄弟节点。所以分区组件必须返回 <>…</> 片段，不能包一层 <div>，
-  // 否则遍历到的是分区外壳而不是行，搜索会静默失效（界面看着正常）。
-  useLayoutEffect(() => {
+  /**
+   * 一轮过滤：改写每行显隐与底纹 → 定标题 → 写空态/计数/横幅 → 滚到首条命中。
+   *
+   * 🔴 这套过滤要求 containerRef 的 children 是「一层扁平的行」：分区标题
+   * 和设置行是兄弟节点。所以分区组件必须返回 <>…</> 片段，不能包一层 <div>，
+   * 否则遍历到的是分区外壳而不是行，搜索会静默失效（界面看着正常）。
+   */
+  const applyFilter = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
     const kw = filter.trim().toLowerCase();
@@ -157,18 +211,22 @@ export function useSettingsSearch(): SettingsSearch {
     // 先拆掉上一轮的 mark，再过滤/重高亮
     clearSearchMarks(container);
 
+    interface Head { el: HTMLElement; title: string; direct: number; shown: number; titleHit: boolean }
+
     // 第一遍：按文本匹配显示/隐藏每个设置行（分区标题留到第二遍）
     let visibleCount = 0;
     let hitCount = 0;
-    /** 直接命中的行所在的分区名（顺序保留、去重） */
-    const hitSections: string[] = [];
+    /** 按 DOM 顺序记录的每个标题，第二遍和横幅都用它 */
+    const heads: Head[] = [];
     // 分区标题自己命中时，整节展开——搜「外观」「数据管理」这种词本来就应当有结果
     let sectionHit = false;
-    let sectionTitle = "";
+    let cur: Head | null = null;
     for (const el of children) {
       if (el.classList.contains(styles.sSection)) {
-        sectionTitle = sectionTitleOf(el);
-        sectionHit = kw !== "" && sectionTitle.toLowerCase().includes(kw);
+        const title = sectionTitleOf(el);
+        sectionHit = kw !== "" && title.toLowerCase().includes(kw);
+        cur = { el, title, direct: 0, shown: 0, titleHit: sectionHit };
+        heads.push(cur);
         continue;
       }
       // 空关键词时短路，不去走 rowHaystack 的 DOM 遍历（这是常态）
@@ -180,10 +238,13 @@ export function useSettingsSearch(): SettingsSearch {
       el.classList.toggle(styles.settingsHit, direct);
       if (direct) {
         hitCount++;
-        if (sectionTitle && !hitSections.includes(sectionTitle)) hitSections.push(sectionTitle);
+        if (cur) cur.direct++;
         highlightSearchKw(el, kw);
       }
-      if (match) visibleCount++;
+      if (match) {
+        visibleCount++;
+        if (cur) cur.shown++;
+      }
     }
     // 第二遍：决定每个分区标题的显隐。
     //
@@ -194,16 +255,6 @@ export function useSettingsSearch(): SettingsSearch {
     //   ② 本节有可见行 → 显示；
     //   ③ 紧跟着的是一个**可见的**小节标题 → 也显示（它是这条链的入口）。
     // 从后往前扫，所以 ③ 看到的是已经定过稿的下一节，连续的纯小节标题能一路串到主标题。
-    const hasRow = new Map<HTMLElement, boolean>();
-    let cur: HTMLElement | null = null;
-    for (const el of children) {
-      if (el.classList.contains(styles.sSection)) {
-        cur = el;
-        hasRow.set(el, false);
-      } else if (cur && el.style.display !== "none") {
-        hasRow.set(cur, true);
-      }
-    }
     const isHead = (el: HTMLElement | undefined) =>
       !!el && el.classList.contains(styles.sSection);
     for (let i = children.length - 1; i >= 0; i--) {
@@ -211,34 +262,82 @@ export function useSettingsSearch(): SettingsSearch {
       if (!isHead(el)) continue;
       const next = children[i + 1];
       const nextShownHead = isHead(next) && next.style.display !== "none";
-      el.style.display = kw === "" || hasRow.get(el) || nextShownHead ? "" : "none";
+      const stat = heads.find((h) => h.el === el);
+      el.style.display = kw === "" || (stat?.shown ?? 0) > 0 || nextShownHead ? "" : "none";
     }
+    /** 屏幕上真算「结果」的分区：本节有直接命中的，加上节名命中而整节展开的。
+     *  只看直接命中会漏——搜「外观」时一行都没命中，但那一节整节摆在那儿。 */
+    const resultTitles = heads
+      .filter((h) => h.el.style.display !== "none" && (h.direct > 0 || h.titleHit))
+      .map((h) => h.title);
+
     if (noResultRef.current) {
       noResultRef.current.style.display = kw && visibleCount === 0 ? "" : "none";
     }
     // 计数写 DOM 而不是走 state：本 effect 每次渲染都跑，setState 会绕回来。
     // 对应的 <span> 不渲染任何子节点，React 不会覆盖这里写进去的文本。
+    // ❗ 框旁那个数是「看得见几项」，取 visibleCount 而不是 hitCount：
+    //    整节展开的那些行同样是结果，只报直接命中会又跟横幅对不上。
     if (countRef.current) {
-      countRef.current.textContent = kw ? `${hitCount} 项` : "";
+      countRef.current.textContent = kw ? `${visibleCount} 项` : "";
     }
     if (summaryRef.current) {
       if (!kw) {
         summaryRef.current.textContent = "";
-      } else if (hitCount === 0) {
+      } else if (visibleCount === 0) {
         summaryRef.current.textContent = "没有匹配项";
+      } else if (hitCount === 0) {
+        // 一行都没命中、却有内容可见 ⇒ 全靠节名命中。这时说「没有匹配项」
+        // 等于当着一屏结果说没有（搜「外观」「谁能连进来」即现）。
+        const scope = resultTitles.length > 1
+          ? `「${resultTitles[0]}」等 ${resultTitles.length} 个`
+          : `「${resultTitles[0] ?? ""}」`;
+        summaryRef.current.textContent = `${scope}分区名命中 · 整节 ${visibleCount} 项`;
       } else {
-        const dist = hitSections.length
-          ? ` · 分布在「${hitSections.join("」「")}」`
-          : "";
-        summaryRef.current.textContent = `命中 ${hitCount} 项${dist}`;
+        summaryRef.current.textContent = `命中 ${hitCount} 项${distText(resultTitles)}`;
       }
     }
     // 滚到第一条直接命中，省得搜完还要自己找（U1）
     if (kw) {
       const first = container.querySelector<HTMLElement>("." + styles.settingsHit);
-      first?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (first) scrollToHit(first, container);
     }
+  }, [filter]);
+
+  // 不写依赖数组＝每次渲染后都重跑。过滤是对真实 DOM 做的，而 React 新插入的节点
+  // 默认 display 为空串，会绕过当前关键词直接显形；只要容器里有条件渲染的分区
+  // （局域网同步、知识库同步…），漏列一项就是搜索静默失效。列举依赖必然漏，故不列。
+  useLayoutEffect(() => {
+    applyFilter();
   });
+
+  /**
+   * 🔴 上面那条只覆盖「本组件渲染了」的那半边。**折叠组展开、懒挂载面板填进来、
+   * 条件行出现**这些新行不引起 SettingsView 重渲染，于是它们顶着默认 display 直接显形，
+   * 而计数还停在「没有匹配项」——旧注释里那句「每次渲染都跑」对这些时刻是假话。
+   * 观察容器**直接子节点的增删**就够：一层扁平契约 ⇒ 新行必然是直接子节点。
+   *
+   * ❗ 故意不观察 subtree / attributes：底纹 `<mark>` 注入和 display 改写都在子树与属性上，
+   * 观察到它们会让「应用过滤 → 触发观察 → 再应用过滤」自激成无限循环。
+   * 只在搜索态挂（空关键词时没有需要维持的过滤结果），一帧最多重跑一次。
+   */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !filter.trim() || typeof MutationObserver === "undefined") return;
+    let raf = 0;
+    const ro = new MutationObserver(() => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        applyFilter();
+      });
+    });
+    ro.observe(container, { childList: true });
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [filter, applyFilter]);
 
   return { filter, setFilter, inputRef, containerRef, noResultRef, countRef, summaryRef };
 }

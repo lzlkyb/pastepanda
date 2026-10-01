@@ -7,6 +7,7 @@
  * 不发送声音 / 免确认二段确认（U9）/ 立即结束。
  * 渲染时机由父组件决定（open && <RcControlDrawer …/>）。
  */
+import { rcCanControl } from "@/lib/rcCapability";
 import { useEffect, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
@@ -76,7 +77,7 @@ export function RcControlDrawer({
   /** 丙-③：暂停 / 恢复对方观看。不传 = 不摆这一键（不给半条路）。 */
   onToggleVideoPause?: () => void;
 }) {
-  const canControl = session.capability === "control";
+  const canControl = rcCanControl(session.capability);
   const name = rcDisplayName(session, fingerprintOf(session.peer));
 
   // U9：开启免确认的行内二段确认（自 RcInboundView 迁移）——降低安全门槛的操作

@@ -48,7 +48,7 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
   /** 当前开着的弹层（长期配对 / 让别人帮我 / 帮别人连一次）——见 RcPairLayer。 */
   const [overlay, setOverlay] = useState<RcPairLayerMode>(null);
   const [devOpen, setDevOpen] = useState(false);
-  const { isOpen, toggle } = useRcGroupOpen(filter);
+  const { isOpen, toggle, inert } = useRcGroupOpen(filter);
   const history = useRcHistory();
   const ability = useRcLocalAbility();
 
@@ -142,6 +142,7 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
         // 组 1 **不吃主开关**：配对与发起远程都不依赖「允许被远程协助」（主开关 detail 第 3 句）。
         // 逐台限制的变灰判据是后端真值 `status.enabled`，在子表里自己算。
         open={isOpen("pair", joins.length > 0)}
+        inert={inert}
         devOpen={devOpen}
         onToggle={() => toggle("pair")}
         onToggleDev={() => setDevOpen((v) => !v)}
@@ -153,6 +154,7 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
         status={rc.status ?? null}
         off={off}
         open={isOpen("conn")}
+        inert={inert}
         onToggle={() => toggle("conn")}
         onOverlay={setOverlay}
       />
@@ -164,6 +166,7 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
           status={rc.status}
           ability={ability}
           open={isOpen("cap")}
+          inert={inert}
           onToggle={() => toggle("cap")}
         />
       )}
@@ -174,6 +177,7 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
         running={!!rc.status?.running}
         busy={rc.busy}
         open={isOpen("recent")}
+        inert={inert}
         onToggle={() => toggle("recent")}
         onReconnect={reconnect}
       />

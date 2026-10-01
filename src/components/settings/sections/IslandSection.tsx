@@ -79,7 +79,7 @@ function GlassRow({ stored, updateAndSave }: {
       <div ref={stageRef} className={styles.glassStage}>
         <div className={styles.glassPill}>今天 3 件 · 点横幅展开列表</div>
       </div>
-      <div className={styles.glassSliderWrap}>
+      <div className={styles.glassSliderWrap} data-stack="true">
         <input
           className={styles.glassSlider}
           type="range"
@@ -122,7 +122,9 @@ function AnchorRow({ stored, updateAndSave }: {
       <div className={styles.anchorStage} data-edge={anchorDock(shown)} data-side={anchorSide(shown)}>
         <div className={styles.anchorPill} />
       </div>
-      <div className={styles.anchorGrid}>
+      {/* data-stack="true"：本块是 `.sRow` 的 last-child，不加这个标记就会被
+          `Settings.module.css` 的右控件列规则拍成单行右对齐（判据见那条注释）。 */}
+      <div className={styles.anchorGrid} data-stack="true">
         {ANCHOR_ORDER.map((key) => (
           <button
             key={key}
@@ -181,6 +183,7 @@ export function IslandSection({
                 <button
                   key={o.ms}
                   className={`${styles.segBtn} ${config.todo_island_remind_ms === o.ms ? styles.segBtnSel : ""}`}
+                  aria-pressed={config.todo_island_remind_ms === o.ms}
                   onClick={() => saveAndNotify(updateAndSave, { todo_island_remind_ms: o.ms })}
                 >
                   {o.label}

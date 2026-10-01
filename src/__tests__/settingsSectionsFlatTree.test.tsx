@@ -108,3 +108,37 @@ describe("设置页右栅：children 必须严格扁平", () => {
     expect(wrapped).toEqual([]);
   });
 });
+
+/**
+ * 「.sRow 右控件列」与整块纵向内容之间的权重游戏（2026-10-01 设置页 UI 审查 P0 5）。
+ *
+ * `Settings.module.css` 那条 `.sRow > :last-child:not(.sToggle):not([data-stack])` 是 0-4-0：
+ * 分区组件自己的 0-1-0 规则永远赢不了它——灵动岛的「停靠位置六宫格」和「玻璃透度滑杆」
+ * 都是纵向整块、又恰好排在行末，被这条规则一拍就成右对齐单行。跨 module 也翻不了盘
+ * （谁在后不由写代码的人决定）。逃生口是显式挂 `data-stack="true"`。
+ *
+ * 三处文本少任何一处，那两块布局就静默塌掉，而 jsdom 量不到布局 ⇒ 只能钉源码。
+ */
+describe("整块纵向内容必须显式退出「.sRow 右控件列」规则", () => {
+  const root = process.cwd();
+  const sharedCss = readFileSync(join(root, "src", "components", "Settings.module.css"), "utf8");
+  const islandTsx = readFileSync(join(root, "src", "components", "settings", "sections", "IslandSection.tsx"), "utf8");
+  const islandCss = readFileSync(join(root, "src", "components", "settings", "sections", "Island.module.css"), "utf8");
+
+  it("右控件列规则留着 :not([data-stack]) 逃生口", () => {
+    expect(sharedCss).toMatch(/\.sRow > :last-child:not\(\.sToggle\):not\(\[data-stack\]\)/);
+  });
+
+  it("六宫格与透度滑杆两个纵向块都挂了 data-stack", () => {
+    // 断言文本里不写 `styles.` 前缀：check-css-classes 扫的是源码原文，
+    // 会把字符串常量内的 `styles.glassSliderWrap` 也当成真引用报死。
+    expect(islandTsx).toMatch(/glassSliderWrap\} data-stack="true"/);
+    expect(islandTsx).toMatch(/anchorGrid\} data-stack="true"/);
+  });
+
+  it("Island.module.css 里的行方向靠双写类名抬权重，没退回单类名", () => {
+    for (const cls of ["glassRow", "anchorRow"]) {
+      expect(islandCss, cls).toMatch(new RegExp(`\\.${cls}\\.${cls}\\s*\\{`));
+    }
+  });
+});

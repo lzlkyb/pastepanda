@@ -9,6 +9,7 @@
  * 🔴 后端只出 `code`（`confirm_timeout` / `pending_full`），整句中文在这里——
  * 与跨端 deny reason 同一套「后端出码、前端出话」纪律（见 rcHistory 的先例）。
  */
+import { rcCanControl } from "@/lib/rcCapability";
 
 /** 与 `service/inbound.rs` 的 `120_000` 同值；改那边必须改这里（下方守卫单测钉着）。 */
 export const RC_ASK_TTL_MS = 120_000;
@@ -28,7 +29,7 @@ export function rcAskCountdownText(leftMs: number): string {
 
 /** 申请文案里的能力档：对标 Quick Assist / RustDesk 的「先看，再控」口径。 */
 export function rcAskGrantText(cap: "view" | "control"): string {
-  return cap === "control" ? "看屏幕 + 控制键鼠" : "只看屏幕";
+  return rcCanControl(cap) ? "看屏幕 + 控制键鼠" : "只看屏幕";
 }
 
 /**
@@ -39,7 +40,7 @@ export function rcAskGrantText(cap: "view" | "control"): string {
  * 造成越权——反过来说，按钮摆出来就一定真降得下来。
  */
 export function rcAskOfferViewOnly(cap: "view" | "control"): boolean {
-  return cap === "control";
+  return rcCanControl(cap);
 }
 
 /** 后端出的码 → 主机看到的一句话（未知码返回 null，不编造原因）。 */

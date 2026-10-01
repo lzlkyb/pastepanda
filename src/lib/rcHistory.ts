@@ -11,6 +11,7 @@
 import type { RcHistoryItem } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
+import { rcCapShort } from "@/lib/rcCapability";
 
 export type RcHistoryDirFilter = "all" | "outbound" | "inbound";
 
@@ -122,7 +123,7 @@ export function lastMeasuredRtt(
 
 /** 历史记录的模式文案（详情面与历史页共用，避免两处各写一个三元）。 */
 export function historyCapabilityLabel(capability: string): string {
-  return capability === "control" ? "可控" : "只看";
+  return rcCapShort(capability);
 }
 
 /** 结果列四态。`cancel` 单列一档而不并进 `warn`：取消是用户主动行为、不是异常，

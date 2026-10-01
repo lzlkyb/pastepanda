@@ -12,7 +12,7 @@
  *
  * 🔴 第二组盯的是另一个真 bug（2026-09-10）：同一个入口，现在会停在**「数据管理」**。
  * 上一次的修复只保证了「排一次滚动」，没保证「排得是时候」：
- * 那个 effect 依赖 `[open]`，在设置页**挂载那一刻**就算好了目标位置，
+ * 那个 effect 在设置页**挂载那一刻**就算好了目标位置，
  * 而那时 `stats` 还是 null、`AiTab` 的 providers 没到、`McpTab` 压根没挂载——
  * 页面矮得多。等这些内容陆续到达把 MCP 标题往下推时，旧代码已经把 ref 清了、不再重算。
  * （手点菜单一直是好的，正因为那时候布局已经稳了。）
@@ -64,7 +64,6 @@ function growContent() {
 }
 
 function Harness({
-  open,
   initialTab,
   initialSection,
   jump,
@@ -73,7 +72,6 @@ function Harness({
   showClipSub = true,
   showRcSub = true,
 }: {
-  open: boolean;
   initialTab?: SettingsTabName;
   /** 通用页内分区 key（剪贴板同步 / 远程电脑等入口用） */
   initialSection?: string;
@@ -88,7 +86,7 @@ function Harness({
   showRcSub?: boolean;
 }) {
   const { nav, bodyRef, handleNavPick } = useSettingsNav({
-    open,
+
     initialTab,
     initialSection,
     jump,
@@ -141,25 +139,25 @@ afterEach(() => {
 
 describe("设置页从外部跳转", () => {
   it("传 initialTab 时必须真的排一次滚动，不能只改高亮", () => {
-    const { container } = render(<Harness open initialTab="mcp" />);
+    const { container } = render(<Harness initialTab="mcp" />);
     expect(scrollWrites.length).toBeGreaterThan(0);
     // 高亮也要到位（这一半修复前就是对的，一并钉住防回退）
     expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("mcp");
   });
 
   it("不传 initialTab 时不滚——本来就在第一节，滚一下是白动一下", () => {
-    render(<Harness open />);
+    render(<Harness />);
     expect(scrollWrites.length).toBe(0);
   });
 
   it("传 general 等同于不传（它已不再是一个页，只是旧叫法）", () => {
-    render(<Harness open initialTab="general" />);
+    render(<Harness initialTab="general" />);
     expect(scrollWrites.length).toBe(0);
   });
 
   it("section=lan 落在「剪贴板同步」小节上，菜单亮主节「同步与互联」", () => {
     const { container } = render(
-      <Harness open initialTab="general" initialSection="lan" jump={1} />,
+      <Harness initialTab="general" initialSection="lan" jump={1} />,
     );
     expect(scrollWrites.length).toBeGreaterThan(0);
     expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("sync");
@@ -174,29 +172,29 @@ describe("设置页从外部跳转", () => {
    */
   it("section=rc 的落点是小节标题，不是主节标题", () => {
     const { container } = render(
-      <Harness open initialSection="rc" jump={1} showSyncHead={false} />,
+      <Harness initialSection="rc" jump={1} showSyncHead={false} />,
     );
     expect(scrollWrites.length).toBeGreaterThan(0);
     expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("sync");
 
     scrollWrites.length = 0;
-    render(<Harness open initialSection="rc" jump={7} showRcSub={false} />);
+    render(<Harness initialSection="rc" jump={7} showRcSub={false} />);
     expect(scrollWrites.length).toBe(0);
   });
 
   it("非法 section 退回第一节，不静默卡死", () => {
     const { container } = render(
-      <Harness open initialTab="general" initialSection="nope" jump={1} />,
+      <Harness initialTab="general" initialSection="nope" jump={1} />,
     );
     expect(scrollWrites.length).toBe(0);
     expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("appearance");
   });
 
-  it("已打开时 jump+1 要重新定位（open 本身不翻转）", () => {
-    const { container, rerender } = render(<Harness open jump={1} />);
+  it("已打开时 jump+1 要重新定位", () => {
+    const { container, rerender } = render(<Harness jump={1} />);
     expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("appearance");
 
-    rerender(<Harness open initialSection="lan" jump={2} />);
+    rerender(<Harness initialSection="lan" jump={2} />);
     expect(scrollWrites.length).toBeGreaterThan(0);
     expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("sync");
   });
@@ -206,7 +204,7 @@ describe("设置页从外部跳转", () => {
    * setNav 命中 React bailout 不重渲染 → 无依赖的滚动 effect 不跑 → 页面只挪一点或不动。
    */
   it("连点同一菜单项仍要重新排滚动（setNav bailout 不能吞掉）", () => {
-    const { getByText } = render(<Harness open />);
+    const { getByText } = render(<Harness />);
     scrollWrites.length = 0;
 
     fireEvent.click(getByText("手点MCP"));
@@ -217,16 +215,11 @@ describe("设置页从外部跳转", () => {
     fireEvent.click(getByText("手点MCP"));
     expect(scrollWrites.length).toBeGreaterThan(afterFirst);
   });
-
-  it("没打开时不动——否则设置页还没显示就已经滚过一次了", () => {
-    render(<Harness open={false} initialTab="mcp" />);
-    expect(scrollWrites.length).toBe(0);
-  });
 });
 
 describe("跳转后的校正窗口（目标会被后到的内容往下推）", () => {
   it("内容长高后要重新对齐，不能是一锤子买卖", () => {
-    render(<Harness open initialTab="mcp" />);
+    render(<Harness initialTab="mcp" />);
     const first = scrollWrites.length;
     expect(first).toBeGreaterThan(0);
 
@@ -237,7 +230,7 @@ describe("跳转后的校正窗口（目标会被后到的内容往下推）", (
   });
 
   it("手点菜单不进校正窗口——那时布局已稳，再插手只会打断定位", () => {
-    const { getByText } = render(<Harness open />);
+    const { getByText } = render(<Harness />);
     expect(scrollWrites.length).toBe(0);
 
     fireEvent.click(getByText("手点MCP"));
@@ -249,7 +242,7 @@ describe("跳转后的校正窗口（目标会被后到的内容往下推）", (
   });
 
   it("校正窗口里用户自己滚了就收手，不跟他抢滚动条", () => {
-    const { container } = render(<Harness open initialTab="mcp" />);
+    const { container } = render(<Harness initialTab="mcp" />);
     const scroller = container.querySelector("[data-nav]") as HTMLElement;
 
     fireEvent.wheel(scroller);
@@ -265,10 +258,10 @@ describe("跳转后的校正窗口（目标会被后到的内容往下推）", (
     // 🔴 这条盯的是 `pendingScrollRef` 的清空时机：旧代码在取 target **之前**
     //    就把 ref 置 null 了，于是「那一帧恰好没找到」等于永久放弃。
     //    MCP 真实场景下标题一直在 DOM 里，所以没暴露——属于侥幸。
-    const { rerender } = render(<Harness open initialTab="mcp" showMcp={false} />);
+    const { rerender } = render(<Harness initialTab="mcp" showMcp={false} />);
     expect(scrollWrites.length).toBe(0);
 
-    rerender(<Harness open initialTab="mcp" showMcp />);
+    rerender(<Harness initialTab="mcp" showMcp />);
     expect(scrollWrites.length).toBeGreaterThan(0);
   });
 });

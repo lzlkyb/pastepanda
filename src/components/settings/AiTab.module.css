@@ -139,6 +139,24 @@
   border-color: var(--accent);
 }
 
+/* AiSemanticField（AI 记忆增强）用：错误提示、次级行、embedding 模型框 */
+.hintDanger {
+  color: var(--danger);
+}
+
+.semRow {
+  margin-top: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* 覆盖 `.input` 的 width:100%：这一格是行内小框，不是整行表单控件。
+   字号/高度/padding 一律不覆盖——它就是页面上其它输入框的样子。 */
+.embedInput {
+  width: 200px;
+  flex: none;
+}
+
 /* v6.4 AI 面板 v2：服务商卡片网格 */
 .provSection {
   margin-bottom: 12px;

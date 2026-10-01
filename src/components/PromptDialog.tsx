@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 interface PromptDialogProps {
   open: boolean;
@@ -46,17 +47,10 @@ export function PromptDialog({
     return () => cancelAnimationFrame(t);
   }, [open, defaultValue]);
 
-  // Esc = 取消（同 ConfirmDialog：capture 阶段，不让底下页面抢走）
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      onCancel();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onCancel]);
+  // Esc = 取消：公共 hook（捕获期 + stopPropagation，不让底下的页面抢走）。
+  // 之前这里手写第四份同款监听，缺 `isComposing`（输入法按 Esc 收候选窗会连着把弹窗关掉）
+  // 和「嵌套确认框在场时让路」两条闸——判据见 `lib/modalLayers.ts`（规则 #11.1）。
+  useDialogEscape(onCancel, open);
 
   return createPortal(
     <AnimatePresence>

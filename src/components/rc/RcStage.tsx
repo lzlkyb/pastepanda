@@ -10,6 +10,7 @@
  * 悬浮，等待态只留「一句话 + 小贴士」。那层装饰带 4 条常驻 infinite 动画，
  * 而本项目有 4 个窗口各挂一份 DOM（AGENTS 规则 8.1 / 8.2），稿债与性能账同源。
  */
+import { rcCanControl } from "@/lib/rcCapability";
 import { useMemo } from "react";
 import { Lightbulb } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
@@ -163,7 +164,7 @@ export function RcStage({
             );
           })()}
           <div className={styles.heroTitle}>
-            正在被「{inboundName}」远程{session.capability === "control" ? "控制" : "查看"}
+            正在被「{inboundName}」远程{rcCanControl(session.capability) ? "控制" : "查看"}
           </div>
           <div className={styles.heroLead}>
             本机画面正在推送给对方。指纹 / 画质 / 免确认等详情可展开上方胶囊查看，随时可立即结束。
@@ -229,7 +230,7 @@ export function RcStage({
           }}
           /** 等待态改档零成本——作废重发，对端只看到一次新敲门。 */
           onRaise={
-            session.capability !== "control"
+            !rcCanControl(session.capability)
               ? async () => {
                   // cancel 失败还重发 = 旧申请没作废就敲第二下，busy_local
                   const cancelled = await rc.cancel();

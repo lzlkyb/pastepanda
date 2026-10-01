@@ -14,11 +14,18 @@
  *    找落点，一旦全等，点菜单会滚到组头上。
  * ④ 组头摘要里的计数必须来自 props，不许是写死的字面量。
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { render, screen } from "@testing-library/react";
-import { rcGroupShouldOpen, RC_GROUP_DEFAULTS, type RcSettingsGroup } from "@/lib/rcPrefs";
+import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import {
+  rcGroupHeadInert,
+  rcGroupShouldOpen,
+  RC_GROUP_DEFAULTS,
+  type RcSettingsGroup,
+} from "@/lib/rcPrefs";
+import { useRcGroupOpen } from "@/hooks/useRcGroupOpen";
+import { RcGroupHead } from "@/components/settings/rcGroups/RcGroupHead";
 import { sectionTitleOf } from "@/hooks/useSettingsSearch";
 import { unoExpiryText } from "@/lib/rcUno";
 import {
@@ -274,5 +281,69 @@ describe("⑥ RcSection 必须自己拉身份与设备列表", () => {
     expect(src).toContain("rc.refresh()");
     expect(src).toContain("rc.refreshTargets()");
     expect(src).toContain("rc.refreshIdentity()");
+  });
+});
+
+/**
+ * ⑦ 搜索态组头是「假按钮」⇒ 必须真的按不动（自查 B）。
+ *
+ * 失效方式很隐蔽：非空关键词下 `rcGroupShouldOpen` 强制全展开，点组头屏幕一动不动
+ * （违反规则 17「有反馈不靠猜」）；而旧版 `toggle` 照旧改状态并写 localStorage，
+ * 于是清空搜索后那一组会突然变成用户从没见过的开合态——像「设置自己动了」。
+ * 三条都要钉：判据同源、hook 不落盘、组头不吃事件。
+ */
+describe("⑦ 搜索态：组头停止响应，且不偷偷改开合态", () => {
+  const LS = "rc_settings_groups";
+
+  it("inert 与「强制展开」同一条判据（分家就会出现「按不动却全展开」）", () => {
+    for (const f of ["画质", " ", "  ", "x", ""]) {
+      // userOpen=false ⇒ rcGroupShouldOpen 只剩关键词那半，与 inert 必然等值
+      expect(rcGroupShouldOpen(false, f), f).toBe(rcGroupHeadInert(f));
+    }
+  });
+
+  it("搜索态 toggle 是空操作：不写盘；清空搜索后回到用户原本的开合态", () => {
+    localStorage.setItem(LS, JSON.stringify({ pair: 1, conn: 0, cap: 0, recent: 0 }));
+    try {
+      const { result, rerender } = renderHook(({ f }) => useRcGroupOpen(f), {
+        initialProps: { f: "" },
+      });
+      // 先确认非搜索态能正常落盘（否则下面「没写盘」可能只是因为压根没写）
+      act(() => result.current.toggle("conn"));
+      expect(JSON.parse(localStorage.getItem(LS) ?? "{}")).toMatchObject({ conn: 1 });
+
+      rerender({ f: "画质" });
+      expect(result.current.inert).toBe(true);
+      expect(result.current.isOpen("cap"), "搜索态四组强制展开").toBe(true);
+      act(() => result.current.toggle("conn"));
+      // 关键一条：收起态的 conn 没被这次点击改掉
+      expect(JSON.parse(localStorage.getItem(LS) ?? "{}")).toMatchObject({ conn: 1 });
+
+      rerender({ f: "" });
+      expect(result.current.inert).toBe(false);
+      expect(result.current.isOpen("conn")).toBe(true);
+      act(() => result.current.toggle("conn"));
+      expect(JSON.parse(localStorage.getItem(LS) ?? "{}")).toMatchObject({ conn: 0 });
+    } finally {
+      localStorage.removeItem(LS);
+    }
+  });
+
+  it("inert 的组头标 aria-disabled 且点击与回车都不回调", () => {
+    const onToggle = vi.fn();
+    const { rerender } = render(<RcGroupHead label="被控上限" open summary="" onToggle={onToggle} />);
+    const head = screen.getByText("被控上限").parentElement as HTMLElement;
+    fireEvent.click(head);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(head.getAttribute("aria-disabled")).toBeNull();
+
+    rerender(
+      <RcGroupHead label="被控上限" open inert summary="" onToggle={onToggle} />,
+    );
+    expect(head.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(head);
+    fireEvent.keyDown(head, { key: "Enter" });
+    fireEvent.keyDown(head, { key: " " });
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });

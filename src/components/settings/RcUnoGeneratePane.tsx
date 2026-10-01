@@ -16,7 +16,10 @@ const TTL_DAY_SECS = 24 * 60 * 60;
 
 export function GeneratePane({ rc, toast, onClose }: { rc: UseRc; toast: ToastFn; onClose: () => void }) {
   const [ttl, setTtl] = useState<"short" | "day">("short");
-  const [cap, setCap] = useState<"control" | "view">("control");
+  // 🔴 默认档是「只看画面」不是「可控」。出码 = 把这台机器交出去，而无人值守码
+  //   对面没人、没人会看一眼这条授权；默认给到键鼠级权限等于把最危险的一档
+  //   做成不用思考就会拿到的那个。需要操控得人自己选，选了就写进承诺句。
+  const [cap, setCap] = useState<"control" | "view">("view");
   const [alsoTrust, setAlsoTrust] = useState(false);
   const [created, setCreated] = useState<{ code: string; full: string; expires_at: number } | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -93,7 +96,7 @@ export function GeneratePane({ rc, toast, onClose }: { rc: UseRc; toast: ToastFn
           {busy ? "生成中…" : "生成接入码"}
         </button>
         <details className={styles.unoAdv}>
-          <summary>高级：改时效 / 只看画面 / 免确认</summary>
+          <summary>高级：改时效 / 授权键鼠 / 免确认</summary>
           <label className={styles.unoRow}>
             <input type="radio" checked={ttl === "short"} onChange={() => setTtl("short")} />
             <span>15 分钟 · 限 1 次（帮人修电脑）</span>

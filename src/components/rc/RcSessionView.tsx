@@ -12,6 +12,7 @@
  *
  * 确认一律用 ConfirmDialog（非 window.confirm，见 lib/confirm）。
  */
+import { rcCanControl } from "@/lib/rcCapability";
 import { useCallback, useEffect, useRef } from "react";
 import { confirmDialog } from "@/lib/confirm";
 import { useRcOutcome } from "@/hooks/useRcOutcome";
@@ -78,7 +79,7 @@ export function RcSessionView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // P4：每次输入发出的本地时刻（useRcInput 写、useRcFrames 读），操作延迟 HUD 用
   const inputEpochRef = useRef(0);
-  const canControl = session.capability === "control";
+  const canControl = rcCanControl(session.capability);
   // 乙-①（2026-09-30）：打字 / 直传两档显式切换（不做自动判定，对标 §6.7）。
   // 偏好持久化 + 「告诉对端」都在 hook 里，这里只把档位分发给输入链和胶囊。
   const { keyMode, pickKeyMode } = useRcKeyMode({ canControl, sessionId: session.id, say });

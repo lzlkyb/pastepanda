@@ -11,6 +11,7 @@
  * 本机能力（显示器 / 编码）由编排层的 `useRcLocalAbility` 读一次传进来：
  * 放在本组件里会随着组收起卸载，每次展开重读一遍。
  */
+import { rcCanControl, rcCapShort } from "@/lib/rcCapability";
 import type { UseRc } from "@/hooks/useRc";
 import type { RcCaptureScope, RcQuality, RcStatus } from "@/lib/api/rc";
 import type { RcLocalAbility } from "@/hooks/useRcLocalAbility";
@@ -27,12 +28,15 @@ export function RcCapGroup({
   status,
   ability,
   open,
+  inert,
   onToggle,
 }: {
   rc: UseRc;
   status: RcStatus;
   ability: RcLocalAbility;
   open: boolean;
+  /** 搜索态：组头停止响应点击（见 RcGroupHead）。 */
+  inert?: boolean;
   onToggle: () => void;
 }) {
   const { loadError, reload, capsUnknown, monitorsUnknown, qualities, monitors } = ability;
@@ -47,11 +51,12 @@ export function RcCapGroup({
       <RcGroupHead
         label="被控上限"
         open={open}
+        inert={inert}
         off={off}
         onToggle={onToggle}
         summary={
           <>
-            上限<b>{status.capability === "control" ? "可控" : "只看"}</b> · 画质
+            上限<b>{rcCapShort(status.capability)}</b> · 画质
             <b>{qualityLabel(status.quality)}</b> · 范围<b>{scopeLabel(status.capture_scope)}</b>
           </>
         }
@@ -90,9 +95,9 @@ export function RcCapGroup({
               </button>
               <button
                 type="button"
-                className={`${shared.sSegText}${status.capability === "control" ? ` ${shared.sSegActive}` : ""}`}
+                className={`${shared.sSegText}${rcCanControl(status.capability) ? ` ${shared.sSegActive}` : ""}`}
                 disabled={busy}
-                aria-pressed={status.capability === "control"}
+                aria-pressed={rcCanControl(status.capability)}
                 title="包含只看"
                 onClick={() => void rc.setCapability("control")}
               >

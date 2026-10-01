@@ -10,6 +10,7 @@
  * 去点玩的第二颗键。
  */
 import type { RcCapability } from "./api/rcTypes";
+import { rcCanControl, rcCapShort } from "@/lib/rcCapability";
 
 /** 会话已进行的时长：`mm:ss`，过一小时升成 `h:mm:ss`。 */
 export function rcPrivElapsedText(startedMs: number, nowMs: number): string {
@@ -33,10 +34,10 @@ export function rcPrivWhoText(displayName: string): string {
  * 264px 的胶囊里放不下「看屏幕 + 控制键鼠」那么长一句。
  */
 export function rcPrivGrantText(cap: RcCapability): string {
-  return cap === "control" ? "可控" : "只看";
+  return rcCapShort(cap);
 }
 
 /** 拿到的是键鼠 ⇒ 角标用警示色（只看屏幕只是被观看，不必一路闪）。 */
 export function rcPrivIsHot(cap: RcCapability): boolean {
-  return cap === "control";
+  return rcCanControl(cap);
 }

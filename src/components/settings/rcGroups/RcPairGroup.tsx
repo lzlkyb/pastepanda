@@ -31,6 +31,7 @@ export function RcPairGroup({
   targets,
   joins,
   open,
+  inert,
   devOpen,
   onToggle,
   onToggleDev,
@@ -41,6 +42,8 @@ export function RcPairGroup({
   targets: RcTargetDevice[];
   joins: NonNullable<RcStatus["joins"]>;
   open: boolean;
+  /** 搜索态：组头停止响应点击（判据与强制展开同源，见 `RcGroupHead`）。 */
+  inert?: boolean;
   /** 子表自己的开合位（与组的开合是两个独立位，见 RcDeviceRestrictList 注释） */
   devOpen: boolean;
   onToggle: () => void;
@@ -58,6 +61,7 @@ export function RcPairGroup({
       <RcGroupHead
         label="谁能连进来"
         open={open}
+        inert={inert}
         onToggle={onToggle}
         summary={
           /* 🔴 摘要在收起态是用户看清现状的**唯一**来源，所以「还没读到」必须说成

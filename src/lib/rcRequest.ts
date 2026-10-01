@@ -9,6 +9,7 @@
  * 「发起远程」整个失败。
  */
 import type { RcCapability } from "@/lib/api/rc";
+import { rcCapShort, rcCapTone } from "@/lib/rcCapability";
 
 const KEY = "rc_last_request_cap";
 
@@ -18,8 +19,8 @@ export const DEFAULT_REQUEST_CAP: RcCapability = "view";
 /** 上次发起用的能力档；没记过或值不合法 → 默认「只看」。 */
 export function lastRequestCap(): RcCapability {
   try {
-    const v = localStorage.getItem(KEY);
-    return v === "control" || v === "view" ? v : DEFAULT_REQUEST_CAP;
+    // rcCapTone 顺带做了合法性收口：localStorage 里可能是老版本写的任意字符串。
+    return rcCapTone(localStorage.getItem(KEY));
   } catch {
     return DEFAULT_REQUEST_CAP;
   }
@@ -40,5 +41,5 @@ export function rememberRequestCap(c: RcCapability): void {
  * 否则用户会以为「我只是想看看」却申请了可控（设计稿风险 #3）。
  */
 export function capabilityLabel(c: string): string {
-  return c === "control" ? "可控" : "只看";
+  return rcCapShort(c);
 }

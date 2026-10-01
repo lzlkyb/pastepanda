@@ -95,6 +95,7 @@ export function CopyPasteSection({ config, updateAndSave }: CopyPasteSectionProp
             type="text"
             className={styles.sTextInput}
             value={excludedDraft}
+            aria-label="应用排除名单"
             placeholder="例如：KeePass, 1Password, Bitwarden"
             onChange={(e) => setExcludedDraft(e.target.value)}
             onBlur={() => commitRef.current()}

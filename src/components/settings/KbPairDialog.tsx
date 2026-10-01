@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { KbDevice, KbInvite, KbInviteCreated } from "@/hooks/useKbSync";
 import type { ToastFn } from "@/components/Toast";
@@ -7,6 +8,7 @@ import type { KbJoinProps } from "./KbJoinRequests";
 import { PasteFlow, RolePick, looksLikeInvite } from "./KbPairSteps";
 import { readClipboardText } from "@/lib/api";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 /**
  * 配对向导的外壳：剪贴板预读 → 选路线 → 交给 `KbPairCreate` / `KbPairSteps`。
@@ -110,27 +112,25 @@ export function KbPairDialog({
   }, []);
 
   /**
-   * Esc 关闭。
+   * Esc 关闭：走公共 hook（规则 #11.1，判据都收在 `hooks/useDialogEscape.ts`）。
    *
-   * 🔴 必须是**捕获期 + `stopPropagation()`**，照 `NoteDialog` 的写法（规则 #11）。
-   *   本弹框是从设置页打开的，而 App.tsx 的 Esc 分层链里有一条
-   *   `if (showSettings) { closeSettings(); return; }`——之前本弹框根本没接 Esc，
-   *   按下去**关掉的是整个设置页**，配对弹框跟着一起没了。
-   *   光加个冒泡期监听也不行：两个监听器都在 window 上，App 那份注册得更早，
-   *   会先跑，`preventDefault()` 拦不住同级监听器。
+   * 🔴 之前这里手写第四份「捕获期 + `stopPropagation()`」，而复制版**已经漂移**：
+   *   缺 `isComposing` 那道闸——中文输入法按 Enter 确认候选词没事，
+   *   但按 Esc 收候选窗会顺手把整个配对向导关掉，刚填的设备名、刚粘的邀请码一起丢。
+   *   hook 还多一条「嵌套确认框在场时让路」，判据见 `lib/modalLayers.ts`。
+   *
+   *   为什么必须是捕获期：App.tsx 的 Esc 分层链里有一条
+   *   `if (showSettings) { closeSettings(); return; }`——本弹框从设置页打开，
+   *   之前它根本没接 Esc，按下去**关掉的是整个设置页**，配对弹框跟着一起没。
    */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      e.preventDefault();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  useDialogEscape(onClose);
 
-  return (
+  /**
+   * 🔴 portal 到 body（与 `KbForgetDialog` 同因）：DOM 父链穿过 `.settingsContent`
+   * 这个滚动容器时，滚轮落在遮罩上会沿祖先链把底下的设置列表滚走；
+   * `position: fixed` 管的是画在哪儿，管不了事件沿哪条 DOM 链冒泡。
+   */
+  return createPortal(
     <div className="dialog-backdrop" onClick={onClose}>
       {/* ❗ `FocusTrap`：本弹框之前是全应用唯一一个漏掉它的真模态。
           不包的后果：Tab 会跑到后面的设置页上（那些控件被遮罩盖着、看不见却可聚焦），
@@ -167,6 +167,7 @@ export function KbPairDialog({
         )}
       </div>
       </FocusTrap>
-    </div>
+    </div>,
+    document.body,
   );
 }

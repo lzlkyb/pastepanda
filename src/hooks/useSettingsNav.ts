@@ -39,13 +39,12 @@ interface ScrollTarget {
   label: string;
 }
 
-export function useSettingsNav({ open, initialTab, initialSection, jump, blossom, searching, sectionClass }: {
-  open: boolean;
+export function useSettingsNav({ initialTab, initialSection, jump, blossom, searching, sectionClass }: {
   /** 从变换中心等处跳过来时指定的页；不传或 "general" 就落在第一个分区。 */
   initialTab?: SettingsTabName;
   /** 通用页内分区 key（如 "lan"）；合法时覆盖 initialTab 的落点 */
   initialSection?: string;
-  /** 外部 open-settings 计数；已打开时再跳靠它触发（open 本身不翻转） */
+  /** 外部 open-settings 计数；设置页已打开时再跳靠它触发 */
   jump?: number;
   /** 樱花主题（四个页的图标要换） */
   blossom: boolean;
@@ -73,7 +72,7 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
    *
    * 🔴 这是 2026-09-10 报的那个 bug 的修复：从知识库「⋯」点「连接 AI 工具（MCP）」，
    * 结果停在「数据管理」。根因**不是**找不到目标、也不是滚不动，而是**算早了**：
-   * 下面那个 effect 依赖 `[open]`，在 `SettingsView` 挂载那一刻就排了滚动，而那时：
+   * 下面那个 effect 在 `SettingsView` 挂载那一刻就排了滚动，而那时：
    *   ・`expiredCount` 还是 0；`stats` 还是 `null`，异步回来后要撑出一整块
    *     （2026-09-29 分区重排后「数据统计」已在九节**最末**，不再把后面的目标往下推；
    *     当年它排在第一节，是那次偏移的最大来源）；
@@ -110,7 +109,6 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
     navItems.find((n) => n.key === key)?.label ?? "";
 
   useEffect(() => {
-    if (!open) return;
     // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定页；
     // 不传或传 "general" 就落在第一个分区（右栅永远不能是空的）。
     // 剪贴板同步等入口可再带 section（如 "lan"）：合法分区 key 优先于 tab 落点。
@@ -147,10 +145,10 @@ export function useSettingsNav({ open, initialTab, initialSection, jump, blossom
       spyMutedUntilRef.current = performance.now() + SETTLE_MS;
     }
     // initialTab / initialSection / jump 只在「打开或外部再跳」那一刻消费。
-    // 列进 open 之外的依赖时，父组件因别的原因重渲染改一次 prop 就会把
+    // 列进 jump 之外的依赖时，父组件因别的原因重渲染改一次 prop 就会把
     // 用户手动切过去的项拉回来——所以 jump 是唯一额外扳机。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, jump]);
+  }, [jump]);
 
   /**
    * 在滚动容器里找目标标题元素。靠**标题文字**对应——meta.ts 已声明

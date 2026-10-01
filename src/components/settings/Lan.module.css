@@ -127,11 +127,17 @@
   background: var(--card-bg); border: 1px solid var(--accent);
 }
 .lanPairTitle { font-size: 12.5px; font-weight: 700; text-align: center; }
-/* 🔴 字号大、字距拉开：这串数字要被人逐位与另一块屏幕对比。
-   它是整套机制里唯一靠人把关的环节，不能做小。 */
+/* 🔴 字号大、字距拉开：这串码要被人逐位与另一块屏幕对比。
+   它是整套机制里唯一靠人把关的环节，不能做小。
+   2026-09-29 由 6 位改 8 位（后端 PAIR_CODE_DIGITS）：字距 9→5px、字号 30→26px，
+   否则 8 位在窄面板/手机上会溢出行宽。展示形态（4+4 分组）由
+   `formatPairCode` 收口，CSS 只管字号字距这两件事。 */
 .lanPairPin {
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 30px; font-weight: 700; letter-spacing: 9px;
+  /* ui-rule-ok: 配对码是逐位人眼比对的展示档，五档字号里没有大字档。
+     26px 已是原 30px 的收窄值（8 位比 6 位宽，再大在窄面板/手机上溢出行宽）；
+     与知识库同步共用同一类，两边必须同尺寸。 */
+  font-size: 26px; font-weight: 700; letter-spacing: 5px; /* ui-rule-ok: 逐位核对大字档，见上 */
   text-align: center; color: var(--accent);
   padding: 12px 0 4px;
 }
@@ -364,3 +370,11 @@
 .kbPairLink:hover { color: var(--accent); }
 .kbPairCenter { text-align: center; }
 .kbPairText { font-size: 12px; color: var(--text-secondary); line-height: 1.7; margin: 0; }
+
+/* 「删除此设备」确认框（KbForgetDialog）。行距/段间距照搬拆出来之前的内联 style，
+   免得搬个文件顺便改视觉：段距 = p 的 margin-bottom 8px，叠在 .dialog-body 的 gap 16 上。
+   字号从原来的 12.5px 归到 12px（U5 五档），与隔壁「添加设备」的正文 `.kbPairText` 同值。 */
+.kbForgetBody { font-size: 12px; line-height: 1.7; }
+.kbForgetBody p { margin: 0 0 8px; }
+.kbForgetBody p:last-child { margin: 0; }
+.kbForgetMuted { color: var(--text-muted); }

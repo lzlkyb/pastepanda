@@ -7,7 +7,7 @@
  *
  * 🔴 红线：全程无 AI。标题与正文只进本机 SQLite 与本机 FTS。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ExternalLink, Copy, History, Search } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
@@ -22,7 +22,12 @@ import { NoteConflictView } from "./NoteConflictView";
 import { NoteConflictBanner } from "./NoteConflictBanner";
 import { isConflictCopy } from "@/lib/kbConflict";
 import { useNoteEditorState } from "./useNoteEditorState";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import styles from "./NoteDialog.module.css";
+
+/** CodeMirror 的查找面板是否开着（本弹窗压在它下面一层）。放模块级：判据是无参数的，
+ *  内联箭头会让 `useDialogEscape` 每次渲染都重装监听。 */
+const cmSearchOpen = () => !!document.querySelector(".cm-editor .cm-panels.cm-search");
 
 export function NoteDialog() {
   const draft = useDialogStore((s) => s.noteDraft);
@@ -82,6 +87,7 @@ function NoteDialogInner({
   });
   const handleSave = useCallback(() => void ed.save(), [ed]);
   const handleClose = ed.requestClose;
+  const escClose = useCallback(() => void handleClose(), [handleClose]);
 
   /** 历史视图（B1 #4）。切过去只是换掉正文区，`ed` 不重建，所以草稿还在。 */
   const [showHistory, setShowHistory] = useState(false);
@@ -104,21 +110,13 @@ function NoteDialogInner({
     }
   }, [showHistory, showConflict, viewMode, setViewMode]);
 
-  // Esc 自己接（与 ItemEditorDialog 同口径）：App.tsx 的全局分层对 noteDraft 只做
-  // `return`、不代关，否则脏数据确认根本没机会弹。
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      // 查找面板开着时，Esc 应只关面板（CM searchKeymap 自己处理），
-      // 不要把整个笔记弹窗关掉——那会让人以为「查找」把稿子弄没了。
-      if (document.querySelector(".cm-editor .cm-panels.cm-search")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      void handleClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [handleClose]);
+  // Esc 走公共 hook（规则 #11.1：捕获期 + stopPropagation + 输入法/嵌套确认框让路只有一份）。
+  // App.tsx 的全局分层对 noteDraft 只做 `return`、不代关，否则脏数据确认根本没机会弹。
+  //
+  // `yieldTo` 这里多加一条本弹窗自己的子层：查找面板开着时 Esc 应**只关面板**
+  // （CM searchKeymap 自己处理），不能把整个笔记弹窗关掉——
+  // 那会让人以为「查找」把稿子弄没了。判据放模块级，免得每次渲染重装监听。
+  useDialogEscape(escClose, true, cmSearchOpen);
 
   return (
     <motion.div {...anim.backdrop} className="dialog-backdrop" onClick={() => void handleClose()}>

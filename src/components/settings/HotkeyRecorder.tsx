@@ -148,6 +148,11 @@ export function HotkeyRecorder({ value, onChange, taken = [], allowClear = false
         onClick={(e) => { e.stopPropagation(); setRecording(true); setHint(null); }}
         onKeyDown={handleKeyDown}
         onBlur={() => setRecording(false)}
+        // 🔴 录制态要挂这个标记：本组件的按键只走按钮自己的 onKeyDown，没有 window 监听，
+        // 而 `SettingsView` 的 `/` 与 Ctrl+F 挂在 window 捕获期、跑得比这里早——
+        // 它一抢焦点，`onBlur` 就把录制取消了（按 `/` 录不进、还看不到原因）。
+        // 判据收口在 `lib/modalLayers.ts`（规则 #11.1）。
+        {...(recording ? { "data-hotkey-recording": "true" } : {})}
         className={`${styles.sKbd}${recording ? ` ${styles.recording}` : ""}`}>
         {recording ? (hint ? `⚠ ${hint}` : "按下组合键…（Esc 取消）") : formatHotkey(value)}
       </button>

@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { LAN_PAIRED_CHANGED } from "@/lib/lanEvents";
 import { LanNearby } from "./LanNearby";
 import { LanPairedList, type PairedDevice } from "./LanPairedList";
+import { LanPairingKeyPanel } from "./LanPairingKeyPanel";
 import shared from "../Settings.module.css";
 import styles from "./Lan.module.css";
 
@@ -14,12 +15,10 @@ import styles from "./Lan.module.css";
  * · LAN_PAIRED_CHANGED 只在本组件 listen 一次，并通知附近刷新
  * · 监听失败横幅带「重试监听」
  * · 发送测试后在按钮旁写送达结果，不只靠 toast
+ * · 「高级：手动交换配对密钥」整块拆给 `LanPairingKeyPanel`（规则 #7 体量红线）
  */
 export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void }) {
   const [devices, setDevices] = useState<PairedDevice[]>([]);
-  const [pairingKey, setPairingKey] = useState("");
-  const [pairingInput, setPairingInput] = useState("");
-  const [pairingBusy, setPairingBusy] = useState(false);
   /**
    * 监听线程是否真的在跑。
    * 🔴 跟开关是两件事。端口 5007 被占、或网卡都没能加入组播组时，
@@ -77,16 +76,6 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
     }
   }, [refreshDevices, toast]);
 
-  const refreshPairingKey = useCallback(async () => {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const key = await invoke<string>("get_lan_pairing_key");
-      setPairingKey(key);
-    } catch (e) {
-      logger.warn("获取配对密钥失败", e);
-    }
-  }, []);
-
   const winVisible = useWindowVisible();
   useEffect(() => {
     if (!winVisible) return;
@@ -94,10 +83,6 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
     const timer = setInterval(() => void refreshDevices(), 5000);
     return () => clearInterval(timer);
   }, [refreshDevices, winVisible]);
-
-  useEffect(() => {
-    void refreshPairingKey();
-  }, [refreshPairingKey]);
 
   /**
    * 配对完成后立即刷名单 + 附近列表。
@@ -139,40 +124,6 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
       toast(`重试失败：${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setRetrying(false);
-    }
-  };
-
-  const handleRegenerateKey = async () => {
-    setPairingBusy(true);
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const key = await invoke<string>("regenerate_lan_pairing_key");
-      setPairingKey(key);
-      toast("已生成新的配对密钥，其他设备需要重新粘贴此密钥才能继续同步", "success");
-    } catch (e) {
-      logger.warn("生成配对密钥失败", e);
-      toast("生成配对密钥失败", "error");
-    } finally {
-      setPairingBusy(false);
-    }
-  };
-
-  const handleApplyPairingKey = async () => {
-    const trimmed = pairingInput.trim();
-    if (!trimmed) return;
-    setPairingBusy(true);
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("set_lan_pairing_key", { key: trimmed });
-      setPairingKey(trimmed);
-      setPairingInput("");
-      toast("配对密钥已更新", "success");
-    } catch (e) {
-      logger.warn("设置配对密钥失败", e);
-      const reason = typeof e === "string" && e ? e : e instanceof Error ? e.message : "";
-      toast(reason ? `设置配对密钥失败: ${reason}` : "设置配对密钥失败", "error");
-    } finally {
-      setPairingBusy(false);
     }
   };
 
@@ -252,52 +203,8 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
         }}
       />
 
-      <details className={styles.lanAdvanced}>
-        <summary className={styles.lanAdvancedHead}>高级：手动交换配对密钥</summary>
-        <div className={styles.lanAdvBody}>
-          <div className={styles.lanAdvDesc}>
-            只有使用相同密钥的设备才会互相同步。
-            <b>与旧版本设备配对时才需要它</b>；两边都是新版本就用上面的「附近的设备」。
-          </div>
-          <div className={styles.lanAdvRow}>
-            <label className={styles.lanAdvLabel}>本机密钥</label>
-            <input
-              type="text"
-              readOnly
-              value={pairingKey}
-              onFocus={(e) => e.currentTarget.select()}
-              className={`${styles.lanKeyInput} ${styles.lanKeyMono}`}
-            />
-            <button
-              type="button"
-              className={shared.lanRefreshBtn}
-              onClick={handleRegenerateKey}
-              disabled={pairingBusy}
-              title="所有已配对设备将断开，需重新配对"
-            >
-              🔁 重新生成
-            </button>
-          </div>
-          <div className={styles.lanAdvRow}>
-            <label className={styles.lanAdvLabel}>对端密钥</label>
-            <input
-              type="text"
-              placeholder="粘贴其他设备的配对密钥"
-              value={pairingInput}
-              onChange={(e) => setPairingInput(e.target.value)}
-              className={`${styles.lanKeyInput} ${styles.lanKeyMono}`}
-            />
-            <button
-              type="button"
-              className={shared.lanTestBtn}
-              onClick={handleApplyPairingKey}
-              disabled={pairingBusy || !pairingInput.trim()}
-            >
-              应用
-            </button>
-          </div>
-        </div>
-      </details>
+      {/* 手动交换密钥整块在 `LanPairingKeyPanel`（含「重新生成」的二段确认） */}
+      <LanPairingKeyPanel toast={toast} />
 
       <LanPairedList devices={devices} onChanged={refreshDevices} toast={toast} />
 

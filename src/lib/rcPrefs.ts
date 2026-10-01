@@ -73,6 +73,17 @@ export function writeRcGroupOpen(map: Record<RcSettingsGroup, boolean>): void {
 }
 
 /**
+ * 搜索期间 ⇒ 组头**不响应点击**。
+ *
+ * 🔴 展开已经由下面的 `rcGroupShouldOpen` 强制了，此刻点组头屏幕一动不动（违反规则 17
+ * 「有反馈不靠猜」）；更要紧的是若照旧改状态并落盘，清空关键词后那一组会突然变成
+ * 用户从没见过的开合态——像「设置自己动了」。所以这两条判据必须是同一个来源。
+ */
+export function rcGroupHeadInert(filter: string): boolean {
+  return filter.trim() !== "";
+}
+
+/**
  * 某个组此刻该不该展开。**搜索期间强制全展开**（设计稿 §5 ① 拍板），退出搜索回到用户态。
  *
  * 判据收在这一个函数里而不是散在组件的 `open={...}` 上：四个组 + 将来的第五个组
@@ -80,5 +91,5 @@ export function writeRcGroupOpen(map: Record<RcSettingsGroup, boolean>): void {
  * 纯判断单独导出，便于无环境守卫单测（规则 11.1）。
  */
 export function rcGroupShouldOpen(userOpen: boolean, filter: string): boolean {
-  return filter.trim() !== "" || userOpen;
+  return rcGroupHeadInert(filter) || userOpen;
 }

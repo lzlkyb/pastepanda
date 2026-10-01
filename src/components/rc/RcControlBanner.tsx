@@ -12,6 +12,7 @@
  * - **自动展开**：文件请求或对端变更到达时弹开抽屉一次（规则 15：触发可见），
  *   胶囊同时挂橙点徽标；用户收起后不重复弹，徽标留到处理完。
  */
+import { rcCanControl } from "@/lib/rcCapability";
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, X } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
@@ -147,7 +148,7 @@ export function RcControlBanner({
     };
   }, [open]);
 
-  const canControl = session.capability === "control";
+  const canControl = rcCanControl(session.capability);
   const name = rcDisplayName(session, fingerprintOf(session.peer));
 
   // U1：结束要确认——按钮挨着高频操作（胶囊上、抽屉里都是），误触代价不对称。

@@ -29,6 +29,7 @@ import { AiHeroCard } from "./ai/AiHeroCard";
 import { AiEvolution } from "./ai/AiEvolution";
 import { AiSection } from "./ai/AiSection";
 import { useAiSettings } from "./ai/useAiSettings";
+import { useAiStatus } from "@/hooks/useAiStatus";
 import { AiOnboarding } from "@/components/AiOnboarding";
 import { hintForError, FALLBACK_PROVIDER, type AiErrorAction } from "./ai/errorHint";
 import styles from "./AiTab.module.css";
@@ -37,6 +38,9 @@ type SectionKey = "setup" | "usage" | "evolution" | "actions" | "advanced";
 
 export function AiTab() {
   const s = useAiSettings();
+  // 「AI 现在真能不能用」的唯一数据源（规则 #16）。保存配置的路径会
+  // `refreshAiAvailability()`，所以这一页改完开关/密钥，这里立刻跟着变。
+  const aiStatus = useAiStatus();
   const [openKey, setOpenKey] = useState<SectionKey | null>(null);
 
   // 未配置 → 自动展开「服务商与密钥」（新用户进来第一件事就是配）；
@@ -200,8 +204,15 @@ export function AiTab() {
         />
 
         {/* 没有可用模型时不显示：在那儿写模板是空转。
-            用量区不跟着藏——那是已经花掉的钱的记录，关个开关就看不到自己的账说不过去。 */}
-        {s.configured && s.config.enabled && (
+            用量区不跟着藏——那是已经花掉的钱的记录，关个开关就看不到自己的账说不过去。
+            🔴 判据用 `useAiStatus()`（= `lib/aiAvailability` 那份唯一判定），
+            不写 `s.configured && s.config.enabled`：那是本模块之外自拼的第二套条件，
+            它漏算两件事——本地厂商（Ollama 这类 needsKey=false，`configured` 只看 hasKey
+            会把配好的本地模型判成「不能用」）、以及 `provider` 为空；
+            且 `reload()` 失败时 `s.config` 停在 DEFAULT_CONFIG，
+            于是「AI 实际开着（变换中心有 AI 组）」而这里整块消失。
+            规则 #16：门控只认这一个数据源。 */}
+        {aiStatus.status === "on" && (
           <AiCustomActions open={openKey === "actions"} onToggle={() => toggle("actions")} />
         )}
 

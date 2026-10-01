@@ -3,7 +3,8 @@
  *
  * 判据本身在 `lib/rcPrefs`（纯函数，可无环境测试），这里只管 React 侧的读写：
  * 用户态进 localStorage（不进 config——`save_config` 每次全量明文备份，
- * 点一下组头不该落盘），搜索非空时由 `rcGroupShouldOpen` 强制全展开。
+ * 点一下组头不该落盘），搜索非空时由 `rcGroupShouldOpen` 强制全展开、
+ * 由 `rcGroupHeadInert` 把 `toggle` 停成空操作（两者同一判据，见 `inert`）。
  *
  * 🔴 收起 = **不渲染**组内的行（不是 `display:none`）。两个前提跟着成立：
  * ① `.settingsSections` 的 children 必须保持「标题 + 行」一层扁平；
@@ -12,6 +13,7 @@
  */
 import { useCallback, useState } from "react";
 import {
+  rcGroupHeadInert,
   rcGroupShouldOpen,
   readRcGroupOpen,
   writeRcGroupOpen,
@@ -20,14 +22,17 @@ import {
 
 export function useRcGroupOpen(filter: string) {
   const [userOpen, setUserOpen] = useState<Record<RcSettingsGroup, boolean>>(readRcGroupOpen);
+  /** 搜索态：组头此刻是「假按钮」，点击与落盘都要停掉（判据见 `rcGroupHeadInert`）。 */
+  const inert = rcGroupHeadInert(filter);
 
   const toggle = useCallback((group: RcSettingsGroup) => {
+    if (inert) return;
     setUserOpen((prev) => {
       const next = { ...prev, [group]: !prev[group] };
       writeRcGroupOpen(next);
       return next;
     });
-  }, []);
+  }, [inert]);
 
   /**
    * `extraOpen` 给「有待确认请求 ⇒ 组 1 自动展开」这类**由数据决定**的强制展开。
@@ -40,5 +45,5 @@ export function useRcGroupOpen(filter: string) {
     [filter, userOpen],
   );
 
-  return { isOpen, toggle };
+  return { isOpen, toggle, inert };
 }

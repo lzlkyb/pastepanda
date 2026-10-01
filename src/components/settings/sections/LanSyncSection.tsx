@@ -38,8 +38,12 @@ export function LanSyncSection({ config, updateAndSave }: LanSyncSectionProps) {
             await invoke("toggle_lan_sync", { enable: v });
             toast(v ? "剪贴板同步已开启" : "剪贴板同步已关闭", "success");
           } catch (e) {
+            // 不静默也不留假开关（规则 #15.3，与 KbSyncSection 同口径）：
+            // 配置是先落盘的，命令失败后必须**回写**，否则界面上留着一个「已开启」
+            // 的开关而服务根本没起来，用户会盯着它等一次永远不会来的同步。
             logger.warn("切换LAN同步失败", e);
-            toast("剪贴板同步切换失败，请检查网络", "error");
+            await updateAndSave({ lan_sync_enabled: !v });
+            toast(`剪贴板同步切换失败：${e instanceof Error ? e.message : String(e)}`, "error");
           }
         }} />
       {config.lan_sync_enabled && (

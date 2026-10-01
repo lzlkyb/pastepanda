@@ -6,6 +6,7 @@
  * 文件唯一使用者，列宽与着色都只在这套语义里成立，拆出来比拆 compact 行更
  * 干净——compact 行还要和「展开全部」的截断口径共用变量。
  */
+import { rcCapTone } from "@/lib/rcCapability";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import type { RcCapability, RcHistoryItem, RcTargetDevice } from "@/lib/api/rc";
 import { canReconnectTo } from "@/lib/rcDevice";
@@ -27,7 +28,7 @@ export function RcHistoryPageRow({
   busy: boolean;
   onReconnect: (nodeId: string, name: string, cap: RcCapability) => void;
 }) {
-  const cap: RcCapability = h.capability === "control" ? "control" : "view";
+  const cap = rcCapTone(h.capability);
   const peerLabel = historyPeerLabel(h);
   const canRetry = canReconnectTo(targets, h.peer, running);
   const path = pathKindLabel(h.path_kind ?? "");

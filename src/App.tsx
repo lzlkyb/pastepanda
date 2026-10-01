@@ -19,6 +19,7 @@ import { useToast } from "@/components/Toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { useViewTransition } from "@/hooks/useViewTransition";
 import { logger } from "@/lib/logger";
 import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, readClipboardText, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
@@ -1226,7 +1227,6 @@ function App() {
             <Suspense fallback={null}>
               <ErrorBoundary fallback={null} componentName="设置页">
                 <SettingsView
-                  open
                   onClose={closeSettings}
                   initialTab={showSettingsTab}
                   initialSection={showSettingsSection}
@@ -1439,6 +1439,12 @@ export default App;
 /** 快捷键浮层（支持搜索过滤） */
 function ShortcutPanel({ onClose }: { onClose: () => void }) {
   const [filter, setFilter] = useState("");
+  // 🔴 本浮层之前**只能用鼠标关**：它的搜索框带 autoFocus，而 App 的全局 Esc 链
+  // 第一道判据是「焦点在 INPUT 里就整个忽略按键」（`keyboardActions.ts` Guard 1），
+  // 于是 `?` 打得开、Esc 关不掉——浮层里还写着「? 显示此面板」，键盘用户是个死路。
+  // 走公共 hook（捕获期 + stopPropagation）：顺带压住 App 那条链，
+  // 从设置页里按 `?` 打开再按 Esc 时，关的是浮层而不是**整个设置页**。
+  useDialogEscape(onClose);
   const config = useAppStore((s) => s.config);
   const allShortcuts = useMemo(() => {
     const dblDesc = config.double_click_action === "copy" ? "双击复制到剪贴板" : "双击预览 / 编辑";
@@ -1462,6 +1468,7 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
       { desc: "打开设置", keys: "Ctrl+S" },
       { desc: "打开帮助", keys: "Ctrl+H" },
       { desc: "显示此面板", keys: "? 或 Shift+/" },
+      { desc: "关闭此面板", keys: "Esc" },
     ];
   }, [config.hotkey, config.sequential_hotkey, config.select_all_hotkey, config.double_click_action, config.stack_toggle_hotkey, config.stack_paste_hotkey, config.quick_paste_hotkey]);
 

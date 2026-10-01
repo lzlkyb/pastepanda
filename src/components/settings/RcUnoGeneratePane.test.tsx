@@ -21,37 +21,38 @@ function renderPane() {
 describe("RcUnoGeneratePane 首屏减负", () => {
   it("首屏只有一句默认承诺 + 大按钮，不展开高级也能一步出码", async () => {
     const unoGenerate = renderPane();
-    expect(screen.getByText(/将生成：/).textContent).toContain("15 分钟 · 用 1 次 · 可控");
+    // 🔴 默认是「只看画面」：出码对面没人，最危险的那档不能是不用思考就会拿到的那档
+    expect(screen.getByText(/将生成：/).textContent).toContain("15 分钟 · 用 1 次 · 只看画面");
     fireEvent.click(screen.getByRole("button", { name: "生成接入码" }));
     await waitFor(() =>
       expect(unoGenerate).toHaveBeenCalledWith({
-      ttlSecs: 15 * 60,
-      unlimited: false,
-      capability: "control",
-      alsoTrust: false,
-    })
+        ttlSecs: 15 * 60,
+        unlimited: false,
+        capability: "view",
+        alsoTrust: false,
+      })
     );
   });
 
   it("高级区改时效/能力后承诺句实时更新，提交跟随", async () => {
     const unoGenerate = renderPane();
     fireEvent.click(screen.getByText("24 小时 · 不限次（装机 / 挂机，可随时撤销）"));
-    fireEvent.click(screen.getByText("只看画面（对方不能动键鼠）"));
-    expect(screen.getByText(/将生成：/).textContent).toContain("24 小时 · 不限次 · 只看画面");
+    fireEvent.click(screen.getByText("可控（能操作键鼠）"));
+    expect(screen.getByText(/将生成：/).textContent).toContain("24 小时 · 不限次 · 可控");
     fireEvent.click(screen.getByRole("button", { name: "生成接入码" }));
     await waitFor(() =>
       expect(unoGenerate).toHaveBeenCalledWith({
-      ttlSecs: 24 * 60 * 60,
-      unlimited: true,
-      capability: "view",
-      alsoTrust: false,
-    })
+        ttlSecs: 24 * 60 * 60,
+        unlimited: true,
+        capability: "control",
+        alsoTrust: false,
+      })
     );
   });
 
   it("勾免确认后承诺句带上「开免确认」", () => {
     renderPane();
     fireEvent.click(screen.getByText(/接入后给这台设备开免确认/));
-    expect(screen.getByText(/将生成：/).textContent).toContain("可控 · 开免确认");
+    expect(screen.getByText(/将生成：/).textContent).toContain("只看画面 · 开免确认");
   });
 });

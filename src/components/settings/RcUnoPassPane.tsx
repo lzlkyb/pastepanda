@@ -18,7 +18,9 @@ export function PassPane({ rc, toast }: { rc: UseRc; toast: ToastFn }) {
   const cur = rc.status?.uno_pass ?? null;
   const selfId = rc.identity?.node_id;
   const [pass, setPass] = useState("");
-  const [cap, setCap] = useState<"control" | "view">("control");
+  // 🔴 与无人值守码同口径：固定密码是**长期**授权，默认档必须是最低的「只看画面」。
+  //   键鼠控制要在这里显式选，选了就显示在下面的「接入授予」摘要里。
+  const [cap, setCap] = useState<"control" | "view">("view");
   const [wan, setWan] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");

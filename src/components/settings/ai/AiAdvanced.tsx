@@ -5,17 +5,11 @@
  * （见 AiSetupStep）——模型也包括手填，所以这里不再重复一份。
  */
 
-import { Database, Loader2, Settings2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Settings2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { AiConfig, AiProviderInfo } from "@/lib/api";
-import {
-  semanticStatus,
-  semanticIndex,
-  semanticSetConfig,
-  type SemanticStatus,
-} from "@/lib/api/semantic";
-import { useToast } from "@/components/Toast";
 import { AiSection } from "./AiSection";
+import { AiSemanticField } from "./AiSemanticField";
 import settings from "../../Settings.module.css";
 import styles from "../AiTab.module.css";
 
@@ -37,31 +31,6 @@ export function AiAdvanced(p: Props) {
   const isLocal = !!spec && !spec.needsKey;
   // v6.4 审查修复：#4 清空密钥二次确认（密钥不可恢复）
   const [confirmClear, setConfirmClear] = useState(false);
-  // M5-2 语义索引状态
-  const [sem, setSem] = useState<SemanticStatus | null>(null);
-  const [modelDraft, setModelDraft] = useState("");
-  // 用户是否改过 embedding 模型草稿：改过则展开时不被服务端值覆盖（P1 修复）
-  const modelDirtyRef = useRef(false);
-  const [semError, setSemError] = useState<string | null>(null);
-  const [indexing, setIndexing] = useState(false);
-  const { toast } = useToast();
-
-  const loadSem = useCallback(async () => {
-    try {
-      const s = await semanticStatus();
-      setSem(s);
-      setSemError(null);
-      // 用户没改过草稿才用服务端值回填；改过则保留，避免覆盖未保存的编辑（P1 修复）
-      if (!modelDirtyRef.current) setModelDraft(s.model);
-    } catch (e) {
-      setSem(null);
-      setSemError(`读取 AI 记忆增强状态失败：${e instanceof Error ? e.message : String(e)}`);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (p.open) void loadSem();
-  }, [p.open, loadSem]);
 
   // 折叠/卸载前先把草稿落盘：输入框靠 onBlur 提交，但折叠是卸载而非失焦，
   // React 不会触发 blur，未失焦的值会静默丢失（P1 修复）。
@@ -84,51 +53,6 @@ export function AiAdvanced(p: Props) {
     // 只在「展开 → 收起」和「展开着卸载」这两个时刻落盘，落的是 ref 里的最新草稿
     return () => commitRef.current();
   }, [p.open]);
-
-  const toggleSem = useCallback(
-    async (enabled: boolean) => {
-      try {
-        await semanticSetConfig(enabled, null);
-        toast(enabled ? "已开启 AI 记忆增强" : "已关闭，搜索退回关键词匹配", "success");
-        void loadSem();
-      } catch (e) {
-        toast(`设置失败：${e instanceof Error ? e.message : String(e)}`, "error");
-      }
-    },
-    [loadSem, toast],
-  );
-
-  const saveModel = useCallback(
-    async () => {
-      try {
-        await semanticSetConfig(sem?.enabled ?? false, modelDraft);
-        modelDirtyRef.current = false;
-        toast("embedding 模型已保存", "success");
-        void loadSem();
-      } catch (e) {
-        toast(`保存失败：${e instanceof Error ? e.message : String(e)}`, "error");
-      }
-    },
-    [loadSem, modelDraft, sem?.enabled, toast],
-  );
-
-  const runIndex = useCallback(async () => {
-    setIndexing(true);
-    try {
-      const r = await semanticIndex();
-      toast(
-        r.indexed > 0
-          ? `已索引 ${r.indexed} 条${r.pendingLeft > 0 ? `，还有 ${r.pendingLeft} 条待处理` : ""}`
-          : "没有需要索引的条目",
-        "success",
-      );
-      void loadSem();
-    } catch (e) {
-      toast(`索引失败：${e instanceof Error ? e.message : String(e)}`, "error");
-    } finally {
-      setIndexing(false);
-    }
-  }, [loadSem, toast]);
 
   return (
     <AiSection
@@ -266,61 +190,9 @@ export function AiAdvanced(p: Props) {
           </div>
         </div>
 
-        {/* M5-2：AI 记忆增强（语义搜索）。开关默认关，出网的只有摘要与搜索词，原文永不出本机 */}
-        <div className={styles.field}>
-          <span className={styles.label}>AI 记忆增强（语义搜索）</span>
-          <div className={styles.row}>
-            <input
-              type="checkbox"
-              className={styles.toggleCheck}
-              checked={sem?.enabled ?? false}
-              disabled={!sem}
-              onChange={(e) => void toggleSem(e.target.checked)}
-            />
-            <span className={styles.hint}>
-              开启后，历史摘要会生成语义向量存在本地：搜"上周那个 API 文档"这类凭印象的查询
-              能按<strong>意思</strong>命中，而不是只按字面。摘要/搜索词会发给当前 AI 厂商计费
-              （受日预算约束），<strong>原文永不出本机</strong>；关闭即退回关键词搜索，可随时清除。
-            </span>
-            {semError && (
-              <span className={styles.hint} style={{ color: "var(--danger, #e5484d)" }}>
-                ⚠ {semError}
-              </span>
-            )}
-          </div>
-
-          {sem?.enabled && (
-            <div className={styles.row} style={{ marginTop: 6, flexWrap: "wrap", gap: 8 }}>
-              <input
-                className={styles.input}
-                style={{ width: 200, padding: "5px 9px", fontSize: 11.5 }}
-                value={modelDraft}
-                placeholder={sem.defaultModel || "embedding 模型名"}
-                onChange={(e) => {
-                  modelDirtyRef.current = true;
-                  setModelDraft(e.target.value);
-                }}
-                onBlur={() => void saveModel()}
-              />
-              <button
-                className={settings.btnSecondary}
-                onClick={() => void runIndex()}
-                disabled={indexing}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-              >
-                {indexing ? <Loader2 size={12} className="spin" /> : <Database size={12} />}
-                {indexing ? "索引中…" : "立即建立索引"}
-              </button>
-              <span className={styles.hint}>
-                已索引 <b>{sem.vectorCount}</b> 条
-                {sem.pending > 0 ? `，${sem.pending} 条待处理（搜索时会自动补）` : ""}
-                {sem.providerSupports
-                  ? ` · 厂商 ${sem.provider} · 模型 ${sem.model || sem.defaultModel || "待填"}`
-                  : ` · ⚠️ 厂商 ${sem.provider} 不支持 embedding，请换 OpenAI 兼容厂商或在上面填中转模型`}
-              </span>
-            </div>
-          )}
-        </div>
+        {/* M5-2：AI 记忆增强。开关默认关；出网的只有摘要与搜索词，原文永不出本机。
+            组件自己按 useAiStatus 门控（规则 #16），未启用时整行不渲染。 */}
+        <AiSemanticField open={p.open} />
 
         {p.hasKey && (
           <div className={styles.row}>

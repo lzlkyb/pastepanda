@@ -7,6 +7,7 @@
  * 都要挂着——「这台机器正对着知道密码的人开着门」不能只有设置页知道。
  * 一键全局关闭就在这条上，这是泄露密码后的止损按钮。
  */
+import { rcCapShort } from "@/lib/rcCapability";
 import { useToast } from "@/components/Toast";
 import { runRcAction } from "@/lib/rcFeedback";
 import type { RcUnoPassInfo } from "@/lib/api/rc";
@@ -28,7 +29,7 @@ export function RcUnoPassBanner({
         <span className={styles.live} />
         无人值守模式中 · 固定密码接入已开启
       </span>
-      <span className={styles.pillOn}>{unoPass.cap === "control" ? "可控" : "只看"}</span>
+      <span className={styles.pillOn}>{rcCapShort(unoPass.cap)}</span>
       <span className={styles.sp} />
       <span className={styles.meta}>
         {unoPass.wan ? "跨网已允许（有限速防爆破）" : "仅限同一局域网"}

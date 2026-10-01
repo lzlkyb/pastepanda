@@ -7,11 +7,12 @@ import { AboutTabContent } from "@/components/settings/AboutTabContent";
 import { AiTab } from "@/components/settings/AiTab";
 import { McpTab } from "@/components/settings/McpTab";
 import { LazyMount } from "@/components/settings/LazyMount";
-import { SETTINGS_SECTIONS, type SettingsNavEntry } from "@/components/settings/sections/meta";
+import { SETTINGS_SECTIONS, type SettingsNavEntry, type SettingsNavKey } from "@/components/settings/sections/meta";
 import type { SettingsTabName } from "@/lib/openSettings";
 import { useSettingsSearch } from "@/hooks/useSettingsSearch";
 import { useSettingsShell } from "@/hooks/useSettingsShell";
 import { useSettingsNav } from "@/hooks/useSettingsNav";
+import { blocksPageShortcuts } from "@/lib/modalLayers";
 import styles from "./Settings.module.css";
 
 /**
@@ -29,8 +30,7 @@ import styles from "./Settings.module.css";
  * 文字始终显示。曾经有过一个 600px 断点用来把菜单收成图标条，已废弃：
  * 只剩图标用户看不懂是哪一项。
  */
-export function SettingsView({ open, onClose, initialTab, initialSection, jump }: {
-  open: boolean;
+export function SettingsView({ onClose, initialTab, initialSection, jump }: {
   onClose: () => void;
   initialTab?: SettingsTabName;
   /** 通用页内分区 key（如 "lan"）；由 openSettings 的 section 透传 */
@@ -43,17 +43,22 @@ export function SettingsView({ open, onClose, initialTab, initialSection, jump }
   /** 搜索态：右栏看到的是跨分区结果，此时菜单不该再高亮某一项（那会误导） */
   const searching = search.filter.trim() !== "";
 
-  const sh = useSettingsShell(open);
+  const sh = useSettingsShell();
   const isBlossom = sh.config.theme === "blossom";
   const { nav, navItems, bodyRef, handleNavPick } = useSettingsNav({
-    open, initialTab, initialSection, jump, blossom: isBlossom, searching, sectionClass: styles.sSection,
+    initialTab, initialSection, jump, blossom: isBlossom, searching, sectionClass: styles.sSection,
   });
 
   // E2：设置页内 Ctrl+F / `/` 聚焦搜索（与主窗/编辑器查找心智一致）。
   // Esc：有搜索词时先清空，不直接关设置（规则 17.6 两级取消）。
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      // 🔴 有浮层盖着、或有控件在吃键盘时，设置页的快捷键整体让路。
+      // 判据与层序收口在 `lib/modalLayers.ts`（规则 #11.1）。不 return 的后果：
+      //   ・Esc 被这里 `stopPropagation` 掉并清关键词，弹框根本收不到（删除确认框按 Esc 关不掉）；
+      //   ・Ctrl+F / `/` 把焦点从弹框、快捷键浮层的搜索框、或正在录制的快捷键控件里抢回设置搜索框
+      //     ——和 FocusTrap 对着拉，录制态还会被 `onBlur` 直接取消。
+      if (blocksPageShortcuts()) return;
       const t = e.target as HTMLElement | null;
       const inField = !!t && (
         t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable
@@ -84,7 +89,21 @@ export function SettingsView({ open, onClose, initialTab, initialSection, jump }
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, search.filter, searching]);
+  }, [search.filter, searching]);
+
+  /**
+   * 菜单项与空态里那四个跳转按钮走**同一条路径**（规则 #11.1）：
+   *
+   * 🔴 搜索态直接跳是死点：目标标题大多已被过滤成 display:none，
+   * findNavEl 明确跳过隐藏标题 ⇒ 不滚；而这次点击引起的重渲染会再跑一遍搜索过滤，
+   * 把滚动条拽回首条命中——用户看到的是「点了没反应，页面还自己动了一下」。
+   * 收掉关键词就等于把落点还回来：setFilter 与 handleNavPick 在同一批次里，
+   * 提交时搜索的 layout effect 先恢复标题，导航那个 passive effect 再滚。
+   */
+  const jumpTo = (k: SettingsNavKey) => {
+    if (searching) search.setFilter("");
+    handleNavPick(k);
+  };
 
   /** 菜单一项。**文字始终显示**——只有图标的话用户看不懂是哪一项 */
   const navItem = (n: SettingsNavEntry) => {
@@ -92,7 +111,7 @@ export function SettingsView({ open, onClose, initialTab, initialSection, jump }
     return (
       <button key={n.key}
         className={`${styles.settingsNavItem}${!searching && nav === n.key ? ` ${styles.settingsNavItemActive}` : ""}`}
-        onClick={() => handleNavPick(n.key)}>
+        onClick={() => jumpTo(n.key)}>
         <span className={styles.settingsNavIcon}>{n.icon}</span>
         <span className={styles.settingsNavLabel}>{n.label}</span>
         {dot && <span className={styles.tabDot} />}
@@ -186,6 +205,7 @@ export function SettingsView({ open, onClose, initialTab, initialSection, jump }
             handleExport={sh.handleExport} handleImport={sh.handleImport} handleCleanup={sh.handleCleanup}
             exporting={sh.exporting} importing={sh.importing}
             search={search}
+            onJumpPage={jumpTo}
           />
           {/* 搜索时隐掉这四块：它们不是「设置行」，不参与逐行过滤，
               留着会让搜索结果下面拖着四大块不相干的内容。 */}

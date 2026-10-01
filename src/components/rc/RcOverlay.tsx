@@ -8,6 +8,7 @@
  * `RcOutboundBanner` / `RcReconnectBanner` / `RcUnoPassBanner` / `RcPairJoins`，
  * 所有动作经 `runRcAction` 收口——失败也有 toast（规则 15.3，主窗没有错误面板）。
  */
+import { rcCapShort } from "@/lib/rcCapability";
 import { useEffect, useRef } from "react";
 import { useToast } from "@/components/Toast";
 import { useRc } from "@/hooks/useRc";
@@ -79,7 +80,7 @@ export function RcOverlay() {
         seenPending.current.add(p.peer);
         toast(
           `「${rcDisplayName(p, fingerprintOf(p.peer))}」申请远程本机（${
-            p.capability === "control" ? "可控" : "只看"
+            rcCapShort(p.capability)
           }）`,
           "info",
         );

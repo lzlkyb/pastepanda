@@ -13,6 +13,7 @@
  * **永远可点**：关掉「允许被远程」并不收回已经发出去的码，撤销是安全出口；粘码是
  * 出站动作，与本机接不接受被远程无关。行本身也不变灰，变灰会让人以为撤销按不了。
  */
+import { rcCapShort } from "@/lib/rcCapability";
 import { useToast } from "@/components/Toast";
 import type { UseRc } from "@/hooks/useRc";
 import type { RcStatus } from "@/lib/api/rc";
@@ -28,6 +29,7 @@ export function RcUnoGroup({
   status,
   off,
   open,
+  inert,
   onToggle,
   onOverlay,
 }: {
@@ -35,6 +37,8 @@ export function RcUnoGroup({
   status: RcStatus | null;
   off: boolean;
   open: boolean;
+  /** 搜索态：组头停止响应点击（见 RcGroupHead）。 */
+  inert?: boolean;
   onToggle: () => void;
   onOverlay: (mode: RcPairLayerMode) => void;
 }) {
@@ -48,6 +52,7 @@ export function RcUnoGroup({
       <RcGroupHead
         label="不用在场的连法"
         open={open}
+        inert={inert}
         onToggle={onToggle}
         summary={
           /* 同组 1：`status` 还没回来时不能断言「接入码 0 · 固定密码 未设置」——
@@ -133,7 +138,7 @@ export function RcUnoGroup({
             desc={
               // 同上：警示留 desc（§5 ⑤ 的例外覆盖无人值守两行），完整说明在 ?
               pass
-                ? `⚠️ 对面没人也能连 · 当前：${pass.cap === "control" ? "可控" : "只看"} · ${pass.wan ? "跨网已允许" : "仅限局域网"}`
+                ? `⚠️ 对面没人也能连 · 当前：${rcCapShort(pass.cap)} · ${pass.wan ? "跨网已允许" : "仅限局域网"}`
                 : "⚠️ 对面没人也能连：知道密码随时可连，给长期挂机的机器"
             }
             detailTitle="无人值守固定密码"

@@ -42,8 +42,8 @@ export function StackRows({ config, updateAndSave }: StackRowsProps) {
               <div className={`${styles.sRowDesc}`}>入栈后每条的文本样子</div>
             </div>
             <div className={styles.sSegGroup}>
-              <button className={`${styles.sSegText}${config.table_split_format === "raw" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "raw" })}>原始行</button>
-              <button className={`${styles.sSegText}${config.table_split_format === "field-value" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "field-value" })}>字段: 值</button>
+              <button className={`${styles.sSegText}${config.table_split_format === "raw" ? ` ${styles.sSegActive}` : ""}`} aria-pressed={config.table_split_format === "raw"} onClick={() => updateAndSave({ table_split_format: "raw" })}>原始行</button>
+              <button className={`${styles.sSegText}${config.table_split_format === "field-value" ? ` ${styles.sSegActive}` : ""}`} aria-pressed={config.table_split_format === "field-value"} onClick={() => updateAndSave({ table_split_format: "field-value" })}>字段: 值</button>
             </div>
           </div>
           <div className={styles.sRow}>
@@ -53,8 +53,8 @@ export function StackRows({ config, updateAndSave }: StackRowsProps) {
               <div className={`${styles.sRowDesc}`}>拆分时是否保留第一行表头</div>
             </div>
             <div className={styles.sSegGroup}>
-              <button className={`${styles.sSegText}${!config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: false })}>排除</button>
-              <button className={`${styles.sSegText}${config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: true })}>包含</button>
+              <button className={`${styles.sSegText}${!config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} aria-pressed={!config.table_split_include_header} onClick={() => updateAndSave({ table_split_include_header: false })}>排除</button>
+              <button className={`${styles.sSegText}${config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} aria-pressed={config.table_split_include_header} onClick={() => updateAndSave({ table_split_include_header: true })}>包含</button>
             </div>
           </div>
         </>

@@ -47,6 +47,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
         <div className={styles.sSegGroup}>
           <button
             className={`${styles.sSegText}${config.ocr_select_mode === "smart" ? ` ${styles.sSegActive}` : ""}`}
+            aria-pressed={config.ocr_select_mode === "smart"}
             onClick={() => void updateAndSave({ ocr_select_mode: "smart" })}
             title="落在文字上拖=选字；光标离开文字带则冻结已选内容"
           >
@@ -54,6 +55,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
           </button>
           <button
             className={`${styles.sSegText}${config.ocr_select_mode === "modifier" ? ` ${styles.sSegActive}` : ""}`}
+            aria-pressed={config.ocr_select_mode === "modifier"}
             onClick={() => void updateAndSave({ ocr_select_mode: "modifier" })}
             title="Ctrl/⌘ + 落在文字上拖=选字；裸拖一律画标注"
           >
@@ -107,10 +109,12 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
           </div>
         </div>
         <div className={styles.sSegGroup}>
-          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "grid" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "grid" })} title="双栏网格">
+          {/* 🔴 这两个按钮的内容只有一个 emoji 字形，读屏会念成「black square」之类
+              的码点名；含义必须写进 aria-label（title 只做鼠标提示）。 */}
+          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "grid" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "grid" })} title="双栏网格" aria-label="双栏网格" aria-pressed={config.quick_paste_layout === "grid"}>
             <span className={styles.sSegEmoji}>🔲</span>
           </button>
-          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "list" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "list" })} title="单栏列表">
+          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "list" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "list" })} title="单栏列表" aria-label="单栏列表" aria-pressed={config.quick_paste_layout === "list"}>
             <span className={styles.sSegEmoji}>☰</span>
           </button>
         </div>

@@ -15,6 +15,7 @@
  * 子节点，所以 `peer` 做成**受控**（由 RcWorkbench 持有）；数据也一并上提
  * （`data` 不传时仍自拉，主窗设置页走这条路，不必为它多挂一个 hook）。
  */
+import { rcCapTone } from "@/lib/rcCapability";
 import { useEffect, useMemo, useState } from "react";
 import {
   rcSessionHistory,
@@ -207,7 +208,7 @@ export function RcSessionHistory({
             : undefined;
         // A5：设备还在 + 通道在跑才摆按钮（判据见 lib/rcDevice.canReconnectTo）
         const canRetry = canReconnectTo(targets, h.peer, running);
-        const cap: RcCapability = h.capability === "control" ? "control" : "view";
+        const cap = rcCapTone(h.capability);
         const peerLabel = historyPeerLabel(h);
         return (
           <div key={`${h.started_ms}-${i}`} className={styles.histItem}>

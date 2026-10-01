@@ -13,9 +13,11 @@ import { hasUnseenEntries, getLastSeenVersion } from "@/lib/changelog";
  * 拆它的理由不是行数指标：这一堆东西（保存串行、导出导入、清理、恢复默认）
  * 与「菜单高亮到哪一项」完全无关，堆在一个组件里时，改任一边都要先读另一边。
  *
- * ❗ `open` 为 false 时不拉数据也不听事件：设置页关着的时候这些都是白烧（规则 #8）。
+ * ❗ 本 hook 只在 `SettingsView` 里调一次，而 SettingsView 由 `App.tsx` 按
+ * `shownView === "settings"` **条件挂载** ⇒ 不存在「关着还挂着」的状态，
+ * 所以这里没有 `open` 参数（上一版有，四个 `if (!open)` 分支永远走不到，只骗读代码的人）。
  */
-export function useSettingsShell(open: boolean) {
+export function useSettingsShell() {
   const config = useAppStore((s) => s.config);
   const updateConfig = useAppStore((s) => s.updateConfig);
   const { toast } = useToast();
@@ -52,14 +54,13 @@ export function useSettingsShell(open: boolean) {
   };
 
   useEffect(() => {
-    if (!open) return;
     // 审查：stats 失败不再静默——置错误标记，界面给重试
     loadStats();
     getAppVersion().then(setAppVersion);
     getAppName().then(setAppName).catch(() => setAppName("PastePanda"));
     // loadStats 每次渲染都是新函数，列进依赖会变成每渲染都重拉一次统计
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, config.current_workspace]);
+  }, [config.current_workspace]);
 
   // 串行化配置写入：后一次保存必须在前一次之后执行，且读取最新 store 快照，
   // 避免快速连续切换时闭包过期 config 相互覆盖导致设置丢失（M20）
@@ -120,13 +121,12 @@ export function useSettingsShell(open: boolean) {
   // 递增 tick 触发重查，避免"清理过期记录"行显示过期数字
   const [expiredRefreshTick, setExpiredRefreshTick] = useState(0);
   useEffect(() => {
-    if (!open) return;
     const onInvalidated = () => setExpiredRefreshTick((t) => t + 1);
     window.addEventListener("counts-invalidated", onInvalidated);
     return () => window.removeEventListener("counts-invalidated", onInvalidated);
-  }, [open]);
+  }, []);
   useEffect(() => {
-    if (!open || cleanupDays <= 0) {
+    if (cleanupDays <= 0) {
       setExpiredCount(0);
       return;
     }
@@ -145,7 +145,7 @@ export function useSettingsShell(open: boolean) {
       }
     })();
     return () => { cancelled = true; };
-  }, [open, cleanupDays, config.current_workspace, expiredRefreshTick]);
+  }, [cleanupDays, config.current_workspace, expiredRefreshTick]);
 
   const handleExport = async () => {
     setExporting(true);

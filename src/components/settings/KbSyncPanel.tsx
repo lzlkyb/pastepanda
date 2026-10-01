@@ -6,6 +6,7 @@ import {
 } from "@/lib/kbOnline";
 import type { ToastFn } from "@/components/Toast";
 import { KbPairDialog } from "./KbPairDialog";
+import { KbForgetDialog } from "./KbForgetDialog";
 import { KbJoinRequests, type KbJoinProps } from "./KbJoinRequests";
 import { RcSyncOffers } from "./RcSyncOffers";
 import shared from "../Settings.module.css";
@@ -280,33 +281,18 @@ export function KbSyncPanel({ toast }: {
         />
       )}
 
+      {/* 删除确认：拆成 KbForgetDialog（补了 FocusTrap 与 Esc，理由见那个文件头） */}
       {confirmForget && (
-        <div className="dialog-backdrop" onClick={() => setConfirmForget(null)}>
-          <div className="dialog-box dialog-solid w420" onClick={(e) => e.stopPropagation()}>
-            <div className="dialog-header"><h2 className="dialog-title">删除「{confirmForget.name}」？</h2></div>
-            <div className="dialog-body" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-              <p style={{ margin: "0 0 8px" }}>
-                本机不再与它同步，已同步过来的笔记<b>不会被删</b>；要恢复得重新配对。
-              </p>
-              <p style={{ margin: "0 0 8px", color: "var(--text-muted)" }}>
-                若只想暂时不同步，用旁边的「启用」开关即可，无需删除。
-              </p>
-              {/* 说清后果：只删一边的话对方会一直白拨，用户看到「连不上」会以为是 bug */}
-              <p style={{ margin: 0, color: "var(--text-muted)" }}>
-                ❗ 对方那台机器上<b>还留着这台的记录</b>，它会继续尝试连接并被拒绝。
-                想彻底断开，请在两边都删除一次。
-              </p>
-            </div>
-            <div className="dialog-footer">
-              <button className="btn-secondary" onClick={() => setConfirmForget(null)}>取消</button>
-              <button className="btn-danger" disabled={s.busy} onClick={async () => {
-                await s.forget(confirmForget.node_id);
-                toast(`已删除「${confirmForget.name}」`, "success");
-                setConfirmForget(null);
-              }}>删除此设备</button>
-            </div>
-          </div>
-        </div>
+        <KbForgetDialog
+          name={confirmForget.name}
+          busy={s.busy}
+          onCancel={() => setConfirmForget(null)}
+          onConfirm={async () => {
+            await s.forget(confirmForget.node_id);
+            toast(`已删除「${confirmForget.name}」`, "success");
+            setConfirmForget(null);
+          }}
+        />
       )}
     </div>
   );

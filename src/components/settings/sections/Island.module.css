@@ -10,6 +10,14 @@
   gap: 12px;
 }
 
+/* 🔴 双写类名（0-2-0）压过 `.sRow`（0-1-0）：这两个选择器分属两个 CSS Module，
+   平权重时谁赢看打包顺序——本行此前全靠 IslandSection 的 import 次序侥幸。
+   顺序一变，纵向三块（预览条 / 滑杆 / 六宫格）整行翻成横排。 */
+.glassRow.glassRow {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .glassHead {
   display: flex;
   align-items: center;
@@ -99,6 +107,12 @@
   flex-direction: column;
   align-items: stretch;
   gap: 12px;
+}
+
+/* 同 .glassRow.glassRow：不双写就赢不了跨 module 的 `.sRow`，打包顺序一变整行翻横排。 */
+.anchorRow.anchorRow {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 /* 预览条：一块假屏幕，胶囊贴在所选锚点上。选完立刻看得出「岛会挪到哪」，

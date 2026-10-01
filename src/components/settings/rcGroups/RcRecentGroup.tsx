@@ -30,6 +30,7 @@ export function RcRecentGroup({
   running,
   busy,
   open,
+  inert,
   onToggle,
   onReconnect,
 }: {
@@ -38,6 +39,8 @@ export function RcRecentGroup({
   running: boolean;
   busy: boolean;
   open: boolean;
+  /** 搜索态：组头停止响应点击（见 RcGroupHead）。 */
+  inert?: boolean;
   onToggle: () => void;
   onReconnect: (nodeId: string, name: string, cap: RcCapability) => void;
 }) {
@@ -48,6 +51,7 @@ export function RcRecentGroup({
       <RcGroupHead
         label="最近会话"
         open={open}
+        inert={inert}
         onToggle={onToggle}
         summary={
           history.loading ? (

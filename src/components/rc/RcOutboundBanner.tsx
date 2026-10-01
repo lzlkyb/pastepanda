@@ -4,6 +4,7 @@
  * B2（2026-09-23）从 `RcOverlay` 拆出：该文件超 300 行红线，纪律要求拆分先行。
  * 行为与原内联块一致，唯一变化是失败分支补了 toast（原先 `if (ok)` 无 else）。
  */
+import { rcCapShort } from "@/lib/rcCapability";
 import { useToast } from "@/components/Toast";
 import { runRcAction } from "@/lib/rcFeedback";
 import { fingerprintOf } from "@/lib/fingerprint";
@@ -61,7 +62,7 @@ export function RcOutboundBanner({
         {isPending ? `正在申请远程「${name}」` : `正在远程「${name}」`}
       </span>
       <span className={styles.pillOn}>
-        {session.capability === "control" ? "可控" : "只看"}
+        {rcCapShort(session.capability)}
       </span>
       <span className={styles.sp} />
       {/* F-10：pending 与工作台 RcPendingWait 同口径——不说超时用户会干等到错误面板 */}

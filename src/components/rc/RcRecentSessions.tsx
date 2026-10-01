@@ -20,15 +20,11 @@
  * 稿的这一块还画过「文件传输 · 3 个文件」——**没有做**：`rc_session_history`
  * 只记画面会话（control/view），没有文件传输记录。宁可少一行也不摆假数据。
  */
+import { rcCapTone } from "@/lib/rcCapability";
 import type { RcHistoryItem } from "@/lib/api/rc";
 import { historyCapabilityLabel, recentSessionsFor, resultTone } from "@/lib/rcHistory";
 import { formatDuration, formatWhen, pathKindLabel } from "@/lib/rcSessionStats";
 import styles from "./RemoteComputerA2.module.css";
-
-/** 药丸配色只认 control / view 两档，其余一律按「只看」的中性处理。 */
-function capTone(capability: string): "control" | "view" {
-  return capability === "control" ? "control" : "view";
-}
 
 export function RcRecentSessions({
   list,
@@ -62,7 +58,7 @@ export function RcRecentSessions({
             return (
               <div key={`${h.started_ms}-${i}`} className={styles.recentLine} title={hint}>
                 <span className={styles.recentCap}>
-                  <span className={styles.capChip} data-cap={capTone(h.capability)}>
+                  <span className={styles.capChip} data-cap={rcCapTone(h.capability)}>
                     {historyCapabilityLabel(h.capability)}
                   </span>
                   <span>{formatWhen(h.started_ms)}</span>

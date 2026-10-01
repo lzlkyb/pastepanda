@@ -45,7 +45,12 @@ export function ConfirmDialog({
    *
    * ❗ 只在 `open` 时挂，否则满屏都是没用的 window 监听。
    * 用 capture 阶段：弹窗开着的时候，Esc 应当先归它，
-   * 不能让底下的页面（比如截图遮罩层）抢先把自己关了。 */
+   * 不能让底下的页面（比如截图遮罩层）抢先把自己关了。
+   *
+   * 🟡 这一处是全仓**唯一**保留的手挂捕获期 Esc：本组件就是别的弹框要让路的那个
+   * `.z-confirm` 层，套 `useDialogEscape` 会扫到自己、把自已冻住。
+   * 新增第二处这种例外之前，先看 `__tests__/dialogEscapeLayering.test.tsx` 那条登记。
+   */
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

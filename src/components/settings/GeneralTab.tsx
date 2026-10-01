@@ -11,6 +11,7 @@ import { DataSection } from "./sections/DataSection";
 import { SyncSection } from "./sections/SyncSection";
 import { StatsSection } from "./sections/StatsSection";
 import type { SettingsSearch } from "@/hooks/useSettingsSearch";
+import { SETTINGS_PAGES, type SettingsPageKey } from "./sections/meta";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WeekReportDialog } from "@/components/WeekReportDialog";
@@ -38,6 +39,8 @@ interface GeneralTabProps {
    * 而装设置行的容器在这里——两边靠这组 ref 对接。
    */
   search: SettingsSearch;
+  /** 空态里那四个「整块页面」的跳转：与左菜单同一条路径（清关键词 + 跳） */
+  onJumpPage: (key: SettingsPageKey) => void;
 }
 
 /**
@@ -53,7 +56,7 @@ export function GeneralTab({
   config, updateAndSave, stats, statsError, onRetryStats, expiredCount,
   tabStyle, handleSwitchTabStyle,
   handleExport, handleImport, handleCleanup,
-  exporting, importing, search,
+  exporting, importing, search, onJumpPage,
 }: GeneralTabProps) {
   // 各分区共用的状态与副作用统一收口到 useSettingsData（规则 #11）
   const {
@@ -106,6 +109,21 @@ export function GeneralTab({
       <div ref={search.noResultRef} className={styles.settingsNoResult} style={{ display: "none" }}>
         😕 没有找到与「{search.filter}」匹配的设置项
         <div className={styles.settingsNoResultHint}>清掉搜索看全部设置，或换个词试试，比如「主题」「热键」</div>
+        {/* 🔴 「没有匹配项」有第二种成因：这四块是**整块组件**，不在这个逐行过滤的
+            容器里（见 SettingsView：它们排在 settingsSections 之外），所以搜「密钥」「模型」
+            「MCP」天然是 0 结果。不写这一句，空态就是在骗人——而用户明明在界面上
+            看得见「AI」那一页里有个密钥框。按钮走左菜单同一个 handleNavPick：
+            先清关键词再跳，否则落点标题被过滤藏着，点了没反应（本轮 P0-1 的同一件事）。 */}
+        <div className={styles.settingsNoResultHint}>
+          「AI / MCP / 帮助 / 关于」是整块页面，不参与逐行搜索——可直接跳过去：
+        </div>
+        <div className={styles.settingsNoResultPages}>
+          {SETTINGS_PAGES.map((pg) => (
+            <button key={pg.key} className={styles.settingsNoResultBtn} onClick={() => onJumpPage(pg.key)}>
+              {pg.icon} {pg.label}
+            </button>
+          ))}
+        </div>
         <button className={styles.settingsNoResultBtn} onClick={() => search.setFilter("")}>
           清空搜索
         </button>

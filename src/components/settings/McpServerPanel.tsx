@@ -94,6 +94,12 @@ export function McpServerPanel({
           <span className={`${shared.lanDot}${status.running ? "" : ` ${shared.off}`}`} />
           <span className={shared.lanStatusText}>
             {status.running ? `监听中 · 端口 ${status.port}` : "未运行"}
+            {/* 🔴 局域网共享失败原本只在折叠的「高级」里（McpLanPanel 那颗黄色药丸 + 横幅），
+                而顶栏这句「监听中 · 端口 1234」会让人以为手机也能连——它只保证了本机。
+                规则 15.1：告警要和它所属的那句结论同一个可见性域。 */}
+            {status.running && status.lanEnabled && !status.lanActive && (
+              <span className={shared.lanStatusWarn}> · 局域网未能监听</span>
+            )}
           </span>
         </div>
       </div>

@@ -63,6 +63,7 @@ export function DataSection({
           {CLEANUP_OPTIONS.map((opt, idx) => (
             <button key={`cleanup-${opt.value ?? idx}`}
               className={`${styles.sCleanupOpt}${cleanupDays === opt.value ? ` ${styles.active}` : ""}`}
+              aria-pressed={cleanupDays === opt.value}
               onClick={() => { void handlePickCleanupDays(opt.value); }}>
               {opt.label}
             </button>
@@ -94,6 +95,7 @@ export function DataSection({
           {CLEANUP_OPTIONS.map((opt, idx) => (
             <button key={`trash-${opt.value ?? idx}`}
               className={`${styles.sCleanupOpt}${trashDays === opt.value ? ` ${styles.active}` : ""}`}
+              aria-pressed={trashDays === opt.value}
               onClick={() => { void handlePickTrashDays(opt.value); }}>
               {opt.label}
             </button>
