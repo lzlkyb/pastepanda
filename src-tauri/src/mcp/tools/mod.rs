@@ -56,9 +56,27 @@ pub struct ToolError {
 }
 
 impl ToolError {
-    fn invalid_params(msg: impl Into<String>) -> Self {
+    /// 🔴 `pub(crate)`：`resources` 与 `prompts` 两个原语也要报**同一套**错误分类
+    /// （规则 #11）。它们各自再造一个错误类型的话，「什么算参数错、什么算服务端错」
+    /// 就有了两份答案，而 JSON-RPC 的 `code` 是宿主用来分诊的。
+    pub(crate) fn invalid_params(msg: impl Into<String>) -> Self {
         Self {
             code: super::protocol::ERR_INVALID_PARAMS,
+            message: msg.into(),
+        }
+    }
+
+    /// 「请求本身没毛病，是这个服务**执行不了 / 不肯执行**它」——数据层读失败，
+    /// 或用户把对应的写权限关掉了。
+    ///
+    /// 为什么不复用 [`Self::invalid_params`]：那个码在宿主里长成
+    /// 「参数写错了，改一下重试」，而这里要传达的恰恰相反——**别重试**，
+    /// 要么是真故障，要么让用户去设置里开。为什么不走 `isError`：
+    /// `prompts/get` 的应答体只有 `messages`，规范没给它一条给模型看的失败通道，
+    /// JSON-RPC error 是唯一出口（这点与工具不同，见上面的分类说明）。
+    pub(crate) fn internal(msg: impl Into<String>) -> Self {
+        Self {
+            code: super::protocol::ERR_INTERNAL,
             message: msg.into(),
         }
     }
@@ -1804,7 +1822,7 @@ async fn blocking<T: Send + 'static>(
 
 /// 从 `arguments` 里取非空字符串参数。空串与缺失同一处理——
 /// 模型经常传 `""` 表示「不筛」，拿空串去查会变成「找不到叫空的标签」。
-fn arg_str<'a>(args: Option<&'a Value>, key: &str) -> Option<&'a str> {
+pub(crate) fn arg_str<'a>(args: Option<&'a Value>, key: &str) -> Option<&'a str> {
     args?
         .get(key)?
         .as_str()
@@ -1855,7 +1873,9 @@ fn arg_i64(args: Option<&Value>, key: &str) -> Option<i64> {
 ///
 /// 🔴 必须用 `chars()`：直接切字节遇中文会在非字符边界上 panic，
 /// 而 `panic = "abort"` 下一次 panic 就是整个应用死掉（R3）。
-fn truncate_chars(s: &str, n: usize) -> String {
+///
+/// `pub(crate)`：`prompts.rs` 的摘录走同一把尺（规则 #11）。
+pub(crate) fn truncate_chars(s: &str, n: usize) -> String {
     let mut out: String = s.chars().take(n).collect();
     if s.chars().nth(n).is_some() {
         out.push('…');
@@ -1918,7 +1938,11 @@ fn section_ref(args: Option<&Value>, tool: &str) -> Result<Option<SectionRef>, T
 }
 
 /// 标题的显示形式。空标题在库里是合法的（剪贴板直接存的笔记常常没标题）。
-fn title_of(n: &Note) -> &str {
+///
+/// `pub(crate)`：`resources.rs` 挂正文时要**同一个显示口径**（规则 #11）——
+/// 两处各写一份「空标题怎么显示」，早晚会漂成一个地方是「（无标题）」、
+/// 另一个地方是空串。
+pub(crate) fn title_of(n: &Note) -> &str {
     if n.title.trim().is_empty() {
         "（无标题）"
     } else {
@@ -2010,7 +2034,11 @@ fn age_label(updated_at: &str, now: chrono::DateTime<chrono::Local>) -> String {
 /// 大量来自剪贴板，那正是能塞进这种句子的地方。
 ///
 /// 正文**一个字都不改**（O-1 的「不做内容过滤/改写」）：靠的是对方猜不到 nonce。
-fn wrap_content(id: &str, section: Option<usize>, body: &str) -> String {
+///
+/// 🔴 `pub(crate)` 是给 `resources.rs` 用的：resource 正文**必须过同一份包裹**，
+/// 而不是在另一处再写一个「看起来一样」的定界符。两处各写一份，
+/// 漏掉 nonce 的那一处就是注入入口（规则 #11.1）。
+pub(crate) fn wrap_content(id: &str, section: Option<usize>, body: &str) -> String {
     let nonce = super::delim_nonce();
     let attr = match section {
         Some(i) => format!(" section=\"{}\"", i),

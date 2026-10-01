@@ -5,7 +5,12 @@
  * 探测结果与忙碌标志都由父级传进来。
  */
 import { Copy, ChevronRight, ChevronDown, Info } from "lucide-react";
-import { canOneClick, buildMcpConfigSnippet, type McpClientDef } from "@/lib/mcpClients";
+import {
+  canOneClick,
+  isStdioClient,
+  buildMcpConfigSnippet,
+  type McpClientDef,
+} from "@/lib/mcpClients";
 import type { McpClientProbe } from "@/lib/api/mcp";
 import styles from "./Mcp.module.css";
 
@@ -25,7 +30,13 @@ function badgeOf(
     // 🔴 不能显示成「已接入」：换过端口或重置过令牌后，那个客户端其实已经
     //   连不上了，而它不会报错——用户只会觉得「工具突然不好用了」。
     case "stale":
-      return { text: "令牌或地址已变更", cls: styles.mcpBadgeStale };
+      // ❗ 两种条目的 `stale` 是**两件事**：stdio 条目里既没有令牌也没有地址，
+      //   对它说「令牌或地址已变更」等于把用户支去改一个不存在的东西。
+      //   判据收在 `isStdioClient`，与确认框、卡片共用同一个（规则 #11.1）。
+      return {
+        text: isStdioClient(client) ? "程序路径已变更" : "令牌或地址已变更",
+        cls: styles.mcpBadgeStale,
+      };
     case "unreadable":
       return { text: "配置读不了", cls: styles.mcpBadgeBad };
     default:
@@ -68,6 +79,8 @@ export function McpClientRow({
   open,
   busy,
   probe,
+  stdioCommand,
+  stdioNote,
   onToggle,
   onCopyConfig,
   onCopyCli,
@@ -78,6 +91,21 @@ export function McpClientRow({
   open: boolean;
   busy: boolean;
   probe: McpClientProbe | null;
+  /**
+   * stdio 那一行的 `command`（后端 `mcp_stdio_status` 给的本程序绝对路径）。
+   *
+   * 🔴 卡片上**必须是真的**：粘出去的条目里写 `__PASTEPANDA_EXE__` 的话，
+   *   Claude Desktop 只会回一句 `failed to start`。所以 `null` 的时候整张卡片
+   *   都不给，改成一句「读不到本程序路径」的警示——不给一个看起来能用的假路径。
+   */
+  stdioCommand: string | null;
+  /**
+   * stdio 那一行的**实况**（由 `stdioBridgeNote` 从后端那四个布尔翻出来）。
+   *
+   * 🔴 必须由父级算好、并只在后端答话之后传进来：面板刚打开时状态还没回来，
+   *   这时候传「读不到」是一句假警报。`null` = 没什么要说的（含「还在读」）。
+   */
+  stdioNote: string | null;
   onToggle: () => void;
   onCopyConfig: () => void;
   onCopyCli: () => void;
@@ -87,6 +115,15 @@ export function McpClientRow({
   const badge = badgeOf(client, probe);
   const label = canOneClick(client) ? actionLabel(probe) : null;
   const note = noteOf(probe);
+  const stdio = isStdioClient(client);
+  // 卡片正文。🔴 stdio 那张只有在**真路径拿得到**的时候才成立：
+  // 一张印着 `<读不到本程序路径>` 的卡片看起来照样能抄，而抄过去就是
+  // `failed to start`——那种情况下宁可整张不给，改成一句人话的警示。
+  const cardText = stdio
+    ? stdioCommand
+      ? buildMcpConfigSnippet(client, "", "", stdioCommand)
+      : null
+    : buildMcpConfigSnippet(client, url, TOKEN_PLACEHOLDER);
 
   return (
     <div className={styles.mcpClientRow}>
@@ -116,7 +153,10 @@ export function McpClientRow({
         <button
           type="button"
           className={styles.mcpIconBtn}
-          title="复制配置（含令牌）"
+          // 🔴 stdio 条目里一个令牌都没有（桥跟主程序读同一个 DPAPI 文件），
+          //   这句提示对它必须是假的：说「含令牌」会让人以为漏了什么、
+          //   进而去手加一个 `headers`，而那是 stdio 客户端不认的键。
+          title={stdio ? "复制配置（含本机程序路径，不含令牌）" : "复制配置（含令牌）"}
           onClick={onCopyConfig}
         >
           <Copy size={12} />
@@ -161,9 +201,26 @@ export function McpClientRow({
             </>
           )}
 
-          <pre className={styles.mcpCode}>
-            {buildMcpConfigSnippet(client, url, TOKEN_PLACEHOLDER)}
-          </pre>
+          {/* 🔴 stdio 与 http 是两种东西，别拿同一张卡片糊过去：
+              http 那张是「地址 + 令牌」，stdio 那张是「程序路径 + 一个启动参数」。
+              路径由后端 `mcp_stdio_status` 给（只有 Rust 侧知道 exe 在哪），
+              读不到就明说读不到——粘一个假的可用路径进去比不给更糟。 */}
+          {stdio && (
+            <p className={styles.mcpGuideNote}>
+              <Info size={11} /> 这一条不含令牌也不含地址：Claude Desktop 把本程序当
+              子进程起起来，桥再连本机那个 MCP 服务。因此<b>主程序得开着、
+              服务也得开着</b>，否则工具表里看到的是「服务没有在运行」而不是卡住。
+            </p>
+          )}
+
+          {cardText && <pre className={styles.mcpCode}>{cardText}</pre>}
+
+          {/* 🔴 实况那句必须**贴在这张卡片旁边**（规则 #15.1：反馈与触发同层级）：
+              上面那段「主程序得开着、服务也得开着」是恒定说明，而这一句是
+              现在到底开没开。路径读不到时卡片整张不给，靠的就是这句话补位。 */}
+          {stdio && stdioNote && (
+            <p className={styles.mcpGuideWarn}>⚠ {stdioNote}</p>
+          )}
         </div>
       )}
     </div>

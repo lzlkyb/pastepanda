@@ -12,8 +12,21 @@
  * 都要标明依据从哪来——**不凭记忆填**，也方便下一个人核。
  */
 
-/** HTTP 类 transport 在各客户端里的写法。 */
-export type McpTransport = "http" | "streamableHttp" | "streamable-http" | "sse" | "remote";
+/**
+ * HTTP 类 transport 在各客户端里的写法，外加一种 **`stdio`**。
+ *
+ * 🔴 `stdio` 故意**不在** [`MCP_TRANSPORTS`] 里：那条列表是「自定义接入」的下拉，
+ *   而自定义接入收的是**地址 + 令牌**——stdio 条目两个都没有，它要的是
+ *   本程序的绝对路径（只有 Rust 侧的 `current_exe` 知道）。
+ *   换句话说：stdio 这一种只能由内置名单出，用户手填填不出来。
+ */
+export type McpTransport =
+  | "http"
+  | "streamableHttp"
+  | "streamable-http"
+  | "sse"
+  | "remote"
+  | "stdio";
 
 /**
  * 四种写法及其常见度。**自定义接入的选择器用它。**
@@ -224,22 +237,99 @@ export function buildMcpAiSetupPrompt(url: string, token: string): string {
  */
 export const MCP_TOKEN_SENTINEL = "__PASTEPANDA_TOKEN__";
 
+/**
+ * stdio 条目里放在**程序路径**位置的占位符（方案 ①）。
+ *
+ * 🔴 必须与 `commands/mcp_connect.rs` 的 `EXE_SENTINEL` 字字相同，
+ *   由 `mcpClients.test.ts` 读 Rust 源码比对钉住。
+ *   为什么这个本机值要后端填而 URL 不用：`current_exe()` 只有 Rust 侧知道，
+ *   而它要写进**别人的**配置文件——猜一个（比如光秃秃的 `PastePanda.exe`）
+ *   会得到一条打不开的 command，而 stdio 客户端对此只回一句 `failed to start`。
+ */
+export const MCP_EXE_SENTINEL = "__PASTEPANDA_EXE__";
+
+/**
+ * stdio 条目的参数：只有一个「本进程以 MCP 桥模式启动」的开关。
+ *
+ * 🔴 必须与 `src-tauri/src/mcp/stdio.rs` 的 `ARG_FLAG` 逐字相同
+ *   （同样由测试读源码比对）。写错的后果很安静：桥进程起来了、
+ *   当作普通二次启动直接被单实例插件挡掉，客户端那边只看到空工具表。
+ */
+export const MCP_STDIO_ARGS = ["--mcp-stdio"];
+
 /** 能不能一键：有稳定的磁盘配置路径才能。 */
 export function canOneClick(client: McpClientDef): boolean {
   return client.configPath !== null;
 }
 
 /**
- * 拼一份交给后端写入的条目（令牌位置是占位符）。
+ * 这一家走的是不是 stdio 条目（方案 ①）。
  *
- * 跟屏幕上的复制卡片走的是同一个 `buildMcpEntry`——只差一个令牌字串，
- * 所以「手动粘的」与「一键写的」不可能分岔。
+ * 🔴 卡片文案、确认框承诺、徽标措辞**三处都要按它分岔**，所以判据收在这一个
+ *   函数里（规则 #11.1）。各写一个 `c.transport === "stdio"` 的话，
+ *   漏掉的那处的表现是说谎：比如对一条不含令牌的条目承诺「会把令牌写进去」。
+ */
+export function isStdioClient(client: McpEntryShape): boolean {
+  return client.transport === "stdio";
+}
+
+/**
+ * stdio 桥的状态（后端 `mcp_stdio_status` 的那几格，结构一致即可）。
+ *
+ * 故意不 `import type` 自 `@/lib/api/mcp`：这个文件是纯注册表 + 纯函数，
+ * 拉一条 invoke 的类型进来，将来任何「因为 api 层动了这里也得动」的牵连
+ * 都无从判断。（TS 是结构类型，传 `McpStdioStatus` 进来照样成立。）
+ */
+export type StdioBridgeState = {
+  command: string | null;
+  serviceRunning: boolean;
+  endpointFound: boolean;
+  tokenReady: boolean;
+};
+
+/**
+ * stdio 那一行该补的一句**实况**。返回 `null` = 一切正常，不用多说。
+ *
+ * 🔴 存在的理由：卡片上那句「主程序得开着、服务也得开着」是恒定文案，
+ * 用户没法拿它判断自己现在这条能不能用；而后端明明回了四个布尔，
+ * 前端一个都没读——「看起来配好了，工具表却是空的」就是这么来的（规则 #15.1：
+ * 反馈要和触发同层级）。这里把那些布尔翻成人话，一条状态说一句。
+ *
+ * 顺序按**后果严重程度**排，不是按检查方便排：令牌没有时桥是**一起来就退出**
+ * （`stdio.rs` 的退出码 3），比端口文件缺了更致命，所以它排在服务状态前面。
+ */
+export function stdioBridgeNote(state: StdioBridgeState | null): string | null {
+  if (!state) return "读不到本机 stdio 桥的状态，这一条现在判断不了。";
+  if (!state.command) return "读不到本程序的路径，这张卡片暂时给不出来。";
+  if (!state.tokenReady) {
+    return "还没有访问令牌：先在设置里打开「知识库 MCP 服务」。桥起来发现没令牌会直接退出，工具表是空的。";
+  }
+  // 🔴 这一条是「两个布尔互相矛盾」的那一格，单独留着：服务在跑而端口文件不在，
+  // HTTP 那边一切正常，而桥一口咬定「主程序没有在运行」——用户对着两个都叫
+  // 「正常」的东西查不出问题（规则 #15.3）。
+  if (state.serviceRunning && !state.endpointFound) {
+    return "服务在跑，但端口文件没写成：HTTP 那侧能用，而 stdio 桥会以为主程序没在运行。把服务关掉再开一次通常就好。";
+  }
+  if (!state.serviceRunning) {
+    return state.endpointFound
+      ? "MCP 服务现在没开（端口文件还留着旧的那份）：桥会等着，期间每条请求都回一句「没有在运行」。"
+      : "MCP 服务现在没开：这条要等主程序开着、服务也开着才有工具。";
+  }
+  return null;
+}
+
+/**
+ * 拼一条条目交给后端写入的对象（本机值位置全是占位符）。
+ *
+ * 🔴 stdio 的条目里没有令牌，也没有 URL——它带的是**程序路径**。所以这一条
+ * 换的是 `MCP_EXE_SENTINEL` 而不是 `MCP_TOKEN_SENTINEL`，两边共用同一个函数
+ * （见 `mcp_connect.rs` 的 `substitute_placeholders`：一次都没换到就中止）。
  */
 export function buildMcpEntryForConnect(
   client: McpEntryShape,
   url: string,
 ): Record<string, unknown> {
-  return buildMcpEntry(client, url, MCP_TOKEN_SENTINEL);
+  return buildMcpEntry(client, url, MCP_TOKEN_SENTINEL, MCP_EXE_SENTINEL);
 }
 
 export const MCP_CLIENTS: McpClientDef[] = [
@@ -464,6 +554,49 @@ export const MCP_CLIENTS: McpClientDef[] = [
       "真出现 401 先回来看这一条。",
   },
   {
+    id: "claude-desktop",
+    name: "Claude Desktop",
+    /**
+     * `%APPDATA%\Claude\claude_desktop_config.json`（`~` 由后端展开）。
+     *
+     * 🔴 这是 **Windows** 那份路径；macOS 在 `~/Library/Application Support/Claude/`。
+     *   本表其余条目用的是两家同形的 `~/...`，这一条不是。写错的后果不严重
+     *   （探测拿不到目录 ⇒ 归进「本机没检测到」，而确认框会把展开后的绝对路径
+     *   原样显示出来，用户点接入前看得见），但真出 mac 版时要按 OS 挑路径。
+     */
+    configPath: "~/AppData/Roaming/Claude/claude_desktop_config.json",
+    detectPath: "~/AppData/Roaming/Claude",
+    /**
+     * 🔴 全表里**唯一一个 stdio**：它的配置文件只认 stdio 条目，
+     * 写带 `url` 的远程条目会被**静默丢弃**（严重时加载出零个工具）。
+     *
+     * 走的是本程序自带的 stdio 桥（`--mcp-stdio`）：Claude 把 PastePanda 当子进程
+     * 起起来，桥再转发给本机那个 HTTP 服务。所以**协议门只有一套**——
+     * 令牌、写权限开关、审计全都照旧（方案 ① 的硬约束）。
+     */
+    transport: "stdio",
+    where:
+      "写进该文件的 mcpServers。它是 stdio 条目：只有程序路径与一个启动参数，" +
+      "**不含地址也不含令牌**。",
+    connectCaveat:
+      "stdio 是**子进程**模式：Claude Desktop 会拉起一个 PastePanda 进程当桥，" +
+      "它转发给本机正在跑的 MCP 服务。所以两件事得成立——① PastePanda 主程序开着，" +
+      "② 设置里的「知识库 MCP 服务」是开的。任一没满足时工具表会直接显示" +
+      "「PastePanda 的 MCP 服务没有在运行」，而不是卡住不答。",
+    evidence:
+      "官方 MCP 快速上手（modelcontextprotocol.io/quickstart/user，2026-10-01 查）：" +
+      "Claude Desktop 的配置示例是 `mcpServers.<名字> = { command, args, env? }`，" +
+      "**没有 `type` 字段**，也没有 `url`；同页给出 Windows 路径 " +
+      "`%APPDATA%\\Claude\\claude_desktop_config.json` 与 macOS 的 " +
+      "`~/Library/Application Support/Claude/claude_desktop_config.json`。" +
+      "⚠ 本机**没有安装** Claude Desktop（`%APPDATA%\\Claude` 与 " +
+      "`%LOCALAPPDATA%\\AnthropicClaude` 都不存在，2026-10-01 查），所以这一条只锚定" +
+      "官方文档、**未实机验证**；桥本身的转发行为是在进程内用一个假 HTTP 服务端测的" +
+      "（`src-tauri/src/mcp/stdio.rs`）。第一次有人实机点通之后，请把结果补到这里。" +
+      "❗ 2026-09-10 那轮调研的结论是：它的远程 HTTP 只能走应用内的 Custom Connector，" +
+      "**这个文件仍然只吃 stdio**——这正是我们给它 stdio 条目而不是 HTTP 条目的原因。",
+  },
+  {
     id: "cherry-studio",
     name: "Cherry Studio",
     configPath: null,
@@ -488,16 +621,20 @@ export const MCP_CLIENTS: McpClientDef[] = [
 /**
  * 🔴 调研过、**刻意不收**的客户端——写在这里免得下次又查一遍。
  *
- * ## Claude Desktop（2026-09-10 查证）
+ * ## Claude Desktop：已经收了（方案 ①，2026-10-01）
  *
- * 它的 `claude_desktop_config.json` **只认 stdio**：往里写带 `url` 的条目会被
- * **静默丢弃**，严重时启动即崩或加载出零个工具。远程 HTTP 服务只能走应用内的
- * 自定义连接器（Custom Connector），或用 `mcp-remote` 包一层 stdio 桥。
+ * 它原先排在这份名单里的理由是：`claude_desktop_config.json` **只认 stdio**，
+ * 往里写带 `url` 的条目会被**静默丢弃**，严重时启动即崩或加载出零个工具。
+ * 而本表当时只会生成 `mcpServers` JSON 卡片，那张卡片对它恰好是有害的东西。
  *
- * ❗ 所以它不能当成「不能一键、给张复制卡片」那一类收进来：
- *   本文件生成的卡片就是一份 `mcpServers` JSON，而那份 JSON 粘进它的配置里
- *   **恰好是有害的那种**。给错的东西比什么都不给更糟。
- *   将来真要收，得先给注册表加一个「不出 JSON 卡片、只出文字说明」的能力。
+ * stdio 桥落地之后这个前提没了：条目变成 `{command, args}`，一个令牌都不带，
+ * 卡片与一键写的是同一个形状。于是它从「不能收」变成「收，且只能按 stdio 收」
+ * ——见上面 `claude-desktop` 那一行。
+ *
+ * ## 其余仍然只给卡片
+ *
+ * Cherry Studio / VS Code 那两家是另一类原因（配置没有稳定的磁盘路径），
+ * 与 transport 无关，仍然走手动组。
  */
 
 /**
@@ -517,12 +654,24 @@ export type McpEntryShape = Pick<
  *
  * ❗ `token` 传占位符还是真令牌由调用方决定：屏幕上显示占位符，
  *   只有点「复制」时才取真的（设置页可能被录屏或截图）。
+ *
+ * `exe` 只有 stdio 那一类用得上（`command` 的位置）。同理：屏幕上的卡片
+ * 传后端 `mcp_stdio_status` 给的**真实路径**，一键写入传
+ * [`MCP_EXE_SENTINEL`]，由后端换成它自己那条。
  */
 export function buildMcpEntry(
   client: McpEntryShape,
   url: string,
   token: string,
+  exe: string = MCP_EXE_SENTINEL,
 ): Record<string, unknown> {
+  // 🔴 stdio 分支**不看** `url` 与 `token`：那种条目里一个令牌都没有，
+  //    桥跟主程序读同一个 DPAPI 文件（方案 ①）。也不写 `type`——
+  //    官方那份 stdio 示例里就没有这个键，多一个不认识的键对严格校验的
+  //    客户端是噪声（同 Gemini CLI / Codex 靠字段名选传输那一族）。
+  if (client.transport === "stdio") {
+    return { command: exe, args: [...MCP_STDIO_ARGS], ...(client.extra ?? {}) };
+  }
   // 字段名默认值就是大多数客户端的写法；只有真不一样的那几家才在注册表里覆盖。
   return {
     ...(client.omitType ? {} : { type: client.transport }),
@@ -571,17 +720,22 @@ function tomlValue(v: unknown): string {
  *
  * 容器键同样跟着客户端走（OpenCode 是 `mcp`、Codex 是 `mcp_servers`）——
  * 手动粘贴那条路不能把一键接入修好的坑又踩一遍。
+ *
+ * ❗ `exe` 省略时是 [`MCP_EXE_SENTINEL`]，那**只**适用于一键写入（后端换真值）。
+ * 屏幕上给人抄的 stdio 卡片必须显式传真路径，读不到就别渲染这张卡片——
+ * 抄一个占位符进客户端，得到的是一句 `failed to start`（见 `McpClientRow`）。
  */
 export function buildMcpConfigSnippet(
   client: McpEntryShape,
   url: string,
   token: string,
+  exe?: string,
 ): string {
   // 🔴 带点号的容器键 = 嵌套路径（ZCode 的 `mcp.servers`）。
   //    不拆的话，卡片会吐出一个字面量叫 `"mcp.servers"` 的键——
   //    而那正是后端刚修掉的那个坑：手动粘贴这条路不能把它又踩一遍。
   const segs = (client.containerKey ?? MCP_CONTAINER_KEY).split(".");
-  const entry = buildMcpEntry(client, url, token);
+  const entry = buildMcpEntry(client, url, token, exe);
 
   if (client.format === "toml") {
     // TOML 的表头本来就用点号表示嵌套，逐段转义后拼起来即可。

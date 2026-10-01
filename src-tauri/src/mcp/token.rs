@@ -54,6 +54,60 @@ fn save(app_dir: &Path, token: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 读一份**已存在**的令牌；没有 / 解不开 / 空 → `Ok(None)`。
+///
+/// 与 [`load_or_create`] 的区别就是这条会不会写盘，而这条**必须**不会：
+/// stdio 桥（`mcp::stdio`）跟主程序读同一个文件，它要是顺手「解不开就重建」，
+/// 后果是把主程序正在用的那条顶掉——HTTP 那边是启动时把令牌拷进内存的，
+/// 于是所有已配好的客户端一起 401，而且现场看起来像「令牌错了」而不是
+/// 「另一个进程偷换了令牌」。**只有用户主动点的那条路径才有资格重建令牌。**
+pub fn load(app_dir: &Path) -> Result<Option<String>, String> {
+    let path = token_path(app_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let cipher = match std::fs::read(&path) {
+        Ok(c) => c,
+        // 读不动与「没有令牌」在桥那边是同一句结论（服务还没配好），
+        // 但原因要留在日志里：权限/占用是另一类故障。
+        Err(e) => {
+            log::warn!("[MCP] 令牌文件读不出来：{}", e);
+            return Ok(None);
+        }
+    };
+    Ok(read_plain(&cipher))
+}
+
+/// 从密文里取回令牌明文。解不开、不是文本、空白都算「没有」。
+///
+/// 收口成一份是为了 [`load_or_create`] 与 [`load`] 用**同一个**判据——
+/// 两处各写一遍，早晚会有一处把「空令牌」当成有效值发出去。
+fn read_plain(cipher: &[u8]) -> Option<String> {
+    let plain = match crate::dpapi::unprotect(cipher, ENTROPY) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("[MCP] 令牌解密失败：{}", e);
+            return None;
+        }
+    };
+    match String::from_utf8(plain) {
+        Ok(s) if !s.trim().is_empty() => {
+            let token = s.trim().to_string();
+            // 登记哈希，使用户拷走令牌时不会被剪贴板监听记成明文历史。
+            crate::secret_registry::register(crate::secret_registry::SLOT_MCP_TOKEN, &token);
+            Some(token)
+        }
+        Ok(_) => {
+            log::warn!("[MCP] 令牌文件为空");
+            None
+        }
+        Err(_) => {
+            log::warn!("[MCP] 令牌内容不是合法文本");
+            None
+        }
+    }
+}
+
 /// 读回令牌；不存在或解不开时自动生成一个新的并落盘。
 ///
 /// 「解不开就重建」是故意的：令牌不是用户输入的秘密，丢了重发一个就行，
@@ -62,28 +116,13 @@ fn save(app_dir: &Path, token: &str) -> Result<(), String> {
 pub fn load_or_create(app_dir: &Path) -> Result<String, String> {
     let path = token_path(app_dir);
     if path.exists() {
-        match std::fs::read(&path) {
-            Ok(cipher) => match crate::dpapi::unprotect(&cipher, ENTROPY) {
-                Ok(plain) => match String::from_utf8(plain) {
-                    Ok(s) if !s.trim().is_empty() => {
-                        let token = s.trim().to_string();
-                        // 登记哈希，使用户拷走令牌时不会被剪贴板监听记成明文历史。
-                        // 放在这里（读出即登记）而不是命令层：漏一条路径就是静默泄露。
-                        crate::secret_registry::register(
-                            crate::secret_registry::SLOT_MCP_TOKEN,
-                            &token,
-                        );
-                        return Ok(token);
-                    }
-                    Ok(_) => log::warn!("[MCP] 令牌文件为空，将重新生成"),
-                    Err(_) => log::warn!("[MCP] 令牌内容不是合法文本，将重新生成"),
-                },
-                Err(e) => log::warn!(
-                    "[MCP] 令牌解密失败，将重新生成（已配置的客户端需重新填）：{}",
-                    e
-                ),
-            },
-            Err(e) => log::warn!("[MCP] 读取令牌文件失败，将重新生成：{}", e),
+        if let Ok(cipher) = std::fs::read(&path) {
+            if let Some(token) = read_plain(&cipher) {
+                return Ok(token);
+            }
+            log::warn!("[MCP] 令牌文件不可用，将重新生成（已配置的客户端需重新填）");
+        } else {
+            log::warn!("[MCP] 读取令牌文件失败，将重新生成");
         }
     }
     let token = generate()?;
@@ -170,6 +209,34 @@ mod tests {
         std::fs::write(token_path(&dir), b"not a dpapi blob").unwrap();
         let token = load_or_create(&dir).unwrap();
         assert_eq!(token.len(), 43);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_load_never_creates_and_never_replaces() {
+        // 🔴 stdio 桥用 `load` 而不是 `load_or_create` 的全部理由：
+        // 它要是能重建令牌，就会把主程序正在用的那条顶掉，
+        // 而已配好的 HTTP 客户端集体 401，现场看起来像「令牌错了」。
+        let dir = temp_dir("load_readonly");
+        // ① 没有文件 → None，而且**不许**顺手生成一个。
+        assert_eq!(load(&dir).unwrap(), None);
+        assert!(!token_path(&dir).exists(), "load 把令牌文件写出来了");
+
+        // ② 有文件 → 读到同一条，且落盘字节一个都没变。
+        let token = load_or_create(&dir).unwrap();
+        let before = std::fs::read(token_path(&dir)).unwrap();
+        assert_eq!(load(&dir).unwrap().as_deref(), Some(token.as_str()));
+        assert_eq!(std::fs::read(token_path(&dir)).unwrap(), before);
+
+        // ③ 坏文件同样不许重建——那是 `load_or_create` 的权限，不是它的。
+        std::fs::write(token_path(&dir), b"not a dpapi blob").unwrap();
+        assert_eq!(load(&dir).unwrap(), None);
+        assert_eq!(
+            std::fs::read(token_path(&dir)).unwrap(),
+            b"not a dpapi blob",
+            "load 改写了用户的令牌文件"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

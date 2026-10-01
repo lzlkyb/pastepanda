@@ -1230,6 +1230,8 @@ pub fn run() {
             commands::mcp_client_probe,
             commands::mcp_client_connect,
             commands::mcp_client_disconnect,
+            // stdio 桥（方案 ①）的接入卡状态。🔴 不回令牌。
+            commands::mcp_stdio_status,
             commands::get_app_version,
             commands::get_app_name,
             commands::ocr_image,

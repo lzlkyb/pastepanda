@@ -243,7 +243,7 @@ impl super::source::KbSource for FakeKb {
         author: Option<&str>,
         me: &str,
         _limit: u32,
-        _offset: u32,
+        offset: u32,
     ) -> Result<super::source::ListOutcome, String> {
         // ③甲：假源里 `me` 与 `human` 总是合法（同真实实现：空结果不是错），
         // 只认一个具体名字 `agent:claude-code`，其余一律报未知——
@@ -256,7 +256,12 @@ impl super::source::KbSource for FakeKb {
         }
         // 输出预算那条测试的入口：只有它会拿到 30 篇大篇幅。
         if folder == Some("海量") {
-            return Ok(super::source::ListOutcome::Ok(bulk_notes()));
+            // 🔴 ② 之后这里要**认 offset**（真实数据层在 SQL 里 LIMIT/OFFSET，
+            // 假源不认的话 `resources/list` 的翻页就只能靠真库验，而本机测试起不了真库）。
+            // `limit` 仍然忽略：预算那几条测的是 MCP 层的截断，靠的就是「数据层一次全给」。
+            return Ok(super::source::ListOutcome::Ok(
+                bulk_notes().into_iter().skip(offset as usize).collect(),
+            ));
         }
         // 假实现里只认一个文件夹与一个标签，其余一律当未知——正好用来钉 R6。
         if let Some(f) = folder {
@@ -269,7 +274,9 @@ impl super::source::KbSource for FakeKb {
                 return Ok(super::source::ListOutcome::UnknownTag(t.to_string()));
             }
         }
-        Ok(super::source::ListOutcome::Ok(self.notes.clone()))
+        Ok(super::source::ListOutcome::Ok(
+            self.notes.iter().skip(offset as usize).cloned().collect(),
+        ))
     }
 
     fn search(
@@ -646,6 +653,16 @@ impl super::audit::AuditSink for RecordingAudit {
     }
 }
 
+/// 取一份审计快照（**拷出来**，不返回 guard）。
+///
+/// 🔴 别再写 `rec.calls.lock().unwrap()` 然后拿着 guard 去 `.await` 下一个请求：
+/// handler 落审计用的是**同一把** `std::sync::Mutex`，测试等响应、handler 等锁，
+/// 两边永远醒不来（② 的 `resources/list` + `resources/read` 那条测试第一次跑就是这么挂的，
+/// 而挂掉的测试比失败的测试难查一个量级）。
+fn audit_snapshot(rec: &RecordingAudit) -> Vec<(String, String, bool, Vec<String>)> {
+    rec.calls.lock().unwrap().clone()
+}
+
 async fn spawn_server() -> String {
     spawn_server_with_audit().await.0
 }
@@ -992,9 +1009,14 @@ async fn test_notifications_initialized_answers_with_null_id() {
 async fn test_unknown_method_and_bad_json() {
     let base = spawn_server().await;
 
+    // 🔴 探针换了方法：`resources/list` 在 ② 之后是**支持**的（见
+    // `test_resources_list_and_read`），拿它测 -32601 会永远测不到东西。
+    // 换成 `resources/subscribe`——规范里有、我们明确不做（没有 server→client 通道，
+    // 见 `protocol.rs` 的 capabilities 注释）。
     let (_, v) = rpc(
         &base,
-        json!({ "jsonrpc": "2.0", "id": 9, "method": "resources/list" }),
+        json!({ "jsonrpc": "2.0", "id": 9, "method": "resources/subscribe",
+                "params": { "uri": "pastepanda://note/n1" } }),
     )
     .await;
     assert_eq!(v["error"]["code"], super::protocol::ERR_METHOD_NOT_FOUND);
@@ -2929,4 +2951,376 @@ fn test_new_write_kind_defaults_to_on_as_decided() {
     // 而显式关掉必须真的关得掉。
     let off = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_structure": false }));
     assert!(!off.allowed(super::gate::WriteKind::Structure));
+}
+
+// ===== ② resources / prompts（2026-10-01）=====
+
+#[tokio::test]
+async fn test_capabilities里的每一项都有方法应答() {
+    // 🔴 方案 #11.1 要的那条守卫单测：钉住「声明 ⇒ 实现」这个不变量。
+    //
+    // 失败方式是**静默的**：往 `capabilities` 里加一个 `logging` / `completions`
+    // 却忘了写 dispatch 分支，握手照样成功，宿主到用的那一刻才拿到 -32601。
+    // 新增能力时必须同步这张表——表本身就是那道检查。
+    let base = spawn_server().await;
+    let (_, init) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} }),
+    )
+    .await;
+
+    // 每一项声明 → 至少要能答的那两个方法。
+    let table: &[(&str, &[&str])] = &[
+        ("tools", &["tools/list", "tools/call"]),
+        ("resources", &["resources/list", "resources/read"]),
+        ("prompts", &["prompts/list", "prompts/get"]),
+    ];
+
+    for (cap, methods) in table {
+        let cap: &str = *cap;
+        assert!(
+            init["result"]["capabilities"][cap].is_object(),
+            "capabilities 里没有 {}——实现了却不声明，宿主根本不会去调它",
+            cap
+        );
+        for m in methods.iter() {
+            let (_, v) = rpc(&base, json!({ "jsonrpc": "2.0", "id": 2, "method": **m })).await;
+            assert_ne!(
+                v["error"]["code"].as_i64(),
+                Some(super::protocol::ERR_METHOD_NOT_FOUND as i64),
+                "声明了 {} 却对 {} 回 -32601",
+                cap,
+                m
+            );
+        }
+    }
+
+    // 反向：声明表里没有的键也不许出现在应答里（新加能力要先过这条）。
+    let caps = init["result"]["capabilities"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    for key in caps.keys() {
+        assert!(
+            table.iter().any(|(cap, _)| *cap == key.as_str()),
+            "capabilities 里冒出一个没登记、也没测试盖住的项：{}",
+            key
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_resources_list与read过线并走同一份包裹() {
+    let (base, _fake, rec) = spawn_from(FakeKb::new()).await;
+
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {} }),
+    )
+    .await;
+    let arr = v["result"]["resources"].as_array().cloned().unwrap_or_default();
+    assert_eq!(arr.len(), 3, "假源三篇，都该列出来：{:?}", arr);
+    // 🔴 不足一页时**不出现** `nextCursor` 这个键（发 null 会被严格客户端拒掉）。
+    assert!(
+        v["result"].get("nextCursor").is_none(),
+        "到底了还带游标：{}",
+        v["result"]
+    );
+    for r in &arr {
+        assert!(
+            super::resources::parse_note_uri(r["uri"].as_str().unwrap_or("")).is_some(),
+            "列出来的 uri 必须读得回来：{:?}",
+            r
+        );
+        assert!(r["title"].is_string() && r["mimeType"].is_string());
+    }
+
+    let uri = super::resources::note_uri("n2");
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 4, "method": "resources/read",
+                "params": { "uri": uri } }),
+    )
+    .await;
+    let text = v["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    assert!(text.contains("架构说明"), "标题要在，宿主里看不出挂的是哪一篇：{}", text);
+    // 🔴 方案文档的硬约束②：每一处新出口都过**同一道** nonce 包裹。
+    assert!(text.contains("<note-content "), "正文没过包裹：{}", text);
+    // 验的是**那份声明本身**（`data_not_instructions`），不是我们自己写的一句话：
+    // 「只有带 nonce 的那一行才是结束标记」——@ 进来的正文没有别的边界了。
+    assert!(
+        text.contains("真正的结束标记") && text.contains("按数据对待"),
+        "少了防注入的声明：{}",
+        text
+    );
+    assert_eq!(v["result"]["contents"][0]["uri"], uri);
+    assert_eq!(v["result"]["contents"][0]["mimeType"], super::resources::MIME);
+
+    // 🔴 两条都上了账（红线②：一次交出三篇的标题和 id 就是交出数据）。
+    //
+    // ❗ 这里**必须等两次请求都发完**再拿锁：审计落盘用的是同一把 `Mutex`，
+    // 拿着 guard 去 `.await` 下一次请求 = 测试和 handler 互相等死
+    // （第一次跑就真死锁过，故记在这）。用 [`audit_snapshot`] 就不会踩。
+    let calls = audit_snapshot(&rec);
+    assert_eq!(calls.len(), 2, "{:?}", calls);
+    assert_eq!(calls[0].0, "resources/list");
+    assert!(calls[0].2);
+    assert_eq!(
+        calls[0].3,
+        vec!["n1".to_string(), "n2".to_string(), "n3".to_string()],
+        "列出去的篇目要按 uri 里那个 id 记下来"
+    );
+    assert_eq!(calls[1].0, "resources/read");
+    assert_eq!(calls[1].3, vec!["n2".to_string()]);
+    for c in &calls {
+        assert!(!c.1.contains("spawn_blocking"), "审计只记参数，不记正文：{}", c.1);
+    }
+}
+
+#[tokio::test]
+async fn test_resources_read的定界符每次都不一样() {
+    // 🔴 O-1 那套注入防御靠的是「对方猜不到 nonce」，而定界符**固定**时，
+    // 库里一篇正文写着 `</note-content>` 的笔记就能提前闭合包裹、
+    // 后面自己接一句指令——而 resource 这条路是用户亲手把整篇按进上下文的。
+    // 这里连读同一篇两次，验两次的 nonce 不同（同 `kb_read` 已有的那条，
+    // 但那条只盖了工具出口；新出口要各自盖一次，规则 #11.1 的验收判据）。
+    let base = spawn_server().await;
+    let nonce_of = |s: &str| -> String {
+        s.find("nonce=\"")
+            .map(|i| s[i + 7..].chars().take_while(|c| *c != '"').collect())
+            .unwrap_or_default()
+    };
+    let read = |id: i64| {
+        let base = base.clone();
+        async move {
+            let (_, v) = rpc(
+                &base,
+                json!({ "jsonrpc": "2.0", "id": id, "method": "resources/read",
+                        "params": { "uri": super::resources::note_uri("n2") } }),
+            )
+            .await;
+            v["result"]["contents"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        }
+    };
+
+    let a = read(1).await;
+    let b = read(2).await;
+    let (na, nb) = (nonce_of(&a), nonce_of(&b));
+    assert!(!na.is_empty() && !nb.is_empty(), "两段都得带 nonce：{:?} / {:?}", na, nb);
+    assert_ne!(na, nb, "定界符是固定的，那就能被内容自己提前闭合");
+    // 同一篇两次读，**正文**当然一样；不一样的只有边界。
+    assert!(a.contains("开头的引言") && b.contains("开头的引言"));
+}
+
+#[tokio::test]
+async fn test_resources_read的坏uri与缺篇都是参数错且记账() {
+    let (base, _fake, rec) = spawn_from(FakeKb::new()).await;
+
+    // 不是我们的 scheme / 段不对 → 参数错（-32602），不是内部错误。
+    for bad in ["file:///tmp/x.md", "pastepanda://folder/f1", "pastepanda://note/"] {
+        let (_, v) = rpc(
+            &base,
+            json!({ "jsonrpc": "2.0", "id": 5, "method": "resources/read",
+                    "params": { "uri": bad } }),
+        )
+        .await;
+        assert_eq!(
+            v["error"]["code"].as_i64(),
+            Some(super::protocol::ERR_INVALID_PARAMS as i64),
+            "{} 该是参数错：{}",
+            bad,
+            v
+        );
+    }
+    // 认得形状、库里没有 → 同样是参数错，并且要说清是哪一篇。
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 6, "method": "resources/read",
+                "params": { "uri": super::resources::note_uri("nope") } }),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"].as_i64(),
+        Some(super::protocol::ERR_INVALID_PARAMS as i64)
+    );
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("nope"),
+        "错误文本要带上是哪一篇：{}",
+        v["error"]["message"]
+    );
+
+    // 🔴 三条失败都得留在账上、且记成 `ok: false`（同 `tools/call` 那条口径）。
+    let calls = audit_snapshot(&rec);
+    assert_eq!(calls.len(), 4);
+    assert!(calls.iter().all(|c| c.0 == "resources/read" && !c.2));
+    // 只有那条认得形状的能记出 id——猜不出来的就不硬凑一个。
+    assert_eq!(calls[3].3, vec!["nope".to_string()]);
+    assert!(calls[..3].iter().all(|c| c.3.is_empty()));
+}
+
+#[tokio::test]
+async fn test_prompts_list按开关收窄而recall恒在() {
+    let (on_base, _on, _rec) = spawn_with(super::gate::WriteSwitches::ALL_ON).await;
+    let (off_base, _off, _rec) = spawn_with(super::gate::WriteSwitches::ALL_OFF).await;
+
+    let names = |base: &str, id: i64| {
+        let base = base.to_string();
+        async move {
+            let (_, v) = rpc(
+                &base,
+                json!({ "jsonrpc": "2.0", "id": id, "method": "prompts/list" }),
+            )
+            .await;
+            v["result"]["prompts"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|p| p["name"].as_str().map(str::to_string))
+                .collect::<Vec<String>>()
+        }
+    };
+
+    let on = names(&on_base, 7).await;
+    let off = names(&off_base, 8).await;
+    assert!(on.contains(&super::prompts::RECALL.to_string()));
+    assert!(on.contains(&super::prompts::DECISION_LOG.to_string()));
+    assert!(
+        off == vec![super::prompts::RECALL.to_string()],
+        "全关时还在推「去写」的 prompt：{:?}",
+        off
+    );
+    // 目录不碰笔记数据 → 不上账（与 `tools/list` 同一口径）。
+}
+
+#[tokio::test]
+async fn test_prompts_get带真命中进上下文并记下拿走了哪几篇() {
+    let (base, _fake, rec) = spawn_from(FakeKb::new()).await;
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 9, "method": "prompts/get",
+                "params": { "name": super::prompts::RECALL,
+                            "arguments": { "topic": "并发" } } }),
+    )
+    .await;
+    let text = v["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    assert!(text.contains("并发"), "主题得回显：{}", text);
+    // 🔴 这段是**服务端真查出来的**，不是让模型自己去调工具。
+    assert!(text.contains("Rust 并发笔记"), "检索命中没进来：{}", text);
+    // 🔴 「服务端真查过」的证据用的是**工具自己的措辞**（`找到 N 篇（按相关度排序）`），
+    // 不是我们 prompt 里那句话——后者在假源为空时也会照样出现。
+    assert!(text.contains("找到 3 篇"), "不是真检索的文本：{}", text);
+
+    let calls = audit_snapshot(&rec);
+    assert_eq!(calls.len(), 1, "prompt 一次拿走 5 篇的标题+摘要，必须上账");
+    assert_eq!(calls[0].0, "prompts/get");
+    assert!(calls[0].2);
+    assert!(!calls[0].3.is_empty(), "拿走的篇目要记进审计：{:?}", calls[0].3);
+    // args 里只有用户填的主题词，不含正文。
+    assert!(calls[0].1.contains("并发"), "参数要留档：{}", calls[0].1);
+    assert!(!calls[0].1.contains("spawn_blocking"), "不得含正文：{}", calls[0].1);
+}
+
+#[tokio::test]
+async fn test_prompts_get不能成为绕过写开关的第二道门() {
+    // 结构档关掉：`kb-tidy` 既不该出现在目录里，也不该取得到。
+    let sw = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_structure": false }));
+    let (base, fake, rec) = spawn_with(sw).await;
+
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 10, "method": "prompts/get",
+                "params": { "name": super::prompts::TIDY } }),
+    )
+    .await;
+    assert!(
+        v["error"].is_object(),
+        "结构档关着还给了整理 prompt：{}",
+        v
+    );
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("设置"),
+        "要说清去哪儿开：{}",
+        v["error"]["message"]
+    );
+    assert!(fake.writes().is_empty(), "取 prompt 绝不该落到数据层");
+
+    let calls = audit_snapshot(&rec);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "prompts/get");
+    assert!(!calls[0].2, "被我拦下的 prompt 取用，用户得看得见");
+}
+
+#[tokio::test]
+async fn test_resources翻页不重不漏而游标是偏移量() {
+    // 80 篇：正好验「一页 20 条 + 有下页」「第二页还是 20 条」，
+    // 并钉住 🔴 只把**真交出去**的那些记进审计（多取的那一条是判断依据，不是结果）。
+    let fake = FakeKb {
+        notes: bulk_notes(),
+        ..FakeKb::new()
+    };
+    let (base, _fake, rec) = spawn_from(fake).await;
+
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 11, "method": "resources/list" }),
+    )
+    .await;
+    let page1 = v["result"]["resources"].as_array().cloned().unwrap_or_default();
+    assert_eq!(page1.len(), 20, "一页 20 条（多取那一条不该漏出来）：{}", page1.len());
+    assert_eq!(v["result"]["nextCursor"], "20", "游标就是下一页的偏移量");
+
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 12, "method": "resources/list",
+                "params": { "cursor": "20" } }),
+    )
+    .await;
+    let page2 = v["result"]["resources"].as_array().cloned().unwrap_or_default();
+    assert_eq!(page2.len(), 20);
+    assert_eq!(v["result"]["nextCursor"], "40");
+
+    // 不漏：最后一页之后没有游标了，而不是继续发空页。
+    let (_, v) = rpc(
+        &base,
+        json!({ "jsonrpc": "2.0", "id": 13, "method": "resources/list",
+                "params": { "cursor": "60" } }),
+    )
+    .await;
+    let page3 = v["result"]["resources"].as_array().cloned().unwrap_or_default();
+    assert_eq!(page3.len(), 20);
+    assert!(
+        v["result"].get("nextCursor").is_none(),
+        "80 篇到底了还在发游标，宿主会一直转：{}",
+        v["result"]
+    );
+
+    // 不重：三页的 uri 两两不相交。
+    let uris: Vec<&str> = [&page1, &page2, &page3]
+        .iter()
+        .flat_map(|p| p.iter().map(|r| r["uri"].as_str().unwrap_or("")))
+        .collect();
+    assert_eq!(uris.len(), 60);
+    let uniq: std::collections::HashSet<&&str> = uris.iter().collect();
+    assert_eq!(uniq.len(), 60, "三页里有重复条目");
+
+    // 🔴 审计记的是**交出去的** 60 篇，不是数据层多查的那几条。
+    let calls = audit_snapshot(&rec);
+    assert_eq!(calls.len(), 3);
+    assert!(calls.iter().all(|c| c.3.len() == 20), "{:?}", calls.iter().map(|c| c.3.len()).collect::<Vec<_>>());
 }

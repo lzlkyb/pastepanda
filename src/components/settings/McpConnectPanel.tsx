@@ -19,24 +19,22 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { copyToClipboard } from "@/lib/utils";
-import { confirmDialog } from "@/lib/confirm";
 import {
   MCP_CLIENTS,
-  MCP_CONTAINER_KEY,
-  MCP_ENTRY_NAME,
-  buildMcpConfigSnippet,
-  buildMcpEntryForConnect,
   canOneClick,
+  stdioBridgeNote,
   type McpClientDef,
 } from "@/lib/mcpClients";
 import { groupMcpClients } from "@/lib/mcpGroups";
+import { useMcpStdioStatus } from "@/hooks/useMcpStdioStatus";
+import { mcpClientProbe, type McpClientProbe } from "@/lib/api/mcp";
 import {
-  mcpClientProbe,
-  mcpClientConnect,
-  mcpClientDisconnect,
-  type McpClientProbe,
-} from "@/lib/api/mcp";
-import { McpClientRow, TOKEN_PLACEHOLDER } from "./McpClientRow";
+  connectMcpClient,
+  copyMcpClientConfig,
+  disconnectMcpClient,
+} from "@/lib/mcpConnectActions";
+import { McpClientRow } from "./McpClientRow";
+import { McpConnectFootnote } from "./McpConnectFootnote";
 import { McpCustomConnect } from "./McpCustomConnect";
 import styles from "./Mcp.module.css";
 
@@ -76,6 +74,12 @@ export function McpConnectPanel({
   const lanOn = !!lanUrl;
   const copyUrl = copyMode === "lan" && lanOn ? lanUrl! : url;
 
+  /** stdio 那一行的 `command` 与「服务/端口文件在不在」（见钩子的注释）。 */
+  const { stdio, failed: stdioFailed } = useMcpStdioStatus();
+  // 🔴 `stdio === null` 有两种意思：还没读到 / 读失败了，而只有后者能报错。
+  // 拿 `failed` 把它们分开，否则面板一打开会先闪一句「读不到状态」的假警报。
+  const stdioNote = stdio || stdioFailed ? stdioBridgeNote(stdio) : null;
+
   /** 重新探测全部可一键的客户端。 */
   const refresh = useCallback(async () => {
     const rows = await Promise.all(
@@ -95,19 +99,20 @@ export function McpConnectPanel({
     void refresh();
   }, [refresh, url]);
 
-  /** 复制时才取真令牌；`build` 决定复的是 JSON 还是 CLI 命令。地址用 `copyUrl`。 */
-  const copyFor = useCallback(
-    async (
-      c: McpClientDef,
-      build: (c: McpClientDef, url: string, token: string) => string,
-      what: string,
-    ) => {
+  /**
+   * 复制**命令行**（只有带 `cli` 的那几家有）。地址用 `copyUrl`，令牌此刻才取。
+   *
+   * 配置卡片不在这里：那张要按 http / stdio 分岔（stdio 不含令牌，见
+   * `mcpConnectActions.copyMcpClientConfig`），纯判断的部分拎到 lib 里才能单测。
+   */
+  const copyCli = useCallback(
+    async (c: McpClientDef) => {
       const t = await onNeedToken();
       if (!t) return;
-      const ok = await copyToClipboard(build(c, copyUrl, t));
+      const ok = await copyToClipboard(c.cli!(copyUrl, t));
       toast(
         ok
-          ? `${c.name} 的${what}已复制（含令牌${lanOn && copyMode === "lan" ? " · 局域网地址" : ""}）`
+          ? `${c.name} 的命令已复制（含令牌${lanOn && copyMode === "lan" ? " · 局域网地址" : ""}）`
           : "复制失败",
         ok ? "success" : "error",
       );
@@ -115,70 +120,20 @@ export function McpConnectPanel({
     [onNeedToken, toast, copyUrl, lanOn, copyMode],
   );
 
-  /** 接入：先确认，再写。 */
+  /**
+   * 接入 / 移除：确认框与写入都在 `lib/mcpConnectActions`（文案是纯函数，能单测）。
+   * 这两个包装只补一件事——写成功之后重探一次，让分组数字与按钮态回到真值。
+   */
   const doConnect = useCallback(
     async (c: McpClientDef, probe: McpClientProbe) => {
-      const ok = await confirmDialog({
-        title: `把知识库接入 ${c.name}？`,
-        message:
-          `将修改这个文件：\n${probe.path}\n\n` +
-          `• 修改前会先备份一份（同目录，文件名带 pastepanda-bak）\n` +
-          // ❗ 容器键得跟着客户端读（OpenCode 是 `mcp`、Codex 是 `mcp_servers`）。
-          //   写死 `mcpServers` 的话，确认框会告诉用户一个我们根本不会去改的键——
-          //   而这句话的全部意义就是“告诉你我到底要动什么”。
-          `• 只添加/更新 ${c.containerKey ?? MCP_CONTAINER_KEY} 里名为 「${MCP_ENTRY_NAME}」 的那一条，` +
-          `其他服务器与配置原封不动\n` +
-          `• 会把本机的访问令牌写进去（${c.name} 靠它访问你的笔记）` +
-          (probe.exists ? "" : "\n• 该文件目前不存在，会新建") +
-          (c.connectCaveat ? `\n\n⚠ ${c.connectCaveat}` : ""),
-        confirmText: "接入",
-      });
-      if (!ok) return;
-
-      const r = await mcpClientConnect(
-        c.configPath!,
-        // 🔴 永远写本机回环地址，与 copyMode 无关
-        buildMcpEntryForConnect(c, url),
-        c.containerKey,
-      );
-      if ("err" in r) {
-        // 后端的错误话术写得很具体（哪个文件、为什么没改），原样给用户看。
-        toast(r.err, "error", 8000);
-        return;
-      }
-      toast(
-        r.ok.backup
-          ? `已接入 ${c.name}（旧配置已备份）`
-          : `已接入 ${c.name}（新建了配置文件）`,
-        "success",
-        6000,
-      );
-      await refresh();
+      if (await connectMcpClient(c, probe, url, toast)) await refresh();
     },
     [refresh, toast, url],
   );
 
-  /** 移除：同样先确认。 */
   const doDisconnect = useCallback(
     async (c: McpClientDef, probe: McpClientProbe) => {
-      const ok = await confirmDialog({
-        title: `从 ${c.name} 移除接入？`,
-        message:
-          `将从这个文件里删掉名为 「${MCP_ENTRY_NAME}」 的条目：\n${probe.path}\n\n` +
-          `删除前会先备份，其他服务器与配置原封不动。` +
-          `${c.name} 将不再能访问你的知识库。`,
-        confirmText: "移除",
-        variant: "danger",
-      });
-      if (!ok) return;
-
-      const r = await mcpClientDisconnect(c.configPath!, c.containerKey);
-      if ("err" in r) {
-        toast(r.err, "error", 8000);
-        return;
-      }
-      toast(r.ok.replaced ? `已从 ${c.name} 移除` : `${c.name} 本来就没有接入`, "success");
-      await refresh();
+      if (await disconnectMcpClient(c, probe, toast)) await refresh();
     },
     [refresh, toast],
   );
@@ -218,8 +173,22 @@ export function McpConnectPanel({
       busy={busyId === c.id}
       probe={probes[c.id] ?? null}
       onToggle={() => setOpenId(openId === c.id ? null : c.id)}
-      onCopyConfig={() => void copyFor(c, buildMcpConfigSnippet, "配置")}
-      onCopyCli={() => void copyFor(c, (cc, u, t) => cc.cli!(u, t), "命令")}
+      stdioCommand={stdio?.command ?? null}
+      stdioNote={stdioNote}
+      onCopyConfig={() =>
+        void copyMcpClientConfig(
+          c,
+          {
+            copyUrl,
+            stdioCommand: stdio?.command ?? null,
+            onNeedToken,
+            lanOn,
+            copyMode,
+          },
+          toast,
+        )
+      }
+      onCopyCli={() => void copyCli(c)}
       onAction={() => void onAction(c)}
     />
   );
@@ -318,30 +287,7 @@ export function McpConnectPanel({
           自定义接入写的是**本机**配置文件，所以永远传本机 url。 */}
       <McpCustomConnect url={url} toast={toast} />
 
-      <p className={styles.mcpGuideNote}>
-        一键接入会先备份对方的配置文件，且<b>只动其中属于本软件的那一条</b>。
-        一键写入永远用本机地址；复制可选本机/局域网。
-      </p>
-      <p className={styles.mcpGuideNote}>
-        展开后显示的是占位符 <code>{TOKEN_PLACEHOLDER}</code>，
-        <b>点复制拿到的才是带真令牌的完整内容</b>。
-        {lanOn
-          ? "选「局域网」时，把复制的内容粘到远程机器上即可接入。"
-          : "默认只监听本机回环地址；若要远程接入，请先在下方打开局域网访问。"}
-      </p>
-      {!lanOn && (
-        <p className={styles.mcpGuideWarn}>
-          ⚠ 别把它写进项目里的 <code>.mcp.json</code>（也就是别用
-          <code>--scope project</code>）——那个文件是提交进仓库给团队共享的，
-          <b>你的访问令牌会跟着进 git</b>。
-        </p>
-      )}
-      {lanOn && copyMode === "lan" && (
-        <p className={styles.mcpGuideWarn}>
-          ⚠ 若用 <code>--scope project</code> 复制命令，注意项目配置若会进 git，
-          <b>令牌也会跟着提交</b>。团队仓库请改用 <code>user</code> scope 或本地私有配置。
-        </p>
-      )}
+      <McpConnectFootnote lanOn={lanOn} copyMode={copyMode} />
     </div>
   );
 }

@@ -322,10 +322,15 @@ export interface McpClientProbe {
    */
   toolPresent: boolean;
   /**
-   * `none` 未接入 · `current` 已接入且地址令牌都对 ·
-   * `stale` 接入过但地址/令牌变了 · `unreadable` 读不了或解析不开
+   * `none` 未接入 · `current` 已接入且现在就能用 ·
+   * `stale` 接入过但已经连不上了 · `unreadable` 读不了或解析不开
    *
    * ❗ `stale` 不能当成「已接入」显示：那个客户端其实已经连不上了，而它不会报错。
+   *
+   * 🔴 它对两种条目是**两件事**：http 条目 = 地址或令牌变了；stdio 条目
+   *   （方案 ①）= `command` 指向的 exe 或 `--mcp-stdio` 参数不对，
+   *   典型成因是换了安装目录。界面上的徽标文案必须跟着分开（见 `McpClientRow`），
+   *   否则会告诉用户去改一个他配置里压根不存在的东西。
    */
   state: "none" | "current" | "stale" | "unreadable";
   /** `unreadable` 时的原因；其余情况为空串。 */
@@ -410,6 +415,55 @@ export async function mcpClientDisconnect(
   } catch (e) {
     logger.error("移除 MCP 接入失败", e);
     return { err: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ─── stdio 桥（方案 ①）───
+
+/**
+ * stdio 接入卡的状态。对应 Rust 的 `McpStdioStatus`。
+ *
+ * 🔴 **不含令牌**——stdio 那条路压根不需要令牌（桥跟主程序读同一个
+ * DPAPI 文件），所以它也不该被顺手带出来。
+ */
+export interface McpStdioStatus {
+  /**
+   * 本程序的绝对路径，就是条目里 `command` 要写的那个。
+   *
+   * 🔴 `null` = 后端 `current_exe()` 失败。此时**只**这一格没有值，其余四格照旧：
+   * 后端故意把它做成可选，就是为了让「服务在跑、端口文件在」这些真状态不被
+   * 一个取不到的路径整体拖没（那样用户看到的是满屏异常，而真正的问题只有一格）。
+   */
+  command: string | null;
+  /** 条目的 `args`，目前就一个 `--mcp-stdio`。 */
+  args: string[];
+  /** 主程序的 MCP 服务在跑吗。 */
+  serviceRunning: boolean;
+  /**
+   * 端口文件在不在（= 桥找不找得到门）。
+   *
+   * 🔴 必须与 `serviceRunning` **一起读**：服务在跑但端口文件没写成时，
+   * HTTP 那边照常能用，而桥一口咬定「主程序没在跑」。这种不一致得显示出来，
+   * 不能让用户对着两个都说「正常」的东西发愁（规则 #15.3）。
+   */
+  endpointFound: boolean;
+  /** 端口文件里的端口；没读到是 `0`。 */
+  endpointPort: number;
+  /** 令牌文件读得开吗（只报在不在）。 */
+  tokenReady: boolean;
+}
+
+/**
+ * 读 stdio 接入卡的状态。失败返回 `null`（卡片自己显示读不到）。
+ *
+ * 不弹 toast：这一条是在接入面板挂载时读的，跟批量探测同一批。
+ */
+export async function mcpStdioStatus(): Promise<McpStdioStatus | null> {
+  try {
+    return await invoke<McpStdioStatus>("mcp_stdio_status");
+  } catch (e) {
+    logger.warn("读取 stdio 接入状态失败", e);
+    return null;
   }
 }
 

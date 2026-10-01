@@ -8,6 +8,7 @@
 //! | 模块 | 职责 |
 //! |---|---|
 //! | [`server`] | HTTP 传输（axum）+ 中间件 + 启停 |
+//! | [`stdio`] | stdio 桥：只转发给 [`server`]，自己不做协议 |
 //! | [`auth`] | `Origin` 校验 + Bearer 常量时间比较 |
 //! | [`protocol`] | 手写的 JSON-RPC / MCP 协议（四个方法）|
 //! | [`tools`] | 工具的定义与分发（四个只读 + 七个写）|
@@ -24,10 +25,17 @@ pub mod gate;
 /// 局域网直连：白名单 + 本机网卡（默认关）。
 pub mod lan;
 pub mod protocol;
+/// **prompts** 原语：由用户一键发起、自带本库实况的指令模板（方案 ②）。
+pub mod prompts;
 /// 「库的脉搏」：搭在模型必经之路上的该写/该整理信号（L2）。
 pub mod pulse;
+/// **resources** 原语：把笔记暴露成可 `@` 的 URI（方案 ②）。
+pub mod resources;
 pub mod server;
 pub mod source;
+/// stdio 桥（方案 ①）：`--mcp-stdio` 下把 stdio 逐行 JSON-RPC 转发给本机 HTTP。
+/// 🔴 纯转发器，不碰 SQLite、不重新实现协议（理由见该模块头部）。
+pub mod stdio;
 /// HTTPS 证书（**默认关闭**，用户手动打开）。
 pub mod tls;
 pub mod token;

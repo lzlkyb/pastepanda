@@ -48,6 +48,47 @@ const SUPPORTED_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 /// 而不是另写一个字面量（那就又多一处能与名单对不上的地方）。
 const LATEST_PROTOCOL_VERSION: &str = SUPPORTED_VERSIONS[0];
 
+/// 「什么值得记」四条判据（①甲）。
+///
+/// 🔴 提成常量是为了 **`instructions` 与 `prompts::kb-decision-log` 共用同一份**
+/// （规则 #11）。两处各写一遍的失败方式很具体：判据改了一个地方，
+/// 模型在两条路径上拿到的标准就不同，而 `- [kind]` 标记会开始只对一半的新笔记生效。
+///
+/// ⚠ 文本内容与提成常量前**逐字节相同**——`test_instructions_answer_what_is_worth_recording`
+/// 钉的是里面的关键子串，动了措辞要先去看那条测试的理由。
+pub(crate) const WRITE_CRITERIA: &str =
+    "什么值得记——**判断值得就直接记，不用先问用户**：\n\
+     ・**下次会重新推导一遍的东西**——这条是判据的总开关：\
+     如果下一个会话要花力气重新弄清它，那就该记；\n\
+     ・**结论，不是过程**——定下来的方案、选型理由，不是推导它的那几轮；\n\
+     ・**踩过的坑**——这台机器/这个项目特有的坑，不是能从文档里查到的通用知识；\n\
+     ・**用户纠正你的地方**——尤其是带理由的纠正。\n\
+     🔴 别把对话流水往里倒（一次会话记一两篇是正常，每轮都记就是噪音）；\
+     也别等用户开口——他看不到你的工作过程，你没记的下个会话就得从头再来。\n\n\
+     记的时候在正文里加行内标记（形如 `- [decision] 一句话`），\
+     `kb_search` 的 `kind` 靠它筛；只往**正文**里加，别去改用户已有的句子。\n\n";
+
+/// 写入约定 + 七个写入口的选型表。
+///
+/// 提成常量的理由同 [`WRITE_CRITERIA`]：`prompts::kb-decision-log` 要带同一张表，
+/// 而这张表存在的意义就是「别让模型把七段工具描述读完才拼出选型规则」——
+/// 拼第二份只会让两份开始漂。
+pub(crate) const WRITE_CONVENTIONS: &str =
+    "写入约定：\n\
+     ・每次写入都计入用户可见的调用记录并标注来源；\n\
+     ・改笔记会自动留版本快照，用户随时可恢复；\n\
+     ・删除只能删到**回收站**（可恢复），没有彻底删除的工具；\n\
+     ・整理文件夹与标签时**只动你自己写的**，用户手工建的一律不碰；\n\
+     ・写权限可以被用户逐项关掉。被关时工具会告知，\
+     那时**不要重试、不要绕路**，让用户去设置里开。\n\
+     ・“今日速记”不开放写入，那是用户热键专用的。\n\n\
+     写文本有七个入口，按**动的范围**选（别都用 kb_update）：\n\
+     ・新开一篇 → kb_create；重写整篇 → kb_update（**覆盖全文**，最后才考虑）\n\
+     ・接在末尾 → kb_append；插到开头 → kb_prepend\n\
+     ・只改某一节 → kb_update_section；在某节前后插一段 → kb_insert_at_section\n\
+     ・改一句话/错字 → kb_replace_in_note（要全文唯一命中）\n\
+     拿不准就选**动得最少**的那个：范围大的用错，用户写的东西就没了。";
+
 // ===== JSON-RPC 错误码（规范固定值）=====
 pub const ERR_PARSE: i32 = -32700;
 pub const ERR_INVALID_REQUEST: i32 = -32600;
@@ -116,34 +157,8 @@ fn server_instructions(switches: &WriteSwitches, blurb: &str) -> String {
         //
         // 🔴 只在写开关至少开一档时发：全关时推一段「什么值得记」
         // 等于叫模型去做一件它做不了的事，而且那些 token 白付。
-        s.push_str(
-            "什么值得记——**判断值得就直接记，不用先问用户**：\n\
-             ・**下次会重新推导一遍的东西**——这条是判据的总开关：\
-             如果下一个会话要花力气重新弄清它，那就该记；\n\
-             ・**结论，不是过程**——定下来的方案、选型理由，不是推导它的那几轮；\n\
-             ・**踩过的坑**——这台机器/这个项目特有的坑，不是能从文档里查到的通用知识；\n\
-             ・**用户纠正你的地方**——尤其是带理由的纠正。\n\
-             🔴 别把对话流水往里倒（一次会话记一两篇是正常，每轮都记就是噪音）；\
-             也别等用户开口——他看不到你的工作过程，你没记的下个会话就得从头再来。\n\n\
-             记的时候在正文里加行内标记（形如 `- [decision] 一句话`），\
-             `kb_search` 的 `kind` 靠它筛；只往**正文**里加，别去改用户已有的句子。\n\n",
-        );
-        s.push_str(
-            "写入约定：\n\
-             ・每次写入都计入用户可见的调用记录并标注来源；\n\
-             ・改笔记会自动留版本快照，用户随时可恢复；\n\
-             ・删除只能删到**回收站**（可恢复），没有彻底删除的工具；\n\
-             ・整理文件夹与标签时**只动你自己写的**，用户手工建的一律不碰；\n\
-             ・写权限可以被用户逐项关掉。被关时工具会告知，\
-             那时**不要重试、不要绕路**，让用户去设置里开。\n\
-             ・“今日速记”不开放写入，那是用户热键专用的。\n\n\
-             写文本有七个入口，按**动的范围**选（别都用 kb_update）：\n\
-             ・新开一篇 → kb_create；重写整篇 → kb_update（**覆盖全文**，最后才考虑）\n\
-             ・接在末尾 → kb_append；插到开头 → kb_prepend\n\
-             ・只改某一节 → kb_update_section；在某节前后插一段 → kb_insert_at_section\n\
-             ・改一句话/错字 → kb_replace_in_note（要全文唯一命中）\n\
-             拿不准就选**动得最少**的那个：范围大的用错，用户写的东西就没了。",
-        );
+        s.push_str(WRITE_CRITERIA);
+        s.push_str(WRITE_CONVENTIONS);
     } else {
         s.push_str("全部工具都不会写入或修改任何数据。");
     }
@@ -190,8 +205,13 @@ pub struct AuditDraft {
 
 /// `dispatch` 的返回：应答 + （若需要）审计草稿。
 ///
-/// 只有 `tools/call` 会产生审计。`initialize` / `tools/list` 不记：
+/// 会产生审计的是**会把笔记数据交出去的**那几个分支：`tools/call`，
+/// 以及 ② 新加的 `resources/list` / `resources/read` / `prompts/get`。
+/// `initialize` / `tools/list` / `resources/templates/list` / `prompts/list` 不记：
 /// 它们不碰笔记数据，记了只会把真正重要的那几条淡化在握手噪声里。
+///
+/// 🔴 这条分界是红线②要求的，不是「哪个方法算一次调用」：
+/// `prompts/list` 与 `resources/list` 长得像，但后者一次交出 20 篇的标题和 id。
 pub struct Dispatched {
     pub response: Value,
     pub audit: Option<AuditDraft>,
@@ -272,6 +292,20 @@ async fn load_trash_days(kb: &std::sync::Arc<dyn super::source::KbSource>) -> i6
     }
 }
 
+/// 组一次调用的上下文（开关 + 范围 + 来源）。
+///
+/// 🔴 从 `tools/call` 分支里提成函数（规则 #11.1）：`prompts/get` 借只读工具取数据，
+/// 必须走**同一份**开关/范围读取。两处各写一遍的话，第 7 个入口将来被新写出来时
+/// 仍会走错——而「从 prompt 这条路绕过写权限」正是不能发生的那件事。
+async fn build_ctx(kb: &std::sync::Arc<dyn super::source::KbSource>, client: &str) -> super::tools::CallCtx {
+    super::tools::CallCtx {
+        kb: kb.clone(),
+        switches: load_switches(kb).await,
+        scope: load_scope(kb).await,
+        source: super::source_agent_from_ua(client),
+    }
+}
+
 /// 处理一整个请求体。`client` 是请求的 User-Agent（由 server 层传入）。
 pub async fn dispatch(
     kb: &std::sync::Arc<dyn super::source::KbSource>,
@@ -323,8 +357,10 @@ pub async fn dispatch(
             .into()
         }
 
-        // 唯一会产生审计的分支。工具名与参数从 `params` 里取，
-        // 即使调用失败也要记（`ok: false`）——「试图读但没读成」也是信息。
+        // 以前这里是「唯一会产生审计的分支」；② 之后还有三个，
+        // 但它们同一条口径：只要把笔记数据交出去了就记（见 [`Dispatched`]）。
+        // 工具名与参数从 `params` 里取，即使调用失败也要记（`ok: false`）——
+        // 「试图读但没读成」也是信息。
         "tools/call" => {
             let tool = params
                 .and_then(|p| p.get("name"))
@@ -335,12 +371,7 @@ pub async fn dispatch(
                 .and_then(|p| p.get("arguments"))
                 .map(|v| v.to_string())
                 .unwrap_or_default();
-            let ctx = super::tools::CallCtx {
-                kb: kb.clone(),
-                switches: load_switches(kb).await,
-                scope: load_scope(kb).await,
-                source: super::source_agent_from_ua(client),
-            };
+            let ctx = build_ctx(kb, client).await;
             match super::tools::call(&ctx, params).await {
                 Ok(out) => {
                     // 🔴 `ok` 要反映**模型实际看到的结果**，而不是「这次调用有没有
@@ -375,8 +406,122 @@ pub async fn dispatch(
             }
         }
 
+        // ===== ② resources / prompts（方案 2026-10-01）=====
+        //
+        // 这三个分支都会**上审计**，而 `resources/templates/list` 与 `prompts/list`
+        // 不上。分界不是「算不算调用」，是有没有把笔记数据交出去：
+        // `resources/list` 一次就把 20 篇的标题和 id 交给宿主，
+        // 那和 `kb_list` 是同一件事，红线②要的是「用户看得见 AI 拿走了什么」。
+        // 而模板表和 prompt 目录是静态文案，跟 `tools/list` 一样属于握手噪声。
+        "resources/list" => {
+            let args = params_json(params);
+            match super::resources::list(kb, params).await {
+                Ok((v, note_ids)) => Dispatched {
+                    response: ok(id, v),
+                    audit: Some(AuditDraft {
+                        tool: "resources/list".to_string(),
+                        args,
+                        ok: true,
+                        note_ids,
+                    }),
+                },
+                Err(e) => Dispatched {
+                    response: err(id, e.code, e.message),
+                    audit: Some(AuditDraft {
+                        tool: "resources/list".to_string(),
+                        args,
+                        ok: false,
+                        note_ids: Vec::new(),
+                    }),
+                },
+            }
+        }
+
+        "resources/templates/list" => ok(id, super::resources::templates()).into(),
+
+        "resources/read" => {
+            let args = params_json(params);
+            // id 从 uri 里**先**解析出来：解析不出来时审计要照记（`ok: false`），
+            // 而正文读取失败时用户最需要知道的恰恰是「他读的是哪一篇」。
+            let uri_id = params
+                .and_then(|p| p.get("uri"))
+                .and_then(|v| v.as_str())
+                .and_then(|u| super::resources::parse_note_uri(u))
+                .map(str::to_string);
+            match super::resources::read(kb, params).await {
+                Ok(v) => Dispatched {
+                    response: ok(id, v),
+                    audit: Some(AuditDraft {
+                        tool: "resources/read".to_string(),
+                        args,
+                        ok: true,
+                        note_ids: uri_id.into_iter().collect(),
+                    }),
+                },
+                Err(e) => Dispatched {
+                    response: err(id, e.code, e.message),
+                    audit: Some(AuditDraft {
+                        tool: "resources/read".to_string(),
+                        args,
+                        // 🔴 同 `tools/call`：「试图读但没读成」也是信息。
+                        ok: false,
+                        note_ids: uri_id.into_iter().collect(),
+                    }),
+                },
+            }
+        }
+
+        // 目录本身不碰笔记数据（同 `tools/list`），所以不记审计；
+        // 但它**按开关现读**——全关时不能把「把结论记下来」这种 prompt 列出去。
+        "prompts/list" => {
+            let switches = load_switches(kb).await;
+            ok(
+                id,
+                json!({ "prompts": super::prompts::definitions(&switches) }),
+            )
+            .into()
+        }
+
+        // 与 `tools/call` 同一条路：借 [`build_ctx`] 拿**同一份**开关快照，
+        // 所以写权限被关掉之后，prompt 里那段「现在就写」不会从这条路绕过去。
+        "prompts/get" => {
+            let args = params_json(params);
+            let ctx = build_ctx(kb, client).await;
+            match super::prompts::get(&ctx, params).await {
+                Ok((result, note_ids)) => Dispatched {
+                    response: ok(id, result),
+                    audit: Some(AuditDraft {
+                        tool: "prompts/get".to_string(),
+                        args,
+                        ok: true,
+                        note_ids,
+                    }),
+                },
+                Err(e) => Dispatched {
+                    response: err(id, e.code, e.message),
+                    audit: Some(AuditDraft {
+                        tool: "prompts/get".to_string(),
+                        args,
+                        ok: false,
+                        note_ids: Vec::new(),
+                    }),
+                },
+            }
+        }
+
         other => err(id, ERR_METHOD_NOT_FOUND, format!("不支持的方法：{}", other)).into(),
     }
+}
+
+/// 审计里那个 `args` 列的内容：**整个 params 的 JSON**。
+///
+/// 🔴 永远不含笔记正文（W3 那条口径）。三个新方法里能进 params 的只有
+/// uri / prompt 名 / 用户自己填的主题词，都是「他要什么」而不是「他拿到什么」，
+/// 而后者由 `note_ids` 那一列承担。
+fn params_json(params: Option<&Value>) -> String {
+    params
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "{}".to_string())
 }
 
 /// 拼 `initialize` 的应答。
@@ -403,7 +548,18 @@ fn initialize_result(params: Option<&Value>, switches: &WriteSwitches, blurb: &s
             // 声明 true 却永远不发，是另一种形式的说谎。
             //
             // 没重连不会变成安全洞：`tools/call` 那一层拦截是即时生效的（见 gate.rs）。
-            "tools": { "listChanged": false }
+            "tools": { "listChanged": false },
+            // ② resources：同上，`listChanged` 声明 false 是**真话**——
+            // 用户每写一篇笔记这个列表就变了，但本服务没有 server→client 通道，
+            // 发不出通知。宿主每次打开 `@` 选择器都会重新 `resources/list`，
+            // 所以"变了但没通知"的实际表现是"下一次打开就是新的"。
+            //
+            // `subscribe` 也声明 false：我们不提供单篇订阅（那同样要推送通道），
+            // 不声明会被理解成"能订"。
+            "resources": { "listChanged": false, "subscribe": false },
+            // ② prompts：目录会随写开关变（全关时只剩 `kb-recall`），
+            // 理由与 tools 一字不差，所以这里也是 false + 靠重连。
+            "prompts": { "listChanged": false }
         },
         "serverInfo": {
             "name": "pastepanda-knowledge",

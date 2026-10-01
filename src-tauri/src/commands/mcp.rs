@@ -511,3 +511,71 @@ pub fn mcp_set_lan_enabled(
     }
     Ok(server.status(configured_port(&store), configured_https_port(&store)))
 }
+
+// ── stdio 接入（方案 ①）────────────────────────────────────────
+//
+// stdio 那条路不需要用户拷令牌：桥跟主程序读同一个 DPAPI 文件。
+// 所以这一区的三个字段全在说一件事——「这台机器上的桥现在能不能连上服务」，
+// 而不是「请把这段秘密复制到别处」。
+
+/// 本程序的绝对路径。stdio 卡片与一键接入写条目都要它。
+///
+/// 🔴 只能由 Rust 侧给出：`mcpClients.ts` 不知道 exe 装在哪，而猜一个
+/// （比如光秃秃的 `PastePanda.exe`）会得到一条**打不开的 command**——
+/// Claude Desktop 那类客户端对此只报一句 `failed to start`，什么都查不出来。
+///
+/// 用 `std::env::current_exe()` 而不是 `app.path()`：Tauri 的 `PathResolver`
+/// 在这个版本上根本没有 `current_exe`，而「进程自己是谁」本来也不需要问框架。
+/// dev 下它是 `target\debug\pastepanda.exe`——真实存在，桥照样起得来。
+pub(super) fn exe_path() -> Result<String, String> {
+    std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .map_err(|e| format!("无法取得本程序路径：{}", e))
+}
+
+/// stdio 接入卡的状态。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpStdioStatus {
+    /// 条目的 `command`（本程序绝对路径）。
+    ///
+    /// 🔴 是 `Option`：`current_exe()` 极少数情况下会失败，而那不该把
+    /// `serviceRunning` / `endpointFound` 一起拖没（规则 #15.3：这两个字段
+    /// 是排查「桥说主程序没在跑」的第一手证据）。前端把 `null` 显示成
+    /// 「读不到本程序路径」，并且拒绝复制那条卡片。
+    pub command: Option<String>,
+    /// 条目的 `args`，就一个 `--mcp-stdio`。
+    pub args: Vec<String>,
+    /// 进程内的服务对象在跑吗。
+    pub service_running: bool,
+    /// 端口文件在不在（= 桥找不找得到门）。
+    ///
+    /// 🔴 它和 `serviceRunning` 必须**一起读**（规则 #15.3 的同一条理由）：
+    /// 端口文件没写成时服务其实能连（HTTP 那边照常），但桥一口咬定「主程序没在跑」——
+    /// 界面上得把这一类不一致显示出来，而不是让用户对着两个都说「正常」的东西发愁。
+    pub endpoint_found: bool,
+    /// 端口文件里的端口；没读到是 `0`。
+    pub endpoint_port: u16,
+    /// 令牌文件读得开吗。**只报在不在，不回令牌本身。**
+    pub token_ready: bool,
+}
+
+/// 读 stdio 接入卡的状态。**不回令牌。**
+#[tauri::command]
+pub fn mcp_stdio_status(
+    app: AppHandle,
+    server: State<McpServer>,
+) -> Result<McpStdioStatus, String> {
+    let dir = app_dir(&app)?;
+    let endpoint = mcp::stdio::read_endpoint(&dir);
+    Ok(McpStdioStatus {
+        command: exe_path().ok(),
+        args: vec![mcp::stdio::ARG_FLAG.to_string()],
+        service_running: server.is_running(),
+        endpoint_found: endpoint.is_some(),
+        endpoint_port: endpoint.map(|e| e.port).unwrap_or(0),
+        // 用 `load` 而不是 `load_or_create`：打开设置页不该顺手生成一个令牌，
+        // 而 `load` 也绝不会把主程序正在用的那条顶掉。
+        token_ready: matches!(mcp::token::load(&dir), Ok(Some(_))),
+    })
+}

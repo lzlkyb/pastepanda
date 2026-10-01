@@ -19,6 +19,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
+// `app.path()` 是这个 trait 的方法（Tauri v2 把它放在 `Manager` 上）。
+use tauri::Manager;
 use tokio::sync::oneshot;
 
 /// 默认端口（决策 D1）。选 17650 而不是 3000/8080 这类：后者被开发服务器占得太多。
@@ -107,6 +109,12 @@ struct Running {
     shutdown: oneshot::Sender<()>,
     /// https 监听。用户手动打开且真的启成了才有。
     https: Option<HttpsRunning>,
+    /// 本次启动写下的端口文件路径；`stop()` 按它清理。
+    ///
+    /// 存路径而不是存目录：启动时算过一次，停机就不必再算一遍，
+    /// 也就不会出现「启动写 A 目录、停机删 B 目录」这种残留。
+    /// `None` = 写失败过（原因已记进日志），那就没有要删的东西。
+    endpoint_file: Option<std::path::PathBuf>,
     /// 这一路的路由。存着是为了能**单独启停 https 而不碰 http**：
     ///
     /// 🔴 切 https 如果靠「停整个服务再起」，就会撞上同一个 http 端口的
@@ -328,6 +336,9 @@ impl McpServer {
         }
 
         self.set_token(token)?;
+        // 🔴 必须在 `app` 被 `AppAuditSink` 收走之前把目录算出来：
+        //    stdio 桥（方案 ①）靠这个目录里的端口文件找到本机服务。
+        let app_dir = app.path().app_data_dir().ok();
         let audit = Arc::new(super::audit::AppAuditSink::new(app));
         let router = build_router(audit, kb, self.token.clone(), self.lan.clone());
         // https 要用同一套路由与中间件（三道门一样都要过）。
@@ -378,12 +389,36 @@ impl McpServer {
             },
         };
 
+        // stdio 桥（方案 ①）的寻址方式：它进不了 Tauri、拿不到 `AppHandle`，
+        // 只能靠这个文件找到本机端口。写在 bind 成功**之后**——
+        // 写早了会留下一个指向没人听的端口的文件，而桥报的是「连不上」。
+        let endpoint_file = match app_dir {
+            Some(dir) => {
+                let https_port = https_running.as_ref().map(|h| h.port).unwrap_or(0);
+                match super::stdio::write_endpoint(&dir, port, https_port) {
+                    Ok(path) => Some(path),
+                    // 🔴 写失败不拖垮服务：HTTP 那条路一切照常，只是 stdio 桥
+                    //    找不到门。规则 #15.3——但这里的「不静默」是日志 +
+                    //    界面端 `mcp_stdio_status` 会报「端口文件缺失」。
+                    Err(e) => {
+                        log::warn!("[MCP] 端口文件没写成，stdio 桥暂时找不到服务：{}", e);
+                        None
+                    }
+                }
+            }
+            None => {
+                log::warn!("[MCP] 拿不到应用数据目录，stdio 桥暂时找不到服务");
+                None
+            }
+        };
+
         *guard = Some(Running {
             port,
             shutdown: tx,
             router: router_for_https,
             https: https_running,
             https_error,
+            endpoint_file,
         });
         Ok(port)
     }
@@ -441,6 +476,11 @@ impl McpServer {
             }
         };
         if let Some(r) = taken {
+            // 端口文件跟着服务一起收：留着它，stdio 桥就会去敲一个没人听的端口，
+            // 而报出来的原因是「连不上」——一个本来能说清「服务已关」的地方。
+            if let Some(path) = r.endpoint_file.as_deref() {
+                super::stdio::remove_endpoint(path);
+            }
             if let Some(h) = r.https.as_ref() {
                 // 给在途请求一点收尾时间，到点强断。
                 // 不给上限的话，一个挂着不动的连接就能让「关服务」永远完不了。
