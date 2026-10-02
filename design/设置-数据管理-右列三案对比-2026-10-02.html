@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>设置·数据管理 — 右列挤爆 三案对比（甲/乙/丙）</title>
+<style>
+/* ============================================================================
+ * 几何申报（全部取自真实源码，不在这份稿里发明数值）
+ *   Settings.module.css
+ *     .sRow        display:flex; align-items:center; padding:12px 16px; gap:12px
+ *     .sRow > :last-child:not(.sToggle):not([data-stack])
+ *                  flex-shrink:0; min-width:72px; display:flex; justify-content:flex-end
+ *     .sRowIcon    40×40 / r10 / flex-shrink:0，内含 .sRowIconGlyph 28×28 / r50% / font 14px
+ *     .sRowBody    flex:1; min-width:0
+ *     .sRowLabel   13px / 600 / --text-primary
+ *     .sRowDesc    11px / --text-muted / margin-top:2px
+ *     .sCleanup    display:flex; gap:4px; flex-wrap:wrap
+ *     .sCleanupOpt height:24px; padding:0 10px; r999; font:11px/600; border 1px --border-color
+ *     .sToggle     44×26（开关不吃右列 min-width:72）
+ *   theme.css（浅色 --theme-light 一组，本稿只演这一套主题）
+ *     --card-bg #fff / --text-primary #0f172a / --text-muted #627083
+ *     --border-color #e0e4eb / --accent #0284c7 / --accent-strong #0273ad
+ *     --seg-bg #e8e8ed / --section-bg #f0f4f8 / --ic-save 绿渐变
+ *   HelpTooltip.module.css  .trigger 20×20 / r50% / border 1.5px
+ *   Settings.module.css     .settingsContent > * max-width:800 / 左栏 220
+ * 三案都只改「这一行的排布」，控件本体（胶囊高度、圆角、字号、间距）一律不动。
+ *
+ * 🔴 上线版（甲）的触发条件是「行末多选一 ≥4 档」，不是「行末有控件」。
+ *   第一版写成 `.sRow:has(> .sCleanup:last-child), .sRow:has(> .sSegGroup:last-child)`，
+ *   四种行原型实测下来会把 2 档的「表头 / 来源图标」从 65px 抬到 147px —— 纯属误伤。
+ *   收口成 `.sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4))`，
+ *   并 ❌ 试过 `flex: 1 1 min(320px, max-content)`：Chromium 判 `min()` 里含**内在关键字**为非法、
+ *   整条声明丢弃；换成 `min(320px, 100% - 52px)`（只含长度/百分比）就被正常采纳。
+ * ========================================================================== */
+:root {
+  --card-bg: #fff;
+  --text-primary: #0f172a;
+  --text-muted: #627083;
+  --border-color: #e0e4eb;
+  --accent: #0284c7;
+  --accent-strong: #0273ad;
+  --accent-light: #e8f3fb;
+  --accent-solid: #0273ad;
+  --seg-bg: #e8e8ed;
+  --section-bg: #f0f4f8;
+  --ic-save: linear-gradient(135deg, #34d399 0%, #10b981 45%, #059669 100%);
+  --ic-privacy: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 45%, #7c3aed 100%);
+  --panel-w: 460px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 22px 24px 60px;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  background: #f6f8fb; color: var(--text-primary);
+}
+h1 { font-size: 19px; margin: 0 0 4px; }
+.sub { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+.toolbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; background: #fff; border: 1px solid var(--border-color);
+  border-radius: 10px; margin-bottom: 18px; position: sticky; top: 12px;
+  z-index: 5; box-shadow: 0 4px 14px rgba(15,23,42,.06);
+}
+.toolbar label { font-size: 12px; font-weight: 600; }
+.toolbar input[type=range] { width: 260px; }
+.toolbar .w { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--accent-strong); }
+.toolbar .hint { font-size: 11px; color: var(--text-muted); }
+/* 🔴 单栏：上一版用 2×2 网格，每列只有 ~570px，`.stage{max-width:100%}` 把滑杆的
+   800px 静默夹到 ~432px —— 于是四案在 520/600/700/800 档读数完全一样，
+   我拿这套数字说的任何「临界宽度」都是假的。改成一行一案 + 横向滚动。 */
+.grid { display: flex; flex-direction: column; gap: 18px; }
+.case {
+  background: #fff; border: 1px solid var(--border-color); border-radius: 12px;
+  padding: 14px 14px 16px; box-shadow: 0 1px 2px rgba(15,23,42,.04); overflow-x: auto;
+}
+.case.rec { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
+.case > h2 { font-size: 14px; margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
+.badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-strong);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.badge.base { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.case > p { font-size: 11px; color: var(--text-muted); margin: 0 0 10px; line-height: 1.6; }
+.stage { width: var(--panel-w); flex-shrink: 0; }
+.metrics {
+  margin-top: 10px; font-size: 11px; font-variant-numeric: tabular-nums;
+  display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-muted);
+}
+.metrics b { color: var(--text-primary); font-weight: 600; }
+.metrics .bad b { color: #b91c1c; }
+.metrics .ok b { color: #047857; }
+
+/* ---- 真实行样式（逐字搬 Settings.module.css） ---- */
+.sSection {
+  font-size: 12px; font-weight: 700; color: var(--text-muted);
+  padding: 10px 16px; background: var(--section-bg);
+  border: 1px solid var(--border-color); border-bottom: none;
+  border-radius: 12px 12px 0 0;
+}
+.sRow {
+  display: flex; align-items: center; padding: 12px 16px; gap: 12px;
+  border-bottom: 1px solid var(--border-color); background: var(--card-bg);
+  border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color);
+  transition: background 150ms ease;
+}
+.sRow:hover { background: color-mix(in srgb, var(--accent) 4%, var(--card-bg)); }
+.sRow:last-child {
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.07);
+}
+.sRow > :last-child:not(.sToggle) {
+  flex-shrink: 0; min-width: 72px; display: flex; align-items: center; justify-content: flex-end;
+}
+.sRowIcon {
+  width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; background: var(--ic-save);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 1px 3px rgba(15,23,42,.10);
+}
+.icPrivacy { background: var(--ic-privacy); }
+.sRowIconGlyph {
+  width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.92);
+  box-shadow: 0 1px 2px rgba(15,23,42,.14); display: flex; align-items: center;
+  justify-content: center; font-size: 14px; line-height: 1; font-style: normal; flex-shrink: 0;
+}
+.sRowBody { flex: 1; min-width: 0; }
+.sRowLabel { font-size: 13px; font-weight: 600; color: var(--text-primary);
+  display: flex; align-items: center; gap: 6px; }
+.sRowDesc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.sCleanup { display: flex; gap: 4px; flex-wrap: wrap; }
+.sCleanupOpt {
+  height: 24px; padding: 0 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border-color); font-family: inherit;
+  background: var(--card-bg); color: var(--text-muted); transition: all .15s;
+}
+.sCleanupOpt.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.sCleanupOpt:not(.active):hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  background: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+}
+.sToggle {
+  position: relative; display: inline-flex; align-items: center; width: 44px; height: 26px;
+  border-radius: 999px; border: none; cursor: pointer; padding: 0;
+  background: #cbd5e1; transition: background .18s;
+}
+.sToggle.on { background: var(--accent); }
+.sToggleThumb {
+  position: absolute; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.25); transition: left .18s;
+}
+.sToggle.on .sToggleThumb { left: 21px; }
+.sAction {
+  height: 26px; padding: 0 12px; border-radius: 8px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border-color); background: var(--card-bg);
+  color: var(--text-primary); font-family: inherit;
+}
+.ht {
+  width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-color);
+  background: transparent; color: var(--text-muted); cursor: pointer; display: flex;
+  align-items: center; justify-content: center; padding: 0; flex-shrink: 0; font-size: 11px;
+}
+.ht:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-light); }
+
+/* ============ 甲：行允许换列（推荐·默认·已上线） ============
+   两条规则，但用 `:has()` 只挑「行末多选一 ≥4 档」的行：
+   `.sRow{flex-wrap:wrap}` + `.sRowBody{flex:1 1 320px}`。
+   🔴 320 不是拍脑袋：浏览器实测（Range.getClientRects 数行数）扫过 280/310/330/360 四档——
+     basis 280 时「控件并排起点 600」与「并排且描述能单行起点 618」之间有 **18px 尴尬档**
+     （那 18px 里控件照旧挤在右边、描述照旧 2 行 = 甲等于没做）；basis ≥ 310 两个临界点重合。
+     取 320 留余量（本区最长描述 27 字 ≈ 312px）。
+   够宽→与现状逐像素相同（640 档两案都是 文字列 320 / 行高 65）；不够宽→控件整块降到描述下方。
+   🔴 保底宽必须封顶 `min(320px, 100% - 52px)`（52 = 图标 40 + gap 12）：写死 320 时，
+     内容列 <372 的窄窗（**含用户截图那档 380**）里文字列自己就挤不进图标那一行，
+     换列算法把它整块甩到第二行 ⇒ 图标单独悬在顶上、三行堆叠 150px。实测封顶后 380 档 113px、图标与文字同行。
+   🔴 降下来的控件要 `margin-left:auto` 才回得到右列：`.sRow > :last-child` 那条的
+     `justify-content:flex-end` 只管控件**自己内部**的子元素，挪不动控件本身（第一版漏了这条，胶囊掉在行首）。
+     实测 `margin-left:auto` 在并排档零影响——那行剩余空间先被 `flex-grow:1` 的文字列吃光。
+   门控的收益实测在下面的表里：3 档对照行在 base / 甲 两格里 380/460/620/640/800 五档
+   逐像素相同（104 / 89 / 74 / 74 / 65），开关行与按钮行也完全不受影响。 */
+.optA .sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) { flex-wrap: wrap; }
+.optA .sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > .sRowBody { flex: 1 1 min(320px, 100% - 52px); }
+.optA .sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > :last-child:not(.sToggle) { margin-left: auto; }
+.optA .sRow > :last-child:not(.sToggle) { flex-shrink: 0; }
+/* 降行后对齐哪一边：默认右对齐（保住「控件自成右列」的扫视轴）；
+   勾上改成落回行首（与图标左缘齐平）。两个都是实测可切换的真选项。 */
+.optA.alignLeft .sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > :last-child:not(.sToggle) { margin-left: 0; }
+/* 「退回上一版」开关：把封顶和右拉都撤掉，用来现场重现那两个 bug
+   （380 档图标悬空孤行 150px / 胶囊掉在行首），勾上就看得见。 */
+.optA.regressOld .sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > .sRowBody { flex: 1 1 320px; }
+.optA.regressOld .sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > :last-child:not(.sToggle) { margin-left: 0; }
+
+/* ============ 乙：右栏允许收缩，胶囊自己折行 ============
+   🔴 实测无效，留在这儿只为对照：max-width:210 只让控件 222→210，让出 12px，
+   460 档描述仍是 3 行（与现状一字不差）；640 档反而更差——胶囊折成两排，
+   行高 77px 超出现状 65px。要真治好得压到 ~90px（每排 2 枚 × 3 排），形态先崩。 */
+.optB .sRow > :last-child:not(.sToggle) { flex-shrink: 1; min-width: 0; }
+.optB .sCleanup { max-width: 210px; justify-content: flex-end; }
+
+/* ============ 丙：控件瘦身成「当前值 + 下拉」 ============ */
+.dd { position: relative; }
+.ddBtn {
+  height: 26px; padding: 0 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border-color); background: var(--card-bg);
+  color: var(--text-primary); cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.ddBtn:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color)); }
+.ddBtn .caret { color: var(--text-muted); font-size: 9px; }
+.ddMenu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 108px;
+  background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(15,23,42,.14); padding: 4px; display: none;
+}
+.dd.open .ddMenu { display: block; }
+.ddItem {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; height: 26px; padding: 0 8px; border: none; border-radius: 7px;
+  background: transparent; color: var(--text-primary); font-size: 12px;
+  font-family: inherit; cursor: pointer; text-align: left;
+}
+.ddItem:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ddItem.sel { color: var(--accent-strong); font-weight: 600; }
+.ddItem .tick { visibility: hidden; font-size: 11px; }
+.ddItem.sel .tick { visibility: visible; }
+.optC .sRow > :last-child:not(.sToggle) { min-width: 0; }
+
+.note { font-size: 11px; color: var(--text-muted); margin-top: 14px; line-height: 1.7; }
+.tbl { border-collapse: collapse; margin: 8px 0 10px; font-size: 11px; }
+.tbl th, .tbl td { border: 1px solid var(--border-color); padding: 4px 10px; text-align: left; }
+.tbl th { background: var(--section-bg); color: var(--text-primary); font-weight: 600; }
+.tbl td:first-child { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<h1>设置 → 数据管理：右列挤爆 三案对比</h1>
+<div class="sub">
+  同一套真实 CSS 数值（见源码头部「几何申报」），同一块舞台宽度。拖动下面的滑杆即可复现你截图里那一屏，
+  四个舞台<b>始终等宽</b>，度量口径一致；数字由 <code>Range.getClientRects()</code> 实测行数，不是我估的。
+</div>
+
+<div class="toolbar">
+  <label for="w">内容区宽</label>
+  <input id="w" type="range" min="320" max="800" step="2" value="460" />
+  <span class="w"><span id="wv">460</span> px</span>
+  <button class="sAction" data-jump="380">≈ 你截图那档（实测描述 6 行）</button>
+  <button class="sAction" data-jump="340">更窄：上一版在这里让图标悬空</button>
+  <button class="sAction" data-jump="460">常见窄窗口</button>
+  <button class="sAction" data-jump="640">甲/现状 重合点</button>
+  <button class="sAction" data-jump="800">宽窗口上限</button>
+  <span class="hint">看每格右下角的「描述行数 / 行高 / 控件是否同行」</span>
+</div>
+
+<div class="grid">
+  <!-- ================= 现状 ================= -->
+  <section class="case" data-case="base">
+    <h2>现状（基线）<span class="badge base">你截图里的样子</span></h2>
+    <p>右列 <code>flex-shrink:0</code> 拒绝收缩，5 枚胶囊硬占 ~200px，描述被压成多行。</p>
+    <div class="stage base">
+      <div class="sSection">数据管理</div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">自动清理 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">清理超过该天数的记录（置顶除外），启动后每小时自动执行</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">关</button><button class="sCleanupOpt">7天</button><button class="sCleanupOpt">15天</button><button class="sCleanupOpt active">30天</button><button class="sCleanupOpt">60天</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">♻</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">笔记回收站 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">删掉的笔记先进回收站，超过该天数后自动销毁（不可恢复）</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">关</button><button class="sCleanupOpt">7天</button><button class="sCleanupOpt active">15天</button><button class="sCleanupOpt">30天</button><button class="sCleanupOpt">60天</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon icPrivacy"><span class="sRowIconGlyph">▦</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">三档对照行（虚构）</div>
+          <div class="sRowDesc">app 里没有这行；它只为钉住门控：降级按「≥4 档」触发，3 档每一档都必须与现状逐像素相同</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">列表</button><button class="sCleanupOpt active">网格</button><button class="sCleanupOpt">紧凑</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">💎</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">保护常用内容</div>
+          <div class="sRowDesc">打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span></button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">清理过期记录</div>
+          <div class="sRowDesc">12 条记录已过期</div>
+        </div>
+        <button class="sAction">清理 12 条</button>
+      </div>
+    </div>
+    <div class="metrics"></div>
+  </section>
+
+  <!-- ================= 甲 ================= -->
+  <section class="case rec" data-case="A">
+    <h2>甲 · 控件超宽时自动降到下一行 <span class="badge">推荐 · 默认 · 已上线</span></h2>
+    <p>只加三条规则，但触发条件是「行末多选一 <b>≥4 档</b>」：<code>.sRow{flex-wrap:wrap}</code> +
+       <code>.sRowBody{flex:1 1 min(320px, 100%-52px)}</code> + <code>控件{margin-left:auto}</code>，
+       门用 <code>:has(&gt; :last-child:is(.sCleanup,.sSegGroup) &gt; :nth-child(4))</code>。
+       ≥640 时与现状<b>逐像素相同</b>（实测：文字列 320px、行高 65px 两案一致）；窄到临界点后，
+       5 枚胶囊整块落到描述下方并拉回右列，描述独享整幅。<b>320 是被扫出来的</b>——280 会留下 18px「挤但没换行」的尴尬档；
+       封顶 <code>100%-52px</code> 是被 380 档炸出来的（写死 320 时图标被甩成孤行，见下表）；
+       <code>min(320px, max-content)</code> 试过，Chromium 直接丢弃整条声明。
+       门控不是洁癖：不加它，2 档的「表头 / 来源图标」行会从 65px 抬到 147px。本舞台第 3 行就是 3 档对照。
+       <label style="font-size:11px;margin-left:6px"><input type="checkbox" id="alignL" />降行后落回行首（与图标左缘齐平，默认右对齐）</label>
+       <label style="font-size:11px;margin-left:6px"><input type="checkbox" id="regressOld" />退回上一版（写死 320、不右拉）看两个 bug</label></p>
+    <div class="stage optA">
+      <div class="sSection">数据管理</div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">自动清理 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">清理超过该天数的记录（置顶除外），启动后每小时自动执行</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">关</button><button class="sCleanupOpt">7天</button><button class="sCleanupOpt">15天</button><button class="sCleanupOpt active">30天</button><button class="sCleanupOpt">60天</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">♻</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">笔记回收站 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">删掉的笔记先进回收站，超过该天数后自动销毁（不可恢复）</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">关</button><button class="sCleanupOpt">7天</button><button class="sCleanupOpt active">15天</button><button class="sCleanupOpt">30天</button><button class="sCleanupOpt">60天</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon icPrivacy"><span class="sRowIconGlyph">▦</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">三档对照行（虚构）</div>
+          <div class="sRowDesc">app 里没有这行；它只为钉住门控：降级按「≥4 档」触发，3 档每一档都必须与现状逐像素相同</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">列表</button><button class="sCleanupOpt active">网格</button><button class="sCleanupOpt">紧凑</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">💎</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">保护常用内容</div>
+          <div class="sRowDesc">打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span></button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">清理过期记录</div>
+          <div class="sRowDesc">12 条记录已过期</div>
+        </div>
+        <button class="sAction">清理 12 条</button>
+      </div>
+    </div>
+    <div class="metrics"></div>
+  </section>
+
+  <!-- ================= 乙 ================= -->
+  <section class="case" data-case="B">
+    <h2>乙 · 右栏允许收缩，胶囊自己折行 <span class="badge base">实测无效 · 建议出局</span></h2>
+    <p>给这两行的容器挂 <code>data-stack</code> 退出 0-4-0 规则，再 <code>flex-shrink:1; max-width:210px</code>，
+       靠 <code>.sCleanup</code> 已有的 <code>flex-wrap</code> 折成 3+2。
+       <b>实测：控件只从 222 让到 210（12px），460 档描述仍是 3 行，与现状一字不差；
+       640 档反而更差——胶囊两排把行高抬到 77px，现状是 65px。</b>
+       真要治好得压到每排 2 枚 × 3 排，那已经不是「折行」而是把控件拆散了。</p>
+    <div class="stage optB">
+      <div class="sSection">数据管理</div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">自动清理 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">清理超过该天数的记录（置顶除外），启动后每小时自动执行</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">关</button><button class="sCleanupOpt">7天</button><button class="sCleanupOpt">15天</button><button class="sCleanupOpt active">30天</button><button class="sCleanupOpt">60天</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">♻</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">笔记回收站 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">删掉的笔记先进回收站，超过该天数后自动销毁（不可恢复）</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">关</button><button class="sCleanupOpt">7天</button><button class="sCleanupOpt active">15天</button><button class="sCleanupOpt">30天</button><button class="sCleanupOpt">60天</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">💎</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">保护常用内容</div>
+          <div class="sRowDesc">打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span></button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">清理过期记录</div>
+          <div class="sRowDesc">12 条记录已过期</div>
+        </div>
+        <button class="sAction">清理 12 条</button>
+      </div>
+    </div>
+    <div class="metrics"></div>
+  </section>
+
+  <!-- ================= 丙 ================= -->
+  <section class="case" data-case="C">
+    <h2>丙 · 控件瘦身成「当前值 + 下拉」<span class="badge base">可点，试一下</span></h2>
+    <p>右栏固定 ~64px（实测），描述 460 档就已经是 1 行、行高恒定 65px 与开关行/按钮行齐平——
+       <b>纯看布局指标它是最优的</b>；代价是选项从「一眼全见」变成<b>先点开一次</b>（在这格子里真能点，试试），
+       且与设置页其它平铺分段控件（栈容量、外观）成为两种形态。用 floating-ui 而非原生 <code>&lt;select&gt;</code>。</p>
+    <div class="stage optC">
+      <div class="sSection">数据管理</div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">自动清理 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">清理超过该天数的记录（置顶除外），启动后每小时自动执行</div>
+        </div>
+        <div class="dd" data-dd="cleanup">
+          <button class="ddBtn"><span class="ddVal">30 天</span><span class="caret">▾</span></button>
+          <div class="ddMenu" role="menu">
+            <button class="ddItem" role="menuitem">关<span class="tick">✓</span></button>
+            <button class="ddItem" role="menuitem">7 天<span class="tick">✓</span></button>
+            <button class="ddItem" role="menuitem">15 天<span class="tick">✓</span></button>
+            <button class="ddItem sel" role="menuitem">30 天<span class="tick">✓</span></button>
+            <button class="ddItem" role="menuitem">60 天<span class="tick">✓</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">♻</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">笔记回收站 <button class="ht" aria-label="帮助">?</button></div>
+          <div class="sRowDesc">删掉的笔记先进回收站，超过该天数后自动销毁（不可恢复）</div>
+        </div>
+        <div class="dd" data-dd="trash">
+          <button class="ddBtn"><span class="ddVal">15 天</span><span class="caret">▾</span></button>
+          <div class="ddMenu" role="menu">
+            <button class="ddItem" role="menuitem">关<span class="tick">✓</span></button>
+            <button class="ddItem" role="menuitem">7 天<span class="tick">✓</span></button>
+            <button class="ddItem sel" role="menuitem">15 天<span class="tick">✓</span></button>
+            <button class="ddItem" role="menuitem">30 天<span class="tick">✓</span></button>
+            <button class="ddItem" role="menuitem">60 天<span class="tick">✓</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">💎</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">保护常用内容</div>
+          <div class="sRowDesc">打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span></button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon"><span class="sRowIconGlyph">🗑</span></span>
+        <div class="sRowBody">
+          <div class="sRowLabel">清理过期记录</div>
+          <div class="sRowDesc">12 条记录已过期</div>
+        </div>
+        <button class="sAction">清理 12 条</button>
+      </div>
+    </div>
+    <div class="metrics"></div>
+  </section>
+</div>
+
+<div class="note">
+  <b>实测读数</b>（同一浏览器、同一套真实 CSS 数值；行数用 <code>Range.getClientRects()</code> 数，不是估的）
+  <table class="tbl">
+    <thead><tr><th>舞台宽</th><th>现状</th><th>甲（上线版）</th><th>乙</th><th>丙</th></tr></thead>
+    <tbody>
+      <tr><td>340</td><td>24 行 / 455px</td><td><b>2 行 / 113px（降行）</b></td><td>13 行 / 290px</td><td>2 行 / 77px</td></tr>
+      <tr><td>380 ≈ 你截图</td><td>6 行 / 151px</td><td><b>2 行 / 113px（降行）</b></td><td>5 行 / 136px</td><td>2 行 / 77px</td></tr>
+      <tr><td>460 常见窄窗</td><td>3 行 / 92px</td><td><b>1 行 / 101px（降行）</b></td><td>3 行 / 92px ＝现状</td><td><b>1 行 / 65px</b></td></tr>
+      <tr><td>620</td><td>1 行 / 65px</td><td>1 行 / 101px（尚未换回并排）</td><td>1 行 / 77px（反高 12px）</td><td>1 行 / 65px</td></tr>
+      <tr><td>640</td><td>1 行 / 65px</td><td>1 行 / 65px ＝现状（临界点）</td><td>1 行 / 77px</td><td>1 行 / 65px</td></tr>
+      <tr><td>800 上限</td><td>1 行 / 65px</td><td>1 行 / 65px ＝现状</td><td>1 行 / 77px</td><td>1 行 / 65px</td></tr>
+    </tbody>
+  </table>
+  <b>门控对照</b>（上线版只降「≥4 档」的行；这几行是<b>不该被动到</b>的，base 与甲两格实测）
+  <table class="tbl">
+    <thead><tr><th>舞台宽</th><th>三档对照行</th><th>开关行</th><th>按钮行</th></tr></thead>
+    <tbody>
+      <tr><td>340</td><td>136 ＝ 136</td><td>74 ＝ 74</td><td>65 ＝ 65</td></tr>
+      <tr><td>380</td><td>104 ＝ 104</td><td>74 ＝ 74</td><td>65 ＝ 65</td></tr>
+      <tr><td>460</td><td>89 ＝ 89</td><td>65 ＝ 65</td><td>65 ＝ 65</td></tr>
+      <tr><td>620</td><td>74 ＝ 74</td><td>65 ＝ 65</td><td>65 ＝ 65</td></tr>
+      <tr><td>640</td><td>74 ＝ 74</td><td>65 ＝ 65</td><td>65 ＝ 65</td></tr>
+      <tr><td>800</td><td>65 ＝ 65</td><td>65 ＝ 65</td><td>65 ＝ 65</td></tr>
+    </tbody>
+  </table>
+  <b>怎么读这两张表</b>：
+  ① <b>乙在任何一档都没治好</b>——控件只让出 12px（222→210），460 档与现状一字不差，640 档因两排胶囊反而高 12px。<b>建议出局</b>。
+  ② <b>甲</b>把<b>被门控命中的行</b>（≥4 档）在每一档都压回 1–2 行；340/380 档比现状<b>省 342px / 38px 行高</b>
+  （现状那两档已经塌成 24 行 / 455px，文字列只剩 8px 宽）。代价是中段：460 档 101px（现状 92，+9px）、
+  620 档 101px（现状 65，<b>最坏 +36px</b>）；≥640 与现状<b>逐像素相同</b>，临界点实测精确在 <b>640px</b>（638 仍降行）。
+  ③ <b>丙</b>指标最好（行高恒定 65px，460 档就单行），因为右栏从 222px 缩到 64px；但它动的是交互形态——多选一从「一眼全见」变成「先点开」。
+  ④ 门控是<b>有意的取舍，不是漏修</b>：不加 ≥4 档这一道，2 档的「表头 / 来源图标」行会从 65px 抬到 147px（描述短、控件窄，
+  却因保底宽被强制换列）。上表左列就是加了门控后 2–3 档行的实测——六档全部与现状相同。
+  <b>设置页 11 个行末分段控件全量清点</b>（grep <code>sSegGroup|sCleanup</code>，规则 #11.1）：
+  ≥4 档 → 命中降级：自动清理 5、笔记回收站 5、栈容量 4（<code>STACK_MAX_TIERS</code>）；
+  2–3 档 → 保持并排：拆行格式 2、表头 2、来源图标 2、OCR 选字模式 2、面板布局 2、RC 能力上限 2、Hover 模式 3。
+  ⑤ <b>本门控治不了的另一种挤</b>：「OCR 选字模式」是 2 档控件 + 约 95 字描述，控件只占 ~110px，
+  换列也救不了多少（窄窗下描述照样多行），且它属于「长描述」问题而非「右列挤压」问题。
+  这条留作待拍：要么拆描述、要么给它单独降级阈值，不与本次混做。
+  <br /><b>实施中踩到的两个 bug（勾「退回上一版」当场重现）</b>：
+  (a) 保底宽写死 <code>320px</code> → 内容列 &lt;372（含截图那档 380）时<b>文字列自己被甩到第二行、图标悬空</b>，行高 150px；
+      封顶成 <code>min(320px, 100% - 52px)</code> 后图标全程与文字同行，380 档 113px。
+  (b) 降下来的胶囊<b>落在行首</b>（离右边界 101–141px）——`.sRow > :last-child` 的 <code>justify-content:flex-end</code>
+      只管控件内部，挪不动控件本身；补 <code>margin-left:auto</code> 后落回离右边界 17px（=16px 内边距），
+      且实测 ≥640 并排档逐像素不变（剩余空间先被 <code>flex-grow:1</code> 的文字列吃光，auto 分到 0）。
+  <br /><b>实机点验清单（jsdom 与本页都量不到真窗口，这四条必须在 app 里看）</b>：
+  (1) 拖动设置窗口在 640px 临界附近来回，换列是 0/1 突变（行高 65↔101 一步切换），看肉眼是否觉得抖；
+  (2) 甲降行后与相邻开关行/按钮行的行高差观感，以及右对齐（上线版默认）vs 落回行首（本页可切）选哪个；
+  (3) 深色主题下胶囊组落到描述下方时缺了右侧留白做分隔，要不要补一条 <code>border-top</code> 或上边距；
+  (4) app 里 7 个 2–3 档行（拆行格式 / 表头 / 来源图标 / OCR 选字模式 / 面板布局 / RC 能力上限 / Hover 模式）逐像素未变，
+      而「栈容量」（4 档）应与两行胶囊清理档一起降行。
+</div>
+
+<script>
+const slider = document.getElementById("w");
+const wv = document.getElementById("wv");
+const stages = [...document.querySelectorAll(".stage")];
+
+/** 精确行数：Range.getClientRects() 每个矩形 = 一行文字，与 font/line-height 无关 */
+function lineCount(el) {
+  const node = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+  if (!node) return 0;
+  const r = document.createRange();
+  r.selectNodeContents(node);
+  const tops = new Set();
+  for (const rect of r.getClientRects()) {
+    if (rect.width < 1) continue;
+    // 2px 容差：同一行因基线浮动被拆成两个矩形时只算一次
+    const key = [...tops].find((t) => Math.abs(t - rect.top) < 2);
+    if (key === undefined) tops.add(rect.top);
+  }
+  return tops.size;
+}
+
+/** 「控件和文字在同一条 flex line 上」= 两者左右并排。
+ *  🔴 判据必须是横向相邻，不能比 top：现状那行描述已经 3 行了，label 在 body 顶部、
+ *  胶囊垂直居中，两个矩形在纵向上根本不相交，比 top 会把「并排」误判成「已换行」。 */
+function sideBySide(body, ctl) {
+  const b = body.getBoundingClientRect(), c = ctl.getBoundingClientRect();
+  return c.left >= b.right - 1;
+}
+
+function measure(stage) {
+  const rows = [...stage.querySelectorAll(".sRow")].slice(0, 2); // 只看被挤的两行
+  const descs = rows.map((r) => r.querySelector(".sRowDesc"));
+  const bodies = rows.map((r) => r.querySelector(".sRowBody"));
+  const ctls = rows.map((r) => [...r.children].at(-1));
+  const lines = descs.map((d) => lineCount(d));
+  const heights = rows.map((r) => Math.round(r.getBoundingClientRect().height));
+  const paired = rows.map((r, i) => sideBySide(bodies[i], ctls[i]));
+  const ctlW = Math.round(ctls[0].getBoundingClientRect().width);
+  const bodyW = Math.round(bodies[0].getBoundingClientRect().width);
+  /* 🔴 图标有没有和文字**在同一行**：判据必须是水平相邻（文字列起点在图标右侧），不能比 top——
+     `.sRow` 是 `align-items:center`，描述一超过 3 行，图标与文字的 top 就差过阈值，
+     会把「本来正常的多行行」误报成孤行。真炸的形态是文字列自己换到第二行、
+     left 退到与图标齐平（56），那才是「图标悬空」（上一版写死 320 在 380 档就是这样）。 */
+  const glued = rows.map((r, i) => {
+    const icon = r.querySelector(".sRowIcon");
+    if (!icon) return true;
+    return bodies[i].getBoundingClientRect().left > icon.getBoundingClientRect().right - 1;
+  });
+  // 降下来的控件离右边界多远（= margin-left:auto 有没有把它拉回右列）
+  const ctlRight = Math.round(rows[0].getBoundingClientRect().right - ctls[0].getBoundingClientRect().right);
+  return { lines, heights, paired, ctlW, bodyW, glued, ctlRight };
+}
+
+/* 临界点（load 时扫一次，之后每格 metrics 尾巴上带着它） */
+const bp = {};
+
+/* 🔴 扫描上限必须是舞台能给的最大宽（800），target 是「允许几行」。
+   上一版把这两个参数写反了（scanBreakpoint(stage, 1) 里的 1 被当成上限），
+   导致循环一次都没跑、四案统统报「做不到」。 */
+function scanBreakpoint(stage, maxLines, sameLineOnly) {
+  const lo = 320, hi = 800;
+  for (let w = lo; w <= hi; w += 2) {
+    stage.style.width = w + "px";
+    const m = measure(stage);
+    // 图标被甩成孤行的宽度不算「达标」，否则报出来的临界点是坏的
+    if (!m.glued.every(Boolean)) continue;
+    if (sameLineOnly ? m.paired.every(Boolean) : m.lines.every((l) => l <= maxLines)) return w;
+  }
+  return null; // 扫到最宽也达不到
+}
+
+function render() {
+  const w = +slider.value;
+  document.documentElement.style.setProperty("--panel-w", w + "px");
+  wv.textContent = w;
+  stages.forEach((stage) => {
+    const m = measure(stage);
+    const box = stage.closest(".case").querySelector(".metrics");
+    const oneLine = m.lines.every((l) => l <= 1);
+    box.innerHTML =
+      '<span class="' + (oneLine ? "ok" : "bad") + '">描述行数 <b>' + m.lines.join(" / ") + "</b></span>" +
+      '<span>行高 <b>' + m.heights.join(" / ") + " px</b></span>" +
+      '<span>文字列实占 <b>' + m.bodyW + " px</b></span>" +
+      '<span class="' + (m.glued.every(Boolean) ? "ok" : "bad") + '">图标同行 <b>' +
+        (m.glued.every(Boolean) ? "是" : "否（图标被甩成孤行）") + "</b></span>" +
+      '<span>控件并排 <b>' + (m.paired.every(Boolean) ? "是" : "已降到下一行") + "</b></span>" +
+      '<span>控件实占 <b>' + m.ctlW + " px</b></span>" +
+      '<span>控件离右边界 <b>' + m.ctlRight + " px</b></span>" +
+      // 临界点是 load 时扫一次的固定值，拖滑杆不该把它擦掉
+      (bp[stage.closest(".case").dataset.case] ?? "");
+  });
+}
+
+function renderAll() { render(); }
+
+slider.addEventListener("input", render);
+document.getElementById("alignL").addEventListener("change", (e) => {
+  document.querySelector(".optA").classList.toggle("alignLeft", e.target.checked);
+  render();
+});
+document.getElementById("regressOld").addEventListener("change", (e) => {
+  document.querySelector(".optA").classList.toggle("regressOld", e.target.checked);
+  render();
+});
+document.querySelectorAll("[data-jump]").forEach((b) =>
+  b.addEventListener("click", () => { slider.value = b.dataset.jump; render(); })
+);
+
+/* 丙的下拉：真交互，点开/选中/Esc/点外关闭 */
+document.querySelectorAll("[data-dd]").forEach((dd) => {
+  const btn = dd.querySelector(".ddBtn");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.querySelectorAll("[data-dd].open").forEach((o) => o !== dd && o.classList.remove("open"));
+    dd.classList.toggle("open");
+  });
+  dd.querySelectorAll(".ddItem").forEach((it) =>
+    it.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dd.querySelectorAll(".ddItem").forEach((o) => o.classList.remove("sel"));
+      it.classList.add("sel");
+      dd.querySelector(".ddVal").textContent = it.textContent.replace("✓", "").trim();
+      dd.classList.remove("open");
+      stages.forEach((s) => s.style.width = "");
+      render();
+    })
+  );
+});
+document.addEventListener("click", () => document.querySelectorAll("[data-dd].open").forEach((o) => o.classList.remove("open")));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.querySelectorAll("[data-dd].open").forEach((o) => o.classList.remove("open"));
+});
+
+/* 先量一次，再扫临界点（扫描会临时改宽度，扫完恢复），最后渲染度量 */
+window.addEventListener("load", () => {
+  const out = [];
+  stages.forEach((stage) => {
+    const name = stage.closest(".case").dataset.case;
+    const bp1 = scanBreakpoint(stage, 1, false);        // 描述压回 1 行所需最小宽
+    const ctlSame = scanBreakpoint(stage, 1, true);      // 控件回到与文字并排所需最小宽
+    stage.style.width = "";
+    out.push({ name, bp1, ctlSame });
+  });
+  render();
+  // 把临界点存进 bp，交给 render 每次一并画上（insertAdjacentHTML 会被下一次 render 擦掉）
+  out.forEach(({ name, bp1, ctlSame }) => {
+    bp[name] =
+      '<span>描述单行需 ≥ <b>' + (bp1 === null ? "800 也不够" : bp1 + "px") + "</b></span>" +
+      '<span>控件并排需 ≥ <b>' + (ctlSame === null ? "800 也不够" : ctlSame + "px") + "</b></span>";
+  });
+  render();
+  console.log("breakpoints", JSON.stringify(out));
+});
+</script>
+</body>
+</html>

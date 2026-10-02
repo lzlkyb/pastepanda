@@ -527,7 +527,8 @@
    🔴 排除 .sToggle：开关自己就是 last-child，吃掉 min-width:72 会把 44×26
    轨道撑成 72px 长胶囊（旋钮贴边、字挤），和设计稿对不上。
    🔴 不写 gap / flex-wrap：子控件自己的间距（sCleanup 4px、sSegGroup 2px）
-   特异性压不过本规则，写了会把它们盖掉。
+   特异性压不过本规则，写了会把它们盖掉。（下面那条降级规则的 flex-wrap 加在 `.sRow`
+   自己身上，不是这条的 `:last-child`，两者不冲突。）
    🔴 排除 [data-stack]：本规则是 0-4-0（.sRow + :last-child + 两个 :not()），
    分区里那些「整块纵向内容恰好排在行末」的子节点（灵动岛的停靠六宫格、透度滑杆）
    自己的 0-1-0 规则必输，`display:grid/column` 会被拍成右对齐单行——跨 module 也没法
@@ -538,6 +539,53 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+}
+
+/* 行末控件挤掉描述时的降级（2026-10-02「右列挤爆」三案实测的甲案）。
+   上面那条 `flex-shrink: 0` 是对的——控件不该被压扁；但它遇上 5 档胶囊（实测实占 222px）
+   就会反过来饿死描述列：460px 内容列下 `.sRowBody` 只剩 140px，一句话折成 3 行，
+   380px（用户截图那档）折成 6 行、整行 151px 高。
+
+   降级：控件与文字挤不进同一行时，让**整块控件**落到描述下方，描述独享整幅。
+
+   🔴 触发条件是「行末那个多选一控件有 ≥4 档」，不是「行末有控件」。第一版写成
+   `.sRow:has(> .sCleanup:last-child), .sRow:has(> .sSegGroup:last-child)`，四种行原型实测
+   把 2 档的「表头 / 来源图标」也从 65px 抬到 147px——那些行的描述本来一行读完，纯属误伤。
+   按档数收口后实测：≥4 档行降级（自动清理 5 / 笔记回收站 5 / 栈容量 4），2·3 档行逐像素不动。
+   全量清点 11 个行末分段控件（grep `sSegGroup|sCleanup`）：2 档 6 个（拆行格式、表头、来源图标、
+   OCR 选字模式、面板布局、RC 能力上限）+ 3 档 1 个（Hover 模式）留在并排，4 档 1 个 + 5 档 2 个降级。
+   仍用 `:has()` 而不是逐个调用点加类名，是因为「第 5 个宽控件行」一定会被写出来（规则 #11.1）。
+
+   ❌ 也试过让每行按自己描述的长度决定保底宽（`flex: 1 1 min(320px, max-content)`）：
+   Chromium 判 `flex-basis` 里的 `min()` 含**内在关键字**为非法，整条声明被丢弃＝等于没写
+   （`CSS.supports('flex-basis','min(320px, max-content)')` 为 false）。
+   但 `min()` 配长度/百分比是合法的——下面那条就用它兜住了窄窗。
+
+   🔴 `320px` 是量出来的，不是凑的：浏览器实测（`Range.getClientRects()` 数行数）扫过
+   280/310/330/360 四档——basis 280 时「控件能并排」与「并排且描述单行」之间留了 18px
+   的尴尬档（那 18px 里描述照旧折行、等于这条没生效）；≥310 两个临界点重合。
+   取 320 留余量（本区最长描述 27 字 ≈ 312px）。
+   宽窗口（内容列 ≥640）下实测与改前**逐像素相同**：文字列 320px、行高 65px 两档一致。
+
+   🔴 保底宽必须封顶到 `100% - 52px`（52 = `.sRowIcon` 40 + `.sRow` 的 gap 12）：
+   写死 320 时，内容列 <372 的窄窗（**含用户截图那档 380**）里 `.sRowBody` 自己就挤不进
+   图标那一行，换列算法把它整块甩到第二行 ⇒ 图标单独悬在顶上、三行堆叠 150px。
+   实测封顶后：340/380 档图标与文字同行、行高 113px（描述 2 行），460–620 档 101px 不变，
+   ≥640 档 65px 与现状逐像素相同。
+
+   🔴 降下来的控件靠 `margin-left: auto` 回到右列（对齐 16px 内边距），**不是**靠
+   `.sRow > :last-child` 那条的 `justify-content: flex-end`——那条管的是控件**自己内部**的
+   子元素，挪不动控件本身；第一版没写这条，胶囊落在行首（跟图标左缘齐平），
+   设计稿里「默认右对齐」的说法当时是假的。实测 `margin-left:auto` 在并排档（≥640）
+   是零影响：那一行的剩余空间先被 `flex-grow:1` 的文字列吃光，auto 外边距分到 0。 */
+.sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) {
+  flex-wrap: wrap;
+}
+.sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > .sRowBody {
+  flex: 1 1 min(320px, 100% - 52px);
+}
+.sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > :last-child:not(.sToggle) {
+  margin-left: auto;
 }
 
 /* emoji + 彩砖 + 白圆盘（最终稿：圆盘必须是真实 DOM，不能用 ::before） */

@@ -142,3 +142,52 @@ describe("整块纵向内容必须显式退出「.sRow 右控件列」规则", (
     }
   });
 });
+
+/**
+ * 「行末宽控件饿死描述列」的降级规则（2026-10-02 三案实测的甲案）。
+ *
+ * jsdom 量不到布局 ⇒ 只能钉源码文本。三样少任何一样，数据管理那两行就退回
+ * 「一句话折 3–6 行」的挤法（`flex-shrink:0` 又不会报错，静默回归）：
+ *  ① 降级触发条件是「行末多选一 ≥4 档」（`:has(... > :nth-child(4))`），不是「行末有控件」——
+ *     后者实测把 2 档行从 65px 抬到 147px，纯属误伤；
+ *  ② 覆盖方式是 `:has()` 一条规则而不是逐个调用点加类名——后者一定会漏第 5 个宽控件行（规则 #11.1）；
+ *  ③ basis 是实测出来的 **320**（280 会留 18px「描述照旧折行」的尴尬档）。
+ *
+ * 🔴 断言跑在**去注释**的 CSS 上：注释里原样记着被否掉的写法
+ *    （`flex: 1 1 min(320px, max-content)`、旧版 `:has(> .sCleanup:last-child)`），
+ *    拿整份文件比就把「文档」当成「代码」了。
+ */
+describe("行末胶囊/分段控件必须能自动降级到描述下方", () => {
+  const root = process.cwd();
+  const rawCss = readFileSync(join(root, "src", "components", "Settings.module.css"), "utf8");
+  const sharedCss = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("降级触发条件是「行末多选一 ≥4 档」，两类控件都覆盖", () => {
+    // 用字面量正则而不是 new RegExp(模板串)：字符串里 `\.` 会被 JS 先吞成 `.`
+    expect(sharedCss).toMatch(
+      /\.sRow:has\(> :last-child:is\(\.sCleanup, \.sSegGroup\) > :nth-child\(4\)\)\s*\{\s*flex-wrap: wrap;/
+    );
+    expect(sharedCss).toMatch(
+      /\.sRow:has\(> :last-child:is\(\.sCleanup, \.sSegGroup\) > :nth-child\(4\)\) > \.sRowBody\s*\{/
+    );
+    // 旧版「行末只要有控件就降级」必须已经不在代码里（注释里留着当反面教材是允许的）
+    expect(sharedCss).not.toMatch(/:has\(> \.s(?:Cleanup|SegGroup):last-child\)/);
+  });
+
+  /** 两条都是实测换来的，退回写法就分别炸成「图标悬空孤行」和「胶囊掉在行首」：
+   *  ① 保底宽封顶 `100% - 52px`：写死 320 时内容列 <372（用户截图那档）图标被甩成单独一行；
+   *  ② `margin-left: auto`：控件自己那行的 `justify-content:flex-end` 挪不动控件本身。 */
+  it("保底宽必须封顶到 100%-52px，降下来的控件必须拉回右列", () => {
+    expect(sharedCss).toMatch(/flex: 1 1 min\(320px, 100% - 52px\);/);
+    expect(sharedCss).not.toMatch(/flex: 1 1 320px;/);
+    expect(sharedCss).toMatch(
+      /\.sRow:has\(> :last-child:is\(\.sCleanup, \.sSegGroup\) > :nth-child\(4\)\) > :last-child:not\(\.sToggle\)\s*\{\s*margin-left: auto;/
+    );
+  });
+
+  it("保底宽是实测出来的 320（写回 280 就留下 18px 挤而不换行的尴尬档）", () => {
+    // 🔴 不接受 `min(320px, max-content)`：Chromium 判含内在关键字为非法，整条声明被丢弃＝等于没写
+    expect(sharedCss).not.toMatch(/max-content/);
+    expect(sharedCss).toMatch(/min\(320px,/);
+  });
+});
