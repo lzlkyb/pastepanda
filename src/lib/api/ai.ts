@@ -320,6 +320,22 @@ export async function aiListContentTypes(): Promise<AiContentTypeOption[]> {
   return invoke<AiContentTypeOption[]>("ai_list_content_types");
 }
 
+/** 本地分类结果：粗类型 + 语言级标签（判不出语言时后端给 null） */
+export interface AiClassifyResult {
+  contentType: string;
+  language: string | null;
+}
+
+/**
+ * 给一段文本算 `contentType`（截图 AI 弹层复用主窗口打分用）。
+ *
+ * 后端走 `ContentClassifier`：纯正则规则，不联网、不花钱，所以**不受 AI 开关门控**
+ * （规则 16.4「本地能力不算 AI 功能」）。分类只有一处在后端，前端不另造判据。
+ */
+export async function aiClassifyText(text: string): Promise<AiClassifyResult> {
+  return invoke<AiClassifyResult>("ai_classify_text", { text });
+}
+
 export async function aiListCustomActions(): Promise<AiCustomAction[]> {
   return invoke<AiCustomAction[]>("ai_list_custom_actions");
 }

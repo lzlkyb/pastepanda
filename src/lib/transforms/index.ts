@@ -71,6 +71,7 @@ export {
   refreshAiAvailability,
   reloadAiCustomActions,
   scoreByContentTypes,
+  aiActionScore,
   isAiAvailable,
   setAiAvailable,
   scoreAiAction,

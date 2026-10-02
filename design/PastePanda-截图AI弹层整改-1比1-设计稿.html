@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PastePanda · 截图 AI 弹层整改 1:1 实景稿</title>
+
+<!-- 这三张表是**产品真用的样式表**，不是抄写件（与 src/screenshot-main.tsx 的导入顺序一致）。
+     所以本页量出来的每一个像素、每一种主题色，都是改完之后应用里会出现的值。
+     弹层家族（.pop-layer / .pop-row / .act-group）直接吃 screenshot.css 的现有规则，
+     本页只为「整改后新增的那几层」打补丁（见下方 #app.after 段）。 -->
+<link rel="stylesheet" href="../src/styles/globals.css" />
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/styles/screenshot.css" />
+
+<style>
+html, body { width: 100%; height: 100%; overflow: hidden; margin: 0; }
+body { background: #05070d; }
+/* 1:1 的「1:1」是**逻辑像素**，不是浏览器窗口大小：真实截图窗是全屏透明层，
+   版式公式吃的是屏幕 CSS 像素。所以固定一块 1440×900 的「屏幕」再整体缩放，
+   缩放只发生在最后一步，不影响任何一个 offset* 测量值。 */
+#app { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; flex: none; width: var(--sw, 1440px); height: var(--sh, 900px);
+  transform: scale(var(--k, 1)); overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .65), 0 0 0 1px rgba(148, 168, 255, .22); }
+
+/* 被截的那块屏 */
+.desk { position: absolute; inset: 0; overflow: hidden;
+  background: linear-gradient(120deg, #1d3a5f 0%, #2b5c86 38%, #10233c 39%, #0b1526 100%); }
+.desk .win { position: absolute; left: 4%; top: 6%; width: 66%; height: 80%;
+  background: #fff; color: #1f2937; border-radius: 10px; box-shadow: 0 24px 70px rgba(0,0,0,.5);
+  overflow: hidden; font-size: 13px; line-height: 1.75; }
+.desk .win .bar { height: 30px; background: #f1f3f7; border-bottom: 1px solid #e2e6ee;
+  display: flex; align-items: center; gap: 6px; padding: 0 12px; color: #6b7280; font-size: 11px; }
+.desk .win .bar i { width: 9px; height: 9px; border-radius: 50%; background: #d7dce4; display: block; }
+.desk .win .doc { padding: 14px 20px; }
+.desk .win h4 { font-size: 16px; margin: 0 0 6px; color: #111827; }
+.desk .win .code { background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 6px;
+  padding: 7px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: #0f3460; }
+.shot-root { position: absolute; inset: 0; }
+.scrim { position: absolute; inset: 0; background: rgba(5, 8, 14, .52); }
+
+/* ============ 整改后新增层（落地时搬进 screenshot.css） ============ */
+/* D3 头部一次性标记：外观逐条抄自 AiMark.module.css 的 .mark/.badge/.brand/.xs/.grad，
+   不重设计——它是全站唯一 AI 标识实现，抄错就是第 7 处分叉。 */
+#app.after .pop-head { gap: 8px; }
+#app.after .pop-head .ht { display: flex; flex-direction: column; gap: 2px; }
+#app.after .pop-head .sub { font-size: 10.5px; font-weight: 400; color: var(--text-muted); letter-spacing: 0; }
+.aimark { display: inline-flex; align-items: center; white-space: nowrap; flex: none;
+  font-size: 8.5px; font-weight: 600; line-height: 1.5; padding: 0 4px; border-radius: 5px;
+  gap: 2px; vertical-align: middle; color: var(--brand-ai-from);
+  background: var(--accent-light); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.aimark .grad { background: linear-gradient(92deg, var(--brand-ai-from) 0%, var(--brand-ai-to) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.aimark svg { flex: none; }
+
+/* 搜索行：23 条动作没有第二招，打字即筛是唯一解（Raycast / Cursor 的命令面板同款） */
+.pop-search { display: flex; align-items: center; gap: 7px; padding: 7px 10px;
+  border-bottom: 1px solid var(--border-color); }
+.pop-search .sic { color: var(--text-muted); display: flex; flex: none; }
+.pop-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font: inherit; font-size: 12px; color: var(--text-primary); }
+.pop-search input::placeholder { color: var(--text-muted); }
+.pop-search .kbd { font-size: 9.5px; color: var(--text-muted); font-family: ui-monospace, Consolas, monospace;
+  white-space: nowrap; }
+
+/* 分组头：直接复用出口面板的 .act-group（同一套字号/字重/分隔线），不新发明一档 */
+.pop-body .act-group:first-child { border-top: 0; margin-top: 0; }
+.pop-body { padding: 4px 8px 8px; }
+.pop-row .ic { color: var(--text-muted); }
+.pop-row.on .ic { background: var(--accent-light); color: var(--accent-strong); }
+.pop-row.on { background: var(--hover); }
+/* 行内不再放「✦ 云端」：23 行重复 23 次同一句话，而这句话头部已经说了 */
+
+/* 滚动可见性：max-height 收到 42vh，底部渐隐提示「下面还有」 */
+#app.after .pop-layer { overflow: hidden; }
+.pop-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--float-card-bg)); display: none; }
+#app.after .pop-layer.scrolled .pop-fade { display: block; }
+.pop-keys { display: flex; gap: 10px; padding: 6px 12px; border-top: 1px solid var(--border-color);
+  font-size: 9.5px; color: var(--text-muted); font-family: ui-monospace, Consolas, monospace; }
+.pop-none { padding: 18px 12px; text-align: center; font-size: 11px; color: var(--text-muted); }
+/* 「展开全部」行：外观照抄出口面板的 .act-row.expand（同一句话在同一屏里只该有一种长相） */
+.pop-row.expand .ic { background: transparent; border: 1px dashed var(--border-color); color: var(--text-muted); }
+.pop-row.expand .lbl { color: var(--text-muted); }
+
+/* 整改点角标 */
+.mark { position: absolute; z-index: 96; width: 17px; height: 17px; border-radius: 50%;
+  display: none; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+  background: var(--accent-solid); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.45); }
+#app.after.showmarks .mark { display: flex; }
+
+/* ============ 右侧控件栏：设计稿外壳，不属于产品 UI ============ */
+#rail { position: fixed; right: 12px; top: 12px; width: 262px; z-index: 200;
+  max-height: calc(100vh - 24px); overflow: auto;
+  background: rgba(9,14,24,.92); border: 1px solid rgba(148,168,255,.28); border-radius: 12px;
+  padding: 11px 12px; font-size: 11.5px; color: #c7d3e6; line-height: 1.6;
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif; }
+#rail h5 { margin: 0 0 2px; font-size: 12px; color: #e6edf7; }
+#rail .who { font-size: 10px; color: #7f93b5; margin-bottom: 8px; }
+#rail .grp { margin-top: 9px; }
+#rail .grp > span { display: block; font-size: 10px; color: #7f93b5; margin-bottom: 3px; letter-spacing: .3px; }
+#rail button { font: inherit; color: #c7d3e6; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(148,168,255,.22); border-radius: 7px; padding: 3px 7px; cursor: pointer; margin: 0 3px 3px 0; }
+#rail button.on { background: #2d78c2; border-color: transparent; color: #fff; }
+#rail .lg { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,168,255,.2); font-size: 10.5px; color: #9db2d0; }
+#rail .lg b { color: #cdd9ea; }
+#rail code { font-family: ui-monospace, Consolas, monospace; font-size: 10px; color: #cdd9ea; }
+#rail .bad { color: #fca5a5; } #rail .good { color: #6ee7b7; }
+/* 矩阵表：设计稿外壳，允许自己的排版（不属于产品 UI） */
+#rail .mx { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 9.5px; }
+#rail .mx th { text-align: left; font-weight: 600; color: #7f93b5; padding: 2px 3px; border-bottom: 1px solid rgba(148,168,255,.28); }
+#rail .mx td { padding: 3px; border-bottom: 1px solid rgba(148,168,255,.12); vertical-align: top; color: #9db2d0; }
+#rail .mx tr.bad td { color: #fca5a5; } #rail .mx tr.good td { color: #6ee7b7; }
+#rail .mx .pill { display: inline-block; margin-left: 3px; padding: 0 4px; border-radius: 4px;
+  background: rgba(110,231,183,.16); color: #6ee7b7; font-size: 9px; }
+</style>
+</head>
+<body>
+<div id="app" class="after">
+  <div id="stage">
+    <div class="desk">
+      <div class="win">
+        <div class="bar"><i></i><i></i><i></i> 需求备忘.md — PastePanda</div>
+        <div class="doc" id="doc"></div>
+      </div>
+    </div>
+    <div class="shot-root" id="root"></div>
+  </div>
+</div>
+
+<aside id="rail">
+  <h5>截图 AI 弹层 · 1:1 实景</h5>
+  <div class="who">右侧控件是设计稿外壳，不属于产品界面</div>
+
+  <div class="grp"><span>对照</span>
+    <button data-mode="before">现状</button>
+    <button data-mode="after">整改后</button>
+    <button data-marks="1">整改点角标</button>
+  </div>
+  <div class="grp"><span>D1 弹层归属</span>
+    <button data-d1="side">贴选区（默认，layoutSidePanel）</button>
+    <button data-d1="bottom">底部居中（现状）</button>
+  </div>
+  <div class="grp"><span>D2 面板宽</span>
+    <button data-d2="320">320（默认）</button>
+    <button data-d2="440">440（现状）</button>
+  </div>
+  <div class="grp"><span>D3 云端标记</span>
+    <button data-d3="head">头部一次（默认）</button>
+    <button data-d3="row">每行一枚</button>
+    <button data-d3="none">不放</button>
+  </div>
+  <div class="grp"><span>D4 推荐段</span>
+    <button data-d4="score">打分（默认，复用主窗口公式）</button>
+    <button data-d4="flat">不打分，只一段</button>
+  </div>
+  <div class="grp"><span>D7 与工具栏的关系</span>
+    <button data-d7="cover">面板盖住工具栏（默认）</button>
+    <button data-d7="avoid">躲工具栏</button>
+  </div>
+  <div class="grp"><span>D8 推荐段条数</span>
+    <button data-d8="top3">前 3（默认，同主窗口枢纽）</button>
+    <button data-d8="all">所有正分</button>
+  </div>
+  <div class="grp"><span>D5 长列表</span>
+    <button data-exp="0">推荐 + 展开全部（默认）</button>
+    <button data-exp="1">直接摊开 23 项</button>
+  </div>
+  <div class="grp"><span>D6 侧向选择（side 档）</span>
+    <button data-d6="tall">可用高度优先（默认）</button>
+    <button data-d6="right">右侧优先（抽屉同款）</button>
+  </div>
+  <div class="grp"><span>选区位置</span>
+    <button data-sel="tr">右上角</button>
+    <button data-sel="mid">中央</button>
+    <button data-sel="bl">左下角</button>
+    <button data-sel="wide">超宽</button>
+  </div>
+  <div class="grp"><span>识别到的文字（影响推荐段）</span>
+    <button data-txt="long">中文段落（<span data-txtstat="long">…</span>）</button>
+    <button data-txt="code">68 行 TS 代码</button>
+    <button data-txt="short">8 个字</button>
+  </div>
+  <div class="grp"><span>其他</span>
+    <button data-t="theme">换主题</button>
+    <button data-t="screen">屏幕 1440×900</button>
+    <button data-t="band">底部带（回执）</button>
+    <button data-t="busy">运行中</button>
+  </div>
+  <div class="grp"><span>搜索词（也可直接在面板里打字）</span>
+    <button data-q="">空</button>
+    <button data-q="代码">代码</button>
+    <button data-q="周报">周报</button>
+    <button data-q="zzz">无匹配</button>
+  </div>
+
+  <div class="lg" id="geo"></div>
+  <div class="lg"><b>现状缺陷实测</b>（切到「现状」对照，1440×900 / 中央选区）<br>
+    图标格是 <code>width:26px; flex-shrink:0</code> 且<b>没有 overflow 约束</b>，里面填的是后端返回的 lucide 名字符串：
+    23 行里 <b>20 行</b>的名字超出 26px 容器，最宽 42px（溢到容器外 16px），而图标格与标题之间只有 <b>10px</b> 间距
+    —— 于是英文串尾压在中文标题上，就是实机截图里看到的那片乱码感。<br>
+    根因在 <code>AiChainPopovers.tsx</code> 的 <code>&lt;span className="ic"&gt;{a.icon || "✦"}&lt;/span&gt;</code>：
+    它把 <code>icon</code> 当字符用，而主窗口的 <code>TransformCard</code> 是查 <code>ICONS</code> 表拿组件；
+    后端 23 个名字里只有 8 个在那张表里。<br>
+    其余三条（每行一枚「✦ 云端」、标题写死「AI 处理识别文字」、面板与选区无关）见下方矩阵与角标。
+  </div>
+  <div class="lg"><b>几何先申报</b><br>
+    工具栏按 <code>AnnotToolbar.tsx</code> 的真实按钮集渲染，<b>实测 907×54</b>（比多数选区还宽，是 D7 的全部难点）；
+    现状弹层是 CSS 死值 <code>left:50%; bottom:16px; width:440px; max-height:56vh</code>，实测 <b>440×319</b>，
+    与选区、屏幕尺寸<b>完全无关</b>（下表每格同值即证据）。<br>
+    度量口径：所有矩形用 <code>getBoundingClientRect</code> 除以舞台缩放系数换算回未缩放坐标
+    （<code>offsetLeft</code> 会吞掉 transform，而现状弹层正是靠 <code>translateX(-50%)</code> 居中的，两把尺子不可比）。
+  </div>
+  <div class="lg"><b>矩阵实测</b>（3 屏幕 × 4 选区 = 12 格，底部带开、中文段落样例（12 行）、列表为默认折叠态）<br>
+    「干净」= 不出屏 + 不压底部带 +（该档要求躲的矩形没被压）；<b>cover 档压工具栏是有意为之</b>，仍如实报数。<br>
+    <table class="mx">
+      <tr><th>档</th><th>干净</th><th>压带</th><th>压工具栏</th><th>压属性条</th><th>最坏一屏可见</th></tr>
+      <tr class="bad"><td>A 现状（底部居中 440）</td><td>0/12</td><td>12/12<br>≤4284px²</td><td>6/12<br>≤23760px²</td><td>3/12<br>≤1825px²</td><td>5/23 行</td></tr>
+      <tr class="bad"><td>F 只改内容，仍底部居中</td><td>0/12</td><td>12/12<br>≤4284px²</td><td>6/12<br>≤17280px²</td><td>1/12<br>≤325px²</td><td>3/4 行</td></tr>
+      <tr class="good"><td>B 贴选区 + cover + 前3 + 320 <span class="pill">推荐</span></td><td>12/12</td><td>0</td><td>7/12（有意）<br>≤17280px²</td><td>1/12（有意）<br>≤825px²</td><td>2/4 行</td></tr>
+      <tr><td>C 同 B，推荐段放所有正分</td><td>12/12</td><td>0</td><td>7/12（有意）</td><td>1/12（有意）</td><td>2/7 行</td></tr>
+      <tr><td>D 同 B，但真躲工具栏（avoid）</td><td>12/12</td><td>0</td><td>0</td><td>0</td><td><b>0/4 行</b></td></tr>
+      <tr><td>E 同 B，宽 440</td><td>12/12</td><td>0</td><td>5/12（有意）<br>≤23760px²</td><td>2/12（有意）<br>≤1530px²</td><td>2/4 行</td></tr>
+      <tr><td>G 同 B，但摊开 23 项（D5=摊开）</td><td>12/12</td><td>0</td><td>7/12（有意）</td><td>1/12（有意）</td><td>2/23 行</td></tr>
+      <tr><td>H 同 B，但侧向改「右侧优先」（D6=right）</td><td>12/12</td><td>0</td><td>6/12（有意）</td><td>0</td><td><b>1/4 行</b></td></tr>
+    </table>
+    <b>怎么读</b>：A/F 两行证明「继续底部居中」不可行——带子和弹层都钉在 <code>bottom:16px</code>，12 格<b>全部</b>互压，
+    现状最高的 23760px² 是工具栏被整条盖掉。D 行是 D7 的代价：真躲 907px 宽的工具栏，1366×768 左下格子只剩
+    <code>PANEL_MIN_H=120</code> 的兜底高度，头部 + 搜索条就吃满，<b>一行动作都看不见</b>——所以默认选 cover。<br>
+    <b>B 档最坏格子</b>（1366×768 / 左下选区，面板只剩 240px 高）能看 2 行；靠搜索框、滚动和尾部长渐隐补足，
+    这一格也是「为什么必须有搜索」。<br>
+    <b>D6 那一行</b>：左下选区在 1440 下「右侧优先」只拿到 208px 高（选区右边没空间，被迫挤到工具栏底下），
+    换成「可用高度优先」后同一格拿到 372px，最坏格子的可见行从 1 行回到 2 行。
+  </div>
+  <div class="lg"><b>材质未拍</b>：本稿保持双轨现状——卡片跟主题（<code>--float-card-bg</code>），截图工具条恒深（<code>--shot-bar-bg</code>）。
+    换主题按钮可当场对比 4 套主题下的观感；若要统一成一套需另开一轮。
+  </div>
+  <div class="lg"><b>角标</b> ①真图标 ②头部一次标记 ③搜索+分组 ④贴选区定位 ⑤42vh+渐隐</div>
+  <div class="lg"><b>数据是真的</b><br>
+    23 条内置动作逐字抄自 <code>src-tauri/src/ai/actions.rs</code>；
+    图标是 <code>node_modules/lucide-react@1.21.0</code> 的原始 path；
+    打分是 <code>aiTransforms.ts</code> 的 <code>scoreAiAction</code> / <code>scoreByContentTypes</code>
+    全量移植（含 MIN_CHARS / INTENT_ONLY / PROSE_ONLY / HAND_TUNED）。<br>
+    工具栏按真实按钮与文案排，宽度取实测值（见上）。</div>
+</aside>
+
+<script>
+/* ===== 真实数据：23 条内置动作（src-tauri/src/ai/actions.rs:285-540，逐字） ===== */
+const ACTIONS = [
+  ["ai-translate","翻译","把内容翻译成指定语言","languages",[]],
+  ["ai-summarize","一句话摘要","把长内容压成一句话","file-text",[]],
+  ["ai-note-tags","建议标签","给这篇笔记提几个检索用的标签","tags",[]],
+  ["ai-explain-code","解释代码","说清楚这段代码做了什么","code",["code","shell"]],
+  ["ai-rewrite","改写语气","换一种语气重写这段内容","pen-line",[]],
+  ["ai-polish","润色纠错","修掉错别字与语病，保持原意","wand-sparkles",["text","markdown"]],
+  ["ai-key-points","提取要点","把长段落拆成条目列表","list",["text","markdown","log"]],
+  ["ai-commit-message","写 commit message","根据 diff 写一条提交信息","git-commit-horizontal",["code"]],
+  ["ai-json-to-type","JSON → 类型定义","按所选语言生成类型定义","braces",["json"]],
+  ["ai-fix-code","修复代码","修掉报错与坏代码，输出可直接用的版本","wrench",["code","shell"]],
+  ["ai-regex-generate","生成正则","根据自然语言描述生成正则表达式","regex",["text"]],
+  ["ai-sql-generate","生成 SQL","根据自然语言描述生成 SQL 查询","database",["text"]],
+  ["ai-followup","继续处理","对上一次结果继续追问","message-square",["text"]],
+  ["ai-tabulate","表格化","把杂乱文本整理成 Markdown 表格","table",["text","csv","log"]],
+  ["ai-reply-draft","回复草稿","对收到的消息写一段可直接发的回复","reply",["text"]],
+  ["ai-merge-polish","合并整理","合并多段内容：去重、顺排、润色","merge",[]],
+  ["ai-weekly-report","生成周报","把本周行为统计翻译成周报文字","calendar-range",[]],
+  ["ai-daily-brief","生成今日小结","把今天的分段与统计翻译成一段小结","calendar-days",[]],
+  ["ai-diagram","生成流程图","把一句话需求画成 Mermaid flowchart","workflow",[]],
+  ["ai-diagram-expand","展开子流程","把一个流程节点拆成 3~6 个子步骤","git-branch",[]],
+  ["ai-diagram-label","润色节点文字","把流程图节点文字改得更专业简洁","pen-line",[]],
+  ["ai-kb-qa","问知识库","只根据给定的笔记片段回答问题","sparkles",[]],
+  ["ai-distill-draft","AI 成文","把一簇剪贴板摘录写成一篇笔记草稿","sparkles",[]],
+].map(([id,label,description,icon,contentTypes]) => ({ id,label,description,icon,contentTypes }));
+
+/* 图标 path：node_modules/lucide-react@1.21.0 原始 __iconNode，非手抄 */
+const ICONS = {"languages":"<path d=\"m5 8 6 6\"/><path d=\"m4 14 6-6 2-3\"/><path d=\"M2 5h12\"/><path d=\"M7 2h1\"/><path d=\"m22 22-5-10-5 10\"/><path d=\"M14 18h6\"/>","file-text":"<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"/><path d=\"M14 2v5a1 1 0 0 0 1 1h5\"/><path d=\"M10 9H8\"/><path d=\"M16 13H8\"/><path d=\"M16 17H8\"/>","tags":"<path d=\"M13.172 2a2 2 0 0 1 1.414.586l6.71 6.71a2.4 2.4 0 0 1 0 3.408l-4.592 4.592a2.4 2.4 0 0 1-3.408 0l-6.71-6.71A2 2 0 0 1 6 9.172V3a1 1 0 0 1 1-1z\"/><path d=\"M2 7v6.172a2 2 0 0 0 .586 1.414l6.71 6.71a2.4 2.4 0 0 0 3.191.193\"/><circle cx=\"10.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\"/>","code":"<path d=\"m16 18 6-6-6-6\"/><path d=\"m8 6-6 6 6 6\"/>","pen-line":"<path d=\"M13 21h8\"/><path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\"/>","wand-sparkles":"<path d=\"m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72\"/><path d=\"m14 7 3 3\"/><path d=\"M5 6v4\"/><path d=\"M19 14v4\"/><path d=\"M10 2v2\"/><path d=\"M7 8H3\"/><path d=\"M21 16h-4\"/><path d=\"M11 3H9\"/>","list":"<path d=\"M3 5h.01\"/><path d=\"M3 12h.01\"/><path d=\"M3 19h.01\"/><path d=\"M8 5h13\"/><path d=\"M8 12h13\"/><path d=\"M8 19h13\"/>","git-commit-horizontal":"<circle cx=\"12\" cy=\"12\" r=\"3\"/><line x1=\"3\" x2=\"9\" y1=\"12\" y2=\"12\"/><line x1=\"15\" x2=\"21\" y1=\"12\" y2=\"12\"/>","braces":"<path d=\"M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1\"/><path d=\"M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1\"/>","wrench":"<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z\"/>","regex":"<path d=\"M17 3v10\"/><path d=\"m12.67 5.5 8.66 5\"/><path d=\"m12.67 10.5 8.66-5\"/><path d=\"M9 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2z\"/>","database":"<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/><path d=\"M3 5V19A9 3 0 0 0 21 19V5\"/><path d=\"M3 12A9 3 0 0 0 21 12\"/>","message-square":"<path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\"/>","table":"<path d=\"M12 3v18\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M3 9h18\"/><path d=\"M3 15h18\"/>","reply":"<path d=\"M20 18v-2a4 4 0 0 0-4-4H4\"/><path d=\"m9 17-5-5 5-5\"/>","merge":"<path d=\"m8 6 4-4 4 4\"/><path d=\"M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22\"/><path d=\"m20 22-5-5\"/>","calendar-range":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/><path d=\"M16 2v4\"/><path d=\"M3 10h18\"/><path d=\"M8 2v4\"/><path d=\"M17 14h-6\"/><path d=\"M13 18H7\"/><path d=\"M7 14h.01\"/><path d=\"M17 18h.01\"/>","calendar-days":"<path d=\"M8 2v4\"/><path d=\"M16 2v4\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/><path d=\"M3 10h18\"/><path d=\"M8 14h.01\"/><path d=\"M12 14h.01\"/><path d=\"M16 14h.01\"/><path d=\"M8 18h.01\"/><path d=\"M12 18h.01\"/><path d=\"M16 18h.01\"/>","workflow":"<rect width=\"8\" height=\"8\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M7 11v4a2 2 0 0 0 2 2h4\"/><rect width=\"8\" height=\"8\" x=\"13\" y=\"13\" rx=\"2\"/>","git-branch":"<path d=\"M15 6a9 9 0 0 0-9 9V3\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/>","sparkles":"<path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\"/><path d=\"M20 2v4\"/><path d=\"M22 4h-4\"/><circle cx=\"4\" cy=\"20\" r=\"2\"/>","search":"<path d=\"m21 21-4.34-4.34\"/><circle cx=\"11\" cy=\"11\" r=\"8\"/>","x":"<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>","chevron-down":"<path d=\"m6 9 6 6 6-6\"/>","cloud":"<path d=\"M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z\"/>","list-filter":"<path d=\"M2 5h20\"/><path d=\"M6 12h12\"/><path d=\"M9 19h6\"/>"};
+function svg(name, size) {
+  const inner = ICONS[name] || ICONS.sparkles;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" ` +
+    `stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+
+/* ===== 布局：与 src/lib/screenshot/toolbarPos.ts / panelPos.ts 同一套常量与分支 ===== */
+const TB_GAP = 8, TB_ATTR_GAP = 6;
+const PANEL_GAP = 8, PANEL_MIN_H = 120, PANEL_MAX_VH = 0.62;
+const BAND_BOTTOM = 16, BAND_LIFT_GAP = 8;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function layoutToolbar(sel, tbW, tbH, attrH, vw, vh) {
+  let left = tbW <= sel.w ? sel.x + sel.w - tbW : sel.x;
+  if (left < TB_GAP) left = TB_GAP;
+  if (left + tbW > vw - TB_GAP) left = vw - TB_GAP - tbW;
+  const totalH = attrH > 0 ? tbH + TB_ATTR_GAP + attrH : tbH;
+  const belowTop = sel.y + sel.h + TB_GAP, aboveTop = sel.y - TB_GAP - totalH;
+  let top, attach;
+  if (belowTop + totalH <= vh - TB_GAP) { top = belowTop; attach = "below"; }
+  else if (aboveTop >= TB_GAP) { top = sel.y - TB_GAP - tbH; attach = "above"; }
+  else { top = sel.y + sel.h - TB_GAP - tbH;
+    if (top + tbH > vh - TB_GAP) top = vh - TB_GAP - tbH;
+    if (top < TB_GAP) top = TB_GAP; attach = "inside"; }
+  const attrTop = attach === "below" ? top + tbH + TB_ATTR_GAP : top - TB_ATTR_GAP - attrH;
+  return { left, top, attrTop, attach };
+}
+
+function layoutSidePanel(sel, panelW, vw, vh, avoid, gap = PANEL_GAP) {
+  const top = clamp(sel.y, gap, Math.max(gap, vh - gap - PANEL_MIN_H));
+  const roomAt = (l) => {
+    let h = vh - gap - top;
+    for (const r of avoid || []) {
+      if (!r) continue;
+      const overlapX = !(l + panelW <= r.x || l >= r.x + r.w);
+      if (overlapX) h = Math.min(h, r.y - gap - top);
+    }
+    return h;
+  };
+  const c = [];
+  const rightSide = sel.x + sel.w + gap, leftSide = sel.x - gap - panelW;
+  if (rightSide + panelW <= vw - gap) c.push({ left: rightSide, side: "right" });
+  if (leftSide >= gap) c.push({ left: leftSide, side: "left" });
+  c.push({ left: clamp(sel.x + sel.w - panelW - gap, gap, Math.max(gap, vw - gap - panelW)), side: "inside" });
+  const picked = c.find((x) => roomAt(x.left) >= PANEL_MIN_H) ?? c[0];
+  const maxHeight = clamp(roomAt(picked.left), PANEL_MIN_H, Math.round(vh * PANEL_MAX_VH));
+  return { left: picked.left, top, maxHeight, side: picked.side };
+}
+
+function layoutBand(vw, vh, bandW, bandH, rects) {
+  const left = Math.round((vw - bandW) / 2);
+  let bottom = BAND_BOTTOM;
+  for (let pass = 0; pass <= rects.length; pass++) {
+    const top = vh - bottom - bandH;
+    let moved = false;
+    for (const r of rects) {
+      if (!r) continue;
+      if (left + bandW <= r.x || left >= r.x + r.w) continue;
+      if (top >= r.y + r.h || top + bandH <= r.y) continue;
+      const want = Math.min(vh - r.y + BAND_LIFT_GAP, vh - BAND_LIFT_GAP - bandH);
+      if (want > bottom) { bottom = want; moved = true; }
+    }
+    if (!moved) break;
+  }
+  return { left, bottom };
+}
+
+/* ===== 打分：aiTransforms.ts 的全量移植（同常量、同分支） ===== */
+const HAND_TUNED = new Set(["ai-translate","ai-summarize","ai-explain-code","ai-rewrite"]);
+const MIN_CHARS = { "ai-key-points": 120, "ai-tabulate": 60, "ai-polish": 10 };
+const PROSE_ONLY = new Set(["ai-polish","ai-key-points","ai-tabulate"]);
+const INTENT_ONLY = new Set(["ai-regex-generate","ai-sql-generate","ai-reply-draft","ai-weekly-report","ai-merge-polish","ai-followup"]);
+const LANGUAGE_TAGS = new Set(["Python","JavaScript","TypeScript","Rust","Java","Go","SQL","HTML","CSS","Shell"]);
+const INTENT_TAG_RULES = [
+  { re: /回复|回信|待回/, actions: ["ai-reply-draft"] },
+  { re: /周报|日报|月报|汇报/, actions: ["ai-weekly-report"] },
+  { re: /提交|commit/i, actions: ["ai-commit-message"] },
+];
+/** analyzer.ts 的 looksLikeIdentifier 近似：单 token / 长 base64 / 路径形态 */
+function looksLikeIdentifier(text) {
+  const t = text.trim();
+  if (!t) return true;
+  if (/^[\w$./\\:-]+$/.test(t) && !/[。？，]/.test(t)) return true;
+  return t.length > 40 && !/\s/.test(t);
+}
+function languageTag(ctx) {
+  const hit = (ctx.tags || []).find((t) => t.source === "auto" && LANGUAGE_TAGS.has(t.name));
+  return hit && hit.name;
+}
+function scoreAiAction(id, ctx) {
+  const len = ctx.text.trim().length, type = ctx.contentType;
+  const isCodeish = type === "code" || type === "json" || type === "config";
+  const lang = languageTag(ctx);
+  switch (id) {
+    case "ai-translate":
+      if (isCodeish || len < 10) return 0;
+      if (looksLikeIdentifier(ctx.text)) return 0;
+      return ctx.hasUnicode === false ? 0.8 : 0.55;
+    case "ai-summarize":
+      if (looksLikeIdentifier(ctx.text)) return 0;
+      return !isCodeish && len > 200 ? 0.7 : 0;
+    case "ai-explain-code":
+      if (type === "code") return lang ? 0.95 : 0.85;
+      if (lang === "SQL") return 0.6;
+      return 0;
+    case "ai-rewrite":
+      if (looksLikeIdentifier(ctx.text)) return 0;
+      return !isCodeish && len >= 50 ? 0.5 : 0;
+    default: return 0;
+  }
+}
+function tagBoost(id, ctx) {
+  const manual = (ctx.tags || []).filter((t) => t.source === "manual");
+  if (!manual.length) return 0;
+  for (const r of INTENT_TAG_RULES) {
+    if (!r.actions.includes(id)) continue;
+    if (manual.some((t) => r.re.test(t.name))) return 0.9;
+  }
+  return 0;
+}
+function scoreByContentTypes(id, types, ctx) {
+  if (INTENT_ONLY.has(id)) return 0;
+  if (PROSE_ONLY.has(id) && looksLikeIdentifier(ctx.text)) return 0;
+  const min = MIN_CHARS[id];
+  if (min !== undefined && ctx.text.trim().length < min) return 0;
+  if (types.length === 0) return 0.45;
+  return types.includes(ctx.contentType) ? 0.75 : 0;
+}
+function scoreOf(a, ctx) {
+  const base = HAND_TUNED.has(a.id) ? scoreAiAction(a.id, ctx) : scoreByContentTypes(a.id, a.contentTypes, ctx);
+  return Math.max(base, tagBoost(a.id, ctx));
+}
+
+/* ===== 三种真实文本样本 ===== */
+const TEXTS = {
+  /* 真实 OCR 出来是**按行**的（一行一条 text line），头部要报「N 行」，
+     所以这里必须带换行；用一整段没有 \n 的文本会让行数永远是 1，等于造假。 */
+  long: {
+    contentType: "text", hasUnicode: true, tags: [],
+    text: [
+      "截图交付态要留几层浮层。工具浮层必须走不透明卡轨，玻璃只留给整窗级弹窗，",
+      "否则浅色主题下白底会透上来，行号那种小字直接读不出。",
+      "这次整改把底部那一排浮层收成一个所有者，成员不再自写 bottom，",
+      "谁让位给谁由布局函数算，而不是靠下一个改代码的人记得改数字。",
+      "弹层也一样：它今天自己写着底部居中，",
+      "于是回执条一出现就压在它最后两行上，而触发它的那个 AI 按钮在屏幕另一头。",
+      "面板与选区无关是同一类病，解法同源。",
+      "用户从按钮移过来的视线应该落在面板上，而不是先找一遍。",
+      "所以位置只有一个来源，避让只有一个入口，标记只有一处外观实现。",
+      "剩下的都是重复：重复的徽标、重复的提示、重复的分组标题。",
+      "同一件事不该在两个文件里各写一遍，读代码的人不会知道哪一份是真的。",
+      "整改的判据很简单：删掉任意一处，另一处还在，就说明还没收口。",
+    ].join("\n"),
+  },
+  code: {
+    contentType: "code", hasUnicode: true, tags: [{ source: "auto", name: "TypeScript" }],
+    text: Array.from({ length: 68 }, (_, i) =>
+      `export function layer${i}(ctx: Ctx): number { return clamp(ctx.top + ${i}, 8, 96); }`).join("\n"),
+  },
+  short: { contentType: "text", hasUnicode: true, tags: [], text: "记得买牛奶" },
+};
+
+/* ===== 状态 ===== */
+const S = {
+  mode: "after", d1: "side", d2: "320", d3: "head", d4: "score", d6: "tall", d7: "cover", d8: "top3", exp: false,
+  sel: "mid", txt: "long", theme: "ocean", screen: 0, band: true, busy: false, q: "", marks: false,
+};
+const SELS = {
+  tr:   { x: 1040, y: 60,  w: 330, h: 250 },
+  mid:  { x: 470,  y: 250, w: 500, h: 330 },
+  bl:   { x: 60,   y: 520, w: 380, h: 250 },
+  wide: { x: 120,  y: 150, w: 1180, h: 420 },
+};
+const SCREENS = [[1440, 900], [1366, 768], [1920, 1200]];
+
+const root = document.getElementById("root");
+const app = document.getElementById("app");
+
+function toolbarHtml(attach) {
+  /* 按钮集合与 AnnotToolbar.tsx 逐一对应：9 个未 hidden 的工具 + 撤销/重做 + 长截图/取文字
+     + 保存/贴图/AI/更多 + 取消/完成。图标用等宽字符占位（宽度由 .tool 的 min-width 38 决定，
+     与真 SVG 同宽），所以实测宽度可信。 */
+  const tools = ["矩形", "椭圆", "箭头", "画笔", "高亮", "马赛克", "文字", "序号", "橡皮擦"];
+  const ic = ["□", "○", "↗", "", "▭", "", "T", "", "⌫"];
+  const exit = (cls, i, lb) => `<button type="button" class="tool ${cls}"><span class="ic">${i}</span><span class="lb">${lb}</span></button>`;
+  return `<div class="annot-toolbar${attach !== "below" ? " top-attached" : ""}" id="tb">
+    ${tools.map((lb, i) => `<button type="button" class="tool${i === 0 ? " on" : ""}"><span class="ic">${ic[i]}</span><span class="lb">${lb}</span></button>`).join("")}
+    <div class="tsep"></div>
+    ${exit("dim tb-undo", "↶", "撤销")}${exit("dim tb-redo disabled", "↷", "重做")}
+    <div class="tsep"></div>
+    ${exit("longshot", "⧉", "长截图")}${exit("ocr-btn", "文", "取文字")}
+    <div class="tsep"></div>
+    ${exit("exit-save", "⤓", "保存")}${exit("exit-pin", "📌", "贴图")}
+    <button type="button" class="tool exit-ai" id="aibtn"><span class="ic">${svg("sparkles", 17)}</span><span class="lb">AI</span></button>
+    <button type="button" class="tool more-btn">更多 ⋯</button>
+    <div class="tsep"></div>
+    <button type="button" class="tool cancel-btn">✕ 取消</button>
+    <span class="pair-sep"></span>
+    <button type="button" class="tool done-btn">完成 ✓</button>
+  </div>`;
+}
+
+function rowHtml(a, opts) {
+  const { after, d3, on } = opts;
+  const ic = after ? svg(a.icon, 15) : a.icon;
+  const net = !after ? `<span class="net">✦ 云端</span>`
+    : d3 === "row" ? `<span class="aimark"><span class="grad">AI</span></span>` : "";
+  return `<button type="button" class="pop-row${on ? " on" : ""}" data-id="${a.id}">
+    <span class="ic">${ic}</span>
+    <span><span class="lbl">${a.label}</span><span class="dsc">${a.description}</span></span>
+    ${net}</button>`;
+}
+
+function popHtml(ctx) {
+  const after = S.mode === "after";
+  const q = S.q.trim().toLowerCase();
+  const list = ACTIONS.filter((a) => !q || (a.label + a.description).toLowerCase().includes(q));
+  let body;
+  if (after) {
+    if (list.length === 0) {
+      body = `<div class="pop-none">没有匹配「${S.q}」的动作<br><span style="opacity:.7">Esc 清空搜索</span></div>`;
+    } else if (q) {
+      /* 一旦打了字，命中的就是全部：这时候再分层级反而把结果切碎了 */
+      body = `<div class="act-group">匹配 ${list.length} 项</div>` +
+        list.map((a) => rowHtml(a, { after, d3: S.d3 })).join("");
+    } else {
+      const scored = list.map((a) => [a, scoreOf(a, ctx)]).sort((x, y) => y[1] - x[1]);
+      /* D8：主窗口枢纽的推荐区就是「前 3 名」，同一件事不该在这里给 6 个 */
+      const nRec = S.d4 === "score" ? Math.min(scored.filter(([, s]) => s >= 0.5).length, S.d8 === "top3" ? 3 : 99) : 0;
+      const rec = scored.slice(0, nRec);
+      const rest = scored.slice(nRec);
+      body =
+        (rec.length ? `<div class="act-group">推荐 · 按这段内容排</div>` + rec.map(([a]) => rowHtml(a, { after, d3: S.d3 })).join("") : "") +
+        (S.exp
+          ? `<div class="act-group">全部 ${rest.length} 项</div>` + rest.map(([a]) => rowHtml(a, { after, d3: S.d3 })).join("")
+          : `<button type="button" class="pop-row expand" id="expand"><span class="ic">⋯</span><span><span class="lbl">展开全部 ${rest.length} 项</span>` +
+            `<span class="dsc">${rest.slice(0, 4).map((x) => x[0].label).join(" / ")} …</span></span></button>`);
+    }
+    const badge = S.d3 === "head" ? `<span class="aimark">${svg("sparkles", 9)}<span class="grad">AI</span></span>` : "";
+    return `<div class="pop-layer" id="pop">
+      <div class="pop-head">
+        <span class="ht"><span>AI 处理 ${badge}</span>
+          <span class="sub">作用于刚识别的 ${ctx.lines} 行文字 · 会把内容发送到所选服务商，可能计费</span></span>
+        <span class="sp"></span><button class="xbtn">✕</button>
+      </div>
+      <div class="pop-search"><span class="sic">${svg("search", 13)}</span>
+        <input id="q" placeholder="搜索 ${ACTIONS.length} 个动作" value="${S.q}" />
+        <span class="kbd">↑↓ Enter Esc</span></div>
+      <div class="pop-body" id="pbody">${body}</div>
+      <div class="pop-fade"></div>
+    </div>`;
+  }
+  /* 现状：逐字还原今天应用里的样子（图标位打的是后端返回的 lucide 名字符串） */
+  return `<div class="pop-layer" id="pop">
+    <div class="pop-head"><span>AI 处理识别文字</span><span class="sp"></span><button class="xbtn">✕</button></div>
+    <div class="pop-body" id="pbody">${list.map((a) => rowHtml(a, { after: false, d3: S.d3 })).join("")}</div>
+  </div>`;
+}
+
+function render() {
+  /* fit 必须在量几何之前跑：下面的实测用 getBoundingClientRect，
+     它读的是**当前**的缩放系数。原来把 fit() 放在末尾，于是换屏幕档时
+     这一格量到的是上一格的 scale —— 1920 下量出 330px 宽的面板就是这么来的。 */
+  fit();
+  const ctx = TEXTS[S.txt];
+  const lines = ctx.text.split("\n").length;
+  const c = { ...ctx, lines };
+  const [vw, vh] = SCREENS[S.screen];
+  const sel = SELS[S.sel];
+
+  app.className = S.mode + (S.marks ? " showmarks" : "");
+  app.dataset.theme = S.theme;
+  document.documentElement.dataset.theme = S.theme;
+
+  root.innerHTML = `
+    <div class="scrim"></div>
+    <div class="sel-rect" id="sel" style="left:${sel.x}px;top:${sel.y}px;width:${sel.w}px;height:${sel.h}px"></div>
+    ${toolbarHtml("below")}
+    <div class="attr-bar" id="attr"><span class="albl">粗细</span><span class="aval">中</span>
+      <span class="sw on"></span><span class="sw"></span><span class="sw"></span></div>
+    ${S.band ? `<div class="bottom-stack" id="band"><div class="shot-toast ok" id="toast">✓ 已复制到剪贴板</div></div>` : ""}
+    ${popHtml(c)}
+    ${"<i class='mark'></i>".repeat(5)}
+  `;
+
+  /* --- 几何 --- */
+  /* 统一口径：一律用 getBoundingClientRect 换算到「未缩放的舞台坐标」。
+     offsetLeft 会吞掉 transform，而现状版 .pop-layer 正是靠 translateX(-50%) 居中的，
+     用 offset* 量它等于量错位置（整改前后必须同一把尺子才可比）。尺寸仍用 offsetWidth/Height。 */
+  const stage = document.getElementById("stage");
+  const stR = stage.getBoundingClientRect();
+  const sc = stR.width / stage.offsetWidth || 1;
+  const R = (el) => {
+    if (!el) return null;
+    const b = el.getBoundingClientRect();
+    return { x: Math.round((b.left - stR.left) / sc), y: Math.round((b.top - stR.top) / sc), w: Math.round(b.width / sc), h: Math.round(b.height / sc) };
+  };
+  const inter = (a, b) => {
+    if (!a || !b) return 0;
+    const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    return ox > 0 && oy > 0 ? ox * oy : 0;
+  };
+
+  const tb = document.getElementById("tb"), attr = document.getElementById("attr");
+  const pop = document.getElementById("pop"), band = document.getElementById("band");
+  const tbW = tb.offsetWidth, tbH = tb.offsetHeight, attrH = attr.offsetHeight;
+  const L = layoutToolbar(sel, tbW, tbH, attrH, vw, vh);
+  tb.style.left = L.left + "px"; tb.style.top = L.top + "px";
+  attr.style.left = L.left + "px"; attr.style.top = L.attrTop + "px";
+  const tbR = { x: L.left, y: L.top, w: tbW, h: tbH };
+  const atR = { x: L.left, y: L.attrTop, w: tbW, h: attrH };
+
+  /* 1) 底部带先落位（躲工具栏 / 属性条）——和截图窗一样：带是常驻层，面板后算并躲它 */
+  let bandR = null;
+  const putBand = (rects) => {
+    if (!band) return;
+    const B = layoutBand(vw, vh, band.offsetWidth, band.offsetHeight, rects);
+    band.style.left = B.left + "px"; band.style.bottom = B.bottom + "px";
+    bandR = R(band);
+  };
+  putBand([tbR, atR]);
+
+  /* 2) 面板 */
+  const panelW = S.mode === "after" ? parseInt(S.d2, 10) : 440;
+  let popBox;
+  if (S.mode === "after" && S.d1 === "side") {
+    /* D7：工具栏实测 907px 宽（比多数选区还宽），躲它就等于把面板压到 120~330px，
+       最坏格子里头部 + 搜索条就吃满，**一行动作都看不见**。
+       所以默认让面板盖住工具栏（面板是它唤起的，打开期间用户不看工具栏），
+       只继续躲底部带（带上是回执，盖掉就违反规则 15.1）。 */
+    const avoid = S.d7 === "cover" ? [bandR] : [tbR, atR, bandR];
+    let P = layoutSidePanel(sel, panelW, vw, vh, avoid);
+    /* D6：抽屉的规则是「右侧优先」（读字习惯），但 23 行的动作面板缺的是高度。
+       这里用同一个 roomAt 口径把两侧都算一遍，比较的是**可用高度**而不是位置。 */
+    const cap = Math.round(vh * 0.42);
+    if (S.d6 === "tall") {
+      const room = (l) => {
+        let h = Math.min(cap, vh - PANEL_GAP - P.top);
+        for (const r of avoid) {
+          if (!r) continue;
+          if (!(l + panelW <= r.x || l >= r.x + r.w)) h = Math.min(h, r.y - PANEL_GAP - P.top);
+        }
+        return h;
+      };
+      const cand = [];
+      const rs = sel.x + sel.w + PANEL_GAP, ls = sel.x - PANEL_GAP - panelW;
+      if (rs + panelW <= vw - PANEL_GAP) cand.push({ left: rs, side: "right" });
+      if (ls >= PANEL_GAP) cand.push({ left: ls, side: "left" });
+      cand.push({ left: clamp(sel.x + sel.w - panelW - PANEL_GAP, PANEL_GAP, Math.max(PANEL_GAP, vw - PANEL_GAP - panelW)), side: "inside" });
+      const best = cand.map((c2) => ({ ...c2, room: room(c2.left) })).sort((a, b) => b.room - a.room)[0];
+      P = { ...P, left: best.left, side: best.side, maxHeight: clamp(best.room, PANEL_MIN_H, Math.round(vh * PANEL_MAX_VH)) };
+    }
+    pop.style.left = P.left + "px"; pop.style.top = P.top + "px";
+    pop.style.maxHeight = Math.min(P.maxHeight, cap) + "px";
+    pop.style.bottom = "auto"; pop.style.transform = "none"; pop.style.width = panelW + "px";
+    popBox = P;
+    /* 3) 面板落位后带子再让一次（side 档才需要；bottom 档两者都在屏幕底，本来就该面板在上） */
+    putBand([tbR, atR, R(pop)]);
+  } else {
+    pop.style.width = panelW + "px";
+    popBox = { side: "bottom" };
+  }
+
+  const body = document.getElementById("pbody");
+  body.style.maxHeight = "";
+  pop.classList.toggle("scrolled", body.scrollHeight > body.clientHeight + 1);
+  if (S.busy) {
+    const first = body.querySelector(".pop-row");
+    if (first) first.classList.add("busy");
+  }
+
+  /* --- 实测报告 --- */
+  const p = R(pop), rows = [...pop.querySelectorAll(".pop-row")];
+  /* 一屏可见行：行与滚动容器的 offsetTop 同一坐标空间（都相对 .pop-layer），
+     减去容器自身 offsetTop 才是容器内偏移。 */
+  const vis = rows.filter((r) => {
+    const t = r.offsetTop - body.offsetTop;
+    return t >= body.scrollTop && t + r.offsetHeight <= body.scrollTop + body.clientHeight;
+  });
+  const out = p.y < 0 || p.x < 0 || p.x + p.w > vw || p.y + p.h > vh;
+  const scored = S.d4 === "score" ? ACTIONS.filter((a) => scoreOf(a, c) >= 0.5).length : 0;
+  const html = [
+    `<b>实测（getBoundingClientRect 换算到未缩放坐标）</b><br>`,
+    `${vw}×${vh} · 选区 ${sel.w}×${sel.h} · 工具栏实测 <b>${tbW}×${tbH}</b><br>`,
+    `面板 <b>${p.w}×${p.h}</b> @ ${p.x},${p.y}（${popBox.side}）<br>`,
+    `压工具栏 <b class="${inter(p, tbR) && S.d7 === "avoid" ? "bad" : "good"}">${inter(p, tbR)}</b>${S.d7 === "cover" && S.d1 === "side" ? "（cover 档：有意盖住）" : " "}· `,
+    `压属性条 <b class="${inter(p, atR) ? "bad" : "good"}">${inter(p, atR)}</b> · `,
+    `压底部带 <b class="${inter(p, bandR) ? "bad" : "good"}">${inter(p, bandR)}</b> px²<br>`,
+    `出屏 <b class="${out ? "bad" : "good"}">${out ? "是" : "否"}</b> · `,
+    `一屏可见 <b>${vis.length}</b>/${rows.length} 行 · 推荐段 <b>${scored}</b> 条<br>`,
+    `列表总高 ${body.scrollHeight}px / 可视 ${body.clientHeight}px`,
+  ].join("");
+  document.getElementById("geo").innerHTML = html;
+
+  /* 角标：贴在真实元素左上角（设计稿外壳，不属于产品 UI）。
+     .pop-layer 是 overflow:hidden，角标留在 root 里、按弹层原点偏移定位。 */
+  const mk = [...root.querySelectorAll(".mark")];
+  const put = (i, el, dx, dy) => {
+    if (!mk[i] || !el) return;
+    mk[i].style.left = pop.offsetLeft + el.offsetLeft + dx + "px";
+    mk[i].style.top = pop.offsetTop + el.offsetTop + dy + "px";
+  };
+  put(0, pop.querySelector(".pop-row .ic"), -6, -6);
+  put(1, pop.querySelector(".pop-head"), p.w - 34, 4);
+  put(2, pop.querySelector(".pop-search"), -6, -6);
+  /* 角标④钉在弹层左上角本身：put() 会再加一次 pop.offsetLeft，
+     所以这里传零偏移的替身，而不是 pop（否则 978 会变成 1932，跑到舞台外）。 */
+  put(3, { offsetLeft: 0, offsetTop: 0 }, -24, -24);
+  put(4, pop.querySelector(".pop-fade"), p.w - 30, -10);
+}
+
+function fit() {
+  const [sw, sh] = SCREENS[S.screen];
+  const k = Math.min((innerWidth - 300) / sw, (innerHeight - 40) / sh, 1);
+  app.style.setProperty("--sw", sw + "px");
+  app.style.setProperty("--sh", sh + "px");
+  app.style.setProperty("--k", k);
+  document.getElementById("stage").style.transform = `scale(${k})`;
+}
+
+/* ===== 控件 ===== */
+const GROUPS = { mode: ["before", "after"], d1: ["side", "bottom"], d2: ["320", "440"], d3: ["head", "row", "none"], d4: ["score", "flat"], d6: ["tall", "right"], d7: ["cover", "avoid"], d8: ["top3", "all"], sel: ["tr", "mid", "bl", "wide"], txt: ["long", "code", "short"] };
+document.querySelectorAll("#rail button").forEach((b) => {
+  b.addEventListener("click", () => {
+    for (const g of Object.keys(GROUPS)) if (b.dataset[g] !== undefined) { S[g] = b.dataset[g]; sync(); render(); return; }
+    if (b.dataset.exp !== undefined) { S.exp = b.dataset.exp === "1"; sync(); render(); return; }
+    if (b.dataset.q !== undefined) { S.q = b.dataset.q; sync(); render(); return; }
+    if (b.dataset.marks !== undefined) { S.marks = !S.marks; sync(); render(); return; }
+    const t = b.dataset.t;
+    if (t === "theme") S.theme = S.theme === "ocean" ? "ocean-dark" : S.theme === "ocean-dark" ? "forest" : S.theme === "forest" ? "blossom" : "ocean";
+    if (t === "screen") S.screen = (S.screen + 1) % SCREENS.length;
+    if (t === "band") S.band = !S.band;
+    if (t === "busy") S.busy = !S.busy;
+    sync(); render();
+  });
+});
+function sync() {
+  document.querySelectorAll("#rail button").forEach((b) => {
+    let on = false;
+    for (const g of Object.keys(GROUPS)) if (b.dataset[g] !== undefined) on = S[g] === b.dataset[g];
+    if (b.dataset.q !== undefined) on = S.q === b.dataset.q;
+    if (b.dataset.exp !== undefined) on = S.exp === (b.dataset.exp === "1");
+    if (b.dataset.marks !== undefined) on = S.marks;
+    if (b.dataset.t === "screen") on = false;
+    b.classList.toggle("on", !!on);
+  });
+  document.querySelector('[data-t="screen"]').textContent = "屏幕 " + SCREENS[S.screen][0] + "×" + SCREENS[S.screen][1];
+}
+document.addEventListener("input", (e) => { if (e.target.id === "q") { S.q = e.target.value; sync(); render(); } });
+document.addEventListener("click", (e) => { if (e.target.closest("#expand")) { S.exp = true; sync(); render(); } });
+addEventListener("resize", fit);
+/* 样例文本的字数/行数从数据算，不手打在标签里（改了 TEXTS 说明不会过期） */
+document.querySelectorAll("[data-txtstat]").forEach((el) => {
+  const t = TEXTS[el.dataset.txtstat].text;
+  el.textContent = t.replace(/\n/g, "").length + " 字 / " + t.split("\n").length + " 行";
+});
+render(); sync();
+</script>
+</body>
+</html>

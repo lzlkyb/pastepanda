@@ -14,7 +14,7 @@ import { memo, useMemo } from "react";
 import { getTransform } from "@/lib/transforms";
 import { recommendScored, sceneOf } from "@/lib/recommend";
 import type { HistoryItem } from "@/stores/appStore";
-import { TIcon } from "@/components/transform/TransformCard";
+import { TIcon } from "@/components/transform/TransformIcon";
 import { useToast } from "@/components/Toast";
 import styles from "./CardActionBar.module.css";
 

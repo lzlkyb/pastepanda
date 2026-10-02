@@ -41,6 +41,34 @@ pub fn ai_list_content_types() -> Vec<ContentTypeOption> {
         .collect()
 }
 
+/// 一段文本的粗分类 + 语言级标签。
+///
+/// 为什么要有它：截图 AI 弹层要复用主窗口那套打分（`aiActionScore`），而打分吃
+/// `contentType`。前端没有分类器，也**不该再造一个**——判定只在一处（规则 11.1），
+/// 否则同一篇 OCR 文本在两个界面会得出不同的推荐顺序。
+/// `ai_run` 里那两行是内部当场算的，不对外，也不改变换契约。
+///
+/// **这不算 AI 功能（规则 16.4）**：`ContentClassifier` 是纯正则/规则，不联网、不花钱，
+/// 所以不查 `cfg.enabled`——门控在这里只会让未配置 AI 的用户看不到本地动作的分组顺序。
+/// 如果哪天把它换成模型调用，必须补 `cfg.enabled` + key 两道门。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiClassifyResult {
+    /// `content_type_from_labels`：text / code / json / markdown / csv …
+    pub content_type: String,
+    /// `language_from_labels`：Rust / Java / SQL …；判不出则 None
+    pub language: Option<String>,
+}
+
+#[tauri::command]
+pub fn ai_classify_text(text: String) -> AiClassifyResult {
+    let labels = ContentClassifier::new().classify(&text);
+    AiClassifyResult {
+        content_type: ContentClassifier::content_type_from_labels(&labels).to_string(),
+        language: ContentClassifier::language_from_labels(&labels).map(str::to_string),
+    }
+}
+
 #[tauri::command]
 pub fn ai_list_custom_actions(store: State<DataStore>) -> Result<Vec<CustomAction>, String> {
     store.ai_custom_actions()

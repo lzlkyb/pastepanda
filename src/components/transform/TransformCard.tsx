@@ -17,15 +17,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Copy, Check, Sparkles, Database, Table, List, ClipboardPaste,
-  CaseUpper, CaseLower, Eraser, Pilcrow, Quote, RemoveFormatting, Link as LinkIcon,
-  ListCollapse,
-  Globe, Mail, Phone, Code, Minus, Hash, Palette, Folder, FileText,
-  Play, ShieldAlert, Languages, PenLine, Search, X, Loader2,
+  Copy, Check, Sparkles, ClipboardPaste, Play, ShieldAlert, X, Loader2,
   Clock, UserRound, Info, Workflow, Star,
-  type LucideIcon,
 } from "lucide-react";
 import { AiBadge, badgeKindOf } from "@/components/AiBadge";
+import { TIcon } from "@/components/transform/TransformIcon";
 import { useDialogStore } from "@/stores/dialogStore";
 import { openAiSettings } from "@/lib/openAiSettings";
 
@@ -47,23 +43,6 @@ import { useToast } from "@/components/Toast";
 import { useAiStatus } from "@/hooks/useAiStatus";
 import { countChars, estimateTokens } from "@/lib/utils";
 import styles from "../TransformHub.module.css";
-
-/** 图标语义键 → lucide 组件（逻辑层保持纯净，图标在 UI 层映射） */
-const ICONS: Record<string, LucideIcon> = {
-  database: Database, table: Table, rows: List,
-  "case-upper": CaseUpper, "case-lower": CaseLower, eraser: Eraser, pilcrow: Pilcrow,
-  quote: Quote, "remove-formatting": RemoveFormatting, link: LinkIcon, globe: Globe,
-  mail: Mail, phone: Phone, code: Code, minus: Minus, hash: Hash, palette: Palette,
-  folder: Folder, "file-text": FileText, search: Search,
-  "list-collapse": ListCollapse,
-  // AI 动作的图标语义键（后端 ai/actions.rs 里声明的那几个）
-  languages: Languages, "pen-line": PenLine,
-};
-
-export function TIcon({ name, size = 15 }: { name?: string; size?: number }) {
-  const C = (name && ICONS[name]) || Sparkles;
-  return <C size={size} />;
-}
 
 /** 理由图标：五种理由各给一个，光看图标就能分出是“常用”还是“被降权” */
 function ReasonIcon({ kind }: { kind: RecommendReason["kind"] }) {

@@ -5,6 +5,22 @@
  * 展示层不能成为安全边界。
  */
 
+import {
+  ChevronDown,
+  ChevronUp,
+  ClipboardPaste,
+  Copy,
+  Crop,
+  Download,
+  Languages,
+  Pin,
+  RotateCcw,
+  Sparkles,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
+import { AiBadge } from "@/components/AiBadge";
+
 interface Props {
   /** 供父组件实测面板尺寸（高度随出口数量变，写死算不准） */
   innerRef?: React.Ref<HTMLDivElement>;
@@ -23,6 +39,9 @@ interface Props {
   regionSaved: boolean;
   /** 当前编辑器打开的文件路径（null = 未打开，不显示插入出口） */
   editorTarget: string | null;
+  /** §3：低频两组（文字 / 其它）默认收起，只留图片三行 + 一行「展开 N 项」 */
+  expanded: boolean;
+  onToggleExpand: () => void;
   onCopyImage: () => void;
   onSaveToGallery: () => void;
   onPinImage: () => void;
@@ -35,6 +54,51 @@ interface Props {
   onInsertToEditor: () => void;
 }
 
+/**
+ * 一行出口。图标位必须是 lucide 组件（与 AI 弹层 / 标注工具栏同一套语言）：
+ * 这里原先画的是 ⬡ ⬇ 📌 AI 译 ⚡ 🔒 ↺ 📝 ⌄，一屏四种图标语言，
+ * 而同一行的「送动作链」在点开后的弹层里已经是 <Workflow/> + 中性底。
+ *
+ * 尺寸 15px 与 `AiPopList.tsx` 的 `<TIcon size={15}/>` 同档，不新造尺寸。
+ */
+function ExitRow({
+  icon: Icon,
+  cls,
+  label,
+  sub,
+  hint,
+  mark,
+  onClick,
+}: {
+  icon: LucideIcon;
+  cls?: string;
+  label: string;
+  sub: string;
+  /** 快捷键位。**只放快捷键**——翻译行原来挂在这里的是装饰性 ⚡，而它没有快捷键 */
+  hint?: string;
+  /** 行末云端标记（AiBadge）。只有点击即出网的行才挂；见下面「送动作链」的注释 */
+  mark?: "ai";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`act-row${cls ? ` ${cls}` : ""}`} onClick={onClick}>
+      <span className="ic">
+        <Icon size={15} />
+      </span>
+      <span className="tx">
+        <span className="lbl">{label}</span>
+        <span className="sub">{sub}</span>
+      </span>
+      {mark && (
+        <span className="mk">
+          <AiBadge size="xs" />
+        </span>
+      )}
+      {hint && <span className="k">{hint}</span>}
+    </button>
+  );
+}
+
 export function ResultActions({
   innerRef,
   left,
@@ -45,6 +109,8 @@ export function ResultActions({
   hasFixedRegion,
   regionSaved,
   editorTarget,
+  expanded,
+  onToggleExpand,
   onCopyImage,
   onSaveToGallery,
   onPinImage,
@@ -55,6 +121,15 @@ export function ResultActions({
   onReselect,
   onInsertToEditor,
 }: Props) {
+  // 收起时藏起来的行 = 文字组 + 其它组。「展开 N 项」的 N 与副标名单都从这一份
+  // 数据推出来，不另写一遍数字：加一行忘了同步计数是本条唯一的坏法。
+  const lowLabels = [
+    ...(aiOk ? ["AI 处理", "翻译"] : []),
+    "送动作链",
+    hasFixedRegion ? "清除固定区域" : "记住为固定区域",
+    "重新截图",
+    ...(editorTarget ? ["插入文档"] : []),
+  ];
   return (
     <div
       ref={innerRef}
@@ -65,115 +140,114 @@ export function ResultActions({
         <span className="dot" /> 截图完成 · 选择出口
       </div>
       {sensitiveKind && (
-        <div
-          style={{
-            padding: "6px 12px",
-            fontSize: 11,
-            lineHeight: 1.5,
-            color: "var(--danger, #F87171)",
-            background: "color-mix(in srgb, var(--danger, #F87171) 12%, transparent)",
-            borderBottom: "1px solid color-mix(in srgb, var(--danger, #F87171) 25%, transparent)",
-          }}
-        >
+        <div className="act-sens">
           ⚠️ 检测到疑似敏感内容（{sensitiveKind}），AI / 云端出口已拦截，需确认后才发送
         </div>
       )}
-      {/* 分三组：9 行平铺时扫视没有落点。不删行——工具栏平铺的三个出口只是多给一条路，
-          用户可能从「更多」进来后再选复制，那些行仍然必须在。 */}
-      {/* U7：下面每一行原先都是 `<div onClick>`——而「送动作链 / 固定区域 /
-          重新截图 / 插入当前文档」只有这个面板一条路，键盘用户根本到不了。
-          内层两行文字同时从 <div> 改成 <span>：div 不能合法地放进 button。 */}
+      {/* 分三组：9 行平铺时扫视没有落点。低频两组默认收起（审计 §3），
+          但**不删行**——工具栏平铺的三个出口只是多给一条路，用户可能从「更多」进来后
+          再选复制，那些行仍然必须能被找到，只是不再占满首屏。 */}
+      {/* U7：每一行都是 `<button>`——「送动作链 / 固定区域 / 重新截图 / 插入当前文档」
+          只有这个面板一条路，用 div 键盘就到不了。 */}
       <div className="act-group">图片</div>
-      <button type="button" className="act-row" onClick={onCopyImage}>
-        <span className="ic">⬡</span>
-        <span>
-          <span className="lbl">复制图片</span>
-          <span className="sub">写入剪贴板历史</span>
-        </span>
-        <span className="k">Ctrl+C</span>
-      </button>
-      <button type="button" className="act-row" onClick={onSaveToGallery}>
-        <span className="ic">⬇</span>
-        <span>
-          <span className="lbl">保存到图库</span>
-          <span className="sub">另存为图片文件</span>
-        </span>
-        <span className="k">Ctrl+S</span>
-      </button>
-      <button type="button" className="act-row pin" onClick={onPinImage}>
-        <span className="ic">📌</span>
-        <span>
-          <span className="lbl">贴图置顶</span>
-          <span className="sub">钉在屏幕上</span>
-        </span>
-      </button>
-      <div className="act-group">文字</div>
-      {/* 规则 16：这两项必然走云端，AI 未启用时不渲染（零可见） */}
-      {aiOk && (
-        <button type="button" className="act-row ai" onClick={onOpenAi}>
-          <span className="ic">AI</span>
-          <span>
-            <span className="lbl">AI 处理</span>
-            <span className="sub">解释 / 翻译 / 总结</span>
-          </span>
-        </button>
-      )}
-      {aiOk && (
-        <button type="button" className="act-row ai" onClick={onTranslate}>
-          <span className="ic">译</span>
-          <span>
-            <span className="lbl">翻译</span>
-            <span className="sub">识别文字翻译成中文</span>
-          </span>
-          <span className="k">⚡</span>
-        </button>
-      )}
-      <button type="button" className="act-row chain" onClick={onOpenChains}>
-        <span className="ic">⚡</span>
-        <span>
-          <span className="lbl">送动作链</span>
-          <span className="sub">对识别文字跑自定义链</span>
-        </span>
-      </button>
-      <div className="act-group">其它</div>
-      {/* 固定区域（从 select 态移来）：低频操作，不占工具栏横向空间。
-          已有固定区域时变为「清除」，给它一个能被发现的出口（否则只能靠右键回退）。 */}
-      <button type="button" className="act-row" onClick={onToggleRegion}>
-        <span className="ic">🔒</span>
-        <span>
-          <span className="lbl">
-            {hasFixedRegion ? "清除固定区域" : regionSaved ? "✓ 已记住此区域" : "记住为固定区域"}
-          </span>
-          <span className="sub">
-            {hasFixedRegion ? "恢复自动吸附" : "下次截图直接用这块区域"}
-          </span>
-        </span>
-      </button>
-      <button type="button" className="act-row" onClick={onReselect}>
-        <span className="ic">↺</span>
-        <span>
-          <span className="lbl">重新截图</span>
-          <span className="sub">重选区域</span>
-        </span>
-      </button>
-      {/* 截图插入当前编辑文档（编辑器打开时才显示） */}
-      {editorTarget && (
-        <button
-          type="button"
-          className="act-row"
-          style={{
-            border: "1px solid rgba(34,211,238,0.45)",
-            background: "rgba(34,211,238,0.07)",
-          }}
-          onClick={onInsertToEditor}
-        >
-          <span className="ic">📝</span>
-          <span>
-            <span className="lbl">插入到当前文档</span>
-            <span className="sub">{editorTarget.split(/[\\/]/).pop()}</span>
-          </span>
-          <span className="k">Ctrl+Enter</span>
-        </button>
+      <ExitRow
+        icon={Copy}
+        label="复制图片"
+        sub="写入剪贴板历史"
+        hint="Ctrl+C"
+        onClick={onCopyImage}
+      />
+      <ExitRow
+        icon={Download}
+        label="保存到图库"
+        sub="另存为图片文件"
+        hint="Ctrl+S"
+        onClick={onSaveToGallery}
+      />
+      <ExitRow
+        icon={Pin}
+        cls="pin"
+        label="贴图置顶"
+        sub="钉在屏幕上"
+        onClick={onPinImage}
+      />
+      {expanded ? (
+        <>
+          <div className="act-group">文字</div>
+          {/* 规则 16：这两项必然走云端，AI 未启用时不渲染（零可见） */}
+          {aiOk && (
+            <ExitRow
+              icon={Sparkles}
+              label="AI 处理"
+              sub="解释 / 翻译 / 总结"
+              mark="ai"
+              onClick={onOpenAi}
+            />
+          )}
+          {aiOk && (
+            <ExitRow
+              icon={Languages}
+              label="翻译"
+              sub="识别文字翻译成中文"
+              mark="ai"
+              onClick={onTranslate}
+            />
+          )}
+          {/* 这一行不挂徽标：它只打开链面板，真正出网的是面板里那条链的「运行」，
+              而那里每条链按自己的步骤各挂各的（ChainPopover）。
+              在这里挂「联网」等于替用户猜了一条他还没选的链。 */}
+          <ExitRow
+            icon={Workflow}
+            label="送动作链"
+            sub="对识别文字跑自定义链"
+            onClick={onOpenChains}
+          />
+          <div className="act-group">其它</div>
+          {/* 固定区域（从 select 态移来）：低频操作，不占工具栏横向空间。
+              已有固定区域时变为「清除」，给它一个能被发现的出口（否则只能靠右键回退）。
+              图标取 Crop（对象是「区域」）——选区预览条那颗按钮同步改，
+              此前一个 🔒 一个 📌，同一功能两种长相。 */}
+          <ExitRow
+            icon={Crop}
+            label={
+              hasFixedRegion ? "清除固定区域" : regionSaved ? "✓ 已记住此区域" : "记住为固定区域"
+            }
+            sub={hasFixedRegion ? "恢复自动吸附" : "下次截图直接用这块区域"}
+            onClick={onToggleRegion}
+          />
+          <ExitRow icon={RotateCcw} label="重新截图" sub="重选区域" onClick={onReselect} />
+          {/* 截图插入当前编辑文档（编辑器打开时才显示） */}
+          {editorTarget && (
+            <ExitRow
+              icon={ClipboardPaste}
+              cls="insert"
+              label="插入到当前文档"
+              sub={editorTarget.split(/[\\/]/).pop() ?? ""}
+              hint="Ctrl+Enter"
+              onClick={onInsertToEditor}
+            />
+          )}
+          {/* 展开态必须留一条回头路：此前 onToggleExpand 只绑在收起态那一行，
+              面板在一次截图里只能进不能出（单向门）。 */}
+          <ExitRow
+            icon={ChevronUp}
+            cls="expand"
+            label={`收起 ${lowLabels.length} 项`}
+            sub="只留图片三行"
+            onClick={onToggleExpand}
+          />
+        </>
+      ) : (
+        <>
+          <div className="act-group">文字 · 其它（收起）</div>
+          <ExitRow
+            icon={ChevronDown}
+            cls="expand"
+            label={`展开 ${lowLabels.length} 项`}
+            sub={lowLabels.join(" / ")}
+            onClick={onToggleExpand}
+          />
+        </>
       )}
     </div>
   );

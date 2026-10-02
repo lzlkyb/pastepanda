@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda · 截图出口面板图标与标记统一 · 设计稿（甲+乙）</title>
+<style>
+/* 与主应用同口径：src/styles/globals.css:21 有 `* { box-sizing: border-box }`。
+   不补这条，本稿的 .act-panel 会量出 226px（224 + 双边 1px），度量和代码就不是一个口径了。
+   只补 box-sizing，不搬 margin/padding 归零（会打乱本稿正文间距）。 */
+*{box-sizing:border-box}
+/* ============================================================
+   0. 令牌：逐值抄自 src/styles/theme.css（6 档主题），不虚构
+   ============================================================ */
+:root, [data-theme="ocean"] {
+  --card-bg:#fff; --border-color:#e0e4eb; --input-bg:#f1f5f9; --hover:#e8ecf2;
+  --text-primary:#0f172a; --text-muted:#627083; --accent:#0284c7;
+  --accent-light:#e0f2fe; --accent-solid:#027cbb; --accent-strong:#0273ad;
+  --success:#15803d; --danger:#d82525; --orange:#c54a0a; --section-bg:#f4f8fc;
+  --preview-pin:#ec4899; --brand-ai-from:#1d4ed8; --brand-ai-to:#6d28d9;
+  --float-card-bg:var(--card-bg); --float-card-border:var(--border-color);
+  --float-card-shadow:0 0 0 1px color-mix(in srgb,#000 3%,transparent),0 8px 24px color-mix(in srgb,#000 12%,transparent);
+  --shot-bar-bg:rgba(255,255,255,.92); --shot-bar-text:var(--text-primary);
+  --shot-bar-border:rgba(15,23,42,.16);
+  --accent-border:color-mix(in srgb, var(--accent) 35%, transparent);
+  --warning:var(--orange);
+}
+[data-theme="midnight"]{--card-bg:#18181b;--border-color:#27272a;--input-bg:#27272a;--hover:#1f1f23;--text-primary:#e4e4e7;--text-muted:#8d8d95;--accent:#818cf8;--accent-light:#1e1b4b;--accent-solid:#666fc4;--accent-strong:var(--accent);--success:#4ade80;--danger:#f87171;--orange:#fb923c;--section-bg:#101013;--brand-ai-from:#a8deff;--brand-ai-to:#d8ccff;--float-card-shadow:0 0 0 1px rgba(255,255,255,.08),0 8px 28px rgba(0,0,0,.45);--shot-bar-bg:rgba(20,20,24,.94);--shot-bar-border:rgba(255,255,255,.14)}
+[data-theme="forest"]{--card-bg:#fff;--border-color:#d1d9d3;--input-bg:#f5f5f4;--hover:#e8ede8;--text-primary:#171717;--text-muted:#726e6b;--accent:#059669;--accent-light:#ecfdf5;--accent-solid:#05875f;--accent-strong:#04835b;--success:#15803d;--danger:#d82525;--orange:#c54a0a;--section-bg:#f7faf7;--shot-bar-bg:rgba(255,255,255,.9);--shot-bar-border:rgba(23,23,23,.16)}
+[data-theme="blossom"]{--card-bg:#fff;--border-color:#f9d3e2;--input-bg:#fff0f6;--hover:#fbe7f0;--text-primary:#3d2231;--text-muted:#86596d;--accent:#f0568c;--accent-light:#ffddec;--accent-solid:#ce3b70;--accent-strong:#b02c5d;--success:#15803d;--danger:#d82525;--orange:#c54a0a;--section-bg:#fff5f9;--shot-bar-bg:rgba(255,255,255,.9);--shot-bar-border:rgba(240,86,140,.35)}
+[data-theme="dawn"]{--card-bg:#fff;--border-color:#f0ddc8;--input-bg:#fff4e6;--hover:#f7e9da;--text-primary:#2b2016;--text-muted:#7d6b58;--accent:#e8734a;--accent-light:#ffede2;--accent-solid:#b95432;--accent-strong:#b95432;--success:#15803d;--danger:#d82525;--orange:#c54a0a;--section-bg:#fffaf2;--shot-bar-bg:rgba(255,255,255,.9);--shot-bar-border:rgba(232,115,74,.3)}
+[data-theme="ocean-dark"]{--card-bg:#0a1628;--border-color:#162b45;--input-bg:#162b45;--hover:#0f1f35;--text-primary:#e0e8f0;--text-muted:#7994b4;--accent:#3b9eff;--accent-light:#0a1e3a;--accent-solid:#2d78c2;--accent-strong:var(--accent);--success:#4ade80;--danger:#ff6b8a;--orange:#fb923c;--section-bg:#0d1c33;--brand-ai-from:#a8deff;--brand-ai-to:#d8ccff;--float-card-shadow:0 0 0 1px rgba(255,255,255,.08),0 8px 28px rgba(0,0,0,.45);--shot-bar-bg:rgba(10,22,40,.94);--shot-bar-border:rgba(148,168,255,.3)}
+
+/* ============================================================
+   1. 出口面板样式：逐条抄自 src/styles/screenshot.css:610-688
+      （选择器与声明都不改，只有标 ★ 的两行是本稿要动的）
+   ============================================================ */
+.act-panel{position:relative;width:224px;background:var(--float-card-bg);border:1px solid var(--float-card-border);border-radius:12px;box-shadow:var(--float-card-shadow);overflow:hidden}
+.act-head{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border-color);color:var(--text-primary)}
+.act-head .dot{width:7px;height:7px;border-radius:50%;background:var(--success)}
+.act-row{width:100%;box-sizing:border-box;text-align:left;display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;color:var(--text-primary);cursor:pointer;transition:background .12s;border:0;font-family:inherit}
+.act-row:hover{background:var(--hover)}
+.act-row .ic{width:26px;height:26px;border-radius:7px;background:var(--input-bg);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.act-row .lbl{display:block;font-size:12px}
+.act-row .sub{display:block;font-size:10px;color:var(--text-muted);margin-top:1px}
+.act-row .k{margin-left:auto;font-size:10px;color:var(--text-muted);font-family:ui-monospace,Consolas,monospace}
+.act-row.pin .ic{color:var(--preview-pin)}
+/* ★ 现状：两处硬编码渐变（screenshot.css:661 / :662），不来自任何令牌 */
+.act-row.now-ai .ic{background:linear-gradient(135deg,#5B6AF0,#7C5CF0);color:#fff}
+.act-row.now-chain .ic{background:linear-gradient(135deg,#0ea5e9,#06b6d4);color:#fff}
+/* ★ 方案 甲-A：中性底 + 语义图标，风险标记交给行末 AiBadge */
+.act-row .tx{flex:1;min-width:0}
+.act-row .mk{margin-left:auto;flex:none}
+.act-row .mk + .k{margin-left:8px}
+.act-group{padding:7px 12px 3px;font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--text-muted);border-top:1px solid var(--border-color)}
+.act-group:first-of-type{border-top:0}
+.act-sens{padding:6px 12px;font-size:11px;line-height:1.5;color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent);border-bottom:1px solid color-mix(in srgb,var(--danger) 25%,transparent)}
+.act-row.insert{border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.act-row.expand .ic{background:transparent;border:1px dashed var(--border-color);color:var(--text-muted)}
+.act-row.expand .lbl{color:var(--text-muted)}
+/* AiBadge（badge.brand.xs）：逐条抄自 src/components/ai/AiMark.module.css */
+.mark{display:inline-flex;align-items:center;white-space:nowrap;flex:none}
+.badge{font-size:9.5px;font-weight:600;line-height:1.5;padding:1px 5px;border-radius:5px;gap:3px;vertical-align:middle}
+.badge.xs{font-size:8.5px;padding:0 4px;gap:2px}
+.badge.brand{background:var(--accent-light);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);color:var(--brand-ai-from)}
+.badge.neutral{background:var(--section-bg);border:1px solid var(--border-color);color:var(--text-muted)}
+.grad{background:linear-gradient(92deg,var(--brand-ai-from) 0%,var(--brand-ai-to) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* ============================================================
+   2. 稿子自身的框架样式（不属于产品）
+   ============================================================ */
+body{margin:0;padding:0;background:#0b0f16;color:#dbe4f0;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 24px 80px}
+h1{font-size:22px;margin:0 0 6px}
+h2{font-size:15px;margin:34px 0 10px;padding-bottom:6px;border-bottom:1px solid #223048;letter-spacing:.3px}
+h3{font-size:13px;margin:18px 0 8px;color:#9fb4d0}
+.meta{font-size:12px;color:#8fa6c4;line-height:1.8}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#121a27;border:1px solid #223048;border-radius:10px;padding:10px 12px;margin:14px 0 22px;position:sticky;top:0;z-index:9}
+.bar b{font-size:11px;color:#8fa6c4;font-weight:600}
+.chip{font-size:11px;padding:4px 10px;border-radius:7px;border:1px solid #2b3a55;background:#0f1622;color:#c6d5ea;cursor:pointer}
+.chip.on{background:#2d78c2;border-color:#2d78c2;color:#fff}
+.grid{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap}
+.stage{background:var(--app-bg,linear-gradient(168deg,#f4f8fc,#e8f0f7));padding:26px;border-radius:14px;border:1px solid #223048;min-width:272px}
+[data-theme="midnight"] .stage,[data-theme="ocean-dark"] .stage{background:linear-gradient(168deg,#0c1320,#0a1628)}
+.tag{font-size:10.5px;color:#8fa6c4;margin:0 0 10px;letter-spacing:.4px}
+table{border-collapse:collapse;width:100%;font-size:11.5px}
+th,td{border-bottom:1px solid #1d2839;padding:7px 8px;text-align:left;vertical-align:top;line-height:1.55}
+th{color:#9fb4d0;font-weight:600;background:#111a28}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:#111a28;border:1px solid #1d2839;border-radius:4px;padding:1px 5px;color:#a9d5ff}
+pre{background:#0d1420;border:1px solid #223048;border-radius:9px;padding:12px 14px;overflow:auto;font-size:11px;line-height:1.65;color:#c3d6ef;font-family:ui-monospace,Consolas,monospace}
+.def{display:inline-block;font-size:10px;font-weight:700;color:#7ee2a8;border:1px solid #245c3d;background:#0f2519;border-radius:4px;padding:0 5px;margin-left:6px}
+.alt{display:inline-block;font-size:10px;font-weight:600;color:#8fa6c4;border:1px solid #2b3a55;border-radius:4px;padding:0 5px;margin-left:6px}
+.q{background:#101927;border:1px solid #223048;border-radius:10px;padding:12px 14px;margin:10px 0}
+.q h4{margin:0 0 6px;font-size:12.5px;color:#e6eefb}
+.q p{margin:2px 0;font-size:11.5px;color:#a8bad6;line-height:1.7}
+.bad{color:#ff8fa8}.ok{color:#7ee2a8}.warnx{color:#ffbf6b}
+.mini{display:flex;gap:14px;flex-wrap:wrap}
+.cell{background:var(--card-bg);border:1px solid var(--border-color);border-radius:9px;padding:8px 10px;font-size:11px;color:var(--text-primary);display:flex;align-items:center;gap:6px}
+</style>
+</head>
+<body data-theme="ocean-dark">
+<div class="wrap">
+  <h1>截图出口面板：图标位统一 + 云端标记归位</h1>
+  <div class="meta">
+    范围 <b>甲（出口面板 + 其余 6 处图标位）+ 乙（三条守卫 + 死 CSS）</b>；丙（弹层焦点策略、间距/字号越档存量、材质双轨）不在本稿。<br>
+    基线源码：<code>src/components/screenshot/ResultActions.tsx:72-193</code>、<code>src/styles/screenshot.css:610-688</code>、<code>src/components/ai/AiMark.module.css</code>。未涉及部分与本稿一致，不凭空改。<br>
+    图标全部来自本地实装 <code>lucide-react@1.21.0</code>（本稿内嵌的是 <code>renderToStaticMarkup(&lt;Copy size={15}/&gt;)</code> 的真实 SVG，不是手描近似）。
+  </div>
+
+  <div class="bar">
+    <b>主题</b>
+    <span class="chip" data-t="ocean">ocean</span>
+    <span class="chip" data-t="midnight">midnight</span>
+    <span class="chip" data-t="forest">forest</span>
+    <span class="chip" data-t="blossom">blossom</span>
+    <span class="chip" data-t="dawn">dawn</span>
+    <span class="chip on" data-t="ocean-dark">ocean-dark</span>
+    <b style="margin-left:14px">面板状态</b>
+    <span class="chip on" data-state="collapsed">收起（默认）</span>
+    <span class="chip" data-state="expanded">展开</span>
+    <b style="margin-left:14px">敏感命中</b>
+    <span class="chip" data-sens="on">显示提示条</span>
+    <span style="font-size:11px;color:#6f86a8;margin-left:auto">实测数字见页面底部「度量」区，随主题与状态实时重算</span>
+  </div>
+
+  <h2>一 · 几何申报（先说清再画，改一处就要重算）</h2>
+  <table>
+    <tr><th>量</th><th>值</th><th>来源 / 约束</th></tr>
+    <tr><td>面板宽</td><td><b>224px</b></td><td><code>screenshot.css:616 .act-panel width</code>，本稿<b>不改宽</b>（改了要回去同步 <code>actSize</code> 实测与 <code>layoutToolbar</code>，那是另一条链）</td></tr>
+    <tr><td>行内边距 / 间隙</td><td>8px 12px / gap 8px</td><td><code>.act-row</code></td></tr>
+    <tr><td>图标槽</td><td>26×26 · r7 · <code>--input-bg</code></td><td><code>.act-row .ic</code>，与弹层 <code>.pop-row .ic</code> 同尺寸</td></tr>
+    <tr><td>槽内图标</td><td>15px 描边 2</td><td>与本轮刚改完的 <code>AiPopList.tsx:107 &lt;TIcon size={15}/&gt;</code> 同档，不再新造尺寸</td></tr>
+    <tr><td>文字列可用宽</td><td><b>224−1−12−26−8−12−1 = 164px</b></td><td>扣的是 1px 双边（面板 border-box，同主应用 globals.css:21）；`.k` 与拟新增的 `.mk` 都从这 164px 里再扣（flex 同级），实测见「度量」</td></tr>
+    <tr><td>字号</td><td>lbl 12 / sub 10 / k 10 / 组头 10</td><td>现状档位，本稿不动（越档存量属丙档）</td></tr>
+    <tr><td>行高</td><td>JS 实测，见「度量」</td><td>换图标<b>不该</b>改行高：字符与 svg 都在 26px 槽内居中</td></tr>
+  </table>
+
+  <h2>二 · 现状（逐条真实渲染，红标是可复现的缺陷）</h2>
+  <div class="grid">
+    <div>
+      <div class="stage"><div class="tag">现在 · 收起态</div><div class="act-panel" id="nowPanel"></div></div>
+    </div>
+    <div style="max-width:520px">
+      <table>
+        <tr><th>编号</th><th>缺陷</th><th>证据</th></tr>
+        <tr><td>D1</td><td><b>一个面板里 4 套图标语言</b>：几何字符 <code>⬡ ⬇ ↺ ⌄</code>／彩色 emoji <code>📌 🔒 📝</code>／文字 <code>AI</code> <code>译</code>／emoji <code>⚡</code></td><td>ResultActions.tsx:94/102/110/122/131/140/150/161/170/183</td></tr>
+        <tr><td>D2</td><td>同一屏的标注工具栏与 AI/链弹层<b>已经是 lucide 组件</b>，出口面板是最后一块没跟上的</td><td><code>tools.tsx:30 icon: React.ReactNode</code>、<code>ChainPopover.tsx:93 &lt;Workflow/&gt;</code></td></tr>
+        <tr><td>D3</td><td>「送动作链」两处两种长相：面板里是 <code>⚡</code>+青色渐变块，点开弹层后是 <code>&lt;Workflow/&gt</code>+中性底</td><td>ResultActions.tsx:140 vs ChainPopover.tsx:92-94</td></tr>
+        <tr><td>D4</td><td>AI 标识分叉：面板自己写文字 <code>AI</code> + 硬编码渐变，而全站唯一样式源是 AiMark（盒子 <code>--accent-light</code> + 渐变字 + <code>--brand-ai-from</code> 图标色）</td><td>AiBadge.tsx 头注释、screenshot.css:661</td></tr>
+        <tr><td>D5</td><td>「翻译」行的 <code>⚡</code> 占了 <code>.k</code> —— 那一列的语义是<b>快捷键</b>（Ctrl+C / Ctrl+S / Ctrl+Enter），翻译其实没有快捷键</td><td>ResultActions.tsx:136，快捷键真值 ScreenshotOverlay.tsx:1291/1299/1304</td></tr>
+        <tr><td>D6</td><td><b>展开是单向门</b>：<code>onToggleExpand</code> 只绑在收起态那一行，展开后再也收不回去（一轮截图内）</td><td>ResultActions.tsx:182（展开分支无对应行）；父组件 <code>actExpanded</code> 只在 :377 声明、无复位</td></tr>
+        <tr><td>D7</td><td>「固定区域」在两处有两个 emoji：面板 <code>🔒</code>、选区预览条 <code>📌</code>（同一功能）</td><td>ResultActions.tsx:150 vs ScreenshotOverlay.tsx:3721</td></tr>
+        <tr><td>D8</td><td>面板内两处硬编码色：<code>linear-gradient(135deg,#5B6AF0,#7C5CF0)</code> 与 <code>#0ea5e9,#06b6d4</code>，不来自任何令牌</td><td>screenshot.css:661-662</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>三 · 方案（甲-A 默认）</h2>
+  <div class="grid">
+    <div class="stage"><div class="tag">拟改 · 图标位全组件 + 行末 AiBadge + 可收起</div><div class="act-panel" id="newPanel"></div></div>
+    <div style="max-width:520px">
+      <table>
+        <tr><th>出口</th><th>槽内容</th><th>图标（lucide 1.21 已核）</th><th>为什么是这枚</th></tr>
+        <tr><td>复制图片</td><td><code>⬡</code> → 组件</td><td><b>Copy</b></td><td>主窗口卡片动作条同一枚（<code>TransformCard.tsx</code> import 列表）</td></tr>
+        <tr><td>保存到图库</td><td><code>⬇</code> → 组件</td><td><b>Download</b></td><td>同义直译，避免 <code>Save</code> 与「存盘对话框」混用</td></tr>
+        <tr><td>贴图置顶</td><td><code>📌</code> → 组件</td><td><b>Pin</b></td><td>保留 <code>.act-row.pin</code> 的 <code>--preview-pin</code> 色，只换字形</td></tr>
+        <tr><td>AI 处理</td><td><code>AI</code>+渐变 → 中性底</td><td><b>Sparkles</b> + <code>.mk</code> AiBadge</td><td>Sparkles 是 AiBadge 的 AI 图标（<code>AiBadge.tsx META.ai</code>）；风险标记移到 AiMark 盒子，D4/D8 同时消</td></tr>
+        <tr><td>翻译</td><td><code>译</code>+<code>⚡</code> → 组件</td><td><b>Languages</b> + <code>.mk</code> AiBadge</td><td>后端 <code>ai-translate</code> 的 <code>icon:"languages"</code>，与弹层里同一张 <code>TIcon</code> 表 ⇒ 面板与弹层同图标</td></tr>
+        <tr><td>送动作链</td><td><code>⚡</code>+cyan → 中性底</td><td><b>Workflow</b></td><td>与 <code>ChainPopover.tsx:93</code> 同一枚，D3 归一；含云端步骤时 <code>.mk</code> 出 <code>remote</code> 徽标</td></tr>
+        <tr><td>记住/清除固定区域</td><td><code>🔒</code>/<code>📌</code> 两种 → 一种</td><td><b>Crop</b></td><td>功能对象是「区域」不是「锁」也不是「钉」；预览条 <code>pin-quick-btn</code> 同步改 Crop（D7）</td></tr>
+        <tr><td>重新截图</td><td><code>↺</code> → 组件</td><td><b>RotateCcw</b></td><td>与 <code>RefreshCw</code> 相比方向语义对（重选=退回上一步）</td></tr>
+        <tr><td>插入到当前文档</td><td><code>📝</code> → 组件</td><td><b>ClipboardPaste</b></td><td>主窗口「粘贴到…」同一枚（TransformCard 的 action 类图标）</td></tr>
+        <tr><td>展开 N 项 / 收起 N 项</td><td><code>⌄</code> → 组件</td><td><b>ChevronDown</b> / <b>ChevronUp</b></td><td>新增收起行复用 <code>.act-row.expand</code>（D6）</td></tr>
+      </table>
+      <p class="meta" style="margin-top:10px">面板其余不动：组头文案、<code>.act-sens</code> 提示条、<code>lowLabels</code> 计数来源、行序、快捷键列的真值全部保持。</p>
+    </div>
+  </div>
+
+  <h2>四 · 其余 6 处图标位（同一轮一起做，默认全部采纳）<span class="def">默认</span></h2>
+  <div class="mini" id="miniRow"></div>
+  <table style="margin-top:12px">
+    <tr><th>位置</th><th>现状</th><th>改法</th><th>备注</th></tr>
+    <tr><td>底部带 回执图标槽</td><td><code>ScreenshotOverlay.tsx:3432 ✓/⚠</code></td><td>Check / TriangleAlert</td><td>槽就叫 <code>.ic</code>，与 D1 同罪</td></tr>
+    <tr><td>OCR 回执文案前缀</td><td><code>:3454 📄 {ocrToast}</code></td><td>FileText 组件放槽位，文字里的 emoji 删</td><td>文案不靠 emoji 表意（L 组规则）</td></tr>
+    <tr><td>动作链完成提示</td><td><code>:1895 ⚡ 动作链「x」完成</code></td><td>删 <code>⚡</code></td><td>纯文案，不是图标位</td></tr>
+    <tr><td>OCR 抽屉 二维码槽</td><td><code>OcrDrawer.tsx:122 ▦</code></td><td>QrCode</td><td><code>.qr-ic</code> 尺寸不动</td></tr>
+    <tr><td>意图模式胶囊</td><td><code>ModePill.tsx:48 ⇄</code></td><td>ArrowLeftRight</td><td>它是「切换」动作，字形该与 <code>.sw</code> 语义一致</td></tr>
+    <tr><td>属性条 自动打码标题</td><td><code>AttrBar.tsx:256 🔒 识别到 N 处隐私</code></td><td>ShieldAlert</td><td>隐私=风险，用 <code>--danger</code> 语义色而非 emoji；主窗口已有 ShieldAlert 先例</td></tr>
+  </table>
+
+  <h2>五 · 拍板点（<span class="def">默认</span> = 我建议采纳）</h2>
+
+  <div class="q"><h4>Q1 AI / 翻译 行的「会出网、可能计费」标记放哪？<span class="def">默认＝行末 .mk 一枚 AiBadge</span></h4>
+    <p>· 甲-A（默认）：图标槽退回中性底，行末加 <code>.mk</code> 放 <code>&lt;AiBadge size="xs"/&gt;</code>（AI 行 <code>kind=ai</code>）。与本轮 AI 弹层的 D3 决定同构，且标记留在<b>触发点同一可见性域</b>（规则 15.1）。</p>
+    <p>· 甲-B <span class="alt">备选</span>：只靠品牌渐变底表意、不加徽标 —— 更干净，但「会发到云端并可能计费」离开触发点；翻译行是<b>一键直接出网</b>（不经过弹层），少了这一枚就是规则 16 的可见性缺口。</p>
+    <p>· 甲-C <span class="alt">备选</span>：把风险写进副标题「识别文字翻译成中文 · 云端计费」—— 已实测：同一行只换这句 sub 文案，行高从 <b>47px 涨到 60px（折行）</b>，见「度量」区；10px 字在 164px 列里放不下第二语义段。代价是展开态两行各 +13px（AI 处理 / 翻译），且风险标记离开了触发点（同 15.1 的问题）。</p>
+  </div>
+
+  <div class="q"><h4>Q2 <code>.k</code> 列只允许放快捷键？<span class="def">默认＝是，删掉翻译行的 ⚡</span></h4>
+    <p>· 删装饰后「翻译」行末只有 AiBadge，没有快捷键 —— 这是<b>真话</b>（它确实没有）。要不要给它补一个真快捷键属另一轮（键位已很挤）。</p>
+    <p>· 配套：乙档守卫会把「<code>.k</code> 里不是快捷键模式」直接判失败，D5 不会复发。</p>
+  </div>
+
+  <div class="q"><h4>Q3 送动作链的底色<span class="def">默认＝中性底（与链弹层一致）</span></h4>
+    <p>· 现状 cyan 渐变是硬编码（D8）。链可能纯本地、也可能含云端步骤，用「品牌色」表达它并不诚实；含云端的风险由 <code>chainNeedsAi()</code> 决定，在 <code>.mk</code> 出 <code>remote</code> 徽标（口径已有：<code>badgeKindOf</code>）。</p>
+    <p>· 备选：弹层链行也加 cyan 底 —— 一致了，但把云端色扩大到不一定出网的链。</p>
+  </div>
+
+  <div class="q"><h4>Q4 展开后怎么收回？<span class="def">默认＝末尾对称补一行「收起 N 项」</span></h4>
+    <p>· 复用 <code>.act-row.expand</code> 的虚线槽与淡字，N 仍由 <code>lowLabels.length</code> 推。改动最小，且与本面板既有的「一行摘要」形态同源。</p>
+    <p>· 备选：把「文字 / 其它」组头改成可点折叠 —— 与设置页刚做的分组折叠口径一致（更统一），但要重做组头热区与摘要文案，属独立一轮。</p>
+  </div>
+
+  <div class="q"><h4>Q5 品牌渐变能不能直接搬到图标槽底？<span class="def">默认＝不能（数据否决，见度量）</span></h4>
+    <p>· 直觉方案是「槽底 = <code>linear-gradient(92deg,--brand-ai-from,--brand-ai-to)</code>」。实测（见「度量」最后一档主题下的值）：这对令牌<b>在暗色主题里是浅色</b>（<code>#a8deff→#d8ccff</code>，因为它给的是暗底上的渐变<b>字</b>），白图标压上去 <b>1.44:1</b>，等于图标消失；同一枚底在浅色主题（<code>#1d4ed8→#6d28d9</code>）却有 <b>6.70:1</b>。所以它不是「一律不合格」，而是<b>跨 6 档不稳、且在深色档直接看不见</b>——一个只在半数主题里成立的颜色不能当风险标记的载体。结论：品牌渐变只用于文字/徽标（AiMark 的原始用法），色块继续走 <code>--input-bg</code> / <code>--accent-solid</code>。</p>
+  </div>
+
+  <div class="q"><h4>Q6 死 CSS 与守卫<span class="def">默认＝6 条全删 + 3 条守卫</span></h4>
+    <p>· 孤儿选择器（全仓无引用，已排除 <code>h-${dir}</code> 这类动态类名）：<code>.toolbar-select</code>、<code>.toolbar-annot</code>、<code>.snap-rect</code>、<code>.longshot-btn</code>、<code>.shot-actions</code>、<code>.pop-row .net</code>（后者是本轮把「✦ 云端」收进弹层头部后留下的）。<code>.snap-tip</code> 同样无渲染者，但被 <code>screenshotThemeTokens.test.ts</code> 钉着 —— 建议样式与那条断言一起撤，不然守卫在守一段死样式。</p>
+  </div>
+
+  <h2>六 · 度量（与代码同口径：量的是这块真实 DOM，不是估算）</h2>
+  <table id="meas"></table>
+  <p class="meta">口径说明：文字列宽 = <code>getBoundingClientRect()</code> 实测 <code>.tx/.lbl</code> 容器；溢出判据 = <code>scrollWidth &gt; clientWidth</code> 或子元素右缘越出 <code>224−12</code>；对比度 = WCAG 2.2 相对亮度，<b>图标属非文本对象 → 门槛 3:1</b>（1.4.11），渐变取两端里更差的一端。</p>
+
+  <h2>七 · 乙：三条守卫（贴完就能红灯，防第 8 处再犯）</h2>
+  <pre>// ① 图标位必须是组件：扫 src/**/*.tsx 的 className="ic" 子节点，出现字面量文本即失败
+//    （命中样例：&lt;span className="ic"&gt;📌&lt;/span&gt; / &gt;AI&lt; / &gt;⌄&lt;）
+const IC_SLOT = /className="[^"]*\bic\b[^"]*"[^>]*>\s*(?![<&{])/;
+
+// ② .k 列只允许快捷键：内容必须匹配修饰键+键名，或 Esc/Enter/方向键
+const K_TEXT = /className="k"[^>]*>([^<]+)</g;
+const SHORTCUT = /^((Ctrl|Alt|Shift|Win)\s*\+\s*[A-Za-z0-9←↑↓→]|Esc|Enter|Tab|Space)$/;
+
+// ③ CSS 类名孤儿检测：screenshot.css 里每个 .x 必须在源码出现，
+//    动态类名走显式白名单（模板拼接的查不到，不白名单就会假红灯）
+const DYNAMIC = ["h-", "tool-", "mask-"];  // 例：`sel-handle h-${dir}`</pre>
+  <p class="meta">①② 是纯文本静态守卫（jsdom 量不到 CSS，与 <code>screenshotThemeTokens.test.ts</code> 同一手法：<code>join(process.cwd(), …)</code> 读源文件）。改完把 <code>ResultActions.tsx</code> 的 10 个槽一次性过 ①，不留 <code>// 例外</code>。</p>
+
+  <h2>八 · 不在本稿（丙，需另开一轮）</h2>
+  <p class="meta">弹层打开后要不要抢焦点（autofocus 会吃掉截图窗的单键快捷键）；「联网/可能计费」三处口径的全站统一（弹层头部徽标 / 链面板副标题 / 本面板徽标）；<code>lint:ui</code> 的 10 处间距越档；卡片跟主题 vs 工具条恒深的材质双轨。</p>
+</div>
+
+<script>
+/* ===== 真实 lucide SVG（renderToStaticMarkup 产物，逐字节来自 lucide-react@1.21.0） ===== */
+const P='xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const IC={
+ Copy:`<svg ${P}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
+ Download:`<svg ${P}><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>`,
+ Pin:`<svg ${P}><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`,
+ Sparkles:`<svg ${P}><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558 1.051a2 2 0 0 0 1.594 1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>`,
+ Languages:`<svg ${P}><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>`,
+ Workflow:`<svg ${P}><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>`,
+ Crop:`<svg ${P}><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>`,
+ RotateCcw:`<svg ${P}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`,
+ ClipboardPaste:`<svg ${P}><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>`,
+ ChevronDown:`<svg ${P}><path d="m6 9 6 6 6-6"/></svg>`,
+ ChevronUp:`<svg ${P}><path d="m18 15-6-6-6 6"/></svg>`,
+ QrCode:`<svg ${P}><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/></svg>`,
+ ArrowLeftRight:`<svg ${P}><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>`,
+ Check:`<svg ${P}><path d="M20 6 9 17l-5-5"/></svg>`,
+ TriangleAlert:`<svg ${P}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+ FileText:`<svg ${P}><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`,
+ ShieldAlert:`<svg ${P}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
+};
+const badge=(kind)=>kind==="ai"
+  ? `<span class="mark badge brand xs" title="AI 动作：需要联网，会把这条内容发送到所选服务商并可能产生费用">${IC.Sparkles}<span class="grad">AI</span></span>`
+  : `<span class="mark badge neutral xs" title="需要联网，会把这条内容发送到外部服务并可能产生费用"><svg ${P.replace('height="15"','height="10"').replace('width="15"','width="10"')}><path d="M17.5 19a4.5 4.5 0 1 0-.41-8.976 6 6 0 1 0-11.13 4.025"/><path d="m2 2 20 20"/></svg>联网</span>`;
+const row=(cls,ic,lbl,sub,k,mk)=>`<button type="button" class="act-row ${cls||""}"><span class="ic">${ic||""}</span><span class="tx"><span class="lbl">${lbl}</span>${sub?`<span class="sub">${sub}</span>`:""}</span>${mk?`<span class="mk">${mk}</span>`:""}${k?`<span class="k">${k}</span>`:""}</button>`;
+
+let state="collapsed", sens=false;
+const LOW=6; // aiOk && editorTarget 时 文字2 + 其它4 → 与 lowLabels 同条数
+const head=()=>`<div class="act-head"><span class="dot"></span>截图完成 · 选择出口</div>`
+  + (sens?`<div class="act-sens">⚠️ 检测到疑似敏感内容（密钥），AI / 云端出口已拦截，需确认后才发送</div>`:"");
+/* 现状面板由 nowPanel() 单独渲染（不能带 .tx/.mk，那是新样式）；
+   row() 只服务方案面板，槽内一律是真 SVG —— 第二参数曾经传过空字符串当占位，
+   结果方案面板十行图标全空白，稿子最该被看见的部分反而没了。 */
+function newBody(){
+  const 图片组=row("",IC.Copy,"复制图片","写入剪贴板历史","Ctrl+C")
+    +row("",IC.Download,"保存到图库","另存为图片文件","Ctrl+S")
+    +row("pin",IC.Pin,"贴图置顶","钉在屏幕上");
+  const tail = state==="collapsed"
+    ? `<div class="act-group">文字 · 其它（收起）</div>`+row("expand",IC.ChevronDown,"展开 "+LOW+" 项","AI 处理 / 翻译 / 送动作链 / 记住为固定区域 / 重新截图 / 插入文档")
+    : `<div class="act-group">文字</div>`
+      +row("",IC.Sparkles,"AI 处理","解释 / 翻译 / 总结","",""+badge("ai"))
+      +row("",IC.Languages,"翻译","识别文字翻译成中文","",""+badge("ai"))
+      +row("",IC.Workflow,"送动作链","对识别文字跑自定义链","",""+badge("remote"))
+      +`<div class="act-group">其它</div>`
+      +row("",IC.Crop,"记住为固定区域","下次截图直接用这块区域")
+      +row("",IC.RotateCcw,"重新截图","重选区域")
+      +row("insert",IC.ClipboardPaste,"插入到当前文档","README.md","Ctrl+Enter")
+      +row("expand",IC.ChevronUp,"收起 "+LOW+" 项","只留图片三行");
+  return 图片组+tail;
+}
+/* 现状面板不能带 .tx（那是新样式），单独渲染一份 */
+function nowPanel(){
+  const r=(cls,glyph,lbl,sub,k,extra="")=>`<button type="button" class="act-row ${cls}"><span class="ic">${glyph}</span><span><span class="lbl">${lbl}</span>${sub?`<span class="sub">${sub}</span>`:""}</span>${k?`<span class="k">${k}</span>`:""}</button>`;
+  const g='<div class="act-group">';
+  const pic=r("","⬡","复制图片","写入剪贴板历史","Ctrl+C")+r("","⬇","保存到图库","另存为图片文件","Ctrl+S")+r("pin","📌","贴图置顶","钉在屏幕上");
+  const body=state==="collapsed"
+    ? pic+g+"文字 · 其它（收起）</div>"+r("expand","⌄","展开 "+LOW+" 项","AI 处理 / 翻译 / 送动作链 / 记住为固定区域 / 重新截图 / 插入文档")
+    : pic+g+"文字</div>"+r("now-ai","AI","AI 处理","解释 / 翻译 / 总结")+r("now-ai","译","翻译","识别文字翻译成中文","⚡")+r("now-chain","⚡","送动作链","对识别文字跑自定义链")
+      +g+"其它</div>"+r("","🔒","记住为固定区域","下次截图直接用这块区域")+r("","↺","重新截图","重选区域")+r("insert","📝","插入到当前文档","README.md","Ctrl+Enter");
+  return head()+body;
+}
+function render(){
+  document.getElementById("nowPanel").innerHTML=nowPanel();
+  document.getElementById("newPanel").innerHTML=head()+newBody();
+  document.querySelectorAll(".act-row.expand").forEach(b=>b.onclick=()=>{state=state==="collapsed"?"expanded":"collapsed";syncChips();render()});
+  measure();
+}
+function syncChips(){document.querySelectorAll("[data-state]").forEach(c=>c.classList.toggle("on",c.dataset.state===state));document.querySelectorAll("[data-sens]").forEach(c=>c.classList.toggle("on",sens));}
+document.querySelectorAll("[data-t]").forEach(c=>c.onclick=()=>{document.body.dataset.theme=c.dataset.t;document.querySelectorAll("[data-t]").forEach(x=>x.classList.toggle("on",x===c));render()});
+document.querySelectorAll("[data-state]").forEach(c=>c.onclick=()=>{state=c.dataset.state;syncChips();render()});
+document.querySelector("[data-sens]").onclick=()=>{sens=!sens;syncChips();render()};
+
+/* ===== 其余 6 处小样：现状 → 方案 ===== */
+const mini=[["回执 图标槽","✓","Check",IC.Check],["OCR 回执 前缀","📄","FileText",IC.FileText],["二维码槽","▦","QrCode",IC.QrCode],["意图胶囊","⇄","ArrowLeftRight",IC.ArrowLeftRight],["打码标题","🔒","ShieldAlert",IC.ShieldAlert],["固定区域（两处统一）","📌/🔒","Crop",IC.Crop]];
+document.getElementById("miniRow").innerHTML=mini.map(m=>`<div class="cell"><span style="color:var(--text-muted)">${m[1]}</span><span style="color:var(--text-muted)">→</span><span style="color:var(--brand-ai-from)">${m[3]}</span><b style="font-weight:600">${m[2]}</b><span style="color:var(--text-muted);font-size:10px">${m[0]}</span></div>`).join("");
+
+/* ===== 度量：真 DOM 实测 + WCAG 相对亮度 ===== */
+const rgb=h=>{h=h.replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");return [0,2,4].map(i=>parseInt(h.slice(i,2+i),16))};
+const lum=c=>{const f=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)};return .2126*f(c[0])+.7152*f(c[1])+.0722*f(c[2])};
+const cr=(a,b)=>{const l1=lum(a),l2=lum(b);return ((Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05))};
+const tok=n=>getComputedStyle(document.body).getPropertyValue(n).trim();
+/* 探针：把面板按指定状态渲染到屏幕外再量。
+   之前两行「收起 / 展开 高度」只量了当前可见态（收起）一个数字，标签却写着两个态 ——
+   展开态的行数差与溢出是全稿唯一的定量依据，不能靠手写。 */
+function probe(build,st){
+  const keep=state; state=st;
+  const el=document.createElement("div");
+  el.className="act-panel";
+  el.style.cssText="position:fixed;left:-9999px;top:0;visibility:hidden";
+  el.innerHTML=build();
+  document.body.appendChild(el);
+  const rows=[...el.querySelectorAll(".act-row")];
+  const out={
+    h:Math.round(el.getBoundingClientRect().height),
+    n:rows.length,
+    tx:[...new Set(rows.map(r=>{const t=r.querySelector(".tx");return t?Math.round(t.getBoundingClientRect().width):null;}).filter(v=>v!==null))],
+    over:rows.filter(r=>{const t=r.querySelector(".tx");if(!t)return false;const tr=t.getBoundingClientRect(),pr=r.getBoundingClientRect();return t.scrollWidth>t.clientWidth+0.5||tr.right>pr.right-12+0.5;}).map(r=>r.querySelector(".lbl").textContent),
+  };
+  el.remove(); state=keep;
+  return out;
+}
+function measure(){
+  const p=document.getElementById("newPanel"), n=document.getElementById("nowPanel");
+  const rowsNew=[...p.querySelectorAll(".act-row")], rowsNow=[...n.querySelectorAll(".act-row")];
+  const nowC=probe(nowPanel,"collapsed"), nowE=probe(nowPanel,"expanded");
+  const newC=probe(()=>head()+newBody(),"collapsed"), newE=probe(()=>head()+newBody(),"expanded");
+  const gradFrom=tok("--brand-ai-from")||"#1d4ed8", gradTo=tok("--brand-ai-to")||"#6d28d9";
+  const inputBg=tok("--input-bg"), accLight=tok("--accent-light");
+  const hex=v=>v.startsWith("#")?rgb(v):rgb("#888888");
+  const cWhite=cr(hex(gradFrom),[255,255,255]), cWhite2=cr(hex(gradTo),[255,255,255]);
+  const cTile=cr(hex(inputBg),hex(tok("--text-primary")||"#fff"));
+  const badgeIcon=cr(hex(gradFrom),hex(accLight));
+  const cBrand=Math.min(cWhite,cWhite2);
+  const cBrandTxt=cBrand.toFixed(2)+":1 "+(cBrand<3?'<b class=bad>本档不合格</b>':'<b class=ok>本档合格</b>');
+  /* Q1 甲-C 是真要拍板的：把「云端计费」写进副标题会不会折行。
+     量法=同样一行、同样 164px 文字列，只换 sub 文案，看行高变不变。 */
+  const oneRow=(sub)=>probe(()=>`<button type="button" class="act-row"><span class="ic">${IC.Languages}</span><span class="tx"><span class="lbl">翻译</span><span class="sub">${sub}</span></span><span class="mk">${badge("ai")}</span></button>`,"collapsed");
+  const cBase=oneRow("识别文字翻译成中文").h, cLong=oneRow("识别文字翻译成中文 · 云端计费").h;
+  const cWrap=cLong>cBase;
+  const r=[
+    ["面板宽 / 主题",Math.round(p.getBoundingClientRect().width)+"px @ "+document.body.dataset.theme,"宽度锁在 224，未随本方案变（含 1px 双边，与主应用 globals.css:21 的 border-box 同口径）"],
+    ["现状 高度（收起 / 展开）",nowC.h+"px / "+nowE.h+"px（"+nowC.n+" 行 / "+nowE.n+" 行）","探针离屏渲染两态实测；展开后行数翻倍且无回头路（D6）"],
+    ["方案 高度（收起 / 展开）",newC.h+"px / "+newE.h+"px（"+newC.n+" 行 / "+newE.n+" 行）","展开态末尾多一行「收起」= 现状 +1 行，收起态与现状等数"],
+    ["行高是否因换图标改变",(Math.round(rowsNew[0].getBoundingClientRect().height)-Math.round(rowsNow[0].getBoundingClientRect().height))+"px","0 = 字符与 15px svg 都在 26px 槽内居中"],
+    ["文字列实测宽（方案展开态）",newE.tx.join(" / ")+"px","公式值 = 224−1−12−26−8−12−1 = 164px；有 .k/.mk 时同列共享，故是多个值"],
+    ["方案溢出行数（展开态）",newE.over.length?("<b class=bad>"+newE.over.join("、")+"</b>"):'<b class=ok>0 行</b>',"判据 scrollWidth&gt;clientWidth 或右缘越出 padding；量的是展开态全部 10 行"],
+    ["Q1 甲-C 会不会折行",cBase+"px → "+cLong+"px "+(cWrap?'<b class=bad>折行</b>':'<b class=ok>不折行</b>'),"同一行只换 sub 文案：「识别文字翻译成中文」vs 加「· 云端计费」；行高变了就是整面板变高"],
+    ["AI 徽标压卡片底（图标色 vs 盒底）",badgeIcon.toFixed(2)+":1","非文本对象门槛 3:1"],
+    ["中性图标槽 vs 图标色",cTile.toFixed(2)+":1","--input-bg 上放 --text-primary"],
+    ["★ 品牌渐变底 + 白图标（Q5 直觉方案）",cBrandTxt,"渐变两端取更差者。同一枚底在浅色档 6.70:1、深色档 1.44:1：跨档不稳，深色主题里白图标直接看不见 —— 这才是「不给色块用 --brand-ai-*」的理由（不是它一律不合格）"],
+    ["现状 135deg 硬编码渐变 + 白图标",Math.min(cr([91,106,240],[255,255,255]),cr([124,92,240],[255,255,255])).toFixed(2)+":1","D8：不来自令牌，且在 6 档主题里完全一样"],
+  ];
+  document.getElementById("meas").innerHTML="<tr><th>量</th><th>实测</th><th>口径</th></tr>"+r.map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td class="meta" style="font-size:11px">${x[2]}</td></tr>`).join("");
+}
+render();
+</script>
+</body>
+</html>

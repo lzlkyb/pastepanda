@@ -16,6 +16,14 @@ body {
   user-select: none;
 }
 
+/* ===== 语义色名（UI 规则 U6 · 审计 §5②）=====
+   本文件的绿/橙一律走 --success / --warning / --success-bg，不再引用色名
+   --green / --orange / --green-bg。两套名字在六主题里成对定义（theme.css），
+   --warning 本身就是 var(--orange) 的别名 ⇒ 零变化；
+   --success 在浅色四套是 #15803d（--green 是 #11813a），差异在 ΔL 一档以内；
+   --success-bg 在深色两套是 #14532d（--green-bg 是 #052e16）⇒ 「已复制」行底
+   抬高一档，文字对比 8.55:1 → 5.23:1，仍达 AA。 */
+
 /* ===== 截图底图容器 ===== */
 .shot-root { position: relative; width: 100%; height: 100%; }
 .shot-bg {
@@ -23,6 +31,41 @@ body {
   background-size: 100% 100%;
   background-repeat: no-repeat;
 }
+
+/* ===== 截不到屏的两态：失败卡 / 加载中（审计 §5③④）=====
+   截图窗是透明全屏层（本文件顶部 `background: transparent`），失败卡的底原来是
+   `color-mix(--danger 15%, transparent)` 直接叠在用户桌面上：同一个 #F87171 文字，
+   暗桌面合成 5.57:1（过 AA），纯白壁纸合成 2.39:1（不过）——能不能读取决于壁纸。
+   改法是 theme.css 的双轨判定：短命、要盖在正文上读字的浮层走 --float-card-*（实底、
+   禁 backdrop-filter），实底上再叠 --danger-bg 的 tint。40% 是算出来的下限：
+   浅色 4.81:1 / 深色 6.34:1，都过 AA；再高就往色板里糊了。 */
+.shot-fatal-root {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-primary);
+}
+.shot-fatal {
+  max-width: 420px; padding: 16px; border-radius: 12px;
+  font-size: 12px; line-height: 1.7; text-align: center;
+  background: color-mix(in srgb, var(--danger-bg) 40%, var(--float-card-bg, var(--card-bg)));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--float-card-border, var(--border-color)));
+  box-shadow: var(--float-card-shadow);
+  color: var(--danger);
+}
+.shot-fatal-acts { margin-top: 8px; display: flex; gap: 8px; justify-content: center; }
+/* 次按钮用截图浮层的文字/描边令牌（不是主窗口的 --text-*），因为这张卡在截图窗里 */
+.shot-fatal-btn {
+  padding: 4px 12px; border-radius: 8px;
+  border: 1px solid var(--shot-bar-border);
+  background: transparent; color: var(--shot-bar-text);
+  font-size: 12px; font-family: inherit; cursor: pointer;
+}
+/* 白字压在 --accent-solid 上：六套主题都专门把 --accent-solid 调成「白字对比度 ≥4.5:1」
+   的实心主按钮底，项目里没有 --on-accent 这类反色令牌，14 处主按钮一律写 #fff。 */
+.shot-fatal-btn.primary { border: none; background: var(--accent-solid); color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，与 .tool.done-btn / .act-row.primary .ic 同一惯例（无对应令牌） */ }
+.shot-fatal-btn:hover { background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent); }
+.shot-fatal-btn.primary:hover { background: color-mix(in srgb, var(--accent-solid) 88%, var(--shot-bar-text)); }
+.shot-loading { font-size: 13px; }
 
 /* 选区外暗色遮罩（用 4 块半透明层实现，避免 mask-composite 兼容性问题）。
  * 0.6 深度：深色屏幕也压得住，浅色屏幕上更突出选区亮度对比 */
@@ -100,7 +143,7 @@ body {
 .ocr-line:hover .tip { opacity: 1; transform: translateY(0); }
 .ocr-line.copied .tip {
   opacity: 1;
-  background: var(--green, #22c55e);
+  background: var(--success);
   transform: translateY(0);
   animation: pp-pop 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -288,7 +331,7 @@ body {
 .mode-pill .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .mode-pill .dot.smart { background: var(--shot-ocr, #7DE0C4); box-shadow: 0 0 6px var(--shot-ocr, #7DE0C4); }
 .mode-pill .dot.ctrl { background: var(--shot-bar-muted, #9DB2D0); }
-.mode-pill .sw { font-size: 10px; color: var(--shot-bar-muted, #6E82A4); }
+.mode-pill .sw { display: inline-flex; align-items: center; color: var(--shot-bar-muted); }
 
 /* ===== 属性条（双层的第二层：颜色 / 粗细 / 箭头样式） ===== */
 .attr-bar {
@@ -345,16 +388,11 @@ body {
 /* 已删：.toolbar-select / .toolbar-annot 两条死规则。JSX 里从来没有这两个类名，
    且它们的 translateX(-50%) 与新的 layoutToolbar 绝对定位直接冲突。 */
 
-/* ===== 顶部提示条 ===== */
-.shot-hint {
-  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 16px; border-radius: 10px;
-  background: var(--shot-bar-bg, rgba(10, 14, 24, 0.88));
-  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.14));
-  color: var(--shot-bar-text, #E6EDF7); font-size: 12px; z-index: 40;
-  white-space: nowrap; pointer-events: none;
-}
+/* 已删：`.shot-hint` 的第一块规则（`position:absolute; top:16px` 那一版）。
+   它和文件后面那块「截图界面底部居中」的 `position:fixed; bottom:16px` 是同一元素的两条规则，
+   而 CSS 是按属性层叠的 —— 两条的偏移量**同时生效**，于是 fixed + top + bottom + height:auto
+   把提示条拉成满屏高（实测 570px 视口里 offsetHeight = 538）。那块规则的所有视觉属性
+   本来也被第二条逐条覆写，删掉它零视觉变化。真正的定位现在在 `.bottom-stack`（§3）。 */
 .shot-hint kbd {
   font-family: ui-monospace, Consolas, monospace;
   background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 10%, transparent);
@@ -497,11 +535,12 @@ body {
    width 改了的话要同步 ScreenshotOverlay 里的 OCR_PANEL_W。 */
 .ocr-drawer {
   position: absolute; width: 252px;
-  background: var(--glass-dialog-bg, rgba(10, 22, 40, 0.92));
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
-  border: 1px solid var(--border-color, #162B45);
-  border-radius: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  /* V2 双轨：抽屉是「短命 + 盖在正文上读字 + 可能叠多层」的工具浮层，不是窗口级玻璃。
+     此前吃 --glass-dialog-bg（六套里五套是 .66 alpha），压进选区内侧时底下的图会透上来，
+     行号 / 副标那种小字直接读不出（实测 1.60:1）。--float-card-* 就是为此准备的实底卡轨。 */
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  border-radius: 12px; box-shadow: var(--float-card-shadow);
   overflow: hidden; z-index: 50;
   display: flex; flex-direction: column;
 }
@@ -519,7 +558,29 @@ body {
   background: var(--accent-solid, #2D78C2); color: #fff;
   font-size: 11px; font-weight: 500; cursor: pointer;
 }
-.ocr-head .copy-all.done { background: var(--green, #22c55e); }
+.ocr-head .copy-all.done { background: var(--success); }
+
+/* ===== §2 OCR 的三个非成功态 =====
+   旧实现只有 lines.length === 0 一个分支，running / failed / 真空三件事共用一句
+   「未从图片识别到文字」，失败连重试入口都没有。 */
+.ocr-state { padding: 14px 12px; display: flex; flex-direction: column; gap: 9px; align-items: flex-start; }
+.ocr-state .t { font-size: 12px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+.ocr-state.err .t { color: var(--danger); }
+.ocr-state .d { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+.ocr-state .retry {
+  height: 26px; padding: 0 12px; border-radius: 8px; cursor: pointer; font-family: inherit;
+  border: 1px solid var(--accent-border);
+  background: transparent; color: var(--accent); font-size: 11px;
+}
+.ocr-state .retry:hover { background: var(--hover); }
+/* 抽屉里的转圈比工具栏那颗小一号（12px vs 17px）：这里跟着 12px 的行高走，
+   也不会像工具栏那样一换尺寸就整条右对齐平移。 */
+.ocr-state .ocr-spin {
+  width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+  border: 2px solid color-mix(in srgb, var(--shot-bar-muted) 28%, transparent);
+  border-top-color: var(--shot-ocr);
+  animation: ocrSpin 0.8s linear infinite; /* ui-rule-ok: 复用工具栏那颗 .ocr-spin 的同一支转圈，两处时长必须一致，不是新档位 */
+}
 .ocr-body { padding: 8px 10px; overflow-y: auto; }
 /* 每行都是一个「复制这行」按钮（U7：原先是 div，键盘到不了）。
    width/text-align 是换成 button 后补的：按钮默认 inline-block 且文字居中，
@@ -534,7 +595,7 @@ body {
 .ocr-row:hover { background: var(--hover, #0F1F35); }
 .ocr-row .n { font-size: 10px; color: var(--text-muted, #7994B4); font-family: ui-monospace, Consolas, monospace; padding-top: 2px; min-width: 15px; }
 .ocr-row .tx { flex: 1; word-break: break-all; }
-.ocr-row.copied { background: var(--green-bg, #052E16); color: var(--green, #4ADE80); }
+.ocr-row.copied { background: var(--success-bg); color: var(--success); }
 .ocr-foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border-color, #162B45); }
 .ocr-foot .fbtn {
   flex: 1; min-width: 68px; height: 28px; border-radius: 8px; font-size: 11px; cursor: pointer;
@@ -556,23 +617,21 @@ body {
    选区在左上时要跨整屏去点出口，选区在右下时面板直接压在图上。 */
 .act-panel {
   position: absolute; width: 224px;
-  background: var(--glass-dialog-bg, rgba(10, 22, 40, 0.92));
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
-  border: 1px solid var(--border-color, #162B45);
-  border-radius: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  border-radius: 12px; box-shadow: var(--float-card-shadow);
   overflow: hidden; z-index: 50;
 }
-/* 上下都放不下、只能盖在选区内时：调淡一点，尽量让底下的图还看得见 */
-.act-panel.inside { opacity: 0.94; }
-.act-panel.inside:hover { opacity: 1; }
+/* .act-panel.inside 的 opacity 降级已删：底色改实底之后，「让底下的图透过来」
+   这条兜底和它的理由一起失效了（留着的后果是行文字在半透明底上掉到 1.6:1）。
+   该不该盖住选区由 panelPos.ts 决定——它本来就优先贴选区外侧，只有真的很宽才退到内侧。 */
 .act-head {
   display: flex; align-items: center; gap: 6px;
   padding: 9px 12px; font-size: 12px; font-weight: 600;
   border-bottom: 1px solid var(--border-color, #162B45);
   color: var(--text-primary, #E0E8F0);
 }
-.act-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green, #22c55e); }
+.act-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
 .act-row {
   /* U7：这九行原先是 `<div onClick>`，而「送动作链 / 固定区域 / 重新截图」
      只有这一条路——键盘用户根本到不了。现在是 `<button>`，
@@ -595,12 +654,18 @@ body {
    放进 button），所以要把 display:block 补回来，否则两行会拼成一行。 */
 .act-row .lbl { display: block; font-size: 12px; }
 .act-row .sub { display: block; font-size: 10px; color: var(--text-muted, #7994B4); margin-top: 1px; }
+/* 文字列的容器：图标槽与 .k/.mk 都是 flex 同级，谁都能来抢这 164px
+   （224 − 1px 双边 − 12 − 26 − 8 − 12），所以它必须能缩（min-width:0），
+   否则长副标会把快捷键挤出面板。 */
+.act-row .tx { flex: 1; min-width: 0; }
+.act-row .mk { display: flex; align-items: center; flex: none; }
 .act-row .k { margin-left: auto; font-size: 10px; color: var(--text-muted, #7994B4); font-family: ui-monospace, Consolas, monospace; }
 .act-row.primary { background: var(--accent-light, #0A1E3A); border-radius: 8px; margin: 6px 8px; padding: 8px 10px; }
 .act-row.primary .ic { background: var(--accent-solid, #2D78C2); color: #fff; }
-.act-row.pin .ic { color: #ec4899; }
-.act-row.ai .ic { background: linear-gradient(135deg, #5B6AF0, #7C5CF0); color: #fff; }
-.act-row.chain .ic { background: linear-gradient(135deg, #0ea5e9, #06b6d4); color: #fff; }
+.act-row.pin .ic { color: var(--preview-pin); }
+/* 原来这两条给 AI / 链的图标槽刷了硬编码渐变（#5B6AF0→#7C5CF0、#0ea5e9→#06b6d4），
+   不来自任何令牌，6 档主题里长得一模一样，还与「AI 标识只认 AiMark」的唯一样式源分叉。
+   现在槽底统一 --input-bg，云端风险改由行末 AiBadge 承担。 */
 /* 面板分组标题：9 行平铺时扫视没有落点，分三组后每组 2-3 行。
    不删行——工具栏平铺三个只是多给一条路，不是把路搬走（用户可能从「更多」进来再选复制）。 */
 .act-group {
@@ -608,34 +673,86 @@ body {
   color: var(--text-muted, #7994B4); border-top: 1px solid var(--border-color, rgba(22, 43, 69, 0.8));
 }
 .act-group:first-of-type { border-top: 0; }
+/* §5④：敏感内容提示与「插入到当前文档」原先把这几条写在 JSX 的内联 style 上，
+   内层还有硬编码的 cyan。颜色一律改从令牌取，样式回到 CSS 单一所有者。 */
+.act-sens {
+  padding: 6px 12px; font-size: 11px; line-height: 1.5;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+}
+.act-row.insert {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+/* §3：收起态的那一行「展开 N 项」——它替代的是 6 行出口，所以刻意比正行淡，
+   但仍然是同一套 .act-row 的热区与键盘可达性。 */
+.act-row.expand .ic {
+  background: transparent; border: 1px dashed var(--border-color);
+  color: var(--text-muted);
+}
+.act-row.expand .lbl { color: var(--text-muted); }
 
-/* ===== 底部动作弹层（AI / 动作链选择） ===== */
+/* ===== 云端动作弹层（AI / 动作链选择） ===== */
+/* left / top / max-height 由父组件用 layoutSidePanel 算好写进 style
+   （与 .ocr-drawer 同一套约定）。原来是 `left:50%; bottom:16px` 的底部居中，
+   跟选区毫无关系 —— 识别到的文字在屏幕左上，面板却在脚底下。 */
 .pop-layer {
-  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
-  width: 440px; max-width: calc(100% - 32px); max-height: 56vh;
-  background: var(--glass-dialog-bg, rgba(10, 22, 40, 0.94));
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
-  border: 1px solid var(--border-color, #162B45);
-  border-radius: 12px; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.45);
+  position: absolute;
+  width: 320px; /* = AI_POP_W（lib/screenshot/shotConstants.ts），两处必须一致 */
+  max-width: calc(100% - 32px);
+  background: var(--float-card-bg, var(--card-bg));
+  border: 1px solid var(--float-card-border, var(--border-color));
+  border-radius: 12px; box-shadow: var(--float-card-shadow);
   display: flex; flex-direction: column; overflow: hidden; z-index: 60;
 }
 .pop-head {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
   padding: 9px 12px; font-size: 12px; font-weight: 600;
-  background: var(--accent-light, #0A1E3A);
-  border-bottom: 1px solid var(--accent-border, rgba(59, 158, 255, 0.35));
-  color: var(--accent-strong, #3B9EFF);
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--accent-border);
+  color: var(--accent-strong);
+}
+/* 标题 + 副标竖排。原来头部只有一行标题，「这些动作会发送到云端、可能计费」
+   被写在每一行的后缀上（23 行重复 23 遍）；收口到头部一次（D3）。 */
+.pop-head .ht { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pop-head .sub {
+  font-size: 11px; font-weight: 400; letter-spacing: 0;
+  color: var(--text-muted);
 }
 .pop-head .sp { flex: 1; }
 .pop-head .xbtn {
   width: 24px; height: 24px; border: none; border-radius: 6px;
-  background: transparent; color: var(--text-muted, #7994B4);
-  cursor: pointer; font-size: 13px;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; font-size: 13px; flex-shrink: 0;
 }
-.pop-head .xbtn:hover { background: var(--hover, #0F1F35); color: var(--text-primary); }
+.pop-head .xbtn:hover { background: var(--hover); color: var(--text-primary); }
+/* 搜索框：23 条动作里找人，滚动 + ↑↓ 都不如打两个字（键盘导航的起点在这里）。
+   Esc 在框里有字时只清字、不关面板（层序见 AiPopover 的 onSearchKeyDown）。 */
+.pop-search {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border-color);
+}
+.pop-search:focus-within { border-bottom-color: var(--accent-border); }
+.pop-search .sic { display: flex; color: var(--text-muted); flex-shrink: 0; }
+.pop-search input {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font-size: 12px; color: var(--text-primary);
+}
+.pop-search input::placeholder { color: var(--text-muted); }
+.pop-search .kbd {
+  flex-shrink: 0; font-size: 11px; font-family: ui-monospace, Consolas, monospace;
+  color: var(--text-muted);
+}
 .pop-body { overflow-y: auto; padding: 8px; }
-.pop-empty { padding: 14px; font-size: 11px; color: var(--text-muted, #7994B4); text-align: center; }
+.pop-empty { padding: 14px; font-size: 11px; color: var(--text-muted); text-align: center; }
+/* 搜索无命中：写清「搜的是什么」，否则用户以为是面板坏了。与 .pop-empty 的区别
+   是这里必须回显查询词，且给一条出路（Esc 清字）。 */
+.pop-none {
+  padding: 16px 12px; font-size: 12px; line-height: 1.7; text-align: center;
+  color: var(--text-primary);
+}
+.pop-none .hint { display: block; margin-top: 4px; font-size: 11px; color: var(--text-muted); }
 /* 同 .ocr-row：已换成 button（U7），需要自己撑满一行并左对齐。 */
 .pop-row {
   width: 100%; box-sizing: border-box; text-align: left;
@@ -643,23 +760,37 @@ body {
   padding: 8px 10px; border-radius: 8px; cursor: pointer;
   transition: background 0.12s;
 }
-.pop-row:hover { background: var(--hover, #0F1F35); }
+.pop-row:hover { background: var(--hover); }
+/* ↑↓ 走过来的那一行：与悬停同源（同一个 --hover），只给图标格加一圈描边。
+   不新造一套高亮色 —— 两种状态长得不一样，用户就要先学一次「哪个才是选中」。 */
+.pop-row.on { background: var(--hover); }
+.pop-row.on .ic { box-shadow: inset 0 0 0 1px var(--accent-border); }
 .pop-row .ic {
   width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; font-size: 12px;
-  background: var(--input-bg, #162B45); color: var(--text-primary, #E0E8F0);
+  background: var(--input-bg); color: var(--text-primary);
 }
 /* 行变成 button 后，这两行从 <div> 改成了 <span>（div 不能合法地放进 button），
-   所以要把 display:block 补回来，否则标题与副标题会拼成一行。 */
-.pop-row .lbl { display: block; font-size: 12px; color: var(--text-primary, #E0E8F0); }
-.pop-row .dsc { display: block; font-size: 10px; color: var(--text-muted, #7994B4); margin-top: 1px; }
-.pop-row .net { margin-left: auto; font-size: 10px; color: var(--orange, #FB923C); white-space: nowrap; }
+   所以要把 display:block 补回来，否则标题与副标题会拼成一行。
+   .tx 是承载它们的容器：320px 比原来的 440px 窄，必须 min-width:0 才允许换行，
+   否则长描述会把图标格挤出面板。 */
+.pop-row .tx { flex: 1; min-width: 0; }
+.pop-row .lbl { display: block; font-size: 12px; color: var(--text-primary); }
+.pop-row .dsc { display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px; } /* ui-rule-ok: 10px 是这一行改前的存量档位，动它会把弹层每一行的层级一起挪 */
+.pop-row .net { margin-left: auto; font-size: 10px; color: var(--warning); white-space: nowrap; } /* ui-rule-ok: 10px 是存量档位，本轮只把色名 --orange 换成语义名 --warning（§5②），动字号会改动作链弹层的层级 */
 .pop-row.busy { opacity: 0.55; pointer-events: none; }
 /* 含云端步骤的链在 AI 未启用时置灰（规则 16）。与 .busy 外观相近但语义不同：
    busy = 正在跑，disabled = 不可用。不用 pointer-events:none，否则 not-allowed 光标也不会显示；
    不可用的原因写在 .dsc 里，不靠 tooltip（规则 15.3：不静默）。 */
 .pop-row.disabled { opacity: 0.45; cursor: not-allowed; }
 .pop-row.disabled:hover { background: transparent; }
+/* 折叠态的「展开全部 N 项」：照抄出口面板 .act-row.expand 的虚线空槽，
+   同一句话在同一屏里只该有一种长相。 */
+.pop-row.expand .ic {
+  background: transparent; border: 1px dashed var(--border-color);
+  color: var(--text-muted);
+}
+.pop-row.expand .lbl { color: var(--text-muted); }
 .pop-foot { padding: 8px 10px; border-top: 1px solid var(--border-color, #162B45); display: flex; gap: 6px; align-items: center; }
 .pop-foot .fb {
   flex: 1; height: 28px; border-radius: 8px; font-size: 11px; cursor: pointer;
@@ -668,7 +799,7 @@ body {
 }
 .pop-foot .fb:hover { background: var(--hover, #0F1F35); }
 .pop-foot .fb.primary { border: none; background: var(--accent-solid, #2D78C2); color: #fff; }
-.pop-foot .fb.primary.done { background: var(--green, #22c55e); }
+.pop-foot .fb.primary.done { background: var(--success); }
 .pop-result {
   padding: 10px 12px; font-size: 12px; line-height: 1.7;
   color: var(--text-primary, #E0E8F0);
@@ -678,7 +809,17 @@ body {
 }
 .pop-result .meta { font-size: 10px; color: var(--text-muted, #7994B4); margin-bottom: 6px; }
 .pop-result.err { color: var(--danger, #F87171); }
-.pop-confirm { padding: 10px 12px; font-size: 12px; color: var(--orange, #FB923C); line-height: 1.6; }
+.pop-confirm { padding: 10px 12px; font-size: 12px; color: var(--warning); line-height: 1.6; }
+.pop-confirm .hint { font-size: 11px; color: var(--text-muted); }
+/* 底部渐隐：面板一屏只有两三行，不提示就没人知道下面还有。
+   只在真的还能往下滚时显示 —— 由 JS 加 .scrolled（AiPopover 的 syncFade），
+   CSS 自己判不了「滚到底了没有」。 */
+.pop-layer .pop-fade {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
+  pointer-events: none; opacity: 0; transition: opacity 150ms;
+  background: linear-gradient(to bottom, transparent, var(--float-card-bg, var(--card-bg)));
+}
+.pop-layer.scrolled .pop-fade { opacity: 1; }
 
 /* ===== 像素放大镜 + 取色 ===== */
 .mag-view {
@@ -694,14 +835,9 @@ body {
 .mag-info { font-size: 10px; color: var(--shot-bar-text, #fff); font-variant-numeric: tabular-nums; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
 .mag-info .hex { color: var(--accent, #8cc5ff); }
 
-/* ===== 吸附窗口高亮框（悬停命中目标窗口） ===== */
-.snap-rect {
-  position: absolute;
-  border: 1.5px dashed rgba(255, 205, 80, 0.95);
-  background: rgba(255, 205, 80, 0.06);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-  pointer-events: none; z-index: 25;
-}
+/* 吸附窗口高亮框：`.snap-rect` / `.snap-tip` 两条死规则已删——吸附高亮现在由
+   `.win-outline` 与选区框自己画，这两个类名在全仓 tsx 里一次都没出现过
+   （死 CSS 检测见 `screenshotDeadCss.test.ts`，别靠记忆删）。 */
 /* Tier3 双层轮廓：外层窗口边界（淡蓝虚线）。不加 z-index：DOM 位于 .sel-rect 之前，
    选区框自然盖在上层；位于暗遮罩之后，窗口轮廓自然可见。控件≈整窗（solo）时不渲染。 */
 .win-outline {
@@ -711,19 +847,9 @@ body {
   border-radius: 10px;
 }
 
-.snap-tip {
-  position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%);
-  padding: 2px 10px; border-radius: 6px; font-size: 10px; white-space: nowrap;
-  background: var(--shot-bar-bg, rgba(10, 14, 24, 0.9)); color: #ffd75e;
-  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.14)); pointer-events: none;
-}
-
-/* 常驻操作提示条：让用户知道截图吸附 / 键盘遍历等能力（截图界面底部居中） */
+/* 常驻操作提示条：让用户知道截图吸附 / 键盘遍历等能力。
+   定位在 .bottom-stack（§3），本块只画长相。 */
 .shot-hint {
-  position: fixed;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
   z-index: 60;
   display: flex;
   align-items: center;
@@ -792,18 +918,21 @@ body {
 .qr-bar {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 10px; font-size: 11px;
-  background: color-mix(in srgb, var(--green, #22c55e) 12%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--green, #22c55e) 25%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--success) 25%, transparent);
   color: var(--text-primary, #E0E8F0);
 }
-.qr-ic { font-size: 13px; color: var(--green, #34d399); flex-shrink: 0; }
+.qr-ic { display: inline-flex; align-items: center; color: var(--success); flex-shrink: 0; }
 .qr-tx { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: break-all; }
 .qr-btn {
-  flex-shrink: 0; height: 22px; padding: 0 9px; border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--green, #22c55e) 40%, transparent); background: transparent;
-  color: var(--green, #34d399); font-size: 10px; cursor: pointer;
+  flex-shrink: 0; height: 24px; padding: 0 9px; border-radius: 6px; /* ui-rule-ok: 6px 圆角是存量取值，本轮只把热区下限从 22 抬到 24（§5⑤），动它会把整条二维码条的观感一起改，不在本次范围 */
+  /* U7 热区下限 24px（原 22px）。上下各 -1px 负 margin 抵掉多出来的 2px，
+     条高不变——照 .hk-close 的既有做法，别让一个合规改动把抽屉头撑高。 */
+  margin: -1px 0;
+  border: 1px solid color-mix(in srgb, var(--success) 40%, transparent); background: transparent;
+  color: var(--success); font-size: 10px; cursor: pointer; /* ui-rule-ok: 10px 是这条二维码条的存量档位，与 .qr-tx 的 11px 差一档才分得开「内容」和「动作」 */
 }
-.qr-btn:hover { background: color-mix(in srgb, var(--green, #22c55e) 15%, transparent); }
+.qr-btn:hover { background: color-mix(in srgb, var(--success) 15%, transparent); }
 
 /* ===== 标注态选中框 + 元素缩放把手（V5 编辑态，微信/QQ 同款） ===== */
 /* 选中框：DOM 层（在 canvas 之上）整圈虚线（用户指定）。
@@ -865,12 +994,32 @@ body {
   font-size: 11px; line-height: 1.7; white-space: pre;
 }
 
+/* ===== 底部带单一所有者（审计 §3）=====
+   回执条 / 取色条 / 强度提示 / OCR 回执 / 找回条 / 快捷键提示原来各写各的
+   `bottom`（16 / 64 / 16 / 16 / fixed+top&bottom），于是：
+     · 同态两条都写 16 → 直接叠在一起（实测 30 组带内互叠）；
+     · ocrToast 手写 bottom:64 躲第一条，加第二条就没人管了；
+     · `.shot-hint` 同时吃到 `:390 top:16` 与 `:760 bottom:16`，
+       fixed + 两个偏移都非 auto + height:auto ⇒ **整条拉到满屏高**（实测 570 视口里 538px）。
+   现在只有栈自己声明位置，`left/bottom` 由 layoutBand 算完写进 style；
+   成员一律 `position: static`，谁也不会再自己躲谁。 */
+.bottom-stack {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+/* 成员的定位声明全部作废（top/bottom 在 static 下惰性失效，顺带治好上面那条拉伸） */
+.bottom-stack > * { position: static; left: auto; right: auto; top: auto; bottom: auto; transform: none; }
+
 /* ===== 出口反馈提示（成功绿 / 失败红） =====
    规则 15.3：完成 / 保存 / 贴图 / 复制 这些出口原来失败只写 logger，
-   UI 零反馈，用户看到的就是"点了没反应"。 */
+   UI 零反馈，用户看到的就是"点了没反应"。
+   位置不再自声明——它住在 .bottom-stack 里（§3），z-index 由栈给。 */
 .shot-toast {
-  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
-  z-index: 70; display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   padding: 7px 14px; border-radius: 10px;
   background: var(--shot-bar-bg, rgba(15, 23, 42, 0.96));
   border: 1px solid color-mix(in srgb, var(--danger, #F87171) 45%, transparent);
@@ -879,16 +1028,38 @@ body {
   font-size: 12px; white-space: nowrap;
   animation: shotToastIn 0.18s ease;
 }
-.shot-toast.ok { border-color: color-mix(in srgb, var(--green, #22c55e) 45%, transparent); color: var(--green, #86EFAC); }
-.shot-toast .ic { font-size: 13px; }
+.shot-toast.ok { border-color: color-mix(in srgb, var(--success) 45%, transparent); color: var(--success); }
+/* 回执图标位：槽里画的是 lucide 组件（✓/⚠ 是文本字符，与工具栏/弹层不同一套）。
+   svg 吃 currentColor，成功=--success、失败=--danger 由 .shot-toast 自己给。 */
+.shot-toast .ic { display: inline-flex; align-items: center; }
+/* 入场只动 Y（审计 §5⑦）：栈里成员被 `.bottom-stack > *` 改成了 transform:none，
+   旧 keyframes 的终值 translate(-50%, …) 会在 0.18s 里把条子挪走半个身位再跳回。 */
 @keyframes shotToastIn {
-  from { opacity: 0; transform: translate(-50%, 6px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
-/* ===== 吸管取色色值条 ===== */
+/* §1 找回条 = .shot-toast 的动作变体：退标注不再清空画布，给一条「找回 (Enter)」
+   与 6 秒倒计时（倒计时归零才真清）。规则 17.6 的两级取消：第一次 Esc 暂存，
+   重新拖框才作废；找回条本身是那次「没退出干净」的补救入口。
+   条内那颗按钮圆角取 4px：V4 同心 = 外 10px − 上下 padding 7px ⇒ 只能更小，落到尺子上是 4。 */
+.shot-toast.act { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--shot-bar-text); padding-right: 8px; }
+.shot-toast.act .tray-btn { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px;
+  border: none; border-radius: 4px; background: var(--accent-solid); color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，与 .tool.done-btn / .act-row.primary .ic 同一惯例（无对应令牌） */ font-size: 11px;
+  cursor: pointer; font-family: inherit; }
+.shot-toast.act .tray-cd { width: 26px; height: 24px; position: relative; overflow: hidden;
+  border-radius: 4px; background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent); }
+/* 倒计时走带（不是 setInterval 数字）：截图窗走 hide() 而非 close()，
+   JS 定时器在窗体不可见时照样跑（性能准则 8.1 / 8.2）；CSS 动画随元素卸载自然停。
+   时长由 JSX 写进 animationDuration，与 JS 的作废定时器同源（ESC_TRAY_MS）。 */
+.shot-toast.act .tray-cd::after { content: ""; position: absolute; inset: 0;
+  background: var(--shot-bar-muted); transform-origin: left center;
+  animation-name: ppTrayDrain; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes ppTrayDrain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* ===== 吸管取色色值条 =====
+   与 .shot-toast 同属底部带（§3），定位交给 .bottom-stack。 */
 .picker-bar {
-  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
   z-index: 46; display: flex; align-items: center; gap: 8px;
   padding: 6px 14px; border-radius: 10px;
   background: var(--shot-bar-bg, rgba(15, 23, 42, 0.94));
@@ -899,6 +1070,14 @@ body {
 .picker-bar .sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.35); }
 .picker-bar .hex { font-family: ui-monospace, Consolas, monospace; font-weight: 600; letter-spacing: 0.5px; }
 .picker-bar .hint { color: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 55%, transparent); font-size: 10px; }
+/* 底部带里两条 .picker-bar 变体（审计 §5④：原来是写在内联 style 上的 borderColor / bottom）
+   —— 颜色是装饰，进类；bottom 由 layoutBand 统一给，成员一律不许自己声明。 */
+.picker-bar.strength { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.picker-bar.ocr-receipt { cursor: pointer; font-family: inherit; font-size: 12px;
+  border-color: color-mix(in srgb, var(--success) 55%, transparent); }
+/* 槽里换成组件后，槽自己必须是 inline-flex：svg 是 inline-level，
+   按基线排会比同行文字低 2–3px（.act-row .ic / .pop-row .ic 本来就是 flex 才没露馅）。 */
+.picker-bar.ocr-receipt .ic, .pin-quick-btn .ic { display: inline-flex; align-items: center; }
 
 /* ===== OCR 文本编辑 ===== */
 .ocr-edit-out {
@@ -909,9 +1088,7 @@ body {
 }
 
 /* ===== OCR 识别过程可见（A 方案：识别中指示 / 完成胶囊） ===== */
-/* 两侧都放不下、只能盖在选区上时：调淡一点，尽量让底下内容还看得见 */
-.ocr-drawer.inside { opacity: 0.93; }
-.ocr-drawer.inside:hover { opacity: 1; }
+/* .ocr-drawer.inside 的 opacity 降级已删，理由同 .act-panel.inside（见上方 §5⑥ 注释）。 */
 
 /* 位置同抽屉（同一锚点，点击原地展开），由 JS 给 left/top */
 /* 已弃用：识别中的浮动胶囊已删（与工具栏按钮上的 .ocr-spin 重复，同一件事两处转圈）。
@@ -1029,8 +1206,8 @@ body {
   flex-shrink: 0; height: 24px; padding: 0 7px; border-radius: 6px;
   background: transparent; cursor: pointer; font-size: 10.5px; white-space: nowrap;
 }
-.ls-btn.stop { border: 1px solid color-mix(in srgb, var(--green, #22c55e) 50%, transparent); color: var(--green, #86EFAC); }
-.ls-btn.stop:hover { background: color-mix(in srgb, var(--green, #22c55e) 15%, transparent); }
+.ls-btn.stop { border: 1px solid color-mix(in srgb, var(--success) 50%, transparent); color: var(--success); }
+.ls-btn.stop:hover { background: color-mix(in srgb, var(--success) 15%, transparent); }
 .ls-btn.abort { border: 1px solid color-mix(in srgb, var(--danger, #F87171) 45%, transparent); color: var(--danger, #FCA5A5); }
 .ls-btn.abort:hover { background: color-mix(in srgb, var(--danger, #F87171) 15%, transparent); }
 .ls-btn.off { opacity: 0.4; cursor: not-allowed; }
@@ -1048,7 +1225,7 @@ body {
 
 /* ===== 固定区域「预览即默认」：虚线紫框预览 + 右下角钉区域按钮 ===== */
 .sel-rect.fixed-preview {
-  border: 2px dashed #7c6cff;
+  border: 2px dashed var(--preview-fixed);
   border-radius: 4px;
 }
 .pin-preview-lbl {
@@ -1056,7 +1233,7 @@ body {
   left: 0;
   top: -26px;
   font-size: 11px;
-  background: rgba(124, 108, 255, 0.92);
+  background: color-mix(in srgb, var(--preview-fixed) 92%, transparent);
   color: #fff;
   padding: 2px 8px;
   border-radius: 6px;
@@ -1068,24 +1245,29 @@ body {
   right: 16px;
   bottom: 16px;
   z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   padding: 6px 12px;
   border-radius: 8px;
   cursor: pointer;
-  background: rgba(124, 108, 255, 0.22);
-  border: 1px solid rgba(124, 108, 255, 0.5);
-  color: #cdbcff;
+  background: color-mix(in srgb, var(--preview-fixed) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--preview-fixed) 50%, transparent);
+  /* 原字面量 #cdbcff（rgb 205,188,255）是手挑的浅 tint；派生值 rgb(196,189,255)，
+     红通道差 9，在这块深底上对比度 9.0 → 8.5，肉眼不可辨、也远过 4.5。 */
+  color: color-mix(in srgb, var(--preview-fixed) 45%);
 }
 .pin-quick-btn:hover {
-  background: rgba(124, 108, 255, 0.34);
+  background: color-mix(in srgb, var(--preview-fixed) 34%, transparent);
 }
 
 /* ===== 自动打码「预览式」：橙色虚框轻预览 + 底部确认条 ===== */
 .mask-preview {
   position: absolute;
-  border: 2px dashed #ff9f43;
+  border: 2px dashed var(--preview-mask);
   border-radius: 3px;
-  background: rgba(255, 159, 67, 0.18);
+  background: color-mix(in srgb, var(--preview-mask) 18%, transparent);
   cursor: pointer;
   z-index: 15;
 }
@@ -1099,7 +1281,7 @@ body {
   top: -18px;
   transform: translateX(-50%);
   font-size: 10px;
-  background: rgba(255, 159, 67, 0.9);
+  background: color-mix(in srgb, var(--preview-mask) 90%, transparent);
   color: #1a1205;
   padding: 1px 6px;
   border-radius: 5px;
@@ -1132,8 +1314,10 @@ body {
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 .mask-title {
+  /* 隐私=风险，用 --warning 语义色配 ShieldAlert，不再靠 🔒 emoji 表意（L 组规则） */
+  display: flex; align-items: center; gap: 8px;
   font-size: 12px; font-weight: 700; letter-spacing: 0.3px;
-  color: var(--orange, #ffb86b); /* 橙色强调：预览框同色系，一眼认出是自动打码的确认 */
+  color: var(--warning); /* 警告强调：预览框同色系，一眼认出是自动打码的确认 */
 }
 .mask-actions { display: flex; gap: 8px; }
 .mask-bar button {
@@ -1254,10 +1438,16 @@ body {
   75% { transform: translateX(3px); }
 }
 /* 属性条随选中工具滑入（挂载即播，纯 CSS；保留 translateX(-50%) 居中） */
+/* 属性条的入场只动 Y（审计 §5⑦）：
+   `.attr-bar` 的定位早已从 CSS 居中改成 JS 写 left（layoutToolbar），本体没有
+   transform；而旧 keyframes 的终值是 `translate(-50%, 0)` —— 两条同时成立的结果是
+   每次挂载那 0.26s 里，435px 宽的条停在真实位置**左边半个身位**（≈217px），
+   动画结束才跳回。选区贴屏幕左侧时那半个身位在屏外。
+   终值写成 none 才能和「无 transform 的基线」对齐。 */
 .attr-bar { animation: tbAttrIn 0.26s cubic-bezier(.34,1.56,.64,1); }
 @keyframes tbAttrIn {
-  from { opacity: 0; transform: translate(-50%, -10px); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* ===== U7：工具栏里的原生 button 重置 =====

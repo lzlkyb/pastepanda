@@ -12,7 +12,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { ocrImage, type OcrResult } from "@/lib/api/images";
-import { aiListActions, aiRun, type AiActionMeta, type AiRunResponse } from "@/lib/api/ai";
+import {
+  aiClassifyText,
+  aiListActions,
+  aiRun,
+  type AiActionMeta,
+  type AiRunResponse,
+} from "@/lib/api/ai";
 import { chainList, type ChainDef } from "@/lib/api/chains";
 import { runChain } from "@/lib/chains/registry";
 import { chainNeedsAi } from "@/lib/screenshot/chains";
@@ -30,9 +36,12 @@ import {
   sleep,
 } from "@/lib/screenshot/imageIo";
 import {
+  AI_POP_MAX_VH,
+  AI_POP_W,
   ATTR_BAR_H,
   ATTR_TOOLS,
   ERASER_RADIUS_SCALE,
+  ESC_TRAY_MS,
   LONG_OCR_MAX_H,
   NO_COLOR_TOOLS,
   OCR_PANEL_W,
@@ -76,7 +85,7 @@ import {
   wrapLines,
 } from "@/lib/screenshot/draw";
 import { isRowMasked } from "@/lib/screenshot/maskGeom";
-import { layoutToolbar, modePillPos } from "@/lib/screenshot/toolbarPos";
+import { layoutToolbar, modePillPos, type TbRect } from "@/lib/screenshot/toolbarPos";
 import { layoutOcrCopyBar } from "@/lib/screenshot/ocrBarPos";
 import {
   pointInAnyWord,
@@ -85,10 +94,15 @@ import {
   selectLine,
 } from "@/lib/screenshot/ocrSelect";
 import { lineBox } from "@/lib/screenshot/ocrTable";
-import { layoutSidePanel } from "@/lib/screenshot/panelPos";
+import { layoutBand, layoutSidePanel, PANEL_GAP } from "@/lib/screenshot/panelPos";
+import BottomStack, { pickBandRows, type BandRow } from "./BottomStack";
 import { layoutSizeLabel } from "@/lib/screenshot/sizeLabelPos";
 import { samplePixelHex } from "@/lib/screenshot/pixelProbe";
 import type { OcrSelectMode } from "@/lib/screenshot/types";
+// AI 弹层的动作排序要 contentType 与预分析特征。只 import 子模块，
+// 不走 @/lib/transforms 的 barrel —— 那会把二十多个本地变换模块全拉进截图包。
+import { analyzeContent } from "@/lib/transforms/analyzer";
+import type { TransformContext } from "@/lib/transforms/types";
 import {
   LONGSHOT_CONTROL,
   type LongShotControl,
@@ -99,9 +113,13 @@ import { TextToolbar } from "./TextToolbar";
 import { AttrBar, type MaskShape, type TextSizeId, type WidthId } from "./AttrBar";
 import { OcrDrawer } from "./OcrDrawer";
 import { OcrEditPopover, TablePopover } from "./TextPopovers";
-import { AiPopover, ChainPopover, type PopRun } from "./AiChainPopovers";
+import { AiPopover, type PopRun } from "./AiPopover";
+import { ChainPopover } from "./ChainPopover";
 import { ResultActions } from "./ResultActions";
 import { ModePill } from "./ModePill";
+// 图标位统一走 lucide 组件（与 AI 弹层 / 出口面板同一套语言）：
+// 这几处原来画的是 ✓ ⚠ 📄 🔒 📌 这类文本字符，同屏多套图标语言。
+import { Check, Crop, FileText, TriangleAlert, X } from "lucide-react";
 // 组件自身仍需要：COLORS 定初始颜色，TOOL_BY_KEY 供数字键切工具（快捷键不经过工具栏），
 // WIDTHS 把粗细档位换算成像素
 import { BLUR_LEVELS, COLORS, DEWARP_LEVELS, MOSAIC_LEVELS, TEXT_SIZES, TOOL_BY_KEY, WIDTHS } from "./tools";
@@ -145,6 +163,20 @@ export function ScreenshotOverlay() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [undoStack, setUndoStack] = useState<Annotation[][]>([]);
   const [redoStack, setRedoStack] = useState<Annotation[][]>([]);
+  /** §1 Esc 退标注的暂存槽：画布不再一走了之，底部带给一条 6 秒的「找回」。
+   *  规则 17.6 的两级取消里，这一层管「按快了」：暂存 → 找回 = 一步回退，
+   *  重新拖框或倒计时归零才真作废。 */
+  const [escTray, setEscTray] = useState<{
+    annotations: Annotation[];
+    undoStack: Annotation[][];
+    redoStack: Annotation[][];
+    sel: Rect | null;
+    count: number;
+  } | null>(null);
+  /** 快捷键 effect 的依赖数组里没有 escTray（加进去会让整层键盘重挂），Enter 找回走 ref 读最新值。 */
+  const escTrayRef = useRef<typeof escTray>(null);
+  escTrayRef.current = escTray;
+  const escTrayTimerRef = useRef<number | null>(null);
   const [tool, setTool] = useState<ToolId>("rect");
   const [color, setColor] = useState(COLORS[1]);
   // 线宽档位（旧实现用写死的 LINE_WIDTH = 3，用户改不了）
@@ -183,6 +215,10 @@ export function ScreenshotOverlay() {
   const eraserCurRef = useRef<HTMLCanvasElement>(null);
   const actRef = useRef<HTMLDivElement>(null);
   const [actSize, setActSize] = useState({ w: 224, h: 300 });
+  // 底部带同理要实测：layoutBand 判「被挡住了才抬」吃的是带的真实宽高，
+  // 写死会让带子在两条行同时出现时压住工具栏（抽屉也跟着避不准）。初值是单行估算。
+  const bandRef = useRef<HTMLDivElement>(null);
+  const [bandSize, setBandSize] = useState({ w: 320, h: 30 });
   const [ocr, setOcr] = useState<OcrResult | null>(null);
   const [resultPath, setResultPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -300,6 +336,10 @@ export function ScreenshotOverlay() {
   const [copiedOut, setCopiedOut] = useState(false);
   // confirm 态继续时复用的 action（aiBusyId 在 finally 已清空）
   const lastAiActionRef = useRef<AiActionMeta | null>(null);
+  // 推荐段打分要的内容上下文；null = 本地分类还没回来（或选区没文字），此时不排推荐
+  const [aiCtx, setAiCtx] = useState<TransformContext | null>(null);
+  // 每次打开弹层都自增：晚到的旧分类结果必须丢弃，否则新选区会拿到上一次内容的排序
+  const aiClassifySeq = useRef(0);
   // V3：吸附窗口 + 长截图（V6.19 hover 即选区后 snap 预览退役，吸附直接写入 sel）
   const [longShot, setLongShot] = useState(false);
   // 固定区域「预览即默认」（P1）：恢复固定区域不再静默进标注，改用虚线紫框预览（单击采纳 / 拖改 / Esc 重置）
@@ -336,6 +376,8 @@ export function ScreenshotOverlay() {
    *  用户在识别未完时 Esc 退回重选，旧结果落下来就会把字层画到新选区上。 */
   const ocrGenRef = useRef(0);
   const [ocrDrawerOpen, setOcrDrawerOpen] = useState(false);
+  /** §3：出口面板「文字 / 其它」两组的展开态。默认收起，一轮里记住用户的选择。 */
+  const [actExpanded, setActExpanded] = useState(false);
   const [ocrToast, setOcrToast] = useState<string | null>(null);
   const ocrToastTimerRef = useRef<number | null>(null);
   /** toast 点击时复制的内容（null → 复制 OCR 全文；动作链结果用非空覆盖） */
@@ -921,7 +963,43 @@ export function ScreenshotOverlay() {
    *
    *  收口到一处还修了一个真 bug：Esc 分支原本是另一份手写实现，漏了
    *  selFixedRef 重置 —— 按 Esc 回到选区态后 hover 吸附不恢复，选区被死死固定住（规则 11.1）。 */
+  /** 作废暂存槽（倒计时归零 / 重新拖框 / 已经找回）。 */
+  const clearEscTray = useCallback(() => {
+    if (escTrayTimerRef.current !== null) {
+      window.clearTimeout(escTrayTimerRef.current);
+      escTrayTimerRef.current = null;
+    }
+    setEscTray(null);
+  }, []);
+
+  // 关窗时残留的 6 秒定时器：回调会往已卸载的组件里 setState。卸载时一并撤掉。
+  useEffect(() => {
+    return () => {
+      if (escTrayTimerRef.current !== null) window.clearTimeout(escTrayTimerRef.current);
+    };
+  }, []);
+
+  /** 找回 = 把暂存槽原样放回，含撤销栈（审计 §1 的验收判据：3 个标注与撤销栈都在）。
+   *  读 escTrayRef 而非 state：让本函数身份稳定，快捷键 effect 不必为此重挂监听。 */
+  const recallAnnot = useCallback(() => {
+    const t = escTrayRef.current;
+    clearEscTray();
+    if (!t) return;
+    setAnnotations(t.annotations);
+    setUndoStack(t.undoStack);
+    setRedoStack(t.redoStack);
+    if (t.sel) setSel(t.sel);
+    setPhase("annotate");
+  }, [clearEscTray]);
+
   const cancelAnnot = useCallback(() => {
+    // §1：画布先落进暂存槽，再由底部带那条 6 秒的「找回」决定要不要真作废。
+    // 空画布不入槽 —— 一笔未画时冒出台「已暂存 0 处」是噪音。
+    if (annotations.length > 0) {
+      if (escTrayTimerRef.current !== null) window.clearTimeout(escTrayTimerRef.current);
+      setEscTray({ annotations, undoStack, redoStack, sel, count: annotations.length });
+      escTrayTimerRef.current = window.setTimeout(clearEscTray, ESC_TRAY_MS);
+    }
     setAnnotations([]);
     setUndoStack([]);
     setRedoStack([]);
@@ -932,7 +1010,7 @@ export function ScreenshotOverlay() {
     clearOcrState();
     selFixedRef.current = false; // 解除固定 → hover 吸附恢复，可以重新挑窗口
     setPhase("select");
-  }, [clearOcrState]);
+  }, [annotations, undoStack, redoStack, sel, clearOcrState, clearEscTray]);
 
   /* ===== 快捷键 ===== */
   useEffect(() => {
@@ -1088,15 +1166,22 @@ export function ScreenshotOverlay() {
           });
           return;
         }
+        // 暂存槽还活着 → Enter 先把刚被 Esc 撤掉的画布找回来（审计 §1）。
+        // 放在"选区过小"判断之前：Esc 后选区原样保留，两条都会命中，谁先谁管。
+        if (e.key === "Enter" && !onButton && escTrayRef.current) {
+          e.preventDefault();
+          recallAnnot();
+          return;
+        }
         // 选区过小（误触点击）时不进入标注；焦点在按钮上时让按钮自己的 click 生效，避免双触发
         if (e.key === "Enter" && !onButton && s && s.w >= 4 && s.h >= 4) setPhase("annotate");
         return;
       }
       if (p === "annotate") {
-        // A 方案：Ctrl+R 展开/收起 OCR 抽屉（标注/结果态均可用）
+        // A 方案：Ctrl+R 与工具栏「取文字」是同一条路（展开/收起；失败或尚未起跑则重跑并展开）
         if ((e.key === "r" || e.key === "R") && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
-          if (ocr) setOcrDrawerOpen((v) => !v);
+          onOcrButton();
           return;
         }
         // T：直接复制全文，不开抽屉——熟练用户一步到位（规则 17.2）。
@@ -1340,10 +1425,12 @@ export function ScreenshotOverlay() {
     const roTb = observe(tbRef.current, setTbSize);
     const roAct = observe(actRef.current, setActSize);
     const roPill = observe(pillRef.current, setPillSize);
+    const roBand = observe(bandRef.current, setBandSize);
     return () => {
       roTb?.disconnect();
       roAct?.disconnect();
       roPill?.disconnect();
+      roBand?.disconnect();
     };
   }, [phase, sel]);
 
@@ -1808,7 +1895,7 @@ export function ScreenshotOverlay() {
                 const res = await runChain(c, text, {}, async () => false);
                 // 云端步骤中止时 res.final=中止前输入（原文），必须看 res.ok 判成功
                 if (res.ok && res.final) {
-                  showOcrToast(`⚡ 动作链「${chain.name}」完成 · 点击复制结果`, res.final);
+                  showOcrToast(`动作链「${chain.name}」完成 · 点击复制结果`, res.final);
                 } else {
                   showOcrToast(`动作链「${chain.name}」已中止 · 含云端步骤未确认`, "");
                 }
@@ -1979,17 +2066,20 @@ export function ScreenshotOverlay() {
     setOcrRetry((v) => v + 1);
   }, []);
 
-  /** 工具栏「取文字」点击：完成态 → 展开/收起抽屉；失败态 → 重试。
+  /** 工具栏「取文字」点击：每个状态都要有下落（规则 15.1 反馈与触发同可见性域）。
+   *  完成/空/识别中 → 展开或收起抽屉；失败与尚未起跑 → 先重跑再把抽屉开出来，
+   *  用户点的是按钮，不能只换一下按钮图标让他猜重跑已经开始。
    *  不直接复制全文：抽屉里还有逐行复制 / 二维码 / 提取表格 / AI 解释 / 送动作链，
    *  直接复制等于把这五个一起埋掉。一步到位那条路由 T 键负责。 */
   const onOcrButton = useCallback(() => {
-    if (ocrStatus === "failed") {
-      notePowerUsed("ocr"); // B 方案：点过即视为已发现
+    if (ocrStatus === "failed" || ocrStatus === "idle") {
+      if (ocrStatus === "failed") notePowerUsed("ocr"); // B 方案：点过即视为已发现
       retryOcr();
+      setOcrDrawerOpen(true);
       return;
     }
-    if (ocrStatus === "done" && ocr) setOcrDrawerOpen((v) => !v);
-  }, [ocrStatus, ocr, retryOcr, notePowerUsed]);
+    setOcrDrawerOpen((v) => !v);
+  }, [ocrStatus, retryOcr, notePowerUsed]);
 
   /** 工具栏「AI」点击。
    *
@@ -2229,6 +2319,27 @@ export function ScreenshotOverlay() {
       variant: "danger",
     });
 
+  // 弹层推荐段的打分上下文。分类走后端本地正则（不联网、不花钱 ⇒ 规则 16.4 豁免），
+  // 前端不另造一份分类器：口径必须和主窗口枢纽同一个。
+  const classifyAiCtx = (text: string) => {
+    const seq = ++aiClassifySeq.current;
+    // 先清空：留着上一次选区的分数比暂时没推荐更糟
+    setAiCtx(null);
+    if (!text) return;
+    void aiClassifyText(text)
+      .then((r) => {
+        if (seq !== aiClassifySeq.current) return;
+        setAiCtx({
+          text,
+          contentType: r.contentType,
+          features: analyzeContent(text, r.contentType),
+          // 语言级标签只有 auto 才进打分（manual 是用户意图，截图这边拿不到）
+          tags: r.language ? [{ name: r.language, source: "auto" as const }] : [],
+        });
+      })
+      .catch((e) => logger.warn("本地内容分类失败（弹层按清单原序平铺）", e));
+  };
+
   const openAi = async () => {
     // 红线（claude.md 规则 16）：AI 总开关未开时，AI 出口一律不打开
     if (!isAiAvailable()) return;
@@ -2244,6 +2355,7 @@ export function ScreenshotOverlay() {
     setChainOpen(false);
     setAiRes(null);
     setAiOpen(true);
+    classifyAiCtx(ocrText());
     if (aiActions.length === 0) {
       try {
         setAiActions(await aiListActions());
@@ -2481,6 +2593,9 @@ export function ScreenshotOverlay() {
   /* ===== select 态：微信同款交互（hover 即选区 / 拖选 / 选区移动） ===== */
   const onSelectMouseDown = (e: React.MouseEvent) => {
     if (phase !== "select") return;
+    // 重新按下去 = 放弃上一张暂存的画布（审计 §1「重新拖框后找回条不再出现」）。
+    // 文字工具的点选也走这里：一旦在新选区上开始画，找回旧画布会把新的一笔整个盖掉。
+    clearEscTray();
     setSnapWin(null); // 点选即退出 hover 吸附态的窗口轮廓（拖选固定后不再显示双层）
     kbActiveRef.current = false; // 拖选/点选退出键盘遍历态
     const r = e.currentTarget.getBoundingClientRect();
@@ -2495,7 +2610,7 @@ export function ScreenshotOverlay() {
       return;
     }
     // 微信同款：select 态按下一律画新矩形（任意起点，含吸附窗口内），
-    // 不再"按在选区内=平移"。平移改为选区确认后用八向手柄拖移（:2789）。
+    // 不再"按在选区内=平移"。八向手柄只做缩放；整体平移走方向键微调（见键盘分支）。
     dragRef.current = { startX: px, startY: py, curX: px, curY: py };
     // 只清掉可能残留的旧草稿，**不**设 0×0 起点：草稿一旦非空就会接管蒙版与选区框的显示，
     // 而这一刻用户还没拖出任何东西（见 displaySel 处的注释）。
@@ -3176,23 +3291,13 @@ export function ScreenshotOverlay() {
   /* ===== 渲染 ===== */
   if (!screen) {
     return (
-      <div
-        className="shot-root"
-        style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-primary, #fff)" }}
-      >
+      <div className="shot-fatal-root">
         {captureError ? (
-          <div
-            style={{
-              maxWidth: 420, padding: "14px 18px", borderRadius: 12, fontSize: 12,
-              background: "color-mix(in srgb, var(--danger, #F87171) 15%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--danger, #F87171) 40%, transparent)",
-              color: "var(--danger, #FCA5A5)", lineHeight: 1.7, textAlign: "center",
-            }}
-          >
+          <div className="shot-fatal">
             <div>截图失败：{captureError}</div>
-            <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "center" }}>
+            <div className="shot-fatal-acts">
               <button
-                style={{ padding: "5px 14px", borderRadius: 8, border: "none", background: "var(--accent-solid, #2D78C2)", color: "#fff", cursor: "pointer", fontSize: 12 }}
+                className="shot-fatal-btn primary"
                 onClick={() => {
                   setCaptureError(null);
                   void invoke<ScreenInfo>("capture_screen")
@@ -3203,7 +3308,7 @@ export function ScreenshotOverlay() {
                 重试
               </button>
               <button
-                style={{ padding: "5px 14px", borderRadius: 8, border: "1px solid var(--shot-bar-border, rgba(255,255,255,0.3))", background: "transparent", color: "var(--shot-bar-text, #E6EDF7)", cursor: "pointer", fontSize: 12 }}
+                className="shot-fatal-btn"
                 onClick={() => void invoke("close_screenshot_window")}
               >
                 关闭
@@ -3211,7 +3316,7 @@ export function ScreenshotOverlay() {
             </div>
           </div>
         ) : (
-          <span style={{ fontSize: 13 }}>正在截取屏幕…</span>
+          <span className="shot-loading">正在截取屏幕…</span>
         )}
       </div>
     );
@@ -3303,8 +3408,156 @@ export function ScreenshotOverlay() {
     window.innerHeight,
   );
 
-  // OCR 胶囊 / 抽屉的位置：跟随选区右外侧，避开工具栏（lib/screenshot/panelPos.ts）。
+  // ===== 底部带（审计 §3）：只有栈自己声明位置 =====
+  // 顺序 = 屏幕上的上下顺序（先写的在上）；prio 只决定超过 2 行时谁被挤掉。
+  // 两件事分开是刻意的：若按 prio 排 DOM，回执会随着另一条浮层出现而从下排跳到上排。
+  const bandRows: BandRow[] = [
+    {
+      key: "tray",
+      prio: "tray",
+      node: escTray ? (
+        <div className="shot-toast act">
+          <span>已退出标注 · {escTray.count} 处标注已暂存</span>
+          <button type="button" className="tray-btn" onClick={recallAnnot}>
+            找回 (Enter)
+          </button>
+          {/* 倒计时用 CSS 走带，不用 setInterval：截图窗是 hide() 不是 close()，
+              JS 定时器在窗体不可见时照跑（性能准则 8.1 / 8.2），而这条动画随元素卸载自然停。 */}
+          <span className="tray-cd" style={{ animationDuration: `${ESC_TRAY_MS}ms` }} />
+        </div>
+      ) : null,
+    },
+    {
+      key: "toast",
+      prio: shotToast?.ok ? "receipt" : "error",
+      node: shotToast ? (
+        <div className={`shot-toast${shotToast.ok ? " ok" : ""}`}>
+          <span className="ic">
+            {shotToast.ok ? <Check size={15} /> : <TriangleAlert size={15} />}
+          </span>
+          <span>{shotToast.text}</span>
+        </div>
+      ) : null,
+    },
+    {
+      key: "ocr-toast",
+      prio: "receipt",
+      node: ocrToast ? (
+        /* U7：它不是纯回执，而是一个「点一下复制全文」的真按钮，
+           而且停留 6 秒（与撤销条同窗口）——键盘用户应该能在这 6 秒里按到它。 */
+        <button
+          type="button"
+          className="picker-bar ocr-receipt"
+          onClick={async () => {
+            const content = ocrToastCopyRef.current ?? (ocr ? ocr.fullText : "");
+            if (content) {
+              await copyText(content);
+              setOcrToast(null);
+            }
+          }}
+        >
+          <span className="ic">
+            <FileText size={14} />
+          </span>
+          <span>{ocrToast}</span>
+        </button>
+      ) : null,
+    },
+    {
+      key: "strength",
+      prio: "progress",
+      node: strengthHint ? (
+        <div className="picker-bar strength">
+          <span>{strengthHint}</span>
+        </div>
+      ) : null,
+    },
+    {
+      key: "picker",
+      prio: "progress",
+      node: tool === "picker" && pickerColor ? (
+        <div className="picker-bar">
+          {/* 色块底是运行时取到的颜色，没有令牌可用 —— 这是数据，不是装饰样式 */}
+          <span className="sw" style={{ background: pickerColor }} />
+          <span className="hex">{pickerColor}</span>
+          <span className="hint">点击画布复制该颜色 · 复制后自动回到原工具</span>
+        </div>
+      ) : null,
+    },
+    {
+      key: "hint",
+      prio: "hint",
+      // 让原本「隐身」的吸附/键盘遍历能力对用户可见：仅 select 态展示，
+      // 数秒后自动淡出、累计展示若干次后排期退休（annotate 态有教练卡，不再重复弹）。
+      node: hintVisible && phase === "select" ? (
+        <div className={`shot-hint${hintFading ? " fade-out" : ""}`}>
+          <span>
+            <span className="hk">拖拽</span> 框选 · 松手自动标注
+          </span>
+          <span className="sep" />
+          <span>
+            <span className="hk">悬停</span> 自动吸附窗口/控件
+          </span>
+          <span className="sep" />
+          <span>
+            <span className="hk">Tab / 方向键</span> 切换控件
+          </span>
+          <span className="sep" />
+          <span>
+            <span className="hk">Enter</span> 进入标注
+          </span>
+          <span className="sep" />
+          <span>
+            <span className="hk">Esc</span> 退出
+          </span>
+          {/* U7：原先是 `<span onClick>`，键盘关不掉这条提示。 */}
+          <button type="button" className="hk-close" title="关闭提示" aria-label="关闭提示" onClick={closeHint}>
+            ×
+          </button>
+        </div>
+      ) : null,
+    },
+  ];
+  const bandShown = pickBandRows(bandRows);
+  // 带子的矩形：给抽屉避让用（layoutBand 定完位置才有 y，这里从 bottom 反推）
+  const vhNow = window.innerHeight;
+  const vwNow = window.innerWidth;
+  const bandLayout = layoutBand(vwNow, vhNow, bandSize.w, bandSize.h, [
+    phase === "annotate" && sel
+      ? { x: tbLayout.left, y: tbLayout.top, w: tbSize.w, h: tbSize.h }
+      : null,
+    phase === "annotate" && sel && showAttrBar
+      ? { x: tbLayout.left, y: tbLayout.attrTop, w: tbSize.w, h: ATTR_BAR_H }
+      : null,
+    phase === "result" && sel
+      ? { x: actLayout.left, y: actLayout.top, w: actSize.w, h: actSize.h }
+      : null,
+    phase === "result" && pinPreview
+      ? { x: pinPreview.x, y: pinPreview.y, w: PIN_FLOAT_W, h: PIN_FLOAT_H }
+      : null,
+  ]);
+  const bandRect: TbRect | null =
+    bandShown.length > 0
+      ? { x: bandLayout.left, y: vhNow - bandLayout.bottom - bandSize.h, w: bandSize.w, h: bandSize.h }
+      : null;
+
+  // OCR 胶囊 / 抽屉的位置：跟随选区右外侧，避开同屏浮层（lib/screenshot/panelPos.ts）。
   // 两者用**同一个锚点**，点胶囊就是原地展开成抽屉，位置连续不跳。
+  // avoid 是矩形数组（审计 §3）：原来是单矩形，只认工具栏 / 出口面板，
+  // 于是底部带（回执条、取色条、OCR 进度胶囊）不在名单里 —— 实测有 3 组
+  // 「抽屉尾整条盖掉底部带」。底部带由 layoutBand 先定位置，抽屉再避它（单向，无环）。
+  const panelAvoid: (TbRect | null)[] = [
+    phase === "annotate" && sel
+      ? { x: tbLayout.left, y: tbLayout.top, w: tbSize.w, h: tbSize.h }
+      : null,
+    phase === "annotate" && sel && showAttrBar
+      ? { x: tbLayout.left, y: tbLayout.attrTop, w: tbSize.w, h: ATTR_BAR_H }
+      : null,
+    phase === "result" && sel
+      ? { x: actLayout.left, y: actLayout.top, w: actSize.w, h: actSize.h }
+      : null,
+    bandRect,
+  ];
   const panelLayout = layoutSidePanel(
     sel
       ? { x: css(sel.x), y: css(sel.y), w: css(sel.w), h: css(sel.h) }
@@ -3312,13 +3565,29 @@ export function ScreenshotOverlay() {
     OCR_PANEL_W,
     window.innerWidth,
     window.innerHeight,
-    // 标注态避工具栏；result 态工具栏已经不在了，改避出口面板
-    phase === "annotate" && sel
-      ? { x: tbLayout.left, y: tbLayout.top, w: tbSize.w, h: tbSize.h }
-      : phase === "result" && sel
-        ? { x: actLayout.left, y: actLayout.top, w: actSize.w, h: actSize.h }
-        : null,
+    panelAvoid,
   );
+
+  // AI / 动作链弹层的位置：贴选区外侧，够不到就压进选区（cover）。
+  // 与抽屉的差别有两处 —— 高度上限更矮（它浮在用户正要看的图上），
+  // avoid 只喂底部带：工具栏/出口面板可以被盖，带子上的回执与进度不能盖。
+  // 两个弹层共用一份几何：同一时刻只开一个，切换时位置连续不跳。
+  const popLayout = layoutSidePanel(
+    sel
+      ? { x: css(sel.x), y: css(sel.y), w: css(sel.w), h: css(sel.h) }
+      : { x: 0, y: 0, w: 0, h: 0 },
+    AI_POP_W,
+    window.innerWidth,
+    window.innerHeight,
+    bandRect ? [bandRect] : [],
+    PANEL_GAP,
+    { pick: "tallest", maxVH: AI_POP_MAX_VH },
+  );
+  const ocrLineCount = ocrText()
+    ? ocrText()
+        .split(/\r?\n/)
+        .filter((l) => l.trim().length > 0).length
+    : 0;
 
   return (
     <div
@@ -3379,23 +3648,8 @@ export function ScreenshotOverlay() {
         </>
       )}
 
-      {/* 常驻操作提示条：让原本「隐身」的吸附/键盘遍历能力对用户可见；仅框选前（select 态）展示、
-          首次使用数秒后自动淡出、累计展示若干次后排期退休。annotate 态不再重复弹（已有教练卡/NEW 引导）。 */}
-      {hintVisible && phase === "select" && (
-        <div className={`shot-hint${hintFading ? " fade-out" : ""}`}>
-          <span><span className="hk">拖拽</span> 框选 · 松手自动标注</span>
-          <span className="sep" />
-          <span><span className="hk">悬停</span> 自动吸附窗口/控件</span>
-          <span className="sep" />
-          <span><span className="hk">Tab / 方向键</span> 切换控件</span>
-          <span className="sep" />
-          <span><span className="hk">Enter</span> 进入标注</span>
-          <span className="sep" />
-          <span><span className="hk">Esc</span> 退出</span>
-          {/* U7：原先是 `<span onClick>`，键盘关不掉这条提示。 */}
-          <button type="button" className="hk-close" title="关闭提示" aria-label="关闭提示" onClick={closeHint}>×</button>
-        </div>
-      )}
+      {/* 常驻操作提示条已收进底部带（见上方 bandRows 的 hint 行）：
+          它原先自己写 bottom:16，和回执条/取色条同层级会叠在一起。 */}
 
       {/* Tier3 双层轮廓：外层淡蓝窗口边界（仅当控件明显小于窗口即 <97% 时显示，避免双框难看） */}
       {phase === "select" && snapWin && displaySel && !(displaySel.w >= snapWin.w * 0.97 && displaySel.h >= snapWin.h * 0.97) && (
@@ -3424,7 +3678,9 @@ export function ScreenshotOverlay() {
               style={{ top: sizeLabel.top }}
             >
               <span>{isFullscreen ? `全屏 ${Math.round(displaySel.w)} × ${Math.round(displaySel.h)}` : `${Math.round(displaySel.w)} × ${Math.round(displaySel.h)}`}</span>
-              <span className="hint">{isFullscreen ? "Enter 确认 · Esc 取消" : "单击进标注 · 拖选区移动 · 拖边缘缩放"}</span>
+              <span className="hint">
+                {isFullscreen ? "Enter 确认 · Esc 取消" : "拖边缘缩放 · 框内再拖 = 画新框"}
+              </span>
             </div>
           )}
           {/* 固定区域预览态：紫色虚框提示（替代尺寸标签），引导「拖可改 / Esc 重置」 */}
@@ -3470,7 +3726,13 @@ export function ScreenshotOverlay() {
             }
           }}
         >
-          {hasFixedRegion ? "✕ 清除固定区域" : "📌 钉当前选区"}
+          {/* 图标位组件化：原来一个 📌 一个 ✕。清除态用 X（对象是「这块区域」，
+              与出口面板的 Crop 同一功能两种动作），钉选区态用 Crop——
+              面板里「记住/清除固定区域」也是 Crop，不再一处 🔒 一处 📌。 */}
+          <span className="ic">
+            {hasFixedRegion ? <X size={14} /> : <Crop size={14} />}
+          </span>
+          {hasFixedRegion ? "清除固定区域" : "钉当前选区"}
         </button>
       )}
 
@@ -3950,47 +4212,9 @@ export function ScreenshotOverlay() {
         />
       )}
 
-      {/* 出口反馈：成功与失败都要看得见（规则 15.3） */}
-      {shotToast && (
-        <div className={`shot-toast${shotToast.ok ? " ok" : ""}`}>
-          <span className="ic">{shotToast.ok ? "✓" : "⚠"}</span>
-          <span>{shotToast.text}</span>
-        </div>
-      )}
-
-      {/* 吸管取色色值条（V6.19：移动即显示光标处颜色，点击画布复制） */}
-      {tool === "picker" && pickerColor && (
-        <div className="picker-bar">
-          <span className="sw" style={{ background: pickerColor }} />
-          <span className="hex">{pickerColor}</span>
-          <span className="hint">点击画布复制该颜色 · 复制后自动回到原工具</span>
-        </div>
-      )}
-      {/* V6.19 马赛克/模糊强度提示（滚轮调节） */}
-      {strengthHint && (
-        <div className="picker-bar" style={{ borderColor: "color-mix(in srgb, var(--accent, #3B9EFF) 45%, transparent)" }}>
-          <span>{strengthHint}</span>
-        </div>
-      )}
-      {/* A 方案：完成复制后的文字 toast（点击复制全文） */}
-      {ocrToast && (
-        /* U7：它不是纯回执，而是一个「点一下复制全文」的真按钮，
-           而且停留 6 秒（与撤销条同窗口）——键盘用户应该能在这 6 秒里按到它。 */
-        <button
-          type="button"
-          className="picker-bar"
-          style={{ cursor: "pointer", borderColor: "color-mix(in srgb, var(--green, #22c55e) 55%, transparent)", bottom: 64 }}
-          onClick={async () => {
-            const content = ocrToastCopyRef.current ?? (ocr ? ocr.fullText : "");
-            if (content) {
-              await copyText(content);
-              setOcrToast(null);
-            }
-          }}
-        >
-          <span>📄 {ocrToast}</span>
-        </button>
-      )}
+      {/* 底部带：回执 / 取色 / 强度 / OCR 回执 / 找回 / 快捷键提示的唯一所有者（审计 §3）。
+          成员不再自声明 bottom，位置由 layoutBand 给；超过 2 行按优先级挤掉低的。 */}
+      <BottomStack rows={bandRows} left={bandLayout.left} bottom={bandLayout.bottom} innerRef={bandRef} />
 
       {/* OCR 过程可见全部收到工具栏「取文字」按钮上：
             识别中 = 按钮图标变转圈（.ocr-spin），完成 = 行数角标，失败 = 感叹号角标。
@@ -4000,13 +4224,18 @@ export function ScreenshotOverlay() {
           而且完成态/失败态的胶囊早就因为同一理由删掉了——只剩下「识别中」这一个
           状态还另起一套展示，本身就是没改完的尾巴。 */}
 
-      {/* OCR 结果抽屉 */}
-      {(phase === "result" || ocrDrawerOpen) && ocr && (
+      {/* OCR 结果抽屉。
+          §2：旧条件是 `phase === "result" || ocrDrawerOpen`，于是**进结果态就自动弹抽屉**，
+          而合成后的 OCR 此刻多半还在跑（1633 行才刚 setOcrStatus("running")），
+          弹出来的就是一张「未从图片识别到文字」——把「还没跑完」说成「没有字」。
+          现在只由用户开：工具栏「取文字」/ Ctrl+R。 */}
+      {ocrDrawerOpen && (
         <OcrDrawer
           left={panelLayout.left}
           top={panelLayout.top}
           maxHeight={panelLayout.maxHeight}
           side={panelLayout.side}
+          status={ocrStatus}
           ocr={ocr}
           qr={qr}
           qrCopied={qrCopied}
@@ -4029,7 +4258,8 @@ export function ScreenshotOverlay() {
           onOpenTable={openTable}
           onOpenAi={() => void openAi()}
           onOpenChains={() => void openChains()}
-          onClose={close}
+          onRetry={retryOcr}
+          onClose={() => setOcrDrawerOpen(false)}
         />
       )}
 
@@ -4067,6 +4297,8 @@ export function ScreenshotOverlay() {
           hasFixedRegion={hasFixedRegion}
           regionSaved={regionSaved}
           editorTarget={editorTarget}
+          expanded={actExpanded}
+          onToggleExpand={() => setActExpanded((v) => !v)}
           onCopyImage={() => void copyImage()}
           onSaveToGallery={() => void runExit("保存", saveImageTo)}
           onPinImage={() => void runExit("贴图", pinImageAt)}
@@ -4120,7 +4352,11 @@ export function ScreenshotOverlay() {
       {/* ===== V2：AI 处理弹层 ===== */}
       {aiOpen && (
         <AiPopover
-          hasText={!!ocrText()}
+          left={popLayout.left}
+          top={popLayout.top}
+          maxHeight={popLayout.maxHeight}
+          lines={ocrLineCount}
+          ctx={aiCtx}
           res={aiRes}
           actions={aiActions}
           busyId={aiBusyId}
@@ -4138,7 +4374,10 @@ export function ScreenshotOverlay() {
       {/* ===== V2：送动作链弹层 ===== */}
       {chainOpen && (
         <ChainPopover
-          hasText={!!ocrText()}
+          left={popLayout.left}
+          top={popLayout.top}
+          maxHeight={popLayout.maxHeight}
+          lines={ocrLineCount}
           chains={chains}
           res={chainRes}
           err={chainErr}

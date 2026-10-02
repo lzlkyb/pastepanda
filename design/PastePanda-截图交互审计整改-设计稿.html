@@ -510,7 +510,16 @@ td.num{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#B9C6F0;
 <h3>② 色名 → 语义名（theme.css 已备好两套，直接用）</h3>
 <p>截图 CSS 里 <code>--green</code> / <code>--orange</code> 共 <b>17 处</b>在当语义色用（<code>grep -c</code> 实测）。theme.css 已为七套主题补了
 <code>--success / --warning / --danger-bg</code> 的三件套（<code>theme.css:404-413 / 557-567</code>，注释明写「U6：新代码只许用语义名」），
-所以这条是纯替换、零视觉变化：底带成功绿 <code>.shot-toast.ok</code>、二维码条 <code>.qr-bar/.qr-btn/.qr-ic</code>、
+所以这条对<b>橙</b>是纯替换：theme.css 里 <code>--warning: var(--orange)</code> 就是别名，六套主题逐字节同值。
+对<b>绿</b>不是零变化（落地前用 sRGB 公式逐档核对过，初稿写「零视觉变化」是错的，已改）：
+<ul style="margin:6px 0 6px 18px;padding:0">
+<li>文字色 <code>--green → --success</code>：浅色四套 <code>#11813a → #15803d</code>，同底上 <b>4.53:1 → 4.57:1</b>（略升，都过 AA）；深色两套同名同值。</li>
+<li>底色 <code>--green-bg → --success-bg</code>：浅色四套同为 <code>#dcfce7</code>；<b>深色两套 <code>#052e16 → #14532d</code></b> ⇒ <code>.ocr-row.copied</code>「已复制」行底抬亮一档，文字 <code>#4ade80</code> 对比 <b>8.55:1 → 5.23:1</b>（仍达 AA，但这是本条唯一的真实观感变化）。</li>
+<li><code>.shot-toast.ok</code> 的文字：深色两套 <code>--green</code> 与 <code>--success</code> 同值（<code>#4ade80</code>），零变化；浅色四套 <code>#11813a → #15803d</code> 在条底上 <b>4.15~4.97 → 4.19~5.02</b>。
+那个区间不是令牌的问题，是<b>条底本身是 0.90 alpha 的玻璃</b>（<code>--shot-bar-bg: rgba(255,255,255,.9)</code>）——底下是纯黑桌面时合成 <code>#e5e5e5</code>，
+所以同一个绿字会掉到 3.96。本条换名不修也不加重它（3.96 → 4.00），根因归 §5⑥ 的材质收口。</li>
+</ul>
+涉及消费方：底带成功绿 <code>.shot-toast.ok</code>、二维码条 <code>.qr-bar/.qr-btn/.qr-ic</code>、
 OCR 行已复制态 <code>.ocr-row.copied</code>、<code>.fbtn.chain</code>、面板状态点 <code>.act-head .dot</code>、<code>.pop-row .net</code> 的橙。</p>
 
 <h3>③ 截图失败卡：不是「对比度偏低」，是对比度<b>不可保证</b></h3>

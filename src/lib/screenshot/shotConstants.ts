@@ -91,9 +91,23 @@ export const LONG_OCR_MAX_H = 4000;
 /** OCR 胶囊 / 抽屉的宽度，必须与 screenshot.css 里 `.ocr-drawer` 的 width 一致。 */
 export const OCR_PANEL_W = 252;
 
+/** AI / 动作链弹层的宽度，必须与 screenshot.css 里 `.pop-layer` 的 width 一致。
+ *  原来是 CSS 死值 440px 且与选区无关；320 是 12 格（3 屏 × 4 选区）实测里
+ *  动作行不溢出的最窄一档——23 条动作中最长的标签+副标在这个宽度下仍完整可读。 */
+export const AI_POP_W = 320;
+
+/** AI / 动作链弹层的高度上限（占视口比例）。
+ *  比 OCR 抽屉的 62vh 矮：抽屉是一行文字看一眼就走，弹层是 23 行的选择列表，
+ *  再高就会顶到屏幕对侧的属性条；42vh 是实测「收起态看得见推荐 3 条 + 展开首行」的档位。 */
+export const AI_POP_MAX_VH = 0.42;
+
+/** Esc 退标注后「找回条」的存活时长（审计 §1）。
+ *  同一个数字要喂两处 —— JS 的作废定时器与 CSS 的走带动画，
+ *  写两份就会一涨一停（条子还在、找回已失效），所以放这里当唯一来源。 */
+export const ESC_TRAY_MS = 6000;
+
 /** 等后端预截屏的上限。实测全屏截屏+编码约 300ms，留一倍余量。
  *  超时就自截 —— 宁可多等一下，也不能因为预截屏卡住就打不开截图。 */
 export const PENDING_WAIT_MS = 700;
-
 /** 轮询间隔：够密才不浪费预截屏提前跑的那段时间 */
 export const PENDING_POLL_MS = 25;

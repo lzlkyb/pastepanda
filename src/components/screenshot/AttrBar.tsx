@@ -13,6 +13,7 @@
  */
 
 import { useRef } from "react";
+import { ShieldAlert } from "lucide-react";
 import type { TbAttach } from "@/lib/screenshot/toolbarPos";
 import { useRovingToolbar } from "./useRovingToolbar";
 import {
@@ -253,7 +254,10 @@ export function AttrBar({
             </button>
             {maskOn && (
               <div className="mask-bar" onMouseDown={(e) => e.stopPropagation()}>
-                <div className="mask-title">🔒 识别到 {maskActive} 处隐私</div>
+                {/* 隐私=风险：语义色 + ShieldAlert（主窗口已有同一枚先例），不再用 🔒 emoji */}
+                <div className="mask-title">
+                  <ShieldAlert size={14} /> 识别到 {maskActive} 处隐私
+                </div>
                 <div className="mask-actions">
                   <button
                     className="mask-confirm"

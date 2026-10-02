@@ -106,7 +106,7 @@ describe("截图主题令牌化守卫", () => {
       ".mag-view",
       ".ls-bar",
       ".sel-size",
-      ".snap-tip",
+      // .snap-tip 已随吸附高亮一起删除（死 CSS 守卫见 screenshotDeadCss.test.ts）
       ".shot-hint",
     ];
     for (const sel of surfaces) {
@@ -117,12 +117,26 @@ describe("截图主题令牌化守卫", () => {
         `${sel} 主声明块必须引用 --shot-* 令牌（背景/描边/文字走令牌，禁止硬编码表面色）`,
       ).toMatch(/--shot-(bar-(bg|border|text|muted)|save|pin|ocr|long|hover)/);
     }
-    // .shot-hint 有顶部 + 底部两条，都必须令牌化
+    // §3：.shot-hint 只许有一条声明块。之前是顶部 + 底部两块各写一套定位，
+    // fixed + top + bottom + height:auto 同时生效，提示条被拉成满屏
+    //（探针实测 offsetHeight 538 / 570）。现在定位归 .bottom-stack，成员一律不许自己声明。
     const hintBlocks = blocksOf(".shot-hint");
-    expect(hintBlocks.length).toBe(2);
+    expect(hintBlocks.length).toBe(1);
     for (const b of hintBlocks) {
       expect(b).toMatch(/--shot-(bar-(bg|border|text|muted)|save|pin|ocr|long|hover)/);
     }
+    // §3 的真正不变量：底部带只有栈一个位置所有者。五条带成员以前各写一套 bottom，
+    // 同层的两条都写 16 → 实测叠在一起；写 64 的那条靠手写偏移躲开，一躲就永远对不齐。
+    for (const sel of [".shot-toast", ".picker-bar", ".shot-hint"]) {
+      for (const b of blocksOf(sel)) {
+        expect(b, `${sel} 不许自己写 top/bottom/left/right（定位归 .bottom-stack）`).not.toMatch(
+          /(^|[;{\s])(top|bottom|left|right)\s*:/,
+        );
+      }
+    }
+    expect(blocksOf(".bottom-stack > *")[0], ".bottom-stack > * 应把成员定位清零").toMatch(
+      /position: static/,
+    );
   });
 
   it("白字实色底一律走 --accent-solid（选中工具 / 完成 / 角标）", () => {

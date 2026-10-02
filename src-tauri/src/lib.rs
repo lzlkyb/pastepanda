@@ -1431,6 +1431,7 @@ pub fn run() {
             commands::ai_save_custom_provider,
             commands::ai_delete_custom_provider,
             commands::ai_list_actions,
+            commands::ai_classify_text,
             commands::ai_get_usage,
             commands::ai_list_content_types,
             commands::ai_list_custom_actions,

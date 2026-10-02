@@ -249,6 +249,29 @@ export function scoreByContentTypes(
 }
 
 /**
+ * AI 动作匹配分的**唯一口径**（规则 11.1）。
+ *
+ * 这套拼法原来只写在 `toTransform.detect` 里，于是「想在注册表之外给一批动作排序」
+ * 就得再拼一遍——枢纽 / 快捷条 / 截图弹层三处一旦各写各的，同一个动作会出现
+ * 一边推荐、一边不推荐（AiQuickBar 已经为此返过一次工，见其 :162 的注释）。
+ * 截图 AI 弹层没有走注册表（它拿的是 `ai_list_actions` 的原始元信息），
+ * 所以它必须调这个函数而不是自己组装。
+ *
+ * @param contentTypes 动作声明的适用类型（`[]` = 不限），来自后端元信息
+ */
+export function aiActionScore(
+  actionId: string,
+  contentTypes: string[],
+  ctx: TransformContext,
+): number {
+  const base = HAND_TUNED.has(actionId)
+    ? scoreAiAction(actionId, ctx)
+    : scoreByContentTypes(actionId, contentTypes, ctx);
+  // max 而不是相加：标签只能把动作往上提，不能压低已有分数
+  return Math.max(base, tagBoost(actionId, ctx));
+}
+
+/**
  * 把三态返回映射成变换结果。
  *
  * “需要确认”与“超预算”用 `meta` 标记而不是只给一句 message，
@@ -315,13 +338,7 @@ function toTransform(meta: AiActionMeta): Transform {
     icon: meta.icon,
     group: "ai",
     remote: true,
-    detect: (ctx) => {
-      const base = HAND_TUNED.has(meta.id)
-        ? scoreAiAction(meta.id, ctx)
-        : scoreByContentTypes(meta.id, meta.contentTypes ?? [], ctx);
-      // max 而不是相加：标签只能把动作往上提，不能压低已有分数
-      return Math.max(base, tagBoost(meta.id, ctx));
-    },
+    detect: (ctx) => aiActionScore(meta.id, meta.contentTypes ?? [], ctx),
     run: makeRun(meta.id),
     options: meta.options.length
       ? meta.options.map((o) => ({
@@ -343,7 +360,10 @@ function toCustomTransform(a: AiCustomAction): Transform {
     icon: a.icon || "sparkles",
     group: "ai",
     remote: true,
-    detect: (ctx) => scoreByContentTypes(a.id, a.contentTypes, ctx),
+    // 与内置动作同一口径（aiActionScore）。自定义动作既不在 HAND_TUNED 也不在
+    // INTENT_TAG_RULES 里，两支都命中不到它，结果与旧写法逐字相同——
+    // 但以后往 INTENT_TAG_RULES 加 id 时不会再出现「内置吃标签加成、自定义不吃」的暗差异。
+    detect: (ctx) => aiActionScore(a.id, a.contentTypes, ctx),
     run: makeRun(a.id),
   };
 }

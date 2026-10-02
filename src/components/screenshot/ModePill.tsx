@@ -9,6 +9,7 @@
  * 锚在那里不压正在画的标注。深色卡片语言对齐 .mask-bar（自动打码确认条）。
  */
 
+import { ArrowLeftRight } from "lucide-react";
 import type { OcrSelectMode } from "@/lib/screenshot/types";
 
 interface Props {
@@ -45,7 +46,11 @@ export function ModePill({ innerRef, mode, onToggle, left, top }: Props) {
     >
       <span className={`dot${smart ? " smart" : " ctrl"}`} />
       {smart ? "智能意图" : "Ctrl"}
-      <span className="sw">⇄</span>
+      {/* 切换动作给它一个「双向」字形；原来的 ⇄ 是文本箭头，
+          同一屏的浮层已经都用组件画图标了 */}
+      <span className="sw">
+        <ArrowLeftRight size={12} />
+      </span>
     </button>
   );
 }
