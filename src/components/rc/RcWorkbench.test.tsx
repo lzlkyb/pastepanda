@@ -167,6 +167,21 @@ describe("RcWorkbench 骨架：会话态收标题栏（A 方案稿 批2 / 批7 �
 });
 
 describe("RcWorkbench 接线：会话历史一源两处（批5）", () => {
+  it("从设备最近会话查看全部时，记录页筛选当前设备", () => {
+    const original = hist.list;
+    hist.list = [...original, { ...original[0], peer: "peer-b", peer_name: "家里的电脑", reason: "B 的记录" }];
+    h.status = status(null, true);
+    h.targets = [{ node_id: "peer-a", name: "工作电脑", source: "rc", conn_state: "ready", presence: "live", last_seen: 0, denied: false }];
+    try {
+      render(<RcWorkbench />);
+      fireEvent.click(screen.getByRole("button", { name: "查看此设备全部记录" }));
+      expect(screen.getByRole("button", { name: /工作电脑，2 条记录/ }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.queryByText("B 的记录")).toBeNull();
+    } finally {
+      hist.list = original;
+      h.targets = [];
+    }
+  });
   it("记录页：侧栏换成「按设备筛选」，计数与内容区列表同源", () => {
     h.status = status(null);
     render(<RcWorkbench />);

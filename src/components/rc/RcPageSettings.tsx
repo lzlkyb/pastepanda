@@ -17,45 +17,15 @@
  * 的 generate / pass 两种 side）早已齐全，缺的只是本页入口。
  */
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { rcSessionHistory, type RcCapability } from "@/lib/api/rc";
-import { rcFileDefaultDir, rcFileReceiveDirSet } from "@/lib/api/rcFile";
 import { readAutoStartChannel, writeAutoStartChannel } from "@/lib/rcPrefs";
 import type { UseRc } from "@/hooks/useRc";
 import type { useToast } from "@/components/Toast";
 import { RcHistoryClearButton } from "./RcPageHistory";
 import settings from "@/components/Settings.module.css";
 import styles from "./RemoteComputer.module.css";
-
-/** 档位胶囊组（外形与 RcQualityBar 的 .pill 同款，语义各自独立）。 */
-function ChoiceTags<T extends string>({
-  value,
-  options,
-  disabled,
-  onPick,
-}: {
-  value: T;
-  options: readonly { key: T; label: string; tip?: string }[];
-  disabled?: boolean;
-  onPick: (v: T) => void;
-}) {
-  return (
-    <div className={styles.qRow} role="group">
-      {options.map(({ key, label, tip }) => (
-        <button
-          key={key}
-          type="button"
-          title={tip}
-          disabled={disabled}
-          className={value === key ? styles.pillOn : styles.pill}
-          onClick={() => onPick(key)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
+import { RcReceiveDirectorySetting } from "./RcReceiveDirectorySetting";
+import { RcSettingsChoiceTags } from "./RcSettingsChoiceTags";
 
 export function RcPageSettings({
   rc,
@@ -90,37 +60,6 @@ export function RcPageSettings({
   /** 自动开通道是本窗口偏好：内存态即时反馈 + localStorage 持久。 */
   const [autoChannel, setAutoChannel] = useState(() => readAutoStartChannel());
 
-  // 2026-09-27：文件接收目录（push 接受不再弹选框，这里成为唯一调整入口）
-  const [receiveDir, setReceiveDir] = useState("");
-  useEffect(() => {
-    void rcFileDefaultDir()
-      .then(setReceiveDir)
-      .catch(() => setReceiveDir(""));
-  }, []);
-  const changeReceiveDir = async () => {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const dir = await open({
-      directory: true,
-      multiple: false,
-      title: "选择文件接收目录",
-      defaultPath: receiveDir || undefined,
-    });
-    if (typeof dir !== "string") return;
-    try {
-      setReceiveDir(await rcFileReceiveDirSet(dir));
-      toast("文件接收目录已更新", "success");
-    } catch (e) {
-      toast(String(e), "error");
-    }
-  };
-  const openReceiveDir = async () => {
-    try {
-      await invoke("open_file_location", { path: receiveDir });
-    } catch (e) {
-      toast(typeof e === "string" && e ? e : "无法打开该目录", "error");
-    }
-  };
-
   useEffect(() => {
     let alive = true;
     void rcSessionHistory()
@@ -147,26 +86,27 @@ export function RcPageSettings({
           <div className={styles.setRowInfo}>
             <div className={styles.setRowTitle}>默认发起方式</div>
             <div className={styles.setRowHint}>
-              点「发起远程」时的初始档，发起前仍可在行内临时改
+              未记住连接方式的设备使用此默认值；连接时可选择「只看」或「连接并控制」
             </div>
           </div>
-          <ChoiceTags
+          <RcSettingsChoiceTags
+            label="默认发起方式"
             value={cap}
-            options={[
-              { key: "view", label: "只看", tip: "更安全：对方屏幕可见但不可操作" },
-              { key: "control", label: "可控" },
-            ] as const}
+            options={
+              [
+                { key: "view", label: "只看", tip: "更安全：对方屏幕可见但不可操作" },
+                { key: "control", label: "可控" },
+              ] as const
+            }
             onPick={onSetDefaultCap}
           />
         </div>
         <div className={styles.setRow}>
           <div className={styles.setRowInfo}>
             <div className={styles.setRowTitle}>启动工作台时自动开启远程通道</div>
-            <div className={styles.setRowHint}>关闭后每次需在主页手动开启</div>
+            <div className={styles.setRowHint}>关闭后，主动连接设备时仍会自动开启；接收连接前请手动开启</div>
           </div>
-          <span className={autoChannel ? styles.selfChipOn : styles.selfChipOff}>
-            {autoChannel ? "已开" : "关"}
-          </span>
+          <span className={autoChannel ? styles.selfChipOn : styles.selfChipOff}>{autoChannel ? "已开" : "关"}</span>
           <button
             type="button"
             role="switch"
@@ -183,33 +123,7 @@ export function RcPageSettings({
             <span className={settings.sToggleLabel}>{autoChannel ? "开" : "关"}</span>
           </button>
         </div>
-        <div className={styles.setRow}>
-          <div className={styles.setRowInfo}>
-            <div className={styles.setRowTitle}>文件接收目录</div>
-            <div className={styles.setRowHint}>
-              对方发来的文件默认存到这里，不再每次询问
-            </div>
-          </div>
-          <span className={`${styles.setRowTitle} ${styles.setRowPath}`} title={receiveDir}>
-            {receiveDir || "读取中…"}
-          </span>
-          <button
-            type="button"
-            className={styles.miniBtn}
-            onClick={() => void changeReceiveDir()}
-          >
-            更改
-          </button>
-          <button
-            type="button"
-            className={styles.miniBtn}
-            disabled={!receiveDir}
-            title="在资源管理器中打开该目录"
-            onClick={() => void openReceiveDir()}
-          >
-            打开
-          </button>
-        </div>
+        <RcReceiveDirectorySetting toast={toast} />
       </section>
 
       <section className={styles.setCard}>
@@ -219,16 +133,17 @@ export function RcPageSettings({
         <div className={styles.setRow}>
           <div className={styles.setRowInfo}>
             <div className={styles.setRowTitle}>被控能力上限</div>
-            <div className={styles.setRowHint}>
-              别人远程这台电脑时最高能申请到的档；「可控」包含只看
-            </div>
+            <div className={styles.setRowHint}>别人远程这台电脑时最高能申请到的档；「可控」包含只看</div>
           </div>
-          <ChoiceTags
+          <RcSettingsChoiceTags
+            label="被控能力上限"
             value={rc.status?.capability ?? "view"}
-            options={[
-              { key: "view", label: "只看" },
-              { key: "control", label: "可控（含只看）" },
-            ] as const}
+            options={
+              [
+                { key: "view", label: "只看" },
+                { key: "control", label: "可控（含只看）" },
+              ] as const
+            }
             disabled={rc.busy}
             onPick={(k) => void rc.setCapability(k)}
           />
@@ -266,12 +181,7 @@ export function RcPageSettings({
               对方不在电脑前也能连进来：生成 15 分钟单次码或 24 小时码，可指定只看或可控
             </div>
           </div>
-          <button
-            type="button"
-            className={styles.miniBtn}
-            disabled={rc.busy}
-            onClick={() => onOpenUno("unoGenerate")}
-          >
+          <button type="button" className={styles.miniBtn} disabled={rc.busy} onClick={() => onOpenUno("unoGenerate")}>
             生成无人值守码
           </button>
         </div>
@@ -279,18 +189,13 @@ export function RcPageSettings({
           <div className={styles.setRowInfo}>
             <div className={styles.setRowTitle}>固定密码</div>
             <div className={styles.setRowHint}>
-              长期挂机的机器用：知道密码的设备随时可连，哈希落盘 · 连续错 5 次锁 10 分钟
+              适合长期无人值守的电脑：知道密码即可申请连接；连续输错 5 次后暂停尝试 10 分钟
             </div>
           </div>
           <span className={rc.status?.uno_pass ? styles.selfChipOn : styles.selfChipOff}>
             {rc.status?.uno_pass ? "已开启" : "未开启"}
           </span>
-          <button
-            type="button"
-            className={styles.miniBtn}
-            disabled={rc.busy}
-            onClick={() => onOpenUno("unoPass")}
-          >
+          <button type="button" className={styles.miniBtn} disabled={rc.busy} onClick={() => onOpenUno("unoPass")}>
             {rc.status?.uno_pass ? "管理" : "设置密码"}
           </button>
         </div>
@@ -304,9 +209,7 @@ export function RcPageSettings({
           <div className={styles.setRowInfo}>
             <div className={styles.setRowTitle}>会话记录</div>
             <div className={styles.setRowHint}>
-              {historyCount !== null && (
-                <span className={styles.cntBadge}>{historyCount} 条</span>
-              )}
+              {historyCount !== null && <span className={styles.cntBadge}>{historyCount} 条</span>}
               只记元数据（时间 / 时长 / 结果），不含画面与键鼠 · 上限 20 条
             </div>
           </div>
@@ -317,14 +220,9 @@ export function RcPageSettings({
         <div className={styles.setRow}>
           <div className={styles.setRowInfo}>
             <div className={styles.setRowTitle}>清空会话记录</div>
-            <div className={styles.setRowHint}>清空后不可恢复（产品红线：日志可见可删除）</div>
+            <div className={styles.setRowHint}>只删除会话记录，不影响配对设备；清空后不可恢复</div>
           </div>
-          <RcHistoryClearButton
-            rc={rc}
-            onCleared={() => setHistoryCount(0)}
-            label="清空"
-            withIcon={false}
-          />
+          <RcHistoryClearButton rc={rc} onCleared={() => setHistoryCount(0)} label="清空" withIcon={false} />
         </div>
       </section>
 

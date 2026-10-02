@@ -20,6 +20,7 @@ export function RcA2ConnectionFacts({
   trusted,
   autoAccept,
   fingerprint,
+  remotelyPaired,
 }: {
   /** 「上次连接」的值（`pathKindLabel` 的结果，空则调用侧已经给了兜底文案）。 */
   connection: string;
@@ -30,6 +31,7 @@ export function RcA2ConnectionFacts({
   trusted: boolean;
   autoAccept: boolean;
   fingerprint: string;
+  remotelyPaired: boolean;
 }) {
   return (
     <dl className={styles.factList}>
@@ -51,10 +53,10 @@ export function RcA2ConnectionFacts({
           <span className={styles.factIcon} data-tone="ok" aria-hidden="true">
             <Check size={14} />
           </span>
-          连接确认
+          对方连接本机
         </dt>
-        <dd>{trusted ? "免确认连接" : "每次由对方确认"}</dd>
-        <span>{trusted ? "仍可随时结束会话" : "默认更安全"}</span>
+        <dd>{!remotelyPaired ? "尚未远程配对" : trusted ? "已允许免确认" : "每次由我确认"}</dd>
+        <span>{!remotelyPaired ? "完成远程配对后可设置权限" : trusted ? "仍可随时结束会话" : "对方申请时由本机用户同意"}</span>
       </div>
       <div>
         <dt>
@@ -63,8 +65,8 @@ export function RcA2ConnectionFacts({
           </span>
           文件接收
         </dt>
-        <dd>{autoAccept ? "自动接收" : "每次询问"}</dd>
-        <span>{autoAccept ? "文件会保存到默认目录" : "接受后才写入电脑"}</span>
+        <dd>{!remotelyPaired ? "尚未开通远程传输" : autoAccept ? "自动接收" : "每次由我确认"}</dd>
+        <span>{!remotelyPaired ? "完成远程配对后可传文件" : autoAccept ? "对方发来的文件保存到默认目录" : "我接受后才保存到本机"}</span>
       </div>
       <div>
         <dt>
@@ -75,7 +77,7 @@ export function RcA2ConnectionFacts({
         </dt>
         <dd className={styles.mono}>{fingerprint}</dd>
         <span>
-          <ShieldCheck size={14} aria-hidden="true" /> 已完成配对核验
+          <ShieldCheck size={14} aria-hidden="true" /> {remotelyPaired ? "已完成远程配对核验" : "仅有同步关系 · 待完成远程配对"}
         </span>
       </div>
     </dl>

@@ -195,7 +195,7 @@ export function RcWorkbench() {
         onRename={(id, note) => saveDeviceField(() => rcDeviceRename(id, note))}
         onSetTags={(id, tags) => saveDeviceField(() => rcDeviceTagsSet(id, tags))}
         onSetRemark={(id, remark) => saveDeviceField(() => rcDeviceRemarkSet(id, remark))}
-        onViewHistory={() => setPage("history")}
+        onViewHistory={() => { setHistoryPeer(selectedId); setPage("history"); }}
         capFor={capOf}
         toast={toast}
       />

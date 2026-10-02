@@ -38,7 +38,9 @@ export function useRcFile(peer?: string | null): RcFileView {
   const snapshot = useRcFileStore((s) => s.snapshot);
   const rates = useRcFileStore((s) => s.rates);
   const busy = useRcFileStore((s) => s.busy);
-  const error = useRcFileStore((s) => s.error);
+  const error = useRcFileStore((s) =>
+    !peer || s.errorPeer === null || s.errorPeer === peer ? s.error : null,
+  );
 
   // 挂载=订阅（首个订阅者装事件监听 + 取首帧），卸载=退订
   useEffect(() => {
@@ -76,7 +78,7 @@ export function useRcFile(peer?: string | null): RcFileView {
     pull: (dir: string) => a.pull(peer ?? "", dir),
     respond: a.respond,
     cancel: a.cancel,
-    clearFinished: a.clearFinished,
+    clearFinished: () => a.clearFinished(peer),
     refresh: a.refresh,
   };
 }

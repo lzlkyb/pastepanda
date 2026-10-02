@@ -204,7 +204,7 @@ fn 清空只清结束的() {
     let live = st.task_start("p", "n", TaskDir::Send, "live", 1, 0, T0);
     let done = st.task_start("p", "n", TaskDir::Send, "done", 1, 0, T0);
     st.task_finish(&done, TaskState::Done, None, T0);
-    st.clear_over();
+    st.clear_over(None);
     let tasks = st.tasks();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].id, live);
@@ -212,6 +212,22 @@ fn 清空只清结束的() {
     assert!(st.is_running(&live));
     st.task_finish(&live, TaskState::Canceled, None, T0);
     assert!(!st.is_running(&live));
+}
+
+#[test]
+fn 按设备清空保留其他设备和运行中任务() {
+    let st = FileState::new();
+    let live = st.task_start("a", "A", TaskDir::Send, "live", 1, 0, T0);
+    let done_a = st.task_start("a", "A", TaskDir::Send, "done", 1, 0, T0);
+    let done_b = st.task_start("b", "B", TaskDir::Recv, "done", 1, 0, T0);
+    st.task_finish(&done_a, TaskState::Done, None, T0);
+    st.task_finish(&done_b, TaskState::Failed, None, T0);
+    st.clear_over(Some("a"));
+    let ids: Vec<String> = st.tasks().into_iter().map(|t| t.id).collect();
+    assert_eq!(ids, vec![live.clone(), done_b]);
+    st.clear_over(None);
+    assert_eq!(st.tasks()[0].id, live);
+    assert_eq!(st.tasks().len(), 1);
 }
 
 

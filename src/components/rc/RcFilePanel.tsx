@@ -12,7 +12,7 @@
  * 落盘/源文件路径带进快照，所以这里能给了。打开动作**直接复用既有命令**
  * `open_file_location`——它自带存在性检查与网络共享路径拦截，别再写一个。
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FolderDown, FolderOpen, FolderUp, Loader2, RotateCcw, X } from "lucide-react";
 import { rcFileDefaultDir, rcFileSend } from "@/lib/api/rcFile";
@@ -56,10 +56,6 @@ export function RcFilePanel({
   const file = useRcFile(peer);
   const { toast } = useToast();
   const [picking, setPicking] = useState(false);
-  const [notice, setNotice] = useState("");
-
-  // 换设备时清掉上一台留下的提示（不然会把 A 的失败挂在 B 名下）
-  useEffect(() => setNotice(""), [peer]);
 
   /**
    * 在资源管理器中定位这个文件。
@@ -90,12 +86,12 @@ export function RcFilePanel({
   const send = async () => {
     if (picking) return;
     setPicking(true);
-    setNotice("");
     try {
       const paths = await pickFiles();
       if (paths.length === 0) return;
-      const ok = await file.send(paths);
-      if (!ok) setNotice("发起失败，对方可能离线或尚未配对。");
+      await file.send(paths);
+    } catch (e) {
+      toast(`${peerName}：选择发送文件失败，${String(e)}`, "error");
     } finally {
       setPicking(false);
     }
@@ -104,13 +100,13 @@ export function RcFilePanel({
   const pull = async () => {
     if (picking) return;
     setPicking(true);
-    setNotice("");
     try {
       // ❗ 目录必须**先**选好：对方一接受就开始灌字节，没有「先请求再选目录」
       const dir = await pickDir();
       if (!dir) return;
-      const ok = await file.pull(dir);
-      if (!ok) setNotice("发起失败，对方可能离线或尚未配对。");
+      await file.pull(dir);
+    } catch (e) {
+      toast(`${peerName}：选择接收目录失败，${String(e)}`, "error");
     } finally {
       setPicking(false);
     }
@@ -130,7 +126,7 @@ export function RcFilePanel({
           type="button"
           className={styles.miniBtn}
           disabled={busy}
-          title="把本机文件发给对方（对方会收到确认条，不点接受不会落盘）"
+          title="把本机文件发给对方，按对方设置确认或自动接收"
           onClick={() => void send()}
         >
           <FolderUp size={13} aria-hidden="true" /> 传文件
@@ -149,15 +145,14 @@ export function RcFilePanel({
             type="button"
             className={styles.miniBtn}
             disabled={file.busy}
-            title="清掉已结束的记录（运行中的不受影响）"
+            title="只清除此设备已结束的记录，不删除文件，运行中的不受影响"
             onClick={() => void file.clearFinished()}
           >
-            清空已结束
+            清空此设备已结束记录
           </button>
         )}
       </div>
 
-      {notice && <div className={`${styles.fb} ${styles.fbBad}`}>{notice}</div>}
       {file.error && <div className={`${styles.fb} ${styles.fbBad}`}>操作失败：{file.error}</div>}
 
       {file.tasks.length === 0 ? (

@@ -581,7 +581,7 @@ describe("RcA2DeviceDetail 最近会话（批5a）", () => {
     const onViewHistory = vi.fn();
     renderDetail({ historyList: [item({})], onViewHistory });
 
-    fireEvent.click(screen.getByRole("button", { name: "查看全部" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看此设备全部记录" }));
     expect(onViewHistory).toHaveBeenCalledTimes(1);
   });
 });
@@ -708,6 +708,48 @@ describe("RcA2DeviceOrgEditor 标签与备注（对齐稿①）", () => {
   function openManage() {
     fireEvent.click(screen.getByRole("button", { name: /管理此设备/ }));
   }
+
+  it("备注和标签草稿在折叠以及换设备返回后保留，且不会串到另一设备", () => {
+    const view = renderDetail();
+    openManage();
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注" }), { target: { value: "未保存的备注" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "标签名称" }), { target: { value: "待添加" } });
+    openManage();
+    openManage();
+    expect((screen.getByRole("textbox", { name: "设备备注" }) as HTMLInputElement).value).toBe("未保存的备注");
+    view.rerender(<DetailHost target={{ ...TARGET, node_id: "peer-b", remark: "B 的备注" }} />);
+    openManage();
+    expect((screen.getByRole("textbox", { name: "设备备注" }) as HTMLInputElement).value).toBe("B 的备注");
+    view.rerender(<DetailHost target={TARGET} />);
+    openManage();
+    expect((screen.getByRole("textbox", { name: "设备备注" }) as HTMLInputElement).value).toBe("未保存的备注");
+    expect((screen.getByRole("textbox", { name: "标签名称" }) as HTMLInputElement).value).toBe("待添加");
+  });
+
+  it("鼠标添加标签失败保留输入，成功后才清空", async () => {
+    const onSetTags = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    renderDetail({ onSetTags });
+    openManage();
+    const input = screen.getByRole("textbox", { name: "标签名称" }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "办公" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加标签" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "添加标签" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(input.value).toBe("办公");
+    fireEvent.click(screen.getByRole("button", { name: "添加标签" }));
+    await waitFor(() => expect(input.value).toBe(""));
+    expect(onSetTags).toHaveBeenCalledTimes(2);
+  });
+
+  it("同步设备不宣称远程配对已核验，权限明确由本机确认", () => {
+    const view = renderDetail({ target: { ...TARGET, source: "sync", trusted: true } });
+    expect(screen.getByText("仅有同步关系 · 待完成远程配对")).toBeTruthy();
+    expect(screen.queryByText("已完成远程配对核验")).toBeNull();
+    expect(screen.queryByText("已允许免确认")).toBeNull();
+    expect(screen.getByRole("button", { name: "完成远程配对" })).toBeTruthy();
+    view.rerender(<DetailHost target={TARGET} />);
+    expect(screen.getByText("对方连接本机")).toBeTruthy();
+    expect(screen.getAllByText("每次由我确认").length).toBe(2);
+  });
 
   it("编辑器收在「管理此设备」折叠区里，默认不占位", () => {
     renderDetail();

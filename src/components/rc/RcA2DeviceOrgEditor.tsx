@@ -7,17 +7,16 @@
  * 刻意分开：别名顶替显示名，这里只补充说明，悬停/详情显示。
  *
  * 挂载方在 `manageOpen` 折叠块内并带 `key={target.node_id}`：换设备重挂载，
- * 本地草稿自然重置（规则 15.2——展开态本就随设备切换收起，见 useRcDeviceUi）。
+ * 草稿与保存状态按设备保留在工作台（useRcDeviceUi），折叠和切页不会丢输入。
  */
-import { useState } from "react";
 import { X } from "lucide-react";
+import type { RcDeviceOrgDraft } from "@/hooks/useRcDeviceUi";
 import type { RcDeviceTag, RcTargetDevice } from "@/lib/api/rc";
 import {
   MAX_TAGS_PER_DEVICE,
   TAG_COLOR_KEYS,
   normalizeDeviceTags,
   tagColorOf,
-  type TagColorKey,
 } from "@/lib/rcDeviceTags";
 import type { ToastFn } from "@/components/Toast";
 import styles from "./RemoteComputerA2.module.css";
@@ -28,6 +27,8 @@ export function RcA2DeviceOrgEditor({
   onSetTags,
   onSetRemark,
   toast,
+  draft,
+  onDraftChange,
 }: {
   target: RcTargetDevice;
   busy: boolean;
@@ -35,46 +36,48 @@ export function RcA2DeviceOrgEditor({
   onSetTags: (id: string, tags: RcDeviceTag[]) => Promise<boolean>;
   onSetRemark: (id: string, remark: string) => Promise<boolean>;
   toast: ToastFn;
+  draft: RcDeviceOrgDraft;
+  onDraftChange: (patch: Partial<RcDeviceOrgDraft>) => void;
 }) {
   const tags = target.tags ?? [];
-  const [pickedColor, setPickedColor] = useState<TagColorKey>("blue");
-  const [tagName, setTagName] = useState("");
-  const [remark, setRemark] = useState(target.remark ?? "");
-  const [saving, setSaving] = useState(false);
+  const { pickedColor, tagName, remark, saving } = draft;
 
   const full = tags.length >= MAX_TAGS_PER_DEVICE;
   const remarkDirty = remark.trim() !== (target.remark ?? "").trim();
 
   const addTag = async () => {
+    if (busy || saving || full) return;
     const next = normalizeDeviceTags([...tags, { name: tagName, color: pickedColor }]);
     if (next.length === tags.length) {
       // 清洗后被丢（空名/重名）：就地说明，不静默
       if (tagName.trim()) toast("这个标签已存在", "info");
       return;
     }
-    setTagName("");
-    await commitTags(next);
+    if (await commitTags(next)) onDraftChange({ tagName: "" });
   };
 
   const commitTags = async (next: RcDeviceTag[]) => {
-    setSaving(true);
+    onDraftChange({ saving: true });
     try {
-      if (await onSetTags(target.node_id, next)) toast("标签已保存", "success");
+      const ok = await onSetTags(target.node_id, next);
+      if (ok) toast("标签已保存", "success");
+      return ok;
     } finally {
-      setSaving(false);
+      onDraftChange({ saving: false });
     }
   };
 
   const saveRemark = async () => {
-    setSaving(true);
+    if (busy || saving) return;
+    onDraftChange({ saving: true });
     try {
       const trimmed = remark.trim();
       if (await onSetRemark(target.node_id, trimmed)) {
         toast(trimmed ? "备注已保存" : "备注已清除", "success");
-        setRemark(trimmed);
+        onDraftChange({ remark: trimmed });
       }
     } finally {
-      setSaving(false);
+      onDraftChange({ saving: false });
     }
   };
 
@@ -101,14 +104,18 @@ export function RcA2DeviceOrgEditor({
       )}
       <input
         className={styles.orgInput}
+        aria-label="标签名称"
         value={tagName}
         disabled={busy || saving || full}
         placeholder={full ? `最多 ${MAX_TAGS_PER_DEVICE} 个标签，先删再增` : "输入标签名，回车创建"}
-        onChange={(e) => setTagName(e.target.value)}
+        onChange={(e) => onDraftChange({ tagName: e.target.value })}
         onKeyDown={(e) => {
           if (e.key === "Enter") void addTag();
         }}
       />
+      <button type="button" className={styles.orgSave} disabled={busy || saving || full || !tagName.trim()} onClick={() => void addTag()}>
+        {saving ? "保存中…" : "添加标签"}
+      </button>
       <div className={styles.orgSwatches} role="radiogroup" aria-label="标签颜色">
         {TAG_COLOR_KEYS.map((key) => (
           <button
@@ -119,17 +126,19 @@ export function RcA2DeviceOrgEditor({
             aria-label={`颜色 ${key}`}
             className={pickedColor === key ? styles.orgSwatchOn : styles.orgSwatch}
             data-color={key}
-            onClick={() => setPickedColor(key)}
+            disabled={busy || saving}
+            onClick={() => onDraftChange({ pickedColor: key })}
           />
         ))}
       </div>
       <div className={styles.orgLabel}>备注（仅自己可见，悬停/详情显示）</div>
       <input
         className={styles.orgInput}
+        aria-label="设备备注"
         value={remark}
         disabled={busy || saving}
         placeholder="例如：双 4K，走中继较卡"
-        onChange={(e) => setRemark(e.target.value)}
+        onChange={(e) => onDraftChange({ remark: e.target.value })}
         onKeyDown={(e) => {
           if (e.key === "Enter") void saveRemark();
         }}

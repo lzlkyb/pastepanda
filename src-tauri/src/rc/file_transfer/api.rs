@@ -94,8 +94,8 @@ impl RcService {
     /// `pub(crate)`：这条契约只服务本 crate 的命令层，不是对外 API——
     /// 事件与命令返回**共用同一个形状**（`FileSnapshot`），改了要一起改。
     /// 清掉已结束的任务（前端「清空」按钮）。
-    pub fn file_clear_finished(&self) {
-        self.file.clear_over();
+    pub fn file_clear_finished(&self, peer: Option<&str>) {
+        self.file.clear_over(peer);
         self.emit_file_state();
     }
 

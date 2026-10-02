@@ -111,4 +111,45 @@ describe("rcFileStore snapshot 代数（P1-11）", () => {
     await useRcFileStore.getState().refresh();
     expect(useRcFileStore.getState().snapshot.tasks[0]?.done).toBe(33);
   });
+
+  it("设备页清空只移除此设备终态任务，全局入口仍兼容", async () => {
+    const store = await loadStore();
+    const base = taskSnap(33).tasks[0];
+    store.getState().applySnapshot({ asks: [], tasks: [
+      { ...base, id: "a-done", peer: "a", state: "done" },
+      { ...base, id: "a-running", peer: "a" },
+      { ...base, id: "b-failed", peer: "b", state: "failed" },
+    ] });
+    await store.getState().clearFinished("a");
+    expect(noop).toHaveBeenCalledWith("a");
+    expect(store.getState().snapshot.tasks.map((task) => task.id)).toEqual(["a-running", "b-failed"]);
+    await store.getState().clearFinished();
+    expect(store.getState().snapshot.tasks.map((task) => task.id)).toEqual(["a-running"]);
+  });
+
+  it("在途设备操作失败保留发起设备归属，刷新不抹掉失败", async () => {
+    const store = await loadStore();
+    let rejectSend!: (reason: string) => void;
+    noop.mockReturnValueOnce(new Promise<void>((_, reject) => { rejectSend = reject; }));
+    const pending = store.getState().send("a", ["report.pdf"]);
+    rejectSend("文件不可读");
+    expect(await pending).toBe(false);
+    expect(store.getState()).toMatchObject({ error: "文件不可读", errorPeer: "a", busy: false });
+    await store.getState().refresh();
+    expect(store.getState().error).toBe("文件不可读");
+  });
+
+  it("取消错误与接收响应错误根据任务和请求保留设备归属", async () => {
+    const store = await loadStore();
+    store.getState().applySnapshot({
+      ...taskSnap(33),
+      asks: [{ id: "ask1", peer: "b", peer_name: "B", kind: "push", name: "a.txt", size: 1, first_seen_ms: 1 }],
+    });
+    noop.mockRejectedValueOnce("取消失败");
+    await store.getState().cancel("t1");
+    expect(store.getState().errorPeer).toBe("n");
+    noop.mockRejectedValueOnce("请求失效");
+    await store.getState().respond("ask1", null);
+    expect(store.getState().errorPeer).toBe("b");
+  });
 });

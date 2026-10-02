@@ -8,6 +8,14 @@
  * effect 版本会先渲染一帧上一台的展开态再收，视觉上闪一下。
  */
 import { useState } from "react";
+import type { TagColorKey } from "@/lib/rcDeviceTags";
+
+export interface RcDeviceOrgDraft {
+  remark: string;
+  tagName: string;
+  pickedColor: TagColorKey;
+  saving: boolean;
+}
 
 export function useRcDeviceUi() {
   const [editingName, setEditingName] = useState(false);
@@ -15,6 +23,16 @@ export function useRcDeviceUi() {
   const [savingName, setSavingName] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [manageFor, setManageFor] = useState<string | null>(null);
+  // 草稿按设备保留在工作台，折叠/切页卸载编辑器不丢输入，也不丢保存中的状态。
+  const [orgDrafts, setOrgDrafts] = useState<Record<string, RcDeviceOrgDraft>>({});
+  const orgDraftFor = (peer: string, remark: string): RcDeviceOrgDraft =>
+    orgDrafts[peer] ?? { remark, tagName: "", pickedColor: "blue", saving: false };
+  const updateOrgDraft = (peer: string, remark: string, patch: Partial<RcDeviceOrgDraft>) => {
+    setOrgDrafts((current) => ({
+      ...current,
+      [peer]: { ...(current[peer] ?? { remark, tagName: "", pickedColor: "blue", saving: false }), ...patch },
+    }));
+  };
 
   /** 换设备才重置；切页再回来（同一台）保留草稿。 */
   const syncPeer = (peerKey: string | null) => {
@@ -35,6 +53,8 @@ export function useRcDeviceUi() {
     manageOpen,
     setManageOpen,
     syncPeer,
+    orgDraftFor,
+    updateOrgDraft,
   };
 }
 

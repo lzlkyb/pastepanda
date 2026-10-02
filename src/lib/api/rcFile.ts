@@ -112,8 +112,8 @@ export function rcFileCancel(taskId: string): Promise<void> {
 }
 
 /** 清掉已结束的任务（前端「清空」按钮）。 */
-export function rcFileClearFinished(): Promise<void> {
-  return invoke("rc_file_clear_finished");
+export function rcFileClearFinished(peer?: string | null): Promise<void> {
+  return invoke("rc_file_clear_finished", { peer: peer ?? null });
 }
 
 /** 首次挂载取一次；之后靠 `rc-file-state` 事件。 */

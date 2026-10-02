@@ -34,6 +34,8 @@ interface RcFileState {
   rates: Record<string, number>;
   busy: boolean;
   error: string | null;
+  /** null 为快照等全局错误；设备操作必须保留归属，避免切设备串提示。 */
+  errorPeer: string | null;
   subscribers: number;
 
   acquire: () => void;
@@ -47,7 +49,7 @@ interface RcFileState {
   pull: (peer: string, dir: string) => Promise<boolean>;
   respond: (askId: string, acceptDir: string | null) => Promise<boolean>;
   cancel: (taskId: string) => Promise<void>;
-  clearFinished: () => Promise<void>;
+  clearFinished: (peer?: string | null) => Promise<void>;
   /** 会话/设备切换时清掉当前视图的残留（可选，默认不清——任务会自己走完）。 */
   resetView: () => void;
 }
@@ -83,6 +85,7 @@ export const useRcFileStore = create<RcFileState>((set, get) => ({
   rates: {},
   busy: false,
   error: null,
+  errorPeer: null,
   subscribers: 0,
 
   acquire: () => {
@@ -105,10 +108,10 @@ export const useRcFileStore = create<RcFileState>((set, get) => ({
       const raw = await rcFileSnapshot();
       if (genAtStart !== eventGen || seq !== snapSeq) return;
       get().applySnapshot(raw);
-      set({ error: null });
+      if (get().errorPeer === null) set({ error: null });
     } catch (e) {
       if (genAtStart !== eventGen || seq !== snapSeq) return;
-      set({ error: String(e) });
+      set({ error: String(e), errorPeer: null });
     }
   },
 
@@ -121,12 +124,12 @@ export const useRcFileStore = create<RcFileState>((set, get) => ({
   },
 
   send: async (peer, paths) => {
-    set({ busy: true, error: null });
+    set({ busy: true, error: null, errorPeer: peer });
     try {
       await rcFileSend(peer, paths);
       return true;
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: String(e), errorPeer: peer });
       return false;
     } finally {
       set({ busy: false });
@@ -134,12 +137,12 @@ export const useRcFileStore = create<RcFileState>((set, get) => ({
   },
 
   pull: async (peer, dir) => {
-    set({ busy: true, error: null });
+    set({ busy: true, error: null, errorPeer: peer });
     try {
       await rcFilePull(peer, dir);
       return true;
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: String(e), errorPeer: peer });
       return false;
     } finally {
       set({ busy: false });
@@ -147,13 +150,14 @@ export const useRcFileStore = create<RcFileState>((set, get) => ({
   },
 
   respond: async (askId, acceptDir) => {
-    set({ busy: true, error: null });
+    const peer = get().snapshot.asks.find((ask) => ask.id === askId)?.peer ?? null;
+    set({ busy: true, error: null, errorPeer: peer });
     try {
       await rcFileRespond(askId, acceptDir);
       return true;
     } catch (e) {
       // 回不上响应 = 这次请求会走到超时，用户必须知道（别静默）
-      set({ error: String(e) });
+      set({ error: String(e), errorPeer: peer });
       return false;
     } finally {
       set({ busy: false });
@@ -161,27 +165,28 @@ export const useRcFileStore = create<RcFileState>((set, get) => ({
   },
 
   cancel: async (taskId) => {
+    const peer = get().snapshot.tasks.find((task) => task.id === taskId)?.peer ?? null;
     try {
       await rcFileCancel(taskId);
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: String(e), errorPeer: peer });
     }
   },
 
-  clearFinished: async () => {
+  clearFinished: async (peer) => {
     try {
-      await rcFileClearFinished();
+      await rcFileClearFinished(peer);
       // 立刻本地清一遍，不等下一次事件（清完可能就没有下一次事件了）
       const st = get().snapshot;
       get().applySnapshot({
         asks: st.asks,
         tasks: st.tasks.filter(
           (t) =>
-            t.state === "awaiting" || t.state === "transferring",
+            t.state === "awaiting" || t.state === "transferring" || (peer != null && t.peer !== peer),
         ),
       });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: String(e), errorPeer: peer ?? null });
     }
   },
 

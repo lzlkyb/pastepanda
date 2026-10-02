@@ -189,6 +189,9 @@ export function RcA2DeviceDetail({
         {target.source !== "rc" && (
           <div className={styles.warningNotice} role="status">
             这台设备目前只有同步关系，请先完成远程配对。
+            <button type="button" className={styles.sectionLink} disabled={busy} onClick={onPair}>
+              完成远程配对
+            </button>
           </div>
         )}
 
@@ -217,7 +220,6 @@ export function RcA2DeviceDetail({
               name={name}
               busy={busy}
               actions={actions}
-              onPair={onPair}
             />
             {target.source === "rc" && (
               <RcA2DeviceOrgEditor
@@ -227,6 +229,8 @@ export function RcA2DeviceDetail({
                 onSetTags={onSetTags}
                 onSetRemark={onSetRemark}
                 toast={toast}
+                draft={ui.orgDraftFor(target.node_id, target.remark ?? "")}
+                onDraftChange={(patch) => ui.updateOrgDraft(target.node_id, target.remark ?? "", patch)}
               />
             )}
           </div>
@@ -238,6 +242,7 @@ export function RcA2DeviceDetail({
           trusted={Boolean(target.trusted)}
           autoAccept={Boolean(target.auto_accept)}
           fingerprint={fingerprintOf(target.node_id)}
+          remotelyPaired={target.source === "rc"}
         />
 
         <RcRecentSessions list={historyList} peer={target.node_id} onViewAll={onViewHistory} />

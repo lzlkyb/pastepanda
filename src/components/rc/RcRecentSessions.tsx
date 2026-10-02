@@ -42,7 +42,7 @@ export function RcRecentSessions({
       <div className={styles.sectionHead}>
         <h3>最近会话</h3>
         <button type="button" className={styles.sectionLink} onClick={onViewAll}>
-          查看全部
+          查看此设备全部记录
         </button>
       </div>
       {items.length === 0 ? (

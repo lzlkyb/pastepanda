@@ -20,13 +20,11 @@ export function RcDeviceManageActions({
   name,
   busy,
   actions,
-  onPair,
 }: {
   target: RcTargetDevice;
   name: string;
   busy: boolean;
   actions: ReturnType<typeof useRcDeviceActions>;
-  onPair: () => void;
 }) {
   return (
     <div className={styles.managementActions}>
@@ -39,7 +37,7 @@ export function RcDeviceManageActions({
         <Shield size={14} aria-hidden="true" />
         {target.denied ? "允许连接本机" : "禁止连接本机"}
       </button>
-      {target.source === "rc" ? (
+      {target.source === "rc" && (
         <>
           <button
             type="button"
@@ -70,10 +68,6 @@ export function RcDeviceManageActions({
             移除设备
           </button>
         </>
-      ) : (
-        <button type="button" className={styles.primaryButton} onClick={onPair}>
-          完成远程配对
-        </button>
       )}
     </div>
   );

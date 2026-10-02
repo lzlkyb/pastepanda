@@ -60,8 +60,8 @@ pub fn rc_file_cancel(svc: State<'_, Arc<RcService>>, task_id: String) {
 
 /// 清掉已结束的任务（前端「清空」按钮）。
 #[tauri::command]
-pub fn rc_file_clear_finished(svc: State<'_, Arc<RcService>>) {
-    svc.file_clear_finished();
+pub fn rc_file_clear_finished(svc: State<'_, Arc<RcService>>, peer: Option<String>) {
+    svc.file_clear_finished(peer.as_deref());
 }
 
 /// 文件状态快照。前端首次挂载取一次；之后靠 `rc-file-state` 事件

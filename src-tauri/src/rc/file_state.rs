@@ -476,9 +476,10 @@ impl FileState {
     }
 
     /// 清掉已结束的任务（前端「清空」按钮 → 命令层）。
-    pub(crate) fn clear_over(&self) {
+    pub(crate) fn clear_over(&self, peer: Option<&str>) {
         let mut g = self.tasks.lock().unwrap_or_else(|p| p.into_inner());
-        g.retain(|t| !t.state.is_over());
+        // 设备页只能清自己的记录；省略 peer 保留旧全局入口的行为。
+        g.retain(|t| !t.state.is_over() || peer.is_some_and(|p| t.peer != p));
     }
 
     pub(crate) fn snapshot(&self) -> FileSnapshot {
