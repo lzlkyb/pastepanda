@@ -100,7 +100,7 @@ describe("截图主题令牌化守卫", () => {
       ".mask-bar",
       ".text-toolbar",
       ".ocr-copy-bar",
-      ".ocr-pill",
+      // .ocr-pill 已随浮动胶囊一起删除（死 CSS 守卫见 screenshotDeadCss.test.ts）
       ".shot-toast",
       ".picker-bar",
       ".mag-view",

@@ -62,7 +62,7 @@ body {
 }
 /* 白字压在 --accent-solid 上：六套主题都专门把 --accent-solid 调成「白字对比度 ≥4.5:1」
    的实心主按钮底，项目里没有 --on-accent 这类反色令牌，14 处主按钮一律写 #fff。 */
-.shot-fatal-btn.primary { border: none; background: var(--accent-solid); color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，与 .tool.done-btn / .act-row.primary .ic 同一惯例（无对应令牌） */ }
+.shot-fatal-btn.primary { border: none; background: var(--accent-solid); color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，与 .tool.done-btn / .pop-foot .fb.primary 同一惯例（无对应令牌） */ }
 .shot-fatal-btn:hover { background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent); }
 .shot-fatal-btn.primary:hover { background: color-mix(in srgb, var(--accent-solid) 88%, var(--shot-bar-text)); }
 .shot-loading { font-size: 13px; }
@@ -660,8 +660,6 @@ body {
 .act-row .tx { flex: 1; min-width: 0; }
 .act-row .mk { display: flex; align-items: center; flex: none; }
 .act-row .k { margin-left: auto; font-size: 10px; color: var(--text-muted, #7994B4); font-family: ui-monospace, Consolas, monospace; }
-.act-row.primary { background: var(--accent-light, #0A1E3A); border-radius: 8px; margin: 6px 8px; padding: 8px 10px; }
-.act-row.primary .ic { background: var(--accent-solid, #2D78C2); color: #fff; }
 .act-row.pin .ic { color: var(--preview-pin); }
 /* 原来这两条给 AI / 链的图标槽刷了硬编码渐变（#5B6AF0→#7C5CF0、#0ea5e9→#06b6d4），
    不来自任何令牌，6 档主题里长得一模一样，还与「AI 标识只认 AiMark」的唯一样式源分叉。
@@ -777,7 +775,6 @@ body {
 .pop-row .tx { flex: 1; min-width: 0; }
 .pop-row .lbl { display: block; font-size: 12px; color: var(--text-primary); }
 .pop-row .dsc { display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px; } /* ui-rule-ok: 10px 是这一行改前的存量档位，动它会把弹层每一行的层级一起挪 */
-.pop-row .net { margin-left: auto; font-size: 10px; color: var(--warning); white-space: nowrap; } /* ui-rule-ok: 10px 是存量档位，本轮只把色名 --orange 换成语义名 --warning（§5②），动字号会改动作链弹层的层级 */
 .pop-row.busy { opacity: 0.55; pointer-events: none; }
 /* 含云端步骤的链在 AI 未启用时置灰（规则 16）。与 .busy 外观相近但语义不同：
    busy = 正在跑，disabled = 不可用。不用 pointer-events:none，否则 not-allowed 光标也不会显示；
@@ -1045,7 +1042,7 @@ body {
    条内那颗按钮圆角取 4px：V4 同心 = 外 10px − 上下 padding 7px ⇒ 只能更小，落到尺子上是 4。 */
 .shot-toast.act { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--shot-bar-text); padding-right: 8px; }
 .shot-toast.act .tray-btn { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px;
-  border: none; border-radius: 4px; background: var(--accent-solid); color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，与 .tool.done-btn / .act-row.primary .ic 同一惯例（无对应令牌） */ font-size: 11px;
+  border: none; border-radius: 4px; background: var(--accent-solid); color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，与 .tool.done-btn / .pop-foot .fb.primary 同一惯例（无对应令牌） */ font-size: 11px;
   cursor: pointer; font-family: inherit; }
 .shot-toast.act .tray-cd { width: 26px; height: 24px; position: relative; overflow: hidden;
   border-radius: 4px; background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent); }
@@ -1087,38 +1084,12 @@ body {
   font-size: 12px; line-height: 1.8;
 }
 
-/* ===== OCR 识别过程可见（A 方案：识别中指示 / 完成胶囊） ===== */
-/* .ocr-drawer.inside 的 opacity 降级已删，理由同 .act-panel.inside（见上方 §5⑥ 注释）。 */
-
-/* 位置同抽屉（同一锚点，点击原地展开），由 JS 给 left/top */
-/* 已弃用：识别中的浮动胶囊已删（与工具栏按钮上的 .ocr-spin 重复，同一件事两处转圈）。
-   保留样式只为了不动 .spinner 的定义链；如果以后确定没人用可以一并清。 */
-.ocr-pill {
-  position: absolute; z-index: 55;
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 14px; border-radius: 999px;
-  background: var(--shot-bar-bg, rgba(15, 23, 42, 0.94));
-  border: 1px solid color-mix(in srgb, var(--accent, #6366F1) 45%, transparent);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  /* 只剩识别中一种形态，不可点，所以不能再给 pointer 光标（那是在骗点击） */
-  font-size: 12px; color: var(--shot-bar-text, #E6EDF7); cursor: default;
-  animation: ocrPillIn 0.25s ease;
-  white-space: nowrap;
-}
-/* 胶囊现在只剩"识别中"一种形态。
-   完成态与失败态已改由工具栏「取文字」按钮的角标承接——
-   胶囊会 6s 自动收起，收起后标注态就再无任何 OCR 入口。 */
-.ocr-pill .spinner {
-  width: 12px; height: 12px; border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--accent, #6366F1) 30%, transparent);
-  border-top-color: var(--accent, #6366F1);
-  animation: ocrSpin 0.8s linear infinite;
-}
+/* ===== OCR 识别过程可见 ===== */
+/* .ocr-drawer.inside 的 opacity 降级已删，理由同 .act-panel.inside（见上方 §5⑥ 注释）。
+   识别中的浮动胶囊（.ocr-pill 与其 .spinner、@keyframes ocrPillIn）已一并删除：
+   完成态与失败态由工具栏「取文字」按钮的角标承接，识别中用 .ocr-spin 那一颗，
+   同一件事不该两处转圈。@keyframes ocrSpin 仍在用（.tool .ocr-spin / .ocr-state .ocr-spin）。 */
 @keyframes ocrSpin { to { transform: rotate(360deg); } }
-@keyframes ocrPillIn {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: none; }
-}
 
 /* ===== 长截图状态小窗（独立窗口 longshot-status） =====
    独立 Tauri 窗口，尺寸 = screenshot.rs 的 LONGSHOT_W × LONGSHOT_H，放在**选区之外**。
