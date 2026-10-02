@@ -526,14 +526,19 @@
 /* 行右控件列：胶囊/按钮统一右对齐，最小宽保证「哪行有控件」可扫（E2）。
    🔴 排除 .sToggle：开关自己就是 last-child，吃掉 min-width:72 会把 44×26
    轨道撑成 72px 长胶囊（旋钮贴边、字挤），和设计稿对不上。
+   🔴 排除 .sRowBody：本规则管的是「行末那颗控件」，而**没有行末控件的行，它的 last-child
+   就是文字列自己**。2026-10-02 全页审计量出来的「应用排除名单」行（全仓唯一的这种行）：
+   body 被改成 `display:flex; justify-content:flex-end; flex-shrink:0` 之后，
+   标题/说明/输入框在 340–800 **五档里全部横排成一行**，输入框永远拿不到整幅。
+   加排除后回到竖排三段（行高 103→135 是输入框自己占的一行，属本意），其余行逐格不变。
    🔴 不写 gap / flex-wrap：子控件自己的间距（sCleanup 4px、sSegGroup 2px）
    特异性压不过本规则，写了会把它们盖掉。（下面那条降级规则的 flex-wrap 加在 `.sRow`
    自己身上，不是这条的 `:last-child`，两者不冲突。）
-   🔴 排除 [data-stack]：本规则是 0-4-0（.sRow + :last-child + 两个 :not()），
-   分区里那些「整块纵向内容恰好排在行末」的子节点（灵动岛的停靠六宫格、透度滑杆）
-   自己的 0-1-0 规则必输，`display:grid/column` 会被拍成右对齐单行——跨 module 也没法
+   🔴 排除 [data-stack]：本规则是 0-5-0（.sRow + :last-child + 三个 :not()），
+   分区里那些「整块纵向内容恰好排在行末」的子节点（灵动岛的停靠六宫格、透度滑杆、
+   外观的主题卡阵）自己的 0-1-0 规则必输，`display:grid/column` 会被拍成右对齐单行——跨 module 也没法
    靠顺序翻盘。这类子节点显式挂 data-stack 退出本规则，而不是去堆类名权重。 */
-.sRow > :last-child:not(.sToggle):not([data-stack]) {
+.sRow > :last-child:not(.sToggle):not(.sRowBody):not([data-stack]) {
   flex-shrink: 0;
   min-width: 72px;
   display: flex;
@@ -577,14 +582,23 @@
    `.sRow > :last-child` 那条的 `justify-content: flex-end`——那条管的是控件**自己内部**的
    子元素，挪不动控件本身；第一版没写这条，胶囊落在行首（跟图标左缘齐平），
    设计稿里「默认右对齐」的说法当时是假的。实测 `margin-left:auto` 在并排档（≥640）
-   是零影响：那一行的剩余空间先被 `flex-grow:1` 的文字列吃光，auto 外边距分到 0。 */
-.sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) {
+   是零影响：那一行的剩余空间先被 `flex-grow:1` 的文字列吃光，auto 外边距分到 0。
+   🔴 门改看**结构**，不再列类名（2026-10-02 全页审计）：上面这段原来写死
+   `:is(.sCleanup, .sSegGroup)`，于是灵动岛「提醒横幅停留」那颗 4 档分段（类名是分区自己的
+   `Island.module.css .seg`）根本不在门眼里——340 档实测描述折 **25 行、整行 556px 高**。
+   这正是规则 #11.1 说的「第 5 个宽控件行一定会被写出来」，只不过它换了个 module 的类名。
+   🔴 门**不**排除 `<select>`：我一开始写了 `:not(select)`，理由是「option 不是档位」，
+   实测把这条判据打死了——动作链下拉有 4 个 option 时，「门看不见 select」那档实测 148px / 描述 5 行，
+   让 select 进门才 115px / 2 行：那颗下拉（右列实占 110px）和长描述本来就挤不进同一行，正是本规则要救的情形。
+   全仓当过行末 last-child 的 `<select>` 只有那一个（MCP 与笔记模板里的都在对话框里），
+   所以这里不存在「短描述被无辜加高」的误伤面。纵向块走 `data-stack` 逃生口（主题卡阵本轮已挂）。 */
+.sRow:has(> :last-child:not([data-stack]):not(.sRowBody) > :nth-child(4)) {
   flex-wrap: wrap;
 }
-.sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > .sRowBody {
+.sRow:has(> :last-child:not([data-stack]):not(.sRowBody) > :nth-child(4)) > .sRowBody {
   flex: 1 1 min(320px, 100% - 52px);
 }
-.sRow:has(> :last-child:is(.sCleanup, .sSegGroup) > :nth-child(4)) > :last-child:not(.sToggle) {
+.sRow:has(> :last-child:not([data-stack]):not(.sRowBody) > :nth-child(4)) > :last-child:not(.sToggle) {
   margin-left: auto;
 }
 

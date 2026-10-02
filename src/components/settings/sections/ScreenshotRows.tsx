@@ -1,6 +1,7 @@
 import type { AppConfig } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { ToggleRow, SettingTile } from "../ToggleRow";
+import { HelpTooltip } from "@/components/HelpTooltip";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
 
@@ -39,9 +40,20 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
       <div className={styles.sRow}>
         <SettingTile hue="capture">🔤</SettingTile>
         <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>OCR 选字模式</div>
+          <div className={`${styles.sRowLabel}`}>
+            OCR 选字模式
+            <HelpTooltip
+              tooltip="两种选字方式：落在文字上直接拖，或按住 Ctrl/⌘ 再拖"
+              detailTitle="OCR 选字模式"
+              detail={<>
+                <p>标注时文字识别与画标注共存，互不抢事件。</p>
+                <p>💡 <b>智能意图</b>：默认矩形工具下，落在文字上拖即选字；光标离开文字带则冻结已选内容。</p>
+                <p>💡 <b>Ctrl 修饰键</b>：按住 Ctrl/⌘ 拖才选字，裸拖一律画标注。</p>
+              </>}
+            />
+          </div>
           <div className={`${styles.sRowDesc}`}>
-            标注时文字识别与画标注共存、互不抢事件。智能意图：默认矩形工具下，落在文字上拖即选字（光标离开文字带则冻结已选内容）；修饰键：按住 Ctrl/⌘ 拖才选字，裸拖一律画标注
+            标注时选文字与画标注共存、互不抢事件
           </div>
         </div>
         <div className={styles.sSegGroup}>

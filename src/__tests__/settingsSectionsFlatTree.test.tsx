@@ -124,9 +124,23 @@ describe("整块纵向内容必须显式退出「.sRow 右控件列」规则", (
   const sharedCss = readFileSync(join(root, "src", "components", "Settings.module.css"), "utf8");
   const islandTsx = readFileSync(join(root, "src", "components", "settings", "sections", "IslandSection.tsx"), "utf8");
   const islandCss = readFileSync(join(root, "src", "components", "settings", "sections", "Island.module.css"), "utf8");
+  const appearanceTsx = readFileSync(join(root, "src", "components", "settings", "sections", "AppearanceSection.tsx"), "utf8");
 
   it("右控件列规则留着 :not([data-stack]) 逃生口", () => {
-    expect(sharedCss).toMatch(/\.sRow > :last-child:not\(\.sToggle\):not\(\[data-stack\]\)/);
+    expect(sharedCss).toMatch(/\.sRow > :last-child:not\(\.sToggle\):not\(\.sRowBody\):not\(\[data-stack\]\)/);
+  });
+
+  /** 🔴 没有行末控件的行，它的 `:last-child` 就是 `.sRowBody` 自己。
+   *  少了这个排除，文字列被改成 `display:flex; justify-content:flex-end` ⇒
+   *  「应用排除名单」实测 340–800 五档全部把标题/说明/输入框横排成一行。 */
+  it("文字列（.sRowBody）永远不算「行末右控件」", () => {
+    expect(sharedCss).toMatch(/\.sRow > :last-child[^\n{]*:not\(\.sRowBody\)/);
+  });
+
+  /** 六张主题卡是纵向行的 last-child：不挂标记就被拍成右对齐（首卡左偏 42px@340 / 262px@800），
+   *  而降级门现在按结构数子节点，6 张卡正好会误触发——同一个标记挡两条规则。 */
+  it("主题卡阵挂着 data-stack（它同时是降级门的例外）", () => {
+    expect(appearanceTsx).toMatch(/themeGrid\} data-stack="true">/);
   });
 
   it("六宫格与透度滑杆两个纵向块都挂了 data-stack", () => {
@@ -162,16 +176,19 @@ describe("行末胶囊/分段控件必须能自动降级到描述下方", () => 
   const rawCss = readFileSync(join(root, "src", "components", "Settings.module.css"), "utf8");
   const sharedCss = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
-  it("降级触发条件是「行末多选一 ≥4 档」，两类控件都覆盖", () => {
+  it("降级触发条件是「行末多选一 ≥4 档」，且按结构认不按类名认", () => {
     // 用字面量正则而不是 new RegExp(模板串)：字符串里 `\.` 会被 JS 先吞成 `.`
     expect(sharedCss).toMatch(
-      /\.sRow:has\(> :last-child:is\(\.sCleanup, \.sSegGroup\) > :nth-child\(4\)\)\s*\{\s*flex-wrap: wrap;/
+      /\.sRow:has\(> :last-child:not\(\[data-stack\]\):not\(\.sRowBody\) > :nth-child\(4\)\)\s*\{\s*flex-wrap: wrap;/
     );
     expect(sharedCss).toMatch(
-      /\.sRow:has\(> :last-child:is\(\.sCleanup, \.sSegGroup\) > :nth-child\(4\)\) > \.sRowBody\s*\{/
+      /\.sRow:has\(> :last-child:not\(\[data-stack\]\):not\(\.sRowBody\) > :nth-child\(4\)\) > \.sRowBody\s*\{/
     );
     // 旧版「行末只要有控件就降级」必须已经不在代码里（注释里留着当反面教材是允许的）
     expect(sharedCss).not.toMatch(/:has\(> \.s(?:Cleanup|SegGroup):last-child\)/);
+    // 🔴 上一版门里的类名清单必须整体消失：门一旦回到「认类名」，
+    // 灵动岛那颗 4 档 `.seg`（类名在 Island.module.css）就又看不见，340 档实测 556px 高。
+    expect(sharedCss).not.toMatch(/:is\(\.sCleanup/);
   });
 
   /** 两条都是实测换来的，退回写法就分别炸成「图标悬空孤行」和「胶囊掉在行首」：
@@ -181,7 +198,7 @@ describe("行末胶囊/分段控件必须能自动降级到描述下方", () => 
     expect(sharedCss).toMatch(/flex: 1 1 min\(320px, 100% - 52px\);/);
     expect(sharedCss).not.toMatch(/flex: 1 1 320px;/);
     expect(sharedCss).toMatch(
-      /\.sRow:has\(> :last-child:is\(\.sCleanup, \.sSegGroup\) > :nth-child\(4\)\) > :last-child:not\(\.sToggle\)\s*\{\s*margin-left: auto;/
+      /\.sRow:has\(> :last-child:not\(\[data-stack\]\):not\(\.sRowBody\) > :nth-child\(4\)\) > :last-child:not\(\.sToggle\)\s*\{\s*margin-left: auto;/
     );
   });
 

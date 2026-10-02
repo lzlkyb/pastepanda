@@ -9,6 +9,11 @@
  * 对比度本身达标，纯粹是小到费劲）。卡宽跟着变大是因为「美乐迪」这类 3 字名
  * 在 11px 下要 33px，加上左侧彩点与内边距后 64px 已经拐不过弯。
  * 预览色仍然写在内联 style 里——它们是每个主题各自一份的数据，不是样式。 */
+.themeGrid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .themeCard {
   width: 72px;
   border-radius: 10px;

@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="zh" data-theme="ocean">
+<head>
+<meta charset="utf-8" />
+<title>设置·行末控件 全页审计探针（2026-10-02）</title>
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/styles/globals.css" />
+<link rel="stylesheet" href="../src/components/HelpTooltip.module.css" />
+<link rel="stylesheet" href="../src/components/Settings.module.css" />
+<link rel="stylesheet" href="../src/components/settings/sections/Island.module.css" />
+<!-- 🔴 R7 的六张主题卡真身在 Appearance.module.css（不在 Settings.module.css 里）。
+     2026-10-02 首版漏了这张表，于是六张卡是我手搓的 84×52 假色块：既不像 App，
+     卡宽又比真的 72px 宽 12px ⇒ R7 的「行高不变」是拿错的宽度量的。已改成真结构。 -->
+<link rel="stylesheet" href="../src/components/settings/sections/Appearance.module.css" />
+<style>
+/* 本探针不发明任何组件样式：上面 6 个 <link> 就是项目真样式表。
+   这里只写「量具」本身（外框、表格、读数），全部前缀 probe- 以免撞进模块类名。
+   🔴 行容器用的是真 `.settingsContent`（见下方 #stage 的 class），
+   所以 16px 内边距、800px 限宽与 `overflow-x:hidden` 都是 App 的行为，不是我抄的。 */
+body { margin: 0; padding: 18px; background: var(--section-bg); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+.probe-h1 { font-size: 15px; margin: 0 0 4px; }
+.probe-lead { font-size: 12px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.7; }
+#stageWrap { display: block; }
+#stage { margin-bottom: 18px; }
+.probe-note { font-size: 11px; color: var(--text-muted); margin: 0 0 8px; }
+#panel { flex: 1; min-width: 0; }
+.probe-bar { display: flex; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 10px; }
+.probe-tbl { border-collapse: collapse; width: 100%; font-size: 11px; }
+.probe-tbl th, .probe-tbl td { border: 1px solid var(--border-color); padding: 4px 6px; text-align: left; }
+.probe-tbl th { background: var(--section-bg); font-weight: 600; }
+.probe-bad { color: #b91c1c; font-weight: 700; }
+.probe-warn { color: #b45309; font-weight: 600; }
+.probe-ok { color: #15803d; }
+/* 量具自己的装饰（不碰组件样式）：待修三行描边，现状红 / 修法后绿 */
+.probe-bar button.probe-on { outline: 2px solid #15803d; outline-offset: 1px; }
+#stage [data-defect] { outline: 2px dashed #b91c1c; outline-offset: -2px; }
+body[data-mode="fix"] #stage [data-defect] { outline-color: #15803d; }
+</style>
+</head>
+<body>
+<h1 class="probe-h1">设置·行末控件 —— 全页审计探针（量具，不是方案稿）</h1>
+<p class="probe-lead">
+  已修的「数据管理」两行只是<b>这一类</b>缺陷里被看见的两个样本。本探针把设置页其余「行末有东西」的行原型逐条搬进来，
+  吃的是项目<b>真样式表</b>（无手抄数值），行装在<b>真容器类</b> <code>.settingsContent</code> 里，
+  在 340 / 380 / 460 / 620 / 800 五档<b>容器宽</b>（行实宽 = 容器宽 − 32px）下量：
+  行高、描述行数、文字列是否与图标同行、右列实占宽、以及「body 自己就是 :last-child」的行是否被排成横向单行。
+  行数用 <code>Range.getClientRects()</code> 数，不是估的。
+  <br /><b>打开方式必须是 dev server</b>（<code>http://localhost:1420/design/…</code>）：只有经 Vite 才有
+  <code>*.module.css</code> 的作用域类名，本稿的类名映射才有东西可映射。
+  用 <code>file://</code> 直接打开时类名是字面量，映射表为空，页首自检会亮红。
+</p>
+
+<div class="probe-bar">
+  <label>容器宽（真 <code>.settingsContent</code> 外框） <input id="w" type="range" min="320" max="800" step="10" value="340" /> <b id="wv">340</b>px</label>
+  <button data-jump="340">340</button>
+  <button data-jump="380">380</button>
+  <button data-jump="460">460</button>
+  <button data-jump="620">620</button>
+  <button data-jump="800">800</button>
+  <button id="measure">重测</button>
+</div>
+<p class="probe-note">🔴 口径（2026-10-02 修正）：舞台现在套的是项目真容器类 <code>.settingsContent</code>
+  （<code>padding:4px 16px 20px</code> + 子项 <code>max-width:800px</code> 居中 + <code>overflow-x:hidden</code>），
+  所以<b>行实宽 = 容器宽 − 32px</b>（800 档再被限宽封顶）。表头每档都另印「行实宽」，读数按行实宽解释；
+  早前一版没套容器，行实宽就等于档值，比现在<b>宽 32px</b>——那批数字已全部重量并替换。</p>
+
+<div class="probe-bar">
+  <b>肉眼对比（本轮 CSS 改动已落码，默认＝改完的源码）：</b>
+  <button id="m-base">退回改前（旧规则）</button>
+  <button id="m-fix" class="probe-on">现在源码（已修）</button>
+  <span class="probe-note">默认停在<b>最狠的 340 档</b>，虚线框那三行就是本轮动过的：
+    R4「提醒横幅停留」改前 556px 高（描述 25 行）⇄ 现在 116px；
+    R1「应用排除名单」改前标题/说明/输入框横排一行 ⇄ 现在竖排三段；
+    R7「主题配色」六张卡改前贴右缘 ⇄ 现在贴左缘。
+    第 4 项（R10「OCR 选字模式」）改的是<b>源码文案</b>不是规则，开关对它无效——它两列读数相同，看上面清单表第 4 行。
+    「退回改前」只是把 CSSOM 里那 4 条规则的选择器还原成旧写法 + 摘掉卡阵的 <code>data-stack</code>，
+    不复制 DOM、不抄任何数值；表里的「现状 →」列因此读作<b>改前 → 改后</b>。</span>
+</div>
+
+<table class="probe-tbl" style="margin-bottom:14px">
+  <thead><tr><th>#</th><th>在 App 里哪一行</th><th>改哪个文件的哪条规则</th><th>肉眼看得出的区别</th></tr></thead>
+  <tbody>
+    <tr><td>1</td>
+      <td><b>灵动岛 · 提醒横幅停留</b>（10秒/30秒/60秒/2分钟 四颗）</td>
+      <td><code>src/components/Settings.module.css:581-589</code><br />三条降级规则的门：
+        <code>:has(&gt; :last-child:is(.sCleanup, .sSegGroup) &gt; :nth-child(4))</code><br />
+        <b>改成</b> <code>:has(&gt; :last-child:not([data-stack]) &gt; :nth-child(4))</code></td>
+      <td class="probe-bad">现状：窄窗时四颗分段挤成竖条，描述被切成 25 行、整行 556px 高<br />
+        <span class="probe-ok">修法后：分段控件整块挪到描述下方，描述 2 行、整行 116px</span></td></tr>
+    <tr><td>2</td>
+      <td><b>复制与粘贴 · 应用排除名单</b>（名字 + 说明 + 输入框，无行末控件）</td>
+      <td><code>src/components/Settings.module.css:536</code><br />右控件列规则：
+        <code>.sRow &gt; :last-child:not(.sToggle):not([data-stack])</code><br />
+        <b>改成</b> 末尾再加 <code>:not(.sRowBody)</code></td>
+      <td class="probe-bad">现状：标题、说明、输入框被<b>横着排成一排</b>（因为 body 自己就是 last-child）<br />
+        <span class="probe-ok">修法后：回到正常的「标题 / 说明 / 输入框占整幅」三段竖排</span></td></tr>
+    <tr><td>3</td>
+      <td><b>外观 · 主题配色</b>（六张主题卡）</td>
+      <td><code>src/components/settings/sections/AppearanceSection.tsx:50</code><br />
+        卡阵那个 <code>&lt;div style={{display:"flex",gap:8,flexWrap:"wrap"}}&gt;</code><br />
+        <b>改成</b> <code>className={styles.themeGrid} data-stack="true"</code>——
+        <code>data-stack</code> 是规则 11.1 收口用的现成标记，flex 三条搬进
+        <code>Appearance.module.css</code> 的 <code>.themeGrid</code>（顺手清 U8 内联 style）</td>
+      <td class="probe-bad">现状：六张卡整体被推到最右边，左边一大片空白（800 档偏 262px）<br />
+        <span class="probe-ok">修法后：卡阵从左边贴齐，行高一像素没变</span></td></tr>
+    <tr><td>4</td>
+      <td><b>截图与栈 · OCR 选字模式</b>（描述约 100 字那行）</td>
+      <td><code>src/components/settings/sections/ScreenshotRows.tsx:42</code><br />
+        不是 CSS：长文案改成行内一句「标注时选文字与画标注共存、互不抢事件」，
+        两段机制说明（智能意图 / Ctrl 修饰键）搬进标题后的 <code>?</code>
+        <code>HelpTooltip</code>，与全页既有口径一致</td>
+      <td class="probe-bad">现状：340→800 五档整块 12 / 8 / 5 / 3 / 2 行（行末只有 2 档，降级门救不到它）<br />
+        <span class="probe-ok">修法后：4 / 3 / 2 / 1 / 1 行（行高 152/116/99/83/83）。
+        本行是源码文案改动，<b>不吃「退回改前」那个开关</b>，两档读数相同</span></td></tr>
+  </tbody>
+</table>
+
+<div id="stageWrap">
+  <div id="stage" class="settingsContent">
+
+    <!-- R1 应用排除名单：本行没有行末控件 ⇒ `.sRowBody` 自己就是 :last-child -->
+    <div class="sRow" data-defect="2" data-r="R1 应用排除名单">
+      <span class="sRowIcon icPrivacy"><span class="sRowIconGlyph">🚫</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">应用排除名单 <span class="trigger">?</span></div>
+        <div class="sRowDesc">来自这些应用的复制内容不会被记录（逗号分隔）</div>
+        <input type="text" class="sTextInput" value="KeePass, 1Password" />
+      </div>
+    </div>
+
+    <!-- R2 完成后自动执行动作链（有链态：行末 select 内联 width:132） -->
+    <div class="sRow" data-r="R2 自动动作链·下拉">
+      <span class="sRowIcon icCapture"><span class="sRowIconGlyph">⚡</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">完成后自动执行动作链</div>
+        <div class="sRowDesc">截图完成自动跑链（OCR 文字为输入）；自动执行仅限纯本地步骤，云端步骤会跳过</div>
+      </div>
+      <select class="sVal" style="width:132">
+        <option>不自动执行</option>
+      </select>
+    </div>
+
+    <!-- R2b 同行的空态：行末是一个未标记的 div（132 胶囊 + 创建按钮） -->
+    <div class="sRow" data-r="R2b 自动动作链·空态">
+      <span class="sRowIcon icCapture"><span class="sRowIconGlyph">⚡</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">完成后自动执行动作链</div>
+        <div class="sRowDesc">截图完成自动跑链（OCR 文字为输入）；自动执行仅限纯本地步骤，云端步骤会跳过</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px">
+        <span class="sVal" style="width:132; opacity:.55; text-align:center">暂无动作链</span>
+        <button class="sAction">创建</button>
+      </div>
+    </div>
+
+    <!-- R2c 动作链下拉·建满 4 条链：行末是 <select> + 4 个 <option>。
+         这行专门钉住一个我自己判错的地方——我起初把门写成 `:not(select)`（理由「option 不是档位」），
+         实测 340 档：含 :not(select) 148px / 描述 9 行，去掉才 115px / 5 行。
+         ⇒ 那颗 132px 的下拉和长描述本来就挤不进同一行，正是降级要救的情形，排除写反了。
+         「退回改前」模式下它读 148px/9 行（旧类名门也不认 select），所以这行是本轮的<b>净收益</b>之一。 -->
+    <div class="sRow" data-r="R2c 动作链下拉(4 option)">
+      <span class="sRowIcon icCapture"><span class="sRowIconGlyph">⚡</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">完成后自动执行动作链</div>
+        <div class="sRowDesc">截图完成自动跑链（OCR 文字为输入）；自动执行仅限纯本地步骤，云端步骤会跳过</div>
+      </div>
+      <select class="sVal" style="width:132">
+        <option>不自动执行</option>
+        <option>OCR + 打码</option>
+        <option>存为笔记</option>
+        <option>转 Markdown</option>
+      </select>
+    </div>
+
+    <!-- R3 关联 .md 文件：行末是「条件 sAction + 常驻 sToggle」两颗，降级门只看 last-child -->
+    <div class="sRow" data-r="R3 关联 .md（按钮+开关）">
+      <span class="sRowIcon icEditor"><span class="sRowIconGlyph">📎</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">关联 .md 文件 <span class="trigger">?</span></div>
+        <div class="sRowDesc">已注册打开方式，尚未设为默认</div>
+      </div>
+      <button class="sAction">设为默认</button>
+      <button class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+    </div>
+
+    <!-- R4 提醒横幅停留：4 档，但类名是 Island.module.css 的 .seg/.segBtn ⇒ 现有 :has() 门看不见它 -->
+    <div class="sRow" data-defect="1" data-r="R4 提醒横幅停留（4 档 .seg）">
+      <span class="sRowIcon icSave"><span class="sRowIconGlyph">⏱️</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">提醒横幅停留</div>
+        <div class="sRowDesc">横幅显示多久后自动收回；点横幅会展开列表，在那里勾完成</div>
+      </div>
+      <div class="seg">
+        <button class="segBtn">10秒</button>
+        <button class="segBtn segBtnSel">30秒</button>
+        <button class="segBtn">60秒</button>
+        <button class="segBtn">2分钟</button>
+      </div>
+    </div>
+
+    <!-- R5 快捷键行录制态：.sKbd 有 white-space:nowrap，录制文案会把右列顶宽 -->
+    <div class="sRow" data-r="R5 快捷键·录制态">
+      <span class="sRowIcon icSystem"><span class="sRowIconGlyph">⌨</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">唤出窗口</div>
+        <div class="sRowDesc">全局快捷键，在任何位置唤出</div>
+      </div>
+      <span style="display:inline-flex; align-items:center; gap:4px">
+        <button class="sKbd recording">按下组合键…（Esc 取消）</button>
+      </span>
+    </div>
+
+    <!-- R5b 快捷键行静止态 -->
+    <div class="sRow" data-r="R5b 快捷键·静止态">
+      <span class="sRowIcon icSystem"><span class="sRowIconGlyph">⌨</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">唤出窗口</div>
+        <div class="sRowDesc">全局快捷键，在任何位置唤出</div>
+      </div>
+      <span style="display:inline-flex; align-items:center; gap:4px">
+        <button class="sKbd">Ctrl+Shift+V</button>
+        <button title="清除" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:none;border-radius:6px;background:transparent;color:var(--text-muted);font-size:13px">×</button>
+      </span>
+    </div>
+
+    <!-- R6 标签样式：行末是 sVal 文字胶囊（「分段控件」4 字 + padding） -->
+    <div class="sRow" data-r="R6 标签样式（sVal）">
+      <span class="sRowIcon icSystem"><span class="sRowIconGlyph">📑</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">标签样式</div>
+        <div class="sRowDesc">切换筛选标签的显示风格</div>
+      </div>
+      <button class="sVal">分段控件</button>
+    </div>
+
+    <!-- R7 主题配色：.sRow 内联改成 column，行末六张主题卡吃 :last-child 的 justify-content:flex-end -->
+    <div class="sRow" id="r7" data-defect="3" data-r="R7 主题配色（卡阵右靠?）" style="flex-direction:column; align-items:stretch; gap:12px">
+      <span class="sRowIcon icBrand"><span class="sRowIconGlyph">🎨</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">主题配色 <span class="trigger">?</span></div>
+        <div class="sRowDesc">选择你喜欢的配色方案</div>
+      </div>
+      <!-- 六张卡 = 真 `.themeCard` 结构（AppearanceSection.tsx:50-86 逐层照搬），
+           尺寸/圆角/阴影来自 Appearance.module.css；内联的只有「每个主题各自的预览色」，
+           那是数据不是样式，值抄自 AppearanceSection.tsx:10-15 的 THEME_PREVIEWS。
+           首张带 .themeCardOn（= 当前主题），因为真 App 里选中态的 3px 外环会改卡的占用宽度。 -->
+      <div id="r7grid" style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="themeCard themeCardOn" title="经典白">
+          <div class="themeCardBar" style="background:#fff;border-bottom:1px solid #E0E4EB">
+            <div class="themeCardDot" style="background:#0284C7"></div>
+            <div class="themeCardName" style="color:#64748B">经典白</div>
+          </div>
+          <div class="themeCardBody" style="background:linear-gradient(180deg, #EAF6FD 0%, #CFE9F8 40%, #9ED0EA 75%, #79B8DD 100%)">
+            <div class="themeCardLine" style="background:#fff;width:100%;border:1px solid #E0E4EB"></div>
+            <div class="themeCardLine" style="background:#E0E4EB;width:70%"></div>
+            <div class="themeCardLine" style="background:#0284C7;width:45%"></div>
+          </div>
+        </button>
+        <button class="themeCard" title="深海">
+          <div class="themeCardBar" style="background:#0A1628;border-bottom:1px solid #162B45">
+            <div class="themeCardDot" style="background:#3B9EFF"></div>
+            <div class="themeCardName" style="color:#8BA4C0">深海</div>
+          </div>
+          <div class="themeCardBody" style="background:radial-gradient(130% 120% at 70% -5%, #14415F 0%, #0A2440 45%, #041225 100%)">
+            <div class="themeCardLine" style="background:#0A1628;width:100%;border:1px solid #162B45"></div>
+            <div class="themeCardLine" style="background:#162B45;width:70%"></div>
+            <div class="themeCardLine" style="background:#3B9EFF;width:45%"></div>
+          </div>
+        </button>
+        <button class="themeCard" title="午夜">
+          <div class="themeCardBar" style="background:#18181B;border-bottom:1px solid #27272A">
+            <div class="themeCardDot" style="background:#818CF8"></div>
+            <div class="themeCardName" style="color:#A1A1AA">午夜</div>
+          </div>
+          <div class="themeCardBody" style="background:radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%)">
+            <div class="themeCardLine" style="background:#18181B;width:100%;border:1px solid #27272A"></div>
+            <div class="themeCardLine" style="background:#27272A;width:70%"></div>
+            <div class="themeCardLine" style="background:#818CF8;width:45%"></div>
+          </div>
+        </button>
+        <button class="themeCard" title="森林">
+          <div class="themeCardBar" style="background:#fff;border-bottom:1px solid #D1D9D3">
+            <div class="themeCardDot" style="background:#059669"></div>
+            <div class="themeCardName" style="color:#78716C">森林</div>
+          </div>
+          <div class="themeCardBody" style="background:linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%)">
+            <div class="themeCardLine" style="background:#fff;width:100%;border:1px solid #D1D9D3"></div>
+            <div class="themeCardLine" style="background:#D1D9D3;width:70%"></div>
+            <div class="themeCardLine" style="background:#059669;width:45%"></div>
+          </div>
+        </button>
+        <button class="themeCard" title="美乐蒂">
+          <div class="themeCardBar" style="background:#fff;border-bottom:1px solid #F9D3E2">
+            <div class="themeCardDot" style="background:#F0568C"></div>
+            <div class="themeCardName" style="color:#86596D">美乐蒂</div>
+          </div>
+          <div class="themeCardBody" style="background:linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%)">
+            <div class="themeCardLine" style="background:#fff;width:100%;border:1px solid #F9D3E2"></div>
+            <div class="themeCardLine" style="background:#F9D3E2;width:70%"></div>
+            <div class="themeCardLine" style="background:#F0568C;width:45%"></div>
+            <span class="themeCardHeart">💗</span>
+          </div>
+        </button>
+        <button class="themeCard" title="晨曦">
+          <div class="themeCardBar" style="background:#fff;border-bottom:1px solid #F0DDC8">
+            <div class="themeCardDot" style="background:#E8734A"></div>
+            <div class="themeCardName" style="color:#A08C72">晨曦</div>
+          </div>
+          <div class="themeCardBody" style="background:linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%)">
+            <div class="themeCardLine" style="background:#fff;width:100%;border:1px solid #F0DDC8"></div>
+            <div class="themeCardLine" style="background:#F0DDC8;width:70%"></div>
+            <div class="themeCardLine" style="background:#E8734A;width:45%"></div>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- R8 对照·已修好的 5 档行（自动清理）：验证降级仍然生效 -->
+    <div class="sRow" data-r="R8 对照·自动清理(已修)">
+      <span class="sRowIcon icSave"><span class="sRowIconGlyph">🗑</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">自动清理 <span class="trigger">?</span></div>
+        <div class="sRowDesc">清理超过该天数的记录（置顶除外），启动后每小时自动执行</div>
+      </div>
+      <div class="sCleanup">
+        <button class="sCleanupOpt">关</button>
+        <button class="sCleanupOpt">7天</button>
+        <button class="sCleanupOpt">15天</button>
+        <button class="sCleanupOpt active">30天</button>
+        <button class="sCleanupOpt">60天</button>
+      </div>
+    </div>
+
+    <!-- R9 对照·开关行（长描述，无右列竞争） -->
+    <div class="sRow" data-r="R9 对照·截图窗口常驻">
+      <span class="sRowIcon icCapture"><span class="sRowIconGlyph">⚡</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">截图窗口常驻 <span class="trigger">?</span></div>
+        <div class="sRowDesc">开启后截图窗关闭时仅隐藏不销毁，再次按热键秒开（微信同款）；关闭则每次冷启动，首次画面慢几秒。代价：常驻约几十~百 MB 内存</div>
+      </div>
+      <button class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+    </div>
+
+    <!-- R10 OCR 选字模式：2 档 ⇒ 门不触发，但描述 ~100 字。
+         🔴 已落地（②）：长描述下沉进 `?`，行内只留一句「标注时选文字与画标注共存、互不抢事件」。
+         下面这份 markup 就是 ScreenshotRows.tsx 现在的样子；改前的 12/8/5/3/2 行读数留在结论文字里当对照。 -->
+    <div class="sRow" data-r="R10 OCR 选字模式（描述已下沉，2 档）">
+      <span class="sRowIcon icCapture"><span class="sRowIconGlyph">🔤</span></span>
+      <div class="sRowBody">
+        <div class="sRowLabel">OCR 选字模式 <span class="trigger">?</span></div>
+        <div class="sRowDesc">标注时选文字与画标注共存、互不抢事件</div>
+      </div>
+      <div class="sSegGroup">
+        <button class="sSegText sSegActive">智能意图</button>
+        <button class="sSegText">Ctrl 修饰键</button>
+      </div>
+    </div>
+
+  </div>
+  <div id="panel"></div>
+</div>
+
+<h2 class="probe-h1" style="margin-top:22px">结论（全部为上表实测读数，非估计）</h2>
+<div class="probe-note" style="max-width:900px; line-height:1.8; font-size:12px">
+  🔴 <b>本稿第二次重量</b>：首版舞台没套真容器 <code>.settingsContent</code>（16px 内边距、800px 限宽全丢），
+  R7 的六张卡还是我手搓的 84×52 假色块（真卡 72px，样式在 <code>Appearance.module.css</code>，首版根本没 link 这张表）
+  ⇒ 每档实际比真 App <b>宽 32px</b>、R7 卡宽多 12px。下面所有数字是补好容器与真卡后的新读数，
+  旧数字（R4「9 行 / 215px」、R7「左偏 38→222」）作废。<b>结论方向不变，严重度更高。</b><br />
+  <b>同类缺陷还有 4 处，根因都是「降级门按类名认人」+「右控件列规则无差别命中 :last-child」：</b>
+  <table class="probe-tbl" style="margin-top:8px">
+    <thead><tr><th>#</th><th>行</th><th>现状最差读数</th><th>根因</th><th>修法</th><th>候选修法实测</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>R4</td><td>灵动岛·提醒横幅停留</td>
+        <td class="probe-bad">340：描述 <b>25 行</b> / 行高 556px<br />380：7 行 / 181px　460：3 行 / 96px</td>
+        <td>它是 4 档分段控件，但类名是分区自己的 <code>Island.module.css .seg/.segBtn</code>；
+            降级门写死了 <code>:is(.sCleanup, .sSegGroup)</code> ⇒ 看不见它。右列实占 198px。</td>
+        <td>门改成看结构：<code>:has(&gt; :last-child:not([data-stack]) &gt; :nth-child(4))</code></td>
+        <td class="probe-ok">340：2 行 / 116px（行高 −440）<br />380：2 行 / 116px<br />460：1 行 / 102px<br />620：1 行 / 102px<br />800：与现状逐像素相同</td>
+      </tr>
+      <tr>
+        <td>R1</td><td>复制与粘贴·应用排除名单</td>
+        <td class="probe-bad"><b>五档全部横排</b>（label/desc/输入框并成一排）；
+            340/380 描述 3 行、460 起 2 行，输入框拿不到整幅</td>
+        <td>这行<b>没有行末控件</b> ⇒ <code>.sRowBody</code> 自己就是 <code>:last-child</code>，
+            被右控件列规则改成 <code>display:flex; justify-content:flex-end; flex-shrink:0; min-width:72px</code>。
+            文字列永远不该是「右控件」。</td>
+        <td>该规则再加一个排除：<code>:not(.sRowBody)</code>（与已有的 <code>:not(.sToggle)</code> 同族）</td>
+        <td class="probe-ok">五档全部回到竖排，描述 2/1/1/1/1 行；行高 103→135(340)、84→118（其余）是输入框自己占一行，属本意</td>
+      </tr>
+      <tr>
+        <td>R7</td><td>外观·主题配色（六张卡）</td>
+        <td class="probe-bad">六张真 <code>.themeCard</code>（72px 宽）整体被推到右边：<code>justify-content:flex-end</code>，
+            首卡左偏 42px(340) / 2px(380、460) / 82px(620) / <b>262px(800)</b></td>
+        <td>卡阵是这条 <code>flexDirection:column</code> 行的 <code>:last-child</code>，吃了右控件列的
+            <code>justify-content:flex-end</code>；行内联只写了 <code>display:flex/gap/wrap</code>，压不住没写的对齐。</td>
+        <td>挂项目<b>已有</b>的逃生口 <code>data-stack="true"</code>（灵动岛六宫格、透度滑杆就是这么修的）；
+            顺手把那条内联 flex 搬进 <code>Appearance.module.css .themeGrid</code>（U8，附带：<code>gap:8px</code> 从此能被主题/媒体查询覆盖）</td>
+        <td class="probe-ok">五档全部 <code>jc:normal</code>、首卡左偏 0（贴 16px 内边距），行高 281/281/281/210/210 一字不变</td>
+      </tr>
+      <tr>
+        <td>R2c</td><td>截图与栈·自动动作链（下拉，4 个 option）</td>
+        <td class="probe-bad">340：整块 <b>5 行 / 148px</b>　380：4 行 / 112px　460：2 行 / 79px</td>
+        <td>行末那颗是 <code>&lt;select&gt;</code>：旧门只认 <code>:is(.sCleanup, .sSegGroup)</code> 两个类名，看不见它；
+            我第一版还想给新门加 <code>:not(select)</code>（理由「option 不是档位」）——被同一个量具打死，见右列。</td>
+        <td>门改看结构，且<b>不</b>排除 <code>select</code>（本稿推翻自己的一处判断，留在表里当反面教材）</td>
+        <td class="probe-ok">改后 115 / 115 / 115 / 79 / 65px（描述 2/2/2/2/1 行）；<b>含</b> <code>:not(select)</code> 则退回 148px / 5 行</td>
+      </tr>
+    </tbody>
+  </table>
+  <b>四条互不干扰</b>：修法打开后，R2/R2b/R3/R5/R5b/R6/R8/R9 与现状<b>逐格相同</b>（表里显示「＝」），
+  已修好的 R8（自动清理 5 档）行为也不变；R10 改的是源码文案，不吃这个开关。
+  <br /><br />
+  <b>剩下的不是「控件饿死」，是「描述本身太长」——两类要分开治：</b>
+  <table class="probe-tbl" style="margin-top:8px">
+    <thead><tr><th>行</th><th>描述行数 340 / 380 / 460 / 620 / 800</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>R10 OCR 选字模式</td><td class="probe-ok">12 / 8 / 5 / 3 / 2 行 → <b>4 / 3 / 2 / 1 / 1 行</b>（已落地）</td>
+        <td>描述约 100 字。行末只有 2 档（实占约 155px，两次重量分别读到 154 / 155），<b>降级救不了它</b>——就算描述独享整幅，460 档仍 5 行。
+            只能动文案：两段机制说明已下沉进 <code>?</code>，行内只留「标注时选文字与画标注共存、互不抢事件」
+            （与既有「全下沉 ?，仅安全警示留 desc」口径一致）。新读数取自上表本行：<b>行高 152/116/99/83/83</b>。</td></tr>
+      <tr><td>R9 截图窗口常驻</td><td class="probe-warn">5 / 4 / 3 / 2 / 2 行</td>
+        <td>约 70 字，行末只是 44px 开关。同上属文案长度，且「代价：常驻几十~百 MB 内存」是安全提示类，按口径可留。</td></tr>
+      <tr><td>R2b 自动动作链·空态</td><td class="probe-warn">5 / 3 / 2 / 1 行</td>
+        <td>行末是「132px 占位胶囊 + 创建按钮」（内联定宽），2 个子节点 ⇒ 结构门看不见。窄档确实挤，但只在 340–460 之间。</td></tr>
+      <tr><td>R3 关联 .md 文件</td><td class="probe-ok">2 / 1 / 1 / 1 行</td>
+        <td>行末「设为默认 + 开关」两颗，仅 340 档描述折 2 行。可接受。</td></tr>
+      <tr><td>R5 快捷键·录制态</td><td class="probe-ok">2 / 2 / 1 / 1 行</td>
+        <td>录制时 <code>.sKbd</code> 有 <code>white-space:nowrap</code>，右列撑到 153px。短暂状态，可接受。</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   🔴 量具的第一条：先确认样式表**真的命中了**。
+   同一份 `*.module.css` 经两种途径打开是**两种类名**：
+     · `file://` 直接打开 → 原样字面量 `.sRow`（历史那批 link 稿走这条；实测 `.sRow` = flex / padding 12px 16px，命中，读数有效）
+     · 经 Vite dev server → **作用域化** `._sRow_1ar8u_497`，此时 HTML 写 `class="sRow"` 一个都匹配不到
+   所以「link 真样式表」的稿子换个打开方式就会整体失配、读数全废，而且**不报错**——表头自检必须显式量一次。
+   做法：从 CSSOM 里把所有 `._<原名>_<hash>_<行>_<列>` 选择器抓出来建反查表，
+   再把本探针 DOM 的类名逐个换成当前作用域名。不抄任何数值。
+   ══════════════════════════════════════════════════════════════════════════ */
+const scopeMap = (() => {
+  const map = {};
+  for (const ss of document.styleSheets) {
+    if (!ss.href || !ss.href.includes(".module.css")) continue;
+    let rules;
+    try { rules = ss.cssRules; } catch { continue; }
+    for (const r of rules) {
+      if (!r.selectorText) continue;
+      // Vite 的作用域名 = `_${原名}_${hash}_${行号}`（例：.sRow ⇒ ._sRow_1ar8u_497）
+      for (const m of r.selectorText.matchAll(/\.(_([A-Za-z][\w]*?)_([0-9a-z]{2,})_(\d+))(?![\w-])/g)) {
+        const orig = m[2];
+        if (!(orig in map)) map[orig] = m[1];
+      }
+    }
+  }
+  return map;
+})();
+
+function applyScope(root) {
+  for (const el of root.querySelectorAll("*")) {
+    const cl = el.getAttribute("class");
+    if (!cl) continue;
+    el.setAttribute("class", cl.split(/\s+/).map((t) => scopeMap[t] || t).join(" "));
+  }
+}
+// 🔴 舞台用的就是项目真容器类 `.settingsContent`（padding 4/16/20 + `> *` 限宽 800 居中 + overflow-x:hidden），
+// 它同样是 module 类、经 Vite 后叫 `._settingsContent_xxx_nnn`，所以必须换成映射后的名字，
+// 而不是像首版那样把 class 抹掉（抹掉 = 探针量的是「没有内容容器」的假环境，每档宽 32px）。
+const stageEl = document.getElementById("stage");
+stageEl.setAttribute("class", scopeMap["settingsContent"] || "settingsContent");
+applyScope(stageEl);
+</script>
+
+<script>
+const stage = document.getElementById("stage");
+const slider = document.getElementById("w");
+const wv = document.getElementById("wv");
+const panel = document.getElementById("panel");
+const WIDTHS = [340, 380, 460, 620, 800];
+/** 用映射后的类名查元素（HTML 里写的原名已经被 applyScope 换掉） */
+const C = (name) => "." + (scopeMap[name] || name);
+const sel = (name) => scopeMap[name] || name;
+
+/** 自检：模块样式没命中时所有读数都是假的，必须先亮红再谈其它数字。
+ *  判据 = R8（自动清理）那行的 `.sRow` 计算样式必须是 flex，且映射表不能是空的。
+ *
+ *  🔴 2026-10-02 加了两项，起因是用户反馈「打开显示不全样式」：
+ *   ① 逐张 <link> 表印规则条数。首版漏 link 了 `Appearance.module.css`，
+ *      于是 R7 的六张卡在页面上是无样式的一坨，而原来的自检**完全看不出来**
+ *      （它只验 `.sRow` 命中，别的表死活不问）。现在任何一张表 cssRules=0 或读不到就亮红。
+ *   ② 本探针 DOM 里用到的类名逐个回查是否命中真表（未命中的列出来）。
+ *      类名写错 / 表没 link，都只会「安静地没样式」，这两项把它变成显式失败。 */
+function styleHealth() {
+  const row = [...stage.querySelectorAll("[data-r]")].find((r) => r.dataset.r.startsWith("R8"));
+  const sheets = [];
+  for (const ss of document.styleSheets) {
+    if (!ss.href) continue;
+    let n = -1, err = "";
+    try { n = ss.cssRules.length; } catch (e) { err = "读不到(" + e.name + ")"; }
+    sheets.push({ name: ss.href.split("/").pop().split("?")[0], n, err });
+  }
+  const wanted = ["sRow", "sRowBody", "sRowLabel", "sRowDesc", "sRowIcon", "sRowIconGlyph", "sTextInput",
+    "sVal", "sAction", "sKbd", "sToggle", "sCleanup", "sCleanupOpt", "sSegGroup", "seg", "segBtn", "segBtnSel",
+    "themeCard", "themeCardOn", "themeCardBar", "themeCardDot", "themeCardName", "themeCardBody", "themeCardLine",
+    "themeCardHeart", "icBrand", "icCapture", "icEditor", "icPrivacy", "icSave", "icSystem",
+    "settingsContent", "trigger"];
+  const mapped = new Set();
+  // 🔴 必须把 stage 自己算进来：`.settingsContent` 就挂在 stage 上，
+  // 而 `querySelectorAll` 只回后代——第一版漏了它，自检把自己的容器类判成「未命中」。
+  for (const el of [stage, ...stage.querySelectorAll("*")]) for (const t of (el.getAttribute("class") || "").split(/\s+/)) if (t) mapped.add(t);
+  const miss = wanted.filter((t) => !mapped.has(scopeMap[t] || t));
+  return {
+    ok: !!row && getComputedStyle(row).display === "flex"
+      && Object.keys(scopeMap).length > 100
+      && sheets.every((s) => s.n > 0)
+      && miss.length === 0
+      && authoredOk,
+    rowDisplay: row ? getComputedStyle(row).display : "n/a",
+    mapSize: Object.keys(scopeMap).length,
+    sheets, miss, authoredOk,
+  };
+}
+
+
+function linesOf(el) {
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  const rects = [...r.getClientRects()].filter((x) => x.height > 1);
+  const tops = [...new Set(rects.map((x) => Math.round(x.top)))];
+  return tops.length;
+}
+
+/** 量一行：行高 / 描述行数 / 文字列是否与图标同行（比 left，不比 top：.sRow 是 align-items:center）
+ *  / 右列实占宽 / body 被排成横向单行的判据（label 与 desc 的 top 是否相同） */
+function measureRow(row) {
+  const rr = row.getBoundingClientRect();
+  const icon = row.querySelector(C("sRowIcon"));
+  const body = row.querySelector(C("sRowBody"));
+  const label = row.querySelector(C("sRowLabel"));
+  const desc = row.querySelector(C("sRowDesc"));
+  const last = row.querySelector(":scope > :last-child");
+  const lr = label.getBoundingClientRect();
+  const dr = desc ? desc.getBoundingClientRect() : null;
+  return {
+    h: Math.round(rr.height),
+    descLines: desc ? linesOf(desc) : 0,
+    // 文字列是否还在图标那一行（横向判据；不比 top——.sRow 是 align-items:center）
+    // 🔴 内联 `flex-direction:column` 的行（R7 主题配色）本来就是「图标在上、文字在下」，
+    // 对它套用横向判据会永远误报「图标孤行」，把真缺陷淹在假红字里。这类行直接算通过。
+    glued: !icon || getComputedStyle(row).flexDirection === "column"
+      || body.getBoundingClientRect().left > icon.getBoundingClientRect().right - 1,
+    // 右列实占
+    rightW: last ? Math.round(last.getBoundingClientRect().width) : 0,
+    // body 自己就是 :last-child 时会被右控件列规则改成横向 flex ⇒ label/desc 顶边齐平
+    stacked: getComputedStyle(body).display !== "flex" ||
+      (dr ? lr.right > dr.left + 1 : true),
+    overflow: Math.round(row.scrollWidth) > Math.round(row.clientWidth) + 1,
+    extra: "",
+  };
+}
+
+/* R7 专项：六张主题卡是「行末 :last-child」⇒ 会吃到右控件列的 justify-content:flex-end。
+   量第一张卡距内容列左缘（16px 内边距）的偏移：0 = 左对齐（本意），>0 = 被推到右边。 */
+{
+  const grid = document.getElementById("r7grid");
+  const prev = measureRow;
+  measureRow = (row) => {
+    const m = prev(row);
+    if (row.id === "r7") {
+      const c0 = grid.firstElementChild.getBoundingClientRect();
+      const cLast = grid.lastElementChild.getBoundingClientRect();
+      m.extra = ` jc=${getComputedStyle(grid).justifyContent} 首卡左偏=${Math.round(c0.left - grid.getBoundingClientRect().left)} 末卡右偏=${Math.round(grid.getBoundingClientRect().right - cLast.right)}`;
+    }
+    return m;
+  };
+}
+
+/* ══ 候选修法：**直接改 CSSOM 里的选择器**，模拟「改了源码之后」的那三条规则。
+   不另写一份 CSS 平行实现——平行实现和项目真样式必然漂移（这条本项目已经吃过一次）。
+     ① 右控件列规则加 `:not(.sRowBody)`：文字列自己永不是「右控件」，修 R1 横排。
+     ② 降级门从「行末是 .sCleanup/.sSegGroup 且 ≥4 档」放宽成「行末容器有 ≥4 个子节点」：
+        这样才看得懂别的分区自带的分段类（灵动岛 .seg 4 档 = R4），修 R4 九行。
+     ③ R7 主题卡阵挂上项目已有的逃生口 `data-stack="true"`，不再被推成右对齐。 ══ */
+const sheet = [...document.styleSheets].find((s) => s.href && s.href.endsWith("Settings.module.css"));
+const patchables = [];
+for (const r of sheet.cssRules) {
+  if (!r.selectorText) continue;
+  const st = r.selectorText;
+  if (/^:last-child:not\(/.test("") || (st.includes(":last-child") && st.includes(":not(") && !st.includes(":has("))) {
+    patchables.push({ rule: r, orig: st, kind: "col" });
+  } else if (st.includes(":has(") && st.includes("nth-child(4)")) {
+    patchables.push({ rule: r, orig: st, kind: "gate" });
+  }
+}
+/* 🔴 2026-10-02 落码之后语义翻转了：源码现在**就是**「修法后」，
+   所以 on(=修法后) 什么都不改，off(=旧规则) 才是把选择器退回改前写法。
+   退回时必须用映射后的作用域类名：`:is(.sCleanup, .sSegGroup)` 写成字面量在经 Vite 的表里
+   一条都不匹配，「旧规则」会被量成「门根本不存在」——那是第三种行为，不是要对比的那一种。 */
+const COL_REVERT = (st) => st.replace(`:not(.${sel("sRowBody")})`, "");
+const GATE_REVERT = (st) =>
+  st.split(`:not([data-stack]):not(.${sel("sRowBody")})`)
+    .join(`:is(.${sel("sCleanup")}, .${sel("sSegGroup")})`);
+
+/** 源码是否已经吃到本轮修法。查不到就亮红——
+ *  否则「旧规则」补丁会静默变成空操作，整张表每个格子都显示「＝」，
+ *  看上去像「三条改动毫无影响」，实际是量具没接到东西上（空守卫的老坑）。 */
+const authoredOk =
+  patchables.some((p) => p.kind === "col" && p.orig.includes(`:not(.${sel("sRowBody")})`)) &&
+  patchables.filter((p) => p.kind === "gate").length === 3 &&
+  patchables.every((p) => p.kind !== "gate" || p.orig.includes(`:not(.${sel("sRowBody")})`));
+
+function setMode(on) {
+  for (const p of patchables) p.rule.selectorText = on ? p.orig : p.kind === "col" ? COL_REVERT(p.orig) : GATE_REVERT(p.orig);
+  document.getElementById("r7grid").toggleAttribute("data-stack", !!on);
+}
+
+function measureAll(rows) {
+  const res = {};
+  for (const mode of [false, true]) {
+    setMode(mode);
+    res[mode] = WIDTHS.map((W) => {
+      stage.style.width = W + "px";
+      void stage.offsetHeight;
+      return rows.map((r) => measureRow(r));
+    });
+  }
+  setMode(false);
+  stage.style.width = slider.value + "px";
+  wv.textContent = slider.value;
+  return res;
+}
+
+function render() {
+  const rows = [...stage.querySelectorAll("[data-r]")];
+  const health = styleHealth();
+  const act = WIDTHS.map((W) => { stage.style.width = W + "px"; void stage.offsetHeight; return Math.round(stage.getBoundingClientRect().width); });
+  const res = measureAll(rows);
+
+  const rowW = WIDTHS.map((W) => { stage.style.width = W + "px"; void stage.offsetHeight; const r0 = rows[0].getBoundingClientRect(); return Math.round(r0.width); });
+  // 🔴 上面两个逐档循环（act / rowW）都是「设完就走」，最后停在 800 档。
+  // measureAll 尾巴上有恢复，但我加 rowW 时把它放在了 measureAll 之后 ⇒
+  // 打开页面看到的实际是 800 档（缺陷最不明显的一档），而滑杆写着 340。必须在此恢复。
+  stage.style.width = slider.value + "px";
+  wv.textContent = slider.value;
+
+  let html = `<table class='probe-tbl'><thead><tr><th colspan="6" class="${health.ok ? "probe-ok" : "probe-bad"}">量具自检：样式命中=${health.ok ? "是" : "否（所有读数作废）"}（R8 行 display:${health.rowDisplay}，类名映射 ${health.mapSize} 条，可补丁规则 ${patchables.length} 条，源码已含本轮修法=${health.authoredOk ? "是" : "<b>否——「改前」那列全是假的</b>"}，容器类=${scopeMap["settingsContent"] ? "作用域版" : "字面量版（file://）"}）<br>`
+    + `各表规则数：${health.sheets.map((s) => s.name + "=" + (s.n < 0 ? s.err : s.n)).join("　")}`
+    + (health.miss.length ? `　<span class="probe-bad">未命中类名：${health.miss.join(" ")}</span>` : "")
+    + `</th></tr>`;
+  html += "<tr><th>行</th>";
+  WIDTHS.forEach((W, i) => { html += `<th>容器${W}${act[i] === W ? "" : "（实量" + act[i] + "）"}<br><span class="probe-note">行实宽 ${rowW[i]}</span></th>`; });
+  html += "</tr></thead><tbody>";
+  rows.forEach((row, i) => {
+    html += `<tr><td>${row.dataset.r}</td>`;
+    WIDTHS.forEach((_, wi) => {
+      const b = res[false][wi][i];
+      const c = res[true][wi][i];
+      const bad = (m) => !m.glued || !m.stacked || m.overflow || m.descLines >= 3;
+      const cls = bad(c) ? "probe-bad" : bad(b) ? "probe-warn" : "probe-ok";
+      const flag = (m) => (!m.stacked ? "横排" : (!m.glued ? "图标孤行" : (m.overflow ? "溢出" : "")));
+      // 🔴 差异判定要把 extra（对齐读数）算进来：只看行高会把「卡阵从右对齐变回左对齐」
+      //    这种行高不变的真实修正好成看成「＝」，第一版就漏了。
+      const same = b.h === c.h && b.descLines === c.descLines && flag(b) === flag(c) && b.extra === c.extra;
+      html += `<td class='${cls}'>${same ? "＝" : `${b.h}px/${b.descLines}行 → `}${c.h}px/${c.descLines}行 / 右${c.rightW}${flag(c) ? " " + flag(c) : ""}${c.extra}</td>`;
+    });
+    html += "</tr>";
+  });
+  html += "</tbody></table>";
+  html += `<p class="probe-note">读数口径：<b>行高 / 描述行数 / 右列实占宽</b>（px）。「横排!」= 该行 body 自己是 :last-child，被右控件列规则改成了横向 flex；`
+    + `「图标孤行」= 文字列被挤到图标下方；「溢出」= 行宽超出内容列。整列为红色即为缺陷行。</p>`;
+  panel.innerHTML = html;
+}
+
+/* 🔴 每个会重算的入口都必须跟一次 applyUi：render 收尾停在 base，
+   否则「已经切到修法后」的人一拖滑杆就被静默打回现状。 */
+slider.oninput = () => { render(); applyUi(); };
+document.getElementById("measure").onclick = () => { render(); applyUi(); };
+document.querySelectorAll("[data-jump]").forEach((b) => {
+  b.onclick = () => { slider.value = b.dataset.jump; render(); applyUi(); };
+});
+
+/* 肉眼对比开关：改前 ⇄ 现在源码。落码后「现在源码」就是不加补丁，所以默认开在 fix 侧。
+   🔴 render() 内部的 measureAll() 为了量两组数会把规则来回切两遍、收尾停在 base（=改前补丁），
+   所以每次 render 之后必须再按当前 UI 模式 apply 一次，否则一进页面就被打成「改前」。 */
+let uiMode = true;
+const mBase = document.getElementById("m-base");
+const mFix = document.getElementById("m-fix");
+function applyUi() {
+  setMode(uiMode);
+  document.body.dataset.mode = uiMode ? "fix" : "base";
+  mBase.classList.toggle("probe-on", !uiMode);
+  mFix.classList.toggle("probe-on", uiMode);
+}
+mBase.onclick = () => { uiMode = false; render(); applyUi(); };
+mFix.onclick = () => { uiMode = true; render(); applyUi(); };
+render();
+applyUi();
+/* 🔴 首屏那一次 render() 量到的数不可信：实测同一份 R10 markup，加载时读到「3 行 / 右 126」，
+   连点三次「重测」都稳定在「4 行 / 右 155」——布局在首次同步脚本之后才落定。
+   所以补一次双 rAF 重量，让默认展示的那格就是 settled 值。 */
+requestAnimationFrame(() => requestAnimationFrame(render));
+</script>
+</body>
+</html>

@@ -47,7 +47,12 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
           </div>
           <div className={shared.sRowDesc}>选择你喜欢的配色方案</div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {/* `data-stack="true"`：这六张卡是一条纵向行的 last-child。不挂标记就被
+            `.sRow > :last-child` 那条右控件列规则拍成 `justify-content:flex-end`——
+            实测首卡左偏 42px(340 档) / 262px(800 档)，左边一大片空白；
+            而降级门现在改成按子节点数档，6 张卡正好会被误当成「6 档宽控件」，
+            同一个标记同时挡住这两条规则。 */}
+        <div className={styles.themeGrid} data-stack="true">
           {THEMES.map((t, idx) => {
             const prev = THEME_PREVIEWS[t.key];
             const isActive = config.theme === t.key;
