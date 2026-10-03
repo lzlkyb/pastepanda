@@ -54,8 +54,8 @@ describe("全仓不许再写第四处 `=== \"control\"` 判定", () => {
    */
   const FORBIDDEN_ZONE = /^components\/rc\/RcA2/;
 
-  // 只认「能力档」的比较式：`"control"` 这个字面量在栈浮标那里是**锚点类型**
-  // （`anchorKind`，见 stack/types.ts），跟远程能力没关系，不该被这条扫到。
+  // 只认「能力档」的比较式：`"control"` 字面量在别处还有别的语义（修饰键名等），
+  // 与远程能力无关，不该被这条扫到。
   const RE = /(capability|cap)\s*[!=]==\s*"control"/;
 
   function walk(dir: string, out: string[] = []): string[] {

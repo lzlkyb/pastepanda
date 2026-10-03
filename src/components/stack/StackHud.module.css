@@ -1,7 +1,6 @@
 /* 剪贴板栈浮标 · 240×65（与 stack_hud.rs 的 HUD_W/HUD_H 是同一份账）
    三行结构：上 = 状态（栈 N · → 应用名 ／ ✓ 已粘贴 · 剩 N 条）+ 右侧进度徽章，
    中 = 下一条内容预览（栈空时不渲染），下 = 提示。
-   anchorKind=control 时底部画方向尾，指向聚焦输入框。
 
    ❗ 刻意**没有** backdrop-filter：窗口 transparent(true) 时 WebView2 的 CSS 模糊
       只作用于 webview 内部元素、**穿不出窗口**（tauri issue #10064，2024-06 报至今）。
@@ -98,24 +97,6 @@
   animation: hudIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), hudNudge 0.9s ease-in-out 2;
   /* 调整中不淡化：用户正在跟它交互 */
   opacity: 1;
-}
-
-/* 方向尾：仅 anchorKind=control（聚焦输入框锚定）时渲染，建立「浮标 ↔ 这个框」的指称。
-   窗口/光标锚不画 —— 尾巴指向虚空比没有更糟。
-   ❗ 刻意画在卡内底部而不是窗外：`.root` 有 `overflow:hidden`（圆角裁切内容），
-   `bottom:-5px` 的外伸三角会被裁掉。内贴小三角在视觉上仍指向下方输入框。 */
-.tail::after {
-  content: "";
-  position: absolute;
-  right: 16px;
-  bottom: 3px;
-  width: 0;
-  height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 5px solid var(--hud-ring);
-  opacity: 0.9;
-  pointer-events: none;
 }
 
 @keyframes hudNudge {

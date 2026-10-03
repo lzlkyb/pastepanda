@@ -23,15 +23,11 @@
  * `box-sizing: border-box` 下会吃掉 3px 布局空间，两行内容就放不下了。
  * 细节与实测见 `StackHud.module.css`。
  *
- * ## 方向尾
- *
- * `anchorKind === "control"` 时画底部小三角，建立「浮标 ↔ 聚焦输入框」的视觉指称。
- * 窗口 / 光标锚不画 —— 那时尾巴指向的是虚空。
- *
  * ## 跟随滑入（settle）
  *
- * Rust 轮询把窗口 `set_position` 到新落位是**瞬时**的，系统没有窗口级动画。
- * 滑入感只能由内容层伪造：窗口已到新位，内容先 `translate(旧−新)` 再动画回 0。
+ * Rust 在开栈/状态推送时把窗口 `set_position` 到新落位，这一动作是**瞬时**的，
+ * 系统没有窗口级动画。滑入感只能由内容层伪造：窗口已到新位，内容先
+ * `translate(旧−新)` 再动画回 0。
  * 位移矢量来自 `stack-hud-repositioned`（CSS 像素，Rust 侧已按 scale 换算并钳幅）。
  * 只 remount 内层三行（极轻），不 remount `.root` —— 后者会重播入场并丢掉 state 引用时机。
  */
@@ -105,7 +101,7 @@ export function StackHud() {
       }),
       "stack-hud-adjust"
     );
-    // 窗口被轮询/推送挪到新位置：内容层做短滑入（见文件头「跟随滑入」）
+    // 窗口被开栈/推送挪到新位置：内容层做短滑入（见文件头「跟随滑入」）
     const offRepos = guard(
       listen<RepositionPayload>("stack-hud-repositioned", (e) => {
         const { dx, dy } = e.payload;
@@ -140,7 +136,7 @@ export function StackHud() {
 
   if (!state) return null;
 
-  const { phase, count, hint, hotkey, target, next, progress, anchorKind } = state;
+  const { phase, count, hint, hotkey, target, next, progress } = state;
   let main: ReactNode;
   let sub: string;
 
@@ -219,13 +215,7 @@ export function StackHud() {
           ? styles.done
           : ""; // collecting 沿用默认橙色描边，没有专属类
 
-  const cls = [
-    styles.root,
-    phaseCls,
-    adjusting ? styles.adjusting : "",
-    idle && !adjusting ? styles.idle : "",
-    anchorKind === "control" ? styles.tail : "",
-  ]
+  const cls = [styles.root, phaseCls, adjusting ? styles.adjusting : "", idle && !adjusting ? styles.idle : ""]
     .filter(Boolean)
     .join(" ");
 

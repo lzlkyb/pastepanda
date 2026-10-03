@@ -166,7 +166,6 @@ async function pushCollecting(count: number): Promise<void> {
     next: nextPreview(),
     hotkey: hotkeyLabel(),
     progress: progressFromStore(count),
-    anchorKind: null,
   });
 }
 
@@ -220,7 +219,6 @@ export async function hudPastedOk(remaining: number): Promise<void> {
     next: nextPreview(),
     hotkey: hotkeyLabel(),
     progress: progressFromStore(remaining),
-    anchorKind: null,
   });
   scheduleRecover();
 }
@@ -245,7 +243,6 @@ export function hudPastedFailed(reason: string): void {
     next: nextPreview(),
     hotkey: hotkeyLabel(),
     progress: progressFromStore(remaining),
-    anchorKind: null,
   });
   scheduleRecover();
 }
@@ -263,7 +260,6 @@ export function hudAllDone(): void {
     // 终态不显示进度徽章：exitStackMode 已清零 stackPasted/Collected，
     // 「全部粘贴完毕」本身就是确认，再拼一个 0/0 反而制造困惑
     progress: null,
-    anchorKind: null,
   });
   invoke("stack_hud_hide", { delayMs: DONE_HOLD_MS }).catch((e) =>
     logger.warn("隐藏栈浮标失败", e),

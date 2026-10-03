@@ -2,26 +2,28 @@
 //!
 //! ## 三套锚点，两级兜底
 //!
-//! 1. **锚定聚焦输入框**（首选）：贴 UIA / caret 探测到的输入框**右上方**。
-//! 2. **锚定目标窗口**（2026-09-16 方案 A）：贴解析出的粘贴目标窗口**右上角内侧**
+//! 1. **锚定目标窗口**（方案 A）：贴解析出的粘贴目标窗口**右上角内侧**
 //!    （右缘 16px、标题栏下方 40px）。用户在哪个窗口操作，浮标就贴在哪个窗口旁边 ——
 //!    这是"显示在你要粘贴的地方"的直译。
-//! 3. **锚定光标下的窗口**（2026-09-17 加入，兜底一）：前台是桌面 / 任务栏 / 自身
-//!    进程窗口时（上面两级的前提 `capture_foreground_now()` 不成立），退一步贴
+//! 2. **锚定光标下的窗口**（2026-09-17 加入，兜底一）：前台是桌面 / 任务栏 / 自身
+//!    进程窗口时（上一级的前提 `capture_foreground_now()` 不成立），退一步贴
 //!    **鼠标底下那个窗口**的右上角。比"贴光标"好在两点：位置钉在**不随鼠标移动**
 //!    的矩形上，且不压在光标上挡住用户正在看的内容。
-//! 4. **贴光标候选序列**（兜底二）：连光标下都没有可锚窗口（光标在桌面上）时，
+//! 3. **贴光标候选序列**（兜底二）：连光标下都没有可锚窗口（光标在桌面上）时，
 //!    退回光标四象限候选。
 //!
-//! 1 / 2 / 3 三级的落位都先加用户拖拽保存的偏移，最后钳制进锚点所在显示器的 workarea。
+//! 三级的落位都先加用户拖拽保存的偏移，最后钳制进锚点所在显示器的 workarea。
 //!
-//! ## ❗ 3 / 4 是「一次性落位」，不参与跟随
+//! ## ❗ 2 / 3 是「一次性落位」，不参与跟随
 //!
 //! 见 [`should_follow`]：光标类锚点算出来的是"鼠标此刻在屏幕的哪儿"，不是"用户的
-//! 操作现场在哪儿"。而这条定位链会被 450ms 跟随轮询反复调用 —— 一旦允许光标锚
-//! 每 tick 重算，等价于**浮标实时跟随鼠标**：用户移动鼠标时浮标一直黏在旁边挡视线。
+//! 操作现场在哪儿"。而这条定位链会被每次状态推送反复调用 —— 一旦允许光标锚
+//! 每次都重算，等价于**浮标实时跟随鼠标**：用户移动鼠标时浮标一直黏在旁边挡视线。
 //! 所以光标锚只在锚点类型**发生变化**的那一次落位，之后钉住不动
-//! （用户切回目标应用 → 锚点变窗口/控件 → 照常跟过去）。
+//! （用户切回目标应用 → 锚点变窗口 → 照常跟过去）。
+//!
+//! 历史：2026-10-03 前有第一级「锚定聚焦输入框」（UIA 探测 + 450ms 轮询跟随）。
+//! 实测反馈「浮标老整窗飞、盖住正在看的字」⇒ 砍掉：浮标只在**换目标窗口**时挪。
 //!
 //! 坐标约定：全部**物理像素**（与 `tray_manager::get_monitor_work_area` 一致）。
 
@@ -42,20 +44,15 @@ pub const EDGE_MARGIN: f64 = 8.0;
 pub const ANCHOR_MARGIN_RIGHT: f64 = 16.0;
 /// 锚定窗口顶缘 → HUD 顶缘的间距（避开标题栏/工具栏按钮区）
 pub const ANCHOR_CLEAR_TITLEBAR: f64 = 40.0;
-/// 聚焦输入框与 HUD 之间的间距（右上 / 右下翻转时共用）
-pub const CONTROL_GAP: f64 = 8.0;
 
 // ===== 锚点类型 =====
 //
-// 由定位链在算出落位时写入（`stack_hud.rs::store_anchor_kind`），两个消费方：
-// 1. `emit_state` 把它写进 `StackHudState.anchor_kind` → 前端决定是否画方向尾；
-// 2. [`should_follow`] 用它决定这次落位算不算"该把浮标挪过去"。
+// 由定位链在算出落位时写入（`stack_hud.rs::store_anchor_kind`），
+// 唯一消费方是 [`should_follow`]：决定这次落位算不算"该把浮标挪过去"。
 
 /// 未知 / 尚未定位过（每次「显示浮标」都会清回这个值，让本次显示能重新落位一次）
 pub const ANCHOR_NONE: u8 = 0;
-/// 聚焦输入框
-pub const ANCHOR_CONTROL: u8 = 1;
-/// 目标窗口右上内侧
+/// 目标窗口右上内侧（2026-10-03 起是唯一真实锚点；值 1 留给已退役的输入框锚，勿复用）
 pub const ANCHOR_WINDOW: u8 = 2;
 /// 光标四象限（最后兜底）
 pub const ANCHOR_CURSOR: u8 = 3;
@@ -72,8 +69,8 @@ pub fn is_cursor_anchor(kind: u8) -> bool {
 ///
 /// 唯一的否决情形：**前后两次都是光标类锚点**。
 ///
-/// 理由见模块注释 —— 光标类锚点的坐标源自鼠标位置，而这条链会被 450ms 跟随轮询
-/// 与每次状态推送反复调用。不加这道拦截，浮标就等于实时跟随鼠标：
+/// 理由见模块注释 —— 光标类锚点的坐标源自鼠标位置，而这条链会被每次状态推送
+/// 反复调用。不加这道拦截，浮标就等于实时跟随鼠标：
 /// 用户一移动鼠标它就挪，一直黏在光标旁边挡住正在看的内容（用户实测反馈）。
 ///
 /// ❗ 两类光标锚之间也必须互相拦住（3 ↔ 4）。用户把鼠标在桌面与窗口之间来回移动时，
@@ -81,9 +78,9 @@ pub fn is_cursor_anchor(kind: u8) -> bool {
 ///
 /// 允许的其它组合：
 /// - `prev = NONE` → 首次落位 / 用户显式重新开栈（`mark_shown` 清回 NONE），要落位；
-/// - 光标锚 → 窗口/控件锚：用户切回了某个应用，这是真实的现场变化，要跟过去；
-/// - 窗口/控件锚 → 光标锚：鼠标下的现场变了（上一轮根本没有窗口锚），落一次；
-/// - 窗口/控件锚之间互相切：都是真实操作现场，照常跟随。
+/// - 光标锚 → 窗口锚：用户切回了某个应用，这是真实的现场变化，要跟过去；
+/// - 窗口锚 → 光标锚：鼠标下的现场变了（上一轮根本没有窗口锚），落一次；
+/// - 窗口锚之间：都是真实操作现场，照常跟随。
 pub fn should_follow(prev_kind: u8, now_kind: u8) -> bool {
     !(is_cursor_anchor(now_kind) && is_cursor_anchor(prev_kind))
 }
@@ -163,55 +160,6 @@ pub fn pick_pos(cx: f64, cy: f64, w: f64, h: f64, wa: WorkArea) -> (f64, f64) {
     }
     // 全不满足（工作区比 HUD 还小）：钳制兜底候选
     clamp(candidates[4].0, candidates[4].1, w, h, wa)
-}
-
-/// 控件矩形是否值得当作锚点：太碎或几乎等于整窗都没意义。
-///
-/// 面积阈值与 `screenshot.rs::uia_control_at` 对齐（MIN_SIDE=20），
-/// 但这里用宽高分别判定，并额外要求高度能放下至少一行文字（≥16）。
-pub fn control_rect_plausible(w: f64, h: f64, win_w: f64, win_h: f64) -> bool {
-    const MIN_W: f64 = 40.0;
-    const MIN_H: f64 = 16.0;
-    if w < MIN_W || h < MIN_H {
-        return false;
-    }
-    let win_area = win_w * win_h;
-    if win_area <= 0.0 {
-        return false;
-    }
-    // 几乎占满整窗 → 不是「输入框」，是宿主/编辑器整面
-    if w * h * 100.0 > win_area * 95.0 {
-        return false;
-    }
-    true
-}
-
-/// 纯函数：锚定聚焦输入框的落位（物理像素）。
-///
-/// 默认贴在控件**右上方**（HUD 右缘与控件右缘对齐、底边在控件顶边上方 `CONTROL_GAP`）。
-/// 控件太靠屏顶、上方放不下时翻到**右下方**，并由 `below` 告诉前端方向尾朝哪边。
-///
-/// `offset` 语义与 [`anchor_pos`] 一致：用户拖拽保存的绝对偏移。
-/// 返回 `None` 表示控件矩形退化，调用方应退回窗口锚。
-pub fn control_anchor_pos(
-    control: (f64, f64, f64, f64),
-    offset: (f64, f64),
-    w: f64,
-    h: f64,
-    wa: WorkArea,
-) -> Option<(f64, f64, bool)> {
-    let (ix, iy, iw, ih) = control;
-    if iw <= 0.0 || ih <= 0.0 {
-        return None;
-    }
-    // 右对齐：HUD 右缘贴控件右缘（比窗口级右对齐更贴输入框）
-    let x_default = ix + iw - w;
-    let y_above = iy - CONTROL_GAP - h;
-    let y_below = iy + ih + CONTROL_GAP;
-    let above_fits = y_above >= wa.y;
-    let y_default = if above_fits { y_above } else { y_below };
-    let (cx, cy) = clamp(x_default + offset.0, y_default + offset.1, w, h, wa);
-    Some((cx, cy, !above_fits))
 }
 
 /// 纯函数：锚定目标窗口的落位（物理像素）。
@@ -418,57 +366,6 @@ mod tests {
         .is_none());
     }
 
-    // ===== control_anchor_pos（锚定聚焦输入框）=====
-
-    /// 屏中部输入框 → HUD 贴其右上方（右对齐、上方 8px），below=false
-    #[test]
-    fn test_control_default_above_right() {
-        let control = (600.0, 400.0, 300.0, 34.0);
-        let (x, y, below) = control_anchor_pos(control, (0.0, 0.0), 240.0, 65.0, wa()).unwrap();
-        assert_eq!(x, 600.0 + 300.0 - 240.0);
-        assert_eq!(y, 400.0 - CONTROL_GAP - 65.0);
-        assert!(!below);
-    }
-
-    /// 输入框贴屏顶 → 上方放不下，翻到右下方，below=true
-    #[test]
-    fn test_control_flips_below_near_top() {
-        let control = (600.0, 20.0, 300.0, 34.0);
-        let (x, y, below) = control_anchor_pos(control, (0.0, 0.0), 240.0, 65.0, wa()).unwrap();
-        assert_eq!(x, 600.0 + 300.0 - 240.0);
-        assert_eq!(y, 20.0 + 34.0 + CONTROL_GAP);
-        assert!(below);
-    }
-
-    /// 用户偏移仍生效，且结果钳在工作区内
-    #[test]
-    fn test_control_offset_and_clamp() {
-        let control = (600.0, 400.0, 300.0, 34.0);
-        let (x, y, _) = control_anchor_pos(control, (-50.0, 10.0), 240.0, 65.0, wa()).unwrap();
-        assert_eq!(x, 600.0 + 300.0 - 240.0 - 50.0);
-        assert_eq!(y, 400.0 - CONTROL_GAP - 65.0 + 10.0);
-        let (_, y2, _) = control_anchor_pos(control, (0.0, 9000.0), 240.0, 65.0, wa()).unwrap();
-        assert_eq!(y2, 1040.0 - 65.0);
-    }
-
-    /// 控件矩形退化 → None
-    #[test]
-    fn test_control_none_on_degenerate() {
-        assert!(control_anchor_pos((0.0, 0.0, 0.0, 30.0), (0.0, 0.0), 240.0, 65.0, wa()).is_none());
-        assert!(
-            control_anchor_pos((0.0, 0.0, 100.0, 0.0), (0.0, 0.0), 240.0, 65.0, wa()).is_none()
-        );
-    }
-
-    /// 控件合理性：太小 / 几乎整窗都拒绝
-    #[test]
-    fn test_control_rect_plausible() {
-        assert!(control_rect_plausible(300.0, 34.0, 1920.0, 1040.0));
-        assert!(!control_rect_plausible(20.0, 34.0, 1920.0, 1040.0));
-        assert!(!control_rect_plausible(300.0, 10.0, 1920.0, 1040.0));
-        assert!(!control_rect_plausible(1900.0, 1000.0, 1920.0, 1040.0));
-    }
-
     // ===== should_follow（跟随白名单）=====
 
     /// ❗ 核心判据：光标类锚点之间一律不跟随（含 3 ↔ 4 互相切换）。
@@ -491,7 +388,6 @@ mod tests {
     fn test_first_placement_allowed() {
         assert!(should_follow(ANCHOR_NONE, ANCHOR_CURSOR));
         assert!(should_follow(ANCHOR_NONE, ANCHOR_WINDOW));
-        assert!(should_follow(ANCHOR_NONE, ANCHOR_CONTROL));
         assert!(should_follow(ANCHOR_NONE, ANCHOR_CURSOR_WINDOW));
     }
 
@@ -499,21 +395,16 @@ mod tests {
     #[test]
     fn test_switching_from_cursor_to_real_anchor_follows() {
         assert!(should_follow(ANCHOR_CURSOR, ANCHOR_WINDOW));
-        assert!(should_follow(ANCHOR_CURSOR, ANCHOR_CONTROL));
-        assert!(should_follow(ANCHOR_CURSOR_WINDOW, ANCHOR_CONTROL));
         assert!(should_follow(ANCHOR_CURSOR_WINDOW, ANCHOR_WINDOW));
     }
 
-    /// 真实锚点之间照常跟随（Tab 换输入框、切窗口都要动）；
+    /// 真实锚点之间照常跟随（切窗口要动）；
     /// 真实锚点 → 光标锚也放行一次（鼠标下的现场变了才会算出这个）。
     #[test]
     fn test_real_anchors_always_follow() {
-        assert!(should_follow(ANCHOR_CONTROL, ANCHOR_CONTROL));
         assert!(should_follow(ANCHOR_WINDOW, ANCHOR_WINDOW));
-        assert!(should_follow(ANCHOR_WINDOW, ANCHOR_CONTROL));
-        assert!(should_follow(ANCHOR_CONTROL, ANCHOR_WINDOW));
         assert!(should_follow(ANCHOR_WINDOW, ANCHOR_CURSOR_WINDOW));
-        assert!(should_follow(ANCHOR_CONTROL, ANCHOR_CURSOR));
+        assert!(should_follow(ANCHOR_WINDOW, ANCHOR_CURSOR));
     }
 
     // ===== can_anchor_at_cursor（光标下窗口判据）=====

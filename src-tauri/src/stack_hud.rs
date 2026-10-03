@@ -48,10 +48,7 @@ pub const EVENT_SHOWN: &str = "stack-hud-shown";
 /// 前端据此把内容从旧位滑入新位 —— 原生窗口 `set_position` 是瞬时的，滑入只能靠内容层伪造。
 pub const EVENT_REPOSITION: &str = "stack-hud-repositioned";
 
-/// 跟随轮询间隔（ms）。与 UIA 缓存解耦：轮询走 `focused_control_rect_fresh`。
-/// 450ms：用户 Tab 后半秒内浮标跟上，又不至于把 COM 查询做成高频活。
-const FOLLOW_POLL_MS: u64 = 450;
-/// 位移小于该物理像素数不算「挪了」—— 吃掉 UIA 取整抖动，避免每 tick 都播动画。
+/// 位移小于该物理像素数不算「挪了」—— 吃掉同一锚点重算时的取整抖动，避免每次都播动画。
 const FOLLOW_MIN_DELTA: i32 = 4;
 /// 滑入动画位移上限（CSS px）。目标窗口跨大半屏时别把内容甩飞。
 const SETTLE_CLAMP_CSS: f64 = 120.0;
@@ -98,10 +95,6 @@ pub struct StackHudState {
     /// 粘贴进度徽章；`None` = 不渲染（如 done 终态）
     #[serde(default)]
     pub progress: Option<StackHudProgress>,
-    /// 锚点类型：`control` 输入框 / `window` 窗口 / `cursor` 光标。
-    /// 由 Rust 在 `emit_state` 时按最近一次 `calc_position` 注入；前端据此决定是否画方向尾。
-    #[serde(default)]
-    pub anchor_kind: Option<String>,
 }
 
 impl Default for StackHudState {
@@ -114,7 +107,6 @@ impl Default for StackHudState {
             next: None,
             hotkey: "Ctrl+Alt+P".to_string(),
             progress: None,
-            anchor_kind: None,
         }
     }
 }
@@ -133,46 +125,19 @@ pub struct HudStateCache(pub std::sync::Mutex<Option<StackHudState>>);
 // 锚点矩形（前台窗口）→ workarea → 落位，兜底退回光标候选。
 
 use crate::stack_hud_pos::{
-    anchor_pos, can_anchor_at_cursor, control_anchor_pos, pick_pos, should_follow, WorkArea,
-    ANCHOR_CONTROL, ANCHOR_CURSOR, ANCHOR_CURSOR_WINDOW, ANCHOR_NONE, ANCHOR_WINDOW,
+    anchor_pos, can_anchor_at_cursor, pick_pos, should_follow, WorkArea, ANCHOR_CURSOR,
+    ANCHOR_CURSOR_WINDOW, ANCHOR_NONE, ANCHOR_WINDOW,
 };
 
-/// 最近一次定位用的锚点类型（取值见 `stack_hud_pos::ANCHOR_*`）。
-/// 两个消费方：
-/// 1. `emit_state` 读它写入 `StackHudState.anchor_kind`，前端据此决定是否画方向尾；
-/// 2. `follow_anchor_with` 读它做「跟随白名单」判据（见 `should_follow`）——
-///    连续两次光标锚不允许挪窗口，否则等价于浮标跟随鼠标。
+/// 最近一次落位用的锚点类型（取值见 `stack_hud_pos::ANCHOR_*`）。
+/// 唯一消费方是 `follow_anchor` 的「跟随白名单」判据（见 `should_follow`）——
+/// 连续两次光标锚不允许挪窗口，否则等价于浮标跟随鼠标。
+/// 不跟随落位时锚点记录必须回滚成 prev，否则它会描述一个**没被采用**的落位。
 static LAST_ANCHOR_KIND: std::sync::atomic::AtomicU8 =
     std::sync::atomic::AtomicU8::new(ANCHOR_NONE);
 
 fn store_anchor_kind(kind: u8) {
     LAST_ANCHOR_KIND.store(kind, Ordering::SeqCst);
-}
-
-fn last_anchor_kind_str() -> Option<String> {
-    match LAST_ANCHOR_KIND.load(Ordering::SeqCst) {
-        ANCHOR_CONTROL => Some("control".into()),
-        ANCHOR_WINDOW => Some("window".into()),
-        ANCHOR_CURSOR => Some("cursor".into()),
-        ANCHOR_CURSOR_WINDOW => Some("cursorWindow".into()),
-        _ => None,
-    }
-}
-
-/// 把最近一次锚点类型回写进状态缓存。
-///
-/// 时机：`emit_state` 里 follow 之后也会注入；但**首帧**是
-/// 「先 emit（窗口尚未创建）→ 再 create（这才算出落位）」，
-/// 缓存里的首帧快照会缺 `anchorKind`。create/reveal 定位后补一次，
-/// HUD 前端 mount 拉快照时才能画出方向尾。
-fn inject_anchor_kind_into_cache(app: &AppHandle) {
-    if let Some(cache) = app.try_state::<HudStateCache>() {
-        if let Ok(mut guard) = cache.0.lock() {
-            if let Some(s) = guard.as_mut() {
-                s.anchor_kind = last_anchor_kind_str();
-            }
-        }
-    }
 }
 
 /// 用户拖拽保存的偏移（物理像素，相对默认落位）。
@@ -252,6 +217,11 @@ pub fn init(app: &AppHandle) {
 /// 「调整模式」：进入后浮标恢复鼠标交互（可拖拽），退出时保存偏移并回到穿透。
 static ADJUSTING: AtomicBool = AtomicBool::new(false);
 
+/// 「本轮钉住」：用户拖动过浮标（退出调整模式）后置位，跟随重定位一律让位，
+/// 直到下一次显式开栈（`mark_shown` 解锁 —— 开栈意图就是「落到当前现场」）。
+/// 语义：浮标碍事时用户拖一下就永久躲开，不必每轮重拖。
+static PINNED: AtomicBool = AtomicBool::new(false);
+
 /// 事件名：进入/退出调整模式（Rust → HUD webview，前端切换拖拽 UI）。
 pub const EVENT_ADJUST: &str = "stack-hud-adjust";
 
@@ -305,7 +275,7 @@ fn get_cursor_pos() -> (f64, f64) {
 ///
 /// ## 为什么不是「直接贴光标」
 ///
-/// 贴光标意味着落位坐标随鼠标变化，而这条定位链会被 450ms 跟随轮询反复调用 ——
+/// 贴光标意味着落位坐标随鼠标变化，而这条定位链会被每次状态推送反复调用 ——
 /// 结果就是浮标实时跟随鼠标、一直黏在光标旁边挡住用户视线（实测反馈）。
 /// 贴「光标底下的窗口」把落位钉在一个**不随鼠标移动的矩形**上，
 /// 位置依然落在用户的视线范围内。
@@ -382,51 +352,27 @@ fn window_rect_at_cursor(_app: &AppHandle, _cx: f64, _cy: f64) -> Option<(f64, f
 
 /// 计算 HUD 位置（物理坐标系，DPI 感知）。
 ///
-/// 链：聚焦输入框右上 → 目标窗口右上内侧 → **光标下的窗口右上内侧** → 贴光标候选。
-/// 前三级都加用户拖拽保存的偏移，全越界再钳进所在显示器的工作区。
+/// 链：目标窗口右上内侧 → **光标下的窗口右上内侧** → 贴光标候选。
+/// 各级都加用户拖拽保存的偏移，最后钳进所在显示器的工作区。
 /// 后两级属「光标类锚点」，只落位一次不跟随（见 `should_follow`）。
+///
+/// 2026-10-03 砍掉了第一级「聚焦输入框右上」锚点与 450ms 跟随轮询：
+/// 贴输入框意味着浮标每次换焦点都整窗飞过去、盖住用户正在看的字（实测反馈
+/// 「太碍事」）；现在浮标只在**换目标窗口**时挪一次，位置稳定可预期。
 fn calc_position(app: &AppHandle) -> tauri::PhysicalPosition<f64> {
     let offset = (
         OFFSET_X.load(Ordering::SeqCst) as f64,
         OFFSET_Y.load(Ordering::SeqCst) as f64,
     );
-    calc_position_with_offset(app, false, offset)
+    calc_position_with_offset(app, offset)
 }
 
-/// `force_focus=true` 时聚焦控件走强制重探（跟随轮询用，要看见 Tab 换框）。
-/// `offset` 显式传入，避免用全局原子量临时清零造成与 follow 轮询的竞态。
+/// `offset` 显式传入，避免用全局原子量临时清零造成与并发重定位的竞态。
 fn calc_position_with_offset(
     app: &AppHandle,
-    force_focus: bool,
     offset: (f64, f64),
 ) -> tauri::PhysicalPosition<f64> {
-    // ① 聚焦输入框（UIA / caret）—— 用户视线所在处
-    if let Some(fg) = app
-        .try_state::<crate::paste_engine::PasteEngine>()
-        .and_then(|e| e.capture_foreground_now())
-    {
-        let ctrl = if force_focus {
-            crate::stack_hud_focus::focused_control_rect_fresh(fg)
-        } else {
-            crate::stack_hud_focus::focused_control_rect(fg)
-        };
-        if let Some((cx, cy, cw, ch)) = ctrl {
-            let mon = crate::tray_manager::get_monitor_work_area(cx + cw / 2.0, cy + ch / 2.0);
-            let wa = WorkArea {
-                x: mon.work_x,
-                y: mon.work_y,
-                w: mon.work_w,
-                h: mon.work_h,
-            };
-            let (pw, ph) = (HUD_W * mon.scale, HUD_H * mon.scale);
-            if let Some((x, y, _below)) = control_anchor_pos((cx, cy, cw, ch), offset, pw, ph, wa) {
-                store_anchor_kind(ANCHOR_CONTROL);
-                return tauri::PhysicalPosition { x, y };
-            }
-        }
-    }
-
-    // ② 锚定目标窗口右上内侧（现方案 A）
+    // ① 锚定目标窗口右上内侧（方案 A）
     if let Some((ax, ay, aw, ah)) = anchor_rect(app) {
         let mon = crate::tray_manager::get_monitor_work_area(ax + aw / 2.0, ay + ah / 2.0);
         let wa = WorkArea {
@@ -442,9 +388,9 @@ fn calc_position_with_offset(
         }
     }
 
-    // ③ 锚定「光标底下的窗口」右上内侧（2026-09-17 加入）
+    // ② 锚定「光标底下的窗口」右上内侧（2026-09-17 加入）
     //
-    // 触发场景 = 前面两级的前提不成立（`capture_foreground_now()` 拿不到有效目标：
+    // 触发场景 = 上一级的前提不成立（`capture_foreground_now()` 拿不到有效目标：
     // 前台是桌面 / 任务栏 / 本进程窗口）。用户在桌面上开栈、从托盘弹层开栈、
     // 在主窗口里开栈，都会落到这里。
     //
@@ -466,10 +412,10 @@ fn calc_position_with_offset(
         }
     }
 
-    // ④ 最后兜底：贴光标候选（连光标下都没有可锚窗口 —— 光标在桌面上）。
+    // ③ 最后兜底：贴光标候选（连光标下都没有可锚窗口 —— 光标在桌面上）。
     //
-    // ❗ 这一级与 ③ 都算「光标类锚点」：`should_follow` 只允许它们落位一次，
-    //    之后钉住不动。没有这道拦截，450ms 轮询会把"贴光标一次"变成"跟随鼠标"。
+    // ❗ 这一级与 ② 都算「光标类锚点」：`should_follow` 只允许它们落位一次，
+    //    之后钉住不动。没有这道拦截，重定位会把"贴光标一次"变成"跟随鼠标"。
     let mon = crate::tray_manager::get_monitor_work_area(cx, cy);
     let wa = WorkArea {
         x: mon.work_x,
@@ -483,17 +429,14 @@ fn calc_position_with_offset(
     tauri::PhysicalPosition { x, y }
 }
 
-/// 跟随重定位：状态推送 / 轮询时把浮标挪到聚焦输入框（或目标窗口）旁。
+/// 跟随重定位：开栈与状态推送时把浮标挪到目标窗口（或光标下窗口）旁。
 ///
-/// 跳过四种情形：调整中（不能跟拖拽抢位置）、窗口不存在 / 隐藏、位移过小（抖动取整）、
+/// 跳过五种情形：本轮已钉住（用户拖过，见 `PINNED`）、调整中（不能跟拖拽抢位置）、
+/// 窗口不存在 / 隐藏、位移过小（抖动取整）、
 /// **连续两次都是光标类锚点** —— 那算出来的是"鼠标此刻在哪"，跟着它挪就等于
 /// 浮标实时跟随鼠标（判据见 `stack_hud_pos::should_follow`）。
 fn follow_anchor(app: &AppHandle) {
-    follow_anchor_with(app, false)
-}
-
-fn follow_anchor_with(app: &AppHandle, force_focus: bool) {
-    if ADJUSTING.load(Ordering::SeqCst) {
+    if PINNED.load(Ordering::SeqCst) || ADJUSTING.load(Ordering::SeqCst) {
         return;
     }
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
@@ -506,7 +449,6 @@ fn follow_anchor_with(app: &AppHandle, force_focus: bool) {
     let prev_kind = LAST_ANCHOR_KIND.load(Ordering::SeqCst);
     let pos = calc_position_with_offset(
         app,
-        force_focus,
         (
             OFFSET_X.load(Ordering::SeqCst) as f64,
             OFFSET_Y.load(Ordering::SeqCst) as f64,
@@ -514,17 +456,13 @@ fn follow_anchor_with(app: &AppHandle, force_focus: bool) {
     );
     // 跟随白名单：这次算出的落位是否构成"该把浮标挪过去"的理由。
     // 光标类锚点只在类型发生**真实变化**时落位一次，之后钉住 —— 没有这道拦截，
-    // 450ms 轮询会让浮标一直黏在鼠标旁（用户实测："挡住视线"）。
+    // 重定位会让浮标一直黏在鼠标旁（用户实测："挡住视线"）。
     let now_kind = LAST_ANCHOR_KIND.load(Ordering::SeqCst);
     let follow = should_follow(prev_kind, now_kind);
     if !follow {
         // 不挪 ⇒ 浮标仍停在上一轮的位置上，锚点记录必须回滚成 prev_kind，
-        // 否则 `anchor_kind` 会描述一个**没被采用**的落位，与实际位置不符。
+        // 否则它会描述一个**没被采用**的落位，与实际位置不符。
         store_anchor_kind(prev_kind);
-    }
-    // 回写缓存，保证前端拉快照时有 anchorKind（读的是上面校正过的值）
-    inject_anchor_kind_into_cache(app);
-    if !follow {
         return;
     }
 
@@ -561,51 +499,6 @@ fn emit_reposition(app: &AppHandle, dx_phys: f64, dy_phys: f64, window: &Webview
     );
 }
 
-// ===== 跟随轮询 =====
-//
-// 问题：只在收集/粘贴推送时重定位的话，用户在同一表单里 Tab 到下一个输入框，
-// 浮标仍贴在上一个框上 —— 「不够显眼」的残留形态。
-// 做法：HUD 可见期间每 450ms 强制重探聚焦控件并跟随；隐藏/调整中/代次过期即停。
-// 遵守规则 8：轮询只在栈浮标可见时活着，不是全局常驻循环。
-
-/// 跟随线程代次：递增即作废旧线程（新 show 接手 / hide 收摊）。
-static FOLLOW_GEN: AtomicU64 = AtomicU64::new(0);
-
-fn bump_follow_gen() -> u64 {
-    FOLLOW_GEN.fetch_add(1, Ordering::SeqCst) + 1
-}
-
-fn current_follow_gen() -> u64 {
-    FOLLOW_GEN.load(Ordering::SeqCst)
-}
-
-/// 启动跟随轮询。可重入：每次调用作废旧线程并起新代。
-fn start_follow_poll(app: &AppHandle) {
-    let gen = bump_follow_gen();
-    let app = app.clone();
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(FOLLOW_POLL_MS));
-            if current_follow_gen() != gen {
-                return;
-            }
-            let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
-                return;
-            };
-            if !window.is_visible().unwrap_or(false) {
-                return;
-            }
-            // 调整中 follow_anchor 自己会跳过；这里不 return，退出调整后轮询仍在
-            follow_anchor_with(&app, true);
-        }
-    });
-}
-
-/// 停止跟随轮询（HUD 隐藏时调用）。
-fn stop_follow_poll() {
-    bump_follow_gen();
-}
-
 // ===== 窗口生命周期 =====
 
 /// 防止并发创建同名窗口（连续快速开栈）
@@ -621,13 +514,17 @@ static HUD_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 /// 声明「浮标要显示」这一意图 —— 递增代次，作废所有挂起的延迟隐藏。
 ///
-/// 顺带把锚点类型记录清回 `ANCHOR_NONE`：这是「跟随白名单」的放行条件 ——
-/// 用户显式开一次栈，就是要看见浮标落到**当前**的操作现场，哪怕上一轮它停在光标锚上。
-/// 不清的话，第二次开栈会沿用上一轮的"光标锚不跟随"结论，浮标钉在旧位置不动。
-/// ❗ 只挂在「显示」路径上（`show_hud` / `reveal`）。轮询调它等于白名单永久失效。
+/// 顺带解锁两样上一轮的东西：
+/// - **锚点类型记录**清回 `ANCHOR_NONE`：这是「跟随白名单」的放行条件 ——
+///   用户显式开一次栈，就是要看见浮标落到**当前**的操作现场，哪怕上一轮它停在光标锚上。
+///   不清的话，第二次开栈会沿用上一轮的"光标锚不跟随"结论，浮标钉在旧位置不动。
+/// - **本轮钉住**（`PINNED`）解除：钉住只在**本轮**有效 —— 用户重新开栈 = 又要
+///   「落到当前现场」，上一轮拖去的位置不该再把这一轮钉死。
+/// ❗ 只挂在「显示」路径上（`show_hud` / `reveal`）。
 fn mark_shown() {
     HUD_EPOCH.fetch_add(1, Ordering::SeqCst);
     LAST_ANCHOR_KIND.store(ANCHOR_NONE, Ordering::SeqCst);
+    PINNED.store(false, Ordering::SeqCst);
 }
 
 /// 排定延迟隐藏时取一份代次快照
@@ -659,12 +556,11 @@ pub fn show_hud(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         if window.is_visible().unwrap_or(false) {
             if !ADJUSTING.load(Ordering::SeqCst) {
-                follow_anchor_with(app, false);
+                follow_anchor(app);
                 // 重新定位也要通知前端：它负责重播入场动画 + 重置空闲淡化计时。
                 // 漏掉这一次的话，用户切了显示器/重开一次而浮标仍停在 55% 淡化态。
                 notify_shown(app);
             }
-            start_follow_poll(app);
             return;
         }
         reveal(app, &window);
@@ -687,7 +583,6 @@ pub fn hide_hud(app: &AppHandle) {
         let _ = app.emit_to(WINDOW_LABEL, EVENT_ADJUST, false);
         log::info!("[StackHud] 隐藏时强制退出调整模式");
     }
-    stop_follow_poll();
     // 清空状态快照：本轮显示结束了，下次显示必须由新一轮 `stack_hud_update` 带动。
     // 不清的话，将来若有路径直接 `stack_hud_show`（不先 push），HUD 的首帧拉取
     // 会拿到上一轮栈的陈旧状态 —— 表现为「浮标写着上一轮的目标应用」。
@@ -723,13 +618,10 @@ pub fn hide_hud_after(app: &AppHandle, delay_ms: u64) {
 
 /// 把状态快照广播给 HUD webview，并缓存一份供首帧拉取。
 pub fn emit_state(app: &AppHandle, state: &StackHudState) {
-    // 方案 A 的核心时机：每次推送都跟随目标窗口/聚焦控件重定位。
     // 收集/粘贴的瞬间用户视线必然在目标窗口上，浮标贴过去才「注意得到」。
+    // 钉住/光标锚钉死时 follow_anchor 内部自行让位。
     follow_anchor(app);
-    let mut state = state.clone();
-    // 注入最近一次定位的锚点类型 —— 前端据此决定是否画方向尾。
-    // 必须在 follow_anchor 之后读，保证与本次落位同源。
-    state.anchor_kind = last_anchor_kind_str();
+    let state = state.clone();
     if let Some(cache) = app.try_state::<HudStateCache>() {
         if let Ok(mut guard) = cache.0.lock() {
             *guard = Some(state.clone());
@@ -759,16 +651,19 @@ fn notify_shown(app: &AppHandle) {
 /// ❗ 刻意**不调 `set_focus()`**（`quick_paste.rs` 的面板要 focus，HUD 不能要）：
 /// 抢了焦点，用户的下一个 `Ctrl+V` 就打进 HUD 而不是目标应用。
 fn reveal(app: &AppHandle, window: &WebviewWindow) {
-    // 这里是「显示」的唯一实现点，同样要作废挂起的延迟隐藏
+    // 这里是「显示」的唯一实现点，同样要作废挂起的延迟隐藏、解除上一轮的钉住
     mark_shown();
-    follow_anchor_with(app, false);
+    // 显示前就落到当前操作现场：`mark_shown` 已把锚点清回 NONE，这次落位恒放行。
+    // ❗ 不能走 `follow_anchor` —— 它有「窗口必须可见」前置，隐藏态调用会整段空转
+    //（旧实现正是如此：重定位实际全靠显示后的第一次状态推送补，开栈首帧停在上一轮旧位置）。
+    let pos = calc_position(app);
+    let _ = window.set_position(pos);
     // 纯展示窗口：鼠标事件必须穿透，否则它挡住目标应用上正在编辑的区域
     // （点击穿透是桌面窗口概念，mobile 无该 API）
     #[cfg(desktop)]
     let _ = window.set_ignore_cursor_events(true);
     notify_shown(app);
     let _ = window.show();
-    start_follow_poll(app);
     log::info!("[StackHud] 已显示（复用缓存窗口）");
 }
 
@@ -798,7 +693,6 @@ fn create(app: &AppHandle) {
         }
 
         let pos = calc_position(app);
-        inject_anchor_kind_into_cache(app);
         let hud_builder = WebviewWindowBuilder::new(
             app,
             WINDOW_LABEL,
@@ -821,7 +715,6 @@ fn create(app: &AppHandle) {
         {
             Ok(window) => {
                 let _ = window.set_position(pos);
-                inject_anchor_kind_into_cache(app);
                 // 点击穿透是桌面窗口概念（mobile 无该 API）
                 #[cfg(desktop)]
                 let _ = window.set_ignore_cursor_events(true);
@@ -831,7 +724,6 @@ fn create(app: &AppHandle) {
 
                 notify_shown(app);
                 let _ = window.show();
-                start_follow_poll(app);
                 log::info!("[StackHud] 浮标窗口创建并显示");
             }
             Err(e) => {
@@ -879,7 +771,9 @@ pub fn stack_hud_state(cache: tauri::State<'_, HudStateCache>) -> Option<StackHu
 /// 双击浮标退出。
 ///
 /// 退出时保存 `offset = 当前位置 − 默认落位`（锚点有效时即"贴窗口的哪个位置"），
-/// 持久化到 config，恢复穿透。之后跟随目标窗口时保持这个相对位置。
+/// 持久化到 config，恢复穿透，并把浮标**钉住本轮**（`PINNED`）—— 用户特意拖过，
+/// 就停在他放的位置，直到下一次显式开栈（`mark_shown` 解锁）才重新跟随落位。
+/// 之后的轮次跟随目标窗口时保持这个相对偏移。
 #[tauri::command]
 pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, String> {
     let currently = ADJUSTING.load(Ordering::SeqCst);
@@ -924,6 +818,7 @@ pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, Str
     let oy = cur.y as f64 - default.y;
     OFFSET_X.store(ox as i32, Ordering::SeqCst);
     OFFSET_Y.store(oy as i32, Ordering::SeqCst);
+    PINNED.store(true, Ordering::SeqCst);
 
     if let Some(store) = app.try_state::<crate::data_store::DataStore>() {
         // save_config 是按键 upsert（事务包裹），只传这两个键不会影响其它配置
@@ -939,9 +834,9 @@ pub fn stack_hud_adjust(app: AppHandle, enter: Option<bool>) -> Result<bool, Str
 }
 
 /// 「默认落位」= 偏移为 (0,0) 时的位置。供退出调整模式时反推偏移用。
-/// **不临时改全局 OFFSET**——否则 follow 轮询会在清零窗口期把窗口挪走并写坏偏移。
+/// **不临时改全局 OFFSET**——否则并发重定位会在清零窗口期把窗口挪走并写坏偏移。
 fn default_position(app: &AppHandle) -> tauri::PhysicalPosition<f64> {
-    calc_position_with_offset(app, false, (0.0, 0.0))
+    calc_position_with_offset(app, (0.0, 0.0))
 }
 
 #[cfg(test)]
@@ -1011,17 +906,18 @@ mod tests {
         );
     }
 
-    /// 跟随轮询代次：bump 后旧线程必须退出（current != mine）
+    /// 拖动钉住只对本轮有效：重新显示必须解锁。
+    ///
+    /// 对应的真实场景：用户嫌浮标碍事把它拖到角落（退出调整模式即钉住）→ 关栈 →
+    /// 在另一个应用重新开栈。若 `mark_shown` 不清 `PINNED`，浮标会永远停在角落里，
+    /// 用户看到的是"新场景里浮标不出现"。
     #[test]
-    fn test_follow_gen_bump_invalidates_old_poll() {
-        let gen = AtomicU64::new(0);
-        let mine = gen.fetch_add(1, Ordering::SeqCst) + 1;
-        // 新一轮 show / hide 再 bump
-        gen.fetch_add(1, Ordering::SeqCst);
-        assert_ne!(
-            gen.load(Ordering::SeqCst),
-            mine,
-            "代次递增后旧轮询线程必须退出"
+    fn test_mark_shown_releases_drag_pin_for_new_round() {
+        PINNED.store(true, Ordering::SeqCst);
+        mark_shown();
+        assert!(
+            !PINNED.load(Ordering::SeqCst),
+            "重新开栈必须解除上一轮的拖动钉住"
         );
     }
 

@@ -53,7 +53,6 @@ mod pinned_window;
 mod quick_paste;
 mod screenshot;
 mod stack_hud;
-mod stack_hud_focus;
 mod stack_hud_pos;
 // 本机自有凭证的哈希登记处（让剪贴板监听不把我们自己的令牌/密钥记进历史）
 /// 远程电脑（远程协助）。默认关；复用 sync 的 iroh 端点（双 ALPN）。

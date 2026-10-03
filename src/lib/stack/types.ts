@@ -44,12 +44,6 @@ export interface StackHudState {
   hotkey: string;
   /** 粘贴进度徽章；null = 不渲染（如 done 终态）。Rust 侧 serde(default) 兼容旧报文 */
   progress: StackHudProgress | null;
-  /**
-   * 锚点类型，由 Rust 在 emit 时按最近一次落位注入：
-   * control=聚焦输入框（显示方向尾） / window=目标窗口 /
-   * cursorWindow=光标下的窗口 / cursor=贴光标兜底
-   */
-  anchorKind: "control" | "window" | "cursorWindow" | "cursor" | null;
 }
 
 /**
