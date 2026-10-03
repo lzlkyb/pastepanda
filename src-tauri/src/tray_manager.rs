@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
 };
 // 托盘是桌面专属能力（mobile 无托盘/无全局菜单），托盘事件类型仅桌面编译；
@@ -7,6 +7,13 @@ use std::sync::{
 #[cfg(desktop)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{image::Image, webview::WebviewWindowBuilder, AppHandle, Emitter, Manager};
+
+/// 栈模式圆点当前是否应显示（`set_tray_stack_mode` 的真相源镜像）。
+/// 角标闪烁还原时要按**当前**栈模式重算底图，而不是盲目恢复无点原图。
+static TRAY_STACK_MODE_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// 角标闪烁的代际号：每次闪烁 +1，`set_tray_stack_mode` 也 +1（它自己已把图标设对）。
+/// 延迟还原线程只在自己仍是最新代际时才动手，避免旧闪烁把新状态抹掉。
+static FLASH_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 /// 截断文本，确保适合预览显示（最大 30 个字符）
 fn truncate_preview(text: &str, max_len: usize) -> String {
@@ -388,11 +395,18 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
 
         let app = &app;
 
-        // 如果已有弹窗，先关闭并等待其销毁完成，再创建新窗口
+        // 如果已有弹窗，先关闭并等待其销毁完成，再创建新窗口。
+        // 轮询销毁而非固定 sleep(80ms)：销毁消息经事件循环异步送达，慢机器上
+        // 80ms 到不了就 build() 报 WindowLabelAlreadyExists → 用户眼里「右键没反应」。
         if let Some(existing) = app.get_webview_window(popup_label) {
             log::info!("[TrayManager] 关闭已有弹窗，准备重建");
             let _ = existing.close();
-            std::thread::sleep(std::time::Duration::from_millis(80));
+            for _ in 0..30 {
+                if app.get_webview_window(popup_label).is_none() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
 
         let monitoring = is_monitoring_public(app);
@@ -479,6 +493,16 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
             }
             Err(e) => {
                 log::warn!("[TrayManager] 创建托盘弹出窗口失败: {}", e);
+                // 兜底：多半是销毁还没送达导致标签占用（WindowLabelAlreadyExists）。
+                // 旧窗口若仍在原位就复用它——刷新定位 + 重推数据 + 显示，
+                // 好过这次右键彻底没菜单；失焦监听早在首次创建时就注册在该窗口上。
+                if let Some(window) = app.get_webview_window(popup_label) {
+                    let _ = window.set_position(popup_pos);
+                    let _ = app.emit("tray-popup-init", &popup_data);
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    log::info!("[TrayManager] 兜底复用已有弹窗完成");
+                }
             }
         }
 
@@ -508,7 +532,23 @@ pub(crate) fn set_dwm_round_corners(window: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn set_dwm_round_corners(_window: &tauri::WebviewWindow) {}
 
-/// 初始化系统托盘图标（纯自绘弹窗，无原生菜单）
+/// 把托盘事件里的图标矩形（物理/逻辑两态）缓存为 (x, y, w, h)
+#[cfg(desktop)]
+fn record_tray_rect(holder: &Arc<Mutex<(f64, f64, f64, f64)>>, rect: tauri::Rect) {
+    let (x, y) = match rect.position {
+        tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+        tauri::Position::Logical(l) => (l.x, l.y),
+    };
+    let (w, h) = match rect.size {
+        tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
+        tauri::Size::Logical(s) => (s.width, s.height),
+    };
+    if let Ok(mut r) = holder.lock() {
+        *r = (x, y, w, h);
+    }
+}
+
+/// 初始化系统托盘图标（右键双轨：原生菜单 / 自绘弹窗，见 `tray_menu`）
 // 托盘构建是桌面专属：函数体整体桌面限定（mobile 用下方占位实现）
 #[cfg(desktop)]
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -541,20 +581,33 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .icon(icon)
         .tooltip(format!("{} v{}", crate::commands::APP_NAME.get().map(|s| s.as_str()).unwrap_or("PastePanda"), &**version))
         .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            crate::tray_menu::handle_menu_event(app, event.id.as_ref())
+        })
         .on_tray_icon_event(move |tray, event| {
             match event {
-                // 记录托盘图标完整矩形（Enter/Move 事件提供 rect.position + rect.size）
-                TrayIconEvent::Enter { rect, .. } | TrayIconEvent::Move { rect, .. } => {
-                    let (x, y) = match rect.position {
-                        tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
-                        tauri::Position::Logical(l) => (l.x, l.y),
-                    };
-                    let (w, h) = match rect.size {
-                        tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
-                        tauri::Size::Logical(s) => (s.width, s.height),
-                    };
-                    if let Ok(mut r) = tray_rect.lock() {
-                        *r = (x, y, w, h);
+                // 记录托盘图标完整矩形（Enter/Move 事件提供 rect.position + rect.size）。
+                // 原生菜单模式：悬停即「即将右键」——请前端重拉远程状态、数据有变则重建菜单。
+                // 🔴 Enter 专用动作：趁前台仍是用户应用，保存粘贴目标。
+                // （TrackPopupMenu 弹出会把前台抢给托盘隐藏窗口，等右键回调时就晚了——
+                //  与弹窗模式在 show_tray_popup 开头保存是同一时机口径。Move 密集，不做。）
+                TrayIconEvent::Enter { rect, .. } => {
+                    record_tray_rect(&tray_rect, rect);
+                    if crate::tray_menu::is_native() {
+                        if let Some(engine) =
+                            tray.app_handle().try_state::<crate::paste_engine::PasteEngine>()
+                        {
+                            engine.save_foreground_hwnd();
+                        }
+                        crate::tray_menu::request_rc_refresh(tray.app_handle());
+                        crate::tray_menu::on_hover(tray.app_handle());
+                    }
+                }
+                TrayIconEvent::Move { rect, .. } => {
+                    record_tray_rect(&tray_rect, rect);
+                    if crate::tray_menu::is_native() {
+                        crate::tray_menu::request_rc_refresh(tray.app_handle());
+                        crate::tray_menu::on_hover(tray.app_handle());
                     }
                 }
                 TrayIconEvent::Click {
@@ -609,6 +662,12 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         tauri::Size::Logical(s) => (s.width, s.height),
                     };
                     let tray_rect = (x, y, w, h);
+                    // 原生菜单模式：菜单在 setup 时已挂上，tray-icon 在本事件派发后
+                    // 立刻由系统 TrackPopupMenu 弹出——自绘弹窗这条路直接让位。
+                    if crate::tray_menu::is_native() {
+                        log::info!("[TrayManager] 右键 — 原生菜单已由系统弹出，跳过自绘弹窗");
+                        return;
+                    }
                     log::info!(
                         "[TrayManager] 右键点击 — 直接从 Click rect 获取位置: ({:.0},{:.0} {:.0}x{:.0})",
                         x, y, w, h
@@ -621,7 +680,14 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         })
         .build(app)?;
 
-    log::info!("[TrayManager] 系统托盘已初始化 (纯自绘弹窗)");
+    // 托盘右键双轨（2026-10-03 方案丁）：按配置决定原生菜单/自绘弹窗；
+    // 原生模式在悬停前就需要菜单已挂载（无悬停直达右键的场景），这里挂首份。
+    crate::tray_menu::init(app);
+
+    log::info!(
+        "[TrayManager] 系统托盘已初始化（右键模式: {}）",
+        if crate::tray_menu::is_native() { "原生菜单" } else { "自绘弹窗" }
+    );
     Ok(())
 }
 
@@ -637,6 +703,9 @@ pub fn set_tray_stack_mode(app: &AppHandle, active: bool) {
     // 托盘图标是桌面专属（mobile 无托盘），整个改图标流程桌面限定
     #[cfg(desktop)]
     {
+    TRAY_STACK_MODE_ACTIVE.store(active, Ordering::SeqCst);
+    // 栈模式本身就是「当前该显示什么」的最新答案，作废在飞的闪烁还原
+    FLASH_EPOCH.fetch_add(1, Ordering::SeqCst);
     let Some(tray) = app.tray_by_id("main-tray") else {
         log::warn!("[TrayManager] 未找到托盘图标，无法切换栈模式状态");
         return;
@@ -656,42 +725,95 @@ pub fn set_tray_stack_mode(app: &AppHandle, active: bool) {
         return;
     }
 
-    // 在图标右上角绘制橙色圆点（#EA580C）+ 深色描边
-    let w = base.width() as usize;
-    let h = base.height() as usize;
-    let mut pixels = base.rgba().to_vec();
-
-    let cx = (w as f64 * 0.78) as isize; // 圆心 x
-    let cy = (h as f64 * 0.22) as isize; // 圆心 y
-    let r = (w as f64 * 0.20) as isize; // 圆点半径
-    let border = 2.0_f64;
-
-    for y in 0..h {
-        for x in 0..w {
-            let dx = x as f64 - cx as f64;
-            let dy = y as f64 - cy as f64;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let idx = (y * w + x) * 4;
-            if dist <= r as f64 {
-                // 橙色填充 #EA580C = (234, 88, 12)
-                pixels[idx] = 234;
-                pixels[idx + 1] = 88;
-                pixels[idx + 2] = 12;
-                pixels[idx + 3] = 255;
-            } else if dist <= r as f64 + border {
-                // 深色描边，增强对比
-                pixels[idx] = 30;
-                pixels[idx + 1] = 41;
-                pixels[idx + 2] = 59;
-                pixels[idx + 3] = 255;
-            }
-        }
-    }
-
-    let stack_icon = Image::new_owned(pixels, w as u32, h as u32);
+    let stack_icon = draw_dot_on_icon(&base, (234, 88, 12), (30, 41, 59));
     let _ = tray.set_icon(Some(stack_icon));
     log::info!("[TrayManager] 托盘图标已切换为栈模式（橙色圆点）");
     }
     #[cfg(mobile)]
     { let _ = (app, active); }
 }
+
+/// 在 32px 图标右上角合成状态圆点（栈模式橙点 / 粘贴反馈绿·红点共用一套几何：
+/// 圆心 (0.78w, 0.22h)、半径 0.20w、2px 深色描边）。
+#[cfg(desktop)]
+fn draw_dot_on_icon(
+    base: &Image<'_>,
+    fill: (u8, u8, u8),
+    stroke: (u8, u8, u8),
+) -> Image<'static> {
+    let w = base.width() as usize;
+    let h = base.height() as usize;
+    let mut pixels = base.rgba().to_vec();
+
+    let cx = (w as f64 * 0.78) as f64; // 圆心 x
+    let cy = (h as f64 * 0.22) as f64; // 圆心 y
+    let r = w as f64 * 0.20; // 圆点半径
+    let border = 2.0_f64;
+
+    for y in 0..h {
+        for x in 0..w {
+            let dx = x as f64 - cx;
+            let dy = y as f64 - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let idx = (y * w + x) * 4;
+            if dist <= r {
+                pixels[idx] = fill.0;
+                pixels[idx + 1] = fill.1;
+                pixels[idx + 2] = fill.2;
+                pixels[idx + 3] = 255;
+            } else if dist <= r + border {
+                pixels[idx] = stroke.0;
+                pixels[idx + 1] = stroke.1;
+                pixels[idx + 2] = stroke.2;
+                pixels[idx + 3] = 255;
+            }
+        }
+    }
+    Image::new_owned(pixels, w as u32, h as u32)
+}
+
+/// 原生菜单动作反馈的角标闪烁（规则 15.1：托盘菜单触发、反馈必须同样常驻可见，
+/// 菜单收起后没有任何 WebView 承载 toast，唯一常驻表面就是托盘图标本身）。
+/// 绿=成功 600ms、红=失败 1500ms，到时按**当前**栈模式状态还原（重算而非存旧图）。
+#[cfg(desktop)]
+pub fn flash_tray_badge(app: &AppHandle, success: bool) {
+    let Some(tray) = app.tray_by_id("main-tray") else { return };
+    let base = match Image::from_bytes(include_bytes!("../icons/icon.png")) {
+        Ok(img) => img,
+        Err(_) => return,
+    };
+    let dot = if success { (22, 163, 74) } else { (220, 38, 38) };
+    let stroke = (30, 41, 59);
+    let icon = draw_dot_on_icon(&base, dot, stroke);
+    let hold_ms = if success { 600 } else { 1500 };
+    let my_epoch = FLASH_EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = tray.set_icon(Some(icon));
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(hold_ms));
+        // 期间若又有新闪烁或栈模式切换，让最新代际负责还原
+        if FLASH_EPOCH.load(Ordering::SeqCst) == my_epoch {
+            let active = TRAY_STACK_MODE_ACTIVE.load(Ordering::SeqCst);
+            set_tray_stack_mode(&app, active);
+        }
+    });
+}
+
+#[cfg(mobile)]
+pub fn flash_tray_badge(_app: &AppHandle, _success: bool) {}
+
+/// 切换监听的常驻反馈：tooltip 追加状态后缀（托盘项永远可见，符合规则 15.1）。
+#[cfg(desktop)]
+pub fn set_monitor_tooltip(app: &AppHandle, running: bool) {
+    let Some(tray) = app.tray_by_id("main-tray") else { return };
+    let name = crate::commands::APP_NAME.get().map(|s| s.as_str()).unwrap_or("PastePanda");
+    let text = if running {
+        format!("{} v{}", name, &*crate::commands::APP_VERSION)
+    } else {
+        format!("{} v{} — 监听已暂停", name, &*crate::commands::APP_VERSION)
+    };
+    let _ = tray.set_tooltip(Some(&text));
+}
+
+#[cfg(mobile)]
+pub fn set_monitor_tooltip(_app: &AppHandle, _running: bool) {}

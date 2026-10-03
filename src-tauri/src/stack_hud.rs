@@ -217,6 +217,12 @@ fn enabled() -> bool {
     ENABLED.load(Ordering::SeqCst)
 }
 
+/// 供托盘原生菜单判断是否摆「调整浮标位置…」项（与浮标显示同一份原子量缓存，
+/// 不为每次 hover 走一遍全表 get_config）。
+pub fn is_enabled() -> bool {
+    enabled()
+}
+
 /// 启动时从 config 恢复偏移（`lib.rs` setup 调一次）。
 pub fn init(app: &AppHandle) {
     if OFFSET_LOADED.swap(true, Ordering::SeqCst) {

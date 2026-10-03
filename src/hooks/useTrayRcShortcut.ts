@@ -88,10 +88,14 @@ export function useTrayRcShortcut(): TrayRcShortcut | null {
     void fetchTarget(() => cancelled);
     // 每次 Rust 侧 show 弹窗都会 emit tray-popup-init（TrayPopup.tsx 也在听它）——
     // 借同一条事件把设备名刷成最新的（改备注后弹托盘立刻看到新名字）。
+    // tray-menu-rc-refresh 是原生菜单模式（方案丁）的对应物：hover 托盘图标时
+    // Rust 隔 1.5s 请求一次，前端重拉后经 set_tray_rc_item 推回菜单项。
     let unlisten: (() => void) | null = null;
-    void listen("tray-popup-init", () => {
+    let unlistenNative: (() => void) | null = null;
+    const refresh = () => {
       if (!cancelled) void fetchTarget(() => cancelled);
-    })
+    };
+    void listen("tray-popup-init", refresh)
       .then((off) => {
         if (cancelled) off();
         else unlisten = off;
@@ -99,9 +103,16 @@ export function useTrayRcShortcut(): TrayRcShortcut | null {
       // 审计修（对齐 useRcSessionNotices 的写法）：listen 的拒绝必须留痕，
       // 不能变成 unhandled rejection 后静默丢掉整条刷新链路。
       .catch((e) => logger.warn("[TrayRc] tray-popup-init 监听注册失败，设备名不会自动刷新", e));
+    void listen("tray-menu-rc-refresh", refresh)
+      .then((off) => {
+        if (cancelled) off();
+        else unlistenNative = off;
+      })
+      .catch((e) => logger.warn("[TrayRc] tray-menu-rc-refresh 监听注册失败，原生菜单设备名不会自动刷新", e));
     return () => {
       cancelled = true;
       unlisten?.();
+      unlistenNative?.();
     };
   }, [fetchTarget]);
 

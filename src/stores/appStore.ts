@@ -156,6 +156,10 @@ export interface AppConfig {
   /** 栈浮标（屏幕角落那个 240×65 小窗）总开关，默认开。
    *  读取一律走 `hudBridge.ts` 的 `hudEnabled()`，Rust 侧另有兜底闸。 */
   stack_hud_enabled: boolean;
+  /** 托盘右键模式（2026-10-03 方案丁）：native=系统原生菜单（默认），popup=自绘弹窗。
+   *  口径与 Rust `tray_menu::native_or_default` 一致：**只有显式 "popup" 才走自绘**，
+   *  缺键/脏值一律原生（原生由 OS 渲染，不存在「显示不出」的一类问题）。 */
+  tray_menu_style: "native" | "popup";
   /** 灵动岛（设置页「灵动岛」分区，2026-09-25）。缺省值必须与 Rust `island_config`、
    *  岛前端（todoisland-main.tsx）一致：**关** / 遮盖度 95 / 停靠顶 · 中 / 提醒开 / 30s / 到期优先。
    *  `todo_island_glass` = 岛体遮盖度 66–100（2026-09-26 由四档枚举改成连续滑杆；
@@ -512,6 +516,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   table_split_include_header: false,
   stack_max_items: STACK_MAX_ITEMS_DEFAULT,
   stack_hud_enabled: true,
+  tray_menu_style: "native",
   todo_island_enabled: false,
   todo_island_glass: 95,
   todo_island_anchor: ANCHOR_DEFAULT,
@@ -1210,6 +1215,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 消费方（Rust island_config、岛前端的 data-island-dock）各自兜底但不会看到非法串。
     if ("todo_island_anchor" in clean) {
       clean.todo_island_anchor = normalizeAnchor(clean.todo_island_anchor);
+    }
+    // 托盘右键模式：非法值收敛为 native（与 Rust 侧「只有显式 popup 才算自绘」同口径）
+    if ("tray_menu_style" in clean && clean.tray_menu_style !== "popup") {
+      clean.tray_menu_style = "native";
     }
     // 栈容量档位：同上，脏值（手改 config / 旧版本残留 / 未来加档又删档）在这里收敛，
     // 否则 `slice(0, NaN)` 会得到空数组 —— 现象是「栈一条都收不进去」。

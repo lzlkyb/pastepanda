@@ -20,6 +20,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { useDialogEscape } from "@/hooks/useDialogEscape";
+import { useTrayMenuBridge } from "@/hooks/useTrayMenuBridge";
 import { useViewTransition } from "@/hooks/useViewTransition";
 import { logger } from "@/lib/logger";
 import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, readClipboardText, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
@@ -101,6 +102,8 @@ function App() {
   const searchRetryTick = useAppStore((s) => s.searchRetryTick);
   const { toast } = useToast();
   const anim = useDialogAnim();
+  // 托盘原生菜单（方案丁）桥：远程项上行 + 最近粘贴/远程连接事件落前端收口
+  useTrayMenuBridge();
 
   /** 新建流程图：写入空文档到历史库，再直接打开全屏编辑器 */
   const handleNewDiagram = useCallback(() => {

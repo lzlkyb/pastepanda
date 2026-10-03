@@ -84,6 +84,36 @@ export function WindowEditorSection({
           await updateAndSave({ auto_startup: v });
           try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("set_startup", { enable: v }); } catch { toast("开机自启设置失败", "error"); }
         }} />
+      {/* 托盘右键模式（2026-10-03 方案丁）：默认原生菜单，自绘弹窗保留为可选项 */}
+      <div className={styles.sRow}>
+        <SettingTile hue="system">🖱️</SettingTile>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>
+            托盘右键菜单
+            <HelpTooltip
+              tooltip="原生=系统渲染的菜单，稳定可靠（推荐）；自绘=应用内玻璃弹窗"
+              detailTitle="托盘右键菜单"
+              detail={<>
+                <p>右键点击托盘图标时弹出的菜单样式，切换后立即生效，无需重启。</p>
+                <p>📌 <b>原生菜单（推荐）</b>：由 Windows 系统渲染，任何缩放/DPI/主题下都能显示，粘贴成功或失败会闪一下托盘图标角标</p>
+                <p>📌 <b>自绘弹窗</b>：应用内的玻璃弹窗样式，最近记录带图片缩略图</p>
+                <p>⚠️ 若曾遇到「右键托盘没有反应/菜单显示不出」，切换为原生菜单可彻底避开</p>
+              </>}
+            />
+          </div>
+          <div className={`${styles.sRowDesc}`}>右键托盘图标时使用的菜单样式</div>
+        </div>
+        <select
+          className={styles.sVal}
+          style={{ width: 132 }}
+          value={config.tray_menu_style}
+          onChange={(e) => void updateAndSave({ tray_menu_style: e.target.value })}
+          title="选择托盘右键菜单样式"
+        >
+          <option value="native">原生菜单（推荐）</option>
+          <option value="popup">自绘弹窗</option>
+        </select>
+      </div>
       <ToggleRow icon="💾" hue="save" label="编辑器自动保存" desc="全屏编辑器中停止输入后自动回写内容" value={config.md_auto_save} onChange={(v) => updateAndSave({ md_auto_save: v })}
         tooltip="开启后，在全屏 Markdown 编辑器中输入停顿约 1 秒后，内容自动保存（卡片回写数据库 / 文件写回磁盘），无需手动按 Ctrl+S"
         detailTitle="编辑器自动保存"

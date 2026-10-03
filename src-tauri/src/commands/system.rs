@@ -409,13 +409,17 @@ pub fn set_md_association(enable: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn toggle_monitor(app: tauri::AppHandle) -> Result<bool, String> {
     if let Some(monitor) = app.try_state::<crate::clipboard_monitor::ClipboardMonitor>() {
-        if monitor.is_running() {
+        let running = if monitor.is_running() {
             monitor.stop();
-            Ok(false)
+            false
         } else {
             monitor.start();
-            Ok(true)
-        }
+            true
+        };
+        // tooltip 后缀跟着走：所有调用方（原生菜单/自绘弹窗/主窗入口）反馈口径一致，
+        // 别只认托盘菜单那一个触发点（规则 11.1）
+        crate::tray_manager::set_monitor_tooltip(&app, running);
+        Ok(running)
     } else {
         Err("监听器未初始化".to_string())
     }
@@ -721,6 +725,20 @@ pub fn hide_tray_popup(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn set_stack_mode(app: tauri::AppHandle, active: bool) {
     crate::tray_manager::set_tray_stack_mode(&app, active);
+}
+
+/// 前端推送托盘原生菜单的「连接远程设备」项状态（null = 判据不满足，整项撤下）。
+/// 「该不该摆这一项」的三条判据只在主窗口 `useTrayRcShortcut` 有实现，
+/// Rust 侧不抄第二份（规则 11.1）；菜单点击经 `tray-menu-rc-connect` 事件回来走同一 connect 逻辑。
+#[tauri::command]
+pub fn set_tray_rc_item(app: tauri::AppHandle, item: Option<crate::tray_menu::RcItem>) {
+    crate::tray_menu::set_rc_item(&app, item);
+}
+
+/// 托盘角标闪烁反馈（原生菜单粘贴成功=绿点/失败=红点；见 `flash_tray_badge`）
+#[tauri::command]
+pub fn tray_flash(app: tauri::AppHandle, ok: bool) {
+    crate::tray_manager::flash_tray_badge(&app, ok);
 }
 
 /// 前端主动获取托盘弹窗初始化数据（解决事件时序竞态问题）

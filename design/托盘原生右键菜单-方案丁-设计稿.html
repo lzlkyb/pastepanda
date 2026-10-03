@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>托盘原生右键菜单 · 方案丁 · 设计稿</title>
+<style>
+  /* ============ 页面骨架 ============ */
+  :root {
+    --page-bg: #14161b;
+    --page-fg: #d7dbe2;
+    --note-bg: #1c1f26;
+    --line: #2a2e37;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 40px 80px;
+    background: var(--page-bg); color: var(--page-fg);
+    font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    font-size: 13px; line-height: 1.7;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 40px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .sub { color: #8a919e; margin-bottom: 24px; }
+  .grid { display: flex; gap: 48px; align-items: flex-start; flex-wrap: wrap; }
+  .col-title { font-size: 12px; color: #8a919e; margin-bottom: 10px; }
+
+  /* ============ Win11 原生菜单几何基线（声明）============
+     圆角 8px；背景 Mica（近似：半透明底 + 1px 描边 + 大投影）
+     项高 32px；水平内边距 12px；图标列 16px、图文间距 12px
+     文字 12px / 快捷键列右对齐 12px 次要色；分隔线 1px、上下留 4px
+     悬停高亮：亮色 #e4e4e4→渐变感 2px 圆角；暗色 rgba(255,255,255,.08)
+     宽度自适应内容，设计示意取 300px */
+
+  .menu {
+    width: 300px; padding: 4px; border-radius: 8px;
+    font-size: 12px; user-select: none;
+  }
+  .menu * { font-size: 12px; }
+  .mi {
+    display: flex; align-items: center; gap: 12px;
+    height: 32px; padding: 0 12px; border-radius: 4px;
+    cursor: default; white-space: nowrap;
+  }
+  .mi .ic { width: 16px; height: 16px; flex: none; display: flex; align-items: center; justify-content: center; }
+  .mi .ic svg { width: 16px; height: 16px; }
+  .mi .tx { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .mi .kb { color: var(--kb); }
+  .sep { height: 1px; margin: 4px 11px; background: var(--sep); }
+  .mi.disabled { color: var(--dis); }
+
+  /* —— 亮色主题 —— */
+  .menu.light {
+    --fg: #1b1b1b; --kb: #5f5f5f; --sep: #e0e0e0; --dis: #a0a0a0; --check: #0a6cc1;
+    background: rgba(249,249,249,.94); border: 1px solid #d5d5d5;
+    color: var(--fg);
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  }
+  .menu.light .mi:hover { background: #ededed; }
+
+  /* —— 暗色主题 —— */
+  .menu.dark {
+    --fg: #eeeeee; --kb: #9a9a9a; --sep: #3d3d3d; --dis: #6d6d6d; --check: #6ab7ff;
+    background: rgba(43,43,43,.96); border: 1px solid #525252;
+    color: var(--fg);
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  .menu.dark .mi:hover { background: rgba(255,255,255,.08); }
+
+  .check::before {
+    content: ""; width: 12px; height: 12px; flex: none; border-radius: 3px;
+    border: 1px solid var(--dis); margin-left: -2px;
+  }
+  .check.on::before {
+    content: "✓"; border-color: var(--check); color: #0a0a0a;
+    background: var(--check); font-size: 10px; display: flex; align-items: center; justify-content: center;
+  }
+  .thumb { border-radius: 2px; background: #555; color: #fff; font-size: 8px; }
+  .badge-dot { position: relative; }
+  .badge-dot::after {
+    content: ""; position: absolute; right: -2px; bottom: -2px;
+    width: 5px; height: 5px; border-radius: 50%; background: #f59e0b;
+  }
+  .note {
+    background: var(--note-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 18px; margin-top: 10px; max-width: 920px;
+  }
+  table { border-collapse: collapse; width: 100%; max-width: 920px; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #1c1f26; }
+  code { background: #23262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .warn { color: #e5a04c; }
+</style>
+</head>
+<body>
+
+<h1>托盘原生右键菜单 — 方案丁设计稿</h1>
+<div class="sub">
+  目标：根治「右键托盘，弹窗整体显示不出」。放弃自绘 WebView 弹窗（tray-popup），改用 Tauri/muda 原生菜单，
+  由系统 <code>TrackPopupMenu</code> 渲染 —— OS 菜单永远显示得出、零常驻内存、自动跟随系统亮暗与 DPI。
+  左键行为不变（显隐主窗口，U54 双击去抖照旧）。
+</div>
+
+<h2>1. 推荐稿（Windows 11 原生观感 · 亮 / 暗双主题）</h2>
+<div class="grid">
+  <div>
+    <div class="col-title">亮色主题（完整态：可连接 + 有最近记录 + 浮标开）</div>
+    <div class="menu light">
+      <div class="mi"><span class="ic">🖥️</span><span class="tx">连接「家里的台式机」</span></div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic"><span class="badge-dot" style="display:inline-flex"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5 6h6M5 9h4"/></svg></span></span><span class="tx">粘贴：2026-10-03 发布流程备忘，先跑 lint:ui 再…</span></div>
+      <div class="mi"><span class="ic thumb">图</span><span class="tx">粘贴：[图片] 1920×1080</span></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5 6h6M5 9h6M5 12h3"/></svg></span><span class="tx">粘贴：https://github.com/lzlkyb/pastepanda</span></div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="12" height="12" rx="2"/><rect x="2" y="2" width="4.5" height="12" rx="1" fill="currentColor" stroke="none"/></svg></span><span class="tx">显示主窗口</span><span class="kb">Ctrl+Shift+V</span></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="4" y="3" width="2.5" height="10" rx="1" fill="currentColor" stroke="none"/><rect x="9.5" y="3" width="2.5" height="10" rx="1" fill="currentColor" stroke="none"/></svg></span><span class="tx">暂停监听</span></div>
+      <div class="mi"><span class="ic">📌</span><span class="tx">贴图管理…</span></div>
+      <div class="mi"><span class="ic">🎯</span><span class="tx">调整浮标位置…</span></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/></svg></span><span class="tx">设置…</span><span class="kb">Ctrl+S</span></div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2v6M5 5.5A4 4 0 1 0 11 5.5"/></svg></span><span class="tx">退出</span></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="col-title">暗色主题（静默态：无可连设备 / 无最近记录 / 浮标关 → 条件块整体不出现）</div>
+    <div class="menu dark" style="width: 260px;">
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="12" height="12" rx="2"/><rect x="2" y="2" width="4.5" height="12" rx="1" fill="currentColor" stroke="none"/></svg></span><span class="tx">显示主窗口</span><span class="kb">Ctrl+Shift+V</span></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3.5" y="3" width="3" height="10" rx="1.2" fill="currentColor" stroke="none"/><path d="M9 3.5l4 4.5-4 4.5" fill="none"/></svg></span><span class="tx">恢复监听</span></div>
+      <div class="mi"><span class="ic">📌</span><span class="tx">贴图管理…</span></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/></svg></span><span class="tx">设置…</span><span class="kb">Ctrl+S</span></div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2v6M5 5.5A4 4 0 1 0 11 5.5"/></svg></span><span class="tx">退出</span></div>
+    </div>
+    <div class="col-title" style="margin-top:24px;">变体 B（待定）：最近记录收进子菜单</div>
+    <div class="menu dark" style="width: 260px;">
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.8"/></svg></span><span class="tx">最近复制</span><span class="tx" style="text-align:right">▸</span></div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="12" height="12" rx="2"/><rect x="2" y="2" width="4.5" height="12" rx="1" fill="currentColor" stroke="none"/></svg></span><span class="tx">显示主窗口</span><span class="kb">Ctrl+Shift+V</span></div>
+      <div class="mi"><span class="tx">…（其余同上）</span></div>
+    </div>
+    <div class="sub" style="max-width:260px;">推荐稿取<b>平铺（变体 A）</b>：与现弹窗一致「打开即见最近 3 条、一步粘贴」（范式 §17 高频一步到位）。子菜单多一跳，仅当你嫌菜单长再切。</div>
+  </div>
+</div>
+
+<h2>2. 与现自绘弹窗的能力对照</h2>
+<table>
+  <tr><th>现弹窗能力</th><th>原生菜单去向</th><th>说明</th></tr>
+  <tr><td>最近复制 3 条 · 点击即贴</td><td>✅ 平铺菜单项</td><td>标题 = 「粘贴：」+ 截断文本（≤40 字符，超出省略号）；文本取当前值，悬停（Enter/Move 事件）时经 <code>run_on_main_thread</code> 就地 <code>set_title</code> 刷新，点击时永远新鲜</td></tr>
+  <tr><td>图片记录的缩略图</td><td>⚠️ 降级为 16px 图标</td><td>muda <code>MenuItem::set_icon</code>；Windows 菜单图标固定走 SM_CXSMICON（100% 缩放下 16px，随 DPI 缩放），做不了大图预览。图片项显示「[图片] W×H」文字 + 缩略图图标（内存里现成的缩略图缩到 16px）</td></tr>
+  <tr><td>暂停/恢复监听</td><td>✅ 双态菜单项</td><td>沿用现文案切换（比勾选框直观）；<code>set_title</code> 动态改</td></tr>
+  <tr><td>显示主窗口 / 设置 / 退出 / 贴图管理 / 调整浮标 / 连接设备</td><td>✅ 一一对应</td><td>逻辑不变，只是触发方从前端按钮改为 <code>on_menu_event</code> 路由到同一批命令。条件块（rc 可连、浮标开）语义照搬：不满足就整项不出现，禁用占位则 <code>set_enabled(false)</code> + 原因写进标题</td></tr>
+  <tr><td>存储统计 + 内存条</td><td>❌ 移除</td><td>原生菜单塞信息条很怪（Ditto/微信都不这么做）。数据都在设置页看；这是本方案唯一的真删项</td></tr>
+  <tr><td>自绘视觉（玻璃、彩色图标、红色「退出」）</td><td>❌ 换系统观感</td><td>收益：自动跟随 Win11 Mica/亮暗/字号/DPI，任何机器都渲染得出。「退出」无红色 → 建议加一次性确认（范式 §17 两级取消），待定</td></tr>
+  <tr><td>键盘 ↑↓ / Esc</td><td>✅ 系统自带</td><td>删掉自装的 <code>TrayPopup.tsx</code> 方向键导航与全局 mousedown 收起</td></tr>
+</table>
+
+<h2>3. 反馈可见性域（规则 15 的落点）</h2>
+<div class="note">
+  菜单点击后 OS 立刻关闭菜单 —— 弹窗时代「在弹窗里 showToast」的反馈没有承载体了。方案：
+  <b>粘贴成功/失败改用托盘图标角标闪烁</b>：复用 <code>set_tray_stack_mode</code>（tray_manager.rs:636）已验证的
+  「合成橙点覆盖图 → <code>set_icon</code>」机制，成功=绿点 600ms 后还原、失败=红点 1.5s 后还原（防连点互相覆盖：还原前比对当前应显态）。
+  这条路径常驻可见、不依赖任何窗口，正好满足 15.1「触发与反馈同可见性域」。
+  连接设备/退出等有独立窗口的动作，反馈跟着那些窗口走，不受影响。
+</div>
+
+<h2>4. 实施要点（确认后落地）</h2>
+<div class="note">
+  <b>增</b>：<code>setup_tray</code> 里 <code>MenuBuilder</code> 静态建骨架（含条件占位），<code>.menu(&menu)</code> 挂到
+  <code>TrayIconBuilder</code>；<code>on_menu_event</code> 按 <code>id</code> 路由到现有命令（show_main_window / toggle_monitor /
+  open_pinned_panel / stack_hud_adjust / emit_tray_open_settings / exit_app / do_paste(托盘路径, 位置 -1) / rc_connect）。
+  动态化：Enter/Move 回调里 <code>run_on_main_thread</code> 调 <code>set_title/set_enabled/setVisible</code> 刷新最近 3 条与双态文案
+  （纯判断部分抽函数单测，按规则 11.1 收口「该显示什么」为单一数据源，新增守卫单测钉住 rc/hud/monitoring 三条件）。<br>
+  <b>删</b>：<code>show_tray_popup</code> 全函数 + <code>POPUP_REBUILDING</code> + 失焦监听线程 + <code>set_dwm_round_corners</code> 的弹窗用途；
+  <code>src/popup-main.tsx</code>、<code>TrayPopup.tsx</code>、<code>popup.html</code>；capabilities 中 <code>tray-popup</code> 窗口授权；
+  命令 <code>get_tray_popup_data</code>/<code>hide_tray_popup</code> 若无他用以编译器引用为准删除。<br>
+  <b>保留不动</b>：左键显隐主窗口（U54 去抖）、托盘 tooltip、栈模式橙点、monitoring 图标状态机。<br>
+  <b>验证</b>：单测=菜单可见性纯函数守卫；实机=右键必出菜单、连点 5 次无卡死、4K150% DPI、Win10/Win11、亮暗系统主题、
+  无最近记录静默态、隐藏图标溢出面板里右键。<br>
+  <b>Android</b>：无托盘，<code>#[cfg(desktop)]</code> 边界照旧，不触碰 mobile 占位实现。
+</div>
+
+<h2>5. 待拍板 3 点</h2>
+<div class="note">
+  ① 最近记录：<b>平铺（推荐）</b> 还是 子菜单（变体 B）？<br>
+  ② 「退出」是否加确认对话框（原生菜单没有红色警示样式）？现状直接退。<br>
+  ③ 粘贴反馈角标闪烁（§3）是否接受，还是宁可完全无反馈？
+</div>
+
+<h2>6. 拍板与实施补记（2026-10-03，已落地）</h2>
+<div class="note">
+  <b>总决策（推翻 §4 的「删」）</b>：自绘弹窗<b>不删</b>——默认切原生菜单，设置页「系统与编辑 → 托盘右键菜单」可切回自绘弹窗。
+  config 键 <code>tray_menu_style</code>，口径同栈浮标：<b>只有显式 <code>"popup"</code> 才走自绘</b>，缺键/脏值一律原生（<code>tray_menu::native_or_default</code>）。<br>
+  <b>§5 三点按推荐口径落地</b>：① 平铺（变体 A）；② 退出不加确认（与现状一致）；③ 采纳角标闪烁（绿 600ms / 红 1.5s，<code>FLASH_EPOCH</code> 计数防连点覆盖）。<br>
+  <b>与稿子的偏差（有意为之）</b>：<br>
+  · 图片缩略图 16px 图标（§2）改为<b>标题前缀 emoji</b>（🖼/📁）——省掉图标转码管线，观感在原生菜单里够用；<br>
+  · 敏感内容且主窗口隐藏时，粘贴桥先 <code>show_main_window</code> 唤出主窗再进脱敏确认条（否则会挂起在看不见的模态上）；<br>
+  · 「暂停/恢复监听」的反馈走 <b>tooltip 后缀</b>（「— 监听已暂停」），不占角标；角标只服务粘贴/浮标调整失败；<br>
+  · 存储统计条与内存条仅在原生模式不存在，弹窗模式原样保留。<br>
+  <b>弹窗路径小加固</b>：<code>show_tray_popup</code> 的固定 <code>sleep(80ms)</code> 改为轮询销毁（≤300ms），
+  <code>build()</code> 失败时兜底复用仍在的旧窗口（刷新定位 + 重推数据 + show）。<br>
+  <b>分工收口（规则 11.1）</b>：菜单摆不摆由 Rust 纯函数 <code>plan_items(snapshot)</code> 决定（6 条守卫单测钉住）；
+  粘贴与远程连接经 <code>tray-menu-paste</code>/<code>tray-menu-rc-connect</code> 事件交回前端唯一分派 <code>pasteHistoryItem</code>，Rust 不抄第二份。
+</div>
+
+</body>
+</html>

@@ -75,6 +75,7 @@ mod todo_island_fullscreen;
 /// 待办扫描（灵动岛 B2）：活笔记正文的 GFM 复选框 → 岛状态。
 pub mod todo_tasks;
 mod tray_manager;
+mod tray_menu;
 mod win_foreground;
 
 /// 主窗口是不是**真的在用户眼前**。
@@ -1301,6 +1302,8 @@ pub fn run() {
             quick_paste::get_quick_paste_data,
             commands::set_stack_mode,
             commands::get_tray_popup_data,
+            commands::set_tray_rc_item,
+            commands::tray_flash,
             commands::emit_tray_open_settings,
             commands::show_main_window,
             commands::save_image_file,

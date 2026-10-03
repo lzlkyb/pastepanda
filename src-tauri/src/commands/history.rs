@@ -363,6 +363,15 @@ pub fn save_config(
         ));
     }
 
+    // 托盘右键模式（原生菜单/自绘弹窗，2026-10-03 方案丁）：同样是「本报文带键才刷新」。
+    if config.get(crate::tray_menu::STYLE_KEY).is_some() {
+        crate::tray_menu::apply_style_value(&app, &config);
+    }
+    // 「显示主窗口」菜单项的快捷键展示串（仅带 hotkey 键时刷新；无效串在构建处降级为不显示）
+    if let Some(hk) = config.get("hotkey").and_then(|v| v.as_str()) {
+        crate::tray_menu::set_show_hotkey(hk);
+    }
+
     // 刷新剪贴板监听器的进程内缓存（避免每次都锁数据库读配置）。
     // 🔴 四项都**只在本报文带了对应键时**才刷新，判据收口在
     // `clipboard_monitor::cache_patch_from`——理由写在那儿（局部 save_config 会把
