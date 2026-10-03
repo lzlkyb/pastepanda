@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "dev:mobile": "vite --config vite.config.mobile.ts",
     "build:mobile": "vite build --config vite.config.mobile.ts",
+    "clean": "node scripts/clean.mjs",
+    "clean:deep": "node scripts/clean.mjs --deep",
     "tauri": "npm run prebuild && tauri",
     "sync:version": "node scripts/sync-version.mjs",
     "prebuild": "node scripts/sync-version.mjs && node scripts/gen-changelog.mjs && node scripts/sync-manual-version.mjs",

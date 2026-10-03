@@ -84,3 +84,16 @@ dist-mobile/
 # WebCodecs 探针页的本地 TLS 私钥（cert.pem + key.pem），永不入库
 design/probe-cert/
 
+
+# ── 2026-10-03 工作区审计时补的本地产物/缓存（逐个确认可再生）──
+# Android 专用 cargo 编译缓存（与桌面 target/ 隔离用，规则 20），纯构建产物
+src-tauri/target-android/
+# 各会话的临时探针/日志/演示工程缓存目录
+.cache/
+# 运行时配置备份（save_config 的全量明文备份落盘处，机器本地）
+config_backups/
+# 装机验证留下的临时 APK 与 cargo registry 快照探针输出
+new-installed.apk
+rd_files.json
+# 宣传视频渲染素材/产物（体积大且可由 scripts/promo-* 再生）
+videos/
