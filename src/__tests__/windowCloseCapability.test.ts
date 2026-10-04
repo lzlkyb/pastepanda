@@ -128,19 +128,25 @@ describe("关闭监听的窗口权限对账", () => {
     ).toEqual([]);
   });
 
-  it("反向：src 下每一处 onCloseRequested 调用都在登记表里", () => {
-    const hits = listenerCallSites();
-    // 一个都没扫到 ⇒ 正则或注释过滤写坏了，不是「没有监听」。
-    expect(hits.length, "一个调用点都没扫到，扫描逻辑坏了").toBeGreaterThanOrEqual(
-      CLOSE_LISTENERS.length,
-    );
+  it(
+    "反向：src 下每一处 onCloseRequested 调用都在登记表里",
+    () => {
+      const hits = listenerCallSites();
+      // 一个都没扫到 ⇒ 正则或注释过滤写坏了，不是「没有监听」。
+      expect(hits.length, "一个调用点都没扫到，扫描逻辑坏了").toBeGreaterThanOrEqual(
+        CLOSE_LISTENERS.length,
+      );
 
-    const registered = new Set(CLOSE_LISTENERS.map((l) => l.file));
-    const unregistered = [...new Set(hits)].filter((f) => !registered.has(f));
+      const registered = new Set(CLOSE_LISTENERS.map((l) => l.file));
+      const unregistered = [...new Set(hits)].filter((f) => !registered.has(f));
 
-    expect(
-      unregistered,
-      `这些文件注册了 onCloseRequested 却没登记，其窗口可能没给 ${DESTROY_PERM}：${unregistered.join(", ")}`,
-    ).toEqual([]);
-  });
+      expect(
+        unregistered,
+        `这些文件注册了 onCloseRequested 却没登记，其窗口可能没给 ${DESTROY_PERM}：${unregistered.join(", ")}`,
+      ).toEqual([]);
+    },
+    // 同步扫 src 下全部 .ts/.tsx（现 1100+ 个）在 jsdom + 本机杀软下超默认 5s；
+    // 断言本身不慢，慢在 IO，放宽到 30s。
+    30_000,
+  );
 });

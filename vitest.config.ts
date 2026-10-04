@@ -9,9 +9,10 @@ export default defineConfig({
     globals: true,
     setupFiles: [path.resolve(__dirname, "./src/test-setup.ts")],
     // .cache 是各会话的本地产物目录（含外部仓库完整克隆，如 hyperframes-source
-    // 自带几百个测试）；vitest 默认只排 node_modules/dist，不排它会把别人的测试
-    // 扫进本仓 run，pre-push 直接被判挂。
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.cache/**"],
+    // 自带几百个测试）；design/ 是 HTML 设计稿目录，里面的 motion.test.cjs 之类
+    // 是稿件脚本不是本仓测试。vitest 默认只排 node_modules/dist，不排它们会把
+    // 无关文件扫进本仓 run，pre-push 直接被判挂。
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.cache/**", "design/**"],
   },
   resolve: {
     alias: {
