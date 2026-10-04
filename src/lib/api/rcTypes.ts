@@ -108,6 +108,11 @@ export interface RcStatus {
    */
   active_quality?: string;
   capture_scope: string;
+  /**
+   * 被控端：会话期间按住本机休眠（Windows 专属，默认关）。
+   * 生效时机是**下一场入站会话**——保活锁在推流启动那一刻才拿。
+   */
+  keep_awake?: boolean;
   /** 发起端「码率倍率」偏好（Q5，50–200，100 = 跟随链路）。会话下拉初值。 */
   bitrate_pct?: number;
   rtt_ms?: number;

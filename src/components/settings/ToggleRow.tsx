@@ -1,5 +1,6 @@
 import React from "react";
 import { HelpTooltip } from "@/components/HelpTooltip";
+import { ToggleSwitch } from "./ToggleSwitch";
 import styles from "../Settings.module.css";
 
 /** 设置图标语义色相（theme.css --ic-*）；缺省 brand 与 AI/品牌同源 */
@@ -51,11 +52,7 @@ export function ToggleRow({ icon, hue = "brand", label, desc, value, onChange, t
         </div>
         <div className={`${styles.sRowDesc}`}>{desc}</div>
       </div>
-      <button className={`${styles.sToggle} ${value ? styles.on : styles.off}`}
-        onClick={(e) => { e.stopPropagation(); onChange(!value); }}>
-        <span className={styles.sToggleThumb} />
-        <span className={styles.sToggleLabel}>{value ? "开" : "关"}</span>
-      </button>
+      <ToggleSwitch value={value} onChange={onChange} />
     </div>
   );
 }

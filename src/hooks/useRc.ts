@@ -73,6 +73,7 @@ export function useRc(enabled: boolean) {
     setCapability: a.setCapability,
     setQuality: a.setQuality,
     setCaptureScope: a.setCaptureScope,
+    setKeepAwake: a.setKeepAwake,
     setDeviceAllowed: a.setDeviceAllowed,
     setDeviceTrust: a.setDeviceTrust,
     setDeviceAutoAccept: a.setDeviceAutoAccept,

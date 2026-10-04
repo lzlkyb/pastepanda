@@ -88,6 +88,7 @@ impl RcService {
                 .and_then(|v| v.as_str())
                 .unwrap_or("virtual")
                 .to_string(),
+            keep_awake: self.keep_awake(),
             bitrate_pct: self.user_bitrate_pct_from_cfg(),
             rtt_ms: self.last_rtt_ms(),
             loss_permille: self

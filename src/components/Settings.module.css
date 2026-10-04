@@ -676,6 +676,9 @@
 }
 .sToggle.off { background: var(--toggle-off-bg); }
 .sToggle.on  { background: var(--green); }
+/* 折叠组里的行会被「被控上限」的通道闸禁用（`.rcPanelOff` 只管变灰，交互靠这里）。
+   判据同 `.lanRefreshBtn:disabled`：降透明 + 明确不是可点态。 */
+.sToggle:disabled { opacity: 0.5; cursor: not-allowed; }
 .sToggle .sToggleThumb {
   position: absolute;
   left: 0;

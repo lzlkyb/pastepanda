@@ -668,3 +668,119 @@ fn 守卫_画面暂停五处接线成对() {
         "RcStatus 没投影 video_paused / peer_video_paused —— 两端 UI 都没有状态源"
     );
 }
+/// 守卫：会话防休眠（`rc_keep_awake`，默认关）的**六处接线成对**（2026-10-04）。
+///
+/// 这条功能的失败方式全部静默，而且一半在本机界面**看不见**（防休眠生效/失效都不弹东西）：
+/// 取锁点被删 = 开关切到「开」但机器照睡；守卫没做成 `InboundVideo` 的字段 = 会话结束后
+/// 机器永远不睡（用户只会觉得 App 有毛病）；`SetThreadExecutionState` 的两处调用被搬到
+/// spawn 外面 = 请求绑在 tokio worker 上、按哪条路退出都不清（**这套实现的全部理由**）。
+/// 双机 + 换电源计划实测跑不了，按本项目做法用源码文本钉住接线。
+#[test]
+fn 守卫_会话防休眠六处接线成对() {
+    // ① 取锁点：真的在推流启动时按配置取，且**只在这一处**取（别处再取一次就是第二套生命周期）。
+    let video = include_str!("../inbound/video.rs");
+    assert!(
+        video.contains("if svc.keep_awake()")
+            && video.contains("crate::rc::keep_awake::KeepAwake::start()"),
+        "推流启动处没有按 rc_keep_awake 取锁 —— 开关是个假的"
+    );
+    assert_eq!(
+        video.matches("KeepAwake::start()").count(),
+        1,
+        "KeepAwake::start() 出现两次以上 —— 两处取锁、只有一处随会话释放"
+    );
+    // ② 释放机制：守卫是 InboundVideo 的字段（`run(mut self)` 析构它）。退化成局部变量
+    //    就等于「会话一开始就放掉」，功能整条白做。
+    let inbound = include_str!("../inbound.rs");
+    assert!(
+        inbound.contains("_keep_awake: Option<crate::rc::keep_awake::KeepAwake>"),
+        "防休眠守卫不是 InboundVideo 的字段 —— 不会随会话结束释放"
+    );
+    assert!(
+        video.contains("_keep_awake: keep_awake,"),
+        "try_new 没把守卫放进结构体 —— 取到的锁当场被丢"
+    );
+    // ③ 线程绑定：set 与 clear 必须都在那条命名线程的闭包里（请求绑调用线程，线程退出即清除）。
+    let ka = include_str!("../keep_awake.rs");
+    assert!(
+        ka.contains(".name(\"rc-keep-awake\".into())"),
+        "防休眠不再走专用线程 —— 请求会绑在 tokio worker 上，退出路径不可控"
+    );
+    assert!(
+        ka.contains("ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED"),
+        "必须同时按住系统休眠与显示器熄屏 —— 只保系统不睡时显示器一熄，DXGI 复制照样失败"
+    );
+    assert_eq!(
+        ka.matches("SetThreadExecutionState(").count(),
+        3,
+        "SetThreadExecutionState 该有三处调用（设 / 探 / 释放）——多一处或少一处都要核对是否搬出了那条线程"
+    );
+    // 🔴 钉住 2026-10-04 修掉的**契约级误读**：MSDN 说成功返回的是「本线程**之前的**执行状态」，
+    //    失败才是 NULL —— 当年按「返回 0 = 申请失败」判，把「之前没状态」读成了「申请被拒」。
+    //    本机实测新进程首次调用返回 0x80000000（线程初值自带 ES_CONTINUOUS），所以那次没
+    //    当场失效，但这个值随线程来路而变、拿它判成败从契约上就不成立，而且它永远分不出
+    //    「两个位到底给没给」。判据必须是「再设一次同样的参数、拿回第一次设下的状态来验」。
+    assert!(
+        ka.contains("held.contains(ES_SYSTEM_REQUIRED)"),
+        "防休眠不再用第二次调用返回的状态位判成败 —— 会退回「新线程返回 0 当成失败」那个空转 bug"
+    );
+    // 🔴 真正的机制不变量：**三处都必须在那条线程的闭包里**（请求绑调用线程）。
+    // 用字节偏移判，不用跨行字面量——include_str! 读的是磁盘原字节，仓库以 CRLF 检出时
+    // 任何含换行的判据都会变成假红。
+    let spawn_at = ka
+        .find(".spawn(move ||")
+        .expect("防休眠必须走专用线程的 spawn 闭包");
+    let first = ka.find("SetThreadExecutionState(").unwrap();
+    let last = ka.rfind("SetThreadExecutionState(").unwrap();
+    assert_ne!(first, last, "只找到一处 SetThreadExecutionState —— 设置/探测/释放三处至少少了一处");
+    assert!(
+        spawn_at < first && spawn_at < last,
+        "有 SetThreadExecutionState 落在 spawn 之前/之外 —— 请求会绑在 tokio worker 上，会话结束没人清"
+    );
+    // ④ 默认关 + 唯一读取点：缺省判断只许存在于 cfg_keep_awake 一处。
+    let svc = include_str!("../service/mod.rs");
+    assert!(
+        svc.contains("pub const CFG_KEEP_AWAKE_DEFAULT: bool = false"),
+        "防休眠默认值不再是关 —— 它会按住用户机器的屏幕与电源计划"
+    );
+    let trust = include_str!("../service/trust.rs");
+    assert!(
+        trust.contains("super::cfg_keep_awake(&self.store)"),
+        "RcService::keep_awake 不再转调唯一读取点"
+    );
+    // ⑤ 状态投影 + 命令注册 + 跨端字符串成对：前端行拿的是后端真值。
+    assert!(
+        include_str!("../service/lifecycle.rs").contains("keep_awake: self.keep_awake()"),
+        "RcStatus 没投影 keep_awake —— 设置页那行没有状态源"
+    );
+    assert!(
+        include_str!("../../lib.rs").contains("commands::rc_set_keep_awake,"),
+        "rc_set_keep_awake 没进 invoke_handler —— 开关点了没反应"
+    );
+    let cmd = include_str!("../../commands/rc.rs");
+    assert!(
+        cmd.contains("#[cfg(target_os = \"windows\")]") && cmd.contains("会话防休眠只支持 Windows 被控端"),
+        "非 Windows 必须**明确报错**，静默成功会让开关切到永远不生效的假状态"
+    );
+    let ts_cmd = include_str!("../../../../src/lib/api/rcCommands.ts");
+    assert!(
+        ts_cmd.contains("invoke(\"rc_set_keep_awake\", { enable })"),
+        "前端 invoke 的命令名与后端对不上 —— 保存直接失败"
+    );
+    let ts_types = include_str!("../../../../src/lib/api/rcTypes.ts");
+    assert!(
+        ts_types.contains("keep_awake?: boolean"),
+        "前端 RcStatus 没有 keep_awake 字段 —— 与后端投影脱节"
+    );
+}
+
+/// 非 Windows：`KeepAwake::start()` 恒 `None`（能力是 Windows 电源 API 专属，
+/// stub 不许假装成功）。Windows 上这条不适用——真机生效只能看会话日志。
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn 会话防休眠_非windows恒不保活() {
+    assert!(
+        crate::rc::keep_awake::KeepAwake::start().is_none(),
+        "非 Windows 上不许产出守卫"
+    );
+}

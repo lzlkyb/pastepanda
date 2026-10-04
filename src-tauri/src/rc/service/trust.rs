@@ -81,6 +81,11 @@ impl RcService {
             .unwrap_or(false)
     }
 
+    /// 本机是否开了「会话期间防休眠」。唯一读取点在 `super::cfg_keep_awake`。
+    pub fn keep_awake(&self) -> bool {
+        super::cfg_keep_awake(&self.store)
+    }
+
     pub fn max_capability(&self) -> Capability {
         self.cfg()
             .get(CFG_CAPABILITY)

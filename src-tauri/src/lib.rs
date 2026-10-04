@@ -1208,6 +1208,7 @@ pub fn run() {
             commands::rc_window_close,
             commands::rc_fit_window_to_video,
             commands::rc_set_quality,
+            commands::rc_set_keep_awake,
             commands::rc_set_bitrate_pct,
             commands::rc_encode_caps,
             commands::rc_list_monitors,

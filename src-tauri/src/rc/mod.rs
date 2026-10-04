@@ -17,6 +17,10 @@ pub mod inbound_tasks;
 pub mod input;
 pub mod join;
 pub mod jpeg;
+/// 被控端会话防休眠（Windows 电源执行状态锁）。**跨平台声明**：非 Windows 由内部
+/// stub 返回 `None`，推流任务的字段因此不必写 cfg（与 [`wic_jpeg`] 同一处理）。
+/// ⚠️ 与 Android 端那条前台服务保活不是一回事：那条管进程不被冻结，这条管机器不睡。
+pub mod keep_awake;
 pub mod link;
 pub mod local_input;
 pub mod mono;

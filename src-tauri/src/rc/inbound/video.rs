@@ -87,6 +87,14 @@ impl InboundVideo {
         } else {
             None
         };
+        // 防休眠：只在**真的要开始推流**这一刻起持（放在 `my_id` 那道闸之后）。
+        // 更早拿等于让「被拒/来不及建会话」的连接白白按住用户机器；不做成字段则要有
+        // 一处记得 release，而退出路径不止一条。
+        let keep_awake = if svc.keep_awake() {
+            crate::rc::keep_awake::KeepAwake::start()
+        } else {
+            None
+        };
         Some(Self {
             svc,
             peer: peer.to_string(),
@@ -123,6 +131,7 @@ impl InboundVideo {
             static_refined: false,
             perf: crate::rc::perf::FrameStats::new(),
             perf_last: crate::rc::perf::FrameTiming::idle(),
+            _keep_awake: keep_awake,
         })
     }
 

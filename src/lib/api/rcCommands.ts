@@ -379,6 +379,14 @@ export function rcSetCaptureScope(scope: RcCaptureScope): Promise<void> {
   return invoke("rc_set_capture_scope", { scope });
 }
 
+/**
+ * 被控端「会话防休眠」开关（Windows 专属；非 Windows 后端直接报错，不静默成功）。
+ * 生效时机是下一场入站会话——锁在推流启动那一刻才拿，会话中改不动已跑的锁。
+ */
+export function rcSetKeepAwake(enable: boolean): Promise<void> {
+  return invoke("rc_set_keep_awake", { enable });
+}
+
 export function rcListMonitors(): Promise<RcMonitorInfo[]> {
   return invoke("rc_list_monitors");
 }

@@ -81,6 +81,8 @@ pub const CFG_CAPTURE_SCOPE: &str = "rc_capture_scope";
 pub const CFG_CODEC: &str = "rc_codec";
 /// 发起端「码率倍率」（Q5，50–200，100 = 跟随链路）。会话建立时推给被控端。
 pub const CFG_BITRATE_PCT: &str = "rc_bitrate_pct";
+/// 被控端会话期间是否按住本机休眠（Windows 专属；见 `rc/keep_awake.rs`）。
+pub const CFG_KEEP_AWAKE: &str = "rc_keep_awake";
 
 /// RC 地址宣告端口。**不是**同步的 5008，两套 presence 互不抢 bind。
 pub const RC_PRESENCE_PORT: u16 = PRESENCE_BASE_PORT + 1;
@@ -139,6 +141,10 @@ pub struct RcStatus {
     pub active_quality: String,
     /// 截取范围 virtual/primary
     pub capture_scope: String,
+    /// 被控端：会话期间是否按住本机休眠（设置项，默认关）。
+    /// 恒为本机配置值（不分角色），但它只对**入站**会话有意义——自己发起远程时
+    /// 该保活的是对方那台机器。
+    pub keep_awake: bool,
     /// 发起端「码率倍率」（Q5，50–200，100 = 跟随链路）。会话 UI 下拉初值。
     pub bitrate_pct: u32,
     /// 发起端最近 RTT（毫秒），0=尚未测到。
@@ -678,4 +684,20 @@ pub fn cfg_enabled(store: &DataStore) -> bool {
         .ok()
         .and_then(|c| c.get(CFG_ENABLED).and_then(|v| v.as_bool()))
         .unwrap_or(false)
+}
+
+/// `rc_keep_awake` 的缺省值：**关**。
+///
+/// 这条按住的是**用户自己的机器**——屏幕常亮、风扇照转，笔记本上是实打实的电与热，
+/// 会话期间还带着合盖旁放置的风险。「改变机器物理状态」的能力不替用户预先决定。
+/// 它也不放大任何攻击面（只在已经有会话的时候生效），纯粹是功耗取舍，所以只走用户勾选。
+pub const CFG_KEEP_AWAKE_DEFAULT: bool = false;
+
+/// 「会话防休眠」的唯一读取点（`RcService::keep_awake` 转调这里，别处不再各读一份）。
+pub fn cfg_keep_awake(store: &DataStore) -> bool {
+    store
+        .get_config()
+        .ok()
+        .and_then(|c| c.get(CFG_KEEP_AWAKE).and_then(|v| v.as_bool()))
+        .unwrap_or(CFG_KEEP_AWAKE_DEFAULT)
 }

@@ -1,7 +1,8 @@
 /**
  * RcCapGroup — 组 3「被控上限」。
  *
- * 三行：能力上限（两档 → `sSegGroup`）、画质档、画面范围（≥3 档 → `RcDropdown`）。
+ * 四行：能力上限（两档 → `sSegGroup`）、画质档、画面范围（≥3 档 → `RcDropdown`）、
+ * 会话防休眠（两态 → `ToggleSwitch`，本组唯一的开关控件——`ToggleRow` 自带整行，塞不进组里）。
  * 🔴 分流判据是**档数**，不是喜好：一行右控件列实测只剩 72–96px（设计稿 §2 现场量的），
  * 11 档画质平铺要 3 行。两档才允许用页内已有的分段按钮。
  *
@@ -18,6 +19,7 @@ import type { RcLocalAbility } from "@/hooks/useRcLocalAbility";
 import { qualityLabel } from "@/lib/rcQuality";
 import { scopeLabel, scopeOptions } from "@/lib/rcScope";
 import { RcDropdown } from "@/components/rc/RcDropdown";
+import { ToggleSwitch } from "../ToggleSwitch";
 import shared from "../../Settings.module.css";
 import styles from "../RcSettings.module.css";
 import { RcGroupHead } from "./RcGroupHead";
@@ -40,7 +42,7 @@ export function RcCapGroup({
   onToggle: () => void;
 }) {
   const { loadError, reload, capsUnknown, monitorsUnknown, qualities, monitors } = ability;
-  // 🔴 判据用**后端真值** `status.enabled`，不是 `config.rc_enabled`：这三行配的就是
+  // 🔴 判据用**后端真值** `status.enabled`，不是 `config.rc_enabled`：这四行配的就是
   // 「通道开着时能被怎么控」，原 `RcAllowPanel` 也是这条口径（两者只在切换在飞的
   // 短暂窗口里不一致，真值不会让界面显示成「能改但其实改了不生效」）。
   const off = !status.enabled;
@@ -157,6 +159,28 @@ export function RcCapGroup({
               disabled={busy}
               disabledTitle={off ? "远程协助已关闭" : undefined}
               onPick={(k) => void rc.setCaptureScope(k)}
+            />
+          </RcGroupRow>
+
+          <RcGroupRow hue="system" icon="🌙" label="会话防休眠"
+            desc="有人连着时本机不睡、屏幕不熄；下次连接起生效"
+            off={off}
+            detailTitle="会话防休眠"
+            detail={
+              <>
+                <p>被控的机器一旦按电源计划休眠，画面、连接、键鼠<b>三件事一起断</b>，而这边只看得到「画面停了」——查不出原因也修不了，只能等你把机器唤醒。</p>
+                <p>开了它：<b>只在会话期间</b>按住系统休眠并让屏幕保持常亮，会话一结束立刻交回你原来的电源计划。<b>不改</b>电源设置，也不影响平时。</p>
+                <p>代价是电与热：屏幕常亮一整场，笔记本别合盖放着。所以默认关。</p>
+                <p>挡不住<b>主动</b>的睡眠：合盖、按电源键、你手动锁屏都照做，屏保也不拦——它只按住「闲置自动睡过去」这一种。</p>
+                <p>只支持 Windows 被控端。切换对<b>已经在跑的会话</b>不做任何事，下一场有人连进来才按新的来。</p>
+              </>
+            }
+          >
+            <ToggleSwitch
+              value={!!status.keep_awake}
+              disabled={busy}
+              disabledTitle={off ? "远程协助已关闭" : undefined}
+              onChange={(v) => void rc.setKeepAwake(v)}
             />
           </RcGroupRow>
         </>

@@ -1476,6 +1476,48 @@ pub async fn rc_set_quality(
     Ok(())
 }
 
+/// 会话防休眠（被控端）：别人连进来时按住本机不休眠、显示器不熄，会话结束自动交回
+/// 原电源策略。**只影响下一场入站会话**——守卫是在推流启动那一刻拿的（`inbound/video.rs`
+/// 的 `try_new`），会话中途改这里不会去动已经在跑的锁。
+///
+/// 与 `rc_set_enabled` 的分工：那条关掉会**当场收掉**进行中的被控会话，因为它撤销的是
+/// 授权；这条撤销的只是本机保活，正在跑的会话不该因此被打断，所以只写配置。
+///
+/// 机制与「为什么必须专用线程」见 [`crate::rc::keep_awake`]。
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn rc_set_keep_awake(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+    enable: bool,
+) -> Result<(), String> {
+    let mut config = store.get_config()?;
+    let obj = config
+        .as_object_mut()
+        .ok_or("配置文件不是一个对象，开关没能保存")?;
+    obj.insert(
+        crate::rc::service::CFG_KEEP_AWAKE.to_string(),
+        serde_json::Value::Bool(enable),
+    );
+    store.save_config(&config)?;
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
+/// 非 Windows：电源执行状态锁是 Windows API 专属。**明确报错**而不是静默成功——
+/// 静默成功会让开关切到一个永远不生效的假状态。
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn rc_set_keep_awake(
+    _app: AppHandle,
+    _store: State<'_, DataStore>,
+    _svc: State<'_, Arc<RcService>>,
+    _enable: bool,
+) -> Result<(), String> {
+    Err("会话防休眠只支持 Windows 被控端".into())
+}
+
 /// Q5：发起端「码率倍率」偏好（50–200，100 = 跟随链路）。只写本机配置；
 /// 对会话的生效由 outbound 任务在会话建立时推送、会话中改下拉走 rc_send_input。
 #[tauri::command]

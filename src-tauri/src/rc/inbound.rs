@@ -128,6 +128,16 @@ pub(super) struct InboundVideo {
     /// 「H.264 硬编 / JPEG 兜底」两条路径、且「抓到帧」与「没抓到（屏幕未变）」
     /// 要区分——只在一个地方收口判定，比散在两处各写一遍少一个出错点。
     pub(super) perf_last: super::perf::FrameTiming,
+    /// 会话防休眠守卫（设置项 `rc_keep_awake`，默认关；None = 本会话不保活）。
+    ///
+    /// 做成字段而不是「开始时设、结束时清」的两处调用：`run(mut self)` 的**每一条**
+    /// 退出路径都会析构它——正常收口、对端断链、`force_end_if_session` 强制结束都一样，
+    /// 不需要任何「记得调 release」的纪律。释放机制见 [`crate::rc::keep_awake`]。
+    ///
+    /// 🔴 前缀下划线是刻意的：这个字段**没有任何读取点**，它的唯一作用是被析构
+    /// （与 `clipboard_monitor` 的 `_auto_strip_cache` 同款）。改成不带下划线的名字
+    /// 会报 `field is never read`，别为了消警告把它「用起来」。
+    pub(super) _keep_awake: Option<crate::rc::keep_awake::KeepAwake>,
 }
 
 /// 一圈推流的走向。命名决策替代三层嵌套 match。

@@ -92,6 +92,8 @@ export interface RcState {
   setCapability: (c: RcCapability) => Promise<boolean>;
   setQuality: (q: RcQuality) => Promise<boolean>;
   setCaptureScope: (s: RcCaptureScope) => Promise<boolean>;
+  /** 被控端「会话防休眠」开关（Windows 专属；下一场入站会话起生效）。 */
+  setKeepAwake: (v: boolean) => Promise<boolean>;
   setDeviceAllowed: (id: string, ok: boolean) => Promise<boolean>;
   /** 方案 D：设置「免确认直连」（默认关，逐台；deny 优先级更高）。 */
   setDeviceTrust: (id: string, trusted: boolean) => Promise<boolean>;
