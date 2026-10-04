@@ -80,9 +80,8 @@ describe("全仓不许再写第四处 `=== \"control\"` 判定", () => {
   });
 
   it("名单不留死条目（谁被改走了就删掉谁）", () => {
-    const stale = ALLOWED.filter(
-      (rel) => !RE.test(readFileSync(join(ROOT, rel.replace(/\//g, "\\")), "utf8"))
-    );
+    // join(ROOT, rel) 两端通吃：Windows 认 `/`，Linux 认不了 `\`——别再转反斜杠。
+    const stale = ALLOWED.filter((rel) => !RE.test(readFileSync(join(ROOT, rel), "utf8")));
     expect(stale).toEqual([]);
   });
 });
